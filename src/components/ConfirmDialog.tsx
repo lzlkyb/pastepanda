@@ -52,7 +52,7 @@ export function ConfirmDialog({
             </div>
 
             {/* Body */}
-            <div className="dialog-body" style={{ gap: 12 }}>
+            <div className="dialog-body" style={{ "--dialog-body-gap": "12px" } as React.CSSProperties}>
               <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
                 {message}
               </p>

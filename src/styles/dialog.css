@@ -1,0 +1,295 @@
+/**
+ * dialog.css — 弹窗通用样式
+ */
+
+/* ===== Dialog 背景遮罩 ===== */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.dialog-box {
+  background: var(--dialog-bg);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.dialog-box.w500 { width: 420px; max-height: 80vh; }
+.dialog-box.w480 { width: 380px; max-height: 70vh; }
+.dialog-box.about-dialog { max-height: 85vh; }
+.dialog-box.w460 { width: 460px; max-height: 78vh; }
+
+/* ===== Dialog Header ===== */
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 48px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.dialog-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.dialog-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: background 0.15s;
+}
+
+.dialog-close:hover {
+  background: var(--hover);
+}
+
+/* ===== Dialog Body ===== */
+.dialog-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--dialog-body-padding, 16px 20px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--dialog-body-gap, 16px);
+}
+
+/* ===== Dialog Footer ===== */
+.dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 48px;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  gap: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.dialog-footer-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+/* ===== 片段库 Header ===== */
+.snippets-header {
+  padding: 10px 16px;
+  height: auto;
+  min-height: 44px;
+}
+
+.snippets-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.snippets-header-left .dialog-title {
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.snippets-header-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.panel-count {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--seg-bg);
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-weight: 500;
+}
+
+/* 最近使用 */
+.recent-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+  padding: 16px 16px 8px;
+}
+
+.recent-tags {
+  padding: 0 16px 12px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.recent-tag {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--seg-bg);
+  padding: 4px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.recent-tag:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+/* ===== 代码查看器（QuickPreview + EditDialog 共用） ===== */
+
+/* 元信息条 */
+.code-meta-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+}
+
+.code-meta-left {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.code-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.code-meta-label {
+  font-weight: 500;
+}
+
+.code-meta-val {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.code-type-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+/* 带行号的代码查看器 */
+.code-viewer {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  overflow: auto;
+}
+
+.code-lines {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 0;
+  min-width: 36px;
+  text-align: right;
+  user-select: none;
+  background: var(--section-bg);
+  border-right: 1px solid var(--border-color);
+  border-radius: 10px 0 0 10px;
+}
+
+.code-ln {
+  padding: 0 10px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+
+.code-text {
+  flex: 1;
+  margin: 0;
+  padding: 10px 14px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+/* 操作栏（预览用） */
+.code-actions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* 旧版 QuickPreview 样式 — 保留兼容 */
+.quick-preview-content {
+  padding: 14px;
+  border-radius: 10px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  max-height: 50vh;
+  overflow: auto;
+  font-family: 'SF Mono', Consolas, 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-primary);
+}
+
+/* 图片预览按钮（旧版兼容） */
+.preview-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.15);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.2s;
+}
+
+.preview-btn:hover {
+  background: rgba(255,255,255,0.25);
+}

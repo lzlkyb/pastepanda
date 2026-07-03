@@ -84,7 +84,7 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
             <button onClick={onClose} className="dialog-close"><X size={16} /></button>
           </div>
 
-          <div className="dialog-body" style={{ padding: "28px 28px 24px" }}>
+          <div className="dialog-body" style={{ "--dialog-body-padding": "28px 28px 24px" } as React.CSSProperties}>
             {/* 英雄区 */}
             <div className={styles.aboutHero}>
               <div className={styles.aboutIcon}><AppIcon size={64} /></div>

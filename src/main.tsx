@@ -4,6 +4,11 @@ import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { logger } from "./lib/logger";
 import "./styles/globals.css";
+import "./styles/theme.css";
+import "./styles/buttons.css";
+import "./styles/dialog.css";
+import "./styles/code-theme.css";
+import "./styles/app.css";
 
 // 缓存 ToastProvider 挂载前触发的 rejection toast，等 DOM 就绪后批量分发
 let toastReady = false;

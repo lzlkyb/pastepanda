@@ -103,7 +103,7 @@ export function QuickPreview() {
             </div>
 
             {/* Body */}
-            <div className="dialog-body" style={{ gap: 10 }}>
+            <div className="dialog-body" style={{ "--dialog-body-gap": "10px" } as React.CSSProperties}>
               {/* 元信息条 */}
               <div className="code-meta-bar">
                 <div className="code-meta-left">
@@ -149,11 +149,6 @@ export function QuickPreview() {
               </div>
             </div>
 
-            {/* Footer */}
-            <div className="dialog-footer">
-              <span style={{ fontSize: 10, color: "var(--text-muted)" }}>Space / Esc 关闭 · 可选中文本</span>
-              <span></span>
-            </div>
           </motion.div>
         </motion.div>
       )}

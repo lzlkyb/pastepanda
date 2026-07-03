@@ -47,8 +47,8 @@ function saveTabStyle(v: TabStyle) {
   try { localStorage.setItem("tabStyle", v); } catch { logger.warn("保存tab样式失败"); }
 }
 
-export function TopBar({ onSettings, onHelp, onSnippets, onExtract, onAbout }: {
-  onSettings?: () => void; onHelp?: () => void; onSnippets?: () => void; onExtract?: () => void; onAbout?: () => void;
+export function TopBar({ onSettings, onSnippets, onExtract }: {
+  onSettings?: () => void; onSnippets?: () => void; onExtract?: () => void;
 }) {
   const filterType = useAppStore((s) => s.filterType);
   const setFilterType = useAppStore((s) => s.setFilterType);
@@ -133,12 +133,8 @@ export function TopBar({ onSettings, onHelp, onSnippets, onExtract, onAbout }: {
         <div className={styles.headerIcons} data-tauri-drag-region="false">
           <IconBtn tip="片段库" onClick={onSnippets}><span className={styles.iconEmoji}>📝</span></IconBtn>
           <IconBtn tip="内容提取" onClick={onExtract}><span className={styles.iconEmoji}>🧲</span></IconBtn>
-          <IconBtn tip="设置" onClick={onSettings}>
+          <IconBtn tip="设置 · 帮助 · 关于" onClick={onSettings}>
             <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-          </IconBtn>
-          <IconBtn tip="帮助" onClick={onHelp}><span className={styles.iconEmoji}>❓</span></IconBtn>
-          <IconBtn tip="关于" onClick={onAbout}>
-            <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" stroke="#FACC15" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
           </IconBtn>
           <IconBtn tip="最小化到任务栏" onClick={minimizeWin}>
             <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round"><path d="M5 12h14"/></svg>

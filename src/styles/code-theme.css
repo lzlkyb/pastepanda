@@ -1,0 +1,458 @@
+/**
+ * code-theme.css — 代码高亮主题样式（Shiki + highlight.js）
+ */
+
+/* 代码高亮样式 — 基于 highlight.js github 主题适配亮/暗 */
+.code-highlighted {
+  padding: 10px 14px;
+}
+
+.code-highlighted code {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+/* 亮色主题高亮色 */
+:root .hljs,
+[data-theme="ocean"] .hljs {
+  color: #24292e;
+}
+
+[data-theme="ocean"] .hljs-comment,
+[data-theme="ocean"] .hljs-quote { color: #6a737d; font-style: italic; }
+
+[data-theme="ocean"] .hljs-keyword,
+[data-theme="ocean"] .hljs-selector-tag,
+[data-theme="ocean"] .hljs-type { color: #d73a49; }
+
+[data-theme="ocean"] .hljs-string,
+[data-theme="ocean"] .hljs-addition { color: #032f62; }
+
+[data-theme="ocean"] .hljs-number,
+[data-theme="ocean"] .hljs-literal { color: #005cc5; }
+
+[data-theme="ocean"] .hljs-title,
+[data-theme="ocean"] .hljs-section,
+[data-theme="ocean"] .hljs-selector-id { color: #6f42c1; }
+
+[data-theme="ocean"] .hljs-attr,
+[data-theme="ocean"] .hljs-attribute,
+[data-theme="ocean"] .hljs-variable,
+[data-theme="ocean"] .hljs-template-variable { color: #e36209; }
+
+[data-theme="ocean"] .hljs-built_in,
+[data-theme="ocean"] .hljs-builtin-name { color: #005cc5; }
+
+[data-theme="ocean"] .hljs-meta,
+[data-theme="ocean"] .hljs-tag { color: #22863a; }
+
+[data-theme="ocean"] .hljs-name { color: #22863a; }
+
+[data-theme="ocean"] .hljs-regexp,
+[data-theme="ocean"] .hljs-link { color: #032f62; }
+
+[data-theme="ocean"] .hljs-symbol,
+[data-theme="ocean"] .hljs-bullet { color: #e36209; }
+
+[data-theme="ocean"] .hljs-deletion { color: #d73a49; }
+
+[data-theme="ocean"] .hljs-emphasis { font-style: italic; }
+
+[data-theme="ocean"] .hljs-strong { font-weight: 700; }
+
+[data-theme="ocean"] .hljs-params { color: #24292e; }
+
+[data-theme="ocean"] .hljs-property { color: #005cc5; }
+
+[data-theme="ocean"] .hljs-punctuation { color: #24292e; }
+
+[data-theme="ocean"] .hljs-operator { color: #d73a49; }
+
+/* 暗色主题高亮色 */
+[data-theme="midnight"] .hljs {
+  color: #c9d1d9;
+}
+
+[data-theme="midnight"] .hljs-comment,
+[data-theme="midnight"] .hljs-quote { color: #8b949e; font-style: italic; }
+
+[data-theme="midnight"] .hljs-keyword,
+[data-theme="midnight"] .hljs-selector-tag,
+[data-theme="midnight"] .hljs-type { color: #ff7b72; }
+
+[data-theme="midnight"] .hljs-string,
+[data-theme="midnight"] .hljs-addition { color: #a5d6ff; }
+
+[data-theme="midnight"] .hljs-number,
+[data-theme="midnight"] .hljs-literal { color: #79c0ff; }
+
+[data-theme="midnight"] .hljs-title,
+[data-theme="midnight"] .hljs-section,
+[data-theme="midnight"] .hljs-selector-id { color: #d2a8ff; }
+
+[data-theme="midnight"] .hljs-attr,
+[data-theme="midnight"] .hljs-attribute,
+[data-theme="midnight"] .hljs-variable,
+[data-theme="midnight"] .hljs-template-variable { color: #ffa657; }
+
+[data-theme="midnight"] .hljs-built_in,
+[data-theme="midnight"] .hljs-builtin-name { color: #79c0ff; }
+
+[data-theme="midnight"] .hljs-meta,
+[data-theme="midnight"] .hljs-tag { color: #7ee787; }
+
+[data-theme="midnight"] .hljs-name { color: #7ee787; }
+
+[data-theme="midnight"] .hljs-regexp,
+[data-theme="midnight"] .hljs-link { color: #a5d6ff; }
+
+[data-theme="midnight"] .hljs-symbol,
+[data-theme="midnight"] .hljs-bullet { color: #ffa657; }
+
+[data-theme="midnight"] .hljs-deletion { color: #ff7b72; }
+
+[data-theme="midnight"] .hljs-emphasis { font-style: italic; }
+
+[data-theme="midnight"] .hljs-strong { font-weight: 700; }
+
+[data-theme="midnight"] .hljs-params { color: #c9d1d9; }
+
+[data-theme="midnight"] .hljs-property { color: #79c0ff; }
+
+[data-theme="midnight"] .hljs-punctuation { color: #c9d1d9; }
+
+[data-theme="midnight"] .hljs-operator { color: #ff7b72; }
+
+/* 其他浅色主题复用 ocean 高亮 */
+[data-theme="forest"] .hljs,
+[data-theme="blossom"] .hljs { color: #24292e; }
+
+[data-theme="forest"] .hljs-comment,
+[data-theme="forest"] .hljs-quote,
+[data-theme="blossom"] .hljs-comment,
+[data-theme="blossom"] .hljs-quote { color: #6a737d; font-style: italic; }
+
+[data-theme="forest"] .hljs-keyword,
+[data-theme="forest"] .hljs-selector-tag,
+[data-theme="forest"] .hljs-type,
+[data-theme="blossom"] .hljs-keyword,
+[data-theme="blossom"] .hljs-selector-tag,
+[data-theme="blossom"] .hljs-type { color: #d73a49; }
+
+[data-theme="forest"] .hljs-string,
+[data-theme="forest"] .hljs-addition,
+[data-theme="blossom"] .hljs-string,
+[data-theme="blossom"] .hljs-addition { color: #032f62; }
+
+[data-theme="forest"] .hljs-number,
+[data-theme="forest"] .hljs-literal,
+[data-theme="blossom"] .hljs-number,
+[data-theme="blossom"] .hljs-literal { color: #005cc5; }
+
+[data-theme="forest"] .hljs-title,
+[data-theme="forest"] .hljs-section,
+[data-theme="forest"] .hljs-selector-id,
+[data-theme="blossom"] .hljs-title,
+[data-theme="blossom"] .hljs-section,
+[data-theme="blossom"] .hljs-selector-id { color: #6f42c1; }
+
+[data-theme="forest"] .hljs-attr,
+[data-theme="forest"] .hljs-attribute,
+[data-theme="forest"] .hljs-variable,
+[data-theme="forest"] .hljs-template-variable,
+[data-theme="blossom"] .hljs-attr,
+[data-theme="blossom"] .hljs-attribute,
+[data-theme="blossom"] .hljs-variable,
+[data-theme="blossom"] .hljs-template-variable { color: #e36209; }
+
+[data-theme="forest"] .hljs-built_in,
+[data-theme="forest"] .hljs-builtin-name,
+[data-theme="blossom"] .hljs-built_in,
+[data-theme="blossom"] .hljs-builtin-name { color: #005cc5; }
+
+[data-theme="forest"] .hljs-meta,
+[data-theme="forest"] .hljs-tag,
+[data-theme="forest"] .hljs-name,
+[data-theme="blossom"] .hljs-meta,
+[data-theme="blossom"] .hljs-tag,
+[data-theme="blossom"] .hljs-name { color: #22863a; }
+
+[data-theme="forest"] .hljs-regexp,
+[data-theme="forest"] .hljs-link,
+[data-theme="blossom"] .hljs-regexp,
+[data-theme="blossom"] .hljs-link { color: #032f62; }
+
+[data-theme="forest"] .hljs-symbol,
+[data-theme="forest"] .hljs-bullet,
+[data-theme="blossom"] .hljs-symbol,
+[data-theme="blossom"] .hljs-bullet { color: #e36209; }
+
+[data-theme="forest"] .hljs-deletion,
+[data-theme="blossom"] .hljs-deletion { color: #d73a49; }
+
+[data-theme="forest"] .hljs-emphasis,
+[data-theme="blossom"] .hljs-emphasis { font-style: italic; }
+
+[data-theme="forest"] .hljs-strong,
+[data-theme="blossom"] .hljs-strong { font-weight: 700; }
+
+[data-theme="forest"] .hljs-params,
+[data-theme="forest"] .hljs-punctuation,
+[data-theme="blossom"] .hljs-params,
+[data-theme="blossom"] .hljs-punctuation { color: #24292e; }
+
+[data-theme="forest"] .hljs-property,
+[data-theme="blossom"] .hljs-property { color: #005cc5; }
+
+[data-theme="forest"] .hljs-operator,
+[data-theme="blossom"] .hljs-operator { color: #d73a49; }
+
+/* 其他暗色主题复用 midnight 高亮 */
+[data-theme="terminal"] .hljs,
+[data-theme="sunset"] .hljs { color: #c9d1d9; }
+
+[data-theme="terminal"] .hljs-comment,
+[data-theme="terminal"] .hljs-quote,
+[data-theme="sunset"] .hljs-comment,
+[data-theme="sunset"] .hljs-quote { color: #8b949e; font-style: italic; }
+
+[data-theme="terminal"] .hljs-keyword,
+[data-theme="terminal"] .hljs-selector-tag,
+[data-theme="terminal"] .hljs-type,
+[data-theme="sunset"] .hljs-keyword,
+[data-theme="sunset"] .hljs-selector-tag,
+[data-theme="sunset"] .hljs-type { color: #ff7b72; }
+
+[data-theme="terminal"] .hljs-string,
+[data-theme="terminal"] .hljs-addition,
+[data-theme="sunset"] .hljs-string,
+[data-theme="sunset"] .hljs-addition { color: #a5d6ff; }
+
+[data-theme="terminal"] .hljs-number,
+[data-theme="terminal"] .hljs-literal,
+[data-theme="sunset"] .hljs-number,
+[data-theme="sunset"] .hljs-literal { color: #79c0ff; }
+
+[data-theme="terminal"] .hljs-title,
+[data-theme="terminal"] .hljs-section,
+[data-theme="terminal"] .hljs-selector-id,
+[data-theme="sunset"] .hljs-title,
+[data-theme="sunset"] .hljs-section,
+[data-theme="sunset"] .hljs-selector-id { color: #d2a8ff; }
+
+[data-theme="terminal"] .hljs-attr,
+[data-theme="terminal"] .hljs-attribute,
+[data-theme="terminal"] .hljs-variable,
+[data-theme="terminal"] .hljs-template-variable,
+[data-theme="sunset"] .hljs-attr,
+[data-theme="sunset"] .hljs-attribute,
+[data-theme="sunset"] .hljs-variable,
+[data-theme="sunset"] .hljs-template-variable { color: #ffa657; }
+
+[data-theme="terminal"] .hljs-built_in,
+[data-theme="terminal"] .hljs-builtin-name,
+[data-theme="sunset"] .hljs-built_in,
+[data-theme="sunset"] .hljs-builtin-name { color: #79c0ff; }
+
+[data-theme="terminal"] .hljs-meta,
+[data-theme="terminal"] .hljs-tag,
+[data-theme="terminal"] .hljs-name,
+[data-theme="sunset"] .hljs-meta,
+[data-theme="sunset"] .hljs-tag,
+[data-theme="sunset"] .hljs-name { color: #7ee787; }
+
+[data-theme="terminal"] .hljs-regexp,
+[data-theme="terminal"] .hljs-link,
+[data-theme="sunset"] .hljs-regexp,
+[data-theme="sunset"] .hljs-link { color: #a5d6ff; }
+
+[data-theme="terminal"] .hljs-symbol,
+[data-theme="terminal"] .hljs-bullet,
+[data-theme="sunset"] .hljs-symbol,
+[data-theme="sunset"] .hljs-bullet { color: #ffa657; }
+
+[data-theme="terminal"] .hljs-deletion,
+[data-theme="sunset"] .hljs-deletion { color: #ff7b72; }
+
+[data-theme="terminal"] .hljs-emphasis,
+[data-theme="sunset"] .hljs-emphasis { font-style: italic; }
+
+[data-theme="terminal"] .hljs-strong,
+[data-theme="sunset"] .hljs-strong { font-weight: 700; }
+
+[data-theme="terminal"] .hljs-params,
+[data-theme="terminal"] .hljs-punctuation,
+[data-theme="sunset"] .hljs-params,
+[data-theme="sunset"] .hljs-punctuation { color: #c9d1d9; }
+
+[data-theme="terminal"] .hljs-property,
+[data-theme="sunset"] .hljs-property { color: #79c0ff; }
+
+[data-theme="terminal"] .hljs-operator,
+[data-theme="sunset"] .hljs-operator { color: #ff7b72; }
+
+/* ===== Shiki 多主题 CSS 变量切换 ===== */
+.shiki span,
+.edit-highlight-wrapper .shiki span,
+.code-highlighted .shiki span {
+  transition: color 0.3s ease, background-color 0.3s ease;
+}
+
+[data-theme="ocean"] .shiki span,
+[data-theme="ocean"] .edit-highlight-wrapper .shiki span,
+[data-theme="ocean"] .code-highlighted .shiki span {
+  color: var(--shiki-ocean) !important;
+  background-color: var(--shiki-ocean-bg) !important;
+  font-style: var(--shiki-ocean-font-style) !important;
+  font-weight: var(--shiki-ocean-font-weight) !important;
+  text-decoration: var(--shiki-ocean-text-decoration) !important;
+}
+
+[data-theme="forest"] .shiki span,
+[data-theme="forest"] .edit-highlight-wrapper .shiki span,
+[data-theme="forest"] .code-highlighted .shiki span {
+  color: var(--shiki-forest) !important;
+  background-color: var(--shiki-forest-bg) !important;
+  font-style: var(--shiki-forest-font-style) !important;
+  font-weight: var(--shiki-forest-font-weight) !important;
+  text-decoration: var(--shiki-forest-text-decoration) !important;
+}
+
+[data-theme="blossom"] .shiki span,
+[data-theme="blossom"] .edit-highlight-wrapper .shiki span,
+[data-theme="blossom"] .code-highlighted .shiki span {
+  color: var(--shiki-blossom) !important;
+  background-color: var(--shiki-blossom-bg) !important;
+  font-style: var(--shiki-blossom-font-style) !important;
+  font-weight: var(--shiki-blossom-font-weight) !important;
+  text-decoration: var(--shiki-blossom-text-decoration) !important;
+}
+
+[data-theme="midnight"] .shiki span,
+[data-theme="midnight"] .edit-highlight-wrapper .shiki span,
+[data-theme="midnight"] .code-highlighted .shiki span {
+  color: var(--shiki-midnight) !important;
+  background-color: var(--shiki-midnight-bg) !important;
+  font-style: var(--shiki-midnight-font-style) !important;
+  font-weight: var(--shiki-midnight-font-weight) !important;
+  text-decoration: var(--shiki-midnight-text-decoration) !important;
+}
+
+[data-theme="terminal"] .shiki span,
+[data-theme="terminal"] .edit-highlight-wrapper .shiki span,
+[data-theme="terminal"] .code-highlighted .shiki span {
+  color: var(--shiki-terminal) !important;
+  background-color: var(--shiki-terminal-bg) !important;
+  font-style: var(--shiki-terminal-font-style) !important;
+  font-weight: var(--shiki-terminal-font-weight) !important;
+  text-decoration: var(--shiki-terminal-text-decoration) !important;
+}
+
+[data-theme="sunset"] .shiki span,
+[data-theme="sunset"] .edit-highlight-wrapper .shiki span,
+[data-theme="sunset"] .code-highlighted .shiki span {
+  color: var(--shiki-sunset) !important;
+  background-color: var(--shiki-sunset-bg) !important;
+  font-style: var(--shiki-sunset-font-style) !important;
+  font-weight: var(--shiki-sunset-font-weight) !important;
+  text-decoration: var(--shiki-sunset-text-decoration) !important;
+}
+
+/* 编辑区（textarea + 行号） */
+.edit-code-area {
+  display: flex;
+  border-radius: 10px;
+  border: 1.5px solid var(--border-color);
+  background: var(--card-bg);
+  min-height: 180px;
+  max-height: 50vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  transition: border-color 0.2s;
+}
+
+.edit-code-area:focus-within {
+  border-color: var(--accent);
+}
+
+.edit-code-area .code-lines {
+  min-width: 36px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  background: var(--section-bg);
+  border-right: 1px solid var(--border-color);
+  border-radius: 10px 0 0 10px;
+  overflow: hidden;
+}
+
+.code-textarea {
+  flex: 1;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  resize: vertical;
+  outline: none;
+}
+
+.edit-highlight-wrapper {
+  flex: 1;
+  min-height: 0;
+  overflow: visible;
+  position: relative;
+}
+
+.edit-highlight-wrapper > div {
+  overflow: visible !important;
+}
+
+#edit-code-textarea {
+  overflow: hidden !important;
+}
+
+.edit-highlight-wrapper > div > pre {
+  overflow: hidden !important;
+}
+
+.edit-highlight-editor textarea,
+.edit-highlight-editor pre {
+  padding: 10px 14px !important;
+  font-family: 'SF Mono', Consolas, monospace !important;
+  font-size: 13px !important;
+  line-height: 1.7 !important;
+  tab-size: 2;
+  white-space: pre-wrap !important;
+  word-break: break-all !important;
+  outline: none !important;
+  border: none !important;
+  margin: 0 !important;
+}
+
+.edit-highlight-editor textarea {
+  caret-color: var(--text-primary);
+  color: transparent !important;
+  background: transparent !important;
+}
+
+.edit-highlight-wrapper > div > pre {
+  pointer-events: none;
+}
+
+.edit-toolbar {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 6px 0;
+}
+
+.tool-separator {
+  width: 1px;
+  height: 18px;
+  background: var(--border-color);
+  margin: 0 4px;
+}

@@ -1,3 +1,76 @@
+/* Tab bar wrapper — scroll hide animation */
+.tabBarWrapper {
+  flex-shrink: 0;
+  overflow: hidden;
+  max-height: 48px;
+  opacity: 1;
+  margin: 8px 12px;
+  transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              margin 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.tabBarWrapperHidden {
+  max-height: 0;
+  opacity: 0;
+  margin: 0 12px;
+}
+
+/* Tab bar */
+.tabBar {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px;
+  background: var(--seg-bg, var(--section-bg));
+  border-radius: 10px;
+}
+
+.tabBtn {
+  flex: 1;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: all 0.2s;
+}
+
+.tabBtn:hover {
+  color: var(--text-primary);
+}
+
+.tabBtnActive {
+  background: var(--seg-active-bg, var(--card-bg));
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.tabIcon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* Dialog header compact */
+.dialogHeaderCompact {
+  height: 36px !important;
+  padding: 0 14px !important;
+}
+.dialogTitleCompact {
+  font-size: 12px !important;
+}
+.dialogCloseCompact {
+  width: 24px !important;
+  height: 24px !important;
+}
+
 .settingsSection {
   border-radius: 12px;
   border: 1px solid var(--border-color);

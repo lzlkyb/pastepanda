@@ -217,29 +217,49 @@
 
 ## 总结优先级排序
 
-| # | 优化项 | 优先级 | 预计工时 |
-|---|--------|--------|----------|
-| 1 | 图片详情 Esc 关闭 | 🔴 高 | 5 分钟 |
-| 2 | QuickPreview 重复内容 | 🔴 高 | 3 分钟 |
-| 3 | 图片拖拽回弹动画 | 🔴 高 | 5 分钟 |
-| 4 | 全局/Module 混用规范 | 🔴 高 | 文档 |
-| 5 | 图片详情快捷键提示 | 🟡 中 | 3 分钟 |
-| 6 | 图片加载失败降级 | 🟡 中 | 15 分钟 |
-| 7 | app.css 拆分 | 🟡 中 | 30 分钟 |
-| 8 | 主题切换过渡动画 | 🟡 中 | 5 分钟 |
-| 9 | 搜索无结果提示 | 🟡 中 | 10 分钟 |
-| 10 | inline style → CSS Module | 🟡 中 | 3 分钟 |
-| 11 | OCR 框动画 | 🟢 低 | 3 分钟 |
-| 12 | TopBar 图标统一 | 🟢 低 | 15 分钟 |
-| 13 | Popover 图片 loading | 🟢 低 | 10 分钟 |
-| 14 | dialog-body 变量化 | 🟢 低 | 20 分钟 |
+| # | 优化项 | 优先级 | 预计工时 | 状态 |
+|---|--------|--------|----------|------|
+| 1 | 图片详情 Esc 关闭 | 🔴 高 | 5 分钟 | ✅ 已修复 |
+| 2 | QuickPreview 重复内容 | 🔴 高 | 3 分钟 | ✅ 已修复 |
+| 3 | 图片拖拽回弹动画 | 🔴 高 | 5 分钟 | ✅ 已修复 |
+| 4 | 全局/Module 混用规范 | 🔴 高 | 文档 | ✅ 已规范 |
+| 5 | 图片详情快捷键提示 | 🟡 中 | 3 分钟 | ✅ 已修复 |
+| 6 | 图片加载失败降级 | 🟡 中 | 15 分钟 | ✅ 已修复 |
+| 7 | app.css 拆分 | 🟡 中 | 30 分钟 | ✅ 已拆分 |
+| 8 | 主题切换过渡动画 | 🟡 中 | 5 分钟 | ✅ 已修复 |
+| 9 | 搜索无结果提示 | 🟡 中 | 10 分钟 | ✅ 已有 |
+| 10 | inline style → CSS Module | 🟡 中 | 3 分钟 | ✅ 已修复 |
+| 11 | OCR 框动画 | 🟢 低 | 3 分钟 | ✅ 已修复 |
+| 12 | TopBar 图标统一 | 🟢 低 | 15 分钟 | ✅ 已修复 |
+| 13 | Popover 图片 loading | 🟢 低 | 10 分钟 | ✅ 已修复 |
+| 14 | dialog-body 变量化 | 🟢 低 | 20 分钟 | ✅ 已修复 |
 
 ---
 
-## 建议执行顺序
+## 实施总结
 
-**第一批（今天）**：1 → 2 → 3 → 10（4 项，约 15 分钟）
+**完成时间**：2026-07-03 | **全部 14 项已完成**
 
-**第二批（按需）**：5 → 8 → 11 → 9（体验提升）
+### 文件变更清单
 
-**第三批（重构）**：4 → 7 → 14 → 12 → 6 → 13
+| 操作 | 文件 |
+|------|------|
+| 新增 | `src/styles/buttons.css` — 按钮基础样式 |
+| 新增 | `src/styles/dialog.css` — 弹窗通用样式（含 CSS 变量化） |
+| 新增 | `src/styles/code-theme.css` — 代码高亮 + 编辑区样式 |
+| 精简 | `src/styles/app.css` — 从 1115 行精简为约 200 行 |
+| 精简 | `src/styles/globals.css` — 移除 @import，改为 main.tsx 统一导入 |
+| 修改 | `src/main.tsx` — 新增 4 个 CSS 导入 |
+| 修改 | `src/components/CardList.tsx` — 拖拽缓动 + 图片降级 + 快捷键提示 |
+| 修改 | `src/components/CardList.module.css` — 新增 3 个 CSS 类 |
+| 修改 | `src/components/Card.tsx` — ImgState 扩展 + silent 状态 + Popover 骨架屏 |
+| 修改 | `src/components/QuickPreview.tsx` — 删除重复 footer + CSS 变量 |
+| 修改 | `src/components/TopBar.tsx` — emoji 图标 → lucide-react 组件 |
+| 修改 | `src/components/SettingsDialog.tsx` — CSS 变量化 |
+| 修改 | `src/components/AboutDialog.tsx` — CSS 变量化 |
+| 修改 | `src/components/ConfirmDialog.tsx` — CSS 变量化 |
+| 修改 | `src/components/EditDialog.tsx` — CSS 变量化 |
+| 修改 | `src/components/FileDetailDialog.tsx` — CSS 变量化 |
+| 修改 | `src/components/ExtractDialog.tsx` — CSS 变量化 |
+| 修改 | `src/components/SnippetsDialog.tsx` — CSS 变量化 |
+| 修改 | `src/styles/theme.css` — dialog-body 过渡动画 |

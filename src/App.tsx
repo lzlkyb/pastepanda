@@ -16,10 +16,8 @@ import appStyles from "./App.module.css";
 
 // 懒加载对话框组件 — 只在打开时才加载对应 JS chunk
 const SettingsDialog = lazy(() => import("@/components/SettingsDialog").then(m => ({ default: m.SettingsDialog })));
-const HelpDialog = lazy(() => import("@/components/HelpDialog").then(m => ({ default: m.HelpDialog })));
 const SnippetsDialog = lazy(() => import("@/components/SnippetsDialog").then(m => ({ default: m.SnippetsDialog })));
 const ExtractDialog = lazy(() => import("@/components/ExtractDialog").then(m => ({ default: m.ExtractDialog })));
-const AboutDialog = lazy(() => import("@/components/AboutDialog").then(m => ({ default: m.AboutDialog })));
 
 function App() {
   const config = useAppStore((s) => s.config);
@@ -29,11 +27,9 @@ function App() {
   const { toast } = useToast();
   const seqTotal = history.filter((h) => h.type === "text").length;
   const [showSettings, setShowSettings] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
   const [showSnippets, setShowSnippets] = useState(false);
   const [showExtract, setShowExtract] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
-  const [showAbout, setShowAbout] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const retryCleanupRef = useRef<(() => void) | null>(null);
@@ -67,7 +63,7 @@ function App() {
   }, []);
 
   // 失焦自动隐藏（弹窗打开时跳过）—— 使用 useRef 避免闭包陷阱
-  const dialogOpen = showSettings || showHelp || showSnippets || showExtract || showAbout;
+  const dialogOpen = showSettings || showSnippets || showExtract;
   const dialogOpenRef = useRef(dialogOpen);
   dialogOpenRef.current = dialogOpen;
 
@@ -188,8 +184,8 @@ function App() {
   }, [loading, shouldShow, markShown, toast]);
 
   // 使用 ref 存储弹窗状态，避免 handleKeyDown 依赖变化导致频繁重新注册事件
-  const dialogStatesRef = useRef({ showSettings, showHelp, showSnippets, showExtract, showAbout, showShortcuts });
-  dialogStatesRef.current = { showSettings, showHelp, showSnippets, showExtract, showAbout, showShortcuts };
+  const dialogStatesRef = useRef({ showSettings, showSnippets, showExtract, showShortcuts });
+  dialogStatesRef.current = { showSettings, showSnippets, showExtract, showShortcuts };
 
   // 键盘导航
   const handleKeyDown = useCallback(async (e: KeyboardEvent) => {
@@ -197,8 +193,8 @@ function App() {
     const tag = (e.target as HTMLElement)?.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
     // 弹窗打开时：ESC/? 正常工作，其余列表导航按键被屏蔽（让弹窗内部控件如 Tab 可以正常使用）
-    const { showSettings, showHelp, showSnippets, showExtract, showAbout } = dialogStatesRef.current;
-    const dialogOpen = showSettings || showHelp || showSnippets || showExtract || showAbout;
+    const { showSettings, showSnippets, showExtract } = dialogStatesRef.current;
+    const dialogOpen = showSettings || showSnippets || showExtract;
     const isListNavKey = ["ArrowDown", "ArrowUp", "Enter", "Delete", "Backspace", "Home", "End"].includes(e.key)
       || (e.ctrlKey && (e.key === "d" || e.key === "z" || e.key === "s" || e.key === "h" || e.key === "a"));
     if (dialogOpen && e.key !== "Escape" && e.key !== "?" && isListNavKey) return;
@@ -212,10 +208,8 @@ function App() {
       e.preventDefault();
       // 弹窗打开时，按 ESC 关闭弹窗（而不是什么都不做）
       if (showSettings) { setShowSettings(false); return; }
-      if (showHelp) { setShowHelp(false); return; }
       if (showSnippets) { setShowSnippets(false); return; }
       if (showExtract) { setShowExtract(false); return; }
-      if (showAbout) { setShowAbout(false); return; }
       if (dialogStatesRef.current.showShortcuts) { setShowShortcuts(false); return; }
       await toggleWindow();
     } else if (e.key === "?" || (e.shiftKey && e.key === "/")) {
@@ -301,7 +295,7 @@ function App() {
       setShowSettings(true);
     } else if (e.ctrlKey && e.key === "h") {
       e.preventDefault();
-      setShowHelp(true);
+      setShowSettings(true); // 帮助已整合到设置面板
     } else if (e.key === "Home") {
       e.preventDefault();
       if (filtered.length > 0) store.selectItem(filtered[0].id);
@@ -379,10 +373,8 @@ function App() {
       <div className={appStyles.appShell}>
         <TopBar
           onSettings={() => setShowSettings(true)}
-          onHelp={() => setShowHelp(true)}
           onSnippets={() => setShowSnippets(true)}
           onExtract={() => setShowExtract(true)}
-          onAbout={() => setShowAbout(true)}
         />
         <CardList />
         <QuickPreview />
@@ -404,17 +396,11 @@ function App() {
           <ErrorBoundary fallback={null} componentName="设置面板">
             <SettingsDialog open={showSettings} onClose={() => setShowSettings(false)} />
           </ErrorBoundary>
-          <ErrorBoundary fallback={null} componentName="帮助面板">
-            <HelpDialog open={showHelp} onClose={() => setShowHelp(false)} />
-          </ErrorBoundary>
           <ErrorBoundary fallback={null} componentName="片段库">
             <SnippetsDialog open={showSnippets} onClose={() => setShowSnippets(false)} />
           </ErrorBoundary>
           <ErrorBoundary fallback={null} componentName="提取面板">
             <ExtractDialog open={showExtract} onClose={() => setShowExtract(false)} />
-          </ErrorBoundary>
-          <ErrorBoundary fallback={null} componentName="关于面板">
-            <AboutDialog open={showAbout} onClose={() => setShowAbout(false)} />
           </ErrorBoundary>
         </Suspense>
 

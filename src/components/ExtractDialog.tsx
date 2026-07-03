@@ -145,7 +145,7 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
             </div>
 
             {/* Results list */}
-            <div className="dialog-body" style={{ padding: "8px 16px", gap: "4px" }}>
+            <div className="dialog-body" style={{ "--dialog-body-padding": "8px 16px", "--dialog-body-gap": "4px" } as React.CSSProperties}>
               {results.length === 0 ? (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "48px 0", gap: "8px" }}>
                   <p className={styles.snippetItemSub}>未找到匹配的内容</p>

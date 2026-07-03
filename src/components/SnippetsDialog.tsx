@@ -238,7 +238,7 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
               </div>
 
               {/* List */}
-              <div className="dialog-body" style={{ padding: "0 16px 16px" }}>
+              <div className="dialog-body" style={{ "--dialog-body-padding": "0 16px 16px" } as React.CSSProperties}>
                 {loading ? (
                   <div style={{ display: "flex", justifyContent: "center", padding: "48px 0" }}>
                     <p className={styles.snippetItemSub}>加载中...</p>

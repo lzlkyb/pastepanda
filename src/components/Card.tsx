@@ -12,7 +12,7 @@ import styles from "./CardList.module.css";
 
 const PALETTE = ["#3B82F6", "#8B5CF6", "#EC4899", "#10B981", "#F59E0B", "#EF4444", "#06B6D4", "#6366F1"];
 
-export type ImgState = { status: "loading" | "loaded" | "error"; url?: string };
+export type ImgState = { status: "loading" | "loaded" | "error" | "silent"; url?: string };
 
 function hashColor(text: string): string {
   let h = 0;
@@ -198,6 +198,10 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
             <div className={`${styles.cardIcon} ${styles.cardImgThumb}`}>
               <img src={imageState.url} alt="" />
             </div>
+          ) : imageState?.status === "silent" ? (
+            <div className={`${styles.cardIcon} ${iconBg}`}>
+              <ImageIcon size={18} color="#9CA3AF" strokeWidth={2.2} />
+            </div>
           ) : imageState?.status === "error" ? (
             <div className={`${styles.cardIcon} ${styles.cardImgError}`}>
               <ImageIcon size={18} color="#EF4444" strokeWidth={2.2} />
@@ -375,6 +379,10 @@ const CardHoverPopover = memo(function CardHoverPopover({
           <div className={styles.cardPopoverImage}>
             {imageState?.status === "loaded" && imageState.url ? (
               <img src={imageState.url} alt="" />
+            ) : imageState?.status === "loading" ? (
+              <div className={styles.cardPopoverImageSkeleton}>
+                <div className={styles.cardImgShimmer} />
+              </div>
             ) : (
               <div className={styles.cardPopoverImagePlaceholder}>
                 <span style={{ fontSize: 24 }}>🖼️</span>

@@ -526,6 +526,14 @@
   align-items: center;
   justify-content: center;
 }
+.cardPopoverImageSkeleton {
+  width: 100%;
+  height: 100px;
+  position: relative;
+  overflow: hidden;
+  background: var(--section-bg);
+  border-radius: 8px;
+}
 .cardPopoverImage img {
   max-width: 100%;
   max-height: 140px;
@@ -641,6 +649,13 @@
   border: 1px solid var(--border-color);
   flex-wrap: wrap;
   transition: background 0.3s, border-color 0.3s;
+}
+.imageDetailToolbarHint {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  user-select: none;
 }
 .imageDetailToolBtn {
   width: 32px;
@@ -769,7 +784,7 @@
 
 /* OCR 词框 */
 .ocrWordBox {
-  transition: background 0.1s, border-color 0.1s;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
 }
 .ocrWordBox:hover {
   background: rgba(99,102,241,0.15) !important;
@@ -886,6 +901,10 @@
 
 .ocrOverlayContainer {
   overflow: hidden;
+}
+
+.imageDetailBody {
+  gap: 12px;
 }
 
 /* ===== 滚动区域 ===== */

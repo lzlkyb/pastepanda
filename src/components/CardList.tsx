@@ -162,9 +162,13 @@ export function CardList() {
         const updates: Record<string, ImgState> = {};
         batch.forEach((path, idx) => {
           const result = results[idx];
-          updates[path] = result.status === "fulfilled" && result.value
-            ? { status: "loaded", url: result.value }
-            : { status: "error" };
+          if (result.status === "fulfilled" && result.value) {
+            updates[path] = { status: "loaded", url: result.value };
+          } else {
+            const retries = (imgRetryCount.current[path] || 0) + 1;
+            imgRetryCount.current[path] = retries;
+            updates[path] = retries > MAX_IMG_RETRY ? { status: "silent" } : { status: "error" };
+          }
         });
         setImgCache((prev) => ({ ...prev, ...updates }));
       }
@@ -189,8 +193,18 @@ export function CardList() {
     });
   }, [items]);
 
+  const imgRetryCount = useRef<Record<string, number>>({});
+  const MAX_IMG_RETRY = 2;
+
   const handleRetryImage = useCallback((content: string) => {
+    const retries = (imgRetryCount.current[content] || 0) + 1;
+    imgRetryCount.current[content] = retries;
     loadedPathsRef.current.add(content);
+    if (retries > MAX_IMG_RETRY) {
+      // 超过重试上限，静默显示占位
+      setImgCache((prev) => ({ ...prev, [content]: { status: "silent" } }));
+      return;
+    }
     setImgCache((prev) => ({ ...prev, [content]: { status: "loading" } }));
     getImageThumbnail(content).then((dataUrl) => {
       setImgCache((prev) => ({ ...prev, [content]: dataUrl ? { status: "loaded", url: dataUrl } : { status: "error" } }));
@@ -746,7 +760,7 @@ export function CardList() {
             </div>
 
             {/* Body */}
-            <div className="dialog-body" style={{ gap: 12 }}>
+            <div className={`dialog-body ${styles.imageDetailBody}`}>
               {/* 元信息标签行 */}
               {previewInfo && (
                 <div className={styles.imageDetailMeta}>
@@ -784,6 +798,9 @@ export function CardList() {
                   <Pin size={16} />
                   <span style={{ marginLeft: 4, fontSize: 12 }}>置顶</span>
                 </button>
+                <span className={styles.imageDetailToolbarHint}>
+                  滚轮缩放 · 拖拽平移 · 双击重置 · 0 重置 · R 旋转
+                </span>
               </div>
 
               {/* 图片查看区 */}
@@ -820,7 +837,7 @@ export function CardList() {
                       className={styles.imageDetailImg}
                       style={{
                         transform: `translate(${previewOffset.x}px, ${previewOffset.y}px) scale(${previewScale}) rotate(${previewRotation}deg)`,
-                        transition: isPanning ? "none" : "transform 0.2s ease",
+                        transition: isPanning ? "none" : "transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
                       }}
                       draggable={false}
                     />

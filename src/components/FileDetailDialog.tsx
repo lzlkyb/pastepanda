@@ -146,7 +146,7 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
           </div>
 
           {/* Body */}
-          <div className="dialog-body" style={{ gap: 16 }}>
+          <div className="dialog-body" style={{ "--dialog-body-gap": "16px" } as React.CSSProperties}>
             {/* 文件图标 + 名称 */}
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
               <div style={{

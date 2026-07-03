@@ -1,10 +1,4 @@
-/* globals.css — 全局入口
- * 
- * 加载顺序：theme.css（变量+keyframes）→ 全局基础样式 → app.css（组件样式，逐步迁移中）
- */
-
-@import "./theme.css";
-@import "./app.css";
+/* globals.css — 全局基础样式 */
 
 /* ===== 全局基础 ===== */
 * { margin: 0; padding: 0; box-sizing: border-box; }

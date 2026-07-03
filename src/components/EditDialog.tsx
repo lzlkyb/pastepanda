@@ -186,7 +186,7 @@ export function EditDialog({ item, onClose }: { item: HistoryItem; onClose: () =
           </div>
 
           {/* Body */}
-          <div className="dialog-body" style={{ gap: 10 }}>
+          <div className="dialog-body" style={{ "--dialog-body-gap": "10px" } as React.CSSProperties}>
             {/* 元信息条 */}
             <div className="code-meta-bar">
               <div className="code-meta-left">
