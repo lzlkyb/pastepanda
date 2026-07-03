@@ -74,17 +74,22 @@ export function UpdateBadge({ currentVersion }: { currentVersion: string }) {
     );
   }
 
-  // idle / checking / error：显示统一版本徽章
+  // idle / checking / error：显示不同状态的版本徽章
   const idleTitle =
     status === "checking" ? "检查更新中…" :
     status === "error" ? "更新检查失败" :
     `v${currentVersion}`;
 
+  const badgeClass =
+    status === "checking" ? "version-badge-checking" :
+    status === "error" ? "version-badge-error" :
+    "version-badge-idle";
+
   return (
     <span className="version-badge-wrapper" title={idleTitle}>
       {status === "checking" && <Loader2 size={10} className="spin-icon version-badge-spin" />}
       {status === "error" && <AlertCircle size={10} className="version-badge-error-icon" />}
-      <VersionBadge version={currentVersion} />
+      <VersionBadge version={currentVersion} className={badgeClass} />
     </span>
   );
 }

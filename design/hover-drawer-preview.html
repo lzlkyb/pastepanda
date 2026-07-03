@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案A · 悬浮抽屉 - 真实布局还原</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --app-bg: #F5F6FA;
+    --card-bg: #fff;
+    --card-border: #E0E4EB;
+    --text-primary: #0F172A;
+    --text-secondary: #64748B;
+    --border-color: #E0E4EB;
+    --accent: #0284C7;
+    --accent-light: #E0F2FE;
+    --dialog-bg: #fff;
+    --card-selected-bg: #F0F9FF;
+    --card-selected-border: #0284C7;
+    --card-selected-shadow: 0 0 0 2px rgba(2,132,199,0.2);
+    --danger: #EF4444;
+    --danger-light: #FEE2E2;
+    --warning: #F59E0B;
+    --warning-light: #FEF3C7;
+    --search-bg: #F1F5F9;
+    --search-border: #E2E8F0;
+    --green: #34C759;
+    --purple: #BF5AF2;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    background: #E8ECF1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+
+  /* ===== 模拟 Tauri 窗口 ===== */
+  .app-shell {
+    width: 460px;
+    height: 700px;
+    display: flex;
+    flex-direction: column;
+    background: var(--app-bg);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 25px 80px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.08);
+    position: relative;
+  }
+
+  /* ===== 顶部栏 ===== */
+  .header {
+    padding: 14px 16px 0;
+    flex-shrink: 0;
+    background: linear-gradient(180deg, #fff 0%, var(--app-bg) 100%);
+    z-index: 5;
+  }
+  .header-top {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .header-title {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 15px; font-weight: 700; color: var(--text-primary);
+  }
+  .header-title .dot {
+    width: 8px; height: 8px; background: var(--accent);
+    border-radius: 50%;
+  }
+  .header-icons {
+    display: flex; gap: 4px;
+  }
+  .header-icons span {
+    width: 28px; height: 28px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; cursor: pointer; color: var(--text-secondary);
+  }
+  .header-icons span:hover { background: #E8ECF1; }
+
+  /* 搜索框 */
+  .search-box {
+    height: 36px; padding: 0 12px;
+    background: var(--search-bg);
+    border: 1px solid var(--search-border);
+    border-radius: 10px;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--text-secondary);
+  }
+  .search-box input {
+    flex: 1; border: none; background: none; outline: none;
+    font-size: 12px; color: var(--text-primary);
+  }
+
+  /* Tab 栏 */
+  .tabs-area {
+    display: flex; gap: 4px; padding: 8px 0 4px;
+  }
+  .tab {
+    padding: 5px 12px; border-radius: 8px;
+    font-size: 12px; font-weight: 500; cursor: pointer;
+    color: var(--text-secondary); border: 1px solid transparent;
+  }
+  .tab.active {
+    background: var(--card-bg); color: var(--accent);
+    border-color: var(--card-border); font-weight: 600;
+  }
+
+  /* 筛选栏 */
+  .filter-bar {
+    display: flex; gap: 6px; padding: 4px 0 8px;
+  }
+  .filter-tag {
+    padding: 3px 10px; border-radius: 6px;
+    font-size: 11px; cursor: pointer; color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+  }
+  .filter-tag.active {
+    background: var(--accent-light); color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  /* ===== 滚动区 ===== */
+  .scroll-area {
+    flex: 1; overflow-y: auto; overflow-x: visible;
+    background: var(--app-bg);
+    position: relative;
+  }
+
+  /* ★ 卡片列表 - overflow:visible 让抽屉不被裁剪 */
+  .card-list {
+    padding: 8px 16px 80px;
+    display: flex; flex-direction: column; gap: 8px;
+    overflow: visible;
+  }
+
+  /* ===== 卡片行容器 ===== */
+  .card-row {
+    position: relative;
+    overflow: visible;
+    /* ★ 关键：hover 时提升 z-index，抽屉盖过下方卡片 */
+    z-index: 1;
+  }
+  .card-row:hover {
+    z-index: 50;
+  }
+
+  /* ===== 卡片本体 ===== */
+  .card {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    transition: all 0.22s ease;
+    cursor: pointer;
+    position: relative;
+    height: 72px;
+    width: 100%;
+    z-index: 1;
+  }
+  .card::before {
+    content: '';
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 3px; border-radius: 0 3px 3px 0;
+  }
+  .card.card-text::before  { background: var(--accent); }
+  .card.card-image::before { background: #FF6482; }
+  .card.card-file::before  { background: var(--green); }
+  .card.card-code::before  { background: var(--purple); }
+
+  .card:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  }
+  .card.selected {
+    background: var(--card-selected-bg);
+    border-color: var(--card-selected-border);
+    box-shadow: var(--card-selected-shadow);
+  }
+
+  .card-row:hover .card {
+    border-radius: 16px 0 0 16px;
+    border-right-color: transparent;
+    box-shadow: 4px 4px 16px rgba(0,0,0,0.1);
+  }
+
+  .card-icon {
+    width: 42px; height: 42px; min-width: 42px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; flex-shrink: 0;
+  }
+  .card-icon.bg-blue   { background: linear-gradient(135deg, #E8F1FB, #D6E8FA); }
+  .card-icon.bg-green  { background: linear-gradient(135deg, #E5F8EC, #D4F2DE); }
+  .card-icon.bg-pink   { background: linear-gradient(135deg, #FDE8EE, #FAD6DF); }
+  .card-icon.bg-purple { background: linear-gradient(135deg, #F0E8FB, #E5D6FA); }
+  .card-icon.card-img-thumb { overflow: hidden; padding: 0; }
+  .card-icon.card-img-thumb img {
+    width: 100%; height: 100%; object-fit: cover; border-radius: 12px;
+  }
+
+  .card-content { flex: 1; min-width: 0; overflow: hidden; }
+  .card-title {
+    font-size: 13px; font-weight: 500;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    line-height: 1.4;
+  }
+  .card-sub {
+    display: flex; align-items: center; gap: 6px; margin-top: 2px;
+    font-size: 11px; color: var(--text-secondary);
+  }
+  .card-pin {
+    display: inline-flex; align-items: center; gap: 3px;
+    color: #D4A017; font-weight: 600; font-size: 10px;
+  }
+  .card-source { color: var(--text-secondary); font-size: 10px; }
+  .card-time {
+    font-size: 11px; color: var(--text-secondary);
+    white-space: nowrap; flex-shrink: 0; margin-left: auto;
+  }
+
+  /* ===== ★ 抽屉面板 — 智能方向 ===== */
+  .card-drawer {
+    position: absolute;
+    top: 0;
+    /* 默认向右弹出 */
+    left: calc(100% + 4px);
+    min-height: 72px;
+    width: 0;
+    overflow: hidden;
+    background: var(--dialog-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 0 16px 16px 0;
+    box-shadow: 4px 4px 20px rgba(0,0,0,0.12);
+    transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                padding 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 0.18s ease;
+    opacity: 0;
+    display: flex;
+    flex-direction: column;
+    z-index: 49;
+    pointer-events: none;
+  }
+
+  .card-row:hover .card-drawer {
+    width: 260px;
+    padding: 12px 14px;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* 抽屉 - 预览区 */
+  .drawer-preview {
+    flex: 1; overflow: hidden; margin-bottom: 10px; min-height: 0;
+  }
+  .drawer-preview-text {
+    font-size: 12px; color: var(--text-primary); line-height: 1.65;
+    display: -webkit-box;
+    -webkit-line-clamp: 6; -webkit-box-orient: vertical;
+    overflow: hidden; white-space: pre-wrap; word-break: break-word;
+    user-select: text;
+  }
+  .drawer-preview-image {
+    width: 100%; min-height: 60px;
+    display: flex; align-items: center; justify-content: center;
+    background: #f8f9fb; border-radius: 10px; overflow: hidden;
+  }
+  .drawer-preview-image .img-placeholder {
+    width: 100%; height: 130px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 10px; color: white; font-size: 13px; gap: 8px;
+  }
+  .drawer-preview-file {
+    font-size: 12px; color: var(--text-secondary); line-height: 1.6;
+  }
+  .drawer-preview-file .file-item {
+    display: flex; align-items: center; gap: 6px; padding: 3px 0;
+    font-size: 12px;
+  }
+
+  /* 抽屉 - 操作按钮 */
+  .drawer-actions {
+    display: flex; gap: 8px;
+    border-top: 1px solid var(--border-color);
+    padding-top: 10px; flex-shrink: 0;
+  }
+  .drawer-btn {
+    flex: 1;
+    display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+    padding: 7px 8px; border-radius: 8px;
+    border: 1px solid var(--border-color); background: var(--card-bg);
+    cursor: pointer; font-size: 12px; font-weight: 500;
+    color: var(--text-primary); transition: all 0.15s ease;
+    white-space: nowrap; user-select: none;
+  }
+  .drawer-btn:hover { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
+  .drawer-btn:active { transform: scale(0.96); }
+  .drawer-btn.fav:hover { background: var(--warning-light); border-color: var(--warning); color: #B45309; }
+  .drawer-btn.fav.active { background: var(--warning-light); border-color: var(--warning); color: #B45309; }
+  .drawer-btn.danger:hover { background: var(--danger-light); border-color: var(--danger); color: var(--danger); }
+  .drawer-btn svg { flex-shrink: 0; }
+
+  /* ===== 底部 FAB 栏 ===== */
+  .fab-container {
+    position: absolute; bottom: 8px; left: 12px; right: 12px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 14px;
+    background: rgba(255,255,255,0.92);
+    backdrop-filter: blur(12px);
+    border-radius: 14px;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 -2px 12px rgba(0,0,0,0.05);
+    z-index: 20;
+    font-size: 12px; color: var(--text-secondary);
+  }
+  .fab-left { display: flex; align-items: center; gap: 8px; }
+  .fab-right { display: flex; align-items: center; gap: 8px; }
+  .fab-badge {
+    background: var(--accent-light); color: var(--accent);
+    padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;
+  }
+
+  /* 说明提示 */
+  .info-banner {
+    margin: 12px 16px 0; padding: 10px 14px;
+    background: #FEF9E7; border: 1px solid #F9E79F;
+    border-radius: 10px; font-size: 11px; color: #7D6608;
+    line-height: 1.6; flex-shrink: 0;
+  }
+  .info-banner strong { color: #B7950B; }
+
+  .icon-s { width: 14px; height: 14px; }
+
+  /* 滚动条 */
+  .scroll-area::-webkit-scrollbar { width: 4px; }
+  .scroll-area::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 99px; }
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+  <!-- ===== 顶部栏 ===== -->
+  <div class="header">
+    <div class="header-top">
+      <div class="header-title">
+        <span class="dot"></span> 剪贴板管理
+      </div>
+      <div class="header-icons">
+        <span title="设置">⚙</span>
+        <span title="帮助">?</span>
+        <span title="最小化">—</span>
+        <span title="关闭">✕</span>
+      </div>
+    </div>
+    <div class="search-box">
+      <span>🔍</span>
+      <input type="text" placeholder="搜索剪贴板内容…" value="React" readonly>
+    </div>
+    <div class="tabs-area">
+      <span class="tab active">全部</span>
+      <span class="tab">📝 文本</span>
+      <span class="tab">🖼 图片</span>
+      <span class="tab">📁 文件</span>
+      <span class="tab">⭐ 收藏</span>
+    </div>
+    <div class="filter-bar">
+      <span class="filter-tag active">全部时间</span>
+      <span class="filter-tag">今天</span>
+      <span class="filter-tag">本周</span>
+    </div>
+  </div>
+
+  <!-- 提示条 -->
+  <div class="info-banner">
+    <strong>💡 抽屉方向说明：</strong>卡片右侧空间不足时，抽屉自动改为<strong>向左弹出</strong>。
+    试试悬浮下面的卡片看效果 ↓
+  </div>
+
+  <!-- ===== 滚动区 ===== -->
+  <div class="scroll-area">
+    <div class="card-list">
+
+      <!-- 1. 文本 - 右侧空间够，向右弹出 -->
+      <div class="card-row">
+        <div class="card card-text">
+          <div class="card-icon bg-blue">🔤</div>
+          <div class="card-content">
+            <p class="card-title">React Server Components 深度解析与实践指南</p>
+            <div class="card-sub"><span class="card-source">VS Code</span></div>
+          </div>
+          <span class="card-time">3分钟前</span>
+        </div>
+        <div class="card-drawer">
+          <div class="drawer-preview">
+            <div class="drawer-preview-text">React Server Components (RSC) 是 React 18 引入的新型组件模型，允许组件在服务端渲染，减少客户端 JavaScript 体积。本文深入探讨 RSC 的工作原理、与 SSR 的区别、以及在实际项目中的最佳实践。</div>
+          </div>
+          <div class="drawer-actions">
+            <button class="drawer-btn fav" onclick="event.stopPropagation()">
+              <svg class="icon-s" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              收藏
+            </button>
+            <button class="drawer-btn" onclick="event.stopPropagation()">📋 复制</button>
+            <button class="drawer-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. 链接 -->
+      <div class="card-row">
+        <div class="card card-text">
+          <div class="card-icon bg-green">🔗</div>
+          <div class="card-content">
+            <p class="card-title">https://github.com/facebook/react/releases/tag/v19</p>
+            <div class="card-sub"><span class="card-source">GitHub</span></div>
+          </div>
+          <span class="card-time">30分钟前</span>
+        </div>
+        <div class="card-drawer">
+          <div class="drawer-preview">
+            <div class="drawer-preview-text">🔗 URL 预览<br/><br/>域名：github.com<br/>路径：/facebook/react/releases/tag/v19<br/><br/>React 19 正式版发布，带来 Server Components、Actions 等重大更新。</div>
+          </div>
+          <div class="drawer-actions">
+            <button class="drawer-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+            <button class="drawer-btn" onclick="event.stopPropagation()">📋 复制</button>
+            <button class="drawer-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. 图片 -->
+      <div class="card-row">
+        <div class="card card-image">
+          <div class="card-icon bg-pink card-img-thumb">
+            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='42' height='42'%3E%3Crect fill='%23FF6482' width='42' height='42' rx='12'/%3E%3Ctext x='21' y='27' text-anchor='middle' fill='white' font-size='18'%3E🖼%3C/text%3E%3C/svg%3E" alt="">
+          </div>
+          <div class="card-content">
+            <p class="card-title">screenshot_2026-07-02.png</p>
+            <div class="card-sub"><span class="card-source">截图工具</span></div>
+          </div>
+          <span class="card-time">5分钟前</span>
+        </div>
+        <div class="card-drawer">
+          <div class="drawer-preview">
+            <div class="drawer-preview-image">
+              <div class="img-placeholder" style="background:linear-gradient(135deg,#667eea,#764ba2);">
+                <span style="font-size:28px;">🖼️</span>
+                <div>
+                  <div style="font-weight:600;">screenshot_2026-07-02.png</div>
+                  <div style="font-size:11px;opacity:0.8;">3840×2160 · PNG · 2.4 MB</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="drawer-actions">
+            <button class="drawer-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+            <button class="drawer-btn" onclick="event.stopPropagation()">📋 复制</button>
+            <button class="drawer-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. 文件 -->
+      <div class="card-row">
+        <div class="card card-file">
+          <div class="card-icon bg-green">📄</div>
+          <div class="card-content">
+            <p class="card-title">项目需求文档_v2.pdf</p>
+            <div class="card-sub"><span class="card-source">文件管理器</span></div>
+          </div>
+          <span class="card-time">昨天</span>
+        </div>
+        <div class="card-drawer">
+          <div class="drawer-preview">
+            <div class="drawer-preview-file">
+              <div class="file-item">📄 项目需求文档_v2.pdf</div>
+              <div class="file-item">📄 技术方案评审记录.docx</div>
+              <div class="file-item">📊 Q3季度数据报表.xlsx</div>
+              <div class="file-item">🖼 原型图_final.png</div>
+            </div>
+          </div>
+          <div class="drawer-actions">
+            <button class="drawer-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+            <button class="drawer-btn" onclick="event.stopPropagation()">📋 复制路径</button>
+            <button class="drawer-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5. 代码 -->
+      <div class="card-row">
+        <div class="card card-code">
+          <div class="card-icon bg-purple">{ }</div>
+          <div class="card-content">
+            <p class="card-title">const fetchData = async (url: string) => { const res = await...</p>
+            <div class="card-sub"><span class="card-source">VS Code</span></div>
+          </div>
+          <span class="card-time">10分钟前</span>
+        </div>
+        <div class="card-drawer">
+          <div class="drawer-preview">
+            <div class="drawer-preview-text" style="font-family:'Fira Code',monospace;font-size:11px;background:#1e1e2e;color:#cdd6f4;padding:8px;border-radius:8px;white-space:pre;overflow:hidden;">
+<span style="color:#cba6f7">const</span> <span style="color:#89b4fa">fetchData</span> = <span style="color:#cba6f7">async</span> (<span style="color:#f38ba8">url</span>) => {
+  <span style="color:#cba6f7">const</span> res = <span style="color:#cba6f7">await</span> <span style="color:#89b4fa">fetch</span>(url);
+  <span style="color:#cba6f7">return</span> res.<span style="color:#89b4fa">json</span>();
+};</div>
+          </div>
+          <div class="drawer-actions">
+            <button class="drawer-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+            <button class="drawer-btn" onclick="event.stopPropagation()">📋 复制</button>
+            <button class="drawer-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6. 已收藏+置顶 -->
+      <div class="card-row">
+        <div class="card card-text">
+          <div class="card-icon bg-blue">🔤</div>
+          <div class="card-content">
+            <p class="card-title">Tailwind CSS v4 新特性一览</p>
+            <div class="card-sub">
+              <span class="card-pin">📌 置顶</span>
+              <span class="card-source">Chrome</span>
+            </div>
+          </div>
+          <span class="card-time">1小时前</span>
+        </div>
+        <div class="card-drawer">
+          <div class="drawer-preview">
+            <div class="drawer-preview-text">Tailwind CSS v4 带来了全新的 Oxide 引擎，性能提升 10 倍以上。新增 CSS-first 配置方式，无需 tailwind.config.js。</div>
+          </div>
+          <div class="drawer-actions">
+            <button class="drawer-btn fav active" onclick="event.stopPropagation()">
+              <svg class="icon-s" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              已收藏
+            </button>
+            <button class="drawer-btn" onclick="event.stopPropagation()">📋 复制</button>
+            <button class="drawer-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 7. 选中态 -->
+      <div class="card-row">
+        <div class="card card-text selected">
+          <div class="card-icon bg-blue">🔤</div>
+          <div class="card-content">
+            <p class="card-title">这是一条被选中的文本记录</p>
+            <div class="card-sub"><span class="card-source">Notion</span></div>
+          </div>
+          <span class="card-time">刚刚</span>
+        </div>
+        <div class="card-drawer">
+          <div class="drawer-preview">
+            <div class="drawer-preview-text">选中态 + hover 抽屉同时生效，互不干扰。</div>
+          </div>
+          <div class="drawer-actions">
+            <button class="drawer-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+            <button class="drawer-btn" onclick="event.stopPropagation()">📋 复制</button>
+            <button class="drawer-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ===== 底部 FAB 栏 ===== -->
+  <div class="fab-container">
+    <div class="fab-left">
+      <span>📋 共 7 条记录</span>
+      <span class="fab-badge">Ctrl+Shift+V</span>
+    </div>
+    <div class="fab-right">
+      <span>⚡ 依次粘贴</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

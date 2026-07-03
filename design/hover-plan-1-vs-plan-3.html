@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案1 vs 方案3 · 悬停 Popover 修复对比</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --app-bg: #F4F6F9;
+    --header-bg-start: #fff;
+    --header-bg-end: #F4F6F9;
+    --card-bg: #fff;
+    --card-border: #E0E4EB;
+    --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    --text-primary: #0F172A;
+    --text-secondary: #64748B;
+    --text-muted: #7888A0;
+    --border-color: #E0E4EB;
+    --accent: #0284C7;
+    --accent-light: #E0F2FE;
+    --accent-shadow: rgba(2,132,199,0.15);
+    --seg-bg: #E8E8ED;
+    --seg-active-bg: #fff;
+    --search-bg: #fff;
+    --search-border: #E0E4EB;
+    --input-bg: #F1F5F9;
+    --dialog-bg: #fff;
+    --card-selected-bg: #E0F2FE;
+    --card-selected-border: #0284C7;
+    --card-selected-shadow: 0 0 0 2px rgba(2,132,199,0.25);
+    --hover: #E8ECF2;
+    --green: #16A34A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+    --orange: #EA580C; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
+    --danger: #DC2626; --red-bg: #FEF2F2;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    background: #E0E4EC;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    padding: 24px;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+
+  /* ===== 顶部说明 ===== */
+  .page-title {
+    width: 100%;
+    text-align: center;
+    margin-bottom: 4px;
+  }
+  .page-title h1 {
+    font-size: 18px; color: var(--text-primary); margin-bottom: 8px;
+  }
+  .page-title p {
+    font-size: 12px; color: var(--text-secondary); max-width: 900px; margin: 0 auto;
+  }
+
+  /* ===== 模拟 Tauri 窗口 ===== */
+  .app-shell {
+    width: 400px;
+    height: 660px;
+    display: flex;
+    flex-direction: column;
+    background: var(--app-bg);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 25px 80px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.08);
+    position: relative;
+  }
+  .plan-label {
+    position: absolute; top: 8px; right: 8px;
+    padding: 3px 10px; border-radius: 8px;
+    font-size: 10px; font-weight: 700; z-index: 100; color: #fff;
+  }
+  .plan-label.plan-1 { background: #059669; }
+  .plan-label.plan-3 { background: #7C3AED; }
+
+  /* ===== 头部 ===== */
+  .header {
+    padding: 16px 16px 0;
+    background: linear-gradient(180deg, var(--header-bg-start) 0%, var(--header-bg-end) 100%);
+    flex-shrink: 0;
+  }
+  .header-top {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .header-title {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 15px; font-weight: 700; color: var(--text-primary);
+  }
+  .header-title-icon {
+    width: 20px; height: 20px;
+    background: linear-gradient(135deg, #0284C7, #0369A1);
+    border-radius: 5px; display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 10px; font-weight: 700;
+  }
+  .header-icons { display: flex; gap: 4px; }
+  .icon-btn {
+    width: 28px; height: 28px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; cursor: pointer; color: var(--text-muted);
+    border: none; background: none; transition: background 0.15s;
+  }
+  .icon-btn:hover { background: var(--hover); }
+
+  .header-controls { padding: 0 0 10px; }
+  .search-box {
+    display: flex; align-items: center; gap: 8px;
+    height: 38px; padding: 0 14px;
+    border-radius: 12px;
+    background: var(--search-bg);
+    border: 1px solid var(--search-border);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+  }
+  .search-icon { font-size: 14px; flex-shrink: 0; }
+  .search-input {
+    flex: 1; border: none; background: transparent; outline: none;
+    font-size: 13px; color: var(--text-primary); font-family: inherit;
+  }
+
+  .tabs-area { padding: 10px 0 0; background: transparent; }
+  .segmented {
+    display: flex; background: var(--seg-bg);
+    border-radius: 10px; padding: 3px;
+  }
+  .seg-item {
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: 4px;
+    height: 36px; border-radius: 8px; border: none; background: transparent;
+    cursor: pointer; font-size: 12px; font-weight: 500; color: var(--text-secondary);
+    transition: all 0.2s; font-family: inherit;
+  }
+  .seg-item.active {
+    color: var(--text-primary); font-weight: 600;
+    background: var(--seg-active-bg);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .seg-count { font-size: 10px; font-weight: 700; color: var(--text-muted); }
+  .seg-item.active .seg-count { color: var(--accent); }
+
+  .filter-bar {
+    display: flex; gap: 6px; padding: 8px 0 0; align-items: center;
+  }
+  .filter-dropdown-btn {
+    display: flex; align-items: center; justify-content: space-between; gap: 4px;
+    flex: 1; height: 28px; padding: 0 10px; border-radius: 8px;
+    border: 1px solid var(--border-color); background: var(--input-bg);
+    color: var(--text-secondary); font-size: 11px; font-weight: 500;
+    cursor: pointer; font-family: inherit;
+  }
+
+  /* ===== 滚动区 ===== */
+  .scroll-area {
+    flex: 1; overflow-y: auto; overflow-x: visible;
+    background: var(--app-bg);
+  }
+  .scroll-area::-webkit-scrollbar { width: 4px; }
+  .scroll-area::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 99px; }
+
+  .card-list {
+    padding: 10px 16px 80px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+
+  /* ===== 共享：卡片行 ===== */
+  .card-row {
+    position: relative;
+    overflow: visible;
+    z-index: 1;
+    transition: z-index 0s step-end;
+  }
+  .card-row:hover { z-index: 50; transition: z-index 0s step-start; }
+
+  /* ===== 共享：卡片本体 ===== */
+  .card {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    box-shadow: var(--card-shadow);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer; position: relative;
+    height: 72px; width: 100%;
+  }
+  .card::before {
+    content: '';
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 3px; border-radius: 0 3px 3px 0;
+  }
+  .card.card-text::before  { background: var(--accent); }
+  .card.card-image::before { background: #FF6482; }
+  .card.card-file::before  { background: #34C759; }
+  .card.card-code::before  { background: #BF5AF2; }
+  .card.card-pinned::before { background: #FFD60A; }
+  .card:hover {
+    box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+    transform: translateY(-2px) scale(1.008);
+  }
+  .card.selected {
+    background: var(--card-selected-bg);
+    border-color: var(--card-selected-border);
+    box-shadow: var(--card-selected-shadow), 0 4px 16px var(--accent-shadow);
+  }
+
+  .card-icon {
+    width: 42px; height: 42px; min-width: 42px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0;
+  }
+  .card-icon.bg-blue   { background: linear-gradient(135deg, #E8F1FB, #D6E8FA); }
+  .card-icon.bg-green  { background: linear-gradient(135deg, #E5F8EC, #D4F2DE); }
+  .card-icon.bg-pink   { background: linear-gradient(135deg, #FDE8EE, #FAD6DF); }
+  .card-icon.bg-purple { background: linear-gradient(135deg, #F0E8FB, #E5D6FA); }
+  .card-icon.card-img-thumb { overflow: hidden; padding: 0; }
+  .card-icon.card-img-thumb img {
+    width: 100%; height: 100%; object-fit: cover; border-radius: 12px;
+  }
+
+  .card-content { flex: 1; min-width: 0; overflow: hidden; }
+  .card-title {
+    font-size: 13px; font-weight: 600; color: var(--text-primary);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; text-overflow: ellipsis; line-height: 1.4;
+    word-break: break-word; max-height: 36px;
+  }
+  .card-sub {
+    font-size: 11px; color: var(--text-secondary); margin-top: 2px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .card-pin {
+    display: inline-flex; align-items: center; gap: 2px;
+    height: 16px; padding: 0 6px; border-radius: 4px;
+    font-size: 10px; font-weight: 600;
+    background: var(--accent-light); color: var(--accent);
+  }
+  .card-time {
+    font-size: 11px; color: var(--text-muted);
+    flex-shrink: 0; font-variant-numeric: tabular-nums;
+  }
+
+  /* ===== Popover 共享样式 ===== */
+  .popover {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 280px;
+    background: var(--dialog-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.15), 0 2px 8px rgba(0,0,0,0.08);
+    padding: 14px;
+    z-index: 60;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+    pointer-events: none;
+  }
+  .popover::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0; height: 0;
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-top: 8px solid var(--dialog-bg);
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.08));
+  }
+  .card-row:first-child .popover {
+    bottom: auto;
+    top: calc(100% + 8px);
+  }
+  .card-row:first-child .popover::after {
+    top: auto; bottom: 100%;
+    border-top: none;
+    border-bottom: 8px solid var(--dialog-bg);
+  }
+  .card-row:last-child .popover {
+    bottom: auto;
+    top: calc(100% + 8px);
+  }
+  .card-row:last-child .popover::after {
+    top: auto; bottom: 100%;
+    border-top: none;
+    border-bottom: 8px solid var(--dialog-bg);
+  }
+  .card-row:hover .popover {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .popover-preview { margin-bottom: 10px; }
+  .popover-text {
+    font-size: 12px; color: var(--text-primary); line-height: 1.65;
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical;
+    overflow: hidden; white-space: pre-wrap; word-break: break-word;
+    user-select: text;
+  }
+  .popover-image-preview {
+    width: 100%; height: 100px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 10px; color: white; font-size: 12px; gap: 8px;
+  }
+  .popover-file { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+  .popover-code {
+    font-size: 11px; font-family: "Fira Code", monospace;
+    padding: 8px 10px; border-radius: 8px;
+    white-space: pre; overflow: hidden; line-height: 1.5;
+  }
+  .popover-actions {
+    display: flex; gap: 6px;
+    border-top: 1px solid var(--border-color);
+    padding-top: 10px;
+  }
+  .popover-btn {
+    flex: 1;
+    display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+    padding: 7px 8px; border-radius: 8px;
+    border: 1px solid var(--border-color); background: var(--card-bg);
+    cursor: pointer; font-size: 12px; font-weight: 500;
+    color: var(--text-primary); transition: all 0.15s;
+    white-space: nowrap; font-family: inherit;
+  }
+  .popover-btn:hover { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
+  .popover-btn.fav:hover { background: #FEF3C7; border-color: #F59E0B; color: #B45309; }
+  .popover-btn.danger:hover { background: var(--red-bg); border-color: var(--danger); color: var(--danger); }
+
+  /* ===== FAB ===== */
+  .fab-container {
+    position: relative; flex-shrink: 0;
+    margin: 0 16px 12px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px; z-index: 50;
+    background: var(--card-bg);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border-radius: 16px;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 -2px 16px rgba(0,0,0,0.06);
+  }
+  .fab-counter {
+    height: 28px; padding: 0 10px; border-radius: 8px;
+    display: flex; align-items: center; font-size: 11px; font-weight: 600;
+    border: none; color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+  .fab-counter .num { color: var(--accent); }
+  .fab-btn {
+    height: 38px; padding: 0 18px; border-radius: 12px;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 600; font-family: inherit;
+    background: var(--accent); color: #fff; border: none; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .fab-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px var(--accent-shadow); }
+
+  /* ===== ★ 方案1 核心：card 去掉 overflow:hidden ===== */
+  .plan-1-shell .card {
+    overflow: visible;
+  }
+  /* 为了保留左侧边条和圆角，::before 本身 absolute 不会被裁剪，这里保持不变 */
+  .plan-1-shell .card-icon.card-img-thumb {
+    border-radius: 12px;
+  }
+
+  /* ===== ★ 方案3 核心：Popover 移到 card 外部（card-row 的兄弟节点）=====
+     .card 保持 overflow:hidden，但 popover 绝对定位在 .card-row 内，不受 card 裁剪。 */
+  .plan-3-shell .card {
+    overflow: hidden; /* 保持原样 */
+  }
+
+  /* ===== 影响说明卡 ===== */
+  .impact-cards {
+    width: 100%;
+    display: flex; gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .impact-card {
+    width: 400px;
+    background: #fff;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    padding: 14px 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .impact-card h3 {
+    font-size: 13px; color: var(--text-primary); margin-bottom: 8px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .impact-card ul {
+    font-size: 12px; color: var(--text-secondary); line-height: 1.7;
+    padding-left: 16px;
+  }
+  .impact-card li { margin-bottom: 4px; }
+  .impact-card .pro { color: #059669; }
+  .impact-card .con { color: #DC2626; }
+  .impact-card code {
+    background: #F1F5F9; padding: 1px 4px; border-radius: 4px;
+    font-size: 11px; color: #334155;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-title">
+  <h1>方案 1 vs 方案 3 · 悬停 Popover 修复效果对比</h1>
+  <p>左右两个窗口分别对应方案 1 和方案 3。请将鼠标悬停到卡片上，观察 Popover 气泡是否被裁剪、布局是否稳定。</p>
+</div>
+
+<!-- ========== 方案 1：移除 card overflow:hidden ========== -->
+<div class="app-shell plan-1-shell">
+  <span class="plan-label plan-1">方案 1</span>
+
+  <div class="header">
+    <div class="header-top">
+      <div class="header-title"><span class="header-title-icon">P</span><span>PastePanda</span></div>
+      <div class="header-icons">
+        <button class="icon-btn">📝</button>
+        <button class="icon-btn">🧲</button>
+        <button class="icon-btn" title="设置">⚙</button>
+        <button class="icon-btn">❓</button>
+        <button class="icon-btn">—</button>
+        <button class="icon-btn">✕</button>
+      </div>
+    </div>
+    <div class="header-controls">
+      <div class="search-box"><span class="search-icon">🔍</span><input class="search-input" value="React" readonly></div>
+    </div>
+    <div class="tabs-area">
+      <div class="segmented">
+        <button class="seg-item active">全部<span class="seg-count">7</span></button>
+        <button class="seg-item">📝 文本</button>
+        <button class="seg-item">🖼 图片</button>
+        <button class="seg-item">📁 文件</button>
+      </div>
+    </div>
+    <div class="filter-bar">
+      <button class="filter-dropdown-btn">全部时间 ▾</button>
+      <button class="filter-dropdown-btn">全部来源 ▾</button>
+    </div>
+  </div>
+
+  <div class="scroll-area">
+    <div class="card-list">
+      <div class="card-row">
+        <div class="card card-text">
+          <div class="card-icon bg-blue">🔤</div>
+          <div class="card-content"><div class="card-title">React Server Components 深度解析与实践指南</div><div class="card-sub">VS Code</div></div>
+          <span class="card-time">3分钟前</span>
+          <div class="popover">
+            <div class="popover-preview"><div class="popover-text">方案 1：Popover 位于 .card 内部。因为 .card 的 overflow:hidden 已被移除，所以气泡可以正常超出卡片边界显示。</div></div>
+            <div class="popover-actions">
+              <button class="popover-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+              <button class="popover-btn" onclick="event.stopPropagation()">📋 复制</button>
+              <button class="popover-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-row">
+        <div class="card card-image">
+          <div class="card-icon bg-pink card-img-thumb"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='42' height='42'%3E%3Crect fill='%23FF6482' width='42' height='42' rx='12'/%3E%3Ctext x='21' y='27' text-anchor='middle' fill='white' font-size='18'%3E🖼%3C/text%3E%3C/svg%3E" alt=""></div>
+          <div class="card-content"><div class="card-title">screenshot_2026-07-02.png</div><div class="card-sub">截图工具</div></div>
+          <span class="card-time">5分钟前</span>
+          <div class="popover">
+            <div class="popover-preview"><div class="popover-image-preview" style="background:linear-gradient(135deg,#667eea,#764ba2);"><span style="font-size:28px;">🖼️</span><div><div style="font-weight:600;">3840×2160</div><div style="font-size:11px;opacity:0.8;">PNG · 2.4 MB</div></div></div></div>
+            <div class="popover-actions">
+              <button class="popover-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+              <button class="popover-btn" onclick="event.stopPropagation()">📋 复制</button>
+              <button class="popover-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-row">
+        <div class="card card-code">
+          <div class="card-icon bg-purple">{ }</div>
+          <div class="card-content"><div class="card-title">const fetchData = async (url) => { const res = await...</div><div class="card-sub">VS Code</div></div>
+          <span class="card-time">10分钟前</span>
+          <div class="popover">
+            <div class="popover-preview"><div class="popover-code" style="background:#1e1e2e;color:#cdd6f4;"><span style="color:#cba6f7">const</span> <span style="color:#89b4fa">fetchData</span> = <span style="color:#cba6f7">async</span> (<span style="color:#f38ba8">url</span>) => {
+  <span style="color:#cba6f7">const</span> res = <span style="color:#cba6f7">await</span> <span style="color:#89b4fa">fetch</span>(url);
+  <span style="color:#cba6f7">return</span> res.<span style="color:#89b4fa">json</span>();
+};</div></div>
+            <div class="popover-actions">
+              <button class="popover-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+              <button class="popover-btn" onclick="event.stopPropagation()">📋 复制</button>
+              <button class="popover-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-row">
+        <div class="card card-text selected">
+          <div class="card-icon bg-blue">🔤</div>
+          <div class="card-content"><div class="card-title">这是一条被选中的文本记录</div><div class="card-sub">Notion</div></div>
+          <span class="card-time">刚刚</span>
+          <div class="popover">
+            <div class="popover-preview"><div class="popover-text">方案 1 下选中态 + Popover 同时生效。注意观察卡片圆角处是否仍有内容被切掉的痕迹。</div></div>
+            <div class="popover-actions">
+              <button class="popover-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+              <button class="popover-btn" onclick="event.stopPropagation()">📋 复制</button>
+              <button class="popover-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="fab-container">
+    <button class="fab-counter">📋 共 <span class="num">4</span> 条记录</button>
+    <button class="fab-btn">⚡ 依次粘贴</button>
+  </div>
+</div>
+
+<!-- ========== 方案 3：Popover 作为 card 的兄弟节点 ========== -->
+<div class="app-shell plan-3-shell">
+  <span class="plan-label plan-3">方案 3</span>
+
+  <div class="header">
+    <div class="header-top">
+      <div class="header-title"><span class="header-title-icon">P</span><span>PastePanda</span></div>
+      <div class="header-icons">
+        <button class="icon-btn">📝</button>
+        <button class="icon-btn">🧲</button>
+        <button class="icon-btn" title="设置">⚙</button>
+        <button class="icon-btn">❓</button>
+        <button class="icon-btn">—</button>
+        <button class="icon-btn">✕</button>
+      </div>
+    </div>
+    <div class="header-controls">
+      <div class="search-box"><span class="search-icon">🔍</span><input class="search-input" value="React" readonly></div>
+    </div>
+    <div class="tabs-area">
+      <div class="segmented">
+        <button class="seg-item active">全部<span class="seg-count">7</span></button>
+        <button class="seg-item">📝 文本</button>
+        <button class="seg-item">🖼 图片</button>
+        <button class="seg-item">📁 文件</button>
+      </div>
+    </div>
+    <div class="filter-bar">
+      <button class="filter-dropdown-btn">全部时间 ▾</button>
+      <button class="filter-dropdown-btn">全部来源 ▾</button>
+    </div>
+  </div>
+
+  <div class="scroll-area">
+    <div class="card-list">
+      <div class="card-row">
+        <div class="card card-text">
+          <div class="card-icon bg-blue">🔤</div>
+          <div class="card-content"><div class="card-title">React Server Components 深度解析与实践指南</div><div class="card-sub">VS Code</div></div>
+          <span class="card-time">3分钟前</span>
+        </div>
+        <div class="popover">
+          <div class="popover-preview"><div class="popover-text">方案 3：Popover 是 .card-row 的直接子元素，与 .card 同级。因此 .card 仍然可以保留 overflow:hidden，气泡也不会被裁剪。</div></div>
+          <div class="popover-actions">
+            <button class="popover-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+            <button class="popover-btn" onclick="event.stopPropagation()">📋 复制</button>
+            <button class="popover-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-row">
+        <div class="card card-image">
+          <div class="card-icon bg-pink card-img-thumb"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='42' height='42'%3E%3Crect fill='%23FF6482' width='42' height='42' rx='12'/%3E%3Ctext x='21' y='27' text-anchor='middle' fill='white' font-size='18'%3E🖼%3C/text%3E%3C/svg%3E" alt=""></div>
+          <div class="card-content"><div class="card-title">screenshot_2026-07-02.png</div><div class="card-sub">截图工具</div></div>
+          <span class="card-time">5分钟前</span>
+        </div>
+        <div class="popover">
+          <div class="popover-preview"><div class="popover-image-preview" style="background:linear-gradient(135deg,#667eea,#764ba2);"><span style="font-size:28px;">🖼️</span><div><div style="font-weight:600;">3840×2160</div><div style="font-size:11px;opacity:0.8;">PNG · 2.4 MB</div></div></div></div>
+          <div class="popover-actions">
+            <button class="popover-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+            <button class="popover-btn" onclick="event.stopPropagation()">📋 复制</button>
+            <button class="popover-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-row">
+        <div class="card card-code">
+          <div class="card-icon bg-purple">{ }</div>
+          <div class="card-content"><div class="card-title">const fetchData = async (url) => { const res = await...</div><div class="card-sub">VS Code</div></div>
+          <span class="card-time">10分钟前</span>
+        </div>
+        <div class="popover">
+          <div class="popover-preview"><div class="popover-code" style="background:#1e1e2e;color:#cdd6f4;"><span style="color:#cba6f7">const</span> <span style="color:#89b4fa">fetchData</span> = <span style="color:#cba6f7">async</span> (<span style="color:#f38ba8">url</span>) => {
+  <span style="color:#cba6f7">const</span> res = <span style="color:#cba6f7">await</span> <span style="color:#89b4fa">fetch</span>(url);
+  <span style="color:#cba6f7">return</span> res.<span style="color:#89b4fa">json</span>();
+};</div></div>
+          <div class="popover-actions">
+            <button class="popover-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+            <button class="popover-btn" onclick="event.stopPropagation()">📋 复制</button>
+            <button class="popover-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-row">
+        <div class="card card-text selected">
+          <div class="card-icon bg-blue">🔤</div>
+          <div class="card-content"><div class="card-title">这是一条被选中的文本记录</div><div class="card-sub">Notion</div></div>
+          <span class="card-time">刚刚</span>
+        </div>
+        <div class="popover">
+          <div class="popover-preview"><div class="popover-text">方案 3 下选中态 + Popover 同样生效。卡片自身保持 overflow:hidden，结构改动稍大，但兼容性更好。</div></div>
+          <div class="popover-actions">
+            <button class="popover-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+            <button class="popover-btn" onclick="event.stopPropagation()">📋 复制</button>
+            <button class="popover-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="fab-container">
+    <button class="fab-counter">📋 共 <span class="num">4</span> 条记录</button>
+    <button class="fab-btn">⚡ 依次粘贴</button>
+  </div>
+</div>
+
+<!-- ========== 影响说明 ========== -->
+<div class="impact-cards">
+  <div class="impact-card">
+    <h3><span class="pro">✅</span> 方案 1：去掉 .card overflow:hidden</h3>
+    <ul>
+      <li class="pro">改动最小：通常只需改一行 CSS，Popover 即可显示。</li>
+      <li class="pro">DOM 结构无需调整，保持原有组件封装。</li>
+      <li class="con">风险：卡片内部其他元素（如 loading 动画、图片、进度条）若超出卡片边界，将不再被圆角裁剪，可能“撑破”卡片。</li>
+      <li class="con">选中态/边框阴影的圆角一致性需要回归测试，尤其是卡片内部绝对定位元素。</li>
+      <li>适用：内部内容相对简单、可控制不外溢的场景。</li>
+    </ul>
+  </div>
+  <div class="impact-card">
+    <h3><span class="pro">✅</span> 方案 3：Popover 作为 .card 兄弟节点</h3>
+    <ul>
+      <li class="pro">最稳妥：.card 保持 <code>overflow:hidden</code>，不破坏卡片自身封装和已有样式。</li>
+      <li class="pro">Popover 脱离 card 布局，完全不受 card 裁剪影响，层级控制更干净。</li>
+      <li class="con">需要调整 <code>Card.tsx</code> 渲染结构，把 popover 从卡片内部提到外部。</li>
+      <li class="con">悬停显示逻辑由 CSS（<code>.card-row:hover .popover</code>）接管，要确保事件委托和虚拟列表兼容。</li>
+      <li>适用：对现有样式影响最小、希望长期维护的场景。</li>
+    </ul>
+  </div>
+</div>
+
+</body>
+</html>

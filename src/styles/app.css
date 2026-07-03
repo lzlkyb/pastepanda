@@ -467,6 +467,24 @@
   color: var(--danger);
 }
 
+/* idle 闲置状态 — 保持原有蓝紫渐变 */
+.version-badge-idle {
+  /* 继承 .version-badge 的默认样式，无需覆盖 */
+}
+
+/* checking 检查中状态 — 蓝紫渐变 + 图标 */
+.version-badge-checking {
+  /* 继承 .version-badge 的默认样式，无需覆盖 */
+}
+
+/* error 错误状态 — 红色调 */
+.version-badge-error {
+  background: var(--red-bg, #FEF2F2) !important;
+  color: var(--danger, #DC2626) !important;
+  border: 1px solid var(--danger, #DC2626);
+  box-shadow: none !important;
+}
+
 /* 更新状态颜色覆盖 — 保留给 UpdateBadge 其他状态 */
 .header-badge {
   display: inline-flex;
@@ -1621,7 +1639,6 @@ button:disabled,
 .dialog-box {
   background: var(--dialog-bg);
   border-radius: 16px;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
@@ -3639,6 +3656,156 @@ button:disabled,
   gap: 4px;
 }
 
+/* ===== 22b. Help Tooltip & Bubble ===== */
+
+.help-trigger-wrap {
+  position: relative;
+}
+
+.help-trigger {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+.help-trigger:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-light);
+}
+.help-trigger.active {
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+}
+
+/* 悬浮 tooltip — FloatingPortal 传送到 body，CSS 变量跟随主题 */
+.help-tooltip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: var(--dialog-bg);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  white-space: normal;
+  max-width: 320px;
+  width: max-content;
+  pointer-events: none;
+  z-index: 10000;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  text-align: left;
+}
+
+/* Floating UI 小箭头 */
+.help-tooltip-arrow {
+  fill: var(--dialog-bg);
+}
+
+/* 点击弹出的详细气泡 — FloatingPortal 传送到 body，突破对话框裁切 */
+.help-bubble {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 300px;
+  max-width: calc(100vw - 48px);
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.2);
+  z-index: 10000;
+  overflow: hidden;
+}
+
+.help-bubble-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--section-bg);
+}
+
+.help-bubble-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.help-bubble-close {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.help-bubble-close:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.help-bubble-body {
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.help-bubble-body p {
+  margin: 0 0 6px 0;
+}
+.help-bubble-body p:last-child {
+  margin-bottom: 0;
+}
+
+.help-bubble-body .help-tip-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+/* 分组引导语 */
+.s-section-desc {
+  padding: 0 20px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* 推荐标记 */
+.s-row-recommend {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #34C759;
+  background: rgba(52, 199, 89, 0.1);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 /* ===== 23. Help Dialog — Accordion Redesign ===== */
 
 /* --- Dialog header extras --- */
@@ -3949,6 +4116,39 @@ button:disabled,
 .guide-text { flex: 1; min-width: 0; }
 .guide-label { font-size: 12px; font-weight: 600; color: var(--text-primary); }
 .guide-desc { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+
+/* Welcome line */
+.guide-welcome {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 0 2px;
+}
+.guide-welcome-emoji {
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* Footer hint */
+.guide-footer-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  padding-top: 4px;
+}
+.guide-footer-hint kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-family: 'SF Mono', Consolas, monospace;
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  vertical-align: middle;
+}
 
 /* ===== 25. Search Highlight ===== */
 .search-highlight {

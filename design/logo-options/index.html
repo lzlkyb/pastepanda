@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PastePanda Logo 方案对比</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+  background: #0f0f14;
+  color: #e0e0e0;
+  padding: 40px 20px;
+  min-height: 100vh;
+}
+h1 {
+  text-align: center;
+  font-size: 28px;
+  font-weight: 800;
+  margin-bottom: 8px;
+  background: linear-gradient(135deg, #5B6AF0, #7C5CF0);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.subtitle { text-align: center; color: #888; margin-bottom: 48px; font-size: 14px; }
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 24px;
+  max-width: 1200px;
+  margin: 0 auto 48px;
+}
+.card {
+  background: #1a1a24;
+  border-radius: 20px;
+  padding: 28px;
+  border: 1px solid #252535;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: border-color .2s, transform .2s;
+}
+.card:hover { border-color: #5B6AF0; transform: translateY(-2px); }
+.card h3 { font-size: 16px; font-weight: 700; margin-bottom: 6px; color: #fff; }
+.card .desc { font-size: 12px; color: #666; margin-bottom: 20px; text-align: center; }
+.card img.main {
+  width: 160px; height: 160px;
+  border-radius: 24px;
+  object-fit: cover;
+  margin-bottom: 20px;
+  background: #252535;
+}
+.sizes {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+.size-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.size-box img {
+  border-radius: 8px;
+  background: #252535;
+  object-fit: cover;
+}
+.size-box .label {
+  font-size: 10px;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.vote-btn {
+  margin-top: 8px;
+  padding: 8px 20px;
+  border-radius: 10px;
+  border: 1px solid #333;
+  background: transparent;
+  color: #aaa;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all .2s;
+}
+.vote-btn:hover {
+  border-color: #5B6AF0;
+  color: #fff;
+  background: rgba(91,106,240,.15);
+}
+
+.mock-section {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.mock-section h2 {
+  font-size: 20px; color: #ccc;
+  text-align: center; margin-bottom: 24px;
+}
+.mock-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+.mock-card {
+  background: #1a1a24;
+  border-radius: 16px;
+  padding: 20px;
+  border: 1px solid #252535;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.mock-card .title { font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 1px; }
+.mock-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; }
+.mock-item { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.mock-item .letter { font-size: 10px; color: #444; font-weight: 700; }
+.mock-item img { border-radius: 6px; background: #252535; object-fit: cover; }
+
+.mock-topbar {
+  display: flex; align-items: center; gap: 8px;
+  background: #14141e; border-radius: 8px;
+  padding: 6px 12px; width: fit-content;
+}
+.mock-topbar span { font-size: 12px; color: #ccc; font-weight: 600; }
+
+@media (max-width: 700px) {
+  .mock-grid { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+<h1>🐼 PastePanda Logo 方案</h1>
+<p class="subtitle">基于你发的毛绒熊猫风格，生成 4 个应用图标方向</p>
+
+<div class="grid">
+
+  <div class="card" id="card-1">
+    <h3>方案 1 · 扁平熊猫</h3>
+    <p class="desc">简洁矢量风格，黑白熊猫 + 薄荷绿剪贴板</p>
+    <img class="main" src="A_cute_fluffy_panda_mascot_hol_2026-07-01T14-45-21.png" alt="方案1">
+    <div class="sizes">
+      <div class="size-box"><img src="A_cute_fluffy_panda_mascot_hol_2026-07-01T14-45-21.png" width="64" height="64"><span class="label">64px</span></div>
+      <div class="size-box"><img src="A_cute_fluffy_panda_mascot_hol_2026-07-01T14-45-21.png" width="32" height="32"><span class="label">32px</span></div>
+      <div class="size-box"><img src="A_cute_fluffy_panda_mascot_hol_2026-07-01T14-45-21.png" width="16" height="16"><span class="label">16px</span></div>
+    </div>
+    <button class="vote-btn" onclick="select(1)">选方案 1</button>
+  </div>
+
+  <div class="card" id="card-2">
+    <h3>方案 2 · 极简熊猫</h3>
+    <p class="desc">更现代的扁平化，适合小尺寸</p>
+    <img class="main" src="A_cute_minimalist_panda_mascot_2026-07-01T14-45-21.png" alt="方案2">
+    <div class="sizes">
+      <div class="size-box"><img src="A_cute_minimalist_panda_mascot_2026-07-01T14-45-21.png" width="64" height="64"><span class="label">64px</span></div>
+      <div class="size-box"><img src="A_cute_minimalist_panda_mascot_2026-07-01T14-45-21.png" width="32" height="32"><span class="label">32px</span></div>
+      <div class="size-box"><img src="A_cute_minimalist_panda_mascot_2026-07-01T14-45-21.png" width="16" height="16"><span class="label">16px</span></div>
+    </div>
+    <button class="vote-btn" onclick="select(2)">选方案 2</button>
+  </div>
+
+  <div class="card" id="card-3">
+    <h3>方案 3 · 毛绒熊猫头</h3>
+    <p class="desc">保留毛绒质感，圆形头像，剪贴板点缀</p>
+    <img class="main" src="A_cute_chibi_panda_head_holdin_2026-07-01T14-45-22.png" alt="方案3">
+    <div class="sizes">
+      <div class="size-box"><img src="A_cute_chibi_panda_head_holdin_2026-07-01T14-45-22.png" width="64" height="64"><span class="label">64px</span></div>
+      <div class="size-box"><img src="A_cute_chibi_panda_head_holdin_2026-07-01T14-45-22.png" width="32" height="32"><span class="label">32px</span></div>
+      <div class="size-box"><img src="A_cute_chibi_panda_head_holdin_2026-07-01T14-45-22.png" width="16" height="16"><span class="label">16px</span></div>
+    </div>
+    <button class="vote-btn" onclick="select(3)">选方案 3</button>
+  </div>
+
+  <div class="card" id="card-4">
+    <h3>方案 4 · 3D 毛绒全身</h3>
+    <p class="desc">最接近你原图的风格，可爱 3D 毛绒熊猫</p>
+    <img class="main" src="A_cute_fluffy_panda_sitting_an_2026-07-01T14-45-24.png" alt="方案4">
+    <div class="sizes">
+      <div class="size-box"><img src="A_cute_fluffy_panda_sitting_an_2026-07-01T14-45-24.png" width="64" height="64"><span class="label">64px</span></div>
+      <div class="size-box"><img src="A_cute_fluffy_panda_sitting_an_2026-07-01T14-45-24.png" width="32" height="32"><span class="label">32px</span></div>
+      <div class="size-box"><img src="A_cute_fluffy_panda_sitting_an_2026-07-01T14-45-24.png" width="16" height="16"><span class="label">16px</span></div>
+    </div>
+    <button class="vote-btn" onclick="select(4)">选方案 4</button>
+  </div>
+
+</div>
+
+<div class="mock-section">
+  <h2>实际场景效果</h2>
+  <div class="mock-grid">
+    <div class="mock-card">
+      <div class="title">TopBar 标题栏</div>
+      <div class="mock-row">
+        <div class="mock-item"><img src="A_cute_fluffy_panda_mascot_hol_2026-07-01T14-45-21.png" width="20" height="20"><span class="letter">1</span></div>
+        <div class="mock-item"><img src="A_cute_minimalist_panda_mascot_2026-07-01T14-45-21.png" width="20" height="20"><span class="letter">2</span></div>
+        <div class="mock-item"><img src="A_cute_chibi_panda_head_holdin_2026-07-01T14-45-22.png" width="20" height="20"><span class="letter">3</span></div>
+        <div class="mock-item"><img src="A_cute_fluffy_panda_sitting_an_2026-07-01T14-45-24.png" width="20" height="20"><span class="letter">4</span></div>
+      </div>
+      <div class="mock-topbar"><img src="A_cute_chibi_panda_head_holdin_2026-07-01T14-45-22.png" width="18" height="18"><span>PastePanda</span></div>
+    </div>
+    <div class="mock-card">
+      <div class="title">系统托盘</div>
+      <div class="mock-row">
+        <div class="mock-item"><img src="A_cute_fluffy_panda_mascot_hol_2026-07-01T14-45-21.png" width="16" height="16"><span class="letter">1</span></div>
+        <div class="mock-item"><img src="A_cute_minimalist_panda_mascot_2026-07-01T14-45-21.png" width="16" height="16"><span class="letter">2</span></div>
+        <div class="mock-item"><img src="A_cute_chibi_panda_head_holdin_2026-07-01T14-45-22.png" width="16" height="16"><span class="letter">3</span></div>
+        <div class="mock-item"><img src="A_cute_fluffy_panda_sitting_an_2026-07-01T14-45-24.png" width="16" height="16"><span class="letter">4</span></div>
+      </div>
+    </div>
+    <div class="mock-card">
+      <div class="title">关于对话框</div>
+      <div class="mock-row">
+        <div class="mock-item"><img src="A_cute_fluffy_panda_mascot_hol_2026-07-01T14-45-21.png" width="64" height="64"><span class="letter">1</span></div>
+        <div class="mock-item"><img src="A_cute_minimalist_panda_mascot_2026-07-01T14-45-21.png" width="64" height="64"><span class="letter">2</span></div>
+        <div class="mock-item"><img src="A_cute_chibi_panda_head_holdin_2026-07-01T14-45-22.png" width="64" height="64"><span class="letter">3</span></div>
+        <div class="mock-item"><img src="A_cute_fluffy_panda_sitting_an_2026-07-01T14-45-24.png" width="64" height="64"><span class="letter">4</span></div>
+      </div>
+    </div>
+    <div class="mock-card">
+      <div class="title">托盘弹窗</div>
+      <div class="mock-row">
+        <div class="mock-item"><img src="A_cute_fluffy_panda_mascot_hol_2026-07-01T14-45-21.png" width="22" height="22"><span class="letter">1</span></div>
+        <div class="mock-item"><img src="A_cute_minimalist_panda_mascot_2026-07-01T14-45-21.png" width="22" height="22"><span class="letter">2</span></div>
+        <div class="mock-item"><img src="A_cute_chibi_panda_head_holdin_2026-07-01T14-45-22.png" width="22" height="22"><span class="letter">3</span></div>
+        <div class="mock-item"><img src="A_cute_fluffy_panda_sitting_an_2026-07-01T14-45-24.png" width="22" height="22"><span class="letter">4</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="text-align:center;margin-top:48px;padding-bottom:60px;">
+  <p style="color:#555;font-size:13px;">选好方案后告诉我，我帮你生成多尺寸 PNG + ICO + ICNS 并应用到项目里</p>
+</div>
+
+<script>
+function select(n) {
+  document.querySelectorAll('.card').forEach(c => c.style.borderColor = '#252535');
+  document.getElementById('card-' + n).style.borderColor = '#5B6AF0';
+  alert('已选择方案 ' + n + '，告诉我就把它应用到项目里');
+}
+</script>
+
+</body>
+</html>

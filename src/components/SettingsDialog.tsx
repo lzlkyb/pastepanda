@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { VersionBadge } from "@/components/VersionBadge";
+import { HelpTooltip } from "@/components/HelpTooltip";
 import { THEMES, applyTheme, ThemeKey } from "@/lib/theme";
 import { useToast } from "@/components/Toast";
 import { logger } from "@/lib/logger";
@@ -173,7 +174,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   return (
     <AnimatePresence>
       {open && (
-        <motion.div
+        <motion.div key="settings-dialog"
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           className="dialog-backdrop" onClick={onClose}>
           <motion.div
@@ -235,7 +236,19 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
               <div className="s-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
                 <span className="s-row-icon" style={{ background: "linear-gradient(135deg, #0078D4, #5856D6)", width: "fit-content", padding: "6px 12px" }}>🎨</span>
                 <div className="s-row-body">
-                  <div className="s-row-label">主题配色</div>
+                  <div className="s-row-label">
+                    主题配色
+                    <HelpTooltip
+                      tooltip="6种精心调配的主题配色"
+                      detailTitle="主题配色"
+                      detail={<>
+                        <p>6 种精心调配的主题，点击即可预览，实时生效。</p>
+                        <p>💡 <b>海洋</b>：柔和护眼，适合长时间使用</p>
+                        <p>💡 <b>终端</b>：程序员风格，代码感十足</p>
+                        <p>💡 <b>午夜</b>：暗色模式，夜间使用不刺眼</p>
+                      </>}
+                    />
+                  </div>
                   <div className="s-row-desc">选择你喜欢的配色方案</div>
                 </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -289,7 +302,19 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
               <div className="s-row">
                 <span className="s-row-icon" style={{ background: "linear-gradient(135deg, #F59E0B, #FF9500)" }}>🗑</span>
                 <div className="s-row-body">
-                  <div className="s-row-label">自动清理</div>
+                  <div className="s-row-label">
+                    自动清理
+                    <HelpTooltip
+                      tooltip="建议开启，避免数据库无限膨胀影响性能"
+                      detailTitle="自动清理"
+                      detail={<>
+                        <p>定期删除超过指定天数的旧记录，避免数据库过大。</p>
+                        <p>📌 <b>推荐 30 天</b>：平衡存储空间和历史追溯</p>
+                        <p>⚠️ 设为「关」则不自动清理，需手动管理</p>
+                        <p>💡 清理后可 Ctrl+Z 撤销</p>
+                      </>}
+                    />
+                  </div>
                   <div className="s-row-desc">手动清理时，删除超过天数的记录</div>
                 </div>
                 <div className="s-cleanup">
@@ -302,11 +327,31 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                   ))}
                 </div>
               </div>
-              <ToggleRow icon={<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M8.6 8.6 18 18M15.4 8.6 6 18"/></svg>} gradient="linear-gradient(135deg, #10B981, #34C759)" label="自动去除空白" desc="复制时去除首尾空白字符" value={config.auto_strip} onChange={(v) => updateAndSave({ auto_strip: v })} />
+              <ToggleRow icon={<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M8.6 8.6 18 18M15.4 8.6 6 18"/></svg>} gradient="linear-gradient(135deg, #10B981, #34C759)" label="自动去除空白" desc="复制时去除首尾空白字符" value={config.auto_strip} onChange={(v) => updateAndSave({ auto_strip: v })}
+                tooltip="粘贴代码时尤其有用，避免多余缩进"
+                detailTitle="自动去除空白"
+                detail={<>
+                  <p>复制文本时自动去除首尾的空格、换行等空白字符。</p>
+                  <p>📌 <b>适合场景</b>：复制代码、复制网页文字</p>
+                  <p>💡 开启后粘贴更干净，无需手动删空格</p>
+                </>}
+              />
               <div className="s-row">
                 <span className="s-row-icon" style={{ background: "linear-gradient(135deg, #8B5CF6, #AF52DE)" }}>👆</span>
                 <div className="s-row-body">
-                  <div className="s-row-label">双击列表行为</div>
+                  <div className="s-row-label">
+                    双击列表行为
+                    <HelpTooltip
+                      tooltip="设为「复制」更快捷，设为「预览」可查看详情"
+                      detailTitle="双击行为"
+                      detail={<>
+                        <p>设置双击卡片时的默认操作。</p>
+                        <p>📌 <b>复制</b>：双击直接复制内容到剪贴板</p>
+                        <p>📌 <b>预览</b>：双击弹出预览面板，可查看详情或编辑</p>
+                        <p>💡 设为「预览」后仍可通过悬停卡片快速复制</p>
+                      </>}
+                    />
+                  </div>
                   <div className="s-row-desc">{config.double_click_action === "copy" ? "双击复制到剪贴板" : "双击预览/编辑"}</div>
                 </div>
                 <button className="s-val" onClick={() => updateAndSave({ double_click_action: config.double_click_action === "copy" ? "preview" : "copy" })}>
@@ -320,15 +365,44 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                 desc="鼠标悬停卡片时弹出预览气泡（关闭后仅通过双击查看详情）"
                 value={config.hover_preview_enabled}
                 onChange={(v) => updateAndSave({ hover_preview_enabled: v })}
+                recommend
+                tooltip="推荐开启，快速浏览长文本内容"
+                detailTitle="悬停预览气泡"
+                detail={<>
+                  <p>鼠标悬停在卡片上时弹出内容预览气泡。</p>
+                  <p>📌 <b>适合</b>：快速浏览长文本、图片预览</p>
+                  <p>❌ <b>关闭后</b>：需双击卡片才能查看详情</p>
+                  <p>💡 <b>建议开启</b>，大幅提升浏览效率</p>
+                </>}
               />
-              <ToggleRow icon="🔁" gradient="linear-gradient(135deg, #06B6D4, #0078D4)" label="依次粘贴循环" desc="到达末尾后从头开始" value={config.sequential_loop} onChange={(v) => updateAndSave({ sequential_loop: v })} />
-              <ToggleRow icon="👁" gradient="linear-gradient(135deg, #EF4444, #FF3B30)" label="失焦自动隐藏" desc="窗口失去焦点时隐藏到托盘" value={config.hide_on_focus_out} onChange={(v) => updateAndSave({ hide_on_focus_out: v })} />
+              <ToggleRow icon="🔁" gradient="linear-gradient(135deg, #06B6D4, #0078D4)" label="依次粘贴循环" desc="到达末尾后从头开始" value={config.sequential_loop} onChange={(v) => updateAndSave({ sequential_loop: v })}
+                tooltip="适合重复粘贴同一组内容时使用"
+              />
+              <ToggleRow icon="👁" gradient="linear-gradient(135deg, #EF4444, #FF3B30)" label="失焦自动隐藏" desc="窗口失去焦点时隐藏到托盘" value={config.hide_on_focus_out} onChange={(v) => updateAndSave({ hide_on_focus_out: v })}
+                recommend
+                tooltip="点击其他窗口时自动隐藏，保持桌面整洁"
+                detailTitle="失焦自动隐藏"
+                detail={<>
+                  <p>当 PastePanda 窗口失去焦点时自动隐藏到托盘。</p>
+                  <p>📌 点击其他应用 → 窗口自动收起，不挡视线</p>
+                  <p>💡 <b>推荐开启</b>，保持桌面整洁</p>
+                  <p>⚠️ 关闭后需手动点击 X 隐藏窗口</p>
+                </>}
+              />
               <ToggleRow icon="📌" gradient="linear-gradient(135deg, #F59E0B, #FF9500)" label="窗口置顶" desc="始终显示在其他窗口之上" value={config.always_on_top}
+                tooltip="适合频繁粘贴时使用，窗口始终可见"
                 onChange={async (v) => {
                   await updateAndSave({ always_on_top: v });
                   try { const { getCurrentWindow } = await import("@tauri-apps/api/window"); await getCurrentWindow().setAlwaysOnTop(v); } catch { toast("窗口置顶设置失败", "error"); }
                 }} />
               <ToggleRow icon="🚀" gradient="linear-gradient(135deg, #3B82F6, #0078D4)" label="开机自启" desc="Windows 启动时自动运行" value={config.auto_startup}
+                tooltip="开机后自动在后台运行，托盘图标常驻"
+                detailTitle="开机自启"
+                detail={<>
+                  <p>Windows 启动时自动运行 PastePanda。</p>
+                  <p>📌 启动后自动最小化到托盘，不影响开机速度</p>
+                  <p>💡 <b>推荐开启</b>，不用担心忘记启动</p>
+                </>}
                 onChange={async (v) => {
                   await updateAndSave({ auto_startup: v });
                   try { const { invoke } = await import("@tauri-apps/api/core"); await invoke("set_startup", { enable: v }); } catch { toast("开机自启设置失败", "error"); }
@@ -337,6 +411,13 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
               {/* ── 局域网同步 ── */}
               <div className="s-section">局域网同步</div>
               <ToggleRow icon="🌐" gradient="linear-gradient(135deg, #06B6D4, #3B82F6)" label="局域网同步" desc="同一局域网内自动同步剪贴板内容" value={config.lan_sync_enabled}
+                detailTitle="局域网同步"
+                detail={<>
+                  <p>同一 WiFi 下的多台电脑自动共享剪贴板。</p>
+                  <p>📌 <b>场景</b>：台式机复制 → 笔记本粘贴</p>
+                  <p>⚠️ <b>注意</b>：两台设备都需安装 PastePanda 并开启此功能</p>
+                  <p>💡 <b>适合</b>：多设备办公用户</p>
+                </>}
                 onChange={async (v) => {
                   await updateAndSave({ lan_sync_enabled: v });
                   try {
@@ -430,7 +511,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
           </motion.div>
         </motion.div>
       )}
-      <ConfirmDialog
+      <ConfirmDialog key="cleanup-confirm"
         open={showCleanupConfirm}
         title="确认清理"
         message={`将删除 ${expiredCount} 条超过 ${cleanupDays} 天的过期记录，确认？`}
@@ -444,14 +525,21 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
 }
 
 /* ===== Toggle Row 组件 ===== */
-function ToggleRow({ icon, gradient, label, desc, value, onChange }: {
+function ToggleRow({ icon, gradient, label, desc, value, onChange, tooltip, detailTitle, detail, recommend }: {
   icon: React.ReactNode; gradient: string; label: string; desc: string; value: boolean; onChange: (v: boolean) => void;
+  tooltip?: string; detailTitle?: string; detail?: React.ReactNode; recommend?: boolean;
 }) {
   return (
     <div className="s-row" onClick={() => onChange(!value)} style={{ cursor: "pointer" }}>
       <span className="s-row-icon" style={{ background: gradient }}>{icon}</span>
       <div className="s-row-body">
-        <div className="s-row-label">{label}</div>
+        <div className="s-row-label">
+          {label}
+          {recommend && <span className="s-row-recommend">⭐推荐</span>}
+          {(tooltip || detail) && (
+            <HelpTooltip tooltip={tooltip} detailTitle={detailTitle} detail={detail} />
+          )}
+        </div>
         <div className="s-row-desc">{desc}</div>
       </div>
       <button className={`s-toggle ${value ? "on" : "off"}`}

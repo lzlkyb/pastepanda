@@ -8,6 +8,7 @@ import { QuickPreview } from "@/components/QuickPreview";
 import { ToastProvider, useToast } from "@/components/Toast";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UpdateProvider } from "@/contexts/UpdateContext";
+import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
 import { logger } from "@/lib/logger";
 import { pasteText, pasteImage, deleteHistory, togglePin, toggleWindow, sequentialPaste } from "@/lib/api";
 import { ClipboardList, RotateCcw, Loader2, X } from "lucide-react";
@@ -45,14 +46,18 @@ function App() {
     import("@tauri-apps/api/window").then(m => m.getCurrentWindow().setAlwaysOnTop(config.always_on_top)).catch(e => logger.warn("窗口置顶设置失败", e));
   }, [config.always_on_top]);
 
-  // 监听来自 api.ts 的 toast 通知（如自动清理）
+  // 监听来自 api.ts 的 toast 通知（如自动清理）和首次提示
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail?.message) toast(detail.message, detail.type || "info");
     };
     window.addEventListener("app-toast", handler);
-    return () => window.removeEventListener("app-toast", handler);
+    window.addEventListener("first-time-tip", handler);
+    return () => {
+      window.removeEventListener("app-toast", handler);
+      window.removeEventListener("first-time-tip", handler);
+    };
   }, [toast]);
 
   // 组件卸载时清理 retry 创建的监听器
@@ -145,6 +150,41 @@ function App() {
       if (cleanup) cleanup(); 
     };
   }, []);
+
+  // 首次使用提示
+  const { shouldShow, markShown } = useFirstTimeTip();
+  const historyLenRef = useRef(history.length);
+  useEffect(() => {
+    // 首次有剪贴板内容时提示
+    if (history.length > 0 && historyLenRef.current === 0 && !loading) {
+      const timer = setTimeout(() => {
+        if (shouldShow("first_copy")) {
+          toast("📋 已自动保存到 PastePanda，Ctrl+Shift+V 随时唤出", "success", 4000);
+          markShown("first_copy");
+        }
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+    historyLenRef.current = history.length;
+  }, [history.length, loading, shouldShow, markShown, toast]);
+
+  // 累计使用 3 天后提示依次粘贴功能
+  useEffect(() => {
+    if (loading) return;
+    const timer = setTimeout(() => {
+      if (shouldShow("seq_paste_tip")) {
+        const daysSinceInstall = Number(localStorage.getItem("pasteship_install_day") || 0);
+        const now = Math.floor(Date.now() / 86400000);
+        if (!daysSinceInstall) {
+          localStorage.setItem("pasteship_install_day", String(now));
+        } else if (now - daysSinceInstall >= 3) {
+          toast("💡 试试 Ctrl+Q 依次粘贴，逐条粘贴超方便", "info", 4000);
+          markShown("seq_paste_tip");
+        }
+      }
+    }, 10000); // 启动 10 秒后检查
+    return () => clearTimeout(timer);
+  }, [loading, shouldShow, markShown, toast]);
 
   // 使用 ref 存储弹窗状态，避免 handleKeyDown 依赖变化导致频繁重新注册事件
   const dialogStatesRef = useRef({ showSettings, showHelp, showSnippets, showExtract, showAbout, showShortcuts });

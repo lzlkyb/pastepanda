@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案A · 覆盖模式（抽屉从卡片内部展开）</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --app-bg: #F4F6F9;
+    --header-bg-start: #fff;
+    --header-bg-end: #F4F6F9;
+    --card-bg: #fff;
+    --card-border: #E0E4EB;
+    --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    --text-primary: #0F172A;
+    --text-secondary: #64748B;
+    --text-muted: #7888A0;
+    --border-color: #E0E4EB;
+    --accent: #0284C7;
+    --accent-light: #E0F2FE;
+    --accent-shadow: rgba(2,132,199,0.15);
+    --seg-bg: #E8E8ED;
+    --seg-active-bg: #fff;
+    --search-bg: #fff;
+    --search-border: #E0E4EB;
+    --input-bg: #F1F5F9;
+    --dialog-bg: #fff;
+    --card-selected-bg: #E0F2FE;
+    --card-selected-border: #0284C7;
+    --card-selected-shadow: 0 0 0 2px rgba(2,132,199,0.25);
+    --hover: #E8ECF2;
+    --green: #16A34A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+    --orange: #EA580C; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
+    --danger: #DC2626; --red-bg: #FEF2F2;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    background: #E0E4EC;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+    gap: 30px;
+    flex-wrap: wrap;
+  }
+
+  /* ===== 模拟 Tauri 窗口 ===== */
+  .app-shell {
+    width: 420px;
+    height: 680px;
+    display: flex;
+    flex-direction: column;
+    background: var(--app-bg);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 25px 80px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.08);
+  }
+
+  /* ===== 头部 ===== */
+  .header {
+    padding: 16px 16px 0;
+    background: linear-gradient(180deg, var(--header-bg-start) 0%, var(--header-bg-end) 100%);
+    flex-shrink: 0;
+  }
+  .header-top {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .header-title {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 15px; font-weight: 700; color: var(--text-primary);
+  }
+  .header-title-icon {
+    width: 20px; height: 20px;
+    background: linear-gradient(135deg, #0284C7, #0369A1);
+    border-radius: 5px; display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 10px; font-weight: 700;
+  }
+  .header-icons { display: flex; gap: 4px; }
+  .icon-btn {
+    width: 28px; height: 28px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; cursor: pointer; color: var(--text-muted);
+    border: none; background: none; transition: background 0.15s;
+  }
+  .icon-btn:hover { background: var(--hover); }
+
+  /* 搜索框 */
+  .header-controls { padding: 0 0 10px; }
+  .search-box {
+    display: flex; align-items: center; gap: 8px;
+    height: 38px; padding: 0 14px;
+    border-radius: 12px;
+    background: var(--search-bg);
+    border: 1px solid var(--search-border);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+  }
+  .search-icon { font-size: 14px; flex-shrink: 0; }
+  .search-input {
+    flex: 1; border: none; background: transparent; outline: none;
+    font-size: 13px; color: var(--text-primary); font-family: inherit;
+  }
+  .search-input::placeholder { color: var(--text-muted); }
+
+  /* Segmented Tab */
+  .tabs-area { padding: 10px 0 0; background: transparent; }
+  .segmented {
+    display: flex; background: var(--seg-bg);
+    border-radius: 10px; padding: 3px;
+  }
+  .seg-item {
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: 4px;
+    height: 36px; border-radius: 8px; border: none; background: transparent;
+    cursor: pointer; font-size: 12px; font-weight: 500; color: var(--text-secondary);
+    transition: all 0.2s; font-family: inherit;
+  }
+  .seg-item.active {
+    color: var(--text-primary); font-weight: 600;
+    background: var(--seg-active-bg);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .seg-count {
+    font-size: 10px; font-weight: 700; color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .seg-item.active .seg-count { color: var(--accent); }
+
+  /* 筛选栏 */
+  .filter-bar {
+    display: flex; gap: 6px; padding: 8px 0 0; align-items: center;
+  }
+  .filter-dropdown-btn {
+    display: flex; align-items: center; justify-content: space-between; gap: 4px;
+    flex: 1; height: 28px; padding: 0 10px; border-radius: 8px;
+    border: 1px solid var(--border-color); background: var(--input-bg);
+    color: var(--text-secondary); font-size: 11px; font-weight: 500;
+    cursor: pointer; font-family: inherit;
+  }
+
+  /* ===== 滚动区 ===== */
+  .scroll-area {
+    flex: 1; overflow-y: auto; overflow-x: hidden;
+    background: var(--app-bg);
+  }
+  .scroll-area::-webkit-scrollbar { width: 4px; }
+  .scroll-area::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 99px; }
+
+  /* ===== 卡片列表 ===== */
+  .card-list {
+    padding: 10px 16px 80px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+
+  /* ===== ★ 方案A核心：卡片覆盖模式 ===== */
+  .card-row {
+    position: relative;
+    /* ★ overflow:visible 让覆盖层不被裁剪 */
+    overflow: visible;
+  }
+  .card-row:hover { z-index: 50; }
+
+  .card {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    box-shadow: var(--card-shadow);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    height: 72px;
+    width: 100%;
+  }
+  .card::before {
+    content: '';
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 3px; border-radius: 0 3px 3px 0;
+  }
+  .card.card-text::before  { background: var(--accent); }
+  .card.card-image::before { background: #FF6482; }
+  .card.card-file::before  { background: #34C759; }
+  .card.card-code::before  { background: #BF5AF2; }
+  .card.card-pinned::before { background: #FFD60A; }
+
+  .card:hover {
+    box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+    transform: translateY(-2px) scale(1.008);
+  }
+  .card.selected {
+    background: var(--card-selected-bg);
+    border-color: var(--card-selected-border);
+    box-shadow: var(--card-selected-shadow), 0 4px 16px var(--accent-shadow);
+  }
+
+  .card-icon {
+    width: 42px; height: 42px; min-width: 42px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0;
+  }
+  .card-icon.bg-blue   { background: linear-gradient(135deg, #E8F1FB, #D6E8FA); }
+  .card-icon.bg-green  { background: linear-gradient(135deg, #E5F8EC, #D4F2DE); }
+  .card-icon.bg-pink   { background: linear-gradient(135deg, #FDE8EE, #FAD6DF); }
+  .card-icon.bg-purple { background: linear-gradient(135deg, #F0E8FB, #E5D6FA); }
+  .card-icon.card-img-thumb { overflow: hidden; padding: 0; }
+  .card-icon.card-img-thumb img {
+    width: 100%; height: 100%; object-fit: cover; border-radius: 12px;
+  }
+
+  .card-content { flex: 1; min-width: 0; overflow: hidden; }
+  .card-title {
+    font-size: 13px; font-weight: 600; color: var(--text-primary);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; text-overflow: ellipsis; line-height: 1.4;
+    word-break: break-word; max-height: 36px;
+  }
+  .card-sub {
+    font-size: 11px; color: var(--text-secondary); margin-top: 2px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .card-pin {
+    display: inline-flex; align-items: center; gap: 2px;
+    height: 16px; padding: 0 6px; border-radius: 4px;
+    font-size: 10px; font-weight: 600;
+    background: var(--accent-light); color: var(--accent);
+  }
+  .card-time {
+    font-size: 11px; color: var(--text-muted);
+    flex-shrink: 0; font-variant-numeric: tabular-nums;
+    transition: opacity 0.2s;
+  }
+  /* hover 时隐藏时间，让位给覆盖层 */
+  .card-row:hover .card-time { opacity: 0; }
+
+  /* ===== ★ 覆盖抽屉层 ===== */
+  .card-overlay {
+    position: absolute;
+    top: 0; right: 0;
+    width: 0; height: 100%;
+    background: var(--dialog-bg);
+    border-radius: 0 16px 16px 0;
+    border-left: 1px solid var(--border-color);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                padding 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 0.18s ease;
+    opacity: 0;
+    z-index: 5;
+    pointer-events: none;
+  }
+  .card-row:hover .card-overlay {
+    width: 220px;
+    padding: 10px 12px;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* 覆盖层 - 预览区 */
+  .overlay-preview { flex: 1; overflow: hidden; min-height: 0; margin-bottom: 8px; }
+  .overlay-preview-text {
+    font-size: 11px; color: var(--text-primary); line-height: 1.55;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden; white-space: pre-wrap; word-break: break-word;
+    user-select: text;
+  }
+  .overlay-preview-image {
+    width: 100%; min-height: 40px;
+    display: flex; align-items: center; justify-content: center;
+    background: #f8f9fb; border-radius: 8px; overflow: hidden;
+  }
+  .overlay-preview-image .img-preview {
+    width: 100%; height: 80px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 8px; color: white; font-size: 11px; gap: 6px;
+  }
+  .overlay-preview-file {
+    font-size: 11px; color: var(--text-secondary); line-height: 1.6;
+  }
+  .overlay-preview-code {
+    font-size: 10px; font-family: "Fira Code", monospace;
+    padding: 6px 8px; border-radius: 8px;
+    white-space: pre; overflow: hidden; line-height: 1.5;
+  }
+
+  /* 覆盖层 - 操作按钮 */
+  .overlay-actions {
+    display: flex; gap: 4px;
+    border-top: 1px solid var(--border-color);
+    padding-top: 8px; flex-shrink: 0;
+  }
+  .overlay-btn {
+    flex: 1;
+    display: inline-flex; align-items: center; justify-content: center; gap: 3px;
+    padding: 5px 6px; border-radius: 7px;
+    border: 1px solid var(--border-color); background: var(--card-bg);
+    cursor: pointer; font-size: 11px; font-weight: 500;
+    color: var(--text-primary); transition: all 0.15s ease;
+    white-space: nowrap; user-select: none; font-family: inherit;
+  }
+  .overlay-btn:hover { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
+  .overlay-btn:active { transform: scale(0.95); }
+  .overlay-btn.fav:hover { background: #FEF3C7; border-color: #F59E0B; color: #B45309; }
+  .overlay-btn.fav.active { background: #FEF3C7; border-color: #F59E0B; color: #B45309; }
+  .overlay-btn.danger:hover { background: var(--red-bg); border-color: var(--danger); color: var(--danger); }
+  .overlay-btn svg { flex-shrink: 0; }
+
+  /* ===== FAB ===== */
+  .fab-container {
+    position: fixed; bottom: 12px; left: 16px; right: 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px; z-index: 50;
+    background: var(--card-bg);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border-radius: 16px;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 -2px 16px rgba(0,0,0,0.06);
+  }
+  .fab-counter {
+    height: 28px; padding: 0 10px; border-radius: 8px;
+    display: flex; align-items: center; font-size: 11px; font-weight: 600;
+    border: none; color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+  .fab-counter .num { color: var(--accent); }
+  .fab-btn {
+    height: 38px; padding: 0 18px; border-radius: 12px;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 600; font-family: inherit;
+    background: var(--accent); color: #fff; border: none; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .fab-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px var(--accent-shadow); }
+
+  .icon-s { width: 13px; height: 13px; }
+
+  /* 提示标签 */
+  .plan-label {
+    position: absolute; top: 8px; right: 8px;
+    background: var(--accent); color: #fff;
+    padding: 3px 10px; border-radius: 8px;
+    font-size: 10px; font-weight: 700; z-index: 100;
+  }
+</style>
+</head>
+<body>
+
+<!-- ========== 方案 A：覆盖模式 ========== -->
+<div class="app-shell" style="position:relative;">
+  <span class="plan-label">方案 A</span>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-top">
+      <div class="header-title">
+        <span class="header-title-icon">P</span>
+        <span>PastePanda</span>
+      </div>
+      <div class="header-icons">
+        <button class="icon-btn">📝</button>
+        <button class="icon-btn">🧲</button>
+        <button class="icon-btn" title="设置">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg>
+        </button>
+        <button class="icon-btn">❓</button>
+        <button class="icon-btn" title="关于">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FACC15" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        </button>
+        <button class="icon-btn" title="最小化">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2"><path d="M5 12h14"/></svg>
+        </button>
+        <button class="icon-btn" title="关闭">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F87171" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="header-controls">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input class="search-input" type="text" placeholder="搜索剪贴板... (Enter 搜索)" value="React" readonly>
+      </div>
+    </div>
+
+    <div class="tabs-area">
+      <div class="segmented">
+        <button class="seg-item active">全部<span class="seg-count">7</span></button>
+        <button class="seg-item">📝 文本</button>
+        <button class="seg-item">🖼 图片</button>
+        <button class="seg-item">📁 文件</button>
+        <button class="seg-item">⭐ 收藏</button>
+      </div>
+    </div>
+
+    <div class="filter-bar">
+      <button class="filter-dropdown-btn">全部时间 ▾</button>
+      <button class="filter-dropdown-btn">全部来源 ▾</button>
+    </div>
+  </div>
+
+  <!-- 滚动区 -->
+  <div class="scroll-area">
+    <div class="card-list">
+
+      <!-- 1. 文本 -->
+      <div class="card-row">
+        <div class="card card-text">
+          <div class="card-icon bg-blue">🔤</div>
+          <div class="card-content">
+            <div class="card-title">React Server Components 深度解析与实践指南</div>
+            <div class="card-sub">VS Code</div>
+          </div>
+          <span class="card-time">3分钟前</span>
+          <!-- ★ 覆盖层 -->
+          <div class="card-overlay">
+            <div class="overlay-preview">
+              <div class="overlay-preview-text">React Server Components (RSC) 是 React 18 引入的新型组件模型，允许组件在服务端渲染，减少客户端 JavaScript 体积。</div>
+            </div>
+            <div class="overlay-actions">
+              <button class="overlay-btn fav" onclick="event.stopPropagation()">
+                <svg class="icon-s" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                收藏
+              </button>
+              <button class="overlay-btn" onclick="event.stopPropagation()">📋 复制</button>
+              <button class="overlay-btn danger" onclick="event.stopPropagation()">🗑</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. 链接 -->
+      <div class="card-row">
+        <div class="card card-text">
+          <div class="card-icon bg-green">🔗</div>
+          <div class="card-content">
+            <div class="card-title">https://github.com/facebook/react/releases/tag/v19</div>
+            <div class="card-sub">GitHub</div>
+          </div>
+          <span class="card-time">30分钟前</span>
+          <div class="card-overlay">
+            <div class="overlay-preview">
+              <div class="overlay-preview-text">🔗 URL 预览<br/>域名：github.com<br/>React 19 正式版发布</div>
+            </div>
+            <div class="overlay-actions">
+              <button class="overlay-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+              <button class="overlay-btn" onclick="event.stopPropagation()">📋 复制</button>
+              <button class="overlay-btn danger" onclick="event.stopPropagation()">🗑</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. 图片 -->
+      <div class="card-row">
+        <div class="card card-image">
+          <div class="card-icon bg-pink card-img-thumb">
+            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='42' height='42'%3E%3Crect fill='%23FF6482' width='42' height='42' rx='12'/%3E%3Ctext x='21' y='27' text-anchor='middle' fill='white' font-size='18'%3E🖼%3C/text%3E%3C/svg%3E" alt="">
+          </div>
+          <div class="card-content">
+            <div class="card-title">screenshot_2026-07-02.png</div>
+            <div class="card-sub">截图工具</div>
+          </div>
+          <span class="card-time">5分钟前</span>
+          <div class="card-overlay">
+            <div class="overlay-preview">
+              <div class="overlay-preview-image">
+                <div class="img-preview" style="background:linear-gradient(135deg,#667eea,#764ba2);">
+                  <span style="font-size:22px;">🖼️</span>
+                  <div><div style="font-weight:600;">3840×2160</div><div style="font-size:10px;opacity:0.8;">PNG · 2.4 MB</div></div>
+                </div>
+              </div>
+            </div>
+            <div class="overlay-actions">
+              <button class="overlay-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+              <button class="overlay-btn" onclick="event.stopPropagation()">📋 复制</button>
+              <button class="overlay-btn danger" onclick="event.stopPropagation()">🗑</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. 文件 -->
+      <div class="card-row">
+        <div class="card card-file">
+          <div class="card-icon bg-green">📄</div>
+          <div class="card-content">
+            <div class="card-title">项目需求文档_v2.pdf</div>
+            <div class="card-sub">文件管理器</div>
+          </div>
+          <span class="card-time">昨天</span>
+          <div class="card-overlay">
+            <div class="overlay-preview">
+              <div class="overlay-preview-file">
+                <div>📄 需求文档_v2.pdf</div>
+                <div>📄 技术方案.docx</div>
+                <div>📊 数据报表.xlsx</div>
+              </div>
+            </div>
+            <div class="overlay-actions">
+              <button class="overlay-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+              <button class="overlay-btn" onclick="event.stopPropagation()">📋 复制路径</button>
+              <button class="overlay-btn danger" onclick="event.stopPropagation()">🗑</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5. 代码 -->
+      <div class="card-row">
+        <div class="card card-code">
+          <div class="card-icon bg-purple">{ }</div>
+          <div class="card-content">
+            <div class="card-title">const fetchData = async (url) => { const res = await...</div>
+            <div class="card-sub">VS Code</div>
+          </div>
+          <span class="card-time">10分钟前</span>
+          <div class="card-overlay">
+            <div class="overlay-preview">
+              <div class="overlay-preview-code" style="background:#1e1e2e;color:#cdd6f4;">
+<span style="color:#cba6f7">const</span> <span style="color:#89b4fa">fetch</span> = <span style="color:#cba6f7">async</span> (url) => {
+  <span style="color:#cba6f7">const</span> r = <span style="color:#cba6f7">await</span> <span style="color:#89b4fa">fetch</span>(url);
+  <span style="color:#cba6f7">return</span> r.<span style="color:#89b4fa">json</span>();
+};</div>
+            </div>
+            <div class="overlay-actions">
+              <button class="overlay-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+              <button class="overlay-btn" onclick="event.stopPropagation()">📋 复制</button>
+              <button class="overlay-btn danger" onclick="event.stopPropagation()">🗑</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6. 置顶+收藏 -->
+      <div class="card-row">
+        <div class="card card-pinned">
+          <div class="card-icon bg-blue">🔤</div>
+          <div class="card-content">
+            <div class="card-title">Tailwind CSS v4 新特性一览</div>
+            <div class="card-sub">
+              <span class="card-pin">📌 置顶</span>
+              Chrome
+            </div>
+          </div>
+          <span class="card-time">1小时前</span>
+          <div class="card-overlay">
+            <div class="overlay-preview">
+              <div class="overlay-preview-text">Tailwind CSS v4 带来全新 Oxide 引擎，性能提升 10 倍。新增 CSS-first 配置方式。</div>
+            </div>
+            <div class="overlay-actions">
+              <button class="overlay-btn fav active" onclick="event.stopPropagation()">
+                <svg class="icon-s" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                已收藏
+              </button>
+              <button class="overlay-btn" onclick="event.stopPropagation()">📋 复制</button>
+              <button class="overlay-btn danger" onclick="event.stopPropagation()">🗑</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 7. 选中态 -->
+      <div class="card-row">
+        <div class="card card-text selected">
+          <div class="card-icon bg-blue">🔤</div>
+          <div class="card-content">
+            <div class="card-title">这是一条被选中的文本记录</div>
+            <div class="card-sub">Notion</div>
+          </div>
+          <span class="card-time">刚刚</span>
+          <div class="card-overlay">
+            <div class="overlay-preview">
+              <div class="overlay-preview-text">选中态 + hover 覆盖层同时生效，互不干扰。覆盖层从卡片右侧内部滑出。</div>
+            </div>
+            <div class="overlay-actions">
+              <button class="overlay-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+              <button class="overlay-btn" onclick="event.stopPropagation()">📋 复制</button>
+              <button class="overlay-btn danger" onclick="event.stopPropagation()">🗑</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- FAB -->
+  <div class="fab-container">
+    <button class="fab-counter">
+      📋 共 <span class="num">7</span> 条记录
+    </button>
+    <button class="fab-btn">⚡ 依次粘贴</button>
+  </div>
+</div>
+
+<!-- ========== 方案 C：Popover 气泡弹窗 ========== -->
+<div class="app-shell" style="position:relative;">
+  <span class="plan-label" style="background:#8B5CF6;">方案 C</span>
+
+  <!-- Header (同上) -->
+  <div class="header">
+    <div class="header-top">
+      <div class="header-title">
+        <span class="header-title-icon">P</span>
+        <span>PastePanda</span>
+      </div>
+      <div class="header-icons">
+        <button class="icon-btn">📝</button>
+        <button class="icon-btn">🧲</button>
+        <button class="icon-btn" title="设置">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg>
+        </button>
+        <button class="icon-btn">❓</button>
+        <button class="icon-btn" title="关于">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FACC15" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        </button>
+        <button class="icon-btn" title="最小化">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2"><path d="M5 12h14"/></svg>
+        </button>
+        <button class="icon-btn" title="关闭">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F87171" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="header-controls">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input class="search-input" type="text" placeholder="搜索剪贴板... (Enter 搜索)" value="React" readonly>
+      </div>
+    </div>
+
+    <div class="tabs-area">
+      <div class="segmented">
+        <button class="seg-item active">全部<span class="seg-count">7</span></button>
+        <button class="seg-item">📝 文本</button>
+        <button class="seg-item">🖼 图片</button>
+        <button class="seg-item">📁 文件</button>
+        <button class="seg-item">⭐ 收藏</button>
+      </div>
+    </div>
+
+    <div class="filter-bar">
+      <button class="filter-dropdown-btn">全部时间 ▾</button>
+      <button class="filter-dropdown-btn">全部来源 ▾</button>
+    </div>
+  </div>
+
+  <!-- 滚动区 -->
+  <div class="scroll-area" style="overflow-x:visible;">
+    <div class="card-list">
+
+      <!-- ★ 方案C 专用样式（内联在这里） -->
+      <style>
+        /* Popover 容器 - absolute 悬浮，脱离卡片 */
+        .c-card-row { position: relative; overflow: visible; }
+        .c-card-row:hover { z-index: 50; }
+
+        .c-card {
+          display: flex; align-items: center; gap: 12px;
+          padding: 12px 16px;
+          background: var(--card-bg);
+          border: 1px solid var(--card-border);
+          border-radius: 16px;
+          box-shadow: var(--card-shadow);
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+          cursor: pointer; position: relative; overflow: hidden;
+          height: 72px; width: 100%;
+        }
+        .c-card::before {
+          content: '';
+          position: absolute; left: 0; top: 0; bottom: 0;
+          width: 3px; border-radius: 0 3px 3px 0;
+        }
+        .c-card.c-text::before  { background: var(--accent); }
+        .c-card.c-image::before { background: #FF6482; }
+        .c-card.c-file::before  { background: #34C759; }
+        .c-card.c-code::before  { background: #BF5AF2; }
+        .c-card.c-pinned::before { background: #FFD60A; }
+        .c-card:hover {
+          box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+          transform: translateY(-2px) scale(1.008);
+        }
+        .c-card.selected {
+          background: var(--card-selected-bg);
+          border-color: var(--card-selected-border);
+          box-shadow: var(--card-selected-shadow), 0 4px 16px var(--accent-shadow);
+        }
+        .c-card-icon {
+          width: 42px; height: 42px; min-width: 42px;
+          border-radius: 12px; display: flex; align-items: center;
+          justify-content: center; font-size: 18px; flex-shrink: 0;
+        }
+        .c-card-content { flex: 1; min-width: 0; overflow: hidden; }
+        .c-card-title {
+          font-size: 13px; font-weight: 600; color: var(--text-primary);
+          display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+          overflow: hidden; text-overflow: ellipsis; line-height: 1.4;
+          word-break: break-word; max-height: 36px;
+        }
+        .c-card-sub {
+          font-size: 11px; color: var(--text-secondary); margin-top: 2px;
+          display: flex; align-items: center; gap: 6px;
+        }
+        .c-card-time {
+          font-size: 11px; color: var(--text-muted);
+          flex-shrink: 0; font-variant-numeric: tabular-nums;
+        }
+
+        /* ★ Popover 气泡弹窗 */
+        .popover {
+          position: absolute;
+          /* 默认显示在卡片上方 */
+          bottom: calc(100% + 8px);
+          left: 50%;
+          transform: translateX(-50%);
+          width: 280px;
+          background: var(--dialog-bg);
+          border: 1px solid var(--border-color);
+          border-radius: 14px;
+          box-shadow: 0 12px 40px rgba(0,0,0,0.15), 0 2px 8px rgba(0,0,0,0.08);
+          padding: 14px;
+          z-index: 60;
+          opacity: 0;
+          visibility: hidden;
+          transition: opacity 0.2s ease, visibility 0.2s ease;
+          pointer-events: none;
+        }
+        /* 小三角箭头 */
+        .popover::after {
+          content: '';
+          position: absolute;
+          top: 100%;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 0; height: 0;
+          border-left: 8px solid transparent;
+          border-right: 8px solid transparent;
+          border-top: 8px solid var(--dialog-bg);
+          filter: drop-shadow(0 1px 1px rgba(0,0,0,0.08));
+        }
+
+        /* 第一项和最后一项：popover 方向翻转 */
+        .c-card-row:first-child .popover {
+          bottom: auto;
+          top: calc(100% + 8px);
+        }
+        .c-card-row:first-child .popover::after {
+          top: auto; bottom: 100%;
+          border-top: none;
+          border-bottom: 8px solid var(--dialog-bg);
+        }
+
+        .c-card-row:hover .popover {
+          opacity: 1;
+          visibility: visible;
+          pointer-events: auto;
+        }
+
+        .popover-preview { margin-bottom: 10px; }
+        .popover-text {
+          font-size: 12px; color: var(--text-primary); line-height: 1.65;
+          display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical;
+          overflow: hidden; white-space: pre-wrap; word-break: break-word;
+          user-select: text;
+        }
+        .popover-image-preview {
+          width: 100%; height: 100px;
+          display: flex; align-items: center; justify-content: center;
+          border-radius: 10px; color: white; font-size: 12px; gap: 8px;
+        }
+        .popover-file { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+        .popover-code {
+          font-size: 11px; font-family: "Fira Code", monospace;
+          padding: 8px 10px; border-radius: 8px;
+          white-space: pre; overflow: hidden; line-height: 1.5;
+        }
+
+        .popover-actions {
+          display: flex; gap: 6px;
+          border-top: 1px solid var(--border-color);
+          padding-top: 10px;
+        }
+        .popover-btn {
+          flex: 1;
+          display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+          padding: 7px 8px; border-radius: 8px;
+          border: 1px solid var(--border-color); background: var(--card-bg);
+          cursor: pointer; font-size: 12px; font-weight: 500;
+          color: var(--text-primary); transition: all 0.15s;
+          white-space: nowrap; font-family: inherit;
+        }
+        .popover-btn:hover { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
+        .popover-btn:active { transform: scale(0.96); }
+        .popover-btn.fav:hover { background: #FEF3C7; border-color: #F59E0B; color: #B45309; }
+        .popover-btn.fav.active { background: #FEF3C7; border-color: #F59E0B; color: #B45309; }
+        .popover-btn.danger:hover { background: var(--red-bg); border-color: var(--danger); color: var(--danger); }
+      </style>
+
+      <!-- 1. 文本（首项，popover 显示在下方） -->
+      <div class="c-card-row">
+        <div class="c-card c-text">
+          <div class="c-card-icon bg-blue">🔤</div>
+          <div class="c-card-content">
+            <div class="c-card-title">React Server Components 深度解析与实践指南</div>
+            <div class="c-card-sub">VS Code</div>
+          </div>
+          <span class="c-card-time">3分钟前</span>
+        </div>
+        <!-- ★ Popover -->
+        <div class="popover">
+          <div class="popover-preview">
+            <div class="popover-text">React Server Components (RSC) 是 React 18 引入的新型组件模型，允许组件在服务端渲染，减少客户端 JavaScript 体积。本文深入探讨 RSC 的工作原理与最佳实践。</div>
+          </div>
+          <div class="popover-actions">
+            <button class="popover-btn fav" onclick="event.stopPropagation()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              收藏
+            </button>
+            <button class="popover-btn" onclick="event.stopPropagation()">📋 复制</button>
+            <button class="popover-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. 链接 -->
+      <div class="c-card-row">
+        <div class="c-card c-text">
+          <div class="c-card-icon bg-green">🔗</div>
+          <div class="c-card-content">
+            <div class="c-card-title">https://github.com/facebook/react/releases/tag/v19</div>
+            <div class="c-card-sub">GitHub</div>
+          </div>
+          <span class="c-card-time">30分钟前</span>
+        </div>
+        <div class="popover">
+          <div class="popover-preview">
+            <div class="popover-text">🔗 URL 预览<br/><br/>域名：github.com<br/>路径：/facebook/react/releases/tag/v19<br/><br/>React 19 正式版发布，带来 Server Components、Actions 等重大更新。</div>
+          </div>
+          <div class="popover-actions">
+            <button class="popover-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+            <button class="popover-btn" onclick="event.stopPropagation()">📋 复制</button>
+            <button class="popover-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. 图片 -->
+      <div class="c-card-row">
+        <div class="c-card c-image">
+          <div class="c-card-icon bg-pink card-img-thumb">
+            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='42' height='42'%3E%3Crect fill='%23FF6482' width='42' height='42' rx='12'/%3E%3Ctext x='21' y='27' text-anchor='middle' fill='white' font-size='18'%3E🖼%3C/text%3E%3C/svg%3E" alt="">
+          </div>
+          <div class="c-card-content">
+            <div class="c-card-title">screenshot_2026-07-02.png</div>
+            <div class="c-card-sub">截图工具</div>
+          </div>
+          <span class="c-card-time">5分钟前</span>
+        </div>
+        <div class="popover">
+          <div class="popover-preview">
+            <div class="popover-image-preview" style="background:linear-gradient(135deg,#667eea,#764ba2);">
+              <span style="font-size:28px;">🖼️</span>
+              <div>
+                <div style="font-weight:600;">screenshot_2026-07-02.png</div>
+                <div style="font-size:11px;opacity:0.8;">3840×2160 · PNG · 2.4 MB</div>
+              </div>
+            </div>
+          </div>
+          <div class="popover-actions">
+            <button class="popover-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+            <button class="popover-btn" onclick="event.stopPropagation()">📋 复制</button>
+            <button class="popover-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. 文件 -->
+      <div class="c-card-row">
+        <div class="c-card c-file">
+          <div class="c-card-icon bg-green">📄</div>
+          <div class="c-card-content">
+            <div class="c-card-title">项目需求文档_v2.pdf</div>
+            <div class="c-card-sub">文件管理器</div>
+          </div>
+          <span class="c-card-time">昨天</span>
+        </div>
+        <div class="popover">
+          <div class="popover-preview">
+            <div class="popover-file">
+              <div>📄 项目需求文档_v2.pdf</div>
+              <div>📄 技术方案评审记录.docx</div>
+              <div>📊 Q3季度数据报表.xlsx</div>
+              <div>🖼 原型图_final.png</div>
+            </div>
+          </div>
+          <div class="popover-actions">
+            <button class="popover-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+            <button class="popover-btn" onclick="event.stopPropagation()">📋 复制路径</button>
+            <button class="popover-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5. 代码 -->
+      <div class="c-card-row">
+        <div class="c-card c-code">
+          <div class="c-card-icon bg-purple">{ }</div>
+          <div class="c-card-content">
+            <div class="c-card-title">const fetchData = async (url) => { const res = await...</div>
+            <div class="c-card-sub">VS Code</div>
+          </div>
+          <span class="c-card-time">10分钟前</span>
+        </div>
+        <div class="popover">
+          <div class="popover-preview">
+            <div class="popover-code" style="background:#1e1e2e;color:#cdd6f4;">
+<span style="color:#cba6f7">const</span> <span style="color:#89b4fa">fetchData</span> = <span style="color:#cba6f7">async</span> (<span style="color:#f38ba8">url</span>) => {
+  <span style="color:#cba6f7">const</span> res = <span style="color:#cba6f7">await</span> <span style="color:#89b4fa">fetch</span>(url);
+  <span style="color:#cba6f7">return</span> res.<span style="color:#89b4fa">json</span>();
+};</div>
+          </div>
+          <div class="popover-actions">
+            <button class="popover-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+            <button class="popover-btn" onclick="event.stopPropagation()">📋 复制</button>
+            <button class="popover-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6. 置顶+收藏 -->
+      <div class="c-card-row">
+        <div class="c-card c-pinned">
+          <div class="c-card-icon bg-blue">🔤</div>
+          <div class="c-card-content">
+            <div class="c-card-title">Tailwind CSS v4 新特性一览</div>
+            <div class="c-card-sub">
+              <span class="card-pin">📌 置顶</span>
+              Chrome
+            </div>
+          </div>
+          <span class="c-card-time">1小时前</span>
+        </div>
+        <div class="popover">
+          <div class="popover-preview">
+            <div class="popover-text">Tailwind CSS v4 带来了全新的 Oxide 引擎，性能提升 10 倍以上。新增 CSS-first 配置方式，无需 tailwind.config.js。</div>
+          </div>
+          <div class="popover-actions">
+            <button class="popover-btn fav active" onclick="event.stopPropagation()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              已收藏
+            </button>
+            <button class="popover-btn" onclick="event.stopPropagation()">📋 复制</button>
+            <button class="popover-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 7. 选中态 -->
+      <div class="c-card-row">
+        <div class="c-card c-text selected">
+          <div class="c-card-icon bg-blue">🔤</div>
+          <div class="c-card-content">
+            <div class="c-card-title">这是一条被选中的文本记录</div>
+            <div class="c-card-sub">Notion</div>
+          </div>
+          <span class="c-card-time">刚刚</span>
+        </div>
+        <div class="popover">
+          <div class="popover-preview">
+            <div class="popover-text">选中态 + hover Popover 同时生效。Popover 悬浮在卡片上方，不影响卡片自身布局。</div>
+          </div>
+          <div class="popover-actions">
+            <button class="popover-btn fav" onclick="event.stopPropagation()">⭐ 收藏</button>
+            <button class="popover-btn" onclick="event.stopPropagation()">📋 复制</button>
+            <button class="popover-btn danger" onclick="event.stopPropagation()">🗑 删除</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- FAB -->
+  <div class="fab-container">
+    <button class="fab-counter">
+      📋 共 <span class="num">7</span> 条记录
+    </button>
+    <button class="fab-btn">⚡ 依次粘贴</button>
+  </div>
+</div>
+
+</body>
+</html>

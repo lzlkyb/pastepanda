@@ -626,17 +626,24 @@ export function CardList() {
             </div>
             {!searchKeyword && filterType === "all" && (
               <div className="guide-cards">
+                <div className="guide-welcome">
+                  <span className="guide-welcome-emoji">👋</span>
+                  <span>你的剪贴板助手已就绪，试试复制一段文字吧</span>
+                </div>
                 <div className="guide-card">
                   <div className="guide-icon" style={{ background: "var(--accent-light)" }}><Copy size={18} style={{ color: "var(--accent)" }} /></div>
                   <div className="guide-text"><div className="guide-label">自动记录</div><div className="guide-desc">Ctrl+C 复制内容自动保存</div></div>
                 </div>
                 <div className="guide-card">
                   <div className="guide-icon" style={{ background: "var(--accent-light)" }}><Search size={18} style={{ color: "var(--accent)" }} /></div>
-                  <div className="guide-text"><div className="guide-label">快速唤出</div><div className="guide-desc">Ctrl+Shift+V 随时打开</div></div>
+                  <div className="guide-text"><div className="guide-label">搜索查找</div><div className="guide-desc">输入关键词快速定位</div></div>
                 </div>
                 <div className="guide-card">
                   <div className="guide-icon" style={{ background: "var(--accent-light)" }}><Zap size={18} style={{ color: "var(--accent)" }} /></div>
                   <div className="guide-text"><div className="guide-label">依次粘贴</div><div className="guide-desc">Ctrl+Q 逐条粘贴</div></div>
+                </div>
+                <div className="guide-footer-hint">
+                  💡 按 <kbd>?</kbd> 查看所有快捷键 · 点击右上角 <span style={{ color: "var(--accent)" }}>❓</span> 打开帮助
                 </div>
               </div>
             )}

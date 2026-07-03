@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>版本号 & 更新状态 — 6套主题预览</title>
+<style>
+/* ===== 基础重置 ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #F0F2F5;
+  color: #1a1a2e;
+  padding: 24px;
+  min-height: 100vh;
+}
+h2 { font-size: 14px; font-weight: 700; margin-bottom: 16px; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }
+h3 { font-size: 11px; font-weight: 600; color: #888; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.3px; }
+section { margin-bottom: 32px; }
+section:last-child { margin-bottom: 0; }
+
+/* ===== 主题卡片网格 ===== */
+.themes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 20px;
+}
+.theme-card {
+  border-radius: 16px;
+  padding: 20px 24px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  transition: box-shadow 0.2s;
+}
+.theme-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+.theme-label {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 18px;
+  font-size: 13px; font-weight: 700; color: var(--text-secondary, #888);
+}
+.theme-label .dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--accent, #5B6AF0);
+}
+
+/* ===== 模拟 TopBar 环境 ===== */
+.topbar-row {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  padding: 8px 12px; border-radius: 10px;
+  background: var(--header-bg-start, #f8f9fb);
+  border: 1px solid var(--border-color, #e5e7eb);
+}
+.topbar-title {
+  font-size: 12px; font-weight: 600; color: var(--text-primary, #111);
+  display: flex; align-items: center; gap: 6px;
+}
+.topbar-icon {
+  width: 18px; height: 18px; border-radius: 5px;
+  background: var(--accent, #5B6AF0); opacity: 0.8;
+}
+
+/* ===== 模拟 AboutDialog 环境 ===== */
+.about-row {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+  padding: 12px 16px; border-radius: 12px;
+  background: var(--dialog-bg, #fff);
+  border: 1px solid var(--border-color, #e5e7eb);
+}
+.about-icon-sim {
+  width: 48px; height: 48px; border-radius: 12px;
+  background: var(--accent, #5B6AF0); opacity: 0.15;
+  flex-shrink: 0;
+}
+.about-name-sim { font-size: 16px; font-weight: 800; color: var(--text-primary); }
+.about-ver-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+
+/* ===== Banner 卡片 ===== */
+.banner-row {
+  padding: 14px 16px; border-radius: 12px; margin-bottom: 10px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  display: flex; align-items: center; gap: 12px;
+}
+.banner-row:last-child { margin-bottom: 0; }
+
+/* ===== CSS 变量定义 ===== */
+:root {
+  /* 回退值 */
+  --accent: #5B6AF0; --accent-light: #EEF0FF; --accent-shadow: rgba(91,106,240,0.2);
+  --green: #16A34A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+  --orange: #EA580C; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
+  --red-bg: #FEF2F2; --danger: #DC2626;
+  --text-primary: #0F172A; --text-secondary: #64748B; --text-muted: #94A3B8;
+  --border-color: #E0E4EB; --section-bg: #F0F4F8; --hover: #E8ECF2;
+  --version-badge-gradient: linear-gradient(135deg, #5B6AF0, #7C5CF0);
+  --version-badge-shadow: rgba(91,106,240,0.35);
+  --update-badge-gradient: linear-gradient(135deg, #5B6AF0, #7C5CF0);
+  --update-badge-shadow: rgba(91,106,240,0.4);
+}
+
+/* 1. light */
+[data-theme="light"] {
+  --app-bg: #F5F7FA; --header-bg-start: #f8f9fb;
+  --dialog-bg: #fff; --section-bg: #F0F4F8;
+  --text-primary: #0F172A; --text-secondary: #64748B; --text-muted: #94A3B8;
+  --border-color: #E0E4EB; --hover: #E8ECF2;
+  --accent: #0284C7; --accent-light: #E0F2FE;
+  --green: #16A34A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+  --orange: #EA580C; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
+  --red-bg: #FEF2F2; --danger: #DC2626;
+  --version-badge-gradient: linear-gradient(135deg, #0284C7, #0369A1);
+  --version-badge-shadow: rgba(2,132,199,0.35);
+  --update-badge-gradient: linear-gradient(135deg, #0284C7, #0369A1);
+  --update-badge-shadow: rgba(2,132,199,0.4);
+}
+
+/* 2. midnight */
+[data-theme="midnight"] {
+  --app-bg: #09090B; --header-bg-start: #18181B;
+  --dialog-bg: #18181B; --section-bg: #0F0F11;
+  --text-primary: #E4E4E7; --text-secondary: #A1A1AA; --text-muted: #71717A;
+  --border-color: #27272A; --hover: #1F1F23;
+  --accent: #818CF8; --accent-light: #1E1B4B;
+  --green: #4ADE80; --green-bg: #052E16; --green-border: #166534;
+  --orange: #FB923C; --orange-bg: #431407; --orange-border: #9A3412;
+  --red-bg: #450A0A; --danger: #F87171;
+  --version-badge-gradient: linear-gradient(135deg, #818CF8, #6366F1);
+  --version-badge-shadow: rgba(129,140,248,0.35);
+  --update-badge-gradient: linear-gradient(135deg, #818CF8, #6366F1);
+  --update-badge-shadow: rgba(129,140,248,0.4);
+}
+
+/* 3. forest */
+[data-theme="forest"] {
+  --app-bg: #F2F7F5; --header-bg-start: #fff;
+  --dialog-bg: #fff; --section-bg: #ECFDF5;
+  --text-primary: #171717; --text-secondary: #78716C; --text-muted: #A8A29E;
+  --border-color: #D1D9D3; --hover: #E8EDE8;
+  --accent: #059669; --accent-light: #ECFDF5;
+  --green: #16A34A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+  --orange: #EA580C; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
+  --red-bg: #FEF2F2; --danger: #DC2626;
+  --version-badge-gradient: linear-gradient(135deg, #059669, #047857);
+  --version-badge-shadow: rgba(5,150,105,0.35);
+  --update-badge-gradient: linear-gradient(135deg, #059669, #047857);
+  --update-badge-shadow: rgba(5,150,105,0.4);
+}
+
+/* 4. blossom */
+[data-theme="blossom"] {
+  --app-bg: #FFFBFD; --header-bg-start: #fff;
+  --dialog-bg: #fff; --section-bg: #FDF2F8;
+  --text-primary: #1F1A1C; --text-secondary: #A68A96; --text-muted: #C4B5BC;
+  --border-color: #F3E8ED; --hover: #F5E8F0;
+  --accent: #EC4899; --accent-light: #FCE7F3;
+  --green: #16A34A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+  --orange: #EA580C; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
+  --red-bg: #FEF2F2; --danger: #DC2626;
+  --version-badge-gradient: linear-gradient(135deg, #EC4899, #DB2777);
+  --version-badge-shadow: rgba(236,72,153,0.35);
+  --update-badge-gradient: linear-gradient(135deg, #EC4899, #DB2777);
+  --update-badge-shadow: rgba(236,72,153,0.4);
+}
+
+/* 5. terminal */
+[data-theme="terminal"] {
+  --app-bg: #0A0A0A; --header-bg-start: #141414;
+  --dialog-bg: #141414; --section-bg: #0F0F0F;
+  --text-primary: #E5E5E5; --text-secondary: #A3A3A3; --text-muted: #737373;
+  --border-color: #262626; --hover: #1A1A1A;
+  --accent: #22C55E; --accent-light: #052E16;
+  --green: #4ADE80; --green-bg: #052E16; --green-border: #166534;
+  --orange: #FB923C; --orange-bg: #431407; --orange-border: #9A3412;
+  --red-bg: #450A0A; --danger: #F87171;
+  --version-badge-gradient: linear-gradient(135deg, #22C55E, #16A34A);
+  --version-badge-shadow: rgba(34,197,94,0.35);
+  --update-badge-gradient: linear-gradient(135deg, #22C55E, #16A34A);
+  --update-badge-shadow: rgba(34,197,94,0.4);
+}
+
+/* 6. sunset */
+[data-theme="sunset"] {
+  --app-bg: #1C1410; --header-bg-start: #281E18;
+  --dialog-bg: #281E18; --section-bg: #1F1610;
+  --text-primary: #F5F0EB; --text-secondary: #B8A99A; --text-muted: #8B7B6B;
+  --border-color: #3D3028; --hover: #33261E;
+  --accent: #F97316; --accent-light: #431407;
+  --green: #4ADE80; --green-bg: #052E16; --green-border: #166534;
+  --orange: #FB923C; --orange-bg: #431407; --orange-border: #9A3412;
+  --red-bg: #450A0A; --danger: #F87171;
+  --version-badge-gradient: linear-gradient(135deg, #F97316, #EA580C);
+  --version-badge-shadow: rgba(249,115,22,0.35);
+  --update-badge-gradient: linear-gradient(135deg, #F97316, #EA580C);
+  --update-badge-shadow: rgba(249,115,22,0.4);
+}
+
+/* ===== 组件样式（复制自 app.css）===== */
+.version-badge {
+  display: inline-flex; align-items: center;
+  font-family: "SF Mono","Fira Code","Consolas",monospace;
+  font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: 7px;
+  background: var(--version-badge-gradient); color: #fff;
+  letter-spacing: 0.3px; white-space: nowrap; user-select: none;
+  box-shadow: 0 2px 8px var(--version-badge-shadow);
+}
+.version-badge--compact {
+  font-size: 9px; padding: 2px 8px;
+  box-shadow: 0 1px 5px var(--version-badge-shadow);
+}
+.version-badge-wrapper {
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.header-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: "SF Mono","Fira Code","Consolas",monospace;
+  font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: 7px;
+  color: #fff; letter-spacing: 0.3px; white-space: nowrap; user-select: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15); border: none; cursor: default;
+}
+.header-badge-update {
+  background: var(--update-badge-gradient);
+  box-shadow: 0 2px 10px var(--update-badge-shadow);
+  cursor: pointer; animation: badge-pulse 2s infinite;
+}
+.header-badge-update:hover { filter: brightness(1.15); }
+.header-badge-downloading {
+  background: var(--accent-light); color: var(--accent); box-shadow: none;
+}
+.header-badge-ready {
+  background: var(--update-badge-gradient);
+  box-shadow: 0 2px 10px var(--update-badge-shadow);
+  cursor: pointer; animation: badge-pulse 2s infinite;
+}
+.header-badge-ready:hover { filter: brightness(1.15); }
+
+/* update banner */
+.update-banner {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px; border-radius: 12px; width: 100%;
+  border: 1px solid var(--border-color);
+}
+.update-banner-idle, .update-banner-checking { background: var(--section-bg); }
+.update-banner-available { background: var(--accent-light); border-color: var(--accent); }
+.update-banner-downloading { background: var(--section-bg); flex-direction: column; align-items: stretch; gap: 8px; }
+.update-banner-ready { background: var(--green-bg); border-color: var(--green); }
+.update-banner-error { background: var(--red-bg); border-color: var(--danger); }
+.update-banner-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.update-banner-desc { font-size: 11px; color: var(--text-muted); margin-top: 2px; line-height: 1.4; }
+.update-banner-btn {
+  padding: 6px 14px; border-radius: 8px; border: none; font-size: 12px; font-weight: 600;
+  cursor: pointer; display: flex; align-items: center; gap: 4px;
+  flex-shrink: 0; white-space: nowrap; transition: all 0.15s;
+}
+/* idle/checking/downloading — 描边 */
+.update-banner-idle .update-banner-btn,
+.update-banner-checking .update-banner-btn,
+.update-banner-downloading .update-banner-btn {
+  background: transparent; color: var(--text-secondary); border: 1px solid var(--border-color);
+}
+/* available/ready/error — 实心 */
+.update-banner-available .update-banner-btn,
+.update-banner-ready .update-banner-btn,
+.update-banner-error .update-banner-btn {
+  background: var(--accent); color: #fff;
+}
+
+/* 进度条 */
+.update-progress-bar {
+  width: 100%; height: 4px; border-radius: 2px;
+  background: var(--border-color); overflow: hidden;
+}
+.update-progress-fill {
+  height: 100%; border-radius: 2px; background: var(--accent);
+}
+.update-progress-indeterminate {
+  width: 40% !important;
+  animation: progress-indeterminate 1.5s ease-in-out infinite;
+}
+@keyframes progress-indeterminate {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(250%); }
+  100% { transform: translateX(-100%); }
+}
+
+/* about version status */
+.about-version-status {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px;
+}
+.about-version-status.latest {
+  background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border);
+}
+.about-version-status.update {
+  background: var(--orange-bg); color: var(--orange); border: 1px solid var(--orange-border);
+}
+.about-status-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+}
+.about-status-dot.green { background: var(--green); }
+.about-status-dot.orange { background: var(--orange); animation: about-dot-pulse 2s infinite; }
+
+@keyframes badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+@keyframes about-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spin-icon { animation: spin 1s linear infinite; display: inline-block; }
+
+/* ===== 提示标签 ===== */
+.tag { font-size: 9px; font-weight: 600; padding: 1px 6px; border-radius: 4px; margin-left: 4px; }
+.tag-new { background: var(--accent-light); color: var(--accent); }
+.tag-ok { background: var(--green-bg); color: var(--green); }
+.tag-warn { background: var(--orange-bg); color: var(--orange); }
+
+/* ===== 图例 ===== */
+.legend {
+  display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px;
+  padding: 12px 16px; background: #fff; border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+}
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #666; }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+</style>
+</head>
+<body>
+
+<h2 style="margin-bottom:16px;">🔍 版本号 & 更新状态 — 6套主题全预览</h2>
+
+<!-- 图例 -->
+<div class="legend">
+  <div class="legend-item"><span class="legend-dot" style="background:#0284C7"></span> light 浅蓝</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#818CF8"></span> midnight 靛紫</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#059669"></span> forest 翠绿</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#EC4899"></span> blossom 樱花</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#22C55E"></span> terminal 终端</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#F97316"></span> sunset 日落</div>
+</div>
+
+<!-- ====== 区域 1：TopBar 版本徽章 ====== -->
+<section>
+  <h2>📍 TopBar — 版本号徽章（idle / checking / error / compact）</h2>
+  <div class="themes-grid">
+    <script>
+      const themes = ['light','midnight','forest','blossom','terminal','sunset'];
+      const themeNames = { light:'☀️ light 浅色', midnight:'🌙 midnight 午夜', forest:'🌿 forest 森林', blossom:'🌸 blossom 樱花', terminal:'💻 terminal 终端', sunset:'🌅 sunset 日落' };
+      themes.forEach(t => {
+        document.write('<div class="theme-card" data-theme="'+t+'">');
+        document.write('<div class="theme-label"><span class="dot"></span>'+themeNames[t]+'</div>');
+
+        // TopBar idle — 正常版本号
+        document.write('<h3>TopBar · idle（正常版本号）</h3>');
+        document.write('<div class="topbar-row">');
+        document.write('<div class="topbar-icon"></div>');
+        document.write('<span class="topbar-title">PastePanda <span class="version-badge-wrapper"><span class="version-badge">v5.0.84</span></span></span>');
+        document.write('</div>');
+
+        // TopBar compact — 紧凑版
+        document.write('<h3>TopBar · compact（设置页脚/TrayPopup）</h3>');
+        document.write('<div class="topbar-row">');
+        document.write('<span style="font-size:11px;color:var(--text-muted)">PastePanda</span>');
+        document.write('<span class="version-badge version-badge--compact">v5.0.84</span>');
+        document.write('</div>');
+
+        // checking 状态
+        document.write('<h3>TopBar · checking（检查更新中）</h3>');
+        document.write('<div class="topbar-row">');
+        document.write('<span class="version-badge-wrapper"><span class="spin-icon" style="color:var(--text-muted);font-size:10px;">⟳</span><span class="version-badge">v5.0.84</span></span>');
+        document.write('</div>');
+
+        // error 状态
+        document.write('<h3>TopBar · error（检查失败）</h3>');
+        document.write('<div class="topbar-row">');
+        document.write('<span class="version-badge-wrapper"><span style="color:var(--danger);font-size:10px;">⚠</span><span class="version-badge">v5.0.84</span></span>');
+        document.write('</div>');
+
+        document.write('</div>');
+      });
+    </script>
+  </div>
+</section>
+
+<!-- ====== 区域 2：TopBar 更新状态徽章 ====== -->
+<section>
+  <h2>📍 TopBar — 更新状态徽章（available / downloading / ready）</h2>
+  <div class="themes-grid">
+    <script>
+      themes.forEach(t => {
+        document.write('<div class="theme-card" data-theme="'+t+'">');
+        document.write('<div class="theme-label"><span class="dot"></span>'+themeNames[t]+'</div>');
+
+        // available — 有更新
+        document.write('<h3>TopBar · available <span class="tag tag-new">有更新</span></h3>');
+        document.write('<div class="topbar-row">');
+        document.write('<span class="topbar-title">PastePanda</span>');
+        document.write('<button class="header-badge header-badge-update"><span style="font-size:10px;">↓</span> 更新 v5.0.85</button>');
+        document.write('</div>');
+
+        // downloading — 下载中
+        document.write('<h3>TopBar · downloading <span class="tag tag-warn">下载中</span></h3>');
+        document.write('<div class="topbar-row">');
+        document.write('<span class="topbar-title">PastePanda</span>');
+        document.write('<span class="header-badge header-badge-downloading"><span class="spin-icon" style="font-size:10px;">⟳</span> 下载中</span>');
+        document.write('</div>');
+
+        // ready — 就绪
+        document.write('<h3>TopBar · ready <span class="tag tag-ok">就绪</span></h3>');
+        document.write('<div class="topbar-row">');
+        document.write('<span class="topbar-title">PastePanda</span>');
+        document.write('<button class="header-badge header-badge-ready"><span style="font-size:10px;">↻</span> 重启</button>');
+        document.write('</div>');
+
+        document.write('</div>');
+      });
+    </script>
+  </div>
+</section>
+
+<!-- ====== 区域 3：AboutDialog 版本号 + 状态标签 ====== -->
+<section>
+  <h2>📍 AboutDialog — 版本号 + 状态标签（latest / update）</h2>
+  <div class="themes-grid">
+    <script>
+      themes.forEach(t => {
+        document.write('<div class="theme-card" data-theme="'+t+'">');
+        document.write('<div class="theme-label"><span class="dot"></span>'+themeNames[t]+'</div>');
+
+        // latest 状态
+        document.write('<h3>AboutDialog · 已是最新 <span class="tag tag-ok">latest</span></h3>');
+        document.write('<div class="about-row">');
+        document.write('<div class="about-icon-sim"></div>');
+        document.write('<div style="flex:1">');
+        document.write('<div class="about-name-sim">PastePanda</div>');
+        document.write('<div class="about-ver-row">');
+        document.write('<span class="version-badge">v5.0.84</span>');
+        document.write('<span class="about-version-status latest"><span class="about-status-dot green"></span>已是最新</span>');
+        document.write('</div></div></div>');
+
+        // update 状态
+        document.write('<h3>AboutDialog · 有新版本 <span class="tag tag-warn">update</span></h3>');
+        document.write('<div class="about-row">');
+        document.write('<div class="about-icon-sim"></div>');
+        document.write('<div style="flex:1">');
+        document.write('<div class="about-name-sim">PastePanda</div>');
+        document.write('<div class="about-ver-row">');
+        document.write('<span class="version-badge">v5.0.84</span>');
+        document.write('<span class="about-version-status update"><span class="about-status-dot orange"></span>v5.0.85 可用</span>');
+        document.write('</div></div></div>');
+
+        document.write('</div>');
+      });
+    </script>
+  </div>
+</section>
+
+<!-- ====== 区域 4：UpdateBanner 横幅 ====== -->
+<section>
+  <h2>📍 AboutDialog — UpdateBanner 横幅（全状态）</h2>
+  <div class="themes-grid">
+    <script>
+      const bannerStates = [
+        { id:'idle', label:'idle · 已是最新', tag:'ok', html:'<div class="update-banner update-banner-idle"><span style="font-size:14px;">✓</span><div style="flex:1"><div class="update-banner-title">已是最新版本</div></div><button class="update-banner-btn">检查更新</button></div>' },
+        { id:'checking', label:'checking · 检查中', tag:'warn', html:'<div class="update-banner update-banner-checking"><span class="spin-icon" style="font-size:14px;">⟳</span><div style="flex:1"><div class="update-banner-title">检查更新中…</div></div></div>' },
+        { id:'available', label:'available · 有更新', tag:'new', html:'<div class="update-banner update-banner-available"><span style="font-size:16px;">↓</span><div style="flex:1"><div class="update-banner-title">发现新版本 v5.0.85</div><div class="update-banner-desc">包含性能优化和 bug 修复</div></div><button class="update-banner-btn">下载更新</button></div>' },
+        { id:'downloading', label:'downloading · 下载中', tag:'warn', html:'<div class="update-banner update-banner-downloading"><div style="display:flex;align-items:center;gap:12px"><span class="spin-icon" style="font-size:14px;">⟳</span><div style="flex:1"><div class="update-banner-title">正在下载更新…</div></div></div><div class="update-progress-bar"><div class="update-progress-fill update-progress-indeterminate"></div></div><div class="update-banner-desc">正在从 GitHub 下载，请耐心等待</div></div>' },
+        { id:'ready', label:'ready · 就绪', tag:'ok', html:'<div class="update-banner update-banner-ready"><span style="font-size:16px;color:var(--green)">✓</span><div style="flex:1"><div class="update-banner-title">更新已下载完成</div><div class="update-banner-desc">点击重启以应用更新</div></div><button class="update-banner-btn">立即重启</button></div>' },
+        { id:'error', label:'error · 失败', tag:'', html:'<div class="update-banner update-banner-error"><span style="font-size:16px;color:var(--danger)">⚠</span><div style="flex:1"><div class="update-banner-title">更新失败</div><div class="update-banner-desc">网络错误，请重试</div></div><button class="update-banner-btn">重试</button></div>' },
+      ];
+      themes.forEach(t => {
+        document.write('<div class="theme-card" data-theme="'+t+'">');
+        document.write('<div class="theme-label"><span class="dot"></span>'+themeNames[t]+'</div>');
+        bannerStates.forEach(s => {
+          const tagHtml = s.tag === 'ok' ? '<span class="tag tag-ok">'+s.label.split('·')[0]+'</span>'
+            : s.tag === 'new' ? '<span class="tag tag-new">'+s.label.split('·')[0]+'</span>'
+            : s.tag === 'warn' ? '<span class="tag tag-warn">'+s.label.split('·')[0]+'</span>'
+            : '';
+          document.write('<h3>'+s.label+' '+tagHtml+'</h3>');
+          document.write(s.html);
+        });
+        document.write('</div>');
+      });
+    </script>
+  </div>
+</section>
+
+</body>
+</html>

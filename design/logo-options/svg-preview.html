@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PastePanda 矢量图标预览</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 40px;
+    }
+    h1 { text-align: center; margin-bottom: 8px; font-size: 28px; }
+    .subtitle { text-align: center; color: #94a3b8; margin-bottom: 40px; }
+    .main {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+    .main img {
+      width: 240px;
+      height: 240px;
+      border-radius: 60px;
+      background: #fff;
+    }
+    .scenes {
+      max-width: 900px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+    }
+    .scene {
+      background: rgba(255,255,255,0.05);
+      border-radius: 16px;
+      padding: 24px;
+      text-align: center;
+    }
+    .scene-title { color: #94a3b8; margin-bottom: 12px; font-size: 13px; }
+    .scene img { border-radius: 8px; background: #fff; }
+    .s24 { width: 24px; height: 24px; }
+    .s32 { width: 32px; height: 32px; }
+    .s48 { width: 48px; height: 48px; }
+    .s64 { width: 64px; height: 64px; }
+  </style>
+</head>
+<body>
+  <h1>🐼 PastePanda 矢量图标</h1>
+  <p class="subtitle">参考变体 3 手绘 SVG：熊猫 + 薄荷绿剪贴板 + 白色 V</p>
+
+  <div class="main">
+    <img src="panda-icon.svg" alt="PastePanda Logo" />
+  </div>
+
+  <div class="scenes">
+    <div class="scene">
+      <div class="scene-title">标题栏 / 24px</div>
+      <img class="s24" src="panda-icon.svg" />
+    </div>
+    <div class="scene">
+      <div class="scene-title">系统托盘 / 32px</div>
+      <img class="s32" src="panda-icon.svg" />
+    </div>
+    <div class="scene">
+      <div class="scene-title">弹窗头部 / 48px</div>
+      <img class="s48" src="panda-icon.svg" />
+    </div>
+    <div class="scene">
+      <div class="scene-title">关于页 / 64px</div>
+      <img class="s64" src="panda-icon.svg" />
+    </div>
+  </div>
+</body>
+</html>

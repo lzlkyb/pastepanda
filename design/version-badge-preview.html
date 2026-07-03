@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>版本徽章统一样式预览</title>
+<style>
+:root {
+  --bg: #1a1a2e;
+  --card-bg: #222240;
+  --section-bg: #2a2a4a;
+  --text-primary: #e8e8f0;
+  --text-secondary: #9090b0;
+  --text-muted: #606080;
+  --accent: #5B6AF0;
+  --accent-light: #7B8AFF;
+  --green: #34C759;
+  --green-bg: rgba(52,199,89,0.12);
+  --green-border: rgba(52,199,89,0.3);
+  --orange: #FF9500;
+  --orange-bg: rgba(255,149,0,0.12);
+  --orange-border: rgba(255,149,0,0.3);
+  --radius: 8px;
+  --font-mono: "SF Mono","Fira Code","Consolas",monospace;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text-primary);
+  padding: 40px;
+  min-height: 100vh;
+}
+h1 { font-size: 24px; margin-bottom: 8px; }
+.subtitle { color: var(--text-muted); font-size: 14px; margin-bottom: 40px; }
+
+/* ========================================
+   VersionBadge 统一组件样式
+   ======================================== */
+
+/* 基础徽章 */
+.version-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  user-select: none;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+/* 尺寸 */
+.version-badge-sm {
+  font-size: 10px;
+  padding: 2px 8px;
+}
+.version-badge-md {
+  font-size: 12px;
+  padding: 3px 10px;
+}
+
+/* 变体：filled（实心，用于 TopBar/托盘弹窗） */
+.version-badge-filled {
+  background: var(--accent);
+  color: #fff;
+}
+.version-badge-filled.version-badge-clickable:hover {
+  filter: brightness(1.15);
+}
+
+/* 变体：ghost（半透明背景，用于对话框内） */
+.version-badge-ghost {
+  background: var(--section-bg);
+  color: var(--text-secondary);
+}
+.version-badge-ghost.version-badge-clickable:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* 变体：outline（边框，用于暗色背景区域） */
+.version-badge-outline {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+/* 可点击 */
+.version-badge-clickable {
+  cursor: pointer;
+}
+
+/* 更新状态颜色覆盖 */
+.version-badge-update {
+  background: #34C759;
+  color: #fff;
+  animation: badge-pulse 2s infinite;
+}
+.version-badge-downloading {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+.version-badge-ready {
+  background: #34C759;
+  color: #fff;
+  animation: badge-pulse 2s infinite;
+}
+
+@keyframes badge-pulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(52,199,89,0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(52,199,89,0); }
+}
+
+/* 带前缀文字的版本行（如设置底部 "PastePanda v5.0.70"） */
+.version-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.version-row .version-badge {
+  font-size: 10px;
+  padding: 2px 8px;
+}
+
+/* 模拟场景卡片 */
+.scene {
+  margin-bottom: 48px;
+}
+.scene-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.scene-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+/* 模拟 TopBar */
+.topbar-mock {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--card-bg);
+  border-radius: 12px;
+  padding: 12px 16px;
+}
+.topbar-title {
+  font-size: 14px;
+  font-weight: 700;
+  flex: 1;
+}
+
+/* 模拟对话框 */
+.dialog-mock {
+  background: var(--card-bg);
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 420px;
+}
+.dialog-mock-about {
+  text-align: center;
+}
+.about-icon {
+  width: 56px; height: 56px;
+  background: var(--accent);
+  border-radius: 16px;
+  margin: 0 auto 16px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px;
+}
+.about-name {
+  font-size: 20px;
+  font-weight: 800;
+  margin-bottom: 12px;
+}
+.about-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.about-status-label {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.about-status-label.latest {
+  background: var(--green-bg);
+  color: var(--green);
+  border: 1px solid var(--green-border);
+}
+.about-status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green);
+}
+.settings-footer-mock {
+  display: flex;
+  justify-content: center;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  margin-top: 16px;
+}
+
+/* 托盘弹窗 mock */
+.tray-mock {
+  background: var(--card-bg);
+  border-radius: 12px;
+  padding: 16px;
+  max-width: 300px;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.tray-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.tray-app-name {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* 对比表格 */
+.compare-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 40px;
+}
+.compare-card {
+  background: var(--card-bg);
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+}
+.compare-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+.compare-before {
+  opacity: 0.5;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.compare-arrow {
+  color: var(--text-muted);
+  font-size: 16px;
+  margin: 4px 0;
+}
+
+/* 亮色暗色切换 */
+.theme-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+.theme-btn {
+  padding: 6px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+.theme-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.theme-btn:hover { border-color: var(--accent); }
+
+/* 暗色变体展示 */
+.variants-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.variant-card {
+  background: var(--card-bg);
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+}
+.variant-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+.variant-demo-sm { margin-bottom: 12px; }
+
+/* 深色背景容器（模拟托盘弹窗） */
+.dark-bg-box {
+  background: #141428;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+</style>
+</head>
+<body>
+
+<h1>版本徽章统一样式 — 设计预览</h1>
+<p class="subtitle">VersionBadge 组件：一个组件，所有位置统一样式</p>
+
+<!-- 统一组件变体展示 -->
+<div class="scene">
+  <div class="scene-title">组件变体（sm=10px / md=12px）</div>
+  <div class="variants-grid">
+    <div class="variant-card">
+      <div class="variant-label">filled · sm（TopBar 用）</div>
+      <div class="variant-demo-sm">
+        <span class="version-badge version-badge-sm version-badge-filled">v5.0.73</span>
+      </div>
+      <div class="variant-label">filled · md</div>
+      <span class="version-badge version-badge-md version-badge-filled">v5.0.73</span>
+    </div>
+    <div class="variant-card">
+      <div class="variant-label">ghost · sm</div>
+      <div class="variant-demo-sm">
+        <span class="version-badge version-badge-sm version-badge-ghost">v5.0.73</span>
+      </div>
+      <div class="variant-label">ghost · md（About 用）</div>
+      <span class="version-badge version-badge-md version-badge-ghost">v5.0.73</span>
+    </div>
+    <div class="variant-card">
+      <div class="variant-label">outline · sm（暗背景用）</div>
+      <div class="variant-demo-sm">
+        <span class="version-badge version-badge-sm version-badge-outline">v5.0.73</span>
+      </div>
+      <div class="variant-label">outline · md</div>
+      <span class="version-badge version-badge-md version-badge-outline">v5.0.73</span>
+    </div>
+  </div>
+</div>
+
+<!-- 实际场景应用 -->
+<div class="scene">
+  <div class="scene-title">场景 1：TopBar 顶部栏（filled · sm）</div>
+  <div class="scene-desc">原样式：蓝色底白色字小徽章。统一后使用 VersionBadge variant="filled" size="sm"</div>
+  <div class="topbar-mock">
+    <span class="topbar-title">PastePanda</span>
+    <span class="version-badge version-badge-sm version-badge-filled">v5.0.73</span>
+  </div>
+  <br>
+  <div class="topbar-mock">
+    <span class="topbar-title">PastePanda</span>
+    <span class="version-badge version-badge-sm version-badge-update version-badge-clickable">↓ 更新 v5.0.74</span>
+  </div>
+</div>
+
+<div class="scene">
+  <div class="scene-title">场景 2：AboutDialog 关于对话框（ghost · md）</div>
+  <div class="scene-desc">原样式：灰色底等宽字体。统一后使用 VersionBadge variant="ghost" size="md"</div>
+  <div class="dialog-mock dialog-mock-about">
+    <div class="about-icon">🐼</div>
+    <div class="about-name">PastePanda</div>
+    <div class="about-meta-row">
+      <span class="version-badge version-badge-md version-badge-ghost">v5.0.73</span>
+      <span class="about-status-label latest">
+        <span class="about-status-dot"></span>
+        已是最新
+      </span>
+    </div>
+  </div>
+</div>
+
+<div class="scene">
+  <div class="scene-title">场景 3：SettingsDialog 底部（ghost · sm + 前缀文字）</div>
+  <div class="scene-desc">原样式：纯文字无背景。统一后使用 VersionBadge variant="ghost" size="sm"</div>
+  <div class="dialog-mock">
+    <div style="min-height: 80px;"></div>
+    <div class="settings-footer-mock">
+      <div class="version-row">
+        PastePanda
+        <span class="version-badge version-badge-sm version-badge-ghost">v5.0.73</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="scene">
+  <div class="scene-title">场景 4：TrayPopup 托盘弹窗头部（outline · sm，暗背景）</div>
+  <div class="scene-desc">原样式：灰色圆角徽章。统一后使用 VersionBadge variant="outline" size="sm"</div>
+  <div class="dark-bg-box">
+    <div class="tray-mock">
+      <div class="tray-header">
+        <span class="tray-app-name">PastePanda</span>
+        <span class="version-badge version-badge-sm version-badge-outline">v5.0.73</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 前后对比 -->
+<div class="scene">
+  <div class="scene-title">前后对比一览</div>
+  <div class="compare-grid">
+    <div class="compare-card">
+      <div class="compare-label">TopBar</div>
+      <div class="compare-before">原: 蓝色 9px 圆角徽章</div>
+      <div class="compare-arrow">↓</div>
+      <span class="version-badge version-badge-sm version-badge-filled">v5.0.73</span>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:6px">filled · sm · 10px</div>
+    </div>
+    <div class="compare-card">
+      <div class="compare-label">About</div>
+      <div class="compare-before">原: 灰色 13px 等宽字体</div>
+      <div class="compare-arrow">↓</div>
+      <span class="version-badge version-badge-md version-badge-ghost">v5.0.73</span>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:6px">ghost · md · 12px</div>
+    </div>
+    <div class="compare-card">
+      <div class="compare-label">Settings</div>
+      <div class="compare-before">原: 10px 灰色纯文字</div>
+      <div class="compare-arrow">↓</div>
+      <div class="version-row">
+        Panda <span class="version-badge version-badge-sm version-badge-ghost">v5.0.73</span>
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:6px">ghost · sm · 10px</div>
+    </div>
+    <div class="compare-card">
+      <div class="compare-label">TrayPopup</div>
+      <div class="compare-before">原: 灰色 12px 圆角徽章</div>
+      <div class="compare-arrow">↓</div>
+      <span class="version-badge version-badge-sm version-badge-outline">v5.0.73</span>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:6px">outline · sm · 10px</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

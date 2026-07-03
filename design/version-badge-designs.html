@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>版本号 vs 有更新 — 6套主题 · 同色系相邻对比</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ============================================================
+   设计策略：同色系内相邻色过渡
+   正常版本号 = 主题色
+   有更新     = 同色系相邻色调（冷色→冷色，暖色→暖色）
+   保持主题统一感，同时有清晰区分
+   ============================================================ */
+
+/* 1. light — 版本号：蓝，有更新：翠绿 */
+.theme-light {
+  --bg: #F8FAFC; --text-primary: #0F172A; --text-muted: #64748B; --border-color: #E2E8F0;
+  --section-bg: #F1F5F9; --hover: #E2E8F0; --badge-text: #fff;
+  --version-bg: linear-gradient(135deg, #0284C7, #0369A1);
+  --version-shadow: rgba(2, 132, 199, 0.35);
+  --update-bg: linear-gradient(135deg, #059669, #047857);
+  --update-shadow: rgba(5, 150, 105, 0.4);
+  --update-ring: rgba(5, 150, 105, 0.18);
+  --theme-dot: #0284C7; --theme-name: 'light · 浅色';
+  --transition: '蓝色系 → 翠绿色（冷色相邻）';
+}
+
+/* 2. midnight — 版本号：靛紫，有更新：蓝紫 */
+.theme-midnight {
+  --bg: #0B0E17; --text-primary: #E2E8F0; --text-muted: #64748B; --border-color: #2D3748;
+  --section-bg: #1A1F2E; --hover: #242D3D; --badge-text: #fff;
+  --version-bg: linear-gradient(135deg, #818CF8, #6366F1);
+  --version-shadow: rgba(129, 140, 248, 0.35);
+  --update-bg: linear-gradient(135deg, #38BDF8, #0EA5E9);
+  --update-shadow: rgba(56, 189, 248, 0.45);
+  --update-ring: rgba(56, 189, 248, 0.2);
+  --theme-dot: #818CF8; --theme-name: 'midnight · 午夜';
+  --transition: '紫色系 → 天蓝色（冷色相邻）';
+}
+
+/* 3. forest — 版本号：翡翠绿，有更新：青蓝 */
+.theme-forest {
+  --bg: #F4F9F4; --text-primary: #1A2E1A; --text-muted: #5C7A5C; --border-color: #C8E6C9;
+  --section-bg: #E8F5E9; --hover: #C8E6C9; --badge-text: #fff;
+  --version-bg: linear-gradient(135deg, #059669, #047857);
+  --version-shadow: rgba(5, 150, 105, 0.35);
+  --update-bg: linear-gradient(135deg, #0891B2, #0E7490);
+  --update-shadow: rgba(8, 145, 178, 0.4);
+  --update-ring: rgba(8, 145, 178, 0.18);
+  --theme-dot: #059669; --theme-name: 'forest · 森林';
+  --transition: '绿色系 → 青蓝色（冷色相邻）';
+}
+
+/* 4. blossom — 版本号：粉红，有更新：玫红 */
+.theme-blossom {
+  --bg: #FDF2F8; --text-primary: #4A0E2E; --text-muted: #9D5B7B; --border-color: #F8BBD0;
+  --section-bg: #FCE4EC; --hover: #F8BBD0; --badge-text: #fff;
+  --version-bg: linear-gradient(135deg, #EC4899, #DB2777);
+  --version-shadow: rgba(236, 72, 153, 0.35);
+  --update-bg: linear-gradient(135deg, #EF4444, #DC2626);
+  --update-shadow: rgba(239, 68, 68, 0.4);
+  --update-ring: rgba(239, 68, 68, 0.18);
+  --theme-dot: #EC4899; --theme-name: 'blossom · 樱花';
+  --transition: '粉色系 → 玫红色（暖色相邻）';
+}
+
+/* 5. terminal — 版本号：终端绿，有更新：青绿 */
+.theme-terminal {
+  --bg: #0A0E0A; --text-primary: #D1F2D1; --text-muted: #4A6B4A; --border-color: #1E3B1E;
+  --section-bg: #121A12; --hover: #1E301E; --badge-text: #fff;
+  --version-bg: linear-gradient(135deg, #22C55E, #16A34A);
+  --version-shadow: rgba(34, 197, 94, 0.35);
+  --update-bg: linear-gradient(135deg, #2DD4BF, #14B8A6);
+  --update-shadow: rgba(45, 212, 191, 0.45);
+  --update-ring: rgba(45, 212, 191, 0.2);
+  --theme-dot: #22C55E; --theme-name: 'terminal · 终端';
+  --transition: '绿色系 → 青绿色（冷色相邻）';
+}
+
+/* 6. sunset — 版本号：暖橙，有更新：琥珀金 */
+.theme-sunset {
+  --bg: #1A0E0A; --text-primary: #FDE4D0; --text-muted: #8B6A5A; --border-color: #3B2318;
+  --section-bg: #241510; --hover: #3B2318; --badge-text: #fff;
+  --version-bg: linear-gradient(135deg, #F97316, #EA580C);
+  --version-shadow: rgba(249, 115, 22, 0.35);
+  --update-bg: linear-gradient(135deg, #F59E0B, #D97706);
+  --update-shadow: rgba(245, 158, 11, 0.45);
+  --update-ring: rgba(245, 158, 11, 0.2);
+  --theme-dot: #F97316; --theme-name: 'sunset · 日落';
+  --transition: '橙色系 → 琥珀金（暖色相邻）';
+}
+
+/* ===== 通用样式 ===== */
+body {
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  background: #0f172a; color: #e2e8f0;
+  padding: 28px 24px; line-height: 1.5;
+}
+h1 { font-size: 22px; color: #fff; margin-bottom: 4px; }
+.subtitle { font-size: 13px; color: #94a3b8; margin-bottom: 24px; }
+.subtitle strong { color: #e2e8f0; }
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 16px;
+}
+
+.theme-card {
+  border-radius: 14px; padding: 18px 20px;
+  border: 1px solid var(--border-color);
+  transition: transform 0.15s;
+}
+.theme-card:hover { transform: translateY(-1px); }
+
+.theme-card-header {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 14px;
+}
+.theme-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  background: var(--theme-dot);
+}
+.theme-card-title {
+  font-size: 13px; font-weight: 700; letter-spacing: 0.3px;
+}
+
+.topbar-sim {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 12px; border-radius: 8px; margin-bottom: 12px;
+  background: var(--section-bg);
+}
+.topbar-label { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+
+.badge-base {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  font-size: 10px; font-weight: 700;
+  padding: 3px 10px; border-radius: 7px;
+  color: var(--badge-text, #fff);
+  letter-spacing: 0.3px; white-space: nowrap;
+  border: none; cursor: default;
+}
+
+.version-badge {
+  background: var(--version-bg);
+  box-shadow: 0 2px 8px var(--version-shadow);
+}
+
+.update-badge {
+  background: var(--update-bg);
+  box-shadow: 0 2px 10px var(--update-shadow);
+  cursor: pointer;
+  animation: updatePulse 2.2s ease-in-out infinite;
+}
+@keyframes updatePulse {
+  0%, 100% { box-shadow: 0 2px 10px var(--update-shadow); }
+  50% { box-shadow: 0 3px 20px var(--update-shadow), 0 0 0 4px var(--update-ring); }
+}
+
+.compare-section {
+  border-top: 1px solid var(--border-color); padding-top: 10px;
+}
+.compare-row {
+  display: flex; align-items: center; gap: 10px; padding: 5px 0;
+}
+.compare-label {
+  font-size: 10px; font-weight: 600; color: var(--text-muted);
+  min-width: 56px; text-align: right; flex-shrink: 0;
+}
+.color-desc {
+  font-size: 10px; color: var(--text-muted);
+}
+
+.optimized-tag {
+  font-size: 9px; padding: 1px 6px; border-radius: 3px;
+  background: #DCFCE7; color: #166534; margin-left: 4px; font-weight: 600;
+}
+
+/* 色阶条 */
+.gradient-row {
+  display: flex; align-items: center; gap: 8px; margin-top: 5px;
+}
+.gradient-swatch {
+  width: 40px; height: 16px; border-radius: 4px; flex-shrink: 0;
+}
+.gradient-arrow {
+  font-size: 14px; color: var(--text-muted); flex-shrink: 0;
+}
+.gradient-label {
+  font-size: 10px; color: var(--text-muted);
+}
+
+/* 色相环指示 */
+.hue-ring {
+  display: flex; align-items: center; gap: 3px; margin-top: 3px;
+}
+.hue-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+
+svg.icon-sm { width: 10px; height: 10px; flex-shrink: 0; }
+
+/* 底部总结 */
+.footer {
+  margin-top: 24px; padding: 18px 22px; border-radius: 12px;
+  background: #1e293b; font-size: 12px; color: #94a3b8; line-height: 1.9;
+}
+.footer table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+.footer th, .footer td {
+  padding: 7px 12px; text-align: left; font-size: 12px;
+  border-bottom: 1px solid #334155;
+}
+.footer th { color: #e2e8f0; font-weight: 600; font-size: 11px; letter-spacing: 0.5px; }
+.footer td { color: #cbd5e1; }
+.swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
+.arrow { margin: 0 4px; color: #64748b; }
+</style>
+</head>
+<body>
+
+<h1>版本号 vs 有更新 — 6套主题 · 同色系相邻色过渡</h1>
+<p class="subtitle">
+  策略：<strong>同色系相邻色</strong> — 正常版本号=主题主色，有更新=同色系相邻色调，保持主题统一感的同时一眼可辨
+</p>
+
+<div class="theme-grid">
+
+  <!-- light — 蓝 → 翠绿 -->
+  <div class="theme-card theme-light" style="background: var(--bg); color: var(--text-primary);">
+    <div class="theme-card-header">
+      <span class="theme-dot"></span>
+      <span class="theme-card-title">light · 浅色</span>
+    </div>
+    <div class="topbar-sim">
+      <span class="topbar-label">TopBar</span>
+      <span class="badge-base version-badge">v5.0.70</span>
+    </div>
+    <div class="compare-section">
+      <div class="compare-row">
+        <span class="compare-label">正常</span>
+        <span class="badge-base version-badge">v5.0.70</span>
+        <span class="color-desc">蓝色</span>
+      </div>
+      <div class="compare-row">
+        <span class="compare-label">有更新<span class="optimized-tag">新</span></span>
+        <button class="badge-base update-badge">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+          更新 v5.0.71
+        </button>
+        <span class="color-desc">翠绿</span>
+      </div>
+      <div class="gradient-row">
+        <span class="gradient-swatch" style="background:linear-gradient(135deg,#0284C7,#0369A1);"></span>
+        <span class="gradient-arrow">→</span>
+        <span class="gradient-swatch" style="background:linear-gradient(135deg,#059669,#047857);"></span>
+        <span class="gradient-label">蓝色系 → 翠绿色（冷色相邻）</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- midnight — 紫 → 天蓝 -->
+  <div class="theme-card theme-midnight" style="background: var(--bg); color: var(--text-primary);">
+    <div class="theme-card-header">
+      <span class="theme-dot"></span>
+      <span class="theme-card-title">midnight · 午夜</span>
+    </div>
+    <div class="topbar-sim">
+      <span class="topbar-label">TopBar</span>
+      <span class="badge-base version-badge">v5.0.70</span>
+    </div>
+    <div class="compare-section">
+      <div class="compare-row">
+        <span class="compare-label">正常</span>
+        <span class="badge-base version-badge">v5.0.70</span>
+        <span class="color-desc">靛紫</span>
+      </div>
+      <div class="compare-row">
+        <span class="compare-label">有更新<span class="optimized-tag">新</span></span>
+        <button class="badge-base update-badge">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+          更新 v5.0.71
+        </button>
+        <span class="color-desc">天蓝</span>
+      </div>
+      <div class="gradient-row">
+        <span class="gradient-swatch" style="background:linear-gradient(135deg,#818CF8,#6366F1);"></span>
+        <span class="gradient-arrow">→</span>
+        <span class="gradient-swatch" style="background:linear-gradient(135deg,#38BDF8,#0EA5E9);"></span>
+        <span class="gradient-label">紫色系 → 天蓝色（冷色相邻）</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- forest — 绿 → 青蓝 -->
+  <div class="theme-card theme-forest" style="background: var(--bg); color: var(--text-primary);">
+    <div class="theme-card-header">
+      <span class="theme-dot"></span>
+      <span class="theme-card-title">forest · 森林</span>
+    </div>
+    <div class="topbar-sim">
+      <span class="topbar-label">TopBar</span>
+      <span class="badge-base version-badge">v5.0.70</span>
+    </div>
+    <div class="compare-section">
+      <div class="compare-row">
+        <span class="compare-label">正常</span>
+        <span class="badge-base version-badge">v5.0.70</span>
+        <span class="color-desc">翡翠绿</span>
+      </div>
+      <div class="compare-row">
+        <span class="compare-label">有更新<span class="optimized-tag">新</span></span>
+        <button class="badge-base update-badge">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+          更新 v5.0.71
+        </button>
+        <span class="color-desc">青蓝</span>
+      </div>
+      <div class="gradient-row">
+        <span class="gradient-swatch" style="background:linear-gradient(135deg,#059669,#047857);"></span>
+        <span class="gradient-arrow">→</span>
+        <span class="gradient-swatch" style="background:linear-gradient(135deg,#0891B2,#0E7490);"></span>
+        <span class="gradient-label">绿色系 → 青蓝色（冷色相邻）</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- blossom — 粉 → 玫红 -->
+  <div class="theme-card theme-blossom" style="background: var(--bg); color: var(--text-primary);">
+    <div class="theme-card-header">
+      <span class="theme-dot"></span>
+      <span class="theme-card-title">blossom · 樱花</span>
+    </div>
+    <div class="topbar-sim">
+      <span class="topbar-label">TopBar</span>
+      <span class="badge-base version-badge">v5.0.70</span>
+    </div>
+    <div class="compare-section">
+      <div class="compare-row">
+        <span class="compare-label">正常</span>
+        <span class="badge-base version-badge">v5.0.70</span>
+        <span class="color-desc">粉红</span>
+      </div>
+      <div class="compare-row">
+        <span class="compare-label">有更新<span class="optimized-tag">新</span></span>
+        <button class="badge-base update-badge">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+          更新 v5.0.71
+        </button>
+        <span class="color-desc">玫红</span>
+      </div>
+      <div class="gradient-row">
+        <span class="gradient-swatch" style="background:linear-gradient(135deg,#EC4899,#DB2777);"></span>
+        <span class="gradient-arrow">→</span>
+        <span class="gradient-swatch" style="background:linear-gradient(135deg,#EF4444,#DC2626);"></span>
+        <span class="gradient-label">粉色系 → 玫红色（暖色相邻）</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- terminal — 绿 → 青绿 -->
+  <div class="theme-card theme-terminal" style="background: var(--bg); color: var(--text-primary);">
+    <div class="theme-card-header">
+      <span class="theme-dot"></span>
+      <span class="theme-card-title">terminal · 终端</span>
+    </div>
+    <div class="topbar-sim">
+      <span class="topbar-label">TopBar</span>
+      <span class="badge-base version-badge">v5.0.70</span>
+    </div>
+    <div class="compare-section">
+      <div class="compare-row">
+        <span class="compare-label">正常</span>
+        <span class="badge-base version-badge">v5.0.70</span>
+        <span class="color-desc">终端绿</span>
+      </div>
+      <div class="compare-row">
+        <span class="compare-label">有更新<span class="optimized-tag">新</span></span>
+        <button class="badge-base update-badge">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+          更新 v5.0.71
+        </button>
+        <span class="color-desc">青绿</span>
+      </div>
+      <div class="gradient-row">
+        <span class="gradient-swatch" style="background:linear-gradient(135deg,#22C55E,#16A34A);"></span>
+        <span class="gradient-arrow">→</span>
+        <span class="gradient-swatch" style="background:linear-gradient(135deg,#2DD4BF,#14B8A6);"></span>
+        <span class="gradient-label">绿色系 → 青绿色（冷色相邻）</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- sunset — 橙 → 琥珀金 -->
+  <div class="theme-card theme-sunset" style="background: var(--bg); color: var(--text-primary);">
+    <div class="theme-card-header">
+      <span class="theme-dot"></span>
+      <span class="theme-card-title">sunset · 日落</span>
+    </div>
+    <div class="topbar-sim">
+      <span class="topbar-label">TopBar</span>
+      <span class="badge-base version-badge">v5.0.70</span>
+    </div>
+    <div class="compare-section">
+      <div class="compare-row">
+        <span class="compare-label">正常</span>
+        <span class="badge-base version-badge">v5.0.70</span>
+        <span class="color-desc">暖橙</span>
+      </div>
+      <div class="compare-row">
+        <span class="compare-label">有更新<span class="optimized-tag">新</span></span>
+        <button class="badge-base update-badge">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+          更新 v5.0.71
+        </button>
+        <span class="color-desc">琥珀金</span>
+      </div>
+      <div class="gradient-row">
+        <span class="gradient-swatch" style="background:linear-gradient(135deg,#F97316,#EA580C);"></span>
+        <span class="gradient-arrow">→</span>
+        <span class="gradient-swatch" style="background:linear-gradient(135deg,#F59E0B,#D97706);"></span>
+        <span class="gradient-label">橙色系 → 琥珀金（暖色相邻）</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">
+  <strong>设计策略：同色系相邻色过渡</strong><br>
+  每套主题的「正常版本号」和「有更新」在色相环上相邻，冷色→冷色，暖色→暖色，保持主题统一感的同时有清晰差异。
+  <table>
+    <thead>
+      <tr><th>主题</th><th>正常版本号</th><th>有更新</th><th>色相过渡</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>light</td>
+        <td><span class="swatch" style="background:#0284C7;"></span>#0284C7 · #0369A1</td>
+        <td><span class="swatch" style="background:#059669;"></span>#059669 · #047857</td>
+        <td>蓝 <span class="arrow">→</span> 翠绿（冷色相邻）</td>
+      </tr>
+      <tr>
+        <td>midnight</td>
+        <td><span class="swatch" style="background:#818CF8;"></span>#818CF8 · #6366F1</td>
+        <td><span class="swatch" style="background:#38BDF8;"></span>#38BDF8 · #0EA5E9</td>
+        <td>紫 <span class="arrow">→</span> 天蓝（冷色相邻）</td>
+      </tr>
+      <tr>
+        <td>forest</td>
+        <td><span class="swatch" style="background:#059669;"></span>#059669 · #047857</td>
+        <td><span class="swatch" style="background:#0891B2;"></span>#0891B2 · #0E7490</td>
+        <td>绿 <span class="arrow">→</span> 青蓝（冷色相邻）</td>
+      </tr>
+      <tr>
+        <td>blossom</td>
+        <td><span class="swatch" style="background:#EC4899;"></span>#EC4899 · #DB2777</td>
+        <td><span class="swatch" style="background:#EF4444;"></span>#EF4444 · #DC2626</td>
+        <td>粉 <span class="arrow">→</span> 玫红（暖色相邻）</td>
+      </tr>
+      <tr>
+        <td>terminal</td>
+        <td><span class="swatch" style="background:#22C55E;"></span>#22C55E · #16A34A</td>
+        <td><span class="swatch" style="background:#2DD4BF;"></span>#2DD4BF · #14B8A6</td>
+        <td>绿 <span class="arrow">→</span> 青绿（冷色相邻）</td>
+      </tr>
+      <tr>
+        <td>sunset</td>
+        <td><span class="swatch" style="background:#F97316;"></span>#F97316 · #EA580C</td>
+        <td><span class="swatch" style="background:#F59E0B;"></span>#F59E0B · #D97706</td>
+        <td>橙 <span class="arrow">→</span> 琥珀金（暖色相邻）</td>
+      </tr>
+    </tbody>
+  </table>
+  <br>
+  每个主题内两个徽章色系相近但明显不同，冷色系内相邻过渡，不破坏主题调性。
+</div>
+
+</body>
+</html>

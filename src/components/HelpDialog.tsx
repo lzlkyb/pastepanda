@@ -197,64 +197,23 @@ export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => vo
                 <KeyRow desc="粘贴第 N 条" value="ctrl+alt+1~9" hidden={searching && !matches(q, "粘贴第N ctrl alt 1 9")} />
               </Section>
 
-              {/* 2. 功能指南 */}
-              <Section icon="🧩" iconBg="linear-gradient(135deg, #8B5CF6, #5856D6)" title="功能指南"
-                forceExpand={searching} hasMatch={!searching || matches(q, "剪贴板 历史", "片段库 模板", "内容 提取 链接 邮箱", "工作 空间", "图片 处理 OCR", "局域网 同步", "粘贴 变换", "数据 管理 导入 导出", "托盘 菜单", "依次 粘贴 批量")}>
-                <GuideCard icon="📋" color="#4f8cff" title="剪贴板历史"
-                  desc="自动记录文本/图片/文件/颜色等所有剪贴板内容，支持搜索筛选、标签分类、置顶收藏"
-                  hidden={searching && !matches(q, "剪贴板 历史 记录", "文本 图片 文件 颜色", "搜索 筛选 标签 置顶")} />
-                <GuideCard icon="📦" color="#8b5cf6" title="片段库"
-                  desc="保存常用文本模板（API、SQL、配置等），一键粘贴。支持批量管理、导入导出"
-                  hidden={searching && !matches(q, "片段库 模板", "API SQL 配置", "导入 导出")} />
-                <GuideCard icon="🔍" color="#34d399" title="内容提取"
-                  desc="一键提取剪贴板中的链接、邮箱、电话号码、代码块、颜色值等信息"
-                  hidden={searching && !matches(q, "内容 提取", "链接 邮箱 电话 代码 颜色")} />
-                <GuideCard icon="🗂" color="#fbbf24" title="工作空间"
-                  desc="隔离不同场景的剪贴板历史（如工作/个人/项目），切换空间即切换记录视图"
-                  hidden={searching && !matches(q, "工作 空间", "场景 隔离 切换", "工作 个人 项目")} />
-                <GuideCard icon="🖼" color="#f87171" title="图片处理"
-                  desc="图片预览、OCR 文字识别、图片置顶悬浮窗，右键菜单快速操作"
-                  hidden={searching && !matches(q, "图片 处理", "预览 OCR 识别 悬浮窗")} />
-                <GuideCard icon="🔄" color="#a78bfa" title="局域网同步"
-                  desc="同一局域网下多设备实时同步剪贴板历史，无需登录账号"
-                  hidden={searching && !matches(q, "局域网 同步", "多设备 实时")} />
-                <GuideCard icon="📎" color="#60a5fa" title="粘贴变换"
-                  desc="右键菜单支持：纯文本粘贴、去除空格、大小写转换、Base64 编解码等"
-                  hidden={searching && !matches(q, "粘贴 变换", "纯文本 空格 大小写 Base64")} />
-                <GuideCard icon="📤" color="#34d399" title="数据管理"
-                  desc="支持导入导出剪贴板历史、自动清理过期记录、统计面板查看使用数据"
-                  hidden={searching && !matches(q, "数据 管理", "导入 导出 清理 统计")} />
-                <GuideCard icon="📌" color="#fb923c" title="托盘菜单"
-                  desc="系统托盘常驻，右键快速查看最近记录、打开主窗口、退出程序"
-                  hidden={searching && !matches(q, "托盘 菜单", "系统 常驻 最近 记录")} />
-                <GuideCard icon="⚡" color="#4ade80" title="依次粘贴"
-                  desc="批量粘贴模式，按顺序逐条粘贴选中记录，适合填写表单、批量输入场景"
-                  hidden={searching && !matches(q, "依次 粘贴", "批量 表单 输入")} />
+              {/* 2. 功能指南 & 设置说明 — 已迁移至设置页 "?" 气泡 */}
+              <Section icon="🧩" iconBg="linear-gradient(135deg, #8B5CF6, #5856D6)" title="功能说明与设置"
+                forceExpand={searching} hasMatch={!searching || matches(q, "功能 指南 设置 说明", "主题 清理 同步 粘贴", "图片 OCR 片段 库", "空间 数据 管理 托盘")}>
+                <div style={{ padding: "4px 0", fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.7 }}>
+                  <p style={{ margin: "0 0 8px" }}>
+                    各功能的详细说明和设置项说明已移至 <strong>设置页面</strong>。
+                  </p>
+                  <p style={{ margin: "0 0 4px" }}>
+                    📌 打开设置（Ctrl+S），点击各选项旁的 <span style={{ color: "var(--accent)", fontWeight: 600 }}>?</span> 图标查看详情。
+                  </p>
+                  <p style={{ margin: 0 }}>
+                    💡 也可以在此搜索框搜索功能关键词快速定位。
+                  </p>
+                </div>
               </Section>
 
-              {/* 3. 设置说明 */}
-              <Section icon={<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>} iconBg="linear-gradient(135deg, #F59E0B, #FF9500)" title="设置说明"
-                forceExpand={searching} hasMatch={!searching || matches(q, "主题 切换 深色 浅色", "自动 清理 过期", "窗口 行为 置顶 自启", "自定义 热键")}>
-                <SubTitle hidden={searching && !matches(q, "主题 切换 深色 浅色")}>外观</SubTitle>
-                <GuideCard icon="🎨" color="#4f8cff" title="主题切换"
-                  desc="支持深色/浅色/跟随系统三种模式，标签样式可选圆角/直角"
-                  hidden={searching && !matches(q, "主题 切换", "深色 浅色 系统", "标签 圆角 直角")} />
-
-                <SubTitle hidden={searching && !matches(q, "自动 清理 过期", "窗口 行为 置顶 自启")}>通用</SubTitle>
-                <GuideCard icon="🗑" color="#fbbf24" title="自动清理"
-                  desc="设置自动清理 N 天前的旧记录、过滤空白内容、限制最大记录数"
-                  hidden={searching && !matches(q, "自动 清理", "过期 旧记录", "过滤 空白 限制")} />
-                <GuideCard icon="📌" color="#a78bfa" title="窗口行为"
-                  desc="窗口置顶、开机自启、隐藏时自动粘贴等行为配置"
-                  hidden={searching && !matches(q, "窗口 行为", "置顶 自启 自动粘贴")} />
-
-                <SubTitle hidden={searching && !matches(q, "自定义 热键")}>快捷键</SubTitle>
-                <GuideCard icon={<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#f87171" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h8M6 12h.01M18 12h.01M6 16h12"/></svg>} color="#f87171" title="自定义热键"
-                  desc="可自定义：全局唤出热键、依次粘贴热键、全选热键等"
-                  hidden={searching && !matches(q, "自定义 热键", "全局 唤出 全选")} />
-              </Section>
-
-              {/* 4. 技巧提示 */}
+              {/* 3. 技巧提示 */}
               <Section icon="💡" iconBg="linear-gradient(135deg, #10B981, #34C759)" title="技巧提示"
                 forceExpand={searching} hasMatch={!searching || matches(q, "Ctrl Click 多选", "Shift Click 范围", "Space 预览", "双击 卡片 配置", "Ctrl Z 撤销", "Ctrl Alt 1 9", "置顶 固定", "搜索 过滤")}>
                 <TipItem hidden={searching && !matches(q, "Ctrl Click 多选", "批量 删除")}>

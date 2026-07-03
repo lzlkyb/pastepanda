@@ -27,12 +27,14 @@ async function minimizeWin() {
 }
 async function hideWin() {
   try { (await import("@tauri-apps/api/window")).getCurrentWindow().hide(); } catch { logger.warn("窗口隐藏失败"); }
-}
-async function quitApp() {
+  // 首次隐藏时提示托盘退出方式
+  const KEY = "pasteship_hidden_tip_shown";
   try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("exit_app");
-  } catch { logger.warn("退出应用失败"); }
+    if (!localStorage.getItem(KEY)) {
+      localStorage.setItem(KEY, "1");
+      window.dispatchEvent(new CustomEvent("first-time-tip", { detail: { id: "hide_window", message: "窗口已隐藏到托盘，右键托盘图标可退出或重新打开", type: "info" } }));
+    }
+  } catch { /* ignore */ }
 }
 
 type TabStyle = "segmented" | "circle";
@@ -65,22 +67,8 @@ export function TopBar({ onSettings, onHelp, onSnippets, onExtract, onAbout }: {
   const [showHistory, setShowHistory] = useState(false);
   const searchBoxRef = useRef<HTMLDivElement>(null);
   const [tabStyle, setTabStyle] = useState<TabStyle>(getTabStyle);
-  const [showQuitConfirm, setShowQuitConfirm] = useState(false);
   const [appVersion, setAppVersion] = useState("...");
   const [appName, setAppName] = useState("PastePanda");
-
-  // ESC 关闭退出确认弹窗
-  useEffect(() => {
-    if (!showQuitConfirm) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setShowQuitConfirm(false);
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [showQuitConfirm]);
 
   useEffect(() => {
     getAppVersion().then(setAppVersion).catch(() => setAppVersion("?.?.?"));
@@ -154,40 +142,11 @@ export function TopBar({ onSettings, onHelp, onSnippets, onExtract, onAbout }: {
           <IconBtn tip="最小化到任务栏" onClick={minimizeWin}>
             <svg className="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round"><path d="M5 12h14"/></svg>
           </IconBtn>
-          <IconBtn tip="退出程序" danger onClick={() => setShowQuitConfirm(true)}>
-            <svg className="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#F87171" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          <IconBtn tip="隐藏窗口" onClick={hideWin}>
+            <svg className="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
           </IconBtn>
         </div>
       </div>
-
-      {/* 退出确认弹窗 */}
-      <AnimatePresence>
-        {showQuitConfirm && (
-          <div className="dialog-backdrop" style={{ zIndex: 9999 }} onClick={() => setShowQuitConfirm(false)}>
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 500, damping: 30 }}
-              className="quit-confirm-box" onClick={(e) => e.stopPropagation()}>
-              <button className="quit-confirm-close" onClick={() => setShowQuitConfirm(false)} aria-label="关闭"><X size={16} /></button>
-              <div className="quit-confirm-icon">⚠️</div>
-              <h3 className="quit-confirm-title">退出 {appName}</h3>
-              <p className="quit-confirm-desc">
-                退出后剪贴板监听将停止，托盘图标也会消失。<br />
-                如果只想让窗口在后台运行，请选择<b>「隐藏窗口」</b>，托盘图标仍会保留。
-              </p>
-              <div className="quit-confirm-actions">
-                <button className="quit-btn-secondary" onClick={() => setShowQuitConfirm(false)}>取消</button>
-                <button className="quit-btn-tray" onClick={() => { hideWin(); setShowQuitConfirm(false); }}>
-                  👁 隐藏窗口
-                </button>
-                <button className="quit-btn-danger" onClick={quitApp}>
-                  <X size={14} /> 确认退出
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       {/* 搜索框 + Tab 在同一个容器内，保证宽度完全一致 */}
       <div className="header-controls">

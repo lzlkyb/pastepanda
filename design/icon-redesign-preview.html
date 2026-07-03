@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PastePanda 图标重设计 - 方案预览</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+  background: #0f0f14;
+  color: #e0e0e0;
+  min-height: 100vh;
+  padding: 40px 20px;
+}
+h1 {
+  text-align: center;
+  font-size: 28px;
+  font-weight: 800;
+  margin-bottom: 8px;
+  background: linear-gradient(135deg, #5B6AF0, #7C5CF0);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.subtitle { text-align: center; color: #888; margin-bottom: 48px; font-size: 14px; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 24px;
+  max-width: 1300px;
+  margin: 0 auto;
+}
+.card {
+  background: #1a1a24;
+  border-radius: 20px;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 1px solid #252535;
+  transition: border-color .2s, transform .2s;
+}
+.card:hover { border-color: #5B6AF0; transform: translateY(-2px); }
+
+.card h3 {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: #fff;
+}
+.card .desc {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.icon-row {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.icon-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.icon-box .label {
+  font-size: 10px;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* ===== 方案 A: 熊猫 + 剪贴板 ===== */
+.icon-a {
+  width: 96px; height: 96px;
+  border-radius: 24px;
+  background: linear-gradient(145deg, #1a1a2e, #16213e);
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+.icon-a .board {
+  width: 48px; height: 58px;
+  background: #fff;
+  border-radius: 8px 8px 6px 6px;
+  position: relative;
+}
+.icon-a .board::before {
+  content: '';
+  position: absolute; top: -6px; left: 50%; transform: translateX(-50%);
+  width: 20px; height: 12px;
+  background: #5B6AF0;
+  border-radius: 4px 4px 0 0;
+}
+.icon-a .board::after {
+  content: '';
+  position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+  width: 16px; height: 3px;
+  background: #e0e0e0; border-radius: 2px;
+  box-shadow: 0 8px 0 #e0e0e0, 0 16px 0 #e0e0e0;
+}
+.icon-a .ear-l, .icon-a .ear-r {
+  position: absolute; top: 8px;
+  width: 22px; height: 22px;
+  background: #fff;
+  border-radius: 50%;
+}
+.icon-a .ear-l { left: 14px; }
+.icon-a .ear-r { right: 14px; }
+.icon-a .eye-l, .icon-a .eye-r {
+  position: absolute; top: 30px;
+  width: 7px; height: 9px;
+  background: #1a1a2e;
+  border-radius: 50%;
+}
+.icon-a .eye-l { left: 26px; }
+.icon-a .eye-r { right: 26px; }
+
+.icon-a-sm { transform: scale(0.33); transform-origin: center; }
+.icon-a-tray { transform: scale(0.25); transform-origin: center; }
+
+/* ===== 方案 B: 字母 P + 熊猫耳朵 ===== */
+.icon-b {
+  width: 96px; height: 96px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, #5B6AF0, #7C5CF0);
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+  box-shadow: 0 12px 36px rgba(91,106,240,.35);
+}
+.icon-b svg { width: 60px; height: 60px; }
+.icon-b-sm { transform: scale(0.33); transform-origin: center; }
+.icon-b-tray { transform: scale(0.25); transform-origin: center; }
+
+/* ===== 方案 C: 剪贴板 + 熊猫眼睛 ===== */
+.icon-c {
+  width: 96px; height: 96px;
+  border-radius: 24px;
+  background: #1a1a2e;
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+  border: 2.5px solid #2a2a3e;
+}
+.icon-c svg { width: 58px; height: 58px; }
+.icon-c-sm { transform: scale(0.33); transform-origin: center; }
+.icon-c-tray { transform: scale(0.25); transform-origin: center; }
+
+/* ===== 方案 D: 太极熊猫优化 ===== */
+.icon-d {
+  width: 96px; height: 96px;
+  border-radius: 24px;
+  background: #1a1a2e;
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+}
+.icon-d svg { width: 64px; height: 64px; }
+.icon-d-sm { transform: scale(0.33); transform-origin: center; }
+.icon-d-tray { transform: scale(0.25); transform-origin: center; }
+
+/* 选中提示 */
+.vote-bar {
+  margin-top: 16px;
+  display: flex; gap: 8px;
+}
+.vote-btn {
+  padding: 6px 16px;
+  border-radius: 8px;
+  border: 1px solid #333;
+  background: transparent;
+  color: #aaa;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all .2s;
+}
+.vote-btn:hover {
+  border-color: #5B6AF0;
+  color: #fff;
+  background: rgba(91,106,240,.1);
+}
+
+/* 场景对比 */
+.scenarios {
+  max-width: 1300px;
+  margin: 48px auto 0;
+}
+.scenarios h2 {
+  font-size: 20px; margin-bottom: 24px;
+  color: #ccc;
+  text-align: center;
+}
+.scene-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+.scene {
+  background: #1a1a24;
+  border-radius: 14px;
+  padding: 20px;
+  text-align: center;
+  border: 1px solid #252535;
+}
+.scene .scene-title {
+  font-size: 11px;
+  color: #666;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.scene-icons {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.scene-icon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.scene-icon .letter {
+  font-size: 10px;
+  color: #444;
+  font-weight: 700;
+}
+
+/* ===== 模拟 TopBar ===== */
+.mock-topbar {
+  display: flex; align-items: center; gap: 10px;
+  background: #14141e; border-radius: 8px;
+  padding: 6px 12px; width: fit-content;
+}
+.mock-topbar span { font-size: 12px; color: #ccc; font-weight: 600; }
+.mock-tray {
+  display: flex; align-items: center; gap: 8px;
+  background: #14141e; border-radius: 8px;
+  padding: 8px 14px; width: fit-content;
+}
+.mock-tray span { font-size: 11px; color: #888; }
+
+/* 响应式 */
+@media (max-width: 700px) {
+  .scene-grid { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<h1>🐼 PastePanda 图标重设计</h1>
+<p class="subtitle">4 套方案 · 点击选择你喜欢的</p>
+
+<div class="grid">
+
+  <!-- ===== 方案 A ===== -->
+  <div class="card" id="card-a">
+    <h3>方案 A — 熊猫 + 剪贴板</h3>
+    <p class="desc">熊猫脸 + 剪贴板身体 · 黑白主色</p>
+    <div class="icon-row">
+      <div class="icon-box">
+        <div class="icon-a"><div class="ear-l"></div><div class="ear-r"></div><div class="eye-l"></div><div class="eye-r"></div><div class="board"></div></div>
+        <span class="label">主图标 96px</span>
+      </div>
+      <div class="icon-box">
+        <div style="width:32px;height:32px;overflow:hidden;border-radius:8px;"><div class="icon-a icon-a-sm"><div class="ear-l"></div><div class="ear-r"></div><div class="eye-l"></div><div class="eye-r"></div><div class="board"></div></div></div>
+        <span class="label">标题栏 32px</span>
+      </div>
+      <div class="icon-box">
+        <div style="width:24px;height:24px;overflow:hidden;border-radius:6px;"><div class="icon-a icon-a-tray"><div class="ear-l"></div><div class="ear-r"></div><div class="eye-l"></div><div class="eye-r"></div><div class="board"></div></div></div>
+        <span class="label">托盘 24px</span>
+      </div>
+    </div>
+    <div class="vote-bar">
+      <button class="vote-btn" onclick="vote('A')">👍 选方案 A</button>
+    </div>
+  </div>
+
+  <!-- ===== 方案 B ===== -->
+  <div class="card" id="card-b">
+    <h3>方案 B — 字母 P 熊猫耳</h3>
+    <p class="desc">几何字母 P + 双圆点熊猫耳朵 · 蓝紫渐变</p>
+    <div class="icon-row">
+      <div class="icon-box">
+        <div class="icon-b">
+          <svg viewBox="0 0 100 100">
+            <circle cx="50" cy="22" r="12" fill="#fff" opacity="0.9"/>
+            <circle cx="50" cy="62" r="6" fill="#fff" opacity="0.9"/>
+            <path d="M35 28 L35 92 Q35 96 39 96 L62 96 Q76 96 76 78 Q76 62 62 56 Q72 50 72 36 Q72 28 62 28 Z" fill="#fff" fill-opacity="0.92"/>
+          </svg>
+        </div>
+        <span class="label">主图标 96px</span>
+      </div>
+      <div class="icon-box">
+        <div style="width:32px;height:32px;overflow:hidden;border-radius:8px;"><div class="icon-b icon-b-sm">
+          <svg viewBox="0 0 100 100">
+            <circle cx="50" cy="22" r="12" fill="#fff" opacity="0.9"/>
+            <circle cx="50" cy="62" r="6" fill="#fff" opacity="0.9"/>
+            <path d="M35 28 L35 92 Q35 96 39 96 L62 96 Q76 96 76 78 Q76 62 62 56 Q72 50 72 36 Q72 28 62 28 Z" fill="#fff" fill-opacity="0.92"/>
+          </svg>
+        </div></div>
+        <span class="label">标题栏 32px</span>
+      </div>
+      <div class="icon-box">
+        <div style="width:24px;height:24px;overflow:hidden;border-radius:6px;"><div class="icon-b icon-b-tray">
+          <svg viewBox="0 0 100 100">
+            <circle cx="50" cy="22" r="12" fill="#fff" opacity="0.9"/>
+            <circle cx="50" cy="62" r="6" fill="#fff" opacity="0.9"/>
+            <path d="M35 28 L35 92 Q35 96 39 96 L62 96 Q76 96 76 78 Q76 62 62 56 Q72 50 72 36 Q72 28 62 28 Z" fill="#fff" fill-opacity="0.92"/>
+          </svg>
+        </div></div>
+        <span class="label">托盘 24px</span>
+      </div>
+    </div>
+    <div class="vote-bar">
+      <button class="vote-btn" onclick="vote('B')">👍 选方案 B</button>
+    </div>
+  </div>
+
+  <!-- ===== 方案 C ===== -->
+  <div class="card" id="card-c">
+    <h3>方案 C — 剪贴板 + 熊猫眼</h3>
+    <p class="desc">剪贴板为主体 · 板上熊猫眼睛 · 功能暗示强</p>
+    <div class="icon-row">
+      <div class="icon-box">
+        <div class="icon-c">
+          <svg viewBox="0 0 100 100">
+            <rect x="22" y="18" width="56" height="70" rx="10" fill="#2a2a40" stroke="#5B6AF0" stroke-width="3"/>
+            <rect x="38" y="6" width="24" height="16" rx="5" fill="#5B6AF0"/>
+            <ellipse cx="40" cy="52" rx="9" ry="11" fill="#fff"/>
+            <ellipse cx="60" cy="52" rx="9" ry="11" fill="#fff"/>
+            <circle cx="41" cy="53" r="5" fill="#1a1a2e"/>
+            <circle cx="61" cy="53" r="5" fill="#1a1a2e"/>
+            <circle cx="43" cy="50" r="1.8" fill="#fff"/>
+            <circle cx="63" cy="50" r="1.8" fill="#fff"/>
+            <ellipse cx="50" cy="74" rx="5" ry="3.5" fill="#5B6AF0"/>
+          </svg>
+        </div>
+        <span class="label">主图标 96px</span>
+      </div>
+      <div class="icon-box">
+        <div style="width:32px;height:32px;overflow:hidden;border-radius:8px;"><div class="icon-c icon-c-sm">
+          <svg viewBox="0 0 100 100">
+            <rect x="22" y="18" width="56" height="70" rx="10" fill="#2a2a40" stroke="#5B6AF0" stroke-width="3"/>
+            <rect x="38" y="6" width="24" height="16" rx="5" fill="#5B6AF0"/>
+            <ellipse cx="40" cy="52" rx="9" ry="11" fill="#fff"/>
+            <ellipse cx="60" cy="52" rx="9" ry="11" fill="#fff"/>
+            <circle cx="41" cy="53" r="5" fill="#1a1a2e"/>
+            <circle cx="61" cy="53" r="5" fill="#1a1a2e"/>
+            <circle cx="43" cy="50" r="1.8" fill="#fff"/>
+            <circle cx="63" cy="50" r="1.8" fill="#fff"/>
+            <ellipse cx="50" cy="74" rx="5" ry="3.5" fill="#5B6AF0"/>
+          </svg>
+        </div></div>
+        <span class="label">标题栏 32px</span>
+      </div>
+      <div class="icon-box">
+        <div style="width:24px;height:24px;overflow:hidden;border-radius:6px;"><div class="icon-c icon-c-tray">
+          <svg viewBox="0 0 100 100">
+            <rect x="22" y="18" width="56" height="70" rx="10" fill="#2a2a40" stroke="#5B6AF0" stroke-width="3"/>
+            <rect x="38" y="6" width="24" height="16" rx="5" fill="#5B6AF0"/>
+            <ellipse cx="40" cy="52" rx="9" ry="11" fill="#fff"/>
+            <ellipse cx="60" cy="52" rx="9" ry="11" fill="#fff"/>
+            <circle cx="41" cy="53" r="5" fill="#1a1a2e"/>
+            <circle cx="61" cy="53" r="5" fill="#1a1a2e"/>
+            <circle cx="43" cy="50" r="1.8" fill="#fff"/>
+            <circle cx="63" cy="50" r="1.8" fill="#fff"/>
+            <ellipse cx="50" cy="74" rx="5" ry="3.5" fill="#5B6AF0"/>
+          </svg>
+        </div></div>
+        <span class="label">托盘 24px</span>
+      </div>
+    </div>
+    <div class="vote-bar">
+      <button class="vote-btn" onclick="vote('C')">👍 选方案 C</button>
+    </div>
+  </div>
+
+  <!-- ===== 方案 D ===== -->
+  <div class="card" id="card-d">
+    <h3>方案 D — 太极熊猫优化</h3>
+    <p class="desc">基于现有图标优化 · 熊猫眼睛 + 渐变背景</p>
+    <div class="icon-row">
+      <div class="icon-box">
+        <div class="icon-d">
+          <svg viewBox="0 0 100 100">
+            <defs>
+              <linearGradient id="gd" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#FFB800"/>
+                <stop offset="100%" stop-color="#FF8C00"/>
+              </linearGradient>
+              <linearGradient id="gd2" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#5B6AF0"/>
+                <stop offset="100%" stop-color="#7C5CF0"/>
+              </linearGradient>
+            </defs>
+            <circle cx="50" cy="50" r="42" fill="none" stroke="url(#gd2)" stroke-width="4"/>
+            <path d="M50 8 A42 42 0 0 1 50 92 A22 22 0 0 1 50 48 A22 22 0 0 0 50 8Z" fill="url(#gd)"/>
+            <path d="M50 8 A42 42 0 0 0 50 92 A22 22 0 0 0 50 48 A22 22 0 0 1 50 8Z" fill="#fff"/>
+            <circle cx="50" cy="28" r="7" fill="#fff"/>
+            <circle cx="50" cy="72" r="7" fill="url(#gd)"/>
+            <circle cx="50" cy="28" r="3.5" fill="#1a1a2e"/>
+            <circle cx="50" cy="72" r="3.5" fill="#fff"/>
+          </svg>
+        </div>
+        <span class="label">主图标 96px</span>
+      </div>
+      <div class="icon-box">
+        <div style="width:32px;height:32px;overflow:hidden;border-radius:8px;"><div class="icon-d icon-d-sm">
+          <svg viewBox="0 0 100 100">
+            <defs><linearGradient id="gd3" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FFB800"/><stop offset="100%" stop-color="#FF8C00"/></linearGradient><linearGradient id="gd4" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#5B6AF0"/><stop offset="100%" stop-color="#7C5CF0"/></linearGradient></defs>
+            <circle cx="50" cy="50" r="42" fill="none" stroke="url(#gd4)" stroke-width="4"/>
+            <path d="M50 8 A42 42 0 0 1 50 92 A22 22 0 0 1 50 48 A22 22 0 0 0 50 8Z" fill="url(#gd3)"/>
+            <path d="M50 8 A42 42 0 0 0 50 92 A22 22 0 0 0 50 48 A22 22 0 0 1 50 8Z" fill="#fff"/>
+            <circle cx="50" cy="28" r="7" fill="#fff"/><circle cx="50" cy="72" r="7" fill="url(#gd3)"/>
+            <circle cx="50" cy="28" r="3.5" fill="#1a1a2e"/><circle cx="50" cy="72" r="3.5" fill="#fff"/>
+          </svg>
+        </div></div>
+        <span class="label">标题栏 32px</span>
+      </div>
+      <div class="icon-box">
+        <div style="width:24px;height:24px;overflow:hidden;border-radius:6px;"><div class="icon-d icon-d-tray">
+          <svg viewBox="0 0 100 100">
+            <defs><linearGradient id="gd5" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FFB800"/><stop offset="100%" stop-color="#FF8C00"/></linearGradient><linearGradient id="gd6" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#5B6AF0"/><stop offset="100%" stop-color="#7C5CF0"/></linearGradient></defs>
+            <circle cx="50" cy="50" r="42" fill="none" stroke="url(#gd6)" stroke-width="4"/>
+            <path d="M50 8 A42 42 0 0 1 50 92 A22 22 0 0 1 50 48 A22 22 0 0 0 50 8Z" fill="url(#gd5)"/>
+            <path d="M50 8 A42 42 0 0 0 50 92 A22 22 0 0 0 50 48 A22 22 0 0 1 50 8Z" fill="#fff"/>
+            <circle cx="50" cy="28" r="7" fill="#fff"/><circle cx="50" cy="72" r="7" fill="url(#gd5)"/>
+            <circle cx="50" cy="28" r="3.5" fill="#1a1a2e"/><circle cx="50" cy="72" r="3.5" fill="#fff"/>
+          </svg>
+        </div></div>
+        <span class="label">托盘 24px</span>
+      </div>
+    </div>
+    <div class="vote-bar">
+      <button class="vote-btn" onclick="vote('D')">👍 选方案 D</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- 场景对比 -->
+<div class="scenarios">
+  <h2>实际场景对比（标题栏 & 托盘）</h2>
+  <div class="scene-grid">
+
+    <div class="scene">
+      <div class="scene-title">TopBar 标题栏 Logo</div>
+      <div class="scene-icons">
+        <div class="scene-icon"><div style="width:20px;height:20px;overflow:hidden;border-radius:5px;"><div class="icon-a" style="transform:scale(0.21);transform-origin:0 0;width:96px;height:96px;"><div class="ear-l"></div><div class="ear-r"></div><div class="eye-l"></div><div class="eye-r"></div><div class="board"></div></div></div><span class="letter">A</span></div>
+        <div class="scene-icon"><div style="width:20px;height:20px;overflow:hidden;border-radius:5px;"><div class="icon-b" style="transform:scale(0.21);transform-origin:0 0;width:96px;height:96px;"><svg viewBox="0 0 100 100"><circle cx="50" cy="22" r="12" fill="#fff" opacity="0.9"/><circle cx="50" cy="62" r="6" fill="#fff" opacity="0.9"/><path d="M35 28 L35 92 Q35 96 39 96 L62 96 Q76 96 76 78 Q76 62 62 56 Q72 50 72 36 Q72 28 62 28 Z" fill="#fff" fill-opacity="0.92"/></svg></div></div><span class="letter">B</span></div>
+        <div class="scene-icon"><div style="width:20px;height:20px;overflow:hidden;border-radius:5px;"><div class="icon-c" style="transform:scale(0.21);transform-origin:0 0;width:96px;height:96px;"><svg viewBox="0 0 100 100"><rect x="22" y="18" width="56" height="70" rx="10" fill="#2a2a40" stroke="#5B6AF0" stroke-width="3"/><rect x="38" y="6" width="24" height="16" rx="5" fill="#5B6AF0"/><ellipse cx="40" cy="52" rx="9" ry="11" fill="#fff"/><ellipse cx="60" cy="52" rx="9" ry="11" fill="#fff"/><circle cx="41" cy="53" r="5" fill="#1a1a2e"/><circle cx="61" cy="53" r="5" fill="#1a1a2e"/></svg></div></div><span class="letter">C</span></div>
+        <div class="scene-icon"><div style="width:20px;height:20px;overflow:hidden;border-radius:5px;"><div class="icon-d" style="transform:scale(0.21);transform-origin:0 0;width:96px;height:96px;"><svg viewBox="0 0 100 100"><defs><linearGradient id="gdx1" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FFB800"/><stop offset="100%" stop-color="#FF8C00"/></linearGradient><linearGradient id="gdx2" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#5B6AF0"/><stop offset="100%" stop-color="#7C5CF0"/></linearGradient></defs><circle cx="50" cy="50" r="42" fill="none" stroke="url(#gdx2)" stroke-width="4"/><path d="M50 8 A42 42 0 0 1 50 92 A22 22 0 0 1 50 48 A22 22 0 0 0 50 8Z" fill="url(#gdx1)"/><path d="M50 8 A42 42 0 0 0 50 92 A22 22 0 0 0 50 48 A22 22 0 0 1 50 8Z" fill="#fff"/></svg></div></div><span class="letter">D</span></div>
+      </div>
+    </div>
+
+    <div class="scene">
+      <div class="scene-title">系统托盘图标</div>
+      <div class="scene-icons">
+        <div class="scene-icon"><div style="width:16px;height:16px;overflow:hidden;border-radius:4px;"><div class="icon-a" style="transform:scale(0.167);transform-origin:0 0;width:96px;height:96px;"><div class="ear-l"></div><div class="ear-r"></div><div class="eye-l"></div><div class="eye-r"></div><div class="board"></div></div></div><span class="letter">A</span></div>
+        <div class="scene-icon"><div style="width:16px;height:16px;overflow:hidden;border-radius:4px;"><div class="icon-b" style="transform:scale(0.167);transform-origin:0 0;width:96px;height:96px;"><svg viewBox="0 0 100 100"><circle cx="50" cy="22" r="12" fill="#fff" opacity="0.9"/><circle cx="50" cy="62" r="6" fill="#fff" opacity="0.9"/><path d="M35 28 L35 92 Q35 96 39 96 L62 96 Q76 96 76 78 Q76 62 62 56 Q72 50 72 36 Q72 28 62 28 Z" fill="#fff" fill-opacity="0.92"/></svg></div></div><span class="letter">B</span></div>
+        <div class="scene-icon"><div style="width:16px;height:16px;overflow:hidden;border-radius:4px;"><div class="icon-c" style="transform:scale(0.167);transform-origin:0 0;width:96px;height:96px;"><svg viewBox="0 0 100 100"><rect x="22" y="18" width="56" height="70" rx="10" fill="#2a2a40" stroke="#5B6AF0" stroke-width="3"/><rect x="38" y="6" width="24" height="16" rx="5" fill="#5B6AF0"/><ellipse cx="40" cy="52" rx="9" ry="11" fill="#fff"/><ellipse cx="60" cy="52" rx="9" ry="11" fill="#fff"/></svg></div></div><span class="letter">C</span></div>
+        <div class="scene-icon"><div style="width:16px;height:16px;overflow:hidden;border-radius:4px;"><div class="icon-d" style="transform:scale(0.167);transform-origin:0 0;width:96px;height:96px;"><svg viewBox="0 0 100 100"><defs><linearGradient id="gdy1" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FFB800"/><stop offset="100%" stop-color="#FF8C00"/></linearGradient><linearGradient id="gdy2" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#5B6AF0"/><stop offset="100%" stop-color="#7C5CF0"/></linearGradient></defs><circle cx="50" cy="50" r="42" fill="none" stroke="url(#gdy2)" stroke-width="4"/><path d="M50 8 A42 42 0 0 1 50 92 A22 22 0 0 1 50 48 A22 22 0 0 0 50 8Z" fill="url(#gdy1)"/><path d="M50 8 A42 42 0 0 0 50 92 A22 22 0 0 0 50 48 A22 22 0 0 1 50 8Z" fill="#fff"/></svg></div></div><span class="letter">D</span></div>
+      </div>
+    </div>
+
+    <div class="scene">
+      <div class="scene-title">关于对话框 Logo</div>
+      <div class="scene-icons">
+        <div class="scene-icon"><div style="width:64px;height:64px;overflow:hidden;border-radius:16px;"><div class="icon-a" style="transform:scale(0.667);transform-origin:0 0;width:96px;height:96px;"><div class="ear-l"></div><div class="ear-r"></div><div class="eye-l"></div><div class="eye-r"></div><div class="board"></div></div></div><span class="letter">A</span></div>
+        <div class="scene-icon"><div style="width:64px;height:64px;overflow:hidden;border-radius:16px;"><div class="icon-b" style="transform:scale(0.667);transform-origin:0 0;width:96px;height:96px;"><svg viewBox="0 0 100 100"><circle cx="50" cy="22" r="12" fill="#fff" opacity="0.9"/><circle cx="50" cy="62" r="6" fill="#fff" opacity="0.9"/><path d="M35 28 L35 92 Q35 96 39 96 L62 96 Q76 96 76 78 Q76 62 62 56 Q72 50 72 36 Q72 28 62 28 Z" fill="#fff" fill-opacity="0.92"/></svg></div></div><span class="letter">B</span></div>
+        <div class="scene-icon"><div style="width:64px;height:64px;overflow:hidden;border-radius:16px;"><div class="icon-c" style="transform:scale(0.667);transform-origin:0 0;width:96px;height:96px;"><svg viewBox="0 0 100 100"><rect x="22" y="18" width="56" height="70" rx="10" fill="#2a2a40" stroke="#5B6AF0" stroke-width="3"/><rect x="38" y="6" width="24" height="16" rx="5" fill="#5B6AF0"/><ellipse cx="40" cy="52" rx="9" ry="11" fill="#fff"/><ellipse cx="60" cy="52" rx="9" ry="11" fill="#fff"/><circle cx="41" cy="53" r="5" fill="#1a1a2e"/><circle cx="61" cy="53" r="5" fill="#1a1a2e"/><ellipse cx="50" cy="74" rx="5" ry="3.5" fill="#5B6AF0"/></svg></div></div><span class="letter">C</span></div>
+        <div class="scene-icon"><div style="width:64px;height:64px;overflow:hidden;border-radius:16px;"><div class="icon-d" style="transform:scale(0.667);transform-origin:0 0;width:96px;height:96px;"><svg viewBox="0 0 100 100"><defs><linearGradient id="gdz1" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FFB800"/><stop offset="100%" stop-color="#FF8C00"/></linearGradient><linearGradient id="gdz2" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#5B6AF0"/><stop offset="100%" stop-color="#7C5CF0"/></linearGradient></defs><circle cx="50" cy="50" r="42" fill="none" stroke="url(#gdz2)" stroke-width="4"/><path d="M50 8 A42 42 0 0 1 50 92 A22 22 0 0 1 50 48 A22 22 0 0 0 50 8Z" fill="url(#gdz1)"/><path d="M50 8 A42 42 0 0 0 50 92 A22 22 0 0 0 50 48 A22 22 0 0 1 50 8Z" fill="#fff"/><circle cx="50" cy="28" r="7" fill="#fff"/><circle cx="50" cy="72" r="7" fill="url(#gdz1)"/></svg></div></div><span class="letter">D</span></div>
+      </div>
+    </div>
+
+    <div class="scene">
+      <div class="scene-title">托盘弹窗头部</div>
+      <div class="scene-icons">
+        <div class="scene-icon"><div style="width:22px;height:22px;overflow:hidden;border-radius:6px;"><div class="icon-a" style="transform:scale(0.23);transform-origin:0 0;width:96px;height:96px;"><div class="ear-l"></div><div class="ear-r"></div><div class="eye-l"></div><div class="eye-r"></div><div class="board"></div></div></div><span class="letter">A</span></div>
+        <div class="scene-icon"><div style="width:22px;height:22px;overflow:hidden;border-radius:6px;"><div class="icon-b" style="transform:scale(0.23);transform-origin:0 0;width:96px;height:96px;"><svg viewBox="0 0 100 100"><circle cx="50" cy="22" r="12" fill="#fff" opacity="0.9"/><circle cx="50" cy="62" r="6" fill="#fff" opacity="0.9"/><path d="M35 28 L35 92 Q35 96 39 96 L62 96 Q76 96 76 78 Q76 62 62 56 Q72 50 72 36 Q72 28 62 28 Z" fill="#fff" fill-opacity="0.92"/></svg></div></div><span class="letter">B</span></div>
+        <div class="scene-icon"><div style="width:22px;height:22px;overflow:hidden;border-radius:6px;"><div class="icon-c" style="transform:scale(0.23);transform-origin:0 0;width:96px;height:96px;"><svg viewBox="0 0 100 100"><rect x="22" y="18" width="56" height="70" rx="10" fill="#2a2a40" stroke="#5B6AF0" stroke-width="3"/><rect x="38" y="6" width="24" height="16" rx="5" fill="#5B6AF0"/><ellipse cx="40" cy="52" rx="9" ry="11" fill="#fff"/><ellipse cx="60" cy="52" rx="9" ry="11" fill="#fff"/></svg></div></div><span class="letter">C</span></div>
+        <div class="scene-icon"><div style="width:22px;height:22px;overflow:hidden;border-radius:6px;"><div class="icon-d" style="transform:scale(0.23);transform-origin:0 0;width:96px;height:96px;"><svg viewBox="0 0 100 100"><defs><linearGradient id="gdt1" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FFB800"/><stop offset="100%" stop-color="#FF8C00"/></linearGradient><linearGradient id="gdt2" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#5B6AF0"/><stop offset="100%" stop-color="#7C5CF0"/></linearGradient></defs><circle cx="50" cy="50" r="42" fill="none" stroke="url(#gdt2)" stroke-width="4"/><path d="M50 8 A42 42 0 0 1 50 92 A22 22 0 0 1 50 48 A22 22 0 0 0 50 8Z" fill="url(#gdt1)"/><path d="M50 8 A42 42 0 0 0 50 92 A22 22 0 0 0 50 48 A22 22 0 0 1 50 8Z" fill="#fff"/></svg></div></div><span class="letter">D</span></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div style="text-align:center;margin-top:48px;padding-bottom:60px;">
+  <p style="color:#555;font-size:13px;">选好方案后告诉我，我来生成最终的图标文件（PNG + ICO + ICNS + SVG）</p>
+</div>
+
+<script>
+function vote(letter) {
+  document.querySelectorAll('.card').forEach(c => c.style.borderColor = '#252535');
+  const card = document.getElementById('card-' + letter.toLowerCase());
+  if (card) card.style.borderColor = '#5B6AF0';
+  const name = {
+    A: '方案 A — 熊猫+剪贴板',
+    B: '方案 B — 字母P熊猫耳',
+    C: '方案 C — 剪贴板+熊猫眼',
+    D: '方案 D — 太极熊猫优化'
+  }[letter];
+  alert('已选择: ' + name + '\n\n你可以在预览后最终确认');
+}
+</script>
+
+</body>
+</html>
