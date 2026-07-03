@@ -1,6 +1,6 @@
 import { useState, useCallback, createContext, useContext, ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle2, AlertCircle, Info, X, RotateCcw } from "lucide-react";
+import { CheckCircle2, AlertCircle, AlertTriangle, Info, X, RotateCcw } from "lucide-react";
 
 type ToastType = "success" | "error" | "info" | "warning";
 
@@ -47,6 +47,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const ICONS = {
     success: CheckCircle2,
     error: AlertCircle,
+    warning: AlertTriangle,
     info: Info,
   };
 
