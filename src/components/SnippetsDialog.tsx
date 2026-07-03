@@ -4,6 +4,7 @@ import { X, Plus, Trash2, Copy, Edit3, ClipboardList, Check, Download, CheckSqua
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "@/lib/logger";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import styles from "./Snippets.module.css";
 
 // v5.0.39 方案A渐进式优化：卡片布局+分类标签+常驻操作栏+快速预览弹窗
 const TAG_OPTIONS = ["API", "SQL", "配置", "模板", "命令"] as const;
@@ -179,25 +180,25 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="dialog-header snippets-header">
-                <div className="snippets-header-left">
+              <div className={`dialog-header ${styles.snippetsHeader}`}>
+                <div className={styles.snippetsHeaderLeft}>
                   <ClipboardList size={16} style={{ color: "var(--accent)" }} />
                   <h2 className="dialog-title">片段库</h2>
-                  <span className="panel-count">{snippets.length}</span>
+                  <span className={styles.panelCount}>{snippets.length}</span>
                 </div>
-                <div className="snippets-header-right">
+                <div className={styles.snippetsHeaderRight}>
                   <button
                     onClick={() => { setBatchMode(!batchMode); setSelectedIds(new Set()); }}
-                    className={`btn-sm-v2 outline compact${batchMode ? " active" : ""}`}
+                    className={`${styles.btnSmV2} ${styles.outline} ${styles.compact}${batchMode ? ` ${styles.active}` : ""}`}
                     title={batchMode ? "退出管理" : "批量管理"}>
                     <CheckSquare size={13} />
                     <span>批量</span>
                   </button>
-                  <button className="btn-sm-v2 outline compact" title="导出">
+                  <button className={`${styles.btnSmV2} ${styles.outline} ${styles.compact}`} title="导出">
                     <Download size={13} />
                     <span>导出</span>
                   </button>
-                  <button onClick={handleAdd} className="btn-sm-v2 primary compact">
+                  <button onClick={handleAdd} className={`${styles.btnSmV2} ${styles.primary} ${styles.compact}`}>
                     <Plus size={13} />
                     <span>新建</span>
                   </button>
@@ -213,11 +214,11 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
               <div style={{ padding: "8px 16px" }}>
                 <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
                   placeholder="搜索片段..."
-                  className="snippet-search" />
+                  className={styles.snippetSearch} />
               </div>
 
               {/* Tag Filter */}
-              <div className="snippet-filter-bar">
+              <div className={styles.snippetFilterBar}>
                 {FILTER_TAGS.map((tag) => {
                   const count = tag === "全部" ? snippets.length : (counts[tag] || 0);
                   const dotColor = TAG_DOT_COLORS[tag];
@@ -225,12 +226,12 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
                     <button
                       key={tag}
                       onClick={() => setActiveTag(tag)}
-                      className={`snippet-filter-chip${activeTag === tag ? " active" : ""}`}>
+                      className={`${styles.snippetFilterChip}${activeTag === tag ? ` ${styles.active}` : ""}`}>
                       {dotColor && (
-                        <span className="chip-dot" style={{ backgroundColor: dotColor }} />
+                        <span className={styles.chipDot} style={{ backgroundColor: dotColor }} />
                       )}
                       {tag}
-                      <span className="chip-count">{count}</span>
+                      <span className={styles.chipCount}>{count}</span>
                     </button>
                   );
                 })}
@@ -240,25 +241,25 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
               <div className="dialog-body" style={{ padding: "0 16px 16px" }}>
                 {loading ? (
                   <div style={{ display: "flex", justifyContent: "center", padding: "48px 0" }}>
-                    <p className="snippet-item-sub">加载中...</p>
+                    <p className={styles.snippetItemSub}>加载中...</p>
                   </div>
                 ) : editing ? (
-                  <div className="snippet-edit-form">
+                  <div className={styles.snippetEditForm}>
                     <input type="text" value={editing.name}
                       onChange={(e) => setEditing({ ...editing, name: e.target.value })}
                       placeholder="片段名称"
-                      className="snippet-edit-input" />
+                      className={styles.snippetEditInput} />
                     <textarea value={editing.content}
                       onChange={(e) => setEditing({ ...editing, content: e.target.value })}
                       placeholder="片段内容..."
                       rows={4}
-                      className="snippet-edit-textarea" />
-                    <div className="snippet-edit-tag-row">
+                      className={styles.snippetEditTextarea} />
+                    <div className={styles.snippetEditTagRow}>
                       <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>标签：</span>
                       <select
                         value={editing.tag || ""}
                         onChange={(e) => setEditing({ ...editing, tag: e.target.value })}
-                        className="snippet-edit-tag-select">
+                        className={styles.snippetEditTagSelect}>
                         <option value="">无标签</option>
                         {TAG_OPTIONS.map((t) => (
                           <option key={t} value={t}>{t}</option>
@@ -267,22 +268,22 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
                     </div>
                     <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
                       <button onClick={() => setEditing(null)}
-                        className="extract-btn-sm ghost">取消</button>
+                        className={`${styles.extractBtnSm} ${styles.ghost}`}>取消</button>
                       <button onClick={handleSaveEdit}
-                        className="extract-btn-sm primary">保存</button>
+                        className={`${styles.extractBtnSm} ${styles.primary}`}>保存</button>
                     </div>
                   </div>
                 ) : filtered.length === 0 ? (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "48px 0", gap: "8px" }}>
                     <ClipboardList size={20} style={{ color: "var(--text-muted)" }} />
-                    <p className="snippet-item-sub">{search ? "没有匹配的片段" : "暂无片段，点击 + 添加"}</p>
+                    <p className={styles.snippetItemSub}>{search ? "没有匹配的片段" : "暂无片段，点击 + 添加"}</p>
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                     {filtered.map((s) => {
                       const tagClass = TAG_COLORS[s.tag || ""] || "";
                       return (
-                        <div key={s.id} className="snippet-card-v2"
+                        <div key={s.id} className={styles.snippetCardV2}
                           onClick={() => {
                             if (batchMode) {
                               toggleBatchSelect(s.id);
@@ -290,39 +291,39 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
                               setPreviewSnippet(s);
                             }
                           }}>
-                          <div className="snippet-card-v2-header">
-                            <div className="snippet-card-v2-title">
+                          <div className={styles.snippetCardV2Header}>
+                            <div className={styles.snippetCardV2Title}>
                               {batchMode && (
                                 <div
-                                  className={`snippet-batch-checkbox${selectedIds.has(s.id) ? " checked" : ""}`}
+                                  className={`${styles.snippetBatchCheckbox}${selectedIds.has(s.id) ? ` ${styles.checked}` : ""}`}
                                   onClick={(e) => { e.stopPropagation(); toggleBatchSelect(s.id); }}>
                                   {selectedIds.has(s.id) ? <Check size={12} /> : ""}
                                 </div>
                               )}
-                              <span className="snippet-card-v2-title-text">{s.name}</span>
+                              <span className={styles.snippetCardV2TitleText}>{s.name}</span>
                               {s.tag && (
-                                <span className={`snippet-tag ${tagClass}`}>{s.tag}</span>
+                                <span className={`${styles.snippetTag} ${styles[tagClass] || ""}`}>{s.tag}</span>
                               )}
                             </div>
                           </div>
-                          <div className="snippet-card-v2-body">{s.content}</div>
-                          <div className="snippet-card-v2-footer">
-                            <span className="snippet-card-v2-meta">
+                          <div className={styles.snippetCardV2Body}>{s.content}</div>
+                          <div className={styles.snippetCardV2Footer}>
+                            <span className={styles.snippetCardV2Meta}>
                               <span>🕐 片段</span>
                               <span>📋 已复制 0 次</span>
                             </span>
-                            <div className="snippet-card-v2-actions">
-                              <button className="snippet-action-btn-v2 copy"
+                            <div className={styles.snippetCardV2Actions}>
+                              <button className={`${styles.snippetActionBtnV2} ${styles.copy}`}
                                 onClick={(e) => { e.stopPropagation(); handleCopy(s.content); }}
                                 title="复制">
                                 <Copy size={13} />
                               </button>
-                              <button className="snippet-action-btn-v2"
+                              <button className={styles.snippetActionBtnV2}
                                 onClick={(e) => { e.stopPropagation(); setEditing(s); }}
                                 title="编辑">
                                 <Edit3 size={13} />
                               </button>
-                              <button className="snippet-action-btn-v2 danger"
+                              <button className={`${styles.snippetActionBtnV2} ${styles.danger}`}
                                 onClick={(e) => { e.stopPropagation(); setDeleteTarget(s); }}
                                 title="删除">
                                 <Trash2 size={13} />
@@ -338,10 +339,10 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
                 {/* 最近使用 */}
                 {snippets.length > 0 && !editing && (
                   <>
-                    <div className="recent-section-label">最近使用</div>
-                    <div className="recent-tags">
+                    <div className={styles.recentSectionLabel}>最近使用</div>
+                    <div className={styles.recentTags}>
                       {snippets.slice(0, 5).map((s) => (
-                        <span key={s.id} className="recent-tag"
+                        <span key={s.id} className={styles.recentTag}
                           onClick={() => setPreviewSnippet(s)}>
                           {s.name}
                         </span>
@@ -355,13 +356,13 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
 
           {/* 快速预览弹窗 */}
           {previewSnippet && (
-            <div className="snippet-preview-overlay" onClick={() => setPreviewSnippet(null)}>
-              <div className="snippet-preview-modal" onClick={(e) => e.stopPropagation()}>
-                <div className="snippet-preview-header">
-                  <div className="snippet-preview-title">
+            <div className={styles.snippetPreviewOverlay} onClick={() => setPreviewSnippet(null)}>
+              <div className={styles.snippetPreviewModal} onClick={(e) => e.stopPropagation()}>
+                <div className={styles.snippetPreviewHeader}>
+                  <div className={styles.snippetPreviewTitle}>
                     {previewSnippet.name}
                     {previewSnippet.tag && (
-                      <span className={`snippet-tag ${TAG_COLORS[previewSnippet.tag] || ""}`}>
+                      <span className={`${styles.snippetTag} ${styles[TAG_COLORS[previewSnippet.tag]] || ""}`}>
                         {previewSnippet.tag}
                       </span>
                     )}
@@ -372,19 +373,19 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
                     <X size={16} />
                   </button>
                 </div>
-                <div className="snippet-preview-body">{previewSnippet.content}</div>
-                <div className="snippet-preview-footer">
+                <div className={styles.snippetPreviewBody}>{previewSnippet.content}</div>
+                <div className={styles.snippetPreviewFooter}>
                   <span style={{ fontSize: 11, color: "var(--text-muted)" }}>🕐 片段 · 📋 已复制 0 次</span>
                   <div style={{ display: "flex", gap: "6px" }}>
-                    <button className="btn-sm-v2 outline"
+                    <button className={`${styles.btnSmV2} ${styles.outline}`}
                       onClick={() => { handleCopy(previewSnippet.content); }}>
                       <Copy size={12} /> 复制
                     </button>
-                    <button className="btn-sm-v2 outline"
+                    <button className={`${styles.btnSmV2} ${styles.outline}`}
                       onClick={() => { setEditing(previewSnippet); setPreviewSnippet(null); }}>
                       <Edit3 size={12} /> 编辑
                     </button>
-                    <button className="btn-sm-v2 ghost"
+                    <button className={`${styles.btnSmV2} ${styles.ghost}`}
                       style={{ color: "var(--danger)" }}
                       onClick={() => {
                         setDeleteTarget(previewSnippet);

@@ -1,4 +1,9 @@
-/* globals.css — 全局基础样式 */
+/* globals.css — 全局入口
+ * 
+ * 加载顺序：theme.css（变量+keyframes）→ 全局基础样式 → app.css（组件样式，逐步迁移中）
+ */
+
+@import "./theme.css";
 @import "./app.css";
 
 /* ===== 全局基础 ===== */

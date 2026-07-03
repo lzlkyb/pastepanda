@@ -10,6 +10,7 @@ import { pasteText, pasteImage, getImageThumbnail, getImageDataUrl, getImageBase
 import { invoke } from "@tauri-apps/api/core";
 import { ClipboardList, Copy, Search, Zap, ZoomIn, ZoomOut, RotateCw, Download, X, Info, Trash2, FileDown, ScanText, Pin, CheckSquare, Square } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import styles from "./CardList.module.css";
 
 const EditDialog = lazy(() => import("@/components/EditDialog").then(m => ({ default: m.EditDialog })));
 const FileDetailDialog = lazy(() => import("@/components/FileDetailDialog").then(m => ({ default: m.FileDetailDialog })));
@@ -59,6 +60,7 @@ export function CardList() {
   const [selRect, setSelRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const selStartRef = useRef({ x: 0, y: 0 });
   const panStartRef = useRef({ x: 0, y: 0, offsetX: 0, offsetY: 0 });
+  const viewportRef = useRef<HTMLDivElement>(null);
   // 使用 ref 存储预览状态，避免 closePreview 闭包导致 ESC 监听器频繁重新注册
   const previewStateRef = useRef({ scale: 1, rotation: 0, offset: { x: 0, y: 0 } });
   // 保存每个图片的上次预览状态（按 content 路径 key）
@@ -468,7 +470,7 @@ export function CardList() {
   const handleOcrSelectStart = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
     // 如果点击的是词框，不触发框选
-    if ((e.target as HTMLElement).closest('.ocr-word-box')) return;
+    if ((e.target as HTMLElement).closest('[data-ocr-word-box]')) return;
     const viewport = e.currentTarget as HTMLElement;
     const rect = viewport.getBoundingClientRect();
     setIsSelecting(true);
@@ -501,7 +503,7 @@ export function CardList() {
       return;
     }
     // 检测哪些词在框选区域内
-    const viewport = document.querySelector('.image-detail-viewport') as HTMLElement;
+    const viewport = viewportRef.current;
     if (!viewport) { setIsSelecting(false); setSelRect(null); return; }
     const vr = viewport.getBoundingClientRect();
 
@@ -604,45 +606,45 @@ export function CardList() {
 
   return (
     <ContextMenu>
-    <div className="scroll-area" ref={scrollRef} onScroll={handleScroll} role="listbox" aria-label="剪贴板记录列表" aria-multiselectable="true" aria-setsize={items.length} aria-live="polite">
-      <div className="card-list">
+    <div className={styles.scrollArea} ref={scrollRef} onScroll={handleScroll} role="listbox" aria-label="剪贴板记录列表" aria-multiselectable="true" aria-setsize={items.length} aria-live="polite">
+      <div className={styles.cardList}>
         {items.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon">
+          <div className={styles.emptyState}>
+            <div className={styles.emptyIcon}>
               <ClipboardList size={28} style={{ color: "var(--accent)" }} strokeWidth={1.5} />
             </div>
             <div style={{ textAlign: "center" }}>
-              <p className="empty-title">
+              <p className={styles.emptyTitle}>
                 {searchKeyword ? "没有找到匹配的记录" : filterType !== "all" ? "该分类暂无记录" : "剪贴板是空的"}
               </p>
-              <p className="empty-desc">
+              <p className={styles.emptyDesc}>
                 {searchKeyword ? "试试其他关键词" : "复制任意内容，它会自动出现在这里"}
               </p>
               {searchKeyword && (
-                <button onClick={() => useAppStore.getState().setSearchKeyword("")} className="empty-clear-btn">
+                <button onClick={() => useAppStore.getState().setSearchKeyword("")} className={styles.emptyClearBtn}>
                   清除搜索条件
                 </button>
               )}
             </div>
             {!searchKeyword && filterType === "all" && (
-              <div className="guide-cards">
-                <div className="guide-welcome">
-                  <span className="guide-welcome-emoji">👋</span>
+              <div className={styles.guideCards}>
+                <div className={styles.guideWelcome}>
+                  <span className={styles.guideWelcomeEmoji}>👋</span>
                   <span>你的剪贴板助手已就绪，试试复制一段文字吧</span>
                 </div>
-                <div className="guide-card">
-                  <div className="guide-icon" style={{ background: "var(--accent-light)" }}><Copy size={18} style={{ color: "var(--accent)" }} /></div>
-                  <div className="guide-text"><div className="guide-label">自动记录</div><div className="guide-desc">Ctrl+C 复制内容自动保存</div></div>
+                <div className={styles.guideCard}>
+                  <div className={styles.guideIcon} style={{ background: "var(--accent-light)" }}><Copy size={18} style={{ color: "var(--accent)" }} /></div>
+                  <div className={styles.guideText}><div className={styles.guideLabel}>自动记录</div><div className={styles.guideDesc}>Ctrl+C 复制内容自动保存</div></div>
                 </div>
-                <div className="guide-card">
-                  <div className="guide-icon" style={{ background: "var(--accent-light)" }}><Search size={18} style={{ color: "var(--accent)" }} /></div>
-                  <div className="guide-text"><div className="guide-label">搜索查找</div><div className="guide-desc">输入关键词快速定位</div></div>
+                <div className={styles.guideCard}>
+                  <div className={styles.guideIcon} style={{ background: "var(--accent-light)" }}><Search size={18} style={{ color: "var(--accent)" }} /></div>
+                  <div className={styles.guideText}><div className={styles.guideLabel}>搜索查找</div><div className={styles.guideDesc}>输入关键词快速定位</div></div>
                 </div>
-                <div className="guide-card">
-                  <div className="guide-icon" style={{ background: "var(--accent-light)" }}><Zap size={18} style={{ color: "var(--accent)" }} /></div>
-                  <div className="guide-text"><div className="guide-label">依次粘贴</div><div className="guide-desc">Ctrl+Q 逐条粘贴</div></div>
+                <div className={styles.guideCard}>
+                  <div className={styles.guideIcon} style={{ background: "var(--accent-light)" }}><Zap size={18} style={{ color: "var(--accent)" }} /></div>
+                  <div className={styles.guideText}><div className={styles.guideLabel}>依次粘贴</div><div className={styles.guideDesc}>Ctrl+Q 逐条粘贴</div></div>
                 </div>
-                <div className="guide-footer-hint">
+                <div className={styles.guideFooterHint}>
                   💡 按 <kbd>?</kbd> 查看所有快捷键 · 点击右上角 <span style={{ color: "var(--accent)" }}>❓</span> 打开帮助
                 </div>
               </div>
@@ -652,8 +654,8 @@ export function CardList() {
           <>
             {/* 批量操作工具栏 */}
             {selectedCount > 0 && (
-              <div className="batch-toolbar">
-                <span className="batch-toolbar-label">已选 {selectedCount} 条</span>
+              <div className={styles.batchToolbar}>
+                <span className={styles.batchToolbarLabel}>已选 {selectedCount} 条</span>
                 <button
                   onClick={() => {
                     const store = useAppStore.getState();
@@ -663,19 +665,19 @@ export function CardList() {
                       store.selectAll();
                     }
                   }}
-                  className="batch-btn"
+                  className={styles.batchBtn}
                   title={selectedCount >= items.length ? "取消全选" : "全选当前列表"}
                   aria-label={selectedCount >= items.length ? "取消全选" : "全选"}>
                   {selectedCount >= items.length ? <CheckSquare size={12} /> : <Square size={12} />}
                   {selectedCount >= items.length ? "取消全选" : "全选"}
                 </button>
-                <button onClick={handleBatchCopy} className="batch-btn" title="合并复制选中文本" aria-label="合并复制选中文本">
+                <button onClick={handleBatchCopy} className={styles.batchBtn} title="合并复制选中文本" aria-label="合并复制选中文本">
                   <Copy size={12} /> 合并复制
                 </button>
-                <button onClick={handleBatchExport} className="batch-btn" title="导出选中记录" aria-label="导出选中记录">
+                <button onClick={handleBatchExport} className={styles.batchBtn} title="导出选中记录" aria-label="导出选中记录">
                   <FileDown size={12} /> 导出
                 </button>
-                <button onClick={() => setShowBatchDeleteConfirm(true)} className="batch-btn batch-btn-danger" title="删除选中记录" aria-label="删除选中记录">
+                <button onClick={() => setShowBatchDeleteConfirm(true)} className={`${styles.batchBtn} ${styles.batchBtnDanger}`} title="删除选中记录" aria-label="删除选中记录">
                   <Trash2 size={12} /> 删除
                 </button>
               </div>
@@ -704,12 +706,12 @@ export function CardList() {
               })}
             </div>
             {hasMore && items.length > 0 && (
-              <div className="load-more-area">
-                {loadingMore && <span className="load-more-hint">加载中…</span>}
+              <div className={styles.loadMoreArea}>
+                {loadingMore && <span className={styles.loadMoreHint}>加载中…</span>}
                 {loadError && !loadingMore && (
                   <>
-                    <span className="load-more-error">加载失败{retryCount > 0 ? ` (已重试 ${retryCount} 次)` : ""}</span>
-                    <button onClick={handleRetryLoadMore} className="load-more-retry-btn">重试</button>
+                    <span className={styles.loadMoreError}>加载失败{retryCount > 0 ? ` (已重试 ${retryCount} 次)` : ""}</span>
+                    <button onClick={handleRetryLoadMore} className={styles.loadMoreRetryBtn}>重试</button>
                   </>
                 )}
               </div>
@@ -734,7 +736,7 @@ export function CardList() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 20 }}
             transition={{ type: "spring", stiffness: 400, damping: 30 }}
-            className="dialog-box image-detail-dialog"
+            className={`dialog-box ${styles.imageDetailDialog}`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -747,35 +749,35 @@ export function CardList() {
             <div className="dialog-body" style={{ gap: 12 }}>
               {/* 元信息标签行 */}
               {previewInfo && (
-                <div className="image-detail-meta">
-                  <span className="image-detail-tag accent">📄 {previewInfo.file_name}</span>
-                  <span className="image-detail-tag">{previewInfo.width} × {previewInfo.height}</span>
-                  <span className="image-detail-tag">{previewInfo.size_str}</span>
-                  <span className="image-detail-tag">来自剪贴板</span>
+                <div className={styles.imageDetailMeta}>
+                  <span className={`${styles.imageDetailTag} ${styles.imageDetailTagAccent}`}>📄 {previewInfo.file_name}</span>
+                  <span className={styles.imageDetailTag}>{previewInfo.width} × {previewInfo.height}</span>
+                  <span className={styles.imageDetailTag}>{previewInfo.size_str}</span>
+                  <span className={styles.imageDetailTag}>来自剪贴板</span>
                 </div>
               )}
 
               {/* 工具栏 */}
-              <div className="image-detail-toolbar">
-                <button className="image-detail-tool-btn" title="缩小" onClick={() => setPreviewScale((s) => Math.max(0.2, s - 0.25))}><ZoomOut size={16} /></button>
-                <span className="image-detail-zoom-label">{Math.round(previewScale * 100)}%</span>
-                <button className="image-detail-tool-btn" title="放大" onClick={() => setPreviewScale((s) => Math.min(5, s + 0.25))}><ZoomIn size={16} /></button>
-                <button className="image-detail-tool-btn" title="适应窗口" onClick={() => { setPreviewScale(1); setPreviewOffset({ x: 0, y: 0 }); }}>1:1</button>
-                <button className="image-detail-tool-btn" title="旋转" onClick={() => setPreviewRotation((r) => (r + 90) % 360)}><RotateCw size={16} /></button>
-                <span className="image-detail-toolbar-sep" />
+              <div className={styles.imageDetailToolbar}>
+                <button className={styles.imageDetailToolBtn} title="缩小" onClick={() => setPreviewScale((s) => Math.max(0.2, s - 0.25))}><ZoomOut size={16} /></button>
+                <span className={styles.imageDetailZoomLabel}>{Math.round(previewScale * 100)}%</span>
+                <button className={styles.imageDetailToolBtn} title="放大" onClick={() => setPreviewScale((s) => Math.min(5, s + 0.25))}><ZoomIn size={16} /></button>
+                <button className={styles.imageDetailToolBtn} title="适应窗口" onClick={() => { setPreviewScale(1); setPreviewOffset({ x: 0, y: 0 }); }}>1:1</button>
+                <button className={styles.imageDetailToolBtn} title="旋转" onClick={() => setPreviewRotation((r) => (r + 90) % 360)}><RotateCw size={16} /></button>
+                <span className={styles.imageDetailToolbarSep} />
                 {/* OCR 识别按钮 */}
                 <button
-                  className={`image-detail-tool-btn ocr-tool-btn${ocrActive ? ' ocr-active' : ''}`}
+                  className={`${styles.imageDetailToolBtn} ${styles.ocrToolBtn}${ocrActive ? ' ' + styles.ocrToolBtnActive : ''}`}
                   title={ocrActive ? "关闭文字识别" : "识别图片中的文字"}
                   onClick={toggleOcrOverlay}
                   disabled={ocrLoading}
                 >
-                  {ocrLoading ? <div className="ocr-spinner-small" /> : <ScanText size={16} />}
+                  {ocrLoading ? <div className={styles.ocrSpinnerSmall} /> : <ScanText size={16} />}
                   <span style={{ marginLeft: 4, fontSize: 12 }}>{ocrActive ? '文字已识别' : '识别文字'}</span>
                 </button>
                 {/* 置顶按钮 */}
                 <button
-                  className="image-detail-tool-btn pin-tool-btn"
+                  className={`${styles.imageDetailToolBtn} ${styles.pinToolBtn}`}
                   title="将图片钉在屏幕最上层"
                   onClick={handlePinImage}
                 >
@@ -786,7 +788,8 @@ export function CardList() {
 
               {/* 图片查看区 */}
               <div
-                className="image-detail-viewport"
+                ref={viewportRef}
+                className={styles.imageDetailViewport}
                 onWheel={handlePreviewWheel}
                 onMouseDown={ocrActive ? handleOcrSelectStart : handlePanStart}
                 onMouseMove={ocrActive ? handleOcrSelectMove : handlePanMove}
@@ -799,14 +802,14 @@ export function CardList() {
               >
                 {/* OCR 加载遮罩 */}
                 {ocrLoading && (
-                  <div className="image-detail-loading">
-                    <div className="image-detail-spinner" />
+                  <div className={styles.imageDetailLoading}>
+                    <div className={styles.imageDetailSpinner} />
                     <span>正在识别文字…</span>
                   </div>
                 )}
                 {previewLoading && !ocrLoading ? (
-                  <div className="image-detail-loading">
-                    <div className="image-detail-spinner" />
+                  <div className={styles.imageDetailLoading}>
+                    <div className={styles.imageDetailSpinner} />
                     <span>加载中…</span>
                   </div>
                 ) : previewImage ? (
@@ -814,7 +817,7 @@ export function CardList() {
                     <img
                       src={previewImage}
                       alt="预览"
-                      className="image-detail-img"
+                      className={styles.imageDetailImg}
                       style={{
                         transform: `translate(${previewOffset.x}px, ${previewOffset.y}px) scale(${previewScale}) rotate(${previewRotation}deg)`,
                         transition: isPanning ? "none" : "transform 0.2s ease",
@@ -823,18 +826,19 @@ export function CardList() {
                     />
                     {/* OCR 文字叠加层 */}
                     {ocrActive && ocrResult && (
-                      <div className="ocr-overlay-container" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+                      <div className={styles.ocrOverlayContainer} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
                         {ocrResult.lines.map((line, li) =>
                           line.words.map((word, wi) => {
                             const key = `${li}-${wi}`;
                             const selected = selectedWordIndices.has(key);
                             // OCR 坐标映射：需要根据图片的实际显示位置计算
                             // 简化处理：用百分比定位
-                            const imgEl = document.querySelector('.image-detail-viewport img') as HTMLImageElement;
+                            const viewport = viewportRef.current;
+                            const imgEl = viewport?.querySelector('img') as HTMLImageElement | null;
                             let left = 0, top = 0, width = 0, height = 0;
                             if (imgEl && imgEl.naturalWidth && imgEl.naturalHeight) {
                               const imgRect = imgEl.getBoundingClientRect();
-                              const viewportEl = imgEl.closest('.image-detail-viewport');
+                              const viewportEl = viewport;
                               const vpRect = viewportEl?.getBoundingClientRect();
                               if (vpRect) {
                                 const scaleX = imgRect.width / imgEl.naturalWidth;
@@ -848,7 +852,8 @@ export function CardList() {
                             return (
                               <div
                                 key={key}
-                                className={`ocr-word-box${selected ? ' ocr-word-selected' : ''}`}
+                                data-ocr-word-box
+                                className={`${styles.ocrWordBox}${selected ? ' ' + styles.ocrWordSelected : ''}`}
                                 style={{
                                   position: 'absolute',
                                   left: `${left}%`,
@@ -890,26 +895,26 @@ export function CardList() {
 
               {/* OCR 选中结果栏 */}
               {ocrActive && ocrResult && (
-                <div className="ocr-result-bar">
+                <div className={styles.ocrResultBar}>
                   <span style={{ fontSize: 14 }}>🔍</span>
-                  <span className="ocr-result-count">
+                  <span className={styles.ocrResultCount}>
                     已选 <strong>{selectedWordIndices.size}</strong> 个词
                   </span>
-                  <span className="ocr-result-preview">
+                  <span className={styles.ocrResultPreview}>
                     {selectedWordIndices.size > 0
                       ? getSelectedOcrTexts().join(' ')
                       : '点击图片上的文字区域选择，或拖拽框选'}
                   </span>
                   {selectedWordIndices.size > 0 && (
                     <button
-                      className="ocr-result-clear-btn"
+                      className={styles.ocrResultClearBtn}
                       onClick={() => setSelectedWordIndices(new Set())}
                     >
                       清除
                     </button>
                   )}
                   <button
-                    className="ocr-result-copy-btn"
+                    className={styles.ocrResultCopyBtn}
                     disabled={selectedWordIndices.size === 0}
                     onClick={() => {
                       const texts = getSelectedOcrTexts();
@@ -926,11 +931,11 @@ export function CardList() {
 
               {/* OCR 纯文本结果面板（关闭叠加层时显示） */}
               {!ocrActive && ocrResult && (
-                <div className="ocr-full-text-panel">
-                  <div className="ocr-full-text-header">
+                <div className={styles.ocrFullTextPanel}>
+                  <div className={styles.ocrFullTextHeader}>
                     <span>🔍 全部识别文字</span>
                     <button
-                      className="ocr-full-text-copy-btn"
+                      className={styles.ocrFullTextCopyBtn}
                       onClick={() => {
                         navigator.clipboard.writeText(ocrResult.full_text).then(() => {
                           toast("已复制全部文字", "success");
@@ -940,7 +945,7 @@ export function CardList() {
                       📋 全部复制
                     </button>
                   </div>
-                  <div className="ocr-full-text-body">
+                  <div className={styles.ocrFullTextBody}>
                     {ocrResult.full_text}
                   </div>
                 </div>
@@ -977,7 +982,7 @@ export function CardList() {
                   } catch { toast("保存失败", "error"); }
                 }}><Download size={14} /> 另存</button>
               </div>
-              <span className="image-detail-hint" style={{ marginLeft: 16 }}>
+              <span className={styles.imageDetailHint} style={{ marginLeft: 16 }}>
                 {ocrActive ? '点击选词 · 拖拽框选 · Ctrl+C复制' : '滚轮平移 · Ctrl+滚轮缩放 · +/- 缩放 · 0 重置 · R 旋转'}
               </span>
             </div>

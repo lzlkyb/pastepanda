@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { useUpdate } from "@/contexts/UpdateContext";
 import { ArrowDown, Loader2, CheckCircle, AlertCircle, RotateCcw } from "lucide-react";
 import { VersionBadge } from "@/components/VersionBadge";
+import styles from "./UpdateBanner.module.css";
 
 /**
  * TopBar 版本号融合徽章
@@ -102,10 +103,10 @@ export function UpdateBanner() {
   switch (status) {
     case "checking":
       return (
-        <div className="update-banner update-banner-checking">
+        <div className={`${styles.updateBanner} ${styles.updateBannerChecking}`}>
           <Loader2 size={14} className="spin-icon" />
           <div>
-            <div className="update-banner-title">检查更新中…</div>
+            <div className={styles.updateBannerTitle}>检查更新中…</div>
           </div>
         </div>
       );
@@ -114,15 +115,15 @@ export function UpdateBanner() {
       const ver = update?.version ?? "";
       const desc = update?.body || "包含性能优化和 bug 修复";
       return (
-        <div className="update-banner update-banner-available">
-          <div className="update-banner-icon">
+        <div className={`${styles.updateBanner} ${styles.updateBannerAvailable}`}>
+          <div className={styles.updateBannerIcon}>
             <ArrowDown size={16} />
           </div>
           <div style={{ flex: 1 }}>
-            <div className="update-banner-title">发现新版本 v{ver}</div>
-            <div className="update-banner-desc">{desc}</div>
+            <div className={styles.updateBannerTitle}>发现新版本 v{ver}</div>
+            <div className={styles.updateBannerDesc}>{desc}</div>
           </div>
-          <button className="update-banner-btn" onClick={downloadAndInstall}>
+          <button className={styles.updateBannerBtn} onClick={downloadAndInstall}>
             <ArrowDown size={12} /> 下载更新
           </button>
         </div>
@@ -131,28 +132,28 @@ export function UpdateBanner() {
 
     case "downloading":
       return (
-        <div className="update-banner update-banner-downloading">
+        <div className={`${styles.updateBanner} ${styles.updateBannerDownloading}`}>
           <Loader2 size={14} className="spin-icon" />
           <div style={{ flex: 1 }}>
-            <div className="update-banner-title">正在下载更新…</div>
-            <div className="update-progress-bar">
-              <div className="update-progress-fill update-progress-indeterminate" />
+            <div className={styles.updateBannerTitle}>正在下载更新…</div>
+            <div className={styles.updateProgressBar}>
+              <div className={`${styles.updateProgressFill} ${styles.updateProgressIndeterminate}`} />
             </div>
-            <div className="update-banner-desc">正在从 GitHub 下载，请耐心等待</div>
+            <div className={styles.updateBannerDesc}>正在从 GitHub 下载，请耐心等待</div>
           </div>
         </div>
       );
 
     case "ready":
       return (
-        <div className="update-banner update-banner-ready">
+        <div className={`${styles.updateBanner} ${styles.updateBannerReady}`}>
           <CheckCircle size={16} style={{ color: "var(--accent)" }} />
           <div style={{ flex: 1 }}>
-            <div className="update-banner-title">更新已下载完成</div>
-            <div className="update-banner-desc">点击重启以应用更新</div>
+            <div className={styles.updateBannerTitle}>更新已下载完成</div>
+            <div className={styles.updateBannerDesc}>点击重启以应用更新</div>
           </div>
           <button
-            className="update-banner-btn update-banner-btn-restart"
+            className={`${styles.updateBannerBtn} ${styles.updateBannerBtnRestart}`}
             onClick={async () => {
               markInstalled();
               await restart();
@@ -165,14 +166,14 @@ export function UpdateBanner() {
 
     case "installed":
       return (
-        <div className="update-banner update-banner-ready">
+        <div className={`${styles.updateBanner} ${styles.updateBannerReady}`}>
           <CheckCircle size={16} style={{ color: "var(--accent)" }} />
           <div style={{ flex: 1 }}>
-            <div className="update-banner-title">更新已安装</div>
-            <div className="update-banner-desc">需要重启应用才能生效</div>
+            <div className={styles.updateBannerTitle}>更新已安装</div>
+            <div className={styles.updateBannerDesc}>需要重启应用才能生效</div>
           </div>
           <button
-            className="update-banner-btn update-banner-btn-restart"
+            className={`${styles.updateBannerBtn} ${styles.updateBannerBtnRestart}`}
             onClick={restart}
           >
             <RotateCcw size={12} /> 立即重启
@@ -182,13 +183,13 @@ export function UpdateBanner() {
 
     case "error":
       return (
-        <div className="update-banner update-banner-error">
+        <div className={`${styles.updateBanner} ${styles.updateBannerError}`}>
           <AlertCircle size={16} style={{ color: "var(--danger)" }} />
           <div style={{ flex: 1 }}>
-            <div className="update-banner-title">更新失败</div>
-            <div className="update-banner-desc">{error || "未知错误，请重试"}</div>
+            <div className={styles.updateBannerTitle}>更新失败</div>
+            <div className={styles.updateBannerDesc}>{error || "未知错误，请重试"}</div>
           </div>
-          <button className="update-banner-btn" onClick={checkForUpdate}>
+          <button className={styles.updateBannerBtn} onClick={checkForUpdate}>
             重试
           </button>
         </div>
@@ -197,12 +198,12 @@ export function UpdateBanner() {
     case "idle":
     default:
       return (
-        <div className="update-banner update-banner-idle">
+        <div className={`${styles.updateBanner} ${styles.updateBannerIdle}`}>
           <CheckCircle size={14} style={{ color: "var(--accent)" }} />
           <div style={{ flex: 1 }}>
-            <div className="update-banner-title">已是最新版本</div>
+            <div className={styles.updateBannerTitle}>已是最新版本</div>
           </div>
-          <button className="update-banner-btn" onClick={checkForUpdate}>
+          <button className={styles.updateBannerBtn} onClick={checkForUpdate}>
             检查更新
           </button>
         </div>

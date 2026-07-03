@@ -1,6 +1,7 @@
 import { useState, useCallback, createContext, useContext, ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, AlertCircle, AlertTriangle, Info, X, RotateCcw } from "lucide-react";
+import styles from "./Toast.module.css";
 
 type ToastType = "success" | "error" | "info" | "warning";
 
@@ -55,7 +56,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={{ toast }}>
       {children}
       {/* Toast container */}
-      <div className="toast-container">
+      <div className={styles.toastContainer}>
         <AnimatePresence>
           {toasts.map((t) => {
             const Icon = ICONS[t.type];
@@ -66,21 +67,21 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ duration: 0.2 }}
-                className={`toast-item ${t.type}`}
+                className={`${styles.toastItem} ${styles[t.type]}`}
                 style={{
                   pointerEvents: "auto",
                   boxShadow: "var(--shadow-md)",
                   "--toast-duration": `${t.duration}ms`,
                 } as React.CSSProperties}
               >
-                <Icon size={16} className="toast-icon" />
-                <span className="toast-msg">{t.message}</span>
+                <Icon size={16} className={styles.toastIcon} />
+                <span className={styles.toastMsg}>{t.message}</span>
                 {t.onRetry && (
-                  <button onClick={(e) => { e.stopPropagation(); t.onRetry?.(); dismiss(t.id); }} className="toast-retry" title="重试">
+                  <button onClick={(e) => { e.stopPropagation(); t.onRetry?.(); dismiss(t.id); }} className={styles.toastRetry} title="重试">
                     <RotateCcw size={12} />
                   </button>
                 )}
-                <button onClick={() => dismiss(t.id)} className="toast-close">
+                <button onClick={() => dismiss(t.id)} className={styles.toastClose}>
                   <X size={14} />
                 </button>
               </motion.div>

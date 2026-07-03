@@ -1,0 +1,198 @@
+
+/* TopBar 更新徽章 */
+.updateBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: inherit;
+  border: none;
+  cursor: default;
+  transition: all 0.15s;
+}
+
+.updateBadgeAvailable {
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  animation: badge-pulse 2s infinite;
+}
+.updateBadgeAvailable:hover {
+  filter: brightness(1.1);
+}
+
+.updateBadgeDownloading {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.updateBadgeReady {
+  background: #34C759;
+  color: #fff;
+  cursor: pointer;
+  animation: badge-pulse 2s infinite;
+}
+.updateBadgeReady:hover {
+  filter: brightness(1.1);
+}
+
+.updateBadgeError {
+  background: rgba(239, 68, 68, 0.1);
+  color: #EF4444;
+}
+
+@keyframes badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
+/* AboutDialog 更新横幅 — 主题适配 */
+.updateBanner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border-color);
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+.updateBannerIdle {
+  background: var(--section-bg);
+}
+
+.updateBannerChecking {
+  background: var(--section-bg);
+}
+
+.updateBannerAvailable {
+  background: var(--accent-light);
+  border-color: var(--accent);
+}
+
+.updateBannerDownloading {
+  background: var(--section-bg);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.updateBannerReady {
+  background: var(--green-bg);
+  border-color: var(--green);
+}
+
+.updateBannerError {
+  background: var(--red-bg);
+  border-color: var(--danger, #DC2626);
+}
+
+.updateBannerIcon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.updateBannerTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.updateBannerDesc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.updateBannerBtn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: none;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+/* idle/checking/downloading — 描边按钮 */
+.updateBannerIdle .updateBannerBtn,
+.updateBannerChecking .updateBannerBtn,
+.updateBannerDownloading .updateBannerBtn {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+.updateBannerIdle .updateBannerBtn:hover,
+.updateBannerChecking .updateBannerBtn:hover,
+.updateBannerDownloading .updateBannerBtn:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+/* available/ready/error — 实心按钮 */
+.updateBannerAvailable .updateBannerBtn,
+.updateBannerReady .updateBannerBtn,
+.updateBannerError .updateBannerBtn {
+  background: var(--accent);
+  color: #fff;
+}
+.updateBannerAvailable .updateBannerBtn:hover,
+.updateBannerReady .updateBannerBtn:hover,
+.updateBannerError .updateBannerBtn:hover {
+  filter: brightness(1.1);
+}
+
+.updateBannerBtn:disabled {
+  opacity: .6; cursor: not-allowed;
+}
+
+.updateBannerBtnRestart {
+  composes: updateBannerBtn;
+}
+
+/* 下载进度条 */
+.updateProgressBar {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-color);
+  margin: 4px 0;
+  overflow: hidden;
+}
+
+.updateProgressFill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
+/* 不确定进度条 — 左右滑动动画 */
+.updateProgressIndeterminate {
+  width: 40% !important;
+  animation: progress-indeterminate 1.5s ease-in-out infinite;
+}
+
+@keyframes progress-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(250%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+

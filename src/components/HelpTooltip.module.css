@@ -1,0 +1,150 @@
+/* HelpTooltip.module.css */
+
+.triggerWrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.trigger {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+.trigger:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-light);
+}
+.triggerActive {
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+}
+
+/* 悬浮 tooltip — FloatingPortal 传送到 body */
+.tooltip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: var(--dialog-bg);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  white-space: normal;
+  max-width: 320px;
+  width: max-content;
+  pointer-events: none;
+  z-index: 10000;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  text-align: left;
+}
+
+.tooltipArrow {
+  fill: var(--dialog-bg);
+}
+
+/* 点击弹出的详细气泡 */
+.bubble {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 300px;
+  max-width: calc(100vw - 48px);
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.2);
+  z-index: 10000;
+  overflow: hidden;
+}
+
+.bubbleHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--section-bg);
+}
+
+.bubbleTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.bubbleClose {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.bubbleClose:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+.bubbleBody {
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.bubbleBody p {
+  margin: 0 0 6px 0;
+}
+.bubbleBody p:last-child {
+  margin-bottom: 0;
+}
+
+.tipLine {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+/* 分组引导语（跨组件共享，保留在全局） */
+.sectionDesc {
+  padding: 0 20px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* 推荐标记 */
+.rowRecommend {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #34C759;
+  background: rgba(52, 199, 89, 0.1);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}

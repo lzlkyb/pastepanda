@@ -16,6 +16,7 @@ import {
   FloatingArrow,
   FloatingPortal,
 } from "@floating-ui/react";
+import styles from "./HelpTooltip.module.css";
 
 interface HelpTooltipProps {
   /** 悬浮时显示的简短提示（1-2句话） */
@@ -101,13 +102,13 @@ export function HelpTooltip({ tooltip, detail, detailTitle }: HelpTooltipProps) 
   };
 
   return (
-    <span className="help-trigger-wrap" style={{ display: "inline-flex", flexShrink: 0 }}>
+    <span className={styles.triggerWrap}>
       <button
         ref={(node) => {
           tooltipRefs.setReference(node);
           detailRefs.setReference(node);
         }}
-        className={`help-trigger${showDetail ? " active" : ""}`}
+        className={`${styles.trigger}${showDetail ? ` ${styles.triggerActive}` : ""}`}
         onClick={handleClick}
         aria-label={detailTitle || tooltip || "帮助"}
         title={!detail ? tooltip : undefined}
@@ -129,11 +130,11 @@ export function HelpTooltip({ tooltip, detail, detailTitle }: HelpTooltipProps) 
                 ...tooltipStyles,
                 visibility: tooltipPositioned ? "visible" : "hidden",
               }}
-              className="help-tooltip"
+              className={styles.tooltip}
               {...tooltipInteractions.getFloatingProps()}
             >
               {tooltip}
-              <FloatingArrow ref={arrowRef} context={tooltipCtx} className="help-tooltip-arrow" />
+              <FloatingArrow ref={arrowRef} context={tooltipCtx} className={styles.tooltipArrow} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -153,17 +154,17 @@ export function HelpTooltip({ tooltip, detail, detailTitle }: HelpTooltipProps) 
                 ...detailStyles,
                 visibility: detailPositioned ? "visible" : "hidden",
               }}
-              className="help-bubble"
+              className={styles.bubble}
               {...detailInteractions.getFloatingProps()}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="help-bubble-header">
-                <span className="help-bubble-title">{detailTitle || "帮助"}</span>
-                <button className="help-bubble-close" onClick={handleCloseDetail}>
+              <div className={styles.bubbleHeader}>
+                <span className={styles.bubbleTitle}>{detailTitle || "帮助"}</span>
+                <button className={styles.bubbleClose} onClick={handleCloseDetail}>
                   <X size={12} />
                 </button>
               </div>
-              <div className="help-bubble-body">{detail}</div>
+              <div className={styles.bubbleBody}>{detail}</div>
             </motion.div>
           )}
         </AnimatePresence>

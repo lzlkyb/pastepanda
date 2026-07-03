@@ -1,0 +1,511 @@
+.snippetItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.snippetItem:hover {
+  background: var(--hover);
+}
+
+.snippetItemContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.snippetItemTitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.snippetItemSub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.snippetActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.snippetItem:hover .snippetActions {
+  opacity: 1;
+}
+
+.snippetActionBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: background 0.15s;
+}
+
+.snippetActionBtn:hover {
+  background: var(--card-bg);
+}
+
+.snippetActionBtn.danger {
+  color: #EF4444;
+}
+
+.snippetActionBtn.danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.snippetEditForm {
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.snippetEditInput {
+  width: 100%;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  outline: none;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  font-family: inherit;
+}
+
+.snippetEditTextarea {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  outline: none;
+  resize: none;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  font-family: inherit;
+}
+
+.snippetSearch {
+  width: 100%;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  outline: none;
+  background: var(--section-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  font-family: inherit;
+}
+
+/* ===== 新卡片布局 v5.0.39 ===== */
+
+/* Header */
+.snippetsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  height: auto;
+  min-height: 44px;
+  border-bottom: 1px solid var(--border-color);
+}
+.snippetsHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+.snippetsHeaderLeft .dialog-title {
+  white-space: nowrap;
+  font-size: 14px;
+}
+.snippetsHeaderRight {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Filter bar */
+.snippetFilterBar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 16px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* Filter chip */
+.snippetFilterChip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.snippetFilterChip:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+.snippetFilterChip.active {
+  background: var(--accent-light);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Chip sub-elements */
+.chipDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.chipCount {
+  font-size: 10px;
+  background: var(--seg-bg);
+  padding: 1px 5px;
+  border-radius: 8px;
+  font-weight: 600;
+  min-width: 16px;
+  text-align: center;
+}
+
+/* Snippet card V2 */
+.snippetCardV2 {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.snippetCardV2:hover {
+  border-color: var(--accent);
+  background: var(--hover);
+}
+.snippetCardV2Header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.snippetCardV2Title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+.snippetCardV2TitleText {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.snippetCardV2Body {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 8px;
+  font-family: "SF Mono", Consolas, monospace;
+}
+.snippetCardV2Footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.snippetCardV2Meta {
+  font-size: 10px;
+  color: var(--text-muted);
+  display: flex;
+  gap: 8px;
+}
+.snippetCardV2Actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* Batch checkbox */
+.snippetBatchCheckbox {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1.5px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.snippetBatchCheckbox.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Tag badge */
+.snippetTag {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--seg-bg);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.snippetTag.api { background: var(--accent-light); color: var(--accent); }
+.snippetTag.sql { background: var(--green-bg); color: var(--green); }
+.snippetTag.config { background: var(--orange-bg); color: var(--orange); }
+.snippetTag.template { background: rgba(168,85,247,0.1); color: #a855f7; }
+.snippetTag.cmd { background: var(--red-bg, rgba(239,68,68,0.1)); color: var(--danger); }
+
+/* Action button V2 */
+.snippetActionBtnV2 {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: all 0.15s;
+}
+.snippetActionBtnV2:hover {
+  background: var(--card-bg);
+}
+.snippetActionBtnV2.copy:hover {
+  color: var(--accent);
+  background: var(--accent-light);
+}
+.snippetActionBtnV2.danger:hover {
+  color: var(--danger);
+  background: var(--red-bg, rgba(239,68,68,0.1));
+}
+
+/* Edit form */
+.snippetEditTagRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.snippetEditTagSelect {
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: inherit;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  outline: none;
+}
+
+/* Preview overlay */
+.snippetPreviewOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+}
+.snippetPreviewModal {
+  width: 420px;
+  max-height: 70vh;
+  border-radius: 16px;
+  background: var(--dialog-bg);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.snippetPreviewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  height: 48px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.snippetPreviewTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 0;
+}
+.snippetPreviewBody {
+  flex: 1;
+  padding: 14px 16px;
+  overflow-y: auto;
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.snippetPreviewFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border-color);
+  background: var(--section-bg);
+  flex-shrink: 0;
+}
+
+/* Recent tags */
+.recentSectionLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+  padding: 16px 16px 8px;
+}
+.recentTags {
+  padding: 0 16px 12px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.recentTag {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--seg-bg);
+  padding: 4px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+  border: none;
+}
+.recentTag:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+/* Panel count */
+.panelCount {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--seg-bg);
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-weight: 500;
+}
+
+/* btn-sm-v2 (跨组件共享) */
+.btnSmV2 {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.btnSmV2.outline {
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+.btnSmV2.outline:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btnSmV2.primary {
+  background: var(--accent);
+  color: #fff;
+}
+.btnSmV2.primary:hover {
+  opacity: 0.9;
+}
+.btnSmV2.ghost {
+  background: transparent;
+  color: var(--text-secondary);
+}
+.btnSmV2.ghost:hover {
+  background: var(--hover);
+}
+.btnSmV2.compact {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
+  gap: 3px;
+}
+.btnSmV2.outline.active {
+  background: var(--accent-light);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* snippet-item-sub */
+.snippetItemSub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+

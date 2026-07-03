@@ -1,0 +1,312 @@
+/**
+ * theme.css — PastePanda 设计令牌层
+ * 
+ * 包含：CSS 自定义属性（6 套主题）、全局动画 keyframes、通用过渡
+ * 这些变量在 CSS Modules 中同样生效（通过 :root 继承）
+ */
+
+/* ===== 全局盒模型 ===== */
+* { box-sizing: border-box; }
+
+/* ===== 全局主题切换过渡 ===== */
+.app-shell,
+.header,
+.card,
+.search-box,
+.segmented,
+.seg-item,
+.dialog-box,
+.s-section,
+.s-row,
+.s-toggle,
+.s-kbd,
+.s-action,
+.s-save-btn,
+.h-footer,
+.h-key,
+.guide-card,
+.fab-btn,
+.fab-counter,
+.ctx-menu,
+.toast-item,
+.about-hero,
+.about-icon,
+.about-meta,
+.about-name,
+.about-version-row,
+.about-version-badge,
+.about-version-status,
+.about-status-dot,
+.about-divider,
+.about-section-label,
+.about-tech-card,
+.about-tech-icon,
+.about-tech-name,
+.about-tech-desc,
+.about-footer-link,
+.about-copyright,
+.update-banner {
+  transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* ===== 全局动画 keyframes ===== */
+@keyframes backdrop-in {
+  from { backdrop-filter: blur(0px); }
+  to { backdrop-filter: blur(4px); }
+}
+@keyframes card-pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.015); }
+  100% { transform: scale(1); }
+}
+@keyframes toast-progress {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+@keyframes fab-icon-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* ===== 主题变量 ===== */
+
+/* ── 1. ocean 海洋（默认浅色·通用）── */
+:root,
+[data-theme="ocean"] {
+  --app-bg: #F4F6F9;
+  --header-bg-start: #fff;
+  --header-bg-end: #F4F6F9;
+  --card-bg: #fff;
+  --card-border: #E0E4EB;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --seg-bg: #E8E8ED;
+  --seg-active-bg: #fff;
+  --search-bg: #fff;
+  --search-border: #E0E4EB;
+  --input-bg: #F1F5F9;
+  --dialog-bg: #fff;
+  --section-bg: #F0F4F8;
+  --toggle-off-bg: #E2E8F0;
+  --toggle-off-label: #94A3B8;
+  --card-selected-bg: #E0F2FE;
+  --card-selected-border: #0284C7;
+  --card-selected-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25);
+  --accent-shadow: rgba(2, 132, 199, 0.15);
+  --hover: #E8ECF2;
+  --toast-success-bg: #ECFDF5; --toast-success-text: #065F46; --toast-success-border: #A7F3D0;
+  --toast-error-bg: #FEF2F2; --toast-error-text: #991B1B; --toast-error-border: #FECACA;
+  --toast-info-bg: #E0F2FE; --toast-info-text: #0284C7; --toast-info-border: rgba(2, 132, 199, 0.2);
+  --green: #16A34A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+  --orange: #EA580C; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
+  --red-bg: #FEF2F2; --danger: #DC2626;
+  --version-badge-gradient: linear-gradient(135deg, #0284C7, #0369A1);
+  --version-badge-shadow: rgba(2, 132, 199, 0.35);
+  --update-badge-gradient: linear-gradient(135deg, #059669, #047857);
+  --update-badge-shadow: rgba(5, 150, 105, 0.4);
+}
+
+/* ── 2. midnight 午夜（默认深色·OLED）── */
+[data-theme="midnight"] {
+  --app-bg: #09090B;
+  --header-bg-start: #18181B;
+  --header-bg-end: #09090B;
+  --card-bg: #18181B;
+  --card-border: #27272A;
+  --card-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  --text-primary: #E4E4E7;
+  --text-secondary: #A1A1AA;
+  --text-muted: #71717A;
+  --border-color: #27272A;
+  --accent: #818CF8;
+  --accent-light: #1E1B4B;
+  --seg-bg: #27272A;
+  --seg-active-bg: #3F3F46;
+  --search-bg: #27272A;
+  --search-border: #3F3F46;
+  --input-bg: #27272A;
+  --dialog-bg: #18181B;
+  --section-bg: #0F0F11;
+  --toggle-off-bg: #3F3F46;
+  --toggle-off-label: #71717A;
+  --card-selected-bg: #1E1B4B;
+  --card-selected-border: #818CF8;
+  --card-selected-shadow: 0 0 0 2px rgba(129, 140, 248, 0.25);
+  --accent-shadow: rgba(129, 140, 248, 0.2);
+  --hover: #1F1F23;
+  --toast-success-bg: #064E3B; --toast-success-text: #A7F3D0; --toast-success-border: #065F46;
+  --toast-error-bg: #7F1D1D; --toast-error-text: #FECACA; --toast-error-border: #991B1B;
+  --toast-info-bg: #1E1B4B; --toast-info-text: #A5B4FC; --toast-info-border: #312E81;
+  --green: #4ADE80; --green-bg: #052E16; --green-border: #166534;
+  --orange: #FB923C; --orange-bg: #431407; --orange-border: #9A3412;
+  --red-bg: #450A0A; --danger: #F87171;
+  --version-badge-gradient: linear-gradient(135deg, #818CF8, #6366F1);
+  --version-badge-shadow: rgba(129, 140, 248, 0.35);
+  --update-badge-gradient: linear-gradient(135deg, #38BDF8, #0EA5E9);
+  --update-badge-shadow: rgba(56, 189, 248, 0.45);
+}
+
+/* ── 3. forest 森林（浅色·护眼绿）── */
+[data-theme="forest"] {
+  --app-bg: #F2F7F5;
+  --header-bg-start: #fff;
+  --header-bg-end: #F2F7F5;
+  --card-bg: #fff;
+  --card-border: #D1D9D3;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --text-primary: #171717;
+  --text-secondary: #78716C;
+  --text-muted: #A8A29E;
+  --border-color: #D1D9D3;
+  --accent: #059669;
+  --accent-light: #ECFDF5;
+  --seg-bg: #E4E8E5;
+  --seg-active-bg: #fff;
+  --search-bg: #fff;
+  --search-border: #D1D9D3;
+  --input-bg: #F5F5F4;
+  --dialog-bg: #fff;
+  --section-bg: #ECFDF5;
+  --toggle-off-bg: #D1D9D3;
+  --toggle-off-label: #A8A29E;
+  --card-selected-bg: #ECFDF5;
+  --card-selected-border: #059669;
+  --card-selected-shadow: 0 0 0 2px rgba(5, 150, 105, 0.2);
+  --accent-shadow: rgba(5, 150, 105, 0.15);
+  --hover: #E8EDE8;
+  --toast-success-bg: #ECFDF5; --toast-success-text: #065F46; --toast-success-border: #A7F3D0;
+  --toast-error-bg: #FEF2F2; --toast-error-text: #991B1B; --toast-error-border: #FECACA;
+  --toast-info-bg: #ECFDF5; --toast-info-text: #047857; --toast-info-border: rgba(4, 120, 87, 0.2);
+  --green: #16A34A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+  --orange: #EA580C; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
+  --red-bg: #FEF2F2; --danger: #DC2626;
+  --version-badge-gradient: linear-gradient(135deg, #059669, #047857);
+  --version-badge-shadow: rgba(5, 150, 105, 0.35);
+  --update-badge-gradient: linear-gradient(135deg, #0891B2, #0E7490);
+  --update-badge-shadow: rgba(8, 145, 178, 0.4);
+}
+
+/* ── 4. blossom 樱花（浅色·女性/浪漫）── */
+[data-theme="blossom"] {
+  --app-bg: #FFFBFD;
+  --header-bg-start: #fff;
+  --header-bg-end: #FFFBFD;
+  --card-bg: #fff;
+  --card-border: #F3E8ED;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  --text-primary: #1F1A1C;
+  --text-secondary: #A68A96;
+  --text-muted: #A8909A;
+  --border-color: #F3E8ED;
+  --accent: #EC4899;
+  --accent-light: #FCE7F3;
+  --seg-bg: #F0EEEF;
+  --seg-active-bg: #fff;
+  --search-bg: #fff;
+  --search-border: #F3E8ED;
+  --input-bg: #FDF2F8;
+  --dialog-bg: #fff;
+  --section-bg: #FDF2F8;
+  --toggle-off-bg: #F3E8ED;
+  --toggle-off-label: #C4B5BC;
+  --card-selected-bg: #FCE7F3;
+  --card-selected-border: #EC4899;
+  --card-selected-shadow: 0 0 0 2px rgba(236, 72, 153, 0.2);
+  --accent-shadow: rgba(236, 72, 153, 0.15);
+  --hover: #F5E8F0;
+  --toast-success-bg: #ECFDF5; --toast-success-text: #065F46; --toast-success-border: #A7F3D0;
+  --toast-error-bg: #FEF2F2; --toast-error-text: #991B1B; --toast-error-border: #FECACA;
+  --toast-info-bg: #FCE7F3; --toast-info-text: #BE185D; --toast-info-border: rgba(190, 24, 93, 0.2);
+  --green: #16A34A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+  --orange: #EA580C; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
+  --red-bg: #FEF2F2; --danger: #DC2626;
+  --version-badge-gradient: linear-gradient(135deg, #EC4899, #DB2777);
+  --version-badge-shadow: rgba(236, 72, 153, 0.35);
+  --update-badge-gradient: linear-gradient(135deg, #EF4444, #DC2626);
+  --update-badge-shadow: rgba(239, 68, 68, 0.4);
+}
+
+/* ── 5. terminal 终端（深色·开发者/极客）── */
+[data-theme="terminal"] {
+  --app-bg: #0A0A0A;
+  --header-bg-start: #141414;
+  --header-bg-end: #0A0A0A;
+  --card-bg: #141414;
+  --card-border: #262626;
+  --card-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  --text-primary: #E5E5E5;
+  --text-secondary: #A3A3A3;
+  --text-muted: #737373;
+  --border-color: #262626;
+  --accent: #22C55E;
+  --accent-light: #052E16;
+  --seg-bg: #262626;
+  --seg-active-bg: #404040;
+  --search-bg: #262626;
+  --search-border: #404040;
+  --input-bg: #262626;
+  --dialog-bg: #141414;
+  --section-bg: #0F0F0F;
+  --toggle-off-bg: #404040;
+  --toggle-off-label: #737373;
+  --card-selected-bg: #052E16;
+  --card-selected-border: #22C55E;
+  --card-selected-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25);
+  --accent-shadow: rgba(34, 197, 94, 0.2);
+  --hover: #1A1A1A;
+  --toast-success-bg: #052E16; --toast-success-text: #86EFAC; --toast-success-border: #166534;
+  --toast-error-bg: #7F1D1D; --toast-error-text: #FECACA; --toast-error-border: #991B1B;
+  --toast-info-bg: #052E16; --toast-info-text: #86EFAC; --toast-info-border: #166534;
+  --green: #4ADE80; --green-bg: #052E16; --green-border: #166534;
+  --orange: #FB923C; --orange-bg: #431407; --orange-border: #9A3412;
+  --red-bg: #450A0A; --danger: #F87171;
+  --version-badge-gradient: linear-gradient(135deg, #22C55E, #16A34A);
+  --version-badge-shadow: rgba(34, 197, 94, 0.35);
+  --update-badge-gradient: linear-gradient(135deg, #2DD4BF, #14B8A6);
+  --update-badge-shadow: rgba(45, 212, 191, 0.45);
+}
+
+/* ── 6. sunset 日落（深色·年轻/潮流）── */
+[data-theme="sunset"] {
+  --app-bg: #1C1410;
+  --header-bg-start: #281E18;
+  --header-bg-end: #1C1410;
+  --card-bg: #281E18;
+  --card-border: #3D3028;
+  --card-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  --text-primary: #F5F0EB;
+  --text-secondary: #B8A99A;
+  --text-muted: #8B7B6B;
+  --border-color: #3D3028;
+  --accent: #F97316;
+  --accent-light: #431407;
+  --seg-bg: #3D3028;
+  --seg-active-bg: #57534E;
+  --search-bg: #3D3028;
+  --search-border: #57534E;
+  --input-bg: #3D3028;
+  --dialog-bg: #281E18;
+  --section-bg: #1F1610;
+  --toggle-off-bg: #57534E;
+  --toggle-off-label: #8B7B6B;
+  --card-selected-bg: #431407;
+  --card-selected-border: #F97316;
+  --card-selected-shadow: 0 0 0 2px rgba(249, 115, 22, 0.25);
+  --accent-shadow: rgba(249, 115, 22, 0.2);
+  --hover: #33261E;
+  --toast-success-bg: #064E3B; --toast-success-text: #A7F3D0; --toast-success-border: #065F46;
+  --toast-error-bg: #7F1D1D; --toast-error-text: #FECACA; --toast-error-border: #991B1B;
+  --toast-info-bg: #431407; --toast-info-text: #FDBA74; --toast-info-border: #7C2D12;
+  --green: #4ADE80; --green-bg: #052E16; --green-border: #166534;
+  --orange: #FB923C; --orange-bg: #431407; --orange-border: #9A3412;
+  --red-bg: #450A0A; --danger: #F87171;
+  --version-badge-gradient: linear-gradient(135deg, #F97316, #EA580C);
+  --version-badge-shadow: rgba(249, 115, 22, 0.35);
+  --update-badge-gradient: linear-gradient(135deg, #F59E0B, #D97706);
+  --update-badge-shadow: rgba(245, 158, 11, 0.45);
+}

@@ -9,6 +9,7 @@ import { THEMES, applyTheme, ThemeKey } from "@/lib/theme";
 import { useToast } from "@/components/Toast";
 import { logger } from "@/lib/logger";
 import { getStats, Stats, getAppVersion, getAppName } from "@/lib/api";
+import styles from "./Settings.module.css";
 
 const THEME_PREVIEWS: Record<string, { bg: string; accent: string; text: string; barBg: string; bodyBg: string; lineBg: string }> = {
   "ocean":    { bg: "#F4F6F9", accent: "#0284C7", text: "#64748B", barBg: "#fff", bodyBg: "#F4F6F9", lineBg: "#E0E4EB" },
@@ -193,38 +194,38 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
             <div className="dialog-body" style={{ padding: 0, gap: 0 }}>
 
               {/* ── 数据统计 ── */}
-              <div className="s-section">数据统计</div>
-              <div className="stats-panel">
-                <div className="stats-panel-header">
+              <div className={styles.sSection}>数据统计</div>
+              <div className={styles.statsPanel}>
+                <div className={styles.statsPanelHeader}>
                   📊 剪贴板数据概览
                 </div>
-                <div className="stats-panel-grid">
-                  <div className="stat-cell">
-                    <div className="stat-num">{stats.total}</div>
-                    <div className="stat-label">总记录</div>
+                <div className={styles.statsPanelGrid}>
+                  <div className={styles.statCell}>
+                    <div className={`${styles.statNum}`}>{stats.total}</div>
+                    <div className={styles.statLabel}>总记录</div>
                   </div>
-                  <div className="stat-cell">
-                    <div className="stat-num stat-green">{stats.pinned}</div>
-                    <div className="stat-label">⭐ 收藏</div>
+                  <div className={styles.statCell}>
+                    <div className={`${styles.statNum} ${styles.statGreen}`}>{stats.pinned}</div>
+                    <div className={styles.statLabel}>⭐ 收藏</div>
                   </div>
-                  <div className="stat-cell">
-                    <div className="stat-num stat-orange">{stats.today}</div>
-                    <div className="stat-label">今日新增</div>
+                  <div className={styles.statCell}>
+                    <div className={`${styles.statNum} ${styles.statOrange}`}>{stats.today}</div>
+                    <div className={styles.statLabel}>今日新增</div>
                   </div>
-                  <div className="stat-cell">
-                    <div className="stat-num stat-accent">{stats.text_count}</div>
-                    <div className="stat-label">📝 文本</div>
+                  <div className={styles.statCell}>
+                    <div className={`${styles.statNum} ${styles.statAccent}`}>{stats.text_count}</div>
+                    <div className={styles.statLabel}>📝 文本</div>
                   </div>
-                  <div className="stat-cell">
-                    <div className="stat-num stat-accent">{stats.image_count}</div>
-                    <div className="stat-label">🖼 图片</div>
+                  <div className={styles.statCell}>
+                    <div className={`${styles.statNum} ${styles.statAccent}`}>{stats.image_count}</div>
+                    <div className={styles.statLabel}>🖼 图片</div>
                   </div>
-                  <div className="stat-cell">
-                    <div className="stat-num stat-accent">{stats.file_count}</div>
-                    <div className="stat-label">📁 文件</div>
+                  <div className={styles.statCell}>
+                    <div className={`${styles.statNum} ${styles.statAccent}`}>{stats.file_count}</div>
+                    <div className={styles.statLabel}>📁 文件</div>
                   </div>
                 </div>
-                <div className="stats-panel-footer">
+                <div className={styles.statsPanelFooter}>
                   <span>💾 {stats.db_size_kb.toFixed(1)} KB</span>
                   {stats.earliest_time && <span>📅 最早: {stats.earliest_time.split(" ")[0]}</span>}
                   <span>📦 {config.current_workspace || "默认"} 空间</span>
@@ -232,11 +233,11 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
               </div>
 
               {/* ── 外观 ── */}
-              <div className="s-section">外观</div>
-              <div className="s-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
-                <span className="s-row-icon" style={{ background: "linear-gradient(135deg, #0078D4, #5856D6)", width: "fit-content", padding: "6px 12px" }}>🎨</span>
-                <div className="s-row-body">
-                  <div className="s-row-label">
+              <div className={styles.sSection}>外观</div>
+              <div className={styles.sRow} style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
+                <span className={styles.sRowIcon} style={{ background: "linear-gradient(135deg, #0078D4, #5856D6)", width: "fit-content", padding: "6px 12px" }}>🎨</span>
+                <div className={styles.sRowBody}>
+                  <div className={styles.sRowLabel}>
                     主题配色
                     <HelpTooltip
                       tooltip="6种精心调配的主题配色"
@@ -249,7 +250,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                       </>}
                     />
                   </div>
-                  <div className="s-row-desc">选择你喜欢的配色方案</div>
+                  <div className={styles.sRowDesc}>选择你喜欢的配色方案</div>
                 </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {THEMES.map((t, idx) => {
@@ -286,23 +287,23 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                   })}
                 </div>
               </div>
-              <div className="s-row">
-                <span className="s-row-icon" style={{ background: "linear-gradient(135deg, #8B5CF6, #AF52DE)" }}>📑</span>
-                <div className="s-row-body">
-                  <div className="s-row-label">标签样式</div>
-                  <div className="s-row-desc">切换筛选标签的显示风格</div>
+              <div className={styles.sRow}>
+                <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #8B5CF6, #AF52DE)" }}>📑</span>
+                <div className={`${styles.sRowBody}`}>
+                  <div className={`${styles.sRowLabel}`}>标签样式</div>
+                  <div className={`${styles.sRowDesc}`}>切换筛选标签的显示风格</div>
                 </div>
-                <button className="s-val" onClick={() => handleSwitchTabStyle(tabStyle === "segmented" ? "circle" : "segmented")}>
+                <button className={styles.sVal} onClick={() => handleSwitchTabStyle(tabStyle === "segmented" ? "circle" : "segmented")}>
                   {tabStyle === "segmented" ? "分段控件" : "圆形图标"}
                 </button>
               </div>
 
               {/* ── 通用 ── */}
-              <div className="s-section">通用</div>
-              <div className="s-row">
-                <span className="s-row-icon" style={{ background: "linear-gradient(135deg, #F59E0B, #FF9500)" }}>🗑</span>
-                <div className="s-row-body">
-                  <div className="s-row-label">
+              <div className={styles.sSection}>通用</div>
+              <div className={styles.sRow}>
+                <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #F59E0B, #FF9500)" }}>🗑</span>
+                <div className={`${styles.sRowBody}`}>
+                  <div className={`${styles.sRowLabel}`}>
                     自动清理
                     <HelpTooltip
                       tooltip="建议开启，避免数据库无限膨胀影响性能"
@@ -315,12 +316,12 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                       </>}
                     />
                   </div>
-                  <div className="s-row-desc">手动清理时，删除超过天数的记录</div>
+                  <div className={`${styles.sRowDesc}`}>手动清理时，删除超过天数的记录</div>
                 </div>
-                <div className="s-cleanup">
+                <div className={styles.sCleanup}>
                   {CLEANUP_OPTIONS.map((opt, idx) => (
                     <button key={`cleanup-${opt.value ?? idx}`}
-                      className={`s-cleanup-opt${cleanupDays === opt.value ? " active" : ""}`}
+                      className={`${styles.sCleanupOpt}${cleanupDays === opt.value ? ` ${styles.active}` : ""}`}
                       onClick={() => updateAndSave({ auto_cleanup_days: opt.value })}>
                       {opt.label}
                     </button>
@@ -336,10 +337,10 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                   <p>💡 开启后粘贴更干净，无需手动删空格</p>
                 </>}
               />
-              <div className="s-row">
-                <span className="s-row-icon" style={{ background: "linear-gradient(135deg, #8B5CF6, #AF52DE)" }}>👆</span>
-                <div className="s-row-body">
-                  <div className="s-row-label">
+              <div className={styles.sRow}>
+                <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #8B5CF6, #AF52DE)" }}>👆</span>
+                <div className={`${styles.sRowBody}`}>
+                  <div className={`${styles.sRowLabel}`}>
                     双击列表行为
                     <HelpTooltip
                       tooltip="设为「复制」更快捷，设为「预览」可查看详情"
@@ -352,9 +353,9 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                       </>}
                     />
                   </div>
-                  <div className="s-row-desc">{config.double_click_action === "copy" ? "双击复制到剪贴板" : "双击预览/编辑"}</div>
+                  <div className={`${styles.sRowDesc}`}>{config.double_click_action === "copy" ? "双击复制到剪贴板" : "双击预览/编辑"}</div>
                 </div>
-                <button className="s-val" onClick={() => updateAndSave({ double_click_action: config.double_click_action === "copy" ? "preview" : "copy" })}>
+                <button className={styles.sVal} onClick={() => updateAndSave({ double_click_action: config.double_click_action === "copy" ? "preview" : "copy" })}>
                   {config.double_click_action === "copy" ? "复制" : "预览"}
                 </button>
               </div>
@@ -409,7 +410,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                 }} />
 
               {/* ── 局域网同步 ── */}
-              <div className="s-section">局域网同步</div>
+              <div className={styles.sSection}>局域网同步</div>
               <ToggleRow icon="🌐" gradient="linear-gradient(135deg, #06B6D4, #3B82F6)" label="局域网同步" desc="同一局域网内自动同步剪贴板内容" value={config.lan_sync_enabled}
                 detailTitle="局域网同步"
                 detail={<>
@@ -431,12 +432,12 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
               )}
 
               {/* ── 快捷键 ── */}
-              <div className="s-section">快捷键</div>
-              <div className="s-row">
-                <span className="s-row-icon" style={{ background: "linear-gradient(135deg, #3B82F6, #0078D4)" }}>⌨</span>
-                <div className="s-row-body">
-                  <div className="s-row-label">唤出窗口</div>
-                  <div className="s-row-desc">全局快捷键，在任何位置唤出</div>
+              <div className={styles.sSection}>快捷键</div>
+              <div className={styles.sRow}>
+                <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #3B82F6, #0078D4)" }}>⌨</span>
+                <div className={`${styles.sRowBody}`}>
+                  <div className={`${styles.sRowLabel}`}>唤出窗口</div>
+                  <div className={`${styles.sRowDesc}`}>全局快捷键，在任何位置唤出</div>
                 </div>
                 <HotkeyRecorder value={config.hotkey} onChange={async (v) => {
                   const oldVal = config.hotkey;
@@ -451,11 +452,11 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                   }
                 }} />
               </div>
-              <div className="s-row">
-                <span className="s-row-icon" style={{ background: "linear-gradient(135deg, #8B5CF6, #5856D6)" }}>📋</span>
-                <div className="s-row-body">
-                  <div className="s-row-label">依次粘贴</div>
-                  <div className="s-row-desc">按顺序逐条粘贴剪贴板</div>
+              <div className={styles.sRow}>
+                <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #8B5CF6, #5856D6)" }}>📋</span>
+                <div className={`${styles.sRowBody}`}>
+                  <div className={`${styles.sRowLabel}`}>依次粘贴</div>
+                  <div className={`${styles.sRowDesc}`}>按顺序逐条粘贴剪贴板</div>
                 </div>
                 <HotkeyRecorder value={config.sequential_hotkey || "ctrl+q"} onChange={async (v) => {
                   const oldVal = config.sequential_hotkey || "ctrl+q";
@@ -472,41 +473,41 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
               </div>
 
               {/* ── 数据管理 ── */}
-              <div className="s-section">数据管理</div>
-              <div className="s-row">
-                <span className="s-row-icon" style={{ background: "linear-gradient(135deg, #F59E0B, #FF9500)" }}>📦</span>
-                <div className="s-row-body">
-                  <div className="s-row-label">导出数据</div>
-                  <div className="s-row-desc">将历史记录导出为 JSON 文件</div>
+              <div className={styles.sSection}>数据管理</div>
+              <div className={styles.sRow}>
+                <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #F59E0B, #FF9500)" }}>📦</span>
+                <div className={`${styles.sRowBody}`}>
+                  <div className={`${styles.sRowLabel}`}>导出数据</div>
+                  <div className={`${styles.sRowDesc}`}>将历史记录导出为 JSON 文件</div>
                 </div>
-                <button className="s-action" onClick={handleExport}>导出</button>
+                <button className={styles.sAction} onClick={handleExport}>导出</button>
               </div>
-              <div className="s-row">
-                <span className="s-row-icon" style={{ background: "linear-gradient(135deg, #06B6D4, #0078D4)" }}>📥</span>
-                <div className="s-row-body">
-                  <div className="s-row-label">导入数据</div>
-                  <div className="s-row-desc">从 JSON 文件导入历史记录</div>
+              <div className={styles.sRow}>
+                <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #06B6D4, #0078D4)" }}>📥</span>
+                <div className={`${styles.sRowBody}`}>
+                  <div className={`${styles.sRowLabel}`}>导入数据</div>
+                  <div className={`${styles.sRowDesc}`}>从 JSON 文件导入历史记录</div>
                 </div>
-                <button className="s-action" onClick={handleImport}>导入</button>
+                <button className={styles.sAction} onClick={handleImport}>导入</button>
               </div>
-              <div className="s-row">
-                <span className="s-row-icon" style={{ background: "linear-gradient(135deg, #EF4444, #FF3B30)" }}>🧹</span>
-                <div className="s-row-body">
-                  <div className="s-row-label">清理过期记录</div>
-                  <div className="s-row-desc">{expiredCount > 0 ? `${expiredCount} 条记录已过期` : "暂无过期记录"}</div>
+              <div className={styles.sRow}>
+                <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #EF4444, #FF3B30)" }}>🧹</span>
+                <div className={`${styles.sRowBody}`}>
+                  <div className={`${styles.sRowLabel}`}>清理过期记录</div>
+                  <div className={`${styles.sRowDesc}`}>{expiredCount > 0 ? `${expiredCount} 条记录已过期` : "暂无过期记录"}</div>
                 </div>
-                <button className={`s-action${expiredCount > 0 ? " danger" : ""}`} onClick={handleCleanup}>
+                <button className={`${styles.sAction}${expiredCount > 0 ? ` ${styles.danger}` : ""}`} onClick={handleCleanup}>
                   {expiredCount > 0 ? `清理 ${expiredCount} 条` : "无过期"}
                 </button>
               </div>
             </div>
 
             {/* Footer */}
-            <div className="s-footer">
-              <button onClick={onClose} className="s-save-btn">
+            <div className={styles.sFooter}>
+              <button onClick={onClose} className={styles.sSaveBtn}>
                 关闭设置
               </button>
-              <span className="s-footer-ver">{appName} <VersionBadge version={appVersion} compact /></span>
+              <span className={styles.sFooterVer}>{appName} <VersionBadge version={appVersion} compact /></span>
             </div>
           </motion.div>
         </motion.div>
@@ -530,22 +531,22 @@ function ToggleRow({ icon, gradient, label, desc, value, onChange, tooltip, deta
   tooltip?: string; detailTitle?: string; detail?: React.ReactNode; recommend?: boolean;
 }) {
   return (
-    <div className="s-row" onClick={() => onChange(!value)} style={{ cursor: "pointer" }}>
-      <span className="s-row-icon" style={{ background: gradient }}>{icon}</span>
-      <div className="s-row-body">
-        <div className="s-row-label">
+    <div className={styles.sRow} onClick={() => onChange(!value)} style={{ cursor: "pointer" }}>
+      <span className={`${styles.sRowIcon}`} style={{ background: gradient }}>{icon}</span>
+      <div className={`${styles.sRowBody}`}>
+        <div className={`${styles.sRowLabel}`}>
           {label}
-          {recommend && <span className="s-row-recommend">⭐推荐</span>}
+          {recommend && <span className={`${styles.sRowRecommend}`}>⭐推荐</span>}
           {(tooltip || detail) && (
             <HelpTooltip tooltip={tooltip} detailTitle={detailTitle} detail={detail} />
           )}
         </div>
-        <div className="s-row-desc">{desc}</div>
+        <div className={`${styles.sRowDesc}`}>{desc}</div>
       </div>
-      <button className={`s-toggle ${value ? "on" : "off"}`}
+      <button className={`${styles.sToggle} ${value ? styles.on : styles.off}`}
         onClick={(e) => { e.stopPropagation(); onChange(!value); }}>
-        <span className="s-toggle-thumb" />
-        <span className="s-toggle-label">{value ? "开" : "关"}</span>
+        <span className={styles.sToggleThumb} />
+        <span className={styles.sToggleLabel}>{value ? "开" : "关"}</span>
       </button>
     </div>
   );
@@ -622,7 +623,7 @@ function HotkeyRecorder({ value, onChange }: { value: string; onChange: (v: stri
       onClick={(e) => { e.stopPropagation(); setRecording(true); }}
       onKeyDown={handleKeyDown}
       onBlur={() => setRecording(false)}
-      className={`s-kbd${recording ? " recording" : ""}`}>
+      className={`${styles.sKbd}${recording ? ` ${styles.recording}` : ""}`}>
       {recording ? "按下组合键..." : value}
     </button>
   );
@@ -660,32 +661,32 @@ function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" | "erro
   };
 
   return (
-    <div className="lan-panel">
-      <div className="lan-panel-header">
-        <div className="lan-status">
-          <div className="lan-dot" />
-          <span className="lan-status-text">监听中 — 等待其他设备连接</span>
+    <div className={styles.lanPanel}>
+      <div className={`${styles.lanPanelHeader}`}>
+        <div className={styles.lanStatus}>
+          <div className={styles.lanDot} />
+          <span className={`${styles.lanStatusText}`}>监听中 — 等待其他设备连接</span>
         </div>
-        <button className="lan-refresh-btn" onClick={refreshDevices} disabled={loading}>
+        <button className={styles.lanRefreshBtn} onClick={refreshDevices} disabled={loading}>
           {loading ? "⏳" : "🔄"} 刷新
         </button>
       </div>
 
       {/* 设备列表 */}
       {devices.length > 0 && (
-        <div className="lan-device-list">
+        <div className={styles.lanDeviceList}>
           {devices.map((d, idx) => (
-            <div key={d.device_id ? `device-${d.device_id}-${idx}` : `device-${idx}`} className="lan-device-item">
-              <div className="lan-device-avatar" style={{
+            <div key={d.device_id ? `device-${d.device_id}-${idx}` : `device-${idx}`} className={`${styles.lanDeviceItem}`}>
+              <div className={`${styles.lanDeviceAvatar}`} style={{
                 background: `hsl(${d.device_id.charCodeAt(0) * 40 % 360}, 60%, 55%)`,
               }}>
                 {d.device_name.charAt(0).toUpperCase()}
               </div>
-              <div className="lan-device-info">
-                <div className="lan-device-name">{d.device_name}</div>
-                <div className="lan-device-time">{d.last_seen}</div>
+              <div className={`${styles.lanDeviceInfo}`}>
+                <div className={`${styles.lanDeviceName}`}>{d.device_name}</div>
+                <div className={`${styles.lanDeviceTime}`}>{d.last_seen}</div>
               </div>
-              <span className="lan-device-online" title="在线"><span className="dot-online" /></span>
+              <span className={`${styles.lanDeviceOnline}`} title="在线"><span className={styles.dotOnline} /></span>
             </div>
           ))}
         </div>
@@ -695,7 +696,7 @@ function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" | "erro
         💡 同一局域网内的设备将自动发现并同步剪贴板
         {devices.length > 0 && <span> · 已发现 {devices.length} 台设备</span>}
       </div>
-      <button className="lan-test-btn" onClick={handleSendTest}>
+      <button className={styles.lanTestBtn} onClick={handleSendTest}>
         🔔 发送测试消息
       </button>
     </div>

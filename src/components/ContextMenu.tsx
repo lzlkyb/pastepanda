@@ -2,6 +2,7 @@ import { createContext, useState, useEffect, useCallback, useRef, useMemo, React
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Copy, ClipboardPaste, Pin, Trash2, ExternalLink, FileCode, Pencil, ChevronRight } from "lucide-react";
+import styles from "./ContextMenu.module.css";
 
 export interface MenuItem {
   icon: ReactNode;
@@ -210,19 +211,12 @@ export function ContextMenu({ children }: { children: ReactNode }) {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0 }}
-            className="ctx-menu"
+            className={styles.ctxMenu}
             style={{
               position: "fixed",
               left: `${adjustedPos ? adjustedPos.left : pos.x}px`,
               top: `${adjustedPos ? adjustedPos.top : pos.y}px`,
               zIndex: 99999,
-              background: "var(--dialog-bg)",
-              border: "1px solid var(--border-color)",
-              boxShadow: "0 8px 24px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04)",
-              borderRadius: 12,
-              padding: "4px 0",
-              minWidth: 170,
-              overflow: "visible",
               transform: "none",
             }}
             onClick={(e) => e.stopPropagation()}
@@ -241,30 +235,30 @@ export function ContextMenu({ children }: { children: ReactNode }) {
                 // 子菜单父项
                 return (
                   <div key={i}>
-                    {item.separator && i > 0 && <div className="ctx-sep" />}
+                    {item.separator && i > 0 && <div className={styles.ctxSep} />}
                     <div
-                      className={`ctx-item ctx-item-parent${isActive ? " keyboard-active" : ""}`}
+                      className={`${styles.ctxItem} ${styles.ctxItemParent}${isActive ? ` ${styles.keyboardActive}` : ""}`}
                       onMouseEnter={() => { setActiveIndex(flatIdx); setActiveSubIndex(null); }}
                       onMouseLeave={() => { if (activeSubIndex === null) setActiveIndex(-1); }}
                     >
-                      <span className="ctx-item-icon">{item.icon}</span>
+                      <span className={styles.ctxItemIcon}>{item.icon}</span>
                       {item.label}
-                      <span className="ctx-item-arrow"><ChevronRight size={12} /></span>
+                      <span className={styles.ctxItemArrow}><ChevronRight size={12} /></span>
 
                       {/* 子菜单弹层（hover 或键盘导航时显示） */}
                       {(isActive || activeSubIndex !== null) && (
                         <div
-                          className={`ctx-submenu${adjustedPos?.submenuFlip ? " flip-left" : ""}`}
+                          className={`${styles.ctxSubmenu}${adjustedPos?.submenuFlip ? ` ${styles.flipLeft}` : ""}`}
                           onMouseEnter={() => { setActiveIndex(flatIdx); setActiveSubIndex(null); }}
                         >
                           {item.children.map((child, j) => (
                             <button
                               key={j}
-                              className={`ctx-item${activeSubIndex === j ? " keyboard-active" : ""}${child.danger ? " danger" : ""}`}
+                              className={`${styles.ctxItem}${activeSubIndex === j ? ` ${styles.keyboardActive}` : ""}${child.danger ? ` ${styles.danger}` : ""}`}
                               onClick={() => { child.onClick?.(); setPos(null); }}
                               onMouseEnter={() => setActiveSubIndex(j)}
                             >
-                              <span className="ctx-item-icon">{child.icon}</span>
+                              <span className={styles.ctxItemIcon}>{child.icon}</span>
                               {child.label}
                             </button>
                           ))}
@@ -277,14 +271,14 @@ export function ContextMenu({ children }: { children: ReactNode }) {
 
               return (
                 <div key={i}>
-                  {item.separator && i > 0 && <div className="ctx-sep" />}
+                  {item.separator && i > 0 && <div className={styles.ctxSep} />}
                   <button
                     onClick={() => { item.onClick?.(); setPos(null); }}
-                    className={`ctx-item${item.danger ? " danger" : ""}${isActive ? " keyboard-active" : ""}`}
+                    className={`${styles.ctxItem}${item.danger ? ` ${styles.danger}` : ""}${isActive ? ` ${styles.keyboardActive}` : ""}`}
                     onMouseEnter={() => setActiveIndex(flatIdx)}
                     onMouseLeave={() => { if (activeSubIndex === null) setActiveIndex(-1); }}
                   >
-                    <span className="ctx-item-icon">{item.icon}</span>
+                    <span className={styles.ctxItemIcon}>{item.icon}</span>
                     {item.label}
                   </button>
                 </div>
@@ -305,11 +299,11 @@ function buildTransformMenu(onTransform: (t: string) => void, itemType?: string,
   if (itemType === "text") {
     // 文本通用变换
     children.push(
-      { icon: <span className="ctx-text-icon ctx-text-upper">A</span>, label: "粘贴为大写", onClick: () => onTransform("upper") },
-      { icon: <span className="ctx-text-icon ctx-text-lower">a</span>, label: "粘贴为小写", onClick: () => onTransform("lower") },
-      { icon: <span className="ctx-text-icon ctx-text-scissor">✂</span>, label: "粘贴并去空白", onClick: () => onTransform("strip") },
-      { icon: <span className="ctx-text-icon ctx-text-para">¶</span>, label: "粘贴并去空行", onClick: () => onTransform("strip_lines") },
-      { icon: <span className="ctx-text-icon ctx-text-quote">"</span>, label: "粘贴为引号包裹", onClick: () => onTransform("quote") },
+      { icon: <span className={`${styles.ctxTextIcon} ${styles.ctxTextUpper}`}>A</span>, label: "粘贴为大写", onClick: () => onTransform("upper") },
+      { icon: <span className={`${styles.ctxTextIcon} ${styles.ctxTextLower}`}>a</span>, label: "粘贴为小写", onClick: () => onTransform("lower") },
+      { icon: <span className={`${styles.ctxTextIcon} ${styles.ctxTextScissor}`}>✂</span>, label: "粘贴并去空白", onClick: () => onTransform("strip") },
+      { icon: <span className={`${styles.ctxTextIcon} ${styles.ctxTextPara}`}>¶</span>, label: "粘贴并去空行", onClick: () => onTransform("strip_lines") },
+      { icon: <span className={`${styles.ctxTextIcon} ${styles.ctxTextQuote}`}>"</span>, label: "粘贴为引号包裹", onClick: () => onTransform("quote") },
     );
 
     // 子类型专属变换

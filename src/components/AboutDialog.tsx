@@ -6,6 +6,7 @@ import { VersionBadge } from "@/components/VersionBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { useUpdate } from "@/contexts/UpdateContext";
 import { useState, useEffect, useMemo } from "react";
+import styles from "./About.module.css";
 
 const TECH_STACK = [
   { label: "Tauri 2", desc: "桌面框架", color: "#FFC131", icon: "⚙️" as React.ReactNode },
@@ -85,14 +86,14 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
 
           <div className="dialog-body" style={{ padding: "28px 28px 24px" }}>
             {/* 英雄区 */}
-            <div className="about-hero">
-              <div className="about-icon"><AppIcon size={64} /></div>
-              <div className="about-meta">
-                <div className="about-name">{appName}</div>
-                <div className="about-version-row">
+            <div className={styles.aboutHero}>
+              <div className={styles.aboutIcon}><AppIcon size={64} /></div>
+              <div className={styles.aboutMeta}>
+                <div className={styles.aboutName}>{appName}</div>
+                <div className={styles.aboutVersionRow}>
                   <VersionBadge version={appVersion} />
-                  <span className={`about-version-status ${versionStatus.cls}`}>
-                    <span className={`about-status-dot ${versionStatus.dotCls}`} />
+                  <span className={`${styles.aboutVersionStatus} ${styles[versionStatus.cls]}`}>
+                    <span className={`${styles.aboutStatusDot} ${styles[versionStatus.dotCls]}`} />
                     {versionStatus.label}
                   </span>
                 </div>
@@ -100,22 +101,22 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
             </div>
 
             {/* 分割线 */}
-            <div className="about-divider" />
+            <div className={styles.aboutDivider} />
 
             {/* 技术栈 */}
-            <div className="about-section-label">技术栈</div>
-            <div className="about-tech-grid">
+            <div className={styles.aboutSectionLabel}>技术栈</div>
+            <div className={styles.aboutTechGrid}>
               {TECH_STACK.map((t) => (
-                <div key={t.label} className="about-tech-card">
+                <div key={t.label} className={styles.aboutTechCard}>
                   <div
-                    className="about-tech-icon"
+                    className={styles.aboutTechIcon}
                     style={{ background: `${t.color}20`, color: t.color }}
                   >
                     {t.icon}
                   </div>
-                  <div className="about-tech-info">
-                    <div className="about-tech-name">{t.label}</div>
-                    <div className="about-tech-desc">{t.desc}</div>
+                  <div className={styles.aboutTechInfo}>
+                    <div className={styles.aboutTechName}>{t.label}</div>
+                    <div className={styles.aboutTechDesc}>{t.desc}</div>
                   </div>
                 </div>
               ))}
@@ -125,12 +126,12 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
             <UpdateBanner />
 
             {/* 底部 */}
-            <div className="about-footer">
-              <button className="about-footer-link" onClick={handleOpenProject}>
+            <div className={styles.aboutFooter}>
+              <button className={styles.aboutFooterLink} onClick={handleOpenProject}>
                 <ExternalLink size={14} />
                 项目主页
               </button>
-              <span className="about-copyright">© 2026 {appName}</span>
+              <span className={styles.aboutCopyright}>© 2026 {appName}</span>
             </div>
           </div>
         </motion.div>

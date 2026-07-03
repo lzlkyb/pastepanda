@@ -8,6 +8,7 @@ import { useToast } from "@/components/Toast";
 import { logger } from "@/lib/logger";
 import { pasteText } from "@/lib/api";
 import { Pin, ImageIcon, Link2, AtSign, Code2, Phone, FileText, Terminal, Type, Check } from "lucide-react";
+import styles from "./CardList.module.css";
 
 const PALETTE = ["#3B82F6", "#8B5CF6", "#EC4899", "#10B981", "#F59E0B", "#EF4444", "#06B6D4", "#6366F1"];
 
@@ -83,16 +84,16 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
   const title = item.type === "file" ? (item.content || "文件") : (item.text || "").replace(/\r?\n/g, " ").trim() || "(空)";
   const source = cleanSource(item.source);
 
-  const typeClass = item.type === "image" ? "card-image"
-    : item.type === "file" ? "card-file"
-    : item.pinned ? "card-pinned"
-    : subType === "code" ? "card-code"
-    : "card-text";
+  const typeClass = item.type === "image" ? styles.cardImage
+    : item.type === "file" ? styles.cardFile
+    : item.pinned ? styles.cardPinned
+    : subType === "code" ? styles.cardCode
+    : styles.cardText;
 
-  const iconBg = item.type === "image" ? "bg-pink"
-    : item.type === "file" ? "bg-green"
-    : subType === "code" ? "bg-purple"
-    : "bg-blue";
+  const iconBg = item.type === "image" ? styles.bgPink
+    : item.type === "file" ? styles.bgGreen
+    : subType === "code" ? styles.bgPurple
+    : styles.bgBlue;
 
   // ★ 通过 Context 获取 ContextMenu 的 trigger 函数，用原生 DOM 事件调用，
   //   完全不依赖 DOM 事件冒泡、dispatchEvent、React 合成事件。
@@ -163,7 +164,7 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
 
   return (
     <div
-      className="card-wrap"
+      className={styles.cardWrap}
       style={{ position: "relative" }}
       onMouseEnter={(e: React.MouseEvent) => {
         enterHover();
@@ -184,7 +185,7 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
         exit={{ opacity: 0, x: -30, scale: 0.95, transition: { duration: 0.2 } }}
         transition={{ type: "spring", stiffness: 400, damping: 28, delay: Math.min(index * 0.003, 0.04) }}
         onMouseDown={handleMouseDown}
-        className={`card ${typeClass}${selected ? " selected" : ""}`}
+        className={`${styles.card} ${typeClass}${selected ? ` ${styles.selected}` : ""}`}
         role="option"
         aria-selected={selected}
         aria-label={title.length > 80 ? title.slice(0, 80) + "…" : title}
@@ -194,45 +195,45 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
         {/* 图标 */}
         {item.type === "image" ? (
           imageState?.status === "loaded" && imageState.url ? (
-            <div className="card-icon card-img-thumb">
+            <div className={`${styles.cardIcon} ${styles.cardImgThumb}`}>
               <img src={imageState.url} alt="" />
             </div>
           ) : imageState?.status === "error" ? (
-            <div className="card-icon card-img-error">
+            <div className={`${styles.cardIcon} ${styles.cardImgError}`}>
               <ImageIcon size={18} color="#EF4444" strokeWidth={2.2} />
               {onRetryImage && (
-                <span className="card-img-retry" onClick={(e) => { e.stopPropagation(); onRetryImage(); }}>🔄</span>
+                <span className={styles.cardImgRetry} onClick={(e) => { e.stopPropagation(); onRetryImage(); }}>🔄</span>
               )}
             </div>
           ) : (
-            <div className={`card-icon ${iconBg} card-img-loading`}>
-              <div className="card-img-shimmer" />
+            <div className={`${styles.cardIcon} ${iconBg} ${styles.cardImgLoading}`}>
+              <div className={styles.cardImgShimmer} />
             </div>
           )
         ) : (
-          <div className={`card-icon ${iconBg}`}>
+          <div className={`${styles.cardIcon} ${iconBg}`}>
             <Icon size={18} color={iconColor} strokeWidth={2.2} />
           </div>
         )}
 
         {/* 内容 */}
-        <div className="card-content">
-          <p className="card-title">
+        <div className={styles.cardContent}>
+          <p className={styles.cardTitle}>
             <HighlightText text={title} highlight={item.type === "text" ? (searchKeyword ?? "") : ""} />
           </p>
-          <div className="card-sub">
+          <div className={styles.cardSub}>
             {item.pinned && (
-              <span className="card-pin">
+              <span className={styles.cardPin}>
                 <Pin size={7} /> 置顶
               </span>
             )}
-            {source && <span className="card-source">{source}</span>}
+            {source && <span className={styles.cardSource}>{source}</span>}
           </div>
         </div>
 
         {/* 时间 / 复制中指示器 */}
-        <span className="card-time">
-          {pasting ? <span className="card-pasting"><Check size={10} style={{marginRight:2}} />已复制</span> : time}
+        <span className={styles.cardTime}>
+          {pasting ? <span className={styles.cardPasting}><Check size={10} style={{marginRight:2}} />已复制</span> : time}
         </span>
       </motion.div>
 
@@ -335,7 +336,7 @@ const CardHoverPopover = memo(function CardHoverPopover({
   return (
     <>
       <div
-        className="card-popover"
+        className={styles.cardPopover}
         // 阻止 mousedown 触发卡片的单击延迟逻辑
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
@@ -345,37 +346,37 @@ const CardHoverPopover = memo(function CardHoverPopover({
         {/* 预览区 */}
         {item.type === "text" && !isShortPlainText && (
           subType === "code" ? (
-            <div className="card-popover-code">{item.text}</div>
+            <div className={styles.cardPopoverCode}>{item.text}</div>
           ) : subType === "link" ? (
-            <div className="card-popover-text">
-              <div className="card-popover-link-host">
+            <div className={styles.cardPopoverText}>
+              <div className={styles.cardPopoverLinkHost}>
                 🔗 {(() => { try { return new URL(item.text).hostname; } catch { return item.text; } })()}
               </div>
-              <div className="card-popover-link-path">
+              <div className={styles.cardPopoverLinkPath}>
                 {(() => { try { return new URL(item.text).pathname; } catch { return ""; } })()}
               </div>
             </div>
           ) : subType === "email" ? (
-            <div className="card-popover-text">
-              <div className="card-popover-link-host">📧 {item.text}</div>
-              <div className="card-popover-link-path">邮箱地址 · 点击复制打开邮件</div>
+            <div className={styles.cardPopoverText}>
+              <div className={styles.cardPopoverLinkHost}>📧 {item.text}</div>
+              <div className={styles.cardPopoverLinkPath}>邮箱地址 · 点击复制打开邮件</div>
             </div>
           ) : subType === "phone" ? (
-            <div className="card-popover-text">
-              <div className="card-popover-link-host">📞 {item.text}</div>
-              <div className="card-popover-link-path">电话号码</div>
+            <div className={styles.cardPopoverText}>
+              <div className={styles.cardPopoverLinkHost}>📞 {item.text}</div>
+              <div className={styles.cardPopoverLinkPath}>电话号码</div>
             </div>
           ) : (
-            <div className="card-popover-text">{item.text}</div>
+            <div className={styles.cardPopoverText}>{item.text}</div>
           )
         )}
 
         {item.type === "image" && (
-          <div className="card-popover-image">
+          <div className={styles.cardPopoverImage}>
             {imageState?.status === "loaded" && imageState.url ? (
               <img src={imageState.url} alt="" />
             ) : (
-              <div className="card-popover-image-placeholder">
+              <div className={styles.cardPopoverImagePlaceholder}>
                 <span style={{ fontSize: 24 }}>🖼️</span>
                 <div>
                   <div style={{ fontWeight: 600, fontSize: 11 }}>
@@ -389,7 +390,7 @@ const CardHoverPopover = memo(function CardHoverPopover({
         )}
 
         {item.type === "file" && (
-          <div className="card-popover-file">
+          <div className={styles.cardPopoverFile}>
             {fileList.length > 0 ? fileList.map((f, i) => {
               const name = f.split(/[/\\]/).pop() || f;
               return <div key={i}>📄 {name}</div>;
@@ -398,23 +399,23 @@ const CardHoverPopover = memo(function CardHoverPopover({
         )}
 
         {/* 操作按钮 */}
-        <div className="card-popover-actions">
+        <div className={styles.cardPopoverActions}>
           <button
-            className={`card-popover-btn fav${item.pinned ? " active" : ""}`}
+            className={`${styles.cardPopoverBtn} ${item.pinned ? styles.cardPopoverBtnFavActive : styles.cardPopoverBtnFav}`}
             onClick={handleFav}
             title={item.pinned ? "取消收藏" : "收藏"}
           >
             {item.pinned ? "★" : "☆"} <span>{item.pinned ? "已收藏" : "收藏"}</span>
           </button>
-          <button className="card-popover-btn" onClick={handleCopy} title="复制">
+          <button className={styles.cardPopoverBtn} onClick={handleCopy} title="复制">
             📋 <span>复制</span>
           </button>
           {item.type === "text" && onEdit && (
-            <button className="card-popover-btn" onClick={handleEdit} title="编辑">
+            <button className={styles.cardPopoverBtn} onClick={handleEdit} title="编辑">
               ✏️ <span>编辑</span>
             </button>
           )}
-          <button className="card-popover-btn danger" onClick={handleDelete} title="删除">
+          <button className={`${styles.cardPopoverBtn} ${styles.cardPopoverBtnDanger}`} onClick={handleDelete} title="删除">
             🗑 <span>删除</span>
           </button>
         </div>

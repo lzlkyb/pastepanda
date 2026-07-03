@@ -1,0 +1,362 @@
+.helpSectionTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+.helpRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+
+.helpDesc {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.helpKbd {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  font-family: "SF Mono", "Consolas", monospace;
+}
+
+
+
+.bAccordion {
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.bAccHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--card-bg);
+  border: none;
+  width: 100%;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+
+.bAccHeader:hover {
+  background: var(--hover);
+}
+
+.bAccArrow {
+  font-size: 12px;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+}
+
+.bAccBody {
+  padding: 4px 14px 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.bAccRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+}
+
+.bAccDesc {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+
+
+
+/* --- Dialog header extras --- */
+.dialogHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* dialog-version-badge 已由 VersionBadge 组件替代 */
+
+/* --- Search bar --- */
+.h2SearchBar {
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.h2SearchWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.h2SearchIcon {
+  position: absolute;
+  left: 10px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.h2SearchInput {
+  width: 100%;
+  height: 34px;
+  padding: 0 28px 0 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.h2SearchInput:focus {
+  border-color: var(--accent);
+}
+.h2SearchInput::placeholder {
+  color: var(--text-muted);
+}
+.h2SearchClear {
+  position: absolute;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.h2SearchClear:hover {
+  background: var(--hover);
+}
+
+/* --- Hidden by search filter --- */
+.h2Hidden {
+  display: none !important;
+}
+.h2NoResults {
+  padding: 28px 18px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* --- Body scrollable area --- */
+.h2Body {
+  padding: 0;
+  gap: 0;
+  overflow-y: auto;
+}
+
+/* --- Section (accordion block) --- */
+.h2Section {
+  border-bottom: 1px solid var(--border-color);
+}
+.h2Section:last-of-type {
+  border-bottom: none;
+}
+.h2SectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+.h2SectionHeader:hover {
+  background: var(--hover);
+}
+.h2SectionIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+  color: #fff;
+}
+.h2SectionTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  flex: 1;
+}
+.h2Arrow {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+.h2Section.expanded .h2Arrow {
+  transform: rotate(90deg);
+}
+
+/* Collapsible content */
+.h2SectionContent {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+.h2Section.expanded .h2SectionContent {
+  max-height: 2000px;
+}
+.h2SectionInner {
+  padding: 0 18px 14px;
+}
+
+/* --- Sub title --- */
+.h2SubTitle {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 8px 0 4px 42px;
+}
+
+/* --- Key row --- */
+.h2Row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 0 5px 42px;
+  gap: 12px;
+}
+.h2Desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex: 1;
+  min-width: 0;
+}
+
+/* Keyboard key capsule */
+.hKey {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-family: 'SF Mono', Consolas, monospace;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.hKey .plus {
+  color: var(--text-muted);
+  margin: 0 3px;
+  font-weight: 400;
+}
+
+/* --- Guide card --- */
+.h2Card {
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 4px 0 4px 42px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.h2CardIcon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.h2CardBody {
+  flex: 1;
+  min-width: 0;
+}
+.h2CardTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.h2CardDesc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* --- Tip item --- */
+.h2Tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0 4px 42px;
+}
+.h2TipBulb {
+  color: var(--warning, #fbbf24);
+  font-size: 13px;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+.h2TipText {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.h2TipText strong {
+  color: var(--text-primary);
+}
+
+/* --- Footer (reuse old classes, adjust padding) --- */
+.hFooter {
+  padding: 14px 18px;
+  border-top: 1px solid var(--border-color);
+  background: var(--section-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.hCloseBtn {
+  width: 100%;
+  height: 40px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px var(--accent-shadow);
+  font-family: inherit;
+  transition: all 0.2s;
+}
+.hCloseBtn:hover {
+  box-shadow: 0 4px 12px var(--accent-shadow);
+}
+.hVer {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+

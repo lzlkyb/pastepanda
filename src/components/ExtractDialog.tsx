@@ -4,6 +4,7 @@ import { X, Link2, AtSign, Phone, Code2, Hash, Copy, CheckSquare, Save, LucideIc
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/stores/appStore";
 import { logger } from "@/lib/logger";
+import styles from "./Extract.module.css";
 
 // v5.0.39 方案A渐进式优化：结果项存为片段+底部批量操作栏+active实色填充
 type ExtractType = "url" | "email" | "phone" | "ip" | "code";
@@ -123,13 +124,13 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
             </div>
 
             {/* Type selector */}
-            <div className="extract-types">
+            <div className={styles.extractTypes}>
               {typeCounts.map((cfg) => {
                 const active = type === cfg.key;
                 const Icon = cfg.Icon;
                 return (
                   <button key={cfg.key} onClick={() => { setType(cfg.key); setSelected(new Set()); }}
-                    className={`extract-type-btn${active ? " active" : ""}`}
+                    className={`${styles.extractTypeBtn}${active ? ` ${styles.active}` : ""}`}
                     style={{
                       background: active ? "var(--accent)" : "transparent",
                       color: active ? "#fff" : "var(--text-secondary)",
@@ -137,7 +138,7 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
                     onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = "var(--hover)"; }}
                     onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}>
                     <Icon size={13} /> {cfg.label}
-                    <span className="tab-count">{cfg.count}</span>
+                    <span className={styles.tabCount}>{cfg.count}</span>
                   </button>
                 );
               })}
@@ -147,30 +148,30 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
             <div className="dialog-body" style={{ padding: "8px 16px", gap: "4px" }}>
               {results.length === 0 ? (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "48px 0", gap: "8px" }}>
-                  <p className="snippet-item-sub">未找到匹配的内容</p>
+                  <p className={styles.snippetItemSub}>未找到匹配的内容</p>
                 </div>
               ) : (
                 results.map((item, i) => {
                   const isSel = selected.has(item);
                   return (
                     <div key={i} onClick={() => toggleSelect(item)}
-                      className={`extract-result${isSel ? " selected" : ""}`}
+                      className={`${styles.extractResult}${isSel ? ` ${styles.selected}` : ""}`}
                       style={{
                         background: isSel ? "var(--accent-light)" : "var(--card-bg)",
                         border: `1px solid ${isSel ? "var(--accent)" : "var(--border-color)"}`,
                       }}
                       onMouseEnter={(e) => { if (!isSel) e.currentTarget.style.background = "var(--hover)"; }}
                       onMouseLeave={(e) => { if (!isSel) e.currentTarget.style.background = "var(--card-bg)"; }}>
-                      <div className={`extract-checkbox${isSel ? " checked" : ""}`}
+                      <div className={`${styles.extractCheckbox}${isSel ? ` ${styles.checked}` : ""}`}
                         style={{
                           background: isSel ? "var(--accent)" : "transparent",
                           border: `1.5px solid ${isSel ? "var(--accent)" : "var(--border-color)"}`,
                         }}>
                         {isSel && <CheckSquare size={10} color="#fff" />}
                       </div>
-                      <span className="extract-result-text">{item}</span>
-                      <div className="extract-item-actions">
-                        <button className="extract-item-action-btn copy"
+                      <span className={styles.extractResultText}>{item}</span>
+                      <div className={styles.extractItemActions}>
+                        <button className={`${styles.extractItemActionBtn} ${styles.copy}`}
                           onClick={(e) => {
                             e.stopPropagation();
                             navigator.clipboard.writeText(item).catch(() => {});
@@ -178,7 +179,7 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
                           title="复制">
                           <Copy size={12} />
                         </button>
-                        <button className="extract-item-action-btn save"
+                        <button className={`${styles.extractItemActionBtn} ${styles.save}`}
                           onClick={(e) => {
                             e.stopPropagation();
                             saveSingleAsSnippet(item);
@@ -195,19 +196,19 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
 
             {/* 底部操作栏 */}
             {results.length > 0 && (
-              <div className="extract-footer-bar">
-                <div className="extract-footer-left">
+              <div className={styles.extractFooterBar}>
+                <div className={styles.extractFooterLeft}>
                   <span>已选 <strong>{selected.size}</strong> / {results.length} 项</span>
-                  <button className="btn-sm-v2 ghost" onClick={selectAll}>
+                  <button className={`${styles.btnSmV2} ${styles.ghost}`} onClick={selectAll}>
                     {selected.size === results.length ? "取消全选" : "全选"}
                   </button>
                 </div>
-                <div className="extract-footer-right">
-                  <button className="btn-sm-v2 outline" onClick={copySelected}
+                <div className={styles.extractFooterRight}>
+                  <button className={`${styles.btnSmV2} ${styles.outline}`} onClick={copySelected}
                     disabled={selected.size === 0}>
                     <Copy size={12} /> 复制选中
                   </button>
-                  <button className="btn-sm-v2 primary" onClick={saveSelectedAsSnippets}
+                  <button className={`${styles.btnSmV2} ${styles.primary}`} onClick={saveSelectedAsSnippets}
                     disabled={selected.size === 0 || saving}>
                     <Save size={12} /> {saving ? "保存中..." : "全部存为片段"}
                   </button>

@@ -1,0 +1,897 @@
+/* CardList 组件样式 — 卡片列表 + 批量操作 + 加载更多 */
+
+.cardList {
+  padding: 10px 16px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 卡片外层容器：让 Popover 绝对定位脱离 .card 的 overflow:hidden 裁剪 */
+.cardWrap {
+  position: relative;
+  overflow: visible;
+  width: 100%;
+  z-index: 1;
+}
+
+.card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  height: 72px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* 左侧彩色边线 — 按类型区分 */
+.card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+}
+
+.cardText::before { background: var(--accent); }
+.cardImage::before { background: #FF6482; }
+.cardFile::before { background: #34C759; }
+.cardCode::before { background: #BF5AF2; }
+.cardPinned::before { background: #FFD60A; }
+
+.card:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px) scale(1.008);
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.selected {
+  background: var(--card-selected-bg);
+  border-color: var(--card-selected-border);
+  box-shadow: var(--card-selected-shadow), 0 4px 16px var(--accent-shadow);
+}
+
+.cardIcon {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+/* 图标渐变底色 */
+.bgBlue   { background: linear-gradient(135deg, #E8F1FB, #D6E8FA); }
+.bgGreen  { background: linear-gradient(135deg, #E5F8EC, #D4F2DE); }
+.bgPink   { background: linear-gradient(135deg, #FDE8EE, #FAD6DF); }
+.bgPurple { background: linear-gradient(135deg, #F0E8FB, #E5D6FA); }
+
+/* 图片缩略图 */
+.cardImgThumb {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  min-height: 42px;
+  padding: 0;
+  overflow: hidden;
+}
+.cardImgThumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+/* 图片加载中 - 骨架屏 */
+.cardImgLoading {
+  position: relative;
+  overflow: hidden;
+}
+.cardImgShimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 25%, rgba(255,255,255,0.5) 50%, transparent 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* 图片加载失败 */
+.cardImgError {
+  position: relative;
+  background: #FEF2F2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.cardImgRetry {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 8px;
+  background: rgba(239,68,68,0.1);
+  color: #DC2626;
+  transition: background 0.15s;
+  border: none;
+}
+.cardImgRetry:hover {
+  background: rgba(239,68,68,0.2);
+}
+
+.cardContent {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.cardTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+  word-break: break-word;
+  max-height: 36px;
+  white-space: normal;
+}
+
+.cardSub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.cardPin {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.cardSource {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;
+}
+
+.cardTime {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.cardPasting {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-light);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+/* ===== 批量操作工具栏 ===== */
+.batchToolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--accent-light);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  border: 1px solid var(--accent);
+}
+.batchToolbarLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  flex: 1;
+}
+.batchBtn {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+.batchBtn:hover { background: var(--hover); }
+.batchBtnDanger {
+  border: 1px solid #EF4444;
+  color: #EF4444;
+}
+.batchBtnDanger:hover { background: rgba(239,68,68,0.1); }
+
+/* 加载更多区域 */
+.loadMoreArea {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.loadMoreHint { font-size: 11px; color: var(--text-muted); }
+.loadMoreError { font-size: 11px; color: #EF4444; }
+.loadMoreRetryBtn {
+  font-size: 11px; color: var(--accent); background: none;
+  border: 1px solid var(--accent); border-radius: 6px;
+  padding: 2px 10px; cursor: pointer; font-family: inherit;
+  transition: all 0.15s;
+}
+.loadMoreRetryBtn:hover { background: var(--accent-light); }
+
+/* ===== 空状态（卡片列表内的空状态） ===== */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 60px 20px;
+  min-height: 300px;
+  user-select: none;
+}
+.emptyIcon {
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  background: var(--accent-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px var(--accent-shadow);
+}
+.emptyTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 6px;
+}
+.emptyDesc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+.emptyClearBtn {
+  margin-top: 8px;
+  padding: 6px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.emptyClearBtn:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+/* ===== 引导卡片（空状态下的新手引导） ===== */
+.guideCards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 340px;
+}
+.guideWelcome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--accent-light);
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 500;
+}
+.guideWelcomeEmoji {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+.guideCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  cursor: default;
+  transition: all 0.15s;
+}
+.guideCard:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px var(--accent-shadow);
+}
+.guideIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.guideText {
+  flex: 1;
+  min-width: 0;
+}
+.guideLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.guideDesc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.guideFooterHint {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 8px 0;
+  line-height: 1.6;
+}
+.guideFooterHint kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* ===== Card Hover Preview Popover ===== */
+.cardPopover {
+  position: absolute;
+  /* 默认在卡片上方弹出 */
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 320px;
+  max-width: calc(100vw - 48px);
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--dialog-bg);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.08);
+  z-index: 100;
+  pointer-events: auto;
+  animation: popoverFadeIn 0.18s ease;
+}
+@keyframes popoverFadeIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* 桥接 */
+.cardPopover::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 10px;
+  bottom: -10px;
+  pointer-events: auto;
+}
+
+/* 小三角箭头 */
+.cardPopover::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0; height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid var(--dialog-bg);
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.08));
+}
+
+/* 第一项/最后一项：popover 翻转到下方 */
+.flipDown {
+  bottom: auto;
+  top: calc(100% + 10px);
+  animation-name: popoverFadeInDown;
+}
+.flipDown::after {
+  top: auto; bottom: 100%;
+  border-top: none;
+  border-bottom: 8px solid var(--dialog-bg);
+}
+.flipDown::before {
+  top: -10px;
+  bottom: auto;
+}
+@keyframes popoverFadeInDown {
+  from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* 预览区 — 文本/链接/邮箱/电话 */
+.cardPopoverText {
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.65;
+  max-height: 140px;
+  overflow-y: auto;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  margin-bottom: 10px;
+  padding-right: 2px;
+}
+.cardPopoverText::-webkit-scrollbar { width: 4px; }
+.cardPopoverText::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+.cardPopoverLinkHost {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+.cardPopoverLinkPath {
+  font-size: 11px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+/* 预览区 — 代码 */
+.cardPopoverCode {
+  font-size: 11px;
+  font-family: "Fira Code", "SF Mono", "Consolas", monospace;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #1e1e2e;
+  color: #cdd6f4;
+  max-height: 140px;
+  overflow: hidden;
+  white-space: pre;
+  text-overflow: ellipsis;
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+
+/* 预览区 — 图片 */
+.cardPopoverImage {
+  margin-bottom: 10px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--section-bg);
+  max-height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cardPopoverImage img {
+  max-width: 100%;
+  max-height: 140px;
+  display: block;
+  object-fit: contain;
+}
+.cardPopoverImagePlaceholder {
+  width: 100%;
+  height: 100px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px;
+}
+
+/* 预览区 — 文件列表 */
+.cardPopoverFile {
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.7;
+  max-height: 140px;
+  overflow-y: auto;
+  margin-bottom: 10px;
+  word-break: break-all;
+}
+.cardPopoverFile::-webkit-scrollbar { width: 4px; }
+.cardPopoverFile::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+
+/* 操作按钮 */
+.cardPopoverActions {
+  display: flex;
+  gap: 4px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 8px;
+}
+.cardPopoverBtn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 5px 6px;
+  border-radius: 7px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-primary);
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  user-select: none;
+  font-family: inherit;
+}
+.cardPopoverBtn:hover {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.cardPopoverBtn:active { transform: scale(0.95); }
+.cardPopoverBtnFav:hover {
+  background: #FEF3C7;
+  border-color: #F59E0B;
+  color: #B45309;
+}
+.cardPopoverBtnFavActive {
+  background: #FEF3C7;
+  border-color: #F59E0B;
+  color: #B45309;
+}
+.cardPopoverBtnDanger:hover {
+  background: var(--red-bg);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* ===== 图片详情弹窗 ===== */
+.imageDetailDialog {
+  width: 720px;
+  max-width: 95vw;
+  max-height: 92vh;
+}
+
+.imageDetailMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.imageDetailTag {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--section-bg);
+  font-variant-numeric: tabular-nums;
+}
+.imageDetailTagAccent {
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+.imageDetailToolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  flex-wrap: wrap;
+  transition: background 0.3s, border-color 0.3s;
+}
+.imageDetailToolBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.imageDetailToolBtn:hover {
+  background: var(--card-bg);
+  color: var(--text-primary);
+}
+.imageDetailZoomLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  min-width: 40px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.imageDetailViewport {
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  min-height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.3s, border-color 0.3s;
+  cursor: grab;
+}
+.imageDetailImg {
+  max-width: none;
+  max-height: none;
+  object-fit: none;
+  border-radius: 4px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  user-select: none;
+  -webkit-user-drag: none;
+  transition: opacity 0.35s ease;
+}
+
+.imageDetailLoading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.imageDetailSpinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: cardlistSpin 0.8s linear infinite;
+}
+@keyframes cardlistSpin {
+  to { transform: rotate(360deg); }
+}
+
+.imageDetailHint {
+  font-size: 10px;
+  color: var(--text-muted);
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.imageDetailToolbarSep {
+  width: 1px;
+  height: 20px;
+  background: var(--border-color);
+  margin: 0 4px;
+}
+
+/* OCR 工具栏按钮 */
+.ocrToolBtn {
+  width: auto !important;
+  padding: 0 10px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 2px;
+}
+.ocrToolBtnActive {
+  background: rgba(16, 185, 129, 0.15) !important;
+  color: #10b981 !important;
+}
+.ocrToolBtn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.pinToolBtn {
+  width: auto !important;
+  padding: 0 10px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 2px;
+  color: #ec4899 !important;
+}
+.pinToolBtn:hover {
+  background: rgba(236, 72, 153, 0.1) !important;
+  color: #db2777 !important;
+}
+
+.ocrSpinnerSmall {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(99,102,241,0.3);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: cardlistSpin 0.7s linear infinite;
+}
+
+/* OCR 词框 */
+.ocrWordBox {
+  transition: background 0.1s, border-color 0.1s;
+}
+.ocrWordBox:hover {
+  background: rgba(99,102,241,0.15) !important;
+  border-color: rgba(99,102,241,0.6) !important;
+}
+.ocrWordSelected:hover {
+  background: rgba(16,185,129,0.28) !important;
+  border-color: rgba(16,185,129,0.9) !important;
+}
+
+/* OCR 选中结果栏 */
+.ocrResultBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(99,102,241,0.06);
+  border: 1px solid rgba(99,102,241,0.2);
+  flex-shrink: 0;
+}
+.ocrResultCount {
+  font-size: 11px;
+  color: #4338ca;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.ocrResultCount strong {
+  font-size: 13px;
+}
+.ocrResultPreview {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ocrResultClearBtn {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(99,102,241,0.2);
+  background: transparent;
+  color: #4338ca;
+  cursor: pointer;
+}
+.ocrResultClearBtn:hover {
+  background: rgba(99,102,241,0.08);
+}
+.ocrResultCopyBtn {
+  font-size: 10px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.ocrResultCopyBtn:hover {
+  opacity: 0.9;
+}
+.ocrResultCopyBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* OCR 纯文本面板 */
+.ocrFullTextPanel {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.ocrFullTextHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #fefce8;
+  border-bottom: 1px solid #fde68a;
+  font-size: 12px;
+  font-weight: 600;
+  color: #92400e;
+}
+.ocrFullTextCopyBtn {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid #fde68a;
+  background: #fff;
+  color: #92400e;
+  cursor: pointer;
+}
+.ocrFullTextCopyBtn:hover {
+  background: #fef3c7;
+}
+.ocrFullTextBody {
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 120px;
+  overflow-y: auto;
+  background: #fffbeb;
+  user-select: text;
+}
+
+.ocrOverlayContainer {
+  overflow: hidden;
+}
+
+/* ===== 滚动区域 ===== */
+.scrollArea {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}

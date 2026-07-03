@@ -1,0 +1,486 @@
+/* TopBar.module.css — Header + Search + Filter + Tabs */
+
+/* ===== Header / TopBar ===== */
+.header {
+  padding: 16px 16px 0;
+  background: linear-gradient(180deg, var(--header-bg-start) 0%, var(--header-bg-end) 100%);
+  flex-shrink: 0;
+}
+
+.headerTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.headerTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.headerTitleIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.headerTitleIcon img {
+  display: block;
+}
+
+.headerTitleText {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.headerIcons {
+  display: flex;
+  gap: 4px;
+}
+
+.iconBtn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  transition: background 0.15s, transform 0.15s;
+}
+
+.iconBtn:hover {
+  background: rgba(129,140,248,.12);
+  transform: scale(1.08);
+}
+
+.iconBtn:active {
+  transform: scale(.92);
+}
+
+/* emoji 图标 */
+.iconEmoji {
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* SVG 图标 */
+.iconSvg {
+  width: 18px;
+  height: 18px;
+}
+
+.iconBtnDanger:hover {
+  background: rgba(239,68,68,.12);
+}
+
+/* ===== Search Box ===== */
+.searchBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--search-bg);
+  border: 1px solid var(--search-border);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+  transition: all 0.2s;
+}
+
+.focused {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-shadow), 0 2px 8px rgba(0, 120, 212, 0.1);
+  background: var(--card-bg);
+}
+
+.hasHistory {
+  /* 搜索历史下拉展开时，保持聚焦样式 */
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-shadow), 0 2px 8px rgba(0, 120, 212, 0.1);
+  background: var(--card-bg);
+}
+
+.searchIcon {
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.searchInput {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.searchInput::placeholder {
+  color: var(--text-muted);
+}
+
+.searchClear {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-muted);
+  border-radius: 6px;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.searchClear:hover {
+  background: var(--hover);
+}
+
+/* ===== 搜索历史下拉 ===== */
+.searchHistoryDropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--dialog-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+  z-index: 30;
+  overflow: hidden;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.searchHistoryHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.searchHistoryClearAll {
+  background: none;
+  border: none;
+  font-size: 10px;
+  color: var(--accent);
+  cursor: pointer;
+  font-family: inherit;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.searchHistoryClearAll:hover {
+  background: var(--accent-light);
+}
+
+.searchHistoryItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background 0.1s;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.searchHistoryItem:hover {
+  background: var(--hover);
+}
+
+.searchHistoryItemIcon {
+  font-size: 12px;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.searchHistoryText {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.searchHistoryRemove {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  opacity: 0;
+  transition: all 0.15s;
+}
+
+.searchHistoryItem:hover .searchHistoryRemove {
+  opacity: 1;
+}
+
+.searchHistoryRemove:hover {
+  background: rgba(239,68,68,0.1);
+  color: #EF4444;
+}
+
+/* ===== Header Controls Wrapper ===== */
+.headerControls {
+  padding: 0 0 10px;
+}
+
+/* ===== Tabs Area ===== */
+.tabsArea {
+  padding: 10px 0 0;
+  background: transparent;
+}
+
+/* ===== Filter Bar ===== */
+.filterBar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 0 0;
+  align-items: center;
+}
+
+.filterDropdown {
+  position: relative;
+  flex: 1;
+}
+
+.filterDropdownBtn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.filterDropdownBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.filterDropdownMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--dialog-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+  z-index: 30;
+  overflow: hidden;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.filterDropdownItem {
+  display: block;
+  width: 100%;
+  padding: 7px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background 0.1s;
+}
+
+.filterDropdownItem:hover {
+  background: var(--accent-light);
+}
+
+.filterDropdownItemActive {
+  color: var(--accent);
+  font-weight: 600;
+  background: var(--accent-light);
+}
+
+/* ===== Segmented Control ===== */
+.segmented {
+  display: flex;
+  background: var(--seg-bg);
+  border-radius: 10px;
+  padding: 3px;
+  position: relative;
+}
+
+.segItem {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  z-index: 1;
+  position: relative;
+  font-family: inherit;
+}
+
+.segItemActive {
+  color: var(--text-primary);
+  font-weight: 600;
+  background: var(--seg-active-bg);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08), 0 0.5px 1px rgba(0, 0, 0, 0.04);
+}
+
+.segActiveIndicator {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  background: var(--seg-active-bg);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08), 0 0.5px 1px rgba(0, 0, 0, 0.04);
+  z-index: 0;
+}
+
+.segItemActive .segIcon,
+.segItemActive span {
+  position: relative;
+  z-index: 1;
+}
+
+.segItem:hover:not(.segItemActive) {
+  color: var(--text-primary);
+}
+
+.segIcon {
+  font-size: 15px;
+}
+
+.segCount {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-left: 1px;
+  font-variant-numeric: tabular-nums;
+}
+
+.segItemActive .segCount {
+  color: var(--accent);
+}
+
+/* ===== Circle Tabs ===== */
+.tabsCircle {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  padding: 20px 16px 12px;
+  background: var(--card-bg);
+}
+
+.circleTab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  padding: 0;
+  position: relative;
+  font-family: inherit;
+}
+
+.circleIcon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  border: 2px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-secondary);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.circleTabActive .circleIcon {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 4px 16px var(--accent-shadow);
+  transform: scale(1.08);
+  border-color: var(--accent);
+}
+
+.circleTab:not(.circleTabActive):hover .circleIcon {
+  background: var(--hover);
+  border-color: var(--border-color);
+  transform: scale(1.04);
+}
+
+.circleLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: color 0.2s;
+}
+
+.circleTabActive .circleLabel {
+  color: var(--accent);
+}
+
+.circleBadge {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  border: 2px solid var(--card-bg);
+  background: var(--text-muted);
+  color: #fff;
+}
+
+.circleTabActive .circleBadge {
+  background: #FF3B30;
+}

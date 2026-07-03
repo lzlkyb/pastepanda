@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, ChevronRight, Search } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { getAppVersion, getAppName } from "@/lib/api";
+import styles from "./Help.module.css";
 
 /** 将 "ctrl+shift+v" 格式化为胶囊 JSX */
 function KeyCaps({ value }: { value: string }) {
@@ -12,7 +13,7 @@ function KeyCaps({ value }: { value: string }) {
     return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
   });
   return (
-    <span className="h-key">
+    <span className={styles.hKey}>
       {parts.map((p, i) => (
         <span key={i}>
           {i > 0 && <span className="plus">+</span>}
@@ -25,14 +26,14 @@ function KeyCaps({ value }: { value: string }) {
 
 /** 静态快捷键胶囊 */
 function StaticKey({ children }: { children: string }) {
-  return <span className="h-key">{children}</span>;
+  return <span className={styles.hKey}>{children}</span>;
 }
 
 /** 一条快捷键行 */
 function KeyRow({ desc, value, isStatic, hidden }: { desc: string; value: string; isStatic?: boolean; hidden?: boolean }) {
   return (
-    <div className={`h2-row${hidden ? " h2-hidden" : ""}`}>
-      <span className="h2-desc">{desc}</span>
+    <div className={`${styles.h2Row}${hidden ? ` ${styles.h2Hidden}` : ""}`}>
+      <span className={styles.h2Desc}>{desc}</span>
       {isStatic ? <StaticKey>{value}</StaticKey> : <KeyCaps value={value} />}
     </div>
   );
@@ -40,17 +41,17 @@ function KeyRow({ desc, value, isStatic, hidden }: { desc: string; value: string
 
 /** 子分组标题 */
 function SubTitle({ children, hidden }: { children: string; hidden?: boolean }) {
-  return <div className={`h2-sub-title${hidden ? " h2-hidden" : ""}`}>{children}</div>;
+  return <div className={`${styles.h2SubTitle}${hidden ? ` ${styles.h2Hidden}` : ""}`}>{children}</div>;
 }
 
 /** 功能指南卡片 */
 function GuideCard({ icon, color, title, desc, hidden }: { icon: React.ReactNode; color: string; title: string; desc: string; hidden?: boolean }) {
   return (
-    <div className={`h2-card${hidden ? " h2-hidden" : ""}`}>
-      <div className="h2-card-icon" style={{ background: `${color}20`, color }}>{icon}</div>
-      <div className="h2-card-body">
-        <div className="h2-card-title">{title}</div>
-        <div className="h2-card-desc">{desc}</div>
+    <div className={`${styles.h2Card}${hidden ? ` ${styles.h2Hidden}` : ""}`}>
+      <div className={styles.h2CardIcon} style={{ background: `${color}20`, color }}>{icon}</div>
+      <div className={styles.h2CardBody}>
+        <div className={styles.h2CardTitle}>{title}</div>
+        <div className={styles.h2CardDesc}>{desc}</div>
       </div>
     </div>
   );
@@ -58,7 +59,7 @@ function GuideCard({ icon, color, title, desc, hidden }: { icon: React.ReactNode
 
 /** 技巧提示条目 */
 function TipItem({ children, hidden }: { children: React.ReactNode; hidden?: boolean }) {
-  return <div className={`h2-tip${hidden ? " h2-hidden" : ""}`}>{children}</div>;
+  return <div className={`${styles.h2Tip}${hidden ? ` ${styles.h2Hidden}` : ""}`}>{children}</div>;
 }
 
 /** 搜索匹配：判断文本是否包含搜索词 */
@@ -80,14 +81,14 @@ function Section({
   if (forceExpand && !hasMatch) return null;
 
   return (
-    <div className={`h2-section${expanded ? " expanded" : ""}`}>
-      <div className="h2-section-header" onClick={() => !forceExpand && setManualExpanded(!manualExpanded)}>
-        <span className="h2-section-icon" style={{ background: iconBg }}>{icon}</span>
-        <span className="h2-section-title">{title}</span>
-        <ChevronRight size={12} className="h2-arrow" />
+    <div className={`${styles.h2Section}${expanded ? ` ${styles.expanded}` : ""}`}>
+      <div className={styles.h2SectionHeader} onClick={() => !forceExpand && setManualExpanded(!manualExpanded)}>
+        <span className={styles.h2SectionIcon} style={{ background: iconBg }}>{icon}</span>
+        <span className={styles.h2SectionTitle}>{title}</span>
+        <ChevronRight size={12} className={styles.h2Arrow} />
       </div>
-      <div className="h2-section-content">
-        <div className="h2-section-inner">{children}</div>
+      <div className={styles.h2SectionContent}>
+        <div className={styles.h2SectionInner}>{children}</div>
       </div>
     </div>
   );
@@ -143,20 +144,20 @@ export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => vo
             </div>
 
             {/* Search bar */}
-            <div className="h2-search-bar">
-              <div className="h2-search-wrap">
-                <Search size={13} className="h2-search-icon" />
+            <div className={styles.h2SearchBar}>
+              <div className={styles.h2SearchWrap}>
+                <Search size={13} className={styles.h2SearchIcon} />
                 <input
                   ref={searchRef}
                   type="text"
-                  className="h2-search-input"
+                  className={styles.h2SearchInput}
                   placeholder="搜索快捷键、功能…"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
                 />
                 {searching && (
-                  <button className="h2-search-clear" onClick={() => { setQuery(""); searchRef.current?.focus(); }}>
+                  <button className={styles.h2SearchClear} onClick={() => { setQuery(""); searchRef.current?.focus(); }}>
                     <X size={12} />
                   </button>
                 )}
@@ -164,7 +165,7 @@ export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => vo
             </div>
 
             {/* Body */}
-            <div className="dialog-body h2-body">
+            <div className={`dialog-body ${styles.h2Body}`}>
 
               {/* 1. 快捷键速查 — 默认展开 */}
               <Section icon={<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h8M6 12h.01M18 12h.01M6 16h12"/></svg>} iconBg="linear-gradient(135deg, #3B82F6, #0078D4)" title="快捷键速查" defaultExpanded
@@ -217,50 +218,50 @@ export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => vo
               <Section icon="💡" iconBg="linear-gradient(135deg, #10B981, #34C759)" title="技巧提示"
                 forceExpand={searching} hasMatch={!searching || matches(q, "Ctrl Click 多选", "Shift Click 范围", "Space 预览", "双击 卡片 配置", "Ctrl Z 撤销", "Ctrl Alt 1 9", "置顶 固定", "搜索 过滤")}>
                 <TipItem hidden={searching && !matches(q, "Ctrl Click 多选", "批量 删除")}>
-                  <span className="h2-tip-bulb">💡</span>
-                  <span className="h2-tip-text"><strong>Ctrl + Click</strong> 可逐个多选记录，然后批量删除或操作</span>
+                  <span className={styles.h2TipBulb}>💡</span>
+                  <span className={styles.h2TipText}><strong>Ctrl + Click</strong> 可逐个多选记录，然后批量删除或操作</span>
                 </TipItem>
                 <TipItem hidden={searching && !matches(q, "Shift Click 范围", "选择")}>
-                  <span className="h2-tip-bulb">💡</span>
-                  <span className="h2-tip-text"><strong>Shift + Click</strong> 可范围选择，从当前到点击位置全部选中</span>
+                  <span className={styles.h2TipBulb}>💡</span>
+                  <span className={styles.h2TipText}><strong>Shift + Click</strong> 可范围选择，从当前到点击位置全部选中</span>
                 </TipItem>
                 <TipItem hidden={searching && !matches(q, "Space 预览", "内容")}>
-                  <span className="h2-tip-bulb">💡</span>
-                  <span className="h2-tip-text">按 <strong>Space</strong> 快速预览选中内容，无需打开详情</span>
+                  <span className={styles.h2TipBulb}>💡</span>
+                  <span className={styles.h2TipText}>按 <strong>Space</strong> 快速预览选中内容，无需打开详情</span>
                 </TipItem>
                 <TipItem hidden={searching && !matches(q, "双击 卡片", "配置")}>
-                  <span className="h2-tip-bulb">💡</span>
-                  <span className="h2-tip-text">双击卡片行为可在设置中配置（粘贴/预览/复制）</span>
+                  <span className={styles.h2TipBulb}>💡</span>
+                  <span className={styles.h2TipText}>双击卡片行为可在设置中配置（粘贴/预览/复制）</span>
                 </TipItem>
                 <TipItem hidden={searching && !matches(q, "Ctrl Z 撤销", "误删 恢复")}>
-                  <span className="h2-tip-bulb">💡</span>
-                  <span className="h2-tip-text">误删记录可按 <strong>Ctrl + Z</strong> 立即撤销恢复</span>
+                  <span className={styles.h2TipBulb}>💡</span>
+                  <span className={styles.h2TipText}>误删记录可按 <strong>Ctrl + Z</strong> 立即撤销恢复</span>
                 </TipItem>
                 <TipItem hidden={searching && !matches(q, "Ctrl Alt 1 9", "序号 粘贴")}>
-                  <span className="h2-tip-bulb">💡</span>
-                  <span className="h2-tip-text"><strong>Ctrl + Alt + 1~9</strong> 直接粘贴对应序号的记录，无需打开窗口</span>
+                  <span className={styles.h2TipBulb}>💡</span>
+                  <span className={styles.h2TipText}><strong>Ctrl + Alt + 1~9</strong> 直接粘贴对应序号的记录，无需打开窗口</span>
                 </TipItem>
                 <TipItem hidden={searching && !matches(q, "置顶 固定", "常用")}>
-                  <span className="h2-tip-bulb">💡</span>
-                  <span className="h2-tip-text">置顶记录会始终显示在列表顶部，适合固定常用内容</span>
+                  <span className={styles.h2TipBulb}>💡</span>
+                  <span className={styles.h2TipText}>置顶记录会始终显示在列表顶部，适合固定常用内容</span>
                 </TipItem>
                 <TipItem hidden={searching && !matches(q, "搜索 过滤", "关键词 类型")}>
-                  <span className="h2-tip-bulb">💡</span>
-                  <span className="h2-tip-text">搜索框支持关键词过滤，输入即搜，支持类型筛选</span>
+                  <span className={styles.h2TipBulb}>💡</span>
+                  <span className={styles.h2TipText}>搜索框支持关键词过滤，输入即搜，支持类型筛选</span>
                 </TipItem>
               </Section>
 
               {/* No results message */}
               {searching && (
-                <div className="h2-no-results">未找到匹配内容</div>
+                <div className={styles.h2NoResults}>未找到匹配内容</div>
               )}
 
             </div>
 
             {/* Footer */}
-            <div className="h-footer">
-              <button onClick={onClose} className="h-close-btn">我知道了</button>
-              <span className="h-ver">{appName} v{appVersion}</span>
+            <div className={styles.hFooter}>
+              <button onClick={onClose} className={styles.hCloseBtn}>我知道了</button>
+              <span className={styles.hVer}>{appName} v{appVersion}</span>
             </div>
           </motion.div>
         </motion.div>

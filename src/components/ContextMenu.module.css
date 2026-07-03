@@ -1,0 +1,121 @@
+/* ContextMenu — CSS Module */
+.ctxMenu {
+  position: fixed;
+  z-index: 90;
+  padding: 4px 0;
+  border-radius: 12px;
+  min-width: 170px;
+  overflow: visible;
+  background: var(--dialog-bg);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.ctxSep {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 10px;
+}
+
+.ctxItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 12px;
+  font-size: 12.5px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  transition: background 0.12s ease;
+  font-family: inherit;
+  text-align: left;
+  border-radius: 0;
+}
+
+.ctxItem:hover,
+.keyboardActive {
+  background: var(--hover);
+}
+
+.danger {
+  color: #EF4444;
+}
+
+.danger:hover,
+.keyboardActive.danger {
+  background: rgba(239, 68, 68, 0.1);
+  color: #DC2626;
+}
+
+.ctxItemIcon {
+  flex-shrink: 0;
+  opacity: 0.7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+}
+
+/* 粘贴变换文字图标 */
+.ctxTextIcon {
+  font-size: 12px;
+  font-weight: 700;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+}
+
+.ctxTextUpper  { background: rgba(59,130,246,.15); color: #60A5FA; }
+.ctxTextLower  { background: rgba(16,185,129,.15); color: #34C759; }
+.ctxTextScissor { background: rgba(245,158,11,.15); color: #F59E0B; }
+.ctxTextPara   { background: rgba(236,72,153,.15); color: #EC4899; }
+.ctxTextQuote  { background: rgba(168,85,247,.15); color: #A855F7; }
+
+/* 子菜单父项 */
+.ctxItemParent {
+  position: relative;
+  cursor: default;
+}
+
+.ctxItemArrow {
+  margin-left: auto;
+  opacity: 0.4;
+  display: flex;
+  align-items: center;
+}
+
+/* 子菜单弹层 */
+.ctxSubmenu {
+  position: absolute;
+  left: calc(100% + 4px);
+  top: -4px;
+  background: var(--dialog-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 4px 0;
+  min-width: 180px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1), 0 2px 6px rgba(0, 0, 0, 0.06);
+  z-index: 91;
+  animation: ctxSubmenuIn 0.12s ease;
+}
+
+.flipLeft {
+  left: auto;
+  right: calc(100% + 4px);
+  animation: ctxSubmenuInLeft 0.12s ease;
+}
+
+@keyframes ctxSubmenuIn {
+  from { opacity: 0; transform: translateX(-4px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes ctxSubmenuInLeft {
+  from { opacity: 0; transform: translateX(4px); }
+  to   { opacity: 1; transform: translateX(0); }
+}

@@ -12,6 +12,7 @@ import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
 import { logger } from "@/lib/logger";
 import { pasteText, pasteImage, deleteHistory, togglePin, toggleWindow, sequentialPaste } from "@/lib/api";
 import { ClipboardList, RotateCcw, Loader2, X } from "lucide-react";
+import appStyles from "./App.module.css";
 
 // 懒加载对话框组件 — 只在打开时才加载对应 JS chunk
 const SettingsDialog = lazy(() => import("@/components/SettingsDialog").then(m => ({ default: m.SettingsDialog })));
@@ -329,10 +330,10 @@ function App() {
   if (loading) {
     return (
       <ToastProvider>
-        <div className="app-shell">
-          <div className="loading-screen">
+        <div className={appStyles.appShell}>
+          <div className={appStyles.loadingScreen}>
             <Loader2 size={32} className="spin-icon" style={{ color: "var(--accent)" }} />
-            <p className="loading-text">正在加载数据…</p>
+            <p className={appStyles.loadingText}>正在加载数据…</p>
           </div>
         </div>
       </ToastProvider>
@@ -343,17 +344,17 @@ function App() {
   if (initError) {
     return (
       <ToastProvider>
-        <div className="app-shell">
-          <div className="error-init-state">
-            <div className="error-init-icon">⚠️</div>
-            <h3 className="error-init-title">无法加载数据</h3>
-            <p className="error-init-desc">数据库文件可能已损坏，或应用没有读取权限。</p>
-            <p className="error-init-detail">{initError}</p>
-            <div className="error-init-actions">
-              <button className="btn-init-secondary" onClick={() => {
+        <div className={appStyles.appShell}>
+          <div className={appStyles.errorInitState}>
+            <div className={appStyles.errorInitIcon}>⚠️</div>
+            <h3 className={appStyles.errorInitTitle}>无法加载数据</h3>
+            <p className={appStyles.errorInitDesc}>数据库文件可能已损坏，或应用没有读取权限。</p>
+            <p className={appStyles.errorInitDetail}>{initError}</p>
+            <div className={appStyles.errorInitActions}>
+              <button className={appStyles.btnInitSecondary} onClick={() => {
                 try { navigator.clipboard.writeText(initError); toast("已复制", "success"); } catch { toast("复制失败", "error"); }
               }}>📋 复制错误详情</button>
-              <button className="btn-init-primary" onClick={() => {
+              <button className={appStyles.btnInitPrimary} onClick={() => {
                 // 清理上次重试的监听器
                 if (retryCleanupRef.current) { retryCleanupRef.current(); retryCleanupRef.current = null; }
                 setInitError(null);
@@ -375,7 +376,7 @@ function App() {
   return (
     <ToastProvider>
       <UpdateProvider>
-      <div className="app-shell">
+      <div className={appStyles.appShell}>
         <TopBar
           onSettings={() => setShowSettings(true)}
           onHelp={() => setShowHelp(true)}
@@ -390,11 +391,11 @@ function App() {
         {seqTotal > 0 && (
           <motion.div initial={{ opacity: 0, y: 20, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.9 }} transition={{ type: "spring", stiffness: 400, damping: 25 }}
-            className="fab-container">
-            <div className="fab-counter"><span className="num">{Math.min(seqPointer, seqTotal)}</span><span className="sep">/</span>{seqTotal}</div>
-            <button className="fab-btn" onClick={() => sequentialPaste()}>
+            className={appStyles.fabContainer}>
+            <div className={appStyles.fabCounter}><span className={appStyles.fabCounterNum}>{Math.min(seqPointer, seqTotal)}</span><span className={appStyles.fabCounterSep}>/</span>{seqTotal}</div>
+            <button className={appStyles.fabBtn} onClick={() => sequentialPaste()}>
               <ClipboardList size={14} /> 粘贴
-              <span className="fab-btn-reset" onClick={(e) => { e.stopPropagation(); resetSeqPointer(); }}><RotateCcw size={10} /></span>
+              <span className={appStyles.fabBtnReset} onClick={(e) => { e.stopPropagation(); resetSeqPointer(); }}><RotateCcw size={10} /></span>
             </button>
           </motion.div>
         )}

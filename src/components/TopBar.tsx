@@ -6,6 +6,7 @@ import { UpdateBadge } from "@/components/UpdateBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { logger } from "@/lib/logger";
 import { X, ChevronDown } from "lucide-react";
+import styles from "./TopBar.module.css";
 
 const TABS: { key: FilterType; label: string; icon: string }[] = [
   { key: "all",    label: "全部", icon: "📋" },
@@ -121,37 +122,37 @@ export function TopBar({ onSettings, onHelp, onSnippets, onExtract, onAbout }: {
   }, [history, ws]);
 
   return (
-    <div className="header" data-tauri-drag-region role="banner">
+    <div className={styles.header} data-tauri-drag-region role="banner">
       {/* 标题行 */}
-      <div className="header-top" data-tauri-drag-region>
-        <div className="header-title">
-          <span className="header-title-icon"><AppIcon size={20} /></span>
-          <span className="header-title-text">{appName}</span>
+      <div className={styles.headerTop} data-tauri-drag-region>
+        <div className={styles.headerTitle}>
+          <span className={styles.headerTitleIcon}><AppIcon size={20} /></span>
+          <span className={styles.headerTitleText}>{appName}</span>
           <UpdateBadge currentVersion={appVersion} />
         </div>
-        <div className="header-icons" data-tauri-drag-region="false">
-          <IconBtn tip="片段库" onClick={onSnippets}><span className="icon-emoji">📝</span></IconBtn>
-          <IconBtn tip="内容提取" onClick={onExtract}><span className="icon-emoji">🧲</span></IconBtn>
+        <div className={styles.headerIcons} data-tauri-drag-region="false">
+          <IconBtn tip="片段库" onClick={onSnippets}><span className={styles.iconEmoji}>📝</span></IconBtn>
+          <IconBtn tip="内容提取" onClick={onExtract}><span className={styles.iconEmoji}>🧲</span></IconBtn>
           <IconBtn tip="设置" onClick={onSettings}>
-            <svg className="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
           </IconBtn>
-          <IconBtn tip="帮助" onClick={onHelp}><span className="icon-emoji">❓</span></IconBtn>
+          <IconBtn tip="帮助" onClick={onHelp}><span className={styles.iconEmoji}>❓</span></IconBtn>
           <IconBtn tip="关于" onClick={onAbout}>
-            <svg className="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#FACC15" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" stroke="#FACC15" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
           </IconBtn>
           <IconBtn tip="最小化到任务栏" onClick={minimizeWin}>
-            <svg className="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round"><path d="M5 12h14"/></svg>
+            <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round"><path d="M5 12h14"/></svg>
           </IconBtn>
           <IconBtn tip="隐藏窗口" onClick={hideWin}>
-            <svg className="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
           </IconBtn>
         </div>
       </div>
 
       {/* 搜索框 + Tab 在同一个容器内，保证宽度完全一致 */}
-      <div className="header-controls">
-        <div ref={searchBoxRef} className={`search-box${focused ? " focused" : ""}${showHistory ? " has-history" : ""}`} data-tauri-drag-region="false" style={{ position: "relative" }}>
-          <span className="search-icon">🔍</span>
+      <div className={styles.headerControls}>
+        <div ref={searchBoxRef} className={`${styles.searchBox}${focused ? ` ${styles.focused}` : ""}${showHistory ? ` ${styles.hasHistory}` : ""}`} data-tauri-drag-region="false" style={{ position: "relative" }}>
+          <span className={styles.searchIcon}>🔍</span>
           <input type="text" value={searchKeyword}
             onChange={(e) => {
               setSearchKeyword(e.target.value);
@@ -165,30 +166,30 @@ export function TopBar({ onSettings, onHelp, onSnippets, onExtract, onAbout }: {
               }
             }}
             placeholder="搜索剪贴板... (Enter 搜索)"
-            className="search-input"
+            className={styles.searchInput}
             aria-label="搜索剪贴板内容"
             aria-description="支持拼音首字母搜索" />
           {searchKeyword && (
-            <button onClick={() => { setSearchKeyword(""); setShowHistory(searchHistory.length > 0); }} className="search-clear">
+            <button onClick={() => { setSearchKeyword(""); setShowHistory(searchHistory.length > 0); }} className={styles.searchClear}>
               <X size={12} />
             </button>
           )}
           {/* 搜索历史下拉 */}
           {showHistory && searchHistory.length > 0 && (
-            <div className="search-history-dropdown">
-              <div className="search-history-header">
+            <div className={styles.searchHistoryDropdown}>
+              <div className={styles.searchHistoryHeader}>
                 <span>最近搜索</span>
-                <button onClick={(e) => { e.stopPropagation(); clearSearchHistory(); setShowHistory(false); }} className="search-history-clear-all">清除全部</button>
+                <button onClick={(e) => { e.stopPropagation(); clearSearchHistory(); setShowHistory(false); }} className={styles.searchHistoryClearAll}>清除全部</button>
               </div>
               {searchHistory.map((kw, i) => (
-                <div key={i} className="search-history-item"
+                <div key={i} className={styles.searchHistoryItem}
                   onMouseDown={(e) => {
                     e.preventDefault();
                     handleSearchSubmit(kw);
                   }}>
-                  <span className="search-history-icon">🕐</span>
-                  <span className="search-history-text">{kw}</span>
-                  <button className="search-history-remove"
+                  <span className={styles.searchHistoryItemIcon}>🕐</span>
+                  <span className={styles.searchHistoryText}>{kw}</span>
+                  <button className={styles.searchHistoryRemove}
                     onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); removeSearchHistory(kw); }}>
                     <X size={10} />
                   </button>
@@ -199,7 +200,7 @@ export function TopBar({ onSettings, onHelp, onSnippets, onExtract, onAbout }: {
         </div>
 
         {/* Tab 区域 */}
-        <div className="tabs-area" data-tauri-drag-region="false">
+        <div className={styles.tabsArea} data-tauri-drag-region="false">
           <AnimatePresence mode="wait">
             {tabStyle === "segmented" ? (
               <motion.div key="seg" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.15 }}>
@@ -214,7 +215,7 @@ export function TopBar({ onSettings, onHelp, onSnippets, onExtract, onAbout }: {
         </div>
 
         {/* 时间 + 来源筛选行 */}
-        <div className="filter-bar" data-tauri-drag-region="false">
+        <div className={styles.filterBar} data-tauri-drag-region="false">
           <FilterDropdown
             label="时间"
             value={timeFilter}
@@ -238,24 +239,24 @@ function SegmentedTabs({ filterType, setFilterType, counts }: {
   filterType: FilterType; setFilterType: (f: FilterType) => void; counts: Record<string, number>;
 }) {
   return (
-    <div className="segmented">
+    <div className={styles.segmented}>
       {TABS.map((tab) => {
         const active = filterType === tab.key;
         const count = counts[tab.key];
         return (
           <button key={tab.key} onClick={() => setFilterType(tab.key)}
-            className={`seg-item${active ? " active" : ""}`}
+            className={`${styles.segItem}${active ? ` ${styles.segItemActive}` : ""}`}
             style={{ position: "relative" }}>
             {active && (
               <motion.div
                 layoutId="seg-active"
-                className="seg-active-indicator"
+                className={styles.segActiveIndicator}
                 transition={{ type: "spring", stiffness: 400, damping: 30 }}
               />
             )}
-            <span className="seg-icon">{tab.icon}</span>
+            <span className={styles.segIcon}>{tab.icon}</span>
             <span>{tab.label}</span>
-            {count > 0 && <span className={`seg-count${active ? " active" : ""}`}>{count}</span>}
+            {count > 0 && <span className={`${styles.segCount}${active ? ` ${styles.segItemActive}` : ""}`}>{count}</span>}
           </button>
         );
       })}
@@ -268,18 +269,18 @@ function CircleTabs({ filterType, setFilterType, counts }: {
   filterType: FilterType; setFilterType: (f: FilterType) => void; counts: Record<string, number>;
 }) {
   return (
-    <div className="tabs-circle">
+    <div className={styles.tabsCircle}>
       {TABS.map((tab) => {
         const active = filterType === tab.key;
         const count = counts[tab.key];
         return (
           <button key={tab.key} onClick={() => setFilterType(tab.key)}
-            className={`circle-tab${active ? " active" : ""}`}>
-            <div className="circle-icon">
+            className={`${styles.circleTab}${active ? ` ${styles.circleTabActive}` : ""}`}>
+            <div className={styles.circleIcon}>
               <span style={{ fontSize: 22 }}>{tab.icon}</span>
             </div>
-            <span className="circle-label">{tab.label}</span>
-            {count > 0 && <span className="circle-badge">{count}</span>}
+            <span className={styles.circleLabel}>{tab.label}</span>
+            {count > 0 && <span className={styles.circleBadge}>{count}</span>}
           </button>
         );
       })}
@@ -292,7 +293,7 @@ function IconBtn({ children, tip, danger, onClick, ariaLabel }: {
 }) {
   return (
     <button title={tip} aria-label={ariaLabel || tip} onClick={onClick}
-      className={`icon-btn${danger ? " danger" : ""}`}>
+      className={`${styles.iconBtn}${danger ? ` ${styles.iconBtnDanger}` : ""}`}>
       {children}
     </button>
   );
@@ -317,16 +318,16 @@ function FilterDropdown<T extends string>({ label, value, options, onChange }: {
   const activeLabel = options.find((o) => o.key === value)?.label || label;
 
   return (
-    <div className="filter-dropdown" ref={ref}>
-      <button className="filter-dropdown-btn" onClick={() => setOpen(!open)}>
+    <div className={styles.filterDropdown} ref={ref}>
+      <button className={styles.filterDropdownBtn} onClick={() => setOpen(!open)}>
         <span>{activeLabel}</span>
         <ChevronDown size={12} style={{ transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0)" }} />
       </button>
       {open && (
-        <div className="filter-dropdown-menu">
+        <div className={styles.filterDropdownMenu}>
           {options.map((opt) => (
             <button key={opt.key}
-              className={`filter-dropdown-item${opt.key === value ? " active" : ""}`}
+              className={`${styles.filterDropdownItem}${opt.key === value ? ` ${styles.filterDropdownItemActive}` : ""}`}
               onClick={() => { onChange(opt.key); setOpen(false); }}>
               {opt.label}
             </button>
@@ -361,20 +362,20 @@ function SourceFilterDropdown({ value, onChange, history, workspace }: {
   }, [history, workspace]);
 
   return (
-    <div className="filter-dropdown" ref={ref}>
-      <button className="filter-dropdown-btn" onClick={() => setOpen(!open)}>
+    <div className={styles.filterDropdown} ref={ref}>
+      <button className={styles.filterDropdownBtn} onClick={() => setOpen(!open)}>
         <span>{value || "来源应用"}</span>
         <ChevronDown size={12} style={{ transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0)" }} />
       </button>
       {open && (
-        <div className="filter-dropdown-menu">
-          <button className={`filter-dropdown-item${!value ? " active" : ""}`}
+        <div className={styles.filterDropdownMenu}>
+          <button className={`${styles.filterDropdownItem}${!value ? ` ${styles.filterDropdownItemActive}` : ""}`}
             onClick={() => { onChange(""); setOpen(false); }}>
             全部来源
           </button>
           {sources.map((src) => (
             <button key={src}
-              className={`filter-dropdown-item${src === value ? " active" : ""}`}
+              className={`${styles.filterDropdownItem}${src === value ? ` ${styles.filterDropdownItemActive}` : ""}`}
               onClick={() => { onChange(src); setOpen(false); }}>
               {src}
             </button>
