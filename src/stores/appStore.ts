@@ -90,7 +90,8 @@ interface AppState {
 
   updateConfig: (partial: Partial<AppConfig>) => void;
 
-  // 计算属性
+  // 计算属性（带缓存）
+  _filterCache: { key: string; result: HistoryItem[] } | null;
   getFilteredItems: () => HistoryItem[];
   getSelectedItems: () => HistoryItem[];
 }
@@ -311,7 +312,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { history, searchKeyword, filterType, timeFilter, sourceFilter, config } = get();
     // 生成缓存键
     const cacheKey = `${history.length}|${searchKeyword}|${filterType}|${timeFilter}|${sourceFilter}|${config.current_workspace}`;
-    const s = get() as AppState & { _filterCache?: { key: string; result: HistoryItem[] } | null };
+    const s = get();
     if (s._filterCache && s._filterCache.key === cacheKey) {
       return s._filterCache.result;
     }
@@ -369,8 +370,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
 
     // 缓存结果
-    const state = get() as unknown as Record<string, unknown>;
-    state._filterCache = { key: cacheKey, result: items };
+    get()._filterCache = { key: cacheKey, result: items };
     return items;
   },
 

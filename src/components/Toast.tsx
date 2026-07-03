@@ -2,7 +2,7 @@ import { useState, useCallback, createContext, useContext, ReactNode } from "rea
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, AlertCircle, Info, X, RotateCcw } from "lucide-react";
 
-type ToastType = "success" | "error" | "info";
+type ToastType = "success" | "error" | "info" | "warning";
 
 interface ToastItem {
   id: number;

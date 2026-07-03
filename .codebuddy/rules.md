@@ -30,8 +30,21 @@
 ---
 
 ## 发版流程
-每次更新 `tauri.conf.json` 中的版本号后，必须：
-1. `git add` + `git commit` 版本号变更
-2. `git tag v{version}` 打 tag
-3. `git push origin v{version}` 推送 tag
-推送 tag 会自动触发 GitHub Actions 构建并发布 Release。
+当用户说 **"tag"** 或 **"打tag"** 时，自动执行完整发版流程（无需逐步确认）：
+
+1. **递增版本号** — `tauri.conf.json` 中 patch 版本自动 +1（如 5.0.87 → 5.0.88）
+2. **git add** — 暂存所有变更文件
+3. **生成 commit message** — 根据代码变更自动生成带前缀的 commit（`feat:`/`chg:`/`fix:`），标题 + 空行 + 详细变更列表
+4. **git commit** — 提交
+5. **git push origin master** — 推送代码
+6. **git tag v{version}** — 打轻量标签
+7. **git push origin v{version}** — 推送标签触发 GitHub Actions 构建发布
+
+### Commit 前缀规范（影响 Release 自动分类）
+| 前缀 | Release 分类 | 示例 |
+|------|-------------|------|
+| `feat:` | ✨ 新功能 | `feat: 新增暗色模式` |
+| `chg:` / `change:` | 🔄 变更 | `chg: 优化版本徽章配色` |
+| `fix:` | 🐛 修复 | `fix: 修复托盘图标不显示` |
+| `refactor:` | 🔧 重构 | `refactor: 重构存储模块` |
+| `docs:` | 📖 文档 | `docs: 更新 README` |

@@ -269,7 +269,6 @@ const CardHoverPopover = memo(function CardHoverPopover({
   const togglePin = useAppStore((s) => s.togglePin);
   const removeItems = useAppStore((s) => s.removeItems);
   const { toast } = useToast();
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const handleCopy = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -315,13 +314,8 @@ const CardHoverPopover = memo(function CardHoverPopover({
   const handleDelete = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    setShowDeleteConfirm(true);
-  }, []);
-
-  const confirmDelete = useCallback(() => {
     removeItems([item.id]);
-    setShowDeleteConfirm(false);
-    toast("已删除", "success");
+    toast("已删除，可按 Ctrl+Z 撤销", "success");
   }, [item.id, removeItems, toast]);
 
   // 短文本：无需预览，只保留操作按钮（纯文本、≤40 字符、无换行）
@@ -425,17 +419,6 @@ const CardHoverPopover = memo(function CardHoverPopover({
           </button>
         </div>
       </div>
-
-      {/* 删除确认弹窗 */}
-      <ConfirmDialog
-        open={showDeleteConfirm}
-        title="确认删除"
-        message="确定要删除这条记录吗？可通过 Ctrl+Z 撤销。"
-        confirmText="删除"
-        variant="danger"
-        onConfirm={confirmDelete}
-        onCancel={() => setShowDeleteConfirm(false)}
-      />
     </>
   );
 });
