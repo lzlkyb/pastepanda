@@ -1045,4 +1045,33 @@
   padding-left: calc(16px + 50px);
 }
 
+/* #7 滚动条美化 — 自定义 Webkit 滚动条 */
+.scrollArea::-webkit-scrollbar {
+  width: 5px;
+}
+
+.scrollArea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollArea::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+  transition: background 0.2s;
+}
+
+.scrollArea::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+.scrollArea::-webkit-scrollbar-thumb:active {
+  background: var(--text-secondary);
+}
+
+/* Firefox 滚动条 */
+.scrollArea {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+}
+
 

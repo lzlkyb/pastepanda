@@ -28,6 +28,7 @@ export interface TimelineNode {
   index: number;    // 卡片在列表中的索引
   label: string;    // 节点的 tooltip 文字（截断后的卡片标题）
   type: CardItemType; // 卡片类型，用于显示不同图标
+  time: string;     // #4 卡片时间戳，用于分组标签悬停预览显示时间范围
 }
 
 interface TimelineProps {
@@ -51,6 +52,8 @@ interface TimelineProps {
   onTriggerEnter?: () => void;
   /** timeline 区域鼠标离开回调（通知父组件隐藏时间轴） */
   onTimelineLeave?: () => void;
+  /** #8 Mini 模式：展开/收回回调，通知父组件调整卡片列表 padding */
+  onExpandChange?: (expanded: boolean) => void;
   /** 卡片列表的滚动容器 ref，用于滚轮事件转发 */
   scrollRef: React.RefObject<HTMLDivElement | null>;
 }
@@ -66,17 +69,91 @@ export function Timeline({
   onDragScroll,
   onTriggerEnter,
   onTimelineLeave,
+  onExpandChange,
   scrollRef,
 }: TimelineProps) {
   const [dragging, setDragging] = useState(false);
   const [capsuleDragging, setCapsuleDragging] = useState(false);
   const [currentGroup, setCurrentGroup] = useState<TimeGroup>("today");
+  // #8 Mini 模式：hover 展开，默认窄轨
+  const [expanded, setExpanded] = useState(false);
+  const isExpanded = expanded || dragging || capsuleDragging;
+
+  // #8 展开状态变化时通知父组件调整卡片 padding
+  useEffect(() => {
+    onExpandChange?.(isExpanded);
+  }, [isExpanded]);
 
   // #6 计算当前分组的卡片数量
   const currentGroupCount = useMemo(() => {
     const groupOrder: TimeGroup[] = ["today", "yesterday", "thisWeek", "earlier"];
     return getGroupCardCount(currentGroup, groupOrder, groupIndices, nodes.length);
   }, [currentGroup, groupIndices, nodes.length]);
+
+  // #8 方案C：计算分组彩色轨道线段的高度百分比
+  const groupTrackSegments = useMemo(() => {
+    const groupOrder: TimeGroup[] = ["today", "yesterday", "thisWeek", "earlier"];
+    // 统计每个分组的节点数
+    const counts: Record<string, number> = {};
+    for (const n of nodes) {
+      counts[n.group] = (counts[n.group] || 0) + 1;
+    }
+    const total = nodes.length || 1;
+    // 分组标签额外占用的高度比例（估算：每个标签约 16px = 0.22 个卡片高度）
+    const labelRatio = 0.22;
+    const activeGroups = groupOrder.filter(g => counts[g] && counts[g] > 0);
+    const totalLabels = activeGroups.length * labelRatio;
+    const nodeRatioTotal = total / (total + totalLabels);
+    const labelRatioTotal = totalLabels / (total + totalLabels);
+
+    const segments: { group: TimeGroup; pct: number }[] = [];
+    let remaining = 100;
+    for (let i = 0; i < activeGroups.length; i++) {
+      const g = activeGroups[i];
+      const nodePct = ((counts[g] || 0) / total) * nodeRatioTotal * 100;
+      const labelPct = (i < activeGroups.length - 1) ? (labelRatio / (total + totalLabels)) * 100 : 0;
+      const segPct = i === activeGroups.length - 1
+        ? remaining
+        : nodePct + labelPct;
+      segments.push({ group: g, pct: Math.max(segPct, 2) });
+      remaining -= segPct;
+    }
+    return segments;
+  }, [nodes]);
+
+  // #4 分组标签悬停预览 — 计算每个分组的时间范围和卡片数
+  const groupPreviews = useMemo(() => {
+    const groupOrder: TimeGroup[] = ["today", "yesterday", "thisWeek", "earlier"];
+    const result: Record<TimeGroup, { count: number; timeRange: string }> = {} as any;
+    for (const g of groupOrder) {
+      const idx = groupIndices[g];
+      if (idx === undefined || idx < 0) continue;
+      const count = getGroupCardCount(g, groupOrder, groupIndices, nodes.length);
+      // 收集该分组所有卡片的时间
+      const times = nodes.slice(idx, idx + count).map(n => n.time).filter(Boolean);
+      if (times.length === 0) {
+        result[g] = { count, timeRange: "" };
+        continue;
+      }
+      // 格式化时间范围：取最早和最晚的时间，只显示 HH:MM
+      const sorted = [...times].sort();
+      const firstTime = sorted[0];
+      const lastTime = sorted[sorted.length - 1];
+      const formatHM = (t: string) => {
+        try {
+          const d = new Date(t.replace(" ", "T"));
+          const hh = String(d.getHours()).padStart(2, "0");
+          const mm = String(d.getMinutes()).padStart(2, "0");
+          return `${hh}:${mm}`;
+        } catch { return ""; }
+      };
+      const first = formatHM(firstTime);
+      const last = formatHM(lastTime);
+      const range = first === last ? first : `${first} → ${last}`;
+      result[g] = { count, timeRange: range };
+    }
+    return result;
+  }, [groupIndices, nodes]);
 
   const dragStartRef = useRef({ y: 0, scrollTop: 0 });
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -90,16 +167,16 @@ export function Timeline({
     };
   }, []);
 
-  // 拖拽结束后通知父组件延迟隐藏
+  // #8 Mini 模式：拖拽结束后延迟收回展开状态
   const scheduleHide = useCallback((delay: number) => {
     if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
     hideTimerRef.current = window.setTimeout(() => {
       if (!dragging && !capsuleDragging) {
-        onTimelineLeave?.();
+        setExpanded(false);
       }
       hideTimerRef.current = null;
     }, delay);
-  }, [dragging, capsuleDragging, onTimelineLeave]);
+  }, [dragging, capsuleDragging]);
 
   // 同步 timeline 滚动偏移
   const translateY = useMemo(() => {
@@ -268,15 +345,26 @@ export function Timeline({
       {/* 左侧感应区域 — 18px 宽，独立于 timeline */}
       <div
         className={styles.timelineTriggerZone}
-        onMouseEnter={onTriggerEnter}
+        onMouseEnter={() => {
+          onTriggerEnter?.();
+          setExpanded(true);
+          if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+        }}
       />
 
       {/* 时间轴容器 */}
       <div
         ref={timelineRef}
-        className={`${styles.timelineContainer} ${visible ? styles.visible : ""} ${dragging || capsuleDragging ? styles.dragActive : ""}`}
-        onMouseEnter={onTriggerEnter}
-        onMouseLeave={() => scheduleHide(300)}
+        className={`${styles.timelineContainer} ${visible ? styles.visible : ""} ${isExpanded ? styles.expanded : ""} ${dragging || capsuleDragging ? styles.dragActive : ""}`}
+        onMouseEnter={() => {
+          onTriggerEnter?.();
+          setExpanded(true);
+          if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+        }}
+        onMouseLeave={() => {
+          setExpanded(false);
+          scheduleHide(300);
+        }}
         onWheel={handleWheel}
       >
         {/* 吸顶胶囊 */}
@@ -289,7 +377,17 @@ export function Timeline({
 
         {/* 滚动区 */}
         <div className={styles.timelineScroll}>
-          <div className={styles.timelineTrack} />
+          <div className={styles.timelineTrack}>
+            {/* #8 方案C：分组彩色轨道线段 */}
+            {groupTrackSegments.map((seg) => (
+              <div
+                key={seg.group}
+                className={styles.timelineTrackSegment}
+                data-group={seg.group}
+                style={{ height: `${seg.pct}%` }}
+              />
+            ))}
+          </div>
           <div
             ref={timelineInnerRef}
             className={styles.timelineInner}
@@ -307,10 +405,19 @@ export function Timeline({
                       className={styles.timelineGroupLabel}
                       data-group={node.group}
                       onMouseDown={(e) => handleNodeMouseDown(e, node.index)}
+                      title={`${TIME_GROUP_LABELS[node.group]} · ${groupPreviews[node.group]?.count || 0}条 · ${groupPreviews[node.group]?.timeRange || ""}`}
                     >
                       <div className={styles.timelineGroupLabelDot} />
                       <div className={styles.timelineGroupLabelText}>
                         {TIME_GROUP_LABELS[node.group]}
+                      </div>
+                      {/* #4 悬停预览 tooltip */}
+                      <div className={styles.timelineGroupTooltip}>
+                        <span className={styles.groupTooltipName}>{TIME_GROUP_LABELS[node.group]}</span>
+                        <span className={styles.groupTooltipCount}>{groupPreviews[node.group]?.count || 0} 条</span>
+                        {groupPreviews[node.group]?.timeRange && (
+                          <span className={styles.groupTooltipTime}>{groupPreviews[node.group]?.timeRange}</span>
+                        )}
                       </div>
                     </div>
                   )}

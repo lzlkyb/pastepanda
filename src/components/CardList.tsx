@@ -674,6 +674,7 @@ export function CardList({ scrollRef: externalScrollRef }: { scrollRef?: React.R
       index: idx,
       label: item.type === "text" ? item.text.slice(0, 15) : (item.type === "image" ? "图片" : "文件"),
       type: item.type as "text" | "image" | "file",
+      time: item.time,
     }));
   }, [items, searchKeyword, filterType]);
 
@@ -693,8 +694,9 @@ export function CardList({ scrollRef: externalScrollRef }: { scrollRef?: React.R
     return result;
   }, [items, searchKeyword, filterType]);
 
-  // 时间轴可见状态（用于控制卡片区域右移）
-  const [timelineVisible, setTimelineVisible] = useState(false);
+  // #8 Mini 模式：时间轴始终可见（常驻 10px 窄轨），hover/拖拽时展开
+  const [timelineVisible, setTimelineVisible] = useState(true);
+  const [timelineExpanded, setTimelineExpanded] = useState(false);
 
   // 滚动到指定卡片索引
   const handleScrollToIndex = useCallback((index: number) => {
@@ -740,22 +742,21 @@ export function CardList({ scrollRef: externalScrollRef }: { scrollRef?: React.R
         onScrollToIndex={handleScrollToIndex}
         onDragScroll={handleDragScroll}
         scrollRef={scrollRef}
+        onExpandChange={setTimelineExpanded}
         onTriggerEnter={() => {
-          setTimelineVisible(true);
+          // #8 Mini 模式：时间轴常驻，triggerZone 进入确保可见
           if (timelineHideTimerRef.current) window.clearTimeout(timelineHideTimerRef.current);
         }}
         onTimelineLeave={() => {
-          setTimelineVisible(false);
+          // #8 Mini 模式：不再隐藏，只是收回展开（Timeline 内部处理）
         }}
       />
 
       <div
-        className={`${styles.scrollArea} ${timelineVisible ? styles.scrollAreaTimelineVisible : ""}`}
+        className={`${styles.scrollArea} ${timelineExpanded ? styles.scrollAreaTimelineVisible : ""}`}
         ref={scrollRef}
         onScroll={(e) => {
           handleScroll();
-          // 滚动时显示时间轴
-          setTimelineVisible(true);
           // 更新滚动指标
           const el = e.currentTarget;
           setScrollMetrics({
@@ -763,12 +764,6 @@ export function CardList({ scrollRef: externalScrollRef }: { scrollRef?: React.R
             clientHeight: el.clientHeight,
             scrollTop: el.scrollTop,
           });
-          // 停止滚动后延迟隐藏
-          if (timelineHideTimerRef.current) window.clearTimeout(timelineHideTimerRef.current);
-          timelineHideTimerRef.current = window.setTimeout(() => {
-            setTimelineVisible(false);
-            timelineHideTimerRef.current = null;
-          }, 1500);
         }}
         role="listbox"
         aria-label="剪贴板记录列表"
