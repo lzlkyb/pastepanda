@@ -38,6 +38,7 @@ function useHighlight(code: string) {
 export function EditDialog({ item, onClose }: { item: HistoryItem; onClose: () => void }) {
   const [text, setText] = useState(item?.text || "");
   const [showOriginal, setShowOriginal] = useState(false);
+  const [saving, setSaving] = useState(false);
   const { toast } = useToast();
   const originalText = item?.text || "";
   const [langLabel, setLangLabel] = useState("检测中…");
@@ -107,6 +108,8 @@ export function EditDialog({ item, onClose }: { item: HistoryItem; onClose: () =
   }, [handleKeyDown]);
 
   const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("update_history", { id: item.id, text });
@@ -127,6 +130,8 @@ export function EditDialog({ item, onClose }: { item: HistoryItem; onClose: () =
       onClose();
     } catch (e) {
       toast("保存失败: " + (e instanceof Error ? e.message : String(e)), "error");
+    } finally {
+      setSaving(false);
     }
   };
   handleSaveRef.current = handleSave;
@@ -267,8 +272,8 @@ export function EditDialog({ item, onClose }: { item: HistoryItem; onClose: () =
               <ActionBtn icon={<Copy size={13} />} label="复制" onClick={handleCopy} />
               <ActionBtn icon={<ClipboardPaste size={13} />} label="粘贴" onClick={handlePaste} />
               <ActionBtn icon={<Bookmark size={13} />} label="存片段" onClick={handleAddSnippet} />
-              <button className="btn-primary" onClick={handleSave} style={{ padding: "5px 14px", fontSize: 12 }}>
-                💾 保存
+              <button className="btn-primary" onClick={handleSave} disabled={saving} style={{ padding: "5px 14px", fontSize: 12, opacity: saving ? 0.7 : 1 }}>
+                {saving ? <><span className="edit-save-spinner" style={{ display: "inline-block", width: 12, height: 12, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "editSaveSpin 0.6s linear infinite", marginRight: 4, verticalAlign: "middle" }} /> 保存中…</> : "💾 保存"}
               </button>
             </div>
           </div>

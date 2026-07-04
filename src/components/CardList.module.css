@@ -36,6 +36,10 @@
   width: 100%;
   box-sizing: border-box;
 }
+.cardClickFeedback {
+  background: var(--hover) !important;
+  transform: scale(0.985);
+}
 
 /* 左侧彩色边线 — 按类型区分 */
 .card::before {
@@ -229,6 +233,11 @@
   background: var(--accent-light);
   padding: 1px 6px;
   border-radius: 4px;
+  animation: pastingFlash 0.3s ease-out;
+}
+@keyframes pastingFlash {
+  from { transform: scale(1.1); opacity: 0.7; }
+  to { transform: scale(1); opacity: 1; }
 }
 
 /* ===== 按钮模式：卡片内嵌操作按钮 ===== */
@@ -367,6 +376,17 @@
   gap: 12px;
 }
 .loadMoreHint { font-size: 11px; color: var(--text-muted); }
+.loadMoreSpinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: loadMoreSpin 0.6s linear infinite;
+}
+@keyframes loadMoreSpin {
+  to { transform: rotate(360deg); }
+}
 .loadMoreError { font-size: 11px; color: #EF4444; }
 .loadMoreRetryBtn {
   font-size: 11px; color: var(--accent); background: none;

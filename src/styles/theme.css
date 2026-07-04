@@ -68,6 +68,18 @@
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
+@keyframes editSaveSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* ===== ErrorBoundary 错误界面动画 ===== */
+.error-init-state {
+  animation: errorInitFadeIn 0.35s ease;
+}
+@keyframes errorInitFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 /* ===== 主题变量 ===== */
 

@@ -147,9 +147,13 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
     setHovered(true);
   }, [cancelCloseTimer]);
 
+  const [clickFeedback, setClickFeedback] = useState(false);
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     // 只处理左键，右键留给 onContextMenu
     if (e.button !== 0) return;
+    // 即时视觉反馈
+    setClickFeedback(true);
+    setTimeout(() => setClickFeedback(false), 150);
     if (clickTimerRef.current) {
       clearTimeout(clickTimerRef.current);
       clickTimerRef.current = null;
@@ -185,7 +189,7 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
         exit={{ opacity: 0, x: -30, scale: 0.95, transition: { duration: 0.2 } }}
         transition={{ type: "spring", stiffness: 400, damping: 28, delay: Math.min(index * 0.003, 0.04) }}
         onMouseDown={handleMouseDown}
-        className={`${styles.card} ${typeClass}${selected ? ` ${styles.selected}` : ""}`}
+        className={`${styles.card} ${typeClass}${selected ? ` ${styles.selected}` : ""}${clickFeedback ? ` ${styles.cardClickFeedback}` : ""}`}
         role="option"
         aria-selected={selected}
         aria-label={title.length > 80 ? title.slice(0, 80) + "…" : title}
@@ -445,7 +449,6 @@ const CardHoverPopover = memo(function CardHoverPopover({
             🗑 <span>删除</span>
           </button>
         </div>
-      </div>
     </motion.div>
   );
 });

@@ -31,19 +31,22 @@ interface GeneralTabProps {
   config: AppConfig;
   updateConfig: (partial: Record<string, unknown>) => void;
   updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
-  stats: Stats;
+  stats: Stats | null;
   history: HistoryItem[];
   tabStyle: string;
   handleSwitchTabStyle: (style: "segmented" | "circle") => void;
   handleExport: () => Promise<void>;
   handleImport: () => Promise<void>;
   handleCleanup: () => Promise<void>;
+  exporting?: boolean;
+  importing?: boolean;
 }
 
 export function GeneralTab({
   config, updateConfig, updateAndSave, stats, history,
   tabStyle, handleSwitchTabStyle,
   handleExport, handleImport, handleCleanup,
+  exporting, importing,
 }: GeneralTabProps) {
   const { toast } = useToast();
   const cleanupDays = config.auto_cleanup_days;
@@ -63,37 +66,46 @@ export function GeneralTab({
         <div className={styles.statsPanelHeader}>
           📊 剪贴板数据概览
         </div>
-        <div className={styles.statsPanelGrid}>
-          <div className={styles.statCell}>
-            <div className={`${styles.statNum}`}>{stats.total}</div>
-            <div className={styles.statLabel}>总记录</div>
+        {stats ? (
+          <>
+            <div className={styles.statsPanelGrid}>
+              <div className={styles.statCell}>
+                <div className={`${styles.statNum}`}>{stats.total}</div>
+                <div className={styles.statLabel}>总记录</div>
+              </div>
+              <div className={styles.statCell}>
+                <div className={`${styles.statNum} ${styles.statGreen}`}>{stats.pinned}</div>
+                <div className={styles.statLabel}>⭐ 收藏</div>
+              </div>
+              <div className={styles.statCell}>
+                <div className={`${styles.statNum} ${styles.statOrange}`}>{stats.today}</div>
+                <div className={styles.statLabel}>今日新增</div>
+              </div>
+              <div className={styles.statCell}>
+                <div className={`${styles.statNum} ${styles.statAccent}`}>{stats.text_count}</div>
+                <div className={styles.statLabel}>📝 文本</div>
+              </div>
+              <div className={styles.statCell}>
+                <div className={`${styles.statNum} ${styles.statAccent}`}>{stats.image_count}</div>
+                <div className={styles.statLabel}>🖼 图片</div>
+              </div>
+              <div className={styles.statCell}>
+                <div className={`${styles.statNum} ${styles.statAccent}`}>{stats.file_count}</div>
+                <div className={styles.statLabel}>📁 文件</div>
+              </div>
+            </div>
+            <div className={styles.statsPanelFooter}>
+              <span>💾 {stats.db_size_kb.toFixed(1)} KB</span>
+              {stats.earliest_time && <span>📅 最早: {stats.earliest_time.split(" ")[0]}</span>}
+              <span>📦 {config.current_workspace || "默认"} 空间</span>
+            </div>
+          </>
+        ) : (
+          <div style={{ padding: "16px 0", textAlign: "center", fontSize: 12, color: "var(--text-muted)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid var(--border-color)", borderTopColor: "var(--accent)", borderRadius: "50%", animation: "fab-icon-spin 0.6s linear infinite" }} />
+            加载统计数据…
           </div>
-          <div className={styles.statCell}>
-            <div className={`${styles.statNum} ${styles.statGreen}`}>{stats.pinned}</div>
-            <div className={styles.statLabel}>⭐ 收藏</div>
-          </div>
-          <div className={styles.statCell}>
-            <div className={`${styles.statNum} ${styles.statOrange}`}>{stats.today}</div>
-            <div className={styles.statLabel}>今日新增</div>
-          </div>
-          <div className={styles.statCell}>
-            <div className={`${styles.statNum} ${styles.statAccent}`}>{stats.text_count}</div>
-            <div className={styles.statLabel}>📝 文本</div>
-          </div>
-          <div className={styles.statCell}>
-            <div className={`${styles.statNum} ${styles.statAccent}`}>{stats.image_count}</div>
-            <div className={styles.statLabel}>🖼 图片</div>
-          </div>
-          <div className={styles.statCell}>
-            <div className={`${styles.statNum} ${styles.statAccent}`}>{stats.file_count}</div>
-            <div className={styles.statLabel}>📁 文件</div>
-          </div>
-        </div>
-        <div className={styles.statsPanelFooter}>
-          <span>💾 {stats.db_size_kb.toFixed(1)} KB</span>
-          {stats.earliest_time && <span>📅 最早: {stats.earliest_time.split(" ")[0]}</span>}
-          <span>📦 {config.current_workspace || "默认"} 空间</span>
-        </div>
+        )}
       </div>
 
       {/* ── 外观 ── */}
@@ -306,7 +318,10 @@ export function GeneralTab({
             const { invoke } = await import("@tauri-apps/api/core");
             await invoke("toggle_lan_sync", { enable: v });
             toast(v ? "局域网同步已开启" : "局域网同步已关闭", "success");
-          } catch (e) { logger.warn("切换LAN同步失败", e); }
+          } catch (e) {
+            logger.warn("切换LAN同步失败", e);
+            toast("局域网同步切换失败，请检查网络", "error");
+          }
         }} />
       {config.lan_sync_enabled && (
         <LanSyncPanel toast={toast} />
@@ -361,7 +376,9 @@ export function GeneralTab({
           <div className={`${styles.sRowLabel}`}>导出数据</div>
           <div className={`${styles.sRowDesc}`}>将历史记录导出为 JSON 文件</div>
         </div>
-        <button className={styles.sAction} onClick={handleExport}>导出</button>
+        <button className={styles.sAction} onClick={handleExport} disabled={exporting}>
+          {exporting ? <span className={styles.sActionLoading}>导出中…</span> : "导出"}
+        </button>
       </div>
       <div className={styles.sRow}>
         <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #06B6D4, #0078D4)" }}>📥</span>
@@ -369,7 +386,9 @@ export function GeneralTab({
           <div className={`${styles.sRowLabel}`}>导入数据</div>
           <div className={`${styles.sRowDesc}`}>从 JSON 文件导入历史记录</div>
         </div>
-        <button className={styles.sAction} onClick={handleImport}>导入</button>
+        <button className={styles.sAction} onClick={handleImport} disabled={importing}>
+          {importing ? <span className={styles.sActionLoading}>导入中…</span> : "导入"}
+        </button>
       </div>
       <div className={styles.sRow}>
         <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #EF4444, #FF3B30)" }}>🧹</span>

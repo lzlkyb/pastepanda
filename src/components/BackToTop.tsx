@@ -1,5 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
-import { useLenisRef, useScrollRef } from "@/contexts/ScrollContext";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useLenisRef } from "@/contexts/ScrollContext";
+import type Lenis from "lenis";
 import styles from "./BackToTop.module.css";
 
 interface BackToTopProps {
@@ -9,43 +11,72 @@ interface BackToTopProps {
 
 export function BackToTop({ threshold = 150 }: BackToTopProps) {
   const lenisRef = useLenisRef();
-  const scrollRef = useScrollRef();
   const [visible, setVisible] = useState(false);
+  // 使用 ref 存储 threshold 避免 effect 因 threshold 变化重新订阅
+  const thresholdRef = useRef(threshold);
+  thresholdRef.current = threshold;
 
-  // 监听原生 scroll 事件（CardList 的 Lenis scroll 回调中同步了 wrapper.scrollTop 并派发了原生 scroll 事件）
   useEffect(() => {
-    const el = scrollRef?.current;
-    if (!el) return;
+    // 轮询等待 Lenis 实例就绪（Lenis 在 CardList 的 useEffect 中异步创建）
+    let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
 
-    const handleScroll = () => {
-      setVisible(el.scrollTop > threshold);
+    const trySubscribe = () => {
+      const lenis = lenisRef?.current;
+      if (!lenis) {
+        if (!cancelled) requestAnimationFrame(trySubscribe);
+        return;
+      }
+
+      // Lenis scroll 事件回调
+      const onScroll = ({ scroll }: Lenis) => {
+        setVisible((prev) => {
+          const should = scroll > thresholdRef.current;
+          return prev !== should ? should : prev;
+        });
+      };
+
+      unsubscribe = lenis.on("scroll", onScroll);
+      // 立即检查初始状态
+      setVisible(lenis.scroll > thresholdRef.current);
     };
 
-    el.addEventListener("scroll", handleScroll, { passive: true });
-    // 初始检测一次
-    handleScroll();
+    // 用 rAF 等待，因为 Lenis 实例在同一个微任务/宏任务中不会被 BackToTop 的 effect 先拿到
+    const rafId = requestAnimationFrame(trySubscribe);
 
-    return () => el.removeEventListener("scroll", handleScroll);
-  }, [scrollRef, threshold]);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
+      unsubscribe?.();
+    };
+  }, [lenisRef]);
 
   const scrollToTop = useCallback(() => {
     const lenis = lenisRef?.current;
     if (lenis) {
-      lenis.scrollTo(0, { lerp: 0.1, duration: 1.0 });
+      lenis.scrollTo(0, { duration: 0.8 });
     }
   }, [lenisRef]);
 
   return (
-    <button
-      className={`${styles.btn} ${visible ? styles.visible : ""}`}
-      onClick={scrollToTop}
-      title="回到顶部"
-      aria-label="回到顶部"
-    >
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="18 15 12 9 6 15" />
-      </svg>
-      顶部
-    </button>
+    <AnimatePresence>
+      {visible && (
+        <motion.button
+          initial={{ opacity: 0, scale: 0.8, y: 10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.8, y: 10 }}
+          transition={{ type: "spring", stiffness: 400, damping: 30 }}
+          className={styles.btn}
+          onClick={scrollToTop}
+          title="回到顶部"
+          aria-label="回到顶部"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="18 15 12 9 6 15" />
+          </svg>
+          顶部
+        </motion.button>
+      )}
+    </AnimatePresence>
   );
 }

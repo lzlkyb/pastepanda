@@ -393,21 +393,25 @@ export function Timeline({
         <div className={styles.timelineScroll}>
           <div className={styles.timelineTrack}>
             {/* #8 方案C：分组彩色轨道线段 */}
-            {groupTrackSegments.map((seg) => (
+            {groupTrackSegments.length > 0 ? groupTrackSegments.map((seg) => (
               <div
                 key={seg.group}
                 className={styles.timelineTrackSegment}
                 data-group={seg.group}
                 style={{ height: `${seg.pct}%` }}
               />
-            ))}
+            )) : (
+              <div className={styles.timelineTrackSegment} style={{ height: "100%", background: "var(--border-color)", opacity: 0.3 }} />
+            )}
           </div>
           <div
             ref={timelineInnerRef}
             className={styles.timelineInner}
             style={{ transform: `translateY(${translateY}px)` }}
           >
-            {nodes.map((node, i) => {
+            {nodes.length === 0 ? (
+              <div className={styles.timelineEmpty} style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center", padding: "12px 0", opacity: 0.6 }}>暂无记录</div>
+            ) : nodes.map((node, i) => {
               // 判断是否需要渲染分组标签（前一个节点不是同一分组）
               const prevGroup = i > 0 ? nodes[i - 1].group : null;
               const showGroupLabel = node.group !== prevGroup;

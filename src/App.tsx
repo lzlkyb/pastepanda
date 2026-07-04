@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef, lazy, Suspense, useMemo } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { applyTheme, DEFAULT_THEME, ThemeKey } from "@/lib/theme";
 import { useAppStore } from "@/stores/appStore";
 import { TopBar } from "@/components/TopBar";
@@ -35,6 +35,7 @@ function App() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [retrying, setRetrying] = useState(false);
   const retryCleanupRef = useRef<(() => void) | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lenisRef = useRef<Lenis | null>(null);
@@ -354,18 +355,21 @@ function App() {
               <button className={appStyles.btnInitSecondary} onClick={() => {
                 try { navigator.clipboard.writeText(initError); toast("已复制", "success"); } catch { toast("复制失败", "error"); }
               }}>📋 复制错误详情</button>
-              <button className={appStyles.btnInitPrimary} onClick={() => {
+              <button className={appStyles.btnInitPrimary} disabled={retrying} style={{ opacity: retrying ? 0.6 : 1, cursor: retrying ? "wait" : "pointer" }} onClick={() => {
+                if (retrying) return;
                 // 清理上次重试的监听器
                 if (retryCleanupRef.current) { retryCleanupRef.current(); retryCleanupRef.current = null; }
                 setInitError(null);
+                setRetrying(true);
                 const init = async () => {
                   try {
                     const { initBackend } = await import("@/lib/api");
                     retryCleanupRef.current = await initBackend();
                   } catch (e) { setInitError(e instanceof Error ? e.message : String(e)); }
+                  finally { setRetrying(false); }
                 };
                 init();
-              }}>🔄 重试加载</button>
+              }}>{retrying ? "⏳ 重试中…" : "🔄 重试加载"}</button>
             </div>
           </div>
         </div>

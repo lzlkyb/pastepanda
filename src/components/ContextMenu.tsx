@@ -207,10 +207,10 @@ export function ContextMenu({ children }: { children: ReactNode }) {
           <motion.div
             key="ctx-menu-portal"
             ref={menuRef}
-            initial={{ opacity: 1, scale: 1 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0 }}
+            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+            transition={{ type: "spring", stiffness: 500, damping: 35 }}
             className={styles.ctxMenu}
             style={{
               position: "fixed",

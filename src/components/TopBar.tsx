@@ -185,8 +185,14 @@ export function TopBar({ onSettings, onSnippets, onExtract }: {
             </button>
           )}
           {/* 搜索历史下拉 */}
+          <AnimatePresence>
           {showHistory && searchHistory.length > 0 && (
-            <div className={styles.searchHistoryDropdown}>
+            <motion.div
+              initial={{ opacity: 0, y: -6, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -6, scale: 0.96 }}
+              transition={{ type: "spring", stiffness: 500, damping: 35 }}
+              className={styles.searchHistoryDropdown}>
               <div className={styles.searchHistoryHeader}>
                 <span>最近搜索</span>
                 <button onClick={(e) => { e.stopPropagation(); clearSearchHistory(); setShowHistory(false); }} className={styles.searchHistoryClearAll}>清除全部</button>
@@ -205,12 +211,20 @@ export function TopBar({ onSettings, onSnippets, onExtract }: {
                   </button>
                 </div>
               ))}
-            </div>
+            </motion.div>
           )}
+          </AnimatePresence>
         </div>
 
         {/* Tab 区域 */}
         <div className={styles.tabsArea} data-tauri-drag-region="false">
+          {countsError && (
+            <div className={styles.countsErrorHint} title="统计数据加载失败">
+              <span style={{ fontSize: 10, color: "var(--danger)", display: "flex", alignItems: "center", gap: 4, padding: "2px 0" }}>
+                ⚠ 计数获取失败
+              </span>
+            </div>
+          )}
           <AnimatePresence mode="wait">
             {tabStyle === "segmented" ? (
               <motion.div key="seg" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.15 }}>
@@ -335,17 +349,25 @@ function FilterDropdown<T extends string>({ label, value, options, onChange }: {
         <span>{activeLabel}</span>
         <ChevronDown size={12} style={{ transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0)" }} />
       </button>
-      {open && (
-        <div className={styles.filterDropdownMenu}>
-          {options.map((opt) => (
-            <button key={opt.key}
-              className={`${styles.filterDropdownItem}${opt.key === value ? ` ${styles.filterDropdownItemActive}` : ""}`}
-              onClick={() => { onChange(opt.key); setOpen(false); }}>
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      )}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -4, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.96 }}
+            transition={{ type: "spring", stiffness: 500, damping: 35 }}
+            className={styles.filterDropdownMenu}
+          >
+            {options.map((opt) => (
+              <button key={opt.key}
+                className={`${styles.filterDropdownItem}${opt.key === value ? ` ${styles.filterDropdownItemActive}` : ""}`}
+                onClick={() => { onChange(opt.key); setOpen(false); }}>
+                {opt.label}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -379,21 +401,29 @@ function SourceFilterDropdown({ value, onChange, history, workspace }: {
         <span>{value || "来源应用"}</span>
         <ChevronDown size={12} style={{ transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0)" }} />
       </button>
-      {open && (
-        <div className={styles.filterDropdownMenu}>
-          <button className={`${styles.filterDropdownItem}${!value ? ` ${styles.filterDropdownItemActive}` : ""}`}
-            onClick={() => { onChange(""); setOpen(false); }}>
-            全部来源
-          </button>
-          {sources.map((src) => (
-            <button key={src}
-              className={`${styles.filterDropdownItem}${src === value ? ` ${styles.filterDropdownItemActive}` : ""}`}
-              onClick={() => { onChange(src); setOpen(false); }}>
-              {src}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -4, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.96 }}
+            transition={{ type: "spring", stiffness: 500, damping: 35 }}
+            className={styles.filterDropdownMenu}
+          >
+            <button className={`${styles.filterDropdownItem}${!value ? ` ${styles.filterDropdownItemActive}` : ""}`}
+              onClick={() => { onChange(""); setOpen(false); }}>
+              全部来源
             </button>
-          ))}
-        </div>
-      )}
+            {sources.map((src) => (
+              <button key={src}
+                className={`${styles.filterDropdownItem}${src === value ? ` ${styles.filterDropdownItemActive}` : ""}`}
+                onClick={() => { onChange(src); setOpen(false); }}>
+                {src}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

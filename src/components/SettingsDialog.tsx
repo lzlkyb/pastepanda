@@ -30,7 +30,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   const [tabStyle, setTabStyle] = useState<string>(
     () => localStorage.getItem("tabStyle") || "segmented",
   );
-  const [stats, setStats] = useState<Stats>({ total: 0, pinned: 0, today: 0, text_count: 0, image_count: 0, file_count: 0, earliest_time: null, db_size_kb: 0 });
+  const [stats, setStats] = useState<Stats | null>(null);
   const [appName, setAppName] = useState("PastePanda");
   const [appVersion, setAppVersion] = useState("?.?.?");
   const [showCleanupConfirm, setShowCleanupConfirm] = useState(false);

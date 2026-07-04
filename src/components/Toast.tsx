@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, AlertCircle, AlertTriangle, Info, X, RotateCcw } from "lucide-react";
 import styles from "./Toast.module.css";
 
-type ToastType = "success" | "error" | "info" | "warning";
+type ToastType = "success" | "error" | "info" | "warning" | "loading";
 
 interface ToastItem {
   id: number;
@@ -50,6 +50,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     error: AlertCircle,
     warning: AlertTriangle,
     info: Info,
+    loading: CheckCircle2, // 复用，通过 CSS spinner 区分
   };
 
   return (
@@ -65,7 +66,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 key={t.id}
                 initial={{ opacity: 0, y: -10, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
+                exit={{ opacity: 0, scale: 0.95, x: 10 }}
                 transition={{ duration: 0.2 }}
                 className={`${styles.toastItem} ${styles[t.type]}`}
                 style={{
@@ -74,7 +75,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                   "--toast-duration": `${t.duration}ms`,
                 } as React.CSSProperties}
               >
-                <Icon size={16} className={styles.toastIcon} />
+                {t.type === "loading" ? (
+                  <span className={styles.toastSpinner} style={{ display: "inline-block", width: 14, height: 14, border: "2px solid rgba(59,130,246,0.3)", borderTopColor: "#3B82F6", borderRadius: "50%", animation: "fab-icon-spin 0.6s linear infinite", marginRight: 8, flexShrink: 0 }} />
+                ) : (
+                  <Icon size={16} className={styles.toastIcon} />
+                )}
                 <span className={styles.toastMsg}>{t.message}</span>
                 {t.onRetry && (
                   <button onClick={(e) => { e.stopPropagation(); t.onRetry?.(); dismiss(t.id); }} className={styles.toastRetry} title="重试">

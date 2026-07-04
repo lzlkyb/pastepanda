@@ -109,6 +109,14 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   const internalScrollRef = useRef<HTMLDivElement>(null);
   const internalLenisRef = useRef<Lenis | null>(null);
   const scrollRef = externalScrollRef ?? internalScrollRef;
+
+  // 回调 ref：同时同步到 externalScrollRef 和 internalScrollRef，确保 BackToTop 等兄弟组件能拿到 DOM 节点
+  const handleScrollRef = useCallback((node: HTMLDivElement | null) => {
+    internalScrollRef.current = node;
+    if (externalScrollRef) {
+      externalScrollRef.current = node;
+    }
+  }, [externalScrollRef]);
   // 使用外部传入的 lenisRef（来自 App.tsx），或内部创建（向后兼容）
   const lenisRef = externalLenisRef ?? internalLenisRef;
   // Lenis 需要 wrapper（固定视口）≠ content（内容元素），否则数据变化后 scrollHeight 不同步导致滚动锁死
@@ -580,9 +588,12 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
 
   const handlePanMove = useCallback((e: React.MouseEvent) => {
     if (!isPanning) return;
+    const vp = viewportRef.current;
+    const maxOffset = vp ? Math.max(vp.clientWidth, vp.clientHeight) * 2 : 2000;
+    const clamp = (v: number) => Math.max(-maxOffset, Math.min(maxOffset, v));
     setPreviewOffset({
-      x: panStartRef.current.offsetX + (e.clientX - panStartRef.current.x),
-      y: panStartRef.current.offsetY + (e.clientY - panStartRef.current.y),
+      x: clamp(panStartRef.current.offsetX + (e.clientX - panStartRef.current.x)),
+      y: clamp(panStartRef.current.offsetY + (e.clientY - panStartRef.current.y)),
     });
   }, [isPanning]);
 
@@ -885,7 +896,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
 
       <div
         className={`${styles.scrollArea} ${timelineExpanded ? styles.scrollAreaTimelineVisible : ""}`}
-        ref={scrollRef}
+        ref={handleScrollRef}
         role="listbox"
         aria-label="剪贴板记录列表"
         aria-multiselectable="true"
@@ -1020,7 +1031,12 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
             </div>
             {items.length > 0 && (
               <div className={styles.loadMoreArea}>
-                {loadingMore && <span className={styles.loadMoreHint}>加载中…</span>}
+                {loadingMore && (
+                  <>
+                    <span className={styles.loadMoreSpinner} />
+                    <span className={styles.loadMoreHint}>加载中…</span>
+                  </>
+                )}
                 {loadError && !loadingMore && (
                   <>
                     <span className={styles.loadMoreError}>加载失败{retryCount > 0 ? ` (已重试 ${retryCount} 次)` : ""}</span>

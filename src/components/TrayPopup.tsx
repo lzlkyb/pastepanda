@@ -151,6 +151,7 @@ export function TrayPopup() {
   const [monitoring, setMonitoring] = useState(true);
   const [recents, setRecents] = useState<RecentItem[]>([]);
   const [stats, setStats] = useState<StatsData | null>(null);
+  const [dataLoaded, setDataLoaded] = useState(false); // 初始数据是否已加载
   const [activeIdx, setActiveIdx] = useState(0); // 默认高亮第一项
   const [themeKey, setThemeKey] = useState<ThemeKey>(DEFAULT_THEME);
   const [toast, setToast] = useState<ToastState>({ visible: false, message: "", type: "info" });
@@ -197,6 +198,8 @@ export function TrayPopup() {
         }
       } catch (e) {
         console.warn("[TrayPopup] invoke get_tray_popup_data 失败:", e);
+      } finally {
+        if (!cancelled) setDataLoaded(true);
       }
 
       // ★ 方案2：事件监听兜底（如果 invoke 失败或后续需要更新）
@@ -332,6 +335,7 @@ export function TrayPopup() {
     } catch (e) {
       console.error("[TrayPopup] 退出失败:", e);
       showToast("退出失败", "error");
+    } finally {
       setOperationLoading(null);
     }
   }, [showToast]);
@@ -450,7 +454,25 @@ export function TrayPopup() {
       </div>
 
       {/* 统计卡片 */}
-      {stats && (
+      {!dataLoaded ? (
+        <div className="tray-popup-cards">
+          <div className="tray-popup-card" style={{ opacity: 0.5 }}>
+            <div className="card-icon-slot"><IconCalendar /></div>
+            <div className="card-value">…</div>
+            <div className="card-label">今日</div>
+          </div>
+          <div className="tray-popup-card" style={{ opacity: 0.5 }}>
+            <div className="card-icon-slot"><IconList /></div>
+            <div className="card-value">…</div>
+            <div className="card-label">总计</div>
+          </div>
+          <div className="tray-popup-card" style={{ opacity: 0.5 }}>
+            <div className="card-icon-slot"><IconPin /></div>
+            <div className="card-value">…</div>
+            <div className="card-label">置顶</div>
+          </div>
+        </div>
+      ) : stats ? (
         <div className="tray-popup-cards">
           <div className="tray-popup-card card-today">
             <div className="card-icon-slot">
@@ -474,12 +496,19 @@ export function TrayPopup() {
             <div className="card-label">置顶</div>
           </div>
         </div>
-      )}
+      ) : dataLoaded ? (
+        <div className="tray-popup-cards" style={{ justifyContent: "center", opacity: 0.5 }}>
+          <div className="tray-popup-card">
+            <div className="card-value" style={{ fontSize: 12, color: "var(--text-muted)" }}>暂无数据</div>
+            <div className="card-label">请检查数据库</div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="tray-popup-divider" />
 
       {/* 最近记录区 */}
-      {recents.length > 0 && (
+      {recents.length > 0 ? (
         <>
           <div className="tray-popup-section-label">
             <span className="section-label-icon">
@@ -508,6 +537,10 @@ export function TrayPopup() {
           </div>
           <div className="tray-popup-divider" />
         </>
+      ) : (
+        <div className="tray-popup-section-label" style={{ justifyContent: "center", padding: "10px 0", opacity: 0.6 }}>
+          暂无最近记录
+        </div>
       )}
 
       {/* 操作区 */}
@@ -515,15 +548,17 @@ export function TrayPopup() {
         {menuItems.map((item) => {
           const idx = recents.length + menuItems.findIndex((m) => m.id === item.id);
           const isActive = activeIdx === idx;
+          const isLoading = operationLoading === item.id;
           return (
             <button
               key={item.id}
-              className={`tray-popup-item${isActive ? " active" : ""}${item.danger ? " danger" : ""}`}
+              className={`tray-popup-item${isActive ? " active" : ""}${item.danger ? " danger" : ""}${isLoading ? " loading" : ""}`}
               onClick={item.onClick}
               onMouseEnter={() => setActiveIdx(idx)}
+              disabled={!!operationLoading}
             >
               <span className={`tray-popup-item-icon ${item.iconClass}`}>{item.iconSvg}</span>
-              <span className="tray-popup-item-text">{item.label}</span>
+              <span className="tray-popup-item-text">{isLoading ? "请稍候…" : item.label}</span>
               {item.hint && <span className="tray-popup-item-hint">{item.hint}</span>}
             </button>
           );
@@ -531,7 +566,7 @@ export function TrayPopup() {
       </div>
 
       {/* 底部状态栏 */}
-      {stats && (
+      {dataLoaded && stats ? (
         <div className="tray-popup-footer">
           <span className="footer-icon">
             <IconActivity />
@@ -539,10 +574,18 @@ export function TrayPopup() {
           <span className="footer-info">{formatDbSize(stats.db_size_kb)} / {stats.max_size_mb.toFixed(0)} MB</span>
           <div className="footer-bar-wrap">
             <div className="footer-bar">
-              <div className="footer-bar-fill" style={{ width: `${memPercent}%` }} />
+              <div className="footer-bar-fill" style={{ width: `${memPercent}%`, transition: "width 0.3s ease" }} />
             </div>
           </div>
           <span className="footer-text">{memPercent.toFixed(1)}%</span>
+        </div>
+      ) : dataLoaded ? (
+        <div className="tray-popup-footer" style={{ justifyContent: "center", opacity: 0.5 }}>
+          <span className="footer-text" style={{ fontSize: 11 }}>无法获取存储信息</span>
+        </div>
+      ) : (
+        <div className="tray-popup-footer" style={{ justifyContent: "center", opacity: 0.5 }}>
+          <span className="footer-text" style={{ fontSize: 11 }}>加载中…</span>
         </div>
       )}
 

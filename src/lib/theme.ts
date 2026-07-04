@@ -23,6 +23,15 @@ export const DEFAULT_THEME: ThemeKey = "ocean";
 /** 将主题应用到 document.documentElement */
 export function applyTheme(themeKey: ThemeKey) {
   document.documentElement.setAttribute("data-theme", themeKey);
+  // 添加主题切换过渡 — 覆盖更多 CSS 变量相关属性
+  document.documentElement.style.transition = "background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease";
+  // 延迟清除过渡，确保动画播放完毕后不再影响后续即时切换
+  const clearTimer = setTimeout(() => {
+    document.documentElement.style.transition = "";
+  }, 350);
+  // 防止快速切换主题时旧定时器残留
+  (applyTheme as any)._clearTimer?.();
+  (applyTheme as any)._clearTimer = () => clearTimeout(clearTimer);
 }
 
 /** 获取当前主题 */
