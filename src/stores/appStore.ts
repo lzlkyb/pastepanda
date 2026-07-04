@@ -145,31 +145,29 @@ export const useAppStore = create<AppState>((set, get) => ({
   // 数据操作
   setHistory: (items) => set({ history: items }),
   appendHistory: (items) => set((s) => ({ history: [...s.history, ...items] })),
-  prependItem: (item) => set((s) => {
-    // 去重：如果已存在相同 id 的记录，保留旧数据的非空字段，更新时间和内容
-    const dupIdx = s.history.findIndex(h => h.id === item.id);
-    if (dupIdx >= 0) {
-      const oldItem = s.history[dupIdx];
-      // 合并：新数据优先，但旧数据的非空字段作为回退
-      const updated = {
-        ...oldItem,
-        ...item,
-        // 保留旧数据中非空的 source / content，除非新数据明确提供了值
-        source: item.source || oldItem.source,
-        content: item.content || oldItem.content,
-        pinned: item.pinned !== undefined ? item.pinned : oldItem.pinned,
-        md5: item.md5 || oldItem.md5,
-        pinyin_initials: item.pinyin_initials || oldItem.pinyin_initials,
-      };
-      const newHistory = [updated, ...s.history.slice(0, dupIdx), ...s.history.slice(dupIdx + 1)];
-      return { history: newHistory };
-    }
-    // 限制前端缓存最大 500 条，防止内存泄漏
-    if (s.history.length >= 500) {
-      return { history: [item, ...s.history.slice(0, 499)] };
-    }
-    return { history: [item, ...s.history] };
-  }),
+  prependItem: (item) =>
+    set((s) => {
+      // 去重：如果已存在相同 id 的记录，保留旧数据的非空字段，更新时间和内容
+      const dupIdx = s.history.findIndex(h => h.id === item.id);
+      if (dupIdx >= 0) {
+        const oldItem = s.history[dupIdx];
+        const updated = {
+          ...oldItem,
+          ...item,
+          source: item.source || oldItem.source,
+          content: item.content || oldItem.content,
+          pinned: item.pinned !== undefined ? item.pinned : oldItem.pinned,
+          md5: item.md5 || oldItem.md5,
+          pinyin_initials: item.pinyin_initials || oldItem.pinyin_initials,
+        };
+        return { history: [updated, ...s.history.slice(0, dupIdx), ...s.history.slice(dupIdx + 1)] };
+      }
+      // 限制前端缓存最大 500 条，防止内存泄漏
+      if (s.history.length >= 500) {
+        return { history: [item, ...s.history.slice(0, 499)] };
+      }
+      return { history: [item, ...s.history] };
+    }),
   // 智能合并：将已有记录移到顶部并更新时间
   moveToTop: (id: string, newTime: string) =>
     set((s) => {
@@ -187,7 +185,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         history: s.history.filter((h) => !idSet.has(h.id)),
         selectedIds: new Set([...s.selectedIds].filter((id) => !idSet.has(id))),
         focusId: s.focusId && idSet.has(s.focusId) ? null : s.focusId,
-        undoStack: [deleted, ...s.undoStack].slice(0, 10), // 最多保留 10 次撤销
+        undoStack: [deleted, ...s.undoStack].slice(0, 10),
       };
     }),
   undoDelete: () => {
@@ -297,7 +295,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { selectedIds: new Set(items.map((i) => i.id)) };
     }),
 
-  // 依次粘贴
   setSeqPointer: (p) => set({ seqPointer: p }),
   resetSeqPointer: () => set({ seqPointer: 0 }),
   setPaused: (p) => set({ paused: p }),
@@ -310,7 +307,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       clean.hover_mode = clean.hover_preview_enabled ? "popover" : "off";
       delete clean.hover_preview_enabled;
     }
-    set((s) => ({ config: { ...s.config, ...clean } }));
+    set((s) => {
+      // 工作区切换 → 清除计数缓存（让 TopBar 重新查后端）
+      if (clean.current_workspace && clean.current_workspace !== s.config.current_workspace) {
+        import("@/lib/api").then(m => m.invalidateCountsCache()).catch(() => {});
+      }
+      return { config: { ...s.config, ...clean } };
+    });
   },
 
   // 计算属性（带简单缓存避免频繁计算）

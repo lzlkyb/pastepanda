@@ -62,7 +62,7 @@ function getTimeGroup(timeStr: string): TimeGroup {
 
 
 
-export function CardList({ scrollRef: externalScrollRef }: { scrollRef?: React.RefObject<HTMLDivElement | null> }) {
+export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenisRef }: { scrollRef?: React.RefObject<HTMLDivElement | null>; lenisRef?: React.RefObject<Lenis | null> }) {
   const history = useAppStore((s) => s.history);
   const searchKeyword = useAppStore((s) => s.searchKeyword);
   const filterType = useAppStore((s) => s.filterType);
@@ -107,13 +107,25 @@ export function CardList({ scrollRef: externalScrollRef }: { scrollRef?: React.R
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false); // 列表是否在滚动中（用于禁用 Popover）
   const internalScrollRef = useRef<HTMLDivElement>(null);
+  const internalLenisRef = useRef<Lenis | null>(null);
   const scrollRef = externalScrollRef ?? internalScrollRef;
+  // 使用外部传入的 lenisRef（来自 App.tsx），或内部创建（向后兼容）
+  const lenisRef = externalLenisRef ?? internalLenisRef;
+  // Lenis 需要 wrapper（固定视口）≠ content（内容元素），否则数据变化后 scrollHeight 不同步导致滚动锁死
+  const contentRef = useRef<HTMLDivElement>(null);
   const scrollTimerRef = useRef<number | null>(null);
   const timelineHideTimerRef = useRef<number | null>(null);
-  const lenisRef = useRef<Lenis | null>(null);
   const loadedPathsRef = useRef<Set<string>>(new Set());
 
-  // 滚动到底部时加载更多
+  // 滚动到底部时加载更多（通过 ref 在 Lenis scroll 回调中触发，避免闭包过期问题）
+  const loadMoreRef = useRef({ hasMore, loadingMore });
+  loadMoreRef.current = { hasMore, loadingMore };
+
+  // 纯 ref 防重入锁：在 then/catch 中解锁，保证同一时间只有一个加载请求
+  const loadingLockRef = useRef(false);
+  // 加载冷却期：加载完成后 500ms 内不再触发，解决 Lenis 渐进滚动多帧触发问题
+  const loadCooldownRef = useRef(0);
+
   const handleScroll = useCallback(() => {
     if (!scrollRef.current) return;
     // 标记滚动中：触发 hover 卡片时不再显示 Popover，避免滚动时频繁渲染
@@ -123,36 +135,61 @@ export function CardList({ scrollRef: externalScrollRef }: { scrollRef?: React.R
       scrollTimerRef.current = null;
       setIsScrolling(false);
     }, 120);
-    if (!hasMore || loadingMore) return;
-    const el = scrollRef.current;
-    const threshold = 80; // 距底部 80px 时触发
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < threshold) {
+  }, []);
+
+  const triggerLoadMore = useCallback(() => {
+    // 冷却期内不触发（解决 Lenis 渐进滚动多帧触发）
+    if (Date.now() < loadCooldownRef.current) return;
+    // 防重入：锁住或 state 已标记加载中时直接返回
+    if (loadingLockRef.current) return;
+    const { hasMore: hm, loadingMore: lm } = loadMoreRef.current;
+    if (!hm || lm) return;
+    const lenis = lenisRef.current;
+    if (!lenis) return;
+    // 用 Lenis 内部状态做触底检测（Lenis 接管滚动后 wrapper.scrollTop 始终为 0）
+    const threshold = 80;
+    const scrollPos = lenis.scroll;     // Lenis 虚拟滚动位置
+    const maxScroll = lenis.limit;      // 最大可滚动距离
+    if (maxScroll - scrollPos < threshold) {
+      // 先设锁，再设 state（state 异步更新，锁同步生效）
+      loadingLockRef.current = true;
       setLoadingMore(true);
       setLoadError(false);
       loadMoreHistory().then((more) => {
         setHasMore(more);
         setLoadingMore(false);
         setRetryCount(0);
+        loadingLockRef.current = false;
+        // 加载成功后进入 500ms 冷却期，防止 Lenis 继续滚动到底部再次触发
+        loadCooldownRef.current = Date.now() + 500;
       }).catch(() => {
         setLoadingMore(false);
         setLoadError(true);
+        loadingLockRef.current = false;
+        // 失败也进入冷却期，避免快速重试
+        loadCooldownRef.current = Date.now() + 500;
       });
     }
-  }, [hasMore, loadingMore]);
+  }, []);
 
   // 手动重试加载
   const handleRetryLoadMore = useCallback(() => {
-    if (loadingMore) return;
+    if (loadingLockRef.current || loadingMore) return;
+    loadingLockRef.current = true;
     setLoadingMore(true);
     setLoadError(false);
     loadMoreHistory().then((more) => {
       setHasMore(more);
       setLoadingMore(false);
       setRetryCount(0);
+      loadingLockRef.current = false;
+      loadCooldownRef.current = Date.now() + 500;
     }).catch(() => {
       setLoadingMore(false);
       setLoadError(true);
       setRetryCount((c) => c + 1);
+      loadingLockRef.current = false;
+      loadCooldownRef.current = Date.now() + 500;
     });
   }, [loadingMore]);
 
@@ -388,22 +425,42 @@ export function CardList({ scrollRef: externalScrollRef }: { scrollRef?: React.R
     });
   }, [items.length, scrollRef]);
 
-  // Lenis 平滑滚动引擎 — 包装 scrollRef 容器
+  // 初始化后自动检测：内容不满一屏时，主动加载更多直到填满或全部加载完
+  // 只尝试一次，由 Lenis 回调的 triggerLoadMore 接管后续触底加载
+  const initLoadRef = useRef(false);
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
+    if (initLoadRef.current || items.length === 0 || !hasMore || loadingMore || loadingLockRef.current || Date.now() < loadCooldownRef.current) return;
+    // 延迟一帧等 Lenis 初始化完成
+    const timer = setTimeout(() => {
+      const el = scrollRef.current;
+      if (!el) return;
+      // 内容不足以产生滚动条 → 自动加载更多（只触发一次）
+      if (el.scrollHeight <= el.clientHeight + 10) {
+        triggerLoadMore();
+      }
+      // 无论是否触发加载，标记完成（后续由 scroll 回调负责触底加载）
+      initLoadRef.current = true;
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [items.length, hasMore, loadingMore]);
+
+  // Lenis 平滑滚动引擎 — 包装 scrollRef 容器
+  // scrollMetrics 同步也在此处完成，避免 Lenis scroll → dispatchEvent → setState → 重渲染的无限循环
+  useEffect(() => {
+    const wrapperEl = scrollRef.current;
+    const contentEl = contentRef.current;
+    if (!wrapperEl || !contentEl) return;
 
     const lenis = new Lenis({
-      wrapper: el,               // 滚动容器
-      content: el,               // 内容即容器自身（内部 overflow:auto）
+      wrapper: wrapperEl,       // 固定高度的视口容器
+      content: contentEl,       // 包裹实际内容（虚拟列表行）的元素
       lerp: 0.08,                // 平滑度（0-1），越小越丝滑
       duration: 1.2,             // 缓动动画时长（lerp 模式下此值影响衰减速度）
       orientation: "vertical",
       smoothWheel: true,         // 平滑鼠标滚轮
-      smoothTouch: false,        // 触摸设备用原生滚动（避免冲突）
       wheelMultiplier: 0.8,      // 滚轮灵敏度
       touchMultiplier: 1,
-      autoResize: true,          // 自动监听尺寸变化
+      autoResize: true,          // 自动监听 contentEl 尺寸变化（ResizeObserver）
     });
 
     lenisRef.current = lenis;
@@ -414,57 +471,50 @@ export function CardList({ scrollRef: externalScrollRef }: { scrollRef?: React.R
     }
     const rafId = requestAnimationFrame(raf);
 
-    // 监听 scroll 事件同步给虚拟列表和 Timeline
-    lenis.on("scroll", () => {
-      // 触发原生 scroll 事件，让虚拟列表的 getScrollElement 能感知变化
-      el.dispatchEvent(new Event("scroll", { bubbles: false }));
-    });
-
-    return () => {
-      cancelAnimationFrame(rafId);
-      lenis.destroy();
-      lenisRef.current = null;
-    };
-  }, [scrollRef]);
-
-  // Timeline 滚轮 → 在 wrapper 元素上合成 WheelEvent，让 Lenis 自然拦截处理
-  const handleTimelineWheel = useCallback((deltaY: number) => {
-    const el = scrollRef.current;
-    if (!el) return;
-    // 合成 WheelEvent 在 wrapper 上 dispatch，Lenis 的 smoothWheel 会拦截并平滑处理
-    el.dispatchEvent(new WheelEvent("wheel", {
-      deltaY,
-      deltaX: 0,
-      deltaMode: 0,
-      bubbles: true,
-      cancelable: true,
-    }));
-  }, [scrollRef]);
-
-  // 列表滚动时 rAF 节流同步 scrollMetrics 给 Timeline
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-
-    let rafId = 0;
-    const handleScroll = () => {
-      if (rafId) return;
-      rafId = requestAnimationFrame(() => {
-        rafId = 0;
+    // scrollMetrics rAF 节流同步给 Timeline（直接用 Lenis 内部状态，wrapper.scrollTop 被 Lenis 接管后始终为 0）
+    let metricsRafId = 0;
+    const updateMetrics = () => {
+      if (metricsRafId) return;
+      metricsRafId = requestAnimationFrame(() => {
+        metricsRafId = 0;
         setScrollMetrics({
-          scrollHeight: el.scrollHeight,
-          clientHeight: el.clientHeight,
-          scrollTop: el.scrollTop,
+          scrollHeight: lenis.dimensions.scrollHeight,
+          clientHeight: lenis.dimensions.height,
+          scrollTop: lenis.scroll,
         });
       });
     };
 
-    el.addEventListener("scroll", handleScroll, { passive: true });
+    // Lenis scroll 回调：同步 scrollMetrics + 触底加载 + 派发原生 scroll 事件给虚拟列表
+    let dispatchingScroll = false;
+    lenis.on("scroll", ({ scroll }: Lenis) => {
+      updateMetrics();
+      triggerLoadMore();
+
+      // 派发原生 scroll 事件给 @tanstack/react-virtual 的 getScrollElement 监听器
+      // Lenis 接管后 wrapper.scrollTop 始终为 0，需先同步 scrollTop 再 dispatchEvent
+      if (dispatchingScroll) return;
+      dispatchingScroll = true;
+      wrapperEl.scrollTop = scroll;  // 同步原生 scrollTop 让虚拟列表能读取到正确位置
+      wrapperEl.dispatchEvent(new Event("scroll", { bubbles: false }));
+      dispatchingScroll = false;
+    });
+
     return () => {
-      el.removeEventListener("scroll", handleScroll);
-      if (rafId) cancelAnimationFrame(rafId);
+      cancelAnimationFrame(rafId);
+      if (metricsRafId) cancelAnimationFrame(metricsRafId);
+      lenis.destroy();
+      lenisRef.current = null;
     };
-  }, [scrollRef]);
+  }, [scrollRef, triggerLoadMore]);
+
+  // Timeline 滚轮 → 直接调用 Lenis scrollTo 平滑滚动
+  const handleTimelineWheel = useCallback((deltaY: number) => {
+    const lenis = lenisRef.current;
+    if (!lenis) return;
+    const target = Math.max(0, Math.min(lenis.limit, lenis.scroll + deltaY));
+    lenis.scrollTo(target, { lerp: 0.08, duration: 1.2 });
+  }, []);
 
   // ESC 键关闭预览 / 清除 OCR 选择
   useEffect(() => {
@@ -780,13 +830,12 @@ export function CardList({ scrollRef: externalScrollRef }: { scrollRef?: React.R
 
   // 滚动到指定卡片索引
   const handleScrollToIndex = useCallback((index: number) => {
-    const el = scrollRef.current;
-    if (!el) return;
+    const lenis = lenisRef.current;
     const item = items[index];
-    if (!item) return;
+    if (!item || !lenis) return;
     const virtItem = virtualizer.getVirtualItems().find(vi => vi.index === index);
     const top = virtItem?.start ?? index * 82;
-    el.scrollTo({ top: Math.max(0, top - 10), behavior: "smooth" });
+    lenis.scrollTo(Math.max(0, top - 10), { lerp: 0.1, duration: 0.8 });
     // 高亮闪烁
     const targetEl = document.querySelector(`[data-item-id="${item.id}"]`);
     if (targetEl) {
@@ -798,12 +847,13 @@ export function CardList({ scrollRef: externalScrollRef }: { scrollRef?: React.R
     }
   }, [items, scrollRef, virtualizer]);
 
-  // 拖拽时间轴滚动
+  // 拖拽时间轴滚动 — 使用 Lenis scrollTo 而不是直接设置 scrollTop
   const handleDragScroll = useCallback((scrollTop: number) => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollTop = scrollTop;
-  }, [scrollRef]);
+    const lenis = lenisRef.current;
+    if (lenis) {
+      lenis.scrollTo(scrollTop, { immediate: true });
+    }
+  }, []);
 
   // 滚动区域尺寸（传给 Timeline）
   const [scrollMetrics, setScrollMetrics] = useState({ scrollHeight: 0, clientHeight: 0, scrollTop: 0 });
@@ -842,9 +892,8 @@ export function CardList({ scrollRef: externalScrollRef }: { scrollRef?: React.R
         aria-setsize={items.length}
         aria-live="polite"
       >
-        {/* 左侧感应区域 — 已在 Timeline 组件中渲染 */}
-        {/* Timeline 组件在 contentArea 中，不随滚动 */}
-        <div className={styles.cardList}>
+        {/* Lenis content 元素 — 包裹所有实际内容，Lenis 通过 ResizeObserver 监听此元素的尺寸变化 */}
+        <div ref={contentRef} className={styles.cardList}>
         {items.length === 0 ? (
           <div className={styles.emptyState}>
             <div className={styles.emptyIcon}>
@@ -969,7 +1018,7 @@ export function CardList({ scrollRef: externalScrollRef }: { scrollRef?: React.R
                 );
               })}
             </div>
-            {hasMore && items.length > 0 && (
+            {items.length > 0 && (
               <div className={styles.loadMoreArea}>
                 {loadingMore && <span className={styles.loadMoreHint}>加载中…</span>}
                 {loadError && !loadingMore && (
@@ -977,6 +1026,9 @@ export function CardList({ scrollRef: externalScrollRef }: { scrollRef?: React.R
                     <span className={styles.loadMoreError}>加载失败{retryCount > 0 ? ` (已重试 ${retryCount} 次)` : ""}</span>
                     <button onClick={handleRetryLoadMore} className={styles.loadMoreRetryBtn}>重试</button>
                   </>
+                )}
+                {!hasMore && !loadingMore && !loadError && (
+                  <span className={styles.loadMoreHint}>— 已加载全部记录 —</span>
                 )}
               </div>
             )}

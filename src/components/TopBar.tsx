@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, FilterType, TimeFilter, SourceFilter, HistoryItem } from "@/stores/appStore";
-import { getAppVersion, getAppName } from "@/lib/api";
+import { getAppVersion, getAppName, fetchCounts } from "@/lib/api";
 import { UpdateBadge } from "@/components/UpdateBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { logger } from "@/lib/logger";
@@ -62,14 +62,15 @@ export function TopBar({ onSettings, onSnippets, onExtract }: {
   const addSearchHistory = useAppStore((s) => s.addSearchHistory);
   const removeSearchHistory = useAppStore((s) => s.removeSearchHistory);
   const clearSearchHistory = useAppStore((s) => s.clearSearchHistory);
-  const history = useAppStore((s) => s.history);
   const ws = useAppStore((s) => s.config.current_workspace);
+  const history = useAppStore((s) => s.history);
   const [focused, setFocused] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const searchBoxRef = useRef<HTMLDivElement>(null);
   const [tabStyle, setTabStyle] = useState<TabStyle>(getTabStyle);
   const [appVersion, setAppVersion] = useState("...");
   const [appName, setAppName] = useState("PastePanda");
+  const [counts, setCounts] = useState<Record<string, number>>({ all: 0, text: 0, image: 0, file: 0, pinned: 0 });
 
   useEffect(() => {
     getAppVersion().then(setAppVersion).catch(() => setAppVersion("?.?.?"));
@@ -78,6 +79,25 @@ export function TopBar({ onSettings, onSnippets, onExtract }: {
       document.title = name;
     }).catch(() => setAppName("PastePanda"));
   }, []);
+
+  // 从后端获取计数（带 30s 缓存）
+  const refreshCounts = useCallback(() => {
+    let cancelled = false;
+    fetchCounts(ws).then(c => { if (!cancelled) setCounts(c); });
+    return () => { cancelled = true; };
+  }, [ws]);
+
+  useEffect(() => {
+    const cleanup = refreshCounts();
+    return cleanup;
+  }, [refreshCounts]);
+
+  // 监听缓存失效事件，实时刷新计数
+  useEffect(() => {
+    const handler = () => refreshCounts();
+    window.addEventListener("counts-invalidated", handler);
+    return () => window.removeEventListener("counts-invalidated", handler);
+  }, [refreshCounts]);
 
   // 监听 localStorage 变化（SettingsDialog 更新 tabStyle 时触发）
   useEffect(() => {
@@ -109,17 +129,6 @@ export function TopBar({ onSettings, onSnippets, onExtract }: {
     }
     setShowHistory(false);
   }, [setSearchKeyword, addSearchHistory]);
-
-  const counts = useMemo(() => {
-    const items = history.filter((h) => h.workspace === ws);
-    return {
-      all: items.length,
-      text: items.filter((h) => h.type === "text").length,
-      image: items.filter((h) => h.type === "image").length,
-      file: items.filter((h) => h.type === "file").length,
-      pinned: items.filter((h) => h.pinned).length,
-    };
-  }, [history, ws]);
 
   return (
     <div className={styles.header} data-tauri-drag-region role="banner">

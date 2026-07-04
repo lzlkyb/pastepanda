@@ -1,10 +1,11 @@
 /* CardList 组件样式 — 卡片列表 + 批量操作 + 加载更多 */
 
 /* #3 节点间距自动对齐 — CSS 变量统一卡片高度，供 Timeline 引用 */
+/* Lenis content 元素 — padding 从 wrapper 移到这里，wrapper 必须干净以便 Lenis 正确计算滚动范围 */
 .cardList {
   --card-height: 72px;
   --card-gap: 10px;
-  padding: 0 0 80px;
+  padding: 10px 16px 80px;
   display: flex;
   flex-direction: column;
   gap: var(--card-gap);
@@ -1034,51 +1035,25 @@
 
 /* 时间轴可见时，整个 contentArea 保持不变，但内部滚动区会右移 */
 
-/* ===== 滚动区域 ===== */
+/* ===== 滚动区域（Lenis wrapper — 固定视口，Lenis 接管 wheel 平滑处理，保留原生滚动条作为视觉指示） ===== */
 .scrollArea {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: auto;            /* 保留原生滚动条作为位置指示 */
   overflow-x: hidden;
   min-height: 0;
   position: relative;
-  padding: 10px 16px 80px;
+  padding: 0;                  /* padding 移到内部 cardList */
   transition: padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
-}
-
-/* 时间轴可见时卡片区域右移 */
-.scrollAreaTimelineVisible {
-  padding-left: calc(16px + 70px);
-}
-
-/* #7 滚动条美化 — 自定义 Webkit 滚动条 */
-.scrollArea::-webkit-scrollbar {
-  width: 5px;
-}
-
-.scrollArea::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.scrollArea::-webkit-scrollbar-thumb {
-  background: var(--border-color);
-  border-radius: 3px;
-  transition: background 0.2s;
-}
-
-.scrollArea::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
-}
-
-.scrollArea::-webkit-scrollbar-thumb:active {
-  background: var(--text-secondary);
-}
-
-/* Firefox 滚动条 */
-.scrollArea {
+  /* 细滚动条样式 */
   scrollbar-width: thin;
   scrollbar-color: var(--border-color) transparent;
+}
+
+/* 时间轴可见时卡片区域右移 — padding-left 在 cardList（Lenis content）上 */
+.scrollAreaTimelineVisible .cardList {
+  padding-left: calc(16px + 70px);
 }
 
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useScrollRef } from "@/contexts/ScrollContext";
+import { useLenisRef, useScrollRef } from "@/contexts/ScrollContext";
 import styles from "./BackToTop.module.css";
 
 interface BackToTopProps {
@@ -8,26 +8,32 @@ interface BackToTopProps {
 }
 
 export function BackToTop({ threshold = 150 }: BackToTopProps) {
+  const lenisRef = useLenisRef();
   const scrollRef = useScrollRef();
   const [visible, setVisible] = useState(false);
 
-  const handleScroll = useCallback(() => {
-    const el = scrollRef?.current;
-    if (!el) return;
-    setVisible(el.scrollTop > threshold);
-  }, [scrollRef, threshold]);
-
+  // 监听原生 scroll 事件（CardList 的 Lenis scroll 回调中同步了 wrapper.scrollTop 并派发了原生 scroll 事件）
   useEffect(() => {
     const el = scrollRef?.current;
     if (!el) return;
+
+    const handleScroll = () => {
+      setVisible(el.scrollTop > threshold);
+    };
+
     el.addEventListener("scroll", handleScroll, { passive: true });
+    // 初始检测一次
     handleScroll();
+
     return () => el.removeEventListener("scroll", handleScroll);
-  }, [scrollRef, handleScroll]);
+  }, [scrollRef, threshold]);
 
   const scrollToTop = useCallback(() => {
-    scrollRef?.current?.scrollTo({ top: 0, behavior: "smooth" });
-  }, [scrollRef]);
+    const lenis = lenisRef?.current;
+    if (lenis) {
+      lenis.scrollTo(0, { lerp: 0.1, duration: 1.0 });
+    }
+  }, [lenisRef]);
 
   return (
     <button

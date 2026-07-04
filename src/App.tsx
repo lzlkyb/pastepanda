@@ -10,10 +10,11 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UpdateProvider } from "@/contexts/UpdateContext";
 import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
 import { logger } from "@/lib/logger";
-import { pasteText, pasteImage, deleteHistory, togglePin, toggleWindow, sequentialPaste } from "@/lib/api";
+import { pasteText, pasteImage, deleteHistory, togglePin, toggleWindow, sequentialPaste, invalidateCountsCache } from "@/lib/api";
 import { ClipboardList, RotateCcw, Loader2, X } from "lucide-react";
 import { BackToTop } from "@/components/BackToTop";
 import { ScrollProvider } from "@/contexts/ScrollContext";
+import type Lenis from "lenis";
 import appStyles from "./App.module.css";
 
 // 懒加载对话框组件 — 只在打开时才加载对应 JS chunk
@@ -36,6 +37,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const retryCleanupRef = useRef<(() => void) | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lenisRef = useRef<Lenis | null>(null);
 
   useEffect(() => {
     try { applyTheme((config.theme as ThemeKey) || DEFAULT_THEME); } catch (e) { logger.warn("应用主题失败", e); }
@@ -280,6 +282,7 @@ function App() {
       e.preventDefault();
       const restored = store.undoDelete();
       if (restored) {
+        invalidateCountsCache(); // 撤销恢复后清除计数缓存
         const failed: string[] = [];
         for (const item of restored) {
           try { await import("@tauri-apps/api/core").then(m => m.invoke("insert_history", { item })); } catch (e) {
@@ -379,8 +382,8 @@ function App() {
           onSnippets={() => setShowSnippets(true)}
           onExtract={() => setShowExtract(true)}
         />
-        <ScrollProvider scrollRef={scrollRef}>
-          <CardList scrollRef={scrollRef} />
+        <ScrollProvider scrollRef={scrollRef} lenisRef={lenisRef}>
+          <CardList scrollRef={scrollRef} lenisRef={lenisRef} />
           <BackToTop />
         </ScrollProvider>
         <QuickPreview />

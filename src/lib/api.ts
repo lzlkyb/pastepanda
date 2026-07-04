@@ -66,6 +66,8 @@ export async function initBackend(): Promise<() => void> {
           // 将清理的记录保存到撤销栈，支持 Ctrl+Z 恢复
           useAppStore.getState().setHistory(fresh);
           useAppStore.setState((s) => ({ undoStack: [result.deleted_items, ...s.undoStack].slice(0, 10) }));
+          // 清理后清除计数缓存，下次渲染会自动查后端
+          invalidateCountsCache();
           setTimeout(() => {
             const event = new CustomEvent("app-toast", { detail: { message: `已自动清理 ${result.count} 条过期记录 (Ctrl+Z 撤销)`, type: "info" } });
             window.dispatchEvent(event);
@@ -79,6 +81,7 @@ export async function initBackend(): Promise<() => void> {
   const unlisten1 = await listen<{ item: HistoryItem }>("clipboard-changed", (event) => {
     const store = useAppStore.getState();
     store.prependItem(event.payload.item);
+    invalidateCountsCache(); // 新增记录，清除计数缓存
     const typeLabel = event.payload.item.type === "image" ? "图片" : event.payload.item.type === "file" ? "文件" : "文本";
     const isLanSync = event.payload.item.source?.startsWith("局域网:");
     const msg = isLanSync ? `📡 ${event.payload.item.source.replace("局域网: ", "")}同步了${typeLabel}` : `已记录${typeLabel}`;
@@ -219,6 +222,7 @@ export async function deleteHistory(ids: string[]) {
     const count = await invoke<number>("delete_history", { ids });
     const store = useAppStore.getState();
     store.removeItems(ids);
+    invalidateCountsCache(); // 删除后清除缓存
     if (count > 0) {
       window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已删除 ${count} 条记录（Ctrl+Z 撤销）`, type: "info" } }));
     }
@@ -235,6 +239,7 @@ export async function togglePin(id: string) {
     const pinned = await invoke<boolean>("toggle_pin", { id });
     const store = useAppStore.getState();
     store.togglePin(id);
+    invalidateCountsCache(); // 置顶状态变化后清除缓存
     return pinned;
   } catch (e) {
     logger.error("切换置顶失败", e);
@@ -264,6 +269,28 @@ export async function getStats(workspace: string): Promise<Stats> {
     logger.error("获取统计失败", e);
     return { total: 0, pinned: 0, today: 0, text_count: 0, image_count: 0, file_count: 0, earliest_time: null, db_size_kb: 0 };
   }
+}
+
+/** Tab 计数缓存（30 秒过期，按工作区分） */
+let countsCache: { workspace: string; counts: { all: number; text: number; image: number; file: number; pinned: number }; ts: number } | null = null;
+const COUNTS_CACHE_MS = 30_000;
+
+/** 获取 Tab 计数（带 30 秒缓存，避免频繁查后端） */
+export async function fetchCounts(workspace: string): Promise<{ all: number; text: number; image: number; file: number; pinned: number }> {
+  if (countsCache && countsCache.workspace === workspace && Date.now() - countsCache.ts < COUNTS_CACHE_MS) {
+    return countsCache.counts;
+  }
+  const stats = await getStats(workspace);
+  const counts = { all: stats.total, text: stats.text_count, image: stats.image_count, file: stats.file_count, pinned: stats.pinned };
+  countsCache = { workspace, counts, ts: Date.now() };
+  return counts;
+}
+
+/** 清除计数缓存（新增/删除/切换工作区后调用，强制下次立即查后端） */
+export function invalidateCountsCache() {
+  countsCache = null;
+  // 通知 TopBar 重新获取计数
+  window.dispatchEvent(new CustomEvent("counts-invalidated"));
 }
 
 /** 图片路径转文件 URL（使用 Tauri 的 asset 协议，浏览器原生缓存） */
