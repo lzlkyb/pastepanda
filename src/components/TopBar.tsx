@@ -70,7 +70,8 @@ export function TopBar({ onSettings, onSnippets, onExtract }: {
   const [tabStyle, setTabStyle] = useState<TabStyle>(getTabStyle);
   const [appVersion, setAppVersion] = useState("...");
   const [appName, setAppName] = useState("PastePanda");
-  const [counts, setCounts] = useState<Record<string, number>>({ all: 0, text: 0, image: 0, file: 0, pinned: 0 });
+  const [counts, setCounts] = useState<Record<string, number> | null>(null);
+  const [countsError, setCountsError] = useState(false);
 
   useEffect(() => {
     getAppVersion().then(setAppVersion).catch(() => setAppVersion("?.?.?"));
@@ -83,7 +84,11 @@ export function TopBar({ onSettings, onSnippets, onExtract }: {
   // 从后端获取计数（带 30s 缓存）
   const refreshCounts = useCallback(() => {
     let cancelled = false;
-    fetchCounts(ws).then(c => { if (!cancelled) setCounts(c); });
+    fetchCounts(ws).then(c => {
+      if (!cancelled) { setCounts(c); setCountsError(false); }
+    }).catch(() => {
+      if (!cancelled) setCountsError(true);
+    });
     return () => { cancelled = true; };
   }, [ws]);
 
@@ -241,13 +246,14 @@ export function TopBar({ onSettings, onSnippets, onExtract }: {
 
 /* ===== 方案 B：iOS 分段控件 ===== */
 function SegmentedTabs({ filterType, setFilterType, counts }: {
-  filterType: FilterType; setFilterType: (f: FilterType) => void; counts: Record<string, number>;
+  filterType: FilterType; setFilterType: (f: FilterType) => void; counts: Record<string, number> | null;
 }) {
+  const getCount = (key: string) => (counts ? counts[key] : undefined);
   return (
     <div className={styles.segmented}>
       {TABS.map((tab) => {
         const active = filterType === tab.key;
-        const count = counts[tab.key];
+        const count = getCount(tab.key);
         return (
           <button key={tab.key} onClick={() => setFilterType(tab.key)}
             className={`${styles.segItem}${active ? ` ${styles.segItemActive}` : ""}`}
@@ -261,7 +267,7 @@ function SegmentedTabs({ filterType, setFilterType, counts }: {
             )}
             <span className={styles.segIcon}>{tab.icon}</span>
             <span>{tab.label}</span>
-            {count > 0 && <span className={`${styles.segCount}${active ? ` ${styles.segItemActive}` : ""}`}>{count}</span>}
+            {count !== undefined && count > 0 && <span className={`${styles.segCount}${active ? ` ${styles.segItemActive}` : ""}`}>{count}</span>}
           </button>
         );
       })}
@@ -271,13 +277,14 @@ function SegmentedTabs({ filterType, setFilterType, counts }: {
 
 /* ===== 方案 C：圆形图标 Tab ===== */
 function CircleTabs({ filterType, setFilterType, counts }: {
-  filterType: FilterType; setFilterType: (f: FilterType) => void; counts: Record<string, number>;
+  filterType: FilterType; setFilterType: (f: FilterType) => void; counts: Record<string, number> | null;
 }) {
+  const getCount = (key: string) => (counts ? counts[key] : undefined);
   return (
     <div className={styles.tabsCircle}>
       {TABS.map((tab) => {
         const active = filterType === tab.key;
-        const count = counts[tab.key];
+        const count = getCount(tab.key);
         return (
           <button key={tab.key} onClick={() => setFilterType(tab.key)}
             className={`${styles.circleTab}${active ? ` ${styles.circleTabActive}` : ""}`}>
@@ -285,7 +292,7 @@ function CircleTabs({ filterType, setFilterType, counts }: {
               <span style={{ fontSize: 22 }}>{tab.icon}</span>
             </div>
             <span className={styles.circleLabel}>{tab.label}</span>
-            {count > 0 && <span className={styles.circleBadge}>{count}</span>}
+            {count !== undefined && count > 0 && <span className={styles.circleBadge}>{count}</span>}
           </button>
         );
       })}

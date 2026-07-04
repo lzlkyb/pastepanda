@@ -1,5 +1,5 @@
 import { memo, useState, useCallback, useContext, useRef, useEffect } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
 import { relativeTime, detectTextType } from "@/lib/utils";
 import { createCardMenuItems, CtxMenuCtx, type MenuItem } from "@/components/ContextMenu";
@@ -206,7 +206,15 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
             <div className={`${styles.cardIcon} ${styles.cardImgError}`}>
               <ImageIcon size={18} color="#EF4444" strokeWidth={2.2} />
               {onRetryImage && (
-                <span className={styles.cardImgRetry} onClick={(e) => { e.stopPropagation(); onRetryImage(); }}>🔄</span>
+                <button
+                  className={styles.cardImgRetry}
+                  onClick={(e) => { e.stopPropagation(); onRetryImage(); }}
+                  title="重新加载"
+                >
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                  </svg>
+                </button>
               )}
             </div>
           ) : (
@@ -242,9 +250,11 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
       </motion.div>
 
       {/* ★ 悬停 Popover 气泡弹窗（移到卡片外部，避免被 card overflow:hidden 裁剪） */}
-      {hovered && config.hover_mode === "popover" && !disablePreview && (
-        <CardHoverPopover item={item} imageState={imageState} subType={subType} onEdit={onEdit} onMouseEnter={enterHover} onMouseLeave={scheduleClose} />
-      )}
+      <AnimatePresence>
+        {hovered && config.hover_mode === "popover" && !disablePreview && (
+          <CardHoverPopover item={item} imageState={imageState} subType={subType} onEdit={onEdit} onMouseEnter={enterHover} onMouseLeave={scheduleClose} />
+        )}
+      </AnimatePresence>
 
       {/* ★ 按钮模式：卡片内嵌操作按钮 */}
       {config.hover_mode === "inline" && (
@@ -343,15 +353,18 @@ const CardHoverPopover = memo(function CardHoverPopover({
   }
 
   return (
-    <>
-      <div
-        className={styles.cardPopover}
-        // 阻止 mousedown 触发卡片的单击延迟逻辑
-        onMouseEnter={onMouseEnter}
-        onMouseLeave={onMouseLeave}
-        onMouseDown={(e) => e.stopPropagation()}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <motion.div
+      initial={{ opacity: 0, y: -8, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -6, scale: 0.97 }}
+      transition={{ type: "spring", stiffness: 500, damping: 35 }}
+      className={styles.cardPopover}
+      // 阻止 mousedown 触发卡片的单击延迟逻辑
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
         {/* 预览区 */}
         {item.type === "text" && !isShortPlainText && (
           subType === "code" ? (
@@ -433,7 +446,7 @@ const CardHoverPopover = memo(function CardHoverPopover({
           </button>
         </div>
       </div>
-    </>
+    </motion.div>
   );
 });
 

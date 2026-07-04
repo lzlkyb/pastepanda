@@ -23,8 +23,6 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
-  if (!open) return null;
-
   return createPortal(
     <AnimatePresence>
       {open && (

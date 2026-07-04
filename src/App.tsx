@@ -415,9 +415,11 @@ function App() {
 
 
         {/* 快捷键浮层 — 从 config 动态读取，支持搜索过滤 */}
-        {showShortcuts && (
-          <ShortcutPanel onClose={() => setShowShortcuts(false)} />
-        )}
+        <AnimatePresence>
+          {showShortcuts && (
+            <ShortcutPanel onClose={() => setShowShortcuts(false)} />
+          )}
+        </AnimatePresence>
       </div>
       </UpdateProvider>
     </ToastProvider>
@@ -458,8 +460,17 @@ function ShortcutPanel({ onClose }: { onClose: () => void }) {
   }, [filter, allShortcuts]);
 
   return (
-    <div className="shortcut-overlay" onClick={onClose}>
-      <div className="shortcut-panel" onClick={(e) => e.stopPropagation()}>
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="shortcut-overlay" onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 16 }}
+        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+        className="shortcut-panel" onClick={(e) => e.stopPropagation()}
+      >
         <div className="shortcut-panel-header">
           <span>⌨ 快捷键一览</span>
           <button className="dialog-close" onClick={onClose}><X size={14} /></button>
@@ -488,8 +499,8 @@ function ShortcutPanel({ onClose }: { onClose: () => void }) {
             ))
           )}
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
 

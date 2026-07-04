@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, lazy, Suspense, useCallback, useMemo } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useAppStore, HistoryItem, FilterType } from "@/stores/appStore";
 import { useToast } from "@/components/Toast";
@@ -1045,16 +1045,22 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
       </Suspense>
 
       {/* 图片预览 — 统一 dialog 风格 */}
-      {(previewImage || previewLoading) && (
-        <div className="dialog-backdrop" style={{ zIndex: 60 }} onClick={closePreview}>
+      <AnimatePresence>
+        {(previewImage || previewLoading) && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 20 }}
-            transition={{ type: "spring", stiffness: 400, damping: 30 }}
-            className={`dialog-box ${styles.imageDetailDialog}`}
-            onClick={(e) => e.stopPropagation()}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="dialog-backdrop" style={{ zIndex: 60 }} onClick={closePreview}
           >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 20 }}
+              transition={{ type: "spring", stiffness: 400, damping: 30 }}
+              className={`dialog-box ${styles.imageDetailDialog}`}
+              onClick={(e) => e.stopPropagation()}
+            >
             {/* Header */}
             <div className="dialog-header">
               <h2 className="dialog-title">🖼 图片详情</h2>
@@ -1306,8 +1312,9 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
               </span>
             </div>
           </motion.div>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* 批量删除确认弹窗 */}
       <ConfirmDialog

@@ -35,6 +35,8 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   const [appVersion, setAppVersion] = useState("?.?.?");
   const [showCleanupConfirm, setShowCleanupConfirm] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -100,6 +102,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     : 0;
 
   const handleExport = async () => {
+    setExporting(true);
     try {
       const { save } = await import("@tauri-apps/plugin-dialog");
       const path = await save({ filters: [{ name: "JSON", extensions: ["json"] }] });
@@ -113,10 +116,13 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     } catch (e) {
       logger.warn("导出失败", e);
       toast("导出失败", "error");
+    } finally {
+      setExporting(false);
     }
   };
 
   const handleImport = async () => {
+    setImporting(true);
     try {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const path = await open({ filters: [{ name: "JSON", extensions: ["json"] }] });
@@ -141,6 +147,8 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     } catch (e) {
       logger.warn("导入失败", e);
       toast("导入失败", "error");
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -220,6 +228,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                       stats={stats} history={history}
                       tabStyle={tabStyle} handleSwitchTabStyle={handleSwitchTabStyle}
                       handleExport={handleExport} handleImport={handleImport} handleCleanup={handleCleanup}
+                      exporting={exporting} importing={importing}
                     />
                   </motion.div>
                 )}
