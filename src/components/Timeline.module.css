@@ -43,11 +43,12 @@
     opacity 0.2s ease;
 }
 
-/* #8 展开状态 — hover 或拖拽时展开到 50px + 显示背景 */
+/* #8 展开状态 — hover 或拖拽时展开到 70px + 显示背景 + 允许溢出 */
 .expanded {
-  width: 50px;
+  width: 70px;
   background: var(--timeline-bg, rgba(9, 9, 11, 0.92));
   border-right-color: var(--border-color);
+  overflow: visible;
 }
 
 /* ===== timeline 内部滚动区 ===== */
@@ -55,6 +56,11 @@
   flex: 1;
   overflow: hidden;
   position: relative;
+}
+
+/* 展开状态：允许 tooltip 溢出滚动区 */
+.expanded .timelineScroll {
+  overflow: visible;
 }
 
 .timelineTrack {
@@ -410,6 +416,7 @@
   opacity: 0;
   transition: opacity 0.15s;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  z-index: 50;
 }
 
 .timelineNode:hover .timelineTooltip {

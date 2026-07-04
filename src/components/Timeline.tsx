@@ -48,6 +48,8 @@ interface TimelineProps {
   onScrollToIndex: (index: number) => void;
   /** 拖拽时滚动到指定 scrollTop */
   onDragScroll: (scrollTop: number) => void;
+  /** 时间轴上滚轮事件 → 转发 deltaY 给父组件，由 Lenis 平滑处理 */
+  onWheelScroll?: (deltaY: number) => void;
   /** triggerZone 鼠标进入回调（通知父组件显示时间轴） */
   onTriggerEnter?: () => void;
   /** timeline 区域鼠标离开回调（通知父组件隐藏时间轴） */
@@ -67,6 +69,7 @@ export function Timeline({
   groupIndices,
   onScrollToIndex,
   onDragScroll,
+  onWheelScroll,
   onTriggerEnter,
   onTimelineLeave,
   onExpandChange,
@@ -178,16 +181,23 @@ export function Timeline({
     }, delay);
   }, [dragging, capsuleDragging]);
 
-  // 同步 timeline 滚动偏移
+  // 同步 timeline 滚动偏移 — 纯 props 计算，不依赖 DOM ref
   const translateY = useMemo(() => {
-    const tlInner = timelineInnerRef.current;
-    const tlScroll = timelineRef.current?.querySelector(`.${styles.timelineScroll}`) as HTMLElement | null;
-    if (!tlInner || !tlScroll) return 0;
-    const maxScroll = tlInner.scrollHeight - tlScroll.clientHeight;
-    if (maxScroll <= 0) return 0;
+    const cardHeight = 72;  // --card-height
+    const cardGap = 10;     // --card-gap
+    const nodeHeight = cardHeight + cardGap; // 82px per node
+    const groupLabelHeight = 36; // 分组标签高度
+
+    const activeGroups = ["today", "yesterday", "thisWeek", "earlier"]
+      .filter(g => groupIndices[g as TimeGroup] !== undefined && groupIndices[g as TimeGroup] >= 0);
+    const groupCount = activeGroups.length;
+    const timelineContentHeight = nodes.length * nodeHeight + groupCount * groupLabelHeight;
+
+    const maxTimelineScroll = timelineContentHeight - clientHeight;
+    if (maxTimelineScroll <= 0) return 0;
     const ratio = scrollTop / (scrollHeight - clientHeight || 1);
-    return -ratio * maxScroll;
-  }, [scrollTop, scrollHeight, clientHeight]);
+    return -ratio * maxTimelineScroll;
+  }, [scrollTop, scrollHeight, clientHeight, nodes.length, groupIndices]);
 
   // 更新吸顶胶囊文字（基于当前 scrollTop 判断可见的第一个分组）
   useEffect(() => {
@@ -329,16 +339,21 @@ export function Timeline({
     [dragging, onScrollToIndex]
   );
 
-  // 滚轮事件 → 转发到卡片列表滚动容器
-  const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
-      const el = scrollRef?.current;
-      if (!el) return;
+  // 滚轮事件 → 转发 deltaY 给父组件，由 Lenis 平滑处理
+  useEffect(() => {
+    const el = timelineRef.current;
+    if (!el || !onWheelScroll) return;
+
+    const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
-      el.scrollTop += e.deltaY;
-    },
-    [scrollRef]
-  );
+      onWheelScroll(e.deltaY);
+    };
+
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => {
+      el.removeEventListener("wheel", handleWheel);
+    };
+  }, [onWheelScroll]);
 
   return (
     <>
@@ -365,7 +380,6 @@ export function Timeline({
           setExpanded(false);
           scheduleHide(300);
         }}
-        onWheel={handleWheel}
       >
         {/* 吸顶胶囊 */}
         <div
@@ -405,7 +419,7 @@ export function Timeline({
                       className={styles.timelineGroupLabel}
                       data-group={node.group}
                       onMouseDown={(e) => handleNodeMouseDown(e, node.index)}
-                      title={`${TIME_GROUP_LABELS[node.group]} · ${groupPreviews[node.group]?.count || 0}条 · ${groupPreviews[node.group]?.timeRange || ""}`}
+                    
                     >
                       <div className={styles.timelineGroupLabelDot} />
                       <div className={styles.timelineGroupLabelText}>
@@ -426,7 +440,7 @@ export function Timeline({
                     data-idx={node.index}
                     onMouseDown={(e) => handleNodeMouseDown(e)}
                     onClick={(e) => handleNodeClick(e, node.index)}
-                    title={node.label}
+                  
                   >
                     <div className={styles.timelineNodeIcon}>{CARD_TYPE_ICONS[node.type]}</div>
                     <div className={styles.timelineTooltip}>{node.label}</div>

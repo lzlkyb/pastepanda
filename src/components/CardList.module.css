@@ -1027,6 +1027,11 @@
   min-height: 0;
 }
 
+/* 时间轴展开时允许 Timeline tooltip 溢出 */
+.contentAreaOverflowVisible {
+  overflow: visible;
+}
+
 /* 时间轴可见时，整个 contentArea 保持不变，但内部滚动区会右移 */
 
 /* ===== 滚动区域 ===== */
@@ -1038,11 +1043,13 @@
   position: relative;
   padding: 10px 16px 80px;
   transition: padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* 时间轴可见时卡片区域右移 */
 .scrollAreaTimelineVisible {
-  padding-left: calc(16px + 50px);
+  padding-left: calc(16px + 70px);
 }
 
 /* #7 滚动条美化 — 自定义 Webkit 滚动条 */

@@ -11,6 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ClipboardList, Copy, Search, Zap, ZoomIn, ZoomOut, RotateCw, Download, X, Info, Trash2, FileDown, ScanText, Pin, CheckSquare, Square, Clock, Package, FileX } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Timeline, type TimeGroup, type TimelineNode } from "@/components/Timeline";
+import Lenis from "lenis";
 import styles from "./CardList.module.css";
 
 const EditDialog = lazy(() => import("@/components/EditDialog").then(m => ({ default: m.EditDialog })));
@@ -109,6 +110,7 @@ export function CardList({ scrollRef: externalScrollRef }: { scrollRef?: React.R
   const scrollRef = externalScrollRef ?? internalScrollRef;
   const scrollTimerRef = useRef<number | null>(null);
   const timelineHideTimerRef = useRef<number | null>(null);
+  const lenisRef = useRef<Lenis | null>(null);
   const loadedPathsRef = useRef<Set<string>>(new Set());
 
   // 滚动到底部时加载更多
@@ -385,6 +387,84 @@ export function CardList({ scrollRef: externalScrollRef }: { scrollRef?: React.R
       scrollTop: el.scrollTop,
     });
   }, [items.length, scrollRef]);
+
+  // Lenis 平滑滚动引擎 — 包装 scrollRef 容器
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const lenis = new Lenis({
+      wrapper: el,               // 滚动容器
+      content: el,               // 内容即容器自身（内部 overflow:auto）
+      lerp: 0.08,                // 平滑度（0-1），越小越丝滑
+      duration: 1.2,             // 缓动动画时长（lerp 模式下此值影响衰减速度）
+      orientation: "vertical",
+      smoothWheel: true,         // 平滑鼠标滚轮
+      smoothTouch: false,        // 触摸设备用原生滚动（避免冲突）
+      wheelMultiplier: 0.8,      // 滚轮灵敏度
+      touchMultiplier: 1,
+      autoResize: true,          // 自动监听尺寸变化
+    });
+
+    lenisRef.current = lenis;
+
+    function raf(time: number) {
+      lenis.raf(time);
+      requestAnimationFrame(raf);
+    }
+    const rafId = requestAnimationFrame(raf);
+
+    // 监听 scroll 事件同步给虚拟列表和 Timeline
+    lenis.on("scroll", () => {
+      // 触发原生 scroll 事件，让虚拟列表的 getScrollElement 能感知变化
+      el.dispatchEvent(new Event("scroll", { bubbles: false }));
+    });
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      lenis.destroy();
+      lenisRef.current = null;
+    };
+  }, [scrollRef]);
+
+  // Timeline 滚轮 → 在 wrapper 元素上合成 WheelEvent，让 Lenis 自然拦截处理
+  const handleTimelineWheel = useCallback((deltaY: number) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // 合成 WheelEvent 在 wrapper 上 dispatch，Lenis 的 smoothWheel 会拦截并平滑处理
+    el.dispatchEvent(new WheelEvent("wheel", {
+      deltaY,
+      deltaX: 0,
+      deltaMode: 0,
+      bubbles: true,
+      cancelable: true,
+    }));
+  }, [scrollRef]);
+
+  // 列表滚动时 rAF 节流同步 scrollMetrics 给 Timeline
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    let rafId = 0;
+    const handleScroll = () => {
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        setScrollMetrics({
+          scrollHeight: el.scrollHeight,
+          clientHeight: el.clientHeight,
+          scrollTop: el.scrollTop,
+        });
+      });
+    };
+
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", handleScroll);
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [scrollRef]);
 
   // ESC 键关闭预览 / 清除 OCR 选择
   useEffect(() => {
@@ -731,7 +811,7 @@ export function CardList({ scrollRef: externalScrollRef }: { scrollRef?: React.R
   return (
     <ContextMenu>
     {/* B1 竖版左侧时间轴 — content-area 包裹 timeline + 滚动区 */}
-    <div className={styles.contentArea}>
+    <div className={`${styles.contentArea} ${timelineExpanded ? styles.contentAreaOverflowVisible : ""}`}>
       <Timeline
         visible={timelineVisible}
         scrollHeight={scrollMetrics.scrollHeight}
@@ -741,6 +821,7 @@ export function CardList({ scrollRef: externalScrollRef }: { scrollRef?: React.R
         groupIndices={timelineGroupIndices}
         onScrollToIndex={handleScrollToIndex}
         onDragScroll={handleDragScroll}
+        onWheelScroll={handleTimelineWheel}
         scrollRef={scrollRef}
         onExpandChange={setTimelineExpanded}
         onTriggerEnter={() => {
@@ -755,16 +836,6 @@ export function CardList({ scrollRef: externalScrollRef }: { scrollRef?: React.R
       <div
         className={`${styles.scrollArea} ${timelineExpanded ? styles.scrollAreaTimelineVisible : ""}`}
         ref={scrollRef}
-        onScroll={(e) => {
-          handleScroll();
-          // 更新滚动指标
-          const el = e.currentTarget;
-          setScrollMetrics({
-            scrollHeight: el.scrollHeight,
-            clientHeight: el.clientHeight,
-            scrollTop: el.scrollTop,
-          });
-        }}
         role="listbox"
         aria-label="剪贴板记录列表"
         aria-multiselectable="true"
