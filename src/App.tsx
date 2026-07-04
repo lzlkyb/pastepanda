@@ -410,17 +410,6 @@ function App() {
           </ErrorBoundary>
         </Suspense>
 
-        {/* #2 快捷键提示浮层 — 右下角常驻，hover 展开 */}
-        {!showShortcuts && !showSettings && !showSnippets && !showExtract && (
-          <div
-            className={appStyles.shortcutHint}
-            onClick={() => setShowShortcuts(true)}
-            title="查看所有快捷键"
-          >
-            <kbd>?</kbd>
-            <span className={appStyles.shortcutHintText}>快捷键一览</span>
-          </div>
-        )}
 
         {/* 快捷键浮层 — 从 config 动态读取，支持搜索过滤 */}
         {showShortcuts && (

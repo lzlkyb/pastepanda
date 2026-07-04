@@ -25,6 +25,20 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "npx tauri dev" -W
 ## 7. 方案设计需考虑代码架构
 模块化、可维护性、扩展性，遵循项目已有的架构模式。
 
+**组件文件大小限制**（硬性规则）：
+- 单个 `.tsx` 组件文件 **禁止超过 300 行**（不含样式和类型定义）。
+- 如果功能增长导致文件膨胀，**必须先拆分再继续**，不能无限制堆积。
+- 拆分策略：
+  - **自定义 Hook**：将复杂状态逻辑、事件处理提取到 `hooks/useXxx.ts`
+  - **子组件**：将独立 UI 区块提取到 `components/XxxPanel.tsx` 或 `components/XxxItem.tsx`
+  - **工具函数**：将纯计算逻辑提取到 `lib/xxx.ts`
+- 当前超标文件（后续逐步重构）：
+  - `CardList.tsx`（53KB / ~1300 行）
+  - `SettingsDialog.tsx`（57KB / ~1400 行）
+  - `Card.tsx`（27KB / ~650 行）
+  - `TrayPopup.tsx`（20KB / ~480 行）
+- 新增功能时：如果目标文件已接近 300 行，默认创建新文件而非追加代码。
+
 ## 8. 方案设计需考虑性能
 内存占用、加载速度、渲染效率、缓存策略。
 

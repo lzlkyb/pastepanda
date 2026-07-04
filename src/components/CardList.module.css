@@ -4,7 +4,7 @@
 .cardList {
   --card-height: 72px;
   --card-gap: 10px;
-  padding: 10px 0 80px;
+  padding: 0 0 80px;
   display: flex;
   flex-direction: column;
   gap: var(--card-gap);
