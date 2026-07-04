@@ -207,3 +207,63 @@
 .btnInitSecondary:hover {
   background: var(--section-bg);
 }
+
+/* #2 快捷键提示浮层 — 右下角常驻 */
+.shortcutHint {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.shortcutHint:hover {
+  color: var(--text-primary);
+  border-color: var(--accent);
+  box-shadow: 0 4px 16px var(--accent-shadow);
+  transform: translateY(-2px);
+}
+
+.shortcutHint kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--accent-light);
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid var(--accent);
+}
+
+.shortcutHintText {
+  opacity: 0.7;
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: max-width 0.3s ease, opacity 0.2s ease, margin 0.3s ease;
+}
+
+.shortcutHint:hover .shortcutHintText {
+  max-width: 120px;
+  opacity: 1;
+  margin-left: 2px;
+}

@@ -100,6 +100,7 @@
   --card-selected-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25);
   --accent-shadow: rgba(2, 132, 199, 0.15);
   --hover: #E8ECF2;
+  --timeline-bg: rgba(244, 246, 249, 0.95);
   --toast-success-bg: #ECFDF5; --toast-success-text: #065F46; --toast-success-border: #A7F3D0;
   --toast-error-bg: #FEF2F2; --toast-error-text: #991B1B; --toast-error-border: #FECACA;
   --toast-info-bg: #E0F2FE; --toast-info-text: #0284C7; --toast-info-border: rgba(2, 132, 199, 0.2);
@@ -140,6 +141,7 @@
   --card-selected-shadow: 0 0 0 2px rgba(129, 140, 248, 0.25);
   --accent-shadow: rgba(129, 140, 248, 0.2);
   --hover: #1F1F23;
+  --timeline-bg: rgba(9, 9, 11, 0.95);
   --toast-success-bg: #064E3B; --toast-success-text: #A7F3D0; --toast-success-border: #065F46;
   --toast-error-bg: #7F1D1D; --toast-error-text: #FECACA; --toast-error-border: #991B1B;
   --toast-info-bg: #1E1B4B; --toast-info-text: #A5B4FC; --toast-info-border: #312E81;
@@ -180,6 +182,7 @@
   --card-selected-shadow: 0 0 0 2px rgba(5, 150, 105, 0.2);
   --accent-shadow: rgba(5, 150, 105, 0.15);
   --hover: #E8EDE8;
+  --timeline-bg: rgba(242, 247, 245, 0.95);
   --toast-success-bg: #ECFDF5; --toast-success-text: #065F46; --toast-success-border: #A7F3D0;
   --toast-error-bg: #FEF2F2; --toast-error-text: #991B1B; --toast-error-border: #FECACA;
   --toast-info-bg: #ECFDF5; --toast-info-text: #047857; --toast-info-border: rgba(4, 120, 87, 0.2);
@@ -220,6 +223,7 @@
   --card-selected-shadow: 0 0 0 2px rgba(236, 72, 153, 0.2);
   --accent-shadow: rgba(236, 72, 153, 0.15);
   --hover: #F5E8F0;
+  --timeline-bg: rgba(255, 251, 253, 0.95);
   --toast-success-bg: #ECFDF5; --toast-success-text: #065F46; --toast-success-border: #A7F3D0;
   --toast-error-bg: #FEF2F2; --toast-error-text: #991B1B; --toast-error-border: #FECACA;
   --toast-info-bg: #FCE7F3; --toast-info-text: #BE185D; --toast-info-border: rgba(190, 24, 93, 0.2);
@@ -260,6 +264,7 @@
   --card-selected-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25);
   --accent-shadow: rgba(34, 197, 94, 0.2);
   --hover: #1A1A1A;
+  --timeline-bg: rgba(10, 10, 10, 0.95);
   --toast-success-bg: #052E16; --toast-success-text: #86EFAC; --toast-success-border: #166534;
   --toast-error-bg: #7F1D1D; --toast-error-text: #FECACA; --toast-error-border: #991B1B;
   --toast-info-bg: #052E16; --toast-info-text: #86EFAC; --toast-info-border: #166534;
@@ -300,6 +305,7 @@
   --card-selected-shadow: 0 0 0 2px rgba(249, 115, 22, 0.25);
   --accent-shadow: rgba(249, 115, 22, 0.2);
   --hover: #33261E;
+  --timeline-bg: rgba(28, 20, 16, 0.95);
   --toast-success-bg: #064E3B; --toast-success-text: #A7F3D0; --toast-success-border: #065F46;
   --toast-error-bg: #7F1D1D; --toast-error-text: #FECACA; --toast-error-border: #991B1B;
   --toast-info-bg: #431407; --toast-info-text: #FDBA74; --toast-info-border: #7C2D12;

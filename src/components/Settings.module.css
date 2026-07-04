@@ -683,6 +683,67 @@
   background: var(--input-bg);
 }
 
+/* 分段控件（复刻 tabBar 风格） */
+.sSegGroup {
+  display: flex;
+  background: var(--seg-bg, var(--section-bg));
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.sSegOpt {
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.sSegOpt:hover:not(.sSegActive) {
+  color: var(--text-primary);
+}
+.sSegActive {
+  background: var(--seg-active-bg, var(--card-bg));
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+.sSegEmoji {
+  font-size: 14px;
+  line-height: 1;
+}
+/* tooltip */
+.sSegOpt::after {
+  content: attr(title);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--text-primary);
+  color: #fff;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 10;
+}
+.sSegOpt:hover::after {
+  opacity: 1;
+}
+
 /* Settings footer */
 .sFooter {
   padding: 16px 20px 20px;

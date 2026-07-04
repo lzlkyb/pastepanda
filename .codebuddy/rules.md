@@ -16,7 +16,11 @@
 不要自动提交，等用户说"提交"或"commit"再操作。
 
 ## 6. 预览测试用 Tauri dev 后台运行
-启动命令用 `Start-Process` 后台方式，不阻塞终端。改代码支持热更新无需反复重启。
+启动命令（在 clipboard-manager-tauri 目录下执行）：
+```powershell
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "npx tauri dev" -WindowStyle Minimized
+```
+通过独立 PowerShell 窗口后台启动，支持 Vite HMR 热更新，不阻塞主终端。改代码支持热更新无需反复重启。
 
 ## 7. 方案设计需考虑代码架构
 模块化、可维护性、扩展性，遵循项目已有的架构模式。
@@ -26,6 +30,9 @@
 
 ## 9. 方案设计需考虑用户体验
 交互流畅度、反馈及时性、边界状态处理（加载中/空状态/错误）。
+
+## 10. 改完代码不需要重启 dev
+如果 dev 已在运行，Vite HMR 会自动热更新。直接看效果即可，不要每次改完代码都尝试重新启动 dev。
 
 ---
 

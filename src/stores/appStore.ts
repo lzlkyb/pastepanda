@@ -38,7 +38,7 @@ export interface AppConfig {
   current_workspace: string;
   workspaces: string[];
   double_click_action: "copy" | "preview"; // 双击列表行为
-  hover_preview_enabled: boolean; // 鼠标悬停卡片时显示 Popover 气泡预览
+  hover_mode: "off" | "inline" | "popover"; // 鼠标悬停卡片交互模式
 }
 
 // ===== Store 接口 =====
@@ -113,7 +113,7 @@ const DEFAULT_CONFIG: AppConfig = {
   current_workspace: "默认",
   workspaces: ["默认"],
   double_click_action: "preview",
-  hover_preview_enabled: true,
+  hover_mode: "popover",
 };
 
 // ===== Store =====
@@ -303,8 +303,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPaused: (p) => set({ paused: p }),
 
   // 配置
-  updateConfig: (partial) =>
-    set((s) => ({ config: { ...s.config, ...partial } })),
+  updateConfig: (partial) => {
+    // 兼容旧配置：hover_preview_enabled → hover_mode
+    const clean = { ...partial };
+    if ("hover_preview_enabled" in clean) {
+      clean.hover_mode = clean.hover_preview_enabled ? "popover" : "off";
+      delete clean.hover_preview_enabled;
+    }
+    set((s) => ({ config: { ...s.config, ...clean } }));
+  },
 
   // 计算属性（带简单缓存避免频繁计算）
   _filterCache: null as { key: string; result: HistoryItem[] } | null,

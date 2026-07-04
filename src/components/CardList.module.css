@@ -1,10 +1,13 @@
 /* CardList 组件样式 — 卡片列表 + 批量操作 + 加载更多 */
 
+/* #3 节点间距自动对齐 — CSS 变量统一卡片高度，供 Timeline 引用 */
 .cardList {
-  padding: 10px 16px 80px;
+  --card-height: 72px;
+  --card-gap: 10px;
+  padding: 10px 0 80px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--card-gap);
 }
 
 /* 卡片外层容器：让 Popover 绝对定位脱离 .card 的 overflow:hidden 裁剪 */
@@ -28,7 +31,7 @@
   cursor: pointer;
   position: relative;
   overflow: hidden;
-  height: 72px;
+  height: var(--card-height, 72px);
   width: 100%;
   box-sizing: border-box;
 }
@@ -49,6 +52,18 @@
 .cardFile::before { background: #34C759; }
 .cardCode::before { background: #BF5AF2; }
 .cardPinned::before { background: #FFD60A; }
+
+/* #5 固定卡片 📌 标记 — 在卡片左侧边线上叠加金色图钉 */
+.cardPinned::after {
+  content: '📌';
+  position: absolute;
+  left: -1px;
+  top: 4px;
+  font-size: 10px;
+  line-height: 1;
+  z-index: 3;
+  filter: drop-shadow(0 1px 2px rgba(180, 83, 9, 0.3));
+}
 
 .card:hover {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
@@ -215,6 +230,95 @@
   border-radius: 4px;
 }
 
+/* ===== 按钮模式：卡片内嵌操作按钮 ===== */
+.cardInlineActions {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 5;
+  pointer-events: none;
+}
+.cardInlineVisible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 按钮模式 hover 时隐藏时间 */
+.cardInlineVisible ~ .cardTime,
+.cardWrap:has(.cardInlineVisible) .cardTime {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.cardInlineBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  background: var(--card-bg);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.cardInlineBtn:hover {
+  transform: scale(1.1);
+}
+.cardInlineBtn:active {
+  transform: scale(0.95);
+}
+
+.cardInlineBtnFav {
+  color: #B45309;
+  background: #FEF3C7;
+  border: 1px solid #FDE68A;
+}
+.cardInlineBtnFav:hover {
+  background: #FDE68A;
+}
+.cardInlineBtnFavActive {
+  color: #92400E;
+  background: #FDE68A;
+  border: 1px solid #F59E0B;
+}
+
+.cardInlineBtnCopy {
+  color: var(--accent);
+  background: var(--accent-light);
+  border: 1px solid var(--accent);
+}
+.cardInlineBtnCopy:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.cardInlineBtnEdit {
+  color: #6D28D9;
+  background: #EDE9FE;
+  border: 1px solid #C4B5FD;
+}
+.cardInlineBtnEdit:hover {
+  background: #DDD6FE;
+}
+
+.cardInlineBtnDel {
+  color: #DC2626;
+  background: #FEE2E2;
+  border: 1px solid #FECACA;
+}
+.cardInlineBtnDel:hover {
+  background: #FECACA;
+}
+
 /* ===== 批量操作工具栏 ===== */
 .batchToolbar {
   display: flex;
@@ -302,6 +406,13 @@
   font-size: 12px;
   color: var(--text-secondary);
   margin: 0;
+}
+.emptyActions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 8px;
+  flex-wrap: wrap;
 }
 .emptyClearBtn {
   margin-top: 8px;
@@ -907,10 +1018,31 @@
   gap: 12px;
 }
 
+/* ===== 主内容区（relative 定位容器，包裹 timeline + 滚动区） ===== */
+.contentArea {
+  flex: 1;
+  display: flex;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* 时间轴可见时，整个 contentArea 保持不变，但内部滚动区会右移 */
+
 /* ===== 滚动区域 ===== */
 .scrollArea {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
+  position: relative;
+  padding: 10px 16px 80px;
+  transition: padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* 时间轴可见时卡片区域右移 */
+.scrollAreaTimelineVisible {
+  padding-left: calc(16px + 50px);
+}
+
+

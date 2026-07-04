@@ -1,15 +1,16 @@
-import { useState, useEffect, useRef, lazy, Suspense, useCallback } from "react";
+import { useState, useEffect, useRef, lazy, Suspense, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useAppStore, HistoryItem } from "@/stores/appStore";
+import { useAppStore, HistoryItem, FilterType } from "@/stores/appStore";
 import { useToast } from "@/components/Toast";
 import { CardWithContext, ImgState } from "@/components/Card";
 import { ContextMenu } from "@/components/ContextMenu";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { pasteText, pasteImage, getImageThumbnail, getImageDataUrl, getImageBase64, getImageInfo, loadMoreHistory, deleteHistory } from "@/lib/api";
 import { invoke } from "@tauri-apps/api/core";
-import { ClipboardList, Copy, Search, Zap, ZoomIn, ZoomOut, RotateCw, Download, X, Info, Trash2, FileDown, ScanText, Pin, CheckSquare, Square } from "lucide-react";
+import { ClipboardList, Copy, Search, Zap, ZoomIn, ZoomOut, RotateCw, Download, X, Info, Trash2, FileDown, ScanText, Pin, CheckSquare, Square, Clock, Package, FileX } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Timeline, type TimeGroup, type TimelineNode } from "@/components/Timeline";
 import styles from "./CardList.module.css";
 
 const EditDialog = lazy(() => import("@/components/EditDialog").then(m => ({ default: m.EditDialog })));
@@ -32,7 +33,35 @@ interface OcrResultData {
   full_text: string;
 }
 
-export function CardList() {
+// 分类类型标签
+const FILTER_TYPE_LABELS: Record<FilterType, string> = {
+  all: "全部",
+  text: "文本",
+  image: "图片",
+  file: "文件",
+  pinned: "收藏",
+};
+function getFilterTypeLabel(ft: FilterType): string {
+  return FILTER_TYPE_LABELS[ft] || ft;
+}
+
+// 根据时间戳返回分组标签
+function getTimeGroup(timeStr: string): TimeGroup {
+  const now = new Date();
+  const t = new Date(timeStr.replace(" ", "T"));
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterdayStart = new Date(todayStart.getTime() - 86400000);
+  const weekStart = new Date(todayStart.getTime() - todayStart.getDay() * 86400000);
+
+  if (t >= todayStart) return "today";
+  if (t >= yesterdayStart) return "yesterday";
+  if (t >= weekStart) return "thisWeek";
+  return "earlier";
+}
+
+
+
+export function CardList({ scrollRef: externalScrollRef }: { scrollRef?: React.RefObject<HTMLDivElement | null> }) {
   const history = useAppStore((s) => s.history);
   const searchKeyword = useAppStore((s) => s.searchKeyword);
   const filterType = useAppStore((s) => s.filterType);
@@ -76,8 +105,10 @@ export function CardList() {
   const [retryCount, setRetryCount] = useState(0);
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false); // 列表是否在滚动中（用于禁用 Popover）
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const internalScrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef = externalScrollRef ?? internalScrollRef;
   const scrollTimerRef = useRef<number | null>(null);
+  const timelineHideTimerRef = useRef<number | null>(null);
   const loadedPathsRef = useRef<Set<string>>(new Set());
 
   // 滚动到底部时加载更多
@@ -126,12 +157,13 @@ export function CardList() {
   // 统一使用 store 的过滤排序逻辑（包含拼音搜索、置顶排序等）
   const items = getFilteredItems();
 
-  // 虚拟列表
+  // 虚拟列表（直接使用 items，不再有 separator）
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 82,
     overscan: 8,
+    getItemKey: (i) => items[i]?.id || `vitem-${i}`,
   });
 
   // 异步加载图片缩略图（使用小尺寸缩略图 + 并行加载）
@@ -336,8 +368,23 @@ export function CardList() {
         window.clearTimeout(scrollTimerRef.current);
         scrollTimerRef.current = null;
       }
+      if (timelineHideTimerRef.current !== null) {
+        window.clearTimeout(timelineHideTimerRef.current);
+        timelineHideTimerRef.current = null;
+      }
     };
   }, []);
+
+  // 初始化时间轴滚动指标
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setScrollMetrics({
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      scrollTop: el.scrollTop,
+    });
+  }, [items.length, scrollRef]);
 
   // ESC 键关闭预览 / 清除 OCR 选择
   useEffect(() => {
@@ -618,25 +665,161 @@ export function CardList() {
   // 只计数当前可见列表中的有效选中项
   const selectedCount = items.filter((i) => selectedIds.has(i.id)).length;
 
+  // ========== 时间轴计算 ==========
+  // 每个卡片对应一个时间轴节点（仅在非搜索/非筛选模式下显示）
+  const timelineNodes = useMemo<TimelineNode[]>(() => {
+    if (searchKeyword || filterType !== "all") return [];
+    return items.map((item, idx) => ({
+      group: getTimeGroup(item.time),
+      index: idx,
+      label: item.type === "text" ? item.text.slice(0, 15) : (item.type === "image" ? "图片" : "文件"),
+      type: item.type as "text" | "image" | "file",
+    }));
+  }, [items, searchKeyword, filterType]);
+
+  // 分组索引映射：group → 该分组第一个卡片的索引
+  const timelineGroupIndices = useMemo<Record<TimeGroup, number>>(() => {
+    const result: Record<TimeGroup, number> = {
+      today: -1,
+      yesterday: -1,
+      thisWeek: -1,
+      earlier: -1,
+    };
+    if (searchKeyword || filterType !== "all") return result;
+    for (let i = 0; i < items.length; i++) {
+      const group = getTimeGroup(items[i].time);
+      if (result[group] === -1) result[group] = i;
+    }
+    return result;
+  }, [items, searchKeyword, filterType]);
+
+  // 时间轴可见状态（用于控制卡片区域右移）
+  const [timelineVisible, setTimelineVisible] = useState(false);
+
+  // 滚动到指定卡片索引
+  const handleScrollToIndex = useCallback((index: number) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const item = items[index];
+    if (!item) return;
+    const virtItem = virtualizer.getVirtualItems().find(vi => vi.index === index);
+    const top = virtItem?.start ?? index * 82;
+    el.scrollTo({ top: Math.max(0, top - 10), behavior: "smooth" });
+    // 高亮闪烁
+    const targetEl = document.querySelector(`[data-item-id="${item.id}"]`);
+    if (targetEl) {
+      const card = targetEl.querySelector('[class*="card"]') as HTMLElement;
+      if (card) {
+        card.style.boxShadow = '0 0 0 3px var(--accent), 0 8px 24px rgba(59,130,246,0.3)';
+        setTimeout(() => { card.style.boxShadow = ''; }, 800);
+      }
+    }
+  }, [items, scrollRef, virtualizer]);
+
+  // 拖拽时间轴滚动
+  const handleDragScroll = useCallback((scrollTop: number) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = scrollTop;
+  }, [scrollRef]);
+
+  // 滚动区域尺寸（传给 Timeline）
+  const [scrollMetrics, setScrollMetrics] = useState({ scrollHeight: 0, clientHeight: 0, scrollTop: 0 });
+
   return (
     <ContextMenu>
-    <div className={styles.scrollArea} ref={scrollRef} onScroll={handleScroll} role="listbox" aria-label="剪贴板记录列表" aria-multiselectable="true" aria-setsize={items.length} aria-live="polite">
-      <div className={styles.cardList}>
+    {/* B1 竖版左侧时间轴 — content-area 包裹 timeline + 滚动区 */}
+    <div className={styles.contentArea}>
+      <Timeline
+        visible={timelineVisible}
+        scrollHeight={scrollMetrics.scrollHeight}
+        clientHeight={scrollMetrics.clientHeight}
+        scrollTop={scrollMetrics.scrollTop}
+        nodes={timelineNodes}
+        groupIndices={timelineGroupIndices}
+        onScrollToIndex={handleScrollToIndex}
+        onDragScroll={handleDragScroll}
+        scrollRef={scrollRef}
+        onTriggerEnter={() => {
+          setTimelineVisible(true);
+          if (timelineHideTimerRef.current) window.clearTimeout(timelineHideTimerRef.current);
+        }}
+        onTimelineLeave={() => {
+          setTimelineVisible(false);
+        }}
+      />
+
+      <div
+        className={`${styles.scrollArea} ${timelineVisible ? styles.scrollAreaTimelineVisible : ""}`}
+        ref={scrollRef}
+        onScroll={(e) => {
+          handleScroll();
+          // 滚动时显示时间轴
+          setTimelineVisible(true);
+          // 更新滚动指标
+          const el = e.currentTarget;
+          setScrollMetrics({
+            scrollHeight: el.scrollHeight,
+            clientHeight: el.clientHeight,
+            scrollTop: el.scrollTop,
+          });
+          // 停止滚动后延迟隐藏
+          if (timelineHideTimerRef.current) window.clearTimeout(timelineHideTimerRef.current);
+          timelineHideTimerRef.current = window.setTimeout(() => {
+            setTimelineVisible(false);
+            timelineHideTimerRef.current = null;
+          }, 1500);
+        }}
+        role="listbox"
+        aria-label="剪贴板记录列表"
+        aria-multiselectable="true"
+        aria-setsize={items.length}
+        aria-live="polite"
+      >
+        {/* 左侧感应区域 — 已在 Timeline 组件中渲染 */}
+        {/* Timeline 组件在 contentArea 中，不随滚动 */}
+        <div className={styles.cardList}>
         {items.length === 0 ? (
           <div className={styles.emptyState}>
             <div className={styles.emptyIcon}>
-              <ClipboardList size={28} style={{ color: "var(--accent)" }} strokeWidth={1.5} />
+              {searchKeyword ? (
+                <Search size={28} style={{ color: "var(--accent)" }} strokeWidth={1.5} />
+              ) : filterType !== "all" ? (
+                <FileX size={28} style={{ color: "var(--accent)" }} strokeWidth={1.5} />
+              ) : (
+                <ClipboardList size={28} style={{ color: "var(--accent)" }} strokeWidth={1.5} />
+              )}
             </div>
             <div style={{ textAlign: "center" }}>
               <p className={styles.emptyTitle}>
-                {searchKeyword ? "没有找到匹配的记录" : filterType !== "all" ? "该分类暂无记录" : "剪贴板是空的"}
+                {searchKeyword
+                  ? `没有找到 "${searchKeyword}" 的相关记录`
+                  : filterType !== "all"
+                    ? `${getFilterTypeLabel(filterType)}分类暂无记录`
+                    : "剪贴板是空的"}
               </p>
               <p className={styles.emptyDesc}>
-                {searchKeyword ? "试试其他关键词" : "复制任意内容，它会自动出现在这里"}
+                {searchKeyword
+                  ? "试试调整关键词，或检查拼写是否正确"
+                  : filterType !== "all"
+                    ? "该类型下还没有记录，复制新内容后会自动出现在这里"
+                    : "复制任意内容，它会自动出现在这里"}
               </p>
               {searchKeyword && (
-                <button onClick={() => useAppStore.getState().setSearchKeyword("")} className={styles.emptyClearBtn}>
-                  清除搜索条件
+                <div className={styles.emptyActions}>
+                  <button onClick={() => useAppStore.getState().setSearchKeyword("")} className={styles.emptyClearBtn}>
+                    清除搜索条件
+                  </button>
+                  {filterType !== "all" && (
+                    <button onClick={() => useAppStore.getState().setFilterType("all")} className={styles.emptyClearBtn}>
+                      查看全部类型
+                    </button>
+                  )}
+                </div>
+              )}
+              {!searchKeyword && filterType !== "all" && (
+                <button onClick={() => useAppStore.getState().setFilterType("all")} className={styles.emptyClearBtn}>
+                  查看全部类型
                 </button>
               )}
             </div>
@@ -699,6 +882,7 @@ export function CardList() {
             <div style={{ height: virtualizer.getTotalSize(), width: "100%", position: "relative" }}>
               {virtualizer.getVirtualItems().map((vItem) => {
                 const item = items[vItem.index];
+                if (!item) return null;
                 return (
                   <div key={item.id} data-index={vItem.index} data-item-id={item.id} ref={virtualizer.measureElement}
                     style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vItem.start}px)` }}>
@@ -1017,6 +1201,7 @@ export function CardList() {
         onConfirm={handleBatchDelete}
         onCancel={() => setShowBatchDeleteConfirm(false)}
       />
+    </div>
     </div>
     </ContextMenu>
   );

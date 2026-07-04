@@ -242,8 +242,13 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
       </motion.div>
 
       {/* ★ 悬停 Popover 气泡弹窗（移到卡片外部，避免被 card overflow:hidden 裁剪） */}
-      {hovered && config.hover_preview_enabled && !disablePreview && (
+      {hovered && config.hover_mode === "popover" && !disablePreview && (
         <CardHoverPopover item={item} imageState={imageState} subType={subType} onEdit={onEdit} onMouseEnter={enterHover} onMouseLeave={scheduleClose} />
+      )}
+
+      {/* ★ 按钮模式：卡片内嵌操作按钮 */}
+      {config.hover_mode === "inline" && (
+        <InlineCardActions item={item} hovered={hovered} onEdit={onEdit} />
       )}
     </div>
   );
@@ -429,6 +434,95 @@ const CardHoverPopover = memo(function CardHoverPopover({
         </div>
       </div>
     </>
+  );
+});
+
+/**
+ * 按钮模式：卡片内嵌操作按钮（hover 时显示）
+ * - 在卡片右侧显示 4 个操作按钮：收藏 / 复制 / 编辑 / 删除
+ * - hover 时淡入显示，时间文字淡出隐藏
+ */
+const InlineCardActions = memo(function InlineCardActions({
+  item,
+  hovered,
+  onEdit,
+}: {
+  item: HistoryItem;
+  hovered: boolean;
+  onEdit?: (item: HistoryItem) => void;
+}) {
+  const togglePin = useAppStore((s) => s.togglePin);
+  const removeItems = useAppStore((s) => s.removeItems);
+  const { toast } = useToast();
+
+  const handleCopy = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    try {
+      if (item.type === "image" && item.content) {
+        const { getImageBase64 } = await import("@/lib/api");
+        const dataUrl = await getImageBase64(item.content);
+        const mimeMatch = dataUrl.match(/^data:([^;]+);base64,/);
+        const mimeType = mimeMatch ? mimeMatch[1] : "image/png";
+        const base64Data = dataUrl.split(",")[1];
+        const byteChars = atob(base64Data);
+        const bytes = new Uint8Array(byteChars.length);
+        for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+        const blob = new Blob([bytes], { type: mimeType });
+        await navigator.clipboard.write([new ClipboardItem({ [mimeType]: blob })]);
+        toast("已复制", "success");
+      } else if (item.type === "file" && item.content) {
+        await navigator.clipboard.writeText(item.content);
+        toast("已复制路径", "success");
+      } else {
+        await navigator.clipboard.writeText(item.text || "");
+        toast("已复制", "success");
+      }
+    } catch {
+      toast("复制失败", "error");
+    }
+  }, [item, toast]);
+
+  const handleFav = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    togglePin(item.id);
+    toast(item.pinned ? "已取消收藏" : "已收藏", "success");
+  }, [item.id, item.pinned, togglePin, toast]);
+
+  const handleEdit = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    onEdit?.(item);
+  }, [item, onEdit]);
+
+  const handleDelete = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    removeItems([item.id]);
+    toast("已删除，可按 Ctrl+Z 撤销", "success");
+  }, [item.id, removeItems, toast]);
+
+  return (
+    <div className={`${styles.cardInlineActions} ${hovered ? styles.cardInlineVisible : ""}`}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button className={`${styles.cardInlineBtn} ${styles.cardInlineBtnFav} ${item.pinned ? styles.cardInlineBtnFavActive : ""}`} onClick={handleFav} title={item.pinned ? "取消收藏" : "收藏"}>
+        {item.pinned ? "★" : "☆"}
+      </button>
+      <button className={`${styles.cardInlineBtn} ${styles.cardInlineBtnCopy}`} onClick={handleCopy} title="复制">
+        📋
+      </button>
+      {item.type === "text" && onEdit && (
+        <button className={`${styles.cardInlineBtn} ${styles.cardInlineBtnEdit}`} onClick={handleEdit} title="编辑">
+          ✏️
+        </button>
+      )}
+      <button className={`${styles.cardInlineBtn} ${styles.cardInlineBtnDel}`} onClick={handleDelete} title="删除">
+        🗑
+      </button>
+    </div>
   );
 });
 

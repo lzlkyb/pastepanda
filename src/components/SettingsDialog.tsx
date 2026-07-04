@@ -421,23 +421,40 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                     {config.double_click_action === "copy" ? "复制" : "预览"}
                   </button>
                 </div>
-                <ToggleRow
-                  icon="💬"
-                  gradient="linear-gradient(135deg, #8B5CF6, #6366F1)"
-                  label="悬停预览气泡"
-                  desc="鼠标悬停卡片时弹出预览气泡（关闭后仅通过双击查看详情）"
-                  value={config.hover_preview_enabled}
-                  onChange={(v) => updateAndSave({ hover_preview_enabled: v })}
-                  recommend
-                  tooltip="推荐开启，快速浏览长文本内容"
-                  detailTitle="悬停预览气泡"
-                  detail={<>
-                    <p>鼠标悬停在卡片上时弹出内容预览气泡。</p>
-                    <p>📌 <b>适合</b>：快速浏览长文本、图片预览</p>
-                    <p>❌ <b>关闭后</b>：需双击卡片才能查看详情</p>
-                    <p>💡 <b>建议开启</b>，大幅提升浏览效率</p>
-                  </>}
-                />
+                <div className={styles.sRow}>
+                  <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #6366F1, #818CF8)" }}>🖱️</span>
+                  <div className={`${styles.sRowBody}`}>
+                    <div className={`${styles.sRowLabel}`}>
+                      卡片悬浮行为
+                      <span className={`${styles.sRowRecommend}`}>⭐推荐</span>
+                      <HelpTooltip
+                        tooltip="鼠标悬停卡片时的交互方式"
+                        detailTitle="卡片悬浮行为"
+                        detail={<>
+                          <p>设置鼠标悬停在卡片上时的交互方式。</p>
+                          <p>📌 <b>关闭</b>：无悬浮交互，界面最简洁</p>
+                          <p>📌 <b>操作按钮</b>：Hover 显示复制/收藏/编辑/删除按钮，时间自动隐藏</p>
+                          <p>📌 <b>预览气泡</b>：弹出 Popover 气泡，内容预览+操作</p>
+                          <p>💡 <b>推荐气泡模式</b>，适合浏览长文本内容</p>
+                        </>}
+                      />
+                    </div>
+                    <div className={`${styles.sRowDesc}`}>
+                      {config.hover_mode === "off" ? "无悬浮交互，界面最简洁" : config.hover_mode === "inline" ? "Hover 显示操作按钮，时间自动隐藏" : "弹出 Popover 预览气泡，内容预览+操作"}
+                    </div>
+                  </div>
+                  <div className={styles.sSegGroup}>
+                    <button className={`${styles.sSegOpt}${config.hover_mode === "off" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ hover_mode: "off" })} title="关闭">
+                      <span className={styles.sSegEmoji}>🚫</span>
+                    </button>
+                    <button className={`${styles.sSegOpt}${config.hover_mode === "inline" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ hover_mode: "inline" })} title="操作按钮">
+                      <span className={styles.sSegEmoji}>👆</span>
+                    </button>
+                    <button className={`${styles.sSegOpt}${config.hover_mode === "popover" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ hover_mode: "popover" })} title="预览气泡">
+                      <span className={styles.sSegEmoji}>💬</span>
+                    </button>
+                  </div>
+                </div>
                 <ToggleRow icon="🔁" gradient="linear-gradient(135deg, #06B6D4, #0078D4)" label="依次粘贴循环" desc="到达末尾后从头开始" value={config.sequential_loop} onChange={(v) => updateAndSave({ sequential_loop: v })}
                   tooltip="适合重复粘贴同一组内容时使用"
                 />

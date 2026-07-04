@@ -1,0 +1,338 @@
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import styles from "./Timeline.module.css";
+
+/** 时间分组类型 */
+export type TimeGroup = "today" | "yesterday" | "thisWeek" | "earlier";
+
+/** 时间分组标签 */
+export const TIME_GROUP_LABELS: Record<TimeGroup, string> = {
+  today: "今天",
+  yesterday: "昨天",
+  thisWeek: "本周",
+  earlier: "更早",
+};
+
+/** 卡片类型 */
+export type CardItemType = "text" | "image" | "file";
+
+/** 卡片类型 → emoji 图标映射 */
+export const CARD_TYPE_ICONS: Record<CardItemType, string> = {
+  text: "📝",
+  image: "🖼",
+  file: "📁",
+};
+
+/** 单个时间轴节点 — 每个卡片对应一个节点 */
+export interface TimelineNode {
+  group: TimeGroup;
+  index: number;    // 卡片在列表中的索引
+  label: string;    // 节点的 tooltip 文字（截断后的卡片标题）
+  type: CardItemType; // 卡片类型，用于显示不同图标
+}
+
+interface TimelineProps {
+  /** 时间轴是否可见（由父组件 CardList 统一控制） */
+  visible: boolean;
+  /** 卡片总高度（scrollHeight） */
+  scrollHeight: number;
+  /** 卡片区域 clientHeight */
+  clientHeight: number;
+  /** 当前 scrollTop */
+  scrollTop: number;
+  /** 每个卡片对应的时间轴节点 */
+  nodes: TimelineNode[];
+  /** 分组索引映射：group → 该分组第一个卡片的索引 */
+  groupIndices: Record<TimeGroup, number>;
+  /** 滚动到指定索引 */
+  onScrollToIndex: (index: number) => void;
+  /** 拖拽时滚动到指定 scrollTop */
+  onDragScroll: (scrollTop: number) => void;
+  /** triggerZone 鼠标进入回调（通知父组件显示时间轴） */
+  onTriggerEnter?: () => void;
+  /** timeline 区域鼠标离开回调（通知父组件隐藏时间轴） */
+  onTimelineLeave?: () => void;
+  /** 卡片列表的滚动容器 ref，用于滚轮事件转发 */
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+}
+
+export function Timeline({
+  visible,
+  scrollHeight,
+  clientHeight,
+  scrollTop,
+  nodes,
+  groupIndices,
+  onScrollToIndex,
+  onDragScroll,
+  onTriggerEnter,
+  onTimelineLeave,
+  scrollRef,
+}: TimelineProps) {
+  const [dragging, setDragging] = useState(false);
+  const [capsuleDragging, setCapsuleDragging] = useState(false);
+  const [currentGroup, setCurrentGroup] = useState<TimeGroup>("today");
+
+  // #6 计算当前分组的卡片数量
+  const currentGroupCount = useMemo(() => {
+    const groupOrder: TimeGroup[] = ["today", "yesterday", "thisWeek", "earlier"];
+    return getGroupCardCount(currentGroup, groupOrder, groupIndices, nodes.length);
+  }, [currentGroup, groupIndices, nodes.length]);
+
+  const dragStartRef = useRef({ y: 0, scrollTop: 0 });
+  const timelineRef = useRef<HTMLDivElement>(null);
+  const timelineInnerRef = useRef<HTMLDivElement>(null);
+  const hideTimerRef = useRef<number | null>(null);
+
+  // 清理 timer
+  useEffect(() => {
+    return () => {
+      if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+    };
+  }, []);
+
+  // 拖拽结束后通知父组件延迟隐藏
+  const scheduleHide = useCallback((delay: number) => {
+    if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = window.setTimeout(() => {
+      if (!dragging && !capsuleDragging) {
+        onTimelineLeave?.();
+      }
+      hideTimerRef.current = null;
+    }, delay);
+  }, [dragging, capsuleDragging, onTimelineLeave]);
+
+  // 同步 timeline 滚动偏移
+  const translateY = useMemo(() => {
+    const tlInner = timelineInnerRef.current;
+    const tlScroll = timelineRef.current?.querySelector(`.${styles.timelineScroll}`) as HTMLElement | null;
+    if (!tlInner || !tlScroll) return 0;
+    const maxScroll = tlInner.scrollHeight - tlScroll.clientHeight;
+    if (maxScroll <= 0) return 0;
+    const ratio = scrollTop / (scrollHeight - clientHeight || 1);
+    return -ratio * maxScroll;
+  }, [scrollTop, scrollHeight, clientHeight]);
+
+  // 更新吸顶胶囊文字（基于当前 scrollTop 判断可见的第一个分组）
+  useEffect(() => {
+    if (!visible) return;
+    // #3 通过 CSS 变量动态读取卡片高度+gap，避免硬编码
+    const cardListEl = document.querySelector('[class*="cardList"]');
+    const cardHeightVar = cardListEl ? parseInt(getComputedStyle(cardListEl).getPropertyValue('--card-height').trim()) || 72 : 72;
+    const cardGapVar = cardListEl ? parseInt(getComputedStyle(cardListEl).getPropertyValue('--card-gap').trim()) || 10 : 10;
+    const cardHeight = cardHeightVar + cardGapVar;
+    const sepHeight = 36;
+    let acc = 0;
+    const groups: { group: TimeGroup; start: number }[] = [];
+    const groupOrder: TimeGroup[] = ["today", "yesterday", "thisWeek", "earlier"];
+    for (const g of groupOrder) {
+      const idx = groupIndices[g];
+      if (idx === undefined || idx < 0) continue;
+      groups.push({ group: g, start: acc });
+      acc += sepHeight;
+      const count = getGroupCardCount(g, groupOrder, groupIndices, nodes.length);
+      acc += count * cardHeight;
+    }
+    for (let i = groups.length - 1; i >= 0; i--) {
+      if (scrollTop >= groups[i].start) {
+        setCurrentGroup(groups[i].group);
+        return;
+      }
+    }
+    setCurrentGroup(groups[0]?.group || "today");
+  }, [scrollTop, visible, groupIndices, nodes.length]);
+
+  // 计算分组之间的卡片数
+  function getGroupCardCount(
+    group: TimeGroup,
+    order: TimeGroup[],
+    indices: Record<TimeGroup, number>,
+    total: number
+  ): number {
+    const idx = order.indexOf(group);
+    if (idx === order.length - 1) {
+      return total - (indices[group] || 0);
+    }
+    const nextGroup = order.slice(idx + 1).find((g) => indices[g] >= 0);
+    if (nextGroup !== undefined && indices[nextGroup] !== undefined) {
+      return indices[nextGroup] - (indices[group] || 0);
+    }
+    return total - (indices[group] || 0);
+  }
+
+  // 拖拽节点/分组标签
+  const handleNodeMouseDown = useCallback(
+    (e: React.MouseEvent, nodeIndex?: number) => {
+      const node = e.currentTarget as HTMLElement;
+      const isGroupLabel = node.classList.contains(styles.timelineGroupLabel);
+
+      e.preventDefault();
+      setDragging(true);
+      dragStartRef.current = {
+        y: e.clientY,
+        scrollTop: scrollTop,
+      };
+
+      if (isGroupLabel && nodeIndex !== undefined) {
+        // 点击分组标签 → 直接跳转
+        onScrollToIndex(nodeIndex);
+      }
+
+      const handleMove = (ev: MouseEvent) => {
+        const dy = ev.clientY - dragStartRef.current.y;
+        const scaleFactor = scrollHeight / (clientHeight || 700);
+        const scrollDelta = dy * scaleFactor;
+        const targetScroll = Math.max(
+          0,
+          Math.min(
+            scrollHeight - clientHeight,
+            dragStartRef.current.scrollTop + scrollDelta
+          )
+        );
+        onDragScroll(targetScroll);
+      };
+
+      const handleUp = () => {
+        setDragging(false);
+        window.removeEventListener("mousemove", handleMove);
+        window.removeEventListener("mouseup", handleUp);
+        scheduleHide(1500);
+      };
+
+      window.addEventListener("mousemove", handleMove);
+      window.addEventListener("mouseup", handleUp);
+    },
+    [scrollTop, scrollHeight, clientHeight, onScrollToIndex, onDragScroll, scheduleHide]
+  );
+
+  // 吸顶胶囊拖拽（加速 1.5x）
+  const handleCapsuleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setCapsuleDragging(true);
+      dragStartRef.current = {
+        y: e.clientY,
+        scrollTop: scrollTop,
+      };
+
+      const handleMove = (ev: MouseEvent) => {
+        const dy = ev.clientY - dragStartRef.current.y;
+        const scaleFactor = (scrollHeight * 1.5) / (clientHeight || 700);
+        const scrollDelta = dy * scaleFactor;
+        const targetScroll = Math.max(
+          0,
+          Math.min(
+            scrollHeight - clientHeight,
+            dragStartRef.current.scrollTop + scrollDelta
+          )
+        );
+        onDragScroll(targetScroll);
+      };
+
+      const handleUp = () => {
+        setCapsuleDragging(false);
+        window.removeEventListener("mousemove", handleMove);
+        window.removeEventListener("mouseup", handleUp);
+        scheduleHide(1500);
+      };
+
+      window.addEventListener("mousemove", handleMove);
+      window.addEventListener("mouseup", handleUp);
+    },
+    [scrollTop, scrollHeight, clientHeight, onDragScroll, scheduleHide]
+  );
+
+  // 点击节点 → 滚动到对应卡片
+  const handleNodeClick = useCallback(
+    (e: React.MouseEvent, index: number) => {
+      if (dragging) return;
+      e.stopPropagation();
+      onScrollToIndex(index);
+    },
+    [dragging, onScrollToIndex]
+  );
+
+  // 滚轮事件 → 转发到卡片列表滚动容器
+  const handleWheel = useCallback(
+    (e: React.WheelEvent) => {
+      const el = scrollRef?.current;
+      if (!el) return;
+      e.preventDefault();
+      el.scrollTop += e.deltaY;
+    },
+    [scrollRef]
+  );
+
+  return (
+    <>
+      {/* 左侧感应区域 — 18px 宽，独立于 timeline */}
+      <div
+        className={styles.timelineTriggerZone}
+        onMouseEnter={onTriggerEnter}
+      />
+
+      {/* 时间轴容器 */}
+      <div
+        ref={timelineRef}
+        className={`${styles.timelineContainer} ${visible ? styles.visible : ""} ${dragging || capsuleDragging ? styles.dragActive : ""}`}
+        onMouseEnter={onTriggerEnter}
+        onMouseLeave={() => scheduleHide(300)}
+        onWheel={handleWheel}
+      >
+        {/* 吸顶胶囊 */}
+        <div
+          className={`${styles.timelineCapsule} ${capsuleDragging ? styles.capsuleDragging : ""}`}
+          onMouseDown={handleCapsuleMouseDown}
+        >
+          <div className={styles.capsuleInner}>📍 {TIME_GROUP_LABELS[currentGroup]}<span className={styles.capsuleCount}> · {currentGroupCount}</span></div>
+        </div>
+
+        {/* 滚动区 */}
+        <div className={styles.timelineScroll}>
+          <div className={styles.timelineTrack} />
+          <div
+            ref={timelineInnerRef}
+            className={styles.timelineInner}
+            style={{ transform: `translateY(${translateY}px)` }}
+          >
+            {nodes.map((node, i) => {
+              // 判断是否需要渲染分组标签（前一个节点不是同一分组）
+              const prevGroup = i > 0 ? nodes[i - 1].group : null;
+              const showGroupLabel = node.group !== prevGroup;
+
+              return (
+                <div key={`node-${i}`}>
+                  {showGroupLabel && (
+                    <div
+                      className={styles.timelineGroupLabel}
+                      data-group={node.group}
+                      onMouseDown={(e) => handleNodeMouseDown(e, node.index)}
+                    >
+                      <div className={styles.timelineGroupLabelDot} />
+                      <div className={styles.timelineGroupLabelText}>
+                        {TIME_GROUP_LABELS[node.group]}
+                      </div>
+                    </div>
+                  )}
+                  <div
+                    className={`${styles.timelineNode} ${node.group === currentGroup ? styles.timelineNodeActive : ""}`}
+                    data-idx={node.index}
+                    onMouseDown={(e) => handleNodeMouseDown(e)}
+                    onClick={(e) => handleNodeClick(e, node.index)}
+                    title={node.label}
+                  >
+                    <div className={styles.timelineNodeIcon}>{CARD_TYPE_ICONS[node.type]}</div>
+                    <div className={styles.timelineTooltip}>{node.label}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 拖拽指示器 */}
+        <div className={styles.timelineDragIndicator} />
+      </div>
+    </>
+  );
+}

@@ -12,6 +12,8 @@ import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
 import { logger } from "@/lib/logger";
 import { pasteText, pasteImage, deleteHistory, togglePin, toggleWindow, sequentialPaste } from "@/lib/api";
 import { ClipboardList, RotateCcw, Loader2, X } from "lucide-react";
+import { BackToTop } from "@/components/BackToTop";
+import { ScrollProvider } from "@/contexts/ScrollContext";
 import appStyles from "./App.module.css";
 
 // 懒加载对话框组件 — 只在打开时才加载对应 JS chunk
@@ -33,6 +35,7 @@ function App() {
   const [initError, setInitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const retryCleanupRef = useRef<(() => void) | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     try { applyTheme((config.theme as ThemeKey) || DEFAULT_THEME); } catch (e) { logger.warn("应用主题失败", e); }
@@ -376,7 +379,10 @@ function App() {
           onSnippets={() => setShowSnippets(true)}
           onExtract={() => setShowExtract(true)}
         />
-        <CardList />
+        <ScrollProvider scrollRef={scrollRef}>
+          <CardList scrollRef={scrollRef} />
+          <BackToTop />
+        </ScrollProvider>
         <QuickPreview />
 
         {/* FAB — 依次粘贴悬浮按钮，独立于滚动区域 */}
@@ -403,6 +409,18 @@ function App() {
             <ExtractDialog open={showExtract} onClose={() => setShowExtract(false)} />
           </ErrorBoundary>
         </Suspense>
+
+        {/* #2 快捷键提示浮层 — 右下角常驻，hover 展开 */}
+        {!showShortcuts && !showSettings && !showSnippets && !showExtract && (
+          <div
+            className={appStyles.shortcutHint}
+            onClick={() => setShowShortcuts(true)}
+            title="查看所有快捷键"
+          >
+            <kbd>?</kbd>
+            <span className={appStyles.shortcutHintText}>快捷键一览</span>
+          </div>
+        )}
 
         {/* 快捷键浮层 — 从 config 动态读取，支持搜索过滤 */}
         {showShortcuts && (
