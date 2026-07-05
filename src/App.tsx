@@ -509,22 +509,22 @@ function App() {
               <CardList scrollRef={scrollRef} lenisRef={lenisRef} />
               <BackToTop />
             </ScrollProvider>
+
+            {/* FAB — 依次粘贴悬浮按钮，定位在卡片面板底部 */}
+            {seqTotal > 0 && (
+              <motion.div initial={{ opacity: 0, y: 20, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.9 }} transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                className={appStyles.fabContainer}>
+                <div className={appStyles.fabCounter}><span className={appStyles.fabCounterNum}>{Math.min(seqPointer, seqTotal)}</span><span className={appStyles.fabCounterSep}>/</span>{seqTotal}</div>
+                <button className={appStyles.fabBtn} onClick={() => sequentialPaste()}>
+                  <ClipboardList size={14} /> 粘贴
+                  <span className={appStyles.fabBtnReset} onClick={(e) => { e.stopPropagation(); resetSeqPointer(); }}><RotateCcw size={10} /></span>
+                </button>
+              </motion.div>
+            )}
           </div>
         </div>
         <QuickPreview />
-
-        {/* FAB — 依次粘贴悬浮按钮，独立于滚动区域 */}
-        {seqTotal > 0 && (
-          <motion.div initial={{ opacity: 0, y: 20, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.9 }} transition={{ type: "spring", stiffness: 400, damping: 25 }}
-            className={appStyles.fabContainer}>
-            <div className={appStyles.fabCounter}><span className={appStyles.fabCounterNum}>{Math.min(seqPointer, seqTotal)}</span><span className={appStyles.fabCounterSep}>/</span>{seqTotal}</div>
-            <button className={appStyles.fabBtn} onClick={() => sequentialPaste()}>
-              <ClipboardList size={14} /> 粘贴
-              <span className={appStyles.fabBtnReset} onClick={(e) => { e.stopPropagation(); resetSeqPointer(); }}><RotateCcw size={10} /></span>
-            </button>
-          </motion.div>
-        )}
 
         <Suspense fallback={null}>
           <ErrorBoundary fallback={null} componentName="设置面板">

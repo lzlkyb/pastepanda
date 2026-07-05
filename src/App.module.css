@@ -30,19 +30,20 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 
-/* FAB — 依次粘贴悬浮按钮 */
+/* FAB — 依次粘贴悬浮按钮，跟随卡片面板定位 */
 .fabContainer {
-  position: fixed;
+  position: absolute;
   bottom: 12px;
-  left: 16px;
-  right: 16px;
+  left: 12px;
+  right: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 10px 16px;
-  z-index: 50;
+  z-index: 10;
   background: var(--card-bg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
