@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>侧边栏样式改版 — 方案 C：macOS Finder 风格</title>
+<style>
+/* ===== 重置 & 基础变量（ocean 主题） ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --app-bg: #F4F6F9;
+  --header-bg-start: #fff;
+  --header-bg-end: #F4F6F9;
+  --card-bg: #fff;
+  --card-border: #E0E4EB;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --seg-bg: #E8E8ED;
+  --seg-active-bg: #fff;
+  --search-bg: #fff;
+  --search-border: #E0E4EB;
+  --hover: #E8ECF2;
+  --sidebar-bg: #F8FAFB;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #E2E6ED;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 20px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== 窗口 ===== */
+.window {
+  width: 680px;
+  height: 520px;
+  background: var(--app-bg);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== TopBar（模拟真实结构） ===== */
+.topbar {
+  padding: 16px 16px 0;
+  background: linear-gradient(180deg, var(--header-bg-start) 0%, var(--header-bg-end) 100%);
+  flex-shrink: 0;
+}
+.topbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* ☰ 侧边栏切换按钮 */
+.sidebar-toggle {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: var(--accent-light);
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  font-size: 16px;
+  flex-shrink: 0;
+  font-family: inherit;
+}
+.topbar-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.topbar-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.topbar-actions {
+  display: flex;
+  gap: 4px;
+}
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 18px;
+  transition: background 0.15s, transform 0.15s;
+}
+.icon-btn:hover { background: rgba(129,140,248,.12); transform: scale(1.08); }
+.icon-btn svg { width: 18px; height: 18px; }
+
+/* 搜索框 */
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--search-bg);
+  border: 1px solid var(--search-border);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+}
+.search-icon { font-size: 14px; line-height: 1; flex-shrink: 0; }
+.search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-family: inherit;
+}
+.search-input::placeholder { color: var(--text-muted); }
+
+/* Tab 分段控件 */
+.tabs-area { padding: 10px 0 0; }
+.segmented {
+  display: flex;
+  background: var(--seg-bg);
+  border-radius: 10px;
+  padding: 3px;
+}
+.seg-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  font-family: inherit;
+}
+.seg-item.active {
+  color: var(--text-primary);
+  font-weight: 600;
+  background: var(--seg-active-bg);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.seg-icon { font-size: 15px; }
+.seg-count {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 筛选行 */
+.filter-bar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 0 4px;
+  align-items: center;
+}
+.filter-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  flex: 1;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: #F1F5F9;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+/* ===== 内容区 ===== */
+.content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ===== 侧边栏（改版后 — macOS Finder 风格） ===== */
+.sidebar {
+  width: 200px;
+  min-width: 200px;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+}
+
+/* 头部 */
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 14px 6px;
+  flex-shrink: 0;
+}
+.sidebar-header-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+.sidebar-header-add {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-family: inherit;
+  line-height: 1;
+  transition: all 0.15s;
+}
+.sidebar-header-add:hover {
+  background: var(--hover);
+  color: var(--accent);
+}
+
+/* 列表区 */
+.sidebar-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* Section 标签 */
+.section-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 10px 10px 4px;
+  opacity: 0.65;
+}
+
+/* 分组项 */
+.item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  transition: all 0.12s;
+  text-align: left;
+  width: 100%;
+}
+.item:hover {
+  background: var(--hover);
+}
+.item.active {
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 图标 */
+.item-icon {
+  font-size: 15px;
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* 颜色圆点（缩小到 6px） */
+.item-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot-blue   { background: #3B82F6; }
+.dot-green  { background: #22C55E; }
+.dot-orange { background: #F97316; }
+.dot-purple { background: #A855F7; }
+
+/* 名称 */
+.item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+
+/* 数量 */
+.item-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  min-width: 18px;
+  text-align: right;
+}
+.item.active .item-count {
+  color: var(--accent);
+}
+
+/* 分割线 */
+.sidebar-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 6px 10px;
+}
+
+/* 底部 */
+.sidebar-footer {
+  padding: 8px;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.collapse-btn {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+.collapse-btn:hover {
+  background: var(--hover);
+  color: var(--text-secondary);
+}
+.collapse-btn svg {
+  width: 14px;
+  height: 14px;
+  opacity: 0.6;
+}
+
+/* ===== 右侧卡片面板 ===== */
+.card-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.card-list {
+  padding: 10px 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* 卡片（模仿真实 Card 组件） */
+.card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  height: 72px;
+  transition: all 0.2s cubic-bezier(0.4,0,0.2,1);
+}
+.card:hover {
+  box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+  transform: translateY(-2px) scale(1.008);
+}
+
+/* 左侧彩色边线 */
+.card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+}
+.card-text::before { background: var(--accent); }
+.card-image::before { background: #FF6482; }
+.card-file::before { background: #34C759; }
+
+/* 卡片图标 */
+.card-icon {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.bgBlue   { background: linear-gradient(135deg, #E8F1FB, #D6E8FA); }
+.bgGreen  { background: linear-gradient(135deg, #E5F8EC, #D4F2DE); }
+.bgPink   { background: linear-gradient(135deg, #FDE8EE, #FAD6DF); }
+
+/* 卡片内容 */
+.card-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+  word-break: break-word;
+  max-height: 36px;
+  white-space: normal;
+}
+.card-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.card-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== 主题切换 ===== */
+.theme-switcher {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  max-width: 340px;
+  justify-content: flex-end;
+}
+.theme-btn {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(0,0,0,0.15);
+  background: #fff;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+  color: #333;
+}
+.theme-btn:hover { background: #f0f0f0; }
+.theme-btn.active-theme {
+  background: #0284C7;
+  color: #fff;
+  border-color: #0284C7;
+}
+
+/* ===== 对比标签 ===== */
+.compare-label {
+  position: fixed;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 13px;
+  font-weight: 600;
+  color: #0284C7;
+  background: #E0F2FE;
+  padding: 4px 16px;
+  border-radius: 20px;
+  border: 1px solid #BAE6FD;
+}
+</style>
+</head>
+<body>
+
+<div class="theme-switcher">
+  <button class="theme-btn active-theme" onclick="setTheme('ocean')">海洋</button>
+  <button class="theme-btn" onclick="setTheme('midnight')">午夜</button>
+  <button class="theme-btn" onclick="setTheme('forest')">森林</button>
+  <button class="theme-btn" onclick="setTheme('blossom')">樱花</button>
+  <button class="theme-btn" onclick="setTheme('terminal')">终端</button>
+  <button class="theme-btn" onclick="setTheme('sunset')">日落</button>
+</div>
+
+<div class="compare-label">侧边栏改版 · macOS Finder 风格</div>
+
+<!-- 窗口 -->
+<div class="window" id="appWindow">
+  <!-- ===== TopBar（真实结构） ===== -->
+  <div class="topbar">
+    <div class="topbar-row">
+      <div class="topbar-left">
+        <button class="sidebar-toggle" title="收起侧边栏">☰</button>
+        <span class="topbar-logo">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0284C7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+        </span>
+        <span class="topbar-title">PastePanda</span>
+      </div>
+      <div class="topbar-actions">
+        <button class="icon-btn" title="片段库"><span style="font-size:18px">📝</span></button>
+        <button class="icon-btn" title="内容提取"><span style="font-size:18px">🧲</span></button>
+        <button class="icon-btn" title="设置">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linecap="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+        <button class="icon-btn" title="最小化">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>
+        </button>
+        <button class="icon-btn" title="隐藏">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- 搜索框 -->
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" class="search-input" placeholder="搜索剪贴板... (Enter 搜索)" value="">
+    </div>
+
+    <!-- Tab 分段控件 -->
+    <div class="tabs-area">
+      <div class="segmented">
+        <button class="seg-item active"><span class="seg-icon">📋</span>全部<span class="seg-count">42</span></button>
+        <button class="seg-item"><span class="seg-icon">📝</span>文本<span class="seg-count">28</span></button>
+        <button class="seg-item"><span class="seg-icon">📸</span>图片<span class="seg-count">9</span></button>
+        <button class="seg-item"><span class="seg-icon">📁</span>文件<span class="seg-count">5</span></button>
+        <button class="seg-item"><span class="seg-icon">⭐</span>收藏<span class="seg-count">7</span></button>
+      </div>
+    </div>
+
+    <!-- 筛选行 -->
+    <div class="filter-bar">
+      <button class="filter-btn"><span>全部时间</span><span>▾</span></button>
+      <button class="filter-btn"><span>来源应用</span><span>▾</span></button>
+    </div>
+  </div>
+
+  <!-- ===== 内容区 ===== -->
+  <div class="content">
+    <!-- 侧边栏（改版后） -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-header-label">分组</span>
+        <button class="sidebar-header-add" title="新建分组">+</button>
+      </div>
+
+      <div class="sidebar-list">
+        <!-- 内置分组 -->
+        <button class="item active">
+          <span class="item-icon">📋</span>
+          <span class="item-name">全部</span>
+          <span class="item-count">42</span>
+        </button>
+        <button class="item">
+          <span class="item-icon">⭐</span>
+          <span class="item-name">收藏</span>
+          <span class="item-count">7</span>
+        </button>
+
+        <!-- 来源分组 section -->
+        <div class="sidebar-divider"></div>
+        <div class="section-label">来源</div>
+
+        <button class="item">
+          <span class="item-icon">💬</span>
+          <span class="item-name">微信</span>
+          <span class="item-count">15</span>
+        </button>
+        <button class="item">
+          <span class="item-icon">🖥</span>
+          <span class="item-name">VS Code</span>
+          <span class="item-count">12</span>
+        </button>
+        <button class="item">
+          <span class="item-icon">🌐</span>
+          <span class="item-name">Chrome</span>
+          <span class="item-count">8</span>
+        </button>
+        <button class="item">
+          <span class="item-icon">💻</span>
+          <span class="item-name">Terminal</span>
+          <span class="item-count">4</span>
+        </button>
+        <button class="item">
+          <span class="item-icon">📁</span>
+          <span class="item-name">文件管理器</span>
+          <span class="item-count">3</span>
+        </button>
+      </div>
+
+      <!-- 底部 -->
+      <div class="sidebar-footer">
+        <button class="collapse-btn">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="10,3 5,8 10,13"/>
+          </svg>
+          收起侧边栏
+        </button>
+      </div>
+    </aside>
+
+    <!-- 右侧卡片面板 -->
+    <div class="card-panel">
+      <div class="card-list">
+        <!-- 卡片 1：文本 -->
+        <div class="card card-text">
+          <div class="card-icon bgBlue">📝</div>
+          <div class="card-content">
+            <div class="card-title">https://github.com/user/project/pull/123 — Review 反馈已处理，请确认合并</div>
+            <div class="card-sub">
+              <span>💬 微信</span>
+              <span class="card-time">2 分钟前</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 卡片 2：代码 -->
+        <div class="card card-text">
+          <div class="card-icon bgGreen">&lt;/&gt;</div>
+          <div class="card-content">
+            <div class="card-title">const API_BASE_URL = "https://api.example.com/v2"; export default API_BASE_URL;</div>
+            <div class="card-sub">
+              <span>🖥 VS Code</span>
+              <span class="card-time">15 分钟前</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 卡片 3：图片 -->
+        <div class="card card-image">
+          <div class="card-icon bgPink">🖼</div>
+          <div class="card-content">
+            <div class="card-title">design-mockup-v3.png</div>
+            <div class="card-sub">
+              <span>📁 文件管理器</span>
+              <span class="card-time">1 小时前</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 卡片 4：文本 -->
+        <div class="card card-text">
+          <div class="card-icon bgBlue">📝</div>
+          <div class="card-content">
+            <div class="card-title">会议纪要：Q3 OKR 对齐 &amp; 跨团队协作方案讨论</div>
+            <div class="card-sub">
+              <span>💬 微信</span>
+              <span class="card-time">2 小时前</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// 6 套主题
+const themes = {
+  ocean: {
+    '--app-bg': '#F4F6F9', '--header-bg-start': '#fff', '--header-bg-end': '#F4F6F9',
+    '--card-bg': '#fff', '--card-border': '#E0E4EB',
+    '--card-shadow': '0 1px 3px rgba(0,0,0,0.06)', '--text-primary': '#0F172A',
+    '--text-secondary': '#64748B', '--text-muted': '#7888A0', '--border-color': '#E0E4EB',
+    '--accent': '#0284C7', '--accent-light': '#E0F2FE',
+    '--seg-bg': '#E8E8ED', '--seg-active-bg': '#fff',
+    '--search-bg': '#fff', '--search-border': '#E0E4EB', '--hover': '#E8ECF2',
+    '--sidebar-bg': '#F8FAFB'
+  },
+  midnight: {
+    '--app-bg': '#09090B', '--header-bg-start': '#18181B', '--header-bg-end': '#09090B',
+    '--card-bg': '#18181B', '--card-border': '#27272A',
+    '--card-shadow': '0 2px 8px rgba(0,0,0,0.4)', '--text-primary': '#E4E4E7',
+    '--text-secondary': '#A1A1AA', '--text-muted': '#71717A', '--border-color': '#27272A',
+    '--accent': '#818CF8', '--accent-light': '#1E1B4B',
+    '--seg-bg': '#27272A', '--seg-active-bg': '#3F3F46',
+    '--search-bg': '#27272A', '--search-border': '#3F3F46', '--hover': '#1F1F23',
+    '--sidebar-bg': '#0F0F11'
+  },
+  forest: {
+    '--app-bg': '#F2F7F5', '--header-bg-start': '#fff', '--header-bg-end': '#F2F7F5',
+    '--card-bg': '#fff', '--card-border': '#D1D9D3',
+    '--card-shadow': '0 1px 3px rgba(0,0,0,0.06)', '--text-primary': '#171717',
+    '--text-secondary': '#78716C', '--text-muted': '#A8A29E', '--border-color': '#D1D9D3',
+    '--accent': '#059669', '--accent-light': '#ECFDF5',
+    '--seg-bg': '#E4E8E5', '--seg-active-bg': '#fff',
+    '--search-bg': '#fff', '--search-border': '#D1D9D3', '--hover': '#E8EDE8',
+    '--sidebar-bg': '#F5F9F7'
+  },
+  blossom: {
+    '--app-bg': '#FFFBFD', '--header-bg-start': '#fff', '--header-bg-end': '#FFFBFD',
+    '--card-bg': '#fff', '--card-border': '#F3E8ED',
+    '--card-shadow': '0 1px 3px rgba(0,0,0,0.05)', '--text-primary': '#1F1A1C',
+    '--text-secondary': '#A68A96', '--text-muted': '#A8909A', '--border-color': '#F3E8ED',
+    '--accent': '#EC4899', '--accent-light': '#FCE7F3',
+    '--seg-bg': '#F0EEEF', '--seg-active-bg': '#fff',
+    '--search-bg': '#fff', '--search-border': '#F3E8ED', '--hover': '#F5E8F0',
+    '--sidebar-bg': '#FEF9FB'
+  },
+  terminal: {
+    '--app-bg': '#0A0A0A', '--header-bg-start': '#141414', '--header-bg-end': '#0A0A0A',
+    '--card-bg': '#141414', '--card-border': '#262626',
+    '--card-shadow': '0 2px 8px rgba(0,0,0,0.5)', '--text-primary': '#E5E5E5',
+    '--text-secondary': '#A3A3A3', '--text-muted': '#737373', '--border-color': '#262626',
+    '--accent': '#22C55E', '--accent-light': '#052E16',
+    '--seg-bg': '#262626', '--seg-active-bg': '#404040',
+    '--search-bg': '#262626', '--search-border': '#404040', '--hover': '#1A1A1A',
+    '--sidebar-bg': '#0D0D0D'
+  },
+  sunset: {
+    '--app-bg': '#1C1410', '--header-bg-start': '#281E18', '--header-bg-end': '#1C1410',
+    '--card-bg': '#281E18', '--card-border': '#3D3028',
+    '--card-shadow': '0 2px 8px rgba(0,0,0,0.4)', '--text-primary': '#F5F0EB',
+    '--text-secondary': '#B8A99A', '--text-muted': '#8B7B6B', '--border-color': '#3D3028',
+    '--accent': '#F97316', '--accent-light': '#431407',
+    '--seg-bg': '#3D3028', '--seg-active-bg': '#57534E',
+    '--search-bg': '#3D3028', '--search-border': '#57534E', '--hover': '#33261E',
+    '--sidebar-bg': '#1F1610'
+  }
+};
+
+function setTheme(name) {
+  const root = document.documentElement;
+  const vars = themes[name];
+  Object.entries(vars).forEach(([k, v]) => root.style.setProperty(k, v));
+  document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active-theme'));
+  document.querySelector(`.theme-btn[onclick="setTheme('${name}')"]`)?.classList.add('active-theme');
+}
+</script>
+</body>
+</html>

@@ -219,6 +219,7 @@ pub fn run() {
             commands::save_image_file,
             commands::start_update,
             commands::read_file_as_base64,
+            commands::animate_window_width,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -48,6 +48,18 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "npx tauri dev" -W
 ## 10. 改完代码不需要重启 dev
 如果 dev 已在运行，Vite HMR 会自动热更新。直接看效果即可，不要每次改完代码都尝试重新启动 dev。
 
+## 11. 公共工具函数统一放 lib/utils.ts
+多个组件共用的纯函数（如 `cleanSourceName`、`getSourceIcon`、`relativeTime`、`truncate`、`detectTextType` 等）**必须**在 `src/lib/utils.ts` 中定义并 `export`，各组件通过 `import { xxx } from "@/lib/utils"` 引用。禁止在组件文件内重复定义相同的工具函数。确保单一数据源，便于统一维护和修改。
+
+## 12. 改动 UI 前必须读取真实组件源码
+生成 HTML 设计稿前，必须先读取相关组件的 `.tsx` 和 `.module.css` 源码，设计稿中的样式、结构、图标、文案必须与真实代码一致，不能凭空自创样式。
+
+## 13. 文件存放目录规范
+| 文件类型 | 存放目录 |
+|---------|---------|
+| `.md` 文档 | `clipboard-manager-tauri/docs/` |
+| `.html` 设计稿 | `clipboard-manager-tauri/design/`
+
 ---
 
 ## 发版流程

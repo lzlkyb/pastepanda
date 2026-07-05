@@ -11,9 +11,11 @@ import { UpdateProvider } from "@/contexts/UpdateContext";
 import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
 import { logger } from "@/lib/logger";
 import { pasteText, pasteImage, deleteHistory, togglePin, toggleWindow, sequentialPaste, invalidateCountsCache } from "@/lib/api";
+import { cleanSourceName, getSourceIcon } from "@/lib/utils";
 import { ClipboardList, RotateCcw, Loader2, X } from "lucide-react";
 import { BackToTop } from "@/components/BackToTop";
 import { ScrollProvider } from "@/contexts/ScrollContext";
+import { Sidebar, type SidebarGroup } from "@/components/Sidebar";
 import type Lenis from "lenis";
 import appStyles from "./App.module.css";
 
@@ -27,6 +29,9 @@ function App() {
   const history = useAppStore((s) => s.history);
   const seqPointer = useAppStore((s) => s.seqPointer);
   const resetSeqPointer = useAppStore((s) => s.resetSeqPointer);
+  const sourceFilter = useAppStore((s) => s.sourceFilter);
+  const setSourceFilter = useAppStore((s) => s.setSourceFilter);
+  const filterType = useAppStore((s) => s.filterType);
   const { toast } = useToast();
   const seqTotal = history.filter((h) => h.type === "text").length;
   const [showSettings, setShowSettings] = useState(false);
@@ -36,9 +41,13 @@ function App() {
   const [initError, setInitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [retrying, setRetrying] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeGroupId, setActiveGroupId] = useState("all");
   const retryCleanupRef = useRef<(() => void) | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lenisRef = useRef<Lenis | null>(null);
+  const isTogglingRef = useRef(false);
+  const sidebarOpenRef = useRef(false);
 
   useEffect(() => {
     try { applyTheme((config.theme as ThemeKey) || DEFAULT_THEME); } catch (e) { logger.warn("应用主题失败", e); }
@@ -105,6 +114,105 @@ function App() {
       if (unlisten) unlisten();
       if (hideTimer !== null) { window.clearTimeout(hideTimer); hideTimer = null; }
     };
+  }, []);
+
+  // 侧边栏分组数据（从 history[].source 自动聚合来源分组）
+  const sidebarGroups = useMemo<SidebarGroup[]>(() => {
+    const ws = config.current_workspace;
+    const wsItems = history.filter(h => h.workspace === ws);
+    const pinnedCount = wsItems.filter(h => h.pinned).length;
+
+    // 内置分组：全部 + 收藏
+    const builtin: SidebarGroup[] = [
+      { id: "all", name: "全部", count: wsItems.length, icon: "📋", isBuiltin: true },
+      { id: "starred", name: "收藏", count: pinnedCount, icon: "⭐", isBuiltin: true },
+    ];
+
+    // 来源分组：从 source 字段聚合，清洗名称 + 映射图标，按计数降序排列
+    // id 保留原始 source（用于精确筛选匹配），name 用清洗后的显示名
+    const sourceCountMap = new Map<string, { count: number; cleaned: string }>();
+    wsItems.forEach(h => {
+      if (h.source) {
+        const entry = sourceCountMap.get(h.source);
+        if (entry) {
+          entry.count++;
+        } else {
+          sourceCountMap.set(h.source, { count: 1, cleaned: cleanSourceName(h.source) });
+        }
+      }
+    });
+    const dotColors = ["dot-blue", "dot-green", "dot-orange", "dot-purple", "dot-red", "dot-pink", "dot-teal", "dot-amber", "dot-indigo"];
+    const sourceGroups: SidebarGroup[] = Array.from(sourceCountMap.entries())
+      .sort((a, b) => b[1].count - a[1].count)
+      .map(([raw, { count, cleaned }], i) => ({
+        id: `source:${raw}`,
+        name: cleaned,
+        count,
+        icon: getSourceIcon(raw),
+        color: dotColors[i % dotColors.length],
+        isBuiltin: false,
+      }));
+
+    return [...builtin, ...sourceGroups];
+  }, [history, config.current_workspace]);
+
+  // 侧边栏分组点击 → 同步设置 sourceFilter（筛选逻辑已在 appStore.getFilteredItems 中实现）
+  const handleSelectGroup = useCallback((groupId: string) => {
+    setActiveGroupId(groupId);
+    if (groupId === "all") {
+      setSourceFilter("");
+      useAppStore.getState().setFilterType("all");
+    } else if (groupId === "starred") {
+      setSourceFilter("");
+      useAppStore.getState().setFilterType("pinned");
+    } else if (groupId.startsWith("source:")) {
+      const source = groupId.slice(7);
+      useAppStore.getState().setFilterType("all");
+      setSourceFilter(source);
+    }
+  }, [setSourceFilter]);
+
+  // 当 TopBar 筛选变化时，同步 activeGroupId（保持 Sidebar 高亮一致）
+  useEffect(() => {
+    if (filterType === "pinned") {
+      setActiveGroupId("starred");
+      return;
+    }
+    if (sourceFilter) {
+      setActiveGroupId(`source:${sourceFilter}`);
+    } else {
+      setActiveGroupId("all");
+    }
+  }, [sourceFilter, filterType]);
+
+  // 侧边栏切换 — CSS transition + Rust 原生窗口动画
+  // Rust 端 animate_window_width 在原生线程逐帧 setSize，无 IPC 抖动
+  const toggleSidebar = useCallback(async () => {
+    if (isTogglingRef.current) return;
+    isTogglingRef.current = true;
+
+    const nextOpen = !sidebarOpenRef.current;
+    sidebarOpenRef.current = nextOpen;
+
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const startW = nextOpen ? 480 : 680;
+      const endW = nextOpen ? 680 : 480;
+
+      // CSS transition 和 Rust 原生动画同时启动
+      setSidebarOpen(nextOpen);
+      // 不 await，让 Rust 后台线程和 CSS 并行运行
+      invoke("animate_window_width", { startW, endW, durationMs: 350 }).catch((e: unknown) =>
+        logger.warn("窗口动画失败", e)
+      );
+    } catch (e) {
+      logger.warn("侧边栏切换失败", e);
+    } finally {
+      // 动画 350ms 结束后才能再次切换
+      setTimeout(() => {
+        isTogglingRef.current = false;
+      }, 400);
+    }
   }, []);
 
   // 监听托盘菜单事件
@@ -380,16 +488,29 @@ function App() {
   return (
     <ToastProvider>
       <UpdateProvider>
-      <div className={appStyles.appShell}>
+      <div className={`${appStyles.appShell} ${sidebarOpen ? appStyles.sidebarExpanded : ''}`}>
         <TopBar
           onSettings={() => setShowSettings(true)}
           onSnippets={() => setShowSnippets(true)}
           onExtract={() => setShowExtract(true)}
+          onToggleSidebar={toggleSidebar}
+          sidebarOpen={sidebarOpen}
         />
-        <ScrollProvider scrollRef={scrollRef} lenisRef={lenisRef}>
-          <CardList scrollRef={scrollRef} lenisRef={lenisRef} />
-          <BackToTop />
-        </ScrollProvider>
+        <div className={appStyles.contentArea}>
+          <Sidebar
+            open={sidebarOpen}
+            activeGroupId={activeGroupId}
+            groups={sidebarGroups}
+            onSelectGroup={handleSelectGroup}
+            onClose={toggleSidebar}
+          />
+          <div className={appStyles.cardPanel}>
+            <ScrollProvider scrollRef={scrollRef} lenisRef={lenisRef}>
+              <CardList scrollRef={scrollRef} lenisRef={lenisRef} />
+              <BackToTop />
+            </ScrollProvider>
+          </div>
+        </div>
         <QuickPreview />
 
         {/* FAB — 依次粘贴悬浮按钮，独立于滚动区域 */}

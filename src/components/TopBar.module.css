@@ -20,6 +20,38 @@
   gap: 8px;
 }
 
+/* ☰ 侧边栏切换按钮 */
+.sidebarToggle {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 16px;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  font-family: inherit;
+}
+
+.sidebarToggle:hover {
+  background: rgba(129, 140, 248, 0.12);
+  transform: scale(1.08);
+}
+
+.sidebarToggle:active {
+  transform: scale(0.92);
+}
+
+.sidebarToggleActive {
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
 .headerTitleIcon {
   display: flex;
   align-items: center;

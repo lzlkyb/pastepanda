@@ -1,0 +1,192 @@
+/* Sidebar.module.css — macOS Finder 风格侧边栏，从 TopBar 下方开始 */
+
+.sidebar {
+  width: 0;
+  min-width: 0;
+  height: 100%;
+  background: var(--sidebar-bg);
+  border-right: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              min-width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.35s ease;
+}
+
+.sidebar.open {
+  width: 220px;
+  min-width: 220px;
+  border-right-color: var(--border-color);
+}
+
+/* 头部 — 隐藏，用 section label 替代 */
+.header {
+  display: none;
+}
+
+/* 列表 */
+.list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+  opacity: 0;
+  transition: opacity 0.2s ease 0.2s;
+}
+
+.sidebar.open .list {
+  opacity: 1;
+}
+
+.list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.list::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 2px;
+}
+
+/* Section 标签 */
+.sectionLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sidebar-section-label);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 10px 10px 6px;
+  flex-shrink: 0;
+}
+
+/* 分组项 */
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  transition: all 0.15s;
+  text-align: left;
+  width: 100%;
+}
+
+.item:hover {
+  background: var(--hover);
+}
+
+.item.active {
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 来源颜色圆点 — 缩小为 6px */
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-blue { background: #3B82F6; }
+.dot-green { background: #22C55E; }
+.dot-orange { background: #F97316; }
+.dot-purple { background: #A855F7; }
+.dot-red { background: #EF4444; }
+.dot-pink { background: #EC4899; }
+.dot-teal { background: #14B8A6; }
+.dot-amber { background: #F59E0B; }
+.dot-indigo { background: #6366F1; }
+
+/* 内置分组 emoji 图标 */
+.icon {
+  font-size: 15px;
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  line-height: 1;
+}
+
+.name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.count {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.item.active .count {
+  color: var(--accent);
+}
+
+/* 分割线 — 更轻量 */
+.sep {
+  height: 1px;
+  background: var(--border-color);
+  margin: 8px 10px 4px;
+}
+
+/* 底部 */
+.footer {
+  padding: 8px;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.2s ease 0.25s;
+}
+
+.sidebar.open .footer {
+  opacity: 1;
+}
+
+.collapseBtn {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s;
+}
+
+.collapseBtn:hover {
+  background: var(--hover);
+  color: var(--text-secondary);
+}
+
+/* 收起按钮中的 SVG 图标 */
+.collapseIcon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.collapseBtn:hover .collapseIcon {
+  opacity: 1;
+}

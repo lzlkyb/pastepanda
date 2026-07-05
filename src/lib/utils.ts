@@ -265,3 +265,37 @@ export function getLangLabel(language: string): string {
 export function highlightCodeSync(text: string, _language: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+
+// ==================== 来源名称清洗 ====================
+
+/** 来源应用 → emoji 图标映射 */
+export const SOURCE_ICONS: Record<string, string> = {
+  "VS Code": "💻", "Code": "💻", "code": "💻", "vscode": "💻",
+  "Chrome": "🌐", "chrome": "🌐", "Google Chrome": "🌐",
+  "企业微信": "💬", "WeChat": "💬", "微信": "💬", "wechat": "💬",
+  "Terminal": "⚡", "terminal": "⚡", "cmd": "⚡", "PowerShell": "⚡",
+  "Figma": "🎨", "figma": "🎨",
+  "Notion": "📝", "notion": "📝",
+  "Slack": "💬", "slack": "💬",
+  "Snipping Tool": "✂️", "截图": "✂️", "Snipaste": "✂️",
+};
+
+/** 清洗来源名称：去掉路径、URL、窗口标题等脏数据 */
+export function cleanSourceName(raw: string): string {
+  if (/^[A-Z]:\\/i.test(raw)) return "资源管理器";
+  if (/^DevTools\s*[-–]\s*localhost/i.test(raw)) return "DevTools";
+  if (/^DevTools/i.test(raw)) return "DevTools";
+  if (/^PastePanda/i.test(raw)) return "PastePanda";
+  const dash = raw.lastIndexOf(" — ");
+  if (dash > 0) raw = raw.slice(0, dash);
+  return raw.length > 18 ? raw.slice(0, 17) + "…" : raw;
+}
+
+/** 根据来源名称匹配图标 */
+export function getSourceIcon(source: string): string | undefined {
+  const lower = source.toLowerCase();
+  for (const [key, icon] of Object.entries(SOURCE_ICONS)) {
+    if (lower.includes(key.toLowerCase())) return icon;
+  }
+  return undefined;
+}

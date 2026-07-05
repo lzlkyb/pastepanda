@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, FilterType, TimeFilter, SourceFilter, HistoryItem } from "@/stores/appStore";
 import { getAppVersion, getAppName, fetchCounts } from "@/lib/api";
+import { cleanSourceName, getSourceIcon } from "@/lib/utils";
 import { UpdateBadge } from "@/components/UpdateBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { logger } from "@/lib/logger";
@@ -47,8 +48,9 @@ function saveTabStyle(v: TabStyle) {
   try { localStorage.setItem("tabStyle", v); } catch { logger.warn("保存tab样式失败"); }
 }
 
-export function TopBar({ onSettings, onSnippets, onExtract }: {
+export function TopBar({ onSettings, onSnippets, onExtract, onToggleSidebar, sidebarOpen }: {
   onSettings?: () => void; onSnippets?: () => void; onExtract?: () => void;
+  onToggleSidebar?: () => void; sidebarOpen?: boolean;
 }) {
   const filterType = useAppStore((s) => s.filterType);
   const setFilterType = useAppStore((s) => s.setFilterType);
@@ -140,6 +142,14 @@ export function TopBar({ onSettings, onSnippets, onExtract }: {
       {/* 标题行 */}
       <div className={styles.headerTop} data-tauri-drag-region>
         <div className={styles.headerTitle}>
+          <button
+            className={`${styles.sidebarToggle}${sidebarOpen ? ` ${styles.sidebarToggleActive}` : ""}`}
+            onClick={onToggleSidebar}
+            title={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
+            aria-label="切换侧边栏"
+          >
+            ☰
+          </button>
           <span className={styles.headerTitleIcon}><AppIcon size={20} /></span>
           <span className={styles.headerTitleText}>{appName}</span>
           <UpdateBadge currentVersion={appVersion} />
@@ -388,17 +398,30 @@ function SourceFilterDropdown({ value, onChange, history, workspace }: {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  // 收集当前工作空间下的所有来源应用
+  // 收集当前工作空间下的所有来源应用（清洗名称 + 图标映射）
   const sources = useMemo(() => {
-    const set = new Set<string>();
-    history.filter((h) => h.workspace === workspace && h.source).forEach((h) => set.add(h.source));
-    return Array.from(set).sort();
+    const map = new Map<string, { cleaned: string; icon?: string }>();
+    history.filter((h) => h.workspace === workspace && h.source).forEach((h) => {
+      if (!map.has(h.source)) {
+        map.set(h.source, { cleaned: cleanSourceName(h.source), icon: getSourceIcon(h.source) });
+      }
+    });
+    return Array.from(map.entries())
+      .sort((a, b) => a[1].cleaned.localeCompare(b[1].cleaned, "zh"));
   }, [history, workspace]);
+
+  // 当前选中来源的显示名称
+  const activeLabel = useMemo(() => {
+    if (!value) return "来源应用";
+    const cleaned = cleanSourceName(value);
+    const icon = getSourceIcon(value);
+    return icon ? `${icon} ${cleaned}` : cleaned;
+  }, [value]);
 
   return (
     <div className={styles.filterDropdown} ref={ref}>
       <button className={styles.filterDropdownBtn} onClick={() => setOpen(!open)}>
-        <span>{value || "来源应用"}</span>
+        <span>{activeLabel}</span>
         <ChevronDown size={12} style={{ transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0)" }} />
       </button>
       <AnimatePresence>
@@ -414,11 +437,11 @@ function SourceFilterDropdown({ value, onChange, history, workspace }: {
               onClick={() => { onChange(""); setOpen(false); }}>
               全部来源
             </button>
-            {sources.map((src) => (
-              <button key={src}
-                className={`${styles.filterDropdownItem}${src === value ? ` ${styles.filterDropdownItemActive}` : ""}`}
-                onClick={() => { onChange(src); setOpen(false); }}>
-                {src}
+            {sources.map(([raw, { cleaned, icon }]) => (
+              <button key={raw}
+                className={`${styles.filterDropdownItem}${raw === value ? ` ${styles.filterDropdownItemActive}` : ""}`}
+                onClick={() => { onChange(raw); setOpen(false); }}>
+                {icon ? `${icon} ${cleaned}` : cleaned}
               </button>
             ))}
           </motion.div>

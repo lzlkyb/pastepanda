@@ -254,6 +254,40 @@ pub fn exit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+/// 窗口宽度动画 — Rust 原生线程逐帧 setSize，无 JS↔Rust IPC 开销
+/// CSS transition 和此命令同时启动，视觉效果丝滑
+#[tauri::command]
+pub async fn animate_window_width(
+    app: tauri::AppHandle,
+    start_w: f64,
+    end_w: f64,
+    duration_ms: u64,
+) -> Result<(), String> {
+    let Some(window) = app.get_webview_window("main") else {
+        return Err("主窗口不存在".to_string());
+    };
+
+    let frame_interval = 16u64; // ~60fps
+    let total_frames = duration_ms / frame_interval;
+
+    for i in 0..=total_frames {
+        let progress = i as f64 / total_frames as f64;
+        // easeOutCubic: 1 - (1-t)³，与 CSS cubic-bezier(0.4,0,0.2,1) 对齐
+        let eased = 1.0 - (1.0 - progress).powi(3);
+        let current_w = start_w + (end_w - start_w) * eased;
+
+        let _ = window.set_size(tauri::LogicalSize::new(current_w, 700.0));
+
+        if i < total_frames {
+            tokio::time::sleep(std::time::Duration::from_millis(frame_interval)).await;
+        }
+    }
+
+    // 确保精确对齐
+    let _ = window.set_size(tauri::LogicalSize::new(end_w, 700.0));
+    Ok(())
+}
+
 /// 导入历史记录
 #[tauri::command]
 pub fn import_history(store: State<DataStore>, items: Vec<HistoryItem>) -> Result<u32, String> {
