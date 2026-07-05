@@ -1,6 +1,6 @@
 use crate::data_store::{DataStore, HistoryItem, Snippet, Stats};
 use crate::paste_engine::PasteEngine;
-use tauri::{State, Manager, Emitter};
+use tauri::{Emitter, Manager, State};
 
 /// 应用配置（从 tauri.conf.json 运行时读取，唯一配置来源）
 use std::sync::LazyLock;
@@ -30,14 +30,18 @@ pub fn get_app_version() -> String {
 /// 获取应用名称
 #[tauri::command]
 pub fn get_app_name() -> String {
-    APP_NAME.get().map(|s| s.as_str()).unwrap_or("PastePanda").to_string()
+    APP_NAME
+        .get()
+        .map(|s| s.as_str())
+        .unwrap_or("PastePanda")
+        .to_string()
 }
 
 /// 读取文件内容并返回 base64 编码（用于图片粘贴并变换）
 #[tauri::command]
 pub fn read_file_as_base64(path: String) -> Result<String, String> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
     use std::fs;
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
     let bytes = fs::read(&path).map_err(|e| format!("读取文件失败: {e}"))?;
     Ok(STANDARD.encode(&bytes))
 }
@@ -84,36 +88,23 @@ pub fn get_history(
 }
 
 #[tauri::command]
-pub fn insert_history(
-    store: State<DataStore>,
-    item: HistoryItem,
-) -> Result<(), String> {
+pub fn insert_history(store: State<DataStore>, item: HistoryItem) -> Result<(), String> {
     store.insert_history(&item)
 }
 
 /// 更新历史记录（编辑对话框用）
 #[tauri::command]
-pub fn update_history(
-    store: State<DataStore>,
-    id: String,
-    text: String,
-) -> Result<(), String> {
+pub fn update_history(store: State<DataStore>, id: String, text: String) -> Result<(), String> {
     store.update_history(&id, &text)
 }
 
 #[tauri::command]
-pub fn delete_history(
-    store: State<DataStore>,
-    ids: Vec<String>,
-) -> Result<u32, String> {
+pub fn delete_history(store: State<DataStore>, ids: Vec<String>) -> Result<u32, String> {
     store.delete_history(&ids)
 }
 
 #[tauri::command]
-pub fn toggle_pin(
-    store: State<DataStore>,
-    id: String,
-) -> Result<bool, String> {
+pub fn toggle_pin(store: State<DataStore>, id: String) -> Result<bool, String> {
     store.toggle_pin(&id)
 }
 
@@ -133,9 +124,7 @@ pub fn clear_history(
 }
 
 #[tauri::command]
-pub fn get_config(
-    store: State<DataStore>,
-) -> Result<serde_json::Value, String> {
+pub fn get_config(store: State<DataStore>) -> Result<serde_json::Value, String> {
     store.get_config()
 }
 
@@ -149,7 +138,10 @@ pub fn save_config(
 
     // 刷新剪贴板监听器的 auto_strip 缓存，避免每次都锁数据库读取配置
     if let Some(monitor) = app.try_state::<crate::clipboard_monitor::ClipboardMonitor>() {
-        let auto_strip = config.get("auto_strip").and_then(|v| v.as_bool()).unwrap_or(false);
+        let auto_strip = config
+            .get("auto_strip")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         monitor.update_auto_strip_cache(auto_strip);
     }
 
@@ -157,10 +149,7 @@ pub fn save_config(
 }
 
 #[tauri::command]
-pub fn get_stats(
-    store: State<DataStore>,
-    workspace: String,
-) -> Result<Stats, String> {
+pub fn get_stats(store: State<DataStore>, workspace: String) -> Result<Stats, String> {
     store.get_stats(&workspace)
 }
 
@@ -168,45 +157,32 @@ pub fn get_stats(
 
 /// 复制文本到剪贴板并执行粘贴（Ctrl+V）
 #[tauri::command]
-pub fn paste_text(
-    engine: State<PasteEngine>,
-    text: String,
-) -> Result<(), String> {
+pub fn paste_text(engine: State<PasteEngine>, text: String) -> Result<(), String> {
     engine.execute_paste(Some(text))
 }
 
 /// 仅复制文本到剪贴板（不粘贴）
 #[tauri::command]
-pub fn copy_only(
-    engine: State<PasteEngine>,
-    text: String,
-) -> Result<(), String> {
+pub fn copy_only(engine: State<PasteEngine>, text: String) -> Result<(), String> {
     engine.copy_only(&text)
 }
 
 /// 粘贴图片到目标窗口
 #[tauri::command]
-pub fn paste_image(
-    engine: State<PasteEngine>,
-    image_path: String,
-) -> Result<(), String> {
+pub fn paste_image(engine: State<PasteEngine>, image_path: String) -> Result<(), String> {
     engine.execute_paste_image(&image_path)
 }
 
 /// 保存当前前台窗口句柄（在显示窗口之前调用）
 #[tauri::command]
-pub fn save_foreground(
-    engine: State<PasteEngine>,
-) -> Result<(), String> {
+pub fn save_foreground(engine: State<PasteEngine>) -> Result<(), String> {
     engine.save_foreground_hwnd();
     Ok(())
 }
 
 /// 切换窗口显示/隐藏
 #[tauri::command]
-pub fn toggle_window(
-    app: tauri::AppHandle,
-) -> Result<(), String> {
+pub fn toggle_window(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
         if window.is_visible().unwrap_or(false) {
             if let Err(e) = window.hide() {
@@ -280,10 +256,7 @@ pub fn exit_app(app: tauri::AppHandle) {
 
 /// 导入历史记录
 #[tauri::command]
-pub fn import_history(
-    store: State<DataStore>,
-    items: Vec<HistoryItem>,
-) -> Result<u32, String> {
+pub fn import_history(store: State<DataStore>, items: Vec<HistoryItem>) -> Result<u32, String> {
     store.import_history(&items)
 }
 
@@ -299,9 +272,7 @@ pub fn add_snippet(
 
 /// 获取所有片段
 #[tauri::command]
-pub fn get_snippets(
-    store: State<DataStore>,
-) -> Result<Vec<Snippet>, String> {
+pub fn get_snippets(store: State<DataStore>) -> Result<Vec<Snippet>, String> {
     store.get_snippets()
 }
 
@@ -319,10 +290,7 @@ pub fn update_snippet(
 
 /// 删除片段
 #[tauri::command]
-pub fn delete_snippet(
-    store: State<DataStore>,
-    id: String,
-) -> Result<(), String> {
+pub fn delete_snippet(store: State<DataStore>, id: String) -> Result<(), String> {
     store.delete_snippet(&id)
 }
 
@@ -343,7 +311,10 @@ pub fn get_image_data_url(path: String) -> Result<String, String> {
     const MAX_FILE_SIZE: u64 = 20 * 1024 * 1024;
     let metadata = std::fs::metadata(&path).map_err(|e| format!("无法读取文件信息: {}", e))?;
     if metadata.len() > MAX_FILE_SIZE {
-        return Err(format!("图片文件过大 ({}MB)，超过 20MB 限制", metadata.len() / 1024 / 1024));
+        return Err(format!(
+            "图片文件过大 ({}MB)，超过 20MB 限制",
+            metadata.len() / 1024 / 1024
+        ));
     }
 
     let mut file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
@@ -356,7 +327,9 @@ pub fn get_image_data_url(path: String) -> Result<String, String> {
 
 /// 获取缩略图缓存目录（在应用数据目录下，确保在 Tauri asset scope 内）
 fn get_thumb_dir(app_handle: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
-    let dir = app_handle.path().app_data_dir()
+    let dir = app_handle
+        .path()
+        .app_data_dir()
         .map_err(|e| format!("无法获取应用数据目录: {}", e))?
         .join("thumbnails");
     std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建缩略图缓存目录: {}", e))?;
@@ -367,11 +340,11 @@ fn get_thumb_dir(app_handle: &tauri::AppHandle) -> Result<std::path::PathBuf, St
 /// 使用文件路径而非 base64 data URL，浏览器可原生缓存图片
 #[tauri::command]
 pub fn get_image_thumbnail(app_handle: tauri::AppHandle, path: String) -> Result<String, String> {
+    use image::GenericImageView;
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
     use std::io::BufWriter;
     use std::io::Write;
-    use image::GenericImageView;
-    use std::hash::{Hash, Hasher};
-    use std::collections::hash_map::DefaultHasher;
 
     const MAX_WIDTH: u32 = 300;
     const MAX_FILE_SIZE: u64 = 20 * 1024 * 1024;
@@ -384,9 +357,14 @@ pub fn get_image_thumbnail(app_handle: tauri::AppHandle, path: String) -> Result
     // 用源路径 + 修改时间生成缩略图文件名（内容变化自动重建）
     let mut hasher = DefaultHasher::new();
     path.hash(&mut hasher);
-    let modified = metadata.modified().map(|t| {
-        t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
-    }).unwrap_or(0);
+    let modified = metadata
+        .modified()
+        .map(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0)
+        })
+        .unwrap_or(0);
     modified.hash(&mut hasher);
     let hash = hasher.finish();
     let thumb_name = format!("thumb_{:016x}.jpg", hash);
@@ -412,9 +390,12 @@ pub fn get_image_thumbnail(app_handle: tauri::AppHandle, path: String) -> Result
     };
 
     // 写入 JPEG 格式（比 PNG 小 3-5 倍，适合照片类图片）
-    let file = std::fs::File::create(&thumb_path).map_err(|e| format!("无法创建缩略图文件: {}", e))?;
+    let file =
+        std::fs::File::create(&thumb_path).map_err(|e| format!("无法创建缩略图文件: {}", e))?;
     let mut writer = BufWriter::new(file);
-    output_img.write_to(&mut writer, image::ImageFormat::Jpeg).map_err(|e| format!("无法写入缩略图: {}", e))?;
+    output_img
+        .write_to(&mut writer, image::ImageFormat::Jpeg)
+        .map_err(|e| format!("无法写入缩略图: {}", e))?;
     writer.flush().map_err(|e| e.to_string())?;
 
     Ok(thumb_path.to_string_lossy().to_string())
@@ -472,11 +453,13 @@ fn get_mime_from_path(path: &str) -> &'static str {
 #[tauri::command]
 pub fn reregister_hotkeys(app: tauri::AppHandle, store: State<DataStore>) -> Result<(), String> {
     let config = store.get_config()?;
-    let show_window = config.get("hotkey")
+    let show_window = config
+        .get("hotkey")
         .and_then(|v| v.as_str())
         .unwrap_or("Ctrl+Shift+V")
         .to_string();
-    let seq_paste = config.get("sequential_hotkey")
+    let seq_paste = config
+        .get("sequential_hotkey")
         .and_then(|v| v.as_str())
         .unwrap_or("Ctrl+Q")
         .to_string();
@@ -570,11 +553,12 @@ pub fn save_image_file(source: String, dest: String) -> Result<(), String> {
 
 /// 获取局域网同步状态（是否启用）
 #[tauri::command]
-pub fn get_lan_status(
-    store: State<DataStore>,
-) -> Result<bool, String> {
+pub fn get_lan_status(store: State<DataStore>) -> Result<bool, String> {
     let config = store.get_config()?;
-    Ok(config.get("lan_sync_enabled").and_then(|v| v.as_bool()).unwrap_or(false))
+    Ok(config
+        .get("lan_sync_enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false))
 }
 
 /// 切换局域网同步
@@ -587,7 +571,10 @@ pub fn toggle_lan_sync(
     // 保存配置
     let mut config = store.get_config()?;
     if let Some(obj) = config.as_object_mut() {
-        obj.insert("lan_sync_enabled".to_string(), serde_json::Value::Bool(enable));
+        obj.insert(
+            "lan_sync_enabled".to_string(),
+            serde_json::Value::Bool(enable),
+        );
     }
     store.save_config(&config)?;
 
@@ -604,9 +591,7 @@ pub fn toggle_lan_sync(
 
 /// 发送测试同步消息
 #[tauri::command]
-pub fn send_lan_test(
-    app: tauri::AppHandle,
-) -> Result<(), String> {
+pub fn send_lan_test(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(lan_sync) = app.try_state::<crate::lan_sync::LanSync>() {
         lan_sync.send("🔔 这是一条局域网同步测试消息");
     }
@@ -615,9 +600,7 @@ pub fn send_lan_test(
 
 /// 获取已发现的局域网设备列表
 #[tauri::command]
-pub fn get_lan_devices(
-    app: tauri::AppHandle,
-) -> Result<Vec<crate::lan_sync::LanDevice>, String> {
+pub fn get_lan_devices(app: tauri::AppHandle) -> Result<Vec<crate::lan_sync::LanDevice>, String> {
     if let Some(lan_sync) = app.try_state::<crate::lan_sync::LanSync>() {
         Ok(lan_sync.get_devices())
     } else {
@@ -630,8 +613,8 @@ pub fn get_lan_devices(
 pub fn set_startup(enable: bool) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        use winreg::RegKey;
         use winreg::enums::*;
+        use winreg::RegKey;
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
         let path = r"Software\Microsoft\Windows\CurrentVersion\Run";
         let (key, _) = hkcu.create_subkey(path).map_err(|e| e.to_string())?;
@@ -658,8 +641,8 @@ pub fn set_startup(enable: bool) -> Result<(), String> {
 pub fn get_startup() -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     {
-        use winreg::RegKey;
         use winreg::enums::*;
+        use winreg::RegKey;
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
         let path = r"Software\Microsoft\Windows\CurrentVersion\Run";
         match hkcu.open_subkey(path) {
@@ -787,7 +770,9 @@ fn ocr_image_impl(path: &str) -> Result<OcrResult, String> {
         let ocr_lines = ocr_result
             .Lines()
             .map_err(|e| format!("获取 OCR 行失败: {}", e))?;
-        let count = ocr_lines.Size().map_err(|e| format!("获取行数失败: {}", e))? as usize;
+        let count = ocr_lines
+            .Size()
+            .map_err(|e| format!("获取行数失败: {}", e))? as usize;
         let mut lines_vec = Vec::with_capacity(count);
         for i in 0..count {
             let line = ocr_lines
@@ -795,10 +780,10 @@ fn ocr_image_impl(path: &str) -> Result<OcrResult, String> {
                 .map_err(|e| format!("获取第 {} 行失败: {}", i, e))?;
             let line_text = line.Text().unwrap_or_default().to_string();
 
-            let words_iv = line
-                .Words()
-                .map_err(|e| format!("获取词列表失败: {}", e))?;
-            let wcount = words_iv.Size().map_err(|e| format!("获取词数失败: {}", e))? as usize;
+            let words_iv = line.Words().map_err(|e| format!("获取词列表失败: {}", e))?;
+            let wcount = words_iv
+                .Size()
+                .map_err(|e| format!("获取词数失败: {}", e))? as usize;
             let mut words = Vec::with_capacity(wcount);
             for j in 0..wcount {
                 let word = words_iv
@@ -839,7 +824,11 @@ fn ocr_image_impl(_path: &str) -> Result<OcrResult, String> {
 
 /// 创建原生 Windows 窗口显示置顶图片（GDI 渲染，不依赖 WebView）
 #[tauri::command]
-pub fn open_pinned_image(_app: tauri::AppHandle, _store: State<DataStore>, path: String) -> Result<(), String> {
+pub fn open_pinned_image(
+    _app: tauri::AppHandle,
+    _store: State<DataStore>,
+    path: String,
+) -> Result<(), String> {
     log::info!("[pinned-image] open_pinned_image 被调用, path: {}", path);
     crate::pinned_window::create_native_window(&path)
 }
@@ -878,7 +867,8 @@ pub fn get_tray_popup_data(app: tauri::AppHandle) -> Result<serde_json::Value, S
 #[tauri::command]
 pub fn emit_tray_open_settings(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(main_window) = app.get_webview_window("main") {
-        main_window.emit("tray-open-settings", ())
+        main_window
+            .emit("tray-open-settings", ())
             .map_err(|e| format!("发送设置事件失败: {}", e))?;
     }
     Ok(())
@@ -899,9 +889,12 @@ pub fn start_update(app: tauri::AppHandle) {
         let updater = match app.updater() {
             Ok(u) => u,
             Err(e) => {
-                let _ = app.emit("update:error", serde_json::json!({
-                    "message": format!("更新插件初始化失败: {}", e)
-                }));
+                let _ = app.emit(
+                    "update:error",
+                    serde_json::json!({
+                        "message": format!("更新插件初始化失败: {}", e)
+                    }),
+                );
                 return;
             }
         };
@@ -909,9 +902,12 @@ pub fn start_update(app: tauri::AppHandle) {
         let check_result = match updater.check().await {
             Ok(r) => r,
             Err(e) => {
-                let _ = app.emit("update:error", serde_json::json!({
-                    "message": format!("检查更新失败: {}", e)
-                }));
+                let _ = app.emit(
+                    "update:error",
+                    serde_json::json!({
+                        "message": format!("检查更新失败: {}", e)
+                    }),
+                );
                 return;
             }
         };
@@ -926,10 +922,13 @@ pub fn start_update(app: tauri::AppHandle) {
         };
 
         // → 通知前端：发现新版本
-        let _ = app.emit("update:available", serde_json::json!({
-            "version": update.version,
-            "body": update.body,
-        }));
+        let _ = app.emit(
+            "update:available",
+            serde_json::json!({
+                "version": update.version,
+                "body": update.body,
+            }),
+        );
 
         // → 通知前端：开始下载
         let _ = app.emit("update:downloading", ());
@@ -937,25 +936,32 @@ pub fn start_update(app: tauri::AppHandle) {
         // 下载并安装（带进度回调）
         let app_progress = app.clone();
         let app_ready = app.clone();
-        let result = update.download_and_install(
-            // on_chunk: 下载进度回调
-            move |downloaded, total| {
-                let _ = app_progress.emit("update:progress", serde_json::json!({
-                    "downloaded": downloaded,
-                    "total": total,
-                }));
-            },
-            // on_download_finish: 下载完成回调
-            move || {
-                let _ = app_ready.emit("update:ready", ());
-            },
-        ).await;
+        let result = update
+            .download_and_install(
+                // on_chunk: 下载进度回调
+                move |downloaded, total| {
+                    let _ = app_progress.emit(
+                        "update:progress",
+                        serde_json::json!({
+                            "downloaded": downloaded,
+                            "total": total,
+                        }),
+                    );
+                },
+                // on_download_finish: 下载完成回调
+                move || {
+                    let _ = app_ready.emit("update:ready", ());
+                },
+            )
+            .await;
 
         if let Err(e) = result {
-            let _ = app.emit("update:error", serde_json::json!({
-                "message": format!("下载安装失败: {}", e)
-            }));
+            let _ = app.emit(
+                "update:error",
+                serde_json::json!({
+                    "message": format!("下载安装失败: {}", e)
+                }),
+            );
         }
     });
 }
-

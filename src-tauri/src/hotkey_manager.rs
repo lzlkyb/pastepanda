@@ -1,6 +1,6 @@
+use std::str::FromStr;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
-use std::str::FromStr;
 
 /// 全局热键配置
 pub struct HotkeyConfig {

@@ -1,11 +1,11 @@
+use crate::data_store::{compute_pinyin_initials, DataStore, HistoryItem};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::UdpSocket;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
 use std::sync::Arc;
+use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
-use crate::data_store::{DataStore, HistoryItem, compute_pinyin_initials};
 
 const MULTICAST_ADDR: &str = "224.1.1.1:5007";
 /// 图片通过 LAN 同步的最大文件大小 (2MB)
@@ -49,7 +49,8 @@ impl LanSync {
 
     /// 获取已发现的设备列表
     pub fn get_devices(&self) -> Vec<LanDevice> {
-        self.devices.lock()
+        self.devices
+            .lock()
             .map(|d| d.values().cloned().collect())
             .unwrap_or_default()
     }
@@ -70,22 +71,24 @@ impl LanSync {
         // 图片类型：读取并编码为 base64
         if item_type == "image" && !image_path.is_empty() {
             match std::fs::metadata(image_path) {
-                Ok(meta) if meta.len() <= MAX_IMAGE_SIZE_LAN => {
-                    match std::fs::read(image_path) {
-                        Ok(data) => {
-                            image_base64 = base64::Engine::encode(
-                                &base64::engine::general_purpose::STANDARD,
-                                &data,
-                            );
-                            log::info!("[LanSync] 图片已编码 {}B", data.len());
-                        }
-                        Err(e) => {
-                            log::warn!("[LanSync] 读取图片失败: {}", e);
-                        }
+                Ok(meta) if meta.len() <= MAX_IMAGE_SIZE_LAN => match std::fs::read(image_path) {
+                    Ok(data) => {
+                        image_base64 = base64::Engine::encode(
+                            &base64::engine::general_purpose::STANDARD,
+                            &data,
+                        );
+                        log::info!("[LanSync] 图片已编码 {}B", data.len());
                     }
-                }
+                    Err(e) => {
+                        log::warn!("[LanSync] 读取图片失败: {}", e);
+                    }
+                },
                 Ok(meta) => {
-                    log::warn!("[LanSync] 图片过大 ({}B > {}B)，跳过", meta.len(), MAX_IMAGE_SIZE_LAN);
+                    log::warn!(
+                        "[LanSync] 图片过大 ({}B > {}B)，跳过",
+                        meta.len(),
+                        MAX_IMAGE_SIZE_LAN
+                    );
                 }
                 Err(e) => {
                     log::warn!("[LanSync] 获取图片元数据失败: {}", e);
@@ -161,20 +164,24 @@ impl LanSync {
 
                                 // 更新设备列表
                                 {
-                                    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+                                    let now = chrono::Local::now()
+                                        .format("%Y-%m-%d %H:%M:%S")
+                                        .to_string();
                                     if let Ok(mut devs) = devices.lock() {
-                                        devs.insert(msg.device_id.clone(), LanDevice {
-                                            device_id: msg.device_id.clone(),
-                                            device_name: msg.device_name.clone(),
-                                            last_seen: now,
-                                        });
+                                        devs.insert(
+                                            msg.device_id.clone(),
+                                            LanDevice {
+                                                device_id: msg.device_id.clone(),
+                                                device_name: msg.device_name.clone(),
+                                                last_seen: now,
+                                            },
+                                        );
                                     }
                                 }
 
                                 // 根据类型处理
-                                let now_str = chrono::Local::now()
-                                    .format("%Y-%m-%d %H:%M:%S")
-                                    .to_string();
+                                let now_str =
+                                    chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
                                 let source = format!("局域网: {}", msg.device_name);
                                 let item_type = msg.item_type.clone();
 
@@ -182,19 +189,18 @@ impl LanSync {
                                     "image" if !msg.image_base64.is_empty() => {
                                         // 解码图片并保存到本地
                                         match save_synced_image(&msg.image_base64, &app_handle) {
-                                            Ok(path) => (format!("[图片同步] 来自 {}", msg.device_name), path),
+                                            Ok(path) => (
+                                                format!("[图片同步] 来自 {}", msg.device_name),
+                                                path,
+                                            ),
                                             Err(e) => {
                                                 log::warn!("[LanSync] 保存同步图片失败: {}", e);
                                                 (format!("[图片同步失败] {}", e), String::new())
                                             }
                                         }
                                     }
-                                    "file" => {
-                                        (format!("[文件] {}", msg.text), String::new())
-                                    }
-                                    _ => {
-                                        (msg.text.clone(), String::new())
-                                    }
+                                    "file" => (format!("[文件] {}", msg.text), String::new()),
+                                    _ => (msg.text.clone(), String::new()),
                                 };
 
                                 // 为文本类型计算拼音首字母，支持前端拼音搜索
@@ -223,8 +229,10 @@ impl LanSync {
                                     }
                                 }
 
-                                if let Err(e) = app_handle.emit("clipboard-changed",
-                                    crate::clipboard_monitor::ClipboardChanged { item }) {
+                                if let Err(e) = app_handle.emit(
+                                    "clipboard-changed",
+                                    crate::clipboard_monitor::ClipboardChanged { item },
+                                ) {
                                     log::warn!("[LanSync] 推送同步事件失败: {}", e);
                                 }
                             }
@@ -248,23 +256,20 @@ impl LanSync {
 
 /// 将 base64 编码的图片保存到本地 images 目录，返回路径
 fn save_synced_image(base64_data: &str, app_handle: &AppHandle) -> Result<String, String> {
-    let bytes = base64::Engine::decode(
-        &base64::engine::general_purpose::STANDARD,
-        base64_data,
-    )
-    .map_err(|e| format!("base64 解码失败: {}", e))?;
+    let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, base64_data)
+        .map_err(|e| format!("base64 解码失败: {}", e))?;
 
-    let app_dir = app_handle.path().app_data_dir()
+    let app_dir = app_handle
+        .path()
+        .app_data_dir()
         .map_err(|e| format!("获取数据目录失败: {}", e))?;
     let images_dir = app_dir.join("images");
-    std::fs::create_dir_all(&images_dir)
-        .map_err(|e| format!("创建图片目录失败: {}", e))?;
+    std::fs::create_dir_all(&images_dir).map_err(|e| format!("创建图片目录失败: {}", e))?;
 
     let file_name = format!("lan_{}.png", uuid::Uuid::new_v4());
     let file_path = images_dir.join(&file_name);
 
-    std::fs::write(&file_path, &bytes)
-        .map_err(|e| format!("写入图片文件失败: {}", e))?;
+    std::fs::write(&file_path, &bytes).map_err(|e| format!("写入图片文件失败: {}", e))?;
 
     Ok(file_path.to_str().unwrap_or("").to_string())
 }

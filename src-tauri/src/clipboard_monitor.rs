@@ -1,11 +1,14 @@
+use crate::data_store::{compute_pinyin_initials, DataStore, HistoryItem};
 use arboard::Clipboard;
-use md5::{Md5, Digest};
+use md5::{Digest, Md5};
 use serde::Serialize;
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use uuid::Uuid;
-use crate::data_store::{DataStore, HistoryItem, compute_pinyin_initials};
 
 /// 剪贴板变化事件，推送到前端
 #[derive(Debug, Clone, Serialize)]
@@ -139,20 +142,24 @@ impl ClipboardMonitor {
                 match clipboard.get_text() {
                     Ok(text) if !text.is_empty() => {
                         // 自动去除空白（使用缓存的配置，避免每 400ms 锁数据库）
-                        let text = if let Some(monitor) = app_handle.try_state::<ClipboardMonitor>() {
+                        let text = if let Some(monitor) = app_handle.try_state::<ClipboardMonitor>()
+                        {
                             if monitor.get_auto_strip() {
                                 text.trim().to_string()
                             } else {
                                 text
                             }
-                        } else { text };
+                        } else {
+                            text
+                        };
 
                         if text.is_empty() {
                             last_text_hash = None;
                             continue;
                         }
 
-                        let hash = format!("{:x}", Md5::new().chain_update(text.as_bytes()).finalize());
+                        let hash =
+                            format!("{:x}", Md5::new().chain_update(text.as_bytes()).finalize());
 
                         // 检查是否是我们自己写入的粘贴内容（hash 匹配）
                         if paste_suppress.is_hash_suppressed(&hash) {
@@ -167,7 +174,8 @@ impl ClipboardMonitor {
 
                             // 计算拼音首字母
                             let pinyin_initials = compute_pinyin_initials(&text);
-                            let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+                            let now_str =
+                                chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
                             // 智能合并：检查是否已存在相同 md5 的文本记录
                             let store = app_handle.try_state::<DataStore>();
@@ -176,10 +184,18 @@ impl ClipboardMonitor {
                                 if let Ok(Some(existing)) = store.find_latest_by_md5(&hash) {
                                     // 找到重复内容，只更新时间戳（不创建新记录）
                                     existing_id = Some(existing.id.clone());
-                                    if let Err(e) = store.update_history_time(&existing.id, &now_str) {
-                                        log::warn!("[ClipboardMonitor] 更新重复记录时间失败: {}", e);
+                                    if let Err(e) =
+                                        store.update_history_time(&existing.id, &now_str)
+                                    {
+                                        log::warn!(
+                                            "[ClipboardMonitor] 更新重复记录时间失败: {}",
+                                            e
+                                        );
                                     } else {
-                                        log::info!("[ClipboardMonitor] 智能合并重复文本 (id={})", existing.id);
+                                        log::info!(
+                                            "[ClipboardMonitor] 智能合并重复文本 (id={})",
+                                            existing.id
+                                        );
                                     }
                                     // 推送更新后的 item 到前端（前端会 prepend，使旧记录移到顶部）
                                     let updated_item = HistoryItem {
@@ -187,11 +203,18 @@ impl ClipboardMonitor {
                                         source: get_foreground_window_title(),
                                         ..existing
                                     };
-                                    if let Err(e) = app_handle.emit("clipboard-changed", ClipboardChanged { item: updated_item.clone() }) {
+                                    if let Err(e) = app_handle.emit(
+                                        "clipboard-changed",
+                                        ClipboardChanged {
+                                            item: updated_item.clone(),
+                                        },
+                                    ) {
                                         log::warn!("[ClipboardMonitor] 推送合并事件失败: {}", e);
                                     }
                                     // LAN 同步
-                                    if let Some(lan_sync) = app_handle.try_state::<crate::lan_sync::LanSync>() {
+                                    if let Some(lan_sync) =
+                                        app_handle.try_state::<crate::lan_sync::LanSync>()
+                                    {
                                         lan_sync.send(&text);
                                     }
                                 }
@@ -220,12 +243,17 @@ impl ClipboardMonitor {
                                 }
 
                                 // 推送事件到前端
-                                if let Err(e) = app_handle.emit("clipboard-changed", ClipboardChanged { item: item.clone() }) {
+                                if let Err(e) = app_handle.emit(
+                                    "clipboard-changed",
+                                    ClipboardChanged { item: item.clone() },
+                                ) {
                                     log::warn!("[ClipboardMonitor] 推送文本事件失败: {}", e);
                                 }
 
                                 // LAN 同步：发送文本到局域网
-                                if let Some(lan_sync) = app_handle.try_state::<crate::lan_sync::LanSync>() {
+                                if let Some(lan_sync) =
+                                    app_handle.try_state::<crate::lan_sync::LanSync>()
+                                {
                                     lan_sync.send(&text);
                                 }
                             }
@@ -238,18 +266,23 @@ impl ClipboardMonitor {
                                 // 图片大小限制：超过 50MB（RGBA bytes）则跳过
                                 const MAX_IMAGE_BYTES: usize = 50 * 1024 * 1024;
                                 if img.bytes.len() > MAX_IMAGE_BYTES {
-                                    log::warn!("[ClipboardMonitor] 图片过大 ({} bytes)，跳过记录", img.bytes.len());
+                                    log::warn!(
+                                        "[ClipboardMonitor] 图片过大 ({} bytes)，跳过记录",
+                                        img.bytes.len()
+                                    );
                                     last_text_hash = None;
                                     continue;
                                 }
 
                                 // 生成图片 hash
-                                let img_hash = format!("{:x}", Md5::new().chain_update(&img.bytes).finalize());
+                                let img_hash =
+                                    format!("{:x}", Md5::new().chain_update(&img.bytes).finalize());
                                 if Some(&img_hash) != last_text_hash.as_ref() {
                                     last_text_hash = Some(img_hash.clone());
 
                                     // 保存图片到磁盘
-                                    let app_dir = app_handle.path().app_data_dir().unwrap_or_default();
+                                    let app_dir =
+                                        app_handle.path().app_data_dir().unwrap_or_default();
                                     let img_dir = app_dir.join("images");
                                     if let Err(e) = std::fs::create_dir_all(&img_dir) {
                                         log::error!("[ClipboardMonitor] 创建图片目录失败 (跳过此次图片保存): {}", e);
@@ -260,21 +293,36 @@ impl ClipboardMonitor {
 
                                     if !img_path.exists() {
                                         // 将 RGBA 数据转为 PNG 并保存
-                                        let img_buf = image::RgbaImage::from_raw(img.width as u32, img.height as u32, img.bytes.to_vec());
+                                        let img_buf = image::RgbaImage::from_raw(
+                                            img.width as u32,
+                                            img.height as u32,
+                                            img.bytes.to_vec(),
+                                        );
                                         if let Some(img_buf) = img_buf {
                                             let dyn_img = image::DynamicImage::ImageRgba8(img_buf);
                                             // 缩放到最大 1080px（长边限制）
                                             let max_dim = 1080u32;
-                                            let dyn_img = if img.width as u32 > max_dim || img.height as u32 > max_dim {
-                                                let ratio = max_dim as f64 / img.width.max(img.height) as f64;
+                                            let dyn_img = if img.width as u32 > max_dim
+                                                || img.height as u32 > max_dim
+                                            {
+                                                let ratio = max_dim as f64
+                                                    / img.width.max(img.height) as f64;
                                                 let new_w = (img.width as f64 * ratio) as u32;
                                                 let new_h = (img.height as f64 * ratio) as u32;
-                                                dyn_img.resize_exact(new_w, new_h, image::imageops::FilterType::Lanczos3)
+                                                dyn_img.resize_exact(
+                                                    new_w,
+                                                    new_h,
+                                                    image::imageops::FilterType::Lanczos3,
+                                                )
                                             } else {
                                                 dyn_img
                                             };
                                             if let Err(e) = dyn_img.save(&img_path) {
-                                                log::error!("[ClipboardMonitor] 保存图片失败 ({}): {}", img_path.display(), e);
+                                                log::error!(
+                                                    "[ClipboardMonitor] 保存图片失败 ({}): {}",
+                                                    img_path.display(),
+                                                    e
+                                                );
                                             }
                                         }
                                     }
@@ -282,7 +330,9 @@ impl ClipboardMonitor {
                                     let item = HistoryItem {
                                         id: Uuid::new_v4().to_string(),
                                         text: format!("[图片] {}x{}", img.width, img.height),
-                                        time: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                                        time: chrono::Local::now()
+                                            .format("%Y-%m-%d %H:%M:%S")
+                                            .to_string(),
                                         item_type: "image".to_string(),
                                         content: img_path.to_string_lossy().to_string(),
                                         pinned: false,
@@ -294,17 +344,29 @@ impl ClipboardMonitor {
 
                                     if let Some(store) = app_handle.try_state::<DataStore>() {
                                         if let Err(e) = store.insert_history(&item) {
-                                            log::error!("[ClipboardMonitor] 插入图片记录失败: {}", e);
+                                            log::error!(
+                                                "[ClipboardMonitor] 插入图片记录失败: {}",
+                                                e
+                                            );
                                         }
                                     }
-                                    if let Err(e) = app_handle.emit("clipboard-changed", ClipboardChanged { item: item.clone() }) {
+                                    if let Err(e) = app_handle.emit(
+                                        "clipboard-changed",
+                                        ClipboardChanged { item: item.clone() },
+                                    ) {
                                         log::warn!("[ClipboardMonitor] 推送图片事件失败: {}", e);
                                     }
 
                                     // LAN 同步：发送图片到局域网
-                                    if let Some(lan_sync) = app_handle.try_state::<crate::lan_sync::LanSync>() {
+                                    if let Some(lan_sync) =
+                                        app_handle.try_state::<crate::lan_sync::LanSync>()
+                                    {
                                         let img_path_str = img_path.to_string_lossy().to_string();
-                                        lan_sync.send_item("image", &format!("[图片] {}", img_path_str), &img_path_str);
+                                        lan_sync.send_item(
+                                            "image",
+                                            &format!("[图片] {}", img_path_str),
+                                            &img_path_str,
+                                        );
                                     }
                                 }
                             }
@@ -313,7 +375,10 @@ impl ClipboardMonitor {
                                 #[cfg(target_os = "windows")]
                                 if let Some(files) = get_clipboard_files() {
                                     let files_hash = files.join("|");
-                                    let hash = format!("{:x}", Md5::new().chain_update(files_hash.as_bytes()).finalize());
+                                    let hash = format!(
+                                        "{:x}",
+                                        Md5::new().chain_update(files_hash.as_bytes()).finalize()
+                                    );
                                     if Some(&hash) != last_text_hash.as_ref() {
                                         last_text_hash = Some(hash);
                                         let source = get_foreground_window_title();
@@ -322,11 +387,18 @@ impl ClipboardMonitor {
                                                 .file_name()
                                                 .map(|n| n.to_string_lossy().to_string())
                                                 .unwrap_or_else(|| file_path.clone());
-                                            let file_hash = format!("{:x}", Md5::new().chain_update(file_path.as_bytes()).finalize());
+                                            let file_hash = format!(
+                                                "{:x}",
+                                                Md5::new()
+                                                    .chain_update(file_path.as_bytes())
+                                                    .finalize()
+                                            );
                                             let item = HistoryItem {
                                                 id: Uuid::new_v4().to_string(),
                                                 text: filename,
-                                                time: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                                                time: chrono::Local::now()
+                                                    .format("%Y-%m-%d %H:%M:%S")
+                                                    .to_string(),
                                                 item_type: "file".to_string(),
                                                 content: file_path.clone(),
                                                 pinned: false,
@@ -335,17 +407,29 @@ impl ClipboardMonitor {
                                                 md5: Some(file_hash),
                                                 pinyin_initials: None,
                                             };
-                                            if let Some(store) = app_handle.try_state::<DataStore>() {
+                                            if let Some(store) = app_handle.try_state::<DataStore>()
+                                            {
                                                 if let Err(e) = store.insert_history(&item) {
-                                                    log::error!("[ClipboardMonitor] 插入文件记录失败: {}", e);
+                                                    log::error!(
+                                                        "[ClipboardMonitor] 插入文件记录失败: {}",
+                                                        e
+                                                    );
                                                 }
                                             }
-                                            if let Err(e) = app_handle.emit("clipboard-changed", ClipboardChanged { item: item.clone() }) {
-                                                log::warn!("[ClipboardMonitor] 推送文件事件失败: {}", e);
+                                            if let Err(e) = app_handle.emit(
+                                                "clipboard-changed",
+                                                ClipboardChanged { item: item.clone() },
+                                            ) {
+                                                log::warn!(
+                                                    "[ClipboardMonitor] 推送文件事件失败: {}",
+                                                    e
+                                                );
                                             }
 
                                             // LAN 同步：发送文件路径到局域网
-                                            if let Some(lan_sync) = app_handle.try_state::<crate::lan_sync::LanSync>() {
+                                            if let Some(lan_sync) =
+                                                app_handle.try_state::<crate::lan_sync::LanSync>()
+                                            {
                                                 lan_sync.send_item("file", &file_path, "");
                                             }
                                         }
@@ -404,10 +488,10 @@ fn get_foreground_window_title() -> String {
 /// 从剪贴板读取文件路径列表 (CF_HDROP)
 #[cfg(target_os = "windows")]
 fn get_clipboard_files() -> Option<Vec<String>> {
-    use windows::Win32::System::DataExchange::*;
-    use windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
     use std::ffi::OsString;
     use std::os::windows::ffi::OsStringExt;
+    use windows::Win32::System::DataExchange::*;
+    use windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
 
     unsafe {
         if OpenClipboard(None).is_err() {
@@ -438,7 +522,9 @@ fn get_clipboard_files() -> Option<Vec<String>> {
         for i in 0..count {
             // 获取文件名长度（不含 null terminator）
             let needed = DragQueryFileW(hdrop, i, None);
-            if needed == 0 { continue; }
+            if needed == 0 {
+                continue;
+            }
 
             // 分配缓冲区并读取文件名
             let mut buf = vec![0u16; (needed + 1) as usize];
@@ -450,7 +536,10 @@ fn get_clipboard_files() -> Option<Vec<String>> {
         }
 
         let _ = CloseClipboard();
-        if files.is_empty() { None } else { Some(files) }
+        if files.is_empty() {
+            None
+        } else {
+            Some(files)
+        }
     }
 }
-

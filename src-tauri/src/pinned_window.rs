@@ -2,31 +2,28 @@
 //! 不依赖 WebView，直接创建 Win32 窗口 + GDI 双缓冲绘制图片
 //! 支持：鼠标滚轮缩放、拖拽移动、ESC/右键关闭
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use image::GenericImageView;
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, BitBlt, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject,
-    EndPaint, InvalidateRect, SelectObject, UpdateWindow,
-    BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, SRCCOPY,
-    PAINTSTRUCT, HBRUSH, HBITMAP,
+    BeginPaint, BitBlt, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, EndPaint,
+    InvalidateRect, SelectObject, UpdateWindow, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS,
+    HBITMAP, HBRUSH, PAINTSTRUCT, SRCCOPY,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, ReleaseCapture, SetCapture, VK_CONTROL, VK_ESCAPE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect,
-    GetMessageW, GetWindowLongPtrW, LoadCursorW, PostQuitMessage,
-    RegisterClassW, SetWindowLongPtrW, ShowWindow, TranslateMessage,
-    CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWLP_USERDATA, IDC_ARROW,
-    MSG, SW_SHOW, WS_EX_TOPMOST, WS_EX_TOOLWINDOW,
-    WM_CREATE, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONUP, WM_SIZE,
-    WNDCLASSW, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
+    GetWindowLongPtrW, LoadCursorW, PostQuitMessage, RegisterClassW, SetWindowLongPtrW, ShowWindow,
+    TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWLP_USERDATA, IDC_ARROW, MSG,
+    SW_SHOW, WM_CREATE, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONUP, WM_SIZE, WNDCLASSW, WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 /// 窗口运行时状态
@@ -55,7 +52,10 @@ static WINDOW_RUNNING: AtomicBool = AtomicBool::new(false);
 const CLASS_NAME: &str = "PinnedImageWindow";
 
 fn to_wide(s: &str) -> Vec<u16> {
-    OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+    OsStr::new(s)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
 }
 
 fn make_bitmap_info(w: i32, h: i32) -> BITMAPINFO {
@@ -77,12 +77,7 @@ fn make_bitmap_info(w: i32, h: i32) -> BITMAPINFO {
 }
 
 /// 用 DIB 像素数据填充缓冲区（最近邻采样 + RGBA→BGRA）
-fn fill_buffer(
-    buf: &mut [u8],
-    buf_w: i32,
-    buf_h: i32,
-    state: &WindowState,
-) {
+fn fill_buffer(buf: &mut [u8], buf_w: i32, buf_h: i32, state: &WindowState) {
     let scaled_w = state.img_width as f32 * state.scale;
     let scaled_h = state.img_height as f32 * state.scale;
     let draw_x = (buf_w as f32 - scaled_w) * 0.5 + state.offset_x;
@@ -100,8 +95,7 @@ fn fill_buffer(
             buf[idx + 2] = 0;
             buf[idx + 3] = 0;
 
-            if sx >= 0.0 && sx < state.img_width as f32
-                && sy >= 0.0 && sy < state.img_height as f32
+            if sx >= 0.0 && sx < state.img_width as f32 && sy >= 0.0 && sy < state.img_height as f32
             {
                 let six = sx as u32;
                 let siy = sy as u32;
@@ -165,14 +159,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     let mut bits: *mut core::ffi::c_void = std::ptr::null_mut();
 
                     let hdc_mem = CreateCompatibleDC(hdc);
-                    let hbitmap_result = CreateDIBSection(
-                        hdc_mem,
-                        &bmi,
-                        DIB_RGB_COLORS,
-                        &mut bits,
-                        None,
-                        0,
-                    );
+                    let hbitmap_result =
+                        CreateDIBSection(hdc_mem, &bmi, DIB_RGB_COLORS, &mut bits, None, 0);
 
                     if let Ok(hbmp) = hbitmap_result {
                         state.hbitmap = Some(hbmp);
@@ -194,10 +182,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     let _ = DeleteDC(hdc_mem);
                 } else {
                     if let Some(bits) = state.dib_bits {
-                        let buf = std::slice::from_raw_parts_mut(
-                            bits,
-                            (win_w * win_h * 4) as usize,
-                        );
+                        let buf =
+                            std::slice::from_raw_parts_mut(bits, (win_w * win_h * 4) as usize);
                         fill_buffer(buf, win_w, win_h, state);
                     }
 
@@ -299,9 +285,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 
 fn register_class(instance: HINSTANCE) -> Result<(), String> {
     let class_name = to_wide(CLASS_NAME);
-    let cursor = unsafe {
-        LoadCursorW(None, IDC_ARROW)
-    }.map_err(|e| format!("LoadCursor 失败: {:?}", e))?;
+    let cursor =
+        unsafe { LoadCursorW(None, IDC_ARROW) }.map_err(|e| format!("LoadCursor 失败: {:?}", e))?;
 
     let wc = WNDCLASSW {
         style: CS_HREDRAW | CS_VREDRAW,
@@ -322,15 +307,16 @@ pub fn create_native_window(image_path: &str) -> Result<(), String> {
     }
     WINDOW_RUNNING.store(true, Ordering::SeqCst);
 
-    let img = image::open(image_path)
-        .map_err(|e| format!("无法加载图片: {}", e))?;
+    let img = image::open(image_path).map_err(|e| format!("无法加载图片: {}", e))?;
     let (img_width, img_height) = img.dimensions();
     let rgba = img.to_rgba8();
     let pixels: Vec<u8> = rgba.into_raw();
 
     log::info!(
         "[pinned-window] 图片已加载: {}x{}, {} bytes",
-        img_width, img_height, pixels.len()
+        img_width,
+        img_height,
+        pixels.len()
     );
 
     std::thread::spawn(move || {
@@ -345,9 +331,8 @@ pub fn create_native_window(image_path: &str) -> Result<(), String> {
 
 fn run_window_loop(pixels: Vec<u8>, img_width: u32, img_height: u32) -> Result<(), String> {
     // GetModuleHandleW 返回 HMODULE，可转为 HINSTANCE
-    let module = unsafe {
-        windows::Win32::System::LibraryLoader::GetModuleHandleW(None)
-    }.map_err(|e| format!("GetModuleHandle 失败: {:?}", e))?;
+    let module = unsafe { windows::Win32::System::LibraryLoader::GetModuleHandleW(None) }
+        .map_err(|e| format!("GetModuleHandle 失败: {:?}", e))?;
 
     let instance = HINSTANCE(module.0);
 
@@ -359,11 +344,12 @@ fn run_window_loop(pixels: Vec<u8>, img_width: u32, img_height: u32) -> Result<(
     let initial_w = (img_width as f32 * 0.6).clamp(300.0, 1200.0) as i32;
     let initial_h = (img_height as f32 * 0.6).clamp(200.0, 900.0) as i32;
 
-    let initial_scale = if img_width as f32 / initial_w as f32 > img_height as f32 / initial_h as f32 {
-        initial_w as f32 / img_width as f32
-    } else {
-        initial_h as f32 / img_height as f32
-    };
+    let initial_scale =
+        if img_width as f32 / initial_w as f32 > img_height as f32 / initial_h as f32 {
+            initial_w as f32 / img_width as f32
+        } else {
+            initial_h as f32 / img_height as f32
+        };
 
     let hwnd = unsafe {
         CreateWindowExW(
@@ -389,7 +375,9 @@ fn run_window_loop(pixels: Vec<u8>, img_width: u32, img_height: u32) -> Result<(
 
     // DWM 圆角
     {
-        use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE};
+        use windows::Win32::Graphics::Dwm::{
+            DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE,
+        };
         let preference: i32 = 2;
         unsafe {
             let _ = DwmSetWindowAttribute(
@@ -439,5 +427,3 @@ fn run_window_loop(pixels: Vec<u8>, img_width: u32, img_height: u32) -> Result<(
 
     Ok(())
 }
-
-

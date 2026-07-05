@@ -1,7 +1,7 @@
-use rusqlite::{Connection, params};
+use md5::{Digest, Md5};
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
-use md5::{Md5, Digest};
 
 // ===== 数据模型 =====
 
@@ -83,9 +83,12 @@ impl DataStore {
                 [],
                 |row| row.get::<_, i32>(0),
             )
-            .unwrap_or(0) > 0;
+            .unwrap_or(0)
+            > 0;
         if !has_pinyin {
-            if let Err(e) = conn.execute_batch("ALTER TABLE history ADD COLUMN pinyin_initials TEXT;") {
+            if let Err(e) =
+                conn.execute_batch("ALTER TABLE history ADD COLUMN pinyin_initials TEXT;")
+            {
                 log::warn!("[DataStore] 添加 pinyin_initials 列失败: {}", e);
             }
         }
@@ -97,9 +100,12 @@ impl DataStore {
                 [],
                 |row| row.get::<_, i32>(0),
             )
-            .unwrap_or(0) > 0;
+            .unwrap_or(0)
+            > 0;
         if !has_tag {
-            if let Err(e) = conn.execute_batch("ALTER TABLE snippets ADD COLUMN tag TEXT NOT NULL DEFAULT '';") {
+            if let Err(e) =
+                conn.execute_batch("ALTER TABLE snippets ADD COLUMN tag TEXT NOT NULL DEFAULT '';")
+            {
                 log::warn!("[DataStore] 添加 snippets.tag 列失败: {}", e);
             }
         }
@@ -124,7 +130,8 @@ impl DataStore {
             "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials
              FROM history WHERE workspace = ?1",
         );
-        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(workspace.to_string())];
+        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> =
+            vec![Box::new(workspace.to_string())];
 
         if filter == "pinned" {
             sql.push_str(" AND pinned = 1");
@@ -282,14 +289,22 @@ impl DataStore {
 
     pub fn delete_history(&self, ids: &[String]) -> Result<u32, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        let placeholders: Vec<String> = ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+        let placeholders: Vec<String> = ids
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", i + 1))
+            .collect();
         let sql = format!(
             "DELETE FROM history WHERE id IN ({})",
             placeholders.join(",")
         );
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-            ids.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
-        let count = conn.execute(&sql, param_refs.as_slice()).map_err(|e| e.to_string())?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = ids
+            .iter()
+            .map(|s| s as &dyn rusqlite::types::ToSql)
+            .collect();
+        let count = conn
+            .execute(&sql, param_refs.as_slice())
+            .map_err(|e| e.to_string())?;
         Ok(count as u32)
     }
 
@@ -302,9 +317,11 @@ impl DataStore {
         .map_err(|e| e.to_string())?;
 
         let pinned: bool = conn
-            .query_row("SELECT pinned FROM history WHERE id = ?1", params![id], |row| {
-                row.get::<_, i32>(0)
-            })
+            .query_row(
+                "SELECT pinned FROM history WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, i32>(0),
+            )
             .map(|p| p != 0)
             .map_err(|e| e.to_string())?;
 
@@ -312,7 +329,11 @@ impl DataStore {
     }
 
     /// 获取即将被清理的记录（用于撤销支持）
-    pub fn get_history_before_cleanup(&self, workspace: &str, before_days: Option<u32>) -> Result<Vec<HistoryItem>, String> {
+    pub fn get_history_before_cleanup(
+        &self,
+        workspace: &str,
+        before_days: Option<u32>,
+    ) -> Result<Vec<HistoryItem>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         // 安全保护：before_days 为 None 或 0 时返回空列表
         let days = match before_days {
@@ -325,15 +346,22 @@ impl DataStore {
             "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials
              FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2",
         ).map_err(|e| e.to_string())?;
-        let rows = stmt.query_map(params![workspace, cutoff_str], |row| {
-            Ok(HistoryItem {
-                id: row.get(0)?, text: row.get(1)?, time: row.get(2)?,
-                item_type: row.get(3)?, content: row.get(4)?,
-                pinned: row.get::<_, i32>(5)? != 0,
-                source: row.get(6)?, workspace: row.get(7)?,
-                md5: row.get(8)?, pinyin_initials: row.get(9)?,
+        let rows = stmt
+            .query_map(params![workspace, cutoff_str], |row| {
+                Ok(HistoryItem {
+                    id: row.get(0)?,
+                    text: row.get(1)?,
+                    time: row.get(2)?,
+                    item_type: row.get(3)?,
+                    content: row.get(4)?,
+                    pinned: row.get::<_, i32>(5)? != 0,
+                    source: row.get(6)?,
+                    workspace: row.get(7)?,
+                    md5: row.get(8)?,
+                    pinyin_initials: row.get(9)?,
+                })
             })
-        }).map_err(|e| e.to_string())?;
+            .map_err(|e| e.to_string())?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
 
@@ -347,11 +375,12 @@ impl DataStore {
         };
         let cutoff = chrono::Local::now() - chrono::Duration::days(days as i64);
         let cutoff_str = cutoff.format("%Y-%m-%d %H:%M:%S").to_string();
-        let count = conn.execute(
-            "DELETE FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2",
-            params![workspace, cutoff_str],
-        )
-        .map_err(|e| e.to_string())?;
+        let count = conn
+            .execute(
+                "DELETE FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2",
+                params![workspace, cutoff_str],
+            )
+            .map_err(|e| e.to_string())?;
         Ok(count as u32)
     }
 
@@ -449,7 +478,8 @@ impl DataStore {
         for row in rows {
             if let Ok((key, value)) = row {
                 // 尝试解析 JSON 值，否则作为字符串
-                let json_val = serde_json::from_str(&value).unwrap_or(serde_json::Value::String(value));
+                let json_val =
+                    serde_json::from_str(&value).unwrap_or(serde_json::Value::String(value));
                 map.insert(key, json_val);
             }
         }
@@ -458,6 +488,9 @@ impl DataStore {
     }
 
     pub fn save_config(&self, config: &serde_json::Value) -> Result<(), String> {
+        // 先备份当前配置（写入前备份，保留最近 10 个版本）
+        let _ = self.backup_config();
+
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         if let serde_json::Value::Object(map) = config {
             for (key, value) in map {
@@ -472,6 +505,61 @@ impl DataStore {
                 .map_err(|e| e.to_string())?;
             }
         }
+        Ok(())
+    }
+
+    /// 备份当前配置到备份文件（自动轮换，保留最近 10 个备份）
+    fn backup_config(&self) -> Result<(), String> {
+        let backup_dir = std::path::Path::new(&self.path)
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join("config_backups");
+
+        // 创建备份目录
+        if !backup_dir.exists() {
+            std::fs::create_dir_all(&backup_dir)
+                .map_err(|e| format!("无法创建配置备份目录: {}", e))?;
+        }
+
+        // 序列化当前配置
+        let config = self.get_config()?;
+        let backup_json = serde_json::to_string_pretty(&config)
+            .map_err(|e| format!("序列化配置失败: {}", e))?;
+
+        // 写入临时文件 + 原子 rename（防止写入中途崩溃损坏备份）
+        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+        let backup_name = format!("config_{}.json", timestamp);
+        let backup_path = backup_dir.join(&backup_name);
+        let tmp_path = backup_dir.join(format!(".{}.tmp", backup_name));
+
+        std::fs::write(&tmp_path, &backup_json)
+            .map_err(|e| format!("写入配置备份临时文件失败: {}", e))?;
+        std::fs::rename(&tmp_path, &backup_path)
+            .map_err(|e| format!("重命名配置备份文件失败: {}", e))?;
+
+        // 轮换：删除超过 10 个的旧备份
+        if let Ok(entries) = std::fs::read_dir(&backup_dir) {
+            let mut backups: Vec<_> = entries
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.file_name()
+                        .to_string_lossy()
+                        .starts_with("config_")
+                        && e.file_name().to_string_lossy().ends_with(".json")
+                })
+                .filter_map(|e| {
+                    let modified = e.metadata().ok()?.modified().ok()?;
+                    Some((e.path(), modified))
+                })
+                .collect();
+            // 按修改时间降序排列，保留最新的 10 个
+            backups.sort_by(|a, b| b.1.cmp(&a.1));
+            for (path, _) in backups.iter().skip(10) {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+
+        log::info!("[DataStore] 配置已备份: {}", backup_path.display());
         Ok(())
     }
 
@@ -533,7 +621,13 @@ impl DataStore {
         Ok(items)
     }
 
-    pub fn update_snippet(&self, id: &str, name: &str, content: &str, tag: &str) -> Result<(), String> {
+    pub fn update_snippet(
+        &self,
+        id: &str,
+        name: &str,
+        content: &str,
+        tag: &str,
+    ) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
             "UPDATE snippets SET name = ?1, content = ?2, tag = ?3 WHERE id = ?4",
@@ -596,7 +690,9 @@ pub fn compute_pinyin_initials(text: &str) -> String {
     let pys = pinyin::lazy_pinyin(text, &args);
     let mut initials = String::new();
     for (i, py) in pys.iter().enumerate() {
-        if i >= 50 { break; }
+        if i >= 50 {
+            break;
+        }
         if let Some(first) = py.chars().next() {
             if first.is_alphabetic() {
                 initials.push(first.to_ascii_uppercase());

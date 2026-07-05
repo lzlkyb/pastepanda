@@ -1,11 +1,11 @@
+use crate::clipboard_monitor::PasteSuppress;
 use arboard::Clipboard;
 use arboard::ImageData;
 use md5::Digest;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
-use crate::clipboard_monitor::PasteSuppress;
 
 /// 粘贴引擎 — 处理时序敏感的粘贴操作
 pub struct PasteEngine {
@@ -64,7 +64,11 @@ impl PasteEngine {
                 } else {
                     "(无标题)".to_string()
                 };
-                log::info!("[PasteEngine] 追踪前台窗口: hwnd={}, title=\"{}\"", new_hwnd, title);
+                log::info!(
+                    "[PasteEngine] 追踪前台窗口: hwnd={}, title=\"{}\"",
+                    new_hwnd,
+                    title
+                );
                 if let Ok(mut guard) = self.tracked_foreground_hwnd.lock() {
                     *guard = Some(new_hwnd);
                 }
@@ -122,7 +126,9 @@ impl PasteEngine {
         }
     }
     #[cfg(not(target_os = "windows"))]
-    pub fn capture_foreground_now(&self) -> Option<isize> { None }
+    pub fn capture_foreground_now(&self) -> Option<isize> {
+        None
+    }
 
     /// 获取最佳目标窗口句柄：手动保存 > 追踪 > 实时抓取 > None
     fn get_target_hwnd(&self) -> Option<isize> {
@@ -161,14 +167,22 @@ impl PasteEngine {
         // RAII 风格的锁释放
         struct LockGuard<'a>(&'a AtomicBool);
         impl<'a> Drop for LockGuard<'a> {
-            fn drop(&mut self) { self.0.store(false, Ordering::Release); }
+            fn drop(&mut self) {
+                self.0.store(false, Ordering::Release);
+            }
         }
         let _guard = LockGuard(&self.paste_lock);
 
         // 1. 先设置粘贴抑制（必须在写入剪贴板之前）
-        let content_hash = text.as_ref().map(|t| format!("{:x}", md5::Md5::new().chain_update(t.as_bytes()).finalize()));
+        let content_hash = text.as_ref().map(|t| {
+            format!(
+                "{:x}",
+                md5::Md5::new().chain_update(t.as_bytes()).finalize()
+            )
+        });
         if let Some(ref hash) = content_hash {
-            self.paste_suppress.set_with_hash(Duration::from_millis(3000), hash.clone());
+            self.paste_suppress
+                .set_with_hash(Duration::from_millis(3000), hash.clone());
         } else {
             self.paste_suppress.set(Duration::from_millis(3000));
         }
@@ -176,7 +190,9 @@ impl PasteEngine {
         // 2. 写入剪贴板
         if let Some(ref t) = text {
             let mut clipboard = Clipboard::new().map_err(|e| format!("无法打开剪贴板: {}", e))?;
-            clipboard.set_text(t.as_str()).map_err(|e| format!("无法写入剪贴板: {}", e))?;
+            clipboard
+                .set_text(t.as_str())
+                .map_err(|e| format!("无法写入剪贴板: {}", e))?;
             log::info!("[PasteEngine] 剪贴板已写入: {}...", &t[..t.len().min(30)]);
         }
 
@@ -210,13 +226,18 @@ impl PasteEngine {
     /// 仅复制不粘贴
     pub fn copy_only(&self, text: &str) -> Result<(), String> {
         let mut clipboard = Clipboard::new().map_err(|e| format!("无法打开剪贴板: {}", e))?;
-        clipboard.set_text(text).map_err(|e| format!("无法写入剪贴板: {}", e))?;
+        clipboard
+            .set_text(text)
+            .map_err(|e| format!("无法写入剪贴板: {}", e))?;
         Ok(())
     }
 
     /// 粘贴图片：读取图片文件 → 写入剪贴板 → 发送 WM_PASTE
     pub fn execute_paste_image(&self, image_path: &str) -> Result<(), String> {
-        log::info!("[PasteEngine] execute_paste_image 开始, path={}", image_path);
+        log::info!(
+            "[PasteEngine] execute_paste_image 开始, path={}",
+            image_path
+        );
 
         // 0. 获取粘贴锁，防止竞态条件
         if self.paste_lock.swap(true, Ordering::Acquire) {
@@ -225,24 +246,25 @@ impl PasteEngine {
         }
         struct LockGuard<'a>(&'a AtomicBool);
         impl<'a> Drop for LockGuard<'a> {
-            fn drop(&mut self) { self.0.store(false, Ordering::Release); }
+            fn drop(&mut self) {
+                self.0.store(false, Ordering::Release);
+            }
         }
         let _guard = LockGuard(&self.paste_lock);
 
         // 1. 设置粘贴抑制
         let content_hash = {
             let mut hasher = md5::Md5::new();
-            let mut file = std::fs::File::open(image_path)
-                .map_err(|e| format!("无法打开图片文件: {}", e))?;
-            std::io::copy(&mut file, &mut hasher)
-                .map_err(|e| format!("读取图片失败: {}", e))?;
+            let mut file =
+                std::fs::File::open(image_path).map_err(|e| format!("无法打开图片文件: {}", e))?;
+            std::io::copy(&mut file, &mut hasher).map_err(|e| format!("读取图片失败: {}", e))?;
             format!("{:x}", hasher.finalize())
         };
-        self.paste_suppress.set_with_hash(Duration::from_millis(3000), content_hash);
+        self.paste_suppress
+            .set_with_hash(Duration::from_millis(3000), content_hash);
 
         // 2. 读取图片并写入剪贴板
-        let img = image::open(image_path)
-            .map_err(|e| format!("无法解码图片: {}", e))?;
+        let img = image::open(image_path).map_err(|e| format!("无法解码图片: {}", e))?;
         let rgba = img.to_rgba8();
         let (width, height) = rgba.dimensions();
         let img_data = ImageData {
@@ -252,7 +274,9 @@ impl PasteEngine {
         };
 
         let mut clipboard = Clipboard::new().map_err(|e| format!("无法打开剪贴板: {}", e))?;
-        clipboard.set_image(img_data).map_err(|e| format!("无法写入图片到剪贴板: {}", e))?;
+        clipboard
+            .set_image(img_data)
+            .map_err(|e| format!("无法写入图片到剪贴板: {}", e))?;
         log::info!("[PasteEngine] 图片已写入剪贴板 {}x{}", width, height);
 
         // 3. 粘贴前实时重抓前台窗口（排除自身）
@@ -283,14 +307,17 @@ impl PasteEngine {
 
     #[cfg(target_os = "windows")]
     fn restore_and_send_ctrl_v(&self, hwnd_value: Option<isize>) -> Result<(), String> {
-        use windows::Win32::UI::WindowsAndMessaging::*;
         use windows::Win32::Foundation::*;
         use windows::Win32::System::Threading::*;
         use windows::Win32::UI::Input::KeyboardAndMouse::GetFocus;
+        use windows::Win32::UI::WindowsAndMessaging::*;
 
         const WM_PASTE: u32 = 0x0302;
 
-        log::info!("[PasteEngine] restore_and_send_ctrl_v, hwnd={:?}", hwnd_value);
+        log::info!(
+            "[PasteEngine] restore_and_send_ctrl_v, hwnd={:?}",
+            hwnd_value
+        );
 
         unsafe {
             if let Some(hwnd_raw) = hwnd_value {

@@ -1,10 +1,13 @@
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use tauri::{
     image::Image,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     webview::WebviewWindowBuilder,
     AppHandle, Emitter, Manager,
 };
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 
 /// 截断文本，确保适合预览显示（最大 30 个字符）
 fn truncate_preview(text: &str, max_len: usize) -> String {
@@ -12,7 +15,8 @@ fn truncate_preview(text: &str, max_len: usize) -> String {
     if text.len() <= max_len {
         return text.to_string();
     }
-    let end = text.char_indices()
+    let end = text
+        .char_indices()
         .take(max_len)
         .last()
         .map(|(i, c)| i + c.len_utf8())
@@ -22,7 +26,10 @@ fn truncate_preview(text: &str, max_len: usize) -> String {
 
 /// 获取最近 N 条文本记录用于自绘弹窗预览
 /// 返回 (id, item_type, preview_text, full_text)，item_type 用于前端图标渲染
-pub fn get_recent_texts_public(app: &AppHandle, limit: usize) -> Vec<(String, String, String, String)> {
+pub fn get_recent_texts_public(
+    app: &AppHandle,
+    limit: usize,
+) -> Vec<(String, String, String, String)> {
     let store = match app.try_state::<crate::data_store::DataStore>() {
         Some(s) => s,
         None => return Vec::new(),
@@ -59,12 +66,17 @@ pub fn is_monitoring_public(app: &AppHandle) -> bool {
         .unwrap_or(true)
 }
 
-
-
 /// 构建弹窗数据 JSON（统一复用，消除重复查询）
-pub fn build_popup_data_public(app: &AppHandle, recents: &[(String, String, String, String)], monitoring: bool) -> serde_json::Value {
+pub fn build_popup_data_public(
+    app: &AppHandle,
+    recents: &[(String, String, String, String)],
+    monitoring: bool,
+) -> serde_json::Value {
     let version = crate::commands::APP_VERSION.to_string();
-    let name = crate::commands::APP_NAME.get().map(|s| s.as_str()).unwrap_or("PastePanda");
+    let name = crate::commands::APP_NAME
+        .get()
+        .map(|s| s.as_str())
+        .unwrap_or("PastePanda");
 
     let recents_json: Vec<serde_json::Value> = recents.iter().map(|(id, item_type, preview, text)| {
         serde_json::json!({ "id": id, "type": item_type, "preview": preview, "text": text })
@@ -74,7 +86,12 @@ pub fn build_popup_data_public(app: &AppHandle, recents: &[(String, String, Stri
     let stats = match store.as_ref() {
         Some(s) => match s.get_stats("默认") {
             Ok(s) => {
-                log::info!("[TrayManager] stats 获取成功: total={}, pinned={}, today={}", s.total, s.pinned, s.today);
+                log::info!(
+                    "[TrayManager] stats 获取成功: total={}, pinned={}, today={}",
+                    s.total,
+                    s.pinned,
+                    s.today
+                );
                 let max_size_mb = store
                     .and_then(|s| s.get_config().ok())
                     .and_then(|c| c.get("db_max_size_mb").and_then(|v| v.as_f64()))
@@ -91,7 +108,7 @@ pub fn build_popup_data_public(app: &AppHandle, recents: &[(String, String, Stri
                 log::warn!("[TrayManager] get_stats 失败: {}", e);
                 None
             }
-        }
+        },
         None => {
             log::warn!("[TrayManager] DataStore 未初始化，无法获取统计");
             None
@@ -134,11 +151,11 @@ fn get_taskbar_edge() -> TaskbarEdge {
     }
 
     match abd.uEdge {
-        0 => TaskbarEdge::Left,    // ABE_LEFT
-        1 => TaskbarEdge::Top,     // ABE_TOP
-        2 => TaskbarEdge::Right,   // ABE_RIGHT
-        3 => TaskbarEdge::Bottom,  // ABE_BOTTOM
-        _ => TaskbarEdge::Bottom,  // 未知默认底部
+        0 => TaskbarEdge::Left,   // ABE_LEFT
+        1 => TaskbarEdge::Top,    // ABE_TOP
+        2 => TaskbarEdge::Right,  // ABE_RIGHT
+        3 => TaskbarEdge::Bottom, // ABE_BOTTOM
+        _ => TaskbarEdge::Bottom, // 未知默认底部
     }
 }
 
@@ -154,8 +171,9 @@ fn get_taskbar_edge() -> TaskbarEdge {
 /// - 任务栏右侧 → 弹窗在图标左侧，上边缘对齐
 /// 增加屏幕边界约束（8px 安全边距），防止弹窗被裁剪或贴边
 fn calc_popup_position(
-    tray_rect: (f64, f64, f64, f64),  // (x, y, w, h)
-    popup_w: f64, popup_h: f64,
+    tray_rect: (f64, f64, f64, f64), // (x, y, w, h)
+    popup_w: f64,
+    popup_h: f64,
     edge: TaskbarEdge,
 ) -> tauri::PhysicalPosition<f64> {
     let (tray_x, tray_y, tray_w, tray_h) = tray_rect;
@@ -206,9 +224,9 @@ fn calc_popup_position(
 /// 获取主显示器工作区尺寸（排除任务栏）
 #[cfg(target_os = "windows")]
 fn get_work_area_size() -> (f64, f64) {
+    use windows::Win32::Foundation::RECT;
     use windows::Win32::UI::WindowsAndMessaging::SystemParametersInfoW;
     use windows::Win32::UI::WindowsAndMessaging::SPI_GETWORKAREA;
-    use windows::Win32::Foundation::RECT;
     use windows::Win32::UI::WindowsAndMessaging::SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS;
 
     let mut rect = RECT::default();
@@ -220,7 +238,10 @@ fn get_work_area_size() -> (f64, f64) {
             SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
         );
     }
-    ((rect.right - rect.left) as f64, (rect.bottom - rect.top) as f64)
+    (
+        (rect.right - rect.left) as f64,
+        (rect.bottom - rect.top) as f64,
+    )
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -235,7 +256,13 @@ fn show_tray_popup(app: &AppHandle, tray_rect: (f64, f64, f64, f64)) {
     let popup_w = 280.0;
     let popup_h = 470.0;
 
-    log::info!("[TrayManager] show_tray_popup 被调用, tray_rect=({:.0},{:.0} {:.0}x{:.0})", tray_rect.0, tray_rect.1, tray_rect.2, tray_rect.3);
+    log::info!(
+        "[TrayManager] show_tray_popup 被调用, tray_rect=({:.0},{:.0} {:.0}x{:.0})",
+        tray_rect.0,
+        tray_rect.1,
+        tray_rect.2,
+        tray_rect.3
+    );
 
     // 如果已有弹窗，先关闭并销毁
     if let Some(existing) = app.get_webview_window(popup_label) {
@@ -253,16 +280,20 @@ fn show_tray_popup(app: &AppHandle, tray_rect: (f64, f64, f64, f64)) {
 
     log::info!("[TrayManager] 开始创建弹窗窗口...");
 
-    match WebviewWindowBuilder::new(app, popup_label, tauri::WebviewUrl::App("popup.html".into()))
-        .title("")
-        .inner_size(popup_w, popup_h)
-        .resizable(false)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .shadow(false)
-        .visible(false)
-        .build()
+    match WebviewWindowBuilder::new(
+        app,
+        popup_label,
+        tauri::WebviewUrl::App("popup.html".into()),
+    )
+    .title("")
+    .inner_size(popup_w, popup_h)
+    .resizable(false)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .shadow(false)
+    .visible(false)
+    .build()
     {
         Ok(window) => {
             log::info!("[TrayManager] 弹窗窗口创建成功");
@@ -338,21 +369,20 @@ fn set_dwm_round_corners(_window: &tauri::WebviewWindow) {}
 
 /// 初始化系统托盘图标（纯自绘弹窗，无原生菜单）
 pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let icon = Image::from_bytes(include_bytes!("../icons/icon.png"))
-        .unwrap_or_else(|e| {
-            log::error!("[TrayManager] 加载托盘图标失败: {}", e);
-            let mut pixels = vec![0u8; 32 * 32 * 4];
-            for y in 8..24 {
-                for x in 8..24 {
-                    let idx = (y * 32 + x) * 4;
-                    pixels[idx] = 200;
-                    pixels[idx + 1] = 200;
-                    pixels[idx + 2] = 200;
-                    pixels[idx + 3] = 200;
-                }
+    let icon = Image::from_bytes(include_bytes!("../icons/icon.png")).unwrap_or_else(|e| {
+        log::error!("[TrayManager] 加载托盘图标失败: {}", e);
+        let mut pixels = vec![0u8; 32 * 32 * 4];
+        for y in 8..24 {
+            for x in 8..24 {
+                let idx = (y * 32 + x) * 4;
+                pixels[idx] = 200;
+                pixels[idx + 1] = 200;
+                pixels[idx + 2] = 200;
+                pixels[idx + 3] = 200;
             }
-            Image::new_owned(pixels, 32, 32)
-        });
+        }
+        Image::new_owned(pixels, 32, 32)
+    });
 
     let version = &crate::commands::APP_VERSION;
 

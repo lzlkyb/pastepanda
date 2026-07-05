@@ -1,20 +1,29 @@
-use tauri::Manager;
 use std::sync::Arc;
+use tauri::Manager;
 
-mod data_store;
-mod commands;
 mod clipboard_monitor;
-mod paste_engine;
-mod tray_manager;
+mod commands;
+mod data_store;
+mod error;
 mod hotkey_manager;
 mod lan_sync;
+mod paste_engine;
 mod pinned_window;
+mod tray_manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_window_state::Builder::new().build())
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // 第二个实例启动时，显示已有窗口
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -24,48 +33,58 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
             // 初始化 APP_NAME（通过 Tauri 框架 API 获取，dev/安装版均可正确读取）
-            let product_name = app.config().product_name.clone().unwrap_or_else(|| "PastePanda".into());
+            let product_name = app
+                .config()
+                .product_name
+                .clone()
+                .unwrap_or_else(|| "PastePanda".into());
             let _ = commands::APP_NAME.set(product_name);
 
             // Updater 插件容错注册：初始化失败仅 warn，不中断应用启动
             #[cfg(desktop)]
             {
-                if let Err(e) = app.handle().plugin(tauri_plugin_updater::Builder::new().build()) {
+                if let Err(e) = app
+                    .handle()
+                    .plugin(tauri_plugin_updater::Builder::new().build())
+                {
                     log::warn!("初始化 Updater 插件失败，已跳过：{e}");
                 }
             }
             let handle = app.handle().clone();
 
             // 初始化 SQLite 数据库
-            let app_dir = handle.path().app_data_dir()
-                .expect("无法获取应用数据目录");
+            let app_dir = handle.path().app_data_dir().expect("无法获取应用数据目录");
             if let Err(e) = std::fs::create_dir_all(&app_dir) {
                 log::error!("无法创建应用数据目录: {}", e);
             }
             let db_path = app_dir.join("clipboard.db");
-            let db_path_str = db_path.to_str()
-                .unwrap_or_else(|| {
-                    log::error!("数据库路径包含非 UTF-8 字符，使用回退路径");
-                    "clipboard.db"
-                });
-            let store = data_store::DataStore::new(db_path_str)
-                .expect("无法初始化数据库");
+            let db_path_str = db_path.to_str().unwrap_or_else(|| {
+                log::error!("数据库路径包含非 UTF-8 字符，使用回退路径");
+                "clipboard.db"
+            });
+            let store = data_store::DataStore::new(db_path_str).expect("无法初始化数据库");
 
             // 读取 LAN 同步配置（在 store 被 manage 之前）
-            let lan_enabled = store.get_config()
+            let lan_enabled = store
+                .get_config()
                 .ok()
                 .and_then(|c| c.get("lan_sync_enabled").and_then(|v| v.as_bool()))
                 .unwrap_or(false);
 
             // 读取保存的热键配置（在 store 被 manage 之前）
             let saved_config = store.get_config().unwrap_or_default();
-            let auto_strip_enabled = saved_config.get("auto_strip").and_then(|v| v.as_bool()).unwrap_or(false);
+            let auto_strip_enabled = saved_config
+                .get("auto_strip")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             let hotkey_config = hotkey_manager::HotkeyConfig {
-                show_window: saved_config.get("hotkey")
+                show_window: saved_config
+                    .get("hotkey")
                     .and_then(|v| v.as_str())
                     .unwrap_or("Ctrl+Shift+V")
                     .to_string(),
-                seq_paste: saved_config.get("sequential_hotkey")
+                seq_paste: saved_config
+                    .get("sequential_hotkey")
                     .and_then(|v| v.as_str())
                     .unwrap_or("Ctrl+Q")
                     .to_string(),
@@ -79,17 +98,12 @@ pub fn run() {
             app.manage(paste_suppress.clone());
 
             // 初始化粘贴引擎
-            let paste_engine = paste_engine::PasteEngine::new(
-                handle.clone(),
-                paste_suppress.clone(),
-            );
+            let paste_engine =
+                paste_engine::PasteEngine::new(handle.clone(), paste_suppress.clone());
             app.manage(paste_engine);
 
             // 启动剪贴板监听
-            let monitor = clipboard_monitor::ClipboardMonitor::new(
-                handle.clone(),
-                paste_suppress,
-            );
+            let monitor = clipboard_monitor::ClipboardMonitor::new(handle.clone(), paste_suppress);
             // 从数据库初始化 auto_strip 缓存（在 store.manage 之前已读取），避免轮询时每次都锁数据库
             monitor.update_auto_strip_cache(auto_strip_enabled);
             monitor.start();
@@ -126,8 +140,10 @@ pub fn run() {
                 // Win11 DWM 圆角
                 #[cfg(target_os = "windows")]
                 {
-                    use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE};
                     use windows::Win32::Foundation::HWND;
+                    use windows::Win32::Graphics::Dwm::{
+                        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE,
+                    };
                     if let Ok(hwnd) = window.hwnd() {
                         let preference: i32 = 2; // DWMWCP_ROUNDSMALL = 2
                         unsafe {
@@ -144,7 +160,14 @@ pub fn run() {
                 }
             }
 
-            log::info!("{} v{} 启动", commands::APP_NAME.get().map(|s| s.as_str()).unwrap_or("PastePanda"), *commands::APP_VERSION);
+            log::info!(
+                "{} v{} 启动",
+                commands::APP_NAME
+                    .get()
+                    .map(|s| s.as_str())
+                    .unwrap_or("PastePanda"),
+                *commands::APP_VERSION
+            );
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
