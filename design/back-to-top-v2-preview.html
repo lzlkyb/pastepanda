@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1200, initial-scale=1.0">
+<title>回到顶部按钮 — 方案 B 精美变体设计</title>
+<style>
+:root {
+  --app-bg: #F4F6F9;
+  --card-bg: #fff;
+  --card-border: #E0E4EB;
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --accent-dark: #0369A1;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #1a1a2e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+.container {
+  display: flex;
+  gap: 28px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.app-window {
+  width: 260px;
+  height: 540px;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.1), 0 20px 60px rgba(0,0,0,0.4);
+  display: flex;
+  flex-direction: column;
+  background: var(--app-bg);
+  position: relative;
+}
+
+.app-header {
+  padding: 12px 14px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  background: #fff;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  padding: 12px;
+}
+.scroll-area::-webkit-scrollbar { width: 4px; }
+.scroll-area::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+
+.mock-card {
+  height: 56px;
+  border-radius: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.mock-card::before {
+  content: '';
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  background: var(--accent-light);
+  flex-shrink: 0;
+}
+.mock-divider {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 8px 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mock-divider::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.desc-area {
+  background: #fff;
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+.scheme-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.scheme-desc {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.badge-recommend {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #ECFDF5;
+  color: #065F46;
+  border: 1px solid #A7F3D0;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+/* ============================================
+   公共：胶囊毛玻璃基类
+   ============================================ */
+.btn-base {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 19px;
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 40;
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border: none;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08), 0 0.5px 2px rgba(0,0,0,0.04);
+}
+.btn-base svg {
+  width: 16px; height: 16px;
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ============================================
+   方案 B1 — 双色渐变边框 + 微光
+   ============================================ */
+.btn-b1 {
+  border: 1px solid transparent;
+  background: rgba(255,255,255,0.88);
+  background-clip: padding-box;
+  position: relative;
+}
+.btn-b1::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 19px;
+  padding: 1px;
+  background: linear-gradient(135deg, #0284C7, #7C3AED, #0284C7);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.35s;
+}
+.btn-b1::after {
+  content: '';
+  position: absolute;
+  top: -2px; left: 50%;
+  width: 30px; height: 1.5px;
+  background: linear-gradient(90deg, transparent, rgba(2,132,199,0.6), transparent);
+  border-radius: 2px;
+  transform: translateX(-50%);
+  opacity: 0;
+  transition: all 0.35s;
+}
+.btn-b1:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 24px rgba(2,132,199,0.15), 0 2px 8px rgba(0,0,0,0.06);
+  color: var(--accent);
+}
+.btn-b1:hover::before { opacity: 1; }
+.btn-b1:hover::after { opacity: 1; top: -1px; width: 40px; }
+.btn-b1:hover svg { transform: translateY(-2px); color: #7C3AED; }
+.btn-b1:active { transform: scale(0.95) translateY(-3px); }
+
+/* ============================================
+   方案 B2 — 冰霜质感 + 内发光
+   ============================================ */
+.btn-b2 {
+  background: linear-gradient(180deg,
+    rgba(255,255,255,0.95) 0%,
+    rgba(240,245,250,0.9) 50%,
+    rgba(255,255,255,0.92) 100%
+  );
+  border: 1px solid rgba(255,255,255,0.6);
+  box-shadow:
+    0 2px 12px rgba(0,0,0,0.06),
+    0 0.5px 2px rgba(0,0,0,0.03),
+    inset 0 1px 0 rgba(255,255,255,0.8);
+  position: relative;
+}
+.btn-b2::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 19px;
+  box-shadow: inset 0 0 20px rgba(2,132,199,0.0);
+  transition: box-shadow 0.4s;
+}
+.btn-b2:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 6px 24px rgba(2,132,199,0.12),
+    0 2px 8px rgba(0,0,0,0.04),
+    inset 0 1px 0 rgba(255,255,255,0.8);
+  color: var(--accent);
+  border-color: rgba(2,132,199,0.3);
+}
+.btn-b2:hover::before {
+  box-shadow: inset 0 0 24px rgba(2,132,199,0.08);
+}
+.btn-b2:hover svg { transform: translateY(-2px) rotate(-180deg); transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.btn-b2:active { transform: scale(0.95) translateY(-3px); }
+
+/* ============================================
+   方案 B3 — 磨砂暗金 + 进度环
+   ============================================ */
+.btn-b3 {
+  background: rgba(255,255,255,0.78);
+  border: 1px solid rgba(0,0,0,0.06);
+  position: relative;
+  overflow: visible;
+}
+/* 进度环 SVG */
+.btn-b3 .progress-ring {
+  position: absolute;
+  top: -4px; left: -4px;
+  width: calc(100% + 8px);
+  height: calc(100% + 8px);
+  pointer-events: none;
+  transform: rotate(-90deg);
+}
+.btn-b3 .progress-ring circle {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 126;
+  stroke-dashoffset: 126;
+  transition: stroke-dashoffset 0.6s cubic-bezier(0.4, 0, 0.2, 1), stroke 0.3s;
+  opacity: 0;
+}
+.btn-b3:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 24px rgba(2,132,199,0.15), 0 2px 8px rgba(0,0,0,0.04);
+  color: var(--accent);
+  border-color: rgba(2,132,199,0.25);
+}
+.btn-b3:hover .progress-ring circle {
+  stroke-dashoffset: 0;
+  opacity: 1;
+}
+.btn-b3:hover svg { transform: translateY(-2px); }
+.btn-b3:active { transform: scale(0.95) translateY(-3px); }
+
+/* ============================================
+   方案 B4 — 液态玻璃 + 涟漪波纹
+   ============================================ */
+.btn-b4 {
+  background: rgba(255,255,255,0.82);
+  border: 1px solid rgba(0,0,0,0.06);
+  position: relative;
+  overflow: hidden;
+}
+/* 涟漪容器 */
+.btn-b4 .ripple-container {
+  position: absolute;
+  inset: 0;
+  border-radius: 19px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.btn-b4 .ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(2,132,199,0.3) 0%, transparent 70%);
+  transform: scale(0);
+  opacity: 0;
+  animation: ripple-pulse 2s ease-out infinite;
+}
+.btn-b4 .ripple:nth-child(1) { width: 60px; height: 60px; top: -30px; right: -20px; animation-delay: 0s; }
+.btn-b4 .ripple:nth-child(2) { width: 40px; height: 40px; bottom: -15px; left: -10px; animation-delay: 0.8s; }
+.btn-b4 .ripple:nth-child(3) { width: 30px; height: 30px; top: 5px; left: 30px; animation-delay: 1.6s; }
+
+@keyframes ripple-pulse {
+  0% { transform: scale(0); opacity: 0; }
+  30% { opacity: 0.6; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
+.btn-b4:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 24px rgba(2,132,199,0.15), 0 2px 8px rgba(0,0,0,0.04);
+  color: var(--accent);
+  border-color: rgba(2,132,199,0.25);
+}
+.btn-b4:hover .ripple-container .ripple {
+  animation: ripple-pulse 1.5s ease-out infinite;
+}
+.btn-b4:hover .ripple:nth-child(1) { animation-delay: 0s; }
+.btn-b4:hover .ripple:nth-child(2) { animation-delay: 0.5s; }
+.btn-b4:hover .ripple:nth-child(3) { animation-delay: 1s; }
+.btn-b4:hover svg { transform: translateY(-2px); }
+.btn-b4:active { transform: scale(0.95) translateY(-3px); }
+
+.label-row {
+  position: absolute;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  background: var(--card-bg);
+  padding: 2px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  z-index: 50;
+}
+
+/* 响应式 */
+@media (max-width: 1200px) {
+  .container { flex-wrap: wrap; justify-content: center; }
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- ========== B1 — 双色渐变边框 + 微光 ========== -->
+  <div class="app-window" style="position:relative;">
+    <div class="app-header">PastePanda 卡片列表</div>
+    <div class="scroll-area" id="scrollB1">
+      <div class="desc-area">
+        <div class="scheme-title">B1 — 双色渐变边框 + 微光</div>
+        <div class="scheme-desc">hover 浮现蓝紫渐变边框，顶部有微光线条，有层次感和科技感</div>
+      </div>
+      <div class="mock-divider">今天</div>
+      <div class="mock-card">React Hooks 最佳实践</div>
+      <div class="mock-card">screenshot_2024.png</div>
+      <div class="mock-card">const result = items.filter</div>
+      <div class="mock-divider">昨天</div>
+      <div class="mock-card">13812345678</div>
+      <div class="mock-card">dev-team@company.com</div>
+      <div class="mock-divider">本周</div>
+      <div class="mock-card"># Task List - Sprint</div>
+      <div class="mock-card">banner_design_v2.jpg</div>
+      <div class="mock-card">项目开发规范文档</div>
+      <div class="mock-card">API 接口设计文档</div>
+      <div class="mock-divider">更早</div>
+      <div class="mock-card">旧版本发布说明</div>
+      <div class="mock-card">2023 年度总结</div>
+      <div style="height:20px;"></div>
+    </div>
+    <button class="btn-base btn-b1" title="回到顶部">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+      顶部
+    </button>
+    <div class="label-row">B1</div>
+  </div>
+
+  <!-- ========== B2 — 冰霜质感 + 内发光 ========== -->
+  <div class="app-window" style="position:relative;">
+    <div class="app-header">PastePanda 卡片列表</div>
+    <div class="scroll-area" id="scrollB2">
+      <div class="desc-area">
+        <div class="scheme-title">B2 — 冰霜质感 + 内发光 <span class="badge-recommend">推荐</span></div>
+        <div class="scheme-desc">冰霜玻璃质感，内发光效果，hover 箭头旋转 180°，细腻优雅</div>
+      </div>
+      <div class="mock-divider">今天</div>
+      <div class="mock-card">React Hooks 最佳实践</div>
+      <div class="mock-card">screenshot_2024.png</div>
+      <div class="mock-card">const result = items.filter</div>
+      <div class="mock-divider">昨天</div>
+      <div class="mock-card">13812345678</div>
+      <div class="mock-card">dev-team@company.com</div>
+      <div class="mock-divider">本周</div>
+      <div class="mock-card"># Task List - Sprint</div>
+      <div class="mock-card">banner_design_v2.jpg</div>
+      <div class="mock-card">项目开发规范文档</div>
+      <div class="mock-card">API 接口设计文档</div>
+      <div class="mock-divider">更早</div>
+      <div class="mock-card">旧版本发布说明</div>
+      <div class="mock-card">2023 年度总结</div>
+      <div style="height:20px;"></div>
+    </div>
+    <button class="btn-base btn-b2" title="回到顶部">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+      顶部
+    </button>
+    <div class="label-row">B2</div>
+  </div>
+
+  <!-- ========== B3 — 磨砂暗金 + 进度环 ========== -->
+  <div class="app-window" style="position:relative;">
+    <div class="app-header">PastePanda 卡片列表</div>
+    <div class="scroll-area" id="scrollB3">
+      <div class="desc-area">
+        <div class="scheme-title">B3 — 磨砂暗金 + 进度环</div>
+        <div class="scheme-desc">hover 浮现品牌色进度环包裹按钮，有"完成感"的视觉反馈</div>
+      </div>
+      <div class="mock-divider">今天</div>
+      <div class="mock-card">React Hooks 最佳实践</div>
+      <div class="mock-card">screenshot_2024.png</div>
+      <div class="mock-card">const result = items.filter</div>
+      <div class="mock-divider">昨天</div>
+      <div class="mock-card">13812345678</div>
+      <div class="mock-card">dev-team@company.com</div>
+      <div class="mock-divider">本周</div>
+      <div class="mock-card"># Task List - Sprint</div>
+      <div class="mock-card">banner_design_v2.jpg</div>
+      <div class="mock-card">项目开发规范文档</div>
+      <div class="mock-card">API 接口设计文档</div>
+      <div class="mock-divider">更早</div>
+      <div class="mock-card">旧版本发布说明</div>
+      <div class="mock-card">2023 年度总结</div>
+      <div style="height:20px;"></div>
+    </div>
+    <button class="btn-base btn-b3" title="回到顶部">
+      <svg class="progress-ring" width="100%" height="100%" style="position:absolute;inset:0;">
+        <circle cx="50%" cy="50%" r="20"/>
+      </svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+      顶部
+    </button>
+    <div class="label-row">B3</div>
+  </div>
+
+  <!-- ========== B4 — 液态玻璃 + 涟漪波纹 ========== -->
+  <div class="app-window" style="position:relative;">
+    <div class="app-header">PastePanda 卡片列表</div>
+    <div class="scroll-area" id="scrollB4">
+      <div class="desc-area">
+        <div class="scheme-title">B4 — 液态玻璃 + 涟漪波纹</div>
+        <div class="scheme-desc">毛玻璃内部有呼吸涟漪动画，动感流畅，hover 加速呼吸</div>
+      </div>
+      <div class="mock-divider">今天</div>
+      <div class="mock-card">React Hooks 最佳实践</div>
+      <div class="mock-card">screenshot_2024.png</div>
+      <div class="mock-card">const result = items.filter</div>
+      <div class="mock-divider">昨天</div>
+      <div class="mock-card">13812345678</div>
+      <div class="mock-card">dev-team@company.com</div>
+      <div class="mock-divider">本周</div>
+      <div class="mock-card"># Task List - Sprint</div>
+      <div class="mock-card">banner_design_v2.jpg</div>
+      <div class="mock-card">项目开发规范文档</div>
+      <div class="mock-card">API 接口设计文档</div>
+      <div class="mock-divider">更早</div>
+      <div class="mock-card">旧版本发布说明</div>
+      <div class="mock-card">2023 年度总结</div>
+      <div style="height:20px;"></div>
+    </div>
+    <button class="btn-base btn-b4" title="回到顶部">
+      <div class="ripple-container">
+        <div class="ripple"></div>
+        <div class="ripple"></div>
+        <div class="ripple"></div>
+      </div>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+      顶部
+    </button>
+    <div class="label-row">B4</div>
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PastePanda 更新弹窗设计稿</title>
+<style>
+/* ===== CSS 变量（浅色主题） ===== */
+:root {
+  --dialog-bg: #fff;
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --section-bg: #F0F4F8;
+  --green: #16A34A;
+  --green-bg: #DCFCE7;
+  --green-border: #BBF7D0;
+  --orange: #EA580C;
+  --orange-bg: #FFF7ED;
+  --red-bg: #FEF2F2;
+  --danger: #DC2626;
+  --hover: #E8ECF2;
+  --card-bg: #fff;
+  --card-selected-bg: #E0F2FE;
+  --card-selected-border: #0284C7;
+  --card-selected-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25);
+  --accent-shadow: rgba(2, 132, 199, 0.15);
+  --version-badge-gradient: linear-gradient(135deg, #0284C7, #0369A1);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #F1F5F9;
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 20px;
+  gap: 40px;
+}
+
+h2 { font-size: 14px; color: var(--text-muted); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+
+/* ===== TopBar 模拟 ===== */
+.topbar {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 420px;
+}
+.topbar-title { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.topbar-spacer { flex: 1; }
+
+/* 徽章：available 状态 — 脉冲 + 主题色边框 */
+.badge-update {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--accent-light);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  cursor: pointer;
+  animation: badge-pulse 2s ease-in-out infinite;
+  transition: all 0.15s;
+}
+.badge-update:hover { filter: brightness(0.95); }
+@keyframes badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* 徽章：idle 状态 */
+.badge-idle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--section-bg);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+
+/* 徽章：下载中 */
+.badge-downloading {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+/* 徽章：就绪 */
+.badge-ready {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--green-bg);
+  color: var(--green);
+  border: 1px solid var(--green-border);
+  cursor: pointer;
+}
+
+/* 旋转动画 */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 1s linear infinite; }
+
+/* ===== 弹窗遮罩 ===== */
+.backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.3);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+}
+
+/* ===== 弹窗主体 ===== */
+.dialog {
+  background: var(--dialog-bg);
+  border-radius: 16px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.15);
+  width: 420px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 头部 */
+.dialog-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+.dialog-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.dialog-close {
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+  transition: all 0.15s;
+}
+.dialog-close:hover { background: var(--hover); color: var(--text-primary); }
+
+/* 内容区 */
+.dialog-body {
+  padding: 24px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* ===== 状态 1：发现新版本 ===== */
+.version-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.version-icon {
+  width: 52px; height: 52px;
+  border-radius: 14px;
+  background: var(--accent-light);
+  color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px;
+  flex-shrink: 0;
+}
+.version-info { flex: 1; min-width: 0; }
+.version-new {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--accent);
+  letter-spacing: -0.3px;
+}
+.version-current {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.version-current span {
+  background: var(--section-bg);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+/* Release Notes */
+.release-notes {
+  background: var(--section-bg);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 20px;
+}
+.release-notes-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+.release-notes-body {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+.release-notes-body ul {
+  list-style: none;
+  padding: 0;
+}
+.release-notes-body li {
+  padding: 3px 0 3px 16px;
+  position: relative;
+}
+.release-notes-body li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+  font-weight: bold;
+}
+
+/* 按钮行 */
+.dialog-actions {
+  display: flex;
+  gap: 10px;
+}
+.btn {
+  flex: 1;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s;
+}
+.btn-secondary {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+.btn-secondary:hover { background: var(--hover); color: var(--text-primary); }
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover { filter: brightness(1.1); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ===== 状态 2：下载中 ===== */
+.download-status {
+  text-align: center;
+  padding: 12px 0;
+}
+.download-spinner {
+  font-size: 36px;
+  margin-bottom: 12px;
+}
+.download-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.download-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 进度条 */
+.progress-bar {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-color);
+  margin: 16px 0;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  width: 40%;
+  animation: progress-slide 1.5s ease-in-out infinite;
+}
+@keyframes progress-slide {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(250%); }
+  100% { transform: translateX(-100%); }
+}
+
+/* ===== 状态 3：下载完成 ===== */
+.ready-status {
+  text-align: center;
+  padding: 12px 0;
+}
+.ready-icon {
+  font-size: 44px;
+  margin-bottom: 12px;
+}
+.ready-text {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.ready-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+}
+
+/* ===== 状态 4：检查中 ===== */
+.checking-status {
+  text-align: center;
+  padding: 20px 0;
+}
+.checking-text {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-top: 12px;
+}
+
+/* ===== 状态 5：已是最新 ===== */
+.uptodate-status {
+  text-align: center;
+  padding: 12px 0;
+}
+.uptodate-icon {
+  font-size: 44px;
+  margin-bottom: 12px;
+}
+.uptodate-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.uptodate-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+}
+
+/* ===== 状态 6：错误 ===== */
+.error-status {
+  text-align: center;
+  padding: 12px 0;
+}
+.error-icon {
+  font-size: 44px;
+  margin-bottom: 12px;
+}
+.error-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--danger);
+  margin-bottom: 4px;
+}
+.error-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+}
+
+/* ===== 主题切换演示 ===== */
+.theme-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.theme-btn {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 500;
+  transition: all 0.15s;
+}
+.theme-btn:hover { background: var(--hover); }
+.theme-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+</style>
+</head>
+<body>
+
+<!-- 主题切换 -->
+<div class="theme-tabs" id="themeTabs">
+  <button class="theme-btn active" data-theme="light">浅色</button>
+  <button class="theme-btn" data-theme="dark">暗色</button>
+  <button class="theme-btn" data-theme="warm">暖色</button>
+  <button class="theme-btn" data-theme="pink">薰衣草</button>
+  <button class="theme-btn" data-theme="forest">森林</button>
+  <button class="theme-btn" data-theme="sunset">日落</button>
+</div>
+
+<!-- TopBar 徽章状态预览 -->
+<h2>TopBar 徽章变化</h2>
+<div class="topbar">
+  <span class="topbar-title">PastePanda</span>
+  <span class="topbar-spacer"></span>
+  <span class="badge-idle" id="topbarBadge">v5.0.98</span>
+</div>
+<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+  <button onclick="setBadge('idle')">闲置</button>
+  <button onclick="setBadge('available')">有更新</button>
+  <button onclick="setBadge('downloading')">下载中</button>
+  <button onclick="setBadge('ready')">就绪</button>
+</div>
+
+<!-- 弹窗预览 -->
+<h2>更新弹窗 (UpdateDialog)</h2>
+<div style="position:relative;width:420px;height:380px;">
+<div class="backdrop" style="position:absolute;" id="dialogArea">
+  <div class="dialog" id="dialog">
+    <!-- 头部 -->
+    <div class="dialog-header">
+      <span class="dialog-title" id="dialogTitle">软件更新</span>
+      <button class="dialog-close" onclick="switchState('available')" title="关闭（演示用：回到发现版本）">✕</button>
+    </div>
+
+    <!-- 内容区 -->
+    <div class="dialog-body" id="dialogBody">
+      <!-- 默认：发现新版本 -->
+    </div>
+  </div>
+</div>
+</div>
+
+<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+  <button onclick="switchState('available')">发现新版本</button>
+  <button onclick="switchState('downloading')">下载中</button>
+  <button onclick="switchState('ready')">下载完成</button>
+  <button onclick="switchState('checking')">检查中</button>
+  <button onclick="switchState('uptodate')">已是最新</button>
+  <button onclick="switchState('error')">更新失败</button>
+</div>
+
+<script>
+// ===== 主题切换 =====
+const themes = {
+  light: {
+    '--dialog-bg': '#fff',
+    '--text-primary': '#0F172A',
+    '--text-secondary': '#64748B',
+    '--text-muted': '#7888A0',
+    '--border-color': '#E0E4EB',
+    '--accent': '#0284C7',
+    '--accent-light': '#E0F2FE',
+    '--section-bg': '#F0F4F8',
+    '--green': '#16A34A',
+    '--green-bg': '#DCFCE7',
+    '--green-border': '#BBF7D0',
+    '--hover': '#E8ECF2',
+    '--card-bg': '#fff',
+    '--danger': '#DC2626',
+    '--red-bg': '#FEF2F2',
+  },
+  dark: {
+    '--dialog-bg': '#18181B',
+    '--text-primary': '#E4E4E7',
+    '--text-secondary': '#A1A1AA',
+    '--text-muted': '#71717A',
+    '--border-color': '#27272A',
+    '--accent': '#818CF8',
+    '--accent-light': '#1E1B4B',
+    '--section-bg': '#0F0F11',
+    '--green': '#4ADE80',
+    '--green-bg': '#052E16',
+    '--green-border': '#166534',
+    '--hover': '#1F1F23',
+    '--card-bg': '#18181B',
+    '--danger': '#F87171',
+    '--red-bg': '#450A0A',
+  },
+  warm: {
+    '--dialog-bg': '#fff',
+    '--text-primary': '#171717',
+    '--text-secondary': '#78716C',
+    '--text-muted': '#A8A29E',
+    '--border-color': '#D1D9D3',
+    '--accent': '#059669',
+    '--accent-light': '#ECFDF5',
+    '--section-bg': '#ECFDF5',
+    '--green': '#16A34A',
+    '--green-bg': '#DCFCE7',
+    '--green-border': '#BBF7D0',
+    '--hover': '#E8EDE8',
+    '--card-bg': '#fff',
+    '--danger': '#DC2626',
+    '--red-bg': '#FEF2F2',
+  },
+  pink: {
+    '--dialog-bg': '#fff',
+    '--text-primary': '#1F1A1C',
+    '--text-secondary': '#A68A96',
+    '--text-muted': '#A8909A',
+    '--border-color': '#F3E8ED',
+    '--accent': '#EC4899',
+    '--accent-light': '#FCE7F3',
+    '--section-bg': '#FDF2F8',
+    '--green': '#16A34A',
+    '--green-bg': '#DCFCE7',
+    '--green-border': '#BBF7D0',
+    '--hover': '#F5E8F0',
+    '--card-bg': '#fff',
+    '--danger': '#DC2626',
+    '--red-bg': '#FEF2F2',
+  },
+  forest: {
+    '--dialog-bg': '#141414',
+    '--text-primary': '#E5E5E5',
+    '--text-secondary': '#A3A3A3',
+    '--text-muted': '#737373',
+    '--border-color': '#262626',
+    '--accent': '#22C55E',
+    '--accent-light': '#052E16',
+    '--section-bg': '#0F0F0F',
+    '--green': '#4ADE80',
+    '--green-bg': '#052E16',
+    '--green-border': '#166534',
+    '--hover': '#1A1A1A',
+    '--card-bg': '#141414',
+    '--danger': '#F87171',
+    '--red-bg': '#450A0A',
+  },
+  sunset: {
+    '--dialog-bg': '#281E18',
+    '--text-primary': '#F5F0EB',
+    '--text-secondary': '#B8A99A',
+    '--text-muted': '#8B7B6B',
+    '--border-color': '#3D3028',
+    '--accent': '#F97316',
+    '--accent-light': '#431407',
+    '--section-bg': '#1F1610',
+    '--green': '#4ADE80',
+    '--green-bg': '#052E16',
+    '--green-border': '#166534',
+    '--hover': '#33261E',
+    '--card-bg': '#281E18',
+    '--danger': '#F87171',
+    '--red-bg': '#450A0A',
+  },
+};
+
+document.querySelectorAll('.theme-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const t = themes[btn.dataset.theme];
+    Object.entries(t).forEach(([k, v]) => document.documentElement.style.setProperty(k, v));
+  });
+});
+
+// ===== 徽章切换 =====
+function setBadge(type) {
+  const el = document.getElementById('topbarBadge');
+  const templates = {
+    idle: '<span class="badge-idle">v5.0.98</span>',
+    available: '<span class="badge-update">🔄 更新 v5.0.99</span>',
+    downloading: '<span class="badge-downloading"><span class="spin">⏳</span> 下载中</span>',
+    ready: '<span class="badge-ready">🔄 重启</span>',
+  };
+  el.outerHTML = templates[type];
+}
+
+// ===== 弹窗状态切换 =====
+function switchState(state) {
+  const body = document.getElementById('dialogBody');
+  const title = document.getElementById('dialogTitle');
+
+  const templates = {
+    available: {
+      title: '软件更新',
+      body: `
+        <div class="version-hero">
+          <div class="version-icon">🎉</div>
+          <div class="version-info">
+            <div class="version-new">v5.0.99</div>
+            <div class="version-current">当前版本 <span>v5.0.98</span></div>
+          </div>
+        </div>
+        <div class="release-notes">
+          <div class="release-notes-label">更新内容</div>
+          <div class="release-notes-body">
+            <ul>
+              <li>修复粘贴大段文本时偶发崩溃的问题</li>
+              <li>新增 Markdown 格式预览支持</li>
+              <li>优化大量历史记录时的搜索性能</li>
+              <li>完善六套主题的细节适配</li>
+              <li>更新底层 Tauri 框架到最新稳定版</li>
+            </ul>
+          </div>
+        </div>
+        <div class="dialog-actions">
+          <button class="btn btn-secondary" onclick="switchState('available')">稍后提醒</button>
+          <button class="btn btn-primary" onclick="switchState('downloading')">立即更新</button>
+        </div>`
+    },
+
+    downloading: {
+      title: '软件更新',
+      body: `
+        <div class="download-status">
+          <div class="download-spinner spin">⏳</div>
+          <div class="download-text">正在下载更新…</div>
+          <div class="download-hint">正在从 GitHub 下载，预计 1-2 分钟</div>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill"></div>
+        </div>
+        <div class="dialog-actions" style="margin-top:16px;">
+          <button class="btn btn-secondary" disabled>下载中…</button>
+          <button class="btn btn-secondary" style="opacity:0;" disabled></button>
+        </div>`
+    },
+
+    ready: {
+      title: '软件更新',
+      body: `
+        <div class="ready-status">
+          <div class="ready-icon">✅</div>
+          <div class="ready-text">更新已下载完成</div>
+          <div class="ready-hint">重启应用即可生效</div>
+        </div>
+        <div class="dialog-actions">
+          <button class="btn btn-secondary" onclick="switchState('available')">稍后重启</button>
+          <button class="btn btn-primary" onclick="alert('模拟重启...')">立即重启</button>
+        </div>`
+    },
+
+    checking: {
+      title: '软件更新',
+      body: `
+        <div class="checking-status">
+          <div style="font-size:36px;" class="spin">⏳</div>
+          <div class="checking-text">正在检查更新…</div>
+        </div>`
+    },
+
+    uptodate: {
+      title: '软件更新',
+      body: `
+        <div class="uptodate-status">
+          <div class="uptodate-icon">✅</div>
+          <div class="uptodate-text">已是最新版本</div>
+          <div class="uptodate-hint">当前 v5.0.98 已是最新版本</div>
+        </div>
+        <div class="dialog-actions">
+          <button class="btn btn-secondary" onclick="switchState('checking')">重新检查</button>
+          <button class="btn btn-primary" onclick="switchState('available')">知道了</button>
+        </div>`
+    },
+
+    error: {
+      title: '软件更新',
+      body: `
+        <div class="error-status">
+          <div class="error-icon">⚠️</div>
+          <div class="error-text">更新检查失败</div>
+          <div class="error-hint">网络连接失败，请检查网络后重试</div>
+        </div>
+        <div class="dialog-actions">
+          <button class="btn btn-secondary" onclick="switchState('available')">关闭</button>
+          <button class="btn btn-primary" onclick="switchState('checking')">重试</button>
+        </div>`
+    },
+  };
+
+  const t = templates[state];
+  title.textContent = t.title;
+  body.innerHTML = t.body;
+}
+
+// 初始加载：发现新版本
+switchState('available');
+</script>
+
+</body>
+</html>

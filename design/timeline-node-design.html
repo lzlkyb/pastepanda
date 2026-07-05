@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Timeline 节点设计方案对比 — 基于现有 UI</title>
+<style>
+  :root {
+    --accent: #6366f1;
+    --accent-light: rgba(99, 102, 241, 0.15);
+    --accent-shadow: rgba(99, 102, 241, 0.3);
+    --border-color: #2a2a4a;
+    --text-primary: #e0e0e0;
+    --text-secondary: #888;
+    --text-muted: #666;
+    --card-bg: #16213e;
+    --timeline-bg: rgba(9, 9, 11, 0.92);
+    --green: #34C759;
+    --orange: #FF9F0A;
+    --pink: #FF6482;
+    --purple: #BF5AF2;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0f0f23;
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    padding: 32px 40px;
+  }
+  h1 {
+    text-align: center;
+    font-size: 22px;
+    margin-bottom: 4px;
+    color: #fff;
+    font-weight: 700;
+  }
+  .subtitle {
+    text-align: center;
+    color: var(--text-secondary);
+    margin-bottom: 32px;
+    font-size: 13px;
+  }
+
+  /* 三列布局 */
+  .grid {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .col {
+    flex: 1;
+    min-width: 380px;
+    max-width: 480px;
+    background: #12121f;
+    border-radius: 16px;
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .col-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(255,255,255,0.02);
+  }
+  .col-header h2 {
+    font-size: 15px;
+    font-weight: 700;
+    color: #fff;
+  }
+  .col-badge {
+    font-size: 10px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-weight: 600;
+  }
+  .badge-a { background: rgba(99,102,241,0.15); color: #818cf8; }
+  .badge-b { background: rgba(52,199,89,0.15); color: var(--green); }
+  .badge-c { background: rgba(255,100,130,0.15); color: var(--pink); }
+
+  /* 主体：timeline + 卡片区 */
+  .col-body {
+    flex: 1;
+    display: flex;
+    position: relative;
+    overflow: hidden;
+    min-height: 420px;
+  }
+
+  /* ========== 时间轴容器（复刻现有样式） ========== */
+  .timelineContainer {
+    position: relative;
+    z-index: 30;
+    background: var(--timeline-bg);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  /* 方案 A：50px 宽 */
+  .tl-a { width: 50px; }
+  /* 方案 B：140px 宽 */
+  .tl-b { width: 140px; }
+  /* 方案 C：200px 宽 */
+  .tl-c { width: 200px; }
+
+  /* 吸顶胶囊（复刻） */
+  .timelineCapsule {
+    position: sticky;
+    top: 8px;
+    z-index: 35;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 0;
+    cursor: grab;
+    user-select: none;
+    flex-shrink: 0;
+  }
+  .capsuleInner {
+    background: var(--accent);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 5px 10px;
+    border-radius: 10px;
+    white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
+  }
+  /* 宽 timeline 的胶囊文字可以长一些 */
+  .tl-b .capsuleInner { font-size: 10px; padding: 5px 12px; }
+  .tl-c .capsuleInner { font-size: 10px; padding: 5px 14px; }
+
+  /* 滚动区 */
+  .timelineScroll {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+  }
+  /* 轨道线 */
+  .timelineTrack {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    width: 2px;
+    height: 100%;
+    background: var(--border-color);
+    transform: translateX(-50%);
+  }
+  /* 方案 B/C 轨道偏左 */
+  .tl-b .timelineTrack { left: 24px; }
+  .tl-c .timelineTrack { left: 24px; }
+
+  .timelineInner {
+    position: relative;
+    width: 100%;
+    padding: 8px 0;
+  }
+
+  /* ===== 方案 A：类型图标节点（50px 宽） ===== */
+  .tl-a .tl-node {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 72px;
+    cursor: pointer;
+  }
+  .tl-a .tl-node-icon {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    z-index: 2;
+    background: var(--card-bg);
+    border: 2px solid var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-light);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .tl-a .tl-node:hover .tl-node-icon {
+    transform: translate(-50%, -50%) scale(1.35);
+    box-shadow: 0 0 0 4px var(--accent-light);
+  }
+  .tl-a .tl-tooltip {
+    position: absolute;
+    left: 52px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--accent);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 5px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    z-index: 5;
+  }
+  .tl-a .tl-node:hover .tl-tooltip { opacity: 1; }
+
+  /* 分组标签 A（复刻） */
+  .tl-a .tl-group-label {
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding: 8px 0;
+    cursor: grab;
+    user-select: none;
+  }
+  .tl-a .tl-group-dot {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--accent);
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 0 4px var(--accent-light), 0 0 12px rgba(59,130,246,0.25);
+    z-index: 2;
+  }
+  .tl-a .tl-group-text {
+    position: absolute;
+    left: calc(50% + 14px);
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 8px;
+    font-weight: 700;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+
+  /* ===== 方案 B：圆点 + 截断标题（140px 宽） ===== */
+  .tl-b .tl-node {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 72px;
+    cursor: pointer;
+    padding-left: 24px;
+    gap: 10px;
+  }
+  .tl-b .tl-node-dot {
+    position: absolute;
+    left: 24px;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-light);
+    z-index: 2;
+    flex-shrink: 0;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .tl-b .tl-node:hover .tl-node-dot {
+    transform: translate(-50%, -50%) scale(1.5);
+    box-shadow: 0 0 0 5px var(--accent-light);
+  }
+  .tl-b .tl-node-content {
+    margin-left: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .tl-b .tl-node-type-icon {
+    font-size: 10px;
+    flex-shrink: 0;
+    opacity: 0.7;
+  }
+  .tl-b .tl-node-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 85px;
+    transition: color 0.15s;
+    line-height: 1;
+  }
+  .tl-b .tl-node:hover .tl-node-label { color: var(--text-primary); }
+
+  .tl-b .tl-group-label {
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding: 8px 0 8px 24px;
+    cursor: grab;
+    user-select: none;
+  }
+  .tl-b .tl-group-dot {
+    position: absolute;
+    left: 24px;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-light), 0 0 12px rgba(59,130,246,0.25);
+    z-index: 2;
+  }
+  .tl-b .tl-group-text {
+    margin-left: 14px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+
+  /* ===== 方案 C：缩略卡片（200px 宽） ===== */
+  .tl-c .tl-node {
+    position: relative;
+    padding: 4px 8px 4px 24px;
+    cursor: pointer;
+  }
+  .tl-c .tl-mini-card {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid transparent;
+    transition: border-color 0.15s, background 0.15s;
+    height: 48px;
+  }
+  .tl-c .tl-mini-card:hover {
+    border-color: var(--border-color);
+    background: rgba(255,255,255,0.06);
+  }
+  .tl-c .tl-node-dot {
+    position: absolute;
+    left: 24px;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    z-index: 2;
+    flex-shrink: 0;
+  }
+  .tl-c .tl-mini-icon {
+    font-size: 13px;
+    flex-shrink: 0;
+    margin-left: 4px;
+  }
+  .tl-c .tl-mini-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .tl-c .tl-mini-title {
+    font-size: 11px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 500;
+  }
+  .tl-c .tl-mini-time {
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .tl-c .tl-group-label {
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding: 8px 0 4px 24px;
+    cursor: grab;
+    user-select: none;
+  }
+  .tl-c .tl-group-dot {
+    position: absolute;
+    left: 24px;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-light), 0 0 12px rgba(59,130,246,0.25);
+    z-index: 2;
+  }
+  .tl-c .tl-group-text {
+    margin-left: 14px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+
+  /* ========== 右侧卡片预览区 ========== */
+  .card-area {
+    flex: 1;
+    min-width: 0;
+    padding: 10px 12px 10px 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+  }
+  /* 方案 A 卡片区无需偏移 */
+  /* 方案 B/C 卡片区有左偏移 */
+  .card-area-b, .card-area-c { padding-left: 12px; }
+
+  .card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    cursor: pointer;
+    height: 72px;
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+  }
+  .card-text::before { background: var(--accent); }
+  .card-image::before { background: var(--pink); }
+  .card-file::before { background: var(--green); }
+  .card-icon {
+    width: 42px; height: 42px; min-width: 42px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .bg-blue  { background: linear-gradient(135deg, #1a1a3e, #1e2a4a); }
+  .bg-pink  { background: linear-gradient(135deg, #2a1a2a, #3a1e2e); }
+  .bg-green { background: linear-gradient(135deg, #1a2a1e, #1e3a22); }
+  .card-content { flex: 1; min-width: 0; overflow: hidden; }
+  .card-title {
+    font-size: 13px; font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    line-height: 1.4;
+  }
+  .card-sub {
+    font-size: 11px; color: var(--text-secondary);
+    margin-top: 2px;
+    display: flex; align-items: center; gap: 6px;
+    white-space: nowrap;
+  }
+  .card-time {
+    font-size: 11px; color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  /* 信息密度对比条 */
+  .info-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border-color);
+    background: rgba(255,255,255,0.01);
+  }
+  .info-bar-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    min-width: 36px;
+  }
+  .info-bar-track {
+    flex: 1;
+    height: 5px;
+    background: var(--border-color);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .info-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s ease;
+  }
+  .fill-a { background: var(--accent); width: 20%; }
+  .fill-b { background: var(--green); width: 55%; }
+  .fill-c { background: var(--pink); width: 85%; }
+  .info-bar-desc {
+    font-size: 10px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  /* 特性列表 */
+  .features {
+    padding: 10px 16px 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .feature-tag {
+    font-size: 9px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .feature-tag.on { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+</style>
+</head>
+<body>
+
+<h1>Timeline 节点设计方案对比</h1>
+<p class="subtitle">基于现有 UI 风格复刻 · 鼠标悬停节点查看交互效果</p>
+
+<div class="grid">
+
+  <!-- ===== 方案 A：类型图标（50px） ===== -->
+  <div class="col">
+    <div class="col-header">
+      <h2>方案 A · 类型图标</h2>
+      <span class="col-badge badge-a">改动最小</span>
+    </div>
+    <div class="col-body">
+      <!-- Timeline -->
+      <div class="timelineContainer tl-a">
+        <div class="timelineCapsule"><div class="capsuleInner">📍 今天</div></div>
+        <div class="timelineScroll">
+          <div class="timelineTrack"></div>
+          <div class="timelineInner">
+            <div class="tl-group-label">
+              <div class="tl-group-dot"></div>
+              <div class="tl-group-text">今天</div>
+            </div>
+            <div class="tl-node">
+              <div class="tl-node-icon">📝</div>
+              <div class="tl-tooltip">一段复制的文本内容示例</div>
+            </div>
+            <div class="tl-node">
+              <div class="tl-node-icon">🖼</div>
+              <div class="tl-tooltip">截图_2026.png</div>
+            </div>
+            <div class="tl-node">
+              <div class="tl-node-icon">📝</div>
+              <div class="tl-tooltip">会议纪要摘要文本内容...</div>
+            </div>
+            <div class="tl-group-label">
+              <div class="tl-group-dot"></div>
+              <div class="tl-group-text">昨天</div>
+            </div>
+            <div class="tl-node">
+              <div class="tl-node-icon">📁</div>
+              <div class="tl-tooltip">项目文档.pdf</div>
+            </div>
+            <div class="tl-node">
+              <div class="tl-node-icon">📝</div>
+              <div class="tl-tooltip">代码片段 const fetch...</div>
+            </div>
+            <div class="tl-group-label">
+              <div class="tl-group-dot"></div>
+              <div class="tl-group-text">本周</div>
+            </div>
+            <div class="tl-node">
+              <div class="tl-node-icon">📁</div>
+              <div class="tl-tooltip">设计稿.fig</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- 卡片预览 -->
+      <div class="card-area">
+        <div class="card card-text">
+          <div class="card-icon bg-blue">📝</div>
+          <div class="card-content">
+            <div class="card-title">一段复制的文本内容示例</div>
+            <div class="card-sub">文本 · 82 字符</div>
+          </div>
+          <div class="card-time">14:30</div>
+        </div>
+        <div class="card card-image">
+          <div class="card-icon bg-pink">🖼</div>
+          <div class="card-content">
+            <div class="card-title">截图_2026.png</div>
+            <div class="card-sub">图片 · 1920×1080</div>
+          </div>
+          <div class="card-time">13:22</div>
+        </div>
+        <div class="card card-text">
+          <div class="card-icon bg-blue">📝</div>
+          <div class="card-content">
+            <div class="card-title">会议纪要摘要文本内容较长示例</div>
+            <div class="card-sub">文本 · 156 字符</div>
+          </div>
+          <div class="card-time">11:05</div>
+        </div>
+        <div class="card card-file">
+          <div class="card-icon bg-green">📁</div>
+          <div class="card-content">
+            <div class="card-title">项目文档.pdf</div>
+            <div class="card-sub">文件 · 2.4 MB</div>
+          </div>
+          <div class="card-time">昨天 22:15</div>
+        </div>
+        <div class="card card-text">
+          <div class="card-icon bg-blue">📝</div>
+          <div class="card-content">
+            <div class="card-title">代码片段 const fetch = await...</div>
+            <div class="card-sub">文本 · 45 字符</div>
+          </div>
+          <div class="card-time">昨天 18:30</div>
+        </div>
+        <div class="card card-file">
+          <div class="card-icon bg-green">📁</div>
+          <div class="card-content">
+            <div class="card-title">设计稿.fig</div>
+            <div class="card-sub">文件 · 8.1 MB</div>
+          </div>
+          <div class="card-time">周三 10:20</div>
+        </div>
+      </div>
+    </div>
+    <div class="info-bar">
+      <span class="info-bar-label">信息密度</span>
+      <div class="info-bar-track"><div class="info-bar-fill fill-a"></div></div>
+      <span class="info-bar-desc">仅图标 · hover 才显示标题</span>
+    </div>
+    <div class="features">
+      <span class="feature-tag on">类型区分</span>
+      <span class="feature-tag">标题可见</span>
+      <span class="feature-tag">时间可见</span>
+      <span class="feature-tag on">拖拽</span>
+      <span class="feature-tag on">滚轮</span>
+      <span class="feature-tag on">50px 宽</span>
+    </div>
+  </div>
+
+  <!-- ===== 方案 B：圆点 + 标题（140px） ===== -->
+  <div class="col">
+    <div class="col-header">
+      <h2>方案 B · 圆点 + 标题</h2>
+      <span class="col-badge badge-b">推荐</span>
+    </div>
+    <div class="col-body">
+      <!-- Timeline -->
+      <div class="timelineContainer tl-b">
+        <div class="timelineCapsule"><div class="capsuleInner">📍 今天</div></div>
+        <div class="timelineScroll">
+          <div class="timelineTrack"></div>
+          <div class="timelineInner">
+            <div class="tl-group-label">
+              <div class="tl-group-dot"></div>
+              <div class="tl-group-text">今天</div>
+            </div>
+            <div class="tl-node" title="一段复制的文本内容示例">
+              <div class="tl-node-dot"></div>
+              <div class="tl-node-content">
+                <span class="tl-node-type-icon">📝</span>
+                <span class="tl-node-label">一段复制的文本...</span>
+              </div>
+            </div>
+            <div class="tl-node" title="截图_2026.png">
+              <div class="tl-node-dot"></div>
+              <div class="tl-node-content">
+                <span class="tl-node-type-icon">🖼</span>
+                <span class="tl-node-label">截图_2026.png</span>
+              </div>
+            </div>
+            <div class="tl-node" title="会议纪要摘要文本内容较长示例">
+              <div class="tl-node-dot"></div>
+              <div class="tl-node-content">
+                <span class="tl-node-type-icon">📝</span>
+                <span class="tl-node-label">会议纪要摘要文...</span>
+              </div>
+            </div>
+            <div class="tl-group-label">
+              <div class="tl-group-dot"></div>
+              <div class="tl-group-text">昨天</div>
+            </div>
+            <div class="tl-node" title="项目文档.pdf">
+              <div class="tl-node-dot"></div>
+              <div class="tl-node-content">
+                <span class="tl-node-type-icon">📁</span>
+                <span class="tl-node-label">项目文档.pdf</span>
+              </div>
+            </div>
+            <div class="tl-node" title="代码片段 const fetch = await...">
+              <div class="tl-node-dot"></div>
+              <div class="tl-node-content">
+                <span class="tl-node-type-icon">📝</span>
+                <span class="tl-node-label">代码片段 const...</span>
+              </div>
+            </div>
+            <div class="tl-group-label">
+              <div class="tl-group-dot"></div>
+              <div class="tl-group-text">本周</div>
+            </div>
+            <div class="tl-node" title="设计稿.fig">
+              <div class="tl-node-dot"></div>
+              <div class="tl-node-content">
+                <span class="tl-node-type-icon">📁</span>
+                <span class="tl-node-label">设计稿.fig</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- 卡片预览 -->
+      <div class="card-area card-area-b">
+        <div class="card card-text">
+          <div class="card-icon bg-blue">📝</div>
+          <div class="card-content">
+            <div class="card-title">一段复制的文本内容示例</div>
+            <div class="card-sub">文本 · 82 字符</div>
+          </div>
+          <div class="card-time">14:30</div>
+        </div>
+        <div class="card card-image">
+          <div class="card-icon bg-pink">🖼</div>
+          <div class="card-content">
+            <div class="card-title">截图_2026.png</div>
+            <div class="card-sub">图片 · 1920×1080</div>
+          </div>
+          <div class="card-time">13:22</div>
+        </div>
+        <div class="card card-text">
+          <div class="card-icon bg-blue">📝</div>
+          <div class="card-content">
+            <div class="card-title">会议纪要摘要文本内容较长示例</div>
+            <div class="card-sub">文本 · 156 字符</div>
+          </div>
+          <div class="card-time">11:05</div>
+        </div>
+        <div class="card card-file">
+          <div class="card-icon bg-green">📁</div>
+          <div class="card-content">
+            <div class="card-title">项目文档.pdf</div>
+            <div class="card-sub">文件 · 2.4 MB</div>
+          </div>
+          <div class="card-time">昨天 22:15</div>
+        </div>
+        <div class="card card-text">
+          <div class="card-icon bg-blue">📝</div>
+          <div class="card-content">
+            <div class="card-title">代码片段 const fetch = await...</div>
+            <div class="card-sub">文本 · 45 字符</div>
+          </div>
+          <div class="card-time">昨天 18:30</div>
+        </div>
+        <div class="card card-file">
+          <div class="card-icon bg-green">📁</div>
+          <div class="card-content">
+            <div class="card-title">设计稿.fig</div>
+            <div class="card-sub">文件 · 8.1 MB</div>
+          </div>
+          <div class="card-time">周三 10:20</div>
+        </div>
+      </div>
+    </div>
+    <div class="info-bar">
+      <span class="info-bar-label">信息密度</span>
+      <div class="info-bar-track"><div class="info-bar-fill fill-b"></div></div>
+      <span class="info-bar-desc">图标+标题始终可见 · 平衡</span>
+    </div>
+    <div class="features">
+      <span class="feature-tag on">类型区分</span>
+      <span class="feature-tag on">标题可见</span>
+      <span class="feature-tag">时间可见</span>
+      <span class="feature-tag on">拖拽</span>
+      <span class="feature-tag on">滚轮</span>
+      <span class="feature-tag">140px 宽</span>
+    </div>
+  </div>
+
+  <!-- ===== 方案 C：缩略卡片（200px） ===== -->
+  <div class="col">
+    <div class="col-header">
+      <h2>方案 C · 缩略卡片</h2>
+      <span class="col-badge badge-c">信息最全</span>
+    </div>
+    <div class="col-body">
+      <!-- Timeline -->
+      <div class="timelineContainer tl-c">
+        <div class="timelineCapsule"><div class="capsuleInner">📍 今天</div></div>
+        <div class="timelineScroll">
+          <div class="timelineTrack"></div>
+          <div class="timelineInner">
+            <div class="tl-group-label">
+              <div class="tl-group-dot"></div>
+              <div class="tl-group-text">今天</div>
+            </div>
+            <div class="tl-node">
+              <div class="tl-node-dot"></div>
+              <div class="tl-mini-card">
+                <span class="tl-mini-icon">📝</span>
+                <div class="tl-mini-info">
+                  <div class="tl-mini-title">一段复制的文本内容...</div>
+                  <div class="tl-mini-time">14:30</div>
+                </div>
+              </div>
+            </div>
+            <div class="tl-node">
+              <div class="tl-node-dot"></div>
+              <div class="tl-mini-card">
+                <span class="tl-mini-icon">🖼</span>
+                <div class="tl-mini-info">
+                  <div class="tl-mini-title">截图_2026.png</div>
+                  <div class="tl-mini-time">13:22</div>
+                </div>
+              </div>
+            </div>
+            <div class="tl-node">
+              <div class="tl-node-dot"></div>
+              <div class="tl-mini-card">
+                <span class="tl-mini-icon">📝</span>
+                <div class="tl-mini-info">
+                  <div class="tl-mini-title">会议纪要摘要文本...</div>
+                  <div class="tl-mini-time">11:05</div>
+                </div>
+              </div>
+            </div>
+            <div class="tl-group-label">
+              <div class="tl-group-dot"></div>
+              <div class="tl-group-text">昨天</div>
+            </div>
+            <div class="tl-node">
+              <div class="tl-node-dot"></div>
+              <div class="tl-mini-card">
+                <span class="tl-mini-icon">📁</span>
+                <div class="tl-mini-info">
+                  <div class="tl-mini-title">项目文档.pdf</div>
+                  <div class="tl-mini-time">22:15</div>
+                </div>
+              </div>
+            </div>
+            <div class="tl-node">
+              <div class="tl-node-dot"></div>
+              <div class="tl-mini-card">
+                <span class="tl-mini-icon">📝</span>
+                <div class="tl-mini-info">
+                  <div class="tl-mini-title">代码片段 const fetch...</div>
+                  <div class="tl-mini-time">18:30</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- 卡片预览 -->
+      <div class="card-area card-area-c">
+        <div class="card card-text">
+          <div class="card-icon bg-blue">📝</div>
+          <div class="card-content">
+            <div class="card-title">一段复制的文本内容示例</div>
+            <div class="card-sub">文本 · 82 字符</div>
+          </div>
+          <div class="card-time">14:30</div>
+        </div>
+        <div class="card card-image">
+          <div class="card-icon bg-pink">🖼</div>
+          <div class="card-content">
+            <div class="card-title">截图_2026.png</div>
+            <div class="card-sub">图片 · 1920×1080</div>
+          </div>
+          <div class="card-time">13:22</div>
+        </div>
+        <div class="card card-text">
+          <div class="card-icon bg-blue">📝</div>
+          <div class="card-content">
+            <div class="card-title">会议纪要摘要文本内容较长示例</div>
+            <div class="card-sub">文本 · 156 字符</div>
+          </div>
+          <div class="card-time">11:05</div>
+        </div>
+      </div>
+    </div>
+    <div class="info-bar">
+      <span class="info-bar-label">信息密度</span>
+      <div class="info-bar-track"><div class="info-bar-fill fill-c"></div></div>
+      <span class="info-bar-desc">图标+标题+时间 · 独立浏览</span>
+    </div>
+    <div class="features">
+      <span class="feature-tag on">类型区分</span>
+      <span class="feature-tag on">标题可见</span>
+      <span class="feature-tag on">时间可见</span>
+      <span class="feature-tag on">拖拽</span>
+      <span class="feature-tag on">滚轮</span>
+      <span class="feature-tag">200px 宽</span>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

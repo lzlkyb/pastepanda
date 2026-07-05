@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="ocean">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>时间分隔线优化 - 方案A：精简分组 + 悬浮吸顶时间标签</title>
+<style>
+/* ===== PastePanda 设计令牌 (ocean 主题) ===== */
+:root {
+  --app-bg: #F4F6F9;
+  --card-bg: #fff;
+  --card-border: #E0E4EB;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --accent-shadow: rgba(2, 132, 199, 0.15);
+  --section-bg: #F0F4F8;
+  --dialog-bg: #fff;
+  --card-selected-bg: #E0F2FE;
+  --card-selected-border: #0284C7;
+  --card-selected-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #E8ECF0;
+  display: flex;
+  justify-content: center;
+  padding: 40px 20px;
+  min-height: 100vh;
+}
+
+/* ===== 容器 ===== */
+.demo-wrapper {
+  width: 420px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ===== 标题区 ===== */
+.section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748B;
+  text-align: center;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+/* ===== 窗口模拟 ===== */
+.window {
+  background: var(--app-bg);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.06);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== 顶部栏 ===== */
+.topbar {
+  height: 48px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: linear-gradient(180deg, #fff 0%, #F4F6F9 100%);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.topbar-dot { width: 10px; height: 10px; border-radius: 50%; }
+.topbar-dot.red  { background: #EF4444; }
+.topbar-dot.yellow { background: #F59E0B; }
+.topbar-dot.green { background: #22C55E; }
+.topbar-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  flex: 1;
+  text-align: center;
+}
+
+/* ===== 滚动区域 ===== */
+.scroll-area {
+  height: 480px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  scroll-behavior: smooth;
+}
+
+/* ===== 卡片列表 ===== */
+.card-list {
+  padding: 10px 16px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ===== 时间分隔线 (方案A: 精简版) ===== */
+.time-separator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px 4px;
+  user-select: none;
+  height: 24px;
+}
+.time-separator-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  box-shadow: 0 0 6px var(--accent-shadow);
+}
+.time-separator-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.time-separator-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+  min-width: 12px;
+}
+
+/* ===== 悬浮吸顶时间标签 ===== */
+.sticky-time-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  padding: 6px 16px 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  background: linear-gradient(180deg, var(--app-bg) 60%, transparent 100%);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.sticky-time-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--app-bg);
+  opacity: 0.92;
+  z-index: -1;
+}
+.sticky-time-header-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  box-shadow: 0 0 6px var(--accent-shadow);
+}
+.sticky-time-header-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.sticky-time-header-line {
+  flex: 1;
+  height: 1px;
+  background: var(--accent-light);
+  min-width: 12px;
+}
+
+/* ===== 卡片 ===== */
+.card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
+  cursor: pointer;
+  height: 72px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+.card:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+.card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+}
+.card-text::before { background: #0284C7; }
+.card-image::before { background: #FF6482; }
+.card-file::before { background: #34C759; }
+.card-code::before { background: #BF5AF2; }
+.card-link::before { background: #10B981; }
+
+.card-icon {
+  width: 42px; height: 42px; min-width: 42px;
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.bg-blue   { background: linear-gradient(135deg, #E8F1FB, #D6E8FA); }
+.bg-green  { background: linear-gradient(135deg, #E5F8EC, #D4F2DE); }
+.bg-pink   { background: linear-gradient(135deg, #FDE8EE, #FAD6DF); }
+.bg-purple { background: linear-gradient(135deg, #F0E8FB, #E5D6FA); }
+.bg-cyan   { background: linear-gradient(135deg, #E0F7FA, #B2EBF2); }
+
+.card-content {
+  flex: 1; min-width: 0; overflow: hidden;
+}
+.card-title {
+  font-size: 13px; font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  line-height: 1.4;
+}
+.card-sub {
+  font-size: 11px; color: var(--text-secondary);
+  margin-top: 2px;
+  display: flex; align-items: center; gap: 6px;
+}
+.card-pin-badge {
+  display: inline-flex; align-items: center; gap: 2px;
+  height: 16px; padding: 0 6px; border-radius: 4px;
+  font-size: 10px; font-weight: 600;
+  background: #FEF3C7; color: #B45309;
+}
+.card-time {
+  font-size: 11px; color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ===== FAB 悬浮栏 ===== */
+.fab-container {
+  position: absolute;
+  bottom: 12px; left: 16px; right: 16px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; z-index: 50;
+  background: var(--card-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 16px;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 -2px 16px rgba(0, 0, 0, 0.06);
+}
+.fab-counter {
+  height: 28px; padding: 0 10px; border-radius: 8px;
+  display: flex; align-items: center;
+  font-size: 11px; font-weight: 600;
+  color: var(--text-secondary);
+}
+.fab-counter-num { color: var(--accent); }
+.fab-counter-sep { opacity: 0.4; margin: 0 3px; }
+.fab-btn {
+  height: 38px; padding: 0 18px; border-radius: 12px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600;
+  background: var(--accent); color: #fff;
+  box-shadow: 0 4px 16px var(--accent-shadow);
+  border: none; cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+.fab-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px var(--accent-shadow); }
+
+/* ===== 回到顶部 ===== */
+.back-to-top {
+  position: absolute;
+  right: 16px; bottom: 80px;
+  height: 38px; padding: 0 16px; border-radius: 19px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08), 0 0.5px 2px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+  z-index: 50;
+  font-size: 12px; font-weight: 600;
+  color: var(--text-secondary);
+  transition: all 0.25s ease;
+  font-family: inherit;
+}
+.back-to-top:hover { color: var(--accent); box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12); }
+
+/* ===== 窗口容器 (relative) ===== */
+.window-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ===== 对比标签 ===== */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+.badge-old { background: #FEF2F2; color: #DC2626; }
+.badge-new { background: #ECFDF5; color: #059669; }
+
+/* ===== 提示条 ===== */
+.tip-bar {
+  background: var(--accent-light);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 11px;
+  color: var(--accent);
+  line-height: 1.5;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.tip-bar strong { font-weight: 700; }
+
+/* ===== SVG 图标 ===== */
+.icon-svg { width: 18px; height: 18px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<div class="demo-wrapper">
+
+  <!-- ===== 标题 ===== -->
+  <div class="section-title">
+    <span class="badge badge-old">旧版</span> 4 组时间分隔线 · 36px 高度
+  </div>
+
+  <!-- ===== 旧版窗口 ===== -->
+  <div class="window">
+    <div class="topbar">
+      <span class="topbar-dot red"></span>
+      <span class="topbar-dot yellow"></span>
+      <span class="topbar-dot green"></span>
+      <span class="topbar-title">PastePanda · 旧版：4 分组</span>
+    </div>
+    <div class="window-body">
+      <div class="scroll-area" style="height:460px">
+        <div class="card-list">
+
+          <!-- 今天 -->
+          <div class="time-separator">
+            <span class="time-separator-dot"></span>
+            <span class="time-separator-label">今天</span>
+            <span class="time-separator-line"></span>
+          </div>
+          <div class="card card-text">
+            <div class="card-icon bg-blue">📝</div>
+            <div class="card-content">
+              <div class="card-title">用户登录接口文档需要更新认证流程</div>
+              <div class="card-sub"><span class="card-pin-badge">★ 置顶</span> VS Code</div>
+            </div>
+            <span class="card-time">3分钟前</span>
+          </div>
+          <div class="card card-image">
+            <div class="card-icon bg-pink">🖼</div>
+            <div class="card-content">
+              <div class="card-title">screenshot_2026-07-03.png</div>
+              <div class="card-sub">截图工具</div>
+            </div>
+            <span class="card-time">15分钟前</span>
+          </div>
+          <div class="card card-code">
+            <div class="card-icon bg-purple">&lt;/&gt;</div>
+            <div class="card-content">
+              <div class="card-title">const API_BASE_URL = "https://api.example.com/v2";</div>
+              <div class="card-sub">VS Code</div>
+            </div>
+            <span class="card-time">1小时前</span>
+          </div>
+
+          <!-- 昨天 -->
+          <div class="time-separator">
+            <span class="time-separator-dot"></span>
+            <span class="time-separator-label">昨天</span>
+            <span class="time-separator-line"></span>
+          </div>
+          <div class="card card-text">
+            <div class="card-icon bg-blue">📝</div>
+            <div class="card-content">
+              <div class="card-title">会议纪要：Q3 OKR 对齐 & 技术方案评审</div>
+              <div class="card-sub">飞书</div>
+            </div>
+            <span class="card-time">昨天 14:30</span>
+          </div>
+          <div class="card card-link">
+            <div class="card-icon bg-cyan">🔗</div>
+            <div class="card-content">
+              <div class="card-title">https://github.com/tauri-apps/tauri/releases/tag/v2.0</div>
+              <div class="card-sub">Chrome</div>
+            </div>
+            <span class="card-time">昨天 10:15</span>
+          </div>
+
+          <!-- 本周 -->
+          <div class="time-separator">
+            <span class="time-separator-dot"></span>
+            <span class="time-separator-label">本周</span>
+            <span class="time-separator-line"></span>
+          </div>
+          <div class="card card-file">
+            <div class="card-icon bg-green">📄</div>
+            <div class="card-content">
+              <div class="card-title">PastePanda-Release-Notes-v2.3.md</div>
+              <div class="card-sub">文件管理器</div>
+            </div>
+            <span class="card-time">周一</span>
+          </div>
+          <div class="card card-text">
+            <div class="card-icon bg-blue">📝</div>
+            <div class="card-content">
+              <div class="card-title">Redis 缓存穿透解决方案：布隆过滤器 + 空值缓存</div>
+              <div class="card-sub">Notion</div>
+            </div>
+            <span class="card-time">6月30日</span>
+          </div>
+
+          <!-- 更早 -->
+          <div class="time-separator">
+            <span class="time-separator-dot"></span>
+            <span class="time-separator-label">更早</span>
+            <span class="time-separator-line"></span>
+          </div>
+          <div class="card card-text">
+            <div class="card-icon bg-blue">📝</div>
+            <div class="card-content">
+              <div class="card-title">Docker compose 部署脚本 — 包含 nginx + redis + postgres</div>
+              <div class="card-sub">VS Code</div>
+            </div>
+            <span class="card-time">6月25日</span>
+          </div>
+          <div class="card card-image">
+            <div class="card-icon bg-pink">🖼</div>
+            <div class="card-content">
+              <div class="card-title">架构图-v3-final.png</div>
+              <div class="card-sub">Figma</div>
+            </div>
+            <span class="card-time">6月22日</span>
+          </div>
+          <div class="card card-code">
+            <div class="card-icon bg-purple">&lt;/&gt;</div>
+            <div class="card-content">
+              <div class="card-title">SELECT * FROM users WHERE status = 'active' ORDER BY created_at DESC;</div>
+              <div class="card-sub">DataGrip</div>
+            </div>
+            <span class="card-time">6月20日</span>
+          </div>
+          <div class="card card-text">
+            <div class="card-icon bg-blue">📝</div>
+            <div class="card-content">
+              <div class="card-title">快递单号：SF1234567890123</div>
+              <div class="card-sub">微信</div>
+            </div>
+            <span class="card-time">6月18日</span>
+          </div>
+          <div class="card card-link">
+            <div class="card-icon bg-cyan">🔗</div>
+            <div class="card-content">
+              <div class="card-title">https://www.figma.com/file/xxxxx/design-system-v2</div>
+              <div class="card-sub">Chrome</div>
+            </div>
+            <span class="card-time">6月15日</span>
+          </div>
+          <div class="card card-file">
+            <div class="card-icon bg-green">📄</div>
+            <div class="card-content">
+              <div class="card-title">报销单-2026年6月.pdf</div>
+              <div class="card-sub">企业微信</div>
+            </div>
+            <span class="card-time">6月12日</span>
+          </div>
+
+        </div>
+
+        <!-- FAB + BackToTop -->
+        <div class="fab-container">
+          <div class="fab-counter">
+            <span class="fab-counter-num">3</span>
+            <span class="fab-counter-sep">/</span>8
+          </div>
+          <button class="fab-btn">📋 粘贴</button>
+        </div>
+        <button class="back-to-top">
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="18 15 12 9 6 15"/>
+          </svg>
+          顶部
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 标题 ===== -->
+  <div class="section-title" style="margin-top:8px">
+    <span class="badge badge-new">方案A</span> 2 组精简 · 24px 分隔线 · 悬浮吸顶标签
+  </div>
+
+  <!-- ===== 新版窗口 ===== -->
+  <div class="window">
+    <div class="topbar">
+      <span class="topbar-dot red"></span>
+      <span class="topbar-dot yellow"></span>
+      <span class="topbar-dot green"></span>
+      <span class="topbar-title">PastePanda · 方案A：2 分组 + 吸顶标签</span>
+    </div>
+    <div class="window-body">
+      <div class="scroll-area" id="newScroll" style="height:460px">
+        <div class="card-list" id="newCardList">
+
+          <!-- 今天 (吸顶 + 分隔线) -->
+          <div class="sticky-time-header" data-group="today">
+            <span class="sticky-time-header-dot"></span>
+            <span class="sticky-time-header-label">今天</span>
+            <span class="sticky-time-header-line"></span>
+          </div>
+          <div class="card card-text">
+            <div class="card-icon bg-blue">📝</div>
+            <div class="card-content">
+              <div class="card-title">用户登录接口文档需要更新认证流程</div>
+              <div class="card-sub"><span class="card-pin-badge">★ 置顶</span> VS Code</div>
+            </div>
+            <span class="card-time">3分钟前</span>
+          </div>
+          <div class="card card-image">
+            <div class="card-icon bg-pink">🖼</div>
+            <div class="card-content">
+              <div class="card-title">screenshot_2026-07-03.png</div>
+              <div class="card-sub">截图工具</div>
+            </div>
+            <span class="card-time">15分钟前</span>
+          </div>
+          <div class="card card-code">
+            <div class="card-icon bg-purple">&lt;/&gt;</div>
+            <div class="card-content">
+              <div class="card-title">const API_BASE_URL = "https://api.example.com/v2";</div>
+              <div class="card-sub">VS Code</div>
+            </div>
+            <span class="card-time">1小时前</span>
+          </div>
+          <div class="card card-text">
+            <div class="card-icon bg-blue">📝</div>
+            <div class="card-content">
+              <div class="card-title">会议纪要：Q3 OKR 对齐 & 技术方案评审</div>
+              <div class="card-sub">飞书</div>
+            </div>
+            <span class="card-time">2小时前</span>
+          </div>
+          <div class="card card-link">
+            <div class="card-icon bg-cyan">🔗</div>
+            <div class="card-content">
+              <div class="card-title">https://github.com/tauri-apps/tauri/releases/tag/v2.0</div>
+              <div class="card-sub">Chrome</div>
+            </div>
+            <span class="card-time">5小时前</span>
+          </div>
+
+          <!-- 更早 (吸顶 + 分隔线) -->
+          <div class="sticky-time-header" data-group="earlier">
+            <span class="sticky-time-header-dot"></span>
+            <span class="sticky-time-header-label">更早</span>
+            <span class="sticky-time-header-line"></span>
+          </div>
+          <div class="card card-file">
+            <div class="card-icon bg-green">📄</div>
+            <div class="card-content">
+              <div class="card-title">PastePanda-Release-Notes-v2.3.md</div>
+              <div class="card-sub">文件管理器</div>
+            </div>
+            <span class="card-time">昨天</span>
+          </div>
+          <div class="card card-text">
+            <div class="card-icon bg-blue">📝</div>
+            <div class="card-content">
+              <div class="card-title">Redis 缓存穿透解决方案：布隆过滤器 + 空值缓存</div>
+              <div class="card-sub">Notion</div>
+            </div>
+            <span class="card-time">6月30日</span>
+          </div>
+          <div class="card card-text">
+            <div class="card-icon bg-blue">📝</div>
+            <div class="card-content">
+              <div class="card-title">Docker compose 部署脚本 — 包含 nginx + redis + postgres</div>
+              <div class="card-sub">VS Code</div>
+            </div>
+            <span class="card-time">6月25日</span>
+          </div>
+          <div class="card card-image">
+            <div class="card-icon bg-pink">🖼</div>
+            <div class="card-content">
+              <div class="card-title">架构图-v3-final.png</div>
+              <div class="card-sub">Figma</div>
+            </div>
+            <span class="card-time">6月22日</span>
+          </div>
+          <div class="card card-code">
+            <div class="card-icon bg-purple">&lt;/&gt;</div>
+            <div class="card-content">
+              <div class="card-title">SELECT * FROM users WHERE status = 'active' ORDER BY created_at DESC;</div>
+              <div class="card-sub">DataGrip</div>
+            </div>
+            <span class="card-time">6月20日</span>
+          </div>
+          <div class="card card-text">
+            <div class="card-icon bg-blue">📝</div>
+            <div class="card-content">
+              <div class="card-title">快递单号：SF1234567890123</div>
+              <div class="card-sub">微信</div>
+            </div>
+            <span class="card-time">6月18日</span>
+          </div>
+          <div class="card card-link">
+            <div class="card-icon bg-cyan">🔗</div>
+            <div class="card-content">
+              <div class="card-title">https://www.figma.com/file/xxxxx/design-system-v2</div>
+              <div class="card-sub">Chrome</div>
+            </div>
+            <span class="card-time">6月15日</span>
+          </div>
+          <div class="card card-file">
+            <div class="card-icon bg-green">📄</div>
+            <div class="card-content">
+              <div class="card-title">报销单-2026年6月.pdf</div>
+              <div class="card-sub">企业微信</div>
+            </div>
+            <span class="card-time">6月12日</span>
+          </div>
+
+        </div>
+
+        <!-- FAB + BackToTop -->
+        <div class="fab-container">
+          <div class="fab-counter">
+            <span class="fab-counter-num">3</span>
+            <span class="fab-counter-sep">/</span>10
+          </div>
+          <button class="fab-btn">📋 粘贴</button>
+        </div>
+        <button class="back-to-top">
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="18 15 12 9 6 15"/>
+          </svg>
+          顶部
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 说明 ===== -->
+  <div class="tip-bar">
+    <span>💡</span>
+    <div>
+      <strong>方案A 优化点：</strong><br>
+      ① 4 分组 → 2 分组（今天 / 更早），分隔线 36px → 24px，节省约 <strong>40%</strong> 空间<br>
+      ② 悬浮吸顶标签 — 滚动时当前分组标签始终可见（类似 iOS 通讯录），知道滚到哪了<br>
+      ③ "更早"分组统一管理历史数据，不再用"昨天""本周"细分<br>
+      ④ 搜索/筛选模式下完全隐藏分隔线（与旧版一致）
+    </div>
+  </div>
+
+</div>
+
+<script>
+// 实现悬浮吸顶效果：滚动时检测当前可见的第一个 sticky header，更新其兄弟的透明度
+(function() {
+  const scrollEl = document.getElementById('newScroll');
+  if (!scrollEl) return;
+
+  const headers = scrollEl.querySelectorAll('.sticky-time-header');
+
+  function updateStickyHeaders() {
+    const scrollTop = scrollEl.scrollTop;
+    const containerTop = scrollEl.getBoundingClientRect().top;
+
+    let activeGroup = null;
+
+    headers.forEach((header, i) => {
+      const rect = header.getBoundingClientRect();
+      const headerTop = rect.top - containerTop;
+
+      // 找到第一个还在视口上方或刚好顶部的 header
+      if (headerTop <= 0) {
+        activeGroup = header.dataset.group;
+      }
+    });
+
+    // 如果没找到（在最顶部），默认第一个分组
+    if (!activeGroup && headers.length > 0) {
+      activeGroup = headers[0].dataset.group;
+    }
+
+    // 高亮当前吸顶的标签
+    headers.forEach(h => {
+      if (h.dataset.group === activeGroup) {
+        h.style.opacity = '1';
+        h.querySelector('.sticky-time-header-label').style.color = 'var(--accent)';
+      } else {
+        // 被覆盖的那个降低透明度
+        const rect = h.getBoundingClientRect();
+        if (rect.top - containerTop <= 24) {
+          h.style.opacity = '0.3';
+        } else {
+          h.style.opacity = '1';
+        }
+        h.querySelector('.sticky-time-header-label').style.color = 'var(--text-secondary)';
+      }
+    });
+  }
+
+  scrollEl.addEventListener('scroll', updateStickyHeaders, { passive: true });
+  // 初始调用
+  setTimeout(updateStickyHeaders, 100);
+})();
+</script>
+
+</body>
+</html>

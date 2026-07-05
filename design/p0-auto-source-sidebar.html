@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="ocean">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PastePanda — 自动来源分组侧边栏（方案A）</title>
+<style>
+/* ===== 主题变量 (完全复刻项目 themes.ts) ===== */
+:root, [data-theme="ocean"] {
+  --app-bg: #F4F6F9;
+  --header-bg-start: #fff;
+  --header-bg-end: #F4F6F9;
+  --card-bg: #fff;
+  --card-border: #E0E4EB;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --seg-bg: #E8E8ED;
+  --seg-active-bg: #fff;
+  --search-bg: #fff;
+  --search-border: #E0E4EB;
+  --input-bg: #F1F5F9;
+  --dialog-bg: #fff;
+  --section-bg: #F0F4F8;
+  --hover: #E8ECF2;
+  --card-selected-bg: #E0F2FE;
+  --card-selected-border: #0284C7;
+  --card-selected-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25);
+  --accent-shadow: rgba(2, 132, 199, 0.15);
+  --green: #16A34A;
+  --green-bg: #DCFCE7;
+  --orange: #EA580C;
+  --orange-bg: #FFF7ED;
+  --danger: #DC2626;
+  --red-bg: #FEF2F2;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: "SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  background: #E8ECF0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+/* ===== 窗口容器（完全复刻 App.module.css .appShell） ===== */
+.app-shell {
+  width: 960px;
+  max-width: 100%;
+  height: 680px;
+  display: flex;
+  flex-direction: column;
+  background: var(--app-bg);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.06);
+}
+
+/* ===== 下方 flex 容器：侧边栏 + 主区域 ===== */
+.body-row {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ===== 侧边栏（方案A：自动来源分组） ===== */
+.sidebar {
+  width: 200px;
+  min-width: 200px;
+  background: var(--card-bg);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s;
+}
+.sidebar.collapsed {
+  width: 0;
+  min-width: 0;
+  border-right: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 12px 10px;
+  flex-shrink: 0;
+}
+.sidebar-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sidebar-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 侧边栏分隔线 */
+.sidebar-sep {
+  height: 1px;
+  background: var(--border-color);
+  margin: 6px 10px;
+}
+.sidebar-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 10px 2px;
+}
+
+/* 侧边栏项（完全复刻 p0-groups-tags.html 的 .sidebar-item） */
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  transition: all 0.15s;
+  text-align: left;
+  width: 100%;
+}
+.sidebar-item:hover { background: var(--hover); }
+.sidebar-item.active {
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: 600;
+}
+.sidebar-item .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sidebar-item .label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-item .count {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 侧边栏底部（复刻 p0-groups-tags.html） */
+.sidebar-footer {
+  padding: 8px;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.sidebar-collapse-btn {
+  width: 100%;
+  padding: 6px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+.sidebar-collapse-btn:hover {
+  background: var(--hover);
+  color: var(--text-secondary);
+}
+
+/* ===== 右侧主区域（flex column: header + content） ===== */
+.main-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* ===== Header / TopBar（完全复刻 TopBar.module.css） ===== */
+.header {
+  padding: 16px 16px 0;
+  background: linear-gradient(180deg, var(--header-bg-start) 0%, var(--header-bg-end) 100%);
+  flex-shrink: 0;
+}
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.header-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ☰ 侧边栏切换按钮（复刻 .iconBtn） */
+.sidebar-toggle {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  transition: background 0.15s, transform 0.15s;
+}
+.sidebar-toggle:hover {
+  background: rgba(129,140,248,.12);
+  transform: scale(1.08);
+}
+.sidebar-toggle:active { transform: scale(.92); }
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.header-title-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.header-title-icon img {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+.header-title-text {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.header-icons {
+  display: flex;
+  gap: 4px;
+}
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  transition: background 0.15s, transform 0.15s;
+}
+.icon-btn:hover {
+  background: rgba(129,140,248,.12);
+  transform: scale(1.08);
+}
+.icon-btn:active { transform: scale(.92); }
+.icon-emoji { font-size: 18px; line-height: 1; }
+.icon-svg { width: 18px; height: 18px; }
+
+/* ===== 搜索框（复刻 TopBar.module.css） ===== */
+.header-controls { padding: 0 0 4px; }
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--search-bg);
+  border: 1px solid var(--search-border);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+  transition: all 0.2s;
+}
+.search-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-shadow), 0 2px 8px rgba(0,120,212,0.1);
+}
+.search-icon { font-size: 14px; line-height: 1; flex-shrink: 0; }
+.search-box input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text-primary);
+}
+.search-box input::placeholder { color: var(--text-muted); }
+
+/* ===== Tabs（复刻 TopBar.module.css） ===== */
+.tabs-area { padding: 10px 0 0; }
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--seg-bg);
+  border-radius: 10px;
+  padding: 3px;
+}
+.seg-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  font-family: inherit;
+}
+.seg-item.active {
+  color: var(--text-primary);
+  font-weight: 600;
+  background: var(--seg-active-bg);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.seg-icon { font-size: 15px; }
+.seg-count {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-left: 1px;
+  font-variant-numeric: tabular-nums;
+}
+.seg-item.active .seg-count { color: var(--accent); }
+
+/* ===== 筛选栏（复刻 TopBar.module.css） ===== */
+.filter-bar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 0 0;
+  align-items: center;
+}
+.filter-dropdown-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  flex: 1;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.filter-dropdown-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ===== 内容区域（复刻 CardList.module.css .contentArea） ===== */
+.content-area {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+.scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ===== 卡片列表（复刻 CardList.module.css .cardList） ===== */
+.card-list {
+  --card-height: 72px;
+  --card-gap: 10px;
+  padding: 10px 16px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-gap);
+}
+
+/* ===== 卡片（完全复刻 CardList.module.css .card） ===== */
+.card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  height: var(--card-height);
+  width: 100%;
+  box-sizing: border-box;
+}
+.card:hover {
+  box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+  transform: translateY(-2px) scale(1.008);
+}
+
+/* 左侧彩色边线 */
+.card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+}
+.card.text::before { background: var(--accent); }
+.card.image::before { background: #FF6482; }
+.card.file::before { background: #34C759; }
+.card.code::before { background: #BF5AF2; }
+.card.pinned::before { background: #FFD60A; }
+.card.pinned::after {
+  content: '📌';
+  position: absolute;
+  left: -1px; top: 4px;
+  font-size: 10px; line-height: 1;
+  z-index: 3;
+}
+
+/* 图标区 */
+.card-icon {
+  width: 42px; height: 42px;
+  min-width: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.bg-blue   { background: linear-gradient(135deg, #E8F1FB, #D6E8FA); }
+.bg-green  { background: linear-gradient(135deg, #E5F8EC, #D4F2DE); }
+.bg-pink   { background: linear-gradient(135deg, #FDE8EE, #FAD6DF); }
+.bg-purple { background: linear-gradient(135deg, #F0E8FB, #E5D6FA); }
+
+.card-content { flex: 1; min-width: 0; overflow: hidden; }
+.card-title {
+  font-size: 13px; font-weight: 600;
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+  max-height: 36px;
+  word-break: break-word;
+  white-space: normal;
+}
+.card-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.card-source {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;
+}
+.card-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+/* ===== FAB（完全复刻 App.module.css .fabContainer） ===== */
+.fab-container {
+  position: absolute;
+  bottom: 12px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  z-index: 50;
+  background: var(--card-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 16px;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 -2px 16px rgba(0,0,0,0.06);
+  transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.fab-counter {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.fab-counter-num { color: var(--accent); }
+.fab-counter-sep { opacity: 0.4; margin: 0 3px; }
+.fab-btn {
+  height: 38px;
+  padding: 0 18px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 4px 16px var(--accent-shadow);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+.fab-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px var(--accent-shadow); }
+.fab-btn:active { transform: scale(0.97); }
+.fab-btn-reset {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.2);
+  border: none;
+  cursor: pointer;
+  color: #fff;
+  transition: background 0.15s;
+}
+.fab-btn-reset:hover { background: rgba(255,255,255,0.35); }
+
+/* Toast */
+.toast {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  z-index: 60;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+.toast.show { opacity: 1; }
+
+/* 滚动条 */
+.scroll-area::-webkit-scrollbar { width: 5px; }
+.scroll-area::-webkit-scrollbar-track { background: transparent; }
+.scroll-area::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+.sidebar-list::-webkit-scrollbar { width: 4px; }
+.sidebar-list::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- 窗口 -->
+<div class="app-shell">
+
+  <!-- ========== TopBar（完全复刻 TopBar.tsx 结构） ========== -->
+  <div class="header" data-tauri-drag-region>
+    <div class="header-top" data-tauri-drag-region>
+      <div class="header-title-group">
+        <!-- ☰ 侧边栏切换按钮（新增） -->
+        <button class="sidebar-toggle" onclick="toggleSidebar()" title="切换来源分组">☰</button>
+        <div class="header-title">
+          <span class="header-title-icon">
+            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='14' r='9' fill='%233B82F6'/%3E%3Ccircle cx='11' cy='12' r='2.5' fill='%23fff'/%3E%3Ccircle cx='21' cy='12' r='2.5' fill='%23fff'/%3E%3Cellipse cx='16' cy='21' rx='5' ry='3' fill='%23fff' opacity='0.9'/%3E%3Ccircle cx='13' cy='9' r='2' fill='%23333'/%3E%3Ccircle cx='19' cy='9' r='2' fill='%23333'/%3E%3C/svg%3E" alt="PastePanda" />
+          </span>
+          <span class="header-title-text">PastePanda</span>
+        </div>
+      </div>
+      <div class="header-icons" data-tauri-drag-region="false">
+        <button class="icon-btn" title="片段库"><span class="icon-emoji">📝</span></button>
+        <button class="icon-btn" title="内容提取"><span class="icon-emoji">🧲</span></button>
+        <button class="icon-btn" title="设置 · 帮助 · 关于">
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+        <button class="icon-btn" title="最小化到任务栏">
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>
+        </button>
+        <button class="icon-btn" title="隐藏窗口">
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="header-controls" data-tauri-drag-region="false">
+      <!-- 搜索框 -->
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" placeholder="搜索剪贴板... (Enter 搜索)" value="">
+      </div>
+
+      <!-- Tab 区域 -->
+      <div class="tabs-area">
+        <div class="segmented">
+          <button class="seg-item active">📋 全部 <span class="seg-count">526</span></button>
+          <button class="seg-item">📝 文本 <span class="seg-count">380</span></button>
+          <button class="seg-item">📸 图片 <span class="seg-count">95</span></button>
+          <button class="seg-item">📁 文件 <span class="seg-count">51</span></button>
+          <button class="seg-item">⭐ 收藏 <span class="seg-count">32</span></button>
+        </div>
+      </div>
+
+      <!-- 筛选栏 -->
+      <div class="filter-bar">
+        <button class="filter-dropdown-btn">全部时间 ▾</button>
+        <button class="filter-dropdown-btn">来源应用 ▾</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 侧边栏 + 主区域 ========== -->
+  <div class="body-row">
+
+    <!-- 侧边栏：自动来源分组 -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">来源分组</span>
+      </div>
+      <div class="sidebar-list" id="sidebarList">
+        <!-- 内置分组 -->
+        <button class="sidebar-item active" data-source="" onclick="selectSource(this, '')">
+          <span style="font-size:16px">📋</span>
+          <span class="label">全部</span>
+          <span class="count">526</span>
+        </button>
+        <button class="sidebar-item" data-source="pinned" onclick="selectSource(this, 'pinned')">
+          <span style="font-size:16px">⭐</span>
+          <span class="label">收藏</span>
+          <span class="count">32</span>
+        </button>
+        <div class="sidebar-sep"></div>
+        <span class="sidebar-section-label">按来源应用</span>
+        <!-- 自动来源分组（模拟数据） -->
+        <button class="sidebar-item" data-source="VS Code" onclick="selectSource(this, 'VS Code')">
+          <span class="dot" style="background:#3B82F6"></span>
+          <span class="label">VS Code</span>
+          <span class="count">180</span>
+        </button>
+        <button class="sidebar-item" data-source="Chrome" onclick="selectSource(this, 'Chrome')">
+          <span class="dot" style="background:#10B981"></span>
+          <span class="label">Chrome</span>
+          <span class="count">120</span>
+        </button>
+        <button class="sidebar-item" data-source="企业微信" onclick="selectSource(this, '企业微信')">
+          <span class="dot" style="background:#8B5CF6"></span>
+          <span class="label">企业微信</span>
+          <span class="count">80</span>
+        </button>
+        <button class="sidebar-item" data-source="Terminal" onclick="selectSource(this, 'Terminal')">
+          <span class="dot" style="background:#F59E0B"></span>
+          <span class="label">Terminal</span>
+          <span class="count">45</span>
+        </button>
+        <button class="sidebar-item" data-source="截图工具" onclick="selectSource(this, '截图工具')">
+          <span class="dot" style="background:#EC4899"></span>
+          <span class="label">截图工具</span>
+          <span class="count">95</span>
+        </button>
+        <button class="sidebar-item" data-source="其他" onclick="selectSource(this, '其他')">
+          <span class="dot" style="background:#6B7280"></span>
+          <span class="label">其他</span>
+          <span class="count">6</span>
+        </button>
+      </div>
+      <div class="sidebar-footer">
+        <button class="sidebar-collapse-btn" onclick="toggleSidebar()">◀ 收起侧边栏</button>
+      </div>
+    </aside>
+
+    <!-- 右侧主区域 -->
+    <div class="main-area">
+      <div class="content-area">
+        <div class="scroll-area">
+          <div class="card-list">
+
+            <!-- 卡片 1 — VS Code 来源 -->
+            <div class="card text">
+              <div class="card-icon bg-blue">📝</div>
+              <div class="card-content">
+                <div class="card-title">function fetchUserData(userId: string) { return api.get(`/users/${userId}`) }</div>
+                <div class="card-sub">
+                  <span>2 分钟前</span>
+                  <span>·</span>
+                  <span class="card-source">VS Code</span>
+                </div>
+              </div>
+              <span class="card-time">14:30</span>
+            </div>
+
+            <!-- 卡片 2 — Chrome 来源 -->
+            <div class="card text">
+              <div class="card-icon bg-blue">🔗</div>
+              <div class="card-content">
+                <div class="card-title">https://github.com/facebook/react/releases/tag/v19.0.0</div>
+                <div class="card-sub">
+                  <span>15 分钟前</span>
+                  <span>·</span>
+                  <span class="card-source">Chrome</span>
+                </div>
+              </div>
+              <span class="card-time">14:17</span>
+            </div>
+
+            <!-- 卡片 3 — 截图工具 -->
+            <div class="card image">
+              <div class="card-icon bg-pink">📸</div>
+              <div class="card-content">
+                <div class="card-title">screenshot_2026-07-04_143000.png</div>
+                <div class="card-sub">
+                  <span>30 分钟前</span>
+                  <span>·</span>
+                  <span class="card-source">截图工具</span>
+                </div>
+              </div>
+              <span class="card-time">14:02</span>
+            </div>
+
+            <!-- 卡片 4 — VS Code 代码 -->
+            <div class="card code">
+              <div class="card-icon bg-purple">💻</div>
+              <div class="card-content">
+                <div class="card-title">SELECT u.name, o.total FROM users u JOIN orders o ON u.id = o.user_id WHERE o.created_at > '2026-06-01'</div>
+                <div class="card-sub">
+                  <span>1 小时前</span>
+                  <span>·</span>
+                  <span class="card-source">VS Code</span>
+                </div>
+              </div>
+              <span class="card-time">13:28</span>
+            </div>
+
+            <!-- 卡片 5 — 企业微信 置顶 -->
+            <div class="card pinned">
+              <div class="card-icon bg-blue">📌</div>
+              <div class="card-content">
+                <div class="card-title">会议纪要：本周五 15:00 产品评审，会议室 A302</div>
+                <div class="card-sub">
+                  <span>昨天</span>
+                  <span>·</span>
+                  <span class="card-source">企业微信</span>
+                </div>
+              </div>
+              <span class="card-time">昨天</span>
+            </div>
+
+            <!-- 卡片 6 — 文件 -->
+            <div class="card file">
+              <div class="card-icon bg-green">📄</div>
+              <div class="card-content">
+                <div class="card-title">Q3产品规划_v3_final.xlsx</div>
+                <div class="card-sub">
+                  <span>昨天</span>
+                  <span>·</span>
+                  <span class="card-source">文件管理器</span>
+                </div>
+              </div>
+              <span class="card-time">昨天</span>
+            </div>
+
+            <!-- 卡片 7 — Terminal -->
+            <div class="card text">
+              <div class="card-icon bg-blue">⚡</div>
+              <div class="card-content">
+                <div class="card-title">npm install @tanstack/react-virtual framer-motion lenis lucide-react</div>
+                <div class="card-sub">
+                  <span>前天</span>
+                  <span>·</span>
+                  <span class="card-source">Terminal</span>
+                </div>
+              </div>
+              <span class="card-time">前天</span>
+            </div>
+
+            <!-- 加载完 -->
+            <div style="height:40px;display:flex;align-items:center;justify-content:center">
+              <span style="font-size:11px;color:var(--text-muted)">— 已加载全部记录 —</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FAB -->
+      <div class="fab-container" id="fabBar">
+        <div class="fab-counter"><span class="fab-counter-num">0</span><span class="fab-counter-sep">/</span>380</div>
+        <button class="fab-btn">📋 粘贴<span class="fab-btn-reset">↺</span></button>
+      </div>
+    </div>
+
+  </div><!-- /body-row -->
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+</div><!-- /app-shell -->
+
+<script>
+// ===== 侧边栏切换 =====
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const fab = document.getElementById('fabBar');
+  sidebar.classList.toggle('collapsed');
+  if (sidebar.classList.contains('collapsed')) {
+    fab.style.left = '16px';
+  } else {
+    fab.style.left = '216px';
+  }
+  showToast(sidebar.classList.contains('collapsed') ? '侧边栏已收起' : '侧边栏已展开 — 按来源分组');
+}
+
+// ===== 来源选择（核心交互） =====
+function selectSource(el, source) {
+  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+  el.classList.add('active');
+
+  // 更新筛选栏的"来源应用"按钮文字
+  const sourceBtn = document.querySelectorAll('.filter-dropdown-btn')[1];
+  if (source === '') {
+    sourceBtn.innerHTML = '来源应用 ▾';
+    showToast('显示全部记录');
+  } else if (source === 'pinned') {
+    sourceBtn.innerHTML = '⭐ 收藏 ▾';
+    showToast('筛选：收藏');
+  } else {
+    sourceBtn.innerHTML = source + ' ▾';
+    showToast('筛选来源：' + source);
+  }
+}
+
+// ===== Toast =====
+let toastTimer;
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 2000);
+}
+</script>
+
+</body>
+</html>

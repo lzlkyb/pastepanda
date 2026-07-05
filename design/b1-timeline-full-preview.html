@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PastePanda — B1 竖版时间轴完整预览</title>
+<style>
+/* ===== Reset & Base ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #0f172a;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; padding: 20px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== Theme Toggle ===== */
+.theme-bar {
+  position: fixed; top: 12px; right: 16px; z-index: 999;
+  display: flex; gap: 6px; align-items: center;
+  background: rgba(255,255,255,0.1); backdrop-filter: blur(12px);
+  border-radius: 10px; padding: 4px; border: 1px solid rgba(255,255,255,0.15);
+}
+.theme-btn {
+  padding: 5px 12px; border-radius: 7px; border: none;
+  font-size: 11px; font-weight: 600; cursor: pointer;
+  transition: all 0.2s; color: #94a3b8; background: transparent;
+}
+.theme-btn.active { background: #3b82f6; color: #fff; }
+
+/* ===== App Shell ===== */
+.app {
+  width: 520px; height: 700px; border-radius: 16px;
+  background: var(--app-bg); overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.08);
+  transition: background 0.35s, box-shadow 0.35s;
+}
+
+/* ===== Header ===== */
+.header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0; transition: all 0.35s;
+  -webkit-app-region: drag;
+}
+.header-logo { font-size: 14px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+.header-spacer { flex: 1; }
+.header-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.header-dot.green { background: #22c55e; }
+.header-dot.amber { background: #f59e0b; }
+.header-dot.red { background: #ef4444; }
+.header-text { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
+
+/* ===== Search + Filter ===== */
+.toolbar {
+  padding: 8px 14px 4px; display: flex; gap: 8px; flex-shrink: 0;
+  transition: background 0.35s;
+}
+.search-box {
+  flex: 1; display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border-radius: 10px;
+  background: var(--search-bg); border: 1px solid var(--search-border);
+  transition: all 0.35s;
+}
+.search-box svg { flex-shrink: 0; color: var(--text-muted); }
+.search-box input {
+  flex: 1; border: none; background: none; outline: none;
+  font-size: 12px; color: var(--text-primary); font-family: inherit;
+}
+.search-box input::placeholder { color: var(--text-muted); }
+
+.filter-tabs {
+  display: flex; gap: 2px; background: var(--seg-bg);
+  border-radius: 9px; padding: 2px; flex-shrink: 0;
+  transition: background 0.35s;
+}
+.filter-tab {
+  padding: 4px 10px; border-radius: 7px; border: none;
+  font-size: 11px; font-weight: 500; cursor: pointer;
+  background: transparent; color: var(--text-muted);
+  transition: all 0.2s; white-space: nowrap;
+}
+.filter-tab.active { background: var(--seg-active-bg); color: var(--accent); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+/* ===== Main Content Area (relative for timeline) ===== */
+.content-area {
+  flex: 1; display: flex; position: relative;
+  overflow: hidden; min-height: 0;
+}
+
+/* ===== Scroll Area ===== */
+.scroll-area {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  padding: 8px 14px 60px; transition: padding-left 0.3s cubic-bezier(0.4,0,0.2,1);
+  scroll-behavior: smooth;
+}
+/* 时间轴可见时卡片区域右移 */
+.scroll-area.timeline-visible {
+  padding-left: calc(14px + 50px);
+}
+.scroll-area::-webkit-scrollbar { width: 5px; }
+.scroll-area::-webkit-scrollbar-track { background: transparent; }
+.scroll-area::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 10px; }
+.scroll-area::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+.card-list { display: flex; flex-direction: column; gap: 8px; }
+
+/* ===== Cards ===== */
+.card {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 14px; background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 14px; position: relative; overflow: hidden;
+  height: 64px; cursor: pointer;
+  box-shadow: var(--card-shadow);
+  transition: all 0.2s cubic-bezier(0.4,0,0.2,1);
+}
+.card:hover {
+  box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+  transform: translateY(-1px);
+}
+.card::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 3px; border-radius: 0 3px 3px 0;
+}
+.card-type-text::before { background: #3b82f6; }
+.card-type-image::before { background: #FF6482; }
+.card-type-file::before { background: #34C759; }
+.card-type-code::before { background: #BF5AF2; }
+.card-type-link::before { background: #10B981; }
+.card-type-pinned::before { background: #FFD60A; }
+
+.card-icon {
+  width: 40px; height: 40px; min-width: 40px;
+  border-radius: 11px; display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0;
+}
+.icon-blue { background: linear-gradient(135deg, #E8F1FB, #D6E8FA); }
+.icon-green { background: linear-gradient(135deg, #E5F8EC, #D4F2DE); }
+.icon-pink { background: linear-gradient(135deg, #FDE8EE, #FAD6DF); }
+.icon-purple { background: linear-gradient(135deg, #F0E8FB, #E5D6FA); }
+
+.card-body { flex: 1; min-width: 0; overflow: hidden; }
+.card-title {
+  font-size: 12px; font-weight: 600; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-bottom: 2px;
+}
+.card-sub {
+  font-size: 10px; color: var(--text-secondary);
+  display: flex; align-items: center; gap: 6px;
+}
+.card-pin-tag {
+  font-size: 9px; font-weight: 600; padding: 1px 6px;
+  border-radius: 4px; background: var(--accent-light); color: var(--accent);
+  display: inline-flex; align-items: center; gap: 2px;
+}
+.card-time {
+  font-size: 10px; color: var(--text-muted);
+  flex-shrink: 0; white-space: nowrap;
+}
+
+/* ===== B1 Timeline ===== */
+.timeline-container {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 50px; z-index: 30;
+  pointer-events: none; /* 默认不拦截鼠标 */
+  transform: translateX(-100%);
+  opacity: 0;
+  transition: transform 0.35s cubic-bezier(0.34,1.56,0.64,1), opacity 0.25s ease;
+  background: var(--timeline-bg);
+  border-right: 1px solid var(--border-color);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.timeline-container.visible {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* timeline 内部滚动区 */
+.timeline-scroll {
+  flex: 1; overflow: hidden; position: relative;
+}
+.timeline-track {
+  position: absolute; left: 50%; top: 0;
+  width: 2px; height: 100%;
+  background: var(--border-color);
+  transform: translateX(-50%);
+}
+.timeline-inner {
+  position: relative; width: 100%;
+}
+
+/* 吸顶胶囊 */
+.timeline-capsule {
+  position: sticky; top: 8px; z-index: 35;
+  display: flex; align-items: center; justify-content: center;
+  padding: 4px 0;
+  cursor: grab;
+  transition: transform 0.15s, box-shadow 0.15s;
+  user-select: none;
+}
+.timeline-capsule:active { cursor: grabbing; }
+.timeline-capsule.dragging {
+  transform: scale(1.12);
+  z-index: 50;
+}
+.capsule-inner {
+  background: var(--accent);
+  color: #fff; font-size: 9px; font-weight: 700;
+  padding: 5px 10px; border-radius: 10px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(59,130,246,0.35);
+  transition: all 0.2s;
+}
+.timeline-capsule.dragging .capsule-inner {
+  box-shadow: 0 4px 16px rgba(59,130,246,0.5);
+  transform: scale(1.08);
+}
+
+/* 时间轴节点 */
+.timeline-node {
+  position: relative; display: flex; align-items: center;
+  height: 64px; /* 与卡片高度一致 */
+  margin-bottom: 8px; /* 与卡片 gap 一致 */
+  cursor: pointer;
+}
+.timeline-node-dot {
+  position: absolute; left: 50%; top: 50%;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 3px var(--accent-light);
+  transition: transform 0.15s, box-shadow 0.15s;
+  z-index: 2;
+}
+.timeline-node:hover .timeline-node-dot {
+  transform: translate(-50%, -50%) scale(1.5);
+  box-shadow: 0 0 0 5px var(--accent-light);
+}
+
+/* 时间轴分组标签 */
+.timeline-group-label {
+  position: relative; display: flex; align-items: center;
+  padding: 8px 0; cursor: grab; user-select: none;
+}
+.timeline-group-label:active { cursor: grabbing; }
+.timeline-group-label-dot {
+  position: absolute; left: 50%; top: 50%;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--accent);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 4px var(--accent-light), 0 0 12px rgba(59,130,246,0.25);
+  z-index: 2;
+  transition: transform 0.15s;
+}
+.timeline-group-label:hover .timeline-group-label-dot {
+  transform: translate(-50%, -50%) scale(1.3);
+}
+
+/* 拖拽时的指示器 */
+.timeline-drag-indicator {
+  position: absolute; left: 8px; right: 8px; top: 50%;
+  height: 2px; background: var(--accent);
+  opacity: 0; transform: translateY(-50%);
+  transition: opacity 0.15s;
+  pointer-events: none;
+  z-index: 5;
+}
+.timeline-container.drag-active .timeline-drag-indicator { opacity: 1; }
+
+/* 拖拽反馈提示 */
+.timeline-tooltip {
+  position: absolute; left: 54px; top: 50%;
+  transform: translateY(-50%);
+  background: var(--accent); color: #fff;
+  font-size: 10px; font-weight: 600;
+  padding: 3px 8px; border-radius: 5px;
+  white-space: nowrap; pointer-events: none;
+  opacity: 0; transition: opacity 0.15s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+.timeline-node:hover .timeline-tooltip { opacity: 1; }
+
+/* ===== Empty State ===== */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 60px 20px; gap: 14px;
+  min-height: 300px; user-select: none;
+}
+.empty-icon {
+  width: 56px; height: 56px; border-radius: 16px;
+  background: var(--accent-light);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; box-shadow: 0 4px 12px rgba(59,130,246,0.12);
+}
+.empty-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.empty-desc { font-size: 11px; color: var(--text-secondary); text-align: center; }
+
+/* ===== Loading More ===== */
+.load-more {
+  height: 36px; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; color: var(--text-muted);
+}
+
+/* ===== 提示横幅 ===== */
+.hint-banner {
+  position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.75); backdrop-filter: blur(10px);
+  color: #fff; font-size: 11px; padding: 6px 16px; border-radius: 20px;
+  white-space: nowrap; z-index: 40; pointer-events: none;
+  transition: opacity 0.4s; opacity: 0;
+  display: flex; align-items: center; gap: 6px;
+}
+.hint-banner.show { opacity: 1; }
+.hint-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; animation: pulse-dot 1.5s infinite; }
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* ===== 左侧感应区域 ===== */
+.timeline-trigger-zone {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 18px; z-index: 25;
+}
+
+/* ===== Light Theme ===== */
+.theme-light {
+  --app-bg: #F4F6F9;
+  --header-bg: linear-gradient(180deg, #fff, #F4F6F9);
+  --card-bg: #fff;
+  --card-border: #E0E4EB;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #94a3b8;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --seg-bg: #E8E8ED;
+  --seg-active-bg: #fff;
+  --search-bg: #fff;
+  --search-border: #E0E4EB;
+  --timeline-bg: rgba(244,246,249,0.92);
+  --card-selected-bg: #E0F2FE;
+  --card-selected-border: #0284C7;
+}
+
+/* ===== Dark Theme (default) ===== */
+.theme-dark {
+  --app-bg: #09090B;
+  --header-bg: linear-gradient(180deg, #18181B, #09090B);
+  --card-bg: #18181B;
+  --card-border: #27272A;
+  --card-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  --text-primary: #E4E4E7;
+  --text-secondary: #A1A1AA;
+  --text-muted: #71717A;
+  --border-color: #27272A;
+  --accent: #818CF8;
+  --accent-light: #1E1B4B;
+  --seg-bg: #27272A;
+  --seg-active-bg: #3F3F46;
+  --search-bg: #27272A;
+  --search-border: #3F3F46;
+  --timeline-bg: rgba(9,9,11,0.92);
+  --card-selected-bg: #1E1B4B;
+  --card-selected-border: #818CF8;
+}
+</style>
+</head>
+<body>
+
+<div class="theme-bar">
+  <button class="theme-btn active" onclick="setTheme('dark')">🌙 深色</button>
+  <button class="theme-btn" onclick="setTheme('light')">☀️ 浅色</button>
+</div>
+
+<div class="app theme-dark" id="app">
+  <!-- Header -->
+  <div class="header">
+    <span class="header-logo">📋 PastePanda</span>
+    <span class="header-spacer"></span>
+    <span class="header-dot green"></span>
+    <span class="header-dot amber"></span>
+    <span class="header-dot red"></span>
+    <span class="header-text">监听中</span>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <div class="search-box">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input type="text" placeholder="搜索剪贴板记录…" />
+    </div>
+    <div class="filter-tabs">
+      <button class="filter-tab active">全部</button>
+      <button class="filter-tab">文本</button>
+      <button class="filter-tab">图片</button>
+      <button class="filter-tab">文件</button>
+    </div>
+  </div>
+
+  <!-- Content Area -->
+  <div class="content-area" id="contentArea">
+    <!-- B1 Timeline -->
+    <div class="timeline-container" id="timeline">
+      <div class="timeline-scroll">
+        <div class="timeline-track"></div>
+        <div class="timeline-inner" id="timelineInner">
+          <!-- JS 动态填充 -->
+        </div>
+      </div>
+      <!-- 拖拽指示器 -->
+      <div class="timeline-drag-indicator"></div>
+    </div>
+
+    <!-- 左侧感应区域 -->
+    <div class="timeline-trigger-zone" id="triggerZone"></div>
+
+    <!-- Scroll Area -->
+    <div class="scroll-area" id="scrollArea">
+      <div class="card-list" id="cardList">
+        <!-- JS 动态填充 -->
+      </div>
+      <div class="load-more">加载更多…</div>
+    </div>
+
+    <!-- 提示横幅 -->
+    <div class="hint-banner" id="hintBanner">
+      <span class="hint-dot"></span>
+      鼠标移到左侧或滚动以查看时间轴 · 可拖拽时间轴导航
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== Mock Data =====
+const MOCK_ITEMS = [
+  { id:1, type:'text', text:'React Server Components 实战指南 - 从入门到精通', source:'GitHub', time:'2分钟前', pinned:false, sub:'text' },
+  { id:2, type:'text', text:'const fetchUserData = async (id: string) => { return await api.get(`/users/${id}`) }', source:'VSCode', time:'5分钟前', pinned:false, sub:'code' },
+  { id:3, type:'image', text:'产品原型图 v3-final.png', source:'Figma', time:'12分钟前', pinned:false, sub:'image' },
+  { id:4, type:'text', text:'https://github.com/tauri-apps/tauri/releases/tag/tauri-v2.0.0', source:'Chrome', time:'18分钟前', pinned:false, sub:'link' },
+  { id:5, type:'file', text:'project-report-2025-Q3.xlsx', source:'Explorer', time:'25分钟前', pinned:false, sub:'file' },
+  { id:6, type:'text', text:'会议纪要：本周迭代计划讨论 - 1. 完成搜索功能优化 2. 修复图片预览bug 3. 添加时间轴功能', source:'Notion', time:'32分钟前', pinned:true, sub:'text' },
+  { id:7, type:'text', text:'npm install @tanstack/react-virtual framer-motion', source:'Terminal', time:'昨天 23:15', pinned:false, sub:'code' },
+  { id:8, type:'image', text:'screenshot-2025-07-02.png', source:'截图', time:'昨天 18:42', pinned:false, sub:'image' },
+  { id:9, type:'text', text:'bug: CardList 虚拟列表滚动到顶部时 timeline 不更新 #42', source:'Linear', time:'昨天 15:30', pinned:false, sub:'text' },
+  { id:10, type:'text', text:'Tauri v2 迁移指南：从 v1 升级需要注意的破坏性变更', source:'Docs', time:'昨天 11:20', pinned:true, sub:'text' },
+  { id:11, type:'file', text:'build-output.zip', source:'CI/CD', time:'昨天 09:05', pinned:false, sub:'file' },
+  { id:12, type:'text', text:'下周发布计划：v2.3.0 包含竖版时间轴、拖拽导航、OCR增强', source:'Notion', time:'周三 16:00', pinned:false, sub:'text' },
+  { id:13, type:'text', text:'docker-compose up -d --build --remove-orphans', source:'Terminal', time:'周三 14:30', pinned:false, sub:'code' },
+  { id:14, type:'image', text:'logo-design-draft.png', source:'Photoshop', time:'周三 10:15', pinned:false, sub:'image' },
+  { id:15, type:'text', text:'性能优化清单：虚拟列表 overscan 调整、图片懒加载、debounce搜索', source:'Notion', time:'周二 20:00', pinned:false, sub:'text' },
+];
+
+const TIME_GROUPS = {
+  '今天': [0, 6],
+  '昨天': [7, 10],
+  '本周': [11, 13],
+  '更早': [14, 14],
+};
+
+// ===== Theme =====
+window.setTheme = function(t) {
+  const app = document.getElementById('app');
+  app.className = 'app ' + (t === 'light' ? 'theme-light' : 'theme-dark');
+  document.querySelectorAll('.theme-btn').forEach(b => b.classList.toggle('active', b.textContent.includes(t === 'light' ? '浅色' : '深色')));
+};
+
+// ===== Build Card List =====
+const cardList = document.getElementById('cardList');
+const ICON_MAP = {
+  text: { emoji:'📝', cls:'icon-blue' },
+  code: { emoji:'💻', cls:'icon-purple' },
+  image:{ emoji:'🖼️', cls:'icon-pink' },
+  file: { emoji:'📄', cls:'icon-green' },
+  link: { emoji:'🔗', cls:'icon-green' },
+};
+const TYPE_CLASS = { text:'card-type-text', image:'card-type-image', file:'card-type-file', code:'card-type-code', link:'card-type-link' };
+Object.assign(TYPE_CLASS, { pinned_text:'card-type-pinned', pinned_code:'card-type-pinned' });
+
+function buildCards() {
+  cardList.innerHTML = MOCK_ITEMS.map((item, idx) => {
+    const icon = ICON_MAP[item.sub] || ICON_MAP.text;
+    const typeCls = item.pinned ? 'card-type-pinned' : (TYPE_CLASS[item.sub] || 'card-type-text');
+    return `
+      <div class="card ${typeCls}" data-idx="${idx}">
+        <div class="card-icon ${icon.cls}">${icon.emoji}</div>
+        <div class="card-body">
+          <div class="card-title">${escapeHTML(item.text.slice(0,60))}${item.text.length>60?'…':''}</div>
+          <div class="card-sub">
+            ${item.pinned ? '<span class="card-pin-tag">📌 置顶</span>' : ''}
+            ${item.source ? '<span>'+escapeHTML(item.source)+'</span>' : ''}
+          </div>
+        </div>
+        <span class="card-time">${item.time}</span>
+      </div>`;
+  }).join('');
+}
+function escapeHTML(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+buildCards();
+
+// ===== Build Timeline =====
+const timelineInner = document.getElementById('timelineInner');
+function buildTimeline() {
+  let html = '';
+  let currentGroup = null;
+  MOCK_ITEMS.forEach((item, idx) => {
+    let group = '更早';
+    if (idx <= 5) group = '今天';
+    else if (idx <= 9) group = '昨天';
+    else if (idx <= 12) group = '本周';
+
+    if (group !== currentGroup) {
+      currentGroup = group;
+      html += `
+        <div class="timeline-group-label" data-group="${group}" data-idx="${idx}">
+          <div class="timeline-group-label-dot"></div>
+          <div style="position:absolute;left:calc(50% + 14px);top:50%;transform:translateY(-50%);font-size:8px;font-weight:700;color:var(--accent);white-space:nowrap;">${group}</div>
+        </div>`;
+    }
+    html += `
+      <div class="timeline-node" data-idx="${idx}" title="${escapeHTML(item.text.slice(0,30))}">
+        <div class="timeline-node-dot"></div>
+        <div class="timeline-tooltip">${escapeHTML(item.text.slice(0,15))}…</div>
+      </div>`;
+  });
+  timelineInner.innerHTML = html;
+}
+buildTimeline();
+
+// ===== Timeline Visibility Logic =====
+const timeline = document.getElementById('timeline');
+const scrollArea = document.getElementById('scrollArea');
+const triggerZone = document.getElementById('triggerZone');
+const hintBanner = document.getElementById('hintBanner');
+const contentArea = document.getElementById('contentArea');
+
+let timelineVisible = false;
+let hideTimer = null;
+let scrollTimer = null;
+let isDraggingTimeline = false;
+let dragStartY = 0;
+let dragStartScroll = 0;
+let dragTarget = null;
+
+function showTimeline() {
+  if (!timelineVisible) {
+    timelineVisible = true;
+    timeline.classList.add('visible');
+    scrollArea.classList.add('timeline-visible');
+  }
+  if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+}
+
+function hideTimeline(delay = 300) {
+  if (isDraggingTimeline) return;
+  if (hideTimer) clearTimeout(hideTimer);
+  hideTimer = setTimeout(() => {
+    if (!isDraggingTimeline) {
+      timelineVisible = false;
+      timeline.classList.remove('visible');
+      scrollArea.classList.remove('timeline-visible');
+    }
+  }, delay);
+}
+
+// 鼠标移到左侧感应区 → 显示
+triggerZone.addEventListener('mouseenter', () => {
+  showTimeline();
+  hintBanner.classList.remove('show');
+});
+contentArea.addEventListener('mouseleave', () => {
+  hideTimeline(200);
+});
+
+// 鼠标移到 timeline 上 → 保持显示
+timeline.addEventListener('mouseenter', () => {
+  showTimeline();
+});
+timeline.addEventListener('mouseleave', () => {
+  hideTimeline(300);
+});
+
+// 滚动时 → 显示
+scrollArea.addEventListener('scroll', () => {
+  showTimeline();
+  hintBanner.classList.remove('show');
+  if (scrollTimer) clearTimeout(scrollTimer);
+  scrollTimer = setTimeout(() => {
+    hideTimeline(1500);
+  }, 1500);
+  // 同步 timeline 滚动位置
+  syncTimelineScroll();
+});
+
+// 初始提示
+setTimeout(() => { hintBanner.classList.add('show'); }, 800);
+setTimeout(() => { hintBanner.classList.remove('show'); }, 6000);
+
+// ===== Timeline Scroll Sync =====
+function syncTimelineScroll() {
+  const scrollRatio = scrollArea.scrollTop / (scrollArea.scrollHeight - scrollArea.clientHeight || 1);
+  const timelineScroll = document.querySelector('.timeline-scroll');
+  const maxScroll = timelineInner.scrollHeight - timelineScroll.clientHeight;
+  timelineInner.style.transform = `translateY(${-scrollRatio * maxScroll}px)`;
+}
+
+// 初始同步
+setTimeout(syncTimelineScroll, 100);
+
+// ===== Drag to Scroll =====
+// 拖拽时间轴节点 → 滚动卡片列表
+timelineInner.addEventListener('mousedown', (e) => {
+  const node = e.target.closest('.timeline-node');
+  const groupLabel = e.target.closest('.timeline-group-label');
+  if (!node && !groupLabel) return;
+
+  e.preventDefault();
+  isDraggingTimeline = true;
+  dragStartY = e.clientY;
+  dragStartScroll = scrollArea.scrollTop;
+  dragTarget = node || groupLabel;
+  timeline.classList.add('drag-active');
+
+  if (groupLabel) {
+    // 点击/拖拽分组标签 → 直接跳转到该分组
+    const targetIdx = parseInt(groupLabel.dataset.idx);
+    const targetCard = cardList.querySelector(`[data-idx="${targetIdx}"]`);
+    if (targetCard) {
+      targetCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (!isDraggingTimeline) return;
+  const deltaY = e.clientY - dragStartY;
+  // 将像素偏移映射到滚动量（比例因子）
+  const scaleFactor = (scrollArea.scrollHeight - scrollArea.clientHeight) / (contentArea.clientHeight || 700);
+  const scrollDelta = deltaY * scaleFactor;
+  scrollArea.scrollTop = Math.max(0, Math.min(scrollArea.scrollHeight - scrollArea.clientHeight, dragStartScroll + scrollDelta));
+});
+
+document.addEventListener('mouseup', () => {
+  if (isDraggingTimeline) {
+    isDraggingTimeline = false;
+    dragTarget = null;
+    timeline.classList.remove('drag-active');
+    // 拖拽结束后延迟隐藏
+    hideTimeline(1500);
+  }
+});
+
+// 点击 timeline 节点 → 滚动到对应卡片
+timelineInner.addEventListener('click', (e) => {
+  const node = e.target.closest('.timeline-node');
+  if (!node || isDraggingTimeline) return;
+  const idx = parseInt(node.dataset.idx);
+  const targetCard = cardList.querySelector(`[data-idx="${idx}"]`);
+  if (targetCard) {
+    targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // 高亮闪烁
+    targetCard.style.boxShadow = '0 0 0 3px var(--accent), 0 8px 24px rgba(59,130,246,0.3)';
+    setTimeout(() => { targetCard.style.boxShadow = ''; }, 800);
+  }
+});
+
+// ===== Sticky Capsule =====
+// 在 timeline 顶部添加吸顶胶囊
+const capsuleEl = document.createElement('div');
+capsuleEl.className = 'timeline-capsule';
+capsuleEl.innerHTML = '<div class="capsule-inner">📍 今天</div>';
+timeline.insertBefore(capsuleEl, timeline.firstChild);
+
+// 拖拽胶囊 → 快速导航
+let capsuleDragging = false;
+capsuleEl.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  capsuleDragging = true;
+  dragStartY = e.clientY;
+  dragStartScroll = scrollArea.scrollTop;
+  capsuleEl.classList.add('dragging');
+  timeline.classList.add('drag-active');
+  isDraggingTimeline = true;
+});
+
+// 更新胶囊文字
+scrollArea.addEventListener('scroll', () => {
+  // 找到当前可见的第一个分组
+  const cards = cardList.querySelectorAll('.card');
+  let currentGroup = '今天';
+  for (const card of cards) {
+    const rect = card.getBoundingClientRect();
+    const areaRect = contentArea.getBoundingClientRect();
+    if (rect.bottom > areaRect.top + 100) {
+      const idx = parseInt(card.dataset.idx);
+      if (idx <= 5) currentGroup = '今天';
+      else if (idx <= 9) currentGroup = '昨天';
+      else if (idx <= 12) currentGroup = '本周';
+      else currentGroup = '更早';
+      break;
+    }
+  }
+  capsuleEl.querySelector('.capsule-inner').textContent = '📍 ' + currentGroup;
+});
+
+// 合并胶囊拖拽逻辑到全局 mousemove/mouseup
+const origMouseMove = document.onmousemove;
+document.addEventListener('mousemove', (e) => {
+  if (!capsuleDragging) return;
+  const deltaY = e.clientY - dragStartY;
+  const scaleFactor = (scrollArea.scrollHeight - scrollArea.clientHeight) / (contentArea.clientHeight || 700);
+  const scrollDelta = deltaY * scaleFactor * 1.5; // 胶囊拖拽加速
+  scrollArea.scrollTop = Math.max(0, Math.min(scrollArea.scrollHeight - scrollArea.clientHeight, dragStartScroll + scrollDelta));
+});
+
+document.addEventListener('mouseup', () => {
+  if (capsuleDragging) {
+    capsuleDragging = false;
+    capsuleEl.classList.remove('dragging');
+    isDraggingTimeline = false;
+    timeline.classList.remove('drag-active');
+    hideTimeline(1500);
+  }
+});
+
+// ===== Initial State =====
+// 初始隐藏时间轴
+timeline.classList.remove('visible');
+scrollArea.classList.remove('timeline-visible');
+syncTimelineScroll();
+
+console.log('✅ B1 竖版时间轴完整预览已就绪');
+console.log('  - 鼠标移到左侧 18px 区域 → 时间轴滑入');
+console.log('  - 滚动列表 → 时间轴显示，停止 1.5s 后隐藏');
+console.log('  - 点击时间轴节点 → 跳转到对应卡片');
+console.log('  - 拖拽时间轴节点/竖线 → 按比例滚动');
+console.log('  - 拖拽吸顶胶囊 → 快速导航');
+console.log('  - 点击分组标签 → 跳转到该分组');
+console.log('  - 右上角切换深色/浅色主题');
+</script>
+
+</body>
+</html>

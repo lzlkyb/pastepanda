@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Timeline 优化方案 — 8 项对比</title>
+<style>
+/* ── 全局变量（复刻 midnight 深色主题）── */
+:root {
+  --app-bg: #09090B;
+  --card-bg: #18181B;
+  --card-border: #27272A;
+  --text-primary: #E4E4E7;
+  --text-secondary: #A1A1AA;
+  --text-muted: #71717A;
+  --border-color: #27272A;
+  --accent: #818CF8;
+  --accent-light: #1E1B4B;
+  --accent-shadow: rgba(129,140,248,0.2);
+  --timeline-bg: rgba(9,9,11,0.95);
+  --section-bg: #0F0F11;
+  --gold: #F59E0B;
+  --gold-light: rgba(245,158,11,0.15);
+  --success: #22C55E;
+  --hover: #1F1F23;
+  --pin-color: #F59E0B;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--app-bg);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  padding: 24px;
+  overflow-x: hidden;
+}
+
+/* ── 页面布局 ── */
+.page-title {
+  font-size: 22px;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+.page-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 28px;
+}
+.legend {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+.legend-item {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--text-muted);
+}
+.legend-dot { width:8px; height:8px; border-radius:50%; }
+.legend-dot.high { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
+.legend-dot.mid { background: var(--accent); box-shadow: 0 0 0 2px var(--accent-light); }
+.legend-dot.low { background: #71717A; }
+.legend-dot.pin { background: var(--gold); box-shadow: 0 0 0 2px var(--gold-light); }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(560px, 1fr));
+  gap: 20px;
+}
+
+/* ── 方案卡片 ── */
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--card-border);
+  background: var(--section-bg);
+}
+.card-header-left { display:flex; align-items:center; gap:10px; }
+.card-num {
+  width: 24px; height: 24px;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 800;
+}
+.card-num.high { background: var(--accent); color: #fff; }
+.card-num.mid { background: rgba(250,204,21,0.2); color: #FACC15; }
+.card-num.low { background: rgba(113,113,122,0.2); color: #A1A1AA; }
+
+.card-title { font-size: 13px; font-weight: 700; }
+.card-tag {
+  font-size: 10px; font-weight: 600;
+  padding: 3px 8px; border-radius: 6px;
+}
+.card-tag.high { background: rgba(129,140,248,0.15); color: var(--accent); }
+.card-tag.mid { background: rgba(250,204,21,0.1); color: #FACC15; }
+.card-tag.low { background: rgba(113,113,122,0.15); color: #A1A1AA; }
+.card-tag.feat { background: rgba(34,197,94,0.15); color: var(--success); }
+
+.card-body {
+  padding: 16px 18px;
+  display: flex; gap: 16px;
+  flex: 1;
+  min-height: 260px;
+}
+.card-desc {
+  font-size: 11px; color: var(--text-muted);
+  padding: 0 18px 14px;
+  line-height: 1.6;
+}
+
+/* ── 左侧预览区（时间轴） ── */
+.preview {
+  width: 280px;
+  flex-shrink: 0;
+  position: relative;
+  background: var(--timeline-bg);
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  overflow: hidden;
+}
+
+/* ── Timeline 核心样式（复刻真实组件） ── */
+.timeline-capsule {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: center;
+  padding: 8px 0; background: var(--timeline-bg);
+}
+.capsule-inner {
+  background: var(--accent); color: #fff;
+  font-size: 9px; font-weight: 700;
+  padding: 5px 10px; border-radius: 10px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(59,130,246,0.35);
+}
+.timeline-scroll {
+  position: relative;
+  padding: 0 8px 8px;
+}
+.timeline-track {
+  position: absolute;
+  left: 50%; top: 0; bottom: 0;
+  width: 2px; background: var(--border-color);
+  transform: translateX(-50%);
+}
+.timeline-inner { position: relative; }
+
+/* ── 分组标签 ── */
+.group-label {
+  position: relative;
+  display: flex; align-items: center;
+  padding: 6px 0; cursor: pointer; user-select: none;
+}
+.group-label-dot {
+  position: absolute; left: 50%; top: 50%;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--accent);
+  transform: translate(-50%,-50%);
+  box-shadow: 0 0 0 4px var(--accent-light), 0 0 12px rgba(59,130,246,0.25);
+  z-index: 2;
+}
+.group-label-text {
+  position: absolute; left: calc(50% + 14px); top: 50%;
+  transform: translateY(-50%);
+  font-size: 8px; font-weight: 700; color: var(--accent);
+  white-space: nowrap;
+}
+
+/* ── 节点 ── */
+.node {
+  position: relative;
+  display: flex; align-items: center;
+  height: 36px; /* 缩小以容纳更多节点 */
+  cursor: pointer;
+}
+.node-icon {
+  position: absolute; left: 50%; top: 50%;
+  font-size: 11px; line-height: 1;
+  transform: translate(-50%,-50%);
+  z-index: 2; pointer-events: none;
+  transition: transform 0.15s;
+}
+.node:hover .node-icon { transform: translate(-50%,-50%) scale(1.3); }
+
+/* ── 高亮节点（#1 当前活跃） ── */
+.node.active .node-icon {
+  color: #fff;
+  filter: drop-shadow(0 0 6px var(--accent));
+  transform: translate(-50%,-50%) scale(1.35);
+}
+.node.active::before {
+  content: '';
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: translate(-50%,-50%);
+  z-index: 1;
+  box-shadow: 0 0 10px rgba(129,140,248,0.4);
+}
+
+/* ── 快捷键提示（#2） ── */
+.kbd-hint {
+  position: absolute;
+  right: 8px; top: 50%;
+  transform: translateY(-50%);
+  font-size: 9px;
+  background: rgba(255,255,255,0.08);
+  color: var(--text-muted);
+  padding: 2px 6px; border-radius: 4px;
+  pointer-events: none;
+}
+
+/* ── 压缩模式节点（#3） ── */
+.node.dense {
+  height: 12px;
+}
+.node.dense .node-icon { font-size: 0; }
+.node.dense::after {
+  content: '';
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transform: translate(-50%,-50%);
+  z-index: 2;
+}
+
+/* ── 折叠分组（#4） ── */
+.collapsed-label {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  padding: 3px 0; cursor: pointer;
+}
+.collapsed-indicator {
+  font-size: 8px; color: var(--text-muted);
+  position: absolute; left: calc(50% + 12px);
+}
+.collapse-toggle {
+  position: absolute; left: 50%; top: 50%;
+  width: 7px; height: 7px;
+  border-radius: 2px;
+  background: var(--text-muted);
+  transform: translate(-50%,-50%) rotate(45deg);
+  z-index: 2;
+}
+
+/* ── 固定标记（#5） ── */
+.node.pinned .node-icon::after {
+  content: '📌';
+  position: absolute;
+  top: -8px; right: -10px;
+  font-size: 7px;
+  z-index: 3;
+}
+.node.pinned .node-icon {
+  color: var(--pin-color) !important;
+}
+
+/* ── 胶囊计数（#6） ── */
+.capsule-count {
+  font-size: 8px; opacity: 0.7;
+  margin-left: 2px;
+}
+
+/* ── 点击轨道（#7） ── */
+.track-click-indicator {
+  position: absolute; right: 4px; top: 50%;
+  transform: translateY(-50%);
+  font-size: 7px; color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+.timeline-scroll:hover .track-click-indicator { opacity: 1; }
+
+/* ── Mini 模式（#8） ── */
+.mini-timeline {
+  width: 10px;
+  flex-shrink: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  position: relative;
+  overflow: hidden;
+  transition: width 0.3s cubic-bezier(0.34,1.56,0.64,1);
+}
+.mini-timeline:hover { width: 50px; }
+.mini-track {
+  position: absolute;
+  left: 50%; top: 8px; bottom: 8px;
+  width: 1.5px; background: var(--border-color);
+  transform: translateX(-50%);
+}
+.mini-nodes {
+  position: absolute;
+  left: 0; right: 0; top: 8px; bottom: 8px;
+  display: flex; flex-direction: column;
+  justify-content: space-around;
+}
+.mini-dot {
+  width: 3px; height: 3px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  margin: 0 auto;
+}
+.mini-capsule {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%,-50%);
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 4px var(--accent);
+  z-index: 2;
+}
+.mini-full {
+  position: absolute;
+  left: 0; top: 0; right: 0; bottom: 0;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+  background: var(--timeline-bg);
+  border-radius: 9px;
+  overflow: hidden;
+}
+.mini-timeline:hover .mini-full { opacity: 1; pointer-events: auto; }
+
+/* ── 右侧说明区 ── */
+.info {
+  flex: 1;
+  display: flex; flex-direction: column;
+  gap: 10px;
+}
+.info-title {
+  font-size: 12px; font-weight: 700;
+  color: var(--text-primary);
+}
+.info-desc {
+  font-size: 10px; color: var(--text-secondary);
+  line-height: 1.6;
+}
+.info-pros, .info-cons {
+  font-size: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  line-height: 1.5;
+}
+.info-pros { background: rgba(34,197,94,0.08); color: var(--success); }
+.info-pros::before { content: '✅ 优点：'; font-weight: 700; display: block; margin-bottom: 2px; }
+.info-cons { background: rgba(239,68,68,0.08); color: #F87171; }
+.info-cons::before { content: '⚠️ 注意：'; font-weight: 700; display: block; margin-bottom: 2px; }
+.info-effort {
+  font-size: 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(129,140,248,0.08);
+  color: var(--accent);
+  align-self: flex-start;
+}
+</style>
+</head>
+<body>
+
+<div class="page-title">Timeline 优化方案</div>
+<div class="page-sub">8 项改进建议 · 基于现有 UI 风格可视化对比 · 左侧为时间轴预览，右侧为说明</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot high"></div> 高价值</div>
+  <div class="legend-item"><div class="legend-dot mid"></div> 中价值</div>
+  <div class="legend-item"><div class="legend-dot low"></div> 低价值</div>
+  <div class="legend-item"><div class="legend-dot pin"></div> 固定标记</div>
+</div>
+
+<div class="grid">
+
+<!-- ===== #1 当前活跃节点高亮 ===== -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="card-num high">1</div>
+      <div class="card-title">当前活跃节点高亮</div>
+    </div>
+    <div class="card-tag high">高价值</div>
+  </div>
+  <div class="card-body">
+    <div class="preview">
+      <div class="timeline-capsule"><div class="capsule-inner">📍 今天</div></div>
+      <div class="timeline-scroll">
+        <div class="timeline-track"></div>
+        <div class="timeline-inner">
+          <div class="group-label">
+            <div class="group-label-dot"></div>
+            <div class="group-label-text">今天</div>
+          </div>
+          <div class="node"><div class="node-icon">📝</div></div>
+          <div class="node"><div class="node-icon">🖼</div></div>
+          <div class="node active"><div class="node-icon">📝</div></div>
+          <div class="node"><div class="node-icon">📁</div></div>
+          <div class="group-label">
+            <div class="group-label-dot"></div>
+            <div class="group-label-text">昨天</div>
+          </div>
+          <div class="node"><div class="node-icon">📝</div></div>
+          <div class="node"><div class="node-icon">🖼</div></div>
+          <div class="node"><div class="node-icon">📝</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="info">
+      <div class="info-title">可见区域对应节点高亮为蓝色填充圆</div>
+      <div class="info-desc">当前 viewport 中间（或第一张）卡片对应的节点显示蓝色实心圆 + 发光效果，轨道线上该节点位置也高亮。类似 VS Code minimap 的当前位置指示。</div>
+      <div class="info-pros">一眼看到当前位置 · 滚动反馈即时 · 改动小（~15行）</div>
+      <div class="info-cons">需要实时计算可见卡片索引 · 虚拟滚动下需要精确映射</div>
+      <div class="info-effort">🛠 约 15 行 · 改动 2 个文件</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== #2 快捷键支持 ===== -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="card-num high">2</div>
+      <div class="card-title">快捷键支持</div>
+    </div>
+    <div class="card-tag high">高价值</div>
+  </div>
+  <div class="card-body">
+    <div class="preview">
+      <div class="timeline-capsule"><div class="capsule-inner">📍 今天</div></div>
+      <div class="timeline-scroll">
+        <div class="timeline-track"></div>
+        <div class="timeline-inner">
+          <div class="group-label">
+            <div class="group-label-dot"></div>
+            <div class="group-label-text">今天</div>
+          </div>
+          <div class="node active"><div class="node-icon">📝</div><div class="kbd-hint">⌨</div></div>
+          <div class="node"><div class="node-icon">🖼</div></div>
+          <div class="node"><div class="node-icon">📁</div></div>
+          <div class="group-label">
+            <div class="group-label-dot"></div>
+            <div class="group-label-text">昨天</div>
+          </div>
+          <div class="node"><div class="node-icon">📝</div></div>
+          <div class="node"><div class="node-icon">🖼</div></div>
+          <div class="node"><div class="node-icon">📝</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="info">
+      <div class="info-title">键盘操作时间轴导航</div>
+      <div class="info-desc" style="font-family:monospace;font-size:11px;color:#A5B4FC;margin-top:4px;">
+        Ctrl+Shift+T 切换显示<br>
+        ↑ ↓ 节点间移动<br>
+        Enter 跳转到选中节点<br>
+        Esc 关闭时间轴
+      </div>
+      <div class="info-pros">纯键盘用户也能用 · 效率提升明显 · 改动小</div>
+      <div class="info-cons">需要维护焦点状态 · 与现有搜索快捷键可能冲突</div>
+      <div class="info-effort">🛠 约 25 行 · 改动 1 个文件</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== #3 节点密度自适应 ===== -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="card-num high">3</div>
+      <div class="card-title">节点密度自适应</div>
+    </div>
+    <div class="card-tag high">高价值</div>
+  </div>
+  <div class="card-body">
+    <div class="preview" style="display:flex;gap:4px;padding:0;background:transparent;border:none;">
+      <!-- 普通模式 -->
+      <div style="flex:1;background:var(--timeline-bg);border-radius:10px;border:1px solid var(--card-border);overflow:hidden;">
+        <div style="padding:8px 4px 0;text-align:center;font-size:8px;color:var(--text-muted);">普通</div>
+        <div style="position:relative;padding:0 6px 6px;">
+          <div style="position:absolute;left:50%;top:4px;bottom:4px;width:2px;background:var(--border-color);transform:translateX(-50%);"></div>
+          <div style="position:relative;">
+            <div class="group-label"><div class="group-label-dot" style="transform:translate(-50%,-50%) scale(.7);"></div><div class="group-label-text" style="font-size:6px;">今天</div></div>
+            <div class="node" style="height:24px;"><div class="node-icon" style="font-size:8px;">📝</div></div>
+            <div class="node" style="height:24px;"><div class="node-icon" style="font-size:8px;">🖼</div></div>
+            <div class="node" style="height:24px;"><div class="node-icon" style="font-size:8px;">📁</div></div>
+            <div class="node" style="height:24px;"><div class="node-icon" style="font-size:8px;">📝</div></div>
+            <div class="node" style="height:24px;"><div class="node-icon" style="font-size:8px;">🖼</div></div>
+          </div>
+        </div>
+      </div>
+      <!-- 压缩模式 -->
+      <div style="flex:1;background:var(--timeline-bg);border-radius:10px;border:1px solid var(--card-border);overflow:hidden;">
+        <div style="padding:8px 4px 0;text-align:center;font-size:8px;color:var(--accent);">压缩</div>
+        <div style="position:relative;padding:0 6px 6px;">
+          <div style="position:absolute;left:50%;top:4px;bottom:4px;width:2px;background:var(--border-color);transform:translateX(-50%);"></div>
+          <div style="position:relative;">
+            <div class="group-label"><div class="group-label-dot" style="transform:translate(-50%,-50%) scale(.5);"></div><div class="group-label-text" style="font-size:6px;">今天</div></div>
+            <div class="node dense" style="height:6px;"></div>
+            <div class="node dense" style="height:6px;"></div>
+            <div class="node dense" style="height:6px;"></div>
+            <div class="node dense" style="height:6px;"></div>
+            <div class="node dense" style="height:6px;"></div>
+            <div class="node dense" style="height:6px;"></div>
+            <div class="node dense" style="height:6px;"></div>
+            <div class="node dense" style="height:6px;"></div>
+            <div class="node dense" style="height:6px;"></div>
+            <div class="node dense" style="height:6px;"></div>
+            <div class="node dense" style="height:6px;"></div>
+            <div class="node dense" style="height:6px;"></div>
+            <div class="group-label"><div class="group-label-dot" style="transform:translate(-50%,-50%) scale(.5);"></div><div class="group-label-text" style="font-size:6px;">昨天</div></div>
+            <div class="node dense" style="height:6px;"></div>
+            <div class="node dense" style="height:6px;"></div>
+            <div class="node dense" style="height:6px;"></div>
+            <div class="node dense" style="height:6px;"></div>
+            <div class="node dense" style="height:6px;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="info">
+      <div class="info-title">卡片多时自动压缩节点密度</div>
+      <div class="info-desc">当卡片超过阈值（如 30 张）时，节点从 72px 高压缩到 8-12px，用密集小点代替图标。hover 时放大为正常图标。类似 IDE 代码缩略图效果。</div>
+      <div class="info-pros">解决大量卡片时时间轴过长问题 · 视觉更紧凑 · 自适应</div>
+      <div class="info-cons">hover 定位精度下降 · 需要精确计算动态高度</div>
+      <div class="info-effort">🛠 约 40 行 · 改动 2 个文件</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== #4 分组折叠 ===== -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="card-num mid">4</div>
+      <div class="card-title">分组折叠</div>
+    </div>
+    <div class="card-tag mid">中价值</div>
+  </div>
+  <div class="card-body">
+    <div class="preview" style="display:flex;gap:4px;padding:0;background:transparent;border:none;">
+      <!-- 展开 -->
+      <div style="flex:1;background:var(--timeline-bg);border-radius:10px;border:1px solid var(--card-border);overflow:hidden;">
+        <div style="padding:8px 4px 0;text-align:center;font-size:8px;color:var(--text-muted);">展开</div>
+        <div style="position:relative;padding:0 6px 6px;">
+          <div style="position:absolute;left:50%;top:4px;bottom:4px;width:2px;background:var(--border-color);transform:translateX(-50%);"></div>
+          <div style="position:relative;">
+            <div class="group-label"><div class="group-label-dot" style="transform:translate(-50%,-50%) scale(.6);"></div><div class="group-label-text" style="font-size:6px;">今天 ▼</div></div>
+            <div class="node" style="height:20px;"><div class="node-icon" style="font-size:7px;">📝</div></div>
+            <div class="node" style="height:20px;"><div class="node-icon" style="font-size:7px;">🖼</div></div>
+            <div class="node" style="height:20px;"><div class="node-icon" style="font-size:7px;">📁</div></div>
+            <div class="group-label"><div class="group-label-dot" style="transform:translate(-50%,-50%) scale(.6);"></div><div class="group-label-text" style="font-size:6px;">昨天</div></div>
+            <div class="node" style="height:20px;"><div class="node-icon" style="font-size:7px;">📝</div></div>
+            <div class="node" style="height:20px;"><div class="node-icon" style="font-size:7px;">🖼</div></div>
+          </div>
+        </div>
+      </div>
+      <!-- 折叠 -->
+      <div style="flex:1;background:var(--timeline-bg);border-radius:10px;border:1px solid var(--card-border);overflow:hidden;">
+        <div style="padding:8px 4px 0;text-align:center;font-size:8px;color:var(--accent);">折叠</div>
+        <div style="position:relative;padding:0 6px 6px;">
+          <div style="position:absolute;left:50%;top:4px;bottom:4px;width:2px;background:var(--border-color);transform:translateX(-50%);"></div>
+          <div style="position:relative;">
+            <div class="group-label"><div class="group-label-dot" style="transform:translate(-50%,-50%) scale(.6);width:6px;height:6px;background:var(--text-muted);box-shadow:none;"></div><div class="group-label-text" style="font-size:6px;color:var(--text-muted);">今天 · 3 ▸</div></div>
+            <div class="collapsed-label" style="height:14px;">
+              <div class="collapse-toggle" style="width:4px;height:4px;"></div>
+            </div>
+            <div class="group-label"><div class="group-label-dot" style="transform:translate(-50%,-50%) scale(.6);"></div><div class="group-label-text" style="font-size:6px;">昨天</div></div>
+            <div class="node" style="height:20px;"><div class="node-icon" style="font-size:7px;">📝</div></div>
+            <div class="node" style="height:20px;"><div class="node-icon" style="font-size:7px;">🖼</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="info">
+      <div class="info-title">点击分组标签折叠/展开该组</div>
+      <div class="info-desc">点击分组标签（今天/昨天等）折叠该分组，轨道线收缩为一段虚线，节点隐藏。再次点击展开。折叠态显示分组名 + 卡片数。</div>
+      <div class="info-pros">有效管理大量卡片 · 减少滚动 · 直观的分组管理</div>
+      <div class="info-cons">需维护折叠状态 · 与现有点击跳转逻辑冲突 · 轨道线动画复杂</div>
+      <div class="info-effort">🛠 约 60 行 · 改动 2 个文件</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== #5 已固定卡片标记 ===== -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="card-num mid">5</div>
+      <div class="card-title">已固定卡片特殊标记</div>
+    </div>
+    <div class="card-tag mid">中价值</div>
+  </div>
+  <div class="card-body">
+    <div class="preview">
+      <div class="timeline-capsule"><div class="capsule-inner">📍 今天</div></div>
+      <div class="timeline-scroll">
+        <div class="timeline-track"></div>
+        <div class="timeline-inner">
+          <div class="group-label">
+            <div class="group-label-dot"></div>
+            <div class="group-label-text">今天</div>
+          </div>
+          <div class="node"><div class="node-icon">📝</div></div>
+          <div class="node pinned"><div class="node-icon">📝</div></div>
+          <div class="node"><div class="node-icon">🖼</div></div>
+          <div class="node pinned"><div class="node-icon">📁</div></div>
+          <div class="group-label">
+            <div class="group-label-dot"></div>
+            <div class="group-label-text">昨天</div>
+          </div>
+          <div class="node"><div class="node-icon">📝</div></div>
+          <div class="node pinned"><div class="node-icon">🖼</div></div>
+          <div class="node"><div class="node-icon">📝</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="info">
+      <div class="info-title">固定/收藏卡片节点加金色标记</div>
+      <div class="info-desc">已固定（pinned）的卡片在时间轴上对应节点显示金色图标 + 📌 角标，一眼可定位重要内容。</div>
+      <div class="info-pros">快速找到重要卡片 · 视觉区分明显 · 改动很小</div>
+      <div class="info-cons">需 TimelineNode 新增 pinned 字段 · 金色在深色主题可能刺眼</div>
+      <div class="info-effort">🛠 约 15 行 · 改动 2 个文件</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== #6 吸顶胶囊增加计数 ===== -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="card-num mid">6</div>
+      <div class="card-title">胶囊显示卡片计数</div>
+    </div>
+    <div class="card-tag mid">中价值</div>
+  </div>
+  <div class="card-body">
+    <div class="preview">
+      <div class="timeline-capsule"><div class="capsule-inner">📍 今天<span class="capsule-count"> · 12</span></div></div>
+      <div class="timeline-scroll">
+        <div class="timeline-track"></div>
+        <div class="timeline-inner">
+          <div class="group-label">
+            <div class="group-label-dot"></div>
+            <div class="group-label-text">今天</div>
+          </div>
+          <div class="node"><div class="node-icon">📝</div></div>
+          <div class="node"><div class="node-icon">🖼</div></div>
+          <div class="node"><div class="node-icon">📁</div></div>
+          <div class="node"><div class="node-icon">📝</div></div>
+          <div class="group-label">
+            <div class="group-label-dot"></div>
+            <div class="group-label-text">昨天</div>
+          </div>
+          <div class="node"><div class="node-icon">📝</div></div>
+          <div class="node"><div class="node-icon">🖼</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="info">
+      <div class="info-title">胶囊显示当前分组卡片数量</div>
+      <div class="info-desc">吸顶胶囊从 "📍 今天" 变为 "📍 今天 · 12"，滚动到其他分组时自动更新数量。一目了然知道该分组有多少内容。</div>
+      <div class="info-pros">信息更丰富 · 一眼看到分组规模 · 改动极少</div>
+      <div class="info-cons">胶囊文字变长 · 极窄屏幕可能溢出</div>
+      <div class="info-effort">🛠 约 10 行 · 改动 1 个文件</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== #7 点击空白轨道跳转 ===== -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="card-num low">7</div>
+      <div class="card-title">点击空白轨道跳转</div>
+    </div>
+    <div class="card-tag low">低价值</div>
+  </div>
+  <div class="card-body">
+    <div class="preview">
+      <div class="timeline-capsule"><div class="capsule-inner">📍 今天</div></div>
+      <div class="timeline-scroll" style="cursor:pointer;">
+        <div class="timeline-track"></div>
+        <div class="track-click-indicator">👆</div>
+        <div class="timeline-inner">
+          <div class="group-label">
+            <div class="group-label-dot"></div>
+            <div class="group-label-text">今天</div>
+          </div>
+          <div class="node"><div class="node-icon">📝</div></div>
+          <div class="node"><div class="node-icon">🖼</div></div>
+          <div class="group-label">
+            <div class="group-label-dot"></div>
+            <div class="group-label-text">昨天</div>
+          </div>
+          <div class="node"><div class="node-icon">📝</div></div>
+          <div class="node"><div class="node-icon">🖼</div></div>
+          <div class="node"><div class="node-icon">📝</div></div>
+          <div class="node"><div class="node-icon">📁</div></div>
+          <div class="node"><div class="node-icon">📝</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="info">
+      <div class="info-title">点击轨道线空白区域按比例跳转</div>
+      <div class="info-desc">点击时间轴轨道线上节点之间的空白区域，根据 Y 坐标占轨道高度的比例，计算对应卡片列表的 scrollTop 并跳转。hover 时显示 👆 提示。</div>
+      <div class="info-pros">更灵活的跳转方式 · 类似视频进度条体验</div>
+      <div class="info-cons">精度不高 · 与节点点击事件需区分 · 空白区域较小</div>
+      <div class="info-effort">🛠 约 20 行 · 改动 1 个文件</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== #8 时间轴 Mini 模式 ===== -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="card-num low">8</div>
+      <div class="card-title">Mini 模式 — 始终可见</div>
+    </div>
+    <div class="card-tag low">低价值</div>
+  </div>
+  <div class="card-body">
+    <div class="preview" style="display:flex;gap:4px;padding:0;background:transparent;border:none;">
+      <!-- Mini 收起态 -->
+      <div style="flex:1;background:var(--timeline-bg);border-radius:10px;border:1px solid var(--card-border);overflow:hidden;">
+        <div style="padding:8px 4px 0;text-align:center;font-size:8px;color:var(--text-muted);">收起</div>
+        <div style="position:relative;height:160px;margin:0 4px 4px;">
+          <div style="position:absolute;left:50%;top:8px;bottom:8px;width:1.5px;background:var(--border-color);transform:translateX(-50%);"></div>
+          <div style="position:absolute;left:0;right:0;top:8px;bottom:8px;display:flex;flex-direction:column;justify-content:space-around;">
+            <div style="width:2px;height:2px;border-radius:50%;background:var(--text-muted);margin:0 auto;"></div>
+            <div style="width:2px;height:2px;border-radius:50%;background:var(--text-muted);margin:0 auto;"></div>
+            <div style="width:2px;height:2px;border-radius:50%;background:var(--text-muted);margin:0 auto;"></div>
+            <div style="width:2px;height:2px;border-radius:50%;background:var(--text-muted);margin:0 auto;"></div>
+            <div style="width:2px;height:2px;border-radius:50%;background:var(--text-muted);margin:0 auto;"></div>
+            <div style="width:2px;height:2px;border-radius:50%;background:var(--text-muted);margin:0 auto;"></div>
+            <div style="width:2px;height:2px;border-radius:50%;background:var(--text-muted);margin:0 auto;"></div>
+            <div style="width:2px;height:2px;border-radius:50%;background:var(--text-muted);margin:0 auto;"></div>
+          </div>
+          <div style="position:absolute;top:42%;left:50%;transform:translate(-50%,-50%);width:5px;height:5px;border-radius:50%;background:var(--accent);box-shadow:0 0 4px var(--accent);z-index:2;"></div>
+        </div>
+      </div>
+      <!-- Mini 展开态（hover） -->
+      <div style="flex:1;background:var(--timeline-bg);border-radius:10px;border:1px solid var(--accent);overflow:hidden;">
+        <div style="padding:8px 4px 0;text-align:center;font-size:8px;color:var(--accent);">展开</div>
+        <div style="position:relative;padding:0 6px 6px;">
+          <div style="position:absolute;left:50%;top:4px;bottom:4px;width:2px;background:var(--border-color);transform:translateX(-50%);"></div>
+          <div style="position:relative;">
+            <div class="group-label"><div class="group-label-dot" style="transform:translate(-50%,-50%) scale(.6);"></div><div class="group-label-text" style="font-size:6px;">今天</div></div>
+            <div class="node" style="height:20px;"><div class="node-icon" style="font-size:7px;">📝</div></div>
+            <div class="node" style="height:20px;"><div class="node-icon" style="font-size:7px;">🖼</div></div>
+            <div class="group-label"><div class="group-label-dot" style="transform:translate(-50%,-50%) scale(.6);"></div><div class="group-label-text" style="font-size:6px;">昨天</div></div>
+            <div class="node" style="height:20px;"><div class="node-icon" style="font-size:7px;">📝</div></div>
+            <div class="node" style="height:20px;"><div class="node-icon" style="font-size:7px;">🖼</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="info">
+      <div class="info-title">极窄轨道线常驻 · hover 展开完整时间轴</div>
+      <div class="info-desc">默认显示 10px 宽的微型轨道线（始终可见），蓝色小圆点指示当前位置。hover 时弹性动画展开为 50px 完整时间轴。不占用卡片空间。</div>
+      <div class="info-pros">不占空间 · 始终可感知位置 · 展开动画流畅</div>
+      <div class="info-cons">微型态交互有限 · 与现有 triggerZone 机制需整合 · 改动量大</div>
+      <div class="info-effort">🛠 约 70 行 · 改动 3 个文件</div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<!-- 底部总结 -->
+<div style="margin-top:28px;padding:18px 20px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;display:flex;gap:24px;flex-wrap:wrap;font-size:11px;color:var(--text-secondary);line-height:1.8;">
+  <div style="flex:1;min-width:200px;">
+    <div style="font-weight:700;color:var(--text-primary);margin-bottom:6px;">🔴 推荐优先实施</div>
+    <div><span style="color:var(--accent);">#1</span> 当前活跃节点高亮 — 体验提升最明显</div>
+    <div><span style="color:var(--accent);">#2</span> 快捷键支持 — 键盘用户必备</div>
+  </div>
+  <div style="flex:1;min-width:200px;">
+    <div style="font-weight:700;color:var(--text-primary);margin-bottom:6px;">🟡 可按需实施</div>
+    <div><span style="color:#FACC15;">#5</span> 固定卡片标记 — 改动小价值高</div>
+    <div><span style="color:#FACC15;">#6</span> 胶囊计数 — 极简改动</div>
+    <div><span style="color:#FACC15;">#3</span> 密度自适应 — 卡片量大时用</div>
+    <div><span style="color:#FACC15;">#4</span> 分组折叠 — 需求明确时做</div>
+  </div>
+  <div style="flex:1;min-width:200px;">
+    <div style="font-weight:700;color:var(--text-primary);margin-bottom:6px;">🟢 锦上添花</div>
+    <div><span style="color:#A1A1AA;">#7</span> 点击空白轨道跳转</div>
+    <div><span style="color:#A1A1AA;">#8</span> Mini 模式常驻</div>
+  </div>
+</div>
+
+</body>
+</html>

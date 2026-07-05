@@ -92,6 +92,12 @@
 }
 
 /* spin-icon 全局动画 */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .spin-icon {
   animation: spin 1s linear infinite;
 }

@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>剪贴板卡片悬停方案预览</title>
+  <style>
+    :root {
+      --app-bg: #f5f7fa;
+      --card-bg: #ffffff;
+      --card-border: #e5e7eb;
+      --card-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      --card-hover-shadow: 0 6px 20px rgba(0,0,0,0.1);
+      --accent: #0284c7;
+      --accent-light: #e0f2fe;
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --text-muted: #9ca3af;
+      --dialog-bg: #ffffff;
+      --border-color: #e5e7eb;
+      --red-bg: #fee2e2;
+      --danger: #dc2626;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--app-bg);
+      color: var(--text-primary);
+      padding: 40px;
+    }
+    h1 { font-size: 20px; margin: 0 0 8px; }
+    .desc { color: var(--text-secondary); margin-bottom: 24px; font-size: 14px; }
+
+    .scheme-switcher {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 24px;
+      background: #fff;
+      padding: 8px;
+      border-radius: 12px;
+      border: 1px solid var(--card-border);
+      width: fit-content;
+      box-shadow: var(--card-shadow);
+    }
+    .scheme-switcher button {
+      border: none;
+      background: transparent;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+      cursor: pointer;
+      color: var(--text-secondary);
+      font-weight: 500;
+      transition: all .2s;
+    }
+    .scheme-switcher button.active {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .demo-stage {
+      background: #fff;
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 24px;
+      max-width: 720px;
+      box-shadow: var(--card-shadow);
+    }
+    .scheme-note {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+
+    .card-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* Card base */
+    .card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      box-shadow: var(--card-shadow);
+      transition: all .2s cubic-bezier(.4,0,.2,1);
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      height: 72px;
+      width: 100%;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 3px;
+      border-radius: 0 3px 3px 0;
+      background: var(--accent);
+    }
+    .card:hover {
+      box-shadow: var(--card-hover-shadow);
+      transform: translateY(-2px) scale(1.008);
+    }
+
+    .card-icon {
+      width: 42px; height: 42px; min-width: 42px;
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+      background: linear-gradient(135deg, #E8F1FB, #D6E8FA);
+    }
+    .card-content {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.4;
+      word-break: break-word;
+      max-height: 36px;
+      margin: 0;
+    }
+    .card-time {
+      font-size: 11px;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    /* Shared drawer / panel styles */
+    .card-overlay, .card-bottom, .card-popover {
+      background: var(--dialog-bg);
+      border: 1px solid var(--border-color);
+      box-shadow: 0 12px 32px rgba(0,0,0,0.15), 0 2px 8px rgba(0,0,0,0.08);
+      z-index: 100;
+      pointer-events: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .preview-text {
+      font-size: 12px;
+      color: var(--text-primary);
+      line-height: 1.65;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 0;
+      flex: 1;
+    }
+    .actions {
+      display: flex;
+      gap: 4px;
+      border-top: 1px solid var(--border-color);
+      padding-top: 8px;
+    }
+    .actions button {
+      flex: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      padding: 5px 6px;
+      border-radius: 7px;
+      border: 1px solid var(--border-color);
+      background: var(--card-bg);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-primary);
+      transition: all .15s ease;
+      white-space: nowrap;
+    }
+    .actions button:hover { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
+    .actions button.danger { flex: 0 0 32px; }
+    .actions button.danger:hover { background: var(--red-bg); border-color: var(--danger); color: var(--danger); }
+
+    /* Scheme A: Overlay drawer */
+    .stage-a .card { overflow: visible; }
+    .stage-a .card-overlay {
+      position: absolute;
+      top: 0; right: 0; bottom: 0;
+      width: 55%;
+      border-radius: 0 16px 16px 0;
+      padding: 12px;
+      opacity: 0;
+      transform: translateX(10px);
+      transition: all .22s ease;
+      clip-path: inset(0 0 0 0 round 0 16px 16px 0);
+    }
+    .stage-a .card:hover .card-overlay {
+      opacity: 1;
+      transform: translateX(0);
+    }
+
+    /* Scheme B: Bottom sheet */
+    .stage-b .card {
+      flex-wrap: wrap;
+      height: auto;
+      align-items: flex-start;
+    }
+    .stage-b .card-main {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      height: 72px;
+    }
+    .stage-b .card-bottom {
+      width: 100%;
+      border-radius: 0 0 14px 14px;
+      border-top: none;
+      padding: 12px 16px;
+      max-height: 0;
+      opacity: 0;
+      overflow: hidden;
+      transition: all .22s ease;
+      box-shadow: none;
+    }
+    .stage-b .card:hover .card-bottom {
+      max-height: 180px;
+      opacity: 1;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.12);
+    }
+
+    /* Scheme C: Popover */
+    .stage-c .card-popover {
+      position: absolute;
+      bottom: calc(100% + 10px);
+      left: 50%;
+      transform: translateX(-50%);
+      width: 260px;
+      padding: 12px;
+      border-radius: 12px;
+      opacity: 0;
+      pointer-events: none;
+      transition: all .18s ease;
+    }
+    .stage-c .card:hover .card-popover {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .stage-c .card-popover::after {
+      content: '';
+      position: absolute;
+      top: 100%; left: 50%; transform: translateX(-50%);
+      width: 0; height: 0;
+      border-left: 8px solid transparent;
+      border-right: 8px solid transparent;
+      border-top: 8px solid var(--dialog-bg);
+    }
+  </style>
+</head>
+<body>
+  <h1>悬停预览/操作三方案对比</h1>
+  <p class="desc">鼠标悬停在卡片上查看不同方案效果。推荐方案 A（抽屉覆盖）。</p>
+
+  <div class="scheme-switcher">
+    <button data-scheme="a" class="active">方案 A：抽屉覆盖</button>
+    <button data-scheme="b">方案 B：底部面板</button>
+    <button data-scheme="c">方案 C：Popover 气泡</button>
+  </div>
+
+  <div class="demo-stage" id="stage">
+    <div class="scheme-note" id="note">
+      <strong>方案 A（推荐）</strong>：抽屉从卡片右侧展开，覆盖右半部分。永远不超出窗口，自适应所有窗口大小；仅遮挡卡片右侧的时间文本。
+    </div>
+
+    <div class="card-list" id="cardList">
+      <!-- Card 1 -->
+      <div class="card">
+        <div class="card-icon">🔷</div>
+        <div class="card-content">
+          <p class="card-title">文本内容：这是一段比较长的文本，用于演示悬停时展开的效果...</p>
+        </div>
+        <span class="card-time">3分钟</span>
+
+        <!-- A -->
+        <div class="card-overlay">
+          <p class="preview-text">📝 完整预览<br>这是一段比较长的文本，用于演示悬停时展开的效果。抽屉覆盖卡片右侧，不超出窗口。</p>
+          <div class="actions">
+            <button>⭐ 收藏</button>
+            <button>📋 复制</button>
+            <button class="danger">🗑</button>
+          </div>
+        </div>
+
+        <!-- B -->
+        <div class="card-bottom">
+          <p class="preview-text">📝 完整预览：这是一段比较长的文本，用于演示悬停时展开的效果。底部面板滑出，预览与操作在同一视觉流中。</p>
+          <div class="actions">
+            <button>⭐ 收藏</button>
+            <button>📋 复制</button>
+            <button class="danger">🗑</button>
+          </div>
+        </div>
+
+        <!-- C -->
+        <div class="card-popover">
+          <p class="preview-text">📝 文本预览：这是一段比较长的文本，用于演示悬停时弹出气泡的效果。</p>
+          <div class="actions">
+            <button>⭐</button>
+            <button>📋</button>
+            <button class="danger">🗑</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 2 -->
+      <div class="card">
+        <div class="card-icon" style="background: linear-gradient(135deg, #E5F8EC, #D4F2DE);">🔗</div>
+        <div class="card-content">
+          <p class="card-title">https://example.com/article/how-to-build-clipboard-manager</p>
+        </div>
+        <span class="card-time">10分钟</span>
+
+        <div class="card-overlay">
+          <p class="preview-text">🔗 链接预览<br>example.com<br>/article/how-to-build-clipboard-manager</p>
+          <div class="actions">
+            <button>⭐ 收藏</button>
+            <button>📋 复制</button>
+            <button class="danger">🗑</button>
+          </div>
+        </div>
+        <div class="card-bottom">
+          <p class="preview-text">🔗 链接预览：example.com/article/how-to-build-clipboard-manager</p>
+          <div class="actions">
+            <button>⭐ 收藏</button>
+            <button>📋 复制</button>
+            <button class="danger">🗑</button>
+          </div>
+        </div>
+        <div class="card-popover">
+          <p class="preview-text">🔗 example.com/article/how-to-build-clipboard-manager</p>
+          <div class="actions">
+            <button>⭐</button>
+            <button>📋</button>
+            <button class="danger">🗑</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 3 -->
+      <div class="card">
+        <div class="card-icon" style="background: linear-gradient(135deg, #F0E8FB, #E5D6FA);">&lt;/&gt;</div>
+        <div class="card-content">
+          <p class="card-title">console.log("hello world");</p>
+        </div>
+        <span class="card-time">1小时</span>
+
+        <div class="card-overlay">
+          <p class="preview-text" style="font-family: monospace; background: #1e1e2e; color: #cdd6f4; padding: 8px; border-radius: 8px;">&lt;/&gt; 代码预览<br>console.log("hello world");</p>
+          <div class="actions">
+            <button>⭐ 收藏</button>
+            <button>📋 复制</button>
+            <button class="danger">🗑</button>
+          </div>
+        </div>
+        <div class="card-bottom">
+          <p class="preview-text" style="font-family: monospace; background: #1e1e2e; color: #cdd6f4; padding: 8px; border-radius: 8px;">console.log("hello world");</p>
+          <div class="actions">
+            <button>⭐ 收藏</button>
+            <button>📋 复制</button>
+            <button class="danger">🗑</button>
+          </div>
+        </div>
+        <div class="card-popover">
+          <p class="preview-text" style="font-family: monospace; background: #1e1e2e; color: #cdd6f4; padding: 8px; border-radius: 8px;">console.log("hello world");</p>
+          <div class="actions">
+            <button>⭐</button>
+            <button>📋</button>
+            <button class="danger">🗑</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const notes = {
+      a: `<strong>方案 A（推荐）</strong>：抽屉从卡片右侧展开，覆盖右半部分。永远不超出窗口，自适应所有窗口大小；仅遮挡卡片右侧的时间文本。`,
+      b: `<strong>方案 B</strong>：hover 时卡片下方滑出操作面板。不超出窗口，预览+操作在同一视觉流中；但会撑开卡片行，下方卡片下移。`,
+      c: `<strong>方案 C</strong>：hover 时在卡片附近弹出独立气泡，优先显示在上方。独立悬浮，不挤压布局；但需要 JS 计算边界。`,
+    };
+    const stage = document.getElementById('stage');
+    const note = document.getElementById('note');
+    const buttons = document.querySelectorAll('.scheme-switcher button');
+
+    buttons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        buttons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const scheme = btn.dataset.scheme;
+        stage.className = 'demo-stage';
+        stage.classList.add('stage-' + scheme);
+        note.innerHTML = notes[scheme];
+      });
+    });
+
+    stage.classList.add('stage-a');
+  </script>
+</body>
+</html>

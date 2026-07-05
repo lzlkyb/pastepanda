@@ -1,0 +1,1633 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="ocean">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PastePanda — 分组+标签系统 设计稿</title>
+<style>
+/* ===== 主题变量 (ocean 默认) ===== */
+:root, [data-theme="ocean"] {
+  --app-bg: #F4F6F9;
+  --header-bg-start: #fff;
+  --header-bg-end: #F4F6F9;
+  --card-bg: #fff;
+  --card-border: #E0E4EB;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --seg-bg: #E8E8ED;
+  --seg-active-bg: #fff;
+  --search-bg: #fff;
+  --search-border: #E0E4EB;
+  --input-bg: #F1F5F9;
+  --dialog-bg: #fff;
+  --section-bg: #F0F4F8;
+  --hover: #E8ECF2;
+  --card-selected-bg: #E0F2FE;
+  --card-selected-border: #0284C7;
+  --card-selected-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25);
+  --accent-shadow: rgba(2, 132, 199, 0.15);
+  --green: #16A34A;
+  --green-bg: #DCFCE7;
+  --orange: #EA580C;
+  --orange-bg: #FFF7ED;
+  --danger: #DC2626;
+  --red-bg: #FEF2F2;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: "SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  background: #E8ECF0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+/* ===== 窗口容器 ===== */
+.app-shell {
+  width: 960px;
+  max-width: 100%;
+  height: 680px;
+  display: flex;
+  flex-direction: row;
+  background: var(--app-bg);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.06);
+  transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* ===== 侧边栏 ===== */
+.sidebar {
+  width: 200px;
+  min-width: 200px;
+  background: var(--card-bg);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sidebar.collapsed {
+  width: 0;
+  min-width: 0;
+  border-right: none;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 12px 10px;
+  flex-shrink: 0;
+}
+.sidebar-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.sidebar-add-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  transition: all 0.15s;
+}
+.sidebar-add-btn:hover {
+  background: var(--hover);
+  color: var(--accent);
+}
+
+.sidebar-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  transition: all 0.15s;
+  text-align: left;
+  width: 100%;
+}
+.sidebar-item:hover { background: var(--hover); }
+.sidebar-item.active {
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: 600;
+}
+.sidebar-item .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sidebar-item .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-item .count {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.sidebar-sep {
+  height: 1px;
+  background: var(--border-color);
+  margin: 6px 10px;
+}
+
+.sidebar-footer {
+  padding: 8px;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.sidebar-collapse-btn {
+  width: 100%;
+  padding: 6px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+.sidebar-collapse-btn:hover {
+  background: var(--hover);
+  color: var(--text-secondary);
+}
+
+/* ===== 右侧主区域 ===== */
+.main-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* ===== Header / TopBar ===== */
+.header {
+  padding: 16px 16px 0;
+  background: linear-gradient(180deg, var(--header-bg-start) 0%, var(--header-bg-end) 100%);
+  flex-shrink: 0;
+}
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.header-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sidebar-toggle {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  font-size: 16px;
+}
+.sidebar-toggle:hover {
+  background: rgba(129,140,248,.12);
+  transform: scale(1.08);
+}
+.header-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.header-icons {
+  display: flex;
+  gap: 4px;
+}
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 18px;
+  transition: all 0.15s;
+}
+.icon-btn:hover {
+  background: rgba(129,140,248,.12);
+  transform: scale(1.08);
+}
+
+/* ===== 搜索框 ===== */
+.header-controls {
+  display: flex;
+  flex-direction: column;
+}
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--search-bg);
+  border: 1px solid var(--search-border);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+  transition: all 0.2s;
+}
+.search-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-shadow), 0 2px 8px rgba(0,120,212,0.1);
+}
+.search-box .search-icon { font-size: 14px; flex-shrink: 0; }
+.search-box input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text-primary);
+}
+.search-box input::placeholder { color: var(--text-muted); }
+
+/* ===== Tab 区域 ===== */
+.tabs-area { padding: 10px 0 0; }
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--seg-bg);
+  border-radius: 10px;
+  padding: 3px;
+}
+.seg-item {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  position: relative;
+  transition: all 0.15s;
+}
+.seg-item.active {
+  background: var(--seg-active-bg);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.seg-count {
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: var(--text-muted);
+  font-weight: 500;
+  min-width: 18px;
+  text-align: center;
+}
+.seg-item.active .seg-count { background: var(--accent-light); color: var(--accent); }
+
+/* ===== 标签筛选栏 ===== */
+.tag-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0 4px;
+  flex-wrap: wrap;
+  min-height: 30px;
+}
+.tag-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid;
+  transition: all 0.15s;
+}
+.tag-filter-chip .remove {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0,0,0,0.1);
+  color: inherit;
+  cursor: pointer;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+}
+.tag-filter-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border: 1px dashed var(--border-color);
+  background: transparent;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.tag-filter-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+/* ===== 筛选下拉栏 ===== */
+.filter-bar {
+  display: flex;
+  gap: 6px;
+  padding: 6px 0 0;
+}
+.filter-dropdown-btn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: none;
+  background: var(--input-bg);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+.filter-dropdown-btn:hover { background: var(--hover); }
+
+/* ===== 内容区域 ===== */
+.content-area {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+.scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.card-list {
+  --card-height: 72px;
+  --card-gap: 10px;
+  padding: 10px 16px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-gap);
+}
+
+/* ===== 批量操作工具栏 ===== */
+.batch-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--accent-light);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  margin-bottom: 4px;
+}
+.batch-toolbar-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.batch-btn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(255,255,255,0.7);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+.batch-btn:hover { background: #fff; }
+.batch-btn.danger { color: var(--danger); }
+.batch-btn.danger:hover { background: var(--red-bg); }
+
+/* ===== 卡片 ===== */
+.card-wrap {
+  position: relative;
+  overflow: visible;
+  width: 100%;
+}
+.card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  height: var(--card-height, 72px);
+  width: 100%;
+  box-sizing: border-box;
+}
+.card:hover {
+  box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+  transform: translateY(-2px) scale(1.008);
+}
+.card.selected {
+  background: var(--card-selected-bg);
+  border-color: var(--card-selected-border);
+  box-shadow: var(--card-selected-shadow), 0 4px 16px var(--accent-shadow);
+}
+
+/* 左侧彩色边线 */
+.card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+}
+.card.text::before { background: var(--accent); }
+.card.image::before { background: #FF6482; }
+.card.file::before { background: #34C759; }
+.card.code::before { background: #BF5AF2; }
+.card.pinned::before { background: #FFD60A; }
+.card.pinned::after {
+  content: '📌';
+  position: absolute;
+  left: -1px; top: 4px;
+  font-size: 10px;
+  line-height: 1;
+  z-index: 3;
+}
+
+/* 图标区 */
+.card-icon {
+  width: 42px; height: 42px;
+  min-width: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.bg-blue   { background: linear-gradient(135deg, #E8F1FB, #D6E8FA); }
+.bg-green  { background: linear-gradient(135deg, #E5F8EC, #D4F2DE); }
+.bg-pink   { background: linear-gradient(135deg, #FDE8EE, #FAD6DF); }
+.bg-purple { background: linear-gradient(135deg, #F0E8FB, #E5D6FA); }
+
+.card-content { flex: 1; min-width: 0; overflow: hidden; }
+.card-title {
+  font-size: 13px; font-weight: 600;
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+  max-height: 36px;
+  word-break: break-word;
+  white-space: normal;
+}
+.card-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.card-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 标签徽标行 */
+.card-tags {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.tag-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.tag-badge:hover {
+  filter: brightness(0.9);
+}
+.tag-badge-more {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+/* 搜索高亮 */
+.search-highlight {
+  background: #FDE68A;
+  color: #92400E;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* ===== 右键菜单 ===== */
+.ctx-menu {
+  position: fixed;
+  z-index: 99999;
+  padding: 4px 0;
+  border-radius: 12px;
+  min-width: 180px;
+  background: var(--dialog-bg);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04);
+  display: none;
+}
+.ctx-menu.visible { display: block; }
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  font-size: 12.5px;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: background 0.12s;
+  position: relative;
+}
+.ctx-item:hover { background: var(--hover); }
+.ctx-item.danger { color: #EF4444; }
+.ctx-item.danger:hover { background: rgba(239,68,68,0.1); }
+.ctx-sep {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 10px;
+}
+.ctx-item .sub-arrow {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+/* 子菜单 */
+.ctx-submenu {
+  position: absolute;
+  left: calc(100% + 4px);
+  top: -4px;
+  min-width: 180px;
+  padding: 4px 0;
+  border-radius: 12px;
+  background: var(--dialog-bg);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04);
+  display: none;
+}
+.ctx-item:hover > .ctx-submenu { display: block; }
+.ctx-sub-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: background 0.12s;
+}
+.ctx-sub-item:hover { background: var(--hover); }
+.ctx-sub-item .check {
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.ctx-sub-item.active { color: var(--accent); font-weight: 600; }
+
+/* ===== 标签编辑器弹窗 ===== */
+.dialog-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  display: none;
+}
+.dialog-overlay.visible { display: flex; }
+.dialog-box {
+  background: var(--dialog-bg);
+  border-radius: 16px;
+  width: 400px;
+  max-width: 90%;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+  overflow: hidden;
+}
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+.dialog-title { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.dialog-close {
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  transition: all 0.15s;
+}
+.dialog-close:hover { background: var(--hover); }
+.dialog-body { padding: 16px; }
+.dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+/* 标签编辑器内部 */
+.tag-editor-section { margin-bottom: 14px; }
+.tag-editor-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 6px;
+}
+.selected-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+}
+.selected-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid;
+}
+.selected-tag .remove-tag {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0,0,0,0.1);
+  color: inherit;
+  cursor: pointer;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+}
+.tag-search-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  outline: none;
+  transition: all 0.2s;
+}
+.tag-search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-shadow);
+}
+.tag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.tag-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  text-align: left;
+  width: 100%;
+  transition: all 0.12s;
+}
+.tag-option:hover { background: var(--hover); }
+.tag-option .tag-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.tag-option .tag-name { flex: 1; }
+.tag-option .tag-check {
+  font-size: 14px;
+  color: var(--accent);
+  visibility: hidden;
+}
+.tag-option.selected .tag-check { visibility: visible; }
+.create-tag-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--border-color);
+}
+.create-tag-input {
+  flex: 1;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  outline: none;
+}
+.create-tag-input:focus { border-color: var(--accent); }
+.create-tag-btn {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.create-tag-btn:hover { filter: brightness(1.1); }
+.color-picker-row {
+  display: flex;
+  gap: 6px;
+  padding: 4px 0;
+}
+.color-dot {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.15s;
+}
+.color-dot:hover { transform: scale(1.15); }
+.color-dot.selected { border-color: var(--text-primary); transform: scale(1.1); }
+
+.btn-primary {
+  height: 34px;
+  padding: 0 18px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-primary:hover { filter: brightness(1.1); }
+.btn-secondary {
+  height: 34px;
+  padding: 0 18px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-secondary:hover { background: var(--section-bg); }
+
+/* ===== 提示标签 ===== */
+.tip-badge {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  z-index: 50;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.tip-badge.show { opacity: 1; }
+
+/* ===== FAB 按钮 ===== */
+.fab-container {
+  position: absolute;
+  bottom: 12px;
+  left: 216px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  z-index: 50;
+  background: var(--card-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 16px;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 -2px 16px rgba(0,0,0,0.06);
+}
+.fab-counter {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.fab-counter .current { color: var(--accent); }
+.fab-btn {
+  height: 38px;
+  padding: 0 18px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 4px 16px var(--accent-shadow);
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s;
+}
+.fab-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px var(--accent-shadow);
+}
+
+/* ===== 主题切换按钮 ===== */
+.theme-switcher {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 6px;
+  z-index: 200;
+}
+.theme-btn {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.theme-btn:hover { transform: scale(1.15); }
+.theme-btn.active { border-color: #fff; box-shadow: 0 0 0 2px rgba(0,0,0,0.2); }
+
+/* 滚动条 */
+.scroll-area::-webkit-scrollbar { width: 5px; }
+.scroll-area::-webkit-scrollbar-track { background: transparent; }
+.scroll-area::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+.scroll-area::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+.sidebar-list::-webkit-scrollbar { width: 4px; }
+.sidebar-list::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
+
+/* 暗色主题适配 */
+[data-theme="midnight"] .card-icon.bg-blue   { background: linear-gradient(135deg, #1E293B, #1E1B4B); }
+[data-theme="midnight"] .card-icon.bg-green  { background: linear-gradient(135deg, #052E16, #064E3B); }
+[data-theme="midnight"] .card-icon.bg-pink   { background: linear-gradient(135deg, #4A1D2D, #3B1B2D); }
+[data-theme="midnight"] .card-icon.bg-purple { background: linear-gradient(135deg, #1E1B4B, #2D1B4E); }
+[data-theme="midnight"] .search-highlight { background: #713F12; color: #FDE68A; }
+</style>
+</head>
+<body>
+
+<!-- 主题切换 -->
+<div class="theme-switcher">
+  <button class="theme-btn active" style="background:#0284C7" onclick="switchTheme('ocean')" title="海洋"></button>
+  <button class="theme-btn" style="background:#818CF8" onclick="switchTheme('midnight')" title="午夜"></button>
+  <button class="theme-btn" style="background:#059669" onclick="switchTheme('forest')" title="森林"></button>
+</div>
+
+<!-- 应用窗口 -->
+<div class="app-shell" id="appShell">
+
+  <!-- ========== 左侧分组侧边栏 ========== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-title">分组</span>
+      <button class="sidebar-add-btn" title="新建分组" onclick="showToast('新建分组功能')">+</button>
+    </div>
+    <div class="sidebar-list" id="sidebarList">
+      <!-- 内置虚拟分组 -->
+      <button class="sidebar-item active" data-group="all" onclick="selectGroup(this, 'all')">
+        <span style="font-size:16px">📋</span>
+        <span class="label">全部</span>
+        <span class="count">526</span>
+      </button>
+      <button class="sidebar-item" data-group="ungrouped" onclick="selectGroup(this, 'ungrouped')">
+        <span style="font-size:16px">📂</span>
+        <span class="label">未分组</span>
+        <span class="count">120</span>
+      </button>
+      <button class="sidebar-item" data-group="pinned" onclick="selectGroup(this, 'pinned')">
+        <span style="font-size:16px">⭐</span>
+        <span class="label">收藏</span>
+        <span class="count">32</span>
+      </button>
+      <div class="sidebar-sep"></div>
+      <!-- 用户自定义分组 -->
+      <button class="sidebar-item" data-group="work-project-a" onclick="selectGroup(this, 'work-project-a')">
+        <span class="dot" style="background:#3B82F6"></span>
+        <span class="label">工作-项目A</span>
+        <span class="count">45</span>
+      </button>
+      <button class="sidebar-item" data-group="work-project-b" onclick="selectGroup(this, 'work-project-b')">
+        <span class="dot" style="background:#10B981"></span>
+        <span class="label">工作-项目B</span>
+        <span class="count">28</span>
+      </button>
+      <button class="sidebar-item" data-group="personal-learn" onclick="selectGroup(this, 'personal-learn')">
+        <span class="dot" style="background:#8B5CF6"></span>
+        <span class="label">个人-学习笔记</span>
+        <span class="count">50</span>
+      </button>
+      <button class="sidebar-item" data-group="temp" onclick="selectGroup(this, 'temp')">
+        <span class="dot" style="background:#F59E0B"></span>
+        <span class="label">临时</span>
+        <span class="count">15</span>
+      </button>
+    </div>
+    <div class="sidebar-footer">
+      <button class="sidebar-collapse-btn" onclick="toggleSidebar()">
+        ◀ 收起侧边栏
+      </button>
+    </div>
+  </aside>
+
+  <!-- ========== 右侧主区域 ========== -->
+  <div class="main-area">
+
+    <!-- Header -->
+    <div class="header">
+      <div class="header-top">
+        <div class="header-title-group">
+          <button class="sidebar-toggle" onclick="toggleSidebar()" title="切换侧边栏">☰</button>
+          <span class="header-title">PastePanda</span>
+        </div>
+        <div class="header-icons">
+          <button class="icon-btn" title="片段库">📝</button>
+          <button class="icon-btn" title="内容提取">🧲</button>
+          <button class="icon-btn" title="设置" onclick="showSettings()">⚙</button>
+          <button class="icon-btn" title="最小化">─</button>
+          <button class="icon-btn" title="隐藏">✕</button>
+        </div>
+      </div>
+
+      <div class="header-controls">
+        <!-- 搜索框 -->
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" placeholder="搜索剪贴板... (Enter 搜索)" value="">
+        </div>
+
+        <!-- Tab 区域 -->
+        <div class="tabs-area">
+          <div class="segmented">
+            <button class="seg-item active">📋 全部 <span class="seg-count">526</span></button>
+            <button class="seg-item">📝 文本 <span class="seg-count">380</span></button>
+            <button class="seg-item">📸 图片 <span class="seg-count">95</span></button>
+            <button class="seg-item">📁 文件 <span class="seg-count">51</span></button>
+            <button class="seg-item">⭐ 收藏 <span class="seg-count">32</span></button>
+          </div>
+        </div>
+
+        <!-- 标签筛选栏 ★ 新增 ★ -->
+        <div class="tag-filter-bar" id="tagFilterBar">
+          <button class="tag-filter-add" onclick="showTagEditor()">+ 添加标签筛选</button>
+        </div>
+
+        <!-- 筛选栏 -->
+        <div class="filter-bar">
+          <button class="filter-dropdown-btn">全部时间 ▾</button>
+          <button class="filter-dropdown-btn">来源应用 ▾</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 内容区域 -->
+    <div class="content-area">
+      <div class="scroll-area">
+        <div class="card-list">
+
+          <!-- 批量操作工具栏（模拟多选状态） -->
+          <div class="batch-toolbar" id="batchToolbar" style="display:none">
+            <span class="batch-toolbar-label">已选 3 条</span>
+            <button class="batch-btn">移动到分组 ▾</button>
+            <button class="batch-btn">添加标签 ▾</button>
+            <button class="batch-btn">合并复制</button>
+            <button class="batch-btn danger">删除</button>
+          </div>
+
+          <!-- ====== 卡片列表（模拟真实数据） ====== -->
+
+          <!-- 卡片 1 — 文本 + 标签 -->
+          <div class="card-wrap">
+            <div class="card text" onclick="toggleSelect(this)" oncontextmenu="showCtxMenu(event, this)">
+              <div class="card-icon bg-blue">📝</div>
+              <div class="card-content">
+                <div class="card-title">function fetchUserData(userId: string) { return api.get(`/users/${userId}`) }</div>
+                <div class="card-sub">
+                  <span>2 分钟前</span>
+                  <span>·</span>
+                  <span>VS Code</span>
+                </div>
+                <!-- ★ 新增标签徽标 ★ -->
+                <div class="card-tags">
+                  <span class="tag-badge" style="background:#DBEAFE;color:#1D4ED8" onclick="event.stopPropagation();filterByTag('JavaScript')">#JavaScript</span>
+                  <span class="tag-badge" style="background:#DCFCE7;color:#166534" onclick="event.stopPropagation();filterByTag('API')">#API</span>
+                  <span class="tag-badge" style="background:#FEF3C7;color:#92400E" onclick="event.stopPropagation();filterByTag('工具函数')">#工具函数</span>
+                </div>
+              </div>
+              <span class="card-time">14:30</span>
+            </div>
+          </div>
+
+          <!-- 卡片 2 — 链接 + 标签 -->
+          <div class="card-wrap">
+            <div class="card text" onclick="toggleSelect(this)" oncontextmenu="showCtxMenu(event, this)">
+              <div class="card-icon bg-blue">🔗</div>
+              <div class="card-content">
+                <div class="card-title">https://github.com/facebook/react/releases/tag/v19.0.0</div>
+                <div class="card-sub">
+                  <span>15 分钟前</span>
+                  <span>·</span>
+                  <span>Chrome</span>
+                </div>
+                <div class="card-tags">
+                  <span class="tag-badge" style="background:#DBEAFE;color:#1D4ED8" onclick="event.stopPropagation();filterByTag('React')">#React</span>
+                  <span class="tag-badge" style="background:#F3E8FF;color:#6B21A8" onclick="event.stopPropagation();filterByTag('前端')">#前端</span>
+                </div>
+              </div>
+              <span class="card-time">14:17</span>
+            </div>
+          </div>
+
+          <!-- 卡片 3 — 图片（无标签） -->
+          <div class="card-wrap">
+            <div class="card image" onclick="toggleSelect(this)" oncontextmenu="showCtxMenu(event, this)">
+              <div class="card-icon bg-pink">📸</div>
+              <div class="card-content">
+                <div class="card-title">screenshot_2026-07-04_143000.png</div>
+                <div class="card-sub">
+                  <span>30 分钟前</span>
+                  <span>·</span>
+                  <span>截图工具</span>
+                </div>
+              </div>
+              <span class="card-time">14:02</span>
+            </div>
+          </div>
+
+          <!-- 卡片 4 — 代码 + 标签 -->
+          <div class="card-wrap">
+            <div class="card code" onclick="toggleSelect(this)" oncontextmenu="showCtxMenu(event, this)">
+              <div class="card-icon bg-purple">💻</div>
+              <div class="card-content">
+                <div class="card-title">SELECT u.name, o.total FROM users u JOIN orders o ON u.id = o.user_id WHERE o.created_at > '2026-06-01'</div>
+                <div class="card-sub">
+                  <span>1 小时前</span>
+                  <span>·</span>
+                  <span>DataGrip</span>
+                </div>
+                <div class="card-tags">
+                  <span class="tag-badge" style="background:#FCE7F3;color:#9D174D" onclick="event.stopPropagation();filterByTag('SQL')">#SQL</span>
+                  <span class="tag-badge" style="background:#DCFCE7;color:#166534" onclick="event.stopPropagation();filterByTag('后端')">#后端</span>
+                </div>
+              </div>
+              <span class="card-time">13:28</span>
+            </div>
+          </div>
+
+          <!-- 卡片 5 — 置顶文本 -->
+          <div class="card-wrap">
+            <div class="card pinned" onclick="toggleSelect(this)" oncontextmenu="showCtxMenu(event, this)">
+              <div class="card-icon bg-blue">📌</div>
+              <div class="card-content">
+                <div class="card-title">会议纪要：本周五 15:00 产品评审，会议室 A302，需要准备 Q3 规划文档</div>
+                <div class="card-sub">
+                  <span>昨天</span>
+                  <span>·</span>
+                  <span>企业微信</span>
+                </div>
+                <div class="card-tags">
+                  <span class="tag-badge" style="background:#FEF3C7;color:#92400E" onclick="event.stopPropagation();filterByTag('会议')">#会议</span>
+                  <span class="tag-badge" style="background:#DBEAFE;color:#1D4ED8" onclick="event.stopPropagation();filterByTag('待办')">#待办</span>
+                </div>
+              </div>
+              <span class="card-time">昨天</span>
+            </div>
+          </div>
+
+          <!-- 卡片 6 — 文件 -->
+          <div class="card-wrap">
+            <div class="card file" onclick="toggleSelect(this)" oncontextmenu="showCtxMenu(event, this)">
+              <div class="card-icon bg-green">📄</div>
+              <div class="card-content">
+                <div class="card-title">Q3产品规划_v3_final.xlsx</div>
+                <div class="card-sub">
+                  <span>昨天</span>
+                  <span>·</span>
+                  <span>文件管理器</span>
+                </div>
+                <div class="card-tags">
+                  <span class="tag-badge" style="background:#DCFCE7;color:#166534" onclick="event.stopPropagation();filterByTag('文档')">#文档</span>
+                  <span class="tag-badge" style="background:#F3E8FF;color:#6B21A8" onclick="event.stopPropagation();filterByTag('项目A')">#项目A</span>
+                </div>
+              </div>
+              <span class="card-time">昨天</span>
+            </div>
+          </div>
+
+          <!-- 卡片 7 — 多标签溢出 -->
+          <div class="card-wrap">
+            <div class="card text" onclick="toggleSelect(this)" oncontextmenu="showCtxMenu(event, this)">
+              <div class="card-icon bg-blue">📝</div>
+              <div class="card-content">
+                <div class="card-title">npm install @tanstack/react-virtual framer-motion lenis lucide-react</div>
+                <div class="card-sub">
+                  <span>前天</span>
+                  <span>·</span>
+                  <span>Terminal</span>
+                </div>
+                <div class="card-tags">
+                  <span class="tag-badge" style="background:#DBEAFE;color:#1D4ED8" onclick="event.stopPropagation();filterByTag('NPM')">#NPM</span>
+                  <span class="tag-badge" style="background:#FCE7F3;color:#9D174D" onclick="event.stopPropagation();filterByTag('依赖')">#依赖</span>
+                  <span class="tag-badge" style="background:#F3E8FF;color:#6B21A8" onclick="event.stopPropagation();filterByTag('React')">#React</span>
+                  <span class="tag-badge-more">+2</span>
+                </div>
+              </div>
+              <span class="card-time">前天</span>
+            </div>
+          </div>
+
+          <!-- 加载更多提示 -->
+          <div style="height:40px;display:flex;align-items:center;justify-content:center;padding:20px 0">
+            <span style="font-size:11px;color:var(--text-muted)">— 已加载全部记录 —</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FAB 依次粘贴 -->
+    <div class="fab-container">
+      <div class="fab-counter"><span class="current">0</span>/380</div>
+      <button class="fab-btn">📋 粘贴</button>
+    </div>
+
+  </div><!-- /main-area -->
+</div><!-- /app-shell -->
+
+<!-- ========== 右键菜单 ========== -->
+<div class="ctx-menu" id="ctxMenu">
+  <div class="ctx-item" onclick="hideCtxMenu()">📋 复制</div>
+  <div class="ctx-item" onclick="hideCtxMenu()">📌 粘贴</div>
+  <div class="ctx-item" onclick="hideCtxMenu()">⭐ 置顶</div>
+  <div class="ctx-sep"></div>
+  <!-- ★ 新增：移动到分组（子菜单） ★ -->
+  <div class="ctx-item" style="position:relative">
+    📂 移动到分组 <span class="sub-arrow">▶</span>
+    <div class="ctx-submenu">
+      <div class="ctx-sub-item" onclick="moveToGroup(null)"><span class="check"></span> 未分组</div>
+      <div class="ctx-sub-item active" onclick="moveToGroup('work-project-a')"><span class="check">✓</span> 工作-项目A</div>
+      <div class="ctx-sub-item" onclick="moveToGroup('work-project-b')"><span class="check"></span> 工作-项目B</div>
+      <div class="ctx-sub-item" onclick="moveToGroup('personal-learn')"><span class="check"></span> 个人-学习笔记</div>
+      <div class="ctx-sub-item" onclick="moveToGroup('temp')"><span class="check"></span> 临时</div>
+    </div>
+  </div>
+  <!-- ★ 新增：编辑标签 ★ -->
+  <div class="ctx-item" onclick="showTagEditor();hideCtxMenu()">🏷️ 编辑标签</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" onclick="hideCtxMenu()">✏️ 编辑内容</div>
+  <div class="ctx-item danger" onclick="hideCtxMenu()">🗑️ 删除</div>
+</div>
+
+<!-- ========== 标签编辑器弹窗 ========== -->
+<div class="dialog-overlay" id="tagEditorOverlay" onclick="hideTagEditor()">
+  <div class="dialog-box" onclick="event.stopPropagation()">
+    <div class="dialog-header">
+      <span class="dialog-title">🏷️ 编辑标签 — "function fetchUserData..."</span>
+      <button class="dialog-close" onclick="hideTagEditor()">✕</button>
+    </div>
+    <div class="dialog-body">
+      <!-- 已选标签 -->
+      <div class="tag-editor-section">
+        <div class="tag-editor-label">已选标签</div>
+        <div class="selected-tags" id="editorSelectedTags">
+          <span class="selected-tag" style="background:#DBEAFE;color:#1D4ED8;border-color:#93C5FD">
+            #JavaScript <button class="remove-tag" onclick="removeEditorTag(this)">×</button>
+          </span>
+          <span class="selected-tag" style="background:#DCFCE7;color:#166534;border-color:#86EFAC">
+            #API <button class="remove-tag" onclick="removeEditorTag(this)">×</button>
+          </span>
+          <span class="selected-tag" style="background:#FEF3C7;color:#92400E;border-color:#FCD34D">
+            #工具函数 <button class="remove-tag" onclick="removeEditorTag(this)">×</button>
+          </span>
+        </div>
+      </div>
+
+      <!-- 搜索/创建标签 -->
+      <div class="tag-editor-section">
+        <div class="tag-editor-label">搜索或创建标签</div>
+        <input type="text" class="tag-search-input" placeholder="输入标签名搜索..." id="tagSearchInput" oninput="filterTagOptions()">
+      </div>
+
+      <!-- 已有标签列表 -->
+      <div class="tag-editor-section">
+        <div class="tag-editor-label">已有标签</div>
+        <div class="tag-list" id="tagOptionList">
+          <button class="tag-option selected" data-tag="JavaScript" onclick="toggleTagOption(this)">
+            <span class="tag-dot" style="background:#3B82F6"></span>
+            <span class="tag-name">JavaScript</span>
+            <span class="tag-check">✓</span>
+          </button>
+          <button class="tag-option selected" data-tag="API" onclick="toggleTagOption(this)">
+            <span class="tag-dot" style="background:#10B981"></span>
+            <span class="tag-name">API</span>
+            <span class="tag-check">✓</span>
+          </button>
+          <button class="tag-option selected" data-tag="工具函数" onclick="toggleTagOption(this)">
+            <span class="tag-dot" style="background:#F59E0B"></span>
+            <span class="tag-name">工具函数</span>
+            <span class="tag-check">✓</span>
+          </button>
+          <button class="tag-option" data-tag="React" onclick="toggleTagOption(this)">
+            <span class="tag-dot" style="background:#06B6D4"></span>
+            <span class="tag-name">React</span>
+            <span class="tag-check">✓</span>
+          </button>
+          <button class="tag-option" data-tag="SQL" onclick="toggleTagOption(this)">
+            <span class="tag-dot" style="background:#EC4899"></span>
+            <span class="tag-name">SQL</span>
+            <span class="tag-check">✓</span>
+          </button>
+          <button class="tag-option" data-tag="前端" onclick="toggleTagOption(this)">
+            <span class="tag-dot" style="background:#8B5CF6"></span>
+            <span class="tag-name">前端</span>
+            <span class="tag-check">✓</span>
+          </button>
+          <button class="tag-option" data-tag="后端" onclick="toggleTagOption(this)">
+            <span class="tag-dot" style="background:#10B981"></span>
+            <span class="tag-name">后端</span>
+            <span class="tag-check">✓</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 创建新标签 -->
+      <div class="create-tag-row">
+        <input type="text" class="create-tag-input" placeholder="新标签名..." id="newTagName">
+        <div class="color-picker-row" id="colorPicker">
+          <span class="color-dot selected" style="background:#3B82F6" onclick="pickColor(this)"></span>
+          <span class="color-dot" style="background:#10B981" onclick="pickColor(this)"></span>
+          <span class="color-dot" style="background:#F59E0B" onclick="pickColor(this)"></span>
+          <span class="color-dot" style="background:#EC4899" onclick="pickColor(this)"></span>
+          <span class="color-dot" style="background:#8B5CF6" onclick="pickColor(this)"></span>
+          <span class="color-dot" style="background:#06B6D4" onclick="pickColor(this)"></span>
+        </div>
+        <button class="create-tag-btn" onclick="createNewTag()">+ 创建</button>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn-secondary" onclick="hideTagEditor()">取消</button>
+      <button class="btn-primary" onclick="hideTagEditor();showToast('标签已保存')">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="tip-badge" id="toast"></div>
+
+<script>
+// ===== 侧边栏切换 =====
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('collapsed');
+  const fab = document.querySelector('.fab-container');
+  if (document.getElementById('sidebar').classList.contains('collapsed')) {
+    fab.style.left = '16px';
+  } else {
+    fab.style.left = '216px';
+  }
+}
+
+// ===== 分组选择 =====
+function selectGroup(el, groupId) {
+  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+  el.classList.add('active');
+  showToast(`已筛选分组: ${el.querySelector('.label').textContent}`);
+}
+
+// ===== 卡片选中 =====
+function toggleSelect(card) {
+  card.classList.toggle('selected');
+  const count = document.querySelectorAll('.card.selected').length;
+  const toolbar = document.getElementById('batchToolbar');
+  if (count > 0) {
+    toolbar.style.display = 'flex';
+    toolbar.querySelector('.batch-toolbar-label').textContent = `已选 ${count} 条`;
+  } else {
+    toolbar.style.display = 'none';
+  }
+}
+
+// ===== 右键菜单 =====
+function showCtxMenu(e, card) {
+  e.preventDefault();
+  const menu = document.getElementById('ctxMenu');
+  menu.style.display = 'block';
+  menu.style.left = Math.min(e.clientX, window.innerWidth - 200) + 'px';
+  menu.style.top = Math.min(e.clientY, window.innerHeight - 300) + 'px';
+  menu.classList.add('visible');
+}
+
+function hideCtxMenu() {
+  const menu = document.getElementById('ctxMenu');
+  menu.style.display = 'none';
+  menu.classList.remove('visible');
+}
+
+function moveToGroup(groupId) {
+  hideCtxMenu();
+  showToast(groupId ? `已移动到分组` : `已移除分组`);
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.ctx-menu')) hideCtxMenu();
+});
+
+// ===== 标签筛选 =====
+function filterByTag(tagName) {
+  const bar = document.getElementById('tagFilterBar');
+  const existing = bar.querySelector(`[data-tag="${tagName}"]`);
+  if (existing) return;
+
+  const addBtn = bar.querySelector('.tag-filter-add');
+  const colors = {
+    'JavaScript': {bg:'#DBEAFE', color:'#1D4ED8'},
+    'API': {bg:'#DCFCE7', color:'#166534'},
+    '工具函数': {bg:'#FEF3C7', color:'#92400E'},
+    'React': {bg:'#F3E8FF', color:'#6B21A8'},
+    'SQL': {bg:'#FCE7F3', color:'#9D174D'},
+    '前端': {bg:'#F3E8FF', color:'#6B21A8'},
+    '后端': {bg:'#DCFCE7', color:'#166534'},
+    'NPM': {bg:'#DBEAFE', color:'#1D4ED8'},
+    '依赖': {bg:'#FCE7F3', color:'#9D174D'},
+    '会议': {bg:'#FEF3C7', color:'#92400E'},
+    '待办': {bg:'#DBEAFE', color:'#1D4ED8'},
+    '文档': {bg:'#DCFCE7', color:'#166534'},
+    '项目A': {bg:'#F3E8FF', color:'#6B21A8'},
+  };
+  const style = colors[tagName] || {bg:'#F1F5F9', color:'#475569'};
+
+  const chip = document.createElement('span');
+  chip.className = 'tag-filter-chip';
+  chip.dataset.tag = tagName;
+  chip.style.cssText = `background:${style.bg};color:${style.color};border-color:${style.color}22`;
+  chip.innerHTML = `#${tagName} <button class="remove" onclick="removeTagFilter(this.parentElement)">×</button>`;
+  bar.insertBefore(chip, addBtn);
+}
+
+function removeTagFilter(chip) {
+  chip.remove();
+}
+
+// ===== 标签编辑器 =====
+function showTagEditor() {
+  document.getElementById('tagEditorOverlay').classList.add('visible');
+}
+
+function hideTagEditor() {
+  document.getElementById('tagEditorOverlay').classList.remove('visible');
+}
+
+function toggleTagOption(btn) {
+  btn.classList.toggle('selected');
+  updateSelectedTags();
+}
+
+function updateSelectedTags() {
+  const selected = document.querySelectorAll('#tagOptionList .tag-option.selected');
+  const container = document.getElementById('editorSelectedTags');
+  const colorMap = {
+    'JavaScript': {bg:'#DBEAFE', color:'#1D4ED8', border:'#93C5FD'},
+    'API': {bg:'#DCFCE7', color:'#166534', border:'#86EFAC'},
+    '工具函数': {bg:'#FEF3C7', color:'#92400E', border:'#FCD34D'},
+    'React': {bg:'#F3E8FF', color:'#6B21A8', border:'#D8B4FE'},
+    'SQL': {bg:'#FCE7F3', color:'#9D174D', border:'#F9A8D4'},
+    '前端': {bg:'#F3E8FF', color:'#6B21A8', border:'#D8B4FE'},
+    '后端': {bg:'#DCFCE7', color:'#166534', border:'#86EFAC'},
+    'NPM': {bg:'#DBEAFE', color:'#1D4ED8', border:'#93C5FD'},
+    '依赖': {bg:'#FCE7F3', color:'#9D174D', border:'#F9A8D4'},
+    '会议': {bg:'#FEF3C7', color:'#92400E', border:'#FCD34D'},
+    '待办': {bg:'#DBEAFE', color:'#1D4ED8', border:'#93C5FD'},
+    '文档': {bg:'#DCFCE7', color:'#166534', border:'#86EFAC'},
+    '项目A': {bg:'#F3E8FF', color:'#6B21A8', border:'#D8B4FE'},
+  };
+
+  container.innerHTML = '';
+  selected.forEach(btn => {
+    const name = btn.dataset.tag;
+    const c = colorMap[name] || {bg:'#F1F5F9', color:'#475569', border:'#CBD5E1'};
+    const tag = document.createElement('span');
+    tag.className = 'selected-tag';
+    tag.style.cssText = `background:${c.bg};color:${c.color};border-color:${c.border}`;
+    tag.innerHTML = `#${name} <button class="remove-tag" onclick="removeEditorTag(this)">×</button>`;
+    container.appendChild(tag);
+  });
+}
+
+function removeEditorTag(btn) {
+  const tagName = btn.parentElement.textContent.replace('×','').replace('#','').trim();
+  const option = document.querySelector(`#tagOptionList [data-tag="${tagName}"]`);
+  if (option) option.classList.remove('selected');
+  btn.parentElement.remove();
+}
+
+function filterTagOptions() {
+  const query = document.getElementById('tagSearchInput').value.toLowerCase();
+  document.querySelectorAll('#tagOptionList .tag-option').forEach(btn => {
+    btn.style.display = btn.dataset.tag.toLowerCase().includes(query) ? '' : 'none';
+  });
+}
+
+function createNewTag() {
+  const name = document.getElementById('newTagName').value.trim();
+  if (!name) return;
+  const option = document.querySelector(`#tagOptionList [data-tag="${name}"]`);
+  if (option) {
+    option.classList.add('selected');
+    updateSelectedTags();
+    document.getElementById('newTagName').value = '';
+    return;
+  }
+  // 模拟创建新标签
+  const list = document.getElementById('tagOptionList');
+  const btn = document.createElement('button');
+  btn.className = 'tag-option selected';
+  btn.dataset.tag = name;
+  btn.innerHTML = `<span class="tag-dot" style="background:#3B82F6"></span><span class="tag-name">${name}</span><span class="tag-check">✓</span>`;
+  btn.onclick = function() { toggleTagOption(this); };
+  list.appendChild(btn);
+  updateSelectedTags();
+  document.getElementById('newTagName').value = '';
+}
+
+function pickColor(dot) {
+  document.querySelectorAll('#colorPicker .color-dot').forEach(d => d.classList.remove('selected'));
+  dot.classList.add('selected');
+}
+
+// ===== Toast =====
+let toastTimer;
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 2000);
+}
+
+// ===== 主题切换 =====
+function switchTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.theme-btn[onclick="switchTheme('${theme}')"]`).classList.add('active');
+}
+
+// ===== 全局点击关闭菜单 =====
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.ctx-menu')) {
+    document.getElementById('ctxMenu').style.display = 'none';
+  }
+});
+</script>
+
+</body>
+</html>

@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1200, initial-scale=1.0">
+<title>方案E vs 方案F — 窗口扩展策略对比</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  background: #1a1a2e;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  gap: 40px;
+  padding: 40px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.sectionTitle {
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sectionTitle .badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+.badge-rec { background: #16A34A; color: #fff; }
+.badge-alt { background: #475569; color: #94A3B8; }
+
+/* 桌面背景 */
+.desktop {
+  position: relative;
+  width: 900px;
+  height: 200px;
+  background: linear-gradient(135deg, #2d1b4e 0%, #1a1a3e 50%, #0d1b2a 100%);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 0 0 2px #333;
+}
+
+/* 桌面图标示意 */
+.desktopIcons {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.desktopIcon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: rgba(255,255,255,0.6);
+}
+
+/* 任务栏 */
+.taskbar {
+  position: absolute;
+  bottom: 0;
+  left: 0; right: 0;
+  height: 32px;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 8px;
+}
+
+.taskbarItem {
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 4px;
+  font-size: 10px;
+  color: rgba(255,255,255,0.8);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255,255,255,0.1);
+}
+.taskbarItem.active {
+  background: rgba(255,255,255,0.2);
+  border-bottom: 2px solid #60A5FA;
+}
+
+/* 辅助线 */
+.guideLine {
+  position: absolute;
+  top: 0; bottom: 32px;
+  border-left: 1px dashed rgba(255,255,255,0.15);
+  pointer-events: none;
+}
+
+/* ===== 窗口样式 ===== */
+.window {
+  position: absolute;
+  top: 30px;
+  height: 140px;
+  display: flex;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 窗口标题栏 */
+.windowBar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 22px;
+  background: rgba(255,255,255,0.06);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  gap: 6px;
+  z-index: 2;
+}
+.winDot { width: 8px; height: 8px; border-radius: 50%; }
+.winDotR { background: #FF5F57; }
+.winDotY { background: #FFBD2E; }
+.winDotG { background: #28CA41; }
+.winTitle {
+  font-size: 9px;
+  color: rgba(255,255,255,0.5);
+  margin-left: 4px;
+}
+
+.sidebar {
+  width: 0;
+  background: #1E293B;
+  border-right: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+  padding-top: 22px;
+  overflow: hidden;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+.window.expanded .sidebar {
+  width: 80px;
+  border-right-color: rgba(255,255,255,0.08);
+}
+
+.sidebarItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 9px;
+  color: rgba(255,255,255,0.4);
+  white-space: nowrap;
+}
+.sidebarItem .dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot-blue { background: #60A5FA; }
+.dot-green { background: #34C759; }
+.dot-orange { background: #F59E0B; }
+
+.cardArea {
+  flex: 1;
+  background: #0F172A;
+  padding: 28px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.card {
+  height: 28px;
+  background: #1E293B;
+  border-radius: 6px;
+  border-left: 2px solid #60A5FA;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  font-size: 9px;
+  color: rgba(255,255,255,0.7);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 关闭时的 ☰ 按钮 */
+.menuBtn {
+  position: absolute;
+  top: 24px; left: 6px;
+  width: 16px; height: 16px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  color: rgba(255,255,255,0.5);
+  cursor: pointer;
+  z-index: 3;
+  transition: all 0.3s;
+  border: none;
+}
+.menuBtn:hover { background: rgba(255,255,255,0.15); }
+.window.expanded .menuBtn { left: 84px; }
+
+/* 窗口宽度标签 */
+.winSizeLabel {
+  position: absolute;
+  bottom: 4px;
+  font-size: 8px;
+  color: rgba(255,255,255,0.25);
+  text-align: center;
+  left: 0; right: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* 鼠标示意 */
+.cursor {
+  position: absolute;
+  width: 14px; height: 20px;
+  z-index: 10;
+  pointer-events: none;
+  transition: all 0.8s ease;
+  animation: clickAnim 1.5s ease infinite;
+}
+@keyframes clickAnim {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; transform: scale(0.9); }
+}
+
+/* 箭头标注 */
+.arrow {
+  position: absolute;
+  color: #60A5FA;
+  font-size: 14px;
+  z-index: 10;
+  pointer-events: none;
+  font-weight: bold;
+}
+
+/* 说明文字 */
+.desc {
+  color: rgba(255,255,255,0.6);
+  font-size: 12px;
+  max-width: 400px;
+  text-align: center;
+  line-height: 1.8;
+}
+.desc strong { color: #fff; }
+
+/* 对比表 */
+.compareTable {
+  display: flex;
+  gap: 20px;
+  margin-top: 8px;
+}
+.compareCard {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 16px 20px;
+  font-size: 11px;
+  color: rgba(255,255,255,0.7);
+  min-width: 200px;
+  text-align: center;
+}
+.compareCard .label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 8px;
+}
+.compareCard .pro { color: #34C759; }
+.compareCard .con { color: #F87171; }
+
+/* 分隔线 */
+.divider {
+  width: 600px;
+  height: 1px;
+  background: rgba(255,255,255,0.1);
+  margin: 10px 0;
+}
+</style>
+</head>
+<body>
+
+<!-- ===== 方案 E：窗口右边缘右移（窗口位置不变） ===== -->
+<div class="section">
+  <div class="sectionTitle">
+    方案 E — 右边缘右移<span class="badge badge-alt">位置不变</span>
+  </div>
+  <div class="desc">
+    窗口<strong>左上角位置固定</strong>，右边缘向外扩展 +200px
+  </div>
+
+  <div class="desktop" id="desktopE">
+    <!-- 辅助线标注 -->
+    <div class="guideLine" style="left:300px;"></div>
+    <div class="guideLine" style="left:500px;"></div>
+    <div style="position:absolute;top:5px;left:295px;font-size:8px;color:rgba(255,255,255,0.2);">左边缘(300px)</div>
+    <div style="position:absolute;top:5px;left:495px;font-size:8px;color:rgba(255,255,255,0.2);">右边缘(500px)</div>
+
+    <div class="desktopIcons">
+      <div class="desktopIcon">📁 项目</div>
+      <div class="desktopIcon">🖼️ 截图</div>
+    </div>
+
+    <!-- 窗口 -->
+    <div class="window" id="winE" style="left:300px;width:200px;">
+      <div class="windowBar">
+        <span class="winDot winDotR"></span><span class="winDot winDotY"></span><span class="winDot winDotG"></span>
+        <span class="winTitle">PastePanda</span>
+      </div>
+      <button class="menuBtn" onclick="toggleWinE()">☰</button>
+      <div class="sidebar" id="sidebarE">
+        <div class="sidebarItem"><span class="dot dot-blue"></span>工作</div>
+        <div class="sidebarItem"><span class="dot dot-green"></span>个人</div>
+        <div class="sidebarItem"><span class="dot dot-orange"></span>代码</div>
+      </div>
+      <div class="cardArea">
+        <div class="card" style="border-left-color:#60A5FA;">React 19 新特性完整指南</div>
+        <div class="card" style="border-left-color:#34C759;">screenshot_2025.png</div>
+        <div class="card" style="border-left-color:#F59E0B;">const fetchData = async ()...</div>
+      </div>
+      <div class="winSizeLabel" id="winELabel">480px</div>
+    </div>
+
+    <!-- 箭头 -->
+    <div class="arrow" style="top:100px;left:505px;transition:all 0.5s ease;" id="arrowE">→ 右移</div>
+
+    <div class="taskbar">
+      <div class="taskbarItem active">📋 PastePanda</div>
+      <div class="taskbarItem">🌐 Edge</div>
+      <div class="taskbarItem">💬 VS Code</div>
+    </div>
+  </div>
+
+  <div class="compareCard">
+    <div class="label">方案 E 特点</div>
+    <span class="pro">✓ 卡片视觉位置不变</span><br>
+    <span class="con">✗ 可能遮挡右侧其他窗口</span><br>
+    <span class="con">✗ 右边缘"跳"到新位置</span>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ===== 方案 F：左边缘左移（窗口右边缘平齐不动） ===== -->
+<div class="section">
+  <div class="sectionTitle">
+    方案 F — 左边缘左移<span class="badge badge-rec">推荐</span>
+  </div>
+  <div class="desc">
+    窗口<strong>右边缘位置不动</strong>，左边缘向左扩展 +200px，<strong>卡片区位置完全不动</strong>
+  </div>
+
+  <div class="desktop" id="desktopF">
+    <!-- 辅助线标注 -->
+    <div class="guideLine" style="left:300px;"></div>
+    <div class="guideLine" style="left:500px;"></div>
+    <div style="position:absolute;top:5px;left:295px;font-size:8px;color:rgba(255,255,255,0.2);">左边缘 关闭(300px)</div>
+    <div style="position:absolute;top:5px;left:495px;font-size:8px;color:rgba(255,255,255,0.2);">右边缘 始终不变(500px)</div>
+
+    <div class="desktopIcons">
+      <div class="desktopIcon">📁 项目</div>
+      <div class="desktopIcon">🖼️ 截图</div>
+    </div>
+
+    <!-- 窗口 -->
+    <div class="window" id="winF" style="left:300px;width:200px;">
+      <div class="windowBar">
+        <span class="winDot winDotR"></span><span class="winDot winDotY"></span><span class="winDot winDotG"></span>
+        <span class="winTitle">PastePanda</span>
+      </div>
+      <button class="menuBtn" onclick="toggleWinF()">☰</button>
+      <div class="sidebar" id="sidebarF">
+        <div class="sidebarItem"><span class="dot dot-blue"></span>工作</div>
+        <div class="sidebarItem"><span class="dot dot-green"></span>个人</div>
+        <div class="sidebarItem"><span class="dot dot-orange"></span>代码</div>
+      </div>
+      <div class="cardArea">
+        <div class="card" style="border-left-color:#60A5FA;">React 19 新特性完整指南</div>
+        <div class="card" style="border-left-color:#34C759;">screenshot_2025.png</div>
+        <div class="card" style="border-left-color:#F59E0B;">const fetchData = async ()...</div>
+      </div>
+      <div class="winSizeLabel" id="winFLabel">480px</div>
+    </div>
+
+    <!-- 箭头 -->
+    <div class="arrow" style="top:100px;left:295px;transition:all 0.5s ease;" id="arrowF">← 左移</div>
+
+    <div class="taskbar">
+      <div class="taskbarItem active">📋 PastePanda</div>
+      <div class="taskbarItem">🌐 Edge</div>
+      <div class="taskbarItem">💬 VS Code</div>
+    </div>
+  </div>
+
+  <div class="compareCard">
+    <div class="label">方案 F 特点</div>
+    <span class="pro">✓ 卡片像素级位置不变</span><br>
+    <span class="pro">✓ 右边缘不遮挡其他窗口</span><br>
+    <span class="con">✗ 左边缘向左扩展（占用左侧空间）</span>
+  </div>
+</div>
+
+<script>
+let winEState = false;
+let winFState = false;
+
+function toggleWinE() {
+  const win = document.getElementById('winE');
+  const label = document.getElementById('winELabel');
+  const arrow = document.getElementById('arrowE');
+  winEState = !winEState;
+  
+  if (winEState) {
+    win.classList.add('expanded');
+    win.style.width = '280px';
+    label.textContent = '680px';
+    arrow.style.opacity = '0.3';
+  } else {
+    win.classList.remove('expanded');
+    win.style.width = '200px';
+    label.textContent = '480px';
+    arrow.style.opacity = '1';
+  }
+}
+
+function toggleWinF() {
+  const win = document.getElementById('winF');
+  const label = document.getElementById('winFLabel');
+  const arrow = document.getElementById('arrowF');
+  winFState = !winFState;
+  
+  if (winFState) {
+    win.classList.add('expanded');
+    win.style.left = '220px';
+    win.style.width = '280px';
+    label.textContent = '680px';
+    arrow.style.opacity = '0.3';
+  } else {
+    win.classList.remove('expanded');
+    win.style.left = '300px';
+    win.style.width = '200px';
+    label.textContent = '480px';
+    arrow.style.opacity = '1';
+  }
+}
+</script>
+
+</body>
+</html>

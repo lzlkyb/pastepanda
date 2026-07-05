@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>时间轴方案对比 — 方案 A / B / C</title>
+<style>
+:root {
+  --bg: #F4F6F9;
+  --card-bg: #fff;
+  --text: #0F172A;
+  --text-secondary: #64748B;
+  --border: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --timeline-bg: rgba(244, 246, 249, 0.95);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #0F172A;
+  color: #E4E4E7;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+/* 页面头部 */
+.page-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+.page-header h1 {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.page-header p {
+  font-size: 13px;
+  color: #94A3B8;
+}
+
+/* 方案卡片容器 */
+.solutions-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  max-width: 1600px;
+  margin: 0 auto 32px;
+}
+
+/* 方案卡片 */
+.solution-card {
+  background: #1E293B;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid #334155;
+}
+.solution-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #334155;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.solution-header h2 {
+  font-size: 16px;
+  font-weight: 700;
+}
+.solution-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+.badge-recommend {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ADE80;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+.badge-normal {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94A3B8;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+/* 架构图区域 */
+.arch-diagram {
+  padding: 16px 20px;
+  border-bottom: 1px solid #334155;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.arch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.arch-box {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.arch-box.cardlist {
+  background: rgba(2, 132, 199, 0.2);
+  color: #38BDF8;
+  border: 1px solid rgba(2, 132, 199, 0.3);
+}
+.arch-box.timeline {
+  background: rgba(139, 92, 246, 0.2);
+  color: #A78BFA;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+.arch-box.state {
+  background: rgba(251, 146, 60, 0.2);
+  color: #FB923C;
+  border: 1px solid rgba(251, 146, 60, 0.3);
+}
+.arch-arrow {
+  color: #64748B;
+  font-size: 13px;
+}
+.arch-line {
+  width: 100%;
+  height: 2px;
+  background: rgba(148, 163, 184, 0.2);
+  position: relative;
+}
+.arch-line-label {
+  position: absolute;
+  right: 0;
+  top: -8px;
+  font-size: 10px;
+  color: #64748B;
+}
+
+/* 预览区域 */
+.preview-area {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.preview-label {
+  font-size: 11px;
+  color: #94A3B8;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* 模拟应用窗口 */
+.app-window {
+  width: 100%;
+  height: 380px;
+  background: var(--bg);
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+/* 模拟头部 */
+.app-header {
+  height: 36px;
+  background: linear-gradient(180deg, #fff, #F4F6F9);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.header-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.header-dot.red { background: #FF5F57; }
+.header-dot.yellow { background: #FFBD2E; }
+.header-dot.green { background: #28C840; }
+.header-title {
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin-left: 8px;
+}
+
+/* 内容区 */
+.content-area {
+  flex: 1;
+  display: flex;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* 滚动区域 */
+.scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 16px 20px;
+  transition: padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.scroll-area.timeline-visible {
+  padding-left: calc(16px + 50px);
+}
+
+/* 卡片 */
+.card-item {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  height: 72px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  transition: box-shadow 0.3s;
+}
+.card-item .card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+.card-item .card-time {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+/* 分组标签 */
+.group-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.group-label::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* 时间轴 */
+.timeline-container {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 50px;
+  z-index: 30;
+  pointer-events: none;
+  transform: translateX(-100%);
+  opacity: 0;
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
+  background: var(--timeline-bg);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.timeline-container.visible {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 感应区 */
+.trigger-zone {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 18px;
+  z-index: 25;
+  background: rgba(255,0,0,0.03);
+}
+
+/* 时间轴胶囊 */
+.timeline-capsule {
+  position: sticky;
+  top: 8px;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 0;
+  cursor: grab;
+}
+.capsule-inner {
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+/* 时间轴滚动区 */
+.timeline-scroll {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+.timeline-track {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: var(--border);
+  transform: translateX(-50%);
+}
+.timeline-inner {
+  position: relative;
+  width: 100%;
+  transition: transform 0.05s linear;
+}
+.timeline-node {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 72px;
+  cursor: pointer;
+}
+.timeline-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 3px var(--accent-light);
+  z-index: 2;
+}
+
+/* 状态指示器 */
+.status-bar {
+  padding: 8px 20px;
+  border-top: 1px solid #334155;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+}
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  transition: background 0.3s;
+}
+.status-dot.on { background: #4ADE80; }
+.status-dot.off { background: #64748B; }
+.status-dot.conflict { background: #F87171; animation: pulse 0.5s infinite; }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* 操作提示 */
+.operation-hint {
+  padding: 12px 20px;
+  border-top: 1px solid #334155;
+  font-size: 11px;
+  color: #94A3B8;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.hint-item {
+  background: rgba(148, 163, 184, 0.1);
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+/* 描述区域 */
+.description {
+  padding: 12px 20px;
+  border-top: 1px solid #334155;
+  font-size: 12px;
+  color: #94A3B8;
+  line-height: 1.6;
+}
+.description strong {
+  color: #E2E8F0;
+}
+
+/* 底部总结 */
+.summary-section {
+  max-width: 1600px;
+  margin: 0 auto;
+  background: #1E293B;
+  border-radius: 14px;
+  padding: 24px;
+  border: 1px solid #334155;
+}
+.summary-section h2 {
+  font-size: 18px;
+  margin-bottom: 16px;
+}
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.compare-table th,
+.compare-table td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid #334155;
+}
+.compare-table th {
+  color: #94A3B8;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+.compare-table td {
+  color: #CBD5E1;
+}
+.compare-table .win {
+  color: #4ADE80;
+  font-weight: 600;
+}
+.compare-table .lose {
+  color: #F87171;
+}
+
+/* 响应式 */
+@media (max-width: 1200px) {
+  .solutions-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>🕐 时间轴方案对比</h1>
+  <p>当前 Bug：滚动时列表右移了，但时间轴没有出来 → 三个修复方案对比</p>
+</div>
+
+<div class="solutions-grid">
+
+  <!-- ========== 方案 A ========== -->
+  <div class="solution-card">
+    <div class="solution-header">
+      <h2>方案 A · CardList 统一控制</h2>
+      <span class="solution-badge badge-recommend">⭐ 推荐</span>
+    </div>
+    <div class="arch-diagram">
+      <div class="arch-row">
+        <span class="arch-box cardlist">CardList</span>
+        <span class="arch-arrow">→ 管理唯一</span>
+        <span class="arch-box state">timelineVisible</span>
+        <span class="arch-arrow">→ 通过 prop</span>
+        <span class="arch-box timeline">Timeline (visible prop)</span>
+      </div>
+      <div class="arch-line">
+        <span class="arch-line-label">单一数据源 · 无状态冲突</span>
+      </div>
+      <div style="font-size:10px;color:#94A3B8;margin-top:4px;">
+        Timeline 移除内部 state，纯展示组件<br>
+        CardList 统一处理所有触发源
+      </div>
+    </div>
+
+    <div class="preview-area">
+      <div class="preview-label">实时演示</div>
+      <div class="app-window" id="app-a">
+        <div class="app-header">
+          <span class="header-dot red"></span>
+          <span class="header-dot yellow"></span>
+          <span class="header-dot green"></span>
+          <span class="header-title">PastePanda — 方案 A</span>
+        </div>
+        <div class="content-area">
+          <!-- 感应区 -->
+          <div class="trigger-zone" id="trigger-a"></div>
+          <!-- 时间轴 -->
+          <div class="timeline-container" id="timeline-a">
+            <div class="timeline-capsule">
+              <div class="capsule-inner" id="capsule-a">📍 今天</div>
+            </div>
+            <div class="timeline-scroll">
+              <div class="timeline-track"></div>
+              <div class="timeline-inner" id="tl-inner-a">
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+              </div>
+            </div>
+          </div>
+          <!-- 滚动区 -->
+          <div class="scroll-area" id="scroll-a">
+            <div class="group-label">今天</div>
+            <div class="card-item"><div class="card-title">📋 复制内容 #1</div><div class="card-time">今天 14:30</div></div>
+            <div class="card-item"><div class="card-title">🖼️ 截图_2024.png</div><div class="card-time">今天 12:15</div></div>
+            <div class="card-item"><div class="card-title">📝 会议纪要.txt</div><div class="card-time">今天 09:00</div></div>
+            <div class="group-label">昨天</div>
+            <div class="card-item"><div class="card-title">🔗 https://example.com</div><div class="card-time">昨天 22:45</div></div>
+            <div class="card-item"><div class="card-title">💬 聊天记录片段</div><div class="card-time">昨天 18:30</div></div>
+            <div class="group-label">本周</div>
+            <div class="card-item"><div class="card-title">📊 数据表格.csv</div><div class="card-time">周三 10:00</div></div>
+            <div class="card-item"><div class="card-title">📧 邮件草稿</div><div class="card-time">周一 15:20</div></div>
+            <div class="card-item"><div class="card-title">🎨 设计稿链接</div><div class="card-time">周一 09:00</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="status-bar">
+      <div class="status-item">
+        时间轴可见: <span class="status-dot" id="status-a-timeline">●</span>
+        <span id="status-a-text" style="font-size:10px;">隐藏</span>
+      </div>
+      <div class="status-item">
+        数据源: <span style="color:#38BDF8;font-size:10px;">CardList 唯一控制</span>
+      </div>
+    </div>
+
+    <div class="operation-hint">
+      <span class="hint-item">🖱️ 鼠标移到左侧 → 时间轴滑出</span>
+      <span class="hint-item">📜 滚动列表 → 时间轴出现</span>
+      <span class="hint-item">⏱️ 停止1.5秒 → 自动隐藏</span>
+    </div>
+
+    <div class="description">
+      <strong>核心逻辑：</strong>CardList 中只有一个 <code>timelineVisible</code> state。鼠标进入感应区/时间轴时设为 true，离开后 300ms 设为 false。滚动时立即设为 true，1.5s 后设为 false。Timeline 接收 <code>visible</code> prop，自身不管理状态。
+    </div>
+  </div>
+
+  <!-- ========== 方案 B ========== -->
+  <div class="solution-card">
+    <div class="solution-header">
+      <h2>方案 B · ref 桥接</h2>
+      <span class="solution-badge badge-normal">备选</span>
+    </div>
+    <div class="arch-diagram">
+      <div class="arch-row">
+        <span class="arch-box cardlist">CardList</span>
+        <span class="arch-arrow">→ 通过 ref</span>
+        <span class="arch-box timeline">Timeline.show()</span>
+      </div>
+      <div class="arch-row">
+        <span class="arch-box timeline">Timeline</span>
+        <span class="arch-arrow">→ 内部管理</span>
+        <span class="arch-box state">visible state</span>
+      </div>
+      <div class="arch-line">
+        <span class="arch-line-label">双数据源 · ref 桥接</span>
+      </div>
+      <div style="font-size:10px;color:#94A3B8;margin-top:4px;">
+        forwardRef + useImperativeHandle<br>
+        CardList 通过 ref 调用 show()
+      </div>
+    </div>
+
+    <div class="preview-area">
+      <div class="preview-label">实时演示</div>
+      <div class="app-window" id="app-b">
+        <div class="app-header">
+          <span class="header-dot red"></span>
+          <span class="header-dot yellow"></span>
+          <span class="header-dot green"></span>
+          <span class="header-title">PastePanda — 方案 B</span>
+        </div>
+        <div class="content-area">
+          <div class="trigger-zone" id="trigger-b"></div>
+          <div class="timeline-container" id="timeline-b">
+            <div class="timeline-capsule">
+              <div class="capsule-inner" id="capsule-b">📍 今天</div>
+            </div>
+            <div class="timeline-scroll">
+              <div class="timeline-track"></div>
+              <div class="timeline-inner" id="tl-inner-b">
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="scroll-area" id="scroll-b">
+            <div class="group-label">今天</div>
+            <div class="card-item"><div class="card-title">📋 复制内容 #1</div><div class="card-time">今天 14:30</div></div>
+            <div class="card-item"><div class="card-title">🖼️ 截图_2024.png</div><div class="card-time">今天 12:15</div></div>
+            <div class="card-item"><div class="card-title">📝 会议纪要.txt</div><div class="card-time">今天 09:00</div></div>
+            <div class="group-label">昨天</div>
+            <div class="card-item"><div class="card-title">🔗 https://example.com</div><div class="card-time">昨天 22:45</div></div>
+            <div class="card-item"><div class="card-title">💬 聊天记录片段</div><div class="card-time">昨天 18:30</div></div>
+            <div class="group-label">本周</div>
+            <div class="card-item"><div class="card-title">📊 数据表格.csv</div><div class="card-time">周三 10:00</div></div>
+            <div class="card-item"><div class="card-title">📧 邮件草稿</div><div class="card-time">周一 15:20</div></div>
+            <div class="card-item"><div class="card-title">🎨 设计稿链接</div><div class="card-time">周一 09:00</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="status-bar">
+      <div class="status-item">
+        时间轴内部 state: <span class="status-dot" id="status-b-timeline">●</span>
+        <span id="status-b-text" style="font-size:10px;">隐藏</span>
+      </div>
+      <div class="status-item">
+        桥接: <span style="color:#A78BFA;font-size:10px;">ref.show()</span>
+      </div>
+    </div>
+
+    <div class="operation-hint">
+      <span class="hint-item">🖱️ 鼠标移到左侧 → 时间轴滑出</span>
+      <span class="hint-item">📜 滚动 → ref 调用 show()</span>
+      <span class="hint-item">⚠️ 注意：可能状态不一致</span>
+    </div>
+
+    <div class="description">
+      <strong>核心逻辑：</strong>Timeline 内部保留 <code>visible</code> state 和 <code>show()</code>/<code>scheduleHide()</code>。CardList 通过 <code>forwardRef</code> 获取 Timeline 实例，滚动时调用 <code>timelineRef.current.show()</code>。<strong>问题：</strong>onVisibilityChange 回调和 CardList 自身的 setTimelineVisible 仍然存在，两处都可能修改状态。
+    </div>
+  </div>
+
+  <!-- ========== 方案 C ========== -->
+  <div class="solution-card">
+    <div class="solution-header">
+      <h2>方案 C · 合并判断</h2>
+      <span class="solution-badge badge-normal">最小改动</span>
+    </div>
+    <div class="arch-diagram">
+      <div class="arch-row">
+        <span class="arch-box cardlist">CardList</span>
+        <span class="arch-arrow">→</span>
+        <span class="arch-box state">scrollForcedVisible</span>
+      </div>
+      <div class="arch-row">
+        <span class="arch-box timeline">Timeline</span>
+        <span class="arch-arrow">→ 内部管理</span>
+        <span class="arch-box state">visible state</span>
+      </div>
+      <div class="arch-row" style="justify-content:center;">
+        <span class="arch-box state" style="background:rgba(251,146,60,0.2);color:#FB923C;border:1px solid rgba(251,146,60,0.3);">最终 = scrollForcedVisible || visible</span>
+      </div>
+      <div class="arch-line">
+        <span class="arch-line-label">两个 boolean OR · 边界情况多</span>
+      </div>
+    </div>
+
+    <div class="preview-area">
+      <div class="preview-label">实时演示</div>
+      <div class="app-window" id="app-c">
+        <div class="app-header">
+          <span class="header-dot red"></span>
+          <span class="header-dot yellow"></span>
+          <span class="header-dot green"></span>
+          <span class="header-title">PastePanda — 方案 C</span>
+        </div>
+        <div class="content-area">
+          <div class="trigger-zone" id="trigger-c"></div>
+          <div class="timeline-container" id="timeline-c">
+            <div class="timeline-capsule">
+              <div class="capsule-inner" id="capsule-c">📍 今天</div>
+            </div>
+            <div class="timeline-scroll">
+              <div class="timeline-track"></div>
+              <div class="timeline-inner" id="tl-inner-c">
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+                <div class="timeline-node"><div class="timeline-dot"></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="scroll-area" id="scroll-c">
+            <div class="group-label">今天</div>
+            <div class="card-item"><div class="card-title">📋 复制内容 #1</div><div class="card-time">今天 14:30</div></div>
+            <div class="card-item"><div class="card-title">🖼️ 截图_2024.png</div><div class="card-time">今天 12:15</div></div>
+            <div class="card-item"><div class="card-title">📝 会议纪要.txt</div><div class="card-time">今天 09:00</div></div>
+            <div class="group-label">昨天</div>
+            <div class="card-item"><div class="card-title">🔗 https://example.com</div><div class="card-time">昨天 22:45</div></div>
+            <div class="card-item"><div class="card-title">💬 聊天记录片段</div><div class="card-time">昨天 18:30</div></div>
+            <div class="group-label">本周</div>
+            <div class="card-item"><div class="card-title">📊 数据表格.csv</div><div class="card-time">周三 10:00</div></div>
+            <div class="card-item"><div class="card-title">📧 邮件草稿</div><div class="card-time">周一 15:20</div></div>
+            <div class="card-item"><div class="card-title">🎨 设计稿链接</div><div class="card-time">周一 09:00</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="status-bar">
+      <div class="status-item">
+        滚动强制: <span class="status-dot" id="status-c-force">●</span>
+        <span id="status-c-force-text" style="font-size:10px;">OFF</span>
+      </div>
+      <div class="status-item">
+        Timeline内部: <span class="status-dot" id="status-c-inner">●</span>
+        <span id="status-c-inner-text" style="font-size:10px;">隐藏</span>
+      </div>
+      <div class="status-item">
+        最终: <span class="status-dot" id="status-c-final">●</span>
+        <span id="status-c-final-text" style="font-size:10px;">隐藏</span>
+      </div>
+    </div>
+
+    <div class="operation-hint">
+      <span class="hint-item">🖱️ 鼠标移到左侧 → 内部 state = true</span>
+      <span class="hint-item">📜 滚动 → 强制 state = true</span>
+      <span class="hint-item">⚠️ 两个状态 OR 合并</span>
+    </div>
+
+    <div class="description">
+      <strong>核心逻辑：</strong>CardList 新增 <code>scrollForcedVisible</code> state，滚动时设为 true。Timeline 保持内部 <code>visible</code> 管理。最终显示条件 = <code>scrollForcedVisible || timelineInternalVisible</code>。<strong>问题：</strong>鼠标离开 → 内部 300ms 后 false，但滚动强制可能还是 true；滚动停止 1.5s 后强制 false，但鼠标可能还在感应区 → 闪烁。
+    </div>
+  </div>
+</div>
+
+<!-- ===== 对比总结 ===== -->
+<div class="summary-section">
+  <h2>📊 三方案对比</h2>
+  <table class="compare-table">
+    <thead>
+      <tr>
+        <th>维度</th>
+        <th>方案 A（推荐）</th>
+        <th>方案 B</th>
+        <th>方案 C</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>数据源数量</td>
+        <td class="win">1 个</td>
+        <td class="lose">2 个</td>
+        <td class="lose">2 个</td>
+      </tr>
+      <tr>
+        <td>状态冲突风险</td>
+        <td class="win">无</td>
+        <td class="lose">有（ref 调用 vs 回调）</td>
+        <td class="lose">有（两个 boolean OR）</td>
+      </tr>
+      <tr>
+        <td>改动量</td>
+        <td>中等（Timeline + CardList）</td>
+        <td>较多（forwardRef + 双逻辑）</td>
+        <td class="win">最小（仅 CardList）</td>
+      </tr>
+      <tr>
+        <td>React 模式</td>
+        <td class="win">受控组件 ✅</td>
+        <td>非受控 + ref 命令式</td>
+        <td>混合式</td>
+      </tr>
+      <tr>
+        <td>可维护性</td>
+        <td class="win">高 · 逻辑集中</td>
+        <td>中 · ref 间接调用</td>
+        <td class="lose">低 · 逻辑分散</td>
+      </tr>
+      <tr>
+        <td>调试难度</td>
+        <td class="win">低</td>
+        <td>中</td>
+        <td class="lose">高</td>
+      </tr>
+      <tr>
+        <td>扩展性</td>
+        <td class="win">好（易加新触发源）</td>
+        <td>中</td>
+        <td class="lose">差（每次改需考虑两个变量）</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+// ============================================================
+// 模拟数据生成
+// ============================================================
+function makeCards(count) {
+  const groups = ['今天','今天','今天','昨天','昨天','本周','本周','本周'];
+  const cards = [];
+  for (let i = 0; i < count; i++) {
+    const g = groups[i % groups.length];
+    const titles = ['📋 复制内容片段','🖼️ 截图_2024.png','📝 文档摘要.txt','🔗 链接地址','💬 聊天记录','📊 数据表格','📧 邮件草稿','🎨 设计稿'];
+    cards.push({ title: titles[i % titles.length] + ' #' + (i+1), group: g, time: g + ' ' + (10 + i%12) + ':' + (i*7 % 60).toString().padStart(2,'0') });
+  }
+  return cards;
+}
+
+// ============================================================
+// 通用函数：给一个方案设置交互
+// ============================================================
+function setupSolution(id, config) {
+  const trigger = document.getElementById('trigger-' + id);
+  const timeline = document.getElementById('timeline-' + id);
+  const scrollArea = document.getElementById('scroll-' + id);
+  const tlInner = document.getElementById('tl-inner-' + id);
+
+  let timelineVisible = false;
+  let hideTimer = null;
+  let scrollHideTimer = null;
+  let scrollForcedVisible = false; // 方案 C 专用
+
+  function setTimelineVisible(v) {
+    timelineVisible = v;
+    if (v) {
+      timeline.classList.add('visible');
+      scrollArea.classList.add('timeline-visible');
+    } else {
+      timeline.classList.remove('visible');
+      scrollArea.classList.remove('timeline-visible');
+    }
+    updateStatus();
+  }
+
+  function clearAllTimers() {
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+    if (scrollHideTimer) { clearTimeout(scrollHideTimer); scrollHideTimer = null; }
+  }
+
+  // 方案 A：统一控制
+  if (config.type === 'A') {
+    trigger.addEventListener('mouseenter', () => {
+      clearAllTimers();
+      setTimelineVisible(true);
+    });
+    trigger.addEventListener('mouseleave', () => {
+      hideTimer = setTimeout(() => setTimelineVisible(false), 300);
+    });
+    timeline.addEventListener('mouseenter', () => {
+      clearAllTimers();
+      setTimelineVisible(true);
+    });
+    timeline.addEventListener('mouseleave', () => {
+      hideTimer = setTimeout(() => setTimelineVisible(false), 300);
+    });
+    scrollArea.addEventListener('scroll', () => {
+      clearAllTimers();
+      setTimelineVisible(true);
+      // 同步 timeline 偏移
+      const maxScroll = scrollArea.scrollHeight - scrollArea.clientHeight;
+      const ratio = maxScroll > 0 ? scrollArea.scrollTop / maxScroll : 0;
+      const tlMax = tlInner.scrollHeight - 250;
+      tlInner.style.transform = `translateY(${-ratio * Math.max(0, tlMax)}px)`;
+      // 1.5s 后隐藏
+      scrollHideTimer = setTimeout(() => {
+        // 检查鼠标是否还在时间轴上
+        if (!timeline.matches(':hover') && !trigger.matches(':hover')) {
+          setTimelineVisible(false);
+        }
+      }, 1500);
+    });
+  }
+
+  // 方案 B：ref 桥接（模拟 forwardRef）
+  if (config.type === 'B') {
+    let timelineInternalVisible = false;
+    let internalHideTimer = null;
+
+    function timelineShow() {
+      if (internalHideTimer) { clearTimeout(internalHideTimer); internalHideTimer = null; }
+      if (!timelineInternalVisible) {
+        timelineInternalVisible = true;
+        setTimelineVisible(true);
+      }
+    }
+
+    function timelineScheduleHide(delay) {
+      if (internalHideTimer) clearTimeout(internalHideTimer);
+      internalHideTimer = setTimeout(() => {
+        timelineInternalVisible = false;
+        setTimelineVisible(false);
+      }, delay);
+    }
+
+    // Timeline 内部事件
+    trigger.addEventListener('mouseenter', timelineShow);
+    trigger.addEventListener('mouseleave', () => timelineScheduleHide(300));
+    timeline.addEventListener('mouseenter', timelineShow);
+    timeline.addEventListener('mouseleave', () => timelineScheduleHide(300));
+
+    // CardList 通过 ref 调用 show() — 滚动时
+    scrollArea.addEventListener('scroll', () => {
+      clearAllTimers();
+      // 模拟 ref.current.show()
+      timelineShow();
+      const maxScroll = scrollArea.scrollHeight - scrollArea.clientHeight;
+      const ratio = maxScroll > 0 ? scrollArea.scrollTop / maxScroll : 0;
+      const tlMax = tlInner.scrollHeight - 250;
+      tlInner.style.transform = `translateY(${-ratio * Math.max(0, tlMax)}px)`;
+      // CardList 自己的隐藏逻辑
+      scrollHideTimer = setTimeout(() => {
+        setTimelineVisible(false);
+        timelineInternalVisible = false;
+      }, 1500);
+    });
+
+    // 更新状态指示器
+    const origUpdate = updateStatus;
+    updateStatus = () => {
+      origUpdate();
+      const dotB = document.getElementById('status-b-timeline');
+      if (dotB) {
+        dotB.className = 'status-dot ' + (timelineInternalVisible ? 'on' : 'off');
+      }
+      const textB = document.getElementById('status-b-text');
+      if (textB) textB.textContent = timelineInternalVisible ? '显示 (内部)' : '隐藏';
+    };
+  }
+
+  // 方案 C：合并判断
+  if (config.type === 'C') {
+    let timelineInternalVisible = false;
+    let internalHideTimer = null;
+
+    function timelineShow() {
+      if (internalHideTimer) { clearTimeout(internalHideTimer); internalHideTimer = null; }
+      if (!timelineInternalVisible) {
+        timelineInternalVisible = true;
+        updateCombinedVisible();
+      }
+    }
+
+    function timelineScheduleHide(delay) {
+      if (internalHideTimer) clearTimeout(internalHideTimer);
+      internalHideTimer = setTimeout(() => {
+        timelineInternalVisible = false;
+        updateCombinedVisible();
+      }, delay);
+    }
+
+    function updateCombinedVisible() {
+      const final = scrollForcedVisible || timelineInternalVisible;
+      setTimelineVisible(final);
+      // 更新方案 C 的状态指示器
+      const dotF = document.getElementById('status-c-force');
+      const dotI = document.getElementById('status-c-inner');
+      const dotFinal = document.getElementById('status-c-final');
+      if (dotF) dotF.className = 'status-dot ' + (scrollForcedVisible ? 'on' : 'off');
+      if (dotI) dotI.className = 'status-dot ' + (timelineInternalVisible ? 'on' : 'off');
+      if (dotFinal) dotFinal.className = 'status-dot ' + (final ? 'on' : 'off');
+      const textForce = document.getElementById('status-c-force-text');
+      const textInner = document.getElementById('status-c-inner-text');
+      const textFinal = document.getElementById('status-c-final-text');
+      if (textForce) textForce.textContent = scrollForcedVisible ? 'ON' : 'OFF';
+      if (textInner) textInner.textContent = timelineInternalVisible ? '显示' : '隐藏';
+      if (textFinal) textFinal.textContent = final ? '显示' : '隐藏';
+    }
+
+    // Timeline 内部事件
+    trigger.addEventListener('mouseenter', timelineShow);
+    trigger.addEventListener('mouseleave', () => timelineScheduleHide(300));
+    timeline.addEventListener('mouseenter', timelineShow);
+    timeline.addEventListener('mouseleave', () => timelineScheduleHide(300));
+
+    // CardList 滚动
+    scrollArea.addEventListener('scroll', () => {
+      clearAllTimers();
+      scrollForcedVisible = true;
+      updateCombinedVisible();
+      const maxScroll = scrollArea.scrollHeight - scrollArea.clientHeight;
+      const ratio = maxScroll > 0 ? scrollArea.scrollTop / maxScroll : 0;
+      const tlMax = tlInner.scrollHeight - 250;
+      tlInner.style.transform = `translateY(${-ratio * Math.max(0, tlMax)}px)`;
+      scrollHideTimer = setTimeout(() => {
+        scrollForcedVisible = false;
+        updateCombinedVisible();
+      }, 1500);
+    });
+  }
+
+  // 更新状态指示器
+  function updateStatus() {
+    if (id === 'a') {
+      const dot = document.getElementById('status-a-timeline');
+      if (dot) dot.className = 'status-dot ' + (timelineVisible ? 'on' : 'off');
+      const text = document.getElementById('status-a-text');
+      if (text) text.textContent = timelineVisible ? '显示' : '隐藏';
+    }
+  }
+}
+
+// ============================================================
+// 初始化三个方案
+// ============================================================
+setupSolution('a', { type: 'A' });
+setupSolution('b', { type: 'B' });
+setupSolution('c', { type: 'C' });
+
+console.log('✅ 三个方案已就绪，试试交互吧！');
+console.log('方案 A：鼠标移入左侧 / 滚动 → 时间轴出现');
+console.log('方案 B：同上，但通过 ref 桥接');
+console.log('方案 C：两个状态 OR 合并');
+</script>
+
+</body>
+</html>

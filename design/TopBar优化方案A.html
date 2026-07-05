@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TopBar 方案 A — 精简布局预览</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #F4F6F9;
+    display: flex;
+    justify-content: center;
+    padding: 40px 20px;
+  }
+
+  /* ── 模拟窗口 ── */
+  .mock-window {
+    width: 720px;
+    background: #fff;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.12);
+  }
+
+  /* ── 标题栏（模拟 Windows 风格）── */
+  .titlebar {
+    height: 32px;
+    background: #F0F0F0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    -webkit-app-region: drag;
+    user-select: none;
+  }
+  .titlebar-text {
+    font-size: 12px;
+    color: #666;
+    margin-left: 8px;
+  }
+  .titlebar-dots {
+    display: flex;
+    gap: 8px;
+  }
+  .titlebar-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+  }
+  .dot-red { background: #FF5F57; }
+  .dot-yellow { background: #FFBD2E; }
+  .dot-green { background: #28CA41; }
+
+  /* ================================================================
+     ===== TopBar 主区域（方案 A） =====
+     ================================================================ */
+  .topbar {
+    background: linear-gradient(180deg, #fff 0%, #F4F6F9 100%);
+    padding: 14px 16px 10px;
+    flex-shrink: 0;
+  }
+
+  /* ── 第1行：标题 + 窗口控制 ── */
+  .row1 {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .brand-logo {
+    width: 28px; height: 28px;
+    background: linear-gradient(135deg, #0284C7, #0369A1);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    font-size: 16px;
+  }
+  .brand-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: #0F172A;
+  }
+  .brand-version {
+    font-size: 10px;
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(135deg, #0284C7, #0369A1);
+    padding: 2px 8px;
+    border-radius: 10px;
+  }
+  .brand-update {
+    font-size: 10px;
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(135deg, #059669, #047857);
+    padding: 2px 8px;
+    border-radius: 10px;
+    animation: pulse-dot 2s infinite;
+  }
+  @keyframes pulse-dot {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+
+  /* 右侧图标区 — 5 个按钮 */
+  .actions {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+  .icon-btn {
+    width: 34px; height: 34px;
+    border: none;
+    background: transparent;
+    border-radius: 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #64748B;
+    font-size: 18px;
+    transition: background 0.15s, transform 0.15s;
+    position: relative;
+  }
+  .icon-btn:hover {
+    background: rgba(129,140,248,.12);
+    transform: scale(1.08);
+  }
+  .icon-btn:active {
+    transform: scale(.92);
+  }
+  .icon-btn svg {
+    width: 18px; height: 18px;
+  }
+  .icon-emoji {
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  /* ── 第2行：搜索框 ── */
+  .row2 {
+    margin-bottom: 10px;
+  }
+  .search-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 38px;
+    padding: 0 14px;
+    border-radius: 12px;
+    background: #fff;
+    border: 1px solid #E0E4EB;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .search-box:focus-within {
+    border-color: #0284C7;
+    box-shadow: 0 0 0 3px rgba(2,132,199,0.15), 0 2px 8px rgba(0,120,212,0.1);
+  }
+  .search-icon { font-size: 14px; flex-shrink: 0; }
+  .search-input {
+    flex: 1; border: none; background: transparent;
+    outline: none; font-size: 13px;
+    color: #0F172A; font-family: inherit;
+  }
+  .search-input::placeholder { color: #7888A0; }
+
+  /* ── 第3行：Tab + 筛选合并一行 ── */
+  .row3 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Tab 分段控件 */
+  .segmented {
+    display: flex;
+    background: #E8E8ED;
+    border-radius: 10px;
+    padding: 3px;
+    flex: 1;
+  }
+  .seg-item {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    height: 36px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    color: #64748B;
+    font-family: inherit;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .seg-item.active {
+    color: #0F172A;
+    font-weight: 600;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .seg-item:not(.active):hover {
+    color: #0F172A;
+  }
+  .seg-icon { font-size: 15px; }
+  .seg-count {
+    font-size: 10px; font-weight: 700;
+    color: #7888A0; margin-left: 1px;
+  }
+  .seg-item.active .seg-count { color: #0284C7; }
+
+  /* 筛选下拉 */
+  .filter-dropdown {
+    position: relative;
+    flex-shrink: 0;
+    width: 100px;
+  }
+  .filter-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    width: 100%;
+    height: 36px;
+    padding: 0 10px;
+    border-radius: 10px;
+    border: 1px solid #E0E4EB;
+    background: #F1F5F9;
+    color: #64748B;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    transition: border-color 0.15s;
+    white-space: nowrap;
+  }
+  .filter-btn:hover {
+    border-color: #0284C7;
+    color: #0284C7;
+  }
+  .filter-btn svg {
+    width: 12px; height: 12px;
+    transition: transform 0.2s;
+  }
+  .filter-btn.open svg {
+    transform: rotate(180deg);
+  }
+
+  /* ── 卡片列表模拟 ── */
+  .card-list {
+    padding: 0 16px 16px;
+  }
+  .mock-card {
+    height: 52px;
+    background: #fff;
+    border: 1px solid #E0E4EB;
+    border-radius: 10px;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    font-size: 13px;
+    color: #0F172A;
+    transition: all 0.15s;
+    cursor: default;
+  }
+  .mock-card:hover {
+    border-color: #0284C7;
+    box-shadow: 0 2px 8px rgba(2,132,199,0.08);
+  }
+  .mock-card .card-type {
+    font-size: 11px;
+    font-weight: 600;
+    color: #0284C7;
+    background: #E0F2FE;
+    padding: 2px 8px;
+    border-radius: 6px;
+    margin-right: 10px;
+    flex-shrink: 0;
+  }
+  .mock-card .card-content {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #64748B;
+  }
+
+  /* ── 对比标签 ── */
+  .section-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0F172A;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #E0E4EB;
+  }
+  .badge-new {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 6px;
+  }
+  .badge-green {
+    background: #DCFCE7;
+    color: #16A34A;
+  }
+  .badge-orange {
+    background: #FFF7ED;
+    color: #EA580C;
+  }
+
+  /* ── 对比：旧版 ── */
+  .old-layout .row3-old {
+    padding-top: 10px;
+  }
+  .old-layout .filter-bar-old {
+    display: flex;
+    gap: 6px;
+    padding: 8px 0 0;
+  }
+
+  /* ── 提示框 ── */
+  .tip-box {
+    background: #E0F2FE;
+    border: 1px solid rgba(2,132,199,0.2);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    font-size: 12px;
+    color: #0284C7;
+    line-height: 1.6;
+  }
+  .tip-box strong { color: #0369A1; }
+</style>
+</head>
+<body>
+
+<div style="display: flex; flex-direction: column; gap: 32px;">
+
+  <!-- ============ 方案 A 新版 ============ -->
+  <div>
+    <div class="section-label">
+      <span class="badge-new badge-green">方案 A</span> 精简后 — 3 行 TopBar
+    </div>
+
+    <div class="mock-window">
+      <div class="titlebar">
+        <span class="titlebar-text">PastePanda</span>
+        <div class="titlebar-dots">
+          <div class="titlebar-dot dot-red"></div>
+          <div class="titlebar-dot dot-yellow"></div>
+          <div class="titlebar-dot dot-green"></div>
+        </div>
+      </div>
+
+      <!-- ═══ TopBar 主区域 ═══ -->
+      <div class="topbar">
+
+        <!-- 第1行：品牌 + 5 个操作按钮 -->
+        <div class="row1">
+          <div class="brand">
+            <div class="brand-logo">🐼</div>
+            <span class="brand-name">PastePanda</span>
+            <span class="brand-version">v2.0.0</span>
+            <span class="brand-update">🆕 更新</span>
+          </div>
+          <div class="actions">
+            <!-- 片段库 + 内容提取（保留） -->
+            <button class="icon-btn" title="片段库"><span class="icon-emoji">📝</span></button>
+            <button class="icon-btn" title="内容提取"><span class="icon-emoji">🧲</span></button>
+            <!-- 设置 -->
+            <button class="icon-btn" title="设置">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+            <!-- 最小化 -->
+            <button class="icon-btn" title="最小化">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round">
+                <path d="M5 12h14"/>
+              </svg>
+            </button>
+            <!-- 关闭/隐藏 -->
+            <button class="icon-btn" title="隐藏窗口">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round">
+                <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- 第2行：搜索框 -->
+        <div class="row2">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" class="search-input" placeholder="搜索剪贴板... (Enter 搜索)">
+          </div>
+        </div>
+
+        <!-- 第3行：Tab + 筛选合并一行 -->
+        <div class="row3">
+          <div class="segmented">
+            <button class="seg-item active">
+              <span class="seg-icon">📋</span><span>全部</span><span class="seg-count">42</span>
+            </button>
+            <button class="seg-item">
+              <span class="seg-icon">📝</span><span>文本</span><span class="seg-count">28</span>
+            </button>
+            <button class="seg-item">
+              <span class="seg-icon">📸</span><span>图片</span><span class="seg-count">8</span>
+            </button>
+            <button class="seg-item">
+              <span class="seg-icon">📁</span><span>文件</span><span class="seg-count">4</span>
+            </button>
+            <button class="seg-item">
+              <span class="seg-icon">⭐</span><span>收藏</span><span class="seg-count">2</span>
+            </button>
+          </div>
+          <div class="filter-dropdown">
+            <button class="filter-btn">全部时间 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
+          </div>
+          <div class="filter-dropdown">
+            <button class="filter-btn">来源应用 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
+          </div>
+        </div>
+
+      </div><!-- /topbar -->
+
+      <!-- 卡片列表 -->
+      <div class="card-list">
+        <div class="mock-card"><span class="card-type">文本</span><span class="card-content">https://github.com/tauri-apps/tauri — Tauri 官方仓库</span></div>
+        <div class="mock-card"><span class="card-type">图片</span><span class="card-content">screenshot_2026-07-03_153042.png</span></div>
+        <div class="mock-card"><span class="card-type">文本</span><span class="card-content">const API_BASE = "https://api.example.com/v2";</span></div>
+        <div class="mock-card"><span class="card-type">文件</span><span class="card-content">C:\Users\docs\项目方案_v3.pdf</span></div>
+        <div class="mock-card"><span class="card-type">文本</span><span class="card-content">npm install @tauri-apps/api@latest</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 旧版 4 行对比 ============ -->
+  <div>
+    <div class="section-label">
+      <span class="badge-new badge-orange">旧版</span> 当前 — 4 行 TopBar
+    </div>
+
+    <div class="mock-window">
+      <div class="titlebar">
+        <span class="titlebar-text">PastePanda</span>
+        <div class="titlebar-dots">
+          <div class="titlebar-dot dot-red"></div>
+          <div class="titlebar-dot dot-yellow"></div>
+          <div class="titlebar-dot dot-green"></div>
+        </div>
+      </div>
+
+      <div class="topbar old-layout">
+
+        <!-- 第1行：品牌 + 7 个按钮 -->
+        <div class="row1">
+          <div class="brand">
+            <div class="brand-logo">🐼</div>
+            <span class="brand-name">PastePanda</span>
+            <span class="brand-version">v2.0.0</span>
+            <span class="brand-update">🆕 更新</span>
+          </div>
+          <div class="actions">
+            <button class="icon-btn" title="片段库"><span class="icon-emoji">📝</span></button>
+            <button class="icon-btn" title="内容提取"><span class="icon-emoji">🧲</span></button>
+            <button class="icon-btn" title="设置">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+            <button class="icon-btn" title="帮助"><span class="icon-emoji">❓</span></button>
+            <button class="icon-btn" title="关于">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#FACC15" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            </button>
+            <button class="icon-btn" title="最小化">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>
+            </button>
+            <button class="icon-btn" title="隐藏窗口">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- 第2行：搜索框 -->
+        <div class="row2">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" class="search-input" placeholder="搜索剪贴板... (Enter 搜索)">
+          </div>
+        </div>
+
+        <!-- 第3行：Tab -->
+        <div class="row3-old">
+          <div class="segmented">
+            <button class="seg-item active"><span class="seg-icon">📋</span><span>全部</span><span class="seg-count">42</span></button>
+            <button class="seg-item"><span class="seg-icon">📝</span><span>文本</span><span class="seg-count">28</span></button>
+            <button class="seg-item"><span class="seg-icon">📸</span><span>图片</span><span class="seg-count">8</span></button>
+            <button class="seg-item"><span class="seg-icon">📁</span><span>文件</span><span class="seg-count">4</span></button>
+            <button class="seg-item"><span class="seg-icon">⭐</span><span>收藏</span><span class="seg-count">2</span></button>
+          </div>
+        </div>
+
+        <!-- 第4行：筛选 -->
+        <div class="filter-bar-old">
+          <div class="filter-dropdown" style="flex:1;width:auto;">
+            <button class="filter-btn" style="height:28px;">全部时间 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
+          </div>
+          <div class="filter-dropdown" style="flex:1;width:auto;">
+            <button class="filter-btn" style="height:28px;">来源应用 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
+          </div>
+        </div>
+
+      </div><!-- /topbar old -->
+
+      <!-- 卡片列表 -->
+      <div class="card-list">
+        <div class="mock-card"><span class="card-type">文本</span><span class="card-content">https://github.com/tauri-apps/tauri — Tauri 官方仓库</span></div>
+        <div class="mock-card"><span class="card-type">图片</span><span class="card-content">screenshot_2026-07-03_153042.png</span></div>
+        <div class="mock-card"><span class="card-type">文本</span><span class="card-content">const API_BASE = "https://api.example.com/v2";</span></div>
+        <div class="mock-card"><span class="card-type">文件</span><span class="card-content">C:\Users\docs\项目方案_v3.pdf</span></div>
+        <div class="mock-card"><span class="card-type">文本</span><span class="card-content">npm install @tauri-apps/api@latest</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 变更说明 ============ -->
+  <div class="tip-box">
+    <strong>方案 A 变更点：</strong><br>
+    1. <strong>第1行</strong>：删除"帮助 ❓"和"关于 Ⓘ"按钮（收到设置面板里）→ 7 按钮 → 5 按钮<br>
+    2. <strong>第3行</strong>：Tab 与筛选合并为同一行（Tab 左、两个筛选下拉右）<br>
+    3. <strong>结果</strong>：4 行 → <strong>3 行</strong>，减少约 40px 高度，卡片列表多露出 1~2 条记录
+  </div>
+
+</div>
+
+</body>
+</html>

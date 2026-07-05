@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=480, initial-scale=1.0">
+<title>方案E — 打开侧边栏时自动扩展窗口宽度</title>
+<style>
+/* ===== 全局重置 & CSS 变量（ocean 主题） ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --app-bg: #F4F6F9;
+  --header-bg-start: #fff;
+  --header-bg-end: #F4F6F9;
+  --card-bg: #fff;
+  --card-border: #E0E4EB;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --accent-shadow: rgba(2, 132, 199, 0.15);
+  --seg-bg: #E8E8ED;
+  --seg-active-bg: #fff;
+  --search-bg: #fff;
+  --search-border: #E0E4EB;
+  --input-bg: #F1F5F9;
+  --dialog-bg: #fff;
+  --section-bg: #F0F4F8;
+  --hover: #E8ECF2;
+  --green: #16A34A; --green-bg: #DCFCE7;
+  --orange: #EA580C; --orange-bg: #FFF7ED;
+  --danger: #DC2626; --red-bg: #FEF2F2;
+  --sidebar-width: 200px;
+  --window-closed: 480px;
+  --window-open: 680px;
+}
+
+body {
+  font-family: "SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  background: #1a1a2e;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== 窗口外框（模拟 Tauri 窗口） ===== */
+.app-shell {
+  height: 700px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--app-bg);
+  border-radius: 16px;
+  position: relative;
+  box-shadow: 0 0 0 2px #333, 0 20px 60px rgba(0,0,0,0.5);
+  /* ★ 核心：宽度动画过渡 */
+  width: var(--window-closed);
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.app-shell.expanded {
+  width: var(--window-open);
+}
+
+/* ===== TopBar（完全复刻真实样式） ===== */
+.header {
+  padding: 16px 16px 0;
+  background: linear-gradient(180deg, var(--header-bg-start) 0%, var(--header-bg-end) 100%);
+  flex-shrink: 0;
+  z-index: 10;
+  /* ★ header 宽度不变（始终跟着窗口走） */
+}
+
+.headerTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.headerTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.headerTitleIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.headerTitleText {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* ★ 侧边栏触发按钮（☰ 汉堡菜单） */
+.sidebarToggle {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 20px;
+  transition: all 0.15s;
+  position: relative;
+  flex-shrink: 0;
+}
+.sidebarToggle:hover {
+  background: rgba(2,132,199,.12);
+  color: var(--accent);
+}
+.sidebarToggle:active { transform: scale(.92); }
+.sidebarToggleActive {
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+.headerIcons {
+  display: flex;
+  gap: 4px;
+}
+
+.iconBtn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 18px;
+  transition: all 0.15s;
+}
+.iconBtn:hover {
+  background: rgba(2,132,199,.12);
+  color: var(--accent);
+}
+.iconBtn:active { transform: scale(.92); }
+
+/* 搜索框 */
+.searchBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--search-bg);
+  border: 1px solid var(--search-border);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+}
+.searchIcon { font-size: 14px; flex-shrink: 0; color: var(--text-muted); }
+.searchInput {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-family: inherit;
+}
+.searchInput::placeholder { color: var(--text-muted); }
+
+/* Segmented 控件 */
+.tabsArea { padding: 10px 0 0; }
+.segmented {
+  display: flex;
+  background: var(--seg-bg);
+  border-radius: 10px;
+  padding: 3px;
+}
+.segItem {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-family: inherit;
+  transition: all 0.2s;
+}
+.segItemActive {
+  color: var(--text-primary);
+  font-weight: 600;
+  background: var(--seg-active-bg);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08), 0 0.5px 1px rgba(0, 0, 0, 0.04);
+}
+.segItem:hover:not(.segItemActive) { color: var(--text-primary); }
+.segIcon { font-size: 15px; }
+.segCount { font-size: 10px; font-weight: 700; color: var(--text-muted); margin-left: 1px; }
+.segItemActive .segCount { color: var(--accent); }
+
+/* 标签筛选行 */
+.tagFilterBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.tagFilterBar::-webkit-scrollbar { display: none; }
+
+.tagChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 14px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1.5px solid var(--border-color);
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-family: inherit;
+  color: var(--text-secondary);
+}
+.tagChip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.tagChip.active {
+  border-color: transparent;
+  font-weight: 600;
+}
+.tagChipDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.tagChipCount {
+  font-size: 10px;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ================================================================
+   ★ 核心：侧边栏 + 卡片区，flex 布局
+   窗口扩展后，侧边栏占据 200px，卡片区保持完整 448px
+   关键：不用 translateX，不用覆盖，不压缩卡片
+================================================================ */
+
+.contentArea {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* 侧边栏 */
+.sidebar {
+  width: 0;
+  min-width: 0;
+  height: 100%;
+  background: var(--card-bg);
+  border-right: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* ★ 宽度从 0→200px 过渡 */
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              min-width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.35s ease;
+}
+.sidebar.open {
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+  border-right-color: var(--border-color);
+}
+
+.sidebarHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.2s ease 0.15s;
+}
+.sidebar.open .sidebarHeader { opacity: 1; }
+
+.sidebarTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.sidebarCloseBtn {
+  width: 26px; height: 26px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 14px;
+  transition: all 0.15s;
+}
+.sidebarCloseBtn:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+.sidebarBody {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+  opacity: 0;
+  transition: opacity 0.2s ease 0.2s;
+}
+.sidebar.open .sidebarBody { opacity: 1; }
+.sidebarBody::-webkit-scrollbar { width: 3px; }
+.sidebarBody::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+
+.sidebarSection { padding: 4px 10px; }
+.sidebarSectionLabel {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 8px 6px 4px;
+  white-space: nowrap;
+}
+
+/* 分组项 */
+.groupItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.12s;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.groupItem:hover { background: var(--hover); }
+.groupItem.active {
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: 600;
+}
+.groupDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.groupIcon {
+  font-size: 14px;
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+}
+.groupName {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.groupCount {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.groupItem.active .groupCount { color: var(--accent); }
+
+/* 标签项 */
+.tagItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.12s;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-primary);
+}
+.tagItem:hover { background: var(--hover); }
+.tagItem.active {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+.tagCheck {
+  width: 14px; height: 14px;
+  border-radius: 3px;
+  border: 2px solid var(--border-color);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  color: transparent;
+  transition: all 0.15s;
+}
+.tagItem.active .tagCheck {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* 新建按钮 */
+.addBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  margin: 4px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px dashed var(--border-color);
+  background: transparent;
+  width: calc(100% - 20px);
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-muted);
+  transition: all 0.15s;
+}
+.addBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+.sidebarFooter {
+  padding: 6px 10px;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+  font-size: 9px;
+  color: var(--text-muted);
+  text-align: center;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.2s ease 0.25s;
+}
+.sidebar.open .sidebarFooter { opacity: 1; }
+
+.sidebarFooter kbd {
+  display: inline-block;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  font-family: inherit;
+  font-size: 9px;
+}
+
+/* ===== 卡片区域 ===== */
+.cardPanel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* ★ 卡片区右边距过渡：侧边栏出现时右侧空出一点 */
+  transition: margin-left 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.scrollArea {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+}
+.scrollArea::-webkit-scrollbar { width: 4px; }
+.scrollArea::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+
+.cardList {
+  padding: 10px 16px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cardWrap {
+  position: relative;
+  overflow: visible;
+  width: 100%;
+}
+
+.card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  height: 72px;
+  width: 100%;
+  box-sizing: border-box;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.card:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+/* 左侧彩色边线 */
+.card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+.cardOrange::before { background: #FF6482; }
+.cardGreen::before { background: #34C759; }
+.cardPurple::before { background: #BF5AF2; }
+.cardYellow::before { background: #FFD60A; }
+
+.cardIcon {
+  width: 42px; height: 42px;
+  min-width: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.bgBlue   { background: linear-gradient(135deg, #E8F1FB, #D6E8FA); }
+.bgGreen  { background: linear-gradient(135deg, #E5F8EC, #D4F2DE); }
+.bgPink   { background: linear-gradient(135deg, #FDE8EE, #FAD6DF); }
+.bgPurple { background: linear-gradient(135deg, #F0E8FB, #E5D6FA); }
+
+.cardContent {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.cardTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.cardSub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cardTags {
+  display: flex;
+  gap: 4px;
+  margin-top: 3px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.cardTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 500;
+  border: 1px solid;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.cardTagDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.cardTime {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+/* 标签颜色预设 */
+.color-blue   { color: #0284C7; background: #E0F2FE; border-color: #BAE6FD; }
+.color-green  { color: #16A34A; background: #DCFCE7; border-color: #BBF7D0; }
+.color-orange { color: #EA580C; background: #FFF7ED; border-color: #FED7AA; }
+.color-purple { color: #9333EA; background: #F3E8FF; border-color: #D8B4FE; }
+.color-pink   { color: #DB2777; background: #FCE7F3; border-color: #FBCFE8; }
+.color-teal   { color: #0D9488; background: #CCFBF1; border-color: #99F6E4; }
+.color-red    { color: #DC2626; background: #FEE2E2; border-color: #FECACA; }
+
+.dot-blue   { background: #0284C7; }
+.dot-green  { background: #16A34A; }
+.dot-orange { background: #EA580C; }
+.dot-purple { background: #9333EA; }
+.dot-pink   { background: #DB2777; }
+.dot-teal   { background: #0D9488; }
+.dot-red    { background: #DC2626; }
+
+/* ===== 过渡动画指示 ===== */
+.windowLabel {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.85);
+  color: #fff;
+  padding: 3px 12px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  z-index: 20;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.app-shell.closed .windowLabelClosed { opacity: 1; }
+.app-shell.expanded .windowLabelOpen { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- ================================================================
+     方案E：打开侧边栏时，Tauri 窗口自动从 480px 扩展到 680px
+     侧边栏 200px + 卡片区 448px + 内边距 = 680px
+     卡片区宽度永远不变（448px），零压缩！
+================================================================ -->
+
+<div class="app-shell closed" id="appShell">
+
+  <!-- 窗口宽度指示器 -->
+  <div class="windowLabel windowLabelClosed">480px（侧边栏关闭）</div>
+  <div class="windowLabel windowLabelOpen">680px（侧边栏打开）</div>
+
+  <!-- ===== TopBar ===== -->
+  <div class="header">
+    <div class="headerTop">
+      <div class="headerTitle">
+        <!-- ★ 侧边栏触发按钮 -->
+        <button class="sidebarToggle" id="sidebarToggle" onclick="toggleSidebar()" title="分组 & 标签">
+          ☰
+        </button>
+        <span class="headerTitleIcon">📋</span>
+        <span class="headerTitleText">剪贴板管理</span>
+      </div>
+      <div class="headerIcons">
+        <button class="iconBtn" title="片段库">📑</button>
+        <button class="iconBtn" title="提取">🔍</button>
+        <button class="iconBtn" title="设置">⚙️</button>
+        <button class="iconBtn" title="最小化">─</button>
+        <button class="iconBtn" title="关闭">✕</button>
+      </div>
+    </div>
+
+    <div class="searchBox">
+      <span class="searchIcon">🔍</span>
+      <input class="searchInput" type="text" placeholder="搜索剪贴板内容…" value="">
+    </div>
+
+    <div class="tabsArea">
+      <div class="segmented">
+        <button class="segItem segItemActive"><span class="segIcon">📋</span>全部<span class="segCount">42</span></button>
+        <button class="segItem"><span class="segIcon">📝</span>文本<span class="segCount">28</span></button>
+        <button class="segItem"><span class="segIcon">📸</span>图片<span class="segCount">8</span></button>
+        <button class="segItem"><span class="segIcon">📁</span>文件<span class="segCount">4</span></button>
+        <button class="segItem"><span class="segIcon">⭐</span>收藏<span class="segCount">2</span></button>
+      </div>
+    </div>
+
+    <!-- 标签筛选行 -->
+    <div class="tagFilterBar">
+      <button class="tagChip color-blue active" onclick="toggleTagChip(this)">
+        <span class="tagChipDot dot-blue"></span>工作<span class="tagChipCount">18</span>
+      </button>
+      <button class="tagChip color-green active" onclick="toggleTagChip(this)">
+        <span class="tagChipDot dot-green"></span>重要<span class="tagChipCount">5</span>
+      </button>
+      <button class="tagChip color-orange" onclick="toggleTagChip(this)">
+        <span class="tagChipDot dot-orange"></span>待办<span class="tagChipCount">7</span>
+      </button>
+      <button class="tagChip color-purple" onclick="toggleTagChip(this)">
+        <span class="tagChipDot dot-purple"></span>灵感<span class="tagChipCount">3</span>
+      </button>
+      <button class="tagChip color-pink" onclick="toggleTagChip(this)">
+        <span class="tagChipDot dot-pink"></span>设计<span class="tagChipCount">2</span>
+      </button>
+      <button class="tagChip color-teal" onclick="toggleTagChip(this)">
+        <span class="tagChipDot dot-teal"></span>参考<span class="tagChipCount">4</span>
+      </button>
+      <button class="tagChip color-red" onclick="toggleTagChip(this)">
+        <span class="tagChipDot dot-red"></span>紧急<span class="tagChipCount">1</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ================================================================
+       内容区 = 侧边栏 + 卡片区（flex 布局）
+       侧边栏 0→200px 宽度过渡，卡片区自动占满剩余空间
+  ================================================================ -->
+  <div class="contentArea">
+    
+    <!-- ★ 左侧边栏 -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebarHeader">
+        <span class="sidebarTitle">分组 &amp; 标签</span>
+        <button class="sidebarCloseBtn" onclick="toggleSidebar()">✕</button>
+      </div>
+      <div class="sidebarBody">
+        <!-- 分组区 -->
+        <div class="sidebarSection">
+          <div class="sidebarSectionLabel">📂 分组</div>
+          <button class="groupItem" onclick="selectGroup(this)">
+            <span class="groupIcon">📋</span>
+            <span class="groupName">全部剪贴板</span>
+            <span class="groupCount">42</span>
+          </button>
+          <button class="groupItem" onclick="selectGroup(this)">
+            <span class="groupIcon">⭐</span>
+            <span class="groupName">收藏</span>
+            <span class="groupCount">5</span>
+          </button>
+          <button class="groupItem" onclick="selectGroup(this)">
+            <span class="groupIcon">📌</span>
+            <span class="groupName">未分组</span>
+            <span class="groupCount">20</span>
+          </button>
+        </div>
+        <div class="sidebarSection">
+          <div class="sidebarSectionLabel">我的分组</div>
+          <button class="groupItem active" onclick="selectGroup(this)">
+            <span class="groupDot dot-blue"></span>
+            <span class="groupName">工作相关</span>
+            <span class="groupCount">12</span>
+          </button>
+          <button class="groupItem" onclick="selectGroup(this)">
+            <span class="groupDot dot-green"></span>
+            <span class="groupName">个人笔记</span>
+            <span class="groupCount">8</span>
+          </button>
+          <button class="groupItem" onclick="selectGroup(this)">
+            <span class="groupDot dot-orange"></span>
+            <span class="groupName">代码片段</span>
+            <span class="groupCount">6</span>
+          </button>
+          <button class="groupItem" onclick="selectGroup(this)">
+            <span class="groupDot dot-purple"></span>
+            <span class="groupName">链接收藏</span>
+            <span class="groupCount">3</span>
+          </button>
+          <button class="addBtn">+ 新建分组</button>
+        </div>
+
+        <!-- 标签区 -->
+        <div class="sidebarSection">
+          <div class="sidebarSectionLabel">🏷️ 按标签筛选</div>
+          <button class="tagItem active" onclick="toggleTagSidebar(this)">
+            <span class="tagCheck">✓</span>
+            <span class="groupDot dot-blue" style="width:7px;height:7px;"></span>
+            <span class="groupName">工作</span>
+          </button>
+          <button class="tagItem active" onclick="toggleTagSidebar(this)">
+            <span class="tagCheck">✓</span>
+            <span class="groupDot dot-green" style="width:7px;height:7px;"></span>
+            <span class="groupName">重要</span>
+          </button>
+          <button class="tagItem" onclick="toggleTagSidebar(this)">
+            <span class="tagCheck">✓</span>
+            <span class="groupDot dot-orange" style="width:7px;height:7px;"></span>
+            <span class="groupName">待办</span>
+          </button>
+          <button class="tagItem" onclick="toggleTagSidebar(this)">
+            <span class="tagCheck">✓</span>
+            <span class="groupDot dot-purple" style="width:7px;height:7px;"></span>
+            <span class="groupName">灵感</span>
+          </button>
+          <button class="tagItem" onclick="toggleTagSidebar(this)">
+            <span class="tagCheck">✓</span>
+            <span class="groupDot dot-pink" style="width:7px;height:7px;"></span>
+            <span class="groupName">设计</span>
+          </button>
+          <button class="tagItem" onclick="toggleTagSidebar(this)">
+            <span class="tagCheck">✓</span>
+            <span class="groupDot dot-teal" style="width:7px;height:7px;"></span>
+            <span class="groupName">参考</span>
+          </button>
+          <button class="addBtn">+ 新建标签</button>
+        </div>
+      </div>
+      <div class="sidebarFooter">
+        拖拽卡片到分组 · <kbd>Esc</kbd> 关闭侧边栏
+      </div>
+    </div>
+
+    <!-- ★ 卡片面板 -->
+    <div class="cardPanel">
+      <div class="scrollArea">
+        <div class="cardList">
+
+          <!-- 卡片 1 -->
+          <div class="cardWrap">
+            <div class="card cardOrange">
+              <div class="cardIcon bgPink">🔗</div>
+              <div class="cardContent">
+                <div class="cardTitle">React 19 新特性完整指南</div>
+                <div class="cardSub"><span>react.dev/blog/2025/…</span></div>
+                <div class="cardTags">
+                  <span class="cardTag color-blue"><span class="cardTagDot dot-blue"></span>工作</span>
+                  <span class="cardTag color-green"><span class="cardTagDot dot-green"></span>重要</span>
+                </div>
+              </div>
+              <div class="cardTime">3分钟前</div>
+            </div>
+          </div>
+
+          <!-- 卡片 2 -->
+          <div class="cardWrap">
+            <div class="card">
+              <div class="cardIcon bgBlue">📝</div>
+              <div class="cardContent">
+                <div class="cardTitle">const fetchData = async (url) => { const res = await fetch(url); return res.json(); }</div>
+                <div class="cardSub">112 字符 · 代码</div>
+                <div class="cardTags">
+                  <span class="cardTag color-orange"><span class="cardTagDot dot-orange"></span>待办</span>
+                </div>
+              </div>
+              <div class="cardTime">15分钟前</div>
+            </div>
+          </div>
+
+          <!-- 卡片 3 -->
+          <div class="cardWrap">
+            <div class="card cardGreen">
+              <div class="cardIcon bgGreen">📸</div>
+              <div class="cardContent">
+                <div class="cardTitle">screenshot_2025-07-04.png</div>
+                <div class="cardSub">1.2 MB · PNG</div>
+              </div>
+              <div class="cardTime">1小时前</div>
+            </div>
+          </div>
+
+          <!-- 卡片 4 -->
+          <div class="cardWrap">
+            <div class="card cardPurple">
+              <div class="cardIcon bgPurple">📄</div>
+              <div class="cardContent">
+                <div class="cardTitle">Q3 项目计划书_v3_final.docx</div>
+                <div class="cardSub">245 KB · 文件</div>
+                <div class="cardTags">
+                  <span class="cardTag color-blue"><span class="cardTagDot dot-blue"></span>工作</span>
+                  <span class="cardTag color-red"><span class="cardTagDot dot-red"></span>紧急</span>
+                </div>
+              </div>
+              <div class="cardTime">2小时前</div>
+            </div>
+          </div>
+
+          <!-- 卡片 5 -->
+          <div class="cardWrap">
+            <div class="card cardYellow">
+              <div class="cardIcon bgBlue">⭐</div>
+              <div class="cardContent">
+                <div class="cardTitle">Tailwind CSS v4 升级备忘</div>
+                <div class="cardSub">developer.mozilla.org/…</div>
+                <div class="cardTags">
+                  <span class="cardTag color-purple"><span class="cardTagDot dot-purple"></span>灵感</span>
+                  <span class="cardTag color-teal"><span class="cardTagDot dot-teal"></span>参考</span>
+                </div>
+              </div>
+              <div class="cardTime">昨天</div>
+            </div>
+          </div>
+
+          <!-- 卡片 6 -->
+          <div class="cardWrap">
+            <div class="card">
+              <div class="cardIcon bgPink">💬</div>
+              <div class="cardContent">
+                <div class="cardTitle">明天下午3点开会讨论新功能排期，记得带上原型图</div>
+                <div class="cardSub">36 字符 · 文本</div>
+                <div class="cardTags">
+                  <span class="cardTag color-blue"><span class="cardTagDot dot-blue"></span>工作</span>
+                </div>
+              </div>
+              <div class="cardTime">昨天</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+    
+  </div><!-- /contentArea -->
+</div>
+
+<!-- ★ 功能说明浮动卡片 -->
+<div style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,0.92);color:#fff;padding:10px 20px;border-radius:12px;font-size:12px;z-index:999;pointer-events:none;text-align:center;line-height:1.8;backdrop-filter:blur(8px);">
+  <div style="font-weight:700;margin-bottom:4px;">方案E — 窗口动态扩展</div>
+  <div>侧边栏打开 → 窗口从 <span style="color:#60A5FA;">480px</span> 扩展到 <span style="color:#34C759;">680px</span></div>
+  <div>卡片宽度<span style="color:#34C759;">始终保持 448px</span>，零压缩！</div>
+  <div>点击 <span style="color:#60A5FA;">☰</span> 或 <span style="color:#F87171;">Esc</span> 切换</div>
+</div>
+
+<script>
+// ===== 侧边栏开关（窗口 + 侧边栏联动） =====
+function toggleSidebar() {
+  const shell = document.getElementById('appShell');
+  const sidebar = document.getElementById('sidebar');
+  const toggle = document.getElementById('sidebarToggle');
+  
+  const isOpen = sidebar.classList.contains('open');
+  
+  if (isOpen) {
+    // 关闭：先收缩侧边栏，再缩小窗口
+    sidebar.classList.remove('open');
+    toggle.classList.remove('sidebarToggleActive');
+    shell.classList.remove('expanded');
+    shell.classList.add('closed');
+  } else {
+    // 打开：先扩展窗口，再展开侧边栏
+    shell.classList.remove('closed');
+    shell.classList.add('expanded');
+    sidebar.classList.add('open');
+    toggle.classList.add('sidebarToggleActive');
+  }
+}
+
+// Esc 关闭
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    const sidebar = document.getElementById('sidebar');
+    const shell = document.getElementById('appShell');
+    const toggle = document.getElementById('sidebarToggle');
+    if (sidebar.classList.contains('open')) {
+      sidebar.classList.remove('open');
+      toggle.classList.remove('sidebarToggleActive');
+      shell.classList.remove('expanded');
+      shell.classList.add('closed');
+    }
+  }
+});
+
+// ===== 分组选择 =====
+function selectGroup(el) {
+  el.parentElement.querySelectorAll('.groupItem').forEach(i => i.classList.remove('active'));
+  el.classList.add('active');
+}
+
+// ===== 标签切换 =====
+function toggleTagSidebar(el) {
+  el.classList.toggle('active');
+}
+
+// ===== 标签行筛选 =====
+function toggleTagChip(el) {
+  el.classList.toggle('active');
+}
+</script>
+
+</body>
+</html>

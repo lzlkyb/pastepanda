@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PastePanda — Timeline 优化方案完整预览</title>
+<style>
+/* ===== 主题变量 (ocean 浅色主题) ===== */
+:root {
+  --app-bg: #F4F6F9;
+  --header-bg-start: #fff;
+  --header-bg-end: #F4F6F9;
+  --card-bg: #fff;
+  --card-border: #E0E4EB;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --seg-bg: #E8E8ED;
+  --seg-active-bg: #fff;
+  --search-bg: #fff;
+  --search-border: #E0E4EB;
+  --input-bg: #F1F5F9;
+  --dialog-bg: #fff;
+  --section-bg: #F0F4F8;
+  --card-selected-bg: #E0F2FE;
+  --card-selected-border: #0284C7;
+  --card-selected-shadow: 0 0 0 2px rgba(2,132,199,0.25);
+  --accent-shadow: rgba(2,132,199,0.15);
+  --hover: #E8ECF2;
+  --timeline-bg: rgba(244,246,249,0.95);
+  --card-h: 72px;
+  --card-gap: 8px;
+}
+
+/* ===== 全局 ===== */
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: "SF Pro Text","Microsoft YaHei","Segoe UI",system-ui,-apple-system,sans-serif;
+  background: #E2E6EB; color: var(--text-primary); overflow-x: hidden; font-size:13px;
+  -webkit-font-smoothing: antialiased;
+}
+h2 { font-size:15px; font-weight:700; color: var(--text-primary); margin-bottom:6px; }
+p.desc { font-size:11px; color: var(--text-muted); margin-bottom:12px; line-height:1.5; }
+
+/* ===== 场景容器 ===== */
+.scene {
+  margin: 24px auto; max-width: 720px; background: var(--app-bg); border-radius: 16px;
+  overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+}
+.scene-header {
+  padding: 14px 20px 6px; background: linear-gradient(180deg, var(--header-bg-start) 0%, var(--header-bg-end) 100%);
+  border-bottom: 1px solid var(--border-color);
+}
+.scene-title { font-size:14px; font-weight:700; }
+.scene-desc { font-size:11px; color: var(--text-muted); margin-top:2px; }
+.scene-badge {
+  display:inline-block; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:600; margin-left:8px;
+}
+.badge-high { background: var(--accent-light); color: var(--accent); }
+.badge-mid { background: #FEF3C7; color: #B45309; }
+.badge-low { background: var(--section-bg); color: var(--text-muted); }
+
+/* ===== 应用壳 ===== */
+.app-shell {
+  display:flex; flex-direction:column; height:520px; overflow:hidden;
+}
+
+/* ===== TopBar ===== */
+.header { padding:12px 16px 0; flex-shrink:0; background: linear-gradient(180deg, var(--header-bg-start) 0%, var(--header-bg-end) 100%); }
+.header-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.header-title { display:flex; align-items:center; gap:6px; }
+.header-title-icon { width:20px; height:20px; border-radius:5px; background: linear-gradient(135deg,#0284C7,#0369A1); display:flex; align-items:center; justify-content:center; color:#fff; font-size:11px; font-weight:700; }
+.header-title-text { font-size:13px; font-weight:700; }
+.header-icons { display:flex; gap:4px; }
+.icon-btn { width:30px; height:30px; border:none; background:transparent; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:15px; transition:background 0.15s; color: var(--text-secondary); }
+.icon-btn:hover { background: rgba(129,140,248,.12); }
+
+/* 搜索框 */
+.search-box { display:flex; align-items:center; gap:8px; height:34px; padding:0 12px; border-radius:10px; background: var(--search-bg); border:1px solid var(--search-border); margin-bottom:6px; }
+.search-icon { font-size:13px; flex-shrink:0; }
+.search-input { flex:1; border:none; background:transparent; outline:none; font-size:12px; color: var(--text-primary); font-family:inherit; }
+.search-input::placeholder { color: var(--text-muted); }
+
+/* Segmented tabs */
+.segmented { display:flex; background: var(--seg-bg); border-radius:8px; padding:2px; }
+.seg-item { flex:1; display:flex; align-items:center; justify-content:center; gap:3px; height:32px; border-radius:7px; border:none; background:transparent; cursor:pointer; font-size:11px; font-weight:500; color: var(--text-secondary); font-family:inherit; transition:all 0.2s; }
+.seg-item.active { background: var(--seg-active-bg); color: var(--text-primary); font-weight:600; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
+.seg-icon { font-size:13px; }
+.seg-count { font-size:9px; font-weight:700; color: var(--text-muted); }
+.seg-item.active .seg-count { color: var(--accent); }
+
+/* Filter bar */
+.filter-bar { display:flex; gap:6px; padding:6px 0 0; }
+.filter-btn { flex:1; display:flex; align-items:center; justify-content:space-between; gap:4px; height:26px; padding:0 10px; border-radius:6px; border:1px solid var(--border-color); background: var(--input-bg); color: var(--text-secondary); font-size:10px; font-weight:500; cursor:pointer; font-family:inherit; }
+
+/* ===== 内容区 ===== */
+.content-area { flex:1; display:flex; position:relative; overflow:hidden; }
+
+/* ===== Timeline ===== */
+.timeline-trigger { position:absolute; left:0; top:0; bottom:0; width:18px; z-index:25; }
+.timeline-container {
+  position:absolute; left:0; top:0; bottom:0; width:50px; z-index:30;
+  background: var(--timeline-bg); border-right:1px solid var(--border-color);
+  display:flex; flex-direction:column; overflow:hidden;
+  transform:translateX(0); opacity:1; /* 始终可见展示 */
+}
+.timeline-capsule {
+  position:sticky; top:8px; z-index:35; display:flex; align-items:center; justify-content:center;
+  padding:4px 0; cursor:grab; user-select:none;
+}
+.capsule-inner {
+  background: var(--accent); color:#fff; font-size:9px; font-weight:700;
+  padding:5px 10px; border-radius:10px; white-space:nowrap;
+  box-shadow:0 2px 8px var(--accent-shadow);
+}
+.timeline-scroll { flex:1; overflow:hidden; position:relative; }
+.timeline-track {
+  position:absolute; left:50%; top:0; width:2px; height:100%;
+  background: var(--border-color); transform:translateX(-50%);
+}
+.timeline-inner { position:relative; width:100%; }
+
+/* 分组标签 */
+.tl-group-label { position:relative; display:flex; align-items:center; padding:8px 0; cursor:grab; user-select:none; }
+.tl-group-dot {
+  position:absolute; left:50%; top:50%; width:9px; height:9px; border-radius:50%;
+  background: var(--accent); transform:translate(-50%,-50%);
+  box-shadow:0 0 0 4px var(--accent-light), 0 0 12px var(--accent-shadow); z-index:2;
+}
+.tl-group-text {
+  position:absolute; left:calc(50% + 14px); top:50%; transform:translateY(-50%);
+  font-size:8px; font-weight:700; color: var(--accent); white-space:nowrap;
+}
+/* 节点 */
+.tl-node { position:relative; display:flex; align-items:center; height:72px; cursor:pointer; }
+.tl-node-icon {
+  position:absolute; left:50%; top:50%; font-size:11px; line-height:1;
+  transform:translate(-50%,-50%); z-index:2; pointer-events:none; transition:transform 0.15s;
+}
+.tl-node:hover .tl-node-icon { transform:translate(-50%,-50%) scale(1.3); }
+.tl-tooltip {
+  position:absolute; left:54px; top:50%; transform:translateY(-50%);
+  background: var(--accent); color:#fff; font-size:10px; font-weight:600;
+  padding:3px 8px; border-radius:5px; white-space:nowrap; pointer-events:none;
+  opacity:0; transition:opacity 0.15s; box-shadow:0 2px 8px rgba(0,0,0,0.2);
+}
+.tl-node:hover .tl-tooltip { opacity:1; }
+
+/* ===== 滚动区 ===== */
+.scroll-area { flex:1; overflow-y:auto; padding:10px 16px 80px 66px; position:relative; }
+
+/* 分隔线 */
+.section-sep {
+  display:flex; align-items:center; gap:8px; padding:4px 0 8px; font-size:11px; font-weight:600; color: var(--text-muted);
+}
+.section-sep::after { content:''; flex:1; height:1px; background: var(--border-color); }
+
+/* ===== 卡片 ===== */
+.card {
+  display:flex; align-items:center; gap:12px; padding:12px 16px;
+  background: var(--card-bg); border:1px solid var(--card-border); border-radius:16px;
+  box-shadow: var(--card-shadow); cursor:pointer; position:relative; overflow:hidden;
+  height:72px; width:100%; margin-bottom:8px; transition:all 0.2s;
+}
+.card::before {
+  content:''; position:absolute; left:0; top:0; bottom:0; width:3px; border-radius:0 3px 3px 0;
+}
+.card-text::before { background: var(--accent); }
+.card-image::before { background: #FF6482; }
+.card-file::before { background: #34C759; }
+.card-pinned::before { background: #FFD60A; }
+.card:hover { box-shadow:0 6px 20px rgba(0,0,0,0.1); transform:translateY(-2px) scale(1.008); }
+.card.selected { background: var(--card-selected-bg); border-color: var(--card-selected-border); box-shadow: var(--card-selected-shadow), 0 4px 16px var(--accent-shadow); }
+
+.card-icon {
+  width:42px; height:42px; min-width:42px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0;
+}
+.card-icon.bg-blue   { background: linear-gradient(135deg, #E8F1FB, #D6E8FA); }
+.card-icon.bg-green  { background: linear-gradient(135deg, #E5F8EC, #D4F2DE); }
+.card-icon.bg-pink   { background: linear-gradient(135deg, #FDE8EE, #FAD6DF); }
+.card-icon.bg-purple { background: linear-gradient(135deg, #F0E8FB, #E5D6FA); }
+.card-content { flex:1; min-width:0; overflow:hidden; }
+.card-title { font-size:13px; font-weight:600; color: var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; line-height:1.4; }
+.card-sub { font-size:11px; color: var(--text-secondary); margin-top:2px; display:flex; align-items:center; gap:6px; }
+.card-pin-badge { display:inline-flex; align-items:center; gap:2px; height:16px; padding:0 6px; border-radius:4px; font-size:10px; font-weight:600; background: var(--accent-light); color: var(--accent); }
+.card-time { font-size:11px; color: var(--text-muted); flex-shrink:0; }
+
+/* ===== FAB ===== */
+.fab {
+  position:absolute; bottom:12px; left:16px; right:16px; display:flex; align-items:center; justify-content:space-between;
+  padding:10px 16px; z-index:50; background: var(--card-bg); backdrop-filter:blur(20px);
+  border-radius:16px; border:1px solid var(--border-color); box-shadow:0 -2px 16px rgba(0,0,0,0.06);
+}
+.fab-counter { font-size:11px; font-weight:600; color: var(--text-secondary); }
+.fab-counter-num { color: var(--accent); }
+.fab-btn {
+  height:38px; padding:0 18px; border-radius:12px; display:flex; align-items:center; gap:8px;
+  font-size:13px; font-weight:600; background: var(--accent); color:#fff;
+  box-shadow:0 4px 16px var(--accent-shadow); border:none; cursor:pointer; font-family:inherit;
+}
+
+/* ===== 优化项标注 ===== */
+.opt-label {
+  display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border-radius:4px;
+  font-size:10px; font-weight:700; position:absolute; z-index:40; white-space:nowrap;
+}
+.opt-new { background: #DCFCE7; color: #16A34A; border:1px solid #BBF7D0; }
+.opt-changed { background: #FEF3C7; color: #B45309; border:1px solid #FDE68A; }
+
+/* Highlight for active node */
+.tl-node.active-node .tl-node-icon {
+  transform:translate(-50%,-50%) scale(1.5);
+  filter:drop-shadow(0 0 4px var(--accent));
+}
+.tl-node.active-node::before {
+  content:''; position:absolute; left:50%; top:50%; width:18px; height:18px; border-radius:50%;
+  background: var(--accent); transform:translate(-50%,-50%); z-index:1; opacity:0.15;
+}
+/* Active segment on track */
+.track-active-seg {
+  position:absolute; left:50%; width:3px; background: var(--accent); transform:translateX(-50%); z-index:1;
+  border-radius:2px; opacity:0.5;
+}
+
+/* Collapsed group */
+.tl-group-collapsed .tl-node { display:none; }
+.tl-group-collapsed .tl-group-dot { opacity:0.5; }
+.tl-group-collapsed .tl-group-text::after { content:' · 12'; font-size:7px; opacity:0.6; }
+
+/* Pinned marker */
+.tl-node.pinned-node .tl-node-icon { filter:drop-shadow(0 0 3px #FFD60A); }
+.tl-pin-badge {
+  position:absolute; left:calc(50% + 14px); top:calc(50% - 12px);
+  font-size:8px; color: #B45309; pointer-events:none; z-index:3;
+}
+
+/* Capsule count */
+.capsule-count { font-size:7px; opacity:0.7; margin-left:1px; }
+
+/* Track hover zone */
+.track-hover-zone {
+  position:absolute; left:0; right:0; top:0; bottom:0; z-index:1; cursor:pointer;
+}
+.track-hover-zone:hover::after {
+  content:'👆 点击跳转'; position:absolute; left:calc(50% + 16px); top:50%;
+  transform:translateY(-50%); font-size:8px; color: var(--accent); white-space:nowrap;
+  pointer-events:none; background: var(--accent-light); padding:2px 6px; border-radius:4px;
+}
+
+/* Mini mode */
+.timeline-mini {
+  position:absolute; left:0; top:0; bottom:0; width:10px; z-index:28;
+  background: var(--timeline-bg); border-right:1px solid var(--border-color);
+  display:flex; flex-direction:column; overflow:hidden; cursor:pointer;
+}
+.timeline-mini:hover { width:50px; transition:width 0.2s ease 0.15s; }
+.timeline-mini-track { position:absolute; left:50%; top:0; width:1px; height:100%; background: var(--border-color); transform:translateX(-50%); }
+.timeline-mini-dots { position:absolute; left:50%; top:0; width:4px; transform:translateX(-50%); display:flex; flex-direction:column; gap:4px; padding-top:10px; }
+.timeline-mini-dot { width:4px; height:4px; border-radius:50%; background: var(--text-muted); opacity:0.3; }
+
+/* Shortcut hint */
+.shortcut-hint {
+  position:absolute; bottom:60px; right:16px; z-index:35;
+  background: var(--card-bg); border:1px solid var(--border-color); border-radius:8px;
+  padding:6px 10px; font-size:10px; color: var(--text-muted);
+  box-shadow:0 2px 8px rgba(0,0,0,0.06); display:flex; gap:12px; align-items:center;
+}
+.shortcut-hint kbd {
+  display:inline-block; padding:1px 5px; border-radius:3px; background: var(--section-bg);
+  border:1px solid var(--border-color); font-family:inherit; font-size:9px; font-weight:600;
+}
+
+/* ===== 标签切换 ===== */
+.opt-tabs { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+.opt-tab {
+  padding:6px 14px; border-radius:8px; border:1px solid var(--border-color); background: var(--card-bg);
+  font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; color: var(--text-secondary); transition:all 0.15s;
+}
+.opt-tab:hover { border-color: var(--accent); color: var(--accent); }
+.opt-tab.active { background: var(--accent); color:#fff; border-color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div style="max-width:760px; margin:20px auto; padding:0 16px;">
+  <div style="text-align:center; margin-bottom:20px;">
+    <h1 style="font-size:22px; font-weight:800; color:var(--text-primary); margin-bottom:4px;">📊 Timeline 优化方案 — 完整主页预览</h1>
+    <p style="font-size:12px; color:var(--text-muted);">基于实际 PastePanda UI 精确还原，展示 8 项优化在完整界面中的效果</p>
+  </div>
+</div>
+
+<!-- ============================================== -->
+<!-- 场景 1: 活跃节点高亮 + 快捷键 -->
+<!-- ============================================== -->
+<div class="scene">
+  <div class="scene-header">
+    <div style="display:flex;align-items:center;">
+      <span class="scene-title">场景 1</span>
+      <span class="scene-badge badge-high">🔴 高价值</span>
+      <span style="margin-left:auto;font-size:11px;color:var(--text-muted);">#1 活跃节点高亮 + #2 快捷键提示</span>
+    </div>
+    <p class="scene-desc">当前查看第3张卡片时，Timeline 上对应节点高亮（蓝色填充+发光），右下角显示快捷键</p>
+  </div>
+  <div class="app-shell" style="position:relative;">
+    <!-- TopBar -->
+    <div class="header">
+      <div class="header-top">
+        <div class="header-title">
+          <div class="header-title-icon">P</div>
+          <span class="header-title-text">PastePanda</span>
+        </div>
+        <div class="header-icons">
+          <button class="icon-btn">📝</button>
+          <button class="icon-btn">🧲</button>
+          <button class="icon-btn">⚙</button>
+          <button class="icon-btn">━</button>
+          <button class="icon-btn">✕</button>
+        </div>
+      </div>
+      <div class="search-box"><span class="search-icon">🔍</span><input class="search-input" placeholder="搜索剪贴板... (Enter 搜索)" readonly></div>
+      <div class="segmented">
+        <button class="seg-item active"><span class="seg-icon">📋</span>全部<span class="seg-count">15</span></button>
+        <button class="seg-item"><span class="seg-icon">📝</span>文本<span class="seg-count">8</span></button>
+        <button class="seg-item"><span class="seg-icon">📸</span>图片<span class="seg-count">4</span></button>
+        <button class="seg-item"><span class="seg-icon">📁</span>文件<span class="seg-count">3</span></button>
+        <button class="seg-item"><span class="seg-icon">⭐</span>收藏<span class="seg-count">2</span></button>
+      </div>
+      <div class="filter-bar">
+        <button class="filter-btn">全部时间 ▾</button>
+        <button class="filter-btn">来源应用 ▾</button>
+      </div>
+    </div>
+
+    <!-- Content Area -->
+    <div class="content-area">
+      <!-- Timeline Trigger -->
+      <div class="timeline-trigger"></div>
+      <!-- Timeline Container -->
+      <div class="timeline-container">
+        <div class="timeline-capsule"><div class="capsule-inner">📍 今天</div></div>
+        <div class="timeline-scroll">
+          <div class="timeline-track"></div>
+          <!-- Active segment on track (对应第3张卡片位置) -->
+          <div class="track-active-seg" style="top:174px; height:72px;"></div>
+          <div class="timeline-inner" style="transform:translateY(0px);">
+            <!-- 今天 -->
+            <div class="tl-group-label" data-group="today">
+              <div class="tl-group-dot"></div>
+              <div class="tl-group-text">今天</div>
+            </div>
+            <div class="tl-node"><div class="tl-node-icon">📝</div><div class="tl-tooltip">会议纪要 - 2024 Q3 总结</div></div>
+            <div class="tl-node"><div class="tl-node-icon">🖼</div><div class="tl-tooltip">产品截图.png</div></div>
+            <!-- ★ 活跃节点（当前查看第3张） -->
+            <div class="tl-node active-node">
+              <div class="tl-node-icon">📝</div><div class="tl-tooltip">API 接口文档 v2.1</div>
+            </div>
+            <div class="tl-node"><div class="tl-node-icon">📁</div><div class="tl-tooltip">项目文件.zip</div></div>
+            <div class="tl-node"><div class="tl-node-icon">📝</div><div class="tl-tooltip">TODO List</div></div>
+            <!-- 昨天 -->
+            <div class="tl-group-label" data-group="yesterday">
+              <div class="tl-group-dot"></div>
+              <div class="tl-group-text">昨天</div>
+            </div>
+            <div class="tl-node"><div class="tl-node-icon">🖼</div><div class="tl-tooltip">设计稿-Final.png</div></div>
+            <div class="tl-node"><div class="tl-node-icon">📝</div><div class="tl-tooltip">git commit message</div></div>
+            <div class="tl-node"><div class="tl-node-icon">📁</div><div class="tl-tooltip">release-notes.md</div></div>
+            <!-- 本周 -->
+            <div class="tl-group-label" data-group="thisWeek">
+              <div class="tl-group-dot"></div>
+              <div class="tl-group-text">本周</div>
+            </div>
+            <div class="tl-node"><div class="tl-node-icon">📝</div><div class="tl-tooltip">周报 2024-W28</div></div>
+            <div class="tl-node"><div class="tl-node-icon">📝</div><div class="tl-tooltip">代码片段 - React</div></div>
+            <!-- 更早 -->
+            <div class="tl-group-label" data-group="earlier">
+              <div class="tl-group-dot"></div>
+              <div class="tl-group-text">更早</div>
+            </div>
+            <div class="tl-node"><div class="tl-node-icon">🖼</div><div class="tl-tooltip">架构图.png</div></div>
+            <div class="tl-node"><div class="tl-node-icon">📝</div><div class="tl-tooltip">面试题目整理</div></div>
+            <div class="tl-node"><div class="tl-node-icon">📁</div><div class="tl-tooltip">备份-2024-06.tar.gz</div></div>
+            <div class="tl-node"><div class="tl-node-icon">📝</div><div class="tl-tooltip">读书笔记</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scroll Area -->
+      <div class="scroll-area">
+        <!-- 今天 -->
+        <div class="section-sep"><span>📅 今天</span></div>
+        <div class="card card-text">
+          <div class="card-icon bg-blue">📝</div>
+          <div class="card-content"><div class="card-title">会议纪要 - 2024 Q3 总结</div><div class="card-sub"><span>微信</span></div></div>
+          <div class="card-time">10:30</div>
+        </div>
+        <div class="card card-image">
+          <div class="card-icon bg-pink">🖼</div>
+          <div class="card-content"><div class="card-title">产品截图.png</div><div class="card-sub"><span>Figma</span></div></div>
+          <div class="card-time">09:15</div>
+        </div>
+        <!-- ★ 当前选中的卡片 -->
+        <div class="card card-text selected">
+          <div class="card-icon bg-blue">📝</div>
+          <div class="card-content"><div class="card-title">API 接口文档 v2.1</div><div class="card-sub"><span>VS Code</span></div></div>
+          <div class="card-time">08:45</div>
+        </div>
+        <div class="card card-file">
+          <div class="card-icon bg-green">📁</div>
+          <div class="card-content"><div class="card-title">项目文件.zip</div><div class="card-sub"><span>资源管理器</span></div></div>
+          <div class="card-time">08:30</div>
+        </div>
+        <div class="card card-text">
+          <div class="card-icon bg-blue">📝</div>
+          <div class="card-content"><div class="card-title">TODO List</div><div class="card-sub"><span>Notion</span></div></div>
+          <div class="card-time">08:00</div>
+        </div>
+        <!-- 昨天 -->
+        <div class="section-sep"><span>📅 昨天</span></div>
+        <div class="card card-image">
+          <div class="card-icon bg-pink">🖼</div>
+          <div class="card-content"><div class="card-title">设计稿-Final.png</div><div class="card-sub"><span>Figma</span></div></div>
+          <div class="card-time">18:20</div>
+        </div>
+        <div class="card card-text">
+          <div class="card-icon bg-blue">📝</div>
+          <div class="card-content"><div class="card-title">git commit message</div><div class="card-sub"><span>Terminal</span></div></div>
+          <div class="card-time">16:00</div>
+        </div>
+        <div class="card card-file">
+          <div class="card-icon bg-green">📁</div>
+          <div class="card-content"><div class="card-title">release-notes.md</div><div class="card-sub"><span>VS Code</span></div></div>
+          <div class="card-time">14:30</div>
+        </div>
+        <!-- 本周 -->
+        <div class="section-sep"><span>📅 本周</span></div>
+        <div class="card card-text">
+          <div class="card-icon bg-blue">📝</div>
+          <div class="card-content"><div class="card-title">周报 2024-W28</div><div class="card-sub"><span>Notion</span></div></div>
+          <div class="card-time">周一</div>
+        </div>
+        <div class="card card-text">
+          <div class="card-icon bg-purple">📝</div>
+          <div class="card-content"><div class="card-title">代码片段 - React</div><div class="card-sub"><span>VS Code</span></div></div>
+          <div class="card-time">周日</div>
+        </div>
+        <!-- 更早 -->
+        <div class="section-sep"><span>📅 更早</span></div>
+        <div class="card card-image">
+          <div class="card-icon bg-pink">🖼</div>
+          <div class="card-content"><div class="card-title">架构图.png</div><div class="card-sub"><span>浏览器</span></div></div>
+          <div class="card-time">6/28</div>
+        </div>
+        <div class="card card-text">
+          <div class="card-icon bg-blue">📝</div>
+          <div class="card-content"><div class="card-title">面试题目整理</div><div class="card-sub"><span>Notion</span></div></div>
+          <div class="card-time">6/25</div>
+        </div>
+        <div class="card card-file">
+          <div class="card-icon bg-green">📁</div>
+          <div class="card-content"><div class="card-title">备份-2024-06.tar.gz</div><div class="card-sub"><span>资源管理器</span></div></div>
+          <div class="card-time">6/20</div>
+        </div>
+        <div class="card card-text">
+          <div class="card-icon bg-blue">📝</div>
+          <div class="card-content"><div class="card-title">读书笔记</div><div class="card-sub"><span>微信</span></div></div>
+          <div class="card-time">6/15</div>
+        </div>
+      </div>
+
+      <!-- FAB -->
+      <div class="fab">
+        <span class="fab-counter"><span class="fab-counter-num">3</span> / 15 条</span>
+        <button class="fab-btn">📋 依次粘贴</button>
+      </div>
+
+      <!-- 快捷键提示（新增） -->
+      <div class="shortcut-hint">
+        <span><kbd>Ctrl+Shift+T</kbd> 时间轴</span>
+        <span><kbd>↑</kbd><kbd>↓</kbd> 导航节点</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================== -->
+<!-- 场景 2: 密度自适应 + 固定标记 -->
+<!-- ============================================== -->
+<div class="scene">
+  <div class="scene-header">
+    <div style="display:flex;align-items:center;">
+      <span class="scene-title">场景 2</span>
+      <span class="scene-badge badge-high">🔴 高</span>
+      <span class="scene-badge badge-mid" style="margin-left:4px;">🟡 中</span>
+      <span style="margin-left:auto;font-size:11px;color:var(--text-muted);">#3 密度自适应 + #5 固定卡片标记</span>
+    </div>
+    <p class="scene-desc">卡片多时自动压缩为密度模式（右侧细线段），固定卡片节点显示金色 📌 标记</p>
+  </div>
+  <div class="app-shell" style="position:relative;">
+    <div class="header">
+      <div class="header-top">
+        <div class="header-title"><div class="header-title-icon">P</div><span class="header-title-text">PastePanda</span></div>
+        <div class="header-icons">
+          <button class="icon-btn">📝</button><button class="icon-btn">🧲</button><button class="icon-btn">⚙</button><button class="icon-btn">━</button><button class="icon-btn">✕</button>
+        </div>
+      </div>
+      <div class="search-box"><span class="search-icon">🔍</span><input class="search-input" placeholder="搜索剪贴板... (Enter 搜索)" readonly></div>
+      <div class="segmented">
+        <button class="seg-item active"><span class="seg-icon">📋</span>全部<span class="seg-count">15</span></button>
+        <button class="seg-item"><span class="seg-icon">📝</span>文本<span class="seg-count">8</span></button>
+        <button class="seg-item"><span class="seg-icon">📸</span>图片<span class="seg-count">4</span></button>
+        <button class="seg-item"><span class="seg-icon">📁</span>文件<span class="seg-count">3</span></button>
+        <button class="seg-item"><span class="seg-icon">⭐</span>收藏<span class="seg-count">2</span></button>
+      </div>
+      <div class="filter-bar">
+        <button class="filter-btn">全部时间 ▾</button><button class="filter-btn">来源应用 ▾</button>
+      </div>
+    </div>
+
+    <div class="content-area">
+      <div class="timeline-trigger"></div>
+      <div class="timeline-container">
+        <div class="timeline-capsule"><div class="capsule-inner">📍 今天</div></div>
+        <div class="timeline-scroll">
+          <div class="timeline-track"></div>
+          <div class="timeline-inner" style="transform:translateY(0px);">
+            <!-- 今天 - 正常模式 -->
+            <div class="tl-group-label" data-group="today">
+              <div class="tl-group-dot"></div>
+              <div class="tl-group-text">今天</div>
+            </div>
+            <!-- 正常节点（密度低的前4个） -->
+            <div class="tl-node"><div class="tl-node-icon">📝</div><div class="tl-tooltip">会议纪要</div></div>
+            <div class="tl-node"><div class="tl-node-icon">🖼</div><div class="tl-tooltip">产品截图</div></div>
+            <!-- ★ 固定卡片标记 -->
+            <div class="tl-node pinned-node" style="position:relative;">
+              <div class="tl-node-icon">📝</div><div class="tl-tooltip">API文档</div>
+              <span class="tl-pin-badge">📌</span>
+            </div>
+            <div class="tl-node"><div class="tl-node-icon">📁</div><div class="tl-tooltip">项目文件</div></div>
+            <!-- 之后进入压缩模式：用细线段代替独立节点 -->
+            <div style="position:relative; display:flex; flex-direction:column; align-items:center; padding:2px 0; gap:2px;">
+              <div style="width:3px; height:4px; border-radius:1px; background: var(--text-muted); opacity:0.3;"></div>
+              <div style="width:3px; height:4px; border-radius:1px; background: var(--text-muted); opacity:0.3;"></div>
+              <div style="width:3px; height:4px; border-radius:1px; background: var(--text-muted); opacity:0.3;"></div>
+              <div style="width:3px; height:4px; border-radius:1px; background: var(--text-muted); opacity:0.3;"></div>
+              <div style="width:3px; height:4px; border-radius:1px; background: var(--text-muted); opacity:0.3;"></div>
+            </div>
+            <!-- 昨天 -->
+            <div class="tl-group-label" data-group="yesterday">
+              <div class="tl-group-dot"></div>
+              <div class="tl-group-text">昨天</div>
+            </div>
+            <div class="tl-node"><div class="tl-node-icon">🖼</div><div class="tl-tooltip">设计稿-Final</div></div>
+            <div class="tl-node"><div class="tl-node-icon">📝</div><div class="tl-tooltip">git commit</div></div>
+            <!-- 压缩区 -->
+            <div style="position:relative; display:flex; flex-direction:column; align-items:center; padding:2px 0; gap:2px;">
+              <div style="width:3px; height:4px; border-radius:1px; background: var(--text-muted); opacity:0.3;"></div>
+              <div style="width:3px; height:4px; border-radius:1px; background: var(--text-muted); opacity:0.3;"></div>
+              <div style="width:3px; height:4px; border-radius:1px; background: var(--text-muted); opacity:0.3;"></div>
+            </div>
+            <!-- 本周 -->
+            <div class="tl-group-label" data-group="thisWeek">
+              <div class="tl-group-dot"></div>
+              <div class="tl-group-text">本周</div>
+            </div>
+            <div class="tl-node"><div class="tl-node-icon">📝</div><div class="tl-tooltip">周报</div></div>
+            <div class="tl-node pinned-node" style="position:relative;">
+              <div class="tl-node-icon">📝</div><div class="tl-tooltip">代码片段</div>
+              <span class="tl-pin-badge">📌</span>
+            </div>
+            <div style="position:relative; display:flex; flex-direction:column; align-items:center; padding:2px 0; gap:2px;">
+              <div style="width:3px; height:4px; border-radius:1px; background: var(--text-muted); opacity:0.3;"></div>
+              <div style="width:3px; height:4px; border-radius:1px; background: var(--text-muted); opacity:0.3;"></div>
+              <div style="width:3px; height:4px; border-radius:1px; background: var(--text-muted); opacity:0.3;"></div>
+              <div style="width:3px; height:4px; border-radius:1px; background: var(--text-muted); opacity:0.3;"></div>
+            </div>
+            <!-- 更早 -->
+            <div class="tl-group-label" data-group="earlier">
+              <div class="tl-group-dot"></div>
+              <div class="tl-group-text">更早</div>
+            </div>
+            <div style="position:relative; display:flex; flex-direction:column; align-items:center; padding:2px 0; gap:2px;">
+              <div style="width:3px; height:4px; border-radius:1px; background: var(--text-muted); opacity:0.3;"></div>
+              <div style="width:3px; height:4px; border-radius:1px; background: var(--text-muted); opacity:0.3;"></div>
+              <div style="width:3px; height:4px; border-radius:1px; background: var(--text-muted); opacity:0.3;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="scroll-area">
+        <div class="section-sep"><span>📅 今天</span></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">会议纪要 - 2024 Q3 总结</div><div class="card-sub"><span>微信</span></div></div><div class="card-time">10:30</div></div>
+        <div class="card card-image"><div class="card-icon bg-pink">🖼</div><div class="card-content"><div class="card-title">产品截图.png</div><div class="card-sub"><span>Figma</span></div></div><div class="card-time">09:15</div></div>
+        <!-- ★ 固定卡片 -->
+        <div class="card card-pinned">
+          <div class="card-icon bg-blue">📝</div>
+          <div class="card-content"><div class="card-title">API 接口文档 v2.1</div><div class="card-sub"><span class="card-pin-badge">📌 置顶</span><span>VS Code</span></div></div>
+          <div class="card-time">08:45</div>
+        </div>
+        <div class="card card-file"><div class="card-icon bg-green">📁</div><div class="card-content"><div class="card-title">项目文件.zip</div><div class="card-sub"><span>资源管理器</span></div></div><div class="card-time">08:30</div></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">TODO List</div><div class="card-sub"><span>Notion</span></div></div><div class="card-time">08:00</div></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">聊天记录 - 项目讨论</div><div class="card-sub"><span>微信</span></div></div><div class="card-time">07:45</div></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">邮件模板 - 客户回复</div><div class="card-sub"><span>Outlook</span></div></div><div class="card-time">07:30</div></div>
+        <div class="card card-text"><div class="card-icon bg-purple">📝</div><div class="card-content"><div class="card-title">SQL 查询优化脚本</div><div class="card-sub"><span>VS Code</span></div></div><div class="card-time">07:15</div></div>
+        <div class="section-sep"><span>📅 昨天</span></div>
+        <div class="card card-image"><div class="card-icon bg-pink">🖼</div><div class="card-content"><div class="card-title">设计稿-Final.png</div><div class="card-sub"><span>Figma</span></div></div><div class="card-time">18:20</div></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">git commit message</div><div class="card-sub"><span>Terminal</span></div></div><div class="card-time">16:00</div></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">代码 Review 意见</div><div class="card-sub"><span>GitHub</span></div></div><div class="card-time">15:30</div></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">需求文档链接</div><div class="card-sub"><span>浏览器</span></div></div><div class="card-time">14:00</div></div>
+        <div class="section-sep"><span>📅 本周</span></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">周报 2024-W28</div><div class="card-sub"><span>Notion</span></div></div><div class="card-time">周一</div></div>
+        <!-- ★ 固定卡片 -->
+        <div class="card card-pinned">
+          <div class="card-icon bg-purple">📝</div>
+          <div class="card-content"><div class="card-title">代码片段 - React</div><div class="card-sub"><span class="card-pin-badge">📌 置顶</span><span>VS Code</span></div></div>
+          <div class="card-time">周日</div>
+        </div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">部署命令备忘</div><div class="card-sub"><span>Terminal</span></div></div><div class="card-time">周六</div></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">测试用例 - 登录模块</div><div class="card-sub"><span>VS Code</span></div></div><div class="card-time">周五</div></div>
+        <div class="section-sep"><span>📅 更早</span></div>
+        <div class="card card-image"><div class="card-icon bg-pink">🖼</div><div class="card-content"><div class="card-title">架构图.png</div><div class="card-sub"><span>浏览器</span></div></div><div class="card-time">6/28</div></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">面试题目整理</div><div class="card-sub"><span>Notion</span></div></div><div class="card-time">6/25</div></div>
+        <div class="card card-file"><div class="card-icon bg-green">📁</div><div class="card-content"><div class="card-title">备份-2024-06.tar.gz</div><div class="card-sub"><span>资源管理器</span></div></div><div class="card-time">6/20</div></div>
+      </div>
+
+      <div class="fab">
+        <span class="fab-counter"><span class="fab-counter-num">3</span> / 20 条</span>
+        <button class="fab-btn">📋 依次粘贴</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================== -->
+<!-- 场景 3: 分组折叠 + 胶囊计数 + 空白轨道跳转 -->
+<!-- ============================================== -->
+<div class="scene">
+  <div class="scene-header">
+    <div style="display:flex;align-items:center;">
+      <span class="scene-title">场景 3</span>
+      <span class="scene-badge badge-mid">🟡 中</span>
+      <span class="scene-badge badge-low" style="margin-left:4px;">🟢 低</span>
+      <span style="margin-left:auto;font-size:11px;color:var(--text-muted);">#4 分组折叠 + #6 胶囊计数 + #7 空白轨道跳转</span>
+    </div>
+    <p class="scene-desc">"更早"分组已折叠（虚线+计数），吸顶胶囊显示"今天 · 5"，hover 轨道空白区可点击跳转</p>
+  </div>
+  <div class="app-shell" style="position:relative;">
+    <div class="header">
+      <div class="header-top">
+        <div class="header-title"><div class="header-title-icon">P</div><span class="header-title-text">PastePanda</span></div>
+        <div class="header-icons">
+          <button class="icon-btn">📝</button><button class="icon-btn">🧲</button><button class="icon-btn">⚙</button><button class="icon-btn">━</button><button class="icon-btn">✕</button>
+        </div>
+      </div>
+      <div class="search-box"><span class="search-icon">🔍</span><input class="search-input" placeholder="搜索剪贴板... (Enter 搜索)" readonly></div>
+      <div class="segmented">
+        <button class="seg-item active"><span class="seg-icon">📋</span>全部<span class="seg-count">15</span></button>
+        <button class="seg-item"><span class="seg-icon">📝</span>文本<span class="seg-count">8</span></button>
+        <button class="seg-item"><span class="seg-icon">📸</span>图片<span class="seg-count">4</span></button>
+        <button class="seg-item"><span class="seg-icon">📁</span>文件<span class="seg-count">3</span></button>
+        <button class="seg-item"><span class="seg-icon">⭐</span>收藏<span class="seg-count">2</span></button>
+      </div>
+      <div class="filter-bar">
+        <button class="filter-btn">全部时间 ▾</button><button class="filter-btn">来源应用 ▾</button>
+      </div>
+    </div>
+
+    <div class="content-area">
+      <div class="timeline-trigger"></div>
+      <div class="timeline-container">
+        <!-- ★ 吸顶胶囊带计数 -->
+        <div class="timeline-capsule"><div class="capsule-inner">📍 今天<span class="capsule-count"> · 5</span></div></div>
+        <div class="timeline-scroll">
+          <div class="timeline-track"></div>
+          <!-- ★ 空白轨道 hover 区域（在"更早"分组上方） -->
+          <div class="track-hover-zone" style="top:55%; height:15%;"></div>
+          <div class="timeline-inner" style="transform:translateY(0px);">
+            <!-- 今天 - 展开 -->
+            <div class="tl-group-label" data-group="today">
+              <div class="tl-group-dot"></div>
+              <div class="tl-group-text">今天<span style="font-size:7px;opacity:0.6;"> · 5</span></div>
+            </div>
+            <div class="tl-node"><div class="tl-node-icon">📝</div><div class="tl-tooltip">会议纪要</div></div>
+            <div class="tl-node"><div class="tl-node-icon">🖼</div><div class="tl-tooltip">产品截图</div></div>
+            <div class="tl-node"><div class="tl-node-icon">📝</div><div class="tl-tooltip">API文档</div></div>
+            <div class="tl-node"><div class="tl-node-icon">📁</div><div class="tl-tooltip">项目文件</div></div>
+            <div class="tl-node"><div class="tl-node-icon">📝</div><div class="tl-tooltip">TODO List</div></div>
+            <!-- 昨天 - 展开 -->
+            <div class="tl-group-label" data-group="yesterday">
+              <div class="tl-group-dot"></div>
+              <div class="tl-group-text">昨天<span style="font-size:7px;opacity:0.6;"> · 3</span></div>
+            </div>
+            <div class="tl-node"><div class="tl-node-icon">🖼</div><div class="tl-tooltip">设计稿-Final</div></div>
+            <div class="tl-node"><div class="tl-node-icon">📝</div><div class="tl-tooltip">git commit</div></div>
+            <div class="tl-node"><div class="tl-node-icon">📁</div><div class="tl-tooltip">release-notes</div></div>
+            <!-- 本周 - 展开 -->
+            <div class="tl-group-label" data-group="thisWeek">
+              <div class="tl-group-dot"></div>
+              <div class="tl-group-text">本周<span style="font-size:7px;opacity:0.6;"> · 2</span></div>
+            </div>
+            <div class="tl-node"><div class="tl-node-icon">📝</div><div class="tl-tooltip">周报</div></div>
+            <div class="tl-node"><div class="tl-node-icon">📝</div><div class="tl-tooltip">代码片段</div></div>
+            <!-- ★ 更早 - 折叠态（虚线表示已折叠） -->
+            <div class="tl-group-label tl-group-collapsed" data-group="earlier" style="cursor:pointer;" title="点击展开">
+              <div class="tl-group-dot" style="border:2px dashed var(--accent); background:transparent; box-shadow:none;"></div>
+              <div class="tl-group-text">更早<span style="font-size:7px;opacity:0.6;"> · 5</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="scroll-area">
+        <div class="section-sep"><span>📅 今天</span></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">会议纪要 - 2024 Q3 总结</div><div class="card-sub"><span>微信</span></div></div><div class="card-time">10:30</div></div>
+        <div class="card card-image"><div class="card-icon bg-pink">🖼</div><div class="card-content"><div class="card-title">产品截图.png</div><div class="card-sub"><span>Figma</span></div></div><div class="card-time">09:15</div></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">API 接口文档 v2.1</div><div class="card-sub"><span>VS Code</span></div></div><div class="card-time">08:45</div></div>
+        <div class="card card-file"><div class="card-icon bg-green">📁</div><div class="card-content"><div class="card-title">项目文件.zip</div><div class="card-sub"><span>资源管理器</span></div></div><div class="card-time">08:30</div></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">TODO List</div><div class="card-sub"><span>Notion</span></div></div><div class="card-time">08:00</div></div>
+        <div class="section-sep"><span>📅 昨天</span></div>
+        <div class="card card-image"><div class="card-icon bg-pink">🖼</div><div class="card-content"><div class="card-title">设计稿-Final.png</div><div class="card-sub"><span>Figma</span></div></div><div class="card-time">18:20</div></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">git commit message</div><div class="card-sub"><span>Terminal</span></div></div><div class="card-time">16:00</div></div>
+        <div class="card card-file"><div class="card-icon bg-green">📁</div><div class="card-content"><div class="card-title">release-notes.md</div><div class="card-sub"><span>VS Code</span></div></div><div class="card-time">14:30</div></div>
+        <div class="section-sep"><span>📅 本周</span></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">周报 2024-W28</div><div class="card-sub"><span>Notion</span></div></div><div class="card-time">周一</div></div>
+        <div class="card card-text"><div class="card-icon bg-purple">📝</div><div class="card-content"><div class="card-title">代码片段 - React</div><div class="card-sub"><span>VS Code</span></div></div><div class="card-time">周日</div></div>
+        <!-- ★ 更早分组已折叠，只显示标题行 -->
+        <div class="section-sep"><span>📅 更早 · 已折叠</span><span style="font-size:10px; color:var(--accent); cursor:pointer; margin-left:auto;">展开 ▾</span></div>
+        <div style="text-align:center; padding:20px; color:var(--text-muted); font-size:11px; border:1px dashed var(--border-color); border-radius:10px; margin-bottom:8px;">
+          📦 5 条记录已折叠 · 点击展开查看
+        </div>
+      </div>
+
+      <div class="fab">
+        <span class="fab-counter"><span class="fab-counter-num">3</span> / 15 条</span>
+        <button class="fab-btn">📋 依次粘贴</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================== -->
+<!-- 场景 4: Mini 模式 -->
+<!-- ============================================== -->
+<div class="scene">
+  <div class="scene-header">
+    <div style="display:flex;align-items:center;">
+      <span class="scene-title">场景 4</span>
+      <span class="scene-badge badge-low">🟢 低价值</span>
+      <span style="margin-left:auto;font-size:11px;color:var(--text-muted);">#8 Mini 模式</span>
+    </div>
+    <p class="scene-desc">极窄 10px 轨道线常驻不占空间，hover 时展开为完整 50px 时间轴</p>
+  </div>
+  <div class="app-shell" style="position:relative;">
+    <div class="header">
+      <div class="header-top">
+        <div class="header-title"><div class="header-title-icon">P</div><span class="header-title-text">PastePanda</span></div>
+        <div class="header-icons">
+          <button class="icon-btn">📝</button><button class="icon-btn">🧲</button><button class="icon-btn">⚙</button><button class="icon-btn">━</button><button class="icon-btn">✕</button>
+        </div>
+      </div>
+      <div class="search-box"><span class="search-icon">🔍</span><input class="search-input" placeholder="搜索剪贴板... (Enter 搜索)" readonly></div>
+      <div class="segmented">
+        <button class="seg-item active"><span class="seg-icon">📋</span>全部<span class="seg-count">15</span></button>
+        <button class="seg-item"><span class="seg-icon">📝</span>文本<span class="seg-count">8</span></button>
+        <button class="seg-item"><span class="seg-icon">📸</span>图片<span class="seg-count">4</span></button>
+        <button class="seg-item"><span class="seg-icon">📁</span>文件<span class="seg-count">3</span></button>
+        <button class="seg-item"><span class="seg-icon">⭐</span>收藏<span class="seg-count">2</span></button>
+      </div>
+      <div class="filter-bar">
+        <button class="filter-btn">全部时间 ▾</button><button class="filter-btn">来源应用 ▾</button>
+      </div>
+    </div>
+
+    <div class="content-area">
+      <!-- ★ Mini 模式：10px 窄轨道 -->
+      <div class="timeline-mini" title="hover 展开完整时间轴">
+        <div class="timeline-mini-track"></div>
+        <div class="timeline-mini-dots">
+          <div class="timeline-mini-dot"></div>
+          <div class="timeline-mini-dot"></div>
+          <div class="timeline-mini-dot"></div>
+          <div class="timeline-mini-dot"></div>
+          <div class="timeline-mini-dot"></div>
+          <div class="timeline-mini-dot"></div>
+          <div class="timeline-mini-dot"></div>
+          <div class="timeline-mini-dot"></div>
+          <div class="timeline-mini-dot"></div>
+          <div class="timeline-mini-dot"></div>
+          <div class="timeline-mini-dot"></div>
+          <div class="timeline-mini-dot"></div>
+          <div class="timeline-mini-dot"></div>
+          <div class="timeline-mini-dot"></div>
+          <div class="timeline-mini-dot"></div>
+        </div>
+      </div>
+
+      <!-- 注意：Mini 模式下 scrollArea padding-left 只需 26px -->
+      <div class="scroll-area" style="padding-left:26px;">
+        <div class="section-sep"><span>📅 今天</span></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">会议纪要 - 2024 Q3 总结</div><div class="card-sub"><span>微信</span></div></div><div class="card-time">10:30</div></div>
+        <div class="card card-image"><div class="card-icon bg-pink">🖼</div><div class="card-content"><div class="card-title">产品截图.png</div><div class="card-sub"><span>Figma</span></div></div><div class="card-time">09:15</div></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">API 接口文档 v2.1</div><div class="card-sub"><span>VS Code</span></div></div><div class="card-time">08:45</div></div>
+        <div class="card card-file"><div class="card-icon bg-green">📁</div><div class="card-content"><div class="card-title">项目文件.zip</div><div class="card-sub"><span>资源管理器</span></div></div><div class="card-time">08:30</div></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">TODO List</div><div class="card-sub"><span>Notion</span></div></div><div class="card-time">08:00</div></div>
+        <div class="section-sep"><span>📅 昨天</span></div>
+        <div class="card card-image"><div class="card-icon bg-pink">🖼</div><div class="card-content"><div class="card-title">设计稿-Final.png</div><div class="card-sub"><span>Figma</span></div></div><div class="card-time">18:20</div></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">git commit message</div><div class="card-sub"><span>Terminal</span></div></div><div class="card-time">16:00</div></div>
+        <div class="card card-file"><div class="card-icon bg-green">📁</div><div class="card-content"><div class="card-title">release-notes.md</div><div class="card-sub"><span>VS Code</span></div></div><div class="card-time">14:30</div></div>
+        <div class="section-sep"><span>📅 本周</span></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">周报 2024-W28</div><div class="card-sub"><span>Notion</span></div></div><div class="card-time">周一</div></div>
+        <div class="card card-text"><div class="card-icon bg-purple">📝</div><div class="card-content"><div class="card-title">代码片段 - React</div><div class="card-sub"><span>VS Code</span></div></div><div class="card-time">周日</div></div>
+        <div class="section-sep"><span>📅 更早</span></div>
+        <div class="card card-image"><div class="card-icon bg-pink">🖼</div><div class="card-content"><div class="card-title">架构图.png</div><div class="card-sub"><span>浏览器</span></div></div><div class="card-time">6/28</div></div>
+        <div class="card card-text"><div class="card-icon bg-blue">📝</div><div class="card-content"><div class="card-title">面试题目整理</div><div class="card-sub"><span>Notion</span></div></div><div class="card-time">6/25</div></div>
+        <div class="card card-file"><div class="card-icon bg-green">📁</div><div class="card-content"><div class="card-title">备份-2024-06.tar.gz</div><div class="card-sub"><span>资源管理器</span></div></div><div class="card-time">6/20</div></div>
+      </div>
+
+      <div class="fab">
+        <span class="fab-counter"><span class="fab-counter-num">3</span> / 15 条</span>
+        <button class="fab-btn">📋 依次粘贴</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="max-width:760px; margin:30px auto 40px; padding:0 16px;">
+  <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:16px; padding:20px 24px;">
+    <h2 style="margin-bottom:12px;">📊 方案总结</h2>
+    <table style="width:100%; font-size:12px; border-collapse:collapse;">
+      <thead>
+        <tr style="text-align:left; border-bottom:2px solid var(--border-color);">
+          <th style="padding:8px 4px;">#</th>
+          <th style="padding:8px 4px;">方案</th>
+          <th style="padding:8px 4px;">价值</th>
+          <th style="padding:8px 4px;">改动量</th>
+          <th style="padding:8px 4px;">推荐</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:8px 4px; font-weight:700;">1</td>
+          <td style="padding:8px 4px;">活跃节点高亮</td>
+          <td style="padding:8px 4px;"><span class="badge-high">🔴 高</span></td>
+          <td style="padding:8px 4px; color:var(--text-muted);">~25 行</td>
+          <td style="padding:8px 4px;">⭐ 强烈推荐</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:8px 4px; font-weight:700;">2</td>
+          <td style="padding:8px 4px;">快捷键支持</td>
+          <td style="padding:8px 4px;"><span class="badge-high">🔴 高</span></td>
+          <td style="padding:8px 4px; color:var(--text-muted);">~30 行</td>
+          <td style="padding:8px 4px;">⭐ 强烈推荐</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:8px 4px; font-weight:700;">3</td>
+          <td style="padding:8px 4px;">密度自适应</td>
+          <td style="padding:8px 4px;"><span class="badge-high">🔴 高</span></td>
+          <td style="padding:8px 4px; color:var(--text-muted);">~50 行</td>
+          <td style="padding:8px 4px;">推荐</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:8px 4px; font-weight:700;">4</td>
+          <td style="padding:8px 4px;">分组折叠</td>
+          <td style="padding:8px 4px;"><span class="badge-mid">🟡 中</span></td>
+          <td style="padding:8px 4px; color:var(--text-muted);">~60 行</td>
+          <td style="padding:8px 4px;">可选</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:8px 4px; font-weight:700;">5</td>
+          <td style="padding:8px 4px;">固定卡片标记</td>
+          <td style="padding:8px 4px;"><span class="badge-mid">🟡 中</span></td>
+          <td style="padding:8px 4px; color:var(--text-muted);">~15 行</td>
+          <td style="padding:8px 4px;">推荐</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:8px 4px; font-weight:700;">6</td>
+          <td style="padding:8px 4px;">胶囊卡片计数</td>
+          <td style="padding:8px 4px;"><span class="badge-mid">🟡 中</span></td>
+          <td style="padding:8px 4px; color:var(--text-muted);">~10 行</td>
+          <td style="padding:8px 4px;">推荐</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:8px 4px; font-weight:700;">7</td>
+          <td style="padding:8px 4px;">空白轨道跳转</td>
+          <td style="padding:8px 4px;"><span class="badge-low">🟢 低</span></td>
+          <td style="padding:8px 4px; color:var(--text-muted);">~20 行</td>
+          <td style="padding:8px 4px;">锦上添花</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 4px; font-weight:700;">8</td>
+          <td style="padding:8px 4px;">Mini 模式</td>
+          <td style="padding:8px 4px;"><span class="badge-low">🟢 低</span></td>
+          <td style="padding:8px 4px; color:var(--text-muted);">~40 行</td>
+          <td style="padding:8px 4px;">锦上添花</td>
+        </tr>
+      </tbody>
+    </table>
+    <p style="margin-top:16px; font-size:12px; color:var(--text-secondary); line-height:1.6;">
+      💡 <strong>建议优先实施 #1 + #2 + #5 + #6</strong>，四项合计约 80 行改动，体验提升显著。<br>
+      其中 #1（活跃节点高亮）和 #5（固定标记）在 Timeline 上提供即时视觉反馈，#2（快捷键）让键盘用户友好，#6（计数）让信息密度更高。
+    </p>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,1450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=420, initial-scale=1.0">
+<title>PastePanda - UX 优化预览</title>
+<style>
+/* ============================================================
+   theme.css — 使用 ocean 主题变量（默认浅色）
+   ============================================================ */
+:root {
+  --app-bg: #F4F6F9;
+  --header-bg-start: #fff;
+  --header-bg-end: #F4F6F9;
+  --card-bg: #fff;
+  --card-border: #E0E4EB;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --seg-bg: #E8E8ED;
+  --seg-active-bg: #fff;
+  --search-bg: #fff;
+  --search-border: #E0E4EB;
+  --input-bg: #F1F5F9;
+  --dialog-bg: #fff;
+  --section-bg: #F0F4F8;
+  --card-selected-bg: #E0F2FE;
+  --card-selected-border: #0284C7;
+  --card-selected-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25);
+  --accent-shadow: rgba(2, 132, 199, 0.15);
+  --hover: #E8ECF2;
+  --red-bg: #FEF2F2;
+  --danger: #DC2626;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #1a1a2e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+/* 模拟应用窗口 — 带圆角和阴影 */
+.app-window {
+  width: 420px;
+  height: 760px;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.1), 0 20px 60px rgba(0,0,0,0.4);
+  display: flex;
+  flex-direction: column;
+  background: var(--app-bg);
+  position: relative;
+}
+
+/* ===== 应用壳 ===== */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ===== Header ===== */
+.header {
+  padding: 14px 16px 0;
+  background: linear-gradient(180deg, var(--header-bg-start) 0%, var(--header-bg-end) 100%);
+  flex-shrink: 0;
+}
+
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-title-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.header-title-text {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.version-badge {
+  display: inline-flex;
+  align-items: center;
+  font-family: "SF Mono", "Consolas", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #0284C7, #0369A1);
+  color: #fff;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  user-select: none;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.35);
+}
+
+.header-icons {
+  display: flex;
+  gap: 4px;
+}
+
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  transition: background 0.15s, transform 0.15s;
+  font-size: 18px;
+}
+.icon-btn:hover {
+  background: rgba(129,140,248,.12);
+  transform: scale(1.08);
+}
+.icon-btn:active { transform: scale(.92); }
+
+.icon-svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ===== 搜索框 ===== */
+.header-controls { padding: 0 0 8px; }
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--search-bg);
+  border: 1px solid var(--search-border);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+  transition: all 0.2s;
+}
+.search-box.focused {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-shadow), 0 2px 8px rgba(0,120,212,0.1);
+}
+
+.search-icon { font-size: 14px; line-height: 1; flex-shrink: 0; }
+
+.search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-family: inherit;
+}
+.search-input::placeholder { color: var(--text-muted); }
+
+.search-clear {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-muted);
+  border-radius: 6px;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  font-size: 12px;
+}
+.search-clear:hover { background: var(--hover); }
+
+/* ===== iOS 分段控件 ===== */
+.tabs-area { padding: 8px 0 0; }
+
+.segmented {
+  display: flex;
+  background: var(--seg-bg);
+  border-radius: 10px;
+  padding: 3px;
+  position: relative;
+}
+
+.seg-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  z-index: 1;
+  position: relative;
+  font-family: inherit;
+}
+.seg-item.active {
+  color: var(--text-primary);
+  font-weight: 600;
+  background: var(--seg-active-bg);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08), 0 0.5px 1px rgba(0,0,0,0.04);
+}
+.seg-item:hover:not(.active) { color: var(--text-primary); }
+.seg-icon { font-size: 15px; }
+
+.seg-count {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-left: 1px;
+  font-variant-numeric: tabular-nums;
+}
+.seg-item.active .seg-count { color: var(--accent); }
+
+/* ===== 筛选栏 ===== */
+.filter-bar {
+  display: flex;
+  gap: 6px;
+  padding: 6px 0 0;
+  align-items: center;
+}
+
+.filter-dropdown {
+  position: relative;
+  flex: 1;
+}
+
+.filter-dropdown-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.filter-dropdown-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.filter-dropdown-btn svg { transition: transform 0.2s; }
+.filter-dropdown-btn.open svg { transform: rotate(180deg); }
+
+/* ===== 滚动区域 ===== */
+.scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  background: var(--app-bg);
+  position: relative;
+}
+.scroll-area::-webkit-scrollbar { width: 4px; }
+.scroll-area::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+
+/* ===== 卡片列表 ===== */
+.card-list {
+  padding: 8px 16px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ===== 时间分隔线 ===== */
+.time-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0 2px;
+}
+
+.time-divider-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+}
+
+.time-divider-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.time-divider-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+/* ===== 卡片 ===== */
+.card-wrap {
+  position: relative;
+  overflow: visible;
+  width: 100%;
+  z-index: 1;
+}
+
+.card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  height: 72px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* 左侧彩色边线 */
+.card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+}
+.card-text::before    { background: var(--accent); }
+.card-image::before   { background: #FF6482; }
+.card-file::before    { background: #34C759; }
+.card-code::before    { background: #BF5AF2; }
+.card-pinned::before  { background: #FFD60A; }
+
+.card:hover {
+  box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+  transform: translateY(-2px) scale(1.008);
+}
+
+.card.selected {
+  background: var(--card-selected-bg);
+  border-color: var(--card-selected-border);
+  box-shadow: var(--card-selected-shadow), 0 4px 16px var(--accent-shadow);
+}
+
+/* 复制成功动画 */
+.card.copy-success {
+  border-color: #10B981 !important;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25), 0 6px 20px rgba(16, 185, 129, 0.15) !important;
+}
+.card.copy-success::before { background: #10B981 !important; }
+
+/* 图标 */
+.card-icon {
+  width: 42px; height: 42px; min-width: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.bg-blue   { background: linear-gradient(135deg, #E8F1FB, #D6E8FA); }
+.bg-green  { background: linear-gradient(135deg, #E5F8EC, #D4F2DE); }
+.bg-pink   { background: linear-gradient(135deg, #FDE8EE, #FAD6DF); }
+.bg-purple { background: linear-gradient(135deg, #F0E8FB, #E5D6FA); }
+
+.card-icon svg { width: 18px; height: 18px; }
+
+/* 图片缩略图 */
+.card-img-thumb {
+  width: 42px; height: 42px; min-width: 42px; min-height: 42px;
+  padding: 0; overflow: hidden;
+}
+.card-img-thumb img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+/* 内容 */
+.card-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+  word-break: break-word;
+  max-height: 36px;
+  white-space: normal;
+}
+
+.card-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.card-pin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.card-source {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;
+}
+
+.card-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.card-pasting {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #10B981;
+  background: #ECFDF5;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+/* Hover 操作按钮 */
+.card-actions {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: all 0.2s ease;
+  z-index: 2;
+}
+.card:hover .card-actions {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.card-action-btn {
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+.card-action-btn:hover {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.card-action-btn.danger:hover {
+  background: var(--red-bg);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* ===== FAB 悬浮按钮 ===== */
+.fab-container {
+  position: absolute;
+  bottom: 12px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  z-index: 50;
+  background: var(--card-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 16px;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 -2px 16px rgba(0,0,0,0.06);
+}
+
+.fab-counter {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.fab-counter-num { color: var(--accent); }
+.fab-counter-sep { opacity: 0.4; margin: 0 3px; }
+
+.fab-btn {
+  height: 38px;
+  padding: 0 18px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 4px 16px var(--accent-shadow);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+.fab-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px var(--accent-shadow); }
+.fab-btn:active { transform: scale(0.97); }
+
+.fab-btn-reset {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.2);
+  border: none;
+  cursor: pointer;
+  color: #fff;
+  transition: background 0.15s;
+  font-size: 12px;
+}
+.fab-btn-reset:hover { background: rgba(255,255,255,0.35); }
+
+/* ===== 回到顶部按钮 ===== */
+.back-to-top {
+  position: absolute;
+  right: 20px;
+  bottom: 80px;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: var(--accent);
+  z-index: 40;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+}
+.back-to-top.visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.back-to-top:hover {
+  background: var(--accent-light);
+  box-shadow: 0 4px 16px var(--accent-shadow);
+  transform: translateY(-2px);
+}
+
+/* ===== Toast 提示 ===== */
+.toast {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+}
+.toast.show {
+  opacity: 1;
+}
+.toast.success {
+  background: #ECFDF5;
+  color: #065F46;
+  border: 1px solid #A7F3D0;
+}
+.toast.error {
+  background: #FEF2F2;
+  color: #991B1B;
+  border: 1px solid #FECACA;
+}
+.toast.info {
+  background: #E0F2FE;
+  color: #0284C7;
+  border: 1px solid rgba(2,132,199,0.2);
+}
+
+/* ===== 搜索无结果 ===== */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 60px 20px;
+  min-height: 300px;
+  user-select: none;
+}
+.empty-icon {
+  width: 64px; height: 64px;
+  border-radius: 20px;
+  background: var(--accent-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px var(--accent-shadow);
+  font-size: 28px;
+}
+.empty-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 6px;
+}
+.empty-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+.empty-clear-btn {
+  margin-top: 8px;
+  padding: 6px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.empty-clear-btn:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+/* ===== 引导卡片（空状态） ===== */
+.guide-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 340px;
+}
+.guide-welcome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--accent-light);
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 500;
+}
+.guide-welcome-emoji { font-size: 20px; flex-shrink: 0; }
+.guide-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  cursor: default;
+  transition: all 0.15s;
+}
+.guide-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px var(--accent-shadow);
+}
+.guide-icon {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 18px;
+}
+.guide-text { flex: 1; min-width: 0; }
+.guide-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.guide-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.guide-footer-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 8px 0;
+  line-height: 1.6;
+}
+.guide-footer-hint kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* 复制成功对勾动画 */
+@keyframes checkPop {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(1.3); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.check-mark {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: #10B981;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  z-index: 3;
+  animation: checkPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+}
+
+/* 暗色模式切换按钮 */
+.mode-toggle {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+  z-index: 200;
+}
+.mode-toggle:hover { background: rgba(255,255,255,0.2); }
+
+/* 暗色模式 */
+body.dark .app-window { box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 20px 60px rgba(0,0,0,0.6); }
+body.dark .app-window {
+  --app-bg: #09090B;
+  --header-bg-start: #18181B;
+  --header-bg-end: #09090B;
+  --card-bg: #18181B;
+  --card-border: #27272A;
+  --card-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  --text-primary: #E4E4E7;
+  --text-secondary: #A1A1AA;
+  --text-muted: #71717A;
+  --border-color: #27272A;
+  --accent: #818CF8;
+  --accent-light: #1E1B4B;
+  --seg-bg: #27272A;
+  --seg-active-bg: #3F3F46;
+  --search-bg: #27272A;
+  --search-border: #3F3F46;
+  --input-bg: #27272A;
+  --dialog-bg: #18181B;
+  --section-bg: #0F0F11;
+  --card-selected-bg: #1E1B4B;
+  --card-selected-border: #818CF8;
+  --card-selected-shadow: 0 0 0 2px rgba(129,140,248,0.25);
+  --accent-shadow: rgba(129,140,248,0.2);
+  --hover: #1F1F23;
+}
+body.dark .toast.success { background: #064E3B; color: #A7F3D0; border-color: #065F46; }
+body.dark .toast.info { background: #1E1B4B; color: #A5B4FC; border-color: #312E81; }
+body.dark .version-badge { background: linear-gradient(135deg, #818CF8, #6366F1); box-shadow: 0 2px 8px rgba(129,140,248,0.35); }
+</style>
+</head>
+<body>
+
+<button class="mode-toggle" onclick="toggleDarkMode()" title="切换暗色模式">🌓 切换暗色模式</button>
+
+<div class="app-window">
+  <div class="app-shell">
+
+    <!-- ========== Header ========== -->
+    <div class="header">
+      <div class="header-top">
+        <div class="header-title">
+          <span class="header-title-icon">🐼</span>
+          <span class="header-title-text">PastePanda</span>
+          <span class="version-badge">v2.4.3</span>
+        </div>
+        <div class="header-icons">
+          <button class="icon-btn" title="片段库">📝</button>
+          <button class="icon-btn" title="内容提取">🧲</button>
+          <button class="icon-btn" title="设置">
+            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linecap="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+          <button class="icon-btn" title="最小化">
+            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2"><path d="M5 12h14"/></svg>
+          </button>
+          <button class="icon-btn" title="隐藏窗口">
+            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="header-controls">
+        <!-- 搜索框 -->
+        <div class="search-box" id="searchBox">
+          <span class="search-icon">🔍</span>
+          <input type="text" class="search-input" id="searchInput" placeholder="搜索剪贴板... (Enter 搜索)" onfocus="document.getElementById('searchBox').classList.add('focused')" onblur="document.getElementById('searchBox').classList.remove('focused')" onkeydown="if(event.key==='Enter') handleSearch()" oninput="handleSearchInput()">
+          <button class="search-clear" id="searchClear" style="display:none" onclick="clearSearch()">✕</button>
+        </div>
+
+        <!-- iOS 分段控件 -->
+        <div class="tabs-area">
+          <div class="segmented">
+            <button class="seg-item active" data-tab="all" onclick="switchTab(this, 'all')">
+              <span class="seg-icon">📋</span><span>全部</span><span class="seg-count">12</span>
+            </button>
+            <button class="seg-item" data-tab="text" onclick="switchTab(this, 'text')">
+              <span class="seg-icon">📝</span><span>文本</span><span class="seg-count">6</span>
+            </button>
+            <button class="seg-item" data-tab="image" onclick="switchTab(this, 'image')">
+              <span class="seg-icon">📸</span><span>图片</span><span class="seg-count">3</span>
+            </button>
+            <button class="seg-item" data-tab="file" onclick="switchTab(this, 'file')">
+              <span class="seg-icon">📁</span><span>文件</span><span class="seg-count">1</span>
+            </button>
+            <button class="seg-item" data-tab="pinned" onclick="switchTab(this, 'pinned')">
+              <span class="seg-icon">⭐</span><span>收藏</span><span class="seg-count">2</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 筛选栏 -->
+        <div class="filter-bar">
+          <div class="filter-dropdown">
+            <button class="filter-dropdown-btn" id="timeFilterBtn" onclick="toggleTimeDropdown()">
+              <span id="timeFilterLabel">全部时间</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div id="timeDropdown" style="display:none; position:absolute; top:calc(100% + 4px); left:0; right:0; background:var(--dialog-bg); border:1px solid var(--border-color); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,0.1); z-index:30; overflow:hidden;">
+              <button class="filter-dropdown-item active" onclick="selectTime(this, '全部时间')">全部时间</button>
+              <button class="filter-dropdown-item" onclick="selectTime(this, '今天')">今天</button>
+              <button class="filter-dropdown-item" onclick="selectTime(this, '本周')">本周</button>
+              <button class="filter-dropdown-item" onclick="selectTime(this, '本月')">本月</button>
+            </div>
+          </div>
+          <div class="filter-dropdown">
+            <button class="filter-dropdown-btn" onclick="toggleSourceDropdown()">
+              <span id="sourceFilterLabel">来源应用</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div id="sourceDropdown" style="display:none; position:absolute; top:calc(100% + 4px); left:0; right:0; background:var(--dialog-bg); border:1px solid var(--border-color); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,0.1); z-index:30; overflow:hidden;">
+              <button class="filter-dropdown-item active" onclick="selectSource(this, '来源应用')">全部来源</button>
+              <button class="filter-dropdown-item" onclick="selectSource(this, 'VS Code')">VS Code</button>
+              <button class="filter-dropdown-item" onclick="selectSource(this, 'Chrome')">Chrome</button>
+              <button class="filter-dropdown-item" onclick="selectSource(this, '微信')">微信</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 卡片列表 ========== -->
+    <div class="scroll-area" id="scrollArea" onscroll="handleScroll()">
+      <div class="card-list" id="cardList">
+
+        <!-- ===== 今天 ===== -->
+        <div class="time-divider">
+          <div class="time-divider-label">
+            <span class="time-divider-dot"></span>今天
+          </div>
+          <div class="time-divider-line"></div>
+        </div>
+
+        <!-- 卡片 1 — 文本 -->
+        <div class="card-wrap" onclick="handleCardClick(this, 'card1')">
+          <div class="card card-text" id="card1">
+            <div class="card-icon bg-blue">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2.2" stroke-linecap="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+            </div>
+            <div class="card-content">
+              <p class="card-title">React Hooks 最佳实践 — useEffect 依赖数组应该包含所有在 effect 中使用的响应式值</p>
+              <div class="card-sub">
+                <span class="card-source">VS Code</span>
+              </div>
+            </div>
+            <span class="card-time">3 分钟前</span>
+            <div class="card-actions">
+              <button class="card-action-btn" title="复制" onclick="event.stopPropagation(); copyCard('card1')">📋</button>
+              <button class="card-action-btn" title="收藏" onclick="event.stopPropagation(); toggleFavorite(this)">☆</button>
+              <button class="card-action-btn danger" title="删除" onclick="event.stopPropagation()">🗑</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 卡片 2 — 图片 -->
+        <div class="card-wrap" onclick="handleCardClick(this, 'card2')">
+          <div class="card card-image" id="card2">
+            <div class="card-icon bg-pink">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#EC4899" stroke-width="2.2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            </div>
+            <div class="card-content">
+              <p class="card-title">screenshot_2024.png</p>
+              <div class="card-sub">
+                <span class="card-source">截图工具</span>
+              </div>
+            </div>
+            <span class="card-time">15 分钟前</span>
+            <div class="card-actions">
+              <button class="card-action-btn" title="复制" onclick="event.stopPropagation(); copyCard('card2')">📋</button>
+              <button class="card-action-btn" title="收藏" onclick="event.stopPropagation(); toggleFavorite(this)">☆</button>
+              <button class="card-action-btn danger" title="删除" onclick="event.stopPropagation()">🗑</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 卡片 3 — 代码 -->
+        <div class="card-wrap" onclick="handleCardClick(this, 'card3')">
+          <div class="card card-code" id="card3">
+            <div class="card-icon bg-purple">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="2.2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            </div>
+            <div class="card-content">
+              <p class="card-title">const result = items.filter(i => i.active).map(i => i.name);</p>
+              <div class="card-sub">
+                <span class="card-source">VS Code</span>
+              </div>
+            </div>
+            <span class="card-time">1 小时前</span>
+            <div class="card-actions">
+              <button class="card-action-btn" title="复制" onclick="event.stopPropagation(); copyCard('card3')">📋</button>
+              <button class="card-action-btn" title="收藏" onclick="event.stopPropagation(); toggleFavorite(this)">☆</button>
+              <button class="card-action-btn danger" title="删除" onclick="event.stopPropagation()">🗑</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 卡片 4 — 置顶 -->
+        <div class="card-wrap" onclick="handleCardClick(this, 'card4')">
+          <div class="card card-pinned" id="card4">
+            <div class="card-icon bg-blue">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.2" stroke-linecap="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+            </div>
+            <div class="card-content">
+              <p class="card-title">PastePanda 项目开发规范与发版流程文档</p>
+              <div class="card-sub">
+                <span class="card-pin-badge">📌 置顶</span>
+                <span class="card-source">Notion</span>
+              </div>
+            </div>
+            <span class="card-time">2 小时前</span>
+            <div class="card-actions">
+              <button class="card-action-btn" title="复制" onclick="event.stopPropagation(); copyCard('card4')">📋</button>
+              <button class="card-action-btn" title="取消收藏" style="color:#F59E0B;border-color:#F59E0B;background:#FEF3C7" onclick="event.stopPropagation(); toggleFavorite(this)">★</button>
+              <button class="card-action-btn danger" title="删除" onclick="event.stopPropagation()">🗑</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 卡片 5 — 链接 -->
+        <div class="card-wrap" onclick="handleCardClick(this, 'card5')">
+          <div class="card card-text" id="card5">
+            <div class="card-icon bg-green">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            </div>
+            <div class="card-content">
+              <p class="card-title">https://github.com/tauri-apps/tauri/releases/tag/tauri-v2.0.0</p>
+              <div class="card-sub">
+                <span class="card-source">Chrome</span>
+              </div>
+            </div>
+            <span class="card-time">3 小时前</span>
+            <div class="card-actions">
+              <button class="card-action-btn" title="复制" onclick="event.stopPropagation(); copyCard('card5')">📋</button>
+              <button class="card-action-btn" title="收藏" onclick="event.stopPropagation(); toggleFavorite(this)">☆</button>
+              <button class="card-action-btn danger" title="删除" onclick="event.stopPropagation()">🗑</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 卡片 6 — 文件 -->
+        <div class="card-wrap" onclick="handleCardClick(this, 'card6')">
+          <div class="card card-file" id="card6">
+            <div class="card-icon bg-green">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#06B6D4" stroke-width="2.2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+            </div>
+            <div class="card-content">
+              <p class="card-title">C:\Users\project\设计稿\v3-final.fig</p>
+              <div class="card-sub">
+                <span class="card-source">文件管理器</span>
+              </div>
+            </div>
+            <span class="card-time">5 小时前</span>
+            <div class="card-actions">
+              <button class="card-action-btn" title="复制" onclick="event.stopPropagation(); copyCard('card6')">📋</button>
+              <button class="card-action-btn" title="收藏" onclick="event.stopPropagation(); toggleFavorite(this)">☆</button>
+              <button class="card-action-btn danger" title="删除" onclick="event.stopPropagation()">🗑</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== 昨天 ===== -->
+        <div class="time-divider">
+          <div class="time-divider-label">
+            <span class="time-divider-dot"></span>昨天
+          </div>
+          <div class="time-divider-line"></div>
+        </div>
+
+        <!-- 卡片 7 — 文本 -->
+        <div class="card-wrap" onclick="handleCardClick(this, 'card7')">
+          <div class="card card-text" id="card7">
+            <div class="card-icon bg-blue">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+            </div>
+            <div class="card-content">
+              <p class="card-title">13812345678</p>
+              <div class="card-sub">
+                <span class="card-source">微信</span>
+              </div>
+            </div>
+            <span class="card-time">昨天 14:32</span>
+            <div class="card-actions">
+              <button class="card-action-btn" title="复制" onclick="event.stopPropagation(); copyCard('card7')">📋</button>
+              <button class="card-action-btn" title="收藏" onclick="event.stopPropagation(); toggleFavorite(this)">☆</button>
+              <button class="card-action-btn danger" title="删除" onclick="event.stopPropagation()">🗑</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 卡片 8 — 邮箱 -->
+        <div class="card-wrap" onclick="handleCardClick(this, 'card8')">
+          <div class="card card-text" id="card8">
+            <div class="card-icon bg-blue">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.2"><circle cx="12" cy="12" r="4"/><line x1="16.24" y1="7.76" x2="16.24" y2="7.76"/><line x1="7.76" y1="16.24" x2="7.76" y2="16.24"/></svg>
+            </div>
+            <div class="card-content">
+              <p class="card-title">dev-team@pastepanda.com</p>
+              <div class="card-sub">
+                <span class="card-source">Chrome</span>
+              </div>
+            </div>
+            <span class="card-time">昨天 10:15</span>
+            <div class="card-actions">
+              <button class="card-action-btn" title="复制" onclick="event.stopPropagation(); copyCard('card8')">📋</button>
+              <button class="card-action-btn" title="收藏" onclick="event.stopPropagation(); toggleFavorite(this)">☆</button>
+              <button class="card-action-btn danger" title="删除" onclick="event.stopPropagation()">🗑</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== 本周 ===== -->
+        <div class="time-divider">
+          <div class="time-divider-label">
+            <span class="time-divider-dot"></span>本周
+          </div>
+          <div class="time-divider-line"></div>
+        </div>
+
+        <!-- 卡片 9 — 文本 -->
+        <div class="card-wrap" onclick="handleCardClick(this, 'card9')">
+          <div class="card card-text" id="card9">
+            <div class="card-icon bg-blue">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2.2" stroke-linecap="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+            </div>
+            <div class="card-content">
+              <p class="card-title"># Task List - Sprint 24
+- [x] 完成搜索优化
+- [ ] 添加暗色模式
+- [ ] 性能优化</p>
+              <div class="card-sub">
+                <span class="card-source">Notion</span>
+              </div>
+            </div>
+            <span class="card-time">周一 09:00</span>
+            <div class="card-actions">
+              <button class="card-action-btn" title="复制" onclick="event.stopPropagation(); copyCard('card9')">📋</button>
+              <button class="card-action-btn" title="收藏" onclick="event.stopPropagation(); toggleFavorite(this)">☆</button>
+              <button class="card-action-btn danger" title="删除" onclick="event.stopPropagation()">🗑</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 卡片 10 — 图片 -->
+        <div class="card-wrap" onclick="handleCardClick(this, 'card10')">
+          <div class="card card-image" id="card10">
+            <div class="card-icon bg-pink">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#EC4899" stroke-width="2.2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            </div>
+            <div class="card-content">
+              <p class="card-title">banner_design_v2.jpg</p>
+              <div class="card-sub">
+                <span class="card-source">微信</span>
+              </div>
+            </div>
+            <span class="card-time">周日 18:00</span>
+            <div class="card-actions">
+              <button class="card-action-btn" title="复制" onclick="event.stopPropagation(); copyCard('card10')">📋</button>
+              <button class="card-action-btn" title="收藏" onclick="event.stopPropagation(); toggleFavorite(this)">☆</button>
+              <button class="card-action-btn danger" title="删除" onclick="event.stopPropagation()">🗑</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 加载更多提示 -->
+        <div style="height:40px;display:flex;align-items:center;justify-content:center;gap:12px">
+          <span style="font-size:11px;color:var(--text-muted)">加载中…</span>
+        </div>
+
+      </div>
+
+      <!-- 回到顶部按钮 -->
+      <button class="back-to-top visible" id="backToTop" onclick="scrollToTop()" title="回到顶部">↑</button>
+
+      <!-- Toast -->
+      <div class="toast" id="toast"></div>
+    </div>
+
+    <!-- ========== FAB 悬浮按钮 ========== -->
+    <div class="fab-container">
+      <div class="fab-counter">
+        <span class="fab-counter-num">3</span><span class="fab-counter-sep">/</span>6
+      </div>
+      <button class="fab-btn">
+        📋 粘贴
+        <button class="fab-btn-reset" onclick="event.stopPropagation()" title="重置">↺</button>
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ===== 搜索处理 =====
+function handleSearch() {
+  const input = document.getElementById('searchInput');
+  const clearBtn = document.getElementById('searchClear');
+  if (input.value.trim()) {
+    clearBtn.style.display = 'flex';
+    // 这里可以触发搜索无结果状态
+    if (input.value === 'test_empty') {
+      showEmptySearch();
+    }
+  }
+}
+
+function handleSearchInput() {
+  const input = document.getElementById('searchInput');
+  const clearBtn = document.getElementById('searchClear');
+  clearBtn.style.display = input.value ? 'flex' : 'none';
+}
+
+function clearSearch() {
+  const input = document.getElementById('searchInput');
+  const clearBtn = document.getElementById('searchClear');
+  input.value = '';
+  clearBtn.style.display = 'none';
+  restoreCardList();
+  document.getElementById('searchBox').classList.remove('focused');
+}
+
+// ===== Tab 切换 =====
+function switchTab(btn, tab) {
+  document.querySelectorAll('.seg-item').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+// ===== 筛选下拉 =====
+function toggleTimeDropdown() {
+  const dd = document.getElementById('timeDropdown');
+  dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+}
+
+function selectTime(btn, label) {
+  document.getElementById('timeFilterLabel').textContent = label;
+  document.querySelectorAll('#timeDropdown button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('timeDropdown').style.display = 'none';
+}
+
+function toggleSourceDropdown() {
+  const dd = document.getElementById('sourceDropdown');
+  dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+}
+
+function selectSource(btn, label) {
+  document.getElementById('sourceFilterLabel').textContent = label;
+  document.querySelectorAll('#sourceDropdown button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('sourceDropdown').style.display = 'none';
+}
+
+// 点击外部关闭下拉
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.filter-dropdown')) {
+    document.getElementById('timeDropdown').style.display = 'none';
+    document.getElementById('sourceDropdown').style.display = 'none';
+  }
+});
+
+// ===== 卡片点击 =====
+function handleCardClick(wrap, cardId) {
+  const card = document.getElementById(cardId);
+  // 选中状态
+  document.querySelectorAll('.card.selected').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+
+  // 复制成功动画
+  card.classList.add('copy-success');
+
+  // 显示对勾
+  const existingCheck = card.querySelector('.check-mark');
+  if (existingCheck) existingCheck.remove();
+  const check = document.createElement('span');
+  check.className = 'check-mark';
+  check.textContent = '✓';
+  card.appendChild(check);
+
+  // Toast
+  showToast('已复制到剪贴板', 'success');
+
+  // 清除动画
+  setTimeout(() => {
+    card.classList.remove('copy-success');
+    if (check && check.parentNode) check.remove();
+  }, 1500);
+}
+
+// ===== 快速复制 =====
+function copyCard(cardId) {
+  const card = document.getElementById(cardId);
+  card.classList.add('copy-success');
+  const existingCheck = card.querySelector('.check-mark');
+  if (existingCheck) existingCheck.remove();
+  const check = document.createElement('span');
+  check.className = 'check-mark';
+  check.textContent = '✓';
+  card.appendChild(check);
+  showToast('已复制到剪贴板', 'success');
+  setTimeout(() => {
+    card.classList.remove('copy-success');
+    if (check && check.parentNode) check.remove();
+  }, 1500);
+}
+
+// ===== 收藏切换 =====
+function toggleFavorite(btn) {
+  if (btn.textContent.trim() === '★') {
+    btn.textContent = '☆';
+    btn.style.color = '';
+    btn.style.borderColor = '';
+    btn.style.background = '';
+    showToast('已取消收藏', 'info');
+  } else {
+    btn.textContent = '★';
+    btn.style.color = '#F59E0B';
+    btn.style.borderColor = '#F59E0B';
+    btn.style.background = '#FEF3C7';
+    showToast('已收藏', 'success');
+  }
+}
+
+// ===== Toast =====
+function showToast(msg, type) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.className = 'toast ' + type + ' show';
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => {
+    toast.classList.remove('show');
+  }, 2000);
+}
+
+// ===== 回到顶部 =====
+function handleScroll() {
+  const scrollArea = document.getElementById('scrollArea');
+  const backToTop = document.getElementById('backToTop');
+  if (scrollArea.scrollTop > 150) {
+    backToTop.classList.add('visible');
+  } else {
+    backToTop.classList.remove('visible');
+  }
+}
+
+function scrollToTop() {
+  document.getElementById('scrollArea').scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ===== 搜索无结果 =====
+function showEmptySearch() {
+  const cardList = document.getElementById('cardList');
+  cardList.innerHTML = `
+    <div class="empty-state">
+      <div class="empty-icon">🔍</div>
+      <div style="text-align:center">
+        <p class="empty-title">没有找到匹配的记录</p>
+        <p class="empty-desc">试试其他关键词</p>
+        <button class="empty-clear-btn" onclick="clearSearch(); restoreCardList();">清除搜索条件</button>
+      </div>
+    </div>
+  `;
+}
+
+// ===== 空状态 =====
+let originalCardsHTML = '';
+
+function restoreCardList() {
+  if (originalCardsHTML) {
+    document.getElementById('cardList').innerHTML = originalCardsHTML;
+    document.getElementById('searchInput').value = '';
+    document.getElementById('searchClear').style.display = 'none';
+  }
+}
+
+// 保存原始 HTML
+window.addEventListener('DOMContentLoaded', () => {
+  originalCardsHTML = document.getElementById('cardList').innerHTML;
+});
+
+// ===== 暗色模式 =====
+function toggleDarkMode() {
+  document.body.classList.toggle('dark');
+}
+</script>
+
+<style>
+/* 筛选下拉项样式 */
+.filter-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 7px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background 0.1s;
+}
+.filter-dropdown-item:hover { background: var(--accent-light); }
+.filter-dropdown-item.active {
+  color: var(--accent);
+  font-weight: 600;
+  background: var(--accent-light);
+}
+</style>
+
+</body>
+</html>

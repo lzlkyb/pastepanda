@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=680, initial-scale=1.0">
+<title>PastePanda — 侧边栏与列表平齐（策略1）完整效果</title>
+<style>
+/* ===== 主题变量 — 完全复刻 TopBar.module.css + CardList.module.css ===== */
+:root {
+  --app-bg: #F4F6F9;
+  --header-bg-start: #fff;
+  --header-bg-end: #F4F6F9;
+  --card-bg: #fff;
+  --card-border: #E0E4EB;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --card-selected-bg: #E0F2FE;
+  --card-selected-border: #0284C7;
+  --card-selected-shadow: 0 0 0 2px rgba(2,132,199,0.25);
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --accent-shadow: rgba(2,132,199,0.15);
+  --seg-bg: #E8E8ED;
+  --seg-active-bg: #fff;
+  --search-bg: #fff;
+  --search-border: #E0E4EB;
+  --input-bg: #F1F5F9;
+  --dialog-bg: #fff;
+  --section-bg: #F0F4F8;
+  --hover: #E8ECF2;
+  --sidebar-width: 200px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  background: #1a1a2e;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  gap: 24px;
+  padding: 24px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ================================================================
+   窗口容器 — 关闭: 480px,  打开: 680px（+200px 侧边栏）
+================================================================ */
+.app-shell {
+  height: 700px;
+  display: flex;
+  flex-direction: column;
+  background: var(--app-bg);
+  border-radius: 16px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 0 0 2px #333, 0 20px 60px rgba(0,0,0,0.5);
+  width: 480px;
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.app-shell.expanded { width: 680px; }
+
+/* ===== 窗口尺寸标签 ===== */
+.windowLabel {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  background: rgba(15,23,42,0.85); color: #fff;
+  padding: 3px 12px; border-radius: 10px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
+  z-index: 20; opacity: 0; transition: opacity 0.3s;
+  pointer-events: none; white-space: nowrap;
+}
+.app-shell.closed .windowLabelClosed { opacity: 1; }
+.app-shell.expanded .windowLabelOpen { opacity: 1; }
+
+/* 高亮标注区域 */
+.highlightBox {
+  position: absolute; pointer-events: none; z-index: 15;
+  border: 2px dashed rgba(52, 199, 89, 0.6);
+  border-radius: 4px; opacity: 0; transition: opacity 0.3s;
+}
+.app-shell.expanded .highlightBox { opacity: 1; }
+
+/* ================================================================
+   TopBar — 完全复刻 TopBar.tsx + TopBar.module.css
+================================================================ */
+.header {
+  padding: 16px 16px 0;
+  background: linear-gradient(180deg, var(--header-bg-start) 0%, var(--header-bg-end) 100%);
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.headerTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.headerTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ☰ 侧边栏切换按钮 — 复刻 p0-groups-tags 的 sidebar-toggle */
+.sidebarToggle {
+  width: 34px; height: 34px;
+  border: none; background: transparent;
+  border-radius: 10px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-secondary); font-size: 16px;
+  transition: all 0.15s; flex-shrink: 0;
+}
+.sidebarToggle:hover { background: rgba(129,140,248,.12); transform: scale(1.08); }
+.sidebarToggle:active { transform: scale(.92); }
+.sidebarToggleActive { color: var(--accent); background: var(--accent-light); }
+
+.headerTitleIcon {
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px;
+}
+.headerTitleText { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+
+.headerIcons { display: flex; gap: 4px; }
+
+/* 图标按钮 — 完全复刻 .iconBtn */
+.iconBtn {
+  width: 34px; height: 34px;
+  border: none; background: transparent;
+  border-radius: 10px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-secondary); font-size: 18px;
+  transition: background 0.15s, transform 0.15s;
+}
+.iconBtn:hover { background: rgba(129,140,248,.12); transform: scale(1.08); }
+.iconBtn:active { transform: scale(.92); }
+
+.iconEmoji { font-size: 18px; line-height: 1; }
+.iconSvg { width: 18px; height: 18px; }
+
+/* ===== Search Box — 完全复刻 .searchBox ===== */
+.searchBox {
+  display: flex; align-items: center; gap: 8px;
+  height: 38px; padding: 0 14px;
+  border-radius: 12px;
+  background: var(--search-bg);
+  border: 1px solid var(--search-border);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+  transition: all 0.2s;
+}
+.searchIcon { font-size: 14px; line-height: 1; flex-shrink: 0; color: var(--text-muted); }
+.searchInput {
+  flex: 1; border: none; background: transparent; outline: none;
+  font-size: 13px; color: var(--text-primary); font-family: inherit;
+}
+.searchInput::placeholder { color: var(--text-muted); }
+
+/* ===== Tabs Area — 完全复刻 .tabsArea + .segmented ===== */
+.tabsArea { padding: 10px 0 0; }
+.segmented {
+  display: flex; background: var(--seg-bg);
+  border-radius: 10px; padding: 3px;
+  position: relative;
+}
+.segItem {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  gap: 4px; height: 36px; border-radius: 8px;
+  border: none; background: transparent; cursor: pointer;
+  font-size: 12px; font-weight: 500; color: var(--text-secondary);
+  font-family: inherit; transition: all 0.2s;
+  z-index: 1; position: relative;
+}
+.segItemActive {
+  color: var(--text-primary); font-weight: 600;
+  background: var(--seg-active-bg);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08), 0 0.5px 1px rgba(0,0,0,0.04);
+}
+.segItem:hover:not(.segItemActive) { color: var(--text-primary); }
+.segIcon { font-size: 15px; }
+.segCount {
+  font-size: 10px; font-weight: 700; color: var(--text-muted);
+  margin-left: 1px; font-variant-numeric: tabular-nums;
+}
+.segItemActive .segCount { color: var(--accent); }
+
+/* ===== Filter Bar — 完全复刻 .filterBar + .filterDropdownBtn ===== */
+.filterBar {
+  display: flex; gap: 6px; padding: 8px 0 0;
+  align-items: center;
+}
+.filterDropdownBtn {
+  flex: 1; display: flex; align-items: center; justify-content: space-between;
+  gap: 4px; height: 28px; padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-secondary);
+  font-size: 11px; font-weight: 500; cursor: pointer;
+  font-family: inherit; transition: all 0.15s;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.filterDropdownBtn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ================================================================
+   ★ 策略1核心：内容区 = 侧边栏 + 卡片面板
+   侧边栏从 TopBar 下方开始，与卡片列表顶部平齐
+================================================================ */
+.contentArea {
+  flex: 1; display: flex; overflow: hidden; min-height: 0;
+}
+
+/* ★ 侧边栏 — 完全复刻 p0-groups-tags 的 .sidebar */
+.sidebar {
+  width: 0; min-width: 0; height: 100%;
+  background: var(--card-bg);
+  border-right: 1px solid transparent;
+  display: flex; flex-direction: column; overflow: hidden;
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              min-width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.35s ease;
+}
+.sidebar.open {
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+  border-right-color: var(--border-color);
+}
+
+/* 侧边栏头部 — 复刻 .sidebar-header */
+.sidebarHeader {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 12px 10px; flex-shrink: 0;
+  opacity: 0; transition: opacity 0.2s ease 0.15s;
+}
+.sidebar.open .sidebarHeader { opacity: 1; }
+.sidebarTitle {
+  font-size: 11px; font-weight: 700; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.sidebarAddBtn {
+  width: 24px; height: 24px; border-radius: 6px;
+  border: none; background: transparent;
+  color: var(--text-secondary); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; transition: all 0.15s;
+}
+.sidebarAddBtn:hover { background: var(--hover); color: var(--accent); }
+
+/* 侧边栏列表 — 复刻 .sidebar-list */
+.sidebarList {
+  flex: 1; overflow-y: auto; padding: 0 8px 8px;
+  display: flex; flex-direction: column; gap: 2px;
+  scrollbar-width: thin; scrollbar-color: var(--border-color) transparent;
+  opacity: 0; transition: opacity 0.2s ease 0.2s;
+}
+.sidebar.open .sidebarList { opacity: 1; }
+.sidebarList::-webkit-scrollbar { width: 4px; }
+.sidebarList::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
+
+/* 分组项 — 复刻 .sidebar-item */
+.groupItem {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 10px;
+  cursor: pointer; border: none; background: transparent;
+  font-family: inherit; font-size: 13px; color: var(--text-primary);
+  transition: all 0.15s; text-align: left; width: 100%;
+}
+.groupItem:hover { background: var(--hover); }
+.groupItem.active {
+  background: var(--accent-light); color: var(--accent); font-weight: 600;
+}
+.groupDot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.groupIcon { font-size: 16px; flex-shrink: 0; width: 16px; text-align: center; }
+.groupName { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.groupCount {
+  font-size: 11px; color: var(--text-muted); font-weight: 500; flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.groupItem.active .groupCount { color: var(--accent); }
+
+/* 分割线 — 复刻 .sidebar-sep */
+.sidebarSep {
+  height: 1px; background: var(--border-color); margin: 6px 10px;
+}
+
+/* 侧边栏底部 — 复刻 .sidebar-footer */
+.sidebarFooter {
+  padding: 8px; border-top: 1px solid var(--border-color);
+  flex-shrink: 0; font-size: 11px; color: var(--text-muted);
+  text-align: center; white-space: nowrap;
+  opacity: 0; transition: opacity 0.2s ease 0.25s;
+}
+.sidebar.open .sidebarFooter { opacity: 1; }
+.sidebarFooter kbd {
+  display: inline-block; padding: 1px 5px; border-radius: 3px;
+  background: var(--section-bg); border: 1px solid var(--border-color);
+  font-family: inherit; font-size: 10px;
+}
+
+/* ===== 卡片面板 — 完全复刻 CardList.module.css ===== */
+.cardPanel {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+
+.scrollArea {
+  flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0;
+  scrollbar-width: thin; scrollbar-color: var(--border-color) transparent;
+}
+.scrollArea::-webkit-scrollbar { width: 5px; }
+.scrollArea::-webkit-scrollbar-track { background: transparent; }
+.scrollArea::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+
+.cardList {
+  --card-height: 72px;
+  --card-gap: 10px;
+  padding: 10px 16px 80px;
+  display: flex; flex-direction: column; gap: var(--card-gap);
+}
+
+.cardWrap { position: relative; overflow: visible; width: 100%; z-index: 1; }
+
+/* 卡片 — 完全复刻 .card */
+.card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
+  cursor: pointer; position: relative; overflow: hidden;
+  height: 72px; width: 100%; box-sizing: border-box;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.card:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.1); transform: translateY(-2px) scale(1.008); }
+.card.selected {
+  background: var(--card-selected-bg);
+  border-color: var(--card-selected-border);
+  box-shadow: var(--card-selected-shadow), 0 4px 16px var(--accent-shadow);
+}
+
+/* 左侧彩色边线 — 完全复刻 */
+.card::before {
+  content: ''; position: absolute;
+  left: 0; top: 0; bottom: 0; width: 3px;
+  border-radius: 0 3px 3px 0;
+}
+.cardText::before   { background: var(--accent); }
+.cardImage::before  { background: #FF6482; }
+.cardFile::before   { background: #34C759; }
+.cardCode::before   { background: #BF5AF2; }
+.cardPinned::before { background: #FFD60A; }
+.cardPinned::after {
+  content: '📌'; position: absolute;
+  left: -1px; top: 4px;
+  font-size: 10px; line-height: 1; z-index: 3;
+  filter: drop-shadow(0 1px 2px rgba(180,83,9,0.3));
+}
+
+/* 图标区 — 完全复刻 */
+.cardIcon {
+  width: 42px; height: 42px; min-width: 42px;
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0;
+}
+.bgBlue   { background: linear-gradient(135deg, #E8F1FB, #D6E8FA); }
+.bgGreen  { background: linear-gradient(135deg, #E5F8EC, #D4F2DE); }
+.bgPink   { background: linear-gradient(135deg, #FDE8EE, #FAD6DF); }
+.bgPurple { background: linear-gradient(135deg, #F0E8FB, #E5D6FA); }
+
+.cardContent { flex: 1; min-width: 0; overflow: hidden; }
+.cardTitle {
+  font-size: 13px; font-weight: 600; color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden; text-overflow: ellipsis;
+  line-height: 1.4; max-height: 36px;
+  word-break: break-word; white-space: normal;
+}
+.cardSub {
+  font-size: 11px; color: var(--text-secondary); margin-top: 2px;
+  display: flex; align-items: center; gap: 6px;
+  white-space: nowrap; overflow: hidden;
+}
+.cardTime {
+  font-size: 11px; color: var(--text-muted);
+  flex-shrink: 0; font-variant-numeric: tabular-nums;
+  align-self: flex-start; margin-top: 2px;
+}
+
+/* 标签徽标 — 复刻 p0-groups-tags 的 .tag-badge */
+.cardTags {
+  display: flex; align-items: center; gap: 4px;
+  margin-top: 3px; flex-wrap: nowrap; overflow: hidden;
+}
+.tagBadge {
+  display: inline-flex; align-items: center;
+  padding: 1px 8px; border-radius: 6px;
+  font-size: 10px; font-weight: 600;
+  white-space: nowrap; flex-shrink: 0; cursor: pointer;
+  transition: all 0.15s;
+}
+.tagBadge:hover { filter: brightness(0.9); }
+.tagBadgeMore {
+  font-size: 10px; color: var(--text-muted); font-weight: 500; flex-shrink: 0;
+}
+
+/* 颜色预设 */
+.color-blue   { color: #1D4ED8; background: #DBEAFE; }
+.color-green  { color: #166534; background: #DCFCE7; }
+.color-orange { color: #92400E; background: #FEF3C7; }
+.color-purple { color: #6B21A8; background: #F3E8FF; }
+.color-pink   { color: #9D174D; background: #FCE7F3; }
+.color-teal   { color: #0F766E; background: #CCFBF1; }
+
+.dot-blue   { background: #3B82F6; }
+.dot-green  { background: #10B981; }
+.dot-orange { background: #F59E0B; }
+.dot-purple { background: #8B5CF6; }
+.dot-pink   { background: #EC4899; }
+.dot-teal   { background: #06B6D4; }
+
+/* 搜索高亮 — 复刻 .search-highlight */
+.search-highlight { background: #FDE68A; color: #92400E; border-radius: 2px; padding: 0 1px; }
+
+/* ===== FAB — 完全复刻 .fabContainer ===== */
+.fabContainer {
+  position: fixed; bottom: 12px; left: 16px; right: 16px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; z-index: 50;
+  background: var(--card-bg);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border-radius: 16px;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 -2px 16px rgba(0,0,0,0.06);
+}
+.fabCounter {
+  height: 28px; padding: 0 10px; border-radius: 8px;
+  display: flex; align-items: center;
+  font-size: 11px; font-weight: 600;
+  background: transparent; border: none;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.fabCounterNum { color: var(--accent); }
+.fabCounterSep { opacity: 0.4; margin: 0 3px; }
+.fabBtn {
+  height: 38px; padding: 0 18px; border-radius: 12px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600;
+  background: var(--accent); color: #fff;
+  box-shadow: 0 4px 16px var(--accent-shadow);
+  border: none; cursor: pointer;
+  font-family: inherit; transition: all 0.2s;
+}
+.fabBtn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px var(--accent-shadow); }
+.fabBtn:active { transform: scale(0.97); }
+.fabBtnReset {
+  width: 24px; height: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.2); border: none; cursor: pointer;
+  color: #fff; transition: background 0.15s;
+}
+.fabBtnReset:hover { background: rgba(255,255,255,0.35); }
+
+/* ===== 底部说明信息 ===== */
+.descPanel {
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px; padding: 16px 24px; text-align: left;
+}
+.descPanel h3 { font-weight: 700; color: #fff; font-size: 14px; margin-bottom: 8px; }
+.descPanel .good { color: #34C759; }
+.descPanel .note { color: #60A5FA; }
+.descPanel pre { font-size: 11px; color: rgba(255,255,255,0.7); line-height: 2; margin: 0; }
+</style>
+</head>
+<body>
+
+<!-- ================================================================
+     策略1：侧边栏与列表平齐
+     — TopBar + 搜索栏 + Tabs + 筛选栏 保持全宽
+     — 侧边栏从 TopBar 下方开始，与卡片列表顶部对齐
+================================================================ -->
+
+<div class="app-shell closed" id="appShell">
+
+  <!-- 窗口宽度指示 -->
+  <div class="windowLabel windowLabelClosed">480px（侧边栏关闭）</div>
+  <div class="windowLabel windowLabelOpen">680px — 侧边栏与列表平齐</div>
+
+  <!-- ★ 高亮标注：TopBar 区域始终保持全宽 -->
+  <div class="highlightBox" style="top:0;left:0;right:0;height:160px;border-color:rgba(52,199,89,0.4);background:rgba(52,199,89,0.04);"></div>
+
+  <!-- ===== TopBar — 完全复刻 TopBar.tsx ===== -->
+  <div class="header">
+    <!-- 标题行 -->
+    <div class="headerTop">
+      <div class="headerTitle">
+        <button class="sidebarToggle" id="sidebarToggle" onclick="toggleSidebar()" title="分组">
+          ☰
+        </button>
+        <span class="headerTitleIcon">📋</span>
+        <span class="headerTitleText">PastePanda</span>
+      </div>
+      <div class="headerIcons">
+        <button class="iconBtn" title="片段库">
+          <span class="iconEmoji">📝</span>
+        </button>
+        <button class="iconBtn" title="内容提取">
+          <span class="iconEmoji">🧲</span>
+        </button>
+        <button class="iconBtn" title="设置 · 帮助 · 关于">
+          <svg class="iconSvg" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+        <button class="iconBtn" title="最小化到任务栏">
+          <svg class="iconSvg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>
+        </button>
+        <button class="iconBtn" title="隐藏窗口">
+          <svg class="iconSvg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- 搜索框 -->
+    <div class="searchBox">
+      <span class="searchIcon">🔍</span>
+      <input class="searchInput" type="text" placeholder="搜索剪贴板... (Enter 搜索)" value="">
+    </div>
+
+    <!-- Tab 区域 -->
+    <div class="tabsArea">
+      <div class="segmented">
+        <button class="segItem segItemActive"><span class="segIcon">📋</span>全部<span class="segCount">42</span></button>
+        <button class="segItem"><span class="segIcon">📝</span>文本<span class="segCount">28</span></button>
+        <button class="segItem"><span class="segIcon">📸</span>图片<span class="segCount">8</span></button>
+        <button class="segItem"><span class="segIcon">📁</span>文件<span class="segCount">4</span></button>
+        <button class="segItem"><span class="segIcon">⭐</span>收藏<span class="segCount">2</span></button>
+      </div>
+    </div>
+
+    <!-- 筛选栏 -->
+    <div class="filterBar">
+      <button class="filterDropdownBtn">全部时间 <span style="font-size:10px;opacity:0.5">▾</span></button>
+      <button class="filterDropdownBtn">来源应用 <span style="font-size:10px;opacity:0.5">▾</span></button>
+    </div>
+  </div>
+
+  <!-- ================================================================
+       ★ 策略1核心：内容区 = 侧边栏 + 卡片面板
+       侧边栏顶部与卡片列表顶部完全平齐
+  ================================================================ -->
+  <div class="contentArea">
+
+    <!-- ★ 侧边栏 — 从 TopBar 下方开始 -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebarHeader">
+        <span class="sidebarTitle">分组</span>
+        <button class="sidebarAddBtn" title="新建分组">+</button>
+      </div>
+      <div class="sidebarList">
+        <!-- 内置虚拟分组 -->
+        <button class="groupItem active" onclick="selectGroup(this)">
+          <span class="groupIcon">📋</span>
+          <span class="groupName">全部</span>
+          <span class="groupCount">42</span>
+        </button>
+        <button class="groupItem" onclick="selectGroup(this)">
+          <span class="groupIcon">📂</span>
+          <span class="groupName">未分组</span>
+          <span class="groupCount">20</span>
+        </button>
+        <button class="groupItem" onclick="selectGroup(this)">
+          <span class="groupIcon">⭐</span>
+          <span class="groupName">收藏</span>
+          <span class="groupCount">5</span>
+        </button>
+        <div class="sidebarSep"></div>
+        <!-- 用户自定义分组 -->
+        <button class="groupItem" onclick="selectGroup(this)">
+          <span class="groupDot dot-blue"></span>
+          <span class="groupName">工作-项目A</span>
+          <span class="groupCount">12</span>
+        </button>
+        <button class="groupItem" onclick="selectGroup(this)">
+          <span class="groupDot dot-green"></span>
+          <span class="groupName">工作-项目B</span>
+          <span class="groupCount">8</span>
+        </button>
+        <button class="groupItem" onclick="selectGroup(this)">
+          <span class="groupDot dot-purple"></span>
+          <span class="groupName">个人-学习笔记</span>
+          <span class="groupCount">6</span>
+        </button>
+        <button class="groupItem" onclick="selectGroup(this)">
+          <span class="groupDot dot-orange"></span>
+          <span class="groupName">临时</span>
+          <span class="groupCount">3</span>
+        </button>
+      </div>
+      <div class="sidebarFooter">
+        <button class="sidebarCollapseBtn" onclick="toggleSidebar()" style="width:100%;padding:6px;border-radius:8px;border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-family:inherit;font-size:11px;display:flex;align-items:center;justify-content:center;gap:4px;transition:all .15s" onmouseover="this.style.background='var(--hover)';this.style.color='var(--text-secondary)'" onmouseout="this.style.background='transparent';this.style.color='var(--text-muted)'">
+          ◀ 收起侧边栏
+        </button>
+      </div>
+    </div>
+
+    <!-- ★ 卡片面板 — 顶部与侧边栏平齐 -->
+    <div class="cardPanel">
+      <div class="scrollArea">
+        <div class="cardList">
+
+          <!-- 卡片 1 — 链接 + 标签 -->
+          <div class="cardWrap">
+            <div class="card cardText" onclick="this.classList.toggle('selected')">
+              <div class="cardIcon bgBlue">🔗</div>
+              <div class="cardContent">
+                <div class="cardTitle">React 19 新特性完整指南 — react.dev/blog/2025/12/react-v19</div>
+                <div class="cardSub">
+                  <span>3分钟前</span>
+                  <span>·</span>
+                  <span>Chrome</span>
+                </div>
+                <div class="cardTags">
+                  <span class="tagBadge color-blue">#React</span>
+                  <span class="tagBadge color-purple">#前端</span>
+                  <span class="tagBadge color-green">#重要</span>
+                </div>
+              </div>
+              <span class="cardTime">14:42</span>
+            </div>
+          </div>
+
+          <!-- 卡片 2 — 代码 -->
+          <div class="cardWrap">
+            <div class="card cardCode" onclick="this.classList.toggle('selected')">
+              <div class="cardIcon bgPurple">💻</div>
+              <div class="cardContent">
+                <div class="cardTitle">const fetchData = async (url) => { const res = await fetch(url); return res.json(); }</div>
+                <div class="cardSub">
+                  <span>15分钟前</span>
+                  <span>·</span>
+                  <span>VS Code</span>
+                </div>
+                <div class="cardTags">
+                  <span class="tagBadge color-blue">#JavaScript</span>
+                  <span class="tagBadge color-green">#API</span>
+                </div>
+              </div>
+              <span class="cardTime">14:30</span>
+            </div>
+          </div>
+
+          <!-- 卡片 3 — 图片 -->
+          <div class="cardWrap">
+            <div class="card cardImage" onclick="this.classList.toggle('selected')">
+              <div class="cardIcon bgPink">📸</div>
+              <div class="cardContent">
+                <div class="cardTitle">screenshot_2025-07-04_143000.png</div>
+                <div class="cardSub">
+                  <span>1小时前</span>
+                  <span>·</span>
+                  <span>截图工具</span>
+                </div>
+              </div>
+              <span class="cardTime">13:02</span>
+            </div>
+          </div>
+
+          <!-- 卡片 4 — 文件 + 标签 -->
+          <div class="cardWrap">
+            <div class="card cardFile" onclick="this.classList.toggle('selected')">
+              <div class="cardIcon bgGreen">📄</div>
+              <div class="cardContent">
+                <div class="cardTitle">Q3项目计划书_v3_final.docx</div>
+                <div class="cardSub">
+                  <span>2小时前</span>
+                  <span>·</span>
+                  <span>文件管理器</span>
+                </div>
+                <div class="cardTags">
+                  <span class="tagBadge color-green">#文档</span>
+                  <span class="tagBadge color-purple">#项目A</span>
+                </div>
+              </div>
+              <span class="cardTime">12:28</span>
+            </div>
+          </div>
+
+          <!-- 卡片 5 — 置顶 + 标签 -->
+          <div class="cardWrap">
+            <div class="card cardPinned" onclick="this.classList.toggle('selected')">
+              <div class="cardIcon bgBlue">📌</div>
+              <div class="cardContent">
+                <div class="cardTitle">会议纪要：本周五 15:00 产品评审，会议室 A302，需要准备 Q3 规划文档</div>
+                <div class="cardSub">
+                  <span>昨天</span>
+                  <span>·</span>
+                  <span>企业微信</span>
+                </div>
+                <div class="cardTags">
+                  <span class="tagBadge color-orange">#会议</span>
+                  <span class="tagBadge color-blue">#待办</span>
+                </div>
+              </div>
+              <span class="cardTime">昨天</span>
+            </div>
+          </div>
+
+          <!-- 卡片 6 — 文本 -->
+          <div class="cardWrap">
+            <div class="card cardText" onclick="this.classList.toggle('selected')">
+              <div class="cardIcon bgBlue">💬</div>
+              <div class="cardContent">
+                <div class="cardTitle">明天下午3点开会讨论新功能排期，记得带上原型图和需求文档</div>
+                <div class="cardSub">
+                  <span>昨天</span>
+                  <span>·</span>
+                  <span>微信</span>
+                </div>
+              </div>
+              <span class="cardTime">昨天</span>
+            </div>
+          </div>
+
+          <!-- 卡片 7 — SQL -->
+          <div class="cardWrap">
+            <div class="card cardCode" onclick="this.classList.toggle('selected')">
+              <div class="cardIcon bgBlue">🗄</div>
+              <div class="cardContent">
+                <div class="cardTitle">SELECT u.name, o.total FROM users u JOIN orders o ON u.id = o.user_id WHERE o.created_at > '2025-06-01'</div>
+                <div class="cardSub">
+                  <span>2天前</span>
+                  <span>·</span>
+                  <span>DataGrip</span>
+                </div>
+                <div class="cardTags">
+                  <span class="tagBadge color-pink">#SQL</span>
+                  <span class="tagBadge color-teal">#后端</span>
+                </div>
+              </div>
+              <span class="cardTime">周三</span>
+            </div>
+          </div>
+
+          <!-- 加载完成 -->
+          <div style="height:40px;display:flex;align-items:center;justify-content:center;padding:20px 0">
+            <span style="font-size:11px;color:var(--text-muted)">— 已加载全部记录 —</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /contentArea -->
+
+  <!-- FAB — 完全复刻 App.tsx fabContainer -->
+  <div class="fabContainer" style="pointer-events:none">
+    <div class="fabCounter"><span class="fabCounterNum">0</span><span class="fabCounterSep">/</span>42</div>
+    <button class="fabBtn">📋 粘贴</button>
+  </div>
+
+</div><!-- /app-shell -->
+
+<!-- ===== 底部说明 ===== -->
+<div style="display:flex;gap:32px;flex-wrap:wrap;justify-content:center;">
+  <div class="descPanel">
+    <h3>策略1 — 侧边栏与列表平齐</h3>
+    <span class="good">✓ TopBar + 搜索栏始终全宽，不受侧边栏影响</span><br>
+    <span class="good">✓ 侧边栏从 TopBar 下方开始，与卡片列表顶部平齐</span><br>
+    <span class="good">✓ 行业惯例：VS Code / Figma / Notion 均如此</span><br>
+    <span class="good">✓ 打开侧边栏时 TopBar 完全不动，视觉干扰最小</span><br>
+    <span class="note">△ 侧边栏少显示约 3-4 个分组项（高度 = 窗口 - TopBar）</span>
+  </div>
+  <div class="descPanel">
+    <h3>布局结构</h3>
+    <pre>
+┌─────────────────────────┐
+│ TopBar + 搜索 + Tabs    │ ← 全宽，不受影响
+├──────────┬──────────────┤
+│ 侧边栏   │  卡片列表     │ ← 平齐开始
+│ 200px    │              │
+│          │              │
+│          │              │
+│          │              │
+└──────────┴──────────────┘
+    </pre>
+  </div>
+</div>
+
+<script>
+function toggleSidebar() {
+  const shell = document.getElementById('appShell');
+  const sidebar = document.getElementById('sidebar');
+  const toggle = document.getElementById('sidebarToggle');
+  const isOpen = sidebar.classList.contains('open');
+
+  if (isOpen) {
+    sidebar.classList.remove('open');
+    toggle.classList.remove('sidebarToggleActive');
+    shell.classList.remove('expanded');
+    shell.classList.add('closed');
+  } else {
+    shell.classList.remove('closed');
+    shell.classList.add('expanded');
+    sidebar.classList.add('open');
+    toggle.classList.add('sidebarToggleActive');
+  }
+}
+
+// Esc 关闭
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar.classList.contains('open')) {
+      toggleSidebar();
+    }
+  }
+});
+
+function selectGroup(el) {
+  el.parentElement.querySelectorAll('.groupItem').forEach(i => i.classList.remove('active'));
+  el.classList.add('active');
+}
+</script>
+
+</body>
+</html>

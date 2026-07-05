@@ -1,0 +1,1675 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案A：精简按钮 - 完整UI预览</title>
+<style>
+/* ===== CSS 变量 (ocean 主题) ===== */
+:root {
+  --app-bg: #F4F6F9;
+  --header-bg-start: #fff;
+  --header-bg-end: #F4F6F9;
+  --card-bg: #fff;
+  --card-border: #E0E4EB;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --seg-bg: #E8E8ED;
+  --seg-active-bg: #fff;
+  --search-bg: #fff;
+  --search-border: #E0E4EB;
+  --input-bg: #F1F5F9;
+  --dialog-bg: #fff;
+  --section-bg: #F0F4F8;
+  --toggle-off-bg: #E2E8F0;
+  --toggle-off-label: #94A3B8;
+  --accent-shadow: rgba(2, 132, 199, 0.15);
+  --hover: #E8ECF2;
+  --green: #16A34A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+  --orange: #EA580C; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
+  --red-bg: #FEF2F2; --danger: #DC2626;
+  --version-badge-gradient: linear-gradient(135deg, #0284C7, #0369A1);
+  --version-badge-shadow: rgba(2, 132, 199, 0.35);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: "SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui, -apple-system, sans-serif;
+  background: var(--app-bg);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 20px;
+}
+
+/* ===== 场景标题 ===== */
+.scene-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  text-align: center;
+}
+
+/* ===== 应用容器 (模拟 480px 窗口) ===== */
+.app-shell {
+  width: 480px;
+  background: var(--app-bg);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+}
+
+/* ===== Header ===== */
+.header {
+  padding: 16px 16px 0;
+  background: linear-gradient(180deg, var(--header-bg-start) 0%, var(--header-bg-end) 100%);
+}
+
+.headerTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.headerTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.headerTitleIcon {
+  width: 20px;
+  height: 20px;
+  background: linear-gradient(135deg, #0284C7, #0369A1);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.headerTitleText {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.headerIcons {
+  display: flex;
+  gap: 4px;
+}
+
+.iconBtn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  transition: background 0.15s, transform 0.15s;
+  font-family: inherit;
+}
+
+.iconBtn:hover {
+  background: rgba(129,140,248,.12);
+  transform: scale(1.08);
+}
+
+.iconBtn:active {
+  transform: scale(.92);
+}
+
+.iconEmoji {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.iconSvg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ===== Search Box ===== */
+.searchBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--search-bg);
+  border: 1px solid var(--search-border);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+}
+
+.searchIcon {
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.searchInput {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.searchInput::placeholder {
+  color: var(--text-muted);
+}
+
+.headerControls {
+  padding: 0 0 10px;
+}
+
+/* ===== Segmented Tabs ===== */
+.tabsArea {
+  padding: 10px 0 0;
+}
+
+.segmented {
+  display: flex;
+  background: var(--seg-bg);
+  border-radius: 10px;
+  padding: 3px;
+  position: relative;
+}
+
+.segItem {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  position: relative;
+  z-index: 1;
+  font-family: inherit;
+}
+
+.segItemActive {
+  color: var(--text-primary);
+  font-weight: 600;
+  background: var(--seg-active-bg);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08), 0 0.5px 1px rgba(0, 0, 0, 0.04);
+}
+
+.segIcon {
+  font-size: 15px;
+}
+
+.segCount {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-left: 1px;
+}
+
+.segItemActive .segCount {
+  color: var(--accent);
+}
+
+/* ===== Filter Bar ===== */
+.filterBar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 0 0;
+  align-items: center;
+}
+
+.filterDropdown {
+  position: relative;
+  flex: 1;
+}
+
+.filterDropdownBtn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+/* ===== 卡片占位 ===== */
+.card-placeholder {
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* ===== Dialog 弹窗 ===== */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.dialog-box {
+  background: var(--dialog-bg);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.dialog-box.w500 { width: 420px; max-height: 80vh; }
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 48px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.dialog-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.dialog-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: background 0.15s;
+  font-family: inherit;
+  font-size: 16px;
+}
+
+.dialog-close:hover {
+  background: var(--hover);
+}
+
+.dialog-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* ===== 设置 Tab 切换栏 ===== */
+.settings-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.settings-tab {
+  padding: 10px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: inherit;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all 0.2s;
+}
+
+.settings-tab:hover {
+  color: var(--text-primary);
+}
+
+.settings-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ===== 设置 Section 标题 ===== */
+.sSection {
+  padding: 14px 20px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: var(--section-bg);
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* ===== 设置行 ===== */
+.sRow {
+  display: flex;
+  align-items: center;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border-color);
+  gap: 12px;
+}
+
+.sRow:last-child { border-bottom: none; }
+
+.sRowIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+.sRowBody { flex: 1; min-width: 0; }
+.sRowLabel { font-size: 13px; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 6px; }
+.sRowDesc { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+/* Toggle */
+.sToggle {
+  display: inline-block;
+  width: 44px;
+  height: 26px;
+  border-radius: 13px;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.25s;
+  padding: 0;
+}
+
+.sToggle.off { background: var(--toggle-off-bg); }
+.sToggle.on  { background: #34C759; }
+
+.sToggleThumb {
+  position: absolute;
+  top: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.sToggle.off .sToggleThumb { left: 2px; }
+.sToggle.on  .sToggleThumb { left: 20px; }
+
+.sToggleLabel {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 9px;
+  font-weight: 700;
+  pointer-events: none;
+  user-select: none;
+}
+
+.sToggle.on  .sToggleLabel { left: 7px;  color: #fff; }
+.sToggle.off .sToggleLabel { left: auto; right: 6px; color: var(--toggle-off-label); }
+
+/* Hotkey */
+.sKbd {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: 'SF Mono', Consolas, monospace;
+  border: 1.5px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  min-width: 100px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.sKbd:hover {
+  border-color: var(--accent);
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+/* Value badge */
+.sVal {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 3px 8px;
+  background: var(--accent-light);
+  border-radius: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+}
+
+/* Action button */
+.sAction {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.sAction:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+.sAction.danger { color: #EF4444; border-color: rgba(239, 68, 68, 0.3); }
+
+/* Cleanup options */
+.sCleanup { display: flex; gap: 4px; }
+.sCleanupOpt {
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  font-family: inherit;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.sCleanupOpt.active {
+  background: var(--accent-light);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Recommend badge */
+.sRowRecommend {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #34C759;
+  background: rgba(52, 199, 89, 0.1);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
+
+/* Help tooltip icon */
+.helpTip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--border-color);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: help;
+  flex-shrink: 0;
+}
+
+/* Stats panel */
+.statsPanel {
+  margin: 10px 20px 12px;
+  background: var(--section-bg);
+  border-radius: 14px;
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.statsPanelHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.statsPanelGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--border-color);
+}
+
+.statCell {
+  background: var(--input-bg);
+  padding: 14px 10px;
+  text-align: center;
+}
+
+.statNum {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+  letter-spacing: -0.5px;
+}
+
+.statAccent { color: var(--accent); }
+.statGreen  { color: #34C759; }
+.statOrange { color: #FF9500; }
+
+.statLabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 6px;
+  font-weight: 500;
+}
+
+.statsPanelFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-color);
+  background: var(--section-bg);
+}
+
+/* Settings footer */
+.sFooter {
+  padding: 16px 20px 20px;
+  border-top: 1px solid var(--border-color);
+  background: var(--section-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.sSaveBtn {
+  width: 100%;
+  height: 40px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px var(--accent-shadow);
+  font-family: inherit;
+  transition: all 0.2s;
+}
+
+.sSaveBtn:hover {
+  box-shadow: 0 4px 12px var(--accent-shadow);
+  transform: translateY(-1px);
+}
+
+.sFooterVer {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Version badge */
+.verBadge {
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: var(--version-badge-gradient);
+  box-shadow: 0 1px 3px var(--version-badge-shadow);
+}
+
+/* Theme selector */
+.themeGrid {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.themeBtn {
+  width: 64px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  cursor: pointer;
+  background: none;
+  padding: 0;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  font-family: inherit;
+}
+
+.themeBtn.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-shadow);
+}
+
+.themeBtnBar {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  gap: 3px;
+}
+
+.themeBtnDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.themeBtnName {
+  font-size: 8px;
+}
+
+.themeBtnBody {
+  height: 36px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.themeBtnLine {
+  height: 5px;
+  border-radius: 3px;
+}
+
+/* ===== 帮助面板内容 (整合到设置 Tab) ===== */
+.h2Body {
+  padding: 0;
+  overflow-y: auto;
+}
+
+.h2Section {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.h2Section:last-of-type { border-bottom: none; }
+
+.h2SectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+
+.h2SectionHeader:hover {
+  background: var(--hover);
+}
+
+.h2SectionIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+.h2SectionTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.h2Arrow {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: transform 0.2s;
+  font-size: 14px;
+}
+
+.h2Section.expanded .h2Arrow {
+  transform: rotate(90deg);
+}
+
+.h2SectionContent {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.h2Section.expanded .h2SectionContent {
+  max-height: 2000px;
+}
+
+.h2SectionInner {
+  padding: 0 18px 14px;
+}
+
+.h2SubTitle {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 8px 0 4px 42px;
+}
+
+.h2Row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 0 5px 42px;
+  gap: 12px;
+}
+
+.h2Desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex: 1;
+  min-width: 0;
+}
+
+.hKey {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-family: 'SF Mono', Consolas, monospace;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.hKey .plus {
+  color: var(--text-muted);
+  margin: 0 3px;
+  font-weight: 400;
+}
+
+/* Tip item */
+.h2Tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0 4px 42px;
+}
+
+.h2TipBulb {
+  color: #fbbf24;
+  font-size: 13px;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+.h2TipText {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.h2TipText strong {
+  color: var(--text-primary);
+}
+
+.h2InfoBox {
+  padding: 4px 0 4px 42px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+/* ===== 关于面板内容 (整合到设置 Tab) ===== */
+.aboutHero {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 28px;
+}
+
+.aboutIcon {
+  width: 68px;
+  height: 68px;
+  border-radius: 18px;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, #0284C7, #0369A1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 28px;
+  font-weight: 800;
+}
+
+.aboutMeta { flex: 1; min-width: 0; }
+
+.aboutName {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  margin-bottom: 6px;
+  color: var(--text-primary);
+}
+
+.aboutVersionRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.aboutVersionStatus {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+
+.latest {
+  background: var(--green-bg);
+  color: var(--green);
+  border: 1px solid var(--green-border);
+}
+
+.aboutStatusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.green { background: var(--green); }
+
+.aboutDivider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 0 0 24px;
+}
+
+.aboutSectionLabel {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.8px;
+  margin-bottom: 12px;
+}
+
+.aboutTechGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.aboutTechCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--section-bg);
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+
+.aboutTechCard:hover {
+  border-color: var(--border-color);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.aboutTechIcon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.aboutTechInfo { min-width: 0; }
+
+.aboutTechName {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 2px;
+  color: var(--text-primary);
+}
+
+.aboutTechDesc {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.aboutFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.aboutFooterLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.aboutFooterLink:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+.aboutCopyright {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ===== 标签 ===== */
+.tag-before {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.tag-removed {
+  background: rgba(239, 68, 68, 0.1);
+  color: #EF4444;
+}
+
+.tag-moved {
+  background: rgba(249, 115, 22, 0.1);
+  color: #F97316;
+}
+
+/* ===== 按钮对比区域 ===== */
+.btn-compare {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.btn-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-group-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn-row {
+  display: flex;
+  gap: 4px;
+  background: #fff;
+  padding: 8px 12px;
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+/* ===== LAN Sync Panel ===== */
+.lanPanel {
+  margin: 8px 20px;
+  border-radius: 14px;
+  padding: 16px 18px;
+  background: var(--accent-light);
+  border: 1px solid var(--border-color);
+}
+
+.lanPanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.lanStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lanDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #10B981;
+  box-shadow: 0 0 6px rgba(16,185,129,0.4);
+  animation: lanPulse 2s infinite;
+}
+
+@keyframes lanPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.lanStatusText {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.lanRefreshBtn {
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.lanTestBtn {
+  margin-top: 10px;
+  width: 100%;
+  padding: 6px 0;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* ===== Help tooltip ===== */
+.help-tip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--border-color);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: help;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+/* ===== 全局交互 ===== */
+button {
+  transition: all 0.15s;
+}
+</style>
+</head>
+<body>
+
+<!-- ===== 标题 ===== -->
+<div style="text-align:center; margin-bottom:0;">
+  <h2 style="font-size:18px;font-weight:800;color:var(--text-primary);margin-bottom:4px;">方案 A：精简右上角按钮</h2>
+  <p style="font-size:13px;color:var(--text-muted);">帮助 ❓ + 关于 ⓘ → 整合到设置面板 ⚙（Tab 切换）</p>
+</div>
+
+<!-- ===== 按钮对比 ===== -->
+<div class="btn-compare">
+  <!-- 当前 -->
+  <div class="btn-group">
+    <div class="btn-group-label">当前（7个按钮）</div>
+    <div class="btn-row">
+      <button class="iconBtn" title="片段库"><span class="iconEmoji">📝</span></button>
+      <button class="iconBtn" title="内容提取"><span class="iconEmoji">🧲</span></button>
+      <button class="iconBtn" title="设置">
+        <svg class="iconSvg" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+      <button class="iconBtn" title="帮助"><span class="iconEmoji">❓</span></button>
+      <button class="iconBtn" title="关于">
+        <svg class="iconSvg" viewBox="0 0 24 24" fill="none" stroke="#FACC15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      </button>
+      <button class="iconBtn" title="最小化">
+        <svg class="iconSvg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>
+      </button>
+      <button class="iconBtn" title="隐藏窗口">
+        <svg class="iconSvg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div style="display:flex;align-items:center;font-size:24px;color:var(--accent);font-weight:800;padding-top:8px;">→</div>
+
+  <!-- 方案 A -->
+  <div class="btn-group">
+    <div class="btn-group-label">方案 A（5个按钮）</div>
+    <div class="btn-row">
+      <button class="iconBtn" title="片段库"><span class="iconEmoji">📝</span></button>
+      <button class="iconBtn" title="内容提取"><span class="iconEmoji">🧲</span></button>
+      <button class="iconBtn" title="设置">
+        <svg class="iconSvg" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+      <button class="iconBtn" title="最小化">
+        <svg class="iconSvg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>
+      </button>
+      <button class="iconBtn" title="隐藏窗口">
+        <svg class="iconSvg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+    <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">
+      <span class="tag-removed tag-before">移除</span>❓ ⓘ
+      <span class="tag-moved tag-before" style="margin-left:8px;">移入</span>设置面板
+    </div>
+  </div>
+</div>
+
+<!-- ===== 完整窗口预览 ===== -->
+<div class="scene-title" style="margin-top:20px;">完整窗口预览（方案 A）</div>
+<div class="app-shell">
+  <!-- Header -->
+  <div class="header" style="border-radius:16px 16px 0 0;">
+    <div class="headerTop">
+      <div class="headerTitle">
+        <span class="headerTitleIcon">P</span>
+        <span class="headerTitleText">PastePanda</span>
+        <span class="verBadge">v2.4.0</span>
+      </div>
+      <div class="headerIcons">
+        <button class="iconBtn" title="片段库"><span class="iconEmoji">📝</span></button>
+        <button class="iconBtn" title="内容提取"><span class="iconEmoji">🧲</span></button>
+        <button class="iconBtn" title="设置 (含帮助和关于)" style="position:relative;">
+          <svg class="iconSvg" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          <span style="position:absolute;top:-2px;right:-2px;width:12px;height:12px;border-radius:50%;background:var(--accent);font-size:7px;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;">3</span>
+        </button>
+        <button class="iconBtn" title="最小化到任务栏">
+          <svg class="iconSvg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>
+        </button>
+        <button class="iconBtn" title="隐藏窗口">
+          <svg class="iconSvg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Search -->
+    <div class="headerControls">
+      <div class="searchBox">
+        <span class="searchIcon">🔍</span>
+        <input type="text" class="searchInput" placeholder="搜索剪贴板... (Enter 搜索)" value="" readonly>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabsArea">
+        <div class="segmented">
+          <button class="segItem segItemActive"><span class="segIcon">📋</span><span>全部</span><span class="segCount">128</span></button>
+          <button class="segItem"><span class="segIcon">📝</span><span>文本</span><span class="segCount">86</span></button>
+          <button class="segItem"><span class="segIcon">📸</span><span>图片</span><span class="segCount">23</span></button>
+          <button class="segItem"><span class="segIcon">📁</span><span>文件</span><span class="segCount">12</span></button>
+          <button class="segItem"><span class="segIcon">⭐</span><span>收藏</span><span class="segCount">7</span></button>
+        </div>
+      </div>
+
+      <!-- Filter -->
+      <div class="filterBar">
+        <div class="filterDropdown"><button class="filterDropdownBtn"><span>全部时间</span><span>▾</span></button></div>
+        <div class="filterDropdown"><button class="filterDropdownBtn"><span>来源应用</span><span>▾</span></button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Content placeholder -->
+  <div class="card-placeholder">
+    📋 剪贴板内容列表区域<br>
+    <span style="font-size:11px;color:var(--text-muted);">点击右上角 ⚙ 打开设置面板</span>
+  </div>
+</div>
+
+<!-- ===== 设置面板 ===== -->
+<div class="scene-title" style="margin-top:24px;">设置面板（整合帮助 + 关于）</div>
+
+<!-- Tab: 通用 -->
+<div style="width:420px;">
+  <div class="dialog-box w500" style="width:420px;max-height:none;overflow:visible;">
+    <!-- Header -->
+    <div class="dialog-header">
+      <h2 class="dialog-title">⚙ 设置</h2>
+      <button class="dialog-close">✕</button>
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="settings-tabs">
+      <button class="settings-tab active">⚙ 通用</button>
+      <button class="settings-tab">❓ 帮助</button>
+      <button class="settings-tab">ℹ️ 关于</button>
+    </div>
+
+    <!-- Body - 通用 -->
+    <div class="dialog-body">
+      <!-- 数据统计 -->
+      <div class="sSection">数据统计</div>
+      <div class="statsPanel">
+        <div class="statsPanelHeader">📊 剪贴板数据概览</div>
+        <div class="statsPanelGrid">
+          <div class="statCell"><div class="statNum">128</div><div class="statLabel">总记录</div></div>
+          <div class="statCell"><div class="statNum statGreen">7</div><div class="statLabel">⭐ 收藏</div></div>
+          <div class="statCell"><div class="statNum statOrange">15</div><div class="statLabel">今日新增</div></div>
+          <div class="statCell"><div class="statNum statAccent">86</div><div class="statLabel">📝 文本</div></div>
+          <div class="statCell"><div class="statNum statAccent">23</div><div class="statLabel">🖼 图片</div></div>
+          <div class="statCell"><div class="statNum statAccent">12</div><div class="statLabel">📁 文件</div></div>
+        </div>
+        <div class="statsPanelFooter">
+          <span>💾 1.2 MB</span>
+          <span>📅 最早: 2026-06-01</span>
+          <span>📦 默认 空间</span>
+        </div>
+      </div>
+
+      <!-- 外观 -->
+      <div class="sSection">外观</div>
+      <div class="sRow" style="flex-direction:column;align-items:stretch;gap:12px;">
+        <span class="sRowIcon" style="background:linear-gradient(135deg,#0078D4,#5856D6);width:fit-content;padding:6px 12px;">🎨</span>
+        <div class="sRowBody">
+          <div class="sRowLabel">主题配色 <span class="help-tip-icon">?</span></div>
+          <div class="sRowDesc">选择你喜欢的配色方案</div>
+        </div>
+        <div class="themeGrid">
+          <button class="themeBtn active" style="border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-shadow);">
+            <div class="themeBtnBar" style="background:#fff;border-bottom:1px solid #E0E4EB;"><div class="themeBtnDot" style="background:#0284C7;"></div><span class="themeBtnName" style="color:#64748B;">海洋</span></div>
+            <div class="themeBtnBody" style="background:#F4F6F9;"><div class="themeBtnLine" style="background:#fff;width:100%;border:1px solid #E0E4EB;"></div><div class="themeBtnLine" style="background:#E0E4EB;width:70%;"></div><div class="themeBtnLine" style="background:#0284C7;width:45%;"></div></div>
+          </button>
+          <button class="themeBtn">
+            <div class="themeBtnBar" style="background:#18181B;border-bottom:1px solid #27272A;"><div class="themeBtnDot" style="background:#818CF8;"></div><span class="themeBtnName" style="color:#A1A1AA;">午夜</span></div>
+            <div class="themeBtnBody" style="background:#09090B;"><div class="themeBtnLine" style="background:#18181B;width:100%;border:1px solid #27272A;"></div><div class="themeBtnLine" style="background:#27272A;width:70%;"></div><div class="themeBtnLine" style="background:#818CF8;width:45%;"></div></div>
+          </button>
+          <button class="themeBtn">
+            <div class="themeBtnBar" style="background:#fff;border-bottom:1px solid #D1D9D3;"><div class="themeBtnDot" style="background:#059669;"></div><span class="themeBtnName" style="color:#78716C;">森林</span></div>
+            <div class="themeBtnBody" style="background:#F2F7F5;"><div class="themeBtnLine" style="background:#fff;width:100%;border:1px solid #D1D9D3;"></div><div class="themeBtnLine" style="background:#D1D9D3;width:70%;"></div><div class="themeBtnLine" style="background:#059669;width:45%;"></div></div>
+          </button>
+          <button class="themeBtn">
+            <div class="themeBtnBar" style="background:#fff;border-bottom:1px solid #F3E8ED;"><div class="themeBtnDot" style="background:#EC4899;"></div><span class="themeBtnName" style="color:#A68A96;">樱花</span></div>
+            <div class="themeBtnBody" style="background:#FFFBFD;"><div class="themeBtnLine" style="background:#fff;width:100%;border:1px solid #F3E8ED;"></div><div class="themeBtnLine" style="background:#F3E8ED;width:70%;"></div><div class="themeBtnLine" style="background:#EC4899;width:45%;"></div></div>
+          </button>
+          <button class="themeBtn">
+            <div class="themeBtnBar" style="background:#141414;border-bottom:1px solid #262626;"><div class="themeBtnDot" style="background:#22C55E;"></div><span class="themeBtnName" style="color:#A3A3A3;">终端</span></div>
+            <div class="themeBtnBody" style="background:#0A0A0A;"><div class="themeBtnLine" style="background:#141414;width:100%;border:1px solid #262626;"></div><div class="themeBtnLine" style="background:#262626;width:70%;"></div><div class="themeBtnLine" style="background:#22C55E;width:45%;"></div></div>
+          </button>
+          <button class="themeBtn">
+            <div class="themeBtnBar" style="background:#281E18;border-bottom:1px solid #3D3028;"><div class="themeBtnDot" style="background:#F97316;"></div><span class="themeBtnName" style="color:#B8A99A;">日落</span></div>
+            <div class="themeBtnBody" style="background:#1C1410;"><div class="themeBtnLine" style="background:#281E18;width:100%;border:1px solid #3D3028;"></div><div class="themeBtnLine" style="background:#3D3028;width:70%;"></div><div class="themeBtnLine" style="background:#F97316;width:45%;"></div></div>
+          </button>
+        </div>
+      </div>
+      <div class="sRow">
+        <span class="sRowIcon" style="background:linear-gradient(135deg,#8B5CF6,#AF52DE);">📑</span>
+        <div class="sRowBody">
+          <div class="sRowLabel">标签样式</div>
+          <div class="sRowDesc">切换筛选标签的显示风格</div>
+        </div>
+        <button class="sVal">分段控件</button>
+      </div>
+
+      <!-- 通用 -->
+      <div class="sSection">通用</div>
+      <div class="sRow">
+        <span class="sRowIcon" style="background:linear-gradient(135deg,#F59E0B,#FF9500);">🗑</span>
+        <div class="sRowBody">
+          <div class="sRowLabel">自动清理 <span class="help-tip-icon">?</span></div>
+          <div class="sRowDesc">手动清理时，删除超过天数的记录</div>
+        </div>
+        <div class="sCleanup">
+          <button class="sCleanupOpt">关</button>
+          <button class="sCleanupOpt">7天</button>
+          <button class="sCleanupOpt">15天</button>
+          <button class="sCleanupOpt active">30天</button>
+          <button class="sCleanupOpt">60天</button>
+        </div>
+      </div>
+      <div class="sRow">
+        <span class="sRowIcon" style="background:linear-gradient(135deg,#10B981,#34C759);">✨</span>
+        <div class="sRowBody">
+          <div class="sRowLabel">自动去除空白 <span class="help-tip-icon">?</span></div>
+          <div class="sRowDesc">复制时去除首尾空白字符</div>
+        </div>
+        <button class="sToggle on"><span class="sToggleThumb"></span><span class="sToggleLabel">开</span></button>
+      </div>
+      <div class="sRow">
+        <span class="sRowIcon" style="background:linear-gradient(135deg,#8B5CF6,#AF52DE);">👆</span>
+        <div class="sRowBody">
+          <div class="sRowLabel">双击列表行为 <span class="help-tip-icon">?</span></div>
+          <div class="sRowDesc">双击复制到剪贴板</div>
+        </div>
+        <button class="sVal">复制</button>
+      </div>
+      <div class="sRow">
+        <span class="sRowIcon" style="background:linear-gradient(135deg,#8B5CF6,#6366F1);">💬</span>
+        <div class="sRowBody">
+          <div class="sRowLabel">悬停预览气泡 <span class="sRowRecommend">⭐推荐</span> <span class="help-tip-icon">?</span></div>
+          <div class="sRowDesc">鼠标悬停卡片时弹出预览气泡</div>
+        </div>
+        <button class="sToggle on"><span class="sToggleThumb"></span><span class="sToggleLabel">开</span></button>
+      </div>
+      <div class="sRow">
+        <span class="sRowIcon" style="background:linear-gradient(135deg,#EF4444,#FF3B30);">👁</span>
+        <div class="sRowBody">
+          <div class="sRowLabel">失焦自动隐藏 <span class="sRowRecommend">⭐推荐</span></div>
+          <div class="sRowDesc">窗口失去焦点时隐藏到托盘</div>
+        </div>
+        <button class="sToggle on"><span class="sToggleThumb"></span><span class="sToggleLabel">开</span></button>
+      </div>
+
+      <!-- 快捷键 -->
+      <div class="sSection">快捷键</div>
+      <div class="sRow">
+        <span class="sRowIcon" style="background:linear-gradient(135deg,#3B82F6,#0078D4);">⌨</span>
+        <div class="sRowBody">
+          <div class="sRowLabel">唤出窗口</div>
+          <div class="sRowDesc">全局快捷键，在任何位置唤出</div>
+        </div>
+        <button class="sKbd">ctrl+shift+v</button>
+      </div>
+
+      <!-- 数据管理 -->
+      <div class="sSection">数据管理</div>
+      <div class="sRow">
+        <span class="sRowIcon" style="background:linear-gradient(135deg,#F59E0B,#FF9500);">📦</span>
+        <div class="sRowBody">
+          <div class="sRowLabel">导出数据</div>
+          <div class="sRowDesc">将历史记录导出为 JSON 文件</div>
+        </div>
+        <button class="sAction">导出</button>
+      </div>
+      <div class="sRow">
+        <span class="sRowIcon" style="background:linear-gradient(135deg,#EF4444,#FF3B30);">🧹</span>
+        <div class="sRowBody">
+          <div class="sRowLabel">清理过期记录</div>
+          <div class="sRowDesc">3 条记录已过期</div>
+        </div>
+        <button class="sAction danger">清理 3 条</button>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="sFooter">
+      <button class="sSaveBtn">关闭设置</button>
+      <span class="sFooterVer">PastePanda <span class="verBadge" style="font-size:9px;">v2.4.0</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 帮助 Tab ===== -->
+<div class="scene-title" style="margin-top:24px;">设置 → 帮助 Tab</div>
+<div style="width:420px;">
+  <div class="dialog-box w500" style="width:420px;max-height:none;overflow:visible;">
+    <div class="dialog-header">
+      <h2 class="dialog-title">⚙ 设置</h2>
+      <button class="dialog-close">✕</button>
+    </div>
+
+    <div class="settings-tabs">
+      <button class="settings-tab">⚙ 通用</button>
+      <button class="settings-tab active">❓ 帮助</button>
+      <button class="settings-tab">ℹ️ 关于</button>
+    </div>
+
+    <!-- 帮助内容（从原 HelpDialog 迁移） -->
+    <div class="dialog-body h2Body">
+      <!-- 1. 快捷键速查 -->
+      <div class="h2Section expanded">
+        <div class="h2SectionHeader">
+          <span class="h2SectionIcon" style="background:linear-gradient(135deg,#3B82F6,#0078D4);">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h8M6 12h.01M18 12h.01M6 16h12"/></svg>
+          </span>
+          <span class="h2SectionTitle">快捷键速查</span>
+          <span class="h2Arrow">›</span>
+        </div>
+        <div class="h2SectionContent"><div class="h2SectionInner">
+          <div class="h2SubTitle">全局操作</div>
+          <div class="h2Row"><span class="h2Desc">唤出 / 隐藏窗口</span><span class="hKey">Ctrl<span class="plus">+</span>Shift<span class="plus">+</span>V</span></div>
+          <div class="h2Row"><span class="h2Desc">隐藏窗口</span><span class="hKey">Esc</span></div>
+          <div class="h2Row"><span class="h2Desc">打开设置</span><span class="hKey">Ctrl<span class="plus">+</span>S</span></div>
+          <div class="h2Row"><span class="h2Desc">打开帮助</span><span class="hKey">Ctrl<span class="plus">+</span>H</span></div>
+          <div class="h2Row"><span class="h2Desc">打开片段库</span><span class="hKey">Ctrl<span class="plus">+</span>B</span></div>
+          <div class="h2Row"><span class="h2Desc">打开内容提取</span><span class="hKey">Ctrl<span class="plus">+</span>E</span></div>
+
+          <div class="h2SubTitle">列表操作</div>
+          <div class="h2Row"><span class="h2Desc">上下导航记录</span><span class="hKey">↑ / ↓</span></div>
+          <div class="h2Row"><span class="h2Desc">跳到顶部 / 底部</span><span class="hKey">Home / End</span></div>
+          <div class="h2Row"><span class="h2Desc">粘贴选中记录</span><span class="hKey">Enter</span></div>
+          <div class="h2Row"><span class="h2Desc">快速预览内容</span><span class="hKey">Space</span></div>
+          <div class="h2Row"><span class="h2Desc">删除选中记录</span><span class="hKey">Delete</span></div>
+          <div class="h2Row"><span class="h2Desc">全选</span><span class="hKey">Ctrl<span class="plus">+</span>A</span></div>
+          <div class="h2Row"><span class="h2Desc">置顶 / 取消置顶</span><span class="hKey">Ctrl<span class="plus">+</span>D</span></div>
+          <div class="h2Row"><span class="h2Desc">撤销删除</span><span class="hKey">Ctrl<span class="plus">+</span>Z</span></div>
+
+          <div class="h2SubTitle">多选操作</div>
+          <div class="h2Row"><span class="h2Desc">逐个多选</span><span class="hKey">ctrl+click</span></div>
+          <div class="h2Row"><span class="h2Desc">范围选择</span><span class="hKey">shift+click</span></div>
+
+          <div class="h2SubTitle">高级功能</div>
+          <div class="h2Row"><span class="h2Desc">依次粘贴模式</span><span class="hKey">Ctrl<span class="plus">+</span>Q</span></div>
+          <div class="h2Row"><span class="h2Desc">粘贴第 N 条</span><span class="hKey">ctrl+alt+1~9</span></div>
+        </div></div>
+      </div>
+
+      <!-- 2. 功能说明 -->
+      <div class="h2Section">
+        <div class="h2SectionHeader">
+          <span class="h2SectionIcon" style="background:linear-gradient(135deg,#8B5CF6,#5856D6);">🧩</span>
+          <span class="h2SectionTitle">功能说明与设置</span>
+          <span class="h2Arrow">›</span>
+        </div>
+        <div class="h2SectionContent"><div class="h2SectionInner">
+          <div class="h2InfoBox">
+            <p style="margin:0 0 8px;">各功能的详细说明和设置项说明已移至 <strong>设置页面</strong>。</p>
+            <p style="margin:0 0 4px;">📌 打开设置（Ctrl+S），点击各选项旁的 <span style="color:var(--accent);font-weight:600;">?</span> 图标查看详情。</p>
+            <p style="margin:0;">💡 也可以在此搜索框搜索功能关键词快速定位。</p>
+          </div>
+        </div></div>
+      </div>
+
+      <!-- 3. 技巧提示 -->
+      <div class="h2Section">
+        <div class="h2SectionHeader">
+          <span class="h2SectionIcon" style="background:linear-gradient(135deg,#10B981,#34C759);">💡</span>
+          <span class="h2SectionTitle">技巧提示</span>
+          <span class="h2Arrow">›</span>
+        </div>
+        <div class="h2SectionContent"><div class="h2SectionInner">
+          <div class="h2Tip"><span class="h2TipBulb">💡</span><span class="h2TipText"><strong>Ctrl + Click</strong> 可逐个多选记录，然后批量删除或操作</span></div>
+          <div class="h2Tip"><span class="h2TipBulb">💡</span><span class="h2TipText"><strong>Shift + Click</strong> 可范围选择，从当前到点击位置全部选中</span></div>
+          <div class="h2Tip"><span class="h2TipBulb">💡</span><span class="h2TipText">按 <strong>Space</strong> 快速预览选中内容，无需打开详情</span></div>
+          <div class="h2Tip"><span class="h2TipBulb">💡</span><span class="h2TipText">双击卡片行为可在设置中配置（粘贴/预览/复制）</span></div>
+          <div class="h2Tip"><span class="h2TipBulb">💡</span><span class="h2TipText">误删记录可按 <strong>Ctrl + Z</strong> 立即撤销恢复</span></div>
+          <div class="h2Tip"><span class="h2TipBulb">💡</span><span class="h2TipText"><strong>Ctrl + Alt + 1~9</strong> 直接粘贴对应序号的记录</span></div>
+          <div class="h2Tip"><span class="h2TipBulb">💡</span><span class="h2TipText">置顶记录会始终显示在列表顶部，适合固定常用内容</span></div>
+          <div class="h2Tip"><span class="h2TipBulb">💡</span><span class="h2TipText">搜索框支持关键词过滤，输入即搜，支持类型筛选</span></div>
+        </div></div>
+      </div>
+    </div>
+
+    <div class="sFooter">
+      <button class="sSaveBtn">关闭设置</button>
+      <span class="sFooterVer">PastePanda <span class="verBadge" style="font-size:9px;">v2.4.0</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 关于 Tab ===== -->
+<div class="scene-title" style="margin-top:24px;">设置 → 关于 Tab</div>
+<div style="width:420px;">
+  <div class="dialog-box w500" style="width:420px;max-height:none;overflow:visible;">
+    <div class="dialog-header">
+      <h2 class="dialog-title">⚙ 设置</h2>
+      <button class="dialog-close">✕</button>
+    </div>
+
+    <div class="settings-tabs">
+      <button class="settings-tab">⚙ 通用</button>
+      <button class="settings-tab">❓ 帮助</button>
+      <button class="settings-tab active">ℹ️ 关于</button>
+    </div>
+
+    <!-- 关于内容（从原 AboutDialog 迁移） -->
+    <div class="dialog-body" style="padding:28px 28px 24px;">
+      <!-- 英雄区 -->
+      <div class="aboutHero">
+        <div class="aboutIcon">P</div>
+        <div class="aboutMeta">
+          <div class="aboutName">PastePanda</div>
+          <div class="aboutVersionRow">
+            <span class="verBadge">v2.4.0</span>
+            <span class="aboutVersionStatus latest">
+              <span class="aboutStatusDot green"></span>
+              已是最新
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 分割线 -->
+      <div class="aboutDivider"></div>
+
+      <!-- 技术栈 -->
+      <div class="aboutSectionLabel">技术栈</div>
+      <div class="aboutTechGrid">
+        <div class="aboutTechCard">
+          <div class="aboutTechIcon" style="background:rgba(255,193,49,0.12);color:#FFC131;">⚙️</div>
+          <div class="aboutTechInfo"><div class="aboutTechName">Tauri 2</div><div class="aboutTechDesc">桌面框架</div></div>
+        </div>
+        <div class="aboutTechCard">
+          <div class="aboutTechIcon" style="background:rgba(97,218,251,0.12);color:#61DAFB;">⚛️</div>
+          <div class="aboutTechInfo"><div class="aboutTechName">React 19</div><div class="aboutTechDesc">UI 框架</div></div>
+        </div>
+        <div class="aboutTechCard">
+          <div class="aboutTechIcon" style="background:rgba(49,120,198,0.12);color:#3178C6;font-size:12px;font-weight:700;">TS</div>
+          <div class="aboutTechInfo"><div class="aboutTechName">TypeScript</div><div class="aboutTechDesc">类型安全</div></div>
+        </div>
+        <div class="aboutTechCard">
+          <div class="aboutTechIcon" style="background:rgba(77,184,189,0.12);color:#4DB8BD;">🗄️</div>
+          <div class="aboutTechInfo"><div class="aboutTechName">SQLite</div><div class="aboutTechDesc">本地存储</div></div>
+        </div>
+        <div class="aboutTechCard">
+          <div class="aboutTechIcon" style="background:rgba(222,165,132,0.12);color:#DEA584;">🦀</div>
+          <div class="aboutTechInfo"><div class="aboutTechName">Rust</div><div class="aboutTechDesc">后端核心</div></div>
+        </div>
+        <div class="aboutTechCard">
+          <div class="aboutTechIcon" style="background:rgba(100,108,255,0.12);color:#646CFF;">⚡</div>
+          <div class="aboutTechInfo"><div class="aboutTechName">Vite</div><div class="aboutTechDesc">构建工具</div></div>
+        </div>
+      </div>
+
+      <!-- 底部 -->
+      <div class="aboutFooter">
+        <button class="aboutFooterLink">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          项目主页
+        </button>
+        <span class="aboutCopyright">© 2026 PastePanda</span>
+      </div>
+    </div>
+
+    <div class="sFooter">
+      <button class="sSaveBtn">关闭设置</button>
+      <span class="sFooterVer">PastePanda <span class="verBadge" style="font-size:9px;">v2.4.0</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 总结 ===== -->
+<div style="width:480px;margin-top:16px;padding:16px 20px;background:#fff;border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,0.06);font-size:13px;color:var(--text-secondary);line-height:1.8;">
+  <strong style="color:var(--text-primary);">变更总结</strong><br>
+  <span class="tag-removed tag-before">移除</span> TopBar 的 ❓ 帮助按钮<br>
+  <span class="tag-removed tag-before">移除</span> TopBar 的 ⓘ 关于按钮<br>
+  <span class="tag-moved tag-before">新增</span> 设置面板顶部 3 个 Tab：⚙ 通用 | ❓ 帮助 | ℹ️ 关于<br>
+  <span style="color:var(--accent);">→</span> 右上角从 7 个按钮精简为 5 个，480px 窗口不再拥挤<br>
+  <span style="color:var(--accent);">→</span> 帮助和关于仍可通过设置面板访问（Ctrl+S）
+</div>
+
+</body>
+</html>

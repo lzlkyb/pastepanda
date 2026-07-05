@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PastePanda 主页面 UX 优化预览</title>
+<style>
+/* ===== Reset & Variables (Ocean theme) ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --app-bg: #F4F6F9;
+  --card-bg: #fff;
+  --card-border: #E0E4EB;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --accent-shadow: rgba(2, 132, 199, 0.15);
+  --hover: #E8ECF2;
+  --green: #16A34A;
+  --green-bg: #DCFCE7;
+  --green-border: #BBF7D0;
+  --orange: #EA580C;
+  --orange-bg: #FFF7ED;
+  --orange-border: #FED7AA;
+  --red-bg: #FEF2F2;
+  --danger: #DC2626;
+  --search-bg: #fff;
+  --search-border: #E0E4EB;
+  --seg-bg: #E8E8ED;
+  --seg-active-bg: #fff;
+  --fab-shadow: rgba(2, 132, 199, 0.35);
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--app-bg);
+  color: var(--text-primary);
+  overflow: hidden;
+  height: 100vh;
+}
+
+/* ===== Layout ===== */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-width: 800px;
+  margin: 0 auto;
+  position: relative;
+}
+
+/* ===== Header ===== */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, #fff 0%, #F4F6F9 100%);
+  z-index: 10;
+}
+
+.logo {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.logo span { color: var(--text-primary); }
+
+/* ===== Search ===== */
+.search-wrap {
+  flex: 1;
+  position: relative;
+}
+
+.search-box {
+  width: 100%;
+  height: 38px;
+  border-radius: 10px;
+  border: 1.5px solid var(--search-border);
+  background: var(--search-bg);
+  padding: 0 14px 0 36px;
+  font-size: 14px;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.search-box:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-shadow);
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  font-size: 15px;
+  pointer-events: none;
+}
+
+/* ===== Filter Chips (NEW) ===== */
+.filter-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px 12px;
+  flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.filter-chips::-webkit-scrollbar { display: none; }
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  border: 1.5px solid transparent;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.chip-default {
+  background: var(--seg-bg);
+  color: var(--text-secondary);
+}
+
+.chip-default:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+.chip-active {
+  background: var(--accent-light);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.chip-active:hover {
+  background: var(--accent-light);
+}
+
+.chip-close {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  background: rgba(0,0,0,0.1);
+  color: var(--accent);
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.chip-close:hover {
+  background: rgba(0,0,0,0.2);
+}
+
+.chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.chip-dot-text { background: var(--accent); }
+.chip-dot-link { background: var(--orange); }
+.chip-dot-image { background: #8B5CF6; }
+.chip-dot-file { background: var(--green); }
+.chip-dot-fav { background: #F59E0B; }
+
+/* ===== Content Area ===== */
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 20px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ===== Time Divider (NEW) ===== */
+.time-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0 4px;
+  margin-top: 4px;
+}
+
+.time-divider:first-child { margin-top: 0; }
+
+.time-divider-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+}
+
+.time-divider-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.time-divider-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+/* ===== Card ===== */
+.card {
+  background: var(--card-bg);
+  border: 1.5px solid var(--card-border);
+  border-radius: 12px;
+  padding: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px var(--accent-shadow);
+}
+
+/* Card copy success flash (NEW) */
+.card.flash-success {
+  animation: card-flash-green 0.8s ease-out;
+  border-color: var(--green-border);
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
+}
+
+@keyframes card-flash-green {
+  0% { border-color: var(--green); box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.25); }
+  100% { border-color: var(--card-border); box-shadow: var(--card-shadow); }
+}
+
+.card-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+  z-index: 1;
+}
+
+.card-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  width: fit-content;
+}
+
+.badge-text { background: var(--accent-light); color: var(--accent); }
+.badge-link { background: var(--orange-bg); color: var(--orange); }
+.badge-image { background: #EDE9FE; color: #7C3AED; }
+
+.card-content {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.card-time {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.card-actions {
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.card:hover .card-actions { opacity: 1; }
+
+.card-action-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: var(--hover);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+
+.card-action-btn:hover {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.card-action-btn.danger:hover {
+  background: var(--red-bg);
+  color: var(--danger);
+}
+
+.card-action-btn.fav-active {
+  color: #F59E0B;
+  background: #FEF3C7;
+}
+
+/* Copy checkmark animation (NEW) */
+.copy-check {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  font-size: 32px;
+  color: var(--green);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 5;
+  transition: none;
+}
+
+.card.flash-success .copy-check {
+  animation: check-pop 0.6s ease-out forwards;
+}
+
+@keyframes check-pop {
+  0% { transform: translate(-50%, -50%) scale(0); opacity: 0; }
+  40% { transform: translate(-50%, -50%) scale(1.3); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(0.8); opacity: 0; }
+}
+
+/* ===== Search No Result (NEW) ===== */
+.no-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 20px;
+  gap: 12px;
+  text-align: center;
+}
+
+.no-result-icon {
+  font-size: 48px;
+  margin-bottom: 8px;
+  opacity: 0.6;
+}
+
+.no-result-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.no-result-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  max-width: 280px;
+}
+
+.no-result-desc strong {
+  color: var(--text-primary);
+  background: var(--accent-light);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.no-result-clear {
+  margin-top: 8px;
+  padding: 8px 20px;
+  border-radius: 8px;
+  border: 1.5px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.no-result-clear:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ===== Empty State Guide (ENHANCED) ===== */
+.empty-guide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  gap: 16px;
+  text-align: center;
+  flex: 1;
+}
+
+.guide-mascot {
+  width: 80px;
+  height: 80px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, var(--accent-light), var(--accent-shadow));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  margin-bottom: 4px;
+  animation: mascot-float 3s ease-in-out infinite;
+}
+
+@keyframes mascot-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+.guide-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.guide-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.7;
+  max-width: 300px;
+}
+
+.guide-shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  background: var(--card-bg);
+  border: 1.5px solid var(--border-color);
+  border-radius: 12px;
+  padding: 14px 18px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.guide-shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.guide-kbd {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--seg-bg);
+  font-size: 12px;
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  color: var(--text-primary);
+  font-weight: 600;
+  border: 1px solid var(--border-color);
+}
+
+/* ===== Back to Top FAB (NEW) ===== */
+.back-to-top {
+  position: fixed;
+  right: 24px;
+  bottom: 100px;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--card-bg);
+  border: 1.5px solid var(--border-color);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 18px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  transition: all 0.3s ease;
+  z-index: 20;
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+}
+
+.back-to-top.visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.back-to-top:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  box-shadow: 0 4px 14px var(--fab-shadow);
+  transform: translateY(-2px);
+}
+
+/* ===== Main FAB (existing, enhanced) ===== */
+.fab-wrap {
+  position: fixed;
+  right: 24px;
+  bottom: 36px;
+  z-index: 20;
+}
+
+.fab-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, var(--accent), #0369A1);
+  color: #fff;
+  font-size: 24px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px var(--fab-shadow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.fab-btn:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 22px var(--fab-shadow);
+}
+
+.fab-btn:active {
+  transform: scale(0.95);
+}
+
+.fab-counter {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border: 2px solid var(--card-bg);
+  animation: counter-pulse 0.3s ease-out;
+}
+
+@keyframes counter-pulse {
+  0% { transform: scale(0.5); opacity: 0; }
+  60% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* ===== Toast (existing) ===== */
+.toast-container {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toast {
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  animation: toast-in 0.3s ease-out;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid;
+}
+
+.toast-success {
+  background: #ECFDF5;
+  color: #065F46;
+  border-color: #A7F3D0;
+}
+
+@keyframes toast-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* ===== Swipe Action (NEW - visual hint) ===== */
+.card-swipe-hint {
+  display: none; /* shown on touch devices via JS, here for demo */
+}
+
+/* ===== Theme Switcher Demo Bar ===== */
+.demo-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 13px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.demo-bar strong {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.demo-bar .section-label {
+  margin-right: 4px;
+}
+
+.demo-toggle-group {
+  display: flex;
+  gap: 4px;
+}
+
+.demo-toggle-btn {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.demo-toggle-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.demo-toggle-btn.active {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ===== Scrollbar ===== */
+.content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.content::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+
+.content::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 600px) {
+  .header { padding: 12px 14px; }
+  .filter-chips { padding: 0 14px 10px; }
+  .content { padding: 0 14px 80px; }
+  .back-to-top { right: 16px; bottom: 92px; }
+  .fab-wrap { right: 16px; bottom: 28px; }
+}
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- Demo Controls -->
+  <div class="demo-bar">
+    <strong>UX 优化预览</strong>
+    <span>|</span>
+    <span class="section-label">视图:</span>
+    <div class="demo-toggle-group">
+      <button class="demo-toggle-btn active" onclick="switchView('normal')">📋 正常列表</button>
+      <button class="demo-toggle-btn" onclick="switchView('empty')">📭 空状态</button>
+      <button class="demo-toggle-btn" onclick="switchView('noresult')">🔍 搜索无结果</button>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">🐼 <span>PastePanda</span></div>
+    <div class="search-wrap">
+      <span class="search-icon">🔍</span>
+      <input class="search-box" type="text" placeholder="搜索剪贴板内容…" id="searchInput" oninput="handleSearch(this.value)">
+    </div>
+  </div>
+
+  <!-- Filter Chips -->
+  <div class="filter-chips" id="filterChips">
+    <div class="chip chip-active" onclick="toggleChip(this, 'all')">
+      📋 全部
+      <span class="chip-close" onclick="event.stopPropagation(); clearChip(this.parentElement)">✕</span>
+    </div>
+    <div class="chip chip-default" onclick="toggleChip(this, 'text')">
+      <span class="chip-dot chip-dot-text"></span> 文本
+    </div>
+    <div class="chip chip-default" onclick="toggleChip(this, 'link')">
+      <span class="chip-dot chip-dot-link"></span> 链接
+    </div>
+    <div class="chip chip-default" onclick="toggleChip(this, 'image')">
+      <span class="chip-dot chip-dot-image"></span> 图片
+    </div>
+    <div class="chip chip-default" onclick="toggleChip(this, 'file')">
+      <span class="chip-dot chip-dot-file"></span> 文件
+    </div>
+    <div class="chip chip-default" onclick="toggleChip(this, 'fav')">
+      <span class="chip-dot chip-dot-fav"></span> ⭐ 收藏
+    </div>
+  </div>
+
+  <!-- Content Area -->
+  <div class="content" id="contentArea">
+
+    <!-- Time Divider: Today -->
+    <div class="time-divider">
+      <span class="time-divider-dot"></span>
+      <span class="time-divider-label">今天</span>
+      <div class="time-divider-line"></div>
+    </div>
+
+    <!-- Card 1 - Text -->
+    <div class="card" id="card1" onclick="simulateCopy('card1')">
+      <div class="copy-check">✓</div>
+      <div class="card-inner">
+        <span class="card-type-badge badge-text">📝 文本</span>
+        <div class="card-content">这是一个复制到剪贴板的文本内容示例，展示卡片的基本样式和布局效果。</div>
+        <div class="card-meta">
+          <span class="card-time">🕐 2 分钟前</span>
+          <div class="card-actions">
+            <button class="card-action-btn" title="复制" onclick="event.stopPropagation(); simulateCopy('card1')">📋</button>
+            <button class="card-action-btn fav-active" title="已收藏" onclick="event.stopPropagation()">⭐</button>
+            <button class="card-action-btn danger" title="删除" onclick="event.stopPropagation()">🗑</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 2 - Link -->
+    <div class="card" id="card2" onclick="simulateCopy('card2')">
+      <div class="copy-check">✓</div>
+      <div class="card-inner">
+        <span class="card-type-badge badge-link">🔗 链接</span>
+        <div class="card-content">https://github.com/user/project/pull/123 - 修复了滚动相关的性能问题</div>
+        <div class="card-meta">
+          <span class="card-time">🕐 15 分钟前</span>
+          <div class="card-actions">
+            <button class="card-action-btn" title="复制" onclick="event.stopPropagation(); simulateCopy('card2')">📋</button>
+            <button class="card-action-btn" title="收藏" onclick="event.stopPropagation()">⭐</button>
+            <button class="card-action-btn danger" title="删除" onclick="event.stopPropagation()">🗑</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 3 - Image -->
+    <div class="card" id="card3" onclick="simulateCopy('card3')">
+      <div class="copy-check">✓</div>
+      <div class="card-inner">
+        <span class="card-type-badge badge-image">🖼 图片</span>
+        <div class="card-content">screenshot_2026-07-03_184500.png (1920×1080, 245KB)</div>
+        <div class="card-meta">
+          <span class="card-time">🕐 1 小时前</span>
+          <div class="card-actions">
+            <button class="card-action-btn" title="复制" onclick="event.stopPropagation(); simulateCopy('card3')">📋</button>
+            <button class="card-action-btn" title="收藏" onclick="event.stopPropagation()">⭐</button>
+            <button class="card-action-btn danger" title="删除" onclick="event.stopPropagation()">🗑</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Time Divider: Yesterday -->
+    <div class="time-divider">
+      <span class="time-divider-dot"></span>
+      <span class="time-divider-label">昨天</span>
+      <div class="time-divider-line"></div>
+    </div>
+
+    <!-- Card 4 -->
+    <div class="card" id="card4" onclick="simulateCopy('card4')">
+      <div class="copy-check">✓</div>
+      <div class="card-inner">
+        <span class="card-type-badge badge-text">📝 文本</span>
+        <div class="card-content">const fetchData = async (url: string): Promise<Response> => { return await fetch(url, { headers: { 'Content-Type': 'application/json' } }); };</div>
+        <div class="card-meta">
+          <span class="card-time">🕐 昨天 22:30</span>
+          <div class="card-actions">
+            <button class="card-action-btn" title="复制" onclick="event.stopPropagation(); simulateCopy('card4')">📋</button>
+            <button class="card-action-btn" title="收藏" onclick="event.stopPropagation()">⭐</button>
+            <button class="card-action-btn danger" title="删除" onclick="event.stopPropagation()">🗑</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 5 -->
+    <div class="card" id="card5" onclick="simulateCopy('card5')">
+      <div class="copy-check">✓</div>
+      <div class="card-inner">
+        <span class="card-type-badge badge-link">🔗 链接</span>
+        <div class="card-content">https://www.figma.com/file/abc123/Design-System - 新版设计系统组件库</div>
+        <div class="card-meta">
+          <span class="card-time">🕐 昨天 18:15</span>
+          <div class="card-actions">
+            <button class="card-action-btn" title="复制" onclick="event.stopPropagation(); simulateCopy('card5')">📋</button>
+            <button class="card-action-btn" title="收藏" onclick="event.stopPropagation()">⭐</button>
+            <button class="card-action-btn danger" title="删除" onclick="event.stopPropagation()">🗑</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Time Divider: This Week -->
+    <div class="time-divider">
+      <span class="time-divider-dot"></span>
+      <span class="time-divider-label">本周</span>
+      <div class="time-divider-line"></div>
+    </div>
+
+    <!-- Card 6 -->
+    <div class="card" id="card6" onclick="simulateCopy('card6')">
+      <div class="copy-check">✓</div>
+      <div class="card-inner">
+        <span class="card-type-badge badge-text">📝 文本</span>
+        <div class="card-content">会议纪要 - 2026年7月1日：讨论了Q3产品路线图，确定了新功能优先级排序，分配了各团队的任务。</div>
+        <div class="card-meta">
+          <span class="card-time">🕐 2 天前</span>
+          <div class="card-actions">
+            <button class="card-action-btn" title="复制" onclick="event.stopPropagation(); simulateCopy('card6')">📋</button>
+            <button class="card-action-btn" title="收藏" onclick="event.stopPropagation()">⭐</button>
+            <button class="card-action-btn danger" title="删除" onclick="event.stopPropagation()">🗑</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 7 -->
+    <div class="card" id="card7" onclick="simulateCopy('card7')">
+      <div class="copy-check">✓</div>
+      <div class="card-inner">
+        <span class="card-type-badge badge-image">🖼 图片</span>
+        <div class="card-content">product_homepage_redesign_v3.png (2560×1440, 1.2MB)</div>
+        <div class="card-meta">
+          <span class="card-time">🕐 3 天前</span>
+          <div class="card-actions">
+            <button class="card-action-btn" title="复制" onclick="event.stopPropagation(); simulateCopy('card7')">📋</button>
+            <button class="card-action-btn" title="收藏" onclick="event.stopPropagation()">⭐</button>
+            <button class="card-action-btn danger" title="删除" onclick="event.stopPropagation()">🗑</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Empty State (hidden by default) -->
+    <div class="empty-guide" id="emptyState" style="display:none;">
+      <div class="guide-mascot">🐼</div>
+      <div class="guide-title">欢迎使用 PastePanda!</div>
+      <div class="guide-desc">
+        你的剪贴板助手已就绪。开始复制任何内容，它会自动出现在这里。
+      </div>
+      <div class="guide-shortcuts">
+        <div class="guide-shortcut-row">
+          <span>📋 快速粘贴</span>
+          <span class="guide-kbd">Ctrl+1~9</span>
+        </div>
+        <div class="guide-shortcut-row">
+          <span>🔍 搜索</span>
+          <span class="guide-kbd">Ctrl+F</span>
+        </div>
+        <div class="guide-shortcut-row">
+          <span>⌨️ 快捷键列表</span>
+          <span class="guide-kbd">?</span>
+        </div>
+        <div class="guide-shortcut-row">
+          <span>⚙️ 设置</span>
+          <span class="guide-kbd">Ctrl+,</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Search No Result (hidden by default) -->
+    <div class="no-result" id="noResult" style="display:none;">
+      <div class="no-result-icon">🔍</div>
+      <div class="no-result-title">未找到相关内容</div>
+      <div class="no-result-desc">
+        没有找到包含 <strong id="noResultKeyword">"xxx"</strong> 的剪贴板记录
+      </div>
+      <div class="no-result-desc" style="color: var(--text-muted); font-size: 12px;">
+        试试其他关键词，或者检查拼写是否正确
+      </div>
+      <button class="no-result-clear" onclick="clearSearch()">清除搜索</button>
+    </div>
+
+  </div>
+
+  <!-- Back to Top FAB -->
+  <button class="back-to-top visible" id="backToTop" onclick="scrollToTop()" title="回到顶部">
+    ↑
+  </button>
+
+  <!-- Main FAB -->
+  <div class="fab-wrap">
+    <button class="fab-btn" onclick="alert('粘贴最新内容')">
+      📋
+      <span class="fab-counter">3</span>
+    </button>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast-container" id="toastContainer">
+    <div class="toast toast-success" id="toastDemo" style="display:none;">
+      ✓ 已复制到剪贴板
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ===== Filter Chip Toggle =====
+function toggleChip(chip, type) {
+  // If clicking the same chip, toggle off (back to default)
+  if (chip.classList.contains('chip-active')) {
+    chip.classList.remove('chip-active');
+    chip.classList.add('chip-default');
+    // Remove close button if it existed
+    const close = chip.querySelector('.chip-close');
+    if (close) close.remove();
+  } else {
+    // Remove active from all chips
+    document.querySelectorAll('.chip-active').forEach(c => {
+      c.classList.remove('chip-active');
+      c.classList.add('chip-default');
+      const close = c.querySelector('.chip-close');
+      if (close) close.remove();
+    });
+    // Activate this chip
+    chip.classList.remove('chip-default');
+    chip.classList.add('chip-active');
+    // Add close button if not 'all'
+    if (type !== 'all' && !chip.querySelector('.chip-close')) {
+      const close = document.createElement('span');
+      close.className = 'chip-close';
+      close.textContent = '✕';
+      close.onclick = function(e) {
+        e.stopPropagation();
+        clearChip(chip);
+      };
+      chip.appendChild(close);
+    }
+  }
+}
+
+function clearChip(chip) {
+  chip.classList.remove('chip-active');
+  chip.classList.add('chip-default');
+  const close = chip.querySelector('.chip-close');
+  if (close) close.remove();
+  // Re-activate 'all' chip
+  const allChip = document.querySelector('[onclick*="all"]');
+  if (allChip && !allChip.classList.contains('chip-active')) {
+    allChip.classList.remove('chip-default');
+    allChip.classList.add('chip-active');
+  }
+}
+
+// ===== Copy Animation =====
+function simulateCopy(cardId) {
+  const card = document.getElementById(cardId);
+  if (!card) return;
+
+  // Add flash class
+  card.classList.add('flash-success');
+
+  // Show toast
+  const toast = document.getElementById('toastDemo');
+  toast.style.display = 'flex';
+  toast.style.animation = 'none';
+  toast.offsetHeight; // reflow
+  toast.style.animation = 'toast-in 0.3s ease-out';
+
+  // Remove flash after animation
+  setTimeout(() => {
+    card.classList.remove('flash-success');
+  }, 800);
+
+  // Hide toast after 2s
+  setTimeout(() => {
+    toast.style.display = 'none';
+  }, 2000);
+}
+
+// ===== Scroll to Top =====
+function scrollToTop() {
+  document.getElementById('contentArea').scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// Show/hide back-to-top based on scroll
+document.getElementById('contentArea').addEventListener('scroll', function() {
+  const btn = document.getElementById('backToTop');
+  if (this.scrollTop > 200) {
+    btn.classList.add('visible');
+  } else {
+    btn.classList.remove('visible');
+  }
+});
+
+// ===== Search =====
+function handleSearch(value) {
+  const cards = document.querySelectorAll('.card');
+  const timeDividers = document.querySelectorAll('.time-divider');
+  const emptyState = document.getElementById('emptyState');
+  const noResult = document.getElementById('noResult');
+
+  if (value.trim() === '') {
+    // Show all
+    cards.forEach(c => c.style.display = '');
+    timeDividers.forEach(t => t.style.display = '');
+    noResult.style.display = 'none';
+    if (emptyState.style.display === 'none') {
+      // normal mode
+    }
+    return;
+  }
+
+  const keyword = value.toLowerCase();
+  let foundAny = false;
+
+  cards.forEach(card => {
+    const content = card.querySelector('.card-content').textContent.toLowerCase();
+    if (content.includes(keyword)) {
+      card.style.display = '';
+      foundAny = true;
+    } else {
+      card.style.display = 'none';
+    }
+  });
+
+  timeDividers.forEach(t => t.style.display = foundAny ? '' : 'none');
+
+  if (!foundAny && cards.length > 0) {
+    noResult.style.display = 'flex';
+    document.getElementById('noResultKeyword').textContent = `"${value}"`;
+  } else {
+    noResult.style.display = 'none';
+  }
+}
+
+function clearSearch() {
+  document.getElementById('searchInput').value = '';
+  handleSearch('');
+}
+
+// ===== View Switching =====
+function switchView(view) {
+  // Update buttons
+  document.querySelectorAll('.demo-toggle-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+
+  const cards = document.querySelectorAll('.card');
+  const timeDividers = document.querySelectorAll('.time-divider');
+  const emptyState = document.getElementById('emptyState');
+  const noResult = document.getElementById('noResult');
+
+  // Hide all
+  cards.forEach(c => c.style.display = 'none');
+  timeDividers.forEach(t => t.style.display = 'none');
+  emptyState.style.display = 'none';
+  noResult.style.display = 'none';
+  document.getElementById('searchInput').value = '';
+
+  if (view === 'normal') {
+    cards.forEach(c => c.style.display = '');
+    timeDividers.forEach(t => t.style.display = '');
+  } else if (view === 'empty') {
+    emptyState.style.display = 'flex';
+  } else if (view === 'noresult') {
+    document.getElementById('searchInput').value = 'xxxxx';
+    noResult.style.display = 'flex';
+    document.getElementById('noResultKeyword').textContent = '"xxxxx"';
+  }
+}
+</script>
+
+</body>
+</html>

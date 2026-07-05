@@ -110,6 +110,24 @@ impl DataStore {
             }
         }
 
+        // 启用 WAL 模式 + 性能/可靠性优化
+        // WAL：写操作不阻塞读，并发更好，崩溃恢复更安全
+        // synchronous=NORMAL：WAL 模式下足够安全，大幅提升写入性能
+        // cache_size=-8000：8MB 缓存（负值表示 KB），减少磁盘 I/O
+        // busy_timeout=5000：等待 5 秒而非立即返回 SQLITE_BUSY
+        let pragmas = [
+            "PRAGMA journal_mode=WAL;",
+            "PRAGMA synchronous=NORMAL;",
+            "PRAGMA cache_size=-8000;",
+            "PRAGMA busy_timeout=5000;",
+            "PRAGMA foreign_keys=ON;",
+        ];
+        for pragma in &pragmas {
+            if let Err(e) = conn.execute_batch(pragma) {
+                log::warn!("[DataStore] PRAGMA 设置失败 ({}): {}", pragma, e);
+            }
+        }
+
         Ok(Self {
             conn: Mutex::new(conn),
             path: db_path,
@@ -289,23 +307,37 @@ impl DataStore {
 
     pub fn delete_history(&self, ids: &[String]) -> Result<u32, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        let placeholders: Vec<String> = ids
-            .iter()
-            .enumerate()
-            .map(|(i, _)| format!("?{}", i + 1))
-            .collect();
-        let sql = format!(
-            "DELETE FROM history WHERE id IN ({})",
-            placeholders.join(",")
-        );
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> = ids
-            .iter()
-            .map(|s| s as &dyn rusqlite::types::ToSql)
-            .collect();
-        let count = conn
-            .execute(&sql, param_refs.as_slice())
-            .map_err(|e| e.to_string())?;
-        Ok(count as u32)
+        // 显式事务：批量删除要么全成功要么全回滚
+        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        let result = (|| {
+            let placeholders: Vec<String> = ids
+                .iter()
+                .enumerate()
+                .map(|(i, _)| format!("?{}", i + 1))
+                .collect();
+            let sql = format!(
+                "DELETE FROM history WHERE id IN ({})",
+                placeholders.join(",")
+            );
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> = ids
+                .iter()
+                .map(|s| s as &dyn rusqlite::types::ToSql)
+                .collect();
+            let count = conn
+                .execute(&sql, param_refs.as_slice())
+                .map_err(|e| e.to_string())?;
+            Ok(count as u32)
+        })();
+        match result {
+            Ok(count) => {
+                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                Ok(count)
+            }
+            Err(e) => {
+                conn.execute_batch("ROLLBACK;").ok();
+                Err(e)
+            }
+        }
     }
 
     pub fn toggle_pin(&self, id: &str) -> Result<bool, String> {
@@ -368,20 +400,29 @@ impl DataStore {
     pub fn clear_history(&self, workspace: &str, before_days: Option<u32>) -> Result<u32, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         // 安全保护：before_days 为 None 或 0 时不删除任何记录
-        // 避免因参数传递错误（如类型不匹配导致反序列化为 None）而误删全部数据
         let days = match before_days {
             Some(d) if d > 0 => d,
             _ => return Ok(0),
         };
         let cutoff = chrono::Local::now() - chrono::Duration::days(days as i64);
         let cutoff_str = cutoff.format("%Y-%m-%d %H:%M:%S").to_string();
-        let count = conn
-            .execute(
-                "DELETE FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2",
-                params![workspace, cutoff_str],
-            )
-            .map_err(|e| e.to_string())?;
-        Ok(count as u32)
+
+        // 显式事务：批量清理要么全成功要么全回滚
+        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        let result = conn.execute(
+            "DELETE FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2",
+            params![workspace, cutoff_str],
+        );
+        match result {
+            Ok(count) => {
+                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                Ok(count as u32)
+            }
+            Err(e) => {
+                conn.execute_batch("ROLLBACK;").ok();
+                Err(e.to_string())
+            }
+        }
     }
 
     pub fn get_stats(&self, workspace: &str) -> Result<Stats, String> {
@@ -565,29 +606,46 @@ impl DataStore {
 
     pub fn import_history(&self, items: &[HistoryItem]) -> Result<u32, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        let mut count = 0u32;
-        for item in items {
-            let result = conn.execute(
-                "INSERT OR IGNORE INTO history (id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                params![
-                    item.id,
-                    item.text,
-                    item.time,
-                    item.item_type,
-                    item.content,
-                    item.pinned as i32,
-                    item.source,
-                    item.workspace,
-                    item.md5,
-                    item.pinyin_initials,
-                ],
-            );
-            if let Ok(n) = result {
-                count += n as u32;
+
+        // 显式事务：批量导入要么全成功要么全回滚
+        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+
+        let result = (|| -> Result<u32, String> {
+            let mut count = 0u32;
+            for item in items {
+                let affected = conn
+                    .execute(
+                        "INSERT OR IGNORE INTO history (id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                        params![
+                            item.id,
+                            item.text,
+                            item.time,
+                            item.item_type,
+                            item.content,
+                            item.pinned as i32,
+                            item.source,
+                            item.workspace,
+                            item.md5,
+                            item.pinyin_initials,
+                        ],
+                    )
+                    .map_err(|e| e.to_string())?;
+                count += affected as u32;
+            }
+            Ok(count)
+        })();
+
+        match result {
+            Ok(count) => {
+                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                Ok(count)
+            }
+            Err(e) => {
+                conn.execute_batch("ROLLBACK;").ok();
+                Err(e)
             }
         }
-        Ok(count)
     }
 
     pub fn add_snippet(&self, name: &str, content: &str) -> Result<String, String> {

@@ -4,10 +4,11 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { logger } from "@/lib/logger";
+import { useToast } from "@/components/Toast";
 
 // ─── 类型定义 ───────────────────────────────────────────
 
-export type UpdateStatus = "idle" | "checking" | "available" | "downloading" | "ready" | "error" | "installed";
+export type UpdateStatus = "idle" | "checking" | "available" | "downloading" | "ready" | "error" | "installed" | "uptodate";
 
 export interface UpdateState {
   status: UpdateStatus;
@@ -37,6 +38,26 @@ export function useUpdate() {
   return ctx;
 }
 
+// ─── 工具函数 ──────────────────────────────────────────
+
+/** 将原始错误信息翻译为用户友好的中文提示，同时保留原始错误 */
+function friendlyError(raw: string): string {
+  const lower = raw.toLowerCase();
+  if (lower.includes("networkerror") || lower.includes("failed to fetch") || lower.includes("fetch")) {
+    return `网络连接失败，请检查网络后重试（${raw}）`;
+  }
+  if (lower.includes("enotfound") || lower.includes("getaddrinfo") || lower.includes("dns")) {
+    return `无法解析更新服务器地址，请检查网络连接（${raw}）`;
+  }
+  if (lower.includes("timeout") || lower.includes("timed out")) {
+    return `连接超时，请稍后重试（${raw}）`;
+  }
+  if (lower.includes("403") || lower.includes("rate limit")) {
+    return `GitHub API 访问受限，请稍后重试（${raw}）`;
+  }
+  return `更新失败：${raw}`;
+}
+
 // ─── 常量 ──────────────────────────────────────────────
 
 /** 自动检查间隔：24 小时 */
@@ -50,8 +71,10 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   const [update, setUpdate] = useState<Update | null>(null);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
   const checkingRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const uptodateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ─── 启动时自动检查 ──────────────────────────────────
 
@@ -79,6 +102,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
+      if (uptodateTimerRef.current) clearTimeout(uptodateTimerRef.current);
     };
   }, []);
 
@@ -101,6 +125,23 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // ─── 指数退避重试辅助函数 ─────────────────────────
+
+  /** 带指数退避的重试执行，最多 retries 次，间隔 1s/2s/4s/... */
+  async function retryWithBackoff<T>(fn: () => Promise<T>, retries: number, label: string): Promise<T> {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await fn();
+      } catch (e) {
+        if (attempt >= retries) throw e;
+        const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s, ...
+        logger.warn(`[Update] ${label} 失败（第 ${attempt + 1}/${retries + 1} 次），${delay / 1000}s 后重试:`, e);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+    throw new Error("unreachable");
+  }
+
   // ─── 检查更新 ─────────────────────────────────────────
 
   const checkForUpdate = useCallback(async () => {
@@ -111,19 +152,28 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     setError(null);
 
     try {
-      const update = await check();
+      // 带重试检查更新（最多 3 次，指数退避 1s/2s/4s）
+      const update = await retryWithBackoff(() => check(), 3, "检查更新");
       if (update) {
         setStatus("available");
         setUpdate(update);
+        toast(`发现新版本 v${update.version}`, "info");
       } else {
-        setStatus("idle");
+        setStatus("uptodate");
         setUpdate(null);
+        toast("已是最新版本", "success");
+        // 4 秒后自动回到 idle
+        if (uptodateTimerRef.current) clearTimeout(uptodateTimerRef.current);
+        uptodateTimerRef.current = setTimeout(() => {
+          setStatus("idle");
+        }, 4000);
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       logger.error("[Update] 检查更新失败:", msg);
       setError(msg);
       setStatus("error");
+      toast(friendlyError(msg), "error");
     } finally {
       checkingRef.current = false;
       localStorage.setItem(LAST_CHECK_KEY, String(Date.now()));
@@ -192,9 +242,11 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
 
       unlisteners.push(
         await listen<{ message: string }>("update:error", (e) => {
-          logger.error("[Update] 更新失败:", e.payload.message);
-          setError(e.payload.message);
+          const msg = e.payload.message;
+          logger.error("[Update] 更新失败:", msg);
+          setError(msg);
           setStatus("error");
+          toast(friendlyError(msg), "error");
         }),
       );
 

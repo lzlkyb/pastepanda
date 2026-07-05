@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="ocean">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>悬浮交互模式 - 设置</title>
+<style>
+/* ===== 主题变量（ocean 默认） ===== */
+:root, [data-theme="ocean"] {
+  --app-bg: #F4F6F9;
+  --header-bg-start: #fff;
+  --header-bg-end: #F4F6F9;
+  --card-bg: #fff;
+  --card-border: #E0E4EB;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --seg-bg: #E8E8ED;
+  --seg-active-bg: #fff;
+  --search-bg: #fff;
+  --search-border: #E0E4EB;
+  --input-bg: #F1F5F9;
+  --dialog-bg: #fff;
+  --section-bg: #F0F4F8;
+  --toggle-off-bg: #E2E8F0;
+  --toggle-off-label: #94A3B8;
+  --card-selected-bg: #E0F2FE;
+  --card-selected-border: #0284C7;
+  --card-selected-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25);
+  --accent-shadow: rgba(2, 132, 199, 0.15);
+  --hover: #E8ECF2;
+  --green: #16A34A;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--app-bg);
+  color: var(--text-primary);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+/* ===== 模拟 App 窗口 ===== */
+.app-window {
+  width: 820px;
+  height: 640px;
+  background: var(--app-bg);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15), 0 2px 8px rgba(0,0,0,0.08);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== 模拟标题栏 ===== */
+.titlebar {
+  height: 38px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  flex-shrink: 0;
+  user-select: none;
+}
+.titlebar-dots {
+  display: flex;
+  gap: 6px;
+  margin-right: 12px;
+}
+.titlebar-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+}
+.titlebar-dot.red { background: #EF4444; }
+.titlebar-dot.yellow { background: #F59E0B; }
+.titlebar-dot.green { background: #10B981; }
+.titlebar-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* ===== 主内容区 ===== */
+.main-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ===== TopBar ===== */
+.topbar {
+  padding: 12px 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+  background: var(--app-bg);
+}
+.topbar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.search-box {
+  flex: 1;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--search-border);
+  background: var(--search-bg);
+  padding: 0 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+  font-family: inherit;
+}
+.search-box::placeholder { color: var(--text-muted); }
+.search-box:focus { border-color: var(--accent); }
+
+.segmented {
+  display: flex;
+  background: var(--seg-bg);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+}
+.seg-item {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.seg-item.active {
+  background: var(--seg-active-bg);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.seg-item:hover:not(.active) { color: var(--text-primary); }
+
+.icon-btn {
+  width: 34px; height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  cursor: pointer;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.icon-btn:hover { background: var(--hover); color: var(--text-primary); }
+
+/* ===== 卡片列表 ===== */
+.card-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--card-shadow);
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s;
+}
+.card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.card.selected {
+  background: var(--card-selected-bg);
+  border-color: var(--card-selected-border);
+  box-shadow: var(--card-selected-shadow);
+}
+
+.card-icon {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+.card-icon.blue { background: #E0F2FE; }
+.card-icon.green { background: #DCFCE7; }
+.card-icon.purple { background: #EDE9FE; }
+.card-icon.pink { background: #FCE7F3; }
+
+.card-content { flex: 1; min-width: 0; }
+.card-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.card-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ===== Hover 操作按钮 ===== */
+.card-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  flex-shrink: 0;
+}
+.card:hover .card-actions { opacity: 1; }
+.card-action-btn {
+  width: 26px; height: 26px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.card-action-btn.copy { background: #E0F2FE; color: #0284C7; }
+.card-action-btn.copy:hover { background: #BAE6FD; }
+.card-action-btn.fav { background: #FFF7ED; color: #F59E0B; }
+.card-action-btn.fav:hover { background: #FFEDD5; }
+.card-action-btn.edit { background: #EDE9FE; color: #7C3AED; }
+.card-action-btn.edit:hover { background: #DDD6FE; }
+.card-action-btn.del { background: #FEF2F2; color: #EF4444; }
+.card-action-btn.del:hover { background: #FEE2E2; }
+
+/* ★ 方案 A：按钮模式下，hover 时时间淡出 → 按钮淡入（空间置换） */
+.mode-inline .card-time {
+  transition: opacity 0.18s ease;
+}
+.mode-inline .card:hover .card-time {
+  opacity: 0;
+}
+
+/* ===== Popover 气泡 ===== */
+.card-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 10px 14px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  min-width: 200px;
+  max-width: 280px;
+  z-index: 20;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+.card:hover .card-popover { opacity: 1; }
+.card-popover::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 7px solid transparent;
+  border-top-color: var(--card-bg);
+}
+.card-popover::before {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 8px solid transparent;
+  border-top-color: var(--border-color);
+}
+.card-popover-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  max-height: 40px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.card-popover-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.card-popover-actions button {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.card-popover-actions button:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+.card-popover-actions .pop-del {
+  color: #EF4444;
+  border-color: #FECACA;
+}
+.card-popover-actions .pop-del:hover { background: #FEF2F2; }
+
+/* ===== 模式控制：切换不同的 hover 行为 ===== */
+.card-wrap { position: relative; }
+
+/* off 模式：隐藏所有 */
+.mode-off .card-actions { display: none; }
+.mode-off .card-popover { display: none; }
+
+/* inline 模式：显示操作按钮，隐藏 popover */
+.mode-inline .card-popover { display: none; }
+
+/* popover 模式：显示 popover，隐藏操作按钮 */
+.mode-popover .card-actions { display: none; }
+
+/* ===== 设置弹窗（覆盖层） ===== */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.35);
+  animation: fadeIn 0.2s ease;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.dialog-box {
+  background: var(--dialog-bg);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04);
+  width: 420px;
+  max-height: 80vh;
+  animation: scaleIn 0.25s ease;
+}
+@keyframes scaleIn { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.dialog-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.dialog-close {
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 16px;
+  transition: background 0.15s;
+}
+.dialog-close:hover { background: var(--hover); color: var(--text-primary); }
+
+.dialog-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== Section 标题 ===== */
+.s-section {
+  padding: 14px 20px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: var(--section-bg);
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* ===== 设置行 ===== */
+.s-row {
+  display: flex;
+  align-items: center;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border-color);
+  gap: 12px;
+}
+.s-row-icon {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.s-row-body { flex: 1; min-width: 0; }
+.s-row-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.s-row-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.s-row-recommend {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #34C759;
+  background: rgba(52,199,89,0.1);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+/* ===== 方案A：紧凑分段控件（复刻 segmented 风格） ===== */
+.s-seg-group {
+  display: flex;
+  background: var(--seg-bg);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.s-seg-opt {
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.s-seg-opt .s-seg-emoji {
+  font-size: 14px;
+  line-height: 1;
+}
+/* tooltip */
+.s-seg-opt::after {
+  content: attr(title);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--text-primary);
+  color: #fff;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.s-seg-opt:hover::after {
+  opacity: 1;
+}
+}
+.s-seg-opt.active {
+  background: var(--seg-active-bg);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.s-seg-opt:hover:not(.active) {
+  color: var(--text-primary);
+}
+
+/* ===== Footer ===== */
+.s-footer {
+  padding: 16px 20px 20px;
+  border-top: 1px solid var(--border-color);
+  background: var(--section-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.s-save-btn {
+  width: 100%;
+  height: 40px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px var(--accent-shadow);
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+.s-save-btn:hover {
+  box-shadow: 0 4px 12px var(--accent-shadow);
+  transform: translateY(-1px);
+}
+.s-footer-ver {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ===== 模式指示标签 ===== */
+.mode-indicator {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 200;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.mode-indicator:hover { border-color: var(--accent); }
+.mode-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+}
+.mode-dot.off { background: #9CA3AF; }
+.mode-dot.inline { background: #F59E0B; }
+.mode-dot.popover { background: #6366F1; }
+
+/* ===== 帮助提示 ===== */
+.help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--border-color);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: help;
+  transition: all 0.15s;
+}
+.help-icon:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ===== Toast ===== */
+.toast {
+  position: fixed;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 300;
+  padding: 8px 20px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #ECFDF5;
+  color: #065F46;
+  border: 1px solid #A7F3D0;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  animation: toastIn 0.3s ease;
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+</style>
+</head>
+<body>
+<div id="app" class="app-window">
+  <!-- 标题栏 -->
+  <div class="titlebar">
+    <div class="titlebar-dots">
+      <div class="titlebar-dot red"></div>
+      <div class="titlebar-dot yellow"></div>
+      <div class="titlebar-dot green"></div>
+    </div>
+    <span class="titlebar-title">PastePanda — 剪贴板管理</span>
+  </div>
+
+  <!-- 主内容 -->
+  <div class="main-area">
+    <!-- TopBar -->
+    <div class="topbar">
+      <div class="topbar-row">
+        <input class="search-box" placeholder="🔍 搜索剪贴板…" value=""/>
+        <button class="icon-btn" @click="settingsOpen = true" title="设置">⚙</button>
+      </div>
+      <div class="topbar-row">
+        <div class="segmented">
+          <button class="seg-item" :class="{ active: filter === 'all' }" @click="filter = 'all'">全部</button>
+          <button class="seg-item" :class="{ active: filter === 'text' }" @click="filter = 'text'">📝 文本</button>
+          <button class="seg-item" :class="{ active: filter === 'image' }" @click="filter = 'image'">🖼 图片</button>
+          <button class="seg-item" :class="{ active: filter === 'file' }" @click="filter = 'file'">📁 文件</button>
+          <button class="seg-item" :class="{ active: filter === 'fav' }" @click="filter = 'fav'">⭐ 收藏</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 卡片列表 -->
+    <div class="card-list" :class="'mode-' + hoverMode">
+      <div class="card-wrap" v-for="item in cards" :key="item.id">
+        <div class="card" :class="{ selected: selectedId === item.id }" @click="selectedId = item.id">
+          <div class="card-icon" :class="item.iconClass">{{ item.icon }}</div>
+          <div class="card-content">
+            <div class="card-title">{{ item.title }}</div>
+            <div class="card-sub">{{ item.source }} · {{ item.typeLabel }}</div>
+          </div>
+          <span class="card-time">{{ item.time }}</span>
+
+          <!-- Inline 操作按钮 -->
+          <div class="card-actions" @click.stop>
+            <button class="card-action-btn copy" title="复制">📋</button>
+            <button class="card-action-btn fav" title="收藏">☆</button>
+            <button class="card-action-btn edit" title="编辑" v-if="item.type === 'text'">✏</button>
+            <button class="card-action-btn del" title="删除">🗑</button>
+          </div>
+
+          <!-- Popover 气泡 -->
+          <div class="card-popover" @click.stop v-if="item.hasPreview">
+            <div class="card-popover-text">{{ item.preview }}</div>
+            <div class="card-popover-actions">
+              <button>☆ 收藏</button>
+              <button>📋 复制</button>
+              <button v-if="item.type === 'text'">✏ 编辑</button>
+              <button class="pop-del">🗑 删除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 模式指示器 -->
+  <div class="mode-indicator" @click="settingsOpen = true">
+    <div class="mode-dot" :class="hoverMode"></div>
+    {{ hoverMode === 'off' ? '悬浮已关闭' : hoverMode === 'inline' ? '操作按钮模式' : 'Popover 模式' }}
+  </div>
+
+  <!-- 设置弹窗 -->
+  <div class="dialog-backdrop" v-if="settingsOpen" @click.self="settingsOpen = false">
+    <div class="dialog-box">
+      <div class="dialog-header">
+        <h2 class="dialog-title">⚙ 设置</h2>
+        <button class="dialog-close" @click="settingsOpen = false">✕</button>
+      </div>
+
+      <div class="dialog-body">
+        <!-- ── 通用 ── -->
+        <div class="s-section">通用</div>
+
+        <!-- 双击行为 -->
+        <div class="s-row">
+          <span class="s-row-icon" style="background:linear-gradient(135deg,#8B5CF6,#AF52DE)">👆</span>
+          <div class="s-row-body">
+            <div class="s-row-label">双击列表行为</div>
+            <div class="s-row-desc">{{ doubleClickAction === 'copy' ? '双击复制到剪贴板' : '双击预览/编辑' }}</div>
+          </div>
+          <button class="s-mode-opt active" @click="doubleClickAction = doubleClickAction === 'copy' ? 'preview' : 'copy'">
+            {{ doubleClickAction === 'copy' ? '复制' : '预览' }}
+          </button>
+        </div>
+
+        <!-- 悬浮交互模式 ★ 方案A：紧凑分段控件（复刻 segmented 风格） -->
+        <div class="s-row">
+          <span class="s-row-icon" style="background:linear-gradient(135deg,#6366F1,#818CF8)">🖱️</span>
+          <div class="s-row-body">
+            <div class="s-row-label">
+              卡片悬浮行为
+              <span class="s-row-recommend">⭐推荐</span>
+              <span class="help-icon" title="鼠标悬停在卡片上时的交互方式。气泡模式适合浏览长内容，按钮模式更轻量，关闭后界面最简洁。">?</span>
+            </div>
+            <div class="s-row-desc">
+              {{ hoverMode === 'off' ? '无悬浮交互，界面最简洁' : hoverMode === 'inline' ? 'Hover 显示操作按钮，时间自动隐藏' : '弹出 Popover 预览气泡，内容预览+操作' }}
+            </div>
+          </div>
+          <div class="s-seg-group">
+            <button class="s-seg-opt" :class="{ active: hoverMode === 'off' }" @click="hoverMode = 'off'" title="关闭">
+              <span class="s-seg-emoji">🚫</span>
+            </button>
+            <button class="s-seg-opt" :class="{ active: hoverMode === 'inline' }" @click="hoverMode = 'inline'" title="操作按钮">
+              <span class="s-seg-emoji">👆</span>
+            </button>
+            <button class="s-seg-opt" :class="{ active: hoverMode === 'popover' }" @click="hoverMode = 'popover'" title="预览气泡">
+              <span class="s-seg-emoji">💬</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 其他设置项（示意） -->
+        <div class="s-row">
+          <span class="s-row-icon" style="background:linear-gradient(135deg,#10B981,#34C759)">🔁</span>
+          <div class="s-row-body">
+            <div class="s-row-label">依次粘贴循环</div>
+            <div class="s-row-desc">到达末尾后从头开始</div>
+          </div>
+          <div class="s-toggle on" @click="toggleOn = !toggleOn" style="cursor:pointer">
+            <span style="position:absolute;left:0;top:2px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.15);transform:translateX(20px);transition:transform 0.35s cubic-bezier(0.34,1.56,0.64,1)"></span>
+          </div>
+        </div>
+        <div class="s-row">
+          <span class="s-row-icon" style="background:linear-gradient(135deg,#EF4444,#FF3B30)">👁</span>
+          <div class="s-row-body">
+            <div class="s-row-label">
+              失焦自动隐藏
+              <span class="s-row-recommend">⭐推荐</span>
+            </div>
+            <div class="s-row-desc">窗口失去焦点时隐藏到托盘</div>
+          </div>
+          <div class="s-toggle on" style="cursor:pointer">
+            <span style="position:absolute;left:0;top:2px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.15);transform:translateX(20px);transition:transform 0.35s cubic-bezier(0.34,1.56,0.64,1)"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="s-footer">
+        <button class="s-save-btn" @click="handleSave">关闭设置</button>
+        <span class="s-footer-ver">PastePanda v1.6.0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" v-if="showToast">{{ toastMsg }}</div>
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script>
+const { createApp } = Vue;
+
+createApp({
+  data() {
+    return {
+      filter: 'all',
+      selectedId: '2',
+      hoverMode: 'popover',      // off | inline | popover
+      doubleClickAction: 'copy',
+      settingsOpen: true,
+      toggleOn: true,
+      showToast: false,
+      toastMsg: '',
+      cards: [
+        { id: '1', type: 'text', icon: '📝', iconClass: 'blue', title: 'git commit -m "feat: add hover mode setting"', source: '终端', typeLabel: '代码', time: '2分钟前', hasPreview: true, preview: 'git commit -m "feat: add hover mode setting for clipboard cards — support three modes: off, inline buttons, and popover preview"' },
+        { id: '2', type: 'text', icon: '🔗', iconClass: 'green', title: 'https://github.com/user/repo/pull/123', source: 'Chrome', typeLabel: '链接', time: '15分钟前', hasPreview: true, preview: 'https://github.com/user/repo/pull/123\n\nPull Request — feat: add hover interaction modes' },
+        { id: '3', type: 'image', icon: '🖼️', iconClass: 'pink', title: 'screenshot_2026-07-03.png', source: '截图工具', typeLabel: '图片', time: '1小时前', hasPreview: false, preview: '' },
+        { id: '4', type: 'file', icon: '📁', iconClass: 'purple', title: 'project-report-v2.pdf', source: '文件管理器', typeLabel: '文件', time: '2小时前', hasPreview: false, preview: '' },
+        { id: '5', type: 'text', icon: '📧', iconClass: 'blue', title: 'user@example.com — 会议纪要', source: 'Outlook', typeLabel: '邮箱', time: '3小时前', hasPreview: true, preview: 'user@example.com\n\n会议纪要 — 关于 Q3 产品规划的讨论' },
+        { id: '6', type: 'text', icon: '📝', iconClass: 'blue', title: 'const API_BASE = "https://api.example.com/v2"', source: 'VS Code', typeLabel: '代码', time: '4小时前', hasPreview: true, preview: 'const API_BASE = "https://api.example.com/v2";\nconst WS_URL = "wss://ws.example.com";\n\nexport { API_BASE, WS_URL };' },
+        { id: '7', type: 'image', icon: '🖼️', iconClass: 'pink', title: 'design-mockup-final.png', source: 'Figma', typeLabel: '图片', time: '5小时前', hasPreview: false, preview: '' },
+        { id: '8', type: 'text', icon: '📞', iconClass: 'green', title: '+86 138-0000-1234', source: '微信', typeLabel: '电话', time: '6小时前', hasPreview: true, preview: '+86 138-0000-1234\n\n电话号码 — 来自微信聊天记录' },
+      ]
+    };
+  },
+  watch: {
+    hoverMode(val) {
+      this.toastMsg = val === 'off' ? '悬浮交互已关闭' : val === 'inline' ? '已切换为操作按钮模式' : '已切换为 Popover 模式';
+      this.showToast = true;
+      setTimeout(() => this.showToast = false, 2000);
+    }
+  },
+  methods: {
+    handleSave() {
+      this.toastMsg = '设置已保存';
+      this.showToast = true;
+      this.settingsOpen = false;
+      setTimeout(() => this.showToast = false, 2000);
+    }
+  }
+}).mount('#app');
+</script>
+</body>
+</html>

@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1200, initial-scale=1.0">
+<title>侧边栏分组设计风格对比</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --app-bg: #F4F6F9;
+  --card-bg: #fff;
+  --border-color: #E0E4EB;
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --hover: #E8ECF2;
+}
+
+body {
+  font-family: "SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  background: #1a1a2e;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  gap: 40px;
+  padding: 40px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.sectionTitle {
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.badge {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+.badge-rec { background: #16A34A; color: #fff; }
+.badge-alt { background: #475569; color: #94A3B8; }
+
+.desc {
+  color: rgba(255,255,255,0.55);
+  font-size: 12px;
+  max-width: 500px;
+  text-align: center;
+  line-height: 1.8;
+}
+.desc strong { color: rgba(255,255,255,0.85); }
+
+/* ===== 窗口容器 ===== */
+.windowPair {
+  display: flex;
+  gap: 32px;
+  align-items: flex-start;
+}
+
+.win {
+  width: 220px;
+  height: 460px;
+  background: var(--app-bg);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 0 0 2px #333, 0 20px 60px rgba(0,0,0,0.4);
+  display: flex;
+  flex-direction: column;
+}
+
+.winBar {
+  height: 28px;
+  background: var(--card-bg);
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  gap: 6px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.winDot { width: 8px; height: 8px; border-radius: 50%; }
+.winDotR { background: #FF5F57; }
+.winDotY { background: #FFBD2E; }
+.winDotG { background: #28CA41; }
+.winTitle {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: 6px;
+  flex: 1;
+}
+
+/* ===== 侧边栏通用 ===== */
+.sidebar {
+  flex: 1;
+  background: var(--card-bg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebarHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 12px 10px;
+  flex-shrink: 0;
+}
+.sidebarHeadLabel {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.sidebarAddBtn {
+  width: 22px; height: 22px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.sidebarAddBtn:hover { background: var(--hover); color: var(--accent); }
+
+.sidebarList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebarFooter {
+  padding: 8px;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+  font-size: 9px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ================================================================
+   风格 A — p0-groups-tags 风格（emoji + 彩色圆点 + 分隔线）
+================================================================ */
+.styleA-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  transition: all 0.15s;
+  text-align: left;
+  width: 100%;
+}
+.styleA-item:hover { background: var(--hover); }
+.styleA-item.active {
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: 600;
+}
+.styleA-icon {
+  font-size: 15px;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.styleA-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.styleA-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.styleA-count {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 500;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.styleA-item.active .styleA-count { color: var(--accent); }
+
+.styleA-sep {
+  height: 1px;
+  background: var(--border-color);
+  margin: 6px 10px;
+}
+
+/* ================================================================
+   风格 B — 方案 E 风格（纯色圆点 + 极简文字，无分隔线）
+================================================================ */
+.styleB-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  transition: all 0.12s;
+  text-align: left;
+  width: 100%;
+}
+.styleB-item:hover { background: var(--hover); }
+.styleB-item.active {
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: 600;
+}
+.styleB-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.styleB-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+}
+.styleB-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.styleB-count {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.styleB-item.active .styleB-count { color: var(--accent); }
+
+/* 风格B 的 Section 标题 */
+.styleB-section {
+  padding: 4px 10px;
+}
+.styleB-sectionLabel {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 8px 6px 4px;
+}
+
+/* ================================================================
+   对比分析卡片
+================================================================ */
+.analysis {
+  display: flex;
+  gap: 24px;
+  margin-top: 8px;
+}
+.analysisCard {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px;
+  padding: 20px 24px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.65);
+  min-width: 280px;
+  line-height: 1.9;
+}
+.analysisCard .title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pro { color: #34C759; font-weight: 500; }
+.con { color: #F87171; font-weight: 500; }
+.neutral { color: #FBBF24; font-weight: 500; }
+
+.divider {
+  width: 700px;
+  height: 1px;
+  background: rgba(255,255,255,0.08);
+  margin: 10px 0;
+}
+
+/* 分组详情弹出层 */
+.groupDetail {
+  position: relative;
+  display: inline-block;
+}
+.groupDetailTooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15,23,42,0.95);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 1.7;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 10;
+}
+.groupDetail:hover .groupDetailTooltip {
+  opacity: 1;
+}
+.groupDetailTooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: rgba(15,23,42,0.95);
+}
+
+/* 颜色圆点预设 */
+.dot-blue { background: #0284C7; }
+.dot-green { background: #16A34A; }
+.dot-orange { background: #EA580C; }
+.dot-purple { background: #9333EA; }
+.dot-yellow { background: #F59E0B; }
+.dot-pink { background: #DB2777; }
+.dot-teal { background: #0D9488; }
+</style>
+</head>
+<body>
+
+<!-- ===== 风格 A：p0-groups-tags 风格 ===== -->
+<div class="section">
+  <div class="sectionTitle">
+    风格 A — 丰富视觉<span class="badge badge-alt">p0-groups-tags</span>
+  </div>
+  <div class="desc">
+    Emoji 图标 + 彩色圆点 + 分隔线分区 · 视觉层次丰富，分组辨识度高
+  </div>
+
+  <div class="windowPair">
+    <div class="win">
+      <div class="winBar">
+        <span class="winDot winDotR"></span><span class="winDot winDotY"></span><span class="winDot winDotG"></span>
+        <span class="winTitle">PastePanda</span>
+      </div>
+
+      <div class="sidebar">
+        <div class="sidebarHead">
+          <span class="sidebarHeadLabel">分组</span>
+          <button class="sidebarAddBtn">+</button>
+        </div>
+        <div class="sidebarList">
+
+          <!-- 内置分组 — emoji 图标 -->
+          <button class="styleA-item active">
+            <span class="styleA-icon">📋</span>
+            <span class="styleA-label">全部</span>
+            <span class="styleA-count">526</span>
+          </button>
+          <button class="styleA-item">
+            <span class="styleA-icon">📂</span>
+            <span class="styleA-label">未分组</span>
+            <span class="styleA-count">120</span>
+          </button>
+          <button class="styleA-item">
+            <span class="styleA-icon">⭐</span>
+            <span class="styleA-label">收藏</span>
+            <span class="styleA-count">32</span>
+          </button>
+
+          <!-- ★ 分隔线 -->
+          <div class="styleA-sep"></div>
+
+          <!-- 用户分组 — 彩色圆点 -->
+          <button class="styleA-item">
+            <span class="styleA-dot dot-blue"></span>
+            <span class="styleA-label">工作-项目A</span>
+            <span class="styleA-count">45</span>
+          </button>
+          <button class="styleA-item">
+            <span class="styleA-dot dot-green"></span>
+            <span class="styleA-label">工作-项目B</span>
+            <span class="styleA-count">28</span>
+          </button>
+          <button class="styleA-item">
+            <span class="styleA-dot dot-purple"></span>
+            <span class="styleA-label">个人-学习笔记</span>
+            <span class="styleA-count">50</span>
+          </button>
+          <button class="styleA-item">
+            <span class="styleA-dot dot-orange"></span>
+            <span class="styleA-label">临时</span>
+            <span class="styleA-count">15</span>
+          </button>
+        </div>
+        <div class="sidebarFooter">◀ 收起侧边栏</div>
+      </div>
+    </div>
+
+    <!-- 放大特写 -->
+    <div style="display:flex;flex-direction:column;gap:12px;align-items:flex-start;">
+      <div style="background:rgba(255,255,255,0.06);border-radius:10px;padding:10px 14px;border:1px solid rgba(255,255,255,0.08);">
+        <div style="font-size:10px;color:rgba(255,255,255,0.35);margin-bottom:6px;">内置分组 — emoji 图标</div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:8px;background:rgba(2,132,199,0.12);">
+            <span style="font-size:16px;">📋</span><span style="color:#0284C7;font-weight:600;font-size:12px;">全部</span><span style="color:#0284C7;font-size:10px;margin-left:auto;">526</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:8px;">
+            <span style="font-size:16px;">📂</span><span style="color:#fff;font-size:12px;">未分组</span><span style="color:rgba(255,255,255,0.4);font-size:10px;margin-left:auto;">120</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:8px;">
+            <span style="font-size:16px;">⭐</span><span style="color:#fff;font-size:12px;">收藏</span><span style="color:rgba(255,255,255,0.4);font-size:10px;margin-left:auto;">32</span>
+          </div>
+        </div>
+      </div>
+      <div style="background:rgba(255,255,255,0.06);border-radius:10px;padding:10px 14px;border:1px solid rgba(255,255,255,0.08);">
+        <div style="font-size:10px;color:rgba(255,255,255,0.35);margin-bottom:6px;">用户分组 — 彩色圆点 + 分隔线区分</div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:8px;">
+            <span style="width:8px;height:8px;border-radius:50%;background:#0284C7;flex-shrink:0;"></span><span style="color:#fff;font-size:12px;">工作-项目A</span><span style="color:rgba(255,255,255,0.4);font-size:10px;margin-left:auto;">45</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:8px;">
+            <span style="width:8px;height:8px;border-radius:50%;background:#16A34A;flex-shrink:0;"></span><span style="color:#fff;font-size:12px;">个人-学习笔记</span><span style="color:rgba(255,255,255,0.4);font-size:10px;margin-left:auto;">50</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="analysisCard">
+    <div class="title">风格 A 设计特点</div>
+    <span class="pro">✓ 内置分组用 emoji — 一眼识别，无需思考</span><br>
+    <span class="pro">✓ 分隔线明确分区 — "系统分组 vs 我的分组"层次清晰</span><br>
+    <span class="pro">✓ 用户分组用彩色圆点 — 颜色即分类</span><br>
+    <span class="neutral">△ emoji 在暗色主题下可能风格不统一</span><br>
+    <span class="neutral">△ 视觉元素较多，略"热闹"</span>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ===== 风格 B：方案 E 风格 ===== -->
+<div class="section">
+  <div class="sectionTitle">
+    风格 B — 极简克制<span class="badge badge-rec">方案 E</span>
+  </div>
+  <div class="desc">
+    统一纯色圆点 + 简洁图标 + Section 标题分区 · 克制、专业、视觉安静
+  </div>
+
+  <div class="windowPair">
+    <div class="win">
+      <div class="winBar">
+        <span class="winDot winDotR"></span><span class="winDot winDotY"></span><span class="winDot winDotG"></span>
+        <span class="winTitle">PastePanda</span>
+      </div>
+
+      <div class="sidebar">
+        <div class="sidebarHead">
+          <span class="sidebarHeadLabel">分组 &amp; 标签</span>
+          <button class="sidebarAddBtn">+</button>
+        </div>
+        <div class="sidebarList">
+
+          <!-- Section 标题代替分隔线 -->
+          <div class="styleB-section">
+            <div class="styleB-sectionLabel">📂 分组</div>
+          </div>
+
+          <button class="styleB-item">
+            <span class="styleB-icon">📋</span>
+            <span class="styleB-name">全部剪贴板</span>
+            <span class="styleB-count">526</span>
+          </button>
+          <button class="styleB-item">
+            <span class="styleB-icon">⭐</span>
+            <span class="styleB-name">收藏</span>
+            <span class="styleB-count">32</span>
+          </button>
+          <button class="styleB-item">
+            <span class="styleB-icon">📌</span>
+            <span class="styleB-name">未分组</span>
+            <span class="styleB-count">120</span>
+          </button>
+
+          <div class="styleB-section">
+            <div class="styleB-sectionLabel">我的分组</div>
+          </div>
+
+          <button class="styleB-item active">
+            <span class="styleB-dot dot-blue"></span>
+            <span class="styleB-name">工作相关</span>
+            <span class="styleB-count">45</span>
+          </button>
+          <button class="styleB-item">
+            <span class="styleB-dot dot-green"></span>
+            <span class="styleB-name">个人笔记</span>
+            <span class="styleB-count">28</span>
+          </button>
+          <button class="styleB-item">
+            <span class="styleB-dot dot-orange"></span>
+            <span class="styleB-name">代码片段</span>
+            <span class="styleB-count">50</span>
+          </button>
+          <button class="styleB-item">
+            <span class="styleB-dot dot-purple"></span>
+            <span class="styleB-name">链接收藏</span>
+            <span class="styleB-count">15</span>
+          </button>
+
+          <button style="display:flex;align-items:center;gap:6px;padding:6px 10px;margin:4px 10px;border-radius:8px;cursor:pointer;border:1px dashed var(--border-color);background:transparent;font-family:inherit;font-size:11px;color:var(--text-muted);width:calc(100% - 20px);transition:all 0.15s;">
+            + 新建分组
+          </button>
+        </div>
+        <div class="sidebarFooter"><kbd style="background:#F0F4F8;border:1px solid #E0E4EB;border-radius:3px;padding:1px 4px;font-size:8px;">Esc</kbd> 关闭侧边栏</div>
+      </div>
+    </div>
+
+    <!-- 放大特写 -->
+    <div style="display:flex;flex-direction:column;gap:12px;align-items:flex-start;">
+      <div style="background:rgba(255,255,255,0.06);border-radius:10px;padding:10px 14px;border:1px solid rgba(255,255,255,0.08);">
+        <div style="font-size:10px;color:rgba(255,255,255,0.35);margin-bottom:6px;">Section 标签 + 简洁项</div>
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <div style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.25);padding:4px 6px;">📂 分组</div>
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;">
+            <span style="font-size:14px;">📋</span><span style="color:#fff;font-size:12px;">全部剪贴板</span><span style="color:rgba(255,255,255,0.4);font-size:10px;margin-left:auto;">526</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;">
+            <span style="font-size:14px;">⭐</span><span style="color:#fff;font-size:12px;">收藏</span><span style="color:rgba(255,255,255,0.4);font-size:10px;margin-left:auto;">32</span>
+          </div>
+          <div style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.25);padding:8px 6px 4px;">我的分组</div>
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;background:rgba(2,132,199,0.12);">
+            <span style="width:8px;height:8px;border-radius:50%;background:#0284C7;"></span><span style="color:#0284C7;font-weight:600;font-size:12px;">工作相关</span><span style="color:#0284C7;font-size:10px;margin-left:auto;">45</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;">
+            <span style="width:8px;height:8px;border-radius:50%;background:#16A34A;"></span><span style="color:#fff;font-size:12px;">个人笔记</span><span style="color:rgba(255,255,255,0.4);font-size:10px;margin-left:auto;">28</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="analysisCard">
+    <div class="title">风格 B 设计特点</div>
+    <span class="pro">✓ Section 小标题取代分隔线 — 信息更明确（"分组"/"我的分组"）</span><br>
+    <span class="pro">✓ 极简统一 — 所有项相同间距、字号、结构</span><br>
+    <span class="pro">✓ 专业克制 — 不依赖 emoji，暗色主题下更统一</span><br>
+    <span class="neutral">△ 内置分组辨识度略低于 emoji</span><br>
+    <span class="neutral">△ 缺少视觉"锚点"，快速扫视时定位稍慢</span>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ===== 融合方案：风格 C ===== -->
+<div class="section">
+  <div class="sectionTitle">
+    风格 C — 融合方案<span class="badge badge-rec">推荐</span>
+  </div>
+  <div class="desc">
+    取两者之长：<strong>emoji 用于内置分组</strong>（辨识度高），<strong>Section 标题代替分隔线</strong>（信息明确），<strong>彩色圆点 + 简洁文字用于用户分组</strong>（克制统一）
+  </div>
+
+  <div class="windowPair">
+    <div class="win">
+      <div class="winBar">
+        <span class="winDot winDotR"></span><span class="winDot winDotY"></span><span class="winDot winDotG"></span>
+        <span class="winTitle">PastePanda</span>
+      </div>
+
+      <div class="sidebar">
+        <div class="sidebarHead">
+          <span class="sidebarHeadLabel">分组 &amp; 标签</span>
+          <button class="sidebarAddBtn">+</button>
+        </div>
+        <div class="sidebarList">
+
+          <!-- 内置分组 — emoji 图标（保留风格A的优势） -->
+          <div class="styleB-section">
+            <div class="styleB-sectionLabel">📂 分组</div>
+          </div>
+
+          <button class="styleA-item active">
+            <span class="styleA-icon">📋</span>
+            <span class="styleA-label">全部</span>
+            <span class="styleA-count">526</span>
+          </button>
+          <button class="styleA-item">
+            <span class="styleA-icon">📂</span>
+            <span class="styleA-label">未分组</span>
+            <span class="styleA-count">120</span>
+          </button>
+          <button class="styleA-item">
+            <span class="styleA-icon">⭐</span>
+            <span class="styleA-label">收藏</span>
+            <span class="styleA-count">32</span>
+          </button>
+
+          <!-- 用户分组 — 彩色圆点（保留风格B的克制） -->
+          <div class="styleB-section">
+            <div class="styleB-sectionLabel">我的分组</div>
+          </div>
+
+          <button class="styleB-item">
+            <span class="styleB-dot dot-blue"></span>
+            <span class="styleB-name">工作相关</span>
+            <span class="styleB-count">45</span>
+          </button>
+          <button class="styleB-item">
+            <span class="styleB-dot dot-green"></span>
+            <span class="styleB-name">个人笔记</span>
+            <span class="styleB-count">28</span>
+          </button>
+          <button class="styleB-item">
+            <span class="styleB-dot dot-orange"></span>
+            <span class="styleB-name">代码片段</span>
+            <span class="styleB-count">50</span>
+          </button>
+          <button class="styleB-item">
+            <span class="styleB-dot dot-purple"></span>
+            <span class="styleB-name">链接收藏</span>
+            <span class="styleB-count">15</span>
+          </button>
+
+          <button style="display:flex;align-items:center;gap:6px;padding:6px 10px;margin:4px 10px;border-radius:8px;cursor:pointer;border:1px dashed var(--border-color);background:transparent;font-family:inherit;font-size:11px;color:var(--text-muted);width:calc(100% - 20px);transition:all 0.15s;">
+            + 新建分组
+          </button>
+
+          <!-- 标签区 -->
+          <div class="styleB-section">
+            <div class="styleB-sectionLabel">🏷️ 按标签筛选</div>
+          </div>
+
+          <button class="styleB-item">
+            <span class="styleB-dot dot-blue" style="width:7px;height:7px;"></span>
+            <span class="styleB-name">工作</span>
+            <span class="styleB-count">18</span>
+          </button>
+          <button class="styleB-item">
+            <span class="styleB-dot dot-green" style="width:7px;height:7px;"></span>
+            <span class="styleB-name">重要</span>
+            <span class="styleB-count">5</span>
+          </button>
+          <button class="styleB-item">
+            <span class="styleB-dot dot-orange" style="width:7px;height:7px;"></span>
+            <span class="styleB-name">待办</span>
+            <span class="styleB-count">7</span>
+          </button>
+          <button class="styleB-item">
+            <span class="styleB-dot dot-purple" style="width:7px;height:7px;"></span>
+            <span class="styleB-name">灵感</span>
+            <span class="styleB-count">3</span>
+          </button>
+
+          <button style="display:flex;align-items:center;gap:6px;padding:6px 10px;margin:4px 10px;border-radius:8px;cursor:pointer;border:1px dashed var(--border-color);background:transparent;font-family:inherit;font-size:11px;color:var(--text-muted);width:calc(100% - 20px);transition:all 0.15s;">
+            + 新建标签
+          </button>
+        </div>
+        <div class="sidebarFooter">
+          拖拽卡片到分组 · <kbd style="background:#F0F4F8;border:1px solid #E0E4EB;border-radius:3px;padding:1px 4px;font-size:8px;">Esc</kbd> 关闭
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="analysisCard">
+    <div class="title">风格 C 设计要点</div>
+    <span class="pro">✓ 内置分组保留 emoji — 辨识度不妥协</span><br>
+    <span class="pro">✓ 用户分组用彩色圆点 — 克制、扩展性强</span><br>
+    <span class="pro">✓ Section 标题代替分隔线 — "📂 分组 / 我的分组 / 🏷️ 标签"层次清晰</span><br>
+    <span class="pro">✓ 三种分组方式各司其职，互不混淆</span><br>
+    <span class="neutral">△ 侧边栏高度增加（多了标签区），需要滚动</span>
+  </div>
+</div>
+
+<!-- ===== 底部对比总结 ===== -->
+<div style="display:flex;gap:16px;margin-top:8px;">
+  <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:16px 20px;font-size:11px;color:rgba(255,255,255,0.6);line-height:2;min-width:200px;text-align:center;">
+    <div style="font-weight:700;color:#fff;font-size:13px;margin-bottom:8px;">风格 A</div>
+    系统分组 emoji<br>
+    分隔线分区<br>
+    用户分组彩色圆点<br>
+    <span style="color:#FBBF24;">丰富 · 活泼 · 辨识度高</span>
+  </div>
+  <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:16px 20px;font-size:11px;color:rgba(255,255,255,0.6);line-height:2;min-width:200px;text-align:center;">
+    <div style="font-weight:700;color:#fff;font-size:13px;margin-bottom:8px;">风格 B</div>
+    Section 小标题分区<br>
+    全部统一圆点/图标<br>
+    极简统一间距<br>
+    <span style="color:#FBBF24;">克制 · 专业 · 视觉安静</span>
+  </div>
+  <div style="background:rgba(22,163,74,0.1);border:1px solid rgba(22,163,74,0.3);border-radius:14px;padding:16px 20px;font-size:11px;color:rgba(255,255,255,0.6);line-height:2;min-width:200px;text-align:center;">
+    <div style="font-weight:700;color:#34C759;font-size:13px;margin-bottom:8px;">风格 C ✓ 推荐</div>
+    内置 emoji + 用户圆点<br>
+    Section 标题分区<br>
+    分组 + 标签两区<br>
+    <span style="color:#34C759;">兼得两者优势</span>
+  </div>
+</div>
+
+</body>
+</html>

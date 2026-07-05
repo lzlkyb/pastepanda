@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TopBar 方案对比 — 480px 默认宽度</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: #0f172a;
+  display: flex;
+  gap: 32px;
+  padding: 40px;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.window {
+  width: 480px;
+  background: #1e293b;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+}
+
+.window-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-align: center;
+  padding: 16px 0 4px;
+  letter-spacing: 0.5px;
+}
+
+/* ============ 公共样式 ============ */
+.header {
+  padding: 12px 12px 0;
+  background: linear-gradient(180deg, rgba(30,41,59,1) 0%, rgba(15,23,42,1) 100%);
+  flex-shrink: 0;
+}
+
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #e2e8f0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.header-icons {
+  display: flex;
+  gap: 2px;
+}
+
+.icon-btn {
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  transition: background 0.15s;
+  font-size: 16px;
+}
+
+.icon-btn:hover { background: rgba(129,140,248,.12); }
+
+.icon-svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ============ 搜索框 ============ */
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  margin-bottom: 10px;
+}
+
+.search-icon { font-size: 13px; }
+
+.search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 12px;
+  color: #e2e8f0;
+  font-family: inherit;
+}
+
+.search-input::placeholder { color: #475569; }
+
+/* ============ Segmented Tab ============ */
+.segmented {
+  display: flex;
+  background: rgba(255,255,255,0.04);
+  border-radius: 10px;
+  padding: 3px;
+}
+
+.seg-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  color: #64748b;
+  font-family: inherit;
+  transition: all 0.2s;
+  position: relative;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.seg-item.active {
+  color: #e2e8f0;
+  font-weight: 600;
+  background: rgba(255,255,255,0.08);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+}
+
+.seg-icon { font-size: 13px; }
+
+.seg-count {
+  font-size: 9px;
+  font-weight: 700;
+  color: #475569;
+}
+
+.seg-item.active .seg-count { color: #818cf8; }
+
+/* ============ Circle Tab ============ */
+.tabs-circle {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px 8px 12px;
+}
+
+.circle-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+}
+
+.circle-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  border: 2px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  color: #64748b;
+  transition: all 0.2s;
+}
+
+.circle-tab.active .circle-icon {
+  background: #818cf8;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(129,140,248,0.4);
+  border-color: #818cf8;
+}
+
+.circle-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.circle-tab.active .circle-label { color: #818cf8; }
+
+/* ============ 筛选下拉 ============ */
+.filter-bar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 0 4px;
+}
+
+.filter-dropdown {
+  flex: 1;
+  position: relative;
+}
+
+.filter-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.filter-btn:hover {
+  border-color: rgba(129,140,248,0.3);
+  color: #818cf8;
+}
+
+.filter-arrow {
+  font-size: 8px;
+  transition: transform 0.2s;
+}
+
+/* ============ 方案 A: Tab+筛选同行 ============ */
+.tab-filter-row {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  padding: 0 0 4px;
+}
+
+.tab-filter-row .segmented {
+  flex: 1;
+  min-width: 0;
+}
+
+.tab-filter-row .filter-bar-compact {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.tab-filter-row .filter-btn-compact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+  width: 72px;
+  height: 32px;
+  padding: 0 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.tab-filter-row .filter-btn-compact:hover {
+  border-color: rgba(129,140,248,0.3);
+  color: #818cf8;
+}
+
+/* ============ 方案 B: Tab+筛选同行, flex-wrap ============ */
+.tab-filter-wrap {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  padding: 0 0 4px;
+  flex-wrap: wrap;
+}
+
+.tab-filter-wrap .segmented {
+  flex: 1;
+  min-width: 220px;
+}
+
+.tab-filter-wrap .filter-bar-inline {
+  display: flex;
+  gap: 4px;
+}
+
+.tab-filter-wrap .filter-btn-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.tab-filter-wrap .filter-btn-inline:hover {
+  border-color: rgba(129,140,248,0.3);
+  color: #818cf8;
+}
+
+/* ============ 内容区域模拟 ============ */
+.content-mock {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card-mock {
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+/* ============ 标注 ============ */
+.badge-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.badge-old { background: rgba(239,68,68,0.15); color: #ef4444; }
+.badge-new { background: rgba(34,197,94,0.15); color: #22c55e; }
+
+/* 行数标注 */
+.line-count {
+  font-size: 10px;
+  color: #475569;
+  padding: 2px 0;
+  text-align: right;
+}
+
+/* 分割线 */
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  padding: 6px 0 2px;
+  letter-spacing: 0.5px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  margin-top: 4px;
+}
+
+/* 空间计算指示 */
+.space-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  color: #475569;
+  padding: 4px 0;
+}
+
+.space-bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255,255,255,0.06);
+  overflow: hidden;
+}
+
+.space-used {
+  height: 100%;
+  border-radius: 2px;
+}
+
+.space-used.ok { background: #22c55e; }
+.space-used.tight { background: #f59e0b; }
+.space-used.critical { background: #ef4444; }
+</style>
+</head>
+<body>
+
+<!-- ============ 1. 当前效果 (4行) ============ -->
+<div>
+  <div class="window-title">当前效果 — 4行布局</div>
+  <div class="window">
+    <div class="header">
+      <!-- 第1行：标题+图标按钮 -->
+      <div class="header-top">
+        <div class="header-title">
+          <span style="font-size:18px">🐼</span>
+          PastePanda
+        </div>
+        <div class="header-icons">
+          <button class="icon-btn" title="片段库">📝</button>
+          <button class="icon-btn" title="内容提取">🧲</button>
+          <button class="icon-btn" title="设置">
+            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg>
+          </button>
+          <button class="icon-btn" title="帮助">❓</button>
+          <button class="icon-btn" title="关于">
+            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#FACC15" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          </button>
+          <button class="icon-btn" title="最小化">
+            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2"><path d="M5 12h14"/></svg>
+          </button>
+          <button class="icon-btn" title="关闭">
+            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 第2行：搜索框 -->
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input class="search-input" placeholder="搜索剪贴板... (Enter 搜索)" readonly>
+      </div>
+
+      <!-- 第3行：Segmented Tab -->
+      <div class="section-label">第3行：Tab</div>
+      <div class="segmented">
+        <button class="seg-item active">
+          <span class="seg-icon">📋</span><span>全部</span><span class="seg-count">128</span>
+        </button>
+        <button class="seg-item">
+          <span class="seg-icon">📝</span><span>文本</span><span class="seg-count">86</span>
+        </button>
+        <button class="seg-item">
+          <span class="seg-icon">📸</span><span>图片</span><span class="seg-count">24</span>
+        </button>
+        <button class="seg-item">
+          <span class="seg-icon">📁</span><span>文件</span><span class="seg-count">12</span>
+        </button>
+        <button class="seg-item">
+          <span class="seg-icon">⭐</span><span>收藏</span><span class="seg-count">6</span>
+        </button>
+      </div>
+
+      <!-- 第4行：筛选 -->
+      <div class="section-label">第4行：筛选</div>
+      <div class="filter-bar">
+        <div class="filter-dropdown">
+          <button class="filter-btn">
+            <span>全部时间</span>
+            <span class="filter-arrow">▼</span>
+          </button>
+        </div>
+        <div class="filter-dropdown">
+          <button class="filter-btn">
+            <span>来源应用</span>
+            <span class="filter-arrow">▼</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="line-count">Header 占用 ≈ 4行 → 卡片区域剩余</div>
+    <div class="content-mock">
+      <div class="card-mock"></div>
+      <div class="card-mock"></div>
+      <div class="card-mock"></div>
+      <div class="card-mock"></div>
+      <div class="card-mock"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 2. 方案 A1: Segmented + 筛选同行(紧凑) ============ -->
+<div>
+  <div class="window-title">方案 A1 — Segmented + 筛选同行（紧凑按钮）</div>
+  <div class="window">
+    <div class="header">
+      <!-- 第1行 -->
+      <div class="header-top">
+        <div class="header-title">
+          <span style="font-size:18px">🐼</span>
+          PastePanda
+        </div>
+        <div class="header-icons">
+          <button class="icon-btn" title="片段库">📝</button>
+          <button class="icon-btn" title="内容提取">🧲</button>
+          <button class="icon-btn" title="设置">
+            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg>
+          </button>
+          <button class="icon-btn" title="帮助">❓</button>
+          <button class="icon-btn" title="关于">
+            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#FACC15" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          </button>
+          <button class="icon-btn" title="最小化">
+            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2"><path d="M5 12h14"/></svg>
+          </button>
+          <button class="icon-btn" title="关闭">
+            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 第2行：搜索框 -->
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input class="search-input" placeholder="搜索剪贴板... (Enter 搜索)" readonly>
+      </div>
+
+      <!-- 第3行：Tab + 筛选同行（紧凑按钮） -->
+      <div class="section-label">第3行：Tab + 筛选同行 <span class="badge-new">-1行</span></div>
+      <div class="tab-filter-row">
+        <div class="segmented">
+          <button class="seg-item active">
+            <span class="seg-icon">📋</span><span>全部</span><span class="seg-count">128</span>
+          </button>
+          <button class="seg-item">
+            <span class="seg-icon">📝</span><span>文本</span><span class="seg-count">86</span>
+          </button>
+          <button class="seg-item">
+            <span class="seg-icon">📸</span><span>图片</span><span class="seg-count">24</span>
+          </button>
+          <button class="seg-item">
+            <span class="seg-icon">📁</span><span>文件</span><span class="seg-count">12</span>
+          </button>
+          <button class="seg-item">
+            <span class="seg-icon">⭐</span><span>收藏</span><span class="seg-count">6</span>
+          </button>
+        </div>
+        <div class="filter-bar-compact">
+          <button class="filter-btn-compact">
+            <span>时间</span><span class="filter-arrow">▼</span>
+          </button>
+          <button class="filter-btn-compact">
+            <span>来源</span><span class="filter-arrow">▼</span>
+          </button>
+        </div>
+      </div>
+      <div class="space-indicator">
+        <span>Tab ≈220px</span>
+        <div class="space-bar"><div class="space-used tight" style="width:65%"></div></div>
+        <span>筛选 72×2=144px</span>
+        <span style="color:#f59e0b">较挤</span>
+      </div>
+    </div>
+
+    <div class="line-count">Header 占用 ≈ 3行 → 节省 ~36px</div>
+    <div class="content-mock">
+      <div class="card-mock"></div>
+      <div class="card-mock"></div>
+      <div class="card-mock"></div>
+      <div class="card-mock"></div>
+      <div class="card-mock"></div>
+      <div class="card-mock"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 3. 方案 A2: Segmented + 筛选同行(flex-wrap) ============ -->
+<div>
+  <div class="window-title">方案 A2 — flex-wrap 自适应换行</div>
+  <div class="window">
+    <div class="header">
+      <!-- 第1行 -->
+      <div class="header-top">
+        <div class="header-title">
+          <span style="font-size:18px">🐼</span>
+          PastePanda
+        </div>
+        <div class="header-icons">
+          <button class="icon-btn" title="片段库">📝</button>
+          <button class="icon-btn" title="内容提取">🧲</button>
+          <button class="icon-btn" title="设置">
+            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg>
+          </button>
+          <button class="icon-btn" title="帮助">❓</button>
+          <button class="icon-btn" title="关于">
+            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#FACC15" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          </button>
+          <button class="icon-btn" title="最小化">
+            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2"><path d="M5 12h14"/></svg>
+          </button>
+          <button class="icon-btn" title="关闭">
+            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 第2行：搜索框 -->
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input class="search-input" placeholder="搜索剪贴板... (Enter 搜索)" readonly>
+      </div>
+
+      <!-- 第3行：Tab + 筛选同行(flex-wrap) — 480px下自动换行 -->
+      <div class="section-label">第3行：flex-wrap — 480px下筛选自动折行</div>
+      <div class="tab-filter-wrap">
+        <div class="segmented">
+          <button class="seg-item active">
+            <span class="seg-icon">📋</span><span>全部</span><span class="seg-count">128</span>
+          </button>
+          <button class="seg-item">
+            <span class="seg-icon">📝</span><span>文本</span><span class="seg-count">86</span>
+          </button>
+          <button class="seg-item">
+            <span class="seg-icon">📸</span><span>图片</span><span class="seg-count">24</span>
+          </button>
+          <button class="seg-item">
+            <span class="seg-icon">📁</span><span>文件</span><span class="seg-count">12</span>
+          </button>
+          <button class="seg-item">
+            <span class="seg-icon">⭐</span><span>收藏</span><span class="seg-count">6</span>
+          </button>
+        </div>
+        <div class="filter-bar-inline">
+          <button class="filter-btn-inline">
+            <span>全部时间</span><span class="filter-arrow">▼</span>
+          </button>
+          <button class="filter-btn-inline">
+            <span>来源应用</span><span class="filter-arrow">▼</span>
+          </button>
+        </div>
+      </div>
+      <div class="space-indicator">
+        <span>min-width:220px Tab + 2个筛选 → 总需~430px</span>
+        <div class="space-bar"><div class="space-used ok" style="width:96%"></div></div>
+        <span style="color:#22c55e">临界</span>
+      </div>
+    </div>
+
+    <div class="line-count">Header 占用 ≈ 3~4行（自动）→ 宽屏3行 / 窄屏4行</div>
+    <div class="content-mock">
+      <div class="card-mock"></div>
+      <div class="card-mock"></div>
+      <div class="card-mock"></div>
+      <div class="card-mock"></div>
+      <div class="card-mock"></div>
+      <div class="card-mock"></div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

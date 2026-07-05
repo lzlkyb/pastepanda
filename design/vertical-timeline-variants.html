@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>竖版时间轴 — 4 种变体对比</title>
+<style>
+/* ===== 全局重置 & 主题变量（ocean 主题） ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: #F4F6F9;
+  color: #0F172A;
+  min-height: 100vh;
+}
+:root {
+  --app-bg: #F4F6F9;
+  --card-bg: #fff;
+  --card-border: #E0E4EB;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --accent-shadow: rgba(2,132,199,0.15);
+  --hover: #E8ECF2;
+}
+
+/* ===== 页面布局：2×2 网格 ===== */
+.page-header {
+  text-align: center;
+  padding: 28px 20px 12px;
+  background: #fff;
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.page-header h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+.page-header p { font-size: 13px; color: var(--text-secondary); }
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding: 16px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+.panel {
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.panel-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.panel-header .badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--accent-light);
+  color: var(--accent);
+}
+.panel-header h3 { font-size: 14px; font-weight: 600; flex: 1; }
+.panel-header .tag {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #F1F5F9;
+}
+
+/* ===== 滚动区域 ===== */
+.scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  height: 420px;
+  padding: 0 12px 16px;
+}
+
+/* ===== 悬浮吸顶时间胶囊（共用） ===== */
+.sticky-capsule {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  margin: 0 -12px;
+  background: rgba(244,246,249,0.92);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  transition: all 0.2s;
+}
+.sticky-capsule .dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  box-shadow: 0 0 4px var(--accent-shadow);
+}
+.sticky-capsule .count {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+/* 当胶囊变化时（更早组吸顶），颜色变淡 */
+.sticky-capsule.earlier {
+  color: var(--text-secondary);
+}
+.sticky-capsule.earlier .dot {
+  background: var(--text-muted);
+  box-shadow: none;
+}
+
+/* ===== 卡片基础样式（还原项目实际） ===== */
+.card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  box-shadow: var(--card-shadow);
+  height: 64px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+.card:hover {
+  box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+  transform: translateY(-1px);
+}
+.card-icon {
+  width: 38px; height: 38px;
+  min-width: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  flex-shrink: 0;
+}
+.card-icon.blue  { background: linear-gradient(135deg, #E8F1FB, #D6E8FA); }
+.card-icon.green { background: linear-gradient(135deg, #E5F8EC, #D4F2DE); }
+.card-icon.pink  { background: linear-gradient(135deg, #FDE8EE, #FAD6DF); }
+.card-content { flex: 1; min-width: 0; overflow: hidden; }
+.card-title {
+  font-size: 12px; font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.card-sub {
+  font-size: 10px; color: var(--text-secondary);
+  margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.card-time {
+  font-size: 10px; color: var(--text-muted);
+  flex-shrink: 0; font-variant-numeric: tabular-nums;
+}
+/* 左侧类型色条 */
+.card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+}
+.card.text::before { background: var(--accent); }
+.card.image::before { background: #FF6482; }
+.card.file::before { background: #34C759; }
+.card.code::before { background: #BF5AF2; }
+
+/* ===== B1: 左侧外部时间轴 ===== */
+.b1 .timeline-row {
+  display: flex;
+  gap: 0;
+  margin-bottom: 2px;
+  position: relative;
+}
+.b1 .timeline-axis {
+  width: 36px;
+  min-width: 36px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.b1 .timeline-line {
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 50%;
+  width: 2px;
+  background: var(--border-color);
+  transform: translateX(-50%);
+}
+.b1 .timeline-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px var(--accent-shadow);
+  z-index: 2;
+  margin-top: 28px;
+  flex-shrink: 0;
+}
+.b1 .timeline-dot.first { margin-top: 14px; }
+.b1 .timeline-dot.last-group { background: var(--text-muted); box-shadow: 0 0 0 2px rgba(100,116,139,0.1); }
+.b1 .card-wrap { flex: 1; margin-bottom: 8px; }
+.b1 .timeline-label {
+  font-size: 9px; font-weight: 700; color: var(--accent);
+  position: absolute; left: 100%; white-space: nowrap;
+  margin-left: 6px; top: 26px;
+  opacity: 0.85;
+}
+.b1 .timeline-label.earlier { color: var(--text-muted); }
+
+/* ===== B2: 左侧内部时间轴（融合类型色条） ===== */
+.b2 .card-timeline {
+  padding-left: 20px;
+  position: relative;
+  margin-bottom: 8px;
+}
+.b2 .card-timeline::before {
+  /* 竖线替代 ::before 类型色条 */
+  content: '';
+  position: absolute;
+  left: 6px; top: 0; bottom: -8px;
+  width: 2px;
+  background: var(--border-color);
+  z-index: 0;
+}
+.b2 .card-timeline:last-child::before { bottom: 50%; }
+.b2 .card-timeline .card {
+  position: relative;
+  z-index: 1;
+}
+/* 时间轴圆点 */
+.b2 .card-timeline .card::after {
+  content: '';
+  position: absolute;
+  left: -14px; top: 50%;
+  transform: translateY(-50%);
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px var(--accent-shadow);
+  z-index: 2;
+}
+.b2 .card-timeline.earlier .card::after {
+  background: var(--text-muted);
+  box-shadow: 0 0 0 2px rgba(100,116,139,0.1);
+}
+/* 类型色条移到右边 */
+.b2 .card::before { left: auto; right: 0; border-radius: 3px 0 0 3px; }
+/* 分组标签 — 贴在时间轴上 */
+.b2 .group-label {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 9px; font-weight: 700;
+  color: var(--accent);
+  background: var(--card-bg);
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  z-index: 3;
+  border: 1px solid var(--accent-light);
+}
+.b2 .group-label.earlier { color: var(--text-muted); border-color: var(--border-color); }
+
+/* ===== B3: 极窄色标竖线 ===== */
+.b3 .color-strip-group { margin-bottom: 12px; }
+.b3 .color-strip-group .cards { padding-left: 14px; }
+.b3 .color-strip-group .card {
+  border-left: 4px solid transparent;
+  border-radius: 0 14px 14px 0;
+  margin-bottom: 8px;
+}
+.b3 .color-strip-group .card::before { display: none; }
+.b3 .group-today .card { border-left-color: var(--accent); }
+.b3 .group-earlier .card { border-left-color: var(--text-muted); }
+.b3 .color-strip-label {
+  font-size: 10px; font-weight: 700;
+  padding: 4px 0 4px 18px;
+  color: var(--accent);
+  position: relative;
+}
+.b3 .color-strip-label::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 50%;
+  transform: translateY(-50%);
+  width: 10px; height: 10px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+.b3 .group-earlier .color-strip-label { color: var(--text-muted); }
+.b3 .group-earlier .color-strip-label::before { background: var(--text-muted); }
+
+/* ===== B4: Git-graph 连线 ===== */
+.b4 .git-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  min-height: 64px;
+  position: relative;
+  margin-bottom: 0;
+}
+.b4 .git-graph {
+  width: 24px;
+  min-width: 24px;
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.b4 .git-line {
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 50%;
+  width: 2px;
+  background: var(--border-color);
+  transform: translateX(-50%);
+}
+.b4 .git-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px var(--accent-shadow);
+  z-index: 2;
+  margin-top: 27px;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+.b4 .git-dot.first-row { margin-top: 12px; }
+.b4 .git-dot.earlier { background: var(--text-muted); box-shadow: 0 0 0 2px rgba(100,116,139,0.1); }
+.b4 .git-dot:hover { transform: scale(1.4); }
+/* 分组连接弧线 */
+.b4 .git-arc {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  bottom: 6px;
+  width: 18px;
+  border-left: 2px solid var(--accent);
+  border-bottom: 2px solid var(--accent);
+  border-bottom-left-radius: 8px;
+  opacity: 0.25;
+  pointer-events: none;
+}
+.b4 .card-wrap { flex: 1; margin-bottom: 0; padding: 4px 0; }
+
+/* 旧版横向分隔线（参考对比） */
+.old-separator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0 4px;
+  user-select: none;
+}
+.old-separator-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  box-shadow: 0 0 6px var(--accent-shadow);
+}
+.old-separator-label {
+  font-size: 12px; font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.old-separator-line {
+  flex: 1; height: 1px;
+  background: var(--border-color);
+  min-width: 12px;
+}
+
+/* 通用卡片间距 */
+.card-list { display: flex; flex-direction: column; }
+.card-list .card { margin-bottom: 0; }
+
+/* 标签高亮动画 */
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 2px var(--accent-shadow); }
+  50% { box-shadow: 0 0 0 5px rgba(2,132,199,0.08); }
+}
+.sticky-capsule .dot { animation: pulse-dot 2s ease-in-out infinite; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>📐 竖版时间轴 — 4 种变体对比</h1>
+  <p>方案 B 深化 · 每组 8 张卡片（今天 5 + 更早 3）· 左侧旧版为参考基准</p>
+</div>
+
+<div class="grid">
+
+  <!-- ===== 旧版参考：横向分隔线 ===== -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="badge">参考</span>
+      <h3>旧版 · 横向分隔线</h3>
+      <span class="tag">4 组 / 36px 每条</span>
+    </div>
+    <div class="scroll-area">
+      <div class="card-list" style="padding: 8px 0;">
+        <div class="old-separator"><span class="old-separator-dot"></span><span class="old-separator-label">今天</span><span class="old-separator-line"></span></div>
+        <div class="card text"><div class="card-icon blue">📝</div><div class="card-content"><div class="card-title">项目周报 — Q3 OKR 进度更新</div><div class="card-sub">VS Code</div></div><span class="card-time">23:10</span></div>
+        <div class="card image"><div class="card-icon pink">🖼</div><div class="card-content"><div class="card-title">screenshot_2026-07-03.png</div><div class="card-sub">截图工具</div></div><span class="card-time">22:45</span></div>
+        <div class="card text"><div class="card-icon blue">📝</div><div class="card-content"><div class="card-title">https://github.com/tauri-apps/tauri/releases</div><div class="card-sub">Chrome</div></div><span class="card-time">20:30</span></div>
+        <div class="card code"><div class="card-icon blue" style="background:linear-gradient(135deg,#F0E8FB,#E5D6FA)">💻</div><div class="card-content"><div class="card-title">const apiBase = process.env.VITE_API_URL</div><div class="card-sub">VS Code</div></div><span class="card-time">18:15</span></div>
+        <div class="card file"><div class="card-icon green">📁</div><div class="card-content"><div class="card-title">Q3 Planning.xlsx</div><div class="card-sub">文件管理器</div></div><span class="card-time">15:00</span></div>
+
+        <div class="old-separator"><span class="old-separator-dot"></span><span class="old-separator-label">更早</span><span class="old-separator-line"></span></div>
+        <div class="card text"><div class="card-icon blue">📝</div><div class="card-content"><div class="card-title">会议纪要：产品需求评审 2026-07-02</div><div class="card-sub">飞书</div></div><span class="card-time">昨天</span></div>
+        <div class="card text"><div class="card-icon blue">📝</div><div class="card-content"><div class="card-title">Tauri 2.0 迁移指南 &amp; 注意事项汇总</div><div class="card-sub">Notion</div></div><span class="card-time">7月1日</span></div>
+        <div class="card image"><div class="card-icon pink">🖼</div><div class="card-content"><div class="card-title">design-mockup-final.png</div><div class="card-sub">Figma</div></div><span class="card-time">6月30日</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== B1: 左侧外部时间轴 ===== -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="badge">B1</span>
+      <h3>左侧外部时间轴</h3>
+      <span class="tag">+36px 左边距</span>
+    </div>
+    <div class="scroll-area b1">
+      <!-- 吸顶胶囊 -->
+      <div class="sticky-capsule">
+        <span class="dot"></span> 今天 <span class="count">5 条</span>
+      </div>
+      <!-- 今天组 -->
+      <div class="timeline-row">
+        <div class="timeline-axis">
+          <div class="timeline-line" style="top:14px; bottom:0;"></div>
+          <div class="timeline-dot first"></div>
+          <span class="timeline-label">今天</span>
+        </div>
+        <div class="card-wrap"><div class="card text"><div class="card-icon blue">📝</div><div class="card-content"><div class="card-title">项目周报 — Q3 OKR 进度更新</div><div class="card-sub">VS Code</div></div><span class="card-time">23:10</span></div></div>
+      </div>
+      <div class="timeline-row">
+        <div class="timeline-axis"><div class="timeline-line"></div><div class="timeline-dot"></div></div>
+        <div class="card-wrap"><div class="card image"><div class="card-icon pink">🖼</div><div class="card-content"><div class="card-title">screenshot_2026-07-03.png</div><div class="card-sub">截图工具</div></div><span class="card-time">22:45</span></div></div>
+      </div>
+      <div class="timeline-row">
+        <div class="timeline-axis"><div class="timeline-line"></div><div class="timeline-dot"></div></div>
+        <div class="card-wrap"><div class="card text"><div class="card-icon blue">📝</div><div class="card-content"><div class="card-title">https://github.com/tauri-apps/tauri/releases</div><div class="card-sub">Chrome</div></div><span class="card-time">20:30</span></div></div>
+      </div>
+      <div class="timeline-row">
+        <div class="timeline-axis"><div class="timeline-line"></div><div class="timeline-dot"></div></div>
+        <div class="card-wrap"><div class="card code"><div class="card-icon blue" style="background:linear-gradient(135deg,#F0E8FB,#E5D6FA)">💻</div><div class="card-content"><div class="card-title">const apiBase = process.env.VITE_API_URL</div><div class="card-sub">VS Code</div></div><span class="card-time">18:15</span></div></div>
+      </div>
+      <div class="timeline-row">
+        <div class="timeline-axis"><div class="timeline-line" style="bottom:50%;"></div><div class="timeline-dot last-group"></div></div>
+        <div class="card-wrap"><div class="card file"><div class="card-icon green">📁</div><div class="card-content"><div class="card-title">Q3 Planning.xlsx</div><div class="card-sub">文件管理器</div></div><span class="card-time">15:00</span></div></div>
+      </div>
+      <!-- 吸顶胶囊（更早） -->
+      <div class="sticky-capsule earlier">
+        <span class="dot"></span> 更早 <span class="count">3 条</span>
+      </div>
+      <!-- 更早组 -->
+      <div class="timeline-row">
+        <div class="timeline-axis">
+          <div class="timeline-line" style="top:12px;"></div>
+          <div class="timeline-dot first" style="margin-top:12px;"></div>
+          <span class="timeline-label earlier" style="top:10px;">更早</span>
+        </div>
+        <div class="card-wrap"><div class="card text"><div class="card-icon blue">📝</div><div class="card-content"><div class="card-title">会议纪要：产品需求评审 2026-07-02</div><div class="card-sub">飞书</div></div><span class="card-time">昨天</span></div></div>
+      </div>
+      <div class="timeline-row">
+        <div class="timeline-axis"><div class="timeline-line"></div><div class="timeline-dot" style="background:var(--text-muted);box-shadow:0 0 0 2px rgba(100,116,139,0.1);"></div></div>
+        <div class="card-wrap"><div class="card text"><div class="card-icon blue">📝</div><div class="card-content"><div class="card-title">Tauri 2.0 迁移指南 &amp; 注意事项汇总</div><div class="card-sub">Notion</div></div><span class="card-time">7月1日</span></div></div>
+      </div>
+      <div class="timeline-row">
+        <div class="timeline-axis"><div class="timeline-line" style="top:0; bottom:50%;"></div><div class="timeline-dot" style="background:var(--text-muted);box-shadow:0 0 0 2px rgba(100,116,139,0.1);"></div></div>
+        <div class="card-wrap"><div class="card image"><div class="card-icon pink">🖼</div><div class="card-content"><div class="card-title">design-mockup-final.png</div><div class="card-sub">Figma</div></div><span class="card-time">6月30日</span></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== B2: 左侧内部时间轴（融合类型色条） ===== -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="badge">B2</span>
+      <h3>左侧内部时间轴 · 融合色条</h3>
+      <span class="tag">+14px 内边距</span>
+    </div>
+    <div class="scroll-area b2">
+      <div class="sticky-capsule">
+        <span class="dot"></span> 今天 <span class="count">5 条</span>
+      </div>
+      <div class="card-timeline">
+        <span class="group-label">今天</span>
+        <div class="card text"><div class="card-icon blue">📝</div><div class="card-content"><div class="card-title">项目周报 — Q3 OKR 进度更新</div><div class="card-sub">VS Code</div></div><span class="card-time">23:10</span></div>
+      </div>
+      <div class="card-timeline">
+        <div class="card image"><div class="card-icon pink">🖼</div><div class="card-content"><div class="card-title">screenshot_2026-07-03.png</div><div class="card-sub">截图工具</div></div><span class="card-time">22:45</span></div>
+      </div>
+      <div class="card-timeline">
+        <div class="card text"><div class="card-icon blue">📝</div><div class="card-content"><div class="card-title">https://github.com/tauri-apps/tauri/releases</div><div class="card-sub">Chrome</div></div><span class="card-time">20:30</span></div>
+      </div>
+      <div class="card-timeline">
+        <div class="card code"><div class="card-icon blue" style="background:linear-gradient(135deg,#F0E8FB,#E5D6FA)">💻</div><div class="card-content"><div class="card-title">const apiBase = process.env.VITE_API_URL</div><div class="card-sub">VS Code</div></div><span class="card-time">18:15</span></div>
+      </div>
+      <div class="card-timeline">
+        <div class="card file"><div class="card-icon green">📁</div><div class="card-content"><div class="card-title">Q3 Planning.xlsx</div><div class="card-sub">文件管理器</div></div><span class="card-time">15:00</span></div>
+      </div>
+
+      <div class="sticky-capsule earlier">
+        <span class="dot"></span> 更早 <span class="count">3 条</span>
+      </div>
+      <div class="card-timeline earlier">
+        <span class="group-label earlier">更早</span>
+        <div class="card text"><div class="card-icon blue">📝</div><div class="card-content"><div class="card-title">会议纪要：产品需求评审 2026-07-02</div><div class="card-sub">飞书</div></div><span class="card-time">昨天</span></div>
+      </div>
+      <div class="card-timeline earlier">
+        <div class="card text"><div class="card-icon blue">📝</div><div class="card-content"><div class="card-title">Tauri 2.0 迁移指南 &amp; 注意事项汇总</div><div class="card-sub">Notion</div></div><span class="card-time">7月1日</span></div>
+      </div>
+      <div class="card-timeline earlier">
+        <div class="card image"><div class="card-icon pink">🖼</div><div class="card-content"><div class="card-title">design-mockup-final.png</div><div class="card-sub">Figma</div></div><span class="card-time">6月30日</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== B3: 极窄色标竖线 ===== -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="badge">B3</span>
+      <h3>极窄色标竖线</h3>
+      <span class="tag">+4px 色条</span>
+    </div>
+    <div class="scroll-area b3">
+      <div class="sticky-capsule">
+        <span class="dot"></span> 今天 <span class="count">5 条</span>
+      </div>
+      <div class="color-strip-group group-today">
+        <div class="color-strip-label">今天</div>
+        <div class="cards">
+          <div class="card text"><div class="card-icon blue">📝</div><div class="card-content"><div class="card-title">项目周报 — Q3 OKR 进度更新</div><div class="card-sub">VS Code</div></div><span class="card-time">23:10</span></div>
+          <div class="card image"><div class="card-icon pink">🖼</div><div class="card-content"><div class="card-title">screenshot_2026-07-03.png</div><div class="card-sub">截图工具</div></div><span class="card-time">22:45</span></div>
+          <div class="card text"><div class="card-icon blue">📝</div><div class="card-content"><div class="card-title">https://github.com/tauri-apps/tauri/releases</div><div class="card-sub">Chrome</div></div><span class="card-time">20:30</span></div>
+          <div class="card code"><div class="card-icon blue" style="background:linear-gradient(135deg,#F0E8FB,#E5D6FA)">💻</div><div class="card-content"><div class="card-title">const apiBase = process.env.VITE_API_URL</div><div class="card-sub">VS Code</div></div><span class="card-time">18:15</span></div>
+          <div class="card file"><div class="card-icon green">📁</div><div class="card-content"><div class="card-title">Q3 Planning.xlsx</div><div class="card-sub">文件管理器</div></div><span class="card-time">15:00</span></div>
+        </div>
+      </div>
+
+      <div class="sticky-capsule earlier">
+        <span class="dot"></span> 更早 <span class="count">3 条</span>
+      </div>
+      <div class="color-strip-group group-earlier">
+        <div class="color-strip-label">更早</div>
+        <div class="cards">
+          <div class="card text"><div class="card-icon blue">📝</div><div class="card-content"><div class="card-title">会议纪要：产品需求评审 2026-07-02</div><div class="card-sub">飞书</div></div><span class="card-time">昨天</span></div>
+          <div class="card text"><div class="card-icon blue">📝</div><div class="card-content"><div class="card-title">Tauri 2.0 迁移指南 &amp; 注意事项汇总</div><div class="card-sub">Notion</div></div><span class="card-time">7月1日</span></div>
+          <div class="card image"><div class="card-icon pink">🖼</div><div class="card-content"><div class="card-title">design-mockup-final.png</div><div class="card-sub">Figma</div></div><span class="card-time">6月30日</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== B4: Git-graph 连线 ===== -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="badge">B4</span>
+      <h3>Git-graph 连线风格</h3>
+      <span class="tag">+24px 图形区</span>
+    </div>
+    <div class="scroll-area b4">
+      <div class="sticky-capsule">
+        <span class="dot"></span> 今天 <span class="count">5 条</span>
+      </div>
+      <!-- 今天组 -->
+      <div class="git-row">
+        <div class="git-graph">
+          <div class="git-line" style="top:12px; bottom:0;"></div>
+          <div class="git-dot first-row"></div>
+        </div>
+        <div class="card-wrap"><div class="card text"><div class="card-icon blue">📝</div><div class="card-content"><div class="card-title">项目周报 — Q3 OKR 进度更新</div><div class="card-sub">VS Code</div></div><span class="card-time">23:10</span></div></div>
+      </div>
+      <div class="git-row">
+        <div class="git-graph"><div class="git-line"></div><div class="git-dot"></div></div>
+        <div class="card-wrap"><div class="card image"><div class="card-icon pink">🖼</div><div class="card-content"><div class="card-title">screenshot_2026-07-03.png</div><div class="card-sub">截图工具</div></div><span class="card-time">22:45</span></div></div>
+      </div>
+      <div class="git-row">
+        <div class="git-graph"><div class="git-line"></div><div class="git-dot"></div></div>
+        <div class="card-wrap"><div class="card text"><div class="card-icon blue">📝</div><div class="card-content"><div class="card-title">https://github.com/tauri-apps/tauri/releases</div><div class="card-sub">Chrome</div></div><span class="card-time">20:30</span></div></div>
+      </div>
+      <div class="git-row">
+        <div class="git-graph"><div class="git-line"></div><div class="git-dot"></div></div>
+        <div class="card-wrap"><div class="card code"><div class="card-icon blue" style="background:linear-gradient(135deg,#F0E8FB,#E5D6FA)">💻</div><div class="card-content"><div class="card-title">const apiBase = process.env.VITE_API_URL</div><div class="card-sub">VS Code</div></div><span class="card-time">18:15</span></div></div>
+      </div>
+      <div class="git-row">
+        <div class="git-graph"><div class="git-line" style="bottom:50%;"></div><div class="git-dot earlier"></div></div>
+        <div class="card-wrap"><div class="card file"><div class="card-icon green">📁</div><div class="card-content"><div class="card-title">Q3 Planning.xlsx</div><div class="card-sub">文件管理器</div></div><span class="card-time">15:00</span></div></div>
+      </div>
+
+      <div class="sticky-capsule earlier">
+        <span class="dot"></span> 更早 <span class="count">3 条</span>
+      </div>
+      <!-- 更早组 -->
+      <div class="git-row">
+        <div class="git-graph">
+          <div class="git-line" style="top:12px;"></div>
+          <div class="git-dot first-row" style="background:var(--text-muted);box-shadow:0 0 0 2px rgba(100,116,139,0.1);"></div>
+        </div>
+        <div class="card-wrap"><div class="card text"><div class="card-icon blue">📝</div><div class="card-content"><div class="card-title">会议纪要：产品需求评审 2026-07-02</div><div class="card-sub">飞书</div></div><span class="card-time">昨天</span></div></div>
+      </div>
+      <div class="git-row">
+        <div class="git-graph"><div class="git-line"></div><div class="git-dot" style="background:var(--text-muted);box-shadow:0 0 0 2px rgba(100,116,139,0.1);"></div></div>
+        <div class="card-wrap"><div class="card text"><div class="card-icon blue">📝</div><div class="card-content"><div class="card-title">Tauri 2.0 迁移指南 &amp; 注意事项汇总</div><div class="card-sub">Notion</div></div><span class="card-time">7月1日</span></div></div>
+      </div>
+      <div class="git-row">
+        <div class="git-graph"><div class="git-line" style="top:0; bottom:50%;"></div><div class="git-dot" style="background:var(--text-muted);box-shadow:0 0 0 2px rgba(100,116,139,0.1);"></div></div>
+        <div class="card-wrap"><div class="card image"><div class="card-icon pink">🖼</div><div class="card-content"><div class="card-title">design-mockup-final.png</div><div class="card-sub">Figma</div></div><span class="card-time">6月30日</span></div></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div style="max-width:1400px; margin: 0 auto 40px; padding: 0 16px;">
+  <div style="background:#fff; border-radius:16px; border:1px solid var(--border-color); padding: 20px 24px;">
+    <h3 style="font-size:15px; margin-bottom:16px;">📊 方案对比总结</h3>
+    <table style="width:100%; border-collapse:collapse; font-size:12px;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border-color); text-align:left;">
+          <th style="padding:8px 12px;">维度</th>
+          <th style="padding:8px 12px;">B1 左侧外部时间轴</th>
+          <th style="padding:8px 12px; background:var(--accent-light);">B2 融合色条 ⭐</th>
+          <th style="padding:8px 12px;">B3 极窄色标</th>
+          <th style="padding:8px 12px;">B4 Git-graph</th>
+        </tr>
+      </thead>
+      <tbody style="color:var(--text-secondary);">
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:8px 12px; font-weight:600; color:var(--text-primary);">空间效率</td>
+          <td style="padding:8px 12px;">🟡 +36px 左边距</td>
+          <td style="padding:8px 12px; background:var(--accent-light);">🟢 +14px 内边距</td>
+          <td style="padding:8px 12px;">🟢 +4px 色条</td>
+          <td style="padding:8px 12px;">🟡 +24px 图形区</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:8px 12px; font-weight:600; color:var(--text-primary);">类型色条</td>
+          <td style="padding:8px 12px;">✅ 保留左侧 3px</td>
+          <td style="padding:8px 12px; background:var(--accent-light);">⚠️ 移到右侧</td>
+          <td style="padding:8px 12px;">❌ 被时间色标替代</td>
+          <td style="padding:8px 12px;">✅ 保留左侧 3px</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:8px 12px; font-weight:600; color:var(--text-primary);">时间导航</td>
+          <td style="padding:8px 12px;">✅ 竖线标签 + 吸顶胶囊</td>
+          <td style="padding:8px 12px; background:var(--accent-light);">✅ 首张标签 + 吸顶胶囊</td>
+          <td style="padding:8px 12px;">⚠️ 仅吸顶胶囊</td>
+          <td style="padding:8px 12px;">✅ 圆点 + 吸顶胶囊</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:8px 12px; font-weight:600; color:var(--text-primary);">视觉优雅度</td>
+          <td style="padding:8px 12px;">⭐⭐⭐⭐ 经典优雅</td>
+          <td style="padding:8px 12px; background:var(--accent-light);">⭐⭐⭐⭐⭐ 最紧凑优雅</td>
+          <td style="padding:8px 12px;">⭐⭐⭐ 简洁但缺信息</td>
+          <td style="padding:8px 12px;">⭐⭐⭐⭐ 开发者友好</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:8px 12px; font-weight:600; color:var(--text-primary);">实现复杂度</td>
+          <td style="padding:8px 12px;">中等 · 需改虚拟列表</td>
+          <td style="padding:8px 12px; background:var(--accent-light);">中等 · CSS 为主</td>
+          <td style="padding:8px 12px;">低 · 纯 CSS</td>
+          <td style="padding:8px 12px;">中等 · 需改虚拟列表</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 12px; font-weight:600; color:var(--text-primary);">兼容现有代码</td>
+          <td style="padding:8px 12px;">⚠️ 需新增 VirtualItem</td>
+          <td style="padding:8px 12px; background:var(--accent-light);">✅ 改动最小</td>
+          <td style="padding:8px 12px;">✅ 改动最小</td>
+          <td style="padding:8px 12px;">⚠️ 需新增 VirtualItem</td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="margin-top:16px; padding:12px 16px; background:var(--accent-light); border-radius:10px; font-size:12px; color:var(--accent); line-height:1.8;">
+      <strong>🏆 推荐：B2（左侧内部时间轴 · 融合色条）</strong><br>
+      理由：① 空间成本最低（仅 +14px 内边距）② 类型色条移到右侧保留功能 ③ 时间轴竖线 + 圆点 + 悬浮胶囊三重导航 ④ 改动集中在 CSS，虚拟列表逻辑几乎不变 ⑤ 视觉效果类似 Notion/Linear，用户熟悉度高
+    </div>
+  </div>
+</div>
+
+<script>
+// 模拟吸顶胶囊切换效果
+document.querySelectorAll('.scroll-area').forEach(area => {
+  area.addEventListener('scroll', () => {
+    const capsules = area.querySelectorAll('.sticky-capsule');
+    // 简单演示：滚动时胶囊始终可见（CSS sticky 已处理）
+  });
+});
+</script>
+
+</body>
+</html>

@@ -70,6 +70,26 @@
   gap: 4px;
 }
 
+.version-badge-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 20px;
+  transition: opacity 0.15s, transform 0.15s;
+  -webkit-app-region: no-drag;
+}
+.version-badge-btn:hover {
+  opacity: 0.8;
+  transform: scale(1.05);
+}
+.version-badge-btn:active {
+  transform: scale(0.95);
+}
+
 .version-badge-spin {
   animation: spin 1s linear infinite;
   color: var(--text-muted);
@@ -108,6 +128,11 @@
   animation: spin 1s linear infinite;
 }
 
+@keyframes badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
 .header-badge-update {
   background: var(--update-badge-gradient, linear-gradient(135deg, #5B6AF0, #7C5CF0));
   box-shadow: 0 2px 10px var(--update-badge-shadow, rgba(91, 106, 240, 0.35));
@@ -119,10 +144,11 @@
   filter: brightness(1.15);
 }
 
+/* downloading：复用 version-badge-gradient，与 idle 同源 */ 
 .header-badge-downloading {
-  background: var(--accent-light);
-  color: var(--accent);
-  box-shadow: none;
+  background: var(--version-badge-gradient, linear-gradient(135deg, #5B6AF0, #7C5CF0));
+  box-shadow: 0 2px 10px var(--version-badge-shadow, rgba(91, 106, 240, 0.35));
+  animation: badge-pulse 2s infinite;
 }
 
 .header-badge-ready {
@@ -133,6 +159,30 @@
 }
 
 .header-badge-ready:hover {
+  filter: brightness(1.15);
+}
+
+/* uptodate：复用 version-badge-gradient，短暂显示后淡出回 idle */
+.header-badge-uptodate {
+  background: var(--version-badge-gradient, linear-gradient(135deg, #5B6AF0, #7C5CF0));
+  box-shadow: 0 2px 10px var(--version-badge-shadow, rgba(91, 106, 240, 0.35));
+}
+
+/* checking：复用 version-badge-gradient，带旋转图标 + 呼吸脉冲 */
+.header-badge-checking {
+  background: var(--version-badge-gradient, linear-gradient(135deg, #5B6AF0, #7C5CF0));
+  box-shadow: 0 2px 10px var(--version-badge-shadow, rgba(91, 106, 240, 0.35));
+  animation: badge-pulse 2s infinite;
+}
+
+/* error：固定红色渐变，跨主题统一识别，可点击重试 */
+.header-badge-error {
+  background: linear-gradient(135deg, #EF4444, #DC2626);
+  box-shadow: 0 2px 10px rgba(220, 38, 38, 0.4);
+  cursor: pointer;
+}
+
+.header-badge-error:hover {
   filter: brightness(1.15);
 }
 
