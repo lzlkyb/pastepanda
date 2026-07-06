@@ -2,6 +2,22 @@ import { create } from "zustand";
 
 // ===== 数据类型 =====
 
+export interface Tag {
+  id: string;
+  name: string;
+  color: string;
+  created_at: string;
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  color: string;
+  icon: string;
+  sort_order: number;
+  created_at: string;
+}
+
 export interface HistoryItem {
   id: string;
   text: string;
@@ -15,6 +31,8 @@ export interface HistoryItem {
   pinyin_initials?: string;
   /** 预计算的时间戳（毫秒），避免 sort 中反复 new Date() */
   timeStamp?: number;
+  group_id?: string | null;
+  tags?: Tag[];
 }
 
 export type FilterType = "all" | "text" | "image" | "file" | "pinned";
@@ -24,6 +42,9 @@ export type TimeFilter = "all" | "today" | "week" | "month";
 
 // 来源应用筛选
 export type SourceFilter = string | ""; // 空字符串表示全部
+
+// 分组筛选
+export type GroupFilter = "all" | "ungrouped" | string; // "all"=全部, "ungrouped"=未分组, string=group_id
 
 export interface AppConfig {
   hotkey: string;
@@ -49,12 +70,16 @@ interface AppState {
   // 数据
   history: HistoryItem[];
   config: AppConfig;
+  groups: Group[];
+  tags: Tag[];
 
   // UI 状态
   searchKeyword: string;
   filterType: FilterType;
   timeFilter: TimeFilter;
   sourceFilter: SourceFilter;
+  groupFilter: GroupFilter;
+  selectedTagIds: string[];
   selectedIds: Set<string>;
   focusId: string | null;
   lastClickedId: string | null;
@@ -79,6 +104,11 @@ interface AppState {
   setFilterType: (ft: FilterType) => void;
   setTimeFilter: (tf: TimeFilter) => void;
   setSourceFilter: (sf: SourceFilter) => void;
+  setGroupFilter: (gf: GroupFilter) => void;
+  toggleTagFilter: (tagId: string) => void;
+  clearTagFilters: () => void;
+  setGroups: (groups: Group[]) => void;
+  setTags: (tags: Tag[]) => void;
   addSearchHistory: (kw: string) => void;
   removeSearchHistory: (kw: string) => void;
   clearSearchHistory: () => void;
@@ -124,12 +154,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   // 数据
   history: [],
   config: DEFAULT_CONFIG,
+  groups: [],
+  tags: [],
 
   // UI 状态
   searchKeyword: "",
   filterType: "all",
   timeFilter: "all",
   sourceFilter: "",
+  groupFilter: "all",
+  selectedTagIds: [],
   selectedIds: new Set(),
   focusId: null,
   lastClickedId: null,
@@ -229,6 +263,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   setFilterType: (ft) => set({ filterType: ft, selectedIds: new Set(), focusId: null, lastClickedId: null }),
   setTimeFilter: (tf) => set({ timeFilter: tf, selectedIds: new Set(), focusId: null, lastClickedId: null }),
   setSourceFilter: (sf) => set({ sourceFilter: sf, selectedIds: new Set(), focusId: null, lastClickedId: null }),
+  setGroupFilter: (gf) => set({ groupFilter: gf, selectedIds: new Set(), focusId: null, lastClickedId: null }),
+  toggleTagFilter: (tagId) =>
+    set((s) => {
+      const next = s.selectedTagIds.includes(tagId)
+        ? s.selectedTagIds.filter((id) => id !== tagId)
+        : [...s.selectedTagIds, tagId];
+      return { selectedTagIds: next, selectedIds: new Set(), focusId: null, lastClickedId: null };
+    }),
+  clearTagFilters: () => set({ selectedTagIds: [], selectedIds: new Set(), focusId: null, lastClickedId: null }),
+  setGroups: (groups) => set({ groups }),
+  setTags: (tags) => set({ tags }),
 
   // 搜索历史
   addSearchHistory: (kw) => {
@@ -309,9 +354,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   // 计算属性（带简单缓存避免频繁计算）
   _filterCache: null as { key: string; result: HistoryItem[] } | null,
   getFilteredItems: () => {
-    const { history, searchKeyword, filterType, timeFilter, sourceFilter, config } = get();
+    const { history, searchKeyword, filterType, timeFilter, sourceFilter, groupFilter, selectedTagIds, config } = get();
     // 生成缓存键
-    const cacheKey = `${history.length}|${searchKeyword}|${filterType}|${timeFilter}|${sourceFilter}|${config.current_workspace}`;
+    const cacheKey = `${history.length}|${searchKeyword}|${filterType}|${timeFilter}|${sourceFilter}|${groupFilter}|${selectedTagIds.join(",")}|${config.current_workspace}`;
     const s = get();
     if (s._filterCache && s._filterCache.key === cacheKey) {
       return s._filterCache.result;
@@ -336,7 +381,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
-    // 单次遍历：合并 workspace + 搜索 + 类型 + 时间 + 来源过滤
+    // 单次遍历：合并 workspace + 搜索 + 类型 + 时间 + 来源 + 分组 + 标签过滤
     const items: HistoryItem[] = [];
     for (let i = 0; i < history.length; i++) {
       const h = history[i];
@@ -370,6 +415,19 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // 来源过滤
       if (sourceFilter && h.source !== sourceFilter) continue;
+
+      // 分组过滤
+      if (groupFilter === "ungrouped") {
+        if (h.group_id) continue;
+      } else if (groupFilter !== "all") {
+        if (h.group_id !== groupFilter) continue;
+      }
+
+      // 标签过滤（AND 逻辑）
+      if (selectedTagIds.length > 0) {
+        const itemTagIds = (h.tags || []).map((t) => t.id);
+        if (!selectedTagIds.every((tid) => itemTagIds.includes(tid))) continue;
+      }
 
       items.push(h);
     }

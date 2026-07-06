@@ -7,7 +7,7 @@ import { UpdateBadge } from "@/components/UpdateBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { SearchBox } from "@/components/SearchBox";
 import { logger } from "@/lib/logger";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Tag, X } from "lucide-react";
 import styles from "./TopBar.module.css";
 
 const TABS: { key: FilterType; label: string; icon: string }[] = [
@@ -59,12 +59,17 @@ export function TopBar({ onSettings, onSnippets, onExtract, onToggleSidebar, sid
   const setTimeFilter = useAppStore((s) => s.setTimeFilter);
   const sourceFilter = useAppStore((s) => s.sourceFilter);
   const setSourceFilter = useAppStore((s) => s.setSourceFilter);
+  const selectedTagIds = useAppStore((s) => s.selectedTagIds);
+  const toggleTagFilter = useAppStore((s) => s.toggleTagFilter);
+  const clearTagFilters = useAppStore((s) => s.clearTagFilters);
+  const allTags = useAppStore((s) => s.tags);
   const ws = useAppStore((s) => s.config.current_workspace);
   const [tabStyle, setTabStyle] = useState<TabStyle>(getTabStyle);
   const [appVersion, setAppVersion] = useState("...");
   const [appName, setAppName] = useState("PastePanda");
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [countsError, setCountsError] = useState(false);
+  const [tagPickerOpen, setTagPickerOpen] = useState(false);
 
   useEffect(() => {
     getAppVersion().then(setAppVersion).catch(() => setAppVersion("?.?.?"));
@@ -180,6 +185,53 @@ export function TopBar({ onSettings, onSnippets, onExtract, onToggleSidebar, sid
             workspace={ws}
           />
         </div>
+
+        {/* 标签筛选栏 */}
+        {allTags.length > 0 && (
+          <div className={styles.tagFilterBar} data-tauri-drag-region="false">
+            {selectedTagIds.map((tid) => {
+              const tag = allTags.find((t) => t.id === tid);
+              if (!tag) return null;
+              return (
+                <span
+                  key={tid}
+                  className={styles.tagFilterChip}
+                  style={{ background: tag.color + "20", color: tag.color, borderColor: tag.color + "40" }}
+                >
+                  #{tag.name}
+                  <button
+                    className={styles.tagFilterRemove}
+                    onClick={() => toggleTagFilter(tid)}
+                    title="移除筛选"
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              );
+            })}
+            {selectedTagIds.length > 0 && (
+              <button className={styles.tagFilterClear} onClick={clearTagFilters} title="清除所有标签筛选">
+                清除
+              </button>
+            )}
+            <button
+              className={styles.tagFilterAdd}
+              onClick={() => setTagPickerOpen(!tagPickerOpen)}
+            >
+              <Tag size={12} /> 标签筛选
+            </button>
+            <AnimatePresence>
+              {tagPickerOpen && (
+                <TagPickerPopover
+                  tags={allTags}
+                  selectedTagIds={selectedTagIds}
+                  onToggle={toggleTagFilter}
+                  onClose={() => setTagPickerOpen(false)}
+                />
+              )}
+            </AnimatePresence>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -369,5 +421,67 @@ function SourceFilterDropdown({ value, onChange, workspace }: {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+/* ===== 标签选择 Popover ===== */
+function TagPickerPopover({ tags, selectedTagIds, onToggle, onClose }: {
+  tags: import("@/stores/appStore").Tag[];
+  selectedTagIds: string[];
+  onToggle: (tagId: string) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
+  // 按名称排序
+  const sorted = useMemo(() => [...tags].sort((a, b) => a.name.localeCompare(b.name, "zh")), [tags]);
+
+  return (
+    <motion.div
+      ref={ref}
+      initial={{ opacity: 0, y: -4, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -4, scale: 0.96 }}
+      transition={{ type: "spring", stiffness: 500, damping: 35 }}
+      className={styles.tagPickerPopover}
+    >
+      <div className={styles.tagPickerHeader}>
+        <span>选择标签筛选</span>
+        <button className={styles.tagPickerClose} onClick={onClose}><X size={12} /></button>
+      </div>
+      <div className={styles.tagPickerBody}>
+        {sorted.length === 0 ? (
+          <div className={styles.tagPickerEmpty}>
+            暂无标签，右键卡片 → 编辑标签 来创建
+          </div>
+        ) : (
+          sorted.map((tag) => {
+            const active = selectedTagIds.includes(tag.id);
+            return (
+              <button
+                key={tag.id}
+                className={`${styles.tagPickerItem}${active ? ` ${styles.tagPickerItemActive}` : ""}`}
+                onClick={() => onToggle(tag.id)}
+              >
+                <span
+                  className={styles.tagPickerDot}
+                  style={{ background: tag.color }}
+                />
+                <span className={styles.tagPickerName}>{tag.name}</span>
+                {active && <span className={styles.tagPickerCheck}>✓</span>}
+              </button>
+            );
+          })
+        )}
+      </div>
+    </motion.div>
   );
 }

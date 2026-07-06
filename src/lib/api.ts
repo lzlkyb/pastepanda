@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useAppStore, HistoryItem } from "@/stores/appStore";
+import { useAppStore, HistoryItem, Group, Tag } from "@/stores/appStore";
 import { logger } from "@/lib/logger";
 
 /** 加载更多历史记录（分页） */
@@ -50,6 +50,22 @@ export async function initBackend(): Promise<() => void> {
     configLoaded = true;
   } catch (e) {
     logger.error("加载配置失败，使用默认配置，跳过自动清理", e);
+  }
+
+  // 加载分组
+  try {
+    const groups = await invoke<Group[]>("get_groups");
+    store.setGroups(groups);
+  } catch (e) {
+    logger.warn("加载分组失败", e);
+  }
+
+  // 加载标签
+  try {
+    const tags = await invoke<Tag[]>("get_tags");
+    store.setTags(tags);
+  } catch (e) {
+    logger.warn("加载标签失败", e);
   }
 
   // 启动时自动清理过期记录
@@ -386,5 +402,232 @@ export async function getAppName(): Promise<string> {
     return await invoke<string>("get_app_name");
   } catch {
     return "PastePanda";
+  }
+}
+
+// ===== 分组 API =====
+
+/** 获取所有分组 */
+export async function fetchGroups(): Promise<Group[]> {
+  try {
+    const groups = await invoke<Group[]>("get_groups");
+    useAppStore.getState().setGroups(groups);
+    return groups;
+  } catch (e) {
+    logger.error("获取分组失败", e);
+    return [];
+  }
+}
+
+/** 创建分组 */
+export async function createGroup(name: string, color: string, icon: string): Promise<Group | null> {
+  try {
+    const group = await invoke<Group>("create_group", { name, color, icon });
+    // 重新从后端获取，保证按 sort_order 排序，避免多客户端场景顺序错乱
+    await fetchGroups();
+    return group;
+  } catch (e) {
+    logger.error("创建分组失败", e);
+    return null;
+  }
+}
+
+/** 更新分组 */
+export async function updateGroup(id: string, name: string, color: string, icon: string): Promise<boolean> {
+  try {
+    await invoke("update_group", { id, name, color, icon });
+    const store = useAppStore.getState();
+    store.setGroups(store.groups.map((g) => (g.id === id ? { ...g, name, color, icon } : g)));
+    return true;
+  } catch (e) {
+    logger.error("更新分组失败", e);
+    return false;
+  }
+}
+
+/** 删除分组 */
+export async function deleteGroup(id: string): Promise<boolean> {
+  try {
+    await invoke("delete_group", { id });
+    // 更新本地 state：移除分组 + 将被删除分组的记录的 group_id 设为 null
+    useAppStore.setState((state) => ({
+      groups: state.groups.filter((g) => g.id !== id),
+      history: state.history.map((h) =>
+        h.group_id === id ? { ...h, group_id: null as string | null } : h
+      ),
+      // 如果当前正在筛选此分组，重置筛选
+      groupFilter: state.groupFilter === id ? "all" : state.groupFilter,
+    }));
+    invalidateCountsCache();
+    return true;
+  } catch (e) {
+    logger.error("删除分组失败", e);
+    return false;
+  }
+}
+
+/** 排序分组 */
+export async function reorderGroups(ids: string[]): Promise<boolean> {
+  try {
+    await invoke("reorder_groups", { ids });
+    const store = useAppStore.getState();
+    const ordered = ids.map((id) => store.groups.find((g) => g.id === id)!).filter(Boolean);
+    store.setGroups(ordered);
+    return true;
+  } catch (e) {
+    logger.error("排序分组失败", e);
+    return false;
+  }
+}
+
+/** 移动记录到分组 */
+export async function moveToGroup(historyIds: string[], groupId: string | null): Promise<number> {
+  try {
+    const count = await invoke<number>("move_to_group", { historyIds, groupId });
+    // 更新本地 state — 使用 setState 更新函数，避免丢失运行时状态
+    useAppStore.setState((state) => ({
+      history: state.history.map((h) => {
+        if (historyIds.includes(h.id)) {
+          return { ...h, group_id: groupId };
+        }
+        return h;
+      }),
+    }));
+    invalidateCountsCache();
+    return count;
+  } catch (e) {
+    logger.error("移动记录失败", e);
+    return 0;
+  }
+}
+
+// ===== 标签 API =====
+
+/** 获取所有标签 */
+export async function fetchTags(): Promise<Tag[]> {
+  try {
+    const tags = await invoke<Tag[]>("get_tags");
+    useAppStore.getState().setTags(tags);
+    return tags;
+  } catch (e) {
+    logger.error("获取标签失败", e);
+    return [];
+  }
+}
+
+/** 创建标签 */
+export async function createTag(name: string, color: string): Promise<Tag | null> {
+  try {
+    const tag = await invoke<Tag>("create_tag", { name, color });
+    useAppStore.getState().setTags([...useAppStore.getState().tags, tag]);
+    return tag;
+  } catch (e) {
+    logger.error("创建标签失败", e);
+    return null;
+  }
+}
+
+/** 更新标签 */
+export async function updateTag(id: string, name: string, color: string): Promise<boolean> {
+  try {
+    await invoke("update_tag", { id, name, color });
+    const store = useAppStore.getState();
+    store.setTags(store.tags.map((t) => (t.id === id ? { ...t, name, color } : t)));
+    return true;
+  } catch (e) {
+    logger.error("更新标签失败", e);
+    return false;
+  }
+}
+
+/** 删除标签 */
+export async function deleteTag(id: string): Promise<boolean> {
+  try {
+    await invoke("delete_tag", { id });
+    const store = useAppStore.getState();
+    store.setTags(store.tags.filter((t) => t.id !== id));
+    store.clearTagFilters();
+    return true;
+  } catch (e) {
+    logger.error("删除标签失败", e);
+    return false;
+  }
+}
+
+/** 设置记录标签（全量替换） */
+export async function setItemTags(historyId: string, tagIds: string[]): Promise<boolean> {
+  try {
+    await invoke("set_item_tags", { historyId, tagIds });
+    // 更新本地 state
+    const store = useAppStore.getState();
+    const allTags = store.tags;
+    const newHistory = store.history.map((h) => {
+      if (h.id === historyId) {
+        return { ...h, tags: tagIds.map((tid) => allTags.find((t) => t.id === tid)!).filter(Boolean) };
+      }
+      return h;
+    });
+    useAppStore.setState({ history: newHistory });
+    return true;
+  } catch (e) {
+    logger.error("设置标签失败", e);
+    return false;
+  }
+}
+
+/** 批量添加标签 */
+export async function addItemTags(historyIds: string[], tagIds: string[]): Promise<number> {
+  try {
+    const count = await invoke<number>("add_item_tags", { historyIds, tagIds });
+    // 更新本地 state
+    const store = useAppStore.getState();
+    const allTags = store.tags;
+    const newTags = tagIds.map((tid) => allTags.find((t) => t.id === tid)!).filter(Boolean);
+    const newHistory = store.history.map((h) => {
+      if (historyIds.includes(h.id)) {
+        const existing = h.tags || [];
+        const merged = [...existing];
+        for (const nt of newTags) {
+          if (!merged.find((t) => t.id === nt.id)) merged.push(nt);
+        }
+        return { ...h, tags: merged };
+      }
+      return h;
+    });
+    useAppStore.setState({ history: newHistory });
+    return count;
+  } catch (e) {
+    logger.error("添加标签失败", e);
+    return 0;
+  }
+}
+
+/** 批量移除标签 */
+export async function removeItemTags(historyIds: string[], tagIds: string[]): Promise<number> {
+  try {
+    const count = await invoke<number>("remove_item_tags", { historyIds, tagIds });
+    const store = useAppStore.getState();
+    const newHistory = store.history.map((h) => {
+      if (historyIds.includes(h.id)) {
+        return { ...h, tags: (h.tags || []).filter((t) => !tagIds.includes(t.id)) };
+      }
+      return h;
+    });
+    useAppStore.setState({ history: newHistory });
+    return count;
+  } catch (e) {
+    logger.error("移除标签失败", e);
+    return 0;
+  }
+}
+
+/** 批量获取记录标签 */
+export async function getItemsWithTags(historyIds: string[]): Promise<Map<string, Tag[]>> {
+  try {
+    const result = await invoke<[string, Tag[]][]>("get_items_with_tags", { historyIds });
+    return new Map(result);
+  } catch (e) {
+    logger.error("获取记录标签失败", e);
+    return new Map();
   }
 }

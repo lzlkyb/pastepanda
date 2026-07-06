@@ -15,8 +15,8 @@
 }
 
 .sidebar.open {
-  width: 220px;
-  min-width: 220px;
+  width: 180px;
+  min-width: 180px;
   border-right-color: var(--border-color);
 }
 
@@ -79,6 +79,7 @@
   transition: all 0.15s;
   text-align: left;
   width: 100%;
+  position: relative;
 }
 
 .item:hover {
@@ -91,23 +92,13 @@
   font-weight: 600;
 }
 
-/* 来源颜色圆点 — 缩小为 6px */
+/* 来源颜色圆点 — 缩小为 8px */
 .dot {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
-
-.dot-blue { background: #3B82F6; }
-.dot-green { background: #22C55E; }
-.dot-orange { background: #F97316; }
-.dot-purple { background: #A855F7; }
-.dot-red { background: #EF4444; }
-.dot-pink { background: #EC4899; }
-.dot-teal { background: #14B8A6; }
-.dot-amber { background: #F59E0B; }
-.dot-indigo { background: #6366F1; }
 
 /* 内置分组 emoji 图标 */
 .icon {
@@ -135,6 +126,260 @@
 
 .item.active .count {
   color: var(--accent);
+}
+
+/* 更多操作按钮 (⋯) */
+.moreBtn {
+  display: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.item:hover .moreBtn {
+  display: flex;
+}
+
+.moreBtn:hover {
+  background: var(--border-color);
+  color: var(--text-primary);
+}
+
+/* + 新建分组按钮 */
+.addGroupBtn {
+  color: var(--text-muted);
+  font-weight: 500;
+  opacity: 0.7;
+  margin-top: 2px;
+}
+
+.addGroupBtn:hover {
+  opacity: 1;
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+.addIcon {
+  font-size: 16px;
+  font-weight: 600;
+  flex-shrink: 0;
+  width: 8px;
+  text-align: center;
+  line-height: 1;
+  margin-right: 2px;
+}
+
+/* 新建分组输入行 */
+.createRow {
+  padding: 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 2px 0 4px;
+}
+
+.colorPicker {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 0 6px;
+}
+
+.colorDot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.colorDot:hover {
+  transform: scale(1.2);
+}
+
+.colorDotActive {
+  border-color: var(--text-primary);
+  transform: scale(1.15);
+}
+
+.iconPicker {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 0 6px;
+}
+
+.iconDot {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  background: var(--hover);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.iconDot:hover {
+  transform: scale(1.15);
+  background: var(--border-color);
+}
+
+.iconDotActive {
+  border-color: var(--text-primary);
+  background: var(--border-color);
+  transform: scale(1.1);
+}
+
+.createInputRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 7px;
+  background: var(--hover);
+}
+
+.inlineInput {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 12px;
+  color: var(--text-primary);
+  font-family: inherit;
+  padding: 2px 0;
+  min-width: 0;
+}
+
+.inlineInput::placeholder {
+  color: var(--text-muted);
+}
+
+.createConfirm {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  transition: all 0.15s;
+}
+
+.createConfirm:hover {
+  filter: brightness(1.1);
+}
+
+.itemEditing {
+  background: var(--hover);
+  cursor: default;
+}
+
+/* 右键菜单 */
+.contextMenu {
+  position: fixed;
+  z-index: 100000;
+  background: var(--dialog-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  padding: 4px;
+  min-width: 140px;
+}
+
+.contextMenuItem {
+  display: block;
+  width: 100%;
+  padding: 7px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  border-radius: 6px;
+  transition: background 0.1s;
+}
+
+.contextMenuItem:hover {
+  background: var(--hover);
+}
+
+.contextMenuItemDanger {
+  color: #EF4444;
+}
+
+.contextMenuItemDanger:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.contextMenuLabel {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  padding: 8px 12px 4px;
+}
+
+.contextMenuColors {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 4px 12px 8px;
+}
+
+.contextMenuColorDot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.15s;
+}
+
+.contextMenuColorDot:hover {
+  transform: scale(1.15);
+}
+
+.contextMenuColorDotActive {
+  border-color: var(--text-primary);
+  box-shadow: 0 0 0 1px var(--text-primary);
+}
+
+.contextMenuSep {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 8px;
 }
 
 /* 分割线 — 更轻量 */

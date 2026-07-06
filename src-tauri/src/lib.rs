@@ -16,7 +16,6 @@ pub fn run() {
     env_logger::init();
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             // 第二个实例启动时，显示已有窗口
             if let Some(window) = app.get_webview_window("main") {
@@ -32,6 +31,12 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            // 窗口状态恢复 — 必须在 window.show() 之前注册，确保先恢复后显示
+            #[cfg(desktop)]
+            app.handle()
+                .plugin(tauri_plugin_window_state::Builder::default().build())
+                .expect("window-state 插件初始化失败");
+
             // 初始化 APP_NAME（通过 Tauri 框架 API 获取，dev/安装版均可正确读取）
             let product_name = app
                 .config()
@@ -219,7 +224,20 @@ pub fn run() {
             commands::save_image_file,
             commands::start_update,
             commands::read_file_as_base64,
-            commands::animate_window_width,
+            commands::get_groups,
+            commands::create_group,
+            commands::update_group,
+            commands::delete_group,
+            commands::reorder_groups,
+            commands::move_to_group,
+            commands::get_tags,
+            commands::create_tag,
+            commands::update_tag,
+            commands::delete_tag,
+            commands::set_item_tags,
+            commands::add_item_tags,
+            commands::remove_item_tags,
+            commands::get_items_with_tags,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

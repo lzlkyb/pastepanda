@@ -221,6 +221,8 @@ impl LanSync {
                                     workspace: "默认".to_string(),
                                     md5: None,
                                     pinyin_initials,
+                                    group_id: None,
+                                    tags: Vec::new(),
                                 };
 
                                 if let Some(store) = app_handle.try_state::<DataStore>() {

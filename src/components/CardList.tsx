@@ -5,6 +5,7 @@ import { useAppStore, HistoryItem, FilterType } from "@/stores/appStore";
 import { useToast } from "@/components/Toast";
 import { CardWithContext, ImgState } from "@/components/Card";
 import { ContextMenu } from "@/components/ContextMenu";
+import { TagEditor } from "@/components/TagEditor";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { pasteText, pasteImage, getImageThumbnail, getImageDataUrl, getImageBase64, getImageInfo, loadMoreHistory, deleteHistory } from "@/lib/api";
 import { invoke } from "@tauri-apps/api/core";
@@ -62,12 +63,14 @@ function getTimeGroup(timeStr: string): TimeGroup {
 
 
 
-export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenisRef }: { scrollRef?: React.RefObject<HTMLDivElement | null>; lenisRef?: React.RefObject<Lenis | null> }) {
+export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenisRef, showMoveToGroup = false }: { scrollRef?: React.RefObject<HTMLDivElement | null>; lenisRef?: React.RefObject<Lenis | null>; showMoveToGroup?: boolean }) {
   const history = useAppStore((s) => s.history);
   const searchKeyword = useAppStore((s) => s.searchKeyword);
   const filterType = useAppStore((s) => s.filterType);
   const timeFilter = useAppStore((s) => s.timeFilter);
   const sourceFilter = useAppStore((s) => s.sourceFilter);
+  const groupFilter = useAppStore((s) => s.groupFilter);
+  const selectedTagIds = useAppStore((s) => s.selectedTagIds);
   const getFilteredItems = useAppStore((s) => s.getFilteredItems);
   const selectedIds = useAppStore((s) => s.selectedIds);
   const focusId = useAppStore((s) => s.focusId);
@@ -75,6 +78,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
 
   const { toast } = useToast();
   const [editItem, setEditItem] = useState<HistoryItem | null>(null);
+  const [tagEditorItem, setTagEditorItem] = useState<HistoryItem | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [previewInfo, setPreviewInfo] = useState<Record<string, string | number> | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -205,7 +209,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
 
   // 统一使用 store 的过滤排序逻辑（包含拼音搜索、置顶排序等）
   // useMemo 稳定 items 引用，避免虚拟列表和图片 effect 因新数组引用频繁重新计算
-  const items = useMemo(() => getFilteredItems(), [history, searchKeyword, filterType, timeFilter, sourceFilter, getFilteredItems]);
+  const items = useMemo(() => getFilteredItems(), [history, searchKeyword, filterType, timeFilter, sourceFilter, groupFilter, selectedTagIds, getFilteredItems]);
 
   // 虚拟列表（直接使用 items，不再有 separator）
   const virtualizer = useVirtualizer({
@@ -1025,6 +1029,11 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                           onClick={(e: React.MouseEvent) => selectItem(item.id, e.ctrlKey, e.shiftKey)}
                           onDoubleClick={() => handleDoubleClick(item)}
                           onEdit={(item) => setEditItem(item)}
+                          onEditTags={(item) => setTagEditorItem(item)}
+                          onMoveToGroup={showMoveToGroup ? (item) => {
+                            // 右键菜单触发：派发事件让 App 层弹出分组选择弹窗
+                            window.dispatchEvent(new CustomEvent("app-move-to-group", { detail: { item } }));
+                          } : undefined}
                           index={vItem.index}
                           disablePreview={isScrolling || selectedCount > 0}
                         />
@@ -1062,6 +1071,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
       <Suspense fallback={null}>
         {fileDetailItem && <ErrorBoundary fallback={null}><FileDetailDialog item={fileDetailItem} onClose={() => setFileDetailItem(null)} /></ErrorBoundary>}
       </Suspense>
+      <TagEditor open={!!tagEditorItem} item={tagEditorItem} onClose={() => setTagEditorItem(null)} />
 
       {/* 图片预览 — 统一 dialog 风格 */}
       <AnimatePresence>

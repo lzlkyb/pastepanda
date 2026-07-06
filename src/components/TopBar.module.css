@@ -516,3 +516,199 @@
 .circleTabActive .circleBadge {
   background: #FF3B30;
 }
+
+/* ===== 标签筛选栏 ===== */
+.tagFilterBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0 2px;
+  flex-wrap: wrap;
+  min-height: 28px;
+  position: relative;
+}
+
+.tagFilterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid;
+  cursor: default;
+  flex-shrink: 0;
+  transition: filter 0.15s;
+}
+
+.tagFilterChip:hover {
+  filter: brightness(0.95);
+}
+
+.tagFilterRemove {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.1);
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 0.15s;
+}
+
+.tagFilterRemove:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.tagFilterClear {
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tagFilterClear:hover {
+  color: var(--danger);
+  background: var(--red-bg);
+}
+
+.tagFilterAdd {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px dashed var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tagFilterAdd:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+.countsErrorHint {
+  margin-bottom: 4px;
+}
+
+/* ===== 标签选择 Popover ===== */
+.tagPickerPopover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 200px;
+  background: var(--dialog-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+  z-index: 30;
+  overflow: hidden;
+}
+
+.tagPickerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tagPickerClose {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.tagPickerClose:hover {
+  background: var(--hover);
+}
+
+.tagPickerBody {
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.tagPickerEmpty {
+  padding: 16px 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.tagPickerItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 6px;
+  font-family: inherit;
+  transition: background 0.1s;
+  text-align: left;
+}
+
+.tagPickerItem:hover {
+  background: var(--hover);
+}
+
+.tagPickerItemActive {
+  background: var(--accent-light);
+  font-weight: 600;
+}
+
+.tagPickerDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tagPickerName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tagPickerCheck {
+  font-size: 10px;
+  color: var(--accent);
+  flex-shrink: 0;
+}

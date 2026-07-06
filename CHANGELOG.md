@@ -2,6 +2,20 @@
 
 PastePanda 版本更新日志。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [5.0.126] - 2026-07-06
+
+### 修复
+- 修复窗口状态恢复 — window-state 插件从 .plugin() 链移至 .setup() 闭包，确保先恢复后显示
+- 修复侧边栏开关时窗口宽度漂移问题
+
+### 变更
+- 侧边栏宽度 220px → 180px，内容区更宽敞
+- 侧边栏开关改为纯 CSS transition，窗口宽度不再随侧边栏变化
+
+### 重构
+- 移除 Rust animate_window_width 命令及相关代码（~70行）
+- 简化 App.tsx 侧边栏切换逻辑，删除 isTogglingRef/logicalWidthRef/初始化宽度同步
+
 ## [5.0.118] - 2026-07-05
 
 ### 新功能

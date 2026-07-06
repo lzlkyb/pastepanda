@@ -201,6 +201,8 @@ impl ClipboardMonitor {
                                     let updated_item = HistoryItem {
                                         time: now_str.clone(),
                                         source: get_foreground_window_title(),
+                                        group_id: None,
+                                        tags: Vec::new(),
                                         ..existing
                                     };
                                     if let Err(e) = app_handle.emit(
@@ -233,6 +235,8 @@ impl ClipboardMonitor {
                                     workspace: "默认".to_string(),
                                     md5: Some(hash),
                                     pinyin_initials: Some(pinyin_initials),
+                                    group_id: None,
+                                    tags: Vec::new(),
                                 };
 
                                 // 插入数据库
@@ -340,6 +344,8 @@ impl ClipboardMonitor {
                                         workspace: "默认".to_string(),
                                         md5: Some(img_hash),
                                         pinyin_initials: None,
+                                        group_id: None,
+                                        tags: Vec::new(),
                                     };
 
                                     if let Some(store) = app_handle.try_state::<DataStore>() {
@@ -406,6 +412,8 @@ impl ClipboardMonitor {
                                                 workspace: "默认".to_string(),
                                                 md5: Some(file_hash),
                                                 pinyin_initials: None,
+                                                group_id: None,
+                                                tags: Vec::new(),
                                             };
                                             if let Some(store) = app_handle.try_state::<DataStore>()
                                             {

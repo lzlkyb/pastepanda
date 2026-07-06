@@ -1,7 +1,7 @@
 import { createContext, useState, useEffect, useCallback, useRef, useMemo, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Copy, ClipboardPaste, Pin, Trash2, ExternalLink, FileCode, Pencil, ChevronRight } from "lucide-react";
+import { Copy, ClipboardPaste, Pin, Trash2, ExternalLink, FileCode, Pencil, ChevronRight, Tag, FolderInput } from "lucide-react";
 import styles from "./ContextMenu.module.css";
 
 export interface MenuItem {
@@ -357,6 +357,8 @@ export function createCardMenuItems(opts: {
   onPin: () => void;
   onDelete: () => void;
   onEdit?: () => void;
+  onEditTags?: () => void;
+  onMoveToGroup?: () => void;
   onAddSnippet?: () => void;
   onOpenUrl?: () => void;
   onPasteTransform?: (transform: string) => void;
@@ -392,6 +394,16 @@ export function createCardMenuItems(opts: {
 
   if (opts.hasUrl && opts.onOpenUrl) {
     items.push({ icon: <ExternalLink size={14} />, label: "在浏览器中打开", onClick: opts.onOpenUrl });
+  }
+
+  // ★ 编辑标签 ★
+  if (opts.onEditTags) {
+    items.push({ icon: <Tag size={14} />, label: "编辑标签", onClick: opts.onEditTags, separator: true });
+  }
+
+  // ★ 移动到分组 ★
+  if (opts.onMoveToGroup) {
+    items.push({ icon: <FolderInput size={14} />, label: "移动到分组", onClick: opts.onMoveToGroup, separator: true });
   }
 
   items.push(

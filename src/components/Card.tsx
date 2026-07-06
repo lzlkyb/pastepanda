@@ -5,6 +5,7 @@ import { relativeTime, detectTextType } from "@/lib/utils";
 import { createCardMenuItems, CtxMenuCtx, type MenuItem } from "@/components/ContextMenu";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useToast } from "@/components/Toast";
+import { TagRow } from "@/components/TagBadge";
 import { logger } from "@/lib/logger";
 import { pasteText } from "@/lib/api";
 import { Pin, ImageIcon, Link2, AtSign, Code2, Phone, FileText, Terminal, Type, Check } from "lucide-react";
@@ -247,6 +248,7 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
             )}
             {source && <span className={styles.cardSource}>{source}</span>}
           </div>
+          <TagRow tags={item.tags || []} />
         </div>
 
         {/* 时间 / 复制中指示器 */}
@@ -545,8 +547,8 @@ const InlineCardActions = memo(function InlineCardActions({
 });
 
 /** 卡片上下文包装器（右键菜单 + 操作逻辑） */
-export const CardWithContext = memo(function CardWithContext({ item, selected, onClick, onDoubleClick, index, imageState, searchKeyword, onRetryImage, pasting, onEdit, disablePreview }: {
-  item: HistoryItem; selected: boolean; onClick: (e: React.MouseEvent) => void; onDoubleClick: () => void; index: number; imageState?: ImgState; searchKeyword?: string; onRetryImage?: () => void; pasting?: boolean; onEdit?: (item: HistoryItem) => void; disablePreview?: boolean;
+export const CardWithContext = memo(function CardWithContext({ item, selected, onClick, onDoubleClick, index, imageState, searchKeyword, onRetryImage, pasting, onEdit, onEditTags, onMoveToGroup, disablePreview }: {
+  item: HistoryItem; selected: boolean; onClick: (e: React.MouseEvent) => void; onDoubleClick: () => void; index: number; imageState?: ImgState; searchKeyword?: string; onRetryImage?: () => void; pasting?: boolean; onEdit?: (item: HistoryItem) => void; onEditTags?: (item: HistoryItem) => void; onMoveToGroup?: (item: HistoryItem) => void; disablePreview?: boolean;
 }) {
   const { toast } = useToast();
   const togglePin = useAppStore((s) => s.togglePin);
@@ -661,6 +663,8 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
 
   const menuItems = createCardMenuItems({
     onEdit: item.type === "text" && onEdit ? () => onEdit(item) : undefined,
+    onEditTags: onEditTags ? () => onEditTags(item) : undefined,
+    onMoveToGroup: onMoveToGroup ? () => onMoveToGroup(item) : undefined,
     onCopy: async () => {
       try { await navigator.clipboard.writeText(item.text); toast("已复制到剪贴板", "success"); } catch { toast("复制失败", "error"); }
     },

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef, lazy, Suspense, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { applyTheme, DEFAULT_THEME, ThemeKey } from "@/lib/theme";
-import { useAppStore } from "@/stores/appStore";
+import { useAppStore, GroupFilter, HistoryItem } from "@/stores/appStore";
 import { TopBar } from "@/components/TopBar";
 import { CardList } from "@/components/CardList";
 import { QuickPreview } from "@/components/QuickPreview";
@@ -10,7 +10,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UpdateProvider } from "@/contexts/UpdateContext";
 import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
 import { logger } from "@/lib/logger";
-import { pasteText, pasteImage, deleteHistory, togglePin, toggleWindow, sequentialPaste, invalidateCountsCache } from "@/lib/api";
+import { pasteText, pasteImage, deleteHistory, togglePin, toggleWindow, sequentialPaste, invalidateCountsCache, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup } from "@/lib/api";
 import { cleanSourceName, getSourceIcon } from "@/lib/utils";
 import { ClipboardList, RotateCcw, Loader2, X } from "lucide-react";
 import { BackToTop } from "@/components/BackToTop";
@@ -27,10 +27,13 @@ const ExtractDialog = lazy(() => import("@/components/ExtractDialog").then(m => 
 function App() {
   const config = useAppStore((s) => s.config);
   const history = useAppStore((s) => s.history);
+  const groups = useAppStore((s) => s.groups);
   const seqPointer = useAppStore((s) => s.seqPointer);
   const resetSeqPointer = useAppStore((s) => s.resetSeqPointer);
   const sourceFilter = useAppStore((s) => s.sourceFilter);
   const setSourceFilter = useAppStore((s) => s.setSourceFilter);
+  const groupFilter = useAppStore((s) => s.groupFilter);
+  const setGroupFilter = useAppStore((s) => s.setGroupFilter);
   const filterType = useAppStore((s) => s.filterType);
   const { toast } = useToast();
   const seqTotal = history.filter((h) => h.type === "text").length;
@@ -43,10 +46,10 @@ function App() {
   const [retrying, setRetrying] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeGroupId, setActiveGroupId] = useState("all");
+  const [moveToGroupItem, setMoveToGroupItem] = useState<HistoryItem | null>(null);
   const retryCleanupRef = useRef<(() => void) | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lenisRef = useRef<Lenis | null>(null);
-  const isTogglingRef = useRef(false);
   const sidebarOpenRef = useRef(false);
 
   useEffect(() => {
@@ -60,22 +63,35 @@ function App() {
 
   // 监听来自 api.ts 的 toast 通知（如自动清理）和首次提示
   useEffect(() => {
-    const handler = (e: Event) => {
+    const toastHandler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail?.message) toast(detail.message, detail.type || "info");
     };
-    window.addEventListener("app-toast", handler);
-    window.addEventListener("first-time-tip", handler);
-    return () => {
-      window.removeEventListener("app-toast", handler);
-      window.removeEventListener("first-time-tip", handler);
+    const moveToGroupHandler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.item) {
+        setMoveToGroupItem(detail.item);
+      }
     };
+    window.addEventListener("app-toast", toastHandler);
+    window.addEventListener("first-time-tip", toastHandler);
+    window.addEventListener("app-move-to-group", moveToGroupHandler);
+    return () => {
+      window.removeEventListener("app-toast", toastHandler);
+      window.removeEventListener("first-time-tip", toastHandler);
+      window.removeEventListener("app-move-to-group", moveToGroupHandler);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toast]);
 
   // 组件卸载时清理 retry 创建的监听器
   useEffect(() => {
     return () => { if (retryCleanupRef.current) retryCleanupRef.current(); };
   }, []);
+
+
+
+
 
   // 失焦自动隐藏（弹窗打开时跳过）—— 使用 useRef 避免闭包陷阱
   const dialogOpen = showSettings || showSnippets || showExtract;
@@ -116,20 +132,32 @@ function App() {
     };
   }, []);
 
-  // 侧边栏分组数据（从 history[].source 自动聚合来源分组）
+  // 侧边栏分组数据（从 history[].source 自动聚合来源分组 + 用户自定义分组）
   const sidebarGroups = useMemo<SidebarGroup[]>(() => {
     const ws = config.current_workspace;
     const wsItems = history.filter(h => h.workspace === ws);
     const pinnedCount = wsItems.filter(h => h.pinned).length;
+    const ungroupedCount = wsItems.filter(h => h.group_id == null).length;
 
-    // 内置分组：全部 + 收藏
+    // 内置分组：全部 + 收藏 + 未分组
     const builtin: SidebarGroup[] = [
-      { id: "all", name: "全部", count: wsItems.length, icon: "📋", isBuiltin: true },
-      { id: "starred", name: "收藏", count: pinnedCount, icon: "⭐", isBuiltin: true },
+      { id: "all", name: "全部", count: wsItems.length, icon: "📋", isBuiltin: true, section: "builtin" as const },
+      { id: "starred", name: "收藏", count: pinnedCount, icon: "⭐", isBuiltin: true, section: "builtin" as const },
+      { id: "ungrouped", name: "未分组", count: ungroupedCount, icon: "📂", isBuiltin: true, section: "builtin" as const },
     ];
 
+    // 用户自定义分组
+    const userGroupItems: SidebarGroup[] = groups.map(g => ({
+      id: g.id,
+      name: g.name,
+      count: wsItems.filter(h => h.group_id === g.id).length,
+      color: g.color,
+      isBuiltin: false,
+      isUserGroup: true,
+      section: "user" as const,
+    }));
+
     // 来源分组：从 source 字段聚合，清洗名称 + 映射图标，按计数降序排列
-    // id 保留原始 source（用于精确筛选匹配），name 用清洗后的显示名
     const sourceCountMap = new Map<string, { count: number; cleaned: string }>();
     wsItems.forEach(h => {
       if (h.source) {
@@ -141,7 +169,7 @@ function App() {
         }
       }
     });
-    const dotColors = ["dot-blue", "dot-green", "dot-orange", "dot-purple", "dot-red", "dot-pink", "dot-teal", "dot-amber", "dot-indigo"];
+    const dotColors = ["#3B82F6", "#22C55E", "#F97316", "#A855F7", "#EF4444", "#EC4899", "#14B8A6", "#F59E0B", "#6366F1"];
     const sourceGroups: SidebarGroup[] = Array.from(sourceCountMap.entries())
       .sort((a, b) => b[1].count - a[1].count)
       .map(([raw, { count, cleaned }], i) => ({
@@ -151,68 +179,107 @@ function App() {
         icon: getSourceIcon(raw),
         color: dotColors[i % dotColors.length],
         isBuiltin: false,
+        section: "source" as const,
       }));
 
-    return [...builtin, ...sourceGroups];
-  }, [history, config.current_workspace]);
+    return [...builtin, ...userGroupItems, ...sourceGroups];
+  }, [history, config.current_workspace, groups]);
 
-  // 侧边栏分组点击 → 同步设置 sourceFilter（筛选逻辑已在 appStore.getFilteredItems 中实现）
+  // 侧边栏分组点击 → 同步筛选状态
   const handleSelectGroup = useCallback((groupId: string) => {
     setActiveGroupId(groupId);
     if (groupId === "all") {
       setSourceFilter("");
+      setGroupFilter("all");
       useAppStore.getState().setFilterType("all");
     } else if (groupId === "starred") {
       setSourceFilter("");
+      setGroupFilter("all");
       useAppStore.getState().setFilterType("pinned");
+    } else if (groupId === "ungrouped") {
+      setSourceFilter("");
+      useAppStore.getState().setFilterType("all");
+      setGroupFilter("ungrouped");
     } else if (groupId.startsWith("source:")) {
       const source = groupId.slice(7);
+      setGroupFilter("all");
       useAppStore.getState().setFilterType("all");
       setSourceFilter(source);
+    } else {
+      // 用户自定义分组 ID
+      setSourceFilter("");
+      useAppStore.getState().setFilterType("all");
+      setGroupFilter(groupId);
     }
-  }, [setSourceFilter]);
+  }, [setSourceFilter, setGroupFilter]);
 
-  // 当 TopBar 筛选变化时，同步 activeGroupId（保持 Sidebar 高亮一致）
+  // 分组操作回调
+  const handleCreateGroup = useCallback(async (name: string, color: string, icon: string) => {
+    const g = await createGroup(name, color, icon);
+    if (g) {
+      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已创建分组「${name}」`, type: "success" } }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleRenameGroup = useCallback(async (id: string, name: string) => {
+    const group = groups.find(g => g.id === id);
+    if (!group) return;
+    await updateGroup(id, name, group.color, group.icon);
+  }, [groups]);
+
+  const handleDeleteGroup = useCallback(async (id: string) => {
+    const group = groups.find(g => g.id === id);
+    if (!group) return;
+    await deleteGroupApi(id);
+    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已删除分组「${group.name}」`, type: "info" } }));
+  }, [groups]);
+
+  const handleChangeGroupColor = useCallback(async (id: string, color: string) => {
+    const group = groups.find(g => g.id === id);
+    if (!group) return;
+    await updateGroup(id, group.name, color, group.icon);
+  }, [groups]);
+
+  // 移动到分组（api.ts 的 moveToGroup 接收 historyIds: string[]）
+  const handleMoveToGroup = useCallback(async (groupId: string | null) => {
+    if (!moveToGroupItem) return;
+    await moveToGroup([moveToGroupItem.id], groupId);
+    if (groupId) {
+      const group = groups.find(g => g.id === groupId);
+      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已移动到「${group?.name || groupId}」`, type: "success" } }));
+    } else {
+      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已移除分组", type: "success" } }));
+    }
+    setMoveToGroupItem(null);
+  }, [moveToGroupItem, groups]);
+
+  // 当筛选状态变化时，同步 activeGroupId（保持 Sidebar 高亮一致）
   useEffect(() => {
     if (filterType === "pinned") {
       setActiveGroupId("starred");
       return;
     }
+    if (groupFilter === "ungrouped") {
+      setActiveGroupId("ungrouped");
+      return;
+    }
+    if (groupFilter && groupFilter !== "all") {
+      setActiveGroupId(groupFilter);
+      return;
+    }
     if (sourceFilter) {
       setActiveGroupId(`source:${sourceFilter}`);
-    } else {
-      setActiveGroupId("all");
+      return;
     }
-  }, [sourceFilter, filterType]);
+    setActiveGroupId("all");
+  }, [sourceFilter, filterType, groupFilter]);
 
-  // 侧边栏切换 — CSS transition + Rust 原生窗口动画
-  // Rust 端 animate_window_width 在原生线程逐帧 setSize，无 IPC 抖动
-  const toggleSidebar = useCallback(async () => {
-    if (isTogglingRef.current) return;
-    isTogglingRef.current = true;
-
+  // 侧边栏切换 — 纯 CSS transition，窗口宽度不变
+  const toggleSidebar = useCallback(() => {
     const nextOpen = !sidebarOpenRef.current;
     sidebarOpenRef.current = nextOpen;
-
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const startW = nextOpen ? 480 : 680;
-      const endW = nextOpen ? 680 : 480;
-
-      // CSS transition 和 Rust 原生动画同时启动
-      setSidebarOpen(nextOpen);
-      // 不 await，让 Rust 后台线程和 CSS 并行运行
-      invoke("animate_window_width", { startW, endW, durationMs: 350 }).catch((e: unknown) =>
-        logger.warn("窗口动画失败", e)
-      );
-    } catch (e) {
-      logger.warn("侧边栏切换失败", e);
-    } finally {
-      // 动画 350ms 结束后才能再次切换
-      setTimeout(() => {
-        isTogglingRef.current = false;
-      }, 400);
-    }
+    setSidebarOpen(nextOpen);
   }, []);
 
   // 监听托盘菜单事件
@@ -503,10 +570,14 @@ function App() {
             groups={sidebarGroups}
             onSelectGroup={handleSelectGroup}
             onClose={toggleSidebar}
+            onCreateGroup={handleCreateGroup}
+            onRenameGroup={handleRenameGroup}
+            onDeleteGroup={handleDeleteGroup}
+            onChangeGroupColor={handleChangeGroupColor}
           />
           <div className={appStyles.cardPanel}>
             <ScrollProvider scrollRef={scrollRef} lenisRef={lenisRef}>
-              <CardList scrollRef={scrollRef} lenisRef={lenisRef} />
+              <CardList scrollRef={scrollRef} lenisRef={lenisRef} showMoveToGroup />
               <BackToTop />
             </ScrollProvider>
 
@@ -525,6 +596,53 @@ function App() {
           </div>
         </div>
         <QuickPreview />
+
+        {/* 移动到分组选择弹窗 */}
+        <AnimatePresence>
+          {moveToGroupItem && (
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="dialog-backdrop" style={{ zIndex: 100 }} onClick={() => setMoveToGroupItem(null)}
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 16 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 16 }}
+                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                className="dialog-box" style={{ maxWidth: 300 }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="dialog-header">
+                  <h2 className="dialog-title">📂 移动到分组</h2>
+                  <button className="dialog-close" onClick={() => setMoveToGroupItem(null)}><X size={14} /></button>
+                </div>
+                <div className="dialog-body" style={{ padding: "8px 0" }}>
+                  <button
+                    className={`${appStyles.moveGroupItem}`}
+                    onClick={() => handleMoveToGroup(null)}
+                    style={{ width: "100%", textAlign: "left", padding: "10px 16px", border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 13, display: "flex", alignItems: "center", gap: 10, borderRadius: 0 }}
+                  >
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#9CA3AF", flexShrink: 0 }} />
+                    移除分组
+                  </button>
+                  {groups.map((g) => (
+                    <button
+                      key={g.id}
+                      className={`${appStyles.moveGroupItem}`}
+                      onClick={() => handleMoveToGroup(g.id)}
+                      style={{ width: "100%", textAlign: "left", padding: "10px 16px", border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 13, display: "flex", alignItems: "center", gap: 10, borderRadius: 0, transition: "background 0.1s" }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                    >
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: g.color, flexShrink: 0 }} />
+                      {g.name}
+                    </button>
+                  ))}
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <Suspense fallback={null}>
           <ErrorBoundary fallback={null} componentName="设置面板">

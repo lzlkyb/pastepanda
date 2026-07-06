@@ -19,6 +19,28 @@ pub struct HistoryItem {
     pub md5: Option<String>,
     #[serde(default)]
     pub pinyin_initials: Option<String>,
+    #[serde(default)]
+    pub group_id: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<Tag>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Group {
+    pub id: String,
+    pub name: String,
+    pub color: String,
+    pub icon: String,
+    pub sort_order: i32,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Tag {
+    pub id: String,
+    pub name: String,
+    pub color: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,6 +95,30 @@ impl DataStore {
                 name TEXT NOT NULL,
                 content TEXT NOT NULL,
                 tag TEXT NOT NULL DEFAULT ''
+            );
+
+            CREATE TABLE IF NOT EXISTS groups (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                color TEXT NOT NULL DEFAULT '#3B82F6',
+                icon TEXT NOT NULL DEFAULT 'folder',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS tags (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                color TEXT NOT NULL DEFAULT '#3B82F6',
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS history_tags (
+                history_id TEXT NOT NULL,
+                tag_id TEXT NOT NULL,
+                PRIMARY KEY (history_id, tag_id),
+                FOREIGN KEY (history_id) REFERENCES history(id) ON DELETE CASCADE,
+                FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
             );",
         )?;
 
@@ -107,6 +153,23 @@ impl DataStore {
                 conn.execute_batch("ALTER TABLE snippets ADD COLUMN tag TEXT NOT NULL DEFAULT '';")
             {
                 log::warn!("[DataStore] 添加 snippets.tag 列失败: {}", e);
+            }
+        }
+
+        // 数据库迁移：为旧 history 表添加 group_id 列（如果不存在）
+        let has_group_id: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('history') WHERE name = 'group_id'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_group_id {
+            if let Err(e) =
+                conn.execute_batch("ALTER TABLE history ADD COLUMN group_id TEXT;")
+            {
+                log::warn!("[DataStore] 添加 group_id 列失败: {}", e);
             }
         }
 
@@ -145,7 +208,7 @@ impl DataStore {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
 
         let mut sql = String::from(
-            "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials
+            "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id
              FROM history WHERE workspace = ?1",
         );
         let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> =
@@ -172,25 +235,33 @@ impl DataStore {
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
             params_vec.iter().map(|p| p.as_ref()).collect();
 
-        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-        let items = stmt
-            .query_map(param_refs.as_slice(), |row| {
-                Ok(HistoryItem {
-                    id: row.get(0)?,
-                    text: row.get(1)?,
-                    time: row.get(2)?,
-                    item_type: row.get(3)?,
-                    content: row.get(4)?,
-                    pinned: row.get::<_, i32>(5)? != 0,
-                    source: row.get(6)?,
-                    workspace: row.get(7)?,
-                    md5: row.get(8)?,
-                    pinyin_initials: row.get(9)?,
+        let mut items: Vec<HistoryItem> = {
+            let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+            let result: Vec<HistoryItem> = stmt
+                .query_map(param_refs.as_slice(), |row| {
+                    Ok(HistoryItem {
+                        id: row.get(0)?,
+                        text: row.get(1)?,
+                        time: row.get(2)?,
+                        item_type: row.get(3)?,
+                        content: row.get(4)?,
+                        pinned: row.get::<_, i32>(5)? != 0,
+                        source: row.get(6)?,
+                        workspace: row.get(7)?,
+                        md5: row.get(8)?,
+                        pinyin_initials: row.get(9)?,
+                        group_id: row.get(10)?,
+                        tags: Vec::new(),
+                    })
                 })
-            })
-            .map_err(|e| e.to_string())?
-            .filter_map(|r| r.ok())
-            .collect();
+                .map_err(|e| e.to_string())?
+                .filter_map(|r| r.ok())
+                .collect();
+            drop(stmt);
+            result
+        };
+        drop(conn);
+        self.load_tags_into_items(&mut items)?;
 
         Ok(items)
     }
@@ -198,38 +269,46 @@ impl DataStore {
     /// 获取最近 N 条记录（按时间倒序，用于托盘菜单快速预览）
     pub fn get_recent_items(&self, limit: u32) -> Result<Vec<HistoryItem>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials
-                 FROM history ORDER BY time DESC LIMIT ?1",
-            )
-            .map_err(|e| e.to_string())?;
-        let items = stmt
-            .query_map(params![limit], |row| {
-                Ok(HistoryItem {
-                    id: row.get(0)?,
-                    text: row.get(1)?,
-                    time: row.get(2)?,
-                    item_type: row.get(3)?,
-                    content: row.get(4)?,
-                    pinned: row.get::<_, i32>(5)? != 0,
-                    source: row.get(6)?,
-                    workspace: row.get(7)?,
-                    md5: row.get(8)?,
-                    pinyin_initials: row.get(9)?,
+        let mut items: Vec<HistoryItem> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id
+                     FROM history ORDER BY time DESC LIMIT ?1",
+                )
+                .map_err(|e| e.to_string())?;
+            let result: Vec<HistoryItem> = stmt
+                .query_map(params![limit], |row| {
+                    Ok(HistoryItem {
+                        id: row.get(0)?,
+                        text: row.get(1)?,
+                        time: row.get(2)?,
+                        item_type: row.get(3)?,
+                        content: row.get(4)?,
+                        pinned: row.get::<_, i32>(5)? != 0,
+                        source: row.get(6)?,
+                        workspace: row.get(7)?,
+                        md5: row.get(8)?,
+                        pinyin_initials: row.get(9)?,
+                        group_id: row.get(10)?,
+                        tags: Vec::new(),
+                    })
                 })
-            })
-            .map_err(|e| e.to_string())?
-            .filter_map(|r| r.ok())
-            .collect();
+                .map_err(|e| e.to_string())?
+                .filter_map(|r| r.ok())
+                .collect();
+            drop(stmt);
+            result
+        };
+        drop(conn);
+        self.load_tags_into_items(&mut items)?;
         Ok(items)
     }
 
     pub fn insert_history(&self, item: &HistoryItem) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT OR REPLACE INTO history (id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT OR REPLACE INTO history (id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 item.id,
                 item.text,
@@ -241,6 +320,7 @@ impl DataStore {
                 item.workspace,
                 item.md5,
                 item.pinyin_initials,
+                item.group_id,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -268,7 +348,7 @@ impl DataStore {
     pub fn find_latest_by_md5(&self, md5: &str) -> Result<Option<HistoryItem>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let result = conn.query_row(
-            "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials
+            "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id
              FROM history WHERE md5 = ?1 AND type = 'text'
              ORDER BY time DESC LIMIT 1",
             params![md5],
@@ -284,11 +364,17 @@ impl DataStore {
                     workspace: row.get(7)?,
                     md5: row.get(8)?,
                     pinyin_initials: row.get(9)?,
+                    group_id: row.get(10)?,
+                    tags: Vec::new(),
                 })
             },
         );
+        drop(conn);
         match result {
-            Ok(item) => Ok(Some(item)),
+            Ok(mut item) => {
+                self.load_tags_into_items(std::slice::from_mut(&mut item))?;
+                Ok(Some(item))
+            }
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e.to_string()),
         }
@@ -374,27 +460,37 @@ impl DataStore {
         };
         let cutoff = chrono::Local::now() - chrono::Duration::days(days as i64);
         let cutoff_str = cutoff.format("%Y-%m-%d %H:%M:%S").to_string();
-        let mut stmt = conn.prepare(
-            "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials
-             FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2",
-        ).map_err(|e| e.to_string())?;
-        let rows = stmt
-            .query_map(params![workspace, cutoff_str], |row| {
-                Ok(HistoryItem {
-                    id: row.get(0)?,
-                    text: row.get(1)?,
-                    time: row.get(2)?,
-                    item_type: row.get(3)?,
-                    content: row.get(4)?,
-                    pinned: row.get::<_, i32>(5)? != 0,
-                    source: row.get(6)?,
-                    workspace: row.get(7)?,
-                    md5: row.get(8)?,
-                    pinyin_initials: row.get(9)?,
+        let mut items: Vec<HistoryItem> = {
+            let mut stmt = conn.prepare(
+                "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id
+                 FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2",
+            ).map_err(|e| e.to_string())?;
+            let result: Vec<HistoryItem> = stmt
+                .query_map(params![workspace, cutoff_str], |row| {
+                    Ok(HistoryItem {
+                        id: row.get(0)?,
+                        text: row.get(1)?,
+                        time: row.get(2)?,
+                        item_type: row.get(3)?,
+                        content: row.get(4)?,
+                        pinned: row.get::<_, i32>(5)? != 0,
+                        source: row.get(6)?,
+                        workspace: row.get(7)?,
+                        md5: row.get(8)?,
+                        pinyin_initials: row.get(9)?,
+                        group_id: row.get(10)?,
+                        tags: Vec::new(),
+                    })
                 })
-            })
-            .map_err(|e| e.to_string())?;
-        Ok(rows.filter_map(|r| r.ok()).collect())
+                .map_err(|e| e.to_string())?
+                .filter_map(|r| r.ok())
+                .collect();
+            drop(stmt);
+            result
+        };
+        drop(conn);
+        self.load_tags_into_items(&mut items)?;
+        Ok(items)
     }
 
     pub fn clear_history(&self, workspace: &str, before_days: Option<u32>) -> Result<u32, String> {
@@ -615,8 +711,8 @@ impl DataStore {
             for item in items {
                 let affected = conn
                     .execute(
-                        "INSERT OR IGNORE INTO history (id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                        "INSERT OR IGNORE INTO history (id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                         params![
                             item.id,
                             item.text,
@@ -628,6 +724,7 @@ impl DataStore {
                             item.workspace,
                             item.md5,
                             item.pinyin_initials,
+                            item.group_id,
                         ],
                     )
                     .map_err(|e| e.to_string())?;
@@ -705,31 +802,390 @@ impl DataStore {
     /// 获取全部历史记录（用于导出，无分页限制）
     pub fn get_all_history(&self, workspace: &str) -> Result<Vec<HistoryItem>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut items: Vec<HistoryItem> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id
+                     FROM history WHERE workspace = ?1 ORDER BY time DESC",
+                )
+                .map_err(|e| e.to_string())?;
+            let result: Vec<HistoryItem> = stmt
+                .query_map(params![workspace], |row| {
+                    Ok(HistoryItem {
+                        id: row.get(0)?,
+                        text: row.get(1)?,
+                        time: row.get(2)?,
+                        item_type: row.get(3)?,
+                        content: row.get(4)?,
+                        pinned: row.get::<_, i32>(5)? != 0,
+                        source: row.get(6)?,
+                        workspace: row.get(7)?,
+                        md5: row.get(8)?,
+                        pinyin_initials: row.get(9)?,
+                        group_id: row.get(10)?,
+                        tags: Vec::new(),
+                    })
+                })
+                .map_err(|e| e.to_string())?
+                .filter_map(|r| r.ok())
+                .collect();
+            drop(stmt);
+            result
+        };
+        drop(conn);
+        self.load_tags_into_items(&mut items)?;
+        Ok(items)
+    }
+
+    // ===== 分组 CRUD =====
+
+    pub fn get_groups(&self) -> Result<Vec<Group>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
-            .prepare(
-                "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials
-                 FROM history WHERE workspace = ?1 ORDER BY time DESC",
-            )
+            .prepare("SELECT id, name, color, icon, sort_order, created_at FROM groups ORDER BY sort_order ASC")
             .map_err(|e| e.to_string())?;
         let items = stmt
-            .query_map(params![workspace], |row| {
-                Ok(HistoryItem {
+            .query_map([], |row| {
+                Ok(Group {
                     id: row.get(0)?,
-                    text: row.get(1)?,
-                    time: row.get(2)?,
-                    item_type: row.get(3)?,
-                    content: row.get(4)?,
-                    pinned: row.get::<_, i32>(5)? != 0,
-                    source: row.get(6)?,
-                    workspace: row.get(7)?,
-                    md5: row.get(8)?,
-                    pinyin_initials: row.get(9)?,
+                    name: row.get(1)?,
+                    color: row.get(2)?,
+                    icon: row.get(3)?,
+                    sort_order: row.get(4)?,
+                    created_at: row.get(5)?,
                 })
             })
             .map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
             .collect();
         Ok(items)
+    }
+
+    pub fn create_group(&self, name: &str, color: &str, icon: &str) -> Result<Group, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        // 获取最大 sort_order
+        let max_order: i32 = conn
+            .query_row("SELECT COALESCE(MAX(sort_order), -1) FROM groups", [], |row| row.get(0))
+            .unwrap_or(-1);
+        let sort_order = max_order + 1;
+        conn.execute(
+            "INSERT INTO groups (id, name, color, icon, sort_order, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, name, color, icon, sort_order, now],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(Group {
+            id,
+            name: name.to_string(),
+            color: color.to_string(),
+            icon: icon.to_string(),
+            sort_order,
+            created_at: now,
+        })
+    }
+
+    pub fn update_group(&self, id: &str, name: &str, color: &str, icon: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let affected = conn
+            .execute(
+                "UPDATE groups SET name = ?1, color = ?2, icon = ?3 WHERE id = ?4",
+                params![name, color, icon, id],
+            )
+            .map_err(|e| e.to_string())?;
+        if affected == 0 {
+            return Err("分组不存在".to_string());
+        }
+        Ok(())
+    }
+
+    pub fn delete_group(&self, id: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        let result = (|| -> Result<(), String> {
+            // 将该分组的记录的 group_id 置为 NULL
+            conn.execute(
+                "UPDATE history SET group_id = NULL WHERE group_id = ?1",
+                params![id],
+            )
+            .map_err(|e| e.to_string())?;
+            // 删除分组
+            conn.execute("DELETE FROM groups WHERE id = ?1", params![id])
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                Ok(())
+            }
+            Err(e) => {
+                conn.execute_batch("ROLLBACK;").ok();
+                Err(e)
+            }
+        }
+    }
+
+    pub fn reorder_groups(&self, ids: &[String]) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        let result = (|| -> Result<(), String> {
+            for (i, id) in ids.iter().enumerate() {
+                conn.execute(
+                    "UPDATE groups SET sort_order = ?1 WHERE id = ?2",
+                    params![i as i32, id],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                Ok(())
+            }
+            Err(e) => {
+                conn.execute_batch("ROLLBACK;").ok();
+                Err(e)
+            }
+        }
+    }
+
+    pub fn move_to_group(&self, history_ids: &[String], group_id: Option<&str>) -> Result<u32, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let placeholders: Vec<String> = history_ids
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", i + 2))
+            .collect();
+        let sql = format!(
+            "UPDATE history SET group_id = ?1 WHERE id IN ({})",
+            placeholders.join(",")
+        );
+        let mut param_refs: Vec<Box<dyn rusqlite::types::ToSql>> = vec![];
+        param_refs.push(Box::new(group_id.map(|s| s.to_string())));
+        for id in history_ids {
+            param_refs.push(Box::new(id.clone()));
+        }
+        let params: Vec<&dyn rusqlite::types::ToSql> = param_refs.iter().map(|p| p.as_ref()).collect();
+        let affected = conn.execute(&sql, params.as_slice()).map_err(|e| e.to_string())?;
+        Ok(affected as u32)
+    }
+
+    // ===== 标签 CRUD =====
+
+    pub fn get_tags(&self) -> Result<Vec<Tag>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT id, name, color, created_at FROM tags ORDER BY name ASC")
+            .map_err(|e| e.to_string())?;
+        let items = stmt
+            .query_map([], |row| {
+                Ok(Tag {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    color: row.get(2)?,
+                    created_at: row.get(3)?,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(items)
+    }
+
+    pub fn create_tag(&self, name: &str, color: &str) -> Result<Tag, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        conn.execute(
+            "INSERT INTO tags (id, name, color, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![id, name, color, now],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(Tag {
+            id,
+            name: name.to_string(),
+            color: color.to_string(),
+            created_at: now,
+        })
+    }
+
+    pub fn update_tag(&self, id: &str, name: &str, color: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let affected = conn
+            .execute(
+                "UPDATE tags SET name = ?1, color = ?2 WHERE id = ?3",
+                params![name, color, id],
+            )
+            .map_err(|e| e.to_string())?;
+        if affected == 0 {
+            return Err("标签不存在".to_string());
+        }
+        Ok(())
+    }
+
+    pub fn delete_tag(&self, id: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        let result = (|| -> Result<(), String> {
+            conn.execute("DELETE FROM history_tags WHERE tag_id = ?1", params![id])
+                .map_err(|e| e.to_string())?;
+            conn.execute("DELETE FROM tags WHERE id = ?1", params![id])
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                Ok(())
+            }
+            Err(e) => {
+                conn.execute_batch("ROLLBACK;").ok();
+                Err(e)
+            }
+        }
+    }
+
+    pub fn set_item_tags(&self, history_id: &str, tag_ids: &[String]) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        let result = (|| -> Result<(), String> {
+            // 先删除旧关联
+            conn.execute(
+                "DELETE FROM history_tags WHERE history_id = ?1",
+                params![history_id],
+            )
+            .map_err(|e| e.to_string())?;
+            // 插入新关联
+            for tag_id in tag_ids {
+                conn.execute(
+                    "INSERT OR IGNORE INTO history_tags (history_id, tag_id) VALUES (?1, ?2)",
+                    params![history_id, tag_id],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                Ok(())
+            }
+            Err(e) => {
+                conn.execute_batch("ROLLBACK;").ok();
+                Err(e)
+            }
+        }
+    }
+
+    pub fn add_item_tags(&self, history_ids: &[String], tag_ids: &[String]) -> Result<u32, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut count = 0u32;
+        for history_id in history_ids {
+            for tag_id in tag_ids {
+                let affected = conn
+                    .execute(
+                        "INSERT OR IGNORE INTO history_tags (history_id, tag_id) VALUES (?1, ?2)",
+                        params![history_id, tag_id],
+                    )
+                    .map_err(|e| e.to_string())?;
+                count += affected as u32;
+            }
+        }
+        Ok(count)
+    }
+
+    pub fn remove_item_tags(&self, history_ids: &[String], tag_ids: &[String]) -> Result<u32, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let placeholders_h: Vec<String> = history_ids
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", i + 1))
+            .collect();
+        let placeholders_t: Vec<String> = tag_ids
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", i + 1 + history_ids.len()))
+            .collect();
+        let sql = format!(
+            "DELETE FROM history_tags WHERE history_id IN ({}) AND tag_id IN ({})",
+            placeholders_h.join(","),
+            placeholders_t.join(","),
+        );
+        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = vec![];
+        for id in history_ids {
+            params_vec.push(Box::new(id.clone()));
+        }
+        for id in tag_ids {
+            params_vec.push(Box::new(id.clone()));
+        }
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let affected = conn.execute(&sql, param_refs.as_slice()).map_err(|e| e.to_string())?;
+        Ok(affected as u32)
+    }
+
+    pub fn get_items_with_tags(&self, history_ids: &[String]) -> Result<Vec<(String, Vec<Tag>)>, String> {
+        if history_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let placeholders: Vec<String> = history_ids
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", i + 1))
+            .collect();
+        let sql = format!(
+            "SELECT ht.history_id, t.id, t.name, t.color, t.created_at
+             FROM history_tags ht
+             JOIN tags t ON t.id = ht.tag_id
+             WHERE ht.history_id IN ({})
+             ORDER BY t.name ASC",
+            placeholders.join(","),
+        );
+        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = vec![];
+        for id in history_ids {
+            params_vec.push(Box::new(id.clone()));
+        }
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(param_refs.as_slice(), |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    Tag {
+                        id: row.get(1)?,
+                        name: row.get(2)?,
+                        color: row.get(3)?,
+                        created_at: row.get(4)?,
+                    },
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut map: std::collections::HashMap<String, Vec<Tag>> = std::collections::HashMap::new();
+        for row in rows {
+            if let Ok((history_id, tag)) = row {
+                map.entry(history_id).or_default().push(tag);
+            }
+        }
+        Ok(map.into_iter().collect())
+    }
+
+    /// 批量加载 items 的标签并填充到 tags 字段
+    fn load_tags_into_items(&self, items: &mut [HistoryItem]) -> Result<(), String> {
+        if items.is_empty() {
+            return Ok(());
+        }
+        let ids: Vec<String> = items.iter().map(|i| i.id.clone()).collect();
+        let tags_map = self.get_items_with_tags(&ids)?;
+        let tag_map: std::collections::HashMap<String, Vec<Tag>> = tags_map.into_iter().collect();
+        for item in items.iter_mut() {
+            if let Some(tags) = tag_map.get(&item.id) {
+                item.tags = tags.clone();
+            }
+        }
+        Ok(())
     }
 }
 

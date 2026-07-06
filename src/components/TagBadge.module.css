@@ -1,0 +1,35 @@
+.row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  border: 1px solid;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: filter 0.15s;
+  line-height: 18px;
+  user-select: none;
+}
+
+.badge:hover {
+  filter: brightness(0.9);
+}
+
+.more {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 500;
+  flex-shrink: 0;
+  padding: 1px 4px;
+}

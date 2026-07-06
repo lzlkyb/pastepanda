@@ -1,18 +1,13 @@
 /* App.module.css — App.tsx 专用样式 */
-/* 根布局容器 — width 由 CSS transition 驱动（GPU 加速），JS 帧动画只负责 setSize */
+/* 根布局容器 — width: 100% 自适应窗口大小，Rust 端 setSize 控制窗口尺寸 */
 .appShell {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  width: 480px;
+  width: 100%;
   background: var(--app-bg);
   color: var(--text-primary);
   overflow: hidden;
-  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.appShell.sidebarExpanded {
-  width: 680px;
 }
 
 /* 内容区：侧边栏 + 卡片面板，TopBar 下方平齐 */
@@ -23,7 +18,7 @@
   min-height: 0;
 }
 
-/* 卡片面板 — flex:1 自动维持 480px（appShell width - sidebar width） */
+/* 卡片面板 — flex:1 自动填充剩余空间（窗口宽度 - sidebar 180px） */
 .cardPanel {
   flex: 1;
   min-width: 0;

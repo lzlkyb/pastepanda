@@ -1,4 +1,4 @@
-use crate::data_store::{DataStore, HistoryItem, Snippet, Stats};
+use crate::data_store::{DataStore, Group, HistoryItem, Snippet, Stats, Tag};
 use crate::paste_engine::PasteEngine;
 use tauri::{Emitter, Manager, State};
 
@@ -252,40 +252,6 @@ pub fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn exit_app(app: tauri::AppHandle) {
     app.exit(0);
-}
-
-/// 窗口宽度动画 — Rust 原生线程逐帧 setSize，无 JS↔Rust IPC 开销
-/// CSS transition 和此命令同时启动，视觉效果丝滑
-#[tauri::command]
-pub async fn animate_window_width(
-    app: tauri::AppHandle,
-    start_w: f64,
-    end_w: f64,
-    duration_ms: u64,
-) -> Result<(), String> {
-    let Some(window) = app.get_webview_window("main") else {
-        return Err("主窗口不存在".to_string());
-    };
-
-    let frame_interval = 16u64; // ~60fps
-    let total_frames = duration_ms / frame_interval;
-
-    for i in 0..=total_frames {
-        let progress = i as f64 / total_frames as f64;
-        // easeOutCubic: 1 - (1-t)³，与 CSS cubic-bezier(0.4,0,0.2,1) 对齐
-        let eased = 1.0 - (1.0 - progress).powi(3);
-        let current_w = start_w + (end_w - start_w) * eased;
-
-        let _ = window.set_size(tauri::LogicalSize::new(current_w, 700.0));
-
-        if i < total_frames {
-            tokio::time::sleep(std::time::Duration::from_millis(frame_interval)).await;
-        }
-    }
-
-    // 确保精确对齐
-    let _ = window.set_size(tauri::LogicalSize::new(end_w, 700.0));
-    Ok(())
 }
 
 /// 导入历史记录
@@ -1041,4 +1007,113 @@ pub fn start_update(app: tauri::AppHandle) {
             );
         }
     });
+}
+
+// ===== 分组命令 =====
+
+#[tauri::command]
+pub fn get_groups(store: State<DataStore>) -> Result<Vec<Group>, String> {
+    store.get_groups()
+}
+
+#[tauri::command]
+pub fn create_group(
+    store: State<DataStore>,
+    name: String,
+    color: String,
+    icon: String,
+) -> Result<Group, String> {
+    store.create_group(&name, &color, &icon)
+}
+
+#[tauri::command]
+pub fn update_group(
+    store: State<DataStore>,
+    id: String,
+    name: String,
+    color: String,
+    icon: String,
+) -> Result<(), String> {
+    store.update_group(&id, &name, &color, &icon)
+}
+
+#[tauri::command]
+pub fn delete_group(store: State<DataStore>, id: String) -> Result<(), String> {
+    store.delete_group(&id)
+}
+
+#[tauri::command]
+pub fn reorder_groups(store: State<DataStore>, ids: Vec<String>) -> Result<(), String> {
+    store.reorder_groups(&ids)
+}
+
+#[tauri::command]
+pub fn move_to_group(
+    store: State<DataStore>,
+    history_ids: Vec<String>,
+    group_id: Option<String>,
+) -> Result<u32, String> {
+    store.move_to_group(&history_ids, group_id.as_deref())
+}
+
+// ===== 标签命令 =====
+
+#[tauri::command]
+pub fn get_tags(store: State<DataStore>) -> Result<Vec<Tag>, String> {
+    store.get_tags()
+}
+
+#[tauri::command]
+pub fn create_tag(store: State<DataStore>, name: String, color: String) -> Result<Tag, String> {
+    store.create_tag(&name, &color)
+}
+
+#[tauri::command]
+pub fn update_tag(
+    store: State<DataStore>,
+    id: String,
+    name: String,
+    color: String,
+) -> Result<(), String> {
+    store.update_tag(&id, &name, &color)
+}
+
+#[tauri::command]
+pub fn delete_tag(store: State<DataStore>, id: String) -> Result<(), String> {
+    store.delete_tag(&id)
+}
+
+#[tauri::command]
+pub fn set_item_tags(
+    store: State<DataStore>,
+    history_id: String,
+    tag_ids: Vec<String>,
+) -> Result<(), String> {
+    store.set_item_tags(&history_id, &tag_ids)
+}
+
+#[tauri::command]
+pub fn add_item_tags(
+    store: State<DataStore>,
+    history_ids: Vec<String>,
+    tag_ids: Vec<String>,
+) -> Result<u32, String> {
+    store.add_item_tags(&history_ids, &tag_ids)
+}
+
+#[tauri::command]
+pub fn remove_item_tags(
+    store: State<DataStore>,
+    history_ids: Vec<String>,
+    tag_ids: Vec<String>,
+) -> Result<u32, String> {
+    store.remove_item_tags(&history_ids, &tag_ids)
+}
+
+#[tauri::command]
+pub fn get_items_with_tags(
+    store: State<DataStore>,
+    history_ids: Vec<String>,
+) -> Result<Vec<(String, Vec<Tag>)>, String> {
+    store.get_items_with_tags(&history_ids)
 }
