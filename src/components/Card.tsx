@@ -1,4 +1,4 @@
-import { memo, useState, useCallback, useContext, useRef, useEffect } from "react";
+import { memo, useState, useCallback, useContext, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
 import { relativeTime, detectTextType } from "@/lib/utils";
@@ -55,9 +55,11 @@ export const HighlightText = memo(function HighlightText({ text, highlight }: { 
   // 限制搜索词长度，防止过长正则导致性能问题
   const safeHighlight = highlight.trim().slice(0, 100);
   if (!safeHighlight) return <>{text}</>;
-  const escaped = safeHighlight.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // 不使用全局标志，避免 lastIndex 副作用；用 split 天然支持多段高亮
-  const regex = new RegExp(`(${escaped})`, "i");
+  // useMemo 缓存 RegExp，避免每次渲染重新编译
+  const regex = useMemo(() => {
+    const escaped = safeHighlight.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(${escaped})`, "i");
+  }, [safeHighlight]);
   const parts = text.split(regex);
   return (
     <>

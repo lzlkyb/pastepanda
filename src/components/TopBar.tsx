@@ -1,12 +1,13 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAppStore, FilterType, TimeFilter, SourceFilter, HistoryItem } from "@/stores/appStore";
+import { useAppStore, FilterType, TimeFilter, SourceFilter } from "@/stores/appStore";
 import { getAppVersion, getAppName, fetchCounts } from "@/lib/api";
 import { cleanSourceName, getSourceIcon } from "@/lib/utils";
 import { UpdateBadge } from "@/components/UpdateBadge";
 import { AppIcon } from "@/components/AppIcon";
+import { SearchBox } from "@/components/SearchBox";
 import { logger } from "@/lib/logger";
-import { X, ChevronDown } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import styles from "./TopBar.module.css";
 
 const TABS: { key: FilterType; label: string; icon: string }[] = [
@@ -58,17 +59,7 @@ export function TopBar({ onSettings, onSnippets, onExtract, onToggleSidebar, sid
   const setTimeFilter = useAppStore((s) => s.setTimeFilter);
   const sourceFilter = useAppStore((s) => s.sourceFilter);
   const setSourceFilter = useAppStore((s) => s.setSourceFilter);
-  const searchKeyword = useAppStore((s) => s.searchKeyword);
-  const setSearchKeyword = useAppStore((s) => s.setSearchKeyword);
-  const searchHistory = useAppStore((s) => s.searchHistory);
-  const addSearchHistory = useAppStore((s) => s.addSearchHistory);
-  const removeSearchHistory = useAppStore((s) => s.removeSearchHistory);
-  const clearSearchHistory = useAppStore((s) => s.clearSearchHistory);
   const ws = useAppStore((s) => s.config.current_workspace);
-  const history = useAppStore((s) => s.history);
-  const [focused, setFocused] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
-  const searchBoxRef = useRef<HTMLDivElement>(null);
   const [tabStyle, setTabStyle] = useState<TabStyle>(getTabStyle);
   const [appVersion, setAppVersion] = useState("...");
   const [appName, setAppName] = useState("PastePanda");
@@ -117,26 +108,6 @@ export function TopBar({ onSettings, onSnippets, onExtract, onToggleSidebar, sid
     return () => window.removeEventListener("storage", handler);
   }, []);
 
-  // 点击外部关闭搜索历史下拉
-  useEffect(() => {
-    if (!showHistory) return;
-    const handler = (e: MouseEvent) => {
-      if (searchBoxRef.current && !searchBoxRef.current.contains(e.target as Node)) {
-        setShowHistory(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showHistory]);
-
-  const handleSearchSubmit = useCallback((kw: string) => {
-    setSearchKeyword(kw);
-    if (kw.trim()) {
-      addSearchHistory(kw.trim());
-    }
-    setShowHistory(false);
-  }, [setSearchKeyword, addSearchHistory]);
-
   return (
     <div className={styles.header} data-tauri-drag-region role="banner">
       {/* 标题行 */}
@@ -171,60 +142,7 @@ export function TopBar({ onSettings, onSnippets, onExtract, onToggleSidebar, sid
 
       {/* 搜索框 + Tab 在同一个容器内，保证宽度完全一致 */}
       <div className={styles.headerControls}>
-        <div ref={searchBoxRef} className={`${styles.searchBox}${focused ? ` ${styles.focused}` : ""}${showHistory ? ` ${styles.hasHistory}` : ""}`} data-tauri-drag-region="false" style={{ position: "relative" }}>
-          <span className={styles.searchIcon}>🔍</span>
-          <input type="text" value={searchKeyword}
-            onChange={(e) => {
-              setSearchKeyword(e.target.value);
-              if (!e.target.value) setShowHistory(true);
-            }}
-            onFocus={() => { setFocused(true); setShowHistory(searchHistory.length > 0 && !searchKeyword); }}
-            onBlur={() => setFocused(false)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                handleSearchSubmit((e.target as HTMLInputElement).value);
-              }
-            }}
-            placeholder="搜索剪贴板... (Enter 搜索)"
-            className={styles.searchInput}
-            aria-label="搜索剪贴板内容"
-            aria-description="支持拼音首字母搜索" />
-          {searchKeyword && (
-            <button onClick={() => { setSearchKeyword(""); setShowHistory(searchHistory.length > 0); }} className={styles.searchClear}>
-              <X size={12} />
-            </button>
-          )}
-          {/* 搜索历史下拉 */}
-          <AnimatePresence>
-          {showHistory && searchHistory.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: -6, scale: 0.96 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -6, scale: 0.96 }}
-              transition={{ type: "spring", stiffness: 500, damping: 35 }}
-              className={styles.searchHistoryDropdown}>
-              <div className={styles.searchHistoryHeader}>
-                <span>最近搜索</span>
-                <button onClick={(e) => { e.stopPropagation(); clearSearchHistory(); setShowHistory(false); }} className={styles.searchHistoryClearAll}>清除全部</button>
-              </div>
-              {searchHistory.map((kw, i) => (
-                <div key={i} className={styles.searchHistoryItem}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    handleSearchSubmit(kw);
-                  }}>
-                  <span className={styles.searchHistoryItemIcon}>🕐</span>
-                  <span className={styles.searchHistoryText}>{kw}</span>
-                  <button className={styles.searchHistoryRemove}
-                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); removeSearchHistory(kw); }}>
-                    <X size={10} />
-                  </button>
-                </div>
-              ))}
-            </motion.div>
-          )}
-          </AnimatePresence>
-        </div>
+        <SearchBox />
 
         {/* Tab 区域 */}
         <div className={styles.tabsArea} data-tauri-drag-region="false">
@@ -259,7 +177,6 @@ export function TopBar({ onSettings, onSnippets, onExtract, onToggleSidebar, sid
           <SourceFilterDropdown
             value={sourceFilter}
             onChange={setSourceFilter}
-            history={history}
             workspace={ws}
           />
         </div>
@@ -383,11 +300,13 @@ function FilterDropdown<T extends string>({ label, value, options, onChange }: {
 }
 
 /* ===== 来源筛选下拉 ===== */
-function SourceFilterDropdown({ value, onChange, history, workspace }: {
-  value: SourceFilter; onChange: (v: SourceFilter) => void; history: HistoryItem[]; workspace: string;
+function SourceFilterDropdown({ value, onChange, workspace }: {
+  value: SourceFilter; onChange: (v: SourceFilter) => void; workspace: string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  // 只订阅 history.length 作为缓存失效信号，避免每次 history 变化都重渲染
+  const historyLen = useAppStore((s) => s.history.length);
 
   useEffect(() => {
     if (!open) return;
@@ -399,7 +318,9 @@ function SourceFilterDropdown({ value, onChange, history, workspace }: {
   }, [open]);
 
   // 收集当前工作空间下的所有来源应用（清洗名称 + 图标映射）
+  // historyLen 作为缓存失效信号
   const sources = useMemo(() => {
+    const history = useAppStore.getState().history;
     const map = new Map<string, { cleaned: string; icon?: string }>();
     history.filter((h) => h.workspace === workspace && h.source).forEach((h) => {
       if (!map.has(h.source)) {
@@ -408,7 +329,7 @@ function SourceFilterDropdown({ value, onChange, history, workspace }: {
     });
     return Array.from(map.entries())
       .sort((a, b) => a[1].cleaned.localeCompare(b[1].cleaned, "zh"));
-  }, [history, workspace]);
+  }, [historyLen, workspace]);
 
   // 当前选中来源的显示名称
   const activeLabel = useMemo(() => {

@@ -13,6 +13,8 @@ export interface HistoryItem {
   workspace: string;
   md5?: string;
   pinyin_initials?: string;
+  /** 预计算的时间戳（毫秒），避免 sort 中反复 new Date() */
+  timeStamp?: number;
 }
 
 export type FilterType = "all" | "text" | "image" | "file" | "pinned";
@@ -220,21 +222,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
   clearAll: () => set({ history: [], selectedIds: new Set(), focusId: null }),
 
-  // 搜索/筛选（带防抖）
+  // 搜索/筛选（防抖已在 TopBar 中处理，此处直接同步更新）
   setSearchKeyword: (kw) => {
-    // 清除之前的防抖定时器
-    const debounceKey = "__search_debounce__";
-    const prev = (window as unknown as Record<string, unknown>)[debounceKey] as number | undefined;
-    if (prev) clearTimeout(prev);
-    // 如果关键词为空，立即更新（清除搜索不需要防抖）
-    if (!kw) {
-      set({ searchKeyword: "", selectedIds: new Set(), focusId: null, lastClickedId: null });
-      return;
-    }
-    // 否则延迟 200ms 更新，并清除选中（搜索关键词变化时列表变了）
-    (window as unknown as Record<string, unknown>)[debounceKey] = window.setTimeout(() => {
-      set({ searchKeyword: kw, selectedIds: new Set(), focusId: null, lastClickedId: null });
-    }, 200);
+    set({ searchKeyword: kw, selectedIds: new Set(), focusId: null, lastClickedId: null });
   },
   setFilterType: (ft) => set({ filterType: ft, selectedIds: new Set(), focusId: null, lastClickedId: null }),
   setTimeFilter: (tf) => set({ timeFilter: tf, selectedIds: new Set(), focusId: null, lastClickedId: null }),
@@ -328,29 +318,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     const ws = config.current_workspace;
-    let items = history.filter((h) => h.workspace === ws);
+    const kw = searchKeyword ? searchKeyword.toLowerCase() : "";
+    const now = Date.now();
 
-    // 搜索过滤（同时匹配文本和拼音首字母）
-    if (searchKeyword) {
-      const kw = searchKeyword.toLowerCase();
-      items = items.filter((h) =>
-        h.text.toLowerCase().includes(kw) ||
-        (h.pinyin_initials && h.pinyin_initials.toLowerCase().includes(kw))
-      );
-    }
-
-    // 类型过滤
-    if (filterType === "pinned") {
-      items = items.filter((h) => h.pinned);
-    } else if (filterType !== "all") {
-      items = items.filter((h) => h.type === filterType);
-    }
-
-    // 时间范围过滤
+    // 预计算时间截止线
+    let cutoff = 0;
     if (timeFilter !== "all") {
-      const now = Date.now();
       const msInDay = 86400000;
-      let cutoff: number;
       if (timeFilter === "today") {
         const startOfDay = new Date();
         startOfDay.setHours(0, 0, 0, 0);
@@ -359,24 +333,54 @@ export const useAppStore = create<AppState>((set, get) => ({
         cutoff = now - 7 * msInDay;
       } else if (timeFilter === "month") {
         cutoff = now - 30 * msInDay;
-      } else {
-        cutoff = 0;
       }
-      items = items.filter((h) => {
-        const t = h.time.replace(" ", "T");
-        return new Date(t).getTime() >= cutoff;
-      });
     }
 
-    // 来源应用过滤
-    if (sourceFilter) {
-      items = items.filter((h) => h.source === sourceFilter);
+    // 单次遍历：合并 workspace + 搜索 + 类型 + 时间 + 来源过滤
+    const items: HistoryItem[] = [];
+    for (let i = 0; i < history.length; i++) {
+      const h = history[i];
+
+      // 工作区过滤
+      if (h.workspace !== ws) continue;
+
+      // 搜索过滤（文本 + 拼音）
+      if (kw) {
+        if (!h.text.toLowerCase().includes(kw) &&
+            !(h.pinyin_initials && h.pinyin_initials.toLowerCase().includes(kw))) {
+          continue;
+        }
+      }
+
+      // 类型过滤
+      if (filterType === "pinned") {
+        if (!h.pinned) continue;
+      } else if (filterType !== "all") {
+        if (h.type !== filterType) continue;
+      }
+
+      // 时间范围过滤
+      if (cutoff > 0) {
+        // 懒计算 timeStamp（只对需要的项计算一次）
+        if (h.timeStamp === undefined) {
+          h.timeStamp = new Date(h.time.replace(" ", "T")).getTime();
+        }
+        if (h.timeStamp < cutoff) continue;
+      }
+
+      // 来源过滤
+      if (sourceFilter && h.source !== sourceFilter) continue;
+
+      items.push(h);
     }
 
-    // 置顶在前，按时间倒序
+    // 排序：置顶在前，按时间倒序（使用预计算的 timeStamp）
     items.sort((a, b) => {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-      return new Date(b.time).getTime() - new Date(a.time).getTime();
+      // 懒计算 timeStamp
+      if (a.timeStamp === undefined) a.timeStamp = new Date(a.time.replace(" ", "T")).getTime();
+      if (b.timeStamp === undefined) b.timeStamp = new Date(b.time.replace(" ", "T")).getTime();
+      return b.timeStamp - a.timeStamp;
     });
 
     // 缓存结果

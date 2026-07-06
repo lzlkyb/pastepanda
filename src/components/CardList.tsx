@@ -66,6 +66,8 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   const history = useAppStore((s) => s.history);
   const searchKeyword = useAppStore((s) => s.searchKeyword);
   const filterType = useAppStore((s) => s.filterType);
+  const timeFilter = useAppStore((s) => s.timeFilter);
+  const sourceFilter = useAppStore((s) => s.sourceFilter);
   const getFilteredItems = useAppStore((s) => s.getFilteredItems);
   const selectedIds = useAppStore((s) => s.selectedIds);
   const focusId = useAppStore((s) => s.focusId);
@@ -202,7 +204,8 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   }, [loadingMore]);
 
   // 统一使用 store 的过滤排序逻辑（包含拼音搜索、置顶排序等）
-  const items = getFilteredItems();
+  // useMemo 稳定 items 引用，避免虚拟列表和图片 effect 因新数组引用频繁重新计算
+  const items = useMemo(() => getFilteredItems(), [history, searchKeyword, filterType, timeFilter, sourceFilter, getFilteredItems]);
 
   // 虚拟列表（直接使用 items，不再有 separator）
   const virtualizer = useVirtualizer({
