@@ -6,6 +6,7 @@ export interface Tag {
   id: string;
   name: string;
   color: string;
+  source: "manual" | "auto"; // ★ 新增：标签来源
   created_at: string;
 }
 

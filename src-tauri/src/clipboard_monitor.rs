@@ -1,3 +1,4 @@
+use crate::content_classifier::ContentClassifier;
 use crate::data_store::{compute_pinyin_initials, DataStore, HistoryItem};
 use arboard::Clipboard;
 use md5::{Digest, Md5};
@@ -141,6 +142,9 @@ impl ClipboardMonitor {
                 // 尝试读取文本
                 match clipboard.get_text() {
                     Ok(text) if !text.is_empty() => {
+                        // ===== 诊断日志 1: 读到文本 =====
+                        let preview = if text.len() > 50 { &text[..50] } else { &text };
+                        log::info!("[ClipboardMonitor] 读到文本: \"{}\" ({}字符)", preview, text.len());
                         // 自动去除空白（使用缓存的配置，避免每 400ms 锁数据库）
                         let text = if let Some(monitor) = app_handle.try_state::<ClipboardMonitor>()
                         {
@@ -198,11 +202,11 @@ impl ClipboardMonitor {
                                         );
                                     }
                                     // 推送更新后的 item 到前端（前端会 prepend，使旧记录移到顶部）
+                                    // 注意：..existing 的 tags 已被 load_tags_into_items 填充，不能覆盖
                                     let updated_item = HistoryItem {
                                         time: now_str.clone(),
                                         source: get_foreground_window_title(),
                                         group_id: None,
-                                        tags: Vec::new(),
                                         ..existing
                                     };
                                     if let Err(e) = app_handle.emit(
@@ -246,12 +250,43 @@ impl ClipboardMonitor {
                                     }
                                 }
 
+                                // AI 自动分类：用 std::thread 后台执行，不阻塞轮询循环
+                                // 注意：不能用 tokio::spawn，因为监听线程是 std::thread，没有 Tokio runtime
+                                {
+                                    let history_id = item.id.clone();
+                                    let classify_text = item.text.clone();
+                                    let app_clone = app_handle.clone();
+                                    std::thread::spawn(move || {
+                                        // ContentClassifier 是无状态的纯逻辑引擎，直接创建实例即可
+                                        let classifier = ContentClassifier::new();
+                                        let labels = classifier.classify(&classify_text);
+                                        if let Some(store) = app_clone.try_state::<DataStore>() {
+                                            if let Ok(tag_ids) = store.resolve_auto_tag_ids(&labels) {
+                                                if !tag_ids.is_empty() {
+                                                    if let Err(e) = store.add_history_tags(&history_id, &tag_ids) {
+                                                        log::warn!("[ContentClassifier] 写入自动标签失败: {}", e);
+                                                    } else {
+                                                        log::info!("[ContentClassifier] 自动分类: {:?} → {}", labels, history_id);
+                                                        // 传递增量数据：history_id + tag_ids，前端只更新该 item 的标签
+                                                        let _ = app_clone.emit("tags-updated", serde_json::json!({
+                                                            "history_id": history_id,
+                                                            "tag_ids": tag_ids,
+                                                        }));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    });
+                                }
+
                                 // 推送事件到前端
-                                if let Err(e) = app_handle.emit(
+                                // ===== 诊断日志 2: emit 结果 =====
+                                match app_handle.emit(
                                     "clipboard-changed",
                                     ClipboardChanged { item: item.clone() },
                                 ) {
-                                    log::warn!("[ClipboardMonitor] 推送文本事件失败: {}", e);
+                                    Ok(()) => log::info!("[ClipboardMonitor] ✅ 事件已推送到前端 (id={})", item.id),
+                                    Err(e) => log::warn!("[ClipboardMonitor] ❌ 推送文本事件失败: {}", e),
                                 }
 
                                 // LAN 同步：发送文本到局域网

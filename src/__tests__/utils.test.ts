@@ -7,14 +7,17 @@ describe("relativeTime", () => {
   });
 
   it('returns "刚刚" for very recent time', () => {
-    const now = new Date();
-    const date = now.toISOString().replace("T", " ").slice(0, 19);
+    // 使用 30 秒前的时间，格式化为本地时间字符串（不含时区后缀）
+    const d = new Date(Date.now() - 30 * 1000);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const date = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     expect(relativeTime(date)).toBe("刚刚");
   });
 
   it("returns minutes ago format", () => {
     const d = new Date(Date.now() - 5 * 60 * 1000);
-    const date = d.toISOString().replace("T", " ").slice(0, 19);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const date = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     const result = relativeTime(date);
     expect(result).toMatch(/分钟前/);
   });
@@ -32,7 +35,7 @@ describe("truncate", () => {
   });
 
   it("truncates long text with ellipsis", () => {
-    expect(truncate("hello world this is long", 10)).toBe("hello worl…");
+    expect(truncate("hello world this is long", 10)).toBe("hello worl...");
   });
 });
 

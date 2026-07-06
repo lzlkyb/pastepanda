@@ -1117,3 +1117,12 @@ pub fn get_items_with_tags(
 ) -> Result<Vec<(String, Vec<Tag>)>, String> {
     store.get_items_with_tags(&history_ids)
 }
+
+/// 将指定记录的所有自动标签转为手动标签（用户确认 AI 分类结果）
+#[tauri::command]
+pub fn confirm_auto_tags(
+    store: State<DataStore>,
+    history_id: String,
+) -> Result<(), String> {
+    store.confirm_auto_tags(&history_id)
+}

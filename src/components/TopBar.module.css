@@ -712,3 +712,27 @@
   color: var(--accent);
   flex-shrink: 0;
 }
+
+/* 标签分组标题 */
+.tagPickerSection {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 4px 12px 2px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* 分组分隔线 */
+.tagPickerDivider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 12px;
+}
+
+/* AI 图标（标签选择器内） */
+.tagPickerAiIcon {
+  font-size: 10px;
+  margin-right: 2px;
+  flex-shrink: 0;
+}

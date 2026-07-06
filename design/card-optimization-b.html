@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1100, initial-scale=1.0">
+<title>方案B：现代极简 - 卡片优化</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --app-bg: #F4F6F9;
+  --card-bg: #fff;
+  --card-border: #E8ECF1;
+  --card-shadow: none;
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #94A3B8;
+  --border-color: #E8ECF1;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --accent-shadow: rgba(2, 132, 199, 0.15);
+  --hover: #F8FAFC;
+  --section-bg: #F0F4F8;
+  --card-selected-bg: #F0F9FF;
+  --card-selected-border: #0284C7;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--app-bg);
+  color: var(--text-primary);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+.page-header h1 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+.page-header .badge {
+  font-size: 11px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  background: #EDE9FE;
+  color: #6D28D9;
+  font-weight: 600;
+}
+
+.comparison-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.col-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px 8px;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 4px;
+}
+.col-header h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.col-header .tag {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.col-header .tag.old { background: #FEF2F2; color: #DC2626; }
+.col-header .tag.new { background: #ECFDF5; color: #059669; }
+
+/* ===== 方案B 卡片样式 ===== */
+
+.cardWrap-b {
+  position: relative;
+  width: 100%;
+}
+
+/* 卡片 — 12px 圆角 + 无阴影（极简扁平） */
+.card-b {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  box-shadow: none;
+  transition: background 0.2s ease, border-color 0.2s ease;
+  cursor: pointer;
+  position: relative;
+  min-height: 72px;
+  width: 100%;
+}
+
+/* hover — 仅颜色变化，无位置移动 */
+.card-b:hover {
+  background: var(--hover);
+  border-color: rgba(2, 132, 199, 0.15);
+}
+
+/* 选中态 — 左侧粗色条 */
+.card-b.selected {
+  background: var(--card-selected-bg);
+  border-color: var(--card-selected-border);
+}
+.card-b.selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+
+/* 置顶 — 右侧小图标 */
+.card-b.pinned::after {
+  content: '📌';
+  position: absolute;
+  right: 10px;
+  top: 8px;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+/* 图标 — 更小更精致 36px */
+.icon-b {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--section-bg);
+  transition: background 0.2s;
+}
+.card-b:hover .icon-b {
+  background: var(--accent-light);
+}
+
+.icon-b svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* 内容区 */
+.content-b {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.title-b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+/* 副行 — 标签 + 来源在同一行，时间在另一行 */
+.sub-b {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.tag-badge-b {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 18px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.time-b {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  text-align: right;
+  min-width: 42px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 搜索高亮 */
+mark {
+  background: #FDE68A;
+  color: #92400E;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+/* ===== 旧样式（方案B对比） ===== */
+.cardWrap-old {
+  position: relative;
+  width: 100%;
+}
+
+.card-old {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid #E0E4EB;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  position: relative;
+  height: 72px;
+  width: 100%;
+}
+.card-old:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px) scale(1.008);
+}
+.card-old.selected {
+  background: #E0F2FE;
+  border-color: #0284C7;
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25), 0 4px 16px rgba(2, 132, 199, 0.15);
+}
+.card-old.pinned::after {
+  content: '📌';
+  position: absolute;
+  left: 2px;
+  top: 4px;
+  font-size: 10px;
+  z-index: 3;
+}
+
+.icon-old {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.icon-old.gray   { background: linear-gradient(135deg, #F3F4F6, #E5E7EB); }
+.icon-old.green  { background: linear-gradient(135deg, #E5F8EC, #D4F2DE); }
+.icon-old.purple { background: linear-gradient(135deg, #F0E8FB, #E5D6FA); }
+.icon-old.blue   { background: linear-gradient(135deg, #E8F1FB, #D6E8FA); }
+.icon-old svg { width: 18px; height: 18px; }
+
+.content-old {
+  flex: 1; min-width: 0; overflow: hidden;
+}
+.title-old {
+  font-size: 13px; font-weight: 600; color: var(--text-primary);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; line-height: 1.4; max-height: 36px;
+}
+.sub-old {
+  font-size: 11px; color: var(--text-secondary); margin-top: 2px;
+  display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden;
+}
+.time-old {
+  font-size: 11px; color: var(--text-muted); flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 标注 */
+.callout {
+  position: absolute;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 10;
+  white-space: nowrap;
+}
+
+.diff-notes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 16px;
+}
+.diff-note {
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.diff-note.good { background: #ECFDF5; border: 1px solid #A7F3D0; color: #065F46; }
+.diff-note.warn { background: #FFF7ED; border: 1px solid #FED7AA; color: #9A3412; }
+.diff-note h4 { font-size: 12px; margin-bottom: 4px; display: flex; align-items: center; gap: 4px; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>方案B：现代极简</h1>
+  <span class="badge">CSS + 结构调整 · 中等改动</span>
+</div>
+
+<p style="font-size:12px;color:var(--text-secondary);margin-top:-12px;padding:0 4px;">
+  核心思路：扁平化设计 — 去掉阴影、去掉位置动画、去掉渐变装饰。更小的图标（36px）、更宽松的间距（14px padding）、hover 仅颜色变化不动位置。适合追求清爽、安静、专业感的场景。
+</p>
+
+<div class="comparison-grid">
+  <div class="col">
+    <div class="col-header">
+      <h3>旧版 — 当前样式</h3>
+      <span class="tag old">CURRENT</span>
+    </div>
+
+    <div class="cardWrap-old">
+      <div class="card-old">
+        <div class="icon-old gray">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+        </div>
+        <div class="content-old">
+          <div class="title-old">用户登录接口文档 - API v2.3 版本更新说明</div>
+          <div class="sub-old">
+            <span style="color:var(--text-muted);">VS Code</span>
+          </div>
+        </div>
+        <span class="time-old">3分钟前</span>
+      </div>
+    </div>
+
+    <div class="cardWrap-old">
+      <div class="card-old">
+        <div class="icon-old green">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        </div>
+        <div class="content-old">
+          <div class="title-old">https://github.com/rust-lang/rust/releases</div>
+          <div class="sub-old">
+            <span style="color:var(--text-muted);">Chrome</span>
+            <span class="tag-badge-b" style="background:rgba(16,185,129,0.1);color:#059669;border:1px solid rgba(16,185,129,0.3);">链接</span>
+          </div>
+        </div>
+        <span class="time-old">1小时前</span>
+      </div>
+    </div>
+
+    <div class="cardWrap-old">
+      <div class="card-old">
+        <div class="icon-old purple">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        </div>
+        <div class="content-old">
+          <div class="title-old">async function fetchUserData(userId: string) { ... }</div>
+          <div class="sub-old">
+            <span style="color:var(--text-muted);">VS Code</span>
+            <span class="tag-badge-b" style="background:rgba(139,92,246,0.1);color:#7C3AED;border:1px solid rgba(139,92,246,0.3);">TypeScript</span>
+          </div>
+        </div>
+        <span class="time-old">昨天</span>
+      </div>
+    </div>
+
+    <div class="cardWrap-old">
+      <div class="card-old selected">
+        <div class="icon-old blue">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+        </div>
+        <div class="content-old">
+          <div class="title-old">选中的卡片 — 蓝色高亮边框 + 聚焦环</div>
+          <div class="sub-old">
+            <span style="color:var(--text-muted);">VS Code</span>
+          </div>
+        </div>
+        <span class="time-old">2天前</span>
+      </div>
+    </div>
+
+    <div class="cardWrap-old">
+      <div class="card-old pinned" style="border-color:rgba(245,158,11,0.3);">
+        <div class="icon-old blue">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+        </div>
+        <div class="content-old">
+          <div class="title-old">重要的备忘录 — 项目部署清单</div>
+          <div class="sub-old">
+            <span style="color:var(--text-muted);">Notion</span>
+          </div>
+        </div>
+        <span class="time-old">3天前</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 方案B 新版 -->
+  <div class="col">
+    <div class="col-header">
+      <h3>方案B — 现代极简</h3>
+      <span class="tag new">NEW</span>
+    </div>
+
+    <div class="cardWrap-b">
+      <div class="card-b">
+        <div class="icon-b">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+        </div>
+        <div class="content-b">
+          <div class="title-b">用户登录接口文档 - API v2.3 版本更新说明</div>
+          <div class="sub-b">
+            <span>VS Code</span>
+          </div>
+        </div>
+        <span class="time-b">3分钟前</span>
+      </div>
+      <span class="callout" style="top:-16px;right:12px;background:#ECFDF5;color:#065F46;">✨ 无阴影扁平</span>
+    </div>
+
+    <div class="cardWrap-b">
+      <div class="card-b">
+        <div class="icon-b">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        </div>
+        <div class="content-b">
+          <div class="title-b">https://github.com/rust-lang/rust/releases</div>
+          <div class="sub-b">
+            <span>Chrome</span>
+            <span class="tag-badge-b" style="background:rgba(16,185,129,0.1);color:#059669;border:1px solid rgba(16,185,129,0.3);">链接</span>
+          </div>
+        </div>
+        <span class="time-b">1小时前</span>
+      </div>
+      <span class="callout" style="top:-16px;left:8px;background:#EDE9FE;color:#6D28D9;">✨ 36px 图标</span>
+    </div>
+
+    <div class="cardWrap-b">
+      <div class="card-b">
+        <div class="icon-b">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        </div>
+        <div class="content-b">
+          <div class="title-b">async function fetchUserData(userId: string) { ... }</div>
+          <div class="sub-b">
+            <span>VS Code</span>
+            <span class="tag-badge-b" style="background:rgba(139,92,246,0.1);color:#7C3AED;border:1px solid rgba(139,92,246,0.3);">TypeScript</span>
+          </div>
+        </div>
+        <span class="time-b">昨天</span>
+      </div>
+      <span class="callout" style="top:-16px;right:12px;background:#ECFDF5;color:#065F46;">✨ 12px 圆角</span>
+    </div>
+
+    <div class="cardWrap-b">
+      <div class="card-b selected">
+        <div class="icon-b" style="background:#E0F2FE;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+        </div>
+        <div class="content-b">
+          <div class="title-b">选中的卡片 — 左侧色条 + 纯色背景</div>
+          <div class="sub-b">
+            <span>VS Code</span>
+          </div>
+        </div>
+        <span class="time-b">2天前</span>
+      </div>
+      <span class="callout" style="left:-6px;top:50%;transform:translateY(-50%);background:#E0F2FE;color:#0284C7;">← 3px 色条</span>
+    </div>
+
+    <div class="cardWrap-b">
+      <div class="card-b pinned" style="border-color:rgba(245,158,11,0.2);">
+        <div class="icon-b">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+        </div>
+        <div class="content-b">
+          <div class="title-b">重要的备忘录 — 项目部署清单</div>
+          <div class="sub-b">
+            <span>Notion</span>
+          </div>
+        </div>
+        <span class="time-b">3天前</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="diff-notes">
+  <div class="diff-note good">
+    <h4>✅ 优点</h4>
+    ① 极简扁平风格 — 视觉噪音最小<br>
+    ② 无阴影 → 列表更轻量、更安静<br>
+    ③ hover 不位移 → 减少视觉跳动<br>
+    ④ 小图标 → 更紧凑，同屏更多内容<br>
+    ⑤ 适合长时间使用的工具型产品
+  </div>
+  <div class="diff-note warn">
+    <h4>⚠️ 风险</h4>
+    ① 无阴影 → 卡片边界感弱，可能显得"飘"<br>
+    ② 无位移动画 → 交互反馈不如方案A明显<br>
+    ③ 小图标 → 识别度略降，需测试<br>
+    ④ 标题单行 → 长内容截断更多<br>
+    ⑤ 改动较大 — 需调整 TSX 结构调整布局
+  </div>
+</div>
+
+</body>
+</html>

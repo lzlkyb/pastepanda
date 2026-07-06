@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
 import { relativeTime, detectTextType } from "@/lib/utils";
 import { createCardMenuItems, CtxMenuCtx, type MenuItem } from "@/components/ContextMenu";
+import { confirmAutoTags, removeItemTags, fetchTags } from "@/lib/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useToast } from "@/components/Toast";
 import { TagRow } from "@/components/TagBadge";
@@ -247,8 +248,8 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
               </span>
             )}
             {source && <span className={styles.cardSource}>{source}</span>}
+            <TagRow tags={item.tags || []} />
           </div>
-          <TagRow tags={item.tags || []} />
         </div>
 
         {/* 时间 / 复制中指示器 */}
@@ -565,6 +566,30 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     } catch (e) { logger.warn("添加片段失败", e); }
   }, [item.text, toast]);
 
+  // 自动标签相关
+  const hasAutoTags = useMemo(() =>
+    (item.tags || []).some(t => t.source === "auto"),
+  [item.tags]);
+  const autoTagIds = useMemo(() =>
+    (item.tags || []).filter(t => t.source === "auto").map(t => t.id),
+  [item.tags]);
+
+  const handleConfirmAutoTags = useCallback(async () => {
+    try {
+      await confirmAutoTags(item.id);
+      toast("已确认自动标签", "success");
+    } catch (e) { logger.warn("确认自动标签失败", e); }
+  }, [item.id, toast]);
+
+  const handleRemoveAutoTags = useCallback(async () => {
+    try {
+      if (autoTagIds.length > 0) {
+        await removeItemTags([item.id], autoTagIds);
+        toast("已移除自动标签", "success");
+      }
+    } catch (e) { logger.warn("移除自动标签失败", e); }
+  }, [item.id, autoTagIds, toast]);
+
   const handleOpenUrl = useCallback(async () => {
     try {
       const { openUrl } = await import("@tauri-apps/plugin-opener");
@@ -678,7 +703,10 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     onDelete: () => setShowDeleteConfirm(true),
     onAddSnippet: handleAddSnippet,
     onOpenUrl: hasUrl ? handleOpenUrl : undefined,
+    onConfirmAutoTags: hasAutoTags ? handleConfirmAutoTags : undefined,
+    onRemoveAutoTags: hasAutoTags ? handleRemoveAutoTags : undefined,
     hasUrl,
+    hasAutoTags,
     pinned: item.pinned,
   });
 

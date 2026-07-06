@@ -28,6 +28,7 @@ function App() {
   const config = useAppStore((s) => s.config);
   const history = useAppStore((s) => s.history);
   const groups = useAppStore((s) => s.groups);
+  const tags = useAppStore((s) => s.tags);
   const seqPointer = useAppStore((s) => s.seqPointer);
   const resetSeqPointer = useAppStore((s) => s.resetSeqPointer);
   const sourceFilter = useAppStore((s) => s.sourceFilter);
@@ -182,8 +183,41 @@ function App() {
         section: "source" as const,
       }));
 
-    return [...builtin, ...userGroupItems, ...sourceGroups];
-  }, [history, config.current_workspace, groups]);
+    // 智能分类分组：从 AI 自动标签（source="auto"）聚合虚拟分组
+    const autoTags = tags.filter(t => t.source === "auto");
+    const autoTagIcons: Record<string, string> = {
+      "代码": "💻", "链接": "🔗", "JSON": "📋", "配置文件": "⚙️", "表格": "📊",
+      "命令行": "⬛", "日志": "📜", "密钥": "🔑", "数字": "🔢", "纯文本": "📝",
+      "Python": "🐍", "JavaScript": "🟨", "TypeScript": "🔷", "Rust": "🦀",
+      "Java": "☕", "Go": "🔵", "SQL": "🗄️", "HTML": "🌐", "CSS": "🎨", "Shell": "💲",
+    };
+    const autoTagColors: Record<string, string> = {
+      "代码": "#6366F1", "链接": "#3B82F6", "JSON": "#F59E0B", "配置文件": "#8B5CF6", "表格": "#22C55E",
+      "命令行": "#6B7280", "日志": "#EF4444", "密钥": "#F97316", "数字": "#14B8A6", "纯文本": "#9CA3AF",
+      "Python": "#3776AB", "JavaScript": "#F7DF1E", "TypeScript": "#3178C6", "Rust": "#DEA584",
+      "Java": "#ED8B00", "Go": "#00ADD8", "SQL": "#336791", "HTML": "#E34F26", "CSS": "#1572B6", "Shell": "#4EAA25",
+    };
+    const autoTagGroups: SidebarGroup[] = autoTags
+      .map(t => {
+        // 统计拥有此标签的记录数
+        const count = wsItems.filter(h =>
+          (h.tags || []).some(ht => ht.id === t.id)
+        ).length;
+        return {
+          id: `auto:${t.id}`,
+          name: t.name,
+          count,
+          icon: autoTagIcons[t.name] || "🏷️",
+          color: autoTagColors[t.name] || dotColors[autoTags.indexOf(t) % dotColors.length],
+          isBuiltin: false,
+          section: "auto" as const,
+        };
+      })
+      .filter(g => g.count > 0)
+      .sort((a, b) => b.count - a.count);
+
+    return [...builtin, ...userGroupItems, ...sourceGroups, ...autoTagGroups];
+  }, [history, config.current_workspace, groups, tags]);
 
   // 侧边栏分组点击 → 同步筛选状态
   const handleSelectGroup = useCallback((groupId: string) => {
@@ -205,6 +239,20 @@ function App() {
       setGroupFilter("all");
       useAppStore.getState().setFilterType("all");
       setSourceFilter(source);
+    } else if (groupId.startsWith("auto:")) {
+      // AI 智能分类标签：切换标签筛选
+      const tagId = groupId.slice(5);
+      setSourceFilter("");
+      setGroupFilter("all");
+      useAppStore.getState().setFilterType("all");
+      const store = useAppStore.getState();
+      // 单选模式：替换当前标签筛选为该标签
+      if (store.selectedTagIds.length === 1 && store.selectedTagIds[0] === tagId) {
+        store.clearTagFilters();
+      } else {
+        store.clearTagFilters();
+        store.toggleTagFilter(tagId);
+      }
     } else {
       // 用户自定义分组 ID
       setSourceFilter("");

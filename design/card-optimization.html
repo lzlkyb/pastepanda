@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>卡片视觉优化对比 — PastePanda</title>
+<style>
+/* ===== 全局 ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: #F4F6F9;
+  color: #0F172A;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 48px;
+}
+
+/* ===== 分区标题 ===== */
+.section-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0F172A;
+  margin-bottom: 4px;
+}
+.section-subtitle {
+  font-size: 12px;
+  color: #7888A0;
+  margin-bottom: 16px;
+}
+.section-header {
+  margin-bottom: 16px;
+}
+
+/* ===== 面板 ===== */
+.panel {
+  background: #fff;
+  border: 1px solid #E0E4EB;
+  border-radius: 16px;
+  padding: 20px 24px;
+}
+
+/* ===== CSS 变量（模拟 ocean 主题） ===== */
+:root {
+  --card-bg: #fff;
+  --card-border: #E0E4EB;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --hover: #E8ECF2;
+  --section-bg: #F0F4F8;
+  --card-selected-bg: #E0F2FE;
+  --card-selected-border: #0284C7;
+  --card-selected-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25);
+  --accent-shadow: rgba(2, 132, 199, 0.15);
+  --dialog-bg: #fff;
+  --border-color: #E0E4EB;
+  --red-bg: #FEF2F2;
+  --danger: #DC2626;
+  --green: #16A34A;
+  --green-bg: #DCFCE7;
+  --green-border: #BBF7D0;
+  --orange: #EA580C;
+  --orange-bg: #FFF7ED;
+  --orange-border: #FED7AA;
+}
+
+/* ===== 卡片列表容器 ===== */
+.card-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-gap, 10px);
+  max-width: 520px;
+}
+
+/* ===== 版本 A：当前设计 ===== */
+.current-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  height: 72px;
+  width: 100%;
+  position: relative;
+}
+.current-card:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px) scale(1.008);
+}
+
+/* ===== 版本 B：优化设计 ===== */
+.opt-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  box-shadow:
+    0 1px 2px rgba(0,0,0,0.04),
+    0 1px 3px rgba(0,0,0,0.06);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  height: 74px;
+  width: 100%;
+  position: relative;
+}
+.opt-card:hover {
+  box-shadow:
+    0 4px 12px rgba(0,0,0,0.08),
+    0 2px 4px rgba(0,0,0,0.04);
+  transform: translateY(-3px) scale(1.01);
+  border-color: #C8CDD5;
+}
+
+/* ===== 选中状态 ===== */
+.opt-card.selected {
+  background: var(--card-selected-bg);
+  border-color: var(--card-selected-border);
+  box-shadow:
+    inset 3px 0 0 var(--accent),
+    0 0 0 2px rgba(2, 132, 199, 0.15);
+}
+
+.current-card.selected-sim {
+  background: var(--card-selected-bg);
+  border-color: var(--card-selected-border);
+  box-shadow: var(--card-selected-shadow), 0 4px 16px var(--accent-shadow);
+}
+
+/* ===== 图标区域 ===== */
+.card-icon {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.opt-card .card-icon {
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+}
+
+.bg-blue   { background: linear-gradient(135deg, #E8F1FB, #D6E8FA); }
+.bg-green  { background: linear-gradient(135deg, #E5F8EC, #D4F2DE); }
+.bg-pink   { background: linear-gradient(135deg, #FDE8EE, #FAD6DF); }
+.bg-purple { background: linear-gradient(135deg, #F0E8FB, #E5D6FA); }
+
+/* ===== 内容区 ===== */
+.card-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+  word-break: break-word;
+  max-height: 36px;
+  white-space: normal;
+}
+
+.opt-card .card-title {
+  line-height: 1.45;
+}
+
+.card-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.card-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.opt-card .card-time {
+  color: #8B99B0;
+}
+
+/* ===== 标签徽标 ===== */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  border: 1px solid;
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+/* ===== 置顶徽标 ===== */
+.card-pin {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+/* ===== 对比布局 ===== */
+.compare-row {
+  display: flex;
+  gap: 32px;
+}
+.compare-col {
+  flex: 1;
+  min-width: 0;
+}
+.compare-col h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text-secondary);
+}
+.compare-col h3.bad  { color: #DC2626; }
+.compare-col h3.good { color: #059669; }
+
+/* ===== 差异标注 ===== */
+.diff-list {
+  margin-top: 20px;
+  font-size: 12px;
+  line-height: 2;
+  color: var(--text-secondary);
+}
+.diff-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.diff-list .label {
+  font-weight: 600;
+  min-width: 100px;
+  flex-shrink: 0;
+}
+.diff-list .old-val {
+  color: #DC2626;
+  text-decoration: line-through;
+  margin-right: 6px;
+}
+.diff-list .new-val {
+  color: #059669;
+  font-weight: 600;
+}
+
+/* ===== 全局提示 ===== */
+.note {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: #F0F4F8;
+  border-radius: 8px;
+  line-height: 1.6;
+}
+
+/* ===== 卡片 hover 效果展示区 ===== */
+.hover-demo {
+  position: relative;
+}
+.hover-indicator {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 6px;
+}
+</style>
+</head>
+<body>
+
+<!-- ===== 1. 对比总览 ===== -->
+<div class="panel">
+  <div class="section-header">
+    <div class="section-title">📋 卡片优化对比</div>
+    <div class="section-subtitle">左：当前设计 &nbsp;|&nbsp; 右：优化方案（hover 卡片查看动效差异）</div>
+  </div>
+
+  <div class="compare-row">
+    <!-- 当前版本 -->
+    <div class="compare-col">
+      <h3 class="bad">❌ 当前设计</h3>
+      <div class="card-list" style="--card-gap: 10px;">
+        <!-- 文本卡片 -->
+        <div class="current-card">
+          <div class="card-icon bg-blue">📝</div>
+          <div class="card-content">
+            <div class="card-title">这是一个示例文本内容，展示卡片标题的显示效果</div>
+            <div class="card-sub">
+              <span class="card-pin">📌 置顶</span>
+              <span>Chrome</span>
+              <span class="badge" style="background:#E0F2FE;color:#0284C7;border-color:rgba(2,132,199,0.25);">工作</span>
+            </div>
+          </div>
+          <span class="card-time">2 分钟前</span>
+        </div>
+        <!-- 代码卡片 -->
+        <div class="current-card">
+          <div class="card-icon bg-purple">💻</div>
+          <div class="card-content">
+            <div class="card-title">const App = () => { return &lt;div&gt;Hello&lt;/div&gt; }</div>
+            <div class="card-sub">
+              <span>VS Code</span>
+              <span class="badge" style="background:#F3E8FF;color:#8B5CF6;border-color:rgba(139,92,246,0.25);">代码</span>
+              <span class="badge" style="background:#E0F2FE;color:#0284C7;border-color:rgba(2,132,199,0.25);">React</span>
+              <span style="color:#7888A0;font-size:10px;">+2</span>
+            </div>
+          </div>
+          <span class="card-time">15 分钟前</span>
+        </div>
+        <!-- 图片卡片 -->
+        <div class="current-card">
+          <div class="card-icon bg-pink">🖼️</div>
+          <div class="card-content">
+            <div class="card-title">screenshot-2024.png</div>
+            <div class="card-sub">
+              <span>截图工具</span>
+              <span class="badge" style="background:#FCE7F3;color:#EC4899;border-color:rgba(236,72,153,0.25);">截图</span>
+            </div>
+          </div>
+          <span class="card-time">1 小时前</span>
+        </div>
+        <!-- 文件卡片 -->
+        <div class="current-card">
+          <div class="card-icon bg-green">📁</div>
+          <div class="card-content">
+            <div class="card-title">项目文档.pdf / 需求规格说明书.docx</div>
+            <div class="card-sub">
+              <span>文件管理器</span>
+              <span class="badge" style="background:#DCFCE7;color:#16A34A;border-color:rgba(22,163,74,0.25);">文档</span>
+            </div>
+          </div>
+          <span class="card-time">3 小时前</span>
+        </div>
+        <!-- 链接卡片（选中态） -->
+        <div class="current-card selected-sim">
+          <div class="card-icon bg-blue">🔗</div>
+          <div class="card-content">
+            <div class="card-title">github.com/facebook/react/releases/tag/v19.0</div>
+            <div class="card-sub">
+              <span>Chrome</span>
+              <span class="badge" style="background:#E0F2FE;color:#0284C7;border-color:rgba(2,132,199,0.25);">链接</span>
+            </div>
+          </div>
+          <span class="card-time">昨天</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 优化版本 -->
+    <div class="compare-col">
+      <h3 class="good">✅ 优化方案</h3>
+      <div class="card-list" style="--card-gap: 8px;">
+        <!-- 文本卡片 -->
+        <div class="opt-card">
+          <div class="card-icon bg-blue">📝</div>
+          <div class="card-content">
+            <div class="card-title">这是一个示例文本内容，展示卡片标题的显示效果</div>
+            <div class="card-sub">
+              <span class="card-pin">📌 置顶</span>
+              <span>Chrome</span>
+              <span class="badge" style="background:#E0F2FE;color:#0284C7;border-color:rgba(2,132,199,0.25);">工作</span>
+            </div>
+          </div>
+          <span class="card-time">2 分钟前</span>
+        </div>
+        <!-- 代码卡片 -->
+        <div class="opt-card">
+          <div class="card-icon bg-purple">💻</div>
+          <div class="card-content">
+            <div class="card-title">const App = () => { return &lt;div&gt;Hello&lt;/div&gt; }</div>
+            <div class="card-sub">
+              <span>VS Code</span>
+              <span class="badge" style="background:#F3E8FF;color:#8B5CF6;border-color:rgba(139,92,246,0.25);">代码</span>
+              <span class="badge" style="background:#E0F2FE;color:#0284C7;border-color:rgba(2,132,199,0.25);">React</span>
+              <span style="color:#7888A0;font-size:10px;">+2</span>
+            </div>
+          </div>
+          <span class="card-time">15 分钟前</span>
+        </div>
+        <!-- 图片卡片 -->
+        <div class="opt-card">
+          <div class="card-icon bg-pink">🖼️</div>
+          <div class="card-content">
+            <div class="card-title">screenshot-2024.png</div>
+            <div class="card-sub">
+              <span>截图工具</span>
+              <span class="badge" style="background:#FCE7F3;color:#EC4899;border-color:rgba(236,72,153,0.25);">截图</span>
+            </div>
+          </div>
+          <span class="card-time">1 小时前</span>
+        </div>
+        <!-- 文件卡片 -->
+        <div class="opt-card">
+          <div class="card-icon bg-green">📁</div>
+          <div class="card-content">
+            <div class="card-title">项目文档.pdf / 需求规格说明书.docx</div>
+            <div class="card-sub">
+              <span>文件管理器</span>
+              <span class="badge" style="background:#DCFCE7;color:#16A34A;border-color:rgba(22,163,74,0.25);">文档</span>
+            </div>
+          </div>
+          <span class="card-time">3 小时前</span>
+        </div>
+        <!-- 链接卡片（选中态） -->
+        <div class="opt-card selected">
+          <div class="card-icon bg-blue">🔗</div>
+          <div class="card-content">
+            <div class="card-title">github.com/facebook/react/releases/tag/v19.0</div>
+            <div class="card-sub">
+              <span>Chrome</span>
+              <span class="badge" style="background:#E0F2FE;color:#0284C7;border-color:rgba(2,132,199,0.25);">链接</span>
+            </div>
+          </div>
+          <span class="card-time">昨天</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note" style="margin-top: 20px;">
+    💡 <strong>悬停卡片</strong>查看 hover 动效差异：左侧上浮 2px + 1.008x 缩放；右侧上浮 3px + 1.01x 缩放 + 边框色变深。
+  </div>
+</div>
+
+<!-- ===== 2. 变更清单 ===== -->
+<div class="panel">
+  <div class="section-header">
+    <div class="section-title">🔧 具体变更清单</div>
+    <div class="section-subtitle">逐一对比每一项调整</div>
+  </div>
+  <ul class="diff-list">
+    <li>
+      <span class="label">卡片高度</span>
+      <span class="old-val">72px</span>
+      <span class="new-val">74px</span>
+      <span style="color:var(--text-muted);">— 内容呼吸感更好</span>
+    </li>
+    <li>
+      <span class="label">内边距</span>
+      <span class="old-val">12px 16px</span>
+      <span class="new-val">10px 16px</span>
+      <span style="color:var(--text-muted);">— 上下稍紧，视觉居中更佳</span>
+    </li>
+    <li>
+      <span class="label">圆角</span>
+      <span class="old-val">16px</span>
+      <span class="new-val">14px</span>
+      <span style="color:var(--text-muted);">— 小卡片 14px 更精致协调</span>
+    </li>
+    <li>
+      <span class="label">卡片间距</span>
+      <span class="old-val">10px</span>
+      <span class="new-val">8px</span>
+      <span style="color:var(--text-muted);">— 紧凑但不拥挤</span>
+    </li>
+    <li>
+      <span class="label">默认阴影</span>
+      <span class="old-val">0 1px 3px rgba(0,0,0,0.06)</span>
+      <span class="new-val">双层：1px+2px / 1px+3px</span>
+      <span style="color:var(--text-muted);">— 更自然的"浮纸"感</span>
+    </li>
+    <li>
+      <span class="label">Hover 阴影</span>
+      <span class="old-val">0 6px 20px rgba(0,0,0,0.1)</span>
+      <span class="new-val">双层：4px+12px / 2px+4px</span>
+      <span style="color:var(--text-muted);">— 更明显的抬升层次</span>
+    </li>
+    <li>
+      <span class="label">Hover 位移</span>
+      <span class="old-val">translateY(-2px) scale(1.008)</span>
+      <span class="new-val">translateY(-3px) scale(1.01)</span>
+      <span style="color:var(--text-muted);">— 反馈更明显</span>
+    </li>
+    <li>
+      <span class="label">Hover 边框</span>
+      <span class="old-val">不变</span>
+      <span class="new-val">border-color 微深</span>
+      <span style="color:var(--text-muted);">— 视觉聚焦</span>
+    </li>
+    <li>
+      <span class="label">过渡时长</span>
+      <span class="old-val">0.2s</span>
+      <span class="new-val">0.25s</span>
+      <span style="color:var(--text-muted);">— 稍慢更优雅</span>
+    </li>
+    <li>
+      <span class="label">图标圆角</span>
+      <span class="old-val">12px</span>
+      <span class="new-val">10px</span>
+      <span style="color:var(--text-muted);">— 与卡片 14px 形成层次</span>
+    </li>
+    <li>
+      <span class="label">图标阴影</span>
+      <span class="old-val">无</span>
+      <span class="new-val">0 2px 6px rgba(0,0,0,0.06)</span>
+      <span style="color:var(--text-muted);">— 增加图标层次感</span>
+    </li>
+    <li>
+      <span class="label">选中态</span>
+      <span class="old-val">蓝色背景 + 边框 + 外发光</span>
+      <span class="new-val">+ 左侧 inset 3px 蓝条</span>
+      <span style="color:var(--text-muted);">— 替代已删除的色条</span>
+    </li>
+    <li>
+      <span class="label">标题行高</span>
+      <span class="old-val">1.4</span>
+      <span class="new-val">1.45</span>
+      <span style="color:var(--text-muted);">— 多行文本更舒适</span>
+    </li>
+    <li>
+      <span class="label">时间颜色</span>
+      <span class="old-val">--text-muted</span>
+      <span class="new-val">稍亮 (#8B99B0)</span>
+      <span style="color:var(--text-muted);">— 弱化次要信息</span>
+    </li>
+  </ul>
+</div>
+
+</body>
+</html>

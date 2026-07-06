@@ -95,13 +95,42 @@ export async function initBackend(): Promise<() => void> {
 
   // 监听剪贴板变化事件 — prependItem 内部已处理去重，无需手动判断
   const unlisten1 = await listen<{ item: HistoryItem }>("clipboard-changed", (event) => {
+    // ===== 诊断日志: 前端收到事件 =====
+    console.log("[Diagnostic] ✅ 前端收到 clipboard-changed 事件", { id: event.payload.item.id, type: event.payload.item.type, textPreview: event.payload.item.text?.slice(0, 30) });
     const store = useAppStore.getState();
+    console.log("[Diagnostic] prependItem 前 history 长度:", store.history.length);
     store.prependItem(event.payload.item);
+    console.log("[Diagnostic] prependItem 后 history 长度:", store.history.length);
     invalidateCountsCache(); // 新增记录，清除计数缓存
     const typeLabel = event.payload.item.type === "image" ? "图片" : event.payload.item.type === "file" ? "文件" : "文本";
     const isLanSync = event.payload.item.source?.startsWith("局域网:");
     const msg = isLanSync ? `📡 ${event.payload.item.source.replace("局域网: ", "")}同步了${typeLabel}` : `已记录${typeLabel}`;
     window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: msg, type: isLanSync ? "info" : "success" } }));
+  });
+
+  // 监听标签更新事件（AI 自动分类完成后触发）
+  const unlistenTags = await listen<{ history_id: string; tag_ids: string[] }>("tags-updated", async (event) => {
+    try {
+      // 只刷新全局标签列表（标签选择器用）
+      const tags = await invoke<Tag[]>("get_tags");
+      const store = useAppStore.getState();
+      store.setTags(tags);
+      // 增量更新该 item 的标签，避免全量刷新 history
+      const { history_id, tag_ids } = event.payload;
+      if (history_id && tag_ids.length > 0) {
+        const itemsWithTags = await invoke<[string, Tag[]][]>("get_items_with_tags", {
+          historyIds: [history_id],
+        });
+        const tagMap = new Map(itemsWithTags);
+        const newTags = tagMap.get(history_id) || [];
+        const updatedHistory = store.history.map(item =>
+          item.id === history_id ? { ...item, tags: newTags } : item
+        );
+        store.setHistory(updatedHistory);
+      }
+    } catch (e) {
+      logger.warn("刷新标签失败", e);
+    }
   });
 
   // 监听依次粘贴热键 (Ctrl+Q)
@@ -120,6 +149,7 @@ export async function initBackend(): Promise<() => void> {
     unlisten1();
     unlisten2();
     unlisten3();
+    unlistenTags();
   };
 }
 
@@ -629,5 +659,31 @@ export async function getItemsWithTags(historyIds: string[]): Promise<Map<string
   } catch (e) {
     logger.error("获取记录标签失败", e);
     return new Map();
+  }
+}
+
+/** 确认自动标签（将指定记录的所有自动标签转为手动标签） */
+export async function confirmAutoTags(historyId: string): Promise<boolean> {
+  try {
+    await invoke("confirm_auto_tags", { historyId });
+    // 刷新标签列表
+    const tags = await invoke<Tag[]>("get_tags");
+    const store = useAppStore.getState();
+    store.setTags(tags);
+    // 同步更新 history 中该 item 的 tags source 为 manual
+    const updatedHistory = store.history.map(item => {
+      if (item.id === historyId && item.tags) {
+        return {
+          ...item,
+          tags: item.tags.map(t => t.source === "auto" ? { ...t, source: "manual" as const } : t),
+        };
+      }
+      return item;
+    });
+    store.setHistory(updatedHistory);
+    return true;
+  } catch (e) {
+    logger.error("确认自动标签失败", e);
+    return false;
   }
 }

@@ -3,8 +3,9 @@ use tauri::Manager;
 
 mod clipboard_monitor;
 mod commands;
-mod data_store;
-mod error;
+pub mod content_classifier;
+pub mod data_store;
+pub mod error;
 mod hotkey_manager;
 mod lan_sync;
 mod paste_engine;
@@ -69,6 +70,11 @@ pub fn run() {
             });
             let store = data_store::DataStore::new(db_path_str).expect("无法初始化数据库");
 
+            // 初始化自动标签种子数据（AI 智能分类用）
+            if let Err(e) = store.ensure_auto_tags() {
+                log::warn!("[ContentClassifier] 自动标签种子数据初始化失败: {}", e);
+            }
+
             // 读取 LAN 同步配置（在 store 被 manage 之前）
             let lan_enabled = store
                 .get_config()
@@ -113,6 +119,10 @@ pub fn run() {
             monitor.update_auto_strip_cache(auto_strip_enabled);
             monitor.start();
             app.manage(monitor);
+
+            // 初始化内容分类器（AI 智能分类）
+            let classifier = content_classifier::ContentClassifier::new();
+            app.manage(classifier);
 
             // 系统托盘
             if let Err(e) = tray_manager::setup_tray(&handle) {
@@ -238,6 +248,7 @@ pub fn run() {
             commands::add_item_tags,
             commands::remove_item_tags,
             commands::get_items_with_tags,
+            commands::confirm_auto_tags,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

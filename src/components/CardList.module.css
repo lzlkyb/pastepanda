@@ -11,7 +11,7 @@
   gap: var(--card-gap);
 }
 
-/* 卡片外层容器：让 Popover 绝对定位脱离 .card 的 overflow:hidden 裁剪 */
+/* 卡片外层容器：让 Popover 绝对定位脱离卡片约束 */
 .cardWrap {
   position: relative;
   overflow: visible;
@@ -31,7 +31,6 @@
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
   position: relative;
-  overflow: hidden;
   height: var(--card-height, 72px);
   width: 100%;
   box-sizing: border-box;
@@ -41,28 +40,11 @@
   transform: scale(0.985);
 }
 
-/* 左侧彩色边线 — 按类型区分 */
-.card::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-}
-
-.cardText::before { background: var(--accent); }
-.cardImage::before { background: #FF6482; }
-.cardFile::before { background: #34C759; }
-.cardCode::before { background: #BF5AF2; }
-.cardPinned::before { background: #FFD60A; }
-
-/* #5 固定卡片 📌 标记 — 在卡片左侧边线上叠加金色图钉 */
+/* #5 固定卡片 📌 标记 */
 .cardPinned::after {
   content: '📌';
   position: absolute;
-  left: -1px;
+  left: 2px;
   top: 4px;
   font-size: 10px;
   line-height: 1;

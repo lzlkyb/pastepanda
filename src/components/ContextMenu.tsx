@@ -362,8 +362,11 @@ export function createCardMenuItems(opts: {
   onAddSnippet?: () => void;
   onOpenUrl?: () => void;
   onPasteTransform?: (transform: string) => void;
+  onConfirmAutoTags?: () => void;
+  onRemoveAutoTags?: () => void;
   pinned?: boolean;
   hasUrl?: boolean;
+  hasAutoTags?: boolean;
   /** item 基础类型 + 子类型，用于按类型生成不同变换菜单 */
   itemType?: string;
   itemSubType?: string;
@@ -398,7 +401,20 @@ export function createCardMenuItems(opts: {
 
   // ★ 编辑标签 ★
   if (opts.onEditTags) {
-    items.push({ icon: <Tag size={14} />, label: "编辑标签", onClick: opts.onEditTags, separator: true });
+    items.push({ icon: <Tag size={14} />, label: "编辑标签", onClick: opts.onEditTags });
+  }
+
+  // ★ 自动标签操作 ★
+  if (opts.hasAutoTags && opts.onConfirmAutoTags) {
+    items.push({ icon: <span style={{ fontSize: 14 }}>🤖</span>, label: "确认自动标签", onClick: opts.onConfirmAutoTags });
+  }
+  if (opts.hasAutoTags && opts.onRemoveAutoTags) {
+    items.push({ icon: <span style={{ fontSize: 14 }}>🗑️</span>, label: "移除自动标签", onClick: opts.onRemoveAutoTags, separator: true });
+  } else if (opts.onEditTags || opts.onMoveToGroup) {
+    // 如果没有自动标签操作但有编辑标签，保持分隔线
+    if (opts.onMoveToGroup) {
+      items[items.length - 1].separator = true;
+    }
   }
 
   // ★ 移动到分组 ★

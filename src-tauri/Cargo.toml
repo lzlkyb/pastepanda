@@ -1,6 +1,6 @@
 [package]
 name = "pastepanda"
-version = "5.0.126"
+version = "5.0.128"
 description = "PastePanda - Smart Clipboard Manager"
 authors = ["you"]
 edition = "2021"
@@ -41,6 +41,7 @@ pinyin = "0.5"
 log = "0.4"
 env_logger = "0.11"
 thiserror = "2"
+regex = "1"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

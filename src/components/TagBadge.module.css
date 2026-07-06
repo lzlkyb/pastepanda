@@ -1,15 +1,66 @@
-.row {
+/* 标签行外层容器 — 卡片内紧凑行 */
+.tagContainer {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* 紧凑行：默认显示的标签 + +N */
+.tagInlineRow {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-top: 6px;
-  flex-wrap: nowrap;
-  overflow: hidden;
+  flex-shrink: 0;
 }
 
+/* 展开浮层 — 绝对定位在卡片上方 */
+.tagExpand {
+  position: absolute;
+  left: 12px;
+  bottom: calc(100% - 2px);  /* 紧贴 cardWrap 顶部，略微遮挡卡片 */
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.06);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 100;
+}
+
+/* 展开浮层下方小三角箭头 */
+.tagExpand::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 16px;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 6px solid var(--card-bg);
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.06));
+}
+
+/* card hover 时显示展开浮层 */
+.card:hover .tagExpand {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+  transition-delay: 0.12s;
+}
+
+/* ===== 标签徽标 ===== */
 .badge {
   display: inline-flex;
   align-items: center;
+  gap: 2px;
   padding: 1px 8px;
   border-radius: 4px;
   font-size: 10px;
@@ -20,16 +71,37 @@
   transition: filter 0.15s;
   line-height: 18px;
   user-select: none;
+  white-space: nowrap;
 }
 
 .badge:hover {
   filter: brightness(0.9);
 }
 
+/* 自动标签样式 — 虚线边框 + AI 图标 */
+.autoBadge {
+  border-style: dashed;
+  opacity: 0.85;
+}
+
+.aiIcon {
+  font-size: 9px;
+  margin-right: 1px;
+  line-height: 1;
+}
+
+/* 溢出指示器 +N */
 .more {
   font-size: 10px;
   color: var(--text-muted);
   font-weight: 500;
   flex-shrink: 0;
   padding: 1px 4px;
+  cursor: default;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+.more:hover {
+  background: var(--hover);
+  color: var(--accent);
 }

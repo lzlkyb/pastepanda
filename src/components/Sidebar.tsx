@@ -10,7 +10,7 @@ export interface SidebarGroup {
   color?: string;  // 颜色值，如 "#3B82F6"
   isBuiltin?: boolean; // 内置分组（全部/未分组/收藏）
   isUserGroup?: boolean; // 用户自定义分组
-  section?: "builtin" | "user" | "source"; // 所属区域
+  section?: "builtin" | "user" | "source" | "auto"; // 所属区域
 }
 
 interface SidebarProps {
@@ -45,6 +45,7 @@ export function Sidebar({ open, activeGroupId, groups, onSelectGroup, onClose, o
   const builtinGroups = groups.filter(g => g.section === "builtin");
   const userGroups = groups.filter(g => g.section === "user");
   const sourceGroups = groups.filter(g => g.section === "source");
+  const autoGroups = groups.filter(g => g.section === "auto");
 
   // 关闭右键菜单
   const closeContextMenu = useCallback(() => {
@@ -253,6 +254,15 @@ export function Sidebar({ open, activeGroupId, groups, onSelectGroup, onClose, o
           <span className={styles.addIcon}>+</span>
           <span className={styles.name}>新建分组</span>
         </button>
+
+        {/* 智能分类（AI 自动标签作为虚拟分组） */}
+        {autoGroups.length > 0 && (
+          <>
+            <div className={styles.sep} />
+            <div className={styles.sectionLabel}>智能分类</div>
+            {autoGroups.map(renderGroupItem)}
+          </>
+        )}
 
         {/* 来源分组 */}
         {sourceGroups.length > 0 && (

@@ -3,11 +3,30 @@ import { useAppStore } from "@/stores/appStore";
 
 describe("appStore", () => {
   beforeEach(() => {
-    // Reset store state
-    const store = useAppStore.getState();
-    store.setHistory([]);
-    store.setSearchKeyword("");
-    store.setFilterType("all");
+    // 完整重置 store 状态，避免测试交叉污染
+    useAppStore.setState({
+      history: [],
+      searchKeyword: "",
+      filterType: "all",
+      timeFilter: "all",
+      sourceFilter: "",
+      groupFilter: "all",
+      selectedTagIds: [],
+      selectedIds: new Set(),
+      focusId: null,
+      lastClickedId: null,
+      undoStack: [],
+      searchHistory: [],
+      seqPointer: 0,
+      paused: false,
+      groups: [],
+      tags: [],
+      _filterCache: null,
+      config: {
+        ...useAppStore.getState().config,
+        current_workspace: "默认",
+      },
+    });
   });
 
   it("has correct default config", () => {
@@ -114,16 +133,19 @@ describe("appStore", () => {
     ];
     store.setHistory(items);
 
-    // Single select (普通点击设 focusId，不加入 selectedIds)
+    // Single select (普通点击设 focusId + lastClickedId，不加入 selectedIds)
     store.selectItem("1");
     expect(useAppStore.getState().focusId).toBe("1");
+    expect(useAppStore.getState().lastClickedId).toBe("1");
     expect(useAppStore.getState().selectedIds.size).toBe(0);
 
-    // Multi select
+    // Multi select — Ctrl+点击切换选中状态
     store.selectItem("2", true);
-    const ids = useAppStore.getState().selectedIds;
-    expect(ids.has("1")).toBe(true);
-    expect(ids.has("2")).toBe(true);
+    expect(useAppStore.getState().selectedIds.has("2")).toBe(true);
+
+    // 再次 Ctrl+点击取消选中
+    store.selectItem("2", true);
+    expect(useAppStore.getState().selectedIds.has("2")).toBe(false);
 
     // Select all
     store.selectAll();

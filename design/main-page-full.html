@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=960, initial-scale=1.0">
+<title>PastePanda - 主页面真实效果图</title>
+<style>
+/* ===== CSS Variables (ocean theme) ===== */
+:root {
+  --app-bg: #F4F6F9;
+  --header-bg-start: #fff;
+  --header-bg-end: #F4F6F9;
+  --card-bg: #fff;
+  --card-border: #E0E4EB;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --accent-shadow: rgba(2, 132, 199, 0.15);
+  --seg-bg: #E8E8ED;
+  --seg-active-bg: #fff;
+  --search-bg: #fff;
+  --search-border: #E0E4EB;
+  --input-bg: #F1F5F9;
+  --dialog-bg: #fff;
+  --section-bg: #F0F4F8;
+  --hover: #E8ECF2;
+  --sidebar-bg: #EFF1F5;
+  --sidebar-section-label: #9CA3AF;
+  --card-selected-bg: #E0F2FE;
+  --card-selected-border: #0284C7;
+  --red-bg: #FEF2F2;
+  --danger: #DC2626;
+  font-family: "SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #e8eaef;
+  display: flex;
+  justify-content: center;
+  padding: 20px;
+  min-height: 100vh;
+}
+
+/* ===== App Shell ===== */
+.app-shell {
+  width: 960px;
+  height: 700px;
+  display: flex;
+  flex-direction: column;
+  background: var(--app-bg);
+  color: var(--text-primary);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+}
+
+/* ===== Header / TopBar ===== */
+.header {
+  padding: 16px 16px 0;
+  background: linear-gradient(180deg, var(--header-bg-start) 0%, var(--header-bg-end) 100%);
+  flex-shrink: 0;
+}
+
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-toggle {
+  width: 34px; height: 34px;
+  border: none; background: transparent;
+  border-radius: 10px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-secondary); font-size: 16px;
+  transition: all 0.15s; flex-shrink: 0;
+}
+
+.sidebar-toggle:hover { background: rgba(129,140,248,0.12); transform: scale(1.08); }
+
+.header-title-icon { display: flex; align-items: center; }
+.header-title-icon svg { display: block; }
+
+.header-title-text { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+
+.header-icons { display: flex; gap: 4px; }
+
+.icon-btn {
+  width: 34px; height: 34px;
+  border: none; background: transparent;
+  border-radius: 10px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-secondary);
+  transition: background 0.15s, transform 0.15s;
+}
+
+.icon-btn:hover { background: rgba(129,140,248,0.12); transform: scale(1.08); }
+
+.icon-emoji { font-size: 18px; line-height: 1; }
+
+.icon-svg { width: 18px; height: 18px; }
+
+/* ===== Search Box ===== */
+.header-controls { padding: 0 0 4px; }
+
+.search-box {
+  display: flex; align-items: center; gap: 8px;
+  height: 38px; padding: 0 14px;
+  border-radius: 12px;
+  background: var(--search-bg);
+  border: 1px solid var(--search-border);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+}
+
+.search-icon { font-size: 14px; flex-shrink: 0; }
+.search-input {
+  flex: 1; border: none; background: transparent; outline: none;
+  font-size: 13px; color: var(--text-primary); font-family: inherit;
+}
+.search-input::placeholder { color: var(--text-muted); }
+
+/* ===== Tabs (Segmented) ===== */
+.tabs-area { padding: 10px 0 0; }
+
+.segmented {
+  display: flex; background: var(--seg-bg);
+  border-radius: 10px; padding: 3px; position: relative;
+}
+
+.seg-item {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  gap: 4px; height: 36px; border-radius: 8px;
+  border: none; background: transparent; cursor: pointer;
+  font-size: 12px; font-weight: 500;
+  color: var(--text-secondary);
+  font-family: inherit; position: relative; z-index: 1;
+  transition: color 0.2s;
+}
+
+.seg-item:hover:not(.seg-item-active) { color: var(--text-primary); }
+
+.seg-item-active {
+  color: var(--text-primary); font-weight: 600;
+  background: var(--seg-active-bg);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08), 0 0.5px 1px rgba(0,0,0,0.04);
+}
+
+.seg-icon { font-size: 15px; }
+.seg-count { font-size: 10px; font-weight: 700; color: var(--text-muted); }
+.seg-item-active .seg-count { color: var(--accent); }
+
+/* ===== Filter Bar ===== */
+.filter-bar {
+  display: flex; gap: 6px; padding: 8px 0 0; align-items: center;
+}
+
+.filter-dropdown { position: relative; flex: 1; }
+
+.filter-btn {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 4px; width: 100%; height: 28px; padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-secondary);
+  font-size: 11px; font-weight: 500; cursor: pointer;
+  font-family: inherit; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+
+.filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.filter-chevron { transition: transform 0.2s; }
+
+/* ===== Tag Filter Bar ===== */
+.tag-filter-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 0 2px; flex-wrap: wrap; min-height: 28px;
+}
+
+.tag-filter-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 10px; border-radius: 6px;
+  font-size: 11px; font-weight: 600;
+  border: 1px solid; cursor: default; flex-shrink: 0;
+}
+
+.tag-filter-remove {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: none; background: rgba(0,0,0,0.1);
+  color: inherit; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0; font-size: 8px;
+}
+
+.tag-filter-add {
+  display: inline-flex; align-items: center; gap: 3px;
+  height: 24px; padding: 0 10px; border-radius: 6px;
+  border: 1px dashed var(--border-color); background: transparent;
+  color: var(--text-muted); font-size: 11px;
+  font-family: inherit; cursor: pointer;
+}
+
+/* ===== Content Area ===== */
+.content-area {
+  flex: 1; display: flex; overflow: hidden; min-height: 0;
+}
+
+/* ===== Sidebar ===== */
+.sidebar {
+  width: 180px; min-width: 180px; height: 100%;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border-color);
+  display: none; flex-direction: column; overflow: hidden;
+}
+
+.sidebar-list {
+  flex: 1; overflow-y: auto;
+  padding: 12px 8px 8px;
+  display: flex; flex-direction: column; gap: 1px;
+  scrollbar-width: thin;
+}
+
+.sidebar-list::-webkit-scrollbar { width: 4px; }
+.sidebar-list::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
+
+.sidebar-section-label {
+  font-size: 11px; font-weight: 700;
+  color: var(--sidebar-section-label);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  padding: 10px 10px 6px; flex-shrink: 0;
+}
+
+.sidebar-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px; border-radius: 7px;
+  cursor: pointer; border: none; background: transparent;
+  font-family: inherit; font-size: 13px;
+  color: var(--text-primary); text-align: left;
+  width: 100%; position: relative; transition: all 0.15s;
+}
+
+.sidebar-item:hover { background: var(--hover); }
+
+.sidebar-item.active {
+  background: var(--accent-light);
+  color: var(--accent); font-weight: 600;
+}
+
+.sidebar-icon { font-size: 15px; flex-shrink: 0; width: 16px; text-align: center; }
+.sidebar-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.sidebar-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-count { font-size: 11px; color: var(--text-muted); font-weight: 500; flex-shrink: 0; }
+.sidebar-item.active .sidebar-count { color: var(--accent); }
+
+.sidebar-sep { height: 1px; background: var(--border-color); margin: 8px 10px 4px; }
+
+.sidebar-add-btn {
+  color: var(--text-muted); font-weight: 500; opacity: 0.7; margin-top: 2px;
+}
+.sidebar-add-btn:hover { opacity: 1; color: var(--accent); background: var(--accent-light); }
+
+.sidebar-add-icon { font-size: 16px; font-weight: 600; flex-shrink: 0; margin-right: 2px; }
+
+.sidebar-footer {
+  padding: 8px; border-top: 1px solid var(--border-color); flex-shrink: 0;
+}
+
+.collapse-btn {
+  width: 100%; padding: 7px 10px; border-radius: 7px;
+  border: none; background: transparent;
+  color: var(--text-muted); cursor: pointer;
+  font-family: inherit; font-size: 12px;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  transition: all 0.15s;
+}
+
+.collapse-btn:hover { background: var(--hover); color: var(--text-secondary); }
+
+.collapse-icon { width: 14px; height: 14px; flex-shrink: 0; opacity: 0.7; }
+
+/* ===== Card Panel ===== */
+.card-panel {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; overflow: hidden;
+  position: relative;
+}
+
+.card-panel-scroll {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  min-height: 0; position: relative;
+  scrollbar-width: thin; scrollbar-color: var(--border-color) transparent;
+}
+
+.card-panel-scroll::-webkit-scrollbar { width: 5px; }
+.card-panel-scroll::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 99px; }
+
+/* ===== Card List ===== */
+.card-list {
+  --card-height: 72px;
+  --card-gap: 10px;
+  padding: 10px 16px 80px;
+  display: flex; flex-direction: column; gap: var(--card-gap);
+}
+
+/* ===== Card ===== */
+.card-wrap { position: relative; overflow: visible; width: 100%; z-index: 1; }
+
+.card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer; position: relative;
+  height: var(--card-height, 72px); width: 100%; box-sizing: border-box;
+}
+
+.card:hover {
+  box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+  transform: translateY(-2px) scale(1.008);
+}
+
+.card.selected {
+  background: var(--card-selected-bg);
+  border-color: var(--card-selected-border);
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25), 0 4px 16px var(--accent-shadow);
+}
+
+.card.pinned::after {
+  content: '📌';
+  position: absolute; left: 2px; top: 4px;
+  font-size: 10px; line-height: 1; z-index: 3;
+  filter: drop-shadow(0 1px 2px rgba(180, 83, 9, 0.3));
+}
+
+.card-icon {
+  width: 42px; height: 42px; min-width: 42px;
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0;
+}
+
+.bg-blue { background: linear-gradient(135deg, #E8F1FB, #D6E8FA); }
+.bg-green { background: linear-gradient(135deg, #E5F8EC, #D4F2DE); }
+.bg-purple { background: linear-gradient(135deg, #F0E8FB, #E5D6FA); }
+.bg-pink { background: linear-gradient(135deg, #FDE8EE, #FAD6DF); }
+
+.card-content { flex: 1; min-width: 0; overflow: hidden; }
+
+.card-title {
+  font-size: 13px; font-weight: 600; color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; text-overflow: ellipsis;
+  line-height: 1.4; word-break: break-word;
+  max-height: 36px; white-space: normal;
+}
+
+.card-sub {
+  font-size: 11px; color: var(--text-secondary);
+  margin-top: 2px;
+  display: flex; align-items: center; gap: 6px;
+  white-space: nowrap; overflow: hidden;
+}
+
+.card-pin-badge {
+  display: inline-flex; align-items: center; gap: 2px;
+  height: 16px; padding: 0 6px; border-radius: 4px;
+  font-size: 10px; font-weight: 600;
+  background: var(--accent-light); color: var(--accent);
+}
+
+.card-source {
+  white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; max-width: 100px;
+}
+
+.card-time {
+  font-size: 11px; color: var(--text-muted);
+  flex-shrink: 0; font-variant-numeric: tabular-nums;
+}
+
+/* ===== Tag Badge ===== */
+.tag-badge {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 1px 8px; border-radius: 4px;
+  font-size: 10px; font-weight: 600;
+  border: 1px solid; cursor: pointer; flex-shrink: 0;
+  line-height: 18px; white-space: nowrap;
+}
+
+.tag-badge.auto { border-style: dashed; opacity: 0.85; }
+.tag-badge .ai-icon { font-size: 9px; margin-right: 1px; line-height: 1; }
+
+.tag-more {
+  font-size: 10px; color: var(--text-muted); font-weight: 500;
+  flex-shrink: 0; padding: 1px 4px; border-radius: 4px;
+}
+
+/* ===== FAB ===== */
+.fab-container {
+  position: absolute; bottom: 12px; left: 12px; right: 12px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; z-index: 10;
+  background: var(--card-bg); backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 16px;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 -2px 16px rgba(0,0,0,0.06);
+}
+
+.fab-counter {
+  height: 28px; padding: 0 10px; border-radius: 8px;
+  display: flex; align-items: center;
+  font-size: 11px; font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.fab-counter-num { color: var(--accent); }
+.fab-counter-sep { opacity: 0.4; margin: 0 3px; }
+
+.fab-btn {
+  height: 38px; padding: 0 18px; border-radius: 12px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600;
+  background: var(--accent); color: #fff;
+  box-shadow: 0 4px 16px var(--accent-shadow);
+  border: none; cursor: pointer; font-family: inherit;
+  transition: all 0.2s;
+}
+
+.fab-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px var(--accent-shadow); }
+.fab-btn:active { transform: scale(0.97); }
+
+.fab-btn-reset {
+  width: 24px; height: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.2); border: none;
+  cursor: pointer; color: #fff; font-size: 12px;
+  transition: background 0.15s;
+}
+
+.fab-btn-reset:hover { background: rgba(255,255,255,0.35); }
+
+/* ===== SVG Icons inline ===== */
+.icon-gear { color: #60A5FA; }
+.icon-minimize { color: #94A3B8; }
+.icon-close { color: #94A3B8; }
+
+/* ===== App Icon SVG ===== */
+.app-logo { width: 20px; height: 20px; }
+
+/* ===== 卡片 SVG 图标颜色 ===== */
+.icon-blue { color: #3B82F6; }
+.icon-green { color: #10B981; }
+.icon-purple { color: #8B5CF6; }
+.icon-pink { color: #EC4899; }
+.icon-gray { color: #6B7280; }
+.icon-cyan { color: #06B6D4; }
+.icon-yellow { color: #F59E0B; }
+
+/* Hover indicator */
+.card:hover .card-inline-actions {
+  opacity: 1; pointer-events: auto;
+}
+
+.card-inline-actions {
+  position: absolute; right: 12px; top: 50%;
+  transform: translateY(-50%);
+  display: flex; gap: 4px;
+  opacity: 0; transition: opacity 0.2s ease;
+  z-index: 5; pointer-events: none;
+}
+
+.card-inline-btn {
+  width: 28px; height: 28px; border-radius: 8px;
+  border: none; display: flex; align-items: center; justify-content: center;
+  font-size: 14px; cursor: pointer; transition: all 0.15s;
+  background: var(--card-bg); box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+.card-inline-btn:hover { transform: scale(1.1); }
+.card-inline-btn:active { transform: scale(0.95); }
+
+.btn-fav { color: #B45309; background: #FEF3C7; border: 1px solid #FDE68A; }
+.btn-fav:hover { background: #FDE68A; }
+.btn-fav-active { color: #92400E; background: #FDE68A; border: 1px solid #F59E0B; }
+.btn-copy { color: var(--accent); background: var(--accent-light); border: 1px solid var(--accent); }
+.btn-copy:hover { background: var(--accent); color: #fff; }
+.btn-edit { color: #6D28D9; background: #EDE9FE; border: 1px solid #C4B5FD; }
+.btn-edit:hover { background: #DDD6FE; }
+.btn-del { color: #DC2626; background: #FEE2E2; border: 1px solid #FECACA; }
+.btn-del:hover { background: #FECACA; }
+
+/* ===== Highlight ===== */
+.search-highlight {
+  background: #FDE68A; color: #92400E;
+  border-radius: 2px; padding: 0 1px; font-weight: 700;
+}
+
+/* ===== Tooltip ===== */
+[title] { position: relative; }
+
+/* ===== Badge ===== */
+.update-badge {
+  font-size: 9px; font-weight: 700; color: #fff;
+  background: linear-gradient(135deg, #0284C7, #0369A1);
+  padding: 2px 6px; border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(2,132,199,0.35);
+}
+</style>
+</head>
+<body>
+<div class="app-shell">
+
+  <!-- ====== TopBar ====== -->
+  <div class="header">
+    <div class="header-top">
+      <div class="header-title">
+        <button class="sidebar-toggle" title="展开侧边栏">☰</button>
+        <span class="header-title-icon">
+          <!-- AppIcon SVG -->
+          <svg class="app-logo" viewBox="0 0 32 32" fill="none">
+            <rect width="32" height="32" rx="8" fill="#0284C7"/>
+            <path d="M8 12h16v10a4 4 0 0 1-4 4H12a4 4 0 0 1-4-4V12z" fill="#fff" opacity="0.9"/>
+            <path d="M10 8h12a2 2 0 0 1 2 2v2H8v-2a2 2 0 0 1 2-2z" fill="#BAE6FD"/>
+            <rect x="13" y="14" width="6" height="2" rx="1" fill="#0284C7" opacity="0.5"/>
+            <rect x="13" y="18" width="4" height="2" rx="1" fill="#0284C7" opacity="0.3"/>
+          </svg>
+        </span>
+        <span class="header-title-text">PastePanda</span>
+        <span class="update-badge">v1.6.2</span>
+      </div>
+      <div class="header-icons">
+        <button class="icon-btn" title="片段库"><span class="icon-emoji">📝</span></button>
+        <button class="icon-btn" title="内容提取"><span class="icon-emoji">🧲</span></button>
+        <button class="icon-btn" title="设置 · 帮助 · 关于">
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+        <button class="icon-btn" title="最小化到任务栏">
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>
+        </button>
+        <button class="icon-btn" title="隐藏窗口">
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Search + Tabs + Filter -->
+    <div class="header-controls">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input class="search-input" placeholder="搜索剪贴板... (Enter 搜索)" value="" readonly>
+      </div>
+
+      <div class="tabs-area">
+        <div class="segmented">
+          <button class="seg-item seg-item-active"><span class="seg-icon">📋</span> 全部 <span class="seg-count">247</span></button>
+          <button class="seg-item"><span class="seg-icon">📝</span> 文本 <span class="seg-count">189</span></button>
+          <button class="seg-item"><span class="seg-icon">📸</span> 图片 <span class="seg-count">32</span></button>
+          <button class="seg-item"><span class="seg-icon">📁</span> 文件 <span class="seg-count">15</span></button>
+          <button class="seg-item"><span class="seg-icon">⭐</span> 收藏 <span class="seg-count">8</span></button>
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <div class="filter-dropdown">
+          <button class="filter-btn">全部时间 <span class="filter-chevron">▾</span></button>
+        </div>
+        <div class="filter-dropdown">
+          <button class="filter-btn">来源应用 <span class="filter-chevron">▾</span></button>
+        </div>
+      </div>
+
+      <div class="tag-filter-bar">
+        <span class="tag-filter-chip" style="background:#3B82F620;color:#3B82F6;border-color:#3B82F640;">#代码 <button class="tag-filter-remove">✕</button></span>
+        <span class="tag-filter-chip" style="background:#22C55E20;color:#22C55E;border-color:#22C55E40;">#Python <button class="tag-filter-remove">✕</button></span>
+        <button class="tag-filter-add">🏷 标签筛选</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== Content Area ====== -->
+  <div class="content-area">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-list">
+        <!-- Built-in groups -->
+        <button class="sidebar-item active">
+          <span class="sidebar-icon">📋</span>
+          <span class="sidebar-name">全部</span>
+          <span class="sidebar-count">247</span>
+        </button>
+        <button class="sidebar-item">
+          <span class="sidebar-icon">⭐</span>
+          <span class="sidebar-name">收藏</span>
+          <span class="sidebar-count">8</span>
+        </button>
+        <button class="sidebar-item">
+          <span class="sidebar-icon">📂</span>
+          <span class="sidebar-name">未分组</span>
+          <span class="sidebar-count">42</span>
+        </button>
+
+
+      </div>
+
+      <div class="sidebar-footer">
+        <button class="collapse-btn">
+          <svg class="collapse-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3L6 8l5 5"/></svg>
+          收起侧边栏
+        </button>
+      </div>
+    </aside>
+
+    <!-- Card Panel -->
+    <div class="card-panel">
+      <div class="card-panel-scroll">
+        <div class="card-list">
+
+          <!-- Card 1 - 文本/代码 (选中) -->
+          <div class="card-wrap">
+            <div class="card selected">
+              <div class="card-icon bg-purple">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+                </svg>
+              </div>
+              <div class="card-content">
+                <p class="card-title">const fetchData = async (url: string) => { const res = await fetch(url); return res.json(); };</p>
+                <div class="card-sub">
+                  <span class="card-pin-badge">📌 置顶</span>
+                  <span class="card-source">VS Code</span>
+                  <span class="tag-badge" style="background:#6366F120;color:#6366F1;border-color:#6366F140;">TypeScript</span>
+                  <span class="tag-badge auto" style="background:#6366F120;color:#6366F1;border-color:#6366F140;"><span class="ai-icon">🤖</span>代码</span>
+                </div>
+              </div>
+              <span class="card-time">2 分钟前</span>
+              <div class="card-inline-actions" style="opacity:1;pointer-events:auto;">
+                <button class="card-inline-btn btn-fav btn-fav-active">★</button>
+                <button class="card-inline-btn btn-copy">📋</button>
+                <button class="card-inline-btn btn-edit">✏️</button>
+                <button class="card-inline-btn btn-del">🗑</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2 - 链接 -->
+          <div class="card-wrap">
+            <div class="card">
+              <div class="card-icon bg-blue">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                </svg>
+              </div>
+              <div class="card-content">
+                <p class="card-title">https://github.com/facebook/react/releases/tag/v19.0.0</p>
+                <div class="card-sub">
+                  <span class="card-source">Chrome</span>
+                  <span class="tag-badge auto" style="background:#3B82F620;color:#3B82F6;border-color:#3B82F640;"><span class="ai-icon">🤖</span>链接</span>
+                </div>
+              </div>
+              <span class="card-time">12 分钟前</span>
+              <div class="card-inline-actions">
+                <button class="card-inline-btn btn-fav">☆</button>
+                <button class="card-inline-btn btn-copy">📋</button>
+                <button class="card-inline-btn btn-edit">✏️</button>
+                <button class="card-inline-btn btn-del">🗑</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 3 - 图片 -->
+          <div class="card-wrap">
+            <div class="card">
+              <div class="card-icon bg-pink" style="overflow:hidden;padding:0;">
+                <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='42' height='42'%3E%3Crect fill='%23FDE8EE' width='42' height='42'/%3E%3Ccircle cx='21' cy='21' r='10' fill='%23EC4899' opacity='0.3'/%3E%3Ctext x='21' y='26' text-anchor='middle' font-size='14' fill='%23EC4899'%3E🖼%3C/text%3E%3C/svg%3E" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" alt="">
+              </div>
+              <div class="card-content">
+                <p class="card-title">screenshot_2026-07-06_145123.png</p>
+                <div class="card-sub">
+                  <span class="card-source">截图工具</span>
+                </div>
+              </div>
+              <span class="card-time">25 分钟前</span>
+              <div class="card-inline-actions">
+                <button class="card-inline-btn btn-fav">☆</button>
+                <button class="card-inline-btn btn-copy">📋</button>
+                <button class="card-inline-btn btn-del">🗑</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 4 - 纯文本（带搜索高亮） -->
+          <div class="card-wrap">
+            <div class="card">
+              <div class="card-icon bg-blue">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/>
+                </svg>
+              </div>
+              <div class="card-content">
+                <p class="card-title">PastePanda 是一款智能剪贴板管理工具，支持自动保存、<mark class="search-highlight">搜索</mark>、分类、标签管理</p>
+                <div class="card-sub">
+                  <span class="card-source">Notion</span>
+                  <span class="tag-badge" style="background:#F59E0B20;color:#F59E0B;border-color:#F59E0B40;">产品</span>
+                </div>
+              </div>
+              <span class="card-time">1 小时前</span>
+              <div class="card-inline-actions">
+                <button class="card-inline-btn btn-fav">☆</button>
+                <button class="card-inline-btn btn-copy">📋</button>
+                <button class="card-inline-btn btn-edit">✏️</button>
+                <button class="card-inline-btn btn-del">🗑</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 5 - 文件 -->
+          <div class="card-wrap">
+            <div class="card">
+              <div class="card-icon bg-green">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#06B6D4" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/>
+                </svg>
+              </div>
+              <div class="card-content">
+                <p class="card-title">C:\Users\19145\Documents\project\design-spec.pdf</p>
+                <div class="card-sub">
+                  <span class="card-source">文件管理器</span>
+                </div>
+              </div>
+              <span class="card-time">2 小时前</span>
+              <div class="card-inline-actions">
+                <button class="card-inline-btn btn-fav">☆</button>
+                <button class="card-inline-btn btn-copy">📋</button>
+                <button class="card-inline-btn btn-del">🗑</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 6 - 邮件 -->
+          <div class="card-wrap">
+            <div class="card">
+              <div class="card-icon bg-blue">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"/>
+                </svg>
+              </div>
+              <div class="card-content">
+                <p class="card-title">dev-team@pastepanda.com</p>
+                <div class="card-sub">
+                  <span class="card-source">Outlook</span>
+                </div>
+              </div>
+              <span class="card-time">3 小时前</span>
+              <div class="card-inline-actions">
+                <button class="card-inline-btn btn-fav">☆</button>
+                <button class="card-inline-btn btn-copy">📋</button>
+                <button class="card-inline-btn btn-edit">✏️</button>
+                <button class="card-inline-btn btn-del">🗑</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 7 - JSON 代码 (收藏) -->
+          <div class="card-wrap">
+            <div class="card pinned">
+              <div class="card-icon bg-purple">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+                </svg>
+              </div>
+              <div class="card-content">
+                <p class="card-title">{ "name": "pastepanda", "version": "1.6.2", "dependencies": { "react": "^19.0", "tauri": "^2.0" } }</p>
+                <div class="card-sub">
+                  <span class="card-pin-badge">📌 置顶</span>
+                  <span class="card-source">VS Code</span>
+                  <span class="tag-badge auto" style="background:#F59E0B20;color:#F59E0B;border-color:#F59E0B40;"><span class="ai-icon">🤖</span>JSON</span>
+                  <span class="tag-badge" style="background:#EC489920;color:#EC4899;border-color:#EC489940;">配置</span>
+                </div>
+              </div>
+              <span class="card-time">昨天 14:30</span>
+              <div class="card-inline-actions">
+                <button class="card-inline-btn btn-fav btn-fav-active">★</button>
+                <button class="card-inline-btn btn-copy">📋</button>
+                <button class="card-inline-btn btn-edit">✏️</button>
+                <button class="card-inline-btn btn-del">🗑</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 8 - 电话号码 -->
+          <div class="card-wrap">
+            <div class="card">
+              <div class="card-icon bg-blue">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+                </svg>
+              </div>
+              <div class="card-content">
+                <p class="card-title">+86 138-8888-8888</p>
+                <div class="card-sub">
+                  <span class="card-source">微信</span>
+                </div>
+              </div>
+              <span class="card-time">昨天 09:15</span>
+              <div class="card-inline-actions">
+                <button class="card-inline-btn btn-fav">☆</button>
+                <button class="card-inline-btn btn-copy">📋</button>
+                <button class="card-inline-btn btn-edit">✏️</button>
+                <button class="card-inline-btn btn-del">🗑</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 9 - 多文件 -->
+          <div class="card-wrap">
+            <div class="card">
+              <div class="card-icon bg-green">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#06B6D4" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/>
+                </svg>
+              </div>
+              <div class="card-content">
+                <p class="card-title">3 个文件</p>
+                <div class="card-sub">
+                  <span class="card-source">文件管理器</span>
+                </div>
+              </div>
+              <span class="card-time">2 天前</span>
+              <div class="card-inline-actions">
+                <button class="card-inline-btn btn-fav">☆</button>
+                <button class="card-inline-btn btn-copy">📋</button>
+                <button class="card-inline-btn btn-del">🗑</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 10 - Shell 命令 -->
+          <div class="card-wrap">
+            <div class="card">
+              <div class="card-icon bg-purple">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+                </svg>
+              </div>
+              <div class="card-content">
+                <p class="card-title">npx tauri build --target x86_64-pc-windows-msvc</p>
+                <div class="card-sub">
+                  <span class="card-source">Terminal</span>
+                  <span class="tag-badge auto" style="background:#6B728020;color:#6B7280;border-color:#6B728040;"><span class="ai-icon">🤖</span>命令行</span>
+                  <span class="tag-badge" style="background:#22C55E20;color:#22C55E;border-color:#22C55E40;">构建</span>
+                </div>
+              </div>
+              <span class="card-time">3 天前</span>
+              <div class="card-inline-actions">
+                <button class="card-inline-btn btn-fav">☆</button>
+                <button class="card-inline-btn btn-copy">📋</button>
+                <button class="card-inline-btn btn-edit">✏️</button>
+                <button class="card-inline-btn btn-del">🗑</button>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /card-list -->
+      </div><!-- /card-panel-scroll -->
+
+      <!-- FAB -->
+      <div class="fab-container">
+        <div class="fab-counter"><span class="fab-counter-num">3</span><span class="fab-counter-sep">/</span>189</div>
+        <button class="fab-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11v6"/><path d="M9 14h6"/>
+          </svg>
+          粘贴
+          <button class="fab-btn-reset">↺</button>
+        </button>
+      </div>
+    </div><!-- /card-panel -->
+
+  </div><!-- /content-area -->
+
+</div><!-- /app-shell -->
+
+</body>
+</html>

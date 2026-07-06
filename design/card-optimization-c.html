@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1100, initial-scale=1.0">
+<title>方案C：质感提升 - 卡片优化</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --app-bg: #F4F6F9;
+  --card-bg: rgba(255,255,255,0.72);
+  --card-border: rgba(224, 228, 235, 0.6);
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #94A3B8;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --accent-shadow: rgba(2, 132, 199, 0.15);
+  --hover: #E8ECF2;
+  --section-bg: #F0F4F8;
+  --card-selected-bg: rgba(240, 249, 255, 0.9);
+  --card-selected-border: #0284C7;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--app-bg);
+  color: var(--text-primary);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+.page-header h1 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+.page-header .badge {
+  font-size: 11px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  background: #FFF7ED;
+  color: #EA580C;
+  font-weight: 600;
+}
+
+.comparison-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.col-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px 8px;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 4px;
+}
+.col-header h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.col-header .tag {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.col-header .tag.old { background: #FEF2F2; color: #DC2626; }
+.col-header .tag.new { background: #ECFDF5; color: #059669; }
+
+/* ===== 方案C 卡片样式 ===== */
+
+.cardWrap-c {
+  position: relative;
+  width: 100%;
+}
+
+/* 卡片 — 玻璃拟态 + 微质感 */
+.card-c {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(255,255,255,0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(224, 228, 235, 0.5);
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(2, 132, 199, 0.04);
+  transition: all 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+  cursor: pointer;
+  position: relative;
+  height: 72px;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* hover 光泽扫过效果 */
+.card-c::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.5) 45%, rgba(255,255,255,0.2) 50%, transparent 55%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.card-c:hover::after {
+  opacity: 1;
+}
+
+.card-c:hover {
+  background: rgba(255,255,255,0.85);
+  border-color: rgba(2, 132, 199, 0.25);
+  box-shadow: 0 4px 20px rgba(2, 132, 199, 0.1), 0 2px 6px rgba(0,0,0,0.06);
+  transform: translateY(-1px);
+}
+
+/* 选中态 */
+.card-c.selected {
+  background: rgba(240, 249, 255, 0.9);
+  border-color: var(--card-selected-border);
+  box-shadow: 0 0 0 1px rgba(2, 132, 199, 0.25), 0 4px 16px rgba(2, 132, 199, 0.12);
+}
+
+.card-c.selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+  z-index: 3;
+}
+
+/* 置顶 — 右上角 */
+.card-c.pinned::after {
+  content: '📌';
+  position: absolute;
+  right: 10px;
+  top: 6px;
+  font-size: 11px;
+  line-height: 1;
+  z-index: 4;
+  opacity: 0.7;
+}
+
+/* 图标 — 带微妙内阴影 */
+.icon-c {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+  transition: transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* 图标玻璃凸起效果 */
+.icon-c::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.6) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+.card-c:hover .icon-c {
+  transform: scale(1.05);
+}
+
+.icon-c.blue   { background: linear-gradient(145deg, #DBEAFE, #BFDBFE); box-shadow: 0 2px 6px rgba(59,130,246,0.15), inset 0 1px 0 rgba(255,255,255,0.6); }
+.icon-c.green  { background: linear-gradient(145deg, #D1FAE5, #A7F3D0); box-shadow: 0 2px 6px rgba(16,185,129,0.15), inset 0 1px 0 rgba(255,255,255,0.6); }
+.icon-c.pink   { background: linear-gradient(145deg, #FCE7F3, #FBCFE8); box-shadow: 0 2px 6px rgba(236,72,153,0.15), inset 0 1px 0 rgba(255,255,255,0.6); }
+.icon-c.purple { background: linear-gradient(145deg, #EDE9FE, #DDD6FE); box-shadow: 0 2px 6px rgba(139,92,246,0.15), inset 0 1px 0 rgba(255,255,255,0.6); }
+.icon-c.gray   { background: linear-gradient(145deg, #F3F4F6, #E5E7EB); box-shadow: 0 2px 6px rgba(107,114,128,0.1), inset 0 1px 0 rgba(255,255,255,0.6); }
+
+.icon-c svg {
+  width: 18px;
+  height: 18px;
+  position: relative;
+  z-index: 2;
+}
+
+/* 内容区 */
+.content-c {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+
+.title-c {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+  word-break: break-word;
+  max-height: 36px;
+}
+
+.sub-c {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.tag-badge-c {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 18px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.time-c {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  text-align: right;
+  min-width: 40px;
+  font-variant-numeric: tabular-nums;
+  position: relative;
+  z-index: 1;
+}
+
+/* 搜索高亮 */
+mark {
+  background: #FDE68A;
+  color: #92400E;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+/* ===== 旧样式（方案C对比） ===== */
+.cardWrap-old {
+  position: relative;
+  width: 100%;
+}
+
+.card-old {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid #E0E4EB;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  position: relative;
+  height: 72px;
+  width: 100%;
+}
+.card-old:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px) scale(1.008);
+}
+.card-old.selected {
+  background: #E0F2FE;
+  border-color: #0284C7;
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25), 0 4px 16px rgba(2, 132, 199, 0.15);
+}
+.card-old.pinned::after {
+  content: '📌';
+  position: absolute;
+  left: 2px;
+  top: 4px;
+  font-size: 10px;
+  z-index: 3;
+}
+
+.icon-old {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.icon-old.gray   { background: linear-gradient(135deg, #F3F4F6, #E5E7EB); }
+.icon-old.green  { background: linear-gradient(135deg, #E5F8EC, #D4F2DE); }
+.icon-old.purple { background: linear-gradient(135deg, #F0E8FB, #E5D6FA); }
+.icon-old.blue   { background: linear-gradient(135deg, #E8F1FB, #D6E8FA); }
+.icon-old svg { width: 18px; height: 18px; }
+
+.content-old {
+  flex: 1; min-width: 0; overflow: hidden;
+}
+.title-old {
+  font-size: 13px; font-weight: 600; color: var(--text-primary);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; line-height: 1.4; max-height: 36px;
+}
+.sub-old {
+  font-size: 11px; color: var(--text-secondary); margin-top: 2px;
+  display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden;
+}
+.time-old {
+  font-size: 11px; color: var(--text-muted); flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 标注 */
+.callout {
+  position: absolute;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 10;
+  white-space: nowrap;
+}
+
+.diff-notes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 16px;
+}
+.diff-note {
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.diff-note.good { background: #ECFDF5; border: 1px solid #A7F3D0; color: #065F46; }
+.diff-note.warn { background: #FFF7ED; border: 1px solid #FED7AA; color: #9A3412; }
+.diff-note h4 { font-size: 12px; margin-bottom: 4px; display: flex; align-items: center; gap: 4px; }
+
+/* ===== 质感效果区域 ===== */
+.glass-demo {
+  padding: 20px;
+  border-radius: 16px;
+  margin-top: 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  position: relative;
+  overflow: hidden;
+}
+.glass-demo::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.06'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+.glass-demo h4 {
+  font-size: 13px;
+  color: rgba(255,255,255,0.9);
+  margin-bottom: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+/* 在彩色背景上的玻璃卡片效果 */
+.cardWrap-c-demo {
+  position: relative;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.card-c-demo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(255,255,255,0.18);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  transition: all 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+  cursor: pointer;
+  position: relative;
+  height: 72px;
+  width: 100%;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.card-c-demo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.35) 45%, rgba(255,255,255,0.15) 50%, transparent 55%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+
+.card-c-demo:hover::after {
+  opacity: 1;
+}
+
+.card-c-demo:hover {
+  background: rgba(255,255,255,0.28);
+  border-color: rgba(255,255,255,0.4);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.12);
+  transform: translateY(-1px);
+}
+
+.icon-c-demo {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.25);
+  backdrop-filter: blur(4px);
+  position: relative;
+}
+.icon-c-demo svg {
+  width: 18px;
+  height: 18px;
+  stroke: rgba(255,255,255,0.9);
+}
+
+.title-c-demo {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.95);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+  max-height: 36px;
+}
+
+.sub-c-demo {
+  font-size: 11px;
+  color: rgba(255,255,255,0.6);
+  margin-top: 2px;
+}
+
+.time-c-demo {
+  font-size: 11px;
+  color: rgba(255,255,255,0.5);
+  flex-shrink: 0;
+}
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>方案C：质感提升</h1>
+  <span class="badge">CSS 改动 · 视觉冲击最强</span>
+</div>
+
+<p style="font-size:12px;color:var(--text-secondary);margin-top:-12px;padding:0 4px;">
+  核心思路：玻璃拟态（Glassmorphism）+ 微质感。半透明卡片 + backdrop-filter 模糊背景，hover 光泽扫过效果，图标带内阴影凸起感。视觉层次丰富，适合追求精致感的场景。
+</p>
+
+<div class="comparison-grid">
+  <div class="col">
+    <div class="col-header">
+      <h3>旧版 — 当前样式</h3>
+      <span class="tag old">CURRENT</span>
+    </div>
+
+    <div class="cardWrap-old">
+      <div class="card-old">
+        <div class="icon-old gray">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+        </div>
+        <div class="content-old">
+          <div class="title-old">用户登录接口文档 - API v2.3 版本更新说明</div>
+          <div class="sub-old">
+            <span style="color:var(--text-muted);">VS Code</span>
+          </div>
+        </div>
+        <span class="time-old">3分钟前</span>
+      </div>
+    </div>
+
+    <div class="cardWrap-old">
+      <div class="card-old">
+        <div class="icon-old green">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        </div>
+        <div class="content-old">
+          <div class="title-old">https://github.com/rust-lang/rust/releases</div>
+          <div class="sub-old">
+            <span style="color:var(--text-muted);">Chrome</span>
+            <span class="tag-badge-c" style="background:rgba(16,185,129,0.1);color:#059669;border:1px solid rgba(16,185,129,0.3);">链接</span>
+          </div>
+        </div>
+        <span class="time-old">1小时前</span>
+      </div>
+    </div>
+
+    <div class="cardWrap-old">
+      <div class="card-old">
+        <div class="icon-old purple">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        </div>
+        <div class="content-old">
+          <div class="title-old">async function fetchUserData(userId: string) { ... }</div>
+          <div class="sub-old">
+            <span style="color:var(--text-muted);">VS Code</span>
+            <span class="tag-badge-c" style="background:rgba(139,92,246,0.1);color:#7C3AED;border:1px solid rgba(139,92,246,0.3);">TypeScript</span>
+          </div>
+        </div>
+        <span class="time-old">昨天</span>
+      </div>
+    </div>
+
+    <div class="cardWrap-old">
+      <div class="card-old selected">
+        <div class="icon-old blue">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+        </div>
+        <div class="content-old">
+          <div class="title-old">选中的卡片 — 蓝色高亮边框 + 聚焦环</div>
+          <div class="sub-old">
+            <span style="color:var(--text-muted);">VS Code</span>
+          </div>
+        </div>
+        <span class="time-old">2天前</span>
+      </div>
+    </div>
+
+    <div class="cardWrap-old">
+      <div class="card-old pinned" style="border-color:rgba(245,158,11,0.3);">
+        <div class="icon-old blue">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+        </div>
+        <div class="content-old">
+          <div class="title-old">重要的备忘录 — 项目部署清单</div>
+          <div class="sub-old">
+            <span style="color:var(--text-muted);">Notion</span>
+          </div>
+        </div>
+        <span class="time-old">3天前</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 方案C 新版 -->
+  <div class="col">
+    <div class="col-header">
+      <h3>方案C — 质感提升</h3>
+      <span class="tag new">NEW</span>
+    </div>
+
+    <div class="cardWrap-c">
+      <div class="card-c">
+        <div class="icon-c gray">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+        </div>
+        <div class="content-c">
+          <div class="title-c">用户登录接口文档 - API v2.3 版本更新说明</div>
+          <div class="sub-c">
+            <span style="color:var(--text-muted);">VS Code</span>
+          </div>
+        </div>
+        <span class="time-c">3分钟前</span>
+      </div>
+      <span class="callout" style="top:-16px;right:12px;background:#FFF7ED;color:#EA580C;">✨ 玻璃半透明</span>
+    </div>
+
+    <div class="cardWrap-c">
+      <div class="card-c">
+        <div class="icon-c green">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        </div>
+        <div class="content-c">
+          <div class="title-c">https://github.com/rust-lang/rust/releases</div>
+          <div class="sub-c">
+            <span style="color:var(--text-muted);">Chrome</span>
+            <span class="tag-badge-c" style="background:rgba(16,185,129,0.1);color:#059669;border:1px solid rgba(16,185,129,0.3);">链接</span>
+          </div>
+        </div>
+        <span class="time-c">1小时前</span>
+      </div>
+      <span class="callout" style="top:-16px;left:8px;background:#EDE9FE;color:#6D28D9;">✨ 内阴影凸起</span>
+    </div>
+
+    <div class="cardWrap-c">
+      <div class="card-c">
+        <div class="icon-c purple">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        </div>
+        <div class="content-c">
+          <div class="title-c">async function fetchUserData(userId: string) { ... }</div>
+          <div class="sub-c">
+            <span style="color:var(--text-muted);">VS Code</span>
+            <span class="tag-badge-c" style="background:rgba(139,92,246,0.1);color:#7C3AED;border:1px solid rgba(139,92,246,0.3);">TypeScript</span>
+          </div>
+        </div>
+        <span class="time-c">昨天</span>
+      </div>
+      <span class="callout" style="top:-16px;right:12px;background:#FFF7ED;color:#EA580C;">hover 光泽扫过</span>
+    </div>
+
+    <div class="cardWrap-c">
+      <div class="card-c selected">
+        <div class="icon-c blue">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+        </div>
+        <div class="content-c">
+          <div class="title-c">选中的卡片 — 玻璃质感 + 左侧色条</div>
+          <div class="sub-c">
+            <span style="color:var(--text-muted);">VS Code</span>
+          </div>
+        </div>
+        <span class="time-c">2天前</span>
+      </div>
+      <span class="callout" style="left:-6px;top:50%;transform:translateY(-50%);background:#E0F2FE;color:#0284C7;">← 色条</span>
+    </div>
+
+    <div class="cardWrap-c">
+      <div class="card-c pinned" style="border-color:rgba(245,158,11,0.25);">
+        <div class="icon-c blue">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+        </div>
+        <div class="content-c">
+          <div class="title-c">重要的备忘录 — 项目部署清单</div>
+          <div class="sub-c">
+            <span style="color:var(--text-muted);">Notion</span>
+          </div>
+        </div>
+        <span class="time-c">3天前</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 玻璃拟态在彩色背景上的效果演示 -->
+<div class="glass-demo">
+  <h4>🎨 在彩色渐变背景上的玻璃卡片效果（凸显 backdrop-filter 魅力）</h4>
+  
+  <div class="cardWrap-c-demo">
+    <div class="card-c-demo">
+      <div class="icon-c-demo">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+      </div>
+      <div style="flex:1;min-width:0;position:relative;z-index:1;">
+        <div class="title-c-demo">登录接口文档 - API v2.3 更新说明</div>
+        <div class="sub-c-demo">VS Code</div>
+      </div>
+      <span class="time-c-demo">3分钟前</span>
+    </div>
+  </div>
+
+  <div class="cardWrap-c-demo">
+    <div class="card-c-demo">
+      <div class="icon-c-demo">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+      </div>
+      <div style="flex:1;min-width:0;position:relative;z-index:1;">
+        <div class="title-c-demo">https://github.com/rust-lang/rust/releases</div>
+        <div class="sub-c-demo">Chrome · 链接</div>
+      </div>
+      <span class="time-c-demo">1小时前</span>
+    </div>
+  </div>
+
+  <div class="cardWrap-c-demo">
+    <div class="card-c-demo" style="background:rgba(255,255,255,0.28);border-color:rgba(255,255,255,0.4);">
+      <div class="icon-c-demo" style="background:rgba(255,255,255,0.35);">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+      </div>
+      <div style="flex:1;min-width:0;position:relative;z-index:1;">
+        <div class="title-c-demo">选中态 — 更高不透明度</div>
+        <div class="sub-c-demo">VS Code · TypeScript</div>
+      </div>
+      <span class="time-c-demo">昨天</span>
+    </div>
+  </div>
+</div>
+
+<div class="diff-notes">
+  <div class="diff-note good">
+    <h4>✅ 优点</h4>
+    ① 玻璃拟态 — 视觉层次最丰富、最精致<br>
+    ② hover 光泽扫过 — 动画效果惊艳<br>
+    ③ 图标内阴影凸起 — 物理质感强烈<br>
+    ④ 在彩色/图片背景上效果最佳<br>
+    ⑤ 适合高端定位、追求设计感的产品
+  </div>
+  <div class="diff-note warn">
+    <h4>⚠️ 风险</h4>
+    ① backdrop-filter 在部分旧浏览器/系统不支持<br>
+    ② 半透明卡片在纯白背景上效果弱<br>
+    ③ 需要背景有色彩/纹理才能体现玻璃质感<br>
+    ④ GPU 合成层增加，低配机器可能有性能影响<br>
+    ⑤ 改动适中 — 纯 CSS 改动，不涉及 TSX 结构
+  </div>
+</div>
+
+</body>
+</html>

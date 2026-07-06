@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>卡片标签 - 紧凑显示 + hover 展开</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f5f5f7;
+    display: flex; justify-content: center; padding: 40px 0;
+  }
+
+  :root {
+    --card-height: 72px;
+    --card-bg: #fff;
+    --card-border: #e5e7eb;
+    --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    --text-primary: #1f2937;
+    --text-secondary: #6b7280;
+    --text-muted: #9ca3af;
+    --accent: #6366f1;
+    --accent-light: #eef2ff;
+    --section-bg: #f9fafb;
+    --hover: #f3f4f6;
+  }
+
+  .card-list {
+    display: flex; flex-direction: column; gap: 10px;
+    width: 540px; padding: 20px;
+  }
+
+  /* ===== 卡片基础 ===== */
+  .card {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    box-shadow: var(--card-shadow);
+    cursor: pointer; position: relative;
+    overflow: visible; /* ★ 改为 visible，让展开的标签行可以溢出 */
+    height: var(--card-height);
+    width: 100%;
+    transition: box-shadow 0.2s, transform 0.2s;
+  }
+  .card:hover {
+    box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+    transform: translateY(-2px) scale(1.008);
+  }
+
+  /* 左侧色条 */
+  .card::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+    width: 3px; border-radius: 0 3px 3px 0;
+  }
+  .card-text::before { background: #6366f1; }
+  .card-code::before { background: #BF5AF2; }
+  .card-link::before { background: #10B981; }
+
+  /* 图标 */
+  .card-icon {
+    width: 42px; height: 42px; min-width: 42px;
+    border-radius: 12px; display: flex;
+    align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0;
+    position: relative; z-index: 2;
+  }
+  .bg-blue   { background: linear-gradient(135deg, #E8F1FB, #D6E8FA); }
+  .bg-purple { background: linear-gradient(135deg, #F0E8FB, #E5D6FA); }
+  .bg-green  { background: linear-gradient(135deg, #E5F8EC, #D4F2DE); }
+
+  /* 内容区 */
+  .card-content {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column;
+    justify-content: center; gap: 2px;
+    position: relative; z-index: 2;
+  }
+
+  .card-title {
+    font-size: 13px; font-weight: 600; color: var(--text-primary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    line-height: 1.4;
+  }
+
+  /* 底部行：来源 + 置顶 + 标签摘要 */
+  .card-sub-row {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; color: var(--text-secondary);
+    white-space: nowrap;
+    position: relative;
+    /* ★ 允许标签溢出 */
+    overflow: visible;
+  }
+
+  .card-source {
+    color: var(--text-muted);
+    display: flex; align-items: center; gap: 3px;
+    flex-shrink: 0;
+  }
+  .card-source-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .card-pin {
+    display: inline-flex; align-items: center; gap: 2px;
+    height: 16px; padding: 0 6px; border-radius: 4px;
+    font-size: 10px; font-weight: 600;
+    background: var(--accent-light); color: var(--accent);
+    flex-shrink: 0;
+  }
+
+  /* ===== 标签容器 ===== */
+  .tag-container {
+    display: flex; align-items: center; gap: 4px;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 10;
+  }
+
+  .tag-badge {
+    display: inline-flex; align-items: center; gap: 2px;
+    padding: 1px 8px; border-radius: 4px;
+    font-size: 10px; font-weight: 600; border: 1px solid;
+    cursor: pointer; flex-shrink: 0; line-height: 18px;
+    user-select: none; transition: filter 0.15s;
+    white-space: nowrap;
+    position: relative; z-index: 10;
+  }
+  .tag-badge:hover { filter: brightness(0.9); }
+  .tag-auto { border-style: dashed; opacity: 0.85; }
+  .tag-ai-icon { font-size: 9px; margin-right: 1px; line-height: 1; }
+
+  .tag-more {
+    font-size: 10px; color: var(--text-muted);
+    font-weight: 500; flex-shrink: 0; padding: 1px 4px;
+    cursor: pointer; border-radius: 4px;
+    transition: background 0.15s;
+    position: relative; z-index: 10;
+  }
+  .tag-more:hover { background: var(--hover); color: var(--accent); }
+
+  /* ===== hover 时标签行展开 ===== */
+  .card-tag-expand {
+    position: absolute;
+    left: 0; bottom: 100%;
+    /* bottom 由 JS 动态设置，这里用 CSS 变量控制 */
+    margin-bottom: 2px;
+    display: flex; align-items: center; gap: 4px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06);
+    white-space: nowrap;
+    opacity: 0; pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    z-index: 100;
+  }
+
+  /* 展开小三角 */
+  .card-tag-expand::after {
+    content: ''; position: absolute; top: 100%; left: 50%;
+    transform: translateX(-50%);
+    width: 0; height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 6px solid var(--card-bg);
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.06));
+  }
+
+  .card:hover .card-tag-expand {
+    opacity: 1; transform: translateY(0);
+    pointer-events: auto;
+    transition-delay: 0.12s;
+  }
+
+  .card-time {
+    font-size: 11px; color: var(--text-muted);
+    flex-shrink: 0; font-variant-numeric: tabular-nums;
+    position: relative; z-index: 2;
+  }
+
+  /* ===== 描述文字 ===== */
+  .section-title {
+    font-size: 12px; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.5px;
+    margin-bottom: 4px; padding: 0 4px;
+  }
+  .section-note {
+    font-size: 11px; color: var(--text-muted);
+    padding: 4px 4px 8px; line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<div class="card-list">
+
+  <!-- 说明 -->
+  <div class="section-note" style="margin-bottom: 8px;">
+    💡 <strong>方案 4：默认紧凑 + hover 展开</strong><br>
+    默认显示最多 2 个标签，超出显示 +N。<br>
+    <span style="color: var(--accent);">hover 卡片</span> 时标签行从下方弹出，展示全部标签。
+  </div>
+
+  <!-- 示例 1：多标签（AI 智能分类 + 分组标签） -->
+  <div class="card card-code">
+    <div class="card-icon bg-purple">💻</div>
+    <div class="card-content">
+      <div class="card-title">def process_data(items): return sorted(items)</div>
+      <div class="card-sub-row">
+        <span class="card-source">
+          <span class="card-source-dot" style="background:#3B82F6;"></span> VS Code
+        </span>
+        <span class="card-pin">📌 置顶</span>
+        <!-- ★ 标签容器：默认紧凑显示 2 个 + +N -->
+        <div class="tag-container">
+          <span class="tag-badge tag-auto" style="background:#8B5CF620; color:#8B5CF6; border-color:#8B5CF640;">
+            <span class="tag-ai-icon">🤖</span>代码
+          </span>
+          <span class="tag-badge" style="background:#10B98120; color:#10B981; border-color:#10B98140;">Python</span>
+          <span class="tag-more">+2</span>
+        </div>
+
+        <!-- ★ hover 展开：全部标签 -->
+        <div class="card-tag-expand">
+          <span class="tag-badge tag-auto" style="background:#8B5CF620; color:#8B5CF6; border-color:#8B5CF640;">
+            <span class="tag-ai-icon">🤖</span>代码
+          </span>
+          <span class="tag-badge tag-auto" style="background:#EC489920; color:#EC4899; border-color:#EC489940;">
+            <span class="tag-ai-icon">🤖</span>脚本
+          </span>
+          <span class="tag-badge" style="background:#10B98120; color:#10B981; border-color:#10B98140;">Python</span>
+          <span class="tag-badge" style="background:#6366f120; color:#6366f1; border-color:#6366f140;">📁 我的项目</span>
+        </div>
+      </div>
+    </div>
+    <span class="card-time">1 分钟</span>
+  </div>
+
+  <!-- 示例 2：只有少量标签（不触发 +N） -->
+  <div class="card card-text">
+    <div class="card-icon bg-blue">📝</div>
+    <div class="card-content">
+      <div class="card-title">项目周报 - 2024Q4 工作总结与下季度规划</div>
+      <div class="card-sub-row">
+        <span class="card-source">
+          <span class="card-source-dot" style="background:#34C759;"></span> Chrome
+        </span>
+        <!-- ★ 只有 1 个标签，不显示 +N -->
+        <div class="tag-container">
+          <span class="tag-badge tag-auto" style="background:#F59E0B20; color:#F59E0B; border-color:#F59E0B40;">
+            <span class="tag-ai-icon">🤖</span>文档
+          </span>
+        </div>
+
+        <!-- hover 展开：同样只显示 1 个 -->
+        <div class="card-tag-expand">
+          <span class="tag-badge tag-auto" style="background:#F59E0B20; color:#F59E0B; border-color:#F59E0B40;">
+            <span class="tag-ai-icon">🤖</span>文档
+          </span>
+        </div>
+      </div>
+    </div>
+    <span class="card-time">5 分钟</span>
+  </div>
+
+  <!-- 示例 3：无标签 -->
+  <div class="card card-link">
+    <div class="card-icon bg-green">🔗</div>
+    <div class="card-content">
+      <div class="card-title">https://github.com/user/awesome-project</div>
+      <div class="card-sub-row">
+        <span class="card-source">
+          <span class="card-source-dot" style="background:#34C759;"></span> Chrome
+        </span>
+      </div>
+    </div>
+    <span class="card-time">10 分钟</span>
+  </div>
+
+  <!-- 示例 4：只有分组标签，无 AI 标签 -->
+  <div class="card card-text">
+    <div class="card-icon bg-blue">📝</div>
+    <div class="card-content">
+      <div class="card-title">数据库连接字符串配置</div>
+      <div class="card-sub-row">
+        <span class="card-source">
+          <span class="card-source-dot" style="background:#3B82F6;"></span> VS Code
+        </span>
+        <div class="tag-container">
+          <span class="tag-badge" style="background:#6366f120; color:#6366f1; border-color:#6366f140;">📁 后端配置</span>
+          <span class="tag-badge" style="background:#EC489920; color:#EC4899; border-color:#EC489940;">📁 数据库</span>
+          <span class="tag-more">+1</span>
+        </div>
+
+        <div class="card-tag-expand">
+          <span class="tag-badge" style="background:#6366f120; color:#6366f1; border-color:#6366f140;">📁 后端配置</span>
+          <span class="tag-badge" style="background:#EC489920; color:#EC4899; border-color:#EC489940;">📁 数据库</span>
+          <span class="tag-badge" style="background:#F59E0B20; color:#F59E0B; border-color:#F59E0B40;">📁 DevOps</span>
+        </div>
+      </div>
+    </div>
+    <span class="card-time">30 分钟</span>
+  </div>
+
+  <!-- 示例 5：极多标签（8 个标签 → 展示 +6） -->
+  <div class="card card-code">
+    <div class="card-icon bg-purple">💻</div>
+    <div class="card-content">
+      <div class="card-title">export const useDebounce = (fn, delay) => {...}</div>
+      <div class="card-sub-row">
+        <span class="card-source">
+          <span class="card-source-dot" style="background:#3B82F6;"></span> VS Code
+        </span>
+        <span class="card-pin">📌 置顶</span>
+        <div class="tag-container">
+          <span class="tag-badge tag-auto" style="background:#8B5CF620; color:#8B5CF6; border-color:#8B5CF640;">
+            <span class="tag-ai-icon">🤖</span>代码
+          </span>
+          <span class="tag-badge tag-auto" style="background:#10B98120; color:#10B981; border-color:#10B98140;">
+            <span class="tag-ai-icon">🤖</span>React
+          </span>
+          <span class="tag-more">+6</span>
+        </div>
+
+        <div class="card-tag-expand">
+          <span class="tag-badge tag-auto" style="background:#8B5CF620; color:#8B5CF6; border-color:#8B5CF640;">
+            <span class="tag-ai-icon">🤖</span>代码
+          </span>
+          <span class="tag-badge tag-auto" style="background:#10B98120; color:#10B981; border-color:#10B98140;">
+            <span class="tag-ai-icon">🤖</span>React
+          </span>
+          <span class="tag-badge tag-auto" style="background:#EC489920; color:#EC4899; border-color:#EC489940;">
+            <span class="tag-ai-icon">🤖</span>工具函数
+          </span>
+          <span class="tag-badge tag-auto" style="background:#F59E0B20; color:#F59E0B; border-color:#F59E0B40;">
+            <span class="tag-ai-icon">🤖</span>Hooks
+          </span>
+          <span class="tag-badge" style="background:#6366f120; color:#6366f1; border-color:#6366f140;">📁 前端组件库</span>
+          <span class="tag-badge" style="background:#10B98120; color:#10B981; border-color:#10B98140;">📁 公共工具</span>
+          <span class="tag-badge" style="background:#EC489920; color:#EC4899; border-color:#EC489940;">📁 TypeScript</span>
+          <span class="tag-badge" style="background:#3B82F620; color:#3B82F6; border-color:#3B82F640;">📁 v2.0</span>
+        </div>
+      </div>
+    </div>
+    <span class="card-time">1 小时</span>
+  </div>
+
+</div>
+
+</body>
+</html>

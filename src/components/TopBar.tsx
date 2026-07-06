@@ -441,8 +441,31 @@ function TagPickerPopover({ tags, selectedTagIds, onToggle, onClose }: {
     return () => document.removeEventListener("mousedown", handler);
   }, [onClose]);
 
-  // 按名称排序
-  const sorted = useMemo(() => [...tags].sort((a, b) => a.name.localeCompare(b.name, "zh")), [tags]);
+  // 分组：自动标签 vs 手动标签
+  const { autoTags, manualTags } = useMemo(() => {
+    const auto = tags.filter(t => t.source === "auto").sort((a, b) => a.name.localeCompare(b.name, "zh"));
+    const manual = tags.filter(t => t.source === "manual").sort((a, b) => a.name.localeCompare(b.name, "zh"));
+    return { autoTags: auto, manualTags: manual };
+  }, [tags]);
+
+  const renderTag = (tag: import("@/stores/appStore").Tag) => {
+    const active = selectedTagIds.includes(tag.id);
+    return (
+      <button
+        key={tag.id}
+        className={`${styles.tagPickerItem}${active ? ` ${styles.tagPickerItemActive}` : ""}`}
+        onClick={() => onToggle(tag.id)}
+      >
+        <span
+          className={styles.tagPickerDot}
+          style={{ background: tag.color }}
+        />
+        {tag.source === "auto" && <span className={styles.tagPickerAiIcon}>🤖</span>}
+        <span className={styles.tagPickerName}>{tag.name}</span>
+        {active && <span className={styles.tagPickerCheck}>✓</span>}
+      </button>
+    );
+  };
 
   return (
     <motion.div
@@ -458,28 +481,26 @@ function TagPickerPopover({ tags, selectedTagIds, onToggle, onClose }: {
         <button className={styles.tagPickerClose} onClick={onClose}><X size={12} /></button>
       </div>
       <div className={styles.tagPickerBody}>
-        {sorted.length === 0 ? (
+        {tags.length === 0 ? (
           <div className={styles.tagPickerEmpty}>
             暂无标签，右键卡片 → 编辑标签 来创建
           </div>
         ) : (
-          sorted.map((tag) => {
-            const active = selectedTagIds.includes(tag.id);
-            return (
-              <button
-                key={tag.id}
-                className={`${styles.tagPickerItem}${active ? ` ${styles.tagPickerItemActive}` : ""}`}
-                onClick={() => onToggle(tag.id)}
-              >
-                <span
-                  className={styles.tagPickerDot}
-                  style={{ background: tag.color }}
-                />
-                <span className={styles.tagPickerName}>{tag.name}</span>
-                {active && <span className={styles.tagPickerCheck}>✓</span>}
-              </button>
-            );
-          })
+          <>
+            {autoTags.length > 0 && (
+              <>
+                <div className={styles.tagPickerSection}>🤖 智能标签</div>
+                {autoTags.map(renderTag)}
+                {manualTags.length > 0 && <div className={styles.tagPickerDivider} />}
+              </>
+            )}
+            {manualTags.length > 0 && (
+              <>
+                <div className={styles.tagPickerSection}>🏷️ 我的标签</div>
+                {manualTags.map(renderTag)}
+              </>
+            )}
+          </>
         )}
       </div>
     </motion.div>
