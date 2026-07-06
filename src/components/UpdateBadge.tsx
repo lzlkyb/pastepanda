@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { useUpdate } from "@/contexts/UpdateContext";
+import { useUpdate, friendlyError } from "@/contexts/UpdateContext";
 import { ArrowDown, Loader2, CheckCircle, AlertCircle, RotateCcw } from "lucide-react";
 import { VersionBadge } from "@/components/VersionBadge";
 import styles from "./UpdateBanner.module.css";
@@ -269,25 +269,31 @@ export function UpdateBanner() {
         </motion.div>
       )}
 
-      {status === "error" && (
-        <motion.div
-          key={bannerKey}
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.2 }}
-          className={`${styles.updateBanner} ${styles.updateBannerError}`}
-        >
-          <AlertCircle size={16} style={{ color: "var(--danger)" }} />
-          <div style={{ flex: 1 }}>
-            <div className={styles.updateBannerTitle}>更新失败</div>
-            <div className={styles.updateBannerDesc}>{error || "未知错误，请重试"}</div>
-          </div>
-          <button className={styles.updateBannerBtn} onClick={checkForUpdate}>
-            重试
-          </button>
-        </motion.div>
-      )}
+      {status === "error" && (() => {
+        const fe = error ? friendlyError(error) : null;
+        return (
+          <motion.div
+            key={bannerKey}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.2 }}
+            className={`${styles.updateBanner} ${styles.updateBannerError}`}
+          >
+            <AlertCircle size={16} style={{ color: "var(--danger)", flexShrink: 0, marginTop: 2 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className={styles.updateBannerTitle}>更新失败</div>
+              <div className={styles.updateBannerDesc}>{fe?.friendly || "未知错误，请重试"}</div>
+              {fe?.raw && (
+                <div className={styles.updateBannerRaw}>{fe.raw}</div>
+              )}
+            </div>
+            <button className={styles.updateBannerBtn} onClick={checkForUpdate}>
+              重试
+            </button>
+          </motion.div>
+        );
+      })()}
 
       {(status === "idle" || status === "uptodate") && (
         <motion.div

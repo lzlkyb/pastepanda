@@ -66,12 +66,15 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "npx tauri dev" -W
 当用户说 **"tag"** 或 **"打tag"** 时，自动执行完整发版流程（无需逐步确认）：
 
 1. **递增版本号** — `tauri.conf.json` 中 patch 版本自动 +1（如 5.0.87 → 5.0.88）
-2. **git add** — 暂存所有变更文件
-3. **生成 commit message** — 根据代码变更自动生成带前缀的 commit（`feat:`/`chg:`/`fix:`），标题 + 空行 + 详细变更列表
-4. **git commit** — 提交
-5. **git push origin master** — 推送代码
-6. **git tag v{version}** — 打轻量标签
-7. **git push origin v{version}** — 推送标签触发 GitHub Actions 构建发布
+2. **更新 CHANGELOG.md** — 扫描上一次 tag 到当前的所有 commit，按前缀分类（feat:/fix:/chg:/refactor:/docs:），在文件顶部插入新版本段落，格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)
+3. **git add** — 暂存所有变更文件（含 CHANGELOG.md）
+4. **生成 commit message** — 根据代码变更自动生成带前缀的 commit（`feat:`/`chg:`/`fix:`），标题 + 空行 + 详细变更列表
+5. **git commit** — 提交
+6. **git push origin master** — 推送代码
+7. **git tag v{version}** — 打轻量标签
+8. **git push origin v{version}** — 推送标签触发 GitHub Actions 构建发布
+
+> **Release 更新日志来源**：CI release.yml 会优先从 `CHANGELOG.md` 提取当前版本的段落作为 Release body。如果文件不存在或找不到对应版本，则自动回退到 git log 模式。这样即使几个版本才发一次 tag，Release 也能展示完整的累积变更记录。
 
 ### Commit 前缀规范（影响 Release 自动分类）
 | 前缀 | Release 分类 | 示例 |

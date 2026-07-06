@@ -40,22 +40,29 @@ export function useUpdate() {
 
 // ─── 工具函数 ──────────────────────────────────────────
 
-/** 将原始错误信息翻译为用户友好的中文提示，同时保留原始错误 */
-function friendlyError(raw: string): string {
+export interface FriendlyError {
+  /** 用户友好文案 */
+  friendly: string;
+  /** 原始错误信息（技术细节） */
+  raw: string;
+}
+
+/** 将原始错误信息拆分为友好提示 + 原始错误，横幅显示友好文案，原始错误作为技术细节展示 */
+export function friendlyError(raw: string): FriendlyError {
   const lower = raw.toLowerCase();
   if (lower.includes("networkerror") || lower.includes("failed to fetch") || lower.includes("fetch")) {
-    return `网络连接失败，请检查网络后重试（${raw}）`;
+    return { friendly: "网络连接失败，请检查网络后重试", raw };
   }
   if (lower.includes("enotfound") || lower.includes("getaddrinfo") || lower.includes("dns")) {
-    return `无法解析更新服务器地址，请检查网络连接（${raw}）`;
+    return { friendly: "无法解析更新服务器地址，请检查网络连接", raw };
   }
   if (lower.includes("timeout") || lower.includes("timed out")) {
-    return `连接超时，请稍后重试（${raw}）`;
+    return { friendly: "连接超时，请稍后重试", raw };
   }
   if (lower.includes("403") || lower.includes("rate limit")) {
-    return `GitHub API 访问受限，请稍后重试（${raw}）`;
+    return { friendly: "GitHub API 访问受限，请稍后重试", raw };
   }
-  return `更新失败：${raw}`;
+  return { friendly: "更新失败，请重试", raw };
 }
 
 // ─── 常量 ──────────────────────────────────────────────
@@ -173,7 +180,8 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       logger.error("[Update] 检查更新失败:", msg);
       setError(msg);
       setStatus("error");
-      toast(friendlyError(msg), "error");
+      const fe = friendlyError(msg);
+      toast(`${fe.friendly}（${fe.raw}）`, "error");
     } finally {
       checkingRef.current = false;
       localStorage.setItem(LAST_CHECK_KEY, String(Date.now()));
@@ -246,7 +254,8 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
           logger.error("[Update] 更新失败:", msg);
           setError(msg);
           setStatus("error");
-          toast(friendlyError(msg), "error");
+          const fe2 = friendlyError(msg);
+          toast(`${fe2.friendly}（${fe2.raw}）`, "error");
         }),
       );
 

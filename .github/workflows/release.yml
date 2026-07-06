@@ -152,146 +152,81 @@ jobs:
         shell: pwsh
         run: |
           $currentTag = "${{ github.ref_name }}"
-
-          # 查找上一个 tag
-          $prevTag = git describe --tags --abbrev=0 "$currentTag^" 2>$null
-          if (-not $prevTag) { $prevTag = "" }
+          # 去掉 v 前缀得到版本号，如 v5.0.118 → 5.0.118
+          $version = $currentTag -replace '^v', ''
 
           Write-Host "当前 tag: $currentTag"
-          Write-Host "上一个 tag: $prevTag"
+          Write-Host "版本号: $version"
 
-          # 提取自上一个 tag 以来的 commit messages（排除 merge commits）
-          if ($prevTag) {
-            $commits = git log "${prevTag}..${currentTag}" --pretty=format:"%s" --no-merges
+          # 从 CHANGELOG.md 提取当前版本的段落
+          $changelogPath = "CHANGELOG.md"
+          if (-not (Test-Path $changelogPath)) {
+            Write-Host "❌ CHANGELOG.md 不存在，回退到 git log 模式"
+            # 回退：用 git log 生成基本内容
+            $prevTag = git describe --tags --abbrev=0 "$currentTag^" 2>$null
+            if ($prevTag) {
+              $commits = git log "${prevTag}..${currentTag}" --pretty=format:"%s" --no-merges
+            } else {
+              $commits = git log $currentTag --pretty=format:"%s" --no-merges -n 10
+            }
+            $releaseBody = ""
+            foreach ($line in ($commits -split "`n")) {
+              if ($line.Trim()) { $releaseBody += "- $($line.Trim())`n" }
+            }
+            if (-not $releaseBody) { $releaseBody = "常规构建发布" }
+            $updaterNotes = $releaseBody
+            $firstCommit = ($commits -split "`n" | Select-Object -First 1) -replace "^(feat|fix|chg|change|refactor|docs):?\s*", ""
+            "first_commit=$firstCommit" >> $env:GITHUB_OUTPUT
+            "release_body<<EOF" >> $env:GITHUB_OUTPUT
+            $releaseBody >> $env:GITHUB_OUTPUT
+            "EOF" >> $env:GITHUB_OUTPUT
+            "updater_notes<<EOF" >> $env:GITHUB_OUTPUT
+            $updaterNotes >> $env:GITHUB_OUTPUT
+            "EOF" >> $env:GITHUB_OUTPUT
+            Write-Host "=== Release Body (fallback) ==="
+            Write-Host $releaseBody
+            exit 0
+          }
+
+          $changelog = Get-Content $changelogPath -Raw
+
+          # 匹配 ## [版本号] 段落，直到下一个 ## [ 或文件末尾
+          $pattern = "## \[$version\][^\n]*\n\n((?:.|\n)*?)(?=\n## \[|\Z)"
+          if ($changelog -match $pattern) {
+            $section = $Matches[1].Trim()
+            Write-Host "✅ 从 CHANGELOG.md 提取到版本 $version 的更新日志"
           } else {
-            $commits = git log $currentTag --pretty=format:"%s" --no-merges -n 10
+            Write-Host "⚠️ CHANGELOG.md 中未找到版本 $version 的段落"
+            $section = "常规构建发布"
           }
 
-          # 按前缀分类 commit
-          $featLogs = @()
-          $fixLogs = @()
-          $chgLogs = @()
-          $refactorLogs = @()
-          $docsLogs = @()
-          $otherLogs = @()
+          # 提取第一条变更作为 Release 名称
+          $firstItem = ""
+          if ($section -match '^- (.+)$') {
+            $firstItem = $Matches[1]
+          } else {
+            $firstItem = "PastePanda $currentTag"
+          }
 
-          foreach ($line in ($commits -split "`n")) {
-            $trimmed = $line.Trim()
-            if (-not $trimmed) { continue }
-
-            if ($trimmed -match '^feat:?\s*(.+)') {
-              $featLogs += "- $($Matches[1])"
-            }
-            elseif ($trimmed -match '^fix:?\s*(.+)') {
-              $fixLogs += "- $($Matches[1])"
-            }
-            elseif ($trimmed -match '^(chg|change):?\s*(.+)') {
-              $chgLogs += "- $($Matches[2])"
-            }
-            elseif ($trimmed -match '^refactor:?\s*(.+)') {
-              $refactorLogs += "- $($Matches[1])"
-            }
-            elseif ($trimmed -match '^docs:?\s*(.+)') {
-              $docsLogs += "- $($Matches[1])"
-            }
-            else {
-              $otherLogs += "- $trimmed"
+          # updater 简要文本：取所有列表项
+          $updaterItems = @()
+          foreach ($line in ($section -split "`n")) {
+            if ($line.Trim() -match '^- (.+)') {
+              $updaterItems += "- $($Matches[1])"
             }
           }
+          $updaterNotes = if ($updaterItems.Count -gt 0) { $updaterItems -join "`n" } else { "常规构建发布" }
 
-          # 构建各分类段落
-          $sections = @()
+          # Release body 直接使用 CHANGELOG 段落（已包含分类标题）
+          $releaseBody = $section
 
-          # 重点内容：取前 6 条作为亮点
-          $highlights = @()
-          $allItems = $featLogs + $chgLogs + $fixLogs
-          if ($allItems.Count -gt 0) {
-            $count = [Math]::Min(6, $allItems.Count)
-            for ($i = 0; $i -lt $count; $i++) {
-              $highlights += $allItems[$i]
-            }
-          }
-
-          if ($highlights.Count -gt 0) {
-            $sections += "### ⚡ 重点内容"
-            $sections += ""
-            $sections += ($highlights -join "`n")
-            $sections += ""
-          }
-
-          if ($featLogs.Count -gt 0) {
-            $sections += "### ✨ 新功能"
-            $sections += ""
-            $sections += ($featLogs -join "`n")
-            $sections += ""
-          }
-
-          if ($chgLogs.Count -gt 0) {
-            $sections += "### 🔄 变更"
-            $sections += ""
-            $sections += ($chgLogs -join "`n")
-            $sections += ""
-          }
-
-          if ($fixLogs.Count -gt 0) {
-            $sections += "### 🐛 修复"
-            $sections += ""
-            $sections += ($fixLogs -join "`n")
-            $sections += ""
-          }
-
-          if ($refactorLogs.Count -gt 0) {
-            $sections += "### 🔧 重构"
-            $sections += ""
-            $sections += ($refactorLogs -join "`n")
-            $sections += ""
-          }
-
-          if ($docsLogs.Count -gt 0) {
-            $sections += "### 📖 文档"
-            $sections += ""
-            $sections += ($docsLogs -join "`n")
-            $sections += ""
-          }
-
-          if ($otherLogs.Count -gt 0) {
-            $sections += "### 📌 其他"
-            $sections += ""
-            $sections += ($otherLogs -join "`n")
-            $sections += ""
-          }
-
-          # 如果没有分类到任何 commit
-          if ($sections.Count -eq 0) {
-            $sections += "### 📝 更新内容"
-            $sections += ""
-            $sections += "常规构建发布"
-            $sections += ""
-          }
-
-          $releaseBody = $sections -join "`n"
-
-          # 第一条 commit message 作为 Release name
-          $firstCommit = ($commits -split "`n" | Select-Object -First 1) -replace "^(feat|fix|chg|change|refactor|docs):?\s*", ""
-
-          # updater 用简要文本（取所有分类项）
-          $updaterNotes = ($allItems -join "`n")
-          if (-not $updaterNotes) { $updaterNotes = "常规构建发布" }
-
-          "first_commit=$firstCommit" >> $env:GITHUB_OUTPUT
+          "first_commit=$firstItem" >> $env:GITHUB_OUTPUT
           "release_body<<EOF" >> $env:GITHUB_OUTPUT
           $releaseBody >> $env:GITHUB_OUTPUT
           "EOF" >> $env:GITHUB_OUTPUT
           "updater_notes<<EOF" >> $env:GITHUB_OUTPUT
           $updaterNotes >> $env:GITHUB_OUTPUT
           "EOF" >> $env:GITHUB_OUTPUT
-          Write-Host "=== 分类结果 ==="
-          Write-Host "新功能: $($featLogs.Count) 条"
-          Write-Host "变更: $($chgLogs.Count) 条"
-          Write-Host "修复: $($fixLogs.Count) 条"
-          Write-Host "重构: $($refactorLogs.Count) 条"
-          Write-Host "文档: $($docsLogs.Count) 条"
-          Write-Host "其他: $($otherLogs.Count) 条"
           Write-Host "=== Release Body ==="
           Write-Host $releaseBody
 

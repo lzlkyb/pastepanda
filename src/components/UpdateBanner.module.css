@@ -111,6 +111,21 @@
   line-height: 1.4;
 }
 
+.updateBannerRaw {
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0.6;
+  margin-top: 4px;
+  line-height: 1.4;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  user-select: text;
+}
+
 .updateBannerBtn {
   padding: 6px 14px;
   border-radius: 8px;
