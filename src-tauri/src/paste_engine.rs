@@ -13,22 +13,42 @@ pub struct PasteEngine {
     paste_suppress: Arc<PasteSuppress>,
     /// 追踪的最后一个非自身前台窗口（由剪贴板轮询线程持续更新）
     tracked_foreground_hwnd: std::sync::Mutex<Option<isize>>,
-    /// 手动保存的前台窗口句柄（由 save_foreground_hwnd 设置，优先使用）
-    last_foreground_hwnd: std::sync::Mutex<Option<isize>>,
+    /// 手动保存的前台窗口句柄 + 时间戳（由 save_foreground_hwnd 设置，优先使用）。
+    /// 有效期 2 秒，过期自动失效。这样 sequential paste 循环中的多次粘贴
+    /// 都能使用热键触发时保存的目标窗口，不会因 execute_paste 内部清除而丢失。
+    last_foreground_hwnd: std::sync::Mutex<Option<(isize, std::time::Instant)>>,
     /// 粘贴操作互斥锁：确保同一时间只有一个粘贴在执行，防止竞态
     paste_lock: AtomicBool,
+    /// 本进程 ID（启动时缓存，用于过滤自身所有子窗口）
+    own_pid: u32,
 }
 
 impl PasteEngine {
     pub fn new(app_handle: AppHandle, paste_suppress: Arc<PasteSuppress>) -> Self {
+        let own_pid = std::process::id();
         Self {
             app_handle,
             paste_suppress,
             tracked_foreground_hwnd: std::sync::Mutex::new(None),
             last_foreground_hwnd: std::sync::Mutex::new(None),
             paste_lock: AtomicBool::new(false),
+            own_pid,
         }
     }
+
+    /// 判断窗口是否属于本进程（包括主窗口、子窗口、弹出窗口等）
+    #[cfg(target_os = "windows")]
+    fn is_own_window(&self, hwnd: isize) -> bool {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+        unsafe {
+            let mut pid: u32 = 0;
+            GetWindowThreadProcessId(HWND(hwnd as *mut _), Some(&mut pid));
+            pid == self.own_pid
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    fn is_own_window(&self, _hwnd: isize) -> bool { false }
 
     /// 持续追踪前台窗口 — 由剪贴板轮询线程每 400ms 调用一次
     /// 只记录非自身的窗口，确保保存的始终是用户正在操作的目标应用
@@ -40,36 +60,15 @@ impl PasteEngine {
             if hwnd.is_invalid() {
                 return;
             }
-            // 跳过我们自己的窗口
-            if let Some(window) = self.app_handle.get_webview_window("main") {
-                if let Ok(our_hwnd) = window.hwnd() {
-                    if hwnd.0 as isize == our_hwnd.0 as isize {
-                        return;
-                    }
-                }
+            // 用进程 ID 过滤自身所有窗口（包括子窗口如 DevTools、Agents 等）
+            if self.is_own_window(hwnd.0 as isize) {
+                return;
             }
             // 更新追踪的前台窗口
-            let old = match self.tracked_foreground_hwnd.lock() {
-                Ok(v) => *v,
-                Err(_) => return,
-            };
             let new_hwnd = hwnd.0 as isize;
-            if old != Some(new_hwnd) {
-                // 获取窗口标题用于调试
-                let len = GetWindowTextLengthW(hwnd);
-                let title = if len > 0 {
-                    let mut buf = vec![0u16; (len + 1) as usize];
-                    GetWindowTextW(hwnd, &mut buf);
-                    String::from_utf16_lossy(&buf[..len as usize])
-                } else {
-                    "(无标题)".to_string()
-                };
-                log::info!(
-                    "[PasteEngine] 追踪前台窗口: hwnd={}, title=\"{}\"",
-                    new_hwnd,
-                    title
-                );
-                if let Ok(mut guard) = self.tracked_foreground_hwnd.lock() {
+            if let Ok(mut guard) = self.tracked_foreground_hwnd.lock() {
+                let old = *guard;
+                if old != Some(new_hwnd) {
                     *guard = Some(new_hwnd);
                 }
             }
@@ -81,6 +80,7 @@ impl PasteEngine {
 
     /// 手动保存当前前台窗口（在显示窗口之前调用，作为备用）。
     /// 排除 PastePanda 自身的窗口，避免把"自己"当作粘贴目标。
+    /// 保存时会附带时间戳，2 秒后自动过期。
     pub fn save_foreground_hwnd(&self) {
         #[cfg(target_os = "windows")]
         {
@@ -90,16 +90,12 @@ impl PasteEngine {
                 if hwnd.is_invalid() {
                     return;
                 }
-                // 过滤自身窗口
-                if let Some(window) = self.app_handle.get_webview_window("main") {
-                    if let Ok(our_hwnd) = window.hwnd() {
-                        if hwnd.0 as isize == our_hwnd.0 as isize {
-                            return;
-                        }
-                    }
+                // 用进程 ID 过滤自身所有窗口
+                if self.is_own_window(hwnd.0 as isize) {
+                    return;
                 }
                 if let Ok(mut guard) = self.last_foreground_hwnd.lock() {
-                    *guard = Some(hwnd.0 as isize);
+                    *guard = Some((hwnd.0 as isize, std::time::Instant::now()));
                 }
             }
         }
@@ -114,15 +110,11 @@ impl PasteEngine {
             if hwnd.is_invalid() {
                 return None;
             }
-            // 过滤自身窗口
-            if let Some(window) = self.app_handle.get_webview_window("main") {
-                if let Ok(our_hwnd) = window.hwnd() {
-                    if hwnd.0 as isize == our_hwnd.0 as isize {
-                        return None;
-                    }
-                }
+            let hwnd_val = hwnd.0 as isize;
+            if self.is_own_window(hwnd_val) {
+                return None;
             }
-            Some(hwnd.0 as isize)
+            Some(hwnd_val)
         }
     }
     #[cfg(not(target_os = "windows"))]
@@ -130,23 +122,31 @@ impl PasteEngine {
         None
     }
 
-    /// 获取最佳目标窗口句柄：手动保存 > 追踪 > 实时抓取 > None
-    fn get_target_hwnd(&self) -> Option<isize> {
-        // 优先使用手动保存的句柄
+    /// 保存的前台窗口有效期（秒）。超过此时间，last_foreground_hwnd 视为过期。
+    const FOREGROUND_TTL_SECS: u64 = 2;
+
+    /// 获取最佳目标窗口句柄：手动保存（2秒内有效） > 实时抓取（粘贴前一刻） > None
+    /// 
+    /// 注意：不再使用 tracked_foreground_hwnd（400ms 轮询可能过时）。
+    /// 传入的 fallback 是 execute_paste 在粘贴前实时抓取的结果，比轮询更可靠。
+    fn get_target_hwnd(&self, fallback: Option<isize>) -> Option<isize> {
+        // 优先使用手动保存的句柄（热键触发时第一时间保存），但仅限 2 秒内有效
         if let Ok(manual) = self.last_foreground_hwnd.lock() {
-            if manual.is_some() {
-                return *manual;
+            if let Some((hwnd, timestamp)) = *manual {
+                let elapsed = timestamp.elapsed().as_secs();
+                if elapsed < Self::FOREGROUND_TTL_SECS {
+                    return Some(hwnd);
+                }
+                // 已过期，不删除（下次 save_foreground_hwnd 会覆盖）
             }
         }
 
-        // 其次使用追踪的句柄
-        if let Ok(tracked) = self.tracked_foreground_hwnd.lock() {
-            if tracked.is_some() {
-                return *tracked;
-            }
+        // 回退到传入的实时抓取结果（粘贴前一刻的最新前台窗口）
+        if fallback.is_some() {
+            return fallback;
         }
 
-        // 最后实时抓取当前前台窗口（粘贴前一刻的最新状态）
+        // 最后实时抓取当前前台窗口（兜底）
         #[cfg(target_os = "windows")]
         {
             return self.capture_foreground_now();
@@ -156,8 +156,17 @@ impl PasteEngine {
     }
 
     /// 核心粘贴流程：写入剪贴板 → 发送 WM_PASTE 到目标窗口
-    pub fn execute_paste(&self, text: Option<String>) -> Result<(), String> {
-        log::info!("[PasteEngine] execute_paste 开始, text={}", text.is_some());
+    pub fn execute_paste(
+        &self,
+        text: Option<String>,
+    ) -> Result<crate::commands::PasteResult, String> {
+        let mut result = crate::commands::PasteResult {
+            success: false,
+            error: None,
+            target_hwnd: None,
+            clipboard_written: false,
+            wm_paste_sent: false,
+        };
 
         // 0. 获取粘贴锁，防止竞态条件（同一时间只允许一个粘贴操作）
         if self.paste_lock.swap(true, Ordering::Acquire) {
@@ -193,34 +202,32 @@ impl PasteEngine {
             clipboard
                 .set_text(t.as_str())
                 .map_err(|e| format!("无法写入剪贴板: {}", e))?;
-            log::info!("[PasteEngine] 剪贴板已写入: {}...", &t[..t.len().min(30)]);
         }
+        result.clipboard_written = true;
 
-        // 3. 粘贴前实时重抓前台窗口（排除自身）作为兜底目标，
-        //    防止 tracked/manual 句柄过期或指向自身
+        // 3. 粘贴前实时重抓前台窗口（排除自身），作为 get_target_hwnd 的回退值
         #[cfg(target_os = "windows")]
-        if let Some(now_hwnd) = self.capture_foreground_now() {
-            if let Ok(mut guard) = self.tracked_foreground_hwnd.lock() {
-                *guard = Some(now_hwnd);
-            }
-        }
+        let now_hwnd = self.capture_foreground_now();
+        #[cfg(not(target_os = "windows"))]
+        let now_hwnd: Option<isize> = None;
 
-        // 4. 获取目标窗口句柄
-        let target_hwnd = self.get_target_hwnd();
-        log::info!("[PasteEngine] 目标窗口: {:?}", target_hwnd);
+        // 4. 获取目标窗口句柄：手动保存 > 实时抓取 > None
+        let target_hwnd = self.get_target_hwnd(now_hwnd);
+        result.target_hwnd = target_hwnd;
 
         // 4. 发送 WM_PASTE 到目标窗口
         #[cfg(target_os = "windows")]
         {
             self.restore_and_send_ctrl_v(target_hwnd)?;
         }
+        result.wm_paste_sent = true;
 
-        // 5. 清除手动保存的句柄（仅在成功时清除，保留追踪的句柄）
-        if let Ok(mut guard) = self.last_foreground_hwnd.lock() {
-            *guard = None;
-        }
+        // 5. 不在此处清除 last_foreground_hwnd！
+        //    改为依赖时间戳过期机制（2 秒 TTL），确保 sequential paste
+        //    循环中的多次粘贴都能使用热键触发时保存的目标窗口。
 
-        Ok(())
+        result.success = true;
+        Ok(result)
     }
 
     /// 仅复制不粘贴
@@ -234,11 +241,6 @@ impl PasteEngine {
 
     /// 粘贴图片：读取图片文件 → 写入剪贴板 → 发送 WM_PASTE
     pub fn execute_paste_image(&self, image_path: &str) -> Result<(), String> {
-        log::info!(
-            "[PasteEngine] execute_paste_image 开始, path={}",
-            image_path
-        );
-
         // 0. 获取粘贴锁，防止竞态条件
         if self.paste_lock.swap(true, Ordering::Acquire) {
             log::warn!("[PasteEngine] 上一个粘贴操作仍在进行中，跳过本次图片粘贴");
@@ -277,30 +279,23 @@ impl PasteEngine {
         clipboard
             .set_image(img_data)
             .map_err(|e| format!("无法写入图片到剪贴板: {}", e))?;
-        log::info!("[PasteEngine] 图片已写入剪贴板 {}x{}", width, height);
 
         // 3. 粘贴前实时重抓前台窗口（排除自身）
         #[cfg(target_os = "windows")]
-        if let Some(now_hwnd) = self.capture_foreground_now() {
-            if let Ok(mut guard) = self.tracked_foreground_hwnd.lock() {
-                *guard = Some(now_hwnd);
-            }
-        }
+        let now_hwnd = self.capture_foreground_now();
+        #[cfg(not(target_os = "windows"))]
+        let now_hwnd: Option<isize> = None;
 
         // 4. 获取目标窗口句柄
-        let target_hwnd = self.get_target_hwnd();
-        log::info!("[PasteEngine] 图片粘贴目标窗口: {:?}", target_hwnd);
+        let target_hwnd = self.get_target_hwnd(now_hwnd);
 
-        // 4. 发送 WM_PASTE
+        // 5. 发送 Ctrl+V
         #[cfg(target_os = "windows")]
         {
             self.restore_and_send_ctrl_v(target_hwnd)?;
         }
 
-        // 5. 清除手动保存的句柄
-        if let Ok(mut guard) = self.last_foreground_hwnd.lock() {
-            *guard = None;
-        }
+        // 5. 不在此处清除 last_foreground_hwnd（依赖 2 秒 TTL 过期）
 
         Ok(())
     }
@@ -308,56 +303,53 @@ impl PasteEngine {
     #[cfg(target_os = "windows")]
     fn restore_and_send_ctrl_v(&self, hwnd_value: Option<isize>) -> Result<(), String> {
         use windows::Win32::Foundation::*;
-        use windows::Win32::System::Threading::*;
-        use windows::Win32::UI::Input::KeyboardAndMouse::GetFocus;
+        use windows::Win32::UI::Input::KeyboardAndMouse::*;
         use windows::Win32::UI::WindowsAndMessaging::*;
-
-        const WM_PASTE: u32 = 0x0302;
-
-        log::info!(
-            "[PasteEngine] restore_and_send_ctrl_v, hwnd={:?}",
-            hwnd_value
-        );
 
         unsafe {
             if let Some(hwnd_raw) = hwnd_value {
                 let hwnd = HWND(hwnd_raw as *mut _);
 
                 if !IsWindow(hwnd).as_bool() {
-                    log::warn!("[PasteEngine] 目标窗口已不存在!");
                     return Ok(());
                 }
 
-                // 连接到目标窗口线程以获取其焦点控件
-                let target_tid = GetWindowThreadProcessId(hwnd, None);
-                let cur_tid = GetCurrentThreadId();
-                let attached = if target_tid != cur_tid {
-                    AttachThreadInput(cur_tid, target_tid, true).as_bool()
-                } else {
-                    true
-                };
-
-                // 找到目标窗口中有焦点的子控件（如 Notepad++ 的 Scintilla 编辑区）
-                let focus_hwnd = GetFocus();
-                let paste_target = if !focus_hwnd.is_invalid() && focus_hwnd != hwnd {
-                    log::info!("[PasteEngine] 找到焦点子控件: {:?}", focus_hwnd.0);
-                    focus_hwnd
-                } else {
-                    log::info!("[PasteEngine] 无焦点子控件，使用主窗口");
-                    hwnd
-                };
-
-                // 使用 SendMessageW 同步发送 WM_PASTE，确保目标窗口处理完成再返回
-                // 相比 PostMessageW，SendMessageW 更可靠，不会因目标消息队列繁忙而丢失粘贴
-                let paste_result = SendMessageW(paste_target, WM_PASTE, WPARAM(0), LPARAM(0));
-                log::info!("[PasteEngine] WM_PASTE 已发送, result={:?}", paste_result);
-
-                // 断开线程连接
-                if attached && target_tid != cur_tid {
-                    let _ = AttachThreadInput(cur_tid, target_tid, false);
+                // 将目标窗口切换到前台（确保按键能送达）
+                let was_minimized = IsIconic(hwnd).as_bool();
+                if was_minimized {
+                    ShowWindow(hwnd, SW_RESTORE);
                 }
-            } else {
-                log::warn!("[PasteEngine] 没有目标窗口!");
+                SetForegroundWindow(hwnd);
+                // 等待窗口获得焦点（微信等应用需要一点时间）
+                std::thread::sleep(std::time::Duration::from_millis(30));
+
+                // 使用 SendInput 模拟 Ctrl+V 按键（兼容所有应用，包括微信/企业微信等 WebView 应用）
+                let mut inputs: [INPUT; 4] = std::mem::zeroed();
+
+                // Ctrl 按下
+                inputs[0].r#type = INPUT_KEYBOARD;
+                inputs[0].Anonymous.ki.wVk = VIRTUAL_KEY(VK_CONTROL.0 as u16);
+
+                // V 按下
+                inputs[1].r#type = INPUT_KEYBOARD;
+                inputs[1].Anonymous.ki.wVk = VIRTUAL_KEY(0x56);
+
+                // V 释放
+                inputs[2].r#type = INPUT_KEYBOARD;
+                inputs[2].Anonymous.ki.wVk = VIRTUAL_KEY(0x56);
+                inputs[2].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
+
+                // Ctrl 释放
+                inputs[3].r#type = INPUT_KEYBOARD;
+                inputs[3].Anonymous.ki.wVk = VIRTUAL_KEY(VK_CONTROL.0 as u16);
+                inputs[3].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
+
+                SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+
+                // 如果窗口之前是最小化的，恢复最小化状态
+                if was_minimized {
+                    ShowWindow(hwnd, SW_MINIMIZE);
+                }
             }
         }
 

@@ -155,9 +155,19 @@ pub fn get_stats(store: State<DataStore>, workspace: String) -> Result<Stats, St
 
 // ===== 粘贴引擎命令 =====
 
+/// 粘贴诊断结果
+#[derive(serde::Serialize)]
+pub struct PasteResult {
+    pub success: bool,
+    pub error: Option<String>,
+    pub target_hwnd: Option<isize>,
+    pub clipboard_written: bool,
+    pub wm_paste_sent: bool,
+}
+
 /// 复制文本到剪贴板并执行粘贴（Ctrl+V）
 #[tauri::command]
-pub fn paste_text(engine: State<PasteEngine>, text: String) -> Result<(), String> {
+pub fn paste_text(engine: State<PasteEngine>, text: String) -> Result<PasteResult, String> {
     engine.execute_paste(Some(text))
 }
 

@@ -131,6 +131,10 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
         match gs.on_shortcut(shortcut, move |app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
                 log::info!("[HotkeyManager] 依次粘贴热键触发!");
+                // 第一时间保存前台窗口句柄，确保粘贴目标正确
+                if let Some(engine) = app.try_state::<crate::paste_engine::PasteEngine>() {
+                    engine.save_foreground_hwnd();
+                }
                 let _ = app.emit("hotkey-sequential-paste", ());
             }
         }) {
@@ -152,6 +156,10 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
             let idx = i;
             match gs.on_shortcut(shortcut, move |app, _shortcut, event| {
                 if event.state == ShortcutState::Pressed {
+                    // 第一时间保存前台窗口句柄
+                    if let Some(engine) = app.try_state::<crate::paste_engine::PasteEngine>() {
+                        engine.save_foreground_hwnd();
+                    }
                     let _ = app.emit("hotkey-index-paste", idx);
                 }
             }) {

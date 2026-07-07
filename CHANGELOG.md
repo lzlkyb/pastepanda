@@ -2,6 +2,16 @@
 
 PastePanda 版本更新日志。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [5.0.140] - 2026-07-07
+
+### 修复
+- 修复依次粘贴在微信/企业微信等现代应用中失效 — 粘贴引擎从 WM_PASTE 消息改为 SendInput 模拟 Ctrl+V 按键
+- 修复 sequential paste 第 2+ 条粘贴目标窗口错误 — last_foreground_hwnd 加 2 秒 TTL 过期机制，不再在每次粘贴后清除
+
+### 变更
+- 热键触发时第一时间调用 save_foreground_hwnd 保存目标窗口
+- PasteResult 增加 target_hwnd/clipboard_written/wm_paste_sent 诊断字段
+
 ## [5.0.126] - 2026-07-06
 
 ### 修复

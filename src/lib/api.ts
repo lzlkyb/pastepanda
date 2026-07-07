@@ -131,6 +131,7 @@ export async function initBackend(): Promise<() => void> {
 
   // 监听依次粘贴热键 (Ctrl+Q)
   const unlisten2 = await listen("hotkey-sequential-paste", async () => {
+    console.log("[hotkey-sequential-paste] 事件收到，调用 sequentialPaste()");
     await sequentialPaste();
   });
 
@@ -156,27 +157,36 @@ export async function sequentialPaste() {
   const pointer = store.seqPointer;
   const loop = store.config.sequential_loop;
 
+  logger.info(`[sequentialPaste] 触发 — textItems=${textItems.length}, pointer=${pointer}, loop=${loop}`);
+
   if (textItems.length === 0) {
+    logger.warn("[sequentialPaste] 没有文本记录，跳过");
+    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "没有可粘贴的文本记录", type: "info" } }));
     return;
   }
 
   let idx = pointer;
+  // 指针越界：循环模式下从头开始，非循环模式下也从头开始（而不是静默 return）
   if (idx >= textItems.length) {
-    if (loop) {
-      idx = 0;
-      store.setSeqPointer(0);
-    } else {
-      return; // 到头了
-    }
+    logger.warn(`[sequentialPaste] 指针越界 ${idx} >= ${textItems.length}，重置为 0`);
+    idx = 0;
+    store.setSeqPointer(0);
   }
 
   const item = textItems[idx];
   if (!item) {
+    logger.error(`[sequentialPaste] textItems[${idx}] 为 null/undefined`);
     return;
   }
 
-  // 调用后端粘贴引擎
-  await pasteText(item.text);
+  logger.info(`[sequentialPaste] 粘贴第 ${idx + 1}/${textItems.length} 条: ${item.text.slice(0, 30)}...`);
+
+  // 调用后端粘贴引擎，成功后推进指针，失败不推进
+  const ok = await pasteText(item.text);
+  if (!ok) {
+    logger.warn(`[sequentialPaste] 粘贴失败，指针保持 ${idx}`);
+    return; // 粘贴失败不推进指针
+  }
 
   // Toast 反馈
   window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已粘贴第 ${idx + 1} 条`, type: "success" } }));
@@ -186,8 +196,10 @@ export async function sequentialPaste() {
   if (next >= textItems.length) {
     if (loop) {
       store.setSeqPointer(0);
+      logger.info("[sequentialPaste] 循环模式：指针重置为 0");
     } else {
       store.setSeqPointer(next);
+      logger.info(`[sequentialPaste] 非循环模式：指针到达末尾 ${next}`);
     }
   } else {
     store.setSeqPointer(next);
@@ -209,14 +221,20 @@ export async function indexPaste(n: number) {
   window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已粘贴第 ${n} 条`, type: "success" } }));
 }
 
-/** 粘贴文本 */
-export async function pasteText(text: string) {
+/** 粘贴文本，返回是否成功 */
+export async function pasteText(text: string): Promise<boolean> {
   try {
-    await invoke("paste_text", { text });
+    const result = await invoke<{ success: boolean; error?: string; target_hwnd: number | null; clipboard_written: boolean; wm_paste_sent: boolean }>("paste_text", { text });
+    if (!result.success) {
+      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `粘贴失败: ${result.error || "未知"}`, type: "error" } }));
+      return false;
+    }
+    return true;
   } catch (e) {
     logger.error("粘贴失败", e);
     const msg = e instanceof Error ? e.message : String(e);
     window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `粘贴失败: ${msg}`, type: "error" } }));
+    return false;
   }
 }
 
