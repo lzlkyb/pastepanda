@@ -7,6 +7,7 @@ pub mod content_classifier;
 pub mod data_store;
 pub mod error;
 mod hotkey_manager;
+mod icon_extractor;
 mod lan_sync;
 mod paste_engine;
 mod pinned_window;
@@ -119,6 +120,11 @@ pub fn run() {
             monitor.update_auto_strip_cache(auto_strip_enabled);
             monitor.start();
             app.manage(monitor);
+
+            // 初始化图标缓存（用于来源应用真实图标）
+            let icon_cache_dir = app_dir.join("source-icons");
+            let icon_cache = icon_extractor::IconCache::new(icon_cache_dir);
+            app.manage(icon_cache);
 
             // 初始化内容分类器（AI 智能分类）
             let classifier = content_classifier::ContentClassifier::new();
@@ -249,6 +255,8 @@ pub fn run() {
             commands::remove_item_tags,
             commands::get_items_with_tags,
             commands::confirm_auto_tags,
+            commands::get_source_app_icon,
+            commands::clear_source_icon_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -11,12 +11,13 @@ import { LanSyncPanel } from "./LanSyncPanel";
 import styles from "../Settings.module.css";
 
 const THEME_PREVIEWS: Record<string, { bg: string; accent: string; text: string; barBg: string; bodyBg: string; lineBg: string }> = {
-  "ocean":    { bg: "#F4F6F9", accent: "#0284C7", text: "#64748B", barBg: "#fff", bodyBg: "#F4F6F9", lineBg: "#E0E4EB" },
-  "midnight": { bg: "#09090B", accent: "#818CF8", text: "#A1A1AA", barBg: "#18181B", bodyBg: "#09090B", lineBg: "#27272A" },
-  "forest":   { bg: "#F2F7F5", accent: "#059669", text: "#78716C", barBg: "#fff", bodyBg: "#F2F7F5", lineBg: "#D1D9D3" },
-  "blossom":  { bg: "#FFFBFD", accent: "#EC4899", text: "#A68A96", barBg: "#fff", bodyBg: "#FFFBFD", lineBg: "#F3E8ED" },
-  "terminal": { bg: "#0A0A0A", accent: "#22C55E", text: "#A3A3A3", barBg: "#141414", bodyBg: "#0A0A0A", lineBg: "#262626" },
-  "sunset":   { bg: "#1C1410", accent: "#F97316", text: "#B8A99A", barBg: "#281E18", bodyBg: "#1C1410", lineBg: "#3D3028" },
+  "ocean":      { bg: "#F4F6F9", accent: "#0284C7", text: "#64748B", barBg: "#fff", bodyBg: "#F4F6F9", lineBg: "#E0E4EB" },
+  "ocean-dark": { bg: "#060D14", accent: "#3B9EFF", text: "#8BA4C0", barBg: "#0A1628", bodyBg: "#060D14", lineBg: "#162B45" },
+  "midnight":   { bg: "#09090B", accent: "#818CF8", text: "#A1A1AA", barBg: "#18181B", bodyBg: "#09090B", lineBg: "#27272A" },
+  "forest":     { bg: "#F2F7F5", accent: "#059669", text: "#78716C", barBg: "#fff", bodyBg: "#F2F7F5", lineBg: "#D1D9D3" },
+  "blossom":    { bg: "#FFFBFD", accent: "#EC4899", text: "#A68A96", barBg: "#fff", bodyBg: "#FFFBFD", lineBg: "#F3E8ED" },
+  "terminal":   { bg: "#0A0A0A", accent: "#22C55E", text: "#A3A3A3", barBg: "#141414", bodyBg: "#0A0A0A", lineBg: "#262626" },
+  "sunset":     { bg: "#1C1410", accent: "#F97316", text: "#B8A99A", barBg: "#281E18", bodyBg: "#1C1410", lineBg: "#3D3028" },
 };
 
 const CLEANUP_OPTIONS = [
@@ -269,6 +270,48 @@ export function GeneralTab({
           </button>
         </div>
       </div>
+
+      {/* 来源图标模式 */}
+      <div className={styles.sRow}>
+        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #EC4899, #F43F5E)" }}>🎯</span>
+        <div className={`${styles.sRowBody}`}>
+          <div className={`${styles.sRowLabel}`}>
+            来源图标
+            <span className={`${styles.sRowRecommend}`}>⭐推荐</span>
+            <HelpTooltip
+              tooltip="应用真实图标更直观，首次提取约需 50ms"
+              detailTitle="来源图标"
+              detail={<>
+                <p>控制剪贴板卡片中来源 Badge 的图标显示方式。</p>
+                <p>📌 <b>应用图标</b>：提取真实程序图标（推荐，更直观）</p>
+                <p>📌 <b>Emoji</b>：使用预设的 emoji 图标</p>
+                <p>💡 <b>推荐真实图标</b>，一眼就能识别来源应用</p>
+              </>}
+            />
+          </div>
+          <div className={`${styles.sRowDesc}`}>
+            {config.source_icon_mode === "app" ? "显示真实程序图标，更直观" : "显示预设 Emoji 图标"}
+          </div>
+        </div>
+        <div className={styles.sSegGroup}>
+          <button className={`${styles.sSegOpt}${config.source_icon_mode === "emoji" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ source_icon_mode: "emoji" })} title="Emoji 图标">
+            <span className={styles.sSegEmoji}>😀</span>
+          </button>
+          <button className={`${styles.sSegOpt}${config.source_icon_mode === "app" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ source_icon_mode: "app" })} title="应用真实图标">
+            <span className={styles.sSegEmoji}>🖼️</span>
+          </button>
+        </div>
+      </div>
+      <ToggleRow icon="⏱" gradient="linear-gradient(135deg, #8B5CF6, #6366F1)" label="时间线" desc="主页面左侧显示竖版时间轴导航" value={config.timeline_enabled}
+        tooltip="在剪贴板列表左侧显示时间轴，可快速跳转到不同时间段的记录"
+        detailTitle="时间线"
+        detail={<>
+          <p>在主页左侧显示一条竖版时间轴导航条。</p>
+          <p>📌 <b>功能</b>：按时间分组（今天/昨天/本周/更早）快速定位剪贴板记录</p>
+          <p>🖱️ <b>操作</b>：悬停查看卡片预览，点击跳转到对应位置</p>
+          <p>💡 适合记录较多时使用，帮助快速浏览</p>
+        </>}
+        onChange={(v) => updateAndSave({ timeline_enabled: v })} />
       <ToggleRow icon="🔁" gradient="linear-gradient(135deg, #06B6D4, #0078D4)" label="依次粘贴循环" desc="到达末尾后从头开始" value={config.sequential_loop} onChange={(v) => updateAndSave({ sequential_loop: v })}
         tooltip="适合重复粘贴同一组内容时使用"
       />

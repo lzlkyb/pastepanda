@@ -1,6 +1,6 @@
 [package]
 name = "pastepanda"
-version = "5.0.128"
+version = "5.0.135"
 description = "PastePanda - Smart Clipboard Manager"
 authors = ["you"]
 edition = "2021"
@@ -31,7 +31,7 @@ serde_json = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }
 arboard = { version = "3", features = ["image-data"] }
 tokio = { version = "1", features = ["full"] }
-image = "0.25"
+image = { version = "0.25", features = ["png"] }
 md-5 = "0.10"
 base64 = "0.22"
 uuid = { version = "1", features = ["v4"] }
@@ -55,6 +55,9 @@ windows = { version = "0.58", features = [
     "Win32_UI_Shell",
     "Win32_System_DataExchange",
     "Win32_System_Memory",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Threading",
+    "Win32_Storage_FileSystem",
     "Media_Ocr",
     "Graphics_Imaging",
     "Storage",

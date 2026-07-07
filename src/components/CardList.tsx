@@ -228,6 +228,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
     if (imageItems.length === 0) return;
 
     let cancelled = false;
+    const completedPaths = new Set<string>(); // 跟踪已完成加载的路径
     const pathsToLoad = imageItems.map((i) => i.content!);
     pathsToLoad.forEach((p) => loadedPathsRef.current.add(p));
 
@@ -250,16 +251,38 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
           const result = results[idx];
           if (result.status === "fulfilled" && result.value) {
             updates[path] = { status: "loaded", url: result.value };
+            completedPaths.add(path);
           } else {
             const retries = (imgRetryCount.current[path] || 0) + 1;
             imgRetryCount.current[path] = retries;
             updates[path] = retries > MAX_IMG_RETRY ? { status: "silent" } : { status: "error" };
+            completedPaths.add(path); // error/silent 也是终态，不再重试
           }
         });
         setImgCache((prev) => ({ ...prev, ...updates }));
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      // 回滚：只删除未完成加载的路径，已完成的保留在 loadedPathsRef 中
+      for (const p of pathsToLoad) {
+        if (!completedPaths.has(p)) {
+          loadedPathsRef.current.delete(p);
+        }
+      }
+      // 清除 loading 状态的 imgCache 残留，避免骨架屏卡住
+      setImgCache((prev) => {
+        const next = { ...prev };
+        let changed = false;
+        for (const p of pathsToLoad) {
+          if (!completedPaths.has(p) && next[p]?.status === "loading") {
+            delete next[p];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
 
@@ -843,7 +866,8 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   }, [items, searchKeyword, filterType]);
 
   // #8 Mini 模式：时间轴始终可见（常驻 10px 窄轨），hover/拖拽时展开
-  const [timelineVisible, setTimelineVisible] = useState(true);
+  // 受设置项 timeline_enabled 控制：关闭时完全不渲染
+  const timelineEnabled = useAppStore((s) => s.config.timeline_enabled);
   const [timelineExpanded, setTimelineExpanded] = useState(false);
 
   // 滚动到指定卡片索引
@@ -880,26 +904,26 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
     <ContextMenu>
     {/* B1 竖版左侧时间轴 — content-area 包裹 timeline + 滚动区 */}
     <div className={`${styles.contentArea} ${timelineExpanded ? styles.contentAreaOverflowVisible : ""}`}>
-      <Timeline
-        visible={timelineVisible}
-        scrollHeight={scrollMetrics.scrollHeight}
-        clientHeight={scrollMetrics.clientHeight}
-        scrollTop={scrollMetrics.scrollTop}
-        nodes={timelineNodes}
-        groupIndices={timelineGroupIndices}
-        onScrollToIndex={handleScrollToIndex}
-        onDragScroll={handleDragScroll}
-        onWheelScroll={handleTimelineWheel}
-        scrollRef={scrollRef}
-        onExpandChange={setTimelineExpanded}
-        onTriggerEnter={() => {
-          // #8 Mini 模式：时间轴常驻，triggerZone 进入确保可见
-          if (timelineHideTimerRef.current) window.clearTimeout(timelineHideTimerRef.current);
-        }}
-        onTimelineLeave={() => {
-          // #8 Mini 模式：不再隐藏，只是收回展开（Timeline 内部处理）
-        }}
-      />
+      {timelineEnabled && (
+        <Timeline
+          visible={timelineEnabled}
+          scrollHeight={scrollMetrics.scrollHeight}
+          clientHeight={scrollMetrics.clientHeight}
+          scrollTop={scrollMetrics.scrollTop}
+          nodes={timelineNodes}
+          groupIndices={timelineGroupIndices}
+          onScrollToIndex={handleScrollToIndex}
+          onDragScroll={handleDragScroll}
+          onWheelScroll={handleTimelineWheel}
+          scrollRef={scrollRef}
+          onExpandChange={setTimelineExpanded}
+          onTriggerEnter={() => {
+            if (timelineHideTimerRef.current) window.clearTimeout(timelineHideTimerRef.current);
+          }}
+          onTimelineLeave={() => {
+          }}
+        />
+      )}
 
       <div
         className={`${styles.scrollArea} ${timelineExpanded ? styles.scrollAreaTimelineVisible : ""}`}

@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useAppStore } from "@/stores/appStore";
+import { fetchRealSourceIcon } from "@/lib/source-mappings";
 import styles from "./Sidebar.module.css";
 
 /** 侧边栏分组项 */
@@ -6,11 +8,15 @@ export interface SidebarGroup {
   id: string;
   name: string;
   count: number;
-  icon?: string;   // emoji 图标
+  icon?: string;   // emoji 图标（回退用）
   color?: string;  // 颜色值，如 "#3B82F6"
   isBuiltin?: boolean; // 内置分组（全部/未分组/收藏）
   isUserGroup?: boolean; // 用户自定义分组
   section?: "builtin" | "user" | "source" | "auto"; // 所属区域
+  /** 来源分组的原始 source 字符串（用于 SourceBadge 获取真实图标） */
+  sourceRaw?: string;
+  /** 来源分组的 source_icon 文件名（用于 fetchRealSourceIcon） */
+  sourceIcon?: string | null;
 }
 
 interface SidebarProps {
@@ -27,6 +33,24 @@ interface SidebarProps {
 
 const PRESET_COLORS = ["#3B82F6", "#22C55E", "#F97316", "#A855F7", "#EF4444", "#EC4899", "#14B8A6", "#F59E0B", "#6366F1"];
 const PRESET_ICONS = ["📁", "📂", "🏷️", "📌", "⭐", "❤️", "🔥", "💼", "🎯", "📝", "💡", "🔖"];
+
+/** 来源分组图标：支持真实应用图标 + emoji 回退 */
+function SourceGroupIcon({ source, sourceIcon, fallbackEmoji }: { source: string; sourceIcon?: string | null; fallbackEmoji: string }) {
+  const sourceIconMode = useAppStore((s) => s.config.source_icon_mode);
+  const cacheKey = sourceIcon || source;
+  const realIconUrl = useAppStore((s) => s.realIconCache[cacheKey]);
+
+  useEffect(() => {
+    if (sourceIconMode === "app" && source) {
+      fetchRealSourceIcon(source, sourceIcon);
+    }
+  }, [source, sourceIcon, sourceIconMode]);
+
+  if (sourceIconMode === "app" && realIconUrl) {
+    return <img src={realIconUrl} alt="" className={styles.sourceIcon} />;
+  }
+  return <span className={styles.icon}>{fallbackEmoji}</span>;
+}
 
 export function Sidebar({ open, activeGroupId, groups, onSelectGroup, onClose, onCreateGroup, onRenameGroup, onDeleteGroup, onChangeGroupColor }: SidebarProps) {
   const [listKey] = useState(() => crypto.randomUUID());
@@ -169,7 +193,13 @@ export function Sidebar({ open, activeGroupId, groups, onSelectGroup, onClose, o
         onContextMenu={(e) => g.isUserGroup ? handleContextMenu(e, g.id) : undefined}
         tabIndex={open ? 0 : -1}
       >
-        {g.icon ? <span className={styles.icon}>{g.icon}</span> : <span className={styles.dot} style={{ background: g.color || "#3B82F6" }} />}
+        {g.section === "source" && g.sourceRaw ? (
+          <SourceGroupIcon source={g.sourceRaw} sourceIcon={g.sourceIcon} fallbackEmoji={g.icon || "🔍"} />
+        ) : g.icon ? (
+          <span className={styles.icon}>{g.icon}</span>
+        ) : (
+          <span className={styles.dot} style={{ background: g.color || "#3B82F6" }} />
+        )}
         <span className={styles.name}>{g.name}</span>
         <span className={styles.count}>{g.count}</span>
         {g.isUserGroup && (

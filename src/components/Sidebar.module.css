@@ -109,6 +109,15 @@
   line-height: 1;
 }
 
+/* 来源分组的真实应用图标（小尺寸） */
+.sourceIcon {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
 .name {
   flex: 1;
   overflow: hidden;

@@ -1,6 +1,6 @@
 /** 主题定义 — 6 套配色方案 */
 
-export type ThemeKey = "ocean" | "midnight" | "forest" | "blossom" | "terminal" | "sunset";
+export type ThemeKey = "ocean" | "ocean-dark" | "midnight" | "forest" | "blossom" | "terminal" | "sunset";
 
 export interface Theme {
   key: ThemeKey;
@@ -10,15 +10,16 @@ export interface Theme {
 }
 
 export const THEMES: Theme[] = [
-  { key: "ocean",    displayName: "海洋", dark: false },
-  { key: "midnight", displayName: "午夜", dark: true },
-  { key: "forest",   displayName: "森林", dark: false },
-  { key: "blossom",  displayName: "樱花", dark: false },
-  { key: "terminal", displayName: "终端", dark: true },
-  { key: "sunset",   displayName: "日落", dark: true },
+  { key: "ocean",      displayName: "海洋", dark: false },
+  { key: "ocean-dark", displayName: "深海", dark: true },
+  { key: "midnight",   displayName: "午夜", dark: true },
+  { key: "forest",     displayName: "森林", dark: false },
+  { key: "blossom",    displayName: "樱花", dark: false },
+  { key: "terminal",   displayName: "终端", dark: true },
+  { key: "sunset",     displayName: "日落", dark: true },
 ];
 
-export const DEFAULT_THEME: ThemeKey = "ocean";
+export const DEFAULT_THEME: ThemeKey = "ocean-dark";
 
 /** 将主题应用到 document.documentElement */
 export function applyTheme(themeKey: ThemeKey) {

@@ -2,6 +2,7 @@ import { memo, useState, useCallback, useContext, useRef, useEffect, useMemo } f
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
 import { relativeTime, detectTextType } from "@/lib/utils";
+import SourceBadge from "@/components/SourceBadge";
 import { createCardMenuItems, CtxMenuCtx, type MenuItem } from "@/components/ContextMenu";
 import { confirmAutoTags, removeItemTags, fetchTags } from "@/lib/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -31,14 +32,6 @@ const ICONS: Record<string, { Icon: React.FC<{ size?: number; color?: string; st
   image: { Icon: ImageIcon, color: "#EC4899" },
   file:  { Icon: FileText,  color: "#06B6D4" },
 };
-
-function cleanSource(source: string): string {
-  if (!source) return "";
-  if (/^[A-Z]:\\/i.test(source) || /^\//.test(source)) return "";
-  const cleaned = source.split(/\s*[-–—]\s*/)[0].trim();
-  if (cleaned.length > 20) return cleaned.slice(0, 18) + "…";
-  return cleaned;
-}
 
 /** 解析文件路径 content JSON，返回路径数组 */
 function parseFilePaths(content: string): string[] {
@@ -86,7 +79,6 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
   const iconColor = subType === "text" ? hashColor(item.text || "") : cfg.color;
   const time = relativeTime(item.time);
   const title = item.type === "file" ? (item.content || "文件") : (item.text || "").replace(/\r?\n/g, " ").trim() || "(空)";
-  const source = cleanSource(item.source);
 
   const typeClass = item.type === "image" ? styles.cardImage
     : item.type === "file" ? styles.cardFile
@@ -247,7 +239,7 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
                 <Pin size={7} /> 置顶
               </span>
             )}
-            {source && <span className={styles.cardSource}>{source}</span>}
+            {item.source && <SourceBadge source={item.source} sourceIcon={item.source_icon} size="small" />}
             <TagRow tags={item.tags || []} />
           </div>
         </div>

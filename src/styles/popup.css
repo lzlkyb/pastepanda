@@ -169,6 +169,16 @@
 [data-theme="terminal"] .card-pinned .card-icon-slot {
   background: linear-gradient(135deg, #CA8A04, #713F12);
 }
+/* ocean-dark */
+[data-theme="ocean-dark"] .card-today .card-icon-slot {
+  background: linear-gradient(135deg, #3B9EFF, #1A7DE0);
+}
+[data-theme="ocean-dark"] .card-total .card-icon-slot {
+  background: linear-gradient(135deg, #6366F1, #4338CA);
+}
+[data-theme="ocean-dark"] .card-pinned .card-icon-slot {
+  background: linear-gradient(135deg, #F59E0B, #D97706);
+}
 /* sunset */
 [data-theme="sunset"] .card-today .card-icon-slot {
   background: linear-gradient(135deg, #EA580C, #7C2D12);
@@ -209,6 +219,9 @@
 [data-theme="terminal"] .card-today .card-value { color: #86EFAC; }
 [data-theme="terminal"] .card-total .card-value { color: #6EE7B7; }
 [data-theme="terminal"] .card-pinned .card-value { color: #FDE68A; }
+[data-theme="ocean-dark"] .card-today .card-value { color: #93C5FD; }
+[data-theme="ocean-dark"] .card-total .card-value { color: #C4B5FD; }
+[data-theme="ocean-dark"] .card-pinned .card-value { color: #FDE68A; }
 [data-theme="sunset"] .card-today .card-value { color: #FDBA74; }
 [data-theme="sunset"] .card-total .card-value { color: #FED7AA; }
 [data-theme="sunset"] .card-pinned .card-value { color: #FDE68A; }

@@ -19,8 +19,8 @@ import {
 } from "@/lib/theme";
 
 describe("THEMES 常量", () => {
-  it("包含 6 个主题", () => {
-    expect(THEMES).toHaveLength(6);
+  it("包含 7 个主题", () => {
+    expect(THEMES).toHaveLength(7);
   });
 
   it("每个主题都有 key, displayName, dark 字段", () => {
@@ -39,21 +39,22 @@ describe("THEMES 常量", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it("包含预期主题: ocean, midnight, forest, blossom, terminal, sunset", () => {
+  it("包含预期主题", () => {
     const keys = THEMES.map((t) => t.key).sort();
     expect(keys).toEqual([
       "blossom",
       "forest",
       "midnight",
       "ocean",
+      "ocean-dark",
       "sunset",
       "terminal",
     ]);
   });
 
-  it("暗色主题有 midnight, terminal, sunset", () => {
+  it("暗色主题有 midnight, ocean-dark, terminal, sunset", () => {
     const darkKeys = THEMES.filter((t) => t.dark).map((t) => t.key).sort();
-    expect(darkKeys).toEqual(["midnight", "sunset", "terminal"]);
+    expect(darkKeys).toEqual(["midnight", "ocean-dark", "sunset", "terminal"]);
   });
 
   it("亮色主题有 ocean, forest, blossom", () => {
@@ -61,8 +62,8 @@ describe("THEMES 常量", () => {
     expect(lightKeys).toEqual(["blossom", "forest", "ocean"]);
   });
 
-  it("DEFAULT_THEME 为 ocean", () => {
-    expect(DEFAULT_THEME).toBe("ocean");
+  it("DEFAULT_THEME 为 ocean-dark", () => {
+    expect(DEFAULT_THEME).toBe("ocean-dark");
   });
 });
 
@@ -132,8 +133,8 @@ describe("getCurrentTheme", () => {
     expect(getCurrentTheme()).toBe("terminal");
   });
 
-  it("无 data-theme 属性时返回默认主题 ocean", () => {
-    expect(getCurrentTheme()).toBe("ocean");
+  it("无 data-theme 属性时返回默认主题 ocean-dark", () => {
+    expect(getCurrentTheme()).toBe("ocean-dark");
   });
 
   it("data-theme 为空字符串时返回默认主题", () => {

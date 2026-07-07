@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SourceBadge 组件 — 来源显示统一设计稿</title>
+<style>
+:root {
+  --app-bg: #f8fafc;
+  --card-bg: #ffffff;
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+  --accent: #6366f1;
+  --accent-light: #eef2ff;
+  --border-color: #e2e8f0;
+  --section-bg: #f1f5f9;
+  --hover: #f1f5f9;
+  --sidebar-section-label: #64748b;
+}
+
+/* ===== 设计稿整体布局 ===== */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--app-bg);
+  margin: 0;
+  padding: 24px;
+  color: var(--text-primary);
+}
+
+h2 {
+  font-size: 16px;
+  margin: 24px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+h2:first-child { margin-top: 0; }
+
+.section-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+/* ===== SourceBadge 组件 ===== */
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  white-space: nowrap;
+  flex-shrink: 0;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.15s, border-color 0.15s;
+  user-select: none;
+}
+.source-badge:hover {
+  background: var(--hover);
+  border-color: var(--text-muted);
+}
+
+/* 尺寸变体 */
+.source-badge.small {
+  height: 16px;
+  padding: 0 5px;
+  font-size: 10px;
+  gap: 3px;
+  border-radius: 3px;
+  max-width: 90px;
+}
+.source-badge.small .source-icon { font-size: 11px; }
+
+.source-badge.large {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+  gap: 5px;
+  border-radius: 6px;
+  max-width: 160px;
+}
+.source-badge.large .source-icon { font-size: 15px; }
+
+.source-icon { font-size: 13px; line-height: 1; flex-shrink: 0; }
+.source-name { overflow: hidden; text-overflow: ellipsis; }
+
+/* 无边框变体（用于紧凑场景） */
+.source-badge.plain {
+  border-color: transparent;
+  background: transparent;
+  padding: 0 4px;
+}
+.source-badge.plain:hover {
+  background: var(--section-bg);
+  border-color: var(--border-color);
+}
+
+/* 颜色主题变体 */
+.source-badge.accent {
+  background: var(--accent-light);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ===== 模拟卡片 ===== */
+.mock-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  margin-bottom: 10px;
+  max-width: 440px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+.mock-card-icon {
+  width: 42px; height: 42px; min-width: 42px;
+  border-radius: 12px;
+  background: rgba(99,102,241,0.12);
+  border: 1px solid rgba(99,102,241,0.22);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+}
+.mock-card-body { flex: 1; min-width: 0; overflow: hidden; }
+.mock-card-title {
+  font-size: 13px; font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  margin-bottom: 2px;
+}
+.mock-card-sub {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--text-secondary);
+  white-space: nowrap; overflow: hidden;
+}
+.mock-card-pin {
+  display: inline-flex; align-items: center; gap: 2px;
+  height: 16px; padding: 0 6px; border-radius: 4px;
+  font-size: 10px; font-weight: 600;
+  background: var(--accent-light); color: var(--accent);
+}
+.mock-card-time {
+  font-size: 11px; color: var(--text-muted); flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* ===== 模拟 Sidebar 来源分组 ===== */
+.mock-sidebar {
+  width: 200px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 8px;
+}
+.mock-sidebar-section {
+  font-size: 11px; font-weight: 700;
+  color: var(--sidebar-section-label);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  padding: 10px 10px 6px;
+}
+.mock-sidebar-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px; border-radius: 7px;
+  cursor: pointer; border: none; background: transparent;
+  font-family: inherit; font-size: 13px;
+  color: var(--text-primary); text-align: left;
+  width: 100%; transition: all 0.15s;
+}
+.mock-sidebar-item:hover { background: var(--hover); }
+.mock-sidebar-item.active {
+  background: var(--accent-light); color: var(--accent); font-weight: 600;
+}
+.mock-sidebar-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.mock-sidebar-count {
+  margin-left: auto; font-size: 11px;
+  color: var(--text-muted); font-variant-numeric: tabular-nums;
+}
+
+/* ===== 模拟详情弹窗来源行 ===== */
+.mock-detail-row {
+  display: flex; justify-content: space-between;
+  align-items: center; padding: 6px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.mock-detail-label {
+  font-size: 12px; color: var(--text-muted);
+  flex-shrink: 0; min-width: 60px;
+}
+.mock-detail-value {
+  font-size: 12px; color: var(--text-primary);
+  text-align: right;
+}
+
+/* ===== 筛选下拉 ===== */
+.mock-dropdown-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg); font-size: 12px;
+  font-family: inherit; cursor: pointer;
+  color: var(--text-primary); transition: all 0.15s;
+}
+.mock-dropdown-btn:hover { background: var(--hover); }
+.mock-dropdown-btn .source-icon { font-size: 14px; }
+
+/* ===== 布局 ===== */
+.row { display: flex; gap: 24px; flex-wrap: wrap; }
+.col { flex: 1; min-width: 300px; }
+.spacer { height: 16px; }
+
+/* ===== 标签行（模拟 TagRow） ===== */
+.tag-badge {
+  display: inline-flex; align-items: center; gap: 2px;
+  height: 16px; padding: 0 5px; border-radius: 4px;
+  font-size: 10px; font-weight: 500;
+  border: 1px solid; flex-shrink: 0;
+}
+.tag-badge.auto {
+  border-style: dashed; opacity: 0.85;
+}
+
+/* 对比标注 */
+.comparison {
+  margin-top: 24px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.comparison h3 { font-size: 14px; margin: 0 0 8px; color: #92400e; }
+.comparison .before { color: #dc2626; }
+.comparison .after { color: #16a34a; }
+</style>
+</head>
+<body>
+
+<h2>一、卡片内来源显示 — 统一为 SourceBadge 组件</h2>
+<div class="section-desc">之前是纯文本 &lt;span&gt;，改为带图标+背景色的 Badge，和旁边的"置顶"标签风格统一</div>
+
+<div class="row">
+  <div class="col">
+    <h3 style="font-size:13px;color:#dc2626;margin:0 0 8px;">之前（不一致）</h3>
+    <div class="mock-card">
+      <div class="mock-card-icon">📝</div>
+      <div class="mock-card-body">
+        <div class="mock-card-title">这是一段复制的文本内容</div>
+        <div class="mock-card-sub">
+          <span class="mock-card-pin">📌 置顶</span>
+          <span style="font-size:11px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;max-width:100px;white-space:nowrap;">Chrome</span>
+          <span class="tag-badge auto" style="background:#3b82f620;color:#3B82F6;border-color:#3b82f640;">🤖 工作</span>
+        </div>
+      </div>
+      <span class="mock-card-time">3分钟前</span>
+    </div>
+
+    <div class="mock-card">
+      <div class="mock-card-icon">📋</div>
+      <div class="mock-card-body">
+        <div class="mock-card-title">console.log("hello world")</div>
+        <div class="mock-card-sub">
+          <span style="font-size:11px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;max-width:100px;white-space:nowrap;">VS Code</span>
+          <span class="tag-badge" style="background:#8b5cf620;color:#8B5CF6;border-color:#8b5cf640;">代码</span>
+        </div>
+      </div>
+      <span class="mock-card-time">1小时前</span>
+    </div>
+  </div>
+
+  <div class="col">
+    <h3 style="font-size:13px;color:#16a34a;margin:0 0 8px;">之后（SourceBadge 统一）</h3>
+    <div class="mock-card">
+      <div class="mock-card-icon">📝</div>
+      <div class="mock-card-body">
+        <div class="mock-card-title">这是一段复制的文本内容</div>
+        <div class="mock-card-sub">
+          <span class="mock-card-pin">📌 置顶</span>
+          <span class="source-badge small">
+            <span class="source-icon">🌐</span>
+            <span class="source-name">Chrome</span>
+          </span>
+          <span class="tag-badge auto" style="background:#3b82f620;color:#3B82F6;border-color:#3b82f640;">🤖 工作</span>
+        </div>
+      </div>
+      <span class="mock-card-time">3分钟前</span>
+    </div>
+
+    <div class="mock-card">
+      <div class="mock-card-icon">📋</div>
+      <div class="mock-card-body">
+        <div class="mock-card-title">console.log("hello world")</div>
+        <div class="mock-card-sub">
+          <span class="source-badge small">
+            <span class="source-icon">💻</span>
+            <span class="source-name">VS Code</span>
+          </span>
+          <span class="tag-badge" style="background:#8b5cf620;color:#8B5CF6;border-color:#8b5cf640;">代码</span>
+        </div>
+      </div>
+      <span class="mock-card-time">1小时前</span>
+    </div>
+  </div>
+</div>
+
+<h2>二、尺寸变体 — small / normal / large</h2>
+<div class="section-desc">SourceBadge 支持三种尺寸，适配不同场景</div>
+
+<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+    <span class="source-badge small">
+      <span class="source-icon">🌐</span>
+      <span class="source-name">Chrome</span>
+    </span>
+    <span style="font-size:10px;color:var(--text-muted);">small — 卡片内</span>
+  </div>
+  <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+    <span class="source-badge">
+      <span class="source-icon">💻</span>
+      <span class="source-name">VS Code</span>
+    </span>
+    <span style="font-size:10px;color:var(--text-muted);">normal — 筛选下拉/详情</span>
+  </div>
+  <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+    <span class="source-badge large">
+      <span class="source-icon">💬</span>
+      <span class="source-name">企业微信</span>
+    </span>
+    <span style="font-size:10px;color:var(--text-muted);">large — 弹窗标题区</span>
+  </div>
+</div>
+
+<h2>三、无边框变体 plain — 紧凑场景</h2>
+<div class="section-desc">来源筛选下拉按钮等不需要边框的场景</div>
+
+<div style="display:flex;gap:12px;flex-wrap:wrap;">
+  <span class="source-badge plain">
+    <span class="source-icon">🌐</span>
+    <span class="source-name">Chrome</span>
+  </span>
+  <span class="source-badge plain">
+    <span class="source-icon">💻</span>
+    <span class="source-name">VS Code</span>
+  </span>
+  <span class="source-badge plain">
+    <span class="source-icon">💬</span>
+    <span class="source-name">企业微信</span>
+  </span>
+  <span class="source-badge plain">
+    <span class="source-icon">🎨</span>
+    <span class="source-name">Figma</span>
+  </span>
+  <span class="source-badge plain">
+    <span class="source-icon">📝</span>
+    <span class="source-name">Notion</span>
+  </span>
+</div>
+
+<h2>四、Sidebar 来源分组 — 保持不变（图标由 SourceBadge 统一输出）</h2>
+<div class="section-desc">Sidebar 来源分组已有 emoji 图标+圆点，风格不变。但图标统一走 getSourceIcon()</div>
+
+<div class="mock-sidebar">
+  <div class="mock-sidebar-section">来源</div>
+  <div class="mock-sidebar-item">
+    <span style="font-size:14px;flex-shrink:0;">🌐</span>
+    <span>Chrome</span>
+    <span class="mock-sidebar-count">12</span>
+  </div>
+  <div class="mock-sidebar-item active">
+    <span style="font-size:14px;flex-shrink:0;">💻</span>
+    <span>VS Code</span>
+    <span class="mock-sidebar-count">8</span>
+  </div>
+  <div class="mock-sidebar-item">
+    <span style="font-size:14px;flex-shrink:0;">💬</span>
+    <span>企业微信</span>
+    <span class="mock-sidebar-count">5</span>
+  </div>
+</div>
+
+<h2>五、详情弹窗来源行</h2>
+<div class="section-desc">FileDetailDialog 中"来源"信息行，使用 SourceBadge normal 尺寸 + 清洗后名称</div>
+
+<div style="max-width:360px;background:var(--card-bg);border:1px solid var(--border-color);border-radius:12px;padding:16px;">
+  <div class="mock-detail-row">
+    <span class="mock-detail-label">完整路径</span>
+    <span class="mock-detail-value" style="font-family:monospace;font-size:11px;">C:\Users\...\document.docx</span>
+  </div>
+  <div class="mock-detail-row">
+    <span class="mock-detail-label">文件大小</span>
+    <span class="mock-detail-value">245 KB</span>
+  </div>
+  <div class="mock-detail-row">
+    <span class="mock-detail-label">复制时间</span>
+    <span class="mock-detail-value">2026-07-06 18:00</span>
+  </div>
+  <div class="mock-detail-row" style="border-bottom:none;">
+    <span class="mock-detail-label">来源</span>
+    <span class="source-badge">
+      <span class="source-icon">🌐</span>
+      <span class="source-name">Chrome</span>
+    </span>
+  </div>
+</div>
+
+<h2>六、筛选下拉 — 按钮用 SourceBadge</h2>
+<div class="section-desc">TopBar 来源筛选下拉按钮，使用 SourceBadge plain 变体</div>
+
+<div style="display:flex;gap:8px;flex-wrap:wrap;">
+  <button class="mock-dropdown-btn">
+    <span class="source-icon">🌐</span> Chrome
+    <span style="font-size:10px;margin-left:4px;opacity:0.6;">▼</span>
+  </button>
+  <button class="mock-dropdown-btn">
+    <span class="source-icon">💻</span> VS Code
+    <span style="font-size:10px;margin-left:4px;opacity:0.6;">▼</span>
+  </button>
+  <button class="mock-dropdown-btn">
+    全部来源
+    <span style="font-size:10px;margin-left:4px;opacity:0.6;">▼</span>
+  </button>
+</div>
+
+<!-- ===== 对比总结 ===== -->
+<div class="comparison">
+  <h3>改动总结</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <thead>
+      <tr style="border-bottom:1px solid #fde68a;">
+        <th style="text-align:left;padding:6px 8px;">位置</th>
+        <th style="text-align:left;padding:6px 8px;">之前</th>
+        <th style="text-align:left;padding:6px 8px;">之后</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="border-bottom:1px solid #fef3c7;">
+        <td style="padding:6px 8px;">卡片 Card</td>
+        <td class="before" style="padding:6px 8px;">纯文本 span + 独立 cleanSource()</td>
+        <td class="after" style="padding:6px 8px;">SourceBadge small + 统一 cleanSourceName()</td>
+      </tr>
+      <tr style="border-bottom:1px solid #fef3c7;">
+        <td style="padding:6px 8px;">详情弹窗</td>
+        <td class="before" style="padding:6px 8px;">原始 source 字符串</td>
+        <td class="after" style="padding:6px 8px;">SourceBadge normal + 清洗后名称</td>
+      </tr>
+      <tr style="border-bottom:1px solid #fef3c7;">
+        <td style="padding:6px 8px;">筛选下拉</td>
+        <td class="before" style="padding:6px 8px;">手动拼接 icon+名称</td>
+        <td class="after" style="padding:6px 8px;">SourceBadge plain</td>
+      </tr>
+      <tr style="border-bottom:1px solid #fef3c7;">
+        <td style="padding:6px 8px;">清洗函数</td>
+        <td class="before" style="padding:6px 8px;">Card.tsx 内 cleanSource() + utils.ts cleanSourceName() 两套</td>
+        <td class="after" style="padding:6px 8px;">统一为 utils.ts 的 cleanSourceName() + getSourceIcon()</td>
+      </tr>
+      <tr>
+        <td style="padding:6px 8px;">Sidebar</td>
+        <td class="before" style="padding:6px 8px;">已有 emoji 图标</td>
+        <td class="after" style="padding:6px 8px;">不变（已统一）</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>

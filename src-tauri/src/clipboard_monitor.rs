@@ -142,9 +142,7 @@ impl ClipboardMonitor {
                 // 尝试读取文本
                 match clipboard.get_text() {
                     Ok(text) if !text.is_empty() => {
-                        // ===== 诊断日志 1: 读到文本 =====
-                        let preview = if text.len() > 50 { &text[..50] } else { &text };
-                        log::info!("[ClipboardMonitor] 读到文本: \"{}\" ({}字符)", preview, text.len());
+
                         // 自动去除空白（使用缓存的配置，避免每 400ms 锁数据库）
                         let text = if let Some(monitor) = app_handle.try_state::<ClipboardMonitor>()
                         {
@@ -176,6 +174,9 @@ impl ClipboardMonitor {
                         if Some(&hash) != last_text_hash.as_ref() {
                             last_text_hash = Some(hash.clone());
 
+                            // 获取前台窗口信息（标题 + 图标，一次调用）
+                            let (source_title, source_icon) = get_foreground_window_info(&app_handle);
+
                             // 计算拼音首字母
                             let pinyin_initials = compute_pinyin_initials(&text);
                             let now_str =
@@ -205,7 +206,8 @@ impl ClipboardMonitor {
                                     // 注意：..existing 的 tags 已被 load_tags_into_items 填充，不能覆盖
                                     let updated_item = HistoryItem {
                                         time: now_str.clone(),
-                                        source: get_foreground_window_title(),
+                                        source: source_title.clone(),
+                                        source_icon: source_icon.clone(),
                                         group_id: None,
                                         ..existing
                                     };
@@ -235,11 +237,12 @@ impl ClipboardMonitor {
                                     item_type: "text".to_string(),
                                     content: String::new(),
                                     pinned: false,
-                                    source: get_foreground_window_title(),
+                                    source: source_title.clone(),
                                     workspace: "默认".to_string(),
                                     md5: Some(hash),
                                     pinyin_initials: Some(pinyin_initials),
                                     group_id: None,
+                                    source_icon: source_icon.clone(),
                                     tags: Vec::new(),
                                 };
 
@@ -280,13 +283,11 @@ impl ClipboardMonitor {
                                 }
 
                                 // 推送事件到前端
-                                // ===== 诊断日志 2: emit 结果 =====
-                                match app_handle.emit(
+                                if let Err(e) = app_handle.emit(
                                     "clipboard-changed",
                                     ClipboardChanged { item: item.clone() },
                                 ) {
-                                    Ok(()) => log::info!("[ClipboardMonitor] ✅ 事件已推送到前端 (id={})", item.id),
-                                    Err(e) => log::warn!("[ClipboardMonitor] ❌ 推送文本事件失败: {}", e),
+                                    log::warn!("[ClipboardMonitor] 推送文本事件失败: {}", e);
                                 }
 
                                 // LAN 同步：发送文本到局域网
@@ -366,6 +367,8 @@ impl ClipboardMonitor {
                                         }
                                     }
 
+                                    let (img_source_title, img_source_icon) = get_foreground_window_info(&app_handle);
+
                                     let item = HistoryItem {
                                         id: Uuid::new_v4().to_string(),
                                         text: format!("[图片] {}x{}", img.width, img.height),
@@ -375,11 +378,12 @@ impl ClipboardMonitor {
                                         item_type: "image".to_string(),
                                         content: img_path.to_string_lossy().to_string(),
                                         pinned: false,
-                                        source: get_foreground_window_title(),
+                                        source: img_source_title,
                                         workspace: "默认".to_string(),
                                         md5: Some(img_hash),
                                         pinyin_initials: None,
                                         group_id: None,
+                                        source_icon: img_source_icon,
                                         tags: Vec::new(),
                                     };
 
@@ -422,7 +426,7 @@ impl ClipboardMonitor {
                                     );
                                     if Some(&hash) != last_text_hash.as_ref() {
                                         last_text_hash = Some(hash);
-                                        let source = get_foreground_window_title();
+                                        let (file_source_title, file_source_icon) = get_foreground_window_info(&app_handle);
                                         for file_path in &files {
                                             let filename = std::path::Path::new(file_path)
                                                 .file_name()
@@ -443,11 +447,12 @@ impl ClipboardMonitor {
                                                 item_type: "file".to_string(),
                                                 content: file_path.clone(),
                                                 pinned: false,
-                                                source: source.clone(),
+                                                source: file_source_title.clone(),
                                                 workspace: "默认".to_string(),
                                                 md5: Some(file_hash),
                                                 pinyin_initials: None,
                                                 group_id: None,
+                                                source_icon: file_source_icon.clone(),
                                                 tags: Vec::new(),
                                             };
                                             if let Some(store) = app_handle.try_state::<DataStore>()
@@ -503,28 +508,36 @@ impl ClipboardMonitor {
     }
 }
 
-/// 获取前台窗口标题
-fn get_foreground_window_title() -> String {
+/// 获取前台窗口标题 + 提取来源图标
+/// 返回 (窗口标题, 图标文件名)
+fn get_foreground_window_info(app_handle: &tauri::AppHandle) -> (String, Option<String>) {
     #[cfg(target_os = "windows")]
     {
         use windows::Win32::UI::WindowsAndMessaging::*;
         unsafe {
             let hwnd = GetForegroundWindow();
             if hwnd.is_invalid() {
-                return String::new();
+                return (String::new(), None);
             }
             let len = GetWindowTextLengthW(hwnd);
             if len == 0 {
-                return String::new();
+                return (String::new(), None);
             }
             let mut buf = vec![0u16; (len + 1) as usize];
             GetWindowTextW(hwnd, &mut buf);
-            String::from_utf16_lossy(&buf[..len as usize])
+            let title = String::from_utf16_lossy(&buf[..len as usize]);
+
+            // 提取图标（首次提取约 50ms，后续缓存 <1ms）
+            let icon = app_handle
+                .try_state::<crate::icon_extractor::IconCache>()
+                .and_then(|cache| cache.extract_icon_by_hwnd(hwnd));
+
+            (title, icon)
         }
     }
     #[cfg(not(target_os = "windows"))]
     {
-        String::new()
+        (String::new(), None)
     }
 }
 

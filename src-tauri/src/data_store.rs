@@ -23,6 +23,9 @@ pub struct HistoryItem {
     pub group_id: Option<String>,
     #[serde(default)]
     pub tags: Vec<Tag>,
+    /// 来源应用真实图标文件名（存储在 source-icons/ 目录下）
+    #[serde(default)]
+    pub source_icon: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,7 +78,7 @@ impl DataStore {
 
         // 创建表
         conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS history (
+            "            CREATE TABLE IF NOT EXISTS history (
                 id TEXT PRIMARY KEY,
                 text TEXT NOT NULL DEFAULT '',
                 time TEXT NOT NULL,
@@ -85,7 +88,8 @@ impl DataStore {
                 source TEXT NOT NULL DEFAULT '',
                 workspace TEXT NOT NULL DEFAULT '默认',
                 md5 TEXT,
-                pinyin_initials TEXT
+                pinyin_initials TEXT,
+                source_icon TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_history_workspace ON history(workspace);
             CREATE INDEX IF NOT EXISTS idx_history_time ON history(time);
@@ -197,6 +201,23 @@ impl DataStore {
             }
         }
 
+        // 数据库迁移：为旧 history 表添加 source_icon 列（如果不存在）
+        let has_source_icon: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('history') WHERE name = 'source_icon'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_source_icon {
+            if let Err(e) =
+                conn.execute_batch("ALTER TABLE history ADD COLUMN source_icon TEXT;")
+            {
+                log::warn!("[DataStore] 添加 source_icon 列失败: {}", e);
+            }
+        }
+
         // 数据库迁移：为旧 history_tags 表添加 source 列（如果不存在）
         let has_ht_source: bool = conn
             .query_row(
@@ -255,7 +276,7 @@ impl DataStore {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
 
         let mut sql = String::from(
-            "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id
+            "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon
              FROM history WHERE workspace = ?1",
         );
         let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> =
@@ -298,6 +319,7 @@ impl DataStore {
                         md5: row.get(8)?,
                         pinyin_initials: row.get(9)?,
                         group_id: row.get(10)?,
+                        source_icon: row.get(11)?,
                         tags: Vec::new(),
                     })
                 })
@@ -319,7 +341,7 @@ impl DataStore {
         let mut items: Vec<HistoryItem> = {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id
+                    "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon
                      FROM history ORDER BY time DESC LIMIT ?1",
                 )
                 .map_err(|e| e.to_string())?;
@@ -337,6 +359,7 @@ impl DataStore {
                         md5: row.get(8)?,
                         pinyin_initials: row.get(9)?,
                         group_id: row.get(10)?,
+                        source_icon: row.get(11)?,
                         tags: Vec::new(),
                     })
                 })
@@ -354,8 +377,8 @@ impl DataStore {
     pub fn insert_history(&self, item: &HistoryItem) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT OR REPLACE INTO history (id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT OR REPLACE INTO history (id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 item.id,
                 item.text,
@@ -368,6 +391,7 @@ impl DataStore {
                 item.md5,
                 item.pinyin_initials,
                 item.group_id,
+                item.source_icon,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -395,7 +419,7 @@ impl DataStore {
     pub fn find_latest_by_md5(&self, md5: &str) -> Result<Option<HistoryItem>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let result = conn.query_row(
-            "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id
+            "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon
              FROM history WHERE md5 = ?1 AND type = 'text'
              ORDER BY time DESC LIMIT 1",
             params![md5],
@@ -412,6 +436,7 @@ impl DataStore {
                     md5: row.get(8)?,
                     pinyin_initials: row.get(9)?,
                     group_id: row.get(10)?,
+                    source_icon: row.get(11)?,
                     tags: Vec::new(),
                 })
             },
@@ -509,7 +534,7 @@ impl DataStore {
         let cutoff_str = cutoff.format("%Y-%m-%d %H:%M:%S").to_string();
         let mut items: Vec<HistoryItem> = {
             let mut stmt = conn.prepare(
-                "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id
+                "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon
                  FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2",
             ).map_err(|e| e.to_string())?;
             let result: Vec<HistoryItem> = stmt
@@ -526,6 +551,7 @@ impl DataStore {
                         md5: row.get(8)?,
                         pinyin_initials: row.get(9)?,
                         group_id: row.get(10)?,
+                        source_icon: row.get(11)?,
                         tags: Vec::new(),
                     })
                 })
@@ -758,8 +784,8 @@ impl DataStore {
             for item in items {
                 let affected = conn
                     .execute(
-                        "INSERT OR IGNORE INTO history (id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                        "INSERT OR IGNORE INTO history (id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                         params![
                             item.id,
                             item.text,
@@ -772,6 +798,7 @@ impl DataStore {
                             item.md5,
                             item.pinyin_initials,
                             item.group_id,
+                            item.source_icon,
                         ],
                     )
                     .map_err(|e| e.to_string())?;
@@ -852,7 +879,7 @@ impl DataStore {
         let mut items: Vec<HistoryItem> = {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id
+                    "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon
                      FROM history WHERE workspace = ?1 ORDER BY time DESC",
                 )
                 .map_err(|e| e.to_string())?;
@@ -870,6 +897,7 @@ impl DataStore {
                         md5: row.get(8)?,
                         pinyin_initials: row.get(9)?,
                         group_id: row.get(10)?,
+                        source_icon: row.get(11)?,
                         tags: Vec::new(),
                     })
                 })
@@ -1377,6 +1405,7 @@ mod tests {
             md5: Some(md5_hash),
             pinyin_initials: Some(pinyin_initials),
             group_id: None,
+            source_icon: None,
             tags: Vec::new(),
         }
     }

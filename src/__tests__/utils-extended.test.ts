@@ -7,6 +7,7 @@ import {
   relativeTime,
   getLangLabel,
 } from "@/lib/utils";
+import { resolveSource } from "@/lib/source-mappings";
 
 // ============================================================
 // cleanSourceName
@@ -27,9 +28,10 @@ describe("cleanSourceName", () => {
     expect(cleanSourceName("PastePanda — 主窗口")).toBe("PastePanda");
   });
 
-  it("truncates long names after last dash separator", () => {
-    // cleanSourceName 使用 lastIndexOf(" — ")，所以只截掉最后一个 — 之后的内容
-    expect(cleanSourceName("VS Code — main.ts — my-project")).toBe("VS Code — main.ts");
+  it("extracts app name from window title (after last '—')", () => {
+    // 窗口标题 "页面标题 — 应用名"，取应用名
+    expect(cleanSourceName("README.md — Visual Studio Code")).toBe("Visual Studio Code");
+    expect(cleanSourceName("New Tab — Google Chrome")).toBe("Google Chrome");
   });
 
   it("truncates names longer than 18 chars", () => {

@@ -11,7 +11,7 @@ import { UpdateProvider } from "@/contexts/UpdateContext";
 import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
 import { logger } from "@/lib/logger";
 import { pasteText, pasteImage, deleteHistory, togglePin, toggleWindow, sequentialPaste, invalidateCountsCache, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup } from "@/lib/api";
-import { cleanSourceName, getSourceIcon } from "@/lib/utils";
+import { resolveSource, getAutoTagIcon, getAutoTagColor } from "@/lib/source-mappings";
 import { ClipboardList, RotateCcw, Loader2, X } from "lucide-react";
 import { BackToTop } from "@/components/BackToTop";
 import { ScrollProvider } from "@/contexts/ScrollContext";
@@ -159,46 +159,37 @@ function App() {
     }));
 
     // 来源分组：从 source 字段聚合，清洗名称 + 映射图标，按计数降序排列
-    const sourceCountMap = new Map<string, { count: number; cleaned: string }>();
+    const sourceCountMap = new Map<string, { count: number; displayName: string; icon: string; sourceIcon: string | null }>();
     wsItems.forEach(h => {
       if (h.source) {
         const entry = sourceCountMap.get(h.source);
         if (entry) {
           entry.count++;
         } else {
-          sourceCountMap.set(h.source, { count: 1, cleaned: cleanSourceName(h.source) });
+          const resolved = resolveSource(h.source);
+          sourceCountMap.set(h.source, { count: 1, displayName: resolved.displayName, icon: resolved.icon, sourceIcon: h.source_icon ?? null });
         }
       }
     });
     const dotColors = ["#3B82F6", "#22C55E", "#F97316", "#A855F7", "#EF4444", "#EC4899", "#14B8A6", "#F59E0B", "#6366F1"];
     const sourceGroups: SidebarGroup[] = Array.from(sourceCountMap.entries())
       .sort((a, b) => b[1].count - a[1].count)
-      .map(([raw, { count, cleaned }], i) => ({
+      .map(([raw, { count, displayName, icon, sourceIcon }], i) => ({
         id: `source:${raw}`,
-        name: cleaned,
+        name: displayName,
         count,
-        icon: getSourceIcon(raw),
+        icon,
         color: dotColors[i % dotColors.length],
         isBuiltin: false,
         section: "source" as const,
+        sourceRaw: raw,
+        sourceIcon,
       }));
 
     // 智能分类分组：从 AI 自动标签（source="auto"）聚合虚拟分组
     const autoTags = tags.filter(t => t.source === "auto");
-    const autoTagIcons: Record<string, string> = {
-      "代码": "💻", "链接": "🔗", "JSON": "📋", "配置文件": "⚙️", "表格": "📊",
-      "命令行": "⬛", "日志": "📜", "密钥": "🔑", "数字": "🔢", "纯文本": "📝",
-      "Python": "🐍", "JavaScript": "🟨", "TypeScript": "🔷", "Rust": "🦀",
-      "Java": "☕", "Go": "🔵", "SQL": "🗄️", "HTML": "🌐", "CSS": "🎨", "Shell": "💲",
-    };
-    const autoTagColors: Record<string, string> = {
-      "代码": "#6366F1", "链接": "#3B82F6", "JSON": "#F59E0B", "配置文件": "#8B5CF6", "表格": "#22C55E",
-      "命令行": "#6B7280", "日志": "#EF4444", "密钥": "#F97316", "数字": "#14B8A6", "纯文本": "#9CA3AF",
-      "Python": "#3776AB", "JavaScript": "#F7DF1E", "TypeScript": "#3178C6", "Rust": "#DEA584",
-      "Java": "#ED8B00", "Go": "#00ADD8", "SQL": "#336791", "HTML": "#E34F26", "CSS": "#1572B6", "Shell": "#4EAA25",
-    };
     const autoTagGroups: SidebarGroup[] = autoTags
-      .map(t => {
+      .map((t, i) => {
         // 统计拥有此标签的记录数
         const count = wsItems.filter(h =>
           (h.tags || []).some(ht => ht.id === t.id)
@@ -207,8 +198,8 @@ function App() {
           id: `auto:${t.id}`,
           name: t.name,
           count,
-          icon: autoTagIcons[t.name] || "🏷️",
-          color: autoTagColors[t.name] || dotColors[autoTags.indexOf(t) % dotColors.length],
+          icon: getAutoTagIcon(t.name),
+          color: getAutoTagColor(t.name, i),
           isBuiltin: false,
           section: "auto" as const,
         };

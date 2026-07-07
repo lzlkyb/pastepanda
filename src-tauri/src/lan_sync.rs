@@ -222,6 +222,7 @@ impl LanSync {
                                     md5: None,
                                     pinyin_initials,
                                     group_id: None,
+                                    source_icon: None,
                                     tags: Vec::new(),
                                 };
 

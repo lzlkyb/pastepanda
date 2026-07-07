@@ -34,6 +34,8 @@ export interface HistoryItem {
   timeStamp?: number;
   group_id?: string | null;
   tags?: Tag[];
+  /** 来源应用真实图标文件名（捕获剪贴板时从 exe 提取） */
+  source_icon?: string | null;
 }
 
 export type FilterType = "all" | "text" | "image" | "file" | "pinned";
@@ -63,6 +65,8 @@ export interface AppConfig {
   workspaces: string[];
   double_click_action: "copy" | "preview"; // 双击列表行为
   hover_mode: "off" | "inline" | "popover"; // 鼠标悬停卡片交互模式
+  source_icon_mode: "emoji" | "app"; // 来源图标显示方式
+  timeline_enabled: boolean; // 时间线功能开关
 }
 
 // ===== Store 接口 =====
@@ -123,6 +127,11 @@ interface AppState {
 
   updateConfig: (partial: Partial<AppConfig>) => void;
 
+  // 真实来源图标缓存（source_icon 文件名或 source → asset:// URL）
+  // 提升到全局 store 避免 N 个组件各自维护一份 useState
+  realIconCache: Record<string, string | null>;
+  setRealIconUrl: (key: string, url: string | null) => void;
+
   // 计算属性（带缓存）
   _filterCache: { key: string; result: HistoryItem[] } | null;
   getFilteredItems: () => HistoryItem[];
@@ -137,7 +146,7 @@ const DEFAULT_CONFIG: AppConfig = {
   auto_cleanup_days: 30,
   auto_strip: false,
   sequential_loop: false,
-  hide_on_focus_out: true,
+  hide_on_focus_out: false,
   lan_sync_enabled: false,
   always_on_top: false,
   auto_startup: false,
@@ -147,6 +156,8 @@ const DEFAULT_CONFIG: AppConfig = {
   workspaces: ["默认"],
   double_click_action: "preview",
   hover_mode: "popover",
+  source_icon_mode: "app",
+  timeline_enabled: false,
 };
 
 // ===== Store =====
@@ -172,6 +183,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   seqTotal: 0,
   paused: false,
   undoStack: [],
+  realIconCache: {},
   searchHistory: (() => {
     try {
       const saved = localStorage.getItem("searchHistory");
@@ -180,7 +192,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   })(),
 
   // 数据操作
-  setHistory: (items) => set({ history: items }),
+  setHistory: (items) => set({ history: items, _filterCache: null }),
   appendHistory: (items) => set((s) => ({ history: [...s.history, ...items] })),
   prependItem: (item) =>
     set((s) => {
@@ -334,6 +346,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSeqPointer: (p) => set({ seqPointer: p }),
   resetSeqPointer: () => set({ seqPointer: 0 }),
   setPaused: (p) => set({ paused: p }),
+
+  // 来源图标缓存
+  setRealIconUrl: (key, url) => set((s) => ({
+    realIconCache: { ...s.realIconCache, [key]: url },
+  })),
 
   // 配置
   updateConfig: (partial) => {

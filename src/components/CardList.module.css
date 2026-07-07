@@ -19,22 +19,83 @@
   z-index: 1;
 }
 
+/* ── 方案C：玻璃拟态 + 光泽扫过（适配全主题）── */
 .card {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
   border-radius: 16px;
-  box-shadow: var(--card-shadow);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
   position: relative;
   height: var(--card-height, 72px);
   width: 100%;
   box-sizing: border-box;
+  overflow: hidden;
+
+  /* 玻璃拟态核心 — 全部来自主题变量 */
+  background: var(--glass-card-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-card-border);
+  box-shadow: var(--glass-card-shadow);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* 静态光泽层 — 始终可见的顶部微光，模拟玻璃反光 */
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  background: linear-gradient(
+    180deg,
+    var(--glass-shimmer-static) 0%,
+    transparent 50%
+  );
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* 动态光泽扫过 — hover 时播放 */
+.card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  background: linear-gradient(
+    120deg,
+    transparent 20%,
+    var(--glass-shimmer) 35%,
+    var(--glass-shimmer) 40%,
+    var(--glass-shimmer) 45%,
+    transparent 60%
+  );
+  background-size: 200% 100%;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* hover: 动态光泽扫过动画 */
+.card:hover::after {
+  opacity: 1;
+  animation: shimmer-sweep 1.6s ease-in-out infinite;
+}
+
+@keyframes shimmer-sweep {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* hover: 卡片微浮起 + 边框亮起 */
+.card:hover {
+  transform: translateY(-2px) scale(1.01);
+  border-color: var(--glass-card-hover-border);
+  box-shadow: var(--glass-card-hover-shadow);
+}
+
 .cardClickFeedback {
   background: var(--hover) !important;
   transform: scale(0.985);
@@ -48,13 +109,8 @@
   top: 4px;
   font-size: 10px;
   line-height: 1;
-  z-index: 3;
+  z-index: 5;
   filter: drop-shadow(0 1px 2px rgba(180, 83, 9, 0.3));
-}
-
-.card:hover {
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
-  transform: translateY(-2px) scale(1.008);
 }
 
 .card:focus-visible {
@@ -78,13 +134,21 @@
   justify-content: center;
   font-size: 18px;
   flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+  transition: all 0.3s ease;
+
+  /* 玻璃拟态图标底 — 主题变量驱动 */
+  background: var(--glass-icon-bg);
+  border: 1px solid var(--glass-icon-border);
+  box-shadow: var(--glass-icon-shadow);
 }
 
-/* 图标渐变底色 */
-.bgBlue   { background: linear-gradient(135deg, #E8F1FB, #D6E8FA); }
-.bgGreen  { background: linear-gradient(135deg, #E5F8EC, #D4F2DE); }
-.bgPink   { background: linear-gradient(135deg, #FDE8EE, #FAD6DF); }
-.bgPurple { background: linear-gradient(135deg, #F0E8FB, #E5D6FA); }
+/* 图标颜色覆盖 — 保留色系区分 */
+.bgBlue   { background: rgba(59, 130, 246, 0.12);  border-color: rgba(59, 130, 246, 0.22);  box-shadow: inset 0 2px 4px rgba(59, 130, 246, 0.1), 0 2px 8px rgba(0,0,0,0.15); }
+.bgGreen  { background: rgba(16, 185, 129, 0.12);  border-color: rgba(16, 185, 129, 0.22);  box-shadow: inset 0 2px 4px rgba(16, 185, 129, 0.1), 0 2px 8px rgba(0,0,0,0.15); }
+.bgPink   { background: rgba(236, 72, 153, 0.12);  border-color: rgba(236, 72, 153, 0.22);  box-shadow: inset 0 2px 4px rgba(236, 72, 153, 0.1), 0 2px 8px rgba(0,0,0,0.15); }
+.bgPurple { background: rgba(139, 92, 246, 0.12);  border-color: rgba(139, 92, 246, 0.22);  box-shadow: inset 0 2px 4px rgba(139, 92, 246, 0.1), 0 2px 8px rgba(0,0,0,0.15); }
 
 /* 图片缩略图 */
 .cardImgThumb {
@@ -514,10 +578,9 @@
   font-weight: 600;
 }
 
-/* ===== Card Hover Preview Popover ===== */
+/* ===== Card Hover Preview Popover（玻璃拟态，主题适配） ===== */
 .cardPopover {
   position: absolute;
-  /* 默认在卡片上方弹出 */
   bottom: calc(100% + 10px);
   left: 50%;
   transform: translateX(-50%);
@@ -525,12 +588,16 @@
   max-width: calc(100vw - 48px);
   padding: 12px;
   border-radius: 12px;
-  background: var(--dialog-bg);
-  border: 1px solid var(--border-color);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.08);
   z-index: 100;
   pointer-events: auto;
   animation: popoverFadeIn 0.18s ease;
+
+  /* 玻璃拟态弹窗 — 主题变量驱动 */
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-popover-border);
+  box-shadow: var(--glass-popover-shadow);
 }
 @keyframes popoverFadeIn {
   from { opacity: 0; transform: translateX(-50%) translateY(4px); }
@@ -548,7 +615,7 @@
   pointer-events: auto;
 }
 
-/* 小三角箭头 */
+/* 小三角箭头 — 跟随主题 popover 背景色 */
 .cardPopover::after {
   content: '';
   position: absolute;
@@ -558,8 +625,8 @@
   width: 0; height: 0;
   border-left: 8px solid transparent;
   border-right: 8px solid transparent;
-  border-top: 8px solid var(--dialog-bg);
-  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.08));
+  border-top: 8px solid var(--glass-popover-bg);
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.2));
 }
 
 /* 第一项/最后一项：popover 翻转到下方 */
@@ -571,7 +638,7 @@
 .flipDown::after {
   top: auto; bottom: 100%;
   border-top: none;
-  border-bottom: 8px solid var(--dialog-bg);
+  border-bottom: 8px solid var(--glass-popover-bg);
 }
 .flipDown::before {
   top: -10px;
@@ -1051,6 +1118,12 @@
   /* 细滚动条样式 */
   scrollbar-width: thin;
   scrollbar-color: var(--border-color) transparent;
+
+  /* 背景纹理 — 为玻璃拟态提供"背后的风景"，卡片半透明后可见层次 */
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 0%, var(--accent-shadow) 0%, transparent 60%),
+    radial-gradient(ellipse 80% 40% at 20% 100%, var(--glass-card-hover-glow) 0%, transparent 50%),
+    var(--app-bg);
 }
 
 /* 时间轴可见时卡片区域右移 — padding-left 在 cardList（Lenis content）上 */

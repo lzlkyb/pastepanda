@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, FolderOpen, Copy, ExternalLink, Loader, Check } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { relativeTime } from "@/lib/utils";
+import SourceBadge from "@/components/SourceBadge";
 import { HistoryItem } from "@/stores/appStore";
+import { getFileIcon, getFileIconColor } from "@/lib/source-mappings";
 
 // 预加载 Tauri API 模块
 let _invoke: any = null;
@@ -18,40 +20,6 @@ const preloadApi = async () => {
     _openUrl = opener.openUrl;
   }
 };
-
-// 根据文件扩展名返回图标
-function getFileIcon(filename: string): string {
-  const ext = filename.split(".").pop()?.toLowerCase() || "";
-  const map: Record<string, string> = {
-    pdf: "📕", doc: "📘", docx: "📘", xls: "📗", xlsx: "📗",
-    ppt: "📙", pptx: "📙", txt: "📄", md: "📝",
-    png: "🖼️", jpg: "🖼️", jpeg: "🖼️", gif: "🖼️", webp: "🖼️", bmp: "🖼️", svg: "🖼️",
-    mp4: "🎬", avi: "🎬", mkv: "🎬", mov: "🎬", wmv: "🎬",
-    mp3: "🎵", wav: "🎵", flac: "🎵", aac: "🎵",
-    zip: "📦", rar: "📦", "7z": "📦", tar: "📦", gz: "📦",
-    exe: "⚙️", msi: "⚙️", dll: "⚙️",
-    html: "🌐", css: "🎨", js: "📜", ts: "📜", jsx: "📜", tsx: "📜",
-    py: "🐍", rs: "🦀", go: "🔷", java: "☕", cpp: "⚡", c: "⚡",
-    json: "📋", xml: "📋", yaml: "📋", yml: "📋", toml: "📋",
-  };
-  return map[ext] || "📄";
-}
-
-// 文件图标颜色映射
-function getFileIconColor(filename: string): string {
-  const ext = filename.split(".").pop()?.toLowerCase() || "";
-  const map: Record<string, string> = {
-    pdf: "linear-gradient(135deg, #EF4444, #DC2626)",
-    doc: "linear-gradient(135deg, #3B82F6, #2563EB)", docx: "linear-gradient(135deg, #3B82F6, #2563EB)",
-    xls: "linear-gradient(135deg, #10B981, #059669)", xlsx: "linear-gradient(135deg, #10B981, #059669)",
-    ppt: "linear-gradient(135deg, #F59E0B, #D97706)", pptx: "linear-gradient(135deg, #F59E0B, #D97706)",
-    png: "linear-gradient(135deg, #8B5CF6, #7C3AED)", jpg: "linear-gradient(135deg, #8B5CF6, #7C3AED)",
-    jpeg: "linear-gradient(135deg, #8B5CF6, #7C3AED)", gif: "linear-gradient(135deg, #8B5CF6, #7C3AED)",
-    mp4: "linear-gradient(135deg, #EC4899, #DB2777)", mp3: "linear-gradient(135deg, #14B8A6, #0D9488)",
-    zip: "linear-gradient(135deg, #78716C, #57534E)",
-  };
-  return map[ext] || "linear-gradient(135deg, #06B6D4, #0078D4)";
-}
 
 export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose: () => void }) {
   const { toast } = useToast();
@@ -170,7 +138,7 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
               <InfoRow label="完整路径" value={filePath} mono />
               <InfoRow label="文件大小" value={fileInfo ? formatSize(fileInfo.size) : "…"} />
               <InfoRow label="复制时间" value={item.time || "未知"} />
-              <InfoRow label="来源" value={item.source || "未知"} />
+              <InfoRow label="来源" value={item.source ? <SourceBadge source={item.source} /> : "未知"} />
             </div>
 
             {/* 操作按钮 */}
@@ -207,7 +175,7 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
   );
 }
 
-function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function InfoRow({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
       <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0, minWidth: 60 }}>{label}</span>

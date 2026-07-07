@@ -2,7 +2,8 @@ import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, FilterType, TimeFilter, SourceFilter } from "@/stores/appStore";
 import { getAppVersion, getAppName, fetchCounts } from "@/lib/api";
-import { cleanSourceName, getSourceIcon } from "@/lib/utils";
+import { cleanSourceName, getSourceIcon, fetchRealSourceIcon } from "@/lib/source-mappings";
+import SourceBadge from "@/components/SourceBadge";
 import { UpdateBadge } from "@/components/UpdateBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { SearchBox } from "@/components/SearchBox";
@@ -369,32 +370,60 @@ function SourceFilterDropdown({ value, onChange, workspace }: {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  // 收集当前工作空间下的所有来源应用（清洗名称 + 图标映射）
+  // 收集当前工作空间下的所有来源应用（含 source_icon 信息）
   // historyLen 作为缓存失效信号
   const sources = useMemo(() => {
     const history = useAppStore.getState().history;
-    const map = new Map<string, { cleaned: string; icon?: string }>();
+    const map = new Map<string, string | null>(); // source → source_icon
     history.filter((h) => h.workspace === workspace && h.source).forEach((h) => {
       if (!map.has(h.source)) {
-        map.set(h.source, { cleaned: cleanSourceName(h.source), icon: getSourceIcon(h.source) });
+        map.set(h.source, h.source_icon ?? null);
+      } else if (h.source_icon && !map.get(h.source)) {
+        // 更新：之前没有 source_icon 的，现在有了
+        map.set(h.source, h.source_icon);
       }
     });
     return Array.from(map.entries())
-      .sort((a, b) => a[1].cleaned.localeCompare(b[1].cleaned, "zh"));
+      .sort(([a], [b]) => cleanSourceName(a).localeCompare(cleanSourceName(b), "zh"));
   }, [historyLen, workspace]);
 
+  // source → source_icon 的快速查找表
+  const sourceIconMap = useMemo(() => {
+    const map = new Map<string, string | null>();
+    sources.forEach(([source, icon]) => map.set(source, icon));
+    return map;
+  }, [sources]);
+
+  // 当前选中来源的 source_icon
+  const selectedSourceIcon = value ? sourceIconMap.get(value) ?? null : null;
+
   // 当前选中来源的显示名称
+  const sourceIconMode = useAppStore((s) => s.config.source_icon_mode);
+  const activeCacheKey = selectedSourceIcon || value;
+  const activeIconUrl = useAppStore((s) => s.realIconCache[activeCacheKey]);
+
+  useEffect(() => {
+    if (sourceIconMode === "app" && value) {
+      fetchRealSourceIcon(value, selectedSourceIcon);
+    }
+  }, [value, sourceIconMode, selectedSourceIcon]);
+
   const activeLabel = useMemo(() => {
-    if (!value) return "来源应用";
+    if (!value) return "全部来源";
     const cleaned = cleanSourceName(value);
+    // 真实图标模式：显示真实图标
+    if (sourceIconMode === "app" && activeIconUrl) {
+      return <><img src={activeIconUrl} alt="" className={styles.filterDropdownIcon} /> {cleaned}</>;
+    }
+    // emoji 模式
     const icon = getSourceIcon(value);
-    return icon ? `${icon} ${cleaned}` : cleaned;
-  }, [value]);
+    return <>{icon && <span>{icon}</span>} {cleaned}</>;
+  }, [value, sourceIconMode, activeIconUrl]);
 
   return (
     <div className={styles.filterDropdown} ref={ref}>
       <button className={styles.filterDropdownBtn} onClick={() => setOpen(!open)}>
-        <span>{activeLabel}</span>
+        {activeLabel}
         <ChevronDown size={12} style={{ transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0)" }} />
       </button>
       <AnimatePresence>
@@ -410,11 +439,11 @@ function SourceFilterDropdown({ value, onChange, workspace }: {
               onClick={() => { onChange(""); setOpen(false); }}>
               全部来源
             </button>
-            {sources.map(([raw, { cleaned, icon }]) => (
+            {sources.map(([raw, icon]) => (
               <button key={raw}
                 className={`${styles.filterDropdownItem}${raw === value ? ` ${styles.filterDropdownItemActive}` : ""}`}
                 onClick={() => { onChange(raw); setOpen(false); }}>
-                {icon ? `${icon} ${cleaned}` : cleaned}
+                <SourceBadge source={raw} sourceIcon={icon} variant="plain" />
               </button>
             ))}
           </motion.div>

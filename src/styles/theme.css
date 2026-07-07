@@ -125,6 +125,21 @@
   --version-badge-shadow: rgba(2, 132, 199, 0.35);
   --update-badge-gradient: linear-gradient(135deg, #059669, #047857);
   --update-badge-shadow: rgba(5, 150, 105, 0.4);
+  /* 玻璃拟态 — 浅色：降低透明度 + 加深阴影制造层次 */
+  --glass-card-bg: rgba(255,255,255,0.55);
+  --glass-card-border: rgba(0,0,0,0.08);
+  --glass-card-hover-border: rgba(0,0,0,0.14);
+  --glass-card-hover-glow: rgba(2,132,199,0.10);
+  --glass-card-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.7);
+  --glass-card-hover-shadow: 0 8px 24px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9), 0 0 0 1px rgba(2,132,199,0.10);
+  --glass-shimmer: rgba(255,255,255,0.40);
+  --glass-shimmer-static: rgba(255,255,255,0.50);
+  --glass-icon-bg: rgba(0,0,0,0.04);
+  --glass-icon-border: rgba(0,0,0,0.07);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.05);
+  --glass-popover-bg: rgba(255,255,255,0.88);
+  --glass-popover-border: rgba(0,0,0,0.06);
+  --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
 }
 
 /* ── 2. midnight 午夜（默认深色·OLED）── */
@@ -168,6 +183,21 @@
   --version-badge-shadow: rgba(129, 140, 248, 0.35);
   --update-badge-gradient: linear-gradient(135deg, #38BDF8, #0EA5E9);
   --update-badge-shadow: rgba(56, 189, 248, 0.45);
+  /* 玻璃拟态 — 午夜深色：降低透明度 + 增强边框层次 */
+  --glass-card-bg: rgba(24,24,27,0.48);
+  --glass-card-border: rgba(255,255,255,0.06);
+  --glass-card-hover-border: rgba(255,255,255,0.14);
+  --glass-card-hover-glow: rgba(129,140,248,0.10);
+  --glass-card-shadow: 0 4px 16px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.03), inset 0 1px 0 rgba(255,255,255,0.04);
+  --glass-card-hover-shadow: 0 8px 28px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.06), 0 0 0 1px rgba(129,140,248,0.10);
+  --glass-shimmer: rgba(255,255,255,0.06);
+  --glass-shimmer-static: rgba(255,255,255,0.05);
+  --glass-icon-bg: rgba(255,255,255,0.05);
+  --glass-icon-border: rgba(255,255,255,0.07);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.04), 0 2px 8px rgba(0,0,0,0.3);
+  --glass-popover-bg: rgba(20,20,24,0.88);
+  --glass-popover-border: rgba(255,255,255,0.07);
+  --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.25);
 }
 
 /* ── 3. forest 森林（浅色·护眼绿）── */
@@ -211,6 +241,21 @@
   --version-badge-shadow: rgba(5, 150, 105, 0.35);
   --update-badge-gradient: linear-gradient(135deg, #0891B2, #0E7490);
   --update-badge-shadow: rgba(8, 145, 178, 0.4);
+  /* 玻璃拟态 — 森林浅色 */
+  --glass-card-bg: rgba(255,255,255,0.55);
+  --glass-card-border: rgba(0,0,0,0.07);
+  --glass-card-hover-border: rgba(0,0,0,0.14);
+  --glass-card-hover-glow: rgba(5,150,105,0.10);
+  --glass-card-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.7);
+  --glass-card-hover-shadow: 0 8px 24px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9), 0 0 0 1px rgba(5,150,105,0.10);
+  --glass-shimmer: rgba(255,255,255,0.40);
+  --glass-shimmer-static: rgba(255,255,255,0.50);
+  --glass-icon-bg: rgba(0,0,0,0.04);
+  --glass-icon-border: rgba(0,0,0,0.07);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.05);
+  --glass-popover-bg: rgba(255,255,255,0.88);
+  --glass-popover-border: rgba(0,0,0,0.06);
+  --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
 }
 
 /* ── 4. blossom 樱花（浅色·女性/浪漫）── */
@@ -254,6 +299,21 @@
   --version-badge-shadow: rgba(236, 72, 153, 0.35);
   --update-badge-gradient: linear-gradient(135deg, #EF4444, #DC2626);
   --update-badge-shadow: rgba(239, 68, 68, 0.4);
+  /* 玻璃拟态 — 樱花浅色 */
+  --glass-card-bg: rgba(255,255,255,0.55);
+  --glass-card-border: rgba(0,0,0,0.07);
+  --glass-card-hover-border: rgba(0,0,0,0.14);
+  --glass-card-hover-glow: rgba(236,72,153,0.10);
+  --glass-card-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.7);
+  --glass-card-hover-shadow: 0 8px 24px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9), 0 0 0 1px rgba(236,72,153,0.10);
+  --glass-shimmer: rgba(255,255,255,0.40);
+  --glass-shimmer-static: rgba(255,255,255,0.50);
+  --glass-icon-bg: rgba(0,0,0,0.04);
+  --glass-icon-border: rgba(0,0,0,0.07);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.05);
+  --glass-popover-bg: rgba(255,255,255,0.88);
+  --glass-popover-border: rgba(0,0,0,0.06);
+  --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
 }
 
 /* ── 5. terminal 终端（深色·开发者/极客）── */
@@ -297,9 +357,82 @@
   --version-badge-shadow: rgba(34, 197, 94, 0.35);
   --update-badge-gradient: linear-gradient(135deg, #2DD4BF, #14B8A6);
   --update-badge-shadow: rgba(45, 212, 191, 0.45);
+  /* 玻璃拟态 — 终端深色 */
+  --glass-card-bg: rgba(20,20,20,0.45);
+  --glass-card-border: rgba(255,255,255,0.05);
+  --glass-card-hover-border: rgba(255,255,255,0.14);
+  --glass-card-hover-glow: rgba(34,197,94,0.10);
+  --glass-card-shadow: 0 4px 16px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.03), inset 0 1px 0 rgba(255,255,255,0.04);
+  --glass-card-hover-shadow: 0 8px 28px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.06), 0 0 0 1px rgba(34,197,94,0.10);
+  --glass-shimmer: rgba(255,255,255,0.05);
+  --glass-shimmer-static: rgba(255,255,255,0.04);
+  --glass-icon-bg: rgba(255,255,255,0.04);
+  --glass-icon-border: rgba(255,255,255,0.06);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.03), 0 2px 8px rgba(0,0,0,0.35);
+  --glass-popover-bg: rgba(18,18,18,0.88);
+  --glass-popover-border: rgba(255,255,255,0.06);
+  --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3);
 }
 
-/* ── 6. sunset 日落（深色·年轻/潮流）── */
+/* ── 6. ocean-dark 海洋深色（玻璃拟态专用）── */
+[data-theme="ocean-dark"] {
+  --app-bg: #060D14;
+  --header-bg-start: #0A1628;
+  --header-bg-end: #060D14;
+  --card-bg: #0A1628;
+  --card-border: #162B45;
+  --card-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  --text-primary: #E0E8F0;
+  --text-secondary: #8BA4C0;
+  --text-muted: #5577A0;
+  --border-color: #162B45;
+  --accent: #3B9EFF;
+  --accent-light: #0A1E3A;
+  --seg-bg: #162B45;
+  --seg-active-bg: #1E3D60;
+  --search-bg: #162B45;
+  --search-border: #1E3D60;
+  --input-bg: #162B45;
+  --dialog-bg: #0A1628;
+  --section-bg: #081018;
+  --toggle-off-bg: #1E3D60;
+  --toggle-off-label: #5577A0;
+  --card-selected-bg: #0A1E3A;
+  --card-selected-border: #3B9EFF;
+  --card-selected-shadow: 0 0 0 2px rgba(59,158,255,0.25);
+  --accent-shadow: rgba(59,158,255,0.2);
+  --hover: #0F1F35;
+  --sidebar-bg: #060F1A;
+  --sidebar-section-label: #4A6B8A;
+  --timeline-bg: rgba(6, 13, 20, 0.95);
+  --toast-success-bg: #064E3B; --toast-success-text: #A7F3D0; --toast-success-border: #065F46;
+  --toast-error-bg: #7F1D1D; --toast-error-text: #FECACA; --toast-error-border: #991B1B;
+  --toast-info-bg: #0A1E3A; --toast-info-text: #93C5FD; --toast-info-border: #1E3D60;
+  --green: #4ADE80; --green-bg: #052E16; --green-border: #166534;
+  --orange: #FB923C; --orange-bg: #431407; --orange-border: #9A3412;
+  --red-bg: #3A1525; --danger: #FF6B8A;
+  --version-badge-gradient: linear-gradient(135deg, #3B9EFF, #1A7DE0);
+  --version-badge-shadow: rgba(59,158,255,0.35);
+  --update-badge-gradient: linear-gradient(135deg, #2DD4BF, #14B8A6);
+  --update-badge-shadow: rgba(45,212,191,0.45);
+  /* 玻璃拟态 — 深海深色 */
+  --glass-card-bg: rgba(10,22,40,0.48);
+  --glass-card-border: rgba(255,255,255,0.07);
+  --glass-card-hover-border: rgba(255,255,255,0.15);
+  --glass-card-hover-glow: rgba(59,158,255,0.12);
+  --glass-card-shadow: 0 4px 16px rgba(0,0,0,0.40), 0 0 0 1px rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.05);
+  --glass-card-hover-shadow: 0 8px 28px rgba(0,0,0,0.50), 0 0 0 1px rgba(255,255,255,0.07), inset 0 1px 0 rgba(255,255,255,0.07), 0 0 0 1px rgba(59,158,255,0.12);
+  --glass-shimmer: rgba(255,255,255,0.07);
+  --glass-shimmer-static: rgba(255,255,255,0.05);
+  --glass-icon-bg: rgba(255,255,255,0.05);
+  --glass-icon-border: rgba(255,255,255,0.08);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.04), 0 2px 8px rgba(0,0,0,0.30);
+  --glass-popover-bg: rgba(10,22,40,0.88);
+  --glass-popover-border: rgba(255,255,255,0.08);
+  --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.25);
+}
+
+/* ── 7. sunset 日落（深色·年轻/潮流）── */
 [data-theme="sunset"] {
   --app-bg: #1C1410;
   --header-bg-start: #281E18;
@@ -340,4 +473,19 @@
   --version-badge-shadow: rgba(249, 115, 22, 0.35);
   --update-badge-gradient: linear-gradient(135deg, #F59E0B, #D97706);
   --update-badge-shadow: rgba(245, 158, 11, 0.45);
+  /* 玻璃拟态 — 日落深色 */
+  --glass-card-bg: rgba(40,30,24,0.48);
+  --glass-card-border: rgba(255,255,255,0.06);
+  --glass-card-hover-border: rgba(255,255,255,0.14);
+  --glass-card-hover-glow: rgba(249,115,22,0.12);
+  --glass-card-shadow: 0 4px 16px rgba(0,0,0,0.40), 0 0 0 1px rgba(255,255,255,0.03), inset 0 1px 0 rgba(255,255,255,0.04);
+  --glass-card-hover-shadow: 0 8px 28px rgba(0,0,0,0.50), 0 0 0 1px rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.06), 0 0 0 1px rgba(249,115,22,0.12);
+  --glass-shimmer: rgba(255,255,255,0.06);
+  --glass-shimmer-static: rgba(255,255,255,0.04);
+  --glass-icon-bg: rgba(255,255,255,0.04);
+  --glass-icon-border: rgba(255,255,255,0.06);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.03), 0 2px 8px rgba(0,0,0,0.30);
+  --glass-popover-bg: rgba(40,30,24,0.88);
+  --glass-popover-border: rgba(255,255,255,0.07);
+  --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.25);
 }

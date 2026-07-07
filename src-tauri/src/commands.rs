@@ -1126,3 +1126,107 @@ pub fn confirm_auto_tags(
 ) -> Result<(), String> {
     store.confirm_auto_tags(&history_id)
 }
+
+// ===== 来源图标命令 =====
+
+/// 获取来源应用的图标文件完整路径
+/// 前端用 convertFileSrc 转 asset:// URL
+/// 如果 item 中已有 source_icon 则直接返回完整路径，否则尝试从窗口标题查找缓存
+#[tauri::command]
+pub fn get_source_app_icon(
+    icon_cache: State<crate::icon_extractor::IconCache>,
+    source_icon: Option<String>,
+    window_title: String,
+) -> Result<Option<String>, String> {
+    // 1. 优先使用已存储的 source_icon 文件名（含磁盘恢复缓存 + 文件有效性验证）
+    if let Some(ref filename) = source_icon {
+        if let Some(full_path) = icon_cache.get_icon_full_path(filename) {
+            return Ok(Some(full_path.to_string_lossy().to_string()));
+        }
+    }
+
+    // 2. 回退：source_icon 为空或文件不存在时，通过窗口标题查找前台窗口 → exe 路径 → hash → 图标
+    //    需要当前窗口正是来源窗口才能命中（get_foreground_window 获取当前前台窗口）
+    if !window_title.is_empty() {
+        #[cfg(target_os = "windows")]
+        {
+            use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+            use windows::Win32::UI::WindowsAndMessaging::GetWindowTextW;
+            use windows::Win32::System::Threading::{
+                OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+                PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+            };
+            use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+            use windows::Win32::Foundation::CloseHandle;
+            use windows::core::PWSTR;
+
+            unsafe {
+                let fg = GetForegroundWindow();
+                if !fg.is_invalid() {
+                    // 获取前台窗口标题
+                    let mut title_buf = [0u16; 512];
+                    let title_len = GetWindowTextW(fg, &mut title_buf);
+                    if title_len > 0 {
+                        let current_title = String::from_utf16_lossy(&title_buf[..title_len as usize]);
+                        // 仅当前台窗口标题与目标匹配时才查找（避免错配）
+                        if current_title == window_title {
+                            // 通过窗口句柄获取进程路径
+                            let mut pid: u32 = 0;
+                            GetWindowThreadProcessId(fg, Some(&mut pid));
+                            if pid != 0 {
+                                if let Ok(handle) = OpenProcess(
+                                    PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
+                                    false, pid,
+                                ) {
+                                    let mut exe_buf = [0u16; 260];
+                                    let mut exe_len = exe_buf.len() as u32;
+                                    let result = QueryFullProcessImageNameW(
+                                        handle,
+                                        PROCESS_NAME_WIN32,
+                                        PWSTR(exe_buf.as_mut_ptr()),
+                                        &mut exe_len,
+                                    );
+                                    let _ = CloseHandle(handle);
+
+                                    if result.is_ok() && exe_len > 0 {
+                                        let exe_path = std::path::PathBuf::from(
+                                            String::from_utf16_lossy(&exe_buf[..exe_len as usize])
+                                        );
+                                        if let Some(full_path) = icon_cache.get_icon_by_exe_path(&exe_path) {
+                                            log::debug!("[get_source_app_icon] 回退命中: title={}, exe={}, icon={}",
+                                                window_title, exe_path.display(), full_path.display());
+                                            return Ok(Some(full_path.to_string_lossy().to_string()));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        log::debug!("[get_source_app_icon] 未找到图标: source_icon={:?}, title={}", source_icon, window_title);
+    }
+
+    Ok(None)
+}
+
+/// 清理来源图标缓存目录
+#[tauri::command]
+pub fn clear_source_icon_cache(
+    icon_cache: State<crate::icon_extractor::IconCache>,
+) -> Result<u32, String> {
+    let cache_dir = icon_cache.cache_dir.clone();
+    let mut count = 0u32;
+    if let Ok(entries) = std::fs::read_dir(&cache_dir) {
+        for entry in entries.flatten() {
+            if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                if std::fs::remove_file(entry.path()).is_ok() {
+                    count += 1;
+                }
+            }
+        }
+    }
+    Ok(count)
+}

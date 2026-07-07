@@ -95,12 +95,8 @@ export async function initBackend(): Promise<() => void> {
 
   // 监听剪贴板变化事件 — prependItem 内部已处理去重，无需手动判断
   const unlisten1 = await listen<{ item: HistoryItem }>("clipboard-changed", (event) => {
-    // ===== 诊断日志: 前端收到事件 =====
-    console.log("[Diagnostic] ✅ 前端收到 clipboard-changed 事件", { id: event.payload.item.id, type: event.payload.item.type, textPreview: event.payload.item.text?.slice(0, 30) });
     const store = useAppStore.getState();
-    console.log("[Diagnostic] prependItem 前 history 长度:", store.history.length);
     store.prependItem(event.payload.item);
-    console.log("[Diagnostic] prependItem 后 history 长度:", store.history.length);
     invalidateCountsCache(); // 新增记录，清除计数缓存
     const typeLabel = event.payload.item.type === "image" ? "图片" : event.payload.item.type === "file" ? "文件" : "文本";
     const isLanSync = event.payload.item.source?.startsWith("局域网:");

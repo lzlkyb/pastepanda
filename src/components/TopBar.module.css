@@ -324,6 +324,16 @@
   color: var(--accent);
 }
 
+/* 下拉按钮中的真实应用图标 */
+.filterDropdownIcon {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  vertical-align: -3px;
+  object-fit: contain;
+}
+
 .filterDropdownMenu {
   position: absolute;
   top: calc(100% + 4px);

@@ -1,0 +1,109 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--section-bg, #f1f5f9);
+  border: 1px solid var(--border-color, #e2e8f0);
+  white-space: nowrap;
+  flex-shrink: 0;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+.badge:hover {
+  background: var(--hover, #f1f5f9);
+  border-color: var(--text-muted, #94a3b8);
+}
+
+/* ===== 尺寸变体 ===== */
+
+/* 小尺寸 — 卡片内使用（只覆盖尺寸，颜色由 accent 变体控制） */
+.small {
+  height: 16px;
+  padding: 0 5px;
+  font-size: 10px;
+  gap: 3px;
+  border-radius: 3px;
+  max-width: 90px;
+}
+.small .icon {
+  font-size: 11px;
+  line-height: 1;
+}
+
+/* 大尺寸 — 弹窗标题区 */
+.large {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+  gap: 5px;
+  border-radius: 6px;
+  max-width: 160px;
+}
+.large .icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* ===== 颜色变体 ===== */
+
+/* accent 变体 — 紫色高亮风格 */
+.accent {
+  background: var(--accent-light);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* 无边框变体 — 筛选下拉按钮等紧凑场景 */
+.plain {
+  border-color: transparent;
+  background: transparent;
+  padding: 0 4px;
+}
+.plain:hover {
+  background: var(--section-bg, #f1f5f9);
+  border-color: var(--border-color, #e2e8f0);
+}
+
+/* ===== 子元素 ===== */
+
+.icon {
+  font-size: 13px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 真实应用图标（替代 emoji） */
+.realIcon {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+  display: block;
+  flex-shrink: 0;
+}
+
+.small .realIcon {
+  width: 11px;
+  height: 11px;
+}
+
+.large .realIcon {
+  width: 16px;
+  height: 16px;
+}
+
+
