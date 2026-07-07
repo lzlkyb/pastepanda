@@ -166,11 +166,16 @@ export async function sequentialPaste() {
   }
 
   let idx = pointer;
-  // 指针越界：循环模式下从头开始，非循环模式下也从头开始（而不是静默 return）
+  // 指针越界：循环模式下从头开始，非循环模式下直接 return
   if (idx >= textItems.length) {
-    logger.warn(`[sequentialPaste] 指针越界 ${idx} >= ${textItems.length}，重置为 0`);
-    idx = 0;
-    store.setSeqPointer(0);
+    if (loop) {
+      logger.warn(`[sequentialPaste] 指针越界 ${idx} >= ${textItems.length}，循环模式：重置为 0`);
+      idx = 0;
+      store.setSeqPointer(0);
+    } else {
+      logger.warn(`[sequentialPaste] 指针越界 ${idx} >= ${textItems.length}，非循环模式：停止`);
+      return;
+    }
   }
 
   const item = textItems[idx];
@@ -224,9 +229,9 @@ export async function indexPaste(n: number) {
 /** 粘贴文本，返回是否成功 */
 export async function pasteText(text: string): Promise<boolean> {
   try {
-    const result = await invoke<{ success: boolean; error?: string; target_hwnd: number | null; clipboard_written: boolean; wm_paste_sent: boolean }>("paste_text", { text });
-    if (!result.success) {
-      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `粘贴失败: ${result.error || "未知"}`, type: "error" } }));
+    const result = await invoke<{ success: boolean; error?: string; target_hwnd: number | null; clipboard_written: boolean; wm_paste_sent: boolean } | null>("paste_text", { text });
+    if (!result || !result.success) {
+      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `粘贴失败: ${result?.error || "未知"}`, type: "error" } }));
       return false;
     }
     return true;

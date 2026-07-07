@@ -2,6 +2,12 @@
 
 PastePanda 版本更新日志。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [5.0.141] - 2026-07-07
+
+### 修复
+- 修复 CI 测试失败 — pasteText 增加 invoke 返回空值保护；sequentialPaste 非循环模式下指针越界直接 return 而非重置
+- 测试 beforeEach 中 invoke mock 设置默认返回值 `{ success: true }`
+
 ## [5.0.140] - 2026-07-07
 
 ### 修复

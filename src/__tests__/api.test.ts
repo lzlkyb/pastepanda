@@ -43,8 +43,9 @@ function resetStore() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // 完全重置 mock，包括 mockResolvedValueOnce 队列
+  // 完全重置 mock，包括 mockResolvedValueOnce 队列，并设置默认返回值
   vi.mocked(invoke).mockReset();
+  vi.mocked(invoke).mockResolvedValue({ success: true });
   resetStore();
 });
 
@@ -73,7 +74,7 @@ describe("pasteText", () => {
 
   it("does not throw on invoke failure", async () => {
     vi.mocked(invoke).mockRejectedValueOnce(new Error("fail"));
-    await expect(pasteText("test")).resolves.toBeUndefined();
+    await expect(pasteText("test")).resolves.toBe(false);
   });
 });
 
