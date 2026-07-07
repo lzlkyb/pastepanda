@@ -28,6 +28,7 @@ fn make_item(id: &str, text: &str, time: &str, item_type: &str) -> HistoryItem {
         )),
         pinyin_initials: Some(pastepanda_lib::data_store::compute_pinyin_initials(text)),
         group_id: None,
+        source_icon: None,
         tags: Vec::new(),
     }
 }
