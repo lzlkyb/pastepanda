@@ -140,6 +140,6 @@ describe("getCurrentTheme", () => {
   it("data-theme 为空字符串时返回默认主题", () => {
     document.documentElement.setAttribute("data-theme", "");
     // 空字符串不是有效的 ThemeKey，会走 fallback
-    expect(getCurrentTheme()).toBe("ocean");
+    expect(getCurrentTheme()).toBe("ocean-dark");
   });
 });

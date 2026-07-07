@@ -29,9 +29,9 @@ describe("cleanSourceName", () => {
   });
 
   it("extracts app name from window title (after last '—')", () => {
-    // 窗口标题 "页面标题 — 应用名"，取应用名
-    expect(cleanSourceName("README.md — Visual Studio Code")).toBe("Visual Studio Code");
-    expect(cleanSourceName("New Tab — Google Chrome")).toBe("Google Chrome");
+    // 窗口标题 "页面标题 — 应用名"，匹配到 SOURCE_MAP 则返回 displayName
+    expect(cleanSourceName("README.md — Visual Studio Code")).toBe("VS Code");
+    expect(cleanSourceName("New Tab — Google Chrome")).toBe("Chrome");
   });
 
   it("truncates names longer than 18 chars", () => {
@@ -64,7 +64,7 @@ describe("getSourceIcon", () => {
 
   it("returns icon for WeChat", () => {
     expect(getSourceIcon("微信")).toBe("💬");
-    expect(getSourceIcon("企业微信")).toBe("💬");
+    expect(getSourceIcon("企业微信")).toBe("💼");
   });
 
   it("returns icon for Terminal", () => {
@@ -72,9 +72,9 @@ describe("getSourceIcon", () => {
     expect(getSourceIcon("PowerShell")).toBe("⚡");
   });
 
-  it("returns undefined for unknown source", () => {
-    expect(getSourceIcon("UnknownApp")).toBeUndefined();
-    expect(getSourceIcon("")).toBeUndefined();
+  it("returns default icon for unknown source", () => {
+    expect(getSourceIcon("UnknownApp")).toBe("🔍");
+    expect(getSourceIcon("")).toBe("🔍");
   });
 
   it("matches case-insensitively", () => {
