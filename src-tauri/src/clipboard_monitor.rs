@@ -134,11 +134,6 @@ impl ClipboardMonitor {
                     engine.track_foreground_window();
                 }
 
-                // 检查粘贴抑制
-                if paste_suppress.is_suppressed() {
-                    continue;
-                }
-
                 // 尝试读取文本
                 match clipboard.get_text() {
                     Ok(text) if !text.is_empty() => {
@@ -208,7 +203,7 @@ impl ClipboardMonitor {
                                         time: now_str.clone(),
                                         source: source_title.clone(),
                                         source_icon: source_icon.clone(),
-                                        group_id: None,
+                                        group_id: existing.group_id.clone(),
                                         ..existing
                                     };
                                     if let Err(e) = app_handle.emit(
@@ -317,6 +312,15 @@ impl ClipboardMonitor {
                                 // 生成图片 hash
                                 let img_hash =
                                     format!("{:x}", Md5::new().chain_update(&img.bytes).finalize());
+
+                                // 检查是否是我们自己写入的粘贴图片（hash 匹配）
+                                if paste_suppress.is_hash_suppressed(&img_hash) {
+                                    log::info!("[ClipboardMonitor] 跳过自身粘贴图片 (hash匹配)");
+                                    paste_suppress.clear_hash();
+                                    last_text_hash = Some(img_hash);
+                                    continue;
+                                }
+
                                 if Some(&img_hash) != last_text_hash.as_ref() {
                                     last_text_hash = Some(img_hash.clone());
 

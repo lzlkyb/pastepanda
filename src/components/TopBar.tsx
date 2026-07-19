@@ -81,24 +81,31 @@ export function TopBar({ onSettings, onSnippets, onExtract, onToggleSidebar, sid
   }, []);
 
   // 从后端获取计数（带 30s 缓存）
+  // cancelRef 始终持有“最近一次” refreshCounts 调用的取消函数，
+  // 保证任意时刻最多只有一个 fetchCounts 结果能够生效：
+  // 每次发起新请求前先取消上一个仍在途的请求，避免旧请求晚回导致覆盖新结果的竞态。
+  const cancelRef = useRef<(() => void) | null>(null);
   const refreshCounts = useCallback(() => {
+    cancelRef.current?.();
     let cancelled = false;
     fetchCounts(ws).then(c => {
       if (!cancelled) { setCounts(c); setCountsError(false); }
     }).catch(() => {
       if (!cancelled) setCountsError(true);
     });
-    return () => { cancelled = true; };
+    const cancel = () => { cancelled = true; };
+    cancelRef.current = cancel;
+    return cancel;
   }, [ws]);
 
   useEffect(() => {
-    const cleanup = refreshCounts();
-    return cleanup;
+    refreshCounts();
+    return () => { cancelRef.current?.(); };
   }, [refreshCounts]);
 
   // 监听缓存失效事件，实时刷新计数
   useEffect(() => {
-    const handler = () => refreshCounts();
+    const handler = () => { refreshCounts(); };
     window.addEventListener("counts-invalidated", handler);
     return () => window.removeEventListener("counts-invalidated", handler);
   }, [refreshCounts]);

@@ -102,6 +102,7 @@ interface AppState {
   removeItems: (ids: string[]) => void;
   undoDelete: () => HistoryItem[] | null;
   togglePin: (id: string) => void;
+  setPinned: (id: string, pinned: boolean) => void;
   reorderItems: (fromId: string, toId: string) => void;
   clearAll: () => void;
 
@@ -193,7 +194,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // 数据操作
   setHistory: (items) => set({ history: items, _filterCache: null }),
-  appendHistory: (items) => set((s) => ({ history: [...s.history, ...items] })),
+  appendHistory: (items) =>
+    set((s) => {
+      // 去重：过滤掉已存在于 history 中的 id，防止并发分页请求导致重复行
+      const existingIds = new Set(s.history.map((h) => h.id));
+      const deduped = items.filter((it) => !existingIds.has(it.id));
+      return { history: [...s.history, ...deduped] };
+    }),
   prependItem: (item) =>
     set((s) => {
       // 去重：如果已存在相同 id 的记录，保留旧数据的非空字段，更新时间和内容
@@ -209,10 +216,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           md5: item.md5 || oldItem.md5,
           pinyin_initials: item.pinyin_initials || oldItem.pinyin_initials,
         };
+        s._filterCache = null; // 清除缓存确保列表刷新
         return { history: [updated, ...s.history.slice(0, dupIdx), ...s.history.slice(dupIdx + 1)] };
       }
       // 限制前端缓存最大 500 条，防止内存泄漏
       if (s.history.length >= 500) {
+        s._filterCache = null; // 清除缓存确保列表刷新
         return { history: [item, ...s.history.slice(0, 499)] };
       }
       return { history: [item, ...s.history] };
@@ -224,6 +233,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (idx < 0) return s;
       const item = { ...s.history[idx], time: newTime };
       const newHistory = [item, ...s.history.slice(0, idx), ...s.history.slice(idx + 1)];
+      s._filterCache = null; // 清除缓存确保列表刷新
       return { history: newHistory };
     }),
   removeItems: (ids) =>
@@ -256,6 +266,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         ),
       };
     }),
+  // 设置权威置顶状态（由后端 toggle_pin 返回值驱动，避免与本地状态漂移时被 togglePin 的盲目取反打反）
+  setPinned: (id, pinned) =>
+    set((s) => {
+      s._filterCache = null; // 清除缓存确保列表刷新
+      return {
+        history: s.history.map((h) =>
+          h.id === id ? { ...h, pinned } : h
+        ),
+      };
+    }),
   // 拖拽排序：将 fromId 移动到 toId 之前（在原始 history 中操作，不改变置顶排序）
   reorderItems: (fromId: string, toId: string) =>
     set((s) => {
@@ -265,6 +285,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const newHistory = [...s.history];
       const [moved] = newHistory.splice(fromIdx, 1);
       newHistory.splice(toIdx, 0, moved);
+      s._filterCache = null; // 清除缓存确保列表刷新
       return { history: newHistory };
     }),
   clearAll: () => set({ history: [], selectedIds: new Set(), focusId: null }),

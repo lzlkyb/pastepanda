@@ -385,9 +385,11 @@ export function GeneralTab({
             const { invoke } = await import("@tauri-apps/api/core");
             await invoke("reregister_hotkeys");
             toast("快捷键已更新", "success");
-          } catch {
+          } catch (e) {
             await updateAndSave({ hotkey: oldVal });
-            toast("快捷键无效，已恢复原值", "error");
+            const msg = e instanceof Error ? e.message : String(e);
+            logger.warn("热键设置失败", e);
+            toast(`快捷键设置失败：${msg}，已恢复原值`, "error");
           }
         }} />
       </div>
@@ -404,9 +406,11 @@ export function GeneralTab({
             const { invoke } = await import("@tauri-apps/api/core");
             await invoke("reregister_hotkeys");
             toast("快捷键已更新", "success");
-          } catch {
+          } catch (e) {
             await updateAndSave({ sequential_hotkey: oldVal });
-            toast("快捷键无效，已恢复原值", "error");
+            const msg = e instanceof Error ? e.message : String(e);
+            logger.warn("热键设置失败", e);
+            toast(`快捷键设置失败：${msg}，已恢复原值`, "error");
           }
         }} />
       </div>

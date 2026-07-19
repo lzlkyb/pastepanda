@@ -80,8 +80,18 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
   const checkingRef = useRef(false);
+  const downloadingRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const uptodateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const downloadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** 清除“已是最新”4 秒回退计时器，避免过期计时器在状态已变化后再次覆盖为 idle */
+  const clearUptodateTimer = useCallback(() => {
+    if (uptodateTimerRef.current) {
+      clearTimeout(uptodateTimerRef.current);
+      uptodateTimerRef.current = null;
+    }
+  }, []);
 
   // ─── 启动时自动检查 ──────────────────────────────────
 
@@ -109,7 +119,8 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
-      if (uptodateTimerRef.current) clearTimeout(uptodateTimerRef.current);
+      clearUptodateTimer();
+      if (downloadTimeoutRef.current) clearTimeout(downloadTimeoutRef.current);
     };
   }, []);
 
@@ -121,6 +132,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     try {
       const update = await check();
       if (update) {
+        clearUptodateTimer();
         setStatus("available");
         setUpdate(update);
       }
@@ -155,6 +167,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     if (checkingRef.current) return;
     checkingRef.current = true;
 
+    clearUptodateTimer();
     setStatus("checking");
     setError(null);
 
@@ -162,6 +175,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       // 带重试检查更新（最多 3 次，指数退避 1s/2s/4s）
       const update = await retryWithBackoff(() => check(), 3, "检查更新");
       if (update) {
+        clearUptodateTimer();
         setStatus("available");
         setUpdate(update);
         toast(`发现新版本 v${update.version}`, "info");
@@ -170,7 +184,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
         setUpdate(null);
         toast("已是最新版本", "success");
         // 4 秒后自动回到 idle
-        if (uptodateTimerRef.current) clearTimeout(uptodateTimerRef.current);
+        clearUptodateTimer();
         uptodateTimerRef.current = setTimeout(() => {
           setStatus("idle");
         }, 4000);
@@ -192,12 +206,27 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
 
   const downloadAndInstall = useCallback(async () => {
     if (!update) return;
+    // 防止快速重复点击导致并发触发多个 start_update
+    if (downloadingRef.current) return;
+    downloadingRef.current = true;
+
+    // 兜底：若后端迟迟未推送 update:downloading 事件，避免 downloadingRef 被永久卡死
+    if (downloadTimeoutRef.current) clearTimeout(downloadTimeoutRef.current);
+    downloadTimeoutRef.current = setTimeout(() => {
+      downloadingRef.current = false;
+      downloadTimeoutRef.current = null;
+    }, 15000);
 
     // 启动后台下载（Rust 侧 spawn 线程，通过 event 推送状态）
     invoke("start_update").catch((e) => {
       logger.error("[Update] start_update invoke 失败:", e);
       setError(String(e));
       setStatus("error");
+      downloadingRef.current = false;
+      if (downloadTimeoutRef.current) {
+        clearTimeout(downloadTimeoutRef.current);
+        downloadTimeoutRef.current = null;
+      }
     });
   }, [update]);
 
@@ -209,6 +238,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     const setupListeners = async () => {
       unlisteners.push(
         await listen("update:checking", () => {
+          clearUptodateTimer();
           setStatus("checking");
           setError(null);
         }),
@@ -216,6 +246,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
 
       unlisteners.push(
         await listen<{ version: string; body: string | null }>("update:available", (e) => {
+          clearUptodateTimer();
           setStatus("available");
           setUpdate({
             version: e.payload.version,
@@ -226,6 +257,12 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
 
       unlisteners.push(
         await listen("update:downloading", () => {
+          clearUptodateTimer();
+          downloadingRef.current = false;
+          if (downloadTimeoutRef.current) {
+            clearTimeout(downloadTimeoutRef.current);
+            downloadTimeoutRef.current = null;
+          }
           setStatus("downloading");
           setProgress(0);
         }),
@@ -243,6 +280,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
 
       unlisteners.push(
         await listen("update:ready", () => {
+          clearUptodateTimer();
           setProgress(100);
           setStatus("ready");
         }),
@@ -252,6 +290,12 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
         await listen<{ message: string }>("update:error", (e) => {
           const msg = e.payload.message;
           logger.error("[Update] 更新失败:", msg);
+          clearUptodateTimer();
+          downloadingRef.current = false;
+          if (downloadTimeoutRef.current) {
+            clearTimeout(downloadTimeoutRef.current);
+            downloadTimeoutRef.current = null;
+          }
           setError(msg);
           setStatus("error");
           const fe2 = friendlyError(msg);
@@ -261,6 +305,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
 
       unlisteners.push(
         await listen("update:uptodate", () => {
+          clearUptodateTimer();
           setStatus("idle");
           setUpdate(null);
         }),
@@ -287,6 +332,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   // ─── 标记已安装 ──────────────────────────────────────
 
   const markInstalled = useCallback(() => {
+    clearUptodateTimer();
     setStatus("installed");
   }, []);
 

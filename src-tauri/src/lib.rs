@@ -1,5 +1,20 @@
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
+use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+
+/// 启动早期致命错误：弹出原生错误对话框后干净退出进程，
+/// 避免 windows_subsystem = "windows" 下无控制台时用户看到的"静默崩溃"或 panic 崩溃对话框。
+fn fatal_startup_error(app: &tauri::AppHandle, title: &str, detail: impl std::fmt::Display) {
+    let message = format!(
+        "{detail}\n请检查磁盘空间、文件占用（例如杀毒软件/备份软件）或联系技术支持后重试。"
+    );
+    app.dialog()
+        .message(message)
+        .kind(MessageDialogKind::Error)
+        .title(title)
+        .blocking_show();
+    std::process::exit(1);
+}
 
 mod clipboard_monitor;
 mod commands;
@@ -35,9 +50,17 @@ pub fn run() {
         .setup(|app| {
             // 窗口状态恢复 — 必须在 window.show() 之前注册，确保先恢复后显示
             #[cfg(desktop)]
-            app.handle()
+            if let Err(e) = app
+                .handle()
                 .plugin(tauri_plugin_window_state::Builder::default().build())
-                .expect("window-state 插件初始化失败");
+            {
+                log::error!("window-state 插件初始化失败: {}", e);
+                fatal_startup_error(
+                    app.handle(),
+                    "PastePanda 启动失败",
+                    format!("窗口状态插件初始化失败: {e}"),
+                );
+            }
 
             // 初始化 APP_NAME（通过 Tauri 框架 API 获取，dev/安装版均可正确读取）
             let product_name = app
@@ -69,7 +92,18 @@ pub fn run() {
                 log::error!("数据库路径包含非 UTF-8 字符，使用回退路径");
                 "clipboard.db"
             });
-            let store = data_store::DataStore::new(db_path_str).expect("无法初始化数据库");
+            let store = match data_store::DataStore::new(db_path_str) {
+                Ok(s) => s,
+                Err(e) => {
+                    log::error!("无法初始化数据库: {}", e);
+                    fatal_startup_error(
+                        app.handle(),
+                        "PastePanda 启动失败",
+                        format!("数据库初始化失败: {e}"),
+                    );
+                    unreachable!("fatal_startup_error 已退出进程");
+                }
+            };
 
             // 初始化自动标签种子数据（AI 智能分类用）
             if let Err(e) = store.ensure_auto_tags() {
@@ -85,6 +119,33 @@ pub fn run() {
 
             // 读取保存的热键配置（在 store 被 manage 之前）
             let saved_config = store.get_config().unwrap_or_default();
+
+            // 读取（或首次启动时自动生成并持久化）局域网同步配对密钥，
+            // 用于对 LAN 同步消息进行签名/验签，防止未配对设备伪造消息
+            let lan_pairing_key = {
+                let existing = saved_config
+                    .get("lan_pairing_key")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string());
+                match existing {
+                    Some(key) => key,
+                    None => {
+                        let new_key = lan_sync::generate_pairing_key();
+                        let mut cfg = saved_config.clone();
+                        if let Some(obj) = cfg.as_object_mut() {
+                            obj.insert(
+                                "lan_pairing_key".to_string(),
+                                serde_json::Value::String(new_key.clone()),
+                            );
+                        }
+                        if let Err(e) = store.save_config(&cfg) {
+                            log::warn!("[LanSync] 保存自动生成的配对密钥失败: {}", e);
+                        }
+                        new_key
+                    }
+                }
+            };
             let auto_strip_enabled = saved_config
                 .get("auto_strip")
                 .and_then(|v| v.as_bool())
@@ -138,11 +199,16 @@ pub fn run() {
             // 全局热键
             if let Err(e) = hotkey_manager::register_global_hotkeys(&handle, &hotkey_config) {
                 log::warn!("[HotkeyManager] 热键注册失败: {}", e);
+                // release 版为 windows_subsystem = "windows"，无控制台可见，仅 log::warn! 用户无法感知，
+                // 需通过事件通知前端弹出提示，否则用户会误以为软件损坏
+                if let Err(emit_err) = handle.emit("hotkey-register-failed", e) {
+                    log::warn!("[HotkeyManager] 发送热键注册失败事件失败: {}", emit_err);
+                }
             }
 
             // 局域网同步（使用之前读取的配置）
             let device_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
-            let lan_sync = lan_sync::LanSync::new(device_id);
+            let lan_sync = lan_sync::LanSync::new(device_id, lan_pairing_key);
             if lan_enabled {
                 lan_sync.start_listener(handle.clone());
                 log::info!("[LanSync] 局域网同步已启用");
@@ -228,6 +294,9 @@ pub fn run() {
             commands::toggle_lan_sync,
             commands::send_lan_test,
             commands::get_lan_devices,
+            commands::get_lan_pairing_key,
+            commands::set_lan_pairing_key,
+            commands::regenerate_lan_pairing_key,
             commands::get_app_version,
             commands::get_app_name,
             commands::ocr_image,

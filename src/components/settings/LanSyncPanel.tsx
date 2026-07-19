@@ -7,6 +7,9 @@ interface LanDevice { device_id: string; device_name: string; last_seen: string;
 export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" | "error" | "info", duration?: number) => void }) {
   const [devices, setDevices] = useState<LanDevice[]>([]);
   const [loading, setLoading] = useState(false);
+  const [pairingKey, setPairingKey] = useState("");
+  const [pairingInput, setPairingInput] = useState("");
+  const [pairingBusy, setPairingBusy] = useState(false);
 
   const refreshDevices = useCallback(async () => {
     setLoading(true);
@@ -18,11 +21,52 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
     finally { setLoading(false); }
   }, []);
 
+  const refreshPairingKey = useCallback(async () => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const key = await invoke<string>("get_lan_pairing_key");
+      setPairingKey(key);
+    } catch (e) { logger.warn("获取配对密钥失败", e); }
+  }, []);
+
   useEffect(() => {
     refreshDevices();
     const timer = setInterval(refreshDevices, 5000);
     return () => clearInterval(timer);
   }, [refreshDevices]);
+
+  useEffect(() => {
+    refreshPairingKey();
+  }, [refreshPairingKey]);
+
+  const handleRegenerateKey = async () => {
+    setPairingBusy(true);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const key = await invoke<string>("regenerate_lan_pairing_key");
+      setPairingKey(key);
+      toast("已生成新的配对密钥，其他设备需要重新粘贴此密钥才能继续同步", "success");
+    } catch (e) {
+      logger.warn("生成配对密钥失败", e);
+      toast("生成配对密钥失败", "error");
+    } finally { setPairingBusy(false); }
+  };
+
+  const handleApplyPairingKey = async () => {
+    const trimmed = pairingInput.trim();
+    if (!trimmed) return;
+    setPairingBusy(true);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("set_lan_pairing_key", { key: trimmed });
+      setPairingKey(trimmed);
+      setPairingInput("");
+      toast("配对密钥已更新", "success");
+    } catch (e) {
+      logger.warn("设置配对密钥失败", e);
+      toast("设置配对密钥失败", "error");
+    } finally { setPairingBusy(false); }
+  };
 
   const handleSendTest = async () => {
     try {
@@ -42,6 +86,58 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
         <button className={styles.lanRefreshBtn} onClick={refreshDevices} disabled={loading}>
           {loading ? "⏳" : "🔄"} 刷新
         </button>
+      </div>
+
+      <div style={{ marginTop: 4, marginBottom: 12 }}>
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6 }}>
+          配对密钥（只有使用相同密钥的设备才会互相同步，请将此密钥手动拷贝到其他设备）
+        </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <input
+            type="text"
+            readOnly
+            value={pairingKey}
+            onFocus={(e) => e.currentTarget.select()}
+            style={{
+              flex: 1,
+              fontFamily: "monospace",
+              fontSize: 12,
+              padding: "4px 8px",
+              borderRadius: 4,
+              border: "1px solid var(--border-color, #ccc)",
+              background: "var(--bg-secondary, transparent)",
+              color: "var(--text-primary)",
+            }}
+          />
+          <button className={styles.lanRefreshBtn} onClick={handleRegenerateKey} disabled={pairingBusy}>
+            🔁 重新生成
+          </button>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            type="text"
+            placeholder="粘贴其他设备的配对密钥"
+            value={pairingInput}
+            onChange={(e) => setPairingInput(e.target.value)}
+            style={{
+              flex: 1,
+              fontFamily: "monospace",
+              fontSize: 12,
+              padding: "4px 8px",
+              borderRadius: 4,
+              border: "1px solid var(--border-color, #ccc)",
+              background: "var(--bg-secondary, transparent)",
+              color: "var(--text-primary)",
+            }}
+          />
+          <button
+            className={styles.lanTestBtn}
+            onClick={handleApplyPairingKey}
+            disabled={pairingBusy || !pairingInput.trim()}
+          >
+            应用
+          </button>
+        </div>
       </div>
 
       {devices.length > 0 && (

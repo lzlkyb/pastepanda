@@ -170,6 +170,11 @@ impl ContentClassifier {
             }
         }
 
+        // ===== JSON 检测（必须先于下面的"超短文本"早退检查，否则短 JSON 如 {"id":1} 会被误判为纯文本）=====
+        if self.is_json(text) {
+            return vec!["JSON".to_string()];
+        }
+
         // 超短文本 (< 15 字符，不含特殊格式)
         if text.len() < 15 && !text.contains('\n') && !text.contains("://") {
             return vec!["纯文本".to_string()];
@@ -180,37 +185,32 @@ impl ContentClassifier {
             return vec!["链接".to_string()];
         }
 
-        // ===== 2. JSON 检测 =====
-        if self.is_json(text) {
-            return vec!["JSON".to_string()];
-        }
-
-        // ===== 3. 配置文件检测 =====
+        // ===== 2. 配置文件检测 =====
         if let Some(config_label) = self.detect_config(text) {
             return vec!["配置文件".to_string(), config_label];
         }
 
-        // ===== 4. CSV/TSV 检测 =====
+        // ===== 3. CSV/TSV 检测 =====
         if self.is_csv(text) {
             return vec!["表格".to_string()];
         }
 
-        // ===== 5. 命令行检测 =====
+        // ===== 4. 命令行检测 =====
         if self.is_command(text) {
             return vec!["命令行".to_string()];
         }
 
-        // ===== 6. 日志检测 =====
+        // ===== 5. 日志检测 =====
         if self.is_log(text) {
             return vec!["日志".to_string()];
         }
 
-        // ===== 7. 密钥/Token 检测 =====
+        // ===== 6. 密钥/Token 检测 =====
         if self.is_secret(text) {
             return vec!["密钥".to_string()];
         }
 
-        // ===== 8. 代码检测 =====
+        // ===== 7. 代码检测 =====
         if self.is_code(text) {
             let lang = self.detect_language(text);
             let mut labels = vec!["代码".to_string()];
@@ -220,7 +220,7 @@ impl ContentClassifier {
             return labels;
         }
 
-        // ===== 9. 默认：纯文本 =====
+        // ===== 8. 默认：纯文本 =====
         vec!["纯文本".to_string()]
     }
 
@@ -358,9 +358,16 @@ impl ContentClassifier {
             return false;
         }
 
-        // 检查是否以常见命令开头
+        // 检查是否以常见命令开头，且命令后须为词边界（字符串结尾/空白/非字母数字），
+        // 避免 "dir"/"cat"/"find" 等前缀误伤 "directory"/"category"/"finder" 等普通单词
         let lower = first_line.to_lowercase();
-        let starts_with_cmd = COMMON_COMMANDS.iter().any(|cmd| lower.starts_with(cmd));
+        let starts_with_cmd = COMMON_COMMANDS.iter().any(|cmd| {
+            lower.starts_with(cmd)
+                && lower
+                    .as_bytes()
+                    .get(cmd.len())
+                    .map_or(true, |b| !b.is_ascii_alphanumeric())
+        });
         if !starts_with_cmd {
             return false;
         }
@@ -414,15 +421,30 @@ impl ContentClassifier {
         }
 
         // 通用 Base64（长串、非文本）
+        // 真实 base64 编码数据（含末尾 padding）长度必为 4 的倍数，以此作为必要条件之一，
+        // 排除普通驼峰命名标识符（如 calculateTotalPriceWithDiscountAndTax123）被误判为密钥
         if trimmed.len() > 30
             && !trimmed.contains(' ')
             && !trimmed.contains('\n')
+            && trimmed.len() % 4 == 0
             && BASE64_RE.is_match(trimmed)
         {
             // 排除明显的文本（包含常见英文单词）
             let upper = trimmed.to_uppercase();
             let common_words = ["THE", "AND", "FOR", "ARE", "BUT", "NOT", "YOU", "ALL", "CAN", "HAD", "HER", "WAS", "ONE", "OUR", "OUT", "HAS", "HAVE"];
-            if !common_words.iter().any(|w| upper.contains(w)) {
+            let looks_like_text = common_words.iter().any(|w| upper.contains(w));
+
+            // 排除 camelCase/标识符风格字符串：不含 base64 常见符号 + / =，
+            // 且存在"小写字母紧跟大写字母"的驼峰命名特征（真实 base64 中这种相邻模式很少见）
+            let has_base64_symbols =
+                trimmed.contains('+') || trimmed.contains('/') || trimmed.contains('=');
+            let looks_like_camel_case = !has_base64_symbols
+                && trimmed
+                    .as_bytes()
+                    .windows(2)
+                    .any(|w| w[0].is_ascii_lowercase() && w[1].is_ascii_uppercase());
+
+            if !looks_like_text && !looks_like_camel_case {
                 return true;
             }
         }
@@ -692,5 +714,28 @@ mod tests {
     fn test_url_ftp() {
         let r = classify("ftp://files.example.com/data/report.pdf");
         assert!(r.contains(&"链接".to_string()));
+    }
+
+    // ===== 回归测试：3 个误判修复场景 =====
+
+    #[test]
+    fn test_short_json_not_plaintext() {
+        // 修复前：< 15 字符且无换行/"://" 会在 JSON 检测之前早退为纯文本
+        let r = classify(r#"{"id":1}"#);
+        assert!(r.contains(&"JSON".to_string()));
+    }
+
+    #[test]
+    fn test_sentence_with_command_prefix_word_not_command() {
+        // 修复前："directory" 以 "dir" 为前缀，被误判为命令行
+        let r = classify("directory of important files");
+        assert!(!r.contains(&"命令行".to_string()));
+    }
+
+    #[test]
+    fn test_camel_case_identifier_not_secret() {
+        // 修复前：>30 字符、无空格、字符集匹配 base64 正则，被误判为密钥
+        let r = classify("calculateTotalPriceWithDiscountAndTax123");
+        assert!(!r.contains(&"密钥".to_string()));
     }
 }

@@ -1,4 +1,5 @@
 use crate::data_store::{compute_pinyin_initials, DataStore, HistoryItem};
+use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::UdpSocket;
@@ -10,6 +11,9 @@ use tauri::{AppHandle, Emitter, Manager};
 const MULTICAST_ADDR: &str = "224.1.1.1:5007";
 /// 图片通过 LAN 同步的最大文件大小 (2MB)
 const MAX_IMAGE_SIZE_LAN: u64 = 2 * 1024 * 1024;
+/// 单条局域网消息允许的最大原始负载大小 (20MB)，超过则在解析/解码前直接丢弃，
+/// 防止恶意或畸形数据包耗尽 CPU/内存/磁盘资源
+const MAX_LAN_MESSAGE_BYTES: usize = 20 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct LanMessage {
@@ -23,6 +27,40 @@ struct LanMessage {
     image_base64: String,
     device_id: String,
     device_name: String,
+    /// 使用配对双方共享的 pairing_key 计算出的签名，用于校验消息来自受信任的已配对设备，
+    /// 防止局域网内任意设备伪造/篡改剪贴板同步消息
+    #[serde(default)]
+    signature: String,
+}
+
+/// 生成一个新的随机配对密钥：16 字节，hex 编码为 32 位字符串
+/// （直接复用已有的 uuid 依赖，避免引入新的随机数 crate）
+pub fn generate_pairing_key() -> String {
+    uuid::Uuid::new_v4().simple().to_string()
+}
+
+/// 使用共享 pairing_key 对消息内容计算签名（keyed hash）。
+/// 发送方与接收方都基于本地持有的 pairing_key 独立计算，只有密钥一致才能匹配，
+/// 从而实现“同一配对密钥的设备互相信任”的最小可行配对方案。
+fn compute_signature(
+    pairing_key: &str,
+    msg_type: &str,
+    item_type: &str,
+    text: &str,
+    image_base64: &str,
+    device_id: &str,
+    device_name: &str,
+) -> String {
+    let canonical = format!(
+        "{}|{}|{}|{}|{}|{}",
+        msg_type, item_type, text, image_base64, device_id, device_name
+    );
+    // 密钥前后各拼接一次，缓解简单哈希的长度扩展类问题
+    let mut input = String::with_capacity(pairing_key.len() * 2 + canonical.len());
+    input.push_str(pairing_key);
+    input.push_str(&canonical);
+    input.push_str(pairing_key);
+    format!("{:x}", Md5::new().chain_update(input.as_bytes()).finalize())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,14 +73,16 @@ pub struct LanDevice {
 pub struct LanSync {
     running: Arc<AtomicBool>,
     device_id: String,
+    pairing_key: Arc<Mutex<String>>,
     pub devices: Arc<Mutex<HashMap<String, LanDevice>>>,
 }
 
 impl LanSync {
-    pub fn new(device_id: String) -> Self {
+    pub fn new(device_id: String, pairing_key: String) -> Self {
         Self {
             running: Arc::new(AtomicBool::new(false)),
             device_id,
+            pairing_key: Arc::new(Mutex::new(pairing_key)),
             devices: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -53,6 +93,18 @@ impl LanSync {
             .lock()
             .map(|d| d.values().cloned().collect())
             .unwrap_or_default()
+    }
+
+    /// 获取当前配对密钥（用于在设置面板中展示，供用户手动同步到其他设备）
+    pub fn get_pairing_key(&self) -> String {
+        self.pairing_key.lock().map(|k| k.clone()).unwrap_or_default()
+    }
+
+    /// 更新运行时使用的配对密钥（持久化由调用方负责）
+    pub fn set_pairing_key(&self, key: String) {
+        if let Ok(mut guard) = self.pairing_key.lock() {
+            *guard = key;
+        }
     }
 
     /// 发送剪贴板文本到局域网
@@ -96,15 +148,28 @@ impl LanSync {
             }
         }
 
+        let device_name = hostname::get()
+            .map(|h| h.to_string_lossy().to_string())
+            .unwrap_or_else(|_| "未知设备".to_string());
+        let pairing_key = self.get_pairing_key();
+        let signature = compute_signature(
+            &pairing_key,
+            "clipboard",
+            item_type,
+            text,
+            &image_base64,
+            &self.device_id,
+            &device_name,
+        );
+
         let msg = LanMessage {
             msg_type: "clipboard".to_string(),
             item_type: item_type.to_string(),
             text: text.to_string(),
             image_base64,
             device_id: self.device_id.clone(),
-            device_name: hostname::get()
-                .map(|h| h.to_string_lossy().to_string())
-                .unwrap_or_else(|_| "未知设备".to_string()),
+            device_name,
+            signature,
         };
 
         if let Ok(json) = serde_json::to_string(&msg) {
@@ -129,6 +194,7 @@ impl LanSync {
         let running = self.running.clone();
         let device_id = self.device_id.clone();
         let devices = self.devices.clone();
+        let pairing_key = self.pairing_key.clone();
 
         std::thread::spawn(move || {
             log::info!("[LanSync] 监听线程启动");
@@ -155,10 +221,40 @@ impl LanSync {
             while running.load(Ordering::SeqCst) {
                 match socket.recv_from(&mut buf) {
                     Ok((len, _addr)) => {
+                        // 消息大小上限：在解析/解码前直接丢弃超大数据包，防止资源耗尽
+                        if len > MAX_LAN_MESSAGE_BYTES {
+                            log::warn!(
+                                "[LanSync] 收到超大数据包 ({}B > {}B)，已丢弃",
+                                len,
+                                MAX_LAN_MESSAGE_BYTES
+                            );
+                            continue;
+                        }
                         if let Ok(text) = std::str::from_utf8(&buf[..len]) {
                             if let Ok(msg) = serde_json::from_str::<LanMessage>(text) {
                                 // 过滤自身消息
                                 if msg.device_id == device_id {
+                                    continue;
+                                }
+
+                                // 校验签名：使用本地 pairing_key 独立重新计算签名，
+                                // 拒绝签名缺失或不匹配的消息（未配对/伪造设备），直接丢弃、不应用
+                                let local_key =
+                                    pairing_key.lock().map(|k| k.clone()).unwrap_or_default();
+                                let expected_sig = compute_signature(
+                                    &local_key,
+                                    &msg.msg_type,
+                                    &msg.item_type,
+                                    &msg.text,
+                                    &msg.image_base64,
+                                    &msg.device_id,
+                                    &msg.device_name,
+                                );
+                                if msg.signature.is_empty() || msg.signature != expected_sig {
+                                    log::warn!(
+                                        "[LanSync] 签名校验失败，已丢弃来自 {} 的消息（可能是未配对设备或伪造消息）",
+                                        msg.device_name
+                                    );
                                     continue;
                                 }
 
@@ -261,6 +357,14 @@ impl LanSync {
 fn save_synced_image(base64_data: &str, app_handle: &AppHandle) -> Result<String, String> {
     let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, base64_data)
         .map_err(|e| format!("base64 解码失败: {}", e))?;
+
+    if bytes.len() > MAX_LAN_MESSAGE_BYTES {
+        return Err(format!(
+            "解码后的图片数据过大 ({}B > {}B)，已拒绝写入",
+            bytes.len(),
+            MAX_LAN_MESSAGE_BYTES
+        ));
+    }
 
     let app_dir = app_handle
         .path()

@@ -249,8 +249,22 @@ fn get_work_area_size() -> (f64, f64) {
     (1920.0, 1080.0) // 非 Windows 平台回退值
 }
 
+/// 防止快速连续右键点击导致“关闭旧弹窗 → 等待 → 创建新弹窗”序列相互重叠。
+/// show_tray_popup 本身在托盘事件的主/事件循环线程上被调用，真正耗时的
+/// 关闭/等待/创建逻辑放到后台线程执行；这个标志用于在后台序列进行期间
+/// 忽略新的右键点击，避免并发关闭/创建同名窗口。
+static POPUP_REBUILDING: AtomicBool = AtomicBool::new(false);
+
 /// 打开自绘托盘弹出窗口（右键托盘图标触发）
 /// 使用 tray_rect（从 Enter/Move 事件记录的托盘图标完整矩形）定位弹窗
+///
+/// 注意：关闭旧弹窗 → 等待其销毁 → 创建新弹窗的整个序列都被放进后台线程执行，
+/// 因为本函数是从托盘图标的右键事件回调中直接同步调用的，回调运行在应用的
+/// 主/事件循环线程上；此前这里的 std::thread::sleep(80ms) 是同步阻塞调用，
+/// 快速连续右键会导致每次点击都卡住整个应用 UI 80ms。Tauri 的窗口句柄方法
+/// （close/show/set_position 等，以及 WebviewWindowBuilder::build）都会通过
+/// 事件循环的 dispatcher 安全地跨线程调用，因此可以放心地在后台线程里完成，
+/// 这与本文件后面“延迟 300ms 注册失焦监听”所用的 std::thread::spawn 模式一致。
 fn show_tray_popup(app: &AppHandle, tray_rect: (f64, f64, f64, f64)) {
     let popup_label = "tray-popup";
     let popup_w = 280.0;
@@ -264,85 +278,111 @@ fn show_tray_popup(app: &AppHandle, tray_rect: (f64, f64, f64, f64)) {
         tray_rect.3
     );
 
-    // 如果已有弹窗，先关闭并销毁
-    if let Some(existing) = app.get_webview_window(popup_label) {
-        log::info!("[TrayManager] 关闭已有弹窗，准备重建");
-        let _ = existing.close();
-        std::thread::sleep(std::time::Duration::from_millis(80));
+    // 若上一次点击触发的“关闭/等待/重建”序列还在后台进行中，直接忽略本次点击，
+    // 避免两个序列同时操作同一个 tray-popup 标签的窗口。
+    if POPUP_REBUILDING.swap(true, Ordering::SeqCst) {
+        log::info!("[TrayManager] 弹窗正在重建中，忽略本次右键点击");
+        return;
     }
 
-    let monitoring = is_monitoring_public(app);
-    let recents = get_recent_texts_public(app, 3);
-    log::info!("[TrayManager] 最近记录: {} 条", recents.len());
-    let popup_data = build_popup_data_public(app, &recents, monitoring);
-    let taskbar_edge = get_taskbar_edge();
-    let popup_pos = calc_popup_position(tray_rect, popup_w, popup_h, taskbar_edge);
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let app = &app;
 
-    log::info!("[TrayManager] 开始创建弹窗窗口...");
+        // 如果已有弹窗，先关闭并等待其销毁完成，再创建新窗口
+        if let Some(existing) = app.get_webview_window(popup_label) {
+            log::info!("[TrayManager] 关闭已有弹窗，准备重建");
+            let _ = existing.close();
+            std::thread::sleep(std::time::Duration::from_millis(80));
+        }
 
-    match WebviewWindowBuilder::new(
-        app,
-        popup_label,
-        tauri::WebviewUrl::App("popup.html".into()),
-    )
-    .title("")
-    .inner_size(popup_w, popup_h)
-    .resizable(false)
-    .decorations(false)
-    .always_on_top(true)
-    .skip_taskbar(true)
-    .shadow(false)
-    .visible(false)
-    .build()
-    {
-        Ok(window) => {
-            log::info!("[TrayManager] 弹窗窗口创建成功");
+        let monitoring = is_monitoring_public(app);
+        let recents = get_recent_texts_public(app, 3);
+        log::info!("[TrayManager] 最近记录: {} 条", recents.len());
+        let popup_data = build_popup_data_public(app, &recents, monitoring);
+        let taskbar_edge = get_taskbar_edge();
+        let popup_pos = calc_popup_position(tray_rect, popup_w, popup_h, taskbar_edge);
 
-            // 设置位置
-            let _ = window.set_position(popup_pos);
+        log::info!("[TrayManager] 开始创建弹窗窗口...");
 
-            // 应用 DWM 圆角（Windows 11）
-            #[cfg(target_os = "windows")]
-            set_dwm_round_corners(&window);
+        match WebviewWindowBuilder::new(
+            app,
+            popup_label,
+            tauri::WebviewUrl::App("popup.html".into()),
+        )
+        .title("")
+        .inner_size(popup_w, popup_h)
+        .resizable(false)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .shadow(false)
+        .visible(false)
+        .build()
+        {
+            Ok(window) => {
+                log::info!("[TrayManager] 弹窗窗口创建成功");
 
-            // ★ 先发送初始化数据，再显示窗口 — 确保前端渲染时数据已就绪
-            let _ = app.emit("tray-popup-init", &popup_data);
-            log::info!("[TrayManager] 已发送 tray-popup-init（在 show 之前）");
+                // 设置位置
+                let _ = window.set_position(popup_pos);
 
-            // 显示窗口
-            let show_result = window.show();
-            log::info!("[TrayManager] show() 结果: {:?}", show_result);
-            let _ = window.set_focus();
+                // 应用 DWM 圆角（Windows 11）
+                #[cfg(target_os = "windows")]
+                set_dwm_round_corners(&window);
 
-            // ★ 延迟注册失焦监听，避免 show()/set_focus() 过程中误触发 Focused(false) 导致闪退
-            let w_for_event = window.clone();
-            let w_for_thread = window.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(300));
-                let hide_flag = Arc::new(AtomicBool::new(false));
-                let flag = hide_flag.clone();
-                let flag2 = hide_flag.clone();
-                w_for_event.on_window_event(move |event| {
-                    if let tauri::WindowEvent::Focused(false) = event {
-                        if flag.swap(true, Ordering::SeqCst) {
-                            return;
-                        }
-                        let w3 = w_for_thread.clone();
-                        let f2 = flag2.clone();
-                        std::thread::spawn(move || {
-                            std::thread::sleep(std::time::Duration::from_millis(30));
-                            let _ = w3.hide();
-                            f2.store(false, Ordering::SeqCst);
-                        });
+                // ★ 先发送初始化数据，再显示窗口 — 确保前端渲染时数据已就绪
+                let _ = app.emit("tray-popup-init", &popup_data);
+                log::info!("[TrayManager] 已发送 tray-popup-init（在 show 之前）");
+
+                // 显示窗口
+                let show_result = window.show();
+                log::info!("[TrayManager] show() 结果: {:?}", show_result);
+                let _ = window.set_focus();
+
+                // ★ 延迟注册失焦监听，避免 show()/set_focus() 过程中误触发 Focused(false) 导致闪退
+                let w_for_event = window.clone();
+                let w_for_thread = window.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+
+                    // 若这 300ms 等待期间窗口已被关闭/替换（例如又发生了一次快速右键重建），
+                    // 则不要在一个已销毁的窗口对象上注册监听。
+                    if w_for_event.is_visible().is_err() {
+                        log::info!("[TrayManager] 弹窗已在等待期间被关闭，跳过失焦监听注册");
+                        return;
                     }
+
+                    let hide_flag = Arc::new(AtomicBool::new(false));
+                    let flag = hide_flag.clone();
+                    let flag2 = hide_flag.clone();
+                    w_for_event.on_window_event(move |event| {
+                        if let tauri::WindowEvent::Focused(false) = event {
+                            if flag.swap(true, Ordering::SeqCst) {
+                                return;
+                            }
+                            let w3 = w_for_thread.clone();
+                            let f2 = flag2.clone();
+                            std::thread::spawn(move || {
+                                std::thread::sleep(std::time::Duration::from_millis(30));
+                                // 再次确认窗口仍然存在，避免作用于已销毁的窗口对象
+                                if w3.is_visible().is_ok() {
+                                    let _ = w3.hide();
+                                }
+                                f2.store(false, Ordering::SeqCst);
+                            });
+                        }
+                    });
+                    log::info!("[TrayManager] 失焦监听已注册");
                 });
-                log::info!("[TrayManager] 失焦监听已注册");
-            });
+            }
+            Err(e) => {
+                log::warn!("[TrayManager] 创建托盘弹出窗口失败: {}", e);
+            }
         }
-        Err(e) => {
-            log::warn!("[TrayManager] 创建托盘弹出窗口失败: {}", e);
-        }
-    }
+
+        // 本轮关闭/重建序列结束，允许后续右键点击再次触发
+        POPUP_REBUILDING.store(false, Ordering::SeqCst);
+    });
 }
 
 /// 为弹窗窗口设置 DWM 圆角（Windows 11）

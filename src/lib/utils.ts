@@ -33,7 +33,9 @@ export function relativeTime(timeStr: string): string {
 export function truncate(text: string, maxLen: number): string {
   if (!text) return "";
   const cleaned = text.replace(/\r/g, " ").replace(/\n/g, " ");
-  return cleaned.length > maxLen ? cleaned.slice(0, maxLen) + "..." : cleaned;
+  // 按 Unicode 码点切分，避免 UTF-16 代理对（如 emoji）被从中间切断产生孤立代理项
+  const codePoints = Array.from(cleaned);
+  return codePoints.length > maxLen ? codePoints.slice(0, maxLen).join("") + "..." : cleaned;
 }
 
 /** 检测文本类型 */

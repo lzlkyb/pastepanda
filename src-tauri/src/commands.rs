@@ -37,12 +37,41 @@ pub fn get_app_name() -> String {
         .to_string()
 }
 
+/// 图片扩展名白名单：用于校验用户选择/粘贴的图片路径，防止通过这些命令读取或写入任意文件
+const ALLOWED_IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "bmp", "webp", "ico"];
+
+/// 校验路径是否为合法的图片文件：规范化路径后确认其存在、是普通文件，且扩展名在允许列表内。
+/// 返回规范化后的路径，调用方应使用该路径进行后续文件操作。
+fn validate_image_file_path(path: &str) -> Result<std::path::PathBuf, String> {
+    let canonical =
+        std::fs::canonicalize(path).map_err(|e| format!("路径无效或文件不存在: {e}"))?;
+
+    if !canonical.is_file() {
+        return Err("目标路径不是一个有效的文件".to_string());
+    }
+
+    let ext = canonical
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default();
+
+    if !ALLOWED_IMAGE_EXTENSIONS.contains(&ext.as_str()) {
+        return Err(format!(
+            "不支持的文件类型: .{ext}，仅允许图片文件 ({})",
+            ALLOWED_IMAGE_EXTENSIONS.join(", ")
+        ));
+    }
+
+    Ok(canonical)
+}
+
 /// 读取文件内容并返回 base64 编码（用于图片粘贴并变换）
 #[tauri::command]
 pub fn read_file_as_base64(path: String) -> Result<String, String> {
     use base64::{engine::general_purpose::STANDARD, Engine as _};
-    use std::fs;
-    let bytes = fs::read(&path).map_err(|e| format!("读取文件失败: {e}"))?;
+    let canonical = validate_image_file_path(&path)?;
+    let bytes = std::fs::read(&canonical).map_err(|e| format!("读取文件失败: {e}"))?;
     Ok(STANDARD.encode(&bytes))
 }
 
@@ -319,7 +348,9 @@ pub fn get_image_data_url(path: String) -> Result<String, String> {
     use std::io::Read;
 
     const MAX_FILE_SIZE: u64 = 20 * 1024 * 1024;
-    let metadata = std::fs::metadata(&path).map_err(|e| format!("无法读取文件信息: {}", e))?;
+    let canonical = validate_image_file_path(&path)?;
+    let metadata =
+        std::fs::metadata(&canonical).map_err(|e| format!("无法读取文件信息: {}", e))?;
     if metadata.len() > MAX_FILE_SIZE {
         return Err(format!(
             "图片文件过大 ({}MB)，超过 20MB 限制",
@@ -327,7 +358,7 @@ pub fn get_image_data_url(path: String) -> Result<String, String> {
         ));
     }
 
-    let mut file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+    let mut file = std::fs::File::open(&canonical).map_err(|e| e.to_string())?;
     let mut buffer = Vec::with_capacity(metadata.len() as usize);
     file.read_to_end(&mut buffer).map_err(|e| e.to_string())?;
     let base64_str = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &buffer);
@@ -395,7 +426,7 @@ pub fn get_image_thumbnail(app_handle: tauri::AppHandle, path: String) -> Result
         img
     } else {
         let ratio = MAX_WIDTH as f64 / w as f64;
-        let new_h = (h as f64 * ratio) as u32;
+        let new_h = ((h as f64 * ratio) as u32).max(1);
         img.resize_exact(MAX_WIDTH, new_h, image::imageops::FilterType::Lanczos3)
     };
 
@@ -508,9 +539,10 @@ pub fn open_file_with_system(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use std::process::Command;
-        // ShellExecute 等价：用系统默认程序打开文件
-        Command::new("cmd")
-            .args(["/C", "start", "", &path])
+        // 与 open_file_location 保持一致：调用 explorer.exe 打开文件，
+        // 避免通过 cmd /C start 触发 shell 解析导致的命令注入/参数注入风险
+        Command::new("explorer")
+            .arg(&path)
             .spawn()
             .map_err(|e| format!("打开文件失败: {}", e))?;
         Ok(())
@@ -552,10 +584,80 @@ pub fn open_file_location(path: String) -> Result<(), String> {
     }
 }
 
+/// 保存图片目标路径的敏感目录黑名单（防御性层：拒绝写入到开机启动项、系统目录等敏感位置）
+fn sensitive_dest_dirs() -> Vec<std::path::PathBuf> {
+    let mut dirs = Vec::new();
+
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        dirs.push(
+            std::path::PathBuf::from(appdata)
+                .join(r"Microsoft\Windows\Start Menu\Programs\Startup"),
+        );
+    }
+    if let Ok(windir) = std::env::var("WINDIR").or_else(|_| std::env::var("SystemRoot")) {
+        dirs.push(std::path::PathBuf::from(windir).join("System32"));
+    }
+    if let Ok(pf) = std::env::var("ProgramFiles") {
+        dirs.push(std::path::PathBuf::from(pf));
+    }
+    if let Ok(pf86) = std::env::var("ProgramFiles(x86)") {
+        dirs.push(std::path::PathBuf::from(pf86));
+    }
+
+    dirs
+}
+
 /// 保存图片文件（直接复制源文件到目标路径）
+/// 安全约束：
+/// - source 必须是已存在的图片文件（扩展名在白名单内），防止读取任意文件内容；
+/// - dest 的文件扩展名也必须在图片白名单内，拒绝 .exe/.bat/.lnk 等可执行/快捷方式扩展名；
+/// - dest 所在目录不得落在敏感目录（开机启动目录、System32、Program Files 等）内。
+/// 目标路径本身允许是用户通过系统"另存为"对话框选择的任意正常位置——该对话框已构成
+/// "写到哪里"的用户同意边界，这里只约束"写入的是什么"，避免任意文件读取后写出的攻击链。
 #[tauri::command]
 pub fn save_image_file(source: String, dest: String) -> Result<(), String> {
-    std::fs::copy(&source, &dest).map_err(|e| format!("保存图片失败: {}", e))?;
+    let source_canonical = validate_image_file_path(&source)?;
+
+    let dest_path = std::path::Path::new(&dest);
+
+    let dest_ext = dest_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default();
+    if !ALLOWED_IMAGE_EXTENSIONS.contains(&dest_ext.as_str()) {
+        return Err(format!(
+            "不支持的目标文件类型: .{dest_ext}，仅允许保存为图片文件 ({})",
+            ALLOWED_IMAGE_EXTENSIONS.join(", ")
+        ));
+    }
+
+    let dest_parent = dest_path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .ok_or_else(|| "目标路径无效".to_string())?;
+    let dest_file_name = dest_path
+        .file_name()
+        .ok_or_else(|| "目标路径缺少文件名".to_string())?;
+
+    // 目标所在目录必须已存在（不基于用户输入创建任意目录，避免路径穿越产生的副作用）
+    let dest_parent_canonical =
+        std::fs::canonicalize(dest_parent).map_err(|_| "目标目录不存在或无效".to_string())?;
+
+    // 防御性层：拒绝写入到系统/开机等敏感目录，降低"写图片到启动项进行骚扰性持久化"的风险
+    for sensitive in sensitive_dest_dirs() {
+        if let Ok(sensitive_canonical) = std::fs::canonicalize(&sensitive) {
+            if dest_parent_canonical.starts_with(&sensitive_canonical) {
+                return Err(format!(
+                    "出于安全考虑，不允许保存到该目录: {}",
+                    sensitive.display()
+                ));
+            }
+        }
+    }
+
+    let dest_final = dest_parent_canonical.join(dest_file_name);
+    std::fs::copy(&source_canonical, &dest_final).map_err(|e| format!("保存图片失败: {}", e))?;
     Ok(())
 }
 
@@ -616,6 +718,78 @@ pub fn get_lan_devices(app: tauri::AppHandle) -> Result<Vec<crate::lan_sync::Lan
     } else {
         Ok(Vec::new())
     }
+}
+
+/// 获取当前局域网配对密钥（用于在设置面板中展示，供用户手动复制到其他设备完成配对）
+#[tauri::command]
+pub fn get_lan_pairing_key(
+    app: tauri::AppHandle,
+    store: State<DataStore>,
+) -> Result<String, String> {
+    if let Some(lan_sync) = app.try_state::<crate::lan_sync::LanSync>() {
+        let key = lan_sync.get_pairing_key();
+        if !key.is_empty() {
+            return Ok(key);
+        }
+    }
+    // 回退：正常情况下启动时已生成并注入 LanSync，这里仅作兜底，直接读配置
+    let config = store.get_config()?;
+    Ok(config
+        .get("lan_pairing_key")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string())
+}
+
+/// 设置（粘贴自其他设备的）局域网配对密钥，持久化并立即在运行时生效
+#[tauri::command]
+pub fn set_lan_pairing_key(
+    app: tauri::AppHandle,
+    store: State<DataStore>,
+    key: String,
+) -> Result<(), String> {
+    let key = key.trim().to_string();
+    if key.is_empty() {
+        return Err("配对密钥不能为空".to_string());
+    }
+
+    let mut config = store.get_config()?;
+    if let Some(obj) = config.as_object_mut() {
+        obj.insert(
+            "lan_pairing_key".to_string(),
+            serde_json::Value::String(key.clone()),
+        );
+    }
+    store.save_config(&config)?;
+
+    if let Some(lan_sync) = app.try_state::<crate::lan_sync::LanSync>() {
+        lan_sync.set_pairing_key(key);
+    }
+    Ok(())
+}
+
+/// 重新生成一个随机配对密钥，持久化并立即生效，返回新密钥。
+/// 注意：更换密钥后，其他已配对设备需要重新粘贴此密钥才能继续同步。
+#[tauri::command]
+pub fn regenerate_lan_pairing_key(
+    app: tauri::AppHandle,
+    store: State<DataStore>,
+) -> Result<String, String> {
+    let new_key = crate::lan_sync::generate_pairing_key();
+
+    let mut config = store.get_config()?;
+    if let Some(obj) = config.as_object_mut() {
+        obj.insert(
+            "lan_pairing_key".to_string(),
+            serde_json::Value::String(new_key.clone()),
+        );
+    }
+    store.save_config(&config)?;
+
+    if let Some(lan_sync) = app.try_state::<crate::lan_sync::LanSync>() {
+        lan_sync.set_pairing_key(new_key.clone());
+    }
+    Ok(new_key)
 }
 
 /// 设置开机自启
@@ -843,10 +1017,11 @@ pub fn open_pinned_image(
     crate::pinned_window::create_native_window(&path)
 }
 
-/// 关闭置顶图片（通知前端隐藏遮罩层 + 取消窗口置顶）
+/// 关闭置顶图片（通知前端隐藏遮罩层 + 主动关闭当前原生置顶窗口）
 #[tauri::command]
 pub fn close_pinned_image() -> Result<(), String> {
-    log::info!("[pinned-image] close_pinned_image 被调用（原生窗口自行关闭，无需额外操作）");
+    log::info!("[pinned-image] close_pinned_image 被调用");
+    crate::pinned_window::close_current_window();
     Ok(())
 }
 

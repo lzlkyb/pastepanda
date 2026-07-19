@@ -5,10 +5,11 @@ use md5::Digest;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 /// 粘贴引擎 — 处理时序敏感的粘贴操作
 pub struct PasteEngine {
+    #[allow(dead_code)]
     app_handle: AppHandle,
     paste_suppress: Arc<PasteSuppress>,
     /// 追踪的最后一个非自身前台窗口（由剪贴板轮询线程持续更新）
@@ -317,11 +318,42 @@ impl PasteEngine {
                 // 将目标窗口切换到前台（确保按键能送达）
                 let was_minimized = IsIconic(hwnd).as_bool();
                 if was_minimized {
-                    ShowWindow(hwnd, SW_RESTORE);
+                    let _ = ShowWindow(hwnd, SW_RESTORE);
                 }
-                SetForegroundWindow(hwnd);
-                // 等待窗口获得焦点（微信等应用需要一点时间）
-                std::thread::sleep(std::time::Duration::from_millis(30));
+                // 切换前台窗口并确认生效：Windows 的“前台锁定超时”（foreground lock timeout）
+                // 机制可能悄悄拒绝来自后台进程的 SetForegroundWindow 请求（返回 false 但不报错）。
+                // 之前的代码完全忽略了返回值，也没有确认切换是否真正生效，就直接固定 sleep 30ms
+                // 后发送按键——一旦切换被拒绝，Ctrl+V 会被发送到当时真正处于前台的错误窗口。
+                // 这里改为：最多重试 3 次 SetForegroundWindow，每次之后轮询
+                // GetForegroundWindow() 确认是否已切换成功，总耗时预算约 100ms（3 次 * 3 * 10ms）。
+                let mut confirmed = false;
+                for attempt in 0..3 {
+                    let ok = SetForegroundWindow(hwnd).as_bool();
+                    if !ok {
+                        log::warn!(
+                            "[PasteEngine] SetForegroundWindow 返回失败（第 {} 次尝试），hwnd={:?}",
+                            attempt + 1,
+                            hwnd_raw
+                        );
+                    }
+                    // 无论返回值如何，都轮询确认实际前台窗口（返回值不总是可靠）
+                    for _ in 0..3 {
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                        if GetForegroundWindow() == hwnd {
+                            confirmed = true;
+                            break;
+                        }
+                    }
+                    if confirmed {
+                        break;
+                    }
+                }
+                if !confirmed {
+                    log::warn!(
+                        "[PasteEngine] 前台窗口切换未能在预期时间内确认成功，hwnd={:?}，粘贴可能发送到错误窗口",
+                        hwnd_raw
+                    );
+                }
 
                 // 使用 SendInput 模拟 Ctrl+V 按键（兼容所有应用，包括微信/企业微信等 WebView 应用）
                 let mut inputs: [INPUT; 4] = std::mem::zeroed();
@@ -346,9 +378,13 @@ impl PasteEngine {
 
                 SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
 
-                // 如果窗口之前是最小化的，恢复最小化状态
+                // 如果窗口之前是最小化的，恢复最小化状态。
+                // SendInput 只是把按键放入系统输入队列，目标窗口识别 Ctrl+V 并执行粘贴
+                // 是异步的；如果窗口刚从最小化恢复，消息循环/激活可能还没完全就绪，
+                // 需要多留一点时间，避免立刻重新最小化打断目标窗口的粘贴处理。
                 if was_minimized {
-                    ShowWindow(hwnd, SW_MINIMIZE);
+                    std::thread::sleep(std::time::Duration::from_millis(80));
+                    let _ = ShowWindow(hwnd, SW_MINIMIZE);
                 }
             }
         }

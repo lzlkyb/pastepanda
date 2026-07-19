@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useUpdate, friendlyError } from "@/contexts/UpdateContext";
 import { ArrowDown, Loader2, CheckCircle, AlertCircle, RotateCcw } from "lucide-react";
@@ -17,14 +18,22 @@ import styles from "./UpdateBanner.module.css";
  */
 export function UpdateBadge({ currentVersion }: { currentVersion: string }) {
   const { status, update, progress, checkForUpdate, downloadAndInstall, restart } = useUpdate();
+  // 防止用户快速重复点击（连点更新徽章）导致重复触发检查/下载/重启
+  const [isStarting, setIsStarting] = useState(false);
 
   const handleClick = async () => {
-    if (status === "idle" || status === "error") {
-      await checkForUpdate();
-    } else if (status === "available") {
-      await downloadAndInstall();
-    } else if (status === "ready" || status === "installed") {
-      await restart();
+    if (isStarting) return;
+    setIsStarting(true);
+    try {
+      if (status === "idle" || status === "error") {
+        await checkForUpdate();
+      } else if (status === "available") {
+        await downloadAndInstall();
+      } else if (status === "ready" || status === "installed") {
+        await restart();
+      }
+    } finally {
+      setIsStarting(false);
     }
   };
 
@@ -42,6 +51,7 @@ export function UpdateBadge({ currentVersion }: { currentVersion: string }) {
             className="header-badge header-badge-update"
             title={`发现新版本 v${ver}，点击下载更新`}
             onClick={handleClick}
+            disabled={isStarting}
           >
             <ArrowDown size={10} />
             <span>更新 v{ver}</span>
@@ -74,6 +84,7 @@ export function UpdateBadge({ currentVersion }: { currentVersion: string }) {
           className="header-badge header-badge-ready"
           title="更新已安装，点击重启"
           onClick={handleClick}
+          disabled={isStarting}
         >
           <RotateCcw size={10} />
           <span>重启</span>
@@ -120,6 +131,7 @@ export function UpdateBadge({ currentVersion }: { currentVersion: string }) {
           className="header-badge header-badge-error"
           title="更新检查失败，点击重试"
           onClick={handleClick}
+          disabled={isStarting}
         >
           <AlertCircle size={10} />
           <span>{currentVersion}</span>
@@ -140,6 +152,7 @@ export function UpdateBadge({ currentVersion }: { currentVersion: string }) {
             className="version-badge-btn"
             title={`v${currentVersion} — 点击检查更新`}
             onClick={handleClick}
+            disabled={isStarting}
           >
             <VersionBadge version={currentVersion} className="version-badge-idle" />
           </button>

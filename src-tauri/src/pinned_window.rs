@@ -4,7 +4,8 @@
 
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
 use image::GenericImageView;
 use windows::core::PCWSTR;
@@ -19,11 +20,11 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
-    GetWindowLongPtrW, LoadCursorW, PostQuitMessage, RegisterClassW, SetWindowLongPtrW, ShowWindow,
-    TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWLP_USERDATA, IDC_ARROW, MSG,
-    SW_SHOW, WM_CREATE, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONUP, WM_SIZE, WNDCLASSW, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    GetWindowLongPtrW, LoadCursorW, PostMessageW, PostQuitMessage, RegisterClassW,
+    SetWindowLongPtrW, ShowWindow, TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
+    GWLP_USERDATA, IDC_ARROW, MSG, SW_SHOW, WM_CLOSE, WM_CREATE, WM_DESTROY, WM_ERASEBKGND,
+    WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONUP,
+    WM_SIZE, WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 /// 窗口运行时状态
@@ -43,12 +44,31 @@ struct WindowState {
     dib_bits: Option<*mut u8>,
     last_width: i32,
     last_height: i32,
+    /// 该窗口的代际号，用于在 WM_DESTROY 中判断这是否仍是当前被跟踪的窗口
+    generation: u64,
 }
 
 unsafe impl Send for WindowState {}
 unsafe impl Sync for WindowState {}
 
-static WINDOW_RUNNING: AtomicBool = AtomicBool::new(false);
+/// 当前置顶窗口的身份标识（HWND 数值 + 单调递增代际号）。
+///
+/// 用 Mutex 记录“当前唯一存活的置顶窗口是谁”，取代原先仅用一个 AtomicBool
+/// 表示“是否有窗口在跑”的做法：布尔值无法区分“哪一个”窗口，导致任意一个
+/// 窗口（哪怕已经被替换掉）的 WM_DESTROY 都会把标志错误地清成 false，
+/// 且原逻辑在“已有窗口运行”时只打日志，并没有真正阻止/替换创建新窗口。
+#[derive(Clone, Copy)]
+struct PinnedWindowHandle {
+    hwnd: isize,
+    generation: u64,
+}
+
+// HWND 只是一个句柄数值，跨线程传递该数值本身是安全的
+unsafe impl Send for PinnedWindowHandle {}
+
+static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
+static CURRENT_WINDOW: Mutex<Option<PinnedWindowHandle>> = Mutex::new(None);
+
 const CLASS_NAME: &str = "PinnedImageWindow";
 
 fn to_wide(s: &str) -> Vec<u16> {
@@ -268,13 +288,28 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 
         WM_DESTROY => {
             let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+            let mut destroyed_generation = None;
             if ptr != 0 {
                 let state = Box::from_raw(ptr as *mut WindowState);
+                destroyed_generation = Some(state.generation);
                 if let Some(hbmp) = state.hbitmap {
                     let _ = DeleteObject(hbmp);
                 }
             }
-            WINDOW_RUNNING.store(false, Ordering::SeqCst);
+
+            // 只有当被销毁的窗口确实是当前全局跟踪的那一个（HWND + 代际号都匹配）时，
+            // 才清空全局状态；否则说明这是一个已经被新窗口替换掉的旧窗口，
+            // 它的销毁事件不应该覆盖新窗口写入的状态。
+            if let Ok(mut guard) = CURRENT_WINDOW.lock() {
+                let should_clear = match (*guard, destroyed_generation) {
+                    (Some(cur), Some(gen)) => cur.hwnd == hwnd.0 as isize && cur.generation == gen,
+                    _ => false,
+                };
+                if should_clear {
+                    *guard = None;
+                }
+            }
+
             let _ = PostQuitMessage(0);
             LRESULT(0)
         }
@@ -302,10 +337,16 @@ fn register_class(instance: HINSTANCE) -> Result<(), String> {
 }
 
 pub fn create_native_window(image_path: &str) -> Result<(), String> {
-    if WINDOW_RUNNING.load(Ordering::SeqCst) {
-        log::info!("[pinned-window] 已有窗口运行中");
+    // 单实例替换：若已有置顶窗口在运行，先关闭旧窗口，再创建新窗口。
+    // 原逻辑在“已有窗口运行”时只打了一条日志就往下走，既不 return 也不关闭旧窗口，
+    // 导致连续调用会同时存在多个原生窗口——这里改为“关旧开新”，与 close_pinned_image
+    // 所暗示的“同一时刻只应有一个置顶图片”的模型保持一致。
+    if let Some(prev) = CURRENT_WINDOW.lock().unwrap().take() {
+        log::info!("[pinned-window] 已有窗口运行中，关闭旧窗口后创建新窗口");
+        unsafe {
+            let _ = PostMessageW(HWND(prev.hwnd as *mut _), WM_CLOSE, WPARAM(0), LPARAM(0));
+        }
     }
-    WINDOW_RUNNING.store(true, Ordering::SeqCst);
 
     let img = image::open(image_path).map_err(|e| format!("无法加载图片: {}", e))?;
     let (img_width, img_height) = img.dimensions();
@@ -319,17 +360,32 @@ pub fn create_native_window(image_path: &str) -> Result<(), String> {
         pixels.len()
     );
 
+    let generation = NEXT_GENERATION.fetch_add(1, Ordering::SeqCst);
+
     std::thread::spawn(move || {
-        if let Err(e) = run_window_loop(pixels, img_width, img_height) {
+        if let Err(e) = run_window_loop(pixels, img_width, img_height, generation) {
             log::error!("[pinned-window] 窗口消息循环错误: {}", e);
         }
-        WINDOW_RUNNING.store(false, Ordering::SeqCst);
     });
 
     Ok(())
 }
 
-fn run_window_loop(pixels: Vec<u8>, img_width: u32, img_height: u32) -> Result<(), String> {
+/// 主动关闭当前正在显示的置顶窗口（如果有）。供 `close_pinned_image` 命令调用。
+pub fn close_current_window() {
+    if let Some(cur) = CURRENT_WINDOW.lock().unwrap().take() {
+        unsafe {
+            let _ = PostMessageW(HWND(cur.hwnd as *mut _), WM_CLOSE, WPARAM(0), LPARAM(0));
+        }
+    }
+}
+
+fn run_window_loop(
+    pixels: Vec<u8>,
+    img_width: u32,
+    img_height: u32,
+    generation: u64,
+) -> Result<(), String> {
     // GetModuleHandleW 返回 HMODULE，可转为 HINSTANCE
     let module = unsafe { windows::Win32::System::LibraryLoader::GetModuleHandleW(None) }
         .map_err(|e| format!("GetModuleHandle 失败: {:?}", e))?;
@@ -373,6 +429,12 @@ fn run_window_loop(pixels: Vec<u8>, img_width: u32, img_height: u32) -> Result<(
         Err(e) => return Err(format!("CreateWindowExW 失败: {:?}", e)),
     };
 
+    // 登记为“当前置顶窗口”，供后续的单实例替换 / 主动关闭使用
+    *CURRENT_WINDOW.lock().unwrap() = Some(PinnedWindowHandle {
+        hwnd: hwnd.0 as isize,
+        generation,
+    });
+
     // DWM 圆角
     {
         use windows::Win32::Graphics::Dwm::{
@@ -405,6 +467,7 @@ fn run_window_loop(pixels: Vec<u8>, img_width: u32, img_height: u32) -> Result<(
         dib_bits: None,
         last_width: 0,
         last_height: 0,
+        generation,
     });
 
     unsafe {

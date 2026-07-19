@@ -99,6 +99,17 @@ describe("truncate — 扩展", () => {
   it("replaces carriage returns with spaces", () => {
     expect(truncate("hello\rworld", 50)).toBe("hello world");
   });
+
+  it("does not split a surrogate pair (emoji) when truncating", () => {
+    // 😀 = U+1F600，在 UTF-16 中是代理对 😀（占 2 个 code unit）
+    // "hello" 占 5 个 code unit，emoji 紧随其后位于 index 5-6，
+    // 若按 UTF-16 code unit 在 maxLen=6 处朴素 slice，会切在代理对中间，产生孤立代理项
+    const text = "hello😀world";
+    const result = truncate(text, 6);
+    const lonelySurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+    expect(result).not.toMatch(lonelySurrogate);
+    expect(result).toBe("hello😀...");
+  });
 });
 
 // ============================================================

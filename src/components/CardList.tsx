@@ -321,9 +321,13 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   }, []);
 
   const openImagePreview = useCallback(async (item: HistoryItem) => {
+    // 记录本次调用对应的 content，作为后续每个 await 之后的“过期”判定依据：
+    // 若期间用户已切换到预览另一张图（previewContentRef.current 被改写），
+    // 则本次调用的后续 state 更新一律跳过，避免慢请求覆盖新预览的状态。
+    const requestContent = item.content || null;
     setPreviewImage(null);
     setPreviewInfo(null);
-    previewContentRef.current = item.content || null;
+    previewContentRef.current = requestContent;
 
     // 重置 OCR 状态
     setOcrResult(null);
@@ -344,6 +348,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
 
     // 先尝试用已有缩略图占位（秒开）
     const thumbUrl = await getImageThumbnail(item.content).catch(() => "");
+    if (previewContentRef.current !== requestContent) return; // 已切换到其他预览，丢弃过期结果
     if (thumbUrl) {
       setPreviewImage(thumbUrl);
       setPreviewLoading(false);
@@ -356,6 +361,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
       getImageDataUrl(item.content),
       getImageInfo(item.content),
     ]);
+    if (previewContentRef.current !== requestContent) return; // 已切换到其他预览，丢弃过期结果
     setPreviewLoading(false);
 
     if (dataUrl) {

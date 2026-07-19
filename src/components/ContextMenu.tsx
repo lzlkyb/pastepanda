@@ -171,24 +171,25 @@ export function ContextMenu({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!pos) return;
-    let skipFirstMousedown = true; // 跳过右键触发的 mousedown 事件
     const close = (e: Event) => {
-      if (e.type === "mousedown" && skipFirstMousedown) {
-        skipFirstMousedown = false;
-        return;
-      }
       // 忽略菜单自身区域内的点击/右键
       if (e.target instanceof Node && menuRef.current?.contains(e.target)) return;
       setPos(null);
     };
     // ★ 用 mousedown 代替 click（更早触发，更可靠）
-    //    延迟注册 + 跳过首次 mousedown，彻底解决右键菜单闪现消失问题
-    const timer = setTimeout(() => {
+    //    用 requestAnimationFrame 而不是固定的 300ms 延时来注册监听器：
+    //    打开菜单的那次原生 mousedown/contextmenu 事件在本次调用栈内已经
+    //    完整派发完毕（JS 单线程，捕获/冒泡阶段必须先跑完；useEffect 本身
+    //    也只会在该调用栈结束之后才异步执行），所以哪怕下一帧就注册监听器，
+    //    也不可能收到"打开菜单"的那个事件——不需要用固定延时窗口或跳过
+    //    首次事件这种脆弱的兜底方案，那样反而会把 300ms 内 / 恰好排在
+    //    "第一次"的真实关闭点击也一起吞掉，导致用户要多点一次才能关闭菜单。
+    const raf = requestAnimationFrame(() => {
       window.addEventListener("mousedown", close);
       window.addEventListener("contextmenu", close);
-    }, 300);
+    });
     return () => {
-      clearTimeout(timer);
+      cancelAnimationFrame(raf);
       window.removeEventListener("mousedown", close);
       window.removeEventListener("contextmenu", close);
     };

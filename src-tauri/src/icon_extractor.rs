@@ -176,8 +176,8 @@ impl IconCache {
             SHGetFileInfoW, SHGFI_ICON, SHGFI_LARGEICON, SHFILEINFOW,
         };
         use windows::Win32::Graphics::Gdi::{
-            CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, SelectObject,
-            BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
+            CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetObjectW, SelectObject,
+            BITMAP, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
         };
         use windows::Win32::UI::WindowsAndMessaging::{GetIconInfo, DestroyIcon, ICONINFO};
         use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
@@ -216,6 +216,50 @@ impl IconCache {
                 return None;
             }
 
+            // 查询图标位图的真实尺寸：SHGFI_LARGEICON 返回的位图边长取决于系统
+            // SM_CXICON/SM_CYICON，DPI 缩放（125%/150%/200%）下并非固定 48x48，
+            // 硬编码会导致 GetDIBits 读取到错位/损坏的像素数据，这里用 GetObject 读真实尺寸
+            let mut bitmap_info = BITMAP::default();
+            let bitmap_info_size = std::mem::size_of::<BITMAP>() as i32;
+            if GetObjectW(
+                icon_info.hbmColor,
+                bitmap_info_size,
+                Some(&mut bitmap_info as *mut _ as *mut _),
+            ) == 0
+            {
+                log::warn!(
+                    "[IconExtractor] GetObject 获取图标位图尺寸失败: {}",
+                    exe_path.display()
+                );
+                if !icon_info.hbmColor.is_invalid() {
+                    let _ = DeleteObject(icon_info.hbmColor);
+                }
+                if !icon_info.hbmMask.is_invalid() {
+                    let _ = DeleteObject(icon_info.hbmMask);
+                }
+                let _ = DestroyIcon(hicon);
+                return None;
+            }
+
+            let icon_w: i32 = bitmap_info.bmWidth;
+            let icon_h: i32 = bitmap_info.bmHeight.abs();
+
+            if icon_w <= 0 || icon_h <= 0 {
+                log::warn!(
+                    "[IconExtractor] GetObject 返回的图标位图尺寸无效: {}x{}",
+                    icon_w,
+                    icon_h
+                );
+                if !icon_info.hbmColor.is_invalid() {
+                    let _ = DeleteObject(icon_info.hbmColor);
+                }
+                if !icon_info.hbmMask.is_invalid() {
+                    let _ = DeleteObject(icon_info.hbmMask);
+                }
+                let _ = DestroyIcon(hicon);
+                return None;
+            }
+
             let hdc = CreateCompatibleDC(None);
             if hdc.is_invalid() {
                 if !icon_info.hbmColor.is_invalid() {
@@ -229,9 +273,6 @@ impl IconCache {
             }
 
             let old_bmp = SelectObject(hdc, icon_info.hbmColor);
-
-            let icon_w: i32 = 48;
-            let icon_h: i32 = 48;
 
             let mut bmi = BITMAPINFO {
                 bmiHeader: BITMAPINFOHEADER {

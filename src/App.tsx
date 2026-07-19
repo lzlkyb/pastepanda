@@ -100,6 +100,7 @@ function App() {
   dialogOpenRef.current = dialogOpen;
 
   useEffect(() => {
+    let cancelled = false;
     let unlisten: (() => void) | null = null;
     let hideTimer: number | null = null;
     async function setup() {
@@ -107,7 +108,7 @@ function App() {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
         const win = getCurrentWindow();
         // Tauri 2: 使用 onFocusChanged 替代已移除的 tauri://focus-lost 事件
-        unlisten = await win.onFocusChanged(({ payload: focused }) => {
+        const fn = await win.onFocusChanged(({ payload: focused }) => {
           if (focused) {
             // 重新获焦时取消任何 pending hide
             if (hideTimer !== null) { window.clearTimeout(hideTimer); hideTimer = null; }
@@ -124,10 +125,17 @@ function App() {
             win.hide().catch(e => logger.warn("隐藏窗口失败", e));
           }, 150);
         });
+        if (cancelled) {
+          // effect 已在本次 setup 完成前被清理（StrictMode 重挂载 / HMR），立即取消订阅，避免监听器泄漏
+          fn();
+        } else {
+          unlisten = fn;
+        }
       } catch (e) { logger.warn("注册失焦监听失败", e); }
     }
     setup();
     return () => {
+      cancelled = true;
       if (unlisten) unlisten();
       if (hideTimer !== null) { window.clearTimeout(hideTimer); hideTimer = null; }
     };
@@ -323,19 +331,56 @@ function App() {
 
   // 监听托盘菜单事件
   useEffect(() => {
+    let cancelled = false;
     let unlisten: (() => void) | null = null;
     async function setup() {
       try {
         const { listen } = await import("@tauri-apps/api/event");
         // 托盘"设置"菜单项 → 打开设置弹窗
-        unlisten = await listen("tray-open-settings", () => {
+        const fn = await listen("tray-open-settings", () => {
           setShowSettings(true);
         });
+        if (cancelled) {
+          // effect 已在本次 setup 完成前被清理（StrictMode 重挂载 / HMR），立即取消订阅，避免监听器泄漏
+          fn();
+        } else {
+          unlisten = fn;
+        }
       } catch (e) { logger.warn("注册托盘事件监听失败", e); }
     }
     setup();
-    return () => { if (unlisten) unlisten(); };
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
   }, []);
+
+  // 监听全局热键注册失败事件 — release 版无控制台，静默失败用户完全无感知，
+  // 需在前端弹出提示，否则用户会以为软件坏了（常见于热键被微信/其他剪贴板工具/录屏软件占用）
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+    async function setup() {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const fn = await listen<string>("hotkey-register-failed", (event) => {
+          toast(`快捷键注册失败：${event.payload}，可能已被其他程序占用，请前往设置更换`, "error");
+        });
+        if (cancelled) {
+          // effect 已在本次 setup 完成前被清理（StrictMode 重挂载 / HMR），立即取消订阅，避免监听器泄漏
+          fn();
+        } else {
+          unlisten = fn;
+        }
+      } catch (e) { logger.warn("注册热键失败事件监听失败", e); }
+    }
+    setup();
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toast]);
 
   useEffect(() => {
     let cleanup: (() => void) | null = null;

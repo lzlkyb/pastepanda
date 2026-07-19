@@ -661,12 +661,16 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
           }).join("\n");
           break;
         }
-        case "file_bslash":
-          text = content.replace(/\//g, "\\");
+        case "file_bslash": {
+          const files = parseFilePaths(content);
+          text = files.map((f: string) => f.replace(/\//g, "\\")).join("\n");
           break;
-        case "file_fslash":
-          text = content.replace(/\\/g, "/");
+        }
+        case "file_fslash": {
+          const files = parseFilePaths(content);
+          text = files.map((f: string) => f.replace(/\\/g, "/")).join("\n");
           break;
+        }
         case "file_list": {
           const files = parseFilePaths(content);
           text = files.join("\n");

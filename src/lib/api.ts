@@ -3,8 +3,13 @@ import { listen } from "@tauri-apps/api/event";
 import { useAppStore, HistoryItem, Group, Tag } from "@/stores/appStore";
 import { logger } from "@/lib/logger";
 
+/** 分页在飞行中标志位：防止连续滑动触发两次 loadMoreHistory 并发请求同一页导致重复行 */
+let isLoadingMore = false;
+
 /** 加载更多历史记录（分页） */
 export async function loadMoreHistory(): Promise<boolean> {
+  if (isLoadingMore) return false; // 已有请求在飞行中，直接返回，避免重复请求/重复行
+  isLoadingMore = true;
   const store = useAppStore.getState();
   const currentCount = store.history.length;
   try {
@@ -21,6 +26,8 @@ export async function loadMoreHistory(): Promise<boolean> {
   } catch (e) {
     logger.warn("加载更多失败", e);
     return false;
+  } finally {
+    isLoadingMore = false;
   }
 }
 
@@ -303,7 +310,8 @@ export async function togglePin(id: string) {
   try {
     const pinned = await invoke<boolean>("toggle_pin", { id });
     const store = useAppStore.getState();
-    store.togglePin(id);
+    // 使用后端返回的权威 pinned 值直接设置，而非盲目本地取反（本地/后端状态可能因局域网同步等原因已经漂移）
+    store.setPinned(id, pinned);
     invalidateCountsCache(); // 置顶状态变化后清除缓存
     return pinned;
   } catch (e) {

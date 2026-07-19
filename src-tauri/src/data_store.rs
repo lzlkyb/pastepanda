@@ -3,6 +3,21 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
+/// 判断是否为 SQLite "duplicate column name" 错误——ALTER TABLE ADD COLUMN 在列已存在时
+/// （例如非首次启动的正常迁移场景）会报此错误，属于幂等场景，可安全忽略；
+/// 其他错误（磁盘满、库损坏、权限等）则应视为真实失败并向上传播。
+fn is_duplicate_column_error(e: &rusqlite::Error) -> bool {
+    e.to_string().contains("duplicate column name")
+}
+
+/// 转义 LIKE 模式串中的通配符 `%`、`_` 以及转义符本身 `\`，
+/// 需配合 SQL 中的 `ESCAPE '\\'` 子句使用，避免用户搜索文本中的 % / _ 被当作通配符解析。
+fn escape_like_pattern(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
 // ===== 数据模型 =====
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -146,7 +161,12 @@ impl DataStore {
             if let Err(e) =
                 conn.execute_batch("ALTER TABLE history ADD COLUMN pinyin_initials TEXT;")
             {
-                log::warn!("[DataStore] 添加 pinyin_initials 列失败: {}", e);
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] pinyin_initials 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 pinyin_initials 列失败: {}", e);
+                    return Err(e);
+                }
             }
         }
 
@@ -163,7 +183,12 @@ impl DataStore {
             if let Err(e) =
                 conn.execute_batch("ALTER TABLE snippets ADD COLUMN tag TEXT NOT NULL DEFAULT '';")
             {
-                log::warn!("[DataStore] 添加 snippets.tag 列失败: {}", e);
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] snippets.tag 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 snippets.tag 列失败: {}", e);
+                    return Err(e);
+                }
             }
         }
 
@@ -180,7 +205,12 @@ impl DataStore {
             if let Err(e) =
                 conn.execute_batch("ALTER TABLE history ADD COLUMN group_id TEXT;")
             {
-                log::warn!("[DataStore] 添加 group_id 列失败: {}", e);
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] group_id 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 group_id 列失败: {}", e);
+                    return Err(e);
+                }
             }
         }
 
@@ -197,7 +227,12 @@ impl DataStore {
             if let Err(e) =
                 conn.execute_batch("ALTER TABLE tags ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';")
             {
-                log::warn!("[DataStore] 添加 tags.source 列失败: {}", e);
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] tags.source 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 tags.source 列失败: {}", e);
+                    return Err(e);
+                }
             }
         }
 
@@ -214,7 +249,12 @@ impl DataStore {
             if let Err(e) =
                 conn.execute_batch("ALTER TABLE history ADD COLUMN source_icon TEXT;")
             {
-                log::warn!("[DataStore] 添加 source_icon 列失败: {}", e);
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] source_icon 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 source_icon 列失败: {}", e);
+                    return Err(e);
+                }
             }
         }
 
@@ -231,7 +271,12 @@ impl DataStore {
             if let Err(e) =
                 conn.execute_batch("ALTER TABLE history_tags ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';")
             {
-                log::warn!("[DataStore] 添加 history_tags.source 列失败: {}", e);
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] history_tags.source 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 history_tags.source 列失败: {}", e);
+                    return Err(e);
+                }
             }
             // 将已有自动标签关联的 source 同步为 'auto'（通过 tags.source 判断）
             let _ = conn.execute_batch(
@@ -290,8 +335,8 @@ impl DataStore {
         }
 
         if !search.is_empty() {
-            sql.push_str(" AND (text LIKE ? OR pinyin_initials LIKE ?)");
-            let search_pattern = format!("%{}%", search);
+            sql.push_str(" AND (text LIKE ? ESCAPE '\\' OR pinyin_initials LIKE ? ESCAPE '\\')");
+            let search_pattern = format!("%{}%", escape_like_pattern(search));
             params_vec.push(Box::new(search_pattern.clone()));
             params_vec.push(Box::new(search_pattern));
         }
@@ -1158,19 +1203,32 @@ impl DataStore {
 
     pub fn add_item_tags(&self, history_ids: &[String], tag_ids: &[String]) -> Result<u32, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        let mut count = 0u32;
-        for history_id in history_ids {
-            for tag_id in tag_ids {
-                let affected = conn
-                    .execute(
-                        "INSERT OR IGNORE INTO history_tags (history_id, tag_id) VALUES (?1, ?2)",
-                        params![history_id, tag_id],
-                    )
-                    .map_err(|e| e.to_string())?;
-                count += affected as u32;
+        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        let result = (|| -> Result<u32, String> {
+            let mut count = 0u32;
+            for history_id in history_ids {
+                for tag_id in tag_ids {
+                    let affected = conn
+                        .execute(
+                            "INSERT OR IGNORE INTO history_tags (history_id, tag_id) VALUES (?1, ?2)",
+                            params![history_id, tag_id],
+                        )
+                        .map_err(|e| e.to_string())?;
+                    count += affected as u32;
+                }
+            }
+            Ok(count)
+        })();
+        match result {
+            Ok(count) => {
+                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                Ok(count)
+            }
+            Err(e) => {
+                conn.execute_batch("ROLLBACK;").ok();
+                Err(e)
             }
         }
-        Ok(count)
     }
 
     pub fn remove_item_tags(&self, history_ids: &[String], tag_ids: &[String]) -> Result<u32, String> {
@@ -1328,14 +1386,27 @@ impl DataStore {
             return Ok(());
         }
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        for tag_id in tag_ids {
-            conn.execute(
-                "INSERT OR IGNORE INTO history_tags (history_id, tag_id, source) VALUES (?1, ?2, 'auto')",
-                params![history_id, tag_id],
-            )
-            .map_err(|e| e.to_string())?;
+        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        let result = (|| -> Result<(), String> {
+            for tag_id in tag_ids {
+                conn.execute(
+                    "INSERT OR IGNORE INTO history_tags (history_id, tag_id, source) VALUES (?1, ?2, 'auto')",
+                    params![history_id, tag_id],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                Ok(())
+            }
+            Err(e) => {
+                conn.execute_batch("ROLLBACK;").ok();
+                Err(e)
+            }
         }
-        Ok(())
     }
 
     /// 将指定记录的所有自动标签转为手动标签（用户确认）
