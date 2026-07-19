@@ -3,11 +3,11 @@ import { detectColor, toHex, toRgb, toHsl } from "@/lib/color";
 
 describe("detectColor", () => {
   it("detects 6-digit hex", () => {
-    expect(detectColor("#FF5733")).toEqual({ r: 255, g: 87, b: 51, a: 1 });
+    expect(detectColor("#FF5733")).toEqual({ r: 255, g: 87, b: 51, a: 1, format: "hex" });
   });
 
   it("detects 3-digit hex and expands it", () => {
-    expect(detectColor("#0f0")).toEqual({ r: 0, g: 255, b: 0, a: 1 });
+    expect(detectColor("#0f0")).toEqual({ r: 0, g: 255, b: 0, a: 1, format: "hex" });
   });
 
   it("detects 8-digit hex with alpha", () => {
@@ -28,11 +28,11 @@ describe("detectColor", () => {
   });
 
   it("detects rgb()", () => {
-    expect(detectColor("rgb(255, 87, 51)")).toEqual({ r: 255, g: 87, b: 51, a: 1 });
+    expect(detectColor("rgb(255, 87, 51)")).toEqual({ r: 255, g: 87, b: 51, a: 1, format: "rgb" });
   });
 
   it("detects rgba() with decimal alpha", () => {
-    expect(detectColor("rgba(59, 130, 246, 0.5)")).toEqual({ r: 59, g: 130, b: 246, a: 0.5 });
+    expect(detectColor("rgba(59, 130, 246, 0.5)")).toEqual({ r: 59, g: 130, b: 246, a: 0.5, format: "rgb" });
   });
 
   it("detects hsl()", () => {
@@ -53,7 +53,7 @@ describe("detectColor", () => {
 
   it("is case-insensitive and tolerates internal whitespace", () => {
     expect(detectColor("#FF5733")).toEqual(detectColor("#ff5733"));
-    expect(detectColor("RGB( 255 , 87 , 51 )")).toEqual({ r: 255, g: 87, b: 51, a: 1 });
+    expect(detectColor("RGB( 255 , 87 , 51 )")).toEqual({ r: 255, g: 87, b: 51, a: 1, format: "rgb" });
   });
 
   it("rejects rgb() with out-of-range components", () => {
@@ -89,21 +89,27 @@ describe("detectColor", () => {
 
 describe("toHex / toRgb / toHsl", () => {
   it("toHex renders opaque color without alpha suffix", () => {
-    expect(toHex({ r: 255, g: 87, b: 51, a: 1 })).toBe("#ff5733");
+    expect(toHex({ r: 255, g: 87, b: 51, a: 1, format: "hex" })).toBe("#ff5733");
   });
 
   it("toHex renders alpha suffix when a < 1", () => {
-    expect(toHex({ r: 59, g: 130, b: 246, a: 0.5 })).toBe("#3b82f680");
+    expect(toHex({ r: 59, g: 130, b: 246, a: 0.5, format: "hex" })).toBe("#3b82f680");
   });
 
   it("toRgb renders rgb() when opaque, rgba() when transparent", () => {
-    expect(toRgb({ r: 255, g: 87, b: 51, a: 1 })).toBe("rgb(255, 87, 51)");
-    expect(toRgb({ r: 255, g: 87, b: 51, a: 0.5 })).toBe("rgba(255, 87, 51, 0.5)");
+    expect(toRgb({ r: 255, g: 87, b: 51, a: 1, format: "rgb" })).toBe("rgb(255, 87, 51)");
+    expect(toRgb({ r: 255, g: 87, b: 51, a: 0.5, format: "rgb" })).toBe("rgba(255, 87, 51, 0.5)");
   });
 
   it("toHsl renders hsl() when opaque, hsla() when transparent", () => {
-    expect(toHsl({ r: 255, g: 87, b: 51, a: 1 })).toBe("hsl(11, 100%, 60%)");
-    expect(toHsl({ r: 255, g: 87, b: 51, a: 0.5 })).toBe("hsla(11, 100%, 60%, 0.5)");
+    expect(toHsl({ r: 255, g: 87, b: 51, a: 1, format: "hsl" })).toBe("hsl(11, 100%, 60%)");
+    expect(toHsl({ r: 255, g: 87, b: 51, a: 0.5, format: "hsl" })).toBe("hsla(11, 100%, 60%, 0.5)");
+  });
+
+  it("rounds alpha derived from 8-digit hex to 2 decimal places in toRgb/toHsl", () => {
+    const parsed = detectColor("#3B82F680")!;
+    expect(toRgb(parsed)).toBe("rgba(59, 130, 246, 0.5)");
+    expect(toHsl(parsed)).toBe("hsla(217, 91%, 60%, 0.5)");
   });
 
   it("round-trips hex -> parsed -> hex", () => {

@@ -254,6 +254,9 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
                 <Pin size={7} /> 置顶
               </span>
             )}
+            {parsedColor && (
+              <span className={styles.colorFormatTag}>{parsedColor.format.toUpperCase()}</span>
+            )}
             {item.source && <SourceBadge source={item.source} sourceIcon={item.source_icon} size="small" />}
             <TagRow tags={item.tags || []} />
           </div>

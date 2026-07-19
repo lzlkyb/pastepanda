@@ -163,6 +163,17 @@
   background: var(--swatch-color);
   box-shadow: 0 0 0 2px rgba(255,255,255,0.55), inset 0 0 0 1px rgba(0,0,0,0.08);
 }
+.colorFormatTag {
+  display: inline-flex;
+  align-items: center;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  background: var(--accent-light);
+  color: var(--accent);
+}
 
 /* 图片缩略图 */
 .cardImgThumb {

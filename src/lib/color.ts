@@ -4,6 +4,7 @@ export interface ParsedColor {
   g: number;
   b: number;
   a: number;
+  format: "hex" | "rgb" | "hsl";
 }
 
 const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
@@ -26,7 +27,7 @@ function parseHex(text: string): ParsedColor | null {
   const g = parseInt(hex.slice(2, 4), 16);
   const b = parseInt(hex.slice(4, 6), 16);
   const a = hex.length === 8 ? parseInt(hex.slice(6, 8), 16) / 255 : 1;
-  return { r, g, b, a };
+  return { r, g, b, a, format: "hex" };
 }
 
 function parseRgb(text: string): ParsedColor | null {
@@ -37,7 +38,7 @@ function parseRgb(text: string): ParsedColor | null {
   const b = Number(m[3]);
   if (r > 255 || g > 255 || b > 255) return null;
   const a = m[4] !== undefined ? Number(m[4]) : 1;
-  return { r, g, b, a };
+  return { r, g, b, a, format: "rgb" };
 }
 
 /** HSL (h: 0-360, s/l: 0-100) -> RGB (0-255) */
@@ -84,7 +85,7 @@ function parseHsl(text: string): ParsedColor | null {
   if (h > 360 || s > 100 || l > 100) return null;
   const { r, g, b } = hslToRgb(h, s, l);
   const a = m[4] !== undefined ? Number(m[4]) : 1;
-  return { r, g, b, a };
+  return { r, g, b, a, format: "hsl" };
 }
 
 /**
@@ -107,10 +108,12 @@ export function toHex(c: ParsedColor): string {
 }
 
 export function toRgb(c: ParsedColor): string {
-  return c.a < 1 ? `rgba(${c.r}, ${c.g}, ${c.b}, ${c.a})` : `rgb(${c.r}, ${c.g}, ${c.b})`;
+  const a = Math.round(c.a * 100) / 100;
+  return c.a < 1 ? `rgba(${c.r}, ${c.g}, ${c.b}, ${a})` : `rgb(${c.r}, ${c.g}, ${c.b})`;
 }
 
 export function toHsl(c: ParsedColor): string {
   const { h, s, l } = rgbToHsl(c.r, c.g, c.b);
-  return c.a < 1 ? `hsla(${h}, ${s}%, ${l}%, ${c.a})` : `hsl(${h}, ${s}%, ${l}%)`;
+  const a = Math.round(c.a * 100) / 100;
+  return c.a < 1 ? `hsla(${h}, ${s}%, ${l}%, ${a})` : `hsl(${h}, ${s}%, ${l}%)`;
 }
