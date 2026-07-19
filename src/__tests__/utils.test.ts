@@ -56,6 +56,16 @@ describe("detectTextType", () => {
   it("defaults to text", () => {
     expect(detectTextType("hello world")).toBe("text");
   });
+
+  it("detects color values", () => {
+    expect(detectTextType("#FF5733")).toBe("color");
+    expect(detectTextType("rgba(59, 130, 246, 0.5)")).toBe("color");
+    expect(detectTextType("hsl(160, 84%, 39%)")).toBe("color");
+  });
+
+  it("does not classify a color substring inside a larger snippet as color", () => {
+    expect(detectTextType("body { color: #FF5733; }")).not.toBe("color");
+  });
 });
 
 describe("cn", () => {

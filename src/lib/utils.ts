@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { detectColor } from "./color";
 
 /** 合并 Tailwind 类名，自动去重和解决冲突 */
 export function cn(...inputs: ClassValue[]) {
@@ -68,6 +69,8 @@ export function detectTextType(text: string): string {
   if (/^\d+$/.test(t)) return "code";
   // 多行文本
   if (t.includes("\n") && t.split("\n").length > 3) return "text";
+  // 颜色值 (Hex/RGB/HSL)
+  if (detectColor(t)) return "color";
   return "text";
 }
 
