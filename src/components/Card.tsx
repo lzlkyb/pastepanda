@@ -2,7 +2,7 @@ import { memo, useState, useCallback, useContext, useRef, useEffect, useMemo } f
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
 import { relativeTime, detectTextType } from "@/lib/utils";
-import { detectColor } from "@/lib/color";
+import { detectColor, toHex, toRgb, toHsl } from "@/lib/color";
 import type { CSSProperties } from "react";
 import SourceBadge from "@/components/SourceBadge";
 import { createCardMenuItems, CtxMenuCtx, type MenuItem } from "@/components/ContextMenu";
@@ -637,6 +637,23 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
         case "phone_cn": {
           const digits = text.replace(/[- ()（）+]/g, "");
           text = digits.startsWith("86") ? `+${digits}` : `+86${digits}`;
+          break;
+        }
+
+        // === 颜色子类型专属 ===
+        case "color_hex": {
+          const parsed = detectColor(text.trim());
+          if (parsed) text = toHex(parsed);
+          break;
+        }
+        case "color_rgb": {
+          const parsed = detectColor(text.trim());
+          if (parsed) text = toRgb(parsed);
+          break;
+        }
+        case "color_hsl": {
+          const parsed = detectColor(text.trim());
+          if (parsed) text = toHsl(parsed);
           break;
         }
 

@@ -327,6 +327,12 @@ function buildTransformMenu(onTransform: (t: string) => void, itemType?: string,
         { icon: <span style={{ fontSize: 12 }}>📞</span>, label: "粘贴为 tel 链接", onClick: () => onTransform("tel") },
         { icon: <span style={{ fontSize: 12 }}>+</span>, label: "粘贴为 +86 格式", onClick: () => onTransform("phone_cn") },
       );
+    } else if (subType === "color") {
+      children.push(
+        { icon: <span className={styles.ctxTextIcon} style={{ background: "rgba(255,87,51,.15)", color: "#FF5733" }}>#</span>, label: "复制为 HEX", onClick: () => onTransform("color_hex") },
+        { icon: <span className={styles.ctxTextIcon} style={{ background: "rgba(59,130,246,.15)", color: "#3B82F6" }}>R</span>, label: "复制为 RGB", onClick: () => onTransform("color_rgb") },
+        { icon: <span className={styles.ctxTextIcon} style={{ background: "rgba(16,185,129,.15)", color: "#10B981" }}>H</span>, label: "复制为 HSL", onClick: () => onTransform("color_hsl") },
+      );
     } else {
       // 普通文本：也有 Markdown 链接
       children.push(
