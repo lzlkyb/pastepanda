@@ -2,6 +2,8 @@ import { memo, useState, useCallback, useContext, useRef, useEffect, useMemo } f
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
 import { relativeTime, detectTextType } from "@/lib/utils";
+import { detectColor } from "@/lib/color";
+import type { CSSProperties } from "react";
 import SourceBadge from "@/components/SourceBadge";
 import { createCardMenuItems, CtxMenuCtx, type MenuItem } from "@/components/ContextMenu";
 import { confirmAutoTags, removeItemTags, fetchTags } from "@/lib/api";
@@ -74,6 +76,7 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
   const clickTimerRef = useRef<number | null>(null);
   const closeTimerRef = useRef<number | null>(null);
   const subType = item.type === "text" ? detectTextType(item.text) : item.type;
+  const parsedColor = subType === "color" ? detectColor(item.text || "") : null;
   const cfg = ICONS[subType] || ICONS.text;
   const Icon = cfg.Icon;
   const iconColor = subType === "text" ? hashColor(item.text || "") : cfg.color;
@@ -222,6 +225,18 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
               <div className={styles.cardImgShimmer} />
             </div>
           )
+        ) : parsedColor ? (
+          <div
+            className={`${styles.cardIcon} ${styles.colorIcon}`}
+            style={{
+              "--swatch-color": item.text.trim(),
+              "--swatch-bg": `rgba(${parsedColor.r}, ${parsedColor.g}, ${parsedColor.b}, 0.12)`,
+              "--swatch-border": `rgba(${parsedColor.r}, ${parsedColor.g}, ${parsedColor.b}, 0.22)`,
+              "--swatch-inset": `rgba(${parsedColor.r}, ${parsedColor.g}, ${parsedColor.b}, 0.1)`,
+            } as CSSProperties}
+          >
+            <div className={styles.colorDot} />
+          </div>
         ) : (
           <div className={`${styles.cardIcon} ${iconBg}`}>
             <Icon size={18} color={iconColor} strokeWidth={2.2} />

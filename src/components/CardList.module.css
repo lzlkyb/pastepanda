@@ -150,6 +150,20 @@
 .bgPink   { background: rgba(236, 72, 153, 0.12);  border-color: rgba(236, 72, 153, 0.22);  box-shadow: inset 0 2px 4px rgba(236, 72, 153, 0.1), 0 2px 8px rgba(0,0,0,0.15); }
 .bgPurple { background: rgba(139, 92, 246, 0.12);  border-color: rgba(139, 92, 246, 0.22);  box-shadow: inset 0 2px 4px rgba(139, 92, 246, 0.1), 0 2px 8px rgba(0,0,0,0.15); }
 
+/* 颜色值拾取预览 (#10) — 图标底色/边框/内阴影用当前颜色本身的低透明度，而非固定色系 */
+.colorIcon {
+  background: var(--swatch-bg);
+  border-color: var(--swatch-border);
+  box-shadow: inset 0 2px 4px var(--swatch-inset), 0 2px 8px rgba(0,0,0,0.15);
+}
+.colorDot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--swatch-color);
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.55), inset 0 0 0 1px rgba(0,0,0,0.08);
+}
+
 /* 图片缩略图 */
 .cardImgThumb {
   width: 42px;
