@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>剪贴板栈 - 设计稿（基于真实 UI）</title>
+<style>
+/* ===== 真实主题变量 (ocean) ===== */
+:root {
+  --app-bg: #F4F6F9;
+  --header-bg-start: #fff;
+  --header-bg-end: #F4F6F9;
+  --card-bg: #fff;
+  --card-border: #E0E4EB;
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --accent-shadow: rgba(2, 132, 199, 0.15);
+  --seg-bg: #E8E8ED;
+  --seg-active-bg: #fff;
+  --search-bg: #fff;
+  --search-border: #E0E4EB;
+  --input-bg: #F1F5F9;
+  --dialog-bg: #fff;
+  --hover: #E8ECF2;
+  --danger: #DC2626;
+  --green: #16A34A;
+  --orange: #EA580C;
+  --glass-card-bg: rgba(255,255,255,0.55);
+  --glass-card-border: rgba(0,0,0,0.08);
+  --glass-card-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.7);
+  --glass-icon-bg: rgba(0,0,0,0.04);
+  --glass-icon-border: rgba(0,0,0,0.07);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: "SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  background: #E8ECF2;
+  padding: 40px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 48px;
+}
+
+h1 { font-size: 22px; font-weight: 700; color: var(--text-primary); }
+h2 { font-size: 16px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+.section-desc { font-size: 12px; color: var(--text-secondary); margin-bottom: 16px; }
+.section { width: 100%; max-width: 1100px; }
+
+/* ===== 模拟窗口 ===== */
+.window {
+  width: 520px;
+  height: 640px;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.18), 0 4px 16px rgba(0,0,0,0.08);
+  display: flex;
+  flex-direction: column;
+  background: var(--app-bg);
+  border: 1px solid rgba(0,0,0,0.08);
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* ===== TopBar（真实结构） ===== */
+.header {
+  padding: 16px 16px 0;
+  background: linear-gradient(180deg, var(--header-bg-start), var(--header-bg-end));
+  flex-shrink: 0;
+}
+.headerTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.iconBtn {
+  width: 34px; height: 34px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.appLogo { width: 20px; height: 20px; border-radius: 5px; background: linear-gradient(135deg, #0284C7, #06B6D4); display: flex; align-items: center; justify-content: center; font-size: 11px; color: #fff; }
+.appName { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.versionBadge {
+  font-family: monospace; font-size: 10px; font-weight: 700;
+  padding: 3px 10px; border-radius: 7px;
+  background: linear-gradient(135deg, #0284C7, #0369A1);
+  color: #fff;
+}
+.headerTop .spacer { flex: 1; }
+
+.searchBox {
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--search-bg);
+  border: 1px solid var(--search-border);
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.segmented {
+  display: flex;
+  background: var(--seg-bg);
+  border-radius: 10px;
+  padding: 3px;
+  margin-bottom: 10px;
+}
+.segItem {
+  flex: 1;
+  height: 36px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  font-size: 12px; font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.segItem.active {
+  background: var(--seg-active-bg);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.segCount { font-size: 10px; font-weight: 700; color: var(--text-muted); }
+.segItem.active .segCount { color: var(--accent); }
+
+.filterBar {
+  display: flex; gap: 8px;
+  padding-bottom: 10px;
+}
+.filterBtn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 11px; font-weight: 500;
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  display: flex; align-items: center; gap: 4px;
+}
+
+/* ===== 栈横幅（新增元素） ===== */
+.stackBanner {
+  margin: 0 16px 4px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #FFF7ED, #FFEDD5);
+  border: 1px solid #FDBA74;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: bannerIn 0.3s ease;
+  flex-shrink: 0;
+}
+@keyframes bannerIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+.stackDot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--orange);
+  animation: pulse 1.5s ease infinite;
+  flex-shrink: 0;
+}
+@keyframes pulse { 0%,100% { opacity: 1; box-shadow: 0 0 0 0 rgba(234,88,12,0.4); } 50% { opacity: 0.7; box-shadow: 0 0 0 5px rgba(234,88,12,0); } }
+.stackBannerText { flex: 1; }
+.stackBannerTitle { font-size: 12px; font-weight: 600; color: #9A3412; }
+.stackBannerSub { font-size: 11px; color: #C2410C; opacity: 0.8; }
+.stackBannerBtn {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  display: flex; align-items: center; gap: 4px;
+}
+.stackBannerBtn.paste {
+  background: var(--orange);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(234,88,12,0.3);
+}
+.stackBannerBtn.exit {
+  background: rgba(154,52,18,0.08);
+  color: #9A3412;
+  border: 1px solid #FDBA74;
+}
+
+/* ===== 卡片列表区域 ===== */
+.scrollArea {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 16px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 0%, var(--accent-shadow), transparent 60%),
+    var(--app-bg);
+}
+
+/* 卡片（真实样式） */
+.card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  height: 72px;
+  background: var(--glass-card-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-card-border);
+  box-shadow: var(--glass-card-shadow);
+  position: relative;
+  flex-shrink: 0;
+}
+.cardIcon {
+  width: 42px; height: 42px;
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+  background: var(--glass-icon-bg);
+  border: 1px solid var(--glass-icon-border);
+  flex-shrink: 0;
+}
+.cardIcon.blue { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.22); }
+.cardIcon.green { background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.22); }
+.cardIcon.purple { background: rgba(139,92,246,0.12); border-color: rgba(139,92,246,0.22); }
+.cardIcon.pink { background: rgba(236,72,153,0.12); border-color: rgba(236,72,153,0.22); }
+.cardBody { flex: 1; min-width: 0; }
+.cardTitle {
+  font-size: 13px; font-weight: 600; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  line-height: 1.4;
+}
+.cardSub { font-size: 11px; color: var(--text-secondary); display: flex; gap: 6px; align-items: center; margin-top: 2px; }
+.cardTime { font-size: 11px; color: var(--text-muted); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+
+/* ===== 栈标记卡片（新增样式） ===== */
+.card.inStack {
+  border-left: 3px solid var(--orange);
+  background: rgba(255,247,237,0.7);
+}
+.stackBadge {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: var(--orange);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 6px rgba(234,88,12,0.4);
+}
+/* 栈顶（下一个要粘贴的） */
+.card.stackNext {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 2px rgba(234,88,12,0.25), var(--glass-card-shadow);
+}
+.card.stackNext .stackBadge {
+  animation: pulse 1.5s ease infinite;
+}
+/* 已粘贴过的 */
+.card.stackDone {
+  opacity: 0.45;
+  border-left-color: #D1D5DB;
+}
+.card.stackDone .stackBadge {
+  background: #9CA3AF;
+  box-shadow: none;
+}
+
+/* ===== FAB 栏（真实的依次粘贴栏） ===== */
+.fabContainer {
+  position: absolute;
+  bottom: 12px;
+  left: 12px; right: 12px;
+  padding: 10px 16px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 -2px 16px rgba(0,0,0,0.06);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 10;
+}
+.fabCounter { font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+.fabCounter b { color: var(--accent); }
+.fabBtn {
+  height: 38px;
+  padding: 0 18px;
+  border-radius: 12px;
+  font-size: 13px; font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  box-shadow: 0 4px 16px var(--accent-shadow);
+  cursor: pointer;
+}
+
+/* ===== 托盘图标 ===== */
+.trayRow { display: flex; gap: 40px; align-items: flex-start; }
+.trayBox { text-align: center; }
+.trayIcon {
+  width: 48px; height: 48px;
+  border-radius: 12px;
+  background: #1E293B;
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+  margin: 0 auto 8px;
+}
+.trayIcon .panda { font-size: 22px; }
+.trayDot {
+  position: absolute;
+  top: 4px; right: 4px;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--orange);
+  border: 2px solid #1E293B;
+  animation: pulse 1.5s ease infinite;
+}
+.trayLabel { font-size: 11px; color: var(--text-secondary); }
+
+/* ===== 快捷键提示 ===== */
+.kbd {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+  font-family: monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ===== 布局辅助 ===== */
+.duo { display: flex; gap: 32px; justify-content: center; flex-wrap: wrap; }
+.stateLabel {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+  padding: 4px 14px;
+  background: #fff;
+  border-radius: 20px;
+  border: 1px solid var(--border-color);
+  display: inline-block;
+}
+.stateWrap { text-align: center; }
+
+.flowStrip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 32px;
+}
+.flowStep {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid var(--border-color);
+  font-size: 12px;
+  color: var(--text-primary);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+}
+.flowArrow { font-size: 16px; color: var(--text-muted); }
+
+.noteBox {
+  max-width: 700px;
+  margin: 0 auto;
+  background: #fff;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 16px 20px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 2;
+}
+.noteBox b { color: var(--text-primary); }
+.noteBox .tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  margin-right: 4px;
+}
+.tag.new { background: #FFF7ED; color: #EA580C; border: 1px solid #FDBA74; }
+.tag.exist { background: #F0FDF4; color: #16A34A; border: 1px solid #BBF7D0; }
+</style>
+</head>
+<body>
+
+<h1>剪贴板栈 — 设计稿（基于真实 UI）</h1>
+
+<!-- 操作流程 -->
+<div class="section">
+  <div class="flowStrip">
+    <div class="flowStep"><span class="kbd">Ctrl+Shift+K</span> 进入栈模式</div>
+    <span class="flowArrow">→</span>
+    <div class="flowStep">正常 <span class="kbd">Ctrl+C</span> 复制，内容逐条入栈</div>
+    <span class="flowArrow">→</span>
+    <div class="flowStep"><span class="kbd">Ctrl+Shift+P</span> 粘贴栈顶并弹出</div>
+    <span class="flowArrow">→</span>
+    <div class="flowStep">栈空 → 自动退出栈模式</div>
+  </div>
+</div>
+
+<!-- 状态1：栈模式激活，已收集3条 -->
+<div class="section">
+  <h2>状态一：栈模式激活（已收集 3 条）</h2>
+  <p class="section-desc">横幅出现在卡片列表上方，入栈卡片带橙色左边框 + 序号角标，最新入栈的排最前（栈顶 = 序号 1）</p>
+  <div class="duo">
+    <div class="stateWrap">
+      <div class="window">
+        <!-- TopBar -->
+        <div class="header">
+          <div class="headerTop">
+            <div class="iconBtn">☰</div>
+            <div class="appLogo">🐼</div>
+            <span class="appName">PastePanda</span>
+            <span class="versionBadge">v5.0.148</span>
+            <span class="spacer"></span>
+            <div class="iconBtn">⚙️</div>
+          </div>
+          <div class="searchBox">🔍 搜索剪贴板历史…</div>
+          <div class="segmented">
+            <div class="segItem active">📋 全部 <span class="segCount">42</span></div>
+            <div class="segItem">📝 文本 <span class="segCount">35</span></div>
+            <div class="segItem">📸 图片 <span class="segCount">5</span></div>
+            <div class="segItem">📁 文件 <span class="segCount">2</span></div>
+            <div class="segItem">⭐ 收藏 <span class="segCount">8</span></div>
+          </div>
+          <div class="filterBar">
+            <div class="filterBtn">🕐 全部时间 ▾</div>
+            <div class="filterBtn">📱 全部来源 ▾</div>
+          </div>
+        </div>
+
+        <!-- 栈横幅（新增） -->
+        <div class="stackBanner">
+          <div class="stackDot"></div>
+          <div class="stackBannerText">
+            <div class="stackBannerTitle">栈模式 · 已收集 3 条</div>
+            <div class="stackBannerSub">Ctrl+C 继续收集 · Ctrl+Shift+P 逐条粘贴</div>
+          </div>
+          <button class="stackBannerBtn paste">▶ 全部粘贴</button>
+          <button class="stackBannerBtn exit">退出</button>
+        </div>
+
+        <!-- 卡片列表 -->
+        <div class="scrollArea">
+          <!-- 入栈卡片：序号1 = 栈顶 = 最新复制的 -->
+          <div class="card inStack stackNext">
+            <div class="stackBadge">1</div>
+            <div class="cardIcon green">🔗</div>
+            <div class="cardBody">
+              <div class="cardTitle">https://github.com/tauri-apps/tauri/releases</div>
+              <div class="cardSub"><span>链接</span><span>·</span><span>Chrome</span></div>
+            </div>
+            <div class="cardTime">刚刚</div>
+          </div>
+
+          <div class="card inStack">
+            <div class="stackBadge">2</div>
+            <div class="cardIcon purple">⟨⟩</div>
+            <div class="cardBody">
+              <div class="cardTitle">const result = await fetch(url).then(r => r.json())</div>
+              <div class="cardSub"><span>代码</span><span>·</span><span>VS Code</span></div>
+            </div>
+            <div class="cardTime">1分钟前</div>
+          </div>
+
+          <div class="card inStack">
+            <div class="stackBadge">3</div>
+            <div class="cardIcon blue">📝</div>
+            <div class="cardBody">
+              <div class="cardTitle">第三季度产品路线图已更新，请各组确认排期</div>
+              <div class="cardSub"><span>文本</span><span>·</span><span>微信</span></div>
+            </div>
+            <div class="cardTime">2分钟前</div>
+          </div>
+
+          <!-- 普通历史卡片 -->
+          <div class="card">
+            <div class="cardIcon blue">📝</div>
+            <div class="cardBody">
+              <div class="cardTitle">npm install @tauri-apps/plugin-global-shortcut</div>
+              <div class="cardSub"><span>文本</span><span>·</span><span>Terminal</span></div>
+            </div>
+            <div class="cardTime">5分钟前</div>
+          </div>
+
+          <div class="card">
+            <div class="cardIcon pink">🖼</div>
+            <div class="cardBody">
+              <div class="cardTitle">截图 2026-07-21 143052.png</div>
+              <div class="cardSub"><span>图片</span><span>·</span><span>Snipaste</span></div>
+            </div>
+            <div class="cardTime">8分钟前</div>
+          </div>
+
+          <div class="card">
+            <div class="cardIcon green">🔗</div>
+            <div class="cardBody">
+              <div class="cardTitle">https://docs.rs/arboard/latest/arboard/</div>
+              <div class="cardSub"><span>链接</span><span>·</span><span>Edge</span></div>
+            </div>
+            <div class="cardTime">12分钟前</div>
+          </div>
+        </div>
+
+        <!-- FAB（栈模式下隐藏依次粘贴栏） -->
+      </div>
+      <span class="stateLabel">主窗口 · 栈模式激活</span>
+    </div>
+
+    <!-- 托盘状态 -->
+    <div class="stateWrap" style="align-self: center;">
+      <div class="trayRow">
+        <div class="trayBox">
+          <div class="trayIcon"><span class="panda">🐼</span></div>
+          <div class="trayLabel">正常状态</div>
+        </div>
+        <div class="trayBox">
+          <div class="trayIcon"><span class="panda">🐼</span><div class="trayDot"></div></div>
+          <div class="trayLabel">栈模式激活<br><span style="font-size:10px;color:#EA580C;">橙色呼吸圆点</span></div>
+        </div>
+      </div>
+      <div style="margin-top: 24px;">
+        <div class="noteBox" style="text-align:left;">
+          <b>交互细节</b><br>
+          <span class="tag new">新增</span>栈横幅：列表上方固定，不随滚动<br>
+          <span class="tag new">新增</span>入栈卡片：橙色左边框 + 左上角序号角标<br>
+          <span class="tag new">新增</span>栈顶卡片（序号1）：橙色外发光，表示下一个粘贴<br>
+          <span class="tag new">新增</span>托盘图标：叠加橙色呼吸圆点<br>
+          <span class="tag exist">已有</span>栈模式下 FAB 依次粘贴栏隐藏（互斥）<br>
+          <span class="tag exist">已有</span>入栈内容同时正常写入历史记录<br>
+          <span class="tag exist">已有</span>退出栈模式后卡片恢复正常样式
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 状态2：粘贴进行中 -->
+<div class="section">
+  <h2>状态二：逐条粘贴进行中（已贴 1 条，剩 2 条）</h2>
+  <p class="section-desc">按 Ctrl+Shift+P 后，栈顶内容粘贴到当前焦点窗口并弹出；已粘贴的卡片变灰（序号保留），新的栈顶高亮</p>
+  <div class="duo">
+    <div class="stateWrap">
+      <div class="window" style="height: 480px;">
+        <div class="header">
+          <div class="headerTop">
+            <div class="iconBtn">☰</div>
+            <div class="appLogo">🐼</div>
+            <span class="appName">PastePanda</span>
+            <span class="versionBadge">v5.0.148</span>
+            <span class="spacer"></span>
+            <div class="iconBtn">⚙️</div>
+          </div>
+          <div class="searchBox">🔍 搜索剪贴板历史…</div>
+          <div class="segmented">
+            <div class="segItem active">📋 全部 <span class="segCount">42</span></div>
+            <div class="segItem">📝 文本 <span class="segCount">35</span></div>
+            <div class="segItem">📸 图片 <span class="segCount">5</span></div>
+            <div class="segItem">📁 文件 <span class="segCount">2</span></div>
+            <div class="segItem">⭐ 收藏 <span class="segCount">8</span></div>
+          </div>
+        </div>
+
+        <div class="stackBanner">
+          <div class="stackDot"></div>
+          <div class="stackBannerText">
+            <div class="stackBannerTitle">栈模式 · 剩余 2 条</div>
+            <div class="stackBannerSub">已粘贴 1/3 · Ctrl+Shift+P 继续</div>
+          </div>
+          <button class="stackBannerBtn paste">▶ 全部粘贴</button>
+          <button class="stackBannerBtn exit">退出</button>
+        </div>
+
+        <div class="scrollArea">
+          <!-- 已粘贴 → 变灰 -->
+          <div class="card inStack stackDone">
+            <div class="stackBadge">✓</div>
+            <div class="cardIcon green">🔗</div>
+            <div class="cardBody">
+              <div class="cardTitle">https://github.com/tauri-apps/tauri/releases</div>
+              <div class="cardSub"><span>已粘贴</span></div>
+            </div>
+            <div class="cardTime">刚刚</div>
+          </div>
+
+          <!-- 当前栈顶 -->
+          <div class="card inStack stackNext">
+            <div class="stackBadge">1</div>
+            <div class="cardIcon purple">⟨⟩</div>
+            <div class="cardBody">
+              <div class="cardTitle">const result = await fetch(url).then(r => r.json())</div>
+              <div class="cardSub"><span>代码</span><span>·</span><span>VS Code</span></div>
+            </div>
+            <div class="cardTime">1分钟前</div>
+          </div>
+
+          <div class="card inStack">
+            <div class="stackBadge">2</div>
+            <div class="cardIcon blue">📝</div>
+            <div class="cardBody">
+              <div class="cardTitle">第三季度产品路线图已更新，请各组确认排期</div>
+              <div class="cardSub"><span>文本</span><span>·</span><span>微信</span></div>
+            </div>
+            <div class="cardTime">2分钟前</div>
+          </div>
+
+          <div class="card">
+            <div class="cardIcon blue">📝</div>
+            <div class="cardBody">
+              <div class="cardTitle">npm install @tauri-apps/plugin-global-shortcut</div>
+              <div class="cardSub"><span>文本</span><span>·</span><span>Terminal</span></div>
+            </div>
+            <div class="cardTime">5分钟前</div>
+          </div>
+        </div>
+      </div>
+      <span class="stateLabel">粘贴中 · 已贴的变灰打勾，剩余重新编号</span>
+    </div>
+
+    <div class="stateWrap" style="align-self: center;">
+      <div class="noteBox" style="text-align:left; max-width: 380px;">
+        <b>粘贴逻辑</b><br>
+        · 每次 Ctrl+Shift+P：粘贴当前栈顶 → 该条标记 ✓ 变灰 → 剩余重新编号<br>
+        · 粘贴时主窗口<b>不隐藏</b>（方便观察进度），粘贴动作通过 WM_PASTE 注入焦点窗口<br>
+        · 「全部粘贴」：间隔 300ms 连续粘贴剩余全部条目<br>
+        · 栈清空后自动退出栈模式，横幅消失，卡片恢复<br>
+        · 手动「退出」：保留历史，仅清除栈状态<br>
+        <br>
+        <b>入栈规则</b><br>
+        · 与上一条内容完全相同 → 不重复入栈<br>
+        · 图片/文件类型同样支持入栈<br>
+        · 入栈上限 50 条，超出时最早的自动移出
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 实现要点 -->
+<div class="section">
+  <div class="noteBox">
+    <b>实现要点</b><br>
+    <span class="tag new">Rust</span>hotkey_manager 注册 Ctrl+Shift+K（切换栈模式）+ Ctrl+Shift+P（栈粘贴）<br>
+    <span class="tag new">Rust</span>栈模式激活时 tray_manager 切换图标（叠加橙色圆点），通过 emit 事件通知前端<br>
+    <span class="tag new">前端</span>appStore 新增 stackMode / stackItems / stackPointer 状态<br>
+    <span class="tag new">前端</span>clipboard-changed 事件在栈模式下追加入 stackItems（同时正常写入历史）<br>
+    <span class="tag new">前端</span>StackBanner 组件 + Card 增加 inStack/stackNext/stackDone 样式<br>
+    <span class="tag exist">复用</span>粘贴引擎 pasteText()（WM_PASTE 注入 + PasteSuppress 防自录）
+  </div>
+</div>
+
+</body>
+</html>

@@ -67,6 +67,8 @@ export interface AppConfig {
   hover_mode: "off" | "inline" | "popover"; // 鼠标悬停卡片交互模式
   source_icon_mode: "emoji" | "app"; // 来源图标显示方式
   timeline_enabled: boolean; // 时间线功能开关
+  stack_toggle_hotkey: string; // 栈模式开关快捷键
+  stack_paste_hotkey: string; // 栈顶粘贴快捷键
 }
 
 // ===== Store 接口 =====
@@ -93,6 +95,13 @@ interface AppState {
   paused: boolean;
   undoStack: HistoryItem[][]; // 撤销栈，每项是一组被删除的 items
   searchHistory: string[]; // 搜索历史记录
+
+  // 剪贴板栈
+  stackMode: boolean; // 栈模式是否激活
+  stackItems: HistoryItem[]; // 待粘贴栈（index 0 = 栈顶 = 下一个粘贴）
+  stackDoneIds: Set<string>; // 本轮已粘贴的条目 ID（卡片变灰）
+  stackPasted: number; // 本轮实际已粘贴条数
+  stackCollected: number; // 本轮真实收集总条数（含被 50 条上限截断丢弃的，进度分母用它，避免虚高）
 
   // 动作
   setHistory: (items: HistoryItem[]) => void;
@@ -125,6 +134,12 @@ interface AppState {
   setSeqPointer: (p: number) => void;
   resetSeqPointer: () => void;
   setPaused: (p: boolean) => void;
+
+  // 剪贴板栈动作
+  setStackMode: (active: boolean) => void;
+  stackPush: (item: HistoryItem) => void;
+  stackMarkPasted: () => void;
+  exitStackMode: () => void;
 
   updateConfig: (partial: Partial<AppConfig>) => void;
 
@@ -159,6 +174,8 @@ const DEFAULT_CONFIG: AppConfig = {
   hover_mode: "popover",
   source_icon_mode: "app",
   timeline_enabled: false,
+  stack_toggle_hotkey: "ctrl+shift+k",
+  stack_paste_hotkey: "ctrl+shift+p",
 };
 
 // ===== Store =====
@@ -184,6 +201,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   seqTotal: 0,
   paused: false,
   undoStack: [],
+  stackMode: false,
+  stackItems: [],
+  stackDoneIds: new Set(),
+  stackPasted: 0,
+  stackCollected: 0,
   realIconCache: {},
   searchHistory: (() => {
     try {
@@ -216,15 +238,18 @@ export const useAppStore = create<AppState>((set, get) => ({
           md5: item.md5 || oldItem.md5,
           pinyin_initials: item.pinyin_initials || oldItem.pinyin_initials,
         };
-        s._filterCache = null; // 清除缓存确保列表刷新
-        return { history: [updated, ...s.history.slice(0, dupIdx), ...s.history.slice(dupIdx + 1)] };
+        // 修复 Low（Zustand 反模式）：_filterCache 通过返回 partial 清除，而非原地突变 s
+        return { history: [updated, ...s.history.slice(0, dupIdx), ...s.history.slice(dupIdx + 1)], _filterCache: null };
       }
-      // 限制前端缓存最大 500 条，防止内存泄漏
+      // 限制前端缓存最大 500 条，防止内存泄漏（淘汰时跳过 pinned 条目，避免收藏项消失）
       if (s.history.length >= 500) {
-        s._filterCache = null; // 清除缓存确保列表刷新
-        return { history: [item, ...s.history.slice(0, 499)] };
+        const lastUnpinnedIdx = [...s.history].map((h) => h.pinned).lastIndexOf(false);
+        const trimmed = lastUnpinnedIdx >= 0
+          ? [...s.history.slice(0, lastUnpinnedIdx), ...s.history.slice(lastUnpinnedIdx + 1)]
+          : s.history.slice(0, 499); // 全是 pinned 的极端情况才强制截断
+        return { history: [item, ...trimmed], _filterCache: null };
       }
-      return { history: [item, ...s.history] };
+      return { history: [item, ...s.history], _filterCache: null };
     }),
   // 智能合并：将已有记录移到顶部并更新时间
   moveToTop: (id: string, newTime: string) =>
@@ -233,8 +258,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (idx < 0) return s;
       const item = { ...s.history[idx], time: newTime };
       const newHistory = [item, ...s.history.slice(0, idx), ...s.history.slice(idx + 1)];
-      s._filterCache = null; // 清除缓存确保列表刷新
-      return { history: newHistory };
+      // 修复 Low（Zustand 反模式）：通过返回 partial 清缓存（重排不改变 length，缓存键不会自动失效）
+      return { history: newHistory, _filterCache: null };
     }),
   removeItems: (ids) =>
     set((s) => {
@@ -244,7 +269,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         history: s.history.filter((h) => !idSet.has(h.id)),
         selectedIds: new Set([...s.selectedIds].filter((id) => !idSet.has(id))),
         focusId: s.focusId && idSet.has(s.focusId) ? null : s.focusId,
-        undoStack: [deleted, ...s.undoStack].slice(0, 10),
+        // 仅在确实删除了条目时才记录撤销批次，避免空批次消耗撤销额度
+        undoStack: deleted.length > 0 ? [deleted, ...s.undoStack].slice(0, 10) : s.undoStack,
       };
     }),
   undoDelete: () => {
@@ -258,24 +284,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     return restored;
   },
   togglePin: (id) =>
-    set((s) => {
-      s._filterCache = null; // 清除缓存确保列表刷新
-      return {
-        history: s.history.map((h) =>
-          h.id === id ? { ...h, pinned: !h.pinned } : h
-        ),
-      };
-    }),
+    set((s) => ({
+      // 修复 Low（Zustand 反模式）：通过返回 partial 清缓存，而非原地突变 s
+      history: s.history.map((h) =>
+        h.id === id ? { ...h, pinned: !h.pinned } : h
+      ),
+      _filterCache: null,
+    })),
   // 设置权威置顶状态（由后端 toggle_pin 返回值驱动，避免与本地状态漂移时被 togglePin 的盲目取反打反）
   setPinned: (id, pinned) =>
-    set((s) => {
-      s._filterCache = null; // 清除缓存确保列表刷新
-      return {
-        history: s.history.map((h) =>
-          h.id === id ? { ...h, pinned } : h
-        ),
-      };
-    }),
+    set((s) => ({
+      history: s.history.map((h) =>
+        h.id === id ? { ...h, pinned } : h
+      ),
+      _filterCache: null,
+    })),
   // 拖拽排序：将 fromId 移动到 toId 之前（在原始 history 中操作，不改变置顶排序）
   reorderItems: (fromId: string, toId: string) =>
     set((s) => {
@@ -285,8 +308,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const newHistory = [...s.history];
       const [moved] = newHistory.splice(fromIdx, 1);
       newHistory.splice(toIdx, 0, moved);
-      s._filterCache = null; // 清除缓存确保列表刷新
-      return { history: newHistory };
+      return { history: newHistory, _filterCache: null };
     }),
   clearAll: () => set({ history: [], selectedIds: new Set(), focusId: null }),
 
@@ -368,6 +390,35 @@ export const useAppStore = create<AppState>((set, get) => ({
   resetSeqPointer: () => set({ seqPointer: 0 }),
   setPaused: (p) => set({ paused: p }),
 
+  // 剪贴板栈
+  setStackMode: (active) =>
+    set(
+      active
+        ? { stackMode: true, stackItems: [], stackDoneIds: new Set(), stackPasted: 0, stackCollected: 0 }
+        : { stackMode: false }
+    ),
+  stackPush: (item) =>
+    set((s) => {
+      if (!s.stackMode) return s;
+      // 去重：与栈顶真实内容完全相同则跳过（文本比 text，图片/文件比 content 路径）
+      const top = s.stackItems[0];
+      const keyOf = (it: HistoryItem) => (it.type === "text" ? it.text : it.content || it.text);
+      if (top && top.type === item.type && keyOf(top) === keyOf(item)) return s;
+      // 上限 50 条，超出移出最早的（栈底）；stackCollected 记录真实收集总数（不受截断影响）
+      const next = [item, ...s.stackItems].slice(0, 50);
+      return { stackItems: next, stackCollected: s.stackCollected + 1 };
+    }),
+  stackMarkPasted: () =>
+    set((s) => {
+      if (s.stackItems.length === 0) return s;
+      const [pasted, ...rest] = s.stackItems;
+      const done = new Set(s.stackDoneIds);
+      done.add(pasted.id);
+      return { stackItems: rest, stackDoneIds: done, stackPasted: s.stackPasted + 1 };
+    }),
+  exitStackMode: () =>
+    set({ stackMode: false, stackItems: [], stackDoneIds: new Set(), stackPasted: 0, stackCollected: 0 }),
+
   // 来源图标缓存
   setRealIconUrl: (key, url) => set((s) => ({
     realIconCache: { ...s.realIconCache, [key]: url },
@@ -381,13 +432,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       clean.hover_mode = clean.hover_preview_enabled ? "popover" : "off";
       delete clean.hover_preview_enabled;
     }
-    set((s) => {
-      // 工作区切换 → 清除计数缓存（让 TopBar 重新查后端）
-      if (clean.current_workspace && clean.current_workspace !== s.config.current_workspace) {
-        import("@/lib/api").then(m => m.invalidateCountsCache()).catch(() => {});
-      }
-      return { config: { ...s.config, ...clean } };
-    });
+    // 修复 Low（Zustand 反模式）：副作用（动态 import + 事件派发）移出 set updater，
+    // updater 保持纯函数；先读旧工作区，set 之后再触发缓存失效
+    const prevWorkspace = get().config.current_workspace;
+    set((s) => ({ config: { ...s.config, ...clean } }));
+    if (clean.current_workspace && clean.current_workspace !== prevWorkspace) {
+      import("@/lib/api").then(m => m.invalidateCountsCache()).catch(() => {});
+    }
   },
 
   // 计算属性（带简单缓存避免频繁计算）

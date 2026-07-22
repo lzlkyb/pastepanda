@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ToastProvider } from "./components/Toast";
 import { logger } from "./lib/logger";
 import "./styles/globals.css";
 import "./styles/theme.css";
@@ -49,7 +50,9 @@ window.addEventListener("unhandledrejection", (event) => {
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <App />
+      <ToastProvider>
+        <App />
+      </ToastProvider>
     </ErrorBoundary>
   </React.StrictMode>,
 );

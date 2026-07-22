@@ -32,7 +32,7 @@ async function minimizeWin() {
 async function hideWin() {
   try { (await import("@tauri-apps/api/window")).getCurrentWindow().hide(); } catch { logger.warn("窗口隐藏失败"); }
   // 首次隐藏时提示托盘退出方式
-  const KEY = "pasteship_hidden_tip_shown";
+  const KEY = "pastepanda_hidden_tip_shown";
   try {
     if (!localStorage.getItem(KEY)) {
       localStorage.setItem(KEY, "1");

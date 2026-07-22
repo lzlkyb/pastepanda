@@ -1,12 +1,23 @@
 use std::str::FromStr;
+use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
+/// 最近一次成功注册的热键配置（重注册失败时回滚用）
+static LAST_GOOD: OnceLock<Mutex<Option<HotkeyConfig>>> = OnceLock::new();
+
+fn last_good() -> &'static Mutex<Option<HotkeyConfig>> {
+    LAST_GOOD.get_or_init(|| Mutex::new(None))
+}
+
 /// 全局热键配置
+#[derive(Clone)]
 pub struct HotkeyConfig {
     pub show_window: String,
     pub seq_paste: String,
     pub index_prefix: String,
+    pub stack_toggle: String,
+    pub stack_paste: String,
 }
 
 impl Default for HotkeyConfig {
@@ -15,6 +26,8 @@ impl Default for HotkeyConfig {
             show_window: "Ctrl+Shift+V".to_string(),
             seq_paste: "Ctrl+Q".to_string(),
             index_prefix: "Ctrl+Alt".to_string(),
+            stack_toggle: "Ctrl+Shift+K".to_string(),
+            stack_paste: "Ctrl+Shift+P".to_string(),
         }
     }
 }
@@ -87,9 +100,28 @@ pub fn unregister_all_hotkeys(app: &AppHandle) {
 }
 
 /// 注销并重新注册全局热键（供前端设置保存后调用）
+/// 失败时回滚到上一次成功的配置，避免"新热键被占用 → 全部热键失效"（M27）
 pub fn reregister_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result<(), String> {
     unregister_all_hotkeys(app);
-    register_global_hotkeys(app, config)
+    match register_global_hotkeys(app, config) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let prev = last_good()
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone();
+            if let Some(prev_cfg) = prev {
+                unregister_all_hotkeys(app);
+                match register_global_hotkeys(app, &prev_cfg) {
+                    Ok(()) => log::warn!("[HotkeyManager] 新热键注册失败，已回滚到上次成功的配置"),
+                    Err(re) => log::error!("[HotkeyManager] 新热键注册失败且回滚也失败: {}", re),
+                }
+            } else {
+                log::warn!("[HotkeyManager] 新热键注册失败，且无可回滚的历史配置");
+            }
+            Err(e)
+        }
+    }
 }
 
 /// 注册全局热键
@@ -175,7 +207,53 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
 
     // 全选(Ctrl+A)：使用应用内键盘事件处理，不注册全局热键（避免劫持其他应用）
 
+    // 剪贴板栈：切换栈模式
+    if let Ok(shortcut) = parse_shortcut(&config.stack_toggle) {
+        let stack_toggle_str = config.stack_toggle.clone();
+        match gs.on_shortcut(shortcut, move |app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                log::info!("[HotkeyManager] 栈模式切换热键触发!");
+                let _ = app.emit("hotkey-stack-toggle", ());
+            }
+        }) {
+            Ok(_) => log::info!("[HotkeyManager] 注册栈模式切换热键: {}", stack_toggle_str),
+            Err(e) => {
+                let msg = format!("栈模式热键注册失败: {}", e);
+                log::warn!("[HotkeyManager] {}", msg);
+                errors.push(msg);
+            }
+        }
+    } else {
+        errors.push(format!("无效的栈模式热键: {}", config.stack_toggle));
+    }
+
+    // 剪贴板栈：粘贴栈顶
+    if let Ok(shortcut) = parse_shortcut(&config.stack_paste) {
+        let stack_paste_str = config.stack_paste.clone();
+        match gs.on_shortcut(shortcut, move |app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                log::info!("[HotkeyManager] 栈粘贴热键触发!");
+                // 第一时间保存前台窗口句柄，确保粘贴目标正确
+                if let Some(engine) = app.try_state::<crate::paste_engine::PasteEngine>() {
+                    engine.save_foreground_hwnd();
+                }
+                let _ = app.emit("hotkey-stack-paste", ());
+            }
+        }) {
+            Ok(_) => log::info!("[HotkeyManager] 注册栈粘贴热键: {}", stack_paste_str),
+            Err(e) => {
+                let msg = format!("栈粘贴热键注册失败: {}", e);
+                log::warn!("[HotkeyManager] {}", msg);
+                errors.push(msg);
+            }
+        }
+    } else {
+        errors.push(format!("无效的栈粘贴热键: {}", config.stack_paste));
+    }
+
     if errors.is_empty() {
+        // 记录最近一次成功配置，供 reregister 失败时回滚（M27）
+        *last_good().lock().unwrap_or_else(|p| p.into_inner()) = Some(config.clone());
         Ok(())
     } else {
         Err(errors.join("; "))

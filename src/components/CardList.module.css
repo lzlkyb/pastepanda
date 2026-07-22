@@ -124,6 +124,55 @@
   box-shadow: var(--card-selected-shadow), 0 4px 16px var(--accent-shadow);
 }
 
+/* ===== 剪贴板栈标记 ===== */
+.cardInStack {
+  border-left: 3px solid var(--orange, #EA580C);
+  background: rgba(255, 247, 237, 0.7);
+}
+
+.cardStackNext {
+  border-color: var(--orange, #EA580C);
+  box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.25), var(--glass-card-shadow);
+}
+
+.cardStackDone {
+  opacity: 0.45;
+  border-left-color: #D1D5DB;
+}
+
+.stackBadge {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--orange, #EA580C);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(234, 88, 12, 0.4);
+  z-index: 2;
+}
+
+.stackBadgeNext {
+  animation: stackBadgePulse 1.5s ease infinite;
+}
+
+.stackBadgeDone {
+  background: #9CA3AF;
+  box-shadow: none;
+  animation: none;
+}
+
+@keyframes stackBadgePulse {
+  0%, 100% { box-shadow: 0 2px 6px rgba(234, 88, 12, 0.4), 0 0 0 0 rgba(234, 88, 12, 0.35); }
+  50% { box-shadow: 0 2px 6px rgba(234, 88, 12, 0.4), 0 0 0 5px rgba(234, 88, 12, 0); }
+}
+
 .cardIcon {
   width: 42px;
   height: 42px;

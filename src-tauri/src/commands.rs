@@ -66,11 +66,46 @@ fn validate_image_file_path(path: &str) -> Result<std::path::PathBuf, String> {
     Ok(canonical)
 }
 
+/// 图片最大解码像素数（100MP ≈ 400MB RGBA 内存），防止解压炸弹（修复 C18）
+pub(crate) const MAX_DECODE_PIXELS: u64 = 100_000_000;
+
+/// 仅读取图片头部获取尺寸（不完整解码），并校验是否超过解码上限。
+/// 供所有 image::open 调用点前置调用，防止小文件解码出巨大位图导致内存暴涨（修复 C18）。
+pub(crate) fn check_image_decode_limits(path: &std::path::Path) -> Result<(u32, u32), String> {
+    let reader = image::ImageReader::open(path)
+        .map_err(|e| format!("无法打开图片: {e}"))?
+        .with_guessed_format()
+        .map_err(|e| format!("无法识别图片格式: {e}"))?;
+    let (w, h) = reader
+        .into_dimensions()
+        .map_err(|e| format!("无法读取图片尺寸: {e}"))?;
+    if (w as u64) * (h as u64) > MAX_DECODE_PIXELS {
+        return Err(format!(
+            "图片尺寸过大 ({}x{}，约 {}MP)，超过 {}MP 解码上限",
+            w,
+            h,
+            (w as u64) * (h as u64) / 1_000_000,
+            MAX_DECODE_PIXELS / 1_000_000
+        ));
+    }
+    Ok((w, h))
+}
+
 /// 读取文件内容并返回 base64 编码（用于图片粘贴并变换）
 #[tauri::command]
 pub fn read_file_as_base64(path: String) -> Result<String, String> {
     use base64::{engine::general_purpose::STANDARD, Engine as _};
+    // 修复 C15：与 get_image_data_url 一致的 20MB 上限，防止合法扩展名的超大文件导致 OOM
+    const MAX_FILE_SIZE: u64 = 20 * 1024 * 1024;
     let canonical = validate_image_file_path(&path)?;
+    let metadata =
+        std::fs::metadata(&canonical).map_err(|e| format!("无法读取文件信息: {e}"))?;
+    if metadata.len() > MAX_FILE_SIZE {
+        return Err(format!(
+            "图片文件过大 ({}MB)，超过 20MB 限制",
+            metadata.len() / 1024 / 1024
+        ));
+    }
     let bytes = std::fs::read(&canonical).map_err(|e| format!("读取文件失败: {e}"))?;
     Ok(STANDARD.encode(&bytes))
 }
@@ -143,9 +178,8 @@ pub fn clear_history(
     workspace: String,
     before_days: Option<u32>,
 ) -> Result<serde_json::Value, String> {
-    // 先获取即将被删除的记录（用于撤销）
-    let deleted_items = store.get_history_before_cleanup(&workspace, before_days)?;
-    let count = store.clear_history(&workspace, before_days)?;
+    // 修复 Low：单次原子操作完成 读取被删记录 + 删除，避免读写竞态
+    let (count, deleted_items) = store.clear_history_with_undo(&workspace, before_days)?;
     Ok(serde_json::json!({
         "count": count,
         "deleted_items": deleted_items,
@@ -381,7 +415,6 @@ fn get_thumb_dir(app_handle: &tauri::AppHandle) -> Result<std::path::PathBuf, St
 /// 使用文件路径而非 base64 data URL，浏览器可原生缓存图片
 #[tauri::command]
 pub fn get_image_thumbnail(app_handle: tauri::AppHandle, path: String) -> Result<String, String> {
-    use image::GenericImageView;
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     use std::io::BufWriter;
@@ -390,14 +423,20 @@ pub fn get_image_thumbnail(app_handle: tauri::AppHandle, path: String) -> Result
     const MAX_WIDTH: u32 = 300;
     const MAX_FILE_SIZE: u64 = 20 * 1024 * 1024;
 
-    let metadata = std::fs::metadata(&path).map_err(|e| format!("无法读取文件信息: {}", e))?;
+    // 修复 C16：与其他图片命令一致的严格路径校验（canonicalize + 白名单）
+    let canonical = validate_image_file_path(&path)?;
+    let metadata =
+        std::fs::metadata(&canonical).map_err(|e| format!("无法读取文件信息: {}", e))?;
     if metadata.len() > MAX_FILE_SIZE {
         return Err(format!("图片文件过大 ({}MB)", metadata.len() / 1024 / 1024));
     }
 
+    // 修复 C18：仅读头部校验尺寸，防止解压炸弹
+    let (w, h) = check_image_decode_limits(&canonical)?;
+
     // 用源路径 + 修改时间生成缩略图文件名（内容变化自动重建）
     let mut hasher = DefaultHasher::new();
-    path.hash(&mut hasher);
+    canonical.to_string_lossy().hash(&mut hasher);
     let modified = metadata
         .modified()
         .map(|t| {
@@ -418,8 +457,7 @@ pub fn get_image_thumbnail(app_handle: tauri::AppHandle, path: String) -> Result
         return Ok(thumb_path.to_string_lossy().to_string());
     }
 
-    let img = image::open(&path).map_err(|e| format!("无法打开图片: {}", e))?;
-    let (w, h) = img.dimensions();
+    let img = image::open(&canonical).map_err(|e| format!("无法打开图片: {}", e))?;
 
     // 如果原图宽度 ≤ 300px，直接复制（转为 JPEG 减小体积）
     let output_img = if w <= MAX_WIDTH {
@@ -445,13 +483,13 @@ pub fn get_image_thumbnail(app_handle: tauri::AppHandle, path: String) -> Result
 /// 获取图片信息（尺寸、文件大小）
 #[tauri::command]
 pub fn get_image_info(path: String) -> Result<serde_json::Value, String> {
-    use image::GenericImageView;
-    let metadata = std::fs::metadata(&path).map_err(|e| format!("无法读取文件信息: {}", e))?;
+    // 修复 C16/C18 同类问题：统一路径校验 + 仅读头部获取尺寸（无需完整解码，防解压炸弹）
+    let canonical = validate_image_file_path(&path)?;
+    let metadata =
+        std::fs::metadata(&canonical).map_err(|e| format!("无法读取文件信息: {}", e))?;
     let file_size = metadata.len();
 
-    let (width, height) = image::open(&path)
-        .map(|img| img.dimensions())
-        .map_err(|e| format!("无法读取图片尺寸: {}", e))?;
+    let (width, height) = check_image_decode_limits(&canonical)?;
 
     let file_name = std::path::Path::new(&path)
         .file_name()
@@ -504,17 +542,44 @@ pub fn reregister_hotkeys(app: tauri::AppHandle, store: State<DataStore>) -> Res
         .and_then(|v| v.as_str())
         .unwrap_or("Ctrl+Q")
         .to_string();
+    let stack_toggle = config
+        .get("stack_toggle_hotkey")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Ctrl+Shift+K")
+        .to_string();
+    let stack_paste = config
+        .get("stack_paste_hotkey")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Ctrl+Shift+P")
+        .to_string();
     let hotkey_config = crate::hotkey_manager::HotkeyConfig {
         show_window,
         seq_paste,
         index_prefix: "Ctrl+Alt".to_string(),
+        stack_toggle,
+        stack_paste,
     };
     crate::hotkey_manager::reregister_global_hotkeys(&app, &hotkey_config)
+}
+
+/// 安全检查：拒绝 UNC / 网络共享路径（\\server\share 或 //server/share）。
+/// Windows 上对此类路径执行 exists()/metadata()/explorer 会自动发起 SMB 认证，
+/// 泄漏用户的 NTLMv2 凭据哈希（可被离线爆破或中继）。剪贴板中的文件路径可能被
+/// 恶意程序或 LAN 同步注入，因此必须在任何文件系统操作前拦截（修复 C3）。
+fn is_unsafe_network_path(path: &str) -> bool {
+    let trimmed = path.trim();
+    trimmed.starts_with("\\\\") || trimmed.starts_with("//")
 }
 
 /// 获取文件信息（大小、是否存在）
 #[tauri::command]
 pub fn get_file_info(path: String) -> Result<serde_json::Value, String> {
+    if is_unsafe_network_path(&path) {
+        return Ok(serde_json::json!({
+            "size": 0,
+            "exists": false,
+        }));
+    }
     let metadata = std::fs::metadata(&path);
     match metadata {
         Ok(m) => Ok(serde_json::json!({
@@ -531,6 +596,9 @@ pub fn get_file_info(path: String) -> Result<serde_json::Value, String> {
 /// 用系统默认程序打开文件（直接调用 Windows ShellExecute）
 #[tauri::command]
 pub fn open_file_with_system(path: String) -> Result<(), String> {
+    if is_unsafe_network_path(&path) {
+        return Err("不支持打开网络共享路径（安全限制）".to_string());
+    }
     // 先检查文件是否存在
     if !std::path::Path::new(&path).exists() {
         return Err(format!("文件不存在: {}", path));
@@ -557,6 +625,9 @@ pub fn open_file_with_system(path: String) -> Result<(), String> {
 /// 打开文件所在文件夹并选中文件
 #[tauri::command]
 pub fn open_file_location(path: String) -> Result<(), String> {
+    if is_unsafe_network_path(&path) {
+        return Err("不支持打开网络共享路径（安全限制）".to_string());
+    }
     // 先检查路径是否存在（文件或父目录）
     let p = std::path::Path::new(&path);
     let check_path = if p.is_dir() {
@@ -752,6 +823,8 @@ pub fn set_lan_pairing_key(
     if key.is_empty() {
         return Err("配对密钥不能为空".to_string());
     }
+    // 修复 M14：密钥强度校验，拒绝 "1" 这类可离线爆破的弱密钥
+    crate::lan_sync::validate_pairing_key(&key)?;
 
     let mut config = store.get_config()?;
     if let Some(obj) = config.as_object_mut() {
@@ -909,8 +982,14 @@ fn ocr_image_impl(path: &str) -> Result<OcrResult, String> {
     use windows::Media::Ocr::OcrEngine;
     use windows::Storage::{FileAccessMode, StorageFile};
 
+    // 修复 C16/C18 同类问题：OCR 通道此前无任何路径校验，可读取任意文件。
+    // 统一走白名单 + canonicalize（兼防 UNC 凭据泄漏），并做头部尺寸校验防解压炸弹。
+    let canonical = validate_image_file_path(path)?;
+    check_image_decode_limits(&canonical)?;
+    let canonical_str = canonical.to_string_lossy().to_string();
+
     // 1. 用 StorageFile 打开图片文件
-    let file = StorageFile::GetFileFromPathAsync(&HSTRING::from(path))
+    let file = StorageFile::GetFileFromPathAsync(&HSTRING::from(canonical_str))
         .map_err(|e| format!("打开文件失败: {}", e))?
         .get()
         .map_err(|e| format!("等待文件打开失败: {}", e))?;
@@ -1034,6 +1113,12 @@ pub fn hide_tray_popup(app: tauri::AppHandle) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// 设置剪贴板栈模式（切换托盘图标橙色圆点）
+#[tauri::command]
+pub fn set_stack_mode(app: tauri::AppHandle, active: bool) {
+    crate::tray_manager::set_tray_stack_mode(&app, active);
 }
 
 /// 前端主动获取托盘弹窗初始化数据（解决事件时序竞态问题）

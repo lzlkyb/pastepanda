@@ -2,6 +2,115 @@
 
 PastePanda 版本更新日志。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [5.0.148] - 2026-07-21
+
+### 新增
+- 剪贴板栈：Ctrl+Shift+K 进入栈模式，正常 Ctrl+C 复制的内容逐条入栈，Ctrl+Shift+P 逐条粘贴并弹出栈顶，栈空自动退出
+- 栈模式横幅：列表上方橙色横幅，显示收集/粘贴进度，支持「全部粘贴」（300ms 间隔连续粘贴）和手动退出
+- 入栈卡片标记：橙色左边框 + 左上角序号角标，栈顶（下一个粘贴）脉冲高亮，已粘贴条目变灰打勾
+- 托盘图标状态：栈模式激活时图标右上角叠加橙色圆点
+- 入栈规则：与栈顶内容相同自动去重，上限 50 条，支持文本/图片/文件全类型
+- 栈快捷键可自定义：设置 → 快捷键新增「栈模式开关」「栈顶粘贴」两行录制器，修改后即时重注册，失败自动回滚
+
+### 技术
+- appStore 新增 stackMode / stackItems / stackDoneIds / stackCollected 状态及对应 actions
+- hotkey_manager 注册栈切换 + 栈粘贴全局热键；HotkeyConfig 新增 stack_toggle / stack_paste 字段，快捷键从配置读取（不再硬编码）
+- AppConfig 新增 stack_toggle_hotkey / stack_paste_hotkey（默认 ctrl+shift+k / ctrl+shift+p），reregister_hotkeys 与启动注册均读取
+- tray_manager 新增 set_tray_stack_mode：程序化绘制橙色圆点覆盖层切换托盘图标
+- 新增 StackBanner 组件 + 卡片栈标记样式；栈模式下依次粘贴 FAB 自动隐藏（互斥）
+
+### 修复
+- 粘贴抑制恢复"hash 主检查 + 时间兜底"双重机制：监听循环补回时间窗口检查，修复 hash 清除后轮询竞态导致的自粘贴重复记录，以及无 hash 路径（文件粘贴）抑制失效的问题（同时消除 is_suppressed 死代码警告）
+
+### 安全（代码审计专项，详见 docs/代码审计报告-5.0.148.md）
+- C1 粘贴前前台窗口确认失败时中止粘贴并报错（原静默继续，可能粘错窗口）
+- C2/C3 局域网同步改为 AES-256-GCM 加密 + 随机 nonce + 时间窗口重放防护（M12），拒绝 UNC/非本地路径；配对密钥强度校验（M14），弱密钥自动重新生成
+- C14-C18 资源限制：图片解码尺寸/体积上限、正则执行 300ms 时间预算 + 按行分块（ReDoS 防护，C17）、导入条数上限 5 万
+- M16 CSP 收紧：移除失效的 unsafe-eval / esm.sh / Google Fonts / https: 通配
+- device_id 改用完整 UUID（原 32bit 前缀易碰撞/伪造）
+- 配对密钥明文存储属共享密钥配对的固有设计取舍，评估后接受（密钥需可跨设备粘贴）
+
+### 崩溃与数据完整性
+- C4 ToastProvider 位置修正，恢复全部错误反馈（此前 toast 空转无输出）
+- C6/M10 粘贴操作加互斥锁 + 原子弹栈，修复快速连按重复粘贴/跳过条目
+- C7 pasteImage 错误上抛（原吞掉），C8 监听器失败后复位 running（原无法重启）
+- C9 图片抑制 hash 口径统一，C10 改 ON CONFLICT DO UPDATE，C13 initBackend 先加载配置再拉历史
+- 新增 clear_history_with_undo：读取被删记录 + 加载标签 + 事务删除在同一连接锁内原子完成，消除命令层先读后删的竞态
+- find_latest_by_md5 增加 workspace 过滤，修复跨工作区智能合并误合并
+- data_store 全部锁获取改用 lock_conn()（Mutex 中毒后自动恢复，避免 panic 永久毒化 DB 连接）
+- hotkey_manager 注册失败自动回滚到最近一次成功配置（OnceLock 保存 last-good）
+- tray_manager / clipboard_monitor 引入 RAII drop 守卫复位标志/计数（panic-safe），分类线程并发上限 4
+- SystemParametersInfoW 失败时托盘弹窗定位回退 1920×1080（原定位到屏幕外）
+
+### 性能
+- M17/M18 虚拟列表滚动优化：模块级 memo 行组件 + 稳定回调（itemsRef 模式），Toast Context 值 memo 化
+- M25 缩略图按可视窗口加载，M26 滚动定位改用 getOffsetForIndex + 动画后校正
+- 图片复制改用 fetch(dataUrl) 浏览器原生解码，替代主线程 atob + 逐字节循环（大图阻塞数百毫秒）
+- OCR 词框 DOM 测量从每词一次提升为整层一次，消除渲染期 O(n) 强制布局
+- ExtractDialog 类型计数 memo 化，Card 标题/菜单 memo + 截断保护
+
+### 其他修复（Low）
+- 依次粘贴/索引粘贴改用与 UI 一致的过滤后列表；非循环模式到末尾给出提示（原静默）
+- 栈进度分母改用真实收集总数 stackCollected，修复 50 条上限截断后进度虚高
+- 栈内同 id 条目（智能合并复用 id）：序号徽章取最靠栈顶位置，置灰仅在条目不再位于栈内时生效
+- EditDialog 有未保存修改时关闭（Esc/×/遮罩）先弹确认，避免静默丢弃编辑
+- ExtractDialog 电话/IP 正则收紧（数字边界 + 0-255 段校验），减少误报
+- HotkeyRecorder 重写：需修饰键、冲突检测、Esc 取消，修复 Ctrl+Space 无法录制
+- localStorage 旧 pasteship_* 键一次性迁移到 pastepanda_*（保留老用户提示状态）
+- Zustand 反模式清理：set updater 内 _filterCache 改为返回 partial 清除，updateConfig 副作用移出 updater
+
+## [5.0.147] - 2026-07-19
+
+### 新增
+- 正则过滤/替换：右键「粘贴并变换 → 正则替换」分组，展示已启用规则，点击后弹出预览对话框
+- 正则预览对话框：左右分栏（原文高亮匹配 / 替换结果高亮变更），顶部可临时编辑正则+替换串+标志调试
+- 正则规则管理弹窗：预设 8 条规则（去空行/去空格/合并空格/移除行号/URL解码/手机号脱敏/身份证脱敏/去HTML标签）可开关，自定义规则可增删改
+- 规则存储于 localStorage，无需后端改动；ReDoS 防护（try/catch + 大文本截断）
+
+### 技术
+- 新增 regexRules.ts 数据层（预设规则 + CRUD + safeApplyRegex）
+- RegexPreviewDialog / RegexRulesDialog 独立 chunk 懒加载
+- ContextMenu buildTransformMenu 新增正则替换分组 + 管理入口
+
+## [5.0.146] - 2026-07-19
+
+### 新增
+- 历史对比 (Diff)：Ctrl 多选恰好 2 条文本记录 → 批量工具栏「对比」按钮，打开全屏 Diff 对话框
+- Diff 对话框支持左右分栏、行号列、同步滚动、差异统计（+N / -N）
+- 按行 / 按词两种对比模式切换，支持「忽略空白」选项
+- 差异跳转导航：上一处 / 下一处按钮 + 当前位置指示，目标行蓝色描边高亮
+- 列头标注旧/新文本来源和时间，底部支持复制左侧 / 复制右侧
+
+### 技术
+- 新增 diff (jsdiff) 依赖 + @types/diff，DiffDialog 组件独立 chunk 懒加载
+- 组件拆分：DiffDialog.tsx（主框架）+ DiffPane.tsx（单侧面板）+ useDiff hook（diff 计算 + 对齐 + 词级高亮）
+
+## [5.0.145] - 2026-07-19
+
+### 新增
+- 二维码生成：右键菜单「生成二维码」，支持 URL/文本（≤300字）生成 QR Canvas，可复制图片或保存 PNG
+- HTML 转纯文本：右键菜单「粘贴并变换 → 剥离 HTML 标签」，使用 DOMParser 安全去除标签保留文本
+- EditDialog 变换工具栏新增「去标签」按钮（仅 HTML 内容时显示）
+
+### 技术
+- 新增 qrcode 依赖 + @types/qrcode，QRCodeDialog 组件独立 chunk 懒加载
+- 新增 isHtml() / stripHtml() 工具函数（lib/utils.ts），DOMParser 解析 + 正则回退
+
+## [5.0.144] - 2026-07-19
+
+### 新增
+- Markdown 实时预览：检测到 MD 内容时，EditDialog 顶部出现「编辑 | 预览」切换按钮，默认进入预览模式
+- Markdown 渲染支持 GFM（标题/列表/代码块/表格/引用/任务列表/图片），代码块自动语法高亮（highlight.js）
+- 预览模式底部新增「复制为 HTML」「复制为纯文本」快捷操作
+- 卡片 hover 弹窗支持 Markdown 渲染预览（compact 模式，限高 120px）
+- 卡片副标题新增蓝色「MD」徽标标识 Markdown 内容
+- 右键菜单新增「Markdown 预览」入口（仅 MD 内容显示）
+- 新增 isMarkdown() 检测函数（11 条语法规则，命中 2 条以上判定为 MD）
+
+### 技术
+- 新增 marked + dompurify 依赖，MarkdownRenderer 组件独立 chunk 懒加载（~72KB）
+- DOMPurify 防 XSS，marked 输出 HTML 先过 sanitize 再渲染
+
 ## [5.0.143] - 2026-07-19
 
 ### 新增

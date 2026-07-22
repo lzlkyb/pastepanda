@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>DiffDialog 设计稿 — 方案C</title>
+<style>
+:root {
+  --app-bg: #F4F6F9;
+  --dialog-bg: #fff;
+  --border-color: #E0E4EB;
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --hover: #E8ECF2;
+  --section-bg: #F0F4F8;
+  --danger: #DC2626;
+  --green: #16A34A;
+  --green-bg: #DCFCE7;
+  --red-bg: #FEF2F2;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, 'Segoe UI', sans-serif; background: var(--app-bg); display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+
+/* Backdrop */
+.backdrop {
+  position: relative;
+  width: 900px;
+  max-width: 95vw;
+}
+
+/* Dialog */
+.dialog-box {
+  background: var(--dialog-bg);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04);
+  width: 100%;
+  max-height: 85vh;
+  overflow: hidden;
+}
+
+/* Header */
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 48px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.dialog-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dialog-title .icon { font-size: 16px; }
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dialog-close {
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; border: none; background: transparent;
+  color: var(--text-secondary);
+  font-size: 16px;
+}
+.dialog-close:hover { background: var(--hover); }
+
+/* Stats badge */
+.diff-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.stat-add { color: var(--green); background: var(--green-bg); padding: 2px 6px; border-radius: 4px; }
+.stat-del { color: var(--danger); background: var(--red-bg); padding: 2px 6px; border-radius: 4px; }
+
+/* Toolbar */
+.diff-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--section-bg);
+  flex-shrink: 0;
+}
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+/* Segmented mode toggle */
+.mode-toggle {
+  display: flex;
+  background: var(--border-color);
+  border-radius: 6px;
+  padding: 2px;
+}
+.mode-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.mode-btn.active {
+  background: #fff;
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+/* Ignore whitespace checkbox */
+.ignore-ws {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-left: 12px;
+  cursor: pointer;
+}
+.ignore-ws input { width: 13px; height: 13px; accent-color: var(--accent); }
+
+/* Navigation */
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid var(--border-color);
+  background: #fff;
+  color: var(--text-secondary);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+.nav-info {
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 50px;
+  text-align: center;
+}
+
+/* Column headers */
+.diff-col-headers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.col-header {
+  padding: 6px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.col-header:first-child { border-right: 1px solid var(--border-color); }
+.col-header .time { font-weight: 400; color: var(--text-muted); opacity: 0.7; }
+.col-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+}
+.col-dot.old { background: var(--danger); }
+.col-dot.new { background: var(--green); }
+
+/* Diff body */
+.diff-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  flex: 1;
+  overflow: hidden;
+  min-height: 320px;
+  max-height: 420px;
+}
+.diff-pane {
+  overflow-y: auto;
+  font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace;
+  font-size: 12px;
+  line-height: 20px;
+}
+.diff-pane:first-child { border-right: 1px solid var(--border-color); }
+
+/* Diff lines */
+.diff-line {
+  display: flex;
+  min-height: 20px;
+  padding: 0;
+}
+.line-no {
+  width: 36px;
+  min-width: 36px;
+  text-align: right;
+  padding-right: 8px;
+  color: var(--text-muted);
+  opacity: 0.6;
+  font-size: 11px;
+  user-select: none;
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.line-content {
+  flex: 1;
+  padding: 0 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+/* Line states */
+.diff-line.added { background: #DCFCE7; }
+.diff-line.added .line-no { background: #BBF7D0; color: #166534; opacity: 1; }
+.diff-line.removed { background: #FEE2E2; }
+.diff-line.removed .line-no { background: #FECACA; color: #991B1B; opacity: 1; }
+.diff-line.empty { background: #F8FAFC; }
+.diff-line.empty .line-content { opacity: 0.3; }
+/* Word-level highlight */
+.word-add { background: #86EFAC; border-radius: 2px; padding: 0 1px; }
+.word-del { background: #FCA5A5; border-radius: 2px; padding: 0 1px; text-decoration: line-through; }
+
+/* Current diff highlight (for jump navigation) */
+.diff-line.current-diff {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 2px;
+}
+
+/* Footer */
+.diff-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.footer-left {
+  display: flex;
+  gap: 8px;
+}
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: #fff;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.action-btn:hover { border-color: var(--accent); color: var(--accent); }
+.action-btn.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.action-btn.primary:hover { opacity: 0.9; color: #fff; }
+
+/* Annotation labels */
+.annotation {
+  position: absolute;
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 600;
+  background: var(--accent-light);
+  padding: 2px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+.ann-1 { top: 56px; right: -120px; }
+.ann-2 { top: 100px; right: -140px; }
+.ann-3 { top: 160px; right: -130px; }
+.ann-4 { bottom: 60px; right: -120px; }
+
+/* Description panel */
+.desc-panel {
+  margin-top: 24px;
+  padding: 16px 20px;
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
+.desc-panel h3 {
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+.desc-panel ul { padding-left: 18px; }
+.desc-panel li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<div style="display:flex;flex-direction:column;align-items:center;gap:0;">
+
+<!-- Dialog mockup -->
+<div class="backdrop">
+  <div class="dialog-box">
+    <!-- Header -->
+    <div class="dialog-header">
+      <div class="dialog-title">
+        <span class="icon">🔀</span> 对比差异
+        <span class="diff-stats">
+          <span class="stat-add">+3</span>
+          <span class="stat-del">-2</span>
+        </span>
+      </div>
+      <div class="header-right">
+        <button class="dialog-close">✕</button>
+      </div>
+    </div>
+
+    <!-- Toolbar: mode + navigation -->
+    <div class="diff-toolbar">
+      <div class="toolbar-left">
+        <div class="mode-toggle">
+          <button class="mode-btn active">按行</button>
+          <button class="mode-btn">按词</button>
+        </div>
+        <label class="ignore-ws">
+          <input type="checkbox" /> 忽略空白
+        </label>
+      </div>
+      <div class="toolbar-right">
+        <button class="nav-btn">▲ 上一处</button>
+        <span class="nav-info">2 / 5</span>
+        <button class="nav-btn">▼ 下一处</button>
+      </div>
+    </div>
+
+    <!-- Column headers -->
+    <div class="diff-col-headers">
+      <div class="col-header">
+        <span class="col-dot old"></span>
+        旧文本 <span class="time">· 2小时前 · VS Code</span>
+      </div>
+      <div class="col-header">
+        <span class="col-dot new"></span>
+        新文本 <span class="time">· 刚刚 · Chrome</span>
+      </div>
+    </div>
+
+    <!-- Diff body -->
+    <div class="diff-body">
+      <!-- Left pane (old) -->
+      <div class="diff-pane">
+        <div class="diff-line"><span class="line-no">1</span><span class="line-content">function calculateTotal(items) {</span></div>
+        <div class="diff-line removed"><span class="line-no">2</span><span class="line-content">  let total = 0;</span></div>
+        <div class="diff-line removed"><span class="line-no">3</span><span class="line-content">  for (let i = 0; i < items.length; i++) {</span></div>
+        <div class="diff-line empty"><span class="line-no"></span><span class="line-content"></span></div>
+        <div class="diff-line empty"><span class="line-no"></span><span class="line-content"></span></div>
+        <div class="diff-line"><span class="line-no">4</span><span class="line-content">    total += items[i].price;</span></div>
+        <div class="diff-line"><span class="line-no">5</span><span class="line-content">  }</span></div>
+        <div class="diff-line removed"><span class="line-no">6</span><span class="line-content">  return total;</span></div>
+        <div class="diff-line"><span class="line-no">7</span><span class="line-content">}</span></div>
+        <div class="diff-line"><span class="line-no">8</span><span class="line-content"></span></div>
+        <div class="diff-line"><span class="line-no">9</span><span class="line-content">const items = getCartItems();</span></div>
+        <div class="diff-line removed"><span class="line-no">10</span><span class="line-content">console.log(calculateTotal(items));</span></div>
+        <div class="diff-line"><span class="line-no">11</span><span class="line-content"></span></div>
+        <div class="diff-line"><span class="line-no">12</span><span class="line-content">// End of module</span></div>
+      </div>
+      <!-- Right pane (new) -->
+      <div class="diff-pane">
+        <div class="diff-line"><span class="line-no">1</span><span class="line-content">function calculateTotal(items) {</span></div>
+        <div class="diff-line added"><span class="line-no">2</span><span class="line-content">  const total = items.reduce((sum, item) => {</span></div>
+        <div class="diff-line added"><span class="line-no">3</span><span class="line-content">    return sum + item.price;</span></div>
+        <div class="diff-line added"><span class="line-no">4</span><span class="line-content">  }, 0);</span></div>
+        <div class="diff-line"><span class="line-no">5</span><span class="line-content">    total += items[i].price;</span></div>
+        <div class="diff-line"><span class="line-no">6</span><span class="line-content">  }</span></div>
+        <div class="diff-line added"><span class="line-no">7</span><span class="line-content">  return `$${total.toFixed(2)}`;</span></div>
+        <div class="diff-line"><span class="line-no">8</span><span class="line-content">}</span></div>
+        <div class="diff-line"><span class="line-no">9</span><span class="line-content"></span></div>
+        <div class="diff-line"><span class="line-no">10</span><span class="line-content">const items = getCartItems();</span></div>
+        <div class="diff-line added"><span class="line-no">11</span><span class="line-content">const result = calculateTotal(items);</span></div>
+        <div class="diff-line added"><span class="line-no">12</span><span class="line-content">console.log(`Total: ${result}`);</span></div>
+        <div class="diff-line"><span class="line-no">13</span><span class="line-content"></span></div>
+        <div class="diff-line"><span class="line-no">14</span><span class="line-content">// End of module</span></div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="diff-footer">
+      <div class="footer-left">
+        <button class="action-btn">📋 复制左侧</button>
+        <button class="action-btn">📋 复制右侧</button>
+      </div>
+      <button class="action-btn primary">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- Description -->
+<div class="desc-panel" style="width:900px;max-width:95vw;">
+  <h3>方案 C — DiffDialog 设计说明</h3>
+  <ul>
+    <li><b>触发方式</b>：Ctrl 多选恰好 2 条文本记录 → 右键菜单「对比差异」；批量工具栏也显示「对比」按钮（仅 2 条文本时可用）</li>
+    <li><b>布局</b>：全屏级 Dialog（宽 900px / 90vw），左右分栏等宽，中间 1px 分隔线</li>
+    <li><b>行号列</b>：左侧 36px 灰色行号，增/删行行号分别染绿/红</li>
+    <li><b>差异统计</b>：标题栏右侧显示 <span class="stat-add">+N</span> <span class="stat-del">-N</span> 徽标</li>
+    <li><b>模式切换</b>：工具栏 Segmented「按行 | 按词」+ 勾选「忽略空白」</li>
+    <li><b>差异跳转</b>：「▲ 上一处 / ▼ 下一处」按钮 + 当前位置指示（2/5），跳转时目标行高亮蓝色描边</li>
+    <li><b>同步滚动</b>：左右面板滚动联动，保持对齐</li>
+    <li><b>列头信息</b>：显示「旧文本 / 新文本」+ 来源 + 时间，红/绿圆点区分</li>
+    <li><b>底部操作</b>：复制左侧 / 复制右侧 / 关闭</li>
+    <li><b>依赖</b>：<code>diff</code>（jsdiff）库，~15KB gzipped，DiffDialog 独立 chunk 懒加载</li>
+    <li><b>组件拆分</b>：DiffDialog.tsx（主框架 ≤200行）+ useDiff hook（diff 计算）+ DiffPane.tsx（单侧面板渲染）</li>
+  </ul>
+</div>
+
+</div>
+</body>
+</html>

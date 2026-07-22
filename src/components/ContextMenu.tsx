@@ -1,7 +1,8 @@
 import { createContext, useState, useEffect, useCallback, useRef, useMemo, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Copy, ClipboardPaste, Pin, Trash2, ExternalLink, FileCode, Pencil, ChevronRight, Tag, FolderInput } from "lucide-react";
+import { Copy, ClipboardPaste, Pin, Trash2, ExternalLink, FileCode, Pencil, ChevronRight, Tag, FolderInput, Eye } from "lucide-react";
+import { getEnabledRules } from "@/lib/regexRules";
 import styles from "./ContextMenu.module.css";
 
 export interface MenuItem {
@@ -85,8 +86,9 @@ export function ContextMenu({ children }: { children: ReactNode }) {
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     // ★ 如果事件来自 Card 内部（已经有原生监听器通过 ctxTrigger 处理），
     //    就不再重复设置 pos，避免状态冲突导致菜单闪烁/不显示
+    //    注意：CSS Module 会哈希类名，".card" 永不命中；行包装器带 data-item-id（Low 修复）
     const target = e.target as HTMLElement;
-    if (target.closest?.(".card")) {
+    if (target.closest?.("[data-item-id]")) {
       return;
     }
     e.preventDefault();
@@ -305,6 +307,7 @@ function buildTransformMenu(onTransform: (t: string) => void, itemType?: string,
       { icon: <span className={`${styles.ctxTextIcon} ${styles.ctxTextScissor}`}>✂</span>, label: "粘贴并去空白", onClick: () => onTransform("strip") },
       { icon: <span className={`${styles.ctxTextIcon} ${styles.ctxTextPara}`}>¶</span>, label: "粘贴并去空行", onClick: () => onTransform("strip_lines") },
       { icon: <span className={`${styles.ctxTextIcon} ${styles.ctxTextQuote}`}>"</span>, label: "粘贴为引号包裹", onClick: () => onTransform("quote") },
+      { icon: <span style={{ fontSize: 12 }}>🏷</span>, label: "剥离 HTML 标签", onClick: () => onTransform("strip_html") },
     );
 
     // 子类型专属变换
@@ -371,9 +374,15 @@ export function createCardMenuItems(opts: {
   onPasteTransform?: (transform: string) => void;
   onConfirmAutoTags?: () => void;
   onRemoveAutoTags?: () => void;
+  onMarkdownPreview?: () => void;
+  onQrCode?: () => void;
   pinned?: boolean;
   hasUrl?: boolean;
   hasAutoTags?: boolean;
+  isMarkdown?: boolean;
+  canQrCode?: boolean;
+  onRegexPreview?: (ruleId: string) => void;
+  onManageRegexRules?: () => void;
   /** item 基础类型 + 子类型，用于按类型生成不同变换菜单 */
   itemType?: string;
   itemSubType?: string;
@@ -385,6 +394,11 @@ export function createCardMenuItems(opts: {
     items.push({ icon: <Pencil size={14} />, label: "编辑内容", onClick: opts.onEdit });
   }
 
+  // Markdown 预览入口（仅 MD 内容显示）
+  if (opts.isMarkdown && opts.onMarkdownPreview) {
+    items.push({ icon: <Eye size={14} />, label: "Markdown 预览", onClick: opts.onMarkdownPreview });
+  }
+
   items.push(
     { icon: <Copy size={14} />, label: "复制到剪贴板", onClick: opts.onCopy },
     { icon: <ClipboardPaste size={14} />, label: "粘贴到前台", onClick: opts.onPaste },
@@ -393,6 +407,25 @@ export function createCardMenuItems(opts: {
   // 粘贴变换折叠为子菜单（按类型定制）
   if (opts.onPasteTransform) {
     const transformChildren: MenuItem[] = buildTransformMenu(opts.onPasteTransform, opts.itemType, opts.itemSubType);
+
+    // 正则替换分组
+    if (opts.onRegexPreview && opts.itemType === "text") {
+      const enabledRules = getEnabledRules();
+      if (enabledRules.length > 0) {
+        transformChildren.push({ icon: <span style={{ fontSize: 12 }}>─</span>, label: "正则替换", onClick: undefined, separator: true });
+        for (const rule of enabledRules) {
+          transformChildren.push({
+            icon: <span style={{ fontSize: 12 }}>{rule.preset ? "🔤" : "🏷"}</span>,
+            label: rule.name,
+            onClick: () => opts.onRegexPreview!(rule.id),
+          });
+        }
+      }
+      if (opts.onManageRegexRules) {
+        transformChildren.push({ icon: <span style={{ fontSize: 12 }}>⚙</span>, label: "管理正则规则…", onClick: opts.onManageRegexRules });
+      }
+    }
+
     if (transformChildren.length > 0) {
       items.push({
         icon: <ClipboardPaste size={14} />,
@@ -404,6 +437,11 @@ export function createCardMenuItems(opts: {
 
   if (opts.hasUrl && opts.onOpenUrl) {
     items.push({ icon: <ExternalLink size={14} />, label: "在浏览器中打开", onClick: opts.onOpenUrl });
+  }
+
+  // 二维码生成（URL 或短文本）
+  if (opts.canQrCode && opts.onQrCode) {
+    items.push({ icon: <span style={{ fontSize: 14 }}>📱</span>, label: "生成二维码", onClick: opts.onQrCode });
   }
 
   // ★ 编辑标签 ★

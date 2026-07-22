@@ -1,0 +1,220 @@
+/* RegexRulesDialog.module.css */
+
+.rulesDialog {
+  width: min(560px, 92vw);
+  max-height: 80vh;
+}
+
+.rulesBody {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.ruleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  margin-bottom: 8px;
+  background: var(--card-bg, #fff);
+  transition: border-color 0.15s;
+}
+.ruleRow:hover {
+  border-color: var(--accent);
+}
+
+/* Toggle */
+.toggle {
+  width: 32px;
+  height: 18px;
+  border-radius: 9px;
+  background: #D1D5DB;
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+  border: none;
+  transition: background 0.15s;
+}
+.toggleOn {
+  background: var(--accent);
+}
+.toggle::after {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.15s;
+}
+.toggleOn::after {
+  transform: translateX(14px);
+}
+
+/* Rule info */
+.ruleInfo {
+  flex: 1;
+  min-width: 0;
+}
+.ruleName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.rulePattern {
+  font-size: 11px;
+  font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Badge */
+.badge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.badgePreset {
+  background: var(--accent-light, #E0F2FE);
+  color: var(--accent);
+}
+.badgeCustom {
+  background: var(--orange-bg, #FFF7ED);
+  color: var(--orange, #EA580C);
+}
+
+/* Actions */
+.ruleActions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.actionBtn {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.actionBtn:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+.actionBtnDel:hover {
+  color: var(--danger, #DC2626);
+}
+
+/* Add button */
+.addBtn {
+  width: 100%;
+  padding: 10px;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  margin-top: 4px;
+  transition: all 0.15s;
+}
+.addBtn:hover {
+  border-color: var(--accent);
+  background: var(--accent-light, #E0F2FE);
+}
+
+/* Edit form */
+.editForm {
+  padding: 12px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: var(--accent-light, #E0F2FE);
+}
+.editRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.editRow:last-child {
+  margin-bottom: 0;
+}
+.editLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  width: 36px;
+  flex-shrink: 0;
+}
+.editInput {
+  flex: 1;
+  padding: 5px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace;
+  color: var(--text-primary);
+  background: var(--card-bg, #fff);
+  min-width: 0;
+}
+.editInput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.editInputError {
+  border-color: var(--danger, #DC2626);
+}
+.editBtns {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.editBtn {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg, #fff);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.editBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.editBtnSave {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.editBtnSave:hover {
+  opacity: 0.9;
+  color: #fff;
+}
+.editError {
+  font-size: 10px;
+  color: var(--danger, #DC2626);
+  margin-top: 4px;
+}

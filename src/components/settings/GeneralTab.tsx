@@ -378,7 +378,7 @@ export function GeneralTab({
           <div className={`${styles.sRowLabel}`}>唤出窗口</div>
           <div className={`${styles.sRowDesc}`}>全局快捷键，在任何位置唤出</div>
         </div>
-        <HotkeyRecorder value={config.hotkey} onChange={async (v) => {
+        <HotkeyRecorder value={config.hotkey} taken={[config.sequential_hotkey || "ctrl+q", config.stack_toggle_hotkey || "ctrl+shift+k", config.stack_paste_hotkey || "ctrl+shift+p"]} onChange={async (v) => {
           const oldVal = config.hotkey;
           await updateAndSave({ hotkey: v });
           try {
@@ -399,7 +399,7 @@ export function GeneralTab({
           <div className={`${styles.sRowLabel}`}>依次粘贴</div>
           <div className={`${styles.sRowDesc}`}>按顺序逐条粘贴剪贴板</div>
         </div>
-        <HotkeyRecorder value={config.sequential_hotkey || "ctrl+q"} onChange={async (v) => {
+        <HotkeyRecorder value={config.sequential_hotkey || "ctrl+q"} taken={[config.hotkey, config.stack_toggle_hotkey || "ctrl+shift+k", config.stack_paste_hotkey || "ctrl+shift+p"]} onChange={async (v) => {
           const oldVal = config.sequential_hotkey || "ctrl+q";
           await updateAndSave({ sequential_hotkey: v });
           try {
@@ -408,6 +408,48 @@ export function GeneralTab({
             toast("快捷键已更新", "success");
           } catch (e) {
             await updateAndSave({ sequential_hotkey: oldVal });
+            const msg = e instanceof Error ? e.message : String(e);
+            logger.warn("热键设置失败", e);
+            toast(`快捷键设置失败：${msg}，已恢复原值`, "error");
+          }
+        }} />
+      </div>
+      <div className={styles.sRow}>
+        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #F97316, #EA580C)" }}>📚</span>
+        <div className={`${styles.sRowBody}`}>
+          <div className={`${styles.sRowLabel}`}>栈模式开关</div>
+          <div className={`${styles.sRowDesc}`}>进入/退出剪贴板栈收集模式</div>
+        </div>
+        <HotkeyRecorder value={config.stack_toggle_hotkey || "ctrl+shift+k"} taken={[config.hotkey, config.sequential_hotkey || "ctrl+q", config.stack_paste_hotkey || "ctrl+shift+p"]} onChange={async (v) => {
+          const oldVal = config.stack_toggle_hotkey || "ctrl+shift+k";
+          await updateAndSave({ stack_toggle_hotkey: v });
+          try {
+            const { invoke } = await import("@tauri-apps/api/core");
+            await invoke("reregister_hotkeys");
+            toast("快捷键已更新", "success");
+          } catch (e) {
+            await updateAndSave({ stack_toggle_hotkey: oldVal });
+            const msg = e instanceof Error ? e.message : String(e);
+            logger.warn("热键设置失败", e);
+            toast(`快捷键设置失败：${msg}，已恢复原值`, "error");
+          }
+        }} />
+      </div>
+      <div className={styles.sRow}>
+        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #FB923C, #F97316)" }}>📤</span>
+        <div className={`${styles.sRowBody}`}>
+          <div className={`${styles.sRowLabel}`}>栈顶粘贴</div>
+          <div className={`${styles.sRowDesc}`}>粘贴栈顶内容并出栈</div>
+        </div>
+        <HotkeyRecorder value={config.stack_paste_hotkey || "ctrl+shift+p"} taken={[config.hotkey, config.sequential_hotkey || "ctrl+q", config.stack_toggle_hotkey || "ctrl+shift+k"]} onChange={async (v) => {
+          const oldVal = config.stack_paste_hotkey || "ctrl+shift+p";
+          await updateAndSave({ stack_paste_hotkey: v });
+          try {
+            const { invoke } = await import("@tauri-apps/api/core");
+            await invoke("reregister_hotkeys");
+            toast("快捷键已更新", "success");
+          } catch (e) {
+            await updateAndSave({ stack_paste_hotkey: oldVal });
             const msg = e instanceof Error ? e.message : String(e);
             logger.warn("热键设置失败", e);
             toast(`快捷键设置失败：${msg}，已恢复原值`, "error");

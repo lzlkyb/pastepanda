@@ -12,22 +12,23 @@ type ExtractType = "url" | "email" | "phone" | "ip" | "code";
 const EXTRACT_CONFIGS: { key: ExtractType; label: string; Icon: LucideIcon; regex: RegExp }[] = [
   { key: "url",   label: "链接",  Icon: Link2,  regex: /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g },
   { key: "email", label: "邮箱",  Icon: AtSign, regex: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g },
-  { key: "phone", label: "电话",  Icon: Phone,  regex: /(?:\+?86)?1[3-9]\d{9}/g },
-  { key: "ip",    label: "IP",    Icon: Hash,   regex: /\b(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?\b/g },
+  { key: "phone", label: "电话",  Icon: Phone,  regex: /(?<!\d)(?:\+?86)?1[3-9]\d{9}(?!\d)/g },
+  { key: "ip",    label: "IP",    Icon: Hash,   regex: /(?<![\d.])\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?::\d{1,5})?\b(?!\.\d)/g },
   { key: "code",  label: "代码块", Icon: Code2, regex: /```[\s\S]*?```/g },
 ];
 
-// 各类型数量统计
-const useTypeCounts = (history: any[], ws: string) => {
-  const allText = history
-    .filter((h) => h.workspace === ws && h.type === "text")
-    .map((h) => h.text)
-    .join("\n");
-  return EXTRACT_CONFIGS.map((cfg) => ({
-    ...cfg,
-    count: new Set((allText.match(cfg.regex) || []).map((m) => m.trim()).filter(Boolean)).size,
-  }));
-};
+// 各类型数量统计（memo：避免每次渲染对全量历史跑 5 个正则 — M23）
+const useTypeCounts = (history: any[], ws: string) =>
+  useMemo(() => {
+    const allText = history
+      .filter((h) => h.workspace === ws && h.type === "text")
+      .map((h) => h.text)
+      .join("\n");
+    return EXTRACT_CONFIGS.map((cfg) => ({
+      ...cfg,
+      count: new Set((allText.match(cfg.regex) || []).map((m) => m.trim()).filter(Boolean)).size,
+    }));
+  }, [history, ws]);
 
 export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const history = useAppStore((s) => s.history);

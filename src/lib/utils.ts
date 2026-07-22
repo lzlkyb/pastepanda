@@ -74,6 +74,45 @@ export function detectTextType(text: string): string {
   return "text";
 }
 
+/** 检测文本是否为 Markdown 内容（命中 2 条以上语法规则判定为 MD） */
+export function isMarkdown(text: string): boolean {
+  if (!text || text.length < 10) return false;
+  const t = text.trim();
+  let score = 0;
+  if (/^#{1,6}\s+\S/m.test(t)) score++;            // ATX 标题
+  if (/\*\*[^*]+\*\*|__[^_]+__/.test(t)) score++;   // 粗体
+  if (/^[\s]*[-*+]\s+\S/m.test(t)) score++;         // 无序列表
+  if (/^[\s]*\d+\.\s+\S/m.test(t)) score++;         // 有序列表
+  if (/^```/m.test(t)) score++;                      // 围栏代码块
+  if (/\[[^\]]*\]\([^)]*\)/.test(t)) score++;        // 链接
+  if (/!\[[^\]]*\]\([^)]*\)/.test(t)) score++;       // 图片
+  if (/^>\s+/m.test(t)) score++;                     // 引用
+  if (/^\|.+\|$/m.test(t) && /^[\s|:-]+$/m.test(t)) score++; // 表格
+  if (/^(---|\*\*\*|___)\s*$/m.test(t)) score++;     // 分隔线
+  if (/`[^`\n]+`/.test(t)) score++;                  // 行内代码
+  return score >= 2;
+}
+
+/** 检测文本是否包含 HTML 标签 */
+export function isHtml(text: string): boolean {
+  if (!text || text.length < 5) return false;
+  const t = text.trim();
+  // 以常见 HTML 标签开头，且包含闭合标签
+  return /^<(?:!DOCTYPE|html|div|p|span|table|ul|ol|h[1-6]|a|img|br|hr|section|article|header|footer|nav|main|pre|code|blockquote|form|input|button|select|textarea|label|svg)\b/i.test(t)
+    && /<\/[a-zA-Z]+>|\/>$/.test(t);
+}
+
+/** 剥离 HTML 标签，返回纯文本 */
+export function stripHtml(text: string): string {
+  try {
+    const doc = new DOMParser().parseFromString(text, "text/html");
+    return (doc.body.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
+  } catch {
+    // 兜底：正则剥离
+    return text.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').trim();
+  }
+}
+
 /** 类型图标配置 — SVG 路径数据 */
 export const TYPE_ICONS: Record<string, { svgPath: string; color: string }> = {
   text:    { svgPath: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01", color: "#9E9E9E" },

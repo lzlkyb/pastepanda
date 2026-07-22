@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
 
-const STORAGE_KEY = "pasteship_shown_tips";
+const STORAGE_KEY = "pastepanda_shown_tips";
 
 beforeEach(() => {
   localStorage.clear();

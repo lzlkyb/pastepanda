@@ -64,7 +64,9 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
       toast("配对密钥已更新", "success");
     } catch (e) {
       logger.warn("设置配对密钥失败", e);
-      toast("设置配对密钥失败", "error");
+      // 展示后端的具体拒绝原因（如密钥强度不足 — 修复 M14 后由后端校验返回）
+      const reason = typeof e === "string" && e ? e : e instanceof Error ? e.message : "";
+      toast(reason ? `设置配对密钥失败: ${reason}` : "设置配对密钥失败", "error");
     } finally { setPairingBusy(false); }
   };
 

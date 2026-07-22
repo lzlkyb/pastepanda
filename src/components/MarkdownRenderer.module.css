@@ -1,0 +1,101 @@
+/* MarkdownRenderer.module.css — GitHub 风格 Markdown 排版 */
+
+.md {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* ===== 标题 ===== */
+.md h1 { font-size: 20px; font-weight: 700; margin: 0 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border-color); }
+.md h2 { font-size: 16px; font-weight: 700; margin: 16px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border-color); }
+.md h3 { font-size: 14px; font-weight: 600; margin: 12px 0 4px; }
+.md h4 { font-size: 13px; font-weight: 600; margin: 10px 0 4px; }
+.md h5, .md h6 { font-size: 12px; font-weight: 600; margin: 8px 0 4px; color: var(--text-secondary); }
+
+/* ===== 段落 / 文本 ===== */
+.md p { margin: 6px 0; }
+.md strong { font-weight: 700; }
+.md em { font-style: italic; }
+.md del { text-decoration: line-through; color: var(--text-muted); }
+.md a { color: var(--accent); text-decoration: none; }
+.md a:hover { text-decoration: underline; }
+
+/* ===== 列表 ===== */
+.md ul, .md ol { padding-left: 20px; margin: 6px 0; }
+.md li { margin: 2px 0; }
+.md li > ul, .md li > ol { margin: 2px 0; }
+/* 任务列表 */
+.md li:has(> input[type="checkbox"]) { list-style: none; margin-left: -16px; }
+.md input[type="checkbox"] { margin-right: 6px; accent-color: var(--accent); }
+
+/* ===== 行内代码 ===== */
+.md code {
+  font-family: 'SF Mono', Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  background: var(--section-bg);
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: #E11D48;
+  border: 1px solid var(--border-color);
+}
+
+/* ===== 代码块 ===== */
+.md pre {
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 8px 0;
+  overflow-x: auto;
+}
+.md pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* ===== 引用 ===== */
+.md blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 4px 12px;
+  margin: 8px 0;
+  background: var(--accent-light);
+  border-radius: 0 6px 6px 0;
+  color: var(--text-secondary);
+}
+.md blockquote p { margin: 2px 0; }
+
+/* ===== 表格 ===== */
+.md table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12px; }
+.md th { background: var(--section-bg); font-weight: 600; text-align: left; padding: 6px 10px; border: 1px solid var(--border-color); }
+.md td { padding: 6px 10px; border: 1px solid var(--border-color); }
+.md tr:nth-child(even) td { background: var(--section-bg); }
+
+/* ===== 分隔线 ===== */
+.md hr { border: none; border-top: 1px solid var(--border-color); margin: 12px 0; }
+
+/* ===== 图片 ===== */
+.md img { max-width: 100%; border-radius: 8px; margin: 4px 0; }
+
+/* ===== compact 模式（hover 弹窗用） ===== */
+.compact {
+  font-size: 12px;
+  line-height: 1.6;
+  max-height: 120px;
+  overflow: hidden;
+}
+.compact h1 { font-size: 15px; margin: 0 0 4px; padding-bottom: 3px; }
+.compact h2 { font-size: 13px; margin: 8px 0 3px; }
+.compact h3 { font-size: 12px; margin: 6px 0 2px; }
+.compact p { margin: 3px 0; }
+.compact pre { padding: 8px 10px; margin: 4px 0; }
+.compact pre code { font-size: 11px; }
+.compact blockquote { padding: 3px 10px; margin: 4px 0; }
+.compact table { font-size: 11px; }
+.compact th, .compact td { padding: 4px 8px; }

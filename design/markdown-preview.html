@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Markdown 实时预览 — UI 设计稿</title>
+<style>
+  :root {
+    --app-bg: #F4F6F9;
+    --card-bg: #fff;
+    --card-border: #E0E4EB;
+    --text-primary: #0F172A;
+    --text-secondary: #64748B;
+    --text-muted: #7888A0;
+    --border-color: #E0E4EB;
+    --accent: #0284C7;
+    --accent-light: #E0F2FE;
+    --dialog-bg: #fff;
+    --section-bg: #F0F4F8;
+    --hover: #E8ECF2;
+    --seg-bg: #E8E8ED;
+    --seg-active-bg: #fff;
+    --input-bg: #F1F5F9;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #E8ECF2; padding: 32px; color: var(--text-primary); }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+  .subtitle { font-size: 13px; color: var(--text-secondary); margin-bottom: 32px; }
+  .section-title { font-size: 15px; font-weight: 700; margin: 32px 0 16px; color: var(--text-primary); display: flex; align-items: center; gap: 8px; }
+  .section-title .num { background: var(--accent); color: #fff; width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+  .row { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+  .label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+
+  /* ===== Dialog 通用 ===== */
+  .dialog-box {
+    background: var(--dialog-bg);
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04);
+    width: 440px;
+    max-height: 520px;
+    overflow: hidden;
+  }
+  .dialog-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px; height: 48px; flex-shrink: 0;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .dialog-title { font-size: 15px; font-weight: 600; }
+  .dialog-close {
+    width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; border: none; background: transparent; color: var(--text-secondary); font-size: 14px;
+  }
+  .dialog-body {
+    flex: 1; overflow-y: auto; padding: 14px 20px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .dialog-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px; height: 48px; flex-shrink: 0;
+    border-top: 1px solid var(--border-color); font-size: 10px; color: var(--text-muted);
+  }
+  .footer-btns { display: flex; gap: 4px; align-items: center; }
+  .footer-btn {
+    display: flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 6px;
+    border: 1px solid var(--border-color); background: var(--card-bg);
+    color: var(--text-secondary); font-size: 11px; font-weight: 600; cursor: pointer;
+  }
+  .btn-primary {
+    padding: 5px 14px; border-radius: 6px; border: none;
+    background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+
+  /* ===== 元信息条 ===== */
+  .code-meta-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 10px; border-radius: 8px;
+    background: var(--section-bg); border: 1px solid var(--border-color);
+  }
+  .code-meta-left { display: flex; gap: 12px; align-items: center; }
+  .code-meta-item { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted); }
+  .code-meta-label { font-weight: 500; }
+  .code-meta-val { font-weight: 700; color: var(--text-primary); }
+  .code-type-badge {
+    font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px;
+    background: var(--accent-light); color: var(--accent);
+  }
+
+  /* ===== 编辑/预览 切换 ===== */
+  .mode-toggle {
+    display: flex; align-items: center; gap: 2px;
+    background: var(--seg-bg); border-radius: 8px; padding: 2px;
+  }
+  .mode-btn {
+    padding: 4px 12px; border-radius: 6px; border: none;
+    font-size: 11px; font-weight: 600; cursor: pointer;
+    background: transparent; color: var(--text-muted);
+    transition: all 0.2s;
+  }
+  .mode-btn.active {
+    background: var(--seg-active-bg); color: var(--text-primary);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+
+  /* ===== 编辑区 ===== */
+  .edit-code-area {
+    display: flex; flex: 1; min-height: 180px; border-radius: 10px;
+    border: 1px solid var(--border-color); background: var(--card-bg); overflow: hidden;
+  }
+  .code-lines {
+    display: flex; flex-direction: column; padding: 10px 0; min-width: 36px;
+    text-align: right; user-select: none; background: var(--section-bg);
+    border-right: 1px solid var(--border-color);
+  }
+  .code-ln { padding: 0 10px; font-family: 'SF Mono', Consolas, monospace; font-size: 12px; line-height: 1.7; color: var(--text-muted); }
+  .code-content {
+    flex: 1; padding: 10px 14px; font-family: 'SF Mono', Consolas, monospace;
+    font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-break: break-all;
+    color: var(--text-primary); overflow: auto;
+  }
+
+  /* ===== Markdown 预览区 ===== */
+  .md-preview {
+    flex: 1; min-height: 180px; border-radius: 10px;
+    border: 1px solid var(--border-color); background: var(--card-bg);
+    padding: 16px 20px; overflow-y: auto;
+  }
+  .md-preview h1 { font-size: 20px; font-weight: 700; margin: 0 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border-color); }
+  .md-preview h2 { font-size: 16px; font-weight: 700; margin: 16px 0 6px; }
+  .md-preview h3 { font-size: 14px; font-weight: 600; margin: 12px 0 4px; }
+  .md-preview p { font-size: 13px; line-height: 1.7; margin: 6px 0; color: var(--text-primary); }
+  .md-preview ul, .md-preview ol { padding-left: 20px; margin: 6px 0; }
+  .md-preview li { font-size: 13px; line-height: 1.7; margin: 2px 0; }
+  .md-preview code {
+    font-family: 'SF Mono', Consolas, monospace; font-size: 12px;
+    background: var(--section-bg); padding: 1px 5px; border-radius: 4px;
+    color: #E11D48; border: 1px solid var(--border-color);
+  }
+  .md-preview pre {
+    background: var(--section-bg); border: 1px solid var(--border-color);
+    border-radius: 8px; padding: 12px 14px; margin: 8px 0; overflow-x: auto;
+  }
+  .md-preview pre code {
+    background: none; border: none; padding: 0; color: var(--text-primary);
+    font-size: 12px; line-height: 1.6;
+  }
+  .md-preview blockquote {
+    border-left: 3px solid var(--accent); padding: 4px 12px; margin: 8px 0;
+    background: var(--accent-light); border-radius: 0 6px 6px 0;
+    color: var(--text-secondary); font-size: 13px;
+  }
+  .md-preview table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12px; }
+  .md-preview th { background: var(--section-bg); font-weight: 600; text-align: left; padding: 6px 10px; border: 1px solid var(--border-color); }
+  .md-preview td { padding: 6px 10px; border: 1px solid var(--border-color); }
+  .md-preview a { color: var(--accent); text-decoration: none; }
+  .md-preview a:hover { text-decoration: underline; }
+  .md-preview hr { border: none; border-top: 1px solid var(--border-color); margin: 12px 0; }
+  .md-preview strong { font-weight: 700; }
+  .md-preview img { max-width: 100%; border-radius: 8px; }
+
+  /* ===== 工具栏 ===== */
+  .edit-toolbar { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .tool-btn {
+    display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px;
+    border: 1px solid var(--border-color); background: var(--card-bg);
+    color: var(--text-secondary); font-size: 11px; font-weight: 600; cursor: pointer;
+  }
+  .tool-sep { width: 1px; height: 16px; background: var(--border-color); margin: 0 4px; }
+
+  /* ===== 预览操作栏 ===== */
+  .preview-actions {
+    display: flex; align-items: center; gap: 4px;
+  }
+  .preview-action-btn {
+    display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 6px;
+    border: 1px solid var(--border-color); background: var(--card-bg);
+    color: var(--text-secondary); font-size: 11px; font-weight: 600; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .preview-action-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ===== 卡片 ===== */
+  .card-demo {
+    width: 380px; border-radius: 12px; border: 1px solid var(--card-border);
+    background: var(--card-bg); padding: 10px 14px;
+    display: flex; align-items: center; gap: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    position: relative;
+  }
+  .card-icon {
+    width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    background: #E0F2FE; flex-shrink: 0; font-size: 16px;
+  }
+  .card-body { flex: 1; min-width: 0; }
+  .card-title { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; display: flex; align-items: center; gap: 6px; }
+  .card-time { font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
+  .md-badge {
+    font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px;
+    background: var(--accent-light); color: var(--accent); letter-spacing: 0.03em;
+  }
+
+  /* ===== Hover Popover ===== */
+  .popover {
+    position: absolute; top: -8px; left: 50%; transform: translate(-50%, -100%);
+    width: 340px; border-radius: 12px;
+    background: rgba(255,255,255,0.92); backdrop-filter: blur(16px);
+    border: 1px solid rgba(0,0,0,0.06);
+    box-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+    padding: 12px 14px; z-index: 10;
+  }
+  .popover-md { font-size: 12px; line-height: 1.6; max-height: 120px; overflow: hidden; }
+  .popover-md h1 { font-size: 15px; font-weight: 700; margin: 0 0 4px; }
+  .popover-md h2 { font-size: 13px; font-weight: 700; margin: 8px 0 3px; }
+  .popover-md p { margin: 3px 0; font-size: 12px; }
+  .popover-md ul { padding-left: 16px; margin: 3px 0; }
+  .popover-md li { font-size: 12px; margin: 1px 0; }
+  .popover-md code { font-family: 'SF Mono', Consolas, monospace; font-size: 11px; background: var(--section-bg); padding: 0 4px; border-radius: 3px; color: #E11D48; }
+  .popover-md pre { background: var(--section-bg); border-radius: 6px; padding: 8px 10px; margin: 4px 0; }
+  .popover-md pre code { background: none; color: var(--text-primary); padding: 0; }
+  .popover-actions {
+    display: flex; gap: 4px; margin-top: 8px; padding-top: 8px;
+    border-top: 1px solid var(--border-color);
+  }
+  .popover-btn {
+    flex: 1; padding: 5px 0; border-radius: 6px; border: 1px solid var(--border-color);
+    background: var(--card-bg); color: var(--text-secondary); font-size: 11px;
+    font-weight: 600; cursor: pointer; text-align: center;
+  }
+  .popover-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ===== 右键菜单 ===== */
+  .ctx-menu {
+    width: 200px; border-radius: 10px; background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(16px); border: 1px solid rgba(0,0,0,0.06);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.1); padding: 4px; overflow: hidden;
+  }
+  .ctx-item {
+    display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+    border-radius: 6px; font-size: 12px; color: var(--text-primary);
+    cursor: pointer; border: none; background: none; width: 100%; text-align: left;
+  }
+  .ctx-item:hover { background: var(--hover); }
+  .ctx-item .icon { width: 16px; text-align: center; font-size: 13px; flex-shrink: 0; }
+  .ctx-item.highlight { background: var(--accent-light); color: var(--accent); font-weight: 600; }
+  .ctx-sep { height: 1px; background: var(--border-color); margin: 4px 8px; }
+  .ctx-item.danger { color: #DC2626; }
+
+  .note { font-size: 11px; color: var(--text-muted); margin-top: 8px; line-height: 1.5; padding: 8px 12px; background: var(--section-bg); border-radius: 8px; }
+</style>
+</head>
+<body>
+
+<h1>Markdown 实时预览 — UI 设计稿</h1>
+<p class="subtitle">方案 A：EditDialog 内嵌预览切换 + Hover 弹窗 MD 渲染 + 右键菜单入口</p>
+
+<!-- ==================== 1. EditDialog 预览模式 ==================== -->
+<div class="section-title"><span class="num">1</span> EditDialog — 预览模式（检测到 Markdown 时显示切换按钮）</div>
+<div class="row">
+  <div>
+    <div class="label">预览模式（默认）</div>
+    <div class="dialog-box">
+      <div class="dialog-header">
+        <h2 class="dialog-title">✏️ 编辑记录</h2>
+        <button class="dialog-close">✕</button>
+      </div>
+      <div class="dialog-body">
+        <!-- 元信息条 + 切换 -->
+        <div class="code-meta-bar">
+          <div class="code-meta-left">
+            <div class="code-meta-item"><span class="code-meta-label">行</span><span class="code-meta-val">18</span></div>
+            <div class="code-meta-item"><span class="code-meta-label">字符</span><span class="code-meta-val">426</span></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div class="code-type-badge">📝 Markdown</div>
+            <div class="mode-toggle">
+              <button class="mode-btn">编辑</button>
+              <button class="mode-btn active">预览</button>
+            </div>
+          </div>
+        </div>
+        <!-- Markdown 渲染预览 -->
+        <div class="md-preview">
+          <h1>PastePanda 功能规划</h1>
+          <h2>一、智能化方向</h2>
+          <p>AI 智能分类：剪贴板内容自动识别类型并打标签，无需手动整理。</p>
+          <ul>
+            <li><strong>代码</strong> — 编程语言特征（关键字/语法结构）</li>
+            <li><strong>链接</strong> — URL 正则匹配</li>
+            <li><strong>JSON</strong> — 合法 JSON 格式验证</li>
+          </ul>
+          <blockquote>推荐方案 A：纯本地规则引擎，零网络依赖、零成本。</blockquote>
+          <pre><code>fn classify(text: &str) -> ContentType {
+    if is_url(text) { return ContentType::Link; }
+    // ...
+}</code></pre>
+          <table>
+            <tr><th>批次</th><th>功能</th><th>状态</th></tr>
+            <tr><td>P0</td><td>分组+标签</td><td>✅ 已完成</td></tr>
+            <tr><td>P1</td><td>剪贴板栈</td><td>❌ 未实现</td></tr>
+          </table>
+        </div>
+        <!-- 预览操作栏 -->
+        <div class="preview-actions">
+          <button class="preview-action-btn">📋 复制为 HTML</button>
+          <button class="preview-action-btn">📄 复制为纯文本</button>
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <span>Ctrl+Enter 保存 · Esc 取消</span>
+        <div class="footer-btns">
+          <button class="footer-btn">📋 复制</button>
+          <button class="footer-btn">📌 粘贴</button>
+          <button class="footer-btn">🔖 存片段</button>
+          <button class="btn-primary">💾 保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="label">编辑模式（点击"编辑"切换回）</div>
+    <div class="dialog-box">
+      <div class="dialog-header">
+        <h2 class="dialog-title">✏️ 编辑记录</h2>
+        <button class="dialog-close">✕</button>
+      </div>
+      <div class="dialog-body">
+        <div class="code-meta-bar">
+          <div class="code-meta-left">
+            <div class="code-meta-item"><span class="code-meta-label">行</span><span class="code-meta-val">18</span></div>
+            <div class="code-meta-item"><span class="code-meta-label">字符</span><span class="code-meta-val">426</span></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div class="code-type-badge">📝 Markdown</div>
+            <div class="mode-toggle">
+              <button class="mode-btn active">编辑</button>
+              <button class="mode-btn">预览</button>
+            </div>
+          </div>
+        </div>
+        <div class="edit-code-area">
+          <div class="code-lines">
+            <span class="code-ln">1</span><span class="code-ln">2</span><span class="code-ln">3</span>
+            <span class="code-ln">4</span><span class="code-ln">5</span><span class="code-ln">6</span>
+            <span class="code-ln">7</span><span class="code-ln">8</span><span class="code-ln">9</span>
+            <span class="code-ln">10</span><span class="code-ln">11</span>
+          </div>
+          <div class="code-content"># PastePanda 功能规划
+
+## 一、智能化方向
+
+AI 智能分类：剪贴板内容自动识别类型并打标签。
+
+- **代码** — 编程语言特征
+- **链接** — URL 正则匹配
+- **JSON** — 合法 JSON 格式
+
+> 推荐方案 A：纯本地规则引擎</div>
+        </div>
+        <div class="edit-toolbar">
+          <button class="tool-btn">Aa 大写</button>
+          <button class="tool-btn">aa 小写</button>
+          <button class="tool-btn">✂ 去空白</button>
+          <button class="tool-btn">¶ 去空行</button>
+          <div class="tool-sep"></div>
+          <button class="tool-btn">↩ 撤销</button>
+          <button class="tool-btn">↪ 重做</button>
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <span>Ctrl+Enter 保存 · Esc 取消</span>
+        <div class="footer-btns">
+          <button class="footer-btn">📋 复制</button>
+          <button class="footer-btn">📌 粘贴</button>
+          <button class="footer-btn">🔖 存片段</button>
+          <button class="btn-primary">💾 保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <strong>交互说明：</strong>检测到 Markdown 内容时，元信息条右侧出现「编辑 | 预览」切换按钮（Segmented 风格），默认进入预览模式。
+  非 Markdown 内容不显示切换按钮，保持原有编辑体验不变。预览区底部增加「复制为 HTML」「复制为纯文本」快捷操作。
+</div>
+
+<!-- ==================== 2. 卡片 Hover 弹窗 ==================== -->
+<div class="section-title"><span class="num">2</span> 卡片 Hover 弹窗 — Markdown 渲染预览</div>
+<div class="row">
+  <div>
+    <div class="label">MD 内容卡片（hover 时显示渲染预览）</div>
+    <div class="card-demo" style="margin-top: 160px;">
+      <!-- Popover -->
+      <div class="popover">
+        <div class="popover-md">
+          <h1>PastePanda 功能规划</h1>
+          <h2>一、智能化方向</h2>
+          <p>AI 智能分类：剪贴板内容自动识别类型并打标签。</p>
+          <ul>
+            <li><strong>代码</strong> — 编程语言特征</li>
+            <li><strong>链接</strong> — URL 正则匹配</li>
+          </ul>
+        </div>
+        <div class="popover-actions">
+          <button class="popover-btn">☆ 收藏</button>
+          <button class="popover-btn">📋 复制</button>
+          <button class="popover-btn">✏️ 编辑</button>
+          <button class="popover-btn">🗑 删除</button>
+        </div>
+      </div>
+      <!-- Card -->
+      <div class="card-icon">📝</div>
+      <div class="card-body">
+        <div class="card-title"># PastePanda 功能规划 ## 一、智能化方向</div>
+        <div class="card-sub">
+          <span class="md-badge">MD</span>
+          <span>VS Code</span>
+          <span>2分钟前</span>
+        </div>
+      </div>
+      <span class="card-time">2分钟前</span>
+    </div>
+  </div>
+
+  <div>
+    <div class="label">普通文本卡片（hover 保持原样）</div>
+    <div class="card-demo" style="margin-top: 160px;">
+      <div class="popover">
+        <div style="font-size:12px;line-height:1.6;max-height:100px;overflow:hidden;color:var(--text-primary);">
+          这是一段普通的纯文本内容，没有 Markdown 语法特征，hover 时保持原有的纯文本预览样式不变。
+        </div>
+        <div class="popover-actions">
+          <button class="popover-btn">☆ 收藏</button>
+          <button class="popover-btn">📋 复制</button>
+          <button class="popover-btn">✏️ 编辑</button>
+          <button class="popover-btn">🗑 删除</button>
+        </div>
+      </div>
+      <div class="card-icon" style="background:#F0F4F8;">📄</div>
+      <div class="card-body">
+        <div class="card-title">这是一段普通的纯文本内容，没有 Markdown 语法</div>
+        <div class="card-sub"><span>记事本</span></div>
+      </div>
+      <span class="card-time">5分钟前</span>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <strong>交互说明：</strong>MD 内容卡片的 hover 弹窗中，预览区显示渲染后的 Markdown（取前部分内容渲染，限高 120px 溢出隐藏）。
+  卡片副标题行增加蓝色「MD」小徽标标识。普通文本卡片不受影响。
+</div>
+
+<!-- ==================== 3. 右键菜单 ==================== -->
+<div class="section-title"><span class="num">3</span> 右键菜单 — 新增「Markdown 预览」入口</div>
+<div class="row">
+  <div>
+    <div class="label">MD 内容卡片右键菜单</div>
+    <div class="ctx-menu">
+      <button class="ctx-item"><span class="icon">✏️</span>编辑内容</button>
+      <button class="ctx-item highlight"><span class="icon">👁</span>Markdown 预览</button>
+      <button class="ctx-item"><span class="icon">📋</span>复制到剪贴板</button>
+      <button class="ctx-item"><span class="icon">📌</span>粘贴到前台</button>
+      <button class="ctx-item"><span class="icon">📌</span>粘贴并变换 <span style="margin-left:auto;font-size:10px;color:var(--text-muted)">▸</span></button>
+      <div class="ctx-sep"></div>
+      <button class="ctx-item"><span class="icon">🏷</span>编辑标签</button>
+      <button class="ctx-item"><span class="icon">📁</span>移动到分组</button>
+      <div class="ctx-sep"></div>
+      <button class="ctx-item"><span class="icon">📌</span>置顶</button>
+      <button class="ctx-item"><span class="icon">📄</span>添加到片段库</button>
+      <div class="ctx-sep"></div>
+      <button class="ctx-item danger"><span class="icon">🗑</span>删除</button>
+    </div>
+  </div>
+
+  <div>
+    <div class="label">普通文本卡片右键菜单（无 MD 预览项）</div>
+    <div class="ctx-menu">
+      <button class="ctx-item"><span class="icon">✏️</span>编辑内容</button>
+      <button class="ctx-item"><span class="icon">📋</span>复制到剪贴板</button>
+      <button class="ctx-item"><span class="icon">📌</span>粘贴到前台</button>
+      <button class="ctx-item"><span class="icon">📌</span>粘贴并变换 <span style="margin-left:auto;font-size:10px;color:var(--text-muted)">▸</span></button>
+      <div class="ctx-sep"></div>
+      <button class="ctx-item"><span class="icon">🏷</span>编辑标签</button>
+      <button class="ctx-item"><span class="icon">📁</span>移动到分组</button>
+      <div class="ctx-sep"></div>
+      <button class="ctx-item"><span class="icon">📌</span>置顶</button>
+      <button class="ctx-item"><span class="icon">📄</span>添加到片段库</button>
+      <div class="ctx-sep"></div>
+      <button class="ctx-item danger"><span class="icon">🗑</span>删除</button>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <strong>交互说明：</strong>仅当卡片内容被检测为 Markdown 时，右键菜单在「编辑内容」下方出现「Markdown 预览」项（蓝色高亮），
+  点击后打开 EditDialog 并自动切换到预览模式。非 MD 内容不显示此菜单项。
+</div>
+
+</body>
+</html>

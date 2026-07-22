@@ -1,0 +1,101 @@
+/* 剪贴板栈横幅 — 橙色系，与设计稿一致 */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 16px 4px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #FFF7ED, #FFEDD5);
+  border: 1px solid #FDBA74;
+  flex-shrink: 0;
+  animation: bannerIn 0.3s ease;
+  z-index: 5;
+}
+
+@keyframes bannerIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: none; }
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--orange, #EA580C);
+  flex-shrink: 0;
+  animation: stackPulse 1.5s ease infinite;
+}
+
+@keyframes stackPulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(234, 88, 12, 0.4); }
+  50% { opacity: 0.7; box-shadow: 0 0 0 5px rgba(234, 88, 12, 0); }
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #9A3412;
+}
+
+.sub {
+  font-size: 11px;
+  color: #C2410C;
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pasteAllBtn {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  background: var(--orange, #EA580C);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(234, 88, 12, 0.3);
+  transition: transform 0.15s, box-shadow 0.15s;
+  flex-shrink: 0;
+}
+
+.pasteAllBtn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.4);
+}
+
+.pasteAllBtn:active {
+  transform: translateY(0);
+}
+
+.exitBtn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  background: rgba(154, 52, 18, 0.08);
+  color: #9A3412;
+  border: 1px solid #FDBA74;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.exitBtn:hover {
+  background: rgba(154, 52, 18, 0.15);
+}

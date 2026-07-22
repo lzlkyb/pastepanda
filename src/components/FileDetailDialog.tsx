@@ -54,6 +54,7 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
     if (openingFile || !fileInfo?.exists) return;
     setOpeningFile(true);
     try {
+      await preloadApi();
       await _invoke("open_file_with_system", { path: item.content });
       toast(`已打开 ${fileName}`, "success");
     } catch (e: any) {
@@ -67,6 +68,7 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
     if (openingFolder || !fileInfo?.exists) return;
     setOpeningFolder(true);
     try {
+      await preloadApi();
       await _invoke("open_file_location", { path: item.content });
     } catch (e: any) {
       toast(e?.toString?.() || "无法打开文件夹", "error");
@@ -148,13 +150,13 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
                 label={openingFile ? "打开中…" : "打开文件"}
                 onClick={handleOpenFile}
                 primary
-                disabled={!fileExists || openingFile}
+                disabled={!fileExists || openingFile || !apiReady}
               />
               <FileActionBtn
                 icon={openingFolder ? <Loader size={14} className="spin" /> : <FolderOpen size={14} />}
                 label={openingFolder ? "打开中…" : "打开文件夹"}
                 onClick={handleOpenFolder}
-                disabled={!fileExists || openingFolder}
+                disabled={!fileExists || openingFolder || !apiReady}
               />
               <FileActionBtn
                 icon={<Copy size={14} />}

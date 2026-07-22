@@ -5,19 +5,23 @@ import { useAppStore, GroupFilter, HistoryItem } from "@/stores/appStore";
 import { TopBar } from "@/components/TopBar";
 import { CardList } from "@/components/CardList";
 import { QuickPreview } from "@/components/QuickPreview";
-import { ToastProvider, useToast } from "@/components/Toast";
+import { useToast } from "@/components/Toast";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UpdateProvider } from "@/contexts/UpdateContext";
 import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
 import { logger } from "@/lib/logger";
 import { pasteText, pasteImage, deleteHistory, togglePin, toggleWindow, sequentialPaste, invalidateCountsCache, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup } from "@/lib/api";
 import { resolveSource, getAutoTagIcon, getAutoTagColor } from "@/lib/source-mappings";
+import { migrateLegacyStorageKeys } from "@/lib/storageMigration";
 import { ClipboardList, RotateCcw, Loader2, X } from "lucide-react";
 import { BackToTop } from "@/components/BackToTop";
 import { ScrollProvider } from "@/contexts/ScrollContext";
 import { Sidebar, type SidebarGroup } from "@/components/Sidebar";
 import type Lenis from "lenis";
 import appStyles from "./App.module.css";
+
+// 修复 Low：应用更名后迁移历史版本遗留的 pasteship_* localStorage 键（幂等，仅执行一次）
+migrateLegacyStorageKeys();
 
 // 懒加载对话框组件 — 只在打开时才加载对应 JS chunk
 const SettingsDialog = lazy(() => import("@/components/SettingsDialog").then(m => ({ default: m.SettingsDialog })));
@@ -31,6 +35,7 @@ function App() {
   const tags = useAppStore((s) => s.tags);
   const seqPointer = useAppStore((s) => s.seqPointer);
   const resetSeqPointer = useAppStore((s) => s.resetSeqPointer);
+  const stackMode = useAppStore((s) => s.stackMode);
   const sourceFilter = useAppStore((s) => s.sourceFilter);
   const setSourceFilter = useAppStore((s) => s.setSourceFilter);
   const groupFilter = useAppStore((s) => s.groupFilter);
@@ -435,10 +440,10 @@ function App() {
     if (loading) return;
     const timer = setTimeout(() => {
       if (shouldShow("seq_paste_tip")) {
-        const daysSinceInstall = Number(localStorage.getItem("pasteship_install_day") || 0);
+        const daysSinceInstall = Number(localStorage.getItem("pastepanda_install_day") || 0);
         const now = Math.floor(Date.now() / 86400000);
         if (!daysSinceInstall) {
-          localStorage.setItem("pasteship_install_day", String(now));
+          localStorage.setItem("pastepanda_install_day", String(now));
         } else if (now - daysSinceInstall >= 3) {
           toast("💡 试试 Ctrl+Q 依次粘贴，逐条粘贴超方便", "info", 4000);
           markShown("seq_paste_tip");
@@ -543,15 +548,24 @@ function App() {
       const restored = store.undoDelete();
       if (restored) {
         invalidateCountsCache(); // 撤销恢复后清除计数缓存
-        const failed: string[] = [];
+        const failedItems: HistoryItem[] = [];
         for (const item of restored) {
           try { await import("@tauri-apps/api/core").then(m => m.invoke("insert_history", { item })); } catch (e) {
             logger.warn("撤销恢复失败", e);
-            failed.push(item.text.slice(0, 30));
+            failedItems.push(item);
           }
         }
-        if (failed.length > 0) {
-          window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `部分恢复失败 (${failed.length}/${restored.length})，请检查数据完整性`, type: "error" } }));
+        if (failedItems.length > 0) {
+          // 修复 M9：后端写入失败时回滚本地恢复的条目并放回撤销栈，
+          // 用户可再次 Ctrl+Z 重试 — 此前失败后条目留在本地列表却不在 DB，
+          // 撤销栈已消耗无法重试，前后端永久不一致
+          const failedIds = new Set(failedItems.map((i) => i.id));
+          useAppStore.setState((s) => ({
+            history: s.history.filter((h) => !failedIds.has(h.id)),
+            undoStack: [failedItems, ...s.undoStack].slice(0, 10),
+            _filterCache: null,
+          }));
+          window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `${failedItems.length}/${restored.length} 条恢复失败，可再次 Ctrl+Z 重试`, type: "error" } }));
         } else {
           window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已恢复 ${restored.length} 条记录`, type: "success" } }));
         }
@@ -589,21 +603,18 @@ function App() {
   // 加载中页面
   if (loading) {
     return (
-      <ToastProvider>
-        <div className={appStyles.appShell}>
-          <div className={appStyles.loadingScreen}>
-            <Loader2 size={32} className="spin-icon" style={{ color: "var(--accent)" }} />
-            <p className={appStyles.loadingText}>正在加载数据…</p>
-          </div>
+      <div className={appStyles.appShell}>
+        <div className={appStyles.loadingScreen}>
+          <Loader2 size={32} className="spin-icon" style={{ color: "var(--accent)" }} />
+          <p className={appStyles.loadingText}>正在加载数据…</p>
         </div>
-      </ToastProvider>
+      </div>
     );
   }
 
   // 初始化错误页面
   if (initError) {
     return (
-      <ToastProvider>
         <div className={appStyles.appShell}>
           <div className={appStyles.errorInitState}>
             <div className={appStyles.errorInitIcon}>⚠️</div>
@@ -632,12 +643,10 @@ function App() {
             </div>
           </div>
         </div>
-      </ToastProvider>
     );
   }
 
   return (
-    <ToastProvider>
       <UpdateProvider>
       <div className={`${appStyles.appShell} ${sidebarOpen ? appStyles.sidebarExpanded : ''}`}>
         <TopBar
@@ -665,8 +674,8 @@ function App() {
               <BackToTop />
             </ScrollProvider>
 
-            {/* FAB — 依次粘贴悬浮按钮，定位在卡片面板底部 */}
-            {seqTotal > 0 && (
+            {/* FAB — 依次粘贴悬浮按钮，定位在卡片面板底部（栈模式下隐藏，两者互斥） */}
+            {seqTotal > 0 && !stackMode && (
               <motion.div initial={{ opacity: 0, y: 20, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 10, scale: 0.9 }} transition={{ type: "spring", stiffness: 400, damping: 25 }}
                 className={appStyles.fabContainer}>
@@ -749,7 +758,6 @@ function App() {
         </AnimatePresence>
       </div>
       </UpdateProvider>
-    </ToastProvider>
   );
 }
 

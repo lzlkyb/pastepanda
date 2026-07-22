@@ -35,21 +35,9 @@ export async function loadMoreHistory(): Promise<boolean> {
 export async function initBackend(): Promise<() => void> {
   const store = useAppStore.getState();
 
-  // 加载初始数据
-  try {
-    const items = await invoke<HistoryItem[]>("get_history", {
-      workspace: store.config.current_workspace,
-      filter: "all",
-      search: "",
-      offset: 0,
-      limit: 50,
-    });
-    store.setHistory(items);
-  } catch (e) {
-    logger.error("加载历史记录失败", e);
-  }
-
-  // 加载配置
+  // 修复 C13：先加载配置 — history 必须用配置里的真实 workspace 拉取。
+  // 旧顺序（先 history）在 workspace 非默认时用 DEFAULT_CONFIG 的 workspace 拉错数据，
+  // config 加载后按真实 workspace 过滤 → 首屏空白，loadMore offset 也错位。
   let configLoaded = false;
   try {
     const config = await invoke<Record<string, unknown>>("get_config");
@@ -58,6 +46,18 @@ export async function initBackend(): Promise<() => void> {
   } catch (e) {
     logger.error("加载配置失败，使用默认配置，跳过自动清理", e);
   }
+
+  // 加载初始数据
+  // 修复 M8：失败不再吞掉（此前 catch 仅 log，"无法加载数据"错误页实际不可达，
+  // DB 损坏时用户看到空列表+正常 UI 误以为记录丢失）— 向上抛出，由 App 展示错误页
+  const items = await invoke<HistoryItem[]>("get_history", {
+    workspace: useAppStore.getState().config.current_workspace,
+    filter: "all",
+    search: "",
+    offset: 0,
+    limit: 50,
+  });
+  useAppStore.getState().setHistory(items);
 
   // 加载分组
   try {
@@ -100,67 +100,113 @@ export async function initBackend(): Promise<() => void> {
     } catch (e) { logger.warn("自动清理失败", e); }
   }
 
-  // 监听剪贴板变化事件 — prependItem 内部已处理去重，无需手动判断
-  const unlisten1 = await listen<{ item: HistoryItem }>("clipboard-changed", (event) => {
-    const store = useAppStore.getState();
-    store.prependItem(event.payload.item);
-    invalidateCountsCache(); // 新增记录，清除计数缓存
-    const typeLabel = event.payload.item.type === "image" ? "图片" : event.payload.item.type === "file" ? "文件" : "文本";
-    const isLanSync = event.payload.item.source?.startsWith("局域网:");
-    const msg = isLanSync ? `📡 ${event.payload.item.source.replace("局域网: ", "")}同步了${typeLabel}` : `已记录${typeLabel}`;
-    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: msg, type: isLanSync ? "info" : "success" } }));
-  });
-
-  // 监听标签更新事件（AI 自动分类完成后触发）
-  const unlistenTags = await listen<{ history_id: string; tag_ids: string[] }>("tags-updated", async (event) => {
-    try {
-      // 只刷新全局标签列表（标签选择器用）
-      const tags = await invoke<Tag[]>("get_tags");
+  // 修复 M7：统一收集 unlisten，任一 listen 失败时清理已注册的监听器，
+  // 避免泄漏旧监听器导致重试后事件被双重处理
+  const unlistens: Array<() => void> = [];
+  try {
+    // 监听剪贴板变化事件 — prependItem 内部已处理去重，无需手动判断
+    unlistens.push(await listen<{ item: HistoryItem }>("clipboard-changed", (event) => {
       const store = useAppStore.getState();
-      store.setTags(tags);
-      // 增量更新该 item 的标签，避免全量刷新 history
-      const { history_id, tag_ids } = event.payload;
-      if (history_id && tag_ids.length > 0) {
-        const itemsWithTags = await invoke<[string, Tag[]][]>("get_items_with_tags", {
-          historyIds: [history_id],
-        });
-        const tagMap = new Map(itemsWithTags);
-        const newTags = tagMap.get(history_id) || [];
-        const updatedHistory = store.history.map(item =>
-          item.id === history_id ? { ...item, tags: newTags } : item
-        );
-        store.setHistory(updatedHistory);
+      store.prependItem(event.payload.item);
+      invalidateCountsCache(); // 新增记录，清除计数缓存
+      const typeLabel = event.payload.item.type === "image" ? "图片" : event.payload.item.type === "file" ? "文件" : "文本";
+      const isLanSync = event.payload.item.source?.startsWith("局域网:");
+      if (store.stackMode) {
+        // 栈模式：入栈并使用专属提示
+        const before = store.stackItems.length;
+        store.stackPush(event.payload.item);
+        const after = useAppStore.getState().stackItems.length;
+        if (after > before) {
+          window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `入栈 ${after} 条`, type: "info" } }));
+        }
+      } else {
+        const msg = isLanSync ? `📡 ${event.payload.item.source.replace("局域网: ", "")}同步了${typeLabel}` : `已记录${typeLabel}`;
+        window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: msg, type: isLanSync ? "info" : "success" } }));
       }
-    } catch (e) {
-      logger.warn("刷新标签失败", e);
-    }
-  });
+    }));
 
-  // 监听依次粘贴热键 (Ctrl+Q)
-  const unlisten2 = await listen("hotkey-sequential-paste", async () => {
-    console.log("[hotkey-sequential-paste] 事件收到，调用 sequentialPaste()");
-    await sequentialPaste();
-  });
+    // 监听标签更新事件（AI 自动分类完成后触发）
+    unlistens.push(await listen<{ history_id: string; tag_ids: string[] }>("tags-updated", async (event) => {
+      try {
+        // 只刷新全局标签列表（标签选择器用）
+        const tags = await invoke<Tag[]>("get_tags");
+        useAppStore.getState().setTags(tags);
+        // 修复 M5：基于"最新 state"函数式更新该 item 的标签 —
+        // 旧实现用 await 前的过期快照 map 全量覆盖 history，会丢弃 await 期间新复制的条目；
+        // 且 tag_ids 为空（清空全部标签）时也要更新，不能跳过
+        const { history_id } = event.payload;
+        if (history_id) {
+          const itemsWithTags = await invoke<[string, Tag[]][]>("get_items_with_tags", {
+            historyIds: [history_id],
+          });
+          const tagMap = new Map(itemsWithTags);
+          const newTags = tagMap.get(history_id) || [];
+          useAppStore.setState((s) => ({
+            history: s.history.map((item) =>
+              item.id === history_id ? { ...item, tags: newTags } : item
+            ),
+            _filterCache: null,
+          }));
+        }
+      } catch (e) {
+        logger.warn("刷新标签失败", e);
+      }
+    }));
 
-  // 监听索引粘贴热键 (Ctrl+Alt+1~9)
-  const unlisten3 = await listen<number>("hotkey-index-paste", async (event) => {
-    await indexPaste(event.payload);
-  });
+    // 监听依次粘贴热键 (Ctrl+Q)
+    unlistens.push(await listen("hotkey-sequential-paste", async () => {
+      console.log("[hotkey-sequential-paste] 事件收到，调用 sequentialPaste()");
+      await sequentialPaste();
+    }));
+
+    // 监听索引粘贴热键 (Ctrl+Alt+1~9)
+    unlistens.push(await listen<number>("hotkey-index-paste", async (event) => {
+      await indexPaste(event.payload);
+    }));
+
+    // 监听剪贴板栈热键 (Ctrl+Shift+K 切换 / Ctrl+Shift+P 粘贴)
+    unlistens.push(await listen("hotkey-stack-toggle", () => {
+      toggleStackMode();
+    }));
+    unlistens.push(await listen("hotkey-stack-paste", async () => {
+      await stackPasteNext();
+    }));
+  } catch (e) {
+    unlistens.forEach((u) => u());
+    throw e;
+  }
 
   // Ctrl+A 全选改为应用内快捷键，不再通过全局热键事件
   // 返回清理函数，在组件卸载时调用
   return () => {
-    unlisten1();
-    unlisten2();
-    unlisten3();
-    unlistenTags();
+    unlistens.forEach((u) => u());
   };
 }
+
+/** 依次粘贴互斥锁：防止快速连按导致同一条被粘贴两次 */
+let seqPasteBusy = false;
 
 /** 依次粘贴：粘贴当前指针指向的文本，然后指针+1 */
 export async function sequentialPaste() {
   const store = useAppStore.getState();
-  const textItems = store.history.filter((h) => h.type === "text");
+  // 栈模式与依次粘贴互斥：栈模式下请用栈粘贴热键
+  if (store.stackMode) {
+    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "栈模式进行中，请用栈粘贴快捷键", type: "info" } }));
+    return;
+  }
+  if (seqPasteBusy) return; // 并发重入跳过，避免粘贴同一条
+  seqPasteBusy = true;
+  try {
+    await sequentialPasteInner();
+  } finally {
+    seqPasteBusy = false;
+  }
+}
+
+async function sequentialPasteInner() {
+  const store = useAppStore.getState();
+  // 修复 Low：使用与 UI 一致的过滤后列表（原用未过滤 history，筛选/搜索激活时顺序与界面不符）
+  const textItems = store.getFilteredItems().filter((h) => h.type === "text");
   const pointer = store.seqPointer;
   const loop = store.config.sequential_loop;
 
@@ -173,14 +219,16 @@ export async function sequentialPaste() {
   }
 
   let idx = pointer;
-  // 指针越界：循环模式下从头开始，非循环模式下直接 return
+  // 指针越界：循环模式下从头开始，非循环模式下提示并停止
   if (idx >= textItems.length) {
     if (loop) {
       logger.warn(`[sequentialPaste] 指针越界 ${idx} >= ${textItems.length}，循环模式：重置为 0`);
       idx = 0;
       store.setSeqPointer(0);
     } else {
+      // 修复 Low：非循环模式到末尾不再静默 return，给出明确反馈
       logger.warn(`[sequentialPaste] 指针越界 ${idx} >= ${textItems.length}，非循环模式：停止`);
+      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已到最后一条，无更多可粘贴记录", type: "info" } }));
       return;
     }
   }
@@ -221,7 +269,8 @@ export async function sequentialPaste() {
 /** 索引粘贴：粘贴第 N 条文本记录 (1-based) */
 export async function indexPaste(n: number) {
   const store = useAppStore.getState();
-  const textItems = store.history.filter((h) => h.type === "text");
+  // 修复 Low：与 UI 一致，基于过滤后列表定位第 N 条
+  const textItems = store.getFilteredItems().filter((h) => h.type === "text");
   const idx = n - 1; // 转为 0-based
 
   if (idx < 0 || idx >= textItems.length) return;
@@ -231,6 +280,101 @@ export async function indexPaste(n: number) {
 
   await pasteText(item.text);
   window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已粘贴第 ${n} 条`, type: "success" } }));
+}
+
+// ===== 剪贴板栈 =====
+
+/** 同步栈模式状态到后端（托盘图标） */
+function syncStackModeToBackend(active: boolean) {
+  invoke("set_stack_mode", { active }).catch((e) => logger.warn("同步栈模式到后端失败", e));
+}
+
+/** 切换栈模式 */
+export function toggleStackMode() {
+  const store = useAppStore.getState();
+  const active = !store.stackMode;
+  if (active) {
+    store.setStackMode(true);
+    syncStackModeToBackend(true);
+    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "栈模式已开启 · Ctrl+C 收集 · Ctrl+Shift+P 粘贴", type: "info" } }));
+  } else {
+    store.exitStackMode();
+    syncStackModeToBackend(false);
+    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "栈模式已退出", type: "info" } }));
+  }
+}
+
+/** 退出栈模式（手动退出，保留历史记录） */
+export function exitStack() {
+  useAppStore.getState().exitStackMode();
+  syncStackModeToBackend(false);
+  window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "栈模式已退出", type: "info" } }));
+}
+
+/** 栈粘贴互斥锁：防止快速连按/全部粘贴与手动粘贴并发导致重复粘贴或跳过条目 */
+let stackPasteBusy = false;
+let stackPasteAllRunning = false;
+
+/** 栈粘贴：粘贴栈顶条目并弹出，栈空自动退出 */
+export async function stackPasteNext(): Promise<boolean> {
+  if (stackPasteBusy) return false; // 并发重入直接跳过，避免重复粘贴同一条
+  stackPasteBusy = true;
+  try {
+    const store = useAppStore.getState();
+    if (!store.stackMode) return false;
+
+    const item = store.stackItems[0];
+    if (!item) {
+      // 栈空 → 自动退出
+      store.exitStackMode();
+      syncStackModeToBackend(false);
+      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "栈已清空，自动退出栈模式", type: "success" } }));
+      return false;
+    }
+
+    let ok: boolean;
+    if (item.type === "image" && item.content) {
+      ok = await pasteImage(item.content);
+    } else if (item.type === "file") {
+      // 文件粘贴完整路径（content），与列表回车粘贴行为保持一致
+      ok = await pasteText(item.content || item.text);
+    } else {
+      ok = await pasteText(item.text);
+    }
+
+    if (!ok) return false;
+
+    store.stackMarkPasted();
+    const remaining = useAppStore.getState().stackItems.length;
+    if (remaining === 0) {
+      // 全部粘贴完毕 → 自动退出
+      useAppStore.getState().exitStackMode();
+      syncStackModeToBackend(false);
+      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "全部粘贴完毕，已退出栈模式", type: "success" } }));
+    } else {
+      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已粘贴，剩余 ${remaining} 条`, type: "success" } }));
+    }
+    return true;
+  } finally {
+    stackPasteBusy = false;
+  }
+}
+
+/** 全部粘贴：间隔 300ms 连续粘贴剩余全部条目 */
+export async function stackPasteAll() {
+  if (stackPasteAllRunning) return; // 防止双击「全部粘贴」启动两个循环
+  const store = useAppStore.getState();
+  if (!store.stackMode || store.stackItems.length === 0) return;
+  stackPasteAllRunning = true;
+  try {
+    while (useAppStore.getState().stackMode && useAppStore.getState().stackItems.length > 0) {
+      const ok = await stackPasteNext();
+      if (!ok) break;
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  } finally {
+    stackPasteAllRunning = false;
+  }
 }
 
 /** 粘贴文本，返回是否成功 */
@@ -250,14 +394,16 @@ export async function pasteText(text: string): Promise<boolean> {
   }
 }
 
-/** 粘贴图片 */
-export async function pasteImage(imagePath: string) {
+/** 粘贴图片，返回是否成功 */
+export async function pasteImage(imagePath: string): Promise<boolean> {
   try {
     await invoke("paste_image", { imagePath });
+    return true;
   } catch (e) {
     logger.error("图片粘贴失败", e);
     const msg = e instanceof Error ? e.message : String(e);
     window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `图片粘贴失败: ${msg}`, type: "error" } }));
+    return false;
   }
 }
 
@@ -406,6 +552,17 @@ export async function getImageBase64(filePath: string): Promise<string> {
   }
 }
 
+/** 将 base64 data URL 转为 Blob。
+ * 修复 Low：用 fetch(dataUrl) 让浏览器网络栈原生解码 base64，
+ * 替代主线程 atob + 逐字节 charCodeAt 循环（大图会阻塞数百毫秒）。 */
+export async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+  const blob = await (await fetch(dataUrl)).blob();
+  if (blob.type) return blob;
+  // 兜底：data URL 缺 MIME 时手动指定（正常路径不会触发）
+  const mimeMatch = dataUrl.match(/^data:([^;]+);base64,/);
+  return new Blob([blob], { type: mimeMatch ? mimeMatch[1] : "image/png" });
+}
+
 /** 获取图片缩略图 URL（返回文件路径，由前端转 asset URL） */
 const thumbnailUrlCache = new Map<string, string>();
 const MAX_THUMBNAIL_CACHE_SIZE = 200;
@@ -507,6 +664,7 @@ export async function deleteGroup(id: string): Promise<boolean> {
   try {
     await invoke("delete_group", { id });
     // 更新本地 state：移除分组 + 将被删除分组的记录的 group_id 设为 null
+    // 修复 M6：原地修改 history 不改变 length，必须手动清 _filterCache，否则筛选列表停滞
     useAppStore.setState((state) => ({
       groups: state.groups.filter((g) => g.id !== id),
       history: state.history.map((h) =>
@@ -514,6 +672,7 @@ export async function deleteGroup(id: string): Promise<boolean> {
       ),
       // 如果当前正在筛选此分组，重置筛选
       groupFilter: state.groupFilter === id ? "all" : state.groupFilter,
+      _filterCache: null,
     }));
     invalidateCountsCache();
     return true;
@@ -542,6 +701,7 @@ export async function moveToGroup(historyIds: string[], groupId: string | null):
   try {
     const count = await invoke<number>("move_to_group", { historyIds, groupId });
     // 更新本地 state — 使用 setState 更新函数，避免丢失运行时状态
+    // 修复 M6：原地修改 history 不改变 length，必须手动清 _filterCache
     useAppStore.setState((state) => ({
       history: state.history.map((h) => {
         if (historyIds.includes(h.id)) {
@@ -549,6 +709,7 @@ export async function moveToGroup(historyIds: string[], groupId: string | null):
         }
         return h;
       }),
+      _filterCache: null,
     }));
     invalidateCountsCache();
     return count;
@@ -624,7 +785,8 @@ export async function setItemTags(historyId: string, tagIds: string[]): Promise<
       }
       return h;
     });
-    useAppStore.setState({ history: newHistory });
+    // 修复 M6：标签变化不改变 history.length，必须手动清 _filterCache
+    useAppStore.setState({ history: newHistory, _filterCache: null });
     return true;
   } catch (e) {
     logger.error("设置标签失败", e);
@@ -651,7 +813,8 @@ export async function addItemTags(historyIds: string[], tagIds: string[]): Promi
       }
       return h;
     });
-    useAppStore.setState({ history: newHistory });
+    // 修复 M6：标签变化不改变 history.length，必须手动清 _filterCache
+    useAppStore.setState({ history: newHistory, _filterCache: null });
     return count;
   } catch (e) {
     logger.error("添加标签失败", e);
@@ -670,7 +833,8 @@ export async function removeItemTags(historyIds: string[], tagIds: string[]): Pr
       }
       return h;
     });
-    useAppStore.setState({ history: newHistory });
+    // 修复 M6：标签变化不改变 history.length，必须手动清 _filterCache
+    useAppStore.setState({ history: newHistory, _filterCache: null });
     return count;
   } catch (e) {
     logger.error("移除标签失败", e);
@@ -695,19 +859,21 @@ export async function confirmAutoTags(historyId: string): Promise<boolean> {
     await invoke("confirm_auto_tags", { historyId });
     // 刷新标签列表
     const tags = await invoke<Tag[]>("get_tags");
-    const store = useAppStore.getState();
-    store.setTags(tags);
+    useAppStore.getState().setTags(tags);
     // 同步更新 history 中该 item 的 tags source 为 manual
-    const updatedHistory = store.history.map(item => {
-      if (item.id === historyId && item.tags) {
-        return {
-          ...item,
-          tags: item.tags.map(t => t.source === "auto" ? { ...t, source: "manual" as const } : t),
-        };
-      }
-      return item;
-    });
-    store.setHistory(updatedHistory);
+    // 修复 M5 同类问题：基于最新 state 函数式更新，避免 await 前的过期快照覆盖整份 history
+    useAppStore.setState((s) => ({
+      history: s.history.map((item) => {
+        if (item.id === historyId && item.tags) {
+          return {
+            ...item,
+            tags: item.tags.map((t) => (t.source === "auto" ? { ...t, source: "manual" as const } : t)),
+          };
+        }
+        return item;
+      }),
+      _filterCache: null,
+    }));
     return true;
   } catch (e) {
     logger.error("确认自动标签失败", e);

@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P2 - Markdown 实时预览 & Diff 对比 设计稿</title>
+<style>
+/* ===== 基础变量（与项目主题变量一致） ===== */
+:root {
+  --app-bg: #0f0f13;
+  --card-bg: #1a1a23;
+  --dialog-bg: #1e1e2a;
+  --section-bg: #252536;
+  --seg-bg: #2a2a3c;
+  --hover: rgba(255,255,255,0.06);
+  --accent: #6366f1;
+  --accent-light: rgba(99,102,241,0.15);
+  --accent-shadow: rgba(99,102,241,0.25);
+  --text-primary: #e4e4ed;
+  --text-secondary: #9898a8;
+  --text-muted: #6b6b7d;
+  --border-color: #2e2e3e;
+  --danger: #EF4444;
+  --red-bg: rgba(239,68,68,0.1);
+  --glass-card-bg: rgba(26, 26, 35, 0.75);
+  --glass-card-border: rgba(255,255,255,0.06);
+  --glass-card-shadow: 0 2px 12px rgba(0,0,0,0.3);
+  --glass-card-hover-border: rgba(255,255,255,0.12);
+  --glass-card-hover-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  --card-selected-bg: rgba(99,102,241,0.12);
+  --card-selected-border: rgba(99,102,241,0.35);
+  --card-selected-shadow: 0 0 0 1px rgba(99,102,241,0.2);
+  --glass-shimmer: rgba(255,255,255,0.04);
+  --glass-shimmer-static: rgba(255,255,255,0.03);
+  --glass-icon-bg: rgba(255,255,255,0.06);
+  --glass-icon-border: rgba(255,255,255,0.08);
+  --glass-icon-shadow: inset 0 2px 4px rgba(0,0,0,0.15), 0 2px 8px rgba(0,0,0,0.15);
+  --glass-popover-bg: rgba(30,30,42,0.92);
+  --glass-popover-border: rgba(255,255,255,0.08);
+  --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  --radius: 16px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--app-bg); color: var(--text-primary); }
+
+/* ===== 页面布局 ===== */
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 24px;
+}
+.page h1 { font-size: 24px; margin-bottom: 4px; }
+.page .subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 32px; }
+
+.section { margin-bottom: 48px; }
+.section h2 {
+  font-size: 18px;
+  padding-bottom: 12px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex; align-items: center; gap: 10px;
+}
+.section h2 .badge {
+  font-size: 11px; font-weight: 500; padding: 2px 10px; border-radius: 12px;
+  background: var(--accent-light); color: var(--accent);
+}
+
+/* ===== 1. Card 内 MD 徽标 ===== */
+.cards-row {
+  display: flex; flex-direction: column; gap: 10px; max-width: 480px;
+}
+
+.card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; border-radius: var(--radius); height: 72px;
+  background: var(--glass-card-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-card-border);
+  box-shadow: var(--glass-card-shadow);
+  cursor: pointer; position: relative; overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.card::before {
+  content: ''; position: absolute; inset: 0; border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--glass-shimmer-static) 0%, transparent 50%);
+  z-index: 0; pointer-events: none;
+}
+.card:hover {
+  transform: translateY(-2px) scale(1.01);
+  border-color: var(--glass-card-hover-border);
+  box-shadow: var(--glass-card-hover-shadow);
+}
+
+.cardIcon {
+  width: 42px; height: 42px; min-width: 42px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center; font-size: 18px;
+  position: relative; z-index: 1;
+  background: var(--glass-icon-bg);
+  border: 1px solid var(--glass-icon-border);
+  box-shadow: var(--glass-icon-shadow);
+}
+.cardIcon.bgPurple { background: rgba(139,92,246,0.12); border-color: rgba(139,92,246,0.22); }
+.cardIcon.bgBlue   { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.22); }
+
+.cardContent { flex: 1; min-width: 0; overflow: hidden; position: relative; z-index: 1; }
+.cardTitle {
+  font-size: 13px; font-weight: 600; color: var(--text-primary);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; text-overflow: ellipsis; line-height: 1.4; max-height: 36px;
+  word-break: break-word; white-space: normal;
+}
+.cardSub {
+  font-size: 11px; color: var(--text-secondary); margin-top: 2px;
+  display: flex; align-items: center; gap: 6px;
+}
+.cardTime { font-size: 11px; color: var(--text-muted); flex-shrink: 0; position: relative; z-index: 1; }
+
+/* MD 徽标 */
+.mdBadge {
+  display: inline-flex; align-items: center; gap: 2px;
+  font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px;
+  background: rgba(99,102,241,0.15); color: #818cf8;
+  letter-spacing: 0.03em; flex-shrink: 0;
+}
+
+/* 标签行 */
+.tagRow { display: flex; gap: 4px; flex-wrap: wrap; }
+.tag {
+  font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: 500;
+  background: var(--seg-bg); color: var(--text-secondary);
+}
+
+/* ===== 2. 悬停 Popover 中的 MD 预览 ===== */
+.popover {
+  width: 340px; padding: 14px; border-radius: 12px;
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-popover-border);
+  box-shadow: var(--glass-popover-shadow);
+  margin-top: 16px;
+}
+.popover .popoverTitle {
+  font-size: 11px; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 6px;
+}
+.popover .popoverTitle .mdIcon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 5px; font-size: 10px; font-weight: 700;
+  background: rgba(99,102,241,0.2); color: #818cf8;
+}
+/* MD 预览内容 */
+.mdPreview {
+  font-size: 12px; line-height: 1.7; color: var(--text-primary);
+  max-height: 160px; overflow: hidden; position: relative;
+}
+.mdPreview::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 40px;
+  background: linear-gradient(transparent, var(--glass-popover-bg));
+  pointer-events: none;
+}
+.mdPreview h1, .mdPreview h2, .mdPreview h3 {
+  font-size: 13px; margin: 6px 0 4px; color: var(--text-primary);
+}
+.mdPreview h1 { font-size: 14px; }
+.mdPreview p { margin: 4px 0; }
+.mdPreview code {
+  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  font-size: 11px; padding: 1px 5px; border-radius: 4px;
+  background: var(--section-bg); color: #f59e0b;
+}
+.mdPreview pre {
+  font-size: 11px; padding: 8px 10px; border-radius: 6px;
+  background: #1e1e2e; color: #cdd6f4; margin: 6px 0;
+  overflow: hidden; white-space: pre;
+}
+.mdPreview ul, .mdPreview ol { padding-left: 16px; margin: 4px 0; }
+.mdPreview li { margin: 2px 0; }
+.mdPreview blockquote {
+  border-left: 3px solid var(--accent); padding: 2px 10px; margin: 6px 0;
+  color: var(--text-secondary); background: var(--section-bg); border-radius: 0 4px 4px 0;
+}
+.mdPreview a { color: var(--accent); text-decoration: none; }
+.mdPreview table { font-size: 10px; border-collapse: collapse; width: 100%; }
+.mdPreview th, .mdPreview td {
+  border: 1px solid var(--border-color); padding: 3px 6px; text-align: left;
+}
+.mdPreview th { background: var(--section-bg); font-weight: 600; }
+.mdPreview hr { border: none; border-top: 1px solid var(--border-color); margin: 6px 0; }
+
+/* ===== 3. Markdown 对话框 ===== */
+.dialog-backdrop {
+  position: relative; inset: 0; background: rgba(0,0,0,0.35);
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 16px; min-height: 520px;
+}
+.dialog-box {
+  background: var(--dialog-bg); border-radius: 16px;
+  display: flex; flex-direction: column;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.08);
+  width: 720px; max-width: 95vw; max-height: 85vh;
+}
+.dialog-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; height: 48px; flex-shrink: 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.dialog-title { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.dialog-close {
+  width: 28px; height: 28px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; border: none; background: transparent;
+  color: var(--text-secondary); transition: background 0.15s;
+}
+.dialog-close:hover { background: var(--hover); }
+.dialog-body {
+  flex: 1; overflow-y: auto; padding: 16px 20px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.dialog-footer {
+  display: flex; align-items: center; justify-content: flex-end;
+  padding: 0 20px; height: 48px; flex-shrink: 0;
+  border-top: 1px solid var(--border-color); gap: 8px;
+}
+
+/* 左右分栏 */
+.splitPane {
+  display: flex; gap: 12px; flex: 1; min-height: 0;
+}
+.splitPaneLeft, .splitPaneRight {
+  flex: 1; min-width: 0; display: flex; flex-direction: column;
+  border-radius: 10px; border: 1px solid var(--border-color); overflow: hidden;
+}
+.splitPaneHeader {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 12px; background: var(--section-bg);
+  border-bottom: 1px solid var(--border-color); flex-shrink: 0;
+}
+.splitPaneLabel {
+  font-size: 11px; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.splitPaneBody {
+  flex: 1; overflow: auto; padding: 10px 12px; font-size: 12px;
+  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  line-height: 1.65; white-space: pre-wrap; word-break: break-word;
+  color: var(--text-primary); background: var(--card-bg);
+}
+.splitPaneBodyRendered {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 13px;
+}
+
+/* 按钮 */
+.btn {
+  padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  cursor: pointer; border: none; font-family: inherit; transition: all 0.15s;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { opacity: 0.9; }
+.btn-secondary {
+  background: transparent; color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+.btn-secondary:hover { background: var(--hover); }
+
+/* 工具栏行 */
+.toolbarRow {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-radius: 8px;
+  background: var(--section-bg); border: 1px solid var(--border-color);
+}
+.toolbarRow .sep {
+  width: 1px; height: 16px; background: var(--border-color); margin: 0 2px;
+}
+
+/* ===== 4. Diff 对话框 ===== */
+.diffContainer {
+  flex: 1; min-height: 0; border-radius: 10px;
+  border: 1px solid var(--border-color); overflow: auto;
+  background: var(--card-bg);
+}
+.diffLine {
+  display: flex; font-size: 12px; font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  line-height: 1.7; min-height: 20px;
+}
+.diffLineNum {
+  width: 42px; min-width: 42px; text-align: right; padding: 0 8px;
+  color: var(--text-muted); user-select: none; flex-shrink: 0;
+  border-right: 1px solid var(--border-color);
+}
+.diffLineContent {
+  flex: 1; padding: 0 12px; white-space: pre-wrap; word-break: break-all;
+}
+.diffAdded { background: rgba(34,197,94,0.12); }
+.diffAdded .diffLineContent { color: #4ade80; }
+.diffRemoved { background: rgba(239,68,68,0.12); }
+.diffRemoved .diffLineContent { color: #f87171; }
+.diffUnchanged .diffLineContent { color: var(--text-primary); }
+.diffAdded .diffLineContent::before { content: '+ '; font-weight: 700; }
+.diffRemoved .diffLineContent::before { content: '- '; font-weight: 700; }
+.diffUnchanged .diffLineContent::before { content: '  '; }
+
+.diffHeader {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-bottom: 1px solid var(--border-color);
+  background: var(--section-bg);
+}
+.diffHeaderLabel {
+  font-size: 12px; font-weight: 600; color: var(--text-primary);
+  display: flex; align-items: center; gap: 6px; flex: 1;
+}
+.diffHeaderMeta {
+  font-size: 10px; color: var(--text-muted);
+}
+.diffHeaderDot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.diffHeaderDot.left { background: #f87171; }
+.diffHeaderDot.right { background: #4ade80; }
+
+/* Diff 对比模式切换 */
+.modeSwitch {
+  display: flex; border-radius: 6px; overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+.modeSwitchBtn {
+  padding: 4px 10px; font-size: 11px; font-weight: 500; cursor: pointer;
+  border: none; background: transparent; color: var(--text-secondary);
+  font-family: inherit; transition: all 0.15s;
+}
+.modeSwitchBtn.active {
+  background: var(--accent-light); color: var(--accent);
+}
+
+/* 切换开关 */
+.toggleRow {
+  display: flex; align-items: center; gap: 6px; font-size: 11px;
+  color: var(--text-secondary); cursor: pointer;
+}
+.toggleSwitch {
+  width: 32px; height: 18px; border-radius: 10px; position: relative;
+  background: var(--border-color); transition: background 0.2s;
+}
+.toggleSwitch.on { background: var(--accent); }
+.toggleSwitch::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 14px; height: 14px; border-radius: 50%; background: #fff;
+  transition: transform 0.2s;
+}
+.toggleSwitch.on::after { transform: translateX(14px); }
+
+/* 统计条 */
+.statBar {
+  display: flex; gap: 12px; font-size: 11px; color: var(--text-muted);
+  padding: 6px 0;
+}
+.statBar .added { color: #4ade80; font-weight: 600; }
+.statBar .removed { color: #f87171; font-weight: 600; }
+
+/* 右键菜单 */
+.ctxMenu {
+  min-width: 170px; padding: 4px 0; border-radius: 12px;
+  background: var(--dialog-bg); border: 1px solid var(--border-color);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04);
+}
+.ctxItem {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 7px 12px; font-size: 12.5px;
+  cursor: pointer; border: none; background: transparent;
+  color: var(--text-primary); transition: background 0.12s;
+  font-family: inherit; text-align: left;
+}
+.ctxItem:hover { background: var(--hover); }
+.ctxItemIcon { flex-shrink: 0; opacity: 0.7; display: flex; align-items: center; width: 16px; }
+.ctxSep { height: 1px; background: var(--border-color); margin: 4px 10px; }
+.ctxItemArrow { margin-left: auto; opacity: 0.4; }
+
+/* 子菜单 */
+.ctxSubmenu {
+  position: absolute; left: calc(100% + 4px); top: -4px;
+  background: var(--dialog-bg); border: 1px solid var(--border-color);
+  border-radius: 12px; padding: 4px 0; min-width: 180px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+}
+
+/* 提示条 */
+.note {
+  padding: 10px 14px; border-radius: 8px; font-size: 12px; line-height: 1.6;
+  background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.2);
+  color: var(--text-secondary); margin-bottom: 16px;
+}
+.note strong { color: var(--accent); }
+
+/* 两个功能的分隔 */
+.divider {
+  height: 2px; background: linear-gradient(90deg, transparent, var(--border-color), transparent);
+  margin: 48px 0;
+}
+
+/* 按钮组 */
+.btnGroup { display: flex; gap: 8px; }
+
+/* ===== 快速导航 ===== */
+.toc {
+  display: flex; gap: 16px; margin-bottom: 32px; flex-wrap: wrap;
+}
+.toc a {
+  font-size: 13px; color: var(--accent); text-decoration: none;
+  padding: 6px 14px; border-radius: 8px;
+  background: var(--accent-light); transition: all 0.15s;
+}
+.toc a:hover { background: rgba(99,102,241,0.25); }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>📋 P2 批次 — UI 设计稿</h1>
+<p class="subtitle">Markdown 实时预览 · 历史对比 (Diff) · 截图标注</p>
+
+<div class="toc">
+  <a href="#md">1. Markdown 实时预览</a>
+  <a href="#diff">2. 历史对比 (Diff)</a>
+</div>
+
+<!-- ==================== 1. Markdown 实时预览 ==================== -->
+<div class="section" id="md">
+  <h2><span>1. Markdown 实时预览</span><span class="badge">新增</span></h2>
+
+  <p class="note">
+    <strong>检测规则：</strong>内容包含 ≥2 个 MD 特征（标题/粗体/代码块/列表/链接/表格等）时自动判定为 Markdown。<br>
+    <strong>新增依赖：</strong><code>marked</code>（~30KB gzipped）<br>
+    <strong>新增文件：</strong>lib/markdown.ts, MarkdownPreview.tsx, MarkdownDialog.tsx
+  </p>
+
+  <!-- 1a. Card 中的 MD 徽标 -->
+  <h3 style="font-size:14px;margin:20px 0 12px;color:var(--text-secondary);">1a. 卡片中的 MD 识别徽标</h3>
+  <div class="cards-row">
+    <!-- 普通文本卡片（对照） -->
+    <div class="card">
+      <div class="cardIcon bgBlue" style="font-size:14px;">📝</div>
+      <div class="cardContent">
+        <p class="cardTitle">今天天气真好，适合出去走走散步</p>
+        <div class="cardSub">
+          <span>2 分钟前</span>
+          <span class="tagRow"><span class="tag">#纯文本</span></span>
+        </div>
+      </div>
+      <span class="cardTime">刚刚</span>
+    </div>
+    <!-- Markdown 卡片 -->
+    <div class="card" style="border-color: rgba(99,102,241,0.2);">
+      <div class="cardIcon bgPurple" style="font-size:16px;">#️⃣</div>
+      <div class="cardContent">
+        <p class="cardTitle"># README ## 安装 npm install</p>
+        <div class="cardSub">
+          <span class="mdBadge">MD</span>
+          <span>3 分钟前</span>
+          <span class="tagRow"><span class="tag">#文档</span></span>
+        </div>
+      </div>
+      <span class="cardTime">3分钟</span>
+    </div>
+    <!-- Markdown 卡片（代码块） -->
+    <div class="card" style="border-color: rgba(99,102,241,0.2);">
+      <div class="cardIcon bgPurple" style="font-size:14px;">⚙️</div>
+      <div class="cardContent">
+        <p class="cardTitle">```js const a = 1; console.log(a) ``` 使用方法如上</p>
+        <div class="cardSub">
+          <span class="mdBadge">MD</span>
+          <span>5 分钟前</span>
+          <span class="tagRow"><span class="tag">#代码</span></span>
+        </div>
+      </div>
+      <span class="cardTime">5分钟</span>
+    </div>
+  </div>
+
+  <!-- 1b. 悬停 Popover 中的 MD 预览 -->
+  <h3 style="font-size:14px;margin:24px 0 12px;color:var(--text-secondary);">1b. 悬停 Popover — MD 渲染预览</h3>
+  <div class="popover">
+    <div class="popoverTitle">
+      <span class="mdIcon">MD</span> Markdown 预览
+    </div>
+    <div class="mdPreview">
+      <h1>My Project</h1>
+      <p>A <strong>modern</strong> clipboard manager built with <code>Tauri</code>.</p>
+      <h2>Features</h2>
+      <ul>
+        <li>📋 Real-time clipboard monitoring</li>
+        <li>🏷️ AI-powered auto-tagging</li>
+        <li>🎨 Custom CSS themes</li>
+      </ul>
+      <h2>Quick Start</h2>
+      <pre>npm install
+npm run tauri dev</pre>
+      <blockquote>⚠️ Requires Rust &amp; Node.js 18+</blockquote>
+    </div>
+  </div>
+
+  <!-- 1c. Markdown 对话框（左右分栏） -->
+  <h3 style="font-size:14px;margin:24px 0 12px;color:var(--text-secondary);">1c. Markdown 对话框 — 双击打开（左右分栏：源码 | 预览）</h3>
+  <div class="dialog-backdrop">
+    <div class="dialog-box">
+      <div class="dialog-header">
+        <h2 class="dialog-title">📄 Markdown 预览 — README.md</h2>
+        <button class="dialog-close">✕</button>
+      </div>
+      <div class="dialog-body">
+        <!-- 工具栏 -->
+        <div class="toolbarRow">
+          <span style="font-size:11px;color:var(--text-muted);margin-right:8px;">2分钟前 · VS Code</span>
+          <span class="sep"></span>
+          <span style="font-size:11px;color:var(--text-secondary);">1,247 字符 · 28 行</span>
+        </div>
+        <!-- 左右分栏 -->
+        <div class="splitPane" style="height:340px;">
+          <!-- 左侧：源码 -->
+          <div class="splitPaneLeft">
+            <div class="splitPaneHeader">
+              <span class="splitPaneLabel">📝 源码</span>
+              <span style="font-size:10px;color:var(--text-muted);">Markdown</span>
+            </div>
+            <div class="splitPaneBody"># My Project
+
+A **modern** clipboard manager built with `Tauri`.
+
+## Features
+- 📋 Real-time clipboard monitoring
+- 🏷️ AI-powered auto-tagging
+- 🎨 Custom CSS themes
+
+## Quick Start
+```bash
+npm install
+npm run tauri dev
+```
+
+> ⚠️ Requires Rust &amp; Node.js 18+</div>
+          </div>
+          <!-- 右侧：预览 -->
+          <div class="splitPaneRight">
+            <div class="splitPaneHeader">
+              <span class="splitPaneLabel">👁️ 预览</span>
+              <span style="font-size:10px;color:var(--text-muted);">GitHub Flavored</span>
+            </div>
+            <div class="splitPaneBody splitPaneBodyRendered">
+              <h1 style="font-size:18px;margin:0 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border-color);">My Project</h1>
+              <p style="margin:8px 0;">A <strong>modern</strong> clipboard manager built with <code style="background:var(--section-bg);padding:1px 5px;border-radius:4px;font-size:11px;color:#f59e0b;">Tauri</code>.</p>
+              <h2 style="font-size:14px;margin:12px 0 6px;">Features</h2>
+              <ul style="padding-left:18px;font-size:12px;">
+                <li>📋 Real-time clipboard monitoring</li>
+                <li>🏷️ AI-powered auto-tagging</li>
+                <li>🎨 Custom CSS themes</li>
+              </ul>
+              <h2 style="font-size:14px;margin:12px 0 6px;">Quick Start</h2>
+              <pre style="background:#1e1e2e;color:#cdd6f4;padding:8px 10px;border-radius:6px;font-size:11px;margin:6px 0;">npm install
+npm run tauri dev</pre>
+              <blockquote style="border-left:3px solid var(--accent);padding:2px 10px;margin:8px 0;color:var(--text-secondary);background:var(--section-bg);border-radius:0 4px 4px 0;font-size:12px;">⚠️ Requires Rust &amp; Node.js 18+</blockquote>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <div class="btnGroup">
+          <button class="btn btn-secondary">📋 复制为 HTML</button>
+          <button class="btn btn-secondary">📄 复制为纯文本</button>
+          <button class="btn btn-primary">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 1d. 右键菜单新增项 -->
+  <h3 style="font-size:14px;margin:24px 0 12px;color:var(--text-secondary);">1d. 右键菜单新增「预览 Markdown」</h3>
+  <div class="ctxMenu" style="position:relative;">
+    <div class="ctxItem"><span class="ctxItemIcon">📋</span>复制到剪贴板</div>
+    <div class="ctxItem"><span class="ctxItemIcon">📌</span>粘贴到前台</div>
+    <div class="ctxItem" style="position:relative;">
+      <span class="ctxItemIcon">📋</span>粘贴并变换<span class="ctxItemArrow">▸</span>
+      <div class="ctxSubmenu">
+        <div class="ctxItem">粘贴为大写</div>
+        <div class="ctxItem">粘贴为小写</div>
+      </div>
+    </div>
+    <div class="ctxItem" style="background:var(--accent-light);color:var(--accent);">
+      <span class="ctxItemIcon" style="opacity:1;">📄</span>预览 Markdown
+    </div>
+    <div class="ctxSep"></div>
+    <div class="ctxItem"><span class="ctxItemIcon">🏷️</span>编辑标签</div>
+    <div class="ctxItem"><span class="ctxItemIcon">📌</span>置顶</div>
+    <div class="ctxSep"></div>
+    <div class="ctxItem" style="color:#EF4444;"><span class="ctxItemIcon">🗑</span>删除</div>
+  </div>
+</div>
+
+<!-- ==================== 分隔线 ==================== -->
+<div class="divider"></div>
+
+<!-- ==================== 2. 历史对比 (Diff) ==================== -->
+<div class="section" id="diff">
+  <h2><span>2. 历史对比 (Diff)</span><span class="badge">新增</span></h2>
+
+  <p class="note">
+    <strong>触发方式：</strong>Ctrl 多选 2 条文本记录 → 右键菜单「对比差异」；或单选时「与当前剪贴板对比」。<br>
+    <strong>新增依赖：</strong><code>diff</code>（jsdiff，~5KB gzipped）<br>
+    <strong>新增文件：</strong>lib/diff.ts, DiffDialog.tsx
+  </p>
+
+  <!-- 2a. 右键菜单 — 多选 2 条时出现 -->
+  <h3 style="font-size:14px;margin:20px 0 12px;color:var(--text-secondary);">2a. 右键菜单 — 多选 2 条文本时出现「对比差异」</h3>
+  <div class="ctxMenu" style="position:relative;">
+    <div class="ctxItem"><span class="ctxItemIcon">📋</span>复制到剪贴板</div>
+    <div class="ctxItem"><span class="ctxItemIcon">📌</span>粘贴到前台</div>
+    <div class="ctxItem" style="background:var(--accent-light);color:var(--accent);">
+      <span class="ctxItemIcon" style="opacity:1;">🔍</span>对比差异
+    </div>
+    <div class="ctxSep"></div>
+    <div class="ctxItem"><span class="ctxItemIcon">📌</span>置顶</div>
+    <div class="ctxSep"></div>
+    <div class="ctxItem" style="color:#EF4444;"><span class="ctxItemIcon">🗑</span>删除 (2)</div>
+  </div>
+
+  <!-- 2b. Diff 对话框 -->
+  <h3 style="font-size:14px;margin:24px 0 12px;color:var(--text-secondary);">2b. Diff 对话框 — 行级对比</h3>
+  <div class="dialog-backdrop">
+    <div class="dialog-box" style="width:780px;">
+      <div class="dialog-header">
+        <h2 class="dialog-title">🔍 历史对比</h2>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <!-- 模式切换 -->
+          <div class="modeSwitch">
+            <button class="modeSwitchBtn active">行级</button>
+            <button class="modeSwitchBtn">词级</button>
+            <button class="modeSwitchBtn">字符</button>
+          </div>
+          <!-- 忽略空白 -->
+          <div class="toggleRow">
+            <div class="toggleSwitch on"></div> 忽略空白
+          </div>
+          <button class="dialog-close">✕</button>
+        </div>
+      </div>
+      <div class="dialog-body" style="padding:12px 16px;">
+        <!-- 统计条 -->
+        <div class="statBar">
+          <span class="added">+3 行新增</span>
+          <span class="removed">-2 行删除</span>
+          <span>2 行未变</span>
+        </div>
+        <!-- 对比头部 -->
+        <div style="display:flex;gap:0;">
+          <div class="diffHeader" style="flex:1;border-right:1px solid var(--border-color);">
+            <div class="diffHeaderDot left"></div>
+            <div class="diffHeaderLabel">
+              2024-01-01 10:30
+              <span class="diffHeaderMeta">VS Code · 156 字符</span>
+            </div>
+          </div>
+          <div class="diffHeader" style="flex:1;">
+            <div class="diffHeaderDot right"></div>
+            <div class="diffHeaderLabel">
+              2024-01-02 14:20
+              <span class="diffHeaderMeta">VS Code · 178 字符</span>
+            </div>
+          </div>
+        </div>
+        <!-- Diff 内容 -->
+        <div class="diffContainer" style="height:340px;">
+          <div class="diffLine diffUnchanged">
+            <span class="diffLineNum">1</span><span class="diffLineContent">function hello(name) {</span>
+          </div>
+          <div class="diffLine diffRemoved">
+            <span class="diffLineNum">2</span><span class="diffLineContent">console.log("Hello " + name);</span>
+          </div>
+          <div class="diffLine diffRemoved">
+            <span class="diffLineNum">3</span><span class="diffLineContent">return true;</span>
+          </div>
+          <div class="diffLine diffAdded">
+            <span class="diffLineNum">2</span><span class="diffLineContent">const greeting = `Hello, ${name}!`;</span>
+          </div>
+          <div class="diffLine diffAdded">
+            <span class="diffLineNum">3</span><span class="diffLineContent">console.info(greeting);</span>
+          </div>
+          <div class="diffLine diffAdded">
+            <span class="diffLineNum">4</span><span class="diffLineContent">return greeting;</span>
+          </div>
+          <div class="diffLine diffUnchanged">
+            <span class="diffLineNum">4</span><span class="diffLineContent">}</span>
+          </div>
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <div class="btnGroup" style="margin-right:auto;">
+          <button class="btn btn-secondary">📋 复制左侧</button>
+          <button class="btn btn-secondary">📋 复制右侧</button>
+          <button class="btn btn-secondary">🔀 合并到新记录</button>
+        </div>
+        <button class="btn btn-primary">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2c. 词级对比模式 -->
+  <h3 style="font-size:14px;margin:24px 0 12px;color:var(--text-secondary);">2c. 词级对比 — 精确到单词</h3>
+  <div class="dialog-backdrop">
+    <div class="dialog-box" style="width:700px;">
+      <div class="dialog-header">
+        <h2 class="dialog-title">🔍 历史对比 — 词级</h2>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div class="modeSwitch">
+            <button class="modeSwitchBtn">行级</button>
+            <button class="modeSwitchBtn active">词级</button>
+            <button class="modeSwitchBtn">字符</button>
+          </div>
+          <button class="dialog-close">✕</button>
+        </div>
+      </div>
+      <div class="dialog-body" style="padding:12px 16px;">
+        <div class="statBar">
+          <span class="added">+3 词</span>
+          <span class="removed">-1 词</span>
+          <span>5 词未变</span>
+        </div>
+        <!-- 词级对比：上下两行 -->
+        <div style="border:1px solid var(--border-color);border-radius:10px;overflow:hidden;background:var(--card-bg);">
+          <div style="padding:12px 16px;font-size:13px;font-family:'SF Mono','Fira Code','Consolas',monospace;line-height:2;border-bottom:1px solid var(--border-color);">
+            <span style="color:var(--text-primary);">今天</span>
+            <span style="background:rgba(239,68,68,0.2);color:#f87171;border-radius:3px;padding:0 2px;">天气</span>
+            <span style="color:var(--text-primary);">很好</span>
+          </div>
+          <div style="padding:12px 16px;font-size:13px;font-family:'SF Mono','Fira Code','Consolas',monospace;line-height:2;">
+            <span style="color:var(--text-primary);">今天</span>
+            <span style="background:rgba(34,197,94,0.2);color:#4ade80;border-radius:3px;padding:0 2px;">阳光明媚</span>
+            <span style="color:var(--text-primary);">很好</span>
+          </div>
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <div class="btnGroup" style="margin-right:auto;">
+          <button class="btn btn-secondary">📋 复制左侧</button>
+          <button class="btn btn-secondary">📋 复制右侧</button>
+        </div>
+        <button class="btn btn-primary">关闭</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

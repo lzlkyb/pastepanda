@@ -1,4 +1,4 @@
-import { useState, useCallback, createContext, useContext, ReactNode } from "react";
+import { useState, useCallback, useMemo, createContext, useContext, ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, AlertCircle, AlertTriangle, Info, X, RotateCcw } from "lucide-react";
 import styles from "./Toast.module.css";
@@ -45,6 +45,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const dismiss = (id: number) => setToasts((prev) => prev.filter((t) => t.id !== id));
 
+  // 稳定的 context value：避免每次 Provider 渲染（toast 列表变化）都让所有消费者重渲染
+  const ctxValue = useMemo(() => ({ toast }), [toast]);
+
   const ICONS = {
     success: CheckCircle2,
     error: AlertCircle,
@@ -54,7 +57,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <ToastContext.Provider value={{ toast }}>
+    <ToastContext.Provider value={ctxValue}>
       {children}
       {/* Toast container */}
       <div className={styles.toastContainer}>

@@ -83,6 +83,13 @@ impl IconCache {
     /// 根据图标文件名获取完整路径（用于 convertFileSrc）
     /// 先查内存（磁盘恢复时已预加载），再查磁盘
     pub fn get_icon_full_path(&self, filename: &str) -> Option<PathBuf> {
+        // 修复 C14：防路径穿越。图标文件名应为纯文件名（hex hash + .png），
+        // 拒绝任何含路径分隔符或 ".." 的输入，避免拼出缓存目录之外的路径
+        // （此前可被用作任意文件存在性探针，且 is_valid_png 会整文件读入导致 OOM）
+        if !Self::is_safe_icon_name(filename) {
+            log::warn!("[IconCache] 拒绝非法图标文件名: {:?}", filename);
+            return None;
+        }
         // 1. 查内存缓存（最快）
         if let Ok(files) = self.icon_files.lock() {
             if let Some(path) = files.get(filename) {
@@ -99,6 +106,14 @@ impl IconCache {
         None
     }
 
+    /// 校验图标文件名是否为安全的纯文件名（无路径分隔符、无 ".."、非空）
+    fn is_safe_icon_name(name: &str) -> bool {
+        !name.is_empty()
+            && !name.contains(['/', '\\', ':'])
+            && !name.contains("..")
+            && name != "."
+    }
+
     /// 根据 exe 路径 hash 查找图标（回退逻辑：窗口标题 → exe 路径 → hash → 图标）
     /// 用于 source_icon 为空但知道窗口标题的场景
     pub fn get_icon_by_exe_path(&self, exe_path: &PathBuf) -> Option<PathBuf> {
@@ -112,10 +127,16 @@ impl IconCache {
     }
 
     /// 验证文件是否为有效 PNG（检查文件头 8 字节）
+    /// 修复 C14：只读前 8 字节，不再整文件读入内存（大文件会导致 OOM）
     fn is_valid_png(path: &PathBuf) -> bool {
+        use std::io::Read;
         const PNG_HEADER: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-        std::fs::read(path)
-            .map(|data| data.len() >= 8 && data[..8] == PNG_HEADER)
+        std::fs::File::open(path)
+            .and_then(|mut f| {
+                let mut header = [0u8; 8];
+                f.read_exact(&mut header).map(|_| header)
+            })
+            .map(|header| header == PNG_HEADER)
             .unwrap_or(false)
     }
 

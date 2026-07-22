@@ -4,7 +4,7 @@ use arboard::Clipboard;
 use md5::{Digest, Md5};
 use serde::Serialize;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc, Mutex,
 };
 use std::time::{Duration, Instant};
@@ -47,6 +47,8 @@ impl PasteSuppress {
         }
     }
 
+    /// 时间抑制兜底检查：是否仍处于自粘贴抑制窗口内。
+    /// 作为 hash 主检查的兜底——覆盖 hash 已被清除的轮询竞态，以及无 hash 的粘贴路径（如文件）。
     pub fn is_suppressed(&self) -> bool {
         if let Ok(guard) = self.until.lock() {
             guard.map_or(false, |t| Instant::now() < t)
@@ -103,10 +105,15 @@ impl ClipboardMonitor {
     }
 
     pub fn start(&self) {
-        if self.running.load(Ordering::SeqCst) {
+        // 修复 M2：原子 CAS 替代"先判断后置位"，防止并发 toggle 同时通过检查
+        // 而 spawn 出两个轮询线程（各持独立 last_text_hash → 图片/文件重复入库）
+        if self
+            .running
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
             return;
         }
-        self.running.store(true, Ordering::SeqCst);
 
         let running = self.running.clone();
         let app_handle = self.app_handle.clone();
@@ -118,7 +125,12 @@ impl ClipboardMonitor {
             let mut clipboard = match Clipboard::new() {
                 Ok(c) => c,
                 Err(e) => {
+                    // 修复 C8：失败时复位 running，否则 is_running() 永远为 true、
+                    // start() 永远提前返回，监听永久失效（只能重启应用）。
+                    // 同时广播状态事件，让 UI 不再显示"监听中"。
                     log::error!("[ClipboardMonitor] 无法打开剪贴板: {}", e);
+                    running.store(false, Ordering::SeqCst);
+                    let _ = app_handle.emit("monitor-status-changed", false);
                     return;
                 }
             };
@@ -126,13 +138,31 @@ impl ClipboardMonitor {
             let mut last_text_hash: Option<String> = None;
             let poll_interval = Duration::from_millis(400);
 
+            // Low 修复：启动/重启时以当前剪贴板内容作为基准 hash，
+            // 避免监听恢复后必然把已存在的内容重复记录一条
+            if let Ok(initial_text) = clipboard.get_text() {
+                if !initial_text.is_empty() {
+                    let initial_text = if let Some(monitor) = app_handle.try_state::<ClipboardMonitor>()
+                    {
+                        if monitor.get_auto_strip() {
+                            initial_text.trim().to_string()
+                        } else {
+                            initial_text
+                        }
+                    } else {
+                        initial_text
+                    };
+                    if !initial_text.is_empty() {
+                        last_text_hash = Some(format!(
+                            "{:x}",
+                            Md5::new().chain_update(initial_text.as_bytes()).finalize()
+                        ));
+                    }
+                }
+            }
+
             while running.load(Ordering::SeqCst) {
                 std::thread::sleep(poll_interval);
-
-                // 持续追踪前台窗口（跳过自身窗口）
-                if let Some(engine) = app_handle.try_state::<crate::paste_engine::PasteEngine>() {
-                    engine.track_foreground_window();
-                }
 
                 // 尝试读取文本
                 match clipboard.get_text() {
@@ -166,6 +196,13 @@ impl ClipboardMonitor {
                             continue;
                         }
 
+                        // 时间兜底：hash 已清除（轮询竞态）或无 hash 路径下，仍在抑制窗口内则跳过
+                        if paste_suppress.is_suppressed() {
+                            log::info!("[ClipboardMonitor] 跳过自身粘贴内容 (时间抑制窗口内)");
+                            last_text_hash = Some(hash);
+                            continue;
+                        }
+
                         if Some(&hash) != last_text_hash.as_ref() {
                             last_text_hash = Some(hash.clone());
 
@@ -181,7 +218,7 @@ impl ClipboardMonitor {
                             let store = app_handle.try_state::<DataStore>();
                             let mut existing_id: Option<String> = None;
                             if let Some(ref store) = store {
-                                if let Ok(Some(existing)) = store.find_latest_by_md5(&hash) {
+                                if let Ok(Some(existing)) = store.find_latest_by_md5(&hash, "默认") {
                                     // 找到重复内容，只更新时间戳（不创建新记录）
                                     existing_id = Some(existing.id.clone());
                                     if let Err(e) =
@@ -250,31 +287,49 @@ impl ClipboardMonitor {
 
                                 // AI 自动分类：用 std::thread 后台执行，不阻塞轮询循环
                                 // 注意：不能用 tokio::spawn，因为监听线程是 std::thread，没有 Tokio runtime
+                                // 并发上限：剪贴板高频突发（同步工具/脚本）时避免无界创建线程（M29）
                                 {
-                                    let history_id = item.id.clone();
-                                    let classify_text = item.text.clone();
-                                    let app_clone = app_handle.clone();
-                                    std::thread::spawn(move || {
-                                        // ContentClassifier 是无状态的纯逻辑引擎，直接创建实例即可
-                                        let classifier = ContentClassifier::new();
-                                        let labels = classifier.classify(&classify_text);
-                                        if let Some(store) = app_clone.try_state::<DataStore>() {
-                                            if let Ok(tag_ids) = store.resolve_auto_tag_ids(&labels) {
-                                                if !tag_ids.is_empty() {
-                                                    if let Err(e) = store.add_history_tags(&history_id, &tag_ids) {
-                                                        log::warn!("[ContentClassifier] 写入自动标签失败: {}", e);
-                                                    } else {
-                                                        log::info!("[ContentClassifier] 自动分类: {:?} → {}", labels, history_id);
-                                                        // 传递增量数据：history_id + tag_ids，前端只更新该 item 的标签
-                                                        let _ = app_clone.emit("tags-updated", serde_json::json!({
-                                                            "history_id": history_id,
-                                                            "tag_ids": tag_ids,
-                                                        }));
+                                    const MAX_CLASSIFY_IN_FLIGHT: usize = 4;
+                                    static CLASSIFY_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+
+                                    if CLASSIFY_IN_FLIGHT.load(Ordering::SeqCst) >= MAX_CLASSIFY_IN_FLIGHT {
+                                        log::debug!("[ContentClassifier] 分类线程已达上限，跳过本条自动分类");
+                                    } else {
+                                        CLASSIFY_IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
+                                        let history_id = item.id.clone();
+                                        let classify_text = item.text.clone();
+                                        let app_clone = app_handle.clone();
+                                        std::thread::spawn(move || {
+                                            // panic-safe 计数复位
+                                            struct DecOnDrop;
+                                            impl Drop for DecOnDrop {
+                                                fn drop(&mut self) {
+                                                    CLASSIFY_IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
+                                                }
+                                            }
+                                            let _dec = DecOnDrop;
+
+                                            // ContentClassifier 是无状态的纯逻辑引擎，直接创建实例即可
+                                            let classifier = ContentClassifier::new();
+                                            let labels = classifier.classify(&classify_text);
+                                            if let Some(store) = app_clone.try_state::<DataStore>() {
+                                                if let Ok(tag_ids) = store.resolve_auto_tag_ids(&labels) {
+                                                    if !tag_ids.is_empty() {
+                                                        if let Err(e) = store.add_history_tags(&history_id, &tag_ids) {
+                                                            log::warn!("[ContentClassifier] 写入自动标签失败: {}", e);
+                                                        } else {
+                                                            log::info!("[ContentClassifier] 自动分类: {:?} → {}", labels, history_id);
+                                                            // 传递增量数据：history_id + tag_ids，前端只更新该 item 的标签
+                                                            let _ = app_clone.emit("tags-updated", serde_json::json!({
+                                                                "history_id": history_id,
+                                                                "tag_ids": tag_ids,
+                                                            }));
+                                                        }
                                                     }
                                                 }
                                             }
-                                        }
-                                    });
+                                        });
+                                    }
                                 }
 
                                 // 推送事件到前端
@@ -321,6 +376,13 @@ impl ClipboardMonitor {
                                     continue;
                                 }
 
+                                // 时间兜底：hash 已清除（轮询竞态）或无 hash 路径下，仍在抑制窗口内则跳过
+                                if paste_suppress.is_suppressed() {
+                                    log::info!("[ClipboardMonitor] 跳过自身粘贴图片 (时间抑制窗口内)");
+                                    last_text_hash = Some(img_hash);
+                                    continue;
+                                }
+
                                 if Some(&img_hash) != last_text_hash.as_ref() {
                                     last_text_hash = Some(img_hash.clone());
 
@@ -342,32 +404,43 @@ impl ClipboardMonitor {
                                             img.height as u32,
                                             img.bytes.to_vec(),
                                         );
-                                        if let Some(img_buf) = img_buf {
-                                            let dyn_img = image::DynamicImage::ImageRgba8(img_buf);
-                                            // 缩放到最大 1080px（长边限制）
-                                            let max_dim = 1080u32;
-                                            let dyn_img = if img.width as u32 > max_dim
-                                                || img.height as u32 > max_dim
-                                            {
-                                                let ratio = max_dim as f64
-                                                    / img.width.max(img.height) as f64;
-                                                let new_w = (img.width as f64 * ratio) as u32;
-                                                let new_h = (img.height as f64 * ratio) as u32;
-                                                dyn_img.resize_exact(
-                                                    new_w,
-                                                    new_h,
-                                                    image::imageops::FilterType::Lanczos3,
-                                                )
-                                            } else {
-                                                dyn_img
-                                            };
-                                            if let Err(e) = dyn_img.save(&img_path) {
-                                                log::error!(
-                                                    "[ClipboardMonitor] 保存图片失败 ({}): {}",
-                                                    img_path.display(),
-                                                    e
-                                                );
-                                            }
+                                        let Some(img_buf) = img_buf else {
+                                            log::error!(
+                                                "[ClipboardMonitor] 图片 RGBA 数据与尺寸不匹配 ({}x{})，跳过本次图片",
+                                                img.width,
+                                                img.height
+                                            );
+                                            last_text_hash = None;
+                                            continue;
+                                        };
+                                        let dyn_img = image::DynamicImage::ImageRgba8(img_buf);
+                                        // 缩放到最大 1080px（长边限制）
+                                        let max_dim = 1080u32;
+                                        let dyn_img = if img.width as u32 > max_dim
+                                            || img.height as u32 > max_dim
+                                        {
+                                            let ratio = max_dim as f64
+                                                / img.width.max(img.height) as f64;
+                                            let new_w = (img.width as f64 * ratio) as u32;
+                                            let new_h = (img.height as f64 * ratio) as u32;
+                                            dyn_img.resize_exact(
+                                                new_w,
+                                                new_h,
+                                                image::imageops::FilterType::Lanczos3,
+                                            )
+                                        } else {
+                                            dyn_img
+                                        };
+                                        if let Err(e) = dyn_img.save(&img_path) {
+                                            // 修复 M4：保存失败即中止，不再插入指向不存在文件的历史记录
+                                            // （此前仅 log 不中断，记录 content 指向缺失文件，UI 点击必报错）
+                                            log::error!(
+                                                "[ClipboardMonitor] 保存图片失败 ({}): {}，跳过本条记录",
+                                                img_path.display(),
+                                                e
+                                            );
+                                            last_text_hash = None;
+                                            continue;
                                         }
                                     }
 

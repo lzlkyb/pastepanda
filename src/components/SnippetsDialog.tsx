@@ -150,14 +150,29 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
 
   const handleBatchDelete = async () => {
     if (selectedIds.size === 0) return;
-    try {
-      for (const id of selectedIds) {
+    // 逐条删除，单条失败不中断；无论成败都刷新列表，仅保留失败项的选中态（Low 修复）
+    const failed = new Set<string>();
+    for (const id of selectedIds) {
+      try {
         await invoke("delete_snippet", { id });
+      } catch (e) {
+        logger.warn("批量删除片段失败", e);
+        failed.add(id);
       }
-      await loadSnippets();
-      setSelectedIds(new Set());
+    }
+    await loadSnippets();
+    setSelectedIds(failed);
+  };
+
+  const handleExportSnippets = async () => {
+    try {
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const path = await save({ filters: [{ name: "JSON", extensions: ["json"] }] });
+      if (!path) return;
+      const { writeTextFile } = await import("@tauri-apps/plugin-fs");
+      await writeTextFile(path, JSON.stringify(snippets, null, 2));
     } catch (e) {
-      logger.warn("批量删除片段失败", e);
+      logger.warn("导出片段失败", e);
     }
   };
 
@@ -194,7 +209,7 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
                     <CheckSquare size={13} />
                     <span>批量</span>
                   </button>
-                  <button className={`${styles.btnSmV2} ${styles.outline} ${styles.compact}`} title="导出">
+                  <button onClick={handleExportSnippets} className={`${styles.btnSmV2} ${styles.outline} ${styles.compact}`} title="导出">
                     <Download size={13} />
                     <span>导出</span>
                   </button>

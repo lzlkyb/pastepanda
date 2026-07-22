@@ -310,6 +310,14 @@ impl DataStore {
         })
     }
 
+    /// 获取 DB 连接锁（容忍中毒 — Low 修复）。
+    /// 若某持有者 panic 导致 Mutex 中毒，此后所有 lock() 都会永久失败，
+    /// DB 访问将彻底瘫痪直到重启。rusqlite 单条语句具备原子性，panic 后
+    /// 连接本身仍可用，因此直接 into_inner() 恢复。
+    fn lock_conn(&self) -> std::sync::MutexGuard<'_, rusqlite::Connection> {
+        self.conn.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
     pub fn get_history(
         &self,
         workspace: &str,
@@ -318,7 +326,7 @@ impl DataStore {
         offset: u32,
         limit: u32,
     ) -> Result<Vec<HistoryItem>, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
 
         let mut sql = String::from(
             "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon
@@ -382,7 +390,7 @@ impl DataStore {
 
     /// 获取最近 N 条记录（按时间倒序，用于托盘菜单快速预览）
     pub fn get_recent_items(&self, limit: u32) -> Result<Vec<HistoryItem>, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         let mut items: Vec<HistoryItem> = {
             let mut stmt = conn
                 .prepare(
@@ -420,10 +428,25 @@ impl DataStore {
     }
 
     pub fn insert_history(&self, item: &HistoryItem) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
+        // 修复 C10：INSERT OR REPLACE 在主键冲突时执行 DELETE+INSERT，
+        // 会触发 history_tags 的 ON DELETE CASCADE，静默清空该记录的全部标签。
+        // 改为 ON CONFLICT(id) DO UPDATE 原地更新，不删行、不触发级联。
         conn.execute(
-            "INSERT OR REPLACE INTO history (id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            "INSERT INTO history (id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+             ON CONFLICT(id) DO UPDATE SET
+                text = excluded.text,
+                time = excluded.time,
+                type = excluded.type,
+                content = excluded.content,
+                pinned = excluded.pinned,
+                source = excluded.source,
+                workspace = excluded.workspace,
+                md5 = excluded.md5,
+                pinyin_initials = excluded.pinyin_initials,
+                group_id = excluded.group_id,
+                source_icon = excluded.source_icon",
             params![
                 item.id,
                 item.text,
@@ -445,7 +468,7 @@ impl DataStore {
 
     /// 更新历史记录的文本内容（编辑对话框用）— 同时更新 md5 和拼音
     pub fn update_history(&self, id: &str, text: &str) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         let md5_hash = format!("{:x}", Md5::new().chain_update(text.as_bytes()).finalize());
         let pinyin_initials = compute_pinyin_initials(text);
         let affected = conn
@@ -461,13 +484,18 @@ impl DataStore {
     }
 
     /// 查找与给定 md5 相同的最近一条文本记录（用于智能合并重复内容）
-    pub fn find_latest_by_md5(&self, md5: &str) -> Result<Option<HistoryItem>, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+    /// 修复 Low：增加 workspace 过滤，避免跨工作区误合并
+    pub fn find_latest_by_md5(
+        &self,
+        md5: &str,
+        workspace: &str,
+    ) -> Result<Option<HistoryItem>, String> {
+        let conn = self.lock_conn();
         let result = conn.query_row(
             "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon
-             FROM history WHERE md5 = ?1 AND type = 'text'
+             FROM history WHERE md5 = ?1 AND type = 'text' AND workspace = ?2
              ORDER BY time DESC LIMIT 1",
-            params![md5],
+            params![md5, workspace],
             |row| {
                 Ok(HistoryItem {
                     id: row.get(0)?,
@@ -499,7 +527,7 @@ impl DataStore {
 
     /// 更新记录的 time 为当前时间（智能合并用：重复内容只更新时间戳）
     pub fn update_history_time(&self, id: &str, new_time: &str) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         conn.execute(
             "UPDATE history SET time = ?1 WHERE id = ?2",
             params![new_time, id],
@@ -509,7 +537,7 @@ impl DataStore {
     }
 
     pub fn delete_history(&self, ids: &[String]) -> Result<u32, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         // 显式事务：批量删除要么全成功要么全回滚
         conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
         let result = (|| {
@@ -544,7 +572,7 @@ impl DataStore {
     }
 
     pub fn toggle_pin(&self, id: &str) -> Result<bool, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         conn.execute(
             "UPDATE history SET pinned = CASE WHEN pinned = 0 THEN 1 ELSE 0 END WHERE id = ?1",
             params![id],
@@ -569,7 +597,7 @@ impl DataStore {
         workspace: &str,
         before_days: Option<u32>,
     ) -> Result<Vec<HistoryItem>, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         // 安全保护：before_days 为 None 或 0 时返回空列表
         let days = match before_days {
             Some(d) if d > 0 => d,
@@ -612,7 +640,7 @@ impl DataStore {
     }
 
     pub fn clear_history(&self, workspace: &str, before_days: Option<u32>) -> Result<u32, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         // 安全保护：before_days 为 None 或 0 时不删除任何记录
         let days = match before_days {
             Some(d) if d > 0 => d,
@@ -639,8 +667,122 @@ impl DataStore {
         }
     }
 
+    /// 清理历史并返回被删记录（用于撤销）。
+    /// 修复 Low：原实现在命令层分两次加锁（先读后删），读写之间存在竞态窗口
+    /// （期间 pin 状态变化/记录增删会导致撤销快照与实际删除不一致）。
+    /// 此方法在同一把连接锁内完成 读取→加载标签→事务删除，保证原子一致。
+    pub fn clear_history_with_undo(
+        &self,
+        workspace: &str,
+        before_days: Option<u32>,
+    ) -> Result<(u32, Vec<HistoryItem>), String> {
+        // 安全保护：before_days 为 None 或 0 时不删除任何记录
+        let days = match before_days {
+            Some(d) if d > 0 => d,
+            _ => return Ok((0, Vec::new())),
+        };
+        let cutoff = chrono::Local::now() - chrono::Duration::days(days as i64);
+        let cutoff_str = cutoff.format("%Y-%m-%d %H:%M:%S").to_string();
+
+        let conn = self.lock_conn();
+
+        // 1. 读取即将被删除的记录
+        let mut items: Vec<HistoryItem> = {
+            let mut stmt = conn.prepare(
+                "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon
+                 FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2",
+            ).map_err(|e| e.to_string())?;
+            let result: Vec<HistoryItem> = stmt
+                .query_map(params![workspace, cutoff_str], |row| {
+                    Ok(HistoryItem {
+                        id: row.get(0)?,
+                        text: row.get(1)?,
+                        time: row.get(2)?,
+                        item_type: row.get(3)?,
+                        content: row.get(4)?,
+                        pinned: row.get::<_, i32>(5)? != 0,
+                        source: row.get(6)?,
+                        workspace: row.get(7)?,
+                        md5: row.get(8)?,
+                        pinyin_initials: row.get(9)?,
+                        group_id: row.get(10)?,
+                        source_icon: row.get(11)?,
+                        tags: Vec::new(),
+                    })
+                })
+                .map_err(|e| e.to_string())?
+                .filter_map(|r| r.ok())
+                .collect();
+            drop(stmt);
+            result
+        };
+
+        // 2. 在同一连接上内联加载标签（不能再调用 self.load_tags_into_items，
+        //    它会重复加锁导致死锁）
+        if !items.is_empty() {
+            let ids: Vec<String> = items.iter().map(|i| i.id.clone()).collect();
+            let placeholders: Vec<String> =
+                ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+            let sql = format!(
+                "SELECT ht.history_id, t.id, t.name, t.color, COALESCE(ht.source, 'manual'), t.created_at
+                 FROM history_tags ht
+                 JOIN tags t ON t.id = ht.tag_id
+                 WHERE ht.history_id IN ({})
+                 ORDER BY t.name ASC",
+                placeholders.join(","),
+            );
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+                ids.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+            let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map(param_refs.as_slice(), |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        Tag {
+                            id: row.get(1)?,
+                            name: row.get(2)?,
+                            color: row.get(3)?,
+                            source: row.get::<_, String>(4).unwrap_or_else(|_| "manual".to_string()),
+                            created_at: row.get(5)?,
+                        },
+                    ))
+                })
+                .map_err(|e| e.to_string())?;
+            let mut tag_map: std::collections::HashMap<String, Vec<Tag>> =
+                std::collections::HashMap::new();
+            for row in rows {
+                if let Ok((history_id, tag)) = row {
+                    tag_map.entry(history_id).or_default().push(tag);
+                }
+            }
+            drop(stmt);
+            for item in items.iter_mut() {
+                if let Some(tags) = tag_map.get(&item.id) {
+                    item.tags = tags.clone();
+                }
+            }
+        }
+
+        // 3. 事务删除
+        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        let result = conn.execute(
+            "DELETE FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2",
+            params![workspace, cutoff_str],
+        );
+        match result {
+            Ok(count) => {
+                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                Ok((count as u32, items))
+            }
+            Err(e) => {
+                conn.execute_batch("ROLLBACK;").ok();
+                Err(e.to_string())
+            }
+        }
+    }
+
     pub fn get_stats(&self, workspace: &str) -> Result<Stats, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
 
         let total: u32 = conn
             .query_row(
@@ -718,7 +860,7 @@ impl DataStore {
     }
 
     pub fn get_config(&self) -> Result<serde_json::Value, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         let mut stmt = conn
             .prepare("SELECT key, value FROM config")
             .map_err(|e| e.to_string())?;
@@ -746,19 +888,23 @@ impl DataStore {
         // 先备份当前配置（写入前备份，保留最近 10 个版本）
         let _ = self.backup_config();
 
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut conn = self.lock_conn();
         if let serde_json::Value::Object(map) = config {
+            // 修复 M15：事务包裹全部配置键写入，保证 all-or-nothing，
+            // 避免中途失败时配置处于半写状态
+            let tx = conn.transaction().map_err(|e| e.to_string())?;
             for (key, value) in map {
                 let value_str = match value {
                     serde_json::Value::String(s) => s.clone(),
                     _ => serde_json::to_string(value).unwrap_or_default(),
                 };
-                conn.execute(
+                tx.execute(
                     "INSERT OR REPLACE INTO config (key, value) VALUES (?1, ?2)",
                     params![key, value_str],
                 )
                 .map_err(|e| e.to_string())?;
             }
+            tx.commit().map_err(|e| e.to_string())?;
         }
         Ok(())
     }
@@ -819,7 +965,17 @@ impl DataStore {
     }
 
     pub fn import_history(&self, items: &[HistoryItem]) -> Result<u32, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        // 修复 Low：导入条数上限，防止超大导入文件耗尽内存/撑爆数据库
+        const MAX_IMPORT_ITEMS: usize = 50_000;
+        if items.len() > MAX_IMPORT_ITEMS {
+            return Err(format!(
+                "导入失败：条数 {} 超过上限 {}，请拆分后重试",
+                items.len(),
+                MAX_IMPORT_ITEMS
+            ));
+        }
+
+        let conn = self.lock_conn();
 
         // 显式事务：批量导入要么全成功要么全回滚
         conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
@@ -865,7 +1021,7 @@ impl DataStore {
     }
 
     pub fn add_snippet(&self, name: &str, content: &str) -> Result<String, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         let id = uuid::Uuid::new_v4().to_string();
         conn.execute(
             "INSERT OR REPLACE INTO snippets (id, name, content) VALUES (?1, ?2, ?3)",
@@ -876,7 +1032,7 @@ impl DataStore {
     }
 
     pub fn get_snippets(&self) -> Result<Vec<Snippet>, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         let mut stmt = conn
             .prepare("SELECT id, name, content, tag FROM snippets ORDER BY rowid DESC")
             .map_err(|e| e.to_string())?;
@@ -902,7 +1058,7 @@ impl DataStore {
         content: &str,
         tag: &str,
     ) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         conn.execute(
             "UPDATE snippets SET name = ?1, content = ?2, tag = ?3 WHERE id = ?4",
             params![name, content, tag, id],
@@ -912,7 +1068,7 @@ impl DataStore {
     }
 
     pub fn delete_snippet(&self, id: &str) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         conn.execute("DELETE FROM snippets WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
         Ok(())
@@ -920,7 +1076,7 @@ impl DataStore {
 
     /// 获取全部历史记录（用于导出，无分页限制）
     pub fn get_all_history(&self, workspace: &str) -> Result<Vec<HistoryItem>, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         let mut items: Vec<HistoryItem> = {
             let mut stmt = conn
                 .prepare(
@@ -960,7 +1116,7 @@ impl DataStore {
     // ===== 分组 CRUD =====
 
     pub fn get_groups(&self) -> Result<Vec<Group>, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         let mut stmt = conn
             .prepare("SELECT id, name, color, icon, sort_order, created_at FROM groups ORDER BY sort_order ASC")
             .map_err(|e| e.to_string())?;
@@ -982,7 +1138,7 @@ impl DataStore {
     }
 
     pub fn create_group(&self, name: &str, color: &str, icon: &str) -> Result<Group, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         // 获取最大 sort_order
@@ -1006,7 +1162,7 @@ impl DataStore {
     }
 
     pub fn update_group(&self, id: &str, name: &str, color: &str, icon: &str) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         let affected = conn
             .execute(
                 "UPDATE groups SET name = ?1, color = ?2, icon = ?3 WHERE id = ?4",
@@ -1020,7 +1176,7 @@ impl DataStore {
     }
 
     pub fn delete_group(&self, id: &str) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
         let result = (|| -> Result<(), String> {
             // 将该分组的记录的 group_id 置为 NULL
@@ -1047,7 +1203,7 @@ impl DataStore {
     }
 
     pub fn reorder_groups(&self, ids: &[String]) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
         let result = (|| -> Result<(), String> {
             for (i, id) in ids.iter().enumerate() {
@@ -1072,7 +1228,7 @@ impl DataStore {
     }
 
     pub fn move_to_group(&self, history_ids: &[String], group_id: Option<&str>) -> Result<u32, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         let placeholders: Vec<String> = history_ids
             .iter()
             .enumerate()
@@ -1095,7 +1251,7 @@ impl DataStore {
     // ===== 标签 CRUD =====
 
     pub fn get_tags(&self) -> Result<Vec<Tag>, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         let mut stmt = conn
             .prepare("SELECT id, name, color, COALESCE(source, 'manual'), created_at FROM tags ORDER BY name ASC")
             .map_err(|e| e.to_string())?;
@@ -1116,7 +1272,7 @@ impl DataStore {
     }
 
     pub fn create_tag(&self, name: &str, color: &str) -> Result<Tag, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         conn.execute(
@@ -1134,7 +1290,7 @@ impl DataStore {
     }
 
     pub fn update_tag(&self, id: &str, name: &str, color: &str) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         let affected = conn
             .execute(
                 "UPDATE tags SET name = ?1, color = ?2 WHERE id = ?3",
@@ -1148,7 +1304,7 @@ impl DataStore {
     }
 
     pub fn delete_tag(&self, id: &str) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
         let result = (|| -> Result<(), String> {
             conn.execute("DELETE FROM history_tags WHERE tag_id = ?1", params![id])
@@ -1170,7 +1326,7 @@ impl DataStore {
     }
 
     pub fn set_item_tags(&self, history_id: &str, tag_ids: &[String]) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
         let result = (|| -> Result<(), String> {
             // 先删除旧关联
@@ -1202,7 +1358,7 @@ impl DataStore {
     }
 
     pub fn add_item_tags(&self, history_ids: &[String], tag_ids: &[String]) -> Result<u32, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
         let result = (|| -> Result<u32, String> {
             let mut count = 0u32;
@@ -1232,7 +1388,7 @@ impl DataStore {
     }
 
     pub fn remove_item_tags(&self, history_ids: &[String], tag_ids: &[String]) -> Result<u32, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         let placeholders_h: Vec<String> = history_ids
             .iter()
             .enumerate()
@@ -1264,7 +1420,7 @@ impl DataStore {
         if history_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         let placeholders: Vec<String> = history_ids
             .iter()
             .enumerate()
@@ -1328,7 +1484,7 @@ impl DataStore {
 
     /// 确保自动标签种子数据存在（首次启动时插入）
     pub fn ensure_auto_tags(&self) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         let auto_tags: [(&str, &str, &str); 20] = [
             // 主类别
             ("auto-code", "代码", "#6366F1"),
@@ -1365,7 +1521,7 @@ impl DataStore {
 
     /// 根据标签名列表查找对应的标签 ID（用于自动分类结果写入数据库）
     pub fn resolve_auto_tag_ids(&self, labels: &[String]) -> Result<Vec<String>, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         let mut ids = Vec::new();
         for label in labels {
             let result: Result<String, _> = conn.query_row(
@@ -1385,7 +1541,7 @@ impl DataStore {
         if tag_ids.is_empty() {
             return Ok(());
         }
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
         let result = (|| -> Result<(), String> {
             for tag_id in tag_ids {
@@ -1412,7 +1568,7 @@ impl DataStore {
     /// 将指定记录的所有自动标签转为手动标签（用户确认）
     /// 只影响当前记录的 history_tags.source，不影响其他记录
     pub fn confirm_auto_tags(&self, history_id: &str) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         conn.execute(
             "UPDATE history_tags SET source = 'manual' WHERE history_id = ?1 AND source = 'auto'",
             params![history_id],
@@ -1748,7 +1904,7 @@ mod tests {
         let md5 = item.md5.clone().unwrap();
         store.insert_history(&item).unwrap();
 
-        let found = store.find_latest_by_md5(&md5).unwrap();
+        let found = store.find_latest_by_md5(&md5, "默认").unwrap();
         assert!(found.is_some());
         assert_eq!(found.unwrap().id, "md5-1");
     }
@@ -1756,7 +1912,7 @@ mod tests {
     #[test]
     fn test_find_latest_by_md5_not_found() {
         let store = make_store();
-        let found = store.find_latest_by_md5("nonexistent_md5").unwrap();
+        let found = store.find_latest_by_md5("nonexistent_md5", "默认").unwrap();
         assert!(found.is_none());
     }
 
@@ -1774,8 +1930,27 @@ mod tests {
         item2.md5 = Some(md5_hash.clone());
         store.insert_history(&item2).unwrap();
 
-        let found = store.find_latest_by_md5(&md5_hash).unwrap().unwrap();
+        let found = store
+            .find_latest_by_md5(&md5_hash, "默认")
+            .unwrap()
+            .unwrap();
         assert_eq!(found.id, "dup-2"); // 应该返回时间更新的那条
+    }
+
+    #[test]
+    fn test_find_latest_by_md5_workspace_isolated() {
+        let store = make_store();
+        let mut item = make_item("ws-1", "Cross WS Content", "2024-01-01 10:00:00", "text");
+        let md5 = item.md5.clone().unwrap();
+        item.workspace = "其他工作区".to_string();
+        store.insert_history(&item).unwrap();
+
+        // 不同 workspace 下不应命中
+        let found = store.find_latest_by_md5(&md5, "默认").unwrap();
+        assert!(found.is_none());
+        // 相同 workspace 下应命中
+        let found = store.find_latest_by_md5(&md5, "其他工作区").unwrap();
+        assert!(found.is_some());
     }
 
     // ============================================================

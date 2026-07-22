@@ -40,17 +40,20 @@ export function QuickPreview() {
     };
   }, [visible]);
 
-  // 文本变化时高亮
+  // 文本变化时高亮（带取消守卫：慢请求不得覆盖新内容 — M22）
   useEffect(() => {
     if (!text || !visible) return;
 
     if (text.length <= 5000) {
+      let cancelled = false;
       setHighlighting(true);
       highlightCode(text).then((result) => {
+        if (cancelled) return;
         setHighlightedHtml(result.html);
         setLangInfo({ name: result.language, label: getLangLabel(result.language) });
         setHighlighting(false);
       });
+      return () => { cancelled = true; };
     } else {
       setHighlightedHtml("");
       setLangInfo({ name: "plain", label: "文本" });

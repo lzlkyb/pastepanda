@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>二维码生成 — UI 设计稿</title>
+<style>
+  :root {
+    --app-bg: #F4F6F9; --card-bg: #fff; --card-border: #E0E4EB;
+    --text-primary: #0F172A; --text-secondary: #64748B; --text-muted: #7888A0;
+    --border-color: #E0E4EB; --accent: #0284C7; --accent-light: #E0F2FE;
+    --dialog-bg: #fff; --section-bg: #F0F4F8; --hover: #E8ECF2;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #E8ECF2; padding: 32px; color: var(--text-primary); }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+  .subtitle { font-size: 13px; color: var(--text-secondary); margin-bottom: 32px; }
+  .section-title { font-size: 15px; font-weight: 700; margin: 32px 0 16px; display: flex; align-items: center; gap: 8px; }
+  .section-title .num { background: var(--accent); color: #fff; width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+  .row { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+  .label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+  .note { font-size: 11px; color: var(--text-muted); margin-top: 12px; line-height: 1.5; padding: 8px 12px; background: var(--section-bg); border-radius: 8px; }
+
+  /* Dialog */
+  .dialog-box {
+    background: var(--dialog-bg); border-radius: 16px; display: flex; flex-direction: column;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04);
+    width: 320px; overflow: hidden;
+  }
+  .dialog-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px; height: 48px; flex-shrink: 0; border-bottom: 1px solid var(--border-color);
+  }
+  .dialog-title { font-size: 15px; font-weight: 600; }
+  .dialog-close { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; border: none; background: transparent; color: var(--text-secondary); font-size: 14px; }
+  .dialog-body { padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .dialog-footer {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 14px 20px; flex-shrink: 0; border-top: 1px solid var(--border-color);
+  }
+
+  /* QR 区域 */
+  .qr-canvas-wrap {
+    width: 200px; height: 200px; border-radius: 12px;
+    border: 1px solid var(--border-color); background: #fff;
+    display: flex; align-items: center; justify-content: center;
+    padding: 12px;
+  }
+  .qr-placeholder {
+    width: 176px; height: 176px; background: var(--section-bg);
+    border-radius: 4px; display: flex; align-items: center; justify-content: center;
+    font-size: 48px; color: var(--text-muted);
+  }
+  /* 模拟二维码图案 */
+  .qr-mock {
+    width: 176px; height: 176px; display: grid;
+    grid-template-columns: repeat(11, 1fr); grid-template-rows: repeat(11, 1fr);
+    gap: 1px;
+  }
+  .qr-mock span { background: var(--text-primary); border-radius: 1px; }
+  .qr-mock span:nth-child(even) { background: transparent; }
+  .qr-mock span:nth-child(3n) { background: var(--text-primary); }
+  .qr-mock span:nth-child(5n) { background: transparent; }
+  .qr-mock span:nth-child(7n+1) { background: var(--text-primary); }
+
+  .qr-content {
+    width: 100%; padding: 8px 12px; border-radius: 8px;
+    background: var(--section-bg); border: 1px solid var(--border-color);
+    font-size: 11px; color: var(--text-secondary); line-height: 1.5;
+    word-break: break-all; max-height: 60px; overflow: hidden;
+    font-family: 'SF Mono', Consolas, monospace;
+  }
+  .qr-type-badge {
+    font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 4px;
+    background: var(--accent-light); color: var(--accent);
+  }
+
+  /* 按钮 */
+  .qr-btn {
+    display: flex; align-items: center; gap: 6px; padding: 7px 16px; border-radius: 8px;
+    border: 1px solid var(--border-color); background: var(--card-bg);
+    color: var(--text-secondary); font-size: 12px; font-weight: 600; cursor: pointer;
+    font-family: inherit; transition: all 0.15s;
+  }
+  .qr-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .qr-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .qr-btn.primary:hover { opacity: 0.9; }
+
+  /* 右键菜单 */
+  .ctx-menu {
+    width: 200px; border-radius: 10px; background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(16px); border: 1px solid rgba(0,0,0,0.06);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.1); padding: 4px;
+  }
+  .ctx-item {
+    display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+    border-radius: 6px; font-size: 12px; color: var(--text-primary);
+    cursor: pointer; border: none; background: none; width: 100%; text-align: left;
+  }
+  .ctx-item:hover { background: var(--hover); }
+  .ctx-item .icon { width: 16px; text-align: center; font-size: 13px; flex-shrink: 0; }
+  .ctx-item.highlight { background: var(--accent-light); color: var(--accent); font-weight: 600; }
+  .ctx-sep { height: 1px; background: var(--border-color); margin: 4px 8px; }
+  .ctx-item.danger { color: #DC2626; }
+</style>
+</head>
+<body>
+
+<h1>二维码生成 + HTML 转纯文本 — UI 设计稿</h1>
+<p class="subtitle">方案 A：独立 QRCodeDialog + 右键菜单「剥离 HTML 标签」</p>
+
+<!-- 1. QRCodeDialog -->
+<div class="section-title"><span class="num">1</span> QRCodeDialog — 二维码生成对话框</div>
+<div class="row">
+  <div>
+    <div class="label">URL 内容</div>
+    <div class="dialog-box">
+      <div class="dialog-header">
+        <h2 class="dialog-title">📱 二维码</h2>
+        <button class="dialog-close">✕</button>
+      </div>
+      <div class="dialog-body">
+        <div class="qr-canvas-wrap">
+          <div class="qr-mock">
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+          </div>
+        </div>
+        <span class="qr-type-badge">🔗 URL</span>
+        <div class="qr-content">https://github.com/user/pastepanda/releases/tag/v5.0.144</div>
+      </div>
+      <div class="dialog-footer">
+        <button class="qr-btn primary">📋 复制图片</button>
+        <button class="qr-btn">💾 保存 PNG</button>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="label">短文本内容</div>
+    <div class="dialog-box">
+      <div class="dialog-header">
+        <h2 class="dialog-title">📱 二维码</h2>
+        <button class="dialog-close">✕</button>
+      </div>
+      <div class="dialog-body">
+        <div class="qr-canvas-wrap">
+          <div class="qr-mock">
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+          </div>
+        </div>
+        <span class="qr-type-badge">📝 文本</span>
+        <div class="qr-content">WiFi:MyNetwork|Pass:hello123|Type:WPA</div>
+      </div>
+      <div class="dialog-footer">
+        <button class="qr-btn primary">📋 复制图片</button>
+        <button class="qr-btn">💾 保存 PNG</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <strong>交互说明：</strong>右键菜单「生成二维码」触发条件：内容是 URL 或短文本（≤300 字符）。
+  对话框 320px 宽，二维码 200×200 居中，下方显示内容类型徽标 + 原始内容（限高 60px）。
+  「复制图片」将 QR Canvas 转为 ClipboardItem 写入剪贴板；「保存 PNG」调用 Tauri 文件对话框另存为。
+</div>
+
+<!-- 2. 右键菜单 -->
+<div class="section-title"><span class="num">2</span> 右键菜单 — 新增入口</div>
+<div class="row">
+  <div>
+    <div class="label">URL 卡片右键（含二维码 + HTML 剥离）</div>
+    <div class="ctx-menu">
+      <button class="ctx-item"><span class="icon">✏️</span>编辑内容</button>
+      <button class="ctx-item"><span class="icon">📋</span>复制到剪贴板</button>
+      <button class="ctx-item"><span class="icon">📌</span>粘贴到前台</button>
+      <button class="ctx-item"><span class="icon">📌</span>粘贴并变换 <span style="margin-left:auto;font-size:10px;color:var(--text-muted)">▸</span></button>
+      <button class="ctx-item highlight"><span class="icon">📱</span>生成二维码</button>
+      <button class="ctx-item"><span class="icon">🔗</span>在浏览器中打开</button>
+      <div class="ctx-sep"></div>
+      <button class="ctx-item"><span class="icon">🏷</span>编辑标签</button>
+      <div class="ctx-sep"></div>
+      <button class="ctx-item"><span class="icon">📌</span>置顶</button>
+      <div class="ctx-sep"></div>
+      <button class="ctx-item danger"><span class="icon">🗑</span>删除</button>
+    </div>
+  </div>
+
+  <div>
+    <div class="label">「粘贴并变换」子菜单（含 HTML 剥离）</div>
+    <div class="ctx-menu">
+      <button class="ctx-item"><span class="icon" style="font-weight:700;color:#0284C7">A</span>粘贴为大写</button>
+      <button class="ctx-item"><span class="icon" style="font-weight:700;color:#0284C7">a</span>粘贴为小写</button>
+      <button class="ctx-item"><span class="icon">✂</span>粘贴并去空白</button>
+      <button class="ctx-item"><span class="icon">¶</span>粘贴并去空行</button>
+      <button class="ctx-item"><span class="icon">"</span>粘贴为引号包裹</button>
+      <button class="ctx-item highlight"><span class="icon">🏷</span>剥离 HTML 标签</button>
+      <button class="ctx-item"><span class="icon">🔗</span>粘贴为 Markdown 链接</button>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <strong>HTML 转纯文本：</strong>「剥离 HTML 标签」出现在「粘贴并变换」子菜单中（所有文本类型通用），
+  同时 EditDialog 工具栏新增「去标签」按钮。检测逻辑：内容包含 &lt;tag&gt; 闭合标签对即判定为 HTML。
+  <br><br>
+  <strong>二维码：</strong>「生成二维码」仅对 URL 或 ≤300 字符短文本显示，位于「粘贴并变换」之后。
+</div>
+
+</body>
+</html>

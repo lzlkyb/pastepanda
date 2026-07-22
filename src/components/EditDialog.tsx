@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Copy, ClipboardPaste, Bookmark, Type, Scissors, Quote, AlignLeft, CaseSensitive, Undo2, Redo2, ChevronDown, ChevronUp } from "lucide-react";
+import { X, Copy, ClipboardPaste, Bookmark, Type, Scissors, Quote, AlignLeft, CaseSensitive, Undo2, Redo2, ChevronDown, ChevronUp, Code2 } from "lucide-react";
 import Editor from "react-simple-code-editor";
 import { useToast } from "@/components/Toast";
 import { pasteText } from "@/lib/api";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
-import { highlightCode, getLangLabel } from "@/lib/utils";
+import { highlightCode, getLangLabel, isMarkdown, isHtml, stripHtml } from "@/lib/utils";
+import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 // 高亮函数：接受代码字符串，返回 React 节点
 async function highlightFn(code: string): Promise<React.ReactNode> {
@@ -39,26 +41,26 @@ export function EditDialog({ item, onClose }: { item: HistoryItem; onClose: () =
   const [text, setText] = useState(item?.text || "");
   const [showOriginal, setShowOriginal] = useState(false);
   const [saving, setSaving] = useState(false);
+  // 修复 Low：有未保存修改时关闭（Esc/×/点遮罩）先弹确认，避免静默丢弃编辑
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const { toast } = useToast();
   const originalText = item?.text || "";
   const [langLabel, setLangLabel] = useState("检测中…");
+  const [mode, setMode] = useState<"edit" | "preview">(() => isMarkdown(item?.text || "") ? "preview" : "edit");
+  const isMd = useMemo(() => isMarkdown(text), [text]);
+  const isHtmlContent = useMemo(() => isHtml(text), [text]);
 
-  // 初始化语言检测
+  // 文本变化时更新语言标签（带取消守卫：慢请求不得覆盖新内容的检测结果 — M22）
   useEffect(() => {
-    highlightCode(item?.text || "").then(r => {
-      setLangLabel(getLangLabel(r.language));
-    });
-  }, []);
-
-  // 文本变化时更新语言标签
-  useEffect(() => {
-    if (text.length <= 5000) {
-      highlightCode(text).then(r => {
-        setLangLabel(getLangLabel(r.language));
-      });
-    } else {
+    if (text.length > 5000) {
       setLangLabel("文本");
+      return;
     }
+    let cancelled = false;
+    highlightCode(text).then(r => {
+      if (!cancelled) setLangLabel(getLangLabel(r.language));
+    });
+    return () => { cancelled = true; };
   }, [text]);
 
   // 撤销/重做历史（纯文本级别）
@@ -91,16 +93,17 @@ export function EditDialog({ item, onClose }: { item: HistoryItem; onClose: () =
   }, []);
 
   const handleSaveRef = useRef<() => void>(() => {});
+  const requestCloseRef = useRef<() => void>(() => {});
 
   const handleKeyDown = useCallback(async (e: KeyboardEvent) => {
     if (e.key === "Escape") {
       e.preventDefault();
-      onClose();
+      requestCloseRef.current();
     } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       await handleSaveRef.current();
     }
-  }, [onClose]);
+  }, []);
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
@@ -113,18 +116,25 @@ export function EditDialog({ item, onClose }: { item: HistoryItem; onClose: () =
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("update_history", { id: item.id, text });
-      const store = useAppStore.getState();
-      store.setHistory(store.history.map(h =>
-        h.id === item.id
-          ? { ...h, text, md5: undefined }
-          : h
-      ));
+      // 乐观更新 — 基于最新 state 函数式更新（text 影响搜索过滤，同步清 _filterCache）
+      useAppStore.setState((s) => ({
+        history: s.history.map((h) =>
+          h.id === item.id ? { ...h, text, md5: undefined } : h
+        ),
+        _filterCache: null,
+      }));
+      // 修复 C12：刷新必须基于回调时刻的最新 state — 旧实现用 await 前的过期快照
+      // map 全量覆盖，会丢弃请求期间新复制的条目、回滚并发修改。
+      // 现仅将后端响应中存在的条目替换为权威数据，不在 top-200 内的条目保持原样。
       invoke<HistoryItem[]>("get_history", {
-        workspace: store.config.current_workspace, filter: "all",
+        workspace: useAppStore.getState().config.current_workspace, filter: "all",
         search: "", offset: 0, limit: 200
-      }).then(items => {
-        const backendMap = new Map(items.map(i => [i.id, i]));
-        store.setHistory(store.history.map(h => backendMap.get(h.id) || h));
+      }).then((items) => {
+        const backendMap = new Map(items.map((i) => [i.id, i]));
+        useAppStore.setState((s) => ({
+          history: s.history.map((h) => backendMap.get(h.id) || h),
+          _filterCache: null,
+        }));
       }).catch(() => {});
       toast("已保存", "success");
       onClose();
@@ -158,6 +168,33 @@ export function EditDialog({ item, onClose }: { item: HistoryItem; onClose: () =
     } catch { toast("添加失败", "error"); }
   };
 
+  const handleCopyHtml = async () => {
+    try {
+      const { marked } = await import("marked");
+      const DOMPurify = (await import("dompurify")).default;
+      const html = DOMPurify.sanitize(marked.parse(text) as string);
+      await navigator.clipboard.writeText(html);
+      toast("已复制 HTML", "success");
+    } catch { toast("复制失败", "error"); }
+  };
+
+  const handleCopyPlain = async () => {
+    try {
+      // 剥离 MD 语法，保留纯文本
+      const plain = text
+        .replace(/^#{1,6}\s+/gm, "")
+        .replace(/\*\*([^*]+)\*\*/g, "$1")
+        .replace(/\*([^*]+)\*/g, "$1")
+        .replace(/`([^`]+)`/g, "$1")
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+        .replace(/^>\s+/gm, "")
+        .replace(/^[-*+]\s+/gm, "")
+        .replace(/^\d+\.\s+/gm, "");
+      await navigator.clipboard.writeText(plain);
+      toast("已复制纯文本", "success");
+    } catch { toast("复制失败", "error"); }
+  };
+
   // 文本变换
   const transform = (fn: (s: string) => string) => pushHistory(fn(text));
 
@@ -168,13 +205,24 @@ export function EditDialog({ item, onClose }: { item: HistoryItem; onClose: () =
   const lineCount = text.split("\n").length;
   const isModified = text !== originalText;
 
+  // 关闭守卫：无修改直接关；有修改先确认，防止误触 Esc/遮罩丢失编辑
+  const requestClose = () => {
+    if (isModified) {
+      setConfirmDiscard(true);
+    } else {
+      onClose();
+    }
+  };
+  requestCloseRef.current = requestClose;
+
   if (!item) return null;
 
   return (
+  <>
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="dialog-backdrop" onClick={onClose}>
+        className="dialog-backdrop" onClick={requestClose}>
         <motion.div
           initial={{ scale: 0.96, opacity: 0, y: 10 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -187,7 +235,7 @@ export function EditDialog({ item, onClose }: { item: HistoryItem; onClose: () =
           {/* Header */}
           <div className="dialog-header">
             <h2 className="dialog-title">✏️ 编辑记录</h2>
-            <button onClick={onClose} className="dialog-close"><X size={16} /></button>
+            <button onClick={requestClose} className="dialog-close"><X size={16} /></button>
           </div>
 
           {/* Body */}
@@ -199,42 +247,64 @@ export function EditDialog({ item, onClose }: { item: HistoryItem; onClose: () =
                 <div className="code-meta-item"><span className="code-meta-label">字符</span><span className="code-meta-val">{charCount}</span></div>
                 {isModified && <div className="code-meta-item" style={{ color: "var(--accent)" }}><span className="code-meta-label">状态</span><span className="code-meta-val">已修改</span></div>}
               </div>
-              <div className="code-type-badge">
-                {langLabel !== "文本" && langLabel !== "检测中…" ? <>🔧 {langLabel}</> : "✏️ 编辑"}
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div className="code-type-badge">
+                  {isMd ? "📝 Markdown" : langLabel !== "文本" && langLabel !== "检测中…" ? <>🔧 {langLabel}</> : "✏️ 编辑"}
+                </div>
+                {isMd && (
+                  <div className="md-mode-toggle">
+                    <button className={`md-mode-btn${mode === "edit" ? " active" : ""}`} onClick={() => setMode("edit")}>编辑</button>
+                    <button className={`md-mode-btn${mode === "preview" ? " active" : ""}`} onClick={() => setMode("preview")}>预览</button>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* 带行号 + 语法高亮的可编辑区（textarea+pre 叠加层） */}
-            <div className="edit-code-area">
-              <div className="code-lines">
-                {text.split("\n").map((_, i) => <span key={i} className="code-ln">{i + 1}</span>)}
+            {/* 编辑区 / Markdown 预览区 */}
+            {isMd && mode === "preview" ? (
+              <>
+                <div className="md-preview-wrap">
+                  <MarkdownRenderer text={text} />
+                </div>
+                <div className="md-preview-actions">
+                  <button className="md-preview-btn" onClick={handleCopyHtml}>📋 复制为 HTML</button>
+                  <button className="md-preview-btn" onClick={handleCopyPlain}>📄 复制为纯文本</button>
+                </div>
+              </>
+            ) : (
+              <div className="edit-code-area">
+                <div className="code-lines">
+                  {text.split("\n").map((_, i) => <span key={i} className="code-ln">{i + 1}</span>)}
+                </div>
+                <div className="edit-highlight-wrapper">
+                  <Editor
+                    value={text}
+                    onValueChange={(newVal) => {
+                      pushHistory(newVal);
+                    }}
+                    highlight={(_code: string) => highlighted}
+                    padding={0}
+                    className="edit-highlight-editor"
+                    textareaId="edit-code-textarea"
+                    style={{
+                      fontFamily: "'SF Mono', Consolas, monospace",
+                      fontSize: 13,
+                      lineHeight: 1.7,
+                    }}
+                  />
+                </div>
               </div>
-              <div className="edit-highlight-wrapper">
-                <Editor
-                  value={text}
-                  onValueChange={(newVal) => {
-                    pushHistory(newVal);
-                  }}
-                  highlight={(_code: string) => highlighted}
-                  padding={0}
-                  className="edit-highlight-editor"
-                  textareaId="edit-code-textarea"
-                  style={{
-                    fontFamily: "'SF Mono', Consolas, monospace",
-                    fontSize: 13,
-                    lineHeight: 1.7,
-                  }}
-                />
-              </div>
-            </div>
+            )}
 
-            {/* 文本变换工具栏 */}
+            {/* 文本变换工具栏（仅编辑模式显示） */}
+            {!(isMd && mode === "preview") && (
             <div className="edit-toolbar">
               <ToolBtn icon={<CaseSensitive size={13} />} label="大写" onClick={() => transform(s => s.toUpperCase())} />
               <ToolBtn icon={<Type size={13} />} label="小写" onClick={() => transform(s => s.toLowerCase())} />
               <ToolBtn icon={<Scissors size={13} />} label="去空白" onClick={() => transform(s => s.trim())} />
               <ToolBtn icon={<AlignLeft size={13} />} label="去空行" onClick={() => transform(s => s.split("\n").filter(l => l.trim()).join("\n"))} />
               <ToolBtn icon={<Quote size={13} />} label="加引号" onClick={() => transform(s => `"${s}"`)} />
+              {isHtmlContent && <ToolBtn icon={<Code2 size={13} />} label="去标签" onClick={() => transform(s => stripHtml(s))} />}
               <div className="tool-separator"></div>
               <ToolBtn icon={<Undo2 size={13} />} label="撤销" onClick={undo} />
               <ToolBtn icon={<Redo2 size={13} />} label="重做" onClick={redo} />
@@ -249,9 +319,10 @@ export function EditDialog({ item, onClose }: { item: HistoryItem; onClose: () =
                 </button>
               )}
             </div>
+            )}
 
             {/* 原文对比区 */}
-            {showOriginal && isModified && (
+            {showOriginal && isModified && !(isMd && mode === "preview") && (
               <div style={{
                 padding: 10, borderRadius: 8, background: "var(--section-bg)",
                 border: "1px solid var(--border-color)", fontSize: 12,
@@ -280,6 +351,18 @@ export function EditDialog({ item, onClose }: { item: HistoryItem; onClose: () =
         </motion.div>
       </motion.div>
     </AnimatePresence>
+
+    <ConfirmDialog
+      open={confirmDiscard}
+      title="放弃修改？"
+      message="当前编辑尚未保存，关闭后修改将丢失。确定要放弃吗？"
+      confirmText="放弃修改"
+      cancelText="继续编辑"
+      variant="warning"
+      onConfirm={() => { setConfirmDiscard(false); onClose(); }}
+      onCancel={() => setConfirmDiscard(false)}
+    />
+  </>
   );
 }
 

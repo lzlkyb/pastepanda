@@ -1,7 +1,7 @@
-import { memo, useState, useCallback, useContext, useRef, useEffect, useMemo } from "react";
+import { memo, useState, useCallback, useContext, useRef, useEffect, useMemo, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
-import { relativeTime, detectTextType } from "@/lib/utils";
+import { relativeTime, detectTextType, isMarkdown, stripHtml } from "@/lib/utils";
 import { detectColor, toHex, toRgb, toHsl } from "@/lib/color";
 import type { CSSProperties } from "react";
 import SourceBadge from "@/components/SourceBadge";
@@ -14,6 +14,8 @@ import { logger } from "@/lib/logger";
 import { pasteText } from "@/lib/api";
 import { Pin, ImageIcon, Link2, AtSign, Code2, Phone, FileText, Terminal, Type, Check } from "lucide-react";
 import styles from "./CardList.module.css";
+
+const LazyMdRenderer = lazy(() => import("@/components/MarkdownRenderer").then(m => ({ default: m.MarkdownRenderer })));
 
 const PALETTE = ["#3B82F6", "#8B5CF6", "#EC4899", "#10B981", "#F59E0B", "#EF4444", "#06B6D4", "#6366F1"];
 
@@ -68,20 +70,27 @@ export const HighlightText = memo(function HighlightText({ text, highlight }: { 
 });
 
 /** 卡片组件（纯展示） */
-export const Card = memo(function Card({ item, selected, onClick, onDoubleClick, index, imageState, searchKeyword, onRetryImage, pasting, menuItems, onEdit, disablePreview }: {
-  item: HistoryItem; selected: boolean; onClick: (e: React.MouseEvent) => void; onDoubleClick: () => void; index: number; imageState?: ImgState; searchKeyword?: string; onRetryImage?: () => void; pasting?: boolean; menuItems?: MenuItem[]; onEdit?: (item: HistoryItem) => void; disablePreview?: boolean;
+export const Card = memo(function Card({ item, selected, onClick, onDoubleClick, index, imageState, searchKeyword, onRetryImage, pasting, menuItems, onEdit, disablePreview, stackOrder, stackDone }: {
+  item: HistoryItem; selected: boolean; onClick: (e: React.MouseEvent) => void; onDoubleClick: () => void; index: number; imageState?: ImgState; searchKeyword?: string; onRetryImage?: () => void; pasting?: boolean; menuItems?: MenuItem[]; onEdit?: (item: HistoryItem) => void; disablePreview?: boolean; stackOrder?: number; stackDone?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
   const config = useAppStore((s) => s.config);
   const clickTimerRef = useRef<number | null>(null);
   const closeTimerRef = useRef<number | null>(null);
+  const feedbackTimerRef = useRef<number | null>(null);
   const subType = item.type === "text" ? detectTextType(item.text) : item.type;
+  const isMd = item.type === "text" && isMarkdown(item.text);
   const parsedColor = subType === "color" ? detectColor(item.text || "") : null;
   const cfg = ICONS[subType] || ICONS.text;
   const Icon = cfg.Icon;
   const iconColor = subType === "text" ? hashColor(item.text || "") : cfg.color;
   const time = relativeTime(item.time);
-  const title = item.type === "file" ? (item.content || "文件") : (item.text || "").replace(/\r?\n/g, " ").trim() || "(空)";
+  // MB 级文本先截断再扁平化，避免整块进 DOM / 高亮 split 拖垮列表（M24）
+  const title = (() => {
+    if (item.type === "file") return item.content || "文件";
+    const flat = (item.text || "").slice(0, 501).replace(/\r?\n/g, " ").trim() || "(空)";
+    return flat.length > 500 ? flat.slice(0, 500) + "…" : flat;
+  })();
 
   const typeClass = item.type === "image" ? styles.cardImage
     : item.type === "file" ? styles.cardFile
@@ -124,6 +133,10 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
         clearTimeout(closeTimerRef.current);
         closeTimerRef.current = null;
       }
+      if (feedbackTimerRef.current !== null) {
+        clearTimeout(feedbackTimerRef.current);
+        feedbackTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -152,7 +165,11 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
     if (e.button !== 0) return;
     // 即时视觉反馈
     setClickFeedback(true);
-    setTimeout(() => setClickFeedback(false), 150);
+    if (feedbackTimerRef.current !== null) clearTimeout(feedbackTimerRef.current);
+    feedbackTimerRef.current = window.setTimeout(() => {
+      setClickFeedback(false);
+      feedbackTimerRef.current = null;
+    }, 150);
     if (clickTimerRef.current) {
       clearTimeout(clickTimerRef.current);
       clickTimerRef.current = null;
@@ -188,7 +205,7 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
         exit={{ opacity: 0, x: -30, scale: 0.95, transition: { duration: 0.2 } }}
         transition={{ type: "spring", stiffness: 400, damping: 28, delay: Math.min(index * 0.003, 0.04) }}
         onMouseDown={handleMouseDown}
-        className={`${styles.card} ${typeClass}${selected ? ` ${styles.selected}` : ""}${clickFeedback ? ` ${styles.cardClickFeedback}` : ""}`}
+        className={`${styles.card} ${typeClass}${selected ? ` ${styles.selected}` : ""}${clickFeedback ? ` ${styles.cardClickFeedback}` : ""}${stackOrder ? ` ${styles.cardInStack}${stackOrder === 1 ? ` ${styles.cardStackNext}` : ""}` : ""}${stackDone ? ` ${styles.cardStackDone}` : ""}`}
         role="option"
         aria-selected={selected}
         aria-label={title.length > 80 ? title.slice(0, 80) + "…" : title}
@@ -254,6 +271,7 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
                 <Pin size={7} /> 置顶
               </span>
             )}
+            {isMd && <span className="md-badge">MD</span>}
             {parsedColor && (
               <span className={styles.colorFormatTag}>{parsedColor.format.toUpperCase()}</span>
             )}
@@ -268,10 +286,14 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
         </span>
       </motion.div>
 
+      {/* 栈序号角标（渲染在 cardWrap 层，避免被卡片 overflow:hidden 裁剪） */}
+      {stackOrder ? <span className={`${styles.stackBadge}${stackOrder === 1 ? ` ${styles.stackBadgeNext}` : ""}`}>{stackOrder}</span> : null}
+      {stackDone ? <span className={`${styles.stackBadge} ${styles.stackBadgeDone}`}>✓</span> : null}
+
       {/* ★ 悬停 Popover 气泡弹窗（移到卡片外部，避免被 card overflow:hidden 裁剪） */}
       <AnimatePresence>
         {hovered && config.hover_mode === "popover" && !disablePreview && (
-          <CardHoverPopover item={item} imageState={imageState} subType={subType} onEdit={onEdit} onMouseEnter={enterHover} onMouseLeave={scheduleClose} />
+          <CardHoverPopover item={item} imageState={imageState} subType={subType} isMd={isMd} onEdit={onEdit} onMouseEnter={enterHover} onMouseLeave={scheduleClose} />
         )}
       </AnimatePresence>
 
@@ -294,6 +316,7 @@ const CardHoverPopover = memo(function CardHoverPopover({
   item,
   imageState,
   subType,
+  isMd,
   onEdit,
   onMouseEnter,
   onMouseLeave,
@@ -301,6 +324,7 @@ const CardHoverPopover = memo(function CardHoverPopover({
   item: HistoryItem;
   imageState?: ImgState;
   subType: string;
+  isMd?: boolean;
   onEdit?: (item: HistoryItem) => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
@@ -314,15 +338,10 @@ const CardHoverPopover = memo(function CardHoverPopover({
     e.preventDefault();
     try {
       if (item.type === "image" && item.content) {
-        const { getImageBase64 } = await import("@/lib/api");
+        const { getImageBase64, dataUrlToBlob } = await import("@/lib/api");
         const dataUrl = await getImageBase64(item.content);
-        const mimeMatch = dataUrl.match(/^data:([^;]+);base64,/);
-        const mimeType = mimeMatch ? mimeMatch[1] : "image/png";
-        const base64Data = dataUrl.split(",")[1];
-        const byteChars = atob(base64Data);
-        const bytes = new Uint8Array(byteChars.length);
-        for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
-        const blob = new Blob([bytes], { type: mimeType });
+        const blob = await dataUrlToBlob(dataUrl);
+        const mimeType = blob.type || "image/png";
         await navigator.clipboard.write([new ClipboardItem({ [mimeType]: blob })]);
         toast("已复制", "success");
       } else if (item.type === "file" && item.content) {
@@ -386,7 +405,11 @@ const CardHoverPopover = memo(function CardHoverPopover({
     >
         {/* 预览区 */}
         {item.type === "text" && !isShortPlainText && (
-          subType === "code" ? (
+          isMd ? (
+            <Suspense fallback={<div className={styles.cardPopoverText}>{(item.text || "").slice(0, 200)}</div>}>
+              <LazyMdRenderer text={item.text} compact />
+            </Suspense>
+          ) : subType === "code" ? (
             <div className={styles.cardPopoverCode}>{item.text}</div>
           ) : subType === "link" ? (
             <div className={styles.cardPopoverText}>
@@ -491,15 +514,10 @@ const InlineCardActions = memo(function InlineCardActions({
     e.preventDefault();
     try {
       if (item.type === "image" && item.content) {
-        const { getImageBase64 } = await import("@/lib/api");
+        const { getImageBase64, dataUrlToBlob } = await import("@/lib/api");
         const dataUrl = await getImageBase64(item.content);
-        const mimeMatch = dataUrl.match(/^data:([^;]+);base64,/);
-        const mimeType = mimeMatch ? mimeMatch[1] : "image/png";
-        const base64Data = dataUrl.split(",")[1];
-        const byteChars = atob(base64Data);
-        const bytes = new Uint8Array(byteChars.length);
-        for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
-        const blob = new Blob([bytes], { type: mimeType });
+        const blob = await dataUrlToBlob(dataUrl);
+        const mimeType = blob.type || "image/png";
         await navigator.clipboard.write([new ClipboardItem({ [mimeType]: blob })]);
         toast("已复制", "success");
       } else if (item.type === "file" && item.content) {
@@ -558,8 +576,8 @@ const InlineCardActions = memo(function InlineCardActions({
 });
 
 /** 卡片上下文包装器（右键菜单 + 操作逻辑） */
-export const CardWithContext = memo(function CardWithContext({ item, selected, onClick, onDoubleClick, index, imageState, searchKeyword, onRetryImage, pasting, onEdit, onEditTags, onMoveToGroup, disablePreview }: {
-  item: HistoryItem; selected: boolean; onClick: (e: React.MouseEvent) => void; onDoubleClick: () => void; index: number; imageState?: ImgState; searchKeyword?: string; onRetryImage?: () => void; pasting?: boolean; onEdit?: (item: HistoryItem) => void; onEditTags?: (item: HistoryItem) => void; onMoveToGroup?: (item: HistoryItem) => void; disablePreview?: boolean;
+export const CardWithContext = memo(function CardWithContext({ item, selected, onClick, onDoubleClick, index, imageState, searchKeyword, onRetryImage, pasting, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, disablePreview, stackOrder, stackDone }: {
+  item: HistoryItem; selected: boolean; onClick: (e: React.MouseEvent) => void; onDoubleClick: () => void; index: number; imageState?: ImgState; searchKeyword?: string; onRetryImage?: () => void; pasting?: boolean; onEdit?: (item: HistoryItem) => void; onEditTags?: (item: HistoryItem) => void; onMoveToGroup?: (item: HistoryItem) => void; onQrCode?: (item: HistoryItem) => void; onRegexPreview?: (item: HistoryItem, ruleId: string) => void; onManageRegexRules?: () => void; disablePreview?: boolean; stackOrder?: number; stackDone?: boolean;
 }) {
   const { toast } = useToast();
   const togglePin = useAppStore((s) => s.togglePin);
@@ -608,6 +626,7 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
   }, [item.text]);
 
   const subType = item.type === "text" ? detectTextType(item.text) : item.type;
+  const canQrCode = item.type === "text" && (hasUrl || (item.text || "").length <= 300);
 
   const handlePasteTransform = useCallback(async (transform: string) => {
     let text = item.text || "";
@@ -622,6 +641,7 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
         case "strip_lines": text = text.split("\n").filter((l: string) => l.trim()).join("\n"); break;
         case "quote": text = `"${text}"`; break;
         case "md_link": text = `[${text.slice(0, 30)}](${text})`; break;
+        case "strip_html": text = stripHtml(text); break;
 
         // === 链接子类型专属 ===
         case "plain_url":
@@ -717,8 +737,10 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     } catch { toast("粘贴失败", "error"); }
   }, [item.text, item.content, toast]);
 
-  const menuItems = createCardMenuItems({
+  const menuItems = useMemo(() => createCardMenuItems({
     onEdit: item.type === "text" && onEdit ? () => onEdit(item) : undefined,
+    onMarkdownPreview: item.type === "text" && isMarkdown(item.text) && onEdit ? () => onEdit(item) : undefined,
+    isMarkdown: item.type === "text" && isMarkdown(item.text),
     onEditTags: onEditTags ? () => onEditTags(item) : undefined,
     onMoveToGroup: onMoveToGroup ? () => onMoveToGroup(item) : undefined,
     onCopy: async () => {
@@ -734,16 +756,20 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     onDelete: () => setShowDeleteConfirm(true),
     onAddSnippet: handleAddSnippet,
     onOpenUrl: hasUrl ? handleOpenUrl : undefined,
+    onQrCode: canQrCode && onQrCode ? () => onQrCode(item) : undefined,
+    canQrCode,
+    onRegexPreview: item.type === "text" && onRegexPreview ? (ruleId: string) => onRegexPreview(item, ruleId) : undefined,
+    onManageRegexRules,
     onConfirmAutoTags: hasAutoTags ? handleConfirmAutoTags : undefined,
     onRemoveAutoTags: hasAutoTags ? handleRemoveAutoTags : undefined,
     hasUrl,
     hasAutoTags,
     pinned: item.pinned,
-  });
+  }), [item, subType, hasUrl, canQrCode, hasAutoTags, toast, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, handlePasteTransform, handleAddSnippet, handleOpenUrl, handleConfirmAutoTags, handleRemoveAutoTags, togglePin]);
 
   return (
     <>
-      <Card item={item} selected={selected} onClick={onClick} onDoubleClick={onDoubleClick} index={index} imageState={imageState} searchKeyword={searchKeyword} onRetryImage={onRetryImage} pasting={pasting} menuItems={menuItems} onEdit={onEdit} disablePreview={disablePreview} />
+      <Card item={item} selected={selected} onClick={onClick} onDoubleClick={onDoubleClick} index={index} imageState={imageState} searchKeyword={searchKeyword} onRetryImage={onRetryImage} pasting={pasting} menuItems={menuItems} onEdit={onEdit} disablePreview={disablePreview} stackOrder={stackOrder} stackDone={stackDone} />
       <ConfirmDialog
         open={showDeleteConfirm}
         title="确认删除"

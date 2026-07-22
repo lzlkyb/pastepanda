@@ -348,6 +348,8 @@ pub fn create_native_window(image_path: &str) -> Result<(), String> {
         }
     }
 
+    // 修复 C18：先仅读头部校验尺寸上限，防解压炸弹
+    crate::commands::check_image_decode_limits(std::path::Path::new(image_path))?;
     let img = image::open(image_path).map_err(|e| format!("无法加载图片: {}", e))?;
     let (img_width, img_height) = img.dimensions();
     let rgba = img.to_rgba8();

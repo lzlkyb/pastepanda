@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>颜色值拾取预览 — 设计稿</title>
+<style>
+  :root {
+    --text-primary: #0F172A;
+    --text-secondary: #64748B;
+    --text-muted: #7888A0;
+    --accent: #0284C7;
+    --accent-light: #E0F2FE;
+    --dialog-bg: #FFFFFF;
+    --border-color: #E0E4EB;
+    --hover: #E8ECF2;
+    --glass-card-bg: rgba(255,255,255,0.55);
+    --glass-card-border: rgba(0,0,0,0.08);
+    --glass-card-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.7);
+    --glass-shimmer-static: rgba(255,255,255,0.50);
+    --glass-icon-bg: rgba(0,0,0,0.04);
+    --glass-icon-border: rgba(0,0,0,0.07);
+    --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.05);
+    --page-bg: #F4F6F9;
+  }
+  [data-theme="dark"] {
+    --text-primary: #E4E4E7;
+    --text-secondary: #A1A1AA;
+    --text-muted: #71717A;
+    --accent: #818CF8;
+    --accent-light: #1E1B4B;
+    --dialog-bg: #1C1C1F;
+    --border-color: #27272A;
+    --hover: #1F1F23;
+    --glass-card-bg: rgba(24,24,27,0.48);
+    --glass-card-border: rgba(255,255,255,0.06);
+    --glass-card-shadow: 0 4px 16px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.03), inset 0 1px 0 rgba(255,255,255,0.04);
+    --glass-shimmer-static: rgba(255,255,255,0.05);
+    --glass-icon-bg: rgba(255,255,255,0.05);
+    --glass-icon-border: rgba(255,255,255,0.07);
+    --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.04), 0 2px 8px rgba(0,0,0,0.3);
+    --page-bg: #17181C;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--page-bg);
+    color: var(--text-primary);
+    padding: 32px;
+    transition: background .2s ease;
+  }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .desc { font-size: 12px; color: var(--text-secondary); margin: 0 0 20px; line-height: 1.6; }
+  .toggle {
+    position: fixed; top: 16px; right: 16px;
+    font-size: 12px; padding: 6px 12px; border-radius: 8px;
+    border: 1px solid var(--border-color); background: var(--dialog-bg);
+    color: var(--text-primary); cursor: pointer;
+  }
+  .section-label {
+    font-size: 11px; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: .04em;
+    margin: 24px 0 8px;
+  }
+
+  /* ── 卡片列表（还原 CardList.module.css 的玻璃拟态卡片）── */
+  .cardList { display: flex; flex-direction: column; gap: 10px; }
+  .card {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px; border-radius: 16px; position: relative;
+    height: 72px; overflow: hidden;
+    background: var(--glass-card-bg);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-card-border);
+    box-shadow: var(--glass-card-shadow);
+  }
+  .card::before {
+    content: ''; position: absolute; inset: 0; border-radius: 16px;
+    background: linear-gradient(180deg, var(--glass-shimmer-static) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  .cardIcon {
+    width: 42px; height: 42px; min-width: 42px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    position: relative; z-index: 1;
+    background: var(--glass-icon-bg); border: 1px solid var(--glass-icon-border);
+    box-shadow: var(--glass-icon-shadow);
+  }
+  /* 新增：颜色色块图标 —— 用实际颜色的低透明度打底（沿用 bgPurple/bgPink 现有配色规律），
+     中心是一个真实颜色填充的圆点，外圈浅色描边保证在深/浅色卡片背景下都能看清轮廓 */
+  .cardIcon.colorIcon { background: var(--swatch-bg); border-color: var(--swatch-border); box-shadow: inset 0 2px 4px var(--swatch-inset), 0 2px 8px rgba(0,0,0,0.15); }
+  .colorDot {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--swatch-color);
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.55), inset 0 0 0 1px rgba(0,0,0,0.08);
+  }
+  [data-theme="dark"] .colorDot { box-shadow: 0 0 0 2px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.12); }
+
+  .cardContent { flex: 1; min-width: 0; overflow: hidden; }
+  .cardTitle {
+    font-size: 13px; font-weight: 600; color: var(--text-primary);
+    font-family: "SF Mono", Consolas, monospace;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .cardSub { font-size: 11px; color: var(--text-secondary); margin-top: 3px; display: flex; align-items: center; gap: 6px; }
+  .colorFormatTag {
+    display: inline-flex; align-items: center; height: 15px; padding: 0 5px;
+    border-radius: 4px; font-size: 9.5px; font-weight: 700;
+    background: var(--accent-light); color: var(--accent);
+  }
+  .cardTime { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+
+  /* ── 右键菜单（还原 ContextMenu.module.css）── */
+  .menuDemo { position: relative; margin-top: 18px; height: 210px; }
+  .ctxMenu {
+    position: absolute; left: 0; top: 0; z-index: 2;
+    padding: 4px 0; border-radius: 12px; min-width: 168px;
+    background: var(--dialog-bg); border: 1px solid var(--border-color);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04);
+  }
+  .ctxItem {
+    display: flex; align-items: center; gap: 10px; padding: 7px 12px;
+    font-size: 12.5px; color: var(--text-primary); white-space: nowrap;
+  }
+  .ctxItem.dim { opacity: .45; }
+  .ctxSep { height: 1px; background: var(--border-color); margin: 4px 10px; }
+  .ctxSubmenu {
+    position: absolute; left: calc(100% + 4px); top: 40px;
+    background: var(--dialog-bg); border: 1px solid var(--border-color);
+    border-radius: 12px; padding: 4px 0; min-width: 168px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.1), 0 2px 6px rgba(0,0,0,0.06);
+  }
+  .ctxTextIcon {
+    font-size: 11px; font-weight: 700; width: 20px; height: 20px;
+    display: flex; align-items: center; justify-content: center; border-radius: 5px;
+    flex-shrink: 0;
+  }
+  .newBadge {
+    margin-left: auto; font-size: 9px; font-weight: 700; color: #fff;
+    background: #22C55E; border-radius: 4px; padding: 1px 5px;
+  }
+</style>
+</head>
+<body>
+  <button class="toggle" onclick="document.documentElement.setAttribute('data-theme', document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark')">切换深/浅色</button>
+
+  <div class="wrap">
+    <h1>#10 颜色值拾取预览 — 设计稿</h1>
+    <p class="desc">
+      样式还原自 CardList.module.css 的玻璃拟态卡片（.card / .cardIcon 42×42 / .cardTitle 13px）
+      与 ContextMenu.module.css 的菜单样式，仅新增内容，未凭空创造新视觉语言。
+    </p>
+
+    <div class="section-label">卡片列表 — 三种颜色格式示例</div>
+    <div class="cardList">
+      <div class="card">
+        <div class="cardIcon colorIcon" style="--swatch-color:#FF5733; --swatch-bg:rgba(255,87,51,0.12); --swatch-border:rgba(255,87,51,0.22); --swatch-inset:rgba(255,87,51,0.1);">
+          <div class="colorDot"></div>
+        </div>
+        <div class="cardContent">
+          <div class="cardTitle">#FF5733</div>
+          <div class="cardSub"><span class="colorFormatTag">HEX</span>VS Code</div>
+        </div>
+        <span class="cardTime">2 分钟前</span>
+      </div>
+
+      <div class="card">
+        <div class="cardIcon colorIcon" style="--swatch-color:rgb(59,130,246); --swatch-bg:rgba(59,130,246,0.12); --swatch-border:rgba(59,130,246,0.22); --swatch-inset:rgba(59,130,246,0.1);">
+          <div class="colorDot"></div>
+        </div>
+        <div class="cardContent">
+          <div class="cardTitle">rgba(59, 130, 246, 0.6)</div>
+          <div class="cardSub"><span class="colorFormatTag">RGBA</span>Figma</div>
+        </div>
+        <span class="cardTime">15 分钟前</span>
+      </div>
+
+      <div class="card">
+        <div class="cardIcon colorIcon" style="--swatch-color:hsl(160,84%,39%); --swatch-bg:rgba(16,185,129,0.12); --swatch-border:rgba(16,185,129,0.22); --swatch-inset:rgba(16,185,129,0.1);">
+          <div class="colorDot"></div>
+        </div>
+        <div class="cardContent">
+          <div class="cardTitle">hsl(160, 84%, 39%)</div>
+          <div class="cardSub"><span class="colorFormatTag">HSL</span>Chrome</div>
+        </div>
+        <span class="cardTime">1 小时前</span>
+      </div>
+
+      <div class="card" style="opacity:.55">
+        <div class="cardIcon">
+          <span style="font-size:18px;color:#8B5CF6">{</span>
+        </div>
+        <div class="cardContent">
+          <div class="cardTitle">function fetchData(url) { ...</div>
+          <div class="cardSub">普通代码卡片，作对比参照</div>
+        </div>
+        <span class="cardTime">3 小时前</span>
+      </div>
+    </div>
+
+    <div class="section-label">右键菜单 — "粘贴并变换" 子菜单新增项</div>
+    <div class="menuDemo">
+      <div class="ctxMenu">
+        <div class="ctxItem">📌 置顶</div>
+        <div class="ctxItem">🏷️ 编辑标签</div>
+        <div class="ctxSep"></div>
+        <div class="ctxItem">📋 粘贴并变换 ▸</div>
+        <div class="ctxItem dim">🗑️ 删除</div>
+
+        <div class="ctxSubmenu">
+          <div class="ctxItem"><span class="ctxTextIcon" style="background:rgba(59,130,246,.15);color:#60A5FA">A</span>粘贴为大写</div>
+          <div class="ctxItem"><span class="ctxTextIcon" style="background:rgba(16,185,129,.15);color:#34C759">a</span>粘贴为小写</div>
+          <div class="ctxItem"><span class="ctxTextIcon" style="background:rgba(245,158,11,.15);color:#F59E0B">✂</span>粘贴并去空白</div>
+          <div class="ctxSep"></div>
+          <div class="ctxItem">
+            <span class="ctxTextIcon" style="background:rgba(255,87,51,.15);color:#FF5733">#</span>复制为 HEX
+            <span class="newBadge">新</span>
+          </div>
+          <div class="ctxItem">
+            <span class="ctxTextIcon" style="background:rgba(59,130,246,.15);color:#3B82F6">R</span>复制为 RGB
+            <span class="newBadge">新</span>
+          </div>
+          <div class="ctxItem">
+            <span class="ctxTextIcon" style="background:rgba(16,185,129,.15);color:#10B981">H</span>复制为 HSL
+            <span class="newBadge">新</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

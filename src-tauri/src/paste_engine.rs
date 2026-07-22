@@ -12,8 +12,6 @@ pub struct PasteEngine {
     #[allow(dead_code)]
     app_handle: AppHandle,
     paste_suppress: Arc<PasteSuppress>,
-    /// 追踪的最后一个非自身前台窗口（由剪贴板轮询线程持续更新）
-    tracked_foreground_hwnd: std::sync::Mutex<Option<isize>>,
     /// 手动保存的前台窗口句柄 + 时间戳（由 save_foreground_hwnd 设置，优先使用）。
     /// 有效期 2 秒，过期自动失效。这样 sequential paste 循环中的多次粘贴
     /// 都能使用热键触发时保存的目标窗口，不会因 execute_paste 内部清除而丢失。
@@ -30,7 +28,6 @@ impl PasteEngine {
         Self {
             app_handle,
             paste_suppress,
-            tracked_foreground_hwnd: std::sync::Mutex::new(None),
             last_foreground_hwnd: std::sync::Mutex::new(None),
             paste_lock: AtomicBool::new(false),
             own_pid,
@@ -50,34 +47,6 @@ impl PasteEngine {
     }
     #[cfg(not(target_os = "windows"))]
     fn is_own_window(&self, _hwnd: isize) -> bool { false }
-
-    /// 持续追踪前台窗口 — 由剪贴板轮询线程每 400ms 调用一次
-    /// 只记录非自身的窗口，确保保存的始终是用户正在操作的目标应用
-    #[cfg(target_os = "windows")]
-    pub fn track_foreground_window(&self) {
-        use windows::Win32::UI::WindowsAndMessaging::*;
-        unsafe {
-            let hwnd = GetForegroundWindow();
-            if hwnd.is_invalid() {
-                return;
-            }
-            // 用进程 ID 过滤自身所有窗口（包括子窗口如 DevTools、Agents 等）
-            if self.is_own_window(hwnd.0 as isize) {
-                return;
-            }
-            // 更新追踪的前台窗口
-            let new_hwnd = hwnd.0 as isize;
-            if let Ok(mut guard) = self.tracked_foreground_hwnd.lock() {
-                let old = *guard;
-                if old != Some(new_hwnd) {
-                    *guard = Some(new_hwnd);
-                }
-            }
-        }
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    pub fn track_foreground_window(&self) {}
 
     /// 手动保存当前前台窗口（在显示窗口之前调用，作为备用）。
     /// 排除 PastePanda 自身的窗口，避免把"自己"当作粘贴目标。
@@ -242,7 +211,19 @@ impl PasteEngine {
 
     /// 粘贴图片：读取图片文件 → 写入剪贴板 → 发送 WM_PASTE
     pub fn execute_paste_image(&self, image_path: &str) -> Result<(), String> {
-        // 0. 获取粘贴锁，防止竞态条件
+        // 1. 读取并解码图片（hash 口径须与监听线程一致：对 RGBA 像素字节计算，修复 C9。
+        //    旧实现对磁盘文件字节算 hash，而监听线程对 arboard 解码后的 RGBA 算 hash，
+        //    两者永不相等，导致图片自粘贴的 hash 主检查永远失效）
+        //    修复 C18：先仅读头部校验尺寸上限，防解压炸弹
+        //    修复 M30：慢 I/O（读文件+解码）在锁外执行，paste_lock 只保护
+        //    "写剪贴板 → 发送 WM_PASTE" 临界区，避免大图解码期间阻塞所有粘贴
+        crate::commands::check_image_decode_limits(std::path::Path::new(image_path))?;
+        let img = image::open(image_path).map_err(|e| format!("无法解码图片: {}", e))?;
+        let rgba = img.to_rgba8();
+        let (width, height) = rgba.dimensions();
+        let content_hash = format!("{:x}", md5::Md5::new().chain_update(rgba.as_raw()).finalize());
+
+        // 2. 获取粘贴锁，防止剪贴板写入与粘贴投递之间的竞态条件
         if self.paste_lock.swap(true, Ordering::Acquire) {
             log::warn!("[PasteEngine] 上一个粘贴操作仍在进行中，跳过本次图片粘贴");
             return Err("上一个粘贴操作仍在进行中，请稍后再试".to_string());
@@ -255,21 +236,11 @@ impl PasteEngine {
         }
         let _guard = LockGuard(&self.paste_lock);
 
-        // 1. 设置粘贴抑制
-        let content_hash = {
-            let mut hasher = md5::Md5::new();
-            let mut file =
-                std::fs::File::open(image_path).map_err(|e| format!("无法打开图片文件: {}", e))?;
-            std::io::copy(&mut file, &mut hasher).map_err(|e| format!("读取图片失败: {}", e))?;
-            format!("{:x}", hasher.finalize())
-        };
+        // 3. 设置粘贴抑制（hash = RGBA 像素字节的 MD5，与监听线程匹配）
         self.paste_suppress
             .set_with_hash(Duration::from_millis(3000), content_hash);
 
-        // 2. 读取图片并写入剪贴板
-        let img = image::open(image_path).map_err(|e| format!("无法解码图片: {}", e))?;
-        let rgba = img.to_rgba8();
-        let (width, height) = rgba.dimensions();
+        // 4. 写入剪贴板
         let img_data = ImageData {
             width: width as usize,
             height: height as usize,
@@ -281,7 +252,7 @@ impl PasteEngine {
             .set_image(img_data)
             .map_err(|e| format!("无法写入图片到剪贴板: {}", e))?;
 
-        // 3. 粘贴前实时重抓前台窗口（排除自身）
+        // 5. 粘贴前实时重抓前台窗口（排除自身）
         #[cfg(target_os = "windows")]
         let now_hwnd = self.capture_foreground_now();
         #[cfg(not(target_os = "windows"))]
@@ -307,53 +278,64 @@ impl PasteEngine {
         use windows::Win32::UI::Input::KeyboardAndMouse::*;
         use windows::Win32::UI::WindowsAndMessaging::*;
 
+        // 无目标窗口：剪贴板已写入但无法投递按键，明确报错而非静默"成功"（修复 M3）
+        let hwnd_raw = match hwnd_value {
+            Some(h) => h,
+            None => {
+                return Err("未找到目标窗口，已取消粘贴（内容已复制到剪贴板，可手动 Ctrl+V）".to_string());
+            }
+        };
+
         unsafe {
-            if let Some(hwnd_raw) = hwnd_value {
-                let hwnd = HWND(hwnd_raw as *mut _);
+            let hwnd = HWND(hwnd_raw as *mut _);
 
-                if !IsWindow(hwnd).as_bool() {
-                    return Ok(());
-                }
+            if !IsWindow(hwnd).as_bool() {
+                return Err("目标窗口已关闭，已取消粘贴（内容已复制到剪贴板，可手动 Ctrl+V）".to_string());
+            }
 
-                // 将目标窗口切换到前台（确保按键能送达）
-                let was_minimized = IsIconic(hwnd).as_bool();
-                if was_minimized {
-                    let _ = ShowWindow(hwnd, SW_RESTORE);
-                }
-                // 切换前台窗口并确认生效：Windows 的“前台锁定超时”（foreground lock timeout）
-                // 机制可能悄悄拒绝来自后台进程的 SetForegroundWindow 请求（返回 false 但不报错）。
-                // 之前的代码完全忽略了返回值，也没有确认切换是否真正生效，就直接固定 sleep 30ms
-                // 后发送按键——一旦切换被拒绝，Ctrl+V 会被发送到当时真正处于前台的错误窗口。
-                // 这里改为：最多重试 3 次 SetForegroundWindow，每次之后轮询
-                // GetForegroundWindow() 确认是否已切换成功，总耗时预算约 100ms（3 次 * 3 * 10ms）。
-                let mut confirmed = false;
-                for attempt in 0..3 {
-                    let ok = SetForegroundWindow(hwnd).as_bool();
-                    if !ok {
-                        log::warn!(
-                            "[PasteEngine] SetForegroundWindow 返回失败（第 {} 次尝试），hwnd={:?}",
-                            attempt + 1,
-                            hwnd_raw
-                        );
-                    }
-                    // 无论返回值如何，都轮询确认实际前台窗口（返回值不总是可靠）
-                    for _ in 0..3 {
-                        std::thread::sleep(std::time::Duration::from_millis(10));
-                        if GetForegroundWindow() == hwnd {
-                            confirmed = true;
-                            break;
-                        }
-                    }
-                    if confirmed {
-                        break;
-                    }
-                }
-                if !confirmed {
+            // 将目标窗口切换到前台（确保按键能送达）
+            let was_minimized = IsIconic(hwnd).as_bool();
+            if was_minimized {
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+            }
+            // 切换前台窗口并确认生效：Windows 的“前台锁定超时”（foreground lock timeout）
+            // 机制可能悄悄拒绝来自后台进程的 SetForegroundWindow 请求（返回 false 但不报错）。
+            // 一旦切换被拒绝，Ctrl+V 会被发送到当时真正处于前台的错误窗口——对剪贴板管理器
+            // 而言可能泄漏密码等敏感内容。因此这里最多重试 3 次 SetForegroundWindow 并轮询确认，
+            // 若始终无法确认切换成功则中止粘贴并报错（修复 C1），绝不冒险发送按键。
+            let mut confirmed = false;
+            for attempt in 0..3 {
+                let ok = SetForegroundWindow(hwnd).as_bool();
+                if !ok {
                     log::warn!(
-                        "[PasteEngine] 前台窗口切换未能在预期时间内确认成功，hwnd={:?}，粘贴可能发送到错误窗口",
+                        "[PasteEngine] SetForegroundWindow 返回失败（第 {} 次尝试），hwnd={:?}",
+                        attempt + 1,
                         hwnd_raw
                     );
                 }
+                // 无论返回值如何，都轮询确认实际前台窗口（返回值不总是可靠）
+                for _ in 0..3 {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    if GetForegroundWindow() == hwnd {
+                        confirmed = true;
+                        break;
+                    }
+                }
+                if confirmed {
+                    break;
+                }
+            }
+            if !confirmed {
+                log::warn!(
+                    "[PasteEngine] 前台窗口切换未能确认成功，hwnd={:?}，中止粘贴以防止内容发送到错误窗口",
+                    hwnd_raw
+                );
+                // 恢复最小化状态，避免窗口停留在被还原的状态
+                if was_minimized {
+                    let _ = ShowWindow(hwnd, SW_MINIMIZE);
+                }
+                return Err("无法切换到目标窗口，已中止粘贴以防止内容粘贴到错误窗口（内容已复制到剪贴板，可手动 Ctrl+V）".to_string());
+            }
 
                 // 使用 SendInput 模拟 Ctrl+V 按键（兼容所有应用，包括微信/企业微信等 WebView 应用）
                 let mut inputs: [INPUT; 4] = std::mem::zeroed();
@@ -386,7 +368,6 @@ impl PasteEngine {
                     std::thread::sleep(std::time::Duration::from_millis(80));
                     let _ = ShowWindow(hwnd, SW_MINIMIZE);
                 }
-            }
         }
 
         Ok(())

@@ -1,15 +1,17 @@
-import { useState, useEffect, useRef, lazy, Suspense, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, lazy, Suspense, useCallback, useMemo, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useAppStore, HistoryItem, FilterType } from "@/stores/appStore";
 import { useToast } from "@/components/Toast";
 import { CardWithContext, ImgState } from "@/components/Card";
 import { ContextMenu } from "@/components/ContextMenu";
+import { StackBanner } from "@/components/StackBanner";
 import { TagEditor } from "@/components/TagEditor";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { pasteText, pasteImage, getImageThumbnail, getImageDataUrl, getImageBase64, getImageInfo, loadMoreHistory, deleteHistory } from "@/lib/api";
+import { pasteText, pasteImage, getImageThumbnail, getImageDataUrl, getImageBase64, dataUrlToBlob, getImageInfo, loadMoreHistory, deleteHistory } from "@/lib/api";
+import { getAllRules } from "@/lib/regexRules";
 import { invoke } from "@tauri-apps/api/core";
-import { ClipboardList, Copy, Search, Zap, ZoomIn, ZoomOut, RotateCw, Download, X, Info, Trash2, FileDown, ScanText, Pin, CheckSquare, Square, Clock, Package, FileX } from "lucide-react";
+import { ClipboardList, Copy, Search, Zap, ZoomIn, ZoomOut, RotateCw, Download, X, Info, Trash2, FileDown, ScanText, Pin, CheckSquare, Square, Clock, Package, FileX, GitCompare } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Timeline, type TimeGroup, type TimelineNode } from "@/components/Timeline";
 import Lenis from "lenis";
@@ -17,6 +19,74 @@ import styles from "./CardList.module.css";
 
 const EditDialog = lazy(() => import("@/components/EditDialog").then(m => ({ default: m.EditDialog })));
 const FileDetailDialog = lazy(() => import("@/components/FileDetailDialog").then(m => ({ default: m.FileDetailDialog })));
+const QRCodeDialog = lazy(() => import("@/components/QRCodeDialog").then(m => ({ default: m.QRCodeDialog })));
+const DiffDialog = lazy(() => import("@/components/DiffDialog").then(m => ({ default: m.DiffDialog })));
+const RegexPreviewDialog = lazy(() => import("@/components/RegexPreviewDialog").then(m => ({ default: m.RegexPreviewDialog })));
+const RegexRulesDialog = lazy(() => import("@/components/RegexRulesDialog").then(m => ({ default: m.RegexRulesDialog })));
+
+/** 解析 ruleId → rule 对象，再渲染 RegexPreviewDialog */
+function RegexPreviewDialogWrapper({ item, ruleId, onClose }: { item: HistoryItem; ruleId: string; onClose: () => void }) {
+  const rule = getAllRules().find((r) => r.id === ruleId);
+  if (!rule) return null;
+  return <RegexPreviewDialog text={item.text || ""} rule={rule} onClose={onClose} />;
+}
+
+/**
+ * 虚拟化行（memoized）— CardList 每滚动帧因 scrollMetrics 重渲染，
+ * 若行内联闭包则所有可见 Card 的 memo 全部失效。改为：行组件接收稳定的
+ * by-id 回调 + 原始类型标志，浅比较通过即跳过，闭包放在行内部创建。
+ */
+const VirtualCardRow = memo(function VirtualCardRow({
+  item, selected, pasting, imageState, searchKeyword, stackOrder, stackDone,
+  index, disablePreview, showMoveToGroup,
+  onItemClick, onItemDoubleClick, onRetryImage, onEdit, onEditTags,
+  onQrCode, onRegexPreview, onManageRegexRules,
+}: {
+  item: HistoryItem;
+  selected: boolean;
+  pasting: boolean;
+  imageState: ImgState | undefined;
+  searchKeyword: string;
+  stackOrder: number | undefined;
+  stackDone: boolean;
+  index: number;
+  disablePreview: boolean;
+  showMoveToGroup: boolean;
+  onItemClick: (id: string, ctrl: boolean, shift: boolean) => void;
+  onItemDoubleClick: (id: string) => void;
+  onRetryImage: (content: string) => void;
+  onEdit: (item: HistoryItem) => void;
+  onEditTags: (item: HistoryItem) => void;
+  onQrCode: (item: HistoryItem) => void;
+  onRegexPreview: (item: HistoryItem, ruleId: string) => void;
+  onManageRegexRules: () => void;
+}) {
+  return (
+    <CardWithContext
+      item={item} selected={selected}
+      imageState={imageState}
+      searchKeyword={searchKeyword}
+      pasting={pasting}
+      onRetryImage={item.type === "image" && item.content && imageState?.status === "error"
+        ? () => onRetryImage(item.content) : undefined}
+      onClick={(e: React.MouseEvent) => onItemClick(item.id, e.ctrlKey, e.shiftKey)}
+      onDoubleClick={() => onItemDoubleClick(item.id)}
+      onEdit={onEdit}
+      onEditTags={onEditTags}
+      onMoveToGroup={showMoveToGroup ? (it) => {
+        // 右键菜单触发：派发事件让 App 层弹出分组选择弹窗
+        window.dispatchEvent(new CustomEvent("app-move-to-group", { detail: { item: it } }));
+      } : undefined}
+      onQrCode={onQrCode}
+      onRegexPreview={onRegexPreview}
+      onManageRegexRules={onManageRegexRules}
+      stackOrder={stackOrder}
+      stackDone={stackDone}
+      index={index}
+      disablePreview={disablePreview}
+    />
+  );
+});
 
 // OCR 词信息类型
 interface OcrWordInfo {
@@ -76,9 +146,29 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   const focusId = useAppStore((s) => s.focusId);
   const selectItem = useAppStore((s) => s.selectItem);
 
+  // 剪贴板栈状态
+  const stackMode = useAppStore((s) => s.stackMode);
+  const stackItems = useAppStore((s) => s.stackItems);
+  const stackDoneIds = useAppStore((s) => s.stackDoneIds);
+  /** id → 栈序号（1 = 栈顶 = 下一个粘贴）。
+   * 修复 Low：智能合并会复用相同 id，栈内可能出现同 id 多条 — 取最靠栈顶的位置（首次出现），
+   * 原实现被更深的同 id 条目覆盖，徽章显示的是最后一次入栈的深度，误导用户 */
+  const stackOrderMap = useMemo(() => {
+    if (!stackMode) return null;
+    const m = new Map<string, number>();
+    stackItems.forEach((it, i) => {
+      if (!m.has(it.id)) m.set(it.id, i + 1);
+    });
+    return m;
+  }, [stackMode, stackItems]);
+
   const { toast } = useToast();
   const [editItem, setEditItem] = useState<HistoryItem | null>(null);
   const [tagEditorItem, setTagEditorItem] = useState<HistoryItem | null>(null);
+  const [qrItem, setQrItem] = useState<HistoryItem | null>(null);
+  const [diffPair, setDiffPair] = useState<[HistoryItem, HistoryItem] | null>(null);
+  const [regexPreview, setRegexPreview] = useState<{ item: HistoryItem; ruleId: string } | null>(null);
+  const [showRegexRules, setShowRegexRules] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [previewInfo, setPreviewInfo] = useState<Record<string, string | number> | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -220,11 +310,21 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
     getItemKey: (i) => items[i]?.id || `vitem-${i}`,
   });
 
+  // M25：当前可视窗口索引范围（含 overscan）— 缩略图只加载该范围，
+  // 避免对全部过滤结果（可能成百上千张图）一次性发起加载
+  const vItemsNow = virtualizer.getVirtualItems();
+  const thumbFirst = vItemsNow.length > 0 ? vItemsNow[0].index : 0;
+  const thumbLast = vItemsNow.length > 0 ? vItemsNow[vItemsNow.length - 1].index : 0;
+  const thumbWindowKey = `${thumbFirst}-${thumbLast}`;
+
   // 异步加载图片缩略图（使用小尺寸缩略图 + 并行加载）
+  // M25：只加载可视窗口 ± 缓冲范围内的缩略图，滚动时按窗口增量加载
   useEffect(() => {
-    const imageItems = items.filter(
-      (i) => i.type === "image" && i.content && !loadedPathsRef.current.has(i.content)
-    );
+    const imageItems = items
+      .slice(Math.max(0, thumbFirst - 4), thumbLast + 5)
+      .filter(
+        (i) => i.type === "image" && i.content && !loadedPathsRef.current.has(i.content)
+      );
     if (imageItems.length === 0) return;
 
     let cancelled = false;
@@ -284,7 +384,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
       });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items]);
+  }, [items, thumbWindowKey]);
 
   // 当 items 变化时，清理 loadedPathsRef 中不再可见的路径
   useEffect(() => {
@@ -380,13 +480,8 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
         setPastingId(item.id);
         try {
           const dataUrl = await getImageBase64(item.content);
-          const mimeMatch = dataUrl.match(/^data:([^;]+);base64,/);
-          const mimeType = mimeMatch ? mimeMatch[1] : "image/png";
-          const base64Data = dataUrl.split(",")[1];
-          const byteChars = atob(base64Data);
-          const bytes = new Uint8Array(byteChars.length);
-          for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
-          const blob = new Blob([bytes], { type: mimeType });
+          const blob = await dataUrlToBlob(dataUrl);
+          const mimeType = blob.type || "image/png";
           await navigator.clipboard.write([new ClipboardItem({ [mimeType]: blob })]);
           toast("图片已复制", "success");
         } catch {
@@ -419,6 +514,22 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
     }
   }, [openImagePreview, toast]);
 
+  // ── 稳定行回调（供 memoized VirtualCardRow 使用，滚动帧重渲染时引用不变）──
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const handleItemClick = useCallback((id: string, ctrl: boolean, shift: boolean) => {
+    selectItem(id, ctrl, shift);
+  }, [selectItem]);
+  const handleItemDoubleClick = useCallback((id: string) => {
+    const it = itemsRef.current.find((i) => i.id === id);
+    if (it) handleDoubleClick(it);
+  }, [handleDoubleClick]);
+  const handleEditItem = useCallback((it: HistoryItem) => setEditItem(it), []);
+  const handleEditTagsItem = useCallback((it: HistoryItem) => setTagEditorItem(it), []);
+  const handleQrItem = useCallback((it: HistoryItem) => setQrItem(it), []);
+  const handleRegexPreviewItem = useCallback((it: HistoryItem, ruleId: string) => setRegexPreview({ item: it, ruleId }), []);
+  const handleManageRegexRules = useCallback(() => setShowRegexRules(true), []);
+
   // 同步预览状态到 ref
   previewStateRef.current = { scale: previewScale, rotation: previewRotation, offset: previewOffset };
 
@@ -432,6 +543,13 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
         rotation: state.rotation,
         offset: state.offset,
       };
+      // 上限 50 条，淘汰最旧（字符串键按插入序，Low 修复：防无上限增长）
+      const keys = Object.keys(previewStateCache.current);
+      if (keys.length > 50) {
+        for (const k of keys.slice(0, keys.length - 50)) {
+          delete previewStateCache.current[k];
+        }
+      }
     }
     previewContentRef.current = null;
     setPreviewImage(null);
@@ -532,6 +650,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
     // Lenis scroll 回调：同步 scrollMetrics + 触底加载 + 派发原生 scroll 事件给虚拟列表
     let dispatchingScroll = false;
     lenis.on("scroll", ({ scroll }: Lenis) => {
+      handleScroll(); // 标记滚动中（禁用 hover Popover，120ms 无滚动后复位）
       updateMetrics();
       triggerLoadMore();
 
@@ -550,7 +669,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
       lenis.destroy();
       lenisRef.current = null;
     };
-  }, [scrollRef, triggerLoadMore]);
+  }, [scrollRef, triggerLoadMore, handleScroll]);
 
   // Timeline 滚轮 → 直接调用 Lenis scrollTo 平滑滚动
   const handleTimelineWheel = useCallback((deltaY: number) => {
@@ -877,23 +996,33 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   const [timelineExpanded, setTimelineExpanded] = useState(false);
 
   // 滚动到指定卡片索引
+  // M26：getOffsetForIndex 综合"已挂载行的实测高度 + 未挂载行的估算"，比 index*82 准；
+  //      动画结束后目标行已挂载实测，再做一次漂移校正，然后才查找 DOM 做高亮
   const handleScrollToIndex = useCallback((index: number) => {
     const lenis = lenisRef.current;
     const item = items[index];
     if (!item || !lenis) return;
-    const virtItem = virtualizer.getVirtualItems().find(vi => vi.index === index);
-    const top = virtItem?.start ?? index * 82;
-    lenis.scrollTo(Math.max(0, top - 10), { lerp: 0.1, duration: 0.8 });
-    // 高亮闪烁
-    const targetEl = document.querySelector(`[data-item-id="${item.id}"]`);
-    if (targetEl) {
-      const card = targetEl.querySelector('[class*="card"]') as HTMLElement;
-      if (card) {
-        card.style.boxShadow = '0 0 0 3px var(--accent), 0 8px 24px rgba(59,130,246,0.3)';
-        setTimeout(() => { card.style.boxShadow = ''; }, 800);
+    const offsetInfo = virtualizer.getOffsetForIndex(index, "start");
+    const start = offsetInfo ? offsetInfo[0] : index * 82;
+    lenis.scrollTo(Math.max(0, start - 10), { lerp: 0.1, duration: 0.8 });
+
+    window.setTimeout(() => {
+      const correctedInfo = virtualizer.getOffsetForIndex(index, "start");
+      const corrected = correctedInfo ? correctedInfo[0] : start;
+      if (Math.abs(corrected - start) > 4) {
+        lenis.scrollTo(Math.max(0, corrected - 10), { immediate: true });
       }
-    }
-  }, [items, scrollRef, virtualizer]);
+      // 高亮闪烁（此时目标行已挂载）
+      const targetEl = document.querySelector(`[data-item-id="${item.id}"]`);
+      if (targetEl) {
+        const card = targetEl.querySelector('[class*="card"]') as HTMLElement;
+        if (card) {
+          card.style.boxShadow = '0 0 0 3px var(--accent), 0 8px 24px rgba(59,130,246,0.3)';
+          window.setTimeout(() => { card.style.boxShadow = ''; }, 800);
+        }
+      }
+    }, 850);
+  }, [items, virtualizer]);
 
   // 拖拽时间轴滚动 — 使用 Lenis scrollTo 而不是直接设置 scrollTop
   const handleDragScroll = useCallback((scrollTop: number) => {
@@ -930,6 +1059,9 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
           }}
         />
       )}
+
+      {/* 剪贴板栈横幅 — 栈模式激活时固定显示在列表上方 */}
+      <StackBanner />
 
       <div
         className={`${styles.scrollArea} ${timelineExpanded ? styles.scrollAreaTimelineVisible : ""}`}
@@ -1037,6 +1169,20 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                 <button onClick={handleBatchExport} className={styles.batchBtn} title="导出选中记录" aria-label="导出选中记录">
                   <FileDown size={12} /> 导出
                 </button>
+                <button
+                  onClick={() => {
+                    const selected = items.filter((i) => selectedIds.has(i.id) && i.type === "text");
+                    if (selected.length === 2) {
+                      const [a, b] = selected.sort((x, y) => x.time.localeCompare(y.time));
+                      setDiffPair([a, b]);
+                    }
+                  }}
+                  className={styles.batchBtn}
+                  disabled={items.filter((i) => selectedIds.has(i.id) && i.type === "text").length !== 2}
+                  title="对比两条文本差异（需选中恰好 2 条文本）"
+                  aria-label="对比差异">
+                  <GitCompare size={12} /> 对比
+                </button>
                 <button onClick={() => setShowBatchDeleteConfirm(true)} className={`${styles.batchBtn} ${styles.batchBtnDanger}`} title="删除选中记录" aria-label="删除选中记录">
                   <Trash2 size={12} /> 删除
                 </button>
@@ -1049,21 +1195,22 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                 return (
                   <div key={item.id} data-index={vItem.index} data-item-id={item.id} ref={virtualizer.measureElement}
                     style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vItem.start}px)` }}>
-                        <CardWithContext
-                          key={item.id} item={item} selected={focusId === item.id || selectedIds.has(item.id)}
+                        <VirtualCardRow
+                          item={item} selected={focusId === item.id || selectedIds.has(item.id)}
                           imageState={item.type === "image" && item.content ? imgCache[item.content] : undefined}
                           searchKeyword={searchKeyword}
                           pasting={pastingId === item.id}
-                          onRetryImage={item.type === "image" && item.content && imgCache[item.content]?.status === "error"
-                            ? () => handleRetryImage(item.content) : undefined}
-                          onClick={(e: React.MouseEvent) => selectItem(item.id, e.ctrlKey, e.shiftKey)}
-                          onDoubleClick={() => handleDoubleClick(item)}
-                          onEdit={(item) => setEditItem(item)}
-                          onEditTags={(item) => setTagEditorItem(item)}
-                          onMoveToGroup={showMoveToGroup ? (item) => {
-                            // 右键菜单触发：派发事件让 App 层弹出分组选择弹窗
-                            window.dispatchEvent(new CustomEvent("app-move-to-group", { detail: { item } }));
-                          } : undefined}
+                          onItemClick={handleItemClick}
+                          onItemDoubleClick={handleItemDoubleClick}
+                          onRetryImage={handleRetryImage}
+                          onEdit={handleEditItem}
+                          onEditTags={handleEditTagsItem}
+                          onQrCode={handleQrItem}
+                          onRegexPreview={handleRegexPreviewItem}
+                          onManageRegexRules={handleManageRegexRules}
+                          showMoveToGroup={showMoveToGroup}
+                          stackOrder={stackOrderMap?.get(item.id)}
+                          stackDone={stackMode && stackDoneIds.has(item.id) && !stackOrderMap?.has(item.id)}
                           index={vItem.index}
                           disablePreview={isScrolling || selectedCount > 0}
                         />
@@ -1100,6 +1247,18 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
       </Suspense>
       <Suspense fallback={null}>
         {fileDetailItem && <ErrorBoundary fallback={null}><FileDetailDialog item={fileDetailItem} onClose={() => setFileDetailItem(null)} /></ErrorBoundary>}
+      </Suspense>
+      <Suspense fallback={null}>
+        {qrItem && <ErrorBoundary fallback={null}><QRCodeDialog text={qrItem.text} onClose={() => setQrItem(null)} /></ErrorBoundary>}
+      </Suspense>
+      <Suspense fallback={null}>
+        {diffPair && <ErrorBoundary fallback={null}><DiffDialog oldItem={diffPair[0]} newItem={diffPair[1]} onClose={() => setDiffPair(null)} /></ErrorBoundary>}
+      </Suspense>
+      <Suspense fallback={null}>
+        {regexPreview && <ErrorBoundary fallback={null}><RegexPreviewDialogWrapper item={regexPreview.item} ruleId={regexPreview.ruleId} onClose={() => setRegexPreview(null)} /></ErrorBoundary>}
+      </Suspense>
+      <Suspense fallback={null}>
+        {showRegexRules && <ErrorBoundary fallback={null}><RegexRulesDialog onClose={() => setShowRegexRules(false)} /></ErrorBoundary>}
       </Suspense>
       <TagEditor open={!!tagEditorItem} item={tagEditorItem} onClose={() => setTagEditorItem(null)} />
 
@@ -1211,52 +1370,57 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                     {/* OCR 文字叠加层 */}
                     {ocrActive && ocrResult && (
                       <div className={styles.ocrOverlayContainer} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-                        {ocrResult.lines.map((line, li) =>
-                          line.words.map((word, wi) => {
-                            const key = `${li}-${wi}`;
-                            const selected = selectedWordIndices.has(key);
-                            // OCR 坐标映射：需要根据图片的实际显示位置计算
-                            // 简化处理：用百分比定位
-                            const viewport = viewportRef.current;
-                            const imgEl = viewport?.querySelector('img') as HTMLImageElement | null;
-                            let left = 0, top = 0, width = 0, height = 0;
-                            if (imgEl && imgEl.naturalWidth && imgEl.naturalHeight) {
-                              const imgRect = imgEl.getBoundingClientRect();
-                              const viewportEl = viewport;
-                              const vpRect = viewportEl?.getBoundingClientRect();
-                              if (vpRect) {
-                                const scaleX = imgRect.width / imgEl.naturalWidth;
-                                const scaleY = imgRect.height / imgEl.naturalHeight;
-                                left = (imgRect.left - vpRect.left) / vpRect.width * 100 + (word.x * scaleX / vpRect.width * 100);
-                                top = (imgRect.top - vpRect.top) / vpRect.height * 100 + (word.y * scaleY / vpRect.height * 100);
-                                width = word.width * scaleX / vpRect.width * 100;
-                                height = word.height * scaleY / vpRect.height * 100;
-                              }
+                        {(() => {
+                          // 修复 Low：DOM 测量从"每个词一次"提升为"整层一次"，
+                          // 避免渲染期间 O(n) 次 getBoundingClientRect 强制布局
+                          const viewport = viewportRef.current;
+                          const imgEl = viewport?.querySelector('img') as HTMLImageElement | null;
+                          let baseLeft = 0, baseTop = 0, unitX = 0, unitY = 0;
+                          if (imgEl && imgEl.naturalWidth && imgEl.naturalHeight) {
+                            const imgRect = imgEl.getBoundingClientRect();
+                            const vpRect = viewport?.getBoundingClientRect();
+                            if (vpRect && vpRect.width > 0 && vpRect.height > 0) {
+                              const scaleX = imgRect.width / imgEl.naturalWidth;
+                              const scaleY = imgRect.height / imgEl.naturalHeight;
+                              baseLeft = ((imgRect.left - vpRect.left) / vpRect.width) * 100;
+                              baseTop = ((imgRect.top - vpRect.top) / vpRect.height) * 100;
+                              unitX = (scaleX / vpRect.width) * 100;
+                              unitY = (scaleY / vpRect.height) * 100;
                             }
-                            return (
-                              <div
-                                key={key}
-                                data-ocr-word-box
-                                className={`${styles.ocrWordBox}${selected ? ' ' + styles.ocrWordSelected : ''}`}
-                                style={{
-                                  position: 'absolute',
-                                  left: `${left}%`,
-                                  top: `${top}%`,
-                                  width: `${width}%`,
-                                  height: `${height}%`,
-                                  border: selected ? '1.5px solid rgba(16,185,129,0.8)' : '1px solid rgba(99,102,241,0.35)',
-                                  background: selected ? 'rgba(16,185,129,0.18)' : 'rgba(99,102,241,0.06)',
-                                  borderRadius: 2,
-                                  pointerEvents: 'auto',
-                                  cursor: 'pointer',
-                                  zIndex: selected ? 2 : 1,
-                                }}
-                                onClick={(e) => handleOcrWordClick(li, wi, e)}
-                                title={word.text}
-                              />
-                            );
-                          })
-                        )}
+                          }
+                          return ocrResult.lines.map((line, li) =>
+                            line.words.map((word, wi) => {
+                              const key = `${li}-${wi}`;
+                              const selected = selectedWordIndices.has(key);
+                              const left = baseLeft + word.x * unitX;
+                              const top = baseTop + word.y * unitY;
+                              const width = word.width * unitX;
+                              const height = word.height * unitY;
+                              return (
+                                <div
+                                  key={key}
+                                  data-ocr-word-box
+                                  className={`${styles.ocrWordBox}${selected ? ' ' + styles.ocrWordSelected : ''}`}
+                                  style={{
+                                    position: 'absolute',
+                                    left: `${left}%`,
+                                    top: `${top}%`,
+                                    width: `${width}%`,
+                                    height: `${height}%`,
+                                    border: selected ? '1.5px solid rgba(16,185,129,0.8)' : '1px solid rgba(99,102,241,0.35)',
+                                    background: selected ? 'rgba(16,185,129,0.18)' : 'rgba(99,102,241,0.06)',
+                                    borderRadius: 2,
+                                    pointerEvents: 'auto',
+                                    cursor: 'pointer',
+                                    zIndex: selected ? 2 : 1,
+                                  }}
+                                  onClick={(e) => handleOcrWordClick(li, wi, e)}
+                                  title={word.text}
+                                />
+                              );
+                            })
+                          );
+                        })()}
                         {/* 框选矩形 */}
                         {isSelecting && selRect && (
                           <div style={{
@@ -1342,13 +1506,8 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                 <button className="btn-primary" style={{ padding: "6px 14px", fontSize: 12 }} onClick={async () => {
                   try {
                     const dataUrl = await getImageBase64(previewContentRef.current!);
-                    const mimeMatch = dataUrl.match(/^data:([^;]+);base64,/);
-                    const mimeType = mimeMatch ? mimeMatch[1] : "image/png";
-                    const base64Data = dataUrl.split(",")[1];
-                    const byteChars = atob(base64Data);
-                    const bytes = new Uint8Array(byteChars.length);
-                    for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
-                    const blob = new Blob([bytes], { type: mimeType });
+                    const blob = await dataUrlToBlob(dataUrl);
+                    const mimeType = blob.type || "image/png";
                     await navigator.clipboard.write([new ClipboardItem({ [mimeType]: blob })]);
                     toast("已复制", "success");
                   } catch { toast("复制失败", "error"); }

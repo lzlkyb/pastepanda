@@ -80,12 +80,21 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     }
   };
 
+  // 串行化配置写入：后一次保存必须在前一次之后执行，且读取最新 store 快照，
+  // 避免快速连续切换时闭包过期 config 相互覆盖导致设置丢失（M20）
+  const saveChainRef = useRef(Promise.resolve() as Promise<unknown>);
+
   const updateAndSave = async (partial: Record<string, unknown>) => {
     updateConfig(partial);
-    try {
+    const task = saveChainRef.current.then(async () => {
       const { invoke } = await import("@tauri-apps/api/core");
-      const newConfig = { ...config, ...partial };
+      // Zustand set 同步生效，此时 getState 已包含 partial
+      const newConfig = useAppStore.getState().config;
       await invoke("save_config", { config: newConfig });
+    });
+    saveChainRef.current = task.catch(() => {});
+    try {
+      await task;
     } catch (e) {
       logger.warn("即时保存失败", e);
       toast("设置保存失败，请检查数据库权限", "error");

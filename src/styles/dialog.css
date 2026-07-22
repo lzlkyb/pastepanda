@@ -293,3 +293,83 @@
 .preview-btn:hover {
   background: rgba(255,255,255,0.25);
 }
+
+/* ===== Markdown 编辑/预览切换 ===== */
+.md-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--seg-bg);
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.md-mode-btn {
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: none;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  transition: all 0.2s;
+}
+
+.md-mode-btn.active {
+  background: var(--seg-active-bg);
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+/* ===== Markdown 预览操作栏 ===== */
+.md-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.md-preview-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.md-preview-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ===== Markdown 预览区容器 ===== */
+.dialog-body .md-preview-wrap {
+  flex: 1;
+  min-height: 120px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  padding: 14px 18px;
+  overflow-y: auto;
+}
+
+/* ===== MD 卡片徽标 ===== */
+.md-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--accent-light);
+  color: var(--accent);
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+}

@@ -127,7 +127,16 @@ pub fn run() {
                     .get("lan_pairing_key")
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.is_empty())
-                    .map(|s| s.to_string());
+                    .map(|s| s.to_string())
+                    // 修复 M14：旧版本可能保存了 "1" 这类弱密钥，强度校验不通过则视为无效并重新生成
+                    // （已配对的设备需要重新粘贴新密钥，属安全升级的预期行为）
+                    .filter(|k| {
+                        let ok = lan_sync::validate_pairing_key(k).is_ok();
+                        if !ok {
+                            log::warn!("[LanSync] 已保存的配对密钥强度不足，已自动重新生成");
+                        }
+                        ok
+                    });
                 match existing {
                     Some(key) => key,
                     None => {
@@ -162,6 +171,16 @@ pub fn run() {
                     .unwrap_or("Ctrl+Q")
                     .to_string(),
                 index_prefix: "Ctrl+Alt".to_string(),
+                stack_toggle: saved_config
+                    .get("stack_toggle_hotkey")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Ctrl+Shift+K")
+                    .to_string(),
+                stack_paste: saved_config
+                    .get("stack_paste_hotkey")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Ctrl+Shift+P")
+                    .to_string(),
             };
 
             app.manage(store);
@@ -207,7 +226,9 @@ pub fn run() {
             }
 
             // 局域网同步（使用之前读取的配置）
-            let device_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
+            // 修复 Low：device_id 改用完整 UUID（原仅取前 8 位十六进制 = 32bit，易碰撞/被伪造），
+            // 该值仅用于过滤自身消息，无长度约束
+            let device_id = uuid::Uuid::new_v4().to_string();
             let lan_sync = lan_sync::LanSync::new(device_id, lan_pairing_key);
             if lan_enabled {
                 lan_sync.start_listener(handle.clone());
@@ -303,6 +324,7 @@ pub fn run() {
             commands::open_pinned_image,
             commands::close_pinned_image,
             commands::hide_tray_popup,
+            commands::set_stack_mode,
             commands::get_tray_popup_data,
             commands::emit_tray_open_settings,
             commands::show_main_window,

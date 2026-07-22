@@ -230,13 +230,18 @@ fn get_work_area_size() -> (f64, f64) {
     use windows::Win32::UI::WindowsAndMessaging::SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS;
 
     let mut rect = RECT::default();
-    unsafe {
-        let _ = SystemParametersInfoW(
+    let ok = unsafe {
+        SystemParametersInfoW(
             SPI_GETWORKAREA,
             0,
             Some(&mut rect as *mut _ as *mut _),
             SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
-        );
+        )
+    };
+    // 调用失败或返回退化矩形时回退默认值，避免弹窗被定位到屏幕外（Low 修复）
+    if ok.is_err() || rect.right <= rect.left || rect.bottom <= rect.top {
+        log::warn!("[TrayManager] 获取工作区尺寸失败，使用默认 1920x1080");
+        return (1920.0, 1080.0);
     }
     (
         (rect.right - rect.left) as f64,
@@ -287,6 +292,16 @@ fn show_tray_popup(app: &AppHandle, tray_rect: (f64, f64, f64, f64)) {
 
     let app = app.clone();
     std::thread::spawn(move || {
+        // RAII 守卫：无论正常结束还是 panic 都复位标志，
+        // 否则一次 panic 会让 POPUP_REBUILDING 永远为 true，托盘弹窗彻底失效（M28）
+        struct ResetRebuildingOnDrop;
+        impl Drop for ResetRebuildingOnDrop {
+            fn drop(&mut self) {
+                POPUP_REBUILDING.store(false, Ordering::SeqCst);
+            }
+        }
+        let _reset_guard = ResetRebuildingOnDrop;
+
         let app = &app;
 
         // 如果已有弹窗，先关闭并等待其销毁完成，再创建新窗口
@@ -380,8 +395,7 @@ fn show_tray_popup(app: &AppHandle, tray_rect: (f64, f64, f64, f64)) {
             }
         }
 
-        // 本轮关闭/重建序列结束，允许后续右键点击再次触发
-        POPUP_REBUILDING.store(false, Ordering::SeqCst);
+        // 本轮关闭/重建序列结束，_reset_guard 落盘时自动复位 POPUP_REBUILDING
     });
 }
 
@@ -507,4 +521,62 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     log::info!("[TrayManager] 系统托盘已初始化 (纯自绘弹窗)");
     Ok(())
+}
+
+/// 切换托盘图标的栈模式状态（叠加/移除橙色圆点）
+pub fn set_tray_stack_mode(app: &AppHandle, active: bool) {
+    let Some(tray) = app.tray_by_id("main-tray") else {
+        log::warn!("[TrayManager] 未找到托盘图标，无法切换栈模式状态");
+        return;
+    };
+
+    let base = match Image::from_bytes(include_bytes!("../icons/icon.png")) {
+        Ok(img) => img,
+        Err(e) => {
+            log::warn!("[TrayManager] 加载基础图标失败: {}", e);
+            return;
+        }
+    };
+
+    if !active {
+        let _ = tray.set_icon(Some(base));
+        log::info!("[TrayManager] 托盘图标已恢复正常状态");
+        return;
+    }
+
+    // 在图标右上角绘制橙色圆点（#EA580C）+ 深色描边
+    let w = base.width() as usize;
+    let h = base.height() as usize;
+    let mut pixels = base.rgba().to_vec();
+
+    let cx = (w as f64 * 0.78) as isize; // 圆心 x
+    let cy = (h as f64 * 0.22) as isize; // 圆心 y
+    let r = (w as f64 * 0.20) as isize;  // 圆点半径
+    let border = 2.0_f64;
+
+    for y in 0..h {
+        for x in 0..w {
+            let dx = x as f64 - cx as f64;
+            let dy = y as f64 - cy as f64;
+            let dist = (dx * dx + dy * dy).sqrt();
+            let idx = (y * w + x) * 4;
+            if dist <= r as f64 {
+                // 橙色填充 #EA580C = (234, 88, 12)
+                pixels[idx] = 234;
+                pixels[idx + 1] = 88;
+                pixels[idx + 2] = 12;
+                pixels[idx + 3] = 255;
+            } else if dist <= r as f64 + border {
+                // 深色描边，增强对比
+                pixels[idx] = 30;
+                pixels[idx + 1] = 41;
+                pixels[idx + 2] = 59;
+                pixels[idx + 3] = 255;
+            }
+        }
+    }
+
+    let stack_icon = Image::new_owned(pixels, w as u32, h as u32);
+    let _ = tray.set_icon(Some(stack_icon));
+    log::info!("[TrayManager] 托盘图标已切换为栈模式（橙色圆点）");
 }

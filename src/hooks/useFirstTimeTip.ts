@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 
-const STORAGE_KEY = "pasteship_shown_tips";
+const STORAGE_KEY = "pastepanda_shown_tips";
 
 function getShownTips(): Set<string> {
   try {

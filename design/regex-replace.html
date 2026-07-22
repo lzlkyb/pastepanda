@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>正则过滤/替换 设计稿 — 方案B</title>
+<style>
+:root {
+  --app-bg: #F4F6F9;
+  --dialog-bg: #fff;
+  --border-color: #E0E4EB;
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --hover: #E8ECF2;
+  --section-bg: #F0F4F8;
+  --danger: #DC2626;
+  --green: #16A34A;
+  --green-bg: #DCFCE7;
+  --orange: #EA580C;
+  --orange-bg: #FFF7ED;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, 'Segoe UI', sans-serif; background: var(--app-bg); padding: 30px; display: flex; flex-direction: column; align-items: center; gap: 40px; }
+h1 { font-size: 18px; color: var(--text-primary); }
+h2 { font-size: 14px; color: var(--text-secondary); margin-bottom: 12px; }
+.section { width: 100%; max-width: 920px; }
+
+/* ===== 1. 右键菜单中的正则替换分组 ===== */
+.menu-mock {
+  width: 220px;
+  background: var(--dialog-bg);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  padding: 4px;
+  font-size: 12px;
+}
+.menu-group-label {
+  padding: 6px 10px 3px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.menu-item:hover { background: var(--hover); }
+.menu-item .icon { font-size: 13px; width: 16px; text-align: center; }
+.menu-item .label { flex: 1; }
+.menu-item .shortcut { font-size: 10px; color: var(--text-muted); }
+.menu-sep { height: 1px; background: var(--border-color); margin: 4px 8px; }
+.menu-item.manage { color: var(--accent); font-weight: 500; }
+
+/* ===== 2. 预览对话框 ===== */
+.dialog-box {
+  background: var(--dialog-bg);
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+  width: 100%;
+  overflow: hidden;
+}
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 48px;
+  border-bottom: 1px solid var(--border-color);
+}
+.dialog-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dialog-close {
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent;
+  color: var(--text-secondary);
+  font-size: 15px; cursor: pointer;
+}
+.dialog-close:hover { background: var(--hover); }
+
+/* Regex input bar */
+.regex-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--section-bg);
+}
+.regex-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+.regex-field label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.regex-input {
+  flex: 1;
+  padding: 5px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: 'SF Mono', Consolas, monospace;
+  color: var(--text-primary);
+  background: #fff;
+}
+.regex-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light); }
+.regex-flags {
+  width: 40px;
+  text-align: center;
+}
+.regex-apply-btn {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* Preview panes */
+.preview-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 200px;
+  max-height: 300px;
+}
+.preview-pane {
+  padding: 12px 16px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-primary);
+}
+.preview-pane:first-child {
+  border-right: 1px solid var(--border-color);
+  background: #FAFBFC;
+}
+.preview-pane .highlight {
+  background: rgba(220, 38, 38, 0.12);
+  border-radius: 2px;
+  padding: 0 1px;
+  text-decoration: line-through;
+  color: var(--danger);
+}
+.preview-pane .replaced {
+  background: rgba(22, 163, 74, 0.12);
+  border-radius: 2px;
+  padding: 0 1px;
+  color: var(--green);
+  font-weight: 500;
+}
+.pane-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 6px 16px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.preview-col {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.preview-col:first-child { border-right: 1px solid var(--border-color); }
+
+/* Footer */
+.dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-color);
+}
+.footer-info {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.footer-info b { color: var(--orange); }
+.footer-btns {
+  display: flex;
+  gap: 8px;
+}
+.btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: #fff;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.btn-primary:hover { opacity: 0.9; color: #fff; }
+
+/* ===== 3. 规则管理弹窗 ===== */
+.rules-body {
+  padding: 16px 20px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.rule-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  margin-bottom: 8px;
+  background: #fff;
+}
+.rule-row:hover { border-color: var(--accent); }
+.rule-toggle {
+  width: 32px; height: 18px;
+  border-radius: 9px;
+  background: #D1D5DB;
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.rule-toggle.on { background: var(--accent); }
+.rule-toggle::after {
+  content: '';
+  position: absolute;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  top: 2px; left: 2px;
+  transition: transform 0.15s;
+}
+.rule-toggle.on::after { transform: translateX(14px); }
+.rule-info { flex: 1; min-width: 0; }
+.rule-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.rule-pattern {
+  font-size: 11px;
+  font-family: 'SF Mono', Consolas, monospace;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rule-badge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.rule-badge.preset { background: var(--accent-light); color: var(--accent); }
+.rule-badge.custom { background: var(--orange-bg); color: var(--orange); }
+.rule-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.rule-action-btn {
+  width: 24px; height: 24px;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent;
+  color: var(--text-muted);
+  font-size: 12px; cursor: pointer;
+}
+.rule-action-btn:hover { background: var(--hover); color: var(--text-primary); }
+.rule-action-btn.del:hover { color: var(--danger); }
+
+.add-rule-btn {
+  width: 100%;
+  padding: 10px;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 4px;
+}
+.add-rule-btn:hover { border-color: var(--accent); background: var(--accent-light); }
+
+/* Annotation */
+.desc-panel {
+  padding: 16px 20px;
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
+.desc-panel h3 { font-size: 14px; color: var(--text-primary); margin-bottom: 8px; }
+.desc-panel ul { padding-left: 18px; }
+.desc-panel li { margin-bottom: 4px; }
+.desc-panel code { background: var(--section-bg); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+
+.flex-row { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+
+<h1>正则过滤/替换 — 方案B 设计稿</h1>
+
+<!-- Section 1: 右键菜单 -->
+<div class="section">
+  <h2>① 右键菜单「粘贴并变换 → 正则替换」分组</h2>
+  <div class="flex-row">
+    <div class="menu-mock">
+      <div class="menu-group-label">通用变换</div>
+      <div class="menu-item"><span class="icon">AA</span><span class="label">转为大写</span></div>
+      <div class="menu-item"><span class="icon">aa</span><span class="label">转为小写</span></div>
+      <div class="menu-item"><span class="icon">✂</span><span class="label">去除首尾空白</span></div>
+      <div class="menu-sep"></div>
+      <div class="menu-group-label">正则替换</div>
+      <div class="menu-item"><span class="icon">🔤</span><span class="label">去除空行</span></div>
+      <div class="menu-item"><span class="icon">🔢</span><span class="label">移除行号</span></div>
+      <div class="menu-item"><span class="icon">🔗</span><span class="label">URL 解码</span></div>
+      <div class="menu-item"><span class="icon">📱</span><span class="label">手机号脱敏</span></div>
+      <div class="menu-item"><span class="icon">🪪</span><span class="label">身份证脱敏</span></div>
+      <div class="menu-sep"></div>
+      <div class="menu-item manage"><span class="icon">⚙</span><span class="label">管理正则规则…</span></div>
+    </div>
+    <div class="desc-panel" style="flex:1;min-width:300px;">
+      <h3>菜单集成说明</h3>
+      <ul>
+        <li>在现有「粘贴并变换」子菜单中新增「正则替换」分组</li>
+        <li>只展示已启用的规则（预设 + 自定义），按顺序排列</li>
+        <li>点击规则 → 弹出<b>预览对话框</b>（非直接粘贴）</li>
+        <li>底部「管理正则规则…」入口打开规则 CRUD 弹窗</li>
+        <li>自定义规则也出现在此分组中（带 🏷 图标区分）</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- Section 2: 预览对话框 -->
+<div class="section">
+  <h2>② 正则预览对话框（点击规则后弹出）</h2>
+  <div class="dialog-box">
+    <div class="dialog-header">
+      <div class="dialog-title">🔍 正则替换预览 — 手机号脱敏</div>
+      <button class="dialog-close">✕</button>
+    </div>
+    <!-- Regex input bar (editable for debugging) -->
+    <div class="regex-bar">
+      <div class="regex-field">
+        <label>匹配</label>
+        <input class="regex-input" value="(\d{3})\d{4}(\d{4})" readonly style="opacity:0.85" />
+      </div>
+      <div class="regex-field">
+        <label>替换</label>
+        <input class="regex-input" value="$1****$2" readonly style="opacity:0.85" />
+      </div>
+      <div class="regex-field" style="flex:0 0 60px;">
+        <label>标志</label>
+        <input class="regex-input regex-flags" value="g" readonly style="opacity:0.85" />
+      </div>
+      <button class="regex-apply-btn">重新匹配</button>
+    </div>
+    <!-- Preview panes -->
+    <div class="preview-body">
+      <div class="preview-col">
+        <div class="pane-label">原文</div>
+        <div class="preview-pane">联系人：张三
+手机：<span class="highlight">13812345678</span>
+备用：<span class="highlight">15987654321</span>
+地址：北京市朝阳区xx路1号
+备注：工作日联系</div>
+      </div>
+      <div class="preview-col">
+        <div class="pane-label">替换结果</div>
+        <div class="preview-pane">联系人：张三
+手机：<span class="replaced">138****5678</span>
+备用：<span class="replaced">159****4321</span>
+地址：北京市朝阳区xx路1号
+备注：工作日联系</div>
+      </div>
+    </div>
+    <!-- Footer -->
+    <div class="dialog-footer">
+      <div class="footer-info">匹配 <b>2</b> 处 · 规则：手机号脱敏</div>
+      <div class="footer-btns">
+        <button class="btn">📋 复制结果</button>
+        <button class="btn btn-primary">✓ 确认粘贴</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Section 3: 规则管理弹窗 -->
+<div class="section">
+  <h2>③ 正则规则管理弹窗</h2>
+  <div class="dialog-box" style="max-width:560px;">
+    <div class="dialog-header">
+      <div class="dialog-title">⚙ 正则规则管理</div>
+      <button class="dialog-close">✕</button>
+    </div>
+    <div class="rules-body">
+      <!-- Preset rules -->
+      <div class="rule-row">
+        <div class="rule-toggle on"></div>
+        <div class="rule-info">
+          <div class="rule-name">去除空行</div>
+          <div class="rule-pattern">/^\s*$\n/gm → ""</div>
+        </div>
+        <span class="rule-badge preset">预设</span>
+        <div class="rule-actions">
+          <button class="rule-action-btn" title="编辑">✏</button>
+        </div>
+      </div>
+      <div class="rule-row">
+        <div class="rule-toggle on"></div>
+        <div class="rule-info">
+          <div class="rule-name">移除行号</div>
+          <div class="rule-pattern">/^\s*\d+[\.\)]\s*/gm → ""</div>
+        </div>
+        <span class="rule-badge preset">预设</span>
+        <div class="rule-actions">
+          <button class="rule-action-btn" title="编辑">✏</button>
+        </div>
+      </div>
+      <div class="rule-row">
+        <div class="rule-toggle on"></div>
+        <div class="rule-info">
+          <div class="rule-name">手机号脱敏</div>
+          <div class="rule-pattern">/(\d{3})\d{4}(\d{4})/g → "$1****$2"</div>
+        </div>
+        <span class="rule-badge preset">预设</span>
+        <div class="rule-actions">
+          <button class="rule-action-btn" title="编辑">✏</button>
+        </div>
+      </div>
+      <div class="rule-row">
+        <div class="rule-toggle"></div>
+        <div class="rule-info">
+          <div class="rule-name">身份证脱敏</div>
+          <div class="rule-pattern">/(\d{4})\d{10}(\d{4})/g → "$1**********$2"</div>
+        </div>
+        <span class="rule-badge preset">预设</span>
+        <div class="rule-actions">
+          <button class="rule-action-btn" title="编辑">✏</button>
+        </div>
+      </div>
+      <!-- Custom rule -->
+      <div class="rule-row">
+        <div class="rule-toggle on"></div>
+        <div class="rule-info">
+          <div class="rule-name">去除 JS 注释</div>
+          <div class="rule-pattern">/\/\/.*$/gm → ""</div>
+        </div>
+        <span class="rule-badge custom">自定义</span>
+        <div class="rule-actions">
+          <button class="rule-action-btn" title="编辑">✏</button>
+          <button class="rule-action-btn del" title="删除">🗑</button>
+        </div>
+      </div>
+      <button class="add-rule-btn">＋ 添加自定义规则</button>
+    </div>
+  </div>
+</div>
+
+<!-- Description -->
+<div class="section">
+  <div class="desc-panel">
+    <h3>方案 B 实现说明</h3>
+    <ul>
+      <li><b>触发流程</b>：右键「粘贴并变换 → 正则替换 → 选择规则」→ 弹出预览对话框 → 确认粘贴 / 复制结果</li>
+      <li><b>预览对话框</b>：左右分栏（原文高亮匹配 / 替换结果高亮变更），顶部可编辑正则+替换串+标志（临时调试），底部显示匹配数</li>
+      <li><b>规则管理</b>：独立弹窗，预设规则只能开关和编辑替换串（不可删除），自定义规则可增删改</li>
+      <li><b>存储</b>：<code>localStorage</code> key = <code>pp_regex_rules</code>，JSON 数组，无需后端改动</li>
+      <li><b>ReDoS 防护</b>：正则执行包裹在 <code>try/catch</code> + 100ms 超时（Web Worker 或 setTimeout 中断）</li>
+      <li><b>预设 8 条</b>：去空行、去首尾空格、合并连续空格、移除行号、URL 解码、手机号脱敏、身份证脱敏、去 HTML 标签</li>
+      <li><b>组件拆分</b>：<code>regexRules.ts</code>（数据层）+ <code>RegexPreviewDialog.tsx</code>（预览）+ <code>RegexRulesDialog.tsx</code>（管理）</li>
+      <li><b>懒加载</b>：两个 Dialog 均 React.lazy 独立 chunk</li>
+    </ul>
+  </div>
+</div>
+
+</body>
+</html>
