@@ -22,12 +22,15 @@ pub struct HotkeyConfig {
 
 impl Default for HotkeyConfig {
     fn default() -> Self {
+        // U7：避开常用系统/应用快捷键 — 原默认 Ctrl+Shift+V（粘贴为纯文本）、
+        // Ctrl+Q（退出/关标签）、Ctrl+Shift+P（命令面板）会被全局注册静默劫持。
+        // Ctrl+Alt 系列极少被占用；仅影响新安装用户，已保存的配置不受影响。
         Self {
-            show_window: "Ctrl+Shift+V".to_string(),
-            seq_paste: "Ctrl+Q".to_string(),
+            show_window: "Ctrl+Alt+V".to_string(),
+            seq_paste: "Ctrl+Alt+Q".to_string(),
             index_prefix: "Ctrl+Alt".to_string(),
-            stack_toggle: "Ctrl+Shift+K".to_string(),
-            stack_paste: "Ctrl+Shift+P".to_string(),
+            stack_toggle: "Ctrl+Alt+K".to_string(),
+            stack_paste: "Ctrl+Alt+P".to_string(),
         }
     }
 }
@@ -129,8 +132,10 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
     let gs = app.global_shortcut();
     let mut errors: Vec<String> = Vec::new();
 
-    // 主唤出热键
-    if let Ok(shortcut) = parse_shortcut(&config.show_window) {
+    // 主唤出热键（留空 = 禁用）
+    if config.show_window.trim().is_empty() {
+        log::info!("[HotkeyManager] 唤出热键已禁用（留空），跳过注册");
+    } else if let Ok(shortcut) = parse_shortcut(&config.show_window) {
         match gs.on_shortcut(shortcut, move |app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
                 if let Some(window) = app.get_webview_window("main") {
@@ -158,8 +163,10 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
         errors.push(format!("无效的唤出热键: {}", config.show_window));
     }
 
-    // 依次粘贴热键
-    if let Ok(shortcut) = parse_shortcut(&config.seq_paste) {
+    // 依次粘贴热键（留空 = 禁用）
+    if config.seq_paste.trim().is_empty() {
+        log::info!("[HotkeyManager] 依次粘贴热键已禁用（留空），跳过注册");
+    } else if let Ok(shortcut) = parse_shortcut(&config.seq_paste) {
         match gs.on_shortcut(shortcut, move |app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
                 log::info!("[HotkeyManager] 依次粘贴热键触发!");
@@ -207,8 +214,10 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
 
     // 全选(Ctrl+A)：使用应用内键盘事件处理，不注册全局热键（避免劫持其他应用）
 
-    // 剪贴板栈：切换栈模式
-    if let Ok(shortcut) = parse_shortcut(&config.stack_toggle) {
+    // 剪贴板栈：切换栈模式（留空 = 禁用）
+    if config.stack_toggle.trim().is_empty() {
+        log::info!("[HotkeyManager] 栈模式切换热键已禁用（留空），跳过注册");
+    } else if let Ok(shortcut) = parse_shortcut(&config.stack_toggle) {
         let stack_toggle_str = config.stack_toggle.clone();
         match gs.on_shortcut(shortcut, move |app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
@@ -227,8 +236,10 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
         errors.push(format!("无效的栈模式热键: {}", config.stack_toggle));
     }
 
-    // 剪贴板栈：粘贴栈顶
-    if let Ok(shortcut) = parse_shortcut(&config.stack_paste) {
+    // 剪贴板栈：粘贴栈顶（留空 = 禁用）
+    if config.stack_paste.trim().is_empty() {
+        log::info!("[HotkeyManager] 栈粘贴热键已禁用（留空），跳过注册");
+    } else if let Ok(shortcut) = parse_shortcut(&config.stack_paste) {
         let stack_paste_str = config.stack_paste.clone();
         match gs.on_shortcut(shortcut, move |app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {

@@ -3,8 +3,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Plus, Trash2, Copy, Edit3, ClipboardList, Check, Download, CheckSquare } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "@/lib/logger";
+import { useToast } from "@/components/Toast";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import styles from "./Snippets.module.css";
+import { FocusTrap } from "@/components/FocusTrap";
 
 // v5.0.39 方案A渐进式优化：卡片布局+分类标签+常驻操作栏+快速预览弹窗
 const TAG_OPTIONS = ["API", "SQL", "配置", "模板", "命令"] as const;
@@ -16,6 +18,8 @@ interface Snippet {
   name: string;
   content: string;
   tag: string;
+  copy_count?: number;
+  last_used_at?: string;
 }
 
 const TAG_COLORS: Record<string, string> = {
@@ -35,6 +39,7 @@ const TAG_DOT_COLORS: Record<string, string> = {
 };
 
 export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { toast } = useToast();
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Snippet | null>(null);
@@ -44,6 +49,9 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
   const [previewSnippet, setPreviewSnippet] = useState<Snippet | null>(null);
   const [batchMode, setBatchMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+  const [editSnapshot, setEditSnapshot] = useState("");
+  const [discardOpen, setDiscardOpen] = useState(false);
 
   // 从后端加载片段
   const loadSnippets = useCallback(async () => {
@@ -103,8 +111,29 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
     return matchSearch && matchTag;
   });
 
+  const beginEdit = (s: Snippet) => {
+    setEditing(s);
+    setEditSnapshot(JSON.stringify({ name: s.name, content: s.content, tag: s.tag }));
+  };
+
   const handleAdd = () => {
-    setEditing({ id: "", name: "", content: "", tag: "" });
+    beginEdit({ id: "", name: "", content: "", tag: "" });
+  };
+
+  const isEditDirty = () => {
+    if (!editing) return false;
+    return (
+      JSON.stringify({ name: editing.name, content: editing.content, tag: editing.tag }) !==
+      editSnapshot
+    );
+  };
+
+  const handleCancelEdit = () => {
+    if (isEditDirty()) {
+      setDiscardOpen(true);
+    } else {
+      setEditing(null);
+    }
   };
 
   const handleSaveEdit = async () => {
@@ -138,8 +167,24 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
     setDeleteTarget(null);
   };
 
-  const handleCopy = async (content: string) => {
-    try { await navigator.clipboard.writeText(content); } catch { logger.warn("复制片段失败"); }
+  const handleCopy = async (s: Snippet) => {
+    try {
+      await navigator.clipboard.writeText(s.content);
+      toast("已复制片段", "success");
+      // 记录使用情况（后端累加 copy_count / last_used_at），并同步本地状态避免重新加载
+      invoke("use_snippet", { id: s.id }).catch((e) => logger.warn("记录片段使用失败", e));
+      const now = new Date().toISOString();
+      setSnippets((prev) =>
+        prev.map((it) =>
+          it.id === s.id
+            ? { ...it, copy_count: (it.copy_count || 0) + 1, last_used_at: now }
+            : it
+        )
+      );
+    } catch {
+      logger.warn("复制片段失败");
+      toast("复制失败", "error");
+    }
   };
 
   const toggleBatchSelect = (id: string) => {
@@ -150,6 +195,7 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
 
   const handleBatchDelete = async () => {
     if (selectedIds.size === 0) return;
+    setBatchDeleteOpen(false);
     // 逐条删除，单条失败不中断；无论成败都刷新列表，仅保留失败项的选中态（Low 修复）
     const failed = new Set<string>();
     for (const id of selectedIds) {
@@ -187,11 +233,12 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
             className="dialog-backdrop"
             onClick={onClose}
           >
+            <FocusTrap>
             <motion.div
               initial={{ scale: 0.96, opacity: 0, y: 10 }} animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.96, opacity: 0, y: 10 }}
               transition={{ type: "spring", stiffness: 400, damping: 30 }}
-              className="dialog-box w480"
+              className="dialog-box w380"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
@@ -282,16 +329,18 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
                       </select>
                     </div>
                     <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
-                      <button onClick={() => setEditing(null)}
+                      <button onClick={handleCancelEdit}
                         className={`${styles.extractBtnSm} ${styles.ghost}`}>取消</button>
                       <button onClick={handleSaveEdit}
-                        className={`${styles.extractBtnSm} ${styles.primary}`}>保存</button>
+                        disabled={!editing.name.trim()}
+                        className={`${styles.extractBtnSm} ${styles.primary}`}
+                        style={!editing.name.trim() ? { opacity: 0.5, cursor: "not-allowed" } : undefined}>保存</button>
                     </div>
                   </div>
                 ) : filtered.length === 0 ? (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "48px 0", gap: "8px" }}>
                     <ClipboardList size={20} style={{ color: "var(--text-muted)" }} />
-                    <p className={styles.snippetItemSub}>{search ? "没有匹配的片段" : "暂无片段，点击 + 添加"}</p>
+                    <p className={styles.snippetItemSub}>{search ? "没有匹配的片段" : "暂无片段，点击右上角「新建」添加"}</p>
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -325,16 +374,16 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
                           <div className={styles.snippetCardV2Footer}>
                             <span className={styles.snippetCardV2Meta}>
                               <span>🕐 片段</span>
-                              <span>📋 已复制 0 次</span>
+                              <span>📋 已复制 {s.copy_count || 0} 次</span>
                             </span>
                             <div className={styles.snippetCardV2Actions}>
                               <button className={`${styles.snippetActionBtnV2} ${styles.copy}`}
-                                onClick={(e) => { e.stopPropagation(); handleCopy(s.content); }}
+                                onClick={(e) => { e.stopPropagation(); handleCopy(s); }}
                                 title="复制">
                                 <Copy size={13} />
                               </button>
                               <button className={styles.snippetActionBtnV2}
-                                onClick={(e) => { e.stopPropagation(); setEditing(s); }}
+                                onClick={(e) => { e.stopPropagation(); beginEdit(s); }}
                                 title="编辑">
                                 <Edit3 size={13} />
                               </button>
@@ -351,22 +400,43 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
                   </div>
                 )}
 
-                {/* 最近使用 */}
-                {snippets.length > 0 && !editing && (
-                  <>
-                    <div className={styles.recentSectionLabel}>最近使用</div>
-                    <div className={styles.recentTags}>
-                      {snippets.slice(0, 5).map((s) => (
-                        <span key={s.id} className={styles.recentTag}
-                          onClick={() => setPreviewSnippet(s)}>
-                          {s.name}
-                        </span>
-                      ))}
+                {/* 批量操作栏 */}
+                {batchMode && selectedIds.size > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 4px", marginTop: "4px", borderTop: "1px solid var(--border)" }}>
+                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>已选 {selectedIds.size} 项</span>
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <button className={`${styles.btnSmV2} ${styles.outline} ${styles.compact}`} onClick={() => setSelectedIds(new Set())}>清空选择</button>
+                      <button className={`${styles.btnSmV2} ${styles.ghost} ${styles.compact}`} style={{ color: "var(--danger)" }} onClick={() => setBatchDeleteOpen(true)}>
+                        <Trash2 size={13} /> 删除选中
+                      </button>
                     </div>
-                  </>
+                  </div>
                 )}
+
+                {/* 最近使用 */}
+                {(() => {
+                  const recent = snippets
+                    .filter((s) => s.last_used_at)
+                    .sort((a, b) => (b.last_used_at || "").localeCompare(a.last_used_at || ""))
+                    .slice(0, 5);
+                  if (recent.length === 0 || editing) return null;
+                  return (
+                    <>
+                      <div className={styles.recentSectionLabel}>最近使用</div>
+                      <div className={styles.recentTags}>
+                        {recent.map((s) => (
+                          <span key={s.id} className={styles.recentTag}
+                            onClick={() => setPreviewSnippet(s)}>
+                            {s.name}
+                          </span>
+                        ))}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </motion.div>
+            </FocusTrap>
           </motion.div>
 
           {/* 快速预览弹窗 */}
@@ -390,14 +460,14 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
                 </div>
                 <div className={styles.snippetPreviewBody}>{previewSnippet.content}</div>
                 <div className={styles.snippetPreviewFooter}>
-                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>🕐 片段 · 📋 已复制 0 次</span>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>🕐 片段 · 📋 已复制 {previewSnippet.copy_count || 0} 次</span>
                   <div style={{ display: "flex", gap: "6px" }}>
                     <button className={`${styles.btnSmV2} ${styles.outline}`}
-                      onClick={() => { handleCopy(previewSnippet.content); }}>
+                      onClick={() => { handleCopy(previewSnippet); }}>
                       <Copy size={12} /> 复制
                     </button>
                     <button className={`${styles.btnSmV2} ${styles.outline}`}
-                      onClick={() => { setEditing(previewSnippet); setPreviewSnippet(null); }}>
+                      onClick={() => { beginEdit(previewSnippet); setPreviewSnippet(null); }}>
                       <Edit3 size={12} /> 编辑
                     </button>
                     <button className={`${styles.btnSmV2} ${styles.ghost}`}
@@ -423,6 +493,28 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
             variant="danger"
             onConfirm={handleDelete}
             onCancel={() => setDeleteTarget(null)}
+          />
+
+          {/* 批量删除确认弹窗 */}
+          <ConfirmDialog
+            open={batchDeleteOpen}
+            title="确认批量删除"
+            message={`确定删除选中的 ${selectedIds.size} 个片段？此操作不可撤销。`}
+            confirmText="删除"
+            variant="danger"
+            onConfirm={handleBatchDelete}
+            onCancel={() => setBatchDeleteOpen(false)}
+          />
+
+          {/* 放弃编辑确认弹窗 */}
+          <ConfirmDialog
+            open={discardOpen}
+            title="放弃编辑"
+            message="当前修改尚未保存，确定放弃？"
+            confirmText="放弃"
+            variant="danger"
+            onConfirm={() => { setEditing(null); setDiscardOpen(false); }}
+            onCancel={() => setDiscardOpen(false)}
           />
         </>
       )}

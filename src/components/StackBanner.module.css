@@ -99,3 +99,49 @@
 .exitBtn:hover {
   background: rgba(154, 52, 18, 0.15);
 }
+
+/* U58：全部粘贴进度条 */
+.progressTrack {
+  margin-top: 6px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(154, 52, 18, 0.12);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #F97316, #EA580C);
+  transition: width 0.25s ease;
+}
+
+/* U58：中止按钮 */
+.abortBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  background: #DC2626;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
+  transition: transform 0.15s, box-shadow 0.15s;
+  flex-shrink: 0;
+  animation: abortPulse 1.2s ease infinite;
+}
+
+@keyframes abortPulse {
+  0%, 100% { box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3); }
+  50% { box-shadow: 0 2px 14px rgba(220, 38, 38, 0.55); }
+}
+
+.abortBtn:hover {
+  transform: translateY(-1px);
+  background: #B91C1C;
+}

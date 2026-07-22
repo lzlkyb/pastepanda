@@ -44,6 +44,28 @@
 
 .qrError {
   color: var(--danger, #DC2626);
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px;
+  text-align: center;
+}
+
+.qrErrorMsg {
+  line-height: 1.5;
+}
+
+.qrRetryBtn {
+  padding: 4px 14px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg, #fff);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.qrRetryBtn:hover {
+  background: var(--hover);
 }
 
 .qrTypeBadge {

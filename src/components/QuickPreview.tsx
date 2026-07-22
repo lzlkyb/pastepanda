@@ -4,6 +4,7 @@ import { X, Copy, ClipboardPaste, Loader2 } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { pasteText } from "@/lib/api";
 import { highlightCode, getLangLabel } from "@/lib/utils";
+import { FocusTrap } from "@/components/FocusTrap";
 
 /**
  * 快速预览面板 — 按 Space 键弹出，显示选中文本的完整内容
@@ -69,10 +70,9 @@ export function QuickPreview() {
   }, [text, toast]);
 
   const handlePaste = async () => {
-    try {
-      await pasteText(text);
-      toast("已粘贴", "success");
-    } catch { toast("粘贴失败", "error"); }
+    // U1：仅粘贴成功时弹成功提示（pasteText 失败时已自行弹错误 toast）
+    const ok = await pasteText(text);
+    if (ok) toast("已粘贴", "success");
   };
 
   const lineCount = text.split("\n").length;
@@ -91,12 +91,13 @@ export function QuickPreview() {
           style={{ zIndex: 9990 }}
           onClick={() => setVisible(false)}
         >
+          <FocusTrap>
           <motion.div
             initial={{ scale: 0.95, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.95, opacity: 0, y: 20 }}
             transition={{ type: "spring", stiffness: 400, damping: 30 }}
-            className="dialog-box w480"
+            className="dialog-box w380"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -153,6 +154,7 @@ export function QuickPreview() {
             </div>
 
           </motion.div>
+          </FocusTrap>
         </motion.div>
       )}
     </AnimatePresence>

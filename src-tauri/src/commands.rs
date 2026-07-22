@@ -206,6 +206,23 @@ pub fn save_config(
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         monitor.update_auto_strip_cache(auto_strip);
+
+        // 修复 U36：刷新敏感内容防护缓存（默认开启）
+        let skip_sensitive = config
+            .get("skip_sensitive")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let excluded_apps: Vec<String> = config
+            .get("excluded_apps")
+            .and_then(|v| v.as_str())
+            .map(|s| {
+                s.split(',')
+                    .map(|a| a.trim().to_string())
+                    .filter(|a| !a.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        monitor.update_sensitive_cache(skip_sensitive, excluded_apps);
     }
 
     Ok(())
@@ -365,6 +382,12 @@ pub fn update_snippet(
 #[tauri::command]
 pub fn delete_snippet(store: State<DataStore>, id: String) -> Result<(), String> {
     store.delete_snippet(&id)
+}
+
+/// 记录片段被使用（复制）
+#[tauri::command]
+pub fn use_snippet(store: State<DataStore>, id: String) -> Result<(), String> {
+    store.use_snippet(&id)
 }
 
 /// 获取全部历史记录（用于导出）
@@ -535,22 +558,22 @@ pub fn reregister_hotkeys(app: tauri::AppHandle, store: State<DataStore>) -> Res
     let show_window = config
         .get("hotkey")
         .and_then(|v| v.as_str())
-        .unwrap_or("Ctrl+Shift+V")
+        .unwrap_or("Ctrl+Alt+V")
         .to_string();
     let seq_paste = config
         .get("sequential_hotkey")
         .and_then(|v| v.as_str())
-        .unwrap_or("Ctrl+Q")
+        .unwrap_or("Ctrl+Alt+Q")
         .to_string();
     let stack_toggle = config
         .get("stack_toggle_hotkey")
         .and_then(|v| v.as_str())
-        .unwrap_or("Ctrl+Shift+K")
+        .unwrap_or("Ctrl+Alt+K")
         .to_string();
     let stack_paste = config
         .get("stack_paste_hotkey")
         .and_then(|v| v.as_str())
-        .unwrap_or("Ctrl+Shift+P")
+        .unwrap_or("Ctrl+Alt+P")
         .to_string();
     let hotkey_config = crate::hotkey_manager::HotkeyConfig {
         show_window,
@@ -877,7 +900,10 @@ pub fn set_startup(enable: bool) -> Result<(), String> {
         let (key, _) = hkcu.create_subkey(path).map_err(|e| e.to_string())?;
         if enable {
             let exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
-            key.set_value("ClipboardManager", &exe_path.to_string_lossy().to_string())
+            // U5：自启命令追加 /silent 标志 — 开机启动时静默驻留托盘，不弹窗抢焦点
+            // （路径加引号防止空格导致解析错误）
+            let cmd = format!("\"{}\" /silent", exe_path.to_string_lossy());
+            key.set_value("ClipboardManager", &cmd)
                 .map_err(|e| e.to_string())?;
         } else {
             if let Err(e) = key.delete_value("ClipboardManager") {

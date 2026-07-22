@@ -1,7 +1,8 @@
 /* Toast — CSS Module */
 .toastContainer {
   position: fixed;
-  top: 16px;
+  /* U53: 下移避开标题栏右上角的最小化/关闭按钮（按钮区约 y=16~50px） */
+  top: 60px;
   right: 16px;
   z-index: 100;
   display: flex;
@@ -84,6 +85,23 @@
 .toastRetry:hover {
   opacity: 1;
   background: rgba(255,255,255,0.3);
+}
+
+.toastAction {
+  flex-shrink: 0;
+  cursor: pointer;
+  border: none;
+  background: rgba(255,255,255,0.25);
+  color: inherit;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.15s;
+}
+
+.toastAction:hover {
+  background: rgba(255,255,255,0.4);
 }
 
 .toastClose {

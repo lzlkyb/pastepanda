@@ -17,6 +17,23 @@
   margin: 4px 10px;
 }
 
+/* 子菜单分组标题 — 非交互，仅展示 */
+.ctxSubHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 12px 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  opacity: 0.7;
+  cursor: default;
+  user-select: none;
+  pointer-events: none;
+  letter-spacing: 0.02em;
+}
+
 .ctxItem {
   display: flex;
   align-items: center;

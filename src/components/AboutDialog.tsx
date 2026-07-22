@@ -4,6 +4,7 @@ import { getAppVersion, getAppName } from "@/lib/api";
 import { UpdateBanner } from "@/components/UpdateBadge";
 import { VersionBadge } from "@/components/VersionBadge";
 import { AppIcon } from "@/components/AppIcon";
+import { FocusTrap } from "@/components/FocusTrap";
 import { useUpdate } from "@/contexts/UpdateContext";
 import { useState, useEffect, useMemo } from "react";
 import styles from "./About.module.css";
@@ -70,12 +71,13 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         className="dialog-backdrop" onClick={onClose}
       >
+        <FocusTrap>
         <motion.div
           initial={{ scale: 0.96, opacity: 0, y: 10 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.96, opacity: 0, y: 10 }}
           transition={{ type: "spring", stiffness: 400, damping: 30 }}
-          className="dialog-box w500 about-dialog"
+          className="dialog-box w420 about-dialog"
           onClick={(e) => e.stopPropagation()}
         >
           {/* 头部 */}
@@ -135,6 +137,7 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
             </div>
           </div>
         </motion.div>
+        </FocusTrap>
       </motion.div>
     </AnimatePresence>
   );

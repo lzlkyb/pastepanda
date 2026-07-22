@@ -3,7 +3,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Link2, AtSign, Phone, Code2, Hash, Copy, CheckSquare, Save, LucideIcon } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/stores/appStore";
+import { useToast } from "@/components/Toast";
 import { logger } from "@/lib/logger";
+import { FocusTrap } from "@/components/FocusTrap";
 import styles from "./Extract.module.css";
 
 // v5.0.39 方案A渐进式优化：结果项存为片段+底部批量操作栏+active实色填充
@@ -36,6 +38,7 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
   const [type, setType] = useState<ExtractType>("url");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
+  const { toast } = useToast();
 
   const typeCounts = useTypeCounts(history, ws);
 
@@ -62,11 +65,23 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
 
   const copySelected = async () => {
     const text = [...selected].join("\n");
-    try { await navigator.clipboard.writeText(text); } catch { logger.warn("复制选中内容失败"); }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast(`已复制 ${selected.size} 项`, "success");
+    } catch {
+      logger.warn("复制选中内容失败");
+      toast("复制失败", "error");
+    }
   };
 
   const copyAll = async () => {
-    try { await navigator.clipboard.writeText(results.join("\n")); } catch { logger.warn("复制全部内容失败"); }
+    try {
+      await navigator.clipboard.writeText(results.join("\n"));
+      toast(`已复制全部 ${results.length} 项`, "success");
+    } catch {
+      logger.warn("复制全部内容失败");
+      toast("复制失败", "error");
+    }
   };
 
   // 保存选中项为片段
@@ -74,14 +89,15 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
     if (selected.size === 0) return;
     setSaving(true);
     try {
-      const cfg = EXTRACT_CONFIGS.find((c) => c.key === type)!;
       for (const item of selected) {
         const name = item.length > 50 ? item.slice(0, 47) + "..." : item;
         await invoke("add_snippet", { name, content: item });
       }
+      toast(`已保存 ${selected.size} 条片段`, "success");
       setSelected(new Set());
     } catch (e) {
       logger.warn("保存片段失败", e);
+      toast("保存片段失败", "error");
     } finally {
       setSaving(false);
     }
@@ -92,8 +108,10 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
     try {
       const name = item.length > 50 ? item.slice(0, 47) + "..." : item;
       await invoke("add_snippet", { name, content: item });
+      toast("已保存为片段", "success");
     } catch (e) {
       logger.warn("保存片段失败", e);
+      toast("保存片段失败", "error");
     }
   };
 
@@ -107,11 +125,12 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
           className="dialog-backdrop"
           onClick={onClose}
         >
+          <FocusTrap>
           <motion.div
             initial={{ scale: 0.96, opacity: 0, y: 10 }} animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.96, opacity: 0, y: 10 }}
             transition={{ type: "spring", stiffness: 400, damping: 30 }}
-            className="dialog-box w480"
+            className="dialog-box w380"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -211,12 +230,13 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
                   </button>
                   <button className={`${styles.btnSmV2} ${styles.primary}`} onClick={saveSelectedAsSnippets}
                     disabled={selected.size === 0 || saving}>
-                    <Save size={12} /> {saving ? "保存中..." : "全部存为片段"}
+                    <Save size={12} /> {saving ? "保存中..." : "存为片段（已选）"}
                   </button>
                 </div>
               </div>
             )}
           </motion.div>
+          </FocusTrap>
         </motion.div>
       )}
     </AnimatePresence>

@@ -8,6 +8,7 @@ import { useAppStore, HistoryItem } from "@/stores/appStore";
 import { highlightCode, getLangLabel, isMarkdown, isHtml, stripHtml } from "@/lib/utils";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { FocusTrap } from "@/components/FocusTrap";
 
 // 高亮函数：接受代码字符串，返回 React 节点
 async function highlightFn(code: string): Promise<React.ReactNode> {
@@ -62,6 +63,16 @@ export function EditDialog({ item, onClose }: { item: HistoryItem; onClose: () =
     });
     return () => { cancelled = true; };
   }, [text]);
+
+  // U47：打开即聚焦编辑框（此前无初始焦点，需先点一下才能输入）。
+  // 延迟到下一帧，确保在 FocusTrap 的"聚焦首个可聚焦元素"（关闭按钮）之后执行；
+  // Markdown 预览模式下没有 textarea，getElementById 返回 null 自然跳过
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      document.getElementById("edit-code-textarea")?.focus();
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, []);
 
   // 撤销/重做历史（纯文本级别）
   const historyRef = useRef<string[]>([item?.text || ""]);
@@ -154,10 +165,9 @@ export function EditDialog({ item, onClose }: { item: HistoryItem; onClose: () =
   };
 
   const handlePaste = async () => {
-    try {
-      await pasteText(text);
-      toast("已粘贴", "success");
-    } catch { toast("粘贴失败", "error"); }
+    // U1：仅粘贴成功时弹成功提示（pasteText 失败时已自行弹错误 toast）
+    const ok = await pasteText(text);
+    if (ok) toast("已粘贴", "success");
   };
 
   const handleAddSnippet = async () => {
@@ -223,12 +233,13 @@ export function EditDialog({ item, onClose }: { item: HistoryItem; onClose: () =
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         className="dialog-backdrop" onClick={requestClose}>
+        <FocusTrap>
         <motion.div
           initial={{ scale: 0.96, opacity: 0, y: 10 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.96, opacity: 0, y: 10 }}
           transition={{ type: "spring", stiffness: 400, damping: 30 }}
-          className="dialog-box w500"
+          className="dialog-box w420"
           onClick={(e) => e.stopPropagation()}
           style={{ maxHeight: "85vh" }}>
 
@@ -349,6 +360,7 @@ export function EditDialog({ item, onClose }: { item: HistoryItem; onClose: () =
             </div>
           </div>
         </motion.div>
+        </FocusTrap>
       </motion.div>
     </AnimatePresence>
 

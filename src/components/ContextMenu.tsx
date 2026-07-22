@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Copy, ClipboardPaste, Pin, Trash2, ExternalLink, FileCode, Pencil, ChevronRight, Tag, FolderInput, Eye } from "lucide-react";
 import { getEnabledRules } from "@/lib/regexRules";
+import { useAppStore } from "@/stores/appStore";
 import styles from "./ContextMenu.module.css";
 
 export interface MenuItem {
@@ -11,6 +12,8 @@ export interface MenuItem {
   onClick?: () => void;
   danger?: boolean;
   separator?: boolean;
+  /** 分组标题（非交互，不可点击） */
+  header?: boolean;
   children?: MenuItem[];
 }
 
@@ -38,6 +41,13 @@ export function ContextMenu({ children }: { children: ReactNode }) {
     setActiveIndex(-1);
     setActiveSubIndex(null);
   }, []);
+
+  // U3：菜单开关状态广播给全局键盘层（App.handleKeyDown 据此让位，避免按键双重处理）
+  useEffect(() => {
+    if (!pos) return;
+    window.dispatchEvent(new CustomEvent("app-ctxmenu-open"));
+    return () => { window.dispatchEvent(new CustomEvent("app-ctxmenu-close")); };
+  }, [pos]);
 
   // 预估算菜单尺寸（在渲染后测量）— 使用 items 的长度作为稳定依赖
   const itemsKey = items.map(i => i.label + (i.children?.length ?? 0)).join("|");
@@ -100,19 +110,43 @@ export function ContextMenu({ children }: { children: ReactNode }) {
 
   // ★ 不再依赖 DOM 事件冒泡。Card 通过 CtxMenuCtx 直接调用 trigger(x, y)。
 
-  // 键盘触发右键菜单 (Shift+F10 / ContextMenu 键)
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if ((e.key === "F10" && e.shiftKey) || e.key === "ContextMenu") {
+  // U40：键盘触发右键菜单 (Shift+F10 / ContextMenu 键) — 改为全局监听，
+  // 并在"当前聚焦/选中的卡片"处弹出（而非列表区中心），复用卡片自身的
+  // contextmenu 监听器以带上正确的菜单项；同时移除无意义的 wrapper tabIndex
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!((e.key === "F10" && e.shiftKey) || e.key === "ContextMenu")) return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       e.preventDefault();
-      e.stopPropagation();
-      const rect = wrapperRef.current?.getBoundingClientRect();
-      setPos({
-        x: rect ? rect.left + rect.width / 2 : 100,
-        y: rect ? rect.top + rect.height / 2 : 100,
-      });
-      setActiveIndex(-1);
-      setActiveSubIndex(null);
-    }
+      // 定位目标卡片：优先键盘焦点项，其次首个选中项
+      const store = useAppStore.getState();
+      const targetId = store.focusId || (store.selectedIds.size > 0 ? [...store.selectedIds][0] : null);
+      const cardEl = targetId
+        ? document.querySelector(`[data-item-id="${targetId}"] [role="option"]`)
+        : null;
+      if (cardEl) {
+        const rect = cardEl.getBoundingClientRect();
+        // 在卡片上派发原生 contextmenu 事件 → 卡片监听器以正确坐标 + 菜单项打开
+        cardEl.dispatchEvent(new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: rect.left + Math.min(48, rect.width / 3),
+          clientY: rect.top + rect.height / 2,
+        }));
+      } else {
+        // 无聚焦卡片时回退到列表区中心
+        const wrap = wrapperRef.current?.getBoundingClientRect();
+        setPos({
+          x: wrap ? wrap.left + wrap.width / 2 : 100,
+          y: wrap ? wrap.top + wrap.height / 2 : 100,
+        });
+        setActiveIndex(-1);
+        setActiveSubIndex(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
   // 展开的菜单项列表（过滤掉不可点击的分组父项）
@@ -203,7 +237,7 @@ export function ContextMenu({ children }: { children: ReactNode }) {
   return (
     <>
       <CtxMenuCtx.Provider value={trigger}>
-        <div ref={wrapperRef} onContextMenu={handleContextMenu} onKeyDown={handleKeyDown} tabIndex={0} role="application" aria-haspopup="menu" aria-label="右键菜单" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>{children}</div>
+        <div ref={wrapperRef} onContextMenu={handleContextMenu} role="application" aria-haspopup="menu" aria-label="右键菜单" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>{children}</div>
       </CtxMenuCtx.Provider>
       {pos && createPortal(
         <AnimatePresence>
@@ -255,15 +289,22 @@ export function ContextMenu({ children }: { children: ReactNode }) {
                           onMouseEnter={() => { setActiveIndex(flatIdx); setActiveSubIndex(null); }}
                         >
                           {item.children.map((child, j) => (
-                            <button
-                              key={j}
-                              className={`${styles.ctxItem}${activeSubIndex === j ? ` ${styles.keyboardActive}` : ""}${child.danger ? ` ${styles.danger}` : ""}`}
-                              onClick={() => { child.onClick?.(); setPos(null); }}
-                              onMouseEnter={() => setActiveSubIndex(j)}
-                            >
-                              <span className={styles.ctxItemIcon}>{child.icon}</span>
-                              {child.label}
-                            </button>
+                            child.header ? (
+                              <div key={j} className={styles.ctxSubHeader} aria-hidden="true">
+                                <span className={styles.ctxItemIcon}>{child.icon}</span>
+                                {child.label}
+                              </div>
+                            ) : (
+                              <button
+                                key={j}
+                                className={`${styles.ctxItem}${activeSubIndex === j ? ` ${styles.keyboardActive}` : ""}${child.danger ? ` ${styles.danger}` : ""}`}
+                                onClick={() => { child.onClick?.(); setPos(null); }}
+                                onMouseEnter={() => setActiveSubIndex(j)}
+                              >
+                                <span className={styles.ctxItemIcon}>{child.icon}</span>
+                                {child.label}
+                              </button>
+                            )
                           ))}
                         </div>
                       )}
@@ -412,7 +453,7 @@ export function createCardMenuItems(opts: {
     if (opts.onRegexPreview && opts.itemType === "text") {
       const enabledRules = getEnabledRules();
       if (enabledRules.length > 0) {
-        transformChildren.push({ icon: <span style={{ fontSize: 12 }}>─</span>, label: "正则替换", onClick: undefined, separator: true });
+        transformChildren.push({ icon: <span style={{ fontSize: 12 }}>─</span>, label: "正则替换", header: true });
         for (const rule of enabledRules) {
           transformChildren.push({
             icon: <span style={{ fontSize: 12 }}>{rule.preset ? "🔤" : "🏷"}</span>,

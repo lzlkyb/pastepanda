@@ -110,7 +110,7 @@ export function SearchBox() {
             handleSearchSubmit((e.target as HTMLInputElement).value);
           }
         }}
-        placeholder="搜索剪贴板... (Enter 搜索)"
+        placeholder="搜索剪贴板...（输入即搜）"
         className={styles.searchInput}
         aria-label="搜索剪贴板内容"
         aria-description="支持拼音首字母搜索"

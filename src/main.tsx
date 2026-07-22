@@ -38,13 +38,28 @@ window.addEventListener("error", (event) => {
   // 不阻止默认行为，让 ErrorBoundary 也有机会捕获
 });
 
+// U55: 把技术性错误信息翻译成用户能看懂的提示（技术细节只进日志）
+function friendlyRejectionMessage(reason: unknown): string {
+  const raw = reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason || "");
+  const low = raw.toLowerCase();
+  if (low.includes("invoke") || low.includes("command") || low.includes("tauri")) {
+    return "应用内部操作失败，请重试";
+  }
+  if (low.includes("network") || low.includes("fetch") || low.includes("timeout") || low.includes("socket")) {
+    return "网络连接失败，请检查网络后重试";
+  }
+  if (low.includes("denied") || low.includes("permission")) {
+    return "操作权限不足，请检查系统设置";
+  }
+  return "有个后台操作未能完成，已记录日志";
+}
+
 window.addEventListener("unhandledrejection", (event) => {
   logger.error("未处理的 Promise 拒绝", event.reason);
   // 防止控制台静默吞掉错误
   event.preventDefault();
-  // 发送 toast 通知用户
-  const msg = event.reason instanceof Error ? event.reason.message : String(event.reason || "未知异步错误");
-  emitToast(`⚠️ 后台任务异常：${msg.slice(0, 80)}`, "error");
+  // U55: 发送友好提示，而非原始技术文本
+  emitToast(`⚠️ ${friendlyRejectionMessage(event.reason)}`, "error");
 });
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

@@ -502,6 +502,59 @@
   border-bottom: 1px solid var(--border-color);
 }
 
+/* U52：设置搜索框 — 吸附在滚动区顶部，便于在长列表中快速定位设置项 */
+.settingsSearch {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--dialog-bg);
+  border-bottom: 1px solid var(--border-color);
+}
+.settingsSearchIcon {
+  font-size: 13px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.settingsSearchInput {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  outline: none;
+  font-family: inherit;
+  min-width: 0;
+}
+.settingsSearchInput:focus {
+  border-color: var(--accent);
+}
+.settingsSearchClear {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.settingsSearchClear:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+.settingsNoResult {
+  padding: 32px 20px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 /* Setting row */
 .sRow {
   display: flex;
@@ -805,6 +858,33 @@
 .sSaveBtn.saved {
   background: linear-gradient(135deg, #34C759, #248A3D);
   box-shadow: 0 2px 8px rgba(52, 199, 89, 0.3);
+}
+
+.sFooterMeta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sResetBtn {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-bottom: 1px dashed var(--border-color);
+  cursor: pointer;
+  padding: 0 0 1px;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+.sResetBtn:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.sAutoSaveHint {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.8;
 }
 
 .sFooterVer {

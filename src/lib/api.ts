@@ -120,8 +120,11 @@ export async function initBackend(): Promise<() => void> {
           window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `入栈 ${after} 条`, type: "info" } }));
         }
       } else {
-        const msg = isLanSync ? `📡 ${event.payload.item.source.replace("局域网: ", "")}同步了${typeLabel}` : `已记录${typeLabel}`;
-        window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: msg, type: isLanSync ? "info" : "success" } }));
+        // U23：普通捕获静默记录（卡片出现在顶部即反馈），仅局域网同步这类"外部事件"才提示
+        if (isLanSync) {
+          const msg = `📡 ${event.payload.item.source!.replace("局域网: ", "")}同步了${typeLabel}`;
+          window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: msg, type: "info" } }));
+        }
       }
     }));
 
@@ -153,7 +156,7 @@ export async function initBackend(): Promise<() => void> {
       }
     }));
 
-    // 监听依次粘贴热键 (Ctrl+Q)
+    // 监听依次粘贴热键 (默认 Ctrl+Alt+Q)
     unlistens.push(await listen("hotkey-sequential-paste", async () => {
       console.log("[hotkey-sequential-paste] 事件收到，调用 sequentialPaste()");
       await sequentialPaste();
@@ -164,11 +167,16 @@ export async function initBackend(): Promise<() => void> {
       await indexPaste(event.payload);
     }));
 
-    // 监听剪贴板栈热键 (Ctrl+Shift+K 切换 / Ctrl+Shift+P 粘贴)
+    // 监听剪贴板栈热键 (默认 Ctrl+Alt+K 切换 / Ctrl+Alt+P 粘贴)
     unlistens.push(await listen("hotkey-stack-toggle", () => {
       toggleStackMode();
     }));
     unlistens.push(await listen("hotkey-stack-paste", async () => {
+      // U58：「全部粘贴」进行中再按粘贴热键 = 中止循环（全局可中止）
+      if (isStackPasteAllRunning()) {
+        abortStackPasteAll();
+        return;
+      }
       await stackPasteNext();
     }));
   } catch (e) {
@@ -273,13 +281,20 @@ export async function indexPaste(n: number) {
   const textItems = store.getFilteredItems().filter((h) => h.type === "text");
   const idx = n - 1; // 转为 0-based
 
-  if (idx < 0 || idx >= textItems.length) return;
+  if (idx < 0 || idx >= textItems.length) {
+    // U37：越界不再静默，明确告知当前只有多少条
+    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `只有 ${textItems.length} 条文本记录，没有第 ${n} 条`, type: "info" } }));
+    return;
+  }
 
   const item = textItems[idx];
   if (!item) return;
 
-  await pasteText(item.text);
-  window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已粘贴第 ${n} 条`, type: "success" } }));
+  // U1：仅粘贴成功时弹成功提示（pasteText 失败时已自行弹错误 toast）
+  const ok = await pasteText(item.text);
+  if (ok) {
+    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已粘贴第 ${n} 条`, type: "success" } }));
+  }
 }
 
 // ===== 剪贴板栈 =====
@@ -296,7 +311,8 @@ export function toggleStackMode() {
   if (active) {
     store.setStackMode(true);
     syncStackModeToBackend(true);
-    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "栈模式已开启 · Ctrl+C 收集 · Ctrl+Shift+P 粘贴", type: "info" } }));
+    const pasteKey = store.config.stack_paste_hotkey || "ctrl+alt+p";
+    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `栈模式已开启 · Ctrl+C 收集 · ${pasteKey} 粘贴`, type: "info" } }));
   } else {
     store.exitStackMode();
     syncStackModeToBackend(false);
@@ -361,19 +377,48 @@ export async function stackPasteNext(): Promise<boolean> {
 }
 
 /** 全部粘贴：间隔 300ms 连续粘贴剩余全部条目 */
+let stackPasteAllAbort = false; // U58：中止标志
+
+/** U58：查询「全部粘贴」是否进行中 */
+export function isStackPasteAllRunning(): boolean {
+  return stackPasteAllRunning;
+}
+
+/** U58：中止「全部粘贴」循环（全局热键 / 横幅按钮 / Esc 均可调用） */
+export function abortStackPasteAll() {
+  if (stackPasteAllRunning) stackPasteAllAbort = true;
+}
+
 export async function stackPasteAll() {
   if (stackPasteAllRunning) return; // 防止双击「全部粘贴」启动两个循环
   const store = useAppStore.getState();
   if (!store.stackMode || store.stackItems.length === 0) return;
   stackPasteAllRunning = true;
+  stackPasteAllAbort = false;
+  useAppStore.setState({ stackPasteAllActive: true }); // U58：横幅显示进度条 + 中止按钮
+  let aborted = false;
   try {
     while (useAppStore.getState().stackMode && useAppStore.getState().stackItems.length > 0) {
+      if (stackPasteAllAbort) { // U58：用户中止
+        aborted = true;
+        break;
+      }
       const ok = await stackPasteNext();
       if (!ok) break;
-      await new Promise((r) => setTimeout(r, 300));
+      // U58：分段 sleep，中止响应延迟 ≤100ms
+      for (let i = 0; i < 3; i++) {
+        if (stackPasteAllAbort) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
     }
   } finally {
     stackPasteAllRunning = false;
+    stackPasteAllAbort = false;
+    useAppStore.setState({ stackPasteAllActive: false });
+    if (aborted) {
+      const remaining = useAppStore.getState().stackItems.length;
+      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已中止全部粘贴，剩余 ${remaining} 条`, type: "info" } }));
+    }
   }
 }
 
@@ -452,7 +497,7 @@ export async function deleteHistory(ids: string[]) {
 }
 
 /** 切换置顶 */
-export async function togglePin(id: string) {
+export async function togglePin(id: string): Promise<boolean | null> {
   try {
     const pinned = await invoke<boolean>("toggle_pin", { id });
     const store = useAppStore.getState();
@@ -462,7 +507,7 @@ export async function togglePin(id: string) {
     return pinned;
   } catch (e) {
     logger.error("切换置顶失败", e);
-    return false;
+    return null; // U2：null 表示失败（区别于 false="取消置顶"成功），UI 层据此跳过 toast
   }
 }
 

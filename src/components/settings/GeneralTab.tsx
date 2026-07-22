@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useRef, useLayoutEffect } from "react";
 import { useAppStore, AppConfig, HistoryItem } from "@/stores/appStore";
 import { HelpTooltip } from "@/components/HelpTooltip";
 import { THEMES, applyTheme, ThemeKey } from "@/lib/theme";
@@ -59,8 +59,62 @@ export function GeneralTab({
       }).length
     : 0;
 
+  // U52: 设置项搜索过滤
+  const [settingsFilter, setSettingsFilter] = useState("");
+  const settingsContainerRef = useRef<HTMLDivElement>(null);
+  const noResultRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const container = settingsContainerRef.current;
+    if (!container) return;
+    const kw = settingsFilter.trim().toLowerCase();
+    const children = Array.from(container.children) as HTMLElement[];
+    // 第一遍：按文本匹配显示/隐藏每个设置行（分区标题留到第二遍）
+    let visibleCount = 0;
+    for (const el of children) {
+      if (el.classList.contains(styles.sSection)) continue;
+      const match = !kw || (el.textContent || "").toLowerCase().includes(kw);
+      el.style.display = match ? "" : "none";
+      if (match) visibleCount++;
+    }
+    // 第二遍：若某分区下已无可见行，则连分区标题一起隐藏
+    let currentSection: HTMLElement | null = null;
+    let sectionHasVisible = false;
+    const flush = () => {
+      if (currentSection) currentSection.style.display = sectionHasVisible ? "" : "none";
+    };
+    for (const el of children) {
+      if (el.classList.contains(styles.sSection)) {
+        flush();
+        currentSection = el;
+        sectionHasVisible = false;
+      } else if (el.style.display !== "none") {
+        sectionHasVisible = true;
+      }
+    }
+    flush();
+    if (noResultRef.current) {
+      noResultRef.current.style.display = kw && visibleCount === 0 ? "" : "none";
+    }
+  }, [settingsFilter, config.lan_sync_enabled]);
+
   return (
     <>
+      {/* U52: 设置搜索框（吸顶） */}
+      <div className={styles.settingsSearch}>
+        <span className={styles.settingsSearchIcon}>🔍</span>
+        <input
+          className={styles.settingsSearchInput}
+          type="text"
+          value={settingsFilter}
+          placeholder="搜索设置项…"
+          onChange={(e) => setSettingsFilter(e.target.value)}
+        />
+        {settingsFilter && (
+          <button className={styles.settingsSearchClear} onClick={() => setSettingsFilter("")} title="清空搜索">✕</button>
+        )}
+      </div>
+      <div ref={settingsContainerRef}>
       {/* ── 数据统计 ── */}
       <div className={styles.sSection}>数据统计</div>
       <div className={styles.statsPanel}>
@@ -214,6 +268,43 @@ export function GeneralTab({
           <p>💡 开启后粘贴更干净，无需手动删空格</p>
         </>}
       />
+      <ToggleRow icon="🛡" gradient="linear-gradient(135deg, #EF4444, #DC2626)" label="敏感内容防护" desc="不记录匹配密钥/凭证模式的内容" value={config.skip_sensitive} onChange={(v) => updateAndSave({ skip_sensitive: v })}
+        tooltip="开启后，复制密码、Token、密钥等敏感内容时不会记录到历史，也不会通过局域网同步"
+        detailTitle="敏感内容防护"
+        detail={<>
+          <p>开启后，剪贴板捕获到匹配密钥/凭证特征的内容（如 JWT、AWS Key、GitHub Token、长 Base64 串）时，将<b>不写入历史、不显示、不局域网同步</b>。</p>
+          <p>📌 <b>适合场景</b>：从密码管理器或网页复制密码、复制 API 密钥</p>
+          <p>💡 建议保持开启，避免敏感信息意外留存</p>
+        </>}
+      />
+      <div className={styles.sRow}>
+        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #F43F5E, #E11D48)" }}>🚫</span>
+        <div className={`${styles.sRowBody}`}>
+          <div className={`${styles.sRowLabel}`}>
+            应用排除名单
+            <HelpTooltip tooltip="来自这些应用的复制内容不会被记录，多个应用用英文逗号分隔" />
+          </div>
+          <div className={`${styles.sRowDesc}`}>来自这些应用的复制内容不会被记录（逗号分隔）</div>
+          <input
+            type="text"
+            value={config.excluded_apps}
+            placeholder="例如：KeePass, 1Password, Bitwarden"
+            onChange={(e) => updateAndSave({ excluded_apps: e.target.value })}
+            style={{
+              marginTop: 6,
+              width: "100%",
+              padding: "6px 10px",
+              fontSize: 12,
+              borderRadius: 8,
+              border: "1px solid var(--border-color)",
+              background: "var(--input-bg)",
+              color: "var(--text-primary)",
+              outline: "none",
+              boxSizing: "border-box",
+            }}
+          />
+        </div>
+      </div>
       <div className={styles.sRow}>
         <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #8B5CF6, #AF52DE)" }}>👆</span>
         <div className={`${styles.sRowBody}`}>
@@ -378,7 +469,7 @@ export function GeneralTab({
           <div className={`${styles.sRowLabel}`}>唤出窗口</div>
           <div className={`${styles.sRowDesc}`}>全局快捷键，在任何位置唤出</div>
         </div>
-        <HotkeyRecorder value={config.hotkey} taken={[config.sequential_hotkey || "ctrl+q", config.stack_toggle_hotkey || "ctrl+shift+k", config.stack_paste_hotkey || "ctrl+shift+p"]} onChange={async (v) => {
+        <HotkeyRecorder value={config.hotkey} allowClear taken={[config.sequential_hotkey || "ctrl+alt+q", config.stack_toggle_hotkey || "ctrl+alt+k", config.stack_paste_hotkey || "ctrl+alt+p"]} onChange={async (v) => {
           const oldVal = config.hotkey;
           await updateAndSave({ hotkey: v });
           try {
@@ -389,7 +480,7 @@ export function GeneralTab({
             await updateAndSave({ hotkey: oldVal });
             const msg = e instanceof Error ? e.message : String(e);
             logger.warn("热键设置失败", e);
-            toast(`快捷键设置失败：${msg}，已恢复原值`, "error");
+            toast(`快捷键设置失败：${msg}。变更未生效，已恢复原值`, "error");
           }
         }} />
       </div>
@@ -399,8 +490,8 @@ export function GeneralTab({
           <div className={`${styles.sRowLabel}`}>依次粘贴</div>
           <div className={`${styles.sRowDesc}`}>按顺序逐条粘贴剪贴板</div>
         </div>
-        <HotkeyRecorder value={config.sequential_hotkey || "ctrl+q"} taken={[config.hotkey, config.stack_toggle_hotkey || "ctrl+shift+k", config.stack_paste_hotkey || "ctrl+shift+p"]} onChange={async (v) => {
-          const oldVal = config.sequential_hotkey || "ctrl+q";
+        <HotkeyRecorder value={config.sequential_hotkey || "ctrl+alt+q"} allowClear taken={[config.hotkey, config.stack_toggle_hotkey || "ctrl+alt+k", config.stack_paste_hotkey || "ctrl+alt+p"]} onChange={async (v) => {
+          const oldVal = config.sequential_hotkey || "ctrl+alt+q";
           await updateAndSave({ sequential_hotkey: v });
           try {
             const { invoke } = await import("@tauri-apps/api/core");
@@ -410,18 +501,18 @@ export function GeneralTab({
             await updateAndSave({ sequential_hotkey: oldVal });
             const msg = e instanceof Error ? e.message : String(e);
             logger.warn("热键设置失败", e);
-            toast(`快捷键设置失败：${msg}，已恢复原值`, "error");
+            toast(`快捷键设置失败：${msg}。变更未生效，已恢复原值`, "error");
           }
         }} />
       </div>
       <div className={styles.sRow}>
         <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #F97316, #EA580C)" }}>📚</span>
         <div className={`${styles.sRowBody}`}>
-          <div className={`${styles.sRowLabel}`}>栈模式开关</div>
-          <div className={`${styles.sRowDesc}`}>进入/退出剪贴板栈收集模式</div>
+          <div className={`${styles.sRowLabel}`}>收集模式开关</div>
+          <div className={`${styles.sRowDesc}`}>进入/退出剪贴板收集模式（栈模式）</div>
         </div>
-        <HotkeyRecorder value={config.stack_toggle_hotkey || "ctrl+shift+k"} taken={[config.hotkey, config.sequential_hotkey || "ctrl+q", config.stack_paste_hotkey || "ctrl+shift+p"]} onChange={async (v) => {
-          const oldVal = config.stack_toggle_hotkey || "ctrl+shift+k";
+        <HotkeyRecorder value={config.stack_toggle_hotkey || "ctrl+alt+k"} allowClear taken={[config.hotkey, config.sequential_hotkey || "ctrl+alt+q", config.stack_paste_hotkey || "ctrl+alt+p"]} onChange={async (v) => {
+          const oldVal = config.stack_toggle_hotkey || "ctrl+alt+k";
           await updateAndSave({ stack_toggle_hotkey: v });
           try {
             const { invoke } = await import("@tauri-apps/api/core");
@@ -431,18 +522,18 @@ export function GeneralTab({
             await updateAndSave({ stack_toggle_hotkey: oldVal });
             const msg = e instanceof Error ? e.message : String(e);
             logger.warn("热键设置失败", e);
-            toast(`快捷键设置失败：${msg}，已恢复原值`, "error");
+            toast(`快捷键设置失败：${msg}。变更未生效，已恢复原值`, "error");
           }
         }} />
       </div>
       <div className={styles.sRow}>
         <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #FB923C, #F97316)" }}>📤</span>
         <div className={`${styles.sRowBody}`}>
-          <div className={`${styles.sRowLabel}`}>栈顶粘贴</div>
-          <div className={`${styles.sRowDesc}`}>粘贴栈顶内容并出栈</div>
+          <div className={`${styles.sRowLabel}`}>粘贴最近收集</div>
+          <div className={`${styles.sRowDesc}`}>粘贴最近收集的内容并移出收集列表</div>
         </div>
-        <HotkeyRecorder value={config.stack_paste_hotkey || "ctrl+shift+p"} taken={[config.hotkey, config.sequential_hotkey || "ctrl+q", config.stack_toggle_hotkey || "ctrl+shift+k"]} onChange={async (v) => {
-          const oldVal = config.stack_paste_hotkey || "ctrl+shift+p";
+        <HotkeyRecorder value={config.stack_paste_hotkey || "ctrl+alt+p"} allowClear taken={[config.hotkey, config.sequential_hotkey || "ctrl+alt+q", config.stack_toggle_hotkey || "ctrl+alt+k"]} onChange={async (v) => {
+          const oldVal = config.stack_paste_hotkey || "ctrl+alt+p";
           await updateAndSave({ stack_paste_hotkey: v });
           try {
             const { invoke } = await import("@tauri-apps/api/core");
@@ -452,7 +543,7 @@ export function GeneralTab({
             await updateAndSave({ stack_paste_hotkey: oldVal });
             const msg = e instanceof Error ? e.message : String(e);
             logger.warn("热键设置失败", e);
-            toast(`快捷键设置失败：${msg}，已恢复原值`, "error");
+            toast(`快捷键设置失败：${msg}。变更未生效，已恢复原值`, "error");
           }
         }} />
       </div>
@@ -488,6 +579,10 @@ export function GeneralTab({
         <button className={`${styles.sAction}${expiredCount > 0 ? ` ${styles.danger}` : ""}`} onClick={handleCleanup}>
           {expiredCount > 0 ? `清理 ${expiredCount} 条` : "无过期"}
         </button>
+      </div>
+      </div>
+      <div ref={noResultRef} className={styles.settingsNoResult} style={{ display: "none" }}>
+        😕 没有找到与「{settingsFilter}」匹配的设置项
       </div>
     </>
   );

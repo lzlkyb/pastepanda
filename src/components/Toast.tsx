@@ -11,10 +11,11 @@ interface ToastItem {
   message: string;
   duration: number;
   onRetry?: () => void;
+  actionLabel?: string;
 }
 
 interface ToastContextType {
-  toast: (message: string, type?: ToastType, duration?: number, onRetry?: () => void) => void;
+  toast: (message: string, type?: ToastType, duration?: number, onRetry?: () => void, actionLabel?: string) => void;
 }
 
 const ToastContext = createContext<ToastContextType>({ toast: () => {} });
@@ -29,11 +30,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const MAX_TOASTS = 5; // 最多同时显示 5 个 toast
 
-  const toast = useCallback((message: string, type: ToastType = "info", duration?: number, onRetry?: () => void) => {
+  const toast = useCallback((message: string, type: ToastType = "info", duration?: number, onRetry?: () => void, actionLabel?: string) => {
     const d = duration ?? (type === "error" ? 5000 : 4000);
     const id = ++toastId;
     setToasts((prev) => {
-      const next = [...prev, { id, type, message, duration: d, onRetry }];
+      const next = [...prev, { id, type, message, duration: d, onRetry, actionLabel }];
       // 超出限制时移除最早的 toast
       if (next.length > MAX_TOASTS) {
         return next.slice(next.length - MAX_TOASTS);
@@ -84,11 +85,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                   <Icon size={16} className={styles.toastIcon} />
                 )}
                 <span className={styles.toastMsg}>{t.message}</span>
-                {t.onRetry && (
+                {t.onRetry && t.actionLabel ? (
+                  <button onClick={(e) => { e.stopPropagation(); t.onRetry?.(); dismiss(t.id); }} className={styles.toastAction}>
+                    {t.actionLabel}
+                  </button>
+                ) : t.onRetry ? (
                   <button onClick={(e) => { e.stopPropagation(); t.onRetry?.(); dismiss(t.id); }} className={styles.toastRetry} title="重试">
                     <RotateCcw size={12} />
                   </button>
-                )}
+                ) : null}
                 <button onClick={() => dismiss(t.id)} className={styles.toastClose}>
                   <X size={14} />
                 </button>

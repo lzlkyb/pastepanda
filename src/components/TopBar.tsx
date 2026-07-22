@@ -1,14 +1,14 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, FilterType, TimeFilter, SourceFilter } from "@/stores/appStore";
-import { getAppVersion, getAppName, fetchCounts } from "@/lib/api";
+import { getAppVersion, getAppName, fetchCounts, toggleStackMode } from "@/lib/api";
 import { cleanSourceName, getSourceIcon, fetchRealSourceIcon } from "@/lib/source-mappings";
 import SourceBadge from "@/components/SourceBadge";
 import { UpdateBadge } from "@/components/UpdateBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { SearchBox } from "@/components/SearchBox";
 import { logger } from "@/lib/logger";
-import { ChevronDown, Tag, X } from "lucide-react";
+import { ChevronDown, Tag, X, EyeOff, Layers } from "lucide-react";
 import styles from "./TopBar.module.css";
 
 const TABS: { key: FilterType; label: string; icon: string }[] = [
@@ -30,15 +30,17 @@ async function minimizeWin() {
   try { (await import("@tauri-apps/api/window")).getCurrentWindow().minimize(); } catch { logger.warn("窗口最小化失败"); }
 }
 async function hideWin() {
-  try { (await import("@tauri-apps/api/window")).getCurrentWindow().hide(); } catch { logger.warn("窗口隐藏失败"); }
-  // 首次隐藏时提示托盘退出方式
+  // U6：首次隐藏时先派发提示并延迟隐藏，确保提示真正被看到
+  // （原实现先 hide() 再派发事件，toast 渲染在已隐藏窗口里永远不可见，却已标记"已展示"）
   const KEY = "pastepanda_hidden_tip_shown";
-  try {
-    if (!localStorage.getItem(KEY)) {
-      localStorage.setItem(KEY, "1");
-      window.dispatchEvent(new CustomEvent("first-time-tip", { detail: { id: "hide_window", message: "窗口已隐藏到托盘，右键托盘图标可退出或重新打开", type: "info" } }));
-    }
-  } catch { /* ignore */ }
+  let firstHide = false;
+  try { firstHide = !localStorage.getItem(KEY); } catch { /* ignore */ }
+  if (firstHide) {
+    window.dispatchEvent(new CustomEvent("first-time-tip", { detail: { id: "hide_window", message: "窗口已隐藏到托盘，右键托盘图标可退出或重新打开", type: "info" } }));
+    try { localStorage.setItem(KEY, "1"); } catch { /* ignore */ }
+    await new Promise((r) => setTimeout(r, 2000)); // 留出阅读提示的时间
+  }
+  try { (await import("@tauri-apps/api/window")).getCurrentWindow().hide(); } catch { logger.warn("窗口隐藏失败"); }
 }
 
 type TabStyle = "segmented" | "circle";
@@ -65,6 +67,8 @@ export function TopBar({ onSettings, onSnippets, onExtract, onToggleSidebar, sid
   const clearTagFilters = useAppStore((s) => s.clearTagFilters);
   const allTags = useAppStore((s) => s.tags);
   const ws = useAppStore((s) => s.config.current_workspace);
+  const stackMode = useAppStore((s) => s.stackMode);
+  const stackToggleHotkey = useAppStore((s) => s.config.stack_toggle_hotkey);
   const [tabStyle, setTabStyle] = useState<TabStyle>(getTabStyle);
   const [appVersion, setAppVersion] = useState("...");
   const [appName, setAppName] = useState("PastePanda");
@@ -139,6 +143,9 @@ export function TopBar({ onSettings, onSnippets, onExtract, onToggleSidebar, sid
           <UpdateBadge currentVersion={appVersion} />
         </div>
         <div className={styles.headerIcons} data-tauri-drag-region="false">
+          <IconBtn tip={`收集模式（栈模式）· ${stackToggleHotkey || "ctrl+alt+k"}${stackMode ? " · 已开启" : ""}`} onClick={() => toggleStackMode()}>
+            <Layers className={styles.iconSvg} color={stackMode ? "var(--accent)" : "#94A3B8"} strokeWidth="2" />
+          </IconBtn>
           <IconBtn tip="片段库" onClick={onSnippets}><span className={styles.iconEmoji}>📝</span></IconBtn>
           <IconBtn tip="内容提取" onClick={onExtract}><span className={styles.iconEmoji}>🧲</span></IconBtn>
           <IconBtn tip="设置 · 帮助 · 关于" onClick={onSettings}>
@@ -147,8 +154,8 @@ export function TopBar({ onSettings, onSnippets, onExtract, onToggleSidebar, sid
           <IconBtn tip="最小化到任务栏" onClick={minimizeWin}>
             <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round"><path d="M5 12h14"/></svg>
           </IconBtn>
-          <IconBtn tip="隐藏窗口" onClick={hideWin}>
-            <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          <IconBtn tip="隐藏到托盘（保持后台运行）" onClick={hideWin}>
+            <EyeOff className={styles.iconSvg} color="#94A3B8" strokeWidth="2" />
           </IconBtn>
         </div>
       </div>

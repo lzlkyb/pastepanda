@@ -6,6 +6,7 @@ import { relativeTime } from "@/lib/utils";
 import SourceBadge from "@/components/SourceBadge";
 import { HistoryItem } from "@/stores/appStore";
 import { getFileIcon, getFileIconColor } from "@/lib/source-mappings";
+import { FocusTrap } from "@/components/FocusTrap";
 
 // 预加载 Tauri API 模块
 let _invoke: any = null;
@@ -42,6 +43,18 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
     }
     if (item?.content) getInfo();
   }, [item]);
+
+  // U51：Esc 关闭 + 向全局键盘层广播开关状态（本弹窗由 CardList 管理，
+  // App 的 dialogStatesRef 感知不到，需靠事件让列表导航键在弹窗打开时让位）
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("app-filedetail-open"));
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.dispatchEvent(new CustomEvent("app-filedetail-close"));
+    };
+  }, [onClose]);
 
   const handleCopyPath = useCallback(async () => {
     try {
@@ -101,12 +114,13 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         className="dialog-backdrop" onClick={onClose}>
+        <FocusTrap>
         <motion.div
           initial={{ scale: 0.96, opacity: 0, y: 20 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.96, opacity: 0, y: 20 }}
           transition={{ type: "spring", stiffness: 400, damping: 30 }}
-          className="dialog-box w480"
+          className="dialog-box w380"
           onClick={(e) => e.stopPropagation()}>
 
           {/* Header */}
@@ -172,6 +186,7 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
             <button className="btn-primary" onClick={onClose}>关闭</button>
           </div>
         </motion.div>
+        </FocusTrap>
       </motion.div>
     </AnimatePresence>
   );

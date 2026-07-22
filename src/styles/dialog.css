@@ -19,10 +19,14 @@
   display: flex;
   flex-direction: column;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+  /* U45：响应式 — 窄窗口下不溢出（此前各类宽均为固定 px） */
+  max-width: calc(100vw - 32px);
 }
 
-.dialog-box.w500 { width: 420px; max-height: 80vh; }
-.dialog-box.w480 { width: 380px; max-height: 70vh; }
+/* U45：类名与实际宽度保持一致（此前 w500=420px / w480=380px 命名误导，w400 未定义） */
+.dialog-box.w400 { width: 400px; max-height: 80vh; }
+.dialog-box.w420 { width: 420px; max-height: 80vh; }
+.dialog-box.w380 { width: 380px; max-height: 70vh; }
 .dialog-box.about-dialog { max-height: 85vh; }
 .dialog-box.w460 { width: 460px; max-height: 78vh; }
 
@@ -227,11 +231,18 @@
   border-radius: 10px 0 0 10px;
 }
 
+/* U56: 横向滚动时行号列固定在左侧，始终与代码行对齐 */
+.code-viewer .code-lines {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+
 .code-ln {
   padding: 0 10px;
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 12px;
-  line-height: 1.7;
+  line-height: 22px; /* U56: 与代码区使用相同固定行高，行号逐行严格对齐 */
   color: var(--text-muted);
 }
 
@@ -241,11 +252,9 @@
   padding: 10px 14px;
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 13px;
-  line-height: 1.7;
-  white-space: pre-wrap;
-  word-break: break-all;
+  line-height: 22px; /* U56: 固定行高，与行号一一对应 */
+  white-space: pre; /* U56: 长行不折行，改为横向滚动，避免行号错位 */
   color: var(--text-primary);
-  overflow: hidden;
 }
 
 /* 操作栏（预览用） */

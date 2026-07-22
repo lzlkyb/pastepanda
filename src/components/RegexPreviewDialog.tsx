@@ -3,8 +3,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Copy, Check } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { pasteText } from "@/lib/api";
-import { safeApplyRegex, validateRegex, REGEX_TIME_BUDGET_MS, type RegexRule } from "@/lib/regexRules";
+import { safeApplyRegex, validateRegex, updateCustomRule, REGEX_TIME_BUDGET_MS, type RegexRule } from "@/lib/regexRules";
 import styles from "./RegexPreviewDialog.module.css";
+import { FocusTrap } from "@/components/FocusTrap";
 
 interface RegexPreviewDialogProps {
   text: string;
@@ -82,18 +83,26 @@ export function RegexPreviewDialog({ text, rule, onClose }: RegexPreviewDialogPr
 
   const handlePaste = useCallback(async () => {
     if (!preview) return;
-    try {
-      await pasteText(preview.result);
+    // U49：确认粘贴时把调好的参数写回规则（此前编辑仅存在于弹窗内，关闭即丢失）。
+    // 仅自定义规则可写回（预设规则不改动）；正则无效或未修改时跳过
+    if (!regexError && rule.id.startsWith("c_") &&
+        (pattern !== rule.pattern || replacement !== rule.replacement || flags !== rule.flags)) {
+      updateCustomRule(rule.id, { pattern, replacement, flags });
+    }
+    // U1：仅粘贴成功时弹成功提示并关闭（pasteText 失败时已自行弹错误 toast，保留对话框便于重试）
+    const ok = await pasteText(preview.result);
+    if (ok) {
       toast("已粘贴替换结果", "success");
       onClose();
-    } catch { toast("粘贴失败", "error"); }
-  }, [preview, toast, onClose]);
+    }
+  }, [preview, toast, onClose, regexError, rule, pattern, replacement, flags]);
 
   return (
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         className="dialog-backdrop" onClick={onClose}>
+        <FocusTrap>
         <motion.div
           initial={{ scale: 0.96, opacity: 0, y: 10 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -182,6 +191,7 @@ export function RegexPreviewDialog({ text, rule, onClose }: RegexPreviewDialogPr
             </div>
           </div>
         </motion.div>
+        </FocusTrap>
       </motion.div>
     </AnimatePresence>
   );

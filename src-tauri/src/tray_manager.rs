@@ -24,12 +24,13 @@ fn truncate_preview(text: &str, max_len: usize) -> String {
     format!("{}…", &text[..end])
 }
 
-/// 获取最近 N 条文本记录用于自绘弹窗预览
-/// 返回 (id, item_type, preview_text, full_text)，item_type 用于前端图标渲染
+/// 获取最近 N 条记录用于自绘弹窗预览
+/// 返回 (id, item_type, preview_text, full_text, content)，item_type 用于前端图标渲染；
+/// U33：content 携带图片路径/文件路径，前端据此走正确的粘贴通道（而非粘贴占位文本）
 pub fn get_recent_texts_public(
     app: &AppHandle,
     limit: usize,
-) -> Vec<(String, String, String, String)> {
+) -> Vec<(String, String, String, String, String)> {
     let store = match app.try_state::<crate::data_store::DataStore>() {
         Some(s) => s,
         None => return Vec::new(),
@@ -49,7 +50,7 @@ pub fn get_recent_texts_public(
                 } else {
                     truncate_preview(&item.text, 26)
                 };
-                (item.id, item.item_type, preview, item.text)
+                (item.id, item.item_type, preview, item.text, item.content)
             })
             .collect(),
         Err(e) => {
@@ -69,7 +70,7 @@ pub fn is_monitoring_public(app: &AppHandle) -> bool {
 /// 构建弹窗数据 JSON（统一复用，消除重复查询）
 pub fn build_popup_data_public(
     app: &AppHandle,
-    recents: &[(String, String, String, String)],
+    recents: &[(String, String, String, String, String)],
     monitoring: bool,
 ) -> serde_json::Value {
     let version = crate::commands::APP_VERSION.to_string();
@@ -78,8 +79,8 @@ pub fn build_popup_data_public(
         .map(|s| s.as_str())
         .unwrap_or("PastePanda");
 
-    let recents_json: Vec<serde_json::Value> = recents.iter().map(|(id, item_type, preview, text)| {
-        serde_json::json!({ "id": id, "type": item_type, "preview": preview, "text": text })
+    let recents_json: Vec<serde_json::Value> = recents.iter().map(|(id, item_type, preview, text, content)| {
+        serde_json::json!({ "id": id, "type": item_type, "preview": preview, "text": text, "content": content })
     }).collect();
 
     let store = app.try_state::<crate::data_store::DataStore>();
@@ -443,6 +444,11 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     // 记录最后一次托盘图标完整矩形 (x, y, w, h)（从 Enter/Move 事件获取）
     let tray_rect: Arc<Mutex<(f64, f64, f64, f64)>> = Arc::new(Mutex::new((0.0, 0.0, 24.0, 24.0)));
 
+    // U54: 记录上次左键点击时间，双击的第二下直接忽略，避免 显示→隐藏 相互抵消
+    let last_left_click: Arc<Mutex<std::time::Instant>> = Arc::new(Mutex::new(
+        std::time::Instant::now() - std::time::Duration::from_secs(10),
+    ));
+
     let _tray = TrayIconBuilder::with_id("main-tray")
         .icon(icon)
         .tooltip(format!("{} v{}", crate::commands::APP_NAME.get().map(|s| s.as_str()).unwrap_or("PastePanda"), &**version))
@@ -468,6 +474,15 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                     button_state: MouseButtonState::Up,
                     ..
                 } => {
+                    // U54: 双击去抖——600ms 内的第二次点击视为双击的第二下，直接忽略
+                    if let Ok(mut last) = last_left_click.lock() {
+                        let is_second_of_double = last.elapsed().as_millis() < 600;
+                        *last = std::time::Instant::now();
+                        if is_second_of_double {
+                            log::info!("[TrayManager] 托盘左键双击的第二下，已忽略");
+                            return;
+                        }
+                    }
                     let app = tray.app_handle();
                     // 隐藏 popup（如果正在显示）
                     if let Some(popup) = app.get_webview_window("tray-popup") {

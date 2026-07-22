@@ -159,27 +159,42 @@ pub fn run() {
                 .get("auto_strip")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
+            // 修复 U36：读取敏感内容防护配置（默认开启）
+            let skip_sensitive_enabled = saved_config
+                .get("skip_sensitive")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let excluded_apps_list: Vec<String> = saved_config
+                .get("excluded_apps")
+                .and_then(|v| v.as_str())
+                .map(|s| {
+                    s.split(',')
+                        .map(|a| a.trim().to_string())
+                        .filter(|a| !a.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default();
             let hotkey_config = hotkey_manager::HotkeyConfig {
                 show_window: saved_config
                     .get("hotkey")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Shift+V")
+                    .unwrap_or("Ctrl+Alt+V")
                     .to_string(),
                 seq_paste: saved_config
                     .get("sequential_hotkey")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Q")
+                    .unwrap_or("Ctrl+Alt+Q")
                     .to_string(),
                 index_prefix: "Ctrl+Alt".to_string(),
                 stack_toggle: saved_config
                     .get("stack_toggle_hotkey")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Shift+K")
+                    .unwrap_or("Ctrl+Alt+K")
                     .to_string(),
                 stack_paste: saved_config
                     .get("stack_paste_hotkey")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Shift+P")
+                    .unwrap_or("Ctrl+Alt+P")
                     .to_string(),
             };
 
@@ -198,6 +213,8 @@ pub fn run() {
             let monitor = clipboard_monitor::ClipboardMonitor::new(handle.clone(), paste_suppress);
             // 从数据库初始化 auto_strip 缓存（在 store.manage 之前已读取），避免轮询时每次都锁数据库
             monitor.update_auto_strip_cache(auto_strip_enabled);
+            // 修复 U36：初始化敏感内容防护缓存
+            monitor.update_sensitive_cache(skip_sensitive_enabled, excluded_apps_list);
             monitor.start();
             app.manage(monitor);
 
@@ -237,12 +254,19 @@ pub fn run() {
             app.manage(lan_sync);
 
             // 显示窗口
+            // U5：开机自启带 /silent 标志时静默驻留托盘，不弹窗抢焦点
+            // （与设置面板"开机后自动在后台运行，托盘图标常驻"的承诺一致）
+            let silent_start = std::env::args().any(|a| a.eq_ignore_ascii_case("/silent"));
             if let Some(window) = app.get_webview_window("main") {
-                if let Err(e) = window.show() {
-                    log::warn!("窗口显示失败: {}", e);
-                }
-                if let Err(e) = window.set_focus() {
-                    log::warn!("窗口聚焦失败: {}", e);
+                if silent_start {
+                    log::info!("[Startup] /silent 模式：窗口保持隐藏，仅托盘常驻");
+                } else {
+                    if let Err(e) = window.show() {
+                        log::warn!("窗口显示失败: {}", e);
+                    }
+                    if let Err(e) = window.set_focus() {
+                        log::warn!("窗口聚焦失败: {}", e);
+                    }
                 }
 
                 // Win11 DWM 圆角
@@ -299,6 +323,7 @@ pub fn run() {
             commands::get_snippets,
             commands::update_snippet,
             commands::delete_snippet,
+            commands::use_snippet,
             commands::get_all_history,
             commands::get_image_data_url,
             commands::get_image_thumbnail,

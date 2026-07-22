@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
-import { useAppStore, HistoryItem } from "@/stores/appStore";
+import { useAppStore, HistoryItem, DEFAULT_CONFIG } from "@/stores/appStore";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { VersionBadge } from "@/components/VersionBadge";
 import { useToast } from "@/components/Toast";
@@ -11,6 +11,7 @@ import { GeneralTab } from "@/components/settings/GeneralTab";
 import { HelpTabContent } from "@/components/settings/HelpTabContent";
 import { AboutTabContent } from "@/components/settings/AboutTabContent";
 import styles from "./Settings.module.css";
+import { FocusTrap } from "@/components/FocusTrap";
 
 const tabPanelVariants = {
   initial: { opacity: 0, y: 8 },
@@ -25,7 +26,6 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   const config = useAppStore((s) => s.config);
   const updateConfig = useAppStore((s) => s.updateConfig);
   const history = useAppStore((s) => s.history);
-  const [saved, setSaved] = useState(false);
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
   const [tabStyle, setTabStyle] = useState<string>(
     () => localStorage.getItem("tabStyle") || "segmented",
@@ -34,6 +34,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   const [appName, setAppName] = useState("PastePanda");
   const [appVersion, setAppVersion] = useState("?.?.?");
   const [showCleanupConfirm, setShowCleanupConfirm] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -62,24 +63,6 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     }
   }, []);
 
-  const handleSave = async () => {
-    let success = true;
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("save_config", { config });
-      await invoke("reregister_hotkeys").catch((e: unknown) => logger.warn("重注册热键失败", e));
-    } catch (e) {
-      logger.warn("保存配置失败", e);
-      success = false;
-      toast("保存配置失败，请检查数据库权限", "error");
-    }
-    if (success) {
-      setSaved(true);
-      toast("配置已保存", "success");
-      setTimeout(() => setSaved(false), 2000);
-    }
-  };
-
   // 串行化配置写入：后一次保存必须在前一次之后执行，且读取最新 store 快照，
   // 避免快速连续切换时闭包过期 config 相互覆盖导致设置丢失（M20）
   const saveChainRef = useRef(Promise.resolve() as Promise<unknown>);
@@ -99,6 +82,26 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
       logger.warn("即时保存失败", e);
       toast("设置保存失败，请检查数据库权限", "error");
     }
+  };
+
+  // 修复 U27：恢复默认设置（保留工作区等用户数据，仅重置行为/外观/热键配置）
+  const handleResetDefaults = async () => {
+    setShowResetConfirm(false);
+    const current = useAppStore.getState().config;
+    const reset = {
+      ...DEFAULT_CONFIG,
+      // 工作区属于用户数据，不随"恢复默认"重置
+      current_workspace: current.current_workspace,
+      workspaces: current.workspaces,
+    };
+    await updateAndSave(reset);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("reregister_hotkeys");
+    } catch (e) {
+      logger.warn("恢复默认后重注册热键失败", e);
+    }
+    toast("已恢复默认设置", "success");
   };
 
   const cleanupDays = config.auto_cleanup_days;
@@ -198,11 +201,12 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
         <motion.div key="settings-dialog"
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           className="dialog-backdrop" onClick={onClose}>
+          <FocusTrap>
           <motion.div
             initial={{ scale: 0.96, opacity: 0, y: 10 }} animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.96, opacity: 0, y: 10 }}
             transition={{ type: "spring", stiffness: 400, damping: 30 }}
-            className="dialog-box w500" onClick={(e) => e.stopPropagation()}>
+            className="dialog-box w420" onClick={(e) => e.stopPropagation()}>
 
             {/* Header */}
             <div className={`dialog-header${scrolled ? ` ${styles.dialogHeaderCompact}` : ""}`}>
@@ -261,9 +265,14 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
             {/* Footer */}
             <div className={styles.sFooter}>
               <button onClick={onClose} className={styles.sSaveBtn}>关闭设置</button>
+              <div className={styles.sFooterMeta}>
+                <button onClick={() => setShowResetConfirm(true)} className={styles.sResetBtn} title="将所有设置恢复为默认值">恢复默认设置</button>
+                <span className={styles.sAutoSaveHint}>所有设置修改后自动保存</span>
+              </div>
               <span className={styles.sFooterVer}>{appName} <VersionBadge version={appVersion} compact /></span>
             </div>
           </motion.div>
+          </FocusTrap>
         </motion.div>
       )}
       <ConfirmDialog key="cleanup-confirm"
@@ -274,6 +283,14 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
         variant="danger"
         onConfirm={executeCleanup}
         onCancel={() => setShowCleanupConfirm(false)}
+      />
+      <ConfirmDialog key="reset-confirm"
+        open={showResetConfirm}
+        title="恢复默认设置"
+        message="将把主题、热键、自动清理等行为设置恢复为默认值（工作区数据保留），确认？"
+        confirmText="恢复默认"
+        onConfirm={handleResetDefaults}
+        onCancel={() => setShowResetConfirm(false)}
       />
     </AnimatePresence>
   );

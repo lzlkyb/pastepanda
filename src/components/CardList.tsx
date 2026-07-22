@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, lazy, Suspense, useCallback, useMemo, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useAppStore, HistoryItem, FilterType } from "@/stores/appStore";
+import { useAppStore, HistoryItem } from "@/stores/appStore";
 import { useToast } from "@/components/Toast";
 import { CardWithContext, ImgState } from "@/components/Card";
 import { ContextMenu } from "@/components/ContextMenu";
@@ -12,10 +12,10 @@ import { pasteText, pasteImage, getImageThumbnail, getImageDataUrl, getImageBase
 import { getAllRules } from "@/lib/regexRules";
 import { invoke } from "@tauri-apps/api/core";
 import { ClipboardList, Copy, Search, Zap, ZoomIn, ZoomOut, RotateCw, Download, X, Info, Trash2, FileDown, ScanText, Pin, CheckSquare, Square, Clock, Package, FileX, GitCompare } from "lucide-react";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Timeline, type TimeGroup, type TimelineNode } from "@/components/Timeline";
 import Lenis from "lenis";
 import styles from "./CardList.module.css";
+import { FocusTrap } from "@/components/FocusTrap";
 
 const EditDialog = lazy(() => import("@/components/EditDialog").then(m => ({ default: m.EditDialog })));
 const FileDetailDialog = lazy(() => import("@/components/FileDetailDialog").then(m => ({ default: m.FileDetailDialog })));
@@ -105,18 +105,6 @@ interface OcrResultData {
   full_text: string;
 }
 
-// 分类类型标签
-const FILTER_TYPE_LABELS: Record<FilterType, string> = {
-  all: "全部",
-  text: "文本",
-  image: "图片",
-  file: "文件",
-  pinned: "收藏",
-};
-function getFilterTypeLabel(ft: FilterType): string {
-  return FILTER_TYPE_LABELS[ft] || ft;
-}
-
 // 根据时间戳返回分组标签
 function getTimeGroup(timeStr: string): TimeGroup {
   const now = new Date();
@@ -141,6 +129,24 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   const sourceFilter = useAppStore((s) => s.sourceFilter);
   const groupFilter = useAppStore((s) => s.groupFilter);
   const selectedTagIds = useAppStore((s) => s.selectedTagIds);
+  // 修复 U20：判断是否有任意筛选条件生效，空状态需区分"无匹配"与"剪贴板为空"
+  const hasActiveFilter = !!(
+    searchKeyword ||
+    filterType !== "all" ||
+    timeFilter !== "all" ||
+    sourceFilter !== "" ||
+    groupFilter !== "all" ||
+    selectedTagIds.length > 0
+  );
+  const clearAllFilters = useCallback(() => {
+    const st = useAppStore.getState();
+    st.setSearchKeyword("");
+    st.setFilterType("all");
+    st.setTimeFilter("all");
+    st.setSourceFilter("");
+    st.setGroupFilter("all");
+    st.clearTagFilters();
+  }, []);
   const getFilteredItems = useAppStore((s) => s.getFilteredItems);
   const selectedIds = useAppStore((s) => s.selectedIds);
   const focusId = useAppStore((s) => s.focusId);
@@ -200,7 +206,6 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
-  const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false); // 列表是否在滚动中（用于禁用 Popover）
   const internalScrollRef = useRef<HTMLDivElement>(null);
   const internalLenisRef = useRef<Lenis | null>(null);
@@ -909,18 +914,12 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
     }
   }, [toast]);
 
-  // 批量删除
+  // 批量删除（修复 U11：直接删除 + 统一撤销 toast，不再弹确认框）
   const handleBatchDelete = useCallback(async () => {
     const ids = [...selectedIds];
     if (ids.length === 0) return;
-    try {
-      await deleteHistory(ids);
-      toast(`已删除 ${ids.length} 条记录`, "success");
-    } catch {
-      toast("批量删除失败", "error");
-    }
-    setShowBatchDeleteConfirm(false);
-  }, [selectedIds, toast]);
+    await deleteHistory(ids);
+  }, [selectedIds]);
 
   // 批量导出
   const handleBatchExport = useCallback(async () => {
@@ -993,21 +992,22 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   // #8 Mini 模式：时间轴始终可见（常驻 10px 窄轨），hover/拖拽时展开
   // 受设置项 timeline_enabled 控制：关闭时完全不渲染
   const timelineEnabled = useAppStore((s) => s.config.timeline_enabled);
+  const sequentialHotkey = useAppStore((s) => s.config.sequential_hotkey);
   const [timelineExpanded, setTimelineExpanded] = useState(false);
 
   // 滚动到指定卡片索引
   // M26：getOffsetForIndex 综合"已挂载行的实测高度 + 未挂载行的估算"，比 index*82 准；
   //      动画结束后目标行已挂载实测，再做一次漂移校正，然后才查找 DOM 做高亮
-  const handleScrollToIndex = useCallback((index: number) => {
+  const handleScrollToIndex = useCallback((index: number, align: "start" | "center" | "end" | "auto" = "start") => {
     const lenis = lenisRef.current;
     const item = items[index];
     if (!item || !lenis) return;
-    const offsetInfo = virtualizer.getOffsetForIndex(index, "start");
+    const offsetInfo = virtualizer.getOffsetForIndex(index, align);
     const start = offsetInfo ? offsetInfo[0] : index * 82;
     lenis.scrollTo(Math.max(0, start - 10), { lerp: 0.1, duration: 0.8 });
 
     window.setTimeout(() => {
-      const correctedInfo = virtualizer.getOffsetForIndex(index, "start");
+      const correctedInfo = virtualizer.getOffsetForIndex(index, align);
       const corrected = correctedInfo ? correctedInfo[0] : start;
       if (Math.abs(corrected - start) > 4) {
         lenis.scrollTo(Math.max(0, corrected - 10), { immediate: true });
@@ -1023,6 +1023,37 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
       }
     }, 850);
   }, [items, virtualizer]);
+
+  // U39：监听 App.tsx 键盘导航的滚动请求 — 通过 Lenis + 虚拟列表定位，
+  // 替代 scrollIntoView（与 Lenis 平滑滚动冲突，且未挂载的虚拟行查不到 DOM）
+  useEffect(() => {
+    const onScrollToItem = (e: Event) => {
+      const id = (e as CustomEvent).detail?.id as string | undefined;
+      if (!id) return;
+      const idx = items.findIndex((i) => i.id === id);
+      if (idx >= 0) handleScrollToIndex(idx, "auto");
+    };
+    window.addEventListener("app-scroll-to-item", onScrollToItem);
+    return () => window.removeEventListener("app-scroll-to-item", onScrollToItem);
+  }, [items, handleScrollToIndex]);
+
+  // U44：Space 快速预览 — 图片/文件项打开对应详情窗（文本由 QuickPreview 处理），
+  // 此前 Space 对图片/文件无任何响应
+  useEffect(() => {
+    const onOpenItemDetail = (e: Event) => {
+      const id = (e as CustomEvent).detail?.id as string | undefined;
+      if (!id) return;
+      const item = items.find((i) => i.id === id);
+      if (!item) return;
+      if (item.type === "image" && item.content) {
+        openImagePreview(item);
+      } else if (item.type === "file") {
+        setFileDetailItem(item);
+      }
+    };
+    window.addEventListener("app-open-item-detail", onOpenItemDetail);
+    return () => window.removeEventListener("app-open-item-detail", onOpenItemDetail);
+  }, [items, openImagePreview]);
 
   // 拖拽时间轴滚动 — 使用 Lenis scrollTo 而不是直接设置 scrollTop
   const handleDragScroll = useCallback((scrollTop: number) => {
@@ -1070,8 +1101,12 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
         aria-label="剪贴板记录列表"
         aria-multiselectable="true"
         aria-setsize={items.length}
-        aria-live="polite"
       >
+        {/* U43：专用状态节点 — 只在结果数量变化（筛选/搜索）时播报，
+            替代挂在整个虚拟列表上的 aria-live（滚动时行频繁挂载/卸载会导致播报噪音） */}
+        <div role="status" aria-live="polite" style={{ position: "absolute", width: 1, height: 1, margin: -1, padding: 0, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0 }}>
+          {items.length === 0 ? "没有符合条件的记录" : `共 ${items.length} 条记录`}
+        </div>
         {/* Lenis content 元素 — 包裹所有实际内容，Lenis 通过 ResizeObserver 监听此元素的尺寸变化 */}
         <div ref={contentRef} className={styles.cardList}>
         {items.length === 0 ? (
@@ -1079,7 +1114,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
             <div className={styles.emptyIcon}>
               {searchKeyword ? (
                 <Search size={28} style={{ color: "var(--accent)" }} strokeWidth={1.5} />
-              ) : filterType !== "all" ? (
+              ) : hasActiveFilter ? (
                 <FileX size={28} style={{ color: "var(--accent)" }} strokeWidth={1.5} />
               ) : (
                 <ClipboardList size={28} style={{ color: "var(--accent)" }} strokeWidth={1.5} />
@@ -1089,36 +1124,31 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
               <p className={styles.emptyTitle}>
                 {searchKeyword
                   ? `没有找到 "${searchKeyword}" 的相关记录`
-                  : filterType !== "all"
-                    ? `${getFilterTypeLabel(filterType)}分类暂无记录`
+                  : hasActiveFilter
+                    ? "没有符合条件的记录"
                     : "剪贴板是空的"}
               </p>
               <p className={styles.emptyDesc}>
                 {searchKeyword
                   ? "试试调整关键词，或检查拼写是否正确"
-                  : filterType !== "all"
-                    ? "该类型下还没有记录，复制新内容后会自动出现在这里"
+                  : hasActiveFilter
+                    ? "当前筛选条件下没有匹配的记录，试试放宽部分条件"
                     : "复制任意内容，它会自动出现在这里"}
               </p>
-              {searchKeyword && (
+              {hasActiveFilter && (
                 <div className={styles.emptyActions}>
-                  <button onClick={() => useAppStore.getState().setSearchKeyword("")} className={styles.emptyClearBtn}>
-                    清除搜索条件
-                  </button>
-                  {filterType !== "all" && (
-                    <button onClick={() => useAppStore.getState().setFilterType("all")} className={styles.emptyClearBtn}>
-                      查看全部类型
+                  {searchKeyword && (
+                    <button onClick={() => useAppStore.getState().setSearchKeyword("")} className={styles.emptyClearBtn}>
+                      清除搜索条件
                     </button>
                   )}
+                  <button onClick={clearAllFilters} className={styles.emptyClearBtn}>
+                    清除全部筛选
+                  </button>
                 </div>
               )}
-              {!searchKeyword && filterType !== "all" && (
-                <button onClick={() => useAppStore.getState().setFilterType("all")} className={styles.emptyClearBtn}>
-                  查看全部类型
-                </button>
-              )}
             </div>
-            {!searchKeyword && filterType === "all" && (
+            {!hasActiveFilter && (
               <div className={styles.guideCards}>
                 <div className={styles.guideWelcome}>
                   <span className={styles.guideWelcomeEmoji}>👋</span>
@@ -1134,7 +1164,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                 </div>
                 <div className={styles.guideCard}>
                   <div className={styles.guideIcon} style={{ background: "var(--accent-light)" }}><Zap size={18} style={{ color: "var(--accent)" }} /></div>
-                  <div className={styles.guideText}><div className={styles.guideLabel}>依次粘贴</div><div className={styles.guideDesc}>Ctrl+Q 逐条粘贴</div></div>
+                  <div className={styles.guideText}><div className={styles.guideLabel}>依次粘贴</div><div className={styles.guideDesc}>{sequentialHotkey || "ctrl+alt+q"} 逐条粘贴</div></div>
                 </div>
                 <div className={styles.guideFooterHint}>
                   💡 按 <kbd>?</kbd> 查看所有快捷键 · 点击右上角 <span style={{ color: "var(--accent)" }}>❓</span> 打开帮助
@@ -1183,7 +1213,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                   aria-label="对比差异">
                   <GitCompare size={12} /> 对比
                 </button>
-                <button onClick={() => setShowBatchDeleteConfirm(true)} className={`${styles.batchBtn} ${styles.batchBtnDanger}`} title="删除选中记录" aria-label="删除选中记录">
+                <button onClick={() => { void handleBatchDelete(); }} className={`${styles.batchBtn} ${styles.batchBtnDanger}`} title="删除选中记录（Ctrl+Z 可撤销）" aria-label="删除选中记录">
                   <Trash2 size={12} /> 删除
                 </button>
               </div>
@@ -1271,6 +1301,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
             exit={{ opacity: 0 }}
             className="dialog-backdrop" style={{ zIndex: 60 }} onClick={closePreview}
           >
+            <FocusTrap>
             <motion.div
               initial={{ opacity: 0, scale: 0.96, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -1302,7 +1333,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                 <button className={styles.imageDetailToolBtn} title="缩小" onClick={() => setPreviewScale((s) => Math.max(0.2, s - 0.25))}><ZoomOut size={16} /></button>
                 <span className={styles.imageDetailZoomLabel}>{Math.round(previewScale * 100)}%</span>
                 <button className={styles.imageDetailToolBtn} title="放大" onClick={() => setPreviewScale((s) => Math.min(5, s + 0.25))}><ZoomIn size={16} /></button>
-                <button className={styles.imageDetailToolBtn} title="适应窗口" onClick={() => { setPreviewScale(1); setPreviewOffset({ x: 0, y: 0 }); }}>1:1</button>
+                <button className={styles.imageDetailToolBtn} title="重置为 100% 并居中" onClick={() => { setPreviewScale(1); setPreviewOffset({ x: 0, y: 0 }); }}>1:1</button>
                 <button className={styles.imageDetailToolBtn} title="旋转" onClick={() => setPreviewRotation((r) => (r + 90) % 360)}><RotateCw size={16} /></button>
                 <span className={styles.imageDetailToolbarSep} />
                 {/* OCR 识别按钮 */}
@@ -1325,7 +1356,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                   <span style={{ marginLeft: 4, fontSize: 12 }}>置顶</span>
                 </button>
                 <span className={styles.imageDetailToolbarHint}>
-                  滚轮缩放 · 拖拽平移 · 双击重置 · 0 重置 · R 旋转
+                  滚轮平移 · Ctrl+滚轮缩放 · 拖拽平移 · 0 重置 · R 旋转
                 </span>
               </div>
 
@@ -1530,20 +1561,11 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
               </span>
             </div>
           </motion.div>
+          </FocusTrap>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* 批量删除确认弹窗 */}
-      <ConfirmDialog
-        open={showBatchDeleteConfirm}
-        title="确认批量删除"
-        message={`确定删除 ${selectedCount} 条记录？可通过 Ctrl+Z 撤销。`}
-        confirmText={`删除 ${selectedCount} 条`}
-        variant="danger"
-        onConfirm={handleBatchDelete}
-        onCancel={() => setShowBatchDeleteConfirm(false)}
-      />
     </div>
     </div>
     </ContextMenu>

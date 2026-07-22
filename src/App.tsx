@@ -19,6 +19,7 @@ import { ScrollProvider } from "@/contexts/ScrollContext";
 import { Sidebar, type SidebarGroup } from "@/components/Sidebar";
 import type Lenis from "lenis";
 import appStyles from "./App.module.css";
+import { FocusTrap } from "@/components/FocusTrap";
 
 // 修复 Low：应用更名后迁移历史版本遗留的 pasteship_* localStorage 键（幂等，仅执行一次）
 migrateLegacyStorageKeys();
@@ -41,8 +42,19 @@ function App() {
   const groupFilter = useAppStore((s) => s.groupFilter);
   const setGroupFilter = useAppStore((s) => s.setGroupFilter);
   const filterType = useAppStore((s) => s.filterType);
+  const searchKeyword = useAppStore((s) => s.searchKeyword);
+  const timeFilter = useAppStore((s) => s.timeFilter);
+  const selectedTagIds = useAppStore((s) => s.selectedTagIds);
+  const workspace = useAppStore((s) => s.config.current_workspace);
+  const getFilteredItems = useAppStore((s) => s.getFilteredItems);
   const { toast } = useToast();
-  const seqTotal = history.filter((h) => h.type === "text").length;
+  // 修复 U15：计数与实际粘贴遍历使用同一数据源（getFilteredItems），
+  // 搜索/筛选激活时 FAB 计数不再失真
+  const seqTotal = useMemo(
+    () => getFilteredItems().filter((h) => h.type === "text").length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [getFilteredItems, history, searchKeyword, filterType, timeFilter, sourceFilter, groupFilter, selectedTagIds, workspace]
+  );
   const [showSettings, setShowSettings] = useState(false);
   const [showSnippets, setShowSnippets] = useState(false);
   const [showExtract, setShowExtract] = useState(false);
@@ -66,6 +78,15 @@ function App() {
   useEffect(() => {
     import("@tauri-apps/api/window").then(m => m.getCurrentWindow().setAlwaysOnTop(config.always_on_top)).catch(e => logger.warn("窗口置顶设置失败", e));
   }, [config.always_on_top]);
+
+  // 修复 U15：筛选条件变化时重置依次粘贴指针，避免计数与遍历目标脱节
+  const filterKey = `${searchKeyword}|${filterType}|${timeFilter}|${sourceFilter}|${groupFilter}|${selectedTagIds.join(",")}|${workspace}`;
+  const isFirstFilterRef = useRef(true);
+  useEffect(() => {
+    if (isFirstFilterRef.current) { isFirstFilterRef.current = false; return; }
+    resetSeqPointer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterKey]);
 
   // 监听来自 api.ts 的 toast 通知（如自动清理）和首次提示
   useEffect(() => {
@@ -369,7 +390,12 @@ function App() {
       try {
         const { listen } = await import("@tauri-apps/api/event");
         const fn = await listen<string>("hotkey-register-failed", (event) => {
-          toast(`快捷键注册失败：${event.payload}，可能已被其他程序占用，请前往设置更换`, "error");
+          // 后端把所有失败绑定 join 成长串，这里只取数量做摘要，详情写日志
+          const detail = event.payload || "";
+          logger.warn("热键注册失败详情", detail);
+          const count = detail ? detail.split(";").filter((s) => s.trim()).length : 0;
+          const summary = count > 0 ? `${count} 个快捷键注册失败，可能已被其他程序占用` : "部分快捷键注册失败，可能已被其他程序占用";
+          toast(summary, "error", 6000, () => setShowSettings(true), "去设置");
         });
         if (cancelled) {
           // effect 已在本次 setup 完成前被清理（StrictMode 重挂载 / HMR），立即取消订阅，避免监听器泄漏
@@ -426,14 +452,14 @@ function App() {
     if (history.length > 0 && historyLenRef.current === 0 && !loading) {
       const timer = setTimeout(() => {
         if (shouldShow("first_copy")) {
-          toast("📋 已自动保存到 PastePanda，Ctrl+Shift+V 随时唤出", "success", 4000);
+          toast(`📋 已自动保存到 PastePanda，${config.hotkey || "Ctrl+Alt+V"} 随时唤出`, "success", 4000);
           markShown("first_copy");
         }
       }, 500);
       return () => clearTimeout(timer);
     }
     historyLenRef.current = history.length;
-  }, [history.length, loading, shouldShow, markShown, toast]);
+  }, [history.length, loading, shouldShow, markShown, toast, config.hotkey]);
 
   // 累计使用 3 天后提示依次粘贴功能
   useEffect(() => {
@@ -445,26 +471,56 @@ function App() {
         if (!daysSinceInstall) {
           localStorage.setItem("pastepanda_install_day", String(now));
         } else if (now - daysSinceInstall >= 3) {
-          toast("💡 试试 Ctrl+Q 依次粘贴，逐条粘贴超方便", "info", 4000);
+          toast(`💡 试试 ${config.sequential_hotkey || "Ctrl+Alt+Q"} 依次粘贴，逐条粘贴超方便`, "info", 4000);
           markShown("seq_paste_tip");
         }
       }
     }, 10000); // 启动 10 秒后检查
     return () => clearTimeout(timer);
-  }, [loading, shouldShow, markShown, toast]);
+  }, [loading, shouldShow, markShown, toast, config.sequential_hotkey]);
 
   // 使用 ref 存储弹窗状态，避免 handleKeyDown 依赖变化导致频繁重新注册事件
-  const dialogStatesRef = useRef({ showSettings, showSnippets, showExtract, showShortcuts });
-  dialogStatesRef.current = { showSettings, showSnippets, showExtract, showShortcuts };
+  // U4：moveToGroup 弹窗一并登记，Esc/导航键守卫才能感知它
+  const dialogStatesRef = useRef({ showSettings, showSnippets, showExtract, showShortcuts, moveToGroup: !!moveToGroupItem });
+  dialogStatesRef.current = { showSettings, showSnippets, showExtract, showShortcuts, moveToGroup: !!moveToGroupItem };
+
+  // U3：跟踪右键菜单开关（ContextMenu 打开/关闭时广播 app-ctxmenu-open/close 事件）
+  const ctxMenuOpenRef = useRef(false);
+  useEffect(() => {
+    const onOpen = () => { ctxMenuOpenRef.current = true; };
+    const onClose = () => { ctxMenuOpenRef.current = false; };
+    window.addEventListener("app-ctxmenu-open", onOpen);
+    window.addEventListener("app-ctxmenu-close", onClose);
+    return () => {
+      window.removeEventListener("app-ctxmenu-open", onOpen);
+      window.removeEventListener("app-ctxmenu-close", onClose);
+    };
+  }, []);
+
+  // U51：跟踪文件详情弹窗开关（由 CardList 管理，广播 app-filedetail-open/close 事件）
+  const fileDetailOpenRef = useRef(false);
+  useEffect(() => {
+    const onOpen = () => { fileDetailOpenRef.current = true; };
+    const onClose = () => { fileDetailOpenRef.current = false; };
+    window.addEventListener("app-filedetail-open", onOpen);
+    window.addEventListener("app-filedetail-close", onClose);
+    return () => {
+      window.removeEventListener("app-filedetail-open", onOpen);
+      window.removeEventListener("app-filedetail-close", onClose);
+    };
+  }, []);
 
   // 键盘导航
   const handleKeyDown = useCallback(async (e: KeyboardEvent) => {
     // 忽略输入框内的按键
     const tag = (e.target as HTMLElement)?.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    // U3：右键菜单打开期间所有按键让位给菜单（菜单自带方向键/Enter/Esc 处理），
+    // 否则 Enter 会同时激活菜单项并粘贴选中卡片、Esc 会同时关菜单和隐藏窗口
+    if (ctxMenuOpenRef.current) return;
     // 弹窗打开时：ESC/? 正常工作，其余列表导航按键被屏蔽（让弹窗内部控件如 Tab 可以正常使用）
-    const { showSettings, showSnippets, showExtract } = dialogStatesRef.current;
-    const dialogOpen = showSettings || showSnippets || showExtract;
+    const { showSettings, showSnippets, showExtract, moveToGroup } = dialogStatesRef.current;
+    const dialogOpen = showSettings || showSnippets || showExtract || moveToGroup || fileDetailOpenRef.current;
     const isListNavKey = ["ArrowDown", "ArrowUp", "Enter", "Delete", "Backspace", "Home", "End"].includes(e.key)
       || (e.ctrlKey && (e.key === "d" || e.key === "z" || e.key === "s" || e.key === "h" || e.key === "a"));
     if (dialogOpen && e.key !== "Escape" && e.key !== "?" && isListNavKey) return;
@@ -476,11 +532,13 @@ function App() {
 
     if (e.key === "Escape") {
       e.preventDefault();
-      // 弹窗打开时，按 ESC 关闭弹窗（而不是什么都不做）
+      // U4：Esc 分层 — 关最上层弹窗 → 关分组弹窗 → 清多选 → 最后才隐藏窗口
       if (showSettings) { setShowSettings(false); return; }
       if (showSnippets) { setShowSnippets(false); return; }
       if (showExtract) { setShowExtract(false); return; }
       if (dialogStatesRef.current.showShortcuts) { setShowShortcuts(false); return; }
+      if (moveToGroup) { setMoveToGroupItem(null); return; }
+      if (selectedIds.size > 0) { store.clearSelection(); return; }
       await toggleWindow();
     } else if (e.key === "?" || (e.shiftKey && e.key === "/")) {
       e.preventDefault();
@@ -491,18 +549,16 @@ function App() {
       const currentIdx = focusId ? filtered.findIndex((i) => i.id === focusId) : -1;
       const nextIdx = Math.min(currentIdx + 1, filtered.length - 1);
       store.selectItem(filtered[nextIdx].id);
-      // 滚动到视图内
-      const targetEl = document.querySelector(`[data-item-id="${filtered[nextIdx].id}"]`);
-      if (targetEl) targetEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      // U39：滚动交给 CardList 的 Lenis + 虚拟列表（scrollIntoView 与 Lenis 冲突）
+      window.dispatchEvent(new CustomEvent("app-scroll-to-item", { detail: { id: filtered[nextIdx].id } }));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       if (filtered.length === 0) return;
       const currentIdx = focusId ? filtered.findIndex((i) => i.id === focusId) : filtered.length;
       const prevIdx = Math.max(currentIdx - 1, 0);
       store.selectItem(filtered[prevIdx].id);
-      // 滚动到视图内
-      const targetEl = document.querySelector(`[data-item-id="${filtered[prevIdx].id}"]`);
-      if (targetEl) targetEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      // U39：滚动交给 CardList 的 Lenis + 虚拟列表（scrollIntoView 与 Lenis 冲突）
+      window.dispatchEvent(new CustomEvent("app-scroll-to-item", { detail: { id: filtered[prevIdx].id } }));
     } else if (e.key === "Enter") {
       e.preventDefault();
       const selectedArr = [...selectedIds];
@@ -511,16 +567,17 @@ function App() {
       if (targetId) {
         const item = filtered.find((i) => i.id === targetId);
         if (item) {
+          // U1：仅粘贴成功时弹成功提示（pasteText/pasteImage 失败时已自行弹错误 toast）
           if (item.type === "image" && item.content) {
-            await pasteImage(item.content);
-            window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴图片", type: "success" } }));
+            const ok = await pasteImage(item.content);
+            if (ok) window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴图片", type: "success" } }));
           } else if (item.type === "file" && item.content) {
             // 文件粘贴：将文件路径写入剪贴板
-            await pasteText(item.content);
-            window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴文件路径", type: "success" } }));
+            const ok = await pasteText(item.content);
+            if (ok) window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴文件路径", type: "success" } }));
           } else {
-            await pasteText(item.text);
-            window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴", type: "success" } }));
+            const ok = await pasteText(item.text);
+            if (ok) window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴", type: "success" } }));
           }
         }
       }
@@ -578,10 +635,17 @@ function App() {
       setShowSettings(true); // 帮助已整合到设置面板
     } else if (e.key === "Home") {
       e.preventDefault();
-      if (filtered.length > 0) store.selectItem(filtered[0].id);
+      if (filtered.length > 0) {
+        store.selectItem(filtered[0].id);
+        window.dispatchEvent(new CustomEvent("app-scroll-to-item", { detail: { id: filtered[0].id } }));
+      }
     } else if (e.key === "End") {
       e.preventDefault();
-      if (filtered.length > 0) store.selectItem(filtered[filtered.length - 1].id);
+      if (filtered.length > 0) {
+        const last = filtered[filtered.length - 1];
+        store.selectItem(last.id);
+        window.dispatchEvent(new CustomEvent("app-scroll-to-item", { detail: { id: last.id } }));
+      }
     } else if (e.key === " ") {
       // Space: 快速预览选中的文本（优先 selectedIds，回退 focusId）
       e.preventDefault();
@@ -590,6 +654,9 @@ function App() {
         const item = filtered.find((i) => i.id === targetId);
         if (item && item.type === "text") {
           window.dispatchEvent(new CustomEvent("app-quick-preview", { detail: { text: item.text } }));
+        } else if (item && (item.type === "image" || item.type === "file")) {
+          // U44：图片/文件 → 打开对应详情窗（此前 Space 对它们无响应）
+          window.dispatchEvent(new CustomEvent("app-open-item-detail", { detail: { id: item.id } }));
         }
       }
     }
@@ -680,10 +747,14 @@ function App() {
                 exit={{ opacity: 0, y: 10, scale: 0.9 }} transition={{ type: "spring", stiffness: 400, damping: 25 }}
                 className={appStyles.fabContainer}>
                 <div className={appStyles.fabCounter}><span className={appStyles.fabCounterNum}>{Math.min(seqPointer, seqTotal)}</span><span className={appStyles.fabCounterSep}>/</span>{seqTotal}</div>
-                <button className={appStyles.fabBtn} onClick={() => sequentialPaste()}>
-                  <ClipboardList size={14} /> 粘贴
-                  <span className={appStyles.fabBtnReset} onClick={(e) => { e.stopPropagation(); resetSeqPointer(); }}><RotateCcw size={10} /></span>
-                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <button className={appStyles.fabBtn} onClick={() => sequentialPaste()}>
+                    <ClipboardList size={14} /> 粘贴
+                  </button>
+                  <button className={appStyles.fabBtnReset} title="重置指针（从头开始）" onClick={() => resetSeqPointer()}>
+                    <RotateCcw size={10} />
+                  </button>
+                </div>
               </motion.div>
             )}
           </div>
@@ -697,6 +768,7 @@ function App() {
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="dialog-backdrop" style={{ zIndex: 100 }} onClick={() => setMoveToGroupItem(null)}
             >
+              <FocusTrap>
               <motion.div
                 initial={{ opacity: 0, scale: 0.95, y: 16 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -733,6 +805,7 @@ function App() {
                   ))}
                 </div>
               </motion.div>
+              </FocusTrap>
             </motion.div>
           )}
         </AnimatePresence>
@@ -768,16 +841,19 @@ function ShortcutPanel({ onClose }: { onClose: () => void }) {
   const [filter, setFilter] = useState("");
   const config = useAppStore((s) => s.config);
   const allShortcuts = useMemo(() => {
+    const dblDesc = config.double_click_action === "copy" ? "双击复制到剪贴板" : "双击预览 / 编辑";
     return [
-      { desc: "唤出 / 隐藏窗口", keys: config.hotkey || "Ctrl+Shift+V" },
-      { desc: "依次粘贴", keys: config.sequential_hotkey || "Ctrl+Q" },
+      { desc: "唤出 / 隐藏窗口", keys: config.hotkey || "Ctrl+Alt+V" },
+      { desc: "依次粘贴", keys: config.sequential_hotkey || "Ctrl+Alt+Q" },
       { desc: "全选", keys: config.select_all_hotkey || "Ctrl+A" },
       { desc: "粘贴第 N 条", keys: "Ctrl+Alt+1~9" },
+      { desc: "收集模式 开/关", keys: config.stack_toggle_hotkey || "ctrl+alt+k" },
+      { desc: "粘贴最近收集的内容", keys: config.stack_paste_hotkey || "ctrl+alt+p" },
       { desc: "上下导航", keys: "↑ / ↓" },
       { desc: "首尾跳转", keys: "Home / End" },
       { desc: "快速预览", keys: "Space" },
       { desc: "粘贴选中", keys: "Enter" },
-      { desc: "双击复制到剪贴板", keys: "双击卡片" },
+      { desc: dblDesc, keys: "双击卡片" },
       { desc: "右键编辑内容", keys: "右键菜单" },
       { desc: "删除选中", keys: "Delete" },
       { desc: "置顶 / 取消", keys: "Ctrl+D" },
@@ -786,7 +862,7 @@ function ShortcutPanel({ onClose }: { onClose: () => void }) {
       { desc: "打开帮助", keys: "Ctrl+H" },
       { desc: "显示此面板", keys: "? 或 Shift+/" },
     ];
-  }, [config.hotkey, config.sequential_hotkey, config.select_all_hotkey]);
+  }, [config.hotkey, config.sequential_hotkey, config.select_all_hotkey, config.double_click_action, config.stack_toggle_hotkey, config.stack_paste_hotkey]);
 
   const filtered = useMemo(() => {
     if (!filter.trim()) return allShortcuts;

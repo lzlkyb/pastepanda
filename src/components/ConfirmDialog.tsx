@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { createPortal } from "react-dom";
 import { X, AlertTriangle } from "lucide-react";
+import { FocusTrap } from "@/components/FocusTrap";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -32,6 +33,7 @@ export function ConfirmDialog({
           style={{ zIndex: 100000 }}
           onClick={onCancel}
         >
+          <FocusTrap>
           <motion.div
             initial={{ scale: 0.96, opacity: 0, y: 10 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -71,6 +73,7 @@ export function ConfirmDialog({
               </div>
             </div>
           </motion.div>
+          </FocusTrap>
         </motion.div>
       )}
     </AnimatePresence>,

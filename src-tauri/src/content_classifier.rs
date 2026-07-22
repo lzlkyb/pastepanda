@@ -402,7 +402,7 @@ impl ContentClassifier {
     }
 
     /// 检测密钥/Token
-    fn is_secret(&self, text: &str) -> bool {
+    pub fn is_secret(&self, text: &str) -> bool {
         let trimmed = text.trim();
 
         // JWT

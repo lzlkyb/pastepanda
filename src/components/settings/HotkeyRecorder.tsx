@@ -10,6 +10,22 @@ function normalizeCombo(combo: string): string {
   return [...mods, ...keys].join("+");
 }
 
+/** 将组合键格式化为易读形式：ctrl+shift+k → Ctrl + Shift + K */
+export function formatHotkey(combo: string): string {
+  if (!combo || !combo.trim()) return "未设置";
+  const modLabels: Record<string, string> = { ctrl: "Ctrl", alt: "Alt", shift: "Shift", meta: "Win" };
+  return combo
+    .split("+")
+    .filter(Boolean)
+    .map((p) => {
+      const low = p.toLowerCase();
+      if (modLabels[low]) return modLabels[low];
+      if (/^f\d{1,2}$/i.test(low)) return low.toUpperCase();
+      return p.length === 1 ? p.toUpperCase() : p.charAt(0).toUpperCase() + p.slice(1);
+    })
+    .join(" + ");
+}
+
 /**
  * 快捷键录制器
  * - 必须包含修饰键（Ctrl/Alt/Win），避免劫持全局普通按键
@@ -17,7 +33,7 @@ function normalizeCombo(combo: string): string {
  * - taken 列表做冲突校验，冲突时拒绝并提示
  * - 捕获阶段只 preventDefault 不 stopPropagation，保证 ctrl+space 等能录到
  */
-export function HotkeyRecorder({ value, onChange, taken = [] }: { value: string; onChange: (v: string) => void; taken?: string[] }) {
+export function HotkeyRecorder({ value, onChange, taken = [], allowClear = false }: { value: string; onChange: (v: string) => void; taken?: string[]; allowClear?: boolean }) {
   const [recording, setRecording] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
   const hintTimer = useRef<number | null>(null);
@@ -25,7 +41,7 @@ export function HotkeyRecorder({ value, onChange, taken = [] }: { value: string;
   const showHint = useCallback((msg: string) => {
     setHint(msg);
     if (hintTimer.current) window.clearTimeout(hintTimer.current);
-    hintTimer.current = window.setTimeout(() => { setHint(null); hintTimer.current = null; }, 1800);
+    hintTimer.current = window.setTimeout(() => { setHint(null); hintTimer.current = null; }, 3500);
   }, []);
 
   useEffect(() => () => { if (hintTimer.current) window.clearTimeout(hintTimer.current); }, []);
@@ -108,12 +124,30 @@ export function HotkeyRecorder({ value, onChange, taken = [] }: { value: string;
   );
 
   return (
-    <button
-      onClick={(e) => { e.stopPropagation(); setRecording(true); setHint(null); }}
-      onKeyDown={handleKeyDown}
-      onBlur={() => setRecording(false)}
-      className={`${styles.sKbd}${recording ? ` ${styles.recording}` : ""}`}>
-      {recording ? (hint ? `⚠ ${hint}` : "按下组合键...") : value}
-    </button>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+      <button
+        onClick={(e) => { e.stopPropagation(); setRecording(true); setHint(null); }}
+        onKeyDown={handleKeyDown}
+        onBlur={() => setRecording(false)}
+        className={`${styles.sKbd}${recording ? ` ${styles.recording}` : ""}`}>
+        {recording ? (hint ? `⚠ ${hint}` : "按下组合键…（Esc 取消）") : formatHotkey(value)}
+      </button>
+      {allowClear && !recording && value && value.trim() && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onChange(""); }}
+          title="清除（禁用该快捷键）"
+          style={{
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            width: 20, height: 20, border: "none", borderRadius: 6,
+            background: "transparent", color: "var(--text-muted)", cursor: "pointer",
+            fontSize: 13, lineHeight: 1,
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+        >
+          ×
+        </button>
+      )}
+    </span>
   );
 }

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Copy, Download } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import styles from "./QRCodeDialog.module.css";
+import { FocusTrap } from "@/components/FocusTrap";
 
 /**
  * 二维码生成对话框
@@ -13,9 +14,13 @@ export function QRCodeDialog({ text, onClose }: { text: string; onClose: () => v
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
   const { toast } = useToast();
 
   const isUrl = /^https?:\/\//i.test(text.trim());
+  // 修复 U29：检测文本是否超出二维码容量（UTF-8 字节数），给出具体失败原因
+  const textBytes = new TextEncoder().encode(text).length;
+  const tooLong = textBytes > 2000;
 
   // 生成二维码
   useEffect(() => {
@@ -36,7 +41,7 @@ export function QRCodeDialog({ text, onClose }: { text: string; onClose: () => v
       });
     }).catch(() => { if (!cancelled) setError(true); });
     return () => { cancelled = true; };
-  }, [text]);
+  }, [text, retryKey]);
 
   // 键盘关闭
   useEffect(() => {
@@ -80,6 +85,7 @@ export function QRCodeDialog({ text, onClose }: { text: string; onClose: () => v
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         className="dialog-backdrop" onClick={onClose}>
+        <FocusTrap>
         <motion.div
           initial={{ scale: 0.96, opacity: 0, y: 10 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -97,7 +103,18 @@ export function QRCodeDialog({ text, onClose }: { text: string; onClose: () => v
             <div className={styles.qrCanvasWrap}>
               <canvas ref={canvasRef} className={styles.qrCanvas} style={{ opacity: ready ? 1 : 0 }} />
               {!ready && !error && <div className={styles.qrLoading}>生成中…</div>}
-              {error && <div className={styles.qrError}>生成失败</div>}
+              {error && (
+                <div className={styles.qrError}>
+                  <div className={styles.qrErrorMsg}>
+                    {tooLong ? `文本过长（${textBytes} 字节），超出二维码容量` : "生成失败"}
+                  </div>
+                  {!tooLong && (
+                    <button className={styles.qrRetryBtn} onClick={() => setRetryKey((k) => k + 1)}>
+                      重试
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
             <span className={styles.qrTypeBadge}>{isUrl ? "🔗 URL" : "📝 文本"}</span>
             <div className={styles.qrContent}>{text.length > 200 ? text.slice(0, 200) + "…" : text}</div>
@@ -112,6 +129,7 @@ export function QRCodeDialog({ text, onClose }: { text: string; onClose: () => v
             </button>
           </div>
         </motion.div>
+        </FocusTrap>
       </motion.div>
     </AnimatePresence>
   );

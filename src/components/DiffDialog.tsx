@@ -7,6 +7,7 @@ import { DiffPane } from "@/components/DiffPane";
 import { relativeTime } from "@/lib/utils";
 import type { HistoryItem } from "@/stores/appStore";
 import styles from "./DiffDialog.module.css";
+import { FocusTrap } from "@/components/FocusTrap";
 
 interface DiffDialogProps {
   oldItem: HistoryItem;
@@ -22,6 +23,8 @@ export function DiffDialog({ oldItem, newItem, onClose }: DiffDialogProps) {
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
   const syncing = useRef(false);
+  // U46：程序化跳转期间暂停双向滚动同步，避免同步逻辑打断平滑滚动
+  const jumpingRef = useRef(false);
 
   const { left, right, added, removed, blockCount } = useDiff({
     oldText: oldItem.text || "",
@@ -32,7 +35,7 @@ export function DiffDialog({ oldItem, newItem, onClose }: DiffDialogProps) {
 
   // 同步滚动
   const handleScroll = useCallback((source: "left" | "right") => {
-    if (syncing.current) return;
+    if (syncing.current || jumpingRef.current) return;
     syncing.current = true;
     const from = source === "left" ? leftRef.current : rightRef.current;
     const to = source === "left" ? rightRef.current : leftRef.current;
@@ -47,12 +50,19 @@ export function DiffDialog({ oldItem, newItem, onClose }: DiffDialogProps) {
   const jumpTo = useCallback((block: number) => {
     const clamped = Math.max(0, Math.min(block, blockCount - 1));
     setCurrentBlock(clamped);
-    // 找到目标块在面板中的行索引，滚动到对应位置
+    // U46：用目标行的真实 DOM 位置定位（替代硬编码 20px 行高——按词模式下换行行高不固定），
+    // 并同时平滑滚动左右两面板（此前仅滚左侧，右侧靠滚动同步追赶、观感生硬）
     const idx = left.findIndex((l) => l.diffBlock === clamped && l.state !== "unchanged" && l.state !== "empty");
-    if (idx >= 0 && leftRef.current) {
-      const lineH = 20;
-      leftRef.current.scrollTo({ top: Math.max(0, idx * lineH - 60), behavior: "smooth" });
-    }
+    if (idx < 0) return;
+    const from = leftRef.current;
+    if (!from) return;
+    const lineEl = from.firstElementChild?.children[idx] as HTMLElement | undefined;
+    if (!lineEl) return;
+    const top = Math.max(0, lineEl.getBoundingClientRect().top - from.getBoundingClientRect().top + from.scrollTop - 60);
+    jumpingRef.current = true;
+    from.scrollTo({ top, behavior: "smooth" });
+    rightRef.current?.scrollTo({ top, behavior: "smooth" });
+    window.setTimeout(() => { jumpingRef.current = false; }, 500);
   }, [blockCount, left]);
 
   // 键盘快捷键
@@ -78,6 +88,7 @@ export function DiffDialog({ oldItem, newItem, onClose }: DiffDialogProps) {
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         className="dialog-backdrop" onClick={onClose}>
+        <FocusTrap>
         <motion.div
           initial={{ scale: 0.96, opacity: 0, y: 10 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -152,16 +163,17 @@ export function DiffDialog({ oldItem, newItem, onClose }: DiffDialogProps) {
           {/* Footer */}
           <div className={styles.footer}>
             <div className={styles.footerLeft}>
-              <button className={styles.actionBtn} onClick={() => handleCopy(oldItem.text || "", "左侧")}>
-                <Copy size={13} /> 复制左侧
+              <button className={styles.actionBtn} onClick={() => handleCopy(oldItem.text || "", "旧文本")}>
+                <Copy size={13} /> 复制旧文本
               </button>
-              <button className={styles.actionBtn} onClick={() => handleCopy(newItem.text || "", "右侧")}>
-                <Copy size={13} /> 复制右侧
+              <button className={styles.actionBtn} onClick={() => handleCopy(newItem.text || "", "新文本")}>
+                <Copy size={13} /> 复制新文本
               </button>
             </div>
             <button className={`${styles.actionBtn} ${styles.actionBtnPrimary}`} onClick={onClose}>关闭</button>
           </div>
         </motion.div>
+        </FocusTrap>
       </motion.div>
     </AnimatePresence>
   );

@@ -192,6 +192,48 @@ impl DataStore {
             }
         }
 
+        // 数据库迁移：为旧 snippets 表添加 copy_count / last_used_at 列（如果不存在）
+        let has_copy_count: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('snippets') WHERE name = 'copy_count'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_copy_count {
+            if let Err(e) = conn.execute_batch(
+                "ALTER TABLE snippets ADD COLUMN copy_count INTEGER NOT NULL DEFAULT 0;",
+            ) {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] snippets.copy_count 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 snippets.copy_count 列失败: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+        let has_last_used: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('snippets') WHERE name = 'last_used_at'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_last_used {
+            if let Err(e) =
+                conn.execute_batch("ALTER TABLE snippets ADD COLUMN last_used_at TEXT;")
+            {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] snippets.last_used_at 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 snippets.last_used_at 列失败: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
         // 数据库迁移：为旧 history 表添加 group_id 列（如果不存在）
         let has_group_id: bool = conn
             .query_row(
@@ -1034,7 +1076,9 @@ impl DataStore {
     pub fn get_snippets(&self) -> Result<Vec<Snippet>, String> {
         let conn = self.lock_conn();
         let mut stmt = conn
-            .prepare("SELECT id, name, content, tag FROM snippets ORDER BY rowid DESC")
+            .prepare(
+                "SELECT id, name, content, tag, copy_count, last_used_at FROM snippets ORDER BY rowid DESC",
+            )
             .map_err(|e| e.to_string())?;
         let items = stmt
             .query_map([], |row| {
@@ -1043,12 +1087,26 @@ impl DataStore {
                     name: row.get(1)?,
                     content: row.get(2)?,
                     tag: row.get::<_, String>(3).unwrap_or_default(),
+                    copy_count: row.get::<_, i64>(4).unwrap_or(0),
+                    last_used_at: row.get::<_, Option<String>>(5).unwrap_or(None),
                 })
             })
             .map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
             .collect();
         Ok(items)
+    }
+
+    /// 记录片段被使用（复制）：累加 copy_count 并更新 last_used_at
+    pub fn use_snippet(&self, id: &str) -> Result<(), String> {
+        let conn = self.lock_conn();
+        let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        conn.execute(
+            "UPDATE snippets SET copy_count = copy_count + 1, last_used_at = ?1 WHERE id = ?2",
+            params![now, id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
     }
 
     pub fn update_snippet(
@@ -1585,6 +1643,10 @@ pub struct Snippet {
     pub content: String,
     #[serde(default)]
     pub tag: String,
+    #[serde(default)]
+    pub copy_count: i64,
+    #[serde(default)]
+    pub last_used_at: Option<String>,
 }
 
 /// 计算文本的拼音首字母（仅中文字符）

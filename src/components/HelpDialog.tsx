@@ -4,6 +4,7 @@ import { X, ChevronRight, Search } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { getAppVersion, getAppName } from "@/lib/api";
 import styles from "./Help.module.css";
+import { FocusTrap } from "@/components/FocusTrap";
 
 /** 将 "ctrl+shift+v" 格式化为胶囊 JSX */
 function KeyCaps({ value }: { value: string }) {
@@ -111,8 +112,8 @@ export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => vo
     }
   }, [open]);
 
-  const hotkeyShow = (config.hotkey as string) || "ctrl+shift+v";
-  const hotkeySeq = (config.sequential_hotkey as string) || "ctrl+q";
+  const hotkeyShow = (config.hotkey as string) || "ctrl+alt+v";
+  const hotkeySeq = (config.sequential_hotkey as string) || "ctrl+alt+q";
   const hotkeySelectAll = (config.select_all_hotkey as string) || "ctrl+a";
 
   const q = query.trim();
@@ -126,6 +127,7 @@ export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => vo
         <motion.div
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           className="dialog-backdrop" onClick={onClose}>
+          <FocusTrap>
           <motion.div
             initial={{ scale: 0.96, opacity: 0, y: 10 }} animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.96, opacity: 0, y: 10 }}
@@ -264,6 +266,7 @@ export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => vo
               <span className={styles.hVer}>{appName} v{appVersion}</span>
             </div>
           </motion.div>
+          </FocusTrap>
         </motion.div>
       )}
     </AnimatePresence>

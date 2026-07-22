@@ -7,11 +7,10 @@ import type { CSSProperties } from "react";
 import SourceBadge from "@/components/SourceBadge";
 import { createCardMenuItems, CtxMenuCtx, type MenuItem } from "@/components/ContextMenu";
 import { confirmAutoTags, removeItemTags, fetchTags } from "@/lib/api";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useToast } from "@/components/Toast";
 import { TagRow } from "@/components/TagBadge";
 import { logger } from "@/lib/logger";
-import { pasteText } from "@/lib/api";
+import { pasteText, togglePin, deleteHistory } from "@/lib/api";
 import { Pin, ImageIcon, Link2, AtSign, Code2, Phone, FileText, Terminal, Type, Check } from "lucide-react";
 import styles from "./CardList.module.css";
 
@@ -74,10 +73,12 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
   item: HistoryItem; selected: boolean; onClick: (e: React.MouseEvent) => void; onDoubleClick: () => void; index: number; imageState?: ImgState; searchKeyword?: string; onRetryImage?: () => void; pasting?: boolean; menuItems?: MenuItem[]; onEdit?: (item: HistoryItem) => void; disablePreview?: boolean; stackOrder?: number; stackDone?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
+  const [popoverFlipDown, setPopoverFlipDown] = useState(false);
   const config = useAppStore((s) => s.config);
   const clickTimerRef = useRef<number | null>(null);
   const closeTimerRef = useRef<number | null>(null);
   const feedbackTimerRef = useRef<number | null>(null);
+  const openTimerRef = useRef<number | null>(null);
   const subType = item.type === "text" ? detectTextType(item.text) : item.type;
   const isMd = item.type === "text" && isMarkdown(item.text);
   const parsedColor = subType === "color" ? detectColor(item.text || "") : null;
@@ -87,7 +88,13 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
   const time = relativeTime(item.time);
   // MB 级文本先截断再扁平化，避免整块进 DOM / 高亮 split 拖垮列表（M24）
   const title = (() => {
-    if (item.type === "file") return item.content || "文件";
+    if (item.type === "file") {
+      // 修复 U19：不再显示原始 JSON，解析为友好文件名（"a.txt 等 3 个文件"）
+      const paths = parseFilePaths(item.content || "");
+      if (paths.length === 0) return "文件";
+      const firstName = paths[0].split(/[/\\]/).pop() || paths[0];
+      return paths.length > 1 ? `${firstName} 等 ${paths.length} 个文件` : firstName;
+    }
     const flat = (item.text || "").slice(0, 501).replace(/\r?\n/g, " ").trim() || "(空)";
     return flat.length > 500 ? flat.slice(0, 500) + "…" : flat;
   })();
@@ -137,6 +144,10 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
         clearTimeout(feedbackTimerRef.current);
         feedbackTimerRef.current = null;
       }
+      if (openTimerRef.current !== null) {
+        clearTimeout(openTimerRef.current);
+        openTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -147,17 +158,39 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
       closeTimerRef.current = null;
     }
   }, []);
+  // U42：取消尚未触发的"延迟打开"定时器
+  const cancelOpenTimer = useCallback(() => {
+    if (openTimerRef.current !== null) {
+      clearTimeout(openTimerRef.current);
+      openTimerRef.current = null;
+    }
+  }, []);
   const scheduleClose = useCallback(() => {
+    cancelOpenTimer(); // U42：鼠标在打开前就离开 → 取消待定的打开，避免"路过"卡片后弹层仍弹出
     cancelCloseTimer();
     closeTimerRef.current = window.setTimeout(() => {
       setHovered(false);
       closeTimerRef.current = null;
     }, 150);
-  }, [cancelCloseTimer]);
+  }, [cancelCloseTimer, cancelOpenTimer]);
   const enterHover = useCallback(() => {
     cancelCloseTimer();
-    setHovered(true);
-  }, [cancelCloseTimer]);
+    // 修复 U21：卡片靠近视口顶部、上方空间不足时，弹层翻转到下方展开，
+    // 避免被 .contentArea{overflow:hidden} 裁剪导致顶部卡片按钮够不着
+    const el = cardRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setPopoverFlipDown(rect.top < 260);
+    }
+    // U42：意图延迟 — 鼠标停留约 180ms 才打开，避免快速划过卡片时弹层闪烁；
+    // 已经打开（如从弹层移回卡片）则保持，不重复延迟
+    if (hovered) return;
+    cancelOpenTimer();
+    openTimerRef.current = window.setTimeout(() => {
+      openTimerRef.current = null;
+      setHovered(true);
+    }, 180);
+  }, [cancelCloseTimer, cancelOpenTimer, hovered]);
 
   const [clickFeedback, setClickFeedback] = useState(false);
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -170,15 +203,18 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
       setClickFeedback(false);
       feedbackTimerRef.current = null;
     }, 150);
+    // 修复 U18：单击立即执行选中，消除 200ms 延迟；
+    // 定时器仅作为"双击窗口"标记——窗口期内的第二次点击触发双击动作
+    // （首次点击的选中保留，符合桌面端双击先选中的惯例）
     if (clickTimerRef.current) {
       clearTimeout(clickTimerRef.current);
       clickTimerRef.current = null;
       onDoubleClick();
     } else {
+      onClick(e);
       clickTimerRef.current = window.setTimeout(() => {
-        onClick(e);
         clickTimerRef.current = null;
-      }, 200);
+      }, 250);
     }
   }, [onClick, onDoubleClick]);
 
@@ -293,7 +329,7 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
       {/* ★ 悬停 Popover 气泡弹窗（移到卡片外部，避免被 card overflow:hidden 裁剪） */}
       <AnimatePresence>
         {hovered && config.hover_mode === "popover" && !disablePreview && (
-          <CardHoverPopover item={item} imageState={imageState} subType={subType} isMd={isMd} onEdit={onEdit} onMouseEnter={enterHover} onMouseLeave={scheduleClose} />
+          <CardHoverPopover item={item} imageState={imageState} subType={subType} isMd={isMd} onEdit={onEdit} onMouseEnter={enterHover} onMouseLeave={scheduleClose} flipDown={popoverFlipDown} />
         )}
       </AnimatePresence>
 
@@ -320,6 +356,7 @@ const CardHoverPopover = memo(function CardHoverPopover({
   onEdit,
   onMouseEnter,
   onMouseLeave,
+  flipDown,
 }: {
   item: HistoryItem;
   imageState?: ImgState;
@@ -328,9 +365,8 @@ const CardHoverPopover = memo(function CardHoverPopover({
   onEdit?: (item: HistoryItem) => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
+  flipDown?: boolean;
 }) {
-  const togglePin = useAppStore((s) => s.togglePin);
-  const removeItems = useAppStore((s) => s.removeItems);
   const { toast } = useToast();
 
   const handleCopy = useCallback(async (e: React.MouseEvent) => {
@@ -356,12 +392,13 @@ const CardHoverPopover = memo(function CardHoverPopover({
     }
   }, [item, toast]);
 
-  const handleFav = useCallback((e: React.MouseEvent) => {
+  const handleFav = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    togglePin(item.id);
-    toast(item.pinned ? "已取消收藏" : "已收藏", "success");
-  }, [item.id, item.pinned, togglePin, toast]);
+    // U2：走后端持久化（原 store.togglePin 仅改本地状态，鼠标收藏重启后全部丢失）
+    const pinned = await togglePin(item.id);
+    if (pinned !== null) toast(pinned ? "已收藏" : "已取消收藏", "success");
+  }, [item.id, toast]);
 
   const handleEdit = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -372,9 +409,9 @@ const CardHoverPopover = memo(function CardHoverPopover({
   const handleDelete = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    removeItems([item.id]);
-    toast("已删除，可按 Ctrl+Z 撤销", "success");
-  }, [item.id, removeItems, toast]);
+    // 修复 U11：统一走 deleteHistory（后端持久化 + 统一撤销 toast），不再仅改本地状态
+    void deleteHistory([item.id]);
+  }, [item.id]);
 
   // 短文本：无需预览，只保留操作按钮（纯文本、≤40 字符、无换行）
   const isShortPlainText = item.type === "text" && subType === "text" && (item.text?.length ?? 0) <= 40 && !item.text?.includes("\n");
@@ -396,7 +433,7 @@ const CardHoverPopover = memo(function CardHoverPopover({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -6, scale: 0.97 }}
       transition={{ type: "spring", stiffness: 500, damping: 35 }}
-      className={styles.cardPopover}
+      className={`${styles.cardPopover}${flipDown ? ` ${styles.flipDown}` : ""}`}
       // 阻止 mousedown 触发卡片的单击延迟逻辑
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
@@ -505,8 +542,6 @@ const InlineCardActions = memo(function InlineCardActions({
   hovered: boolean;
   onEdit?: (item: HistoryItem) => void;
 }) {
-  const togglePin = useAppStore((s) => s.togglePin);
-  const removeItems = useAppStore((s) => s.removeItems);
   const { toast } = useToast();
 
   const handleCopy = useCallback(async (e: React.MouseEvent) => {
@@ -532,12 +567,13 @@ const InlineCardActions = memo(function InlineCardActions({
     }
   }, [item, toast]);
 
-  const handleFav = useCallback((e: React.MouseEvent) => {
+  const handleFav = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    togglePin(item.id);
-    toast(item.pinned ? "已取消收藏" : "已收藏", "success");
-  }, [item.id, item.pinned, togglePin, toast]);
+    // U2：走后端持久化（原 store.togglePin 仅改本地状态，鼠标收藏重启后全部丢失）
+    const pinned = await togglePin(item.id);
+    if (pinned !== null) toast(pinned ? "已收藏" : "已取消收藏", "success");
+  }, [item.id, toast]);
 
   const handleEdit = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -548,9 +584,9 @@ const InlineCardActions = memo(function InlineCardActions({
   const handleDelete = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    removeItems([item.id]);
-    toast("已删除，可按 Ctrl+Z 撤销", "success");
-  }, [item.id, removeItems, toast]);
+    // 修复 U11：统一走 deleteHistory（后端持久化 + 统一撤销 toast），不再仅改本地状态
+    void deleteHistory([item.id]);
+  }, [item.id]);
 
   return (
     <div className={`${styles.cardInlineActions} ${hovered ? styles.cardInlineVisible : ""}`}
@@ -580,9 +616,6 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
   item: HistoryItem; selected: boolean; onClick: (e: React.MouseEvent) => void; onDoubleClick: () => void; index: number; imageState?: ImgState; searchKeyword?: string; onRetryImage?: () => void; pasting?: boolean; onEdit?: (item: HistoryItem) => void; onEditTags?: (item: HistoryItem) => void; onMoveToGroup?: (item: HistoryItem) => void; onQrCode?: (item: HistoryItem) => void; onRegexPreview?: (item: HistoryItem, ruleId: string) => void; onManageRegexRules?: () => void; disablePreview?: boolean; stackOrder?: number; stackDone?: boolean;
 }) {
   const { toast } = useToast();
-  const togglePin = useAppStore((s) => s.togglePin);
-  const removeItems = useAppStore((s) => s.removeItems);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const hasUrl = /^https?:\/\//i.test(item.text || "");
 
@@ -732,8 +765,9 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
           break;
         }
       }
-      await pasteText(text);
-      toast("已粘贴", "success");
+      // U1：仅粘贴成功时弹成功提示（pasteText 失败时已自行弹错误 toast）
+      const ok = await pasteText(text);
+      if (ok) toast("已粘贴", "success");
     } catch { toast("粘贴失败", "error"); }
   }, [item.text, item.content, toast]);
 
@@ -747,13 +781,19 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
       try { await navigator.clipboard.writeText(item.text); toast("已复制到剪贴板", "success"); } catch { toast("复制失败", "error"); }
     },
     onPaste: async () => {
-      try { await pasteText(item.text); toast("已粘贴", "success"); } catch { toast("粘贴失败", "error"); }
+      // U1：仅粘贴成功时弹成功提示（pasteText 失败时已自行弹错误 toast）
+      const ok = await pasteText(item.text);
+      if (ok) toast("已粘贴", "success");
     },
     onPasteTransform: handlePasteTransform,
     itemType: item.type,
     itemSubType: subType,
-    onPin: () => { togglePin(item.id); toast(item.pinned ? "已取消置顶" : "已置顶", "success"); },
-    onDelete: () => setShowDeleteConfirm(true),
+    onPin: async () => {
+      // U2：走后端持久化，按权威返回值提示
+      const pinned = await togglePin(item.id);
+      if (pinned !== null) toast(pinned ? "已置顶" : "已取消置顶", "success");
+    },
+    onDelete: () => { void deleteHistory([item.id]); },
     onAddSnippet: handleAddSnippet,
     onOpenUrl: hasUrl ? handleOpenUrl : undefined,
     onQrCode: canQrCode && onQrCode ? () => onQrCode(item) : undefined,
@@ -768,17 +808,6 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
   }), [item, subType, hasUrl, canQrCode, hasAutoTags, toast, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, handlePasteTransform, handleAddSnippet, handleOpenUrl, handleConfirmAutoTags, handleRemoveAutoTags, togglePin]);
 
   return (
-    <>
-      <Card item={item} selected={selected} onClick={onClick} onDoubleClick={onDoubleClick} index={index} imageState={imageState} searchKeyword={searchKeyword} onRetryImage={onRetryImage} pasting={pasting} menuItems={menuItems} onEdit={onEdit} disablePreview={disablePreview} stackOrder={stackOrder} stackDone={stackDone} />
-      <ConfirmDialog
-        open={showDeleteConfirm}
-        title="确认删除"
-        message={`确定要删除这条记录吗？可通过 Ctrl+Z 撤销。\n\n"${item.text?.slice(0, 80)}"`}
-        confirmText="删除"
-        variant="danger"
-        onConfirm={() => { removeItems([item.id]); toast("已删除", "success"); setShowDeleteConfirm(false); }}
-        onCancel={() => setShowDeleteConfirm(false)}
-      />
-    </>
+    <Card item={item} selected={selected} onClick={onClick} onDoubleClick={onDoubleClick} index={index} imageState={imageState} searchKeyword={searchKeyword} onRetryImage={onRetryImage} pasting={pasting} menuItems={menuItems} onEdit={onEdit} disablePreview={disablePreview} stackOrder={stackOrder} stackDone={stackDone} />
   );
 });

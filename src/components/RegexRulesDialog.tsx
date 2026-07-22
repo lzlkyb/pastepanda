@@ -1,12 +1,14 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Pencil, Trash2 } from "lucide-react";
 import {
   getAllRules, togglePresetRule, toggleCustomRule,
   addCustomRule, updateCustomRule, deleteCustomRule,
-  validateRegex, type RegexRule,
+  validateRegex, safeApplyRegex, type RegexRule,
 } from "@/lib/regexRules";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import styles from "./RegexRulesDialog.module.css";
+import { FocusTrap } from "@/components/FocusTrap";
 
 interface RegexRulesDialogProps {
   onClose: () => void;
@@ -26,6 +28,7 @@ const emptyEdit: EditState = { id: null, name: "", pattern: "", replacement: "",
 export function RegexRulesDialog({ onClose }: RegexRulesDialogProps) {
   const [rules, setRules] = useState<RegexRule[]>(() => getAllRules());
   const [edit, setEdit] = useState<EditState>(emptyEdit);
+  const [deleteTarget, setDeleteTarget] = useState<RegexRule | null>(null);
 
   const refresh = useCallback(() => setRules(getAllRules()), []);
 
@@ -41,10 +44,12 @@ export function RegexRulesDialog({ onClose }: RegexRulesDialogProps) {
     refresh();
   }, [refresh]);
 
-  const handleDelete = useCallback((id: string) => {
-    deleteCustomRule(id);
+  const confirmDelete = useCallback(() => {
+    if (!deleteTarget) return;
+    deleteCustomRule(deleteTarget.id);
+    setDeleteTarget(null);
     refresh();
-  }, [refresh]);
+  }, [deleteTarget, refresh]);
 
   const startEdit = useCallback((rule: RegexRule) => {
     setEdit({ id: rule.id, name: rule.name, pattern: rule.pattern, replacement: rule.replacement, flags: rule.flags, isNew: false });
@@ -56,18 +61,25 @@ export function RegexRulesDialog({ onClose }: RegexRulesDialogProps) {
 
   const editError = edit.pattern ? validateRegex(edit.pattern, edit.flags) : null;
 
+  // U48："试一试"实时预览 — 用当前编辑中的规则对示例文本做替换（ReDoS 安全）
+  const [testText, setTestText] = useState("");
+  const testPreview = useMemo(() => {
+    if (!testText || !edit.pattern || editError) return null;
+    try {
+      const { result, matchCount } = safeApplyRegex(testText, edit.pattern, edit.replacement, edit.flags);
+      return { result, matchCount };
+    } catch {
+      return null;
+    }
+  }, [testText, edit.pattern, edit.replacement, edit.flags, editError]);
+
   const handleSave = useCallback(() => {
     if (!edit.name.trim() || !edit.pattern) return;
     if (editError) return;
     if (edit.isNew) {
       addCustomRule({ name: edit.name.trim(), pattern: edit.pattern, replacement: edit.replacement, flags: edit.flags, enabled: true });
-    } else if (edit.id) {
-      if (edit.id.startsWith("c_")) {
-        updateCustomRule(edit.id, { name: edit.name.trim(), pattern: edit.pattern, replacement: edit.replacement, flags: edit.flags });
-      } else {
-        // 预设规则只能改 replacement 和 flags（通过自定义覆盖方式暂不支持，仅自定义可编辑全部字段）
-        updateCustomRule(edit.id, { name: edit.name.trim(), pattern: edit.pattern, replacement: edit.replacement, flags: edit.flags });
-      }
+    } else if (edit.id && edit.id.startsWith("c_")) {
+      updateCustomRule(edit.id, { name: edit.name.trim(), pattern: edit.pattern, replacement: edit.replacement, flags: edit.flags });
     }
     setEdit(emptyEdit);
     refresh();
@@ -78,6 +90,7 @@ export function RegexRulesDialog({ onClose }: RegexRulesDialogProps) {
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         className="dialog-backdrop" onClick={onClose}>
+        <FocusTrap>
         <motion.div
           initial={{ scale: 0.96, opacity: 0, y: 10 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -111,6 +124,17 @@ export function RegexRulesDialog({ onClose }: RegexRulesDialogProps) {
                   <span className={styles.editLabel}>标志</span>
                   <input className={styles.editInput} style={{ width: 60, flex: "none" }} value={edit.flags} onChange={(e) => setEdit({ ...edit, flags: e.target.value })} spellCheck={false} />
                 </div>
+                {/* U48：试一试 — 输入示例文本实时验证规则效果 */}
+                <div className={styles.editRow}>
+                  <span className={styles.editLabel}>试一试</span>
+                  <input className={styles.editInput} value={testText} onChange={(e) => setTestText(e.target.value)} placeholder="输入示例文本，实时预览替换效果" spellCheck={false} />
+                </div>
+                {testText && edit.pattern && !editError && (
+                  <div className={styles.testPreview}>
+                    <span className={styles.testPreviewCount}>匹配 {testPreview?.matchCount ?? 0} 处</span>
+                    <span className={styles.testPreviewResult}>{testPreview ? testPreview.result : "（替换失败）"}</span>
+                  </div>
+                )}
                 {editError && <div className={styles.editError}>⚠ {editError}</div>}
                 <div className={styles.editBtns}>
                   <button className={styles.editBtn} onClick={() => setEdit(emptyEdit)}>取消</button>
@@ -135,9 +159,11 @@ export function RegexRulesDialog({ onClose }: RegexRulesDialogProps) {
                   {rule.preset ? "预设" : "自定义"}
                 </span>
                 <div className={styles.ruleActions}>
-                  <button className={styles.actionBtn} title="编辑" onClick={() => startEdit(rule)}><Pencil size={12} /></button>
                   {!rule.preset && (
-                    <button className={`${styles.actionBtn} ${styles.actionBtnDel}`} title="删除" onClick={() => handleDelete(rule.id)}><Trash2 size={12} /></button>
+                    <button className={styles.actionBtn} title="编辑" onClick={() => startEdit(rule)}><Pencil size={12} /></button>
+                  )}
+                  {!rule.preset && (
+                    <button className={`${styles.actionBtn} ${styles.actionBtnDel}`} title="删除" onClick={() => setDeleteTarget(rule)}><Trash2 size={12} /></button>
                   )}
                 </div>
               </div>
@@ -145,7 +171,19 @@ export function RegexRulesDialog({ onClose }: RegexRulesDialogProps) {
 
             <button className={styles.addBtn} onClick={startAdd}>＋ 添加自定义规则</button>
           </div>
+
+          {/* 删除确认弹窗 */}
+          <ConfirmDialog
+            open={!!deleteTarget}
+            title="确认删除规则"
+            message={`确定删除自定义规则"${deleteTarget?.name}"？此操作不可撤销。`}
+            confirmText="删除"
+            variant="danger"
+            onConfirm={confirmDelete}
+            onCancel={() => setDeleteTarget(null)}
+          />
         </motion.div>
+        </FocusTrap>
       </motion.div>
     </AnimatePresence>
   );

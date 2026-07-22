@@ -66,6 +66,17 @@ impl PasteSuppress {
         }
     }
 
+    /// U57：是否处于"hash 设防"模式（已知预期粘贴内容）。
+    /// hash 模式下监听端只应按 hash 匹配跳过，不得用时间窗口无差别吞掉
+    /// 粘贴后 3 秒内用户的新复制；时间兜底仅适用于无 hash 的粘贴路径。
+    pub fn has_expected_hash(&self) -> bool {
+        if let Ok(guard) = self.expected_hash.lock() {
+            guard.is_some()
+        } else {
+            false
+        }
+    }
+
     pub fn clear_hash(&self) {
         if let Ok(mut guard) = self.expected_hash.lock() {
             *guard = None;
@@ -80,6 +91,10 @@ pub struct ClipboardMonitor {
     paste_suppress: Arc<PasteSuppress>,
     /// 缓存 auto_strip 配置值，避免每 400ms 都锁定数据库读取配置
     cached_auto_strip: Arc<std::sync::RwLock<bool>>,
+    /// 修复 U36：缓存"不记录匹配密钥模式的内容"开关
+    cached_skip_sensitive: Arc<std::sync::RwLock<bool>>,
+    /// 修复 U36：缓存应用排除名单（来源应用名，命中则不记录）
+    cached_excluded_apps: Arc<std::sync::RwLock<Vec<String>>>,
 }
 
 impl ClipboardMonitor {
@@ -89,6 +104,9 @@ impl ClipboardMonitor {
             app_handle,
             paste_suppress,
             cached_auto_strip: Arc::new(std::sync::RwLock::new(false)),
+            // U36：默认开启敏感内容防护
+            cached_skip_sensitive: Arc::new(std::sync::RwLock::new(true)),
+            cached_excluded_apps: Arc::new(std::sync::RwLock::new(Vec::new())),
         }
     }
 
@@ -102,6 +120,46 @@ impl ClipboardMonitor {
     /// 读取缓存的 auto_strip 配置（无锁竞争，比每次查数据库快得多）
     fn get_auto_strip(&self) -> bool {
         self.cached_auto_strip.read().map(|g| *g).unwrap_or(false)
+    }
+
+    /// 修复 U36：更新敏感内容防护缓存（由前端保存配置后调用）
+    pub fn update_sensitive_cache(&self, skip_sensitive: bool, excluded_apps: Vec<String>) {
+        if let Ok(mut guard) = self.cached_skip_sensitive.write() {
+            *guard = skip_sensitive;
+        }
+        if let Ok(mut guard) = self.cached_excluded_apps.write() {
+            *guard = excluded_apps;
+        }
+    }
+
+    /// 修复 U36：判断文本是否应按敏感内容跳过记录
+    fn should_skip_sensitive(&self, text: &str) -> bool {
+        let skip = self
+            .cached_skip_sensitive
+            .read()
+            .map(|g| *g)
+            .unwrap_or(true);
+        if !skip {
+            return false;
+        }
+        let classifier = crate::content_classifier::ContentClassifier::new();
+        classifier.is_secret(text)
+    }
+
+    /// 修复 U36：判断来源应用是否在排除名单内
+    fn is_excluded_app(&self, source_title: &str) -> bool {
+        let excluded = match self.cached_excluded_apps.read() {
+            Ok(g) => g.clone(),
+            Err(_) => return false,
+        };
+        if excluded.is_empty() || source_title.is_empty() {
+            return false;
+        }
+        let lower = source_title.to_lowercase();
+        excluded.iter().any(|app| {
+            let app = app.trim().to_lowercase();
+            !app.is_empty() && lower.contains(&app)
+        })
     }
 
     pub fn start(&self) {
@@ -196,9 +254,15 @@ impl ClipboardMonitor {
                             continue;
                         }
 
-                        // 时间兜底：hash 已清除（轮询竞态）或无 hash 路径下，仍在抑制窗口内则跳过
-                        if paste_suppress.is_suppressed() {
-                            log::info!("[ClipboardMonitor] 跳过自身粘贴内容 (时间抑制窗口内)");
+                        // U57：hash 设防模式下只认 hash 匹配（上面已处理），
+                        // 窗口过期仍未命中则清除陈旧 hash，避免误吞用户后续复制的相同内容；
+                        // 时间兜底仅对无 hash 的粘贴路径（如"粘贴当前剪贴板"）生效
+                        if paste_suppress.has_expected_hash() {
+                            if !paste_suppress.is_suppressed() {
+                                paste_suppress.clear_hash();
+                            }
+                        } else if paste_suppress.is_suppressed() {
+                            log::info!("[ClipboardMonitor] 跳过自身粘贴内容 (无hash路径·时间抑制窗口内)");
                             last_text_hash = Some(hash);
                             continue;
                         }
@@ -208,6 +272,24 @@ impl ClipboardMonitor {
 
                             // 获取前台窗口信息（标题 + 图标，一次调用）
                             let (source_title, source_icon) = get_foreground_window_info(&app_handle);
+
+                            // 修复 U36：敏感内容防护 —— 命中应用排除名单或密钥模式时不记录
+                            // （在入库/合并/推送/局域网同步之前拦截，确保敏感内容不落盘、不外传）
+                            if let Some(monitor) = app_handle.try_state::<ClipboardMonitor>() {
+                                if monitor.is_excluded_app(&source_title) {
+                                    log::info!(
+                                        "[ClipboardMonitor] 跳过敏感内容：来源应用 \"{}\" 在排除名单内",
+                                        source_title
+                                    );
+                                    continue;
+                                }
+                                if monitor.should_skip_sensitive(&text) {
+                                    log::info!(
+                                        "[ClipboardMonitor] 跳过敏感内容：匹配密钥/凭证模式，不记录"
+                                    );
+                                    continue;
+                                }
+                            }
 
                             // 计算拼音首字母
                             let pinyin_initials = compute_pinyin_initials(&text);
@@ -376,9 +458,14 @@ impl ClipboardMonitor {
                                     continue;
                                 }
 
-                                // 时间兜底：hash 已清除（轮询竞态）或无 hash 路径下，仍在抑制窗口内则跳过
-                                if paste_suppress.is_suppressed() {
-                                    log::info!("[ClipboardMonitor] 跳过自身粘贴图片 (时间抑制窗口内)");
+                                // U57：hash 设防模式下只认 hash 匹配（上面已处理），
+                                // 窗口过期仍未命中则清除陈旧 hash；时间兜底仅对无 hash 路径生效
+                                if paste_suppress.has_expected_hash() {
+                                    if !paste_suppress.is_suppressed() {
+                                        paste_suppress.clear_hash();
+                                    }
+                                } else if paste_suppress.is_suppressed() {
+                                    log::info!("[ClipboardMonitor] 跳过自身粘贴图片 (无hash路径·时间抑制窗口内)");
                                     last_text_hash = Some(img_hash);
                                     continue;
                                 }

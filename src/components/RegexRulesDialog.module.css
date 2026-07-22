@@ -218,3 +218,30 @@
   color: var(--danger, #DC2626);
   margin-top: 4px;
 }
+
+/* U48：试一试 实时预览 */
+.testPreview {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border-color);
+  margin-bottom: 8px;
+  font-size: 11px;
+  min-width: 0;
+}
+.testPreviewCount {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--accent);
+}
+.testPreviewResult {
+  font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}

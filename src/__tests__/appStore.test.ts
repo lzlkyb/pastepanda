@@ -33,7 +33,7 @@ describe("appStore", () => {
     const config = useAppStore.getState().config;
     expect(config.theme).toBe("light");
     expect(config.auto_cleanup_days).toBe(30);
-    expect(config.hotkey).toBe("ctrl+shift+v");
+    expect(config.hotkey).toBe("ctrl+alt+v");
     expect(config.current_workspace).toBe("默认");
     expect(config.lan_sync_enabled).toBe(false);
     expect(config.always_on_top).toBe(false);

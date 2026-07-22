@@ -79,8 +79,8 @@ export function HelpTabContent({ config, appName, appVersion }: { config: AppCon
     setTimeout(() => searchRef.current?.focus(), 100);
   }, []);
 
-  const hotkeyShow = (config.hotkey as string) || "ctrl+shift+v";
-  const hotkeySeq = (config.sequential_hotkey as string) || "ctrl+q";
+  const hotkeyShow = (config.hotkey as string) || "ctrl+alt+v";
+  const hotkeySeq = (config.sequential_hotkey as string) || "ctrl+alt+q";
   const hotkeySelectAll = (config.select_all_hotkey as string) || "ctrl+a";
 
   const q = query.trim();

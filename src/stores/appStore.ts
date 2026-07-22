@@ -69,6 +69,8 @@ export interface AppConfig {
   timeline_enabled: boolean; // 时间线功能开关
   stack_toggle_hotkey: string; // 栈模式开关快捷键
   stack_paste_hotkey: string; // 栈顶粘贴快捷键
+  skip_sensitive: boolean; // 修复 U36：不记录匹配密钥/凭证模式的内容
+  excluded_apps: string; // 修复 U36：应用排除名单（逗号分隔，命中来源应用则不记录）
 }
 
 // ===== Store 接口 =====
@@ -102,6 +104,7 @@ interface AppState {
   stackDoneIds: Set<string>; // 本轮已粘贴的条目 ID（卡片变灰）
   stackPasted: number; // 本轮实际已粘贴条数
   stackCollected: number; // 本轮真实收集总条数（含被 50 条上限截断丢弃的，进度分母用它，避免虚高）
+  stackPasteAllActive: boolean; // U58：「全部粘贴」循环进行中（用于显示进度条与中止按钮）
 
   // 动作
   setHistory: (items: HistoryItem[]) => void;
@@ -156,8 +159,8 @@ interface AppState {
 
 // ===== 默认配置 =====
 
-const DEFAULT_CONFIG: AppConfig = {
-  hotkey: "ctrl+shift+v",
+export const DEFAULT_CONFIG: AppConfig = {
+  hotkey: "ctrl+alt+v",
   theme: "light",
   auto_cleanup_days: 30,
   auto_strip: false,
@@ -166,7 +169,7 @@ const DEFAULT_CONFIG: AppConfig = {
   lan_sync_enabled: false,
   always_on_top: false,
   auto_startup: false,
-  sequential_hotkey: "ctrl+q",
+  sequential_hotkey: "ctrl+alt+q",
   select_all_hotkey: "ctrl+a",
   current_workspace: "默认",
   workspaces: ["默认"],
@@ -174,8 +177,10 @@ const DEFAULT_CONFIG: AppConfig = {
   hover_mode: "popover",
   source_icon_mode: "app",
   timeline_enabled: false,
-  stack_toggle_hotkey: "ctrl+shift+k",
-  stack_paste_hotkey: "ctrl+shift+p",
+  stack_toggle_hotkey: "ctrl+alt+k",
+  stack_paste_hotkey: "ctrl+alt+p",
+  skip_sensitive: true,
+  excluded_apps: "",
 };
 
 // ===== Store =====
@@ -206,6 +211,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   stackDoneIds: new Set(),
   stackPasted: 0,
   stackCollected: 0,
+  stackPasteAllActive: false,
   realIconCache: {},
   searchHistory: (() => {
     try {
@@ -265,10 +271,27 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => {
       const idSet = new Set(ids);
       const deleted = s.history.filter((h) => idSet.has(h.id));
+      // 修复 U13：被删的是当前焦点项时，焦点移到最近的存活邻居（优先后一项），
+      // 避免焦点置空后键盘导航跳回列表顶部
+      let nextFocus = s.focusId && idSet.has(s.focusId) ? null : s.focusId;
+      if (nextFocus === null && s.focusId) {
+        const items = s.getFilteredItems();
+        const idx = items.findIndex((h) => h.id === s.focusId);
+        if (idx >= 0) {
+          for (let i = idx + 1; i < items.length; i++) {
+            if (!idSet.has(items[i].id)) { nextFocus = items[i].id; break; }
+          }
+          if (nextFocus === null) {
+            for (let i = idx - 1; i >= 0; i--) {
+              if (!idSet.has(items[i].id)) { nextFocus = items[i].id; break; }
+            }
+          }
+        }
+      }
       return {
         history: s.history.filter((h) => !idSet.has(h.id)),
         selectedIds: new Set([...s.selectedIds].filter((id) => !idSet.has(id))),
-        focusId: s.focusId && idSet.has(s.focusId) ? null : s.focusId,
+        focusId: nextFocus,
         // 仅在确实删除了条目时才记录撤销批次，避免空批次消耗撤销额度
         undoStack: deleted.length > 0 ? [deleted, ...s.undoStack].slice(0, 10) : s.undoStack,
       };
@@ -376,8 +399,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
         return { selectedIds: newIds, focusId: id, lastClickedId: id };
       }
-      // 普通点击：只设置焦点，不清空多选（保留已多选的项）
-      return { focusId: id, lastClickedId: id };
+      // 修复 U12：普通点击时若存在多选，先清空选中（提供直觉的取消出口），再设置焦点
+      return {
+        selectedIds: s.selectedIds.size > 0 ? new Set() : s.selectedIds,
+        focusId: id,
+        lastClickedId: id,
+      };
     }),
   clearSelection: () => set({ selectedIds: new Set(), focusId: null, lastClickedId: null }),
   selectAll: () =>
@@ -417,7 +444,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { stackItems: rest, stackDoneIds: done, stackPasted: s.stackPasted + 1 };
     }),
   exitStackMode: () =>
-    set({ stackMode: false, stackItems: [], stackDoneIds: new Set(), stackPasted: 0, stackCollected: 0 }),
+    set({ stackMode: false, stackItems: [], stackDoneIds: new Set(), stackPasted: 0, stackCollected: 0, stackPasteAllActive: false }),
 
   // 来源图标缓存
   setRealIconUrl: (key, url) => set((s) => ({
@@ -479,10 +506,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       // 工作区过滤
       if (h.workspace !== ws) continue;
 
-      // 搜索过滤（文本 + 拼音）
+      // 搜索过滤（文本 + 拼音 + 内容路径）
+      // U41：图片项 text 为"[图片] WxH"、文件名在 content 路径里；文件项完整路径也在 content，
+      //      因此一并匹配 content，让图片文件名 / 文件路径可被搜到
       if (kw) {
         if (!h.text.toLowerCase().includes(kw) &&
-            !(h.pinyin_initials && h.pinyin_initials.toLowerCase().includes(kw))) {
+            !(h.pinyin_initials && h.pinyin_initials.toLowerCase().includes(kw)) &&
+            !(h.content && h.content.toLowerCase().includes(kw))) {
           continue;
         }
       }

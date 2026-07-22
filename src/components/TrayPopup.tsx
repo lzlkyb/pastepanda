@@ -3,7 +3,7 @@ import { applyTheme, getCurrentTheme, ThemeKey, DEFAULT_THEME } from "@/lib/them
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { pasteText } from "@/lib/api";
+import { pasteText, pasteImage } from "@/lib/api";
 import { VersionBadge } from "@/components/VersionBadge";
 import { AppIcon } from "@/components/AppIcon";
 
@@ -13,6 +13,7 @@ interface RecentItem {
   type: string; // "text" | "image" | "file"
   preview: string;
   text: string;
+  content?: string; // U33：图片路径/文件路径，粘贴时按类型路由（text 为占位预览文本）
 }
 
 interface StatsData {
@@ -340,11 +341,21 @@ export function TrayPopup() {
     }
   }, [showToast]);
 
-  const doPaste = useCallback(async (itemText: string) => {
+  // U33：按类型路由粘贴 — 图片走 pasteImage、文件粘贴路径（content）、文本粘贴 text，
+  // 避免把"[图片] WxH"/裸文件名等占位文本打进用户文档
+  const doPaste = useCallback(async (item: RecentItem) => {
     try {
       await invoke("save_foreground");
-      await pasteText(itemText);
-      showToast("已粘贴", "success", 800);
+      let ok: boolean;
+      if (item.type === "image" && item.content) {
+        ok = await pasteImage(item.content);
+      } else if (item.type === "file" && item.content) {
+        ok = await pasteText(item.content);
+      } else {
+        ok = await pasteText(item.text);
+      }
+      // U1：仅粘贴成功时弹成功提示（pasteText/pasteImage 失败时已自行弹错误 toast）
+      if (ok) showToast("已粘贴", "success", 800);
     } catch (e) {
       console.error("[TrayPopup] 粘贴失败:", e);
       showToast("粘贴失败", "error");
@@ -371,7 +382,7 @@ export function TrayPopup() {
       iconClass: "icon-blue",
       iconSvg: <IconSidebar />,
       label: "显示主窗口",
-      hint: "Ctrl+Shift+V",
+      hint: "Ctrl+Alt+V",
       onClick: doShow,
     },
     {
@@ -416,7 +427,7 @@ export function TrayPopup() {
           const item = allItems[activeIdx];
           if (item.type === "recent") {
             const recent = recents.find((r) => r.id === item.id);
-            if (recent) doPaste(recent.text);
+            if (recent) doPaste(recent);
           } else {
             const mi = menuItems.find((m) => m.id === item.id);
             mi?.onClick();
@@ -525,7 +536,7 @@ export function TrayPopup() {
                   <button
                     key={item.id}
                     className={`tray-popup-item${isActive ? " active" : ""}`}
-                    onClick={() => doPaste(item.text)}
+                    onClick={() => doPaste(item)}
                     onMouseEnter={() => setActiveIdx(idx)}
                   >
                   <span className={`tray-popup-item-icon ${typeColor}`}>{typeIcon}</span>
