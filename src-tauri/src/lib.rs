@@ -355,6 +355,7 @@ pub fn run() {
             commands::show_main_window,
             commands::save_image_file,
             commands::start_update,
+            commands::check_update,
             commands::read_file_as_base64,
             commands::get_groups,
             commands::create_group,

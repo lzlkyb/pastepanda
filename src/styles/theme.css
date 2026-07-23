@@ -140,6 +140,9 @@
   --glass-popover-bg: rgba(255,255,255,0.88);
   --glass-popover-border: rgba(0,0,0,0.06);
   --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+  /* 更新弹框 + 更新日志 */
+  --accent-glow: rgba(2,132,199, 0.12);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(2,132,199,0.10), transparent);
 }
 
 /* ── 2. midnight 午夜（默认深色·OLED）── */
@@ -198,6 +201,9 @@
   --glass-popover-bg: rgba(20,20,24,0.88);
   --glass-popover-border: rgba(255,255,255,0.07);
   --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.25);
+  /* 更新弹框 + 更新日志 */
+  --accent-glow: rgba(129,140,248, 0.12);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(129,140,248,0.10), transparent);
 }
 
 /* ── 3. forest 森林（浅色·护眼绿）── */
@@ -256,6 +262,9 @@
   --glass-popover-bg: rgba(255,255,255,0.88);
   --glass-popover-border: rgba(0,0,0,0.06);
   --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+  /* 更新弹框 + 更新日志 */
+  --accent-glow: rgba(5,150,105, 0.12);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(5,150,105,0.10), transparent);
 }
 
 /* ── 4. blossom 樱花（浅色·女性/浪漫）── */
@@ -314,6 +323,9 @@
   --glass-popover-bg: rgba(255,255,255,0.88);
   --glass-popover-border: rgba(0,0,0,0.06);
   --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+  /* 更新弹框 + 更新日志 */
+  --accent-glow: rgba(236,72,153, 0.12);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(236,72,153,0.10), transparent);
 }
 
 /* ── 5. terminal 终端（深色·开发者/极客）── */
@@ -372,6 +384,9 @@
   --glass-popover-bg: rgba(18,18,18,0.88);
   --glass-popover-border: rgba(255,255,255,0.06);
   --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3);
+  /* 更新弹框 + 更新日志 */
+  --accent-glow: rgba(34,197,94, 0.12);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(34,197,94,0.10), transparent);
 }
 
 /* ── 6. ocean-dark 海洋深色（玻璃拟态专用）── */
@@ -430,6 +445,9 @@
   --glass-popover-bg: rgba(10,22,40,0.88);
   --glass-popover-border: rgba(255,255,255,0.08);
   --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.25);
+  /* 更新弹框 + 更新日志 */
+  --accent-glow: rgba(56,189,248, 0.12);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(56,189,248,0.10), transparent);
 }
 
 /* ── 7. sunset 日落（深色·年轻/潮流）── */
@@ -488,4 +506,7 @@
   --glass-popover-bg: rgba(40,30,24,0.88);
   --glass-popover-border: rgba(255,255,255,0.07);
   --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.25);
+  /* 更新弹框 + 更新日志 */
+  --accent-glow: rgba(249,115,22, 0.12);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(249,115,22,0.10), transparent);
 }

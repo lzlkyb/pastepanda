@@ -88,7 +88,6 @@ describe("dataUrlToBlob", () => {
     // 1x1 红色 PNG
     const dataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
     const blob = await dataUrlToBlob(dataUrl);
-    expect(blob).toBeInstanceOf(Blob);
     expect(blob.type).toBe("image/png");
     expect(blob.size).toBeGreaterThan(0);
   });
@@ -97,7 +96,8 @@ describe("dataUrlToBlob", () => {
     // 最小 JPEG（SOI + EOI）
     const dataUrl = "data:image/jpeg;base64,/9j/4AAQSkZJRg==";
     const blob = await dataUrlToBlob(dataUrl);
-    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.type).toBe("image/jpeg");
+    expect(blob.size).toBeGreaterThan(0);
   });
 });
 

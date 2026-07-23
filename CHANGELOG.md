@@ -2,6 +2,37 @@
 
 PastePanda 版本更新日志。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [5.1.1] - 2026-07-23
+
+### 新增
+- 更新说明弹框（UpdateNotesDialog）：检测到新版本时自动弹出，展示结构化更新日志（分类卡片 + 摘要 + 数量徽章），支持跳过版本和一键下载
+- 更新日志浏览器（ChangelogView）：嵌入设置 → 关于 tab，可折叠的版本历史列表，当前版本高亮，支持"查看全部 N 个版本"
+- 关于 tab 未读红点：有新版本可用或有未查看的更新日志时，"关于" tab 显示脉冲红点提醒，切换后自动标记已读
+- DownloadRing 下载进度环：Header 徽章内 14px SVG 圆环，确定态显示百分比弧，不确定态整体旋转
+- 下载速率显示：前端实时计算下载速度（如"1.2 MB/s"），Header 徽章和 Banner 进度条均展示
+
+### 技术
+- gen-changelog.mjs 构建脚本：解析 CHANGELOG.md 生成结构化 TypeScript 数据（15 版本 8 分类），prebuild 自动运行
+- changelog.ts 类型层：ChangelogEntry/ChangeCategory 类型 + 版本比较 + lastSeen 工具函数
+- UpdateContext 新增 progressIndeterminate（total 为 null 时 true）和 bytesPerSec 状态
+- 更新后端多源 failover：Gitee manifest → ghproxy → GitHub 直连，指数退避重试
+- 跳过版本：localStorage 按版本号存储跳过标记，支持"跳过此版本"操作
+- 主题 CSS 新增 --accent-glow 和 --hero-glow 变量（7 套主题独立 RGB）
+- CI Gitee 镜像同步：生成 updater-gitee.json + releases 分支 latest/ 目录覆盖式推送
+
+### 修复
+- api-images.test.ts Blob instanceof 跨域失败：改用 duck-type 检查（.type + .size）
+
+## [5.1.0] - 2026-07-22
+
+### 新增
+- 代码架构重构：Rust 父目录 mod.rs + 多 impl 块拆分模式（data_store→7 模块、commands→11 模块）
+- content_type 统一：Rust classify() 单次分类→labels+content_type 入 DB，前端 contentTypes.ts 纯映射，旧数据 null 回退前端检测兜底
+- 自动清理定时：setInterval 每小时周期触发历史清理（cutoff 使用 chrono::Local::now 修复时区偏移）
+
+### 技术
+- 前端模块拆分：api.ts→11 模块，无文件超过 1000 行且 API 不变
+
 ## [5.0.148] - 2026-07-21
 
 ### 新增

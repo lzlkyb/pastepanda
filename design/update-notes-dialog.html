@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PastePanda 更新弹框 + 日志浏览 — 精修版</title>
+<style>
+/* ========== PastePanda 真实主题变量（6 套） ========== */
+:root, [data-theme="ocean"] {
+  --app-bg: #F4F6F9;
+  --card-bg: #fff;
+  --card-border: #E0E4EB;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --accent-glow: rgba(2,132,199,0.12);
+  --dialog-bg: #fff;
+  --section-bg: #F0F4F8;
+  --hover: #E8ECF2;
+  --seg-bg: #E8E8ED;
+  --green: #16A34A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+  --orange: #EA580C; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
+  --red-bg: #FEF2F2; --danger: #DC2626;
+  --version-badge-gradient: linear-gradient(135deg, #0284C7, #0369A1);
+  --version-badge-shadow: rgba(2, 132, 199, 0.35);
+  --update-badge-gradient: linear-gradient(135deg, #059669, #047857);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(2,132,199,0.10), transparent);
+  --cat-feat: #6366F1; --cat-fix: #F59E0B; --cat-improve: #10B981; --cat-sec: #EF4444;
+}
+[data-theme="midnight"] {
+  --app-bg: #09090B; --card-bg: #18181B; --card-border: #27272A;
+  --card-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  --text-primary: #E4E4E7; --text-secondary: #A1A1AA; --text-muted: #71717A;
+  --border-color: #27272A; --accent: #818CF8; --accent-light: #1E1B4B;
+  --accent-glow: rgba(129,140,248,0.12);
+  --dialog-bg: #18181B; --section-bg: #0F0F11; --hover: #1F1F23; --seg-bg: #27272A;
+  --green: #4ADE80; --green-bg: #052E16; --green-border: #166534;
+  --orange: #FB923C; --orange-bg: #431407; --orange-border: #9A3412;
+  --red-bg: #450A0A; --danger: #F87171;
+  --version-badge-gradient: linear-gradient(135deg, #818CF8, #6366F1);
+  --version-badge-shadow: rgba(129, 140, 248, 0.35);
+  --update-badge-gradient: linear-gradient(135deg, #38BDF8, #0EA5E9);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(129,140,248,0.12), transparent);
+  --cat-feat: #A5B4FC; --cat-fix: #FBBF24; --cat-improve: #34D399; --cat-sec: #FCA5A5;
+}
+[data-theme="forest"] {
+  --app-bg: #F2F7F5; --card-bg: #fff; --card-border: #D1D9D3;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --text-primary: #171717; --text-secondary: #78716C; --text-muted: #A8A29E;
+  --border-color: #D1D9D3; --accent: #059669; --accent-light: #ECFDF5;
+  --accent-glow: rgba(5,150,105,0.10);
+  --dialog-bg: #fff; --section-bg: #ECFDF5; --hover: #E8EDE8; --seg-bg: #E4E8E5;
+  --green: #16A34A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+  --orange: #EA580C; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
+  --red-bg: #FEF2F2; --danger: #DC2626;
+  --version-badge-gradient: linear-gradient(135deg, #059669, #047857);
+  --version-badge-shadow: rgba(5, 150, 105, 0.35);
+  --update-badge-gradient: linear-gradient(135deg, #0891B2, #0E7490);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(5,150,105,0.10), transparent);
+  --cat-feat: #6366F1; --cat-fix: #D97706; --cat-improve: #059669; --cat-sec: #DC2626;
+}
+[data-theme="blossom"] {
+  --app-bg: #FFFBFD; --card-bg: #fff; --card-border: #F3E8ED;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  --text-primary: #1F1A1C; --text-secondary: #A68A96; --text-muted: #A8909A;
+  --border-color: #F3E8ED; --accent: #EC4899; --accent-light: #FCE7F3;
+  --accent-glow: rgba(236,72,153,0.10);
+  --dialog-bg: #fff; --section-bg: #FDF2F8; --hover: #F8EEF3; --seg-bg: #F0EEEF;
+  --green: #16A34A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+  --orange: #EA580C; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
+  --red-bg: #FEF2F2; --danger: #DC2626;
+  --version-badge-gradient: linear-gradient(135deg, #EC4899, #DB2777);
+  --version-badge-shadow: rgba(236, 72, 153, 0.35);
+  --update-badge-gradient: linear-gradient(135deg, #F472B6, #EC4899);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(236,72,153,0.10), transparent);
+  --cat-feat: #6366F1; --cat-fix: #D97706; --cat-improve: #059669; --cat-sec: #DC2626;
+}
+[data-theme="sunset"] {
+  --app-bg: #F8F6F4; --card-bg: #fff; --card-border: #E8E0D8;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --text-primary: #1C1917; --text-secondary: #78716C; --text-muted: #A8A29E;
+  --border-color: #E8E0D8; --accent: #3B9EFF; --accent-light: #EFF6FF;
+  --accent-glow: rgba(59,158,255,0.10);
+  --dialog-bg: #fff; --section-bg: #F5F3F0; --hover: #EDE8E3; --seg-bg: #E8E4DF;
+  --green: #16A34A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+  --orange: #EA580C; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
+  --red-bg: #FEF2F2; --danger: #DC2626;
+  --version-badge-gradient: linear-gradient(135deg, #3B9EFF, #1A7DE0);
+  --version-badge-shadow: rgba(59, 158, 255, 0.35);
+  --update-badge-gradient: linear-gradient(135deg, #F97316, #EA580C);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(59,158,255,0.10), transparent);
+  --cat-feat: #6366F1; --cat-fix: #D97706; --cat-improve: #059669; --cat-sec: #DC2626;
+}
+[data-theme="tangerine"] {
+  --app-bg: #FFF9F5; --card-bg: #fff; --card-border: #FDE8D8;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --text-primary: #1C1917; --text-secondary: #78716C; --text-muted: #A8A29E;
+  --border-color: #FDE8D8; --accent: #F97316; --accent-light: #FFF7ED;
+  --accent-glow: rgba(249,115,22,0.10);
+  --dialog-bg: #fff; --section-bg: #FFFBF5; --hover: #FFF0E6; --seg-bg: #FDE8D8;
+  --green: #16A34A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+  --orange: #EA580C; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
+  --red-bg: #FEF2F2; --danger: #DC2626;
+  --version-badge-gradient: linear-gradient(135deg, #F97316, #EA580C);
+  --version-badge-shadow: rgba(249, 115, 22, 0.35);
+  --update-badge-gradient: linear-gradient(135deg, #FB923C, #F97316);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(249,115,22,0.10), transparent);
+  --cat-feat: #6366F1; --cat-fix: #D97706; --cat-improve: #059669; --cat-sec: #DC2626;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  background: var(--app-bg); color: var(--text-primary);
+  padding: 24px; transition: background 0.3s, color 0.3s;
+}
+
+/* ========== 页面 ========== */
+.page-header { text-align: center; margin-bottom: 18px; }
+.page-title { font-size: 20px; font-weight: 800; margin-bottom: 3px; }
+.page-subtitle { font-size: 12px; color: var(--text-muted); }
+.theme-switcher { display: flex; justify-content: center; gap: 5px; margin-bottom: 24px; flex-wrap: wrap; }
+.theme-btn {
+  padding: 4px 11px; border-radius: 7px; border: 1px solid var(--border-color);
+  background: var(--card-bg); color: var(--text-secondary); font-size: 10px; font-weight: 600;
+  cursor: pointer; transition: all 0.15s; font-family: inherit;
+}
+.theme-btn:hover { border-color: var(--accent); color: var(--accent); }
+.theme-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.panels { display: flex; gap: 24px; justify-content: center; align-items: flex-start; flex-wrap: wrap; }
+.panel { flex: 0 0 460px; max-width: 460px; }
+.panel-label {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
+  color: var(--text-muted); margin-bottom: 8px; padding-left: 2px;
+}
+
+/* ========== Dialog 真实结构 ========== */
+.demo-backdrop { position: relative; border-radius: 16px; background: rgba(0,0,0,0.02); border: 1px solid var(--border-color); transition: all 0.3s; }
+
+.dialog-box {
+  background: var(--dialog-bg); border-radius: 16px; display: flex; flex-direction: column;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04);
+  width: 460px; max-height: 85vh; overflow: hidden;
+  transition: background 0.3s, box-shadow 0.3s;
+}
+.dialog-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; height: 48px; flex-shrink: 0;
+  border-bottom: 1px solid var(--border-color); transition: border-color 0.3s;
+}
+.dialog-title { font-size: 15px; font-weight: 600; color: var(--text-primary); transition: color 0.3s; }
+.dialog-close {
+  width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center;
+  justify-content: center; cursor: pointer; border: none; background: transparent;
+  color: var(--text-secondary); font-size: 14px; transition: background 0.15s;
+}
+.dialog-close:hover { background: var(--hover); }
+.dialog-body { flex: 1; overflow-y: auto; padding: 0; display: flex; flex-direction: column; }
+.dialog-body::-webkit-scrollbar { width: 3px; }
+.dialog-body::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
+.dialog-footer {
+  display: flex; align-items: center; justify-content: flex-end;
+  padding: 0 20px; height: 56px; flex-shrink: 0; gap: 10px;
+  border-top: 1px solid var(--border-color); transition: border-color 0.3s;
+}
+
+/* ========== Hero + 辉光 ========== */
+.hero-wrap { position: relative; overflow: hidden; }
+.hero-wrap::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: var(--hero-glow); z-index: 0; transition: background 0.4s;
+}
+.update-hero {
+  display: flex; align-items: center; gap: 16px;
+  padding: 28px 24px 18px; position: relative; z-index: 1;
+}
+.update-icon {
+  width: 56px; height: 56px; border-radius: 16px; flex-shrink: 0;
+  overflow: hidden; display: flex; align-items: center; justify-content: center;
+  background: var(--version-badge-gradient);
+  box-shadow: 0 4px 16px var(--version-badge-shadow), 0 0 0 3px var(--accent-glow);
+  transition: all 0.3s;
+  animation: iconBreath 4s ease-in-out infinite;
+}
+@keyframes iconBreath {
+  0%, 100% { box-shadow: 0 4px 16px var(--version-badge-shadow), 0 0 0 3px var(--accent-glow); }
+  50% { box-shadow: 0 4px 20px var(--version-badge-shadow), 0 0 0 8px transparent; }
+}
+.update-icon span { font-size: 26px; filter: brightness(10); }
+.update-meta { flex: 1; min-width: 0; }
+.update-name { font-size: 17px; font-weight: 800; margin-bottom: 6px; color: var(--text-primary); transition: color 0.3s; }
+.version-row { display: flex; align-items: center; gap: 8px; }
+.v-badge {
+  display: inline-flex; align-items: center;
+  font-family: "SF Mono","Fira Code","Consolas",monospace;
+  font-size: 10px; font-weight: 700; color: #fff;
+  background: var(--version-badge-gradient); padding: 2px 8px; border-radius: 6px;
+  box-shadow: 0 1px 4px var(--version-badge-shadow); transition: all 0.3s;
+}
+.v-status {
+  display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600;
+  padding: 3px 10px; border-radius: 20px; transition: all 0.3s;
+}
+.v-status.up { background: var(--orange-bg); color: var(--orange); border: 1px solid var(--orange-border); }
+.v-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--orange); animation: dotPulse 2s infinite; }
+@keyframes dotPulse { 0%,100%{opacity:1}50%{opacity:.4} }
+
+/* ========== 版本过渡卡 ========== */
+.vt-card {
+  margin: 0 20px 4px; padding: 14px 18px; border-radius: 12px; position: relative; z-index: 1;
+  background: var(--section-bg); border: 1px solid var(--border-color);
+  display: flex; align-items: center; gap: 12px; transition: all 0.3s;
+}
+.vt-old {
+  font-size: 14px; font-weight: 700; color: var(--text-muted);
+  font-family: "SF Mono","Fira Code","Consolas",monospace;
+  text-decoration: line-through; opacity: 0.45; transition: color 0.3s;
+}
+.vt-arrow-wrap {
+  width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  background: var(--accent); flex-shrink: 0; box-shadow: 0 2px 8px var(--version-badge-shadow); transition: all 0.3s;
+}
+.vt-arrow-wrap svg { width: 14px; height: 14px; stroke: #fff; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.vt-new-wrap { display: flex; align-items: center; gap: 8px; }
+.vt-new {
+  font-size: 16px; font-weight: 800; color: var(--accent);
+  font-family: "SF Mono","Fira Code","Consolas",monospace; transition: color 0.3s;
+}
+.vt-new-pill {
+  font-size: 8px; font-weight: 800; color: #fff; background: var(--accent);
+  padding: 2px 6px; border-radius: 4px; letter-spacing: 0.5px; transition: background 0.3s;
+}
+.vt-date { font-size: 10px; color: var(--text-muted); margin-left: auto; transition: color 0.3s; }
+
+/* 渐变分割线 */
+.gradient-divider {
+  height: 1px; margin: 12px 24px 0;
+  background: linear-gradient(90deg, transparent, var(--border-color), transparent);
+  transition: background 0.3s;
+}
+
+/* ========== 日志内容 ========== */
+.notes-scroll { padding: 14px 18px 16px; max-height: 320px; overflow-y: auto; }
+.notes-scroll::-webkit-scrollbar { width: 3px; }
+.notes-scroll::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
+
+/* 摘要卡片 — 带 shimmer 效果 */
+.notes-summary {
+  background: var(--accent-light); border-left: 3px solid var(--accent);
+  border-radius: 0 12px 12px 0; padding: 12px 16px; margin-bottom: 14px;
+  position: relative; overflow: hidden; transition: all 0.3s;
+}
+.notes-summary::after {
+  content: ''; position: absolute; top: 0; left: -100%; width: 60%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+  animation: shimmer 3s ease-in-out infinite;
+}
+@keyframes shimmer { 0%{left:-100%} 50%{left:150%} 100%{left:150%} }
+.notes-summary-head {
+  font-size: 11px; font-weight: 700; color: var(--accent); margin-bottom: 5px;
+  display: flex; align-items: center; gap: 5px; transition: color 0.3s;
+}
+.notes-summary-text { font-size: 12px; line-height: 1.7; color: var(--text-primary); transition: color 0.3s; }
+
+/* 统计行 */
+.notes-stats { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+.notes-stat {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 8px; font-size: 11px; font-weight: 600;
+  background: var(--section-bg); color: var(--text-secondary); transition: all 0.3s;
+  border: 1px solid transparent;
+}
+.notes-stat:hover { border-color: var(--border-color); }
+.stat-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.stat-dot.feat { background: var(--cat-feat); }
+.stat-dot.fix { background: var(--cat-fix); }
+.stat-dot.improve { background: var(--cat-improve); }
+.stat-dot.sec { background: var(--cat-sec); }
+
+/* 分类卡片 */
+.notes-cat {
+  margin-bottom: 10px; border-radius: 12px; background: var(--card-bg);
+  border: 1px solid var(--card-border); overflow: hidden; position: relative;
+  transition: all 0.25s, background 0.3s, border-color 0.3s;
+}
+.notes-cat:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+.notes-cat::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  border-radius: 12px 0 0 12px;
+}
+.notes-cat.feat::before { background: var(--cat-feat); }
+.notes-cat.fix::before { background: var(--cat-fix); }
+.notes-cat.improve::before { background: var(--cat-improve); }
+.notes-cat.sec::before { background: var(--cat-sec); }
+
+.notes-cat-head {
+  display: flex; align-items: center; gap: 8px; padding: 10px 14px 10px 16px;
+  font-size: 12px; font-weight: 700;
+}
+.notes-cat-head.feat { color: var(--cat-feat); }
+.notes-cat-head.fix { color: var(--cat-fix); }
+.notes-cat-head.improve { color: var(--cat-improve); }
+.notes-cat-head.sec { color: var(--cat-sec); }
+
+.cat-icon {
+  width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center;
+  justify-content: center; font-size: 11px; font-weight: 800; flex-shrink: 0;
+}
+.cat-icon.feat { background: rgba(99,102,241,0.1); color: var(--cat-feat); }
+.cat-icon.fix { background: rgba(245,158,11,0.1); color: var(--cat-fix); }
+.cat-icon.improve { background: rgba(16,185,129,0.1); color: var(--cat-improve); }
+.cat-icon.sec { background: rgba(239,68,68,0.1); color: var(--cat-sec); }
+
+.cat-count {
+  margin-left: auto; font-size: 10px; font-weight: 700; opacity: 0.6;
+  font-family: "SF Mono","Fira Code",monospace;
+}
+
+.notes-cat-items { padding: 0 14px 10px 40px; list-style: none; }
+.notes-cat-items li {
+  font-size: 11px; line-height: 1.7; color: var(--text-secondary); position: relative;
+  padding-left: 14px; margin-bottom: 2px; transition: color 0.3s;
+}
+.notes-cat-items li::before {
+  content: ''; position: absolute; left: 0; top: 8px;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--border-color); transition: background 0.3s;
+}
+
+/* 底部 */
+.dialog-hint { font-size: 10px; color: var(--text-muted); text-align: center; padding: 0 20px; line-height: 1.4; transition: color 0.3s; }
+.btn-later {
+  padding: 9px 20px; border-radius: 10px; border: 1px solid var(--border-color);
+  background: transparent; color: var(--text-secondary); font-size: 12px; font-weight: 600;
+  cursor: pointer; font-family: inherit; transition: all 0.15s, border-color 0.3s;
+}
+.btn-later:hover { background: var(--hover); color: var(--text-primary); }
+.btn-download {
+  padding: 9px 22px; border-radius: 10px; border: none;
+  background: var(--accent); color: #fff; font-size: 13px; font-weight: 700;
+  cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 6px;
+  box-shadow: 0 2px 10px var(--version-badge-shadow);
+  transition: all 0.2s, background 0.3s, box-shadow 0.3s;
+  position: relative; overflow: hidden;
+}
+.btn-download:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 4px 16px var(--version-badge-shadow); }
+.btn-download::after {
+  content: ''; position: absolute; top: 0; left: -100%; width: 50%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+  animation: btnShimmer 3s ease-in-out infinite;
+}
+@keyframes btnShimmer { 0%{left:-100%} 50%{left:150%} 100%{left:150%} }
+.btn-download svg { width: 14px; height: 14px; }
+
+/* ========== Settings ========== */
+.settings-card {
+  background: var(--card-bg); border-radius: 16px; border: 1px solid var(--card-border);
+  box-shadow: var(--card-shadow); overflow: hidden; transition: all 0.3s;
+}
+.s-tabs {
+  display: flex; gap: 2px; padding: 10px 14px 0;
+  border-bottom: 1px solid var(--border-color); transition: border-color 0.3s;
+}
+.s-tab {
+  padding: 7px 12px; font-size: 11px; font-weight: 600; color: var(--text-muted);
+  cursor: pointer; border: none; background: none; font-family: inherit; position: relative; transition: color 0.15s;
+}
+.s-tab:hover { color: var(--text-primary); }
+.s-tab.active { color: var(--accent); }
+.s-tab.active::after {
+  content: ''; position: absolute; bottom: -1px; left: 12px; right: 12px;
+  height: 2px; background: var(--accent); border-radius: 1px; transition: background 0.3s;
+}
+.tab-dot-wrap { position: relative; }
+.tab-dot {
+  position: absolute; top: 2px; right: 0px; min-width: 14px; height: 14px; padding: 0 3px;
+  border-radius: 7px; background: #EF4444; color: #fff; font-size: 8px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; animation: dotPulse 2s infinite;
+}
+.s-hero { display: flex; align-items: center; gap: 14px; padding: 16px 18px 12px; }
+.s-icon {
+  width: 44px; height: 44px; border-radius: 12px; background: var(--version-badge-gradient);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  box-shadow: 0 2px 8px var(--version-badge-shadow); transition: all 0.3s;
+}
+.s-icon span { font-size: 22px; filter: brightness(10); }
+.s-meta { flex: 1; min-width: 0; }
+.s-name { font-size: 15px; font-weight: 800; margin-bottom: 4px; color: var(--text-primary); transition: color 0.3s; }
+.s-ver-row { display: flex; align-items: center; gap: 6px; }
+.s-ver-badge {
+  font-size: 9px; font-weight: 700; color: #fff; background: var(--version-badge-gradient);
+  padding: 2px 7px; border-radius: 5px; font-family: "SF Mono","Fira Code",monospace; transition: background 0.3s;
+}
+.s-pill {
+  display: flex; align-items: center; gap: 4px; font-size: 9px; font-weight: 600;
+  padding: 2px 7px; border-radius: 10px; transition: all 0.3s;
+}
+.s-pill.up { background: var(--orange-bg); color: var(--orange); border: 1px solid var(--orange-border); }
+.s-pill-dot { width: 4px; height: 4px; border-radius: 50%; }
+.s-pill-dot.orange { background: var(--orange); animation: dotPulse 2s infinite; }
+.s-btn {
+  padding: 5px 12px; border-radius: 8px; border: 1px solid var(--border-color);
+  background: transparent; color: var(--text-secondary); font-size: 10px; font-weight: 600;
+  cursor: pointer; font-family: inherit; transition: all 0.15s;
+}
+.s-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+.s-inline {
+  margin: 0 14px 10px; border-radius: 10px; border: 1px solid var(--border-color);
+  overflow: hidden; transition: border-color 0.3s;
+}
+.s-inline-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 7px 10px; background: var(--accent-light); border-bottom: 1px solid var(--border-color); transition: all 0.3s;
+}
+.s-inline-title { font-size: 10px; font-weight: 700; color: var(--accent); transition: color 0.3s; }
+.s-inline-link { font-size: 9px; color: var(--accent); font-weight: 600; cursor: pointer; transition: color 0.3s; }
+.s-inline-body { padding: 8px 10px; }
+.s-inline-item {
+  font-size: 10px; line-height: 1.5; color: var(--text-secondary); padding-left: 10px;
+  position: relative; margin-bottom: 1px; transition: color 0.3s;
+}
+.s-inline-item::before {
+  content: ''; position: absolute; left: 0; top: 5px; width: 3px; height: 3px;
+  border-radius: 50%; background: var(--border-color);
+}
+.s-divider { height: 1px; background: var(--border-color); margin: 0 14px; transition: background 0.3s; }
+.s-section-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px 8px; }
+.s-section-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); transition: color 0.3s; }
+.s-tech { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; padding: 0 14px 10px; }
+.s-tech-item {
+  display: flex; align-items: center; gap: 5px; padding: 5px 7px; border-radius: 7px;
+  background: var(--section-bg); font-size: 9px; font-weight: 600; color: var(--text-secondary); transition: all 0.3s;
+}
+.s-tech-dot { width: 6px; height: 6px; border-radius: 2px; flex-shrink: 0; }
+
+.cl-entry { padding: 0 14px; margin-bottom: 6px; }
+.cl-bar {
+  display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 8px;
+  background: var(--section-bg); margin-bottom: 4px; transition: all 0.2s;
+}
+.cl-bar:hover { background: var(--hover); }
+.cl-ver {
+  font-size: 10px; font-weight: 700; color: var(--text-primary); padding: 2px 7px;
+  border-radius: 5px; background: var(--card-bg); border: 1px solid var(--border-color);
+  font-family: "SF Mono","Fira Code",monospace; transition: all 0.3s;
+}
+.cl-ver.latest { background: var(--version-badge-gradient); color: #fff; border: none; transition: background 0.3s; }
+.cl-date { font-size: 9px; color: var(--text-muted); flex: 1; transition: color 0.3s; }
+.cl-tag { font-size: 8px; font-weight: 700; padding: 1px 5px; border-radius: 3px; background: var(--green-bg); color: var(--green); transition: all 0.3s; }
+.cl-items { padding: 0 0 0 10px; list-style: none; }
+.cl-items li { font-size: 10px; line-height: 1.5; color: var(--text-secondary); padding: 1px 0 1px 10px; position: relative; transition: color 0.3s; }
+.cl-items li::before { content: ''; position: absolute; left: 0; top: 6px; width: 3px; height: 3px; border-radius: 50%; }
+.cl-items li.feat::before { background: var(--cat-feat); }
+.cl-items li.fix::before { background: var(--cat-fix); }
+.cl-items li.improve::before { background: var(--cat-improve); }
+.cl-items li.sec::before { background: var(--cat-sec); }
+.cl-badge { display: inline-block; font-size: 8px; font-weight: 700; padding: 0px 4px; border-radius: 3px; margin-right: 3px; }
+.cl-badge.feat { background: rgba(99,102,241,0.1); color: var(--cat-feat); }
+.cl-badge.fix { background: rgba(245,158,11,0.1); color: var(--cat-fix); }
+.cl-badge.improve { background: rgba(16,185,129,0.1); color: var(--cat-improve); }
+.cl-badge.sec { background: rgba(239,68,68,0.1); color: var(--cat-sec); }
+
+.cl-toggle {
+  display: flex; align-items: center; justify-content: center; padding: 6px;
+  font-size: 10px; font-weight: 600; color: var(--text-muted); cursor: pointer;
+  border: none; background: none; font-family: inherit; gap: 3px; transition: color 0.15s;
+}
+.cl-toggle:hover { color: var(--accent); }
+.s-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 18px 12px; border-top: 1px solid var(--border-color); transition: border-color 0.3s;
+}
+.s-footer-link { font-size: 10px; color: var(--text-muted); cursor: pointer; transition: color 0.15s; }
+.s-footer-link:hover { color: var(--accent); }
+.s-copyright { font-size: 9px; color: var(--text-muted); transition: color 0.3s; }
+
+/* 入场动画 */
+@keyframes notesRise { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+.rise { animation: notesRise 0.3s ease both; }
+.rise-1 { animation-delay: 60ms; }
+.rise-2 { animation-delay: 120ms; }
+.rise-3 { animation-delay: 180ms; }
+.rise-4 { animation-delay: 240ms; }
+.rise-5 { animation-delay: 300ms; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <div class="page-title">PastePanda 更新弹框 + 日志浏览</div>
+  <div class="page-subtitle">Fluent Air 精修版 · dialog.css 真实结构 · 6 套主题 · 辉光 / shimmer / 入场动画</div>
+</div>
+
+<div class="theme-switcher">
+  <button class="theme-btn active" onclick="setTheme('ocean',this)">Ocean</button>
+  <button class="theme-btn" onclick="setTheme('midnight',this)">Midnight</button>
+  <button class="theme-btn" onclick="setTheme('forest',this)">Forest</button>
+  <button class="theme-btn" onclick="setTheme('blossom',this)">Blossom</button>
+  <button class="theme-btn" onclick="setTheme('sunset',this)">Sunset</button>
+  <button class="theme-btn" onclick="setTheme('tangerine',this)">Tangerine</button>
+</div>
+
+<div class="panels">
+
+<!-- ============ A. UpdateNotesDialog ============ -->
+<div class="panel">
+  <div class="panel-label">A. 更新弹框 — 发现新版本时弹出</div>
+  <div class="demo-backdrop">
+    <div class="dialog-box">
+      <div class="dialog-header">
+        <span class="dialog-title">版本更新</span>
+        <button class="dialog-close">✕</button>
+      </div>
+
+      <div class="dialog-body">
+        <!-- Hero + 辉光 -->
+        <div class="hero-wrap">
+          <div class="update-hero">
+            <div class="update-icon"><span>🐼</span></div>
+            <div class="update-meta">
+              <div class="update-name">PastePanda</div>
+              <div class="version-row">
+                <span class="v-badge">v5.0.148</span>
+                <span class="v-status up"><span class="v-dot"></span>v5.1.0 可用</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 版本过渡卡 -->
+        <div class="vt-card rise">
+          <span class="vt-old">v5.0.148</span>
+          <span class="vt-arrow-wrap">
+            <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+          </span>
+          <div class="vt-new-wrap">
+            <span class="vt-new">v5.1.0</span>
+            <span class="vt-new-pill">NEW</span>
+          </div>
+          <span class="vt-date">2026-07-23</span>
+        </div>
+
+        <div class="gradient-divider"></div>
+
+        <!-- 日志 -->
+        <div class="notes-scroll">
+          <div class="notes-summary rise rise-1">
+            <div class="notes-summary-head">★ 本次更新</div>
+            <div class="notes-summary-text">剪贴板栈模式全新上线，多源更新故障转移，58 项 UI/UX 体验优化，安全审计修复。</div>
+          </div>
+
+          <div class="notes-stats rise rise-2">
+            <span class="notes-stat"><span class="stat-dot feat"></span>新增 6</span>
+            <span class="notes-stat"><span class="stat-dot improve"></span>优化 3</span>
+            <span class="notes-stat"><span class="stat-dot fix"></span>修复 1</span>
+            <span class="notes-stat"><span class="stat-dot sec"></span>安全 2</span>
+          </div>
+
+          <div class="notes-cat feat rise rise-2">
+            <div class="notes-cat-head feat">
+              <span class="cat-icon feat">＋</span>新增
+              <span class="cat-count">6</span>
+            </div>
+            <ul class="notes-cat-items">
+              <li>剪贴板栈：Ctrl+Shift+K 进入栈模式，逐条收集、逐条粘贴</li>
+              <li>栈模式横幅：显示收集/粘贴进度，支持全部粘贴和手动退出</li>
+              <li>多源更新：Gitee → ghproxy → GitHub 自动故障转移</li>
+              <li>版本跳过：可按版本标记"跳过"，不再重复提醒</li>
+            </ul>
+          </div>
+
+          <div class="notes-cat improve rise rise-3">
+            <div class="notes-cat-head improve">
+              <span class="cat-icon improve">✦</span>优化
+              <span class="cat-count">3</span>
+            </div>
+            <ul class="notes-cat-items">
+              <li>58 项 UI/UX 体验修复（焦点陷阱、无障碍、交互一致性）</li>
+              <li>更新检查统一走 Rust 多源路径，移除 JS 插件单源依赖</li>
+            </ul>
+          </div>
+
+          <div class="notes-cat fix rise rise-4">
+            <div class="notes-cat-head fix">
+              <span class="cat-icon fix">⟳</span>修复
+              <span class="cat-count">1</span>
+            </div>
+            <ul class="notes-cat-items">
+              <li>粘贴抑制 hash + 时间双重检查竞态修复</li>
+            </ul>
+          </div>
+
+          <div class="notes-cat sec rise rise-5">
+            <div class="notes-cat-head sec">
+              <span class="cat-icon sec">⛨</span>安全
+              <span class="cat-count">2</span>
+            </div>
+            <ul class="notes-cat-items">
+              <li>粘贴前前台窗口确认失败时中止并报错</li>
+              <li>敏感内容防护：密钥/凭证模式不记录开关</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="dialog-hint">点「稍后」本版本不再弹框；有新版本时仍会提醒</div>
+      <div class="dialog-footer">
+        <button class="btn-later">稍后</button>
+        <button class="btn-download">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          下载并更新
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ B. Settings ============ -->
+<div class="panel">
+  <div class="panel-label">B. Settings 关于页 — 日志浏览 + 红点</div>
+  <div class="settings-card">
+    <div class="s-tabs">
+      <button class="s-tab">通用</button>
+      <button class="s-tab">外观</button>
+      <button class="s-tab">快捷键</button>
+      <button class="s-tab active">关于</button>
+      <div class="tab-dot-wrap">
+        <button class="s-tab">设置</button>
+        <span class="tab-dot">3</span>
+      </div>
+    </div>
+
+    <div class="s-hero">
+      <div class="s-icon"><span>🐼</span></div>
+      <div class="s-meta">
+        <div class="s-name">PastePanda</div>
+        <div class="s-ver-row">
+          <span class="s-ver-badge">v5.0.148</span>
+          <span class="s-pill up"><span class="s-pill-dot orange"></span>v5.1.0 可用</span>
+        </div>
+      </div>
+      <button class="s-btn">下载安装</button>
+    </div>
+
+    <div class="s-inline">
+      <div class="s-inline-head">
+        <span class="s-inline-title">v5.1.0 更新内容</span>
+        <span class="s-inline-link">查看详情 →</span>
+      </div>
+      <div class="s-inline-body">
+        <div class="notes-stats" style="margin-bottom: 6px;">
+          <span class="notes-stat"><span class="stat-dot feat"></span>新增 6</span>
+          <span class="notes-stat"><span class="stat-dot fix"></span>修复 1</span>
+        </div>
+        <div class="s-inline-item">剪贴板栈模式：逐条收集、逐条粘贴</div>
+        <div class="s-inline-item">多源更新 Gitee/ghproxy/GitHub 故障转移</div>
+        <div class="s-inline-item">58 项 UI/UX 体验优化</div>
+        <div class="s-inline-item">安全审计修复</div>
+      </div>
+    </div>
+
+    <div class="s-divider"></div>
+
+    <div class="s-section-head"><span class="s-section-title">技术栈</span></div>
+    <div class="s-tech">
+      <div class="s-tech-item"><span class="s-tech-dot" style="background:#FFC131"></span>Tauri 2</div>
+      <div class="s-tech-item"><span class="s-tech-dot" style="background:#61DAFB"></span>React 18</div>
+      <div class="s-tech-item"><span class="s-tech-dot" style="background:#3178C6"></span>TypeScript</div>
+      <div class="s-tech-item"><span class="s-tech-dot" style="background:#4DB8BD"></span>SQLite</div>
+      <div class="s-tech-item"><span class="s-tech-dot" style="background:#DEA584"></span>Rust</div>
+      <div class="s-tech-item"><span class="s-tech-dot" style="background:#646CFF"></span>Vite</div>
+    </div>
+
+    <div class="s-divider"></div>
+
+    <div class="s-section-head"><span class="s-section-title">更新历史</span></div>
+
+    <div class="cl-entry">
+      <div class="cl-bar">
+        <span class="cl-ver latest">5.1.0</span>
+        <span class="cl-date">2026-07-23</span>
+        <span class="cl-tag">最新</span>
+      </div>
+      <ul class="cl-items">
+        <li class="feat"><span class="cl-badge feat">新增</span>剪贴板栈模式 Ctrl+Shift+K</li>
+        <li class="feat"><span class="cl-badge feat">新增</span>多源更新 Gitee/ghproxy/GitHub</li>
+        <li class="improve"><span class="cl-badge improve">优化</span>58 项 UI/UX 修复</li>
+        <li class="fix"><span class="cl-badge fix">修复</span>粘贴抑制竞态问题</li>
+        <li class="sec"><span class="cl-badge sec">安全</span>敏感内容防护</li>
+      </ul>
+    </div>
+
+    <div class="cl-entry">
+      <div class="cl-bar">
+        <span class="cl-ver">5.0.148</span>
+        <span class="cl-date">2026-07-21</span>
+      </div>
+      <ul class="cl-items">
+        <li class="feat"><span class="cl-badge feat">新增</span>栈模式 + 入栈卡片标记</li>
+        <li class="improve"><span class="cl-badge improve">优化</span>UI/UX 审计 58 项修复</li>
+        <li class="fix"><span class="cl-badge fix">修复</span>粘贴抑制双重检查</li>
+      </ul>
+    </div>
+
+    <div class="cl-entry">
+      <div class="cl-bar">
+        <span class="cl-ver">5.0.130</span>
+        <span class="cl-date">2026-07-10</span>
+      </div>
+    </div>
+
+    <div class="cl-entry">
+      <div class="cl-bar">
+        <span class="cl-ver">5.0.120</span>
+        <span class="cl-date">2026-07-01</span>
+      </div>
+    </div>
+
+    <button class="cl-toggle">▾ 查看更多版本 (5)</button>
+
+    <div class="s-footer">
+      <span class="s-footer-link">项目主页</span>
+      <span class="s-copyright">© 2026 PastePanda</span>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+function setTheme(theme, btn) {
+  document.documentElement.setAttribute('data-theme', theme);
+  document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+</script>
+</body>
+</html>

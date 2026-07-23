@@ -7,7 +7,7 @@ import { CardList } from "@/components/CardList";
 import { QuickPreview } from "@/components/QuickPreview";
 import { useToast } from "@/components/Toast";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { UpdateProvider } from "@/contexts/UpdateContext";
+import { UpdateProvider, useUpdate } from "@/contexts/UpdateContext";
 import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
 import { logger } from "@/lib/logger";
 import { pasteText, pasteImage, deleteHistory, togglePin, toggleWindow, sequentialPaste, invalidateCountsCache, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup } from "@/lib/api";
@@ -28,6 +28,7 @@ migrateLegacyStorageKeys();
 const SettingsDialog = lazy(() => import("@/components/SettingsDialog").then(m => ({ default: m.SettingsDialog })));
 const SnippetsDialog = lazy(() => import("@/components/SnippetsDialog").then(m => ({ default: m.SnippetsDialog })));
 const ExtractDialog = lazy(() => import("@/components/ExtractDialog").then(m => ({ default: m.ExtractDialog })));
+const UpdateNotesDialog = lazy(() => import("@/components/UpdateNotesDialog").then(m => ({ default: m.UpdateNotesDialog })));
 
 function App() {
   const config = useAppStore((s) => s.config);
@@ -715,6 +716,7 @@ function App() {
 
   return (
       <UpdateProvider>
+      <UpdateNotesAutoPop />
       <div className={`${appStyles.appShell} ${sidebarOpen ? appStyles.sidebarExpanded : ''}`}>
         <TopBar
           onSettings={() => setShowSettings(true)}
@@ -831,6 +833,38 @@ function App() {
         </AnimatePresence>
       </div>
       </UpdateProvider>
+  );
+}
+
+/** 自动弹出更新说明弹框：当检测到新版本时自动显示 */
+function UpdateNotesAutoPop() {
+  const { status, update } = useUpdate();
+  const [open, setOpen] = useState(false);
+  const [appVersion, setAppVersion] = useState("");
+  const dismissedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    import("@/lib/api").then(m => m.getAppVersion().then(setAppVersion)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (status === "available" && update && dismissedRef.current !== update.version) {
+      setOpen(true);
+    }
+  }, [status, update]);
+
+  const handleClose = useCallback(() => {
+    setOpen(false);
+    if (update) dismissedRef.current = update.version;
+  }, [update]);
+
+  if (!open) return null;
+  return (
+    <Suspense fallback={null}>
+      <ErrorBoundary fallback={null} componentName="更新说明弹框">
+        <UpdateNotesDialog open={open} onClose={handleClose} currentVersion={appVersion} />
+      </ErrorBoundary>
+    </Suspense>
   );
 }
 

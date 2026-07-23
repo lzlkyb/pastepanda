@@ -1,12 +1,15 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { useAppStore, HistoryItem, DEFAULT_CONFIG } from "@/stores/appStore";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { VersionBadge } from "@/components/VersionBadge";
 import { useToast } from "@/components/Toast";
+import { useUpdate } from "@/contexts/UpdateContext";
 import { logger } from "@/lib/logger";
 import { getStats, Stats, getAppVersion, getAppName, invalidateCountsCache } from "@/lib/api";
+import { CHANGELOG } from "@/lib/changelog.generated";
+import { hasUnseenEntries, getLastSeenVersion, setLastSeenVersion } from "@/lib/changelog";
 import { GeneralTab } from "@/components/settings/GeneralTab";
 import { HelpTabContent } from "@/components/settings/HelpTabContent";
 import { AboutTabContent } from "@/components/settings/AboutTabContent";
@@ -40,6 +43,14 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   const [importing, setImporting] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+  const { status: updateStatus } = useUpdate();
+
+  /** 关于 tab 红点：有新版本可用 或 有未查看过的更新日志 */
+  const hasAboutDot = useMemo(() => {
+    if (updateStatus === "available" || updateStatus === "ready" || updateStatus === "installed") return true;
+    const lastSeen = getLastSeenVersion();
+    return lastSeen ? hasUnseenEntries(CHANGELOG, lastSeen) : CHANGELOG.length > 0;
+  }, [updateStatus]);
 
   useEffect(() => {
     if (open) {
@@ -57,6 +68,9 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
 
   const handleTabSwitch = useCallback((tab: SettingsTab) => {
     setActiveTab(tab);
+    if (tab === "about" && CHANGELOG.length > 0) {
+      setLastSeenVersion(CHANGELOG[0].version);
+    }
     if (bodyRef.current) {
       bodyRef.current.scrollTop = 0;
       setScrolled(false);
@@ -219,11 +233,13 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
               <div className={styles.tabBar}>
                 {tabs.map((tab) => {
                   const isActive = activeTab === tab.key;
+                  const showDot = tab.key === "about" && hasAboutDot && !isActive;
                   return (
                     <button key={tab.key} onClick={() => handleTabSwitch(tab.key)}
                       className={`${styles.tabBtn} ${isActive ? styles.tabBtnActive : ""}`}>
                       <span className={styles.tabIcon}>{tab.icon}</span>
                       {tab.label}
+                      {showDot && <span className={styles.tabDot} />}
                     </button>
                   );
                 })}

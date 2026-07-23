@@ -104,6 +104,14 @@
   color: var(--text-primary);
 }
 
+/* 下载速率文字（标题右侧） */
+.updateBannerSpeed {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+
 .updateBannerDesc {
   font-size: 11px;
   color: var(--text-muted);
@@ -174,6 +182,17 @@
 
 .updateBannerBtnRestart {
   composes: updateBannerBtn;
+}
+
+.updateBannerBtnSkip {
+  composes: updateBannerBtn;
+  background: transparent !important;
+  color: var(--text-secondary) !important;
+  border: 1px solid var(--border-color) !important;
+}
+.updateBannerBtnSkip:hover {
+  background: var(--hover) !important;
+  color: var(--text-primary) !important;
 }
 
 /* 下载进度条 */

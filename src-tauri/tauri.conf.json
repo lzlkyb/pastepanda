@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "PastePanda",
-  "version": "5.1.0",
+  "version": "5.1.1",
   "identifier": "com.pastepanda.app",
   "build": {
     "beforeBuildCommand": "npm run build",
@@ -37,6 +37,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
+        "https://ghproxy.net/https://github.com/lzlkyb/pastepanda/releases/latest/download/updater.json",
         "https://github.com/lzlkyb/pastepanda/releases/latest/download/updater.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJGQTNBQ0Y5OTIxNjg1RUUKUldUdWhSYVMrYXlqdnptREQvTlpWR1dRckVLVkZaRVBBOGYvQm0wL3FjMjVad1Nkd0ZPUlhSZUMK",

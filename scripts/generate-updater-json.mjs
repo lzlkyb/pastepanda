@@ -7,15 +7,18 @@
  *   node scripts/generate-updater-json.mjs [version] [--platforms win,linux,mac]
  *
  * 环境变量：
- *   UPDATER_NOTES       - 更新日志 (可选)
- *   GITHUB_RELEASE_TAG  - GitHub Release tag (可选，默认 v{version})
+ *   UPDATER_NOTES            - 更新日志 (可选)
+ *   GITHUB_RELEASE_TAG       - GitHub Release tag (可选，默认 v{version})
+ *   UPDATER_DOWNLOAD_BASE    - 二进制下载基线 URL（默认 GitHub Release；CI 可设为 ghproxy 镜像）
+ *   UPDATER_URL_TEMPLATE     - 完全接管 URL 拼接（支持 {tag}/{filename} 占位符，优先级高于 UPDATER_DOWNLOAD_BASE）
+ *   UPDATER_OUTPUT_FILENAME  - 输出文件名（默认 updater.json；Gitee 变体设为 updater-gitee.json）
  *
- * 输出：dist/updater.json
+ * 输出：dist/{UPDATER_OUTPUT_FILENAME}
  *
  * 流程：
  *   1. 读取 src-tauri/target/release/bundle/{nsis,msi,appimage,macos}/ 下的 .sig 文件
- *   2. 拼接 GitHub Release 下载 URL
- *   3. 生成符合 Tauri v2 格式的 updater.json
+ *   2. 拼接下载 URL（GitHub / ghproxy / Gitee 模板）
+ *   3. 生成符合 Tauri v2 格式的 updater manifest
  */
 
 import fs from "node:fs";
@@ -28,19 +31,25 @@ const BUNDLE_DIR = path.join(ROOT, "src-tauri", "target", "release", "bundle");
 
 // ─── 配置 ────────────────────────────────────────────────
 
-const REPO_OWNER = "lzlkyb";
-const REPO_NAME = "pastepanda";
-const GITHUB_RELEASE_BASE = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download`;
+const [FALLBACK_OWNER, FALLBACK_REPO] = ["lzlkyb", "pastepanda"];
+const [REPO_OWNER, REPO_NAME] = (
+  process.env.GITHUB_REPOSITORY || `${FALLBACK_OWNER}/${FALLBACK_REPO}`
+).split("/");
+
+// 二进制下载基线 URL：默认 GitHub Release；CI/生产可经 UPDATER_DOWNLOAD_BASE 指向 ghproxy 镜像
+const GITHUB_RELEASE_BASE =
+  process.env.UPDATER_DOWNLOAD_BASE ||
+  `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download`;
+
+// URL 模板（Gitee 场景）：完全接管 URL 拼接，支持 {tag}/{filename} 占位符，
+// 优先级高于 UPDATER_DOWNLOAD_BASE（两者互斥）
+const URL_TEMPLATE = process.env.UPDATER_URL_TEMPLATE || null;
+
+// 输出文件名：Gitee 变体与 GitHub 变体输出为不同文件，同一脚本跑两次即可
+const OUTPUT_FILENAME = process.env.UPDATER_OUTPUT_FILENAME || "updater.json";
 
 // ─── 平台映射 ────────────────────────────────────────────
 
-/**
- * 每个平台需要：
- *  - dir: bundle 子目录
- *  - filePattern: 文件名模式（正则）
- *  - ext: 最终上传的文件扩展名
- *  - platformKey: updater.json 中的平台键名
- */
 const PLATFORM_CONFIGS = [
   {
     name: "windows-nsis",
@@ -98,13 +107,11 @@ function findArtifacts(config) {
 
   const files = fs.readdirSync(dirPath);
 
-  // 找到安装包文件
   const pkgFile = files.find(
     (f) => config.filePattern.test(f) && !f.endsWith(".sig")
   );
   if (!pkgFile) return null;
 
-  // 找到对应的签名文件
   const sigFile = files.find(
     (f) =>
       f === `${pkgFile}.sig` ||
@@ -113,8 +120,6 @@ function findArtifacts(config) {
 
   if (!sigFile) {
     warn(`${config.name}: 找到 ${pkgFile} 但没有 .sig 签名文件 → updater 将无法验证签名`);
-    // 降级：签名文件缺失时仍返回空签名，确保 updater.json 能生成
-    // 用户端会在验证签名时失败，但至少不会报 404
     return { fileName: pkgFile, signature: "" };
   }
 
@@ -128,9 +133,16 @@ function findArtifacts(config) {
   return { fileName: pkgFile, signature };
 }
 
+/** 根据配置生成下载 URL */
+function buildDownloadUrl(tag, filename) {
+  if (URL_TEMPLATE) {
+    return URL_TEMPLATE.replaceAll("{tag}", tag).replaceAll("{filename}", filename);
+  }
+  return `${GITHUB_RELEASE_BASE}/${tag}/${filename}`;
+}
+
 // ─── 主逻辑 ──────────────────────────────────────────────
 
-/** 从 tauri.conf.json 读取版本号（唯一版本来源） */
 function readVersionFromConf() {
   const confPath = path.join(ROOT, "src-tauri", "tauri.conf.json");
   if (!fs.existsSync(confPath)) {
@@ -145,23 +157,28 @@ function readVersionFromConf() {
 }
 
 function main() {
-  // 从 tauri.conf.json 读取版本号（唯一来源）
   const cleanVersion = readVersionFromConf();
   const tag = process.env.GITHUB_RELEASE_TAG || `v${cleanVersion}`;
   const notes = process.env.UPDATER_NOTES || "";
 
+  info(`仓库: ${REPO_OWNER}/${REPO_NAME}`);
   info(`版本: ${cleanVersion}`);
   info(`Release Tag: ${tag}`);
+  info(`输出文件: ${OUTPUT_FILENAME}`);
+  if (URL_TEMPLATE) {
+    info(`URL 模板: ${URL_TEMPLATE}`);
+  } else {
+    info(`下载基线: ${GITHUB_RELEASE_BASE}`);
+  }
   info(`扫描构建产物: ${BUNDLE_DIR}`);
 
-  // 扫描各平台产物
   const platforms = {};
 
   for (const cfg of PLATFORM_CONFIGS) {
     const result = findArtifacts(cfg);
     if (!result) continue;
 
-    const downloadUrl = `${GITHUB_RELEASE_BASE}/${tag}/${result.fileName}`;
+    const downloadUrl = buildDownloadUrl(tag, result.fileName);
 
     platforms[cfg.platformKey] = {
       signature: result.signature,
@@ -169,6 +186,7 @@ function main() {
     };
 
     success(`${cfg.name}: ${result.fileName}`);
+    info(`  下载 URL: ${downloadUrl}`);
   }
 
   if (Object.keys(platforms).length === 0) {
@@ -179,7 +197,6 @@ function main() {
     );
   }
 
-  // 构建 updater.json
   const updaterJson = {
     version: cleanVersion,
     notes: notes || `PastePanda v${cleanVersion}`,
@@ -187,33 +204,18 @@ function main() {
     platforms,
   };
 
-  // 输出到 dist 目录（前端构建输出）
   const distDir = path.join(ROOT, "dist");
   if (!fs.existsSync(distDir)) {
     fs.mkdirSync(distDir, { recursive: true });
   }
 
-  const outputPath = path.join(distDir, "updater.json");
+  const outputPath = path.join(distDir, OUTPUT_FILENAME);
   fs.writeFileSync(outputPath, JSON.stringify(updaterJson, null, 2), "utf-8");
 
   success(`已生成: ${outputPath}`);
-  console.log("\n--- updater.json 内容预览 ---");
+  console.log(`\n--- ${OUTPUT_FILENAME} 内容预览 ---`);
   console.log(JSON.stringify(updaterJson, null, 2));
   console.log("--- 预览结束 ---\n");
-
-  info("接下来你需要：");
-  info(
-    `1. 创建 GitHub Release: https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/new?tag=${tag}`
-  );
-  info(
-    `2. 上传以下文件到 Release:`
-  );
-  for (const [key, p] of Object.entries(platforms)) {
-    const fileName = path.basename(p.url);
-    info(`   - ${fileName} (${key})`);
-  }
-  info(`   - updater.json (在 ${outputPath})`);
-  info("3. 发布 Release");
 }
 
 main();

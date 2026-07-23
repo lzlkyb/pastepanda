@@ -4,6 +4,7 @@ import { useUpdate } from "@/contexts/UpdateContext";
 import { VersionBadge } from "@/components/VersionBadge";
 import { UpdateBanner } from "@/components/UpdateBadge";
 import { AppIcon } from "@/components/AppIcon";
+import { ChangelogView } from "@/components/ChangelogView";
 import aboutStyles from "../About.module.css";
 
 const TECH_STACK = [
@@ -83,6 +84,11 @@ export function AboutTabContent({ appName, appVersion }: { appName: string; appV
       </div>
 
       <UpdateBanner />
+
+      <div className={aboutStyles.aboutDivider} />
+
+      <div className={aboutStyles.aboutSectionLabel}>更新日志</div>
+      <ChangelogView currentVersion={appVersion} maxEntries={5} />
 
       <div className={aboutStyles.aboutFooter}>
         <button className={aboutStyles.aboutFooterLink} onClick={handleOpenProject}>

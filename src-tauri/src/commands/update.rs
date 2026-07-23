@@ -1,4 +1,5 @@
 use tauri::Emitter;
+use tauri_plugin_updater::UpdaterExt;
 
 // ===== 自动更新（后台线程，不阻塞 UI） =====
 
@@ -38,99 +39,217 @@ where
     }
 }
 
-/// 后台执行更新检查+下载安装，通过 Tauri event 推送状态到前端
-/// 内置指数退避重试：检查更新最多重试 3 次，下载安装最多重试 2 次
+// ─── 多源更新端点 ──────────────────────────────────────
+
+/// Gitee 镜像仓库（备用更新源）
+const GITEE_MANIFEST_URL: &str =
+    "https://gitee.com/lzul/pastepanda/raw/releases/latest/updater-gitee.json";
+
+/// 解析环境变量覆盖的更新端点
+/// `PASTEPANDA_UPDATE_ENDPOINT` 逗号分隔的 URL 列表，优先级最高
+fn resolve_env_endpoints() -> Option<Vec<String>> {
+    std::env::var("PASTEPANDA_UPDATE_ENDPOINT")
+        .ok()
+        .map(|val| {
+            val.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .filter(|v: &Vec<String>| !v.is_empty())
+}
+
+/// 候选更新端点组（按优先级排列），每组是 updater manifest URL 列表
+///
+/// 优先级：
+/// 1. 环境变量 PASTEPANDA_UPDATE_ENDPOINT（开发/测试用）
+/// 2. Gitee 镜像（国内直连，最可靠）
+/// 3. tauri.conf.json 中配置的 endpoints（ghproxy → GitHub 直连）
+fn candidate_endpoint_groups() -> Vec<Option<Vec<String>>> {
+    // 环境变量覆盖
+    if let Some(eps) = resolve_env_endpoints() {
+        log::info!("[Update] 使用环境变量端点: {:?}", eps);
+        return vec![Some(eps)];
+    }
+
+    let mut groups = Vec::new();
+
+    // 优先尝试 Gitee 镜像
+    groups.push(Some(vec![GITEE_MANIFEST_URL.to_string()]));
+
+    // 回退到 tauri.conf.json 的 endpoints（ghproxy / GitHub 直连）
+    groups.push(None); // None = 使用 tauri.conf.json 默认 endpoints
+
+    groups
+}
+
+/// 构建 Updater 实例：Some(urls) 时用自定义端点，None 时用 tauri.conf.json 默认端点。
+/// 对齐 cc-bridge 的 builder 模式：endpoints() 返回 Result，需 map_err 后 ?。
+fn build_updater(app: &tauri::AppHandle, endpoints: Option<&[String]>) -> Result<tauri_plugin_updater::Updater, String> {
+    let mut builder = app.updater_builder();
+    if let Some(urls) = endpoints {
+        let parsed: Vec<url::Url> = urls
+            .iter()
+            .filter_map(|u| url::Url::parse(u).ok())
+            .collect();
+        if parsed.is_empty() {
+            return Err("所有自定义端点 URL 均无效".to_string());
+        }
+        builder = builder
+            .endpoints(parsed)
+            .map_err(|e| format!("更新源配置无效（需 https）: {e}"))?;
+    }
+    builder
+        .build()
+        .map_err(|e| format!("Updater 初始化失败: {e}"))
+}
+
+// ─── check_update 命令 ─────────────────────────────────
+
+/// 仅检查更新（不下载），支持多源 failover。
+/// 前端通过此命令统一走 Rust 多源路径，避免 JS 插件单源检查。
 #[tauri::command]
-pub fn start_update(app: tauri::AppHandle) {
-    use tauri_plugin_updater::UpdaterExt;
+pub async fn check_update(app: tauri::AppHandle) -> Result<Option<serde_json::Value>, String> {
+    let groups = candidate_endpoint_groups();
 
-    tauri::async_runtime::spawn(async move {
-        // → 通知前端：检查中
-        let _ = app.emit("update:checking", ());
+    let mut last_error = String::new();
 
-        // 使用 UpdaterExt trait 的方法检查更新
-        let updater = match app.updater() {
+    for (i, group) in groups.iter().enumerate() {
+        let source_label = match group {
+            Some(urls) => urls.first().map(|s| s.as_str()).unwrap_or("custom"),
+            None => "tauri.conf.json (ghproxy/github)",
+        };
+        log::info!("[Update] 尝试更新源 {}/{}: {}", i + 1, groups.len(), source_label);
+
+        let endpoints = group.as_deref();
+        let updater = match build_updater(&app, endpoints) {
             Ok(u) => u,
             Err(e) => {
-                let _ = app.emit(
-                    "update:error",
-                    serde_json::json!({
-                        "message": format!("更新插件初始化失败: {}", e)
-                    }),
-                );
-                return;
+                last_error = e;
+                continue;
             }
         };
 
-        // 检查更新（带重试，最多 3 次，指数退避 1s/2s/4s）
-        let check_result = match retry_with_backoff(3, "检查更新", || updater.check()).await {
-            Ok(r) => r,
+        match retry_with_backoff(2, &format!("检查更新({})", source_label), || updater.check()).await {
+            Ok(Some(update)) => {
+                log::info!("[Update] 发现新版本 v{} (源: {})", update.version, source_label);
+                return Ok(Some(serde_json::json!({
+                    "version": update.version,
+                    "body": update.body,
+                })));
+            }
+            Ok(None) => {
+                log::info!("[Update] 已是最新版本 (源: {})", source_label);
+                return Ok(None);
+            }
             Err(e) => {
-                let _ = app.emit(
-                    "update:error",
-                    serde_json::json!({
-                        "message": format!("检查更新失败（已重试 3 次）: {}", e)
-                    }),
-                );
-                return;
+                last_error = e.to_string();
+                log::warn!("[Update] 源 {} 失败: {}", source_label, last_error);
+                continue;
             }
-        };
+        }
+    }
 
-        let update = match check_result {
-            Some(u) => u,
-            None => {
-                // 已是最新版本
-                let _ = app.emit("update:uptodate", ());
-                return;
-            }
-        };
+    Err(format!("所有更新源均失败: {}", last_error))
+}
 
-        // → 通知前端：发现新版本
-        let _ = app.emit(
-            "update:available",
-            serde_json::json!({
-                "version": update.version,
-                "body": update.body,
-            }),
-        );
+// ─── start_update 命令 ─────────────────────────────────
 
-        // → 通知前端：开始下载
-        let _ = app.emit("update:downloading", ());
+/// 后台执行更新检查+下载安装，通过 Tauri event 推送状态到前端。
+/// 支持多源 failover：按优先级尝试 Gitee → ghproxy → GitHub。
+#[tauri::command]
+pub fn start_update(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let _ = app.emit("update:checking", ());
 
-        // 下载并安装（带重试，最多 2 次，指数退避 1s/2s）
-        let app_progress = app.clone();
-        let app_ready = app.clone();
-        let result = retry_with_backoff(2, "下载安装", || {
-            let u = update.clone();
-            let ap = app_progress.clone();
-            let ar = app_ready.clone();
-            async move {
-                u.download_and_install(
-                    move |downloaded, total| {
-                        let _ = ap.emit(
-                            "update:progress",
-                            serde_json::json!({
-                                "downloaded": downloaded,
-                                "total": total,
-                            }),
-                        );
-                    },
-                    move || {
-                        let _ = ar.emit("update:ready", ());
-                    },
-                )
-                .await
-            }
-        })
-        .await;
+        let groups = candidate_endpoint_groups();
+        let mut last_error = String::new();
 
-        if let Err(e) = result {
+        for (i, group) in groups.iter().enumerate() {
+            let source_label = match group {
+                Some(urls) => urls.first().map(|s| s.as_str()).unwrap_or("custom"),
+                None => "tauri.conf.json (ghproxy/github)",
+            };
+            log::info!("[Update] 下载尝试源 {}/{}: {}", i + 1, groups.len(), source_label);
+
+            let endpoints = group.as_deref();
+            let updater = match build_updater(&app, endpoints) {
+                Ok(u) => u,
+                Err(e) => {
+                    last_error = e;
+                    continue;
+                }
+            };
+
+            // 检查更新（带重试，最多 2 次）
+            let update = match retry_with_backoff(2, &format!("检查更新({})", source_label), || updater.check()).await {
+                Ok(Some(u)) => u,
+                Ok(None) => {
+                    let _ = app.emit("update:uptodate", ());
+                    return;
+                }
+                Err(e) => {
+                    last_error = e.to_string();
+                    log::warn!("[Update] 源 {} 检查失败: {}", source_label, last_error);
+                    continue;
+                }
+            };
+
+            // → 通知前端：发现新版本
             let _ = app.emit(
-                "update:error",
+                "update:available",
                 serde_json::json!({
-                    "message": format!("下载安装失败（已重试 2 次）: {}", e)
+                    "version": update.version,
+                    "body": update.body,
                 }),
             );
+
+            // → 通知前端：开始下载
+            let _ = app.emit("update:downloading", ());
+
+            // 下载并安装（带重试，最多 2 次）
+            let app_progress = app.clone();
+            let app_ready = app.clone();
+            let result = retry_with_backoff(2, &format!("下载安装({})", source_label), || {
+                let u = update.clone();
+                let ap = app_progress.clone();
+                let ar = app_ready.clone();
+                async move {
+                    u.download_and_install(
+                        move |downloaded, total| {
+                            let _ = ap.emit(
+                                "update:progress",
+                                serde_json::json!({
+                                    "downloaded": downloaded,
+                                    "total": total,
+                                }),
+                            );
+                        },
+                        move || {
+                            let _ = ar.emit("update:ready", ());
+                        },
+                    )
+                    .await
+                }
+            })
+            .await;
+
+            match result {
+                Ok(()) => return, // 下载成功，已 emit update:ready
+                Err(e) => {
+                    last_error = e.to_string();
+                    log::warn!("[Update] 源 {} 下载失败: {}", source_label, last_error);
+                    continue;
+                }
+            }
         }
+
+        // 所有源均失败
+        let _ = app.emit(
+            "update:error",
+            serde_json::json!({
+                "message": format!("所有更新源均失败: {}", last_error)
+            }),
+        );
     });
 }

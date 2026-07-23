@@ -1,5 +1,4 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
-import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -8,14 +7,24 @@ import { useToast } from "@/components/Toast";
 
 // ─── 类型定义 ───────────────────────────────────────────
 
-export type UpdateStatus = "idle" | "checking" | "available" | "downloading" | "ready" | "error" | "installed" | "uptodate";
+export type UpdateStatus = "idle" | "checking" | "available" | "downloading" | "ready" | "error" | "installed" | "uptodate" | "skipped";
+
+/** 本地更新信息（替代 @tauri-apps/plugin-updater 的 Update 类型，数据统一从 Rust 多源路径获取） */
+export interface UpdateInfo {
+  version: string;
+  body: string | null;
+}
 
 export interface UpdateState {
   status: UpdateStatus;
   /** 更新信息（available / downloading / ready 时有值） */
-  update: Update | null;
+  update: UpdateInfo | null;
   /** 下载进度 0-100 */
   progress: number;
+  /** 进度不确定（total 未知，如某些源不返回 Content-Length） */
+  progressIndeterminate: boolean;
+  /** 下载速率（字节/秒，前端根据 downloaded 差值计算） */
+  bytesPerSec: number;
   /** 错误信息 */
   error: string | null;
   /** 手动触发检查更新 */
@@ -26,6 +35,8 @@ export interface UpdateState {
   restart: () => Promise<void>;
   /** 标记已安装（重启前显示提示） */
   markInstalled: () => void;
+  /** 跳过当前版本（不再提示） */
+  skipThisVersion: () => void;
 }
 
 // ─── Context ────────────────────────────────────────────
@@ -70,13 +81,26 @@ export function friendlyError(raw: string): FriendlyError {
 /** 自动检查间隔：24 小时 */
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const LAST_CHECK_KEY = "pastepanda_last_update_check";
+const SKIP_VERSION_PREFIX = "pastepanda_skip_";
+
+/** 检查某版本是否被用户标记为"跳过" */
+function isVersionSkipped(version: string): boolean {
+  return localStorage.getItem(`${SKIP_VERSION_PREFIX}${version}`) === "1";
+}
+
+/** 标记某版本为"跳过" */
+function setVersionSkipped(version: string): void {
+  localStorage.setItem(`${SKIP_VERSION_PREFIX}${version}`, "1");
+}
 
 // ─── Provider ───────────────────────────────────────────
 
 export function UpdateProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<UpdateStatus>("idle");
-  const [update, setUpdate] = useState<Update | null>(null);
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [progress, setProgress] = useState(0);
+  const [progressIndeterminate, setProgressIndeterminate] = useState(false);
+  const [bytesPerSec, setBytesPerSec] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
   const checkingRef = useRef(false);
@@ -84,8 +108,10 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const uptodateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const downloadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 用于前端计算下载速率：记录上次 downloaded 值和时间戳 */
+  const speedRef = useRef<{ downloaded: number; time: number }>({ downloaded: 0, time: 0 });
 
-  /** 清除“已是最新”4 秒回退计时器，避免过期计时器在状态已变化后再次覆盖为 idle */
+  /** 清除"已是最新"4 秒回退计时器，避免过期计时器在状态已变化后再次覆盖为 idle */
   const clearUptodateTimer = useCallback(() => {
     if (uptodateTimerRef.current) {
       clearTimeout(uptodateTimerRef.current);
@@ -130,11 +156,16 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     if (checkingRef.current) return;
     checkingRef.current = true;
     try {
-      const update = await check();
-      if (update) {
+      const result = await invoke<{ version: string; body: string | null } | null>("check_update");
+      if (result) {
+        // 检查版本是否被跳过
+        if (isVersionSkipped(result.version)) {
+          logger.info(`[Update] 版本 v${result.version} 已被用户标记为跳过`);
+          return;
+        }
         clearUptodateTimer();
         setStatus("available");
-        setUpdate(update);
+        setUpdate({ version: result.version, body: result.body });
       }
     } catch {
       // 静默检查失败不处理
@@ -144,24 +175,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // ─── 指数退避重试辅助函数 ─────────────────────────
-
-  /** 带指数退避的重试执行，最多 retries 次，间隔 1s/2s/4s/... */
-  async function retryWithBackoff<T>(fn: () => Promise<T>, retries: number, label: string): Promise<T> {
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      try {
-        return await fn();
-      } catch (e) {
-        if (attempt >= retries) throw e;
-        const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s, ...
-        logger.warn(`[Update] ${label} 失败（第 ${attempt + 1}/${retries + 1} 次），${delay / 1000}s 后重试:`, e);
-        await new Promise((r) => setTimeout(r, delay));
-      }
-    }
-    throw new Error("unreachable");
-  }
-
-  // ─── 检查更新 ─────────────────────────────────────────
+  // ─── 检查更新（统一走 Rust 多源路径）─────────────────
 
   const checkForUpdate = useCallback(async () => {
     if (checkingRef.current) return;
@@ -172,13 +186,21 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     setError(null);
 
     try {
-      // 带重试检查更新（最多 3 次，指数退避 1s/2s/4s）
-      const update = await retryWithBackoff(() => check(), 3, "检查更新");
-      if (update) {
+      // Rust 侧已内置多源 failover + 指数退避重试，前端无需再重试
+      const result = await invoke<{ version: string; body: string | null } | null>("check_update");
+      if (result) {
+        // 检查版本是否被跳过
+        if (isVersionSkipped(result.version)) {
+          clearUptodateTimer();
+          setStatus("skipped");
+          setUpdate({ version: result.version, body: result.body });
+          toast(`v${result.version} 已被跳过（可在设置中取消）`, "info");
+          return;
+        }
         clearUptodateTimer();
         setStatus("available");
-        setUpdate(update);
-        toast(`发现新版本 v${update.version}`, "info");
+        setUpdate({ version: result.version, body: result.body });
+        toast(`发现新版本 v${result.version}`, "info");
       } else {
         setStatus("uptodate");
         setUpdate(null);
@@ -247,11 +269,13 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       unlisteners.push(
         await listen<{ version: string; body: string | null }>("update:available", (e) => {
           clearUptodateTimer();
-          setStatus("available");
-          setUpdate({
-            version: e.payload.version,
-            body: e.payload.body,
-          } as Update);
+          // 检查版本是否被跳过
+          if (isVersionSkipped(e.payload.version)) {
+            setStatus("skipped");
+          } else {
+            setStatus("available");
+          }
+          setUpdate({ version: e.payload.version, body: e.payload.body });
         }),
       );
 
@@ -265,6 +289,9 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
           }
           setStatus("downloading");
           setProgress(0);
+          setProgressIndeterminate(false);
+          setBytesPerSec(0);
+          speedRef.current = { downloaded: 0, time: Date.now() };
         }),
       );
 
@@ -274,6 +301,18 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
           if (total) {
             const pct = Math.round((downloaded / total) * 100);
             setProgress(pct);
+            setProgressIndeterminate(false);
+          } else {
+            setProgressIndeterminate(true);
+          }
+          // 前端计算下载速率（基于 downloaded 差值 / 时间差）
+          const now = Date.now();
+          const prev = speedRef.current;
+          const dt = (now - prev.time) / 1000; // 秒
+          if (dt > 0.3) {
+            const bps = (downloaded - prev.downloaded) / dt;
+            setBytesPerSec(Math.round(bps));
+            speedRef.current = { downloaded, time: now };
           }
         }),
       );
@@ -336,17 +375,31 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     setStatus("installed");
   }, []);
 
+  // ─── 跳过当前版本 ───────────────────────────────────
+
+  const skipThisVersion = useCallback(() => {
+    if (update) {
+      setVersionSkipped(update.version);
+      logger.info(`[Update] 用户跳过了版本 v${update.version}`);
+      setStatus("idle");
+      toast(`已跳过 v${update.version}`, "info");
+    }
+  }, [update]);
+
   return (
     <UpdateContext.Provider
       value={{
         status,
         update,
         progress,
+        progressIndeterminate,
+        bytesPerSec,
         error,
         checkForUpdate,
         downloadAndInstall,
         restart,
         markInstalled,
+        skipThisVersion,
       }}
     >
       {children}

@@ -58,6 +58,22 @@
   line-height: 1;
 }
 
+/* 未读红点：关于 tab 有更新可用时显示 */
+.tabDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--danger, #DC2626);
+  box-shadow: 0 0 4px var(--danger, #DC2626);
+  flex-shrink: 0;
+  animation: dotPulse 2s ease-in-out infinite;
+}
+
+@keyframes dotPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 /* Dialog header compact */
 .dialogHeaderCompact {
   height: 36px !important;
