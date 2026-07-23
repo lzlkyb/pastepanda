@@ -34,6 +34,7 @@ function resetStore() {
     paused: false,
     groups: [],
     tags: [],
+    _filterCache: null,
     config: {
       ...useAppStore.getState().config,
       current_workspace: "默认",
@@ -238,10 +239,10 @@ describe("togglePin", () => {
     expect(pinned).toBe(true);
   });
 
-  it("returns false on failure", async () => {
+  it("returns null on failure", async () => {
     vi.mocked(invoke).mockRejectedValueOnce(new Error("pin failed"));
     const pinned = await togglePin("item-1");
-    expect(pinned).toBe(false);
+    expect(pinned).toBeNull();
   });
 
   it("toggles pin state in store", async () => {
@@ -277,7 +278,7 @@ describe("sequentialPaste", () => {
         {
           id: "1",
           text: "First",
-          time: "2026-01-01 12:00:00",
+          time: "2026-01-01 12:00:01", // 更新 → 排序后在前
           type: "text",
           content: "",
           pinned: false,
@@ -287,7 +288,7 @@ describe("sequentialPaste", () => {
         {
           id: "2",
           text: "Second",
-          time: "2026-01-01 12:00:01",
+          time: "2026-01-01 12:00:00",
           type: "text",
           content: "",
           pinned: false,
@@ -529,9 +530,9 @@ describe("indexPaste", () => {
       ],
     });
 
-    await indexPaste(2); // 第二条文本 = Text B
+    await indexPaste(2); // 过滤后按时间倒序：Text B(12:00:02) 第1, Text A(12:00:01) 第2
 
-    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "Text B" });
+    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "Text A" });
   });
 
   it("dispatches app-toast after paste", async () => {
@@ -567,8 +568,18 @@ describe("initBackend", () => {
   it("loads initial history, config, groups, tags on init", async () => {
     const { initBackend } = await import("@/lib/api");
 
-    // Mock invoke 依次返回不同的值
+    // Mock invoke 依次返回不同的值（C13 修复后顺序：config → history → groups → tags）
     vi.mocked(invoke)
+      // get_config（先加载配置）
+      .mockResolvedValueOnce({
+        theme: "dark",
+        auto_cleanup_days: 7,
+        hotkey: "ctrl+shift+v",
+        current_workspace: "默认",
+        lan_sync_enabled: false,
+        always_on_top: false,
+        auto_startup: false,
+      })
       // get_history
       .mockResolvedValueOnce([
         {
@@ -582,16 +593,6 @@ describe("initBackend", () => {
           workspace: "默认",
         },
       ])
-      // get_config
-      .mockResolvedValueOnce({
-        theme: "dark",
-        auto_cleanup_days: 7,
-        hotkey: "ctrl+shift+v",
-        current_workspace: "默认",
-        lan_sync_enabled: false,
-        always_on_top: false,
-        auto_startup: false,
-      })
       // get_groups
       .mockResolvedValueOnce([
         {
@@ -616,8 +617,8 @@ describe("initBackend", () => {
 
     const cleanup = await initBackend();
 
-    expect(invoke).toHaveBeenCalledWith("get_history", expect.any(Object));
     expect(invoke).toHaveBeenCalledWith("get_config");
+    expect(invoke).toHaveBeenCalledWith("get_history", expect.any(Object));
     expect(invoke).toHaveBeenCalledWith("get_groups");
     expect(invoke).toHaveBeenCalledWith("get_tags");
 
@@ -632,28 +633,15 @@ describe("initBackend", () => {
     expect(typeof cleanup).toBe("function");
   });
 
-  it("handles get_history failure gracefully", async () => {
-    // 需要重新 import 以获取新的模块实例（避免 vi.mock 缓存问题）
-    vi.mocked(invoke).mockRejectedValueOnce(new Error("DB error"));
-
+  it("throws when get_history fails (M8: error propagates to App)", async () => {
     const { initBackend } = await import("@/lib/api");
 
-    // 重新 mock 后续调用
+    // C13 修复后顺序：get_config 先（try/catch 内），get_history 后（无 catch，向上抛）
     vi.mocked(invoke)
-      .mockRejectedValueOnce(new Error("DB error"))
-      .mockResolvedValueOnce({
-        theme: "light",
-        auto_cleanup_days: 30,
-        hotkey: "ctrl+shift+v",
-        current_workspace: "默认",
-      })
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce({ theme: "light", current_workspace: "默认" }) // get_config 成功
+      .mockRejectedValueOnce(new Error("DB error")); // get_history 失败 → 抛出
 
-    await initBackend();
-
-    const store = useAppStore.getState();
-    expect(store.history).toHaveLength(0); // 加载失败，保持空
+    await expect(initBackend()).rejects.toThrow("DB error");
   });
 });
 

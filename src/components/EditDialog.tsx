@@ -47,9 +47,15 @@ export function EditDialog({ item, onClose }: { item: HistoryItem; onClose: () =
   const { toast } = useToast();
   const originalText = item?.text || "";
   const [langLabel, setLangLabel] = useState("检测中…");
-  const [mode, setMode] = useState<"edit" | "preview">(() => isMarkdown(item?.text || "") ? "preview" : "edit");
-  const isMd = useMemo(() => isMarkdown(text), [text]);
-  const isHtmlContent = useMemo(() => isHtml(text), [text]);
+  // content_type 由 Rust ContentClassifier 持久化，为权威来源；旧数据无该字段时回退前端检测
+  const [mode, setMode] = useState<"edit" | "preview">(() =>
+    (item?.content_type ? item.content_type === "markdown" : isMarkdown(item?.text || "")) ? "preview" : "edit");
+  const isMd = useMemo(() =>
+    item?.content_type ? item.content_type === "markdown" : isMarkdown(text),
+  [item?.content_type, text]);
+  const isHtmlContent = useMemo(() =>
+    item?.content_type ? item.content_type === "html" : isHtml(text),
+  [item?.content_type, text]);
 
   // 文本变化时更新语言标签（带取消守卫：慢请求不得覆盖新内容的检测结果 — M22）
   useEffect(() => {

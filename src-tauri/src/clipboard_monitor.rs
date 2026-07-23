@@ -344,6 +344,8 @@ impl ClipboardMonitor {
 
                             // 如果没有找到重复记录，则正常创建新记录
                             if existing_id.is_none() {
+                                // 统一分类：一次 classify() 同时派生 content_type 和自动标签
+                                let labels = ContentClassifier::new().classify(&text);
                                 let item = HistoryItem {
                                     id: Uuid::new_v4().to_string(),
                                     text: text.clone(),
@@ -357,6 +359,7 @@ impl ClipboardMonitor {
                                     pinyin_initials: Some(pinyin_initials),
                                     group_id: None,
                                     source_icon: source_icon.clone(),
+                                    content_type: Some(ContentClassifier::content_type_from_labels(&labels).to_string()),
                                     tags: Vec::new(),
                                 };
 
@@ -367,19 +370,17 @@ impl ClipboardMonitor {
                                     }
                                 }
 
-                                // AI 自动分类：用 std::thread 后台执行，不阻塞轮询循环
-                                // 注意：不能用 tokio::spawn，因为监听线程是 std::thread，没有 Tokio runtime
+                                // 自动标签写入：后台线程只做 DB 操作（分类已在上方同步完成，< 0.5ms）
                                 // 并发上限：剪贴板高频突发（同步工具/脚本）时避免无界创建线程（M29）
                                 {
                                     const MAX_CLASSIFY_IN_FLIGHT: usize = 4;
                                     static CLASSIFY_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
 
                                     if CLASSIFY_IN_FLIGHT.load(Ordering::SeqCst) >= MAX_CLASSIFY_IN_FLIGHT {
-                                        log::debug!("[ContentClassifier] 分类线程已达上限，跳过本条自动分类");
+                                        log::debug!("[ContentClassifier] 标签写入线程已达上限，跳过本条");
                                     } else {
                                         CLASSIFY_IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
                                         let history_id = item.id.clone();
-                                        let classify_text = item.text.clone();
                                         let app_clone = app_handle.clone();
                                         std::thread::spawn(move || {
                                             // panic-safe 计数复位
@@ -391,9 +392,6 @@ impl ClipboardMonitor {
                                             }
                                             let _dec = DecOnDrop;
 
-                                            // ContentClassifier 是无状态的纯逻辑引擎，直接创建实例即可
-                                            let classifier = ContentClassifier::new();
-                                            let labels = classifier.classify(&classify_text);
                                             if let Some(store) = app_clone.try_state::<DataStore>() {
                                                 if let Ok(tag_ids) = store.resolve_auto_tag_ids(&labels) {
                                                     if !tag_ids.is_empty() {
@@ -401,7 +399,6 @@ impl ClipboardMonitor {
                                                             log::warn!("[ContentClassifier] 写入自动标签失败: {}", e);
                                                         } else {
                                                             log::info!("[ContentClassifier] 自动分类: {:?} → {}", labels, history_id);
-                                                            // 传递增量数据：history_id + tag_ids，前端只更新该 item 的标签
                                                             let _ = app_clone.emit("tags-updated", serde_json::json!({
                                                                 "history_id": history_id,
                                                                 "tag_ids": tag_ids,
@@ -548,6 +545,7 @@ impl ClipboardMonitor {
                                         pinyin_initials: None,
                                         group_id: None,
                                         source_icon: img_source_icon,
+                                        content_type: Some("image".to_string()),
                                         tags: Vec::new(),
                                     };
 
@@ -617,6 +615,7 @@ impl ClipboardMonitor {
                                                 pinyin_initials: None,
                                                 group_id: None,
                                                 source_icon: file_source_icon.clone(),
+                                                content_type: Some("file".to_string()),
                                                 tags: Vec::new(),
                                             };
                                             if let Some(store) = app_handle.try_state::<DataStore>()
@@ -761,5 +760,114 @@ fn get_clipboard_files() -> Option<Vec<String>> {
         } else {
             Some(files)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::thread;
+
+    #[test]
+    fn test_new_not_suppressed() {
+        let ps = PasteSuppress::new();
+        assert!(!ps.is_suppressed());
+        assert!(!ps.has_expected_hash());
+    }
+
+    #[test]
+    fn test_set_activates_time_window() {
+        let ps = PasteSuppress::new();
+        ps.set(Duration::from_millis(200));
+        assert!(ps.is_suppressed());
+    }
+
+    #[test]
+    fn test_time_window_expires() {
+        let ps = PasteSuppress::new();
+        ps.set(Duration::from_millis(50));
+        assert!(ps.is_suppressed());
+        thread::sleep(Duration::from_millis(80));
+        assert!(!ps.is_suppressed());
+    }
+
+    #[test]
+    fn test_set_with_hash() {
+        let ps = PasteSuppress::new();
+        ps.set_with_hash(Duration::from_millis(200), "abc123".to_string());
+        assert!(ps.is_suppressed());
+        assert!(ps.has_expected_hash());
+        assert!(ps.is_hash_suppressed("abc123"));
+        assert!(!ps.is_hash_suppressed("other"));
+    }
+
+    #[test]
+    fn test_hash_suppressed_after_time_expires() {
+        let ps = PasteSuppress::new();
+        ps.set_with_hash(Duration::from_millis(30), "hash1".to_string());
+        thread::sleep(Duration::from_millis(60));
+        // 时间窗口过期
+        assert!(!ps.is_suppressed());
+        // 但 hash 仍然匹配（U57 双重检查的核心）
+        assert!(ps.has_expected_hash());
+        assert!(ps.is_hash_suppressed("hash1"));
+    }
+
+    #[test]
+    fn test_clear_hash() {
+        let ps = PasteSuppress::new();
+        ps.set_with_hash(Duration::from_secs(10), "h".to_string());
+        assert!(ps.has_expected_hash());
+        ps.clear_hash();
+        assert!(!ps.has_expected_hash());
+        assert!(!ps.is_hash_suppressed("h"));
+        // 时间窗口不受 clear_hash 影响
+        assert!(ps.is_suppressed());
+    }
+
+    #[test]
+    fn test_u57_dual_check_pattern() {
+        // 模拟 U57 修复后的监听循环逻辑：
+        // if has_expected_hash() { if !is_hash_suppressed(hash) { clear_hash(); } }
+        // else if is_suppressed() { skip }
+        let ps = PasteSuppress::new();
+        ps.set_with_hash(Duration::from_millis(30), "pasted_content".to_string());
+        thread::sleep(Duration::from_millis(60)); // 时间过期
+
+        // 场景 1：新复制的内容 hash 匹配 → 应跳过（自粘贴回显）
+        let new_hash = "pasted_content";
+        if ps.has_expected_hash() {
+            assert!(ps.is_hash_suppressed(new_hash)); // 匹配 → 跳过
+        }
+
+        // 场景 2：新复制的内容 hash 不匹配 → 应清除 hash 并正常记录
+        let different_hash = "user_new_content";
+        if ps.has_expected_hash() {
+            if !ps.is_hash_suppressed(different_hash) {
+                ps.clear_hash(); // 不匹配 → 清除，正常记录
+            }
+        }
+        assert!(!ps.has_expected_hash());
+    }
+
+    #[test]
+    fn test_set_overwrites_previous() {
+        let ps = PasteSuppress::new();
+        ps.set_with_hash(Duration::from_secs(10), "old".to_string());
+        ps.set_with_hash(Duration::from_secs(10), "new".to_string());
+        assert!(ps.is_hash_suppressed("new"));
+        assert!(!ps.is_hash_suppressed("old"));
+    }
+
+    #[test]
+    fn test_concurrent_access() {
+        let ps = Arc::new(PasteSuppress::new());
+        let ps2 = Arc::clone(&ps);
+        let handle = thread::spawn(move || {
+            ps2.set_with_hash(Duration::from_millis(100), "t".to_string());
+        });
+        handle.join().unwrap();
+        assert!(ps.is_suppressed());
+        assert!(ps.is_hash_suppressed("t"));
     }
 }

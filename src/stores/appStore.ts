@@ -36,6 +36,8 @@ export interface HistoryItem {
   tags?: Tag[];
   /** 来源应用真实图标文件名（捕获剪贴板时从 exe 提取） */
   source_icon?: string | null;
+  /** 内容类型（由 Rust ContentClassifier 在插入时计算并持久化） */
+  content_type?: string;
 }
 
 export type FilterType = "all" | "text" | "image" | "file" | "pinned";

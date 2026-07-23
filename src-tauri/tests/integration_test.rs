@@ -29,6 +29,7 @@ fn make_item(id: &str, text: &str, time: &str, item_type: &str) -> HistoryItem {
         pinyin_initials: Some(pastepanda_lib::data_store::compute_pinyin_initials(text)),
         group_id: None,
         source_icon: None,
+        content_type: None,
         tags: Vec::new(),
     }
 }
@@ -513,7 +514,7 @@ fn test_dedup_by_md5_workflow() {
     store.insert_history(&item2).unwrap();
 
     // 查找最新重复
-    let found = store.find_latest_by_md5(&md5_hash).unwrap().unwrap();
+    let found = store.find_latest_by_md5(&md5_hash, "默认").unwrap().unwrap();
     assert_eq!(found.id, "dup-2"); // 时间更新的那条
 
     // 更新时间为现在
@@ -523,7 +524,7 @@ fn test_dedup_by_md5_workflow() {
     store.update_history_time("dup-1", &now).unwrap();
 
     // 现在最新的是 dup-1
-    let found = store.find_latest_by_md5(&md5_hash).unwrap().unwrap();
+    let found = store.find_latest_by_md5(&md5_hash, "默认").unwrap().unwrap();
     assert_eq!(found.id, "dup-1");
 }
 

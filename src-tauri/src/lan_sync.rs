@@ -428,7 +428,15 @@ impl LanSync {
                                     }
                                 }
                             }
-                            "file" => (format!("[文件] {}", msg.text), String::new()),
+                            "file" => {
+                                // 与本地文件捕获格式一致：text=文件名, content=路径
+                                let path = &msg.text;
+                                let filename = std::path::Path::new(path)
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| path.clone());
+                                (filename, path.clone())
+                            }
                             _ => (msg.text.clone(), String::new()),
                         };
 
@@ -437,6 +445,16 @@ impl LanSync {
                             Some(compute_pinyin_initials(&final_text))
                         } else {
                             None
+                        };
+
+                        // 计算统一内容类型（与本地剪贴板使用相同的 classify() 路径）
+                        let content_type = match item_type.as_str() {
+                            "image" => Some("image".to_string()),
+                            "file" => Some("file".to_string()),
+                            _ => {
+                                let labels = crate::content_classifier::ContentClassifier::new().classify(&final_text);
+                                Some(crate::content_classifier::ContentClassifier::content_type_from_labels(&labels).to_string())
+                            }
                         };
 
                         let item = HistoryItem {
@@ -452,6 +470,7 @@ impl LanSync {
                             pinyin_initials,
                             group_id: None,
                             source_icon: None,
+                            content_type,
                             tags: Vec::new(),
                         };
 

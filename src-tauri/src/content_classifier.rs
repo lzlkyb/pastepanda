@@ -57,6 +57,60 @@ static CODE_INDENT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?m)^[ \t]{2,}\S").unwrap()
 });
 
+// ===== Email 检测 =====
+static EMAIL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$").unwrap()
+});
+
+// ===== 电话号码检测（中国手机号） =====
+static PHONE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(\+?86)?1[3-9]\d{9}$").unwrap()
+});
+
+// ===== 颜色检测 =====
+static COLOR_HEX_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$").unwrap()
+});
+static COLOR_RGB_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*(0|1|0?\.\d+)\s*)?\)$").unwrap()
+});
+static COLOR_HSL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^hsla?\(\s*\d{1,3}\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%\s*(,\s*(0|1|0?\.\d+)\s*)?\)$").unwrap()
+});
+
+// ===== 文件路径检测 =====
+static FILE_PATH_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^([A-Z]:\\|\\\\|/[\w.]|[.~]/)").unwrap()
+});
+
+// ===== Markdown 检测 =====
+static MD_HEADING_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?m)^#{1,6}\s+\S").unwrap()
+});
+static MD_BOLD_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\*\*[^*]+\*\*|__[^_]+__").unwrap()
+});
+static MD_LIST_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?m)^\s*[-*+]\s+\S|^\s*\d+\.\s+\S").unwrap()
+});
+static MD_CODE_BLOCK_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"```").unwrap()
+});
+static MD_LINK_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\[[^\]]*\]\([^)]+\)").unwrap()
+});
+static MD_BLOCKQUOTE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?m)^>\s+\S").unwrap()
+});
+
+// ===== HTML 检测 =====
+static HTML_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?s)<(html|head|body|div|span|p|a|img|script|style|table|ul|ol|li|h[1-6]|form|input|button|section|article|nav|header|footer|main)\b[^>]*>").unwrap()
+});
+static HTML_DOCTYPE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)<!DOCTYPE\s+html").unwrap()
+});
+
 /// 常用命令白名单
 static COMMON_COMMANDS: &[&str] = &[
     "git", "docker", "npm", "yarn", "pnpm", "cargo", "rustc",
@@ -161,6 +215,12 @@ impl ContentClassifier {
             return vec!["纯文本".to_string()];
         }
 
+        // ===== 0.5 单行精确匹配 =====
+        if self.is_email(text) { return vec!["邮箱".to_string()]; }
+        if self.is_phone(text) { return vec!["电话".to_string()]; }
+        if self.is_color(text) { return vec!["颜色".to_string()]; }
+        if self.is_file_path(text) { return vec!["文件路径".to_string()]; }
+
         // 纯数字
         if text.chars().all(|c| c.is_ascii_digit() || c == '.' || c == ',' || c == '-' || c == ' ' || c == '\n' || c == '\r') {
             // 确认不全是标点/空格
@@ -183,6 +243,16 @@ impl ContentClassifier {
         // ===== 1. URL 检测 =====
         if URL_RE.is_match(text) {
             return vec!["链接".to_string()];
+        }
+
+        // ===== 1.5 Markdown 检测（在代码之前） =====
+        if self.is_markdown(text) {
+            return vec!["Markdown".to_string()];
+        }
+
+        // ===== 1.6 HTML 检测 =====
+        if self.is_html(text) {
+            return vec!["HTML".to_string()];
         }
 
         // ===== 2. 配置文件检测 =====
@@ -222,6 +292,83 @@ impl ContentClassifier {
 
         // ===== 8. 默认：纯文本 =====
         vec!["纯文本".to_string()]
+    }
+
+    /// 统一内容类型分类 — 返回规范化的 content_type 字符串（用于持久化）。
+    /// 优先级：email > phone > color > file_path > link > number > json > markdown > html > config > csv > shell > log > secret > code > text
+    pub fn classify_content_type(&self, text: &str) -> &'static str {
+        let text = text.trim();
+        if text.is_empty() { return "text"; }
+
+        // 单行精确匹配（最高优先级）
+        if self.is_email(text) { return "email"; }
+        if self.is_phone(text) { return "phone"; }
+        if self.is_color(text) { return "color"; }
+        if self.is_file_path(text) { return "file_path"; }
+
+        // URL
+        if URL_RE.is_match(text) { return "link"; }
+
+        // 纯数字
+        if text.chars().all(|c| c.is_ascii_digit() || c == '.' || c == ',' || c == '-' || c == ' ' || c == '\n' || c == '\r') {
+            let digit_count = text.chars().filter(|c| c.is_ascii_digit()).count();
+            if digit_count > 0 && digit_count as f64 / text.len() as f64 > 0.5 {
+                return "number";
+            }
+        }
+
+        // JSON
+        if self.is_json(text) { return "json"; }
+
+        // Markdown（在 code 之前，因为 MD 中可能包含代码块）
+        if self.is_markdown(text) { return "markdown"; }
+
+        // HTML（在 code 之前）
+        if self.is_html(text) { return "html"; }
+
+        // 配置文件
+        if self.detect_config(text).is_some() { return "config"; }
+
+        // CSV/TSV
+        if self.is_csv(text) { return "csv"; }
+
+        // 命令行
+        if self.is_command(text) { return "shell"; }
+
+        // 日志
+        if self.is_log(text) { return "log"; }
+
+        // 密钥
+        if self.is_secret(text) { return "secret"; }
+
+        // 代码
+        if self.is_code(text) { return "code"; }
+
+        "text"
+    }
+
+    /// 从 classify() 返回的标签列表派生 content_type（单一分类入口）。
+    /// 映射规则：第一个标签决定主类型。
+    pub fn content_type_from_labels(labels: &[String]) -> &'static str {
+        match labels.first().map(|s| s.as_str()) {
+            Some("邮箱") => "email",
+            Some("电话") => "phone",
+            Some("颜色") => "color",
+            Some("文件路径") => "file_path",
+            Some("链接") => "link",
+            Some("数字") => "number",
+            Some("JSON") => "json",
+            Some("Markdown") => "markdown",
+            Some("HTML") => "html",
+            Some("配置文件") => "config",
+            Some("表格") => "csv",
+            Some("命令行") => "shell",
+            Some("日志") => "log",
+            Some("密钥") => "secret",
+            Some("代码") => "code",
+            Some("纯文本") => "text",
+            _ => "text",
+        }
     }
 
     /// 检测是否为合法 JSON
@@ -527,6 +674,80 @@ impl ContentClassifier {
             best_label
         }
     }
+
+    /// 检测邮箱
+    fn is_email(&self, text: &str) -> bool {
+        !text.contains('\n') && EMAIL_RE.is_match(text)
+    }
+
+    /// 检测电话号码
+    fn is_phone(&self, text: &str) -> bool {
+        !text.contains('\n') && PHONE_RE.is_match(text.trim())
+    }
+
+    /// 检测颜色值
+    fn is_color(&self, text: &str) -> bool {
+        let t = text.trim();
+        if t.contains('\n') { return false; }
+        if COLOR_HEX_RE.is_match(t) { return true; }
+        if COLOR_RGB_RE.is_match(t) {
+            // 验证 R/G/B 通道 0-255（正则允许 0-999）
+            let nums: Vec<u32> = t
+                .trim_start_matches("rgba(")
+                .trim_start_matches("rgb(")
+                .trim_end_matches(')')
+                .split(',')
+                .filter_map(|s| s.trim().parse::<u32>().ok())
+                .collect();
+            return nums.len() >= 3 && nums[..3].iter().all(|&v| v <= 255);
+        }
+        if COLOR_HSL_RE.is_match(t) {
+            // 验证 S/L 百分比 0-100
+            let nums: Vec<u32> = t
+                .trim_start_matches("hsla(")
+                .trim_start_matches("hsl(")
+                .trim_end_matches(')')
+                .split(',')
+                .skip(1) // 跳过 hue（0-360 无上限约束，正则已限 0-999）
+                .filter_map(|s| s.trim().trim_end_matches('%').parse::<u32>().ok())
+                .collect();
+            return nums.len() >= 2 && nums.iter().all(|&v| v <= 100);
+        }
+        false
+    }
+
+    /// 检测文件路径（单行或少量行）
+    fn is_file_path(&self, text: &str) -> bool {
+        let lines: Vec<&str> = text.lines().collect();
+        if lines.len() > 5 { return false; }
+        // 每行都必须是路径格式
+        lines.iter().all(|l| {
+            let l = l.trim();
+            !l.is_empty() && FILE_PATH_RE.is_match(l)
+        })
+    }
+
+    /// 检测 Markdown（评分制：命中 ≥ 2 种语法特征）
+    fn is_markdown(&self, text: &str) -> bool {
+        let lines = text.lines().count();
+        if lines < 2 { return false; }
+        let mut score = 0;
+        if MD_HEADING_RE.is_match(text) { score += 1; }
+        if MD_BOLD_RE.is_match(text) { score += 1; }
+        if MD_LIST_RE.is_match(text) { score += 1; }
+        if MD_CODE_BLOCK_RE.is_match(text) { score += 1; }
+        if MD_LINK_RE.is_match(text) { score += 1; }
+        if MD_BLOCKQUOTE_RE.is_match(text) { score += 1; }
+        score >= 2
+    }
+
+    /// 检测 HTML
+    fn is_html(&self, text: &str) -> bool {
+        if HTML_DOCTYPE_RE.is_match(text) { return true; }
+        // 至少包含 2 个不同的 HTML 标签
+        let matches: Vec<&str> = HTML_TAG_RE.find_iter(text).take(3).map(|m| m.as_str()).collect();
+        matches.len() >= 2
+    }
 }
 
 #[cfg(test)]
@@ -737,5 +958,215 @@ mod tests {
         // 修复前：>30 字符、无空格、字符集匹配 base64 正则，被误判为密钥
         let r = classify("calculateTotalPriceWithDiscountAndTax123");
         assert!(!r.contains(&"密钥".to_string()));
+    }
+
+    // ===== 补充：is_secret 公开方法直接测试 =====
+
+    #[test]
+    fn test_is_secret_jwt_boundary() {
+        let c = ContentClassifier::new();
+        // JWT 格式：header.payload.signature（三段，两个点）
+        // 长度 > 50 才触发
+        let jwt = "aaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaa";
+        assert!(jwt.len() > 50);
+        assert!(c.is_secret(jwt));
+        // 短于 50 字符的类 JWT 不触发
+        let short = "aaaaaa.aaaaaa.aaaaaa";
+        assert!(short.len() < 50);
+        assert!(!c.is_secret(short));
+    }
+
+    #[test]
+    fn test_is_secret_aws_key_exact_length() {
+        let c = ContentClassifier::new();
+        assert!(c.is_secret("AKIA1234567890ABCDEF")); // 20 chars
+        assert!(!c.is_secret("AKIA1234567890ABCDE")); // 19 chars → 不触发
+        assert!(!c.is_secret("AKIA1234567890ABCDEFG")); // 21 chars → 不触发
+    }
+
+    #[test]
+    fn test_is_secret_github_pat() {
+        let c = ContentClassifier::new();
+        assert!(c.is_secret("github_pat_1234567890abcdef1234567890abcdef"));
+        assert!(!c.is_secret("ghp_short")); // 太短
+    }
+
+    #[test]
+    fn test_is_secret_base64_length_must_be_multiple_of_4() {
+        let c = ContentClassifier::new();
+        // 长度 32（4 的倍数），纯 base64 字符，无空格 → 触发
+        let b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef";
+        assert_eq!(b64.len(), 32);
+        assert!(c.is_secret(b64));
+        // 长度 33（非 4 的倍数）→ 不触发
+        let not_b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg";
+        assert_eq!(not_b64.len(), 33);
+        assert!(!c.is_secret(not_b64));
+    }
+
+    #[test]
+    fn test_is_secret_base64_with_padding() {
+        let c = ContentClassifier::new();
+        // 带 = 填充的真实 base64
+        assert!(c.is_secret("SGVsbG8gV29ybGQhIFRoaXMgaXMgYQ=="));
+    }
+
+    #[test]
+    fn test_is_secret_rejects_common_words() {
+        let c = ContentClassifier::new();
+        // 包含常见英文单词 THE → 排除（即使长度是 4 的倍数也不触发）
+        // "THEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" 长度 35，非 4 倍数 → 已被长度排除
+        let with_the = "THEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        assert!(!c.is_secret(with_the));
+    }
+
+    // ===== 补充：命令行边界 =====
+
+    #[test]
+    fn test_multiline_not_command() {
+        // 超过 3 行 → 不是命令
+        let r = classify("git status\ngit add .\ngit commit -m \"msg\"\ngit push");
+        assert!(!r.contains(&"命令行".to_string()));
+    }
+
+    #[test]
+    fn test_command_without_args_not_command() {
+        // 无参数 → 不是命令
+        let r = classify("git");
+        assert!(!r.contains(&"命令行".to_string()));
+    }
+
+    #[test]
+    fn test_command_word_boundary() {
+        // "finder" 不应匹配 "find" 命令
+        let r = classify("finder of lost treasures and ancient relics");
+        assert!(!r.contains(&"命令行".to_string()));
+    }
+
+    // ===== 补充：CSV 边界 =====
+
+    #[test]
+    fn test_csv_inconsistent_columns_not_table() {
+        let r = classify("a,b,c\n1,2\nx,y,z,w");
+        assert!(!r.contains(&"表格".to_string()));
+    }
+
+    #[test]
+    fn test_tsv_detection() {
+        let r = classify("name\tage\tcity\nAlice\t30\tNYC\nBob\t25\tLA");
+        assert!(r.contains(&"表格".to_string()));
+    }
+
+    // ===== 补充：JSON 边界 =====
+
+    #[test]
+    fn test_jsonc_with_comments() {
+        let r = classify("{\n  // this is a comment\n  \"name\": \"test\",\n  \"value\": 42\n}");
+        assert!(r.contains(&"JSON".to_string()));
+    }
+
+    #[test]
+    fn test_invalid_json_not_json() {
+        let r = classify("{invalid json content here}");
+        assert!(!r.contains(&"JSON".to_string()));
+    }
+
+    // ===== 补充：分类优先级 =====
+
+    #[test]
+    fn test_url_takes_priority_over_plaintext() {
+        // 长 URL 不应被判为纯文本
+        let r = classify("https://example.com/very/long/path/to/resource?query=value&other=123");
+        assert!(r.contains(&"链接".to_string()));
+    }
+
+    #[test]
+    fn test_json_takes_priority_over_short_text() {
+        // 短 JSON 优先于"超短文本"早退
+        let r = classify(r#"{"a":1}"#);
+        assert!(r.contains(&"JSON".to_string()));
+    }
+
+    // ===== 补充：空白/特殊输入 =====
+
+    #[test]
+    fn test_whitespace_only() {
+        let r = classify("   \n\t  ");
+        assert!(r.contains(&"纯文本".to_string()));
+    }
+
+    #[test]
+    fn test_numbers_with_separators() {
+        let r = classify("1,234,567.89");
+        assert!(r.contains(&"数字".to_string()));
+    }
+
+    #[test]
+    fn test_negative_numbers() {
+        let r = classify("-42 -100 -0.5");
+        assert!(r.contains(&"数字".to_string()));
+    }
+
+    #[test]
+    fn test_email() {
+        assert!(classify("user@example.com").contains(&"邮箱".to_string()));
+        assert!(classify("test.name+tag@sub.domain.co.uk").contains(&"邮箱".to_string()));
+    }
+
+    #[test]
+    fn test_phone() {
+        assert!(classify("13812345678").contains(&"电话".to_string()));
+        assert!(classify("+8613912345678").contains(&"电话".to_string()));
+    }
+
+    #[test]
+    fn test_color() {
+        assert!(classify("#FF5733").contains(&"颜色".to_string()));
+        assert!(classify("rgb(255, 87, 51)").contains(&"颜色".to_string()));
+        assert!(classify("hsl(120, 50%, 75%)").contains(&"颜色".to_string()));
+    }
+
+    #[test]
+    fn test_file_path() {
+        assert!(classify(r"C:\Users\test\file.txt").contains(&"文件路径".to_string()));
+        assert!(classify("/home/user/file.txt").contains(&"文件路径".to_string()));
+        assert!(classify("~/Documents/report.pdf").contains(&"文件路径".to_string()));
+    }
+
+    #[test]
+    fn test_markdown() {
+        let md = "# Title\n\nSome **bold** text\n\n- item 1\n- item 2";
+        assert!(classify(md).contains(&"Markdown".to_string()));
+    }
+
+    #[test]
+    fn test_html() {
+        let html = "<!DOCTYPE html>\n<html>\n<head><title>Test</title></head>\n<body><div>Hello</div></body>\n</html>";
+        assert!(classify(html).contains(&"HTML".to_string()));
+    }
+
+    #[test]
+    fn test_content_type_basic() {
+        let c = ContentClassifier::new();
+        assert_eq!(c.classify_content_type("user@example.com"), "email");
+        assert_eq!(c.classify_content_type("13812345678"), "phone");
+        assert_eq!(c.classify_content_type("#FF5733"), "color");
+        assert_eq!(c.classify_content_type(r"C:\Users\test\f.txt"), "file_path");
+        assert_eq!(c.classify_content_type("https://github.com"), "link");
+        assert_eq!(c.classify_content_type("12345"), "number");
+        assert_eq!(c.classify_content_type(r#"{"a":1}"#), "json");
+        assert_eq!(c.classify_content_type("hello world"), "text");
+    }
+
+    #[test]
+    fn test_content_type_code() {
+        let c = ContentClassifier::new();
+        assert_eq!(c.classify_content_type("function hello() {\n  console.log('hi');\n  return 42;\n}"), "code");
+    }
+
+    #[test]
+    fn test_content_type_markdown() {
+        let c = ContentClassifier::new();
+        assert_eq!(c.classify_content_type("# Title\n\nSome **bold** text\n\n- item 1\n- item 2"), "markdown");
     }
 }

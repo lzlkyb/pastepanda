@@ -1,7 +1,8 @@
 import { memo, useState, useCallback, useContext, useRef, useEffect, useMemo, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
-import { relativeTime, detectTextType, isMarkdown, stripHtml } from "@/lib/utils";
+import { relativeTime, stripHtml, isMarkdown } from "@/lib/utils";
+import { getContentTypeMeta, isCodeLike } from "@/lib/contentTypes";
 import { detectColor, toHex, toRgb, toHsl } from "@/lib/color";
 import type { CSSProperties } from "react";
 import SourceBadge from "@/components/SourceBadge";
@@ -11,7 +12,7 @@ import { useToast } from "@/components/Toast";
 import { TagRow } from "@/components/TagBadge";
 import { logger } from "@/lib/logger";
 import { pasteText, togglePin, deleteHistory } from "@/lib/api";
-import { Pin, ImageIcon, Link2, AtSign, Code2, Phone, FileText, Terminal, Type, Check } from "lucide-react";
+import { Pin, ImageIcon, Link2, AtSign, Code2, Phone, FileText, Terminal, Type, Check, Hash, Lock, Palette } from "lucide-react";
 import styles from "./CardList.module.css";
 
 const LazyMdRenderer = lazy(() => import("@/components/MarkdownRenderer").then(m => ({ default: m.MarkdownRenderer })));
@@ -26,14 +27,26 @@ function hashColor(text: string): string {
   return PALETTE[Math.abs(h) % PALETTE.length];
 }
 
-const ICONS: Record<string, { Icon: React.FC<{ size?: number; color?: string; strokeWidth?: number }>; color: string }> = {
-  text:  { Icon: Type,      color: "#6B7280" },
-  link:  { Icon: Link2,     color: "#10B981" },
-  email: { Icon: AtSign,    color: "#3B82F6" },
-  code:  { Icon: Terminal,  color: "#8B5CF6" },
-  phone: { Icon: Phone,     color: "#F59E0B" },
-  image: { Icon: ImageIcon, color: "#EC4899" },
-  file:  { Icon: FileText,  color: "#06B6D4" },
+// content_type → 图标组件映射；颜色统一取自 getContentTypeMeta（唯一来源）
+const ICONS: Record<string, React.FC<{ size?: number; color?: string; strokeWidth?: number }>> = {
+  text:      Type,
+  link:      Link2,
+  email:     AtSign,
+  phone:     Phone,
+  file_path: FileText,
+  code:      Terminal,
+  json:      Terminal,
+  config:    Terminal,
+  csv:       Terminal,
+  shell:     Terminal,
+  log:       Terminal,
+  markdown:  FileText,
+  html:      Code2,
+  secret:    Lock,
+  number:    Hash,
+  color:     Palette,
+  image:     ImageIcon,
+  file:      FileText,
 };
 
 /** 解析文件路径 content JSON，返回路径数组 */
@@ -79,12 +92,15 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
   const closeTimerRef = useRef<number | null>(null);
   const feedbackTimerRef = useRef<number | null>(null);
   const openTimerRef = useRef<number | null>(null);
-  const subType = item.type === "text" ? detectTextType(item.text) : item.type;
-  const isMd = item.type === "text" && isMarkdown(item.text);
+  const subType = item.content_type
+    || (item.type === "text"
+      ? (isMarkdown(item.text || "") ? "markdown" : "text")
+      : item.type);
+  const isMd = item.type === "text" && subType === "markdown";
   const parsedColor = subType === "color" ? detectColor(item.text || "") : null;
-  const cfg = ICONS[subType] || ICONS.text;
-  const Icon = cfg.Icon;
-  const iconColor = subType === "text" ? hashColor(item.text || "") : cfg.color;
+  const Icon = ICONS[subType] || Type;
+  // 颜色统一取自 contentTypes 映射；无特定 content_type 的纯文本保留原有哈希配色
+  const iconColor = subType === "text" ? hashColor(item.text || "") : getContentTypeMeta(subType).color;
   const time = relativeTime(item.time);
   // MB 级文本先截断再扁平化，避免整块进 DOM / 高亮 split 拖垮列表（M24）
   const title = (() => {
@@ -102,12 +118,12 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
   const typeClass = item.type === "image" ? styles.cardImage
     : item.type === "file" ? styles.cardFile
     : item.pinned ? styles.cardPinned
-    : subType === "code" ? styles.cardCode
+    : isCodeLike(subType) ? styles.cardCode
     : styles.cardText;
 
   const iconBg = item.type === "image" ? styles.bgPink
     : item.type === "file" ? styles.bgGreen
-    : subType === "code" ? styles.bgPurple
+    : isCodeLike(subType) ? styles.bgPurple
     : styles.bgBlue;
 
   // ★ 通过 Context 获取 ContextMenu 的 trigger 函数，用原生 DOM 事件调用，
@@ -446,7 +462,7 @@ const CardHoverPopover = memo(function CardHoverPopover({
             <Suspense fallback={<div className={styles.cardPopoverText}>{(item.text || "").slice(0, 200)}</div>}>
               <LazyMdRenderer text={item.text} compact />
             </Suspense>
-          ) : subType === "code" ? (
+          ) : isCodeLike(subType) ? (
             <div className={styles.cardPopoverCode}>{item.text}</div>
           ) : subType === "link" ? (
             <div className={styles.cardPopoverText}>
@@ -617,7 +633,7 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
 }) {
   const { toast } = useToast();
 
-  const hasUrl = /^https?:\/\//i.test(item.text || "");
+  const hasUrl = /^(https?|ftp|file|ws|wss|sftp|telnet|ssh|rdp):\/\//i.test(item.text || "");
 
   const handleAddSnippet = useCallback(async () => {
     try {
@@ -658,7 +674,10 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     } catch (e) { logger.warn("打开URL失败", e); }
   }, [item.text]);
 
-  const subType = item.type === "text" ? detectTextType(item.text) : item.type;
+  const subType = item.content_type
+    || (item.type === "text"
+      ? (isMarkdown(item.text || "") ? "markdown" : "text")
+      : item.type);
   const canQrCode = item.type === "text" && (hasUrl || (item.text || "").length <= 300);
 
   const handlePasteTransform = useCallback(async (transform: string) => {
@@ -712,6 +731,11 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
           if (parsed) text = toHsl(parsed);
           break;
         }
+
+        // === 路径子类型专属（文本型 file_path） ===
+        case "path_bslash": text = text.replace(/\//g, "\\"); break;
+        case "path_fslash": text = text.replace(/\\/g, "/"); break;
+        case "path_name": text = text.split(/[/\\]/).pop() || text; break;
 
         // === 图片类型 ===
         case "md_image": {
@@ -773,8 +797,8 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
 
   const menuItems = useMemo(() => createCardMenuItems({
     onEdit: item.type === "text" && onEdit ? () => onEdit(item) : undefined,
-    onMarkdownPreview: item.type === "text" && isMarkdown(item.text) && onEdit ? () => onEdit(item) : undefined,
-    isMarkdown: item.type === "text" && isMarkdown(item.text),
+    onMarkdownPreview: item.type === "text" && subType === "markdown" && onEdit ? () => onEdit(item) : undefined,
+    isMarkdown: item.type === "text" && subType === "markdown",
     onEditTags: onEditTags ? () => onEditTags(item) : undefined,
     onMoveToGroup: onMoveToGroup ? () => onMoveToGroup(item) : undefined,
     onCopy: async () => {

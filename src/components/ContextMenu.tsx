@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Copy, ClipboardPaste, Pin, Trash2, ExternalLink, FileCode, Pencil, ChevronRight, Tag, FolderInput, Eye } from "lucide-react";
 import { getEnabledRules } from "@/lib/regexRules";
+import { isCodeLike } from "@/lib/contentTypes";
 import { useAppStore } from "@/stores/appStore";
 import styles from "./ContextMenu.module.css";
 
@@ -361,7 +362,7 @@ function buildTransformMenu(onTransform: (t: string) => void, itemType?: string,
       children.push(
         { icon: <span style={{ fontSize: 12 }}>📧</span>, label: "粘贴为 mailto 链接", onClick: () => onTransform("mailto") },
       );
-    } else if (subType === "code") {
+    } else if (isCodeLike(subType)) {
       children.push(
         { icon: <span style={{ fontSize: 12 }}>{`</>`}</span>, label: "粘贴为代码块", onClick: () => onTransform("code_block") },
         { icon: <span style={{ fontSize: 12 }}>≡</span>, label: "粘贴为单行", onClick: () => onTransform("single_line") },
@@ -376,6 +377,17 @@ function buildTransformMenu(onTransform: (t: string) => void, itemType?: string,
         { icon: <span className={styles.ctxTextIcon} style={{ background: "rgba(255,87,51,.15)", color: "#FF5733" }}>#</span>, label: "复制为 HEX", onClick: () => onTransform("color_hex") },
         { icon: <span className={styles.ctxTextIcon} style={{ background: "rgba(59,130,246,.15)", color: "#3B82F6" }}>R</span>, label: "复制为 RGB", onClick: () => onTransform("color_rgb") },
         { icon: <span className={styles.ctxTextIcon} style={{ background: "rgba(16,185,129,.15)", color: "#10B981" }}>H</span>, label: "复制为 HSL", onClick: () => onTransform("color_hsl") },
+      );
+    } else if (subType === "file_path") {
+      children.push(
+        { icon: <span style={{ fontSize: 12 }}>\\</span>, label: "粘贴为反斜杠路径", onClick: () => onTransform("path_bslash") },
+        { icon: <span style={{ fontSize: 12 }}>/</span>, label: "粘贴为正斜杠路径", onClick: () => onTransform("path_fslash") },
+        { icon: <span style={{ fontSize: 12 }}>📄</span>, label: "粘贴为文件名", onClick: () => onTransform("path_name") },
+      );
+    } else if (subType === "markdown") {
+      children.push(
+        { icon: <span style={{ fontSize: 12 }}>{`</>`}</span>, label: "粘贴为代码块", onClick: () => onTransform("code_block") },
+        { icon: <span style={{ fontSize: 12 }}>🔗</span>, label: "粘贴为 Markdown 链接", onClick: () => onTransform("md_link") },
       );
     } else {
       // 普通文本：也有 Markdown 链接
