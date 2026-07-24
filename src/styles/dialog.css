@@ -382,3 +382,486 @@
   letter-spacing: 0.03em;
   flex-shrink: 0;
 }
+
+/* ===== P2：JSON 校验徽章 ===== */
+.json-valid-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--green-bg);
+  color: var(--green);
+  border: 1px solid var(--green-border);
+  white-space: nowrap;
+}
+
+.json-invalid-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--red-bg);
+  color: var(--danger);
+  /* 主题未定义 --red-border，用 color-mix 从 danger 派生 */
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  white-space: nowrap;
+}
+
+/* JSON 错误行号高亮 */
+.code-ln-err {
+  color: var(--danger) !important;
+  font-weight: 700;
+  background: var(--red-bg);
+}
+
+/* ===== P2：HTML 沙箱预览区 ===== */
+.dialog-body .html-preview-wrap {
+  flex: 1;
+  min-height: 120px;
+  display: flex;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  overflow: hidden;
+}
+
+.html-preview-frame {
+  flex: 1;
+  width: 100%;
+  border: none;
+  background: #fff;
+}
+
+/* ===== P4：颜色编辑器 ===== */
+
+/* 大色块；棋盘格底（alpha <1 时透出），用主题变量适配深色主题 */
+.color-swatch-wrap {
+  position: relative;
+  height: 92px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+  background: repeating-conic-gradient(var(--section-bg) 0% 25%, var(--card-bg) 0% 50%) 0 0 / 16px 16px;
+}
+
+.color-swatch {
+  position: absolute;
+  inset: 0;
+}
+
+.color-swatch-label {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-family: 'SF Mono', Consolas, monospace;
+  backdrop-filter: blur(2px);
+}
+
+/* 可编辑颜色值输入框（单行，聚焦时高亮边框） */
+.color-input {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1.5px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.color-input:focus {
+  border-color: var(--accent);
+}
+
+/* 三格式转换行 */
+.color-format-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.color-format-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+}
+
+.color-format-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--accent-light);
+  color: var(--accent);
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.color-format-val {
+  flex: 1;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.color-copy-btn {
+  padding: 3px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.color-copy-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.color-empty-hint {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--section-bg);
+  border: 1px dashed var(--border-color);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* ===== P4：CSV 表格预览 ===== */
+
+.csv-table-wrap {
+  flex: 1;
+  min-height: 140px;
+  max-height: 46vh;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  overflow: auto;
+}
+
+.csv-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+/* 表头：首行 sticky + 加粗 */
+.csv-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--section-bg);
+  text-align: left;
+  padding: 7px 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  border-bottom: 1.5px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.csv-table td {
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-family: 'SF Mono', Consolas, monospace;
+  white-space: nowrap;
+}
+
+/* 斑马纹 + 悬停高亮 */
+.csv-table tr:nth-child(even) td {
+  background: var(--section-bg);
+}
+
+.csv-table tr:hover td {
+  background: var(--accent-light);
+}
+
+/* 行号列 */
+.csv-col-idx {
+  color: var(--text-muted) !important;
+  font-size: 10px !important;
+  background: var(--section-bg) !important;
+  border-right: 1px solid var(--border-color);
+  text-align: center;
+  min-width: 28px;
+  user-select: none;
+}
+
+.csv-invalid-hint {
+  padding: 16px 14px;
+  border-radius: 10px;
+  background: var(--section-bg);
+  border: 1px dashed var(--border-color);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* ===== P4：密钥编辑器 ===== */
+
+/* 脱敏/明文显示区 */
+.secret-display {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 96px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border-color);
+  background: var(--section-bg);
+  transition: border-color 0.2s;
+}
+
+.secret-display.secret-revealed {
+  border-color: var(--accent);
+}
+
+/* 脱敏遮罩：大字号圆点，禁止选中 */
+.secret-masked {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 16px;
+  letter-spacing: 3px;
+  line-height: 1.8;
+  color: var(--text-muted);
+  user-select: none;
+  word-break: break-all;
+  padding-right: 64px;
+}
+
+/* 明文 */
+.secret-plain {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  word-break: break-all;
+  padding-right: 64px;
+}
+
+/* 显示/隐藏按钮（右上角） */
+.secret-eye {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.secret-eye:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* 自动回脱敏倒计时徽章（右下角） */
+.secret-countdown {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: var(--orange-bg);
+  color: var(--orange);
+  border: 1px solid var(--orange-border);
+}
+
+/* 安全提示行 */
+.secret-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* 密钥类型徽章（JWT/AWS/GitHub/Base64） */
+.secret-kind-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  background: var(--red-bg);
+  color: var(--danger);
+  /* 主题未定义 --red-border，用 color-mix 从 danger 派生 */
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+/* ===== ④ 文件快速预览面板 ===== */
+.file-preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--section-bg);
+}
+.file-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.file-preview-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
+}
+.file-preview-copy {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.file-preview-copy:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.file-preview-loading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 6px 2px;
+}
+.file-preview-img-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  max-height: 220px;
+  padding: 6px;
+  border-radius: 8px;
+  background:
+    repeating-conic-gradient(var(--card-bg) 0% 25%, var(--section-bg) 0% 50%) 50% / 14px 14px;
+  border: 1px dashed var(--border-color);
+  overflow: hidden;
+}
+.file-preview-img {
+  max-width: 100%;
+  max-height: 208px;
+  object-fit: contain;
+  display: block;
+}
+.file-preview-code-wrap {
+  max-height: 200px;
+  overflow: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+}
+.file-preview-code {
+  margin: 0;
+  padding: 8px 10px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  background: transparent;
+  white-space: pre;
+}
+.file-preview-line {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.file-preview-ln {
+  flex-shrink: 0;
+  min-width: 22px;
+  text-align: right;
+  color: var(--text-muted);
+  opacity: 0.55;
+  user-select: none;
+  font-size: 10.5px;
+}
+.file-preview-txt {
+  white-space: pre;
+  word-break: break-all;
+}
+.file-preview-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+.file-preview-ext {
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: 700;
+  font-family: 'SF Mono', Consolas, monospace;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+.file-preview-truncated {
+  color: var(--orange);
+  font-weight: 600;
+}
+.file-preview-empty {
+  padding: 14px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg);
+}

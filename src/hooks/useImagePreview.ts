@@ -9,6 +9,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { HistoryItem } from "@/stores/appStore";
 import { getImageThumbnail, getImageDataUrl, getImageInfo } from "@/lib/api";
 import { useToast } from "@/components/Toast";
+import {
+  type ExportFormat,
+  EXPORT_FORMATS,
+  DEFAULT_EXPORT_QUALITY,
+  withExportExt,
+  formatBytes,
+} from "@/lib/imageFormat";
 
 // ===== 类型 =====
 
@@ -37,6 +44,14 @@ export interface PreviewInfo {
   path: string;
 }
 
+/** 裁剪选区（视口像素坐标，相对 viewport 左上角） */
+export interface CropRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface UseImagePreviewReturn {
   // 预览状态
   previewImage: string | null;
@@ -55,9 +70,29 @@ export interface UseImagePreviewReturn {
   selectedWordIndices: Set<string>;
   isSelecting: boolean;
   selRect: { x: number; y: number; w: number; h: number } | null;
+  // 导出（格式转换 + 压缩）状态
+  exportFormat: ExportFormat;
+  exportQuality: number;
+  exportEstimate: number | null;
+  exporting: boolean;
   // 操作
   openImagePreview: (item: HistoryItem) => void;
   closePreview: () => void;
+  setExportFormat: React.Dispatch<React.SetStateAction<ExportFormat>>;
+  setExportQuality: React.Dispatch<React.SetStateAction<number>>;
+  exportImage: () => Promise<void>;
+  // 裁剪状态
+  cropMode: boolean;
+  cropRect: CropRect | null;
+  cropOriginal: string | null;
+  setCropMode: React.Dispatch<React.SetStateAction<boolean>>;
+  setCropRect: React.Dispatch<React.SetStateAction<CropRect | null>>;
+  handleCropMouseDown: (e: React.MouseEvent) => void;
+  handleCropMouseMove: (e: React.MouseEvent) => void;
+  handleCropMouseUp: () => void;
+  confirmCrop: () => Promise<void>;
+  cancelCrop: () => void;
+  restoreOriginal: () => void;
   setPreviewScale: React.Dispatch<React.SetStateAction<number>>;
   setPreviewRotation: React.Dispatch<React.SetStateAction<number>>;
   setPreviewOffset: React.Dispatch<React.SetStateAction<{ x: number; y: number }>>;
@@ -78,6 +113,10 @@ export interface UseImagePreviewReturn {
   handlePinImage: () => void;
 }
 
+// 模块级缓存：保存每个图片的上次预览状态（按 content 路径 key）。
+// P3 起 hook 实例随 ImageEditor 挂载/卸载，缓存提升到模块级避免关闭即丢失；上限 50 条淘汰最旧。
+const previewStateCache: Record<string, { scale: number; rotation: number; offset: { x: number; y: number } }> = {};
+
 export function useImagePreview(): UseImagePreviewReturn {
   const { toast } = useToast();
 
@@ -96,13 +135,21 @@ export function useImagePreview(): UseImagePreviewReturn {
   const [selectedWordIndices, setSelectedWordIndices] = useState<Set<string>>(new Set());
   const [isSelecting, setIsSelecting] = useState(false);
   const [selRect, setSelRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  // 导出（格式转换 + 压缩）状态
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("png");
+  const [exportQuality, setExportQuality] = useState<number>(DEFAULT_EXPORT_QUALITY);
+  const [exportEstimate, setExportEstimate] = useState<number | null>(null);
+  const [exporting, setExporting] = useState(false);
+  // 裁剪状态
+  const [cropMode, setCropMode] = useState(false);
+  const [cropRect, setCropRect] = useState<CropRect | null>(null);
+  const [cropOriginal, setCropOriginal] = useState<string | null>(null);
+  const cropDragRef = useRef<{ mode: "draw" | "move" | "resize"; handle: string; sx: number; sy: number; start: CropRect } | null>(null);
   const selStartRef = useRef({ x: 0, y: 0 });
   const panStartRef = useRef({ x: 0, y: 0, offsetX: 0, offsetY: 0 });
   const viewportRef = useRef<HTMLDivElement>(null);
   // 使用 ref 存储预览状态，避免 closePreview 闭包导致 ESC 监听器频繁重新注册
   const previewStateRef = useRef({ scale: 1, rotation: 0, offset: { x: 0, y: 0 } });
-  // 保存每个图片的上次预览状态（按 content 路径 key）
-  const previewStateCache = useRef<Record<string, { scale: number; rotation: number; offset: { x: number; y: number } }>>({});
   // 当前预览的图片 content 路径（用于关闭时保存状态）
   const previewContentRef = useRef<string | null>(null);
 
@@ -119,9 +166,13 @@ export function useImagePreview(): UseImagePreviewReturn {
     setOcrResult(null);
     setOcrActive(false);
     setSelectedWordIndices(new Set());
+    setExportEstimate(null);
+    setCropMode(false);
+    setCropRect(null);
+    setCropOriginal(null);
 
     // 恢复上次的预览状态（如果有）
-    const cached = item.content ? previewStateCache.current[item.content] : null;
+    const cached = item.content ? previewStateCache[item.content] : null;
     if (cached) {
       setPreviewScale(cached.scale);
       setPreviewRotation(cached.rotation);
@@ -163,16 +214,16 @@ export function useImagePreview(): UseImagePreviewReturn {
     const contentKey = previewContentRef.current;
     if (contentKey) {
       const state = previewStateRef.current;
-      previewStateCache.current[contentKey] = {
+      previewStateCache[contentKey] = {
         scale: state.scale,
         rotation: state.rotation,
         offset: state.offset,
       };
       // 上限 50 条，淘汰最旧
-      const keys = Object.keys(previewStateCache.current);
+      const keys = Object.keys(previewStateCache);
       if (keys.length > 50) {
         for (const k of keys.slice(0, keys.length - 50)) {
-          delete previewStateCache.current[k];
+          delete previewStateCache[k];
         }
       }
     }
@@ -185,6 +236,9 @@ export function useImagePreview(): UseImagePreviewReturn {
     setOcrResult(null);
     setOcrActive(false);
     setSelectedWordIndices(new Set());
+    setCropMode(false);
+    setCropRect(null);
+    setCropOriginal(null);
   }, []);
 
   // ESC 键关闭预览 / 清除 OCR 选择
@@ -192,7 +246,10 @@ export function useImagePreview(): UseImagePreviewReturn {
     if (!previewImage && !previewLoading) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (ocrActive && selectedWordIndices.size > 0) {
+        if (cropMode) {
+          setCropMode(false);
+          setCropRect(null);
+        } else if (ocrActive && selectedWordIndices.size > 0) {
           setSelectedWordIndices(new Set());
         } else if (ocrActive) {
           setOcrActive(false);
@@ -221,7 +278,7 @@ export function useImagePreview(): UseImagePreviewReturn {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [previewImage, previewLoading, closePreview, ocrActive, selectedWordIndices, toast]);
+  }, [previewImage, previewLoading, closePreview, ocrActive, selectedWordIndices, cropMode, toast]);
 
   const handlePreviewWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -401,12 +458,243 @@ export function useImagePreview(): UseImagePreviewReturn {
     }
   }, [toast]);
 
+  // ========== 导出（格式转换 + 压缩） ==========
+
+  // 将当前预览图按目标格式/质量转码为 Blob（按原图自然尺寸绘制）。
+  // jpeg 无透明通道，先铺白底避免透明区域变黑。
+  const transcodeToBlob = useCallback((format: ExportFormat, quality: number): Promise<Blob | null> => {
+    const src = previewImage;
+    if (!src) return Promise.resolve(null);
+    const meta = EXPORT_FORMATS[format];
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const w = img.naturalWidth || 1;
+        const h = img.naturalHeight || 1;
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { resolve(null); return; }
+        if (format === "jpeg") {
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, w, h);
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob((b) => resolve(b), meta.mime, meta.lossy ? quality : undefined);
+      };
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+  }, [previewImage]);
+
+  // 防抖估算导出体积：格式/质量变化时重新 toBlob 取真实字节数。
+  useEffect(() => {
+    if (!previewImage) { setExportEstimate(null); return; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const blob = await transcodeToBlob(exportFormat, exportQuality);
+      if (!cancelled) setExportEstimate(blob ? blob.size : null);
+    }, 220);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [previewImage, exportFormat, exportQuality, transcodeToBlob]);
+
+  const exportImage = useCallback(async () => {
+    if (exporting || !previewImage) return;
+    setExporting(true);
+    try {
+      const meta = EXPORT_FORMATS[exportFormat];
+      const blob = await transcodeToBlob(exportFormat, exportQuality);
+      if (!blob) { toast("导出失败：无法编码图片", "error"); return; }
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const { writeFile } = await import("@tauri-apps/plugin-fs");
+      const defaultName = withExportExt(previewInfo?.file_name || "image.png", exportFormat);
+      const path = await save({
+        defaultPath: defaultName,
+        filters: [{ name: `${meta.label} 图片`, extensions: [meta.ext] }],
+      });
+      if (!path) return;
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      await writeFile(path, bytes);
+      toast(`已导出 ${meta.label}`, "success");
+    } catch (e) {
+      toast("导出失败: " + (e instanceof Error ? e.message : String(e)), "error");
+    } finally {
+      setExporting(false);
+    }
+  }, [exporting, previewImage, exportFormat, exportQuality, previewInfo, transcodeToBlob, toast]);
+
+  // ========== 裁剪（③） ==========
+
+  const MIN_CROP = 10;
+
+  // 将当前预览图按 scale/rotation 烘到 canvas，返回 canvas + 显示尺寸（viewport 坐标空间）。
+  // 裁剪选区基于该空间，因此 视口内所见 = canvas 内所取。
+  const bakeImage = useCallback((): Promise<{ canvas: HTMLCanvasElement; displayW: number; displayH: number } | null> => {
+    if (!previewImage) return Promise.resolve(null);
+    const vp = viewportRef.current;
+    if (!vp) return Promise.resolve(null);
+    const vpRect = vp.getBoundingClientRect();
+    const w = vpRect.width, h = vpRect.height;
+    if (w <= 0 || h <= 0) return Promise.resolve(null);
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return Promise.resolve(null);
+    return new Promise<{ canvas: HTMLCanvasElement; displayW: number; displayH: number } | null>((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = previewScale;
+        const rot = previewRotation * Math.PI / 180;
+        ctx.save();
+        ctx.translate(w / 2, h / 2);
+        ctx.rotate(rot);
+        ctx.drawImage(img, -img.naturalWidth * scale / 2, -img.naturalHeight * scale / 2, img.naturalWidth * scale, img.naturalHeight * scale);
+        ctx.restore();
+        resolve({ canvas, displayW: w, displayH: h });
+      };
+      img.onerror = () => resolve(null);
+      img.src = previewImage;
+    });
+  }, [previewImage, previewScale, previewRotation]);
+
+  const handleCropMouseDown = useCallback((e: React.MouseEvent) => {
+    if (!cropMode || !viewportRef.current) return;
+    const vpRect = viewportRef.current.getBoundingClientRect();
+    const mx = e.clientX - vpRect.left;
+    const my = e.clientY - vpRect.top;
+    const r = cropRect;
+    const HIT = 10;
+    if (r) {
+      // 8 个手柄：角 + 边中点
+      const hs: Record<string, [number, number]> = {
+        tl: [r.x, r.y], tc: [r.x + r.w / 2, r.y], tr: [r.x + r.w, r.y],
+        ml: [r.x, r.y + r.h / 2], mr: [r.x + r.w, r.y + r.h / 2],
+        bl: [r.x, r.y + r.h], bc: [r.x + r.w / 2, r.y + r.h], br: [r.x + r.w, r.y + r.h],
+      };
+      for (const [name, [hx, hy]] of Object.entries(hs)) {
+        if (Math.abs(mx - hx) <= HIT && Math.abs(my - hy) <= HIT) {
+          e.stopPropagation();
+          cropDragRef.current = { mode: "resize", handle: name, sx: mx, sy: my, start: { ...r } };
+          return;
+        }
+      }
+      // 内部移动
+      if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+        e.stopPropagation();
+        cropDragRef.current = { mode: "move", handle: "", sx: mx, sy: my, start: { ...r } };
+        return;
+      }
+    }
+    // 空白区拖拽重画
+    e.stopPropagation();
+    const initRect = { x: mx, y: my, w: 1, h: 1 };
+    setCropRect(initRect);
+    cropDragRef.current = { mode: "draw", handle: "", sx: mx, sy: my, start: initRect };
+  }, [cropMode, cropRect]);
+
+  const handleCropMouseMove = useCallback((e: React.MouseEvent) => {
+    const drag = cropDragRef.current;
+    if (!drag || !viewportRef.current) return;
+    const vpRect = viewportRef.current.getBoundingClientRect();
+    const mx = e.clientX - vpRect.left;
+    const my = e.clientY - vpRect.top;
+    const dx = mx - drag.sx;
+    const dy = my - drag.sy;
+    const W = vpRect.width, H = vpRect.height;
+    const { start } = drag;
+
+    if (drag.mode === "move") {
+      let nx = start.x + dx, ny = start.y + dy;
+      nx = Math.max(0, Math.min(W - start.w, nx));
+      ny = Math.max(0, Math.min(H - start.h, ny));
+      setCropRect({ x: nx, y: ny, w: start.w, h: start.h });
+      return;
+    }
+    if (drag.mode === "resize") {
+      let x = start.x, y = start.y, w = start.w, h = start.h;
+      const hdl = drag.handle;
+      if (hdl.includes("l")) { x = start.x + dx; w = start.w - dx; }
+      if (hdl.includes("r")) { w = start.w + dx; }
+      if (hdl.includes("t")) { y = start.y + dy; h = start.h - dy; }
+      if (hdl.includes("b")) { h = start.h + dy; }
+      if (w < MIN_CROP) { if (hdl.includes("l")) x = start.x + start.w - MIN_CROP; w = MIN_CROP; }
+      if (h < MIN_CROP) { if (hdl.includes("t")) y = start.y + start.h - MIN_CROP; h = MIN_CROP; }
+      if (x < 0) { w += x; x = 0; }
+      if (y < 0) { h += y; y = 0; }
+      if (x + w > W) w = W - x;
+      if (y + h > H) h = H - y;
+      setCropRect({ x, y, w, h });
+      return;
+    }
+    // draw：左上角为起点，右下角为当前鼠标
+    let x1 = drag.sx, y1 = drag.sy, x2 = mx, y2 = my;
+    let rx = Math.min(x1, x2), ry = Math.min(y1, y2);
+    let rw = Math.abs(x2 - x1), rh = Math.abs(y2 - y1);
+    if (rx < 0) { rw += rx; rx = 0; }
+    if (ry < 0) { rh += ry; ry = 0; }
+    if (rx + rw > W) rw = W - rx;
+    if (ry + rh > H) rh = H - ry;
+    if (rw < MIN_CROP) rw = MIN_CROP;
+    if (rh < MIN_CROP) rh = MIN_CROP;
+    setCropRect({ x: rx, y: ry, w: rw, h: rh });
+  }, []);
+
+  const handleCropMouseUp = useCallback(() => {
+    cropDragRef.current = null;
+  }, []);
+
+  const confirmCrop = useCallback(async () => {
+    if (!cropRect || !previewImage || !viewportRef.current) return;
+    const baked = await bakeImage();
+    if (!baked) { toast("裁剪失败：无法渲染图片", "error"); return; }
+    const { canvas, displayW, displayH } = baked;
+    const sx = Math.max(0, Math.min(displayW, cropRect.x));
+    const sy = Math.max(0, Math.min(displayH, cropRect.y));
+    const sw = Math.max(1, Math.min(displayW - sx, cropRect.w));
+    const sh = Math.max(1, Math.min(displayH - sy, cropRect.h));
+    const out = document.createElement("canvas");
+    out.width = Math.round(sw);
+    out.height = Math.round(sh);
+    const octx = out.getContext("2d");
+    if (!octx) { toast("裁剪失败", "error"); return; }
+    octx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+    const dataUrl = out.toDataURL("image/png");
+    const originalForRestore = cropOriginal ?? previewImage;
+    setCropOriginal(originalForRestore);
+    setPreviewImage(dataUrl);
+    setPreviewInfo((prev) => prev ? { ...prev, width: out.width, height: out.height, size_str: formatBytes(out.toDataURL("image/png").length) } : prev);
+    setCropMode(false);
+    setCropRect(null);
+    toast("裁剪完成", "success");
+  }, [cropRect, previewImage, previewInfo, cropOriginal, bakeImage, toast]);
+
+  const cancelCrop = useCallback(() => {
+    setCropMode(false);
+    setCropRect(null);
+  }, []);
+
+  const restoreOriginal = useCallback(() => {
+    if (!cropOriginal) return;
+    setPreviewImage(cropOriginal);
+    setCropOriginal(null);
+    setPreviewInfo(null); // 让 openImagePreview 重新拉取信息，或由外部重新加载
+    toast("已还原原图", "success");
+  }, [cropOriginal, toast]);
+
   return {
     previewImage, previewInfo, previewLoading,
     previewScale, previewRotation, previewOffset, isPanning,
     previewContentRef, viewportRef,
     ocrResult, ocrLoading, ocrActive, selectedWordIndices, isSelecting, selRect,
+    exportFormat, exportQuality, exportEstimate, exporting,
+    cropMode, cropRect, cropOriginal,
     openImagePreview, closePreview,
+    setExportFormat, setExportQuality, exportImage,
+    setCropMode, setCropRect,
+    handleCropMouseDown, handleCropMouseMove, handleCropMouseUp,
+    confirmCrop, cancelCrop, restoreOriginal,
     setPreviewScale, setPreviewRotation, setPreviewOffset, setSelectedWordIndices,
     handlePreviewWheel, handlePanStart, handlePanMove, handlePanEnd,
     handleOcrRecognize, toggleOcrOverlay, getSelectedOcrTexts,

@@ -3,7 +3,6 @@ import {
   cleanSourceName,
   getSourceIcon,
   truncate,
-  detectTextType,
   relativeTime,
   getLangLabel,
 } from "@/lib/utils";
@@ -109,44 +108,6 @@ describe("truncate — 扩展", () => {
     const lonelySurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
     expect(result).not.toMatch(lonelySurrogate);
     expect(result).toBe("hello😀...");
-  });
-});
-
-// ============================================================
-// detectTextType 扩展
-// ============================================================
-
-describe("detectTextType — 扩展", () => {
-  it("detects file paths", () => {
-    expect(detectTextType("C:\\path\\to\\file.txt")).toBe("file");
-    expect(detectTextType("/home/user/file.txt")).toBe("file");
-    expect(detectTextType("./relative/path")).toBe("file");
-  });
-
-  it("detects JSON", () => {
-    expect(detectTextType('{"key": "value"}')).toBe("code");
-  });
-
-  it("detects HTML", () => {
-    expect(detectTextType("<div>hello</div>")).toBe("code");
-  });
-
-  it("detects code patterns", () => {
-    expect(detectTextType("import React from 'react'")).toBe("code");
-    expect(detectTextType("const x = 42")).toBe("code");
-    expect(detectTextType("function hello() {}")).toBe("code");
-  });
-
-  it("detects git commands", () => {
-    expect(detectTextType("git commit -m 'fix'")).toBe("code");
-  });
-
-  it("handles empty input", () => {
-    expect(detectTextType("")).toBe("text");
-  });
-
-  it("detects error logs", () => {
-    expect(detectTextType("2024-01-01 12:00:00 ERROR Connection failed")).toBe("code");
   });
 });
 

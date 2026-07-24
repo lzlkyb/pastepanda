@@ -1,9 +1,10 @@
 import { memo, useState, useCallback, useContext, useRef, useEffect, useMemo, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
-import { relativeTime, stripHtml, isMarkdown } from "@/lib/utils";
+import { relativeTime, stripHtml } from "@/lib/utils";
 import { getContentTypeMeta, isCodeLike } from "@/lib/contentTypes";
 import { detectColor, toHex, toRgb, toHsl } from "@/lib/color";
+import { maskSecretText } from "@/lib/secret";
 import type { CSSProperties } from "react";
 import SourceBadge from "@/components/SourceBadge";
 import { createCardMenuItems, CtxMenuCtx, type MenuItem } from "@/components/ContextMenu";
@@ -92,10 +93,7 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
   const closeTimerRef = useRef<number | null>(null);
   const feedbackTimerRef = useRef<number | null>(null);
   const openTimerRef = useRef<number | null>(null);
-  const subType = item.content_type
-    || (item.type === "text"
-      ? (isMarkdown(item.text || "") ? "markdown" : "text")
-      : item.type);
+  const subType = item.content_type || item.type;
   const isMd = item.type === "text" && subType === "markdown";
   const parsedColor = subType === "color" ? detectColor(item.text || "") : null;
   const Icon = ICONS[subType] || Type;
@@ -111,6 +109,8 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
       const firstName = paths[0].split(/[/\\]/).pop() || paths[0];
       return paths.length > 1 ? `${firstName} 等 ${paths.length} 个文件` : firstName;
     }
+    // P4：密钥脱敏 — 卡片标题不展示明文，前 8 字符 + 遮罩（复制操作不受影响，仍取真实值）
+    if (subType === "secret") return maskSecretText(item.text || "");
     const flat = (item.text || "").slice(0, 501).replace(/\r?\n/g, " ").trim() || "(空)";
     return flat.length > 500 ? flat.slice(0, 500) + "…" : flat;
   })();
@@ -483,6 +483,11 @@ const CardHoverPopover = memo(function CardHoverPopover({
               <div className={styles.cardPopoverLinkHost}>📞 {item.text}</div>
               <div className={styles.cardPopoverLinkPath}>电话号码</div>
             </div>
+          ) : subType === "secret" ? (
+            <div className={styles.cardPopoverText}>
+              <div className={styles.cardPopoverLinkHost}>🔑 {maskSecretText(item.text || "")}</div>
+              <div className={styles.cardPopoverLinkPath}>密钥 · 已脱敏 · 双击在编辑器中查看</div>
+            </div>
           ) : (
             <div className={styles.cardPopoverText}>{item.text}</div>
           )
@@ -674,10 +679,7 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     } catch (e) { logger.warn("打开URL失败", e); }
   }, [item.text]);
 
-  const subType = item.content_type
-    || (item.type === "text"
-      ? (isMarkdown(item.text || "") ? "markdown" : "text")
-      : item.type);
+  const subType = item.content_type || item.type;
   const canQrCode = item.type === "text" && (hasUrl || (item.text || "").length <= 300);
 
   const handlePasteTransform = useCallback(async (transform: string) => {

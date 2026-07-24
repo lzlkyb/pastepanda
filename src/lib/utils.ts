@@ -1,6 +1,5 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { detectColor } from "./color";
 
 /** 合并 Tailwind 类名，自动去重和解决冲突 */
 export function cn(...inputs: ClassValue[]) {
@@ -37,69 +36,6 @@ export function truncate(text: string, maxLen: number): string {
   // 按 Unicode 码点切分，避免 UTF-16 代理对（如 emoji）被从中间切断产生孤立代理项
   const codePoints = Array.from(cleaned);
   return codePoints.length > maxLen ? codePoints.slice(0, maxLen).join("") + "..." : cleaned;
-}
-
-/** 检测文本类型 */
-export function detectTextType(text: string): string {
-  if (!text) return "text";
-  const t = text.trim();
-  // URL
-  if (/^https?:\/\//.test(t)) return "link";
-  // 邮箱
-  if (/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(t)) return "email";
-  // 文件路径
-  if (/^[A-Z]:\\/i.test(t) || /^\/[\w]/.test(t) || /^[.~]\//.test(t)) return "file";
-  // 命令行 (npm, git, cargo, pip, python, node, curl, docker, kubectl...)
-  if (/^(npm |npx |yarn |pnpm |git |cargo |pip |python |node |curl |docker |kubectl |make |cmake |go |rustc |java |gcc |ssh |cd |ls |cat |echo |export |source )/i.test(t)) return "code";
-  // 代码片段（英文关键词）
-  if (/^(def |class |function |import |const |let |var |#include |print\(|console\.|SELECT |INSERT |UPDATE |DELETE |public |private |static |return |if \(|for \(|while \(|try |catch |<\/?[a-z])/i.test(t)) return "code";
-  // 代码片段（中文关键词）
-  if (/^(函数 |类 |接口 |枚举 |导入 |导出 |定义 |声明 |模块 |组件 |配置 |方法 )/i.test(t)) return "code";
-  // 中文代码/配置关键词（包含型检测）
-  if (/[（(]\s*(函数|类|接口|枚举|方法|模块|组件|配置|对象)\s*[）)]/.test(t) || /^(import |export |from |require\(|module\.)/i.test(t) || /^\s*[a-zA-Z_$][\w$]*\s*[=:]\s*(function|class|new|=>|{)/.test(t)) return "code";
-  // JSON / XML / HTML 检测
-  if (/^\s*[\[{<]/.test(t) && /[\]}>]\s*$/.test(t)) return "code";
-  // 错误日志
-  if (/^\[?\d{4}-\d{2}-\d{2}/.test(t) || /ERROR|WARN|FATAL|Exception|Traceback/i.test(t) || /错误|异常|警告|失败|超时/.test(t)) return "code";
-  // 电话号码
-  if (/^(\+?86)?1[3-9]\d{9}$/.test(t.replace(/[- ]/g, ""))) return "phone";
-  // 短码/版本号 (如 v1.0, 0.1.0, abc123)
-  if (/^[a-z]?\d+(\.\d+){1,3}$/i.test(t) || /^[a-z][a-z0-9_-]{2,12}$/i.test(t) && t.length < 15) return "code";
-  // 数字
-  if (/^\d+$/.test(t)) return "code";
-  // 多行文本
-  if (t.includes("\n") && t.split("\n").length > 3) return "text";
-  // 颜色值 (Hex/RGB/HSL)
-  if (detectColor(t)) return "color";
-  return "text";
-}
-
-/** 检测文本是否为 Markdown 内容（命中 2 条以上语法规则判定为 MD） */
-export function isMarkdown(text: string): boolean {
-  if (!text || text.length < 10) return false;
-  const t = text.trim();
-  let score = 0;
-  if (/^#{1,6}\s+\S/m.test(t)) score++;            // ATX 标题
-  if (/\*\*[^*]+\*\*|__[^_]+__/.test(t)) score++;   // 粗体
-  if (/^[\s]*[-*+]\s+\S/m.test(t)) score++;         // 无序列表
-  if (/^[\s]*\d+\.\s+\S/m.test(t)) score++;         // 有序列表
-  if (/^```/m.test(t)) score++;                      // 围栏代码块
-  if (/\[[^\]]*\]\([^)]*\)/.test(t)) score++;        // 链接
-  if (/!\[[^\]]*\]\([^)]*\)/.test(t)) score++;       // 图片
-  if (/^>\s+/m.test(t)) score++;                     // 引用
-  if (/^\|.+\|$/m.test(t) && /^[\s|:-]+$/m.test(t)) score++; // 表格
-  if (/^(---|\*\*\*|___)\s*$/m.test(t)) score++;     // 分隔线
-  if (/`[^`\n]+`/.test(t)) score++;                  // 行内代码
-  return score >= 2;
-}
-
-/** 检测文本是否包含 HTML 标签 */
-export function isHtml(text: string): boolean {
-  if (!text || text.length < 5) return false;
-  const t = text.trim();
-  // 以常见 HTML 标签开头，且包含闭合标签
-  return /^<(?:!DOCTYPE|html|div|p|span|table|ul|ol|h[1-6]|a|img|br|hr|section|article|header|footer|nav|main|pre|code|blockquote|form|input|button|select|textarea|label|svg)\b/i.test(t)
-    && /<\/[a-zA-Z]+>|\/>$/.test(t);
 }
 
 /** 剥离 HTML 标签，返回纯文本 */

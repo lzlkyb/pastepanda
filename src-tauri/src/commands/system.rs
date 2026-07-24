@@ -153,6 +153,102 @@ pub fn toggle_monitor(app: tauri::AppHandle) -> Result<bool, String> {
     }
 }
 
+/// 读取文本文件快速预览：最多 128KB，最多 20 行。
+/// 返回：{ kind: "text"|"binary"|"missing", file_size, total_lines, lines: String[], truncated, extension }
+/// 二进制文件返回 lines=[] 与 kind="binary"，前端据此显示"二进制文件"占位。
+#[tauri::command]
+pub fn read_text_file_preview(path: String) -> Result<serde_json::Value, String> {
+    use std::io::Read;
+
+    if is_unsafe_network_path(&path) {
+        return Err("不支持的网络共享路径".to_string());
+    }
+
+    let meta = match std::fs::metadata(&path) {
+        Ok(m) if m.is_file() => m,
+        _ => return Ok(serde_json::json!({
+            "kind": "missing",
+            "file_size": 0,
+            "total_lines": 0,
+            "lines": [],
+            "truncated": false,
+            "extension": "",
+        })),
+    };
+
+    let file_size = meta.len();
+    let ext = std::path::Path::new(&path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    const MAX_BYTES: u64 = 128 * 1024;
+    const MAX_LINES: usize = 20;
+
+    // 上限：防止大文件读取卡 UI；超过上限仍允许读取前 128KB。
+    let read_limit = file_size.min(MAX_BYTES);
+
+    let mut file = std::fs::File::open(&path).map_err(|e| format!("打开文件失败: {}", e))?;
+    let mut preview_bytes: Vec<u8> = Vec::with_capacity(read_limit as usize);
+    let taken = (&mut file).take(read_limit);
+    std::io::BufReader::new(taken)
+        .read_to_end(&mut preview_bytes)
+        .map_err(|e| format!("读取文件失败: {}", e))?;
+
+    // 二进制检测：前 8KB 内是否出现 NUL 字节
+    let is_binary = preview_bytes
+        .iter()
+        .take(8192)
+        .any(|&b| b == 0);
+
+    if is_binary {
+        return Ok(serde_json::json!({
+            "kind": "binary",
+            "file_size": file_size,
+            "total_lines": 0,
+            "lines": [],
+            "truncated": false,
+            "extension": ext,
+        }));
+    }
+
+    // 文本解码（lossy UTF-8，容错非 UTF-8 编码）
+    let preview_str = String::from_utf8_lossy(&preview_bytes).into_owned();
+
+    let mut lines: Vec<String> = Vec::new();
+    let mut total_lines = 0usize;
+    let mut truncated = false;
+    for line in preview_str.split('\n') {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if lines.len() < MAX_LINES {
+            lines.push(line.to_string());
+        } else {
+            truncated = true;
+        }
+        total_lines += 1;
+    }
+    // 文件以 \n 结尾时，split 多一个空串；保持与 wc -l 一致
+    if total_lines > 0 && preview_str.ends_with('\n') {
+        total_lines = total_lines.saturating_sub(1);
+        if lines.len() > total_lines {
+            lines.truncate(total_lines);
+        }
+    }
+    if file_size > MAX_BYTES {
+        truncated = true;
+    }
+
+    Ok(serde_json::json!({
+        "kind": "text",
+        "file_size": file_size,
+        "total_lines": total_lines,
+        "lines": lines,
+        "truncated": truncated,
+        "extension": ext,
+    }))
+}
+
 /// 获取剪贴板监听状态
 #[tauri::command]
 pub fn get_monitor_status(app: tauri::AppHandle) -> Result<bool, String> {

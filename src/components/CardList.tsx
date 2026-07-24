@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, lazy, Suspense, useCallback, useMemo, memo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
+import { useDialogStore } from "@/stores/dialogStore";
 import { useToast } from "@/components/Toast";
 import { CardWithContext, ImgState } from "@/components/Card";
 import { ContextMenu } from "@/components/ContextMenu";
@@ -14,12 +15,9 @@ import { Timeline } from "@/components/Timeline";
 import Lenis from "lenis";
 import styles from "./CardList.module.css";
 import { useLoadMore } from "@/hooks/useLoadMore";
-import { useImagePreview } from "@/hooks/useImagePreview";
 import { useVirtualScroll } from "@/hooks/useVirtualScroll";
-import { ImagePreviewDialog } from "@/components/ImagePreviewDialog";
+import { ItemEditorDialog } from "@/components/editors/ItemEditorDialog";
 
-const EditDialog = lazy(() => import("@/components/EditDialog").then(m => ({ default: m.EditDialog })));
-const FileDetailDialog = lazy(() => import("@/components/FileDetailDialog").then(m => ({ default: m.FileDetailDialog })));
 const QRCodeDialog = lazy(() => import("@/components/QRCodeDialog").then(m => ({ default: m.QRCodeDialog })));
 const DiffDialog = lazy(() => import("@/components/DiffDialog").then(m => ({ default: m.DiffDialog })));
 const RegexPreviewDialog = lazy(() => import("@/components/RegexPreviewDialog").then(m => ({ default: m.RegexPreviewDialog })));
@@ -132,13 +130,12 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   }, [stackMode, stackItems]);
 
   const { toast } = useToast();
-  const [editItem, setEditItem] = useState<HistoryItem | null>(null);
+  const openEditor = useDialogStore((s) => s.openEditor);
   const [tagEditorItem, setTagEditorItem] = useState<HistoryItem | null>(null);
   const [qrItem, setQrItem] = useState<HistoryItem | null>(null);
   const [diffPair, setDiffPair] = useState<[HistoryItem, HistoryItem] | null>(null);
   const [regexPreview, setRegexPreview] = useState<{ item: HistoryItem; ruleId: string } | null>(null);
   const [showRegexRules, setShowRegexRules] = useState(false);
-  const [fileDetailItem, setFileDetailItem] = useState<HistoryItem | null>(null);
   const [pastingId, setPastingId] = useState<string | null>(null);
   const [imgCache, setImgCache] = useState<Record<string, ImgState>>({});
 
@@ -176,7 +173,6 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
     scrollRef, lenisRef, itemsLength: items.length,
   });
 
-  const preview = useImagePreview();
 
   const {
     contentRef, scrollMetrics, isScrolling,
@@ -306,14 +302,14 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
           setPastingId(null);
         }
       } else {
-        preview.openImagePreview(item);
+        openEditor(item);
       }
     } else if (item.type === "file") {
-      setFileDetailItem(item);
+      openEditor(item);
     } else if (item.type === "text") {
       const action = useAppStore.getState().config.double_click_action || "preview";
       if (action === "preview") {
-        setEditItem(item);
+        openEditor(item);
       } else {
         setPastingId(item.id);
         try {
@@ -326,7 +322,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
         }
       }
     }
-  }, [preview.openImagePreview, toast]);
+  }, [toast, openEditor]);
 
   // ── 稳定行回调（供 memoized VirtualCardRow 使用）──
   const itemsRef = useRef(items);
@@ -338,7 +334,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
     const it = itemsRef.current.find((i) => i.id === id);
     if (it) handleDoubleClick(it);
   }, [handleDoubleClick]);
-  const handleEditItem = useCallback((it: HistoryItem) => setEditItem(it), []);
+  const handleEditItem = useCallback((it: HistoryItem) => openEditor(it), [openEditor]);
   const handleEditTagsItem = useCallback((it: HistoryItem) => setTagEditorItem(it), []);
   const handleQrItem = useCallback((it: HistoryItem) => setQrItem(it), []);
   const handleRegexPreviewItem = useCallback((it: HistoryItem, ruleId: string) => setRegexPreview({ item: it, ruleId }), []);
@@ -391,22 +387,20 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   const timelineEnabled = useAppStore((s) => s.config.timeline_enabled);
   const sequentialHotkey = useAppStore((s) => s.config.sequential_hotkey);
 
-  // U44：Space 快速预览 — 图片/文件项打开对应详情窗
+  // U44：Space 快速预览 — 图片/文件项打开对应详情窗（P3 起统一走 openEditor）
   useEffect(() => {
     const onOpenItemDetail = (e: Event) => {
       const id = (e as CustomEvent).detail?.id as string | undefined;
       if (!id) return;
       const item = items.find((i) => i.id === id);
       if (!item) return;
-      if (item.type === "image" && item.content) {
-        preview.openImagePreview(item);
-      } else if (item.type === "file") {
-        setFileDetailItem(item);
+      if ((item.type === "image" && item.content) || item.type === "file") {
+        openEditor(item);
       }
     };
     window.addEventListener("app-open-item-detail", onOpenItemDetail);
     return () => window.removeEventListener("app-open-item-detail", onOpenItemDetail);
-  }, [items, preview.openImagePreview]);
+  }, [items, openEditor]);
 
   return (
     <ContextMenu>
@@ -609,12 +603,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
       </div>
 
       {/* 弹窗 */}
-      <Suspense fallback={null}>
-        {editItem && <ErrorBoundary fallback={null}><EditDialog item={editItem} onClose={() => setEditItem(null)} /></ErrorBoundary>}
-      </Suspense>
-      <Suspense fallback={null}>
-        {fileDetailItem && <ErrorBoundary fallback={null}><FileDetailDialog item={fileDetailItem} onClose={() => setFileDetailItem(null)} /></ErrorBoundary>}
-      </Suspense>
+      <ItemEditorDialog />
       <Suspense fallback={null}>
         {qrItem && <ErrorBoundary fallback={null}><QRCodeDialog text={qrItem.text} onClose={() => setQrItem(null)} /></ErrorBoundary>}
       </Suspense>
@@ -628,9 +617,6 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
         {showRegexRules && <ErrorBoundary fallback={null}><RegexRulesDialog onClose={() => setShowRegexRules(false)} /></ErrorBoundary>}
       </Suspense>
       <TagEditor open={!!tagEditorItem} item={tagEditorItem} onClose={() => setTagEditorItem(null)} />
-
-      {/* 图片预览 */}
-      <ImagePreviewDialog preview={preview} />
 
     </div>
     </div>

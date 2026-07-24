@@ -4,12 +4,19 @@
  * 包含：缩放/旋转/平移、OCR 文字识别叠加层与框选、
  * 复制/另存按钮、快捷键提示。
  */
+import { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, ZoomIn, ZoomOut, RotateCw, Copy, Download, ScanText, Pin } from "lucide-react";
+import { X, ZoomIn, ZoomOut, RotateCw, Copy, Download, ScanText, Pin, FileDown, Crop, Check, RotateCcw } from "lucide-react";
 import { FocusTrap } from "@/components/FocusTrap";
 import { useToast } from "@/components/Toast";
 import { getImageBase64, dataUrlToBlob } from "@/lib/api";
-import type { UseImagePreviewReturn } from "@/hooks/useImagePreview";
+import {
+  EXPORT_FORMATS,
+  EXPORT_FORMAT_ORDER,
+  formatBytes,
+  type ExportFormat,
+} from "@/lib/imageFormat";
+import type { UseImagePreviewReturn, CropRect } from "@/hooks/useImagePreview";
 import styles from "./CardList.module.css";
 
 export interface ImagePreviewDialogProps {
@@ -23,12 +30,41 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
     previewScale, previewRotation, previewOffset, isPanning,
     previewContentRef, viewportRef,
     ocrResult, ocrLoading, ocrActive, selectedWordIndices, isSelecting, selRect,
+    exportFormat, exportQuality, exportEstimate, exporting,
+    cropMode, cropRect, cropOriginal,
     closePreview, setPreviewScale, setPreviewRotation, setPreviewOffset, setSelectedWordIndices,
+    setExportFormat, setExportQuality, exportImage,
+    setCropMode, setCropRect,
+    handleCropMouseDown, handleCropMouseMove, handleCropMouseUp,
+    confirmCrop, cancelCrop, restoreOriginal,
     handlePreviewWheel, handlePanStart, handlePanMove, handlePanEnd,
     toggleOcrOverlay, getSelectedOcrTexts, handleOcrWordClick,
     handleOcrSelectStart, handleOcrSelectMove, handleOcrSelectEnd,
     handlePinImage,
   } = preview;
+
+  // 裁剪拖拽：mousedown 在 overlay 上触发，move/up 挂在 window 上以便拖出视口仍能跟踪。
+  useEffect(() => {
+    if (!cropMode) return;
+    const onMove = (e: MouseEvent) => {
+      handleCropMouseMove(e as unknown as React.MouseEvent);
+    };
+    const onUp = () => handleCropMouseUp();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        confirmCrop();
+      }
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [cropMode, handleCropMouseMove, handleCropMouseUp, confirmCrop]);
 
   return (
     <AnimatePresence>
@@ -92,6 +128,18 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
               >
                 <Pin size={16} />
                 <span style={{ marginLeft: 4, fontSize: 12 }}>置顶</span>
+              </button>
+              {/* 裁剪按钮 */}
+              <button
+                className={`${styles.imageDetailToolBtn} ${cropMode ? styles.imageDetailToolBtnActive : ''}`}
+                title="进入/退出裁剪模式"
+                onClick={() => {
+                  setCropMode(!cropMode);
+                  setCropRect(null);
+                }}
+              >
+                <Crop size={16} />
+                <span style={{ marginLeft: 4, fontSize: 12 }}>裁剪</span>
               </button>
               <span className={styles.imageDetailToolbarHint}>
                 滚轮平移 · Ctrl+滚轮缩放 · 拖拽平移 · 0 重置 · R 旋转
@@ -204,9 +252,88 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
                       )}
                     </div>
                   )}
+                  {/* 裁剪叠加层 */}
+                  {cropMode && previewImage && !previewLoading && (
+                    <>
+                      <div
+                        className={styles.cropBackdrop}
+                        onMouseDown={(e) => handleCropMouseDown(e)}
+                        style={{ cursor: 'crosshair' }}
+                      />
+                      {cropRect && (
+                        <>
+                          <div className={styles.cropMask} style={{ top: 0, left: 0, right: 0, height: cropRect.y }} />
+                          <div className={styles.cropMask} style={{ bottom: 0, left: 0, right: 0, height: `calc(100% - ${cropRect.y + cropRect.h}px)` }} />
+                          <div className={styles.cropMask} style={{ top: cropRect.y, left: 0, width: cropRect.x, height: cropRect.h }} />
+                          <div className={styles.cropMask} style={{ top: cropRect.y, right: 0, width: `calc(100% - ${cropRect.x + cropRect.w}px)`, height: cropRect.h }} />
+                          <div
+                            className={styles.cropSel}
+                            style={{ left: cropRect.x, top: cropRect.y, width: cropRect.w, height: cropRect.h }}
+                          >
+                            <div className={styles.cropGridH} style={{ top: '33.333%' }} />
+                            <div className={styles.cropGridH} style={{ top: '66.667%' }} />
+                            <div className={styles.cropGridV} style={{ left: '33.333%' }} />
+                            <div className={styles.cropGridV} style={{ left: '66.667%' }} />
+                            {(['tl','tc','tr','ml','mr','bl','bc','br'] as const).map((name) => (
+                              <div
+                                key={name}
+                                className={`${styles.cropHandle}${name.length === 2 && !name.includes('c') ? ' ' + styles.cropHandleCorner : ''}`}
+                                style={
+                                  name === 'tl' ? { left: -5, top: -5, cursor: 'nwse-resize' }
+                                  : name === 'tc' ? { left: '50%', top: -5, cursor: 'ns-resize', transform: 'translateX(-50%)' }
+                                  : name === 'tr' ? { right: -5, top: -5, cursor: 'nesw-resize' }
+                                  : name === 'ml' ? { left: -5, top: '50%', cursor: 'ew-resize', transform: 'translateY(-50%)' }
+                                  : name === 'mr' ? { right: -5, top: '50%', cursor: 'ew-resize', transform: 'translateY(-50%)' }
+                                  : name === 'bl' ? { left: -5, bottom: -5, cursor: 'nesw-resize' }
+                                  : name === 'bc' ? { left: '50%', bottom: -5, cursor: 'ns-resize', transform: 'translateX(-50%)' }
+                                  : { right: -5, bottom: -5, cursor: 'nwse-resize' }
+                                }
+                              />
+                            ))}
+                            <div className={styles.cropHintBar}>
+                              <span>{Math.round(cropRect.w)} × {Math.round(cropRect.h)}</span>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                      {cropOriginal && (
+                        <button
+                          className={styles.cropRestoreBtn}
+                          onClick={(e) => { e.stopPropagation(); restoreOriginal(); }}
+                          title="还原原图"
+                        >
+                          <RotateCcw size={13} />
+                          <span style={{ marginLeft: 4, fontSize: 11 }}>还原原图</span>
+                        </button>
+                      )}
+                    </>
+                  )}
                 </>
               ) : null}
             </div>
+
+            {/* 裁剪确认/取消栏 */}
+            {cropMode && (
+              <div className={styles.cropActionBar}>
+                <span className={styles.cropActionHint}>
+                  拖拽绘制选区 · 拖动手柄调整 · Enter 确认
+                </span>
+                <button
+                  className={styles.cropActionBtn}
+                  onClick={confirmCrop}
+                  disabled={!cropRect || cropRect.w < 10 || cropRect.h < 10}
+                >
+                  <Check size={14} />
+                  <span style={{ marginLeft: 4 }}>确认裁剪</span>
+                </button>
+                <button
+                  className={styles.cropActionBtnSecondary}
+                  onClick={cancelCrop}
+                >
+                  取消
+                </button>
+              </div>
+            )}
 
             {/* OCR 选中结果栏 */}
             {ocrActive && ocrResult && (
@@ -263,6 +390,48 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
                 <div className={styles.ocrFullTextBody}>
                   {ocrResult.full_text}
                 </div>
+              </div>
+            )}
+
+            {/* 导出（格式转换 + 压缩） */}
+            {previewImage && !previewLoading && (
+              <div className={styles.imageExportRow}>
+                <span className={styles.imageExportLabel}>导出</span>
+                <div className={styles.imageExportSeg}>
+                  {EXPORT_FORMAT_ORDER.map((f) => (
+                    <button
+                      key={f}
+                      className={`${styles.imageExportSegBtn}${exportFormat === f ? ' ' + styles.imageExportSegBtnActive : ''}`}
+                      onClick={() => setExportFormat(f as ExportFormat)}
+                    >
+                      {EXPORT_FORMATS[f].label}
+                    </button>
+                  ))}
+                </div>
+                <div className={styles.imageExportQuality}>
+                  <input
+                    type="range"
+                    min={10}
+                    max={100}
+                    step={1}
+                    value={Math.round(exportQuality * 100)}
+                    disabled={!EXPORT_FORMATS[exportFormat].lossy}
+                    onChange={(e) => setExportQuality(Number(e.target.value) / 100)}
+                    className={styles.imageExportSlider}
+                  />
+                  <span>{Math.round(exportQuality * 100)}%</span>
+                </div>
+                <span className={styles.imageExportEstimate}>
+                  ≈ {exportEstimate != null ? formatBytes(exportEstimate) : "…"}
+                </span>
+                <button
+                  className={styles.imageExportBtn}
+                  onClick={exportImage}
+                  disabled={exporting || !previewImage}
+                >
+                  <FileDown size={14} />
+                  {exporting ? "导出中…" : "导出"}
+                </button>
               </div>
             )}
           </div>

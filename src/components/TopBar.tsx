@@ -5,6 +5,7 @@ import { getAppVersion, getAppName, fetchCounts, toggleStackMode } from "@/lib/a
 import { cleanSourceName, getSourceIcon, fetchRealSourceIcon } from "@/lib/source-mappings";
 import SourceBadge from "@/components/SourceBadge";
 import { UpdateBadge } from "@/components/UpdateBadge";
+import { TagBadge } from "@/components/TagBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { SearchBox } from "@/components/SearchBox";
 import { logger } from "@/lib/logger";
@@ -208,20 +209,12 @@ export function TopBar({ onSettings, onSnippets, onExtract, onToggleSidebar, sid
               const tag = allTags.find((t) => t.id === tid);
               if (!tag) return null;
               return (
-                <span
+                <TagBadge
                   key={tid}
-                  className={styles.tagFilterChip}
-                  style={{ background: tag.color + "20", color: tag.color, borderColor: tag.color + "40" }}
-                >
-                  #{tag.name}
-                  <button
-                    className={styles.tagFilterRemove}
-                    onClick={() => toggleTagFilter(tid)}
-                    title="移除筛选"
-                  >
-                    <X size={10} />
-                  </button>
-                </span>
+                  tag={tag}
+                  variant="chip"
+                  onRemove={(t) => toggleTagFilter(t.id)}
+                />
               );
             })}
             {selectedTagIds.length > 0 && (
@@ -491,24 +484,15 @@ function TagPickerPopover({ tags, selectedTagIds, onToggle, onClose }: {
     return { autoTags: auto, manualTags: manual };
   }, [tags]);
 
-  const renderTag = (tag: import("@/stores/appStore").Tag) => {
-    const active = selectedTagIds.includes(tag.id);
-    return (
-      <button
-        key={tag.id}
-        className={`${styles.tagPickerItem}${active ? ` ${styles.tagPickerItemActive}` : ""}`}
-        onClick={() => onToggle(tag.id)}
-      >
-        <span
-          className={styles.tagPickerDot}
-          style={{ background: tag.color }}
-        />
-        {tag.source === "auto" && <span className={styles.tagPickerAiIcon}>🤖</span>}
-        <span className={styles.tagPickerName}>{tag.name}</span>
-        {active && <span className={styles.tagPickerCheck}>✓</span>}
-      </button>
-    );
-  };
+  const renderTag = (tag: import("@/stores/appStore").Tag) => (
+    <TagBadge
+      key={tag.id}
+      tag={tag}
+      variant="picker"
+      active={selectedTagIds.includes(tag.id)}
+      onClick={(t) => onToggle(t.id)}
+    />
+  );
 
   return (
     <motion.div

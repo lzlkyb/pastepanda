@@ -222,7 +222,7 @@ impl DataStore {
     /// 确保自动标签种子数据存在（首次启动时插入）
     pub fn ensure_auto_tags(&self) -> Result<(), String> {
         let conn = self.lock_conn();
-        let auto_tags: [(&str, &str, &str); 20] = [
+        let auto_tags: [(&str, &str, &str); 25] = [
             // 主类别
             ("auto-code", "代码", "#6366F1"),
             ("auto-link", "链接", "#06B6D4"),
@@ -234,6 +234,11 @@ impl DataStore {
             ("auto-secret", "密钥", "#DC2626"),
             ("auto-number", "数字", "#14B8A6"),
             ("auto-plaintext", "纯文本", "#9CA3AF"),
+            ("auto-email", "邮箱", "#2563EB"),
+            ("auto-phone", "电话", "#16A34A"),
+            ("auto-color", "颜色", "#EC4899"),
+            ("auto-filepath", "文件路径", "#EA580C"),
+            ("auto-markdown", "Markdown", "#84CC16"),
             // 代码语言
             ("auto-lang-python", "Python", "#3776AB"),
             ("auto-lang-javascript", "JavaScript", "#F7DF1E"),

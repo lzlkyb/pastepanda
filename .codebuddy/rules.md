@@ -62,6 +62,18 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "npx tauri dev" -W
 
 ---
 
+## 14. git push 优先使用 SSH
+本机 HTTPS 访问 GitHub 经常超时（系统代理 `127.0.0.1:26561` 不稳定，git 无法走通），但 SSH 方式 (`git@github.com`) 始终可用。
+
+- remote URL 应使用 SSH 格式：`git@github.com:lzlkyb/pastepanda.git`
+- 如果 `git push` 报 `Failed to connect` 或 `Connection was reset`，先检查 `git remote get-url origin`，若为 HTTPS 则切换为 SSH：
+  ```bash
+  git remote set-url origin git@github.com:lzlkyb/pastepanda.git
+  ```
+- pre-push hook 会跑完整测试（vitest + cargo test），耗时约 3 分钟，push 命令 timeout 需设 ≥300s
+
+---
+
 ## 发版流程
 当用户说 **"tag"** 或 **"打tag"** 时，自动执行完整发版流程（无需逐步确认）：
 

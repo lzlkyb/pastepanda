@@ -447,13 +447,15 @@ impl LanSync {
                             None
                         };
 
-                        // 计算统一内容类型（与本地剪贴板使用相同的 classify() 路径）
-                        let content_type = match item_type.as_str() {
-                            "image" => Some("image".to_string()),
-                            "file" => Some("file".to_string()),
+                        // 计算统一内容类型（与本地剪贴板使用相同的 classify() 路径），
+                        // 同时保留 labels 供后续附加自动标签（修复：LAN 同步条目此前不打标签）
+                        let (content_type, labels) = match item_type.as_str() {
+                            "image" => (Some("image".to_string()), None),
+                            "file" => (Some("file".to_string()), None),
                             _ => {
                                 let labels = crate::content_classifier::ContentClassifier::new().classify(&final_text);
-                                Some(crate::content_classifier::ContentClassifier::content_type_from_labels(&labels).to_string())
+                                let ct = crate::content_classifier::ContentClassifier::content_type_from_labels(&labels).to_string();
+                                (Some(ct), Some(labels))
                             }
                         };
 
@@ -474,9 +476,26 @@ impl LanSync {
                             tags: Vec::new(),
                         };
 
+                        let history_id = item.id.clone();
+
                         if let Some(store) = app_handle.try_state::<DataStore>() {
                             if let Err(e) = store.insert_history(&item) {
                                 log::error!("[LanSync] 插入同步记录失败: {}", e);
+                            } else if let Some(ref labels) = labels {
+                                // 附加自动标签（与本地捕获一致）：解析标签 ID → 写入 → 通知前端
+                                if let Ok(tag_ids) = store.resolve_auto_tag_ids(labels) {
+                                    if !tag_ids.is_empty() {
+                                        if let Err(e) = store.add_history_tags(&history_id, &tag_ids) {
+                                            log::warn!("[LanSync] 写入自动标签失败: {}", e);
+                                        } else {
+                                            log::info!("[LanSync] 自动分类: {:?} → {}", labels, history_id);
+                                            let _ = app_handle.emit("tags-updated", serde_json::json!({
+                                                "history_id": history_id,
+                                                "tag_ids": tag_ids,
+                                            }));
+                                        }
+                                    }
+                                }
                             }
                         }
 

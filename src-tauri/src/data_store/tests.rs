@@ -1122,8 +1122,8 @@ fn test_ensure_auto_tags() {
     store.ensure_auto_tags().unwrap();
 
     let tags = store.get_tags().unwrap();
-    // 应该有 20 个自动标签种子
-    assert_eq!(tags.len(), 20);
+    // 应该有 25 个自动标签种子
+    assert_eq!(tags.len(), 25);
     // 全部 source 为 "auto"
     assert!(tags.iter().all(|t| t.source == "auto"));
 }
@@ -1135,7 +1135,7 @@ fn test_ensure_auto_tags_idempotent() {
     store.ensure_auto_tags().unwrap();
 
     let tags = store.get_tags().unwrap();
-    assert_eq!(tags.len(), 20); // 不应重复插入
+    assert_eq!(tags.len(), 25); // 不应重复插入
 }
 
 #[test]
@@ -1158,6 +1158,25 @@ fn test_resolve_auto_tag_ids_unknown_label() {
         .resolve_auto_tag_ids(&["不存在的标签".to_string()])
         .unwrap();
     assert!(ids.is_empty());
+}
+
+#[test]
+fn test_all_classify_main_labels_resolve() {
+    // 回归：classify() 输出的每个主标签都必须能解析到种子标签，
+    // 防止识别结果被 resolve_auto_tag_ids 静默丢弃（邮箱/电话/颜色/文件路径/Markdown 曾缺失）
+    let store = make_store();
+    store.ensure_auto_tags().unwrap();
+
+    let main_labels: Vec<String> = [
+        "邮箱", "电话", "颜色", "文件路径", "数字", "JSON", "纯文本", "链接",
+        "Markdown", "HTML", "配置文件", "表格", "命令行", "日志", "密钥", "代码",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+
+    let ids = store.resolve_auto_tag_ids(&main_labels).unwrap();
+    assert_eq!(ids.len(), main_labels.len(), "存在未种子化的主标签: 期望 {} 个，实际解析 {} 个", main_labels.len(), ids.len());
 }
 
 #[test]

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { relativeTime, truncate, detectTextType, cn } from "@/lib/utils";
+import { relativeTime, truncate, cn } from "@/lib/utils";
 
 describe("relativeTime", () => {
   it("returns empty string for empty input", () => {
@@ -36,35 +36,6 @@ describe("truncate", () => {
 
   it("truncates long text with ellipsis", () => {
     expect(truncate("hello world this is long", 10)).toBe("hello worl...");
-  });
-});
-
-describe("detectTextType", () => {
-  it("detects URLs", () => {
-    expect(detectTextType("https://example.com")).toBe("link");
-    expect(detectTextType("http://test.org")).toBe("link");
-  });
-
-  it("detects emails", () => {
-    expect(detectTextType("user@example.com")).toBe("email");
-  });
-
-  it("detects phone numbers", () => {
-    expect(detectTextType("13800138000")).toBe("phone");
-  });
-
-  it("defaults to text", () => {
-    expect(detectTextType("hello world")).toBe("text");
-  });
-
-  it("detects color values", () => {
-    expect(detectTextType("#FF5733")).toBe("color");
-    expect(detectTextType("rgba(59, 130, 246, 0.5)")).toBe("color");
-    expect(detectTextType("hsl(160, 84%, 39%)")).toBe("color");
-  });
-
-  it("does not classify a color substring inside a larger snippet as color", () => {
-    expect(detectTextType("body { color: #FF5733; }")).not.toBe("color");
   });
 });
 

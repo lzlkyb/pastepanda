@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, Tag, HistoryItem } from "@/stores/appStore";
 import { setItemTags, createTag } from "@/lib/api";
+import { TagBadge } from "@/components/TagBadge";
 import { X, Search } from "lucide-react";
 import styles from "./TagEditor.module.css";
 
@@ -142,20 +143,12 @@ export function TagEditor({ open, item, onClose }: TagEditorProps) {
                     <span className={styles.emptyHint}>暂无标签</span>
                   ) : (
                     selectedTags.map((tag) => (
-                      <span
+                      <TagBadge
                         key={tag.id}
-                        className={styles.selectedTag}
-                        style={{ background: tag.color + "18", color: tag.color, borderColor: tag.color + "40" }}
-                      >
-                        #{tag.name}
-                        <button
-                          className={styles.removeTagBtn}
-                          onClick={() => removeTag(tag.id)}
-                          tabIndex={-1}
-                        >
-                          ×
-                        </button>
-                      </span>
+                        tag={tag}
+                        variant="chip"
+                        onRemove={(t) => removeTag(t.id)}
+                      />
                     ))
                   )}
                 </div>
@@ -190,16 +183,14 @@ export function TagEditor({ open, item, onClose }: TagEditorProps) {
                     <div className={styles.emptyList}>未找到匹配标签</div>
                   ) : (
                     filteredTags.map((tag) => (
-                      <button
+                      <TagBadge
                         key={tag.id}
-                        className={`${styles.tagOption} ${selectedIds.includes(tag.id) ? styles.tagOptionSelected : ""}`}
-                        onClick={() => toggleTag(tag.id)}
+                        tag={tag}
+                        variant="picker"
+                        active={selectedIds.includes(tag.id)}
+                        onClick={(t) => toggleTag(t.id)}
                         tabIndex={-1}
-                      >
-                        <span className={styles.tagDot} style={{ background: tag.color }} />
-                        <span className={styles.tagName}>{tag.name}</span>
-                        <span className={styles.tagCheck}>{selectedIds.includes(tag.id) ? "✓" : ""}</span>
-                      </button>
+                      />
                     ))
                   )}
                 </div>

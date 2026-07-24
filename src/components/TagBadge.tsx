@@ -1,29 +1,91 @@
 import { memo, useCallback } from "react";
+import { X } from "lucide-react";
 import { useAppStore, Tag } from "@/stores/appStore";
 import styles from "./TagBadge.module.css";
 
-/** 单个标签徽标 — 显示在卡片上，点击可筛选 */
-export const TagBadge = memo(function TagBadge({ tag, onClick }: {
+/**
+ * 标签颜色唯一来源 — 全应用所有标签渲染点都必须经过这里。
+ * 改标签配色只需改这一个函数。
+ */
+export function getTagStyle(tag: Tag): React.CSSProperties {
+  return {
+    background: tag.color + "20",
+    color: tag.color,
+    borderColor: tag.color + "40",
+  };
+}
+
+export type TagBadgeVariant = "card" | "chip" | "picker";
+
+interface TagBadgeProps {
   tag: Tag;
+  /** card=卡片内紧凑徽标 | chip=带×移除按钮 | picker=选择器行(dot+名称+✓) */
+  variant?: TagBadgeVariant;
   onClick?: (tag: Tag) => void;
-}) {
+  /** chip 变体：点 × 移除 */
+  onRemove?: (tag: Tag) => void;
+  /** picker 变体：选中态 */
+  active?: boolean;
+  /** 透传 tabIndex（对话框内防抢焦点用 -1） */
+  tabIndex?: number;
+}
+
+/** 标签徽标 — 全应用唯一标签渲染组件 */
+export const TagBadge = memo(function TagBadge({
+  tag,
+  variant = "card",
+  onClick,
+  onRemove,
+  active = false,
+  tabIndex,
+}: TagBadgeProps) {
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
     onClick?.(tag);
   }, [tag, onClick]);
 
+  const handleRemove = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    onRemove?.(tag);
+  }, [tag, onRemove]);
+
   const isAuto = tag.source === "auto";
 
+  /* ===== picker 变体：选择器行 ===== */
+  if (variant === "picker") {
+    return (
+      <button
+        type="button"
+        className={`${styles.pickerItem} ${active ? styles.pickerItemActive : ""}`}
+        onClick={handleClick}
+        tabIndex={tabIndex}
+        title={`${isAuto ? "🤖 智能标签: " : ""}${tag.name}`}
+      >
+        <span className={styles.pickerDot} style={{ background: tag.color }} />
+        {isAuto && <span className={styles.pickerAiIcon}>🤖</span>}
+        <span className={styles.pickerName}>{tag.name}</span>
+        <span className={styles.pickerCheck}>{active ? "✓" : ""}</span>
+      </button>
+    );
+  }
+
+  /* ===== card / chip 变体 ===== */
   return (
     <span
-      className={`${styles.badge} ${isAuto ? styles.autoBadge : ""}`}
-      style={{ background: tag.color + "20", color: tag.color, borderColor: tag.color + "40" }}
-      onClick={handleClick}
+      className={`${styles.badge} ${variant === "chip" ? styles.chip : ""} ${isAuto ? styles.autoBadge : ""}`}
+      style={getTagStyle(tag)}
+      onClick={onClick ? handleClick : undefined}
       title={`${isAuto ? "🤖 智能" : ""}标签: ${tag.name}`}
     >
       {isAuto && <span className={styles.aiIcon}>🤖</span>}
-      {tag.name}
+      {variant === "chip" ? `#${tag.name}` : tag.name}
+      {variant === "chip" && onRemove && (
+        <button type="button" className={styles.removeBtn} onClick={handleRemove} tabIndex={tabIndex} title="移除">
+          <X size={10} />
+        </button>
+      )}
     </span>
   );
 });

@@ -1162,6 +1162,250 @@
   gap: 12px;
 }
 
+/* ===== 图片导出行（格式转换 + 压缩） ===== */
+.imageExportRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.imageExportLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.imageExportSeg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+}
+.imageExportSegBtn {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.imageExportSegBtn:hover {
+  color: var(--text-primary);
+}
+.imageExportSegBtnActive {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(0,120,212,0.25);
+}
+.imageExportQuality {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.imageExportSlider {
+  width: 90px;
+  height: 4px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.imageExportSlider:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.imageExportEstimate {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.imageExportBtn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+  box-shadow: 0 2px 8px rgba(0,120,212,0.25);
+}
+.imageExportBtn:hover {
+  opacity: 0.9;
+}
+.imageExportBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ===== 图片裁剪（③）===== */
+.imageDetailToolBtnActive {
+  background: var(--accent) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 8px rgba(0,120,212,0.3);
+}
+.cropBackdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: transparent;
+  cursor: crosshair;
+}
+.cropMask {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  z-index: 21;
+}
+.cropSel {
+  position: absolute;
+  border: 1.5px dashed #fff;
+  z-index: 22;
+  pointer-events: none;
+  box-shadow: 0 0 12px rgba(0,0,0,0.4);
+}
+.cropGridH, .cropGridV {
+  position: absolute;
+  background: rgba(255,255,255,0.35);
+  pointer-events: none;
+}
+.cropGridH {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+.cropGridV {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+.cropHandle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  border: 1.5px solid var(--accent);
+  border-radius: 2px;
+  pointer-events: auto;
+  z-index: 23;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+}
+.cropHandleCorner {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+.cropHintBar {
+  position: absolute;
+  bottom: -22px;
+  left: 0;
+  padding: 2px 8px;
+  background: rgba(0,0,0,0.7);
+  color: #fff;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.cropRestoreBtn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: rgba(255,255,255,0.9);
+  backdrop-filter: blur(6px);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 600;
+  z-index: 25;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  transition: all 0.15s;
+}
+.cropRestoreBtn:hover {
+  background: #fff;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.cropActionBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.cropActionHint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-right: auto;
+}
+.cropActionBtn {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: 0 2px 8px rgba(0,120,212,0.25);
+  transition: all 0.15s;
+}
+.cropActionBtn:hover { opacity: 0.9; }
+.cropActionBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.cropActionBtnSecondary {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.cropActionBtnSecondary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* ===== 主内容区（relative 定位容器，包裹 timeline + 滚动区） ===== */
 .contentArea {
   flex: 1;

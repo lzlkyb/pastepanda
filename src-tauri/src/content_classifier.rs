@@ -16,7 +16,7 @@ static URL_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 // ===== 日志时间戳格式 =====
 static LOG_TS_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?m)^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}|\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\]|\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})").unwrap()
+    Regex::new(r"(?m)(^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}|^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\]|^\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2}|\[\d{2}/[A-Z][a-z]{2}/\d{4}:\d{2}:\d{2}:\d{2}|^[A-Z][a-z]{2}\s{1,2}\d{1,2}\s+\d{2}:\d{2}:\d{2})").unwrap()
 });
 static LOG_LEVEL_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(DEBUG|INFO|WARN(ING)?|ERROR|FATAL|TRACE|NOTICE|CRITICAL)\b").unwrap()
@@ -48,13 +48,27 @@ static BASE64_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 // ===== 代码检测 — 通用关键字 =====
 static CODE_KEYWORD_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(function|return|class|import|export|const|let|var|if|else|for|while|switch|case|break|continue|try|catch|finally|throw|new|this|async|await|yield|typedef|struct|enum|interface|extends|implements|abstract|static|public|private|protected|void|int|float|double|bool|boolean|string|char|byte|long|short)\b").unwrap()
+    Regex::new(r"(?i)\b(function|return|class|import|export|const|let|var|if|else|for|while|switch|case|break|continue|try|catch|finally|throw|new|this|async|await|yield|typedef|struct|enum|interface|extends|implements|abstract|static|public|private|protected|void|int|float|double|bool|boolean|string|char|byte|long|short|echo|exit|fi|elif)\b").unwrap()
 });
 static CODE_SYNTAX_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"[{};]|=>|&&|\|\||== |!= |<= |>= ").unwrap()
 });
 static CODE_INDENT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?m)^[ \t]{2,}\S").unwrap()
+});
+
+// ===== 单行代码检测 =====
+/// 行首强关键字（大小写敏感：代码中这些关键字都是小写，避免 "Let me know"/"Variable costs" 等散文误伤）
+static SINGLE_LINE_KW_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(const|let|var|fn|def|func|pub\s+fn)\b").unwrap()
+});
+/// 行首 SQL 强特征（大小写不敏感）：多词短语或 select...from 组合，避免散文 "Select the best option..."
+static SINGLE_LINE_SQL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^(insert\s+into|create\s+table|drop\s+table|alter\s+table|delete\s+from|update\s+\w+\s+set)\b|^select\b.+\bfrom\b").unwrap()
+});
+/// 函数调用结构：标识符紧邻左括号且括号内无换行（区别于散文中的 "think (as noted)"）
+static CALL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"[A-Za-z_]\w*\([^)]*\)").unwrap()
 });
 
 // ===== Email 检测 =====
@@ -154,17 +168,17 @@ static LANGUAGE_PROFILES: &[LanguageProfile] = &[
     LanguageProfile {
         label: "JavaScript",
         keywords: &["function", "const", "let", "var", "=>", "import ", "export ", "console.log", "undefined", "null", "typeof", "prototype", "Promise", ".then("],
-        patterns: &[re!(r"\bconst \w+ = "), re!(r"\bfunction \w+\("), re!(r"\.js\b"), re!(r"\.ts\b"), re!(r"\.jsx\b"), re!(r"\.tsx\b")],
+        patterns: &[re!(r"\bconst \w+ = "), re!(r"\bfunction \w+\("), re!(r"\.js\b"), re!(r"\.jsx\b")],
     },
     LanguageProfile {
         label: "TypeScript",
         keywords: &[": string", ": number", ": boolean", ": void", "interface ", "type ", "enum ", "as const", "Readonly", "Partial<"],
-        patterns: &[re!(r":\s*(string|number|boolean|void)\b"), re!(r"\binterface \w+\b"), re!(r"\btype \w+ =")],
+        patterns: &[re!(r":\s*(string|number|boolean|void)\b"), re!(r"\binterface \w+\b"), re!(r"\btype \w+ ="), re!(r"\.tsx?\b")],
     },
     LanguageProfile {
         label: "Rust",
         keywords: &["fn ", "let mut", "impl", "pub ", "use ", "struct ", "enum ", "match ", "Vec<", "Option<", "Result<", "println!(", "mut ", "&self", "&mut"],
-        patterns: &[re!(r"\bfn \w+\(.*\)"), re!(r"\bimpl \w+"), re!(r"\bpub fn ")],
+        patterns: &[re!(r"\bfn \w+\(.*\)"), re!(r"\bimpl \w+"), re!(r"\bpub fn "), re!(r"\blet mut \b"), re!(r"\w+!\(")],
     },
     LanguageProfile {
         label: "Java",
@@ -174,7 +188,7 @@ static LANGUAGE_PROFILES: &[LanguageProfile] = &[
     LanguageProfile {
         label: "Go",
         keywords: &["func ", "package ", "defer", "go func", "chan ", "goroutine", "interface{", "struct{", "fmt.Println", "err != nil"],
-        patterns: &[re!(r"\bfunc \w+\("), re!(r"\bpackage \w+"), re!(r"\bdefer \w+\(")],
+        patterns: &[re!(r"\bfunc \w+\("), re!(r"\bpackage \w+"), re!(r"\bdefer \w+\("), re!(r":=")],
     },
     LanguageProfile {
         label: "SQL",
@@ -280,9 +294,20 @@ impl ContentClassifier {
             return vec!["密钥".to_string()];
         }
 
-        // ===== 7. 代码检测 =====
+        // ===== 7. 代码检测（多行） =====
         if self.is_code(text) {
-            let lang = self.detect_language(text);
+            let lang = self.detect_language(text, false);
+            let mut labels = vec!["代码".to_string()];
+            if let Some(l) = lang {
+                labels.push(l.to_string());
+            }
+            return labels;
+        }
+
+        // ===== 7.5 单行代码检测（"复制一行代码/SQL" 高频场景） =====
+        // 单行关键词证据薄弱，detect_language 内部始终走解析器仲裁
+        if self.is_code_single_line(text) {
+            let lang = self.detect_language(text, true);
             let mut labels = vec!["代码".to_string()];
             if let Some(l) = lang {
                 labels.push(l.to_string());
@@ -292,59 +317,6 @@ impl ContentClassifier {
 
         // ===== 8. 默认：纯文本 =====
         vec!["纯文本".to_string()]
-    }
-
-    /// 统一内容类型分类 — 返回规范化的 content_type 字符串（用于持久化）。
-    /// 优先级：email > phone > color > file_path > link > number > json > markdown > html > config > csv > shell > log > secret > code > text
-    pub fn classify_content_type(&self, text: &str) -> &'static str {
-        let text = text.trim();
-        if text.is_empty() { return "text"; }
-
-        // 单行精确匹配（最高优先级）
-        if self.is_email(text) { return "email"; }
-        if self.is_phone(text) { return "phone"; }
-        if self.is_color(text) { return "color"; }
-        if self.is_file_path(text) { return "file_path"; }
-
-        // URL
-        if URL_RE.is_match(text) { return "link"; }
-
-        // 纯数字
-        if text.chars().all(|c| c.is_ascii_digit() || c == '.' || c == ',' || c == '-' || c == ' ' || c == '\n' || c == '\r') {
-            let digit_count = text.chars().filter(|c| c.is_ascii_digit()).count();
-            if digit_count > 0 && digit_count as f64 / text.len() as f64 > 0.5 {
-                return "number";
-            }
-        }
-
-        // JSON
-        if self.is_json(text) { return "json"; }
-
-        // Markdown（在 code 之前，因为 MD 中可能包含代码块）
-        if self.is_markdown(text) { return "markdown"; }
-
-        // HTML（在 code 之前）
-        if self.is_html(text) { return "html"; }
-
-        // 配置文件
-        if self.detect_config(text).is_some() { return "config"; }
-
-        // CSV/TSV
-        if self.is_csv(text) { return "csv"; }
-
-        // 命令行
-        if self.is_command(text) { return "shell"; }
-
-        // 日志
-        if self.is_log(text) { return "log"; }
-
-        // 密钥
-        if self.is_secret(text) { return "secret"; }
-
-        // 代码
-        if self.is_code(text) { return "code"; }
-
-        "text"
     }
 
     /// 从 classify() 返回的标签列表派生 content_type（单一分类入口）。
@@ -524,28 +496,36 @@ impl ContentClassifier {
     }
 
     /// 检测日志
+    /// 路径 1：时间戳 + 日志级别同行（严格，适合应用日志，单行也允许）
+    /// 路径 2：仅有时间戳（多行 ≥60% 一致性，适合 nginx/syslog 等无级别格式）
     fn is_log(&self, text: &str) -> bool {
         let lines: Vec<&str> = text.lines().collect();
-        if lines.len() < 1 {
+        let total = lines.len() as f64;
+        if total < 1.0 {
             return false;
         }
-        let total = lines.len() as f64;
 
-        // 前几行包含时间戳 + 日志级别
-        let log_lines = lines
-            .iter()
-            .filter(|l| {
-                let l = l.trim();
-                if l.is_empty() {
-                    return false;
+        let mut ts_level = 0f64;
+        let mut ts_only = 0f64;
+        for l in &lines {
+            let l = l.trim();
+            if l.is_empty() {
+                continue;
+            }
+            if LOG_TS_RE.is_match(l) {
+                ts_only += 1.0;
+                if LOG_LEVEL_RE.is_match(l) {
+                    ts_level += 1.0;
                 }
-                let has_ts = LOG_TS_RE.is_match(l);
-                let has_level = LOG_LEVEL_RE.is_match(l);
-                has_ts && has_level
-            })
-            .count() as f64;
+            }
+        }
 
-        log_lines / total > 0.3 && log_lines >= 1.0
+        // 路径 1：时间戳 + 级别共存
+        if ts_level >= 1.0 && ts_level / total > 0.3 {
+            return true;
+        }
+        // 路径 2：仅时间戳（nginx 访问日志、syslog 等），要求更高一致性
+        total >= 2.0 && ts_only >= 2.0 && ts_only / total > 0.6
     }
 
     /// 检测密钥/Token
@@ -599,31 +579,33 @@ impl ContentClassifier {
         false
     }
 
-    /// 检测是否为代码
+    /// 检测是否为代码（多行片段）
+    /// 分母使用"有效行数"（排除空行和注释行），避免注释稀释代码特征比例
     fn is_code(&self, text: &str) -> bool {
         let lines: Vec<&str> = text.lines().collect();
-        let total = lines.len() as f64;
+        if lines.len() < 2 {
+            return false;
+        }
+
+        let effective: Vec<&str> = lines
+            .iter()
+            .filter(|l| {
+                let t = l.trim();
+                !t.is_empty() && !is_comment_line(t)
+            })
+            .copied()
+            .collect();
+        let total = effective.len() as f64;
         if total < 2.0 {
             return false;
         }
 
         // 统计代码特征行
-        let code_lines = lines
+        let code_lines = effective
             .iter()
             .filter(|l| {
                 let l = l.trim();
-                if l.is_empty() {
-                    return false;
-                }
-                // 包含代码关键字
-                if CODE_KEYWORD_RE.is_match(l) {
-                    return true;
-                }
-                // 包含语法符号
-                if CODE_SYNTAX_RE.is_match(l) {
-                    return true;
-                }
-                false
+                CODE_KEYWORD_RE.is_match(l) || CODE_SYNTAX_RE.is_match(l)
             })
             .count() as f64;
 
@@ -637,42 +619,58 @@ impl ContentClassifier {
         code_ratio > 0.4 || (code_ratio > 0.2 && indent_ratio > 0.3)
     }
 
-    /// 检测代码语言
-    /// patterns 中的正则已通过 LazyLock 预编译，零运行时编译开销
-    fn detect_language(&self, text: &str) -> Option<&'static str> {
-        let mut best_score = 0i32;
-        let mut best_label: Option<&'static str> = None;
-
-        for profile in LANGUAGE_PROFILES {
-            let mut score = 0i32;
-
-            // 关键词匹配
-            for kw in profile.keywords {
-                if text.contains(kw) {
-                    score += 3;
-                }
-            }
-
-            // 正则模式匹配（权重更高）— 调用预编译的 LazyLock<Regex>
-            for get_re in profile.patterns {
-                let re: &Regex = get_re();
-                if re.is_match(text) {
-                    score += 5;
-                }
-            }
-
-            if score > best_score {
-                best_score = score;
-                best_label = Some(profile.label);
-            }
+    /// 单行代码检测（补偿 is_code 要求 ≥2 行的限制）
+    /// 路径 1：行首强关键字（const/fn/def/func/SELECT...FROM 等）直接命中
+    /// 路径 2：括号配对 +（以 ; 结尾 / 含 => / 含函数调用结构）
+    fn is_code_single_line(&self, text: &str) -> bool {
+        if text.contains('\n') {
+            return false;
         }
+        let t = text.trim();
+        if t.len() < 15 {
+            return false;
+        }
+        // 路径 1：行首强关键字（大小写敏感/不敏感按关键字类型区分）
+        if SINGLE_LINE_KW_RE.is_match(t) || SINGLE_LINE_SQL_RE.is_match(t) {
+            return true;
+        }
+        // 路径 2：括号配对 + 终止/箭头/调用结构
+        let has_pair = (t.contains('(') && t.contains(')'))
+            || (t.contains('{') && t.contains('}'))
+            || (t.contains('[') && t.contains(']'));
+        if !has_pair {
+            return false;
+        }
+        t.ends_with(';') || t.contains("=>") || CALL_RE.is_match(t)
+    }
 
-        // 如果最高分 < 6，认为是通用代码，不返回具体语言
+    /// 检测代码语言（规则计分 + tree-sitter 仲裁）
+    /// - single_line=true 时，始终走解析器仲裁（单行关键词证据薄弱）
+    /// - 高置信度（得分 ≥11 或与次高分差距 ≥5）：直接返回规则结果
+    /// - 低置信度：把得分 >0 的候选（前 5）送仲裁；仲裁失败则回退规则结果
+    fn detect_language(&self, text: &str, single_line: bool) -> Option<&'static str> {
+        let text_lower = text.to_lowercase();
+        let mut scores: Vec<(&'static str, i32)> = LANGUAGE_PROFILES
+            .iter()
+            .map(|p| (p.label, profile_score(p, text, &text_lower)))
+            .filter(|(_, s)| *s > 0)
+            .collect();
+        scores.sort_by(|a, b| b.1.cmp(&a.1));
+
+        let (best_label, best_score) = *scores.first()?;
         if best_score < 6 {
-            None
-        } else {
-            best_label
+            return None;
         }
+        let second_score = scores.get(1).map(|s| s.1).unwrap_or(0);
+
+        // 高置信度：规则结果可信（多行才适用；单行一律仲裁）
+        if !single_line && (best_score >= 11 || best_score - second_score >= 5) {
+            return Some(best_label);
+        }
+
+        // 低置信度 → tree-sitter 仲裁
+        let candidates: Vec<&str> = scores.iter().take(5).map(|(l, _)| *l).collect();
+        crate::lang_arbiter::arbitrate(text, &candidates).or(Some(best_label))
     }
 
     /// 检测邮箱
@@ -749,6 +747,35 @@ impl ContentClassifier {
         matches.len() >= 2
     }
 }
+
+/// 语言特征计分：关键词命中 +3（大小写不敏感），正则模式命中 +5（匹配原始文本）
+fn profile_score(profile: &LanguageProfile, text: &str, text_lower: &str) -> i32 {
+    let mut score = 0i32;
+    for kw in profile.keywords {
+        if text_lower.contains(&kw.to_ascii_lowercase()) {
+            score += 3;
+        }
+    }
+    for get_re in profile.patterns {
+        let re: &Regex = get_re();
+        if re.is_match(text) {
+            score += 5;
+        }
+    }
+    score
+}
+
+/// 判定注释行（用于 is_code 分母过滤，避免注释稀释代码特征比例）
+/// 支持 //、#、/*、* (jsdoc 延续)、-- (SQL/Lua)、<!-- (HTML)
+fn is_comment_line(t: &str) -> bool {
+    t.starts_with("//")
+        || t.starts_with('#')
+        || t.starts_with("/*")
+        || t.starts_with('*')
+        || t.starts_with("--")
+        || t.starts_with("<!--")
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -846,10 +873,8 @@ mod tests {
 
     #[test]
     fn test_html_code() {
-        // HTML 可能被分类为纯文本（标签比例不够高时），这里验证非空分类结果
         let r = classify("<!DOCTYPE html>\n<html>\n<head>\n  <title>Test</title>\n  <link rel=\"stylesheet\" href=\"style.css\">\n</head>\n<body>\n  <div class=\"container\">\n    <p>Hello</p>\n  </div>\n</body>\n</html>");
-        // HTML 标签特征明显时应该被分类为代码
-        assert!(!r.is_empty());
+        assert!(r.contains(&"HTML".to_string()));
     }
 
     #[test]
@@ -860,9 +885,9 @@ mod tests {
 
     #[test]
     fn test_shell_code() {
-        // Shell 脚本由于空行比例较高可能无法达到 40% 代码阈值，验证返回非空
         let r = classify("#!/bin/bash\n\nexport PATH=/usr/bin\ncd /home/user\n\necho \"Starting...\"\nif [ -f \"$1\" ]; then\n  cat \"$1\" | grep \"error\"\nelse\n  echo \"File not found\"\n  exit 1\nfi");
-        assert!(!r.is_empty());
+        assert!(r.contains(&"代码".to_string()));
+        assert!(r.contains(&"Shell".to_string()));
     }
 
     #[test]
@@ -1148,25 +1173,89 @@ mod tests {
     #[test]
     fn test_content_type_basic() {
         let c = ContentClassifier::new();
-        assert_eq!(c.classify_content_type("user@example.com"), "email");
-        assert_eq!(c.classify_content_type("13812345678"), "phone");
-        assert_eq!(c.classify_content_type("#FF5733"), "color");
-        assert_eq!(c.classify_content_type(r"C:\Users\test\f.txt"), "file_path");
-        assert_eq!(c.classify_content_type("https://github.com"), "link");
-        assert_eq!(c.classify_content_type("12345"), "number");
-        assert_eq!(c.classify_content_type(r#"{"a":1}"#), "json");
-        assert_eq!(c.classify_content_type("hello world"), "text");
+        let ct = |t: &str| ContentClassifier::content_type_from_labels(&c.classify(t));
+        assert_eq!(ct("user@example.com"), "email");
+        assert_eq!(ct("13812345678"), "phone");
+        assert_eq!(ct("#FF5733"), "color");
+        assert_eq!(ct(r"C:\Users\test\f.txt"), "file_path");
+        assert_eq!(ct("https://github.com"), "link");
+        assert_eq!(ct("12345"), "number");
+        assert_eq!(ct(r#"{"a":1}"#), "json");
+        assert_eq!(ct("hello world"), "text");
     }
 
     #[test]
     fn test_content_type_code() {
         let c = ContentClassifier::new();
-        assert_eq!(c.classify_content_type("function hello() {\n  console.log('hi');\n  return 42;\n}"), "code");
+        assert_eq!(
+            ContentClassifier::content_type_from_labels(&c.classify("function hello() {\n  console.log('hi');\n  return 42;\n}")),
+            "code"
+        );
     }
 
     #[test]
     fn test_content_type_markdown() {
         let c = ContentClassifier::new();
-        assert_eq!(c.classify_content_type("# Title\n\nSome **bold** text\n\n- item 1\n- item 2"), "markdown");
+        assert_eq!(
+            ContentClassifier::content_type_from_labels(&c.classify("# Title\n\nSome **bold** text\n\n- item 1\n- item 2")),
+            "markdown"
+        );
+    }
+
+    // ===== Plan B: 单行代码 + 注释豁免 + 仲裁 + 日志扩展 =====
+
+    #[test]
+    fn test_single_line_js() {
+        // 单行 JS 代码：const 强关键字命中 → 代码+JavaScript（解析器仲裁确认）
+        let r = classify("const x = foo();");
+        assert!(r.contains(&"代码".to_string()));
+        assert!(r.contains(&"JavaScript".to_string()));
+    }
+
+    #[test]
+    fn test_single_line_sql_lowercase() {
+        // 小写 SQL：修复前关键词大小写敏感，小写 select 漏判
+        let r = classify("select id, name from users where id = 1");
+        assert!(r.contains(&"代码".to_string()));
+        assert!(r.contains(&"SQL".to_string()));
+    }
+
+    #[test]
+    fn test_single_line_prose_not_code() {
+        // 含括号的散文：无 ;/=>/调用结构 → 不是代码
+        let r = classify("I think (as noted) the value differs");
+        assert!(!r.contains(&"代码".to_string()));
+    }
+
+    #[test]
+    fn test_comment_exempt_snippet() {
+        // 3 行注释 + 2 行代码：修复前分母 5 行 2 行命中=40%（不 >40%）→ 非代码；
+        // 修复后有效行 2 行 2 行命中=100% → 代码
+        let r = classify("// c1\n// c2\n// c3\nconst a = 1;\nlet b = 2;");
+        assert!(r.contains(&"代码".to_string()));
+    }
+
+    #[test]
+    fn test_ts_java_arbitration() {
+        // 规则计分接近（interface/void 两边都命中），解析器仲裁决定：
+        // Java 语法能干净解析 void method(Order)，TS 语法不能
+        let r = classify("public interface PaymentService {\n    void process(Order order);\n}");
+        assert!(r.contains(&"代码".to_string()));
+        assert!(r.contains(&"Java".to_string()));
+    }
+
+    #[test]
+    fn test_nginx_log() {
+        // nginx 访问日志：仅有时间戳无级别，旧版本漏判
+        let r = classify("127.0.0.1 - - [10/Oct/2024:13:55:36 +0800] \"GET /api HTTP/1.1\" 200 512\n127.0.0.1 - - [10/Oct/2024:13:55:37 +0800] \"POST /login HTTP/1.1\" 401 128");
+        assert!(r.contains(&"日志".to_string()));
+    }
+
+    #[test]
+    fn test_syslog() {
+        // syslog 格式：仅有时间戳无级别
+        let r = classify("Jan  5 12:00:01 myhost sshd[1234]: Accepted password\nJan  5 12:00:02 myhost sshd[1234]: session opened");
+        assert!(r.contains(&"日志".to_string()));
     }
 }
+

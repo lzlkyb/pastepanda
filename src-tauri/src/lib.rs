@@ -24,6 +24,7 @@ pub mod error;
 mod hotkey_manager;
 mod icon_extractor;
 mod lan_sync;
+mod lang_arbiter;
 mod paste_engine;
 mod pinned_window;
 mod tray_manager;
@@ -200,6 +201,19 @@ pub fn run() {
 
             app.manage(store);
 
+            // 一次性补填迁移：后台为旧数据（content_type 为 NULL）运行统一分类器回填，
+            // 使前端可以完全依赖持久化的 content_type，不再需要本地检测回退
+            let backfill_handle = handle.clone();
+            std::thread::spawn(move || {
+                if let Some(store) = backfill_handle.try_state::<data_store::DataStore>() {
+                    match store.backfill_content_types() {
+                        Ok(n) if n > 0 => log::info!("[Backfill] content_type 补填完成: {} 行", n),
+                        Ok(_) => {}
+                        Err(e) => log::warn!("[Backfill] content_type 补填失败: {}", e),
+                    }
+                }
+            });
+
             // 初始化粘贴抑制
             let paste_suppress = Arc::new(clipboard_monitor::PasteSuppress::new());
             app.manage(paste_suppress.clone());
@@ -330,6 +344,7 @@ pub fn run() {
             commands::get_image_info,
             commands::reregister_hotkeys,
             commands::get_file_info,
+            commands::read_text_file_preview,
             commands::open_file_with_system,
             commands::open_file_location,
             commands::set_startup,

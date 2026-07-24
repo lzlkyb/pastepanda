@@ -585,4 +585,63 @@ impl DataStore {
         }
         Ok(())
     }
+
+    /// 一次性补填迁移：为缺少 content_type 的文本行运行统一分类器回填。
+    /// 分类逻辑在锁外执行（避免长时间持锁阻塞其他 DB 操作），仅更新阶段持锁。
+    /// 返回补填的行数。
+    pub fn backfill_content_types(&self) -> Result<usize, String> {
+        // 1. 快速取出待补填行，立即释放锁
+        let pending: Vec<(String, String)> = {
+            let conn = self.lock_conn();
+            let mut stmt = conn
+                .prepare("SELECT id, text FROM history WHERE type = 'text' AND content_type IS NULL")
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+                .map_err(|e| e.to_string())?;
+            rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+        };
+
+        if pending.is_empty() {
+            return Ok(0);
+        }
+
+        // 2. 锁外分类（纯 CPU，<0.5ms/条）
+        let classifier = crate::content_classifier::ContentClassifier::new();
+        let classified: Vec<(String, &'static str)> = pending
+            .iter()
+            .map(|(id, text)| {
+                let labels = classifier.classify(text);
+                let ct = crate::content_classifier::ContentClassifier::content_type_from_labels(&labels);
+                (id.clone(), ct)
+            })
+            .collect();
+
+        // 3. 重新持锁，事务批量写入
+        let conn = self.lock_conn();
+        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        let result = (|| {
+            let mut count = 0usize;
+            for (id, ct) in &classified {
+                conn.execute(
+                    "UPDATE history SET content_type = ?1 WHERE id = ?2",
+                    params![ct, id],
+                )
+                .map_err(|e| e.to_string())?;
+                count += 1;
+            }
+            Ok(count)
+        })();
+
+        match result {
+            Ok(count) => {
+                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                Ok(count)
+            }
+            Err(e) => {
+                conn.execute_batch("ROLLBACK;").ok();
+                Err(e)
+            }
+        }
+    }
 }
