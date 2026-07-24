@@ -2,6 +2,30 @@
 
 PastePanda 版本更新日志。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [5.1.2] - 2026-07-24
+
+### 新增
+- 统一细粒度编辑器架构（方案 A）：editorRegistry 按类型 / content_type / 默认三级解析 + ItemEditorDialog 共享外壳（Esc / Ctrl+Enter / 脏数据守卫）
+- P4 专用编辑器：颜色（lib/color.ts 全链路 + 棋盘格色块 + HEX/RGB/HSL 三格式复制）、表格（表格/编辑双模式 + Markdown/JSON 导出 + 分隔符互转）、密钥（默认脱敏 + 15 秒倒计时自动回脱敏 + JWT/AWS/GitHub/Base64 类型徽章）
+- Card 标题与 Popover 密钥自动脱敏（复制操作仍取真实值）
+- ImageEditor 格式转换 + 压缩：PNG/JPG/WebP 分段切换、10-100 质量滑块、220ms 防抖真实体积估算、canvas.toBlob 转码（jpeg 先铺白底避免透明黑边）
+- ImageEditor 裁剪：viewport canvas 按当前 scale/rotation 烘焙、8 手柄 + 三分线、Enter 确认、原图保留可还原
+- FileDetailDialog 多文件支持：parseFilePaths 统一单/多路径，单文件顺修 JSON 数组旧数据，多文件汇总卡 + 逐文件操作 + 批量打开（按父目录去重）/ 复制全部路径
+- FileDetailDialog 快速预览面板：图片缩略图、文本前 20 行带行号、二进制/不存在/空文件占位
+- Rust 新命令 `read_text_file_preview`：UNC 路径安全校验 + 128KB 上限 + 8KB 内 NUL 二进制检测 + lossy UTF-8 解码
+
+### 技术
+- src/lib/imageFormat.ts 纯逻辑模块：EXPORT_FORMATS / withExportExt / formatBytes
+- src/lib/csv.ts、src/lib/secret.ts 纯逻辑模块（与 Rust 分类器规则对齐）
+- src-tauri/src/lang_arbiter.rs：tree-sitter 语法 ERROR/MISSING 字节比例投票（阈值 0.25），规则置信低时仲裁
+- 测试覆盖 498/498（+12 imageFormat.test.ts，23 个测试文件）
+- useImagePreview 新增导出与裁剪状态机，bakeImage 返回 Promise<canvas>
+
+### UI/UX
+- FileDetailDialog 单文件 w380 / 多文件 w420 自适应宽度，多文件行点击切换预览（选中高亮）
+- ImagePreviewDialog 工具栏新增裁剪按钮（active 高亮）与导出选项行
+- 裁剪叠加层：55% 黑色遮罩 + 白色虚线选区 + 8 个带 accent 描边的手柄 + 深色尺寸提示标签
+
 ## [5.1.1] - 2026-07-23
 
 ### 新增
