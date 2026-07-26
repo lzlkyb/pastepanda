@@ -189,6 +189,9 @@ jobs:
           }
 
           $changelog = Get-Content $changelogPath -Raw
+          # 归一化 CRLF → LF：Windows runner 以 autocrlf 检出，仓库 LF 文件变 CRLF，
+          # 下方正则的 \n\n 无法匹配 \r\n\r\n，会导致提取失败回退"常规构建发布"
+          $changelog = $changelog -replace "\r\n", "`n"
 
           # 匹配 ## [版本号] 段落，直到下一个 ## [ 或文件末尾
           $pattern = "## \[$version\][^\n]*\n\n((?:.|\n)*?)(?=\n## \[|\Z)"
