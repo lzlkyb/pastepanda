@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useEditorCore } from "./useEditorCore";
 import { CodeTextArea } from "./CodeTextArea";
-import { MetaBar, TransformToolbar, OriginalDiff } from "./editorBits";
+import { MetaBar, TransformToolbar, OriginalDiff, FullscreenLaunchButton } from "./editorBits";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { useToast } from "@/components/Toast";
 import type { EditorProps } from "@/lib/editorRegistry";
@@ -57,9 +57,12 @@ export function MarkdownEditor({ item, registerActions }: EditorProps) {
         isModified={isModified}
         badge="📝 Markdown"
         extra={
-          <div className="md-mode-toggle">
-            <button className={`md-mode-btn${mode === "edit" ? " active" : ""}`} onClick={() => setMode("edit")}>编辑</button>
-            <button className={`md-mode-btn${mode === "preview" ? " active" : ""}`} onClick={() => setMode("preview")}>预览</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div className="md-mode-toggle">
+              <button className={`md-mode-btn${mode === "edit" ? " active" : ""}`} onClick={() => setMode("edit")}>编辑</button>
+              <button className={`md-mode-btn${mode === "preview" ? " active" : ""}`} onClick={() => setMode("preview")}>预览</button>
+            </div>
+            <FullscreenLaunchButton itemId={item.id} text={text} contentType="markdown" />
           </div>
         }
       />

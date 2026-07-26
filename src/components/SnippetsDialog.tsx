@@ -4,6 +4,7 @@ import { X, Plus, Trash2, Copy, Edit3, ClipboardList, Check, Download, CheckSqua
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "@/lib/logger";
 import { useToast } from "@/components/Toast";
+import { useDialogAnim } from "@/lib/dialogMotion";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import styles from "./Snippets.module.css";
 import { FocusTrap } from "@/components/FocusTrap";
@@ -40,6 +41,7 @@ const TAG_DOT_COLORS: Record<string, string> = {
 
 export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { toast } = useToast();
+  const anim = useDialogAnim();
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Snippet | null>(null);
@@ -222,22 +224,20 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
     }
   };
 
-  if (!open) return null;
-
+  // 注意：不能在此处 if (!open) return null —— 组件需常挂载，
+  // open 变 false 时由下方 AnimatePresence 驱动退场动画后再卸载
   return (
     <AnimatePresence>
       {open && (
         <>
           <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            {...anim.backdrop}
             className="dialog-backdrop"
             onClick={onClose}
           >
             <FocusTrap>
             <motion.div
-              initial={{ scale: 0.96, opacity: 0, y: 10 }} animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.96, opacity: 0, y: 10 }}
-              transition={{ type: "spring", stiffness: 400, damping: 30 }}
+              {...anim.panel}
               className="dialog-box w380"
               onClick={(e) => e.stopPropagation()}
             >

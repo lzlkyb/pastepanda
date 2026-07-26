@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, type ReactNode } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { X, FolderOpen, Copy, ExternalLink, Loader, Check } from "lucide-react";
 import { useToast } from "@/components/Toast";
+import { useDialogAnim } from "@/lib/dialogMotion";
 import { relativeTime } from "@/lib/utils";
 import SourceBadge from "@/components/SourceBadge";
 import { HistoryItem } from "@/stores/appStore";
@@ -53,6 +54,7 @@ const formatSize = (bytes: number) => {
 const nameOf = (p: string) => p.split(/[\\/]/).pop() || p;
 
 export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose: () => void }) {
+  const anim = useDialogAnim();
   // 多文件支持：content 可能是 JSON 数组 / 换行分隔的多路径，也可能是单路径。
   const paths = useMemo(() => {
     const p = parseFilePaths(item?.content || "");
@@ -111,18 +113,14 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
   if (!item) return null;
 
   return (
-    <AnimatePresence>
+    <motion.div
+      {...anim.backdrop}
+      className="dialog-backdrop" onClick={onClose}>
+      <FocusTrap>
       <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="dialog-backdrop" onClick={onClose}>
-        <FocusTrap>
-        <motion.div
-          initial={{ scale: 0.96, opacity: 0, y: 20 }}
-          animate={{ scale: 1, opacity: 1, y: 0 }}
-          exit={{ scale: 0.96, opacity: 0, y: 20 }}
-          transition={{ type: "spring", stiffness: 400, damping: 30 }}
-          className={`dialog-box ${isMulti ? "w420" : "w380"}`}
-          onClick={(e) => e.stopPropagation()}>
+        {...anim.panel}
+        className={`dialog-box ${isMulti ? "w420" : "w380"}`}
+        onClick={(e) => e.stopPropagation()}>
 
           {/* Header */}
           <div className="dialog-header">
@@ -150,7 +148,6 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
         </motion.div>
         </FocusTrap>
       </motion.div>
-    </AnimatePresence>
   );
 }
 

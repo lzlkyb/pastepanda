@@ -22,17 +22,17 @@
 
 /* ☰ 侧边栏切换按钮 */
 .sidebarToggle {
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   border: none;
   background: transparent;
-  border-radius: 10px;
+  border-radius: 8px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text-secondary);
-  font-size: 16px;
+  font-size: 14px;
   transition: all 0.15s;
   flex-shrink: 0;
   font-family: inherit;
@@ -70,15 +70,25 @@
 
 .headerIcons {
   display: flex;
-  gap: 4px;
+  gap: 2px;
+  align-items: center;
+}
+
+/* 方案 A：功能按钮组与窗口控制组之间的竖分隔线 */
+.headerDivider {
+  width: 1px;
+  height: 16px;
+  background: var(--border-color);
+  flex-shrink: 0;
+  margin: 0 4px;
 }
 
 .iconBtn {
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   border: none;
   background: transparent;
-  border-radius: 10px;
+  border-radius: 8px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -98,14 +108,14 @@
 
 /* emoji 图标 */
 .iconEmoji {
-  font-size: 18px;
+  font-size: 15px;
   line-height: 1;
 }
 
 /* SVG 图标 */
 .iconSvg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 .iconBtnDanger:hover {
@@ -290,6 +300,45 @@
   gap: 6px;
   padding: 8px 0 0;
   align-items: center;
+}
+
+/* ===== 方案 A：搜索 + 时间/来源筛选同行 ===== */
+.searchFilterRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 搜索框占满剩余宽度（与筛选下拉同行时） */
+.searchBoxFill {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 筛选下拉紧凑自适应宽度模式（不再 flex:1 平分宽度）
+   注意：必须用双 class 提升优先级——本块定义在 .filterDropdown{flex:1} 之前，
+   单 class 会被后写的 .filterDropdown 覆盖，导致下拉仍平分宽度 */
+.filterDropdown.filterDropdownAuto {
+  flex: none;
+  width: auto;
+  min-width: 0;
+}
+.filterDropdownAuto .filterDropdownBtn {
+  width: auto;
+  max-width: 130px;
+  height: 34px;
+}
+.filterDropdownAuto .filterDropdownBtn > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+/* 下拉菜单右对齐按钮右缘，避免超出窗口右侧；min-width 保证选项可容纳 */
+.filterDropdownAuto .filterDropdownMenu {
+  left: auto;
+  right: 0;
+  min-width: 130px;
 }
 
 .filterDropdown {

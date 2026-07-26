@@ -13,6 +13,8 @@
  *   P2：JsonEditor（校验+格式化/压缩）+ HtmlEditor（沙箱渲染预览）✅
  *   P3：ImageEditor / FileEditor（迁入现有 ImagePreviewDialog / FileDetailDialog）✅
  *   P4：color / csv / secret 专用编辑器 ✅
+ *   P5：link / file_path 动作化编辑器（URL 结构拆解 / 路径面包屑 + 系统动作）✅
+ *   P6：number 数字工具箱（时间戳 / 进制 / 字节速览）✅
  */
 import { lazy, type ComponentType } from "react";
 import type { HistoryItem } from "@/stores/appStore";
@@ -88,6 +90,15 @@ const CsvEditor = lazy(() =>
 const SecretEditor = lazy(() =>
   import("@/components/editors/SecretEditor").then((m) => ({ default: m.SecretEditor }))
 );
+const LinkEditor = lazy(() =>
+  import("@/components/editors/LinkEditor").then((m) => ({ default: m.LinkEditor }))
+);
+const PathEditor = lazy(() =>
+  import("@/components/editors/PathEditor").then((m) => ({ default: m.PathEditor }))
+);
+const NumberEditor = lazy(() =>
+  import("@/components/editors/NumberEditor").then((m) => ({ default: m.NumberEditor }))
+);
 const ImageEditor = lazy(() =>
   import("@/components/editors/ImageEditor").then((m) => ({ default: m.ImageEditor }))
 );
@@ -103,6 +114,9 @@ const EDITOR_REGISTRY: Partial<Record<string, EditorDefinition>> = {
   color: { component: ColorEditor, width: "w420", title: "🎨 编辑颜色", footer: ["copy", "paste", "snippet"] },
   csv: { component: CsvEditor, width: "w420", title: "📊 编辑表格", footer: ["copy", "paste", "snippet"] },
   secret: { component: SecretEditor, width: "w420", title: "🔑 编辑密钥", footer: ["copy", "paste", "snippet"] },
+  link: { component: LinkEditor, width: "w420", title: "🔗 编辑链接", footer: ["copy", "paste", "snippet"] },
+  file_path: { component: PathEditor, width: "w420", title: "📁 编辑路径", footer: ["copy", "paste", "snippet"] },
+  number: { component: NumberEditor, width: "w420", title: "🔢 编辑数字", footer: ["copy", "paste", "snippet"] },
 };
 
 const DEFAULT_EDITOR: EditorDefinition = {

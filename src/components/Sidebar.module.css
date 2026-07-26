@@ -84,12 +84,27 @@
 
 .item:hover {
   background: var(--hover);
+  transform: translateX(2px);
 }
 
 .item.active {
   background: var(--accent-light);
   color: var(--accent);
   font-weight: 600;
+}
+
+/* 激活项左侧色条 */
+.item.active::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent-shadow);
 }
 
 /* 来源颜色圆点 — 缩小为 8px */
@@ -125,16 +140,25 @@
   white-space: nowrap;
 }
 
+/* 计数徽章 */
 .count {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-muted);
-  font-weight: 500;
+  font-weight: 600;
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1px 7px;
+  line-height: 1.4;
+  transition: all 0.15s;
 }
 
 .item.active .count {
   color: var(--accent);
+  background: var(--accent-light);
+  border-color: transparent;
 }
 
 /* 更多操作按钮 (⋯) */
@@ -315,7 +339,7 @@
 /* 右键菜单 */
 .contextMenu {
   position: fixed;
-  z-index: 100000;
+  z-index: var(--z-context);
   background: var(--dialog-bg);
   border: 1px solid var(--border-color);
   border-radius: 10px;

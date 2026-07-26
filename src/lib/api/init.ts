@@ -9,39 +9,6 @@ import { invalidateCountsCache } from "./cache";
 import { sequentialPaste, indexPaste } from "./sequential";
 import { toggleStackMode, stackPasteNext, stackPasteAll, isStackPasteAllRunning, abortStackPasteAll } from "./stack";
 
-/**
- * 执行一次自动清理（启动时 + 周期性调用）。
- * 读取当前配置的 auto_cleanup_days，删除超期且未置顶的记录。
- * 返回被清理的条数（0 = 无需清理或配置无效）。
- */
-async function runAutoCleanup(): Promise<number> {
-  const cfg = useAppStore.getState().config;
-  const days = Number(cfg.auto_cleanup_days);
-  if (!Number.isFinite(days) || days <= 0) return 0;
-
-  const result = await invoke<{ count: number; deleted_items: HistoryItem[] }>(
-    "clear_history",
-    { workspace: cfg.current_workspace, before_days: Math.floor(days) },
-  );
-  if (result.count > 0) {
-    const fresh = await invoke<HistoryItem[]>("get_history", {
-      workspace: cfg.current_workspace, filter: "all", search: "", offset: 0, limit: 50,
-    });
-    useAppStore.getState().setHistory(fresh);
-    useAppStore.setState((s) => ({ undoStack: [result.deleted_items, ...s.undoStack].slice(0, 10) }));
-    invalidateCountsCache();
-    setTimeout(() => {
-      window.dispatchEvent(new CustomEvent("app-toast", {
-        detail: { message: `已自动清理 ${result.count} 条过期记录 (Ctrl+Z 撤销)`, type: "info" },
-      }));
-    }, 1000);
-  }
-  return result.count;
-}
-
-/** 周期性清理间隔：1 小时 */
-const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
-
 /** 初始化 Tauri 后端连接 */
 export async function initBackend(): Promise<() => void> {
   const store = useAppStore.getState();
@@ -49,13 +16,11 @@ export async function initBackend(): Promise<() => void> {
   // 修复 C13：先加载配置 — history 必须用配置里的真实 workspace 拉取。
   // 旧顺序（先 history）在 workspace 非默认时用 DEFAULT_CONFIG 的 workspace 拉错数据，
   // config 加载后按真实 workspace 过滤 → 首屏空白，loadMore offset 也错位。
-  let configLoaded = false;
   try {
     const config = await invoke<Record<string, unknown>>("get_config");
     store.updateConfig(config);
-    configLoaded = true;
   } catch (e) {
-    logger.error("加载配置失败，使用默认配置，跳过自动清理", e);
+    logger.error("加载配置失败，使用默认配置", e);
   }
 
   // 加载初始数据
@@ -84,26 +49,6 @@ export async function initBackend(): Promise<() => void> {
     store.setTags(tags);
   } catch (e) {
     logger.warn("加载标签失败", e);
-  }
-
-  // 启动时自动清理过期记录
-  if (configLoaded) {
-    try {
-      await runAutoCleanup();
-    } catch (e) { logger.warn("自动清理失败", e); }
-  }
-
-  // 周期性清理：托盘应用长期运行不重启，启动时清理一次不够 —
-  // 每小时检查一次，确保运行期间超过保留天数的记录也能被及时清理
-  let cleanupTimer: ReturnType<typeof setInterval> | null = null;
-  if (configLoaded) {
-    cleanupTimer = setInterval(async () => {
-      try {
-        await runAutoCleanup();
-      } catch (e) {
-        logger.warn("周期性自动清理失败", e);
-      }
-    }, CLEANUP_INTERVAL_MS);
   }
 
   // 修复 M7：统一收集 unlisten，任一 listen 失败时清理已注册的监听器，
@@ -162,6 +107,37 @@ export async function initBackend(): Promise<() => void> {
       }
     }));
 
+    // 监听历史条目更新事件（全屏编辑器 update_history 后触发）
+    unlistens.push(await listen<{ id: string; text: string }>("history-item-updated", (event) => {
+      const { id, text } = event.payload;
+      if (!id) return;
+      useAppStore.setState((s) => ({
+        history: s.history.map((item) =>
+          item.id === id ? { ...item, text } : item
+        ),
+        _filterCache: null,
+      }));
+    }));
+
+    // 监听自动清理完成事件（后端调度器启动首跑 + 每小时循环，替代原前端 setInterval）
+    // 按事件携带的 deleted_ids 从内存列表精确移除，不重新拉取整页（避免列表被截断到首页）；
+    // 策略性清理不属于用户误删，不写撤销栈，提示语也不带 Ctrl+Z
+    unlistens.push(await listen<{ count: number; deleted_ids: string[] }>("auto-cleanup-done", (event) => {
+      const { count, deleted_ids } = event.payload || {};
+      if (!count || !Array.isArray(deleted_ids) || deleted_ids.length === 0) return;
+      const deletedSet = new Set(deleted_ids);
+      useAppStore.setState((s) => ({
+        history: s.history.filter((h) => !deletedSet.has(h.id)),
+        selectedIds: new Set([...s.selectedIds].filter((id) => !deletedSet.has(id))),
+        focusId: s.focusId && deletedSet.has(s.focusId) ? null : s.focusId,
+        _filterCache: null,
+      }));
+      invalidateCountsCache();
+      window.dispatchEvent(new CustomEvent("app-toast", {
+        detail: { message: `已自动清理 ${count} 条过期记录`, type: "info" },
+      }));
+    }));
+
     // 监听依次粘贴热键 (默认 Ctrl+Alt+Q)
     unlistens.push(await listen("hotkey-sequential-paste", async () => {
       console.log("[hotkey-sequential-paste] 事件收到，调用 sequentialPaste()");
@@ -193,7 +169,6 @@ export async function initBackend(): Promise<() => void> {
   // Ctrl+A 全选改为应用内快捷键，不再通过全局热键事件
   // 返回清理函数，在组件卸载时调用
   return () => {
-    if (cleanupTimer) clearInterval(cleanupTimer);
     unlistens.forEach((u) => u());
   };
 }

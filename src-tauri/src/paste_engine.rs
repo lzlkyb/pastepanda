@@ -338,27 +338,74 @@ impl PasteEngine {
             }
 
                 // 使用 SendInput 模拟 Ctrl+V 按键（兼容所有应用，包括微信/企业微信等 WebView 应用）
-                let mut inputs: [INPUT; 4] = std::mem::zeroed();
+                //
+                // 连按优化：若用户物理按住 Ctrl（"按住 Ctrl 连点粘贴热键"场景），
+                // 只注入 V 按下/释放——物理 Ctrl + 合成 V 在目标应用中即为 Ctrl+V。
+                // 若此时注入合成"Ctrl 释放"，系统会认为 Ctrl 已松开，而长按的 Ctrl
+                // 不会再产生新的按下事件，导致下次点按热键时修饰键不匹配、热键失效
+                // （用户被迫松开 Ctrl 重新按）。未按住时合成完整按下/释放。
+                //
+                // 额外修饰键处理：热键含 Alt/Shift/Win（如默认 Ctrl+Alt+Q）时，用户
+                // 按住它们连点，物理修饰键残留按下会让目标应用收到 Ctrl+Alt+V 而非
+                // Ctrl+V（部分应用中是"粘贴为纯文本"）。故注入 V 前先合成释放这些
+                // 修饰键，V 后再合成按回——恢复逻辑状态，下次热键匹配不受影响。
+                let ctrl_held = (GetAsyncKeyState(VK_CONTROL.0 as i32) as u16) & 0x8000 != 0;
+                let extra_keys = [VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN];
+                let extra_held = [
+                    (GetAsyncKeyState(VK_MENU.0 as i32) as u16) & 0x8000 != 0,   // Alt
+                    (GetAsyncKeyState(VK_SHIFT.0 as i32) as u16) & 0x8000 != 0,  // Shift
+                    (GetAsyncKeyState(VK_LWIN.0 as i32) as u16) & 0x8000 != 0,   // 左 Win
+                    (GetAsyncKeyState(VK_RWIN.0 as i32) as u16) & 0x8000 != 0,   // 右 Win
+                ];
 
-                // Ctrl 按下
-                inputs[0].r#type = INPUT_KEYBOARD;
-                inputs[0].Anonymous.ki.wVk = VIRTUAL_KEY(VK_CONTROL.0 as u16);
+                // 最多 12 事件：4(释放额外修饰键) + Ctrl↓ + V↓ + V↑ + Ctrl↑ + 4(按回额外修饰键)
+                let mut inputs: [INPUT; 12] = std::mem::zeroed();
+                let mut n = 0usize;
 
-                // V 按下
-                inputs[1].r#type = INPUT_KEYBOARD;
-                inputs[1].Anonymous.ki.wVk = VIRTUAL_KEY(0x56);
+                // 1. 先释放物理按住的额外修饰键（Alt/Shift/Win）
+                for i in 0..4 {
+                    if extra_held[i] {
+                        inputs[n].r#type = INPUT_KEYBOARD;
+                        inputs[n].Anonymous.ki.wVk = extra_keys[i];
+                        inputs[n].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
+                        n += 1;
+                    }
+                }
 
-                // V 释放
-                inputs[2].r#type = INPUT_KEYBOARD;
-                inputs[2].Anonymous.ki.wVk = VIRTUAL_KEY(0x56);
-                inputs[2].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
+                // 2. Ctrl 按下（仅当未物理按住）
+                if !ctrl_held {
+                    inputs[n].r#type = INPUT_KEYBOARD;
+                    inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(VK_CONTROL.0 as u16);
+                    n += 1;
+                }
 
-                // Ctrl 释放
-                inputs[3].r#type = INPUT_KEYBOARD;
-                inputs[3].Anonymous.ki.wVk = VIRTUAL_KEY(VK_CONTROL.0 as u16);
-                inputs[3].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
+                // 3. V 按下 / V 释放
+                inputs[n].r#type = INPUT_KEYBOARD;
+                inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(0x56);
+                n += 1;
+                inputs[n].r#type = INPUT_KEYBOARD;
+                inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(0x56);
+                inputs[n].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
+                n += 1;
 
-                SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+                // 4. Ctrl 释放（仅当未物理按住）
+                if !ctrl_held {
+                    inputs[n].r#type = INPUT_KEYBOARD;
+                    inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(VK_CONTROL.0 as u16);
+                    inputs[n].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
+                    n += 1;
+                }
+
+                // 5. 按回额外修饰键（恢复逻辑状态，保证热键可连按）
+                for i in 0..4 {
+                    if extra_held[i] {
+                        inputs[n].r#type = INPUT_KEYBOARD;
+                        inputs[n].Anonymous.ki.wVk = extra_keys[i];
+                        n += 1;
+                    }
+                }
+
+                SendInput(&inputs[..n], std::mem::size_of::<INPUT>() as i32);
 
                 // 如果窗口之前是最小化的，恢复最小化状态。
                 // SendInput 只是把按键放入系统输入队列，目标窗口识别 Ctrl+V 并执行粘贴

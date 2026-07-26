@@ -1,10 +1,10 @@
-/* Toast — CSS Module */
+/* Toast — CSS Module（玻璃态升级：毛玻璃 + 图标色块容器 + 渐变进度条） */
 .toastContainer {
   position: fixed;
   /* U53: 下移避开标题栏右上角的最小化/关闭按钮（按钮区约 y=16~50px） */
   top: 60px;
   right: 16px;
-  z-index: 100;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -16,23 +16,27 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
+  padding: 9px 12px;
   border-radius: 12px;
   pointer-events: auto;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.03);
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid var(--glass-popover-border);
+  box-shadow: var(--glass-popover-shadow);
+  color: var(--text-primary);
   position: relative;
   overflow: hidden;
 }
 
+/* 渐变进度条（按类型着色） */
 .toastItem::after {
   content: '';
   position: absolute;
   bottom: 0;
   left: 0;
   height: 3px;
-  background: currentColor;
-  opacity: 0.4;
-  border-radius: 0 0 0 2px;
+  border-radius: 0 3px 3px 0;
   animation: toastProgress var(--toast-duration, 4s) linear forwards;
 }
 
@@ -41,32 +45,54 @@
   to   { width: 0%; }
 }
 
-.success {
-  background: var(--toast-success-bg, #ECFDF5);
-  color: var(--toast-success-text, #065F46);
-  border: 1px solid var(--toast-success-border, #A7F3D0);
+.success::after { background: linear-gradient(90deg, #34D399, #10B981); }
+.error::after   { background: linear-gradient(90deg, #F87171, #EF4444); }
+.warning::after { background: linear-gradient(90deg, #FBBF24, #F59E0B); }
+.info::after    { background: linear-gradient(90deg, #60A5FA, #3B82F6); }
+.loading::after { background: linear-gradient(90deg, #60A5FA, #3B82F6); }
+
+/* 图标色块容器 */
+.toastIconBox {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid transparent;
 }
 
-.error {
-  background: var(--toast-error-bg, #FEF2F2);
-  color: var(--toast-error-text, #991B1B);
-  border: 1px solid var(--toast-error-border, #FECACA);
-}
-
-.info {
-  background: var(--toast-info-bg, #EFF4FF);
-  color: var(--toast-info-text, #0078D4);
-  border: 1px solid var(--toast-info-border, rgba(2, 132, 199, 0.2));
-}
+.successBox { background: rgba(16, 185, 129, 0.14); border-color: rgba(16, 185, 129, 0.25); color: #10B981; }
+.errorBox   { background: rgba(239, 68, 68, 0.14);  border-color: rgba(239, 68, 68, 0.25);  color: #F87171; }
+.warningBox { background: rgba(245, 158, 11, 0.14); border-color: rgba(245, 158, 11, 0.25); color: #F59E0B; }
+.infoBox    { background: rgba(59, 130, 246, 0.14); border-color: rgba(59, 130, 246, 0.25); color: #60A5FA; }
+.loadingBox { background: rgba(59, 130, 246, 0.14); border-color: rgba(59, 130, 246, 0.25); color: #60A5FA; }
 
 .toastIcon {
   flex-shrink: 0;
+}
+
+.toastSpinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(96, 165, 250, 0.3);
+  border-top-color: #60A5FA;
+  border-radius: 50%;
+  animation: toastSpin 0.6s linear infinite;
+}
+
+@keyframes toastSpin {
+  to { transform: rotate(360deg); }
 }
 
 .toastMsg {
   font-size: 12px;
   font-weight: 500;
   flex: 1;
+  color: var(--text-primary);
 }
 
 .toastRetry {
@@ -84,24 +110,25 @@
 
 .toastRetry:hover {
   opacity: 1;
-  background: rgba(255,255,255,0.3);
+  background: var(--hover);
 }
 
 .toastAction {
   flex-shrink: 0;
   cursor: pointer;
-  border: none;
-  background: rgba(255,255,255,0.25);
-  color: inherit;
+  border: 1px solid var(--glass-popover-border);
+  background: var(--hover);
+  color: var(--accent);
   padding: 3px 10px;
   border-radius: 6px;
   font-size: 12px;
   font-weight: 600;
+  font-family: inherit;
   transition: all 0.15s;
 }
 
 .toastAction:hover {
-  background: rgba(255,255,255,0.4);
+  background: var(--accent-light);
 }
 
 .toastClose {

@@ -594,6 +594,91 @@ fn test_get_stats_empty() {
 }
 
 // ============================================================
+// get_stats_detail 测试
+// ============================================================
+
+#[test]
+fn test_get_stats_detail_daily_and_hours() {
+    let store = make_store();
+    let now = chrono::Local::now();
+    let today = now.format("%Y-%m-%d").to_string();
+    let yesterday = (now - chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
+
+    // 今天 2 条（10 时 / 14 时），昨天 1 条（23 时）
+    store
+        .insert_history(&make_item("d1", "A", &format!("{} 10:00:00", today), "text"))
+        .unwrap();
+    store
+        .insert_history(&make_item("d2", "B", &format!("{} 14:30:00", today), "image"))
+        .unwrap();
+    store
+        .insert_history(&make_item("d3", "C", &format!("{} 23:00:00", yesterday), "file"))
+        .unwrap();
+
+    let detail = store.get_stats_detail("默认").unwrap();
+    assert_eq!(detail.total, 3);
+    assert_eq!(detail.today, 2);
+    assert_eq!(detail.yesterday, 1);
+    assert_eq!(detail.text_count, 1);
+    assert_eq!(detail.image_count, 1);
+    assert_eq!(detail.file_count, 1);
+
+    // daily：7 天升序，末位为今天，缺日补 0
+    assert_eq!(detail.daily.len(), 7);
+    assert_eq!(detail.daily[6].date, today);
+    assert_eq!(detail.daily[6].count, 2);
+    assert_eq!(detail.daily[5].date, yesterday);
+    assert_eq!(detail.daily[5].count, 1);
+    assert_eq!(detail.daily[0].count, 0);
+
+    // hours：恒 24 槽，计数落在对应时段
+    assert_eq!(detail.hours.len(), 24);
+    assert_eq!(detail.hours[10], 1);
+    assert_eq!(detail.hours[14], 1);
+    assert_eq!(detail.hours[23], 1);
+    assert_eq!(detail.hours[0], 0);
+}
+
+#[test]
+fn test_get_stats_detail_sources_top5() {
+    let store = make_store();
+    // 6 个来源，计数 6..1，应只保留 Top 5 且按计数降序
+    for (i, count) in (1..=6).rev().enumerate() {
+        let source = format!("App{}", i + 1);
+        for j in 0..count {
+            let mut item = make_item(
+                &format!("s{}-{}", i, j),
+                &format!("text {}-{}", i, j),
+                "2024-01-01 10:00:00",
+                "text",
+            );
+            item.source = source.clone();
+            store.insert_history(&item).unwrap();
+        }
+    }
+
+    let detail = store.get_stats_detail("默认").unwrap();
+    assert_eq!(detail.sources.len(), 5);
+    assert_eq!(detail.sources[0].source, "App1");
+    assert_eq!(detail.sources[0].count, 6);
+    assert_eq!(detail.sources[4].source, "App5");
+    assert_eq!(detail.sources[4].count, 2);
+}
+
+#[test]
+fn test_get_stats_detail_empty() {
+    let store = make_store();
+    let detail = store.get_stats_detail("默认").unwrap();
+    assert_eq!(detail.total, 0);
+    assert_eq!(detail.today, 0);
+    assert_eq!(detail.yesterday, 0);
+    assert_eq!(detail.daily.len(), 7);
+    assert!(detail.daily.iter().all(|d| d.count == 0));
+    assert_eq!(detail.hours, vec![0u32; 24]);
+    assert!(detail.sources.is_empty());
+}
+
+// ============================================================
 // get_config + save_config 测试
 // ============================================================
 
@@ -1122,8 +1207,8 @@ fn test_ensure_auto_tags() {
     store.ensure_auto_tags().unwrap();
 
     let tags = store.get_tags().unwrap();
-    // 应该有 25 个自动标签种子
-    assert_eq!(tags.len(), 25);
+    // 应该有 29 个自动标签种子
+    assert_eq!(tags.len(), 29);
     // 全部 source 为 "auto"
     assert!(tags.iter().all(|t| t.source == "auto"));
 }
@@ -1135,7 +1220,7 @@ fn test_ensure_auto_tags_idempotent() {
     store.ensure_auto_tags().unwrap();
 
     let tags = store.get_tags().unwrap();
-    assert_eq!(tags.len(), 25); // 不应重复插入
+    assert_eq!(tags.len(), 29); // 不应重复插入
 }
 
 #[test]

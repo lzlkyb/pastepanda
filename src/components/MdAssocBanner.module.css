@@ -1,0 +1,128 @@
+/* .md 关联引导横幅 — 与 StackBanner 同构（滚动区外固定节点），accent 蓝配色，主题自适应 */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 16px 4px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(59, 158, 255, 0.10), transparent 65%), var(--accent-light);
+  border: 1px solid var(--accent-border, rgba(59, 158, 255, 0.35));
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 16px var(--accent-shadow);
+  flex-shrink: 0;
+  animation: bannerIn 0.3s ease;
+  z-index: 5;
+}
+
+@keyframes bannerIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: none; }
+}
+
+.icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--accent), #2563EB);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px var(--accent-shadow);
+  color: #fff;
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sub {
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dismissBtn {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.dismissBtn:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+.goBtn {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--accent), #2563EB);
+  color: #fff;
+  box-shadow: 0 2px 8px var(--accent-shadow);
+  transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
+  flex-shrink: 0;
+}
+
+.goBtn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.12);
+  box-shadow: 0 4px 12px var(--accent-shadow);
+}
+
+.goBtn:active {
+  transform: translateY(0);
+}
+
+.goBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
+.closeBtn {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.closeBtn:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}

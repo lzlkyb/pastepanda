@@ -4,6 +4,7 @@ import { X, Link2, AtSign, Phone, Code2, Hash, Copy, CheckSquare, Save, LucideIc
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/stores/appStore";
 import { useToast } from "@/components/Toast";
+import { useDialogAnim } from "@/lib/dialogMotion";
 import { logger } from "@/lib/logger";
 import { FocusTrap } from "@/components/FocusTrap";
 import styles from "./Extract.module.css";
@@ -39,6 +40,7 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
+  const anim = useDialogAnim();
 
   const typeCounts = useTypeCounts(history, ws);
 
@@ -115,21 +117,19 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
     }
   };
 
-  if (!open) return null;
-
+  // 注意：不能在此处 if (!open) return null —— 组件需常挂载，
+  // open 变 false 时由下方 AnimatePresence 驱动退场动画后再卸载
   return (
     <AnimatePresence>
       {open && (
         <motion.div
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          {...anim.backdrop}
           className="dialog-backdrop"
           onClick={onClose}
         >
           <FocusTrap>
           <motion.div
-            initial={{ scale: 0.96, opacity: 0, y: 10 }} animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.96, opacity: 0, y: 10 }}
-            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+            {...anim.panel}
             className="dialog-box w380"
             onClick={(e) => e.stopPropagation()}
           >

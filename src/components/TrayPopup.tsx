@@ -139,10 +139,12 @@ const IconExit = () => (
   </SvgIcon>
 );
 
-// 活动曲线图标（底部状态栏）
-const IconActivity = () => (
+// 数据库圆柱图标（底部状态栏 — 存储占用）
+const IconDatabase = () => (
   <SvgIcon size={11}>
-    <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+    <ellipse cx="12" cy="5" rx="9" ry="3"/>
+    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
   </SvgIcon>
 );
 
@@ -576,19 +578,21 @@ export function TrayPopup() {
         })}
       </div>
 
-      {/* 底部状态栏 */}
+      {/* 底部状态栏（方案B 两行清晰版） */}
       {dataLoaded && stats ? (
         <div className="tray-popup-footer">
-          <span className="footer-icon">
-            <IconActivity />
-          </span>
-          <span className="footer-info">{formatDbSize(stats.db_size_kb)} / {stats.max_size_mb.toFixed(0)} MB</span>
-          <div className="footer-bar-wrap">
-            <div className="footer-bar">
-              <div className="footer-bar-fill" style={{ width: `${memPercent}%`, transition: "width 0.3s ease" }} />
-            </div>
+          <div className="footer-row1">
+            <span className="footer-icon">
+              <IconDatabase />
+            </span>
+            <span className="footer-label">数据库存储</span>
+            <span className="footer-nums">
+              {formatDbSize(stats.db_size_kb)} / {stats.max_size_mb.toFixed(0)} MB · {memPercent.toFixed(1)}%
+            </span>
           </div>
-          <span className="footer-text">{memPercent.toFixed(1)}%</span>
+          <div className="footer-bar">
+            <div className="footer-bar-fill" style={{ width: `${memPercent}%`, transition: "width 0.3s ease" }} />
+          </div>
         </div>
       ) : dataLoaded ? (
         <div className="tray-popup-footer" style={{ justifyContent: "center", opacity: 0.5 }}>

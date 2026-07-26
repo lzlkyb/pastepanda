@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { X, Pencil, Trash2 } from "lucide-react";
+import { useDialogAnim } from "@/lib/dialogMotion";
 import {
   getAllRules, togglePresetRule, toggleCustomRule,
   addCustomRule, updateCustomRule, deleteCustomRule,
@@ -26,6 +27,7 @@ interface EditState {
 const emptyEdit: EditState = { id: null, name: "", pattern: "", replacement: "", flags: "g", isNew: false };
 
 export function RegexRulesDialog({ onClose }: RegexRulesDialogProps) {
+  const anim = useDialogAnim();
   const [rules, setRules] = useState<RegexRule[]>(() => getAllRules());
   const [edit, setEdit] = useState<EditState>(emptyEdit);
   const [deleteTarget, setDeleteTarget] = useState<RegexRule | null>(null);
@@ -86,18 +88,14 @@ export function RegexRulesDialog({ onClose }: RegexRulesDialogProps) {
   }, [edit, editError, refresh]);
 
   return (
-    <AnimatePresence>
+    <motion.div
+      {...anim.backdrop}
+      className="dialog-backdrop" onClick={onClose}>
+      <FocusTrap>
       <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="dialog-backdrop" onClick={onClose}>
-        <FocusTrap>
-        <motion.div
-          initial={{ scale: 0.96, opacity: 0, y: 10 }}
-          animate={{ scale: 1, opacity: 1, y: 0 }}
-          exit={{ scale: 0.96, opacity: 0, y: 10 }}
-          transition={{ type: "spring", stiffness: 400, damping: 30 }}
-          className={`dialog-box ${styles.rulesDialog}`}
-          onClick={(e) => e.stopPropagation()}>
+        {...anim.panel}
+        className={`dialog-box ${styles.rulesDialog}`}
+        onClick={(e) => e.stopPropagation()}>
 
           <div className="dialog-header">
             <h2 className="dialog-title">⚙ 正则规则管理</h2>
@@ -185,6 +183,5 @@ export function RegexRulesDialog({ onClose }: RegexRulesDialogProps) {
         </motion.div>
         </FocusTrap>
       </motion.div>
-    </AnimatePresence>
   );
 }

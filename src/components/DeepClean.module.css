@@ -1,0 +1,255 @@
+/* DeepClean.module.css — 深度清理弹窗（方案 A：组合条件 + 实时计数 + 预览）
+   尺寸与设置页真实组件对齐：chip 12px/600、matchBox 大数字 30px/700 danger */
+
+.headerIcon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #EF4444, #F97316);
+  color: #fff;
+  flex-shrink: 0;
+}
+
+/* ===== 条件区 ===== */
+.condGroup {
+  padding: 0;
+}
+.condLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 7px;
+  letter-spacing: 0.3px;
+}
+.chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.chip {
+  padding: 5px 12px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.chipActive {
+  background: var(--accent-light);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ===== 来源下拉（TopBar 来源筛选同款：触发按钮 + 浮层列表） ===== */
+.srcTrigger {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+.srcTrigger:hover {
+  border-color: var(--accent);
+}
+.srcTriggerOpen {
+  border-color: var(--accent);
+}
+/* 全部来源 / 未选中态文字（触发按钮与浮层首行共用，flex:1 把右侧元素推到行尾） */
+.srcAllLabel {
+  flex: 1;
+  text-align: left;
+  color: var(--text-secondary);
+}
+.srcTriggerCount {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+.srcTriggerArr {
+  color: var(--text-muted);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+/* 浮层：portal 到 body，fixed 定位（left/top/width/maxHeight 由 JS 测量写入） */
+.srcPopup {
+  position: fixed;
+  z-index: var(--z-modal-top);
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16), 0 2px 8px rgba(15, 23, 42, 0.08);
+  padding: 4px;
+  overflow-y: auto;
+}
+.srcItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 9px;
+  border-radius: 7px;
+  border: none;
+  background: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: background 0.12s;
+}
+.srcItem:hover {
+  background: var(--hover);
+}
+.srcItemActive {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+.srcItemActive:hover {
+  background: var(--accent-light);
+}
+.srcItemCount {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.srcItemActive .srcItemCount {
+  color: var(--accent);
+  opacity: 0.75;
+}
+.srcItemCheck {
+  color: var(--accent);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ===== 匹配结果（statsPanel 风格大数字） ===== */
+.matchBox {
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.matchNum {
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--danger);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -1px;
+  min-width: 40px;
+}
+.matchMeta {
+  flex: 1;
+  min-width: 0;
+}
+.matchLabel {
+  font-size: 12px;
+  font-weight: 600;
+}
+.matchDesc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  line-height: 1.5;
+}
+.previewLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  padding: 4px 2px;
+}
+.previewLink:hover {
+  text-decoration: underline;
+}
+
+/* ===== 预览列表 ===== */
+.previewList {
+  max-height: 190px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--card-bg);
+}
+.previewRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
+}
+.previewRow:last-child {
+  border-bottom: none;
+}
+.previewType {
+  flex-shrink: 0;
+  font-size: 13px;
+}
+.previewText {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+.previewMeta {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.previewEmpty {
+  padding: 14px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ===== 底部按钮 ===== */
+.dangerBtn {
+  flex: 1;
+  justify-content: center;
+  padding: 8px 16px;
+  font-size: 13px;
+}

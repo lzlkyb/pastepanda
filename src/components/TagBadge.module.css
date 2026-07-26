@@ -56,47 +56,55 @@
   transition-delay: 0.12s;
 }
 
-/* ===== 标签徽标（card 变体） ===== */
+/* ===== 标签徽标（card 变体）— 方案 C 统一胶囊 ===== */
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 1px 8px;
-  border-radius: 4px;
+  gap: 4px;
+  height: 18px;
+  padding: 0 8px;
+  border-radius: 6px;
   font-size: 10px;
   font-weight: 600;
   border: 1px solid;
   cursor: pointer;
   flex-shrink: 0;
-  transition: filter 0.15s;
-  line-height: 18px;
   user-select: none;
   white-space: nowrap;
+  /* 配色由 --tag-c 派生（getTagStyle 注入），混 --text-primary 保证深浅主题下文字对比度 */
+  background: color-mix(in srgb, var(--tag-c) 10%, transparent);
+  color: color-mix(in srgb, var(--tag-c) 74%, var(--text-primary));
+  border-color: color-mix(in srgb, var(--tag-c) 26%, transparent);
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .badge:hover {
-  filter: brightness(0.9);
+  background: color-mix(in srgb, var(--tag-c) 18%, transparent);
+  border-color: color-mix(in srgb, var(--tag-c) 45%, transparent);
 }
 
-/* 自动标签样式 — 虚线边框 + AI 图标 */
+/* 自动标签样式 — 虚线边框 + 🤖 标记 */
 .autoBadge {
   border-style: dashed;
-  opacity: 0.85;
+  border-color: color-mix(in srgb, var(--tag-c) 40%, transparent);
+  opacity: 0.88;
 }
 
 .aiIcon {
+  display: inline-flex;
+  align-items: center;
   font-size: 9px;
-  margin-right: 1px;
   line-height: 1;
+  flex-shrink: 0;
 }
 
 /* ===== chip 变体 — 带 × 移除按钮（TagEditor 已选区 / TopBar 筛选栏） ===== */
 .chip {
-  padding: 2px 10px;
+  height: 20px;
+  padding: 0 10px;
   border-radius: 6px;
   font-size: 11px;
   gap: 4px;
-  line-height: 18px;
 }
 
 .removeBtn {
@@ -153,8 +161,10 @@
 }
 
 .pickerAiIcon {
+  display: inline-flex;
+  align-items: center;
   font-size: 10px;
-  margin-right: 2px;
+  line-height: 1;
   flex-shrink: 0;
 }
 
@@ -171,18 +181,22 @@
   flex-shrink: 0;
 }
 
-/* 溢出指示器 +N */
+/* 溢出指示器 +N — 虚线胶囊，与标签胶囊同几何 */
 .more {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 6px;
   font-size: 10px;
+  font-weight: 600;
   color: var(--text-muted);
-  font-weight: 500;
   flex-shrink: 0;
-  padding: 1px 4px;
   cursor: default;
-  border-radius: 4px;
-  transition: background 0.15s, color 0.15s;
+  border: 1px dashed color-mix(in srgb, var(--text-muted) 40%, transparent);
+  transition: color 0.15s, border-color 0.15s;
 }
 .more:hover {
-  background: var(--hover);
   color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }

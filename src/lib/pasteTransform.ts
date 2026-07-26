@@ -4,6 +4,7 @@
  * 纯函数，无副作用（不调用 pasteText / invoke），便于单元测试和复用
  */
 import { detectColor, toHex, toRgb, toHsl } from "@/lib/color";
+import { urlHostPath } from "@/lib/url";
 
 /** 去除 HTML 标签 */
 function stripHtml(html: string): string {
@@ -45,12 +46,8 @@ export function applyPasteTransform(input: TransformInput, transform: string): s
     case "strip_html": return stripHtml(text);
 
     // === 链接子类型 ===
-    case "plain_url": {
-      try {
-        const u = new URL(text);
-        return u.hostname + u.pathname;
-      } catch { return text; }
-    }
+    case "plain_url":
+      return urlHostPath(text);
 
     // === 邮箱子类型 ===
     case "mailto": return `mailto:${text.trim()}`;

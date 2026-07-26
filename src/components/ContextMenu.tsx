@@ -1,7 +1,7 @@
-import { createContext, useState, useEffect, useCallback, useRef, useMemo, ReactNode } from "react";
+import { createContext, useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, Fragment, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Copy, ClipboardPaste, Pin, Trash2, ExternalLink, FileCode, Pencil, ChevronRight, Tag, FolderInput, Eye } from "lucide-react";
+import { Copy, ClipboardPaste, Pin, Trash2, ExternalLink, FileCode, Pencil, ChevronRight, Tag, FolderInput, FolderOpen, FileText, Sparkles, Image as ImageIcon, Palette, MoreHorizontal, Regex } from "lucide-react";
 import { getEnabledRules } from "@/lib/regexRules";
 import { isCodeLike } from "@/lib/contentTypes";
 import { useAppStore } from "@/stores/appStore";
@@ -15,6 +15,8 @@ export interface MenuItem {
   separator?: boolean;
   /** 分组标题（非交互，不可点击） */
   header?: boolean;
+  /** 类型主操作（置顶高亮显示） */
+  primary?: boolean;
   children?: MenuItem[];
 }
 
@@ -86,13 +88,51 @@ export function ContextMenu({ children }: { children: ReactNode }) {
     }
     top = Math.max(margin, Math.min(top, window.innerHeight - menuH - margin));
 
-    // 检测子菜单是否需要翻到左侧（右侧空间 < 子菜单宽 + 间距）
-    const submenuWidth = 180;
-    const availForSubRight = window.innerWidth - left - menuW - margin;
-    const submenuFlip = availForSubRight < submenuWidth + 4;
-
-    return { left, top, submenuFlip };
+    return { left, top };
   }, [pos, menuSize]);
+
+  // 子菜单边缘钳制：打开瞬间（挂载后、绘制前）测量真实宽高与父项视口位置——
+  //   水平：按实测宽度决定向右还是向左翻转（替代写死 180 的估算）；
+  //   垂直：默认锚在父项上缘 -4px，超出底边时整体上移，比可用视口还高时顶部钳制 + 内部滚动。
+  // 仅当前激活父项的子菜单会挂载，submenuRef 即指向它。
+  const submenuRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const sub = submenuRef.current;
+    if (!sub) return;
+    const parent = sub.parentElement as HTMLElement | null;
+    if (!parent) return;
+    const parentRect = parent.getBoundingClientRect();
+    const margin = 8;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    // 先清掉上一次的行内调整再测量自然尺寸，避免 maxHeight 钳制形成反馈
+    sub.style.top = "";
+    sub.style.maxHeight = "";
+    sub.style.overflowY = "";
+    sub.classList.remove(styles.flipLeft);
+
+    const subW = sub.offsetWidth;
+    const subH = sub.offsetHeight;
+
+    // 水平：优先向右，放不下且左侧放得下时翻到左侧
+    const fitsRight = parentRect.right + 4 + subW <= vw - margin;
+    const fitsLeft = parentRect.left - 4 - subW >= margin;
+    sub.classList.toggle(styles.flipLeft, !fitsRight && fitsLeft);
+
+    // 垂直：超出底边上移；上移后顶到上缘仍放不下，则顶部钳制 + 限高滚动
+    let topOffset = -4;
+    const naturalBottom = parentRect.top + topOffset + subH;
+    if (naturalBottom > vh - margin) {
+      topOffset -= naturalBottom - (vh - margin);
+      if (parentRect.top + topOffset < margin) {
+        topOffset = margin - parentRect.top;
+        sub.style.maxHeight = `${vh - 2 * margin}px`;
+        sub.style.overflowY = "auto";
+      }
+    }
+    sub.style.top = `${topOffset}px`;
+  }, [activeIndex, pos, items]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     // ★ 如果事件来自 Card 内部（已经有原生监听器通过 ctxTrigger 处理），
@@ -240,8 +280,11 @@ export function ContextMenu({ children }: { children: ReactNode }) {
       <CtxMenuCtx.Provider value={trigger}>
         <div ref={wrapperRef} onContextMenu={handleContextMenu} role="application" aria-haspopup="menu" aria-label="右键菜单" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>{children}</div>
       </CtxMenuCtx.Provider>
-      {pos && createPortal(
+      {/* ★ 退出动画修复：pos 条件移入 portal 内的 AnimatePresence ——
+          否则 {pos && createPortal(...)} 在 pos 置 null 时整个 portal 瞬间卸载，exit 动画无法播放 */}
+      {createPortal(
         <AnimatePresence>
+          {pos && (
           <motion.div
             key="ctx-menu-portal"
             ref={menuRef}
@@ -254,7 +297,6 @@ export function ContextMenu({ children }: { children: ReactNode }) {
               position: "fixed",
               left: `${adjustedPos ? adjustedPos.left : pos.x}px`,
               top: `${adjustedPos ? adjustedPos.top : pos.y}px`,
-              zIndex: 99999,
               transform: "none",
             }}
             onClick={(e) => e.stopPropagation()}
@@ -283,10 +325,12 @@ export function ContextMenu({ children }: { children: ReactNode }) {
                       {item.label}
                       <span className={styles.ctxItemArrow}><ChevronRight size={12} /></span>
 
-                      {/* 子菜单弹层（hover 或键盘导航时显示） */}
-                      {(isActive || activeSubIndex !== null) && (
+                      {/* 子菜单弹层（仅当该父项激活时显示 —— activeSubIndex 是全局状态，
+                          不能用它门控，否则多个子菜单会同时弹出互相叠加） */}
+                      {isActive && (
                         <div
-                          className={`${styles.ctxSubmenu}${adjustedPos?.submenuFlip ? ` ${styles.flipLeft}` : ""}`}
+                          ref={submenuRef}
+                          className={styles.ctxSubmenu}
                           onMouseEnter={() => { setActiveIndex(flatIdx); setActiveSubIndex(null); }}
                         >
                           {item.children.map((child, j) => (
@@ -296,15 +340,17 @@ export function ContextMenu({ children }: { children: ReactNode }) {
                                 {child.label}
                               </div>
                             ) : (
-                              <button
-                                key={j}
-                                className={`${styles.ctxItem}${activeSubIndex === j ? ` ${styles.keyboardActive}` : ""}${child.danger ? ` ${styles.danger}` : ""}`}
-                                onClick={() => { child.onClick?.(); setPos(null); }}
-                                onMouseEnter={() => setActiveSubIndex(j)}
-                              >
-                                <span className={styles.ctxItemIcon}>{child.icon}</span>
-                                {child.label}
-                              </button>
+                              <Fragment key={j}>
+                                {child.separator && j > 0 && <div className={styles.ctxSep} />}
+                                <button
+                                  className={`${styles.ctxItem}${activeSubIndex === j ? ` ${styles.keyboardActive}` : ""}${child.danger ? ` ${styles.danger}` : ""}`}
+                                  onClick={() => { child.onClick?.(); setPos(null); }}
+                                  onMouseEnter={() => setActiveSubIndex(j)}
+                                >
+                                  <span className={styles.ctxItemIcon}>{child.icon}</span>
+                                  {child.label}
+                                </button>
+                              </Fragment>
                             )
                           ))}
                         </div>
@@ -319,7 +365,7 @@ export function ContextMenu({ children }: { children: ReactNode }) {
                   {item.separator && i > 0 && <div className={styles.ctxSep} />}
                   <button
                     onClick={() => { item.onClick?.(); setPos(null); }}
-                    className={`${styles.ctxItem}${item.danger ? ` ${styles.danger}` : ""}${isActive ? ` ${styles.keyboardActive}` : ""}`}
+                    className={`${styles.ctxItem}${item.primary ? ` ${styles.ctxItemPrimary}` : ""}${item.danger ? ` ${styles.danger}` : ""}${isActive ? ` ${styles.keyboardActive}` : ""}`}
                     onMouseEnter={() => setActiveIndex(flatIdx)}
                     onMouseLeave={() => { if (activeSubIndex === null) setActiveIndex(-1); }}
                   >
@@ -330,6 +376,7 @@ export function ContextMenu({ children }: { children: ReactNode }) {
               );
             })}
           </motion.div>
+          )}
         </AnimatePresence>,
         document.body
       )}
@@ -342,17 +389,7 @@ function buildTransformMenu(onTransform: (t: string) => void, itemType?: string,
   const children: MenuItem[] = [];
 
   if (itemType === "text") {
-    // 文本通用变换
-    children.push(
-      { icon: <span className={`${styles.ctxTextIcon} ${styles.ctxTextUpper}`}>A</span>, label: "粘贴为大写", onClick: () => onTransform("upper") },
-      { icon: <span className={`${styles.ctxTextIcon} ${styles.ctxTextLower}`}>a</span>, label: "粘贴为小写", onClick: () => onTransform("lower") },
-      { icon: <span className={`${styles.ctxTextIcon} ${styles.ctxTextScissor}`}>✂</span>, label: "粘贴并去空白", onClick: () => onTransform("strip") },
-      { icon: <span className={`${styles.ctxTextIcon} ${styles.ctxTextPara}`}>¶</span>, label: "粘贴并去空行", onClick: () => onTransform("strip_lines") },
-      { icon: <span className={`${styles.ctxTextIcon} ${styles.ctxTextQuote}`}>"</span>, label: "粘贴为引号包裹", onClick: () => onTransform("quote") },
-      { icon: <span style={{ fontSize: 12 }}>🏷</span>, label: "剥离 HTML 标签", onClick: () => onTransform("strip_html") },
-    );
-
-    // 子类型专属变换
+    // 子类型专属快捷变换（通用变换已迁入注册表，由「更多变换…」进枢纽）
     if (subType === "link") {
       children.push(
         { icon: <span style={{ fontSize: 12 }}>🔗</span>, label: "粘贴为 Markdown 链接", onClick: () => onTransform("md_link") },
@@ -424,13 +461,21 @@ export function createCardMenuItems(opts: {
   onMoveToGroup?: () => void;
   onAddSnippet?: () => void;
   onOpenUrl?: () => void;
+  /** file_path 卡片：用默认应用打开（后端 open_file_with_system） */
+  onOpenFile?: () => void;
+  /** file_path 卡片：在资源管理器中显示（后端 open_file_location） */
+  onRevealFile?: () => void;
   onPasteTransform?: (transform: string) => void;
+  /** 打开变换枢纽：列出当前内容可用的所有变换（SQL IN / INSERT / …） */
+  onOpenHub?: () => void;
   onConfirmAutoTags?: () => void;
   onRemoveAutoTags?: () => void;
   onMarkdownPreview?: () => void;
   onQrCode?: () => void;
   pinned?: boolean;
   hasUrl?: boolean;
+  /** file_path 子类型卡片（显示"用默认应用打开 / 在资源管理器中显示"） */
+  isFilePath?: boolean;
   hasAutoTags?: boolean;
   isMarkdown?: boolean;
   canQrCode?: boolean;
@@ -442,41 +487,30 @@ export function createCardMenuItems(opts: {
 }): MenuItem[] {
   const items: MenuItem[] = [];
 
-  // 编辑入口（文本类型优先显示）
-  if (opts.onEdit) {
-    items.push({ icon: <Pencil size={14} />, label: "编辑内容", onClick: opts.onEdit });
+  // ① 类型主操作（置顶高亮）——按条目类型挑选最具代表性的动作
+  const primary = getPrimaryAction(opts);
+  if (primary) {
+    items.push({ ...primary.item, primary: true });
   }
 
-  // Markdown 预览入口（仅 MD 内容显示）
-  if (opts.isMarkdown && opts.onMarkdownPreview) {
-    items.push({ icon: <Eye size={14} />, label: "Markdown 预览", onClick: opts.onMarkdownPreview });
-  }
-
+  // ② 核心剪贴板操作
   items.push(
     { icon: <Copy size={14} />, label: "复制到剪贴板", onClick: opts.onCopy },
     { icon: <ClipboardPaste size={14} />, label: "粘贴到前台", onClick: opts.onPaste },
   );
 
-  // 粘贴变换折叠为子菜单（按类型定制）
+  // 粘贴变换折叠为子菜单：子类型快捷项 + 「更多变换…」（枢纽兜底）
   if (opts.onPasteTransform) {
     const transformChildren: MenuItem[] = buildTransformMenu(opts.onPasteTransform, opts.itemType, opts.itemSubType);
 
-    // 正则替换分组
-    if (opts.onRegexPreview && opts.itemType === "text") {
-      const enabledRules = getEnabledRules();
-      if (enabledRules.length > 0) {
-        transformChildren.push({ icon: <span style={{ fontSize: 12 }}>─</span>, label: "正则替换", header: true });
-        for (const rule of enabledRules) {
-          transformChildren.push({
-            icon: <span style={{ fontSize: 12 }}>{rule.preset ? "🔤" : "🏷"}</span>,
-            label: rule.name,
-            onClick: () => opts.onRegexPreview!(rule.id),
-          });
-        }
-      }
-      if (opts.onManageRegexRules) {
-        transformChildren.push({ icon: <span style={{ fontSize: 12 }}>⚙</span>, label: "管理正则规则…", onClick: opts.onManageRegexRules });
-      }
+    // 「更多变换…」— 打开变换枢纽，长尾通用变换全部收纳于此（仅 text 类型）
+    if (opts.onOpenHub && opts.itemType === "text") {
+      transformChildren.push({
+        icon: <Sparkles size={14} />,
+        label: "更多变换…",
+        onClick: opts.onOpenHub,
+        separator: transformChildren.length > 0,
+      });
     }
 
     if (transformChildren.length > 0) {
@@ -488,49 +522,152 @@ export function createCardMenuItems(opts: {
     }
   }
 
-  if (opts.hasUrl && opts.onOpenUrl) {
-    items.push({ icon: <ExternalLink size={14} />, label: "在浏览器中打开", onClick: opts.onOpenUrl });
-  }
-
-  // 二维码生成（URL 或短文本）
-  if (opts.canQrCode && opts.onQrCode) {
-    items.push({ icon: <span style={{ fontSize: 14 }}>📱</span>, label: "生成二维码", onClick: opts.onQrCode });
-  }
-
-  // ★ 编辑标签 ★
-  if (opts.onEditTags) {
-    items.push({ icon: <Tag size={14} />, label: "编辑标签", onClick: opts.onEditTags });
-  }
-
-  // ★ 自动标签操作 ★
-  if (opts.hasAutoTags && opts.onConfirmAutoTags) {
-    items.push({ icon: <span style={{ fontSize: 14 }}>🤖</span>, label: "确认自动标签", onClick: opts.onConfirmAutoTags });
-  }
-  if (opts.hasAutoTags && opts.onRemoveAutoTags) {
-    items.push({ icon: <span style={{ fontSize: 14 }}>🗑️</span>, label: "移除自动标签", onClick: opts.onRemoveAutoTags, separator: true });
-  } else if (opts.onEditTags || opts.onMoveToGroup) {
-    // 如果没有自动标签操作但有编辑标签，保持分隔线
-    if (opts.onMoveToGroup) {
-      items[items.length - 1].separator = true;
+  // 正则替换：独立顶层子菜单（规则列表 + 管理入口）
+  if (opts.onRegexPreview && opts.itemType === "text") {
+    const regexChildren: MenuItem[] = [];
+    const enabledRules = getEnabledRules();
+    for (const rule of enabledRules) {
+      regexChildren.push({
+        icon: <span style={{ fontSize: 12 }}>{rule.preset ? "🔤" : "🏷"}</span>,
+        label: rule.name,
+        onClick: () => opts.onRegexPreview!(rule.id),
+      });
+    }
+    if (opts.onManageRegexRules) {
+      regexChildren.push({
+        icon: <span style={{ fontSize: 12 }}>⚙</span>,
+        label: "管理正则规则…",
+        onClick: opts.onManageRegexRules,
+        separator: regexChildren.length > 0,
+      });
+    }
+    if (regexChildren.length > 0) {
+      items.push({ icon: <Regex size={14} />, label: "正则替换", children: regexChildren });
     }
   }
 
-  // ★ 移动到分组 ★
-  if (opts.onMoveToGroup) {
-    items.push({ icon: <FolderInput size={14} />, label: "移动到分组", onClick: opts.onMoveToGroup, separator: true });
+  // ③ 类型工具（次级的类型相关操作，排除已作为主操作的项）
+  const tools = getTypeTools(opts, primary?.key ?? null);
+  tools.forEach((t, idx) => {
+    items.push(idx === 0 ? { ...t, separator: true } : t);
+  });
+
+  // ④ 更多操作（标签/分组/置顶/片段库等管理项统一收纳）
+  const moreChildren = getMoreChildren(opts);
+  if (moreChildren.length > 0) {
+    items.push({ icon: <MoreHorizontal size={14} />, label: "更多操作", children: moreChildren, separator: true });
   }
 
-  items.push(
-    { icon: <Pin size={14} />, label: opts.pinned ? "取消置顶" : "置顶", onClick: opts.onPin, separator: true },
-  );
-
-  if (opts.onAddSnippet) {
-    items.push({ icon: <FileCode size={14} />, label: "添加到片段库", onClick: opts.onAddSnippet });
-  }
-
+  // ⑤ 删除
   items.push(
     { icon: <Trash2 size={14} />, label: "删除", onClick: opts.onDelete, danger: true, separator: true },
   );
 
   return items;
+}
+
+type CardMenuOpts = Parameters<typeof createCardMenuItems>[0];
+
+/** 类型主操作：按条目类型挑选最具代表性的动作置顶高亮 */
+function getPrimaryAction(opts: CardMenuOpts): { key: string; item: MenuItem } | null {
+  const st = opts.itemSubType;
+  const t = opts.itemType;
+
+  // 图片：粘贴为 Markdown 图片
+  if (t === "image" && opts.onPasteTransform) {
+    return { key: "mdImage", item: { icon: <ImageIcon size={14} />, label: "粘贴为 Markdown 图片", onClick: () => opts.onPasteTransform!("md_image") } };
+  }
+  // 文件 / 路径：在资源管理器中显示
+  if (opts.onRevealFile) {
+    return { key: "reveal", item: { icon: <FolderOpen size={14} />, label: "在资源管理器中显示", onClick: opts.onRevealFile } };
+  }
+  // 链接：在浏览器中打开
+  if (opts.hasUrl && opts.onOpenUrl) {
+    return { key: "openUrl", item: { icon: <ExternalLink size={14} />, label: "在浏览器中打开", onClick: opts.onOpenUrl } };
+  }
+  // JSON：变换枢纽（SQL IN / INSERT / … 的统一入口，置顶高亮）
+  if (st === "json" && opts.onOpenHub) {
+    return { key: "hub", item: { icon: <Sparkles size={14} />, label: "变换为…", onClick: opts.onOpenHub } };
+  }
+  // 颜色：复制为 HEX
+  if (st === "color" && opts.onPasteTransform) {
+    return { key: "colorHex", item: { icon: <Palette size={14} />, label: "复制为 HEX", onClick: () => opts.onPasteTransform!("color_hex") } };
+  }
+  // 文本（含各子类型）：编辑内容
+  if (opts.onEdit) {
+    return { key: "edit", item: { icon: <Pencil size={14} />, label: editLabelFor(st), onClick: opts.onEdit } };
+  }
+  return null;
+}
+
+/** 类型工具：次级的类型相关操作（排除已作为主操作的项） */
+function getTypeTools(opts: CardMenuOpts, primaryKey: string | null): MenuItem[] {
+  const tools: MenuItem[] = [];
+  const st = opts.itemSubType;
+
+  // 编辑入口（主操作不是编辑时，作为次级工具）
+  if (opts.onEdit && primaryKey !== "edit") {
+    tools.push({ icon: <Pencil size={14} />, label: editLabelFor(st), onClick: opts.onEdit });
+  }
+  // 在浏览器中打开（主操作不是它时）
+  if (opts.hasUrl && opts.onOpenUrl && primaryKey !== "openUrl") {
+    tools.push({ icon: <ExternalLink size={14} />, label: "在浏览器中打开", onClick: opts.onOpenUrl });
+  }
+  // 用默认应用打开（路径 / 文件）
+  if (opts.onOpenFile) {
+    tools.push({ icon: <FileText size={14} />, label: "用默认应用打开", onClick: opts.onOpenFile });
+  }
+  // 在资源管理器中显示（主操作不是它时）
+  if (opts.onRevealFile && primaryKey !== "reveal") {
+    tools.push({ icon: <FolderOpen size={14} />, label: "在资源管理器中显示", onClick: opts.onRevealFile });
+  }
+  // 二维码（沿用现有 canQrCode 规则）
+  if (opts.canQrCode && opts.onQrCode) {
+    tools.push({ icon: <span style={{ fontSize: 14 }}>📱</span>, label: "生成二维码", onClick: opts.onQrCode });
+  }
+  // 变换枢纽（主操作不是它时，作为次级工具——如按列文本等非 json 内容）
+  if (opts.onOpenHub && primaryKey !== "hub") {
+    tools.push({ icon: <Sparkles size={14} />, label: "变换为…", onClick: opts.onOpenHub });
+  }
+  return tools;
+}
+
+/** 更多操作子菜单：标签/分组/置顶/片段库等管理项统一收纳 */
+function getMoreChildren(opts: CardMenuOpts): MenuItem[] {
+  const more: MenuItem[] = [];
+  if (opts.onEditTags) {
+    more.push({ icon: <Tag size={14} />, label: "编辑标签", onClick: opts.onEditTags });
+  }
+  if (opts.hasAutoTags && opts.onConfirmAutoTags) {
+    more.push({ icon: <span style={{ fontSize: 14 }}>🤖</span>, label: "确认自动标签", onClick: opts.onConfirmAutoTags });
+  }
+  if (opts.hasAutoTags && opts.onRemoveAutoTags) {
+    more.push({ icon: <span style={{ fontSize: 14 }}>🗑️</span>, label: "移除自动标签", onClick: opts.onRemoveAutoTags });
+  }
+  if (opts.onMoveToGroup) {
+    more.push({ icon: <FolderInput size={14} />, label: "移动到分组", onClick: opts.onMoveToGroup, separator: more.length > 0 });
+  }
+  more.push({ icon: <Pin size={14} />, label: opts.pinned ? "取消置顶" : "置顶", onClick: opts.onPin });
+  if (opts.onAddSnippet) {
+    more.push({ icon: <FileCode size={14} />, label: "添加到片段库", onClick: opts.onAddSnippet });
+  }
+  return more;
+}
+
+/** 编辑入口的标签文案（按子类型） */
+function editLabelFor(st?: string): string {
+  const map: Record<string, string> = {
+    link: "编辑链接",
+    color: "编辑颜色",
+    json: "编辑 JSON",
+    file_path: "编辑路径",
+    markdown: "编辑 Markdown",
+    number: "编辑数字",
+    secret: "编辑密钥",
+    html: "编辑 HTML",
+    csv: "编辑表格",
+  };
+  if (st && map[st]) return map[st];
+  if (st && isCodeLike(st)) return "编辑代码";
+  return "编辑内容";
 }

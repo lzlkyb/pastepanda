@@ -5,6 +5,7 @@ import { setItemTags, createTag } from "@/lib/api";
 import { TagBadge } from "@/components/TagBadge";
 import { X, Search } from "lucide-react";
 import styles from "./TagEditor.module.css";
+import { useDialogAnim } from "@/lib/dialogMotion";
 
 const PRESET_COLORS = ["#3B82F6", "#22C55E", "#F97316", "#A855F7", "#EF4444", "#EC4899", "#14B8A6", "#F59E0B", "#6366F1"];
 
@@ -23,6 +24,7 @@ export function TagEditor({ open, item, onClose }: TagEditorProps) {
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const anim = useDialogAnim();
 
   // 初始化已选标签
   useEffect(() => {
@@ -111,19 +113,13 @@ export function TagEditor({ open, item, onClose }: TagEditorProps) {
       {open && (
         <motion.div
           className={styles.overlay}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.15 }}
+          {...anim.backdrop}
           onClick={onClose}
           onKeyDown={handleKeyDown}
         >
           <motion.div
             className={styles.dialog}
-            initial={{ opacity: 0, scale: 0.95, y: 16 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 16 }}
-            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+            {...anim.panel}
             onClick={(e) => e.stopPropagation()}
           >
             {/* 头部 */}

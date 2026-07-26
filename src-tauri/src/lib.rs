@@ -16,6 +16,7 @@ fn fatal_startup_error(app: &tauri::AppHandle, title: &str, detail: impl std::fm
     std::process::exit(1);
 }
 
+mod auto_cleanup;
 mod clipboard_monitor;
 mod commands;
 pub mod content_classifier;
@@ -29,12 +30,53 @@ mod paste_engine;
 mod pinned_window;
 mod tray_manager;
 
+/// 首次启动时通过文件关联传入的待打开文件路径。
+/// setup 阶段前端尚未加载，无法直接 emit 事件，
+/// 先存入该状态，前端挂载后调用 take_pending_file_open 取走。
+pub struct PendingFileOpen(pub std::sync::Mutex<Option<Vec<String>>>);
+
+/// 全屏编辑器独立窗口的初始数据（通用外壳：markdown/json/html/text/csv/code）。
+/// 新建编辑器窗口时先存入该状态，窗口内前端挂载后调用 take_editor_init 取走，
+/// 规避"窗口尚未加载完成就 emit 事件导致丢失"的时序竞态。
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorInitData {
+    /// 来源剪贴板卡片 id（从卡片进入时有值，保存时回写该条记录）
+    pub source_id: Option<String>,
+    /// 初始文本内容（从卡片进入时为卡片 text）
+    pub content: Option<String>,
+    /// 文件路径（从文件关联进入时有值）
+    pub file_path: Option<String>,
+    /// 内容类型（markdown/json/html/text/csv/code/config/shell），前端据此查表选择语言模式/视图形态；
+    /// 缺省（None）时前端回退 markdown，兼容既有 .md 文件关联
+    pub content_type: Option<String>,
+    /// 语言提示（如 "Rust"、"YAML"，来自调用方对自动标签的派生），
+    /// code 类型据此动态加载 CodeMirror 语言模式；None 时编辑器内可手动选择
+    #[serde(default)]
+    pub language: Option<String>,
+}
+
+pub struct PendingEditor(pub std::sync::Mutex<Option<EditorInitData>>);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            // 文件关联：应用已运行时，系统双击 .md 文件会启动第二个实例，
+            // 文件路径作为命令行参数传入，提取后发送事件到前端打开全屏编辑器
+            let md_paths: Vec<String> = args
+                .iter()
+                .filter(|a| {
+                    let lower = a.to_lowercase();
+                    lower.ends_with(".md") || lower.ends_with(".markdown")
+                })
+                .cloned()
+                .collect();
+            if !md_paths.is_empty() {
+                let _ = app.emit("file-open-event", md_paths);
+            }
             // 第二个实例启动时，显示已有窗口
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
@@ -82,6 +124,25 @@ pub fn run() {
                 }
             }
             let handle = app.handle().clone();
+
+            // 文件关联（首次启动）：系统双击 .md 文件时，文件路径作为命令行参数传入。
+            // 此时前端尚未加载，先存入 PendingFileOpen 状态，前端挂载后主动取走。
+            let startup_md_paths: Vec<String> = std::env::args()
+                .filter(|a| {
+                    let lower = a.to_lowercase();
+                    lower.ends_with(".md") || lower.ends_with(".markdown")
+                })
+                .collect();
+            app.manage(PendingFileOpen(std::sync::Mutex::new(
+                if startup_md_paths.is_empty() {
+                    None
+                } else {
+                    Some(startup_md_paths)
+                },
+            )));
+
+            // 全屏 Markdown 编辑器独立窗口的待取初始数据（初始为空）
+            app.manage(PendingEditor(std::sync::Mutex::new(None)));
 
             // 初始化 SQLite 数据库
             let app_dir = handle.path().app_data_dir().expect("无法获取应用数据目录");
@@ -214,6 +275,11 @@ pub fn run() {
                 }
             });
 
+            // 自动清理调度器（后端常驻）：启动延迟首跑 + 每小时循环，
+            // 替代原前端 setInterval——关闭窗口驻留托盘时清理不再停摆，
+            // 且清理结果不占用前端撤销栈（策略性清理非用户误删）
+            auto_cleanup::start(handle.clone());
+
             // 初始化粘贴抑制
             let paste_suppress = Arc::new(clipboard_monitor::PasteSuppress::new());
             app.manage(paste_suppress.clone());
@@ -323,9 +389,16 @@ pub fn run() {
             commands::delete_history,
             commands::toggle_pin,
             commands::clear_history,
+            commands::count_expired_history,
+            commands::count_history_conditions,
+            commands::clear_history_conditions,
+            commands::preview_history_conditions,
             commands::get_config,
             commands::save_config,
             commands::get_stats,
+            commands::get_stats_detail,
+            commands::get_sidebar_counts,
+            commands::search_history,
             commands::paste_text,
             commands::paste_image,
             commands::copy_only,
@@ -345,10 +418,13 @@ pub fn run() {
             commands::reregister_hotkeys,
             commands::get_file_info,
             commands::read_text_file_preview,
+            commands::read_text_file_full,
             commands::open_file_with_system,
             commands::open_file_location,
             commands::set_startup,
             commands::get_startup,
+            commands::get_md_association_status,
+            commands::set_md_association,
             commands::toggle_monitor,
             commands::get_monitor_status,
             commands::get_lan_status,
@@ -389,6 +465,11 @@ pub fn run() {
             commands::confirm_auto_tags,
             commands::get_source_app_icon,
             commands::clear_source_icon_cache,
+            commands::take_pending_file_open,
+            commands::open_fullscreen_editor,
+            commands::take_editor_init,
+            commands::close_editor_window,
+            commands::insert_markdown_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

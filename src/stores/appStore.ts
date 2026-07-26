@@ -73,6 +73,9 @@ export interface AppConfig {
   stack_paste_hotkey: string; // 栈顶粘贴快捷键
   skip_sensitive: boolean; // 修复 U36：不记录匹配密钥/凭证模式的内容
   excluded_apps: string; // 修复 U36：应用排除名单（逗号分隔，命中来源应用则不记录）
+  md_save_to_history: boolean; // 全屏编辑器中编辑 .md 文件保存时，是否同时写入剪贴板历史
+  md_auto_save: boolean; // 全屏编辑器输入停顿后自动回写（卡片→数据库 / 文件→磁盘）
+  window_animation: boolean; // 弹框与全屏窗口打开/关闭动画（方案 B 玻璃浮升），关闭后即时显隐
 }
 
 // ===== Store 接口 =====
@@ -83,6 +86,15 @@ interface AppState {
   config: AppConfig;
   groups: Group[];
   tags: Tag[];
+
+  /** history 变更版本号：任何修改 history 的 action 都 +1。
+   *  作为 getFilteredItems 缓存键的一部分，替代脆弱的 history.length——
+   *  长度不变但内容变化（或忘记清 _filterCache）时，length 键会命中脏缓存，版本号不会 */
+  historyVersion: number;
+  /** history 整体替换信号：仅 setHistory 递增。
+   *  useLoadMore 监听它重置 hasMore——导入/切换工作区等整体换列表场景下，
+   *  若此前已滚动到底（hasMore=false），不重置就永远无法再加载更多 */
+  historyResetSeq: number;
 
   // UI 状态
   searchKeyword: string;
@@ -99,6 +111,12 @@ interface AppState {
   paused: boolean;
   undoStack: HistoryItem[][]; // 撤销栈，每项是一组被删除的 items
   searchHistory: string[]; // 搜索历史记录
+
+  // 搜索模式（关键词激活时，列表数据源切换为后端全量搜索结果，
+  // 不再 filter 分页加载的内存窗口，从而能搜到未加载的记录）
+  searchResults: HistoryItem[] | null; // null = 非搜索模式 / 尚未加载
+  searchResultsKey: string; // 产生 searchResults 的查询签名（buildSearchKey）
+  searchLoading: boolean; // 搜索查询进行中
 
   // 剪贴板栈
   stackMode: boolean; // 栈模式是否激活
@@ -121,6 +139,8 @@ interface AppState {
   clearAll: () => void;
 
   setSearchKeyword: (kw: string) => void;
+  setSearchResults: (results: HistoryItem[] | null, key: string) => void;
+  setSearchLoading: (loading: boolean) => void;
   setFilterType: (ft: FilterType) => void;
   setTimeFilter: (tf: TimeFilter) => void;
   setSourceFilter: (sf: SourceFilter) => void;
@@ -181,9 +201,33 @@ export const DEFAULT_CONFIG: AppConfig = {
   timeline_enabled: false,
   stack_toggle_hotkey: "ctrl+alt+k",
   stack_paste_hotkey: "ctrl+alt+p",
-  skip_sensitive: true,
+  skip_sensitive: false,
   excluded_apps: "",
+  md_save_to_history: true,
+  md_auto_save: true,
+  window_animation: true,
 };
+
+// ===== 搜索模式辅助 =====
+
+/**
+ * 计算搜索查询签名：当前关键词 + 全部筛选条件 + 工作区 + 数据版本号。
+ * 后端搜索结果（searchResults）只有在签名与当前一致时才视为新鲜；
+ * 任一筛选变化或历史数据变更（historyVersion 自增）都会使缓存结果失效。
+ * 供 getFilteredItems（判断新鲜）与 App.tsx 搜索编排 effect（决定是否重新查询）共用。
+ */
+export function buildSearchKey(s: {
+  searchKeyword: string;
+  filterType: FilterType;
+  timeFilter: TimeFilter;
+  sourceFilter: SourceFilter;
+  groupFilter: GroupFilter;
+  selectedTagIds: string[];
+  config: AppConfig;
+  historyVersion: number;
+}): string {
+  return `${s.searchKeyword}|${s.filterType}|${s.timeFilter}|${s.sourceFilter}|${s.groupFilter}|${s.selectedTagIds.join(",")}|${s.config.current_workspace}|v${s.historyVersion}`;
+}
 
 // ===== Store =====
 
@@ -193,6 +237,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   config: DEFAULT_CONFIG,
   groups: [],
   tags: [],
+  historyVersion: 0,
+  historyResetSeq: 0,
 
   // UI 状态
   searchKeyword: "",
@@ -221,15 +267,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   })(),
+  searchResults: null,
+  searchResultsKey: "",
+  searchLoading: false,
 
   // 数据操作
-  setHistory: (items) => set({ history: items, _filterCache: null }),
+  setHistory: (items) =>
+    set((s) => ({
+      history: items,
+      _filterCache: null,
+      historyVersion: s.historyVersion + 1,
+      // 整体替换列表（初始加载/导入/切换工作区）→ 重新允许分页加载
+      historyResetSeq: s.historyResetSeq + 1,
+    })),
   appendHistory: (items) =>
     set((s) => {
       // 去重：过滤掉已存在于 history 中的 id，防止并发分页请求导致重复行
       const existingIds = new Set(s.history.map((h) => h.id));
       const deduped = items.filter((it) => !existingIds.has(it.id));
-      return { history: [...s.history, ...deduped] };
+      return { history: [...s.history, ...deduped], historyVersion: s.historyVersion + 1 };
     }),
   prependItem: (item) =>
     set((s) => {
@@ -247,7 +303,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           pinyin_initials: item.pinyin_initials || oldItem.pinyin_initials,
         };
         // 修复 Low（Zustand 反模式）：_filterCache 通过返回 partial 清除，而非原地突变 s
-        return { history: [updated, ...s.history.slice(0, dupIdx), ...s.history.slice(dupIdx + 1)], _filterCache: null };
+        return { history: [updated, ...s.history.slice(0, dupIdx), ...s.history.slice(dupIdx + 1)], _filterCache: null, historyVersion: s.historyVersion + 1 };
       }
       // 限制前端缓存最大 500 条，防止内存泄漏（淘汰时跳过 pinned 条目，避免收藏项消失）
       if (s.history.length >= 500) {
@@ -255,9 +311,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         const trimmed = lastUnpinnedIdx >= 0
           ? [...s.history.slice(0, lastUnpinnedIdx), ...s.history.slice(lastUnpinnedIdx + 1)]
           : s.history.slice(0, 499); // 全是 pinned 的极端情况才强制截断
-        return { history: [item, ...trimmed], _filterCache: null };
+        return { history: [item, ...trimmed], _filterCache: null, historyVersion: s.historyVersion + 1 };
       }
-      return { history: [item, ...s.history], _filterCache: null };
+      return { history: [item, ...s.history], _filterCache: null, historyVersion: s.historyVersion + 1 };
     }),
   // 智能合并：将已有记录移到顶部并更新时间
   moveToTop: (id: string, newTime: string) =>
@@ -267,7 +323,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const item = { ...s.history[idx], time: newTime };
       const newHistory = [item, ...s.history.slice(0, idx), ...s.history.slice(idx + 1)];
       // 修复 Low（Zustand 反模式）：通过返回 partial 清缓存（重排不改变 length，缓存键不会自动失效）
-      return { history: newHistory, _filterCache: null };
+      return { history: newHistory, _filterCache: null, historyVersion: s.historyVersion + 1 };
     }),
   removeItems: (ids) =>
     set((s) => {
@@ -296,6 +352,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         focusId: nextFocus,
         // 仅在确实删除了条目时才记录撤销批次，避免空批次消耗撤销额度
         undoStack: deleted.length > 0 ? [deleted, ...s.undoStack].slice(0, 10) : s.undoStack,
+        _filterCache: null,
+        historyVersion: s.historyVersion + 1,
       };
     }),
   undoDelete: () => {
@@ -305,6 +363,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       history: [...restored, ...s.history],
       undoStack: rest,
+      _filterCache: null,
+      historyVersion: s.historyVersion + 1,
     });
     return restored;
   },
@@ -315,6 +375,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         h.id === id ? { ...h, pinned: !h.pinned } : h
       ),
       _filterCache: null,
+      historyVersion: s.historyVersion + 1,
     })),
   // 设置权威置顶状态（由后端 toggle_pin 返回值驱动，避免与本地状态漂移时被 togglePin 的盲目取反打反）
   setPinned: (id, pinned) =>
@@ -323,6 +384,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         h.id === id ? { ...h, pinned } : h
       ),
       _filterCache: null,
+      historyVersion: s.historyVersion + 1,
     })),
   // 拖拽排序：将 fromId 移动到 toId 之前（在原始 history 中操作，不改变置顶排序）
   reorderItems: (fromId: string, toId: string) =>
@@ -333,14 +395,31 @@ export const useAppStore = create<AppState>((set, get) => ({
       const newHistory = [...s.history];
       const [moved] = newHistory.splice(fromIdx, 1);
       newHistory.splice(toIdx, 0, moved);
-      return { history: newHistory, _filterCache: null };
+      return { history: newHistory, _filterCache: null, historyVersion: s.historyVersion + 1 };
     }),
-  clearAll: () => set({ history: [], selectedIds: new Set(), focusId: null }),
+  clearAll: () =>
+    set((s) => ({
+      history: [],
+      selectedIds: new Set(),
+      focusId: null,
+      _filterCache: null,
+      historyVersion: s.historyVersion + 1,
+    })),
 
   // 搜索/筛选（防抖已在 TopBar 中处理，此处直接同步更新）
   setSearchKeyword: (kw) => {
-    set({ searchKeyword: kw, selectedIds: new Set(), focusId: null, lastClickedId: null });
+    set({
+      searchKeyword: kw,
+      selectedIds: new Set(),
+      focusId: null,
+      lastClickedId: null,
+      // 清空关键词 → 退出搜索模式，丢弃后端搜索结果（回到内存窗口过滤）
+      ...(kw.trim() ? {} : { searchResults: null, searchResultsKey: "", searchLoading: false }),
+    });
   },
+  setSearchResults: (results, key) =>
+    set({ searchResults: results, searchResultsKey: key, searchLoading: false }),
+  setSearchLoading: (loading) => set({ searchLoading: loading }),
   setFilterType: (ft) => set({ filterType: ft, selectedIds: new Set(), focusId: null, lastClickedId: null }),
   setTimeFilter: (tf) => set({ timeFilter: tf, selectedIds: new Set(), focusId: null, lastClickedId: null }),
   setSourceFilter: (sf) => set({ sourceFilter: sf, selectedIds: new Set(), focusId: null, lastClickedId: null }),
@@ -473,9 +552,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   // 计算属性（带简单缓存避免频繁计算）
   _filterCache: null as { key: string; result: HistoryItem[] } | null,
   getFilteredItems: () => {
-    const { history, searchKeyword, filterType, timeFilter, sourceFilter, groupFilter, selectedTagIds, config } = get();
-    // 生成缓存键
-    const cacheKey = `${history.length}|${searchKeyword}|${filterType}|${timeFilter}|${sourceFilter}|${groupFilter}|${selectedTagIds.join(",")}|${config.current_workspace}`;
+    // 搜索模式：关键词激活时优先返回后端全量搜索结果（已覆盖未加载的记录），
+    // 不再 filter 分页加载的内存窗口。结果尚未写回（首次搜索进行中）时，
+    // 先落在下方的内存窗口过滤作为过渡占位（App.tsx effect 写回后即被完整结果替换）；
+    // 这也让无后端的纯 store 单测能继续验证搜索过滤逻辑。
+    if (get().searchKeyword.trim()) {
+      const sr = get().searchResults;
+      if (sr !== null) return sr;
+    }
+
+    const { history, historyVersion, searchKeyword, filterType, timeFilter, sourceFilter, groupFilter, selectedTagIds, config } = get();
+    // 生成缓存键（用 historyVersion 而非 history.length：长度不变的变更如置顶也能正确失效）
+    const cacheKey = `${historyVersion}|${searchKeyword}|${filterType}|${timeFilter}|${sourceFilter}|${groupFilter}|${selectedTagIds.join(",")}|${config.current_workspace}`;
     const s = get();
     if (s._filterCache && s._filterCache.key === cacheKey) {
       return s._filterCache.result;

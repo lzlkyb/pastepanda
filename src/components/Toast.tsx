@@ -57,6 +57,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     loading: CheckCircle2, // 复用，通过 CSS spinner 区分
   };
 
+  // 图标色块容器（每种类型独立配色）
+  const ICON_BOX: Record<ToastType, string> = {
+    success: styles.successBox,
+    error: styles.errorBox,
+    warning: styles.warningBox,
+    info: styles.infoBox,
+    loading: styles.loadingBox,
+  };
+
   return (
     <ToastContext.Provider value={ctxValue}>
       {children}
@@ -75,15 +84,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 className={`${styles.toastItem} ${styles[t.type]}`}
                 style={{
                   pointerEvents: "auto",
-                  boxShadow: "var(--shadow-md)",
                   "--toast-duration": `${t.duration}ms`,
                 } as React.CSSProperties}
               >
-                {t.type === "loading" ? (
-                  <span className={styles.toastSpinner} style={{ display: "inline-block", width: 14, height: 14, border: "2px solid rgba(59,130,246,0.3)", borderTopColor: "#3B82F6", borderRadius: "50%", animation: "fab-icon-spin 0.6s linear infinite", marginRight: 8, flexShrink: 0 }} />
-                ) : (
-                  <Icon size={16} className={styles.toastIcon} />
-                )}
+                <span className={`${styles.toastIconBox} ${ICON_BOX[t.type]}`}>
+                  {t.type === "loading" ? (
+                    <span className={styles.toastSpinner} />
+                  ) : (
+                    <Icon size={14} className={styles.toastIcon} />
+                  )}
+                </span>
                 <span className={styles.toastMsg}>{t.message}</span>
                 {t.onRetry && t.actionLabel ? (
                   <button onClick={(e) => { e.stopPropagation(); t.onRetry?.(); dismiss(t.id); }} className={styles.toastAction}>

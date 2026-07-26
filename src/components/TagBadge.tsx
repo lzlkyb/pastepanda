@@ -5,14 +5,11 @@ import styles from "./TagBadge.module.css";
 
 /**
  * 标签颜色唯一来源 — 全应用所有标签渲染点都必须经过这里。
- * 改标签配色只需改这一个函数。
+ * 统一注入 --tag-c 变量，具体配色（淡底/文字/边框/hover）在 TagBadge.module.css
+ * 里用 color-mix 派生，保证主题切换与交互态只需改 CSS。
  */
 export function getTagStyle(tag: Tag): React.CSSProperties {
-  return {
-    background: tag.color + "20",
-    color: tag.color,
-    borderColor: tag.color + "40",
-  };
+  return { "--tag-c": tag.color } as React.CSSProperties;
 }
 
 export type TagBadgeVariant = "card" | "chip" | "picker";

@@ -41,7 +41,24 @@ export default defineConfig(async () => ({
       input: {
         main: resolve(projectRoot, "index.html"),
         popup: resolve(projectRoot, "popup.html"),
+        editor: resolve(projectRoot, "editor.html"),
       },
     },
+  },
+
+  // 预构建编辑器依赖：@codemirror/* 是互相引用的小包集合，
+  // 不提前 include 会在 dev 首次打开编辑器窗口时逐个按需预构建、反复刷新，
+  // 造成明显的打开卡顿。language-data 虽为懒加载，也一并预构建以避免二次卡顿。
+  optimizeDeps: {
+    include: [
+      "@codemirror/commands",
+      "@codemirror/lang-markdown",
+      "@codemirror/language",
+      "@codemirror/language-data",
+      "@codemirror/search",
+      "@codemirror/state",
+      "@codemirror/theme-one-dark",
+      "@codemirror/view",
+    ],
   },
 }));

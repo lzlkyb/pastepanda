@@ -1,13 +1,15 @@
-import React, { useState, useRef, useLayoutEffect } from "react";
-import { useAppStore, AppConfig, HistoryItem } from "@/stores/appStore";
+import React, { useState, useRef, useLayoutEffect, useCallback, useEffect, useMemo } from "react";
+import { AppConfig, useAppStore } from "@/stores/appStore";
 import { HelpTooltip } from "@/components/HelpTooltip";
 import { THEMES, applyTheme, ThemeKey } from "@/lib/theme";
 import { useToast } from "@/components/Toast";
 import { logger } from "@/lib/logger";
-import { Stats } from "@/lib/api";
+import { StatsDetail } from "@/lib/api";
+import { resolveSource, fetchRealSourceIcon } from "@/lib/source-mappings";
 import { ToggleRow } from "./ToggleRow";
 import { HotkeyRecorder } from "./HotkeyRecorder";
 import { LanSyncPanel } from "./LanSyncPanel";
+import { DeepCleanDialog } from "@/components/DeepCleanDialog";
 import styles from "../Settings.module.css";
 
 const THEME_PREVIEWS: Record<string, { bg: string; accent: string; text: string; barBg: string; bodyBg: string; lineBg: string }> = {
@@ -32,8 +34,9 @@ interface GeneralTabProps {
   config: AppConfig;
   updateConfig: (partial: Record<string, unknown>) => void;
   updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
-  stats: Stats | null;
-  history: HistoryItem[];
+  stats: StatsDetail | null;
+  /** 过期记录数（后端按清理条件精确统计，含"未置顶+超期"） */
+  expiredCount: number;
   tabStyle: string;
   handleSwitchTabStyle: (style: "segmented" | "circle") => void;
   handleExport: () => Promise<void>;
@@ -43,21 +46,122 @@ interface GeneralTabProps {
   importing?: boolean;
 }
 
+/** 来源榜图标：复用侧边栏真实应用图标 / emoji 双模式逻辑（source_icon_mode + realIconCache） */
+function SourceRowIcon({ source, sourceIcon, fallbackEmoji, color }: { source: string; sourceIcon?: string | null; fallbackEmoji: string; color?: string }) {
+  const sourceIconMode = useAppStore((s) => s.config.source_icon_mode);
+  const cacheKey = sourceIcon || source;
+  const realIconUrl = useAppStore((s) => s.realIconCache[cacheKey]);
+
+  useEffect(() => {
+    if (sourceIconMode === "app" && source) {
+      fetchRealSourceIcon(source, sourceIcon);
+    }
+  }, [source, sourceIcon, sourceIconMode]);
+
+  return (
+    <span className={styles.bSrcIco} style={color ? { background: `${color}26` } : undefined}>
+      {sourceIconMode === "app" && realIconUrl ? (
+        <img src={realIconUrl} alt="" className={styles.bSrcIcoImg} />
+      ) : (
+        fallbackEmoji
+      )}
+    </span>
+  );
+}
+
 export function GeneralTab({
-  config, updateConfig, updateAndSave, stats, history,
+  config, updateConfig, updateAndSave, stats, expiredCount,
   tabStyle, handleSwitchTabStyle,
   handleExport, handleImport, handleCleanup,
   exporting, importing,
 }: GeneralTabProps) {
   const { toast } = useToast();
   const cleanupDays = config.auto_cleanup_days;
-  const expiredCount = cleanupDays > 0
-    ? history.filter((h) => {
-        const t = h.time.replace(" ", "T");
-        const recordTime = new Date(t).getTime();
-        return Date.now() - recordTime > cleanupDays * 86400000;
-      }).length
-    : 0;
+
+  // 深度清理弹窗开关（数据管理 → 深度清理）
+  const [showDeepClean, setShowDeepClean] = useState(false);
+
+  // ── 数据仪表盘：来源 Top 5 折叠状态 + 更新时间 + 派生指标 ──
+  const [srcOpen, setSrcOpen] = useState(false);
+  const [loadedAt, setLoadedAt] = useState("");
+  useEffect(() => {
+    if (stats) {
+      const d = new Date();
+      setLoadedAt(`${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`);
+    }
+  }, [stats]);
+
+  /** 仪表盘派生值：今昨涨跌、7 日均、时段峰值、圆环弧长、来源摘要等 */
+  const dash = useMemo(() => {
+    if (!stats) return null;
+    const dailyMax = Math.max(1, ...stats.daily.map((d) => d.count));
+    const weekTotal = stats.daily.reduce((s, d) => s + d.count, 0);
+    const weekAvg = Math.round(weekTotal / 7);
+    const delta =
+      stats.yesterday > 0
+        ? {
+            text: `${stats.today >= stats.yesterday ? "▲" : "▼"} ${Math.abs(((stats.today - stats.yesterday) / stats.yesterday) * 100).toFixed(1)}%`,
+            up: stats.today >= stats.yesterday,
+          }
+        : stats.today > 0
+          ? { text: "新增", up: true }
+          : null;
+    const hourMax = Math.max(...stats.hours);
+    const peakHour = hourMax > 0 ? stats.hours.indexOf(hourMax) : -1;
+    const typeTotal = stats.text_count + stats.image_count + stats.file_count;
+    const C = 2 * Math.PI * 30; // 圆环周长（r=30）
+    const arc = (n: number) => (typeTotal > 0 ? (n / typeTotal) * C : 0);
+    const textArc = arc(stats.text_count);
+    const imageArc = arc(stats.image_count);
+    const fileArc = arc(stats.file_count);
+    const textPct = typeTotal > 0 ? Math.round((stats.text_count / typeTotal) * 100) : 0;
+    const top = stats.sources[0];
+    const srcSummary =
+      top && stats.total > 0
+        ? `${resolveSource(top.source).displayName} ${Math.round((top.count / stats.total) * 100)}% 居首`
+        : "";
+    const srcMax = top ? Math.max(1, top.count) : 1;
+    return { dailyMax, weekTotal, weekAvg, delta, hourMax, peakHour, C, textArc, imageArc, fileArc, textPct, srcSummary, srcMax };
+  }, [stats]);
+
+  // ── .md 文件关联：状态以系统注册表为准（实时查询，不存 AppConfig，避免设置与注册表脱节） ──
+  type MdAssocStatus = "unregistered" | "registered" | "default";
+  const [mdAssoc, setMdAssoc] = useState<MdAssocStatus | "loading">("loading");
+  const [mdAssocBusy, setMdAssocBusy] = useState(false);
+
+  const refreshMdAssoc = useCallback(async () => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const s = await invoke<string>("get_md_association_status");
+      if (s === "default" || s === "registered" || s === "unregistered") setMdAssoc(s);
+    } catch {
+      /* 查询失败保持当前状态 */
+    }
+  }, []);
+
+  useEffect(() => { void refreshMdAssoc(); }, [refreshMdAssoc]);
+  // 用户去系统设置确认后返回，窗口重新获焦时自动刷新状态
+  useEffect(() => {
+    const onFocus = () => void refreshMdAssoc();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [refreshMdAssoc]);
+
+  const handleMdAssocToggle = async (enable: boolean) => {
+    if (mdAssocBusy) return;
+    setMdAssocBusy(true);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("set_md_association", { enable });
+      toast(enable ? "已注册 .md 打开方式，请在设置页中点击 .md 一行并选择 PastePanda" : "已取消 .md 文件关联", "success");
+      await refreshMdAssoc();
+    } catch (e) {
+      logger.warn("设置 .md 关联失败", e);
+      toast(".md 文件关联设置失败", "error");
+    } finally {
+      setMdAssocBusy(false);
+    }
+  };
 
   // U52: 设置项搜索过滤
   const [settingsFilter, setSettingsFilter] = useState("");
@@ -120,39 +224,149 @@ export function GeneralTab({
       <div className={styles.statsPanel}>
         <div className={styles.statsPanelHeader}>
           📊 剪贴板数据概览
+          {loadedAt && <span className={styles.statsHeaderRight}>更新于 {loadedAt}</span>}
         </div>
-        {stats ? (
+        {stats && dash ? (
           <>
-            <div className={styles.statsPanelGrid}>
-              <div className={styles.statCell}>
-                <div className={`${styles.statNum}`}>{stats.total}</div>
-                <div className={styles.statLabel}>总记录</div>
+            {/* 核心指标 4 格 */}
+            <div className={styles.bGrid4}>
+              <div className={styles.bCell}>
+                <div className={styles.bCellNum}>{stats.total.toLocaleString()}</div>
+                <div className={styles.bCellLabel}>总记录</div>
               </div>
-              <div className={styles.statCell}>
-                <div className={`${styles.statNum} ${styles.statGreen}`}>{stats.pinned}</div>
-                <div className={styles.statLabel}>⭐ 收藏</div>
+              <div className={styles.bCell}>
+                <div className={`${styles.bCellNum} ${styles.cGreen}`}>{stats.pinned.toLocaleString()}</div>
+                <div className={styles.bCellLabel}>⭐ 收藏</div>
               </div>
-              <div className={styles.statCell}>
-                <div className={`${styles.statNum} ${styles.statOrange}`}>{stats.today}</div>
-                <div className={styles.statLabel}>今日新增</div>
+              <div className={styles.bCell}>
+                <div className={`${styles.bCellNum} ${styles.cAccent}`}>{stats.today.toLocaleString()}</div>
+                <div className={styles.bCellLabel}>今日新增</div>
+                <div className={styles.bCellDelta}>
+                  {dash.delta && (
+                    <span className={`${styles.delta} ${dash.delta.up ? styles.deltaUp : styles.deltaDown}`}>{dash.delta.text}</span>
+                  )}
+                </div>
               </div>
-              <div className={styles.statCell}>
-                <div className={`${styles.statNum} ${styles.statAccent}`}>{stats.text_count}</div>
-                <div className={styles.statLabel}>📝 文本</div>
-              </div>
-              <div className={styles.statCell}>
-                <div className={`${styles.statNum} ${styles.statAccent}`}>{stats.image_count}</div>
-                <div className={styles.statLabel}>🖼 图片</div>
-              </div>
-              <div className={styles.statCell}>
-                <div className={`${styles.statNum} ${styles.statAccent}`}>{stats.file_count}</div>
-                <div className={styles.statLabel}>📁 文件</div>
+              <div className={styles.bCell}>
+                <div className={`${styles.bCellNum} ${styles.cOrange}`}>{stats.yesterday.toLocaleString()}</div>
+                <div className={styles.bCellLabel}>昨日</div>
+                <div className={styles.bCellDelta}>
+                  <span className={styles.bCellAvg}>7日均 {dash.weekAvg}</span>
+                </div>
               </div>
             </div>
+
+            {/* 近 7 天趋势 */}
+            <div className={styles.subTitle}>
+              近 7 天趋势
+              <span className={styles.subHint}>共 {dash.weekTotal.toLocaleString()} 条 · 悬停查看</span>
+            </div>
+            <div className={styles.bChartWrap}>
+              <div className={styles.bChart}>
+                <div className={styles.bGridLine} style={{ top: "22%" }} />
+                <div className={styles.bGridLine} style={{ top: "55%" }} />
+                <div className={styles.bGridLine} style={{ top: "88%" }} />
+                <div className={styles.bBars}>
+                  {stats.daily.map((d, i) => {
+                    const isToday = i === stats.daily.length - 1;
+                    const [, mm, dd] = d.date.split("-");
+                    return (
+                      <div key={d.date} className={`${styles.bDay} ${isToday ? styles.bDayToday : ""}`}>
+                        <span className={styles.bDayVal}>{d.count}</span>
+                        <i className={styles.bDayBar} style={{ height: `${Math.max(4, Math.round((d.count / dash.dailyMax) * 100))}%` }} />
+                        <span className={styles.bDayLbl}>{isToday ? "今天" : `${Number(mm)}/${Number(dd)}`}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* 时段分布 + 类型占比 */}
+            <div className={styles.bTwoCol}>
+              <div className={styles.bCard}>
+                <div className={styles.bCardTitle}>
+                  时段分布
+                  {dash.peakHour >= 0 && <span className={styles.bCardHint}>{dash.peakHour} 点峰值</span>}
+                </div>
+                <div className={styles.bHourBars}>
+                  {stats.hours.map((v, i) => (
+                    <i
+                      key={i}
+                      title={`${i} 时 · ${v} 条`}
+                      className={dash.hourMax > 0 && v === dash.hourMax ? styles.bHourPeak : undefined}
+                      style={{ height: `${Math.max(4, dash.hourMax > 0 ? Math.round((v / dash.hourMax) * 100) : 4)}%` }}
+                    />
+                  ))}
+                </div>
+                <div className={styles.bHourLbl}>
+                  <span>0</span><span>6</span><span>12</span><span>18</span><span>24</span>
+                </div>
+              </div>
+              <div className={styles.bCard}>
+                <div className={styles.bCardTitle}>类型占比</div>
+                <div className={styles.bDonutRow}>
+                  <svg width="62" height="62" viewBox="0 0 76 76">
+                    <g transform="rotate(-90 38 38)">
+                      <circle cx="38" cy="38" r="30" fill="none" stroke="var(--input-bg)" strokeWidth="10" />
+                      <circle cx="38" cy="38" r="30" fill="none" stroke="var(--accent)" strokeWidth="10"
+                        strokeDasharray={`${dash.textArc} ${dash.C - dash.textArc}`} strokeDashoffset="0" />
+                      <circle cx="38" cy="38" r="30" fill="none" stroke="var(--teal, #2DD4BF)" strokeWidth="10"
+                        strokeDasharray={`${dash.imageArc} ${dash.C - dash.imageArc}`} strokeDashoffset={-dash.textArc} />
+                      <circle cx="38" cy="38" r="30" fill="none" stroke="var(--orange)" strokeWidth="10"
+                        strokeDasharray={`${dash.fileArc} ${dash.C - dash.fileArc}`} strokeDashoffset={-(dash.textArc + dash.imageArc)} />
+                    </g>
+                    <text x="38" y="42" textAnchor="middle" fontSize="12" fontWeight="700" fill="var(--text-primary)">{dash.textPct}%</text>
+                  </svg>
+                  <div className={styles.bDonutLegend}>
+                    <div className={styles.bLegItem}><i className={styles.bLegDot} style={{ background: "var(--accent)" }} />文本<b>{stats.text_count.toLocaleString()}</b></div>
+                    <div className={styles.bLegItem}><i className={styles.bLegDot} style={{ background: "var(--teal, #2DD4BF)" }} />图片<b>{stats.image_count.toLocaleString()}</b></div>
+                    <div className={styles.bLegItem}><i className={styles.bLegDot} style={{ background: "var(--orange)" }} />文件<b>{stats.file_count.toLocaleString()}</b></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 来源 Top 5（默认折叠） */}
+            {stats.sources.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  className={`${styles.srcHead} ${srcOpen ? styles.srcHeadOpen : ""}`}
+                  onClick={() => setSrcOpen((v) => !v)}
+                >
+                  <span className={styles.srcChev}>
+                    <svg width="10" height="10" viewBox="0 0 10 10">
+                      <path d="M3 1.5 L7 5 L3 8.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </span>
+                  <span className={styles.srcTitle}>来源 Top 5</span>
+                  <span className={styles.srcHint}>按复制次数</span>
+                  {dash.srcSummary && <span className={styles.srcSummary}>{dash.srcSummary}</span>}
+                </button>
+                <div className={`${styles.srcBody} ${srcOpen ? styles.srcBodyOpen : ""}`}>
+                  {stats.sources.map((s, i) => {
+                    const meta = resolveSource(s.source);
+                    return (
+                      <div className={styles.bSrcRow} key={s.source}>
+                        <span className={`${styles.bSrcRank} ${i < 3 ? styles.bSrcRankTop : ""}`}>{i + 1}</span>
+                        <SourceRowIcon source={s.source} sourceIcon={s.source_icon} fallbackEmoji={meta.icon} color={meta.color} />
+                        <span className={styles.bSrcName}>{meta.displayName || s.source}</span>
+                        <span className={styles.bSrcTrack}>
+                          <span className={styles.bSrcFill} style={{ width: `${Math.max(4, Math.round((s.count / dash.srcMax) * 100))}%` }} />
+                        </span>
+                        <span className={styles.bSrcCnt}>{s.count.toLocaleString()}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
             <div className={styles.statsPanelFooter}>
               <span>💾 {stats.db_size_kb.toFixed(1)} KB</span>
-              {stats.earliest_time && <span>📅 最早: {stats.earliest_time.split(" ")[0]}</span>}
-              <span>📦 {config.current_workspace || "默认"} 空间</span>
+              {stats.earliest_time && <span>📅 最早 {stats.earliest_time.split(" ")[0]}</span>}
+              <span>📦 {config.current_workspace || "默认"}空间</span>
             </div>
           </>
         ) : (
@@ -237,17 +451,17 @@ export function GeneralTab({
           <div className={`${styles.sRowLabel}`}>
             自动清理
             <HelpTooltip
-              tooltip="建议开启，避免数据库无限膨胀影响性能"
+              tooltip="启动后每小时自动清理超过指定天数、未置顶的记录"
               detailTitle="自动清理"
               detail={<>
-                <p>定期删除超过指定天数的旧记录，避免数据库过大。</p>
+                <p>应用启动后每小时检查一次，自动删除超过指定天数的旧记录。</p>
                 <p>📌 <b>推荐 30 天</b>：平衡存储空间和历史追溯</p>
+                <p>📌 置顶记录永不清理；手动「清理过期记录」同样受此天数约束</p>
                 <p>⚠️ 设为「关」则不自动清理，需手动管理</p>
-                <p>💡 清理后可 Ctrl+Z 撤销</p>
               </>}
             />
           </div>
-          <div className={`${styles.sRowDesc}`}>手动清理时，删除超过天数的记录</div>
+          <div className={`${styles.sRowDesc}`}>清理超过该天数的记录（置顶除外），启动后每小时自动执行</div>
         </div>
         <div className={styles.sCleanup}>
           {CLEANUP_OPTIONS.map((opt, idx) => (
@@ -403,6 +617,16 @@ export function GeneralTab({
           <p>💡 适合记录较多时使用，帮助快速浏览</p>
         </>}
         onChange={(v) => updateAndSave({ timeline_enabled: v })} />
+      <ToggleRow icon="✨" gradient="linear-gradient(135deg, #0EA5E9, #8B5CF6)" label="窗口动画" desc="弹框与全屏窗口打开/关闭时的过渡动画" value={config.window_animation}
+        tooltip="玻璃浮升效果；关闭后弹框与全屏编辑器即时显隐"
+        detailTitle="窗口动画"
+        detail={<>
+          <p>控制弹框与全屏编辑器打开/关闭时的过渡动画（玻璃浮升效果）。</p>
+          <p>📌 <b>开启</b>：弹框浮升进入、背景模糊渐显，关闭时平滑退场</p>
+          <p>📌 <b>关闭</b>：即时显示/隐藏，无任何过渡</p>
+          <p>💡 默认开启；追求极速响应可关闭</p>
+        </>}
+        onChange={(v) => updateAndSave({ window_animation: v })} />
       <ToggleRow icon="🔁" gradient="linear-gradient(135deg, #06B6D4, #0078D4)" label="依次粘贴循环" desc="到达末尾后从头开始" value={config.sequential_loop} onChange={(v) => updateAndSave({ sequential_loop: v })}
         tooltip="适合重复粘贴同一组内容时使用"
       />
@@ -435,6 +659,64 @@ export function GeneralTab({
           await updateAndSave({ auto_startup: v });
           try { const { invoke } = await import("@tauri-apps/api/core"); await invoke("set_startup", { enable: v }); } catch { toast("开机自启设置失败", "error"); }
         }} />
+      <ToggleRow icon="📝" gradient="linear-gradient(135deg, #6366F1, #8B5CF6)" label="编辑器保存写入历史" desc="全屏编辑器中保存 .md 文件时，同时写入剪贴板历史" value={config.md_save_to_history} onChange={(v) => updateAndSave({ md_save_to_history: v })}
+        tooltip="开启后，在全屏 Markdown 编辑器中编辑并保存 .md 文件时，内容会同时作为一条剪贴板记录保存"
+        detailTitle="编辑器保存写入历史"
+        detail={<>
+          <p>在全屏 Markdown 编辑器中编辑 .md 文件并保存时，是否同时将内容写入剪贴板历史。</p>
+          <p>📌 <b>开启</b>：保存文件后，内容也会出现在剪贴板历史中，方便后续粘贴</p>
+          <p>📌 <b>关闭</b>：仅保存文件，不写入历史</p>
+          <p>💡 默认开启，适合编辑后需要频繁粘贴的场景</p>
+        </>}
+      />
+      <ToggleRow icon="💾" gradient="linear-gradient(135deg, #10B981, #059669)" label="编辑器自动保存" desc="全屏编辑器中停止输入后自动回写内容" value={config.md_auto_save} onChange={(v) => updateAndSave({ md_auto_save: v })}
+        tooltip="开启后，在全屏 Markdown 编辑器中输入停顿约 1 秒后，内容自动保存（卡片回写数据库 / 文件写回磁盘），无需手动按 Ctrl+S"
+        detailTitle="编辑器自动保存"
+        detail={<>
+          <p>在全屏 Markdown 编辑器中编辑时，停止输入约 1 秒后自动保存内容。</p>
+          <p>📌 <b>来自卡片</b>：自动回写到对应的剪贴板记录</p>
+          <p>📌 <b>来自文件</b>：自动写回磁盘（不会重复写入剪贴板历史）</p>
+          <p>📌 <b>新建未保存的文档</b>：没有保存目标，不会自动保存，需手动另存为</p>
+          <p>💡 默认开启，防止意外丢失编辑内容</p>
+        </>}
+      />
+      {/* .md 文件关联：状态实时取自注册表，三态显示 */}
+      <div className={styles.sRow}>
+        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #0EA5E9, #0284C7)" }}>📎</span>
+        <div className={`${styles.sRowBody}`}>
+          <div className={`${styles.sRowLabel}`}>
+            关联 .md 文件
+            <HelpTooltip
+              tooltip="注册 .md 打开方式并引导设为默认，双击 .md 直接用全屏编辑器打开"
+              detailTitle="关联 .md 文件"
+              detail={<>
+                <p>将 PastePanda 注册为 .md 文件的打开方式，并引导你在系统设置中确认为默认程序。</p>
+                <p>📌 <b>生效后</b>：双击任意 .md 文件，直接用 PastePanda 全屏编辑器打开</p>
+                <p>📌 开启后会打开系统「默认应用」设置页并定位到 PastePanda，点击 .md 一行选择 PastePanda 即可</p>
+                <p>⚠️ Windows 不允许应用静默设为默认，需手动确认一次</p>
+              </>}
+            />
+          </div>
+          <div className={`${styles.sRowDesc}`}>
+            {mdAssoc === "default" ? "已是 .md 默认打开方式 ✓"
+              : mdAssoc === "registered" ? "已注册打开方式，尚未设为默认"
+              : mdAssoc === "loading" ? "检测中…"
+              : "双击 .md 文件直接用 PastePanda 编辑"}
+          </div>
+        </div>
+        {mdAssoc === "registered" && (
+          <button className={styles.sAction} disabled={mdAssocBusy} onClick={() => void handleMdAssocToggle(true)}>
+            设为默认
+          </button>
+        )}
+        <button
+          className={`${styles.sToggle} ${mdAssoc !== "unregistered" && mdAssoc !== "loading" ? styles.on : styles.off}`}
+          disabled={mdAssocBusy || mdAssoc === "loading"}
+          onClick={() => void handleMdAssocToggle(mdAssoc === "unregistered" || mdAssoc === "loading")}>
+          <span className={styles.sToggleThumb} />
+          <span className={styles.sToggleLabel}>{mdAssoc !== "unregistered" && mdAssoc !== "loading" ? "开" : "关"}</span>
+        </button>
+      </div>
 
       {/* ── 局域网同步 ── */}
       <div className={styles.sSection}>局域网同步</div>
@@ -580,10 +862,33 @@ export function GeneralTab({
           {expiredCount > 0 ? `清理 ${expiredCount} 条` : "无过期"}
         </button>
       </div>
+      <div className={styles.sRow}>
+        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #EF4444, #F97316)" }}>🎯</span>
+        <div className={`${styles.sRowBody}`}>
+          <div className={`${styles.sRowLabel}`}>
+            深度清理
+            <HelpTooltip
+              tooltip="按时间范围 / 类型 / 来源应用自由组合条件，实时计数，可先预览再删除"
+              detailTitle="深度清理"
+              detail={<>
+                <p>按组合条件精细化清理记录，适合释放空间或清除某个应用的全部记录。</p>
+                <p>📌 <b>时间范围</b>：全部 / 超过 7·30·90 天</p>
+                <p>📌 <b>类型</b>：全部 / 文本 / 图片 / 文件</p>
+                <p>📌 <b>来源应用</b>：只清理来自指定应用的记录</p>
+                <p>💡 实时统计匹配条数，可展开预览；置顶记录自动跳过，删除后可 Ctrl+Z 撤销</p>
+              </>}
+            />
+          </div>
+          <div className={`${styles.sRowDesc}`}>按时间 / 类型 / 来源组合条件清理，支持预览与撤销</div>
+        </div>
+        <button className={styles.sAction} onClick={() => setShowDeepClean(true)}>打开</button>
+      </div>
       </div>
       <div ref={noResultRef} className={styles.settingsNoResult} style={{ display: "none" }}>
         😕 没有找到与「{settingsFilter}」匹配的设置项
       </div>
+      {/* 深度清理弹窗：portal 到 body，open 门控显隐 */}
+      <DeepCleanDialog open={showDeepClean} onClose={() => setShowDeepClean(false)} />
     </>
   );
 }

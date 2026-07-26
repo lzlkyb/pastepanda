@@ -88,7 +88,7 @@ export function AboutTabContent({ appName, appVersion }: { appName: string; appV
       <div className={aboutStyles.aboutDivider} />
 
       <div className={aboutStyles.aboutSectionLabel}>更新日志</div>
-      <ChangelogView currentVersion={appVersion} maxEntries={5} />
+      <ChangelogView currentVersion={appVersion} maxEntries={10} />
 
       <div className={aboutStyles.aboutFooter}>
         <button className={aboutStyles.aboutFooterLink} onClick={handleOpenProject}>

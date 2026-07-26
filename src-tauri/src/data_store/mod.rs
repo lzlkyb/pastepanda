@@ -90,6 +90,57 @@ pub struct Stats {
     pub db_size_kb: f64,
 }
 
+/// 按天计数条目（近 7 天趋势图）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyCount {
+    pub date: String,
+    pub count: u32,
+}
+
+/// 设置页「数据仪表盘」详细统计（get_stats_detail）：
+/// 在基础统计之上增加昨日计数、近 7 天按天聚合、24 小时时段分布与来源 Top 5。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatsDetail {
+    pub total: u32,
+    pub pinned: u32,
+    pub today: u32,
+    pub yesterday: u32,
+    /// 近 7 天（含今天）升序，缺日补 0
+    pub daily: Vec<DailyCount>,
+    /// 0-23 时段复制计数（恒 24 槽）
+    pub hours: Vec<u32>,
+    pub text_count: u32,
+    pub image_count: u32,
+    pub file_count: u32,
+    /// 来源 Top 5（按计数降序）
+    pub sources: Vec<SourceCountEntry>,
+    pub earliest_time: Option<String>,
+    pub db_size_kb: f64,
+}
+
+/// 侧边栏聚合计数来源条目：某来源应用的记录数 + 代表性图标文件名
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceCountEntry {
+    pub source: String,
+    pub count: u32,
+    pub source_icon: Option<String>,
+}
+
+/// 侧边栏全量计数（GROUP BY 聚合，不依赖前端内存分页窗口）。
+/// 前端侧边栏此前直接 filter 内存中已加载的分页窗口（初始 50 条、上限 500 条），
+/// 导致计数随滚动变化、未加载的来源/分类不显示，与 TopBar 的 DB 计数互相矛盾。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SidebarCounts {
+    pub total: u32,
+    pub pinned: u32,
+    pub ungrouped: u32,
+    pub sources: Vec<SourceCountEntry>,
+    /// group_id → 记录数
+    pub groups: std::collections::HashMap<String, u32>,
+    /// tag_id → 记录数
+    pub tags: std::collections::HashMap<String, u32>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Snippet {
     pub id: String,

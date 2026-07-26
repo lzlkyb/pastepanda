@@ -1,4 +1,4 @@
-/* 剪贴板栈横幅 — 橙色系，与设计稿一致 */
+/* 剪贴板栈横幅 — 主题自适应（--orange-* 变量覆盖全部 7 套主题，深色下不再刺眼） */
 .banner {
   display: flex;
   align-items: center;
@@ -6,8 +6,11 @@
   margin: 0 16px 4px;
   padding: 10px 14px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #FFF7ED, #FFEDD5);
-  border: 1px solid #FDBA74;
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.07), transparent 65%), var(--orange-bg);
+  border: 1px solid var(--orange-border);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 16px rgba(234, 88, 12, 0.08);
   flex-shrink: 0;
   animation: bannerIn 0.3s ease;
   z-index: 5;
@@ -43,13 +46,13 @@
   gap: 5px;
   font-size: 12px;
   font-weight: 600;
-  color: #9A3412;
+  color: var(--orange);
 }
 
 .sub {
   font-size: 11px;
-  color: #C2410C;
-  opacity: 0.8;
+  color: var(--orange);
+  opacity: 0.72;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -89,29 +92,29 @@
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
-  background: rgba(154, 52, 18, 0.08);
-  color: #9A3412;
-  border: 1px solid #FDBA74;
+  background: transparent;
+  color: var(--orange);
+  border: 1px solid var(--orange-border);
   transition: background 0.15s;
   flex-shrink: 0;
 }
 
 .exitBtn:hover {
-  background: rgba(154, 52, 18, 0.15);
+  background: rgba(249, 115, 22, 0.12);
 }
 
-/* U58：全部粘贴进度条 */
+/* 进度条（常驻显示：已粘贴/总数） */
 .progressTrack {
   margin-top: 6px;
-  height: 5px;
-  border-radius: 3px;
-  background: rgba(154, 52, 18, 0.12);
+  height: 4px;
+  border-radius: 2px;
+  background: var(--orange-border);
   overflow: hidden;
 }
 
 .progressFill {
   height: 100%;
-  border-radius: 3px;
+  border-radius: 2px;
   background: linear-gradient(90deg, #F97316, #EA580C);
   transition: width 0.25s ease;
 }

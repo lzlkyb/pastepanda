@@ -165,94 +165,112 @@ fn get_taskbar_edge() -> TaskbarEdge {
     TaskbarEdge::Bottom
 }
 
+/// 显示器工作区信息（物理像素，含原点）+ 该屏缩放因子
+struct MonitorWorkArea {
+    work_x: f64,
+    work_y: f64,
+    work_w: f64,
+    work_h: f64,
+    scale: f64,
+}
+
+/// 获取包含指定物理坐标点的显示器的工作区（排除任务栏，带原点）与缩放因子。
+/// 使用 MonitorFromPoint（MONITOR_DEFAULTTONEAREST，点不在任何屏上时返回最近屏）
+/// + GetMonitorInfoW（rcWork）+ GetDpiForMonitor（每监视器 DPI）。
+/// 修复要点：
+///  - 旧实现只用 SPI_GETWORKAREA 取"主显示器"工作区且丢弃原点，多屏/任务栏在
+///    上或左侧时坐标系错位；
+///  - 旧实现把弹窗"逻辑"尺寸直接当"物理"尺寸参与物理坐标钳制，高 DPI（125%/150%）
+///    屏幕上弹窗实际物理高度 = 逻辑×缩放，导致按逻辑高度钳制后底部仍超出屏幕。
+#[cfg(target_os = "windows")]
+fn get_monitor_work_area(px: f64, py: f64) -> MonitorWorkArea {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    };
+    use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+
+    let pt = POINT { x: px as i32, y: py as i32 };
+    let hmonitor = unsafe { MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST) };
+
+    let mut mi = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    let mut scale = 1.0_f64;
+    unsafe {
+        let _ = GetMonitorInfoW(hmonitor, &mut mi);
+        let mut dpi_x: u32 = 96;
+        let mut dpi_y: u32 = 96;
+        if GetDpiForMonitor(hmonitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_ok() && dpi_x > 0 {
+            scale = dpi_x as f64 / 96.0;
+        }
+    }
+
+    let work = mi.rcWork;
+    // 退化矩形兜底，避免弹窗被定位到屏幕外
+    if work.right <= work.left || work.bottom <= work.top {
+        log::warn!("[TrayManager] 获取显示器工作区失败，使用默认 1920x1080 @ scale {}", scale);
+        return MonitorWorkArea { work_x: 0.0, work_y: 0.0, work_w: 1920.0, work_h: 1080.0, scale };
+    }
+    MonitorWorkArea {
+        work_x: work.left as f64,
+        work_y: work.top as f64,
+        work_w: (work.right - work.left) as f64,
+        work_h: (work.bottom - work.top) as f64,
+        scale,
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn get_monitor_work_area(_px: f64, _py: f64) -> MonitorWorkArea {
+    MonitorWorkArea { work_x: 0.0, work_y: 0.0, work_w: 1920.0, work_h: 1080.0, scale: 1.0 }
+}
+
 /// 计算弹窗位置，与 Windows 原生托盘右键菜单逻辑一致：
 /// - 任务栏底部 → 弹窗在图标上方，右边缘对齐
 /// - 任务栏顶部 → 弹窗在图标下方，右边缘对齐
 /// - 任务栏左侧 → 弹窗在图标右侧，上边缘对齐
 /// - 任务栏右侧 → 弹窗在图标左侧，上边缘对齐
-/// 增加屏幕边界约束（8px 安全边距），防止弹窗被裁剪或贴边
+/// 全程在"物理像素"坐标系中计算：弹窗逻辑尺寸先按所在显示器缩放因子换算为物理尺寸，
+/// 再钳制到该显示器的工作区（含原点），保证高 DPI / 多显示器 / 任务栏任意边缘下都不越界。
 fn calc_popup_position(
-    tray_rect: (f64, f64, f64, f64), // (x, y, w, h)
-    popup_w: f64,
-    popup_h: f64,
+    tray_rect: (f64, f64, f64, f64), // (x, y, w, h)，物理像素
+    popup_w_logical: f64,
+    popup_h_logical: f64,
     edge: TaskbarEdge,
 ) -> tauri::PhysicalPosition<f64> {
     let (tray_x, tray_y, tray_w, tray_h) = tray_rect;
     let gap = 4.0; // 弹窗与图标之间的间距
     let margin = 8.0; // 屏幕边缘安全边距
 
-    // 获取主显示器工作区尺寸（排除任务栏区域）
-    let (screen_w, screen_h) = get_work_area_size();
+    // 以托盘图标中心点定位所在显示器（工作区 + 缩放因子）
+    let mon = get_monitor_work_area(tray_x + tray_w / 2.0, tray_y + tray_h / 2.0);
+
+    // 弹窗逻辑尺寸 → 物理尺寸（inner_size 传的是逻辑像素，实际占屏 = 逻辑 × 缩放）
+    let popup_w = popup_w_logical * mon.scale;
+    let popup_h = popup_h_logical * mon.scale;
 
     let (raw_x, raw_y) = match edge {
-        TaskbarEdge::Bottom => {
-            // 弹窗在图标上方，右边缘对齐图标右边缘
-            let px = tray_x + tray_w - popup_w;
-            let py = tray_y - popup_h - gap;
-            (px, py)
-        }
-        TaskbarEdge::Top => {
-            // 弹窗在图标下方，右边缘对齐图标右边缘
-            let px = tray_x + tray_w - popup_w;
-            let py = tray_y + tray_h + gap;
-            (px, py)
-        }
-        TaskbarEdge::Left => {
-            // 弹窗在图标右侧，上边缘对齐图标上边缘
-            let px = tray_x + tray_w + gap;
-            let py = tray_y;
-            (px, py)
-        }
-        TaskbarEdge::Right => {
-            // 弹窗在图标左侧，上边缘对齐图标上边缘
-            let px = tray_x - popup_w - gap;
-            let py = tray_y;
-            (px, py)
-        }
+        TaskbarEdge::Bottom => (tray_x + tray_w - popup_w, tray_y - popup_h - gap),
+        TaskbarEdge::Top => (tray_x + tray_w - popup_w, tray_y + tray_h + gap),
+        TaskbarEdge::Left => (tray_x + tray_w + gap, tray_y),
+        TaskbarEdge::Right => (tray_x - popup_w - gap, tray_y),
     };
 
-    // 屏幕边界约束：确保弹窗不超出屏幕，留 margin 边距
-    let x = raw_x.max(margin).min(screen_w - popup_w - margin);
-    let y = raw_y.max(margin).min(screen_h - popup_h - margin);
+    // 钳制到该显示器工作区（带原点）。工作区比弹窗还小（极小屏幕）时贴左上角，
+    // 避免 max < min 导致钳制反向把弹窗推出屏幕
+    let (min_x, max_x) = (mon.work_x + margin, mon.work_x + mon.work_w - popup_w - margin);
+    let (min_y, max_y) = (mon.work_y + margin, mon.work_y + mon.work_h - popup_h - margin);
+    let x = if max_x < min_x { min_x } else { raw_x.max(min_x).min(max_x) };
+    let y = if max_y < min_y { min_y } else { raw_y.max(min_y).min(max_y) };
 
     log::info!(
-        "[TrayManager] 弹窗定位: taskbar={:?} tray=({:.0},{:.0} {:.0}x{:.0}) raw=({:.0},{:.0}) final=({:.0},{:.0}) screen=({:.0},{:.0})",
-        edge, tray_x, tray_y, tray_w, tray_h, raw_x, raw_y, x, y, screen_w, screen_h
+        "[TrayManager] 弹窗定位: taskbar={:?} tray=({:.0},{:.0} {:.0}x{:.0}) scale={:.2} popup_phys=({:.0}x{:.0}) work=({:.0},{:.0} {:.0}x{:.0}) raw=({:.0},{:.0}) final=({:.0},{:.0})",
+        edge, tray_x, tray_y, tray_w, tray_h, mon.scale, popup_w, popup_h,
+        mon.work_x, mon.work_y, mon.work_w, mon.work_h, raw_x, raw_y, x, y
     );
     tauri::PhysicalPosition { x, y }
-}
-
-/// 获取主显示器工作区尺寸（排除任务栏）
-#[cfg(target_os = "windows")]
-fn get_work_area_size() -> (f64, f64) {
-    use windows::Win32::Foundation::RECT;
-    use windows::Win32::UI::WindowsAndMessaging::SystemParametersInfoW;
-    use windows::Win32::UI::WindowsAndMessaging::SPI_GETWORKAREA;
-    use windows::Win32::UI::WindowsAndMessaging::SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS;
-
-    let mut rect = RECT::default();
-    let ok = unsafe {
-        SystemParametersInfoW(
-            SPI_GETWORKAREA,
-            0,
-            Some(&mut rect as *mut _ as *mut _),
-            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
-        )
-    };
-    // 调用失败或返回退化矩形时回退默认值，避免弹窗被定位到屏幕外（Low 修复）
-    if ok.is_err() || rect.right <= rect.left || rect.bottom <= rect.top {
-        log::warn!("[TrayManager] 获取工作区尺寸失败，使用默认 1920x1080");
-        return (1920.0, 1080.0);
-    }
-    (
-        (rect.right - rect.left) as f64,
-        (rect.bottom - rect.top) as f64,
-    )
-}
-
-#[cfg(not(target_os = "windows"))]
-fn get_work_area_size() -> (f64, f64) {
-    (1920.0, 1080.0) // 非 Windows 平台回退值
 }
 
 /// 防止快速连续右键点击导致“关闭旧弹窗 → 等待 → 创建新弹窗”序列相互重叠。

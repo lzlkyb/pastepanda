@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { X, Copy, Download } from "lucide-react";
 import { useToast } from "@/components/Toast";
+import { useDialogAnim } from "@/lib/dialogMotion";
 import styles from "./QRCodeDialog.module.css";
 import { FocusTrap } from "@/components/FocusTrap";
 
@@ -16,6 +17,7 @@ export function QRCodeDialog({ text, onClose }: { text: string; onClose: () => v
   const [error, setError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const { toast } = useToast();
+  const anim = useDialogAnim();
 
   const isUrl = /^https?:\/\//i.test(text.trim());
   // 修复 U29：检测文本是否超出二维码容量（UTF-8 字节数），给出具体失败原因
@@ -81,18 +83,14 @@ export function QRCodeDialog({ text, onClose }: { text: string; onClose: () => v
   }, [toast]);
 
   return (
-    <AnimatePresence>
+    <motion.div
+      {...anim.backdrop}
+      className="dialog-backdrop" onClick={onClose}>
+      <FocusTrap>
       <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="dialog-backdrop" onClick={onClose}>
-        <FocusTrap>
-        <motion.div
-          initial={{ scale: 0.96, opacity: 0, y: 10 }}
-          animate={{ scale: 1, opacity: 1, y: 0 }}
-          exit={{ scale: 0.96, opacity: 0, y: 10 }}
-          transition={{ type: "spring", stiffness: 400, damping: 30 }}
-          className={`dialog-box ${styles.qrDialog}`}
-          onClick={(e) => e.stopPropagation()}>
+        {...anim.panel}
+        className={`dialog-box ${styles.qrDialog}`}
+        onClick={(e) => e.stopPropagation()}>
 
           <div className="dialog-header">
             <h2 className="dialog-title">📱 二维码</h2>
@@ -131,6 +129,5 @@ export function QRCodeDialog({ text, onClose }: { text: string; onClose: () => v
         </motion.div>
         </FocusTrap>
       </motion.div>
-    </AnimatePresence>
   );
 }

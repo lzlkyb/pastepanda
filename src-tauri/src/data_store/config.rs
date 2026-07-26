@@ -79,6 +79,291 @@ impl DataStore {
         })
     }
 
+    /// 设置页「数据仪表盘」详细统计：一次返回总/置顶/今日/昨日、近 7 天按天聚合
+    /// （缺日补 0）、24 小时时段分布、类型计数、来源 Top 5、最早记录与数据库大小。
+    /// time 列格式为 "YYYY-MM-DD HH:MM:SS" 且有 idx_history_time 索引，
+    /// substr 分组（1,10 取日期、12,2 取小时）可走索引扫描；全部查询共用单把连接锁。
+    pub fn get_stats_detail(&self, workspace: &str) -> Result<StatsDetail, String> {
+        let conn = self.lock_conn();
+        let now = chrono::Local::now();
+
+        let total: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM history WHERE workspace = ?1",
+                params![workspace],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+
+        let pinned: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM history WHERE workspace = ?1 AND pinned = 1",
+                params![workspace],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+
+        let today_str = now.format("%Y-%m-%d").to_string();
+        let yesterday_str = (now - chrono::Duration::days(1))
+            .format("%Y-%m-%d")
+            .to_string();
+
+        let today: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM history WHERE workspace = ?1 AND time LIKE ?2",
+                params![workspace, format!("{}%", today_str)],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+
+        let yesterday: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM history WHERE workspace = ?1 AND time LIKE ?2",
+                params![workspace, format!("{}%", yesterday_str)],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+
+        // 近 7 天（含今天）按天聚合：SQL 只返回有数据的日期，Rust 侧按连续日期补 0
+        let week_start = (now - chrono::Duration::days(6)).format("%Y-%m-%d").to_string();
+        let mut day_map: std::collections::HashMap<String, u32> =
+            std::collections::HashMap::new();
+        {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT substr(time, 1, 10) AS d, COUNT(*)
+                     FROM history WHERE workspace = ?1 AND time >= ?2
+                     GROUP BY d",
+                )
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map(
+                    params![workspace, format!("{} 00:00:00", week_start)],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?)),
+                )
+                .map_err(|e| e.to_string())?;
+            for row in rows {
+                if let Ok((d, c)) = row {
+                    day_map.insert(d, c);
+                }
+            }
+        }
+        let daily: Vec<DailyCount> = (0..7)
+            .map(|i| {
+                let date = (now - chrono::Duration::days(6 - i))
+                    .format("%Y-%m-%d")
+                    .to_string();
+                let count = day_map.get(&date).copied().unwrap_or(0);
+                DailyCount { date, count }
+            })
+            .collect();
+
+        // 24 小时时段分布：substr(time, 12, 2) 取 "00".."23"，解析越界时忽略
+        let mut hours = vec![0u32; 24];
+        {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT substr(time, 12, 2) AS h, COUNT(*)
+                     FROM history WHERE workspace = ?1
+                     GROUP BY h",
+                )
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map(params![workspace], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+                })
+                .map_err(|e| e.to_string())?;
+            for row in rows {
+                if let Ok((h, c)) = row {
+                    if let Ok(idx) = h.parse::<usize>() {
+                        if idx < 24 {
+                            hours[idx] = c;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 类型计数（参数化，避免三份重复 SQL）
+        let type_count = |t: &str| -> Result<u32, String> {
+            conn.query_row(
+                "SELECT COUNT(*) FROM history WHERE workspace = ?1 AND type = ?2",
+                params![workspace, t],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())
+        };
+        let text_count = type_count("text")?;
+        let image_count = type_count("image")?;
+        let file_count = type_count("file")?;
+
+        // 来源 Top 5（按计数降序）：与 get_sidebar_counts 同源聚合，取代表性图标文件名
+        let sources: Vec<SourceCountEntry> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT source, COUNT(*), MAX(source_icon)
+                     FROM history WHERE workspace = ?1 AND source != ''
+                     GROUP BY source
+                     ORDER BY COUNT(*) DESC
+                     LIMIT 5",
+                )
+                .map_err(|e| e.to_string())?;
+            let result = stmt
+                .query_map(params![workspace], |row| {
+                    Ok(SourceCountEntry {
+                        source: row.get(0)?,
+                        count: row.get(1)?,
+                        source_icon: row.get(2)?,
+                    })
+                })
+                .map_err(|e| e.to_string())?
+                .filter_map(|r| r.ok())
+                .collect();
+            drop(stmt);
+            result
+        };
+
+        let earliest_time: Option<String> = conn
+            .query_row(
+                "SELECT MIN(time) FROM history WHERE workspace = ?1",
+                params![workspace],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+
+        let db_size_bytes = std::fs::metadata(self.path.clone())
+            .map(|m| m.len())
+            .unwrap_or(0);
+        let db_size_kb = db_size_bytes as f64 / 1024.0;
+
+        Ok(StatsDetail {
+            total,
+            pinned,
+            today,
+            yesterday,
+            daily,
+            hours,
+            text_count,
+            image_count,
+            file_count,
+            sources,
+            earliest_time,
+            db_size_kb,
+        })
+    }
+
+    /// 侧边栏聚合计数：单把连接锁内完成全部 GROUP BY 统计。
+    /// 前端侧边栏分组（全部/收藏/未分组/用户分组/来源/智能分类）直接消费该结果，
+    /// 不再 filter 内存分页窗口（初始 50 条、上限 500 条），计数精确且与 TopBar 一致。
+    pub fn get_sidebar_counts(&self, workspace: &str) -> Result<SidebarCounts, String> {
+        let conn = self.lock_conn();
+
+        let total: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM history WHERE workspace = ?1",
+                params![workspace],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+
+        let pinned: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM history WHERE workspace = ?1 AND pinned = 1",
+                params![workspace],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+
+        let ungrouped: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM history WHERE workspace = ?1 AND group_id IS NULL",
+                params![workspace],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+
+        // 来源聚合：MAX(source_icon) 取代表性图标文件名（NULL 被忽略，全 NULL 时为 None）
+        let mut sources: Vec<SourceCountEntry> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT source, COUNT(*), MAX(source_icon)
+                     FROM history WHERE workspace = ?1 AND source != ''
+                     GROUP BY source",
+                )
+                .map_err(|e| e.to_string())?;
+            let result = stmt
+                .query_map(params![workspace], |row| {
+                    Ok(SourceCountEntry {
+                        source: row.get(0)?,
+                        count: row.get(1)?,
+                        source_icon: row.get(2)?,
+                    })
+                })
+                .map_err(|e| e.to_string())?
+                .filter_map(|r| r.ok())
+                .collect();
+            drop(stmt);
+            result
+        };
+        // 与前端原展示顺序一致：按计数降序
+        sources.sort_by(|a, b| b.count.cmp(&a.count));
+
+        let mut groups: std::collections::HashMap<String, u32> =
+            std::collections::HashMap::new();
+        {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT group_id, COUNT(*)
+                     FROM history WHERE workspace = ?1 AND group_id IS NOT NULL
+                     GROUP BY group_id",
+                )
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map(params![workspace], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+                })
+                .map_err(|e| e.to_string())?;
+            for row in rows {
+                if let Ok((gid, count)) = row {
+                    groups.insert(gid, count);
+                }
+            }
+        }
+
+        let mut tags: std::collections::HashMap<String, u32> =
+            std::collections::HashMap::new();
+        {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT ht.tag_id, COUNT(*)
+                     FROM history_tags ht
+                     JOIN history h ON h.id = ht.history_id
+                     WHERE h.workspace = ?1
+                     GROUP BY ht.tag_id",
+                )
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map(params![workspace], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+                })
+                .map_err(|e| e.to_string())?;
+            for row in rows {
+                if let Ok((tid, count)) = row {
+                    tags.insert(tid, count);
+                }
+            }
+        }
+
+        Ok(SidebarCounts {
+            total,
+            pinned,
+            ungrouped,
+            sources,
+            groups,
+            tags,
+        })
+    }
+
     pub fn get_config(&self) -> Result<serde_json::Value, String> {
         let conn = self.lock_conn();
         let mut stmt = conn

@@ -292,6 +292,53 @@
 [data-theme="terminal"] .hljs-operator,
 [data-theme="sunset"] .hljs-operator { color: #ff7b72; }
 
+/* 暗色默认主题 ocean-dark — Atom One Dark 调色板（与全屏编辑器 oneDark 一致） */
+[data-theme="ocean-dark"] .hljs { color: #abb2bf; }
+
+[data-theme="ocean-dark"] .hljs-comment,
+[data-theme="ocean-dark"] .hljs-quote { color: #5c6370; font-style: italic; }
+
+[data-theme="ocean-dark"] .hljs-doctag,
+[data-theme="ocean-dark"] .hljs-keyword,
+[data-theme="ocean-dark"] .hljs-formula { color: #c678dd; }
+
+[data-theme="ocean-dark"] .hljs-section,
+[data-theme="ocean-dark"] .hljs-name,
+[data-theme="ocean-dark"] .hljs-selector-tag,
+[data-theme="ocean-dark"] .hljs-deletion,
+[data-theme="ocean-dark"] .hljs-subst { color: #e06c75; }
+
+[data-theme="ocean-dark"] .hljs-literal { color: #56b6c2; }
+
+[data-theme="ocean-dark"] .hljs-string,
+[data-theme="ocean-dark"] .hljs-regexp,
+[data-theme="ocean-dark"] .hljs-addition,
+[data-theme="ocean-dark"] .hljs-attribute { color: #98c379; }
+
+[data-theme="ocean-dark"] .hljs-attr,
+[data-theme="ocean-dark"] .hljs-variable,
+[data-theme="ocean-dark"] .hljs-template-variable,
+[data-theme="ocean-dark"] .hljs-type,
+[data-theme="ocean-dark"] .hljs-selector-class,
+[data-theme="ocean-dark"] .hljs-selector-attr,
+[data-theme="ocean-dark"] .hljs-selector-pseudo,
+[data-theme="ocean-dark"] .hljs-number { color: #d19a66; }
+
+[data-theme="ocean-dark"] .hljs-symbol,
+[data-theme="ocean-dark"] .hljs-bullet,
+[data-theme="ocean-dark"] .hljs-link,
+[data-theme="ocean-dark"] .hljs-meta,
+[data-theme="ocean-dark"] .hljs-selector-id,
+[data-theme="ocean-dark"] .hljs-title { color: #61afef; }
+
+[data-theme="ocean-dark"] .hljs-built_in,
+[data-theme="ocean-dark"] .hljs-title.class_,
+[data-theme="ocean-dark"] .hljs-class .hljs-title { color: #e6c07b; }
+
+[data-theme="ocean-dark"] .hljs-emphasis { font-style: italic; }
+[data-theme="ocean-dark"] .hljs-strong { font-weight: 700; }
+[data-theme="ocean-dark"] .hljs-link { text-decoration: underline; }
+
 /* ===== Shiki 多主题 CSS 变量切换 ===== */
 .shiki span,
 .edit-highlight-wrapper .shiki span,

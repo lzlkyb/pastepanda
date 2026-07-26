@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronRight, ChevronDown } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { CHANGELOG } from "@/lib/changelog.generated";
 import {
   CATEGORY_COLORS,
@@ -13,8 +13,6 @@ import {
 import styles from "./ChangelogView.module.css";
 
 // ─── Category icon emoji mapping ────────────────────────
-// Using emoji for compact display in the history browser
-// (lucide icons are used in UpdateNotesDialog for the full modal)
 
 const CATEGORY_ICON_EMOJI: Record<ChangeCategoryType, string> = {
   feat: "\u2728",
@@ -28,49 +26,38 @@ const CATEGORY_ICON_EMOJI: Record<ChangeCategoryType, string> = {
   other: "\uD83D\uDCE6",
 };
 
+/** 收起状态下每个分类最多显示的条目数 */
+const COLLAPSED_ITEMS = 2;
+
 // ─── Props ──────────────────────────────────────────────
 
 interface ChangelogViewProps {
   currentVersion: string;
-  /** Optional: max entries to show (default: show all) */
+  /** 最多显示的版本数（默认 10） */
   maxEntries?: number;
 }
 
 // ─── Component ──────────────────────────────────────────
 
-export function ChangelogView({ currentVersion, maxEntries }: ChangelogViewProps) {
-  const [showAll, setShowAll] = useState(false);
+export function ChangelogView({ currentVersion, maxEntries = 10 }: ChangelogViewProps) {
   const [expandedVersions, setExpandedVersions] = useState<Set<string>>(() => {
-    // First entry expanded by default
     const initial = new Set<string>();
-    if (CHANGELOG.length > 0) {
-      initial.add(CHANGELOG[0].version);
-    }
+    if (CHANGELOG.length > 0) initial.add(CHANGELOG[0].version);
     return initial;
   });
 
   const entries = useMemo(() => {
-    // Sort descending by version
     const sorted = [...CHANGELOG].sort((a: ChangelogEntry, b: ChangelogEntry) =>
       compareVersions(b.version, a.version),
     );
-    if (maxEntries && !showAll) {
-      return sorted.slice(0, maxEntries);
-    }
-    return sorted;
-  }, [maxEntries, showAll]);
-
-  const totalEntries = CHANGELOG.length;
-  const hasMore = maxEntries != null && totalEntries > maxEntries && !showAll;
+    return sorted.slice(0, maxEntries);
+  }, [maxEntries]);
 
   const toggleExpand = (version: string) => {
     setExpandedVersions((prev) => {
       const next = new Set(prev);
-      if (next.has(version)) {
-        next.delete(version);
-      } else {
-        next.add(version);
-      }
+      if (next.has(version)) next.delete(version);
+      else next.add(version);
       return next;
     });
   };
@@ -81,166 +68,117 @@ export function ChangelogView({ currentVersion, maxEntries }: ChangelogViewProps
 
   return (
     <div className={styles.container}>
-      {entries.map((entry, idx) => {
-        const isCurrent = compareVersions(entry.version, currentVersion) === 0;
-        const isLatest = idx === 0;
-        const isExpanded = expandedVersions.has(entry.version);
-
-        return (
-          <EntryCard
-            key={entry.version}
-            entry={entry}
-            isCurrent={isCurrent}
-            isLatest={isLatest}
-            isExpanded={isExpanded}
-            onToggle={() => toggleExpand(entry.version)}
-            totalEntries={totalEntries}
-            entryIndex={idx}
-          />
-        );
-      })}
-
-      {hasMore && (
-        <button className={styles.toggleBtn} onClick={() => setShowAll(true)}>
-          <ChevronDown size={14} />
-          查看全部 {totalEntries} 个版本
-        </button>
-      )}
+      {entries.map((entry, idx) => (
+        <VersionCard
+          key={entry.version}
+          entry={entry}
+          isCurrent={compareVersions(entry.version, currentVersion) === 0}
+          isLatest={idx === 0}
+          isExpanded={expandedVersions.has(entry.version)}
+          onToggle={() => toggleExpand(entry.version)}
+        />
+      ))}
     </div>
   );
 }
 
-// ─── Entry Card ─────────────────────────────────────────
+// ─── Version Card ───────────────────────────────────────
 
-function EntryCard({
+function VersionCard({
   entry,
   isCurrent,
   isLatest,
   isExpanded,
   onToggle,
-  totalEntries,
-  entryIndex,
 }: {
   entry: ChangelogEntry;
   isCurrent: boolean;
   isLatest: boolean;
   isExpanded: boolean;
   onToggle: () => void;
-  totalEntries: number;
-  entryIndex: number;
 }) {
   const itemCount = countEntryItems(entry);
 
   return (
-    <div
-      className={`${styles.entry} ${isCurrent ? styles.entryCurrent : ""}`}
-    >
-      {/* Clickable Header */}
-      <div className={styles.entryHeader} onClick={onToggle}>
+    <div className={`${styles.card} ${isCurrent ? styles.cardCurrent : ""}`}>
+      {/* Header */}
+      <div className={styles.header} onClick={onToggle}>
         <ChevronRight
-          size={14}
+          size={13}
           className={`${styles.chevron} ${isExpanded ? styles.chevronOpen : ""}`}
         />
-        <span
-          className={`${styles.versionBadge} ${isLatest ? styles.versionBadgeCurrent : ""}`}
-        >
+        <span className={`${styles.versionBadge} ${isLatest ? styles.versionBadgeCurrent : ""}`}>
           {entry.version}
         </span>
         <span className={styles.date}>{entry.date}</span>
         {isLatest && <span className={styles.latestTag}>最新</span>}
-        {itemCount > 0 && (
-          <span className={styles.itemCount}>{itemCount} 项</span>
-        )}
       </div>
 
-      {/* Expandable Content */}
+      {/* Expandable Body */}
       <AnimatePresence initial={false}>
         {isExpanded && (
           <motion.div
-            key="content"
+            key="body"
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-            className={styles.entryBody}
+            transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
+            className={styles.body}
           >
-            {/* Version Progress Bar */}
-            <div className={styles.progressBar}>
-              {Array.from({ length: Math.min(totalEntries, 10) }).map((_, i) => (
-                <div
-                  key={i}
-                  className={`${styles.progressSegment} ${
-                    i <= entryIndex ? styles.progressActive : styles.progressInactive
-                  }`}
-                />
+            <div className={styles.categories}>
+              {entry.categories.map((cat) => (
+                <CategoryRow key={cat.type} category={cat} />
               ))}
             </div>
 
-            {/* Summary */}
-            {entry.summary && (
-              <div className={styles.entrySummary}>{entry.summary}</div>
+            {itemCount > COLLAPSED_ITEMS && (
+              <button className={styles.collapseBtn} onClick={onToggle}>
+                ▾ 收起
+              </button>
             )}
-
-            {/* Categories */}
-            {entry.categories.map((cat) => (
-              <CategorySection key={cat.type} category={cat} />
-            ))}
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Collapsed hint */}
+      {!isExpanded && itemCount > 0 && (
+        <button className={styles.collapseBtn} onClick={onToggle}>
+          ▸ 展开全部 {itemCount} 项
+        </button>
+      )}
     </div>
   );
 }
 
-// ─── Category Section ───────────────────────────────────
+// ─── Category Row ───────────────────────────────────────
 
-function CategorySection({ category }: { category: ChangeCategory }) {
+function CategoryRow({ category }: { category: ChangeCategory }) {
   const barColor = CATEGORY_COLORS[category.type];
   const icon = CATEGORY_ICON_EMOJI[category.type];
 
-  const sectionStyle = {
-    "--bar-color": barColor,
-  } as React.CSSProperties;
+  const items = category.items ?? [];
+  const groupItems = category.groups?.flatMap((g) => g.items) ?? [];
+  const allItems = [...items, ...groupItems];
+
+  if (allItems.length === 0) return null;
 
   return (
-    <div className={styles.categorySection} style={sectionStyle}>
-      <div className={styles.categoryHead} style={{ color: barColor }}>
-        <span
-          className={styles.categoryIcon}
-          style={{ background: `${barColor}18` }}
-        >
-          {icon}
-        </span>
-        {category.name}
+    <div className={styles.category}>
+      <div className={styles.categoryIcon} style={{ background: `color-mix(in srgb, ${barColor} 10%, transparent)` }}>
+        {icon}
       </div>
-
-      {/* Flat items */}
-      {category.items && category.items.length > 0 && (
+      <div className={styles.categoryBody}>
+        <div className={styles.categoryName} style={{ color: barColor }}>
+          {category.name}
+        </div>
         <ul className={styles.categoryItems}>
-          {category.items.map((item, idx) => (
+          {allItems.map((item, idx) => (
             <li key={idx} className={styles.categoryItem}>
               {item.text}
             </li>
           ))}
         </ul>
-      )}
-
-      {/* Grouped items */}
-      {category.groups &&
-        category.groups.map((group, gIdx) => (
-          <div key={gIdx}>
-            {group.label && (
-              <div className={styles.groupLabel}>{group.label}</div>
-            )}
-            <ul className={styles.categoryItems}>
-              {group.items.map((item, idx) => (
-                <li key={idx} className={styles.categoryItem}>
-                  {item.text}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+      </div>
     </div>
   );
 }

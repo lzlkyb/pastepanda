@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { createPortal } from "react-dom";
 import { X, AlertTriangle } from "lucide-react";
 import { FocusTrap } from "@/components/FocusTrap";
+import { useDialogAnim } from "@/lib/dialogMotion";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -24,21 +25,18 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const anim = useDialogAnim();
   return createPortal(
     <AnimatePresence>
       {open && (
         <motion.div
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          className="dialog-backdrop"
-          style={{ zIndex: 100000 }}
+          {...anim.backdrop}
+          className="dialog-backdrop z-confirm"
           onClick={onCancel}
         >
           <FocusTrap>
           <motion.div
-            initial={{ scale: 0.96, opacity: 0, y: 10 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.96, opacity: 0, y: 10 }}
-            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+            {...anim.panel}
             className="dialog-box w400"
             onClick={(e) => e.stopPropagation()}
           >

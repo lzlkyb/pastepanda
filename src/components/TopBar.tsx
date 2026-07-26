@@ -152,6 +152,8 @@ export function TopBar({ onSettings, onSnippets, onExtract, onToggleSidebar, sid
           <IconBtn tip="设置 · 帮助 · 关于" onClick={onSettings}>
             <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
           </IconBtn>
+          {/* 分隔线：功能按钮组（栈模式/片段库/提取/设置）与窗口控制组（最小化/隐藏）分开 */}
+          <span className={styles.headerDivider} aria-hidden="true" />
           <IconBtn tip="最小化到任务栏" onClick={minimizeWin}>
             <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round"><path d="M5 12h14"/></svg>
           </IconBtn>
@@ -163,7 +165,23 @@ export function TopBar({ onSettings, onSnippets, onExtract, onToggleSidebar, sid
 
       {/* 搜索框 + Tab 在同一个容器内，保证宽度完全一致 */}
       <div className={styles.headerControls}>
-        <SearchBox />
+        {/* 搜索 + 时间/来源筛选同行（方案 A：筛选并入搜索行，省一行垂直空间） */}
+        <div className={styles.searchFilterRow}>
+          <SearchBox fill />
+          <FilterDropdown
+            label="时间"
+            value={timeFilter}
+            options={TIME_OPTIONS}
+            onChange={(v) => setTimeFilter(v as TimeFilter)}
+            auto
+          />
+          <SourceFilterDropdown
+            value={sourceFilter}
+            onChange={setSourceFilter}
+            workspace={ws}
+            auto
+          />
+        </div>
 
         {/* Tab 区域 */}
         <div className={styles.tabsArea} data-tauri-drag-region="false">
@@ -185,21 +203,6 @@ export function TopBar({ onSettings, onSnippets, onExtract, onToggleSidebar, sid
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
-
-        {/* 时间 + 来源筛选行 */}
-        <div className={styles.filterBar} data-tauri-drag-region="false">
-          <FilterDropdown
-            label="时间"
-            value={timeFilter}
-            options={TIME_OPTIONS}
-            onChange={(v) => setTimeFilter(v as TimeFilter)}
-          />
-          <SourceFilterDropdown
-            value={sourceFilter}
-            onChange={setSourceFilter}
-            workspace={ws}
-          />
         </div>
 
         {/* 标签筛选栏 */}
@@ -313,8 +316,8 @@ function IconBtn({ children, tip, danger, onClick, ariaLabel }: {
 }
 
 /* ===== 筛选下拉组件 ===== */
-function FilterDropdown<T extends string>({ label, value, options, onChange }: {
-  label: string; value: T; options: { key: T; label: string }[]; onChange: (v: T) => void;
+function FilterDropdown<T extends string>({ label, value, options, onChange, auto }: {
+  label: string; value: T; options: { key: T; label: string }[]; onChange: (v: T) => void; auto?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -331,7 +334,7 @@ function FilterDropdown<T extends string>({ label, value, options, onChange }: {
   const activeLabel = options.find((o) => o.key === value)?.label || label;
 
   return (
-    <div className={styles.filterDropdown} ref={ref}>
+    <div className={`${styles.filterDropdown}${auto ? ` ${styles.filterDropdownAuto}` : ""}`} ref={ref}>
       <button className={styles.filterDropdownBtn} onClick={() => setOpen(!open)}>
         <span>{activeLabel}</span>
         <ChevronDown size={12} style={{ transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0)" }} />
@@ -360,8 +363,8 @@ function FilterDropdown<T extends string>({ label, value, options, onChange }: {
 }
 
 /* ===== 来源筛选下拉 ===== */
-function SourceFilterDropdown({ value, onChange, workspace }: {
-  value: SourceFilter; onChange: (v: SourceFilter) => void; workspace: string;
+function SourceFilterDropdown({ value, onChange, workspace, auto }: {
+  value: SourceFilter; onChange: (v: SourceFilter) => void; workspace: string; auto?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -428,7 +431,7 @@ function SourceFilterDropdown({ value, onChange, workspace }: {
   }, [value, sourceIconMode, activeIconUrl]);
 
   return (
-    <div className={styles.filterDropdown} ref={ref}>
+    <div className={`${styles.filterDropdown}${auto ? ` ${styles.filterDropdownAuto}` : ""}`} ref={ref}>
       <button className={styles.filterDropdownBtn} onClick={() => setOpen(!open)}>
         {activeLabel}
         <ChevronDown size={12} style={{ transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0)" }} />

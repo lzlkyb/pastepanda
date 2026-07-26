@@ -1,7 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { X, Copy, ChevronUp, ChevronDown } from "lucide-react";
 import { useToast } from "@/components/Toast";
+import { useDialogAnim } from "@/lib/dialogMotion";
 import { useDiff, type DiffMode } from "@/hooks/useDiff";
 import { DiffPane } from "@/components/DiffPane";
 import { relativeTime } from "@/lib/utils";
@@ -17,6 +18,7 @@ interface DiffDialogProps {
 
 export function DiffDialog({ oldItem, newItem, onClose }: DiffDialogProps) {
   const { toast } = useToast();
+  const anim = useDialogAnim();
   const [mode, setMode] = useState<DiffMode>("line");
   const [ignoreWs, setIgnoreWs] = useState(false);
   const [currentBlock, setCurrentBlock] = useState(0);
@@ -84,18 +86,14 @@ export function DiffDialog({ oldItem, newItem, onClose }: DiffDialogProps) {
   }, [toast]);
 
   return (
-    <AnimatePresence>
+    <motion.div
+      {...anim.backdrop}
+      className="dialog-backdrop" onClick={onClose}>
+      <FocusTrap>
       <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="dialog-backdrop" onClick={onClose}>
-        <FocusTrap>
-        <motion.div
-          initial={{ scale: 0.96, opacity: 0, y: 10 }}
-          animate={{ scale: 1, opacity: 1, y: 0 }}
-          exit={{ scale: 0.96, opacity: 0, y: 10 }}
-          transition={{ type: "spring", stiffness: 400, damping: 30 }}
-          className={`dialog-box ${styles.diffDialog}`}
-          onClick={(e) => e.stopPropagation()}>
+        {...anim.panel}
+        className={`dialog-box ${styles.diffDialog}`}
+        onClick={(e) => e.stopPropagation()}>
 
           {/* Header */}
           <div className="dialog-header">
@@ -175,6 +173,5 @@ export function DiffDialog({ oldItem, newItem, onClose }: DiffDialogProps) {
         </motion.div>
         </FocusTrap>
       </motion.div>
-    </AnimatePresence>
   );
 }

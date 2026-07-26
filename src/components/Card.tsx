@@ -1,10 +1,13 @@
 import { memo, useState, useCallback, useContext, useRef, useEffect, useMemo, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
-import { relativeTime, stripHtml } from "@/lib/utils";
+import { relativeTime } from "@/lib/utils";
 import { getContentTypeMeta, isCodeLike } from "@/lib/contentTypes";
-import { detectColor, toHex, toRgb, toHsl } from "@/lib/color";
+import { detectColor } from "@/lib/color";
 import { maskSecretText } from "@/lib/secret";
+import { URL_SCHEME_RE, urlHost, urlPathname, fileUrlToLocalPath } from "@/lib/url";
+import { applicableTransforms, getTransform } from "@/lib/transforms";
+import { useDialogStore } from "@/stores/dialogStore";
 import type { CSSProperties } from "react";
 import SourceBadge from "@/components/SourceBadge";
 import { createCardMenuItems, CtxMenuCtx, type MenuItem } from "@/components/ContextMenu";
@@ -83,6 +86,24 @@ export const HighlightText = memo(function HighlightText({ text, highlight }: { 
 });
 
 /** 卡片组件（纯展示） */
+/**
+ * 置顶切换瞬间标记（方案 C 动画）：item.pinned 发生翻转后约 1s 内返回 true，
+ * 驱动 ★ 弹跳、📌 弹出、"置顶"徽章渐显等一次性动画——
+ * 仅响应真实切换，初始加载的已置顶卡片不会播放。
+ */
+function usePinFlash(pinned: boolean): boolean {
+  const prevRef = useRef(pinned);
+  const [flash, setFlash] = useState(false);
+  useEffect(() => {
+    if (prevRef.current === pinned) return;
+    prevRef.current = pinned;
+    setFlash(true);
+    const t = window.setTimeout(() => setFlash(false), 1000);
+    return () => window.clearTimeout(t);
+  }, [pinned]);
+  return flash;
+}
+
 export const Card = memo(function Card({ item, selected, onClick, onDoubleClick, index, imageState, searchKeyword, onRetryImage, pasting, menuItems, onEdit, disablePreview, stackOrder, stackDone }: {
   item: HistoryItem; selected: boolean; onClick: (e: React.MouseEvent) => void; onDoubleClick: () => void; index: number; imageState?: ImgState; searchKeyword?: string; onRetryImage?: () => void; pasting?: boolean; menuItems?: MenuItem[]; onEdit?: (item: HistoryItem) => void; disablePreview?: boolean; stackOrder?: number; stackDone?: boolean;
 }) {
@@ -93,6 +114,7 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
   const closeTimerRef = useRef<number | null>(null);
   const feedbackTimerRef = useRef<number | null>(null);
   const openTimerRef = useRef<number | null>(null);
+  const pinFlash = usePinFlash(item.pinned);
   const subType = item.content_type || item.type;
   const isMd = item.type === "text" && subType === "markdown";
   const parsedColor = subType === "color" ? detectColor(item.text || "") : null;
@@ -257,7 +279,7 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
         exit={{ opacity: 0, x: -30, scale: 0.95, transition: { duration: 0.2 } }}
         transition={{ type: "spring", stiffness: 400, damping: 28, delay: Math.min(index * 0.003, 0.04) }}
         onMouseDown={handleMouseDown}
-        className={`${styles.card} ${typeClass}${selected ? ` ${styles.selected}` : ""}${clickFeedback ? ` ${styles.cardClickFeedback}` : ""}${stackOrder ? ` ${styles.cardInStack}${stackOrder === 1 ? ` ${styles.cardStackNext}` : ""}` : ""}${stackDone ? ` ${styles.cardStackDone}` : ""}`}
+        className={`${styles.card} ${typeClass}${selected ? ` ${styles.selected}` : ""}${clickFeedback ? ` ${styles.cardClickFeedback}` : ""}${stackOrder ? ` ${styles.cardInStack}${stackOrder === 1 ? ` ${styles.cardStackNext}` : ""}` : ""}${stackDone ? ` ${styles.cardStackDone}` : ""}${pinFlash ? ` ${styles.cardJustPinned}` : ""}`}
         role="option"
         aria-selected={selected}
         aria-label={title.length > 80 ? title.slice(0, 80) + "…" : title}
@@ -323,7 +345,6 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
                 <Pin size={7} /> 置顶
               </span>
             )}
-            {isMd && <span className="md-badge">MD</span>}
             {parsedColor && (
               <span className={styles.colorFormatTag}>{parsedColor.format.toUpperCase()}</span>
             )}
@@ -384,6 +405,7 @@ const CardHoverPopover = memo(function CardHoverPopover({
   flipDown?: boolean;
 }) {
   const { toast } = useToast();
+  const pinFlash = usePinFlash(item.pinned);
 
   const handleCopy = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -413,7 +435,7 @@ const CardHoverPopover = memo(function CardHoverPopover({
     e.preventDefault();
     // U2：走后端持久化（原 store.togglePin 仅改本地状态，鼠标收藏重启后全部丢失）
     const pinned = await togglePin(item.id);
-    if (pinned !== null) toast(pinned ? "已收藏" : "已取消收藏", "success");
+    if (pinned !== null) toast(pinned ? "已置顶" : "已取消置顶", "success");
   }, [item.id, toast]);
 
   const handleEdit = useCallback((e: React.MouseEvent) => {
@@ -445,10 +467,8 @@ const CardHoverPopover = memo(function CardHoverPopover({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: -8, scale: 0.96 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: -6, scale: 0.97 }}
-      transition={{ type: "spring", stiffness: 500, damping: 35 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.12 }}
       className={`${styles.cardPopover}${flipDown ? ` ${styles.flipDown}` : ""}`}
       // 阻止 mousedown 触发卡片的单击延迟逻辑
       onMouseEnter={onMouseEnter}
@@ -467,10 +487,10 @@ const CardHoverPopover = memo(function CardHoverPopover({
           ) : subType === "link" ? (
             <div className={styles.cardPopoverText}>
               <div className={styles.cardPopoverLinkHost}>
-                🔗 {(() => { try { return new URL(item.text).hostname; } catch { return item.text; } })()}
+                🔗 {urlHost(item.text)}
               </div>
               <div className={styles.cardPopoverLinkPath}>
-                {(() => { try { return new URL(item.text).pathname; } catch { return ""; } })()}
+                {urlPathname(item.text)}
               </div>
             </div>
           ) : subType === "email" ? (
@@ -527,11 +547,11 @@ const CardHoverPopover = memo(function CardHoverPopover({
         {/* 操作按钮 */}
         <div className={styles.cardPopoverActions}>
           <button
-            className={`${styles.cardPopoverBtn} ${item.pinned ? styles.cardPopoverBtnFavActive : styles.cardPopoverBtnFav}`}
+            className={`${styles.cardPopoverBtn} ${item.pinned ? styles.cardPopoverBtnFavActive : styles.cardPopoverBtnFav}${pinFlash ? ` ${styles.starPopping}` : ""}`}
             onClick={handleFav}
-            title={item.pinned ? "取消收藏" : "收藏"}
+            title={item.pinned ? "取消置顶" : "置顶"}
           >
-            {item.pinned ? "★" : "☆"} <span>{item.pinned ? "已收藏" : "收藏"}</span>
+            {item.pinned ? "★" : "☆"} <span>{item.pinned ? "已置顶" : "置顶"}</span>
           </button>
           <button className={styles.cardPopoverBtn} onClick={handleCopy} title="复制">
             📋 <span>复制</span>
@@ -564,6 +584,7 @@ const InlineCardActions = memo(function InlineCardActions({
   onEdit?: (item: HistoryItem) => void;
 }) {
   const { toast } = useToast();
+  const pinFlash = usePinFlash(item.pinned);
 
   const handleCopy = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -593,7 +614,7 @@ const InlineCardActions = memo(function InlineCardActions({
     e.preventDefault();
     // U2：走后端持久化（原 store.togglePin 仅改本地状态，鼠标收藏重启后全部丢失）
     const pinned = await togglePin(item.id);
-    if (pinned !== null) toast(pinned ? "已收藏" : "已取消收藏", "success");
+    if (pinned !== null) toast(pinned ? "已置顶" : "已取消置顶", "success");
   }, [item.id, toast]);
 
   const handleEdit = useCallback((e: React.MouseEvent) => {
@@ -614,7 +635,7 @@ const InlineCardActions = memo(function InlineCardActions({
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
-      <button className={`${styles.cardInlineBtn} ${styles.cardInlineBtnFav} ${item.pinned ? styles.cardInlineBtnFavActive : ""}`} onClick={handleFav} title={item.pinned ? "取消收藏" : "收藏"}>
+      <button className={`${styles.cardInlineBtn} ${styles.cardInlineBtnFav} ${item.pinned ? styles.cardInlineBtnFavActive : ""}${pinFlash ? ` ${styles.starPopping}` : ""}`} onClick={handleFav} title={item.pinned ? "取消置顶" : "置顶"}>
         {item.pinned ? "★" : "☆"}
       </button>
       <button className={`${styles.cardInlineBtn} ${styles.cardInlineBtnCopy}`} onClick={handleCopy} title="复制">
@@ -638,7 +659,7 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
 }) {
   const { toast } = useToast();
 
-  const hasUrl = /^(https?|ftp|file|ws|wss|sftp|telnet|ssh|rdp):\/\//i.test(item.text || "");
+  const hasUrl = URL_SCHEME_RE.test(item.text || "");
 
   const handleAddSnippet = useCallback(async () => {
     try {
@@ -674,12 +695,52 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
 
   const handleOpenUrl = useCallback(async () => {
     try {
-      const { openUrl } = await import("@tauri-apps/plugin-opener");
-      await openUrl(item.text);
+      // file:// 链接 opener 插件默认白名单不放行，转本地路径走后端命令打开
+      const localPath = fileUrlToLocalPath(item.text || "");
+      if (localPath) {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("open_file_with_system", { path: localPath });
+      } else {
+        const { openUrl } = await import("@tauri-apps/plugin-opener");
+        await openUrl(item.text);
+      }
     } catch (e) { logger.warn("打开URL失败", e); }
   }, [item.text]);
 
+  // 文件操作目标路径：
+  //  - file_path 文本子类型：路径就在 item.text
+  //  - file 类型：路径列表存在 item.content（JSON 数组），取第一个
   const subType = item.content_type || item.type;
+  const isFilePath = item.type === "text" && subType === "file_path";
+  const fileTarget = isFilePath
+    ? (item.text || "").trim()
+    : item.type === "file"
+      ? (parseFilePaths(item.content || "")[0] || "").trim()
+      : "";
+
+  // file_path / file：系统级动作（复用 FileDetailDialog 已验证的后端命令，
+  // 后端自带存在性检查与网络路径拦截，失败原因经 Err 字符串带回）
+  const handleOpenFile = useCallback(async () => {
+    if (!fileTarget) return;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("open_file_with_system", { path: fileTarget });
+      toast("已用默认应用打开", "success");
+    } catch (e) {
+      toast(e?.toString?.() || "无法打开文件", "error");
+    }
+  }, [fileTarget, toast]);
+
+  const handleRevealFile = useCallback(async () => {
+    if (!fileTarget) return;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("open_file_location", { path: fileTarget });
+    } catch (e) {
+      toast(e?.toString?.() || "无法打开文件夹", "error");
+    }
+  }, [fileTarget, toast]);
+
   const canQrCode = item.type === "text" && (hasUrl || (item.text || "").length <= 300);
 
   const handlePasteTransform = useCallback(async (transform: string) => {
@@ -688,58 +749,7 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
 
     try {
       switch (transform) {
-        // === 文本通用变换 ===
-        case "upper": text = text.toUpperCase(); break;
-        case "lower": text = text.toLowerCase(); break;
-        case "strip": text = text.replace(/^\s+|\s+$/g, ""); break;
-        case "strip_lines": text = text.split("\n").filter((l: string) => l.trim()).join("\n"); break;
-        case "quote": text = `"${text}"`; break;
-        case "md_link": text = `[${text.slice(0, 30)}](${text})`; break;
-        case "strip_html": text = stripHtml(text); break;
-
-        // === 链接子类型专属 ===
-        case "plain_url":
-          try { text = new URL(text).hostname + new URL(text).pathname; } catch { /* keep original */ }
-          break;
-
-        // === 邮箱子类型专属 ===
-        case "mailto": text = `mailto:${text.trim()}`; break;
-
-        // === 代码子类型专属 ===
-        case "code_block": text = "```\n" + text + "\n```"; break;
-        case "single_line": text = text.split("\n").map((l: string) => l.trim()).join("; "); break;
-
-        // === 电话子类型专属 ===
-        case "tel": text = `tel:${text.replace(/[- ]/g, "")}`; break;
-        case "phone_cn": {
-          const digits = text.replace(/[- ()（）+]/g, "");
-          text = digits.startsWith("86") ? `+${digits}` : `+86${digits}`;
-          break;
-        }
-
-        // === 颜色子类型专属 ===
-        case "color_hex": {
-          const parsed = detectColor(text.trim());
-          if (parsed) text = toHex(parsed);
-          break;
-        }
-        case "color_rgb": {
-          const parsed = detectColor(text.trim());
-          if (parsed) text = toRgb(parsed);
-          break;
-        }
-        case "color_hsl": {
-          const parsed = detectColor(text.trim());
-          if (parsed) text = toHsl(parsed);
-          break;
-        }
-
-        // === 路径子类型专属（文本型 file_path） ===
-        case "path_bslash": text = text.replace(/\//g, "\\"); break;
-        case "path_fslash": text = text.replace(/\\/g, "/"); break;
-        case "path_name": text = text.split(/[/\\]/).pop() || text; break;
-
-        // === 图片类型 ===
+        // === 图片类型（依赖 item.content，含异步读取，不走注册表） ===
         case "md_image": {
           const imgPath = content || text;
           text = `![图片](${imgPath})`;
@@ -761,7 +771,7 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
           break;
         }
 
-        // === 文件类型 ===
+        // === 文件类型（依赖 item.content 解析路径数组，不走注册表） ===
         case "file_name": {
           const files = parseFilePaths(content);
           text = files.map((f: string) => f.split(/[/\\]/).pop() || f).join("\n");
@@ -790,12 +800,36 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
           text = files.join("\n");
           break;
         }
+
+        // === 文本变换：统一走变换注册表（与枢纽/右键同一数据源） ===
+        default: {
+          const t = getTransform(transform);
+          if (!t) {
+            toast("未知变换", "error");
+            return;
+          }
+          const r = t.run(text);
+          if (!r.ok || !r.output) {
+            toast(r.message ?? "无法转换", "error");
+            return;
+          }
+          text = r.output;
+        }
       }
       // U1：仅粘贴成功时弹成功提示（pasteText 失败时已自行弹错误 toast）
       const ok = await pasteText(text);
       if (ok) toast("已粘贴", "success");
     } catch { toast("粘贴失败", "error"); }
   }, [item.text, item.content, toast]);
+
+  // 变换枢纽：当前内容是否有可用变换（json 数组 / 按列值 等），有才显示右键入口
+  const hubAvailable = useMemo(
+    () => applicableTransforms({ text: item.text || "", contentType: subType }).length > 0,
+    [item.text, subType],
+  );
+  const handleOpenHub = useCallback(() => {
+    useDialogStore.getState().openHub(item);
+  }, [item]);
 
   const menuItems = useMemo(() => createCardMenuItems({
     onEdit: item.type === "text" && onEdit ? () => onEdit(item) : undefined,
@@ -812,6 +846,7 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
       if (ok) toast("已粘贴", "success");
     },
     onPasteTransform: handlePasteTransform,
+    onOpenHub: hubAvailable ? handleOpenHub : undefined,
     itemType: item.type,
     itemSubType: subType,
     onPin: async () => {
@@ -822,6 +857,9 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     onDelete: () => { void deleteHistory([item.id]); },
     onAddSnippet: handleAddSnippet,
     onOpenUrl: hasUrl ? handleOpenUrl : undefined,
+    isFilePath,
+    onOpenFile: fileTarget ? handleOpenFile : undefined,
+    onRevealFile: fileTarget ? handleRevealFile : undefined,
     onQrCode: canQrCode && onQrCode ? () => onQrCode(item) : undefined,
     canQrCode,
     onRegexPreview: item.type === "text" && onRegexPreview ? (ruleId: string) => onRegexPreview(item, ruleId) : undefined,
@@ -831,7 +869,7 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     hasUrl,
     hasAutoTags,
     pinned: item.pinned,
-  }), [item, subType, hasUrl, canQrCode, hasAutoTags, toast, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, handlePasteTransform, handleAddSnippet, handleOpenUrl, handleConfirmAutoTags, handleRemoveAutoTags, togglePin]);
+  }), [item, subType, hasUrl, isFilePath, fileTarget, canQrCode, hasAutoTags, toast, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, handlePasteTransform, handleOpenHub, hubAvailable, handleAddSnippet, handleOpenUrl, handleOpenFile, handleRevealFile, handleConfirmAutoTags, handleRemoveAutoTags, togglePin]);
 
   return (
     <Card item={item} selected={selected} onClick={onClick} onDoubleClick={onDoubleClick} index={index} imageState={imageState} searchKeyword={searchKeyword} onRetryImage={onRetryImage} pasting={pasting} menuItems={menuItems} onEdit={onEdit} disablePreview={disablePreview} stackOrder={stackOrder} stackDone={stackDone} />

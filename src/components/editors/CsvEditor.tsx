@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { Table, Braces, ArrowRightLeft } from "lucide-react";
 import { useEditorCore } from "./useEditorCore";
 import { CodeTextArea } from "./CodeTextArea";
-import { MetaBar, TransformToolbar, OriginalDiff, ToolBtn } from "./editorBits";
+import { MetaBar, TransformToolbar, OriginalDiff, ToolBtn, FullscreenLaunchButton } from "./editorBits";
 import { parseCsv, csvToMarkdown, csvToJson, convertDelimiter } from "@/lib/csv";
 import { useToast } from "@/components/Toast";
 import type { EditorProps } from "@/lib/editorRegistry";
@@ -60,13 +60,16 @@ export function CsvEditor({ item, registerActions }: EditorProps) {
           )
         }
         extra={
-          <div className="md-mode-toggle">
-            <button className={`md-mode-btn${mode === "table" ? " active" : ""}`} onClick={() => setMode("table")}>
-              表格
-            </button>
-            <button className={`md-mode-btn${mode === "edit" ? " active" : ""}`} onClick={() => setMode("edit")}>
-              编辑
-            </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div className="md-mode-toggle">
+              <button className={`md-mode-btn${mode === "table" ? " active" : ""}`} onClick={() => setMode("table")}>
+                表格
+              </button>
+              <button className={`md-mode-btn${mode === "edit" ? " active" : ""}`} onClick={() => setMode("edit")}>
+                编辑
+              </button>
+            </div>
+            <FullscreenLaunchButton itemId={item.id} text={text} contentType="csv" />
           </div>
         }
       />

@@ -1,20 +1,22 @@
-/* ContextMenu — CSS Module */
+/* ContextMenu — CSS Module（玻璃态升级：毛玻璃 + 圆角项 + 加深阴影） */
 .ctxMenu {
   position: fixed;
-  z-index: 90;
-  padding: 4px 0;
+  z-index: var(--z-context);
+  padding: 5px;
   border-radius: 12px;
   min-width: 170px;
   overflow: visible;
-  background: var(--dialog-bg);
-  border: 1px solid var(--border-color);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid var(--glass-popover-border);
+  box-shadow: var(--glass-popover-shadow);
 }
 
 .ctxSep {
   height: 1px;
-  background: var(--border-color);
-  margin: 4px 10px;
+  background: var(--glass-popover-border);
+  margin: 4px 8px;
 }
 
 /* 子菜单分组标题 — 非交互，仅展示 */
@@ -23,7 +25,7 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 6px 12px 3px;
+  padding: 6px 10px 3px;
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
@@ -39,7 +41,7 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 7px 12px;
+  padding: 7px 10px;
   font-size: 12.5px;
   cursor: pointer;
   border: none;
@@ -48,12 +50,24 @@
   transition: background 0.12s ease;
   font-family: inherit;
   text-align: left;
-  border-radius: 0;
+  border-radius: 8px;
 }
 
 .ctxItem:hover,
 .keyboardActive {
   background: var(--hover);
+}
+
+/* 类型主操作 — 置顶高亮（accent 底色 + 加粗） */
+.ctxItemPrimary {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.ctxItemPrimary:hover,
+.keyboardActive.ctxItemPrimary {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 .danger {
@@ -106,17 +120,19 @@
   align-items: center;
 }
 
-/* 子菜单弹层 */
+/* 子菜单弹层 — 与主菜单同款玻璃态 */
 .ctxSubmenu {
   position: absolute;
   left: calc(100% + 4px);
   top: -4px;
-  background: var(--dialog-bg);
-  border: 1px solid var(--border-color);
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid var(--glass-popover-border);
   border-radius: 12px;
-  padding: 4px 0;
+  padding: 5px;
   min-width: 180px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1), 0 2px 6px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--glass-popover-shadow);
   z-index: 91;
   animation: ctxSubmenuIn 0.12s ease;
 }

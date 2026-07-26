@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback, useRef, lazy, Suspense, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { applyTheme, DEFAULT_THEME, ThemeKey } from "@/lib/theme";
-import { useAppStore, GroupFilter, HistoryItem } from "@/stores/appStore";
+import { useAppStore, GroupFilter, HistoryItem, buildSearchKey } from "@/stores/appStore";
+import { useDialogStore } from "@/stores/dialogStore";
 import { TopBar } from "@/components/TopBar";
 import { CardList } from "@/components/CardList";
 import { QuickPreview } from "@/components/QuickPreview";
@@ -10,7 +11,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UpdateProvider, useUpdate } from "@/contexts/UpdateContext";
 import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
 import { logger } from "@/lib/logger";
-import { pasteText, pasteImage, deleteHistory, togglePin, toggleWindow, sequentialPaste, invalidateCountsCache, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup } from "@/lib/api";
+import { pasteText, pasteImage, deleteHistory, togglePin, toggleWindow, sequentialPaste, invalidateCountsCache, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
 import { resolveSource, getAutoTagIcon, getAutoTagColor } from "@/lib/source-mappings";
 import { migrateLegacyStorageKeys } from "@/lib/storageMigration";
 import { ClipboardList, RotateCcw, Loader2, X } from "lucide-react";
@@ -20,6 +21,7 @@ import { Sidebar, type SidebarGroup } from "@/components/Sidebar";
 import type Lenis from "lenis";
 import appStyles from "./App.module.css";
 import { FocusTrap } from "@/components/FocusTrap";
+import { useDialogAnim } from "@/lib/dialogMotion";
 
 // 修复 Low：应用更名后迁移历史版本遗留的 pasteship_* localStorage 键（幂等，仅执行一次）
 migrateLegacyStorageKeys();
@@ -48,7 +50,11 @@ function App() {
   const selectedTagIds = useAppStore((s) => s.selectedTagIds);
   const workspace = useAppStore((s) => s.config.current_workspace);
   const getFilteredItems = useAppStore((s) => s.getFilteredItems);
+  const historyVersion = useAppStore((s) => s.historyVersion);
+  const setSearchResults = useAppStore((s) => s.setSearchResults);
+  const setSearchLoading = useAppStore((s) => s.setSearchLoading);
   const { toast } = useToast();
+  const anim = useDialogAnim();
   // 修复 U15：计数与实际粘贴遍历使用同一数据源（getFilteredItems），
   // 搜索/筛选激活时 FAB 计数不再失真
   const seqTotal = useMemo(
@@ -168,82 +174,108 @@ function App() {
     };
   }, []);
 
-  // 侧边栏分组数据（从 history[].source 自动聚合来源分组 + 用户自定义分组）
-  const sidebarGroups = useMemo<SidebarGroup[]>(() => {
-    const ws = config.current_workspace;
-    const wsItems = history.filter(h => h.workspace === ws);
-    const pinnedCount = wsItems.filter(h => h.pinned).length;
-    const ungroupedCount = wsItems.filter(h => h.group_id == null).length;
+  // 侧边栏聚合计数（后端 GROUP BY 全量统计）— 不再依赖内存分页窗口。
+  // 此前直接 filter 已加载窗口（初始 50 条、上限 500 条）：计数随滚动变化、
+  // 未加载的来源/分类不显示、与 TopBar 的 DB 计数矛盾。
+  // 挂在 counts-invalidated 事件上实时刷新（每次增删后触发，与 TopBar 同节奏）。
+  const [sidebarCounts, setSidebarCounts] = useState<SidebarCounts | null>(null);
+  useEffect(() => {
+    let seq = 0;
+    const refresh = () => {
+      const my = ++seq;
+      fetchSidebarCounts(config.current_workspace)
+        .then(c => { if (my === seq) setSidebarCounts(c); })
+        .catch(e => logger.warn("获取侧边栏计数失败", e));
+    };
+    refresh();
+    window.addEventListener("counts-invalidated", refresh);
+    return () => { seq++; window.removeEventListener("counts-invalidated", refresh); };
+  }, [config.current_workspace]);
 
+  // 搜索模式编排：关键词激活时按全部筛选条件查询后端（search_history 全量下推），
+  // 结果写回 store.searchResults —— getFilteredItems 在搜索模式直接返回它，
+  // 从而搜到尚未分页加载的记录（修复"搜索只覆盖已加载窗口"）。
+  // 依赖涵盖全部筛选 + 工作区 + historyVersion：搜索期间的增删/置顶等数据变更也会刷新结果。
+  // searchSeqRef 防竞态：筛选快速变化导致多个查询在飞时，只允许最新一次写回。
+  const searchSeqRef = useRef(0);
+  useEffect(() => {
+    if (!searchKeyword.trim()) return; // 无关键词 → 非搜索模式（setSearchKeyword 已清空结果）
+    const st = useAppStore.getState();
+    const key = buildSearchKey(st);
+    if (st.searchResults !== null && st.searchResultsKey === key) return; // 同查询结果已新鲜
+    const seq = ++searchSeqRef.current;
+    setSearchLoading(true);
+    searchHistory({
+      search: st.searchKeyword,
+      filter: st.filterType,
+      timeFilter: st.timeFilter,
+      source: st.sourceFilter,
+      groupFilter: st.groupFilter,
+      tagIds: st.selectedTagIds,
+    }).then((results) => {
+      if (seq !== searchSeqRef.current) return; // 已被更新的查询取代
+      setSearchResults(results, key);
+    }).catch((e) => {
+      if (seq !== searchSeqRef.current) return;
+      logger.warn("全量搜索失败", e);
+      setSearchResults([], key); // 失败返回空结果，避免 loading 悬挂
+    });
+  }, [searchKeyword, filterType, timeFilter, sourceFilter, groupFilter, selectedTagIds, workspace, historyVersion, setSearchResults, setSearchLoading]);
+
+  // 侧边栏分组数据（计数全部来自后端聚合，前端只做名称清洗 + 图标映射 + 排序）
+  const sidebarGroups = useMemo<SidebarGroup[]>(() => {
     // 内置分组：全部 + 收藏 + 未分组
     const builtin: SidebarGroup[] = [
-      { id: "all", name: "全部", count: wsItems.length, icon: "📋", isBuiltin: true, section: "builtin" as const },
-      { id: "starred", name: "收藏", count: pinnedCount, icon: "⭐", isBuiltin: true, section: "builtin" as const },
-      { id: "ungrouped", name: "未分组", count: ungroupedCount, icon: "📂", isBuiltin: true, section: "builtin" as const },
+      { id: "all", name: "全部", count: sidebarCounts?.total ?? 0, icon: "📋", isBuiltin: true, section: "builtin" as const },
+      { id: "starred", name: "收藏", count: sidebarCounts?.pinned ?? 0, icon: "⭐", isBuiltin: true, section: "builtin" as const },
+      { id: "ungrouped", name: "未分组", count: sidebarCounts?.ungrouped ?? 0, icon: "📂", isBuiltin: true, section: "builtin" as const },
     ];
 
     // 用户自定义分组
     const userGroupItems: SidebarGroup[] = groups.map(g => ({
       id: g.id,
       name: g.name,
-      count: wsItems.filter(h => h.group_id === g.id).length,
+      count: sidebarCounts?.groups[g.id] ?? 0,
       color: g.color,
       isBuiltin: false,
       isUserGroup: true,
       section: "user" as const,
     }));
 
-    // 来源分组：从 source 字段聚合，清洗名称 + 映射图标，按计数降序排列
-    const sourceCountMap = new Map<string, { count: number; displayName: string; icon: string; sourceIcon: string | null }>();
-    wsItems.forEach(h => {
-      if (h.source) {
-        const entry = sourceCountMap.get(h.source);
-        if (entry) {
-          entry.count++;
-        } else {
-          const resolved = resolveSource(h.source);
-          sourceCountMap.set(h.source, { count: 1, displayName: resolved.displayName, icon: resolved.icon, sourceIcon: h.source_icon ?? null });
-        }
-      }
-    });
+    // 来源分组：后端按 source 聚合（已按计数降序），前端清洗名称 + 映射图标
     const dotColors = ["#3B82F6", "#22C55E", "#F97316", "#A855F7", "#EF4444", "#EC4899", "#14B8A6", "#F59E0B", "#6366F1"];
-    const sourceGroups: SidebarGroup[] = Array.from(sourceCountMap.entries())
-      .sort((a, b) => b[1].count - a[1].count)
-      .map(([raw, { count, displayName, icon, sourceIcon }], i) => ({
-        id: `source:${raw}`,
-        name: displayName,
-        count,
-        icon,
+    const sourceGroups: SidebarGroup[] = (sidebarCounts?.sources ?? []).map((s, i) => {
+      const resolved = resolveSource(s.source);
+      return {
+        id: `source:${s.source}`,
+        name: resolved.displayName,
+        count: s.count,
+        icon: resolved.icon,
         color: dotColors[i % dotColors.length],
         isBuiltin: false,
         section: "source" as const,
-        sourceRaw: raw,
-        sourceIcon,
-      }));
+        sourceRaw: s.source,
+        sourceIcon: s.source_icon,
+      };
+    });
 
-    // 智能分类分组：从 AI 自动标签（source="auto"）聚合虚拟分组
+    // 智能分类分组：AI 自动标签（source="auto"）+ 后端标签计数
     const autoTags = tags.filter(t => t.source === "auto");
     const autoTagGroups: SidebarGroup[] = autoTags
-      .map((t, i) => {
-        // 统计拥有此标签的记录数
-        const count = wsItems.filter(h =>
-          (h.tags || []).some(ht => ht.id === t.id)
-        ).length;
-        return {
-          id: `auto:${t.id}`,
-          name: t.name,
-          count,
-          icon: getAutoTagIcon(t.name),
-          color: getAutoTagColor(t.name, i),
-          isBuiltin: false,
-          section: "auto" as const,
-        };
-      })
+      .map((t, i) => ({
+        id: `auto:${t.id}`,
+        name: t.name,
+        count: sidebarCounts?.tags[t.id] ?? 0,
+        icon: getAutoTagIcon(t.name),
+        color: getAutoTagColor(t.name, i),
+        isBuiltin: false,
+        section: "auto" as const,
+      }))
       .filter(g => g.count > 0)
       .sort((a, b) => b.count - a.count);
 
     return [...builtin, ...userGroupItems, ...sourceGroups, ...autoTagGroups];
-  }, [history, config.current_workspace, groups, tags]);
+  }, [sidebarCounts, groups, tags]);
 
   // 侧边栏分组点击 → 同步筛选状态
   const handleSelectGroup = useCallback((groupId: string) => {
@@ -519,6 +551,8 @@ function App() {
     // U3：右键菜单打开期间所有按键让位给菜单（菜单自带方向键/Enter/Esc 处理），
     // 否则 Enter 会同时激活菜单项并粘贴选中卡片、Esc 会同时关菜单和隐藏窗口
     if (ctxMenuOpenRef.current) return;
+    // 变换枢纽打开时同样让位（枢纽自带 ↑↓/Enter/Esc 处理）
+    if (useDialogStore.getState().hubItem) return;
     // 弹窗打开时：ESC/? 正常工作，其余列表导航按键被屏蔽（让弹窗内部控件如 Tab 可以正常使用）
     const { showSettings, showSnippets, showExtract, moveToGroup } = dialogStatesRef.current;
     const dialogOpen = showSettings || showSnippets || showExtract || moveToGroup || fileDetailOpenRef.current;
@@ -596,11 +630,13 @@ function App() {
     } else if (e.ctrlKey && e.key === "d") {
       e.preventDefault();
       const selectedArr = [...selectedIds];
+      let pinned: boolean | null = null;
       if (selectedArr.length > 0) {
-        await togglePin(selectedArr[0]);
+        pinned = await togglePin(selectedArr[0]);
       } else if (focusId) {
-        await togglePin(focusId);
+        pinned = await togglePin(focusId);
       }
+      if (pinned !== null) toast(pinned ? "已置顶" : "已取消置顶", "success");
     } else if (e.ctrlKey && e.key === "z") {
       e.preventDefault();
       const restored = store.undoDelete();
@@ -767,15 +803,12 @@ function App() {
         <AnimatePresence>
           {moveToGroupItem && (
             <motion.div
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="dialog-backdrop" style={{ zIndex: 100 }} onClick={() => setMoveToGroupItem(null)}
+              {...anim.backdrop}
+              className="dialog-backdrop" onClick={() => setMoveToGroupItem(null)}
             >
               <FocusTrap>
               <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: 16 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 16 }}
-                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                {...anim.panel}
                 className="dialog-box" style={{ maxWidth: 300 }}
                 onClick={(e) => e.stopPropagation()}
               >
@@ -858,13 +891,18 @@ function UpdateNotesAutoPop() {
     if (update) dismissedRef.current = update.version;
   }, [update]);
 
-  if (!open) return null;
+  // 常挂载 + AnimatePresence 门控：关闭时子树保留到退场动画结束再卸载。
+  // lazy chunk 仍只在首次 open 时加载（条件渲染在 Suspense 外层）
   return (
-    <Suspense fallback={null}>
-      <ErrorBoundary fallback={null} componentName="更新说明弹框">
-        <UpdateNotesDialog open={open} onClose={handleClose} currentVersion={appVersion} />
-      </ErrorBoundary>
-    </Suspense>
+    <AnimatePresence>
+      {open && (
+        <Suspense key="update-notes-dialog" fallback={null}>
+          <ErrorBoundary fallback={null} componentName="更新说明弹框">
+            <UpdateNotesDialog open={open} onClose={handleClose} currentVersion={appVersion} />
+          </ErrorBoundary>
+        </Suspense>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -904,16 +942,15 @@ function ShortcutPanel({ onClose }: { onClose: () => void }) {
     return allShortcuts.filter(s => s.desc.toLowerCase().includes(kw) || s.keys.toLowerCase().includes(kw));
   }, [filter, allShortcuts]);
 
+  const anim = useDialogAnim();
+
   return (
     <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      {...anim.backdrop}
       className="shortcut-overlay" onClick={onClose}
     >
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 16 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 16 }}
-        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+        {...anim.panel}
         className="shortcut-panel" onClick={(e) => e.stopPropagation()}
       >
         <div className="shortcut-panel-header">

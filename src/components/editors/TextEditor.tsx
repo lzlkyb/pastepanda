@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
 import { useEditorCore } from "./useEditorCore";
 import { CodeTextArea } from "./CodeTextArea";
-import { MetaBar, TransformToolbar, OriginalDiff } from "./editorBits";
+import { MetaBar, TransformToolbar, OriginalDiff, FullscreenLaunchButton } from "./editorBits";
 import { highlightCode, getLangLabel } from "@/lib/utils";
+import { findLanguageTag } from "./fullscreen/languages";
 import type { EditorProps } from "@/lib/editorRegistry";
 
 /**
@@ -39,6 +40,7 @@ export function TextEditor({ item, registerActions }: EditorProps) {
         charCount={charCount}
         isModified={isModified}
         badge={langLabel !== "文本" && langLabel !== "检测中…" ? <>🔧 {langLabel}</> : "✏️ 编辑"}
+        extra={<FullscreenLaunchButton itemId={item.id} text={text} contentType={item.content_type || "text"} language={findLanguageTag(item.tags)} />}
       />
 
       <CodeTextArea value={text} onChange={pushHistory} textareaId="edit-code-textarea" />

@@ -7,14 +7,15 @@
 export { pasteText, pasteImage, copyOnly, saveForeground, toggleWindow } from "./paste";
 
 // 缓存管理
-export { getStats, fetchCounts, invalidateCountsCache, clearImageCaches } from "./cache";
-export type { Stats } from "./cache";
+export { getStats, getStatsDetail, fetchCounts, fetchSidebarCounts, invalidateCountsCache, clearImageCaches } from "./cache";
+export type { Stats, StatsDetail, DailyCount, SidebarCounts } from "./cache";
 
 // 图片
 export { getImageDataUrl, getImageBase64, dataUrlToBlob, getImageThumbnail, getImageInfo } from "./images";
 
 // 历史记录
-export { loadMoreHistory, deleteHistory, togglePin } from "./history";
+export { loadMoreHistory, deleteHistory, togglePin, searchHistory } from "./history";
+export type { SearchFilters } from "./history";
 
 // 依次粘贴 / 索引粘贴
 export { sequentialPaste, indexPaste } from "./sequential";

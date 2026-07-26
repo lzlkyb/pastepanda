@@ -48,8 +48,8 @@ export const StackBanner = memo(function StackBanner() {
             ? `再按 ${pasteKey} 或 Esc 中止`
             : `${stackPasted > 0 ? `已粘贴 ${stackPasted}/${total} · ` : ""}Ctrl+C 收集 · ${pasteKey} 逐条粘贴`}
         </div>
-        {/* U58：全部粘贴进度条 */}
-        {stackPasteAllActive && (
+        {/* 进度条：常驻显示已粘贴/总数进度 */}
+        {total > 0 && (
           <div className={styles.progressTrack} role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100}>
             <div className={styles.progressFill} style={{ width: `${progressPct}%` }} />
           </div>

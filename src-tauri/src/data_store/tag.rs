@@ -222,7 +222,7 @@ impl DataStore {
     /// 确保自动标签种子数据存在（首次启动时插入）
     pub fn ensure_auto_tags(&self) -> Result<(), String> {
         let conn = self.lock_conn();
-        let auto_tags: [(&str, &str, &str); 25] = [
+        let auto_tags: [(&str, &str, &str); 29] = [
             // 主类别
             ("auto-code", "代码", "#6366F1"),
             ("auto-link", "链接", "#06B6D4"),
@@ -250,6 +250,11 @@ impl DataStore {
             ("auto-lang-html", "HTML", "#E34F26"),
             ("auto-lang-css", "CSS", "#1572B6"),
             ("auto-lang-shell", "Shell", "#4EAA25"),
+            // 配置文件子格式（detect_config 返回的子标签，全屏代码编辑器据此选语言模式）
+            ("auto-fmt-yaml", "YAML", "#CB171E"),
+            ("auto-fmt-toml", "TOML", "#9C4221"),
+            ("auto-fmt-env", "ENV", "#ECD53F"),
+            ("auto-fmt-ini", "INI", "#7C8DA5"),
         ];
         for (id, name, color) in &auto_tags {
             conn.execute(

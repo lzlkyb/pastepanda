@@ -131,6 +131,7 @@ export function useVirtualScroll({
       wheelMultiplier: 0.8,
       touchMultiplier: 1,
       autoResize: true,
+      prevent: (node: HTMLElement) => node.classList?.contains("dialog-backdrop"),
     });
 
     lenisRef.current = lenis;

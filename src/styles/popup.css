@@ -15,8 +15,14 @@
   width: 100vw;
   overflow-y: auto;
   overflow-x: hidden;
-  background: var(--dialog-bg);
+  /* 方案C：渐变底 — 顶部略亮、底部略暗的微妙立体感（color-mix 自动适配明暗主题） */
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--dialog-bg) 90%, #ffffff 10%) 0%,
+    var(--dialog-bg) 45%,
+    color-mix(in srgb, var(--dialog-bg) 94%, #000000 6%) 100%);
+  border: 1px solid var(--glass-card-border);
   border-radius: 14px;
+  box-shadow: inset 0 1px 0 var(--glass-shimmer);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   user-select: none;
   -webkit-user-select: none;
@@ -29,6 +35,10 @@
   align-items: center;
   gap: 10px;
   padding: 10px 14px 8px;
+  /* 方案C：头部 accent 渐变晕染（低透明度，随各主题 accent 色自适应） */
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--accent) 7%, transparent),
+    color-mix(in srgb, var(--accent) 3%, transparent));
   border-bottom: 1px solid var(--border-color);
 }
 
@@ -87,8 +97,11 @@
 .tray-popup-card {
   flex: 1;
   padding: 8px 6px 6px;
-  background: var(--section-bg);
+  /* 方案C②：accent 浅染底 — 混入 7% 主题 accent，与白色渐变底布明显区分（color-mix 自适应明暗主题） */
+  background: color-mix(in srgb, var(--accent) 7%, var(--dialog-bg));
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
   border-radius: 10px;
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--accent) 10%, transparent);
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -105,6 +118,14 @@
   align-items: center;
   justify-content: center;
   color: #fff;
+}
+
+/* 方案C：渐变图标块统一加光泽内高光 + 柔和外阴影（主题无关，明暗皆宜） */
+.tray-popup-card .card-icon-slot,
+.tray-popup-item-icon,
+.tray-popup-section-label .section-label-icon,
+.tray-popup-footer .footer-icon {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 2px 6px rgba(0,0,0,0.18);
 }
 
 .card-today .card-icon-slot {
@@ -435,15 +456,34 @@
   opacity: 0.6;
 }
 
-/* ===== 底部状态栏 ===== */
+/* ===== 底部状态栏（方案B 两行清晰版） ===== */
 .tray-popup-footer {
   padding: 8px 12px;
   font-size: 10.5px;
   color: var(--text-muted);
   border-top: 1px solid var(--border-color);
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+}
+
+/* 第一行：图标 + 标签 + 右对齐数值 */
+.tray-popup-footer .footer-row1 {
+  display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.tray-popup-footer .footer-label {
+  font-weight: 600;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.tray-popup-footer .footer-nums {
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .tray-popup-footer .footer-icon {
@@ -476,17 +516,6 @@
 }
 [data-theme="sunset"] .tray-popup-footer .footer-icon {
   background: linear-gradient(135deg, #EA580C, #C2410C);
-}
-
-.tray-popup-footer .footer-info {
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-}
-
-.tray-popup-footer .footer-bar-wrap {
-  width: 80px;
-  flex-shrink: 0;
 }
 
 .tray-popup-footer .footer-bar {
@@ -527,6 +556,7 @@
   font-size: 10px;
   color: var(--text-muted);
   flex-shrink: 0;
+  text-align: center;
 }
 
 /* ===== 滚动条（当内容超出时） ===== */

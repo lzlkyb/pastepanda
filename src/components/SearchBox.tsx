@@ -4,7 +4,7 @@ import { useAppStore } from "@/stores/appStore";
 import { X } from "lucide-react";
 import styles from "./TopBar.module.css";
 
-export function SearchBox() {
+export function SearchBox({ fill }: { fill?: boolean } = {}) {
   const setSearchKeyword = useAppStore((s) => s.setSearchKeyword);
   const searchHistory = useAppStore((s) => s.searchHistory);
   const addSearchHistory = useAppStore((s) => s.addSearchHistory);
@@ -84,7 +84,7 @@ export function SearchBox() {
   return (
     <div
       ref={searchBoxRef}
-      className={`${styles.searchBox}${focused ? ` ${styles.focused}` : ""}${showHistory ? ` ${styles.hasHistory}` : ""}`}
+      className={`${styles.searchBox}${fill ? ` ${styles.searchBoxFill}` : ""}${focused ? ` ${styles.focused}` : ""}${showHistory ? ` ${styles.hasHistory}` : ""}`}
       data-tauri-drag-region="false"
       style={{ position: "relative" }}
     >

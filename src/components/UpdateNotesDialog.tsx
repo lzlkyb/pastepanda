@@ -1,6 +1,7 @@
 import { useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { createPortal } from "react-dom";
+import { useDialogAnim } from "@/lib/dialogMotion";
 import {
   X,
   ChevronRight,
@@ -56,6 +57,7 @@ interface UpdateNotesDialogProps {
 
 export function UpdateNotesDialog({ open, onClose, currentVersion }: UpdateNotesDialogProps) {
   const { update, downloadAndInstall, skipThisVersion, status, progress, progressIndeterminate, bytesPerSec } = useUpdate();
+  const anim = useDialogAnim();
 
   const entry = useMemo<ChangelogEntry | null>(() => {
     if (!update?.version) return null;
@@ -74,22 +76,16 @@ export function UpdateNotesDialog({ open, onClose, currentVersion }: UpdateNotes
   };
 
   return createPortal(
-    <AnimatePresence>
+    <>
       {open && (
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="dialog-backdrop"
-          style={{ zIndex: 100000 }}
+          {...anim.backdrop}
+          className="dialog-backdrop z-modal-top"
           onClick={onClose}
         >
           <FocusTrap>
             <motion.div
-              initial={{ scale: 0.96, opacity: 0, y: 10 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.96, opacity: 0, y: 10 }}
-              transition={{ type: "spring", stiffness: 400, damping: 30 }}
+              {...anim.panel}
               className="dialog-box w460"
               onClick={(e) => e.stopPropagation()}
             >
@@ -181,7 +177,7 @@ export function UpdateNotesDialog({ open, onClose, currentVersion }: UpdateNotes
           </FocusTrap>
         </motion.div>
       )}
-    </AnimatePresence>,
+    </>,
     document.body,
   );
 }

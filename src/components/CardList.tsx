@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense, useCallback, useMemo, memo } from "react";
+import { createPortal } from "react-dom";
+import { AnimatePresence } from "framer-motion";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
 import { useDialogStore } from "@/stores/dialogStore";
@@ -6,6 +8,7 @@ import { useToast } from "@/components/Toast";
 import { CardWithContext, ImgState } from "@/components/Card";
 import { ContextMenu } from "@/components/ContextMenu";
 import { StackBanner } from "@/components/StackBanner";
+import { MdAssocBanner } from "@/components/MdAssocBanner";
 import { TagEditor } from "@/components/TagEditor";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { pasteText, pasteImage, getImageThumbnail, getImageBase64, dataUrlToBlob, deleteHistory } from "@/lib/api";
@@ -17,6 +20,9 @@ import styles from "./CardList.module.css";
 import { useLoadMore } from "@/hooks/useLoadMore";
 import { useVirtualScroll } from "@/hooks/useVirtualScroll";
 import { ItemEditorDialog } from "@/components/editors/ItemEditorDialog";
+import { TransformHubDialog } from "@/components/TransformHubDialog";
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 
 const QRCodeDialog = lazy(() => import("@/components/QRCodeDialog").then(m => ({ default: m.QRCodeDialog })));
 const DiffDialog = lazy(() => import("@/components/DiffDialog").then(m => ({ default: m.DiffDialog })));
@@ -89,11 +95,14 @@ const VirtualCardRow = memo(function VirtualCardRow({
 export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenisRef, showMoveToGroup = false }: { scrollRef?: React.RefObject<HTMLDivElement | null>; lenisRef?: React.RefObject<Lenis | null>; showMoveToGroup?: boolean }) {
   const history = useAppStore((s) => s.history);
   const searchKeyword = useAppStore((s) => s.searchKeyword);
+  const searchLoading = useAppStore((s) => s.searchLoading);
   const filterType = useAppStore((s) => s.filterType);
   const timeFilter = useAppStore((s) => s.timeFilter);
   const sourceFilter = useAppStore((s) => s.sourceFilter);
   const groupFilter = useAppStore((s) => s.groupFilter);
   const selectedTagIds = useAppStore((s) => s.selectedTagIds);
+  // 搜索模式：关键词激活时列表数据源为后端全量搜索结果（非分页窗口），需禁用分页加载
+  const searchMode = !!searchKeyword.trim();
   const hasActiveFilter = !!(
     searchKeyword ||
     filterType !== "all" ||
@@ -110,6 +119,25 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
     st.setSourceFilter("");
     st.setGroupFilter("all");
     st.clearTagFilters();
+  }, []);
+
+  // 监听系统文件关联事件：双击 .md 文件时打开独立全屏编辑器窗口
+  useEffect(() => {
+    // 应用已在运行时：第二个实例的参数经 single-instance 插件 emit 事件过来
+    const unlisten = listen<string[]>("file-open-event", (event) => {
+      const paths = event.payload;
+      if (paths.length > 0) {
+        invoke("open_fullscreen_editor", { filePath: paths[0], contentType: "markdown" }).catch(() => {});
+      }
+    });
+    // 应用未运行时双击 .md：路径在启动参数中，setup 阶段已存入 PendingFileOpen，
+    // 前端挂载后主动取走（此时 emit 事件尚未注册，不能依赖事件）
+    invoke<string[]>("take_pending_file_open").then((paths) => {
+      if (paths.length > 0) {
+        invoke("open_fullscreen_editor", { filePath: paths[0], contentType: "markdown" }).catch(() => {});
+      }
+    }).catch(() => { /* 命令不存在或无待打开文件时静默忽略 */ });
+    return () => { unlisten.then(fn => fn()); };
   }, []);
   const getFilteredItems = useAppStore((s) => s.getFilteredItems);
   const selectedIds = useAppStore((s) => s.selectedIds);
@@ -131,6 +159,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
 
   const { toast } = useToast();
   const openEditor = useDialogStore((s) => s.openEditor);
+  const editorItem = useDialogStore((s) => s.editorItem);
   const [tagEditorItem, setTagEditorItem] = useState<HistoryItem | null>(null);
   const [qrItem, setQrItem] = useState<HistoryItem | null>(null);
   const [diffPair, setDiffPair] = useState<[HistoryItem, HistoryItem] | null>(null);
@@ -138,6 +167,12 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   const [showRegexRules, setShowRegexRules] = useState(false);
   const [pastingId, setPastingId] = useState<string | null>(null);
   const [imgCache, setImgCache] = useState<Record<string, ImgState>>({});
+  // 方案 C 置顶动画：gliding=行 glide 过渡窗口开关；landingId=落定高亮环目标行
+  const [gliding, setGliding] = useState(false);
+  const [landingId, setLandingId] = useState<string | null>(null);
+  const glideTimerRef = useRef<number | null>(null);
+  const landingShowTimerRef = useRef<number | null>(null);
+  const landingClearTimerRef = useRef<number | null>(null);
 
   // ── Refs ──
   const internalScrollRef = useRef<HTMLDivElement>(null);
@@ -171,6 +206,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   // ── 提取的 hooks ──
   const { hasMore, loadingMore, loadError, retryCount, triggerLoadMore, handleRetryLoadMore } = useLoadMore({
     scrollRef, lenisRef, itemsLength: items.length,
+    enabled: !searchMode, // 搜索模式下列表来自后端搜索结果，禁用分页加载
   });
 
 
@@ -183,6 +219,57 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
     scrollRef, lenisRef, items, virtualizer,
     searchKeyword, filterType, triggerLoadMore,
   });
+
+  // ── 弹框打开时暂停 Lenis，防止滚轮事件穿透到背景列表 ──
+  const anyDialogOpen = !!(editorItem || tagEditorItem || qrItem || diffPair || regexPreview || showRegexRules);
+  const anyDialogOpenRef = useRef(anyDialogOpen);
+  anyDialogOpenRef.current = anyDialogOpen;
+  useEffect(() => {
+    const lenis = lenisRef.current;
+    if (!lenis) return;
+    if (anyDialogOpen) {
+      lenis.stop();
+    } else {
+      lenis.start();
+    }
+  }, [anyDialogOpen, lenisRef]);
+
+  // ── 方案 C 置顶动画：pin-anim 事件（lib/api togglePin 派发）──
+  // 置顶/取消置顶触发 getFilteredItems 重排（pinned DESC），行 translateY 随之变化；
+  // 在重排瞬间给行挂 380ms transform 过渡（rowGlide），被置顶卡片平滑滑向顶部、其余行让位。
+  // glide 期间暂停 Lenis，防止滚动回收行与过渡叠加产生重影；落定后给目标行高亮环。
+  useEffect(() => {
+    const onPinAnim = (e: Event) => {
+      const id = (e as CustomEvent).detail?.id as string | undefined;
+      setGliding(true);
+      if (glideTimerRef.current !== null) window.clearTimeout(glideTimerRef.current);
+      glideTimerRef.current = window.setTimeout(() => {
+        glideTimerRef.current = null;
+        setGliding(false);
+      }, 450);
+      const lenis = lenisRef.current;
+      if (lenis) lenis.stop();
+      if (landingShowTimerRef.current !== null) window.clearTimeout(landingShowTimerRef.current);
+      if (landingClearTimerRef.current !== null) window.clearTimeout(landingClearTimerRef.current);
+      landingShowTimerRef.current = window.setTimeout(() => {
+        landingShowTimerRef.current = null;
+        if (id) setLandingId(id);
+        // glide 结束后恢复 Lenis（弹框打开时保持暂停，交由 anyDialogOpen 效果管理）
+        if (lenis && !anyDialogOpenRef.current) lenis.start();
+      }, 400);
+      landingClearTimerRef.current = window.setTimeout(() => {
+        landingClearTimerRef.current = null;
+        setLandingId(null);
+      }, 1450);
+    };
+    window.addEventListener("pin-anim", onPinAnim);
+    return () => {
+      window.removeEventListener("pin-anim", onPinAnim);
+      if (glideTimerRef.current !== null) window.clearTimeout(glideTimerRef.current);
+      if (landingShowTimerRef.current !== null) window.clearTimeout(landingShowTimerRef.current);
+      if (landingClearTimerRef.current !== null) window.clearTimeout(landingClearTimerRef.current);
+    };
+  }, [lenisRef]);
 
   // ── 缩略图可视窗口范围 ──
   const vItemsNow = virtualizer.getVirtualItems();
@@ -428,6 +515,8 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
 
       <StackBanner />
 
+      <MdAssocBanner />
+
       <div
         className={`${styles.scrollArea} ${timelineExpanded ? styles.scrollAreaTimelineVisible : ""}`}
         ref={handleScrollRef}
@@ -441,15 +530,29 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
         </div>
         <div ref={contentRef} className={styles.cardList}>
         {items.length === 0 ? (
+          searchMode && searchLoading ? (
+            <div className={styles.emptyState}>
+              <div className={styles.emptyIconWrap}>
+                <span className={styles.loadMoreSpinner} />
+              </div>
+              <div style={{ textAlign: "center" }}>
+                <p className={styles.emptyTitle}>搜索中…</p>
+                <p className={styles.emptyDesc}>正在全量检索 “{searchKeyword}”</p>
+              </div>
+            </div>
+          ) : (
           <div className={styles.emptyState}>
-            <div className={styles.emptyIcon}>
-              {searchKeyword ? (
-                <Search size={28} style={{ color: "var(--accent)" }} strokeWidth={1.5} />
-              ) : hasActiveFilter ? (
-                <FileX size={28} style={{ color: "var(--accent)" }} strokeWidth={1.5} />
-              ) : (
-                <ClipboardList size={28} style={{ color: "var(--accent)" }} strokeWidth={1.5} />
-              )}
+            <div className={styles.emptyIconWrap}>
+              <div className={styles.emptyRing} />
+              <div className={styles.emptyIcon}>
+                {searchKeyword ? (
+                  <Search size={28} style={{ color: "var(--accent)" }} strokeWidth={1.5} />
+                ) : hasActiveFilter ? (
+                  <FileX size={28} style={{ color: "var(--accent)" }} strokeWidth={1.5} />
+                ) : (
+                  <ClipboardList size={28} style={{ color: "var(--accent)" }} strokeWidth={1.5} />
+                )}
+              </div>
             </div>
             <div style={{ textAlign: "center" }}>
               <p className={styles.emptyTitle}>
@@ -473,7 +576,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                       清除搜索条件
                     </button>
                   )}
-                  <button onClick={clearAllFilters} className={styles.emptyClearBtn}>
+                  <button onClick={clearAllFilters} className={styles.emptyPrimaryBtn}>
                     清除全部筛选
                   </button>
                 </div>
@@ -503,6 +606,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
               </div>
             )}
           </div>
+          )
         ) : (
           <>
             {/* 批量操作工具栏 */}
@@ -555,6 +659,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                 if (!item) return null;
                 return (
                   <div key={item.id} data-index={vItem.index} data-item-id={item.id} ref={virtualizer.measureElement}
+                    className={[gliding && styles.rowGlide, landingId === item.id && styles.rowLanding].filter(Boolean).join(" ")}
                     style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vItem.start}px)` }}>
                       <VirtualCardRow
                         item={item} selected={focusId === item.id || selectedIds.has(item.id)}
@@ -581,20 +686,33 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
             </div>
             {items.length > 0 && (
               <div className={styles.loadMoreArea}>
-                {loadingMore && (
+                {searchMode ? (
+                  searchLoading ? (
+                    <>
+                      <span className={styles.loadMoreSpinner} />
+                      <span className={styles.loadMoreHint}>搜索中…</span>
+                    </>
+                  ) : (
+                    <span className={styles.loadMoreHint}>— 找到 {items.length} 条相关记录 —</span>
+                  )
+                ) : (
                   <>
-                    <span className={styles.loadMoreSpinner} />
-                    <span className={styles.loadMoreHint}>加载中…</span>
+                    {loadingMore && (
+                      <>
+                        <span className={styles.loadMoreSpinner} />
+                        <span className={styles.loadMoreHint}>加载中…</span>
+                      </>
+                    )}
+                    {loadError && !loadingMore && (
+                      <>
+                        <span className={styles.loadMoreError}>加载失败{retryCount > 0 ? ` (已重试 ${retryCount} 次)` : ""}</span>
+                        <button onClick={handleRetryLoadMore} className={styles.loadMoreRetryBtn}>重试</button>
+                      </>
+                    )}
+                    {!hasMore && !loadingMore && !loadError && (
+                      <span className={styles.loadMoreHint}>— 已加载全部记录 —</span>
+                    )}
                   </>
-                )}
-                {loadError && !loadingMore && (
-                  <>
-                    <span className={styles.loadMoreError}>加载失败{retryCount > 0 ? ` (已重试 ${retryCount} 次)` : ""}</span>
-                    <button onClick={handleRetryLoadMore} className={styles.loadMoreRetryBtn}>重试</button>
-                  </>
-                )}
-                {!hasMore && !loadingMore && !loadError && (
-                  <span className={styles.loadMoreHint}>— 已加载全部记录 —</span>
                 )}
               </div>
             )}
@@ -602,21 +720,44 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
         )}
       </div>
 
-      {/* 弹窗 */}
-      <ItemEditorDialog />
-      <Suspense fallback={null}>
-        {qrItem && <ErrorBoundary fallback={null}><QRCodeDialog text={qrItem.text} onClose={() => setQrItem(null)} /></ErrorBoundary>}
-      </Suspense>
-      <Suspense fallback={null}>
-        {diffPair && <ErrorBoundary fallback={null}><DiffDialog oldItem={diffPair[0]} newItem={diffPair[1]} onClose={() => setDiffPair(null)} /></ErrorBoundary>}
-      </Suspense>
-      <Suspense fallback={null}>
-        {regexPreview && <ErrorBoundary fallback={null}><RegexPreviewDialogWrapper item={regexPreview.item} ruleId={regexPreview.ruleId} onClose={() => setRegexPreview(null)} /></ErrorBoundary>}
-      </Suspense>
-      <Suspense fallback={null}>
-        {showRegexRules && <ErrorBoundary fallback={null}><RegexRulesDialog onClose={() => setShowRegexRules(false)} /></ErrorBoundary>}
-      </Suspense>
-      <TagEditor open={!!tagEditorItem} item={tagEditorItem} onClose={() => setTagEditorItem(null)} />
+      {/* 弹窗 —— createPortal 到 body：
+          .scrollArea 的 isolation:isolate 会形成层叠上下文，内联弹窗的
+          z-modal 令牌被降维到 scrollArea 内部，导致 FAB/Timeline/BackToTop
+          等浮动元素盖住弹窗遮罩。Portal 到 body 后 z-index 在全局层级竞争。
+          （与 ConfirmDialog / UpdateNotesDialog 的既有做法一致） */}
+      {createPortal(
+        <>
+          <ItemEditorDialog />
+          <TransformHubDialog />
+          {/* AnimatePresence 包裹条件挂载：关闭时子树保留到退场动画结束再卸载。
+              各弹框组件内部不再自带 AnimatePresence（会形成独立 presence 边界、
+              屏蔽外层退出信号），motion 元素直接参与本层 presence */}
+          <AnimatePresence>
+            {qrItem && (
+              <Suspense key="qr-dialog" fallback={null}>
+                <ErrorBoundary fallback={null}><QRCodeDialog text={qrItem.text} onClose={() => setQrItem(null)} /></ErrorBoundary>
+              </Suspense>
+            )}
+            {diffPair && (
+              <Suspense key="diff-dialog" fallback={null}>
+                <ErrorBoundary fallback={null}><DiffDialog oldItem={diffPair[0]} newItem={diffPair[1]} onClose={() => setDiffPair(null)} /></ErrorBoundary>
+              </Suspense>
+            )}
+            {regexPreview && (
+              <Suspense key="regex-preview-dialog" fallback={null}>
+                <ErrorBoundary fallback={null}><RegexPreviewDialogWrapper item={regexPreview.item} ruleId={regexPreview.ruleId} onClose={() => setRegexPreview(null)} /></ErrorBoundary>
+              </Suspense>
+            )}
+            {showRegexRules && (
+              <Suspense key="regex-rules-dialog" fallback={null}>
+                <ErrorBoundary fallback={null}><RegexRulesDialog onClose={() => setShowRegexRules(false)} /></ErrorBoundary>
+              </Suspense>
+            )}
+          </AnimatePresence>
+          <TagEditor open={!!tagEditorItem} item={tagEditorItem} onClose={() => setTagEditorItem(null)} />
+        </>,
+        document.body
+      )}
 
     </div>
     </div>

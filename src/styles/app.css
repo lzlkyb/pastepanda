@@ -8,6 +8,24 @@
  * 组件级样式 → 各自 .module.css
  */
 
+/* ===== 0. 图层令牌（z-index 统一刻度）=====
+ * 全局图层一律使用 var(--z-*)，禁止魔法数字。
+ * 间隔 100 预留插入空间；组件内部局部 z（0~50）靠父级层叠上下文隔离，不在此列。
+ * 遮罩与面板不分开定 z —— 面板是遮罩的子元素，天然在其上。
+ */
+:root {
+  --z-base: 0;        /* 基础内容 */
+  --z-raised: 100;    /* 内容内抬升：吸顶栏、来源徽章、收集横幅 */
+  --z-floating: 200;  /* 内容内浮动：BackToTop、FAB、时间轴、悬停预览 */
+  --z-context: 300;   /* 右键菜单（卡片 + 侧边栏） */
+  --z-modal: 400;     /* 普通模态：设置/提取/片段/编辑器壳/图片预览/标签编辑/移动分组/快捷键面板 */
+  --z-modal-top: 500; /* 高优先级模态：快速预览 QuickPreview、更新说明 UpdateNotes */
+  --z-confirm: 600;   /* 嵌套确认框 ConfirmDialog（从设置/片段弹出，须压过父弹框） */
+  --z-tooltip: 700;   /* 帮助提示 HelpTooltip */
+  --z-toast: 800;     /* Toast 通知（最高层） */
+  --z-fullscreen: 900;/* 全屏编辑器（独立窗口，象征性对齐） */
+}
+
 /* ===== 1. 布局 ===== */
 .app-shell {
   display: flex;
@@ -224,7 +242,7 @@
 .shortcut-overlay {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;

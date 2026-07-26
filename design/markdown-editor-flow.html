@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PastePanda - Markdown 编辑器交互流程</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #F8F9FB;
+  color: #1a1a1a;
+  height: 100vh;
+  overflow: auto;
+  padding: 40px;
+}
+
+/* ─── Demo Layout ─── */
+.demo-container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.demo-section {
+  margin-bottom: 48px;
+}
+
+.demo-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.demo-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0078D4, #005A9E);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.demo-desc {
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.demo-arrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0;
+  font-size: 12px;
+  color: #0078D4;
+  font-weight: 600;
+}
+
+.demo-arrow svg {
+  flex-shrink: 0;
+}
+
+/* ─── Card Mockup ─── */
+.card-mock {
+  width: 360px;
+  background: #fff;
+  border-radius: 16px;
+  padding: 14px 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
+  position: relative;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.card-mock::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: #0078D4;
+}
+
+.card-mock:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.06);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.card-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #0078D4, #005A9E);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1a1a;
+  flex: 1;
+}
+
+.card-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(0, 120, 212, 0.08);
+  color: #0078D4;
+}
+
+.card-preview {
+  font-size: 12px;
+  color: #666;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-left: 46px;
+}
+
+.card-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  margin-left: 46px;
+}
+
+.card-time {
+  font-size: 10px;
+  color: #aaa;
+}
+
+.card-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(0, 120, 212, 0.06);
+  color: #0078D4;
+}
+
+/* Double-click hint */
+.card-mock .dblclick-hint {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 11px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.card-mock:hover .dblclick-hint {
+  opacity: 1;
+}
+
+/* ─── Backdrop ─── */
+.dialog-backdrop {
+  position: relative;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 12px;
+  padding: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 360px;
+}
+
+/* ─── Small Dialog ─── */
+.dialog-box {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.08);
+  width: 480px;
+  max-width: 100%;
+  overflow: hidden;
+  animation: dialogIn 0.2s ease;
+}
+
+@keyframes dialogIn {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+
+.dialog-title {
+  font-size: 14px;
+  font-weight: 600;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dialog-title-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #0078D4, #005A9E);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.dialog-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dialog-header-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #888;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s;
+}
+
+.dialog-header-btn:hover { background: rgba(0,0,0,0.05); color: #333; }
+.dialog-header-btn.expand-btn:hover { background: rgba(0, 120, 212, 0.08); color: #0078D4; }
+.dialog-header-btn.close-btn:hover { background: #fee; color: #e53; }
+
+/* ─── Editor Area (small) ─── */
+.editor-area {
+  height: 240px;
+  display: flex;
+  overflow: hidden;
+}
+
+.editor-textarea {
+  flex: 1;
+  padding: 14px 16px;
+  font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #1a1a1a;
+  background: #fafbfc;
+  border: none;
+  outline: none;
+  resize: none;
+}
+
+.editor-textarea::placeholder { color: #ccc; }
+
+/* ─── Dialog Footer ─── */
+.dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-top: 1px solid rgba(0,0,0,0.06);
+  background: #fafbfc;
+}
+
+.dialog-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #888;
+}
+
+.dialog-footer-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.d-btn {
+  height: 30px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.d-btn-secondary {
+  background: rgba(0,0,0,0.04);
+  color: #555;
+}
+.d-btn-secondary:hover { background: rgba(0,0,0,0.08); }
+
+.d-btn-primary {
+  background: linear-gradient(135deg, #0078D4, #005A9E);
+  color: #fff;
+}
+.d-btn-primary:hover { opacity: 0.9; }
+
+.d-btn-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(0, 120, 212, 0.06);
+  color: #0078D4;
+  border: 1px dashed rgba(0, 120, 212, 0.3);
+}
+.d-btn-expand:hover { background: rgba(0, 120, 212, 0.12); }
+
+/* ─── Flow Arrow ─── */
+.flow-container {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.flow-step {
+  flex: 1;
+  min-width: 300px;
+}
+
+.flow-arrow-down {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 16px 0;
+  color: #0078D4;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ─── Expand Animation Hint ─── */
+.expand-hint {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: #0078D4;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  animation: bounce 2s infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+/* ─── Fullscreen Thumbnail ─── */
+.fs-thumb {
+  width: 100%;
+  height: 200px;
+  border-radius: 12px;
+  border: 2px solid rgba(0, 120, 212, 0.2);
+  background: #F8F9FB;
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.fs-thumb:hover {
+  border-color: #0078D4;
+  box-shadow: 0 4px 16px rgba(0, 120, 212, 0.15);
+}
+
+.fs-thumb-inner {
+  display: flex;
+  height: 100%;
+  transform: scale(0.35);
+  transform-origin: top left;
+  width: 285.7%;
+}
+
+.fs-thumb-left {
+  flex: 1;
+  background: #1e1e2e;
+  padding: 8px;
+}
+
+.fs-thumb-right {
+  flex: 1;
+  background: #fff;
+  padding: 8px;
+}
+
+.fs-thumb-label {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 11px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+/* ─── Scenario 2: System File ─── */
+.file-icon-mock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 80px;
+}
+
+.file-icon-img {
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #0078D4, #005A9E);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 120, 212, 0.3);
+}
+
+.file-icon-name {
+  font-size: 11px;
+  color: #333;
+  text-align: center;
+}
+
+/* ─── Info Box ─── */
+.info-box {
+  background: rgba(0, 120, 212, 0.04);
+  border: 1px solid rgba(0, 120, 212, 0.12);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-top: 16px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #444;
+}
+
+.info-box strong {
+  color: #0078D4;
+}
+</style>
+</head>
+<body>
+
+<div class="demo-container">
+
+  <!-- Scenario 1: Card Double-click -->
+  <div class="demo-section">
+    <div class="demo-title">
+      <span class="demo-step">A</span>
+      场景一：双击卡片 → 小窗口 → 放大全屏
+    </div>
+    <div class="demo-desc">
+      在卡片列表中双击 Markdown 内容卡片，弹出小编辑器窗口（与现有颜色/表格/密钥编辑器一致）。<br>
+      窗口右上角有「放大」按钮，点击后进入全屏分屏编辑器。
+    </div>
+
+    <div class="flow-container">
+      <!-- Step 1: Card -->
+      <div class="flow-step">
+        <div class="flow-arrow-down">
+          <span style="font-size: 10px; color: #888;">步骤 1</span>
+          双击卡片
+        </div>
+        <div class="card-mock">
+          <div class="dblclick-hint">双击打开编辑器</div>
+          <div class="card-header">
+            <div class="card-icon">M↓</div>
+            <div class="card-title"># PastePanda 项目文档</div>
+            <span class="card-badge">MD</span>
+          </div>
+          <div class="card-preview">
+            ## 简介&#10;&#10;PastePanda 是一款**智能剪贴板管理器**，支持 Windows 10/11。它提供了丰富的编辑功能和便捷的快捷键操作。
+          </div>
+          <div class="card-footer">
+            <span class="card-time">3 分钟前</span>
+            <span class="card-tag">Markdown</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: Small Dialog -->
+      <div class="flow-step">
+        <div class="flow-arrow-down">
+          <span style="font-size: 10px; color: #888;">步骤 2</span>
+          小编辑器窗口 (w480)
+        </div>
+        <div class="dialog-backdrop">
+          <div class="dialog-box" style="position: relative;">
+            <div class="expand-hint">点击放大全屏</div>
+            <div class="dialog-header">
+              <div class="dialog-title">
+                <div class="dialog-title-icon">M↓</div>
+                Markdown 编辑
+              </div>
+              <div class="dialog-header-actions">
+                <button class="dialog-header-btn expand-btn" title="全屏编辑">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                </button>
+                <button class="dialog-header-btn close-btn" title="关闭">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="editor-area">
+              <div class="editor-textarea" style="white-space: pre-wrap; color: #333; overflow: auto;"># PastePanda 项目文档
+
+## 简介
+
+PastePanda 是一款**智能剪贴板管理器**，支持 Windows 10/11。
+它提供了*丰富的编辑功能*和便捷的快捷键操作。
+
+## 功能特性
+
+- 剪贴板历史记录与搜索
+- **Markdown 实时预览**与编辑
+- 图片格式转换与压缩
+- CSV 表格编辑与导出
+- 密钥/Token `自动脱敏`
+
+## 代码示例
+
+```rust
+fn main() {
+    let greeting = "Hello!";
+    println!("{}", greeting);
+}
+```
+
+## 任务清单
+
+- [x] 完成编辑器架构重构
+- [x] 添加图片裁剪功能
+- [ ] 支持多标签页编辑</div>
+            </div>
+            <div class="dialog-footer">
+              <div class="dialog-footer-left">
+                <span>326 字 · 30 行</span>
+              </div>
+              <div class="dialog-footer-right">
+                <button class="d-btn d-btn-expand">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                  全屏编辑
+                </button>
+                <button class="d-btn d-btn-secondary">取消</button>
+                <button class="d-btn d-btn-primary">保存</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box">
+      <strong>交互流程：</strong>双击卡片 → 弹出小编辑器（w480，纯 textarea，无预览）→ 点右上角「放大」或底部「全屏编辑」按钮 → 进入全屏分屏编辑器（CodeMirror + 实时预览）<br>
+      <strong>关闭流程：</strong>全屏 Esc → 如果小窗口有未保存修改则弹确认 → 关闭全屏回到小窗口 → 小窗口 Esc 关闭
+    </div>
+  </div>
+
+  <!-- Scenario 2: System File Association -->
+  <div class="demo-section">
+    <div class="demo-title">
+      <span class="demo-step">B</span>
+      场景二：系统双击 .md 文件 → 直接全屏
+    </div>
+    <div class="demo-desc">
+      在 Windows 资源管理器中双击 .md 文件，PastePanda 自动启动并直接打开全屏分屏编辑器。<br>
+      需要在安装后关联 .md 扩展名（Tauri fileAssociations 配置）。
+    </div>
+
+    <div class="flow-container">
+      <div class="flow-step">
+        <div class="flow-arrow-down">
+          <span style="font-size: 10px; color: #888;">步骤 1</span>
+          资源管理器双击 .md
+        </div>
+        <div style="display: flex; gap: 16px; align-items: flex-end;">
+          <div class="file-icon-mock">
+            <div class="file-icon-img">M↓</div>
+            <div class="file-icon-name">README.md</div>
+          </div>
+          <div style="font-size: 11px; color: #888; padding-bottom: 8px;">
+            打开方式：PastePanda<br>
+            类型：Markdown 文档
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-arrow-down">
+          <span style="font-size: 10px; color: #888;">步骤 2</span>
+          直接打开全屏编辑器
+        </div>
+        <div class="fs-thumb">
+          <div class="fs-thumb-inner">
+            <div class="fs-thumb-left" style="color: rgba(255,255,255,0.4); font-size: 10px; font-family: monospace;">
+              # PastePanda<br>## 简介<br>...
+            </div>
+            <div class="fs-thumb-right" style="color: rgba(0,0,0,0.4); font-size: 10px;">
+              <div style="font-size: 14px; font-weight: 700; color: #111; margin-bottom: 4px;">PastePanda</div>
+              <div style="font-size: 8px; color: #666;">简介、功能特性...</div>
+            </div>
+          </div>
+          <div class="fs-thumb-label">全屏分屏编辑器（见上方设计稿）</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box">
+      <strong>文件关联：</strong>安装包注册 .md / .markdown 扩展名 → Windows 右键"打开方式"显示 PastePanda → 双击直接启动<br>
+      <strong>启动行为：</strong>如果 PastePanda 已在运行 → 在现有窗口打开新编辑器（通过 Tauri single-instance 事件传递）<br>
+      <strong>关闭行为：</strong>Esc 关闭编辑器 → 未保存弹确认 → 关闭后回到主界面（不退出应用）
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div class="demo-section">
+    <div class="demo-title">
+      <span class="demo-step">C</span>
+      两种入口对比
+    </div>
+
+    <table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px;">
+      <thead>
+        <tr style="background: #f0f2f5;">
+          <th style="padding: 10px 14px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">入口</th>
+          <th style="padding: 10px 14px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">初始状态</th>
+          <th style="padding: 10px 14px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">全屏入口</th>
+          <th style="padding: 10px 14px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">关闭行为</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding: 10px 14px; border-bottom: 1px solid #eee;">双击卡片</td>
+          <td style="padding: 10px 14px; border-bottom: 1px solid #eee;">小编辑器窗口 (w480)</td>
+          <td style="padding: 10px 14px; border-bottom: 1px solid #eee;">右上角放大按钮 / 底部「全屏编辑」</td>
+          <td style="padding: 10px 14px; border-bottom: 1px solid #eee;">全屏→小窗口→关闭</td>
+        </tr>
+        <tr>
+          <td style="padding: 10px 14px; border-bottom: 1px solid #eee;">双击 .md 文件</td>
+          <td style="padding: 10px 14px; border-bottom: 1px solid #eee;">直接全屏编辑器</td>
+          <td style="padding: 10px 14px; border-bottom: 1px solid #eee;">—（已是全屏）</td>
+          <td style="padding: 10px 14px; border-bottom: 1px solid #eee;">全屏→回到主界面</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -246,25 +246,80 @@ describe("togglePin", () => {
   });
 
   it("toggles pin state in store", async () => {
-    useAppStore.setState({
-      history: [
-        {
-          id: "item-1",
-          text: "A",
-          time: "2026-01-01 12:00:00",
-          type: "text",
-          content: "",
-          pinned: false,
-          source: "",
-          workspace: "默认",
-        },
-      ],
-    });
+    const item = {
+      id: "item-1",
+      text: "A",
+      time: "2026-01-01 12:00:00",
+      type: "text" as const,
+      content: "",
+      pinned: false,
+      source: "",
+      workspace: "默认",
+    };
+    useAppStore.setState({ history: [item] });
 
-    vi.mocked(invoke).mockResolvedValueOnce(true);
+    vi.mocked(invoke).mockResolvedValueOnce(true); // toggle_pin
+    vi.mocked(invoke).mockResolvedValueOnce([{ ...item, pinned: true }]); // get_history（窗口重同步）
     await togglePin("item-1");
 
     expect(useAppStore.getState().history[0].pinned).toBe(true);
+  });
+
+  it("resyncs pagination window after pin toggle (offset drift fix)", async () => {
+    const itemA = { id: "a", text: "A", time: "2026-01-01 12:00:00", type: "text" as const, content: "", pinned: true, source: "", workspace: "默认" };
+    const itemB = { id: "b", text: "B", time: "2026-01-02 12:00:00", type: "text" as const, content: "", pinned: false, source: "", workspace: "默认" };
+    useAppStore.setState({ history: [itemA, itemB] });
+
+    vi.mocked(invoke).mockResolvedValueOnce(false); // toggle_pin：取消置顶 a
+    vi.mocked(invoke).mockResolvedValueOnce([itemB, { ...itemA, pinned: false }]); // get_history：新行序
+    await togglePin("a");
+
+    // 重同步应以 offset=0、limit=已加载条数 重新拉取
+    expect(invoke).toHaveBeenCalledWith("get_history", {
+      workspace: "默认",
+      filter: "all",
+      search: "",
+      offset: 0,
+      limit: 2,
+    });
+    // 窗口被替换为后端最新行序（a 落回 b 之后）
+    const h = useAppStore.getState().history;
+    expect(h.map((i) => i.id)).toEqual(["b", "a"]);
+    expect(h[1].pinned).toBe(false);
+  });
+
+  it("keeps window intact when resync fails", async () => {
+    const item = { id: "x", text: "X", time: "2026-01-01 12:00:00", type: "text" as const, content: "", pinned: false, source: "", workspace: "默认" };
+    useAppStore.setState({ history: [item] });
+
+    vi.mocked(invoke).mockResolvedValueOnce(true); // toggle_pin 成功
+    vi.mocked(invoke).mockRejectedValueOnce(new Error("db busy")); // get_history 失败
+    const pinned = await togglePin("x");
+
+    // pin 本身仍然成功，窗口保留（仅本地翻转 pinned）
+    expect(pinned).toBe(true);
+    const h = useAppStore.getState().history;
+    expect(h).toHaveLength(1);
+    expect(h[0].pinned).toBe(true);
+  });
+
+  it("dispatches pin-anim event for the list glide animation", async () => {
+    const item = { id: "p1", text: "P", time: "2026-01-01 12:00:00", type: "text" as const, content: "", pinned: false, source: "", workspace: "默认" };
+    useAppStore.setState({ history: [item] });
+
+    vi.mocked(invoke).mockResolvedValueOnce(true); // toggle_pin
+    vi.mocked(invoke).mockResolvedValueOnce([{ ...item, pinned: true }]); // get_history（窗口重同步）
+    const events: CustomEvent[] = [];
+    const listener = (e: Event) => events.push(e as CustomEvent);
+    window.addEventListener("pin-anim", listener);
+    try {
+      await togglePin("p1");
+    } finally {
+      window.removeEventListener("pin-anim", listener);
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0].detail).toEqual({ id: "p1", pinned: true });
   });
 });
 
@@ -763,6 +818,53 @@ describe("getStats", () => {
     // getStats 在失败时返回零值 Stats，不抛异常
     expect(stats.total).toBe(0);
     expect(stats.pinned).toBe(0);
+  });
+});
+
+// ============================================================
+// getStatsDetail
+// ============================================================
+describe("getStatsDetail", () => {
+  it("fetches detailed stats from backend", async () => {
+    const { getStatsDetail } = await import("@/lib/api");
+
+    vi.mocked(invoke).mockResolvedValue({
+      total: 100,
+      pinned: 5,
+      today: 10,
+      yesterday: 8,
+      daily: [
+        { date: "2026-07-20", count: 5 },
+        { date: "2026-07-21", count: 10 },
+      ],
+      hours: new Array(24).fill(0),
+      text_count: 80,
+      image_count: 15,
+      file_count: 5,
+      sources: [{ source: "Chrome", count: 40, source_icon: null }],
+      earliest_time: "2025-01-01 00:00:00",
+      db_size_kb: 1024,
+    });
+
+    const stats = await getStatsDetail("默认");
+
+    expect(invoke).toHaveBeenCalledWith("get_stats_detail", {
+      workspace: "默认",
+    });
+    expect(stats?.total).toBe(100);
+    expect(stats?.yesterday).toBe(8);
+    expect(stats?.daily).toHaveLength(2);
+    expect(stats?.sources[0].source).toBe("Chrome");
+  });
+
+  it("returns null on failure", async () => {
+    const { getStatsDetail } = await import("@/lib/api");
+
+    vi.mocked(invoke).mockRejectedValue(new Error("fail"));
+
+    const stats = await getStatsDetail("默认");
+    // getStatsDetail 在失败时返回 null（调用方保持加载态），不抛异常
+    expect(stats).toBeNull();
   });
 });
 

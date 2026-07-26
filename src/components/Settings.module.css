@@ -446,6 +446,7 @@
 .statsPanelHeader {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   padding: 10px 14px;
   font-size: 12px;
@@ -453,37 +454,267 @@
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border-color);
 }
-.statsPanelGrid {
+.statsHeaderRight {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* ===== 数据仪表盘：核心指标 4 格 ===== */
+.bGrid4 {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 1px;
   background: var(--border-color);
+  border-bottom: 1px solid var(--border-color);
 }
-.statCell {
+.bCell {
   background: var(--input-bg);
-  padding: 14px 10px;
+  padding: 11px 6px 9px;
   text-align: center;
   transition: background 0.15s;
   min-width: 0;
 }
-.statCell:hover { background: var(--accent-light); }
-.statNum {
-  font-size: 24px;
+.bCell:hover { background: var(--accent-light); }
+.bCellNum {
+  font-size: 19px;
   font-weight: 700;
+  line-height: 1.15;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
-  line-height: 1.2;
   letter-spacing: -0.5px;
 }
-.statAccent { color: var(--accent); }
-.statGreen  { color: #34C759; }
-.statOrange { color: #FF9500; }
-.statLabel {
-  font-size: 11px;
+.bCellLabel {
+  font-size: 9.5px;
   color: var(--text-muted);
-  margin-top: 6px;
+  margin-top: 3px;
   font-weight: 500;
   white-space: nowrap;
+}
+.bCellDelta { margin-top: 3px; min-height: 15px; }
+.bCellAvg { font-size: 9px; color: var(--text-muted); }
+.cAccent { color: var(--accent); }
+.cGreen  { color: var(--green); }
+.cOrange { color: var(--orange); }
+
+/* 今昨涨跌 chip */
+.delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.deltaUp {
+  color: var(--green);
+  background: rgba(74, 222, 128, 0.10);
+  border: 1px solid rgba(74, 222, 128, 0.30);
+}
+.deltaDown {
+  color: var(--danger);
+  background: rgba(255, 107, 138, 0.10);
+  border: 1px solid rgba(255, 107, 138, 0.30);
+}
+
+/* ===== 近 7 天趋势 ===== */
+.subTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.subHint { font-size: 10px; font-weight: 500; color: var(--text-muted); }
+.bChartWrap { padding: 6px 14px 10px; }
+.bChart { position: relative; }
+.bGridLine {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed rgba(85, 119, 160, 0.18);
+}
+.bBars {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  height: 118px;
+  position: relative;
+  z-index: 1;
+}
+.bDay {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  height: 100%;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.bDayVal {
+  font-size: 9.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: 0.15s;
+}
+.bDay:hover .bDayVal,
+.bDayToday .bDayVal { opacity: 1; }
+.bDayToday .bDayVal { color: var(--accent); font-weight: 700; }
+.bDayBar {
+  width: 100%;
+  max-width: 30px;
+  border-radius: 5px 5px 2px 2px;
+  background: linear-gradient(180deg, #2A5480, var(--seg-active-bg));
+  transition: 0.15s;
+  cursor: default;
+}
+.bDayBar:hover { background: linear-gradient(180deg, #3B9EFF, #2A5480); }
+.bDayToday .bDayBar {
+  background: linear-gradient(180deg, var(--accent), #1A7DE0);
+  box-shadow: 0 0 14px rgba(59, 158, 255, 0.4);
+}
+.bDayLbl { font-size: 9.5px; color: var(--text-muted); }
+.bDayToday .bDayLbl { color: var(--accent); font-weight: 700; }
+
+/* ===== 时段分布 + 类型占比 双卡 ===== */
+.bTwoCol {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border-color);
+  border-top: 1px solid var(--border-color);
+}
+.bCard { background: var(--section-bg); padding: 10px 12px 12px; }
+.bCardTitle {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.bCardHint { font-size: 9px; color: var(--text-muted); font-weight: 500; }
+.bHourBars { display: flex; gap: 2px; align-items: flex-end; height: 52px; }
+.bHourBars i {
+  flex: 1;
+  border-radius: 2px 2px 0 0;
+  background: var(--seg-active-bg);
+  transition: 0.15s;
+}
+.bHourBars i:hover { background: var(--accent); }
+.bHourBars i.bHourPeak { background: linear-gradient(180deg, var(--accent), #1A7DE0); }
+.bHourLbl {
+  display: flex;
+  justify-content: space-between;
+  font-size: 8.5px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.bDonutRow { display: flex; align-items: center; gap: 10px; }
+.bDonutLegend { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.bLegItem { display: flex; align-items: center; font-size: 10px; color: var(--text-secondary); }
+.bLegItem b { margin-left: auto; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.bLegDot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 4px;
+}
+
+/* ===== 来源 Top 5（可折叠，默认收起） ===== */
+.srcHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  border-top: 1px solid var(--border-color);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+.srcHead:hover { background: var(--hover); }
+.srcChev {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+.srcHeadOpen .srcChev { transform: rotate(90deg); }
+.srcTitle { font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+.srcHint { font-size: 10px; font-weight: 500; color: var(--text-muted); }
+.srcSummary {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  transition: opacity 0.15s;
+}
+.srcHeadOpen .srcSummary { opacity: 0; }
+.srcBody { max-height: 0; overflow: hidden; transition: max-height 0.28s ease; }
+.srcBodyOpen { max-height: 220px; }
+.bSrcRow { display: flex; align-items: center; gap: 8px; padding: 5px 14px; }
+.bSrcRow:last-child { padding-bottom: 10px; }
+.bSrcRank {
+  width: 14px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.bSrcRankTop { color: var(--accent); }
+.bSrcIco {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  flex-shrink: 0;
+  background: var(--input-bg);
+}
+.bSrcIcoImg { width: 14px; height: 14px; object-fit: contain; }
+.bSrcName {
+  width: 74px;
+  font-size: 11px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bSrcTrack {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--input-bg);
+  overflow: hidden;
+}
+.bSrcFill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #1A7DE0, var(--accent));
+}
+.bSrcCnt {
+  width: 44px;
+  text-align: right;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 .statsPanelFooter {
   display: flex;

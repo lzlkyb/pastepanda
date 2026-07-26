@@ -3,13 +3,14 @@
   align-items: center;
   gap: 4px;
   height: 20px;
-  padding: 0 6px;
-  border-radius: 4px;
+  padding: 0 7px;
+  border-radius: 6px;
   font-size: 11px;
   font-weight: 500;
   color: var(--text-secondary);
-  background: var(--section-bg, #f1f5f9);
-  border: 1px solid var(--border-color, #e2e8f0);
+  /* 玻璃胶囊 — 与卡片类型图标底座同一语言（主题变量驱动） */
+  background: var(--glass-icon-bg, rgba(255,255,255,0.05));
+  border: 1px solid var(--glass-icon-border, rgba(255,255,255,0.08));
   white-space: nowrap;
   flex-shrink: 0;
   max-width: 120px;
@@ -20,22 +21,23 @@
 }
 .badge:hover {
   background: var(--hover, #f1f5f9);
-  border-color: var(--text-muted, #94a3b8);
+  border-color: color-mix(in srgb, var(--text-muted) 35%, transparent);
 }
 
 /* ===== 尺寸变体 ===== */
 
-/* 小尺寸 — 卡片内使用（只覆盖尺寸，颜色由 accent 变体控制） */
+/* 小尺寸 — 卡片内使用（方案 C 胶囊：与标签徽章同高 18px / 同圆角 6px） */
 .small {
-  height: 16px;
-  padding: 0 5px;
+  height: 18px;
+  padding: 0 8px;
   font-size: 10px;
-  gap: 3px;
-  border-radius: 3px;
+  font-weight: 600;
+  gap: 4px;
+  border-radius: 6px;
   max-width: 90px;
 }
 .small .icon {
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1;
 }
 

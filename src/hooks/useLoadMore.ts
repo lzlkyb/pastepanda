@@ -7,11 +7,14 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import type Lenis from "lenis";
 import { loadMoreHistory } from "@/lib/api";
+import { useAppStore } from "@/stores/appStore";
 
 export interface UseLoadMoreOptions {
   scrollRef: React.RefObject<HTMLDivElement | null>;
   lenisRef: React.RefObject<Lenis | null>;
   itemsLength: number;
+  /** 是否启用分页加载（搜索模式下列表来自后端搜索结果，需禁用，默认 true） */
+  enabled?: boolean;
 }
 
 export interface UseLoadMoreReturn {
@@ -23,11 +26,24 @@ export interface UseLoadMoreReturn {
   handleRetryLoadMore: () => void;
 }
 
-export function useLoadMore({ scrollRef, lenisRef, itemsLength }: UseLoadMoreOptions): UseLoadMoreReturn {
+export function useLoadMore({ scrollRef, lenisRef, itemsLength, enabled = true }: UseLoadMoreOptions): UseLoadMoreReturn {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+
+  // enabled 放入 ref：triggerLoadMore 等稳定回调读取最新值，避免闭包过期
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+
+  // setHistory（初始化/导入/切换工作区等整体替换）会自增 historyResetSeq，
+  // 此时历史窗口被重建，需重置 hasMore 让分页重新武装（否则导入后卡在旧状态）
+  const historyResetSeq = useAppStore((s) => s.historyResetSeq);
+  useEffect(() => {
+    setHasMore(true);
+    setLoadError(false);
+    initLoadRef.current = false;
+  }, [historyResetSeq]);
 
   // 滚动到底部时加载更多（通过 ref 在 Lenis scroll 回调中触发，避免闭包过期问题）
   const loadMoreRef = useRef({ hasMore, loadingMore });
@@ -39,6 +55,8 @@ export function useLoadMore({ scrollRef, lenisRef, itemsLength }: UseLoadMoreOpt
   const loadCooldownRef = useRef(0);
 
   const triggerLoadMore = useCallback(() => {
+    // 分页被禁用（搜索模式）时不触发
+    if (!enabledRef.current) return;
     // 冷却期内不触发（解决 Lenis 渐进滚动多帧触发）
     if (Date.now() < loadCooldownRef.current) return;
     // 防重入：锁住或 state 已标记加载中时直接返回
@@ -75,6 +93,7 @@ export function useLoadMore({ scrollRef, lenisRef, itemsLength }: UseLoadMoreOpt
 
   // 手动重试加载
   const handleRetryLoadMore = useCallback(() => {
+    if (!enabledRef.current) return;
     if (loadingLockRef.current || loadingMore) return;
     loadingLockRef.current = true;
     setLoadingMore(true);
@@ -98,7 +117,7 @@ export function useLoadMore({ scrollRef, lenisRef, itemsLength }: UseLoadMoreOpt
   // 只尝试一次，由 Lenis 回调的 triggerLoadMore 接管后续触底加载
   const initLoadRef = useRef(false);
   useEffect(() => {
-    if (initLoadRef.current || itemsLength === 0 || !hasMore || loadingMore || loadingLockRef.current || Date.now() < loadCooldownRef.current) return;
+    if (!enabledRef.current || initLoadRef.current || itemsLength === 0 || !hasMore || loadingMore || loadingLockRef.current || Date.now() < loadCooldownRef.current) return;
     // 延迟一帧等 Lenis 初始化完成
     const timer = setTimeout(() => {
       const el = scrollRef.current;

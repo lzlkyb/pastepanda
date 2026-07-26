@@ -8,6 +8,7 @@ import { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, ZoomIn, ZoomOut, RotateCw, Copy, Download, ScanText, Pin, FileDown, Crop, Check, RotateCcw } from "lucide-react";
 import { FocusTrap } from "@/components/FocusTrap";
+import { useDialogAnim } from "@/lib/dialogMotion";
 import { useToast } from "@/components/Toast";
 import { getImageBase64, dataUrlToBlob } from "@/lib/api";
 import {
@@ -25,6 +26,7 @@ export interface ImagePreviewDialogProps {
 
 export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
   const { toast } = useToast();
+  const anim = useDialogAnim();
   const {
     previewImage, previewInfo, previewLoading,
     previewScale, previewRotation, previewOffset, isPanning,
@@ -70,17 +72,12 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
     <AnimatePresence>
       {(previewImage || previewLoading) && (
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="dialog-backdrop" style={{ zIndex: 60 }} onClick={closePreview}
+          {...anim.backdrop}
+          className="dialog-backdrop" onClick={closePreview}
         >
           <FocusTrap>
           <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 20 }}
-            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+            {...anim.panel}
             className={`dialog-box ${styles.imageDetailDialog}`}
             onClick={(e) => e.stopPropagation()}
           >

@@ -5,6 +5,7 @@ import { useToast } from "@/components/Toast";
 import { pasteText } from "@/lib/api";
 import { highlightCode, getLangLabel } from "@/lib/utils";
 import { FocusTrap } from "@/components/FocusTrap";
+import { useDialogAnim } from "@/lib/dialogMotion";
 
 /**
  * 快速预览面板 — 按 Space 键弹出，显示选中文本的完整内容
@@ -17,6 +18,7 @@ export function QuickPreview() {
   const [langInfo, setLangInfo] = useState<{ name: string; label: string }>({ name: "plain", label: "文本" });
   const [highlighting, setHighlighting] = useState(false);
   const { toast } = useToast();
+  const anim = useDialogAnim();
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -86,17 +88,13 @@ export function QuickPreview() {
     <AnimatePresence>
       {visible && (
         <motion.div
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          className="dialog-backdrop"
-          style={{ zIndex: 9990 }}
+          {...anim.backdrop}
+          className="dialog-backdrop z-modal-top"
           onClick={() => setVisible(false)}
         >
           <FocusTrap>
           <motion.div
-            initial={{ scale: 0.95, opacity: 0, y: 20 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.95, opacity: 0, y: 20 }}
-            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+            {...anim.panel}
             className="dialog-box w380"
             onClick={(e) => e.stopPropagation()}
           >

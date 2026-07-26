@@ -1,185 +1,119 @@
-/* ChangelogView.module.css */
+/* ChangelogView.module.css — 卡片流设计 */
 
 /* ===== Container ===== */
 .container {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 10px;
 }
 
-/* ===== Entry Card ===== */
-.entry {
-  border-radius: 10px;
-  border: 1px solid var(--border-color);
+/* ===== Version Card ===== */
+.card {
   background: var(--card-bg);
-  overflow: hidden;
-  transition: all 0.2s, background 0.3s, border-color 0.3s;
+  border-radius: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-color);
+  transition: border-color 0.3s, box-shadow 0.3s, background 0.3s;
 }
 
-.entryCurrent {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent-glow, rgba(2,132,199,0.12));
+.cardCurrent {
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  box-shadow: 0 2px 16px color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
-/* ===== Entry Header (clickable bar) ===== */
-.entryHeader {
+/* ===== Card Header ===== */
+.header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 10px;
   cursor: pointer;
-  transition: background 0.15s;
   user-select: none;
 }
 
-.entryHeader:hover {
-  background: var(--hover);
+.versionBadge {
+  font-size: 13px;
+  font-weight: 800;
+  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  color: var(--text-primary);
+  transition: color 0.3s;
+}
+
+.versionBadgeCurrent {
+  background: var(--version-badge-gradient, linear-gradient(135deg, var(--accent), var(--accent)));
+  color: #fff;
+  padding: 3px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  box-shadow: 0 1px 4px var(--version-badge-shadow, rgba(0,120,212,0.25));
+}
+
+.date {
+  font-size: 10px;
+  color: var(--text-muted);
+  transition: color 0.3s;
+}
+
+.latestTag {
+  font-size: 8px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--green-bg, #DCFCE7);
+  color: var(--green, #16A34A);
+  margin-left: auto;
+  transition: all 0.3s;
 }
 
 .chevron {
-  flex-shrink: 0;
   color: var(--text-muted);
   transition: transform 0.2s;
+  flex-shrink: 0;
 }
 
 .chevronOpen {
   transform: rotate(90deg);
 }
 
-/* ===== Version Badge ===== */
-.versionBadge {
-  font-size: 11px;
-  font-weight: 700;
-  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: var(--card-bg);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  flex-shrink: 0;
-  transition: all 0.3s;
-}
-
-.versionBadgeCurrent {
-  background: var(--version-badge-gradient, linear-gradient(135deg, var(--accent), var(--accent)));
-  color: #fff;
-  border: none;
-  box-shadow: 0 1px 4px var(--version-badge-shadow, var(--accent-shadow));
-}
-
-/* ===== Date ===== */
-.date {
-  font-size: 10px;
-  color: var(--text-muted);
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: color 0.3s;
-}
-
-/* ===== Item Count ===== */
-.itemCount {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-muted);
-  background: var(--section-bg);
-  padding: 2px 7px;
-  border-radius: 10px;
-  flex-shrink: 0;
-  transition: all 0.3s;
-}
-
-/* ===== "Latest" Tag ===== */
-.latestTag {
-  font-size: 8px;
-  font-weight: 700;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--green-bg, #DCFCE7);
-  color: var(--green, #16A34A);
-  flex-shrink: 0;
-  transition: all 0.3s;
-}
-
-/* ===== Expanded Content ===== */
-.entryBody {
-  padding: 0 12px 10px;
+/* ===== Card Body (expanded) ===== */
+.body {
   overflow: hidden;
 }
 
-.entrySummary {
-  font-size: 11px;
-  line-height: 1.6;
-  color: var(--text-secondary);
-  padding: 6px 10px;
-  margin-bottom: 8px;
-  background: var(--section-bg);
-  border-radius: 8px;
-  border-left: 2px solid var(--accent);
-  transition: all 0.3s;
-}
-
-/* ===== Version Progress Bar ===== */
-.progressBar {
+.categories {
   display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-bottom: 8px;
-  padding: 0 2px;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
 }
 
-.progressSegment {
-  height: 3px;
-  border-radius: 2px;
-  flex: 1;
-  transition: background 0.3s;
-}
-
-.progressActive {
-  background: var(--accent);
-}
-
-.progressInactive {
-  background: var(--border-color);
-}
-
-/* ===== Category Section in Expanded View ===== */
-.categorySection {
-  margin-bottom: 6px;
-  position: relative;
-  padding-left: 12px;
-}
-
-.categorySection::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 4px;
-  bottom: 4px;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--bar-color, var(--border-color));
-}
-
-.categoryHead {
+/* ===== Category Row ===== */
+.category {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 700;
-  margin-bottom: 4px;
+  gap: 9px;
+  align-items: flex-start;
 }
 
 .categoryIcon {
-  width: 18px;
-  height: 18px;
-  border-radius: 5px;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 12px;
   flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.categoryBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.categoryName {
+  font-size: 10px;
+  font-weight: 700;
+  margin-bottom: 3px;
 }
 
 .categoryItems {
@@ -189,58 +123,38 @@
 }
 
 .categoryItem {
-  font-size: 10px;
-  line-height: 1.6;
+  font-size: 11px;
   color: var(--text-secondary);
-  position: relative;
-  padding-left: 12px;
-  margin-bottom: 1px;
+  line-height: 1.75;
   transition: color 0.3s;
 }
 
 .categoryItem::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 6px;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--border-color);
-  transition: background 0.3s;
-}
-
-/* ===== Group Label ===== */
-.groupLabel {
-  font-size: 9px;
-  font-weight: 600;
+  content: '·';
   color: var(--text-muted);
-  padding: 3px 0 1px;
+  margin-right: 6px;
+  font-weight: 700;
 }
 
-/* ===== Toggle Button ===== */
-.toggleBtn {
+/* ===== Collapse Toggle ===== */
+.collapseBtn {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 4px;
-  width: 100%;
-  padding: 8px;
-  margin-top: 4px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   color: var(--text-muted);
+  margin-top: 10px;
   cursor: pointer;
   border: none;
   background: none;
   font-family: inherit;
-  border-radius: 8px;
-  transition: all 0.15s;
+  padding: 2px 0;
+  transition: color 0.15s;
 }
 
-.toggleBtn:hover {
+.collapseBtn:hover {
   color: var(--accent);
-  background: var(--hover);
 }
 
 /* ===== Empty State ===== */
