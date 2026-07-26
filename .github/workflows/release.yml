@@ -149,89 +149,11 @@ jobs:
 
       - name: 提取更新日志
         id: changelog
-        shell: pwsh
-        run: |
-          $currentTag = "${{ github.ref_name }}"
-          # 去掉 v 前缀得到版本号，如 v5.0.118 → 5.0.118
-          $version = $currentTag -replace '^v', ''
-
-          Write-Host "当前 tag: $currentTag"
-          Write-Host "版本号: $version"
-
-          # 从 CHANGELOG.md 提取当前版本的段落
-          $changelogPath = "CHANGELOG.md"
-          if (-not (Test-Path $changelogPath)) {
-            Write-Host "❌ CHANGELOG.md 不存在，回退到 git log 模式"
-            # 回退：用 git log 生成基本内容
-            $prevTag = git describe --tags --abbrev=0 "$currentTag^" 2>$null
-            if ($prevTag) {
-              $commits = git log "${prevTag}..${currentTag}" --pretty=format:"%s" --no-merges
-            } else {
-              $commits = git log $currentTag --pretty=format:"%s" --no-merges -n 10
-            }
-            $releaseBody = ""
-            foreach ($line in ($commits -split "`n")) {
-              if ($line.Trim()) { $releaseBody += "- $($line.Trim())`n" }
-            }
-            if (-not $releaseBody) { $releaseBody = "常规构建发布" }
-            $updaterNotes = $releaseBody
-            $firstCommit = ($commits -split "`n" | Select-Object -First 1) -replace "^(feat|fix|chg|change|refactor|docs):?\s*", ""
-            "first_commit=$firstCommit" >> $env:GITHUB_OUTPUT
-            "release_body<<EOF" >> $env:GITHUB_OUTPUT
-            $releaseBody >> $env:GITHUB_OUTPUT
-            "EOF" >> $env:GITHUB_OUTPUT
-            "updater_notes<<EOF" >> $env:GITHUB_OUTPUT
-            $updaterNotes >> $env:GITHUB_OUTPUT
-            "EOF" >> $env:GITHUB_OUTPUT
-            Write-Host "=== Release Body (fallback) ==="
-            Write-Host $releaseBody
-            exit 0
-          }
-
-          $changelog = Get-Content $changelogPath -Raw
-          # 归一化 CRLF → LF：Windows runner 以 autocrlf 检出，仓库 LF 文件变 CRLF，
-          # 下方正则的 \n\n 无法匹配 \r\n\r\n，会导致提取失败回退"常规构建发布"
-          $changelog = $changelog -replace "\r\n", "`n"
-
-          # 匹配 ## [版本号] 段落，直到下一个 ## [ 或文件末尾
-          $pattern = "## \[$version\][^\n]*\n\n((?:.|\n)*?)(?=\n## \[|\Z)"
-          if ($changelog -match $pattern) {
-            $section = $Matches[1].Trim()
-            Write-Host "✅ 从 CHANGELOG.md 提取到版本 $version 的更新日志"
-          } else {
-            Write-Host "⚠️ CHANGELOG.md 中未找到版本 $version 的段落"
-            $section = "常规构建发布"
-          }
-
-          # 提取第一条变更作为 Release 名称
-          $firstItem = ""
-          if ($section -match '^- (.+)$') {
-            $firstItem = $Matches[1]
-          } else {
-            $firstItem = "PastePanda $currentTag"
-          }
-
-          # updater 简要文本：取所有列表项
-          $updaterItems = @()
-          foreach ($line in ($section -split "`n")) {
-            if ($line.Trim() -match '^- (.+)') {
-              $updaterItems += "- $($Matches[1])"
-            }
-          }
-          $updaterNotes = if ($updaterItems.Count -gt 0) { $updaterItems -join "`n" } else { "常规构建发布" }
-
-          # Release body 直接使用 CHANGELOG 段落（已包含分类标题）
-          $releaseBody = $section
-
-          "first_commit=$firstItem" >> $env:GITHUB_OUTPUT
-          "release_body<<EOF" >> $env:GITHUB_OUTPUT
-          $releaseBody >> $env:GITHUB_OUTPUT
-          "EOF" >> $env:GITHUB_OUTPUT
-          "updater_notes<<EOF" >> $env:GITHUB_OUTPUT
-          $updaterNotes >> $env:GITHUB_OUTPUT
-          "EOF" >> $env:GITHUB_OUTPUT
-          Write-Host "=== Release Body ==="
-          Write-Host $releaseBody
+        # 用 Node 脚本替代内联 pwsh 正则：UTF-8 读取 + /\r?\n/ 分行，免疫
+        # Windows runner autocrlf 检出产生的 CRLF（v5.1.2/v5.2.0 曾因此提取
+        # 失败回退"常规构建发布"）。段落缺失/为空时脚本 exit 1 红灯中止发版，
+        # 不再静默兜底。输出 release_body / updater_notes 写入 GITHUB_OUTPUT。
+        run: node scripts/extract-release-notes.mjs
 
       - name: 生成 updater.json（ghproxy 镜像下载源）
         run: node scripts/generate-updater-json.mjs
@@ -239,6 +161,9 @@ jobs:
           GITHUB_RELEASE_TAG: ${{ github.ref_name }}
           UPDATER_NOTES: ${{ steps.changelog.outputs.updater_notes }}
           UPDATER_DOWNLOAD_BASE: "https://ghproxy.net/https://github.com/${{ github.repository }}/releases/download"
+
+      - name: 校验 updater.json（发布前冒烟，防止坏产物静默发布）
+        run: node scripts/verify-updater-json.mjs dist/updater.json
 
       - name: 发布 GitHub Release
         uses: softprops/action-gh-release@v2
@@ -295,6 +220,15 @@ jobs:
           # 固定走 releases 分支下的 latest/ 目录（每次发版覆盖，不按 tag 累加）
           UPDATER_URL_TEMPLATE: "https://gitee.com/${{ secrets.GITEE_REPOSITORY }}/raw/releases/latest/{filename}"
           UPDATER_OUTPUT_FILENAME: "updater-gitee.json"
+
+      - name: 校验 updater-gitee.json（若已生成）
+        shell: pwsh
+        run: |
+          if (-not (Test-Path dist/updater-gitee.json)) {
+            Write-Host "⚠️ updater-gitee.json 未生成（Gitee 镜像未配置），跳过校验"
+            exit 0
+          }
+          node scripts/verify-updater-json.mjs dist/updater-gitee.json
 
       - name: 镜像发布产物到 Gitee（国内加速，可选）
         shell: pwsh
