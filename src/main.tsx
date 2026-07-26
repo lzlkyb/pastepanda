@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { MotionConfig } from "framer-motion";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ToastProvider } from "./components/Toast";
@@ -65,9 +66,12 @@ window.addEventListener("unhandledrejection", (event) => {
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <ToastProvider>
-        <App />
-      </ToastProvider>
+      {/* #3 无障碍：OS「减少动态效果」开启时，framer 自动关闭位移/缩放/布局动画，仅保留淡入淡出 */}
+      <MotionConfig reducedMotion="user">
+        <ToastProvider>
+          <App />
+        </ToastProvider>
+      </MotionConfig>
     </ErrorBoundary>
   </React.StrictMode>,
 );

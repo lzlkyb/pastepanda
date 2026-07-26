@@ -327,10 +327,15 @@ export function ContextMenu({ children }: { children: ReactNode }) {
 
                       {/* 子菜单弹层（仅当该父项激活时显示 —— activeSubIndex 是全局状态，
                           不能用它门控，否则多个子菜单会同时弹出互相叠加） */}
+                      {/* 子菜单退场：AnimatePresence 在 isActive 置 false 时短暂保留播放淡出。
+                          入场仍由 CSS ctxSubmenuIn 负责（与 flipLeft 翻转方向耦合、经 classList
+                          命令式控制），framer 仅承担退场，避免 transform 冲突 */}
+                      <AnimatePresence>
                       {isActive && (
-                        <div
+                        <motion.div
                           ref={submenuRef}
                           className={styles.ctxSubmenu}
+                          exit={{ opacity: 0, transition: { duration: 0.12, ease: "easeIn" } }}
                           onMouseEnter={() => { setActiveIndex(flatIdx); setActiveSubIndex(null); }}
                         >
                           {item.children.map((child, j) => (
@@ -353,8 +358,9 @@ export function ContextMenu({ children }: { children: ReactNode }) {
                               </Fragment>
                             )
                           ))}
-                        </div>
+                        </motion.div>
                       )}
+                      </AnimatePresence>
                     </div>
                   </div>
                 );

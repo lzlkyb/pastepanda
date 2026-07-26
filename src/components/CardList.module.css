@@ -11,6 +11,15 @@
   gap: var(--card-gap);
 }
 
+/* 列表 ⇄ 空状态切换包裹层（#6，AnimatePresence mode="wait" 的两个 motion 子节点）。
+   接管原 .cardList 直接子元素的 flex 列布局：批量工具栏 / 行容器 / 加载区之间保持 10px 间距 */
+.stateSwap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-gap);
+  width: 100%;
+}
+
 /* 卡片外层容器：让 Popover 绝对定位脱离卡片约束 */
 .cardWrap {
   position: relative;
@@ -89,16 +98,16 @@
   100% { background-position: -200% 0; }
 }
 
-/* hover: 卡片微浮起 + 边框亮起 */
+/* hover: 边框亮起 + 阴影加深（抬升位移由 Card.tsx whileHover 驱动——
+   motion.div 内联 transform 会覆盖样式表 transform，此处不可再写） */
 .card:hover {
-  transform: translateY(-2px) scale(1.01);
   border-color: var(--glass-card-hover-border);
   box-shadow: var(--glass-card-hover-shadow);
 }
 
+/* 点击确认闪烁（按压缩放由 Card.tsx whileTap 驱动，此处 transform 已被内联样式覆盖而失效，移除） */
 .cardClickFeedback {
   background: var(--hover) !important;
-  transform: scale(0.985);
 }
 
 /* #5 固定卡片 📌 标记 */
@@ -193,9 +202,16 @@
 }
 
 /* ===== 剪贴板栈标记 ===== */
+/* 修复：原硬编码浅色底 rgba(255,247,237,0.7) 在深色主题下刺眼，
+   改为 color-mix 从 --orange 派生的半透明渐变叠加玻璃底色（左浓右淡，主题自适应） */
 .cardInStack {
   border-left: 3px solid var(--orange, #EA580C);
-  background: rgba(255, 247, 237, 0.7);
+  background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--orange) 10%, transparent),
+      color-mix(in srgb, var(--orange) 2%, transparent) 55%
+    ),
+    var(--glass-card-bg);
 }
 
 .cardStackNext {
@@ -1071,7 +1087,14 @@
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   user-select: none;
   -webkit-user-drag: none;
-  transition: opacity 0.35s ease;
+  /* #14 载入交叉淡入：挂载时（弹框打开/加载完成）淡入一次；
+     内联 transition 只服务平移缩放的 transform，此处用 animation 走独立通道 */
+  animation: imageDetailIn 0.3s ease;
+}
+
+@keyframes imageDetailIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 .imageDetailLoading {

@@ -80,6 +80,9 @@ export async function deleteHistory(ids: string[]) {
     store.removeItems(ids);
     invalidateCountsCache(); // 删除后清除缓存
     if (count > 0) {
+      // 删除动画：通知列表开启行 glide 过渡窗口（与 pin-anim 机制一致），
+      // 剩余行平滑让位，被删行由 AnimatePresence 播放退场
+      window.dispatchEvent(new CustomEvent("delete-anim", { detail: { ids } }));
       window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已删除 ${count} 条记录（Ctrl+Z 撤销）`, type: "info" } }));
     }
     return count;

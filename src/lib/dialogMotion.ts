@@ -14,6 +14,7 @@
  */
 import type { TargetAndTransition, Transition } from "framer-motion";
 import { useAppStore } from "@/stores/appStore";
+import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 
 export interface DialogMotionProps {
   initial: TargetAndTransition;
@@ -57,8 +58,10 @@ const DISABLED: DialogAnim = {
   },
 };
 
-/** 跟随「窗口动画」设置的弹框动画配置（主窗口与编辑器窗口各自读取本窗口的 store） */
+/** 跟随「窗口动画」设置与 OS 减少动态效果偏好的弹框动画配置
+ *  （任一关闭信号即降级为即时显隐；主窗口与编辑器窗口各自读取本窗口的 store） */
 export function useDialogAnim(): DialogAnim {
   const enabled = useAppStore((s) => s.config.window_animation);
-  return enabled ? ENABLED : DISABLED;
+  const reducedMotion = usePrefersReducedMotion();
+  return enabled && !reducedMotion ? ENABLED : DISABLED;
 }

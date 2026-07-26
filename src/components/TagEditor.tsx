@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, Tag, HistoryItem } from "@/stores/appStore";
 import { setItemTags, createTag } from "@/lib/api";
-import { TagBadge } from "@/components/TagBadge";
+import { TagBadge, AnimatedTagBadge } from "@/components/TagBadge";
 import { X, Search } from "lucide-react";
 import styles from "./TagEditor.module.css";
 import { useDialogAnim } from "@/lib/dialogMotion";
@@ -138,14 +138,18 @@ export function TagEditor({ open, item, onClose }: TagEditorProps) {
                   {selectedTags.length === 0 ? (
                     <span className={styles.emptyHint}>暂无标签</span>
                   ) : (
-                    selectedTags.map((tag) => (
-                      <TagBadge
-                        key={tag.id}
-                        tag={tag}
-                        variant="chip"
-                        onRemove={(t) => removeTag(t.id)}
-                      />
-                    ))
+                    /* #10 已选芯片增删动画：从列表勾选时弹入、点 × 时弹出；
+                       initial={false}——打开弹框时已选芯片不逐个弹跳（面板自身已有入场） */
+                    <AnimatePresence initial={false}>
+                      {selectedTags.map((tag) => (
+                        <AnimatedTagBadge
+                          key={tag.id}
+                          tag={tag}
+                          variant="chip"
+                          onRemove={(t) => removeTag(t.id)}
+                        />
+                      ))}
+                    </AnimatePresence>
                   )}
                 </div>
               </div>

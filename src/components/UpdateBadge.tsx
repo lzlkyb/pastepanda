@@ -199,7 +199,7 @@ export function UpdateBadge({ currentVersion }: { currentVersion: string }) {
   );
 }
 
-/** AboutDialog 中使用的更新横幅 + 下载进度 */
+/** 设置面板"关于"tab 中使用的更新横幅 + 下载进度 */
 export function UpdateBanner() {
   const { status, update, progress, progressIndeterminate, bytesPerSec, error, checkForUpdate, downloadAndInstall, restart, markInstalled, skipThisVersion } =
     useUpdate();

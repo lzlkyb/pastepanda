@@ -218,7 +218,7 @@ export function GeneralTab({
           <button className={styles.settingsSearchClear} onClick={() => setSettingsFilter("")} title="清空搜索">✕</button>
         )}
       </div>
-      <div ref={settingsContainerRef}>
+      <div ref={settingsContainerRef} className={styles.settingsSections}>
       {/* ── 数据统计 ── */}
       <div className={styles.sSection}>数据统计</div>
       <div className={styles.statsPanel}>

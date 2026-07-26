@@ -46,38 +46,39 @@ impl IconCache {
         }
     }
 
-    /// 从窗口句柄提取图标，返回图标文件名（不含路径）
-    /// 返回 None 表示无法获取图标
-    /// 此方法由 clipboard_monitor 在捕获剪贴板内容时调用（此时前台窗口就是来源窗口）
-    #[cfg(target_os = "windows")]
-    pub fn extract_icon_by_hwnd(&self, hwnd: windows::Win32::Foundation::HWND) -> Option<String> {
-        if hwnd.is_invalid() {
-            return None;
-        }
-
-        // 通过窗口句柄获取进程路径
-        let exe_path = self.get_process_path(hwnd)?;
-        let exe_path_str = exe_path.to_string_lossy().to_string();
-
-        // 检查内存缓存
+    /// 从进程可执行文件路径提取图标，返回图标文件名（不含路径）
+    /// 图标提取的唯一入口：事件驱动监听的捕获阶段只保存 exe 路径，
+    /// 图标提取延迟到工作线程执行（避免把可能已销毁的 hwnd 带到异步阶段）
+    pub fn extract_icon_by_exe_path(&self, exe_path: &std::path::Path) -> Option<String> {
+        #[cfg(target_os = "windows")]
         {
-            let cache = self.path_to_icon.lock().ok()?;
-            if let Some(icon) = cache.get(&exe_path_str) {
-                return icon.clone();
+            let exe_path_str = exe_path.to_string_lossy().to_string();
+
+            // 检查内存缓存
+            {
+                let cache = self.path_to_icon.lock().ok()?;
+                if let Some(icon) = cache.get(&exe_path_str) {
+                    return icon.clone();
+                }
             }
+
+            // 提取图标并保存
+            let icon_filename = self.extract_and_save_icon(exe_path)?;
+
+            let result = Some(icon_filename);
+
+            // 写入内存缓存
+            if let Ok(mut cache) = self.path_to_icon.lock() {
+                cache.insert(exe_path_str, result.clone());
+            }
+
+            result
         }
-
-        // 提取图标并保存
-        let icon_filename = self.extract_and_save_icon(&exe_path)?;
-
-        let result = Some(icon_filename);
-
-        // 写入内存缓存
-        if let Ok(mut cache) = self.path_to_icon.lock() {
-            cache.insert(exe_path_str, result.clone());
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = exe_path;
+            None
         }
-
-        result
     }
 
     /// 根据图标文件名获取完整路径（用于 convertFileSrc）
@@ -140,14 +141,10 @@ impl IconCache {
             .unwrap_or(false)
     }
 
-    #[cfg(not(target_os = "windows"))]
-    pub fn extract_icon_by_hwnd(&self, _hwnd: windows::Win32::Foundation::HWND) -> Option<String> {
-        None
-    }
-
     /// 从窗口句柄获取进程可执行文件路径
+    /// pub(crate)：事件驱动监听器的捕获阶段需要快速拿到进程路径（图标提取延后到工作线程）
     #[cfg(target_os = "windows")]
-    fn get_process_path(&self, hwnd: windows::Win32::Foundation::HWND) -> Option<PathBuf> {
+    pub(crate) fn get_process_path(&self, hwnd: windows::Win32::Foundation::HWND) -> Option<PathBuf> {
         use windows::Win32::Foundation::CloseHandle;
         use windows::Win32::System::Threading::{
             OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
@@ -192,7 +189,7 @@ impl IconCache {
 
     /// 提取 exe 图标并保存为 PNG 到缓存目录
     #[cfg(target_os = "windows")]
-    fn extract_and_save_icon(&self, exe_path: &PathBuf) -> Option<String> {
+    fn extract_and_save_icon(&self, exe_path: &std::path::Path) -> Option<String> {
         use windows::Win32::UI::Shell::{
             SHGetFileInfoW, SHGFI_ICON, SHGFI_LARGEICON, SHFILEINFOW,
         };
@@ -392,7 +389,7 @@ impl IconCache {
     }
 
     #[cfg(not(target_os = "windows"))]
-    fn extract_and_save_icon(&self, _exe_path: &PathBuf) -> Option<String> {
+    fn extract_and_save_icon(&self, _exe_path: &std::path::Path) -> Option<String> {
         None
     }
 

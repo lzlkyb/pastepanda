@@ -1,12 +1,15 @@
-/* 剪贴板栈横幅 — 主题自适应（--orange-* 变量覆盖全部 7 套主题，深色下不再刺眼） */
+/* 剪贴板栈横幅 · 方案 A「横幅内嵌队列」
+   三层结构：状态行 / 队列 chips 行 / 进度行。
+   主题自适应：底色用 --orange-* 变量，chips 用 color-mix 从 --orange 派生（覆盖全部 7 套主题）。
+   窄幅适配：banner 设为查询容器，侧边栏展开（cardPanel≈300px）时隐藏主按钮内的热键标签。 */
 .banner {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 7px;
   margin: 0 16px 4px;
-  padding: 10px 14px;
+  padding: 10px 12px;
   border-radius: 12px;
-  background: linear-gradient(135deg, rgba(249, 115, 22, 0.07), transparent 65%), var(--orange-bg);
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.09), transparent 65%), var(--orange-bg);
   border: 1px solid var(--orange-border);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -14,11 +17,19 @@
   flex-shrink: 0;
   animation: bannerIn 0.3s ease;
   z-index: 5;
+  container-type: inline-size;
 }
 
 @keyframes bannerIn {
   from { opacity: 0; transform: translateY(-8px); }
   to { opacity: 1; transform: none; }
+}
+
+/* ===== 状态行 ===== */
+.top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .dot {
@@ -35,11 +46,6 @@
   50% { opacity: 0.7; box-shadow: 0 0 0 5px rgba(234, 88, 12, 0); }
 }
 
-.text {
-  flex: 1;
-  min-width: 0;
-}
-
 .title {
   display: flex;
   align-items: center;
@@ -47,76 +53,109 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--orange);
-}
-
-.sub {
-  font-size: 11px;
-  color: var(--orange);
-  opacity: 0.72;
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.pasteAllBtn {
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 8px;
-  font-size: 11px;
-  font-weight: 600;
-  border: none;
-  cursor: pointer;
-  background: var(--orange, #EA580C);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(234, 88, 12, 0.3);
-  transition: transform 0.15s, box-shadow 0.15s;
+.title svg {
   flex-shrink: 0;
 }
 
-.pasteAllBtn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.4);
-}
-
-.pasteAllBtn:active {
-  transform: translateY(0);
-}
-
-.exitBtn {
+.acts {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* 主按钮：逐条粘贴（内嵌热键标签） */
+.primaryBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: none;
+  background: var(--orange, #EA580C);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(234, 88, 12, 0.35);
+  transition: transform 0.15s, box-shadow 0.15s;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.primaryBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.45);
+}
+
+.primaryBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
+.kbd {
+  font: 600 9px ui-monospace, Consolas, monospace;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 2px 5px;
+  border-radius: 4px;
+  letter-spacing: 0.2px;
+}
+
+/* 次级按钮：全部粘贴 */
+.btn {
   height: 28px;
   padding: 0 10px;
   border-radius: 8px;
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
-  background: transparent;
+  background: color-mix(in srgb, var(--orange) 14%, transparent);
   color: var(--orange);
   border: 1px solid var(--orange-border);
   transition: background 0.15s;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
-.exitBtn:hover {
-  background: rgba(249, 115, 22, 0.12);
+.btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--orange) 24%, transparent);
 }
 
-/* 进度条（常驻显示：已粘贴/总数） */
-.progressTrack {
-  margin-top: 6px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--orange-border);
-  overflow: hidden;
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
-.progressFill {
-  height: 100%;
-  border-radius: 2px;
-  background: linear-gradient(90deg, #F97316, #EA580C);
-  transition: width 0.25s ease;
+/* 幽灵按钮：退出 */
+.ghostBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--orange);
+  opacity: 0.7;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ghostBtn:hover {
+  opacity: 1;
+  border-color: var(--orange-border);
+  background: color-mix(in srgb, var(--orange) 10%, transparent);
 }
 
 /* U58：中止按钮 */
@@ -147,4 +186,145 @@
 .abortBtn:hover {
   transform: translateY(-1px);
   background: #B91C1C;
+}
+
+/* ===== 队列行 ===== */
+.queue {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 8px 2px 2px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--orange-border) transparent;
+}
+
+.queueEmpty {
+  font-size: 10px;
+  color: var(--orange);
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+.chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  max-width: 150px;
+  height: 28px;
+  padding: 0 9px 0 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--orange) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--orange) 20%, transparent);
+  font-size: 11px;
+  color: var(--text-primary);
+  transition: all 0.2s;
+}
+
+.ord {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--orange) 16%, transparent);
+  color: var(--orange);
+}
+
+.ico {
+  font-size: 11px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.txt {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 当前项（下一个粘贴） */
+.chipNext {
+  border-color: var(--orange);
+  background: color-mix(in srgb, var(--orange) 16%, transparent);
+  box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.18);
+}
+
+.chipNext .ord {
+  background: var(--orange);
+  color: #fff;
+  animation: stackPulse 1.5s infinite;
+}
+
+.nextTag {
+  position: absolute;
+  top: -8px;
+  right: 6px;
+  font-size: 8px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.3px;
+  background: var(--orange);
+  padding: 1px 5px;
+  border-radius: 4px;
+  box-shadow: 0 1px 4px rgba(234, 88, 12, 0.5);
+  white-space: nowrap;
+}
+
+/* 已粘贴项 */
+.chipDone {
+  opacity: 0.4;
+}
+
+.chipDone .txt {
+  text-decoration: line-through;
+}
+
+.chipDone .ord {
+  background: #9CA3AF;
+  color: #fff;
+  animation: none;
+}
+
+/* ===== 进度行 ===== */
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.prog {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--orange-border);
+  overflow: hidden;
+}
+
+.progFill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #F97316, #EA580C);
+  transition: width 0.25s ease;
+}
+
+.footTxt {
+  font-size: 10px;
+  color: var(--orange);
+  opacity: 0.85;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== 窄幅适配：侧边栏展开时（banner ≈ 268px）隐藏主按钮热键标签，
+   把空间让给操作按钮，标题自动省略 ===== */
+@container (max-width: 380px) {
+  .kbd {
+    display: none;
+  }
 }

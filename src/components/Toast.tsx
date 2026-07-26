@@ -69,18 +69,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={ctxValue}>
       {children}
-      {/* Toast container */}
+      {/* Toast container — popLayout：退场 toast 立即脱离文档流（framer 固定其尺寸/位置），
+          其余 toast 由 layout 弹簧平滑补位，消除原先卸载瞬间的跳变 */}
       <div className={styles.toastContainer}>
-        <AnimatePresence>
+        <AnimatePresence mode="popLayout">
           {toasts.map((t) => {
             const Icon = ICONS[t.type];
             return (
               <motion.div
                 key={t.id}
+                layout
                 initial={{ opacity: 0, y: -10, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95, x: 10 }}
-                transition={{ duration: 0.2 }}
+                transition={{ duration: 0.2, layout: { type: "spring", stiffness: 550, damping: 38 } }}
                 className={`${styles.toastItem} ${styles[t.type]}`}
                 style={{
                   pointerEvents: "auto",

@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { FileText, X } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
@@ -72,25 +73,38 @@ export const MdAssocBanner = memo(function MdAssocBanner() {
     setDismissed(true);
   };
 
-  // 已是默认 / 已拒绝 / 状态未知（加载中）→ 不渲染
-  if (dismissed || status === null || status === "default") return null;
-
+  // 已是默认 / 已拒绝 / 状态未知（加载中）→ 不渲染（由下方 AnimatePresence 门控以支持退场）
   return (
-    <div className={styles.banner}>
-      <span className={styles.icon}>
-        <FileText size={15} strokeWidth={2.2} />
-      </span>
-      <div className={styles.text}>
-        <div className={styles.title}>将 PastePanda 设为默认 Markdown 编辑器？</div>
-        <div className={styles.sub}>双击 .md 文件直接用全屏编辑器打开</div>
-      </div>
-      <button className={styles.dismissBtn} onClick={handleDismiss}>不再提示</button>
-      <button className={styles.goBtn} onClick={() => void handleGo()} disabled={busy}>
-        {busy ? "设置中…" : "去设置"}
-      </button>
-      <button className={styles.closeBtn} onClick={handleDismiss} title="关闭">
-        <X size={12} />
-      </button>
-    </div>
+    <AnimatePresence>
+      {visible && (
+        <motion.div
+          className={styles.banner}
+          exit={{
+            opacity: 0,
+            height: 0,
+            paddingTop: 0,
+            paddingBottom: 0,
+            marginBottom: 0,
+            overflow: "hidden",
+            transition: { duration: 0.2, ease: "easeIn" },
+          }}
+        >
+          <span className={styles.icon}>
+            <FileText size={15} strokeWidth={2.2} />
+          </span>
+          <div className={styles.text}>
+            <div className={styles.title}>将 PastePanda 设为默认 Markdown 编辑器？</div>
+            <div className={styles.sub}>双击 .md 文件直接用全屏编辑器打开</div>
+          </div>
+          <button className={styles.dismissBtn} onClick={handleDismiss}>不再提示</button>
+          <button className={styles.goBtn} onClick={() => void handleGo()} disabled={busy}>
+            {busy ? "设置中…" : "去设置"}
+          </button>
+          <button className={styles.closeBtn} onClick={handleDismiss} title="关闭">
+            <X size={12} />
+          </button>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 });

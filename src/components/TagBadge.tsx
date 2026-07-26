@@ -1,4 +1,5 @@
 import { memo, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { useAppStore, Tag } from "@/stores/appStore";
 import styles from "./TagBadge.module.css";
@@ -94,6 +95,28 @@ export const TagBadgeMore = memo(function TagBadgeMore({ count }: { count: numbe
   );
 });
 
+/**
+ * #10 标签增删动画包裹层 — TagBadge 的唯一动画入口。
+ * 必须放在 <AnimatePresence initial={false}> 内使用：
+ *  - 新增标签：缩放淡入落位，兄弟芯片由 layout 弹簧让位
+ *  - 移除标签：快速缩放淡出（0.12s），不阻塞列表
+ *  - initial={false}（由调用方提供）保证虚拟列表滚动复用行挂载时不逐个弹跳
+ */
+export const AnimatedTagBadge = memo(function AnimatedTagBadge(props: TagBadgeProps) {
+  return (
+    <motion.span
+      layout
+      className={styles.tagAnim}
+      initial={{ opacity: 0, scale: 0.8 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.12, ease: "easeIn" } }}
+      transition={{ type: "spring", stiffness: 520, damping: 32 }}
+    >
+      <TagBadge {...props} />
+    </motion.span>
+  );
+});
+
 /** 标签行容器 — 默认紧凑显示 max 个，hover 卡片时浮层展开全部 */
 export const TagRow = memo(function TagRow({ tags, max = 2 }: {
   tags: Tag[];
@@ -101,6 +124,8 @@ export const TagRow = memo(function TagRow({ tags, max = 2 }: {
 }) {
   const toggleTagFilter = useAppStore((s) => s.toggleTagFilter);
 
+  // 整行消失（最后一个标签被移除）走早退分支直接卸载，不做行级退场——
+  // 部分增删（常见路径）由下方 AnimatePresence 负责动画
   if (!tags || tags.length === 0) return null;
 
   const visible = tags.slice(0, max);
@@ -110,26 +135,30 @@ export const TagRow = memo(function TagRow({ tags, max = 2 }: {
     <span className={styles.tagContainer}>
       {/* 紧凑行：默认显示的标签 + +N */}
       <span className={styles.tagInlineRow}>
-        {visible.map((tag) => (
-          <TagBadge
-            key={tag.id}
-            tag={tag}
-            onClick={() => toggleTagFilter(tag.id)}
-          />
-        ))}
+        <AnimatePresence initial={false}>
+          {visible.map((tag) => (
+            <AnimatedTagBadge
+              key={tag.id}
+              tag={tag}
+              onClick={() => toggleTagFilter(tag.id)}
+            />
+          ))}
+        </AnimatePresence>
         {overflow > 0 && <TagBadgeMore count={overflow} />}
       </span>
 
       {/* hover 展开浮层：显示全部标签 */}
       {overflow > 0 && (
         <span className={styles.tagExpand}>
-          {tags.map((tag) => (
-            <TagBadge
-              key={tag.id}
-              tag={tag}
-              onClick={() => toggleTagFilter(tag.id)}
-            />
-          ))}
+          <AnimatePresence initial={false}>
+            {tags.map((tag) => (
+              <AnimatedTagBadge
+                key={tag.id}
+                tag={tag}
+                onClick={() => toggleTagFilter(tag.id)}
+              />
+            ))}
+          </AnimatePresence>
         </span>
       )}
     </span>

@@ -127,7 +127,8 @@ export function useVirtualScroll({
       lerp: 0.08,
       duration: 1.2,
       orientation: "vertical",
-      smoothWheel: true,
+      // #3 无障碍：OS「减少动态效果」开启时滚轮走原生滚动，不做平滑插值
+      smoothWheel: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
       wheelMultiplier: 0.8,
       touchMultiplier: 1,
       autoResize: true,

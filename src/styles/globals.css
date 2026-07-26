@@ -30,3 +30,16 @@ img { -webkit-user-drag: none; user-select: none; }
 .text-body  { font-size: 13px; font-weight: 400; color: var(--text-primary); }
 .text-meta  { font-size: 11px; font-weight: 400; color: var(--text-secondary); }
 .text-tiny  { font-size: 10px; font-weight: 500; color: var(--text-muted); }
+
+/* ===== #3 无障碍：OS「减少动态效果」全局降级 =====
+   与 framer <MotionConfig reducedMotion="user">、dialogMotion DISABLED 通道、
+   编辑器窗口 no-anim 类联动：位移/缩放/循环动画即时完成，仅保留状态切换本身。
+   （本文件被主窗口/编辑器/托盘弹窗三个入口共同引入，一处生效全窗口覆盖） */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

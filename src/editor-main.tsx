@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { MotionConfig } from "framer-motion";
 import { FullscreenEditor } from "./components/editors/FullscreenEditor";
 import { ToastProvider } from "./components/Toast";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -11,6 +12,12 @@ import "./styles/globals.css";
 // 编辑器独立窗口：先同步应用默认主题兜底（避免无样式闪烁），
 // 再异步读取用户实际主题，使编辑器外观跟随应用主题
 applyTheme(DEFAULT_THEME);
+// #3 OS「减少动态效果」：挂 no-anim 类（关窗快照等 CSS 判断依赖它）。
+// 同步执行、独立于 get_config；但不改写 store 里的 window_animation——
+// 那是用户的真实设置，useDialogAnim 已通过 usePrefersReducedMotion 直接感知此偏好
+if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  document.documentElement.classList.add("no-anim");
+}
 invoke<{ theme?: string; window_animation?: boolean }>("get_config")
   .then((cfg) => {
     applyTheme((cfg.theme as ThemeKey) || DEFAULT_THEME);
@@ -26,9 +33,11 @@ invoke<{ theme?: string; window_animation?: boolean }>("get_config")
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <ErrorBoundary componentName="全屏编辑器">
-      <ToastProvider>
-        <FullscreenEditor />
-      </ToastProvider>
+      <MotionConfig reducedMotion="user">
+        <ToastProvider>
+          <FullscreenEditor />
+        </ToastProvider>
+      </MotionConfig>
     </ErrorBoundary>
   </React.StrictMode>
 );

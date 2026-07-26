@@ -5,7 +5,7 @@ import { getAppVersion, getAppName, fetchCounts, toggleStackMode } from "@/lib/a
 import { cleanSourceName, getSourceIcon, fetchRealSourceIcon } from "@/lib/source-mappings";
 import SourceBadge from "@/components/SourceBadge";
 import { UpdateBadge } from "@/components/UpdateBadge";
-import { TagBadge } from "@/components/TagBadge";
+import { TagBadge, AnimatedTagBadge } from "@/components/TagBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { SearchBox } from "@/components/SearchBox";
 import { logger } from "@/lib/logger";
@@ -208,11 +208,13 @@ export function TopBar({ onSettings, onSnippets, onExtract, onToggleSidebar, sid
         {/* 标签筛选栏 */}
         {allTags.length > 0 && (
           <div className={styles.tagFilterBar} data-tauri-drag-region="false">
+            {/* #10 筛选芯片增删动画：勾选标签时芯片弹入，点 × 时弹出，兄弟芯片 layout 让位 */}
+            <AnimatePresence initial={false}>
             {selectedTagIds.map((tid) => {
               const tag = allTags.find((t) => t.id === tid);
               if (!tag) return null;
               return (
-                <TagBadge
+                <AnimatedTagBadge
                   key={tid}
                   tag={tag}
                   variant="chip"
@@ -220,6 +222,7 @@ export function TopBar({ onSettings, onSnippets, onExtract, onToggleSidebar, sid
                 />
               );
             })}
+            </AnimatePresence>
             {selectedTagIds.length > 0 && (
               <button className={styles.tagFilterClear} onClick={clearTagFilters} title="清除所有标签筛选">
                 清除

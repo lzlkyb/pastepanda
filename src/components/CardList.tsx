@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense, useCallback, useMemo, memo } from "react";
 import { createPortal } from "react-dom";
-import { AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
 import { useDialogStore } from "@/stores/dialogStore";
@@ -19,6 +19,7 @@ import Lenis from "lenis";
 import styles from "./CardList.module.css";
 import { useLoadMore } from "@/hooks/useLoadMore";
 import { useVirtualScroll } from "@/hooks/useVirtualScroll";
+import { prefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { ItemEditorDialog } from "@/components/editors/ItemEditorDialog";
 import { TransformHubDialog } from "@/components/TransformHubDialog";
 import { listen } from "@tauri-apps/api/event";
@@ -234,28 +235,43 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
     }
   }, [anyDialogOpen, lenisRef]);
 
+  // ── Glide 过渡窗口（置顶/删除重排共享）──
+  // 置顶/删除触发 getFilteredItems 重排，行 translateY 随之变化；在重排瞬间
+  // 给行挂 380ms transform 过渡（rowGlide），各行平滑让位。glide 期间暂停
+  // Lenis，防止滚动回收行与过渡叠加产生重影；结束后恢复。
+  const triggerGlide = useCallback(() => {
+    setGliding(true);
+    if (glideTimerRef.current !== null) window.clearTimeout(glideTimerRef.current);
+    glideTimerRef.current = window.setTimeout(() => {
+      glideTimerRef.current = null;
+      setGliding(false);
+    }, 450);
+    const lenis = lenisRef.current;
+    if (lenis) lenis.stop();
+    // glide 结束后恢复 Lenis（弹框打开时保持暂停，交由 anyDialogOpen 效果管理）
+    window.setTimeout(() => {
+      if (lenisRef.current && !anyDialogOpenRef.current) lenisRef.current.start();
+    }, 400);
+  }, [lenisRef]);
+
+  // glide 定时器卸载清理
+  useEffect(() => {
+    return () => {
+      if (glideTimerRef.current !== null) window.clearTimeout(glideTimerRef.current);
+    };
+  }, []);
+
   // ── 方案 C 置顶动画：pin-anim 事件（lib/api togglePin 派发）──
-  // 置顶/取消置顶触发 getFilteredItems 重排（pinned DESC），行 translateY 随之变化；
-  // 在重排瞬间给行挂 380ms transform 过渡（rowGlide），被置顶卡片平滑滑向顶部、其余行让位。
-  // glide 期间暂停 Lenis，防止滚动回收行与过渡叠加产生重影；落定后给目标行高亮环。
+  // glide 之外额外给目标行落定高亮环。
   useEffect(() => {
     const onPinAnim = (e: Event) => {
       const id = (e as CustomEvent).detail?.id as string | undefined;
-      setGliding(true);
-      if (glideTimerRef.current !== null) window.clearTimeout(glideTimerRef.current);
-      glideTimerRef.current = window.setTimeout(() => {
-        glideTimerRef.current = null;
-        setGliding(false);
-      }, 450);
-      const lenis = lenisRef.current;
-      if (lenis) lenis.stop();
+      triggerGlide();
       if (landingShowTimerRef.current !== null) window.clearTimeout(landingShowTimerRef.current);
       if (landingClearTimerRef.current !== null) window.clearTimeout(landingClearTimerRef.current);
       landingShowTimerRef.current = window.setTimeout(() => {
         landingShowTimerRef.current = null;
         if (id) setLandingId(id);
-        // glide 结束后恢复 Lenis（弹框打开时保持暂停，交由 anyDialogOpen 效果管理）
-        if (lenis && !anyDialogOpenRef.current) lenis.start();
       }, 400);
       landingClearTimerRef.current = window.setTimeout(() => {
         landingClearTimerRef.current = null;
@@ -265,11 +281,42 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
     window.addEventListener("pin-anim", onPinAnim);
     return () => {
       window.removeEventListener("pin-anim", onPinAnim);
-      if (glideTimerRef.current !== null) window.clearTimeout(glideTimerRef.current);
       if (landingShowTimerRef.current !== null) window.clearTimeout(landingShowTimerRef.current);
       if (landingClearTimerRef.current !== null) window.clearTimeout(landingClearTimerRef.current);
     };
-  }, [lenisRef]);
+  }, [triggerGlide]);
+
+  // ── 删除动画：delete-anim 事件（lib/api deleteHistory 派发）──
+  // 仅需 glide（剩余行让位），无高亮环；被删行退场由 AnimatePresence 播放。
+  useEffect(() => {
+    const onDeleteAnim = () => triggerGlide();
+    window.addEventListener("delete-anim", onDeleteAnim);
+    return () => window.removeEventListener("delete-anim", onDeleteAnim);
+  }, [triggerGlide]);
+
+  // ── #5 筛选交叉淡入 ──
+  // 筛选条件变化时，新结果集以快速淡入+轻位移呈现（WAAPI 直接驱动行容器）。
+  // 选 WAAPI 而非 framer/React state：不引入额外渲染、不重挂载行、不与虚拟列表
+  // 行内联 translateY / rowGlide 冲突（动画作用在行容器，transform 互不影响）。
+  // filterKey 不含 searchKeyword：搜索有独立 loading 节奏，逐键触发会闪烁。
+  const rowsWrapRef = useRef<HTMLDivElement>(null);
+  const filterKey = `${filterType}|${timeFilter}|${sourceFilter}|${groupFilter}|${selectedTagIds.join(",")}`;
+  const prevFilterKeyRef = useRef(filterKey);
+  useEffect(() => {
+    if (prevFilterKeyRef.current === filterKey) return;
+    prevFilterKeyRef.current = filterKey;
+    const el = rowsWrapRef.current;
+    if (!el || !el.isConnected) return;
+    if (!useAppStore.getState().config.window_animation) return;
+    if (prefersReducedMotion()) return;
+    el.animate(
+      [
+        { opacity: 0.15, transform: "translateY(6px)" },
+        { opacity: 1, transform: "none" },
+      ],
+      { duration: 260, easing: "ease-out" },
+    );
+  }, [filterKey]);
 
   // ── 缩略图可视窗口范围 ──
   const vItemsNow = virtualizer.getVirtualItems();
@@ -525,12 +572,23 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
         aria-multiselectable="true"
         aria-setsize={items.length}
       >
+        <div ref={contentRef} className={styles.cardList}>
         <div role="status" aria-live="polite" style={{ position: "absolute", width: 1, height: 1, margin: -1, padding: 0, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0 }}>
           {items.length === 0 ? "没有符合条件的记录" : `共 ${items.length} 条记录`}
         </div>
-        <div ref={contentRef} className={styles.cardList}>
+        {/* #6 列表 ⇄ 空状态切换：mode="wait" 先退场再入场，避免两分支同时占位跳动；
+            initial={false} 保证应用首屏（空剪贴板/已有记录）不做入场动画 */}
+        <AnimatePresence mode="wait" initial={false}>
         {items.length === 0 ? (
-          searchMode && searchLoading ? (
+          <motion.div
+            key="empty"
+            className={styles.stateSwap}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6, transition: { duration: 0.14, ease: "easeIn" } }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+          >
+          {searchMode && searchLoading ? (
             <div className={styles.emptyState}>
               <div className={styles.emptyIconWrap}>
                 <span className={styles.loadMoreSpinner} />
@@ -606,9 +664,17 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
               </div>
             )}
           </div>
-          )
+          )}
+          </motion.div>
         ) : (
-          <>
+          <motion.div
+            key="list"
+            className={styles.stateSwap}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.08 } }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+          >
             {/* 批量操作工具栏 */}
             {selectedCount > 0 && (
               <div className={styles.batchToolbar}>
@@ -653,7 +719,11 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                 </button>
               </div>
             )}
-            <div style={{ height: virtualizer.getTotalSize(), width: "100%", position: "relative" }}>
+            <div ref={rowsWrapRef} style={{ height: virtualizer.getTotalSize(), width: "100%", position: "relative" }}>
+              {/* AnimatePresence 包裹虚拟行：删除时行被暂时保留到退场动画结束再卸载，
+                  触发 Card 内 motion 元素的 exit（opacity/x/scale）；剩余行由 rowGlide 让位。
+                  initial 保持默认，不影响首屏 stagger 入场 */}
+              <AnimatePresence>
               {virtualizer.getVirtualItems().map((vItem) => {
                 const item = items[vItem.index];
                 if (!item) return null;
@@ -683,6 +753,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                   </div>
                 );
               })}
+              </AnimatePresence>
             </div>
             {items.length > 0 && (
               <div className={styles.loadMoreArea}>
@@ -716,8 +787,9 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                 )}
               </div>
             )}
-          </>
+          </motion.div>
         )}
+        </AnimatePresence>
       </div>
 
       {/* 弹窗 —— createPortal 到 body：

@@ -453,6 +453,8 @@
   background: #1e1e2e;
   min-width: 200px;
   overflow: hidden;
+  /* #15 视图模式切换动画：从 display:none 恢复显示时 CSS 动画自动重播 */
+  animation: paneIn 0.24s ease;
 }
 
 .paneHeader {
@@ -538,6 +540,18 @@
   background: var(--card-bg, #fff);
   min-width: 200px;
   overflow: hidden;
+  /* #15 视图模式切换动画：面板每次挂载（切入分屏/纯预览）时淡入上浮 */
+  animation: paneIn 0.24s ease;
+}
+
+/* #15 面板切换动画 — 「窗口动画」关闭（no-anim）时即时切换 */
+@keyframes paneIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+:global(.no-anim) .editorPane,
+:global(.no-anim) .previewPane {
+  animation: none;
 }
 
 .previewPane .paneHeader {

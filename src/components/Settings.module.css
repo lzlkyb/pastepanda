@@ -749,6 +749,34 @@
   border-bottom: 1px solid var(--border-color);
 }
 
+/* #16 设置分区错峰入场 — 标签页面板每次挂载（AnimatePresence mode="wait" 按 key 重挂载）
+   时子块按序淡入上浮；搜索过滤切换 display 时新显现的块也会重播一次，强化命中反馈。
+   16 个之后统一封顶延迟，避免折叠线以下的块反向晚到 */
+.settingsSections > * {
+  animation: settingsSectionIn 0.3s ease backwards;
+}
+@keyframes settingsSectionIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.settingsSections > *:nth-child(1)  { animation-delay: 0s; }
+.settingsSections > *:nth-child(2)  { animation-delay: 0.03s; }
+.settingsSections > *:nth-child(3)  { animation-delay: 0.06s; }
+.settingsSections > *:nth-child(4)  { animation-delay: 0.09s; }
+.settingsSections > *:nth-child(5)  { animation-delay: 0.12s; }
+.settingsSections > *:nth-child(6)  { animation-delay: 0.15s; }
+.settingsSections > *:nth-child(7)  { animation-delay: 0.18s; }
+.settingsSections > *:nth-child(8)  { animation-delay: 0.21s; }
+.settingsSections > *:nth-child(9)  { animation-delay: 0.24s; }
+.settingsSections > *:nth-child(10) { animation-delay: 0.27s; }
+.settingsSections > *:nth-child(11) { animation-delay: 0.30s; }
+.settingsSections > *:nth-child(12) { animation-delay: 0.33s; }
+.settingsSections > *:nth-child(13) { animation-delay: 0.36s; }
+.settingsSections > *:nth-child(14) { animation-delay: 0.39s; }
+.settingsSections > *:nth-child(15) { animation-delay: 0.42s; }
+.settingsSections > *:nth-child(16) { animation-delay: 0.45s; }
+.settingsSections > *:nth-child(n+17) { animation-delay: 0.48s; }
+
 /* U52：设置搜索框 — 吸附在滚动区顶部，便于在长列表中快速定位设置项 */
 .settingsSearch {
   position: sticky;
@@ -1065,30 +1093,40 @@
   opacity: 1;
 }
 
-/* Settings footer */
+/* Settings footer — 方案 B 紧凑两行：
+   行1 = 恢复默认设置（左·链接）+ 关闭设置（右·紧凑实心按钮）
+   行2 = 自动保存提示 + 版本徽章（居中合并）
+   底部圆角修复：.dialog-box 有 16px 圆角但无 overflow:hidden（防裁剪其他弹框浮层），
+   自带背景色的 footer 须自行加底部圆角，否则直角溢出弹框圆角之外 */
 .sFooter {
-  padding: 16px 20px 20px;
+  padding: 12px 20px;
   border-top: 1px solid var(--border-color);
   background: var(--section-bg);
+  border-radius: 0 0 16px 16px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
+.sFooterRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .sSaveBtn {
-  width: 100%;
-  height: 40px;
-  border-radius: 10px;
+  height: 30px;
+  padding: 0 16px;
+  border-radius: 8px;
   border: none;
   background: var(--accent);
   color: #fff;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
   box-shadow: 0 2px 8px var(--accent-shadow);
-  transition: all 0.2s;
+  transition: all 0.15s;
   font-family: inherit;
   display: flex;
   align-items: center;
@@ -1102,15 +1140,12 @@
 .sSaveBtn:active {
   transform: scale(0.98);
 }
-.sSaveBtn.saved {
-  background: linear-gradient(135deg, #34C759, #248A3D);
-  box-shadow: 0 2px 8px rgba(52, 199, 89, 0.3);
-}
 
 .sFooterMeta {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: center;
+  gap: 6px;
 }
 
 .sResetBtn {
@@ -1129,13 +1164,12 @@
 }
 
 .sAutoSaveHint {
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--text-muted);
-  opacity: 0.8;
 }
 
 .sFooterVer {
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--text-muted);
   display: flex;
   align-items: center;

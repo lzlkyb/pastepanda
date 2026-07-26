@@ -221,11 +221,13 @@ pub fn run() {
                 .get("auto_strip")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
-            // 修复 U36：读取敏感内容防护配置（默认开启）
+            // 修复 U36：读取敏感内容防护配置。默认值须与前端 DEFAULT_CONFIG 一致
+            // （false = 默认关闭，由用户在设置中显式开启）——此前 unwrap_or(true)
+            // 与前端默认 false 脱节，导致未保存过配置的用户防护被静默开启
             let skip_sensitive_enabled = saved_config
                 .get("skip_sensitive")
                 .and_then(|v| v.as_bool())
-                .unwrap_or(true);
+                .unwrap_or(false);
             let excluded_apps_list: Vec<String> = saved_config
                 .get("excluded_apps")
                 .and_then(|v| v.as_str())
@@ -289,6 +291,12 @@ pub fn run() {
                 paste_engine::PasteEngine::new(handle.clone(), paste_suppress.clone());
             app.manage(paste_engine);
 
+            // 初始化图标缓存（用于来源应用真实图标）
+            // 须在监听器启动之前 manage：事件驱动监听的捕获/处理线程依赖 IconCache
+            let icon_cache_dir = app_dir.join("source-icons");
+            let icon_cache = icon_extractor::IconCache::new(icon_cache_dir);
+            app.manage(icon_cache);
+
             // 启动剪贴板监听
             let monitor = clipboard_monitor::ClipboardMonitor::new(handle.clone(), paste_suppress);
             // 从数据库初始化 auto_strip 缓存（在 store.manage 之前已读取），避免轮询时每次都锁数据库
@@ -297,11 +305,6 @@ pub fn run() {
             monitor.update_sensitive_cache(skip_sensitive_enabled, excluded_apps_list);
             monitor.start();
             app.manage(monitor);
-
-            // 初始化图标缓存（用于来源应用真实图标）
-            let icon_cache_dir = app_dir.join("source-icons");
-            let icon_cache = icon_extractor::IconCache::new(icon_cache_dir);
-            app.manage(icon_cache);
 
             // 初始化内容分类器（AI 智能分类）
             let classifier = content_classifier::ContentClassifier::new();

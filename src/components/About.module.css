@@ -1,4 +1,4 @@
-/* AboutDialog 组件样式 */
+/* 关于页样式（设置面板 → 关于 tab / AboutTabContent 使用） */
 
 /* 英雄区 */
 .aboutHero {
@@ -165,7 +165,7 @@
   transition: color 0.3s ease;
 }
 
-/* AboutDialog 弹窗宽度 */
+/* 关于 tab 容器高度限制 */
 .aboutDialog {
   max-height: 85vh;
 }

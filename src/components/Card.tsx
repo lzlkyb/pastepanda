@@ -277,6 +277,11 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
         initial={{ opacity: 0, x: -20, scale: 0.97 }}
         animate={{ opacity: 1, x: 0, scale: 1 }}
         exit={{ opacity: 0, x: -30, scale: 0.95, transition: { duration: 0.2 } }}
+        /* #8/#9 按压·悬停微交互：必须走 framer 手势通道——motion.div 的内联 transform
+           会覆盖样式表规则，CSS 里 .card:hover / .cardClickFeedback 的 transform 是死代码。
+           手势自带 transition，避免继承入场 stagger 的 delay */
+        whileHover={{ y: -2, scale: 1.01, transition: { type: "spring", stiffness: 500, damping: 30 } }}
+        whileTap={{ scale: 0.985, transition: { duration: 0.08, ease: "easeOut" } }}
         transition={{ type: "spring", stiffness: 400, damping: 28, delay: Math.min(index * 0.003, 0.04) }}
         onMouseDown={handleMouseDown}
         className={`${styles.card} ${typeClass}${selected ? ` ${styles.selected}` : ""}${clickFeedback ? ` ${styles.cardClickFeedback}` : ""}${stackOrder ? ` ${styles.cardInStack}${stackOrder === 1 ? ` ${styles.cardStackNext}` : ""}` : ""}${stackDone ? ` ${styles.cardStackDone}` : ""}${pinFlash ? ` ${styles.cardJustPinned}` : ""}`}

@@ -311,14 +311,16 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
               </AnimatePresence>
             </div>
 
-            {/* Footer */}
+            {/* Footer — 方案 B 紧凑两行 */}
             <div className={styles.sFooter}>
-              <button onClick={onClose} className={styles.sSaveBtn}>关闭设置</button>
-              <div className={styles.sFooterMeta}>
+              <div className={styles.sFooterRow}>
                 <button onClick={() => setShowResetConfirm(true)} className={styles.sResetBtn} title="将所有设置恢复为默认值">恢复默认设置</button>
-                <span className={styles.sAutoSaveHint}>所有设置修改后自动保存</span>
+                <button onClick={onClose} className={styles.sSaveBtn}>关闭设置</button>
               </div>
-              <span className={styles.sFooterVer}>{appName} <VersionBadge version={appVersion} compact /></span>
+              <div className={styles.sFooterMeta}>
+                <span className={styles.sAutoSaveHint}>所有设置修改后自动保存</span>
+                <span className={styles.sFooterVer}><VersionBadge version={appVersion} compact /></span>
+              </div>
             </div>
           </motion.div>
           </FocusTrap>
