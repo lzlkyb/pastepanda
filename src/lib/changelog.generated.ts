@@ -3,6 +3,60 @@ import type { ChangelogEntry } from "./changelog";
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.3.1",
+    date: "2026-07-27",
+    summary: "更新弹框改版：更新日志改为时间线式排布（分类条目沿竖轴展开），顶部分类筛选...",
+    categories: [
+      {
+        type: "other",
+        name: "改进",
+        items: [
+          { text: "更新弹框改版：更新日志改为时间线式排布（分类条目沿竖轴展开），顶部分类筛选 chips（全部 / 新增 / 改进 / 修复）一键过滤，渐变洗色头部 + 版本摘要引语，长日志滚动定位更清晰" },
+        ],
+      },
+      {
+        type: "fix",
+        name: "修复",
+        items: [
+          { text: "全屏编辑器滚动条在深色主题下不可见（滑块色与暗背景融合）：改为 8px 主题自适应常显滚动条，编辑区暗底用浅色滑块、亮色主题自动转深色，预览及 JSON / CSV / 日志滚动区按主题取色" },
+        ],
+      },
+    ],
+  },
+  {
+    version: "5.3.0",
+    date: "2026-07-26",
+    summary: "事件驱动剪贴板监听（Windows）：AddClipboardFormat...",
+    categories: [
+      {
+        type: "feat",
+        name: "新增",
+        items: [
+          { text: "事件驱动剪贴板监听（Windows）：AddClipboardFormatListener + WM_CLIPBOARDUPDATE 原生通知，两级管线（消息线程 50ms 防抖快速捕获、工作线程承担图标提取/过滤/智能合并等重处理），另有按序列号兜底补读的定时器，消除旧 400ms 轮询\"快速连续复制时中间内容永久丢失\"的采样盲区" },
+          { text: "栈模式队列面板：横幅内嵌状态行 + 队列 chips + 进度行三层结构，\"逐条粘贴\"升为主按钮并带热键提示，已粘贴项折叠为内容预览 chips" },
+        ],
+      },
+      {
+        type: "other",
+        name: "改进",
+        items: [
+          { text: "动画体系大修（16 项）：卡片悬停抬升 / 按压反馈改用 framer 手势通道（修复内联 transform 覆盖样式表导致的悬停失效）、筛选切换整行交叉淡入、列表 ↔ 空状态过渡、Toast 移除后弹簧补位、标签芯片统一弹入弹出入口、全屏编辑器视图切换动画、设置分区逐级入场、右键子菜单退场淡出、.md 关联横幅高度塌缩退场" },
+          { text: "支持系统\"减少动态效果\"设置：四通道联动降级（MotionConfig + 全局 CSS 媒体查询 + 对话框动画门控 + 编辑器窗口 no-anim），Lenis 平滑滚动同步禁用" },
+          { text: "图标提取移至工作线程：捕获阶段只记录进程路径，不再阻塞消息循环，同时规避 hwnd 在异步阶段失效的问题" },
+          { text: "设置面板页脚改为紧凑两行布局；栈模式热键提示动态读取设置，修改后即时生效" },
+        ],
+      },
+      {
+        type: "fix",
+        name: "修复",
+        items: [
+          { text: "栈模式卡片底色（.cardInStack）硬编码浅色导致与暗色主题不协调" },
+          { text: "移除从未被引用的 AboutDialog / HelpDialog 组件（内容已整合进设置面板）" },
+        ],
+      },
+    ],
+  },
+  {
     version: "5.2.0",
     date: "2026-07-26",
     summary: "全屏编辑器泛化：通用外壳 + 内容类型注册表架构，文本 / JSON / ...",
