@@ -8,6 +8,13 @@ import { applyTheme, DEFAULT_THEME, ThemeKey } from "./lib/theme";
 import { useAppStore } from "./stores/appStore";
 import { invoke } from "@tauri-apps/api/core";
 import "./styles/globals.css";
+// 独立窗口同样需要加载主题与全局组件样式，否则 [data-theme] 变量无定义，
+// Markdown 预览会回退成白底黑字、h1 渐变标题透明、代码块褪色（与主窗口弹框预览不一致）。
+// 顺序与 main.tsx 保持一致；不引入 app.css（主窗口专属布局样式，与本窗口无关）。
+import "./styles/theme.css";
+import "./styles/buttons.css";
+import "./styles/dialog.css";
+import "./styles/code-theme.css";
 
 // 编辑器独立窗口：先同步应用默认主题兜底（避免无样式闪烁），
 // 再异步读取用户实际主题，使编辑器外观跟随应用主题

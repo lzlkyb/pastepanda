@@ -59,70 +59,7 @@
   background: var(--app-bg);
 }
 
-/* ===== 统一版本徽章 ===== */
-.version-badge {
-  display: inline-flex;
-  align-items: center;
-  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
-  font-size: 10px;
-  font-weight: 700;
-  padding: 3px 10px;
-  border-radius: 7px;
-  background: var(--version-badge-gradient, linear-gradient(135deg, #5B6AF0, #7C5CF0));
-  color: #fff;
-  letter-spacing: 0.3px;
-  white-space: nowrap;
-  user-select: none;
-  box-shadow: 0 2px 8px var(--version-badge-shadow, rgba(91, 106, 240, 0.35));
-}
-
-.version-badge--compact {
-  font-size: 9px;
-  padding: 2px 8px;
-  box-shadow: 0 1px 5px var(--version-badge-shadow, rgba(91, 106, 240, 0.25));
-}
-
-.version-badge-wrapper {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.version-badge-btn {
-  display: inline-flex;
-  align-items: center;
-  padding: 0;
-  margin: 0;
-  border: none;
-  background: none;
-  cursor: pointer;
-  border-radius: 20px;
-  transition: opacity 0.15s, transform 0.15s;
-  -webkit-app-region: no-drag;
-}
-.version-badge-btn:hover {
-  opacity: 0.8;
-  transform: scale(1.05);
-}
-.version-badge-btn:active {
-  transform: scale(0.95);
-}
-
-.version-badge-spin {
-  animation: spin 1s linear infinite;
-  color: var(--text-muted);
-}
-
-.version-badge-error-icon {
-  color: var(--danger);
-}
-
-.version-badge-error {
-  background: var(--red-bg, #FEF2F2) !important;
-  color: var(--danger, #DC2626) !important;
-  border: 1px solid var(--danger, #DC2626);
-  box-shadow: none !important;
-}
+/* ===== 版本徽章样式已迁至 buttons.css（托盘弹窗等独立窗口同样需要，多入口共用） ===== */
 
 .header-badge {
   display: inline-flex;
