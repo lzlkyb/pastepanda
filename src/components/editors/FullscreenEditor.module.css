@@ -582,6 +582,49 @@
   overflow: hidden;
 }
 
+/* ─── 滚动条（方案 A：主题自适应 · 常显）────────────────────────────
+   全屏编辑器不再继承 globals.css 的 5px 全局细滚动条——其 thumb 色为
+   var(--border-color)，深色主题下与暗背景（#1e1e2e / card-bg）对比度≈0
+   而"隐形"，用户无法定位滚动位置。以下为专属滚动条：
+   - 编辑区 .cm-scroller：暗底用浅色半透明 thumb；亮色主题改深色 thumb
+   - 预览区及各填充预览滚动容器：color-mix(var(--text-secondary)) 自动适配全部主题
+   统一 8px 加宽 + 圆角 + 透明 track，始终可见、易于抓握。
+   注意：不改动滚动容器结构，markdown 滚动同步（操作 .cm-scroller 与
+   .previewBody 的 scrollTop）零影响。HTML 预览为 iframe 独立文档（固定白底、
+   自带默认滚动条），不在此处作用。 */
+
+/* 编辑区（CodeMirror .cm-scroller）— 默认暗底，浅色 thumb */
+.editorBody :global(.cm-scroller)::-webkit-scrollbar { width: 8px; height: 8px; }
+.editorBody :global(.cm-scroller)::-webkit-scrollbar-track { background: transparent; }
+.editorBody :global(.cm-scroller)::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.20); border-radius: 99px; }
+.editorBody :global(.cm-scroller)::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.40); }
+
+/* 编辑区 — 亮色主题（data-theme-mode="light"）背景变白，thumb 改深色 */
+.overlay[data-theme-mode="light"] .editorBody :global(.cm-scroller)::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.22); }
+.overlay[data-theme-mode="light"] .editorBody :global(.cm-scroller)::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.42); }
+
+/* 预览区 + 填充预览滚动容器 + 语言选择列表 — color-mix 跟随主题 */
+.previewBody::-webkit-scrollbar,
+.treeBody::-webkit-scrollbar,
+.csvTableWrap::-webkit-scrollbar,
+.logBody::-webkit-scrollbar,
+.langList::-webkit-scrollbar { width: 8px; height: 8px; }
+.previewBody::-webkit-scrollbar-track,
+.treeBody::-webkit-scrollbar-track,
+.csvTableWrap::-webkit-scrollbar-track,
+.logBody::-webkit-scrollbar-track,
+.langList::-webkit-scrollbar-track { background: transparent; }
+.previewBody::-webkit-scrollbar-thumb,
+.treeBody::-webkit-scrollbar-thumb,
+.csvTableWrap::-webkit-scrollbar-thumb,
+.logBody::-webkit-scrollbar-thumb,
+.langList::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text-secondary, #8a8f98) 42%, transparent); border-radius: 99px; }
+.previewBody::-webkit-scrollbar-thumb:hover,
+.treeBody::-webkit-scrollbar-thumb:hover,
+.csvTableWrap::-webkit-scrollbar-thumb:hover,
+.logBody::-webkit-scrollbar-thumb:hover,
+.langList::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--text-secondary, #8a8f98) 70%, transparent); }
+
 /* 预览懒加载占位（Suspense fallback） */
 .previewLoading {
   display: flex;
