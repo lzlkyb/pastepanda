@@ -3,6 +3,22 @@ import type { ChangelogEntry } from "./changelog";
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.3.2",
+    date: "2026-07-27",
+    summary: "全屏编辑器主题样式丢失（Markdown / JSON / HTML / ...",
+    categories: [
+      {
+        type: "fix",
+        name: "修复",
+        items: [
+          { text: "全屏编辑器主题样式丢失（Markdown / JSON / HTML / CSV / 日志 / 代码全类型）：独立窗口入口 editor-main.tsx 缺失全局样式导入，[data-theme] 主题变量无定义，预览区回退白底黑字、h1 渐变标题透明、代码块褪色，与主窗口弹框预览不一致；已补齐 theme / buttons / dialog / code-theme 四份样式导入" },
+          { text: "托盘右键弹窗同类问题：popup-main.tsx 同样缺失主题样式导入（白底黑字、渐变与边框失效），且主题硬编码不跟随用户设置；已补齐样式并在启动时读取用户实际主题" },
+          { text: "版本徽章（VersionBadge）样式从主窗口专属 app.css 迁入 buttons.css，全屏编辑器与托盘弹窗等独立窗口均可复用" },
+        ],
+      },
+    ],
+  },
+  {
     version: "5.3.1",
     date: "2026-07-27",
     summary: "更新弹框改版：更新日志改为时间线式排布（分类条目沿竖轴展开），顶部分类筛选...",
