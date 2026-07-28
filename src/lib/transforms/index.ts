@@ -11,12 +11,14 @@ import { columnToSqlInTransform } from "./columnSqlIn";
 import { jsonInsertTransform } from "./jsonInsert";
 import { textTransforms } from "./textTransforms";
 import { configConvertTransforms } from "./configConverts";
+import { codecTransforms } from "./codecTransforms";
 
 registerTransform(sqlInTransform);
 registerTransform(columnToSqlInTransform);
 registerTransform(jsonInsertTransform);
 textTransforms.forEach(registerTransform);
 configConvertTransforms.forEach(registerTransform);
+codecTransforms.forEach(registerTransform);
 
 export * from "./types";
 export * from "./registry";
@@ -26,3 +28,4 @@ export { columnToSqlInTransform } from "./columnSqlIn";
 export { jsonInsertTransform, jsonToInsert } from "./jsonInsert";
 export type { InsertOptions, InsertResult } from "./jsonInsert";
 export { textTransforms } from "./textTransforms";
+export { codecTransforms } from "./codecTransforms";

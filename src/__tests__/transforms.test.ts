@@ -237,3 +237,105 @@ describe("sql-in dynamic field options (optionsFor)", () => {
     expect((await t.run(objArray)).output).toBe("IN (1, 2)");
   });
 });
+
+// ============ 编解码工具组 ============
+
+describe("codec transforms", () => {
+  it("base64 encode/decode round-trip", async () => {
+    const enc = getTransform("base64_encode")!;
+    const dec = getTransform("base64_decode")!;
+    const r1 = await enc.run("Hello 世界");
+    expect(r1.ok).toBe(true);
+    const r2 = await dec.run(r1.output!);
+    expect(r2.ok).toBe(true);
+    expect(r2.output).toBe("Hello 世界");
+  });
+
+  it("base64 decode detects base64 text", () => {
+    const t = getTransform("base64_decode")!;
+    expect(t.detect({ text: "SGVsbG8=", contentType: "text" })).toBeGreaterThan(0.5);
+    expect(t.detect({ text: "not base64!!!", contentType: "text" })).toBe(0);
+  });
+
+  it("url encode/decode round-trip", async () => {
+    const enc = getTransform("url_encode")!;
+    const dec = getTransform("url_decode")!;
+    const r1 = await enc.run("hello world&foo=bar");
+    expect(r1.output).toBe("hello%20world%26foo%3Dbar");
+    const r2 = await dec.run(r1.output!);
+    expect(r2.output).toBe("hello world&foo=bar");
+  });
+
+  it("url decode detects %XX patterns", () => {
+    const t = getTransform("url_decode")!;
+    expect(t.detect({ text: "hello%20world", contentType: "text" })).toBeGreaterThan(0.5);
+    expect(t.detect({ text: "plain text", contentType: "text" })).toBe(0);
+  });
+
+  it("unicode encode/decode round-trip", async () => {
+    const enc = getTransform("unicode_encode")!;
+    const dec = getTransform("unicode_decode")!;
+    const r1 = await enc.run("你好ABC");
+    expect(r1.output).toContain("\\u4F60");
+    expect(r1.output).toContain("ABC"); // ASCII 不编码
+    const r2 = await dec.run(r1.output!);
+    expect(r2.output).toBe("你好ABC");
+  });
+
+  it("html encode/decode round-trip", async () => {
+    const enc = getTransform("html_encode")!;
+    const dec = getTransform("html_decode")!;
+    const r1 = await enc.run('<div class="test">&</div>');
+    expect(r1.output).toContain("&lt;");
+    expect(r1.output).toContain("&amp;");
+    const r2 = await dec.run(r1.output!);
+    expect(r2.output).toBe('<div class="test">&</div>');
+  });
+
+  it("html decode handles numeric entities", async () => {
+    const dec = getTransform("html_decode")!;
+    const r = await dec.run("&#65;&#x42;&#67;");
+    expect(r.output).toBe("ABC");
+  });
+
+  it("jwt decode parses header and payload", async () => {
+    // 构造一个简单 JWT（不验证签名）
+    const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+    const payload = btoa(JSON.stringify({ sub: "1234", name: "Test", iat: 1700000000 }));
+    const jwt = `${header}.${payload}.fakesig`;
+    const t = getTransform("jwt_decode")!;
+    expect(t.detect({ text: jwt, contentType: "text" })).toBeGreaterThan(0.9);
+    const r = await t.run(jwt);
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain('"alg": "HS256"');
+    expect(r.output).toContain('"name": "Test"');
+    expect(r.output).toContain("iat_readable");
+  });
+
+  it("timestamp to date converts correctly", async () => {
+    const t = getTransform("timestamp_to_date")!;
+    expect(t.detect({ text: "1700000000", contentType: "number" })).toBeGreaterThan(0.5);
+    const r = await t.run("1700000000");
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain("2023-11-14");
+  });
+
+  it("date to timestamp converts correctly", async () => {
+    const t = getTransform("date_to_timestamp")!;
+    expect(t.detect({ text: "2023-11-14T22:13:20Z", contentType: "text" })).toBeGreaterThan(0.5);
+    const r = await t.run("2023-11-14T22:13:20Z");
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain("1700000000");
+  });
+
+  it("all 11 codec transforms are registered", () => {
+    const ids = [
+      "base64_encode", "base64_decode", "url_encode", "url_decode",
+      "unicode_encode", "unicode_decode", "html_encode", "html_decode",
+      "jwt_decode", "timestamp_to_date", "date_to_timestamp",
+    ];
+    for (const id of ids) {
+      expect(getTransform(id), `transform ${id} should be registered`).toBeDefined();
+    }
+  });
+});
