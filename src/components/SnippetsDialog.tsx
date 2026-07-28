@@ -6,6 +6,7 @@ import { logger } from "@/lib/logger";
 import { useToast } from "@/components/Toast";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { resolveSnippetVariables } from "@/lib/snippetVariables";
 import styles from "./Snippets.module.css";
 import { FocusTrap } from "@/components/FocusTrap";
 
@@ -171,7 +172,8 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
 
   const handleCopy = async (s: Snippet) => {
     try {
-      await navigator.clipboard.writeText(s.content);
+      const resolved = await resolveSnippetVariables(s.content);
+      await navigator.clipboard.writeText(resolved);
       toast("已复制片段", "success");
       // 记录使用情况（后端累加 copy_count / last_used_at），并同步本地状态避免重新加载
       invoke("use_snippet", { id: s.id }).catch((e) => logger.warn("记录片段使用失败", e));
