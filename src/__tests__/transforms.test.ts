@@ -339,3 +339,80 @@ describe("codec transforms", () => {
     }
   });
 });
+
+// ============ 日志统计工具 ============
+
+const SAMPLE_LOG = [
+  "2026-07-25 10:00:01 INFO  Server started on port 8080",
+  "2026-07-25 10:00:02 DEBUG Loading config from /etc/app.conf",
+  "2026-07-25 10:00:03 WARN  Disk usage above 80%",
+  "2026-07-25 10:00:04 ERROR Connection refused: db-host:5432",
+  "  at Pool.connect (pool.js:42)",
+  "2026-07-25 10:00:05 ERROR Connection refused: db-host:5432",
+  "2026-07-25 10:00:06 FATAL Out of memory",
+  "2026-07-25 10:00:07 INFO  Shutdown complete",
+].join("\n");
+
+describe("log transforms", () => {
+  it("log_stats produces level distribution and summary", async () => {
+    const t = getTransform("log_stats")!;
+    const r = await t.run(SAMPLE_LOG);
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain("日志统计");
+    expect(r.output).toContain("条目数: 7");
+    expect(r.output).toContain("INFO");
+    expect(r.output).toContain("ERROR");
+    expect(r.output).toContain("高频错误");
+    expect(r.output).toContain("[2x]");
+    expect(r.meta?.count).toBe(7);
+  });
+
+  it("log_stats shows time range", async () => {
+    const t = getTransform("log_stats")!;
+    const r = await t.run(SAMPLE_LOG);
+    expect(r.output).toContain("10:00:01");
+    expect(r.output).toContain("10:00:07");
+  });
+
+  it("log_errors extracts only ERROR/FATAL entries", async () => {
+    const t = getTransform("log_errors")!;
+    const r = await t.run(SAMPLE_LOG);
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain("Connection refused");
+    expect(r.output).toContain("Out of memory");
+    expect(r.output).not.toContain("Server started");
+    expect(r.output).not.toContain("Loading config");
+    expect(r.meta?.count).toBe(3);
+  });
+
+  it("log_errors includes continuation lines", async () => {
+    const t = getTransform("log_errors")!;
+    const r = await t.run(SAMPLE_LOG);
+    expect(r.output).toContain("pool.js:42");
+  });
+
+  it("detect scores: log contentType high, plain text zero", () => {
+    const t = getTransform("log_stats")!;
+    expect(t.detect({ text: SAMPLE_LOG, contentType: "log" })).toBeGreaterThan(0.9);
+    expect(t.detect({ text: SAMPLE_LOG, contentType: "text" })).toBeGreaterThan(0.8);
+    expect(t.detect({ text: "hello world", contentType: "text" })).toBe(0);
+  });
+
+  it("log_stats fails on empty text", async () => {
+    const t = getTransform("log_stats")!;
+    const r = await t.run("");
+    expect(r.ok).toBe(false);
+  });
+
+  it("log_errors fails when no errors found", async () => {
+    const t = getTransform("log_errors")!;
+    const r = await t.run("2026-01-01 00:00:00 INFO all good");
+    expect(r.ok).toBe(false);
+    expect(r.message).toContain("未发现");
+  });
+
+  it("both log transforms are registered", () => {
+    expect(getTransform("log_stats")).toBeDefined();
+    expect(getTransform("log_errors")).toBeDefined();
+  });
+});

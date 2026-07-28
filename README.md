@@ -1,6 +1,6 @@
 # PastePanda — 智能剪贴板管理器
 
-> 🚀 一款基于 Tauri 2 的 Windows 桌面剪贴板管理工具，支持文本/图片/文件历史记录、全局热键粘贴、工作区管理、局域网同步。
+> 🚀 一款基于 Tauri 2 的 Windows 桌面剪贴板管理工具，支持文本/图片/文件历史记录、全局热键粘贴、工作区管理、局域网同步，内置编解码/SQL/日志/配置转换等开发者工具箱。
 
 <p align="center">
   <img src="src-tauri/icons/128x128@2x.png" alt="PastePanda Logo" width="128" />
@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Windows-10%2F11-0078D6?logo=windows&logoColor=white" alt="Windows" />
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License" />
-  <img src="https://img.shields.io/badge/version-5.1.2-green" alt="Version" />
+  <img src="https://img.shields.io/badge/version-5.3.2-green" alt="Version" />
 </p>
 
 ---
@@ -42,7 +42,7 @@
 | 📌 **粘贴到前台** | 文本/图片通过 WM_PASTE 消息注入到目标窗口 |
 | 🏷️ **工作区管理** | 多工作区隔离历史记录，按场景切换 |
 | 🔍 **搜索与筛选** | 拼音首字母搜索、类型筛选、标签分类、时间过滤 |
-| 📝 **片段库** | 常用文本模板管理，使用次数统计 |
+| 📝 **片段库** | 常用文本模板管理，使用次数统计，支持动态变量插入 |
 | 🔗 **信息提取** | 自动识别电话号码、邮箱、URL |
 | 🔒 **敏感内容防护** | 密钥/凭证模式自动识别，不记录敏感剪贴板 |
 
@@ -52,8 +52,21 @@
 |------|------|
 | ⌨️ **全局热键** | 呼出窗口、依次粘贴、索引粘贴，均可自定义 |
 | 📚 **粘贴栈模式** | 连续收集多条剪贴板内容，再逐条或全部粘贴 |
-| 🔤 **正则替换** | 粘贴时应用正则变换（去空行/URL 解码/手机号脱敏等），支持自定义规则 |
+| 🔤 **正则替换** | 粘贴时应用正则变换（去空行/URL 解码/手机号脱敏等），自定义规则 SQLite 持久化 |
 | 🧹 **HTML 剥离** | 一键将富文本转为纯文本粘贴 |
+
+### 开发者工具箱
+
+| 功能 | 说明 |
+|------|------|
+| 🔀 **变换枢纽** | 右键/全屏一键触发，按内容类型智能推荐可用变换 |
+| 🔐 **编解码工具组** | Base64 / URL / Unicode / HTML 实体编解码，JWT 解析，时间戳互转 |
+| 🗄️ **SQL 工具族** | JSON→IN 子句、列→IN、JSON→INSERT、SQL 格式化/压缩/关键字大写 |
+| 📊 **日志统计** | 级别分布柱状图、时间范围、高频错误 Top5、一键提取错误行 |
+| 🔄 **配置互转** | Properties ↔ YAML ↔ JSON 格式转换，跨格式语义对比（Diff） |
+| ✏️ **批量替换** | 多规则并行应用，正则/字面量，实时预览 |
+| 📤 **导出** | 历史记录导出为 Excel (.xlsx) / CSV / JSON |
+| 🧩 **片段变量** | 片段模板支持 `{{date}}` `{{clipboard}}` `{{uuid}}` 等动态变量 |
 
 ### 内容编辑与预览
 
@@ -67,6 +80,8 @@
 | 📁 **文件预览** | 图片缩略图、文本前 20 行带行号，多文件批量管理 |
 | 🔀 **文本对比** | 多选两条记录进行 Diff 对比，按行/按词，同步滚动 |
 | 📱 **二维码生成** | 右键生成 QR 码，支持复制图片或保存 PNG |
+| 🖥️ **全屏编辑器** | CodeMirror 6 多语法高亮，Markdown 实时预览，行号显示 |
+| 🔡 **编码转换** | 自动检测 GBK/Big5/Shift_JIS 等编码，一键转 UTF-8 |
 
 ### 系统与同步
 
@@ -162,6 +177,10 @@
 | image | 图片处理/缩放/格式转换 |
 | windows | Win32 API 调用 |
 | pinyin | 中文拼音搜索 |
+| encoding_rs + chardetng | 编码检测与转换（GBK/Big5 等） |
+| rust_xlsxwriter | Excel (.xlsx) 导出 |
+| csv | CSV 解析/导出 |
+| serde_yaml | YAML 配置解析（配置互转/对比） |
 
 ---
 
@@ -187,11 +206,12 @@
 │   │   └── dialogStore.ts      # 弹窗/编辑器状态
 │   ├── lib/                    # 工具模块
 │   │   ├── api/                # Tauri invoke 封装
+│   │   ├── transforms/         # 变换注册表（编解码/SQL/日志/文本/配置）
 │   │   ├── color.ts            # 颜色解析与转换
 │   │   ├── csv.ts              # CSV 解析/导出
 │   │   ├── imageFormat.ts      # 图片格式/质量/体积
 │   │   ├── keyboardActions.ts  # 键盘事件处理
-│   │   ├── regexRules.ts       # 正则替换规则
+│   │   ├── regexRules.ts       # 正则替换规则（SQLite 持久化）
 │   │   ├── secret.ts           # 密钥识别与脱敏
 │   │   └── ...
 │   └── styles/                 # CSS 样式 + 主题变量
@@ -201,8 +221,9 @@
 │       ├── clipboard_monitor.rs # 剪贴板轮询监听
 │       ├── paste_engine.rs     # 粘贴引擎（WM_PASTE）
 │       ├── hotkey_manager.rs   # 全局热键管理
+│       ├── content_classifier.rs # 内容类型识别（日志/JSON/SQL 等）
 │       ├── data_store/         # SQLite 数据层（7 模块）
-│       ├── commands/           # Tauri Commands（11 模块）
+│       ├── commands/           # Tauri Commands（14 模块）
 │       ├── tray_manager.rs     # 系统托盘
 │       └── lan_sync.rs         # 局域网同步（AES-256-GCM）
 ├── docs/                       # 文档与截图

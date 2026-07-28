@@ -196,11 +196,16 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   const items = useMemo(() => getFilteredItems(), [history, searchKeyword, filterType, timeFilter, sourceFilter, groupFilter, selectedTagIds, getFilteredItems]);
 
   // ── 虚拟列表 ──
+  // useFlushSync:false — 3.14.x 默认 true 会在滚动中 onChange 调 flushSync(rerender)，
+  // 与 Lenis 逐帧派发 scroll + measureElement 动态行高组合会在 commit 阶段触发
+  // "flushSync was called from inside a lifecycle method" dev 警告（TanStack/virtual#1094，
+  // 上游即以此选项关闭该 issue）；本项目滚动由 Lenis 插值驱动，无需同步 flush 保证。
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 82,
     overscan: 8,
+    useFlushSync: false,
     getItemKey: (i) => items[i]?.id || `vitem-${i}`,
   });
 

@@ -13,6 +13,7 @@ import { textTransforms } from "./textTransforms";
 import { configConvertTransforms } from "./configConverts";
 import { codecTransforms } from "./codecTransforms";
 import { sqlTransforms } from "./sqlTransforms";
+import { logTransforms } from "./logTransforms";
 
 registerTransform(sqlInTransform);
 registerTransform(columnToSqlInTransform);
@@ -21,6 +22,7 @@ textTransforms.forEach(registerTransform);
 configConvertTransforms.forEach(registerTransform);
 codecTransforms.forEach(registerTransform);
 sqlTransforms.forEach(registerTransform);
+logTransforms.forEach(registerTransform);
 
 export * from "./types";
 export * from "./registry";
@@ -32,3 +34,4 @@ export type { InsertOptions, InsertResult } from "./jsonInsert";
 export { textTransforms } from "./textTransforms";
 export { codecTransforms } from "./codecTransforms";
 export { sqlTransforms } from "./sqlTransforms";
+export { logTransforms } from "./logTransforms";
