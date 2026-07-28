@@ -23,6 +23,8 @@ export interface UpdateState {
   progress: number;
   /** 进度不确定（total 未知，如某些源不返回 Content-Length） */
   progressIndeterminate: boolean;
+  /** 已下载字节数（不确定态下显示 "已下载 X MB"） */
+  downloadedBytes: number;
   /** 下载速率（字节/秒，前端根据 downloaded 差值计算） */
   bytesPerSec: number;
   /** 错误信息 */
@@ -100,6 +102,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [progress, setProgress] = useState(0);
   const [progressIndeterminate, setProgressIndeterminate] = useState(false);
+  const [downloadedBytes, setDownloadedBytes] = useState(0);
   const [bytesPerSec, setBytesPerSec] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -110,6 +113,9 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   const downloadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** 用于前端计算下载速率：记录上次 downloaded 值和时间戳 */
   const speedRef = useRef<{ downloaded: number; time: number }>({ downloaded: 0, time: 0 });
+  /** rAF 节流：事件写入 ref，rAF 批量刷 state（避免高频 setState 抖动） */
+  const progressRef = useRef<{ pct: number; indeterminate: boolean; downloaded: number; bps: number }>({ pct: 0, indeterminate: false, downloaded: 0, bps: 0 });
+  const rafRef = useRef<number | null>(null);
 
   /** 清除"已是最新"4 秒回退计时器，避免过期计时器在状态已变化后再次覆盖为 idle */
   const clearUptodateTimer = useCallback(() => {
@@ -147,6 +153,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       if (timerRef.current) clearInterval(timerRef.current);
       clearUptodateTimer();
       if (downloadTimeoutRef.current) clearTimeout(downloadTimeoutRef.current);
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
   }, []);
 
@@ -287,8 +294,15 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
             clearTimeout(downloadTimeoutRef.current);
             downloadTimeoutRef.current = null;
           }
-          setStatus("downloading");
-          setProgress(0);
+          // 多源 failover 时不重置已有进度（避免 30% → 0% 跳变）
+          setStatus((prev) => {
+            if (prev !== "downloading") {
+              setProgress(0);
+              setDownloadedBytes(0);
+              progressRef.current = { pct: 0, indeterminate: false, downloaded: 0, bps: 0 };
+            }
+            return "downloading";
+          });
           setProgressIndeterminate(false);
           setBytesPerSec(0);
           speedRef.current = { downloaded: 0, time: Date.now() };
@@ -298,21 +312,35 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       unlisteners.push(
         await listen<{ downloaded: number; total: number | null }>("update:progress", (e) => {
           const { downloaded, total } = e.payload;
-          if (total) {
-            const pct = Math.round((downloaded / total) * 100);
-            setProgress(pct);
-            setProgressIndeterminate(false);
-          } else {
-            setProgressIndeterminate(true);
-          }
-          // 前端计算下载速率（基于 downloaded 差值 / 时间差）
           const now = Date.now();
+
+          // 速率计算（节流 0.3s）
           const prev = speedRef.current;
-          const dt = (now - prev.time) / 1000; // 秒
+          const dt = (now - prev.time) / 1000;
+          let bps = progressRef.current.bps;
           if (dt > 0.3) {
-            const bps = (downloaded - prev.downloaded) / dt;
-            setBytesPerSec(Math.round(bps));
+            bps = Math.round((downloaded - prev.downloaded) / dt);
             speedRef.current = { downloaded, time: now };
+          }
+
+          // 写入 ref（不直接 setState）
+          progressRef.current = {
+            pct: total ? Math.round((downloaded / total) * 100) : progressRef.current.pct,
+            indeterminate: !total,
+            downloaded,
+            bps,
+          };
+
+          // rAF 批量刷新（~16ms 一帧，避免高频 setState 导致进度条抖动）
+          if (rafRef.current === null) {
+            rafRef.current = requestAnimationFrame(() => {
+              rafRef.current = null;
+              const p = progressRef.current;
+              setProgress(p.pct);
+              setProgressIndeterminate(p.indeterminate);
+              setDownloadedBytes(p.downloaded);
+              setBytesPerSec(p.bps);
+            });
           }
         }),
       );
@@ -393,6 +421,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
         update,
         progress,
         progressIndeterminate,
+        downloadedBytes,
         bytesPerSec,
         error,
         checkForUpdate,

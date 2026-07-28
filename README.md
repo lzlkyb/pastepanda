@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Windows-10%2F11-0078D6?logo=windows&logoColor=white" alt="Windows" />
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License" />
-  <img src="https://img.shields.io/badge/version-5.3.2-green" alt="Version" />
+  <img src="https://img.shields.io/badge/version-5.4.0-green" alt="Version" />
 </p>
 
 ---

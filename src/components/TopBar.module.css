@@ -94,17 +94,28 @@
   align-items: center;
   justify-content: center;
   color: var(--text-secondary);
-  transition: background 0.15s, transform 0.15s;
+  transition: background 0.15s, transform 0.15s, color 0.15s;
 }
 
+/* hover 底色用 currentColor 混色 — 图标什么色底色就跟什么色（配色方案 B：功能键各带色相） */
 .iconBtn:hover {
-  background: rgba(129,140,248,.12);
+  background: color-mix(in srgb, currentColor 13%, transparent);
   transform: scale(1.08);
+}
+
+/* 触发按钮激活态（栈模式开启 / 工具箱展开）：底色跟按钮自身色相混色，不改变图标颜色 */
+.iconBtnActive {
+  background: color-mix(in srgb, currentColor 17%, transparent);
 }
 
 .iconBtn:active {
   transform: scale(.92);
 }
+
+/* 功能键默认色相（配色方案 B）：复用工具箱瓷砖调色板，色相跨主题固定 */
+.iconBtn[data-hue="amber"]  { color: #F59E0B; }
+.iconBtn[data-hue="sky"]    { color: #0EA5E9; }
+.iconBtn[data-hue="violet"] { color: #8B5CF6; }
 
 /* emoji 图标 */
 .iconEmoji {
@@ -718,18 +729,20 @@
   z-index: 999;
 }
 
-.toolboxMenu {
+/* 方案 A 分组面板：片段库 / 内容提取迁入后的五工具统一入口 */
+.toolboxPanel {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
   z-index: 1000;
-  min-width: 140px;
-  padding: 5px;
-  background: var(--dialog-bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-  animation: toolboxIn 0.12s ease-out;
+  width: 236px;
+  padding: 6px;
+  background: var(--glass-popover-bg);
+  border: 1px solid var(--glass-popover-border);
+  border-radius: 12px;
+  box-shadow: var(--glass-popover-shadow);
+  backdrop-filter: blur(12px);
+  animation: toolboxIn 0.14s ease-out;
 }
 
 @keyframes toolboxIn {
@@ -737,24 +750,82 @@
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-.toolboxItem {
+/* 组标题（内容 / 文本处理） */
+.tbSection {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 6px 10px 4px;
+  letter-spacing: 0.02em;
+}
+
+/* 组间分隔线 */
+.tbDivider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 5px 8px;
+  opacity: 0.8;
+}
+
+.tbItem {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  padding: 8px 12px;
+  padding: 7px 8px;
   border: none;
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
-  color: var(--text-primary);
-  font-size: 12.5px;
   cursor: pointer;
-  transition: background 0.12s;
   text-align: left;
+  transition: background 0.12s;
 }
-.toolboxItem:hover {
+.tbItem:hover {
   background: var(--hover);
 }
-.toolboxItem span {
-  font-size: 14px;
+.tbItem:active {
+  transform: scale(0.985);
+}
+
+/* 图标瓷砖：每个工具独立色相，color-mix 低透明度混色，六主题自适应 */
+.tbTile {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  background: color-mix(in srgb, var(--tile-hue) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tile-hue) 24%, transparent);
+  transition: transform 0.15s;
+}
+.tbItem:hover .tbTile {
+  transform: scale(1.08);
+}
+.tbTile[data-hue="amber"]  { --tile-hue: #F59E0B; }
+.tbTile[data-hue="rose"]   { --tile-hue: #F43F5E; }
+.tbTile[data-hue="sky"]    { --tile-hue: #0EA5E9; }
+.tbTile[data-hue="violet"] { --tile-hue: #8B5CF6; }
+.tbTile[data-hue="green"]  { --tile-hue: #10B981; }
+
+.tbText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.tbName {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+.tbDesc {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-top: 1px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

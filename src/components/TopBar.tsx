@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback, Fragment } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, FilterType, TimeFilter, SourceFilter } from "@/stores/appStore";
 import { getAppVersion, getAppName, fetchCounts, toggleStackMode } from "@/lib/api";
@@ -9,7 +9,7 @@ import { TagBadge, AnimatedTagBadge } from "@/components/TagBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { SearchBox } from "@/components/SearchBox";
 import { logger } from "@/lib/logger";
-import { ChevronDown, Tag, X, EyeOff, Layers } from "lucide-react";
+import { ChevronDown, Tag, X, EyeOff } from "lucide-react";
 import styles from "./TopBar.module.css";
 
 const TABS: { key: FilterType; label: string; icon: string }[] = [
@@ -25,6 +25,29 @@ const TIME_OPTIONS: { key: TimeFilter; label: string }[] = [
   { key: "today", label: "今天" },
   { key: "week",  label: "本周" },
   { key: "month", label: "本月" },
+];
+
+/** 工具箱分组面板（方案 A）：片段库 / 内容提取从顶栏独立按钮迁入此处 */
+type ToolKey = "snippets" | "extract" | "encoding" | "replace" | "diff";
+const TOOLBOX_GROUPS: {
+  label: string;
+  items: { key: ToolKey; icon: string; name: string; desc: string; hue: string }[];
+}[] = [
+  {
+    label: "内容",
+    items: [
+      { key: "snippets", icon: "📝", name: "片段库",   desc: "常用文本收藏，一键粘贴",             hue: "amber" },
+      { key: "extract",  icon: "🧲", name: "内容提取", desc: "从记录中批量提取链接 / 邮箱 / 电话", hue: "rose" },
+    ],
+  },
+  {
+    label: "文本处理",
+    items: [
+      { key: "encoding", icon: "🔤", name: "编码转换", desc: "Base64 / URL / Unicode 编解码",   hue: "sky" },
+      { key: "replace",  icon: "🔁", name: "批量替换", desc: "正则查找替换，支持多条规则",       hue: "violet" },
+      { key: "diff",     icon: "📊", name: "配置对比", desc: "两份配置语义级差异高亮",           hue: "green" },
+    ],
+  },
 ];
 
 async function minimizeWin() {
@@ -128,6 +151,15 @@ export function TopBar({ onSettings, onSnippets, onExtract, onEncoding, onBatchR
     return () => window.removeEventListener("storage", handler);
   }, []);
 
+  // 工具箱条目 → 回调映射（片段库 / 内容提取迁入后与原有三项统一管理）
+  const toolHandlers: Record<ToolKey, (() => void) | undefined> = {
+    snippets: onSnippets,
+    extract: onExtract,
+    encoding: onEncoding,
+    replace: onBatchReplace,
+    diff: onConfigDiff,
+  };
+
   return (
     <div className={styles.header} data-tauri-drag-region role="banner">
       {/* 标题行 */}
@@ -146,43 +178,63 @@ export function TopBar({ onSettings, onSnippets, onExtract, onEncoding, onBatchR
           <UpdateBadge currentVersion={appVersion} />
         </div>
         <div className={styles.headerIcons} data-tauri-drag-region="false">
-          <IconBtn tip={`收集模式（栈模式）· ${stackToggleHotkey || "ctrl+alt+k"}${stackMode ? " · 已开启" : ""}`} onClick={() => toggleStackMode()}>
-            <Layers className={styles.iconSvg} color={stackMode ? "var(--accent)" : "#94A3B8"} strokeWidth="2" />
+          <IconBtn tip={`收集模式（栈模式）· ${stackToggleHotkey || "ctrl+alt+k"}${stackMode ? " · 已开启" : ""}`} active={stackMode} hue="amber" onClick={() => toggleStackMode()}>
+            {/* 定制双色调图标（方案 B）：顶层实心 + 下层渐淡描边，currentColor 自动跟随主题与激活态 */}
+            <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 2.6 2.9 7.66a.95.95 0 0 0 0 1.68L12 14.4l9.1-5.06a.95.95 0 0 0 0-1.68Z" fill="currentColor" fillOpacity=".88" />
+              <path d="m3.2 12.4 8.8 4.9 8.8-4.9" stroke="currentColor" strokeOpacity=".5" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="m3.2 16.9 8.8 4.9 8.8-4.9" stroke="currentColor" strokeOpacity=".26" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </IconBtn>
-          <IconBtn tip="片段库" onClick={onSnippets}><span className={styles.iconEmoji}>📝</span></IconBtn>
-          <IconBtn tip="内容提取" onClick={onExtract}><span className={styles.iconEmoji}>🧲</span></IconBtn>
-          {/* 工具箱下拉 */}
+          {/* 工具箱下拉（方案 A 分组面板）：片段库 / 内容提取已从顶栏独立按钮迁入此处 */}
           <div className={styles.toolboxWrap}>
-            <IconBtn tip="工具箱" onClick={() => setToolboxOpen((v) => !v)}>
-              <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+            <IconBtn tip="工具箱" active={toolboxOpen} hue="sky" onClick={() => setToolboxOpen((v) => !v)}>
+              {/* 定制双色调图标（方案 B）：轻填充箱体 + 提手 + 实心中扣，箱体语义比扳手更贴「工具箱」 */}
+              <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M9 7.6V6.1a2.6 2.6 0 0 1 2.6-2.6h.8A2.6 2.6 0 0 1 15 6.1v1.5" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" />
+                <rect x="2.9" y="7.6" width="18.2" height="12.6" rx="2.7" fill="currentColor" fillOpacity=".22" stroke="currentColor" strokeWidth="2.1" />
+                <path d="M2.9 12.4h18.2" stroke="currentColor" strokeOpacity=".55" strokeWidth="2.1" />
+                <rect x="10.35" y="10.75" width="3.3" height="3.3" rx="1.15" fill="currentColor" />
+              </svg>
             </IconBtn>
             {toolboxOpen && (
               <>
                 <div className={styles.toolboxBackdrop} onClick={() => setToolboxOpen(false)} />
-                <div className={styles.toolboxMenu}>
-                  <button className={styles.toolboxItem} onClick={() => { setToolboxOpen(false); onEncoding?.(); }}>
-                    <span>🔤</span> 编码转换
-                  </button>
-                  <button className={styles.toolboxItem} onClick={() => { setToolboxOpen(false); onBatchReplace?.(); }}>
-                    <span>🔁</span> 批量替换
-                  </button>
-                  <button className={styles.toolboxItem} onClick={() => { setToolboxOpen(false); onConfigDiff?.(); }}>
-                    <span>📊</span> 配置对比
-                  </button>
+                <div className={styles.toolboxPanel} role="menu" aria-label="工具箱">
+                  {TOOLBOX_GROUPS.map((group, gi) => (
+                    <Fragment key={group.label}>
+                      {gi > 0 && <div className={styles.tbDivider} aria-hidden="true" />}
+                      <div className={styles.tbSection}>{group.label}</div>
+                      {group.items.map((tool) => (
+                        <button
+                          key={tool.key}
+                          className={styles.tbItem}
+                          role="menuitem"
+                          onClick={() => { setToolboxOpen(false); toolHandlers[tool.key]?.(); }}
+                        >
+                          <span className={styles.tbTile} data-hue={tool.hue} aria-hidden="true">{tool.icon}</span>
+                          <span className={styles.tbText}>
+                            <span className={styles.tbName}>{tool.name}</span>
+                            <span className={styles.tbDesc}>{tool.desc}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </Fragment>
+                  ))}
                 </div>
               </>
             )}
           </div>
-          <IconBtn tip="设置 · 帮助 · 关于" onClick={onSettings}>
-            <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          <IconBtn tip="设置 · 帮助 · 关于" hue="violet" onClick={onSettings}>
+            <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
           </IconBtn>
-          {/* 分隔线：功能按钮组（栈模式/片段库/提取/设置）与窗口控制组（最小化/隐藏）分开 */}
+          {/* 分隔线：功能按钮组（栈模式/工具箱/设置）与窗口控制组（最小化/隐藏）分开 */}
           <span className={styles.headerDivider} aria-hidden="true" />
           <IconBtn tip="最小化到任务栏" onClick={minimizeWin}>
-            <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round"><path d="M5 12h14"/></svg>
+            <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M5 12h14"/></svg>
           </IconBtn>
           <IconBtn tip="隐藏到托盘（保持后台运行）" onClick={hideWin}>
-            <EyeOff className={styles.iconSvg} color="#94A3B8" strokeWidth="2" />
+            <EyeOff className={styles.iconSvg} strokeWidth="2" />
           </IconBtn>
         </div>
       </div>
@@ -331,12 +383,15 @@ function CircleTabs({ filterType, setFilterType, counts }: {
   );
 }
 
-function IconBtn({ children, tip, danger, onClick, ariaLabel }: {
-  children: React.ReactNode; tip: string; danger?: boolean; onClick?: () => void; ariaLabel?: string;
+function IconBtn({ children, tip, danger, active, hue, onClick, ariaLabel }: {
+  children: React.ReactNode; tip: string; danger?: boolean; active?: boolean;
+  /** 功能键默认色相（配色方案 B）：CSS 属性选择器映射固定色，复用工具箱瓷砖调色板 */
+  hue?: "amber" | "sky" | "violet";
+  onClick?: () => void; ariaLabel?: string;
 }) {
   return (
-    <button title={tip} aria-label={ariaLabel || tip} onClick={onClick}
-      className={`${styles.iconBtn}${danger ? ` ${styles.iconBtnDanger}` : ""}`}>
+    <button title={tip} aria-label={ariaLabel || tip} onClick={onClick} aria-expanded={active} data-hue={hue}
+      className={`${styles.iconBtn}${danger ? ` ${styles.iconBtnDanger}` : ""}${active ? ` ${styles.iconBtnActive}` : ""}`}>
       {children}
     </button>
   );

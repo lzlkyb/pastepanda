@@ -50,7 +50,7 @@ function DownloadRing({ progress, indeterminate }: { progress: number; indetermi
  * 使用 AnimatePresence + key 实现状态切换进出动画。
  */
 export function UpdateBadge({ currentVersion }: { currentVersion: string }) {
-  const { status, update, progress, progressIndeterminate, bytesPerSec, checkForUpdate, downloadAndInstall, restart } = useUpdate();
+  const { status, update, progress, progressIndeterminate, downloadedBytes, bytesPerSec, checkForUpdate, downloadAndInstall, restart } = useUpdate();
   // 防止用户快速重复点击（连点更新徽章）导致重复触发检查/下载/重启
   const [isStarting, setIsStarting] = useState(false);
 
@@ -106,7 +106,7 @@ export function UpdateBadge({ currentVersion }: { currentVersion: string }) {
             title={titleText}
           >
             <DownloadRing progress={progress} indeterminate={progressIndeterminate} />
-            <span>{progressIndeterminate ? `下载中${speedText}` : `下载中 ${progress}%${speedText}`}</span>
+            <span>{progressIndeterminate ? `下载中 ${(downloadedBytes / 1048576).toFixed(1)} MB${speedText}` : `下载中 ${progress}%${speedText}`}</span>
           </motion.span>
         );
       })()}
@@ -201,7 +201,7 @@ export function UpdateBadge({ currentVersion }: { currentVersion: string }) {
 
 /** 设置面板"关于"tab 中使用的更新横幅 + 下载进度 */
 export function UpdateBanner() {
-  const { status, update, progress, progressIndeterminate, bytesPerSec, error, checkForUpdate, downloadAndInstall, restart, markInstalled, skipThisVersion } =
+  const { status, update, progress, progressIndeterminate, downloadedBytes, bytesPerSec, error, checkForUpdate, downloadAndInstall, restart, markInstalled, skipThisVersion } =
     useUpdate();
 
   const bannerKey = `banner-${status}`;
@@ -271,7 +271,7 @@ export function UpdateBanner() {
             <Loader2 size={14} className="spin-icon" />
             <div style={{ flex: 1 }}>
               <div className={styles.updateBannerTitle}>
-                {progressIndeterminate ? "正在下载更新…" : `正在下载更新… ${progress}%`}
+                {progressIndeterminate ? `正在下载更新… ${(downloadedBytes / 1048576).toFixed(1)} MB` : `正在下载更新… ${progress}%`}
                 <span className={styles.updateBannerSpeed}>{speedText}</span>
               </div>
               <div className={styles.updateProgressBar}>
@@ -279,7 +279,7 @@ export function UpdateBanner() {
                   className={styles.updateProgressFill}
                   style={progressIndeterminate
                     ? { width: "40%", animation: "progress-indeterminate 1.5s ease-in-out infinite" }
-                    : { width: `${progress}%`, transition: "width 0.4s ease" }
+                    : { width: `${progress}%`, transition: "width 0.15s linear" }
                   }
                 />
               </div>
