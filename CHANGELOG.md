@@ -2,6 +2,28 @@
 
 PastePanda 版本更新日志。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [5.4.0] - 2026-07-28
+
+### 新增
+- 文档处理工具组：编码检测与批量转码（GBK/Big5/Shift_JIS 等自动识别 → UTF-8）、配置格式互转（Properties↔YAML↔JSON）、文件级批量查找替换、历史记录导出 Excel/CSV/JSON
+- 配置语义对比：跨格式 key-value 差异高亮（properties vs YAML vs JSON），自动识别格式，表格展示新增/删除/修改/相同
+- 编解码工具组：Base64 / URL / Unicode / HTML 实体编解码、JWT 解析、时间戳与日期互转，共 11 个变换，按内容类型自动匹配推荐
+- SQL 工具族：SQL 格式化（关键字大写 + 子句换行 + 缩进对齐）、SQL 压缩、关键字大写
+- 日志统计：级别分布柱状图 + 时间范围 + 高频错误 Top5 摘要，一键提取 ERROR/FATAL 错误行（复用分类引擎同源解析）
+- 片段变量：文本模板支持 {{date}} {{time}} {{datetime}} {{clipboard}} {{uuid}} 等动态变量，复制时自动解析插入
+- 变换枢纽扩容：注册表现有 41 个变换，覆盖文本 / 编解码 / SQL / JSON / 日志 / 配置六大类
+
+### 改进
+- 帮助页重构为功能全景导览：快速上手 3 步卡片 + 10 张功能卡片网格（含操作路径）+ 快捷键速查 / 常见问题折叠区，去除从未实现的无效热键条目，搜索覆盖全部内容
+- 顶栏工具箱分组面板：片段库 / 内容提取 / 编码转换 / 批量替换 / 配置对比按"内容 / 文本处理"分组收纳，功能图标 currentColor 化跟随主题与激活态
+- 正则替换规则改用 SQLite 持久化（regex_rules 表），内存缓存同步读 + 异步写入，调用方零改动，首次运行自动从 localStorage 迁移
+- 更新说明弹框改版 + Markdown 渲染行号 + 全屏编辑器增强
+- README 全面同步：版本徽章、开发者工具箱段落、技术栈新增依赖、项目结构修正
+
+### 修复
+- 更新下载进度条三处问题：多源 failover（Gitee→GitHub）时进度归零、高频进度事件导致进度条抖动（改 requestAnimationFrame 节流 + 0.15s linear 过渡）、不确定态（服务器无 Content-Length）仅显示转圈动画（改显示已下载 MB + 速率）
+- 卡片虚拟列表滚动告警：CardList 关闭 useFlushSync，消除 TanStack/virtual#1094 与 Lenis 平滑滚动组合产生的 dev 警告
+
 ## [5.3.2] - 2026-07-27
 
 ### 修复
