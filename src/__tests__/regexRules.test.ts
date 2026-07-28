@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   PRESET_RULES,
   loadCustomRules,
-  saveCustomRules,
   getAllRules,
   getEnabledRules,
   togglePresetRule,
@@ -10,20 +9,35 @@ import {
   updateCustomRule,
   deleteCustomRule,
   toggleCustomRule,
+  initRegexRules,
+  _resetCache,
   applyRegex,
   safeApplyRegex,
   validateRegex,
   REGEX_TIME_BUDGET_MS,
-  RegexRule,
+  type RegexRule,
 } from "@/lib/regexRules";
+
+// ============================================================
+// Mock invoke — 模拟 Rust 侧 SQLite
+// ============================================================
+let _mockDb: RegexRule[] = [];
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(async (cmd: string, args?: any) => {
+    if (cmd === "get_regex_rules") return _mockDb;
+    if (cmd === "save_regex_rules") { _mockDb = args?.rules ?? []; return _mockDb.length; }
+    return null;
+  }),
+}));
 
 // ============================================================
 // 辅助
 // ============================================================
-const STORAGE_KEY = "pp_regex_rules";
-
-beforeEach(() => {
-  localStorage.clear();
+beforeEach(async () => {
+  _mockDb = [];
+  _resetCache();
+  await initRegexRules();
 });
 
 // ============================================================
@@ -48,21 +62,8 @@ describe("PRESET_RULES", () => {
 // CRUD — 自定义规则
 // ============================================================
 describe("custom rules CRUD", () => {
-  it("loadCustomRules returns empty when no storage", () => {
+  it("loadCustomRules returns empty when no custom rules", () => {
     expect(loadCustomRules()).toEqual([]);
-  });
-
-  it("loadCustomRules returns empty on corrupt JSON", () => {
-    localStorage.setItem(STORAGE_KEY, "{invalid");
-    expect(loadCustomRules()).toEqual([]);
-  });
-
-  it("saveCustomRules + loadCustomRules round-trip", () => {
-    const rules: RegexRule[] = [
-      { id: "c1", name: "test", pattern: "\\d+", replacement: "#", flags: "g", enabled: true, preset: false },
-    ];
-    saveCustomRules(rules);
-    expect(loadCustomRules()).toEqual(rules);
   });
 
   it("addCustomRule appends and persists", () => {
@@ -89,7 +90,6 @@ describe("custom rules CRUD", () => {
   });
 
   it("deleteCustomRule removes by id", () => {
-    // mock Date.now 确保两次 addCustomRule 生成不同 id
     const now = Date.now();
     vi.spyOn(Date, "now").mockReturnValueOnce(now).mockReturnValueOnce(now + 1);
     const r1 = addCustomRule({ name: "a", pattern: "1", replacement: "", flags: "", enabled: true });
@@ -218,12 +218,11 @@ describe("safeApplyRegex", () => {
   });
 
   it("non-global replaces only first across chunks", () => {
-    // 构造超过 CHUNK_LINES(20) 行的文本
     const lines = Array.from({ length: 40 }, (_, i) => `line${i}\n`).join("");
     const { result, matchCount } = safeApplyRegex(lines, "line", "ROW", "");
     expect(matchCount).toBe(1);
     expect(result).toContain("ROW0");
-    expect(result).toContain("line1"); // 后续不替换
+    expect(result).toContain("line1");
   });
 
   it("multiline flag preserves ^ anchor semantics", () => {

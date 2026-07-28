@@ -53,9 +53,9 @@ function saveTabStyle(v: TabStyle) {
   try { localStorage.setItem("tabStyle", v); } catch { logger.warn("保存tab样式失败"); }
 }
 
-export function TopBar({ onSettings, onSnippets, onExtract, onEncoding, onBatchReplace, onToggleSidebar, sidebarOpen }: {
+export function TopBar({ onSettings, onSnippets, onExtract, onEncoding, onBatchReplace, onConfigDiff, onToggleSidebar, sidebarOpen }: {
   onSettings?: () => void; onSnippets?: () => void; onExtract?: () => void;
-  onEncoding?: () => void; onBatchReplace?: () => void;
+  onEncoding?: () => void; onBatchReplace?: () => void; onConfigDiff?: () => void;
   onToggleSidebar?: () => void; sidebarOpen?: boolean;
 }) {
   const filterType = useAppStore((s) => s.filterType);
@@ -165,6 +165,9 @@ export function TopBar({ onSettings, onSnippets, onExtract, onEncoding, onBatchR
                   </button>
                   <button className={styles.toolboxItem} onClick={() => { setToolboxOpen(false); onBatchReplace?.(); }}>
                     <span>🔁</span> 批量替换
+                  </button>
+                  <button className={styles.toolboxItem} onClick={() => { setToolboxOpen(false); onConfigDiff?.(); }}>
+                    <span>📊</span> 配置对比
                   </button>
                 </div>
               </>

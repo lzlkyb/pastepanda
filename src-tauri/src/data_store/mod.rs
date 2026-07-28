@@ -220,6 +220,17 @@ impl DataStore {
                 PRIMARY KEY (history_id, tag_id),
                 FOREIGN KEY (history_id) REFERENCES history(id) ON DELETE CASCADE,
                 FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS regex_rules (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                pattern TEXT NOT NULL,
+                replacement TEXT NOT NULL DEFAULT '',
+                flags TEXT NOT NULL DEFAULT '',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                preset INTEGER NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0
             );",
         )?;
 

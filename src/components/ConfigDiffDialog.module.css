@@ -1,0 +1,328 @@
+/* ConfigDiffDialog.module.css — 配置对比对话框样式 */
+
+.dialogBox {
+  width: min(860px, 92vw);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 20px 20px;
+  overflow: hidden;
+  flex: 1;
+}
+
+/* 输入区：左右两栏 */
+.inputArea {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.inputCol {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.colHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.colLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.fileBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--section-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.fileBtn:hover {
+  background: var(--hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.textarea {
+  flex: 1;
+  min-height: 160px;
+  max-height: 240px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--section-bg);
+  color: var(--text-primary);
+  font-family: 'Cascadia Code', 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.textarea:focus {
+  border-color: var(--accent);
+}
+.textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.fileChip {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  min-height: 160px;
+  border: 1px dashed var(--accent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.swapBtn {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--section-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, transform 0.2s;
+}
+.swapBtn:hover {
+  background: var(--hover);
+  color: var(--accent);
+  transform: rotate(180deg);
+}
+
+/* 对比按钮 */
+.diffBtn {
+  width: 100%;
+  padding: 10px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark, #0369A1));
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.diffBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.diffBtn:not(:disabled):hover {
+  opacity: 0.9;
+}
+
+/* 结果区 */
+.resultArea {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.statsBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.statsLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.formatBadge {
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: var(--accent-light, color-mix(in srgb, var(--accent) 12%, transparent));
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.vsText {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.statsRight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.statItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.dotModified, .dotLeftOnly, .dotRightOnly, .dotSame {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.dotModified { background: #F59E0B; }
+.dotLeftOnly { background: #EF4444; }
+.dotRightOnly { background: #3B82F6; }
+.dotSame { background: #6B7280; }
+
+/* 工具栏 */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filterBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--section-bg);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.filterBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.filterActive {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.backBtn {
+  margin-left: auto;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.backBtn:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+/* Diff 表格 */
+.tableWrap {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-family: 'Cascadia Code', 'SF Mono', Consolas, monospace;
+}
+
+.table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.table th {
+  padding: 8px 12px;
+  background: var(--section-bg);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 11px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.thKey { width: 34%; }
+.thVal { width: 33%; }
+
+.table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  vertical-align: top;
+  word-break: break-all;
+}
+
+.tdKey {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.tdVal {
+  color: var(--text-secondary);
+}
+
+/* 行状态着色 */
+.row_modified {
+  background: color-mix(in srgb, #F59E0B 8%, transparent);
+}
+.row_modified .tdKey { color: #D97706; }
+.row_modified .tdVal { color: var(--text-primary); }
+
+.row_left_only {
+  background: color-mix(in srgb, #EF4444 6%, transparent);
+}
+.row_left_only .tdKey { color: #DC2626; }
+
+.row_right_only {
+  background: color-mix(in srgb, #3B82F6 6%, transparent);
+}
+.row_right_only .tdKey { color: #2563EB; }
+
+.row_same {
+  opacity: 0.7;
+}
+
+.emptyCell {
+  text-align: center;
+  padding: 24px 12px !important;
+  color: var(--text-muted);
+  font-family: inherit;
+}

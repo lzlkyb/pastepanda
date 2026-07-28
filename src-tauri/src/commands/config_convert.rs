@@ -114,6 +114,32 @@ fn detect_format(text: &str) -> &'static str {
     "properties" // 默认回退
 }
 
+// ===== 通用解析：任意格式 → 扁平 map =====
+
+/// 将任意支持格式的配置文本解析为扁平 key-value 映射
+fn parse_to_flat(text: &str, format: &str) -> Result<BTreeMap<String, String>, String> {
+    match format {
+        "properties" => Ok(parse_properties(text)),
+        "yaml" => {
+            let yaml_val: serde_yaml::Value =
+                serde_yaml::from_str(text).map_err(|e| format!("YAML 解析失败: {e}"))?;
+            let json_val = serde_json::to_value(&yaml_val)
+                .map_err(|e| format!("YAML→JSON 中间转换失败: {e}"))?;
+            let mut m = BTreeMap::new();
+            nested_to_flat(&json_val, "", &mut m);
+            Ok(m)
+        }
+        "json" => {
+            let json_val: JsonValue =
+                serde_json::from_str(text).map_err(|e| format!("JSON 解析失败: {e}"))?;
+            let mut m = BTreeMap::new();
+            nested_to_flat(&json_val, "", &mut m);
+            Ok(m)
+        }
+        _ => Err(format!("不支持的格式: {format}")),
+    }
+}
+
 // ===== Tauri 命令 =====
 
 /// 检测配置格式
@@ -129,27 +155,7 @@ pub fn convert_config(text: String, from: String, to: String) -> Result<String, 
         return Ok(text);
     }
 
-    // 先解析为中间表示（扁平 map 或嵌套 JSON）
-    let flat: BTreeMap<String, String> = match from.as_str() {
-        "properties" => parse_properties(&text),
-        "yaml" => {
-            let yaml_val: serde_yaml::Value =
-                serde_yaml::from_str(&text).map_err(|e| format!("YAML 解析失败: {e}"))?;
-            let json_val = serde_json::to_value(&yaml_val)
-                .map_err(|e| format!("YAML→JSON 中间转换失败: {e}"))?;
-            let mut m = BTreeMap::new();
-            nested_to_flat(&json_val, "", &mut m);
-            m
-        }
-        "json" => {
-            let json_val: JsonValue =
-                serde_json::from_str(&text).map_err(|e| format!("JSON 解析失败: {e}"))?;
-            let mut m = BTreeMap::new();
-            nested_to_flat(&json_val, "", &mut m);
-            m
-        }
-        _ => return Err(format!("不支持的源格式: {from}")),
-    };
+    let flat = parse_to_flat(&text, &from)?;
 
     // 从中间表示序列化为目标格式
     match to.as_str() {
@@ -237,4 +243,101 @@ pub struct ConvertResult {
     pub ok: bool,
     pub output_path: Option<String>,
     pub error: Option<String>,
+}
+
+// ===== 配置语义 Diff =====
+
+#[derive(serde::Serialize, Clone)]
+pub struct ConfigDiffEntry {
+    pub key: String,
+    pub left_value: Option<String>,
+    pub right_value: Option<String>,
+    /// "same" | "modified" | "left_only" | "right_only"
+    pub status: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct ConfigDiffResult {
+    pub left_format: String,
+    pub right_format: String,
+    pub entries: Vec<ConfigDiffEntry>,
+    pub same_count: usize,
+    pub modified_count: usize,
+    pub left_only_count: usize,
+    pub right_only_count: usize,
+}
+
+/// 对两段配置文本做 key-value 语义级对比（自动检测格式，跨格式可比）
+#[tauri::command]
+pub fn diff_config(left: String, right: String) -> Result<ConfigDiffResult, String> {
+    let left_format = detect_format(&left).to_string();
+    let right_format = detect_format(&right).to_string();
+
+    let left_map = parse_to_flat(&left, &left_format)?;
+    let right_map = parse_to_flat(&right, &right_format)?;
+
+    // 合并两侧 key（BTreeMap 天然有序）
+    let all_keys: std::collections::BTreeSet<&String> =
+        left_map.keys().chain(right_map.keys()).collect();
+
+    let mut entries = Vec::with_capacity(all_keys.len());
+    let (mut same_count, mut modified_count, mut left_only_count, mut right_only_count) =
+        (0usize, 0usize, 0usize, 0usize);
+
+    for key in all_keys {
+        let lv = left_map.get(key);
+        let rv = right_map.get(key);
+        let status = match (lv, rv) {
+            (Some(l), Some(r)) => {
+                if l == r {
+                    same_count += 1;
+                    "same"
+                } else {
+                    modified_count += 1;
+                    "modified"
+                }
+            }
+            (Some(_), None) => {
+                left_only_count += 1;
+                "left_only"
+            }
+            (None, Some(_)) => {
+                right_only_count += 1;
+                "right_only"
+            }
+            (None, None) => unreachable!(),
+        };
+        entries.push(ConfigDiffEntry {
+            key: key.clone(),
+            left_value: lv.cloned(),
+            right_value: rv.cloned(),
+            status: status.to_string(),
+        });
+    }
+
+    Ok(ConfigDiffResult {
+        left_format,
+        right_format,
+        entries,
+        same_count,
+        modified_count,
+        left_only_count,
+        right_only_count,
+    })
+}
+
+/// 对两个配置文件做语义对比（读取文件内容后调用 diff_config 逻辑）
+#[tauri::command]
+pub fn diff_config_files(left_path: String, right_path: String) -> Result<ConfigDiffResult, String> {
+    let left = std::fs::read_to_string(&left_path)
+        .map_err(|e| format!("读取左侧文件失败: {e}"))?;
+    let right = std::fs::read_to_string(&right_path)
+        .map_err(|e| format!("读取右侧文件失败: {e}"))?;
+    diff_config(left, right)
+}
+
+/// 读取文本文件内容（供前端混合模式使用）
+#[tauri::command]
+pub fn read_text_file(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| format!("读取文件失败: {e}"))
 }

@@ -14,6 +14,7 @@ import { logger } from "@/lib/logger";
 import { pasteText, pasteImage, deleteHistory, togglePin, toggleWindow, sequentialPaste, invalidateCountsCache, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
 import { resolveSource, getAutoTagIcon, getAutoTagColor } from "@/lib/source-mappings";
 import { migrateLegacyStorageKeys } from "@/lib/storageMigration";
+import { initRegexRules } from "@/lib/regexRules";
 import { ClipboardList, RotateCcw, Loader2, X } from "lucide-react";
 import { BackToTop } from "@/components/BackToTop";
 import { ScrollProvider } from "@/contexts/ScrollContext";
@@ -32,6 +33,7 @@ const SnippetsDialog = lazy(() => import("@/components/SnippetsDialog").then(m =
 const ExtractDialog = lazy(() => import("@/components/ExtractDialog").then(m => ({ default: m.ExtractDialog })));
 const EncodingDialog = lazy(() => import("@/components/EncodingDialog").then(m => ({ default: m.EncodingDialog })));
 const BatchReplaceDialog = lazy(() => import("@/components/BatchReplaceDialog").then(m => ({ default: m.BatchReplaceDialog })));
+const ConfigDiffDialog = lazy(() => import("@/components/ConfigDiffDialog").then(m => ({ default: m.ConfigDiffDialog })));
 const UpdateNotesDialog = lazy(() => import("@/components/UpdateNotesDialog").then(m => ({ default: m.UpdateNotesDialog })));
 
 function App() {
@@ -69,6 +71,7 @@ function App() {
   const [showExtract, setShowExtract] = useState(false);
   const [showEncoding, setShowEncoding] = useState(false);
   const [showBatchReplace, setShowBatchReplace] = useState(false);
+  const [showConfigDiff, setShowConfigDiff] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -132,7 +135,7 @@ function App() {
 
 
   // 失焦自动隐藏（弹窗打开时跳过）—— 使用 useRef 避免闭包陷阱
-  const dialogOpen = showSettings || showSnippets || showExtract || showEncoding || showBatchReplace;
+  const dialogOpen = showSettings || showSnippets || showExtract || showEncoding || showBatchReplace || showConfigDiff;
   const dialogOpenRef = useRef(dialogOpen);
   dialogOpenRef.current = dialogOpen;
 
@@ -463,6 +466,8 @@ function App() {
           cleanup = null;
           return;
         }
+        // 正则规则从 localStorage 迁移至 SQLite（首次运行）
+        await initRegexRules();
       } catch (e) {
         logger.error("初始化后端失败", e);
         if (mounted) {
@@ -518,8 +523,8 @@ function App() {
 
   // 使用 ref 存储弹窗状态，避免 handleKeyDown 依赖变化导致频繁重新注册事件
   // U4：moveToGroup 弹窗一并登记，Esc/导航键守卫才能感知它
-  const dialogStatesRef = useRef({ showSettings, showSnippets, showExtract, showEncoding, showBatchReplace, showShortcuts, moveToGroup: !!moveToGroupItem });
-  dialogStatesRef.current = { showSettings, showSnippets, showExtract, showEncoding, showBatchReplace, showShortcuts, moveToGroup: !!moveToGroupItem };
+  const dialogStatesRef = useRef({ showSettings, showSnippets, showExtract, showEncoding, showBatchReplace, showConfigDiff, showShortcuts, moveToGroup: !!moveToGroupItem });
+  dialogStatesRef.current = { showSettings, showSnippets, showExtract, showEncoding, showBatchReplace, showConfigDiff, showShortcuts, moveToGroup: !!moveToGroupItem };
 
   // U3：跟踪右键菜单开关（ContextMenu 打开/关闭时广播 app-ctxmenu-open/close 事件）
   const ctxMenuOpenRef = useRef(false);
@@ -558,8 +563,8 @@ function App() {
     // 变换枢纽打开时同样让位（枢纽自带 ↑↓/Enter/Esc 处理）
     if (useDialogStore.getState().hubItem) return;
     // 弹窗打开时：ESC/? 正常工作，其余列表导航按键被屏蔽（让弹窗内部控件如 Tab 可以正常使用）
-    const { showSettings, showSnippets, showExtract, showEncoding, showBatchReplace, moveToGroup } = dialogStatesRef.current;
-    const dialogOpen = showSettings || showSnippets || showExtract || showEncoding || showBatchReplace || moveToGroup || fileDetailOpenRef.current;
+    const { showSettings, showSnippets, showExtract, showEncoding, showBatchReplace, showConfigDiff, moveToGroup } = dialogStatesRef.current;
+    const dialogOpen = showSettings || showSnippets || showExtract || showEncoding || showBatchReplace || showConfigDiff || moveToGroup || fileDetailOpenRef.current;
     const isListNavKey = ["ArrowDown", "ArrowUp", "Enter", "Delete", "Backspace", "Home", "End"].includes(e.key)
       || (e.ctrlKey && (e.key === "d" || e.key === "z" || e.key === "s" || e.key === "h" || e.key === "a"));
     if (dialogOpen && e.key !== "Escape" && e.key !== "?" && isListNavKey) return;
@@ -577,6 +582,7 @@ function App() {
       if (showExtract) { setShowExtract(false); return; }
       if (showEncoding) { setShowEncoding(false); return; }
       if (showBatchReplace) { setShowBatchReplace(false); return; }
+      if (showConfigDiff) { setShowConfigDiff(false); return; }
       if (dialogStatesRef.current.showShortcuts) { setShowShortcuts(false); return; }
       if (moveToGroup) { setMoveToGroupItem(null); return; }
       if (selectedIds.size > 0) { store.clearSelection(); return; }
@@ -766,6 +772,7 @@ function App() {
           onExtract={() => setShowExtract(true)}
           onEncoding={() => setShowEncoding(true)}
           onBatchReplace={() => setShowBatchReplace(true)}
+          onConfigDiff={() => setShowConfigDiff(true)}
           onToggleSidebar={toggleSidebar}
           sidebarOpen={sidebarOpen}
         />
@@ -868,6 +875,9 @@ function App() {
           </ErrorBoundary>
           <ErrorBoundary fallback={null} componentName="批量替换">
             <BatchReplaceDialog open={showBatchReplace} onClose={() => setShowBatchReplace(false)} />
+          </ErrorBoundary>
+          <ErrorBoundary fallback={null} componentName="配置对比">
+            <ConfigDiffDialog open={showConfigDiff} onClose={() => setShowConfigDiff(false)} />
           </ErrorBoundary>
         </Suspense>
 

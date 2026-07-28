@@ -478,11 +478,16 @@ pub fn run() {
             commands::detect_config_format,
             commands::convert_config,
             commands::batch_convert_config,
+            commands::diff_config,
+            commands::diff_config_files,
+            commands::read_text_file,
             commands::detect_file_encoding,
             commands::convert_file_encoding,
             commands::batch_convert_encoding,
             commands::preview_replace,
             commands::execute_replace,
+            commands::get_regex_rules,
+            commands::save_regex_rules,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

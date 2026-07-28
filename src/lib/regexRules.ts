@@ -1,7 +1,14 @@
 /**
  * regexRules.ts — 正则替换规则数据层
- * 预设规则 + 自定义规则 CRUD（localStorage）+ ReDoS 防护
+ * 预设规则 + 自定义规则 CRUD（SQLite 持久化 + 内存缓存同步读取）+ ReDoS 防护
+ *
+ * 架构：
+ *  - 读操作（getAllRules / getEnabledRules）从内存缓存同步返回，保持所有调用方无需改动
+ *  - 写操作（add/update/delete/toggle）同步更新缓存 + 异步持久化到 SQLite
+ *  - 首次加载时自动从 localStorage 迁移旧数据到 SQLite
  */
+import { invoke } from "@tauri-apps/api/core";
+import { logger } from "@/lib/logger";
 
 export interface RegexRule {
   id: string;
@@ -11,54 +18,129 @@ export interface RegexRule {
   flags: string;
   enabled: boolean;
   preset: boolean;
+  sort_order?: number;
 }
 
 const STORAGE_KEY = "pp_regex_rules";
+const PRESET_STATE_KEY = STORAGE_KEY + "_preset_state";
 
 /** 预设规则（不可删除，可开关） */
 export const PRESET_RULES: RegexRule[] = [
-  { id: "p1", name: "去除空行", pattern: "^\\s*$\\n", replacement: "", flags: "gm", enabled: true, preset: true },
-  { id: "p2", name: "去除首尾空格", pattern: "^\\s+|\\s+$", replacement: "", flags: "gm", enabled: true, preset: true },
-  { id: "p3", name: "合并连续空格", pattern: " {2,}", replacement: " ", flags: "g", enabled: true, preset: true },
-  { id: "p4", name: "移除行号", pattern: "^\\s*\\d+[\\.)\\]]\\s*", replacement: "", flags: "gm", enabled: true, preset: true },
-  { id: "p5", name: "URL 解码", pattern: "%([0-9A-Fa-f]{2})", replacement: "__URL_DECODE__", flags: "g", enabled: true, preset: true },
-  { id: "p6", name: "手机号脱敏", pattern: "(\\d{3})\\d{4}(\\d{4})", replacement: "$1****$2", flags: "g", enabled: true, preset: true },
-  { id: "p7", name: "身份证脱敏", pattern: "(\\d{4})\\d{10}(\\d{4})", replacement: "$1**********$2", flags: "g", enabled: true, preset: true },
-  { id: "p8", name: "去 HTML 标签", pattern: "<[^>]+>", replacement: "", flags: "g", enabled: true, preset: true },
+  { id: "p1", name: "去除空行", pattern: "^\\s*$\\n", replacement: "", flags: "gm", enabled: true, preset: true, sort_order: 0 },
+  { id: "p2", name: "去除首尾空格", pattern: "^\\s+|\\s+$", replacement: "", flags: "gm", enabled: true, preset: true, sort_order: 1 },
+  { id: "p3", name: "合并连续空格", pattern: " {2,}", replacement: " ", flags: "g", enabled: true, preset: true, sort_order: 2 },
+  { id: "p4", name: "移除行号", pattern: "^\\s*\\d+[\\.)\\]]\\s*", replacement: "", flags: "gm", enabled: true, preset: true, sort_order: 3 },
+  { id: "p5", name: "URL 解码", pattern: "%([0-9A-Fa-f]{2})", replacement: "__URL_DECODE__", flags: "g", enabled: true, preset: true, sort_order: 4 },
+  { id: "p6", name: "手机号脱敏", pattern: "(\\d{3})\\d{4}(\\d{4})", replacement: "$1****$2", flags: "g", enabled: true, preset: true, sort_order: 5 },
+  { id: "p7", name: "身份证脱敏", pattern: "(\\d{4})\\d{10}(\\d{4})", replacement: "$1**********$2", flags: "g", enabled: true, preset: true, sort_order: 6 },
+  { id: "p8", name: "去 HTML 标签", pattern: "<[^>]+>", replacement: "", flags: "g", enabled: true, preset: true, sort_order: 7 },
 ];
 
-/** 从 localStorage 加载自定义规则 */
-export function loadCustomRules(): RegexRule[] {
+// ===== 内存缓存 =====
+
+let _cache: RegexRule[] | null = null;
+let _initialized = false;
+
+/** 重置缓存（仅供测试使用） */
+export function _resetCache(): void {
+  _cache = null;
+  _initialized = false;
+}
+
+/** 构建默认规则列表（预设 + 空自定义） */
+function buildDefaults(): RegexRule[] {
+  return PRESET_RULES.map((r, i) => ({ ...r, sort_order: i }));
+}
+
+/** 持久化当前缓存到 SQLite（fire-and-forget） */
+function persistAsync(): void {
+  if (!_cache) return;
+  invoke("save_regex_rules", { rules: _cache }).catch((e) => {
+    logger.warn("正则规则持久化失败", e);
+  });
+}
+
+/**
+ * 初始化正则规则：从 SQLite 加载，首次运行时自动从 localStorage 迁移。
+ * 应在 App 启动时调用一次。
+ */
+export async function initRegexRules(): Promise<void> {
+  if (_initialized) return;
+
+  try {
+    const dbRules = await invoke<RegexRule[]>("get_regex_rules");
+
+    if (dbRules.length > 0) {
+      // SQLite 有数据，直接使用
+      _cache = dbRules;
+    } else {
+      // SQLite 为空 → 尝试从 localStorage 迁移
+      _cache = migrateFromLocalStorage();
+      if (_cache.length > 0) {
+        // 迁移成功，写入 SQLite
+        await invoke("save_regex_rules", { rules: _cache });
+        // 清理 localStorage
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(PRESET_STATE_KEY);
+        } catch { /* ignore */ }
+        logger.info("正则规则已从 localStorage 迁移至 SQLite");
+      } else {
+        // 全新安装，使用预设默认值
+        _cache = buildDefaults();
+        await invoke("save_regex_rules", { rules: _cache });
+      }
+    }
+  } catch (e) {
+    logger.warn("从 SQLite 加载正则规则失败，回退到默认值", e);
+    _cache = buildDefaults();
+  }
+
+  _initialized = true;
+}
+
+/** 从 localStorage 迁移旧数据 */
+function migrateFromLocalStorage(): RegexRule[] {
+  // 读取自定义规则
+  let custom: RegexRule[] = [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw) as RegexRule[];
-  } catch {
-    return [];
-  }
-}
+    if (raw) custom = JSON.parse(raw) as RegexRule[];
+  } catch { /* ignore */ }
 
-/** 保存自定义规则到 localStorage */
-export function saveCustomRules(rules: RegexRule[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(rules));
-}
-
-/** 获取所有规则（预设 + 自定义），预设的 enabled 状态也从 localStorage 读取 */
-export function getAllRules(): RegexRule[] {
-  const custom = loadCustomRules();
-  // 预设规则的 enabled 状态持久化
+  // 读取预设规则开关状态
   let presetState: Record<string, boolean> = {};
   try {
-    const raw = localStorage.getItem(STORAGE_KEY + "_preset_state");
+    const raw = localStorage.getItem(PRESET_STATE_KEY);
     if (raw) presetState = JSON.parse(raw);
   } catch { /* ignore */ }
 
-  const presets = PRESET_RULES.map((r) => ({
+  // 如果没有旧数据，返回空
+  if (custom.length === 0 && Object.keys(presetState).length === 0) {
+    return [];
+  }
+
+  // 合并预设（含开关状态）+ 自定义
+  const presets = PRESET_RULES.map((r, i) => ({
     ...r,
     enabled: presetState[r.id] !== undefined ? presetState[r.id] : r.enabled,
+    sort_order: i,
   }));
 
-  return [...presets, ...custom];
+  const customs = custom.map((r, i) => ({
+    ...r,
+    preset: false,
+    sort_order: PRESET_RULES.length + i,
+  }));
+
+  return [...presets, ...customs];
+}
+
+// ===== 同步读取 API（从缓存） =====
+
+/** 获取所有规则（预设 + 自定义） */
+export function getAllRules(): RegexRule[] {
+  return _cache ? [..._cache] : buildDefaults();
 }
 
 /** 获取已启用的规则（用于菜单展示） */
@@ -66,54 +148,62 @@ export function getEnabledRules(): RegexRule[] {
   return getAllRules().filter((r) => r.enabled);
 }
 
+// ===== 写入 API（同步更新缓存 + 异步持久化） =====
+
 /** 切换预设规则启用状态 */
 export function togglePresetRule(id: string): void {
-  let presetState: Record<string, boolean> = {};
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY + "_preset_state");
-    if (raw) presetState = JSON.parse(raw);
-  } catch { /* ignore */ }
-
-  const rule = PRESET_RULES.find((r) => r.id === id);
-  if (!rule) return;
-  presetState[id] = !(presetState[id] !== undefined ? presetState[id] : rule.enabled);
-  localStorage.setItem(STORAGE_KEY + "_preset_state", JSON.stringify(presetState));
+  if (!_cache) return;
+  const idx = _cache.findIndex((r) => r.id === id);
+  if (idx >= 0) {
+    _cache[idx] = { ..._cache[idx], enabled: !_cache[idx].enabled };
+    persistAsync();
+  }
 }
 
 /** 添加自定义规则 */
 export function addCustomRule(rule: Omit<RegexRule, "id" | "preset">): RegexRule {
-  const custom = loadCustomRules();
-  const newRule: RegexRule = { ...rule, id: `c_${Date.now()}`, preset: false };
-  custom.push(newRule);
-  saveCustomRules(custom);
+  const newRule: RegexRule = {
+    ...rule,
+    id: `c_${Date.now()}`,
+    preset: false,
+    sort_order: (_cache?.length ?? PRESET_RULES.length),
+  };
+
+  if (_cache) {
+    _cache.push(newRule);
+    persistAsync();
+  }
   return newRule;
 }
 
 /** 更新自定义规则 */
 export function updateCustomRule(id: string, patch: Partial<Omit<RegexRule, "id" | "preset">>): void {
-  const custom = loadCustomRules();
-  const idx = custom.findIndex((r) => r.id === id);
+  if (!_cache) return;
+  const idx = _cache.findIndex((r) => r.id === id);
   if (idx >= 0) {
-    custom[idx] = { ...custom[idx], ...patch };
-    saveCustomRules(custom);
+    _cache[idx] = { ..._cache[idx], ...patch };
+    persistAsync();
   }
 }
 
 /** 删除自定义规则 */
 export function deleteCustomRule(id: string): void {
-  const custom = loadCustomRules().filter((r) => r.id !== id);
-  saveCustomRules(custom);
+  if (!_cache) return;
+  _cache = _cache.filter((r) => r.id !== id);
+  persistAsync();
 }
 
 /** 切换自定义规则启用状态 */
 export function toggleCustomRule(id: string): void {
-  const custom = loadCustomRules();
-  const idx = custom.findIndex((r) => r.id === id);
+  if (!_cache) return;
+  const idx = _cache.findIndex((r) => r.id === id);
   if (idx >= 0) {
-    custom[idx].enabled = !custom[idx].enabled;
-    saveCustomRules(custom);
+    _cache[idx] = { ..._cache[idx], enabled: !_cache[idx].enabled };
+    persistAsync();
   }
 }
+
+// ===== 纯逻辑函数（无状态，保持不变） =====
 
 /**
  * 执行正则替换（带 ReDoS 防护）
@@ -237,4 +327,20 @@ export function validateRegex(pattern: string, flags: string): string | null {
   } catch (e) {
     return e instanceof Error ? e.message : "无效的正则表达式";
   }
+}
+
+// ===== 向后兼容导出（已弃用，供迁移期使用） =====
+
+/** @deprecated 使用 initRegexRules + getAllRules 替代 */
+export function loadCustomRules(): RegexRule[] {
+  return getAllRules().filter((r) => !r.preset);
+}
+
+/** @deprecated 使用 addCustomRule / updateCustomRule 替代 */
+export function saveCustomRules(rules: RegexRule[]): void {
+  // 合并预设 + 传入的自定义规则
+  if (!_cache) return;
+  const presets = _cache.filter((r) => r.preset);
+  _cache = [...presets, ...rules.map((r, i) => ({ ...r, preset: false, sort_order: presets.length + i }))];
+  persistAsync();
 }
