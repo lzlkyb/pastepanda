@@ -60,8 +60,8 @@ export interface Transform {
   group: TransformGroup;
   /** 返回 0~1 的匹配度；0 表示不适用。多个变换可同时命中，按分数排序 */
   detect(ctx: TransformContext): number;
-  /** 执行变换，返回可复制产物 */
-  run(text: string, opts?: Record<string, unknown>): TransformResult;
+  /** 执行变换，返回可复制产物（支持异步：配置转换等调 Rust 侧的变换返回 Promise） */
+  run(text: string, opts?: Record<string, unknown>): TransformResult | Promise<TransformResult>;
   /** 可选：声明支持的选项，供 UI 自动生成 chip */
   options?: TransformOptionSpec[];
   /**

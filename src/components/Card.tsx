@@ -813,7 +813,7 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
             toast("未知变换", "error");
             return;
           }
-          const r = t.run(text);
+          const r = await t.run(text);
           if (!r.ok || !r.output) {
             toast(r.message ?? "无法转换", "error");
             return;

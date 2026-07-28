@@ -69,8 +69,23 @@ function TransformCard({
   onCopy: () => void;
   onPaste: () => void;
 }) {
-  // 本卡产物：只随本卡的 opts 变化而重算（其余卡 opts 引用不变 → 不重算）
-  const preview = useMemo(() => t.run(text, opts), [t, text, opts]);
+  // 本卡产物：支持同步和异步 run（配置转换调 Rust 侧为异步）
+  const [preview, setPreview] = useState<{ ok: boolean; output?: string; message?: string }>({ ok: false, message: "…" });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const result = t.run(text, opts);
+    if (result instanceof Promise) {
+      setLoading(true);
+      result.then((r) => {
+        if (!cancelled) { setPreview(r); setLoading(false); }
+      });
+    } else {
+      setPreview(result);
+    }
+    return () => { cancelled = true; };
+  }, [t, text, opts]);
 
   return (
     <div className={styles.card}>
@@ -102,7 +117,9 @@ function TransformCard({
         </div>
       )}
 
-      {preview.ok ? (
+      {loading ? (
+        <pre className={styles.cardPreview}>转换中…</pre>
+      ) : preview.ok ? (
         <pre className={styles.cardPreview}>{preview.output}</pre>
       ) : (
         <pre className={styles.previewErr}>{preview.message ?? "无法转换"}</pre>
@@ -170,7 +187,7 @@ export function TransformHubDialog() {
   // 复制指定卡的产物；复制后不关闭，允许连续复制多个
   const copyTransform = useCallback(async (t: Transform) => {
     if (!item) return;
-    const r = t.run(item.text || "", optsFor(t));
+    const r = await t.run(item.text || "", optsFor(t));
     if (!r.ok || !r.output) {
       toast(r.message ?? "无法转换", "error");
       return;
@@ -189,7 +206,7 @@ export function TransformHubDialog() {
   // 把指定卡的产物直接粘贴到前台窗口
   const pasteTransform = useCallback(async (t: Transform) => {
     if (!item) return;
-    const r = t.run(item.text || "", optsFor(t));
+    const r = await t.run(item.text || "", optsFor(t));
     if (!r.ok || !r.output) {
       toast(r.message ?? "无法转换", "error");
       return;

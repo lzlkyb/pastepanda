@@ -158,13 +158,29 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     setExporting(true);
     try {
       const { save } = await import("@tauri-apps/plugin-dialog");
-      const path = await save({ filters: [{ name: "JSON", extensions: ["json"] }] });
+      const path = await save({
+        filters: [
+          { name: "Excel", extensions: ["xlsx"] },
+          { name: "CSV", extensions: ["csv"] },
+          { name: "JSON", extensions: ["json"] },
+        ],
+      });
       if (path) {
         const { invoke } = await import("@tauri-apps/api/core");
-        const allItems = await invoke<HistoryItem[]>("get_all_history", { workspace: config.current_workspace });
-        const { writeTextFile } = await import("@tauri-apps/plugin-fs");
-        await writeTextFile(path, JSON.stringify(allItems, null, 2));
-        toast(`导出成功：${allItems.length} 条记录`, "success");
+        const ext = (path as string).split(".").pop()?.toLowerCase();
+        if (ext === "xlsx") {
+          const count = await invoke<number>("export_history_xlsx", { workspace: config.current_workspace, path });
+          toast(`导出成功：${count} 条记录`, "success");
+        } else if (ext === "csv") {
+          const count = await invoke<number>("export_history_csv", { workspace: config.current_workspace, path });
+          toast(`导出成功：${count} 条记录`, "success");
+        } else {
+          // JSON：保持原有前端写入逻辑
+          const allItems = await invoke<HistoryItem[]>("get_all_history", { workspace: config.current_workspace });
+          const { writeTextFile } = await import("@tauri-apps/plugin-fs");
+          await writeTextFile(path, JSON.stringify(allItems, null, 2));
+          toast(`导出成功：${allItems.length} 条记录`, "success");
+        }
       }
     } catch (e) {
       logger.warn("导出失败", e);

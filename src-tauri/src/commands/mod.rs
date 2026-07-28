@@ -151,6 +151,10 @@ pub(crate) fn is_unsafe_network_path(path: &str) -> bool {
     trimmed.starts_with("\\\\") || trimmed.starts_with("//")
 }
 
+mod batch_replace;
+mod config_convert;
+mod encoding;
+mod export;
 mod groups;
 mod history;
 mod images;
@@ -164,6 +168,10 @@ mod update;
 #[cfg(test)]
 mod tests;
 
+pub use batch_replace::*;
+pub use config_convert::*;
+pub use encoding::*;
+pub use export::*;
 pub use groups::*;
 pub use history::*;
 pub use images::*;

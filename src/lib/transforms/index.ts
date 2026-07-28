@@ -10,11 +10,13 @@ import { sqlInTransform } from "./sqlIn";
 import { columnToSqlInTransform } from "./columnSqlIn";
 import { jsonInsertTransform } from "./jsonInsert";
 import { textTransforms } from "./textTransforms";
+import { configConvertTransforms } from "./configConverts";
 
 registerTransform(sqlInTransform);
 registerTransform(columnToSqlInTransform);
 registerTransform(jsonInsertTransform);
 textTransforms.forEach(registerTransform);
+configConvertTransforms.forEach(registerTransform);
 
 export * from "./types";
 export * from "./registry";

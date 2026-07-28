@@ -473,6 +473,16 @@ pub fn run() {
             commands::take_editor_init,
             commands::close_editor_window,
             commands::insert_markdown_history,
+            commands::export_history_csv,
+            commands::export_history_xlsx,
+            commands::detect_config_format,
+            commands::convert_config,
+            commands::batch_convert_config,
+            commands::detect_file_encoding,
+            commands::convert_file_encoding,
+            commands::batch_convert_encoding,
+            commands::preview_replace,
+            commands::execute_replace,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

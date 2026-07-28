@@ -30,6 +30,8 @@ migrateLegacyStorageKeys();
 const SettingsDialog = lazy(() => import("@/components/SettingsDialog").then(m => ({ default: m.SettingsDialog })));
 const SnippetsDialog = lazy(() => import("@/components/SnippetsDialog").then(m => ({ default: m.SnippetsDialog })));
 const ExtractDialog = lazy(() => import("@/components/ExtractDialog").then(m => ({ default: m.ExtractDialog })));
+const EncodingDialog = lazy(() => import("@/components/EncodingDialog").then(m => ({ default: m.EncodingDialog })));
+const BatchReplaceDialog = lazy(() => import("@/components/BatchReplaceDialog").then(m => ({ default: m.BatchReplaceDialog })));
 const UpdateNotesDialog = lazy(() => import("@/components/UpdateNotesDialog").then(m => ({ default: m.UpdateNotesDialog })));
 
 function App() {
@@ -65,6 +67,8 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showSnippets, setShowSnippets] = useState(false);
   const [showExtract, setShowExtract] = useState(false);
+  const [showEncoding, setShowEncoding] = useState(false);
+  const [showBatchReplace, setShowBatchReplace] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -128,7 +132,7 @@ function App() {
 
 
   // 失焦自动隐藏（弹窗打开时跳过）—— 使用 useRef 避免闭包陷阱
-  const dialogOpen = showSettings || showSnippets || showExtract;
+  const dialogOpen = showSettings || showSnippets || showExtract || showEncoding || showBatchReplace;
   const dialogOpenRef = useRef(dialogOpen);
   dialogOpenRef.current = dialogOpen;
 
@@ -514,8 +518,8 @@ function App() {
 
   // 使用 ref 存储弹窗状态，避免 handleKeyDown 依赖变化导致频繁重新注册事件
   // U4：moveToGroup 弹窗一并登记，Esc/导航键守卫才能感知它
-  const dialogStatesRef = useRef({ showSettings, showSnippets, showExtract, showShortcuts, moveToGroup: !!moveToGroupItem });
-  dialogStatesRef.current = { showSettings, showSnippets, showExtract, showShortcuts, moveToGroup: !!moveToGroupItem };
+  const dialogStatesRef = useRef({ showSettings, showSnippets, showExtract, showEncoding, showBatchReplace, showShortcuts, moveToGroup: !!moveToGroupItem });
+  dialogStatesRef.current = { showSettings, showSnippets, showExtract, showEncoding, showBatchReplace, showShortcuts, moveToGroup: !!moveToGroupItem };
 
   // U3：跟踪右键菜单开关（ContextMenu 打开/关闭时广播 app-ctxmenu-open/close 事件）
   const ctxMenuOpenRef = useRef(false);
@@ -554,8 +558,8 @@ function App() {
     // 变换枢纽打开时同样让位（枢纽自带 ↑↓/Enter/Esc 处理）
     if (useDialogStore.getState().hubItem) return;
     // 弹窗打开时：ESC/? 正常工作，其余列表导航按键被屏蔽（让弹窗内部控件如 Tab 可以正常使用）
-    const { showSettings, showSnippets, showExtract, moveToGroup } = dialogStatesRef.current;
-    const dialogOpen = showSettings || showSnippets || showExtract || moveToGroup || fileDetailOpenRef.current;
+    const { showSettings, showSnippets, showExtract, showEncoding, showBatchReplace, moveToGroup } = dialogStatesRef.current;
+    const dialogOpen = showSettings || showSnippets || showExtract || showEncoding || showBatchReplace || moveToGroup || fileDetailOpenRef.current;
     const isListNavKey = ["ArrowDown", "ArrowUp", "Enter", "Delete", "Backspace", "Home", "End"].includes(e.key)
       || (e.ctrlKey && (e.key === "d" || e.key === "z" || e.key === "s" || e.key === "h" || e.key === "a"));
     if (dialogOpen && e.key !== "Escape" && e.key !== "?" && isListNavKey) return;
@@ -571,6 +575,8 @@ function App() {
       if (showSettings) { setShowSettings(false); return; }
       if (showSnippets) { setShowSnippets(false); return; }
       if (showExtract) { setShowExtract(false); return; }
+      if (showEncoding) { setShowEncoding(false); return; }
+      if (showBatchReplace) { setShowBatchReplace(false); return; }
       if (dialogStatesRef.current.showShortcuts) { setShowShortcuts(false); return; }
       if (moveToGroup) { setMoveToGroupItem(null); return; }
       if (selectedIds.size > 0) { store.clearSelection(); return; }
@@ -758,6 +764,8 @@ function App() {
           onSettings={() => setShowSettings(true)}
           onSnippets={() => setShowSnippets(true)}
           onExtract={() => setShowExtract(true)}
+          onEncoding={() => setShowEncoding(true)}
+          onBatchReplace={() => setShowBatchReplace(true)}
           onToggleSidebar={toggleSidebar}
           sidebarOpen={sidebarOpen}
         />
@@ -854,6 +862,12 @@ function App() {
           </ErrorBoundary>
           <ErrorBoundary fallback={null} componentName="提取面板">
             <ExtractDialog open={showExtract} onClose={() => setShowExtract(false)} />
+          </ErrorBoundary>
+          <ErrorBoundary fallback={null} componentName="编码转换">
+            <EncodingDialog open={showEncoding} onClose={() => setShowEncoding(false)} />
+          </ErrorBoundary>
+          <ErrorBoundary fallback={null} componentName="批量替换">
+            <BatchReplaceDialog open={showBatchReplace} onClose={() => setShowBatchReplace(false)} />
           </ErrorBoundary>
         </Suspense>
 

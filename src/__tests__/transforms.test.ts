@@ -189,20 +189,20 @@ describe("transform registry", () => {
     expect(getTransform("sql-in")!.detect({ text: '["a"]', contentType: "text" })).toBe(0);
   });
 
-  it("sql-in run outputs an IN clause", () => {
-    const r = getTransform("sql-in")!.run('["a","b"]');
+  it("sql-in run outputs an IN clause", async () => {
+    const r = await getTransform("sql-in")!.run('["a","b"]');
     expect(r.ok).toBe(true);
     expect(r.output).toBe("IN ('a', 'b')");
   });
 
-  it("column-to-sql-in run outputs an IN clause", () => {
-    const r = getTransform("column-to-sql-in")!.run("1\n2");
+  it("column-to-sql-in run outputs an IN clause", async () => {
+    const r = await getTransform("column-to-sql-in")!.run("1\n2");
     expect(r.ok).toBe(true);
     expect(r.output).toBe("IN (1, 2)");
   });
 
-  it("json-insert run outputs an INSERT statement", () => {
-    const r = getTransform("json-insert")!.run('[{"id":1}]');
+  it("json-insert run outputs an INSERT statement", async () => {
+    const r = await getTransform("json-insert")!.run('[{"id":1}]');
     expect(r.ok).toBe(true);
     expect(r.output).toBe("INSERT INTO table_name (id) VALUES (1);");
   });
@@ -226,14 +226,14 @@ describe("sql-in dynamic field options (optionsFor)", () => {
     expect(specs.find((s) => s.key === "field")).toBeUndefined();
   });
 
-  it("selecting a field drives run output", () => {
+  it("selecting a field drives run output", async () => {
     const t = getTransform("sql-in")!;
-    expect(t.run(objArray, { field: "name" }).output).toBe("IN ('a', 'b')");
-    expect(t.run(objArray, { field: "id" }).output).toBe("IN (1, 2)");
+    expect((await t.run(objArray, { field: "name" })).output).toBe("IN ('a', 'b')");
+    expect((await t.run(objArray, { field: "id" })).output).toBe("IN (1, 2)");
   });
 
-  it("default (no field opt) picks the id-like field", () => {
+  it("default (no field opt) picks the id-like field", async () => {
     const t = getTransform("sql-in")!;
-    expect(t.run(objArray).output).toBe("IN (1, 2)");
+    expect((await t.run(objArray)).output).toBe("IN (1, 2)");
   });
 });

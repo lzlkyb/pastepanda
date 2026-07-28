@@ -705,3 +705,56 @@
   background: var(--border);
   margin: 4px 12px;
 }
+
+/* ===== 工具箱下拉 ===== */
+.toolboxWrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.toolboxBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+}
+
+.toolboxMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 1000;
+  min-width: 140px;
+  padding: 5px;
+  background: var(--dialog-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  animation: toolboxIn 0.12s ease-out;
+}
+
+@keyframes toolboxIn {
+  from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.toolboxItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.12s;
+  text-align: left;
+}
+.toolboxItem:hover {
+  background: var(--hover);
+}
+.toolboxItem span {
+  font-size: 14px;
+}

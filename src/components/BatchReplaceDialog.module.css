@@ -1,0 +1,222 @@
+/* BatchReplaceDialog.module.css — 批量替换对话框样式 */
+
+.fileActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--section-bg);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn:hover {
+  background: var(--hover);
+  border-color: var(--accent);
+}
+
+.fileCount {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.inputGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inputRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--section-bg);
+  transition: border-color 0.15s;
+}
+.inputRow:focus-within {
+  border-color: var(--accent);
+}
+
+.inputIcon {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.input {
+  flex: 1;
+  padding: 9px 0;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+}
+.input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+.options {
+  display: flex;
+  gap: 16px;
+}
+
+.checkLabel {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.previewBtn,
+.replaceBtn {
+  flex: 1;
+  padding: 9px;
+  border: none;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.previewBtn {
+  background: var(--section-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+.previewBtn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.replaceBtn {
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark, #0369A1));
+  color: #fff;
+}
+.previewBtn:disabled,
+.replaceBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.preview {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.previewHeader {
+  padding: 8px 12px;
+  background: var(--section-bg);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.previewList {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.previewFile {
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+.previewFile:hover {
+  background: var(--hover);
+}
+
+.previewFileName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.previewMatch {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 11.5px;
+  font-family: "Cascadia Code", "Fira Code", monospace;
+}
+
+.matchLoc {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.matchCtx {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.previewMore {
+  padding: 4px 0 2px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.results {
+  max-height: 150px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.resultRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.resultOk { color: #22C55E; }
+.resultErr { color: #EF4444; }
+
+.resultName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.resultCount {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.resultError {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #EF4444;
+}
