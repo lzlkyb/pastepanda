@@ -478,6 +478,9 @@
 .paneSubLabel {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.25);
+  /* 行号开关加入标题栏后（margin-left:auto 把开关推到最右），
+     副标签与主标签相邻，需显式间距；两子项面板不受影响 */
+  margin-left: 8px;
 }
 
 .editorBody {
@@ -580,6 +583,53 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* ─── 预览行号开关（markdown 预览面板标题栏 · 设置 markdown_preview_line_numbers）─── */
+
+.lnToggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
+  background: var(--section-bg, #fafbfc);
+  color: var(--text-muted, #8a8f98);
+  font-size: 11px;
+  font-family: inherit;
+  padding: 3px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.lnToggle:hover {
+  color: var(--text-secondary, #555);
+  border-color: var(--text-muted, #8a8f98);
+}
+
+.lnToggleDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted, #8a8f98);
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.lnToggleActive {
+  color: var(--accent, #0078D4);
+  border-color: color-mix(in srgb, var(--accent, #0078D4) 40%, transparent);
+  background: color-mix(in srgb, var(--accent, #0078D4) 10%, transparent);
+}
+
+.lnToggleActive:hover {
+  color: var(--accent, #0078D4);
+  border-color: color-mix(in srgb, var(--accent, #0078D4) 60%, transparent);
+}
+
+.lnToggleActive .lnToggleDot {
+  background: var(--accent, #0078D4);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent, #0078D4) 80%, transparent);
 }
 
 /* ─── 滚动条（方案 A：主题自适应 · 常显）────────────────────────────

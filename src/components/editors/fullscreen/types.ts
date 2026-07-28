@@ -77,8 +77,9 @@ export interface FullscreenTypeSpec {
   defaultMode: ViewMode;
   /** 类型专属格式栏（不传 = 无格式栏） */
   FormatBar?: ComponentType<{ bridge: ShellBridge }>;
-  /** 预览面板组件（不传 = 无预览，仅编辑模式；bridge 可选，供需要跳转编辑区的预览使用） */
-  Preview?: ComponentType<{ text: string; bridge?: ShellBridge }>;
+  /** 预览面板组件（不传 = 无预览，仅编辑模式；bridge 可选，供需要跳转编辑区的预览使用；
+   *  lineNumbers 行号模式开关，仅 markdown 预览消费，其余类型忽略） */
+  Preview?: ComponentType<{ text: string; bridge?: ShellBridge; lineNumbers?: boolean }>;
   /** 预览面板副标签 */
   previewSubLabel?: string;
   /**

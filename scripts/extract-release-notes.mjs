@@ -10,7 +10,8 @@
  *
  * 输出（写入 $GITHUB_OUTPUT，本地无该环境变量时打印到 stdout）：
  *   release_body   — 版本段落原文（含 ### 分类标题），用于 GitHub Release body
- *   updater_notes  — 段落内所有 "- " 条目（换行拼接），用于 updater.json notes
+ *   updater_notes  — 版本段落原文（含 ### 分类标题），用于 updater.json notes，
+ *                    前端 changelogParser.ts 运行时解析还原分类时间线
  *
  * 失败即 exit 1（发版红灯，不再静默回退"常规构建发布"）：
  *   - CHANGELOG.md 不存在
@@ -80,7 +81,7 @@ if (!releaseBody) {
   fail(`版本 ${version} 的段落为空`);
 }
 
-// ─── 提取列表项（updater notes）───────────────────────
+// ─── 提取列表项（仅用于红灯校验）─────────────────────
 
 const items = [];
 for (const line of sectionLines) {
@@ -92,7 +93,12 @@ if (items.length === 0) {
   fail(`版本 ${version} 的段落内没有任何 "- " 条目，无法生成更新说明`);
 }
 
-const updaterNotes = items.join("\n");
+// updater_notes 输出完整段落（含 "### 分类" 标题，与 release_body 一致）：
+// 前端更新弹框（src/lib/changelogParser.ts）运行时解析它还原分类时间线。
+// v5.3.2 及更早只输出纯 "- " 拼接，分类标题被剥离，弹框无法还原分类、
+// 只能走"暂无详细更新日志"灰盒兜底。旧客户端将本 notes 作纯文本展示，
+// 完整段落同样可读，无兼容问题。
+const updaterNotes = releaseBody;
 
 // ─── 输出 ──────────────────────────────────────────────
 

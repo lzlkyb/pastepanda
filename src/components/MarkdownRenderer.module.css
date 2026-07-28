@@ -356,6 +356,70 @@
   padding: 0 3px;
 }
 
+/* ===== 行号模式（全屏编辑器 markdown 预览 · 全局类 md-ln / md-blknum / md-cl）=====
+ * 容器挂 md-ln 时左侧让出 52px 行号槽，每个顶层块（标题/段落/列表/代码块/引用/提示）
+ * 注入 md-blknum 编号（后处理 DOM 注入，机制同 md-codehead）；代码块内部另按行包裹
+ * md-cl 行（md-cln 行号 + md-clc 内容）。开关关闭（移除 md-ln）后布局自动收回。
+ */
+
+.md:global(.md-ln) {
+  padding-left: 52px;
+  position: relative;
+}
+
+.md:global(.md-ln) > :not(hr) { position: relative; }
+
+.md :global(.md-blknum) {
+  position: absolute;
+  left: -52px;
+  width: 34px;
+  text-align: right;
+  font-family: 'Cascadia Code', 'SF Mono', Consolas, 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted);
+  opacity: 0.5;
+  user-select: none;
+  cursor: pointer;
+  /* h1 渐变标题的 -webkit-text-fill-color: transparent 会继承，须重置 */
+  -webkit-text-fill-color: var(--text-muted);
+  padding-top: 8px;
+  transition: opacity 0.12s, color 0.12s;
+}
+
+.md:global(.md-ln) > h1 > :global(.md-blknum) { padding-top: 12px; }
+.md:global(.md-ln) > h2 > :global(.md-blknum) { padding-top: 9px; }
+.md:global(.md-ln) > *:hover > :global(.md-blknum) { opacity: 1; color: var(--accent); }
+
+/* 点击块编号 → 整块闪烁高亮（0.5s 淡入，900ms 后移除类即复位） */
+.md :global(.md-flash) {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 8px;
+  transition: background 0.5s, outline 0.5s;
+}
+
+/* 代码块行结构（hljs 高亮后按行包裹） */
+.md:global(.md-ln) pre { padding: 12px 0; }
+
+.md :global(.md-cl) { display: flex; }
+
+.md :global(.md-cln) {
+  width: 46px;
+  text-align: right;
+  padding-right: 14px;
+  margin-right: 16px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  opacity: 0.6;
+  user-select: none;
+  border-right: 1px solid var(--border-color);
+}
+
+.md :global(.md-cl:hover .md-cln) { opacity: 1; color: var(--accent); }
+
+.md :global(.md-clc) { white-space: pre; }
+
 /* ===== compact 模式（hover 弹窗用：精简版）===== */
 
 .compact {

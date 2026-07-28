@@ -145,6 +145,45 @@ describe("UpdateNotesDialog（方案 C 玻璃时间线）", () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
+  it("包内无条目时解析 update.body：平铺 notes 渲染为「更新内容」时间线", () => {
+    // 真实更新场景：目标版本（0.0.1）不在包内 CHANGELOG（仅 9.9.9），
+    // body 为 v5.3.2 及更早的 notes 格式（分类标题被 CI 剥离的纯 bullet）
+    mockUpdate({
+      update: {
+        version: "0.0.1",
+        body: "- 全屏编辑器主题样式丢失：已补齐样式导入\n- 托盘弹窗同类问题：已修复",
+      },
+    });
+    render(<UpdateNotesDialog open onClose={() => {}} currentVersion="0.0.0" />);
+
+    expect(screen.queryByText("暂无详细更新日志")).toBeNull();
+    // 摘要引语取首条；「标题：」前缀在时间线内加粗
+    expect(screen.getByText("全屏编辑器主题样式丢失")).toBeTruthy();
+    expect(screen.getByText("托盘弹窗同类问题")).toBeTruthy();
+    // 平铺格式归入单个「更新内容」分类 chip
+    expect(chipByLabel("更新内容")).toBeTruthy();
+    expect(screen.getByText("全部").closest("button")?.textContent).toBe("全部2");
+  });
+
+  it("包内无条目时解析 update.body：结构化 notes 还原分类 chips 与时间线", () => {
+    // v5.3.3 起的 notes 格式：完整段落含 ### 分类标题
+    mockUpdate({
+      update: {
+        version: "0.0.2",
+        body: "### 新增\n- 新功能甲\n\n### 修复\n- 修复乙",
+      },
+    });
+    render(<UpdateNotesDialog open onClose={() => {}} currentVersion="0.0.1" />);
+
+    expect(screen.queryByText("暂无详细更新日志")).toBeNull();
+    expect(chipByLabel("新增")).toBeTruthy();
+    expect(chipByLabel("修复")).toBeTruthy();
+    // 首条条目同时出现在摘要引语与时间线（summary 取首条）
+    expect(screen.getAllByText("新功能甲")).toHaveLength(2);
+    expect(screen.getByText("修复乙")).toBeTruthy();
+    expect(screen.getByText("全部").closest("button")?.textContent).toBe("全部2");
+  });
+
   it("无结构化日志条目时走 fallback", () => {
     mockUpdate({ update: { version: "0.0.1", body: "原始日志文本" } });
     render(<UpdateNotesDialog open onClose={() => {}} currentVersion="0.0.0" />);

@@ -196,6 +196,8 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
   const [isFullscreen, setIsFullscreen] = useState(false);
   // 自动保存开关（设置 md_auto_save，独立窗口经 get_config 读取）
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
+  // 预览行号开关（设置 markdown_preview_line_numbers，默认开启）
+  const [previewLineNumbers, setPreviewLineNumbers] = useState(true);
   // 编辑器明暗：默认暗（与 DEFAULT_THEME ocean-dark 一致），读到实际主题后再校正
   const [isDarkTheme, setIsDarkTheme] = useState(true);
 
@@ -434,18 +436,28 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spec, toast]);
 
-  // ─── 读取配置（自动保存开关 + 主题明暗）───
+  // ─── 读取配置（自动保存开关 + 主题明暗 + 预览行号）───
   // 独立窗口不与主窗口共享 store，设置经 get_config 读取
   useEffect(() => {
-    invoke<{ md_auto_save?: boolean; theme?: string }>("get_config")
+    invoke<{ md_auto_save?: boolean; theme?: string; markdown_preview_line_numbers?: boolean }>("get_config")
       .then((cfg) => {
         setAutoSaveEnabled(cfg.md_auto_save !== false);
+        setPreviewLineNumbers(cfg.markdown_preview_line_numbers !== false);
         const themeKey = (cfg.theme || DEFAULT_THEME) as ThemeKey;
         const themeDef = THEMES.find((t) => t.key === themeKey);
         setIsDarkTheme(themeDef ? themeDef.dark : true);
       })
-      .catch(() => { /* 读取失败时保持默认（自动保存开、暗色编辑器） */ });
+      .catch(() => { /* 读取失败时保持默认（自动保存开、行号开、暗色编辑器） */ });
   }, []);
+
+  // 预览行号开关：翻转即时生效，并写回配置持久化（读全量 → 覆盖单键 → 写回）
+  const togglePreviewLineNumbers = useCallback(() => {
+    const next = !previewLineNumbers;
+    setPreviewLineNumbers(next);
+    invoke<Record<string, unknown>>("get_config")
+      .then((cfg) => invoke("save_config", { config: { ...cfg, markdown_preview_line_numbers: next } }))
+      .catch(() => { /* 持久化失败不影响开关即时生效 */ });
+  }, [previewLineNumbers]);
 
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -815,18 +827,32 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
         {viewMode !== "edit" && hasPreview && spec.Preview && (
           <div
             className={styles.previewPane}
-            style={{ flex: viewMode === "split" ? `0 0 ${100 - splitRatio}%` : "1" }}
+            /* split 模式弹性填充剩余空间（100% − 编辑宽 − 6px 把手）：
+               若与编辑面板同为 0 0 X%，三者总宽超出 .main 被 overflow:hidden 裁剪，
+               贴右边缘的预览滚动条会被裁掉大半 */
+            style={{ flex: viewMode === "split" ? "1 1 0" : "1" }}
           >
             <div className={styles.paneHeader}>
               <span className={styles.paneLabel}>预览</span>
               <span className={styles.paneSubLabel}>{spec.previewSubLabel}</span>
+              {spec.key === "markdown" && (
+                <button
+                  type="button"
+                  className={`${styles.lnToggle} ${previewLineNumbers ? styles.lnToggleActive : ""}`}
+                  onClick={togglePreviewLineNumbers}
+                  title="预览区行号（块级编号 + 代码行号）"
+                >
+                  <span className={styles.lnToggleDot} />
+                  行号
+                </button>
+              )}
             </div>
             <div
               className={`${styles.previewBody} ${spec.previewFill ? styles.previewBodyFill : ""}`}
               ref={previewScrollRef}
             >
               <Suspense fallback={<div className={styles.previewLoading}>预览加载中…</div>}>
-                <spec.Preview text={text} bridge={bridge} />
+                <spec.Preview text={text} bridge={bridge} lineNumbers={previewLineNumbers} />
               </Suspense>
             </div>
           </div>

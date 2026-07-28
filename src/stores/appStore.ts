@@ -75,6 +75,7 @@ export interface AppConfig {
   excluded_apps: string; // 修复 U36：应用排除名单（逗号分隔，命中来源应用则不记录）
   md_save_to_history: boolean; // 全屏编辑器中编辑 .md 文件保存时，是否同时写入剪贴板历史
   md_auto_save: boolean; // 全屏编辑器输入停顿后自动回写（卡片→数据库 / 文件→磁盘）
+  markdown_preview_line_numbers: boolean; // 全屏编辑器 markdown 预览行号（块级编号 + 代码行号），预览面板标题栏切换
   window_animation: boolean; // 弹框与全屏窗口打开/关闭动画（方案 B 玻璃浮升），关闭后即时显隐
 }
 
@@ -205,6 +206,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   excluded_apps: "",
   md_save_to_history: true,
   md_auto_save: true,
+  markdown_preview_line_numbers: true,
   window_animation: true,
 };
 

@@ -7,6 +7,7 @@ import { FocusTrap } from "@/components/FocusTrap";
 import { AppIcon } from "@/components/AppIcon";
 import { useUpdate } from "@/contexts/UpdateContext";
 import { CHANGELOG } from "@/lib/changelog.generated";
+import { parseChangelogSection } from "@/lib/changelogParser";
 import {
   CATEGORY_COLORS,
   countCategoryItems,
@@ -49,8 +50,14 @@ export function UpdateNotesDialog({ open, onClose, currentVersion }: UpdateNotes
 
   const entry = useMemo<ChangelogEntry | null>(() => {
     if (!update?.version) return null;
-    return CHANGELOG.find((e: ChangelogEntry) => e.version === update.version) ?? null;
-  }, [update?.version]);
+    // 包内日志优先（仅开发期/同版本场景命中）；真实更新时目标版本必然新于
+    // 当前二进制，构建时打包的 CHANGELOG 不含其条目，需实时解析更新清单
+    // body（CI 从同一份 CHANGELOG.md 提取，见 scripts/extract-release-notes.mjs）
+    return (
+      CHANGELOG.find((e: ChangelogEntry) => e.version === update.version) ??
+      parseChangelogSection(update.body, update.version)
+    );
+  }, [update?.version, update?.body]);
 
   // 版本变化时重置筛选（组件常驻挂载，状态不随 open/close 重置）
   useEffect(() => {
