@@ -10,6 +10,7 @@ import { ToggleRow } from "./ToggleRow";
 import { HotkeyRecorder } from "./HotkeyRecorder";
 import { LanSyncPanel } from "./LanSyncPanel";
 import { DeepCleanDialog } from "@/components/DeepCleanDialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import styles from "../Settings.module.css";
 
 const THEME_PREVIEWS: Record<string, { bg: string; accent: string; text: string; barBg: string; bodyBg: string; lineBg: string }> = {
@@ -77,6 +78,32 @@ export function GeneralTab({
 }: GeneralTabProps) {
   const { toast } = useToast();
   const cleanupDays = config.auto_cleanup_days;
+  // 修复：改保留天数原本点即生效，下一小时静默删一批且自动清理不写撤销栈（见 auto_cleanup.rs）。
+  // 变严格时先用已有的 count_expired_history 算出影响条数，弹二次确认（与手动清理同一套模式）。
+  // count 为 null 表示统计失败：仍然弹确认（不能因统计失败就静默删），只是不显示具体条数
+  const [pendingCleanup, setPendingCleanup] = useState<{ days: number; count: number | null } | null>(null);
+
+  const handlePickCleanupDays = useCallback(async (next: number) => {
+    if (next === cleanupDays) return;
+    // 关闭清理或把天数改大（变宽松）不会产生新的删除，直接生效
+    if (next <= 0 || (cleanupDays > 0 && next > cleanupDays)) {
+      await updateAndSave({ auto_cleanup_days: next });
+      return;
+    }
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const n = await invoke<number>("count_expired_history", {
+        workspace: config.current_workspace,
+        beforeDays: next,
+      });
+      if (n > 0) { setPendingCleanup({ days: next, count: n }); return; }
+      // 新天数下没有任何记录会被删，无需骚扰用户
+      await updateAndSave({ auto_cleanup_days: next });
+    } catch (e) {
+      logger.warn("统计过期记录数失败", e);
+      setPendingCleanup({ days: next, count: null });
+    }
+  }, [cleanupDays, config.current_workspace, updateAndSave]);
 
   // 深度清理弹窗开关（数据管理 → 深度清理）
   const [showDeepClean, setShowDeepClean] = useState(false);
@@ -467,7 +494,7 @@ export function GeneralTab({
           {CLEANUP_OPTIONS.map((opt, idx) => (
             <button key={`cleanup-${opt.value ?? idx}`}
               className={`${styles.sCleanupOpt}${cleanupDays === opt.value ? ` ${styles.active}` : ""}`}
-              onClick={() => updateAndSave({ auto_cleanup_days: opt.value })}>
+              onClick={() => { void handlePickCleanupDays(opt.value); }}>
               {opt.label}
             </button>
           ))}
@@ -889,6 +916,24 @@ export function GeneralTab({
       </div>
       {/* 深度清理弹窗：portal 到 body，open 门控显隐 */}
       <DeepCleanDialog open={showDeepClean} onClose={() => setShowDeepClean(false)} />
+      {/* 修复：改保留天数变严格时的二次确认（自动清理不可撤销，必须让用户先知道会删多少条） */}
+      <ConfirmDialog key="cleanup-days-confirm"
+        open={!!pendingCleanup}
+        title="确认缩短保留天数"
+        message={pendingCleanup
+          ? (pendingCleanup.count === null
+              ? `改为保留 ${pendingCleanup.days} 天后，超期的未置顶记录将在下次自动清理时被删除且无法撤销（本次未能统计出具体条数）。确认？`
+              : `改为保留 ${pendingCleanup.days} 天后，将有 ${pendingCleanup.count} 条超期记录（置顶除外）在下次自动清理时被删除，且无法撤销。确认？`)
+          : ""}
+        confirmText="确认修改"
+        variant="danger"
+        onConfirm={() => {
+          const days = pendingCleanup?.days;
+          setPendingCleanup(null);
+          if (days !== undefined) void updateAndSave({ auto_cleanup_days: days });
+        }}
+        onCancel={() => setPendingCleanup(null)}
+      />
     </>
   );
 }

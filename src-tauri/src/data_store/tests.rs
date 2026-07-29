@@ -768,6 +768,99 @@ fn test_import_history_empty() {
     assert_eq!(count, 0);
 }
 
+#[test]
+fn test_import_history_restores_tags() {
+    // 回归：原 import_history 完全忽略 item.tags，导致帮助页教的迁移路径
+    // （导出 JSON → 新电脑导入）必然丢掉所有标签
+    let store = make_store();
+    let mut item = make_item("imp-tag-1", "tagged", "2024-01-01 10:00:00", "text");
+    item.tags = vec![Tag {
+        id: "src-tag-1".to_string(),
+        name: "源机标签".to_string(),
+        color: "#123456".to_string(),
+        source: "manual".to_string(),
+        created_at: "2024-01-01 09:00:00".to_string(),
+    }];
+
+    let count = store.import_history(&[item]).unwrap();
+    assert_eq!(count, 1);
+
+    // 标签本身应被建出来，颜色沿用源机的
+    let tags = store.get_tags().unwrap();
+    let created = tags
+        .iter()
+        .find(|t| t.name == "源机标签")
+        .expect("导入后应创建同名标签");
+    assert_eq!(created.color, "#123456");
+
+    // 关联应写入，且能随历史记录一起读出
+    let result = store.get_history("默认", "all", "", 0, 10).unwrap();
+    let imported = result
+        .iter()
+        .find(|i| i.id == "imp-tag-1")
+        .expect("导入的记录应存在");
+    assert_eq!(imported.tags.len(), 1, "导入后标签关联丢了");
+    assert_eq!(imported.tags[0].name, "源机标签");
+}
+
+#[test]
+fn test_import_history_reuses_existing_tag_color() {
+    // 策略 (a)：按名匹配同名标签时复用本机标签，不覆盖用户在本机调过的颜色
+    let store = make_store();
+    let local = store.create_tag("共名标签", "#AAAAAA").unwrap();
+
+    let mut item = make_item("imp-tag-2", "tagged2", "2024-01-01 10:00:00", "text");
+    item.tags = vec![Tag {
+        id: "src-tag-2".to_string(),
+        name: "共名标签".to_string(),
+        color: "#BBBBBB".to_string(), // 源机颜色不同，应被忽略
+        source: "manual".to_string(),
+        created_at: "2024-01-01 09:00:00".to_string(),
+    }];
+    store.import_history(&[item]).unwrap();
+
+    let tags = store.get_tags().unwrap();
+    let same_name: Vec<_> = tags.iter().filter(|t| t.name == "共名标签").collect();
+    assert_eq!(same_name.len(), 1, "同名标签不应重复创建");
+    assert_eq!(same_name[0].color, "#AAAAAA", "不应覆盖本机已有标签的颜色");
+    assert_eq!(same_name[0].id, local.id, "应复用本机标签 id");
+
+    // 关联指向本机那个标签
+    let result = store.get_history("默认", "all", "", 0, 10).unwrap();
+    let imported = result.iter().find(|i| i.id == "imp-tag-2").unwrap();
+    assert_eq!(imported.tags.len(), 1);
+    assert_eq!(imported.tags[0].id, local.id);
+}
+
+#[test]
+fn test_import_history_nulls_dangling_group_id() {
+    // 回归：history.group_id 无外键约束，直接写入源机 group_id 会产生悬空引用——
+    // 这些记录计入总数却在任何分组下都看不到（「未分组」按 IS NULL 判定），且永无清理机会
+    let store = make_store();
+    let mut item = make_item("imp-grp-1", "orphan", "2024-01-01 10:00:00", "text");
+    item.group_id = Some("本机不存在的分组id".to_string());
+    store.import_history(&[item]).unwrap();
+
+    let result = store.get_history("默认", "all", "", 0, 10).unwrap();
+    let imported = result.iter().find(|i| i.id == "imp-grp-1").unwrap();
+    assert_eq!(imported.group_id, None, "本机不存在的分组应置 NULL，而非写入悬空引用");
+}
+
+#[test]
+fn test_import_history_keeps_existing_group_id() {
+    // 与上一条成对：分组在本机确实存在时不能被误置 NULL
+    let store = make_store();
+    let group = store.create_group("已有分组", "#FF0000", "📁").unwrap();
+
+    let mut item = make_item("imp-grp-2", "in group", "2024-01-01 10:00:00", "text");
+    item.group_id = Some(group.id.clone());
+    store.import_history(&[item]).unwrap();
+
+    let result = store.get_history("默认", "all", "", 0, 10).unwrap();
+    let imported = result.iter().find(|i| i.id == "imp-grp-2").unwrap();
+    assert_eq!(imported.group_id, Some(group.id));
+}
+
 // ============================================================
 // Snippet CRUD 测试
 // ============================================================

@@ -909,8 +909,36 @@ impl DataStore {
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
 
         let result = (|| -> Result<u32, String> {
+            // 修复：先取出本机已有的分组 id 集合。history.group_id 没有外键约束，直接写入源机的
+            // group_id 会产生悬空引用：这些记录计入总数，但在任何分组下都看不到（「未分组」按
+            // IS NULL 判定，不匹配它们），且永无清理机会。导出数据里只有 group_id 、没有分组名，
+            // 无法重建分组，所以本机不存在时置 NULL（落入「未分组」，用户可见可整理）。
+            let existing_group_ids: std::collections::HashSet<String> = {
+                let mut stmt = conn
+                    .prepare("SELECT id FROM groups")
+                    .map_err(|e| e.to_string())?;
+                let ids = stmt
+                    .query_map([], |row| row.get::<_, String>(0))
+                    .map_err(|e| e.to_string())?
+                    .filter_map(|r| r.ok())
+                    .collect();
+                ids
+            };
+
+            let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
             let mut count = 0u32;
+            let mut dropped_group_refs = 0u32;
+
             for item in items {
+                // 本机不存在该分组 → 置 NULL，避免写入永不可见的悬空引用
+                let group_id = match &item.group_id {
+                    Some(gid) if !existing_group_ids.contains(gid) => {
+                        dropped_group_refs += 1;
+                        None
+                    }
+                    other => other.clone(),
+                };
+
                 let affected = conn
                     .execute(
                         "INSERT OR IGNORE INTO history (id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon, content_type)
@@ -926,13 +954,85 @@ impl DataStore {
                             item.workspace,
                             item.md5,
                             item.pinyin_initials,
-                            item.group_id,
+                            group_id,
                             item.source_icon,
                             item.content_type,
                         ],
                     )
                     .map_err(|e| e.to_string())?;
                 count += affected as u32;
+
+                // 修复：原实现完全忽略 item.tags，导致帮助页教的迁移路径（导出 JSON → 新电脑导入）
+                // 必然丢掉所有标签。策略：按标签名匹配本机已有标签（tags.name 有 UNIQUE 约束），
+                // 命中则复用、不覆盖本机颜色（保留用户在本机调过的配色）；不存在则新建。
+                if item.tags.is_empty() {
+                    continue;
+                }
+                // history_tags 对 history(id) 有外键：只有确认 item.id 这一行真存在才能写关联，
+                // 否则外键约束会把整个导入事务打回。affected>0 必然已存在；==0 时可能是 id 已存在
+                // （可写，相当于把备份里的标签合并回来），也可能是 md5 撞了另一条不同 id 的记录（不可写）。
+                let row_exists = affected > 0
+                    || conn
+                        .query_row(
+                            "SELECT 1 FROM history WHERE id = ?1",
+                            params![item.id],
+                            |_| Ok(()),
+                        )
+                        .is_ok();
+                if !row_exists {
+                    continue;
+                }
+
+                for tag in &item.tags {
+                    let tag_name = tag.name.trim();
+                    if tag_name.is_empty() {
+                        continue;
+                    }
+                    let existing: Option<String> = conn
+                        .query_row(
+                            "SELECT id FROM tags WHERE name = ?1",
+                            params![tag_name],
+                            |r| r.get(0),
+                        )
+                        .ok();
+                    let tag_id = match existing {
+                        // 同名命中：直接复用本机标签，不改它的颜色
+                        Some(id) => id,
+                        None => {
+                            // 本机无同名标签：优先沿用源机 id（便于同一台机器备份恢复时保持一致）；
+                            // 若该 id 恰好与本机另一个标签撞了（OR IGNORE 返回 0），换新 uuid 重试
+                            let mut new_id = tag.id.clone();
+                            let inserted = conn
+                                .execute(
+                                    "INSERT OR IGNORE INTO tags (id, name, color, source, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                                    params![new_id, tag_name, tag.color, tag.source, now],
+                                )
+                                .map_err(|e| e.to_string())?;
+                            if inserted == 0 {
+                                new_id = uuid::Uuid::new_v4().to_string();
+                                conn.execute(
+                                    "INSERT INTO tags (id, name, color, source, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                                    params![new_id, tag_name, tag.color, tag.source, now],
+                                )
+                                .map_err(|e| e.to_string())?;
+                            }
+                            new_id
+                        }
+                    };
+                    // 关联的 source 沿用标签自身的 source（auto/manual），导出数据里不带关联级 source
+                    conn.execute(
+                        "INSERT OR IGNORE INTO history_tags (history_id, tag_id, source) VALUES (?1, ?2, ?3)",
+                        params![item.id, tag_id, tag.source],
+                    )
+                    .map_err(|e| e.to_string())?;
+                }
+            }
+
+            if dropped_group_refs > 0 {
+                log::warn!(
+                    "[DataStore] 导入：{} 条记录引用的分组在本机不存在，已置为未分组",
+                    dropped_group_refs
+                );
             }
             Ok(count)
         })();

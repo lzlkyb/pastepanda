@@ -22,6 +22,7 @@ import { Sidebar, type SidebarGroup } from "@/components/Sidebar";
 import type Lenis from "lenis";
 import appStyles from "./App.module.css";
 import { FocusTrap } from "@/components/FocusTrap";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useDialogAnim } from "@/lib/dialogMotion";
 
 // 修复 Low：应用更名后迁移历史版本遗留的 pasteship_* localStorage 键（幂等，仅执行一次）
@@ -346,13 +347,24 @@ function App() {
     window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: ok ? `已重命名为「${name}」` : "重命名分组失败", type: ok ? "success" : "error" } }));
   }, [groups]);
 
-  const handleDeleteGroup = useCallback(async (id: string) => {
+  // 修复：删除分组原本右键一点就直接删、无确认也不可撤销（对比删片段是有确认框的）。
+  // 现先弹确认并告知影响面（该分组下有多少条记录），确认后才真删。
+  const [deleteGroupTarget, setDeleteGroupTarget] = useState<{ id: string; name: string; count: number } | null>(null);
+
+  const handleDeleteGroup = useCallback((id: string) => {
     const group = groups.find(g => g.id === id);
     if (!group) return;
+    setDeleteGroupTarget({ id, name: group.name, count: sidebarCounts?.groups[id] ?? 0 });
+  }, [groups, sidebarCounts]);
+
+  const executeDeleteGroup = useCallback(async () => {
+    const target = deleteGroupTarget;
+    setDeleteGroupTarget(null);
+    if (!target) return;
     // 修复：此前无论后端删除是否成功都弹"已删除"，现按真实返回值分别提示，避免假成功
-    const ok = await deleteGroupApi(id);
-    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: ok ? `已删除分组「${group.name}」` : `删除分组「${group.name}」失败`, type: ok ? "info" : "error" } }));
-  }, [groups]);
+    const ok = await deleteGroupApi(target.id);
+    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: ok ? `已删除分组「${target.name}」` : `删除分组「${target.name}」失败`, type: ok ? "info" : "error" } }));
+  }, [deleteGroupTarget]);
 
   const handleChangeGroupColor = useCallback(async (id: string, color: string) => {
     const group = groups.find(g => g.id === id);
@@ -901,6 +913,21 @@ function App() {
             <ShortcutPanel onClose={() => setShowShortcuts(false)} />
           )}
         </AnimatePresence>
+
+        {/* 修复：删除分组的二次确认（原本右键一点就删，无确认也不可撤销） */}
+        <ConfirmDialog key="delete-group-confirm"
+          open={!!deleteGroupTarget}
+          title="确认删除分组"
+          message={deleteGroupTarget
+            ? (deleteGroupTarget.count > 0
+                ? `删除分组「${deleteGroupTarget.name}」？该分组下的 ${deleteGroupTarget.count} 条记录不会被删除，但会变为未分组。此操作无法撤销。`
+                : `删除空分组「${deleteGroupTarget.name}」？此操作无法撤销。`)
+            : ""}
+          confirmText="删除分组"
+          variant="danger"
+          onConfirm={() => { void executeDeleteGroup(); }}
+          onCancel={() => setDeleteGroupTarget(null)}
+        />
       </div>
       </UpdateProvider>
   );
