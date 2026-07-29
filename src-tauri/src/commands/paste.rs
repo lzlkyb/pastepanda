@@ -23,6 +23,27 @@ pub fn copy_only(engine: State<PasteEngine>, text: String) -> Result<(), String>
     engine.copy_only(&text)
 }
 
+/// 仅复制图片到剪贴板（不粘贴）— 走 arboard，比 Web Clipboard API 更可靠
+#[tauri::command]
+pub fn copy_image_only(engine: State<PasteEngine>, image_path: String) -> Result<(), String> {
+    engine.copy_image_only(&image_path)
+}
+
+/// 复制文件到剪贴板（CF_HDROP，等同于资源管理器 Ctrl+C）
+#[tauri::command]
+pub fn copy_files(engine: State<PasteEngine>, paths: Vec<String>) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        engine.copy_files(&paths)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = engine;
+        let _ = paths;
+        Err("仅支持 Windows".to_string())
+    }
+}
+
 /// 粘贴图片到目标窗口
 #[tauri::command]
 pub fn paste_image(engine: State<PasteEngine>, image_path: String) -> Result<(), String> {

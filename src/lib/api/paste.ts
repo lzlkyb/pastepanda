@@ -43,6 +43,16 @@ export async function copyOnly(text: string) {
   }
 }
 
+/** 仅复制图片到剪贴板（走 Rust arboard，比 Web API 可靠） */
+export async function copyImageOnly(imagePath: string): Promise<void> {
+  await invoke("copy_image_only", { imagePath });
+}
+
+/** 复制文件到剪贴板（CF_HDROP，等同于资源管理器 Ctrl+C） */
+export async function copyFiles(paths: string[]): Promise<void> {
+  await invoke("copy_files", { paths });
+}
+
 /** 保存前台窗口句柄 */
 export async function saveForeground() {
   try {

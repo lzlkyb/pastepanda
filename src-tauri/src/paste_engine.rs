@@ -209,6 +209,113 @@ impl PasteEngine {
         Ok(())
     }
 
+    /// 仅复制图片到剪贴板（不粘贴）— 走 arboard，绕开 WebView2 Web Clipboard API 兼容问题
+    pub fn copy_image_only(&self, image_path: &str) -> Result<(), String> {
+        crate::commands::check_image_decode_limits(std::path::Path::new(image_path))?;
+        let img = image::open(image_path).map_err(|e| format!("无法解码图片: {}", e))?;
+        let rgba = img.to_rgba8();
+        let (width, height) = rgba.dimensions();
+        // hash 口径与监听线程一致：对 RGBA 像素字节计算
+        let content_hash = format!("{:x}", md5::Md5::new().chain_update(rgba.as_raw()).finalize());
+
+        // 设置粘贴抑制（hash），防止剪贴板监听器重复记录
+        self.paste_suppress
+            .set_with_hash(Duration::from_millis(3000), content_hash);
+
+        let img_data = ImageData {
+            width: width as usize,
+            height: height as usize,
+            bytes: std::borrow::Cow::Borrowed(rgba.as_raw()),
+        };
+        let mut clipboard = Clipboard::new().map_err(|e| format!("无法打开剪贴板: {}", e))?;
+        clipboard
+            .set_image(img_data)
+            .map_err(|e| format!("无法写入图片到剪贴板: {}", e))?;
+        Ok(())
+    }
+
+    /// 复制文件到剪贴板（CF_HDROP，等同于资源管理器 Ctrl+C）
+    #[cfg(target_os = "windows")]
+    pub fn copy_files(&self, paths: &[String]) -> Result<(), String> {
+        use std::os::windows::ffi::OsStrExt;
+        use windows::Win32::Foundation::{BOOL, GlobalFree, HANDLE, POINT};
+        use windows::Win32::System::DataExchange::*;
+        use windows::Win32::System::Memory::*;
+
+        if paths.is_empty() {
+            return Err("文件列表为空".to_string());
+        }
+
+        // 设置时间窗口抑制，防止监听器把这次写入当成新内容记录
+        self.paste_suppress.set(Duration::from_millis(3000));
+
+        // 构建双 null 结尾的宽字符文件列表
+        let mut data: Vec<u16> = Vec::new();
+        for p in paths {
+            let wide: Vec<u16> = std::path::Path::new(p)
+                .as_os_str()
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect();
+            data.extend_from_slice(&wide);
+        }
+        data.push(0); // 列表结尾的第二个 null
+
+        // DROPFILES 头（p_files 指向文件列表偏移，f_wide = 1 表示宽字符）
+        #[repr(C)]
+        struct DropFiles {
+            p_files: u32,
+            pt: POINT,
+            f_nc: BOOL,
+            f_wide: BOOL,
+        }
+        let header_size = std::mem::size_of::<DropFiles>();
+        let total_size = header_size + data.len() * 2;
+
+        unsafe {
+            OpenClipboard(None).map_err(|e| format!("无法打开剪贴板: {}", e))?;
+            let _ = EmptyClipboard();
+
+            let hmem = match GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, total_size) {
+                Ok(h) => h,
+                Err(e) => {
+                    let _ = CloseClipboard();
+                    return Err(format!("GlobalAlloc 失败: {}", e));
+                }
+            };
+
+            let ptr = GlobalLock(hmem);
+            if ptr.is_null() {
+                let _ = GlobalFree(hmem);
+                let _ = CloseClipboard();
+                return Err("GlobalLock 失败".to_string());
+            }
+
+            // 写入 DROPFILES 头
+            let df = ptr as *mut DropFiles;
+            (*df).p_files = header_size as u32;
+            (*df).pt = POINT { x: 0, y: 0 };
+            (*df).f_nc = BOOL(0);
+            (*df).f_wide = BOOL(1);
+
+            // 写入文件列表
+            let dst = (ptr as *mut u8).add(header_size) as *mut u16;
+            std::ptr::copy_nonoverlapping(data.as_ptr(), dst, data.len());
+
+            let _ = GlobalUnlock(hmem);
+
+            const CF_HDROP: u32 = 15;
+            if let Err(e) = SetClipboardData(CF_HDROP, HANDLE(hmem.0)) {
+                let _ = GlobalFree(hmem);
+                let _ = CloseClipboard();
+                return Err(format!("SetClipboardData(CF_HDROP) 失败: {}", e));
+            }
+
+            let _ = CloseClipboard();
+        }
+        Ok(())
+    }
+
     /// 粘贴图片：读取图片文件 → 写入剪贴板 → 发送 WM_PASTE
     pub fn execute_paste_image(&self, image_path: &str) -> Result<(), String> {
         // 1. 读取并解码图片（hash 口径须与监听线程一致：对 RGBA 像素字节计算，修复 C9。

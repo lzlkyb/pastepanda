@@ -4,8 +4,8 @@ use arboard::Clipboard;
 use md5::{Digest, Md5};
 use serde::Serialize;
 use std::sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering},
-    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+    mpsc, Arc, Mutex, OnceLock,
 };
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
@@ -17,6 +17,61 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 #[cfg(target_os = "windows")]
 use std::sync::Condvar;
+
+// ─── 自动标签写入：channel + 单 worker（B-01 修复） ───────────────────────
+// 旧方案：4 并发线程 + 超限静默丢弃 → 突发时标签丢失无感知。
+// 新方案：unbounded channel 排队 + 单 worker 顺序消化，突发不丢、DB 无并发争用。
+
+/// 一次自动标签写入任务
+struct TagJob {
+    app: AppHandle,
+    history_id: String,
+    labels: Vec<String>,
+}
+
+/// 获取标签写入 channel 发送端（首次调用启动 worker 线程）
+fn tag_tx() -> &'static mpsc::Sender<TagJob> {
+    static TX: OnceLock<mpsc::Sender<TagJob>> = OnceLock::new();
+    TX.get_or_init(|| {
+        let (tx, rx) = mpsc::channel::<TagJob>();
+        std::thread::Builder::new()
+            .name("auto-tag-writer".into())
+            .spawn(move || {
+                for job in rx {
+                    let Some(store) = job.app.try_state::<DataStore>() else {
+                        continue;
+                    };
+                    match store.resolve_auto_tag_ids(&job.labels) {
+                        Ok(tag_ids) if !tag_ids.is_empty() => {
+                            if let Err(e) = store.add_history_tags(&job.history_id, &tag_ids) {
+                                log::warn!("[ContentClassifier] 写入自动标签失败: {}", e);
+                            } else {
+                                log::info!(
+                                    "[ContentClassifier] 自动分类: {:?} → {}",
+                                    job.labels,
+                                    job.history_id
+                                );
+                                let _ = job.app.emit(
+                                    "tags-updated",
+                                    serde_json::json!({
+                                        "history_id": job.history_id,
+                                        "tag_ids": tag_ids,
+                                    }),
+                                );
+                            }
+                        }
+                        Ok(_) => {} // 无匹配标签，正常跳过
+                        Err(e) => {
+                            log::warn!("[ContentClassifier] 解析自动标签失败: {}", e);
+                        }
+                    }
+                }
+                log::info!("[ContentClassifier] auto-tag-writer 通道关闭，worker 退出");
+            })
+            .expect("failed to spawn auto-tag-writer thread");
+        tx
+    })
+}
 
 /// 剪贴板变化事件，推送到前端
 #[derive(Debug, Clone, Serialize)]
@@ -959,52 +1014,13 @@ fn process_text(
             }
         }
 
-        // 自动标签写入：后台线程只做 DB 操作（分类已在上方同步完成，< 0.5ms）
-        // 并发上限：剪贴板高频突发（同步工具/脚本）时避免无界创建线程（M29）
-        {
-            const MAX_CLASSIFY_IN_FLIGHT: usize = 4;
-            static CLASSIFY_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
-
-            if CLASSIFY_IN_FLIGHT.load(Ordering::SeqCst) >= MAX_CLASSIFY_IN_FLIGHT {
-                log::debug!("[ContentClassifier] 标签写入线程已达上限，跳过本条");
-            } else {
-                CLASSIFY_IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
-                let history_id = item.id.clone();
-                let app_clone = app_handle.clone();
-                std::thread::spawn(move || {
-                    // panic-safe 计数复位
-                    struct DecOnDrop;
-                    impl Drop for DecOnDrop {
-                        fn drop(&mut self) {
-                            CLASSIFY_IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
-                        }
-                    }
-                    let _dec = DecOnDrop;
-
-                    if let Some(store) = app_clone.try_state::<DataStore>() {
-                        if let Ok(tag_ids) = store.resolve_auto_tag_ids(&labels) {
-                            if !tag_ids.is_empty() {
-                                if let Err(e) = store.add_history_tags(&history_id, &tag_ids) {
-                                    log::warn!("[ContentClassifier] 写入自动标签失败: {}", e);
-                                } else {
-                                    log::info!(
-                                        "[ContentClassifier] 自动分类: {:?} → {}",
-                                        labels,
-                                        history_id
-                                    );
-                                    let _ = app_clone.emit(
-                                        "tags-updated",
-                                        serde_json::json!({
-                                            "history_id": history_id,
-                                            "tag_ids": tag_ids,
-                                        }),
-                                    );
-                                }
-                            }
-                        }
-                    }
-                });
-            }
+        // 自动标签写入：发送到 channel，单 worker 顺序消化（突发不丢）
+        if let Err(e) = tag_tx().send(TagJob {
+            app: app_handle.clone(),
+            history_id: item.id.clone(),
+            labels: labels.clone(),
+        }) {
+            log::warn!("[ContentClassifier] 标签写入通道已关闭: {}", e);
         }
 
         // 推送事件到前端
@@ -1068,13 +1084,25 @@ fn process_image(
         } else {
             dyn_img
         };
-        if let Err(e) = dyn_img.save(&img_path) {
+        // B-05：先写临时文件再原子 rename，防止崩溃/双 timer 触发时留下半文件
+        let tmp_path = img_path.with_extension("png.tmp");
+        if let Err(e) = dyn_img.save(&tmp_path) {
             // 修复 M4：保存失败即中止，不再插入指向不存在文件的历史记录
             log::error!(
                 "[ClipboardMonitor] 保存图片失败 ({}): {}，跳过本条记录",
+                tmp_path.display(),
+                e
+            );
+            return;
+        }
+        if let Err(e) = std::fs::rename(&tmp_path, &img_path) {
+            log::error!(
+                "[ClipboardMonitor] 重命名临时图片失败 ({} → {}): {}",
+                tmp_path.display(),
                 img_path.display(),
                 e
             );
+            let _ = std::fs::remove_file(&tmp_path);
             return;
         }
     }
@@ -1363,56 +1391,13 @@ fn run_polling_listener(
                             }
                         }
 
-                        // 自动标签写入（并发上限 M29）
-                        {
-                            const MAX_CLASSIFY_IN_FLIGHT: usize = 4;
-                            static CLASSIFY_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
-
-                            if CLASSIFY_IN_FLIGHT.load(Ordering::SeqCst) >= MAX_CLASSIFY_IN_FLIGHT
-                            {
-                                log::debug!("[ContentClassifier] 标签写入线程已达上限，跳过本条");
-                            } else {
-                                CLASSIFY_IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
-                                let history_id = item.id.clone();
-                                let app_clone = app_handle.clone();
-                                std::thread::spawn(move || {
-                                    struct DecOnDrop;
-                                    impl Drop for DecOnDrop {
-                                        fn drop(&mut self) {
-                                            CLASSIFY_IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
-                                        }
-                                    }
-                                    let _dec = DecOnDrop;
-
-                                    if let Some(store) = app_clone.try_state::<DataStore>() {
-                                        if let Ok(tag_ids) = store.resolve_auto_tag_ids(&labels) {
-                                            if !tag_ids.is_empty() {
-                                                if let Err(e) =
-                                                    store.add_history_tags(&history_id, &tag_ids)
-                                                {
-                                                    log::warn!(
-                                                        "[ContentClassifier] 写入自动标签失败: {}",
-                                                        e
-                                                    );
-                                                } else {
-                                                    log::info!(
-                                                        "[ContentClassifier] 自动分类: {:?} → {}",
-                                                        labels,
-                                                        history_id
-                                                    );
-                                                    let _ = app_clone.emit(
-                                                        "tags-updated",
-                                                        serde_json::json!({
-                                                            "history_id": history_id,
-                                                            "tag_ids": tag_ids,
-                                                        }),
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    }
-                                });
-                            }
+                        // 自动标签写入：发送到 channel，单 worker 顺序消化（突发不丢）
+                        if let Err(e) = tag_tx().send(TagJob {
+                            app: app_handle.clone(),
+                            history_id: item.id.clone(),
+                            labels: labels.clone(),
+                        }) {
+                            log::warn!("[ContentClassifier] 标签写入通道已关闭: {}", e);
                         }
 
                         if let Err(e) = app_handle.emit(

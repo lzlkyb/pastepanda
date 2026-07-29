@@ -14,7 +14,7 @@ describe("parseColumnList", () => {
     expect(info.ok).toBe(true);
     expect(info.count).toBe(3);
     expect(info.allNumeric).toBe(true);
-    expect(info.values).toEqual([1001, 1002, 1003]);
+    expect(info.values).toEqual(["1001", "1002", "1003"]);
   });
 
   it("parses a string column", () => {
@@ -198,7 +198,7 @@ describe("transform registry", () => {
   it("column-to-sql-in run outputs an IN clause", async () => {
     const r = await getTransform("column-to-sql-in")!.run("1\n2");
     expect(r.ok).toBe(true);
-    expect(r.output).toBe("IN (1, 2)");
+    expect(r.output).toBe("IN ('1', '2')");
   });
 
   it("json-insert run outputs an INSERT statement", async () => {

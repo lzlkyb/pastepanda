@@ -15,7 +15,7 @@ import { confirmAutoTags, removeItemTags, fetchTags } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 import { TagRow } from "@/components/TagBadge";
 import { logger } from "@/lib/logger";
-import { pasteText, togglePin, deleteHistory } from "@/lib/api";
+import { pasteText, togglePin, deleteHistory, copyImageOnly, copyFiles } from "@/lib/api";
 import { Pin, ImageIcon, Link2, AtSign, Code2, Phone, FileText, Terminal, Type, Check, Hash, Lock, Palette } from "lucide-react";
 import styles from "./CardList.module.css";
 
@@ -417,15 +417,11 @@ const CardHoverPopover = memo(function CardHoverPopover({
     e.preventDefault();
     try {
       if (item.type === "image" && item.content) {
-        const { getImageBase64, dataUrlToBlob } = await import("@/lib/api");
-        const dataUrl = await getImageBase64(item.content);
-        const blob = await dataUrlToBlob(dataUrl);
-        const mimeType = blob.type || "image/png";
-        await navigator.clipboard.write([new ClipboardItem({ [mimeType]: blob })]);
+        await copyImageOnly(item.content);
         toast("已复制", "success");
       } else if (item.type === "file" && item.content) {
-        await navigator.clipboard.writeText(item.content);
-        toast("已复制路径", "success");
+        await copyFiles([item.content]);
+        toast("已复制文件", "success");
       } else {
         await navigator.clipboard.writeText(item.text || "");
         toast("已复制", "success");
@@ -598,15 +594,11 @@ const InlineCardActions = memo(function InlineCardActions({
     e.preventDefault();
     try {
       if (item.type === "image" && item.content) {
-        const { getImageBase64, dataUrlToBlob } = await import("@/lib/api");
-        const dataUrl = await getImageBase64(item.content);
-        const blob = await dataUrlToBlob(dataUrl);
-        const mimeType = blob.type || "image/png";
-        await navigator.clipboard.write([new ClipboardItem({ [mimeType]: blob })]);
+        await copyImageOnly(item.content);
         toast("已复制", "success");
       } else if (item.type === "file" && item.content) {
-        await navigator.clipboard.writeText(item.content);
-        toast("已复制路径", "success");
+        await copyFiles([item.content]);
+        toast("已复制文件", "success");
       } else {
         await navigator.clipboard.writeText(item.text || "");
         toast("已复制", "success");
@@ -869,7 +861,20 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     onEditTags: onEditTags ? () => onEditTags(item) : undefined,
     onMoveToGroup: onMoveToGroup ? () => onMoveToGroup(item) : undefined,
     onCopy: async () => {
-      try { await navigator.clipboard.writeText(item.text); toast("已复制到剪贴板", "success"); } catch { toast("复制失败", "error"); }
+      try {
+        if (item.type === "image" && item.content) {
+          await copyImageOnly(item.content);
+          toast("已复制到剪贴板", "success");
+        } else if (item.type === "file" && item.content) {
+          await copyFiles([item.content]);
+          toast("已复制文件到剪贴板", "success");
+        } else {
+          await navigator.clipboard.writeText(item.text);
+          toast("已复制到剪贴板", "success");
+        }
+      } catch {
+        toast("复制失败", "error");
+      }
     },
     onPaste: async () => {
       // U1：仅粘贴成功时弹成功提示（pasteText 失败时已自行弹错误 toast）

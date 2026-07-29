@@ -438,10 +438,8 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
               <button className="btn-primary" style={{ padding: "6px 14px", fontSize: 12 }} onClick={async () => {
                 try {
-                  const dataUrl = await getImageBase64(previewContentRef.current!);
-                  const blob = await dataUrlToBlob(dataUrl);
-                  const mimeType = blob.type || "image/png";
-                  await navigator.clipboard.write([new ClipboardItem({ [mimeType]: blob })]);
+                  const { copyImageOnly } = await import("@/lib/api");
+                  await copyImageOnly(previewContentRef.current!);
                   toast("已复制", "success");
                 } catch { toast("复制失败", "error"); }
               }}><Copy size={14} /> 复制</button>

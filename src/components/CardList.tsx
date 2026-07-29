@@ -11,7 +11,7 @@ import { StackBanner } from "@/components/StackBanner";
 import { MdAssocBanner } from "@/components/MdAssocBanner";
 import { TagEditor } from "@/components/TagEditor";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { pasteText, pasteImage, getImageThumbnail, getImageBase64, dataUrlToBlob, deleteHistory } from "@/lib/api";
+import { pasteText, pasteImage, getImageThumbnail, copyImageOnly, deleteHistory } from "@/lib/api";
 import { getAllRules } from "@/lib/regexRules";
 import { ClipboardList, Copy, Search, Zap, CheckSquare, Square, FileDown, Trash2, GitCompare, FileX } from "lucide-react";
 import { Timeline } from "@/components/Timeline";
@@ -430,10 +430,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
       if (action === "copy") {
         setPastingId(item.id);
         try {
-          const dataUrl = await getImageBase64(item.content);
-          const blob = await dataUrlToBlob(dataUrl);
-          const mimeType = blob.type || "image/png";
-          await navigator.clipboard.write([new ClipboardItem({ [mimeType]: blob })]);
+          await copyImageOnly(item.content);
           toast("图片已复制", "success");
         } catch {
           toast("复制图片失败", "error");

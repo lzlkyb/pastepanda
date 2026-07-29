@@ -8,6 +8,12 @@ import {
 } from "@/lib/utils";
 import { resolveSource } from "@/lib/source-mappings";
 
+/** 格式化本地时间为 "YYYY-MM-DD HH:mm:ss"（与 Rust chrono::Local 写入格式一致） */
+function fmtLocal(d: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 // ============================================================
 // cleanSourceName
 // ============================================================
@@ -118,21 +124,21 @@ describe("truncate — 扩展", () => {
 describe("relativeTime — 扩展", () => {
   it("returns hours ago", () => {
     const d = new Date(Date.now() - 3 * 3600 * 1000);
-    const date = d.toISOString().replace("T", " ").slice(0, 19);
+    const date = fmtLocal(d);
     const result = relativeTime(date);
     expect(result).toMatch(/小时前/);
   });
 
   it('returns "昨天" for yesterday', () => {
     const d = new Date(Date.now() - 25 * 3600 * 1000);
-    const date = d.toISOString().replace("T", " ").slice(0, 19);
+    const date = fmtLocal(d);
     expect(relativeTime(date)).toBe("昨天");
   });
 
   it("returns weekday format for older dates (>= 7 days)", () => {
     // 8天前：diffDay >= 7，进入月日 周X 格式
     const d = new Date(Date.now() - 8 * 86400000);
-    const date = d.toISOString().replace("T", " ").slice(0, 19);
+    const date = fmtLocal(d);
     const result = relativeTime(date);
     expect(result).toMatch(/月\d+日 周[一二三四五六日]/);
   });

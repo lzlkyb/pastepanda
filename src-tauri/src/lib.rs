@@ -405,6 +405,8 @@ pub fn run() {
             commands::paste_text,
             commands::paste_image,
             commands::copy_only,
+            commands::copy_image_only,
+            commands::copy_files,
             commands::save_foreground,
             commands::toggle_window,
             commands::exit_app,

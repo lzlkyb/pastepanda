@@ -14,6 +14,12 @@ function makeItem(overrides: Partial<HistoryItem> & { id: string; text: string }
   };
 }
 
+/** 格式化本地时间为 "YYYY-MM-DD HH:mm:ss"（与 Rust chrono::Local 写入格式一致） */
+function fmtLocal(d: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 describe("appStore — 扩展测试", () => {
   beforeEach(() => {
     useAppStore.setState({
@@ -82,11 +88,8 @@ describe("appStore — 扩展测试", () => {
 
   it("timeFilter filters items by today", () => {
     const store = useAppStore.getState();
-    const today = new Date().toISOString().replace("T", " ").slice(0, 19);
-    const yesterday = new Date(Date.now() - 86400000)
-      .toISOString()
-      .replace("T", " ")
-      .slice(0, 19);
+    const today = fmtLocal();
+    const yesterday = fmtLocal(new Date(Date.now() - 86400000));
 
     store.setHistory([
       makeItem({ id: "1", text: "Today", time: today }),
@@ -101,11 +104,8 @@ describe("appStore — 扩展测试", () => {
 
   it("timeFilter filters items by week", () => {
     const store = useAppStore.getState();
-    const recent = new Date().toISOString().replace("T", " ").slice(0, 19);
-    const oldDate = new Date(Date.now() - 10 * 86400000)
-      .toISOString()
-      .replace("T", " ")
-      .slice(0, 19);
+    const recent = fmtLocal();
+    const oldDate = fmtLocal(new Date(Date.now() - 10 * 86400000));
 
     store.setHistory([
       makeItem({ id: "1", text: "Recent", time: recent }),
@@ -464,11 +464,8 @@ describe("appStore — 扩展测试", () => {
 
   it("filterType + timeFilter 组合筛选", () => {
     const store = useAppStore.getState();
-    const recent = new Date().toISOString().replace("T", " ").slice(0, 19);
-    const oldDate = new Date(Date.now() - 10 * 86400000)
-      .toISOString()
-      .replace("T", " ")
-      .slice(0, 19);
+    const recent = fmtLocal();
+    const oldDate = fmtLocal(new Date(Date.now() - 10 * 86400000));
 
     store.setHistory([
       makeItem({ id: "1", text: "Recent text", type: "text", time: recent }),
@@ -526,7 +523,7 @@ describe("appStore — 扩展测试", () => {
 
   it("全部筛选条件同时生效（searchKeyword + filterType + timeFilter + sourceFilter + groupFilter + selectedTagIds）", () => {
     const store = useAppStore.getState();
-    const recent = new Date().toISOString().replace("T", " ").slice(0, 19);
+    const recent = fmtLocal();
 
     store.setHistory([
       makeItem({

@@ -361,7 +361,11 @@ impl ContentClassifier {
                     if let Some(pos) = line.find("//") {
                         let before = &line[..pos];
                         // 确保 // 不在字符串内（简单检测）
-                        if before.matches('"').count() % 2 == 0 {
+                        // 扣除转义引号 \"，避免 {"url": "\"// x"} 误判为注释
+                        // 局限：\\" 边界（转义反斜杠+真引号）仍可能误判，实际 JSON 配置极罕见
+                        let quote_count = before.matches('"').count()
+                            .saturating_sub(before.matches("\\\"").count());
+                        if quote_count % 2 == 0 {
                             before
                         } else {
                             line
@@ -1087,6 +1091,13 @@ mod tests {
     #[test]
     fn test_jsonc_with_comments() {
         let r = classify("{\n  // this is a comment\n  \"name\": \"test\",\n  \"value\": 42\n}");
+        assert!(r.contains(&"JSON".to_string()));
+    }
+
+    #[test]
+    fn test_jsonc_escaped_quote_before_slashes() {
+        // B-03：转义引号 \" 后紧跟 // 不应被误判为注释
+        let r = classify(r#"{"a": "\"// x"}"#);
         assert!(r.contains(&"JSON".to_string()));
     }
 

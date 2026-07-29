@@ -11,7 +11,7 @@ export interface ColumnListInfo {
   ok: boolean;
   /** 值的行数 */
   count: number;
-  /** 解析出的值：全数字时为 number[]，否则为 string[] */
+  /** 解析出的值：一律保持文本（string[]），是否加引号由下游 SQL 选项决定 */
   values: unknown[];
   /** 是否全为数字 */
   allNumeric: boolean;
@@ -25,7 +25,8 @@ const MIN_COLUMN_LINES = 2;
  * 判定规则：
  * - 去掉空行后行数 ≥ MIN_COLUMN_LINES；
  * - 每行都是"单个值"：不含内部空白、不以 { 或 [ 开头（排除 JSON / 句子）。
- * 全行为数字时输出 number[]，否则原样输出 string[]。
+ * 值一律保持文本输出（string[]）：列数据来源是文本（Excel / 查询结果单元格），
+ * 提前转 number 会让 SQL IN 的引号选项对数字列失效，还会丢前导零与超 2^53 精度。
  */
 export function parseColumnList(text: string): ColumnListInfo {
   const fail: ColumnListInfo = { ok: false, count: 0, values: [], allNumeric: false };
@@ -45,10 +46,10 @@ export function parseColumnList(text: string): ColumnListInfo {
   );
   if (!simple) return fail;
 
+  // allNumeric 仅供检测评分使用；values 保持文本，引号交给下游 toSqlIn 的 quote 选项
   const allNumeric = lines.every((l) => l !== "" && Number.isFinite(Number(l)));
-  const values: unknown[] = allNumeric ? lines.map((l) => Number(l)) : lines;
 
-  return { ok: true, count: lines.length, values, allNumeric };
+  return { ok: true, count: lines.length, values: lines, allNumeric };
 }
 
 /** 便捷布尔判断 */

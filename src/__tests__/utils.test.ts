@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { relativeTime, truncate, cn } from "@/lib/utils";
 
+/** 格式化本地时间为 "YYYY-MM-DD HH:mm:ss"（与 Rust chrono::Local 写入格式一致） */
+function fmtLocal(d: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 describe("relativeTime", () => {
   it("returns empty string for empty input", () => {
     expect(relativeTime("")).toBe("");
@@ -24,7 +30,7 @@ describe("relativeTime", () => {
 
   it("handles future date gracefully", () => {
     const d = new Date(Date.now() + 3600 * 1000);
-    const date = d.toISOString().replace("T", " ").slice(0, 19);
+    const date = fmtLocal(d);
     expect(() => relativeTime(date)).not.toThrow();
   });
 });
