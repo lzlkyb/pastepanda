@@ -13,8 +13,14 @@ export interface SourceMeta {
   icon: string;
   /** 颜色（用于侧边栏圆点等） */
   color?: string;
-  /** 匹配别名（用于模糊匹配原始 source） */
+  /** 匹配别名（用于模糊匹配原始 source，子串包含匹配） */
   aliases?: string[];
+  /**
+   * 精确匹配别名：要求清洗后的应用名与该别名完全相等（大小写不敏感），而非子串包含。
+   * 用于“Code”这类过于宽泛、容易被子串误匹配的短别名（Xcode/Codecademy/CodePen/QR Code 都会命中普通子串匹配，
+   * 但不会与它们完全相等）
+   */
+  exactAliases?: string[];
   /** 清洗规则：正则匹配原始 source，返回该 displayName */
   matchPatterns?: RegExp[];
 }
@@ -27,8 +33,12 @@ export const SOURCE_MAP: SourceMeta[] = [
     displayName: "VS Code",
     icon: "💻",
     color: "#3B82F6",
-    aliases: ["Visual Studio Code", "Code", "code", "vscode", "CodeBuddy"],
-    matchPatterns: [/Visual Studio Code/i, /vscode/i, /CodeBuddy/i],
+    // "Code"/"code" 作为泛英文词汇过于宽泛，不能用子串包含匹配（会误中 Xcode/Codecademy/CodePen/QR Code），
+    // 改用 exactAliases 要求应用名与它完全相等（仅匹配窗口标题确实就叫 "Code" 的真实 VS Code 窗口）
+    // "VS Code" 是两个词的具体名称，子串匹配不会误中 Xcode/CodePen 这类，必须保留（它是真实最常见的应用名）
+    aliases: ["Visual Studio Code", "VS Code", "vscode", "CodeBuddy"],
+    exactAliases: ["Code"],
+    matchPatterns: [/Visual Studio Code/i, /VS ?Code/i, /vscode/i, /CodeBuddy/i],
   },
   {
     displayName: "Chrome",
@@ -303,9 +313,13 @@ export function resolveSource(raw: string): { displayName: string; icon: string;
   const dash = raw.lastIndexOf(" — ");
   const appName = dash > 0 ? raw.slice(dash + 3).trim() : raw;
 
-  // 3. 用提取后的应用名模糊匹配 aliases
+  // 3. 用提取后的应用名模糊匹配 aliases（先走 exactAliases 全等匹配，再走 aliases 子串包含匹配）
   const lower = appName.toLowerCase();
   for (const entry of SOURCE_MAP) {
+    // 精确别名优先：避免 "Code" 这类过宽短别名用子串包含误中 Xcode/CodePen/QR Code 等无关应用
+    if (entry.exactAliases?.some((a) => lower === a.toLowerCase())) {
+      return { displayName: appName.length > 18 ? appName.slice(0, 17) + "…" : appName, icon: entry.icon, color: entry.color };
+    }
     if (entry.aliases) {
       for (const alias of entry.aliases) {
         if (lower.includes(alias.toLowerCase())) {

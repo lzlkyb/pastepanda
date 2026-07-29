@@ -23,8 +23,9 @@
   font-family: inherit;
 }
 
+/* 白字压 --accent 对比度不足 4.5:1，实心激活态背景改用加深版 --accent-solid */
 .extractTypeBtn.active {
-  background: var(--accent);
+  background: var(--accent-solid);
   color: #fff;
   box-shadow: 0 2px 8px var(--accent-shadow);
 }
@@ -83,13 +84,15 @@
 }
 
 .extractBtnSm.primaryLight {
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   background: var(--accent-light);
 }
 
+/* 白字压 --accent 对比度不足 4.5:1，实心主按钮背景改用加深版 --accent-solid */
 .extractBtnSm.primary {
   color: #fff;
-  background: var(--accent);
+  background: var(--accent-solid);
 }
 
 .extractBtnSm.ghost {
@@ -176,7 +179,8 @@
   color: var(--text-primary);
 }
 .extractItemActionBtn.copy:hover {
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   background: var(--accent-light);
 }
 .extractItemActionBtn.save:hover {
@@ -236,8 +240,9 @@
   border-color: var(--accent);
   color: var(--accent);
 }
+/* 白字压 --accent 对比度不足 4.5:1，实心主按钮背景改用加深版 --accent-solid */
 .btnSmV2.primary {
-  background: var(--accent);
+  background: var(--accent-solid);
   color: #fff;
 }
 .btnSmV2.primary:hover {
@@ -258,7 +263,8 @@
 }
 .btnSmV2.outline.active {
   background: var(--accent-light);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   border-color: var(--accent);
 }
 

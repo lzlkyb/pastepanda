@@ -103,7 +103,8 @@
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，数字徽章背景改用加深版 --accent-solid */
+  background: var(--accent-solid);
   color: #fff;
   font-size: 10px;
   font-weight: 700;

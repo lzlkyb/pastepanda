@@ -84,7 +84,8 @@
   font-weight: 600;
   border: none;
   cursor: pointer;
-  background: linear-gradient(135deg, var(--accent), #2563EB);
+  /* 白字压 --accent 对比度不足 4.5:1，渐变起始色改用加深版 --accent-solid */
+  background: linear-gradient(135deg, var(--accent-solid), #2563EB);
   color: #fff;
   box-shadow: 0 2px 8px var(--accent-shadow);
   transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;

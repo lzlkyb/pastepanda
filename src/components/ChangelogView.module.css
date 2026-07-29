@@ -39,7 +39,8 @@
 }
 
 .versionBadgeCurrent {
-  background: var(--version-badge-gradient, linear-gradient(135deg, var(--accent), var(--accent)));
+  /* 白字压 --accent 对比度不足 4.5:1，版本徽章背景回退值改用加深版 --accent-solid */
+  background: var(--version-badge-gradient, linear-gradient(135deg, var(--accent-solid), var(--accent-solid)));
   color: #fff;
   padding: 3px 10px;
   border-radius: 8px;

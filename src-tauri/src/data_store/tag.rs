@@ -25,6 +25,14 @@ impl DataStore {
     }
 
     pub fn create_tag(&self, name: &str, color: &str) -> Result<Tag, String> {
+        // 校验标签名：trim 后非空，最长 50 个字符（用 chars().count() 数字符数而非字节数，避免中文被误判）
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err("标签名不能为空".to_string());
+        }
+        if trimmed.chars().count() > 50 {
+            return Err("标签名最长 50 个字符".to_string());
+        }
         let conn = self.lock_conn();
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
@@ -43,6 +51,14 @@ impl DataStore {
     }
 
     pub fn update_tag(&self, id: &str, name: &str, color: &str) -> Result<(), String> {
+        // 校验标签名：trim 后非空，最长 50 个字符
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err("标签名不能为空".to_string());
+        }
+        if trimmed.chars().count() > 50 {
+            return Err("标签名最长 50 个字符".to_string());
+        }
         let conn = self.lock_conn();
         let affected = conn
             .execute(
@@ -58,7 +74,8 @@ impl DataStore {
 
     pub fn delete_tag(&self, id: &str) -> Result<(), String> {
         let conn = self.lock_conn();
-        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        // 改用 RAII 事务：手写 COMMIT 失败时不会 ROLLBACK，会让事务永久挂在共享连接上，Drop 自动 ROLLBACK 可避免
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         let result = (|| -> Result<(), String> {
             conn.execute("DELETE FROM history_tags WHERE tag_id = ?1", params![id])
                 .map_err(|e| e.to_string())?;
@@ -68,11 +85,11 @@ impl DataStore {
         })();
         match result {
             Ok(()) => {
-                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                tx.commit().map_err(|e| e.to_string())?;
                 Ok(())
             }
             Err(e) => {
-                conn.execute_batch("ROLLBACK;").ok();
+                // tx 在此处离开作用域自动 ROLLBACK，无需手动调用
                 Err(e)
             }
         }
@@ -80,7 +97,8 @@ impl DataStore {
 
     pub fn set_item_tags(&self, history_id: &str, tag_ids: &[String]) -> Result<(), String> {
         let conn = self.lock_conn();
-        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        // 改用 RAII 事务：COMMIT 失败不回滚会让事务永久卡在共享连接上，Transaction drop 时自动 ROLLBACK 可避免
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         let result = (|| -> Result<(), String> {
             // 先删除旧关联
             conn.execute(
@@ -100,11 +118,11 @@ impl DataStore {
         })();
         match result {
             Ok(()) => {
-                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                tx.commit().map_err(|e| e.to_string())?;
                 Ok(())
             }
             Err(e) => {
-                conn.execute_batch("ROLLBACK;").ok();
+                // tx 在此处离开作用域自动 ROLLBACK
                 Err(e)
             }
         }
@@ -112,7 +130,8 @@ impl DataStore {
 
     pub fn add_item_tags(&self, history_ids: &[String], tag_ids: &[String]) -> Result<u32, String> {
         let conn = self.lock_conn();
-        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        // 改用 RAII 事务：手写 COMMIT 失败时不回滚，会让事务永久挂在共享连接上，drop 时自动 ROLLBACK 可避免
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         let result = (|| -> Result<u32, String> {
             let mut count = 0u32;
             for history_id in history_ids {
@@ -130,11 +149,11 @@ impl DataStore {
         })();
         match result {
             Ok(count) => {
-                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                tx.commit().map_err(|e| e.to_string())?;
                 Ok(count)
             }
             Err(e) => {
-                conn.execute_batch("ROLLBACK;").ok();
+                // tx 在此处离开作用域自动 ROLLBACK
                 Err(e)
             }
         }
@@ -271,8 +290,11 @@ impl DataStore {
         let conn = self.lock_conn();
         let mut ids = Vec::new();
         for label in labels {
+            // U-P0.6：不再限定 source='auto' —— tags.name 有 UNIQUE 约束，若用户提前手动建了
+            // 与种子同名的标签，ensure_auto_tags 的 INSERT OR IGNORE 会因名称冲突而不写入
+            // 该种子行，导致按 name+source='auto' 永远查不到。按 name 全局查找即可安全复用同一行。
             let result: Result<String, _> = conn.query_row(
-                "SELECT id FROM tags WHERE name = ?1 AND source = 'auto'",
+                "SELECT id FROM tags WHERE name = ?1",
                 params![label],
                 |row| row.get(0),
             );
@@ -289,7 +311,8 @@ impl DataStore {
             return Ok(());
         }
         let conn = self.lock_conn();
-        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        // 改用 RAII 事务：COMMIT 失败时不回滚会导致事务永久挂在共享连接上，Transaction drop 时自动 ROLLBACK 可避免
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         let result = (|| -> Result<(), String> {
             for tag_id in tag_ids {
                 conn.execute(
@@ -302,11 +325,11 @@ impl DataStore {
         })();
         match result {
             Ok(()) => {
-                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                tx.commit().map_err(|e| e.to_string())?;
                 Ok(())
             }
             Err(e) => {
-                conn.execute_batch("ROLLBACK;").ok();
+                // tx 在此处离开作用域自动 ROLLBACK
                 Err(e)
             }
         }

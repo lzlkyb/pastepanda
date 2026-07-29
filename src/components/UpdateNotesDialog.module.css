@@ -96,7 +96,8 @@
   font-weight: 800;
   letter-spacing: 0.6px;
   color: #fff;
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，NEW 徽章背景改用加深版 --accent-solid */
+  background: var(--accent-solid);
   padding: 2px 6px;
   border-radius: 4px;
   transition: background 0.3s;
@@ -144,9 +145,10 @@
   color: var(--accent);
 }
 
+/* 白字压 --accent 对比度不足 4.5:1，筛选 chip 激活态背景改用加深版 --accent-solid */
 .chipActive,
 .chipActive:hover {
-  background: var(--accent);
+  background: var(--accent-solid);
   border-color: var(--accent);
   color: #fff;
 }

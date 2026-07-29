@@ -214,7 +214,8 @@
   padding: 0 14px;
   border-radius: 8px;
   border: none;
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，实心主按钮背景改用加深版 --accent-solid */
+  background: var(--accent-solid);
   color: #fff;
   font-size: 12px;
   font-weight: 600;
@@ -266,7 +267,8 @@
   padding: 0 18px;
   border-radius: 8px;
   border: none;
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，实心主按钮背景改用加深版 --accent-solid */
+  background: var(--accent-solid);
   color: #fff;
   font-size: 12px;
   font-weight: 600;

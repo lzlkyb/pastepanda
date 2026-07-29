@@ -199,7 +199,8 @@
 
 .themeBtn.active {
   background: var(--accent-light);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   border-color: var(--accent);
 }
 
@@ -232,7 +233,8 @@
 
 .hotkeyInput.recording {
   background: var(--accent-light);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-shadow);
 }
@@ -274,7 +276,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，实心主按钮背景改用加深版 --accent-solid */
+  background: var(--accent-solid);
   color: #fff;
   border: none;
   transition: all 0.15s;
@@ -916,12 +919,14 @@
 .sKbd:hover {
   border-color: var(--accent);
   background: var(--accent-light);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
 }
 .sKbd.recording {
   border-color: var(--accent);
   background: var(--accent-light);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   box-shadow: 0 0 0 2px var(--accent-shadow);
 }
 
@@ -951,7 +956,8 @@
 .sVal {
   font-size: 12px;
   font-weight: 600;
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   padding: 3px 8px;
   background: var(--accent-light);
   border-radius: 6px;
@@ -981,7 +987,8 @@
 }
 .sAction:hover {
   border-color: var(--accent);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   background: var(--accent-light);
 }
 .sAction:disabled {
@@ -1024,7 +1031,8 @@
 }
 .sCleanupOpt.active {
   background: var(--accent-light);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   border-color: var(--accent);
 }
 .sCleanupOpt:not(.active):hover {
@@ -1078,8 +1086,9 @@
   bottom: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
-  background: var(--text-primary);
-  color: #fff;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
   font-size: 11px;
   padding: 3px 8px;
   border-radius: 4px;
@@ -1120,7 +1129,8 @@
   padding: 0 16px;
   border-radius: 8px;
   border: none;
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，实心主按钮背景改用加深版 --accent-solid */
+  background: var(--accent-solid);
   color: #fff;
   font-size: 12px;
   font-weight: 700;

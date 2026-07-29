@@ -1,5 +1,22 @@
 /* globals.css — 全局基础样式 */
 
+/* ===== 0. 图层令牌（z-index 统一刻度）=====
+ * 全局图层一律使用 var(--z-*)，禁止魔法数字。原定义在 app.css，
+ * 但 editor-main.tsx/popup-main.tsx 两个独立窗口不加载 app.css、只加载本文件，
+ * 移到这里三个入口才能共同生效。 */
+:root {
+  --z-base: 0;        /* 基础内容 */
+  --z-raised: 100;    /* 内容内抬升：吸顶栏、来源徽章、收集横幅 */
+  --z-floating: 200;  /* 内容内浮动：BackToTop、FAB、时间轴、悬停预览 */
+  --z-context: 300;   /* 右键菜单（卡片 + 侧边栏） */
+  --z-modal: 400;     /* 普通模态：设置/提取/片段/编辑器壳/图片预览/标签编辑/移动分组/快捷键面板 */
+  --z-modal-top: 500; /* 高优先级模态：快速预览 QuickPreview、更新说明 UpdateNotes */
+  --z-confirm: 600;   /* 嵌套确认框 ConfirmDialog（从设置/片段弹出，须压过父弹框） */
+  --z-tooltip: 700;   /* 帮助提示 HelpTooltip */
+  --z-toast: 800;     /* Toast 通知（最高层） */
+  --z-fullscreen: 900;/* 全屏编辑器（独立窗口，象征性对齐） */
+}
+
 /* ===== 全局基础 ===== */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -21,7 +38,8 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 99px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-::selection { background-color: var(--accent-light); color: var(--accent); }
+/* 选中文字前景色压在 accent-light 选中底上，浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+::selection { background-color: var(--accent-light); color: var(--accent-strong); }
 
 img { -webkit-user-drag: none; user-select: none; }
 
@@ -42,4 +60,14 @@ img { -webkit-user-drag: none; user-select: none; }
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ===== 键盘导航焦点兜底 =====
+ * app.css 里的焦点样式用的是 kebab-case 类名（.icon-btn/.seg-item 等），组件早已
+ * 迁到 CSS Modules 的 hash 类名，匹配不到，导致全应用键盘 Tab 导航基本没有焦点指示。
+ * 这里用零特异性 :where() 兜底，不与既有具体选择器打分冲突，可被任意规则覆盖。 */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: inherit;
 }

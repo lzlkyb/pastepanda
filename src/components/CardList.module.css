@@ -305,7 +305,8 @@
   font-size: 9.5px;
   font-weight: 700;
   background: var(--accent-light);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
 }
 
 /* 图片缩略图 */
@@ -411,7 +412,8 @@
   font-size: 10px;
   font-weight: 600;
   background: var(--accent-light);
-  color: var(--accent);
+  /* 置顶徽标：accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
 }
 
 .cardSource {
@@ -433,7 +435,8 @@
   gap: 3px;
   font-size: 10px;
   font-weight: 600;
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   background: var(--accent-light);
   padding: 1px 6px;
   border-radius: 4px;
@@ -506,12 +509,14 @@
 }
 
 .cardInlineBtnCopy {
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   background: var(--accent-light);
   border: 1px solid var(--accent);
 }
 .cardInlineBtnCopy:hover {
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，hover 实心背景改用加深版 --accent-solid */
+  background: var(--accent-solid);
   color: #fff;
 }
 
@@ -547,7 +552,8 @@
 .batchToolbarLabel {
   font-size: 12px;
   font-weight: 600;
-  color: var(--accent);
+  /* accent 压 .batchToolbar 的 accent-light 底，浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   flex: 1;
 }
 .batchBtn {
@@ -598,7 +604,8 @@
   padding: 2px 10px; cursor: pointer; font-family: inherit;
   transition: all 0.15s;
 }
-.loadMoreRetryBtn:hover { background: var(--accent-light); }
+/* hover 态下继承基础色 accent 的文字压在 accent-light 底上，浅色主题下对比度不足 4.5:1，补充加深版 --accent-strong */
+.loadMoreRetryBtn:hover { background: var(--accent-light); color: var(--accent-strong); }
 
 /* ===== 空状态（卡片列表内的空状态） ===== */
 .emptyState {
@@ -717,7 +724,8 @@
   border-radius: 10px;
   background: var(--accent-light);
   font-size: 12px;
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   font-weight: 500;
 }
 .guideWelcomeEmoji {
@@ -977,7 +985,8 @@
 .cardPopoverBtn:hover {
   background: var(--accent-light);
   border-color: var(--accent);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
 }
 .cardPopoverBtn:active { transform: scale(0.95); }
 .cardPopoverBtnFav:hover {
@@ -1018,7 +1027,8 @@
   font-variant-numeric: tabular-nums;
 }
 .imageDetailTagAccent {
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   background: var(--accent-light);
 }
 
@@ -1230,7 +1240,8 @@
   padding: 4px 10px;
   border-radius: 5px;
   border: none;
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，实心主按钮背景改用加深版 --accent-solid */
+  background: var(--accent-solid);
   color: #fff;
   cursor: pointer;
   font-weight: 500;
@@ -1285,7 +1296,7 @@
   word-break: break-word;
   max-height: 120px;
   overflow-y: auto;
-  background: #fffbeb;
+  background: var(--orange-bg);
   user-select: text;
 }
 
@@ -1339,7 +1350,8 @@
   color: var(--text-primary);
 }
 .imageExportSegBtnActive {
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，实心激活态背景改用加深版 --accent-solid */
+  background: var(--accent-solid);
   color: #fff;
   box-shadow: 0 1px 4px rgba(0,120,212,0.25);
 }
@@ -1377,7 +1389,8 @@
   padding: 6px 14px;
   border-radius: 8px;
   border: none;
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，实心主按钮背景改用加深版 --accent-solid */
+  background: var(--accent-solid);
   color: #fff;
   cursor: pointer;
   transition: all 0.15s;
@@ -1394,7 +1407,8 @@
 
 /* ===== 图片裁剪（③）===== */
 .imageDetailToolBtnActive {
-  background: var(--accent) !important;
+  /* 白字压 --accent 对比度不足 4.5:1，实心激活态背景改用加深版 --accent-solid */
+  background: var(--accent-solid) !important;
   color: #fff !important;
   box-shadow: 0 2px 8px rgba(0,120,212,0.3);
 }
@@ -1472,7 +1486,7 @@
   padding: 6px 10px;
   border-radius: 8px;
   border: 1px solid var(--border-color);
-  background: rgba(255,255,255,0.9);
+  background: var(--card-bg);
   backdrop-filter: blur(6px);
   color: var(--text-primary);
   cursor: pointer;
@@ -1483,7 +1497,7 @@
   transition: all 0.15s;
 }
 .cropRestoreBtn:hover {
-  background: #fff;
+  background: var(--hover);
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -1510,7 +1524,8 @@
   padding: 6px 14px;
   border-radius: 8px;
   border: none;
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，实心主按钮背景改用加深版 --accent-solid */
+  background: var(--accent-solid);
   color: #fff;
   cursor: pointer;
   font-family: inherit;

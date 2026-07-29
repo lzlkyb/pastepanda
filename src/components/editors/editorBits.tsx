@@ -125,7 +125,8 @@ export function ToolBtn({ icon, label, onClick, accent }: { icon: React.ReactNod
       display: "flex", alignItems: "center", gap: 4, padding: "4px 8px", borderRadius: 6,
       border: `1px solid ${accent ? "var(--accent)" : "var(--border-color)"}`,
       background: accent ? "var(--accent-light)" : "var(--card-bg)",
-      color: accent ? "var(--accent)" : "var(--text-secondary)",
+      // accent 模式下 accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong
+      color: accent ? "var(--accent-strong)" : "var(--text-secondary)",
       fontSize: 11, fontWeight: 600, cursor: "pointer",
       fontFamily: "inherit", transition: "all 0.15s",
     }}
@@ -147,7 +148,8 @@ export function ActionBtn({ icon, label, onClick }: { icon: React.ReactNode; lab
       color: "var(--text-secondary)", fontSize: 11, fontWeight: 600, cursor: "pointer",
       fontFamily: "inherit", transition: "all 0.15s",
     }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent-light)"; e.currentTarget.style.color = "var(--accent)"; e.currentTarget.style.borderColor = "var(--accent)"; }}
+      // hover 态 accent 文字压在 accent-light 底上，浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong
+      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent-light)"; e.currentTarget.style.color = "var(--accent-strong)"; e.currentTarget.style.borderColor = "var(--accent)"; }}
       onMouseLeave={(e) => { e.currentTarget.style.background = "var(--card-bg)"; e.currentTarget.style.color = "var(--text-secondary)"; e.currentTarget.style.borderColor = "var(--border-color)"; }}>
       {icon}{label}
     </button>

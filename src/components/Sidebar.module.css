@@ -89,7 +89,8 @@
 
 .item.active {
   background: var(--accent-light);
-  color: var(--accent);
+  /* 侧边栏选中项：accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   font-weight: 600;
 }
 
@@ -156,7 +157,8 @@
 }
 
 .item.active .count {
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   background: var(--accent-light);
   border-color: transparent;
 }
@@ -199,7 +201,8 @@
 
 .addGroupBtn:hover {
   opacity: 1;
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   background: var(--accent-light);
 }
 
@@ -314,7 +317,8 @@
   height: 20px;
   border-radius: 50%;
   border: none;
-  background: var(--accent);
+  /* 白字（✓）压 --accent 对比度不足 4.5:1，确认按钮背景改用加深版 --accent-solid */
+  background: var(--accent-solid);
   color: #fff;
   cursor: pointer;
   font-size: 11px;

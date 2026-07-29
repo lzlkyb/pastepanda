@@ -10,7 +10,7 @@
   align-items: center;
   gap: 6px;
   padding: 7px 14px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--section-bg);
   color: var(--text-primary);
@@ -26,7 +26,7 @@
 .fileList {
   max-height: 180px;
   overflow-y: auto;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 4px;
 }
@@ -57,7 +57,8 @@
   padding: 2px 8px;
   border-radius: 10px;
   background: var(--accent-light);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   font-size: 11px;
   font-weight: 600;
 }
@@ -77,7 +78,7 @@
 .select {
   flex: 1;
   padding: 7px 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--section-bg);
   color: var(--text-primary);
@@ -107,7 +108,8 @@
   padding: 10px;
   border: none;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-dark, #0369A1));
+  /* 白字压 --accent 对比度不足 4.5:1，渐变起始色改用加深版 --accent-solid */
+  background: linear-gradient(135deg, var(--accent-solid), var(--accent-dark, #0369A1));
   color: #fff;
   font-size: 13px;
   font-weight: 600;
@@ -133,7 +135,7 @@
 .results {
   max-height: 150px;
   overflow-y: auto;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 4px;
 }

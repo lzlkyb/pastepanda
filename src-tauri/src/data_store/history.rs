@@ -348,7 +348,8 @@ impl DataStore {
     pub fn delete_history(&self, ids: &[String]) -> Result<u32, String> {
         let conn = self.lock_conn();
         // 显式事务：批量删除要么全成功要么全回滚
-        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        // 改用 RAII 事务：手写 COMMIT 失败时不会 ROLLBACK，会让事务永久挂在共享连接上，drop 时自动 ROLLBACK 可避免
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         let result = (|| {
             let placeholders: Vec<String> = ids
                 .iter()
@@ -370,11 +371,11 @@ impl DataStore {
         })();
         match result {
             Ok(count) => {
-                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                tx.commit().map_err(|e| e.to_string())?;
                 Ok(count)
             }
             Err(e) => {
-                conn.execute_batch("ROLLBACK;").ok();
+                // tx 在此处离开作用域自动 ROLLBACK，无需手动调用
                 Err(e)
             }
         }
@@ -460,18 +461,19 @@ impl DataStore {
         let cutoff_str = cutoff.format("%Y-%m-%d %H:%M:%S").to_string();
 
         // 显式事务：批量清理要么全成功要么全回滚
-        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        // 改用 RAII 事务：COMMIT 失败不回滚会导致事务永久挂在共享连接上，Transaction drop 时自动 ROLLBACK 可避免
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         let result = conn.execute(
             "DELETE FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2",
             params![workspace, cutoff_str],
         );
         match result {
             Ok(count) => {
-                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                tx.commit().map_err(|e| e.to_string())?;
                 Ok(count as u32)
             }
             Err(e) => {
-                conn.execute_batch("ROLLBACK;").ok();
+                // tx 在此处离开作用域自动 ROLLBACK
                 Err(e.to_string())
             }
         }
@@ -575,18 +577,19 @@ impl DataStore {
         }
 
         // 3. 事务删除
-        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        // 改用 RAII 事务：手写 COMMIT 失败不回滚会让事务永久挂在共享连接上，drop 时自动 ROLLBACK 可避免
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         let result = conn.execute(
             "DELETE FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2",
             params![workspace, cutoff_str],
         );
         match result {
             Ok(count) => {
-                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                tx.commit().map_err(|e| e.to_string())?;
                 Ok((count as u32, items))
             }
             Err(e) => {
-                conn.execute_batch("ROLLBACK;").ok();
+                // tx 在此处离开作用域自动 ROLLBACK
                 Err(e.to_string())
             }
         }
@@ -739,15 +742,16 @@ impl DataStore {
 
         // 3. 事务删除（与读取使用完全相同的 WHERE，保证一致性）
         let delete_sql = format!("DELETE FROM history{}", where_clause);
-        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        // 改用 RAII 事务：COMMIT 失败时不回滚会让事务永久挂在共享连接上，Transaction drop 时自动 ROLLBACK 可避免
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         let result = conn.execute(&delete_sql, param_refs.as_slice());
         match result {
             Ok(count) => {
-                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                tx.commit().map_err(|e| e.to_string())?;
                 Ok((count as u32, items))
             }
             Err(e) => {
-                conn.execute_batch("ROLLBACK;").ok();
+                // tx 在此处离开作用域自动 ROLLBACK
                 Err(e.to_string())
             }
         }
@@ -901,7 +905,8 @@ impl DataStore {
         let conn = self.lock_conn();
 
         // 显式事务：批量导入要么全成功要么全回滚
-        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        // 改用 RAII 事务：手写 COMMIT 失败时不回滚，会让事务永久挂在共享连接上，drop 时自动 ROLLBACK 可避免
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
 
         let result = (|| -> Result<u32, String> {
             let mut count = 0u32;
@@ -934,11 +939,11 @@ impl DataStore {
 
         match result {
             Ok(count) => {
-                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                tx.commit().map_err(|e| e.to_string())?;
                 Ok(count)
             }
             Err(e) => {
-                conn.execute_batch("ROLLBACK;").ok();
+                // tx 在此处离开作用域自动 ROLLBACK
                 Err(e)
             }
         }
@@ -993,7 +998,8 @@ impl DataStore {
 
         // 3. 重新持锁，事务批量写入
         let conn = self.lock_conn();
-        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        // 改用 RAII 事务：COMMIT 失败不回滚会让事务永久挂在共享连接上，Transaction drop 时自动 ROLLBACK 可避免
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         let result = (|| {
             let mut count = 0usize;
             for (id, ct) in &classified {
@@ -1009,11 +1015,11 @@ impl DataStore {
 
         match result {
             Ok(count) => {
-                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                tx.commit().map_err(|e| e.to_string())?;
                 Ok(count)
             }
             Err(e) => {
-                conn.execute_batch("ROLLBACK;").ok();
+                // tx 在此处离开作用域自动 ROLLBACK
                 Err(e)
             }
         }

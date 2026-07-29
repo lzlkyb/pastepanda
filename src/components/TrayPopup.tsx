@@ -206,7 +206,7 @@ export function TrayPopup() {
       }
 
       // ★ 方案2：事件监听兜底（如果 invoke 失败或后续需要更新）
-      unlisten1 = await listen<PopupInitData>("tray-popup-init", (event) => {
+      const fn1 = await listen<PopupInitData>("tray-popup-init", (event) => {
         if (cancelled) return;
         setAppName(event.payload.name || "PastePanda");
         setVersion(event.payload.version);
@@ -216,11 +216,25 @@ export function TrayPopup() {
           setStats(event.payload.stats);
         }
       });
+      // 修复监听器泄漏：await listen 期间 effect 可能已被清理（卸载/StrictMode 重挂载），
+      // 此时 cleanup 早已执行完毕（unlisten1 那时还是 null，绑不上），必须在这里立即自行取消，
+      // 否则监听器会永久残留（原 bug：unlisten1/2 在两个 await 之后才赋值，同步 cleanup 抓不到）
+      if (cancelled) {
+        fn1();
+      } else {
+        unlisten1 = fn1;
+      }
+
       // 监听状态变化
-      unlisten2 = await listen<boolean>("monitor-status-changed", (event) => {
+      const fn2 = await listen<boolean>("monitor-status-changed", (event) => {
         if (cancelled) return;
         setMonitoring(event.payload);
       });
+      if (cancelled) {
+        fn2();
+      } else {
+        unlisten2 = fn2;
+      }
     }
     setup();
     return () => {

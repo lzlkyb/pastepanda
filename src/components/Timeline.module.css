@@ -144,7 +144,8 @@
 }
 
 .capsuleInner {
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，胶囊标签背景改用加深版 --accent-solid */
+  background: var(--accent-solid);
   color: #fff;
   font-size: 9px;
   font-weight: 700;
@@ -405,7 +406,8 @@
   left: 54px;
   top: 50%;
   transform: translateY(-50%);
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，提示框背景改用加深版 --accent-solid */
+  background: var(--accent-solid);
   color: #fff;
   font-size: 10px;
   font-weight: 600;

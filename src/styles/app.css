@@ -8,35 +8,16 @@
  * 组件级样式 → 各自 .module.css
  */
 
-/* ===== 0. 图层令牌（z-index 统一刻度）=====
- * 全局图层一律使用 var(--z-*)，禁止魔法数字。
- * 间隔 100 预留插入空间；组件内部局部 z（0~50）靠父级层叠上下文隔离，不在此列。
- * 遮罩与面板不分开定 z —— 面板是遮罩的子元素，天然在其上。
- */
-:root {
-  --z-base: 0;        /* 基础内容 */
-  --z-raised: 100;    /* 内容内抬升：吸顶栏、来源徽章、收集横幅 */
-  --z-floating: 200;  /* 内容内浮动：BackToTop、FAB、时间轴、悬停预览 */
-  --z-context: 300;   /* 右键菜单（卡片 + 侧边栏） */
-  --z-modal: 400;     /* 普通模态：设置/提取/片段/编辑器壳/图片预览/标签编辑/移动分组/快捷键面板 */
-  --z-modal-top: 500; /* 高优先级模态：快速预览 QuickPreview、更新说明 UpdateNotes */
-  --z-confirm: 600;   /* 嵌套确认框 ConfirmDialog（从设置/片段弹出，须压过父弹框） */
-  --z-tooltip: 700;   /* 帮助提示 HelpTooltip */
-  --z-toast: 800;     /* Toast 通知（最高层） */
-  --z-fullscreen: 900;/* 全屏编辑器（独立窗口，象征性对齐） */
-}
-
-/* ===== 1. 布局 ===== */
-.app-shell {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  width: 100vw;
-  overflow: hidden;
-  background: var(--app-bg);
-  border-radius: 16px;
-  min-width: 280px;
-}
+/* ===== 1. 布局 =====
+ * z-index 令牌（--z-*）已移至 globals.css：本文件不被 editor-main/popup-main
+ * 两个独立窗口加载，而 Toast/FullscreenEditor 等跨窗口组件依赖这些变量，
+ * 留在这里会导致独立窗口里 var(--z-*) 无定义、z-index 静默退化为 auto。 */
+/* 死代码已删除：原 .app-shell 在 src 下所有 .tsx 中零引用（实际生效的是 App.module.css 的
+ * .appShell）。其中 border-radius: 16px / min-width: 280px 也未补回 .appShell：
+ * 窗口圆角实际由 lib.rs 里的 DwmSetWindowAttribute(DWMWA_WINDOW_CORNER_PREFERENCE) 原生
+ * DWM 层实现（Win11），与 CSS 无关；且 tauri.conf.json 中 main 窗口 transparent 未开启，
+ * 窗口本身不透明，根元素的 border-radius 对窗口外观无实际视觉效果；min-width: 280px
+ * 也低于 tauri.conf.json 里已配置的 minWidth: 320，同样是冗余值。因此不补回。 */
 
 /* 宽屏适配：卡片列表可使用更大间距 */
 @media (min-width: 600px) {
@@ -170,7 +151,8 @@
 /* 搜索高亮 */
 .search-highlight {
   background: var(--accent-light);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   padding: 0 1px;
   font-weight: 600;
 }

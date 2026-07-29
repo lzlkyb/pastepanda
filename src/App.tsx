@@ -331,6 +331,9 @@ function App() {
     const g = await createGroup(name, color, icon);
     if (g) {
       window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已创建分组「${name}」`, type: "success" } }));
+    } else {
+      // 修复：创建失败时此前无任何提示，用户以为分组已建好，实际后端未写入
+      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `创建分组「${name}」失败`, type: "error" } }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -338,31 +341,41 @@ function App() {
   const handleRenameGroup = useCallback(async (id: string, name: string) => {
     const group = groups.find(g => g.id === id);
     if (!group) return;
-    await updateGroup(id, name, group.color, group.icon);
+    // 修复：重命名分组此前完全没有提示，成功/失败都补上
+    const ok = await updateGroup(id, name, group.color, group.icon);
+    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: ok ? `已重命名为「${name}」` : "重命名分组失败", type: ok ? "success" : "error" } }));
   }, [groups]);
 
   const handleDeleteGroup = useCallback(async (id: string) => {
     const group = groups.find(g => g.id === id);
     if (!group) return;
-    await deleteGroupApi(id);
-    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已删除分组「${group.name}」`, type: "info" } }));
+    // 修复：此前无论后端删除是否成功都弹"已删除"，现按真实返回值分别提示，避免假成功
+    const ok = await deleteGroupApi(id);
+    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: ok ? `已删除分组「${group.name}」` : `删除分组「${group.name}」失败`, type: ok ? "info" : "error" } }));
   }, [groups]);
 
   const handleChangeGroupColor = useCallback(async (id: string, color: string) => {
     const group = groups.find(g => g.id === id);
     if (!group) return;
-    await updateGroup(id, group.name, color, group.icon);
+    // 修复：修改分组颜色此前完全没有提示，成功/失败都补上
+    const ok = await updateGroup(id, group.name, color, group.icon);
+    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: ok ? "已更新分组颜色" : "修改分组颜色失败", type: ok ? "success" : "error" } }));
   }, [groups]);
 
-  // 移动到分组（api.ts 的 moveToGroup 接收 historyIds: string[]）
+  // 移动到分组（api.ts 的 moveToGroup 接收 historyIds: string[]，返回实际移动条数）
   const handleMoveToGroup = useCallback(async (groupId: string | null) => {
     if (!moveToGroupItem) return;
-    await moveToGroup([moveToGroupItem.id], groupId);
-    if (groupId) {
-      const group = groups.find(g => g.id === groupId);
-      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已移动到「${group?.name || groupId}」`, type: "success" } }));
+    // 修复：此前无论后端返回什么都弹"已移动/已移除"成功提示，现按实际移动条数判断是否真的成功
+    const count = await moveToGroup([moveToGroupItem.id], groupId);
+    if (count > 0) {
+      if (groupId) {
+        const group = groups.find(g => g.id === groupId);
+        window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已移动到「${group?.name || groupId}」`, type: "success" } }));
+      } else {
+        window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已移除分组", type: "success" } }));
+      }
     } else {
-      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已移除分组", type: "success" } }));
+      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "移动分组失败", type: "error" } }));
     }
     setMoveToGroupItem(null);
   }, [moveToGroupItem, groups]);

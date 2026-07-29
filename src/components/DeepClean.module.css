@@ -47,7 +47,8 @@
 }
 .chipActive {
   background: var(--accent-light);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   border-color: var(--accent);
 }
 
@@ -127,7 +128,8 @@
 }
 .srcItemActive {
   background: var(--accent-light);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
 }
 .srcItemActive:hover {
   background: var(--accent-light);

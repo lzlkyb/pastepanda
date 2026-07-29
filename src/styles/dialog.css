@@ -209,7 +209,8 @@
   padding: 2px 8px;
   border-radius: 4px;
   background: var(--accent-light);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
 }
 
 /* 带行号的代码查看器 */
@@ -503,7 +504,8 @@
   padding: 2px 7px;
   border-radius: 4px;
   background: var(--accent-light);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   letter-spacing: 0.04em;
   flex-shrink: 0;
 }
@@ -760,7 +762,8 @@
 }
 
 .url-chip-proto {
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   background: var(--accent-light);
   border: 1px solid var(--search-border);
 }
@@ -803,7 +806,8 @@
 .url-qchip b {
   padding: 2px 7px;
   font-weight: 600;
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   background: var(--accent-light);
   border-right: 1px solid var(--border-color);
 }
@@ -884,7 +888,8 @@
 
 .path-crumb-file {
   font-weight: 700;
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   background: var(--accent-light);
   border-color: var(--search-border);
 }
@@ -979,7 +984,8 @@
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.5px;
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   background: var(--accent-light);
   border: 1px solid var(--accent);
   padding: 2px 7px;
@@ -1048,7 +1054,8 @@
   color: var(--accent);
 }
 .sql-in-chip.on {
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   background: var(--accent-light);
   border-color: var(--accent);
   font-weight: 600;
@@ -1168,7 +1175,8 @@
   padding: 1px 7px;
   border-radius: 4px;
   background: var(--accent-light);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   font-weight: 700;
   font-family: 'SF Mono', Consolas, monospace;
   text-transform: uppercase;

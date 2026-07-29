@@ -49,7 +49,7 @@
   justify-content: center;
   width: 26px;
   height: 26px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   background: var(--section-bg);
   color: var(--text-secondary);
@@ -68,7 +68,7 @@
   max-height: 240px;
   resize: vertical;
   padding: 10px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
   background: var(--section-bg);
   color: var(--text-primary);
@@ -106,7 +106,7 @@
   justify-content: center;
   width: 30px;
   height: 30px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: 50%;
   background: var(--section-bg);
   color: var(--text-secondary);
@@ -126,7 +126,8 @@
   padding: 10px;
   border: none;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-dark, #0369A1));
+  /* 白字压 --accent 对比度不足 4.5:1，渐变起始色改用加深版 --accent-solid */
+  background: linear-gradient(135deg, var(--accent-solid), var(--accent-dark, #0369A1));
   color: #fff;
   font-size: 13px;
   font-weight: 600;
@@ -168,7 +169,8 @@
   padding: 3px 10px;
   border-radius: 12px;
   background: var(--accent-light, color-mix(in srgb, var(--accent) 12%, transparent));
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   font-size: 11.5px;
   font-weight: 600;
 }
@@ -215,7 +217,7 @@
   align-items: center;
   gap: 4px;
   padding: 5px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: 7px;
   background: var(--section-bg);
   color: var(--text-secondary);
@@ -228,7 +230,8 @@
   color: var(--accent);
 }
 .filterActive {
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，实心激活态背景改用加深版 --accent-solid */
+  background: var(--accent-solid);
   border-color: var(--accent);
   color: #fff;
 }
@@ -236,7 +239,7 @@
 .backBtn {
   margin-left: auto;
   padding: 5px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: 7px;
   background: transparent;
   color: var(--text-secondary);
@@ -253,7 +256,7 @@
 .tableWrap {
   flex: 1;
   overflow: auto;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
 }
 
@@ -277,7 +280,7 @@
   font-weight: 600;
   font-size: 11px;
   text-align: left;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .thKey { width: 34%; }
@@ -285,7 +288,7 @@
 
 .table td {
   padding: 6px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
   vertical-align: top;
   word-break: break-all;
 }

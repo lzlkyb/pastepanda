@@ -271,7 +271,8 @@
   color: var(--accent);
 }
 .actionBtnPrimary {
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，实心主按钮背景改用加深版 --accent-solid */
+  background: var(--accent-solid);
   color: #fff;
   border-color: var(--accent);
 }

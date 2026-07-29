@@ -1,0 +1,744 @@
+<title>PastePanda 颜色对比度改进设计稿</title>
+<style>
+  :root {
+    --page-bg: #f5f6f8;
+    --page-card: #ffffff;
+    --page-border: #e2e5ea;
+    --page-text: #1b2130;
+    --page-text-dim: #667085;
+    --page-accent: #2563eb;
+    --pass: #16a34a;
+    --pass-bg: #ecfdf3;
+    --fail: #dc2626;
+    --fail-bg: #fef2f2;
+    --code-bg: #f1f3f7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page-bg: #0d1117;
+      --page-card: #161b22;
+      --page-border: #2a313d;
+      --page-text: #e6e8ec;
+      --page-text-dim: #9099a8;
+      --page-accent: #6ea8fe;
+      --pass: #4ade80;
+      --pass-bg: #142a1c;
+      --fail: #f87171;
+      --fail-bg: #2a1414;
+      --code-bg: #1d232c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page-bg: #0d1117;
+    --page-card: #161b22;
+    --page-border: #2a313d;
+    --page-text: #e6e8ec;
+    --page-text-dim: #9099a8;
+    --page-accent: #6ea8fe;
+    --pass: #4ade80;
+    --pass-bg: #142a1c;
+    --fail: #f87171;
+    --fail-bg: #2a1414;
+    --code-bg: #1d232c;
+  }
+  :root[data-theme="light"] {
+    --page-bg: #f5f6f8;
+    --page-card: #ffffff;
+    --page-border: #e2e5ea;
+    --page-text: #1b2130;
+    --page-text-dim: #667085;
+    --page-accent: #2563eb;
+    --pass: #16a34a;
+    --pass-bg: #ecfdf3;
+    --fail: #dc2626;
+    --fail-bg: #fef2f2;
+    --code-bg: #f1f3f7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--page-bg);
+    color: var(--page-text);
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    line-height: 1.55;
+    margin: 0;
+    padding: 28px 20px 80px;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  h2 { font-size: 17px; margin: 40px 0 12px; padding-top: 8px; border-top: 1px solid var(--page-border); }
+  h3 { font-size: 14px; margin: 0 0 10px; }
+  .subtitle { color: var(--page-text-dim); font-size: 13px; margin: 0 0 24px; }
+  .badge {
+    display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 5px;
+    background: var(--page-accent); color: #fff; margin-right: 6px;
+  }
+  code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { border: 1px solid var(--page-border); padding: 6px 9px; text-align: left; vertical-align: middle; }
+  th { background: var(--code-bg); font-weight: 700; }
+  .table-scroll { overflow-x: auto; border-radius: 8px; border: 1px solid var(--page-border); }
+  .table-scroll table { border: none; }
+  .table-scroll th, .table-scroll td { border-left: none; border-right: none; }
+
+  .pass { color: var(--pass); font-weight: 700; white-space: nowrap; }
+  .fail { color: var(--fail); font-weight: 700; white-space: nowrap; }
+  .swatch { display: inline-block; width: 13px; height: 13px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; border: 1px solid rgba(128,128,128,.35); }
+
+  .card {
+    background: var(--page-card); border: 1px solid var(--page-border); border-radius: 12px;
+    padding: 18px 20px; margin-bottom: 18px;
+  }
+  .note { font-size: 12.5px; color: var(--page-text-dim); margin: 8px 0 0; }
+  .note b { color: var(--page-text); }
+
+  /* ===== 对照演示区 ===== */
+  .demo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-top: 12px; }
+  .demo-pair { border: 1px solid var(--page-border); border-radius: 10px; overflow: hidden; }
+  .demo-pair-head {
+    display: flex; justify-content: space-between; align-items: center; padding: 7px 12px;
+    background: var(--code-bg); font-size: 12px; font-weight: 700;
+  }
+  .demo-row { display: flex; }
+  .demo-cell { flex: 1; padding: 14px 12px; font-size: 12px; }
+  .demo-cell + .demo-cell { border-left: 1px solid var(--page-border); }
+  .demo-cell-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; opacity: .65; margin-bottom: 8px; }
+  .demo-ratio { margin-top: 8px; font-size: 11px; font-variant-numeric: tabular-nums; }
+
+  /* 模拟 UI 元件的通用外壳 */
+  .mini-app { border-radius: 8px; padding: 10px 12px; font-size: 12.5px; }
+  .mini-sidebar-label {
+    font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px;
+  }
+  .mini-timestamp { font-size: 11px; }
+  .mini-btn {
+    display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; border-radius: 7px;
+    border: none; font-size: 12px; font-weight: 600; cursor: default;
+  }
+  .mini-tag { display: inline-block; padding: 2px 8px; border-radius: 5px; font-size: 11px; font-weight: 600; }
+  .mini-active-item {
+    display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 7px; font-size: 12.5px; font-weight: 600;
+  }
+  .mini-toast {
+    display: flex; align-items: center; gap: 8px; padding: 8px 11px; border-radius: 10px; font-size: 12px;
+  }
+  .mini-toast-icon {
+    width: 22px; height: 22px; border-radius: 7px; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; font-size: 12px; font-weight: 700;
+  }
+
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--page-text-dim); margin: 6px 0 16px; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; }
+
+  .token-chip { font-family: "SF Mono", Consolas, monospace; font-size: 11.5px; }
+
+  .theme-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 16px; }
+  .theme-tab {
+    font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 999px;
+    border: 1px solid var(--page-border); color: var(--page-text-dim);
+  }
+
+  .toc { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 12.5px; margin: 14px 0 6px; }
+  .toc a { color: var(--page-accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+
+  .arrow { opacity: .5; margin: 0 4px; }
+
+  .footnote { font-size: 11.5px; color: var(--page-text-dim); border-left: 3px solid var(--page-border); padding: 6px 10px; margin-top: 10px; }
+</style>
+
+<div class="wrap">
+  <h1>PastePanda 颜色对比度改进设计稿</h1>
+  <p class="subtitle">
+    基于 WCAG 2.x 相对亮度公式实测（脚本计算，非目测），覆盖 7 套主题；仅供拍板，不改代码。
+  </p>
+
+  <div class="toc">
+    <a href="#overview">① 总览</a>
+    <a href="#text-muted">② text-muted</a>
+    <a href="#sidebar-label">③ 侧边栏分区标题</a>
+    <a href="#accent-text">④ 主色按钮（accent-solid）</a>
+    <a href="#accent-strong">⑤ accent 当文字色（激活态）</a>
+    <a href="#semantic">⑥ 语义色配对</a>
+    <a href="#hierarchy">⑦ 三级文字层级</a>
+    <a href="#toast-icon">⑧ Toast 图标已知遗留问题</a>
+    <a href="#disabled">⑨ 禁用态</a>
+    <a href="#manual">⑩ 需人工确认</a>
+  </div>
+
+  <!-- ============ 总览 ============ -->
+  <div class="card" id="overview">
+    <h2 style="margin-top:0;border-top:none;padding-top:0">① 总览：审查报告 vs 实测</h2>
+    <p class="note">
+      审查报告的具体数字已证实存在编造，本稿全部数字重新用 WCAG 2.x 公式计算得出。结论：报告点出的方向大体正确，
+      但<b>具体覆盖范围与报告描述不完全一致</b> —— 有的比报告更严重（全部 7 套主题中招，不是"部分"），
+      有的比报告轻（只有 3 套主题、不是全部）。逐项对照见下表。
+    </p>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>#</th><th>报告里的说法</th><th>实测结论</th><th>涉及主题</th><th>建议改动令牌</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>侧边栏分区标题压在 sidebar-bg 上对比度不够</td>
+            <td class="fail">属实，且 7 套全部不达标（最差 1.80:1，最好也只有 3.71:1）</td>
+            <td>全部 7 套</td>
+            <td><code>--sidebar-section-label</code></td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>text-muted 用在正文级信息（时间戳/说明文字）对比度不够</td>
+            <td class="fail">属实，且 7 套全部不达标（在最接近它的背景上普遍只有 2.3～4.2:1）</td>
+            <td>全部 7 套</td>
+            <td><code>--text-muted</code></td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>白字压 --accent（主色按钮）对比度不够</td>
+            <td class="fail">比报告更严重：<b>7 套全部不达标</b>，没有一套能让纯白字过 4.5:1（最差 terminal 只有 2.28:1）。
+              <b>最终拍板方案有调整</b>：最初提议"新增 --accent-text 深色字"已被否决（全应用主按钮白字变近黑字，观感代价太大，
+              浅 accent 底上像禁用态），改为<b>保留白字、新增 --accent-solid 专门调深按钮底色</b>，白字压其上 4.52～4.63:1</td>
+            <td>全部 7 套</td>
+            <td>新增 <code>--accent-solid</code>（不改 --accent）</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>--accent 当文字色用（激活标签页/侧边栏选中项）对比度不够</td>
+            <td class="fail">比报告轻：只有 <b>3 套浅色主题</b>（ocean/forest/blossom）不达标；深色 4 套本来就达标（5.06～6.54:1），不用动</td>
+            <td>ocean / forest / blossom</td>
+            <td>新增 <code>--accent-strong</code>（不改 --accent-light）</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>green/orange/danger 语义色配对对比度不够</td>
+            <td class="fail">只有<b>浅色三件套</b>（ocean/forest/blossom 共用同一组语义色值）不达标；深色 4 套已达标（5.8～8.6:1）</td>
+            <td>ocean / forest / blossom</td>
+            <td><code>--green</code> <code>--orange</code> <code>--danger</code></td>
+          </tr>
+          <tr>
+            <td>6</td>
+            <td>"某一套"主题 text-secondary 与 text-muted 层级塔陷</td>
+            <td class="fail">比报告严重：改前实测确有 <b>2 套</b>（ocean 1.32:1、blossom 1.06:1）已经塔陷；
+              而按①②修完 text-muted 之后，因为 text-muted 变化，<b>全部 7 套的间距都会被压缩到 1.05～1.33:1</b>，
+              需要联动微调 text-secondary 才能保住三级层级</td>
+            <td>全部 7 套（联动）</td>
+            <td><code>--text-secondary</code></td>
+          </tr>
+          <tr>
+            <td>7</td>
+            <td><code>button:disabled { opacity:.4 }</code> 禁用态看不清</td>
+            <td class="fail">属实，仅设计建议，不改代码（<code>styles/buttons.css</code> 只读）</td>
+            <td>全部 7 套</td>
+            <td>建议 <code>opacity: .55</code></td>
+          </tr>
+          <tr>
+            <td>—</td>
+            <td>（新发现，报告未提及）Toast info/loading 图标在 blossom 主题下对比度不足</td>
+            <td class="fail">2.96:1，低于图形元素 3:1 阈值（差距很小，用 ⑤ 的 accent-strong 顺带修好）</td>
+            <td>blossom</td>
+            <td>Toast.module.css 里 <code>.infoBox</code>/<code>.loadingBox</code> 改用 <code>--accent-strong</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ============ text-muted ============ -->
+  <div class="card" id="text-muted">
+    <h2 style="margin-top:0;border-top:none;padding-top:0">② --text-muted：卡片时间戳、设置说明文字</h2>
+    <p class="note">
+      <code>--text-muted</code> 在真实代码里绝大多数用在<b>正文级信息</b>上：卡片时间戳（"2 分钟前"）、设置项的说明小字、
+      文件详情的元数据、侧边栏计数徽标等（用 <code>search_files</code> 核对了 <code>var(--text-muted)</code> 的全部引用点，
+      CardList / Settings / FileDetailDialog / Help 等组件里出现上百次，基本都是正文场景），因此按 <b>4.5:1</b> 判定，
+      而不是按纯装饰的 3:1。取值以该主题下 4 个常见背景（card-bg / section-bg / app-bg / input-bg）里<b>最差的一个</b>为准 —— 通常是 input-bg，
+      因为它的明度最接近文字本身。改动方向：浅色主题把文字调深，深色主题把文字调亮；<b>只调文字，不动任何背景色</b>。
+    </p>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>主题</th><th>旧值</th><th>新值</th><th>改前最差对比度</th><th>改后最差对比度</th><th>达标</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>ocean</td><td><span class="swatch" style="background:#7888A0"></span><code class="token-chip">#7888A0</code></td><td><span class="swatch" style="background:#627083"></span><code class="token-chip">#627083</code></td><td class="fail">3.26:1</td><td class="pass">4.56:1</td><td class="pass">✅</td></tr>
+          <tr><td>midnight</td><td><span class="swatch" style="background:#71717A"></span><code class="token-chip">#71717A</code></td><td><span class="swatch" style="background:#8D8D95"></span><code class="token-chip">#8D8D95</code></td><td class="fail">3.08:1</td><td class="pass">4.52:1</td><td class="pass">✅</td></tr>
+          <tr><td>forest</td><td><span class="swatch" style="background:#A8A29E"></span><code class="token-chip">#A8A29E</code></td><td><span class="swatch" style="background:#726E6B"></span><code class="token-chip">#726E6B</code></td><td class="fail">2.31:1</td><td class="pass">4.63:1</td><td class="pass">✅</td></tr>
+          <tr><td>blossom</td><td><span class="swatch" style="background:#A8909A"></span><code class="token-chip">#A8909A</code></td><td><span class="swatch" style="background:#7C6B72"></span><code class="token-chip">#7C6B72</code></td><td class="fail">2.70:1</td><td class="pass">4.58:1</td><td class="pass">✅</td></tr>
+          <tr><td>terminal</td><td><span class="swatch" style="background:#737373"></span><code class="token-chip">#737373</code></td><td><span class="swatch" style="background:#8C8C8C"></span><code class="token-chip">#8C8C8C</code></td><td class="fail">3.19:1</td><td class="pass">4.50:1</td><td class="pass">✅</td></tr>
+          <tr><td>ocean-dark</td><td><span class="swatch" style="background:#5577A0"></span><code class="token-chip">#5577A0</code></td><td><span class="swatch" style="background:#7994B4"></span><code class="token-chip">#7994B4</code></td><td class="fail">3.09:1</td><td class="pass">4.58:1</td><td class="pass">✅</td></tr>
+          <tr><td>sunset</td><td><span class="swatch" style="background:#8B7B6B"></span><code class="token-chip">#8B7B6B</code></td><td><span class="swatch" style="background:#A5988C"></span><code class="token-chip">#A5988C</code></td><td class="fail">3.11:1</td><td class="pass">4.52:1</td><td class="pass">✅</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="margin-top:20px">实样对照（卡片时间戳）</h3>
+    <div class="demo-grid">
+      <div class="demo-pair"><div class="demo-pair-head"><span>ocean</span><span>input-bg 上</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#F1F5F9"><div class="demo-cell-label">改前</div><span class="mini-timestamp" style="color:#7888A0">2 分钟前</span><div class="demo-ratio fail">3.29:1 ❌</div></div>
+          <div class="demo-cell" style="background:#F1F5F9"><div class="demo-cell-label">改后</div><span class="mini-timestamp" style="color:#627083">2 分钟前</span><div class="demo-ratio pass">4.60:1 ✅</div></div>
+        </div></div>
+      <div class="demo-pair"><div class="demo-pair-head"><span>forest</span><span>input-bg 上</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#F5F5F4"><div class="demo-cell-label">改前</div><span class="mini-timestamp" style="color:#A8A29E">2 分钟前</span><div class="demo-ratio fail">2.31:1 ❌</div></div>
+          <div class="demo-cell" style="background:#F5F5F4"><div class="demo-cell-label">改后</div><span class="mini-timestamp" style="color:#726E6B">2 分钟前</span><div class="demo-ratio pass">4.63:1 ✅</div></div>
+        </div></div>
+      <div class="demo-pair"><div class="demo-pair-head"><span>blossom</span><span>input-bg 上</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#FDF2F8"><div class="demo-cell-label">改前</div><span class="mini-timestamp" style="color:#A8909A">2 分钟前</span><div class="demo-ratio fail">2.70:1 ❌</div></div>
+          <div class="demo-cell" style="background:#FDF2F8"><div class="demo-cell-label">改后</div><span class="mini-timestamp" style="color:#7C6B72">2 分钟前</span><div class="demo-ratio pass">4.58:1 ✅</div></div>
+        </div></div>
+      <div class="demo-pair"><div class="demo-pair-head"><span>midnight</span><span>input-bg 上</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#27272A"><div class="demo-cell-label">改前</div><span class="mini-timestamp" style="color:#71717A">2 分钟前</span><div class="demo-ratio fail">3.08:1 ❌</div></div>
+          <div class="demo-cell" style="background:#27272A"><div class="demo-cell-label">改后</div><span class="mini-timestamp" style="color:#8D8D95">2 分钟前</span><div class="demo-ratio pass">4.52:1 ✅</div></div>
+        </div></div>
+      <div class="demo-pair"><div class="demo-pair-head"><span>terminal</span><span>input-bg 上</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#262626"><div class="demo-cell-label">改前</div><span class="mini-timestamp" style="color:#737373">2 分钟前</span><div class="demo-ratio fail">3.19:1 ❌</div></div>
+          <div class="demo-cell" style="background:#262626"><div class="demo-cell-label">改后</div><span class="mini-timestamp" style="color:#8C8C8C">2 分钟前</span><div class="demo-ratio pass">4.50:1 ✅</div></div>
+        </div></div>
+      <div class="demo-pair"><div class="demo-pair-head"><span>ocean-dark</span><span>input-bg 上</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#162B45"><div class="demo-cell-label">改前</div><span class="mini-timestamp" style="color:#5577A0">2 分钟前</span><div class="demo-ratio fail">3.09:1 ❌</div></div>
+          <div class="demo-cell" style="background:#162B45"><div class="demo-cell-label">改后</div><span class="mini-timestamp" style="color:#7994B4">2 分钟前</span><div class="demo-ratio pass">4.58:1 ✅</div></div>
+        </div></div>
+      <div class="demo-pair"><div class="demo-pair-head"><span>sunset</span><span>input-bg 上</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#3D3028"><div class="demo-cell-label">改前</div><span class="mini-timestamp" style="color:#8B7B6B">2 分钟前</span><div class="demo-ratio fail">3.11:1 ❌</div></div>
+          <div class="demo-cell" style="background:#3D3028"><div class="demo-cell-label">改后</div><span class="mini-timestamp" style="color:#A5988C">2 分钟前</span><div class="demo-ratio pass">4.52:1 ✅</div></div>
+        </div></div>
+    </div>
+  </div>
+
+  <!-- ============ 侧边栏分区标题 ============ -->
+  <div class="card" id="sidebar-label">
+    <h2 style="margin-top:0;border-top:none;padding-top:0">③ --sidebar-section-label：侧边栏分区标题</h2>
+    <p class="note">
+      用在 <code>Sidebar.module.css</code> 的 <code>.sectionLabel</code>（"智能分类"/"分组"/"来源"这类分区大写小标题），11px 加粗但达不到"大号文字"的豁免尺寸（需 ≥18.66px 粗体或 ≥24px），按正文 4.5:1 判定。
+      这是 7 套主题里<b>最严重</b>的一项：blossom 改前只有 1.80:1（几乎看不出字），最好的 sunset 也只有 3.71:1。只调文字色，侧边栏背景不动。
+    </p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>主题</th><th>旧值</th><th>新值</th><th>改前</th><th>改后</th><th>达标</th></tr></thead>
+        <tbody>
+          <tr><td>ocean</td><td><span class="swatch" style="background:#9CA3AF"></span><code class="token-chip">#9CA3AF</code></td><td><span class="swatch" style="background:#696D75"></span><code class="token-chip">#696D75</code></td><td class="fail">2.25:1</td><td class="pass">4.59:1</td><td class="pass">✅</td></tr>
+          <tr><td>midnight</td><td><span class="swatch" style="background:#52525B"></span><code class="token-chip">#52525B</code></td><td><span class="swatch" style="background:#7D7D84"></span><code class="token-chip">#7D7D84</code></td><td class="fail">2.40:1</td><td class="pass">4.54:1</td><td class="pass">✅</td></tr>
+          <tr><td>forest</td><td><span class="swatch" style="background:#9CA3AF"></span><code class="token-chip">#9CA3AF</code></td><td><span class="swatch" style="background:#676C73"></span><code class="token-chip">#676C73</code></td><td class="fail">2.17:1</td><td class="pass">4.53:1</td><td class="pass">✅</td></tr>
+          <tr><td>blossom</td><td><span class="swatch" style="background:#C4B5BC"></span><code class="token-chip">#C4B5BC</code></td><td><span class="swatch" style="background:#766D71"></span><code class="token-chip">#766D71</code></td><td class="fail">1.80:1</td><td class="pass">4.58:1</td><td class="pass">✅</td></tr>
+          <tr><td>terminal</td><td><span class="swatch" style="background:#52525B"></span><code class="token-chip">#52525B</code></td><td><span class="swatch" style="background:#7A7A81"></span><code class="token-chip">#7A7A81</code></td><td class="fail">2.51:1</td><td class="pass">4.56:1</td><td class="pass">✅</td></tr>
+          <tr><td>ocean-dark</td><td><span class="swatch" style="background:#4A6B8A"></span><code class="token-chip">#4A6B8A</code></td><td><span class="swatch" style="background:#627E99"></span><code class="token-chip">#627E99</code></td><td class="fail">3.45:1</td><td class="pass">4.55:1</td><td class="pass">✅</td></tr>
+          <tr><td>sunset</td><td><span class="swatch" style="background:#78716C"></span><code class="token-chip">#78716C</code></td><td><span class="swatch" style="background:#867F7B"></span><code class="token-chip">#867F7B</code></td><td class="fail">3.71:1</td><td class="pass">4.52:1</td><td class="pass">✅</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="margin-top:20px">实样对照（模拟侧边栏）</h3>
+    <div class="demo-grid">
+      <div class="demo-pair"><div class="demo-pair-head"><span>ocean 侧边栏</span></div>
+        <div class="demo-row">
+          <div class="demo-cell mini-app" style="background:#EFF1F5"><div class="demo-cell-label">改前</div><div class="mini-sidebar-label" style="color:#9CA3AF">智能分类</div><div style="color:#0F172A">📋 全部　⭐ 收藏</div><div class="demo-ratio fail">2.25:1 ❌</div></div>
+          <div class="demo-cell mini-app" style="background:#EFF1F5"><div class="demo-cell-label">改后</div><div class="mini-sidebar-label" style="color:#696D75">智能分类</div><div style="color:#0F172A">📋 全部　⭐ 收藏</div><div class="demo-ratio pass">4.59:1 ✅</div></div>
+        </div></div>
+      <div class="demo-pair"><div class="demo-pair-head"><span>blossom 侧边栏（改前最差）</span></div>
+        <div class="demo-row">
+          <div class="demo-cell mini-app" style="background:#FDF2F8"><div class="demo-cell-label">改前</div><div class="mini-sidebar-label" style="color:#C4B5BC">分组</div><div style="color:#1F1A1C">📋 全部　⭐ 收藏</div><div class="demo-ratio fail">1.80:1 ❌</div></div>
+          <div class="demo-cell mini-app" style="background:#FDF2F8"><div class="demo-cell-label">改后</div><div class="mini-sidebar-label" style="color:#766D71">分组</div><div style="color:#1F1A1C">📋 全部　⭐ 收藏</div><div class="demo-ratio pass">4.58:1 ✅</div></div>
+        </div></div>
+      <div class="demo-pair"><div class="demo-pair-head"><span>terminal 侧边栏</span></div>
+        <div class="demo-row">
+          <div class="demo-cell mini-app" style="background:#0D0D0D"><div class="demo-cell-label">改前</div><div class="mini-sidebar-label" style="color:#52525B">来源</div><div style="color:#E5E5E5">📋 全部　⭐ 收藏</div><div class="demo-ratio fail">2.51:1 ❌</div></div>
+          <div class="demo-cell mini-app" style="background:#0D0D0D"><div class="demo-cell-label">改后</div><div class="mini-sidebar-label" style="color:#7A7A81">来源</div><div style="color:#E5E5E5">📋 全部　⭐ 收藏</div><div class="demo-ratio pass">4.56:1 ✅</div></div>
+        </div></div>
+      <div class="demo-pair"><div class="demo-pair-head"><span>sunset 侧边栏（改前最好）</span></div>
+        <div class="demo-row">
+          <div class="demo-cell mini-app" style="background:#1F1610"><div class="demo-cell-label">改前</div><div class="mini-sidebar-label" style="color:#78716C">智能分类</div><div style="color:#F5F0EB">📋 全部　⭐ 收藏</div><div class="demo-ratio fail">3.71:1 ❌</div></div>
+          <div class="demo-cell mini-app" style="background:#1F1610"><div class="demo-cell-label">改后</div><div class="mini-sidebar-label" style="color:#867F7B">智能分类</div><div style="color:#F5F0EB">📋 全部　⭐ 收藏</div><div class="demo-ratio pass">4.52:1 ✅</div></div>
+        </div></div>
+    </div>
+  </div>
+
+  <!-- ============ 主色按钮：改用 --accent-solid ============ -->
+  <div class="card" id="accent-text">
+    <h2 style="margin-top:0;border-top:none;padding-top:0">④ 主色按钮：新增 --accent-solid（保留白字，调深按钮底色）</h2>
+    <p class="note">
+      <b>本节已按拍板结果更新</b>——此前的方案（新增 <code>--accent-text</code>，7 套统一换成深墨色文字）已被用户否决。
+      数学结论没错：7 套主题的 <code>--accent</code> 都达不到给白字打底的 4.5:1（最差 terminal 只有 2.28:1）。
+      但否决理由是<b>观感代价太大</b>：白字压彩色按钮是行业主流做法，把全应用主按钮从白字换成近黑字，
+      在 midnight 的浅紫 <code>#818CF8</code>、ocean-dark 的浅蓝 <code>#3B9EFF</code> 这类偏亮 accent 上，深色字看起来会像"禁用态"，
+      整体观感倒退，得不偿失。
+    </p>
+    <p class="note">
+      <b>最终方案</b>：新增 <code>--accent-solid</code>，专用于实心主按钮的背景色（<code>btn-primary</code> 等），
+      取值为该主题 <code>--accent</code> 按同一色相"纯降明度"调深后的版本（用 WCAG 公式反推最小加深比例，白字压其上刚好过 4.5:1，不过度加深）。
+      <b>--accent 和 --accent-light 本身完全不变</b>（它们仍用于文字色/边框/选中态/图标等，不受影响）。
+      深色主题（midnight/terminal/ocean-dark/sunset）的 accent 本身偏亮，需要加深 21～31% 才够；
+      浅色三件套（ocean/forest/blossom）accent 本身已经偏深，只需加深 6～13%。全部落在 4.52～4.63:1，
+      刚好过线、没有冲到 8:1 那种"发脏"的深度。
+    </p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>主题</th><th>--accent（不变）</th><th>--accent-solid（新增）</th><th>加深比例</th><th>白字改前</th><th>白字改后</th></tr></thead>
+        <tbody>
+          <tr><td>ocean</td><td><span class="swatch" style="background:#0284C7"></span><code class="token-chip">#0284C7</code></td><td><span class="swatch" style="background:#027CBB"></span><code class="token-chip">#027CBB</code></td><td>6%</td><td class="fail">4.10:1 ❌</td><td class="pass">4.56:1 ✅</td></tr>
+          <tr><td>midnight</td><td><span class="swatch" style="background:#818CF8"></span><code class="token-chip">#818CF8</code></td><td><span class="swatch" style="background:#666FC4"></span><code class="token-chip">#666FC4</code></td><td>21%</td><td class="fail">2.98:1 ❌</td><td class="pass">4.53:1 ✅</td></tr>
+          <tr><td>forest</td><td><span class="swatch" style="background:#059669"></span><code class="token-chip">#059669</code></td><td><span class="swatch" style="background:#05875F"></span><code class="token-chip">#05875F</code></td><td>10%</td><td class="fail">3.77:1 ❌</td><td class="pass">4.53:1 ✅</td></tr>
+          <tr><td>blossom</td><td><span class="swatch" style="background:#EC4899"></span><code class="token-chip">#EC4899</code></td><td><span class="swatch" style="background:#CD3F85"></span><code class="token-chip">#CD3F85</code></td><td>13%</td><td class="fail">3.53:1 ❌</td><td class="pass">4.52:1 ✅</td></tr>
+          <tr><td>terminal</td><td><span class="swatch" style="background:#22C55E"></span><code class="token-chip">#22C55E</code></td><td><span class="swatch" style="background:#178841"></span><code class="token-chip">#178841</code></td><td>31%</td><td class="fail">2.28:1 ❌</td><td class="pass">4.53:1 ✅</td></tr>
+          <tr><td>ocean-dark</td><td><span class="swatch" style="background:#3B9EFF"></span><code class="token-chip">#3B9EFF</code></td><td><span class="swatch" style="background:#2D78C2"></span><code class="token-chip">#2D78C2</code></td><td>24%</td><td class="fail">2.79:1 ❌</td><td class="pass">4.59:1 ✅</td></tr>
+          <tr><td>sunset</td><td><span class="swatch" style="background:#F97316"></span><code class="token-chip">#F97316</code></td><td><span class="swatch" style="background:#BD5711"></span><code class="token-chip">#BD5711</code></td><td>24%</td><td class="fail">2.80:1 ❌</td><td class="pass">4.63:1 ✅</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="margin-top:20px">实样对照（"保存设置" / "删除" 按钮，白字不变，只调深按钮底色）</h3>
+    <div class="demo-grid">
+      <div class="demo-pair"><div class="demo-pair-head"><span>ocean</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#F4F6F9;display:flex;flex-direction:column;gap:8px">
+            <div class="demo-cell-label">改前（--accent 直接做底）</div>
+            <span class="mini-btn" style="background:#0284C7;color:#fff">保存设置</span>
+            <div class="demo-ratio fail">4.10:1 ❌</div>
+          </div>
+          <div class="demo-cell" style="background:#F4F6F9;display:flex;flex-direction:column;gap:8px">
+            <div class="demo-cell-label">改后（--accent-solid 做底，白字不变）</div>
+            <span class="mini-btn" style="background:#027CBB;color:#fff">保存设置</span>
+            <div class="demo-ratio pass">4.56:1 ✅</div>
+          </div>
+        </div></div>
+      <div class="demo-pair"><div class="demo-pair-head"><span>terminal（改前最差）</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#0A0A0A;display:flex;flex-direction:column;gap:8px">
+            <div class="demo-cell-label">改前</div>
+            <span class="mini-btn" style="background:#22C55E;color:#fff">保存设置</span>
+            <div class="demo-ratio fail">2.28:1 ❌ 几乎融进按钮里</div>
+          </div>
+          <div class="demo-cell" style="background:#0A0A0A;display:flex;flex-direction:column;gap:8px">
+            <div class="demo-cell-label">改后</div>
+            <span class="mini-btn" style="background:#178841;color:#fff">保存设置</span>
+            <div class="demo-ratio pass">4.53:1 ✅（按钮本身仍是鲜亮绿，只是这颗按钮的底色比 --accent 深一档）</div>
+          </div>
+        </div></div>
+      <div class="demo-pair"><div class="demo-pair-head"><span>midnight</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#09090B;display:flex;flex-direction:column;gap:8px">
+            <div class="demo-cell-label">改前</div>
+            <span class="mini-btn" style="background:#818CF8;color:#fff">删除</span>
+            <div class="demo-ratio fail">2.98:1 ❌</div>
+          </div>
+          <div class="demo-cell" style="background:#09090B;display:flex;flex-direction:column;gap:8px">
+            <div class="demo-cell-label">改后</div>
+            <span class="mini-btn" style="background:#666FC4;color:#fff">删除</span>
+            <div class="demo-ratio pass">4.53:1 ✅</div>
+          </div>
+        </div></div>
+      <div class="demo-pair"><div class="demo-pair-head"><span>sunset</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#1C1410;display:flex;flex-direction:column;gap:8px">
+            <div class="demo-cell-label">改前</div>
+            <span class="mini-btn" style="background:#F97316;color:#fff">保存设置</span>
+            <div class="demo-ratio fail">2.80:1 ❌</div>
+          </div>
+          <div class="demo-cell" style="background:#1C1410;display:flex;flex-direction:column;gap:8px">
+            <div class="demo-cell-label">改后</div>
+            <span class="mini-btn" style="background:#BD5711;color:#fff">保存设置</span>
+            <div class="demo-ratio pass">4.63:1 ✅</div>
+          </div>
+        </div></div>
+    </div>
+    <p class="footnote">
+      落地范围：<code>buttons.css</code> 由另一位 agent 并行负责（本 agent 不改），把 <code>.btn-primary</code> 等实心主按钮的
+      <code>background: var(--accent)</code> 改成 <code>background: var(--accent-solid)</code>，<code>color: #fff</code> 保持不变即可；
+      边框/图标/选中态/焦点环等继续用原来的 <code>--accent</code>，不受影响。
+      <code>--danger</code> 底的按钮（如 <code>btn-danger</code>）本来就够深、白字对比度远超 4.5:1，不需要 accent-solid，维持现状。
+    </p>
+  </div>
+
+  <!-- ============ accent-strong ============ -->
+  <div class="card" id="accent-strong">
+    <h2 style="margin-top:0;border-top:none;padding-top:0">⑤ --accent 当文字色用（激活态）：新增 --accent-strong</h2>
+    <p class="note">
+      场景：侧边栏选中分组、顶部激活标签页计数、置顶徽标等——文字用 <code>var(--accent)</code>，背景用 <code>var(--accent-light)</code>（柔和浅色高亮块）。
+      实测 <b>4 套深色主题本来就达标</b>（5.06～6.54:1，不用动）；<b>3 套浅色主题不达标</b>（ocean 3.57、forest 3.58、blossom 3.00）。
+    </p>
+    <p class="note">
+      <b>关键取舍</b>：一开始尝试"把 accent-light 调暗"，发现要满足 4.5:1 得把柔和高亮块几乎调成黑色（例如 ocean 的 accent-light 会从
+      <code>#E0F2FE</code> 变成 <code>#121314</code>），这会把"选中态的浅色高亮"整个变成一块深色色块，彻底破坏设计意图 —— 这是过度改动，放弃。
+      正确方案：<b>accent-light 保持原样不变</b>，新增一个专门给"文字/图标"用的派生色 <code>--accent-strong</code>（只在 3 套浅色主题里比 accent 深一档，深色 4 套 = accent 本身，不变）。
+    </p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>主题</th><th>--accent-light（不变）</th><th>--accent 原值</th><th>改前 accent-on-light</th><th>--accent-strong 新值</th><th>改后</th></tr></thead>
+        <tbody>
+          <tr><td>ocean</td><td><span class="swatch" style="background:#E0F2FE"></span><code class="token-chip">#E0F2FE</code></td><td><code class="token-chip">#0284C7</code></td><td class="fail">3.57:1</td><td><span class="swatch" style="background:#0273AD"></span><code class="token-chip">#0273AD</code></td><td class="pass">4.51:1 ✅</td></tr>
+          <tr><td>forest</td><td><span class="swatch" style="background:#ECFDF5"></span><code class="token-chip">#ECFDF5</code></td><td><code class="token-chip">#059669</code></td><td class="fail">3.58:1</td><td><span class="swatch" style="background:#04835B"></span><code class="token-chip">#04835B</code></td><td class="pass">4.53:1 ✅</td></tr>
+          <tr><td>blossom</td><td><span class="swatch" style="background:#FCE7F3"></span><code class="token-chip">#FCE7F3</code></td><td><code class="token-chip">#EC4899</code></td><td class="fail">3.00:1</td><td><span class="swatch" style="background:#BA3979"></span><code class="token-chip">#BA3979</code></td><td class="pass">4.52:1 ✅</td></tr>
+          <tr><td>midnight</td><td><span class="swatch" style="background:#1E1B4B"></span><code class="token-chip">#1E1B4B</code></td><td><code class="token-chip">#818CF8</code></td><td class="pass">5.36:1</td><td>= --accent（不变）</td><td class="pass">5.36:1 ✅</td></tr>
+          <tr><td>terminal</td><td><span class="swatch" style="background:#052E16"></span><code class="token-chip">#052E16</code></td><td><code class="token-chip">#22C55E</code></td><td class="pass">6.54:1</td><td>= --accent（不变）</td><td class="pass">6.54:1 ✅</td></tr>
+          <tr><td>ocean-dark</td><td><span class="swatch" style="background:#0A1E3A"></span><code class="token-chip">#0A1E3A</code></td><td><code class="token-chip">#3B9EFF</code></td><td class="pass">5.97:1</td><td>= --accent（不变）</td><td class="pass">5.97:1 ✅</td></tr>
+          <tr><td>sunset</td><td><span class="swatch" style="background:#431407"></span><code class="token-chip">#431407</code></td><td><code class="token-chip">#F97316</code></td><td class="pass">5.58:1</td><td>= --accent（不变）</td><td class="pass">5.58:1 ✅</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="margin-top:20px">实样对照（侧边栏选中项 "全部"）</h3>
+    <div class="demo-grid">
+      <div class="demo-pair"><div class="demo-pair-head"><span>ocean 选中态</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#EFF1F5"><div class="demo-cell-label">改前</div>
+            <div class="mini-active-item" style="background:#E0F2FE;color:#0284C7">📋 全部　128</div>
+            <div class="demo-ratio fail">3.57:1 ❌</div></div>
+          <div class="demo-cell" style="background:#EFF1F5"><div class="demo-cell-label">改后（accent-light 不变，文字变深）</div>
+            <div class="mini-active-item" style="background:#E0F2FE;color:#0273AD">📋 全部　128</div>
+            <div class="demo-ratio pass">4.51:1 ✅</div></div>
+        </div></div>
+      <div class="demo-pair"><div class="demo-pair-head"><span>blossom 选中态（改前最差）</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#FDF2F8"><div class="demo-cell-label">改前</div>
+            <div class="mini-active-item" style="background:#FCE7F3;color:#EC4899">📋 全部　128</div>
+            <div class="demo-ratio fail">3.00:1 ❌</div></div>
+          <div class="demo-cell" style="background:#FDF2F8"><div class="demo-cell-label">改后</div>
+            <div class="mini-active-item" style="background:#FCE7F3;color:#BA3979">📋 全部　128</div>
+            <div class="demo-ratio pass">4.52:1 ✅</div></div>
+        </div></div>
+      <div class="demo-pair"><div class="demo-pair-head"><span>midnight（本来就达标，不变）</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#131315"><div class="demo-cell-label">改前=改后</div>
+            <div class="mini-active-item" style="background:#1E1B4B;color:#818CF8">📋 全部　128</div>
+            <div class="demo-ratio pass">5.36:1 ✅</div></div>
+          <div class="demo-cell" style="background:#131315;display:flex;align-items:center;justify-content:center;opacity:.6">
+            <span style="font-size:12px">4 套深色主题均无需改动</span>
+          </div>
+        </div></div>
+    </div>
+  </div>
+
+  <!-- ============ 语义色配对 ============ -->
+  <div class="card" id="semantic">
+    <h2 style="margin-top:0;border-top:none;padding-top:0">⑥ 语义色配对：green/orange/danger on 各自 -bg</h2>
+    <p class="note">
+      浅色三件套（ocean/forest/blossom）共用完全相同的一组语义色值，深色四套（midnight/terminal/ocean-dark/sunset）也共用一组更亮的值。
+      深色组已经达标（5.8～8.6:1），<b>只有浅色三件套需要改</b>，且三套改动量完全一致（因为它们的语义色本来就是同一份值）。
+      只调前景文字/图标色，浅色 pastel 背景块（-bg）不动。这个改动还顺带把下方 ⑧ Toast 图标的 green 那一档也修好了。
+    </p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>令牌</th><th>旧值</th><th>新值</th><th>底色（不变）</th><th>改前</th><th>改后</th></tr></thead>
+        <tbody>
+          <tr><td><code>--green</code></td><td><span class="swatch" style="background:#16A34A"></span><code class="token-chip">#16A34A</code></td><td><span class="swatch" style="background:#11813A"></span><code class="token-chip">#11813A</code></td><td><span class="swatch" style="background:#DCFCE7"></span><code class="token-chip">--green-bg #DCFCE7</code></td><td class="fail">3.00:1</td><td class="pass">4.53:1 ✅</td></tr>
+          <tr><td><code>--orange</code></td><td><span class="swatch" style="background:#EA580C"></span><code class="token-chip">#EA580C</code></td><td><span class="swatch" style="background:#C54A0A"></span><code class="token-chip">#C54A0A</code></td><td><span class="swatch" style="background:#FFF7ED"></span><code class="token-chip">--orange-bg #FFF7ED</code></td><td class="fail">3.35:1</td><td class="pass">4.54:1 ✅</td></tr>
+          <tr><td><code>--danger</code></td><td><span class="swatch" style="background:#DC2626"></span><code class="token-chip">#DC2626</code></td><td><span class="swatch" style="background:#D82525"></span><code class="token-chip">#D82525</code></td><td><span class="swatch" style="background:#FEF2F2"></span><code class="token-chip">--red-bg #FEF2F2</code></td><td class="fail">4.41:1</td><td class="pass">4.56:1 ✅</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">上述改动仅适用于 ocean / forest / blossom 三套主题；midnight / terminal / ocean-dark / sunset 的语义色已达标，不变。</p>
+
+    <h3 style="margin-top:20px">实样对照（分类标签 chip，以 ocean 主题为例）</h3>
+    <div class="demo-grid">
+      <div class="demo-pair"><div class="demo-pair-head"><span>green（SQL 标签）</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#fff"><div class="demo-cell-label">改前</div><span class="mini-tag" style="background:#DCFCE7;color:#16A34A">SQL</span><div class="demo-ratio fail">3.00:1 ❌</div></div>
+          <div class="demo-cell" style="background:#fff"><div class="demo-cell-label">改后</div><span class="mini-tag" style="background:#DCFCE7;color:#11813A">SQL</span><div class="demo-ratio pass">4.53:1 ✅</div></div>
+        </div></div>
+      <div class="demo-pair"><div class="demo-pair-head"><span>orange（配置标签）</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#fff"><div class="demo-cell-label">改前</div><span class="mini-tag" style="background:#FFF7ED;color:#EA580C">配置</span><div class="demo-ratio fail">3.35:1 ❌</div></div>
+          <div class="demo-cell" style="background:#fff"><div class="demo-cell-label">改后</div><span class="mini-tag" style="background:#FFF7ED;color:#C54A0A">配置</span><div class="demo-ratio pass">4.54:1 ✅</div></div>
+        </div></div>
+      <div class="demo-pair"><div class="demo-pair-head"><span>danger（命令标签）</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#fff"><div class="demo-cell-label">改前</div><span class="mini-tag" style="background:#FEF2F2;color:#DC2626">命令</span><div class="demo-ratio fail">4.41:1 ❌（差一点）</div></div>
+          <div class="demo-cell" style="background:#fff"><div class="demo-cell-label">改后</div><span class="mini-tag" style="background:#FEF2F2;color:#D82525">命令</span><div class="demo-ratio pass">4.56:1 ✅</div></div>
+        </div></div>
+    </div>
+  </div>
+
+  <!-- ============ 三级文字层级 ============ -->
+  <div class="card" id="hierarchy">
+    <h2 style="margin-top:0;border-top:none;padding-top:0">⑦ 三级文字层级：text-primary / text-secondary / text-muted</h2>
+    <p class="note">
+      改前实测：<b>ocean（1.32:1）、blossom（1.06:1）</b> 这两套主题的 text-secondary 与 text-muted 已经很接近，三级层级实际塔成两级
+      （报告只提到"某一套"，实测是两套都有问题，比报告严重）。
+    </p>
+    <p class="note">
+      更重要的是一个<b>连锁反应</b>：为了让 text-muted 达到②的 4.5:1 门槛，它的取值必然要往 text-secondary 的方向靠拢
+      （两者本来就是相邻的两档灰度）。实测显示，<b>改完 text-muted 之后，全部 7 套主题的 secondary/muted 间距都被压缩到 1.05～1.33:1</b>，
+      不只是原来那两套出问题。所以这里不是"挖一套主题修"，而是<b>7 套联动微调 text-secondary</b>，目标是把间距重新拉开到 ≥1.5:1（可分辨层级的经验下限）。
+    </p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>主题</th><th>text-secondary 旧值</th><th>text-secondary 新值</th><th>改前 vs 新text-muted</th><th>改后 vs 新text-muted</th></tr></thead>
+        <tbody>
+          <tr><td>ocean</td><td><span class="swatch" style="background:#64748B"></span><code class="token-chip">#64748B</code></td><td><span class="swatch" style="background:#495565"></span><code class="token-chip">#495565</code></td><td class="fail">1.06:1</td><td class="pass">1.50:1</td></tr>
+          <tr><td>midnight</td><td><span class="swatch" style="background:#A1A1AA"></span><code class="token-chip">#A1A1AA</code></td><td><span class="swatch" style="background:#AFAFB7"></span><code class="token-chip">#AFAFB7</code></td><td class="fail">1.29:1</td><td class="pass">1.51:1</td></tr>
+          <tr><td>forest</td><td><span class="swatch" style="background:#78716C"></span><code class="token-chip">#78716C</code></td><td><span class="swatch" style="background:#58524F"></span><code class="token-chip">#58524F</code></td><td class="fail">1.05:1</td><td class="pass">1.52:1</td></tr>
+          <tr><td>blossom</td><td><span class="swatch" style="background:#A68A96"></span><code class="token-chip">#A68A96</code></td><td>不变（原本就是 1.59:1，已够）</td><td class="pass">1.59:1</td><td class="pass">1.59:1</td></tr>
+          <tr><td>terminal</td><td><span class="swatch" style="background:#A3A3A3"></span><code class="token-chip">#A3A3A3</code></td><td><span class="swatch" style="background:#AEAEAE"></span><code class="token-chip">#AEAEAE</code></td><td class="fail">1.33:1</td><td class="pass">1.52:1</td></tr>
+          <tr><td>ocean-dark</td><td><span class="swatch" style="background:#8BA4C0"></span><code class="token-chip">#8BA4C0</code></td><td><span class="swatch" style="background:#A2B6CD"></span><code class="token-chip">#A2B6CD</code></td><td class="fail">1.22:1</td><td class="pass">1.51:1</td></tr>
+          <tr><td>sunset</td><td><span class="swatch" style="background:#B8A99A"></span><code class="token-chip">#B8A99A</code></td><td><span class="swatch" style="background:#C8BCB0"></span><code class="token-chip">#C8BCB0</code></td><td class="fail">1.23:1</td><td class="pass">1.51:1</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="footnote">
+      额外发现（超出报告范围，顺带记录）：blossom 的 <code>--text-secondary</code>（<code>#A68A96</code>）本身对 card-bg 只有 <b>3.14:1</b>，
+      如果它也被用在正文级场景，本身就不满足 4.5:1——这不在本次审查报告的 7 条清单里，是分析中顺带发现的，建议后续单独评估 <code>--text-secondary</code> 的用法后再决定是否处理。
+    </div>
+
+    <h3 style="margin-top:20px">实样对照（三级文字：标题 / 副标题 / 说明）</h3>
+    <div class="demo-grid">
+      <div class="demo-pair"><div class="demo-pair-head"><span>ocean 三级层级</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#fff"><div class="demo-cell-label">改前（secondary 与 muted 太近）</div>
+            <div style="color:#0F172A;font-weight:700">已复制到剪贴板</div>
+            <div style="color:#64748B;margin-top:4px">来自 VS Code</div>
+            <div style="color:#7888A0;font-size:11px;margin-top:2px">2 分钟前</div>
+            <div class="demo-ratio fail">二三级间距 1.32:1 ❌</div></div>
+          <div class="demo-cell" style="background:#fff"><div class="demo-cell-label">改后（层级清晰）</div>
+            <div style="color:#0F172A;font-weight:700">已复制到剪贴板</div>
+            <div style="color:#495565;margin-top:4px">来自 VS Code</div>
+            <div style="color:#627083;font-size:11px;margin-top:2px">2 分钟前</div>
+            <div class="demo-ratio pass">二三级间距 1.50:1 ✅</div></div>
+        </div></div>
+      <div class="demo-pair"><div class="demo-pair-head"><span>blossom 三级层级（改前最差）</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#fff"><div class="demo-cell-label">改前（几乎融为一色）</div>
+            <div style="color:#1F1A1C;font-weight:700">已复制到剪贴板</div>
+            <div style="color:#A68A96;margin-top:4px">来自 VS Code</div>
+            <div style="color:#A8909A;font-size:11px;margin-top:2px">2 分钟前</div>
+            <div class="demo-ratio fail">二三级间距 1.06:1 ❌</div></div>
+          <div class="demo-cell" style="background:#fff"><div class="demo-cell-label">改后（仅 muted 变化即够）</div>
+            <div style="color:#1F1A1C;font-weight:700">已复制到剪贴板</div>
+            <div style="color:#A68A96;margin-top:4px">来自 VS Code</div>
+            <div style="color:#7C6B72;font-size:11px;margin-top:2px">2 分钟前</div>
+            <div class="demo-ratio pass">二三级间距 1.59:1 ✅</div></div>
+        </div></div>
+    </div>
+  </div>
+
+  <!-- ============ Toast 图标已知遗留问题 ============ -->
+  <div class="card" id="toast-icon">
+    <h2 style="margin-top:0;border-top:none;padding-top:0">⑧ Toast 图标已知遗留问题：语义色图标压在同色 14% 半透明底上</h2>
+    <p class="note">
+      <code>Toast.module.css</code> 的 <code>.successBox</code>/<code>.errorBox</code>/<code>.warningBox</code>/<code>.infoBox</code>/<code>.loadingBox</code>
+      把图标色块底色做成"图标自身颜色的 14% 透明度叠加在玻璃拟态弹层上"。这是图形元素，按 <b>3:1</b> 判定（不是 4.5:1）。
+      实测浅色主题下 <code>--green</code> 那一档确实约 <b>2.82:1</b>，与已知遗留问题描述吃合，低于 3:1。
+      好消息：⑥ 里对 <code>--green</code> 的改动（浅色三件套变深）顺带把这个也修好了，<b>不需要再单独改</b>。
+    </p>
+    <p class="note">
+      额外发现：分析过程中还测出 <b>blossom 主题的 --accent 图标（用于 info/loading 类 Toast）只有 2.96:1</b>，同样不达标，这一条报告完全没提到。
+      修法：这类 Toast 图标不再直接用 <code>var(--accent)</code>，改用 ⑤ 新增的 <code>var(--accent-strong)</code>（blossom 会变成 <code>#BA3979</code>，其余 6 套主题的 accent-strong 等于 accent，无变化）。
+    </p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>图标</th><th>主题</th><th>改前（图标 on 自身14%底）</th><th>改后</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>green（success）</td><td>ocean / forest / blossom</td><td class="fail">2.82:1</td><td class="pass">4.10:1 ✅</td><td>由 ⑥ 的 --green 改动顺带修好</td></tr>
+          <tr><td>orange（warning）</td><td>ocean / forest / blossom</td><td class="pass">3.00:1（压线过）</td><td class="pass">≥3.9:1 ✅</td><td>由 ⑥ 的 --orange 改动顺带加大余量</td></tr>
+          <tr><td>danger（error）</td><td>ocean / forest / blossom</td><td class="pass">3.89:1</td><td class="pass">≥3.9:1 ✅</td><td>本来就达标</td></tr>
+          <tr><td>accent（info/loading）</td><td>blossom</td><td class="fail">2.96:1</td><td class="pass">4.33:1 ✅</td><td>改用 --accent-strong（新，仅 blossom 变化）</td></tr>
+          <tr><td>accent（info/loading）</td><td>其余 6 套</td><td class="pass">3.18～6.62:1</td><td class="pass">同前，无变化</td><td>accent-strong = accent</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="margin-top:20px">实样对照（Toast 提示条）</h3>
+    <div class="demo-grid">
+      <div class="demo-pair"><div class="demo-pair-head"><span>ocean · 已复制（success）</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#fefefe"><div class="demo-cell-label">改前</div>
+            <div class="mini-toast" style="background:#fcfdfe;border:1px solid #e5e9f0">
+              <span class="mini-toast-icon" style="background:#def2e6;color:#16A34A">✓</span>
+              <span style="color:#0F172A">已复制</span>
+            </div>
+            <div class="demo-ratio fail">图标 2.82:1 ❌</div></div>
+          <div class="demo-cell" style="background:#fefefe"><div class="demo-cell-label">改后</div>
+            <div class="mini-toast" style="background:#fcfdfe;border:1px solid #e5e9f0">
+              <span class="mini-toast-icon" style="background:#d8ecdf;color:#11813A">✓</span>
+              <span style="color:#0F172A">已复制</span>
+            </div>
+            <div class="demo-ratio pass">图标 4.10:1 ✅</div></div>
+        </div></div>
+      <div class="demo-pair"><div class="demo-pair-head"><span>blossom · 保存失败（error 用 danger，正常）</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#fefefe"><div class="demo-cell-label">改前=改后（本来就达标）</div>
+            <div class="mini-toast" style="background:#fcfdfe;border:1px solid #f3e8ed">
+              <span class="mini-toast-icon" style="background:#fae1e1;color:#DC2626">✕</span>
+              <span style="color:#1F1A1C">保存失败</span>
+            </div>
+            <div class="demo-ratio pass">图标 3.89:1 ✅</div></div>
+          <div class="demo-cell" style="background:#fefefe"><div class="demo-cell-label">对照：blossom · 正在同步（loading，改前）</div>
+            <div class="mini-toast" style="background:#fcfdfe;border:1px solid #f3e8ed">
+              <span class="mini-toast-icon" style="background:#fce5f1;color:#EC4899">⟳</span>
+              <span style="color:#1F1A1C">正在同步…</span>
+            </div>
+            <div class="demo-ratio fail">图标 2.96:1 ❌</div></div>
+        </div></div>
+      <div class="demo-pair"><div class="demo-pair-head"><span>blossom · 正在同步（改后，用 accent-strong）</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#fefefe;grid-column:span 2">
+            <div class="mini-toast" style="background:#fcfdfe;border:1px solid #f3e8ed;display:inline-flex">
+              <span class="mini-toast-icon" style="background:#f3d9e6;color:#BA3979">⟳</span>
+              <span style="color:#1F1A1C">正在同步…</span>
+            </div>
+            <div class="demo-ratio pass" style="margin-top:8px">图标 4.33:1 ✅</div>
+          </div>
+        </div></div>
+    </div>
+  </div>
+
+  <!-- ============ 禁用态 ============ -->
+  <div class="card" id="disabled">
+    <h2 style="margin-top:0;border-top:none;padding-top:0">⑨ button:disabled 禁用态（styles/buttons.css，只读，仅设计建议）</h2>
+    <p class="note">
+      当前：<code>opacity: 0.4</code>，禁用态几乎看不清（尤其深色主题下更明显）。同时存在一个逻辑冗余：这条规则里
+      <code>pointer-events: none</code> 与 <code>cursor: not-allowed</code> 同时存在——<b>前者会让元素完全不接收指针事件，
+      所以 cursor 永远不会有机会生效</b>（浏览器根本不会在这个元素上触发 hover/cursor 判定）。这条只写进设计建议，不改代码。
+    </p>
+    <div class="demo-grid">
+      <div class="demo-pair"><div class="demo-pair-head"><span>ocean · 禁用按钮对照（accent-solid 底 + 白字）</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#F4F6F9;display:flex;flex-direction:column;gap:10px">
+            <div class="demo-cell-label">改前 opacity: 0.4</div>
+            <span class="mini-btn" style="background:#027CBB;color:#fff;opacity:.4">保存设置</span>
+          </div>
+          <div class="demo-cell" style="background:#F4F6F9;display:flex;flex-direction:column;gap:10px">
+            <div class="demo-cell-label">建议 opacity: 0.55</div>
+            <span class="mini-btn" style="background:#027CBB;color:#fff;opacity:.55">保存设置</span>
+          </div>
+        </div></div>
+      <div class="demo-pair"><div class="demo-pair-head"><span>terminal · 禁用按钮对照（accent-solid 底 + 白字）</span></div>
+        <div class="demo-row">
+          <div class="demo-cell" style="background:#0A0A0A;display:flex;flex-direction:column;gap:10px">
+            <div class="demo-cell-label">改前 opacity: 0.4</div>
+            <span class="mini-btn" style="background:#178841;color:#fff;opacity:.4">保存设置</span>
+          </div>
+          <div class="demo-cell" style="background:#0A0A0A;display:flex;flex-direction:column;gap:10px">
+            <div class="demo-cell-label">建议 opacity: 0.55</div>
+            <span class="mini-btn" style="background:#178841;color:#fff;opacity:.55">保存设置</span>
+          </div>
+        </div></div>
+    </div>
+    <p class="footnote">
+      建议值区间 0.5～0.6，取 <b>0.55</b> 作为折中：比 0.4 更能看清文案与图标轮廓，但仍与正常态有明显区分，不会被误认为可点击。
+      另外建议顺手把 <code>pointer-events: none</code> 去掉（<code>cursor: not-allowed</code> 才会真正生效），但这属于交互行为改动，需要单独评估，不在本次视觉对比度范围内，仅记录在此供后续参考。
+    </p>
+  </div>
+
+  <!-- ============ 需人工确认 ============ -->
+  <div class="card" id="manual">
+    <h2 style="margin-top:0;border-top:none;padding-top:0">⑩ 无法静态求值 / 需人工确认的项</h2>
+    <p class="note">脚本对 <code>color-mix()</code> 一律跳过、不编造数字；以下几处理论上也和文字/图形可读性相关，但受限于静态分析能力，建议后续人工用浏览器实测：</p>
+    <ul style="font-size:12.5px;color:var(--page-text-dim)">
+      <li><code>--accent-border: color-mix(in srgb, var(--accent) 35%, transparent)</code>（7 套主题均有）——用于边框描边，不是文字，本次不判定阈值，但如果后续有人把它当文字色用，需要重新评估。</li>
+      <li><code>Toast.module.css</code> 里的 <code>.successBox</code> 等 <code>border-color: color-mix(in srgb, var(--green) 25%, transparent)</code> —— 边框颜色，不参与文字对比度判定，未计算。</li>
+      <li>本稿对 Toast 图标底色的计算，是把 <code>--glass-popover-bg</code>（半透明）先与 <code>--app-bg</code> 做 alpha 合成得到不透明近似值，再与 14% 语义色混合；真实运行时弹层下面可能叠着卡片列表等更复杂内容，实际合成结果会比本稿的近似值更复杂，建议发布前用浏览器截图核对一次。</li>
+      <li><code>--text-secondary</code> 本身是否需要重新评估 4.5:1 达标（见 ⑦ 的 blossom 附注）——本次审查范围只覆盖报告点名的 7 项 + 已知遗留问题，text-secondary 的独立达标性未纳入本次改动范围。</li>
+    </ul>
+  </div>
+
+  <p class="footnote" style="margin-top:24px">
+    计算方法：WCAG 2.x 相对亮度公式（sRGB 归一化 → gamma 校正 → 加权求和），对比度 = (L_light + 0.05) / (L_dark + 0.05)。
+    正文文字阈值 4.5:1，大号文字/图形元素阈值 3:1。全部数值由临时 Node 脚本解析 <code>theme.css</code> 实际 hex 值计算得出，脚本已在计算完成后删除，不保留在仓库中。
+  </p>
+</div>

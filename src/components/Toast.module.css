@@ -29,7 +29,7 @@
   overflow: hidden;
 }
 
-/* 渐变进度条（按类型着色） */
+/* 渐变进度条（按类型着色，跟随主题语义色令牌） */
 .toastItem::after {
   content: '';
   position: absolute;
@@ -45,11 +45,13 @@
   to   { width: 0%; }
 }
 
-.success::after { background: linear-gradient(90deg, #34D399, #10B981); }
-.error::after   { background: linear-gradient(90deg, #F87171, #EF4444); }
-.warning::after { background: linear-gradient(90deg, #FBBF24, #F59E0B); }
-.info::after    { background: linear-gradient(90deg, #60A5FA, #3B82F6); }
-.loading::after { background: linear-gradient(90deg, #60A5FA, #3B82F6); }
+/* 原硬编码色改为语义色令牌：起点用主题色本身，终点用 color-mix 叠加少量黑色制造渐深效果，
+   不论浅色/深色主题都朝同一方向变化，避免叠加白色在深色主题下发白 */
+.success::after { background: linear-gradient(90deg, var(--green), color-mix(in srgb, var(--green) 75%, black)); }
+.error::after   { background: linear-gradient(90deg, var(--danger), color-mix(in srgb, var(--danger) 75%, black)); }
+.warning::after { background: linear-gradient(90deg, var(--orange), color-mix(in srgb, var(--orange) 75%, black)); }
+.info::after    { background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 75%, black)); }
+.loading::after { background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 75%, black)); }
 
 /* 图标色块容器 */
 .toastIconBox {
@@ -64,11 +66,15 @@
   border: 1px solid transparent;
 }
 
-.successBox { background: rgba(16, 185, 129, 0.14); border-color: rgba(16, 185, 129, 0.25); color: #10B981; }
-.errorBox   { background: rgba(239, 68, 68, 0.14);  border-color: rgba(239, 68, 68, 0.25);  color: #F87171; }
-.warningBox { background: rgba(245, 158, 11, 0.14); border-color: rgba(245, 158, 11, 0.25); color: #F59E0B; }
-.infoBox    { background: rgba(59, 130, 246, 0.14); border-color: rgba(59, 130, 246, 0.25); color: #60A5FA; }
-.loadingBox { background: rgba(59, 130, 246, 0.14); border-color: rgba(59, 130, 246, 0.25); color: #60A5FA; }
+/* 图标色块改为语义色令牌：底色/描边用 color-mix 生成半透明层跟随主题变化，
+   图标本身直接用主题令牌本色 —— theme.css 里 --green/--danger/--orange/--accent
+   已按主题分别取值（浅色主题取深色调、深色主题取亮色调），不需要在这里再单独加深/加亮 */
+.successBox { background: color-mix(in srgb, var(--green) 14%, transparent); border-color: color-mix(in srgb, var(--green) 25%, transparent); color: var(--green); }
+.errorBox   { background: color-mix(in srgb, var(--danger) 14%, transparent); border-color: color-mix(in srgb, var(--danger) 25%, transparent); color: var(--danger); }
+.warningBox { background: color-mix(in srgb, var(--orange) 14%, transparent); border-color: color-mix(in srgb, var(--orange) 25%, transparent); color: var(--orange); }
+/* info/loading 图标色压在 accent 半透明淡底上，与 accent-light 同类问题，浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+.infoBox    { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 25%, transparent); color: var(--accent-strong); }
+.loadingBox { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 25%, transparent); color: var(--accent-strong); }
 
 .toastIcon {
   flex-shrink: 0;
@@ -78,8 +84,9 @@
   display: inline-block;
   width: 12px;
   height: 12px;
-  border: 2px solid rgba(96, 165, 250, 0.3);
-  border-top-color: #60A5FA;
+  /* 跟随主题的信息色令牌，替换原硬编码蓝色 */
+  border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: toastSpin 0.6s linear infinite;
 }
@@ -129,6 +136,8 @@
 
 .toastAction:hover {
   background: var(--accent-light);
+  /* hover 态下继承基础色 accent 的文字压在 accent-light 底上，浅色主题下对比度不足 4.5:1，补充加深版 --accent-strong */
+  color: var(--accent-strong);
 }
 
 .toastClose {

@@ -60,7 +60,8 @@
 /* accent 变体 — 紫色高亮风格 */
 .accent {
   background: var(--accent-light);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   border-color: var(--accent);
 }
 

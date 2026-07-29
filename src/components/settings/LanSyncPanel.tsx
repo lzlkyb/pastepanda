@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { logger } from "@/lib/logger";
 import styles from "../Settings.module.css";
 
@@ -11,15 +11,25 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
   const [pairingInput, setPairingInput] = useState("");
   const [pairingBusy, setPairingBusy] = useState(false);
 
+  // 修复：此前失败时完全静默，设备列表和绿色“监听中”状态原地不动，用户完全无感知；
+  // 用 ref 记录上一次是否成功，只在从成功转失败时弹一次，避免 5s 轮询定时器下持续失败刷屏 toast
+  const wasOkRef = useRef(true);
   const refreshDevices = useCallback(async () => {
     setLoading(true);
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       const list = await invoke<LanDevice[]>("get_lan_devices");
       setDevices(list);
-    } catch (e) { logger.warn("获取设备列表失败", e); }
+      wasOkRef.current = true;
+    } catch (e) {
+      logger.warn("获取设备列表失败", e);
+      if (wasOkRef.current) {
+        toast(`获取设备列表失败：${e instanceof Error ? e.message : String(e)}`, "error");
+      }
+      wasOkRef.current = false;
+    }
     finally { setLoading(false); }
-  }, []);
+  }, [toast]);
 
   const refreshPairingKey = useCallback(async () => {
     try {
@@ -75,7 +85,11 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("send_lan_test");
       toast("已发送测试同步消息", "success");
-    } catch (e) { logger.warn("发送测试失败", e); }
+    } catch (e) {
+      logger.warn("发送测试失败", e);
+      // 修复：这个按钮存在的唯一目的就是诊断同步故障，静默失败是最讽刺的 bug，必须补上失败提示
+      toast(`发送测试消息失败：${e instanceof Error ? e.message : String(e)}`, "error");
+    }
   };
 
   return (

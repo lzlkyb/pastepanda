@@ -3,6 +3,105 @@ import type { ChangelogEntry } from "./changelog";
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.4.3",
+    date: "2026-07-29",
+    summary: "**无障碍：修正全局文字与主色对比度至 WCAG AA**（实测数据由脚本...",
+    categories: [
+      {
+        type: "change",
+        name: "变更",
+        items: [
+          { text: "**无障碍：修正全局文字与主色对比度至 WCAG AA**（实测数据由脚本按 WCAG 2.x 相对亮度公式计算，非目估；对照稿见 `design/contrast-audit.html`）： - 新增 `--accent-solid`（7 套主题）—— 实心主按钮专用底色。原来白字压 `--accent` 在 **7 套主题全部不达标**（最差 terminal 2.28:1），现均为 4.52~4.63:1。保留白字、只调深按钮底色，`--accent` 本身不变（文字色/边框/选中态等其他用途不受影响） - 新增 `--accent-strong`（7 套主题）—— 压在主色浅底高亮（`--accent-light`）上的文字/图标色。浅色三套主题下原仅 3.00~3.58:1，现 4.51~4.53:1；深色四套主题本来已达标，取值等于 `--accent`，视觉无变化 - `--text-muted`（7 套）提亮/调深：它被用在卡片时间戳、设置项说明等**正文级**信息上，原最差背景下仅 2.31~3.26:1，现 4.50~4.63:1 - `--sidebar-section-label`（7 套）：原最差 blossom 1.80:1，现 4.52~4.59:1 - `--text-secondary`（6 套联动）：与新 `--text-muted` 重新拉开到 ≥1.5:1，修复 ocean（1.32:1）/blossom（1.06:1）三级文字层级塑陷 - `--green` / `--orange` / `--danger`（仅 ocean/forest/blossom 三套浅色主题）：语义色配对提到 4.53~4.56:1，同时修好 Toast 图标色块在浅色主题下偏淡的问题" },
+        ],
+      },
+      {
+        type: "fix",
+        name: "修复",
+        items: [
+          { text: "补上 4 个“被使用但从未定义”的主题令牌（7 套主题各补齐）： - `--danger-hover`：原回退硬编码 `#B91C1C`，而 4 套深色主题的 `--danger` 是浅红 → **删除类按钮 hover 反而变暗，方向与全应用相反**，现修正为深色主题 hover 变亮 - `--shadow-md`：无 fallback 导致整条声明失效，关于页卡片 hover 抬升没有阴影 - `--accent-border`：原回退到某一套主题的蓝色，其他 6 套不跟色；现改为 `color-mix` 自动跟随各主题 accent - `--warning`：原回退硬编码琥珀色，不跟主题" },
+          { text: "Toast 装饰件（进度条、图标色块、loading spinner）从硬编码语义色改为跟随主题的 `--green`/`--danger`/`--orange`/`--accent`，不再在 7 套主题下固定一个调子" },
+        ],
+      },
+      {
+        type: "other",
+        name: "清理",
+        items: [
+          { text: "删除 `--toast-*` 系列死令牌（9 个变量 × 7 套 = 63 行）—— Toast 已升级为玻璃拟态设计，这套“实心底 toast”语义色令牌零消费者" },
+          { text: "删除 `--card-shadow`（7 行，零消费者，卡片实际用 `--glass-card-shadow`）" },
+          { text: "精简主题切换过渡选择器列表：38 个里 35 个是 CSS Modules 化后失效的 kebab-case 选择器，已删；保留 `.dialog-box`/`.dialog-body`/`.h-key` 三个真全局类" },
+          { text: "删除 `app.css` 里零引用的 `.app-shell` 死代码" },
+        ],
+      },
+    ],
+  },
+  {
+    version: "5.4.2",
+    date: "2026-07-29",
+    summary: "修复综合体检报告中的 P1 类数据安全与静默失败问题： - **事务安全*...",
+    categories: [
+      {
+        type: "fix",
+        name: "修复",
+        items: [
+          { text: "修复综合体检报告中的 P1 类数据安全与静默失败问题： - **事务安全**：data_store 下 12 处手写 `BEGIN;`/`COMMIT;` 事务全部改为 RAII 的 `unchecked_transaction()`。原实现在 COMMIT 自身失败时不会 ROLLBACK，会把事务永久挂在共享连接上，导致后续所有写入静默加入悬空事务并在退出时全部丢失，且重启前无法恢复 - **长度校验**：分组/标签名、片段标题与内容补上后端长度校验（按字符数而非字节数，不误判中文），前端「添加到片段库」同步加限长保护，修复超大粘贴写入片段库后永久冻结 UI 的问题 - **编辑器跨条目误关**：`closeEditor` 增加条目身份校验，修复「编辑 A 保存慢 → 弃改改编 B → A 的保存回调把 B 的编辑器突然关掉、B 的内容无声丢失」 - **静默失败补 toast**：分组五个操作（含两处返回 false 仍弹成功的假成功）、片段保存/删除/导出、清理过期记录、LAN「发送测试消息」与设备刷新、置顶（右键菜单 + 悬停浮层 + 内联按钮共三处）/存片段/确认与移除自动标签、打开链接与文件、创建重名标签等 - **片段库脏检查与防重**：遮罩点击和 X 按钮不再绕过未保存确认；保存加 in-flight 防护，快速双击不再产生重复片段；批量存片段部分失败后重试只处理失败项，不再重复存入已成功的 - **监听器泄漏与错误兜底**：修复 TrayPopup 的 async setup + 同步 cleanup 监听器泄漏、BackToTop 的 rAF 递归轮询泄漏；托盘弹窗窗口补上 ErrorBoundary 与全局 error/unhandledrejection 兜底，不再因渲染抛错变成永久空白弹窗 - **Rules of Hooks 违规**：SourceBadge 的提前 return 移到所有 hook 调用之后，修复 source 在空/非空间切换（异步回填、虚拟列表复用）时抛错崩掉子树 - **标签搜索框误建标签**：搜索框的 Enter 不再误读另一个输入框的 state 而静默创建用户并不想建的标签 - **来源识别误匹配**（上两轮遗留）：“Code” 这类过宽短别名改走精确匹配，Xcode / Codecademy / CodePen / QR Code Generator 不再被错标成 VS Code" },
+        ],
+      },
+    ],
+  },
+  {
+    version: "5.4.1",
+    date: "2026-07-29",
+    summary: "修复 2026-07-28 综合体检报告中的 P0 类功能性破损问题（共 ...",
+    categories: [
+      {
+        type: "fix",
+        name: "修复",
+        items: [
+          { text: "修复 2026-07-28 综合体检报告中的 P0 类功能性破损问题（共 7 项）： - `--border` 变量名手滑改回 `--border-color`，修复 20 处边框在全部主题下静默消失 - `--z-*` 层级令牌从 app.css 移至 globals.css，修复全屏编辑器/托盘弹窗等独立窗口里 Toast/确认框遮罩层级失效 - `globals.css` 新增零特异性 `:focus-visible` 兼底，修复全应用键盘 Tab 导航基本无焦点指示 - 深色主题下三处白字白底：设置面板分段按钮 tooltip、OCR 全文面板、图片裁剪还原按钮 - 修复清除快捷键对「依次粘贴/收集模式开关/粘贴最近收集」3 个热键完全失效（清除后回退默认值），及其导致这些默认组合被误报为已占用的冲突检测 - 修复手动建立与种子同名的标签会永久废掉对应 AI 自动分类类别的问题（`resolve_auto_tag_ids` 不再限定 `source='auto'`） - 空列表引导文案不再指向不存在的 ❓ 按钮，改为指引真实的 ⚙ 设置入口" },
+        ],
+      },
+    ],
+  },
+  {
+    version: "5.4.0",
+    date: "2026-07-28",
+    summary: "文档处理工具组：编码检测与批量转码（GBK/Big5/Shift_JIS ...",
+    categories: [
+      {
+        type: "feat",
+        name: "新增",
+        items: [
+          { text: "文档处理工具组：编码检测与批量转码（GBK/Big5/Shift_JIS 等自动识别 → UTF-8）、配置格式互转（Properties↔YAML↔JSON）、文件级批量查找替换、历史记录导出 Excel/CSV/JSON" },
+          { text: "配置语义对比：跨格式 key-value 差异高亮（properties vs YAML vs JSON），自动识别格式，表格展示新增/删除/修改/相同" },
+          { text: "编解码工具组：Base64 / URL / Unicode / HTML 实体编解码、JWT 解析、时间戳与日期互转，共 11 个变换，按内容类型自动匹配推荐" },
+          { text: "SQL 工具族：SQL 格式化（关键字大写 + 子句换行 + 缩进对齐）、SQL 压缩、关键字大写" },
+          { text: "日志统计：级别分布柱状图 + 时间范围 + 高频错误 Top5 摘要，一键提取 ERROR/FATAL 错误行（复用分类引擎同源解析）" },
+          { text: "片段变量：文本模板支持 {{date}} {{time}} {{datetime}} {{clipboard}} {{uuid}} 等动态变量，复制时自动解析插入" },
+          { text: "变换枢纽扩容：注册表现有 41 个变换，覆盖文本 / 编解码 / SQL / JSON / 日志 / 配置六大类" },
+        ],
+      },
+      {
+        type: "other",
+        name: "改进",
+        items: [
+          { text: "帮助页重构为功能全景导览：快速上手 3 步卡片 + 10 张功能卡片网格（含操作路径）+ 快捷键速查 / 常见问题折叠区，去除从未实现的无效热键条目，搜索覆盖全部内容" },
+          { text: "顶栏工具箱分组面板：片段库 / 内容提取 / 编码转换 / 批量替换 / 配置对比按\"内容 / 文本处理\"分组收纳，功能图标 currentColor 化跟随主题与激活态" },
+          { text: "正则替换规则改用 SQLite 持久化（regex_rules 表），内存缓存同步读 + 异步写入，调用方零改动，首次运行自动从 localStorage 迁移" },
+          { text: "更新说明弹框改版 + Markdown 渲染行号 + 全屏编辑器增强" },
+          { text: "README 全面同步：版本徽章、开发者工具箱段落、技术栈新增依赖、项目结构修正" },
+        ],
+      },
+      {
+        type: "fix",
+        name: "修复",
+        items: [
+          { text: "更新下载进度条三处问题：多源 failover（Gitee→GitHub）时进度归零、高频进度事件导致进度条抖动（改 requestAnimationFrame 节流 + 0.15s linear 过渡）、不确定态（服务器无 Content-Length）仅显示转圈动画（改显示已下载 MB + 速率）" },
+          { text: "卡片虚拟列表滚动告警：CardList 关闭 useFlushSync，消除 TanStack/virtual#1094 与 Lenis 平滑滚动组合产生的 dev 警告" },
+        ],
+      },
+    ],
+  },
+  {
     version: "5.3.2",
     date: "2026-07-27",
     summary: "全屏编辑器主题样式丢失（Markdown / JSON / HTML / ...",

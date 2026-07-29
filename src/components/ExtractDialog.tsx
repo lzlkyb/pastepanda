@@ -86,22 +86,31 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
     }
   };
 
-  // 保存选中项为片段
+  // 保存选中项为片段：逐条保存并单独捕获每条的失败，而不是整体 try/catch，
+  // 避免部分失败时已成功的条目仍留在 selected 里，重试会把已保存过的条目重复再存一遍
   const saveSelectedAsSnippets = async () => {
-    if (selected.size === 0) return;
+    if (selected.size === 0 || saving) return;
     setSaving(true);
-    try {
-      for (const item of selected) {
+    const items = [...selected];
+    const failed: string[] = [];
+    for (const item of items) {
+      try {
         const name = item.length > 50 ? item.slice(0, 47) + "..." : item;
         await invoke("add_snippet", { name, content: item });
+      } catch (e) {
+        logger.warn("保存片段失败", e);
+        failed.push(item);
       }
-      toast(`已保存 ${selected.size} 条片段`, "success");
+    }
+    setSaving(false);
+    if (failed.length === 0) {
+      toast(`已保存 ${items.length} 条片段`, "success");
       setSelected(new Set());
-    } catch (e) {
-      logger.warn("保存片段失败", e);
-      toast("保存片段失败", "error");
-    } finally {
-      setSaving(false);
+    } else if (failed.length === items.length) {
+      toast("保存片段失败", "error"); // 全部失败，保留原选中以便重试
+    } else {
+      toast(`已保存 ${items.length - failed.length} 条，${failed.length} 条失败`, "error");
+      setSelected(new Set(failed)); // 只保留失败项，成功项从选中移除，避免重试时重复保存
     }
   };
 

@@ -26,6 +26,14 @@ impl DataStore {
     }
 
     pub fn create_group(&self, name: &str, color: &str, icon: &str) -> Result<Group, String> {
+        // 校验分组名：trim 后非空，最长 50 个字符（用 chars().count() 数字符数而非字节数，避免中文被误判）
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err("分组名不能为空".to_string());
+        }
+        if trimmed.chars().count() > 50 {
+            return Err("分组名最长 50 个字符".to_string());
+        }
         let conn = self.lock_conn();
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
@@ -50,6 +58,14 @@ impl DataStore {
     }
 
     pub fn update_group(&self, id: &str, name: &str, color: &str, icon: &str) -> Result<(), String> {
+        // 校验分组名：trim 后非空，最长 50 个字符
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err("分组名不能为空".to_string());
+        }
+        if trimmed.chars().count() > 50 {
+            return Err("分组名最长 50 个字符".to_string());
+        }
         let conn = self.lock_conn();
         let affected = conn
             .execute(
@@ -65,7 +81,9 @@ impl DataStore {
 
     pub fn delete_group(&self, id: &str) -> Result<(), String> {
         let conn = self.lock_conn();
-        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        // 改用 RAII 事务（unchecked_transaction）：手写 BEGIN/COMMIT 若 COMMIT 本身失败不会
+        // ROLLBACK，事务会永久挂在共享连接上；Transaction 在 drop 时若未 commit 成功会自动 ROLLBACK
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         let result = (|| -> Result<(), String> {
             // 将该分组的记录的 group_id 置为 NULL
             conn.execute(
@@ -80,11 +98,11 @@ impl DataStore {
         })();
         match result {
             Ok(()) => {
-                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                tx.commit().map_err(|e| e.to_string())?;
                 Ok(())
             }
             Err(e) => {
-                conn.execute_batch("ROLLBACK;").ok();
+                // tx 在此处离开作用域自动 ROLLBACK，无需手动调用
                 Err(e)
             }
         }
@@ -92,7 +110,8 @@ impl DataStore {
 
     pub fn reorder_groups(&self, ids: &[String]) -> Result<(), String> {
         let conn = self.lock_conn();
-        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        // 改用 RAII 事务：COMMIT 失败不回滚会导致事务永久卡在共享连接上，drop 时自动 ROLLBACK 可避免
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         let result = (|| -> Result<(), String> {
             for (i, id) in ids.iter().enumerate() {
                 conn.execute(
@@ -105,11 +124,11 @@ impl DataStore {
         })();
         match result {
             Ok(()) => {
-                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+                tx.commit().map_err(|e| e.to_string())?;
                 Ok(())
             }
             Err(e) => {
-                conn.execute_batch("ROLLBACK;").ok();
+                // tx 在此处离开作用域自动 ROLLBACK
                 Err(e)
             }
         }

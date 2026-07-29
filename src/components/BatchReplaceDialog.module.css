@@ -11,7 +11,7 @@
   align-items: center;
   gap: 6px;
   padding: 7px 14px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--section-bg);
   color: var(--text-primary);
@@ -40,7 +40,7 @@
   align-items: center;
   gap: 8px;
   padding: 0 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--section-bg);
   transition: border-color 0.15s;
@@ -101,13 +101,14 @@
 .previewBtn {
   background: var(--section-bg);
   color: var(--text-primary);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
 }
 .previewBtn:hover:not(:disabled) {
   border-color: var(--accent);
 }
 .replaceBtn {
-  background: linear-gradient(135deg, var(--accent), var(--accent-dark, #0369A1));
+  /* 白字压 --accent 对比度不足 4.5:1，渐变起始色改用加深版 --accent-solid */
+  background: linear-gradient(135deg, var(--accent-solid), var(--accent-dark, #0369A1));
   color: #fff;
 }
 .previewBtn:disabled,
@@ -117,7 +118,7 @@
 }
 
 .preview {
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -128,7 +129,7 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .previewList {
@@ -183,7 +184,7 @@
 .results {
   max-height: 150px;
   overflow-y: auto;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 4px;
 }

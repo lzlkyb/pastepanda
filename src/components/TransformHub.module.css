@@ -99,7 +99,8 @@
 .chipOn {
   background: var(--accent-light);
   border-color: var(--accent);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   font-weight: 600;
 }
 
@@ -143,7 +144,8 @@
   gap: 5px;
   background: var(--accent-light);
   border: 1px solid var(--accent);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   font-size: 11.5px;
   font-weight: 600;
   padding: 5px 13px;
@@ -152,7 +154,8 @@
   transition: 0.15s;
   font-family: inherit;
 }
-.copyBtn:hover:not(:disabled) { background: var(--accent); color: #fff; }
+/* 白字压 --accent 对比度不足 4.5:1，hover 实心背景改用加深版 --accent-solid */
+.copyBtn:hover:not(:disabled) { background: var(--accent-solid); color: #fff; }
 .copyBtn:disabled { opacity: 0.45; cursor: not-allowed; }
 .copyBtnDone {
   background: var(--green-bg);

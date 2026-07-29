@@ -188,7 +188,8 @@
 }
 .snippetFilterChip.active {
   background: var(--accent-light);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   border-color: var(--accent);
 }
 
@@ -301,7 +302,8 @@
   white-space: nowrap;
   flex-shrink: 0;
 }
-.snippetTag.api { background: var(--accent-light); color: var(--accent); }
+/* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+.snippetTag.api { background: var(--accent-light); color: var(--accent-strong); }
 .snippetTag.sql { background: var(--green-bg); color: var(--green); }
 .snippetTag.config { background: var(--orange-bg); color: var(--orange); }
 .snippetTag.template { background: rgba(168,85,247,0.1); color: #a855f7; }
@@ -325,7 +327,8 @@
   background: var(--card-bg);
 }
 .snippetActionBtnV2.copy:hover {
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   background: var(--accent-light);
 }
 .snippetActionBtnV2.danger:hover {
@@ -477,8 +480,9 @@
   border-color: var(--accent);
   color: var(--accent);
 }
+/* 白字压 --accent 对比度不足 4.5:1，实心主按钮背景改用加深版 --accent-solid */
 .btnSmV2.primary {
-  background: var(--accent);
+  background: var(--accent-solid);
   color: #fff;
 }
 .btnSmV2.primary:hover {
@@ -499,7 +503,8 @@
 }
 .btnSmV2.outline.active {
   background: var(--accent-light);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   border-color: var(--accent);
 }
 

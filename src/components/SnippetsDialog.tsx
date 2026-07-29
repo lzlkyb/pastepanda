@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Plus, Trash2, Copy, Edit3, ClipboardList, Check, Download, CheckSquare } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
@@ -55,6 +55,8 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const [editSnapshot, setEditSnapshot] = useState("");
   const [discardOpen, setDiscardOpen] = useState(false);
+  const [saving, setSaving] = useState(false); // 保存中标志，防止快速双击重复提交保存
+  const pendingFullCloseRef = useRef(false); // 遮罩/X 触发关闭时，记录脏检查确认后是否需要关闭整个对话框
 
   // 从后端加载片段
   const loadSnippets = useCallback(async () => {
@@ -131,16 +133,22 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
     );
   };
 
-  const handleCancelEdit = () => {
-    if (isEditDirty()) {
+  // 统一关闭入口：遮罩点击、右上角 X、面板内“取消”按钮三处共用同一条脏检查逻辑，
+  // 有未保存改动时先弹确认，避免遮罩/X 绕过检查导致改动无声丢失；
+  // closeDialog 为 true 表示由“关闭整个对话框”的入口（遮罩/X）触发，确认放弃后需连带关闭整个弹窗
+  const handleRequestClose = (closeDialog: boolean) => {
+    if (editing && isEditDirty()) {
+      pendingFullCloseRef.current = closeDialog;
       setDiscardOpen(true);
     } else {
       setEditing(null);
+      if (closeDialog) onClose();
     }
   };
 
   const handleSaveEdit = async () => {
-    if (!editing || !editing.name.trim()) return;
+    if (!editing || !editing.name.trim() || saving) return; // saving 防止快速双击重复提交
+    setSaving(true);
     try {
       if (editing.id) {
         await invoke("update_snippet", {
@@ -153,10 +161,13 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
         await invoke("add_snippet", { name: editing.name, content: editing.content });
       }
       await loadSnippets();
+      setEditing(null); // 仅保存成功后才关闭编辑框，失败时保留用户输入的内容以便重试
     } catch (e) {
       logger.warn("保存片段失败", e);
+      toast("保存失败，请重试", "error"); // 补充失败提示，且不关闭编辑框，避免用户输入静默丢失
+    } finally {
+      setSaving(false);
     }
-    setEditing(null);
   };
 
   const handleDelete = async () => {
@@ -164,8 +175,10 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
     try {
       await invoke("delete_snippet", { id: deleteTarget.id });
       await loadSnippets();
+      toast("已删除片段", "success"); // 补充删除成功提示
     } catch (e) {
       logger.warn("删除片段失败", e);
+      toast("删除失败", "error"); // 补充删除失败提示
     }
     setDeleteTarget(null);
   };
@@ -221,8 +234,10 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
       if (!path) return;
       const { writeTextFile } = await import("@tauri-apps/plugin-fs");
       await writeTextFile(path, JSON.stringify(snippets, null, 2));
+      toast("导出成功", "success"); // 补充导出成功提示
     } catch (e) {
       logger.warn("导出片段失败", e);
+      toast("导出失败", "error"); // 补充导出失败提示
     }
   };
 
@@ -235,7 +250,7 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
           <motion.div
             {...anim.backdrop}
             className="dialog-backdrop"
-            onClick={onClose}
+            onClick={() => handleRequestClose(true)}
           >
             <FocusTrap>
             <motion.div
@@ -266,7 +281,7 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
                     <Plus size={13} />
                     <span>新建</span>
                   </button>
-                  <button onClick={onClose} className="dialog-close"
+                  <button onClick={() => handleRequestClose(true)} className="dialog-close"
                     onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
                     onMouseLeave={(e) => (e.currentTarget.style.background = "")}>
                     <X size={16} />
@@ -331,12 +346,12 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
                       </select>
                     </div>
                     <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
-                      <button onClick={handleCancelEdit}
+                      <button onClick={() => handleRequestClose(false)}
                         className={`${styles.extractBtnSm} ${styles.ghost}`}>取消</button>
                       <button onClick={handleSaveEdit}
-                        disabled={!editing.name.trim()}
+                        disabled={!editing.name.trim() || saving}
                         className={`${styles.extractBtnSm} ${styles.primary}`}
-                        style={!editing.name.trim() ? { opacity: 0.5, cursor: "not-allowed" } : undefined}>保存</button>
+                        style={!editing.name.trim() || saving ? { opacity: 0.5, cursor: "not-allowed" } : undefined}>{saving ? "保存中..." : "保存"}</button>
                     </div>
                   </div>
                 ) : filtered.length === 0 ? (
@@ -404,7 +419,7 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
 
                 {/* 批量操作栏 */}
                 {batchMode && selectedIds.size > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 4px", marginTop: "4px", borderTop: "1px solid var(--border)" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 4px", marginTop: "4px", borderTop: "1px solid var(--border-color)" }}>
                     <span style={{ fontSize: 12, color: "var(--text-muted)" }}>已选 {selectedIds.size} 项</span>
                     <div style={{ display: "flex", gap: "6px" }}>
                       <button className={`${styles.btnSmV2} ${styles.outline} ${styles.compact}`} onClick={() => setSelectedIds(new Set())}>清空选择</button>
@@ -515,8 +530,16 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
             message="当前修改尚未保存，确定放弃？"
             confirmText="放弃"
             variant="danger"
-            onConfirm={() => { setEditing(null); setDiscardOpen(false); }}
-            onCancel={() => setDiscardOpen(false)}
+            onConfirm={() => {
+              setEditing(null);
+              setDiscardOpen(false);
+              // 若是遮罩/X 触发的关闭，确认放弃后需连带关闭整个对话框
+              if (pendingFullCloseRef.current) {
+                pendingFullCloseRef.current = false;
+                onClose();
+              }
+            }}
+            onCancel={() => { pendingFullCloseRef.current = false; setDiscardOpen(false); }}
           />
         </>
       )}

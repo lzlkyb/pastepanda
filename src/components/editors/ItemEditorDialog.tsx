@@ -38,18 +38,22 @@ export function ItemEditorDialog() {
 function CustomEditorHost({ component: Comp, item, onClose }: {
   component: ComponentType<CustomEditorProps>;
   item: HistoryItem;
-  onClose: () => void;
+  onClose: (itemId?: string) => void;
 }) {
+  // 绑定当前条目 id：customShell 编辑器（图片/文件）内部只会无参调用 onClose，
+  // 这里统一补上 item.id，即便该实例已因切换到其他条目而卸载、残留的异步回调才触发关闭，
+  // 也只会尝试关闭"自己那条"，不会误关新打开的条目（问题1）
+  const boundClose = useCallback(() => onClose(item.id), [onClose, item.id]);
   return (
     <ErrorBoundary fallback={null}>
       <Suspense fallback={null}>
-        <Comp item={item} onClose={onClose} />
+        <Comp item={item} onClose={boundClose} />
       </Suspense>
     </ErrorBoundary>
   );
 }
 
-function EditorShell({ def, item, onClose }: { def: ShellEditorDefinition; item: HistoryItem; onClose: () => void }) {
+function EditorShell({ def, item, onClose }: { def: ShellEditorDefinition; item: HistoryItem; onClose: (itemId?: string) => void }) {
   const anim = useDialogAnim();
   const actionsRef = useRef<EditorActions>({});
   const registerActions = useCallback((a: EditorActions) => { actionsRef.current = a; }, []);
@@ -60,7 +64,7 @@ function EditorShell({ def, item, onClose }: { def: ShellEditorDefinition; item:
   const requestClose = useCallback(() => {
     const dirty = actionsRef.current.isDirty?.() ?? false;
     if (dirty) setConfirmDiscard(true);
-    else onClose();
+    else onClose(); // 用户主动关闭（Esc/遮罩/X），当前渲染实例就是最新条目，无需校验 id，强制关闭即可
   }, [onClose]);
 
   const handleSave = useCallback(async () => {
@@ -69,11 +73,13 @@ function EditorShell({ def, item, onClose }: { def: ShellEditorDefinition; item:
     setSaving(true);
     try {
       const ok = await save();
-      if (ok) onClose();
+      // 带上 item.id 校验后再关闭：await 期间用户可能已经切去编辑其他条目，
+      // 不校验会误关新条目的编辑器、丢失其未保存内容（问题1：closeEditor 竞态）
+      if (ok) onClose(item.id);
     } finally {
       setSaving(false);
     }
-  }, [onClose, saving]);
+  }, [onClose, saving, item.id]);
 
   // ref 转发：键盘监听器保持稳定，闭包始终新鲜
   const requestCloseRef = useRef(requestClose);
@@ -161,7 +167,7 @@ function EditorShell({ def, item, onClose }: { def: ShellEditorDefinition; item:
         confirmText="放弃修改"
         cancelText="继续编辑"
         variant="warning"
-        onConfirm={() => { setConfirmDiscard(false); onClose(); }}
+        onConfirm={() => { setConfirmDiscard(false); onClose(); }} // 用户确认放弃修改，也是主动关闭，强制关闭即可
         onCancel={() => setConfirmDiscard(false)}
       />
     </>

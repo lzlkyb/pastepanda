@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, Tag, HistoryItem } from "@/stores/appStore";
 import { setItemTags, createTag } from "@/lib/api";
 import { TagBadge, AnimatedTagBadge } from "@/components/TagBadge";
+import { useToast } from "@/components/Toast";
 import { X, Search } from "lucide-react";
 import styles from "./TagEditor.module.css";
 import { useDialogAnim } from "@/lib/dialogMotion";
@@ -25,6 +26,7 @@ export function TagEditor({ open, item, onClose }: TagEditorProps) {
   const [saving, setSaving] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const anim = useDialogAnim();
+  const { toast } = useToast();
 
   // 初始化已选标签
   useEffect(() => {
@@ -75,11 +77,15 @@ export function TagEditor({ open, item, onClose }: TagEditorProps) {
         setSelectedIds((prev) => [...prev, tag.id]);
         setNewTagName("");
         setNewTagColor(PRESET_COLORS[0]);
+      } else {
+        // 修复：createTag 返回 null （如 tags.name 的 UNIQUE 约束冲突）时此前完全静默无操作，
+        // 输入框内容还留着，用户不知道发生了什么。get_tags 会返回全部内置自动标签名（代码/链接/Python 等常用词），撞名极易，补上明确提示
+        toast(`标签「${trimmed}」已存在`, "error");
       }
     } finally {
       setCreating(false);
     }
-  }, [newTagName, newTagColor, creating]);
+  }, [newTagName, newTagColor, creating, toast]);
 
   const handleSave = useCallback(async () => {
     if (!item || saving) return;
@@ -167,8 +173,11 @@ export function TagEditor({ open, item, onClose }: TagEditorProps) {
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" && newTagName.trim()) {
-                        handleCreateTag();
+                      // 修复：此前这里检查的是另一个输入框（新建标签）的 newTagName state，
+                      // 在新建框填了名字但没提交、切到搜索框按 Enter 时会静默创建一个他并不想建的标签；
+                      // 现只处理搜索框自身的逻辑——按 Enter 选中当前搜索结果中的第一个标签
+                      if (e.key === "Enter" && search.trim() && filteredTags.length > 0) {
+                        toggleTag(filteredTags[0].id);
                       }
                     }}
                   />

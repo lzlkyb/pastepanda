@@ -23,13 +23,15 @@
 }
 .trigger:hover {
   border-color: var(--accent);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   background: var(--accent-light);
 }
 .triggerActive {
   border-color: var(--accent);
   color: #fff;
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，实心激活态背景改用加深版 --accent-solid */
+  background: var(--accent-solid);
 }
 
 /* 悬浮 tooltip — FloatingPortal 传送到 body */

@@ -751,7 +751,7 @@ export function GeneralTab({
           <div className={`${styles.sRowLabel}`}>唤出窗口</div>
           <div className={`${styles.sRowDesc}`}>全局快捷键，在任何位置唤出</div>
         </div>
-        <HotkeyRecorder value={config.hotkey} allowClear taken={[config.sequential_hotkey || "ctrl+alt+q", config.stack_toggle_hotkey || "ctrl+alt+k", config.stack_paste_hotkey || "ctrl+alt+p"]} onChange={async (v) => {
+        <HotkeyRecorder value={config.hotkey} allowClear taken={[config.sequential_hotkey ?? "", config.stack_toggle_hotkey ?? "", config.stack_paste_hotkey ?? ""]} onChange={async (v) => {
           const oldVal = config.hotkey;
           await updateAndSave({ hotkey: v });
           try {
@@ -772,8 +772,8 @@ export function GeneralTab({
           <div className={`${styles.sRowLabel}`}>依次粘贴</div>
           <div className={`${styles.sRowDesc}`}>按顺序逐条粘贴剪贴板</div>
         </div>
-        <HotkeyRecorder value={config.sequential_hotkey || "ctrl+alt+q"} allowClear taken={[config.hotkey, config.stack_toggle_hotkey || "ctrl+alt+k", config.stack_paste_hotkey || "ctrl+alt+p"]} onChange={async (v) => {
-          const oldVal = config.sequential_hotkey || "ctrl+alt+q";
+        <HotkeyRecorder value={config.sequential_hotkey ?? ""} allowClear taken={[config.hotkey, config.stack_toggle_hotkey ?? "", config.stack_paste_hotkey ?? ""]} onChange={async (v) => {
+          const oldVal = config.sequential_hotkey ?? "";
           await updateAndSave({ sequential_hotkey: v });
           try {
             const { invoke } = await import("@tauri-apps/api/core");
@@ -793,8 +793,8 @@ export function GeneralTab({
           <div className={`${styles.sRowLabel}`}>收集模式开关</div>
           <div className={`${styles.sRowDesc}`}>进入/退出剪贴板收集模式（栈模式）</div>
         </div>
-        <HotkeyRecorder value={config.stack_toggle_hotkey || "ctrl+alt+k"} allowClear taken={[config.hotkey, config.sequential_hotkey || "ctrl+alt+q", config.stack_paste_hotkey || "ctrl+alt+p"]} onChange={async (v) => {
-          const oldVal = config.stack_toggle_hotkey || "ctrl+alt+k";
+        <HotkeyRecorder value={config.stack_toggle_hotkey ?? ""} allowClear taken={[config.hotkey, config.sequential_hotkey ?? "", config.stack_paste_hotkey ?? ""]} onChange={async (v) => {
+          const oldVal = config.stack_toggle_hotkey ?? "";
           await updateAndSave({ stack_toggle_hotkey: v });
           try {
             const { invoke } = await import("@tauri-apps/api/core");
@@ -814,8 +814,8 @@ export function GeneralTab({
           <div className={`${styles.sRowLabel}`}>粘贴最近收集</div>
           <div className={`${styles.sRowDesc}`}>粘贴最近收集的内容并移出收集列表</div>
         </div>
-        <HotkeyRecorder value={config.stack_paste_hotkey || "ctrl+alt+p"} allowClear taken={[config.hotkey, config.sequential_hotkey || "ctrl+alt+q", config.stack_toggle_hotkey || "ctrl+alt+k"]} onChange={async (v) => {
-          const oldVal = config.stack_paste_hotkey || "ctrl+alt+p";
+        <HotkeyRecorder value={config.stack_paste_hotkey ?? ""} allowClear taken={[config.hotkey, config.sequential_hotkey ?? "", config.stack_toggle_hotkey ?? ""]} onChange={async (v) => {
+          const oldVal = config.stack_paste_hotkey ?? "";
           await updateAndSave({ stack_paste_hotkey: v });
           try {
             const { invoke } = await import("@tauri-apps/api/core");

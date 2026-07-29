@@ -244,7 +244,11 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
       }
       setExpiredCount(0);
       toast(`已清理 ${result.count} 条过期记录 (Ctrl+Z 撤销)`, "success");
-    } catch (e) { logger.warn("清理过期记录失败", e); }
+    } catch (e) {
+      logger.warn("清理过期记录失败", e);
+      // 修复：清理失败时确认框照常关闭、计数不变却无任何提示，补上失败 toast
+      toast(`清理过期记录失败：${e instanceof Error ? e.message : String(e)}`, "error");
+    }
     setShowCleanupConfirm(false);
   };
 

@@ -440,7 +440,9 @@ const CardHoverPopover = memo(function CardHoverPopover({
     e.preventDefault();
     // U2：走后端持久化（原 store.togglePin 仅改本地状态，鼠标收藏重启后全部丢失）
     const pinned = await togglePin(item.id);
+    // 修复：失败（返回 null）此前完全静默，星标不变且用户不知道为什么
     if (pinned !== null) toast(pinned ? "已置顶" : "已取消置顶", "success");
+    else toast("置顶操作失败", "error");
   }, [item.id, toast]);
 
   const handleEdit = useCallback((e: React.MouseEvent) => {
@@ -619,7 +621,9 @@ const InlineCardActions = memo(function InlineCardActions({
     e.preventDefault();
     // U2：走后端持久化（原 store.togglePin 仅改本地状态，鼠标收藏重启后全部丢失）
     const pinned = await togglePin(item.id);
+    // 修复：失败（返回 null）此前完全静默，星标不变且用户不知道为什么
     if (pinned !== null) toast(pinned ? "已置顶" : "已取消置顶", "success");
+    else toast("置顶操作失败", "error");
   }, [item.id, toast]);
 
   const handleEdit = useCallback((e: React.MouseEvent) => {
@@ -666,12 +670,22 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
 
   const hasUrl = URL_SCHEME_RE.test(item.text || "");
 
+  // 前端长度防护：直接传全文 content 到后端，30MB 的粘贴会变成 30MB 的片段行，导致片段库永久卡死；
+  // 超过 10 万字符（约 100KB）时截断并提示用户，不直接拒绝是为了仍能保留大部分内容可用
+  const MAX_SNIPPET_LEN = 100000;
   const handleAddSnippet = useCallback(async () => {
+    const full = item.text || "";
+    const truncated = full.length > MAX_SNIPPET_LEN;
+    const content = truncated ? full.slice(0, MAX_SNIPPET_LEN) : full;
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("add_snippet", { name: item.text.slice(0, 30), content: item.text });
-      toast("已添加到片段库", "success");
-    } catch (e) { logger.warn("添加片段失败", e); }
+      await invoke("add_snippet", { name: item.text.slice(0, 30), content });
+      toast(truncated ? "内容过长，已截取前 10 万字符并添加到片段库" : "已添加到片段库", "success");
+    } catch (e) {
+      logger.warn("添加片段失败", e);
+      // 修复：添加失败此前完全静默，用户不知道操作没生效
+      toast(`添加到片段库失败：${e instanceof Error ? e.message : String(e)}`, "error");
+    }
   }, [item.text, toast]);
 
   // 自动标签相关
@@ -686,7 +700,11 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     try {
       await confirmAutoTags(item.id);
       toast("已确认自动标签", "success");
-    } catch (e) { logger.warn("确认自动标签失败", e); }
+    } catch (e) {
+      logger.warn("确认自动标签失败", e);
+      // 修复：确认失败此前完全静默，标签状态未变却用户毫无感知
+      toast(`确认自动标签失败：${e instanceof Error ? e.message : String(e)}`, "error");
+    }
   }, [item.id, toast]);
 
   const handleRemoveAutoTags = useCallback(async () => {
@@ -695,7 +713,11 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
         await removeItemTags([item.id], autoTagIds);
         toast("已移除自动标签", "success");
       }
-    } catch (e) { logger.warn("移除自动标签失败", e); }
+    } catch (e) {
+      logger.warn("移除自动标签失败", e);
+      // 修复：移除失败此前完全静默，标签仍在却用户以为已移除
+      toast(`移除自动标签失败：${e instanceof Error ? e.message : String(e)}`, "error");
+    }
   }, [item.id, autoTagIds, toast]);
 
   const handleOpenUrl = useCallback(async () => {
@@ -709,8 +731,12 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
         const { openUrl } = await import("@tauri-apps/plugin-opener");
         await openUrl(item.text);
       }
-    } catch (e) { logger.warn("打开URL失败", e); }
-  }, [item.text]);
+    } catch (e) {
+      logger.warn("打开URL失败", e);
+      // 修复：打不开时此前完全静默，用户点了没反应完全不知道发生了什么
+      toast(`打开失败：${e instanceof Error ? e.message : String(e)}`, "error");
+    }
+  }, [item.text, toast]);
 
   // 文件操作目标路径：
   //  - file_path 文本子类型：路径就在 item.text
@@ -857,7 +883,12 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     onPin: async () => {
       // U2：走后端持久化，按权威返回值提示
       const pinned = await togglePin(item.id);
-      if (pinned !== null) toast(pinned ? "已置顶" : "已取消置顶", "success");
+      if (pinned !== null) {
+        toast(pinned ? "已置顶" : "已取消置顶", "success");
+      } else {
+        // 修复：置顶失败时此前完全静默，星标状态未变却用户不知道发生了什么
+        toast("置顶操作失败", "error");
+      }
     },
     onDelete: () => { void deleteHistory([item.id]); },
     onAddSnippet: handleAddSnippet,

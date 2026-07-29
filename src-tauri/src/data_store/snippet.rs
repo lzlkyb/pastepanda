@@ -2,6 +2,19 @@ use super::*;
 
 impl DataStore {
     pub fn add_snippet(&self, name: &str, content: &str) -> Result<String, String> {
+        // 校验片段标题：trim 后非空，最长 100 个字符（用 chars().count() 数字符数而非字节数，避免中文被误判）
+        let trimmed_name = name.trim();
+        if trimmed_name.is_empty() {
+            return Err("片段标题不能为空".to_string());
+        }
+        if trimmed_name.chars().count() > 100 {
+            return Err("片段标题最长 100 个字符".to_string());
+        }
+        // 校验片段内容长度：防止前端把整条剪贴板内容（可能几十 MB）当片段写入，
+        // 导致 get_snippets 一次性把所有片段全文通过 IPC 返回造成 UI 永久冻结
+        if content.chars().count() > 100_000 {
+            return Err("片段内容过长，最多 100000 个字符".to_string());
+        }
         let conn = self.lock_conn();
         let id = uuid::Uuid::new_v4().to_string();
         conn.execute(
@@ -55,6 +68,18 @@ impl DataStore {
         content: &str,
         tag: &str,
     ) -> Result<(), String> {
+        // 校验片段标题：trim 后非空，最长 100 个字符
+        let trimmed_name = name.trim();
+        if trimmed_name.is_empty() {
+            return Err("片段标题不能为空".to_string());
+        }
+        if trimmed_name.chars().count() > 100 {
+            return Err("片段标题最长 100 个字符".to_string());
+        }
+        // 校验片段内容长度：同 add_snippet，防止超大内容写入导致 get_snippets IPC 返回卡死 UI
+        if content.chars().count() > 100_000 {
+            return Err("片段内容过长，最多 100000 个字符".to_string());
+        }
         let conn = self.lock_conn();
         conn.execute(
             "UPDATE snippets SET name = ?1, content = ?2, tag = ?3 WHERE id = ?4",

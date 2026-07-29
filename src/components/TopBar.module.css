@@ -48,7 +48,8 @@
 }
 
 .sidebarToggleActive {
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   background: var(--accent-light);
 }
 
@@ -238,6 +239,8 @@
 
 .searchHistoryClearAll:hover {
   background: var(--accent-light);
+  /* hover 态下继承基础色 accent 的文字压在 accent-light 底上，浅色主题下对比度不足 4.5:1，补充加深版 --accent-strong */
+  color: var(--accent-strong);
 }
 
 .searchHistoryItem {
@@ -428,7 +431,8 @@
 }
 
 .filterDropdownItemActive {
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   font-weight: 600;
   background: var(--accent-light);
 }
@@ -635,7 +639,8 @@
 
 .tagFilterAdd:hover {
   border-color: var(--accent);
-  color: var(--accent);
+  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
+  color: var(--accent-strong);
   background: var(--accent-light);
 }
 
@@ -713,7 +718,7 @@
 /* 分组分隔线 */
 .tagPickerDivider {
   height: 1px;
-  background: var(--border);
+  background: var(--border-color);
   margin: 4px 12px;
 }
 

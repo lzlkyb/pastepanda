@@ -15,6 +15,9 @@ export function BackToTop({ threshold = 150 }: BackToTopProps) {
   // 使用 ref 存储 threshold 避免 effect 因 threshold 变化重新订阅
   const thresholdRef = useRef(threshold);
   thresholdRef.current = threshold;
+  // 保存当前的 rAF frame id：trySubscribe 是递归调度的，每次重新调度都必须更新它，
+  // 否则 cleanup 只能 cancel 到第一次的 id，后续递归产生的 rAF 永远取消不掉
+  const rafIdRef = useRef(0);
 
   useEffect(() => {
     // 轮询等待 Lenis 实例就绪（Lenis 在 CardList 的 useEffect 中异步创建）
@@ -24,9 +27,12 @@ export function BackToTop({ threshold = 150 }: BackToTopProps) {
     const trySubscribe = () => {
       const lenis = lenisRef?.current;
       if (!lenis) {
-        if (!cancelled) requestAnimationFrame(trySubscribe);
+        if (!cancelled) rafIdRef.current = requestAnimationFrame(trySubscribe);
         return;
       }
+      // 拿到实例后先复查 cancelled：rAF 排队期间组件可能已卸载，不检查会订阅一个永远不会被清理的
+      // scroll 监听，并对已卸载组件 setState
+      if (cancelled) return;
 
       // Lenis scroll 事件回调
       const onScroll = ({ scroll }: Lenis) => {
@@ -42,11 +48,11 @@ export function BackToTop({ threshold = 150 }: BackToTopProps) {
     };
 
     // 用 rAF 等待，因为 Lenis 实例在同一个微任务/宏任务中不会被 BackToTop 的 effect 先拿到
-    const rafId = requestAnimationFrame(trySubscribe);
+    rafIdRef.current = requestAnimationFrame(trySubscribe);
 
     return () => {
       cancelled = true;
-      cancelAnimationFrame(rafId);
+      cancelAnimationFrame(rafIdRef.current);
       unsubscribe?.();
     };
   }, [lenisRef]);

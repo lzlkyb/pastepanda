@@ -608,12 +608,13 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
             <div className={styles.emptyIconWrap}>
               <div className={styles.emptyRing} />
               <div className={styles.emptyIcon}>
+                {/* 图标压在 .emptyIcon 的 accent-light 底上，浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */}
                 {searchKeyword ? (
-                  <Search size={28} style={{ color: "var(--accent)" }} strokeWidth={1.5} />
+                  <Search size={28} style={{ color: "var(--accent-strong)" }} strokeWidth={1.5} />
                 ) : hasActiveFilter ? (
-                  <FileX size={28} style={{ color: "var(--accent)" }} strokeWidth={1.5} />
+                  <FileX size={28} style={{ color: "var(--accent-strong)" }} strokeWidth={1.5} />
                 ) : (
-                  <ClipboardList size={28} style={{ color: "var(--accent)" }} strokeWidth={1.5} />
+                  <ClipboardList size={28} style={{ color: "var(--accent-strong)" }} strokeWidth={1.5} />
                 )}
               </div>
             </div>
@@ -651,20 +652,21 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                   <span className={styles.guideWelcomeEmoji}>👋</span>
                   <span>你的剪贴板助手已就绪，试试复制一段文字吧</span>
                 </div>
+                {/* 图标压在 guideIcon 的 accent-light 底上，浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */}
                 <div className={styles.guideCard}>
-                  <div className={styles.guideIcon} style={{ background: "var(--accent-light)" }}><Copy size={18} style={{ color: "var(--accent)" }} /></div>
+                  <div className={styles.guideIcon} style={{ background: "var(--accent-light)" }}><Copy size={18} style={{ color: "var(--accent-strong)" }} /></div>
                   <div className={styles.guideText}><div className={styles.guideLabel}>自动记录</div><div className={styles.guideDesc}>Ctrl+C 复制内容自动保存</div></div>
                 </div>
                 <div className={styles.guideCard}>
-                  <div className={styles.guideIcon} style={{ background: "var(--accent-light)" }}><Search size={18} style={{ color: "var(--accent)" }} /></div>
+                  <div className={styles.guideIcon} style={{ background: "var(--accent-light)" }}><Search size={18} style={{ color: "var(--accent-strong)" }} /></div>
                   <div className={styles.guideText}><div className={styles.guideLabel}>搜索查找</div><div className={styles.guideDesc}>输入关键词快速定位</div></div>
                 </div>
                 <div className={styles.guideCard}>
-                  <div className={styles.guideIcon} style={{ background: "var(--accent-light)" }}><Zap size={18} style={{ color: "var(--accent)" }} /></div>
+                  <div className={styles.guideIcon} style={{ background: "var(--accent-light)" }}><Zap size={18} style={{ color: "var(--accent-strong)" }} /></div>
                   <div className={styles.guideText}><div className={styles.guideLabel}>依次粘贴</div><div className={styles.guideDesc}>{sequentialHotkey || "ctrl+alt+q"} 逐条粘贴</div></div>
                 </div>
                 <div className={styles.guideFooterHint}>
-                  💡 按 <kbd>?</kbd> 查看所有快捷键 · 点击右上角 <span style={{ color: "var(--accent)" }}>❓</span> 打开帮助
+                  💡 按 <kbd>?</kbd> 查看所有快捷键 · 点击右上角 <span style={{ color: "var(--accent)" }}>⚙</span> 打开设置 → 帮助
                 </div>
               </div>
             )}
