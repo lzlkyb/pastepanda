@@ -14,13 +14,13 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import styles from "../Settings.module.css";
 
 const THEME_PREVIEWS: Record<string, { bg: string; accent: string; text: string; barBg: string; bodyBg: string; lineBg: string }> = {
-  "ocean":      { bg: "#F4F6F9", accent: "#0284C7", text: "#64748B", barBg: "#fff", bodyBg: "#F4F6F9", lineBg: "#E0E4EB" },
-  "ocean-dark": { bg: "#060D14", accent: "#3B9EFF", text: "#8BA4C0", barBg: "#0A1628", bodyBg: "#060D14", lineBg: "#162B45" },
-  "midnight":   { bg: "#09090B", accent: "#818CF8", text: "#A1A1AA", barBg: "#18181B", bodyBg: "#09090B", lineBg: "#27272A" },
-  "forest":     { bg: "#F2F7F5", accent: "#059669", text: "#78716C", barBg: "#fff", bodyBg: "#F2F7F5", lineBg: "#D1D9D3" },
-  "blossom":    { bg: "#FFFBFD", accent: "#EC4899", text: "#A68A96", barBg: "#fff", bodyBg: "#FFFBFD", lineBg: "#F3E8ED" },
-  "terminal":   { bg: "#0A0A0A", accent: "#22C55E", text: "#A3A3A3", barBg: "#141414", bodyBg: "#0A0A0A", lineBg: "#262626" },
-  "sunset":     { bg: "#1C1410", accent: "#F97316", text: "#B8A99A", barBg: "#281E18", bodyBg: "#1C1410", lineBg: "#3D3028" },
+  "ocean":      { bg: "#F4F6F9", accent: "#0284C7", text: "#64748B", barBg: "#fff", bodyBg: "linear-gradient(180deg, #EAF6FD 0%, #CFE9F8 40%, #9ED0EA 75%, #79B8DD 100%)", lineBg: "#E0E4EB" },
+  "ocean-dark": { bg: "#060D14", accent: "#3B9EFF", text: "#8BA4C0", barBg: "#0A1628", bodyBg: "radial-gradient(130% 120% at 70% -5%, #14415F 0%, #0A2440 45%, #041225 100%)", lineBg: "#162B45" },
+  "midnight":   { bg: "#09090B", accent: "#818CF8", text: "#A1A1AA", barBg: "#18181B", bodyBg: "radial-gradient(100% 80% at 50% -10%, #1C1832 0%, #0B0B13 55%, #07070C 100%)", lineBg: "#27272A" },
+  "forest":     { bg: "#F2F7F5", accent: "#059669", text: "#78716C", barBg: "#fff", bodyBg: "linear-gradient(180deg, #F5F1E3 0%, #EAE5D1 55%, #DCD6BD 100%)", lineBg: "#D1D9D3" },
+  "blossom":    { bg: "#FFFBFD", accent: "#EC4899", text: "#A68A96", barBg: "#fff", bodyBg: "linear-gradient(160deg, #FFF0F6 0%, #FFDEEE 55%, #F9C6DD 100%)", lineBg: "#F3E8ED" },
+  "terminal":   { bg: "#0A0A0A", accent: "#22C55E", text: "#A3A3A3", barBg: "#141414", bodyBg: "radial-gradient(120% 120% at 50% 40%, #0A1408 0%, #000000 75%)", lineBg: "#262626" },
+  "sunset":     { bg: "#1C1410", accent: "#F97316", text: "#B8A99A", barBg: "#281E18", bodyBg: "linear-gradient(180deg, #2A1638 0%, #4A2150 38%, #8A3A5C 68%, #D96A5B 88%, #F0925F 100%)", lineBg: "#3D3028" },
 };
 
 const CLEANUP_OPTIONS = [
@@ -778,7 +778,7 @@ export function GeneralTab({
           <div className={`${styles.sRowLabel}`}>唤出窗口</div>
           <div className={`${styles.sRowDesc}`}>全局快捷键，在任何位置唤出</div>
         </div>
-        <HotkeyRecorder value={config.hotkey} allowClear taken={[config.sequential_hotkey ?? "", config.stack_toggle_hotkey ?? "", config.stack_paste_hotkey ?? ""]} onChange={async (v) => {
+        <HotkeyRecorder value={config.hotkey} allowClear taken={[config.sequential_hotkey ?? "", config.stack_toggle_hotkey ?? "", config.stack_paste_hotkey ?? "", config.quick_paste_hotkey ?? ""]} onChange={async (v) => {
           const oldVal = config.hotkey;
           await updateAndSave({ hotkey: v });
           try {
@@ -799,7 +799,7 @@ export function GeneralTab({
           <div className={`${styles.sRowLabel}`}>依次粘贴</div>
           <div className={`${styles.sRowDesc}`}>按顺序逐条粘贴剪贴板</div>
         </div>
-        <HotkeyRecorder value={config.sequential_hotkey ?? ""} allowClear taken={[config.hotkey, config.stack_toggle_hotkey ?? "", config.stack_paste_hotkey ?? ""]} onChange={async (v) => {
+        <HotkeyRecorder value={config.sequential_hotkey ?? ""} allowClear taken={[config.hotkey, config.stack_toggle_hotkey ?? "", config.stack_paste_hotkey ?? "", config.quick_paste_hotkey ?? ""]} onChange={async (v) => {
           const oldVal = config.sequential_hotkey ?? "";
           await updateAndSave({ sequential_hotkey: v });
           try {
@@ -820,7 +820,7 @@ export function GeneralTab({
           <div className={`${styles.sRowLabel}`}>收集模式开关</div>
           <div className={`${styles.sRowDesc}`}>进入/退出剪贴板收集模式（栈模式）</div>
         </div>
-        <HotkeyRecorder value={config.stack_toggle_hotkey ?? ""} allowClear taken={[config.hotkey, config.sequential_hotkey ?? "", config.stack_paste_hotkey ?? ""]} onChange={async (v) => {
+        <HotkeyRecorder value={config.stack_toggle_hotkey ?? ""} allowClear taken={[config.hotkey, config.sequential_hotkey ?? "", config.stack_paste_hotkey ?? "", config.quick_paste_hotkey ?? ""]} onChange={async (v) => {
           const oldVal = config.stack_toggle_hotkey ?? "";
           await updateAndSave({ stack_toggle_hotkey: v });
           try {
@@ -841,7 +841,7 @@ export function GeneralTab({
           <div className={`${styles.sRowLabel}`}>粘贴最近收集</div>
           <div className={`${styles.sRowDesc}`}>粘贴最近收集的内容并移出收集列表</div>
         </div>
-        <HotkeyRecorder value={config.stack_paste_hotkey ?? ""} allowClear taken={[config.hotkey, config.sequential_hotkey ?? "", config.stack_toggle_hotkey ?? ""]} onChange={async (v) => {
+        <HotkeyRecorder value={config.stack_paste_hotkey ?? ""} allowClear taken={[config.hotkey, config.sequential_hotkey ?? "", config.stack_toggle_hotkey ?? "", config.quick_paste_hotkey ?? ""]} onChange={async (v) => {
           const oldVal = config.stack_paste_hotkey ?? "";
           await updateAndSave({ stack_paste_hotkey: v });
           try {
@@ -850,6 +850,27 @@ export function GeneralTab({
             toast("快捷键已更新", "success");
           } catch (e) {
             await updateAndSave({ stack_paste_hotkey: oldVal });
+            const msg = e instanceof Error ? e.message : String(e);
+            logger.warn("热键设置失败", e);
+            toast(`快捷键设置失败：${msg}。变更未生效，已恢复原值`, "error");
+          }
+        }} />
+      </div>
+      <div className={styles.sRow}>
+        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #14B8A6, #0D9488)" }}>⚡</span>
+        <div className={`${styles.sRowBody}`}>
+          <div className={`${styles.sRowLabel}`}>快捷粘贴</div>
+          <div className={`${styles.sRowDesc}`}>在光标处弹出面板，快速选择并粘贴（类 Win+V）</div>
+        </div>
+        <HotkeyRecorder value={config.quick_paste_hotkey ?? ""} allowClear taken={[config.hotkey, config.sequential_hotkey ?? "", config.stack_toggle_hotkey ?? "", config.stack_paste_hotkey ?? ""]} onChange={async (v) => {
+          const oldVal = config.quick_paste_hotkey ?? "";
+          await updateAndSave({ quick_paste_hotkey: v });
+          try {
+            const { invoke } = await import("@tauri-apps/api/core");
+            await invoke("reregister_hotkeys");
+            toast("快捷键已更新", "success");
+          } catch (e) {
+            await updateAndSave({ quick_paste_hotkey: oldVal });
             const msg = e instanceof Error ? e.message : String(e);
             logger.warn("热键设置失败", e);
             toast(`快捷键设置失败：${msg}。变更未生效，已恢复原值`, "error");

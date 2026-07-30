@@ -130,6 +130,7 @@ export function HelpTabContent({ config }: { config: AppConfig; appName: string;
   const hotkeySeq = (config.sequential_hotkey as string) || "ctrl+alt+q";
   const hotkeyStackToggle = (config.stack_toggle_hotkey as string) || "ctrl+alt+k";
   const hotkeyStackPaste = (config.stack_paste_hotkey as string) || "ctrl+alt+p";
+  const hotkeyQuickPaste = (config.quick_paste_hotkey as string) || "alt+v";
 
   const q = query.trim();
   const searching = q.length > 0;
@@ -139,7 +140,7 @@ export function HelpTabContent({ config }: { config: AppConfig; appName: string;
     ? FEATURES.filter((f) => matches(q, f.name, f.desc, f.path))
     : FEATURES;
 
-  const hotkeyMatch = !searching || matches(q, "唤出 隐藏 窗口 热键 全局 粘贴 栈 索引 导航 删除 置顶 撤销 全选 预览 Escape Enter Space Delete", hotkeyShow, hotkeySeq, hotkeyStackToggle, hotkeyStackPaste);
+  const hotkeyMatch = !searching || matches(q, "唤出 隐藏 窗口 热键 全局 粘贴 栈 索引 导航 删除 置顶 撤销 全选 预览 Escape Enter Space Delete", hotkeyShow, hotkeySeq, hotkeyStackToggle, hotkeyStackPaste, hotkeyQuickPaste);
   const faqMatch = !searching || matches(q, ...FAQ_ITEMS.map((f) => `${f.q} ${f.a}`));
 
   // 搜索时无任何结果
@@ -205,12 +206,13 @@ export function HelpTabContent({ config }: { config: AppConfig; appName: string;
 
         {/* ── 快捷键速查 ── */}
         <Collapse icon="⌨️" title="快捷键速查" defaultOpen hidden={!hotkeyMatch}>
-          <SubTitle hidden={searching && !matches(q, "唤出 隐藏 窗口 热键 全局 依次 索引 栈 收集", hotkeyShow, hotkeySeq, hotkeyStackToggle, hotkeyStackPaste)}>全局热键</SubTitle>
+          <SubTitle hidden={searching && !matches(q, "唤出 隐藏 窗口 热键 全局 依次 索引 栈 收集 快捷", hotkeyShow, hotkeySeq, hotkeyStackToggle, hotkeyStackPaste, hotkeyQuickPaste)}>全局热键</SubTitle>
           <KeyRow desc="唤出 / 隐藏窗口" value={hotkeyShow} hidden={searching && !matches(q, "唤出 隐藏 窗口", hotkeyShow)} />
           <KeyRow desc="依次粘贴（逐条文本）" value={hotkeySeq} hidden={searching && !matches(q, "依次粘贴 逐条", hotkeySeq)} />
           <KeyRow desc="索引粘贴第 N 条" value="Ctrl+Alt+1~9" isStatic hidden={searching && !matches(q, "索引粘贴 第N 1~9 ctrl alt")} />
           <KeyRow desc="收集模式 开/关" value={hotkeyStackToggle} hidden={searching && !matches(q, "收集 栈模式 开关", hotkeyStackToggle)} />
           <KeyRow desc="粘贴收集内容（栈顶）" value={hotkeyStackPaste} hidden={searching && !matches(q, "栈顶粘贴 收集 粘贴", hotkeyStackPaste)} />
+          <KeyRow desc="快捷粘贴面板（类 Win+V）" value={hotkeyQuickPaste} hidden={searching && !matches(q, "快捷粘贴 面板 winv", hotkeyQuickPaste)} />
 
           <SubTitle hidden={searching && !matches(q, "导航 上下 顶部 底部 粘贴 预览 删除 置顶 撤销 全选", "Enter Space Delete Home End")}>窗口内</SubTitle>
           <KeyRow desc="上下导航" value="↑ / ↓" isStatic hidden={searching && !matches(q, "导航 上下 ↑ ↓")} />

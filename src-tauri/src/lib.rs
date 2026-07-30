@@ -28,6 +28,7 @@ mod lan_sync;
 mod lang_arbiter;
 mod paste_engine;
 mod pinned_window;
+mod quick_paste;
 mod tray_manager;
 
 /// 首次启动时通过文件关联传入的待打开文件路径。
@@ -260,6 +261,11 @@ pub fn run() {
                     .and_then(|v| v.as_str())
                     .unwrap_or("Ctrl+Alt+P")
                     .to_string(),
+                quick_paste: saved_config
+                    .get("quick_paste_hotkey")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Alt+V")
+                    .to_string(),
             };
 
             app.manage(store);
@@ -445,6 +451,8 @@ pub fn run() {
             commands::open_pinned_image,
             commands::close_pinned_image,
             commands::hide_tray_popup,
+            quick_paste::hide_quick_paste,
+            quick_paste::get_quick_paste_data,
             commands::set_stack_mode,
             commands::get_tray_popup_data,
             commands::emit_tray_open_settings,

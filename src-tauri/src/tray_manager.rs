@@ -166,12 +166,12 @@ fn get_taskbar_edge() -> TaskbarEdge {
 }
 
 /// 显示器工作区信息（物理像素，含原点）+ 该屏缩放因子
-struct MonitorWorkArea {
-    work_x: f64,
-    work_y: f64,
-    work_w: f64,
-    work_h: f64,
-    scale: f64,
+pub(crate) struct MonitorWorkArea {
+    pub work_x: f64,
+    pub work_y: f64,
+    pub work_w: f64,
+    pub work_h: f64,
+    pub scale: f64,
 }
 
 /// 获取包含指定物理坐标点的显示器的工作区（排除任务栏，带原点）与缩放因子。
@@ -183,7 +183,7 @@ struct MonitorWorkArea {
 ///  - 旧实现把弹窗"逻辑"尺寸直接当"物理"尺寸参与物理坐标钳制，高 DPI（125%/150%）
 ///    屏幕上弹窗实际物理高度 = 逻辑×缩放，导致按逻辑高度钳制后底部仍超出屏幕。
 #[cfg(target_os = "windows")]
-fn get_monitor_work_area(px: f64, py: f64) -> MonitorWorkArea {
+pub(crate) fn get_monitor_work_area(px: f64, py: f64) -> MonitorWorkArea {
     use windows::Win32::Foundation::POINT;
     use windows::Win32::Graphics::Gdi::{
         GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
@@ -223,7 +223,7 @@ fn get_monitor_work_area(px: f64, py: f64) -> MonitorWorkArea {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn get_monitor_work_area(_px: f64, _py: f64) -> MonitorWorkArea {
+pub(crate) fn get_monitor_work_area(_px: f64, _py: f64) -> MonitorWorkArea {
     MonitorWorkArea { work_x: 0.0, work_y: 0.0, work_w: 1920.0, work_h: 1080.0, scale: 1.0 }
 }
 
@@ -420,7 +420,7 @@ fn show_tray_popup(app: &AppHandle, tray_rect: (f64, f64, f64, f64)) {
 
 /// 为弹窗窗口设置 DWM 圆角（Windows 11）
 #[cfg(target_os = "windows")]
-fn set_dwm_round_corners(window: &tauri::WebviewWindow) {
+pub(crate) fn set_dwm_round_corners(window: &tauri::WebviewWindow) {
     use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE};
     if let Ok(hwnd) = window.hwnd() {
         let preference: i32 = 2; // DWMWCP_ROUNDSMALL
@@ -438,7 +438,7 @@ fn set_dwm_round_corners(window: &tauri::WebviewWindow) {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn set_dwm_round_corners(_window: &tauri::WebviewWindow) {}
+pub(crate) fn set_dwm_round_corners(_window: &tauri::WebviewWindow) {}
 
 /// 初始化系统托盘图标（纯自绘弹窗，无原生菜单）
 pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {

@@ -548,12 +548,18 @@ pub fn reregister_hotkeys(app: tauri::AppHandle, store: State<DataStore>) -> Res
         .and_then(|v| v.as_str())
         .unwrap_or("Ctrl+Alt+P")
         .to_string();
+    let quick_paste = config
+        .get("quick_paste_hotkey")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Alt+V")
+        .to_string();
     let hotkey_config = crate::hotkey_manager::HotkeyConfig {
         show_window,
         seq_paste,
         index_prefix: "Ctrl+Alt".to_string(),
         stack_toggle,
         stack_paste,
+        quick_paste,
     };
     crate::hotkey_manager::reregister_global_hotkeys(&app, &hotkey_config)
 }

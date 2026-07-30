@@ -18,6 +18,7 @@ pub struct HotkeyConfig {
     pub index_prefix: String,
     pub stack_toggle: String,
     pub stack_paste: String,
+    pub quick_paste: String,
 }
 
 impl Default for HotkeyConfig {
@@ -31,6 +32,8 @@ impl Default for HotkeyConfig {
             index_prefix: "Ctrl+Alt".to_string(),
             stack_toggle: "Ctrl+Alt+K".to_string(),
             stack_paste: "Ctrl+Alt+P".to_string(),
+            // Win+V 被系统保留，Alt+V 为最接近的替代；仅影响新安装用户
+            quick_paste: "Alt+V".to_string(),
         }
     }
 }
@@ -260,6 +263,31 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
         }
     } else {
         errors.push(format!("无效的栈粘贴热键: {}", config.stack_paste));
+    }
+
+    // 快捷粘贴面板（类 Win+V，留空 = 禁用）
+    if config.quick_paste.trim().is_empty() {
+        log::info!("[HotkeyManager] 快捷粘贴热键已禁用（留空），跳过注册");
+    } else if let Ok(shortcut) = parse_shortcut(&config.quick_paste) {
+        match gs.on_shortcut(shortcut, move |app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                log::info!("[HotkeyManager] 快捷粘贴热键触发!");
+                // 第一时间保存前台窗口句柄，确保粘贴目标正确
+                if let Some(engine) = app.try_state::<crate::paste_engine::PasteEngine>() {
+                    engine.save_foreground_hwnd();
+                }
+                crate::quick_paste::toggle_quick_paste(app);
+            }
+        }) {
+            Ok(_) => log::info!("[HotkeyManager] 注册快捷粘贴热键: {}", config.quick_paste),
+            Err(e) => {
+                let msg = format!("快捷粘贴热键注册失败: {}", e);
+                log::warn!("[HotkeyManager] {}", msg);
+                errors.push(msg);
+            }
+        }
+    } else {
+        errors.push(format!("无效的快捷粘贴热键: {}", config.quick_paste));
     }
 
     if errors.is_empty() {

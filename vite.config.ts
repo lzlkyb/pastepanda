@@ -42,6 +42,7 @@ export default defineConfig(async () => ({
         main: resolve(projectRoot, "index.html"),
         popup: resolve(projectRoot, "popup.html"),
         editor: resolve(projectRoot, "editor.html"),
+        quickpaste: resolve(projectRoot, "quickpaste.html"),
       },
     },
   },

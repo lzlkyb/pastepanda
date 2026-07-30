@@ -1,0 +1,262 @@
+/* ══════════════════════════════════════════════
+   快捷粘贴面板（类 Win+V）— 方案 B 双栏网格
+   独立窗口样式，依赖 theme.css 设计令牌
+   ══════════════════════════════════════════════ */
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  background: transparent;
+  user-select: none;
+}
+
+/* ── 面板容器 ── */
+.qp-panel {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-popover-border);
+  box-shadow: var(--glass-popover-shadow);
+  overflow: hidden;
+}
+
+/* ── 头部 ── */
+.qp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 6px;
+  flex-shrink: 0;
+}
+.qp-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.qp-title svg { color: var(--accent); flex-shrink: 0; }
+.qp-clear {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+.qp-clear:hover { color: var(--danger); background: var(--red-bg); }
+
+/* ── 搜索框 ── */
+.qp-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 2px 10px 8px;
+  padding: 7px 11px;
+  background: var(--search-bg);
+  border: 1px solid var(--search-border);
+  border-radius: 9px;
+  flex-shrink: 0;
+  transition: border-color 0.15s;
+}
+.qp-search:focus-within { border-color: var(--accent); }
+.qp-search svg { color: var(--text-muted); flex-shrink: 0; }
+.qp-search input {
+  border: none;
+  background: none;
+  outline: none;
+  flex: 1;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  font-family: inherit;
+}
+.qp-search input::placeholder { color: var(--text-muted); }
+
+/* ── 双栏网格 ── */
+.qp-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 0 10px 10px;
+  overflow-y: auto;
+  flex: 1;
+}
+.qp-grid::-webkit-scrollbar { width: 5px; }
+.qp-grid::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+.qp-grid::-webkit-scrollbar-track { background: transparent; }
+
+/* ── 网格条目 ── */
+.qp-item {
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  background: var(--card-bg);
+  cursor: pointer;
+  overflow: hidden;
+  position: relative;
+  transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s;
+}
+.qp-item:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--accent); }
+.qp-item.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+/* 预览区 */
+.qp-prev {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  overflow: hidden;
+  background: var(--input-bg);
+  word-break: break-all;
+}
+.qp-prev.img { padding: 0; }
+.qp-prev.img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* 底栏 */
+.qp-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 9px;
+}
+.qp-type {
+  font-size: 10px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.qp-time { font-size: 9px; color: var(--text-muted); flex-shrink: 0; }
+
+/* 置顶标记 */
+.qp-pin {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  color: var(--accent);
+  background: var(--glass-popover-bg);
+  border-radius: 6px;
+  padding: 2px;
+  display: none;
+  line-height: 0;
+}
+.qp-item.pinned .qp-pin { display: block; }
+
+/* 操作按钮（悬停显示） */
+.qp-del {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  color: var(--text-muted);
+  background: var(--glass-popover-bg);
+  border-radius: 6px;
+  padding: 2px 4px;
+  display: none;
+  cursor: pointer;
+  border: none;
+  font-size: 10px;
+  line-height: 1.2;
+}
+.qp-item:hover .qp-del, .qp-item.sel .qp-del { display: block; }
+.qp-del:hover { color: var(--danger); }
+
+.qp-pinbtn {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  color: var(--text-muted);
+  background: var(--glass-popover-bg);
+  border-radius: 6px;
+  padding: 2px;
+  display: none;
+  cursor: pointer;
+  border: none;
+  line-height: 0;
+}
+.qp-item:not(.pinned):hover .qp-pinbtn, .qp-item:not(.pinned).sel .qp-pinbtn { display: block; }
+.qp-pinbtn:hover { color: var(--accent); }
+
+/* ── 面板底栏 ── */
+.qp-statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border-color);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  background: var(--glass-card-bg);
+  flex-shrink: 0;
+}
+.qp-keys { display: flex; gap: 8px; align-items: center; }
+.qp-keys kbd {
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 9.5px;
+  font-family: inherit;
+}
+
+/* ── 空状态 ── */
+.qp-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.qp-empty svg { opacity: 0.4; }
+
+/* ── Toast ── */
+.qp-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 40px;
+  transform: translateX(-50%) translateY(16px);
+  background: var(--glass-popover-bg);
+  border: 1px solid var(--glass-popover-border);
+  box-shadow: var(--glass-popover-shadow);
+  backdrop-filter: blur(16px);
+  border-radius: 10px;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.25s;
+  z-index: 99;
+}
+.qp-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.qp-toast .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+.qp-toast .dot.err { background: var(--danger); }

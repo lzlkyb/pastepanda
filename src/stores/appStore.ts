@@ -71,6 +71,7 @@ export interface AppConfig {
   timeline_enabled: boolean; // 时间线功能开关
   stack_toggle_hotkey: string; // 栈模式开关快捷键
   stack_paste_hotkey: string; // 栈顶粘贴快捷键
+  quick_paste_hotkey: string; // 快捷粘贴面板快捷键（类 Win+V）
   skip_sensitive: boolean; // 修复 U36：不记录匹配密钥/凭证模式的内容
   excluded_apps: string; // 修复 U36：应用排除名单（逗号分隔，命中来源应用则不记录）
   md_save_to_history: boolean; // 全屏编辑器中编辑 .md 文件保存时，是否同时写入剪贴板历史
@@ -202,6 +203,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   timeline_enabled: false,
   stack_toggle_hotkey: "ctrl+alt+k",
   stack_paste_hotkey: "ctrl+alt+p",
+  quick_paste_hotkey: "alt+v",
   skip_sensitive: false,
   excluded_apps: "",
   md_save_to_history: true,

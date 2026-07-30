@@ -6,6 +6,7 @@ import { useDialogStore } from "@/stores/dialogStore";
 import { TopBar } from "@/components/TopBar";
 import { CardList } from "@/components/CardList";
 import { QuickPreview } from "@/components/QuickPreview";
+import { SkinScene } from "@/components/SkinScene";
 import { useToast } from "@/components/Toast";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UpdateProvider, useUpdate } from "@/contexts/UpdateContext";
@@ -791,6 +792,8 @@ function App() {
       <UpdateProvider>
       <UpdateNotesAutoPop />
       <div className={`${appStyles.appShell} ${sidebarOpen ? appStyles.sidebarExpanded : ''}`}>
+        {/* 皮肤场景层：fixed + z-index:0，衬在玻璃卡片（cardWrap z-index:1）之后 */}
+        <SkinScene />
         <TopBar
           onSettings={() => setShowSettings(true)}
           onSnippets={() => setShowSnippets(true)}
@@ -985,6 +988,7 @@ function ShortcutPanel({ onClose }: { onClose: () => void }) {
       { desc: "粘贴第 N 条", keys: "Ctrl+Alt+1~9" },
       { desc: "收集模式 开/关", keys: config.stack_toggle_hotkey || "ctrl+alt+k" },
       { desc: "粘贴最近收集的内容", keys: config.stack_paste_hotkey || "ctrl+alt+p" },
+      { desc: "快捷粘贴面板", keys: config.quick_paste_hotkey || "alt+v" },
       { desc: "上下导航", keys: "↑ / ↓" },
       { desc: "首尾跳转", keys: "Home / End" },
       { desc: "快速预览", keys: "Space" },
@@ -998,7 +1002,7 @@ function ShortcutPanel({ onClose }: { onClose: () => void }) {
       { desc: "打开帮助", keys: "Ctrl+H" },
       { desc: "显示此面板", keys: "? 或 Shift+/" },
     ];
-  }, [config.hotkey, config.sequential_hotkey, config.select_all_hotkey, config.double_click_action, config.stack_toggle_hotkey, config.stack_paste_hotkey]);
+  }, [config.hotkey, config.sequential_hotkey, config.select_all_hotkey, config.double_click_action, config.stack_toggle_hotkey, config.stack_paste_hotkey, config.quick_paste_hotkey]);
 
   const filtered = useMemo(() => {
     if (!filter.trim()) return allShortcuts;
