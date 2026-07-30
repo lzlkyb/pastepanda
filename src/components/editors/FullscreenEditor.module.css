@@ -248,10 +248,13 @@
   max-height: 340px;
   display: flex;
   flex-direction: column;
-  background: var(--card-bg, #fff);
-  border: 1px solid var(--search-border, var(--border-color));
+  /* 皮肤场景：玻璃小浮层（编辑器窗口已加载 theme.css，变量可用），跨窗口风格统一 */
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid var(--glass-popover-border);
   border-radius: 10px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--glass-popover-shadow);
   padding: 6px;
   z-index: 100;
 }

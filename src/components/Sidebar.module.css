@@ -344,10 +344,13 @@
 .contextMenu {
   position: fixed;
   z-index: var(--z-context);
-  background: var(--dialog-bg);
-  border: 1px solid var(--border-color);
+  /* 皮肤场景：玻璃小浮层（0.85 + 模糊），主题场景微透且保菜单文字可读 */
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid var(--glass-popover-border);
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--glass-popover-shadow);
   padding: 4px;
   min-width: 140px;
 }
@@ -372,11 +375,11 @@
 }
 
 .contextMenuItemDanger {
-  color: #EF4444;
+  color: var(--danger);
 }
 
 .contextMenuItemDanger:hover {
-  background: rgba(239, 68, 68, 0.1);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
 .contextMenuLabel {

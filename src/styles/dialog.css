@@ -18,13 +18,28 @@
 .z-confirm   { z-index: var(--z-confirm); }   /* 嵌套确认框 */
 
 .dialog-box {
-  background: var(--dialog-bg);
+  /* 皮肤场景：玻璃对话框（方案B 沉浸磨砂）— 用 --glass-dialog-bg + backdrop-filter 让主题场景透出；
+     不透明 --dialog-bg 保留给对话框内部需实心对比的元素（如设置吸顶搜索栏、TransformHub 芯片） */
+  background: var(--glass-dialog-bg);
+  backdrop-filter: blur(var(--glass-dialog-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--glass-dialog-blur)) saturate(1.4);
+  border: 1px solid var(--glass-popover-border);
   border-radius: 16px;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--glass-popover-shadow);
   /* U45：响应式 — 窄窗口下不溢出（此前各类宽均为固定 px） */
   max-width: calc(100vw - 32px);
+}
+
+/* 实底修饰类 —— 设置/编辑等密集工作型弹框专用：
+   0.66 玻璃 + 22px 模糊会把背后场景糊成均匀灰板（既不沉浸也不清爽），
+   这类弹框回归主题设定的不透明 --dialog-bg，恢复"纯白底 + 浅灰 section"的清晰层级。
+   双类选择器，优先级覆盖 .dialog-box 的玻璃背景。 */
+.dialog-box.dialog-solid {
+  background: var(--dialog-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /* U45：类名与实际宽度保持一致（此前 w500=420px / w480=380px 命名误导，w400 未定义） */

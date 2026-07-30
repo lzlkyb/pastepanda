@@ -261,9 +261,9 @@
 }
 
 .smallBtn.danger {
-  background: rgba(239, 68, 68, 0.1);
-  color: #EF4444;
-  border-color: rgba(239, 68, 68, 0.2);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 20%, transparent);
 }
 
 .btnPrimary {
@@ -573,14 +573,14 @@
   width: 100%;
   max-width: 30px;
   border-radius: 5px 5px 2px 2px;
-  background: linear-gradient(180deg, #2A5480, var(--seg-active-bg));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 45%, var(--seg-active-bg)), var(--seg-active-bg));
   transition: 0.15s;
   cursor: default;
 }
-.bDayBar:hover { background: linear-gradient(180deg, #3B9EFF, #2A5480); }
+.bDayBar:hover { background: linear-gradient(180deg, var(--accent), var(--accent-solid)); }
 .bDayToday .bDayBar {
-  background: linear-gradient(180deg, var(--accent), #1A7DE0);
-  box-shadow: 0 0 14px rgba(59, 158, 255, 0.4);
+  background: linear-gradient(180deg, var(--accent), var(--accent-solid));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 .bDayLbl { font-size: 9.5px; color: var(--text-muted); }
 .bDayToday .bDayLbl { color: var(--accent); font-weight: 700; }
@@ -612,7 +612,7 @@
   transition: 0.15s;
 }
 .bHourBars i:hover { background: var(--accent); }
-.bHourBars i.bHourPeak { background: linear-gradient(180deg, var(--accent), #1A7DE0); }
+.bHourBars i.bHourPeak { background: linear-gradient(180deg, var(--accent), var(--accent-solid)); }
 .bHourLbl {
   display: flex;
   justify-content: space-between;
@@ -710,7 +710,7 @@
 .bSrcFill {
   height: 100%;
   border-radius: 3px;
-  background: linear-gradient(90deg, #1A7DE0, var(--accent));
+  background: linear-gradient(90deg, var(--accent-solid), var(--accent));
 }
 .bSrcCnt {
   width: 44px;
@@ -873,7 +873,7 @@
   vertical-align: middle;
 }
 .sToggle.off { background: var(--toggle-off-bg); }
-.sToggle.on  { background: #34C759; }
+.sToggle.on  { background: var(--green); }
 .sToggle .sToggleThumb {
   position: absolute;
   left: 0;
@@ -995,8 +995,8 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
-.sAction.danger { color: #EF4444; border-color: rgba(239, 68, 68, 0.3); }
-.sAction.danger:hover { background: rgba(239, 68, 68, 0.1); }
+.sAction.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, transparent); }
+.sAction.danger:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
 .sActionLoading {
   display: inline-flex;
   align-items: center;
@@ -1200,8 +1200,8 @@
   gap: 2px;
   font-size: 10px;
   font-weight: 600;
-  color: #34C759;
-  background: rgba(52, 199, 89, 0.1);
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 12%, transparent);
   padding: 1px 6px;
   border-radius: 4px;
   margin-left: 6px;
@@ -1225,8 +1225,8 @@
 }
 .lanDot {
   width: 10px; height: 10px; border-radius: 50%;
-  background: #10B981;
-  box-shadow: 0 0 6px rgba(16,185,129,0.4);
+  background: var(--green);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--green) 40%, transparent);
   animation: lan-pulse 2s infinite;
 }
 @keyframes lan-pulse {
@@ -1251,7 +1251,7 @@
   margin-left: auto; font-size: 10px; padding: 2px 8px; border-radius: 6px;
   font-weight: 600; flex-shrink: 0;
 }
-.lanDeviceStatus.online { background: #D1FAE5; color: #059669; }
+.lanDeviceStatus.online { background: var(--green-bg); color: var(--green); }
 .lanTestBtn {
   margin-top: 10px; width: 100%; padding: 6px 0; border-radius: 8px;
   border: 1px solid var(--border-color); background: var(--card-bg);
@@ -1299,8 +1299,8 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #34C759;
-  box-shadow: 0 0 6px rgba(52,199,89,.4);
+  background: var(--green);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--green) 40%, transparent);
 }
 .lanRefreshBtn {
   background: none; border: 1px solid var(--border-color); border-radius: 6px;

@@ -311,7 +311,7 @@ function SingleFileBody({ path, item }: { path: string; item: HistoryItem }) {
             {fileName}
           </div>
           <div style={{ fontSize: 11, marginTop: 2, color: fileMissing ? "var(--danger, #EF4444)" : "var(--text-muted)" }}>
-            {fileInfo === null ? "检查中…" : fileExists ? <><Check size={12} style={{marginRight:2,color:"#34C759"}} /> 文件正常</> : "⚠ 文件不存在或已移动"}
+            {fileInfo === null ? "检查中…" : fileExists ? <><Check size={12} style={{marginRight:2,color:"var(--green)"}} /> 文件正常</> : "⚠ 文件不存在或已移动"}
           </div>
         </div>
       </div>
@@ -459,7 +459,7 @@ function MultiFileBody({ paths, item, onSelectPreview, selectedPath }: {
         <span style={{ fontSize: 11, color: "var(--text-muted)" }}>共 {loaded ? formatSize(totalSize) : "…"}</span>
         {loaded && (
           <>
-            <span style={{ fontSize: 11, color: "#34C759" }}>✓ {okCount} 正常</span>
+            <span style={{ fontSize: 11, color: "var(--green)" }}>✓ {okCount} 正常</span>
             {missingCount > 0 && <span style={{ fontSize: 11, color: "var(--danger, #EF4444)" }}>⚠ {missingCount} 已移动</span>}
           </>
         )}

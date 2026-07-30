@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { applyTheme, getCurrentTheme, ThemeKey, DEFAULT_THEME } from "@/lib/theme";
+import { ThemeKey, DEFAULT_THEME } from "@/lib/theme";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { pasteText, pasteImage } from "@/lib/api";
 import { VersionBadge } from "@/components/VersionBadge";
 import { AppIcon } from "@/components/AppIcon";
+import { SkinScene } from "@/components/SkinScene";
+import { useAppStore } from "@/stores/appStore";
 
 // ===== 数据类型 =====
 interface RecentItem {
@@ -156,7 +158,9 @@ export function TrayPopup() {
   const [stats, setStats] = useState<StatsData | null>(null);
   const [dataLoaded, setDataLoaded] = useState(false); // 初始数据是否已加载
   const [activeIdx, setActiveIdx] = useState(0); // 默认高亮第一项
-  const [themeKey, setThemeKey] = useState<ThemeKey>(DEFAULT_THEME);
+  // 主题从本窗口独立 store 读取（popup-main 启动与收到 theme-changed 广播时写入），
+  // 与 SkinScene 读同一份 store，保证场景与弹窗内容主题一致
+  const themeKey = (useAppStore((s) => s.config.theme) || DEFAULT_THEME) as ThemeKey;
   const [toast, setToast] = useState<ToastState>({ visible: false, message: "", type: "info" });
   const [operationLoading, setOperationLoading] = useState<string | null>(null); // 正在执行的操作 id
   const menuRef = useRef<HTMLDivElement>(null);
@@ -266,27 +270,6 @@ export function TrayPopup() {
     window.addEventListener("mousedown", handleMouseDown, true);
     return () => window.removeEventListener("mousedown", handleMouseDown, true);
   }, []);
-
-  // 读取并同步主题
-  useEffect(() => {
-    setThemeKey(getCurrentTheme());
-    // 监听主窗口主题变化（通过 storage 事件或轮询 DOM）
-    const observer = new MutationObserver(() => {
-      const current = getCurrentTheme();
-      setThemeKey((prev) => {
-        if (current !== prev) {
-          applyTheme(current);
-          return current;
-        }
-        return prev;
-      });
-    });
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-theme"],
-    });
-    return () => observer.disconnect();
-  }, []); // 移除 themeKey 依赖，避免死循环
 
   // 操作函数（带 Toast 反馈 + 时序修复）
   const doShow = useCallback(async () => {
@@ -459,6 +442,8 @@ export function TrayPopup() {
   }, [activeIdx, allItems, recents, menuItems, doPaste]);
 
   return (
+    <>
+    <SkinScene />
     <div
       ref={menuRef}
       className="tray-popup-root"
@@ -638,6 +623,7 @@ export function TrayPopup() {
         <span className="toast-message">{toast.message}</span>
       </div>
     </div>
+    </>
   );
 }
 

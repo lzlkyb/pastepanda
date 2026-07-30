@@ -114,9 +114,12 @@
   --glass-icon-bg: rgba(0,0,0,0.04);
   --glass-icon-border: rgba(0,0,0,0.07);
   --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.05);
-  --glass-popover-bg: rgba(255,255,255,0.97);
+  --glass-popover-bg: rgba(255,255,255,0.85);
   --glass-popover-border: rgba(0,0,0,0.06);
   --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+  /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
+  --glass-dialog-bg: rgba(255,255,255,0.66);
+  --glass-dialog-blur: 22px;
   /* 更新弹框 + 更新日志 */
   --accent-glow: rgba(2,132,199, 0.12);
   --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(2,132,199,0.10), transparent);
@@ -180,9 +183,12 @@
   --glass-icon-bg: rgba(255,255,255,0.05);
   --glass-icon-border: rgba(255,255,255,0.07);
   --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.04), 0 2px 8px rgba(0,0,0,0.3);
-  --glass-popover-bg: rgba(20,20,24,0.97);
+  --glass-popover-bg: rgba(20,20,24,0.85);
   --glass-popover-border: rgba(255,255,255,0.07);
   --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.25);
+  /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
+  --glass-dialog-bg: rgba(20,20,24,0.66);
+  --glass-dialog-blur: 22px;
   /* 更新弹框 + 更新日志 */
   --accent-glow: rgba(129,140,248, 0.12);
   --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(129,140,248,0.10), transparent);
@@ -246,9 +252,12 @@
   --glass-icon-bg: rgba(0,0,0,0.04);
   --glass-icon-border: rgba(0,0,0,0.07);
   --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.05);
-  --glass-popover-bg: rgba(255,255,255,0.97);
+  --glass-popover-bg: rgba(255,255,255,0.85);
   --glass-popover-border: rgba(0,0,0,0.06);
   --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+  /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
+  --glass-dialog-bg: rgba(255,255,255,0.66);
+  --glass-dialog-blur: 22px;
   /* 更新弹框 + 更新日志 */
   --accent-glow: rgba(5,150,105, 0.12);
   --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(5,150,105,0.10), transparent);
@@ -312,9 +321,12 @@
   --glass-icon-bg: rgba(0,0,0,0.04);
   --glass-icon-border: rgba(0,0,0,0.07);
   --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.05);
-  --glass-popover-bg: rgba(255,255,255,0.97);
+  --glass-popover-bg: rgba(255,255,255,0.85);
   --glass-popover-border: rgba(0,0,0,0.06);
   --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+  /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
+  --glass-dialog-bg: rgba(255,255,255,0.66);
+  --glass-dialog-blur: 22px;
   /* 更新弹框 + 更新日志 */
   --accent-glow: rgba(236,72,153, 0.12);
   --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(236,72,153,0.10), transparent);
@@ -378,9 +390,12 @@
   --glass-icon-bg: rgba(255,255,255,0.04);
   --glass-icon-border: rgba(255,255,255,0.06);
   --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.03), 0 2px 8px rgba(0,0,0,0.35);
-  --glass-popover-bg: rgba(18,18,18,0.97);
+  --glass-popover-bg: rgba(18,18,18,0.85);
   --glass-popover-border: rgba(255,255,255,0.06);
   --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3);
+  /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
+  --glass-dialog-bg: rgba(18,18,18,0.66);
+  --glass-dialog-blur: 22px;
   /* 更新弹框 + 更新日志 */
   --accent-glow: rgba(34,197,94, 0.12);
   --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(34,197,94,0.10), transparent);
@@ -444,9 +459,12 @@
   --glass-icon-bg: rgba(255,255,255,0.05);
   --glass-icon-border: rgba(255,255,255,0.08);
   --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.04), 0 2px 8px rgba(0,0,0,0.30);
-  --glass-popover-bg: rgba(10,22,40,0.97);
+  --glass-popover-bg: rgba(10,22,40,0.85);
   --glass-popover-border: rgba(255,255,255,0.08);
   --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.25);
+  /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
+  --glass-dialog-bg: rgba(10,22,40,0.66);
+  --glass-dialog-blur: 22px;
   /* 更新弹框 + 更新日志 */
   --accent-glow: rgba(56,189,248, 0.12);
   --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(56,189,248,0.10), transparent);
@@ -510,9 +528,12 @@
   --glass-icon-bg: rgba(255,255,255,0.04);
   --glass-icon-border: rgba(255,255,255,0.06);
   --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.03), 0 2px 8px rgba(0,0,0,0.30);
-  --glass-popover-bg: rgba(40,30,24,0.97);
+  --glass-popover-bg: rgba(40,30,24,0.85);
   --glass-popover-border: rgba(255,255,255,0.07);
   --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.25);
+  /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
+  --glass-dialog-bg: rgba(40,30,24,0.66);
+  --glass-dialog-blur: 22px;
   /* 更新弹框 + 更新日志 */
   --accent-glow: rgba(249,115,22, 0.12);
   --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(249,115,22,0.10), transparent);

@@ -69,11 +69,11 @@
 }
 
 .snippetActionBtn.danger {
-  color: #EF4444;
+  color: var(--danger);
 }
 
 .snippetActionBtn.danger:hover {
-  background: rgba(239, 68, 68, 0.1);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
 .snippetEditForm {
@@ -369,9 +369,12 @@
   width: 420px;
   max-height: 70vh;
   border-radius: 16px;
-  background: var(--dialog-bg);
-  border: 1px solid var(--border-color);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  /* 皮肤场景：玻璃大面板（方案B 0.66 + 22px 模糊），主题场景透出 */
+  background: var(--glass-dialog-bg);
+  backdrop-filter: blur(var(--glass-dialog-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--glass-dialog-blur)) saturate(1.4);
+  border: 1px solid var(--glass-popover-border);
+  box-shadow: var(--glass-popover-shadow);
   display: flex;
   flex-direction: column;
   overflow: hidden;

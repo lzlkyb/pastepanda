@@ -226,7 +226,7 @@
 
 .cardStackDone {
   opacity: 0.45;
-  border-left-color: #D1D5DB;
+  border-left-color: var(--border-color);
 }
 
 .stackBadge {
@@ -350,7 +350,7 @@
 /* 图片加载失败 */
 .cardImgError {
   position: relative;
-  background: #FEF2F2;
+  background: var(--red-bg);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -366,13 +366,13 @@
   font-size: 14px;
   cursor: pointer;
   border-radius: 8px;
-  background: rgba(239,68,68,0.1);
-  color: #DC2626;
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
   transition: background 0.15s;
   border: none;
 }
 .cardImgRetry:hover {
-  background: rgba(239,68,68,0.2);
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
 }
 
 .cardContent {
@@ -500,17 +500,17 @@
 }
 
 .cardInlineBtnFav {
-  color: #B45309;
-  background: #FEF3C7;
-  border: 1px solid #FDE68A;
+  color: var(--orange);
+  background: var(--orange-bg);
+  border: 1px solid var(--orange-border);
 }
 .cardInlineBtnFav:hover {
-  background: #FDE68A;
+  background: var(--orange-border);
 }
 .cardInlineBtnFavActive {
-  color: #92400E;
-  background: #FDE68A;
-  border: 1px solid #F59E0B;
+  color: var(--orange);
+  background: var(--orange-border);
+  border: 1px solid var(--orange);
 }
 
 .cardInlineBtnCopy {
@@ -526,21 +526,21 @@
 }
 
 .cardInlineBtnEdit {
-  color: #6D28D9;
-  background: #EDE9FE;
-  border: 1px solid #C4B5FD;
+  color: var(--accent-strong);
+  background: var(--accent-light);
+  border: 1px solid var(--accent-border);
 }
 .cardInlineBtnEdit:hover {
-  background: #DDD6FE;
+  background: var(--accent-border);
 }
 
 .cardInlineBtnDel {
-  color: #DC2626;
-  background: #FEE2E2;
-  border: 1px solid #FECACA;
+  color: var(--danger);
+  background: var(--red-bg);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
 }
 .cardInlineBtnDel:hover {
-  background: #FECACA;
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
 }
 
 /* ===== 批量操作工具栏 ===== */
@@ -577,10 +577,10 @@
 }
 .batchBtn:hover { background: var(--hover); }
 .batchBtnDanger {
-  border: 1px solid #EF4444;
-  color: #EF4444;
+  border: 1px solid var(--danger);
+  color: var(--danger);
 }
-.batchBtnDanger:hover { background: rgba(239,68,68,0.1); }
+.batchBtnDanger:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
 
 /* 加载更多区域 */
 .loadMoreArea {
@@ -602,7 +602,7 @@
 @keyframes loadMoreSpin {
   to { transform: rotate(360deg); }
 }
-.loadMoreError { font-size: 11px; color: #EF4444; }
+.loadMoreError { font-size: 11px; color: var(--danger); }
 .loadMoreRetryBtn {
   font-size: 11px; color: var(--accent); background: none;
   border: 1px solid var(--accent); border-radius: 6px;
@@ -995,14 +995,14 @@
 }
 .cardPopoverBtn:active { transform: scale(0.95); }
 .cardPopoverBtnFav:hover {
-  background: #FEF3C7;
-  border-color: #F59E0B;
-  color: #B45309;
+  background: var(--orange-bg);
+  border-color: var(--orange);
+  color: var(--orange);
 }
 .cardPopoverBtnFavActive {
-  background: #FEF3C7;
-  border-color: #F59E0B;
-  color: #B45309;
+  background: var(--orange-bg);
+  border-color: var(--orange);
+  color: var(--orange);
 }
 .cardPopoverBtnDanger:hover {
   background: var(--red-bg);
@@ -1157,8 +1157,8 @@
   gap: 2px;
 }
 .ocrToolBtnActive {
-  background: rgba(16, 185, 129, 0.15) !important;
-  color: #10b981 !important;
+  background: color-mix(in srgb, var(--green) 15%, transparent) !important;
+  color: var(--green) !important;
 }
 .ocrToolBtn:disabled {
   opacity: 0.6;
@@ -1207,13 +1207,13 @@
   gap: 10px;
   padding: 8px 12px;
   border-radius: 8px;
-  background: rgba(99,102,241,0.06);
-  border: 1px solid rgba(99,102,241,0.2);
+  background: var(--accent-light);
+  border: 1px solid var(--accent-border);
   flex-shrink: 0;
 }
 .ocrResultCount {
   font-size: 11px;
-  color: #4338ca;
+  color: var(--accent-strong);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -1232,13 +1232,13 @@
   font-size: 10px;
   padding: 3px 8px;
   border-radius: 4px;
-  border: 1px solid rgba(99,102,241,0.2);
+  border: 1px solid var(--accent-border);
   background: transparent;
-  color: #4338ca;
+  color: var(--accent-strong);
   cursor: pointer;
 }
 .ocrResultClearBtn:hover {
-  background: rgba(99,102,241,0.08);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .ocrResultCopyBtn {
   font-size: 10px;
@@ -1274,23 +1274,23 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  background: #fefce8;
-  border-bottom: 1px solid #fde68a;
+  background: var(--orange-bg);
+  border-bottom: 1px solid var(--orange-border);
   font-size: 12px;
   font-weight: 600;
-  color: #92400e;
+  color: var(--orange);
 }
 .ocrFullTextCopyBtn {
   font-size: 10px;
   padding: 3px 8px;
   border-radius: 4px;
-  border: 1px solid #fde68a;
-  background: #fff;
-  color: #92400e;
+  border: 1px solid var(--orange-border);
+  background: var(--card-bg);
+  color: var(--orange);
   cursor: pointer;
 }
 .ocrFullTextCopyBtn:hover {
-  background: #fef3c7;
+  background: var(--orange-border);
 }
 .ocrFullTextBody {
   padding: 10px 12px;

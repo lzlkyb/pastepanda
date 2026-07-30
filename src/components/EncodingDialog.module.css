@@ -150,10 +150,10 @@
 }
 
 .resultOk {
-  color: #22C55E;
+  color: var(--green);
 }
 .resultErr {
-  color: #EF4444;
+  color: var(--danger);
 }
 
 .resultName {
@@ -167,5 +167,5 @@
 .resultError {
   flex-shrink: 0;
   font-size: 11px;
-  color: #EF4444;
+  color: var(--danger);
 }

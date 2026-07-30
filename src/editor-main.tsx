@@ -7,6 +7,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { applyTheme, DEFAULT_THEME, ThemeKey } from "./lib/theme";
 import { useAppStore } from "./stores/appStore";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import "./styles/globals.css";
 // 独立窗口同样需要加载主题与全局组件样式，否则 [data-theme] 变量无定义，
 // Markdown 预览会回退成白底黑字、h1 渐变标题透明、代码块褪色（与主窗口弹框预览不一致）。
@@ -36,6 +37,15 @@ invoke<{ theme?: string; window_animation?: boolean }>("get_config")
     }
   })
   .catch(() => { /* 读取失败时保持默认主题 */ });
+
+// 监听主窗口切主题广播，编辑器打开期间实时跟随（长驻编辑时感知明显）。
+// 本窗口不挂 SkinScene，applyTheme 更新 documentElement[data-theme] 即生效；
+// 同步 store 保持与其它独立窗口一致的写法。
+listen<{ theme?: string }>("theme-changed", (e) => {
+  const themeKey = (e.payload.theme as ThemeKey) || DEFAULT_THEME;
+  applyTheme(themeKey);
+  useAppStore.getState().updateConfig({ theme: themeKey });
+}).catch(() => { /* 监听注册失败时退化为仅窗口打开时读取一次 */ });
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

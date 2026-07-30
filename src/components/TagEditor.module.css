@@ -14,9 +14,13 @@
 .dialog {
   width: 380px;
   max-height: 80vh;
-  background: var(--dialog-bg);
+  /* 皮肤场景：玻璃大面板（方案B 0.66 + 22px 模糊），主题场景透出 */
+  background: var(--glass-dialog-bg);
+  backdrop-filter: blur(var(--glass-dialog-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--glass-dialog-blur)) saturate(1.4);
+  border: 1px solid var(--glass-popover-border);
   border-radius: 14px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--glass-popover-shadow);
   display: flex;
   flex-direction: column;
   overflow: hidden;

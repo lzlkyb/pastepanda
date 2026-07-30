@@ -273,7 +273,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
           <FocusTrap>
           <motion.div
             {...anim.panel}
-            className="dialog-box w420" onClick={(e) => e.stopPropagation()}>
+            className="dialog-box dialog-solid w420" onClick={(e) => e.stopPropagation()}>
 
             {/* Header */}
             <div className={`dialog-header${scrolled ? ` ${styles.dialogHeaderCompact}` : ""}`}>

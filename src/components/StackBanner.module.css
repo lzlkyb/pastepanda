@@ -170,22 +170,22 @@
   font-weight: 600;
   border: none;
   cursor: pointer;
-  background: #DC2626;
+  background: var(--danger);
   color: #fff;
-  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--danger) 30%, transparent);
   transition: transform 0.15s, box-shadow 0.15s;
   flex-shrink: 0;
   animation: abortPulse 1.2s ease infinite;
 }
 
 @keyframes abortPulse {
-  0%, 100% { box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3); }
-  50% { box-shadow: 0 2px 14px rgba(220, 38, 38, 0.55); }
+  0%, 100% { box-shadow: 0 2px 8px color-mix(in srgb, var(--danger) 30%, transparent); }
+  50% { box-shadow: 0 2px 14px color-mix(in srgb, var(--danger) 55%, transparent); }
 }
 
 .abortBtn:hover {
   transform: translateY(-1px);
-  background: #B91C1C;
+  background: var(--danger-hover);
 }
 
 /* ===== 队列行 ===== */

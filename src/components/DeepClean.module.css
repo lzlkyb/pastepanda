@@ -99,10 +99,13 @@
 .srcPopup {
   position: fixed;
   z-index: var(--z-modal-top);
-  background: var(--card-bg);
-  border: 1px solid var(--border-color);
+  /* 皮肤场景：玻璃小浮层（0.85 + 模糊），与对话框玻璃风格统一 */
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid var(--glass-popover-border);
   border-radius: 10px;
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16), 0 2px 8px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--glass-popover-shadow);
   padding: 4px;
   overflow-y: auto;
 }

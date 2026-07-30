@@ -1,5 +1,7 @@
 /* ══════════════════════════════════════════════
-   快捷粘贴面板（类 Win+V）— 方案 B 双栏网格
+   快捷粘贴面板（类 Win+V）— 双布局
+   · 双栏网格（方案 C，默认，460×520）
+   · 单栏列表（方案 B，Win+V 风格，380×500）
    独立窗口样式，依赖 theme.css 设计令牌
    ══════════════════════════════════════════════ */
 
@@ -11,18 +13,22 @@ html, body, #root {
 
 body {
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-  background: transparent;
+  /* 皮肤场景：世界渐变底（SkinScene 粒子衬于其上，玻璃面板透出其景） */
+  background: var(--app-bg, #F4F6F9);
   user-select: none;
 }
 
 /* ── 面板容器 ── */
 .qp-panel {
+  position: relative;
+  z-index: 1; /* 盖在 fixed z-0 的 SkinScene 之上， backdrop-filter 采样其下场景 */
   width: 100%;
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--glass-popover-bg);
-  backdrop-filter: blur(20px);
+  background: var(--glass-dialog-bg);
+  backdrop-filter: blur(var(--glass-dialog-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--glass-dialog-blur)) saturate(1.4);
   border: 1px solid var(--glass-popover-border);
   box-shadow: var(--glass-popover-shadow);
   overflow: hidden;
@@ -33,11 +39,11 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px 6px;
+  padding: 12px 16px 7px;
   flex-shrink: 0;
 }
 .qp-title {
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
   display: flex;
@@ -49,12 +55,12 @@ body {
   border: none;
   background: none;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 7px;
+  padding: 4px 8px;
   border-radius: 6px;
   transition: all 0.15s;
 }
@@ -65,8 +71,8 @@ body {
   display: flex;
   align-items: center;
   gap: 7px;
-  margin: 2px 10px 8px;
-  padding: 7px 11px;
+  margin: 3px 12px 10px;
+  padding: 9px 12px;
   background: var(--search-bg);
   border: 1px solid var(--search-border);
   border-radius: 9px;
@@ -80,18 +86,18 @@ body {
   background: none;
   outline: none;
   flex: 1;
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--text-primary);
   font-family: inherit;
 }
 .qp-search input::placeholder { color: var(--text-muted); }
 
-/* ── 双栏网格 ── */
+/* ── 双栏网格（方案 C）── */
 .qp-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  padding: 0 10px 10px;
+  gap: 11px;
+  padding: 0 12px 12px;
   overflow-y: auto;
   flex: 1;
 }
@@ -102,7 +108,7 @@ body {
 /* ── 网格条目 ── */
 .qp-item {
   border: 1px solid var(--card-border);
-  border-radius: 10px;
+  border-radius: 11px;
   background: var(--card-bg);
   cursor: pointer;
   overflow: hidden;
@@ -114,13 +120,13 @@ body {
 
 /* 预览区 */
 .qp-prev {
-  height: 56px;
+  height: 84px;
   display: flex;
   align-items: center;
-  padding: 8px 10px;
-  font-size: 11px;
+  padding: 10px 12px;
+  font-size: 12.5px;
   color: var(--text-secondary);
-  line-height: 1.45;
+  line-height: 1.55;
   overflow: hidden;
   background: var(--input-bg);
   word-break: break-all;
@@ -138,10 +144,10 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 9px;
+  padding: 8px 11px;
 }
 .qp-type {
-  font-size: 10px;
+  font-size: 11.5px;
   color: var(--text-muted);
   display: flex;
   align-items: center;
@@ -150,7 +156,77 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.qp-time { font-size: 9px; color: var(--text-muted); flex-shrink: 0; }
+.qp-time { font-size: 10.5px; color: var(--text-muted); flex-shrink: 0; }
+
+/* ── 单栏列表（方案 B，Win+V 风格）── */
+.qp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 10px 10px;
+  overflow-y: auto;
+  flex: 1;
+}
+.qp-list::-webkit-scrollbar { width: 5px; }
+.qp-list::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+.qp-list::-webkit-scrollbar-track { background: transparent; }
+
+/* 列表行 */
+.qp-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 11px;
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  background: var(--card-bg);
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: box-shadow 0.12s, border-color 0.12s, background 0.12s;
+}
+.qp-row:hover { border-color: var(--accent); box-shadow: var(--shadow-md); }
+.qp-row.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: var(--accent-light); }
+
+/* 类型徽标 */
+.qp-ico {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: var(--accent-light);
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.qp-ico.img { padding: 0; overflow: hidden; }
+.qp-ico.img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* 文本主体 */
+.qp-body { flex: 1; min-width: 0; }
+.qp-maintxt {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.qp-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  display: flex;
+  gap: 8px;
+}
+
+/* 列表行内的操作按钮重定位：行较矮，删除键放右侧垂直居中，
+   置顶徽标移到类型图标左上角，避免与删除键挤在同一侧 */
+.qp-list .qp-del { left: auto; right: 6px; top: 50%; transform: translateY(-50%); }
+.qp-list .qp-pin, .qp-list .qp-pinbtn { top: 4px; right: auto; left: 4px; }
 
 /* 置顶标记 */
 .qp-pin {
@@ -164,7 +240,7 @@ body {
   display: none;
   line-height: 0;
 }
-.qp-item.pinned .qp-pin { display: block; }
+.qp-item.pinned .qp-pin, .qp-row.pinned .qp-pin { display: block; }
 
 /* 操作按钮（悬停显示） */
 .qp-del {
@@ -181,7 +257,8 @@ body {
   font-size: 10px;
   line-height: 1.2;
 }
-.qp-item:hover .qp-del, .qp-item.sel .qp-del { display: block; }
+.qp-item:hover .qp-del, .qp-item.sel .qp-del,
+.qp-row:hover .qp-del, .qp-row.sel .qp-del { display: block; }
 .qp-del:hover { color: var(--danger); }
 
 .qp-pinbtn {
@@ -197,7 +274,8 @@ body {
   border: none;
   line-height: 0;
 }
-.qp-item:not(.pinned):hover .qp-pinbtn, .qp-item:not(.pinned).sel .qp-pinbtn { display: block; }
+.qp-item:not(.pinned):hover .qp-pinbtn, .qp-item:not(.pinned).sel .qp-pinbtn,
+.qp-row:not(.pinned):hover .qp-pinbtn, .qp-row:not(.pinned).sel .qp-pinbtn { display: block; }
 .qp-pinbtn:hover { color: var(--accent); }
 
 /* ── 面板底栏 ── */
@@ -205,9 +283,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 14px;
+  padding: 9px 16px;
   border-top: 1px solid var(--border-color);
-  font-size: 10.5px;
+  font-size: 11.5px;
   color: var(--text-muted);
   background: var(--glass-card-bg);
   flex-shrink: 0;
@@ -217,8 +295,8 @@ body {
   background: var(--input-bg);
   border: 1px solid var(--border-color);
   border-radius: 4px;
-  padding: 1px 5px;
-  font-size: 9.5px;
+  padding: 2px 6px;
+  font-size: 10.5px;
   font-family: inherit;
 }
 

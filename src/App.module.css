@@ -39,12 +39,13 @@
   justify-content: space-between;
   padding: 10px 16px;
   z-index: var(--z-floating);
-  background: var(--card-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  /* 皮肤场景：原 card-bg 不透明，把 blur(20px) 完全盖死；换半透明玻璃底让场景真正透出 */
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
   border-radius: 16px;
-  border: 1px solid var(--border-color);
-  box-shadow: 0 -2px 16px rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--glass-popover-border);
+  box-shadow: var(--glass-popover-shadow);
 }
 
 .fabCounter {

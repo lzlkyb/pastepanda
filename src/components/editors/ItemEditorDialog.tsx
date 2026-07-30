@@ -126,7 +126,7 @@ function EditorShell({ def, item, onClose }: { def: ShellEditorDefinition; item:
         <FocusTrap>
           <motion.div
             {...anim.panel}
-            className={`dialog-box ${def.width}`}
+            className={`dialog-box dialog-solid ${def.width}`}
             onClick={(e) => e.stopPropagation()}
             style={{ maxHeight: "85vh" }}>
 

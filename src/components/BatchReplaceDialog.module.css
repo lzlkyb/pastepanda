@@ -198,8 +198,8 @@
   font-size: 12px;
 }
 
-.resultOk { color: #22C55E; }
-.resultErr { color: #EF4444; }
+.resultOk { color: var(--green); }
+.resultErr { color: var(--danger); }
 
 .resultName {
   flex: 1;
@@ -219,5 +219,5 @@
 .resultError {
   flex-shrink: 0;
   font-size: 11px;
-  color: #EF4444;
+  color: var(--danger);
 }

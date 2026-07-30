@@ -1,5 +1,15 @@
 /* ===== 托盘弹出窗口样式 — Fluent Air 风格 ===== */
 
+/* 皮肤场景：世界渐变底 + 满铺（SkinScene 粒子衬于其上，玻璃根容器透出其景） */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+body {
+  background: var(--app-bg, #F4F6F9);
+}
+
 /* 全局盒模型 */
 .tray-popup-root *,
 .tray-popup-root *::before,
@@ -9,20 +19,21 @@
 
 /* ===== 根容器 ===== */
 .tray-popup-root {
+  position: relative;
+  z-index: 1; /* 盖在 fixed z-0 的 SkinScene 之上，backdrop-filter 采样其下场景 */
   display: flex;
   flex-direction: column;
   height: 100vh;
   width: 100vw;
   overflow-y: auto;
   overflow-x: hidden;
-  /* 方案C：渐变底 — 顶部略亮、底部略暗的微妙立体感（color-mix 自动适配明暗主题） */
-  background: linear-gradient(180deg,
-    color-mix(in srgb, var(--dialog-bg) 90%, #ffffff 10%) 0%,
-    var(--dialog-bg) 45%,
-    color-mix(in srgb, var(--dialog-bg) 94%, #000000 6%) 100%);
+  /* 皮肤场景：玻璃根容器（方案B 0.66 + 22px），主题场景透过弹窗透出 */
+  background: var(--glass-dialog-bg);
+  backdrop-filter: blur(var(--glass-dialog-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--glass-dialog-blur)) saturate(1.4);
   border: 1px solid var(--glass-card-border);
   border-radius: 14px;
-  box-shadow: inset 0 1px 0 var(--glass-shimmer);
+  box-shadow: inset 0 1px 0 var(--glass-shimmer), var(--glass-popover-shadow);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   user-select: none;
   -webkit-user-select: none;
@@ -83,8 +94,8 @@
 }
 
 .tray-popup-status-dot.active {
-  background: #34C759;
-  box-shadow: 0 0 6px rgba(52, 199, 89, 0.4);
+  background: var(--green);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--green) 40%, transparent);
 }
 
 /* ===== 统计卡片 ===== */
@@ -341,29 +352,13 @@
 
 /* 危险操作 */
 .tray-popup-item.danger {
-  color: #EF4444;
+  color: var(--danger);
 }
 
 .tray-popup-item.danger:hover,
 .tray-popup-item.danger.active {
-  background: rgba(239, 68, 68, 0.08);
-  color: #DC2626;
-}
-
-[data-theme="midnight"] .tray-popup-item.danger,
-[data-theme="terminal"] .tray-popup-item.danger,
-[data-theme="sunset"] .tray-popup-item.danger {
-  color: #FF99A4;
-}
-
-[data-theme="midnight"] .tray-popup-item.danger:hover,
-[data-theme="midnight"] .tray-popup-item.danger.active,
-[data-theme="terminal"] .tray-popup-item.danger:hover,
-[data-theme="terminal"] .tray-popup-item.danger.active,
-[data-theme="sunset"] .tray-popup-item.danger:hover,
-[data-theme="sunset"] .tray-popup-item.danger.active {
-  background: rgba(255, 153, 164, 0.12);
-  color: #FFB3B9;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger-hover);
 }
 
 /* 图标 — 彩色渐变背景方块 */

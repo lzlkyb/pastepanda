@@ -39,24 +39,27 @@
   position: absolute;
   top: 0;
   left: 0;
-  background: var(--dialog-bg);
+  /* 皮肤场景：玻璃小浮层（0.85 + 模糊），主题场景微透且保小字可读 */
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
   color: var(--text-primary);
   font-size: 12px;
   line-height: 1.5;
   padding: 8px 14px;
   border-radius: 10px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--glass-popover-border);
   white-space: normal;
   max-width: 320px;
   width: max-content;
   pointer-events: none;
   z-index: var(--z-tooltip);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  box-shadow: var(--glass-popover-shadow);
   text-align: left;
 }
 
 .tooltipArrow {
-  fill: var(--dialog-bg);
+  fill: var(--glass-popover-bg);
 }
 
 /* 点击弹出的详细气泡 */
@@ -66,10 +69,13 @@
   left: 0;
   width: 300px;
   max-width: calc(100vw - 48px);
-  background: var(--card-bg);
-  border: 1px solid var(--border-color);
+  /* 皮肤场景：玻璃小浮层，与同组件悬浮 tooltip(.tooltip) 保持同风格 */
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid var(--glass-popover-border);
   border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0,0,0,0.2);
+  box-shadow: var(--glass-popover-shadow);
   z-index: var(--z-tooltip);
   overflow: hidden;
 }
@@ -143,8 +149,8 @@
   gap: 2px;
   font-size: 10px;
   font-weight: 600;
-  color: #34C759;
-  background: rgba(52, 199, 89, 0.1);
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 12%, transparent);
   padding: 1px 6px;
   border-radius: 4px;
   margin-left: 6px;

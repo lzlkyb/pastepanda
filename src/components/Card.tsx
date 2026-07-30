@@ -303,7 +303,7 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
             </div>
           ) : imageState?.status === "error" ? (
             <div className={`${styles.cardIcon} ${styles.cardImgError}`}>
-              <ImageIcon size={18} color="#EF4444" strokeWidth={2.2} />
+              <ImageIcon size={18} color="var(--danger)" strokeWidth={2.2} />
               {onRetryImage && (
                 <button
                   className={styles.cardImgRetry}

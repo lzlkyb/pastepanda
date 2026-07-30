@@ -171,9 +171,12 @@
 .shortcut-panel {
   width: 360px;
   border-radius: 16px;
-  background: var(--dialog-bg);
-  border: 1px solid var(--border-color);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  /* 皮肤场景：玻璃大面板（方案B 0.66 + 22px 模糊），主题场景透出 */
+  background: var(--glass-dialog-bg);
+  backdrop-filter: blur(var(--glass-dialog-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--glass-dialog-blur)) saturate(1.4);
+  border: 1px solid var(--glass-popover-border);
+  box-shadow: var(--glass-popover-shadow);
   overflow: hidden;
 }
 .shortcut-panel-header {

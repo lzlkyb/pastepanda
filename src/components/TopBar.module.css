@@ -204,10 +204,13 @@
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  background: var(--dialog-bg);
-  border: 1px solid var(--border-color);
+  /* 皮肤场景：玻璃小浮层（0.85 + 模糊），主题场景微透 */
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid var(--glass-popover-border);
   border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+  box-shadow: var(--glass-popover-shadow);
   z-index: 30;
   overflow: hidden;
   max-height: 240px;
@@ -293,8 +296,8 @@
 }
 
 .searchHistoryRemove:hover {
-  background: rgba(239,68,68,0.1);
-  color: #EF4444;
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
 }
 
 /* ===== Header Controls Wrapper ===== */
@@ -402,10 +405,13 @@
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  background: var(--dialog-bg);
-  border: 1px solid var(--border-color);
+  /* 皮肤场景：玻璃小浮层（0.85 + 模糊），主题场景微透 */
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid var(--glass-popover-border);
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+  box-shadow: var(--glass-popover-shadow);
   z-index: 30;
   overflow: hidden;
   max-height: 200px;
@@ -664,10 +670,13 @@
   top: calc(100% + 4px);
   left: 0;
   width: 200px;
-  background: var(--dialog-bg);
-  border: 1px solid var(--border-color);
+  /* 皮肤场景：玻璃小浮层（0.85 + 模糊），主题场景微透 */
+  background: var(--glass-popover-bg);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid var(--glass-popover-border);
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+  box-shadow: var(--glass-popover-shadow);
   z-index: 30;
   overflow: hidden;
 }
