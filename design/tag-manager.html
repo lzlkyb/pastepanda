@@ -1,0 +1,743 @@
+<meta charset="UTF-8">
+<title>标签管理面板 — 设计稿</title>
+<style>
+/* ============================================================
+   设计令牌 —— 原样抄自 src/styles/theme.css 的 :root(ocean 浅色)
+   与 [data-theme="midnight"](午夜深色) 两套变量，仅保留本稿用到的键。
+   ============================================================ */
+:root{
+  --app-bg:#F4F6F9; --card-bg:#fff; --card-border:#E0E4EB;
+  --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+  --border-color:#E0E4EB;
+  --accent:#0284C7; --accent-light:#E0F2FE; --accent-solid:#027CBB; --accent-strong:#0273AD;
+  --accent-shadow:rgba(2,132,199,0.15);
+  --input-bg:#F1F5F9; --dialog-bg:#fff; --section-bg:#F0F4F8; --hover:#E8ECF2;
+  --sidebar-bg:#EFF1F5; --sidebar-section-label:#696D75;
+  --green:#11813A; --green-bg:#DCFCE7; --green-border:#BBF7D0;
+  --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA; --warning:var(--orange);
+  --red-bg:#FEF2F2; --danger:#D82525; --danger-hover:#B91C1C;
+  --shadow-md:0 4px 12px rgba(0,0,0,.08);
+  --note-c:#B45309; --note-bg:#FFFBEB; --note-border:#FDE68A;
+}
+:root[data-theme="dark"]{
+  --app-bg:#09090B; --card-bg:#18181B; --card-border:#27272A;
+  --text-primary:#E4E4E7; --text-secondary:#AFAFB7; --text-muted:#8D8D95;
+  --border-color:#27272A;
+  --accent:#818CF8; --accent-light:#1E1B4B; --accent-solid:#666FC4; --accent-strong:#818CF8;
+  --accent-shadow:rgba(129,140,248,0.2);
+  --input-bg:#27272A; --dialog-bg:#18181B; --section-bg:#0F0F11; --hover:#1F1F23;
+  --sidebar-bg:#131315; --sidebar-section-label:#7D7D84;
+  --green:#4ADE80; --green-bg:#052E16; --green-border:#166534;
+  --orange:#FB923C; --orange-bg:#431407; --orange-border:#9A3412; --warning:var(--orange);
+  --red-bg:#450A0A; --danger:#F87171; --danger-hover:#FCA5A5;
+  --shadow-md:0 4px 12px rgba(0,0,0,.45);
+  --note-c:#FBBF24; --note-bg:#3F2E0A; --note-border:#78350F;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0; font-family:-apple-system,"Segoe UI",PingFang SC,"Microsoft YaHei",sans-serif;
+  background:var(--app-bg); color:var(--text-primary); transition:background .2s,color .2s;
+  padding:28px 20px 80px; line-height:1.55;
+}
+.wrap{max-width:980px;margin:0 auto;}
+h1{font-size:20px;margin:0 0 4px;}
+h2.sec-title{font-size:14px;font-weight:700;margin:36px 0 12px;display:flex;align-items:center;gap:8px;}
+h2.sec-title .num{width:22px;height:22px;border-radius:50%;background:var(--accent-solid);color:#fff;
+  display:inline-flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;}
+p.desc{font-size:12.5px;color:var(--text-secondary);margin:0 0 8px;}
+
+/* ---- 顶部工具条 ---- */
+.topbar{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;}
+.theme-btn{
+  border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-primary);
+  border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer;
+  display:inline-flex;align-items:center;gap:6px;flex-shrink:0;
+}
+.theme-btn:hover{background:var(--hover);}
+
+/* ---- 顶部小结卡片 ---- */
+.summary{
+  background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;
+  padding:16px 18px;margin-top:14px;box-shadow:var(--shadow-md);font-size:12.5px;
+}
+.summary h3{font-size:13px;margin:0 0 8px;}
+.summary dl{display:grid;grid-template-columns:110px 1fr;gap:6px 10px;margin:0;}
+.summary dt{color:var(--text-muted);font-weight:600;}
+.summary dd{margin:0;color:var(--text-secondary);}
+.api-ok{color:var(--green);font-weight:700;}
+.callout{
+  margin-top:12px;padding:10px 12px;border-radius:8px;font-size:12px;
+  background:var(--orange-bg);border:1px solid var(--orange-border);color:var(--orange);
+}
+.callout b{color:inherit;}
+.callout.finding{background:var(--red-bg);border-color:color-mix(in srgb, var(--danger) 35%, transparent);color:var(--danger);}
+
+/* ---- 设计说明 note 标注（非真实 UI，仅供评审） ---- */
+.note{
+  display:inline-flex;align-items:flex-start;gap:5px;font-size:11px;font-style:italic;
+  color:var(--note-c);background:var(--note-bg);border:1px dashed var(--note-border);
+  border-radius:6px;padding:4px 8px;margin:6px 0;max-width:100%;
+}
+.note b{font-style:normal;}
+.note-block{margin:8px 0 18px;}
+
+/* ---- 舞台容器：模拟 app 背景，承载侧边栏/弹窗实样 ---- */
+.stage{
+  position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--card-border);
+  background:var(--app-bg);box-shadow:var(--shadow-md);
+}
+.stage-label{
+  position:absolute;top:8px;right:10px;font-size:10px;color:var(--text-muted);
+  background:var(--card-bg);border:1px solid var(--border-color);border-radius:20px;padding:2px 8px;z-index:5;
+}
+
+/* =========================================================
+   1. 侧边栏入口 mockup —— 抄自 Sidebar.module.css 真实类名/尺寸
+   ========================================================= */
+.sb-row{display:flex;gap:16px;flex-wrap:wrap;padding:18px;}
+.sb-mock{
+  width:196px;background:var(--sidebar-bg);border:1px solid var(--border-color);border-radius:10px;
+  padding:10px 8px;flex-shrink:0;
+}
+.sb-mock.dashed{border-style:dashed;opacity:.88;}
+.sb-plan-label{font-size:11px;font-weight:700;color:var(--text-muted);margin:-2px 0 8px 2px;}
+.sb-plan-label.reco{color:var(--green);}
+.sb-plan-label.todo{color:var(--orange);}
+.sb-section-row{
+  display:flex;align-items:center;justify-content:space-between;padding:10px 10px 6px;
+}
+.sb-section-label{
+  font-size:11px;font-weight:700;color:var(--sidebar-section-label);text-transform:uppercase;letter-spacing:.5px;
+}
+.sb-gear{
+  width:20px;height:20px;border-radius:6px;border:none;background:transparent;color:var(--text-muted);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:all .15s;
+}
+.sb-gear:hover{background:var(--hover);color:var(--accent-strong);transform:rotate(35deg);}
+.sb-item{
+  display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:7px;border:none;background:transparent;
+  font-size:13px;color:var(--text-primary);width:100%;text-align:left;cursor:pointer;font-family:inherit;
+}
+.sb-item:hover{background:var(--hover);}
+.sb-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.sb-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sb-count{
+  font-size:10px;color:var(--text-muted);font-weight:600;background:var(--section-bg);
+  border:1px solid var(--border-color);border-radius:8px;padding:1px 7px;flex-shrink:0;
+}
+.sb-more{font-size:11px;color:var(--text-muted);padding:4px 10px 2px;}
+.sb-hover-hint{
+  display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);margin-top:8px;padding:0 2px;
+}
+.sb-hover-hint .tip{
+  background:var(--dialog-bg);border:1px solid var(--border-color);border-radius:6px;padding:2px 8px;
+  box-shadow:var(--shadow-md);color:var(--text-primary);
+}
+
+/* =========================================================
+   2. 标签管理弹窗 —— dialog.css / TagBadge / Sidebar 取色器同款
+   ========================================================= */
+.tm-stage{padding:26px 14px;display:flex;justify-content:center;min-height:640px;position:relative;}
+.tm-backdrop{
+  width:100%;max-width:520px;background:rgba(0,0,0,.30);border-radius:14px;
+  display:flex;align-items:flex-start;justify-content:center;padding:26px 14px;
+}
+.tm-dialog{
+  width:460px;max-width:100%;background:var(--dialog-bg);border-radius:16px;
+  box-shadow:0 8px 24px rgba(0,0,0,.18),0 2px 6px rgba(0,0,0,.08);
+  display:flex;flex-direction:column;max-height:640px;position:relative;
+}
+.tm-header{
+  display:flex;align-items:center;justify-content:space-between;padding:0 16px;height:52px;flex-shrink:0;
+  border-bottom:1px solid var(--border-color);
+}
+.tm-header-left{display:flex;align-items:center;gap:8px;min-width:0;}
+.tm-title{font-size:14.5px;font-weight:700;margin:0;white-space:nowrap;}
+.tm-count-badge{
+  font-size:11px;color:var(--text-secondary);background:var(--seg-bg,var(--section-bg));
+  padding:2px 8px;border-radius:20px;font-weight:600;
+}
+.tm-header-right{display:flex;align-items:center;gap:6px;}
+.tm-btn{
+  display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 10px;border-radius:7px;
+  border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-secondary);
+  font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s;white-space:nowrap;
+}
+.tm-btn:hover{background:var(--section-bg);border-color:var(--accent);color:var(--accent);}
+.tm-btn:disabled{opacity:.4;cursor:not-allowed;}
+.tm-icon-btn{
+  width:26px;height:26px;border-radius:7px;border:none;background:transparent;color:var(--text-muted);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:all .15s;
+}
+.tm-icon-btn:hover{background:var(--hover);color:var(--text-primary);}
+.tm-close{width:28px;height:28px;border-radius:8px;border:none;background:transparent;color:var(--text-muted);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+.tm-close:hover{background:var(--hover);color:var(--text-primary);}
+
+.tm-search-row{padding:10px 16px 6px;flex-shrink:0;}
+.tm-search-inner{position:relative;display:flex;align-items:center;}
+.tm-search-inner svg{position:absolute;left:10px;color:var(--text-muted);pointer-events:none;}
+.tm-search{
+  width:100%;height:32px;padding:0 10px 0 30px;border-radius:8px;border:1px solid var(--border-color);
+  background:var(--input-bg);font-size:12px;color:var(--text-primary);outline:none;font-family:inherit;
+}
+.tm-search:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-shadow);}
+
+.tm-body{flex:1;overflow-y:auto;padding:6px 16px 14px;display:flex;flex-direction:column;gap:16px;}
+.tm-section-title{
+  display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;color:var(--text-muted);
+  text-transform:uppercase;letter-spacing:.4px;padding:6px 2px 2px;flex-wrap:wrap;
+}
+.tm-section-count{
+  font-size:10px;font-weight:700;background:var(--section-bg);border-radius:8px;padding:0 6px;color:var(--text-secondary);
+}
+.tm-section-hint{
+  font-size:10.5px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--green);
+  background:var(--green-bg);border:1px solid var(--green-border);border-radius:20px;padding:1px 8px;
+}
+.tm-section-hint.warn{color:var(--warning);background:var(--orange-bg);border-color:var(--orange-border);}
+
+.tm-list{display:flex;flex-direction:column;gap:2px;}
+.tm-list.scroll{max-height:260px;overflow-y:auto;padding-right:2px;}
+
+.tm-row{
+  display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:8px;transition:background .12s;
+}
+.tm-row:hover{background:var(--hover);}
+.tm-row.is-auto{border:1px dashed transparent;}
+.tm-row.is-auto:hover{border-color:var(--border-color);}
+.tm-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+.tm-name{flex:1;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.tm-auto-pill{
+  display:inline-flex;align-items:center;gap:2px;font-size:9px;font-weight:700;color:var(--text-muted);
+  border:1px dashed var(--border-color);border-radius:10px;padding:0 6px;flex-shrink:0;
+}
+.tm-usage{
+  font-size:10.5px;color:var(--text-muted);font-weight:600;background:var(--section-bg);
+  border:1px solid var(--border-color);border-radius:8px;padding:1px 7px;flex-shrink:0;font-variant-numeric:tabular-nums;
+}
+.tm-usage.zero{color:var(--orange);border-color:var(--orange-border);background:var(--orange-bg);}
+.tm-actions{display:flex;gap:2px;flex-shrink:0;}
+.tm-icon-btn.danger:hover{background:var(--red-bg);color:var(--danger);}
+.tm-icon-btn.disabled{opacity:.38;cursor:not-allowed;}
+.tm-icon-btn.disabled:hover{background:transparent;color:var(--text-muted);}
+
+/* 重命名行内编辑 —— 抄自 Sidebar.module.css .inlineInput 编辑态 */
+.tm-rename-row{display:none;align-items:center;gap:8px;padding:4px 8px 8px;margin:-2px 0 2px;}
+.tm-rename-row.open{display:flex;}
+.tm-rename-input{
+  flex:1;height:28px;border:1px solid var(--accent);border-radius:7px;background:var(--input-bg);
+  padding:0 8px;font-size:12px;color:var(--text-primary);outline:none;font-family:inherit;
+}
+.tm-rename-counter{font-size:10px;color:var(--text-muted);flex-shrink:0;font-variant-numeric:tabular-nums;}
+.tm-rename-ok,.tm-rename-cancel{
+  width:24px;height:24px;border-radius:50%;border:none;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;flex-shrink:0;
+}
+.tm-rename-ok{background:var(--accent-solid);color:#fff;}
+.tm-rename-ok:hover{filter:brightness(1.1);}
+.tm-rename-cancel{background:transparent;color:var(--text-muted);}
+.tm-rename-cancel:hover{background:var(--hover);}
+
+/* 改色弹层 —— 抄自 Sidebar.module.css .contextMenuColors / .contextMenuColorDot */
+.tm-color-pop{display:none;gap:5px;flex-wrap:wrap;padding:6px 10px 10px 27px;margin:-2px 0 2px;}
+.tm-color-pop.open{display:flex;}
+.tm-color-dot{
+  width:18px;height:18px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;transition:all .15s;
+}
+.tm-color-dot:hover{transform:scale(1.15);}
+.tm-color-dot.active{border-color:var(--text-primary);box-shadow:0 0 0 1px var(--text-primary);}
+
+/* 自动标签禁用提示条 */
+.tm-warn-row{display:none;gap:8px;align-items:flex-start;margin:-2px 8px 6px 27px;padding:8px 10px;
+  border-radius:8px;background:var(--red-bg);border:1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  font-size:11px;color:var(--danger);line-height:1.5;}
+.tm-warn-row.open{display:flex;}
+.tm-warn-row svg{flex-shrink:0;margin-top:1px;}
+
+/* 新建标签行 —— 抄自 TagEditor.module.css .createRow */
+.tm-create-row{
+  display:flex;gap:8px;align-items:center;padding:10px 2px 2px;border-top:1px solid var(--border-color);
+  margin-top:4px;flex-wrap:wrap;
+}
+.tm-create-input{
+  flex:1;min-width:110px;height:30px;padding:0 10px;border-radius:8px;border:1px solid var(--border-color);
+  background:var(--input-bg);font-size:12px;color:var(--text-primary);outline:none;font-family:inherit;
+}
+.tm-create-input:focus{border-color:var(--accent);}
+.tm-create-colors{display:flex;gap:4px;}
+.tm-create-btn{
+  height:30px;padding:0 12px;border-radius:8px;border:none;background:var(--accent-solid);color:#fff;
+  font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap;
+}
+.tm-create-btn:disabled{opacity:.5;cursor:not-allowed;}
+
+.tm-footer{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 16px;height:46px;
+  border-top:1px solid var(--border-color);flex-shrink:0;
+}
+.tm-footer-note{font-size:10.5px;color:var(--text-muted);}
+.tm-btn-primary{
+  height:30px;padding:0 16px;border-radius:8px;border:none;background:var(--accent-solid);color:#fff;
+  font-size:12px;font-weight:700;cursor:pointer;
+}
+.tm-btn-primary:hover{filter:brightness(1.1);}
+
+/* 空状态预览 */
+.tm-empty{display:none;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:56px 20px;text-align:center;}
+.tm-empty.show{display:flex;}
+.tm-empty svg{color:var(--text-muted);opacity:.6;}
+.tm-empty .t1{font-size:13px;font-weight:600;color:var(--text-secondary);}
+.tm-empty .t2{font-size:11.5px;color:var(--text-muted);max-width:260px;}
+.tm-body.hidden-for-empty{display:none;}
+
+/* 嵌套确认弹窗 —— 抄自 ConfirmDialog.tsx（dialog-box w400 + AlertTriangle + btn-danger） */
+.tm-confirm-backdrop{
+  position:absolute;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;
+  border-radius:16px;z-index:20;
+}
+.tm-confirm-backdrop.open{display:flex;}
+.tm-confirm-box{
+  width:340px;max-width:90%;background:var(--dialog-bg);border-radius:16px;
+  box-shadow:0 8px 24px rgba(0,0,0,.12);
+}
+.tm-confirm-head{display:flex;align-items:center;justify-content:space-between;padding:0 18px;height:46px;
+  border-bottom:1px solid var(--border-color);}
+.tm-confirm-head-l{display:flex;align-items:center;gap:8px;}
+.tm-confirm-title{font-size:14px;font-weight:700;}
+.tm-confirm-body{padding:14px 18px;font-size:12.5px;color:var(--text-secondary);line-height:1.6;}
+.tm-confirm-body b{color:var(--text-primary);}
+.tm-confirm-foot{display:flex;justify-content:flex-end;gap:8px;padding:0 18px 16px;}
+.btn-secondary{
+  height:30px;padding:0 14px;border-radius:8px;border:1px solid var(--border-color);background:transparent;
+  color:var(--text-primary);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;
+}
+.btn-secondary:hover{background:var(--section-bg);}
+.btn-danger{
+  height:30px;padding:0 14px;border-radius:8px;border:none;background:var(--danger);color:#fff;
+  font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;
+}
+.btn-danger:hover{background:var(--danger-hover);}
+
+/* 待拍板 / 结尾清单 */
+.decide-list{background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;padding:16px 18px;font-size:12.5px;}
+.decide-list li{margin-bottom:8px;color:var(--text-secondary);}
+.decide-list li b{color:var(--text-primary);}
+footer.foot-note{margin-top:30px;font-size:11px;color:var(--text-muted);text-align:center;}
+</style>
+
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div>
+      <h1>🏷️ 标签管理面板 — 设计稿</h1>
+      <p class="desc">PastePanda · design/tag-manager.html · 仅供拍定视觉与交互，不含实现代码</p>
+    </div>
+    <button class="theme-btn" onclick="toggleTheme()">
+      <span id="themeIcon">🌙</span> <span id="themeLabel">切换到深色（midnight）</span>
+    </button>
+  </div>
+
+  <div class="summary">
+    <h3>这份稿子解决什么问题</h3>
+    <p class="desc" style="margin-bottom:12px;">标签的后端 CRUD（<code>update_tag</code> / <code>delete_tag</code>）和前端 API 都已就绪，但目前唯一的入口 <code>TagEditor</code> 只能勾选/新建标签，不显示使用计数、也没有改名/改色/删除的界面 —— 建错的标签只能永远留着。本稿设计一个独立的「标签管理」弹窗解决这个问题。</p>
+    <dl>
+      <dt>新增组件</dt><dd>TagManagerDialog（新建）— 侧边栏齿轮触发的独立弹窗</dd>
+      <dt>复用的样式/交互</dt><dd><code>dialog.css</code> 弹窗壳、<code>ConfirmDialog</code> 的 danger 变体、<code>Sidebar.module.css</code> 的 <code>.contextMenuColorDot</code> 取色器与行内重命名（<code>editingId</code> 模式）、<code>TagBadge</code> 的色点/🤖 自动标签标记、<code>SnippetsDialog</code> 的“搜索+分组列表+批量操作”骨架</dd>
+      <dt>后端 API 状态</dt><dd><span class="api-ok">已全部就绪，无需新增接口</span> — <code>get_tags</code> / <code>create_tag</code> / <code>update_tag</code> / <code>delete_tag</code> / <code>get_sidebar_counts</code>（<code>SidebarCounts.tags: Record&lt;tag_id, count&gt;</code>）均已存在</dd>
+    </dl>
+    <div class="callout finding">
+      <b>⚠ 核对结果（比你说的更严重一点）：</b>已读 <code>src-tauri/src/data_store/tag.rs</code>，<code>resolve_auto_tag_ids()</code> 确实是 <code>SELECT id FROM tags WHERE name = ?1</code> 按名称查找，<code>content_classifier.rs</code> 的 <code>classify()</code> 返回的正是硬编码的中文/语言名，重命名会打断分类，这点你说得对。<br>
+      但「删除自动标签是无效操作」这句话<b>不完全准确</b>：<code>delete_tag()</code> 是硬删除，会先 <code>DELETE FROM history_tags WHERE tag_id=?1</code> 再删 <code>tags</code> 行。下次启动 <code>ensure_auto_tags()</code> 用 <b>相同的硬编码 id</b>（如 <code>auto-code</code>）把标签种回来，但被删掉的 <code>history_tags</code> 关联<b>不会恢复</b>——已归类记录的这个标签会永久丢失，计数归零。所以删除自动标签不是“白操作”，是<b>不可逆的数据损失</b>，比重命名更需要拦住。稿子里按“重命名会拦截+提示原因、删除会拦截+更强提示”两种强度分别处理。
+    </div>
+  </div>
+
+  <!-- ============ 1. 侧边栏入口 ============ -->
+  <h2 class="sec-title"><span class="num">1</span>入口：侧边栏齿轮</h2>
+  <p class="desc">读了 <code>Sidebar.tsx</code> 才发现一个和任务描述不一致的地方，需要你确认。</p>
+  <div class="note-block">
+    <div class="note">📌 <b>发现：</b>当前 <code>Sidebar.tsx</code> 的 <code>section</code> 类型只有 <code>builtin / user / source / auto</code> 四种，并没有一个叫「标签」的分区 —— 用户手建的 manual 标签目前<b>完全不出现在侧边栏</b>，只在 <code>TagEditor</code> 里能看到。唯一和“标签”相关的现有分区是「智能分类」（<code>autoGroups</code>，只渲染 <code>source === "auto"</code> 的自动标签）。下面画了两个方案，方案 A 是最小改动、方案 B 是顺带把这个缺口也补上，需要你选。
+  </div>
+  <div class="stage sb-row">
+    <div>
+      <div class="sb-plan-label reco">✓ 方案 A（推荐，最小改动）</div>
+      <div class="sb-mock">
+        <div class="sb-section-row">
+          <span class="sb-section-label">智能分类</span>
+          <button class="sb-gear" title="管理标签" onclick="pulseGear(this)">⚙</button>
+        </div>
+        <button class="sb-item"><span class="sb-dot" style="background:#6366F1"></span><span class="sb-name">🤖 代码</span><span class="sb-count">128</span></button>
+        <button class="sb-item"><span class="sb-dot" style="background:#06B6D4"></span><span class="sb-name">🤖 链接</span><span class="sb-count">56</span></button>
+        <button class="sb-item"><span class="sb-dot" style="background:#3776AB"></span><span class="sb-name">🤖 Python</span><span class="sb-count">42</span></button>
+        <div class="sb-more">+ 26 更多智能分类…</div>
+      </div>
+      <div class="sb-hover-hint">👆 悬停齿轮 <span class="tip">管理标签</span></div>
+    </div>
+    <div>
+      <div class="sb-plan-label todo">◐ 方案 B（需确认是否要做：新增"标签"分区）</div>
+      <div class="sb-mock dashed">
+        <div class="sb-section-row">
+          <span class="sb-section-label">标签</span>
+          <button class="sb-gear" title="管理标签" onclick="pulseGear(this)">⚙</button>
+        </div>
+        <button class="sb-item"><span class="sb-dot" style="background:#A855F7"></span><span class="sb-name">客户资料</span><span class="sb-count">34</span></button>
+        <button class="sb-item"><span class="sb-dot" style="background:#3B82F6"></span><span class="sb-name">待办</span><span class="sb-count">9</span></button>
+        <button class="sb-item"><span class="sb-dot" style="background:#F97316"></span><span class="sb-name">面试题</span><span class="sb-count">6</span></button>
+      </div>
+      <div class="sb-hover-hint">让用户标签也能像分组一样在侧边栏筛选</div>
+    </div>
+  </div>
+  <div class="note">📌 <b>设计说明：</b>齿轮的 20×20 尺寸沿用 <code>Sidebar.module.css</code> 里 <code>.moreBtn</code>（⋯ 更多操作按钮）同一套量感，但改成<b>常驻可见</b>而不是 <code>.moreBtn</code> 那种"仅 hover 该行才出现"的时机 —— 因为它是分区级的固定入口而不是单项的次要操作，常驻可见更接近 <code>.collapseBtn</code>（底部"收起侧边栏"按钮）的定位方式。</div>
+
+  <!-- ============ 2. 标签管理弹窗 ============ -->
+  <h2 class="sec-title"><span class="num">2</span>标签管理弹窗</h2>
+  <p class="desc">点击行内的图标可以互动：🎨 改色 / ✏️ 重命名 / 🗑️ 删除；自动标签的 ✏️ 🗑️ 点了会告诉你为什么不能用，而不是直接置灰装死。</p>
+
+  <div class="stage tm-stage">
+    <span class="stage-label">可交互原型 · 点击试试</span>
+    <div class="tm-backdrop">
+      <div class="tm-dialog">
+        <div class="tm-header">
+          <div class="tm-header-left">
+            <span style="font-size:15px;">🏷️</span>
+            <h2 class="tm-title">标签管理</h2>
+            <span class="tm-count-badge" id="tmTotal">33</span>
+          </div>
+          <div class="tm-header-right">
+            <button class="tm-btn" id="emptyPreviewBtn" onclick="toggleEmptyPreview()">👁️ 预览空状态</button>
+            <button class="tm-btn" id="cleanupBtn" onclick="openCleanup()">🧹 清理 0 引用 (<span id="cleanupN">1</span>)</button>
+            <button class="tm-close" onclick="fakeClose()">✕</button>
+          </div>
+        </div>
+
+        <div class="tm-search-row">
+          <div class="tm-search-inner">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input class="tm-search" placeholder="搜索标签名…" oninput="filterRows(this.value)">
+          </div>
+        </div>
+
+        <div class="tm-body" id="tmBody">
+          <!-- 用户标签 -->
+          <div class="tm-section" id="manualSection">
+            <div class="tm-section-title">
+              用户标签 <span class="tm-section-count" id="manualCount">4</span>
+              <span class="tm-section-hint">可重命名 · 改色 · 删除</span>
+            </div>
+            <div class="tm-list" id="manualList"></div>
+            <div class="tm-create-row">
+              <span class="tm-dot" id="newDotPreview" style="background:#3B82F6"></span>
+              <input class="tm-create-input" id="newTagName" placeholder="新标签名…（最长 50 字）" maxlength="50" oninput="onNewNameInput()">
+              <div class="tm-create-colors" id="newColorRow"></div>
+              <button class="tm-create-btn" id="newTagBtn" disabled onclick="createManualTag()">+ 创建</button>
+            </div>
+          </div>
+
+          <!-- 自动标签 -->
+          <div class="tm-section" id="autoSection">
+            <div class="tm-section-title">
+              智能分类自动标签 <span class="tm-section-count">29</span>
+              <span class="tm-section-hint warn">⚠ 仅可改色，重命名 / 删除已禁用</span>
+            </div>
+            <div class="tm-list scroll" id="autoList"></div>
+          </div>
+
+          <div class="tm-empty" id="tmEmpty">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20.59 13.41L11 3.83A2 2 0 0 0 9.59 3.24L4 3a1 1 0 0 0-1 1l.24 5.59a2 2 0 0 0 .59 1.41l9.58 9.59a2 2 0 0 0 2.82 0l4.36-4.36a2 2 0 0 0 0-2.82z"/><circle cx="7.5" cy="7.5" r="1"/></svg>
+            <div class="t1">还没有标签</div>
+            <div class="t2">在剪贴板卡片上打第一个标签后，会自动出现在这里；也可以在下方直接新建。</div>
+          </div>
+        </div>
+
+        <div class="tm-footer">
+          <span class="tm-footer-note">修改会立即生效并同步到卡片与筛选栏</span>
+          <button class="tm-btn-primary" onclick="fakeClose()">完成</button>
+        </div>
+
+        <!-- 共用的嵌套确认弹窗（删除单个 / 批量清理 共用一套外壳，抄自 ConfirmDialog.tsx） -->
+        <div class="tm-confirm-backdrop" id="confirmBackdrop">
+          <div class="tm-confirm-box">
+            <div class="tm-confirm-head">
+              <div class="tm-confirm-head-l">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <span class="tm-confirm-title" id="confirmTitle">确认删除标签</span>
+              </div>
+              <button class="tm-close" onclick="closeConfirm()">✕</button>
+            </div>
+            <div class="tm-confirm-body" id="confirmBody"></div>
+            <div class="tm-confirm-foot">
+              <button class="btn-secondary" onclick="closeConfirm()">取消</button>
+              <button class="btn-danger" id="confirmDangerBtn">删除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">📌 <b>宽度：</b>用了 <code>dialog.css</code> 里预定义的最大宽度档 <code>460px</code>（对应 <code>.w460</code>），没有新造宽度 —— 这个面板信息密度比 <code>TagEditor</code>（380px）高（多了计数、操作按钮、改色弹层），比 <code>SnippetsDialog</code>（380px）也宽一些。</div>
+  <div class="note">📌 <b>分组方式：</b>自动/手动标签分两个独立小节而不是混排+徽标区分 —— 因为二者的可操作范围完全不同（一个只能改色，一个全能改），分组比行内徽标更能让用户"扫一眼就知道这一片能不能动"，徽标法（类似 <code>TagBadge.autoBadge</code> 的虚线框+🤖）保留用在每一行上做二次确认，双重信号。</div>
+  <div class="note">📌 <b>颜色选择器：</b>直接照搬 <code>Sidebar.tsx</code> 右键菜单里的 <code>.contextMenuColorDot</code> 九色预设点，没有另造色相环/HEX 输入 —— 和分组改色保持同一交互语言，用户不用学两套。</div>
+  <div class="note">📌 <b>重命名：</b>行内编辑而不是弹二级对话框，抄的是 <code>Sidebar.tsx</code> 分组重命名的 <code>editingId</code>/<code>onBlur</code> 提交模式；额外加了字符计数器（<code>x/50</code>），对应后端 <code>update_tag</code> 的 50 字符校验，避免用户输满了才在保存时才被拒。</div>
+  <div class="note">📌 <b>自动标签拦截：</b>✏️ 和 🗑️ 图标视觉上弱化（透明度 .38）但<b>仍然可点</b> —— 点击后在行下方展开一条红底解释，而不是做成真正的 <code>disabled</code> 静默吃掉点击；否则用户会以为是 bug 去反馈。删除的解释文案专门强调"关联会被永久删除，标签会被重新种回来但历史关联回不来了"，比重命名的措辞更重。</div>
+  <div class="note">📌 <b>清理 0 引用：</b>点击后列出的候选只从<b>用户标签</b>里筛 <code>count === 0</code>，确认弹窗里明确写"自动标签即使计数为 0 也不清理，这是正常状态"——因为 29 个自动标签里大概率总有几个用户从没触发过（比如从没复制过电话号码），0 引用不代表该删。</div>
+
+  <!-- ============ 拍板清单 ============ -->
+  <h2 class="sec-title"><span class="num">3</span>需要你拍板的设计决策</h2>
+  <div class="decide-list">
+    <ol>
+      <li><b>侧边栏入口：</b>方案 A（挂在现有「智能分类」标题旁，不新增分区）还是方案 B（新增独立「标签」分区，把手动标签也纳入侧边栏筛选）？后者范围更大，等于顺带修了"手动标签在侧边栏完全不可见"这个既有空白。</li>
+      <li><b>是否要在管理器里支持"新建标签"：</b>本稿画了创建行（复用 <code>TagEditor</code> 的 createRow 样式），但原始需求只提到管/改/删，创建入口目前只在打标签时顺手建。是否要在管理器里也开一个入口，还是刻意保持"创建只在打标签流程里发生"？</li>
+      <li><b>自动标签的按钮要不要干脆隐藏：</b>本稿选择"弱化但可点+解释"，也可以更保守地直接不渲染 ✏️/🗑️（只留 🎨），哪种更符合产品调性？</li>
+      <li><b>清理 0 引用要不要支持勾选部分清理：</b>本稿是一键全清所有 0 引用的用户标签，如果候选很多，要不要改成可勾选子集？</li>
+      <li><b>是否需要展示"最近使用"或按计数排序：</b><code>SidebarCounts.tags</code> 现成就有数字，列表要不要默认按使用量倒序而不是按名称排（当前 <code>get_tags</code> 后端是 <code>ORDER BY name ASC</code>）？</li>
+    </ol>
+  </div>
+
+  <footer class="foot-note">design/tag-manager.html · 本文件完全自包含，无外部依赖 · 亮色对应 ocean 主题，暗色对应 midnight 主题，其余 5 套主题靠同名 CSS 变量自动适配</footer>
+</div>
+
+<script>
+/* ============ 数据：真实自动标签常量原样抄自 src-tauri/src/data_store/tag.rs ensure_auto_tags() ============ */
+const AUTO_TAGS = [
+  ["代码","#6366F1",128],["链接","#06B6D4",56],["JSON","#F59E0B",23],["配置文件","#10B981",12],
+  ["日志","#6B7280",45],["表格","#8B5CF6",8],["命令行","#EF4444",34],["密钥","#DC2626",3],
+  ["数字","#14B8A6",19],["纯文本","#9CA3AF",201],["邮箱","#2563EB",15],["电话","#16A34A",2],
+  ["颜色","#EC4899",7],["文件路径","#EA580C",28],["Markdown","#84CC16",11],
+  ["Python","#3776AB",42],["JavaScript","#F7DF1E",38],["TypeScript","#3178C6",29],["Rust","#DEA584",15],
+  ["Java","#ED8B00",9],["Go","#00ADD8",4],["SQL","#4479A1",22],["HTML","#E34F26",13],["CSS","#1572B6",10],
+  ["Shell","#4EAA25",17],["YAML","#CB171E",6],["TOML","#9C4221",2],["ENV","#ECD53F",4],["INI","#7C8DA5",1],
+].map((t,i)=>({id:"auto-"+i,name:t[0],color:t[1],count:t[2],source:"auto"}));
+
+/* 用户标签：真实文案示例（待办/客户资料/面试题），报销单故意 0 引用用来演示"清理" */
+let MANUAL_TAGS = [
+  {id:"m1",name:"待办",color:"#3B82F6",count:9,source:"manual"},
+  {id:"m2",name:"客户资料",color:"#A855F7",count:34,source:"manual"},
+  {id:"m3",name:"面试题",color:"#F97316",count:6,source:"manual"},
+  {id:"m4",name:"报销单",color:"#6366F1",count:0,source:"manual"},
+];
+
+/* PRESET_COLORS —— 与 Sidebar.tsx / TagEditor.tsx 完全一致的九色常量 */
+const PRESET_COLORS = ["#3B82F6","#22C55E","#F97316","#A855F7","#EF4444","#EC4899","#14B8A6","#F59E0B","#6366F1"];
+
+const icon = {
+  pencil:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+  trash:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>',
+  palette:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".6"/><circle cx="17.5" cy="10.5" r=".6"/><circle cx="8.5" cy="7.5" r=".6"/><circle cx="6.5" cy="12.5" r=".6"/><path d="M12 2a10 10 0 1 0 0 20c.9 0 1.65-.75 1.65-1.7 0-.43-.18-.83-.44-1.12-.29-.29-.44-.65-.44-1.13a1.64 1.64 0 0 1 1.67-1.67h2c3.05 0 5.56-2.5 5.56-5.55C22 6 17.46 2 12 2z"/></svg>',
+  check:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+  x:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+};
+
+function colorDots(prefix, current, onClickFn){
+  return PRESET_COLORS.map(c=>{
+    const active = c.toLowerCase()===String(current).toLowerCase() ? " active" : "";
+    return `<button class="tm-color-dot${active}" style="background:${c}" onclick="${onClickFn}('${prefix}','${c}',this)"></button>`;
+  }).join("");
+}
+
+function manualRowHtml(t){
+  return `
+  <div class="tm-row" data-name="${t.name.toLowerCase()}" id="row-${t.id}">
+    <span class="tm-dot" id="dot-${t.id}" style="background:${t.color}"></span>
+    <span class="tm-name" id="name-${t.id}">${t.name}</span>
+    <span class="tm-usage${t.count===0?" zero":""}" id="usage-${t.id}">${t.count} 条</span>
+    <div class="tm-actions">
+      <button class="tm-icon-btn" title="改色" onclick="toggleColorPop('${t.id}')">${icon.palette}</button>
+      <button class="tm-icon-btn" title="重命名" onclick="toggleRename('${t.id}')">${icon.pencil}</button>
+      <button class="tm-icon-btn danger" title="删除" onclick="openDeleteOne('${t.id}')">${icon.trash}</button>
+    </div>
+  </div>
+  <div class="tm-color-pop" id="colorpop-${t.id}">${colorDots(t.id, t.color, "pickManualColor")}</div>
+  <div class="tm-rename-row" id="rename-${t.id}">
+    <input class="tm-rename-input" id="renameInput-${t.id}" value="${t.name}" maxlength="50" oninput="updateRenameCounter('${t.id}')">
+    <span class="tm-rename-counter" id="renameCounter-${t.id}">${t.name.length}/50</span>
+    <button class="tm-rename-ok" onclick="confirmRename('${t.id}')" title="确认">${icon.check}</button>
+    <button class="tm-rename-cancel" onclick="toggleRename('${t.id}')" title="取消">${icon.x}</button>
+  </div>`;
+}
+
+function autoRowHtml(t){
+  return `
+  <div class="tm-row is-auto" data-name="${t.name.toLowerCase()}" id="row-${t.id}">
+    <span class="tm-dot" id="dot-${t.id}" style="background:${t.color}"></span>
+    <span class="tm-name">${t.name}</span>
+    <span class="tm-auto-pill">🤖 自动</span>
+    <span class="tm-usage${t.count===0?" zero":""}">${t.count} 条</span>
+    <div class="tm-actions">
+      <button class="tm-icon-btn" title="改色" onclick="toggleColorPop('${t.id}')">${icon.palette}</button>
+      <button class="tm-icon-btn disabled" title="自动标签不可重命名" onclick="attemptAutoAction('${t.id}','rename')">${icon.pencil}</button>
+      <button class="tm-icon-btn disabled" title="自动标签不可删除" onclick="attemptAutoAction('${t.id}','delete')">${icon.trash}</button>
+    </div>
+  </div>
+  <div class="tm-color-pop" id="colorpop-${t.id}">${colorDots(t.id, t.color, "pickAutoColor")}</div>
+  <div class="tm-warn-row" id="warn-${t.id}"></div>`;
+}
+
+function renderAll(){
+  document.getElementById("manualList").innerHTML = MANUAL_TAGS.map(manualRowHtml).join("");
+  document.getElementById("autoList").innerHTML = AUTO_TAGS.map(autoRowHtml).join("");
+  document.getElementById("manualCount").textContent = MANUAL_TAGS.length;
+  document.getElementById("tmTotal").textContent = MANUAL_TAGS.length + AUTO_TAGS.length;
+  const zeroCount = MANUAL_TAGS.filter(t=>t.count===0).length;
+  document.getElementById("cleanupN").textContent = zeroCount;
+  document.getElementById("cleanupBtn").disabled = zeroCount===0;
+  document.getElementById("newColorRow").innerHTML = PRESET_COLORS.map((c,i)=>
+    `<button class="tm-color-dot${i===0?' active':''}" data-newcolor style="background:${c}" onclick="pickNewColor('${c}',this)"></button>`
+  ).join("");
+  window._newColor = PRESET_COLORS[0];
+}
+renderAll();
+
+/* ---- 主题切换 ---- */
+function toggleTheme(){
+  const root=document.documentElement;
+  const dark = root.getAttribute("data-theme")==="dark";
+  root.setAttribute("data-theme", dark? "light":"dark");
+  document.getElementById("themeIcon").textContent = dark? "🌙":"☀️";
+  document.getElementById("themeLabel").textContent = dark? "切换到深色（midnight）":"切换到浅色（ocean）";
+}
+
+/* ---- 侧边栏齿轮点击反馈（仅示意）---- */
+function pulseGear(el){ el.style.transform="rotate(90deg)"; setTimeout(()=>el.style.transform="",300); }
+
+/* ---- 搜索过滤（两个分区都过滤） ---- */
+function filterRows(kw){
+  kw = kw.trim().toLowerCase();
+  document.querySelectorAll(".tm-row[data-name]").forEach(row=>{
+    const match = !kw || row.dataset.name.includes(kw);
+    row.style.display = match ? "" : "none";
+  });
+}
+
+/* ---- 重命名（用户标签） ---- */
+function toggleRename(id){
+  closeAllPopovers();
+  const row = document.getElementById("rename-"+id);
+  const open = row.classList.contains("open");
+  row.classList.toggle("open", !open);
+  if(!open){ const inp=document.getElementById("renameInput-"+id); inp.focus(); inp.select(); }
+}
+function updateRenameCounter(id){
+  const v = document.getElementById("renameInput-"+id).value;
+  document.getElementById("renameCounter-"+id).textContent = v.length+"/50";
+}
+function confirmRename(id){
+  const v = document.getElementById("renameInput-"+id).value.trim();
+  if(!v){ return; }
+  const t = MANUAL_TAGS.find(x=>x.id===id); t.name = v;
+  document.getElementById("name-"+id).textContent = v;
+  document.getElementById("rename-"+id).classList.remove("open");
+  document.getElementById("row-"+id).dataset.name = v.toLowerCase();
+}
+
+/* ---- 改色（两类标签都可用） ---- */
+function toggleColorPop(id){
+  closeAllPopovers();
+  document.getElementById("colorpop-"+id).classList.toggle("open");
+}
+function pickManualColor(id,color,el){
+  const t = MANUAL_TAGS.find(x=>x.id===id); t.color = color;
+  document.getElementById("dot-"+id).style.background = color;
+  el.parentElement.querySelectorAll(".tm-color-dot").forEach(d=>d.classList.remove("active"));
+  el.classList.add("active");
+}
+function pickAutoColor(id,color,el){
+  const t = AUTO_TAGS.find(x=>x.id===id); t.color = color;
+  document.getElementById("dot-"+id).style.background = color;
+  el.parentElement.querySelectorAll(".tm-color-dot").forEach(d=>d.classList.remove("active"));
+  el.classList.add("active");
+}
+function closeAllPopovers(){
+  document.querySelectorAll(".tm-color-pop.open").forEach(p=>p.classList.remove("open"));
+  document.querySelectorAll(".tm-rename-row.open").forEach(p=>p.classList.remove("open"));
+}
+
+/* ---- 自动标签：点击禁用的 ✏️/🗑️ 时展开解释，而不是静默无反应 ---- */
+function attemptAutoAction(id, kind){
+  document.querySelectorAll(".tm-warn-row.open").forEach(w=>{ if(w.id!=="warn-"+id) w.classList.remove("open"); });
+  const box = document.getElementById("warn-"+id);
+  const open = box.classList.contains("open");
+  if(open){ box.classList.remove("open"); return; }
+  if(kind==="rename"){
+    box.innerHTML = `${icon.x}<span>自动标签的名字是 AI 智能分类的匹配键（后端按名称精确查找）。改名后，这个标签今后再也接不到新的分类结果，且不会有任何报错提示。如需别的叫法，建议新建一个手动标签代替。</span>`;
+  } else {
+    box.innerHTML = `${icon.x}<span>删除会把这个标签下所有记录的关联<b>永久清除</b>；下次启动 App 时标签本身会被重新种回来（用同一个内部 ID），但已经清除的关联<b>找不回来</b>。这不是"无效操作"，是数据丢失，已禁止。</span>`;
+  }
+  box.classList.add("open");
+}
+
+/* ---- 删除单个用户标签 ---- */
+let _pendingDeleteId = null, _pendingCleanup = false;
+function openDeleteOne(id){
+  const t = MANUAL_TAGS.find(x=>x.id===id);
+  _pendingDeleteId = id; _pendingCleanup = false;
+  document.getElementById("confirmTitle").textContent = "确认删除标签";
+  document.getElementById("confirmBody").innerHTML =
+    `确定删除标签 <b>${t.name}</b>？<br>${t.count>0 ? `<b>${t.count}</b> 条记录将失去这个标签。` : "当前没有记录使用这个标签。"}此操作不可撤销。`;
+  document.getElementById("confirmDangerBtn").onclick = doDeleteOne;
+  document.getElementById("confirmBackdrop").classList.add("open");
+}
+function doDeleteOne(){
+  MANUAL_TAGS = MANUAL_TAGS.filter(x=>x.id!==_pendingDeleteId);
+  closeConfirm(); renderAll();
+}
+function closeConfirm(){ document.getElementById("confirmBackdrop").classList.remove("open"); }
+
+/* ---- 批量清理 0 引用（仅用户标签） ---- */
+function openCleanup(){
+  const zero = MANUAL_TAGS.filter(t=>t.count===0);
+  if(zero.length===0) return;
+  _pendingCleanup = true;
+  document.getElementById("confirmTitle").textContent = "清理 0 引用标签";
+  document.getElementById("confirmBody").innerHTML =
+    `将删除 ${zero.length} 个当前没有任何记录使用的<b>用户标签</b>：<br>` +
+    zero.map(t=>`<b>${t.name}</b>`).join("、") +
+    `<br><br>自动标签即使计数为 0 也<b>不会</b>被清理 —— 0 引用对自动标签是正常状态（用户可能只是还没触发过这个分类）。`;
+  document.getElementById("confirmDangerBtn").onclick = doCleanup;
+  document.getElementById("confirmBackdrop").classList.add("open");
+}
+function doCleanup(){
+  MANUAL_TAGS = MANUAL_TAGS.filter(t=>t.count!==0);
+  closeConfirm(); renderAll();
+}
+
+/* ---- 新建用户标签 ---- */
+function pickNewColor(c, el){
+  window._newColor = c;
+  el.parentElement.querySelectorAll(".tm-color-dot").forEach(d=>d.classList.remove("active"));
+  el.classList.add("active");
+  document.getElementById("newDotPreview").style.background = c;
+}
+function onNewNameInput(){
+  document.getElementById("newTagBtn").disabled = !document.getElementById("newTagName").value.trim();
+}
+function createManualTag(){
+  const name = document.getElementById("newTagName").value.trim();
+  if(!name) return;
+  const dup = [...MANUAL_TAGS, ...AUTO_TAGS].some(t=>t.name.toLowerCase()===name.toLowerCase());
+  if(dup){ alert(`标签「${name}」已存在`); return; } // 对应 TagEditor.tsx 里 createTag 撞名时的真实提示文案
+  MANUAL_TAGS.push({id:"m"+Date.now(), name, color:window._newColor||PRESET_COLORS[0], count:0, source:"manual"});
+  document.getElementById("newTagName").value = "";
+  document.getElementById("newTagBtn").disabled = true;
+  renderAll();
+}
+
+/* ---- 空状态预览开关（仅演示，不影响真实数据） ---- */
+function toggleEmptyPreview(){
+  const showing = document.getElementById("tmEmpty").classList.contains("show");
+  document.getElementById("tmEmpty").classList.toggle("show", !showing);
+  document.getElementById("manualSection").style.display = showing ? "" : "none";
+  document.getElementById("autoSection").style.display = showing ? "" : "none";
+  document.getElementById("emptyPreviewBtn").textContent = showing ? "👁️ 预览空状态" : "👁️ 返回正常列表";
+}
+
+/* ---- 关闭/完成：设计稿里不真的隐藏弹窗，提示一下即可 ---- */
+function fakeClose(){
+  const el = document.querySelector(".tm-dialog");
+  el.style.transition="box-shadow .15s";
+  el.style.boxShadow="0 0 0 3px var(--accent), 0 8px 24px rgba(0,0,0,.18)";
+  setTimeout(()=>{ el.style.boxShadow=""; }, 260);
+}
+</script>
+</body>

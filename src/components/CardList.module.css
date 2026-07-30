@@ -26,6 +26,10 @@
   overflow: visible;
   width: 100%;
   z-index: 1;
+  /* 间隙烘焙：虚拟行绝对定位，.cardList 的 flex gap 不生效，行间距由 measureElement
+     测得的行高决定。padding-bottom 计入 offsetHeight（margin 不计），使每行测量值
+     = 卡片高 72 + 间隙 10 = 82px（恰与 estimateSize:82 吻合），恢复设计预留间隙 */
+  padding-bottom: var(--card-gap);
 }
 
 /* ── 方案C：玻璃拟态 + 光泽扫过（适配全主题）── */
@@ -44,8 +48,9 @@
 
   /* 玻璃拟态核心 — 全部来自主题变量 */
   background: var(--glass-card-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  /* 模糊强度走主题变量：皮肤主题覆盖为更弱模糊让场景透出，默认 12px */
+  backdrop-filter: blur(var(--glass-card-blur, 12px));
+  -webkit-backdrop-filter: blur(var(--glass-card-blur, 12px));
   border: 1px solid var(--glass-card-border);
   box-shadow: var(--glass-card-shadow);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1589,11 +1594,12 @@
   scrollbar-width: thin;
   scrollbar-color: var(--border-color) transparent;
 
-  /* 背景纹理 — 为玻璃拟态提供"背后的风景"，卡片半透明后可见层次 */
+  /* 背景纹理 — 为玻璃拟态提供"背后的风景"，卡片半透明后可见层次。
+     注意：底层不透明 --app-bg 已绘制在 body/appShell（皮肤场景层之下），
+     此处只叠两层半透明光晕，让 fixed 皮肤场景（樱花/深海/终端粒子）能透出来 */
   background:
     radial-gradient(ellipse 60% 50% at 50% 0%, var(--accent-shadow) 0%, transparent 60%),
-    radial-gradient(ellipse 80% 40% at 20% 100%, var(--glass-card-hover-glow) 0%, transparent 50%),
-    var(--app-bg);
+    radial-gradient(ellipse 80% 40% at 20% 100%, var(--glass-card-hover-glow) 0%, transparent 50%);
 }
 
 /* 时间轴可见时卡片区域右移 — padding-left 在 cardList（Lenis content）上 */

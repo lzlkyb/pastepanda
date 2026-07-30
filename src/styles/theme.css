@@ -57,9 +57,11 @@
 /* ── 1. ocean 海洋（默认浅色·通用）── */
 :root,
 [data-theme="ocean"] {
-  --app-bg: #F4F6F9;
-  --header-bg-start: #fff;
-  --header-bg-end: #F4F6F9;
+  /* 皮肤场景：清冽晨海 — 晨光海面天空渐变（SkinScene 太阳/海鸥/帆影/波浪/碎金衬于其上） */
+  --app-bg: linear-gradient(180deg, #EAF6FD 0%, #CFE9F8 40%, #9ED0EA 75%, #79B8DD 100%);
+  /* 皮肤场景：header 全透明，场景从窗口顶端连续到底（控件自带底色保证可读性） */
+  --header-bg-start: transparent;
+  --header-bg-end: transparent;
   --card-bg: #fff;
   --card-border: #E0E4EB;
   --text-primary: #0F172A;
@@ -99,8 +101,9 @@
   --version-badge-shadow: rgba(2, 132, 199, 0.35);
   --update-badge-gradient: linear-gradient(135deg, #059669, #047857);
   --update-badge-shadow: rgba(5, 150, 105, 0.4);
-  /* 玻璃拟态 — 浅色：降低透明度 + 加深阴影制造层次 */
-  --glass-card-bg: rgba(255,255,255,0.55);
+  /* 玻璃拟态 — 海洋浅色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让晨海场景透出） */
+  --glass-card-bg: rgba(255,255,255,0.22);
+  --glass-card-blur: 5px;
   --glass-card-border: rgba(0,0,0,0.08);
   --glass-card-hover-border: rgba(0,0,0,0.14);
   --glass-card-hover-glow: rgba(2,132,199,0.10);
@@ -121,9 +124,11 @@
 
 /* ── 2. midnight 午夜（默认深色·OLED）── */
 [data-theme="midnight"] {
-  --app-bg: #09090B;
-  --header-bg-start: #18181B;
-  --header-bg-end: #09090B;
+  /* 皮肤场景：静谧星夜 — 靛紫夜空径向渐变（SkinScene 极光/满天星/流星/月亮/山影衬于其上） */
+  --app-bg: radial-gradient(100% 80% at 50% -10%, #1C1832 0%, #0B0B13 55%, #07070C 100%);
+  /* 皮肤场景：header 全透明，场景从窗口顶端连续到底（控件自带底色保证可读性） */
+  --header-bg-start: transparent;
+  --header-bg-end: transparent;
   --card-bg: #18181B;
   --card-border: #27272A;
   --text-primary: #E4E4E7;
@@ -162,8 +167,9 @@
   --version-badge-shadow: rgba(129, 140, 248, 0.35);
   --update-badge-gradient: linear-gradient(135deg, #38BDF8, #0EA5E9);
   --update-badge-shadow: rgba(56, 189, 248, 0.45);
-  /* 玻璃拟态 — 午夜深色：降低透明度 + 增强边框层次 */
-  --glass-card-bg: rgba(24,24,27,0.48);
+  /* 玻璃拟态 — 午夜深色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让星夜场景透出） */
+  --glass-card-bg: rgba(24,24,27,0.22);
+  --glass-card-blur: 5px;
   --glass-card-border: rgba(255,255,255,0.06);
   --glass-card-hover-border: rgba(255,255,255,0.14);
   --glass-card-hover-glow: rgba(129,140,248,0.10);
@@ -184,9 +190,11 @@
 
 /* ── 3. forest 森林（浅色·护眼绿）── */
 [data-theme="forest"] {
-  --app-bg: #F2F7F5;
-  --header-bg-start: #fff;
-  --header-bg-end: #F2F7F5;
+  /* 皮肤场景：晨雾纸感 — 暖纸色渐变（SkinScene 树冠/竹/晨雾/落叶/萤火虫衬于其上） */
+  --app-bg: linear-gradient(180deg, #F5F1E3 0%, #EAE5D1 55%, #DCD6BD 100%);
+  /* 皮肤场景：header 全透明，场景从窗口顶端连续到底（控件自带底色保证可读性） */
+  --header-bg-start: transparent;
+  --header-bg-end: transparent;
   --card-bg: #fff;
   --card-border: #D1D9D3;
   --text-primary: #171717;
@@ -225,8 +233,9 @@
   --version-badge-shadow: rgba(5, 150, 105, 0.35);
   --update-badge-gradient: linear-gradient(135deg, #0891B2, #0E7490);
   --update-badge-shadow: rgba(8, 145, 178, 0.4);
-  /* 玻璃拟态 — 森林浅色 */
-  --glass-card-bg: rgba(255,255,255,0.55);
+  /* 玻璃拟态 — 森林浅色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让晨雾场景透出） */
+  --glass-card-bg: rgba(255,255,255,0.22);
+  --glass-card-blur: 5px;
   --glass-card-border: rgba(0,0,0,0.07);
   --glass-card-hover-border: rgba(0,0,0,0.14);
   --glass-card-hover-glow: rgba(5,150,105,0.10);
@@ -247,9 +256,11 @@
 
 /* ── 4. blossom 樱花（浅色·女性/浪漫）── */
 [data-theme="blossom"] {
-  --app-bg: #FFFBFD;
-  --header-bg-start: #fff;
-  --header-bg-end: #FFFBFD;
+  /* 皮肤场景：樱粉天空渐变（SkinScene 花瓣粒子层衬于其上）；C 提亮一档更鲜明 */
+  --app-bg: linear-gradient(160deg, #FFECF5 0%, #FFD7EA 45%, #F8C0DB 100%);
+  /* 皮肤场景：header 全透明，场景从窗口顶端连续到底（控件自带底色保证可读性） */
+  --header-bg-start: transparent;
+  --header-bg-end: transparent;
   --card-bg: #fff;
   --card-border: #F3E8ED;
   --text-primary: #1F1A1C;
@@ -288,8 +299,9 @@
   --version-badge-shadow: rgba(236, 72, 153, 0.35);
   --update-badge-gradient: linear-gradient(135deg, #EF4444, #DC2626);
   --update-badge-shadow: rgba(239, 68, 68, 0.4);
-  /* 玻璃拟态 — 樱花浅色 */
-  --glass-card-bg: rgba(255,255,255,0.55);
+  /* 玻璃拟态 — 樱花浅色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让樱粉场景透出） */
+  --glass-card-bg: rgba(255,255,255,0.22);
+  --glass-card-blur: 5px;
   --glass-card-border: rgba(0,0,0,0.07);
   --glass-card-hover-border: rgba(0,0,0,0.14);
   --glass-card-hover-glow: rgba(236,72,153,0.10);
@@ -310,9 +322,11 @@
 
 /* ── 5. terminal 终端（深色·开发者/极客）── */
 [data-theme="terminal"] {
-  --app-bg: #0A0A0A;
-  --header-bg-start: #141414;
-  --header-bg-end: #0A0A0A;
+  /* 皮肤场景：CRT 屏幕中心幽绿光晕渐变（SkinScene 矩阵雨/扫描线衬于其上）；C 提亮一档 */
+  --app-bg: radial-gradient(120% 100% at 50% 40%, #12240D 0%, #020503 70%);
+  /* 皮肤场景：header 全透明，场景从窗口顶端连续到底（控件自带底色保证可读性） */
+  --header-bg-start: transparent;
+  --header-bg-end: transparent;
   --card-bg: #141414;
   --card-border: #262626;
   --text-primary: #E5E5E5;
@@ -351,8 +365,9 @@
   --version-badge-shadow: rgba(34, 197, 94, 0.35);
   --update-badge-gradient: linear-gradient(135deg, #2DD4BF, #14B8A6);
   --update-badge-shadow: rgba(45, 212, 191, 0.45);
-  /* 玻璃拟态 — 终端深色 */
-  --glass-card-bg: rgba(20,20,20,0.45);
+  /* 玻璃拟态 — 终端深色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让 CRT 场景透出） */
+  --glass-card-bg: rgba(20,20,20,0.22);
+  --glass-card-blur: 5px;
   --glass-card-border: rgba(255,255,255,0.05);
   --glass-card-hover-border: rgba(255,255,255,0.14);
   --glass-card-hover-glow: rgba(34,197,94,0.10);
@@ -373,9 +388,11 @@
 
 /* ── 6. ocean-dark 海洋深色（玻璃拟态专用）── */
 [data-theme="ocean-dark"] {
-  --app-bg: #060D14;
-  --header-bg-start: #0A1628;
-  --header-bg-end: #060D14;
+  /* 皮肤场景：海面透光径向渐变（SkinScene 气泡/浮游生物/水母衬于其上）；C 提亮一档 */
+  --app-bg: radial-gradient(130% 110% at 70% -5%, #1E5A82 0%, #0E3355 42%, #061A33 100%);
+  /* 皮肤场景：header 全透明，场景从窗口顶端连续到底（控件自带底色保证可读性） */
+  --header-bg-start: transparent;
+  --header-bg-end: transparent;
   --card-bg: #0A1628;
   --card-border: #162B45;
   --text-primary: #E0E8F0;
@@ -414,8 +431,9 @@
   --version-badge-shadow: rgba(59,158,255,0.35);
   --update-badge-gradient: linear-gradient(135deg, #2DD4BF, #14B8A6);
   --update-badge-shadow: rgba(45,212,191,0.45);
-  /* 玻璃拟态 — 深海深色 */
-  --glass-card-bg: rgba(10,22,40,0.48);
+  /* 玻璃拟态 — 深海深色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让海面场景透出） */
+  --glass-card-bg: rgba(10,22,40,0.22);
+  --glass-card-blur: 5px;
   --glass-card-border: rgba(255,255,255,0.07);
   --glass-card-hover-border: rgba(255,255,255,0.15);
   --glass-card-hover-glow: rgba(59,158,255,0.12);
@@ -436,9 +454,11 @@
 
 /* ── 7. sunset 日落（深色·年轻/潮流）── */
 [data-theme="sunset"] {
-  --app-bg: #1C1410;
-  --header-bg-start: #281E18;
-  --header-bg-end: #1C1410;
+  /* 皮肤场景：晚霞余晖 — 晚霞天空渐变（SkinScene 落日/流云/归鸟/山影衬于其上） */
+  --app-bg: linear-gradient(180deg, #2A1638 0%, #4A2150 38%, #8A3A5C 68%, #D96A5B 88%, #F0925F 100%);
+  /* 皮肤场景：header 全透明，场景从窗口顶端连续到底（控件自带底色保证可读性） */
+  --header-bg-start: transparent;
+  --header-bg-end: transparent;
   --card-bg: #281E18;
   --card-border: #3D3028;
   --text-primary: #F5F0EB;
@@ -477,8 +497,9 @@
   --version-badge-shadow: rgba(249, 115, 22, 0.35);
   --update-badge-gradient: linear-gradient(135deg, #F59E0B, #D97706);
   --update-badge-shadow: rgba(245, 158, 11, 0.45);
-  /* 玻璃拟态 — 日落深色 */
-  --glass-card-bg: rgba(40,30,24,0.48);
+  /* 玻璃拟态 — 日落深色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让晚霞场景透出） */
+  --glass-card-bg: rgba(40,30,24,0.22);
+  --glass-card-blur: 5px;
   --glass-card-border: rgba(255,255,255,0.06);
   --glass-card-hover-border: rgba(255,255,255,0.14);
   --glass-card-hover-glow: rgba(249,115,22,0.12);

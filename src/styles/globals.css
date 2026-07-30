@@ -22,7 +22,8 @@
 
 body {
   font-family: "SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui, -apple-system, sans-serif;
-  background-color: var(--app-bg);
+  /* 用 background 简写：--app-bg 可能是纯色或渐变（皮肤场景天空层） */
+  background: var(--app-bg);
   color: var(--text-primary);
   overflow: hidden;
   user-select: none;

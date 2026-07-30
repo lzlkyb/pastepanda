@@ -438,9 +438,17 @@
 }
 
 /* ===== Segmented Control ===== */
+/* 皮肤场景适配：容器改磨砂玻璃（从 --seg-active-bg 派生半透明 + blur），
+   替代原不透明 --seg-bg 灰块——亮色场景下呈白玻璃、深色场景下呈暗玻璃，
+   与透明 header 后的彩色场景及搜索框/玻璃卡片语言统一。
+   注意：--seg-bg/--seg-active-bg 变量本身不动，设置/提取/片段等对话框分段控件不受影响 */
 .segmented {
   display: flex;
-  background: var(--seg-bg);
+  background: color-mix(in srgb, var(--seg-active-bg) 32%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid color-mix(in srgb, var(--seg-active-bg) 55%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--seg-active-bg) 50%, transparent), 0 2px 8px rgba(0, 0, 0, 0.06);
   border-radius: 10px;
   padding: 3px;
   position: relative;
@@ -469,16 +477,18 @@
 .segItemActive {
   color: var(--text-primary);
   font-weight: 600;
-  background: var(--seg-active-bg);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08), 0 0.5px 1px rgba(0, 0, 0, 0.04);
+  /* 滑块视觉交给内部 .segActiveIndicator 单层呈现，按钮自身透明，
+     避免双层背景叠加把 88% 玻璃滑块垫成近实心、透不出场景 */
+  background: transparent;
 }
 
 .segActiveIndicator {
   position: absolute;
   inset: 0;
   border-radius: 8px;
-  background: var(--seg-active-bg);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08), 0 0.5px 1px rgba(0, 0, 0, 0.04);
+  /* 单层 88% 玻璃滑块（亮色=近白、深色=近暗），场景色可微微透出 */
+  background: color-mix(in srgb, var(--seg-active-bg) 88%, transparent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12), 0 0.5px 1px rgba(0, 0, 0, 0.05);
   z-index: 0;
 }
 

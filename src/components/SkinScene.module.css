@@ -1,0 +1,315 @@
+/* SkinScene — 皮肤场景粒子层
+   固定铺满视口，z-index: 0：衬在玻璃卡片（cardWrap z-index:1）之后、
+   appShell 渐变背景（--app-bg）之上，透过半透明卡片呈现"世界"氛围。
+   全部使用 transform / opacity 动画，GPU 加速，pointer-events 关闭不影响交互。 */
+
+.scene {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* ============ 樱花 · 飘落花瓣 + 粉色雾霭 ============ */
+.petal {
+  position: absolute;
+  top: -30px;
+  border-radius: 60% 40% 60% 40%;
+  background: #ffc4dd;
+  box-shadow: 0 0 10px rgba(255, 160, 210, 0.75);
+  animation: petalFall linear infinite;
+}
+@keyframes petalFall {
+  0%   { transform: translate(0, -40px) rotate(0deg); }
+  100% { transform: translate(-90px, 110vh) rotate(560deg); }
+}
+.haze {
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  height: 180px;
+  border-radius: 50%;
+  background: rgba(255, 235, 245, 0.5);
+  filter: blur(40px);
+}
+
+/* ============ 深海 · 光柱 + 水母 + 气泡 + 浮游生物 ============ */
+.ray {
+  position: absolute;
+  top: -80px;
+  width: 170px;
+  height: 62vh;
+  background: linear-gradient(180deg, rgba(150, 225, 255, 0.34), rgba(150, 225, 255, 0));
+  transform: skewX(-14deg);
+  filter: blur(16px);
+  animation: raySway 10s ease-in-out infinite;
+}
+@keyframes raySway {
+  0%, 100% { opacity: 0.4; transform: skewX(-14deg); }
+  50%      { opacity: 0.8; transform: skewX(-9deg); }
+}
+.bubble {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(170, 230, 255, 0.6);
+  background: rgba(170, 230, 255, 0.12);
+  animation: bubbleRise linear infinite;
+}
+@keyframes bubbleRise {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-110vh); }
+}
+.plankton {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #7ff3ff;
+  box-shadow: 0 0 11px #22d3ee;
+  animation: twinkle 3s ease-in-out infinite;
+}
+@keyframes twinkle {
+  0%, 100% { opacity: 0.15; }
+  50%      { opacity: 0.9; }
+}
+.jelly {
+  position: absolute;
+  animation: jellyDrift 14s ease-in-out infinite;
+}
+@keyframes jellyDrift {
+  0%, 100% { transform: translate(0, 0); }
+  50%      { transform: translate(-30px, -36px); }
+}
+
+/* ============ 终端 · 字符雨 + 扫描线 + 暗角 ============ */
+.glyph {
+  position: absolute;
+  top: -120px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.35;
+  color: #2ba356;
+  opacity: 0.6;
+  white-space: pre;
+  animation: matrixFall linear infinite;
+}
+@keyframes matrixFall {
+  from { transform: translateY(-120px); }
+  to   { transform: translateY(110vh); }
+}
+.scan {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.22) 0 1px, transparent 1px 3px);
+}
+.crtGlow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 100% at 50% 50%, transparent 60%, rgba(0, 0, 0, 0.4) 100%);
+}
+
+/* ============ 海洋 · 晨光 + 帆影 + 波浪 + 水面碎金 ============ */
+.sun {
+  position: absolute;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  right: 90px;
+  top: 50px;
+  background: radial-gradient(circle, #fffbe8 0%, #ffeaa6 42%, rgba(255,234,166,0) 72%);
+  filter: blur(2px);
+}
+.glint {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #fff;
+  animation: glintTw 2.6s ease-in-out infinite;
+}
+@keyframes glintTw {
+  0%, 100% { opacity: 0.15; }
+  50%      { opacity: 0.95; }
+}
+.gull {
+  position: absolute;
+  color: #3a6d8f;
+  opacity: 0.75;
+  animation: gullGlide 14s linear infinite;
+}
+@keyframes gullGlide {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-120vw); }
+}
+.boat {
+  position: absolute;
+  left: 16%;
+  bottom: 150px;
+  font-size: 34px;
+  animation: boatBob 4s ease-in-out infinite;
+  filter: drop-shadow(0 4px 6px rgba(9,60,100,0.3));
+}
+@keyframes boatBob {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50%      { transform: translateY(-8px) rotate(2deg); }
+}
+.waves {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* ============ 午夜 · 极光 + 满天星 + 流星 + 月亮 + 山影 ============ */
+.aurora {
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  top: -40px;
+  height: 220px;
+  background: linear-gradient(100deg, rgba(139,124,246,0), rgba(139,124,246,0.16), rgba(56,189,248,0.14), rgba(139,124,246,0));
+  filter: blur(30px);
+  animation: auroraSway 11s ease-in-out infinite;
+}
+@keyframes auroraSway {
+  0%, 100% { transform: translateX(-30px) skewX(-8deg); opacity: 0.6; }
+  50%      { transform: translateX(30px) skewX(6deg); opacity: 1; }
+}
+.star {
+  position: absolute;
+  border-radius: 50%;
+  background: #cdd3ff;
+  animation: starTw 4s ease-in-out infinite;
+}
+@keyframes starTw {
+  0%, 100% { opacity: 0.15; }
+  50%      { opacity: 0.95; }
+}
+.shoot {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 6px #fff;
+  animation: shootFly 6s linear infinite;
+}
+.shoot::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 70px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.8), transparent);
+  transform: rotate(-32deg) translateX(-60px);
+}
+@keyframes shootFly {
+  0%   { transform: translate(0, 0); opacity: 0; }
+  4%   { opacity: 1; }
+  12%  { transform: translate(-320px, 200px); opacity: 0; }
+  100% { transform: translate(-320px, 200px); opacity: 0; }
+}
+.moon {
+  position: absolute;
+  right: 100px;
+  top: 64px;
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 34%, #f4f1ff 0%, #cfc7f5 55%, #a89cf0 100%);
+  box-shadow: 0 0 50px rgba(139,124,246,0.5), inset -15px -11px 0 rgba(90,74,180,0.35);
+}
+.mountains {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* ============ 森林 · 树冠竹影 + 晨雾 + 落叶 + 萤火虫 ============ */
+.canopy {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.mist {
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  height: 130px;
+  border-radius: 50%;
+  background: rgba(255, 253, 245, 0.8);
+  filter: blur(32px);
+  animation: mistMove 16s ease-in-out infinite;
+}
+@keyframes mistMove {
+  0%, 100% { transform: translateX(-40px); }
+  50%      { transform: translateX(40px); }
+}
+.leaf {
+  position: absolute;
+  width: 10px;
+  height: 7px;
+  border-radius: 60% 40% 60% 40%;
+  background: #8fae7e;
+  opacity: 0.85;
+  animation: leafFall linear infinite;
+}
+@keyframes leafFall {
+  0%   { transform: translateY(-30px) rotate(0); }
+  100% { transform: translateY(110vh) rotate(480deg); }
+}
+.fly {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #d9e8a0;
+  box-shadow: 0 0 8px #b8d468;
+  animation: flyFloat 7s ease-in-out infinite;
+}
+@keyframes flyFloat {
+  0%, 100% { transform: translate(0, 0); opacity: 0.3; }
+  25%      { opacity: 1; }
+  50%      { transform: translate(24px, -30px); opacity: 0.8; }
+  75%      { opacity: 1; }
+}
+
+/* ============ 日落 · 落日 + 流云 + 归鸟 + 山影 ============ */
+.sunsetSun {
+  position: absolute;
+  left: 50%;
+  bottom: 150px;
+  transform: translateX(-50%);
+  width: 170px;
+  height: 170px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffe2ae 0%, #ffab72 46%, rgba(255,140,95,0) 72%);
+  filter: blur(3px);
+  animation: sunPulse 8s ease-in-out infinite;
+}
+@keyframes sunPulse {
+  0%, 100% { opacity: 0.9; }
+  50%      { opacity: 1; }
+}
+.cloud {
+  position: absolute;
+  height: 26px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255,175,135,0.55), rgba(255,125,155,0.35));
+  filter: blur(6px);
+  animation: cloudDrift linear infinite;
+}
+@keyframes cloudDrift {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-260px); }
+}
+.bird {
+  position: absolute;
+  color: #3d1f33;
+  opacity: 0.85;
+  animation: gullGlide 18s linear infinite;
+}
