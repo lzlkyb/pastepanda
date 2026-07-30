@@ -9,12 +9,14 @@ use tauri::AppHandle;
 
 /// 粘贴引擎 — 处理时序敏感的粘贴操作
 pub struct PasteEngine {
-    #[allow(dead_code)]
     app_handle: AppHandle,
     paste_suppress: Arc<PasteSuppress>,
     /// 手动保存的前台窗口句柄 + 时间戳（由 save_foreground_hwnd 设置，优先使用）。
-    /// 有效期 2 秒，过期自动失效。这样 sequential paste 循环中的多次粘贴
-    /// 都能使用热键触发时保存的目标窗口，不会因 execute_paste 内部清除而丢失。
+    /// 有效期规则（窗口会话绑定，对齐 Win+V 语义）：
+    /// - 本应用任一窗口可见期间（主窗口浏览 / 快捷粘贴面板 / 托盘弹窗），保存值
+    ///   永久有效——所有"打开窗口"路径都会先刷新保存，故不会陈旧；
+    /// - 全部窗口隐藏后仅在短 TTL 内有效（覆盖连续粘贴/索引粘贴等无窗口热键场景），
+    ///   过期自动失效，避免粘贴到早已切换走的旧窗口。
     last_foreground_hwnd: std::sync::Mutex<Option<(isize, std::time::Instant)>>,
     /// 粘贴操作互斥锁：确保同一时间只有一个粘贴在执行，防止竞态
     paste_lock: AtomicBool,
@@ -50,7 +52,7 @@ impl PasteEngine {
 
     /// 手动保存当前前台窗口（在显示窗口之前调用，作为备用）。
     /// 排除 PastePanda 自身的窗口，避免把"自己"当作粘贴目标。
-    /// 保存时会附带时间戳，2 秒后自动过期。
+    /// 有效期与窗口会话绑定：本应用窗口可见期间永久有效，全部隐藏后短 TTL 过期。
     pub fn save_foreground_hwnd(&self) {
         #[cfg(target_os = "windows")]
         {
@@ -92,22 +94,41 @@ impl PasteEngine {
         None
     }
 
-    /// 保存的前台窗口有效期（秒）。超过此时间，last_foreground_hwnd 视为过期。
-    const FOREGROUND_TTL_SECS: u64 = 2;
+    /// 全部窗口隐藏后，保存的前台窗口的兜底有效期（秒）。
+    /// 仅覆盖无窗口的热键粘贴场景（连续粘贴/索引粘贴/栈粘贴——热键回调会先
+    /// save_foreground_hwnd 再立即粘贴，实际耗时远小于此值）。
+    const FOREGROUND_TTL_SECS: u64 = 5;
 
-    /// 获取最佳目标窗口句柄：手动保存（2秒内有效） > 实时抓取（粘贴前一刻） > None
-    /// 
-    /// 注意：不再使用 tracked_foreground_hwnd（400ms 轮询可能过时）。
+    /// 确认目标窗口前台后、发送 Ctrl+V 前的就绪延时（毫秒）。
+    /// 目标窗口刚切到前台时，其消息循环/焦点控件可能尚未就绪，立刻 SendInput
+    /// 按键虽能成功入队却会被目标丢弃（"提示已粘贴却没内容"的关键诱因）。
+    /// 对齐 Ditto 的 SendKeys 前置延时实践，给目标应用留出就绪时间。
+    const PRE_PASTE_DELAY_MS: u64 = 40;
+
+    /// 本应用当前是否有任一窗口可见（主窗口 / 快捷粘贴面板 / 托盘弹窗 / 编辑器等）
+    fn any_own_window_visible(&self) -> bool {
+        use tauri::Manager;
+        self.app_handle
+            .webview_windows()
+            .values()
+            .any(|w| w.is_visible().unwrap_or(false))
+    }
+
+    /// 获取最佳目标窗口句柄：手动保存（窗口会话绑定）> 实时抓取（粘贴前一刻）> None
+    ///
+    /// 手动保存值的有效期与"窗口会话"绑定（对齐 Win+V 语义）：
+    /// - 本应用任一窗口可见 → 永久有效（用户正在浏览历史，目标就是唤出前的窗口）；
+    /// - 全部窗口隐藏 → 仅在 FOREGROUND_TTL_SECS 内有效（防陈旧误粘）。
     /// 传入的 fallback 是 execute_paste 在粘贴前实时抓取的结果，比轮询更可靠。
     fn get_target_hwnd(&self, fallback: Option<isize>) -> Option<isize> {
-        // 优先使用手动保存的句柄（热键触发时第一时间保存），但仅限 2 秒内有效
         if let Ok(manual) = self.last_foreground_hwnd.lock() {
             if let Some((hwnd, timestamp)) = *manual {
-                let elapsed = timestamp.elapsed().as_secs();
-                if elapsed < Self::FOREGROUND_TTL_SECS {
+                let window_open = self.any_own_window_visible();
+                let fresh = timestamp.elapsed().as_secs() < Self::FOREGROUND_TTL_SECS;
+                if window_open || fresh {
                     return Some(hwnd);
                 }
-                // 已过期，不删除（下次 save_foreground_hwnd 会覆盖）
+                // 窗口全隐藏且已过期：不使用陈旧值，落入下方回退
             }
         }
 
@@ -193,8 +214,8 @@ impl PasteEngine {
         result.wm_paste_sent = true;
 
         // 5. 不在此处清除 last_foreground_hwnd！
-        //    改为依赖时间戳过期机制（2 秒 TTL），确保 sequential paste
-        //    循环中的多次粘贴都能使用热键触发时保存的目标窗口。
+        //    依赖窗口会话绑定机制（窗口可见期间永久有效 + 隐藏后短 TTL 过期），
+        //    确保 sequential paste 循环中的多次粘贴都能使用热键触发时保存的目标窗口。
 
         result.success = true;
         Ok(result)
@@ -374,7 +395,7 @@ impl PasteEngine {
             self.restore_and_send_ctrl_v(target_hwnd)?;
         }
 
-        // 5. 不在此处清除 last_foreground_hwnd（依赖 2 秒 TTL 过期）
+        // 5. 不在此处清除 last_foreground_hwnd（依赖窗口会话绑定 + 短 TTL 过期）
 
         Ok(())
     }
@@ -382,6 +403,7 @@ impl PasteEngine {
     #[cfg(target_os = "windows")]
     fn restore_and_send_ctrl_v(&self, hwnd_value: Option<isize>) -> Result<(), String> {
         use windows::Win32::Foundation::*;
+        use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
         use windows::Win32::UI::Input::KeyboardAndMouse::*;
         use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -400,23 +422,50 @@ impl PasteEngine {
                 return Err("目标窗口已关闭，已取消粘贴（内容已复制到剪贴板，可手动 Ctrl+V）".to_string());
             }
 
-            // 将目标窗口切换到前台（确保按键能送达）
+            // === 激活目标窗口（对齐 Ditto 的成熟配方）===
+            // 旧实现仅"重试 3 次 SetForegroundWindow + 固定 3×10ms 轮询"，且确认前台后
+            // 立刻发送按键。问题有二：① Windows 的"前台锁定超时"会悄悄拒绝后台进程的
+            //   SetForegroundWindow（返回 false 但不报错），导致激活不扎实；② 目标窗口
+            //   刚切到前台时消息循环/焦点控件尚未就绪，立刻 SendInput 的按键虽成功入队
+            //   却会被目标丢弃——表现就是"提示已粘贴却没内容"。下面按 Ditto 的做法修复。
             let was_minimized = IsIconic(hwnd).as_bool();
             if was_minimized {
                 let _ = ShowWindow(hwnd, SW_RESTORE);
             }
-            // 切换前台窗口并确认生效：Windows 的“前台锁定超时”（foreground lock timeout）
-            // 机制可能悄悄拒绝来自后台进程的 SetForegroundWindow 请求（返回 false 但不报错）。
-            // 一旦切换被拒绝，Ctrl+V 会被发送到当时真正处于前台的错误窗口——对剪贴板管理器
-            // 而言可能泄漏密码等敏感内容。因此这里最多重试 3 次 SetForegroundWindow 并轮询确认，
-            // 若始终无法确认切换成功则中止粘贴并报错（修复 C1），绝不冒险发送按键。
+
+            // 1) 临时关闭"前台锁定超时"：置 0 让 SetForegroundWindow 稳定成功，结束后恢复原值。
+            let mut lock_timeout: u32 = 0;
+            let got_timeout = SystemParametersInfoW(
+                SPI_GETFOREGROUNDLOCKTIMEOUT,
+                0,
+                Some(&mut lock_timeout as *mut u32 as *mut core::ffi::c_void),
+                SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+            )
+            .is_ok();
+            let _ = SystemParametersInfoW(
+                SPI_SETFOREGROUNDLOCKTIMEOUT,
+                0,
+                None,
+                SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+            );
+
+            // 2) 把本线程输入队列挂到"当前前台窗口"所在线程，获得设置前台的权限。
+            let cur_tid = GetCurrentThreadId();
+            let fore_tid = GetWindowThreadProcessId(GetForegroundWindow(), None);
+            let attached_fore = fore_tid != 0
+                && fore_tid != cur_tid
+                && AttachThreadInput(cur_tid, fore_tid, true).as_bool();
+
+            // 3) 循环激活并确认前台（替代固定 3×10ms 轮询）：每轮 BringWindowToTop +
+            //    SetForegroundWindow，再短轮询确认；未确认则重试，直到成功或超时。
+            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
             let mut confirmed = false;
-            for attempt in 0..3 {
+            while std::time::Instant::now() < deadline {
+                let _ = BringWindowToTop(hwnd);
                 let ok = SetForegroundWindow(hwnd).as_bool();
                 if !ok {
                     log::warn!(
-                        "[PasteEngine] SetForegroundWindow 返回失败（第 {} 次尝试），hwnd={:?}",
-                        attempt + 1,
+                        "[PasteEngine] SetForegroundWindow 返回失败，hwnd={:?}（继续轮询确认）",
                         hwnd_raw
                     );
                 }
@@ -432,6 +481,20 @@ impl PasteEngine {
                     break;
                 }
             }
+
+            // 4) 无论成功与否，都恢复前台锁定超时 & 解除线程输入挂接。
+            if got_timeout {
+                let _ = SystemParametersInfoW(
+                    SPI_SETFOREGROUNDLOCKTIMEOUT,
+                    0,
+                    Some(lock_timeout as usize as *mut core::ffi::c_void),
+                    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+                );
+            }
+            if attached_fore {
+                let _ = AttachThreadInput(cur_tid, fore_tid, false);
+            }
+
             if !confirmed {
                 log::warn!(
                     "[PasteEngine] 前台窗口切换未能确认成功，hwnd={:?}，中止粘贴以防止内容发送到错误窗口",
@@ -443,6 +506,9 @@ impl PasteEngine {
                 }
                 return Err("无法切换到目标窗口，已中止粘贴以防止内容粘贴到错误窗口（内容已复制到剪贴板，可手动 Ctrl+V）".to_string());
             }
+
+            // 5) 发送前就绪延时：等目标应用的消息循环/焦点控件就绪，避免按键被丢弃。
+            std::thread::sleep(std::time::Duration::from_millis(Self::PRE_PASTE_DELAY_MS));
 
                 // 使用 SendInput 模拟 Ctrl+V 按键（兼容所有应用，包括微信/企业微信等 WebView 应用）
                 //
@@ -512,7 +578,25 @@ impl PasteEngine {
                     }
                 }
 
-                SendInput(&inputs[..n], std::mem::size_of::<INPUT>() as i32);
+                let sent = SendInput(&inputs[..n], std::mem::size_of::<INPUT>() as i32);
+
+                // SendInput 返回实际成功注入的事件数。与请求数 n 不符，说明部分/全部
+                // 按键被系统拦截——最典型的是 UIPI：目标应用以管理员身份运行而本进程为
+                // 普通权限时，跨完整性级别的合成键盘输入会被静默丢弃。此时绝不能报成功
+                // （这正是"提示已粘贴却没内容"的根因），降级走 WM_PASTE 直投兜底。
+                if sent != n as u32 {
+                    log::warn!(
+                        "[PasteEngine] SendInput 仅注入 {}/{} 个事件（疑似 UIPI 拦截），降级 WM_PASTE，hwnd={:?}",
+                        sent, n, hwnd_raw
+                    );
+                    if !self.post_wm_paste(hwnd) {
+                        // 兜底也失败：恢复最小化状态后返回明确错误，不再谎报成功
+                        if was_minimized {
+                            let _ = ShowWindow(hwnd, SW_MINIMIZE);
+                        }
+                        return Err("无法向目标窗口投递粘贴（目标应用可能以管理员身份运行，权限高于本应用）。内容已复制到剪贴板，可手动 Ctrl+V".to_string());
+                    }
+                }
 
                 // 如果窗口之前是最小化的，恢复最小化状态。
                 // SendInput 只是把按键放入系统输入队列，目标窗口识别 Ctrl+V 并执行粘贴
@@ -525,5 +609,34 @@ impl PasteEngine {
         }
 
         Ok(())
+    }
+
+    /// WM_PASTE 兜底投递：当 SendInput 被 UIPI 等机制拦截（返回注入数不符）时，
+    /// 尝试直接向目标窗口投递 WM_PASTE。先用 AttachThreadInput 把本线程输入队列
+    /// 挂到目标窗口线程，GetFocus 即可取到目标线程当前的焦点控件（真正接收文本的
+    /// Edit/富文本控件），把 WM_PASTE 投给它；取不到焦点控件则退回顶层窗口。
+    /// 注意：对完整性级别高于本进程的目标，WM_PASTE 同样会被 UIPI 消息过滤拦截，
+    /// 此时返回 false，由调用方报明确错误而非谎报成功。
+    #[cfg(target_os = "windows")]
+    fn post_wm_paste(&self, hwnd: windows::Win32::Foundation::HWND) -> bool {
+        use windows::Win32::Foundation::*;
+        use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+        use windows::Win32::UI::Input::KeyboardAndMouse::GetFocus;
+        use windows::Win32::UI::WindowsAndMessaging::*;
+        unsafe {
+            let target_tid = GetWindowThreadProcessId(hwnd, None);
+            let cur_tid = GetCurrentThreadId();
+            let attached = target_tid != 0
+                && target_tid != cur_tid
+                && AttachThreadInput(cur_tid, target_tid, true).as_bool();
+            // 共享输入队列后 GetFocus 返回目标线程的焦点控件；为空则退回顶层窗口
+            let focus = GetFocus();
+            let target = if focus.0.is_null() { hwnd } else { focus };
+            let ok = PostMessageW(target, WM_PASTE, WPARAM(0), LPARAM(0)).is_ok();
+            if attached {
+                let _ = AttachThreadInput(cur_tid, target_tid, false);
+            }
+            ok
+        }
     }
 }

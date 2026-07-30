@@ -294,6 +294,12 @@ fn show_tray_popup(app: &AppHandle, tray_rect: (f64, f64, f64, f64)) {
     let popup_w = 280.0;
     let popup_h = 470.0;
 
+    // 右键托盘图标时前台仍是用户应用（托盘点击不抢焦点），趁弹窗 set_focus
+    // 抢焦点之前保存粘贴目标——窗口会话绑定机制依赖各"打开窗口"路径刷新保存值
+    if let Some(engine) = app.try_state::<crate::paste_engine::PasteEngine>() {
+        engine.save_foreground_hwnd();
+    }
+
     log::info!(
         "[TrayManager] show_tray_popup 被调用, tray_rect=({:.0},{:.0} {:.0}x{:.0})",
         tray_rect.0,

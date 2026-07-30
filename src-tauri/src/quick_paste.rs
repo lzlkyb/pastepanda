@@ -6,9 +6,26 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow, WebviewWindowBuilder};
 
 const WINDOW_LABEL: &str = "quick-paste";
-/// 面板逻辑尺寸（与效果图一致：340×420）
-const PANEL_W: f64 = 340.0;
-const PANEL_H: f64 = 420.0;
+
+/// 面板逻辑尺寸随布局变化：grid=双栏网格 460×520，list=单栏列表 380×500
+fn panel_size(layout: &str) -> (f64, f64) {
+    match layout {
+        "list" => (380.0, 500.0),
+        _ => (460.0, 520.0), // grid 为默认布局
+    }
+}
+
+/// 从 DataStore 读取快捷粘贴面板布局配置（"grid" / "list"），缺省/非法时回退 "grid"
+fn get_layout(app: &AppHandle) -> String {
+    app.try_state::<crate::data_store::DataStore>()
+        .and_then(|store| store.get_config().ok())
+        .and_then(|cfg| {
+            cfg.get("quick_paste_layout")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "grid".to_string())
+}
 
 /// 获取鼠标光标的物理坐标
 #[cfg(target_os = "windows")]
@@ -28,7 +45,8 @@ fn get_cursor_pos() -> (f64, f64) {
 }
 
 /// 计算面板位置：光标右下方偏移，钳制到所在显示器工作区（物理坐标系，DPI 感知）
-fn calc_position() -> tauri::PhysicalPosition<f64> {
+/// panel_w / panel_h 为当前布局的逻辑尺寸
+fn calc_position(panel_w: f64, panel_h: f64) -> tauri::PhysicalPosition<f64> {
     let (cx, cy) = get_cursor_pos();
     let mon = crate::tray_manager::get_monitor_work_area(cx, cy);
 
@@ -36,8 +54,8 @@ fn calc_position() -> tauri::PhysicalPosition<f64> {
     let margin = 8.0; // 屏幕边缘安全边距
 
     // 逻辑尺寸 → 物理尺寸
-    let pw = PANEL_W * mon.scale;
-    let ph = PANEL_H * mon.scale;
+    let pw = panel_w * mon.scale;
+    let ph = panel_h * mon.scale;
 
     let raw_x = cx + offset;
     let raw_y = cy + offset;
@@ -75,15 +93,19 @@ pub fn toggle_quick_paste(app: &AppHandle) {
     create_panel(app);
 }
 
-/// 显示已有面板：重定位 → 发事件通知前端刷新数据 → show + focus
+/// 显示已有面板：按当前布局重设尺寸 → 重定位 → 发事件通知前端刷新数据 → show + focus
 fn show_panel(app: &AppHandle, window: &WebviewWindow) {
-    let pos = calc_position();
+    // 窗口是缓存复用的，布局可能已在设置中切换，须按当前布局重设尺寸后再定位
+    let layout = get_layout(app);
+    let (w, h) = panel_size(&layout);
+    let _ = window.set_size(tauri::LogicalSize::new(w, h));
+    let pos = calc_position(w, h);
     let _ = window.set_position(pos);
     // 通知前端刷新数据（前端监听后 invoke get_quick_paste_data）
     let _ = app.emit("quick-paste-show", ());
     let _ = window.show();
     let _ = window.set_focus();
-    log::info!("[QuickPaste] 面板已显示（复用缓存窗口）");
+    log::info!("[QuickPaste] 面板已显示（复用缓存窗口，布局={}）", layout);
 }
 
 /// 首次创建面板窗口
@@ -111,7 +133,9 @@ fn create_panel(app: &AppHandle) {
             return;
         }
 
-        let pos = calc_position();
+        let layout = get_layout(app);
+        let (panel_w, panel_h) = panel_size(&layout);
+        let pos = calc_position(panel_w, panel_h);
 
         match WebviewWindowBuilder::new(
             app,
@@ -119,7 +143,7 @@ fn create_panel(app: &AppHandle) {
             tauri::WebviewUrl::App("quickpaste.html".into()),
         )
         .title("")
-        .inner_size(PANEL_W, PANEL_H)
+        .inner_size(panel_w, panel_h)
         .resizable(false)
         .decorations(false)
         .always_on_top(true)

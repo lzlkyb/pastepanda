@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { relativeTime } from "@/lib/utils";
 import { getImageThumbnail } from "@/lib/api";
+import { SkinScene } from "./SkinScene";
 
 // ===== 数据类型 =====
 interface PasteItem {
@@ -27,6 +28,32 @@ function typeLabel(item: PasteItem): string {
   if (ct.includes("email")) return "✉ 邮箱";
   if (ct.includes("phone")) return "📞 号码";
   return "📋 文本";
+}
+
+// ===== 类型图标（仅符号，用于列表布局的类型徽标）=====
+function typeIcon(item: PasteItem): string {
+  if (item.type === "image") return "🖼";
+  if (item.type === "file") return "📁";
+  const ct = item.content_type.toLowerCase();
+  if (ct.includes("sql")) return "📋";
+  if (ct.includes("code") || ct.includes("json") || ct.includes("xml")) return "{ }";
+  if (ct.includes("url") || ct.includes("link")) return "🔗";
+  if (ct.includes("email")) return "✉";
+  if (ct.includes("phone")) return "📞";
+  return "📋";
+}
+
+// ===== 类型名称（纯文字，用于列表布局的副标题）=====
+function typeName(item: PasteItem): string {
+  if (item.type === "image") return "图片";
+  if (item.type === "file") return "文件";
+  const ct = item.content_type.toLowerCase();
+  if (ct.includes("sql")) return "SQL";
+  if (ct.includes("code") || ct.includes("json") || ct.includes("xml")) return "代码";
+  if (ct.includes("url") || ct.includes("link")) return "链接";
+  if (ct.includes("email")) return "邮箱";
+  if (ct.includes("phone")) return "号码";
+  return "文本";
 }
 
 // ===== SVG 图标 =====
@@ -60,6 +87,7 @@ export function QuickPastePanel() {
   const [items, setItems] = useState<PasteItem[]>([]);
   const [search, setSearch] = useState("");
   const [selIdx, setSelIdx] = useState(0);
+  const [layout, setLayout] = useState<"grid" | "list">("grid");
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const searchRef = useRef<HTMLInputElement>(null);
@@ -75,6 +103,12 @@ export function QuickPastePanel() {
   // ===== 加载数据 =====
   const loadData = useCallback(async () => {
     try {
+      // 每次显示都重读布局配置：设置中切换布局后，下次唤出即生效
+      // （窗口尺寸由 Rust 侧同步调整，这里只负责渲染形态）
+      try {
+        const cfg = await invoke<{ quick_paste_layout?: string }>("get_config");
+        setLayout(cfg.quick_paste_layout === "list" ? "list" : "grid");
+      } catch { /* 读取失败保持当前布局 */ }
       const data = await invoke<PasteItem[]>("get_quick_paste_data");
       setItems(data);
       setSelIdx(0);
@@ -112,12 +146,9 @@ export function QuickPastePanel() {
 
   // ===== 粘贴 =====
   const doPaste = useCallback(async (item: PasteItem) => {
-    // 先隐藏面板，再执行粘贴（粘贴引擎会恢复热键按下时的前台窗口）
-    try {
-      await invoke("hide_quick_paste");
-    } catch { /* 忽略 */ }
-    // 等待窗口隐藏完成，焦点回到目标
-    await new Promise((r) => setTimeout(r, 150));
+    // 不要提前隐藏面板：粘贴引擎会用热键按下时保存的目标窗口执行
+    // SetForegroundWindow，面板失焦后自动隐藏（Focused(false) 监听）。
+    // 若先隐藏，前台归属出现竞态，反而可能丢失粘贴目标。
     try {
       if (item.type === "image" && item.content) {
         await invoke("paste_image", { imagePath: item.content });
@@ -126,10 +157,13 @@ export function QuickPastePanel() {
       } else {
         await invoke("paste_text", { text: item.text });
       }
+      // 成功后兜底隐藏（正常情况下失焦已自动隐藏）
+      invoke("hide_quick_paste").catch(() => { /* 忽略 */ });
     } catch (e) {
       console.error("[QuickPaste] 粘贴失败", e);
+      showToast("粘贴失败", true);
     }
-  }, []);
+  }, [showToast]);
 
   // ===== 删除 =====
   const doDelete = useCallback(async (id: string) => {
@@ -214,7 +248,9 @@ export function QuickPastePanel() {
   }, [selIdx]);
 
   return (
-    <div className="qp-panel">
+    <>
+      <SkinScene />
+      <div className="qp-panel">
       {/* 头部 */}
       <div className="qp-head">
         <span className="qp-title">
@@ -238,7 +274,7 @@ export function QuickPastePanel() {
         />
       </div>
 
-      {/* 网格 */}
+      {/* 内容区：按布局渲染 单栏列表（B）或 双栏网格（C） */}
       {filtered.length === 0 ? (
         <div className="qp-empty">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -246,6 +282,57 @@ export function QuickPastePanel() {
             <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
           </svg>
           {search ? "没有匹配的记录" : "剪贴板暂无记录"}
+        </div>
+      ) : layout === "list" ? (
+        <div className="qp-list" ref={gridRef}>
+          {filtered.map((item, idx) => (
+            <div
+              key={item.id}
+              className={`qp-row${item.pinned ? " pinned" : ""}${idx === selIdx ? " sel" : ""}`}
+              onClick={() => doPaste(item)}
+              onMouseEnter={() => setSelIdx(idx)}
+            >
+              {/* 删除按钮 */}
+              <button
+                className="qp-del"
+                onClick={(e) => { e.stopPropagation(); doDelete(item.id); }}
+                title="删除"
+              >✕</button>
+              {/* 置顶标记 / 置顶按钮 */}
+              {item.pinned ? (
+                <span className="qp-pin" title="已置顶"><IconPin /></span>
+              ) : (
+                <button
+                  className="qp-pinbtn"
+                  onClick={(e) => { e.stopPropagation(); doTogglePin(item.id); }}
+                  title="置顶"
+                ><IconPin /></button>
+              )}
+
+              {/* 类型徽标 */}
+              {item.type === "image" ? (
+                <span className="qp-ico img">
+                  {thumbs[item.content] ? (
+                    <img src={thumbs[item.content]} alt="" draggable={false} />
+                  ) : (
+                    "🖼"
+                  )}
+                </span>
+              ) : (
+                <span className="qp-ico">{typeIcon(item)}</span>
+              )}
+
+              {/* 文本主体 */}
+              <div className="qp-body">
+                <div className="qp-maintxt">{item.text}</div>
+                <div className="qp-sub">
+                  <span>{typeName(item)}</span>
+                  <span>·</span>
+                  <span>{relativeTime(item.time)}</span>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       ) : (
         <div className="qp-grid" ref={gridRef}>
@@ -314,5 +401,6 @@ export function QuickPastePanel() {
         {toast?.msg}
       </div>
     </div>
+    </>
   );
 }

@@ -2,6 +2,7 @@ import React, { useState, useRef, useLayoutEffect, useCallback, useEffect, useMe
 import { AppConfig, useAppStore } from "@/stores/appStore";
 import { HelpTooltip } from "@/components/HelpTooltip";
 import { THEMES, applyTheme, ThemeKey } from "@/lib/theme";
+import { emit } from "@tauri-apps/api/event";
 import { useToast } from "@/components/Toast";
 import { logger } from "@/lib/logger";
 import { StatsDetail } from "@/lib/api";
@@ -430,7 +431,13 @@ export function GeneralTab({
             const isActive = config.theme === t.key;
             return (
               <button key={t.key || `theme-${idx}`}
-                onClick={() => { updateAndSave({ theme: t.key }); applyTheme(t.key as ThemeKey); }}
+                onClick={() => {
+                  updateAndSave({ theme: t.key });
+                  applyTheme(t.key as ThemeKey);
+                  // 广播到所有独立窗口（快捷粘贴/托盘弹窗/编辑器），使其切主题实时跟随。
+                  // emit 广播是幂等的：主窗口自身也会收到，但 applyTheme 重复执行无副作用。
+                  emit("theme-changed", { theme: t.key }).catch(() => { /* 广播失败不影响本窗口已生效 */ });
+                }}
                 style={{
                   width: 64, borderRadius: 10, overflow: "hidden",
                   border: isActive ? "2px solid var(--accent)" : "2px solid transparent",
@@ -876,6 +883,23 @@ export function GeneralTab({
             toast(`快捷键设置失败：${msg}。变更未生效，已恢复原值`, "error");
           }
         }} />
+      </div>
+      <div className={styles.sRow}>
+        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #0EA5E9, #0284C7)" }}>🗂️</span>
+        <div className={`${styles.sRowBody}`}>
+          <div className={`${styles.sRowLabel}`}>面板布局</div>
+          <div className={`${styles.sRowDesc}`}>
+            {config.quick_paste_layout === "list" ? "单栏列表，贴近原生 Win+V，同屏可览更多条" : "双栏网格，卡片预览更多内容"}
+          </div>
+        </div>
+        <div className={styles.sSegGroup}>
+          <button className={`${styles.sSegOpt}${config.quick_paste_layout === "grid" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ quick_paste_layout: "grid" })} title="双栏网格">
+            <span className={styles.sSegEmoji}>🔲</span>
+          </button>
+          <button className={`${styles.sSegOpt}${config.quick_paste_layout === "list" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ quick_paste_layout: "list" })} title="单栏列表">
+            <span className={styles.sSegEmoji}>☰</span>
+          </button>
+        </div>
       </div>
 
       {/* ── 数据管理 ── */}
