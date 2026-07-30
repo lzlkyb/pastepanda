@@ -1084,9 +1084,11 @@ fn process_image(
         } else {
             dyn_img
         };
-        // B-05：先写临时文件再原子 rename，防止崩溃/双 timer 触发时留下半文件
+        // B-05：先写临时文件再原子 rename，防止崩溃/双 timer 触发时留下半文件。
+        // 注意：临时文件扩展名为 .png.tmp，save() 按扩展名推断格式会因 .tmp 无法识别而
+        // 必然失败（导致图片永不入库），故必须用 save_with_format 显式指定 PNG 编码。
         let tmp_path = img_path.with_extension("png.tmp");
-        if let Err(e) = dyn_img.save(&tmp_path) {
+        if let Err(e) = dyn_img.save_with_format(&tmp_path, image::ImageFormat::Png) {
             // 修复 M4：保存失败即中止，不再插入指向不存在文件的历史记录
             log::error!(
                 "[ClipboardMonitor] 保存图片失败 ({}): {}，跳过本条记录",

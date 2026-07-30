@@ -9,6 +9,9 @@ import type Lenis from "lenis";
 import { loadMoreHistory } from "@/lib/api";
 import { useAppStore } from "@/stores/appStore";
 
+/** 单次筛选下自动补载的页数上限（每页 50 条 ≈ 1500 条），防止永不填满的死循环 */
+const MAX_AUTOFILL_PAGES = 30;
+
 export interface UseLoadMoreOptions {
   scrollRef: React.RefObject<HTMLDivElement | null>;
   lenisRef: React.RefObject<Lenis | null>;
@@ -43,7 +46,16 @@ export function useLoadMore({ scrollRef, lenisRef, itemsLength, enabled = true }
     setHasMore(true);
     setLoadError(false);
     initLoadRef.current = false;
+    autoFillAttemptsRef.current = 0;
   }, [historyResetSeq]);
+
+  // tab/筛选切换不走 setHistory（无 historyResetSeq 自增），须单独重置补载闸门：
+  // 否则首个 tab 补载完成后，切到稀疏 tab（图片/文件等）不再自动加载更多。
+  const filterType = useAppStore((s) => s.filterType);
+  useEffect(() => {
+    initLoadRef.current = false;
+    autoFillAttemptsRef.current = 0;
+  }, [filterType]);
 
   // 滚动到底部时加载更多（通过 ref 在 Lenis scroll 回调中触发，避免闭包过期问题）
   const loadMoreRef = useRef({ hasMore, loadingMore });
@@ -53,6 +65,12 @@ export function useLoadMore({ scrollRef, lenisRef, itemsLength, enabled = true }
   const loadingLockRef = useRef(false);
   // 加载冷却期：加载完成后 500ms 内不再触发，解决 Lenis 渐进滚动多帧触发问题
   const loadCooldownRef = useRef(0);
+
+  // 自动补载闸门：false = 允许"不满一屏则加载更多"检测；填满（或放弃）后置 true，
+  // 交给 Lenis 滚动回调的触底加载。historyResetSeq / filterType 变化时重置回 false。
+  const initLoadRef = useRef(false);
+  // 一次筛选下自动补载的连续页数计数（随闸门重置），设上限防止永不填满的病态死循环
+  const autoFillAttemptsRef = useRef(0);
 
   const triggerLoadMore = useCallback(() => {
     // 分页被禁用（搜索模式）时不触发
@@ -113,24 +131,34 @@ export function useLoadMore({ scrollRef, lenisRef, itemsLength, enabled = true }
     });
   }, [loadingMore]);
 
-  // 初始化后自动检测：内容不满一屏时，主动加载更多直到填满或全部加载完
-  // 只尝试一次，由 Lenis 回调的 triggerLoadMore 接管后续触底加载
-  const initLoadRef = useRef(false);
+  // 自动补载：内容不满一屏时循环加载更多直到填满可视区、全部加载完或达到页数上限。
+  // 用 handleRetryLoadMore 而非 triggerLoadMore：后者有 Lenis 触底检测 + 500ms 冷却，
+  // 补载循环里内容始终不满屏（lenis.limit≈0），冷却会卡死循环。
+  // 守禁用 historyLength（已加载窗口总量）而非 itemsLength（筛选后数量）：
+  // 稀疏 tab 筛选结果为 0 恰恰是需要继续加载的时候，仅初始挂载时 historyLength===0。
+  const historyLength = useAppStore((s) => s.history.length);
   useEffect(() => {
-    if (!enabledRef.current || initLoadRef.current || itemsLength === 0 || !hasMore || loadingMore || loadingLockRef.current || Date.now() < loadCooldownRef.current) return;
-    // 延迟一帧等 Lenis 初始化完成
+    if (!enabledRef.current || initLoadRef.current || historyLength === 0 || !hasMore || loadingMore || loadingLockRef.current) return;
+    // 延迟一帧等 Lenis / 虚拟列表布局完成
     const timer = setTimeout(() => {
       const el = scrollRef.current;
       if (!el) return;
-      // 内容不足以产生滚动条 → 自动加载更多（只触发一次）
       if (el.scrollHeight <= el.clientHeight + 10) {
-        triggerLoadMore();
+        // 内容不足以产生滚动条 → 继续加载（计入补载次数，超限则放弃）
+        if (autoFillAttemptsRef.current >= MAX_AUTOFILL_PAGES) {
+          initLoadRef.current = true;
+          return;
+        }
+        autoFillAttemptsRef.current += 1;
+        handleRetryLoadMore();
+      } else {
+        // 已填满可视区，闸门关闭，后续交给 Lenis scroll 回调的触底加载
+        initLoadRef.current = true;
       }
-      // 无论是否触发加载，标记完成（后续由 scroll 回调负责触底加载）
-      initLoadRef.current = true;
     }, 100);
     return () => clearTimeout(timer);
-  }, [itemsLength, hasMore, loadingMore]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemsLength, hasMore, loadingMore, filterType, historyLength, handleRetryLoadMore]);
 
   return { hasMore, loadingMore, loadError, retryCount, triggerLoadMore, handleRetryLoadMore };
 }

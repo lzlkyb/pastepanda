@@ -71,13 +71,13 @@
 }
 
 .danger {
-  color: #EF4444;
+  color: var(--danger);
 }
 
 .danger:hover,
 .keyboardActive.danger {
-  background: rgba(239, 68, 68, 0.1);
-  color: #DC2626;
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger-hover);
 }
 
 .ctxItemIcon {
@@ -120,14 +120,15 @@
   align-items: center;
 }
 
-/* 子菜单弹层 — 与主菜单同款玻璃态 */
+/* 子菜单弹层 — 不透明底。
+   原因：子菜单在 DOM 上嵌套于带 backdrop-filter 的一级菜单内，按 CSS 规范其玻璃模糊
+   采样到的是父级"已模糊且仅 0.85 不透明"的合成底，会被稀释得几乎透明、看不清内容。
+   故改用不透明 --dialog-bg 保证可读；opaque 背景上 backdrop-filter 完全失效，一并移除。 */
 .ctxSubmenu {
   position: absolute;
   left: calc(100% + 4px);
   top: -4px;
-  background: var(--glass-popover-bg);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  background: var(--dialog-bg);
   border: 1px solid var(--glass-popover-border);
   border-radius: 12px;
   padding: 5px;

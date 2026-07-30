@@ -310,6 +310,10 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   useEffect(() => {
     if (prevFilterKeyRef.current === filterKey) return;
     prevFilterKeyRef.current = filterKey;
+    // 筛选切换时滚动复位到顶部（功能性，不受动画开关影响）：
+    // 否则虚拟列表沿用旧偏移渲染，缩略图窗口（thumbFirst/Last）指向错误区间，
+    // 新 tab 的图片/文件不会进入可视范围、缩略图不加载。
+    lenisRef.current?.scrollTo(0, { immediate: true });
     const el = rowsWrapRef.current;
     if (!el || !el.isConnected) return;
     if (!useAppStore.getState().config.window_animation) return;
