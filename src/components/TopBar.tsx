@@ -27,8 +27,8 @@ const TIME_OPTIONS: { key: TimeFilter; label: string }[] = [
   { key: "month", label: "本月" },
 ];
 
-/** 工具箱分组面板（方案 A）：片段库 / 内容提取从顶栏独立按钮迁入此处 */
-type ToolKey = "snippets" | "extract" | "encoding" | "replace" | "diff";
+/** 工具箱分组面板（方案 A）：片段库 / 内容提取从顶栏独立按钮迁入此处；依次粘贴从主窗口常驻 FAB 迁入此处 */
+type ToolKey = "sequential" | "snippets" | "extract" | "encoding" | "replace" | "diff";
 const TOOLBOX_GROUPS: {
   label: string;
   items: { key: ToolKey; icon: string; name: string; desc: string; hue: string }[];
@@ -36,6 +36,7 @@ const TOOLBOX_GROUPS: {
   {
     label: "内容",
     items: [
+      { key: "sequential", icon: "📋", name: "依次粘贴", desc: "按顺序逐条粘贴文本 · Ctrl+Alt+Q", hue: "cyan" },
       { key: "snippets", icon: "📝", name: "片段库",   desc: "常用文本收藏，一键粘贴",             hue: "amber" },
       { key: "extract",  icon: "🧲", name: "内容提取", desc: "从记录中批量提取链接 / 邮箱 / 电话", hue: "rose" },
     ],
@@ -76,8 +77,8 @@ function saveTabStyle(v: TabStyle) {
   try { localStorage.setItem("tabStyle", v); } catch { logger.warn("保存tab样式失败"); }
 }
 
-export function TopBar({ onSettings, onSnippets, onExtract, onEncoding, onBatchReplace, onConfigDiff, onToggleSidebar, sidebarOpen }: {
-  onSettings?: () => void; onSnippets?: () => void; onExtract?: () => void;
+export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEncoding, onBatchReplace, onConfigDiff, onToggleSidebar, sidebarOpen }: {
+  onSettings?: () => void; onSequential?: () => void; onSnippets?: () => void; onExtract?: () => void;
   onEncoding?: () => void; onBatchReplace?: () => void; onConfigDiff?: () => void;
   onToggleSidebar?: () => void; sidebarOpen?: boolean;
 }) {
@@ -151,8 +152,9 @@ export function TopBar({ onSettings, onSnippets, onExtract, onEncoding, onBatchR
     return () => window.removeEventListener("storage", handler);
   }, []);
 
-  // 工具箱条目 → 回调映射（片段库 / 内容提取迁入后与原有三项统一管理）
+  // 工具箱条目 → 回调映射（片段库 / 内容提取 / 依次粘贴迁入后与原有三项统一管理）
   const toolHandlers: Record<ToolKey, (() => void) | undefined> = {
+    sequential: onSequential,
     snippets: onSnippets,
     extract: onExtract,
     encoding: onEncoding,

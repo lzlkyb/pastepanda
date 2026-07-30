@@ -832,6 +832,7 @@
 .tbTile[data-hue="sky"]    { --tile-hue: #0EA5E9; }
 .tbTile[data-hue="violet"] { --tile-hue: #8B5CF6; }
 .tbTile[data-hue="green"]  { --tile-hue: #10B981; }
+.tbTile[data-hue="cyan"]   { --tile-hue: #06B6D4; }
 
 .tbText {
   min-width: 0;

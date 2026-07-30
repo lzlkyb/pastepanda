@@ -12,11 +12,11 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UpdateProvider, useUpdate } from "@/contexts/UpdateContext";
 import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
 import { logger } from "@/lib/logger";
-import { pasteText, pasteImage, deleteHistory, togglePin, toggleWindow, sequentialPaste, invalidateCountsCache, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
+import { pasteText, pasteImage, deleteHistory, togglePin, toggleWindow, invalidateCountsCache, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
 import { resolveSource, getAutoTagIcon, getAutoTagColor } from "@/lib/source-mappings";
 import { migrateLegacyStorageKeys } from "@/lib/storageMigration";
 import { initRegexRules } from "@/lib/regexRules";
-import { ClipboardList, RotateCcw, Loader2, X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { BackToTop } from "@/components/BackToTop";
 import { ScrollProvider } from "@/contexts/ScrollContext";
 import { Sidebar, type SidebarGroup } from "@/components/Sidebar";
@@ -36,6 +36,7 @@ const ExtractDialog = lazy(() => import("@/components/ExtractDialog").then(m => 
 const EncodingDialog = lazy(() => import("@/components/EncodingDialog").then(m => ({ default: m.EncodingDialog })));
 const BatchReplaceDialog = lazy(() => import("@/components/BatchReplaceDialog").then(m => ({ default: m.BatchReplaceDialog })));
 const ConfigDiffDialog = lazy(() => import("@/components/ConfigDiffDialog").then(m => ({ default: m.ConfigDiffDialog })));
+const SequentialPasteDialog = lazy(() => import("@/components/SequentialPasteDialog").then(m => ({ default: m.SequentialPasteDialog })));
 const UpdateNotesDialog = lazy(() => import("@/components/UpdateNotesDialog").then(m => ({ default: m.UpdateNotesDialog })));
 
 function App() {
@@ -43,9 +44,7 @@ function App() {
   const history = useAppStore((s) => s.history);
   const groups = useAppStore((s) => s.groups);
   const tags = useAppStore((s) => s.tags);
-  const seqPointer = useAppStore((s) => s.seqPointer);
   const resetSeqPointer = useAppStore((s) => s.resetSeqPointer);
-  const stackMode = useAppStore((s) => s.stackMode);
   const sourceFilter = useAppStore((s) => s.sourceFilter);
   const setSourceFilter = useAppStore((s) => s.setSourceFilter);
   const groupFilter = useAppStore((s) => s.groupFilter);
@@ -61,14 +60,8 @@ function App() {
   const setSearchLoading = useAppStore((s) => s.setSearchLoading);
   const { toast } = useToast();
   const anim = useDialogAnim();
-  // 修复 U15：计数与实际粘贴遍历使用同一数据源（getFilteredItems），
-  // 搜索/筛选激活时 FAB 计数不再失真
-  const seqTotal = useMemo(
-    () => getFilteredItems().filter((h) => h.type === "text").length,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [getFilteredItems, history, searchKeyword, filterType, timeFilter, sourceFilter, groupFilter, selectedTagIds, workspace]
-  );
   const [showSettings, setShowSettings] = useState(false);
+  const [showSequential, setShowSequential] = useState(false);
   const [showSnippets, setShowSnippets] = useState(false);
   const [showExtract, setShowExtract] = useState(false);
   const [showEncoding, setShowEncoding] = useState(false);
@@ -137,7 +130,7 @@ function App() {
 
 
   // 失焦自动隐藏（弹窗打开时跳过）—— 使用 useRef 避免闭包陷阱
-  const dialogOpen = showSettings || showSnippets || showExtract || showEncoding || showBatchReplace || showConfigDiff;
+  const dialogOpen = showSettings || showSequential || showSnippets || showExtract || showEncoding || showBatchReplace || showConfigDiff;
   const dialogOpenRef = useRef(dialogOpen);
   dialogOpenRef.current = dialogOpen;
 
@@ -549,8 +542,8 @@ function App() {
 
   // 使用 ref 存储弹窗状态，避免 handleKeyDown 依赖变化导致频繁重新注册事件
   // U4：moveToGroup 弹窗一并登记，Esc/导航键守卫才能感知它
-  const dialogStatesRef = useRef({ showSettings, showSnippets, showExtract, showEncoding, showBatchReplace, showConfigDiff, showShortcuts, moveToGroup: !!moveToGroupItem });
-  dialogStatesRef.current = { showSettings, showSnippets, showExtract, showEncoding, showBatchReplace, showConfigDiff, showShortcuts, moveToGroup: !!moveToGroupItem };
+  const dialogStatesRef = useRef({ showSettings, showSequential, showSnippets, showExtract, showEncoding, showBatchReplace, showConfigDiff, showShortcuts, moveToGroup: !!moveToGroupItem });
+  dialogStatesRef.current = { showSettings, showSequential, showSnippets, showExtract, showEncoding, showBatchReplace, showConfigDiff, showShortcuts, moveToGroup: !!moveToGroupItem };
 
   // U3：跟踪右键菜单开关（ContextMenu 打开/关闭时广播 app-ctxmenu-open/close 事件）
   const ctxMenuOpenRef = useRef(false);
@@ -589,8 +582,8 @@ function App() {
     // 变换枢纽打开时同样让位（枢纽自带 ↑↓/Enter/Esc 处理）
     if (useDialogStore.getState().hubItem) return;
     // 弹窗打开时：ESC/? 正常工作，其余列表导航按键被屏蔽（让弹窗内部控件如 Tab 可以正常使用）
-    const { showSettings, showSnippets, showExtract, showEncoding, showBatchReplace, showConfigDiff, moveToGroup } = dialogStatesRef.current;
-    const dialogOpen = showSettings || showSnippets || showExtract || showEncoding || showBatchReplace || showConfigDiff || moveToGroup || fileDetailOpenRef.current;
+    const { showSettings, showSequential, showSnippets, showExtract, showEncoding, showBatchReplace, showConfigDiff, moveToGroup } = dialogStatesRef.current;
+    const dialogOpen = showSettings || showSequential || showSnippets || showExtract || showEncoding || showBatchReplace || showConfigDiff || moveToGroup || fileDetailOpenRef.current;
     const isListNavKey = ["ArrowDown", "ArrowUp", "Enter", "Delete", "Backspace", "Home", "End"].includes(e.key)
       || (e.ctrlKey && (e.key === "d" || e.key === "z" || e.key === "s" || e.key === "h" || e.key === "a"));
     if (dialogOpen && e.key !== "Escape" && e.key !== "?" && isListNavKey) return;
@@ -604,6 +597,7 @@ function App() {
       e.preventDefault();
       // U4：Esc 分层 — 关最上层弹窗 → 关分组弹窗 → 清多选 → 最后才隐藏窗口
       if (showSettings) { setShowSettings(false); return; }
+      if (showSequential) { setShowSequential(false); return; }
       if (showSnippets) { setShowSnippets(false); return; }
       if (showExtract) { setShowExtract(false); return; }
       if (showEncoding) { setShowEncoding(false); return; }
@@ -796,6 +790,7 @@ function App() {
         <SkinScene />
         <TopBar
           onSettings={() => setShowSettings(true)}
+          onSequential={() => setShowSequential(true)}
           onSnippets={() => setShowSnippets(true)}
           onExtract={() => setShowExtract(true)}
           onEncoding={() => setShowEncoding(true)}
@@ -821,23 +816,6 @@ function App() {
               <CardList scrollRef={scrollRef} lenisRef={lenisRef} showMoveToGroup />
               <BackToTop />
             </ScrollProvider>
-
-            {/* FAB — 依次粘贴悬浮按钮，定位在卡片面板底部（栈模式下隐藏，两者互斥） */}
-            {seqTotal > 0 && !stackMode && (
-              <motion.div initial={{ opacity: 0, y: 20, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 10, scale: 0.9 }} transition={{ type: "spring", stiffness: 400, damping: 25 }}
-                className={appStyles.fabContainer}>
-                <div className={appStyles.fabCounter}><span className={appStyles.fabCounterNum}>{Math.min(seqPointer, seqTotal)}</span><span className={appStyles.fabCounterSep}>/</span>{seqTotal}</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <button className={appStyles.fabBtn} onClick={() => sequentialPaste()}>
-                    <ClipboardList size={14} /> 粘贴
-                  </button>
-                  <button className={appStyles.fabBtnReset} title="重置指针（从头开始）" onClick={() => resetSeqPointer()}>
-                    <RotateCcw size={10} />
-                  </button>
-                </div>
-              </motion.div>
-            )}
           </div>
         </div>
         <QuickPreview />
@@ -891,6 +869,9 @@ function App() {
         <Suspense fallback={null}>
           <ErrorBoundary fallback={null} componentName="设置面板">
             <SettingsDialog open={showSettings} onClose={() => setShowSettings(false)} />
+          </ErrorBoundary>
+          <ErrorBoundary fallback={null} componentName="依次粘贴">
+            <SequentialPasteDialog open={showSequential} onClose={() => setShowSequential(false)} />
           </ErrorBoundary>
           <ErrorBoundary fallback={null} componentName="片段库">
             <SnippetsDialog open={showSnippets} onClose={() => setShowSnippets(false)} />
