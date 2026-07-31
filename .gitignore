@@ -25,3 +25,6 @@ dist-ssr
 
 # Secrets
 .env.secrets
+
+# Runtime config backups (rotated by the app, not source)
+src-tauri/config_backups/
