@@ -12,7 +12,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UpdateProvider, useUpdate } from "@/contexts/UpdateContext";
 import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
 import { logger } from "@/lib/logger";
-import { pasteText, pasteImage, deleteHistory, togglePin, toggleWindow, invalidateCountsCache, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
+import { pasteText, pasteImage, deleteHistory, togglePin, toggleWindow, saveForeground, invalidateCountsCache, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
 import { resolveSource, getAutoTagIcon, getAutoTagColor } from "@/lib/source-mappings";
 import { migrateLegacyStorageKeys } from "@/lib/storageMigration";
 import { initRegexRules } from "@/lib/regexRules";
@@ -149,6 +149,10 @@ function App() {
             if (hideTimer !== null) { window.clearTimeout(hideTimer); hideTimer = null; }
             return;
           }
+          // 失焦即刷新粘贴目标：把刚切到的应用存为"粘贴到前台"的目标窗口。
+          // 必须无条件执行（不依赖 hide_on_focus_out），否则主窗口常驻期间保存值
+          // 一直停留在"打开窗口时"的旧目标；Rust 侧已排除自身窗口与桌面，不会误覆盖。
+          saveForeground().catch(() => {});
           const cfg = useAppStore.getState().config;
           if (!cfg.hide_on_focus_out || dialogOpenRef.current) return;
           // 防抖 150ms：避免弹窗切换/菜单闪烁期间的瞬时失焦误触发

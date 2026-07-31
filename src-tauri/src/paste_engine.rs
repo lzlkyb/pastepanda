@@ -56,10 +56,17 @@ impl PasteEngine {
     pub fn save_foreground_hwnd(&self) {
         #[cfg(target_os = "windows")]
         {
-            use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+            use windows::Win32::UI::WindowsAndMessaging::{
+                GetDesktopWindow, GetForegroundWindow, GetShellWindow,
+            };
             unsafe {
                 let hwnd = GetForegroundWindow();
                 if hwnd.is_invalid() {
+                    return;
+                }
+                // 排除桌面窗口：用户"显示桌面"（Win+D / 点击桌面空白）时前台是桌面，
+                // 若保存它，粘贴会把按键发给桌面导致内容丢失
+                if hwnd == GetDesktopWindow() || hwnd == GetShellWindow() {
                     return;
                 }
                 // 用进程 ID 过滤自身所有窗口

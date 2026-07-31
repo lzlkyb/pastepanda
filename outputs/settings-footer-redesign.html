@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>设置弹框底部重设计 — 方案对比</title>
+<style>
+  /* ============================================================
+     真实 CSS 变量（摘自 theme.css）
+     ============================================================ */
+  :root, [data-theme="ocean"] {
+    --app-bg: #F4F6F9;
+    --text-primary: #0F172A;
+    --text-secondary: #64748B;
+    --text-muted: #7888A0;
+    --border-color: #E0E4EB;
+    --accent: #0284C7;
+    --accent-light: #E0F2FE;
+    --seg-bg: #E8E8ED;
+    --seg-active-bg: #fff;
+    --input-bg: #F1F5F9;
+    --dialog-bg: #fff;
+    --section-bg: #F0F4F8;
+    --toggle-off-bg: #E2E8F0;
+    --accent-shadow: rgba(2, 132, 199, 0.15);
+    --hover: #E8ECF2;
+    --danger: #DC2626;
+    --version-badge-gradient: linear-gradient(135deg, #0284C7, #0369A1);
+    --version-badge-shadow: rgba(2, 132, 199, 0.35);
+    --page-bg: #dfe5ec;
+    --note-bg: #fff;
+  }
+  [data-theme="midnight"] {
+    --app-bg: #09090B;
+    --text-primary: #E4E4E7;
+    --text-secondary: #A1A1AA;
+    --text-muted: #71717A;
+    --border-color: #27272A;
+    --accent: #818CF8;
+    --accent-light: #1E1B4B;
+    --seg-bg: #27272A;
+    --seg-active-bg: #3F3F46;
+    --input-bg: #27272A;
+    --dialog-bg: #18181B;
+    --section-bg: #0F0F11;
+    --toggle-off-bg: #3F3F46;
+    --accent-shadow: rgba(129, 140, 248, 0.2);
+    --hover: #1F1F23;
+    --danger: #F87171;
+    --version-badge-gradient: linear-gradient(135deg, #818CF8, #6366F1);
+    --version-badge-shadow: rgba(129, 140, 248, 0.35);
+    --page-bg: #050507;
+    --note-bg: #131316;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--page-bg);
+    transition: background 0.3s;
+    padding-bottom: 60px;
+  }
+
+  /* ===== 顶部控制栏 ===== */
+  .controlbar {
+    position: sticky; top: 0; z-index: 100;
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 28px;
+    background: color-mix(in srgb, var(--page-bg) 82%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border-color);
+  }
+  .controlbar h1 { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+  .controlbar .sub { font-size: 12px; color: var(--text-muted); }
+  .seg {
+    margin-left: auto;
+    display: flex; gap: 2px; padding: 3px;
+    background: var(--seg-bg); border-radius: 9px;
+  }
+  .seg button {
+    border: none; background: transparent; cursor: pointer;
+    padding: 6px 14px; border-radius: 7px;
+    font-size: 12px; font-weight: 600; color: var(--text-muted);
+    font-family: inherit; transition: all 0.15s;
+  }
+  .seg button.active { background: var(--seg-active-bg); color: var(--accent); box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+
+  /* ===== 方案横排 ===== */
+  .row {
+    display: flex; gap: 32px; align-items: flex-start;
+    padding: 36px 28px; overflow-x: auto;
+  }
+  .col { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .col .tag {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 700; color: var(--text-primary);
+  }
+  .col .tag .h {
+    font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 99px;
+  }
+  .tag .h.cur { background: rgba(220,38,38,0.12); color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent); }
+  .tag .h.rec { background: var(--accent-light); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+
+  /* ===== 弹框本体（1:1 真实结构）===== */
+  .backdrop {
+    width: 420px;
+    background: color-mix(in srgb, var(--app-bg) 60%, transparent);
+    border-radius: 20px;
+    padding: 14px;
+    border: 1px solid var(--border-color);
+  }
+  .dialog {
+    width: 100%;
+    height: 600px;                 /* 固定高度便于对比底部占比 */
+    background: var(--dialog-bg);
+    border-radius: 16px;           /* 真实值 */
+    display: flex; flex-direction: column;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.05);
+    overflow: hidden;              /* 仅演示容器用，非实现方案 */
+    position: relative;
+  }
+  /* 现状：不加 overflow:hidden，还原真实溢出 */
+  .dialog.bug { overflow: visible; }
+
+  .dheader {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px; height: 48px; flex-shrink: 0;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .dtitle { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+  .dclose {
+    width: 28px; height: 28px; border-radius: 8px; border: none;
+    background: transparent; color: var(--text-secondary); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 14px;
+    transition: background 0.15s;
+  }
+  .dclose:hover { background: var(--hover); }
+
+  .tabwrap { margin: 8px 12px; flex-shrink: 0; }
+  .tabbar { display: flex; gap: 2px; padding: 4px 8px; background: var(--seg-bg); border-radius: 10px; }
+  .tabbar button {
+    flex: 1; height: 32px; border-radius: 8px; border: none; background: transparent;
+    font-size: 12px; font-weight: 500; color: var(--text-muted); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 5px; font-family: inherit;
+    transition: all 0.2s;
+  }
+  .tabbar button.active { background: var(--seg-active-bg); color: var(--accent); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+
+  .dbody { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+  .dbody::-webkit-scrollbar { width: 8px; }
+  .dbody::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+
+  /* 设置行（真实 sRow 结构） */
+  .srow { display: flex; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border-color); gap: 12px; }
+  .srow .ic {
+    width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 16px;
+    background: var(--section-bg);
+  }
+  .srow .bd { flex: 1; min-width: 0; }
+  .srow .lb { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .srow .ds { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .tog { width: 36px; height: 20px; border-radius: 99px; position: relative; flex-shrink: 0; border: none; cursor: pointer; transition: background 0.2s; }
+  .tog.on { background: var(--accent); }
+  .tog.off { background: var(--toggle-off-bg); }
+  .tog i { position: absolute; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.15); transition: transform 0.2s; }
+  .tog.off i { transform: translateX(2px); }
+  .tog.on i { transform: translateX(18px); }
+  .sel {
+    height: 28px; padding: 0 8px; border-radius: 6px; font-size: 11px; font-weight: 500;
+    background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color);
+    font-family: inherit; cursor: pointer;
+  }
+  .hk {
+    height: 28px; padding: 0 10px; border-radius: 6px; font-size: 11px;
+    font-family: "SF Mono","Consolas",monospace; font-weight: 500;
+    border: 1.5px solid var(--border-color); background: var(--input-bg); color: var(--text-primary);
+    min-width: 100px; text-align: center;
+  }
+
+  /* ===== 底部（各方案差异点）===== */
+  /* 现状：~128px，直角溢出 */
+  .f-cur {
+    padding: 16px 20px 20px;
+    border-top: 1px solid var(--border-color);
+    background: var(--section-bg);
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    flex-shrink: 0;
+  }
+  .f-cur .save {
+    width: 100%; height: 40px; border-radius: 10px; border: none;
+    background: var(--accent); color: #fff; font-size: 14px; font-weight: 700;
+    cursor: pointer; font-family: inherit;
+    box-shadow: 0 2px 10px var(--accent-shadow);
+  }
+  .f-cur .meta { display: flex; align-items: center; gap: 12px; }
+  .f-cur .reset { font-size: 11px; color: var(--text-muted); background: transparent; border: none; border-bottom: 1px dashed var(--border-color); cursor: pointer; font-family: inherit; padding-bottom: 1px; }
+  .f-cur .hint { font-size: 11px; color: var(--text-muted); opacity: 0.8; }
+  .f-cur .ver { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; }
+
+  /* 方案 A：单行纤薄 ~52px */
+  .f-a {
+    padding: 12px 20px;
+    border-top: 1px solid var(--border-color);
+    background: var(--section-bg);
+    border-radius: 0 0 16px 16px;      /* ← 圆角修复 */
+    display: flex; align-items: center; gap: 10px;
+    flex-shrink: 0;
+  }
+  .f-a .reset { font-size: 11px; color: var(--text-muted); background: transparent; border: none; border-bottom: 1px dashed var(--border-color); cursor: pointer; font-family: inherit; padding-bottom: 1px; white-space: nowrap; }
+  .f-a .reset:hover { color: var(--text-secondary); }
+  .f-a .mid { flex: 1; text-align: center; font-size: 10.5px; color: var(--text-muted); display: flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+  .f-a .closebtn {
+    height: 28px; padding: 0 14px; border-radius: 8px; cursor: pointer;
+    font-size: 12px; font-weight: 600; font-family: inherit;
+    background: var(--card-bg, var(--dialog-bg)); color: var(--text-secondary);
+    border: 1px solid var(--border-color); transition: all 0.15s; white-space: nowrap;
+  }
+  .f-a .closebtn:hover { background: var(--hover); color: var(--text-primary); }
+
+  /* 方案 B：紧凑两行 ~76px */
+  .f-b {
+    padding: 12px 20px 12px;
+    border-top: 1px solid var(--border-color);
+    background: var(--section-bg);
+    border-radius: 0 0 16px 16px;      /* ← 圆角修复 */
+    display: flex; flex-direction: column; gap: 8px;
+    flex-shrink: 0;
+  }
+  .f-b .r1 { display: flex; align-items: center; justify-content: space-between; }
+  .f-b .reset { font-size: 11px; color: var(--text-muted); background: transparent; border: none; border-bottom: 1px dashed var(--border-color); cursor: pointer; font-family: inherit; padding-bottom: 1px; }
+  .f-b .reset:hover { color: var(--text-secondary); }
+  .f-b .closebtn {
+    height: 30px; padding: 0 16px; border-radius: 8px; border: none; cursor: pointer;
+    font-size: 12px; font-weight: 700; font-family: inherit;
+    background: var(--accent); color: #fff;
+    box-shadow: 0 2px 8px var(--accent-shadow); transition: all 0.15s;
+  }
+  .f-b .r2 { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 10.5px; color: var(--text-muted); }
+
+  /* 方案 C：超纤薄（去掉关闭按钮）~44px */
+  .f-c {
+    padding: 11px 20px;
+    border-top: 1px solid var(--border-color);
+    background: var(--section-bg);
+    border-radius: 0 0 16px 16px;      /* ← 圆角修复 */
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    flex-shrink: 0;
+  }
+  .f-c .reset { font-size: 11px; color: var(--text-muted); background: transparent; border: none; border-bottom: 1px dashed var(--border-color); cursor: pointer; font-family: inherit; padding-bottom: 1px; white-space: nowrap; }
+  .f-c .reset:hover { color: var(--text-secondary); }
+  .f-c .right { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text-muted); white-space: nowrap; }
+
+  /* 版本徽章（真实 version-badge--compact） */
+  .vbadge {
+    display: inline-flex; align-items: center;
+    font-family: "SF Mono","Fira Code","Consolas",monospace;
+    font-size: 9px; font-weight: 700; padding: 2px 8px; border-radius: 7px;
+    background: var(--version-badge-gradient); color: #fff; letter-spacing: 0.3px;
+    box-shadow: 0 1px 5px var(--version-badge-shadow);
+  }
+
+  /* ===== 现状问题标注 ===== */
+  .mark {
+    position: absolute; z-index: 50;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--danger); color: #fff;
+    font-size: 11px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 30%, transparent);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { transform: scale(1);} 50% { transform: scale(1.15);} }
+
+  /* ===== 说明卡片 ===== */
+  .note {
+    width: 420px;
+    background: var(--note-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 16px 18px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .note .t { font-size: 13px; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 8px; }
+  .note .hgt { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: var(--accent-light); color: var(--accent); }
+  .note ul { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .note li { font-size: 12px; color: var(--text-secondary); line-height: 1.55; padding-left: 16px; position: relative; }
+  .note li::before { content: ""; position: absolute; left: 2px; top: 7px; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+  .note li.bad::before { background: var(--danger); }
+  .note .impl { font-size: 11px; color: var(--text-muted); border-top: 1px dashed var(--border-color); padding-top: 8px; line-height: 1.6; }
+  .note .impl code { font-family: "SF Mono","Consolas",monospace; font-size: 10px; background: var(--input-bg); padding: 1px 5px; border-radius: 4px; color: var(--accent); }
+
+  .footnote {
+    margin: 0 28px; padding: 16px 20px;
+    background: var(--note-bg); border: 1px solid var(--border-color); border-radius: 14px;
+    font-size: 12px; color: var(--text-secondary); line-height: 1.7;
+  }
+  .footnote b { color: var(--text-primary); }
+  .footnote code { font-family: "SF Mono","Consolas",monospace; font-size: 11px; background: var(--input-bg); padding: 1px 6px; border-radius: 4px; color: var(--accent); }
+</style>
+</head>
+<body data-theme="midnight">
+
+<div class="controlbar">
+  <div>
+    <h1>设置弹框底部重设计</h1>
+    <div class="sub">修复「底部直角溢出」+「不可滚动区过高」· 基于真实 CSS 变量与组件结构 1:1 还原</div>
+  </div>
+  <div class="seg" id="themeSeg">
+    <button data-t="midnight" class="active">午夜（深）</button>
+    <button data-t="ocean">海洋（浅）</button>
+  </div>
+</div>
+
+<div class="row">
+
+  <!-- ============ 现状（对照） ============ -->
+  <div class="col">
+    <div class="tag">现状（对照）<span class="h cur">存在两个问题</span></div>
+    <div class="backdrop">
+      <div class="dialog bug">
+        <div class="dheader">
+          <span class="dtitle">⚙ 设置</span>
+          <button class="dclose">✕</button>
+        </div>
+        <div class="tabwrap">
+          <div class="tabbar">
+            <button class="active">⚙ 通用</button><button>📖 帮助</button><button>ℹ 关于</button>
+          </div>
+        </div>
+        <div class="dbody">
+          <div class="srow"><div class="ic">🚀</div><div class="bd"><div class="lb">开机自动启动</div><div class="ds">登录系统时自动运行</div></div><button class="tog on"><i></i></button></div>
+          <div class="srow"><div class="ic">📋</div><div class="bd"><div class="lb">监听剪贴板</div><div class="ds">自动记录复制内容</div></div><button class="tog on"><i></i></button></div>
+          <div class="srow"><div class="ic">🎨</div><div class="bd"><div class="lb">主题</div><div class="ds">切换界面外观</div></div><button class="sel">午夜</button></div>
+          <div class="srow"><div class="ic">⌨</div><div class="bd"><div class="lb">唤起热键</div><div class="ds">全局呼出主窗口</div></div><button class="hk">Ctrl + Alt + V</button></div>
+          <div class="srow"><div class="ic">🧹</div><div class="bd"><div class="lb">自动清理</div><div class="ds">删除过期历史记录</div></div><button class="sel">30 天</button></div>
+          <div class="srow"><div class="ic">📦</div><div class="bd"><div class="lb">粘贴栈</div><div class="ds">连续复制后批量粘贴</div></div><button class="tog on"><i></i></button></div>
+          <div class="srow"><div class="ic">🔔</div><div class="bd"><div class="lb">提示音</div><div class="ds">复制成功时播放</div></div><button class="tog off"><i></i></button></div>
+        </div>
+        <!-- 问题底部 -->
+        <div class="f-cur">
+          <button class="save">关闭设置</button>
+          <div class="meta"><button class="reset">恢复默认设置</button><span class="hint">所有设置修改后自动保存</span></div>
+          <div class="ver">PastePanda <span class="vbadge">v5.2.0</span></div>
+        </div>
+        <!-- 标注 -->
+        <div class="mark" style="left:-8px; bottom:8px;">1</div>
+        <div class="mark" style="right:-8px; bottom:8px;">1</div>
+        <div class="mark" style="right:-8px; top:46%;">2</div>
+      </div>
+    </div>
+    <div class="note">
+      <div class="t">问题定位 <span class="hgt">底部 ≈ 128px</span></div>
+      <ul>
+        <li class="bad"><b>① 底部不是圆角</b>：.dialog-box 有 16px 圆角但没有 overflow:hidden，.sFooter 自带 section-bg 背景，直角直接溢出弹框圆角之外。</li>
+        <li class="bad"><b>② 不可滚动区过高</b>：底部约 128px（全宽 40px「关闭设置」大按钮 + 元信息行 + 版本行），在 600px 弹框里占 21%，且「关闭设置」与右上角 ✕ 功能重复（设置本就自动保存）。</li>
+      </ul>
+      <div class="impl">根因文件：<code>dialog.css .dialog-box</code>（无 overflow:hidden）+ <code>Settings.module.css .sFooter</code>（padding 16/20 + 40px 按钮 + 双行元信息）。</div>
+    </div>
+  </div>
+
+  <!-- ============ 方案 A：单行纤薄 ============ -->
+  <div class="col">
+    <div class="tag">方案 A · 单行纤薄 <span class="h rec">推荐</span></div>
+    <div class="backdrop">
+      <div class="dialog">
+        <div class="dheader">
+          <span class="dtitle">⚙ 设置</span>
+          <button class="dclose">✕</button>
+        </div>
+        <div class="tabwrap">
+          <div class="tabbar">
+            <button class="active">⚙ 通用</button><button>📖 帮助</button><button>ℹ 关于</button>
+          </div>
+        </div>
+        <div class="dbody">
+          <div class="srow"><div class="ic">🚀</div><div class="bd"><div class="lb">开机自动启动</div><div class="ds">登录系统时自动运行</div></div><button class="tog on"><i></i></button></div>
+          <div class="srow"><div class="ic">📋</div><div class="bd"><div class="lb">监听剪贴板</div><div class="ds">自动记录复制内容</div></div><button class="tog on"><i></i></button></div>
+          <div class="srow"><div class="ic">🎨</div><div class="bd"><div class="lb">主题</div><div class="ds">切换界面外观</div></div><button class="sel">午夜</button></div>
+          <div class="srow"><div class="ic">⌨</div><div class="bd"><div class="lb">唤起热键</div><div class="ds">全局呼出主窗口</div></div><button class="hk">Ctrl + Alt + V</button></div>
+          <div class="srow"><div class="ic">🧹</div><div class="bd"><div class="lb">自动清理</div><div class="ds">删除过期历史记录</div></div><button class="sel">30 天</button></div>
+          <div class="srow"><div class="ic">📦</div><div class="bd"><div class="lb">粘贴栈</div><div class="ds">连续复制后批量粘贴</div></div><button class="tog on"><i></i></button></div>
+          <div class="srow"><div class="ic">🔔</div><div class="bd"><div class="lb">提示音</div><div class="ds">复制成功时播放</div></div><button class="tog off"><i></i></button></div>
+        </div>
+        <div class="f-a">
+          <button class="reset">恢复默认设置</button>
+          <span class="mid">所有设置修改后自动保存 <span class="vbadge">v5.2.0</span></span>
+          <button class="closebtn">关闭</button>
+        </div>
+      </div>
+    </div>
+    <div class="note">
+      <div class="t">单行纤薄底栏 <span class="hgt">底部 ≈ 52px（-60%）</span></div>
+      <ul>
+        <li>三个元素一行排布：左「恢复默认设置」链接、中「自动保存提示 + 版本徽章」、右紧凑「关闭」按钮（28px 高，描边样式，区别于主操作）。</li>
+        <li>保留显式关闭入口，符合「设置类弹框底部有关闭」的直觉，但不再全宽、不再 40px。</li>
+        <li>圆角修复：<code style="font-family:monospace;font-size:10px;background:var(--input-bg);padding:1px 5px;border-radius:4px;color:var(--accent);">border-radius: 0 0 16px 16px</code>。</li>
+      </ul>
+      <div class="impl">改动：<code>.sFooter</code> 改为 flex 单行 + 圆角；<code>.sSaveBtn</code> 降级为描边小按钮；版本与提示合并到中部。不动 <code>.dialog-box</code>，零副作用。</div>
+    </div>
+  </div>
+
+  <!-- ============ 方案 B：紧凑两行 ============ -->
+  <div class="col">
+    <div class="tag">方案 B · 紧凑两行</div>
+    <div class="backdrop">
+      <div class="dialog">
+        <div class="dheader">
+          <span class="dtitle">⚙ 设置</span>
+          <button class="dclose">✕</button>
+        </div>
+        <div class="tabwrap">
+          <div class="tabbar">
+            <button class="active">⚙ 通用</button><button>📖 帮助</button><button>ℹ 关于</button>
+          </div>
+        </div>
+        <div class="dbody">
+          <div class="srow"><div class="ic">🚀</div><div class="bd"><div class="lb">开机自动启动</div><div class="ds">登录系统时自动运行</div></div><button class="tog on"><i></i></button></div>
+          <div class="srow"><div class="ic">📋</div><div class="bd"><div class="lb">监听剪贴板</div><div class="ds">自动记录复制内容</div></div><button class="tog on"><i></i></button></div>
+          <div class="srow"><div class="ic">🎨</div><div class="bd"><div class="lb">主题</div><div class="ds">切换界面外观</div></div><button class="sel">午夜</button></div>
+          <div class="srow"><div class="ic">⌨</div><div class="bd"><div class="lb">唤起热键</div><div class="ds">全局呼出主窗口</div></div><button class="hk">Ctrl + Alt + V</button></div>
+          <div class="srow"><div class="ic">🧹</div><div class="bd"><div class="lb">自动清理</div><div class="ds">删除过期历史记录</div></div><button class="sel">30 天</button></div>
+          <div class="srow"><div class="ic">📦</div><div class="bd"><div class="lb">粘贴栈</div><div class="ds">连续复制后批量粘贴</div></div><button class="tog on"><i></i></button></div>
+          <div class="srow"><div class="ic">🔔</div><div class="bd"><div class="lb">提示音</div><div class="ds">复制成功时播放</div></div><button class="tog off"><i></i></button></div>
+        </div>
+        <div class="f-b">
+          <div class="r1">
+            <button class="reset">恢复默认设置</button>
+            <button class="closebtn">关闭设置</button>
+          </div>
+          <div class="r2">所有设置修改后自动保存 <span class="vbadge">v5.2.0</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="note">
+      <div class="t">紧凑两行底栏 <span class="hgt">底部 ≈ 76px（-41%）</span></div>
+      <ul>
+        <li>第一行：左「恢复默认设置」链接 + 右「关闭设置」实心按钮（30px 高、右对齐、不再全宽，仍是视觉落点）。</li>
+        <li>第二行：自动保存提示与版本徽章合并居中，弱化为一行小字。</li>
+        <li>保留「关闭设置」作为主按钮的既有语义，只压缩尺寸与布局，改动最保守。</li>
+      </ul>
+      <div class="impl">改动：<code>.sFooter</code> 改两行 + 圆角；<code>.sSaveBtn</code> 从全宽 40px 缩为右对齐 30px；元信息与版本合并。适合想保留实心关闭按钮的场景。</div>
+    </div>
+  </div>
+
+  <!-- ============ 方案 C：超纤薄（去关闭按钮） ============ -->
+  <div class="col">
+    <div class="tag">方案 C · 超纤薄（去关闭按钮）</div>
+    <div class="backdrop">
+      <div class="dialog">
+        <div class="dheader">
+          <span class="dtitle">⚙ 设置</span>
+          <button class="dclose">✕</button>
+        </div>
+        <div class="tabwrap">
+          <div class="tabbar">
+            <button class="active">⚙ 通用</button><button>📖 帮助</button><button>ℹ 关于</button>
+          </div>
+        </div>
+        <div class="dbody">
+          <div class="srow"><div class="ic">🚀</div><div class="bd"><div class="lb">开机自动启动</div><div class="ds">登录系统时自动运行</div></div><button class="tog on"><i></i></button></div>
+          <div class="srow"><div class="ic">📋</div><div class="bd"><div class="lb">监听剪贴板</div><div class="ds">自动记录复制内容</div></div><button class="tog on"><i></i></button></div>
+          <div class="srow"><div class="ic">🎨</div><div class="bd"><div class="lb">主题</div><div class="ds">切换界面外观</div></div><button class="sel">午夜</button></div>
+          <div class="srow"><div class="ic">⌨</div><div class="bd"><div class="lb">唤起热键</div><div class="ds">全局呼出主窗口</div></div><button class="hk">Ctrl + Alt + V</button></div>
+          <div class="srow"><div class="ic">🧹</div><div class="bd"><div class="lb">自动清理</div><div class="ds">删除过期历史记录</div></div><button class="sel">30 天</button></div>
+          <div class="srow"><div class="ic">📦</div><div class="bd"><div class="lb">粘贴栈</div><div class="ds">连续复制后批量粘贴</div></div><button class="tog on"><i></i></button></div>
+          <div class="srow"><div class="ic">🔔</div><div class="bd"><div class="lb">提示音</div><div class="ds">复制成功时播放</div></div><button class="tog off"><i></i></button></div>
+        </div>
+        <div class="f-c">
+          <button class="reset">恢复默认设置</button>
+          <span class="right">所有设置修改后自动保存 <span class="vbadge">v5.2.0</span></span>
+        </div>
+      </div>
+    </div>
+    <div class="note">
+      <div class="t">超纤薄状态栏 <span class="hgt">底部 ≈ 44px（-66%）</span></div>
+      <ul>
+        <li>彻底移除「关闭设置」按钮——右上角 ✕、点击遮罩、Esc 均可关闭，且设置自动保存，大按钮本就冗余。</li>
+        <li>底部退化为一条信息栏：左「恢复默认设置」、右「自动保存提示 + 版本」。</li>
+        <li>列表可滚动区域最大化，视觉最接近 Notion / 系统设置的极简底栏。</li>
+      </ul>
+      <div class="impl">改动：<code>.sFooter</code> 改单行信息栏 + 圆角，删除 <code>.sSaveBtn</code>。最激进，适合追求极致留白；代价是少一个显式关闭入口。</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="footnote">
+  <b>圆角修复方式（三方案通用）：</b>给 <code>.sFooter</code> 加 <code>border-radius: 0 0 16px 16px</code>，而<b>不是</b>给全局 <code>.dialog-box</code> 加 <code>overflow:hidden</code>——后者会裁剪其他弹框（片段库、筛选下拉、更新说明等）里溢出边缘的浮层/气泡，风险大。定向加底部圆角只影响设置弹框，零副作用。<br/>
+  <b>高度口径：</b>演示用固定 600px 弹框便于对比占比；真实弹框为 <code>max-height: 80vh</code>，底部为固定高度，压缩底部后滚动区在小屏上收益更明显。切换右上角主题可同时验证深色（午夜）与浅色（海洋）下各方案的表现。
+</div>
+
+<script>
+  const seg = document.getElementById('themeSeg');
+  seg.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    seg.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.body.setAttribute('data-theme', btn.dataset.t);
+  });
+</script>
+</body>
+</html>
