@@ -80,8 +80,21 @@ pub fn insert_markdown_history(
 }
 
 #[tauri::command]
-pub fn delete_history(store: State<DataStore>, ids: Vec<String>) -> Result<u32, String> {
-    store.delete_history(&ids)
+pub fn delete_history(
+    app: tauri::AppHandle,
+    store: State<DataStore>,
+    ids: Vec<String>,
+) -> Result<u32, String> {
+    let n = store.delete_history(&ids)?;
+    // 广播删除事件：删除可能来自快捷粘贴面板等独立窗口，它们与主窗口是不同的
+    // React 实例，不发事件主窗口的列表与侧边栏计数会一直是脏的
+    // （参照本文件 update_history 的做法）。主窗口自己删除时也会收到，
+    // 前端按 id 过滤是幂等的，重复执行无副作用。
+    let _ = app.emit(
+        "history-items-deleted",
+        serde_json::json!({ "ids": ids }),
+    );
+    Ok(n)
 }
 
 #[tauri::command]

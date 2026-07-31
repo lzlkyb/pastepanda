@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { relativeTime } from "@/lib/utils";
 import { getImageThumbnail } from "@/lib/api";
+import { logger } from "@/lib/logger";
 import { SkinScene } from "./SkinScene";
 
 // ===== 数据类型 =====
@@ -123,17 +124,31 @@ export function QuickPastePanel() {
       // 聚焦搜索框
       setTimeout(() => searchRef.current?.focus(), 50);
     } catch (e) {
-      console.error("[QuickPaste] 加载数据失败", e);
+      // 统一走项目 logger（写持久日志）而不是 console：本面板是热键唤出的独立窗口，
+      // 出问题时用户不会去开 devtools，console 里的错误等于没记录
+      logger.error("[QuickPaste] 加载数据失败", e);
     }
   }, []);
 
   useEffect(() => {
     loadData();
+    // 修复监听器泄漏：原写法把 unlisten 放在 .then() 里赋值，而 cleanup 是同步执行的，
+    // 若 cleanup 先跑（React StrictMode 在 dev 下会 mount→unmount→remount），unlisten 还是 null，
+    // 监听器永远解不掉 → 之后每次唤出面板 loadData() 跑两遍（重复拉数据 + 重复加缩略图）。
+    // 同一模式在 App.tsx 与 TrayPopup.tsx 已分别修过，这是第三处。
+    let cancelled = false;
     let unlisten: UnlistenFn | null = null;
     listen("quick-paste-show", () => {
       loadData();
-    }).then((u) => { unlisten = u; });
-    return () => { unlisten?.(); };
+    }).then((u) => {
+      // 拿到 unlisten 时若已卸载，立即自我解绑
+      if (cancelled) { u(); return; }
+      unlisten = u;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
   }, [loadData]);
 
   // ===== 过滤 =====
@@ -160,7 +175,11 @@ export function QuickPastePanel() {
       // 成功后兜底隐藏（正常情况下失焦已自动隐藏）
       invoke("hide_quick_paste").catch(() => { /* 忽略 */ });
     } catch (e) {
-      console.error("[QuickPaste] 粘贴失败", e);
+      // 注意：粘贴引擎会 SetForegroundWindow 到目标窗口，而本面板失焦即自动隐藏
+      // （quick_paste.rs 的 WindowEvent::Focused(false)）。若失败发生在夺焦之后，
+      // 下面这个 toast 会渲染在一个正在消失的窗口上、用户看不到，
+      // 所以必须同时写持久日志，否则这类失败会完全无迹可查
+      logger.error("[QuickPaste] 粘贴失败", e);
       showToast("粘贴失败", true);
     }
   }, [showToast]);
@@ -172,7 +191,7 @@ export function QuickPastePanel() {
       setItems((prev) => prev.filter((i) => i.id !== id));
       showToast("已删除");
     } catch (e) {
-      console.error("[QuickPaste] 删除失败", e);
+      logger.error("[QuickPaste] 删除失败", e);
       showToast("删除失败", true);
     }
   }, [showToast]);
@@ -188,7 +207,7 @@ export function QuickPastePanel() {
       });
       showToast(pinned ? "已置顶" : "已取消置顶");
     } catch (e) {
-      console.error("[QuickPaste] 置顶失败", e);
+      logger.error("[QuickPaste] 置顶失败", e);
     }
   }, [showToast]);
 
@@ -204,10 +223,40 @@ export function QuickPastePanel() {
       setItems((prev) => prev.filter((i) => i.pinned));
       showToast(`已清除 ${ids.length} 条`);
     } catch (e) {
-      console.error("[QuickPaste] 清除失败", e);
+      logger.error("[QuickPaste] 清除失败", e);
       showToast("清除失败", true);
     }
   }, [items, showToast]);
+
+  // ===== 清除全部：两步确认 =====
+  // 为什么需要确认：面板是热键唤出的、按钮就在标题栏右上角紧靠搜索框，误点代价是
+  // 抹掉全部非置顶历史，而这里的删除**无法撤销**：undoStack 是前端 store 状态，
+  // 本窗口与主窗口是两个独立的 React 实例/store，就算写也不是同一个栈。
+  // （后端虽有 clear_history_with_undo，但它是“按天数清理”语义，与这里按 ids 删不匹配）
+  // 为何用两步确认而不是模态框：面板失焦即自动隐藏，且 Escape 已绑定为关闭面板，
+  // 弹模态框会与这两个行为打架；两步确认失焦时自然重置（fail closed）。
+  const [clearConfirm, setClearConfirm] = useState(false);
+  const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearableCount = items.filter((i) => !i.pinned).length;
+
+  const requestClearAll = useCallback(() => {
+    if (clearableCount === 0) { showToast("没有可清除的记录"); return; }
+    if (!clearConfirm) {
+      setClearConfirm(true);
+      if (clearTimer.current) clearTimeout(clearTimer.current);
+      clearTimer.current = setTimeout(() => setClearConfirm(false), 4000);
+      return;
+    }
+    if (clearTimer.current) clearTimeout(clearTimer.current);
+    setClearConfirm(false);
+    void doClearAll();
+  }, [clearConfirm, clearableCount, doClearAll, showToast]);
+
+  // 卸载时清定时器，避免对已卸载组件 setState
+  useEffect(() => () => {
+    if (clearTimer.current) clearTimeout(clearTimer.current);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+  }, []);
 
   // ===== 隐藏面板 =====
   const hidePanel = useCallback(() => {
@@ -257,9 +306,13 @@ export function QuickPastePanel() {
           <IconClipboard />
           剪贴板历史
         </span>
-        <button className="qp-clear" onClick={doClearAll} title="清除全部（保留置顶）">
+        <button
+          className={`qp-clear${clearConfirm ? " confirm" : ""}`}
+          onClick={requestClearAll}
+          title={clearConfirm ? "再点一次确认清除（不可撤销）" : "清除全部（保留置顶）"}
+        >
           <IconTrash />
-          清除
+          {clearConfirm ? `确认清除 ${clearableCount} 条？` : "清除"}
         </button>
       </div>
 

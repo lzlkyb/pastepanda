@@ -119,6 +119,24 @@ export async function initBackend(): Promise<() => void> {
       }));
     }));
 
+    // 监听历史删除事件（delete_history 命令广播）。
+    // 删除可能来自快捷粘贴面板等独立窗口（与主窗口是不同的 React 实例、不共享 store），
+    // 不接这个事件主窗口列表与侧边栏计数会一直是脏的。
+    // 主窗口自己删除时也会收到本事件（app.emit 广播给所有窗口），
+    // 但按 id 过滤是幂等的（已移除的再过滤一次无变化），不会影响已有的乐观更新与撤销栈。
+    unlistens.push(await listen<{ ids: string[] }>("history-items-deleted", (event) => {
+      const ids = event.payload?.ids;
+      if (!Array.isArray(ids) || ids.length === 0) return;
+      const deletedSet = new Set(ids);
+      useAppStore.setState((s) => ({
+        history: s.history.filter((h) => !deletedSet.has(h.id)),
+        selectedIds: new Set([...s.selectedIds].filter((id) => !deletedSet.has(id))),
+        focusId: s.focusId && deletedSet.has(s.focusId) ? null : s.focusId,
+        _filterCache: null,
+      }));
+      invalidateCountsCache();
+    }));
+
     // 监听自动清理完成事件（后端调度器启动首跑 + 每小时循环，替代原前端 setInterval）
     // 按事件携带的 deleted_ids 从内存列表精确移除，不重新拉取整页（避免列表被截断到首页）；
     // 策略性清理不属于用户误删，不写撤销栈，提示语也不带 Ctrl+Z

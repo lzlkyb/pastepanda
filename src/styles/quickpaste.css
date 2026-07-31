@@ -65,6 +65,13 @@ body {
   transition: all 0.15s;
 }
 .qp-clear:hover { color: var(--danger); background: var(--red-bg); }
+/* 两步确认的第二步：常驻危险色 + 描边，让“再点一下就真删了”一眼可辨（不依赖 hover） */
+.qp-clear.confirm {
+  color: var(--danger);
+  background: var(--red-bg);
+  border: 1px solid var(--danger);
+  font-weight: 600;
+}
 
 /* ── 搜索框 ── */
 .qp-search {
@@ -100,6 +107,15 @@ body {
   padding: 0 12px 12px;
   overflow-y: auto;
   flex: 1;
+  /* 下面两行都是防“卡片被压到 ~15px、内容裁切且不滚动”的，勿删任一行。
+     成因：本容器 flex:1 在定高的列方向 flex 父里拿到的是确定高度，而隐式行默认是 auto 轨道；
+     align-content 默认 stretch 会把 auto 轨道拉开均分容器剩余空间，叠上条目 overflow:hidden
+     使其自动最小尺寸归零，行就被压成一条缝（且总高正好等于容器高 → 不产生滚动）。
+     历史上只靠 align-content:start 修过一次，但它只管“轨道怎么摆”、不管“轨道多高”，
+     一旦被覆盖或失效就复现。grid-auto-rows:max-content 直接把隐式行从 auto 轨道改成
+     max-content 轨道——stretch 只能拉伸 auto 轨道，根上断了这个失效路径。 */
+  align-content: start;
+  grid-auto-rows: max-content;
 }
 .qp-grid::-webkit-scrollbar { width: 5px; }
 .qp-grid::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
@@ -113,6 +129,9 @@ body {
   cursor: pointer;
   overflow: hidden;
   position: relative;
+  /* 卡片高度兜底：预览区固定 84px + 底栏约 32px，取 116px 略低于自然高度，
+     正常情况下不产生多余空白；万一行高计算再出问题，也不会被压成一条缝 */
+  min-height: 116px;
   transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s;
 }
 .qp-item:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--accent); }
@@ -121,8 +140,13 @@ body {
 /* 预览区 */
 .qp-prev {
   height: 84px;
-  display: flex;
-  align-items: center;
+  /* 文本预览：从第一行开始按行截断、末行加省略号。
+     原来是 flex + align-items:center，多行文本会被上下对半裁掉
+     （看到的是中间几行、首尾各半行），看起来像渲染坏了。
+     84px 减上下 padding 20px = 64px，行高 12.5×1.55≈19.4px，正好 3 行 */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
   padding: 10px 12px;
   font-size: 12.5px;
   color: var(--text-secondary);
@@ -131,7 +155,8 @@ body {
   background: var(--input-bg);
   word-break: break-all;
 }
-.qp-prev.img { padding: 0; }
+/* 图片预览仍用 flex（无缩略图时靠 margin:auto 居中那个 emoji 占位） */
+.qp-prev.img { padding: 0; display: flex; align-items: center; }
 .qp-prev.img img {
   width: 100%;
   height: 100%;
