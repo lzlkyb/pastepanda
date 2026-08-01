@@ -19,8 +19,8 @@ import {
 } from "@/lib/theme";
 
 describe("THEMES 常量", () => {
-  it("包含 7 个主题", () => {
-    expect(THEMES).toHaveLength(7);
+  it("包含 6 个主题", () => {
+    expect(THEMES).toHaveLength(6);
   });
 
   it("每个主题都有 key, displayName, dark 字段", () => {
@@ -43,23 +43,22 @@ describe("THEMES 常量", () => {
     const keys = THEMES.map((t) => t.key).sort();
     expect(keys).toEqual([
       "blossom",
+      "dawn",
       "forest",
       "midnight",
       "ocean",
       "ocean-dark",
-      "sunset",
-      "terminal",
     ]);
   });
 
-  it("暗色主题有 midnight, ocean-dark, terminal, sunset", () => {
+  it("暗色主题有 midnight, ocean-dark", () => {
     const darkKeys = THEMES.filter((t) => t.dark).map((t) => t.key).sort();
-    expect(darkKeys).toEqual(["midnight", "ocean-dark", "sunset", "terminal"]);
+    expect(darkKeys).toEqual(["midnight", "ocean-dark"]);
   });
 
-  it("亮色主题有 ocean, forest, blossom", () => {
+  it("亮色主题有 ocean, forest, blossom, dawn", () => {
     const lightKeys = THEMES.filter((t) => !t.dark).map((t) => t.key).sort();
-    expect(lightKeys).toEqual(["blossom", "forest", "ocean"]);
+    expect(lightKeys).toEqual(["blossom", "dawn", "forest", "ocean"]);
   });
 
   it("DEFAULT_THEME 为 ocean-dark", () => {
@@ -90,8 +89,8 @@ describe("applyTheme", () => {
     applyTheme("ocean");
     expect(document.documentElement.getAttribute("data-theme")).toBe("ocean");
 
-    applyTheme("sunset");
-    expect(document.documentElement.getAttribute("data-theme")).toBe("sunset");
+    applyTheme("dawn");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dawn");
   });
 
   it("应用主题时设置过渡样式", () => {
@@ -129,8 +128,8 @@ describe("getCurrentTheme", () => {
   });
 
   it("返回当前 data-theme 属性值", () => {
-    document.documentElement.setAttribute("data-theme", "terminal");
-    expect(getCurrentTheme()).toBe("terminal");
+    document.documentElement.setAttribute("data-theme", "dawn");
+    expect(getCurrentTheme()).toBe("dawn");
   });
 
   it("无 data-theme 属性时返回默认主题 ocean-dark", () => {

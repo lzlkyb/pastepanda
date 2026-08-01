@@ -120,6 +120,8 @@
   /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
   --glass-dialog-bg: rgba(255,255,255,0.66);
   --glass-dialog-blur: 22px;
+  /* 遮罩层 — 弹框/浮层背后的半透明压暗底（中性灰黑，压暗场景但不抢色） */
+  --overlay-bg: rgba(0, 0, 0, 0.35);
   /* 更新弹框 + 更新日志 */
   --accent-glow: rgba(2,132,199, 0.12);
   --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(2,132,199,0.10), transparent);
@@ -189,6 +191,8 @@
   /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
   --glass-dialog-bg: rgba(20,20,24,0.66);
   --glass-dialog-blur: 22px;
+  /* 遮罩层 — 弹框/浮层背后的半透明压暗底（中性灰黑，压暗场景但不抢色） */
+  --overlay-bg: rgba(0, 0, 0, 0.35);
   /* 更新弹框 + 更新日志 */
   --accent-glow: rgba(129,140,248, 0.12);
   --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(129,140,248,0.10), transparent);
@@ -258,64 +262,66 @@
   /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
   --glass-dialog-bg: rgba(255,255,255,0.66);
   --glass-dialog-blur: 22px;
+  /* 遮罩层 — 弹框/浮层背后的半透明压暗底（中性灰黑，压暗场景但不抢色） */
+  --overlay-bg: rgba(0, 0, 0, 0.35);
   /* 更新弹框 + 更新日志 */
   --accent-glow: rgba(5,150,105, 0.12);
   --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(5,150,105,0.10), transparent);
 }
 
-/* ── 4. blossom 樱花（浅色·女性/浪漫）── */
+/* ── 4. blossom 美乐蒂（浅色·甜系卡通粉）── */
 [data-theme="blossom"] {
-  /* 皮肤场景：樱粉天空渐变（SkinScene 花瓣粒子层衬于其上）；C 提亮一档更鲜明 */
-  --app-bg: linear-gradient(160deg, #FFECF5 0%, #FFD7EA 45%, #F8C0DB 100%);
+  /* 皮肤场景：美乐蒂糖果粉天空渐变（SkinScene 爱心雨/蝴蝶结/星光/官方美乐蒂立绘衬于其上） */
+  --app-bg: linear-gradient(168deg, #FFE4EF 0%, #FFC9DD 42%, #FFAECF 78%, #FF9BC4 100%);
   /* 皮肤场景：header 全透明，场景从窗口顶端连续到底（控件自带底色保证可读性） */
   --header-bg-start: transparent;
   --header-bg-end: transparent;
   --card-bg: #fff;
-  --card-border: #F3E8ED;
-  --text-primary: #1F1A1C;
-  --text-secondary: #A68A96;
-  --text-muted: #7C6B72; /* 对比度改进：正文场景 最差背景对比度 改前2.70:1→改后4.58:1 */
-  --border-color: #F3E8ED;
-  --accent: #EC4899;
-  --accent-light: #FCE7F3;
+  --card-border: #F9D3E2;
+  --text-primary: #3D2231;
+  --text-secondary: #5F4755; /* 与text-muted拉开三级文字层级间距（8.34:1 on white） */
+  --text-muted: #86596D; /* 对比度校验：正文场景 最差背景对比度 5.73:1（≥4.5:1 达标） */
+  --border-color: #F9D3E2;
+  --accent: #F0568C;
+  --accent-light: #FFDDEC;
   --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
-  --accent-solid: #CD3F85; /* 对比度改进新增：实心主按钮专用底色（白字压其上），不改 --accent 本身；白字对比度 改前3.53:1→改后4.52:1 */
-  --accent-strong: #BA3979; /* 对比度改进新增：压在 --accent-light 浅色高亮上的文字/图标色，不改 --accent-light 本身；对比度 改前3.00:1→改后4.52:1，顺带修好Toast info/loading图标2.96:1→4.33:1 */
-  --seg-bg: #F0EEEF;
+  --accent-solid: #CE3B70; /* 实心主按钮专用底色（白字压其上）；白字对比度 4.68:1 */
+  --accent-strong: #B02C5D; /* 压在 --accent-light 浅色高亮上的文字/图标色；对比度 5.00:1 */
+  --seg-bg: #F6DDE8;
   --seg-active-bg: #fff;
   --search-bg: #fff;
-  --search-border: #F3E8ED;
-  --input-bg: #FDF2F8;
+  --search-border: #F9D3E2;
+  --input-bg: #FFF0F6;
   --dialog-bg: #fff;
-  --section-bg: #FDF2F8;
-  --toggle-off-bg: #F3E8ED;
-  --toggle-off-label: #C4B5BC;
-  --card-selected-bg: #FCE7F3;
-  --card-selected-border: #EC4899;
-  --card-selected-shadow: 0 0 0 2px rgba(236, 72, 153, 0.2);
-  --accent-shadow: rgba(236, 72, 153, 0.15);
+  --section-bg: #FFF0F6;
+  --toggle-off-bg: #F3D5E2;
+  --toggle-off-label: #C9A2B4;
+  --card-selected-bg: #FFDDEC;
+  --card-selected-border: #F0568C;
+  --card-selected-shadow: 0 0 0 2px rgba(240, 86, 140, 0.2);
+  --accent-shadow: rgba(240, 86, 140, 0.15);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-  --hover: #F5E8F0;
-  --sidebar-bg: #FDF2F8;
-  --sidebar-section-label: #766D71; /* 对比度改进：侧边栏分区标题 改前1.80:1（7套里最差）→改后4.58:1 */
-  --timeline-bg: rgba(255, 251, 253, 0.95);
-  --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0; /* 对比度改进：green-on-green-bg 改前3.00:1→改后4.53:1，顺带修好Toast绿图标2.82→4.10:1（仅浅色三主题ocean/forest/blossom，深色四套已达标未改） */
-  --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA; /* 对比度改进：orange-on-orange-bg 改前3.35:1→改后4.54:1 */
+  --hover: #FBE7F0;
+  --sidebar-bg: #FFF0F6;
+  --sidebar-section-label: #8A6478; /* 对比度校验：侧边栏分区标题 4.56:1（≥4.5:1 达标） */
+  --timeline-bg: rgba(255, 250, 252, 0.95);
+  --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+  --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
   --warning: var(--orange);
-  --red-bg: #FEF2F2; --danger: #D82525; /* 对比度改进：danger-on-red-bg 改前4.41:1→改后4.56:1 */
+  --red-bg: #FEF2F2; --danger: #D82525;
   --danger-hover: #B91C1C;
-  --version-badge-gradient: linear-gradient(135deg, #EC4899, #DB2777);
-  --version-badge-shadow: rgba(236, 72, 153, 0.35);
-  --update-badge-gradient: linear-gradient(135deg, #EF4444, #DC2626);
-  --update-badge-shadow: rgba(239, 68, 68, 0.4);
-  /* 玻璃拟态 — 樱花浅色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让樱粉场景透出） */
+  --version-badge-gradient: linear-gradient(135deg, #F0568C, #CE3B70);
+  --version-badge-shadow: rgba(240, 86, 140, 0.35);
+  --update-badge-gradient: linear-gradient(135deg, #7EC8E3, #5BB8DC); /* 蝴蝶结淡蓝 */
+  --update-badge-shadow: rgba(126, 200, 227, 0.4);
+  /* 玻璃拟态 — 美乐蒂糖果粉浅色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让甜粉场景透出） */
   --glass-card-bg: rgba(255,255,255,0.22);
   --glass-card-blur: 5px;
   --glass-card-border: rgba(0,0,0,0.07);
   --glass-card-hover-border: rgba(0,0,0,0.14);
-  --glass-card-hover-glow: rgba(236,72,153,0.10);
+  --glass-card-hover-glow: rgba(240,86,140,0.10);
   --glass-card-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.7);
-  --glass-card-hover-shadow: 0 8px 24px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9), 0 0 0 1px rgba(236,72,153,0.10);
+  --glass-card-hover-shadow: 0 8px 24px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9), 0 0 0 1px rgba(240,86,140,0.10);
   --glass-shimmer: rgba(255,255,255,0.40);
   --glass-shimmer-static: rgba(255,255,255,0.50);
   --glass-icon-bg: rgba(0,0,0,0.04);
@@ -327,78 +333,82 @@
   /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
   --glass-dialog-bg: rgba(255,255,255,0.66);
   --glass-dialog-blur: 22px;
+  /* 遮罩层 — 玫瑰色遮罩：压暗甜粉场景但不发灰（替代硬编码灰黑 rgba(0,0,0,0.35~0.4)） */
+  --overlay-bg: rgba(122, 31, 70, 0.32);
   /* 更新弹框 + 更新日志 */
-  --accent-glow: rgba(236,72,153, 0.12);
-  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(236,72,153,0.10), transparent);
+  --accent-glow: rgba(240,86,140, 0.12);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(240,86,140,0.10), transparent);
 }
 
-/* ── 5. terminal 终端（深色·开发者/极客）── */
-[data-theme="terminal"] {
-  /* 皮肤场景：CRT 屏幕中心幽绿光晕渐变（SkinScene 矩阵雨/扫描线衬于其上）；C 提亮一档 */
-  --app-bg: radial-gradient(120% 100% at 50% 40%, #12240D 0%, #020503 70%);
+/* ── 5. dawn 晨曦（浅色·暖阳晨光）── */
+[data-theme="dawn"] {
+  /* 皮肤场景：晨曦暖光 — 朝霞天空渐变（SkinScene 朝阳/光柱/流云衬于其上） */
+  --app-bg: linear-gradient(180deg, #FFF8EE 0%, #FFE9D2 42%, #FFD9AE 72%, #F9C78F 100%);
   /* 皮肤场景：header 全透明，场景从窗口顶端连续到底（控件自带底色保证可读性） */
   --header-bg-start: transparent;
   --header-bg-end: transparent;
-  --card-bg: #141414;
-  --card-border: #262626;
-  --text-primary: #E5E5E5;
-  --text-secondary: #AEAEAE; /* 对比度改进：与新text-muted拉开三级文字层级间距 改前1.33:1→改后1.52:1 */
-  --text-muted: #8C8C8C; /* 对比度改进：正文场景 最差背景对比度 改前3.19:1→改后4.50:1 */
-  --border-color: #262626;
-  --accent: #22C55E;
-  --accent-light: #052E16;
+  --card-bg: #fff;
+  --card-border: #F0DDC8;
+  --text-primary: #2B2016;
+  --text-secondary: #5C4B38; /* 与text-muted拉开三级文字层级间距（≥1.5:1） */
+  --text-muted: #7D6B58; /* 对比度改进：正文场景 最差背景对比度 ≈4.8:1（沿用项目≥4.5:1标准，较效果图 #A08C72 压暗一档） */
+  --border-color: #F0DDC8;
+  --accent: #E8734A;
+  --accent-light: #FFEDE2;
   --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
-  --accent-solid: #178841; /* 对比度改进新增：实心主按钮专用底色（白字压其上），不改 --accent 本身；白字对比度 改前2.28:1→改后4.53:1（7套里最差，浅绿本来就配不了白字） */
-  --accent-strong: var(--accent); /* 对比度改进新增：压在 --accent-light 上的文字/图标色；本主题本来就达标(6.54:1)，等于 --accent，无需变化 */
-  --seg-bg: #262626;
-  --seg-active-bg: #404040;
-  --search-bg: #262626;
-  --search-border: #404040;
-  --input-bg: #262626;
-  --dialog-bg: #141414;
-  --section-bg: #0F0F0F;
-  --toggle-off-bg: #404040;
-  --toggle-off-label: #737373;
-  --card-selected-bg: #052E16;
-  --card-selected-border: #22C55E;
-  --card-selected-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25);
-  --accent-shadow: rgba(34, 197, 94, 0.2);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
-  --hover: #1A1A1A;
-  --sidebar-bg: #0D0D0D;
-  --sidebar-section-label: #7A7A81; /* 对比度改进：侧边栏分区标题 改前2.51:1→改后4.56:1 */
-  --timeline-bg: rgba(10, 10, 10, 0.95);
-  --green: #4ADE80; --green-bg: #052E16; --green-border: #166534;
-  --orange: #FB923C; --orange-bg: #431407; --orange-border: #9A3412;
+  --accent-solid: #C85A34; /* 实心主按钮专用底色（白字压其上）；白字对比度 ≈4.6:1 */
+  --accent-strong: #B95432; /* 压在 --accent-light 浅色高亮上的文字/图标色；对比度 ≈5.0:1 */
+  --seg-bg: #F3E4D3;
+  --seg-active-bg: #fff;
+  --search-bg: #fff;
+  --search-border: #F0DDC8;
+  --input-bg: #FFF4E6;
+  --dialog-bg: #fff;
+  --section-bg: #FFF4E6;
+  --toggle-off-bg: #EFDCC6;
+  --toggle-off-label: #B09A80;
+  --card-selected-bg: #FFEDE2;
+  --card-selected-border: #E8734A;
+  --card-selected-shadow: 0 0 0 2px rgba(232, 115, 74, 0.22);
+  --accent-shadow: rgba(232, 115, 74, 0.15);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+  --hover: #F7E9DA;
+  --sidebar-bg: #FBF0E1;
+  --sidebar-section-label: #6E5D49; /* 对比度改进：侧边栏分区标题 ≈4.6:1 */
+  --timeline-bg: rgba(255, 250, 242, 0.95);
+  --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+  --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
   --warning: var(--orange);
-  --red-bg: #450A0A; --danger: #F87171;
-  --danger-hover: #FCA5A5;
-  --version-badge-gradient: linear-gradient(135deg, #22C55E, #16A34A);
-  --version-badge-shadow: rgba(34, 197, 94, 0.35);
-  --update-badge-gradient: linear-gradient(135deg, #2DD4BF, #14B8A6);
-  --update-badge-shadow: rgba(45, 212, 191, 0.45);
-  /* 玻璃拟态 — 终端深色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让 CRT 场景透出） */
-  --glass-card-bg: rgba(20,20,20,0.22);
+  --red-bg: #FEF2F2; --danger: #D82525;
+  --danger-hover: #B91C1C;
+  --version-badge-gradient: linear-gradient(135deg, #E8734A, #C85A34);
+  --version-badge-shadow: rgba(232, 115, 74, 0.35);
+  --update-badge-gradient: linear-gradient(135deg, #059669, #047857);
+  --update-badge-shadow: rgba(5, 150, 105, 0.4);
+  /* 玻璃拟态 — 晨曦浅色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让晨光场景透出） */
+  --glass-card-bg: rgba(255,255,255,0.22);
   --glass-card-blur: 5px;
-  --glass-card-border: rgba(255,255,255,0.05);
-  --glass-card-hover-border: rgba(255,255,255,0.14);
-  --glass-card-hover-glow: rgba(34,197,94,0.10);
-  --glass-card-shadow: 0 4px 16px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.03), inset 0 1px 0 rgba(255,255,255,0.04);
-  --glass-card-hover-shadow: 0 8px 28px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.06), 0 0 0 1px rgba(34,197,94,0.10);
-  --glass-shimmer: rgba(255,255,255,0.05);
-  --glass-shimmer-static: rgba(255,255,255,0.04);
-  --glass-icon-bg: rgba(255,255,255,0.04);
-  --glass-icon-border: rgba(255,255,255,0.06);
-  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.03), 0 2px 8px rgba(0,0,0,0.35);
-  --glass-popover-bg: rgba(18,18,18,0.85);
-  --glass-popover-border: rgba(255,255,255,0.06);
-  --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3);
+  --glass-card-border: rgba(0,0,0,0.07);
+  --glass-card-hover-border: rgba(0,0,0,0.14);
+  --glass-card-hover-glow: rgba(232,115,74,0.10);
+  --glass-card-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.7);
+  --glass-card-hover-shadow: 0 8px 24px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9), 0 0 0 1px rgba(232,115,74,0.10);
+  --glass-shimmer: rgba(255,255,255,0.40);
+  --glass-shimmer-static: rgba(255,255,255,0.50);
+  --glass-icon-bg: rgba(0,0,0,0.04);
+  --glass-icon-border: rgba(0,0,0,0.07);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.05);
+  --glass-popover-bg: rgba(255,255,255,0.85);
+  --glass-popover-border: rgba(0,0,0,0.06);
+  --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
   /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
-  --glass-dialog-bg: rgba(18,18,18,0.66);
+  --glass-dialog-bg: rgba(255,255,255,0.66);
   --glass-dialog-blur: 22px;
+  /* 遮罩层 — 弹框/浮层背后的半透明压暗底（中性灰黑，压暗场景但不抢色） */
+  --overlay-bg: rgba(0, 0, 0, 0.35);
   /* 更新弹框 + 更新日志 */
-  --accent-glow: rgba(34,197,94, 0.12);
-  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(34,197,94,0.10), transparent);
+  --accent-glow: rgba(232,115,74, 0.12);
+  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(232,115,74,0.10), transparent);
 }
 
 /* ── 6. ocean-dark 海洋深色（玻璃拟态专用）── */
@@ -465,76 +475,9 @@
   /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
   --glass-dialog-bg: rgba(10,22,40,0.66);
   --glass-dialog-blur: 22px;
+  /* 遮罩层 — 弹框/浮层背后的半透明压暗底（中性灰黑，压暗场景但不抢色） */
+  --overlay-bg: rgba(0, 0, 0, 0.35);
   /* 更新弹框 + 更新日志 */
   --accent-glow: rgba(56,189,248, 0.12);
   --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(56,189,248,0.10), transparent);
-}
-
-/* ── 7. sunset 日落（深色·年轻/潮流）── */
-[data-theme="sunset"] {
-  /* 皮肤场景：晚霞余晖 — 晚霞天空渐变（SkinScene 落日/流云/归鸟/山影衬于其上） */
-  --app-bg: linear-gradient(180deg, #2A1638 0%, #4A2150 38%, #8A3A5C 68%, #D96A5B 88%, #F0925F 100%);
-  /* 皮肤场景：header 全透明，场景从窗口顶端连续到底（控件自带底色保证可读性） */
-  --header-bg-start: transparent;
-  --header-bg-end: transparent;
-  --card-bg: #281E18;
-  --card-border: #3D3028;
-  --text-primary: #F5F0EB;
-  --text-secondary: #C8BCB0; /* 对比度改进：与新text-muted拉开三级文字层级间距 改前1.23:1→改后1.51:1 */
-  --text-muted: #A5988C; /* 对比度改进：正文场景 最差背景对比度 改前3.11:1→改后4.52:1 */
-  --border-color: #3D3028;
-  --accent: #F97316;
-  --accent-light: #431407;
-  --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
-  --accent-solid: #BD5711; /* 对比度改进新增：实心主按钮专用底色（白字压其上），不改 --accent 本身；白字对比度 改前2.80:1→改后4.63:1 */
-  --accent-strong: var(--accent); /* 对比度改进新增：压在 --accent-light 上的文字/图标色；本主题本来就达标(5.58:1)，等于 --accent，无需变化 */
-  --seg-bg: #3D3028;
-  --seg-active-bg: #57534E;
-  --search-bg: #3D3028;
-  --search-border: #57534E;
-  --input-bg: #3D3028;
-  --dialog-bg: #281E18;
-  --section-bg: #1F1610;
-  --toggle-off-bg: #57534E;
-  --toggle-off-label: #8B7B6B;
-  --card-selected-bg: #431407;
-  --card-selected-border: #F97316;
-  --card-selected-shadow: 0 0 0 2px rgba(249, 115, 22, 0.25);
-  --accent-shadow: rgba(249, 115, 22, 0.2);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.45);
-  --hover: #33261E;
-  --sidebar-bg: #1F1610;
-  --sidebar-section-label: #867F7B; /* 对比度改进：侧边栏分区标题 改前3.71:1（7套里改前最好）→改后4.52:1 */
-  --timeline-bg: rgba(28, 20, 16, 0.95);
-  --green: #4ADE80; --green-bg: #052E16; --green-border: #166534;
-  --orange: #FB923C; --orange-bg: #431407; --orange-border: #9A3412;
-  --warning: var(--orange);
-  --red-bg: #450A0A; --danger: #F87171;
-  --danger-hover: #FCA5A5;
-  --version-badge-gradient: linear-gradient(135deg, #F97316, #EA580C);
-  --version-badge-shadow: rgba(249, 115, 22, 0.35);
-  --update-badge-gradient: linear-gradient(135deg, #F59E0B, #D97706);
-  --update-badge-shadow: rgba(245, 158, 11, 0.45);
-  /* 玻璃拟态 — 日落深色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让晚霞场景透出） */
-  --glass-card-bg: rgba(40,30,24,0.22);
-  --glass-card-blur: 5px;
-  --glass-card-border: rgba(255,255,255,0.06);
-  --glass-card-hover-border: rgba(255,255,255,0.14);
-  --glass-card-hover-glow: rgba(249,115,22,0.12);
-  --glass-card-shadow: 0 4px 16px rgba(0,0,0,0.40), 0 0 0 1px rgba(255,255,255,0.03), inset 0 1px 0 rgba(255,255,255,0.04);
-  --glass-card-hover-shadow: 0 8px 28px rgba(0,0,0,0.50), 0 0 0 1px rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.06), 0 0 0 1px rgba(249,115,22,0.12);
-  --glass-shimmer: rgba(255,255,255,0.06);
-  --glass-shimmer-static: rgba(255,255,255,0.04);
-  --glass-icon-bg: rgba(255,255,255,0.04);
-  --glass-icon-border: rgba(255,255,255,0.06);
-  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.03), 0 2px 8px rgba(0,0,0,0.30);
-  --glass-popover-bg: rgba(40,30,24,0.85);
-  --glass-popover-border: rgba(255,255,255,0.07);
-  --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.25);
-  /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
-  --glass-dialog-bg: rgba(40,30,24,0.66);
-  --glass-dialog-blur: 22px;
-  /* 更新弹框 + 更新日志 */
-  --accent-glow: rgba(249,115,22, 0.12);
-  --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(249,115,22,0.10), transparent);
 }

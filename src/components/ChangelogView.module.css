@@ -137,6 +137,12 @@
   font-weight: 700;
 }
 
+:global([data-theme="blossom"]) .categoryItem::before {
+  content: "♥";
+  color: var(--accent);
+  font-size: 9px;
+}
+
 /* ===== Collapse Toggle ===== */
 .collapseBtn {
   display: flex;

@@ -20,10 +20,11 @@ async function detectSubFormat(text: string): Promise<string> {
   return invoke<string>("detect_config_format", { text });
 }
 
-/** 共享的 detect 逻辑：内容类型为 config 时高分命中 */
+/** 共享的 detect 逻辑：优先读预分析特征，回退自行检测 */
 function detectConfig(ctx: TransformContext): number {
+  if (ctx.features?.config) return ctx.features.config.confidence;
+  // 回退（独立调用无 features 时）
   if (ctx.contentType === "config") return 0.9;
-  // 回退：文本看起来像 key=value 或 key: value
   const lines = ctx.text.trim().split("\n").slice(0, 10);
   const kvCount = lines.filter(
     (l) => /^[^#\s][^=:]*[=:]/.test(l.trim())

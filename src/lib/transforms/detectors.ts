@@ -24,7 +24,11 @@ const MIN_COLUMN_LINES = 2;
  * 把"每行一个值"的竖列文本解析为值数组。
  * 判定规则：
  * - 去掉空行后行数 ≥ MIN_COLUMN_LINES；
- * - 每行都是"单个值"：不含内部空白、不以 { 或 [ 开头（排除 JSON / 句子）。
+ * - 每行都是"单个值"：
+ *   - 含 tab 时取第一列（Excel 多列粘贴）；
+ *   - 允许至多一处内部空格且总长 ≤ 60（"New York" 类值）；
+ *   - 不含连续多空格（排除自然语言句子）；
+ *   - 不以 { 或 [ 开头（排除 JSON）。
  * 值一律保持文本输出（string[]）：列数据来源是文本（Excel / 查询结果单元格），
  * 提前转 number 会让 SQL IN 的引号选项对数字列失效，还会丢前导零与超 2^53 精度。
  */
@@ -41,15 +45,23 @@ export function parseColumnList(text: string): ColumnListInfo {
 
   if (lines.length < MIN_COLUMN_LINES) return fail;
 
-  const simple = lines.every(
-    (l) => !/\s/.test(l) && !l.startsWith("{") && !l.startsWith("["),
-  );
-  if (!simple) return fail;
+  const values: string[] = [];
+  for (const l of lines) {
+    // Tab 分隔：取第一列（Excel / 查询结果多列粘贴）
+    const field = l.includes("\t") ? l.split("\t")[0].trim() : l;
+    if (!field) return fail;
+    if (field.startsWith("{") || field.startsWith("[")) return fail;
+    // 连续多空格 → 自然语言句子，拒绝
+    if (/\s{2,}/.test(field)) return fail;
+    // 含单空格但过长 → 不像 ID/值，拒绝
+    if (/\s/.test(field) && field.length > 60) return fail;
+    values.push(field);
+  }
 
   // allNumeric 仅供检测评分使用；values 保持文本，引号交给下游 toSqlIn 的 quote 选项
-  const allNumeric = lines.every((l) => l !== "" && Number.isFinite(Number(l)));
+  const allNumeric = values.every((v) => v !== "" && Number.isFinite(Number(v)));
 
-  return { ok: true, count: lines.length, values: lines, allNumeric };
+  return { ok: true, count: values.length, values, allNumeric };
 }
 
 /** 便捷布尔判断 */

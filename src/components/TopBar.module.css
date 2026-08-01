@@ -150,14 +150,14 @@
 
 .focused {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-shadow), 0 2px 8px rgba(0, 120, 212, 0.1);
+  box-shadow: 0 0 0 3px var(--accent-shadow), 0 2px 8px var(--accent-shadow);
   background: var(--card-bg);
 }
 
 .hasHistory {
   /* 搜索历史下拉展开时，保持聚焦样式 */
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-shadow), 0 2px 8px rgba(0, 120, 212, 0.1);
+  box-shadow: 0 0 0 3px var(--accent-shadow), 0 2px 8px var(--accent-shadow);
   background: var(--card-bg);
 }
 
@@ -498,6 +498,15 @@
   z-index: 0;
 }
 
+/* blossom 主题：分段滑块染粉 + 圆形页签徽章粉化 */
+:global([data-theme="blossom"]) .segActiveIndicator {
+  background: linear-gradient(135deg, #FFFFFF 0%, #FFDDEC 100%);
+  box-shadow: 0 2px 8px rgba(206, 59, 112, 0.18), 0 0.5px 1px rgba(206, 59, 112, 0.08);
+}
+:global([data-theme="blossom"]) .circleTabActive .circleBadge {
+  background: linear-gradient(135deg, #F0568C, #CE3B70);
+}
+
 .segItemActive .segIcon,
 .segItemActive span {
   position: relative;
@@ -833,6 +842,14 @@
 .tbTile[data-hue="violet"] { --tile-hue: #8B5CF6; }
 .tbTile[data-hue="green"]  { --tile-hue: #10B981; }
 .tbTile[data-hue="cyan"]   { --tile-hue: #06B6D4; }
+
+/* blossom 主题：工具格色相重映射为粉/蓝糖果双色 */
+:global([data-theme="blossom"]) .tbTile[data-hue="amber"],
+:global([data-theme="blossom"]) .tbTile[data-hue="rose"],
+:global([data-theme="blossom"]) .tbTile[data-hue="violet"] { --tile-hue: #F0568C; }
+:global([data-theme="blossom"]) .tbTile[data-hue="sky"],
+:global([data-theme="blossom"]) .tbTile[data-hue="green"],
+:global([data-theme="blossom"]) .tbTile[data-hue="cyan"] { --tile-hue: #7EC8E3; }
 
 .tbText {
   min-width: 0;

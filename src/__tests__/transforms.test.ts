@@ -46,8 +46,11 @@ describe("parseColumnList", () => {
     expect(parseColumnList("\n\n").ok).toBe(false);
   });
 
-  it("rejects lines with inner whitespace", () => {
-    expect(parseColumnList("hello world\nfoo bar").ok).toBe(false);
+  it("allows short values with single space but rejects multi-space lines", () => {
+    // 单空格短值现在合法（如 "New York"）
+    expect(parseColumnList("hello world\nfoo bar").ok).toBe(true);
+    // 连续多空格（自然语言句子）仍拒绝
+    expect(parseColumnList("hello  world\nfoo  bar").ok).toBe(false);
   });
 
   it("rejects json-like lines", () => {
@@ -121,7 +124,7 @@ describe("jsonToInsert", () => {
   it("fails on non-array", () => {
     const r = jsonToInsert('{"a":1}');
     expect(r.ok).toBe(false);
-    expect(r.message).toBe("内容不是 JSON 数组");
+    expect(r.message).toContain("未找到可用的 JSON 数组");
   });
 
   it("fails on empty array", () => {
@@ -170,7 +173,6 @@ describe("transform registry", () => {
     // 通用文本变换命中（基线分）
     expect(ids).toContain("upper");
     expect(ids).toContain("lower");
-    expect(ids).toContain("quote");
     // 专业变换不命中
     expect(ids).not.toContain("sql-in");
     expect(ids).not.toContain("json-insert");
@@ -185,8 +187,11 @@ describe("transform registry", () => {
     expect(ids).not.toContain("sql-in");
   });
 
-  it("sql-in detect is 0 for non-json contentType", () => {
-    expect(getTransform("sql-in")!.detect({ text: '["a"]', contentType: "text" })).toBe(0);
+  it("sql-in detect self-detects JSON regardless of contentType", () => {
+    // 不再硬依赖后端 contentType：文本是合法 JSON 数组即命中
+    expect(getTransform("sql-in")!.detect({ text: '["a"]', contentType: "text" })).toBeGreaterThan(0);
+    // 非 JSON 文本仍然不命中
+    expect(getTransform("sql-in")!.detect({ text: "hello world", contentType: "text" })).toBe(0);
   });
 
   it("sql-in run outputs an IN clause", async () => {

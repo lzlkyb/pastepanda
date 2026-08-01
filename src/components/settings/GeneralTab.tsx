@@ -19,9 +19,8 @@ const THEME_PREVIEWS: Record<string, { bg: string; accent: string; text: string;
   "ocean-dark": { bg: "#060D14", accent: "#3B9EFF", text: "#8BA4C0", barBg: "#0A1628", bodyBg: "radial-gradient(130% 120% at 70% -5%, #14415F 0%, #0A2440 45%, #041225 100%)", lineBg: "#162B45" },
   "midnight":   { bg: "#09090B", accent: "#818CF8", text: "#A1A1AA", barBg: "#18181B", bodyBg: "radial-gradient(100% 80% at 50% -10%, #1C1832 0%, #0B0B13 55%, #07070C 100%)", lineBg: "#27272A" },
   "forest":     { bg: "#F2F7F5", accent: "#059669", text: "#78716C", barBg: "#fff", bodyBg: "linear-gradient(180deg, #F5F1E3 0%, #EAE5D1 55%, #DCD6BD 100%)", lineBg: "#D1D9D3" },
-  "blossom":    { bg: "#FFFBFD", accent: "#EC4899", text: "#A68A96", barBg: "#fff", bodyBg: "linear-gradient(160deg, #FFF0F6 0%, #FFDEEE 55%, #F9C6DD 100%)", lineBg: "#F3E8ED" },
-  "terminal":   { bg: "#0A0A0A", accent: "#22C55E", text: "#A3A3A3", barBg: "#141414", bodyBg: "radial-gradient(120% 120% at 50% 40%, #0A1408 0%, #000000 75%)", lineBg: "#262626" },
-  "sunset":     { bg: "#1C1410", accent: "#F97316", text: "#B8A99A", barBg: "#281E18", bodyBg: "linear-gradient(180deg, #2A1638 0%, #4A2150 38%, #8A3A5C 68%, #D96A5B 88%, #F0925F 100%)", lineBg: "#3D3028" },
+  "blossom":    { bg: "#FFF7FA", accent: "#F0568C", text: "#86596D", barBg: "#fff", bodyBg: "linear-gradient(168deg, #FFE4EF 0%, #FFC9DD 42%, #FFAECF 78%, #FF9BC4 100%)", lineBg: "#F9D3E2" },
+  "dawn":       { bg: "#FFF4E6", accent: "#E8734A", text: "#A08C72", barBg: "#fff", bodyBg: "linear-gradient(180deg, #FFF8EE 0%, #FFE9D2 42%, #FFD9AE 72%, #F9C78F 100%)", lineBg: "#F0DDC8" },
 };
 
 const CLEANUP_OPTIONS = [
@@ -418,8 +417,9 @@ export function GeneralTab({
               detail={<>
                 <p>6 种精心调配的主题，点击即可预览，实时生效。</p>
                 <p>💡 <b>海洋</b>：柔和护眼，适合长时间使用</p>
-                <p>💡 <b>终端</b>：程序员风格，代码感十足</p>
+                <p>💡 <b>晨曦</b>：暖阳晨光，温柔唤醒每一天</p>
                 <p>💡 <b>午夜</b>：暗色模式，夜间使用不刺眼</p>
+                <p>💡 <b>美乐蒂</b>：甜系卡通粉，爱心雨+官方立绘，少女心爆棚</p>
               </>}
             />
           </div>
@@ -456,10 +456,14 @@ export function GeneralTab({
                 <div style={{
                   height: 36, background: prev.bodyBg, padding: 6,
                   display: "flex", flexDirection: "column", gap: 3,
+                  position: "relative",
                 }}>
                   <div style={{ height: 5, borderRadius: 3, background: prev.barBg, width: "100%", border: `1px solid ${prev.lineBg}` }} />
                   <div style={{ height: 5, borderRadius: 3, background: prev.lineBg, width: "70%" }} />
                   <div style={{ height: 5, borderRadius: 3, background: prev.accent, width: "45%" }} />
+                  {t.key === "blossom" && (
+                    <span style={{ position: "absolute", right: 4, bottom: 2, fontSize: 10, lineHeight: 1 }}>💗</span>
+                  )}
                 </div>
               </button>
             );

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useAppStore } from "@/stores/appStore";
 import { fetchRealSourceIcon } from "@/lib/source-mappings";
 import styles from "./Sidebar.module.css";
+import melodyUrl from "@/assets/melody.png";
 
 /** 侧边栏分组项 */
 export interface SidebarGroup {
@@ -53,11 +54,21 @@ function SourceGroupIcon({ source, sourceIcon, fallbackEmoji }: { source: string
 }
 
 export function Sidebar({ open, activeGroupId, groups, onSelectGroup, onClose, onCreateGroup, onRenameGroup, onDeleteGroup, onChangeGroupColor }: SidebarProps) {
+  const theme = useAppStore((s) => s.config.theme);
+  const isBlossom = theme === "blossom";
+  // blossom 主题：预设色板/图标换甜美系（粉+蝴蝶结蓝在前）
+  const presetColors = isBlossom
+    ? ["#F0568C", "#7EC8E3", "#EC4899", "#A855F7", "#F97316", "#22C55E", "#3B82F6", "#F59E0B", "#14B8A6"]
+    : PRESET_COLORS;
+  const presetIcons = isBlossom
+    ? ["🎀", "💗", "🌸", "💌", "⭐", "📁", "🏷️", "📌", "🔥", "📝", "💡", "🔖"]
+    : PRESET_ICONS;
+  const defaultIcon = isBlossom ? "🎀" : "📁";
   const [listKey] = useState(() => crypto.randomUUID());
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newColor, setNewColor] = useState(PRESET_COLORS[0]);
-  const [newIcon, setNewIcon] = useState("📁");
+  const [newColor, setNewColor] = useState(presetColors[0]);
+  const [newIcon, setNewIcon] = useState(defaultIcon);
   const [contextGroup, setContextGroup] = useState<string | null>(null);
   const [contextPos, setContextPos] = useState({ x: 0, y: 0 });
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -107,8 +118,8 @@ export function Sidebar({ open, activeGroupId, groups, onSelectGroup, onClose, o
       onCreateGroup(trimmed, newColor, newIcon);
     }
     setNewName("");
-    setNewColor(PRESET_COLORS[0]);
-    setNewIcon("📁");
+    setNewColor(presetColors[0]);
+    setNewIcon(defaultIcon);
     setCreating(false);
   };
 
@@ -237,7 +248,7 @@ export function Sidebar({ open, activeGroupId, groups, onSelectGroup, onClose, o
         {creating && (
           <div className={styles.createRow}>
             <div className={styles.colorPicker}>
-              {PRESET_COLORS.map((c) => (
+              {presetColors.map((c) => (
                 <button
                   key={c}
                   className={`${styles.colorDot}${newColor === c ? ` ${styles.colorDotActive}` : ""}`}
@@ -248,7 +259,7 @@ export function Sidebar({ open, activeGroupId, groups, onSelectGroup, onClose, o
               ))}
             </div>
             <div className={styles.iconPicker}>
-              {PRESET_ICONS.map((icon) => (
+              {presetIcons.map((icon) => (
                 <button
                   key={icon}
                   className={`${styles.iconDot}${newIcon === icon ? ` ${styles.iconDotActive}` : ""}`}
@@ -278,7 +289,7 @@ export function Sidebar({ open, activeGroupId, groups, onSelectGroup, onClose, o
         {/* + 新建分组按钮 */}
         <button
           className={`${styles.item} ${styles.addGroupBtn}`}
-          onClick={() => { setCreating(true); setNewName(""); setNewColor(PRESET_COLORS[0]); setNewIcon("📁"); }}
+          onClick={() => { setCreating(true); setNewName(""); setNewColor(presetColors[0]); setNewIcon(defaultIcon); }}
           tabIndex={open ? 0 : -1}
         >
           <span className={styles.addIcon}>+</span>
@@ -305,6 +316,12 @@ export function Sidebar({ open, activeGroupId, groups, onSelectGroup, onClose, o
       </div>
 
       <div className={styles.footer}>
+        {isBlossom && (
+          <div className={styles.melodyFoot}>
+            <img className={styles.melodyFootImg} src={melodyUrl} alt="" draggable={false} />
+            <span className={styles.melodyFootText}>美乐蒂帮你收着 💗</span>
+          </div>
+        )}
         <button className={styles.collapseBtn} onClick={onClose} tabIndex={open ? 0 : -1}>
           <svg className={styles.collapseIcon} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M11 3L6 8l5 5" />
@@ -326,7 +343,7 @@ export function Sidebar({ open, activeGroupId, groups, onSelectGroup, onClose, o
           </button>
           <div className={styles.contextMenuLabel}>颜色</div>
           <div className={styles.contextMenuColors}>
-            {PRESET_COLORS.map((c) => (
+            {presetColors.map((c) => (
               <button
                 key={c}
                 className={`${styles.contextMenuColorDot}${(userGroups.find(g => g.id === contextGroup)?.color) === c ? ` ${styles.contextMenuColorDotActive}` : ""}`}

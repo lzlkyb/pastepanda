@@ -28,7 +28,11 @@ if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
 }
 invoke<{ theme?: string; window_animation?: boolean }>("get_config")
   .then((cfg) => {
-    applyTheme((cfg.theme as ThemeKey) || DEFAULT_THEME);
+    const themeKey = (cfg.theme as ThemeKey) || DEFAULT_THEME;
+    applyTheme(themeKey);
+    // 同步主题到本窗口独立 store：FullscreenEditor 内的 SkinScene 读 config.theme
+    // 渲染皮肤场景，不同步则场景停留在默认值，要等 theme-changed 广播才纠正
+    useAppStore.getState().updateConfig({ theme: themeKey });
     // 「窗口动画」关闭：no-anim 类让纯 CSS 入场/退场动画降级为即时显隐，
     // 同时同步到本窗口独立 store，使 ConfirmDialog 等走 useDialogAnim 的组件一致
     if (cfg.window_animation === false) {
@@ -39,8 +43,8 @@ invoke<{ theme?: string; window_animation?: boolean }>("get_config")
   .catch(() => { /* 读取失败时保持默认主题 */ });
 
 // 监听主窗口切主题广播，编辑器打开期间实时跟随（长驻编辑时感知明显）。
-// 本窗口不挂 SkinScene，applyTheme 更新 documentElement[data-theme] 即生效；
-// 同步 store 保持与其它独立窗口一致的写法。
+// applyTheme 更新 documentElement[data-theme] 使 CSS 变量生效；
+// 同步 store 驱动 FullscreenEditor 内的 SkinScene 场景层实时切换。
 listen<{ theme?: string }>("theme-changed", (e) => {
   const themeKey = (e.payload.theme as ThemeKey) || DEFAULT_THEME;
   applyTheme(themeKey);

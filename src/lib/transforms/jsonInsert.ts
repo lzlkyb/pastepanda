@@ -11,7 +11,7 @@
  * 字段顺序复用 parseJsonArray 的首次出现顺序，保证与 SQL IN 行为一致。
  */
 
-import { parseJsonArray, toSqlLiteral } from "@/lib/jsonToolbox";
+import { extractArrayFromJson, toSqlLiteral } from "@/lib/jsonToolbox";
 import type { Transform, TransformContext, TransformResult } from "./types";
 
 /** INSERT 生成选项 */
@@ -50,11 +50,11 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
  * 对象数组按字段并集生成多列；标量数组生成单列。
  */
 export function jsonToInsert(text: string, opts: InsertOptions = {}): InsertResult {
-  const info = parseJsonArray(text);
+  const info = extractArrayFromJson(text);
   if (!info.ok) {
     const message =
       info.reason === "invalid-json" ? "JSON 解析失败" :
-      info.reason === "not-array" ? "内容不是 JSON 数组" :
+      info.reason === "not-array" ? "未找到可用的 JSON 数组（顶层数组或对象内的数组字段）" :
       "数组为空，无法生成 INSERT";
     return { ok: false, message };
   }
@@ -95,11 +95,13 @@ export const jsonInsertTransform: Transform = {
   icon: "table",
   group: "json",
   detect(ctx: TransformContext): number {
-    if (ctx.contentType !== "json") return 0;
-    const info = parseJsonArray(ctx.text);
+    // 优先读预分析特征，回退直接解析（兼容测试手动构造 ctx）
+    const info = ctx.features?.json?.arrayInfo ?? extractArrayFromJson(ctx.text);
     if (!info.ok) return 0;
     // INSERT 对对象数组（多列）价值最高
-    return info.elemType === "object" ? 0.8 : 0.5;
+    let score = info.elemType === "object" ? 0.8 : 0.5;
+    if (info.sourceField) score -= 0.05;
+    return score;
   },
   run(text: string, opts?: Record<string, unknown>): TransformResult {
     const r = jsonToInsert(text, (opts ?? {}) as InsertOptions);

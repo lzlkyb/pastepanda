@@ -10,6 +10,7 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
   const addSearchHistory = useAppStore((s) => s.addSearchHistory);
   const removeSearchHistory = useAppStore((s) => s.removeSearchHistory);
   const clearSearchHistory = useAppStore((s) => s.clearSearchHistory);
+  const theme = useAppStore((s) => s.config.theme);
 
   const [focused, setFocused] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -88,7 +89,7 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
       data-tauri-drag-region="false"
       style={{ position: "relative" }}
     >
-      <span className={styles.searchIcon}>🔍</span>
+      <span className={styles.searchIcon}>{theme === "blossom" ? "💗" : "🔍"}</span>
       <input
         ref={inputRef}
         type="text"

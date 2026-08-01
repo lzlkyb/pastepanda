@@ -129,9 +129,8 @@ const THEME_MAP: Record<string, string> = {
   ocean: "github-light-default",
   forest: "everforest-light",
   blossom: "rose-pine-dawn",
+  dawn: "catppuccin-latte",
   midnight: "github-dark-default",
-  terminal: "dark-plus",
-  sunset: "dracula",
 };
 
 let highlighter: HighlighterCore | null = null;
@@ -146,9 +145,8 @@ async function getHighlighter(): Promise<HighlighterCore> {
           import("shiki/themes/github-light-default.mjs"),
           import("shiki/themes/everforest-light.mjs"),
           import("shiki/themes/rose-pine-dawn.mjs"),
+          import("shiki/themes/catppuccin-latte.mjs"),
           import("shiki/themes/github-dark-default.mjs"),
-          import("shiki/themes/dark-plus.mjs"),
-          import("shiki/themes/dracula.mjs"),
         ],
         langs: [
           import("shiki/langs/python.mjs"),

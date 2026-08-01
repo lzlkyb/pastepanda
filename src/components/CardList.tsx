@@ -17,6 +17,7 @@ import { ClipboardList, Copy, Search, Zap, CheckSquare, Square, FileDown, Trash2
 import { Timeline } from "@/components/Timeline";
 import Lenis from "lenis";
 import styles from "./CardList.module.css";
+import melodyUrl from "@/assets/melody.png";
 import { useLoadMore } from "@/hooks/useLoadMore";
 import { useVirtualScroll } from "@/hooks/useVirtualScroll";
 import { prefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
@@ -526,6 +527,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   // ── 时间轴设置 ──
   const timelineEnabled = useAppStore((s) => s.config.timeline_enabled);
   const sequentialHotkey = useAppStore((s) => s.config.sequential_hotkey);
+  const theme = useAppStore((s) => s.config.theme);
 
   // U44：Space 快速预览 — 图片/文件项打开对应详情窗（P3 起统一走 openEditor）
   useEffect(() => {
@@ -606,6 +608,9 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
             </div>
           ) : (
           <div className={styles.emptyState}>
+            {theme === "blossom" && !searchKeyword && !hasActiveFilter ? (
+              <img className={styles.emptyMelody} src={melodyUrl} alt="" draggable={false} />
+            ) : (
             <div className={styles.emptyIconWrap}>
               <div className={styles.emptyRing} />
               <div className={styles.emptyIcon}>
@@ -619,20 +624,25 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                 )}
               </div>
             </div>
+            )}
             <div style={{ textAlign: "center" }}>
               <p className={styles.emptyTitle}>
                 {searchKeyword
                   ? `没有找到 "${searchKeyword}" 的相关记录`
                   : hasActiveFilter
                     ? "没有符合条件的记录"
-                    : "剪贴板是空的"}
+                    : theme === "blossom"
+                      ? "剪贴板空空的～"
+                      : "剪贴板是空的"}
               </p>
               <p className={styles.emptyDesc}>
                 {searchKeyword
                   ? "试试调整关键词，或检查拼写是否正确"
                   : hasActiveFilter
                     ? "当前筛选条件下没有匹配的记录，试试放宽部分条件"
-                    : "复制任意内容，它会自动出现在这里"}
+                    : theme === "blossom"
+                      ? "复制任意内容，美乐蒂帮你收着 💗"
+                      : "复制任意内容，它会自动出现在这里"}
               </p>
               {hasActiveFilter && (
                 <div className={styles.emptyActions}>

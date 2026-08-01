@@ -187,7 +187,7 @@ describe("sqlInFromJson", () => {
   it("reports non-array", () => {
     const r = sqlInFromJson('{"id":1}');
     expect(r.ok).toBe(false);
-    expect(r.message).toContain("不是 JSON 数组");
+    expect(r.message).toContain("未找到可用的 JSON 数组");
   });
 
   it("reports empty array", () => {

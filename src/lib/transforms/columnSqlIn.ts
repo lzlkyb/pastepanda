@@ -16,7 +16,7 @@ export const columnToSqlInTransform: Transform = {
   icon: "rows",
   group: "sql",
   detect(ctx: TransformContext): number {
-    const info = parseColumnList(ctx.text);
+    const info = ctx.features?.columnList ?? parseColumnList(ctx.text);
     if (!info.ok) return 0;
     // 行数越多越像列数据，0.5 起步、封顶 0.9
     return Math.min(0.5 + info.count * 0.05, 0.9);

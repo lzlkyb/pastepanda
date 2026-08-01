@@ -17,6 +17,8 @@ function fail(message: string): TransformResult {
 
 /** 检测文本是否像日志 */
 function looksLikeLog(ctx: TransformContext): number {
+  // 优先读预分析特征
+  if (ctx.features?.log) return ctx.features.log.confidence;
   if (ctx.contentType === "log") return 0.95;
   const t = ctx.text;
   // 多行 + 包含时间戳模式 + 级别关键字

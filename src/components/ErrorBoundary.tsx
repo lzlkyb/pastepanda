@@ -1,5 +1,6 @@
 import { Component, ErrorInfo, ReactNode } from "react";
 import { logger } from "@/lib/logger";
+import melodyUrl from "@/assets/melody.png";
 
 interface Props {
   children: ReactNode;
@@ -38,11 +39,25 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       if (this.props.fallback) return this.props.fallback;
 
+      // class 组件无法用 hook，直接读 documentElement 的 data-theme（applyTheme 维护）
+      const isBlossom = document.documentElement.getAttribute("data-theme") === "blossom";
+
       return (
         <div className="error-init-state">
-          <div className="error-init-icon">💥</div>
-          <h3 className="error-init-title">界面渲染异常</h3>
-          <p className="error-init-desc">组件发生未预期的错误，请尝试刷新。</p>
+          <div className="error-init-icon">
+            {isBlossom ? (
+              <img
+                src={melodyUrl}
+                alt=""
+                draggable={false}
+                style={{ width: 64, height: 64, objectFit: "contain", filter: "drop-shadow(0 6px 16px rgba(240, 86, 140, 0.28))" }}
+              />
+            ) : "💥"}
+          </div>
+          <h3 className="error-init-title">{isBlossom ? "美乐蒂迷路了…" : "界面渲染异常"}</h3>
+          <p className="error-init-desc">
+            {isBlossom ? "组件发生未预期的错误，美乐蒂帮你记下了，请尝试刷新。" : "组件发生未预期的错误，请尝试刷新。"}
+          </p>
           <p className="error-init-detail">{this.state.error?.message || "未知错误"}</p>
           <div className="error-init-actions">
             <button

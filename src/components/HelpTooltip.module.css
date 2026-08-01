@@ -95,6 +95,10 @@
   color: var(--text-primary);
 }
 
+:global([data-theme="blossom"]) .bubbleTitle {
+  color: var(--accent-strong);
+}
+
 .bubbleClose {
   width: 20px;
   height: 20px;

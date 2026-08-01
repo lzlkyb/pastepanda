@@ -1,13 +1,14 @@
 /**
  * SkinScene — 皮肤场景层
  *
- * 为特定主题在窗口背景渲染"世界"氛围（飘落花瓣 / 深海光柱气泡 / 终端字符雨）。
+ * 为特定主题在窗口背景渲染"世界"氛围（美乐蒂爱心雨 / 深海光柱气泡 / 晨曦流云）。
  * 固定铺满视口、z-index: 0、pointer-events: none：
  * 衬在玻璃卡片（cardWrap z-index: 1）之后，透过半透明卡片可见，不干扰任何交互。
  * 粒子参数在挂载时随机生成一次（useMemo），之后仅跑 CSS 动画，性能开销极小。
  */
 import { useMemo } from "react";
 import { useAppStore } from "@/stores/appStore";
+import melodyUrl from "@/assets/melody.png";
 import styles from "./SkinScene.module.css";
 
 const rnd = (n: number) => Math.random() * n;
@@ -15,14 +16,43 @@ const rnd = (n: number) => Math.random() * n;
 export function SkinScene() {
   const theme = useAppStore((s) => s.config.theme);
 
-  // 樱花花瓣
-  const petals = useMemo(
+  // 美乐蒂爱心雨
+  const hearts = useMemo(
     () =>
-      Array.from({ length: 16 }, () => ({
-        left: rnd(110),
-        size: 10 + rnd(10),
-        dur: 7 + rnd(8),
+      Array.from({ length: 14 }, () => ({
+        left: rnd(100),
+        size: 10 + rnd(12),
+        dur: 8 + rnd(8),
         delay: -rnd(14),
+        color: ["#FF7BAC", "#FFA5C6", "#FF6FA5", "#FF8BB4"][Math.floor(rnd(4))],
+      })),
+    []
+  );
+  // 美乐蒂蝴蝶结（粉 / 蝴蝶结淡蓝双色）
+  const bows = useMemo(
+    () =>
+      Array.from({ length: 5 }, () => {
+        const blue = Math.random() < 0.4;
+        return {
+          left: rnd(90),
+          top: 10 + rnd(70),
+          size: 20 + rnd(16),
+          delay: -rnd(7),
+          color: blue ? "#8FD5EF" : "#FF87B5",
+          knot: blue ? "#5BB8DC" : "#F0568C",
+        };
+      }),
+    []
+  );
+  // 美乐蒂星光
+  const sparks = useMemo(
+    () =>
+      Array.from({ length: 8 }, () => ({
+        left: rnd(95),
+        top: rnd(80),
+        size: 6 + rnd(7),
+        delay: -rnd(3),
+        color: Math.random() < 0.6 ? "#FFD1E3" : "#CDEBF7",
       })),
     []
   );
@@ -48,16 +78,19 @@ export function SkinScene() {
       })),
     []
   );
-  // 终端字符雨
-  const glyphs = useMemo(() => {
-    const chars = "01<>{}/$#*+=%&パンダ";
-    return Array.from({ length: 22 }, () => {
-      const n = 3 + Math.floor(rnd(6));
-      let col = "";
-      for (let k = 0; k < n; k++) col += chars[Math.floor(rnd(chars.length))] + "\n";
-      return { left: rnd(100), dur: 6 + rnd(9), delay: -rnd(14), col };
-    });
-  }, []);
+  // 晨曦流云
+  const clouds = useMemo(
+    () =>
+      Array.from({ length: 6 }, () => ({
+        left: rnd(90),
+        top: 40 + rnd(220),
+        width: 150 + rnd(180),
+        opacity: 0.5 + rnd(0.4),
+        dur: 24 + rnd(18),
+        delay: -rnd(30),
+      })),
+    []
+  );
   // 海洋水面碎金
   const glints = useMemo(
     () =>
@@ -104,21 +137,44 @@ export function SkinScene() {
   if (theme === "blossom") {
     return (
       <div className={styles.scene} aria-hidden>
-        <div className={styles.haze} style={{ top: "15%" }} />
-        <div className={styles.haze} style={{ bottom: "8%", opacity: 0.6 }} />
-        {petals.map((p, i) => (
-          <span
+        <div className={styles.haze} style={{ top: "12%" }} />
+        <div className={styles.haze} style={{ bottom: "6%", opacity: 0.6 }} />
+        {hearts.map((h, i) => (
+          <svg
             key={i}
-            className={styles.petal}
-            style={{
-              left: `${p.left}%`,
-              width: p.size,
-              height: p.size * 0.75,
-              animationDuration: `${p.dur}s`,
-              animationDelay: `${p.delay}s`,
-            }}
-          />
+            className={styles.melodyHeart}
+            style={{ left: `${h.left}%`, width: h.size, animationDuration: `${h.dur}s`, animationDelay: `${h.delay}s` }}
+            viewBox="0 0 24 24"
+          >
+            <path
+              fill={h.color}
+              d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+            />
+          </svg>
         ))}
+        {bows.map((b, i) => (
+          <svg
+            key={i}
+            className={styles.melodyBow}
+            style={{ left: `${b.left}%`, top: `${b.top}%`, width: b.size, animationDelay: `${b.delay}s` }}
+            viewBox="0 0 48 30"
+          >
+            <path d="M24 15 C14 4, 3 6, 4 15 C3 24, 14 26, 24 15 Z" fill={b.color} />
+            <path d="M24 15 C34 4, 45 6, 44 15 C45 24, 34 26, 24 15 Z" fill={b.color} />
+            <circle cx="24" cy="15" r="4.5" fill={b.knot} />
+          </svg>
+        ))}
+        {sparks.map((s, i) => (
+          <svg
+            key={i}
+            className={styles.melodySpark}
+            style={{ left: `${s.left}%`, top: `${s.top}%`, width: s.size, animationDelay: `${s.delay}s` }}
+            viewBox="0 0 24 24"
+          >
+            <path fill={s.color} d="M12 0l2.5 9.5L24 12l-9.5 2.5L12 24l-2.5-9.5L0 12l9.5-2.5z" />
+          </svg>
+        ))}
+        <img className={styles.melodyChar} src={melodyUrl} alt="" draggable={false} />
       </div>
     );
   }
@@ -172,28 +228,6 @@ export function SkinScene() {
             style={{ left: `${p.left}%`, top: `${p.top}%`, animationDelay: `${p.delay}s` }}
           />
         ))}
-      </div>
-    );
-  }
-
-  if (theme === "terminal") {
-    return (
-      <div className={styles.scene} aria-hidden>
-        {glyphs.map((g, i) => (
-          <span
-            key={i}
-            className={styles.glyph}
-            style={{
-              left: `${g.left}%`,
-              animationDuration: `${g.dur}s`,
-              animationDelay: `${g.delay}s`,
-            }}
-          >
-            {g.col}
-          </span>
-        ))}
-        <div className={styles.scan} />
-        <div className={styles.crtGlow} />
       </div>
     );
   }
@@ -297,19 +331,27 @@ export function SkinScene() {
     );
   }
 
-  if (theme === "sunset") {
+  if (theme === "dawn") {
     return (
       <div className={styles.scene} aria-hidden>
-        <div className={styles.sunsetSun} />
-        <div className={styles.cloud} style={{ left: "14%", top: 110, width: 230, animationDuration: "26s" }} />
-        <div className={styles.cloud} style={{ left: "56%", top: 80, width: 290, animationDuration: "34s", animationDelay: "-10s" }} />
-        <div className={styles.cloud} style={{ left: "32%", top: 190, width: 190, opacity: 0.7, animationDuration: "30s", animationDelay: "-20s" }} />
-        <span className={styles.bird} style={{ top: 140, left: "100%", fontSize: 16 }}>⌄</span>
-        <span className={styles.bird} style={{ top: 120, left: "108%", fontSize: 12, animationDelay: "-6s" }}>⌄</span>
-        <svg className={styles.mountains} viewBox="0 0 1200 560" preserveAspectRatio="none">
-          <path d="M0,560 L0,460 Q300,410 600,455 Q900,495 1200,435 L1200,560 Z" fill="rgba(30,10,30,0.55)" />
-          <path d="M0,560 L0,505 Q400,465 800,502 Q1000,518 1200,498 L1200,560 Z" fill="rgba(20,6,22,0.78)" />
-        </svg>
+        <div className={styles.dawnSun} />
+        <div className={styles.dawnRay} style={{ left: "12%" }} />
+        <div className={styles.dawnRay} style={{ left: "38%", animationDelay: "-5s" }} />
+        <div className={styles.dawnRay} style={{ left: "64%", animationDelay: "-9s" }} />
+        {clouds.map((c, i) => (
+          <span
+            key={i}
+            className={styles.dawnCloud}
+            style={{
+              left: `${c.left}%`,
+              top: c.top,
+              width: c.width,
+              opacity: c.opacity,
+              animationDuration: `${c.dur}s`,
+              animationDelay: `${c.delay}s`,
+            }}
+          />
+        ))}
       </div>
     );
   }

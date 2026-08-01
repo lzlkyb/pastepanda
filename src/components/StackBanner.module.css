@@ -328,3 +328,99 @@
     display: none;
   }
 }
+
+/* ===== blossom 主题：橙 → 美乐蒂粉 ===== */
+:global([data-theme="blossom"]) .banner {
+  background: linear-gradient(135deg, rgba(240, 86, 140, 0.10), transparent 65%), var(--orange-bg);
+  border-color: color-mix(in srgb, #F0568C 30%, transparent);
+  box-shadow: 0 4px 16px rgba(240, 86, 140, 0.10);
+}
+
+:global([data-theme="blossom"]) .dot {
+  background: #F0568C;
+  animation-name: stackPulsePink;
+}
+
+@keyframes stackPulsePink {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(240, 86, 140, 0.4); }
+  50% { opacity: 0.7; box-shadow: 0 0 0 5px rgba(240, 86, 140, 0); }
+}
+
+:global([data-theme="blossom"]) .title {
+  color: var(--accent-strong);
+}
+
+:global([data-theme="blossom"]) .primaryBtn {
+  background: linear-gradient(135deg, #F0568C, #CE3B70);
+  box-shadow: 0 2px 8px rgba(206, 59, 112, 0.35);
+}
+
+:global([data-theme="blossom"]) .primaryBtn:hover:not(:disabled) {
+  box-shadow: 0 4px 12px rgba(206, 59, 112, 0.45);
+}
+
+:global([data-theme="blossom"]) .btn {
+  background: color-mix(in srgb, #F0568C 12%, transparent);
+  color: var(--accent-strong);
+  border-color: color-mix(in srgb, #F0568C 28%, transparent);
+}
+
+:global([data-theme="blossom"]) .btn:hover:not(:disabled) {
+  background: color-mix(in srgb, #F0568C 22%, transparent);
+}
+
+:global([data-theme="blossom"]) .ghostBtn {
+  color: var(--accent-strong);
+}
+
+:global([data-theme="blossom"]) .ghostBtn:hover {
+  border-color: color-mix(in srgb, #F0568C 30%, transparent);
+  background: color-mix(in srgb, #F0568C 10%, transparent);
+}
+
+:global([data-theme="blossom"]) .queue {
+  scrollbar-color: color-mix(in srgb, #F0568C 30%, transparent) transparent;
+}
+
+:global([data-theme="blossom"]) .queueEmpty {
+  color: var(--accent-strong);
+}
+
+:global([data-theme="blossom"]) .chip {
+  background: color-mix(in srgb, #F0568C 8%, transparent);
+  border-color: color-mix(in srgb, #F0568C 20%, transparent);
+}
+
+:global([data-theme="blossom"]) .ord {
+  background: color-mix(in srgb, #F0568C 16%, transparent);
+  color: var(--accent-strong);
+}
+
+:global([data-theme="blossom"]) .chipNext {
+  border-color: #F0568C;
+  background: color-mix(in srgb, #F0568C 16%, transparent);
+  box-shadow: 0 0 0 2px rgba(240, 86, 140, 0.18);
+}
+
+:global([data-theme="blossom"]) .chipNext .ord {
+  background: #F0568C;
+  color: #fff;
+  animation-name: stackPulsePink;
+}
+
+:global([data-theme="blossom"]) .nextTag {
+  background: linear-gradient(135deg, #F0568C, #CE3B70);
+  box-shadow: 0 1px 4px rgba(206, 59, 112, 0.5);
+}
+
+:global([data-theme="blossom"]) .prog {
+  background: color-mix(in srgb, #F0568C 18%, transparent);
+}
+
+:global([data-theme="blossom"]) .progFill {
+  background: linear-gradient(90deg, #F0568C, #CE3B70);
+}
+
+:global([data-theme="blossom"]) .footTxt {
+  color: var(--accent-strong);
+}

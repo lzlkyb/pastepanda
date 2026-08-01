@@ -10,7 +10,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.35);
+  /* 遮罩层主题化：blossom 为玫瑰色，其余主题中性灰黑（见 theme.css --overlay-bg） */
+  background: var(--overlay-bg);
 }
 
 /* 图层工具类 —— 叠加在 dialog-backdrop 上提升到更高层级 */
@@ -82,6 +83,15 @@
 
 .dialog-close:hover {
   background: var(--hover);
+}
+
+/* ===== blossom 主题：弹窗标题丝带前缀 + 关闭按钮粉化（全局生效） ===== */
+[data-theme="blossom"] .dialog-title::before {
+  content: "🎀 ";
+}
+[data-theme="blossom"] .dialog-close:hover {
+  background: var(--accent-light);
+  color: var(--accent-strong);
 }
 
 /* ===== Dialog Body ===== */

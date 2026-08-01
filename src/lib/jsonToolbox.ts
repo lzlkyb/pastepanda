@@ -57,6 +57,39 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+/** 分析一个已确认非空的数组：收集字段、判定主导类型 */
+function analyzeArray(arr: unknown[]): JsonArrayInfo {
+  // 收集字段（对象数组）：按首次出现顺序取键的并集
+  const fields: string[] = [];
+  const seen = new Set<string>();
+  for (const item of arr) {
+    if (isPlainObject(item)) {
+      for (const k of Object.keys(item)) {
+        if (!seen.has(k)) { seen.add(k); fields.push(k); }
+      }
+    }
+  }
+
+  // 主导类型判定（忽略 null/undefined）
+  const significant = arr.filter((v) => v !== null && v !== undefined);
+  let elemType: JsonElemType;
+  if (significant.length === 0) {
+    elemType = "mixed";
+  } else if (significant.every((v) => typeof v === "string")) {
+    elemType = "string";
+  } else if (significant.every((v) => typeof v === "number")) {
+    elemType = "number";
+  } else if (significant.every((v) => typeof v === "boolean")) {
+    elemType = "boolean";
+  } else if (significant.every(isPlainObject)) {
+    elemType = "object";
+  } else {
+    elemType = "mixed";
+  }
+
+  return { ok: true, count: arr.length, elemType, fields, values: arr };
+}
+
 /**
  * 解析一段文本为 JSON 数组并分析其结构。
  * 解析失败 / 非数组 / 空数组时 ok=false，UI 据此决定是否展示工具箱。
@@ -75,35 +108,59 @@ export function parseJsonArray(text: string): JsonArrayInfo {
   if (!Array.isArray(parsed)) return fail("not-array");
   if (parsed.length === 0) return fail("empty");
 
-  // 收集字段（对象数组）：按首次出现顺序取键的并集
-  const fields: string[] = [];
-  const seen = new Set<string>();
-  for (const item of parsed) {
-    if (isPlainObject(item)) {
-      for (const k of Object.keys(item)) {
-        if (!seen.has(k)) { seen.add(k); fields.push(k); }
+  return analyzeArray(parsed);
+}
+
+// ============ 对象内数组提取（P0 升级） ============
+
+/** extractArrayFromJson 的返回结构：在 JsonArrayInfo 基础上附加来源信息 */
+export interface ExtractedArrayInfo extends JsonArrayInfo {
+  /** 数组来自对象的哪个字段（顶层数组时无此字段） */
+  sourceField?: string;
+  /** 对象中所有非空数组字段名（供 UI 字段选择 chip） */
+  arrayFields?: string[];
+}
+
+/**
+ * 增强版 JSON 数组提取：
+ * 1. 顶层数组 → 直接命中（等价 parseJsonArray）
+ * 2. 顶层对象 → 扫描所有值为非空数组的字段，取最长的作为数据源
+ *
+ * 典型场景：接口返回 {"data":[...],"total":5} → 提取 data 数组。
+ * 不修改 parseJsonArray 本体，jsonInsert 等其他消费方按需切换。
+ */
+export function extractArrayFromJson(text: string): ExtractedArrayInfo {
+  // 优先走顶层数组
+  const direct = parseJsonArray(text);
+  if (direct.ok) return direct;
+  // 非 "not-array" 的失败（invalid-json / empty）直接透传
+  if (direct.reason !== "not-array") return direct;
+
+  // 尝试作为对象解析
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return direct;
+  }
+  if (!isPlainObject(parsed)) return direct;
+
+  // 扫描所有非空数组字段，取最长
+  const arrayFields: string[] = [];
+  let best: { field: string; arr: unknown[] } | null = null;
+  for (const [key, val] of Object.entries(parsed)) {
+    if (Array.isArray(val) && val.length > 0) {
+      arrayFields.push(key);
+      if (!best || val.length > best.arr.length) {
+        best = { field: key, arr: val };
       }
     }
   }
 
-  // 主导类型判定（忽略 null/undefined）
-  const significant = parsed.filter((v) => v !== null && v !== undefined);
-  let elemType: JsonElemType;
-  if (significant.length === 0) {
-    elemType = "mixed";
-  } else if (significant.every((v) => typeof v === "string")) {
-    elemType = "string";
-  } else if (significant.every((v) => typeof v === "number")) {
-    elemType = "number";
-  } else if (significant.every((v) => typeof v === "boolean")) {
-    elemType = "boolean";
-  } else if (significant.every(isPlainObject)) {
-    elemType = "object";
-  } else {
-    elemType = "mixed";
-  }
+  if (!best) return direct; // 对象里没有任何数组字段
 
-  return { ok: true, count: parsed.length, elemType, fields, values: parsed };
+  const info = analyzeArray(best.arr);
+  return { ...info, sourceField: best.field, arrayFields };
 }
 
 /**
@@ -183,11 +240,11 @@ export interface SqlInResult {
  * 对象数组必须提供 opts.field（否则自动用 pickDefaultField 选默认字段）。
  */
 export function sqlInFromJson(text: string, opts: SqlInOptions = {}): SqlInResult {
-  const info = parseJsonArray(text);
+  const info = extractArrayFromJson(text);
   if (!info.ok) {
     const msg =
       info.reason === "invalid-json" ? "JSON 解析失败" :
-      info.reason === "not-array" ? "内容不是 JSON 数组" :
+      info.reason === "not-array" ? "未找到可用的 JSON 数组（顶层数组或对象内的数组字段）" :
       "数组为空，无法生成 IN 语句";
     return { ok: false, message: msg, info };
   }

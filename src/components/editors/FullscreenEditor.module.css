@@ -71,6 +71,9 @@
   background: linear-gradient(180deg, var(--header-bg-start, #fff) 0%, var(--app-bg, #F8F9FB) 100%);
   border-bottom: 1px solid var(--border-color, rgba(0, 0, 0, 0.06));
   flex-shrink: 0;
+  /* 皮肤场景：内容层统一 z-1，压在 SkinScene（fixed z-0）之上 */
+  position: relative;
+  z-index: 1;
 }
 
 .toolbarLeft {
@@ -356,6 +359,9 @@
   background: var(--header-bg-start, #fff);
   border-bottom: 1px solid var(--border-color, rgba(0, 0, 0, 0.04));
   flex-shrink: 0;
+  /* 皮肤场景：内容层统一 z-1，压在 SkinScene（fixed z-0）之上 */
+  position: relative;
+  z-index: 1;
 }
 
 .fmtBtn {
@@ -450,6 +456,8 @@
   display: flex;
   overflow: hidden;
   position: relative;
+  /* 皮肤场景：内容层统一 z-1，压在 SkinScene（fixed z-0）之上 */
+  z-index: 1;
 }
 
 /* ─── Editor Pane ─── */
@@ -739,6 +747,9 @@
   color: rgba(255, 255, 255, 0.85);
   font-size: 11px;
   flex-shrink: 0;
+  /* 皮肤场景：内容层统一 z-1，压在 SkinScene（fixed z-0）之上 */
+  position: relative;
+  z-index: 1;
 }
 
 .statusLeft, .statusRight {

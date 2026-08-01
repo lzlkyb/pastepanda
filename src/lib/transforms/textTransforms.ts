@@ -15,7 +15,6 @@
  */
 
 import { stripHtml as stripHtmlUtil } from "@/lib/utils";
-import { urlHostPath } from "@/lib/url";
 import { detectColor, toHex, toRgb, toHsl, type ParsedColor } from "@/lib/color";
 import { isCodeLike } from "@/lib/contentTypes";
 import type { Transform, TransformContext, TransformResult } from "./types";
@@ -25,7 +24,8 @@ const BASE = 0.25;
 
 /** 非空文本返回 score，空文本返回 0（空内容不进枢纽） */
 function base(ctx: TransformContext, score: number): number {
-  return ctx.text.trim() ? score : 0;
+  const empty = ctx.features ? ctx.features.stats.isEmpty : !ctx.text.trim();
+  return empty ? 0 : score;
 }
 
 /** 命中指定 contentType 返回 score，否则 0 */
@@ -46,7 +46,7 @@ const upper: Transform = {
   description: "全部转为大写字母",
   icon: "case-upper",
   group: "text",
-  detect: (ctx) => base(ctx, BASE),
+  detect: (ctx) => base(ctx, 0.1),
   run: (t) => ok(t.toUpperCase()),
 };
 
@@ -56,7 +56,7 @@ const lower: Transform = {
   description: "全部转为小写字母",
   icon: "case-lower",
   group: "text",
-  detect: (ctx) => base(ctx, BASE),
+  detect: (ctx) => base(ctx, 0.1),
   run: (t) => ok(t.toLowerCase()),
 };
 
@@ -67,7 +67,10 @@ const strip: Transform = {
   icon: "eraser",
   group: "text",
   // 首尾确有空白时更相关
-  detect: (ctx) => base(ctx, /^\s|\s$/.test(ctx.text) ? 0.5 : BASE),
+  detect: (ctx) => {
+    const hasEdge = ctx.features ? ctx.features.stats.hasEdgeWhitespace : /^\s|\s$/.test(ctx.text);
+    return base(ctx, hasEdge ? 0.5 : BASE);
+  },
   run: (t) => ok(t.replace(/^\s+|\s+$/g, "")),
 };
 
@@ -78,18 +81,11 @@ const stripLines: Transform = {
   icon: "pilcrow",
   group: "text",
   // 多行时更相关
-  detect: (ctx) => base(ctx, ctx.text.includes("\n") ? 0.45 : BASE),
+  detect: (ctx) => {
+    const multiline = ctx.features ? ctx.features.stats.isMultiline : ctx.text.includes("\n");
+    return base(ctx, multiline ? 0.45 : BASE);
+  },
   run: (t) => ok(t.split("\n").filter((l) => l.trim()).join("\n")),
-};
-
-const quote: Transform = {
-  id: "quote",
-  label: "引号包裹",
-  description: "用双引号包裹整段文本",
-  icon: "quote",
-  group: "text",
-  detect: (ctx) => base(ctx, BASE),
-  run: (t) => ok(`"${t}"`),
 };
 
 const stripHtml: Transform = {
@@ -99,7 +95,10 @@ const stripHtml: Transform = {
   icon: "remove-formatting",
   group: "text",
   // 确含 HTML 标签时高度相关
-  detect: (ctx) => base(ctx, /<[a-z][\s\S]*>/i.test(ctx.text) ? 0.7 : BASE),
+  detect: (ctx) => {
+    const hasHtml = ctx.features ? ctx.features.stats.hasHtml : /<[a-z][\s\S]*>/i.test(ctx.text);
+    return base(ctx, hasHtml ? 0.7 : BASE);
+  },
   run: (t) => ok(stripHtmlUtil(t)),
 };
 
@@ -116,49 +115,6 @@ const mdLink: Transform = {
   run: (t) => ok(`[${t.slice(0, 30)}](${t})`),
 };
 
-const plainUrl: Transform = {
-  id: "plain_url",
-  label: "纯链接文本",
-  description: "只保留 主机/路径，去掉协议与参数",
-  icon: "globe",
-  group: "web",
-  detect: (ctx) => forType(ctx, "link", 0.8),
-  run: (t) => ok(urlHostPath(t)),
-};
-
-const mailto: Transform = {
-  id: "mailto",
-  label: "mailto 链接",
-  description: "转为 mailto: 协议地址",
-  icon: "mail",
-  group: "web",
-  detect: (ctx) => forType(ctx, "email", 0.85),
-  run: (t) => ok(`mailto:${t.trim()}`),
-};
-
-const tel: Transform = {
-  id: "tel",
-  label: "tel 链接",
-  description: "转为 tel: 协议地址",
-  icon: "phone",
-  group: "web",
-  detect: (ctx) => forType(ctx, "phone", 0.85),
-  run: (t) => ok(`tel:${t.replace(/[- ]/g, "")}`),
-};
-
-const phoneCn: Transform = {
-  id: "phone_cn",
-  label: "+86 格式",
-  description: "规范为 +86 国际区号格式",
-  icon: "phone",
-  group: "web",
-  detect: (ctx) => forType(ctx, "phone", 0.8),
-  run: (t) => {
-    const digits = t.replace(/[- ()（）+]/g, "");
-    return ok(digits.startsWith("86") ? `+${digits}` : `+86${digits}`);
-  },
-};
-
 // ============ 代码 / Markdown ============
 
 const codeBlock: Transform = {
@@ -170,21 +126,6 @@ const codeBlock: Transform = {
   detect: (ctx) =>
     isCodeLike(ctx.contentType) ? base(ctx, 0.7) : forType(ctx, "markdown", 0.5),
   run: (t) => ok("```\n" + t + "\n```"),
-};
-
-const singleLine: Transform = {
-  id: "single_line",
-  label: "单行",
-  description: "多行合并为一行（; 分隔）",
-  icon: "minus",
-  group: "text",
-  detect: (ctx) =>
-    isCodeLike(ctx.contentType)
-      ? base(ctx, 0.65)
-      : ctx.text.includes("\n")
-        ? base(ctx, 0.3)
-        : 0,
-  run: (t) => ok(t.split("\n").map((l) => l.trim()).join("; ")),
 };
 
 // ============ 颜色（三个输出格式，各自独立卡片） ============
@@ -261,9 +202,8 @@ const pathName: Transform = {
 
 /** 全部文本变换（供 index.ts 批量注册） */
 export const textTransforms: Transform[] = [
-  upper, lower, strip, stripLines, quote, stripHtml,
-  mdLink, plainUrl, mailto, tel, phoneCn,
-  codeBlock, singleLine,
+  upper, lower, strip, stripLines, stripHtml,
+  mdLink, codeBlock,
   colorHex, colorRgb, colorHsl,
   pathBslash, pathFslash, pathName,
 ];

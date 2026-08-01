@@ -1,11 +1,13 @@
 import { useMemo } from "react";
 import { ExternalLink } from "lucide-react";
 import { useUpdate } from "@/contexts/UpdateContext";
+import { useAppStore } from "@/stores/appStore";
 import { VersionBadge } from "@/components/VersionBadge";
 import { UpdateBanner } from "@/components/UpdateBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { ChangelogView } from "@/components/ChangelogView";
 import aboutStyles from "../About.module.css";
+import melodyUrl from "@/assets/melody.png";
 
 const TECH_STACK = [
   { label: "Tauri 2", desc: "桌面框架", color: "#FFC131", icon: "⚙️" as React.ReactNode },
@@ -40,6 +42,8 @@ function useVersionStatus() {
 
 export function AboutTabContent({ appName, appVersion }: { appName: string; appVersion: string }) {
   const versionStatus = useVersionStatus();
+  const theme = useAppStore((s) => s.config.theme);
+  const isBlossom = theme === "blossom";
 
   const handleOpenProject = async () => {
     try {
@@ -53,7 +57,13 @@ export function AboutTabContent({ appName, appVersion }: { appName: string; appV
   return (
     <div className="dialog-body" style={{ "--dialog-body-padding": "28px 28px 24px" } as React.CSSProperties}>
       <div className={aboutStyles.aboutHero}>
-        <div className={aboutStyles.aboutIcon}><AppIcon size={64} /></div>
+        <div className={aboutStyles.aboutIcon}>
+          {isBlossom ? (
+            <img className={aboutStyles.aboutMelody} src={melodyUrl} alt="My Melody" draggable={false} />
+          ) : (
+            <AppIcon size={64} />
+          )}
+        </div>
         <div className={aboutStyles.aboutMeta}>
           <div className={aboutStyles.aboutName}>{appName}</div>
           <div className={aboutStyles.aboutVersionRow}>

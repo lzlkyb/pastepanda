@@ -249,6 +249,23 @@
   box-shadow: 0 0 12px var(--accent-shadow), 0 0 24px var(--accent-shadow);
 }
 
+/* blossom 主题：活跃节点圆底换心形，类型图标衬于其上 */
+:global([data-theme="blossom"]) .timelineNodeActive::before {
+  content: "💗";
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 24px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.92;
+  filter: drop-shadow(0 0 8px rgba(240, 86, 140, 0.55));
+}
+
 /* #8 Mini 模式：隐藏活跃节点蓝色圆底 */
 .timelineContainer:not(.expanded) .timelineNodeActive::before {
   opacity: 0;

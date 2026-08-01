@@ -442,6 +442,34 @@
   opacity: 1;
 }
 
+/* blossom 主题：页脚美乐蒂小立绘 + 萌文案 */
+.melodyFoot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 8px;
+}
+.melodyFootImg {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  flex-shrink: 0;
+  filter: drop-shadow(0 4px 10px rgba(240, 86, 140, 0.28));
+  animation: melodyFootFloat 3.2s ease-in-out infinite;
+}
+@keyframes melodyFootFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+.melodyFootText {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .collapseBtn {
   width: 100%;
   padding: 7px 10px;

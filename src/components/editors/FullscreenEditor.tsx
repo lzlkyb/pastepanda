@@ -23,6 +23,7 @@ import { syntaxHighlighting, defaultHighlightStyle, indentOnInput } from "@codem
 import { search, highlightSelectionMatches } from "@codemirror/search";
 import { THEMES, DEFAULT_THEME, type ThemeKey } from "@/lib/theme";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { SkinScene } from "@/components/SkinScene";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
@@ -743,6 +744,9 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
       className={styles.overlay}
       data-theme-mode={isDarkTheme ? "dark" : "light"}
     >
+      {/* 皮肤场景层：fixed z-0，衬于工具栏/编辑区（z-1）之后，
+          主题场景从透明 header（--header-bg-start: transparent）透出 */}
+      <SkinScene />
       {/* Toolbar（deep 拖拽区：按住文件名/图标/空白处可移动窗口，按钮自动豁免） */}
       <div className={styles.toolbar} data-tauri-drag-region="deep">
         <div className={styles.toolbarLeft}>

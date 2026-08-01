@@ -5,7 +5,7 @@
  * 这里只做适配（detect 评分 + run 结果整形），供变换枢纽统一调度。
  */
 
-import { parseJsonArray, pickDefaultField, sqlInFromJson, type SqlInOptions } from "@/lib/jsonToolbox";
+import { extractArrayFromJson, pickDefaultField, sqlInFromJson, type SqlInOptions, type ExtractedArrayInfo } from "@/lib/jsonToolbox";
 import type { Transform, TransformContext, TransformOptionSpec, TransformResult } from "./types";
 
 const QUOTE_OPTS = [
@@ -20,18 +20,24 @@ const WRAP_OPTS = [
   { value: "values", label: "VALUES" },
 ];
 
+/** 从 features 或回退直接解析获取数组信息 */
+function getArrayInfo(ctx: TransformContext): ExtractedArrayInfo {
+  return ctx.features?.json?.arrayInfo ?? extractArrayFromJson(ctx.text);
+}
+
 export const sqlInTransform: Transform = {
   id: "sql-in",
   label: "SQL IN",
-  description: "JSON 数组 → IN (...)",
+  description: "JSON 数组 / 对象内数组 → IN (...)",
   icon: "database",
   group: "json",
   detect(ctx: TransformContext): number {
-    if (ctx.contentType !== "json") return 0;
-    const info = parseJsonArray(ctx.text);
+    const info = getArrayInfo(ctx);
     if (!info.ok) return 0;
-    // 对象数组需要提字段，确定性略低
-    return info.elemType === "object" ? 0.85 : 0.95;
+    // 对象数组需要提字段，确定性略低；对象内提取比顶层数组再略低
+    let score = info.elemType === "object" ? 0.85 : 0.95;
+    if (info.sourceField) score -= 0.05; // 从对象字段提取，稍降权
+    return score;
   },
   run(text: string, opts?: Record<string, unknown>): TransformResult {
     const r = sqlInFromJson(text, (opts ?? {}) as SqlInOptions);
@@ -48,7 +54,7 @@ export const sqlInTransform: Transform = {
   // 与 run → sqlInFromJson 的 pickDefaultField 兜底一致）；标量数组无字段可选则不显示。
   optionsFor(ctx: TransformContext): TransformOptionSpec[] {
     const specs: TransformOptionSpec[] = [];
-    const info = parseJsonArray(ctx.text);
+    const info = getArrayInfo(ctx);
     if (info.ok && info.elemType === "object" && info.fields.length > 0) {
       specs.push({
         key: "field",

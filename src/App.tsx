@@ -16,7 +16,7 @@ import { pasteText, pasteImage, deleteHistory, togglePin, toggleWindow, saveFore
 import { resolveSource, getAutoTagIcon, getAutoTagColor } from "@/lib/source-mappings";
 import { migrateLegacyStorageKeys } from "@/lib/storageMigration";
 import { initRegexRules } from "@/lib/regexRules";
-import { Loader2, X } from "lucide-react";
+import { Loader2, X, Heart } from "lucide-react";
 import { BackToTop } from "@/components/BackToTop";
 import { ScrollProvider } from "@/contexts/ScrollContext";
 import { Sidebar, type SidebarGroup } from "@/components/Sidebar";
@@ -745,7 +745,11 @@ function App() {
     return (
       <div className={appStyles.appShell}>
         <div className={appStyles.loadingScreen}>
-          <Loader2 size={32} className="spin-icon" style={{ color: "var(--accent)" }} />
+          {config.theme === "blossom" ? (
+            <Heart size={32} className="spin-icon" style={{ color: "var(--accent)", fill: "var(--accent)" }} />
+          ) : (
+            <Loader2 size={32} className="spin-icon" style={{ color: "var(--accent)" }} />
+          )}
           <p className={appStyles.loadingText}>正在加载数据…</p>
         </div>
       </div>

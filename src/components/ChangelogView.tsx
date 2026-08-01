@@ -10,6 +10,7 @@ import {
   type ChangeCategory,
   type ChangelogEntry,
 } from "@/lib/changelog";
+import { MelodyEmpty } from "@/components/MelodyEmpty";
 import styles from "./ChangelogView.module.css";
 
 // ─── Category icon emoji mapping ────────────────────────
@@ -63,7 +64,7 @@ export function ChangelogView({ currentVersion, maxEntries = 10 }: ChangelogView
   };
 
   if (CHANGELOG.length === 0) {
-    return <div className={styles.empty}>暂无更新日志</div>;
+    return <div className={styles.empty}><MelodyEmpty size={64} />暂无更新日志</div>;
   }
 
   return (

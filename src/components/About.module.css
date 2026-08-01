@@ -21,6 +21,24 @@
   display: block;
   border-radius: 18px;
 }
+
+/* blossom 主题：英雄区换美乐蒂立绘（放开容器裁切，立绘自带透明底） */
+:global([data-theme="blossom"]) .aboutIcon {
+  overflow: visible;
+  background: transparent;
+}
+.aboutMelody {
+  width: 84px;
+  height: 84px;
+  object-fit: contain;
+  border-radius: 0;
+  filter: drop-shadow(0 8px 20px rgba(240, 86, 140, 0.3));
+  animation: aboutMelodyFloat 3.2s ease-in-out infinite;
+}
+@keyframes aboutMelodyFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
 .aboutMeta { flex: 1; min-width: 0; }
 .aboutName {
   font-size: 20px;

@@ -1,6 +1,6 @@
 /** 主题定义 — 6 套配色方案 */
 
-export type ThemeKey = "ocean" | "ocean-dark" | "midnight" | "forest" | "blossom" | "terminal" | "sunset";
+export type ThemeKey = "ocean" | "ocean-dark" | "midnight" | "forest" | "blossom" | "dawn";
 
 export interface Theme {
   key: ThemeKey;
@@ -14,9 +14,8 @@ export const THEMES: Theme[] = [
   { key: "ocean-dark", displayName: "深海", dark: true },
   { key: "midnight",   displayName: "午夜", dark: true },
   { key: "forest",     displayName: "森林", dark: false },
-  { key: "blossom",    displayName: "樱花", dark: false },
-  { key: "terminal",   displayName: "终端", dark: true },
-  { key: "sunset",     displayName: "日落", dark: true },
+  { key: "blossom",    displayName: "美乐蒂", dark: false },
+  { key: "dawn",       displayName: "晨曦", dark: false },
 ];
 
 export const DEFAULT_THEME: ThemeKey = "ocean-dark";

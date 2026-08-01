@@ -207,3 +207,10 @@
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
+
+/* blossom 主题：+N 指示器默认粉化 */
+:global([data-theme="blossom"]) .more {
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+}

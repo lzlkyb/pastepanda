@@ -258,10 +258,11 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     window.dispatchEvent(new StorageEvent("storage", { key: "tabStyle", newValue: style }));
   };
 
+  const isBlossom = config.theme === "blossom";
   const tabs: { key: SettingsTab; label: string; icon: string }[] = [
-    { key: "general", label: "通用", icon: "⚙" },
-    { key: "help", label: "帮助", icon: "📖" },
-    { key: "about", label: "关于", icon: "ℹ" },
+    { key: "general", label: "通用", icon: isBlossom ? "🎀" : "⚙" },
+    { key: "help", label: "帮助", icon: isBlossom ? "💌" : "📖" },
+    { key: "about", label: "关于", icon: isBlossom ? "💗" : "ℹ" },
   ];
 
   return (

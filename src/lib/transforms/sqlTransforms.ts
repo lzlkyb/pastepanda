@@ -17,6 +17,8 @@ function fail(message: string): TransformResult {
 
 /** 检测文本是否像 SQL */
 function looksLikeSql(ctx: TransformContext): number {
+  // 优先读预分析特征
+  if (ctx.features?.sql) return ctx.features.sql.confidence;
   const t = ctx.text.trim().toUpperCase();
   // 以主要 SQL 关键字开头
   if (/^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|WITH)\b/.test(t)) return 0.9;

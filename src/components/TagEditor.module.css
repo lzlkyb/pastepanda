@@ -2,7 +2,8 @@
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.3);
+  /* 遮罩层主题化：blossom 为玫瑰色，其余主题中性灰黑（见 theme.css --overlay-bg） */
+  background: var(--overlay-bg);
   display: flex;
   align-items: center;
   justify-content: center;

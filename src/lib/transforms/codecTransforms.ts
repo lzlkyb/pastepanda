@@ -50,9 +50,12 @@ const base64Decode: Transform = {
   icon: "unlock",
   group: "web",
   detect: (ctx) => {
+    // 优先读预分析特征
+    if (ctx.features?.base64) {
+      return ctx.features.base64.valid ? 0.85 : 0;
+    }
     const t = ctx.text.trim();
-    // 标准 Base64 字符集 + 长度是 4 的倍数
-    if (/^[A-Za-z0-9+/=\s]+$/.test(t) && t.length >= 4 && t.replace(/\s/g, "").length % 4 === 0) {
+    if (/^[A-Za-z0-9+/=_\-\s]+$/.test(t) && t.length >= 8) {
       return 0.85;
     }
     return 0;
@@ -60,7 +63,12 @@ const base64Decode: Transform = {
   run: (t) => {
     try {
       const cleaned = t.replace(/\s/g, "");
-      const binary = atob(cleaned);
+      // Base64URL → 标准 Base64
+      const std = cleaned.replace(/-/g, "+").replace(/_/g, "/");
+      // 补齐 padding
+      const padLen = (4 - (std.length % 4)) % 4;
+      const padded = std + "=".repeat(padLen);
+      const binary = atob(padded);
       const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
       return ok(new TextDecoder().decode(bytes));
     } catch {
@@ -88,9 +96,10 @@ const urlDecode: Transform = {
   icon: "unlink",
   group: "web",
   detect: (ctx) => {
-    // 包含 %XX 模式
+    if (ctx.features?.urlEncoded) {
+      return ctx.features.urlEncoded.hasPattern ? 0.85 : 0;
+    }
     if (/%[0-9A-Fa-f]{2}/.test(ctx.text)) return 0.85;
-    // 包含 + 号（表单编码的空格）
     if (ctx.text.includes("+") && /\w\+\w/.test(ctx.text)) return 0.5;
     return 0;
   },
@@ -215,8 +224,8 @@ const jwtDecode: Transform = {
   icon: "key",
   group: "web",
   detect: (ctx) => {
+    if (ctx.features?.jwt) return ctx.features.jwt.valid ? 0.95 : 0;
     const t = ctx.text.trim();
-    // JWT 格式：xxx.yyy.zzz（三段 Base64URL）
     if (/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/.test(t)) return 0.95;
     return 0;
   },
@@ -269,8 +278,8 @@ const timestampToDate: Transform = {
   icon: "clock",
   group: "text",
   detect: (ctx) => {
+    if (ctx.features?.timestamp) return ctx.features.timestamp.isTimestamp ? 0.9 : 0;
     const t = ctx.text.trim();
-    // 10 位（秒）或 13 位（毫秒）纯数字
     if (/^\d{10}$/.test(t)) return 0.9;
     if (/^\d{13}$/.test(t)) return 0.9;
     return 0;
@@ -300,8 +309,8 @@ const dateToTimestamp: Transform = {
   icon: "clock",
   group: "text",
   detect: (ctx) => {
+    if (ctx.features?.date) return ctx.features.date.looksLikeDate ? 0.8 : 0;
     const t = ctx.text.trim();
-    // ISO 格式或常见日期格式
     if (/^\d{4}[-/]\d{2}[-/]\d{2}/.test(t)) return 0.8;
     return 0;
   },

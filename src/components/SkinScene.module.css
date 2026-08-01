@@ -11,18 +11,48 @@
   overflow: hidden;
 }
 
-/* ============ 樱花 · 飘落花瓣 + 粉色雾霭 ============ */
-.petal {
+/* ============ 美乐蒂 · 爱心雨 + 蝴蝶结 + 星光 + 官方立绘 ============ */
+.melodyHeart {
   position: absolute;
   top: -30px;
-  border-radius: 60% 40% 60% 40%;
-  background: #ffc4dd;
-  box-shadow: 0 0 10px rgba(255, 160, 210, 0.75);
-  animation: petalFall linear infinite;
+  animation: melodyHeartFall linear infinite;
+  filter: drop-shadow(0 0 6px rgba(255, 140, 190, 0.5));
 }
-@keyframes petalFall {
-  0%   { transform: translate(0, -40px) rotate(0deg); }
-  100% { transform: translate(-90px, 110vh) rotate(560deg); }
+@keyframes melodyHeartFall {
+  0%   { transform: translate(0, -40px) rotate(-10deg); }
+  50%  { transform: translate(-30px, 55vh) rotate(12deg); }
+  100% { transform: translate(12px, 112vh) rotate(-8deg); }
+}
+.melodyBow {
+  position: absolute;
+  opacity: 0.85;
+  animation: melodyBowFloat 7s ease-in-out infinite;
+}
+@keyframes melodyBowFloat {
+  0%, 100% { transform: translateY(0) rotate(-5deg); }
+  50%      { transform: translateY(-14px) rotate(6deg); }
+}
+.melodySpark {
+  position: absolute;
+  animation: melodySparkTw 2.8s ease-in-out infinite;
+}
+@keyframes melodySparkTw {
+  0%, 100% { opacity: 0.15; transform: scale(0.7); }
+  50%      { opacity: 0.95; transform: scale(1); }
+}
+.melodyChar {
+  position: absolute;
+  right: 26px;
+  bottom: 60px;
+  width: 104px;
+  height: 104px;
+  object-fit: contain;
+  animation: melodyBob 5.5s ease-in-out infinite;
+  filter: drop-shadow(0 6px 12px rgba(200, 60, 120, 0.28));
+}
+@keyframes melodyBob {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50%      { transform: translateY(-14px) rotate(3deg); }
 }
 .haze {
   position: absolute;
@@ -82,31 +112,47 @@
   50%      { transform: translate(-30px, -36px); }
 }
 
-/* ============ 终端 · 字符雨 + 扫描线 + 暗角 ============ */
-.glyph {
+/* ============ 晨曦 · 朝阳 + 光柱 + 流云 ============ */
+.dawnSun {
   position: absolute;
-  top: -120px;
-  font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 13px;
-  line-height: 1.35;
-  color: #2ba356;
-  opacity: 0.6;
-  white-space: pre;
-  animation: matrixFall linear infinite;
+  right: 70px;
+  top: 46px;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fffdf5 0%, #ffe3ae 40%, rgba(255,196,130,0) 72%);
+  filter: blur(2px);
+  animation: dawnSunPulse 9s ease-in-out infinite;
 }
-@keyframes matrixFall {
-  from { transform: translateY(-120px); }
-  to   { transform: translateY(110vh); }
+@keyframes dawnSunPulse {
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50%      { opacity: 1; transform: scale(1.06); }
 }
-.scan {
+.dawnRay {
   position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.22) 0 1px, transparent 1px 3px);
+  top: -60px;
+  width: 150px;
+  height: 58vh;
+  background: linear-gradient(180deg, rgba(255, 214, 150, 0.32), rgba(255, 214, 150, 0));
+  transform: skewX(-12deg);
+  filter: blur(14px);
+  animation: dawnRaySway 12s ease-in-out infinite;
 }
-.crtGlow {
+@keyframes dawnRaySway {
+  0%, 100% { opacity: 0.35; transform: skewX(-12deg); }
+  50%      { opacity: 0.7; transform: skewX(-7deg); }
+}
+.dawnCloud {
   position: absolute;
-  inset: 0;
-  background: radial-gradient(120% 100% at 50% 50%, transparent 60%, rgba(0, 0, 0, 0.4) 100%);
+  height: 24px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.75), rgba(255,224,196,0.45));
+  filter: blur(5px);
+  animation: dawnCloudDrift linear infinite;
+}
+@keyframes dawnCloudDrift {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-280px); }
 }
 
 /* ============ 海洋 · 晨光 + 帆影 + 波浪 + 水面碎金 ============ */
@@ -276,40 +322,4 @@
   25%      { opacity: 1; }
   50%      { transform: translate(24px, -30px); opacity: 0.8; }
   75%      { opacity: 1; }
-}
-
-/* ============ 日落 · 落日 + 流云 + 归鸟 + 山影 ============ */
-.sunsetSun {
-  position: absolute;
-  left: 50%;
-  bottom: 150px;
-  transform: translateX(-50%);
-  width: 170px;
-  height: 170px;
-  border-radius: 50%;
-  background: radial-gradient(circle, #ffe2ae 0%, #ffab72 46%, rgba(255,140,95,0) 72%);
-  filter: blur(3px);
-  animation: sunPulse 8s ease-in-out infinite;
-}
-@keyframes sunPulse {
-  0%, 100% { opacity: 0.9; }
-  50%      { opacity: 1; }
-}
-.cloud {
-  position: absolute;
-  height: 26px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(255,175,135,0.55), rgba(255,125,155,0.35));
-  filter: blur(6px);
-  animation: cloudDrift linear infinite;
-}
-@keyframes cloudDrift {
-  from { transform: translateX(0); }
-  to   { transform: translateX(-260px); }
-}
-.bird {
-  position: absolute;
-  color: #3d1f33;
-  opacity: 0.85;
-  animation: gullGlide 18s linear infinite;
 }

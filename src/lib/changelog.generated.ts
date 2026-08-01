@@ -3,6 +3,39 @@ import type { ChangelogEntry } from "./changelog";
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.4.5",
+    date: "2026-07-29",
+    summary: "**快捷粘贴面板（Alt+V）网格卡片被压成一条缝**：卡片高度只剩 ~1...",
+    categories: [
+      {
+        type: "fix",
+        name: "修复",
+        items: [
+          { text: "**快捷粘贴面板（Alt+V）网格卡片被压成一条缝**：卡片高度只剩 ~15px、内容被裁切且不产生滚动。成因是 `.qp-grid` 在定高的列方向 flex 父里拿到确定高度，而隐式行默认是 auto 轨道，`align-content` 默认 `stretch` 会把它们拉开均分剩余空间（叠上条目 `overflow:hidden` 使自动最小尺寸归零）。改用 `grid-auto-rows: max-content` 从机制上断开这条路径（stretch 只能拉伸 auto 轨道），并给卡片加 `min-height` 兜底 —— 原本只靠 `align-content: start` 一条防守，它只管“轨道怎么摆”不管“轨道多高”，一旦失效就复现" },
+          { text: "**预览文本上下对半被裁**：预览区原用 `flex + align-items:center`，多行文本会只显示中间几行、首尾各半行，看起来像渲染坏了。改用 `-webkit-line-clamp: 3` 从第一行开始截断、末行加省略号" },
+          { text: "**从独立窗口删记录后主窗口不刷新**：`delete_history` 命令不广播任何事件（而同文件 `update_history` 是广播的），快捷粘贴面板与主窗口是不同的 React 实例、不共享 store，导致在面板里删除/清除后主窗口列表与侧边栏计数一直是脏的。现广播 `history-items-deleted`，前端按 id 精确移除（幂等，不影响主窗口自己的乐观更新与撤销栈）。本修复覆盖所有“从其它窗口删记录”的场景，不只快捷粘贴" },
+          { text: "**快捷粘贴面板监听器泄漏**：`unlisten` 在 `.then()` 里才赋值而 cleanup 是同步执行，React StrictMode 在 dev 下的 mount→unmount→remount 会留下僵尸监听器，之后每次唤出面板都重复拉数据与重复加缩略图（同一模式在 App.tsx / TrayPopup.tsx 已分别修过，这是第三处）" },
+          { text: "快捷粘贴面板的 5 处 `console.error` 改为项目 `logger.error`（写持久日志）。这个面板是热键唤出的独立窗口，出问题时用户不会去开 devtools；尤其粘贴失败时面板已因失焦自动隐藏，toast 本身可能根本看不到，不写日志就彻底无迹可查" },
+          { text: "快捷粘贴面板卸载时未清理 toast 定时器" },
+        ],
+      },
+      {
+        type: "change",
+        name: "变更",
+        items: [
+          { text: "**快捷粘贴面板「清除」改为两步确认**：原本一点就抹掉全部非置顶历史，无确认；而这里的删除**无法撤销**（`undoStack` 是前端 store 状态，本窗口与主窗口是两个独立实例，就算写也不是同一个栈），而按钮就在标题栏右上角紧靠搜索框。现第一次点击变为带危险色描边的「确认清除 N 条？」，4 秒无操作自动复位。没用模态框是因为面板失焦即自动隐藏、且 Escape 已绑定为关闭面板，弹模态框会与这两个行为打架；两步确认失焦时自然重置" },
+        ],
+      },
+      {
+        type: "other",
+        name: "待办",
+        items: [
+          { text: "粘贴失败的 toast 仍可能不可见：面板失焦就被 OS 层隐藏，要让 toast 可见就得抢回焦点，而那会打断用户正在粘贴的目标窗口，比看不到提示更糟。本次只保证失败一定入日志，彻底解决需要 OS 通知或托盘气泡路径（全仓库目前无此能力）" },
+        ],
+      },
+    ],
+  },
+  {
     version: "5.4.4",
     date: "2026-07-29",
     summary: "**导入不再丢标签**：`import_history` 原本完全忽略 `...",

@@ -27,6 +27,7 @@ import { pasteText } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { FocusTrap } from "@/components/FocusTrap";
+import { MelodyEmpty } from "@/components/MelodyEmpty";
 import styles from "./TransformHub.module.css";
 
 /** 图标语义键 → lucide 组件（逻辑层保持纯净，图标在 UI 层映射） */
@@ -162,11 +163,15 @@ export function TransformHubDialog() {
     [item],
   );
 
-  // 当前内容命中的变换（按匹配度排序）
+  // 当前内容命中的变换（按匹配度排序），过滤 < 0.3 的噪声
   const scored = useMemo(
-    () => (item ? applicableTransforms({ text: item.text || "", contentType: item.content_type || item.type }) : []),
+    () => (item ? applicableTransforms({ text: item.text || "", contentType: item.content_type || item.type }).filter((s) => s.score >= 0.3) : []),
     [item],
   );
+
+  // 分区：推荐（≥0.6）vs 其他工具（0.3~0.6）
+  const recommended = useMemo(() => scored.filter((s) => s.score >= 0.6), [scored]);
+  const others = useMemo(() => scored.filter((s) => s.score < 0.6), [scored]);
 
   // 打开 / 切换内容时重置选项与复制反馈
   useEffect(() => {
@@ -249,22 +254,49 @@ export function TransformHubDialog() {
 
               <div className={styles.cards}>
                 {scored.length === 0 && (
-                  <div className={styles.empty}>此内容暂无可用变换</div>
+                  <div className={styles.empty}>
+                    <MelodyEmpty size={64} />
+                    此内容暂无可用变换
+                  </div>
                 )}
-                {scored.map(({ transform: t, score }) => (
-                  <TransformCard
-                    key={t.id}
-                    t={t}
-                    score={score}
-                    text={item.text || ""}
-                    opts={optsFor(t)}
-                    specs={specsFor(t, ctx)}
-                    copied={copiedId === t.id}
-                    onSetOpt={(k, v) => setOpt(t.id, k, v)}
-                    onCopy={() => void copyTransform(t)}
-                    onPaste={() => void pasteTransform(t)}
-                  />
-                ))}
+                {recommended.length > 0 && (
+                  <>
+                    <div className={styles.sectionLabel}>推荐</div>
+                    {recommended.map(({ transform: t, score }) => (
+                      <TransformCard
+                        key={t.id}
+                        t={t}
+                        score={score}
+                        text={item.text || ""}
+                        opts={optsFor(t)}
+                        specs={specsFor(t, ctx)}
+                        copied={copiedId === t.id}
+                        onSetOpt={(k, v) => setOpt(t.id, k, v)}
+                        onCopy={() => void copyTransform(t)}
+                        onPaste={() => void pasteTransform(t)}
+                      />
+                    ))}
+                  </>
+                )}
+                {others.length > 0 && (
+                  <>
+                    <div className={styles.sectionLabel}>其他工具</div>
+                    {others.map(({ transform: t, score }) => (
+                      <TransformCard
+                        key={t.id}
+                        t={t}
+                        score={score}
+                        text={item.text || ""}
+                        opts={optsFor(t)}
+                        specs={specsFor(t, ctx)}
+                        copied={copiedId === t.id}
+                        onSetOpt={(k, v) => setOpt(t.id, k, v)}
+                        onCopy={() => void copyTransform(t)}
+                        onPaste={() => void pasteTransform(t)}
+                      />
+                    ))}
+                  </>
+                )}
               </div>
             </motion.div>
           </FocusTrap>

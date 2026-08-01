@@ -347,7 +347,7 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
           <div className={styles.cardSub}>
             {item.pinned && (
               <span className={styles.cardPin}>
-                <Pin size={7} /> 置顶
+                {config.theme === "blossom" ? "🎀" : <Pin size={7} />} 置顶
               </span>
             )}
             {parsedColor && (

@@ -9,6 +9,8 @@
  * 图标用语义键（icon 字段）表示，由 UI 层映射为具体组件。
  */
 
+import type { ContentFeatures } from "./analyzer";
+
 /** 变换分组，用于枢纽面板分类展示 */
 export type TransformGroup = "json" | "sql" | "web" | "text" | "log";
 
@@ -18,6 +20,12 @@ export interface TransformContext {
   text: string;
   /** 后端粗分类：json | number | code | color | text */
   contentType: string;
+  /**
+   * 预分析特征集（Phase 1 产出）。
+   * applicableTransforms() 会自动填充；直接构造 ctx 时可省略（兼容旧调用）。
+   * detect() 优先读 features 里的预计算结果，避免重复解析。
+   */
+  features?: ContentFeatures;
 }
 
 /** run() 返回的元信息（供 UI 提示，如"已复制 N 个值"） */

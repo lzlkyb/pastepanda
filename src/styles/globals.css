@@ -38,6 +38,15 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 99px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+/* 美乐蒂皮肤：滚动条换丝带粉，更贴合甜系氛围 */
+[data-theme="blossom"] ::-webkit-scrollbar-thumb { background: rgba(240, 86, 140, 0.35); }
+[data-theme="blossom"] ::-webkit-scrollbar-thumb:hover { background: rgba(240, 86, 140, 0.6); }
+
+/* 美乐蒂空状态立绘浮动动画（MelodyEmpty 组件复用） */
+@keyframes melody-empty-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
 
 /* 选中文字前景色压在 accent-light 选中底上，浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
 ::selection { background-color: var(--accent-light); color: var(--accent-strong); }

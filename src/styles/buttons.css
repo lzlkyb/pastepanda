@@ -26,6 +26,11 @@
 .btn-primary:active {
   transform: scale(0.97);
 }
+/* 美乐蒂皮肤：主按钮换糖果粉渐变 + 胶囊圆角，更甜系 */
+[data-theme="blossom"] .btn-primary {
+  background: linear-gradient(135deg, #F0568C, #CE3B70);
+  border-radius: 999px;
+}
 
 .btn-secondary {
   display: inline-flex;

@@ -53,6 +53,15 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
+:global([data-theme="blossom"]) .tabBtnActive {
+  background: linear-gradient(135deg, #FFFFFF 0%, #FFDDEC 100%);
+  box-shadow: 0 2px 8px rgba(240, 86, 140, 0.16), 0 0.5px 1px rgba(206, 59, 112, 0.06);
+}
+
+:global([data-theme="blossom"]) .tabBtn:hover {
+  color: var(--accent-strong);
+}
+
 .tabIcon {
   font-size: 14px;
   line-height: 1;
@@ -899,6 +908,18 @@
 }
 .sToggle.on  .sToggleLabel { left: 7px;  color: #fff; }
 .sToggle.off .sToggleLabel { left: auto; right: 6px; color: var(--toggle-off-label); }
+/* 美乐蒂皮肤：开关白色旋钮内嵌一颗粉色爱心（绿色 on 轨道语义保留不变） */
+:global([data-theme="blossom"]) .sToggle .sToggleThumb::after {
+  content: "♥";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  line-height: 1;
+  color: #F0568C;
+}
 
 /* Hotkey / KBD button */
 .sKbd {
