@@ -2,6 +2,25 @@
 
 PastePanda 版本更新日志。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [5.5.0] - 2026-08-01
+
+### 新增
+- **变换枢纽两阶段检测管线**：新增 `analyzer.ts` 预分析器，`analyzeContent()` 一次遍历产出 12 维 ContentFeatures（JSON / Base64 / URL / JWT / SQL / 时间戳 / 日期 / 列数据 / 分隔值 / 颜色 / 日志 / 配置），所有 transform 的 `detect()` 优先读预计算特征，消除重复 JSON.parse / 正则 / split，典型 10KB 文本分析 < 5ms
+- **枢纽 UI 分区**：score ≥ 0.6 显示在「推荐」区，0.3~0.6 显示在「其他工具」区，< 0.3 不再出现；日常打开枢纽只看到 2~5 个高相关变换
+- **SQL IN 反向拆解**（sql-in-reverse）：从 `WHERE id IN ('a','b','c')` 提取值列表，支持每行一个 / JSON 数组 / 逗号分隔三种输出
+- **表格 → INSERT**（query-result-to-sql）：支持 MySQL 边框格式（`+----+`）和 Tab 分隔表格，自动生成标准 INSERT 语句，正确处理数字/字符串/NULL
+- **数值工具箱**（numberTransforms ×4）：进制转换（DEC→HEX/OCT/BIN）、字节换算（≥1024 自动显示）、千分位格式化、时间戳增强解读（含本地时间+时区）
+- **美乐蒂沉浸皮肤**（blossom 主题）：AppIcon 主题条件化（melody.png）、ErrorBoundary 美乐蒂立绘+「美乐蒂迷路了」文案、Sidebar 粉色板+蝴蝶结图标、StackBanner 粉化、MelodyEmpty 空态组件、遮罩层 `--overlay-bg` 变量化（6 主题各有独立色值）、FullscreenEditor 场景挂载
+
+### 变更
+- **砍噪声**：删除 quote / mailto / tel / phoneCn / plainUrl / singleLine 6 个极低频变换；upper / lower 基线分从 0.25 降至 0.1（仅在无专业变换命中时兜底出现）
+- **parseColumnList 放宽**：支持 Tab 分隔取首列（Excel 多列粘贴）、允许含单空格的短值（≤60 字符，如 "New York"）；仍拒绝连续多空格（自然语言）和 JSON 前缀
+- **Base64 检测放宽**：字符集扩展含 `-_`（Base64URL）、自动补 padding、最低长度从 4 提至 8 减少短串误判；`base64Decode` 的 run 同步支持 URL 安全字符集解码
+- **SQL IN 自检测**：不再依赖 contentType=json 硬门槛，`extractArrayFromJson` 同时支持顶层数组和对象内数组字段（取最长非空数组）
+
+### 修复
+- **粘贴到前台目标窗口错误**：`save_foreground_hwnd` 仅在窗口 show 路径刷新，焦点离开后保存的是旧 hwnd。现 App.tsx `onFocusChanged` blur 时无条件调 `saveForeground()`，Rust 侧排除 `GetDesktopWindow` / `GetShellWindow`
+
 ## [5.4.5] - 2026-07-29
 
 ### 修复
