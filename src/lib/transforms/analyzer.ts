@@ -9,7 +9,7 @@
  */
 
 import { extractArrayFromJson, type ExtractedArrayInfo } from "@/lib/jsonToolbox";
-import { parseColumnList, type ColumnListInfo } from "./detectors";
+import { parseColumnList, parseDelimitedValues, type ColumnListInfo } from "./detectors";
 import { detectColor, type ParsedColor } from "@/lib/color";
 
 // ============ 特征类型 ============
@@ -163,9 +163,6 @@ export interface ContentFeatures {
 }
 
 // ============ 分析逻辑 ============
-
-/** 支持的分隔符 */
-const DELIMITERS = [",", ";", "|", "\uFF0C"] as const;
 
 /** 廉价 Base64 字符集检测（含 Base64URL 的 - _） */
 const BASE64_RE = /^[A-Za-z0-9+/=_\-\s]+$/;
@@ -347,20 +344,11 @@ export function analyzeContent(text: string, contentType: string): ContentFeatur
   }
 
   // === 分隔值 ===
+  // 解析统一走 detectors.parseDelimitedValues（含外层括号剥除），
+  // 不在这里留第二份副本；外层 gate 仅作廉价早退，避开对大文本的无谓调用。
   if (!stats.isMultiline || stats.lines <= 3) {
-    const single = nonEmptyLines.join(" ");
-    for (const delim of DELIMITERS) {
-      const parts = single.split(delim);
-      if (parts.length < 3) continue;
-      const values = parts.map((p) => p.trim()).filter((p) => p.length > 0);
-      if (values.length < 3) continue;
-      const allSimple = values.every((v) => !/\s{2,}/.test(v) && v.length <= 100);
-      if (!allSimple) continue;
-      const longChinese = values.filter((v) => /[\u4e00-\u9fff]/.test(v) && v.length > 10);
-      if (longChinese.length > values.length * 0.5) continue;
-      features.delimited = { ok: true, values, delimiter: delim, count: values.length };
-      break;
-    }
+    const delimInfo = parseDelimitedValues(text);
+    if (delimInfo.ok) features.delimited = delimInfo;
   }
 
   // === 颜色 ===

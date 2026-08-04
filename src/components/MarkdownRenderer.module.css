@@ -12,6 +12,12 @@
   overflow-wrap: break-word;
   max-width: 900px;
   margin: 0 auto;
+  /* body 全局 user-select: none（桌面应用防误选 UI 文字），预览正文必须显式放开，
+     否则用户在全屏预览里既选不中也复制不了。
+     行号 .md-blknum / .md-cln 各自声明了 none 且特异性更高，
+     所以拖选正文不会把行号一起带进剪贴板。 */
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* ===== 标题 ===== */

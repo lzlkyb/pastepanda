@@ -3,6 +3,65 @@ import type { ChangelogEntry } from "./changelog";
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.5.1",
+    date: "2026-08-03",
+    summary: "**SQL IN（分隔值）丢掉首尾两个 ID**：`[id1, id2, ...",
+    categories: [
+      {
+        type: "fix",
+        name: "修复",
+        items: [
+          { text: "**SQL IN（分隔值）丢掉首尾两个 ID**：`[id1, id2, …]` 这种带方括号的横排列表，外层方括号没被剥掉，首尾两个值变成 `[076300754046516800301326` 与 `008403113226338402766385]`。生成的 SQL 语法合法、不报错，但那两条记录永远查不中——属静默数据错误。现已剥除外层 `[]` / `()` / `{}`，不成对则不剥（`func(a,b,c)` 不会被误伤），且只剥一层" },
+          { text: "**分隔值解析的两份重复实现合并**：`analyzer.ts` 的预计算特征与 `delimitedSqlIn.ts` 各留了一份逐行相同的解析代码，上述 bug 需两处同时改才生效（检测走预计算、执行走本地副本）。现统一到 `detectors.parseDelimitedValues`，双路径一致性由测试锁定" },
+          { text: "**全屏预览无法选中文字**：Markdown / CSV 表格 / JSON 表格 / 日志四个预览区都继承了 `body` 的 `user-select: none`（桌面应用防误选 UI 文字），导致预览里既选不中也复制不了。现已放开，并屏蔽渲染出来的行号列与类型徽章，复制内容不含这些噪声。JSON 结构树保持不放开——它已有「复制值 / 复制路径」按钮，拖选只会得到残缺的伪 JSON" },
+        ],
+      },
+      {
+        type: "other",
+        name: "已知问题",
+        items: [
+          { text: "日志预览拖选复制时，时间 / 级别 / 消息会粘连成 `2026-08-03 10:00:00ERROR消息`——三者之间的间距是 CSS 布局而非文本字符。需要原始格式请切「编辑源码」视图" },
+        ],
+      },
+    ],
+  },
+  {
+    version: "5.5.0",
+    date: "2026-08-01",
+    summary: "**变换枢纽两阶段检测管线**：新增 `analyzer.ts` 预分析器...",
+    categories: [
+      {
+        type: "feat",
+        name: "新增",
+        items: [
+          { text: "**变换枢纽两阶段检测管线**：新增 `analyzer.ts` 预分析器，`analyzeContent()` 一次遍历产出 12 维 ContentFeatures（JSON / Base64 / URL / JWT / SQL / 时间戳 / 日期 / 列数据 / 分隔值 / 颜色 / 日志 / 配置），所有 transform 的 `detect()` 优先读预计算特征，消除重复 JSON.parse / 正则 / split，典型 10KB 文本分析 < 5ms" },
+          { text: "**枢纽 UI 分区**：score ≥ 0.6 显示在「推荐」区，0.3~0.6 显示在「其他工具」区，< 0.3 不再出现；日常打开枢纽只看到 2~5 个高相关变换" },
+          { text: "**SQL IN 反向拆解**（sql-in-reverse）：从 `WHERE id IN ('a','b','c')` 提取值列表，支持每行一个 / JSON 数组 / 逗号分隔三种输出" },
+          { text: "**表格 → INSERT**（query-result-to-sql）：支持 MySQL 边框格式（`+----+`）和 Tab 分隔表格，自动生成标准 INSERT 语句，正确处理数字/字符串/NULL" },
+          { text: "**数值工具箱**（numberTransforms ×4）：进制转换（DEC→HEX/OCT/BIN）、字节换算（≥1024 自动显示）、千分位格式化、时间戳增强解读（含本地时间+时区）" },
+          { text: "**美乐蒂沉浸皮肤**（blossom 主题）：AppIcon 主题条件化（melody.png）、ErrorBoundary 美乐蒂立绘+「美乐蒂迷路了」文案、Sidebar 粉色板+蝴蝶结图标、StackBanner 粉化、MelodyEmpty 空态组件、遮罩层 `--overlay-bg` 变量化（6 主题各有独立色值）、FullscreenEditor 场景挂载" },
+        ],
+      },
+      {
+        type: "change",
+        name: "变更",
+        items: [
+          { text: "**砍噪声**：删除 quote / mailto / tel / phoneCn / plainUrl / singleLine 6 个极低频变换；upper / lower 基线分从 0.25 降至 0.1（仅在无专业变换命中时兜底出现）" },
+          { text: "**parseColumnList 放宽**：支持 Tab 分隔取首列（Excel 多列粘贴）、允许含单空格的短值（≤60 字符，如 \"New York\"）；仍拒绝连续多空格（自然语言）和 JSON 前缀" },
+          { text: "**Base64 检测放宽**：字符集扩展含 `-_`（Base64URL）、自动补 padding、最低长度从 4 提至 8 减少短串误判；`base64Decode` 的 run 同步支持 URL 安全字符集解码" },
+          { text: "**SQL IN 自检测**：不再依赖 contentType=json 硬门槛，`extractArrayFromJson` 同时支持顶层数组和对象内数组字段（取最长非空数组）" },
+        ],
+      },
+      {
+        type: "fix",
+        name: "修复",
+        items: [
+          { text: "**粘贴到前台目标窗口错误**：`save_foreground_hwnd` 仅在窗口 show 路径刷新，焦点离开后保存的是旧 hwnd。现 App.tsx `onFocusChanged` blur 时无条件调 `saveForeground()`，Rust 侧排除 `GetDesktopWindow` / `GetShellWindow`" },
+        ],
+      },
+    ],
+  },
+  {
     version: "5.4.5",
     date: "2026-07-29",
     summary: "**快捷粘贴面板（Alt+V）网格卡片被压成一条缝**：卡片高度只剩 ~1...",
