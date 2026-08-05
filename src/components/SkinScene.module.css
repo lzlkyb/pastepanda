@@ -11,6 +11,18 @@
   overflow: hidden;
 }
 
+/* 窗口失焦即暂停整层动画。
+   原因：托盘弹窗与快捷粘贴面板关闭时走的是 window.hide() 而非 close()，
+   WebView 实例与 DOM 仍存活，场景动画会在看不见的窗口里继续跑——
+   四个窗口（主窗 / 托盘弹窗 / 快捷面板 / 全屏编辑器）各挂一份 SkinScene，
+   实际常有 3 份并发，而任一时刻用户只看得见一份。
+   用暂停而非卸载：粒子位置是挂载时随机生成的，卸载重挂会让画面跳变。
+   animation-play-state 不继承，故必须用 * 覆盖全部子元素。 */
+.paused,
+.paused * {
+  animation-play-state: paused !important;
+}
+
 /* ============ 美乐蒂 · 爱心雨 + 蝴蝶结 + 星光 + 官方立绘 ============ */
 .melodyHeart {
   position: absolute;
@@ -72,7 +84,9 @@
   height: 62vh;
   background: linear-gradient(180deg, rgba(150, 225, 255, 0.34), rgba(150, 225, 255, 0));
   transform: skewX(-14deg);
-  filter: blur(16px);
+  /* blur 降 16px → 10px：raySway 每帧改 skewX，几何形变使模糊无法缓存、必须重算，
+     半径越大每帧代价越高。对比：.haze 的 blur(40px) 无动画，结果可缓存，故未动。 */
+  filter: blur(10px);
   animation: raySway 10s ease-in-out infinite;
 }
 @keyframes raySway {
@@ -135,7 +149,8 @@
   height: 58vh;
   background: linear-gradient(180deg, rgba(255, 214, 150, 0.32), rgba(255, 214, 150, 0));
   transform: skewX(-12deg);
-  filter: blur(14px);
+  /* 同 .ray：skewX 形变 + 大 blur 是每帧重算的组合，14px → 9px */
+  filter: blur(9px);
   animation: dawnRaySway 12s ease-in-out infinite;
 }
 @keyframes dawnRaySway {
@@ -215,7 +230,9 @@
   top: -40px;
   height: 220px;
   background: linear-gradient(100deg, rgba(139,124,246,0), rgba(139,124,246,0.16), rgba(56,189,248,0.14), rgba(139,124,246,0));
-  filter: blur(30px);
+  /* 本文件里最贵的一项：30px blur 叠 translateX + skewX 双形变，每帧重做全尺寸高斯模糊。
+     降到 12px；极光本身是低对比度渐变，观感差异小。 */
+  filter: blur(12px);
   animation: auroraSway 11s ease-in-out infinite;
 }
 @keyframes auroraSway {
@@ -288,7 +305,9 @@
   height: 130px;
   border-radius: 50%;
   background: rgba(255, 253, 245, 0.8);
-  filter: blur(32px);
+  /* mistMove 只动 translateX（纯位移，GPU 可缓存模糊后的纹理再平移），
+     成本低于带 skew 的光柱，故只适度降到 14px 保留朦胧感。 */
+  filter: blur(14px);
   animation: mistMove 16s ease-in-out infinite;
 }
 @keyframes mistMove {

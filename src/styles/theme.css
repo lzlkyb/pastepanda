@@ -103,7 +103,6 @@
   --update-badge-shadow: rgba(5, 150, 105, 0.4);
   /* 玻璃拟态 — 海洋浅色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让晨海场景透出） */
   --glass-card-bg: rgba(255,255,255,0.22);
-  --glass-card-blur: 5px;
   --glass-card-border: rgba(0,0,0,0.08);
   --glass-card-hover-border: rgba(0,0,0,0.14);
   --glass-card-hover-glow: rgba(2,132,199,0.10);
@@ -174,7 +173,6 @@
   --update-badge-shadow: rgba(56, 189, 248, 0.45);
   /* 玻璃拟态 — 午夜深色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让星夜场景透出） */
   --glass-card-bg: rgba(24,24,27,0.22);
-  --glass-card-blur: 5px;
   --glass-card-border: rgba(255,255,255,0.06);
   --glass-card-hover-border: rgba(255,255,255,0.14);
   --glass-card-hover-glow: rgba(129,140,248,0.10);
@@ -245,7 +243,6 @@
   --update-badge-shadow: rgba(8, 145, 178, 0.4);
   /* 玻璃拟态 — 森林浅色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让晨雾场景透出） */
   --glass-card-bg: rgba(255,255,255,0.22);
-  --glass-card-blur: 5px;
   --glass-card-border: rgba(0,0,0,0.07);
   --glass-card-hover-border: rgba(0,0,0,0.14);
   --glass-card-hover-glow: rgba(5,150,105,0.10);
@@ -316,7 +313,6 @@
   --update-badge-shadow: rgba(126, 200, 227, 0.4);
   /* 玻璃拟态 — 美乐蒂糖果粉浅色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让甜粉场景透出） */
   --glass-card-bg: rgba(255,255,255,0.22);
-  --glass-card-blur: 5px;
   --glass-card-border: rgba(0,0,0,0.07);
   --glass-card-hover-border: rgba(0,0,0,0.14);
   --glass-card-hover-glow: rgba(240,86,140,0.10);
@@ -387,7 +383,6 @@
   --update-badge-shadow: rgba(5, 150, 105, 0.4);
   /* 玻璃拟态 — 晨曦浅色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让晨光场景透出） */
   --glass-card-bg: rgba(255,255,255,0.22);
-  --glass-card-blur: 5px;
   --glass-card-border: rgba(0,0,0,0.07);
   --glass-card-hover-border: rgba(0,0,0,0.14);
   --glass-card-hover-glow: rgba(232,115,74,0.10);
@@ -458,7 +453,6 @@
   --update-badge-shadow: rgba(45,212,191,0.45);
   /* 玻璃拟态 — 深海深色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让海面场景透出） */
   --glass-card-bg: rgba(10,22,40,0.22);
-  --glass-card-blur: 5px;
   --glass-card-border: rgba(255,255,255,0.07);
   --glass-card-hover-border: rgba(255,255,255,0.15);
   --glass-card-hover-glow: rgba(59,158,255,0.12);

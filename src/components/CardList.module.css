@@ -48,9 +48,17 @@
 
   /* 玻璃拟态核心 — 全部来自主题变量 */
   background: var(--glass-card-bg);
-  /* 模糊强度走主题变量：皮肤主题覆盖为更弱模糊让场景透出，默认 12px */
-  backdrop-filter: blur(var(--glass-card-blur, 12px));
-  -webkit-backdrop-filter: blur(var(--glass-card-blur, 12px));
+  /* 卡片不做背景模糊（v5.5.2 GPU 优化，原值：blur(5px)，由已删除的 --glass-card-blur 提供）。
+     原因：这一行加在每一张卡片上，列表里几十张卡即几十个独立合成层，
+     而它们采样的正是下方每帧在变的 SkinScene 场景层——场景动一帧，
+     所有卡片的 backdrop 就得重新采样 + 重新模糊，代价是乘法而非加法。
+     卡片仍是半透明（--glass-card-bg 22%），皮肤场景照样透出，只是不再磨砂。
+     若日后觉得文字压在场景上太吵，优先提高 --glass-card-bg 的不透明度
+     （22% → 45~60%）而不是加回模糊——纯色合成几乎不花 GPU。
+     切记：改成 blur(0px) 等于白改——只要值不是 none，合成层与背景采样仍在，
+     省下的仅是高斯模糊本身。详见项目规则 8.3。 */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border: 1px solid var(--glass-card-border);
   box-shadow: var(--glass-card-shadow);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);

@@ -4,9 +4,17 @@
  * 为特定主题在窗口背景渲染"世界"氛围（美乐蒂爱心雨 / 深海光柱气泡 / 晨曦流云）。
  * 固定铺满视口、z-index: 0、pointer-events: none：
  * 衬在玻璃卡片（cardWrap z-index: 1）之后，透过半透明卡片可见，不干扰任何交互。
- * 粒子参数在挂载时随机生成一次（useMemo），之后仅跑 CSS 动画，性能开销极小。
+ * 粒子参数在挂载时随机生成一次（useMemo），之后仅跑 CSS 动画。
+ *
+ * 性能（原注释称“开销极小”，实测不成立，已修正）：
+ * 本组件被四个窗口各挂一份（App / TrayPopup / QuickPastePanel / FullscreenEditor），
+ * 而托盘弹窗与快捷面板关闭走的是 window.hide() 而非 close()，WebView 仍存活，
+ * 动画会在看不见的窗口里继续跑——常态是 3 份并发。再叠上卡片/面板的
+ * backdrop-filter（背后内容一变就得重新采样模糊），持续吃 GPU。
+ * 故失焦时给场景根加 .paused 暂停整层，任一时刻最多一份在跑。
  */
-import { useMemo } from "react";
+import { useMemo, useEffect, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "@/stores/appStore";
 import melodyUrl from "@/assets/melody.png";
 import styles from "./SkinScene.module.css";
@@ -16,10 +24,45 @@ const rnd = (n: number) => Math.random() * n;
 export function SkinScene() {
   const theme = useAppStore((s) => s.config.theme);
 
-  // 美乐蒂爱心雨
+  /**
+   * 窗口不可见 / 失焦时暂停整层动画。
+   * 初始值取 isVisible()（而非 isFocused）：主窗启动时可见但可能尚未获焦，
+   * 若用 focus 作初值会让场景开局就是冻住的；而隐藏的托盘/快捷窗口 isVisible 为假，
+   * 正好从一开始就不跑。之后由 onFocusChanged 驱动（获焦时必已可见）。
+   */
+  const [paused, setPaused] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      try {
+        const w = getCurrentWindow();
+        const visible = await w.isVisible();
+        if (cancelled) return;
+        setPaused(!visible);
+        const un = await w.onFocusChanged(({ payload: focused }) => {
+          if (!cancelled) setPaused(!focused);
+        });
+        // 异步注册期间可能已卸载（StrictMode 双调用），自行解绑避免泄漏
+        if (cancelled) un();
+        else unlisten = un;
+      } catch {
+        // 非 Tauri 环境（单测 / 浏览器预览）拿不到窗口 API，保持动画常开即可
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
+  const sceneCls = paused ? `${styles.scene} ${styles.paused}` : styles.scene;
+
+  // 美乐蒂爱心雨（14 → 10：粒子数直接决定常驻动画层数）
   const hearts = useMemo(
     () =>
-      Array.from({ length: 14 }, () => ({
+      Array.from({ length: 10 }, () => ({
         left: rnd(100),
         size: 10 + rnd(12),
         dur: 8 + rnd(8),
@@ -44,10 +87,10 @@ export function SkinScene() {
       }),
     []
   );
-  // 美乐蒂星光
+  // 美乐蒂星光（8 → 6）
   const sparks = useMemo(
     () =>
-      Array.from({ length: 8 }, () => ({
+      Array.from({ length: 6 }, () => ({
         left: rnd(95),
         top: rnd(80),
         size: 6 + rnd(7),
@@ -56,10 +99,10 @@ export function SkinScene() {
       })),
     []
   );
-  // 深海气泡
+  // 深海气泡（12 → 9）
   const bubbles = useMemo(
     () =>
-      Array.from({ length: 12 }, () => ({
+      Array.from({ length: 9 }, () => ({
         left: rnd(100),
         size: 9 + rnd(22),
         dur: 8 + rnd(9),
@@ -68,10 +111,10 @@ export function SkinScene() {
       })),
     []
   );
-  // 深海浮游生物
+  // 深海浮游生物（20 → 12）
   const plankton = useMemo(
     () =>
-      Array.from({ length: 20 }, () => ({
+      Array.from({ length: 12 }, () => ({
         left: rnd(100),
         top: rnd(100),
         delay: -rnd(3),
@@ -91,20 +134,22 @@ export function SkinScene() {
       })),
     []
   );
-  // 海洋水面碎金
+  // 海洋水面碎金（26 → 14）
+  // 这 26 个点各自跑 opacity 闪烁，自身很便宜，但它们衬在所有卡片之下，
+  // 每帧变化会持续使几十张卡片的 backdrop-filter 失效重算——海洋主题的主要开销在此。
   const glints = useMemo(
     () =>
-      Array.from({ length: 26 }, () => ({
+      Array.from({ length: 14 }, () => ({
         left: rnd(100),
         top: 55 + rnd(38),
         delay: -rnd(3),
       })),
     []
   );
-  // 午夜满天星
+  // 午夜满天星（80 → 36：全项目最多的常驻动画元素）
   const stars = useMemo(
     () =>
-      Array.from({ length: 80 }, () => ({
+      Array.from({ length: 36 }, () => ({
         left: rnd(100),
         top: rnd(68),
         size: Math.random() < 0.85 ? 2 : 3,
@@ -113,20 +158,20 @@ export function SkinScene() {
       })),
     []
   );
-  // 森林落叶
+  // 森林落叶（10 → 8）
   const leaves = useMemo(
     () =>
-      Array.from({ length: 10 }, () => ({
+      Array.from({ length: 8 }, () => ({
         left: rnd(100),
         dur: 8 + rnd(8),
         delay: -rnd(10),
       })),
     []
   );
-  // 森林萤火虫
+  // 森林萤火虫（12 → 9）
   const flies = useMemo(
     () =>
-      Array.from({ length: 12 }, () => ({
+      Array.from({ length: 9 }, () => ({
         left: 5 + rnd(90),
         top: 40 + rnd(50),
         delay: -rnd(7),
@@ -136,7 +181,7 @@ export function SkinScene() {
 
   if (theme === "blossom") {
     return (
-      <div className={styles.scene} aria-hidden>
+      <div className={sceneCls} aria-hidden>
         <div className={styles.haze} style={{ top: "12%" }} />
         <div className={styles.haze} style={{ bottom: "6%", opacity: 0.6 }} />
         {hearts.map((h, i) => (
@@ -181,7 +226,7 @@ export function SkinScene() {
 
   if (theme === "ocean-dark") {
     return (
-      <div className={styles.scene} aria-hidden>
+      <div className={sceneCls} aria-hidden>
         <div className={styles.ray} style={{ left: "18%" }} />
         <div className={styles.ray} style={{ left: "46%", animationDelay: "-4s" }} />
         <div className={styles.ray} style={{ left: "72%", animationDelay: "-7s" }} />
@@ -234,7 +279,7 @@ export function SkinScene() {
 
   if (theme === "ocean") {
     return (
-      <div className={styles.scene} aria-hidden>
+      <div className={sceneCls} aria-hidden>
         <div className={styles.sun} />
         <span className={styles.gull} style={{ top: "14%", left: "100%", fontSize: 20 }}>⌄</span>
         <span className={styles.gull} style={{ top: "9%", left: "110%", fontSize: 14, animationDelay: "-5s" }}>⌄</span>
@@ -258,7 +303,7 @@ export function SkinScene() {
 
   if (theme === "midnight") {
     return (
-      <div className={styles.scene} aria-hidden>
+      <div className={sceneCls} aria-hidden>
         <div className={styles.aurora} />
         {stars.map((s, i) => (
           <span
@@ -286,7 +331,7 @@ export function SkinScene() {
 
   if (theme === "forest") {
     return (
-      <div className={styles.scene} aria-hidden>
+      <div className={sceneCls} aria-hidden>
         <svg className={styles.canopy} viewBox="0 0 1200 560" preserveAspectRatio="none">
           <g fill="#8fa383" opacity="0.4">
             <ellipse cx="300" cy="110" rx="95" ry="48" />
@@ -333,7 +378,7 @@ export function SkinScene() {
 
   if (theme === "dawn") {
     return (
-      <div className={styles.scene} aria-hidden>
+      <div className={sceneCls} aria-hidden>
         <div className={styles.dawnSun} />
         <div className={styles.dawnRay} style={{ left: "12%" }} />
         <div className={styles.dawnRay} style={{ left: "38%", animationDelay: "-5s" }} />
