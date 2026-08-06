@@ -4,7 +4,7 @@
  */
 
 // 粘贴引擎
-export { pasteText, pasteImage, copyOnly, copyImageOnly, copyFiles, saveForeground, toggleWindow } from "./paste";
+export { pasteText, pasteImage, pasteRich, copyOnly, copyImageOnly, copyRichOnly, copyFiles, saveForeground, toggleWindow } from "./paste";
 
 // 缓存管理
 export { getStats, getStatsDetail, fetchCounts, fetchSidebarCounts, invalidateCountsCache, clearImageCaches } from "./cache";

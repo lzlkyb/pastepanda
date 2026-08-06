@@ -1,0 +1,209 @@
+/* 图文混排（rich）富文本编辑器样式。
+   全部走主题 CSS 变量，随 data-theme 自动变色；不用 backdrop-filter
+   （列表卡片那轮 GPU 优化已经确认过：叠在动画背景上的逐元素模糊很贵）。*/
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── 元信息条（弹窗形态顶部） ── */
+.metaBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.metaBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
+}
+
+:global([data-theme="midnight"]) .metaBadge,
+:global([data-theme="ocean-dark"]) .metaBadge {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+.metaInfo {
+  color: var(--text-muted);
+}
+
+.metaDirty {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.fullscreenBtn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.1));
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.fullscreenBtn:hover {
+  background: var(--hover-bg, rgba(0, 0, 0, 0.04));
+  color: var(--text-primary);
+}
+
+/* ── 工具栏 ── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 6px;
+  background: var(--input-bg, rgba(0, 0, 0, 0.02));
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+
+.toolBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.13s ease, color 0.13s ease;
+}
+
+.toolBtn:hover {
+  background: var(--hover-bg, rgba(0, 0, 0, 0.06));
+  color: var(--text-primary);
+}
+
+.toolBtnActive {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+/* 不支持 color-mix 时的回退（旧 WebView）：用中性底色 + 强调色文字仍可辨认 */
+@supports not (background: color-mix(in srgb, red 50%, blue)) {
+  .toolBtnActive {
+    background: rgba(0, 0, 0, 0.08);
+  }
+}
+
+.toolSep {
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: var(--border-color, rgba(0, 0, 0, 0.1));
+}
+
+/* ── 编辑区 ── */
+.content {
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.1));
+  border-radius: 8px;
+  background: var(--input-bg, #fff);
+  overflow: hidden;
+}
+
+.content:focus-within {
+  border-color: var(--accent);
+}
+
+/* Tiptap 的可编辑区（ProseMirror 根节点）。图片/列表等子元素由 ProseMirror
+   直接生成在 DOM 里，拿不到 CSS Modules 的哈希类名，所以子选择器用 :global 包住。*/
+.proseArea {
+  padding: 12px 14px;
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: var(--text-primary);
+  outline: none;
+  overflow-y: auto;
+  max-height: 46vh;
+  word-wrap: break-word;
+}
+
+.proseArea :global(p) {
+  margin: 0 0 0.55em;
+}
+
+.proseArea :global(p:last-child) {
+  margin-bottom: 0;
+}
+
+.proseArea :global(img) {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 8px 0;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
+}
+
+/* 选中图片（点一下就能 Delete 删掉）时给个明确的选中态，
+   否则用户不知道当前选中的是哪张 */
+.proseArea :global(img.ProseMirror-selectednode) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.proseArea :global(ul),
+.proseArea :global(ol) {
+  margin: 0 0 0.55em;
+  padding-left: 1.4em;
+}
+
+.proseArea :global(li) {
+  margin: 0.15em 0;
+}
+
+/* 空文档占位提示 */
+.proseArea :global(p.is-editor-empty:first-child::before) {
+  content: "在此编辑图文内容…";
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--text-muted);
+}
+
+/* ── 全屏形态：编辑区充满可用高度（不再受 46vh 限制） ── */
+.fullscreenWrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 8px;
+  padding: 12px 16px 16px;
+}
+
+.fullscreenWrap .content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.fullscreenWrap .proseArea {
+  flex: 1;
+  max-height: none;
+  font-size: 14.5px;
+  padding: 18px 22px;
+}

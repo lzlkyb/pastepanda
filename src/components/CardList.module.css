@@ -57,8 +57,8 @@
      （22% → 45~60%）而不是加回模糊——纯色合成几乎不花 GPU。
      切记：改成 blur(0px) 等于白改——只要值不是 none，合成层与背景采样仍在，
      省下的仅是高斯模糊本身。详见项目规则 8.3。 */
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  backdrop-filter: var(--glass-card-filter, none);
+  -webkit-backdrop-filter: var(--glass-card-filter, none);
   border: 1px solid var(--glass-card-border);
   box-shadow: var(--glass-card-shadow);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -70,6 +70,7 @@
   position: absolute;
   inset: 0;
   border-radius: 16px;
+  display: var(--card-shimmer-display, block);
   background: linear-gradient(
     180deg,
     var(--glass-shimmer-static) 0%,
@@ -103,7 +104,7 @@
 /* hover: 动态光泽扫过动画 */
 .card:hover::after {
   opacity: 1;
-  animation: shimmer-sweep 1.6s ease-in-out infinite;
+  animation: var(--card-shimmer-anim, shimmer-sweep 1.6s ease-in-out infinite);
 }
 
 @keyframes shimmer-sweep {
@@ -295,6 +296,8 @@
 .bgGreen  { background: rgba(16, 185, 129, 0.12);  border-color: rgba(16, 185, 129, 0.22);  box-shadow: inset 0 2px 4px rgba(16, 185, 129, 0.1), 0 2px 8px rgba(0,0,0,0.15); }
 .bgPink   { background: rgba(236, 72, 153, 0.12);  border-color: rgba(236, 72, 153, 0.22);  box-shadow: inset 0 2px 4px rgba(236, 72, 153, 0.1), 0 2px 8px rgba(0,0,0,0.15); }
 .bgPurple { background: rgba(139, 92, 246, 0.12);  border-color: rgba(139, 92, 246, 0.22);  box-shadow: inset 0 2px 4px rgba(139, 92, 246, 0.1), 0 2px 8px rgba(0,0,0,0.15); }
+/* 图文混排（rich）：琥珀色，与文本蓝/图片粉/文件绿/代码紫都不冲突 */
+.bgAmber  { background: rgba(245, 158, 11, 0.14);  border-color: rgba(245, 158, 11, 0.24);  box-shadow: inset 0 2px 4px rgba(245, 158, 11, 0.1), 0 2px 8px rgba(0,0,0,0.15); }
 
 /* blossom 主题：图标槽底色统一融入粉蓝糖果系（粉=文本/代码，蓝=媒体） */
 :global([data-theme="blossom"]) .bgBlue,
@@ -334,6 +337,29 @@
   background: var(--accent-light);
   /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
   color: var(--accent-strong);
+}
+
+/* 图文混排徽标（卡片副标题行，与“置顶”徽标并列）。
+   前景色用 #92400E 而不是更浅的琥珀色：在 rgba(245,158,11,0.16) 底上
+   才能达到 4.5:1 对比度（与上面 colorFormatTag 那条注释同一个教训）。*/
+.richBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  background: rgba(245, 158, 11, 0.16);
+  color: #92400E;
+  flex-shrink: 0;
+}
+
+:global([data-theme="midnight"]) .richBadge,
+:global([data-theme="ocean-dark"]) .richBadge {
+  background: rgba(245, 158, 11, 0.22);
+  color: #FBBF24;
 }
 
 /* 图片缩略图 */

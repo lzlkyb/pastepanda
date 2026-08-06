@@ -91,14 +91,19 @@ export function clampIndexUp(current: number): number {
 // ===== 粘贴路由 =====
 
 export interface PasteTarget {
-  method: "image" | "text";
+  method: "image" | "text" | "rich";
   payload: string;
+  /** rich 专用：纯文本保底（目标应用不认富文本时用它） */
+  plainText?: string;
 }
 
 /** 根据条目类型决定粘贴方式和载荷 */
 export function resolvePasteTarget(item: TrayRecentItem): PasteTarget {
   if (item.type === "image" && item.content) {
     return { method: "image", payload: item.content };
+  }
+  if (item.type === "rich" && item.content) {
+    return { method: "rich", payload: item.content, plainText: item.text };
   }
   if (item.type === "file" && item.content) {
     return { method: "text", payload: item.content };
@@ -112,6 +117,7 @@ export function resolvePasteTarget(item: TrayRecentItem): PasteTarget {
 export function getTypeIcon(type: string): string {
   if (type === "image") return "🖼";
   if (type === "file") return "📁";
+  if (type === "rich") return "🖼️";
   return "📝";
 }
 

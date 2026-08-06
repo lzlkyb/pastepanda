@@ -2,10 +2,11 @@ use crate::content_classifier::ContentClassifier;
 use crate::data_store::{compute_pinyin_initials, DataStore, HistoryItem};
 use arboard::Clipboard;
 use md5::{Digest, Md5};
+use regex::Regex;
 use serde::Serialize;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    mpsc, Arc, Mutex, OnceLock,
+    mpsc, Arc, LazyLock, Mutex, OnceLock,
 };
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
@@ -198,6 +199,19 @@ enum CapturedItem {
     },
     Files {
         paths: Vec<String>,
+        title: String,
+        exe_path: Option<PathBuf>,
+        time: String,
+    },
+    /// 图文混排富文本（CF_HTML 且含内嵌 <img>）——采集时机上晚于 Text 分支判断，
+    /// 只在片段确实带图片时才走这条路径，避免把"纯文本也带 CF_HTML"的普通复制误判
+    Rich {
+        /// 已把 <img src> 改写为本地图片库路径后的 HTML 片段
+        html_fragment: String,
+        /// 同一剪贴板会话里的纯文本表示（源应用通常会同时写入 CF_UNICODETEXT），
+        /// 阶段1 直接复用，不做 HTML→纯文本转换
+        plain_text: String,
+        hash: String,
         title: String,
         exe_path: Option<PathBuf>,
         time: String,
@@ -682,6 +696,60 @@ fn stage1_capture(
     queue: &CaptureQueue,
     app_handle: &AppHandle,
 ) -> bool {
+    // ── 图文混排富文本（CF_HTML 且含内嵌 <img>）──
+    // 必须放在纯文本分支之前判断：否则下面的文本分支会先把它当普通文本采集掉。
+    // 但只有片段里确实带 <img> 时才短路——绝大多数复制（哪怕只是选中一个词）
+    // 源应用也会顺手写一份 CF_HTML，如果不加这层过滤，普通文本复制会全部
+    // 被误判成"富文本"，所以先用 html_fragment_has_image 快速排除。
+    if let Some(fragment) = get_clipboard_html() {
+        if html_fragment_has_image(&fragment) {
+            let app_dir = app_handle.path().app_data_dir().unwrap_or_default();
+            let images_dir = app_dir.join("images");
+            let (rewritten, _saved_images) = localize_html_images(&fragment, &images_dir);
+
+            // 同一剪贴板会话里通常还有 CF_UNICODETEXT，优先直接复用作为纯文本表示；
+            // 少数应用（如“仅复制带标题的图片”场景）可能不写这个格式，
+            // 若为空则用片段自身去标签后的文字作为保底，避免卡片标题空白、搜索也搜不到
+            let mut plain_text = clipboard.get_text().unwrap_or_default();
+            if plain_text.trim().is_empty() {
+                plain_text = html_fragment_to_plain_text_fallback(&rewritten);
+            }
+
+            let hash = md5_hex(rewritten.as_bytes());
+
+            if paste_suppress.is_hash_suppressed(&hash) {
+                log::info!("[ClipboardMonitor] 跳过自身粘贴内容 (hash匹配·富文本)");
+                paste_suppress.clear_hash();
+                *last_text_hash = Some(hash);
+                return true;
+            }
+            if paste_suppress.has_expected_hash() {
+                if !paste_suppress.is_suppressed() {
+                    paste_suppress.clear_hash();
+                }
+            } else if paste_suppress.is_suppressed() {
+                log::info!("[ClipboardMonitor] 跳过自身粘贴内容 (无hash路径·时间抑制窗口内·富文本)");
+                *last_text_hash = Some(hash);
+                return true;
+            }
+
+            if Some(&hash) != last_text_hash.as_ref() {
+                *last_text_hash = Some(hash.clone());
+
+                let (title, exe_path) = capture_foreground_source(app_handle);
+                queue.push(CapturedItem::Rich {
+                    html_fragment: rewritten,
+                    plain_text,
+                    hash,
+                    title,
+                    exe_path,
+                    time: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                });
+            }
+            return true;
+        }
+    }
+
     // ── 文本 ──
     // 带重试读取：延迟渲染 (CF_OWNERDELAYDISPLAY) / 剪贴板打开竞争可能瞬时失败
     let mut text_read_ok = false;
@@ -900,6 +968,24 @@ fn worker_loop(
                 exe_path,
                 time,
             } => process_files(app_handle, paths, title, exe_path, time),
+            CapturedItem::Rich {
+                html_fragment,
+                plain_text,
+                hash,
+                title,
+                exe_path,
+                time,
+            } => process_rich(
+                app_handle,
+                sensitive_cache,
+                excluded_cache,
+                html_fragment,
+                plain_text,
+                hash,
+                title,
+                exe_path,
+                time,
+            ),
         }
     }
     log::info!("[ClipboardMonitor] 处理工作线程退出");
@@ -1149,6 +1235,71 @@ fn process_image(
             &img_path_str,
         );
     }
+}
+
+/// 处理捕获的图文混排富文本条目（阶段1：入库验证采集管道能跑通，
+/// 内容完整性、图片清理、展示层留待阶段 2/3/4）
+#[cfg(target_os = "windows")]
+fn process_rich(
+    app_handle: &AppHandle,
+    sensitive_cache: &std::sync::RwLock<bool>,
+    excluded_cache: &std::sync::RwLock<Vec<String>>,
+    html_fragment: String,
+    plain_text: String,
+    hash: String,
+    source_title: String,
+    exe_path: Option<PathBuf>,
+    now_str: String,
+) {
+    // 与 process_text 一致：排除名单应用 / 敏感内容不入库
+    if is_excluded_app_with(excluded_cache, &source_title) {
+        log::info!(
+            "[ClipboardMonitor] 跳过敏感内容（富文本）：来源应用 \"{}\" 在排除名单内",
+            source_title
+        );
+        return;
+    }
+    if should_skip_sensitive_with(sensitive_cache, &plain_text) {
+        log::info!("[ClipboardMonitor] 跳过敏感内容（富文本）：匹配密钥/凭据模式，不记录");
+        return;
+    }
+
+    let source_icon = extract_source_icon(app_handle, &exe_path);
+    let pinyin_initials = compute_pinyin_initials(&plain_text);
+
+    // 阶段1 不做智能合并去重（同 process_image/process_files，留待后续阶段补齐）
+    let item = HistoryItem {
+        id: Uuid::new_v4().to_string(),
+        text: plain_text.clone(),
+        time: now_str,
+        item_type: "rich".to_string(),
+        content: html_fragment,
+        pinned: false,
+        source: source_title,
+        workspace: "默认".to_string(),
+        md5: Some(hash),
+        pinyin_initials: Some(pinyin_initials),
+        group_id: None,
+        source_icon,
+        content_type: Some("rich".to_string()),
+        tags: Vec::new(),
+    };
+
+    if let Some(store) = app_handle.try_state::<DataStore>() {
+        if let Err(e) = store.insert_history(&item) {
+            log::error!("[ClipboardMonitor] 插入富文本记录失败: {}", e);
+            return;
+        }
+    }
+    if let Err(e) = app_handle.emit(
+        "clipboard-changed",
+        ClipboardChanged { item: item.clone() },
+    ) {
+        log::warn!("[ClipboardMonitor] 推送富文本事件失败: {}", e);
+    }
+
+    // 局域网同步：富文本内嵌图片文件暂无传输机制，阶段1 先不同步（避免对端收到
+    // 指向本地不存在路径的断链图片），后续阶段再补
 }
 
 /// 处理捕获的文件列表条目（逻辑与轮询版一致：逐文件入库 → 推送 → LAN）
@@ -1436,6 +1587,224 @@ fn get_foreground_window_info(_app_handle: &tauri::AppHandle) -> (String, Option
     (String::new(), None)
 }
 
+/// 匹配 <img src="..."> 或 <img src='...'>（大小写不敏感）。
+static IMG_SRC_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?i)<img\b[^>]*?\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)')"#).unwrap()
+});
+
+/// 判断 CF_HTML 片段里是否确实带内嵌图片（用于决定是否走图文混排采集路径，
+/// 避免把绝大多数"纯文本也带 CF_HTML"的普通复制误判为富文本）
+#[cfg(target_os = "windows")]
+fn html_fragment_has_image(fragment: &str) -> bool {
+    IMG_SRC_RE.is_match(fragment)
+}
+
+/// 提取 HTML 片段里所有 <img src> 的原始值（不判断是否本地/远程，不改写）。
+/// 不按平台限制：供其他模块复用（删除历史时清理关联图片文件需要从 content 里反推 src）。
+pub(crate) fn extract_img_srcs(fragment: &str) -> Vec<String> {
+    IMG_SRC_RE
+        .captures_iter(fragment)
+        .filter_map(|cap| cap.get(1).or_else(|| cap.get(2)).map(|m| m.as_str().to_string()))
+        .collect()
+}
+
+/// 尝试把单个 img src（本地文件路径 / file:// / data: URI）落盘到图片库，
+/// 返回新文件的绝对路径。远程 http(s) 引用与无法识别的格式返回 None（阶段1
+/// 范围之外，原样保留，不删除不报错）。
+#[cfg(target_os = "windows")]
+fn localize_one_image(src: &str, images_dir: &std::path::Path) -> Option<PathBuf> {
+    let bytes: Vec<u8> = if src.starts_with("data:") {
+        // 格式如 data:image/png;base64,xxxx；非 base64 的 data URI（罕见）不处理
+        if !src.contains(";base64,") {
+            return None;
+        }
+        let comma = src.find(',')?;
+        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &src[comma + 1..]).ok()?
+    } else if src.starts_with("file:") {
+        // Word/Outlook/浏览器常见写法：本地临时文件的 file:// 引用，来源应用
+        // 清理临时文件后这个路径就失效，所以必须在采集那一刻立即读出来。
+        let url = url::Url::parse(src).ok()?;
+        let path = url.to_file_path().ok()?;
+        std::fs::read(&path).ok()?
+    } else if src.len() > 1 && src.as_bytes()[1] == b':' {
+        // 裸盘符路径（少数应用不带 file:// 前缀，如 C:\Users\...\image.png）
+        std::fs::read(src).ok()?
+    } else {
+        // http(s) 等远程引用：阶段1 不处理，保留原始 src 不报错
+        return None;
+    };
+
+    if bytes.is_empty() {
+        return None;
+    }
+
+    let ext = image::guess_format(&bytes)
+        .ok()
+        .and_then(|fmt| fmt.extensions_str().first().copied())
+        .unwrap_or("png");
+    let hash = md5_hex(&bytes);
+    if let Err(e) = std::fs::create_dir_all(images_dir) {
+        log::error!("[ClipboardMonitor] 创建图片目录失败（富文本内嵌图片）: {}", e);
+        return None;
+    }
+    let file_path = images_dir.join(format!("{}.{}", hash, ext));
+    if !file_path.exists() {
+        if let Err(e) = std::fs::write(&file_path, &bytes) {
+            log::error!("[ClipboardMonitor] 写入富文本内嵌图片失败: {}", e);
+            return None;
+        }
+    }
+    Some(file_path)
+}
+
+/// 极简 HTML→纯文本：去标签、解基础实体、合并空白（仅用于 CF_UNICODETEXT
+/// 缺失时的展示/搜索保底，不追求完整还原——真实展示走前端富文本渲染）
+static HTML_TAG_STRIP_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]*>").unwrap());
+
+#[cfg(target_os = "windows")]
+fn html_fragment_to_plain_text_fallback(fragment: &str) -> String {
+    let no_tags = HTML_TAG_STRIP_RE.replace_all(fragment, " ");
+    let decoded = no_tags
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'");
+    decoded.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// 把片段里所有本地文件/data URI 图片抄一份进自己的图片库，并把 <img src>
+/// 改写为新路径（远程 http(s) 引用原样保留）。逐个处理 img 标签，支持
+/// 任意多图/任意顺序交错的图文混排片段。
+/// 返回 (改写后的片段, 落盘的图片文件路径列表)
+#[cfg(target_os = "windows")]
+fn localize_html_images(fragment: &str, images_dir: &std::path::Path) -> (String, Vec<PathBuf>) {
+    let mut saved_paths = Vec::new();
+    let mut result = String::with_capacity(fragment.len());
+    let mut last_end = 0usize;
+
+    for cap in IMG_SRC_RE.captures_iter(fragment) {
+        let Some(src_match) = cap.get(1).or_else(|| cap.get(2)) else {
+            continue;
+        };
+        let src = src_match.as_str();
+
+        result.push_str(&fragment[last_end..src_match.start()]);
+
+        match localize_one_image(src, images_dir) {
+            Some(new_path) => {
+                saved_paths.push(new_path.clone());
+                let new_src = new_path.to_string_lossy().replace('\\', "/");
+                result.push_str(&format!("file:///{}", new_src));
+            }
+            None => {
+                result.push_str(src);
+            }
+        }
+        last_end = src_match.end();
+    }
+    result.push_str(&fragment[last_end..]);
+    (result, saved_paths)
+}
+
+/// 构造一个完整的 CF_HTML 缓冲区（Version/StartHTML/EndHTML/StartFragment/EndFragment 自引用
+/// 头部 + <!--StartFragment/EndFragment--> 标记包裹的片段）。采集侧测试用来验证解析，
+/// 粘贴回写侧（execute_paste_rich）用来把存下来的片段重新包装回真实剪贴板格式。
+pub(crate) fn build_cf_html_buffer(fragment_inner: &str) -> Vec<u8> {
+    let prefix_html = "<html><body>\r\n<!--StartFragment-->";
+    let suffix_html = "<!--EndFragment-->\r\n</body></html>";
+    let header_template =
+        |start_html: usize, end_html: usize, start_frag: usize, end_frag: usize| {
+            format!(
+                "Version:0.9\r\nStartHTML:{:010}\r\nEndHTML:{:010}\r\nStartFragment:{:010}\r\nEndFragment:{:010}\r\n",
+                start_html, end_html, start_frag, end_frag
+            )
+        };
+    let header_len = header_template(0, 0, 0, 0).len();
+    let start_html = header_len;
+    let start_frag = start_html + prefix_html.len();
+    let end_frag = start_frag + fragment_inner.as_bytes().len();
+    let end_html = end_frag + suffix_html.len();
+    let header = header_template(start_html, end_html, start_frag, end_frag);
+    let mut buf = Vec::new();
+    buf.extend_from_slice(header.as_bytes());
+    buf.extend_from_slice(prefix_html.as_bytes());
+    buf.extend_from_slice(fragment_inner.as_bytes());
+    buf.extend_from_slice(suffix_html.as_bytes());
+    buf
+}
+
+/// 从剪贴板读取 CF_HTML 原始字节，按 StartFragment/EndFragment 字节偏移切出
+/// 真正的富文本片段（不含 <!--StartFragment/EndFragment--> 注释本身）。
+/// 头部偏移量是按字节算的，片段内容可能含中文等多字节 UTF-8 字符，
+/// 已用真实剪贴板往返验证过字节片切不会错位。
+#[cfg(target_os = "windows")]
+fn get_clipboard_html() -> Option<String> {
+    use windows::core::w;
+    use windows::Win32::Foundation::HGLOBAL;
+    use windows::Win32::System::DataExchange::*;
+    use windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
+
+    unsafe {
+        let format_id = RegisterClipboardFormatW(w!("HTML Format"));
+        if format_id == 0 {
+            return None;
+        }
+        if OpenClipboard(None).is_err() {
+            return None;
+        }
+
+        let handle = match GetClipboardData(format_id) {
+            Ok(h) if !h.is_invalid() => h,
+            _ => {
+                let _ = CloseClipboard();
+                return None;
+            }
+        };
+
+        let hglobal = HGLOBAL(handle.0);
+        let size = GlobalSize(hglobal);
+        if size == 0 {
+            let _ = CloseClipboard();
+            return None;
+        }
+        let ptr = GlobalLock(hglobal) as *const u8;
+        if ptr.is_null() {
+            let _ = CloseClipboard();
+            return None;
+        }
+        let raw = std::slice::from_raw_parts(ptr, size).to_vec();
+        let _ = GlobalUnlock(hglobal);
+        let _ = CloseClipboard();
+
+        parse_cf_html_fragment(&raw)
+    }
+}
+
+/// 解析 CF_HTML 头部（Version/StartHTML/EndHTML/StartFragment/EndFragment），
+/// 按 StartFragment~EndFragment 字节偏移切出片段内容。
+#[cfg(target_os = "windows")]
+pub(crate) fn parse_cf_html_fragment(raw: &[u8]) -> Option<String> {
+    // 头部总是纯 ASCII 且很短，只在前 2KB 里找，避免因后面正文内容过大而白白扫描
+    let header_len = raw.len().min(2048);
+    let header_text = std::str::from_utf8(&raw[..header_len]).ok()?;
+
+    let find_offset = |key: &str| -> Option<usize> {
+        let idx = header_text.find(key)?;
+        let rest = &header_text[idx + key.len()..];
+        let end = rest.find(|c: char| c == '\r' || c == '\n')?;
+        rest[..end].trim().parse::<usize>().ok()
+    };
+
+    let start_frag = find_offset("StartFragment:")?;
+    let end_frag = find_offset("EndFragment:")?;
+    if start_frag >= end_frag || end_frag > raw.len() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&raw[start_frag..end_frag]).into_owned())
+}
+
 /// 从剪贴板读取文件路径列表 (CF_HDROP)
 #[cfg(target_os = "windows")]
 fn get_clipboard_files() -> Option<Vec<String>> {
@@ -1697,5 +2066,112 @@ mod tests {
         // 开关关闭时永不跳过（默认值已与前端 DEFAULT_CONFIG 对齐为 false）
         let cache = std::sync::RwLock::new(false);
         assert!(!should_skip_sensitive_with(&cache, "AKIA1234567890SECRET"));
+    }
+
+    // ── 图文混排 CF_HTML 采集测试（纯函数，不依赖真实剪贴板） ──
+
+    /// 1x1 透明 PNG 的 base64 编码（测试用最小合法 PNG）
+    #[cfg(target_os = "windows")]
+    const TEST_PNG_BASE64: &str =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+    #[cfg(target_os = "windows")]
+    fn build_test_cf_html(fragment_inner: &str) -> Vec<u8> {
+        build_cf_html_buffer(fragment_inner)
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_parse_cf_html_fragment_byte_offset_with_chinese() {
+        // 回归早期可行性验证结论：头部偏移是按字节算的，前面插入中文不能导致错位
+        let fragment = "这是中文段落，包含<img src=\"file:///C:/temp/图片.png\">和后续文字。";
+        let buf = build_test_cf_html(fragment);
+        let parsed = parse_cf_html_fragment(&buf).expect("应能解析出片段");
+        assert_eq!(parsed, fragment);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_parse_cf_html_fragment_rejects_malformed_header() {
+        assert!(parse_cf_html_fragment(b"not a cf_html buffer at all").is_none());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_html_fragment_has_image() {
+        assert!(html_fragment_has_image(r#"<p>hi</p><img src="foo.png">"#));
+        assert!(html_fragment_has_image(r#"<IMG SRC='foo.png'/>"#));
+        assert!(!html_fragment_has_image("<p>纯文本没有图片</p>"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_localize_one_image_data_uri() {
+        let dir = std::env::temp_dir().join(format!("pastepanda_test_{}", Uuid::new_v4()));
+        let src = format!("data:image/png;base64,{}", TEST_PNG_BASE64);
+        let saved = localize_one_image(&src, &dir).expect("应能解码 data URI 并落盘");
+        assert!(saved.exists());
+        assert_eq!(saved.extension().and_then(|e| e.to_str()), Some("png"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_localize_one_image_file_url_before_source_cleans_up() {
+        // 模拟 Word/浏览器场景：源应用的临时图片文件存在于采集那一刻，
+        // 必须立即读出抄走，后续源文件被删除也不影响已落盘的副本。
+        let source_dir = std::env::temp_dir().join(format!("pastepanda_src_{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&source_dir).unwrap();
+        let source_file = source_dir.join("image001.png");
+        use base64::Engine;
+        let png_bytes = base64::engine::general_purpose::STANDARD
+            .decode(TEST_PNG_BASE64)
+            .unwrap();
+        std::fs::write(&source_file, &png_bytes).unwrap();
+
+        let images_dir = std::env::temp_dir().join(format!("pastepanda_images_{}", Uuid::new_v4()));
+        let file_url = url::Url::from_file_path(&source_file).unwrap();
+        let saved = localize_one_image(file_url.as_str(), &images_dir)
+            .expect("应能读出 file:// 本地图片并落盘");
+        assert!(saved.exists());
+        assert_eq!(std::fs::read(&saved).unwrap(), png_bytes);
+
+        // 源文件删除后，落盘的副本仍完好保留（验证"采集时即时抄走"确实有效）
+        let _ = std::fs::remove_dir_all(&source_dir);
+        assert!(saved.exists());
+
+        let _ = std::fs::remove_dir_all(&images_dir);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_localize_one_image_remote_url_untouched() {
+        let dir = std::env::temp_dir().join(format!("pastepanda_test_{}", Uuid::new_v4()));
+        assert!(localize_one_image("https://example.com/pic.png", &dir).is_none());
+        assert!(!dir.exists());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_localize_html_images_multiple_interleaved() {
+        // 验证任意多图/任意交错的图文混排场景：文字 + 图片 + 图片 + 文字
+        let images_dir = std::env::temp_dir().join(format!("pastepanda_multi_{}", Uuid::new_v4()));
+        let data_src = format!("data:image/png;base64,{}", TEST_PNG_BASE64);
+        let fragment = format!(
+            "<p>前段文字</p><img src=\"{}\"><img src=\"{}\"><p>后段文字</p><img src=\"https://remote.example/x.png\">",
+            data_src, data_src
+        );
+        let (rewritten, saved) = localize_html_images(&fragment, &images_dir);
+
+        assert_eq!(saved.len(), 2, "两张 data URI 图片都应落盘（同内容同 hash同文件，但均计入返回列表）");
+        assert!(rewritten.contains("前段文字"));
+        assert!(rewritten.contains("后段文字"));
+        // 远程引用保持原样
+        assert!(rewritten.contains("https://remote.example/x.png"));
+        // 本地化后的图片引用不再指向 data:
+        assert_eq!(rewritten.matches("data:image/png").count(), 0);
+        assert_eq!(rewritten.matches("file:///").count(), 2);
+
+        let _ = std::fs::remove_dir_all(&images_dir);
     }
 }

@@ -24,6 +24,69 @@ pub fn read_file_as_base64(path: String) -> Result<String, String> {
     Ok(STANDARD.encode(&bytes))
 }
 
+/// 将富文本编辑器里新插入/粘贴的图片存入应用图片库，返回落盘路径。
+/// 命名与采集侧完全一致（按内容 md5 + 真实格式扩展名），这样同一张图无论是采集进来的
+/// 还是编辑时插入的，都落在同一个文件上，删除时的引用计数清理才能正确工作。
+#[tauri::command]
+pub fn save_rich_image(
+    app_handle: tauri::AppHandle,
+    data_base64: String,
+) -> Result<String, String> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use md5::{Digest, Md5};
+    use tauri::Manager;
+
+    // 与 read_file_as_base64 / get_image_data_url 同口径的 20MB 上限
+    const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
+
+    // 兼容前端直接丢过来的完整 data URI（data:image/png;base64,xxxx）
+    let payload = match data_base64.find(",") {
+        Some(idx) if data_base64.starts_with("data:") => &data_base64[idx + 1..],
+        _ => data_base64.as_str(),
+    };
+    let bytes = STANDARD
+        .decode(payload)
+        .map_err(|e| format!("图片 base64 解码失败: {e}"))?;
+    if bytes.is_empty() {
+        return Err("图片内容为空".to_string());
+    }
+    if bytes.len() > MAX_IMAGE_BYTES {
+        return Err(format!(
+            "图片过大 ({}MB)，超过 20MB 限制",
+            bytes.len() / 1024 / 1024
+        ));
+    }
+
+    // 按真实内容推断格式，而不是相信前端传的 MIME（假扩展名会让后续读图失败）；
+    // 同时这也拦住了“把非图片文件伪装成图片存进来”的情况。
+    let ext = image::guess_format(&bytes)
+        .map_err(|_| "无法识别的图片格式".to_string())?
+        .extensions_str()
+        .first()
+        .copied()
+        .unwrap_or("png");
+
+    let app_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("获取数据目录失败: {e}"))?;
+    let images_dir = app_dir.join("images");
+    std::fs::create_dir_all(&images_dir).map_err(|e| format!("创建图片目录失败: {e}"))?;
+
+    let hash = format!("{:x}", Md5::new().chain_update(&bytes).finalize());
+    let file_path = images_dir.join(format!("{}.{}", hash, ext));
+    if !file_path.exists() {
+        // 先写临时文件再原子 rename，防止写一半崩溃留下残缺图片（同 process_image 的做法）
+        let tmp_path = file_path.with_extension(format!("{}.tmp", ext));
+        std::fs::write(&tmp_path, &bytes).map_err(|e| format!("写入图片失败: {e}"))?;
+        if let Err(e) = std::fs::rename(&tmp_path, &file_path) {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(format!("重命名临时图片失败: {e}"));
+        }
+    }
+    Ok(file_path.to_string_lossy().to_string())
+}
+
 /// 读取图片文件并返回 base64 data URL（原图，用于预览）
 #[tauri::command]
 pub fn get_image_data_url(path: String) -> Result<String, String> {

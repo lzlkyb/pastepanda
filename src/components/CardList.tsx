@@ -11,8 +11,9 @@ import { StackBanner } from "@/components/StackBanner";
 import { MdAssocBanner } from "@/components/MdAssocBanner";
 import { TagEditor } from "@/components/TagEditor";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { pasteText, pasteImage, getImageThumbnail, copyImageOnly, deleteHistory } from "@/lib/api";
+import { pasteText, pasteImage, getImageThumbnail, copyImageOnly, copyRichOnly, deleteHistory } from "@/lib/api";
 import { getAllRules } from "@/lib/regexRules";
+import { thumbnailSourcePath } from "@/lib/richContent";
 import { ClipboardList, Copy, Search, Zap, CheckSquare, Square, FileDown, Trash2, GitCompare, FileX } from "lucide-react";
 import { Timeline } from "@/components/Timeline";
 import Lenis from "lenis";
@@ -74,8 +75,10 @@ const VirtualCardRow = memo(function VirtualCardRow({
       imageState={imageState}
       searchKeyword={searchKeyword}
       pasting={pasting}
-      onRetryImage={item.type === "image" && item.content && imageState?.status === "error"
-        ? () => onRetryImage(item.content) : undefined}
+      onRetryImage={(() => {
+        const p = thumbnailSourcePath(item);
+        return p && imageState?.status === "error" ? () => onRetryImage(p) : undefined;
+      })()}
       onClick={(e: React.MouseEvent) => onItemClick(item.id, e.ctrlKey, e.shiftKey)}
       onDoubleClick={() => onItemDoubleClick(item.id)}
       onEdit={onEdit}
@@ -336,16 +339,15 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
 
   // 异步加载图片缩略图（只加载可视窗口 ± 缓冲范围）
   useEffect(() => {
-    const imageItems = items
+    // 缩略图源路径：image 类型就是 content，rich 类型取片段里第一张内嵌图
+    const pathsToLoad = items
       .slice(Math.max(0, thumbFirst - 4), thumbLast + 5)
-      .filter(
-        (i) => i.type === "image" && i.content && !loadedPathsRef.current.has(i.content)
-      );
-    if (imageItems.length === 0) return;
+      .map((i) => thumbnailSourcePath(i))
+      .filter((p): p is string => !!p && !loadedPathsRef.current.has(p));
+    if (pathsToLoad.length === 0) return;
 
     let cancelled = false;
     const completedPaths = new Set<string>();
-    const pathsToLoad = imageItems.map((i) => i.content!);
     pathsToLoad.forEach((p) => loadedPathsRef.current.add(p));
 
     const loadingStates: Record<string, ImgState> = {};
@@ -401,7 +403,9 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
 
   // 当 items 变化时，清理 loadedPathsRef 中不再可见的路径
   useEffect(() => {
-    const visiblePaths = new Set(items.filter((i) => i.type === "image" && i.content).map((i) => i.content!));
+    const visiblePaths = new Set(
+      items.map((i) => thumbnailSourcePath(i)).filter((p): p is string => !!p)
+    );
     for (const p of loadedPathsRef.current) {
       if (!visiblePaths.has(p)) loadedPathsRef.current.delete(p);
     }
@@ -439,6 +443,21 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
           toast("图片已复制", "success");
         } catch {
           toast("复制图片失败", "error");
+        } finally {
+          setPastingId(null);
+        }
+      } else {
+        openEditor(item);
+      }
+    } else if (item.type === "rich" && item.content) {
+      const action = useAppStore.getState().config.double_click_action || "preview";
+      if (action === "copy") {
+        setPastingId(item.id);
+        try {
+          await copyRichOnly(item.content, item.text);
+          toast("图文已复制", "success");
+        } catch {
+          toast("复制图文失败", "error");
         } finally {
           setPastingId(null);
         }
@@ -751,7 +770,10 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                     style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vItem.start}px)` }}>
                       <VirtualCardRow
                         item={item} selected={focusId === item.id || selectedIds.has(item.id)}
-                        imageState={item.type === "image" && item.content ? imgCache[item.content] : undefined}
+                        imageState={(() => {
+                          const p = thumbnailSourcePath(item);
+                          return p ? imgCache[p] : undefined;
+                        })()}
                         searchKeyword={searchKeyword}
                         pasting={pastingId === item.id}
                         onItemClick={handleItemClick}

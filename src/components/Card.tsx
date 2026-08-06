@@ -6,6 +6,7 @@ import { getContentTypeMeta, isCodeLike } from "@/lib/contentTypes";
 import { detectColor } from "@/lib/color";
 import { maskSecretText } from "@/lib/secret";
 import { URL_SCHEME_RE, urlHost, urlPathname, fileUrlToLocalPath } from "@/lib/url";
+import { thumbnailSourcePath, countImages } from "@/lib/richContent";
 import { applicableTransforms, getTransform } from "@/lib/transforms";
 import { useDialogStore } from "@/stores/dialogStore";
 import type { CSSProperties } from "react";
@@ -16,7 +17,7 @@ import { useToast } from "@/components/Toast";
 import { TagRow } from "@/components/TagBadge";
 import { logger } from "@/lib/logger";
 import { pasteText, togglePin, deleteHistory, copyImageOnly, copyFiles } from "@/lib/api";
-import { Pin, ImageIcon, Link2, AtSign, Code2, Phone, FileText, Terminal, Type, Check, Hash, Lock, Palette } from "lucide-react";
+import { Pin, ImageIcon, Images, Link2, AtSign, Code2, Phone, FileText, Terminal, Type, Check, Hash, Lock, Palette } from "lucide-react";
 import styles from "./CardList.module.css";
 
 const LazyMdRenderer = lazy(() => import("@/components/MarkdownRenderer").then(m => ({ default: m.MarkdownRenderer })));
@@ -51,6 +52,7 @@ const ICONS: Record<string, React.FC<{ size?: number; color?: string; strokeWidt
   color:     Palette,
   image:     ImageIcon,
   file:      FileText,
+  rich:      Images,
 };
 
 /** 解析文件路径 content JSON，返回路径数组 */
@@ -145,6 +147,7 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
 
   const iconBg = item.type === "image" ? styles.bgPink
     : item.type === "file" ? styles.bgGreen
+    : item.type === "rich" ? styles.bgAmber
     : isCodeLike(subType) ? styles.bgPurple
     : styles.bgBlue;
 
@@ -291,8 +294,10 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
         aria-posinset={index + 1}
         tabIndex={-1}>
 
-        {/* 图标 */}
-        {item.type === "image" ? (
+        {/* 图标。rich 条目正常都带图（采集时要求片段里有 <img> 才会评为 rich），
+            但用户可以在编辑时把图全删了；那种情况下根本不会去加载缩略图，
+            不先排除掉会掉进下面的 loading 分支、永远转圈 */}
+        {(item.type === "image" || (item.type === "rich" && thumbnailSourcePath(item))) ? (
           imageState?.status === "loaded" && imageState.url ? (
             <div className={`${styles.cardIcon} ${styles.cardImgThumb}`}>
               <img src={imageState.url} alt="" />
@@ -352,6 +357,9 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
             )}
             {parsedColor && (
               <span className={styles.colorFormatTag}>{parsedColor.format.toUpperCase()}</span>
+            )}
+            {item.type === "rich" && (
+              <span className={styles.richBadge}>🖼️📝 图文 {countImages(item.content || "")}</span>
             )}
             {item.source && <SourceBadge source={item.source} sourceIcon={item.source_icon} size="small" />}
             <TagRow tags={item.tags || []} />

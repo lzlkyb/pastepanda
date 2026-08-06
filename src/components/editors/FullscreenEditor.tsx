@@ -13,7 +13,7 @@
  *   - 系统双击 .md 文件 → open_fullscreen_editor({filePath, contentType})
  *   - 窗口已存在时 Rust 经 md-editor-load 事件推送新数据（key 变更整体重载）。
  */
-import { useRef, useState, useCallback, useEffect, useMemo, Suspense } from "react";
+import { useRef, useState, useCallback, useEffect, useMemo, Suspense, lazy } from "react";
 import { FolderOpen, Save, X, Maximize2, Minimize2 } from "lucide-react";
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from "@codemirror/view";
 import { EditorState, Compartment, type Extension } from "@codemirror/state";
@@ -36,6 +36,11 @@ import { LanguagePicker } from "./fullscreen/LanguagePicker";
 import { loadLanguageSupport, languageFileExtension } from "./fullscreen/languages";
 import type { ViewMode, ShellBridge } from "./fullscreen/types";
 import styles from "./FullscreenEditor.module.css";
+
+/** 图文混排全屏（Tiptap）——惰加载：其它类型全屏不应为此多拉一份富文本库 */
+const LazyRichFullscreen = lazy(() =>
+  import("./fullscreen/RichFullscreen").then((m) => ({ default: m.RichFullscreen }))
+);
 
 /** Rust 传递的编辑器初始数据（take_editor_init 返回值 / md-editor-load 事件载荷） */
 interface EditorInit {
@@ -145,15 +150,29 @@ export function FullscreenEditor() {
 
   return (
     <div className={`${styles.windowRoot}${closing ? ` ${styles.windowExit}` : ""}`}>
-      <FullscreenInner
-        key={init.nonce}
-        sourceId={init.sourceId}
-        initContent={init.content}
-        initFilePath={init.filePath}
-        contentType={init.contentType}
-        initLanguage={init.language}
-        onClose={handleClose}
-      />
+      {/* 图文混排走独立的 Tiptap 全屏：它与下面 FullscreenInner 那套 CodeMirror
+          机制（语言模式/分屏预览/格式栏桥）完全无关，在这里提前分支，
+          避免把两种数据模型揉进一个组件 */}
+      {init.contentType === "rich" ? (
+        <Suspense fallback={<div className={styles.overlay}><div className={styles.loading}>加载中…</div></div>}>
+          <LazyRichFullscreen
+            key={init.nonce}
+            sourceId={init.sourceId}
+            initContent={init.content}
+            onClose={handleClose}
+          />
+        </Suspense>
+      ) : (
+        <FullscreenInner
+          key={init.nonce}
+          sourceId={init.sourceId}
+          initContent={init.content}
+          initFilePath={init.filePath}
+          contentType={init.contentType}
+          initLanguage={init.language}
+          onClose={handleClose}
+        />
+      )}
     </div>
   );
 }

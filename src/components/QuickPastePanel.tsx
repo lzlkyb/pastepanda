@@ -167,6 +167,8 @@ export function QuickPastePanel() {
     try {
       if (item.type === "image" && item.content) {
         await invoke("paste_image", { imagePath: item.content });
+      } else if (item.type === "rich" && item.content) {
+        await invoke("paste_rich", { htmlFragment: item.content, plainText: item.text });
       } else if (item.type === "file" && item.content) {
         await invoke("paste_text", { text: item.content });
       } else {

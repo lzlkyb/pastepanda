@@ -34,6 +34,27 @@ export async function pasteImage(imagePath: string): Promise<boolean> {
   }
 }
 
+/**
+ * 粘贴图文混排内容（CF_HTML 富文本 + 纯文本保底一起写剪贴板），返回是否成功。
+ * 目标应用不认富文本时自动退到纯文本，不会粘出空白。
+ */
+export async function pasteRich(htmlFragment: string, plainText: string): Promise<boolean> {
+  try {
+    await invoke("paste_rich", { htmlFragment, plainText });
+    return true;
+  } catch (e) {
+    logger.error("图文粘贴失败", e);
+    const msg = e instanceof Error ? e.message : String(e);
+    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `图文粘贴失败: ${msg}`, type: "error" } }));
+    return false;
+  }
+}
+
+/** 仅复制图文混排内容到剪贴板（不粘贴） */
+export async function copyRichOnly(htmlFragment: string, plainText: string): Promise<void> {
+  await invoke("copy_rich_only", { htmlFragment, plainText });
+}
+
 /** 仅复制 */
 export async function copyOnly(text: string) {
   try {

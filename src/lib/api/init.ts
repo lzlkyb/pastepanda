@@ -108,12 +108,16 @@ export async function initBackend(): Promise<() => void> {
     }));
 
     // 监听历史条目更新事件（全屏编辑器 update_history 后触发）
-    unlistens.push(await listen<{ id: string; text: string }>("history-item-updated", (event) => {
-      const { id, text } = event.payload;
+    // 图文混排（rich）保存时会多带 content（HTML 片段），普通文本只有 text；
+    // content 为 undefined 时不能写进去，否则会把图片/文件条目的 content 抹成 undefined。
+    unlistens.push(await listen<{ id: string; text: string; content?: string }>("history-item-updated", (event) => {
+      const { id, text, content } = event.payload;
       if (!id) return;
       useAppStore.setState((s) => ({
         history: s.history.map((item) =>
-          item.id === id ? { ...item, text } : item
+          item.id === id
+            ? { ...item, text, ...(content !== undefined ? { content } : {}) }
+            : item
         ),
         _filterCache: null,
       }));

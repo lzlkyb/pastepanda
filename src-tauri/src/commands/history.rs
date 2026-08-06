@@ -36,6 +36,25 @@ pub fn update_history(
     Ok(())
 }
 
+/// 更新图文混排（rich）记录：同时回写 HTML 片段与纯文本。
+/// 广播的事件载荷多带一个 content 字段（普通 text 记录只有 text），
+/// 主窗口据此同时刷新卡片标题和富文本内容。
+#[tauri::command]
+pub fn update_history_rich(
+    app: tauri::AppHandle,
+    store: State<DataStore>,
+    id: String,
+    html_fragment: String,
+    plain_text: String,
+) -> Result<(), String> {
+    store.update_history_rich(&id, &html_fragment, &plain_text)?;
+    let _ = app.emit(
+        "history-item-updated",
+        serde_json::json!({ "id": id, "text": plain_text, "content": html_fragment }),
+    );
+    Ok(())
+}
+
 /// 将全屏编辑器编辑后的内容作为新文本记录写入剪贴板历史
 /// （由设置开关 md_save_to_history 控制，从 .md 文件保存时调用）。
 /// 写入后广播 `clipboard-changed`，主窗口监听器自动把新卡片 prepend 到列表顶部。

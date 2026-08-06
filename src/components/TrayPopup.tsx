@@ -3,7 +3,7 @@ import { ThemeKey, DEFAULT_THEME } from "@/lib/theme";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { pasteText, pasteImage } from "@/lib/api";
+import { pasteText, pasteImage, pasteRich } from "@/lib/api";
 import { VersionBadge } from "@/components/VersionBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { SkinScene } from "@/components/SkinScene";
@@ -12,7 +12,7 @@ import { useAppStore } from "@/stores/appStore";
 // ===== 数据类型 =====
 interface RecentItem {
   id: string;
-  type: string; // "text" | "image" | "file"
+  type: string; // "text" | "image" | "file" | "rich"
   preview: string;
   text: string;
   content?: string; // U33：图片路径/文件路径，粘贴时按类型路由（text 为占位预览文本）
@@ -348,6 +348,8 @@ export function TrayPopup() {
       let ok: boolean;
       if (item.type === "image" && item.content) {
         ok = await pasteImage(item.content);
+      } else if (item.type === "rich" && item.content) {
+        ok = await pasteRich(item.content, item.text);
       } else if (item.type === "file" && item.content) {
         ok = await pasteText(item.content);
       } else {

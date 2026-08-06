@@ -12,7 +12,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UpdateProvider, useUpdate } from "@/contexts/UpdateContext";
 import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
 import { logger } from "@/lib/logger";
-import { pasteText, pasteImage, deleteHistory, togglePin, toggleWindow, saveForeground, invalidateCountsCache, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
+import { pasteText, pasteImage, pasteRich, deleteHistory, togglePin, toggleWindow, saveForeground, invalidateCountsCache, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
 import { resolveSource, getAutoTagIcon, getAutoTagColor } from "@/lib/source-mappings";
 import { migrateLegacyStorageKeys } from "@/lib/storageMigration";
 import { initRegexRules } from "@/lib/regexRules";
@@ -642,6 +642,9 @@ function App() {
           if (item.type === "image" && item.content) {
             const ok = await pasteImage(item.content);
             if (ok) window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴图片", type: "success" } }));
+          } else if (item.type === "rich" && item.content) {
+            const ok = await pasteRich(item.content, item.text);
+            if (ok) window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴图文", type: "success" } }));
           } else if (item.type === "file" && item.content) {
             // 文件粘贴：将文件路径写入剪贴板
             const ok = await pasteText(item.content);

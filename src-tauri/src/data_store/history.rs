@@ -291,6 +291,63 @@ impl DataStore {
         Ok(())
     }
 
+    /// 更新图文混排（rich）记录：同时写回 HTML 片段（content）与纯文本（text）。
+    /// 与普通 text 类型不同，rich 的两个字段语义不同：content 是真实富文本（回写剪贴板用），
+    /// text 是搜索/列表标题用的纯文本，必须一并更新，否则两者会逐渐不一致。
+    /// md5 口径对齐采集侧与回写侧：都是 md5(HTML 片段字节)，不能用纯文本算，
+    /// 否则粘贴抑制（防自粘贴回显）的 hash 匹配会永久失效。
+    /// 保存后清理“编辑时被删掉的图片”：旧片段里有、新片段里没了的本地图片，
+    /// 交给与删除记录共用的引用计数清理逻辑处理（仍被其它记录引用则不删）。
+    pub fn update_history_rich(
+        &self,
+        id: &str,
+        html_fragment: &str,
+        plain_text: &str,
+    ) -> Result<(), String> {
+        let conn = self.lock_conn();
+        let md5_hash = format!(
+            "{:x}",
+            Md5::new().chain_update(html_fragment.as_bytes()).finalize()
+        );
+        let pinyin_initials = compute_pinyin_initials(plain_text);
+
+        // 先取旧片段，用于算出本次编辑丢掉的图片
+        let old_content: String = conn
+            .query_row(
+                "SELECT content FROM history WHERE id = ?1 AND type = 'rich'",
+                params![id],
+                |row| row.get(0),
+            )
+            .map_err(|_| "记录不存在".to_string())?;
+
+        let affected = conn
+            .execute(
+                "UPDATE history SET content = ?1, text = ?2, md5 = ?3, pinyin_initials = ?4 WHERE id = ?5",
+                params![html_fragment, plain_text, md5_hash, pinyin_initials, id],
+            )
+            .map_err(|e| e.to_string())?;
+        if affected == 0 {
+            return Err("记录不存在".to_string());
+        }
+
+        // 算出“旧有、新无”的图片作为清理候选
+        let old_imgs = Self::extract_local_image_files_from_rich_content(&old_content);
+        let new_imgs: std::collections::HashSet<String> =
+            Self::extract_local_image_files_from_rich_content(html_fragment)
+                .into_iter()
+                .collect();
+        let dropped: Vec<String> = old_imgs
+            .into_iter()
+            .filter(|p| !new_imgs.contains(p))
+            .collect();
+
+        // 必须先释放 conn 锁：cleanup_orphaned_image_files 内部会再次 lock_conn()，
+        // std::sync::Mutex 不可重入（同 delete_history 里踩过的那个死锁）。
+        drop(conn);
+        self.cleanup_orphaned_image_files(&dropped);
+        Ok(())
+    }
+
     /// 查找与给定 md5 相同的最近一条文本记录（用于智能合并重复内容）
     /// 修复 Low：增加 workspace 过滤，避免跨工作区误合并
     pub fn find_latest_by_md5(
@@ -356,27 +413,120 @@ impl DataStore {
                 .enumerate()
                 .map(|(i, _)| format!("?{}", i + 1))
                 .collect();
-            let sql = format!(
-                "DELETE FROM history WHERE id IN ({})",
-                placeholders.join(",")
-            );
             let param_refs: Vec<&dyn rusqlite::types::ToSql> = ids
                 .iter()
                 .map(|s| s as &dyn rusqlite::types::ToSql)
                 .collect();
+
+            // 删除前先收集被删记录引用的本地图片文件路径（image 类型 content 就是图片路径，
+            // rich 类型要从 HTML 片段里反推 file:// 引用）。提交事务后再判断是否真正删文件，
+            // 避免事务回滚时文件已经被删了的不一致。
+            let select_sql = format!(
+                "SELECT type, content FROM history WHERE id IN ({})",
+                placeholders.join(",")
+            );
+            let candidate_paths: Vec<String> = {
+                let mut stmt = conn.prepare(&select_sql).map_err(|e| e.to_string())?;
+                let rows = stmt
+                    .query_map(param_refs.as_slice(), |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })
+                    .map_err(|e| e.to_string())?;
+                let mut paths = Vec::new();
+                for row in rows {
+                    let (item_type, content) = row.map_err(|e| e.to_string())?;
+                    match item_type.as_str() {
+                        "image" if !content.is_empty() => paths.push(content),
+                        "rich" => paths.extend(Self::extract_local_image_files_from_rich_content(&content)),
+                        _ => {}
+                    }
+                }
+                paths
+            };
+
+            let delete_sql = format!(
+                "DELETE FROM history WHERE id IN ({})",
+                placeholders.join(",")
+            );
             let count = conn
-                .execute(&sql, param_refs.as_slice())
+                .execute(&delete_sql, param_refs.as_slice())
                 .map_err(|e| e.to_string())?;
-            Ok(count as u32)
+            Ok((count as u32, candidate_paths))
         })();
         match result {
-            Ok(count) => {
+            Ok((count, candidate_paths)) => {
                 tx.commit().map_err(|e| e.to_string())?;
+                // 必须先释放 conn 锁（MutexGuard）再调用 cleanup_orphaned_image_files：
+                // 它内部会再次 self.lock_conn()，而 std::sync::Mutex 不可重入，
+                // 同线程重复加锁会永久阻塞（实测已复现这个死锁）。
+                drop(conn);
+                self.cleanup_orphaned_image_files(&candidate_paths);
                 Ok(count)
             }
             Err(e) => {
                 // tx 在此处离开作用域自动 ROLLBACK，无需手动调用
                 Err(e)
+            }
+        }
+    }
+
+    /// 从 rich 类型 content（HTML 片段）里解析出本项目自己落盘的本地图片文件路径。
+    /// 只处理 file:// 引用——那是 localize_html_images 采集时改写后的格式；
+    /// 远程 http(s) 引用不是本地文件，不处理。
+    fn extract_local_image_files_from_rich_content(content: &str) -> Vec<String> {
+        crate::clipboard_monitor::extract_img_srcs(content)
+            .into_iter()
+            .filter(|src| src.starts_with("file:"))
+            .filter_map(|src| {
+                url::Url::parse(&src)
+                    .ok()?
+                    .to_file_path()
+                    .ok()
+                    .map(|p| p.to_string_lossy().into_owned())
+            })
+            .collect()
+    }
+
+    /// 事务提交后调用：逐个检查候选图片文件是否还被其它历史记录引用（同一张图片可能
+    /// 被多条记录去重共享——image 类型按内容 hash 命名文件，rich 类型内嵌图片同理），
+    /// 只有确认没有任何记录还引用时才真正删除磁盘文件，避免误删仍在使用的图片。
+    fn cleanup_orphaned_image_files(&self, candidate_paths: &[String]) {
+        if candidate_paths.is_empty() {
+            return;
+        }
+        let conn = self.lock_conn();
+        let mut seen = std::collections::HashSet::new();
+        for path in candidate_paths {
+            if !seen.insert(path.clone()) {
+                continue; // 本批次里同路径去重，避免重复查询
+            }
+            // 用文件名（hash.ext）做子串匹配，而不是重新拼回完整 file:// URI：
+            // rich content 里存的是正斜杠形式的 href，直接拼回去容易因转义/分隔符差异对不上；
+            // 文件名本身是 128 位 hash + 扩展名，足够唯一，子串匹配安全且简单。
+            let Some(file_name) = std::path::Path::new(path)
+                .file_name()
+                .and_then(|n| n.to_str())
+            else {
+                continue;
+            };
+            let like_pattern = format!("%{}%", escape_like_pattern(file_name));
+            let still_referenced: bool = conn
+                .query_row(
+                    "SELECT EXISTS(
+                        SELECT 1 FROM history
+                        WHERE (type = 'image' AND content = ?1)
+                           OR (type = 'rich' AND content LIKE ?2 ESCAPE '\\')
+                    )",
+                    params![path.as_str(), like_pattern],
+                    |row| row.get::<_, i32>(0),
+                )
+                .map(|n| n != 0)
+                .unwrap_or(true); // 查询失败时保守起见当作仍被引用，不删文件
+
+            if !still_referenced {
+                if let Err(e) = std::fs::remove_file(path) {
+                    log::warn!("[DataStore] 清理孤立图片文件失败 ({}): {}", path, e);
+                }
             }
         }
     }

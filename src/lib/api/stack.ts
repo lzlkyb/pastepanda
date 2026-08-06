@@ -4,7 +4,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/stores/appStore";
 import { logger } from "@/lib/logger";
-import { pasteText, pasteImage } from "./paste";
+import { pasteText, pasteImage, pasteRich } from "./paste";
 
 /** 同步栈模式状态到后端（托盘图标） */
 function syncStackModeToBackend(active: boolean) {
@@ -58,6 +58,8 @@ export async function stackPasteNext(): Promise<boolean> {
     let ok: boolean;
     if (item.type === "image" && item.content) {
       ok = await pasteImage(item.content);
+    } else if (item.type === "rich" && item.content) {
+      ok = await pasteRich(item.content, item.text);
     } else if (item.type === "file") {
       // 文件粘贴完整路径（content），与列表回车粘贴行为保持一致
       ok = await pasteText(item.content || item.text);

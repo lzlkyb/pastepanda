@@ -22,8 +22,8 @@
   /* 皮肤场景：玻璃对话框（方案B 沉浸磨砂）— 用 --glass-dialog-bg + backdrop-filter 让主题场景透出；
      不透明 --dialog-bg 保留给对话框内部需实心对比的元素（如设置吸顶搜索栏、TransformHub 芯片） */
   background: var(--glass-dialog-bg);
-  backdrop-filter: blur(var(--glass-dialog-blur)) saturate(1.4);
-  -webkit-backdrop-filter: blur(var(--glass-dialog-blur)) saturate(1.4);
+  backdrop-filter: var(--glass-dialog-filter, blur(var(--glass-dialog-blur)) saturate(1.4));
+  -webkit-backdrop-filter: var(--glass-dialog-filter, blur(var(--glass-dialog-blur)) saturate(1.4));
   border: 1px solid var(--glass-popover-border);
   border-radius: 16px;
   display: flex;
@@ -49,6 +49,8 @@
 .dialog-box.w380 { width: 380px; max-height: 70vh; }
 .dialog-box.about-dialog { max-height: 85vh; }
 .dialog-box.w460 { width: 460px; max-height: 78vh; }
+/* 图文混排编辑：正文内嵌图片，窗口窄了图会被压得很小，给到 520px */
+.dialog-box.w520 { width: 520px; max-height: 82vh; }
 
 /* ===== Dialog Header ===== */
 .dialog-header {

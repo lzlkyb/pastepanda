@@ -23,7 +23,8 @@ export interface HistoryItem {
   id: string;
   text: string;
   time: string;
-  type: "text" | "image" | "file";
+  /** rich = 图文混排（CF_HTML 采集）：content 存 HTML 片段，text 存纯文本副本 */
+  type: "text" | "image" | "file" | "rich";
   content: string; // 空 / 图片路径 / 文件路径JSON
   pinned: boolean;
   source: string;

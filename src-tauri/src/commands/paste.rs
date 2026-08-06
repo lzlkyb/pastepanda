@@ -50,6 +50,46 @@ pub fn paste_image(engine: State<PasteEngine>, image_path: String) -> Result<(),
     engine.execute_paste_image(&image_path)
 }
 
+/// 粘贴图文混排内容：同时写入 CF_HTML 富文本 + 纯文本保底，再发送 Ctrl+V
+#[tauri::command]
+pub fn paste_rich(
+    engine: State<PasteEngine>,
+    html_fragment: String,
+    plain_text: String,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        engine.execute_paste_rich(&html_fragment, &plain_text)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = engine;
+        let _ = html_fragment;
+        let _ = plain_text;
+        Err("仅支持 Windows".to_string())
+    }
+}
+
+/// 仅复制图文混排内容到剪贴板（不粘贴）
+#[tauri::command]
+pub fn copy_rich_only(
+    engine: State<PasteEngine>,
+    html_fragment: String,
+    plain_text: String,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        engine.copy_rich_only(&html_fragment, &plain_text)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = engine;
+        let _ = html_fragment;
+        let _ = plain_text;
+        Err("仅支持 Windows".to_string())
+    }
+}
+
 /// 保存当前前台窗口句柄（在显示窗口之前调用）
 #[tauri::command]
 pub fn save_foreground(engine: State<PasteEngine>) -> Result<(), String> {

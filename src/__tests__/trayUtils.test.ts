@@ -180,6 +180,24 @@ describe("resolvePasteTarget", () => {
     const item = makeItem({ type: "file", content: "", text: "no-path" });
     expect(resolvePasteTarget(item)).toEqual({ method: "text", payload: "no-path" });
   });
+
+  it("图文混排项 → pasteRich(content 作富文本, text 作纯文本保底)", () => {
+    const item = makeItem({
+      type: "rich",
+      content: '<p>hi</p><img src="file:///C:/a.png">',
+      text: "hi",
+    });
+    expect(resolvePasteTarget(item)).toEqual({
+      method: "rich",
+      payload: '<p>hi</p><img src="file:///C:/a.png">',
+      plainText: "hi",
+    });
+  });
+
+  it("图文项无 content → 回退 pasteText(text)", () => {
+    const item = makeItem({ type: "rich", content: "", text: "fallback" });
+    expect(resolvePasteTarget(item)).toEqual({ method: "text", payload: "fallback" });
+  });
 });
 
 // ============================================================

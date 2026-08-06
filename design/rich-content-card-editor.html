@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>图文混排(rich)类型 — 卡片 & 详情弹窗设计稿</title>
+<style>
+  :root {
+    --bg: #F7F7F8;
+    --card-bg: #FFFFFF;
+    --text-primary: #1F2937;
+    --text-secondary: #6B7280;
+    --text-muted: #9CA3AF;
+    --accent: #4F7CFF;
+    --border: rgba(0,0,0,0.06);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text-primary);
+    padding: 32px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 40px 0 12px; color: var(--text-primary); }
+  p.lead { color: var(--text-secondary); font-size: 13px; margin: 0 0 24px; }
+  .section { max-width: 720px; }
+  .card-list { display: flex; flex-direction: column; gap: 10px; }
+  .card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    position: relative;
+  }
+  .card.new::before {
+    content: "新增";
+    position: absolute;
+    top: -8px;
+    left: 12px;
+    background: #F59E0B;
+    color: #fff;
+    font-size: 10px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-weight: 600;
+  }
+  .icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 18px;
+    overflow: hidden;
+  }
+  .icon.blue   { background: rgba(59,130,246,0.12); }
+  .icon.green  { background: rgba(16,185,129,0.12); }
+  .icon.pink   { background: rgba(236,72,153,0.12); }
+  .icon.amber  { background: rgba(245,158,11,0.14); }
+  .icon img { width: 100%; height: 100%; object-fit: cover; }
+  .content { flex: 1; min-width: 0; }
+  .title {
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin: 0 0 3px;
+  }
+  .sub { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-secondary); }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(245,158,11,0.14);
+    color: #B45309;
+    font-weight: 600;
+  }
+  .time { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+
+  /* ── 详情弹窗 ── */
+  .dialog {
+    max-width: 520px;
+    background: var(--card-bg);
+    border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.14);
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .dialog-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .dialog-header .close {
+    margin-left: auto;
+    color: var(--text-muted);
+    font-size: 16px;
+    cursor: pointer;
+  }
+  .dialog-body {
+    padding: 18px;
+    max-height: 360px;
+    overflow-y: auto;
+    font-size: 13.5px;
+    line-height: 1.7;
+  }
+  .dialog-body img {
+    max-width: 100%;
+    border-radius: 8px;
+    margin: 8px 0;
+    display: block;
+    border: 1px solid var(--border);
+  }
+  .dialog-footer {
+    display: flex;
+    gap: 8px;
+    padding: 12px 18px;
+    border-top: 1px solid var(--border);
+    justify-content: flex-end;
+  }
+  .btn {
+    font-size: 12.5px;
+    padding: 6px 14px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: #fff;
+    cursor: pointer;
+    color: var(--text-primary);
+  }
+  .btn.primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .note {
+    max-width: 720px;
+    background: #FFFBEB;
+    border: 1px solid #FDE68A;
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: #78350F;
+    margin-top: 16px;
+  }
+  .note b { color: #92400E; }
+  .note ul { margin: 6px 0 0; padding-left: 18px; }
+</style>
+</head>
+<body>
+
+<h1>图文混排（rich）类型 — 卡片 & 详情弹窗设计稿</h1>
+<p class="lead">阶段 4：只涉及展示层，采集/存储/回写机制已验证跑通。请确认下面的视觉方案和范围界定。</p>
+
+<div class="section">
+  <h2>1. 卡片列表 — 和现有 3 种类型放在一起对比</h2>
+  <div class="card-list">
+    <div class="card">
+      <div class="icon blue">📝</div>
+      <div class="content">
+        <p class="title">这是一段普通复制的纯文本内容</p>
+        <div class="sub"><span>剪贴板管理器</span></div>
+      </div>
+      <span class="time">刚刚</span>
+    </div>
+
+    <div class="card">
+      <div class="icon pink"><img src="https://placehold.co/42x42/ec4899/fff?text=IMG" alt=""></div>
+      <div class="content">
+        <p class="title">[图片] 1920x1080</p>
+        <div class="sub"><span>微信</span></div>
+      </div>
+      <span class="time">2分钟前</span>
+    </div>
+
+    <div class="card">
+      <div class="icon green">📁</div>
+      <div class="content">
+        <p class="title">季度报表.xlsx</p>
+        <div class="sub"><span>资源管理器</span></div>
+      </div>
+      <span class="time">5分钟前</span>
+    </div>
+
+    <div class="card new">
+      <div class="icon amber"><img src="https://placehold.co/42x42/f59e0b/fff?text=IMG" alt=""></div>
+      <div class="content">
+        <p class="title">项目排期看这张图，红色部分是本周要交付的内容</p>
+        <div class="sub">
+          <span class="badge">🖼📝 图文</span>
+          <span>Word</span>
+        </div>
+      </div>
+      <span class="time">刚刚</span>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>卡片方案：</b>
+    <ul>
+      <li>缩略图 = 片段里的<b>第一张</b>内嵌图片（多图只取第一张做缩略图，跟现有"image"类型的加载/缓存机制一致）</li>
+      <li>标题 = 存下来的纯文本（有 CF_UNICODETEXT 就直接用，没有就用去标签后的文字保底）</li>
+      <li>颜色定为<b>琥珀色</b>，和文本(蓝)/图片(粉)/文件(绿)/代码(紫)都不冲突</li>
+      <li>副标题加一个「🖼📝 图文」小徽标，跟"置顶"徽标同一行，方便一眼跟纯图片区分开</li>
+    </ul>
+  </div>
+</div>
+
+<div class="section">
+  <h2>2. 点开详情 — 只读展示，不做行内编辑</h2>
+  <div class="dialog">
+    <div class="dialog-header">
+      🖼📝 图文详情
+      <span class="close">✕</span>
+    </div>
+    <div class="dialog-body">
+      <p>项目排期看这张图，红色部分是本周要交付的内容：</p>
+      <img src="https://placehold.co/460x220/fef3c7/92400e?text=%E5%86%85%E5%B5%8C%E5%9B%BE%E7%89%871" alt="">
+      <p>下面这张是对比上周的变化，多出来的两项本周一起处理：</p>
+      <img src="https://placehold.co/460x160/fef3c7/92400e?text=%E5%86%85%E5%B5%8C%E5%9B%BE%E7%89%872" alt="">
+      <p>有问题随时找我。</p>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn">仅复制</button>
+      <button class="btn primary">复制并粘贴</button>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>范围界定（这是个需要你拍板的决定，不是纯视觉细节）：</b>
+    <ul>
+      <li>这版详情弹窗是<b>只读展示</b>——按原样重现文字+图片的顺序和位置，不支持在弹窗里增删图片/改文字。真要支持行内编辑，等于要做一个迷你富文本编辑器，工作量是另一个量级，而用户反馈的原始需求是"复制什么、粘贴出来还是什么"，不是"编辑功能"，所以先按只读做</li>
+      <li>渲染机制沿用 <code>MarkdownRenderer.tsx</code> 已经验证过的套路：本地图片路径在消毒前先转成 <code>convertFileSrc()</code> 地址、不走沙箱 iframe（沙箱 iframe 读不了本地文件，之前调研已经确认过这个坑）</li>
+      <li>底部按钮跟其它类型编辑框保持一致：仅复制 / 复制并粘贴，分别对应后端已经写好的 <code>copy_rich_only</code> / <code>paste_rich</code></li>
+    </ul>
+  </div>
+</div>
+
+</body>
+</html>

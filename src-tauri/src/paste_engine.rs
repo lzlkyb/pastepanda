@@ -344,6 +344,121 @@ impl PasteEngine {
         Ok(())
     }
 
+    /// 将图文混排内容一次性写入剪贴板（CF_HTML 富文本 + CF_UNICODETEXT 纯文本保底），不触发粘贴。
+    /// 必须用原始 Win32（同 copy_files() 的模式），因为 arboard 的 set_text/set_image
+    /// 每次都会独立开关剪贴板，无法在同一个会话里同时装两种格式。
+    /// 图片以 <img src="file:///..."> 本地路径引用内嵌在 HTML 里；目标应用是否认这种引用
+    /// 取决于对方，纯文本保底至少保证能粘出文字。
+    #[cfg(target_os = "windows")]
+    fn write_rich_to_clipboard(html_fragment: &str, plain_text: &str) -> Result<(), String> {
+        use windows::core::w;
+        use windows::Win32::Foundation::{GlobalFree, HANDLE};
+        use windows::Win32::System::DataExchange::*;
+        use windows::Win32::System::Memory::*;
+
+        let cf_html_bytes = crate::clipboard_monitor::build_cf_html_buffer(html_fragment);
+        let mut text_wide: Vec<u16> = plain_text.encode_utf16().collect();
+        text_wide.push(0); // CF_UNICODETEXT 需要字结尾 null
+
+        unsafe {
+            OpenClipboard(None).map_err(|e| format!("无法打开剪贴板: {}", e))?;
+            let _ = EmptyClipboard();
+
+            // -- 写 CF_UNICODETEXT --
+            let text_byte_len = text_wide.len() * std::mem::size_of::<u16>();
+            let text_hmem = match GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, text_byte_len) {
+                Ok(h) => h,
+                Err(e) => {
+                    let _ = CloseClipboard();
+                    return Err(format!("GlobalAlloc(文本) 失败: {}", e));
+                }
+            };
+            let text_ptr = GlobalLock(text_hmem);
+            if text_ptr.is_null() {
+                let _ = GlobalFree(text_hmem);
+                let _ = CloseClipboard();
+                return Err("GlobalLock(文本) 失败".to_string());
+            }
+            std::ptr::copy_nonoverlapping(text_wide.as_ptr(), text_ptr as *mut u16, text_wide.len());
+            let _ = GlobalUnlock(text_hmem);
+
+            const CF_UNICODETEXT: u32 = 13;
+            if let Err(e) = SetClipboardData(CF_UNICODETEXT, HANDLE(text_hmem.0)) {
+                let _ = GlobalFree(text_hmem);
+                let _ = CloseClipboard();
+                return Err(format!("SetClipboardData(文本) 失败: {}", e));
+            }
+
+            // -- 写 CF_HTML --
+            let format_id = RegisterClipboardFormatW(w!("HTML Format"));
+            let html_hmem = match GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, cf_html_bytes.len()) {
+                Ok(h) => h,
+                Err(e) => {
+                    let _ = CloseClipboard();
+                    return Err(format!("GlobalAlloc(HTML) 失败: {}", e));
+                }
+            };
+            let html_ptr = GlobalLock(html_hmem);
+            if html_ptr.is_null() {
+                let _ = GlobalFree(html_hmem);
+                let _ = CloseClipboard();
+                return Err("GlobalLock(HTML) 失败".to_string());
+            }
+            std::ptr::copy_nonoverlapping(cf_html_bytes.as_ptr(), html_ptr as *mut u8, cf_html_bytes.len());
+            let _ = GlobalUnlock(html_hmem);
+
+            if let Err(e) = SetClipboardData(format_id, HANDLE(html_hmem.0)) {
+                let _ = GlobalFree(html_hmem);
+                let _ = CloseClipboard();
+                return Err(format!("SetClipboardData(HTML) 失败: {}", e));
+            }
+
+            let _ = CloseClipboard();
+        }
+        Ok(())
+    }
+
+    /// 仅复制图文混排内容到剪贴板（不粘贴）
+    #[cfg(target_os = "windows")]
+    pub fn copy_rich_only(&self, html_fragment: &str, plain_text: &str) -> Result<(), String> {
+        let content_hash = format!("{:x}", md5::Md5::new().chain_update(html_fragment.as_bytes()).finalize());
+        self.paste_suppress
+            .set_with_hash(Duration::from_millis(3000), content_hash);
+        Self::write_rich_to_clipboard(html_fragment, plain_text)
+    }
+
+    /// 粘贴图文混排内容：写入剪贴板（CF_HTML + 纯文本保底）→ 发送 WM_PASTE
+    #[cfg(target_os = "windows")]
+    pub fn execute_paste_rich(&self, html_fragment: &str, plain_text: &str) -> Result<(), String> {
+        // 1. 获取粘贴锁，防止竞态
+        if self.paste_lock.swap(true, Ordering::Acquire) {
+            log::warn!("[PasteEngine] 上一个粘贴操作仍在进行中，跳过本次图文混排粘贴");
+            return Err("上一个粘贴操作仍在进行中，请稍后再试".to_string());
+        }
+        struct LockGuard<'a>(&'a AtomicBool);
+        impl<'a> Drop for LockGuard<'a> {
+            fn drop(&mut self) {
+                self.0.store(false, Ordering::Release);
+            }
+        }
+        let _guard = LockGuard(&self.paste_lock);
+
+        // 2. 粘贴抑制（hash 口径需与采集时一致：md5(片段字节)，采集时也是这样算的）
+        let content_hash = format!("{:x}", md5::Md5::new().chain_update(html_fragment.as_bytes()).finalize());
+        self.paste_suppress
+            .set_with_hash(Duration::from_millis(3000), content_hash);
+
+        // 3. 写入剪贴板
+        Self::write_rich_to_clipboard(html_fragment, plain_text)?;
+
+        // 4. 粘贴前实时重抓前台窗口 + 发送 Ctrl+V（与 execute_paste_image 一致）
+        let now_hwnd = self.capture_foreground_now();
+        let target_hwnd = self.get_target_hwnd(now_hwnd);
+        self.restore_and_send_ctrl_v(target_hwnd)?;
+
+        Ok(())
+    }
+
     /// 粘贴图片：读取图片文件 → 写入剪贴板 → 发送 WM_PASTE
     pub fn execute_paste_image(&self, image_path: &str) -> Result<(), String> {
         // 1. 读取并解码图片（hash 口径须与监听线程一致：对 RGBA 像素字节计算，修复 C9。
@@ -644,6 +759,60 @@ impl PasteEngine {
                 let _ = AttachThreadInput(cur_tid, target_tid, false);
             }
             ok
+        }
+    }
+}
+
+#[cfg(test)]
+#[cfg(target_os = "windows")]
+mod tests {
+    use super::*;
+
+    /// 真实剪贴板往返：写入 write_rich_to_clipboard 后直接读真实剪贴板，验证 CF_UNICODETEXT
+    /// 和 CF_HTML 两个格式同时写入成功且内容正确（不需要构造 PasteEngine 实例，因为
+    /// write_rich_to_clipboard 是不带 self 的关联函数）。
+    #[test]
+    fn test_write_rich_to_clipboard_round_trip() {
+        use windows::core::w;
+        use windows::Win32::Foundation::HGLOBAL;
+        use windows::Win32::System::DataExchange::*;
+        use windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
+
+        let fragment = "这是中文段落，包含<img src=\"file:///C:/temp/图片.png\">和后续文字。";
+        let plain = "这是中文段落，图片和后续文字。";
+
+        PasteEngine::write_rich_to_clipboard(fragment, plain).expect("写入剪贴板应成功");
+
+        unsafe {
+            OpenClipboard(None).expect("打开剪贴板失败");
+
+            // -- 读 CF_UNICODETEXT --
+            const CF_UNICODETEXT: u32 = 13;
+            let text_handle = GetClipboardData(CF_UNICODETEXT).expect("读取 CF_UNICODETEXT 失败");
+            let text_hmem = HGLOBAL(text_handle.0);
+            let text_ptr = GlobalLock(text_hmem) as *const u16;
+            let mut len = 0usize;
+            while *text_ptr.add(len) != 0 {
+                len += 1;
+            }
+            let read_text = String::from_utf16_lossy(std::slice::from_raw_parts(text_ptr, len));
+            let _ = GlobalUnlock(text_hmem);
+            assert_eq!(read_text, plain, "读回的 CF_UNICODETEXT 应与写入的纯文本一致");
+
+            // -- 读 CF_HTML --
+            let format_id = RegisterClipboardFormatW(w!("HTML Format"));
+            let html_handle = GetClipboardData(format_id).expect("读取 HTML Format 失败");
+            let html_hmem = HGLOBAL(html_handle.0);
+            let size = GlobalSize(html_hmem);
+            let html_ptr = GlobalLock(html_hmem) as *const u8;
+            let raw = std::slice::from_raw_parts(html_ptr, size).to_vec();
+            let _ = GlobalUnlock(html_hmem);
+
+            let _ = CloseClipboard();
+
+            let parsed = crate::clipboard_monitor::parse_cf_html_fragment(&raw)
+                .expect("应能从写回的 CF_HTML 里解析出片段");
+            assert_eq!(parsed, fragment, "解析出的片段应与写入前的完全一致（回写侧与采集侧共用同一套 CF_HTML 构造/解析逻辑）");
         }
     }
 }

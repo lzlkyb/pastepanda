@@ -423,6 +423,87 @@ fn test_delete_nonexistent() {
     assert_eq!(count, 0);
 }
 
+// ── 删除时清理关联图片文件（图文混排 rich 类型引入，顺带修复 image 类型同样的遗留问题） ──
+
+#[test]
+fn test_delete_image_item_removes_file() {
+    let store = make_store();
+    let dir = std::env::temp_dir().join(format!("pastepanda_del_test_{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let img_path = dir.join("pic.png");
+    std::fs::write(&img_path, b"fake png bytes").unwrap();
+
+    let item = HistoryItem {
+        content: img_path.to_string_lossy().to_string(),
+        ..make_item("img-1", "[图片] 10x10", "2024-01-01 10:00:00", "image")
+    };
+    store.insert_history(&item).unwrap();
+    assert!(img_path.exists());
+
+    store.delete_history(&["img-1".to_string()]).unwrap();
+    assert!(!img_path.exists(), "删除唯一引用该图片的记录后，文件应被清理");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_delete_image_item_keeps_file_if_still_referenced() {
+    // 同一张图片被两条记录共用（按内容 hash 去重后的真实情况）——
+    // 删其中一条不应该连带删掉另一条还在用的图片。
+    let store = make_store();
+    let dir = std::env::temp_dir().join(format!("pastepanda_del_test_{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let img_path = dir.join("shared.png");
+    std::fs::write(&img_path, b"shared png bytes").unwrap();
+
+    let item1 = HistoryItem {
+        content: img_path.to_string_lossy().to_string(),
+        ..make_item("img-a", "[图片] 10x10", "2024-01-01 10:00:00", "image")
+    };
+    let item2 = HistoryItem {
+        content: img_path.to_string_lossy().to_string(),
+        ..make_item("img-b", "[图片] 10x10", "2024-01-01 11:00:00", "image")
+    };
+    store.insert_history(&item1).unwrap();
+    store.insert_history(&item2).unwrap();
+
+    store.delete_history(&["img-a".to_string()]).unwrap();
+    assert!(img_path.exists(), "img-b 还引用着这张图，不应被删除本次删除的 img-a 误删文件");
+
+    store.delete_history(&["img-b".to_string()]).unwrap();
+    assert!(!img_path.exists(), "最后一条引用也删除后，文件才真正清理");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_delete_rich_item_removes_embedded_images() {
+    let store = make_store();
+    let dir = std::env::temp_dir().join(format!("pastepanda_del_test_{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let img1 = dir.join("a1b2c3.png");
+    let img2 = dir.join("d4e5f6.png");
+    std::fs::write(&img1, b"img1").unwrap();
+    std::fs::write(&img2, b"img2").unwrap();
+
+    let html = format!(
+        "<p>前文</p><img src=\"file:///{}\"><img src=\"file:///{}\"><p>后文</p>",
+        img1.to_string_lossy().replace('\\', "/"),
+        img2.to_string_lossy().replace('\\', "/")
+    );
+    let item = HistoryItem {
+        content: html,
+        ..make_item("rich-1", "前文 后文", "2024-01-01 10:00:00", "rich")
+    };
+    store.insert_history(&item).unwrap();
+
+    store.delete_history(&["rich-1".to_string()]).unwrap();
+    assert!(!img1.exists(), "rich 记录删除后，内嵌的图片1应被清理");
+    assert!(!img2.exists(), "rich 记录删除后，内嵌的图片2应被清理");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 // ============================================================
 // toggle_pin 测试
 // ============================================================
