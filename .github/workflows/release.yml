@@ -230,46 +230,143 @@ jobs:
           }
           node scripts/verify-updater-json.mjs dist/updater-gitee.json
 
+      # 可选性靠 continue-on-error 实现，不靠脚本里的 exit 0：
+      #   旧实现包一层 try/catch，失败时 catch 里 exit 0 想做到"不影响发版"，
+      #   但 PowerShell 的 catch 只接 cmdlet 的终止错误，git 这类原生命令返回非零
+      #   **不会**进 catch（实测：native 失败 LASTEXITCODE=3 但不抛；cmdlet 失败才抛）。
+      #   于是出现两种都错的结果：
+      #     - git push 失败 → 不进 catch → 底下那句 "✅ 已镜像" 照样打印（日志骗人），
+      #       同时 LASTEXITCODE 非零又把整个 run 弄红（v5.6.1 就是这样）；
+      #     - 反过来某个 cmdlet 失败 → 进 catch → exit 0 → 绿灯，而镜像其实从没成功。
+      #   现在：每个 git 调用后显式判 $LASTEXITCODE，失败就带原因 exit 1（步骤标红、
+      #   一眼看得见），而 continue-on-error 保证它不拖累已发布的 GitHub Release。
+      #   成功日志只在真推上去之后打印。
       - name: 镜像发布产物到 Gitee（国内加速，可选）
         shell: pwsh
+        continue-on-error: true
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           GITEE_REPOSITORY: ${{ secrets.GITEE_REPOSITORY }}
         run: |
+          # 不用 Stop：让流程走到我们自己的检查点，而不是被某个 cmdlet 的异常抢跑。
+          $ErrorActionPreference = 'Continue'
+
+          function Fail([string]$why) {
+            Write-Host ""
+            Write-Host "❌ Gitee 镜像未完成：$why"
+            Write-Host "   GitHub Release 已正常发布，自动更新仍可走 ghproxy/GitHub 端点；"
+            Write-Host "   只有 Gitee 国内加速通道这一次没更新。"
+            exit 1
+          }
+
           if ([string]::IsNullOrWhiteSpace($env:GITEE_TOKEN) -or [string]::IsNullOrWhiteSpace($env:GITEE_REPOSITORY)) {
             Write-Host "⚠️ 未配置 GITEE_TOKEN/GITEE_REPOSITORY secret，跳过 Gitee 镜像发布"
             exit 0
           }
           $tag = "${{ github.ref_name }}"
-          try {
-            $giteeUrl = "https://oauth2:$($env:GITEE_TOKEN)@gitee.com/$($env:GITEE_REPOSITORY).git"
-            $mirrorDir = Join-Path $env:RUNNER_TEMP "gitee-mirror"
+          # 仓库路径不是秘密，打出来：客户端硬编码的地址与这个 secret 不一致时，
+          # 镜像会"成功"到一个没人读的仓库，不打印根本无法发现。
+          Write-Host "目标 Gitee 仓库：$($env:GITEE_REPOSITORY)（分支 releases，目录 latest/）"
 
-            git clone --depth 1 --branch releases $giteeUrl $mirrorDir 2>&1
-            if ($LASTEXITCODE -ne 0) {
-              git clone --depth 1 $giteeUrl $mirrorDir 2>&1
-              Push-Location $mirrorDir
-              git checkout --orphan releases
-              git reset --hard
-              Pop-Location
-            }
+          $giteeUrl = "https://oauth2:$($env:GITEE_TOKEN)@gitee.com/$($env:GITEE_REPOSITORY).git"
+          $mirrorDir = Join-Path $env:RUNNER_TEMP "gitee-mirror"
 
-            # 固定覆盖 latest/ 目录（不按 tag 累加）
-            $destDir = Join-Path $mirrorDir "latest"
-            if (Test-Path $destDir) { Remove-Item $destDir -Recurse -Force }
-            New-Item -ItemType Directory -Path $destDir -Force | Out-Null
-            Copy-Item src-tauri/target/release/bundle/nsis/*.exe $destDir/ -ErrorAction SilentlyContinue
-            Copy-Item src-tauri/target/release/bundle/nsis/*.exe.sig $destDir/ -ErrorAction SilentlyContinue
-            Copy-Item dist/updater-gitee.json $destDir/ -ErrorAction SilentlyContinue
-
+          git clone --depth 1 --branch releases $giteeUrl $mirrorDir 2>&1 | Write-Host
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "ℹ️ releases 分支不存在（首次发布），改为 clone 默认分支后建孤儿分支"
+            git clone --depth 1 $giteeUrl $mirrorDir 2>&1 | Write-Host
+            if ($LASTEXITCODE -ne 0) { Fail "clone Gitee 仓库失败（查 GITEE_TOKEN 是否有写权限、GITEE_REPOSITORY 路径是否正确）" }
+            if (-not (Test-Path $mirrorDir)) { Fail "clone 返回 0 但目录不存在：$mirrorDir" }
             Push-Location $mirrorDir
-            git add -A latest
-            git -c user.email="ci@pastepanda.local" -c user.name="pastepanda-ci" commit -m "release: mirror $tag to Gitee (latest)"
-            git push origin releases
+            git checkout --orphan releases 2>&1 | Write-Host
+            if ($LASTEXITCODE -ne 0) { Pop-Location; Fail "创建 releases 孤儿分支失败" }
+            git reset --hard 2>&1 | Write-Host
             Pop-Location
-
-            Write-Host "✅ 已镜像到 Gitee releases 分支：$tag"
-          } catch {
-            Write-Host "⚠️ Gitee 镜像发布失败（不影响 GitHub Release）：$_"
-            exit 0
           }
+          if (-not (Test-Path $mirrorDir)) { Fail "镜像工作目录不存在：$mirrorDir" }
+
+          # 固定覆盖 latest/ 目录（不按 tag 累加）
+          $destDir = Join-Path $mirrorDir "latest"
+          if (Test-Path $destDir) { Remove-Item $destDir -Recurse -Force }
+          New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+          Copy-Item src-tauri/target/release/bundle/nsis/*.exe $destDir/ -ErrorAction SilentlyContinue
+          Copy-Item src-tauri/target/release/bundle/nsis/*.exe.sig $destDir/ -ErrorAction SilentlyContinue
+          Copy-Item dist/updater-gitee.json $destDir/ -ErrorAction SilentlyContinue
+
+          # 体积和文件数必须打印：push 被重置时这是判断"是不是太大传不动"的唯一依据。
+          $files = @(Get-ChildItem $destDir -Recurse -File)
+          if ($files.Count -eq 0) { Fail "latest/ 里一个文件都没有（产物路径变了？上一步的 Copy-Item 全没匹配上）" }
+          $mb = ($files | Measure-Object -Property Length -Sum).Sum / 1MB
+          Write-Host ("待推送 latest/：{0} 个文件，合计 {1:N2} MB" -f $files.Count, $mb)
+          $files | ForEach-Object { Write-Host ("  - {0}  {1:N2} MB" -f $_.Name, ($_.Length / 1MB)) }
+
+          Push-Location $mirrorDir
+          git add -A latest 2>&1 | Write-Host
+          if ($LASTEXITCODE -ne 0) { Pop-Location; Fail "git add 失败" }
+          git -c user.email="ci@pastepanda.local" -c user.name="pastepanda-ci" commit -m "release: mirror $tag to Gitee (latest)" 2>&1 | Write-Host
+          if ($LASTEXITCODE -ne 0) { Pop-Location; Fail "git commit 失败（内容与上一版完全相同时也会非零）" }
+
+          # 待传 pack 的真实体积（比文件体积更准：exe 几乎不可压缩）
+          Write-Host "--- git count-objects ---"
+          git count-objects -vH 2>&1 | Write-Host
+
+          # 诊断开关：只在这一步打开。
+          #   GIT_CURL_VERBOSE → HTTP 层细节，能看到连接在哪一步被重置；
+          #   GIT_TRACE        → git 内部子命令与耗时；
+          #   GIT_TRACE_CURL_NO_DATA → 只要头不要数据体，否则日志会被二进制淹没。
+          # token 在 URL 里，但 GITEE_TOKEN 是 secret，GitHub 会自动打码成 ***。
+          $env:GIT_CURL_VERBOSE = "1"
+          $env:GIT_TRACE = "1"
+          $env:GIT_TRACE_CURL_NO_DATA = "1"
+
+          # 第一次：原样推（保留现场，不动任何参数）。
+          # 耗时是关键区分信息：探针已测得 1KB 只需 20 秒、而 8MB 跑 25 分钟不完，
+          # 所以这里要把秒数、退出码、均速都打出来。
+          Write-Host "====== 第一次 push（默认参数） ======"
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          git push --progress --verbose origin releases 2>&1 | Write-Host
+          $pushCode = $LASTEXITCODE
+          $sw.Stop()
+          $sec1 = [int]$sw.Elapsed.TotalSeconds
+          Write-Host ("第一次 push：退出码 {0}，耗时 {1} 秒" -f $pushCode, $sec1)
+          if ($sec1 -gt 0) { Write-Host ("  均速约 {0:N0} KB/s" -f ($mb * 1024 / $sec1)) }
+
+          # 第二次（仅在失败时）：同时试两个针对 "RPC failed / curl 55" 的经典改法，
+          # 把它们放在同一次 run 里验证，省得为了试一个参数再发一版：
+          #   http.postBuffer=500MB → 不用 chunked 上传（很多反代处理不好 chunked）
+          #   --no-thin             → 不发 thin pack（部分服务端对 thin pack 会断连）
+          if ($pushCode -ne 0) {
+            Write-Host ""
+            Write-Host "====== 第二次 push（http.postBuffer=500MB + --no-thin） ======"
+            $sw2 = [System.Diagnostics.Stopwatch]::StartNew()
+            git -c http.postBuffer=524288000 push --no-thin --progress --verbose origin releases 2>&1 | Write-Host
+            $pushCode2 = $LASTEXITCODE
+            $sw2.Stop()
+            $sec2 = [int]$sw2.Elapsed.TotalSeconds
+            Write-Host ("第二次 push：退出码 {0}，耗时 {1} 秒" -f $pushCode2, $sec2)
+            # annotation 会进入 run 的 annotations，可以不看完整日志就拿到关键数字
+            Write-Host ("::error title=Gitee 镜像诊断::pack={0:N2}MB files={1} push1_code={2} push1_sec={3} push2_code={4} push2_sec={5}" -f $mb, $files.Count, $pushCode, $sec1, $pushCode2, $sec2)
+            if ($pushCode2 -eq 0) {
+              Write-Host "✅ 第二次成功 —— 说明 postBuffer/--no-thin 能绕过这个问题，应该直接加到默认参数里"
+              $pushCode = 0
+            }
+          } else {
+            Write-Host ("::notice title=Gitee 镜像::推送成功 pack={0:N2}MB files={1} sec={2}" -f $mb, $files.Count, $sec1)
+          }
+          Pop-Location
+          if ($pushCode -ne 0) { Fail "git push 两次都失败（见上方 GIT_CURL_VERBOSE 输出：连接在哪一步被重置、传了多少字节）" }
+
+          Write-Host "✅ 已推送到 Gitee releases 分支：$tag"
+
+          # 推完立即验证客户端那个地址真的读得到——“推成功”不等于“能用”。
+          # 探针已验：raw 会 302 跳到 raw.giteeusercontent.com，所以必须跟随重定向。
+          $raw = "https://gitee.com/$($env:GITEE_REPOSITORY)/raw/releases/latest/updater-gitee.json"
+          Write-Host "--- 验证 $raw ---"
+          try {
+            $resp = Invoke-WebRequest -Uri $raw -MaximumRedirection 5 -TimeoutSec 60 -UseBasicParsing
+            Write-Host ("raw 返回 {0}，长度 {1} 字节" -f $resp.StatusCode, $resp.RawContentLength)
+            if ($resp.StatusCode -ne 200) { Fail "raw URL 返回 $($resp.StatusCode)，客户端同样读不到" }
+          } catch {
+            Fail "raw URL 请求失败：$_（推上去了却读不到，客户端一样用不了）"
+          }
+          Write-Host "✅ raw URL 可读，国内加速通道本次确实生效"

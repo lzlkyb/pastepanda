@@ -3,6 +3,29 @@ import type { ChangelogEntry } from "./changelog";
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.6.2",
+    date: "2026-08-06",
+    summary: "**国内加速镜像失败时不再报假成功**：之前镜像推送失败时日志照样打印“已...",
+    categories: [
+      {
+        type: "fix",
+        name: "修复",
+        items: [
+          { text: "**国内加速镜像失败时不再报假成功**：之前镜像推送失败时日志照样打印“已镜像成功”，导致国内下载/更新通道已经坏了却一直没人发现；现在只有真正推送成功、并且回头验证过文件可下载才会报成功" },
+        ],
+      },
+      {
+        type: "tech",
+        name: "技术",
+        items: [
+          { text: "发版流程的 Gitee 镜像步骤改用 `continue-on-error` 实现“可选”：原先靠 `try/catch` 里的 `exit 0`，但 PowerShell 的 `catch` 接不到 git 这类原生命令的非零退出码（已实测确认），导致“失败却打印成功”与“可选步骤把整个发版弄红”两种错局同时存在" },
+          { text: "镜像步骤新增诊断输出：目标仓库、待传文件清单与总体积、pack 体积、HTTP 层详细日志、每次 push 的耗时/均速/退出码；失败后自动用 `http.postBuffer` + `--no-thin` 重试一次" },
+          { text: "镜像成功后增加可用性冒烟：直接请求客户端实际使用的 raw 地址（含跨域 302 跟随），“推成功”不再等同于“能用”" },
+        ],
+      },
+    ],
+  },
+  {
     version: "5.6.1",
     date: "2026-08-06",
     summary: "**只复制一张图片时不再被误标成「图文」**：从企业微信等应用复制纯图片时...",
