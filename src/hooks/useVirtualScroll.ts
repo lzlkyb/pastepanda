@@ -243,8 +243,14 @@ export function useVirtualScroll({
     return items.map((item, idx) => ({
       group: getTimeGroup(item.time),
       index: idx,
-      label: item.type === "text" ? item.text.slice(0, 15) : (item.type === "image" ? "图片" : "文件"),
-      type: item.type as "text" | "image" | "file",
+      // 图文混排的 text 存的是真实文字，和 text 类型一样可直接当标题用
+      label:
+        item.type === "text" || item.type === "rich"
+          ? item.text.slice(0, 15)
+          : item.type === "image"
+            ? "图片"
+            : "文件",
+      type: item.type as "text" | "image" | "file" | "rich",
       time: item.time,
     }));
   }, [items, searchKeyword, filterType]);

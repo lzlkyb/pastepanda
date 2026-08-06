@@ -60,7 +60,8 @@ export async function initBackend(): Promise<() => void> {
       const store = useAppStore.getState();
       store.prependItem(event.payload.item);
       invalidateCountsCache(); // 新增记录，清除计数缓存
-      const typeLabel = event.payload.item.type === "image" ? "图片" : event.payload.item.type === "file" ? "文件" : "文本";
+      const t = event.payload.item.type;
+      const typeLabel = t === "image" ? "图片" : t === "rich" ? "图文" : t === "file" ? "文件" : "文本";
       const isLanSync = event.payload.item.source?.startsWith("局域网:");
       if (store.stackMode) {
         // 栈模式：入栈并使用专属提示

@@ -4,7 +4,7 @@
  * 复用 logParser.ts 的 parseLog，输出级别分布 + 时间范围 + 高频错误摘要。
  */
 
-import { parseLog, LEVEL_ORDER, type LogLevel } from "@/lib/logParser";
+import { parseLog, LEVEL_ORDER } from "@/lib/logParser";
 import type { Transform, TransformContext, TransformResult } from "./types";
 
 function ok(output: string, meta?: { count?: number }): TransformResult {

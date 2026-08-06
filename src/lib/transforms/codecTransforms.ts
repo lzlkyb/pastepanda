@@ -121,10 +121,12 @@ const unicodeEncode: Transform = {
   icon: "code",
   group: "web",
   detect: (ctx) => {
-    // 包含非 ASCII 字符时更相关
+    // 包含非 ASCII 字符时更相关（\x00 只是 ASCII 区间下界，不是要匹配控制字符）
+    // eslint-disable-next-line no-control-regex
     return /[^\x00-\x7F]/.test(ctx.text) ? 0.6 : nonEmpty(ctx, BASE);
   },
   run: (t) => {
+    // eslint-disable-next-line no-control-regex
     const encoded = t.replace(/[^\x00-\x7F]/g, (ch) => {
       const code = ch.codePointAt(0)!;
       if (code > 0xffff) {

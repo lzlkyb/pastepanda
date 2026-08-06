@@ -347,10 +347,10 @@ export function SnippetsDialog({ open, onClose }: { open: boolean; onClose: () =
                     </div>
                     <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
                       <button onClick={() => handleRequestClose(false)}
-                        className={`${styles.extractBtnSm} ${styles.ghost}`}>取消</button>
+                        className={`${styles.btnSmV2} ${styles.ghost}`}>取消</button>
                       <button onClick={handleSaveEdit}
                         disabled={!editing.name.trim() || saving}
-                        className={`${styles.extractBtnSm} ${styles.primary}`}
+                        className={`${styles.btnSmV2} ${styles.primary}`}
                         style={!editing.name.trim() || saving ? { opacity: 0.5, cursor: "not-allowed" } : undefined}>{saving ? "保存中..." : "保存"}</button>
                     </div>
                   </div>

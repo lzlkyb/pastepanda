@@ -20,6 +20,10 @@ impl DataStore {
 
         if filter == "pinned" {
             sql.push_str(" AND pinned = 1");
+        } else if filter == "image" {
+            // 图文混排归入「图片」筛选：两者都是带图内容，用户找图时希望一起看到。
+            // 只想看图文时用「图文」自动标签精确筛（不单独占一个顶部标签页，避免拥挤）。
+            sql.push_str(" AND type IN ('image', 'rich')");
         } else if filter != "all" {
             sql.push_str(" AND type = ?");
             params_vec.push(Box::new(filter.to_string()));
@@ -111,6 +115,10 @@ impl DataStore {
         // 类型过滤
         if filter == "pinned" {
             sql.push_str(" AND pinned = 1");
+        } else if filter == "image" {
+            // 图文混排归入「图片」筛选：两者都是带图内容，用户找图时希望一起看到。
+            // 只想看图文时用「图文」自动标签精确筛（不单独占一个顶部标签页，避免拥挤）。
+            sql.push_str(" AND type IN ('image', 'rich')");
         } else if filter != "all" {
             sql.push_str(" AND type = ?");
             params_vec.push(Box::new(filter.to_string()));
@@ -928,8 +936,15 @@ impl DataStore {
         }
         if let Some(t) = item_type {
             if !t.is_empty() && t != "all" {
-                sql.push_str(" AND type = ?");
-                params_vec.push(Box::new(t.to_string()));
+                if t == "image" {
+                    // 与顶部「图片」筛选口径一致：图文混排也算带图内容。
+                    // 不统一的后果很别扭：用户选「图片」去清理，预览里看到的与实际删的不一致，
+                    // 图文记录会被遗留下来。
+                    sql.push_str(" AND type IN ('image', 'rich')");
+                } else {
+                    sql.push_str(" AND type = ?");
+                    params_vec.push(Box::new(t.to_string()));
+                }
             }
         }
         if let Some(s) = source {

@@ -35,9 +35,11 @@ const ALLOWED_ATTR = ["src", "alt", "data-src", "width", "height"];
  * 抹掉，而 update_history_rich 会把“旧有新无”的图片当成用户删除去清理磁盘文件——
  * 等于编辑一次就把图全弄丢了。（MarkdownRenderer 里踩过同一个坑，见那边注释）
  * 注意没有放开 data:：本流程里图片一律已由后端落盘成文件路径，用不到 data URI。
+ * 第二个字符组里的 \- 必须保留转义：它紧挨着 :，去掉反斜杠就变成 .-: 这个区间
+ * （0x2E~0x3A，把 / 和数字都圈进去了），含义完全变了。第一个在组尾，是字面量。
  */
 const ALLOWED_URI_REGEXP =
-  /^(?:(?:https?|file|asset):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i;
+  /^(?:(?:https?|file|asset):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i;
 
 /**
  * 消毒：内容来自外部应用的剪贴板（Word / 浏览器 / 任意第三方程序），

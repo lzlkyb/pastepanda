@@ -37,9 +37,11 @@ impl DataStore {
             )
             .map_err(|e| e.to_string())?;
 
+        // 口径必须与 get_history 的「图片」筛选一致（type IN image/rich），
+        // 否则标签页上的数字会小于实际筛出来的条数
         let image_count: u32 = conn
             .query_row(
-                "SELECT COUNT(*) FROM history WHERE workspace = ?1 AND type = 'image'",
+                "SELECT COUNT(*) FROM history WHERE workspace = ?1 AND type IN ('image', 'rich')",
                 params![workspace],
                 |row| row.get(0),
             )
@@ -194,7 +196,14 @@ impl DataStore {
             .map_err(|e| e.to_string())
         };
         let text_count = type_count("text")?;
-        let image_count = type_count("image")?;
+        // 同上：图文混排计入「图片」，与筛选口径保持一致
+        let image_count: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM history WHERE workspace = ?1 AND type IN ('image', 'rich')",
+                params![workspace],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
         let file_count = type_count("file")?;
 
         // 来源 Top 5（按计数降序）：与 get_sidebar_counts 同源聚合，取代表性图标文件名

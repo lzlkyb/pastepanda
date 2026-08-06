@@ -11,7 +11,7 @@ import { StackBanner } from "@/components/StackBanner";
 import { MdAssocBanner } from "@/components/MdAssocBanner";
 import { TagEditor } from "@/components/TagEditor";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { pasteText, pasteImage, getImageThumbnail, copyImageOnly, copyRichOnly, deleteHistory } from "@/lib/api";
+import { getImageThumbnail, copyItemToClipboard, deleteHistory } from "@/lib/api";
 import { getAllRules } from "@/lib/regexRules";
 import { thumbnailSourcePath } from "@/lib/richContent";
 import { ClipboardList, Copy, Search, Zap, CheckSquare, Square, FileDown, Trash2, GitCompare, FileX } from "lucide-react";
@@ -197,6 +197,10 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   }, [externalScrollRef]);
 
   // ── 统一使用 store 的过滤排序逻辑 ──
+  // 下面依赖数组里那堆值看着"多余"（函数体里确实没直接引用，exhaustive-deps
+  // 也就这么报），但它们是承重的：getFilteredItems() 是从 store 内部读状态的，
+  // 真按 lint 建议删掉，筛选条件变化时这个 memo 就永远不重算，列表不刷新。别删。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const items = useMemo(() => getFilteredItems(), [history, searchKeyword, filterType, timeFilter, sourceFilter, groupFilter, selectedTagIds, getFilteredItems]);
 
   // ── 虚拟列表 ──
@@ -383,6 +387,10 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
       cancelled = true;
       for (const p of pathsToLoad) {
         if (!completedPaths.has(p)) {
+          // lint 会提醒"cleanup 里读 ref.current 可能已经变了，建议先拷到局部变量"——
+          // 这里恰恰就要 cleanup 时刻的那个 Set：目的是把没加载完的路径从"已加载"
+          // 登记表里摘掉好让它重试。按建议拷贝反而拿到旧 Set，行为就错了。
+          // eslint-disable-next-line react-hooks/exhaustive-deps
           loadedPathsRef.current.delete(p);
         }
       }
@@ -434,53 +442,24 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   }, []);
 
   const handleDoubleClick = useCallback(async (item: HistoryItem) => {
-    if (item.type === "image" && item.content) {
-      const action = useAppStore.getState().config.double_click_action || "preview";
-      if (action === "copy") {
-        setPastingId(item.id);
-        try {
-          await copyImageOnly(item.content);
-          toast("图片已复制", "success");
-        } catch {
-          toast("复制图片失败", "error");
-        } finally {
-          setPastingId(null);
-        }
-      } else {
-        openEditor(item);
-      }
-    } else if (item.type === "rich" && item.content) {
-      const action = useAppStore.getState().config.double_click_action || "preview";
-      if (action === "copy") {
-        setPastingId(item.id);
-        try {
-          await copyRichOnly(item.content, item.text);
-          toast("图文已复制", "success");
-        } catch {
-          toast("复制图文失败", "error");
-        } finally {
-          setPastingId(null);
-        }
-      } else {
-        openEditor(item);
-      }
-    } else if (item.type === "file") {
+    // 文件类型没有“双击复制”语义，一律开详情（保持原有行为）
+    if (item.type === "file") {
       openEditor(item);
-    } else if (item.type === "text") {
-      const action = useAppStore.getState().config.double_click_action || "preview";
-      if (action === "preview") {
-        openEditor(item);
-      } else {
-        setPastingId(item.id);
-        try {
-          await navigator.clipboard.writeText(item.text);
-          toast("已复制到剪贴板", "success");
-        } catch {
-          toast("复制失败", "error");
-        } finally {
-          setPastingId(null);
-        }
-      }
+      return;
+    }
+    const action = useAppStore.getState().config.double_click_action || "preview";
+    if (action !== "copy") {
+      openEditor(item);
+      return;
+    }
+    // 复制走统一分派（图片/图文/纯文本），不再按类型各写一份
+    setPastingId(item.id);
+    try {
+      toast(await copyItemToClipboard(item), "success");
+    } catch {
+      toast("复制失败", "error");
+    } finally {
+      setPastingId(null);
     }
   }, [toast, openEditor]);
 

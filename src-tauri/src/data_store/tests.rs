@@ -166,6 +166,38 @@ fn test_get_history_filter_type() {
 }
 
 #[test]
+fn test_image_filter_includes_rich() {
+    // 图文混排归入「图片」筛选（两者都是带图内容，不单独占顶部标签页）。
+    // 这个口径现在散在 5 处查询里（get_history / search_history / 两个计数 /
+    // 深度清理条件），靠这条测试盯住主路径不跑偏。
+    let store = make_store();
+    store
+        .insert_history(&make_item("t1", "纯文本", "2024-01-01 10:00:00", "text"))
+        .unwrap();
+    store
+        .insert_history(&make_item("i1", "[图片] 10x10", "2024-01-01 11:00:00", "image"))
+        .unwrap();
+    store
+        .insert_history(&make_item("r1", "图文内容", "2024-01-01 12:00:00", "rich"))
+        .unwrap();
+
+    // 「图片」应同时筛出 image 与 rich
+    let images = store.get_history("默认", "image", "", 0, 10).unwrap();
+    assert_eq!(images.len(), 2, "图片筛选应包含图文混排");
+    assert!(images.iter().any(|i| i.item_type == "image"));
+    assert!(images.iter().any(|i| i.item_type == "rich"));
+
+    // 「文本」不应被污染
+    let texts = store.get_history("默认", "text", "", 0, 10).unwrap();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].item_type, "text");
+
+    // 标签页上的计数必须与筛选结果一致，否则数字与列表对不上
+    let stats = store.get_stats("默认").unwrap();
+    assert_eq!(stats.image_count, 2, "计数口径应与筛选一致");
+}
+
+#[test]
 fn test_get_history_search() {
     let store = make_store();
     store
@@ -1381,10 +1413,13 @@ fn test_ensure_auto_tags() {
     store.ensure_auto_tags().unwrap();
 
     let tags = store.get_tags().unwrap();
-    // 应该有 29 个自动标签种子
-    assert_eq!(tags.len(), 29);
+    // 应该有 30 个自动标签种子
+    assert_eq!(tags.len(), 30);
     // 全部 source 为 "auto"
     assert!(tags.iter().all(|t| t.source == "auto"));
+    // 图文混排的类型标识必须在标签体系里（而不是卡片上写死的徽标），
+    // 否则点不了筛选、也不会出现在筛选标签列表里
+    assert!(tags.iter().any(|t| t.name == "图文"));
 }
 
 #[test]
@@ -1394,7 +1429,7 @@ fn test_ensure_auto_tags_idempotent() {
     store.ensure_auto_tags().unwrap();
 
     let tags = store.get_tags().unwrap();
-    assert_eq!(tags.len(), 29); // 不应重复插入
+    assert_eq!(tags.len(), 30); // 不应重复插入
 }
 
 #[test]

@@ -696,13 +696,16 @@ fn stage1_capture(
     queue: &CaptureQueue,
     app_handle: &AppHandle,
 ) -> bool {
-    // ── 图文混排富文本（CF_HTML 且含内嵌 <img>）──
+    // ── 图文混排富文本（CF_HTML 且同时含图与文）──
     // 必须放在纯文本分支之前判断：否则下面的文本分支会先把它当普通文本采集掉。
-    // 但只有片段里确实带 <img> 时才短路——绝大多数复制（哪怕只是选中一个词）
-    // 源应用也会顺手写一份 CF_HTML，如果不加这层过滤，普通文本复制会全部
-    // 被误判成"富文本"，所以先用 html_fragment_has_image 快速排除。
+    //
+    // 两道门槛缺一不可，分别拦两类误判：
+    // 1. has_image：绝大多数复制（哪怕只选中一个词）源应用也会顺手写 CF_HTML，
+    //    不拦会把普通文本全误判成富文本；
+    // 2. has_text：企业微信/浏览器复制纯图片时也会写 CF_HTML，内容就是单个 <img>，
+    //    不拦会把纯图片全误判成图文（实测踩过这个）。
     if let Some(fragment) = get_clipboard_html() {
-        if html_fragment_has_image(&fragment) {
+        if html_fragment_has_image(&fragment) && html_fragment_has_text(&fragment) {
             let app_dir = app_handle.path().app_data_dir().unwrap_or_default();
             let images_dir = app_dir.join("images");
             let (rewritten, _saved_images) = localize_html_images(&fragment, &images_dir);
@@ -1291,6 +1294,18 @@ fn process_rich(
             return;
         }
     }
+
+    // 打上「图文」自动标签（同 process_text 的做法）。
+    // 类型标识必须走标签体系，不能只在卡片上画个写死的徽标：
+    // 标签才能点击筛选、才会出现在筛选标签列表里、才能被用户统一管理。
+    if let Err(e) = tag_tx().send(TagJob {
+        app: app_handle.clone(),
+        history_id: item.id.clone(),
+        labels: vec!["图文".to_string()],
+    }) {
+        log::warn!("[ContentClassifier] 标签写入通道已关闭: {}", e);
+    }
+
     if let Err(e) = app_handle.emit(
         "clipboard-changed",
         ClipboardChanged { item: item.clone() },
@@ -1597,6 +1612,20 @@ static IMG_SRC_RE: LazyLock<Regex> = LazyLock::new(|| {
 #[cfg(target_os = "windows")]
 fn html_fragment_has_image(fragment: &str) -> bool {
     IMG_SRC_RE.is_match(fragment)
+}
+
+/// 判断 CF_HTML 片段里除了图片以外是否还有真正的文字。
+///
+/// 为什么必需：“有 <img> 就算图文”是错的。从企业微信/浏览器复制一张纯图片时，
+/// 源应用也会顺手写一份 CF_HTML，内容就是单独一个 <img src="file:///..." />
+/// （已实测验证）。只看有无 <img> 会把纯图片全部误判成图文，后果是：
+/// 本应当图片存的内容被当富文本存，粘贴回写时写 CF_HTML 而不是真实位图，
+/// 而很多应用对前者的支持反而更差。
+///
+/// 所以图文的定义是“既有图、又有文”；只有图没有文的落回图片分支。
+#[cfg(target_os = "windows")]
+fn html_fragment_has_text(fragment: &str) -> bool {
+    !html_fragment_to_plain_text_fallback(fragment).is_empty()
 }
 
 /// 提取 HTML 片段里所有 <img src> 的原始值（不判断是否本地/远程，不改写）。
@@ -2102,6 +2131,39 @@ mod tests {
         assert!(html_fragment_has_image(r#"<p>hi</p><img src="foo.png">"#));
         assert!(html_fragment_has_image(r#"<IMG SRC='foo.png'/>"#));
         assert!(!html_fragment_has_image("<p>纯文本没有图片</p>"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_pure_image_copy_is_not_rich() {
+        // 回归：企业微信复制纯图片时实际写入的 CF_HTML 片段（从真实剪贴板倒出）。
+        // 它确实带 <img>，但没有任何文字——不能当图文，否则纯图片会被当富文本存，
+        // 粘贴回写时发 CF_HTML 而不是真实位图。
+        let pure_image =
+            r#"<img src="file:///D:/wx/QWXWork/Cache/Image/2026-08/企业微信截图_1785998.png" />"#;
+        assert!(html_fragment_has_image(pure_image), "确实带图");
+        assert!(
+            !html_fragment_has_text(pure_image),
+            "但没有文字，不应被当成图文"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_image_with_text_is_rich() {
+        // 真正的图文混排：图与文同时存在，两道门槛都过
+        let mixed = r#"<p>项目排期看这张图</p><img src="file:///C:/a.png" /><p>有问题找我</p>"#;
+        assert!(html_fragment_has_image(mixed));
+        assert!(html_fragment_has_text(mixed));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_image_with_only_whitespace_is_not_rich() {
+        // 只有空白/不断行空格包裹的图片仍算纯图片（部分源应用会多包一层 <p>）
+        let padded = "<p>  </p><img src=\"file:///C:/a.png\" /><p>&nbsp;</p>";
+        assert!(html_fragment_has_image(padded));
+        assert!(!html_fragment_has_text(padded), "空白不算文字");
     }
 
     #[cfg(target_os = "windows")]

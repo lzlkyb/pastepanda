@@ -195,6 +195,15 @@
   padding: 12px 16px 16px;
 }
 
+/* 关键的一环：.wrap 是 RichContentEditor 自己的外层，夹在 .fullscreenWrap 与
+   .content 之间。不给它 flex:1 + min-height:0，它就按内容撑成 auto 高度，
+   高度链在这里断掉——下面 .content 的 flex:1 算在一个不受约束的父容器上，
+   结果内容直接溢出而不产生滚动条（实测到的“全屏编辑滚不了”就是这个）。 */
+.fullscreenWrap .wrap {
+  flex: 1;
+  min-height: 0;
+}
+
 .fullscreenWrap .content {
   flex: 1;
   min-height: 0;

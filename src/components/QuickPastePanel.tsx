@@ -21,6 +21,7 @@ interface PasteItem {
 // ===== 类型标签 =====
 function typeLabel(item: PasteItem): string {
   if (item.type === "image") return "🖼 图片";
+  if (item.type === "rich") return "🖼️ 图文";
   if (item.type === "file") return "📁 文件";
   const ct = item.content_type.toLowerCase();
   if (ct.includes("sql")) return "📋 SQL";
@@ -34,6 +35,7 @@ function typeLabel(item: PasteItem): string {
 // ===== 类型图标（仅符号，用于列表布局的类型徽标）=====
 function typeIcon(item: PasteItem): string {
   if (item.type === "image") return "🖼";
+  if (item.type === "rich") return "🖼️";
   if (item.type === "file") return "📁";
   const ct = item.content_type.toLowerCase();
   if (ct.includes("sql")) return "📋";
@@ -47,6 +49,7 @@ function typeIcon(item: PasteItem): string {
 // ===== 类型名称（纯文字，用于列表布局的副标题）=====
 function typeName(item: PasteItem): string {
   if (item.type === "image") return "图片";
+  if (item.type === "rich") return "图文";
   if (item.type === "file") return "文件";
   const ct = item.content_type.toLowerCase();
   if (ct.includes("sql")) return "SQL";

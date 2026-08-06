@@ -55,6 +55,37 @@ export async function copyRichOnly(htmlFragment: string, plainText: string): Pro
   await invoke("copy_rich_only", { htmlFragment, plainText });
 }
 
+/**
+ * 按条目类型复制到剪贴板 —— 所有“复制卡片”入口的唯一实现。
+ *
+ * 为什么抽成公共函数：这段分派逻辑曾在 Card.tsx 里被拷了三份（悬停复制按钮、
+ * hover 预览卡片、右键菜单），新增图文混排类型时三处全漏了，结果图文内容
+ * 复制出去只剩文字。以后再加类型只改这里一处。
+ *
+ * 返回给用户看的提示文案；失败直接抛，由调用方弹错误 toast。
+ */
+export async function copyItemToClipboard(item: {
+  type: string;
+  text: string;
+  content?: string;
+}): Promise<string> {
+  if (item.type === "image" && item.content) {
+    await copyImageOnly(item.content);
+    return "已复制图片";
+  }
+  if (item.type === "file" && item.content) {
+    await copyFiles([item.content]);
+    return "已复制文件";
+  }
+  if (item.type === "rich" && item.content) {
+    // 富文本 + 纯文本一起写，目标应用不认富文本时自动退到文字
+    await copyRichOnly(item.content, item.text);
+    return "已复制图文";
+  }
+  await navigator.clipboard.writeText(item.text || "");
+  return "已复制";
+}
+
 /** 仅复制 */
 export async function copyOnly(text: string) {
   try {

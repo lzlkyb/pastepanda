@@ -231,6 +231,9 @@ export function analyzeContent(text: string, contentType: string): ContentFeatur
     avgLineLen: nonEmptyLines.length > 0
       ? nonEmptyLines.reduce((s, l) => s + l.length, 0) / nonEmptyLines.length
       : 0,
+    // [^\x00-\x7F] 是判"含非 ASCII 字符"的标准写法，\x00 只是 ASCII 区间下界，
+    // 不是真要匹配控制字符。no-control-regex 在这里是误报。
+    // eslint-disable-next-line no-control-regex
     hasUnicode: /[^\x00-\x7F]/.test(text),
     hasHtml: HTML_TAG_RE.test(text),
     hasEdgeWhitespace: /^\s|\s$/.test(text),

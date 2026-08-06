@@ -241,9 +241,12 @@ impl DataStore {
     /// 确保自动标签种子数据存在（首次启动时插入）
     pub fn ensure_auto_tags(&self) -> Result<(), String> {
         let conn = self.lock_conn();
-        let auto_tags: [(&str, &str, &str); 29] = [
+        let auto_tags: [(&str, &str, &str); 30] = [
             // 主类别
             ("auto-code", "代码", "#6366F1"),
+            // 图文混排：走自动标签而不是卡片上写死的徽标，这样才能与其它标签
+            // 统一管理：点卡片上的标签可筛选、也会出现在筛选标签列表里
+            ("auto-rich", "图文", "#D97706"),
             ("auto-link", "链接", "#06B6D4"),
             ("auto-json", "JSON", "#F59E0B"),
             ("auto-config", "配置文件", "#10B981"),

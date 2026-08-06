@@ -31,15 +31,6 @@ function looksLikeSql(ctx: TransformContext): number {
 
 // ===== SQL 关键字列表 =====
 
-const MAJOR_KEYWORDS = [
-  "SELECT", "FROM", "WHERE", "AND", "OR", "ORDER BY", "GROUP BY",
-  "HAVING", "LIMIT", "OFFSET", "UNION", "UNION ALL", "INTERSECT", "EXCEPT",
-  "INSERT INTO", "VALUES", "UPDATE", "SET", "DELETE FROM",
-  "CREATE TABLE", "ALTER TABLE", "DROP TABLE",
-  "LEFT JOIN", "RIGHT JOIN", "INNER JOIN", "OUTER JOIN", "CROSS JOIN", "JOIN",
-  "ON", "WITH", "AS", "CASE", "WHEN", "THEN", "ELSE", "END",
-];
-
 const KEYWORDS_UPPER = new Set([
   "SELECT", "FROM", "WHERE", "AND", "OR", "NOT", "IN", "EXISTS",
   "BETWEEN", "LIKE", "IS", "NULL", "TRUE", "FALSE",

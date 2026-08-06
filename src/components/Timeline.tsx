@@ -13,13 +13,14 @@ export const TIME_GROUP_LABELS: Record<TimeGroup, string> = {
   earlier: "更早",
 };
 
-/** 卡片类型 */
-export type CardItemType = "text" | "image" | "file";
+/** 卡片类型（rich = 图文混排） */
+export type CardItemType = "text" | "image" | "rich" | "file";
 
 /** 卡片类型 → emoji 图标映射 */
 export const CARD_TYPE_ICONS: Record<CardItemType, string> = {
   text: "📝",
   image: "🖼",
+  rich: "🖼️",
   file: "📁",
 };
 
@@ -411,7 +412,7 @@ export function Timeline({
             style={{ transform: `translateY(${translateY}px)` }}
           >
             {nodes.length === 0 ? (
-              <div className={styles.timelineEmpty} style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center", padding: "12px 0", opacity: 0.6 }}><MelodyEmpty size={48} />暂无记录</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center", padding: "12px 0", opacity: 0.6 }}><MelodyEmpty size={48} />暂无记录</div>
             ) : nodes.map((node, i) => {
               // 判断是否需要渲染分组标签（前一个节点不是同一分组）
               const prevGroup = i > 0 ? nodes[i - 1].group : null;

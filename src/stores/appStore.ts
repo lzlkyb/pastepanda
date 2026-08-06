@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { logger } from "@/lib/logger";
 
 // ===== 数据类型 =====
 
@@ -41,6 +42,7 @@ export interface HistoryItem {
   content_type?: string;
 }
 
+/** 顶部标签页筛选。注：没有 "rich" —— 图文混排归入 "image"（见下方过滤逻辑） */
 export type FilterType = "all" | "text" | "image" | "file" | "pinned";
 
 // 时间范围筛选
@@ -448,19 +450,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => {
       const filtered = s.searchHistory.filter((h) => h !== kw);
       const next = [kw, ...filtered].slice(0, 20); // 最多保留 20 条
-      try { localStorage.setItem("searchHistory", JSON.stringify(next)); } catch {}
+      // 不能空 catch：配额满 / 隐私模式下写入会失败，搜索历史悄悄不落盘，
+      // 用户只看到"重启后历史没了"而无从查起。失败不影响当前会话，所以只警告不抛。
+      try { localStorage.setItem("searchHistory", JSON.stringify(next)); } catch { logger.warn("搜索历史写入 localStorage 失败"); }
       return { searchHistory: next };
     });
   },
   removeSearchHistory: (kw) => {
     set((s) => {
       const next = s.searchHistory.filter((h) => h !== kw);
-      try { localStorage.setItem("searchHistory", JSON.stringify(next)); } catch {}
+      try { localStorage.setItem("searchHistory", JSON.stringify(next)); } catch { logger.warn("搜索历史写入 localStorage 失败"); }
       return { searchHistory: next };
     });
   },
   clearSearchHistory: () => {
-    try { localStorage.setItem("searchHistory", "[]"); } catch {}
+    try { localStorage.setItem("searchHistory", "[]"); } catch { logger.warn("清空搜索历史写入 localStorage 失败"); }
     set({ searchHistory: [] });
   },
 
@@ -617,6 +621,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       // 类型过滤
       if (filterType === "pinned") {
         if (!h.pinned) continue;
+      } else if (filterType === "image") {
+        // 图文混排归入「图片」：口径必须与后端 get_history 一致，
+        // 否则前端本地过滤与后端分页查询会给出不同结果
+        if (h.type !== "image" && h.type !== "rich") continue;
       } else if (filterType !== "all") {
         if (h.type !== filterType) continue;
       }

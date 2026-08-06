@@ -151,4 +151,25 @@ describe("appStore", () => {
     store.selectAll();
     expect(useAppStore.getState().selectedIds.size).toBe(3);
   });
+
+  it("「图片」筛选包含图文（rich）—— 口径必须与后端 get_history 一致", () => {
+    const store = useAppStore.getState();
+    const base = { time: "2026-01-01 12:00:00", content: "", pinned: false, source: "", workspace: "默认" };
+    store.setHistory([
+      { ...base, id: "t", text: "纯文本", type: "text" as const },
+      { ...base, id: "i", text: "[图片] 100x100", type: "image" as const },
+      { ...base, id: "r", text: "图文混排", type: "rich" as const },
+    ]);
+
+    // 「图片」= 纯图片 + 图文，两者都是带图内容。这个口径散落在前端本地过滤和
+    // 后端 5 处 SQL 里，只改一处就会出现"标签页数字和列表条数对不上"这类难查的问题
+    store.setFilterType("image");
+    expect(
+      useAppStore.getState().getFilteredItems().map((h) => h.id).sort()
+    ).toEqual(["i", "r"]);
+
+    // 反向断言：「文本」不能被图文污染。rich 也有 text 字段，条件写松了很容易漏进来
+    store.setFilterType("text");
+    expect(useAppStore.getState().getFilteredItems().map((h) => h.id)).toEqual(["t"]);
+  });
 });

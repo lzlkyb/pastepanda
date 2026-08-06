@@ -339,29 +339,6 @@
   color: var(--accent-strong);
 }
 
-/* 图文混排徽标（卡片副标题行，与“置顶”徽标并列）。
-   前景色用 #92400E 而不是更浅的琥珀色：在 rgba(245,158,11,0.16) 底上
-   才能达到 4.5:1 对比度（与上面 colorFormatTag 那条注释同一个教训）。*/
-.richBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  height: 15px;
-  padding: 0 5px;
-  border-radius: 4px;
-  font-size: 9.5px;
-  font-weight: 700;
-  background: rgba(245, 158, 11, 0.16);
-  color: #92400E;
-  flex-shrink: 0;
-}
-
-:global([data-theme="midnight"]) .richBadge,
-:global([data-theme="ocean-dark"]) .richBadge {
-  background: rgba(245, 158, 11, 0.22);
-  color: #FBBF24;
-}
-
 /* 图片缩略图 */
 .cardImgThumb {
   width: 42px;

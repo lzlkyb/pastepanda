@@ -796,7 +796,9 @@ function App() {
   return (
       <UpdateProvider>
       <UpdateNotesAutoPop />
-      <div className={`${appStyles.appShell} ${sidebarOpen ? appStyles.sidebarExpanded : ''}`}>
+      {/* 侧边栏展开态由 Sidebar 组件自己的 open 类控制（见下方 open={sidebarOpen}）；
+          此处原有一个按 sidebarOpen 切的展开类，但它在 App.module.css 里从未定义，已移除 */}
+      <div className={appStyles.appShell}>
         {/* 皮肤场景层：fixed + z-index:0，衬在玻璃卡片（cardWrap z-index:1）之后 */}
         <SkinScene />
         <TopBar
@@ -850,7 +852,6 @@ function App() {
                 </div>
                 <div className="dialog-body" style={{ padding: "8px 0" }}>
                   <button
-                    className={`${appStyles.moveGroupItem}`}
                     onClick={() => handleMoveToGroup(null)}
                     style={{ width: "100%", textAlign: "left", padding: "10px 16px", border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 13, display: "flex", alignItems: "center", gap: 10, borderRadius: 0 }}
                   >
@@ -860,7 +861,6 @@ function App() {
                   {groups.map((g) => (
                     <button
                       key={g.id}
-                      className={`${appStyles.moveGroupItem}`}
                       onClick={() => handleMoveToGroup(g.id)}
                       style={{ width: "100%", textAlign: "left", padding: "10px 16px", border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 13, display: "flex", alignItems: "center", gap: 10, borderRadius: 0, transition: "background 0.1s" }}
                       onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}

@@ -6,17 +6,17 @@ import { getContentTypeMeta, isCodeLike } from "@/lib/contentTypes";
 import { detectColor } from "@/lib/color";
 import { maskSecretText } from "@/lib/secret";
 import { URL_SCHEME_RE, urlHost, urlPathname, fileUrlToLocalPath } from "@/lib/url";
-import { thumbnailSourcePath, countImages } from "@/lib/richContent";
+import { thumbnailSourcePath } from "@/lib/richContent";
 import { applicableTransforms, getTransform } from "@/lib/transforms";
 import { useDialogStore } from "@/stores/dialogStore";
 import type { CSSProperties } from "react";
 import SourceBadge from "@/components/SourceBadge";
 import { createCardMenuItems, CtxMenuCtx, type MenuItem } from "@/components/ContextMenu";
-import { confirmAutoTags, removeItemTags, fetchTags } from "@/lib/api";
+import { confirmAutoTags, removeItemTags } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 import { TagRow } from "@/components/TagBadge";
 import { logger } from "@/lib/logger";
-import { pasteText, togglePin, deleteHistory, copyImageOnly, copyFiles } from "@/lib/api";
+import { pasteText, togglePin, deleteHistory, copyItemToClipboard } from "@/lib/api";
 import { Pin, ImageIcon, Images, Link2, AtSign, Code2, Phone, FileText, Terminal, Type, Check, Hash, Lock, Palette } from "lucide-react";
 import styles from "./CardList.module.css";
 
@@ -68,15 +68,19 @@ function parseFilePaths(content: string): string[] {
 
 /** 搜索关键词高亮组件 */
 export const HighlightText = memo(function HighlightText({ text, highlight }: { text: string; highlight: string }) {
-  if (!highlight || !highlight.trim()) return <>{text}</>;
   // 限制搜索词长度，防止过长正则导致性能问题
-  const safeHighlight = highlight.trim().slice(0, 100);
-  if (!safeHighlight) return <>{text}</>;
-  // useMemo 缓存 RegExp，避免每次渲染重新编译
+  const safeHighlight = highlight ? highlight.trim().slice(0, 100) : "";
+  // useMemo 缓存 RegExp，避免每次渲染重新编译。
+  // 必须写在下面那个 early return 之前：highlight 会随搜索框在空/非空之间来回变
+  // （调用处传 searchKeyword），原实现把 hook 放在 return 之后，同一个实例的 hooks
+  // 数量会 0↔1 摩擦。实测当前形状下 React 恰好容忍（只有一个 hook 且无 state），
+  // 但那是运气：再给它加一个 hook 就会报"Rendered fewer/more hooks than expected"。
   const regex = useMemo(() => {
+    if (!safeHighlight) return null;
     const escaped = safeHighlight.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return new RegExp(`(${escaped})`, "i");
   }, [safeHighlight]);
+  if (!regex) return <>{text}</>;
   const parts = text.split(regex);
   return (
     <>
@@ -139,11 +143,14 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
     return flat.length > 500 ? flat.slice(0, 500) + "…" : flat;
   })();
 
-  const typeClass = item.type === "image" ? styles.cardImage
-    : item.type === "file" ? styles.cardFile
-    : item.pinned ? styles.cardPinned
-    : isCodeLike(subType) ? styles.cardCode
-    : styles.cardText;
+  // 原来这里是一条按类型分支的链，但 cardImage/cardFile/cardCode/cardText 四个类
+  // 在 CSS 里并不存在（只有 cardPinned 是真的），实际效果等价于下面这行。
+  // 顺带修掉一个副作用：这些未定义类返回 undefined，拼进模板字符串后会在
+  // DOM 里真的落下一个名为 "undefined" 的 class。
+  // 图片/文件类型不加 📌 角标——保持原有行为，它们的置顶状态由下面
+  // cardSub 里的「置顶」徽标体现。
+  const typeClass =
+    item.pinned && item.type !== "image" && item.type !== "file" ? styles.cardPinned : "";
 
   const iconBg = item.type === "image" ? styles.bgPink
     : item.type === "file" ? styles.bgGreen
@@ -349,19 +356,20 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
           <p className={styles.cardTitle}>
             <HighlightText text={title} highlight={item.type === "text" ? (searchKeyword ?? "") : ""} />
           </p>
+          {/* 徽标顺序：置顶（状态）→ 来源应用 → 内容类型 → 标签。
+              来源排在类型之前：用户看卡片时先关心“从哪来的”，再关心“是什么”。
+              注：图文混排不在这里画专用徽标——它走「图文」自动标签，由下方 TagRow
+              渲染，这样才能点击筛选、也才会出现在筛选标签列表里。 */}
           <div className={styles.cardSub}>
             {item.pinned && (
               <span className={styles.cardPin}>
                 {config.theme === "blossom" ? "🎀" : <Pin size={7} />} 置顶
               </span>
             )}
+            {item.source && <SourceBadge source={item.source} sourceIcon={item.source_icon} size="small" />}
             {parsedColor && (
               <span className={styles.colorFormatTag}>{parsedColor.format.toUpperCase()}</span>
             )}
-            {item.type === "rich" && (
-              <span className={styles.richBadge}>🖼️📝 图文 {countImages(item.content || "")}</span>
-            )}
-            {item.source && <SourceBadge source={item.source} sourceIcon={item.source_icon} size="small" />}
             <TagRow tags={item.tags || []} />
           </div>
         </div>
@@ -420,20 +428,13 @@ const CardHoverPopover = memo(function CardHoverPopover({
   const { toast } = useToast();
   const pinFlash = usePinFlash(item.pinned);
 
+  // 按类型分派的复制统一走 copyItemToClipboard（图片/文件/图文/纯文本），
+  // 不再在本文件里重复实现——之前拷了三份，加图文类型时三处全漏
   const handleCopy = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
     try {
-      if (item.type === "image" && item.content) {
-        await copyImageOnly(item.content);
-        toast("已复制", "success");
-      } else if (item.type === "file" && item.content) {
-        await copyFiles([item.content]);
-        toast("已复制文件", "success");
-      } else {
-        await navigator.clipboard.writeText(item.text || "");
-        toast("已复制", "success");
-      }
+      toast(await copyItemToClipboard(item), "success");
     } catch {
       toast("复制失败", "error");
     }
@@ -597,20 +598,13 @@ const InlineCardActions = memo(function InlineCardActions({
   const { toast } = useToast();
   const pinFlash = usePinFlash(item.pinned);
 
+  // 按类型分派的复制统一走 copyItemToClipboard（图片/文件/图文/纯文本），
+  // 不再在本文件里重复实现——之前拷了三份，加图文类型时三处全漏
   const handleCopy = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
     try {
-      if (item.type === "image" && item.content) {
-        await copyImageOnly(item.content);
-        toast("已复制", "success");
-      } else if (item.type === "file" && item.content) {
-        await copyFiles([item.content]);
-        toast("已复制文件", "success");
-      } else {
-        await navigator.clipboard.writeText(item.text || "");
-        toast("已复制", "success");
-      }
+      toast(await copyItemToClipboard(item), "success");
     } catch {
       toast("复制失败", "error");
     }
@@ -870,16 +864,7 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     onMoveToGroup: onMoveToGroup ? () => onMoveToGroup(item) : undefined,
     onCopy: async () => {
       try {
-        if (item.type === "image" && item.content) {
-          await copyImageOnly(item.content);
-          toast("已复制到剪贴板", "success");
-        } else if (item.type === "file" && item.content) {
-          await copyFiles([item.content]);
-          toast("已复制文件到剪贴板", "success");
-        } else {
-          await navigator.clipboard.writeText(item.text);
-          toast("已复制到剪贴板", "success");
-        }
+        toast(await copyItemToClipboard(item), "success");
       } catch {
         toast("复制失败", "error");
       }

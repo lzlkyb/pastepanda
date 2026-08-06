@@ -15,6 +15,9 @@ import styles from "./TopBar.module.css";
 const TABS: { key: FilterType; label: string; icon: string }[] = [
   { key: "all",    label: "全部", icon: "📋" },
   { key: "text",   label: "文本", icon: "📝" },
+  // 「图片」同时包含纯图片与图文混排（两者都是带图内容）。
+  // 图文不单独占一个标签页：480px 默认窗宽下 6 个标签已经拥挤，
+  // 只看图文时用「图文」自动标签精确筛。
   { key: "image",  label: "图片", icon: "📸" },
   { key: "file",   label: "文件", icon: "📁" },
   { key: "pinned", label: "收藏", icon: "⭐" },
@@ -72,9 +75,6 @@ type TabStyle = "segmented" | "circle";
 
 function getTabStyle(): TabStyle {
   try { return (localStorage.getItem("tabStyle") as TabStyle) || "segmented"; } catch { return "segmented"; }
-}
-function saveTabStyle(v: TabStyle) {
-  try { localStorage.setItem("tabStyle", v); } catch { logger.warn("保存tab样式失败"); }
 }
 
 export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEncoding, onBatchReplace, onConfigDiff, onToggleSidebar, sidebarOpen }: {
