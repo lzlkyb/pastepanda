@@ -27,8 +27,8 @@ body {
   display: flex;
   flex-direction: column;
   background: var(--glass-dialog-bg);
-  backdrop-filter: blur(var(--glass-dialog-blur)) saturate(1.4);
-  -webkit-backdrop-filter: blur(var(--glass-dialog-blur)) saturate(1.4);
+  backdrop-filter: var(--glass-dialog-filter, blur(var(--glass-dialog-blur)) saturate(1.4));
+  -webkit-backdrop-filter: var(--glass-dialog-filter, blur(var(--glass-dialog-blur)) saturate(1.4));
   border: 1px solid var(--glass-popover-border);
   box-shadow: var(--glass-popover-shadow);
   overflow: hidden;
@@ -82,7 +82,7 @@ body {
   padding: 9px 12px;
   background: var(--search-bg);
   border: 1px solid var(--search-border);
-  border-radius: 9px;
+  border-radius: 8px;  /* 搜索框圆角统一为 8px */
   flex-shrink: 0;
   transition: border-color 0.15s;
 }

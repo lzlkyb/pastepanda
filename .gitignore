@@ -28,3 +28,7 @@ dist-ssr
 
 # Runtime config backups (rotated by the app, not source)
 src-tauri/config_backups/
+
+# 早期会话的临时产物（图片 base64 中转、暂缓的测试草稿）
+melody_b64.txt
+*.test.ts.pending

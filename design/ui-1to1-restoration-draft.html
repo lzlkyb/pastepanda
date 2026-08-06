@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PastePanda · 真实 UI 1:1 还原设计稿</title>
+<style>
+/* ============================================================
+   PastePanda 真实 UI 1:1 还原设计稿
+   - 全部 CSS 变量名 / 类名 / 结构 / 配色 / 文案均直接取自真实源码
+     (src/styles/theme.css, App.module.css, TopBar/Sidebar/CardList/
+      SkinScene.module.css, TopBar/Sidebar/Card/SkinScene/AppIcon/
+      UpdateBadge.tsx)
+   - blossom(美乐蒂) 为默认主题，顶栏可一键切换 6 套真实主题
+   - 粒子层完全复刻 SkinScene.tsx 的每套主题参数
+   ============================================================ */
+
+/* ===== 全局盒模型 ===== */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif; }
+
+/* ============================================================
+   主题令牌（copied verbatim from src/styles/theme.css）
+   仅在 #app[data-theme] 上生效，复刻 [data-theme] 选择器
+   ============================================================ */
+#app[data-theme="ocean"] {
+  --app-bg: linear-gradient(180deg, #EAF6FD 0%, #CFE9F8 40%, #9ED0EA 75%, #79B8DD 100%);
+  --header-bg-start: transparent; --header-bg-end: transparent;
+  --card-bg: #fff; --card-border: #E0E4EB;
+  --text-primary: #0F172A; --text-secondary: #495565; --text-muted: #627083;
+  --border-color: #E0E4EB; --accent: #0284C7; --accent-light: #E0F2FE;
+  --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
+  --accent-solid: #027CBB; --accent-strong: #0273AD;
+  --seg-bg: #E8E8ED; --seg-active-bg: #fff; --search-bg: #fff; --search-border: #E0E4EB;
+  --input-bg: #F1F5F9; --dialog-bg: #fff; --section-bg: #F0F4F8;
+  --toggle-off-bg: #E2E8F0; --toggle-off-label: #94A3B8;
+  --card-selected-bg: #E0F2FE; --card-selected-border: #0284C7;
+  --card-selected-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25);
+  --accent-shadow: rgba(2, 132, 199, 0.15); --hover: #E8ECF2; --sidebar-bg: #EFF1F5;
+  --sidebar-section-label: #696D75; --timeline-bg: rgba(244, 246, 249, 0.95);
+  --version-badge-gradient: linear-gradient(135deg, #0284C7, #0369A1);
+  --version-badge-shadow: rgba(2, 132, 199, 0.35);
+  --update-badge-gradient: linear-gradient(135deg, #059669, #047857);
+  --update-badge-shadow: rgba(5, 150, 105, 0.4);
+  --overlay-bg: rgba(0, 0, 0, 0.35);
+  --glass-card-bg: rgba(255,255,255,0.22); --glass-card-blur: 5px; --glass-card-border: rgba(0,0,0,0.08);
+  --glass-card-hover-border: rgba(0,0,0,0.14); --glass-card-hover-glow: rgba(2,132,199,0.10);
+  --glass-card-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.7);
+  --glass-card-hover-shadow: 0 8px 24px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9), 0 0 0 1px rgba(2,132,199,0.10);
+  --glass-shimmer: rgba(255,255,255,0.40); --glass-shimmer-static: rgba(255,255,255,0.50);
+  --glass-icon-bg: rgba(0,0,0,0.04); --glass-icon-border: rgba(0,0,0,0.07);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.05);
+  --glass-popover-bg: rgba(255,255,255,0.85); --glass-popover-border: rgba(0,0,0,0.06);
+  --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+  --glass-dialog-bg: rgba(255,255,255,0.66); --glass-dialog-blur: 22px;
+  --accent-glow: rgba(2,132,199, 0.12);
+}
+#app[data-theme="midnight"] {
+  --app-bg: radial-gradient(100% 80% at 50% -10%, #1C1832 0%, #0B0B13 55%, #07070C 100%);
+  --header-bg-start: transparent; --header-bg-end: transparent;
+  --card-bg: #18181B; --card-border: #27272A;
+  --text-primary: #E4E4E7; --text-secondary: #AFAFB7; --text-muted: #8D8D95;
+  --border-color: #27272A; --accent: #818CF8; --accent-light: #1E1B4B;
+  --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
+  --accent-solid: #666FC4; --accent-strong: var(--accent);
+  --seg-bg: #27272A; --seg-active-bg: #3F3F46; --search-bg: #27272A; --search-border: #3F3F46;
+  --input-bg: #27272A; --dialog-bg: #18181B; --section-bg: #0F0F11;
+  --toggle-off-bg: #3F3F46; --toggle-off-label: #71717A;
+  --card-selected-bg: #1E1B4B; --card-selected-border: #818CF8;
+  --card-selected-shadow: 0 0 0 2px rgba(129, 140, 248, 0.25);
+  --accent-shadow: rgba(129, 140, 248, 0.2); --hover: #1F1F23; --sidebar-bg: #131315;
+  --sidebar-section-label: #7D7D84; --timeline-bg: rgba(9, 9, 11, 0.95);
+  --version-badge-gradient: linear-gradient(135deg, #818CF8, #6366F1);
+  --version-badge-shadow: rgba(129, 140, 248, 0.35);
+  --update-badge-gradient: linear-gradient(135deg, #38BDF8, #0EA5E9);
+  --update-badge-shadow: rgba(56, 189, 248, 0.45);
+  --overlay-bg: rgba(0, 0, 0, 0.35);
+  --glass-card-bg: rgba(24,24,27,0.22); --glass-card-blur: 5px; --glass-card-border: rgba(255,255,255,0.06);
+  --glass-card-hover-border: rgba(255,255,255,0.14); --glass-card-hover-glow: rgba(129,140,248,0.10);
+  --glass-card-shadow: 0 4px 16px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.03), inset 0 1px 0 rgba(255,255,255,0.04);
+  --glass-card-hover-shadow: 0 8px 28px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.06), 0 0 0 1px rgba(129,140,248,0.10);
+  --glass-shimmer: rgba(255,255,255,0.06); --glass-shimmer-static: rgba(255,255,255,0.05);
+  --glass-icon-bg: rgba(255,255,255,0.05); --glass-icon-border: rgba(255,255,255,0.07);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.04), 0 2px 8px rgba(0,0,0,0.3);
+  --glass-popover-bg: rgba(20,20,24,0.85); --glass-popover-border: rgba(255,255,255,0.07);
+  --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.25);
+  --glass-dialog-bg: rgba(20,20,24,0.66); --glass-dialog-blur: 22px;
+  --accent-glow: rgba(129,140,248, 0.12);
+}
+#app[data-theme="forest"] {
+  --app-bg: linear-gradient(180deg, #F5F1E3 0%, #EAE5D1 55%, #DCD6BD 100%);
+  --header-bg-start: transparent; --header-bg-end: transparent;
+  --card-bg: #fff; --card-border: #D1D9D3;
+  --text-primary: #171717; --text-secondary: #58524F; --text-muted: #726E6B;
+  --border-color: #D1D9D3; --accent: #059669; --accent-light: #ECFDF5;
+  --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
+  --accent-solid: #05875F; --accent-strong: #04835B;
+  --seg-bg: #E4E8E5; --seg-active-bg: #fff; --search-bg: #fff; --search-border: #D1D9D3;
+  --input-bg: #F5F5F4; --dialog-bg: #fff; --section-bg: #ECFDF5;
+  --toggle-off-bg: #D1D9D3; --toggle-off-label: #A8A29E;
+  --card-selected-bg: #ECFDF5; --card-selected-border: #059669;
+  --card-selected-shadow: 0 0 0 2px rgba(5, 150, 105, 0.2);
+  --accent-shadow: rgba(5, 150, 105, 0.15); --hover: #E8EDE8; --sidebar-bg: #E8EFEB;
+  --sidebar-section-label: #676C73; --timeline-bg: rgba(242, 247, 245, 0.95);
+  --version-badge-gradient: linear-gradient(135deg, #059669, #047857);
+  --version-badge-shadow: rgba(5, 150, 105, 0.35);
+  --update-badge-gradient: linear-gradient(135deg, #0891B2, #0E7490);
+  --update-badge-shadow: rgba(8, 145, 178, 0.4);
+  --overlay-bg: rgba(0, 0, 0, 0.35);
+  --glass-card-bg: rgba(255,255,255,0.22); --glass-card-blur: 5px; --glass-card-border: rgba(0,0,0,0.07);
+  --glass-card-hover-border: rgba(0,0,0,0.14); --glass-card-hover-glow: rgba(5,150,105,0.10);
+  --glass-card-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.7);
+  --glass-card-hover-shadow: 0 8px 24px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9), 0 0 0 1px rgba(5,150,105,0.10);
+  --glass-shimmer: rgba(255,255,255,0.40); --glass-shimmer-static: rgba(255,255,255,0.50);
+  --glass-icon-bg: rgba(0,0,0,0.04); --glass-icon-border: rgba(0,0,0,0.07);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.05);
+  --glass-popover-bg: rgba(255,255,255,0.85); --glass-popover-border: rgba(0,0,0,0.06);
+  --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+  --glass-dialog-bg: rgba(255,255,255,0.66); --glass-dialog-blur: 22px;
+  --accent-glow: rgba(5,150,105, 0.12);
+}
+#app[data-theme="blossom"] {
+  --app-bg: linear-gradient(168deg, #FFE4EF 0%, #FFC9DD 42%, #FFAECF 78%, #FF9BC4 100%);
+  --header-bg-start: transparent; --header-bg-end: transparent;
+  --card-bg: #fff; --card-border: #F9D3E2;
+  --text-primary: #3D2231; --text-secondary: #5F4755; --text-muted: #86596D;
+  --border-color: #F9D3E2; --accent: #F0568C; --accent-light: #FFDDEC;
+  --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
+  --accent-solid: #CE3B70; --accent-strong: #B02C5D;
+  --seg-bg: #F6DDE8; --seg-active-bg: #fff; --search-bg: #fff; --search-border: #F9D3E2;
+  --input-bg: #FFF0F6; --dialog-bg: #fff; --section-bg: #FFF0F6;
+  --toggle-off-bg: #F3D5E2; --toggle-off-label: #C9A2B4;
+  --card-selected-bg: #FFDDEC; --card-selected-border: #F0568C;
+  --card-selected-shadow: 0 0 0 2px rgba(240, 86, 140, 0.2);
+  --accent-shadow: rgba(240, 86, 140, 0.15); --hover: #FBE7F0; --sidebar-bg: #FFF0F6;
+  --sidebar-section-label: #8A6478; --timeline-bg: rgba(255, 250, 252, 0.95);
+  --version-badge-gradient: linear-gradient(135deg, #F0568C, #CE3B70);
+  --version-badge-shadow: rgba(240, 86, 140, 0.35);
+  --update-badge-gradient: linear-gradient(135deg, #7EC8E3, #5BB8DC);
+  --update-badge-shadow: rgba(126, 200, 227, 0.4);
+  --overlay-bg: rgba(122, 31, 70, 0.32);
+  --glass-card-bg: rgba(255,255,255,0.22); --glass-card-blur: 5px; --glass-card-border: rgba(0,0,0,0.07);
+  --glass-card-hover-border: rgba(0,0,0,0.14); --glass-card-hover-glow: rgba(240,86,140,0.10);
+  --glass-card-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.7);
+  --glass-card-hover-shadow: 0 8px 24px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9), 0 0 0 1px rgba(240,86,140,0.10);
+  --glass-shimmer: rgba(255,255,255,0.40); --glass-shimmer-static: rgba(255,255,255,0.50);
+  --glass-icon-bg: rgba(0,0,0,0.04); --glass-icon-border: rgba(0,0,0,0.07);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.05);
+  --glass-popover-bg: rgba(255,255,255,0.85); --glass-popover-border: rgba(0,0,0,0.06);
+  --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+  --glass-dialog-bg: rgba(255,255,255,0.66); --glass-dialog-blur: 22px;
+  --accent-glow: rgba(240,86,140, 0.12);
+}
+#app[data-theme="dawn"] {
+  --app-bg: linear-gradient(180deg, #FFF8EE 0%, #FFE9D2 42%, #FFD9AE 72%, #F9C78F 100%);
+  --header-bg-start: transparent; --header-bg-end: transparent;
+  --card-bg: #fff; --card-border: #F0DDC8;
+  --text-primary: #2B2016; --text-secondary: #5C4B38; --text-muted: #7D6B58;
+  --border-color: #F0DDC8; --accent: #E8734A; --accent-light: #FFEDE2;
+  --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
+  --accent-solid: #C85A34; --accent-strong: #B95432;
+  --seg-bg: #F3E4D3; --seg-active-bg: #fff; --search-bg: #fff; --search-border: #F0DDC8;
+  --input-bg: #FFF4E6; --dialog-bg: #fff; --section-bg: #FFF4E6;
+  --toggle-off-bg: #EFDCC6; --toggle-off-label: #B09A80;
+  --card-selected-bg: #FFEDE2; --card-selected-border: #E8734A;
+  --card-selected-shadow: 0 0 0 2px rgba(232, 115, 74, 0.22);
+  --accent-shadow: rgba(232, 115, 74, 0.15); --hover: #F7E9DA; --sidebar-bg: #FBF0E1;
+  --sidebar-section-label: #6E5D49; --timeline-bg: rgba(255, 250, 242, 0.95);
+  --version-badge-gradient: linear-gradient(135deg, #E8734A, #C85A34);
+  --version-badge-shadow: rgba(232, 115, 74, 0.35);
+  --update-badge-gradient: linear-gradient(135deg, #059669, #047857);
+  --update-badge-shadow: rgba(5, 150, 105, 0.4);
+  --overlay-bg: rgba(0, 0, 0, 0.35);
+  --glass-card-bg: rgba(255,255,255,0.22); --glass-card-blur: 5px; --glass-card-border: rgba(0,0,0,0.07);
+  --glass-card-hover-border: rgba(0,0,0,0.14); --glass-card-hover-glow: rgba(232,115,74,0.10);
+  --glass-card-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.7);
+  --glass-card-hover-shadow: 0 8px 24px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9), 0 0 0 1px rgba(232,115,74,0.10);
+  --glass-shimmer: rgba(255,255,255,0.40); --glass-shimmer-static: rgba(255,255,255,0.50);
+  --glass-icon-bg: rgba(0,0,0,0.04); --glass-icon-border: rgba(0,0,0,0.07);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.05);
+  --glass-popover-bg: rgba(255,255,255,0.85); --glass-popover-border: rgba(0,0,0,0.06);
+  --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+  --glass-dialog-bg: rgba(255,255,255,0.66); --glass-dialog-blur: 22px;
+  --accent-glow: rgba(232,115,74, 0.12);
+}
+#app[data-theme="ocean-dark"] {
+  --app-bg: radial-gradient(130% 110% at 70% -5%, #1E5A82 0%, #0E3355 42%, #061A33 100%);
+  --header-bg-start: transparent; --header-bg-end: transparent;
+  --card-bg: #0A1628; --card-border: #162B45;
+  --text-primary: #E0E8F0; --text-secondary: #A2B6CD; --text-muted: #7994B4;
+  --border-color: #162B45; --accent: #3B9EFF; --accent-light: #0A1E3A;
+  --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
+  --accent-solid: #2D78C2; --accent-strong: var(--accent);
+  --seg-bg: #162B45; --seg-active-bg: #1E3D60; --search-bg: #162B45; --search-border: #1E3D60;
+  --input-bg: #162B45; --dialog-bg: #0A1628; --section-bg: #081018;
+  --toggle-off-bg: #1E3D60; --toggle-off-label: #5577A0;
+  --card-selected-bg: #0A1E3A; --card-selected-border: #3B9EFF;
+  --card-selected-shadow: 0 0 0 2px rgba(59,158,255,0.25);
+  --accent-shadow: rgba(59,158,255,0.2); --hover: #0F1F35; --sidebar-bg: #060F1A;
+  --sidebar-section-label: #627E99; --timeline-bg: rgba(6, 13, 20, 0.95);
+  --version-badge-gradient: linear-gradient(135deg, #3B9EFF, #1A7DE0);
+  --version-badge-shadow: rgba(59,158,255,0.35);
+  --update-badge-gradient: linear-gradient(135deg, #2DD4BF, #14B8A6);
+  --update-badge-shadow: rgba(45,212,191,0.45);
+  --overlay-bg: rgba(0, 0, 0, 0.35);
+  --glass-card-bg: rgba(10,22,40,0.22); --glass-card-blur: 5px; --glass-card-border: rgba(255,255,255,0.07);
+  --glass-card-hover-border: rgba(255,255,255,0.15); --glass-card-hover-glow: rgba(59,158,255,0.12);
+  --glass-card-shadow: 0 4px 16px rgba(0,0,0,0.40), 0 0 0 1px rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.05);
+  --glass-card-hover-shadow: 0 8px 28px rgba(0,0,0,0.50), 0 0 0 1px rgba(255,255,255,0.07), inset 0 1px 0 rgba(255,255,255,0.07), 0 0 0 1px rgba(59,158,255,0.12);
+  --glass-shimmer: rgba(255,255,255,0.07); --glass-shimmer-static: rgba(255,255,255,0.05);
+  --glass-icon-bg: rgba(255,255,255,0.05); --glass-icon-border: rgba(255,255,255,0.08);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.04), 0 2px 8px rgba(0,0,0,0.30);
+  --glass-popover-bg: rgba(10,22,40,0.85); --glass-popover-border: rgba(255,255,255,0.08);
+  --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.25);
+  --glass-dialog-bg: rgba(10,22,40,0.66); --glass-dialog-blur: 22px;
+  --accent-glow: rgba(56,189,248, 0.12);
+}
+
+/* ============================================================
+   App 布局 (App.module.css)
+   ============================================================ */
+.appShell { display: flex; flex-direction: column; height: 100vh; width: 100%; background: var(--app-bg); color: var(--text-primary); overflow: hidden; }
+.contentArea { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+.cardPanel { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+
+/* ============================================================
+   顶栏 (TopBar.module.css)
+   ============================================================ */
+.header { padding: 16px 16px 0; background: linear-gradient(180deg, var(--header-bg-start) 0%, var(--header-bg-end) 100%); flex-shrink: 0; }
+.headerTop { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.headerTitle { display: flex; align-items: center; gap: 8px; }
+.sidebarToggle { width: 28px; height: 28px; border: none; background: transparent; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); font-size: 16px; transition: all 0.15s; flex-shrink: 0; font-family: inherit; }
+.sidebarToggle:hover { background: rgba(129, 140, 248, 0.12); transform: scale(1.08); }
+.sidebarToggleActive { color: var(--accent-strong); background: var(--accent-light); }
+.headerTitleIcon { display: flex; align-items: center; justify-content: center; }
+.headerTitleText { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.headerIcons { display: flex; gap: 2px; align-items: center; }
+.headerDivider { width: 1px; height: 16px; background: var(--border-color); flex-shrink: 0; margin: 0 4px; }
+.iconBtn { width: 28px; height: 28px; border: none; background: transparent; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); transition: background 0.15s, transform 0.15s, color 0.15s; }
+.iconBtn:hover { background: color-mix(in srgb, currentColor 13%, transparent); transform: scale(1.08); }
+.iconBtnActive { background: color-mix(in srgb, currentColor 17%, transparent); }
+.iconBtn:active { transform: scale(.92); }
+.iconBtn[data-hue="amber"]  { color: #F59E0B; }
+.iconBtn[data-hue="sky"]    { color: #0EA5E9; }
+.iconBtn[data-hue="violet"] { color: #8B5CF6; }
+.iconSvg { width: 16px; height: 16px; }
+
+.vbadge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; background: var(--version-badge-gradient); color: #fff; font-size: 11px; font-weight: 600; box-shadow: 0 1px 6px var(--version-badge-shadow); cursor: pointer; font-variant-numeric: tabular-nums; }
+
+.headerControls { padding: 0 0 4px; }
+.searchFilterRow { display: flex; align-items: center; gap: 6px; }
+.searchBox { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px; border-radius: 12px; background: var(--search-bg); border: 1px solid var(--search-border); box-shadow: 0 1px 4px rgba(0,0,0,0.03); transition: all 0.2s; flex: 1; min-width: 0; }
+.searchBox.focused, .searchBox.hasHistory { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-shadow), 0 2px 8px var(--accent-shadow); background: var(--card-bg); }
+.searchIcon { font-size: 14px; line-height: 1; flex-shrink: 0; }
+.searchInput { flex: 1; border: none; background: transparent; outline: none; font-size: 13px; color: var(--text-primary); font-family: inherit; min-width: 0; }
+.searchInput::placeholder { color: var(--text-muted); }
+.searchClear { border: none; background: transparent; cursor: pointer; color: var(--text-muted); border-radius: 6px; padding: 4px; display: flex; align-items: center; justify-content: center; }
+.searchClear:hover { background: var(--hover); }
+
+.filterDropdown { position: relative; flex: none; width: auto; min-width: 0; }
+.filterDropdownBtn { display: flex; align-items: center; justify-content: space-between; gap: 4px; width: auto; max-width: 130px; height: 34px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--input-bg); color: var(--text-secondary); font-size: 11px; font-weight: 500; cursor: pointer; font-family: inherit; transition: all 0.15s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.filterDropdownBtn > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; display: inline-flex; align-items: center; gap: 4px; }
+.filterDropdownBtn:hover { border-color: var(--accent); color: var(--accent); }
+.filterDropdownMenu { position: absolute; top: calc(100% + 4px); left: auto; right: 0; min-width: 130px; background: var(--glass-popover-bg); backdrop-filter: blur(16px) saturate(1.4); -webkit-backdrop-filter: blur(16px) saturate(1.4); border: 1px solid var(--glass-popover-border); border-radius: 10px; box-shadow: var(--glass-popover-shadow); z-index: 30; overflow: hidden; }
+.filterDropdownItem { display: block; width: 100%; padding: 7px 12px; border: none; background: transparent; color: var(--text-primary); font-size: 11px; cursor: pointer; text-align: left; font-family: inherit; transition: background 0.1s; }
+.filterDropdownItem:hover { background: var(--accent-light); }
+.filterDropdownItemActive { color: var(--accent-strong); font-weight: 600; background: var(--accent-light); }
+
+.tabsArea { padding: 10px 0 0; background: transparent; }
+.segmented { display: flex; background: color-mix(in srgb, var(--seg-active-bg) 32%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid color-mix(in srgb, var(--seg-active-bg) 55%, transparent); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--seg-active-bg) 50%, transparent), 0 2px 8px rgba(0,0,0,0.06); border-radius: 10px; padding: 3px; position: relative; }
+.segItem { flex: 1; display: flex; align-items: center; justify-content: center; gap: 4px; height: 36px; border-radius: 8px; border: none; background: transparent; cursor: pointer; font-size: 12px; font-weight: 500; color: var(--text-secondary); transition: all 0.2s; z-index: 1; position: relative; font-family: inherit; }
+.segItemActive { color: var(--text-primary); font-weight: 600; background: transparent; }
+.segItem:hover:not(.segItemActive) { color: var(--text-primary); }
+.segActiveIndicator { position: absolute; inset: 0; border-radius: 8px; background: color-mix(in srgb, var(--seg-active-bg) 88%, transparent); box-shadow: 0 2px 8px rgba(0,0,0,0.12), 0 0.5px 1px rgba(0,0,0,0.05); z-index: 0; }
+.segIcon { font-size: 15px; position: relative; z-index: 1; }
+.segCount { font-size: 10px; font-weight: 700; color: var(--text-muted); margin-left: 1px; font-variant-numeric: tabular-nums; position: relative; z-index: 1; }
+.segItemActive .segCount { color: var(--accent); }
+#app[data-theme="blossom"] .segActiveIndicator { background: linear-gradient(135deg, #FFFFFF 0%, #FFDDEC 100%); box-shadow: 0 2px 8px rgba(206, 59, 112, 0.18), 0 0.5px 1px rgba(206, 59, 112, 0.08); }
+
+.tagFilterBar { display: flex; align-items: center; gap: 6px; padding: 8px 0 2px; flex-wrap: wrap; min-height: 28px; }
+.tagChip { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 6px 0 8px; border-radius: 6px; background: var(--accent-light); color: var(--accent-strong); font-size: 11px; font-weight: 500; border: 1px solid var(--accent-border); }
+.tagChipX { border: none; background: transparent; color: var(--accent-strong); cursor: pointer; font-size: 12px; line-height: 1; padding: 0 2px; border-radius: 4px; }
+.tagFilterClear { height: 22px; padding: 0 8px; border-radius: 6px; border: none; background: transparent; color: var(--text-muted); font-size: 10px; font-weight: 500; font-family: inherit; cursor: pointer; }
+.tagFilterClear:hover { color: var(--danger); background: var(--red-bg); }
+.tagFilterAdd { display: inline-flex; align-items: center; gap: 3px; height: 24px; padding: 0 10px; border-radius: 6px; border: 1px dashed var(--border-color); background: transparent; color: var(--text-muted); font-size: 11px; font-family: inherit; cursor: pointer; }
+.tagFilterAdd:hover { border-color: var(--accent); color: var(--accent-strong); background: var(--accent-light); }
+
+/* ============================================================
+   侧边栏 (Sidebar.module.css)
+   ============================================================ */
+.sidebar { width: 180px; min-width: 180px; height: 100%; background: var(--sidebar-bg); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; overflow: hidden; transition: width 0.35s cubic-bezier(0.4,0,0.2,1), min-width 0.35s cubic-bezier(0.4,0,0.2,1), border-color 0.35s ease; }
+.list { flex: 1; overflow-y: auto; padding: 12px 8px 8px; display: flex; flex-direction: column; gap: 1px; scrollbar-width: thin; scrollbar-color: var(--border-color) transparent; }
+.list::-webkit-scrollbar { width: 4px; }
+.list::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
+.sectionLabel { font-size: 11px; font-weight: 700; color: var(--sidebar-section-label); text-transform: uppercase; letter-spacing: 0.5px; padding: 10px 10px 6px; flex-shrink: 0; }
+.item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 7px; cursor: pointer; border: none; background: transparent; font-family: inherit; font-size: 13px; color: var(--text-primary); transition: all 0.15s; text-align: left; width: 100%; position: relative; }
+.item:hover { background: var(--hover); transform: translateX(2px); }
+.item.active { background: var(--accent-light); color: var(--accent-strong); font-weight: 600; }
+.item.active::before { content: ''; position: absolute; left: 2px; top: 50%; transform: translateY(-50%); width: 3px; height: 16px; border-radius: 2px; background: var(--accent); box-shadow: 0 0 6px var(--accent-shadow); }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.icon { font-size: 15px; flex-shrink: 0; width: 16px; text-align: center; line-height: 1; }
+.sourceIcon { width: 16px; height: 16px; border-radius: 3px; flex-shrink: 0; object-fit: contain; }
+.name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.count { font-size: 10px; color: var(--text-muted); font-weight: 600; flex-shrink: 0; font-variant-numeric: tabular-nums; background: var(--section-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 1px 7px; line-height: 1.4; }
+.item.active .count { color: var(--accent-strong); background: var(--accent-light); border-color: transparent; }
+.moreBtn { display: none; width: 20px; height: 20px; border-radius: 4px; border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 12px; font-weight: 700; line-height: 1; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
+.item:hover .moreBtn { display: flex; }
+.addGroupBtn { color: var(--text-muted); font-weight: 500; opacity: 0.7; margin-top: 2px; }
+.addGroupBtn:hover { opacity: 1; color: var(--accent-strong); background: var(--accent-light); }
+.addIcon { font-size: 16px; font-weight: 600; flex-shrink: 0; width: 8px; text-align: center; line-height: 1; margin-right: 2px; }
+.sep { height: 1px; background: var(--border-color); margin: 8px 10px 4px; }
+.footer { padding: 8px; border-top: 1px solid var(--border-color); flex-shrink: 0; }
+.melodyFoot { display: flex; align-items: center; gap: 8px; padding: 6px 8px 8px; }
+.melodyFootImg { width: 34px; height: 34px; object-fit: contain; flex-shrink: 0; filter: drop-shadow(0 4px 10px rgba(240, 86, 140, 0.28)); animation: melodyFootFloat 3.2s ease-in-out infinite; }
+@keyframes melodyFootFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+.melodyFootText { font-size: 11px; font-weight: 600; color: var(--accent-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.collapseBtn { width: 100%; padding: 7px 10px; border-radius: 7px; border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-family: inherit; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.15s; }
+.collapseBtn:hover { background: var(--hover); color: var(--text-secondary); }
+.collapseIcon { width: 14px; height: 14px; flex-shrink: 0; opacity: 0.7; }
+.collapseBtn:hover .collapseIcon { opacity: 1; }
+#app:not([data-theme="blossom"]) .melodyFoot { display: none; }
+
+/* ============================================================
+   卡片列表 (CardList.module.css)
+   ============================================================ */
+.scrollArea { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; position: relative; isolation: isolate; padding: 0; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; scrollbar-width: thin; scrollbar-color: var(--border-color) transparent;
+  background: radial-gradient(ellipse 60% 50% at 50% 0%, var(--accent-shadow) 0%, transparent 60%), radial-gradient(ellipse 80% 40% at 20% 100%, var(--glass-card-hover-glow) 0%, transparent 50%); }
+.cardList { --card-height: 72px; --card-gap: 10px; padding: 10px 16px 80px; display: flex; flex-direction: column; gap: var(--card-gap); }
+.cardWrap { position: relative; overflow: visible; width: 100%; z-index: 1; padding-bottom: var(--card-gap); }
+.card { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 16px; cursor: pointer; position: relative; height: var(--card-height, 72px); width: 100%; box-sizing: border-box; overflow: hidden;
+  background: var(--glass-card-bg); backdrop-filter: blur(var(--glass-card-blur, 12px)); -webkit-backdrop-filter: blur(var(--glass-card-blur, 12px)); border: 1px solid var(--glass-card-border); box-shadow: var(--glass-card-shadow); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+.card::before { content: ''; position: absolute; inset: 0; border-radius: 16px; background: linear-gradient(180deg, var(--glass-shimmer-static) 0%, transparent 50%); z-index: 0; pointer-events: none; }
+.card::after { content: ''; position: absolute; inset: 0; border-radius: 16px; background: linear-gradient(120deg, transparent 20%, var(--glass-shimmer) 35%, var(--glass-shimmer) 40%, var(--glass-shimmer) 45%, transparent 60%); background-size: 200% 100%; opacity: 0; transition: opacity 0.4s ease; z-index: 0; pointer-events: none; }
+.card:hover::after { opacity: 1; animation: shimmer-sweep 1.6s ease-in-out infinite; }
+@keyframes shimmer-sweep { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+.card:hover { border-color: var(--glass-card-hover-border); box-shadow: var(--glass-card-hover-shadow); }
+.card.selected { background: var(--card-selected-bg); border-color: var(--card-selected-border); box-shadow: var(--card-selected-shadow), 0 4px 16px var(--accent-shadow); }
+.cardIcon { width: 42px; height: 42px; min-width: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; position: relative; z-index: 1; transition: all 0.3s ease; background: var(--glass-icon-bg); border: 1px solid var(--glass-icon-border); box-shadow: var(--glass-icon-shadow); }
+.bgBlue   { background: rgba(59, 130, 246, 0.12);  border-color: rgba(59, 130, 246, 0.22);  box-shadow: inset 0 2px 4px rgba(59, 130, 246, 0.1), 0 2px 8px rgba(0,0,0,0.15); }
+.bgGreen  { background: rgba(16, 185, 129, 0.12);  border-color: rgba(16, 185, 129, 0.22);  box-shadow: inset 0 2px 4px rgba(16, 185, 129, 0.1), 0 2px 8px rgba(0,0,0,0.15); }
+.bgPink   { background: rgba(236, 72, 153, 0.12);  border-color: rgba(236, 72, 153, 0.22);  box-shadow: inset 0 2px 4px rgba(236, 72, 153, 0.1), 0 2px 8px rgba(0,0,0,0.15); }
+.bgPurple { background: rgba(139, 92, 246, 0.12);  border-color: rgba(139, 92, 246, 0.22);  box-shadow: inset 0 2px 4px rgba(139, 92, 246, 0.1), 0 2px 8px rgba(0,0,0,0.15); }
+#app[data-theme="blossom"] .bgBlue, #app[data-theme="blossom"] .bgPurple { background: linear-gradient(135deg, rgba(240, 86, 140, 0.14), rgba(206, 59, 112, 0.10)); border-color: rgba(240, 86, 140, 0.26); box-shadow: inset 0 2px 4px rgba(240, 86, 140, 0.10), 0 2px 8px rgba(206, 59, 112, 0.12); }
+#app[data-theme="blossom"] .bgGreen, #app[data-theme="blossom"] .bgPink { background: linear-gradient(135deg, rgba(126, 200, 227, 0.18), rgba(91, 184, 220, 0.12)); border-color: rgba(126, 200, 227, 0.32); box-shadow: inset 0 2px 4px rgba(126, 200, 227, 0.12), 0 2px 8px rgba(91, 184, 220, 0.12); }
+.colorIcon { background: var(--swatch-bg); border-color: var(--swatch-border); box-shadow: inset 0 2px 4px var(--swatch-inset), 0 2px 8px rgba(0,0,0,0.15); }
+.colorDot { width: 22px; height: 22px; border-radius: 50%; background: var(--swatch-color); box-shadow: 0 0 0 2px rgba(255,255,255,0.55), inset 0 0 0 1px rgba(0,0,0,0.08); }
+.cardImgThumb { width: 42px; height: 42px; min-width: 42px; min-height: 42px; padding: 0; overflow: hidden; }
+.cardImgThumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 12px; }
+.cardContent { flex: 1; min-width: 0; overflow: hidden; }
+.cardTitle { font-size: 13px; font-weight: 600; color: var(--text-primary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; word-break: break-word; max-height: 36px; white-space: normal; margin: 0; }
+.cardSub { font-size: 11px; color: var(--text-secondary); margin-top: 2px; display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; }
+.cardPin { display: inline-flex; align-items: center; gap: 2px; height: 16px; padding: 0 6px; border-radius: 4px; font-size: 10px; font-weight: 600; background: var(--accent-light); color: var(--accent-strong); }
+.cardSource { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100px; display: inline-flex; align-items: center; gap: 3px; }
+.cardTime { font-size: 11px; color: var(--text-muted); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.cardPasting { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 600; color: var(--accent-strong); background: var(--accent-light); padding: 1px 6px; border-radius: 4px; }
+.tagMini { display: inline-flex; align-items: center; gap: 2px; height: 16px; padding: 0 6px; border-radius: 4px; font-size: 10px; font-weight: 600; background: var(--section-bg); color: var(--text-secondary); border: 1px solid var(--border-color); }
+
+/* 悬停玻璃弹层 (CardHoverPopover) */
+.cardPopover { position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); width: 320px; max-width: calc(100vw - 48px); padding: 12px; border-radius: 12px; z-index: 100; pointer-events: auto; animation: popoverFadeIn 0.18s ease; background: var(--glass-popover-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--glass-popover-border); box-shadow: var(--glass-popover-shadow); }
+@keyframes popoverFadeIn { from { opacity: 0; transform: translateX(-50%) translateY(4px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+.cardPopover::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 8px solid var(--glass-popover-bg); filter: drop-shadow(0 1px 1px rgba(0,0,0,0.2)); }
+.cardPopoverText { font-size: 12px; color: var(--text-primary); line-height: 1.65; max-height: 140px; overflow-y: auto; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; white-space: pre-wrap; word-break: break-word; user-select: text; margin-bottom: 10px; padding-right: 2px; }
+.cardPopoverCode { font-size: 11px; font-family: "Fira Code", "SF Mono", "Consolas", monospace; padding: 8px 10px; border-radius: 8px; background: #1e1e2e; color: #cdd6f4; max-height: 140px; overflow: hidden; white-space: pre; text-overflow: ellipsis; line-height: 1.5; margin-bottom: 10px; }
+.cardPopoverLinkHost { font-size: 13px; font-weight: 600; color: var(--accent); margin-bottom: 4px; word-break: break-all; }
+.cardPopoverLinkPath { font-size: 11px; color: var(--text-muted); word-break: break-all; }
+.cardPopoverActions { display: flex; gap: 4px; border-top: 1px solid var(--border-color); padding-top: 8px; }
+.cardPopoverBtn { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 5px 6px; border-radius: 7px; border: 1px solid var(--border-color); background: var(--card-bg); cursor: pointer; font-size: 11px; font-weight: 500; color: var(--text-primary); transition: all 0.15s ease; white-space: nowrap; user-select: none; font-family: inherit; }
+.cardPopoverBtn:hover { background: var(--accent-light); border-color: var(--accent); color: var(--accent-strong); }
+.cardPopoverBtn:active { transform: scale(0.95); }
+
+/* ============================================================
+   皮肤场景粒子 (SkinScene.module.css)
+   ============================================================ */
+.scene { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+/* 美乐蒂 */
+.melodyHeart { position: absolute; top: -30px; animation: melodyHeartFall linear infinite; filter: drop-shadow(0 0 6px rgba(255, 140, 190, 0.5)); }
+@keyframes melodyHeartFall { 0% { transform: translate(0, -40px) rotate(-10deg); } 50% { transform: translate(-30px, 55vh) rotate(12deg); } 100% { transform: translate(12px, 112vh) rotate(-8deg); } }
+.melodyBow { position: absolute; opacity: 0.85; animation: melodyBowFloat 7s ease-in-out infinite; }
+@keyframes melodyBowFloat { 0%,100% { transform: translateY(0) rotate(-5deg); } 50% { transform: translateY(-14px) rotate(6deg); } }
+.melodySpark { position: absolute; animation: melodySparkTw 2.8s ease-in-out infinite; }
+@keyframes melodySparkTw { 0%,100% { opacity: 0.15; transform: scale(0.7); } 50% { opacity: 0.95; transform: scale(1); } }
+.melodyChar { position: absolute; right: 26px; bottom: 60px; width: 104px; height: 104px; object-fit: contain; animation: melodyBob 5.5s ease-in-out infinite; filter: drop-shadow(0 6px 12px rgba(200, 60, 120, 0.28)); }
+@keyframes melodyBob { 0%,100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-14px) rotate(3deg); } }
+.haze { position: absolute; left: -10%; right: -10%; height: 180px; border-radius: 50%; background: rgba(255, 235, 245, 0.5); filter: blur(40px); }
+/* 深海 */
+.ray { position: absolute; top: -80px; width: 170px; height: 62vh; background: linear-gradient(180deg, rgba(150, 225, 255, 0.34), rgba(150, 225, 255, 0)); transform: skewX(-14deg); filter: blur(16px); animation: raySway 10s ease-in-out infinite; }
+@keyframes raySway { 0%,100% { opacity: 0.4; transform: skewX(-14deg); } 50% { opacity: 0.8; transform: skewX(-9deg); } }
+.bubble { position: absolute; border-radius: 50%; border: 1px solid rgba(170, 230, 255, 0.6); background: rgba(170, 230, 255, 0.12); animation: bubbleRise linear infinite; }
+@keyframes bubbleRise { from { transform: translateY(0); } to { transform: translateY(-110vh); } }
+.plankton { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: #7ff3ff; box-shadow: 0 0 11px #22d3ee; animation: twinkle 3s ease-in-out infinite; }
+@keyframes twinkle { 0%,100% { opacity: 0.15; } 50% { opacity: 0.9; } }
+.jelly { position: absolute; animation: jellyDrift 14s ease-in-out infinite; }
+@keyframes jellyDrift { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-30px,-36px); } }
+/* 晨曦 */
+.dawnSun { position: absolute; right: 70px; top: 46px; width: 150px; height: 150px; border-radius: 50%; background: radial-gradient(circle, #fffdf5 0%, #ffe3ae 40%, rgba(255,196,130,0) 72%); filter: blur(2px); animation: dawnSunPulse 9s ease-in-out infinite; }
+@keyframes dawnSunPulse { 0%,100% { opacity: 0.85; transform: scale(1); } 50% { opacity: 1; transform: scale(1.06); } }
+.dawnRay { position: absolute; top: -60px; width: 150px; height: 58vh; background: linear-gradient(180deg, rgba(255, 214, 150, 0.32), rgba(255, 214, 150, 0)); transform: skewX(-12deg); filter: blur(14px); animation: dawnRaySway 12s ease-in-out infinite; }
+@keyframes dawnRaySway { 0%,100% { opacity: 0.35; transform: skewX(-12deg); } 50% { opacity: 0.7; transform: skewX(-7deg); } }
+.dawnCloud { position: absolute; height: 24px; border-radius: 999px; background: linear-gradient(90deg, rgba(255,255,255,0.75), rgba(255,224,196,0.45)); filter: blur(5px); animation: dawnCloudDrift linear infinite; }
+@keyframes dawnCloudDrift { from { transform: translateX(0); } to { transform: translateX(-280px); } }
+/* 海洋 */
+.sun { position: absolute; width: 150px; height: 150px; border-radius: 50%; right: 90px; top: 50px; background: radial-gradient(circle, #fffbe8 0%, #ffeaa6 42%, rgba(255,234,166,0) 72%); filter: blur(2px); }
+.glint { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: #fff; animation: glintTw 2.6s ease-in-out infinite; }
+@keyframes glintTw { 0%,100% { opacity: 0.15; } 50% { opacity: 0.95; } }
+.gull { position: absolute; color: #3a6d8f; opacity: 0.75; animation: gullGlide 14s linear infinite; }
+@keyframes gullGlide { from { transform: translateX(0); } to { transform: translateX(-120vw); } }
+.boat { position: absolute; left: 16%; bottom: 150px; font-size: 34px; animation: boatBob 4s ease-in-out infinite; filter: drop-shadow(0 4px 6px rgba(9,60,100,0.3)); }
+@keyframes boatBob { 0%,100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-8px) rotate(2deg); } }
+.waves { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* 午夜 */
+.aurora { position: absolute; left: -10%; right: -10%; top: -40px; height: 220px; background: linear-gradient(100deg, rgba(139,124,246,0), rgba(139,124,246,0.16), rgba(56,189,248,0.14), rgba(139,124,246,0)); filter: blur(30px); animation: auroraSway 11s ease-in-out infinite; }
+@keyframes auroraSway { 0%,100% { transform: translateX(-30px) skewX(-8deg); opacity: 0.6; } 50% { transform: translateX(30px) skewX(6deg); opacity: 1; } }
+.star { position: absolute; border-radius: 50%; background: #cdd3ff; animation: starTw 4s ease-in-out infinite; }
+@keyframes starTw { 0%,100% { opacity: 0.15; } 50% { opacity: 0.95; } }
+.shoot { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #fff; box-shadow: 0 0 6px #fff; animation: shootFly 6s linear infinite; }
+.shoot::after { content: ''; position: absolute; left: 0; top: 0; width: 70px; height: 1px; background: linear-gradient(90deg, rgba(255,255,255,0.8), transparent); transform: rotate(-32deg) translateX(-60px); }
+@keyframes shootFly { 0% { transform: translate(0,0); opacity: 0; } 4% { opacity: 1; } 12% { transform: translate(-320px, 200px); opacity: 0; } 100% { transform: translate(-320px, 200px); opacity: 0; } }
+.moon { position: absolute; right: 100px; top: 64px; width: 92px; height: 92px; border-radius: 50%; background: radial-gradient(circle at 34% 34%, #f4f1ff 0%, #cfc7f5 55%, #a89cf0 100%); box-shadow: 0 0 50px rgba(139,124,246,0.5), inset -15px -11px 0 rgba(90,74,180,0.35); }
+.mountains { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* 森林 */
+.canopy { position: absolute; inset: 0; width: 100%; height: 100%; }
+.mist { position: absolute; left: -10%; right: -10%; height: 130px; border-radius: 50%; background: rgba(255, 253, 245, 0.8); filter: blur(32px); animation: mistMove 16s ease-in-out infinite; }
+@keyframes mistMove { 0%,100% { transform: translateX(-40px); } 50% { transform: translateX(40px); } }
+.leaf { position: absolute; width: 10px; height: 7px; border-radius: 60% 40% 60% 40%; background: #8fae7e; opacity: 0.85; animation: leafFall linear infinite; }
+@keyframes leafFall { 0% { transform: translateY(-30px) rotate(0); } 100% { transform: translateY(110vh) rotate(480deg); } }
+.fly { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: #d9e8a0; box-shadow: 0 0 8px #b8d468; animation: flyFloat 7s ease-in-out infinite; }
+@keyframes flyFloat { 0%,100% { transform: translate(0,0); opacity: 0.3; } 25% { opacity: 1; } 50% { transform: translate(24px,-30px); opacity: 0.8; } 75% { opacity: 1; } }
+
+/* 预览工具条（设计稿专用，非应用内 UI） */
+.previewBar { position: fixed; top: 14px; right: 16px; z-index: 9999; display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 12px; background: rgba(20,20,28,0.62); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 8px 30px rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.1); }
+.previewBar .lbl { color: #fff; font-size: 11px; font-weight: 600; opacity: 0.75; margin-right: 2px; font-family: inherit; }
+.themeBtn { border: none; background: transparent; color: #fff; font-size: 11px; font-weight: 600; padding: 5px 9px; border-radius: 7px; cursor: pointer; font-family: inherit; opacity: 0.7; transition: all 0.15s; }
+.themeBtn:hover { opacity: 1; background: rgba(255,255,255,0.12); }
+.themeBtn.active { opacity: 1; background: rgba(255,255,255,0.22); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25); }
+.note { position: fixed; left: 16px; bottom: 14px; z-index: 9999; color: #fff; font-size: 11px; opacity: 0.55; background: rgba(20,20,28,0.5); padding: 6px 10px; border-radius: 8px; max-width: 340px; line-height: 1.5; font-family: inherit; }
+
+/* ============================================================
+   美乐蒂常驻角落 + 多状态互动（设计稿增强层 · 真实 melody.png 为角色）
+   ============================================================ */
+.melodyMascot { position: fixed; right: 16px; bottom: 14px; z-index: 60; width: 138px; height: 156px; cursor: pointer; display: flex; flex-direction: column; align-items: center; transition: opacity .4s ease, transform .35s cubic-bezier(.2,.9,.3,1.2); }
+.melodyMascot.hidden { opacity: 0; transform: translateY(70px) scale(.5); pointer-events: none; }
+.melodyMascot:hover { transform: translateY(-3px) scale(1.03); }
+.melodyBody, .melodyCanvas { width: 134px; height: 142px; object-fit: contain; }
+.melodyBody { filter: drop-shadow(0 9px 14px rgba(200,60,120,0.22)); touch-action: none; }
+.melodyCanvas { touch-action: none; }
+@keyframes mBob { 0%,100%{ transform: translateY(0) rotate(0); } 50%{ transform: translateY(-7px) rotate(-1.5deg); } }
+.melodyName { margin-top: 3px; font-size: 11px; font-weight: 700; color: var(--accent-strong); background: var(--accent-light); padding: 2px 10px; border-radius: 999px; box-shadow: 0 2px 8px var(--accent-shadow); white-space: nowrap; }
+.melodyMood { position: absolute; top: -4px; right: 6px; font-size: 22px; opacity: 0; transform: scale(.4); transition: opacity .2s, transform .2s; pointer-events: none; filter: drop-shadow(0 2px 4px rgba(0,0,0,.2)); z-index: 2; }
+.melodyMood.show { opacity: 1; transform: scale(1); animation: mMoodPop .4s ease; }
+@keyframes mMoodPop { from{ transform: scale(.3) translateY(6px);} to{ transform: scale(1) translateY(0);} }
+
+/* 3D 角色（美乐蒂风格原创，R3F 驱动）的姿态由底部 R3F module 的 useFrame 驱动；本层仅保留 DOM 覆盖（气泡/情绪/粒子） */
+
+/* 对话气泡 */
+.melodySpeech { position: absolute; right: 110px; bottom: 92px; max-width: 210px; padding: 9px 13px; border-radius: 16px 16px 4px 16px; background: var(--glass-popover-bg); backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4); border: 1px solid var(--glass-popover-border); box-shadow: var(--glass-popover-shadow); font-size: 12.5px; font-weight: 600; color: var(--text-primary); opacity: 0; transform: translateY(8px) scale(.9); transition: opacity .22s ease, transform .22s ease; pointer-events: none; white-space: nowrap; z-index: 3; }
+.melodySpeech.show { opacity: 1; transform: translateY(0) scale(1); }
+
+/* 粒子特效层 */
+.melodyFx { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 1; }
+.melodyFx span { position: absolute; font-size: 16px; animation: mFxFloat 1.4s ease-out forwards; }
+@keyframes mFxFloat { 0%{ opacity:0; transform: translate(0,0) scale(.5);} 20%{opacity:1;} 100%{ opacity:0; transform: translate(var(--fx-x,0), var(--fx-y,-70px)) scale(1.1) rotate(var(--fx-r,0)); } }
+
+/* 演示控制器（设计稿专用，非应用内 UI） */
+.melodyDemo { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 41; display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 14px; background: rgba(20,20,28,0.62); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 8px 30px rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.1); flex-wrap: wrap; max-width: 92vw; justify-content: center; }
+.melodyDemo .lbl { color: #fff; font-size: 11px; font-weight: 600; opacity: 0.78; margin-right: 2px; font-family: inherit; }
+.melodyDemo button { border: none; background: rgba(255,255,255,0.1); color: #fff; font-size: 11px; font-weight: 600; padding: 5px 9px; border-radius: 8px; cursor: pointer; font-family: inherit; opacity: .85; transition: all .15s; }
+.melodyDemo button:hover { opacity: 1; background: rgba(255,255,255,0.22); }
+.melodyDemo .sep { width: 1px; height: 18px; background: rgba(255,255,255,0.18); margin: 0 2px; }
+</style>
+</head>
+<body>
+<div class="previewBar">
+  <span class="lbl">设计稿 · 切换真实主题</span>
+  <button class="themeBtn" data-t="ocean">海洋</button>
+  <button class="themeBtn" data-t="ocean-dark">深海</button>
+  <button class="themeBtn" data-t="midnight">午夜</button>
+  <button class="themeBtn" data-t="forest">森林</button>
+  <button class="themeBtn" data-t="blossom">美乐蒂</button>
+  <button class="themeBtn" data-t="dawn">晨曦</button>
+</div>
+<div class="note">PastePanda 真实 UI 1:1 还原 · 结构 / 玻璃令牌 / 配色 / 文案 / 图标均取自源码，未自行发明。默认美乐蒂主题。</div>
+
+<div id="app" data-theme="blossom">
+  <div class="scene" id="scene" aria-hidden="true"></div>
+  <div class="appShell">
+    <!-- ============ 顶栏 ============ -->
+    <header class="header" role="banner">
+      <div class="headerTop">
+        <div class="headerTitle">
+          <button class="sidebarToggle sidebarToggleActive" title="收起侧边栏" aria-label="切换侧边栏">☰</button>
+          <span class="headerTitleIcon"><img id="appIcon" src="melody.png" alt="PastePanda" width="20" height="20" style="width:20px;height:20px;flex-shrink:0;" draggable="false"></span>
+          <span class="headerTitleText">PastePanda</span>
+          <span class="vbadge" title="v5.5.0 — 点击检查更新">v5.5.0</span>
+        </div>
+        <div class="headerIcons">
+          <button class="iconBtn" data-hue="amber" title="收集模式（栈模式）· ctrl+alt+k">
+            <svg class="iconSvg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 2.6 2.9 7.66a.95.95 0 0 0 0 1.68L12 14.4l9.1-5.06a.95.95 0 0 0 0-1.68Z" fill="currentColor" fillOpacity=".88" />
+              <path d="m3.2 12.4 8.8 4.9 8.8-4.9" stroke="currentColor" strokeOpacity=".5" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="m3.2 16.9 8.8 4.9 8.8-4.9" stroke="currentColor" strokeOpacity=".26" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+          <div style="position:relative;display:inline-flex;">
+            <button class="iconBtn" data-hue="sky" title="工具箱">
+              <svg class="iconSvg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M9 7.6V6.1a2.6 2.6 0 0 1 2.6-2.6h.8A2.6 2.6 0 0 1 15 6.1v1.5" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" />
+                <rect x="2.9" y="7.6" width="18.2" height="12.6" rx="2.7" fill="currentColor" fillOpacity=".22" stroke="currentColor" stroke-width="2.1" />
+                <path d="M2.9 12.4h18.2" stroke="currentColor" stroke-opacity=".55" stroke-width="2.1" />
+                <rect x="10.35" y="10.75" width="3.3" height="3.3" rx="1.15" fill="currentColor" />
+              </svg>
+            </button>
+          </div>
+          <button class="iconBtn" data-hue="violet" title="设置 · 帮助 · 关于">
+            <svg class="iconSvg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+          <span class="headerDivider" aria-hidden="true"></span>
+          <button class="iconBtn" title="最小化到任务栏">
+            <svg class="iconSvg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>
+          </button>
+          <button class="iconBtn" title="隐藏到托盘（保持后台运行）">
+            <svg class="iconSvg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><line x1="3" y1="3" x2="21" y2="21"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="headerControls">
+        <div class="searchFilterRow">
+          <div class="searchBox">
+            <span class="searchIcon">🔍</span>
+            <input class="searchInput" placeholder="搜索剪贴板记录…" />
+            <button class="searchClear" title="清除" style="display:none;">✕</button>
+          </div>
+          <div class="filterDropdown">
+            <button class="filterDropdownBtn"><span>全部时间</span><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
+          </div>
+          <div class="filterDropdown">
+            <button class="filterDropdownBtn"><span>全部来源</span><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
+          </div>
+        </div>
+
+        <div class="tabsArea">
+          <div class="segmented" id="tabs"></div>
+        </div>
+
+        <div class="tagFilterBar">
+          <span class="tagChip">工作 <button class="tagChipX">✕</button></span>
+          <span class="tagChip">灵感 <button class="tagChipX">✕</button></span>
+          <button class="tagFilterClear">清除</button>
+          <button class="tagFilterAdd">🏷️ 标签筛选</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- ============ 内容区 ============ -->
+    <div class="contentArea">
+      <!-- 侧边栏 -->
+      <aside class="sidebar open">
+        <div class="list">
+          <button class="item active"><span class="icon">📋</span><span class="name">全部</span><span class="count">128</span></button>
+          <button class="item"><span class="icon">⭐</span><span class="name">收藏</span><span class="count">12</span></button>
+          <button class="item"><span class="icon">📂</span><span class="name">未分组</span><span class="count">64</span></button>
+
+          <div class="sep"></div>
+          <div class="sectionLabel">分组</div>
+          <button class="item"><span class="dot" style="background:#F0568C"></span><span class="name">工作</span><span class="count">22</span><span class="moreBtn">⋯</span></button>
+          <button class="item"><span class="dot" style="background:#7EC8E3"></span><span class="name">灵感</span><span class="count">9</span><span class="moreBtn">⋯</span></button>
+          <button class="item"><span class="dot" style="background:#A855F7"></span><span class="name">设计</span><span class="count">7</span><span class="moreBtn">⋯</span></button>
+          <button class="item addGroupBtn"><span class="addIcon">+</span><span class="name">新建分组</span></button>
+
+          <div class="sep"></div>
+          <div class="sectionLabel">智能分类</div>
+          <button class="item"><span class="icon">🤖</span><span class="name">链接</span><span class="count">30</span></button>
+          <button class="item"><span class="icon">🤖</span><span class="name">邮箱</span><span class="count">18</span></button>
+
+          <div class="sep"></div>
+          <div class="sectionLabel">来源</div>
+          <button class="item"><span class="icon">🌐</span><span class="name">Chrome</span><span class="count">41</span></button>
+          <button class="item"><span class="icon">📝</span><span class="name">VS Code</span><span class="count">27</span></button>
+          <button class="item"><span class="icon">💬</span><span class="name">微信</span><span class="count">19</span></button>
+          <button class="item"><span class="icon">✂️</span><span class="name">截图工具</span><span class="count">11</span></button>
+          <button class="item"><span class="icon">📁</span><span class="name">访达</span><span class="count">8</span></button>
+        </div>
+        <div class="footer">
+          <div class="melodyFoot">
+            <img class="melodyFootImg" src="melody.png" alt="" draggable="false" />
+            <span class="melodyFootText">美乐蒂帮你收着 💗</span>
+          </div>
+          <button class="collapseBtn">
+            <svg class="collapseIcon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3L6 8l5 5"/></svg>
+            收起侧边栏
+          </button>
+        </div>
+      </aside>
+
+      <!-- 卡片面板 -->
+      <div class="cardPanel">
+        <div class="scrollArea">
+          <div class="cardList" id="cardList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+  <!-- 美乐蒂常驻角落 + 多状态互动（设计稿增强层） -->
+  <div class="melodyMascot" id="melodyMascot" title="点我抚摸 / 悬停招手（美乐蒂风格原创 3D 角色）">
+    <span class="melodyMood" id="melodyMood">💗</span>
+    <img id="melodyBody" class="melodyBody" src="melody.png" alt="美乐蒂风格（2D 回退）" style="display:none" draggable="false" />
+    <div id="mascotRoot" class="melodyCanvas"></div>
+    <div class="melodyName">美乐蒂 🎀</div>
+    <div class="melodySpeech" id="melodySpeech"></div>
+    <div class="melodyFx" id="melodyFx"></div>
+  </div>
+
+  <!-- 美乐蒂状态演示控制器（设计稿专用，非应用内 UI） -->
+  <div class="melodyDemo" id="melodyDemo">
+    <span class="lbl">美乐蒂状态演示：</span>
+    <button data-act="greet">欢迎</button>
+    <button data-act="copy">复制</button>
+    <button data-act="paste">粘贴</button>
+    <button data-act="collect">收藏</button>
+    <button data-act="edit">编辑</button>
+    <button data-act="think">思考</button>
+    <button data-act="delete">删除</button>
+    <button data-act="error">出错</button>
+    <button data-act="cheer">成功</button>
+    <button data-act="sleep">休眠</button>
+    <span class="sep"></span>
+    <button data-act="idle">回到待机</button>
+  </div>
+
+<!-- 常驻 3D 角色「团团」：R3F + htm（esm.sh 动态加载，离线自动回退 melody.png）。真实代码将用 @react-three/fiber + drei。 -->
+<script type="module">
+(async () => {
+  const container = document.getElementById('mascotRoot');
+  const fallback  = document.getElementById('melodyBody');
+  let ok = true, React, createRoot, Canvas, htm, html;
+  try {
+    const R  = await import('https://esm.sh/react@18.3.1');
+    React = R.default || R;
+    const RD = await import('https://esm.sh/react-dom@18.3.1/client');
+    createRoot = RD.createRoot;
+    const F  = await import('https://esm.sh/@react-three/fiber@8.17.10?deps=react@18.3.1,react-dom@18.3.1,three@0.160.0');
+    Canvas = F.Canvas;
+    const H  = await import('https://esm.sh/htm@3.1.1');
+    htm = H.default;
+    html = htm.bind(React.createElement);
+  } catch (e) { ok = false; }
+  if (!ok || !Canvas) {
+    if (fallback) fallback.style.display = 'block';
+    window.Mascot3D = { setPose(){}, setVisible(v){ if(fallback) fallback.style.display = v ? 'block' : 'none'; }, _fallback:true };
+    return;
+  }
+
+  const { useRef, useEffect } = React;
+  const TR = { greet:0.85, copy:0.6, collect:0.7, paste:1.0, edit:1.2, delete:0.55, error:0.55, cheer:0.95, pet:0.7, theme:0.8 };
+
+  function Tuan(){
+    const root = useRef(), head = useRef(), armL = useRef(), armR = useRef(), eyeL = useRef(), eyeR = useRef();
+    const pose = useRef('idle'), pt = useRef(0), clk = useRef(0);
+    const mouse = useRef({x:0,y:0}), look = useRef({x:0,y:0}), hidden = useRef(false);
+    useEffect(()=>{ window.Mascot3D.setPose = (p)=>{ pose.current = p; pt.current = 0; }; }, []);
+    useEffect(()=>{ window.Mascot3D.setVisible = (v)=>{ hidden.current = !v; if(fallback) fallback.style.display = v ? 'none' : 'block'; }; }, []);
+    useEffect(()=>{
+      const onMove = (e)=>{ mouse.current.x = (e.clientX/window.innerWidth)*2-1; mouse.current.y = (e.clientY/window.innerHeight)*2-1; };
+      window.addEventListener('mousemove', onMove);
+      return ()=> window.removeEventListener('mousemove', onMove);
+    }, []);
+    const easeOutBack = (x)=>{ const c1=1.70158, c3=c1+1; return 1 + c3*Math.pow(x-1,3) + c1*Math.pow(x-1,2); };
+    F.useFrame((state, dt)=>{
+      clk.current += dt;
+      if (hidden.current) return;
+      const t = clk.current;
+      pt.current += dt;
+      const cur = pose.current;
+      if (TR[cur] && pt.current > TR[cur] && cur!=='idle' && cur!=='sleep') pose.current = 'idle';
+      let rootY = Math.sin(t*1.7)*0.06, headPitch = Math.sin(t*1.3)*0.05, rootYaw=0, rootRoll=0, scale=1, aLz=0,aLx=0,aRz=0,aRx=0, eyeY=1;
+      const prog = TR[cur] ? Math.min(pt.current/TR[cur],1) : 1;
+      switch(cur){
+        case 'greet':  scale=easeOutBack(Math.min(pt.current/0.5,1)); rootYaw=(pt.current/0.85)*Math.PI*2; rootY+=Math.sin(Math.min(pt.current/0.5,1)*Math.PI)*0.22; break;
+        case 'copy':   rootY+=Math.sin(prog*Math.PI)*0.45; scale=1+Math.sin(prog*Math.PI)*0.06; break;
+        case 'collect':
+        case 'pet':    aLz=-1.0; aLx=-0.3; aRz=1.0; aRx=-0.3; scale=1.05; rootY+=Math.sin(prog*Math.PI)*0.12; break;
+        case 'paste':
+        case 'wave':   aLz=1.0; aLx=-0.45+Math.sin(pt.current*12)*0.35; break;
+        case 'edit':   headPitch+=0.18+Math.sin(pt.current*2)*0.18; rootRoll+=Math.sin(pt.current*2)*0.03; aRx=-0.8; aRz=0.4; break;
+        case 'think':  headPitch+=0.2+Math.sin(pt.current*2)*0.06; aRx=-0.8; aRz=0.4; break;
+        case 'delete': rootRoll+=Math.sin(pt.current*30)*0.4; headPitch+=Math.sin(pt.current*20)*0.1; break;
+        case 'error':  rootRoll+=Math.sin(pt.current*42)*0.22; rootY+=Math.sin(pt.current*42)*0.04; break;
+        case 'cheer':  rootYaw=(pt.current/0.95)*Math.PI*2; rootY+=Math.sin(prog*Math.PI)*0.5; scale=1.05; aLz=1.0; aRz=-1.0; break;
+        case 'sleep':  rootY-=0.18; headPitch+=0.35; rootRoll-=0.05; eyeY=0.12; break;
+        case 'theme':  rootYaw=(pt.current/0.8)*Math.PI*2; break;
+      }
+      look.current.x += (mouse.current.x - look.current.x)*0.08;
+      look.current.y += (mouse.current.y - look.current.y)*0.08;
+      rootYaw += look.current.x*0.4; headPitch += -look.current.y*0.3;
+      if(root.current){ root.current.position.y=rootY; root.current.rotation.set(0,rootYaw,rootRoll); root.current.scale.setScalar(scale); }
+      if(head.current){ head.current.rotation.x=headPitch; head.current.rotation.y=look.current.x*0.5; }
+      if(armL.current) armL.current.rotation.set(aLx,0,aLz);
+      if(armR.current) armR.current.rotation.set(aRx,0,aRz);
+      if(eyeL.current) eyeL.current.scale.y = eyeY;
+      if(eyeR.current) eyeR.current.scale.y = eyeY;
+    });
+    return html`
+      <group ref=${root}>
+        <mesh position=${[0,-0.62,0]} scale=${[0.6,0.64,0.58]}>
+          <sphereGeometry args=${[1,32,24]} />
+          <meshStandardMaterial color="#ef7a98" roughness=${0.6} />
+        </mesh>
+        <mesh position=${[0,-0.92,0]} rotation=${[Math.PI,0,0]}>
+          <coneGeometry args=${[0.6,0.46,32]} />
+          <meshStandardMaterial color="#f58aab" roughness=${0.6} />
+        </mesh>
+        <mesh position=${[0.22,-1.1,0.16]}><sphereGeometry args=${[0.15,18,14]} /><meshStandardMaterial color="#fff2f6" roughness=${0.6} /></mesh>
+        <mesh position=${[-0.22,-1.1,0.16]}><sphereGeometry args=${[0.15,18,14]} /><meshStandardMaterial color="#fff2f6" roughness=${0.6} /></mesh>
+        <group ref=${head} position=${[0,0.72,0]}>
+          <mesh position=${[0,0.1,-0.02]} scale=${[1.04,1.16,1.02]}>
+            <sphereGeometry args=${[0.86,36,28]} />
+            <meshStandardMaterial color="#ef7a98" roughness=${0.55} />
+          </mesh>
+          <mesh position=${[0,-0.04,0.16]} scale=${[1,0.94,0.92]}>
+            <sphereGeometry args=${[0.74,36,28]} />
+            <meshStandardMaterial color="#fff6f0" roughness=${0.5} emissive="#ffffff" emissiveIntensity=${0.05} />
+          </mesh>
+          <group position=${[0.5,0.5,-0.04]} rotation=${[0,0,-0.3]}>
+            <mesh position=${[0,-0.72,0]} scale=${[0.27,1.3,0.2]}><sphereGeometry args=${[0.5,24,18]} /><meshStandardMaterial color="#ef7a98" roughness=${0.55} /></mesh>
+            <mesh position=${[0.05,-0.7,0.12]} scale=${[0.15,1.05,0.12]}><sphereGeometry args=${[0.5,20,14]} /><meshStandardMaterial color="#ffc2dd" roughness=${0.6} /></mesh>
+          </group>
+          <group position=${[-0.5,0.5,-0.04]} rotation=${[0,0,0.3]}>
+            <mesh position=${[0,-0.72,0]} scale=${[0.27,1.3,0.2]}><sphereGeometry args=${[0.5,24,18]} /><meshStandardMaterial color="#ef7a98" roughness=${0.55} /></mesh>
+            <mesh position=${[-0.05,-0.7,0.12]} scale=${[0.15,1.05,0.12]}><sphereGeometry args=${[0.5,20,14]} /><meshStandardMaterial color="#ffc2dd" roughness=${0.6} /></mesh>
+          </group>
+          <group position=${[0,1.0,0.08]}>
+            <mesh><sphereGeometry args=${[0.1,16,12]} /><meshStandardMaterial color="#ffd34d" roughness=${0.5} /></mesh>
+            <mesh position=${[0.12,0,0]} scale=${[0.7,1.1,0.4]}><sphereGeometry args=${[0.07,12,10]} /><meshStandardMaterial color="#ff8fb0" roughness=${0.55} /></mesh>
+            <mesh position=${[0.037,0.114,0]} rotation=${[0,0,1.256]} scale=${[0.7,1.1,0.4]}><sphereGeometry args=${[0.07,12,10]} /><meshStandardMaterial color="#ff8fb0" roughness=${0.55} /></mesh>
+            <mesh position=${[-0.097,0.07,0]} rotation=${[0,0,2.513]} scale=${[0.7,1.1,0.4]}><sphereGeometry args=${[0.07,12,10]} /><meshStandardMaterial color="#ff8fb0" roughness=${0.55} /></mesh>
+            <mesh position=${[-0.097,-0.07,0]} rotation=${[0,0,3.77]} scale=${[0.7,1.1,0.4]}><sphereGeometry args=${[0.07,12,10]} /><meshStandardMaterial color="#ff8fb0" roughness=${0.55} /></mesh>
+            <mesh position=${[0.037,-0.114,0]} rotation=${[0,0,-1.256]} scale=${[0.7,1.1,0.4]}><sphereGeometry args=${[0.07,12,10]} /><meshStandardMaterial color="#ff8fb0" roughness=${0.55} /></mesh>
+            <mesh position=${[0,0,0.02]}><sphereGeometry args=${[0.05,12,10]} /><meshStandardMaterial color="#e23b5a" roughness=${0.5} /></mesh>
+          </group>
+          <mesh ref=${eyeL} position=${[0.26,0.02,0.66]} scale=${[0.82,1.05,0.7]}><sphereGeometry args=${[0.1,18,14]} /><meshStandardMaterial color="#3a2230" roughness=${0.35} /></mesh>
+          <mesh ref=${eyeR} position=${[-0.26,0.02,0.66]} scale=${[0.82,1.05,0.7]}><sphereGeometry args=${[0.1,18,14]} /><meshStandardMaterial color="#3a2230" roughness=${0.35} /></mesh>
+          <mesh position=${[0.29,0.08,0.73]}><sphereGeometry args=${[0.035,10,8]} /><meshBasicMaterial color="#ffffff" /></mesh>
+          <mesh position=${[-0.23,0.08,0.73]}><sphereGeometry args=${[0.035,10,8]} /><meshBasicMaterial color="#ffffff" /></mesh>
+          <mesh position=${[0,-0.1,0.72]}><sphereGeometry args=${[0.05,14,12]} /><meshStandardMaterial color="#e8a33d" roughness=${0.5} /></mesh>
+          <mesh position=${[0.42,-0.14,0.6]} scale=${[1,0.6,0.4]}><sphereGeometry args=${[0.13,16,12]} /><meshStandardMaterial color="#ff9ec4" roughness=${0.7} transparent opacity=${0.85} /></mesh>
+          <mesh position=${[-0.42,-0.14,0.6]} scale=${[1,0.6,0.4]}><sphereGeometry args=${[0.13,16,12]} /><meshStandardMaterial color="#ff9ec4" roughness=${0.7} transparent opacity=${0.85} /></mesh>
+          <mesh position=${[0.5,-0.06,0.62]} rotation=${[0,0,-0.15]}><boxGeometry args=${[0.34,0.012,0.012]} /><meshStandardMaterial color="#caa6b4" roughness=${0.8} /></mesh>
+          <mesh position=${[0.5,-0.13,0.62]} rotation=${[0,0,0.12]}><boxGeometry args=${[0.3,0.012,0.012]} /><meshStandardMaterial color="#caa6b4" roughness=${0.8} /></mesh>
+          <mesh position=${[-0.5,-0.06,0.62]} rotation=${[0,0,0.15]}><boxGeometry args=${[0.34,0.012,0.012]} /><meshStandardMaterial color="#caa6b4" roughness=${0.8} /></mesh>
+          <mesh position=${[-0.5,-0.13,0.62]} rotation=${[0,0,-0.12]}><boxGeometry args=${[0.3,0.012,0.012]} /><meshStandardMaterial color="#caa6b4" roughness=${0.8} /></mesh>
+        </group>
+        <group ref=${armL} position=${[0.58,-0.4,0.06]}>
+          <mesh position=${[0,-0.22,0]}><cylinderGeometry args=${[0.09,0.11,0.42,16]} /><meshStandardMaterial color="#ef7a98" roughness=${0.6} /></mesh>
+          <mesh position=${[0,-0.42,0]}><sphereGeometry args=${[0.13,16,12]} /><meshStandardMaterial color="#fff2f6" roughness=${0.6} /></mesh>
+        </group>
+        <group ref=${armR} position=${[-0.58,-0.4,0.06]}>
+          <mesh position=${[0,-0.22,0]}><cylinderGeometry args=${[0.09,0.11,0.42,16]} /><meshStandardMaterial color="#ef7a98" roughness=${0.6} /></mesh>
+          <mesh position=${[0,-0.42,0]}><sphereGeometry args=${[0.13,16,12]} /><meshStandardMaterial color="#fff2f6" roughness=${0.6} /></mesh>
+        </group>
+        <mesh rotation=${[-Math.PI/2,0,0]} position=${[0,-1.46,0]}>
+          <circleGeometry args=${[0.92,32]} />
+          <meshBasicMaterial color="#9c2b5a" transparent opacity=${0.16} />
+        </mesh>
+      </group>
+    `;
+  }
+
+  try {
+    createRoot(container).render(html`
+      <${Canvas} camera=${{ position:[0,0.28,6.3], fov:33 }} gl=${{ alpha:true, antialias:true }} dpr=${[1,2]}>
+        <ambientLight intensity=${0.9} />
+        <directionalLight position=${[2.5,4,5]} intensity=${0.85} />
+        <directionalLight position=${[-3,1,2]} intensity=${0.55} color="#ffd6ea" />
+        <directionalLight position=${[0,-2,-4]} intensity=${0.35} />
+        <${Tuan} />
+      <//>
+    `);
+    window.Mascot3D = window.Mascot3D || {};
+    setTimeout(()=>{ if(document.getElementById('app').getAttribute('data-theme')==='blossom'){ try{ window.Mascot3D.setPose('greet'); }catch(e){} } }, 60);
+  } catch(e){
+    if(fallback) fallback.style.display='block';
+    window.Mascot3D = { setPose(){}, setVisible(v){ if(fallback) fallback.style.display = v ? 'block' : 'none'; }, _fallback:true };
+  }
+})();
+</script>
+<script>
+/* ============ 图标 SVG（lucide 路径，与源码 ICONS 映射一致） ============ */
+const ICON_SVG = {
+  text:    '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>',
+  link:    '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
+  email:   '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg>',
+  phone:   '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
+  file_path:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>',
+  code:    '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>',
+  markdown:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>',
+  html:    '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/></svg>',
+  secret:  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
+  number:  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></svg>',
+  image:   '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/></svg>',
+  file:    '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8M16 17H8M10 9H8"/></svg>'
+};
+const ICON_COLOR = { text:'#3B82F6', link:'#0EA5E9', email:'#8B5CF6', phone:'#10B981', file_path:'#22C55E', code:'#8B5CF6', json:'#8B5CF6', config:'#8B5CF6', csv:'#8B5CF6', shell:'#8B5CF6', log:'#8B5CF6', markdown:'#3B82F6', html:'#EC4899', secret:'#EF4444', number:'#F59E0B', image:'#EC4899', file:'#22C55E' };
+const PALETTE = ["#3B82F6","#8B5CF6","#EC4899","#10B981","#F59E0B","#EF4444","#06B6D4","#6366F1"];
+function hashColor(t){ let h=0; for(let i=0;i<t.length;i++) h=((h<<5)-h+t.charCodeAt(i))|0; return PALETTE[Math.abs(h)%PALETTE.length]; }
+function iconBg(sub){ if(sub==='image') return 'bgPink'; if(sub==='file') return 'bgGreen'; if(['code','json','config','csv','shell','log','markdown','html'].includes(sub)) return 'bgPurple'; return 'bgBlue'; }
+
+/* ============ Tabs（来自 TopBar.tsx TABS） ============ */
+const TABS = [
+  { key:'all', label:'全部', icon:'📋', count:128 },
+  { key:'text', label:'文本', icon:'📝', count:86 },
+  { key:'image', label:'图片', icon:'📸', count:14 },
+  { key:'file', label:'文件', icon:'📁', count:21 },
+  { key:'pinned', label:'收藏', icon:'⭐', count:12 },
+];
+function renderTabs(active='all'){
+  const el = document.getElementById('tabs');
+  el.innerHTML = TABS.map(t=>{
+    const a = t.key===active;
+    return `<button class="segItem ${a?'segItemActive':''}" style="position:relative">
+      ${a?'<span class="segActiveIndicator"></span>':''}
+      <span class="segIcon">${t.icon}</span><span>${t.label}</span>
+      ${t.count>0?`<span class="segCount ${a?'segItemActive':''}">${t.count}</span>`:''}
+    </button>`;
+  }).join('');
+}
+
+/* ============ 卡片数据（真实剪贴板内容形态） ============ */
+const CARDS = [
+  { sub:'text', title:'会议纪要 · 沉浸式皮肤一期验收要点：粒子层不得影响卡片可读性', pinned:true, source:{emoji:'💬',name:'微信'}, tags:[{n:'工作'}], time:'2 分钟前' },
+  { sub:'code', title:'{ "theme": "blossom", "glassBlur": 5, "particles": true }', source:{emoji:'📝',name:'VS Code'}, tags:[{n:'灵感'},{n:'工作'}], time:'18 分钟前',
+    popover:{ type:'code', code:'{\n  "theme": "blossom",\n  "glassBlur": 5,\n  "particles": true,\n  "mascot": "melody"\n}' } },
+  { sub:'link', title:'https://github.com/lzlkyb/pastepanda', source:{emoji:'🌐',name:'Chrome'}, time:'35 分钟前' },
+  { sub:'image', title:'screenshot_2026-immersive.png', source:{emoji:'✂️',name:'截图工具'}, time:'1 小时前', img:true },
+  { sub:'color', title:'#FF6FA5', source:{emoji:'🎨',name:'取色器'}, time:'2 小时前', color:'#FF6FA5' },
+  { sub:'file', title:'design-spec.fig 等 3 个文件', source:{emoji:'📁',name:'访达'}, tags:[{n:'设计'}], time:'昨天' },
+  { sub:'email', title:'design.team@pastepanda.app', source:{emoji:'🌐',name:'Chrome'}, time:'昨天' },
+  { sub:'phone', title:'138-0013-8000', source:{emoji:'💬',name:'微信'}, time:'2 天前' },
+  { sub:'secret', title:'sk_live_••••••••••••4f2a', source:{emoji:'📝',name:'VS Code'}, tags:[{n:'工作'}], time:'3 天前' },
+  { sub:'text', title:'Git 提交：feat(ui): 新增 SkinScene 皮肤场景粒子层，复刻 6 套主题氛围', source:{emoji:'📝',name:'VS Code'}, time:'4 天前' },
+];
+
+function cardInner(c, isBlossom){
+  let iconHtml;
+  if(c.img){
+    iconHtml = `<div class="cardIcon cardImgThumb"><img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='42' height='42'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%23FBC2EB'/><stop offset='1' stop-color='%23A6C1EE'/></linearGradient></defs><rect width='42' height='42' rx='12' fill='url(%23g)'/><text x='21' y='26' font-size='16' text-anchor='middle'>🖼️</text></svg>"></div>`;
+  } else if(c.color){
+    iconHtml = `<div class="cardIcon colorIcon" style="--swatch-color:${c.color};--swatch-bg:rgba(255,111,165,.12);--swatch-border:rgba(255,111,165,.22);--swatch-inset:rgba(255,111,165,.1)"><div class="colorDot"></div></div>`;
+  } else {
+    const col = c.sub==='text' ? hashColor(c.title) : (ICON_COLOR[c.sub]||'#3B82F6');
+    const svg = (ICON_SVG[c.sub]||ICON_SVG.text).replace('<svg ', `<svg style="color:${col}" `);
+    iconHtml = `<div class="cardIcon ${iconBg(c.sub)}">${svg}</div>`;
+  }
+  let subHtml = '';
+  if(c.pinned) subHtml += `<span class="cardPin">${isBlossom?'🎀':'📌'} 置顶</span>`;
+  if(c.source) subHtml += `<span class="cardSource">${c.source.emoji} ${c.source.name}</span>`;
+  if(c.tags) c.tags.forEach(t=> subHtml += `<span class="tagMini">#${t.n}</span>`);
+  return `${iconHtml}
+    <div class="cardContent">
+      <p class="cardTitle">${c.title}</p>
+      <div class="cardSub">${subHtml}</div>
+    </div>
+    <span class="cardTime">${c.time}</span>`;
+}
+
+function renderCards(){
+  const isBlossom = document.getElementById('app').getAttribute('data-theme')==='blossom';
+  const list = document.getElementById('cardList');
+  list.innerHTML = CARDS.map(c=>{
+    let pop = '';
+    if(c.popover){
+      if(c.popover.type==='code'){
+        pop = `<div class="cardPopover"><div class="cardPopoverCode">${c.popover.code}</div>
+          <div class="cardPopoverActions">
+            <button class="cardPopoverBtn">⭐ 收藏</button>
+            <button class="cardPopoverBtn">📋 复制</button>
+            <button class="cardPopoverBtn">✏️ 编辑</button>
+            <button class="cardPopoverBtn" style="color:var(--danger)">🗑️ 删除</button>
+          </div></div>`;
+      }
+    }
+    return `<div class="cardWrap"><div class="card">${cardInner(c,isBlossom)}</div>${pop}</div>`;
+  }).join('');
+}
+
+/* ============ 皮肤场景粒子（复刻 SkinScene.tsx 参数） ============ */
+const rnd = n => Math.random()*n;
+function renderScene(theme){
+  const s = document.getElementById('scene');
+  let h = '';
+  if(theme==='blossom'){
+    h += '<div class="haze" style="top:12%"></div><div class="haze" style="bottom:6%;opacity:.6"></div>';
+    for(let i=0;i<14;i++){ const left=rnd(100),size=10+rnd(12),dur=8+rnd(8),delay=-rnd(14); const col=['#FF7BAC','#FFA5C6','#FF6FA5','#FF8BB4'][Math.floor(rnd(4))];
+      h += `<svg class="melodyHeart" style="left:${left}%;width:${size}px;animation-duration:${dur}s;animation-delay:${delay}s" viewBox="0 0 24 24"><path fill="${col}" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`; }
+    for(let i=0;i<5;i++){ const left=rnd(90),top=10+rnd(70),size=20+rnd(16),delay=-rnd(7); const blue=Math.random()<0.4; const col=blue?'#8FD5EF':'#FF87B5'; const knot=blue?'#5BB8DC':'#F0568C';
+      h += `<svg class="melodyBow" style="left:${left}%;top:${top}%;width:${size}px;animation-delay:${delay}s" viewBox="0 0 48 30"><path d="M24 15 C14 4, 3 6, 4 15 C3 24, 14 26, 24 15 Z" fill="${col}"/><path d="M24 15 C34 4, 45 6, 44 15 C45 24, 34 26, 24 15 Z" fill="${col}"/><circle cx="24" cy="15" r="4.5" fill="${knot}"/></svg>`; }
+    for(let i=0;i<8;i++){ const left=rnd(95),top=rnd(80),size=6+rnd(7),delay=-rnd(3); const col=Math.random()<0.6?'#FFD1E3':'#CDEBF7';
+      h += `<svg class="melodySpark" style="left:${left}%;top:${top}%;width:${size}px;animation-delay:${delay}s" viewBox="0 0 24 24"><path fill="${col}" d="M12 0l2.5 9.5L24 12l-9.5 2.5L12 24l-2.5-9.5L0 12l9.5-2.5z"/></svg>`; }
+    /* 美乐蒂静态背景图改为右下角常驻互动角色（见 #melodyMascot），避免同角重复 */
+  } else if(theme==='ocean-dark'){
+    h += '<div class="ray" style="left:18%"></div><div class="ray" style="left:46%;animation-delay:-4s"></div><div class="ray" style="left:72%;animation-delay:-7s"></div>';
+    h += '<svg class="jelly" style="right:8%;top:12%" width="120" height="150" viewBox="0 0 120 150"><defs><radialGradient id="j" cx="50%" cy="30%"><stop offset="0%" stop-color="rgba(150,238,255,0.9)"/><stop offset="100%" stop-color="rgba(80,160,255,0.04)"/></radialGradient></defs><ellipse cx="60" cy="42" rx="46" ry="36" fill="url(#j)"/><path d="M30,66 q-6,36 -13,54 M48,74 q-2,40 -7,60 M62,76 q2,42 5,62 M78,72 q8,36 15,52 M92,60 q11,30 19,44" stroke="rgba(140,225,255,0.45)" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg>';
+    for(let i=0;i<12;i++){ const left=rnd(100),size=9+rnd(22),dur=8+rnd(9),delay=-rnd(14),bottom=-20-rnd(120);
+      h += `<span class="bubble" style="left:${left}%;bottom:${bottom}px;width:${size}px;height:${size}px;animation-duration:${dur}s;animation-delay:${delay}s"></span>`; }
+    for(let i=0;i<20;i++){ const left=rnd(100),top=rnd(100),delay=-rnd(3); h += `<span class="plankton" style="left:${left}%;top:${top}%;animation-delay:${delay}s"></span>`; }
+  } else if(theme==='ocean'){
+    h += '<div class="sun"></div><span class="gull" style="top:14%;left:100%;font-size:20px">⌄</span><span class="gull" style="top:9%;left:110%;font-size:14px;animation-delay:-5s">⌄</span><div class="boat">⛵</div>';
+    h += '<svg class="waves" viewBox="0 0 1200 560" preserveAspectRatio="none"><path d="M0,380 C200,350 400,420 600,390 C800,360 1000,420 1200,390 L1200,560 L0,560 Z" fill="rgba(9,60,110,0.14)"/><path d="M0,430 C220,400 420,470 640,435 C860,400 1040,470 1200,435 L1200,560 L0,560 Z" fill="rgba(9,60,110,0.22)"/><path d="M0,480 C240,450 460,515 680,480 C900,450 1060,515 1200,480 L1200,560 L0,560 Z" fill="rgba(6,42,80,0.34)"/><path d="M0,525 C260,500 480,550 700,522 C920,500 1080,550 1200,525 L1200,560 L0,560 Z" fill="rgba(5,34,66,0.5)"/></svg>';
+    for(let i=0;i<26;i++){ const left=rnd(100),top=55+rnd(38),delay=-rnd(3); h += `<span class="glint" style="left:${left}%;top:${top}%;animation-delay:${delay}s"></span>`; }
+  } else if(theme==='midnight'){
+    h += '<div class="aurora"></div>';
+    for(let i=0;i<80;i++){ const left=rnd(100),top=rnd(68),size=Math.random()<0.85?2:3,delay=-rnd(4),op=0.3+rnd(0.7); h += `<span class="star" style="left:${left}%;top:${top}%;width:${size}px;height:${size}px;opacity:${op};animation-delay:${delay}s"></span>`; }
+    h += '<span class="shoot" style="left:70%;top:8%"></span><span class="shoot" style="left:40%;top:4%;animation-delay:-3s"></span><div class="moon"></div>';
+    h += '<svg class="mountains" viewBox="0 0 1200 560" preserveAspectRatio="none"><path d="M0,560 L0,470 L180,380 L340,470 L520,400 L700,490 L900,410 L1080,480 L1200,440 L1200,560 Z" fill="rgba(20,18,38,0.8)"/><path d="M0,560 L0,510 L240,460 L480,515 L720,470 L960,520 L1200,490 L1200,560 Z" fill="rgba(12,11,24,0.95)"/></svg>';
+  } else if(theme==='forest'){
+    h += '<svg class="canopy" viewBox="0 0 1200 560" preserveAspectRatio="none"><g fill="#8fa383" opacity="0.4"><ellipse cx="300" cy="110" rx="95" ry="48"/><ellipse cx="385" cy="80" rx="72" ry="37"/><ellipse cx="225" cy="85" rx="62" ry="31"/><ellipse cx="830" cy="140" rx="105" ry="50"/><ellipse cx="915" cy="105" rx="74" ry="37"/></g><g fill="#5f7a58" opacity="0.6"><path d="M1080,560 L1080,235 Q1080,210 1100,210 Q1120,210 1120,235 L1120,560 Z"/><path d="M1053,295 Q1012,258 1026,206 Q1077,232 1079,283 Z"/><path d="M1118,335 Q1161,299 1150,247 Q1099,271 1097,325 Z"/></g><g fill="#7a8f6f" opacity="0.5"><path d="M55,560 L55,300 Q55,280 70,280 Q85,280 85,300 L85,560 Z"/><path d="M35,330 Q5,300 15,260 Q55,280 57,320 Z"/><path d="M83,360 Q115,330 107,290 Q67,308 65,350 Z"/></g><g fill="#6b8266" opacity="0.5"><path d="M170,560 l28,-150 l28,150 Z"/><path d="M232,560 l22,-110 l22,110 Z"/><path d="M920,560 l30,-170 l30,170 Z"/></g></svg>';
+    h += '<div class="mist" style="bottom:30px"></div><div class="mist" style="bottom:150px;opacity:.55;animation-delay:-8s"></div>';
+    for(let i=0;i<10;i++){ const left=rnd(100),dur=8+rnd(8),delay=-rnd(10); h += `<span class="leaf" style="left:${left}%;top:-20px;animation-duration:${dur}s;animation-delay:${delay}s"></span>`; }
+    for(let i=0;i<12;i++){ const left=5+rnd(90),top=40+rnd(50),delay=-rnd(7); h += `<span class="fly" style="left:${left}%;top:${top}%;animation-delay:${delay}s"></span>`; }
+  } else if(theme==='dawn'){
+    h += '<div class="dawnSun"></div><div class="dawnRay" style="left:12%"></div><div class="dawnRay" style="left:38%;animation-delay:-5s"></div><div class="dawnRay" style="left:64%;animation-delay:-9s"></div>';
+    for(let i=0;i<6;i++){ const left=rnd(90),top=40+rnd(220),width=150+rnd(180),op=0.5+rnd(0.4),dur=24+rnd(18),delay=-rnd(30); h += `<span class="dawnCloud" style="left:${left}%;top:${top}px;width:${width}px;opacity:${op};animation-duration:${dur}s;animation-delay:${delay}s"></span>`; }
+  }
+  s.innerHTML = h;
+}
+
+/* ============ 主题切换 ============ */
+function switchTheme(t){
+  const app = document.getElementById('app');
+  app.setAttribute('data-theme', t);
+  document.getElementById('appIcon').src = (t==='blossom') ? 'melody.png' : 'icon.png';
+  document.querySelectorAll('.themeBtn').forEach(b=> b.classList.toggle('active', b.dataset.t===t));
+  const mascot = document.getElementById('melodyMascot');
+  if(t==='blossom'){ mascot.classList.remove('hidden'); Melody.state('theme', '换装啦~'); }
+  else { mascot.classList.add('hidden'); }
+  renderScene(t);
+  renderCards();
+}
+document.querySelectorAll('.themeBtn').forEach(b=> b.addEventListener('click', ()=> switchTheme(b.dataset.t)));
+
+/* ============ 常驻角落 3D 角色（美乐蒂风格原创，R3F 驱动，规避IP） ============ */
+/* 旧裸 Three.js 实现已停用；3D 改由底部 R3F module 驱动。此处仅留全局桩，模块加载后注入真实实现。 */
+window.Mascot3D = window.Mascot3D || { setPose(){}, setVisible(){}, _stub:true };
+
+/* ============ 美乐蒂常驻角落 + 多状态互动 ============ */
+const Melody = (() => {
+  const root   = document.getElementById('melodyMascot');
+  const body   = document.getElementById('melodyBody');
+  const speech = document.getElementById('melodySpeech');
+  const mood   = document.getElementById('melodyMood');
+  const fx     = document.getElementById('melodyFx');
+
+  const LINES = {
+    greet:'嗨，我帮你收着啦 💗', copy:'帮你存好啦~ 💗', paste:'贴好咯！',
+    collect:'收藏住啦 ✨', edit:'改好啦~', think:'找找看…', delete:'啊…删掉啦',
+    error:'出问题了…别急', cheer:'搞定！🎉', sleep:'zzz…', idle:'', pet:'最喜欢一起整理啦 💗', wave:'在呢~'
+  };
+  const MOODS = {
+    greet:'✨', copy:'💗', paste:'👋', collect:'💗', edit:'✏️', think:'🔍',
+    delete:'😢', error:'❗', cheer:'🎉', sleep:'💤', idle:'', pet:'💗', wave:'👋'
+  };
+  const FX = {
+    copy:['💗','💕','💖'], collect:['💗','✨','💕'], cheer:['🎉','✨','💗','⭐'],
+    greet:['✨','💗'], think:['💭','🔍'], delete:['💔'], error:['⚠️'], paste:['👋'],
+    edit:['✏️'], pet:['💗','💕','✨'], wave:['👋'], sleep:['💤']
+  };
+  const BODY = {
+    greetc:'s-greet', greet:'s-greet', copy:'s-copy', collect:'s-collect', paste:'s-paste',
+    edit:'s-edit', think:'s-think', delete:'s-delete', error:'s-error', cheer:'s-cheer',
+    sleep:'s-sleep', theme:'s-theme', wave:'s-paste', pet:'s-collect'
+  };
+
+  let idleTimer=null, speechTimer=null, revertTimer=null;
+
+  function spawnFx(kind){
+    const arr = FX[kind]; if(!arr) return;
+    arr.forEach((e,i)=>{
+      const s = document.createElement('span');
+      s.textContent = e;
+      s.style.left = (28 + Math.random()*56) + 'px';
+      s.style.top  = (36 + Math.random()*30) + 'px';
+      s.style.setProperty('--fx-x', (Math.random()*44-22).toFixed(0)+'px');
+      s.style.setProperty('--fx-y', (-58 - Math.random()*46).toFixed(0)+'px');
+      s.style.setProperty('--fx-r', (Math.random()*60-30).toFixed(0)+'deg');
+      s.style.animationDelay = (i*0.12)+'s';
+      fx.appendChild(s);
+      setTimeout(()=> s.remove(), 1700 + i*120);
+    });
+  }
+
+  function setState(s, text){
+    if(document.getElementById('app').getAttribute('data-theme')!=='blossom') return;
+    window.Mascot3D.setPose((s==='idle') ? 'idle' : s);
+    const m = MOODS[s] || ''; mood.textContent = m; mood.classList.toggle('show', !!m);
+    const t = (text!==undefined) ? text : LINES[s];
+    if(t){ speech.textContent = t; speech.classList.add('show'); } else { speech.classList.remove('show'); }
+    spawnFx(s);
+    clearTimeout(speechTimer); clearTimeout(revertTimer); clearTimeout(idleTimer);
+    if(s!=='idle' && s!=='sleep'){
+      speechTimer = setTimeout(()=> speech.classList.remove('show'), 2600);
+      revertTimer = setTimeout(()=>{ body.className='melodyBody'; mood.classList.remove('show'); }, 3000);
+      resetIdle();
+    }
+  }
+
+  function resetIdle(){ clearTimeout(idleTimer); idleTimer = setTimeout(()=> setState('sleep'), 14000); }
+
+  return {
+    state: setState,
+    wake(){ body.className='melodyBody'; mood.classList.remove('show'); speech.classList.remove('show'); clearTimeout(speechTimer); clearTimeout(revertTimer); resetIdle(); },
+    pet(){ setState('pet'); },
+    resetIdle
+  };
+})();
+
+/* ---- 角色自身交互 ---- */
+document.getElementById('melodyMascot').addEventListener('click', ()=> Melody.pet());
+document.getElementById('melodyMascot').addEventListener('mouseenter', ()=>{
+  if(document.getElementById('app').getAttribute('data-theme')==='blossom') Melody.state('wave');
+});
+
+/* ---- 卡片悬停弹层动作 → 角色状态（事件委托） ---- */
+document.getElementById('cardList').addEventListener('click', (e)=>{
+  const btn = e.target.closest('.cardPopoverBtn'); if(!btn) return;
+  const txt = btn.textContent;
+  if(txt.includes('收藏')) Melody.state('collect');
+  else if(txt.includes('复制')) Melody.state('copy');
+  else if(txt.includes('编辑')) Melody.state('edit');
+  else if(txt.includes('删除')) Melody.state('delete');
+  Melody.resetIdle();
+});
+
+/* ---- 搜索框 → 思考态 ---- */
+const _searchInput = document.querySelector('.searchInput');
+let _searchTimer = null;
+_searchInput.addEventListener('input', ()=>{
+  if(_searchInput.value.trim()===''){ Melody.wake(); return; }
+  Melody.state('think');
+  clearTimeout(_searchTimer); _searchTimer = setTimeout(()=> Melody.wake(), 1200);
+});
+
+/* ---- 演示控制器 ---- */
+document.querySelectorAll('#melodyDemo button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    const a = b.dataset.act;
+    if(a==='idle') Melody.wake(); else Melody.state(a);
+  });
+});
+
+/* ============ 初始化 ============ */
+renderTabs('all');
+renderCards();
+renderScene('blossom');
+document.querySelector('.themeBtn[data-t="blossom"]').classList.add('active');
+Melody.state('greet');
+Melody.resetIdle();
+</script>
+</body>
+</html>

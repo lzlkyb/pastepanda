@@ -10,7 +10,7 @@ export interface Theme {
 }
 
 export const THEMES: Theme[] = [
-  { key: "ocean",      displayName: "海洋", dark: false },
+  { key: "ocean",      displayName: "经典白", dark: false },
   { key: "ocean-dark", displayName: "深海", dark: true },
   { key: "midnight",   displayName: "午夜", dark: true },
   { key: "forest",     displayName: "森林", dark: false },

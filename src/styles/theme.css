@@ -58,7 +58,12 @@
 :root,
 [data-theme="ocean"] {
   /* 皮肤场景：清冽晨海 — 晨光海面天空渐变（SkinScene 太阳/海鸥/帆影/波浪/碎金衬于其上） */
-  --app-bg: linear-gradient(180deg, #EAF6FD 0%, #CFE9F8 40%, #9ED0EA 75%, #79B8DD 100%);
+  /* 经典白皮肤：纯色底（与 v5.2.0一致）。ocean 不再渲染 SkinScene，
+     背景静止 → 卡片的 backdrop-filter 结果可被合成器缓存，模糊几乎不花 GPU。 */
+  --app-bg: #F7F7F8;
+  /* 经典白：中性极浅灰。原 #F4F6F9 是 (244,246,249)，蓝分量最高、偏冷，
+     同一亮度下冷色看起来就比中性色“灰”。
+     不用纯白是为了让纯白卡片还能浮起来——两边都纯白就只剩边框分界了。 */
   /* 皮肤场景：header 全透明，场景从窗口顶端连续到底（控件自带底色保证可读性） */
   --header-bg-start: transparent;
   --header-bg-end: transparent;
@@ -102,23 +107,40 @@
   --update-badge-gradient: linear-gradient(135deg, #059669, #047857);
   --update-badge-shadow: rgba(5, 150, 105, 0.4);
   /* 玻璃拟态 — 海洋浅色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让晨海场景透出） */
-  --glass-card-bg: rgba(255,255,255,0.22);
+  --glass-card-bg: #FFFFFF;   /* 经典白：不透明纯白卡片。ocean 无场景层，半透明混不出纯白（0.55 白压 #F4F6F9 实际只有 #FAFBFC，发灰） */
+  /* 卡片玻璃模糊：整个属性走变量，因为只有背景静止的主题适合开模糊。
+     不能写成 blur(var(--…)) 形式——那种写法无法表达 none。 */
+  --glass-card-filter: none;
+  /* 下面两项关掉在纯白卡片上完全不可见、却仍在渲染的玻璃装饰。
+     其余主题不定义这两个变量，走 CardList 里的 fallback，行为不变。 */
+  /* 顶部静态光泽层：白色半透明渐变盖在纯白上 = 看不见，但多一个渲染层 */
+  --card-shimmer-display: none;
+  /* hover 扫光：shimmer-sweep 是 infinite 动画，扫的也是半透明白，看不见却真在跑 */
+  --card-shimmer-anim: none;  /* 卡片已不透明，模糊完全看不见；而非 none 的值仍会创建合成层并采样背景，属白付开销 */
   --glass-card-border: rgba(0,0,0,0.08);
   --glass-card-hover-border: rgba(0,0,0,0.14);
   --glass-card-hover-glow: rgba(2,132,199,0.10);
-  --glass-card-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.7);
-  --glass-card-hover-shadow: 0 8px 24px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9), 0 0 0 1px rgba(2,132,199,0.10);
+  --glass-card-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.05);
+  /* 去掉了 inset 0 1px 0 rgba(255,255,255,0.7)：白色内高光压在纯白卡片上完全不可见。
+     投影从 2px 8px 收到 1px 3px、描边从 0.04 提到 0.05：
+     经典白靠描边定边界，而不是靠大阴影把卡片“浮”起来。 */
+  --glass-card-hover-shadow: 0 4px 12px rgba(0,0,0,0.10), 0 0 0 1px rgba(2,132,199,0.25);
   --glass-shimmer: rgba(255,255,255,0.40);
   --glass-shimmer-static: rgba(255,255,255,0.50);
   --glass-icon-bg: rgba(0,0,0,0.04);
   --glass-icon-border: rgba(0,0,0,0.07);
   --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.05);
-  --glass-popover-bg: rgba(255,255,255,0.85);
+  --glass-popover-bg: rgba(255,255,255,0.97);
+  /* 经典白：回到 v5.2.0 的 0.97。其余 6 套主题的 0.85 是为了让场景透出，ocean 无场景不需要 */
   --glass-popover-border: rgba(0,0,0,0.06);
   --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
-  /* 玻璃对话框/大浮层 — 方案B 沉浸磨砂：0.66 透明 + 22px 模糊，让主题场景透过对话框透出（小浮层用 --glass-popover-bg 0.85 保小字可读） */
-  --glass-dialog-bg: rgba(255,255,255,0.66);
-  --glass-dialog-blur: 22px;
+  --glass-dialog-bg: #FFFFFF;
+  /* 经典白：对话框回到 v5.2.0 的实心白（原这里是 0.66 透明 + 22px 模糊，为让皮肤场景透出，ocean 已无场景） */
+  --glass-dialog-blur: 22px;  /* 已无处使用（被下行 --glass-dialog-filter 取代），保留仅为避免变量缺失报错 */
+  /* 对话框模糊：整个属性走变量（与卡片同一套思路）。
+     dialog.css 等 6 处消费方写的是 var(--glass-dialog-filter, blur(var(--glass-dialog-blur)) saturate(1.4))，
+     其余主题不定义这个变量就走 fallback，行为不变。 */
+  --glass-dialog-filter: none;
   /* 遮罩层 — 弹框/浮层背后的半透明压暗底（中性灰黑，压暗场景但不抢色） */
   --overlay-bg: rgba(0, 0, 0, 0.35);
   /* 更新弹框 + 更新日志 */
@@ -173,6 +195,10 @@
   --update-badge-shadow: rgba(56, 189, 248, 0.45);
   /* 玻璃拟态 — 午夜深色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让星夜场景透出） */
   --glass-card-bg: rgba(24,24,27,0.22);
+  /* 场景整层透明度（midnight）—— 压缩背景色彩范围，与 --app-bg 混合 */
+  --scene-opacity: 0.5;
+  /* 背景有动画的主题不开卡片模糊：每帧重算 × 几十张卡 = 乘法代价 */
+  --glass-card-filter: none;
   --glass-card-border: rgba(255,255,255,0.06);
   --glass-card-hover-border: rgba(255,255,255,0.14);
   --glass-card-hover-glow: rgba(129,140,248,0.10);
@@ -243,6 +269,10 @@
   --update-badge-shadow: rgba(8, 145, 178, 0.4);
   /* 玻璃拟态 — 森林浅色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让晨雾场景透出） */
   --glass-card-bg: rgba(255,255,255,0.22);
+  /* 场景整层透明度（forest）—— 压缩背景色彩范围，与 --app-bg 混合 */
+  --scene-opacity: 0.55;
+  /* 背景有动画的主题不开卡片模糊：每帧重算 × 几十张卡 = 乘法代价 */
+  --glass-card-filter: none;
   --glass-card-border: rgba(0,0,0,0.07);
   --glass-card-hover-border: rgba(0,0,0,0.14);
   --glass-card-hover-glow: rgba(5,150,105,0.10);
@@ -313,6 +343,10 @@
   --update-badge-shadow: rgba(126, 200, 227, 0.4);
   /* 玻璃拟态 — 美乐蒂糖果粉浅色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让甜粉场景透出） */
   --glass-card-bg: rgba(255,255,255,0.22);
+  /* 场景整层透明度（blossom）—— 压缩背景色彩范围，与 --app-bg 混合 */
+  --scene-opacity: 0.55;
+  /* 背景有动画的主题不开卡片模糊：每帧重算 × 几十张卡 = 乘法代价 */
+  --glass-card-filter: none;
   --glass-card-border: rgba(0,0,0,0.07);
   --glass-card-hover-border: rgba(0,0,0,0.14);
   --glass-card-hover-glow: rgba(240,86,140,0.10);
@@ -383,6 +417,10 @@
   --update-badge-shadow: rgba(5, 150, 105, 0.4);
   /* 玻璃拟态 — 晨曦浅色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让晨光场景透出） */
   --glass-card-bg: rgba(255,255,255,0.22);
+  /* 场景整层透明度（dawn）—— 压缩背景色彩范围，与 --app-bg 混合 */
+  --scene-opacity: 0.55;
+  /* 背景有动画的主题不开卡片模糊：每帧重算 × 几十张卡 = 乘法代价 */
+  --glass-card-filter: none;
   --glass-card-border: rgba(0,0,0,0.07);
   --glass-card-hover-border: rgba(0,0,0,0.14);
   --glass-card-hover-glow: rgba(232,115,74,0.10);
@@ -453,6 +491,10 @@
   --update-badge-shadow: rgba(45,212,191,0.45);
   /* 玻璃拟态 — 深海深色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让海面场景透出） */
   --glass-card-bg: rgba(10,22,40,0.22);
+  /* 场景整层透明度（ocean-dark）—— 压缩背景色彩范围，与 --app-bg 混合 */
+  --scene-opacity: 0.5;
+  /* 背景有动画的主题不开卡片模糊：每帧重算 × 几十张卡 = 乘法代价 */
+  --glass-card-filter: none;
   --glass-card-border: rgba(255,255,255,0.07);
   --glass-card-hover-border: rgba(255,255,255,0.15);
   --glass-card-hover-glow: rgba(59,158,255,0.12);

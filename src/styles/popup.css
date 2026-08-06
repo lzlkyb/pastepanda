@@ -29,8 +29,8 @@ body {
   overflow-x: hidden;
   /* 皮肤场景：玻璃根容器（方案B 0.66 + 22px），主题场景透过弹窗透出 */
   background: var(--glass-dialog-bg);
-  backdrop-filter: blur(var(--glass-dialog-blur)) saturate(1.4);
-  -webkit-backdrop-filter: blur(var(--glass-dialog-blur)) saturate(1.4);
+  backdrop-filter: var(--glass-dialog-filter, blur(var(--glass-dialog-blur)) saturate(1.4));
+  -webkit-backdrop-filter: var(--glass-dialog-filter, blur(var(--glass-dialog-blur)) saturate(1.4));
   border: 1px solid var(--glass-card-border);
   border-radius: 14px;
   box-shadow: inset 0 1px 0 var(--glass-shimmer), var(--glass-popover-shadow);

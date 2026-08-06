@@ -233,17 +233,19 @@ export function GeneralTab({
     <>
       {/* U52: 设置搜索框（吸顶） */}
       <div className={styles.settingsSearch}>
-        <span className={styles.settingsSearchIcon}>🔍</span>
-        <input
-          className={styles.settingsSearchInput}
-          type="text"
-          value={settingsFilter}
-          placeholder="搜索设置项…"
-          onChange={(e) => setSettingsFilter(e.target.value)}
-        />
-        {settingsFilter && (
-          <button className={styles.settingsSearchClear} onClick={() => setSettingsFilter("")} title="清空搜索">✕</button>
-        )}
+        <div className={styles.settingsSearchBox}>
+          <span className={styles.settingsSearchIcon}>🔍</span>
+          <input
+            className={styles.settingsSearchInput}
+            type="text"
+            value={settingsFilter}
+            placeholder="搜索设置项…"
+            onChange={(e) => setSettingsFilter(e.target.value)}
+          />
+          {settingsFilter && (
+            <button className={styles.settingsSearchClear} onClick={() => setSettingsFilter("")} title="清空搜索">✕</button>
+          )}
+        </div>
       </div>
       <div ref={settingsContainerRef} className={styles.settingsSections}>
       {/* ── 数据统计 ── */}
@@ -416,7 +418,7 @@ export function GeneralTab({
               detailTitle="主题配色"
               detail={<>
                 <p>6 种精心调配的主题，点击即可预览，实时生效。</p>
-                <p>💡 <b>海洋</b>：柔和护眼，适合长时间使用</p>
+                <p>💡 <b>经典白</b>：纯白卡片 + 素面背景，无动效，最省资源</p>
                 <p>💡 <b>晨曦</b>：暖阳晨光，温柔唤醒每一天</p>
                 <p>💡 <b>午夜</b>：暗色模式，夜间使用不刺眼</p>
                 <p>💡 <b>美乐蒂</b>：甜系卡通粉，爱心雨+官方立绘，少女心爆棚</p>

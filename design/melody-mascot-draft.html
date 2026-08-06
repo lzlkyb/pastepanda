@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="blossom">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PastePanda · 美乐蒂互动角色设计稿</title>
+<style>
+  /* ===== 真实主题调色板（取自 src/styles/theme.css 六套主题近似色） ===== */
+  html[data-theme="blossom"]   { --bg1:#2a1f2e; --bg2:#3a2535; --panel:#3a2a3e; --glass:rgba(255,255,255,.22); --glass-pop:rgba(255,255,255,.85); --accent:#F0568C; --accent2:#CE3B70; --text:#fff4f8; --dim:rgba(255,244,248,.62); --border:rgba(255,255,255,.18); --char:#F0568C; }
+  html[data-theme="ocean-dark"]{ --bg1:#06121c; --bg2:#08202e; --panel:#0a2230; --glass:rgba(255,255,255,.12); --glass-pop:rgba(255,255,255,.78); --accent:#3aa6ff; --accent2:#7cc4ff; --text:#dcefff; --dim:rgba(220,239,255,.55); --border:rgba(255,255,255,.12); --char:#5fb8ff; }
+  html[data-theme="ocean"]     { --bg1:#0a1f2e; --bg2:#0d2b3a; --panel:#103144; --glass:rgba(255,255,255,.18); --glass-pop:rgba(255,255,255,.82); --accent:#4fd0e0; --accent2:#9beefb; --text:#eafcff; --dim:rgba(234,252,255,.6); --border:rgba(255,255,255,.16); --char:#9beefb; }
+  html[data-theme="midnight"]  { --bg1:#14121f; --bg2:#1c1830; --panel:#221d36; --glass:rgba(255,255,255,.14); --glass-pop:rgba(255,255,255,.8); --accent:#9b8cff; --accent2:#c5bcff; --text:#f1eeff; --dim:rgba(241,238,255,.58); --border:rgba(255,255,255,.13); --char:#c0b4ff; }
+  html[data-theme="forest"]    { --bg1:#16241a; --bg2:#1d3023; --panel:#223626; --glass:rgba(255,255,255,.16); --glass-pop:rgba(255,255,255,.82); --accent:#7bd88f; --accent2:#b6f0c0; --text:#eefbef; --dim:rgba(238,251,239,.6); --border:rgba(255,255,255,.14); --char:#b6f0c0; }
+  html[data-theme="dawn"]      { --bg1:#2a2230; --bg2:#3a2a3a; --panel:#42304a; --glass:rgba(255,255,255,.18); --glass-pop:rgba(255,255,255,.84); --accent:#ffb38a; --accent2:#ffd0a8; --text:#fff3ec; --dim:rgba(255,243,236,.6); --border:rgba(255,255,255,.16); --char:#ffd0a8; }
+
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html, body { height:100%; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--text); overflow:hidden; transition:background .6s ease;
+    background:radial-gradient(1100px 700px at 18% -10%, var(--bg2), transparent 60%),
+                radial-gradient(900px 600px at 112% 118%, var(--bg2), transparent 55%), var(--bg1); }
+
+  /* 背景皮肤场景（美乐蒂爱心雨示意，真实由 SkinScene.tsx 渲染） */
+  #bgHearts { position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.5; transition:opacity .4s; }
+  #bgHearts .h { position:absolute; color:var(--accent); font-size:14px; animation:fall linear infinite; }
+  @keyframes fall { from{transform:translateY(-40px) rotate(0)} to{transform:translateY(110vh) rotate(360deg)} }
+
+  #app { position:relative; z-index:2; height:100vh; display:flex; padding:16px; gap:14px; }
+
+  /* ===== Sidebar（真实结构：全部/未分组/收藏/分组/智能分类/来源 + 收起） ===== */
+  .sidebar { width:74px; flex:0 0 auto; border-radius:20px; padding:14px 8px; display:flex; flex-direction:column; align-items:center; gap:12px;
+    background:var(--glass); backdrop-filter:blur(22px) saturate(140%); -webkit-backdrop-filter:blur(22px) saturate(140%); border:1px solid var(--border); box-shadow:0 8px 40px rgba(0,0,0,.25); }
+  .logo { width:38px; height:38px; border-radius:13px; display:grid; place-items:center; font-size:20px;
+    background:linear-gradient(135deg,var(--accent),var(--accent2)); box-shadow:0 4px 14px color-mix(in srgb,var(--accent) 50%, transparent); }
+  .nav { display:flex; flex-direction:column; gap:10px; margin-top:4px; }
+  .nav button { width:44px; height:44px; border-radius:13px; border:1px solid transparent; background:transparent; color:var(--dim); font-size:19px; cursor:pointer; }
+  .nav button.active, .nav button:hover { color:var(--text); background:color-mix(in srgb,var(--accent) 22%, transparent); }
+
+  .main { flex:1; display:flex; flex-direction:column; gap:12px; min-width:0; }
+  /* ===== TopBar（真实：标签 + 搜索 + 工具箱 + 设置 + 最小化/隐藏） ===== */
+  .topbar { display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:16px;
+    background:var(--glass-pop); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px); border:1px solid var(--border); box-shadow:0 8px 30px rgba(0,0,0,.2); }
+  .tabs { display:flex; gap:4px; }
+  .tabs button { width:38px; height:34px; border-radius:10px; border:none; background:transparent; color:var(--dim); font-size:17px; cursor:pointer; }
+  .tabs button.active { background:color-mix(in srgb,var(--accent) 24%, transparent); color:var(--text); }
+  .search { flex:1; display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:11px; background:color-mix(in srgb,var(--text) 8%, transparent); color:var(--dim); font-size:13px; }
+  .search input { flex:1; background:transparent; border:none; outline:none; color:var(--text); font-size:13px; }
+  .icon-btn { width:36px; height:36px; border-radius:10px; border:1px solid var(--border); background:color-mix(in srgb,var(--accent) 14%, transparent); color:var(--text); cursor:pointer; font-size:15px; }
+
+  .list { flex:1; overflow:auto; display:flex; flex-direction:column; gap:10px; padding:4px; }
+  .card { padding:12px 14px; border-radius:14px; background:var(--glass); backdrop-filter:blur(14px) saturate(130%); -webkit-backdrop-filter:blur(14px) saturate(130%);
+    border:1px solid var(--border); box-shadow:0 6px 22px rgba(0,0,0,.18); display:flex; align-items:center; gap:10px; }
+  .card .ic { width:34px; height:34px; border-radius:10px; display:grid; place-items:center; font-size:16px; background:color-mix(in srgb,var(--accent) 20%, transparent); flex:0 0 auto; }
+  .card .body { min-width:0; flex:1; }
+  .card .ttl { font-size:13px; font-weight:600; }
+  .card .snip { font-size:12px; color:var(--dim); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .card .star { color:var(--accent); font-size:16px; }
+
+  /* ===== 美乐蒂互动角色（设计稿：常驻角落 + 多状态） ===== */
+  #mascot { position:fixed; right:26px; bottom:26px; z-index:20; width:120px; height:150px; cursor:pointer;
+    transition:transform .3s cubic-bezier(.2,.9,.3,1.2), opacity .35s ease; }
+  #mascot.hidden { opacity:0; transform:translateY(40px) scale(.6); pointer-events:none; }
+  #mascot:hover { transform:translateY(-4px) scale(1.04); }
+  #mascot .bunny { width:120px; height:150px; transform-origin:50% 90%; animation:bob 3.4s ease-in-out infinite; }
+  @keyframes bob { 0%,100%{transform:translateY(0) rotate(0)} 50%{transform:translateY(-6px) rotate(-1.5deg)} }
+  #mascot .ear { transform-origin:60px 36px; }
+  #mascot.state-theme .bunny { animation:spin .7s ease; }
+  @keyframes spin { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+  #mascot.state-launch .bunny { animation:pop .6s cubic-bezier(.2,1.4,.4,1); }
+  @keyframes pop { from{transform:scale(0) translateY(40px)} to{transform:scale(1) translateY(0)} }
+
+  /* 表情组：默认全隐藏，按状态显示对应组合 */
+  .face-idle,.face-happy,.face-star,.face-worry,
+  .mouth-idle,.mouth-open,.hands-heart,.hands-cover,.sweat,.sparkle { display:none; }
+  #mascot.state-idle   .face-idle,  #mascot.state-idle   .mouth-idle { display:block; }
+  #mascot.state-copy   .face-happy, #mascot.state-copy   .mouth-open,  #mascot.state-copy   .hands-heart { display:block; }
+  #mascot.state-paste  .face-happy, #mascot.state-paste  .mouth-idle { display:block; }
+  #mascot.state-favorite .face-star, #mascot.state-favorite .mouth-open, #mascot.state-favorite .sparkle { display:block; }
+  #mascot.state-delete .face-worry, #mascot.state-delete .mouth-idle, #mascot.state-delete .hands-cover { display:block; }
+  #mascot.state-error  .face-worry, #mascot.state-error  .mouth-idle, #mascot.state-error  .sweat { display:block; }
+  #mascot.state-theme  .face-happy, #mascot.state-theme  .mouth-open { display:block; }
+  #mascot.state-launch .face-happy, #mascot.state-launch .mouth-open { display:block; }
+
+  /* 招手（hover） */
+  #mascot:hover .arm-wave { animation:wave .5s ease-in-out infinite; transform-origin:30px 86px; }
+  @keyframes wave { 0%,100%{transform:rotate(0)} 50%{transform:rotate(-26deg)} }
+
+  /* 对话气泡 */
+  #speech { position:absolute; right:104px; bottom:96px; max-width:190px; padding:10px 14px; border-radius:16px 16px 4px 16px;
+    background:var(--glass-pop); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px); border:1px solid var(--border);
+    box-shadow:0 8px 28px rgba(0,0,0,.28); font-size:13px; color:var(--text); opacity:0; transform:translateY(8px) scale(.9);
+    transition:opacity .25s ease, transform .25s ease; pointer-events:none; white-space:nowrap; }
+  #speech.show { opacity:1; transform:translateY(0) scale(1); }
+
+  /* ===== 右侧：皮肤能力表面板（方案 A 框架示意） ===== */
+  #panel { width:230px; flex:0 0 auto; border-radius:18px; padding:14px; font-size:12px;
+    background:var(--glass); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px); border:1px solid var(--border); box-shadow:0 8px 30px rgba(0,0,0,.2); }
+  #panel h3 { font-size:12px; letter-spacing:.5px; margin-bottom:4px; }
+  #panel .sub { color:var(--dim); font-size:11px; margin-bottom:10px; line-height:1.5; }
+  .cap-row { display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:10px; margin-bottom:6px; background:color-mix(in srgb,var(--text) 5%, transparent); }
+  .cap-row .emo { font-size:18px; width:22px; text-align:center; }
+  .cap-row .nm { flex:1; }
+  .cap-row .st { font-size:10px; padding:2px 7px; border-radius:10px; }
+  .st.on { background:color-mix(in srgb,var(--accent) 30%, transparent); color:var(--text); }
+  .st.off { background:color-mix(in srgb,var(--text) 12%, transparent); color:var(--dim); }
+  #panel .note { margin-top:8px; font-size:10.5px; color:var(--dim); line-height:1.5; }
+
+  /* ===== 底部控制器（仅演示用） ===== */
+  #ctrl { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); z-index:30; display:flex; gap:8px; flex-wrap:wrap; justify-content:center;
+    padding:10px 14px; border-radius:16px; background:var(--glass-pop); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px); border:1px solid var(--border); box-shadow:0 10px 34px rgba(0,0,0,.3); max-width:92vw; }
+  #ctrl .lbl { font-size:11px; color:var(--dim); align-self:center; margin-right:4px; }
+  #ctrl button { padding:7px 11px; border-radius:10px; border:1px solid var(--border); background:color-mix(in srgb,var(--accent) 16%, transparent); color:var(--text); cursor:pointer; font-size:12px; }
+  #ctrl button:hover { background:color-mix(in srgb,var(--accent) 30%, transparent); }
+  .themes { display:flex; gap:6px; align-self:center; }
+  .themes button { width:26px; height:26px; border-radius:50%; border:2px solid transparent; cursor:pointer; padding:0; }
+  .themes button.active { border-color:var(--text); }
+
+  /* 启动 splash（设计稿：可选演示） */
+  #splash { position:fixed; inset:0; z-index:50; display:grid; place-items:center; background:var(--bg1); transition:opacity .5s ease; }
+  #splash.gone { opacity:0; pointer-events:none; }
+  #splash .panda { font-size:64px; animation:bob 2s ease-in-out infinite; }
+  #splash .ring { width:54px; height:54px; border:4px solid color-mix(in srgb,var(--accent) 30%, transparent); border-top-color:var(--accent); border-radius:50%; margin:18px auto 0; animation:spin .8s linear infinite; }
+</style>
+</head>
+<body>
+  <!-- 背景爱心雨（美乐蒂场景示意） -->
+  <div id="bgHearts"></div>
+
+  <!-- 启动 splash（点「模拟启动」演示） -->
+  <div id="splash"><div class="panda">🐼</div><div class="ring"></div></div>
+
+  <div id="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="logo">🐼</div>
+      <nav class="nav">
+        <button class="active" title="全部">📋</button>
+        <button title="文本">📝</button>
+        <button title="图片">📸</button>
+        <button title="文件">📁</button>
+        <button title="收藏">⭐</button>
+      </nav>
+    </aside>
+
+    <div class="main">
+      <!-- TopBar -->
+      <header class="topbar">
+        <div class="tabs">
+          <button class="active">📋</button><button>📝</button><button>📸</button><button>📁</button><button>⭐</button>
+        </div>
+        <div class="search">🔍<input placeholder="搜索剪贴板…" /></div>
+        <button class="icon-btn" title="变换枢纽">🧰</button>
+        <button class="icon-btn" title="设置">⚙️</button>
+        <button class="icon-btn" title="最小化">➖</button>
+        <button class="icon-btn" title="隐藏">✕</button>
+      </header>
+
+      <!-- CardList（真实卡片结构示意） -->
+      <div class="list">
+        <div class="card"><div class="ic">📝</div><div class="body"><div class="ttl">会议链接已复制</div><div class="snip">https://meet.example.com/room/8f3a</div></div><span class="star">⭐</span></div>
+        <div class="card"><div class="ic">📋</div><div class="body"><div class="ttl">JSON 配置片段</div><div class="snip">{"theme":"blossom","autoCleanup":true}</div></div></div>
+        <div class="card"><div class="ic">📁</div><div class="body"><div class="ttl">3 个文件</div><div class="snip">design/, docs/, src-tauri/</div></div></div>
+        <div class="card"><div class="ic">📸</div><div class="body"><div class="ttl">截图 2026-08-02</div><div class="snip">PNG · 1.2 MB</div></div></div>
+      </div>
+    </div>
+
+    <!-- 皮肤能力表面板（方案 A 框架示意） -->
+    <aside id="panel">
+      <h3>皮肤能力表 · themeCapabilities</h3>
+      <div class="sub">每套皮肤声明自己的 mascot。&lt;Mascot&gt; 读 config.theme 自动渲染，新皮肤只需加一项配置。</div>
+      <div class="cap-row"><span class="emo">🐰</span><span class="nm">blossom 美乐蒂</span><span class="st on">实装中</span></div>
+      <div class="cap-row"><span class="emo">🐳</span><span class="nm">ocean-dark 水母</span><span class="st off">占位</span></div>
+      <div class="cap-row"><span class="emo">🐬</span><span class="nm">ocean 海豚</span><span class="st off">占位</span></div>
+      <div class="cap-row"><span class="emo">✨</span><span class="nm">midnight 星灵</span><span class="st off">占位</span></div>
+      <div class="cap-row"><span class="emo">🦌</span><span class="nm">forest 小鹿</span><span class="st off">占位</span></div>
+      <div class="cap-row"><span class="emo">☁️</span><span class="nm">dawn 云兽</span><span class="st off">占位</span></div>
+      <div class="note">非 blossom 主题：mascot 为 null → 角色不渲染（演示切换主题可见）。其他主题美术资源后续补。</div>
+    </aside>
+  </div>
+
+  <!-- 美乐蒂互动角色 -->
+  <div id="mascot" class="state-idle" title="点我 / 悬停和我玩">
+    <div id="speech"></div>
+    <svg class="bunny" viewBox="0 0 120 150">
+      <!-- 耳朵 -->
+      <ellipse class="ear" cx="46" cy="34" rx="9" ry="26" fill="var(--char)"/>
+      <ellipse class="ear" cx="74" cy="34" rx="9" ry="26" fill="var(--char)"/>
+      <ellipse cx="46" cy="34" rx="4" ry="16" fill="#ffd9e6"/>
+      <ellipse cx="74" cy="34" rx="4" ry="16" fill="#ffd9e6"/>
+      <!-- 头 -->
+      <ellipse cx="60" cy="74" rx="40" ry="36" fill="var(--char)"/>
+      <!-- 腮红 -->
+      <circle cx="40" cy="84" r="6" fill="#ff9ec4" opacity=".7"/>
+      <circle cx="80" cy="84" r="6" fill="#ff9ec4" opacity=".7"/>
+      <!-- 眼睛：idle -->
+      <g class="face-idle"><circle cx="48" cy="70" r="4.5" fill="#3a2230"/><circle cx="72" cy="70" r="4.5" fill="#3a2230"/></g>
+      <!-- 眼睛：happy ^^ -->
+      <g class="face-happy"><path d="M42 72 q6 -8 12 0" stroke="#3a2230" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M66 72 q6 -8 12 0" stroke="#3a2230" stroke-width="3" fill="none" stroke-linecap="round"/></g>
+      <!-- 眼睛：star -->
+      <g class="face-star"><path d="M48 62 l2 5 5 0 -4 4 2 5 -5 -3 -5 3 2 -5 -4 -4 5 0 z" fill="#fff"/><path d="M72 62 l2 5 5 0 -4 4 2 5 -5 -3 -5 3 2 -5 -4 -4 5 0 z" fill="#fff"/></g>
+      <!-- 眼睛：worry >< -->
+      <g class="face-worry"><path d="M44 66 l8 8 M52 66 l-8 8" stroke="#3a2230" stroke-width="3" stroke-linecap="round"/><path d="M68 66 l8 8 M76 66 l-8 8" stroke="#3a2230" stroke-width="3" stroke-linecap="round"/></g>
+      <!-- 嘴：idle -->
+      <path class="mouth-idle" d="M54 86 q6 6 12 0" stroke="#3a2230" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <!-- 嘴：open -->
+      <ellipse class="mouth-open" cx="60" cy="88" rx="6" ry="5" fill="#3a2230"/>
+      <!-- 手：招手（hover） -->
+      <path class="arm-wave" d="M22 90 q-8 -6 -4 -16" stroke="var(--char)" stroke-width="9" fill="none" stroke-linecap="round"/>
+      <!-- 双手比心（copy） -->
+      <g class="hands-heart"><path d="M20 96 q-6 -10 4 -14 q10 4 4 14 z" fill="#ff5e8a"/><path d="M100 96 q6 -10 -4 -14 q-10 4 -4 14 z" fill="#ff5e8a"/></g>
+      <!-- 双手捂嘴（delete） -->
+      <g class="hands-cover"><circle cx="46" cy="92" r="9" fill="var(--char)"/><circle cx="74" cy="92" r="9" fill="var(--char)"/></g>
+      <!-- 汗滴（error） -->
+      <path class="sweat" d="M86 58 q4 8 0 12 q-4 -4 0 -12 z" fill="#9beefb"/>
+      <!-- 星星特效（favorite） -->
+      <g class="sparkle"><path d="M30 50 l2 5 5 0 -4 4 2 5 -5 -3 -5 3 2 -5 -4 -4 5 0 z" fill="#fff"/><path d="M92 52 l2 5 5 0 -4 4 2 5 -5 -3 -5 3 2 -5 -4 -4 5 0 z" fill="#fff"/></g>
+    </svg>
+  </div>
+
+  <!-- 底部控制器（仅演示） -->
+  <div id="ctrl">
+    <span class="lbl">触发互动：</span>
+    <button data-act="copy">复制</button>
+    <button data-act="paste">粘贴</button>
+    <button data-act="favorite">收藏</button>
+    <button data-act="delete">删除</button>
+    <button data-act="error">出错</button>
+    <button data-act="launch">模拟启动</button>
+    <span class="lbl">切主题：</span>
+    <div class="themes" id="themes"></div>
+  </div>
+
+<script>
+  const mascot = document.getElementById('mascot');
+  const speech = document.getElementById('speech');
+  const lines = {
+    copy:'帮你存好啦~ ♥', paste:'贴好咯！', favorite:'收藏住啦 ✨',
+    delete:'啊…删掉啦', error:'出问题了…', theme:'换装啦~', launch:'嗨，等你好久啦~'
+  };
+  let timer = null;
+  function setState(s, text){
+    mascot.className = 'state-' + s;
+    if (text !== undefined){
+      speech.textContent = text;
+      speech.classList.add('show');
+      clearTimeout(timer);
+      if (s !== 'idle') timer = setTimeout(()=>setState('idle'), 2800);
+    }
+  }
+  // 点击角色 = 彩蛋台词
+  mascot.addEventListener('click', ()=> setState('favorite','最喜欢和你一起整理啦 ✨'));
+  // 底部控制器
+  document.querySelectorAll('#ctrl button[data-act]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const a = b.dataset.act;
+      if (a === 'launch'){ document.getElementById('splash').classList.remove('gone'); setTimeout(()=>{document.getElementById('splash').classList.add('gone'); setState('launch', lines.launch);}, 1100); return; }
+      setState(a, lines[a]);
+    });
+  });
+
+  // 主题切换（演示能力表驱动角色：非 blossom → 角色隐藏）
+  const themes = [
+    {k:'blossom', c:'#F0568C'}, {k:'ocean-dark', c:'#3aa6ff'}, {k:'ocean', c:'#4fd0e0'},
+    {k:'midnight', c:'#9b8cff'}, {k:'forest', c:'#7bd88f'}, {k:'dawn', c:'#ffb38a'}
+  ];
+  const tw = document.getElementById('themes');
+  themes.forEach((t,i)=>{
+    const b = document.createElement('button');
+    b.style.background = t.c;
+    if (i===0) b.classList.add('active');
+    b.title = t.k;
+    b.addEventListener('click', ()=>{
+      document.documentElement.setAttribute('data-theme', t.k);
+      document.querySelectorAll('#themes button').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      if (t.k === 'blossom'){ mascot.classList.remove('hidden'); setState('theme', lines.theme); }
+      else { mascot.classList.add('hidden'); } // 其他主题 mascot=null 占位
+    });
+    tw.appendChild(b);
+  });
+
+  // 背景爱心雨（美乐蒂场景示意）
+  const bg = document.getElementById('bgHearts');
+  for (let i=0;i<14;i++){ const s=document.createElement('span'); s.className='h'; s.textContent='♥';
+    s.style.left=Math.random()*100+'%'; s.style.fontSize=(10+Math.random()*12)+'px';
+    s.style.animationDuration=(8+Math.random()*8)+'s'; s.style.animationDelay=(-Math.random()*14)+'s';
+    s.style.color=['#FF7BAC','#FFA5C6','#FF6FA5'][i%3]; bg.appendChild(s); }
+
+  // 启动：splash 1.1s 后淡出 + 美乐蒂蹦出打招呼
+  window.addEventListener('load', ()=> setTimeout(()=>{ document.getElementById('splash').classList.add('gone'); setState('launch', lines.launch); }, 1100));
+</script>
+</body>
+</html>

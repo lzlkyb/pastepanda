@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="ocean-dark" data-d1="on" data-d2="on" data-d3="on" data-d4="on" data-d5="off" data-d6="on" data-d7="off" data-d8="on" data-immersive="on">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PastePanda · 沉浸式皮肤设计稿（基于真实代码 · 默认沉浸）</title>
+<!--
+  设计稿说明（遵守 .codebuddy/rules.md 规则 12：样式/结构/图标/文案与真实代码一致）
+  - 真实来源：src/lib/theme.ts（6 主题）、src/styles/theme.css（精确配色令牌）、
+    src/components/SkinScene.tsx + .module.css（逐主题粒子层）、
+    src/components/TopBar.tsx（标签/工具箱）、Sidebar.tsx（分组）、Card.tsx（卡片字段）。
+  - 本稿"基础壳"还原真实结构；标注 [增强] 的 D2/D3/D4/D5/D6/D7 为沉浸式方案在真实代码之上的叠加。
+  - 默认 data-immersive="on"：D1 玻璃用满 + D2 视差 + D3 morph + D4 启动 + D6 涟漪 全部开启，开箱即沉浸。
+  - 顶部"沉浸模式"总开关一键对比 开/关（关闭即回到真实代码当前观感）。
+-->
+<style>
+  :root,
+  [data-theme="ocean"] {
+    --app-bg:linear-gradient(180deg,#EAF6FD 0%,#CFE9F8 40%,#9ED0EA 75%,#79B8DD 100%);
+    --card-bg:#fff; --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+    --border-color:#E0E4EB; --accent:#0284C7; --accent-solid:#027CBB;
+    --glass-card-bg:rgba(255,255,255,0.22); --glass-card-blur:5px;
+    --glass-card-border:rgba(0,0,0,0.08); --glass-card-shadow:0 2px 8px rgba(0,0,0,0.06),0 0 0 1px rgba(0,0,0,0.04),inset 0 1px 0 rgba(255,255,255,0.7);
+    --glass-popover-bg:rgba(255,255,255,0.85); --glass-dialog-bg:rgba(255,255,255,0.66); --glass-dialog-blur:22px;
+    --sidebar-bg:#EFF1F5; --hover:#E8ECF2; --overlay-bg:rgba(0,0,0,0.35);
+  }
+  [data-theme="ocean-dark"] {
+    --app-bg:radial-gradient(130% 110% at 70% -5%,#1E5A82 0%,#0E3355 42%,#061A33 100%);
+    --card-bg:#0A1628; --text-primary:#E0E8F0; --text-secondary:#A2B6CD; --text-muted:#7994B4;
+    --border-color:#162B45; --accent:#3B9EFF; --accent-solid:#2D78C2;
+    --glass-card-bg:rgba(10,22,40,0.22); --glass-card-blur:5px;
+    --glass-card-border:rgba(255,255,255,0.07); --glass-card-shadow:0 4px 16px rgba(0,0,0,0.40),0 0 0 1px rgba(255,255,255,0.04),inset 0 1px 0 rgba(255,255,255,0.05);
+    --glass-popover-bg:rgba(10,22,40,0.85); --glass-dialog-bg:rgba(10,22,40,0.66); --glass-dialog-blur:22px;
+    --sidebar-bg:#060F1A; --hover:#0F1F35; --overlay-bg:rgba(0,0,0,0.35);
+  }
+  [data-theme="midnight"] {
+    --app-bg:radial-gradient(100% 80% at 50% -10%,#1C1832 0%,#0B0B13 55%,#07070C 100%);
+    --card-bg:#18181B; --text-primary:#E4E4E7; --text-secondary:#AFAFB7; --text-muted:#8D8D95;
+    --border-color:#27272A; --accent:#818CF8; --accent-solid:#666FC4;
+    --glass-card-bg:rgba(24,24,27,0.22); --glass-card-blur:5px;
+    --glass-card-border:rgba(255,255,255,0.06); --glass-card-shadow:0 4px 16px rgba(0,0,0,0.35),0 0 0 1px rgba(255,255,255,0.03),inset 0 1px 0 rgba(255,255,255,0.04);
+    --glass-popover-bg:rgba(20,20,24,0.85); --glass-dialog-bg:rgba(20,20,24,0.66); --glass-dialog-blur:22px;
+    --sidebar-bg:#131315; --hover:#1F1F23; --overlay-bg:rgba(0,0,0,0.35);
+  }
+  [data-theme="forest"] {
+    --app-bg:linear-gradient(180deg,#F5F1E3 0%,#EAE5D1 55%,#DCD6BD 100%);
+    --card-bg:#fff; --text-primary:#171717; --text-secondary:#58524F; --text-muted:#726E6B;
+    --border-color:#D1D9D3; --accent:#059669; --accent-solid:#05875F;
+    --glass-card-bg:rgba(255,255,255,0.22); --glass-card-blur:5px;
+    --glass-card-border:rgba(0,0,0,0.07); --glass-card-shadow:0 2px 8px rgba(0,0,0,0.06),0 0 0 1px rgba(0,0,0,0.04),inset 0 1px 0 rgba(255,255,255,0.7);
+    --glass-popover-bg:rgba(255,255,255,0.85); --glass-dialog-bg:rgba(255,255,255,0.66); --glass-dialog-blur:22px;
+    --sidebar-bg:#E8EFEB; --hover:#E8EDE8; --overlay-bg:rgba(0,0,0,0.35);
+  }
+  [data-theme="blossom"] {
+    --app-bg:linear-gradient(168deg,#FFE4EF 0%,#FFC9DD 42%,#FFAECF 78%,#FF9BC4 100%);
+    --card-bg:#fff; --text-primary:#3D2231; --text-secondary:#5F4755; --text-muted:#86596D;
+    --border-color:#F9D3E2; --accent:#F0568C; --accent-solid:#CE3B70;
+    --glass-card-bg:rgba(255,255,255,0.22); --glass-card-blur:5px;
+    --glass-card-border:rgba(0,0,0,0.07); --glass-card-shadow:0 2px 8px rgba(0,0,0,0.06),0 0 0 1px rgba(0,0,0,0.04),inset 0 1px 0 rgba(255,255,255,0.7);
+    --glass-popover-bg:rgba(255,255,255,0.85); --glass-dialog-bg:rgba(255,255,255,0.66); --glass-dialog-blur:22px;
+    --sidebar-bg:#FFF0F6; --hover:#FBE7F0; --overlay-bg:rgba(122,31,70,0.32);
+  }
+  [data-theme="dawn"] {
+    --app-bg:linear-gradient(180deg,#FFF8EE 0%,#FFE9D2 42%,#FFD9AE 72%,#F9C78F 100%);
+    --card-bg:#fff; --text-primary:#2B2016; --text-secondary:#5C4B38; --text-muted:#7D6B58;
+    --border-color:#F0DDC8; --accent:#E8734A; --accent-solid:#C85A34;
+    --glass-card-bg:rgba(255,255,255,0.22); --glass-card-blur:5px;
+    --glass-card-border:rgba(0,0,0,0.07); --glass-card-shadow:0 2px 8px rgba(0,0,0,0.06),0 0 0 1px rgba(0,0,0,0.04),inset 0 1px 0 rgba(255,255,255,0.7);
+    --glass-popover-bg:rgba(255,255,255,0.85); --glass-dialog-bg:rgba(255,255,255,0.66); --glass-dialog-blur:22px;
+    --sidebar-bg:#FBF0E1; --hover:#F7E9DA; --overlay-bg:rgba(0,0,0,0.35);
+  }
+
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { height:100%; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--text-primary); overflow:hidden; background:var(--app-bg); transition:background .6s ease; }
+  /* D3 主题 morph：开启时流体过渡（真实代码仅 0.3s 淡入）*/
+  html[data-d3="on"] body, html[data-d3="on"] #app, html[data-d3="on"] .card, html[data-d3="on"] .glass {
+    transition:background .6s cubic-bezier(.4,0,.2,1), color .6s ease, border-color .6s ease, box-shadow .6s ease; }
+
+  /* ===== SkinScene 粒子层（真实 SkinScene.module.css 的简化逐主题动画）+ 常驻光斑 ===== */
+  #scene { position:fixed; inset:-30px; z-index:0; pointer-events:none; overflow:hidden;
+           transition:transform .25s cubic-bezier(.2,.8,.2,1); }
+  .p { position:absolute; pointer-events:none; }
+  @keyframes fall { 0%{transform:translateY(-40px) rotate(-10deg);opacity:0} 10%{opacity:1} 100%{transform:translateY(112vh) rotate(8deg)} }
+  @keyframes rise { from{transform:translateY(0)} to{transform:translateY(-120vh)} }
+  @keyframes tw { 0%,100%{opacity:.2} 50%{opacity:1} }
+  @keyframes floaty { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-16px)} }
+  @keyframes drift { from{transform:translateX(0)} to{transform:translateX(-300px)} }
+  @keyframes sway { 0%,100%{transform:skewX(-12deg);opacity:.4} 50%{transform:skewX(-7deg);opacity:.85} }
+  @keyframes orbFloat { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(30px,-26px) scale(1.08)} }
+  /* 常驻光斑：让静止时也有"活气"（[增强]，关沉浸模式时隐藏）*/
+  .orb { position:fixed; border-radius:50%; filter:blur(46px); opacity:.5; z-index:1; pointer-events:none;
+         background:radial-gradient(circle,var(--accent),transparent 70%); animation:orbFloat 14s ease-in-out infinite; }
+  html[data-immersive="off"] .orb { display:none; }
+
+  /* ===== 真实 App 壳 ===== */
+  #app { position:relative; z-index:2; height:100vh; display:flex; padding:14px; gap:14px; opacity:0; }
+  #app.in { animation:appIn .8s ease forwards; } /* D4 启动渐入（真实无）*/
+  @keyframes appIn { from{opacity:0; transform:scale(.985)} to{opacity:1; transform:none} }
+
+  .sidebar { width:230px; flex:0 0 auto; border-radius:18px; padding:14px 10px; display:flex; flex-direction:column;
+    background:var(--sidebar-bg); border:1px solid var(--border-color); }
+  .sidebar.glass { background:var(--glass-popover-bg); backdrop-filter:blur(var(--glass-card-blur)) saturate(150%);
+    -webkit-backdrop-filter:blur(var(--glass-card-blur)) saturate(150%); border-color:var(--glass-card-border); }
+  .side-sec { font-size:11px; color:var(--text-muted); padding:10px 10px 4px; letter-spacing:.5px; }
+  .side-sep { height:1px; background:var(--border-color); margin:6px 4px; }
+  .side-item { display:flex; align-items:center; gap:9px; padding:8px 10px; border-radius:11px; cursor:pointer; font-size:14px; color:var(--text-secondary); }
+  .side-item:hover { background:var(--hover); }
+  .side-item.active { background:color-mix(in srgb,var(--accent) 18%,transparent); color:var(--text-primary); }
+  .side-item .em { width:18px; text-align:center; }
+  .side-item .ct { margin-left:auto; font-size:12px; color:var(--text-muted); }
+  .side-foot { margin-top:auto; padding-top:8px; }
+  .side-foot button { width:100%; display:flex; align-items:center; gap:8px; padding:9px 10px; border-radius:11px;
+    border:1px solid var(--border-color); background:transparent; color:var(--text-secondary); cursor:pointer; font-size:13px; }
+  .melody-foot { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-muted); padding:6px 8px 10px; }
+
+  .main { flex:1; display:flex; flex-direction:column; gap:12px; min-width:0; }
+  .topbar { display:flex; align-items:center; gap:12px; padding:10px 14px; border-radius:16px;
+    background:var(--glass-popover-bg); backdrop-filter:blur(var(--glass-card-blur)); -webkit-backdrop-filter:blur(var(--glass-card-blur));
+    border:1px solid var(--glass-card-border); }
+  .logo { width:34px; height:34px; border-radius:11px; display:grid; place-items:center; font-size:18px;
+    background:linear-gradient(135deg,var(--accent),var(--accent-solid)); color:#fff; box-shadow:0 3px 10px color-mix(in srgb,var(--accent) 40%,transparent); }
+  .tabs { display:flex; gap:4px; background:var(--hover); padding:4px; border-radius:12px; }
+  .tab { display:flex; align-items:center; gap:5px; padding:6px 12px; border-radius:9px; cursor:pointer; font-size:13px; color:var(--text-secondary); border:none; background:transparent; }
+  .tab.active { background:var(--card-bg); color:var(--text-primary); box-shadow:0 1px 3px rgba(0,0,0,.12); }
+  .search { flex:1; display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:11px;
+    background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-muted); font-size:13px; }
+  .search input { flex:1; border:none; outline:none; background:transparent; color:var(--text-primary); font-size:13px; }
+  .icon-btn { width:36px; height:36px; border-radius:11px; border:1px solid var(--border-color); background:var(--card-bg);
+    color:var(--text-secondary); cursor:pointer; font-size:15px; display:grid; place-items:center; position:relative; overflow:hidden; }
+  .icon-btn:hover { color:var(--text-primary); background:var(--hover); }
+
+  .list { flex:1; overflow:auto; display:flex; flex-direction:column; gap:10px; padding:4px; }
+  .card { position:relative; overflow:hidden; padding:13px 15px; border-radius:15px; cursor:pointer;
+    background:var(--card-bg); border:1px solid var(--border-color); box-shadow:var(--glass-card-shadow);
+    transition:transform .16s ease, box-shadow .16s ease, background .3s ease; animation:cardIn .5s ease both; }
+  .card.glass { background:var(--glass-card-bg); backdrop-filter:blur(var(--glass-card-blur)) saturate(140%);
+    -webkit-backdrop-filter:blur(var(--glass-card-blur)) saturate(140%); border-color:var(--glass-card-border); }
+  .card:hover { transform:translateY(-3px); box-shadow:0 14px 34px rgba(0,0,0,.22); }
+  @keyframes cardIn { from{opacity:0; transform:translateY(14px)} to{opacity:1; transform:none} }
+  .card .row { display:flex; align-items:center; gap:9px; }
+  .type-ic { width:30px; height:30px; border-radius:9px; display:grid; place-items:center; flex:0 0 auto;
+    color:var(--accent); background:color-mix(in srgb,var(--accent) 16%,transparent); }
+  .card .ttl { font-size:14px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .card .meta { font-size:12px; color:var(--text-muted); margin-top:5px; display:flex; gap:10px; align-items:center; }
+  .card .snip { font-size:13px; color:var(--text-secondary); margin-top:6px; line-height:1.5;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .star { margin-left:auto; color:var(--accent); }
+  .tag { font-size:11px; padding:2px 8px; border-radius:20px; color:var(--text-primary); background:color-mix(in srgb,var(--accent) 18%,transparent); }
+
+  /* D6 hover 涟漪 */
+  .ripple { position:absolute; border-radius:50%; transform:translate(-50%,-50%) scale(0);
+    background:radial-gradient(circle, color-mix(in srgb,var(--accent) 50%,transparent), transparent 70%); pointer-events:none;
+    animation:rip .6s ease-out forwards; }
+  @keyframes rip { to{ transform:translate(-50%,-50%) scale(1); opacity:0; } }
+
+  /* 顶部沉浸模式总开关 */
+  #modeBar { position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:40; display:flex; align-items:center; gap:10px;
+    padding:8px 14px; border-radius:999px; background:var(--glass-popover-bg); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+    border:1px solid var(--glass-card-border); box-shadow:0 8px 30px rgba(0,0,0,.25); font-size:13px; color:var(--text-primary); cursor:pointer; }
+  #modeBar .dot { width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent); }
+  #modeBar.off .dot { background:var(--text-muted); box-shadow:none; }
+
+  /* 控制面板 */
+  #ctrl { position:fixed; right:16px; bottom:16px; z-index:30; width:262px; padding:14px; border-radius:16px;
+    background:var(--glass-popover-bg); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px);
+    border:1px solid var(--glass-card-border); box-shadow:0 12px 40px rgba(0,0,0,.3); font-size:12px; }
+  #ctrl h3 { font-size:12px; margin-bottom:8px; letter-spacing:.5px; color:var(--text-primary); }
+  .sw { display:flex; align-items:center; justify-content:space-between; padding:5px 0; color:var(--text-secondary); }
+  .sw b { color:var(--text-primary); font-weight:600; }
+  .toggle { width:40px; height:22px; border-radius:20px; border:none; cursor:pointer; position:relative;
+    background:color-mix(in srgb,var(--text-muted) 40%,transparent); transition:background .25s ease; }
+  .toggle.on { background:var(--accent); }
+  .toggle::after { content:""; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%;
+    background:#fff; transition:transform .25s ease; box-shadow:0 1px 3px rgba(0,0,0,.3); }
+  .toggle.on::after { transform:translateX(18px); }
+  .theme-row { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
+  .theme-chip { flex:1 0 30%; text-align:center; padding:7px 0; border-radius:10px; cursor:pointer; font-size:12px;
+    border:1px solid var(--border-color); color:var(--text-secondary); background:var(--card-bg); }
+  .theme-chip.on { border-color:var(--accent); color:var(--text-primary); background:color-mix(in srgb,var(--accent) 14%,transparent); }
+
+  .overlay { position:fixed; inset:0; z-index:20; background:var(--overlay-bg); display:none; align-items:center; justify-content:center; }
+  .overlay.show { display:flex; }
+  .dialog { width:520px; max-width:92vw; padding:22px; border-radius:18px;
+    background:var(--glass-dialog-bg); backdrop-filter:blur(var(--glass-dialog-blur)); -webkit-backdrop-filter:blur(var(--glass-dialog-blur));
+    border:1px solid var(--glass-card-border); box-shadow:0 20px 60px rgba(0,0,0,.4); }
+  .dialog h2 { font-size:16px; margin-bottom:4px; color:var(--text-primary); }
+  .dialog p.sub { font-size:12px; color:var(--text-muted); margin-bottom:16px; }
+  .theme-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .theme-card { border-radius:14px; padding:14px; cursor:pointer; border:2px solid transparent; overflow:hidden; position:relative; }
+  .theme-card.on { border-color:var(--accent); }
+  .theme-card .swatch { height:54px; border-radius:9px; margin-bottom:8px; }
+  .theme-card .nm { font-size:13px; color:var(--text-primary); font-weight:600; }
+  .theme-card .dk { font-size:11px; color:var(--text-muted); }
+
+  #splash { position:fixed; inset:0; z-index:50; display:grid; place-items:center; background:var(--app-bg); transition:opacity .4s ease; }
+  #splash.hide { opacity:0; pointer-events:none; }
+  .splash-logo { font-size:54px; animation:bob 2s ease-in-out infinite; }
+  @keyframes bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
+  .splash-ring { width:54px; height:54px; border-radius:50%; border:4px solid color-mix(in srgb,var(--accent) 30%,transparent);
+    border-top-color:var(--accent); animation:spin .8s linear infinite; margin:14px auto 0; }
+  @keyframes spin { to{ transform:rotate(360deg); } }
+
+  .note { position:fixed; left:16px; bottom:16px; z-index:30; max-width:330px; font-size:11px; line-height:1.5;
+    color:var(--text-muted); background:var(--glass-popover-bg); backdrop-filter:blur(14px); padding:9px 12px; border-radius:10px;
+    border:1px solid var(--glass-card-border); }
+</style>
+</head>
+<body>
+
+<!-- 常驻光斑（[增强] 沉浸模式开时显示）-->
+<div class="orb" style="left:8%;top:62%;width:320px;height:320px"></div>
+<div class="orb" style="right:10%;top:12%;width:240px;height:240px;background:radial-gradient(circle,var(--accent-solid),transparent 70%);animation-delay:-5s"></div>
+
+<!-- SkinScene：逐主题粒子 -->
+<div id="scene" aria-hidden></div>
+
+<!-- 启动 splash [增强]D4 -->
+<div id="splash"><div style="text-align:center"><div class="splash-logo">🐼</div><div class="splash-ring"></div></div></div>
+
+<!-- 沉浸模式总开关 -->
+<div id="modeBar" title="一键对比 沉浸 / 真实">🎨 沉浸模式 · <b id="modeTxt">开</b> <span class="dot"></span></div>
+
+<!-- 真实 App 壳 -->
+<div id="app">
+  <aside class="sidebar glass" id="sidebar">
+    <div class="side-sec">内置</div>
+    <div class="side-item active"><span class="em">📋</span>全部<span class="ct">128</span></div>
+    <div class="side-item"><span class="em">💡</span>未分组<span class="ct">42</span></div>
+    <div class="side-item"><span class="em">⭐</span>收藏<span class="ct">9</span></div>
+    <div class="side-sep"></div>
+    <div class="side-sec">分组</div>
+    <div class="side-item"><span class="em">📁</span>工作<span class="ct">17</span></div>
+    <div class="side-item"><span class="em">🔥</span>灵感<span class="ct">11</span></div>
+    <div class="side-sep"></div>
+    <div class="side-sec">智能分类</div>
+    <div class="side-item"><span class="em">🤖</span>代码片段<span class="ct">23</span></div>
+    <div class="side-sep"></div>
+    <div class="side-sec">来源</div>
+    <div class="side-item"><span class="em">🌐</span>Chrome<span class="ct">31</span></div>
+    <div class="side-item"><span class="em">💬</span>微信<span class="ct">14</span></div>
+    <div class="side-foot">
+      <div class="melody-foot" id="melodyFoot" style="display:none">🎀 美乐蒂帮你收着 💗</div>
+      <button>⟨ 收起侧边栏</button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="logo">🐼</div>
+      <div class="tabs">
+        <button class="tab active">📋 全部</button>
+        <button class="tab">📝 文本</button>
+        <button class="tab">📸 图片</button>
+        <button class="tab">📁 文件</button>
+        <button class="tab">⭐ 收藏</button>
+      </div>
+      <div class="search">🔍<input placeholder="搜索剪贴板历史…" /></div>
+      <button class="icon-btn" title="工具箱">🧰</button>
+      <button class="icon-btn" id="openSettings" title="设置">⚙️</button>
+      <button class="icon-btn" title="最小化">—</button>
+      <button class="icon-btn" title="隐藏到托盘">✕</button>
+    </div>
+
+    <div class="list" id="list">
+      <div class="card glass"><div class="row">
+        <div class="type-ic">📝</div><div class="ttl">修复登录态失效：token 过期未刷新</div><span class="star">★</span></div>
+        <div class="meta"><span>2 分钟前</span><span class="tag">工作</span></div>
+        <div class="snip">用户反馈登录后约 30 分钟被踢出，排查发现 refresh_token 逻辑在 401 时未触发重新获取，需补重试……</div></div>
+
+      <div class="card glass"><div class="row">
+        <div class="type-ic">🔗</div><div class="ttl">https://docs.pastepanda.app/guide/theme</div></div>
+        <div class="meta"><span>8 分钟前</span><span class="tag">灵感</span></div>
+        <div class="snip">主题与皮肤开发指南 · 含 6 套配色令牌与玻璃拟态变量说明。</div></div>
+
+      <div class="card glass"><div class="row">
+        <div class="type-ic">🖼️</div><div class="ttl">截图_2026-08-02_1312.png</div><span class="star">★</span></div>
+        <div class="meta"><span>15 分钟前</span></div>
+        <div class="snip">（图片缩略图占位）</div></div>
+
+      <div class="card glass"><div class="row">
+        <div class="type-ic">💻</div><div class="ttl">SQL 格式化片段</div></div>
+        <div class="meta"><span>32 分钟前</span><span class="tag">代码片段</span></div>
+        <div class="snip">SELECT id, name FROM users WHERE status = 1 ORDER BY created_at DESC LIMIT 20;</div></div>
+
+      <div class="card glass"><div class="row">
+        <div class="type-ic">🔒</div><div class="ttl">sk-************3f9a（已脱敏）</div></div>
+        <div class="meta"><span>1 小时前</span></div>
+        <div class="snip">密钥类内容已按规则脱敏显示，复制时仍取真实值。</div></div>
+
+      <div class="card glass"><div class="row">
+        <div class="type-ic">📁</div><div class="ttl">report.pdf 等 3 个文件</div></div>
+        <div class="meta"><span>2 小时前</span></div>
+        <div class="snip">从资源管理器复制的文件列表。</div></div>
+    </div>
+  </div>
+</div>
+
+<div id="ctrl">
+  <h3>🎛️ 沉浸式维度（对照真实代码）</h3>
+  <div class="sw"><b>D1 玻璃用满</b><button class="toggle on" data-k="d1"></button></div>
+  <div class="sw"><b>D2 场景视差</b><button class="toggle on" data-k="d2"></button></div>
+  <div class="sw"><b>D3 主题 morph</b><button class="toggle on" data-k="d3"></button></div>
+  <div class="sw"><b>D4 启动动画</b><button class="toggle on" data-k="d4"></button></div>
+  <div class="sw"><b>D5 沉浸声效</b><button class="toggle" data-k="d5"></button></div>
+  <div class="sw"><b>D6 hover 涟漪</b><button class="toggle on" data-k="d6"></button></div>
+  <div class="sw"><b>D7 时间感知</b><button class="toggle" data-k="d7"></button></div>
+  <div class="sw"><b>D8 跨窗口统一</b><button class="toggle on" data-k="d8"></button></div>
+  <h3 style="margin-top:10px">真实主题（theme.ts）</h3>
+  <div class="theme-row" id="themeRow">
+    <div class="theme-chip" data-t="ocean">海洋</div>
+    <div class="theme-chip on" data-t="ocean-dark">深海</div>
+    <div class="theme-chip" data-t="midnight">午夜</div>
+    <div class="theme-chip" data-t="forest">森林</div>
+    <div class="theme-chip" data-t="blossom">美乐蒂</div>
+    <div class="theme-chip" data-t="dawn">晨曦</div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="dialog">
+    <h2>外观 · 主题</h2>
+    <p class="sub">选择与你的桌面氛围契合的皮肤（真实设置页结构）</p>
+    <div class="theme-grid" id="themeGrid"></div>
+  </div>
+</div>
+
+<div class="note">
+  基础壳 = 真实代码结构（TopBar / Sidebar / CardList / 主题选择器）。
+  默认<b>沉浸模式开</b>：D1 玻璃用满 + D2 视差 + D3 morph + D4 启动 + D6 涟漪 + 常驻光斑。
+  点顶部<b>沉浸模式</b>总开关或右下角逐项开关，可一键对比真实代码观感。
+</div>
+
+<script>
+  const THEMES = [
+    { key:"ocean",      name:"海洋",  dark:false, bg:"linear-gradient(180deg,#EAF6FD,#9ED0EA,#79B8DD)" },
+    { key:"ocean-dark", name:"深海",  dark:true,  bg:"radial-gradient(130% 110% at 70% -5%,#1E5A82,#0E3355,#061A33)" },
+    { key:"midnight",   name:"午夜",  dark:true,  bg:"radial-gradient(100% 80% at 50% -10%,#1C1832,#0B0B13,#07070C)" },
+    { key:"forest",     name:"森林",  dark:false, bg:"linear-gradient(180deg,#F5F1E3,#DCD6BD)" },
+    { key:"blossom",    name:"美乐蒂", dark:false, bg:"linear-gradient(168deg,#FFE4EF,#FFAECF,#FF9BC4)" },
+    { key:"dawn",       name:"晨曦",  dark:false, bg:"linear-gradient(180deg,#FFF8EE,#FFD9AE,#F9C78F)" },
+  ];
+  const scene = document.getElementById('scene');
+  const html = document.documentElement;
+
+  function buildScene(theme){
+    scene.innerHTML = "";
+    const add = (cls, style, svg) => {
+      const el = document.createElement(svg ? 'div' : 'span');
+      if (svg) el.innerHTML = svg;
+      el.className = 'p ' + cls;
+      Object.assign(el.style, style);
+      scene.appendChild(el);
+    };
+    if (theme === 'blossom'){
+      for (let i=0;i<16;i++) add('',{left:Math.random()*100+'%',top:-30,color:['#FF7BAC','#FFA5C6','#FF6FA5'][i%3],animation:'fall '+(7+Math.random()*7)+'s linear infinite',animationDelay:-Math.random()*13+'s'},
+        '<svg viewBox="0 0 24 24" width="16"><path fill="currentColor" d="M12 21l-1.5-1.3C5.4 15.4 2 12.3 2 8.5 2 5.4 4.4 3 7.5 3c1.7 0 3.4.8 4.5 2.1C13.1 3.8 14.8 3 16.5 3 19.6 3 22 5.4 22 8.5c0 3.8-3.4 6.9-8.5 11.5z"/></svg>');
+    } else if (theme === 'ocean-dark'){
+      for (let i=0;i<3;i++) add('',{left:(18+i*28)+'%',top:-80,width:'170px',height:'62vh',
+        background:'linear-gradient(180deg,rgba(150,225,255,.4),transparent)',transform:'skewX(-14deg)',filter:'blur(16px)',animation:'sway 10s ease-in-out infinite',animationDelay:-(i*4)+'s'});
+      for (let i=0;i<16;i++) add('',{left:Math.random()*100+'%',bottom:-120,width:9+Math.random()*22,height:9+Math.random()*22,
+        borderRadius:'50%',border:'1px solid rgba(170,230,255,.7)',background:'rgba(170,230,255,.16)',animation:'rise '+(7+Math.random()*8)+'s linear infinite',animationDelay:-Math.random()*14+'s'});
+    } else if (theme === 'midnight'){
+      const aur=document.createElement('div'); aur.className='p';
+      aur.style.cssText='left:-10%;right:-10%;top:-40px;height:220px;background:linear-gradient(100deg,transparent,rgba(139,124,246,.2),rgba(56,189,248,.16),transparent);filter:blur(30px);animation:sway 11s ease-in-out infinite';
+      scene.appendChild(aur);
+      for (let i=0;i<90;i++) add('',{left:Math.random()*100+'%',top:Math.random()*68+'%',width:2+(Math.random()<.85?0:1),height:2+(Math.random()<.85?0:1),
+        borderRadius:'50%',background:'#cdd3ff',animation:'tw 4s ease-in-out infinite',animationDelay:-Math.random()*4+'s'});
+      const moon=document.createElement('div'); moon.className='p';
+      moon.style.cssText='right:100px;top:64px;width:92px;height:92px;border-radius:50%;background:radial-gradient(circle at 34% 34%,#f4f1ff,#a89cf0);box-shadow:0 0 50px rgba(139,124,246,.55)';
+      scene.appendChild(moon);
+    } else if (theme === 'forest'){
+      for (let i=0;i<12;i++) add('',{left:Math.random()*100+'%',top:-20,width:11,height:8,borderRadius:'60% 40% 60% 40%',background:'#8fae7e',
+        animation:'fall '+(7+Math.random()*7)+'s linear infinite',animationDelay:-Math.random()*10+'s'});
+      for (let i=0;i<14;i++) add('',{left:5+Math.random()*90+'%',top:40+Math.random()*50+'%',width:4,height:4,borderRadius:'50%',
+        background:'#d9e8a0',boxShadow:'0 0 8px #b8d468',animation:'floaty 7s ease-in-out infinite',animationDelay:-Math.random()*7+'s'});
+    } else if (theme === 'dawn'){
+      const sun=document.createElement('div'); sun.className='p';
+      sun.style.cssText='right:70px;top:46px;width:150px;height:150px;border-radius:50%;background:radial-gradient(circle,#fffdf5,#ffe3ae,rgba(255,196,130,0));filter:blur(2px)';
+      scene.appendChild(sun);
+      for (let i=0;i<7;i++) add('',{left:Math.random()*90+'%',top:40+Math.random()*220+'%',width:150+Math.random()*180,height:24,borderRadius:999,
+        background:'linear-gradient(90deg,rgba(255,255,255,.8),rgba(255,224,196,.5))',filter:'blur(5px)',animation:'drift '+(22+Math.random()*16)+'s linear infinite',animationDelay:-Math.random()*30+'s'});
+    } else if (theme === 'ocean'){
+      for (let i=0;i<30;i++) add('',{left:Math.random()*100+'%',top:55+Math.random()*38+'%',width:4,height:4,borderRadius:'50%',background:'#fff',
+        animation:'tw 2.6s ease-in-out infinite',animationDelay:-Math.random()*3+'s'});
+    }
+  }
+
+  function applyTheme(key){
+    const def = THEMES.find(t=>t.key===key) || THEMES[1];
+    html.setAttribute('data-theme', key);
+    buildScene(key);
+    document.getElementById('melodyFoot').style.display = key==='blossom' ? 'flex' : 'none';
+    document.querySelectorAll('.theme-chip').forEach(c=>c.classList.toggle('on', c.dataset.t===key));
+    document.querySelectorAll('#themeGrid .theme-card').forEach(c=>c.classList.toggle('on', c.dataset.t===key));
+  }
+
+  document.querySelectorAll('.theme-chip').forEach(c=>c.onclick=()=>applyTheme(c.dataset.t));
+
+  const grid = document.getElementById('themeGrid');
+  THEMES.forEach(t=>{
+    const el=document.createElement('div'); el.className='theme-card'; el.dataset.t=t.key;
+    el.innerHTML=`<div class="swatch" style="background:${t.bg}"></div><div class="nm">${t.name}</div><div class="dk">${t.dark?'深色':'浅色'}</div>`;
+    el.onclick=()=>applyTheme(t.key);
+    grid.appendChild(el);
+  });
+  document.getElementById('openSettings').onclick=()=>document.getElementById('overlay').classList.add('show');
+  document.getElementById('overlay').onclick=(e)=>{ if(e.target.id==='overlay') e.currentTarget.classList.remove('show'); };
+
+  // D2 视差
+  document.addEventListener('mousemove',(e)=>{
+    if (html.getAttribute('data-d2')!=='on') return;
+    const x=(e.clientX/window.innerWidth-0.5), y=(e.clientY/window.innerHeight-0.5);
+    scene.style.transform=`translate(${ -x*18 }px, ${ -y*18 }px)`;
+    document.getElementById('app').style.transform=`translate(${ x*5 }px, ${ y*5 }px)`;
+  });
+
+  // D6 hover 涟漪
+  document.body.addEventListener('click',(e)=>{
+    if (html.getAttribute('data-d6')!=='on') return;
+    const t=e.target.closest('.icon-btn,.tab,.side-item,.card');
+    if(!t) return;
+    const r=t.getBoundingClientRect();
+    const rip=document.createElement('span'); rip.className='ripple';
+    const size=Math.max(r.width,r.height)*1.8;
+    rip.style.width=rip.style.height=size+'px';
+    rip.style.left=(e.clientX-r.left)+'px'; rip.style.top=(e.clientY-r.top)+'px';
+    t.appendChild(rip); setTimeout(()=>rip.remove(),600);
+  });
+
+  // D5 声效（Web Audio 合成，真实代码无；默认关）
+  let actx;
+  function beep(freq=440,dur=0.08,type='sine',vol=0.04){
+    if (html.getAttribute('data-d5')!=='on') return;
+    actx = actx || new (window.AudioContext||window.webkitAudioContext)();
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.type=type; o.frequency.value=freq; g.gain.value=vol;
+    o.connect(g); g.connect(actx.destination); o.start();
+    g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime+dur);
+    o.stop(actx.currentTime+dur);
+  }
+  document.querySelectorAll('.icon-btn,.tab,.side-item,.card,.theme-chip').forEach(el=>
+    el.addEventListener('mouseenter',()=>beep(520,0.05,'triangle',0.025)));
+  document.getElementById('openSettings').addEventListener('click',()=>beep(660,0.09,'sine',0.05));
+
+  // D7 时间感知（真实代码主题固定）
+  function timeTheme(){
+    if (html.getAttribute('data-d7')!=='on') return;
+    const h=new Date().getHours();
+    const key = h>=6&&h<17?'ocean':(h>=17&&h<20?'ocean-dark':'midnight');
+    applyTheme(key);
+  }
+
+  // 逐项开关
+  function setDim(k,on){ html.setAttribute('data-'+k, on?'on':'off'); }
+  document.querySelectorAll('#ctrl .toggle').forEach(b=>{
+    b.onclick=()=>{
+      const k=b.dataset.k, on=b.classList.toggle('on');
+      setDim(k,on);
+      if (k==='d1'){ document.querySelectorAll('.card').forEach(c=>c.classList.toggle('glass',on));
+        document.getElementById('sidebar').classList.toggle('glass',on); }
+      if (k==='d4' && on) playSplash();
+      if (k==='d7') timeTheme();
+      beep(on?600:300,0.06,'sine',0.04);
+    };
+  });
+
+  // 沉浸模式总开关：一键对比
+  const modeBar=document.getElementById('modeBar');
+  function setImmersive(on){
+    html.setAttribute('data-immersive', on?'on':'off');
+    const dims={d1:on,d2:on,d3:on,d4:on,d6:on,d8:on}; // 沉浸=除声效/时间外的视觉维度全开
+    for (const k in dims){ setDim(k,dims[k]); }
+    document.querySelectorAll('.card').forEach(c=>c.classList.toggle('glass',on));
+    document.getElementById('sidebar').classList.toggle('glass',on);
+    document.querySelectorAll('#ctrl .toggle').forEach(b=>{
+      const k=b.dataset.k; if (k in dims) b.classList.toggle('on', on);
+    });
+    modeBar.classList.toggle('off',!on);
+    document.getElementById('modeTxt').textContent = on?'开':'关（真实观感）';
+  }
+  modeBar.onclick=()=>setImmersive(html.getAttribute('data-immersive')!=='on');
+
+  // D4 启动动画（任何点击也兜底隐藏，防 JS 异常卡住）
+  function playSplash(){
+    const s=document.getElementById('splash'); s.classList.remove('hide');
+    setTimeout(()=>{ s.classList.add('hide'); document.getElementById('app').classList.add('in'); }, 800);
+  }
+  playSplash();
+  document.addEventListener('click',()=>{ const s=document.getElementById('splash'); if(s&&!s.classList.contains('hide')) s.classList.add('hide'); }, { once:true });
+</script>
+</body>
+</html>

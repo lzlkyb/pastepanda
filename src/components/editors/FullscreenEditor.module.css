@@ -1426,7 +1426,7 @@
   gap: 5px;
   margin-left: auto;
   padding: 4px 9px;
-  border-radius: 7px;
+  border-radius: 8px;  /* 搜索框圆角统一为 8px */
   border: 1px solid var(--search-border, rgba(0, 0, 0, 0.15));
   background: var(--input-bg, rgba(0, 0, 0, 0.04));
   color: var(--text-muted, #8a8f98);

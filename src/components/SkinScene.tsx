@@ -134,18 +134,6 @@ export function SkinScene() {
       })),
     []
   );
-  // 海洋水面碎金（26 → 14）
-  // 这 26 个点各自跑 opacity 闪烁，自身很便宜，但它们衬在所有卡片之下，
-  // 每帧变化会持续使几十张卡片的 backdrop-filter 失效重算——海洋主题的主要开销在此。
-  const glints = useMemo(
-    () =>
-      Array.from({ length: 14 }, () => ({
-        left: rnd(100),
-        top: 55 + rnd(38),
-        delay: -rnd(3),
-      })),
-    []
-  );
   // 午夜满天星（80 → 36：全项目最多的常驻动画元素）
   const stars = useMemo(
     () =>
@@ -271,30 +259,6 @@ export function SkinScene() {
             key={i}
             className={styles.plankton}
             style={{ left: `${p.left}%`, top: `${p.top}%`, animationDelay: `${p.delay}s` }}
-          />
-        ))}
-      </div>
-    );
-  }
-
-  if (theme === "ocean") {
-    return (
-      <div className={sceneCls} aria-hidden>
-        <div className={styles.sun} />
-        <span className={styles.gull} style={{ top: "14%", left: "100%", fontSize: 20 }}>⌄</span>
-        <span className={styles.gull} style={{ top: "9%", left: "110%", fontSize: 14, animationDelay: "-5s" }}>⌄</span>
-        <div className={styles.boat}>⛵</div>
-        <svg className={styles.waves} viewBox="0 0 1200 560" preserveAspectRatio="none">
-          <path d="M0,380 C200,350 400,420 600,390 C800,360 1000,420 1200,390 L1200,560 L0,560 Z" fill="rgba(9,60,110,0.14)" />
-          <path d="M0,430 C220,400 420,470 640,435 C860,400 1040,470 1200,435 L1200,560 L0,560 Z" fill="rgba(9,60,110,0.22)" />
-          <path d="M0,480 C240,450 460,515 680,480 C900,450 1060,515 1200,480 L1200,560 L0,560 Z" fill="rgba(6,42,80,0.34)" />
-          <path d="M0,525 C260,500 480,550 700,522 C920,500 1080,550 1200,525 L1200,560 L0,560 Z" fill="rgba(5,34,66,0.5)" />
-        </svg>
-        {glints.map((g, i) => (
-          <span
-            key={i}
-            className={styles.glint}
-            style={{ left: `${g.left}%`, top: `${g.top}%`, animationDelay: `${g.delay}s` }}
           />
         ))}
       </div>

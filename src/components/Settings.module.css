@@ -799,27 +799,41 @@
   gap: 8px;
   padding: 10px 20px;
   background: var(--dialog-bg);
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);  /* 页面分区线（吸顶栏与下方内容的分界），与搜索框本身的边框是两个层级，保留 */
 }
 .settingsSearchIcon {
   font-size: 13px;
   color: var(--text-muted);
   flex-shrink: 0;
 }
-.settingsSearchInput {
+/* 搜索框本体：与其余 7 处搜索框同一套“外框拥有边框，内部 input 透明”结构。
+   之前是 input 自己带一整圈边框，叠在上面 .settingsSearch 的 border-bottom 之上，
+   视觉上形成两层边框（即用户反馈的“内边框”）。现把边框/背景/圆角改到包裹层上，
+   input 自身变透明，高度保持不变（padding 从 input 换到包裹层，视觉高度一致）。 */
+.settingsSearchBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex: 1;
   padding: 6px 10px;
-  font-size: 12px;
   border-radius: 8px;
-  border: 1px solid var(--border-color);
-  background: var(--input-bg);
+  border: 1px solid var(--search-border);
+  background: var(--search-bg);
+  transition: border-color 0.2s;
+}
+.settingsSearchBox:focus-within {
+  border-color: var(--accent);
+}
+.settingsSearchInput {
+  flex: 1;
+  padding: 0;
+  font-size: 12px;
+  border: none;
+  background: transparent;
   color: var(--text-primary);
   outline: none;
   font-family: inherit;
   min-width: 0;
-}
-.settingsSearchInput:focus {
-  border-color: var(--accent);
 }
 .settingsSearchClear {
   border: none;
