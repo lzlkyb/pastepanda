@@ -105,6 +105,9 @@ const ImageEditor = lazy(() =>
 const RichEditor = lazy(() =>
   import("@/components/editors/RichEditor").then((m) => ({ default: m.RichEditor }))
 );
+const DocEditor = lazy(() =>
+  import("@/components/editors/DocEditor").then((m) => ({ default: m.DocEditor }))
+);
 const FileEditor = lazy(() =>
   import("@/components/FileDetailDialog").then((m) => ({ default: m.FileDetailDialog }))
 );
@@ -133,6 +136,8 @@ const TYPE_EDITORS: Partial<Record<HistoryItem["type"], EditorDefinition>> = {
   // 图文混排走 shell 变体：与文本类一样需要外壳的保存/未保存确认/Ctrl+Enter，
   // 不像图片/文件那样需要自带完整弹窗。snippet 不提供（片段库只存纯文本）。
   rich: { component: RichEditor, width: "w520", title: "🖼️📝 编辑图文", footer: ["copy", "paste"] },
+  // P4：结构化文档三态预览（原文/清洗/Markdown），与 rich 同走 shell 变体
+  doc: { component: DocEditor, width: "w520", title: "📄 编辑文档", footer: ["copy", "paste"] },
 };
 
 /** 按 item 的 type + content_type 分派编辑器（type 优先，文本类按 content_type） */

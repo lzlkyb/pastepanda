@@ -10,6 +10,7 @@
 
 import { extractArrayFromJson, type ExtractedArrayInfo } from "@/lib/jsonToolbox";
 import { parseColumnList, parseDelimitedValues, type ColumnListInfo } from "./detectors";
+import { looksLikePdfText } from "@/lib/docPipeline/pdfRepair";
 import { detectColor, type ParsedColor } from "@/lib/color";
 
 // ============ 特征类型 ============
@@ -160,6 +161,10 @@ export interface ContentFeatures {
   log?: LogFeatures;
   /** 配置格式特征 */
   config?: ConfigFeatures;
+  /** P2：疑似 PDF 复制文本（多短行 + 行尾非句末标点） */
+  pdfLike?: boolean;
+  /** P2：疑似 Tab 分隔表格文本（多行 + 多列 Tab） */
+  tableLike?: boolean;
 }
 
 // ============ 分析逻辑 ============
@@ -385,6 +390,20 @@ export function analyzeContent(text: string, contentType: string): ContentFeatur
     if (confidence > 0) {
       features.config = { looksLikeConfig: true, confidence };
     }
+  }
+
+  // === P2：疑似 PDF 复制文本（多短行 + 行尾非句末标点） ===
+  // pdfRepair 模块不依赖 transforms，静态 import 无循环依赖
+  // 不做 avgLineLen 预筛——looksLikePdfText 内部已判 ≥60% 行短，外层门控会漏检混入长行的 PDF
+  if (stats.lines >= 5) {
+    features.pdfLike = looksLikePdfText(text);
+  }
+
+  // === P2：疑似 Tab 分隔表格（多行 + ≥2 列 Tab） ===
+  if (stats.lines >= 2) {
+    const tabCols = nonEmptyLines.map((l) => (l.match(/\t/g) || []).length + 1);
+    const multiCol = tabCols.filter((c) => c >= 2).length;
+    features.tableLike = multiCol / nonEmptyLines.length >= 0.6;
   }
 
   return features;

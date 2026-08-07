@@ -12,13 +12,13 @@
 import type { ContentFeatures } from "./analyzer";
 
 /** 变换分组，用于枢纽面板分类展示 */
-export type TransformGroup = "json" | "sql" | "web" | "text" | "log";
+export type TransformGroup = "json" | "sql" | "web" | "text" | "log" | "doc";
 
 /** detect() 的输入上下文 */
 export interface TransformContext {
   /** 剪贴板原文 */
   text: string;
-  /** 后端粗分类：json | number | code | color | text */
+  /** 后端粗分类：json | number | code | color | text | doc | rich */
   contentType: string;
   /**
    * 预分析特征集（Phase 1 产出）。
@@ -26,6 +26,12 @@ export interface TransformContext {
    * detect() 优先读 features 里的预计算结果，避免重复解析。
    */
   features?: ContentFeatures;
+  /**
+   * P2 文档管线：doc/rich 条目的 CF_HTML 片段（item.content）。
+   * 文档类变换（格式清洗 / 转 Markdown / 表格→GFM）从这里取 HTML 输入；
+   * 纯文本变换不读此字段，向后兼容。
+   */
+  html?: string;
 }
 
 /** run() 返回的元信息（供 UI 提示，如"已复制 N 个值"） */

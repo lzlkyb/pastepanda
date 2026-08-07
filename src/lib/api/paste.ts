@@ -77,10 +77,10 @@ export async function copyItemToClipboard(item: {
     await copyFiles([item.content]);
     return "已复制文件";
   }
-  if (item.type === "rich" && item.content) {
+  if ((item.type === "rich" || item.type === "doc") && item.content) {
     // 富文本 + 纯文本一起写，目标应用不认富文本时自动退到文字
     await copyRichOnly(item.content, item.text);
-    return "已复制图文";
+    return item.type === "doc" ? "已复制文档" : "已复制图文";
   }
   await navigator.clipboard.writeText(item.text || "");
   return "已复制";

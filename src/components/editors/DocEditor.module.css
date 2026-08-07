@@ -1,0 +1,134 @@
+/* DocEditor.module.css — 用项目真实 CSS 变量（theme.css 定义的令牌） */
+
+.metaBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
+}
+
+.badge {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+.metaInfo {
+  color: var(--text-muted);
+}
+
+.dirty {
+  color: var(--warning);
+  font-size: 11px;
+}
+
+.fullscreenBtn {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  padding: 3px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.fullscreenBtn:hover {
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-family: inherit;
+  transition: color 0.15s, border-color 0.15s;
+}
+.tab:hover { color: var(--text-secondary); }
+
+.tabActive {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.content {
+  padding: 16px;
+  min-height: 220px;
+  max-height: 340px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* 原文 tab：渲染后的 HTML */
+.rendered :global(h1),
+.rendered :global(h2),
+.rendered :global(h3) {
+  margin: 8px 0 4px;
+  color: var(--text-primary);
+}
+.rendered :global(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+}
+.rendered :global(th),
+.rendered :global(td) {
+  border: 1px solid var(--border-color);
+  padding: 4px 8px;
+  text-align: left;
+}
+.rendered :global(th) {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.rendered :global(a) {
+  color: var(--accent);
+}
+.rendered :global(ul),
+.rendered :global(ol) {
+  padding-left: 20px;
+  margin: 4px 0;
+}
+
+/* 清洗 tab */
+.plainText {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+  font-family: 'SF Mono', Consolas, 'Cascadia Code', monospace;
+  font-size: 12px;
+}
+
+/* Markdown tab：可编辑 */
+.mdEdit {
+  width: 100%;
+  min-height: 200px;
+  background: var(--input-bg, rgba(0, 0, 0, 0.15));
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-family: 'SF Mono', Consolas, 'Cascadia Code', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 10px;
+  resize: vertical;
+  outline: none;
+}
+.mdEdit:focus {
+  border-color: var(--accent);
+}

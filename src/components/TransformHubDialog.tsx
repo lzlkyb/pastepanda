@@ -58,12 +58,14 @@ function defaultOptsFromSpecs(specs: TransformOptionSpec[]): Record<string, stri
 
 /** 单个变换卡片：选项 + 预览 + 复制/粘贴，全部自包含、互不干扰 */
 function TransformCard({
-  t, score, text, opts, specs, copied, onSetOpt, onCopy, onPaste,
+  t, score, text, opts, html, specs, copied, onSetOpt, onCopy, onPaste,
 }: {
   t: Transform;
   score: number;
   text: string;
   opts: Record<string, string>;
+  /** P2：doc/rich 条目的 HTML 片段，透传给变换 run() */
+  html?: string;
   specs: TransformOptionSpec[];
   copied: boolean;
   onSetOpt: (key: string, value: string) => void;
@@ -76,7 +78,7 @@ function TransformCard({
 
   useEffect(() => {
     let cancelled = false;
-    const result = t.run(text, opts);
+    const result = t.run(text, { ...opts, ...(html ? { html } : {}) });
     if (result instanceof Promise) {
       setLoading(true);
       result.then((r) => {
@@ -86,7 +88,7 @@ function TransformCard({
       setPreview(result);
     }
     return () => { cancelled = true; };
-  }, [t, text, opts]);
+  }, [t, text, opts, html]);
 
   return (
     <div className={styles.card}>
@@ -159,19 +161,27 @@ export function TransformHubDialog() {
 
   // 变换上下文（动态选项解析的输入，如 SQL IN 的可选字段来自对象数组实际字段）
   const ctx = useMemo<TransformContext>(
-    () => ({ text: item?.text || "", contentType: item ? item.content_type || item.type : "" }),
+    () => ({
+      text: item?.text || "",
+      contentType: item ? item.content_type || item.type : "",
+      // P2 文档管线：doc/rich 条目把 CF_HTML 片段透传给文档类变换
+      html: item && (item.type === "doc" || item.type === "rich") ? item.content : undefined,
+    }),
     [item],
   );
 
   // 当前内容命中的变换（按匹配度排序），过滤 < 0.3 的噪声
   const scored = useMemo(
-    () => (item ? applicableTransforms({ text: item.text || "", contentType: item.content_type || item.type }).filter((s) => s.score >= 0.3) : []),
-    [item],
+    () => (item ? applicableTransforms(ctx).filter((s) => s.score >= 0.3) : []),
+    [item, ctx],
   );
 
   // 分区：推荐（≥0.6）vs 其他工具（0.3~0.6）
   const recommended = useMemo(() => scored.filter((s) => s.score >= 0.6), [scored]);
   const others = useMemo(() => scored.filter((s) => s.score < 0.6), [scored]);
+
+  // P2：doc/rich 条目的 HTML 片段，注入到变换的 opts 供 run() 取用
+  const itemHtml = item && (item.type === "doc" || item.type === "rich") ? item.content : undefined;
 
   // 打开 / 切换内容时重置选项与复制反馈
   useEffect(() => {
@@ -192,7 +202,7 @@ export function TransformHubDialog() {
   // 复制指定卡的产物；复制后不关闭，允许连续复制多个
   const copyTransform = useCallback(async (t: Transform) => {
     if (!item) return;
-    const r = await t.run(item.text || "", optsFor(t));
+    const r = await t.run(item.text || "", { ...optsFor(t), ...(itemHtml ? { html: itemHtml } : {}) });
     if (!r.ok || !r.output) {
       toast(r.message ?? "无法转换", "error");
       return;
@@ -206,19 +216,19 @@ export function TransformHubDialog() {
     } catch {
       toast("复制失败", "error");
     }
-  }, [item, optsFor, toast]);
+  }, [item, optsFor, toast, itemHtml]);
 
   // 把指定卡的产物直接粘贴到前台窗口
   const pasteTransform = useCallback(async (t: Transform) => {
     if (!item) return;
-    const r = await t.run(item.text || "", optsFor(t));
+    const r = await t.run(item.text || "", { ...optsFor(t), ...(itemHtml ? { html: itemHtml } : {}) });
     if (!r.ok || !r.output) {
       toast(r.message ?? "无法转换", "error");
       return;
     }
     const ok = await pasteText(r.output);
     if (ok) toast(`已粘贴「${t.label}」`, "success");
-  }, [item, optsFor, toast]);
+  }, [item, optsFor, toast, itemHtml]);
 
   // Esc 关闭（其余导航键交由卡片按钮 / Tab 处理）
   useEffect(() => {
@@ -268,6 +278,7 @@ export function TransformHubDialog() {
                         t={t}
                         score={score}
                         text={item.text || ""}
+                        html={itemHtml}
                         opts={optsFor(t)}
                         specs={specsFor(t, ctx)}
                         copied={copiedId === t.id}
@@ -287,6 +298,7 @@ export function TransformHubDialog() {
                         t={t}
                         score={score}
                         text={item.text || ""}
+                        html={itemHtml}
                         opts={optsFor(t)}
                         specs={specsFor(t, ctx)}
                         copied={copiedId === t.id}

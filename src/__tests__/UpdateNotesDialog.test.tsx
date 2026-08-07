@@ -127,11 +127,28 @@ describe("UpdateNotesDialog（方案 C 玻璃时间线）", () => {
     expect(screen.getByText("改进乙").closest("div")?.className).not.toContain("tlHidden");
   });
 
-  it("下载中：按钮显示进度文本并禁用", () => {
+  it("点「下载并更新」：触发下载并立即关闭弹框", () => {
+    // 旧行为是不关弹框、把按钮兼作进度条。现在进度统一由 TopBar 的
+    // UpdateBadge 承担（圆环百分比 + 速率，ready 后变「重启」）。
+    const dl = vi.fn();
+    const close = vi.fn();
+    mockUpdate({ downloadAndInstall: dl });
+    render(<UpdateNotesDialog open onClose={close} currentVersion="9.9.8" />);
+
+    fireEvent.click(screen.getByText("下载并更新"));
+    expect(dl).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("按钮不再兼作进度条：即使 status=downloading 也不显示百分比/不禁用", () => {
+    // 靠这条拦住回归：以前这里会渲染 "下载中 N%"，而那个 N 永远是 0
+    // （后端把单个 chunk 的字节数当成了累计下载量）。
     mockUpdate({ status: "downloading", progress: 42 });
     render(<UpdateNotesDialog open onClose={() => {}} currentVersion="9.9.8" />);
-    const btn = screen.getByText("下载中 42%").closest("button");
-    expect(btn?.disabled).toBe(true);
+
+    expect(screen.queryByText(/下载中/)).toBeNull();
+    const btn = screen.getByText("下载并更新").closest("button");
+    expect(btn?.disabled).toBe(false);
   });
 
   it("跳过此版本：调用 skipThisVersion 并关闭弹框", () => {

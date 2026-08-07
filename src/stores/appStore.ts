@@ -24,8 +24,8 @@ export interface HistoryItem {
   id: string;
   text: string;
   time: string;
-  /** rich = 图文混排（CF_HTML 采集）：content 存 HTML 片段，text 存纯文本副本 */
-  type: "text" | "image" | "file" | "rich";
+  /** rich = 图文混排（CF_HTML 采集）；doc = 结构化文档（P1：有结构无图的 CF_HTML） */
+  type: "text" | "image" | "file" | "rich" | "doc";
   content: string; // 空 / 图片路径 / 文件路径JSON
   pinned: boolean;
   source: string;
@@ -82,6 +82,8 @@ export interface AppConfig {
   md_auto_save: boolean; // 全屏编辑器输入停顿后自动回写（卡片→数据库 / 文件→磁盘）
   markdown_preview_line_numbers: boolean; // 全屏编辑器 markdown 预览行号（块级编号 + 代码行号），预览面板标题栏切换
   window_animation: boolean; // 弹框与全屏窗口打开/关闭动画（方案 B 玻璃浮升），关闭后即时显隐
+  doc_capture: boolean; // P1：结构化文本复制保留 CF_HTML（文档保真采集）
+  paste_format_default: "auto" | "plain"; // P5：doc/rich 粘贴默认格式（auto=富格式，plain=纯文本）
 }
 
 // ===== Store 接口 =====
@@ -215,6 +217,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   md_auto_save: true,
   markdown_preview_line_numbers: true,
   window_animation: true,
+  doc_capture: true,
+  paste_format_default: "auto",
 };
 
 // ===== 搜索模式辅助 =====

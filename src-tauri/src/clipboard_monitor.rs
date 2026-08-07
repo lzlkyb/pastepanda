@@ -216,6 +216,19 @@ enum CapturedItem {
         exe_path: Option<PathBuf>,
         time: String,
     },
+    /// 结构化文档内容（P1）：CF_HTML 有结构（表格/标题/列表）但无图片的文本复制，
+    /// 典型来源是 Word/Excel/网页。与 Rich 同构存储（content=HTML 片段、text=纯文本），
+    /// 保留结构供下游清洗/转 Markdown/表格保真使用；无结构的普通文本仍走 Text 分支。
+    Doc {
+        /// 原始 CF_HTML 片段（未做图片本地化——门控已排除含图片场景）
+        html_fragment: String,
+        /// 同一剪贴板会话里的纯文本表示（CF_UNICODETEXT）
+        plain_text: String,
+        hash: String,
+        title: String,
+        exe_path: Option<PathBuf>,
+        time: String,
+    },
 }
 
 /// 有界捕获队列（满则丢最旧）+ Condvar 唤醒工作线程
@@ -317,6 +330,8 @@ pub struct ClipboardMonitor {
     cached_skip_sensitive: Arc<std::sync::RwLock<bool>>,
     /// 修复 U36：缓存应用排除名单（来源应用名，命中则不记录）
     cached_excluded_apps: Arc<std::sync::RwLock<Vec<String>>>,
+    /// P1 文档采集：缓存"结构化文本复制保留 CF_HTML"开关（默认开启，设置键 doc_capture）
+    cached_doc_capture: Arc<std::sync::RwLock<bool>>,
     /// 事件驱动监听线程 ID（stop() 用于投递 WM_QUIT 唤醒阻塞的消息循环）
     #[cfg(target_os = "windows")]
     listener_thread_id: Arc<Mutex<Option<u32>>>,
@@ -332,6 +347,8 @@ impl ClipboardMonitor {
             // 与前端 DEFAULT_CONFIG 对齐：默认关闭，由用户在设置中显式开启
             cached_skip_sensitive: Arc::new(std::sync::RwLock::new(false)),
             cached_excluded_apps: Arc::new(std::sync::RwLock::new(Vec::new())),
+            // P1 文档采集：默认开启（与前端 DEFAULT_CONFIG 的 doc_capture 对齐）
+            cached_doc_capture: Arc::new(std::sync::RwLock::new(true)),
             #[cfg(target_os = "windows")]
             listener_thread_id: Arc::new(Mutex::new(None)),
         }
@@ -357,6 +374,13 @@ impl ClipboardMonitor {
         }
         if let Ok(mut guard) = self.cached_excluded_apps.write() {
             *guard = excluded_apps;
+        }
+    }
+
+    /// P1 文档采集：更新"结构化文本保留 CF_HTML"开关缓存（由前端保存配置后调用）
+    pub fn update_doc_capture_cache(&self, enabled: bool) {
+        if let Ok(mut guard) = self.cached_doc_capture.write() {
+            *guard = enabled;
         }
     }
 
@@ -392,6 +416,8 @@ impl ClipboardMonitor {
         #[cfg(target_os = "windows")]
         let excluded_cache = self.cached_excluded_apps.clone();
         #[cfg(target_os = "windows")]
+        let doc_capture_cache = self.cached_doc_capture.clone();
+        #[cfg(target_os = "windows")]
         let thread_id_slot = self.listener_thread_id.clone();
 
         #[cfg(target_os = "windows")]
@@ -404,6 +430,7 @@ impl ClipboardMonitor {
                     auto_strip_cache,
                     sensitive_cache,
                     excluded_cache,
+                    doc_capture_cache,
                     thread_id_slot,
                 );
             });
@@ -452,6 +479,7 @@ fn run_event_listener(
     auto_strip_cache: Arc<std::sync::RwLock<bool>>,
     sensitive_cache: Arc<std::sync::RwLock<bool>>,
     excluded_cache: Arc<std::sync::RwLock<Vec<String>>>,
+    doc_capture_cache: Arc<std::sync::RwLock<bool>>,
     thread_id_slot: Arc<Mutex<Option<u32>>>,
 ) {
     use windows::core::PCWSTR;
@@ -626,6 +654,7 @@ fn run_event_listener(
                             &mut last_text_hash,
                             &paste_suppress,
                             &auto_strip_cache,
+                            &doc_capture_cache,
                             &queue,
                             &app_handle,
                         );
@@ -639,6 +668,7 @@ fn run_event_listener(
                                 &mut last_text_hash,
                                 &paste_suppress,
                                 &auto_strip_cache,
+                                &doc_capture_cache,
                                 &queue,
                                 &app_handle,
                             );
@@ -693,9 +723,13 @@ fn stage1_capture(
     last_text_hash: &mut Option<String>,
     paste_suppress: &PasteSuppress,
     auto_strip_cache: &std::sync::RwLock<bool>,
+    doc_capture_cache: &std::sync::RwLock<bool>,
     queue: &CaptureQueue,
     app_handle: &AppHandle,
 ) -> bool {
+    // CF_HTML 只读一次，供 rich 分支与 doc 门控复用（避免竞态窗口与重复 I/O）
+    let html_fragment_opt = get_clipboard_html();
+
     // ── 图文混排富文本（CF_HTML 且同时含图与文）──
     // 必须放在纯文本分支之前判断：否则下面的文本分支会先把它当普通文本采集掉。
     //
@@ -704,11 +738,11 @@ fn stage1_capture(
     //    不拦会把普通文本全误判成富文本；
     // 2. has_text：企业微信/浏览器复制纯图片时也会写 CF_HTML，内容就是单个 <img>，
     //    不拦会把纯图片全误判成图文（实测踩过这个）。
-    if let Some(fragment) = get_clipboard_html() {
-        if html_fragment_has_image(&fragment) && html_fragment_has_text(&fragment) {
+    if let Some(fragment) = html_fragment_opt.as_deref() {
+        if html_fragment_has_image(fragment) && html_fragment_has_text(fragment) {
             let app_dir = app_handle.path().app_data_dir().unwrap_or_default();
             let images_dir = app_dir.join("images");
-            let (rewritten, _saved_images) = localize_html_images(&fragment, &images_dir);
+            let (rewritten, _saved_images) = localize_html_images(fragment, &images_dir);
 
             // 同一剪贴板会话里通常还有 CF_UNICODETEXT，优先直接复用作为纯文本表示；
             // 少数应用（如“仅复制带标题的图片”场景）可能不写这个格式，
@@ -791,12 +825,34 @@ fn stage1_capture(
                 return true;
             }
 
-            let hash = md5_hex(text.as_bytes());
+            let text_hash = md5_hex(text.as_bytes());
 
-            // 自粘贴抑制（与轮询版一致）：hash 匹配优先跳过；
+            // ── P1 文档门控 ──
+            // 从 Word/Excel/网页复制的"有结构文本"（表格/标题/列表），剪贴板上同时有
+            // CF_HTML；此前只存纯文本，结构在入库前就丢了，下游无法做清洗/转 Markdown/
+            // 表格保真。这里探测到结构片段就改走 Doc 分支保留 HTML。
+            // 无结构的普通复制（聊天、记事本等）detect_doc_fragment 返回 false，行为不变。
+            let doc_fragment: Option<String> = if read_bool_cache(doc_capture_cache) {
+                html_fragment_opt
+                    .as_deref()
+                    .filter(|fragment| detect_doc_fragment(fragment, &text))
+                    .map(|s| s.to_string())
+            } else {
+                None
+            };
+            // Doc 条目 hash 按 HTML 片段计（与 rich 口径一致，去重粒度=结构内容）
+            let hash = match &doc_fragment {
+                Some(fragment) => md5_hex(fragment.as_bytes()),
+                None => text_hash.clone(),
+            };
+
+            // 自粘贴抑制（与轮询版一致）：hash 匹配优先跳过（文本或片段命中均算）；
+            // doc_fragment 为 Some 时 hash == 片段 hash，直接用 hash 判断，不重复算 md5。
             // 时间窗口仅作无 hash 路径兜底（U57）
-            if paste_suppress.is_hash_suppressed(&hash) {
-                log::info!("[ClipboardMonitor] 跳过自身粘贴内容 (hash匹配)");
+            let own_hash_hit = paste_suppress.is_hash_suppressed(&text_hash)
+                || (doc_fragment.is_some() && paste_suppress.is_hash_suppressed(&hash));
+            if own_hash_hit {
+                log::info!("[ClipboardMonitor] 跳过自身粘贴内容 (hash匹配·文本/doc)");
                 paste_suppress.clear_hash();
                 *last_text_hash = Some(hash);
                 return true;
@@ -806,7 +862,9 @@ fn stage1_capture(
                     paste_suppress.clear_hash();
                 }
             } else if paste_suppress.is_suppressed() {
-                log::info!("[ClipboardMonitor] 跳过自身粘贴内容 (无hash路径·时间抑制窗口内)");
+                log::info!(
+                    "[ClipboardMonitor] 跳过自身粘贴内容 (无hash路径·时间抑制窗口内·文本/doc)"
+                );
                 *last_text_hash = Some(hash);
                 return true;
             }
@@ -817,13 +875,24 @@ fn stage1_capture(
             *last_text_hash = Some(hash.clone());
 
             let (title, exe_path) = capture_foreground_source(app_handle);
-            queue.push(CapturedItem::Text {
-                text,
-                hash,
-                title,
-                exe_path,
-                time: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-            });
+            let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            match doc_fragment {
+                Some(fragment) => queue.push(CapturedItem::Doc {
+                    html_fragment: fragment,
+                    plain_text: text,
+                    hash,
+                    title,
+                    exe_path,
+                    time: now_str,
+                }),
+                None => queue.push(CapturedItem::Text {
+                    text,
+                    hash,
+                    title,
+                    exe_path,
+                    time: now_str,
+                }),
+            }
             return true;
         }
     }
@@ -979,6 +1048,24 @@ fn worker_loop(
                 exe_path,
                 time,
             } => process_rich(
+                app_handle,
+                sensitive_cache,
+                excluded_cache,
+                html_fragment,
+                plain_text,
+                hash,
+                title,
+                exe_path,
+                time,
+            ),
+            CapturedItem::Doc {
+                html_fragment,
+                plain_text,
+                hash,
+                title,
+                exe_path,
+                time,
+            } => process_doc(
                 app_handle,
                 sensitive_cache,
                 excluded_cache,
@@ -1317,6 +1404,123 @@ fn process_rich(
     // 指向本地不存在路径的断链图片），后续阶段再补
 }
 
+/// 处理捕获的文档条目（P1：Word/Excel/网页等"有结构无图片"的文本复制）。
+/// 模板同 process_rich，两处差异：① type/content_type 为 "doc"；
+/// ② 对纯文本副本跑分类器派生自动标签（链接/代码/邮箱等），另加"文档"类型标签。
+#[cfg(target_os = "windows")]
+fn process_doc(
+    app_handle: &AppHandle,
+    sensitive_cache: &std::sync::RwLock<bool>,
+    excluded_cache: &std::sync::RwLock<Vec<String>>,
+    html_fragment: String,
+    plain_text: String,
+    hash: String,
+    source_title: String,
+    exe_path: Option<PathBuf>,
+    now_str: String,
+) {
+    // 与 process_text/process_rich 一致：排除名单应用 / 敏感内容不入库
+    // （敏感检测作用于纯文本副本——HTML 里同样可能携带密钥模式）
+    if is_excluded_app_with(excluded_cache, &source_title) {
+        log::info!(
+            "[ClipboardMonitor] 跳过敏感内容（文档）：来源应用 \"{}\" 在排除名单内",
+            source_title
+        );
+        return;
+    }
+    if should_skip_sensitive_with(sensitive_cache, &plain_text) {
+        log::info!("[ClipboardMonitor] 跳过敏感内容（文档）：匹配密钥/凭据模式，不记录");
+        return;
+    }
+    // 敏感检测也作用于 HTML 片段——属性值（href 里的 api_key、data-token 等）
+    // 不会出现在纯文本副本中，需要单独检查
+    if should_skip_sensitive_with(sensitive_cache, &html_fragment) {
+        log::info!("[ClipboardMonitor] 跳过敏感内容（文档·HTML 属性）：匹配密钥/凭据模式，不记录");
+        return;
+    }
+
+    let source_icon = extract_source_icon(app_handle, &exe_path);
+
+    // 智能合并：检查是否已存在相同 md5 的文档记录（同 process_text 的做法，
+    // 避免重复复制同一文档创建多条历史记录）
+    let store = app_handle.try_state::<DataStore>();
+    if let Some(ref store) = store {
+        if let Ok(Some(existing)) = store.find_latest_by_md5(&hash, "默认") {
+            if let Err(e) = store.update_history_time(&existing.id, &now_str) {
+                log::warn!("[ClipboardMonitor] 更新重复文档时间失败: {}", e);
+            } else {
+                log::info!(
+                    "[ClipboardMonitor] 智能合并重复文档 (id={})",
+                    existing.id
+                );
+            }
+            let updated_item = HistoryItem {
+                time: now_str,
+                source: source_title.clone(),
+                source_icon: source_icon.clone(),
+                group_id: existing.group_id.clone(),
+                ..existing
+            };
+            if let Err(e) = app_handle.emit(
+                "clipboard-changed",
+                ClipboardChanged { item: updated_item },
+            ) {
+                log::warn!("[ClipboardMonitor] 推送合并事件失败: {}", e);
+            }
+            return;
+        }
+    }
+
+    // 没有找到重复记录，创建新记录
+    let pinyin_initials = compute_pinyin_initials(&plain_text);
+
+    // 统一分类：一次 classify() 派生自动标签（纯文本副本），
+    // 再补一个类型标签"文档"（同 rich 补"图文"的做法，走标签体系便于筛选）
+    let mut labels = ContentClassifier::new().classify(&plain_text);
+    labels.push("文档".to_string());
+
+    let item = HistoryItem {
+        id: Uuid::new_v4().to_string(),
+        text: plain_text,
+        time: now_str,
+        item_type: "doc".to_string(),
+        content: html_fragment,
+        pinned: false,
+        source: source_title,
+        workspace: "默认".to_string(),
+        md5: Some(hash),
+        pinyin_initials: Some(pinyin_initials),
+        group_id: None,
+        source_icon,
+        content_type: Some("doc".to_string()),
+        tags: Vec::new(),
+    };
+
+    if let Some(ref store) = store {
+        if let Err(e) = store.insert_history(&item) {
+            log::error!("[ClipboardMonitor] 插入文档记录失败: {}", e);
+            return;
+        }
+    }
+
+    if let Err(e) = tag_tx().send(TagJob {
+        app: app_handle.clone(),
+        history_id: item.id.clone(),
+        labels,
+    }) {
+        log::warn!("[ContentClassifier] 标签写入通道已关闭: {}", e);
+    }
+
+    if let Err(e) = app_handle.emit(
+        "clipboard-changed",
+        ClipboardChanged { item: item.clone() },
+    ) {
+        log::warn!("[ClipboardMonitor] 推送文档事件失败: {}", e);
+    }
+
+    // 局域网同步：与 rich 一致，阶段1 先不同步（HTML 片段体积大且对端暂无渲染链路）
+}
+
 /// 处理捕获的文件列表条目（逻辑与轮询版一致：逐文件入库 → 推送 → LAN）
 #[cfg(target_os = "windows")]
 fn process_files(
@@ -1628,6 +1832,90 @@ fn html_fragment_has_text(fragment: &str) -> bool {
     !html_fragment_to_plain_text_fallback(fragment).is_empty()
 }
 
+/// P1 文档结构门控：判断 CF_HTML 片段是否为值得保留 HTML 的"结构化文档"。
+/// 纯函数、不依赖剪贴板，可单测。
+///
+/// 三个条件（全部满足才命中）：
+/// 1. 片段字节数 ≤ 200KB —— 控制存储膨胀，超大片段宁可只存纯文本；
+/// 2. 含结构标签：表格/标题/列表是强信号，单独即可；链接是弱信号，
+///    需要剪贴板纯文本足够长才计入——否则聊天短句里带一个链接会被误判；
+/// 3. 片段去标签后的文本与剪贴板纯文本大致一致，防止个别应用写出的
+///    怪异 CF_HTML（内容与纯文本对不上）被当文档入库。
+#[cfg(target_os = "windows")]
+fn detect_doc_fragment(fragment: &str, plain_text: &str) -> bool {
+    const MAX_FRAGMENT_BYTES: usize = 200 * 1024;
+    if fragment.len() > MAX_FRAGMENT_BYTES {
+        return false;
+    }
+
+    let lower = fragment.to_lowercase();
+    let has_table = lower.contains("<table");
+    let has_heading = (1..=6u32).any(|n| lower.contains(&format!("<h{}", n)));
+    // <li 后须跟非字母字符，排除 <link（Outlook CF_HTML 偶尔内联 link 标签）
+    let has_list = lower.contains("<ul") || lower.contains("<ol")
+        || lower.contains("<li>") || lower.contains("<li ")
+        || lower.contains("<li\t") || lower.contains("<li\n") || lower.contains("<li\r");
+    let has_link = lower.contains("<a ") || lower.contains("<a\t")
+        || lower.contains("<a\n") || lower.contains("<a\r");
+
+    let strong = has_table || has_heading || has_list;
+    let weak_link = has_link && plain_text.chars().count() >= 50;
+    if !strong && !weak_link {
+        return false;
+    }
+
+    let stripped = html_fragment_to_plain_text_fallback(fragment);
+    if strong {
+        // 强信号：只要去标签后有文字就通过。Word CF_HTML 的 mso 噪声导致
+        // 去标签文本与 CF_UNICODETEXT 可能有细微差异（多 span/多余空格），
+        // 不该因此把结构化文档降级为纯文本。
+        return !stripped.is_empty();
+    }
+    // 弱信号（仅链接+长文本）：须文本一致性验证，防止短文本误判
+    text_substantially_matches(&stripped, plain_text)
+}
+
+/// 粗粒度判断两段文本是否"大致同一内容"：去掉全部空白后，短者长度需达到
+/// 长者的 50%，且短者开头一段须出现在长者中（doc 门控用，防怪异 CF_HTML 入库）
+#[cfg(target_os = "windows")]
+fn text_substantially_matches(a: &str, b: &str) -> bool {
+    let na: String = a.chars().filter(|c| !c.is_whitespace()).collect();
+    let nb: String = b.chars().filter(|c| !c.is_whitespace()).collect();
+    if na.is_empty() || nb.is_empty() {
+        return false;
+    }
+    let (long, short) = if na.len() >= nb.len() {
+        (na.as_str(), nb.as_str())
+    } else {
+        (nb.as_str(), na.as_str())
+    };
+    if (short.len() as f64) / (long.len() as f64) < 0.5 {
+        return false;
+    }
+    // 双端验证：短者前 32 字符 + 后 16 字符都须出现在长者中（按字符边界切）
+    let head_len = short
+        .char_indices()
+        .nth(32)
+        .map(|(i, _)| i)
+        .unwrap_or(short.len());
+    if !long.contains(&short[..head_len]) {
+        return false;
+    }
+    let tail_start = {
+        let total = short.chars().count();
+        if total <= 32 {
+            return true; // 短者 ≤32 字符已在前缀检查中全覆盖
+        }
+        let skip = total.saturating_sub(16);
+        short
+            .char_indices()
+            .nth(skip)
+            .map(|(i, _)| i)
+            .unwrap_or(short.len())
+    };
+    long.contains(&short[tail_start..])
+}
+
 /// 提取 HTML 片段里所有 <img src> 的原始值（不判断是否本地/远程，不改写）。
 /// 不按平台限制：供其他模块复用（删除历史时清理关联图片文件需要从 content 里反推 src）。
 pub(crate) fn extract_img_srcs(fragment: &str) -> Vec<String> {
@@ -1690,6 +1978,11 @@ fn localize_one_image(src: &str, images_dir: &std::path::Path) -> Option<PathBuf
 /// 缺失时的展示/搜索保底，不追求完整还原——真实展示走前端富文本渲染）
 static HTML_TAG_STRIP_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]*>").unwrap());
 
+/// 数字字符实体 &#NNN; / &#xHH;（用于 html_fragment_to_plain_text_fallback 补齐解码）
+#[cfg(target_os = "windows")]
+static NUMERIC_ENTITY_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"&#(x?[0-9a-fA-F]+);").unwrap());
+
 #[cfg(target_os = "windows")]
 fn html_fragment_to_plain_text_fallback(fragment: &str) -> String {
     let no_tags = HTML_TAG_STRIP_RE.replace_all(fragment, " ");
@@ -1699,7 +1992,33 @@ fn html_fragment_to_plain_text_fallback(fragment: &str) -> String {
         .replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
-        .replace("&#39;", "'");
+        .replace("&#39;", "'")
+        // Word/Excel CF_HTML 常见命名实体（补齐 text_substantially_matches 一致性问题）
+        .replace("&mdash;", "\u{2014}")
+        .replace("&ndash;", "\u{2013}")
+        .replace("&hellip;", "\u{2026}")
+        .replace("&copy;", "\u{00A9}")
+        .replace("&reg;", "\u{00AE}")
+        .replace("&trade;", "\u{2122}")
+        .replace("&rsquo;", "\u{2019}")
+        .replace("&lsquo;", "\u{2018}")
+        .replace("&rdquo;", "\u{201C}")
+        .replace("&ldquo;", "\u{201D}")
+        .replace("&middot;", "\u{00B7}")
+        .replace("&laquo;", "\u{00AB}")
+        .replace("&raquo;", "\u{00BB}");
+    // 数字实体 &#NNN; / &#xHH;
+    let decoded = NUMERIC_ENTITY_RE.replace_all(&decoded, |caps: &regex::Captures| {
+        let raw = &caps[1];
+        let code = if let Some(hex) = raw.strip_prefix('x').or_else(|| raw.strip_prefix('X')) {
+            u32::from_str_radix(hex, 16).ok()
+        } else {
+            raw.parse::<u32>().ok()
+        };
+        code.and_then(char::from_u32)
+            .map(|c| c.to_string())
+            .unwrap_or_default()
+    });
     decoded.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
@@ -2235,5 +2554,102 @@ mod tests {
         assert_eq!(rewritten.matches("file:///").count(), 2);
 
         let _ = std::fs::remove_dir_all(&images_dir);
+    }
+
+    // ── P1 文档结构门控（detect_doc_fragment / text_substantially_matches 纯函数）──
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_detect_doc_fragment_word_table() {
+        // Word/Excel 表格片段 + 与纯文本一致 → 命中
+        let fragment = "<table><tr><td>姓名</td><td>年龄</td></tr><tr><td>张三</td><td>28</td></tr></table>";
+        let plain = "姓名\t年龄\n张三\t28";
+        assert!(detect_doc_fragment(fragment, plain));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_detect_doc_fragment_heading_and_list() {
+        let fragment = "<h1>标题</h1><p>正文段落</p><ul><li>项一</li><li>项二</li></ul>";
+        let plain = "标题\n正文段落\n项一\n项二";
+        assert!(detect_doc_fragment(fragment, plain));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_detect_doc_fragment_plain_paragraph_rejected() {
+        // 仅 <p>/<span>，无结构标签 → 不命中
+        let fragment = "<p>这是一段普通文字</p><span>没有结构</span>";
+        let plain = "这是一段普通文字没有结构";
+        assert!(!detect_doc_fragment(fragment, plain));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_detect_doc_fragment_short_link_rejected() {
+        // 链接 + 短文本 → 弱信号不达标 → 不命中
+        let fragment = "<a href=\"https://example.com\">链接</a>";
+        let plain = "链接";
+        assert!(!detect_doc_fragment(fragment, plain));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_detect_doc_fragment_long_link_ok() {
+        // 链接 + 长文本（≥50 字符），片段去标签文本与纯文本一致 → 命中
+        let body = "This is a long enough sentence that exceeds fifty characters total yes it does";
+        let fragment = format!("<p>{}</p><a href=\"https://example.com\">link</a>", body);
+        let plain = format!("{}\nlink", body);
+        assert!(detect_doc_fragment(&fragment, &plain));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_detect_doc_fragment_oversized_rejected() {
+        // 超 200KB → 不命中（即使含结构标签）
+        let fragment = format!("<table><tr><td>{}</td></tr></table>", "a".repeat(210_000));
+        let plain = "a".repeat(210_000);
+        assert!(!detect_doc_fragment(&fragment, &plain));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_detect_doc_fragment_strong_table_mismatch_ok() {
+        // 强信号（表格）：即使片段文本与纯文本不匹配也命中（Word mso 噪声导致
+        // 去标签文本与 CF_UNICODETEXT 有细微差异，强信号不该因此被拒）
+        let fragment = "<table><tr><td>完全不同的内容</td></tr></table>";
+        let plain = "这里是毫不相关的纯文本";
+        assert!(detect_doc_fragment(fragment, plain));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_detect_doc_fragment_weak_link_mismatch_rejected() {
+        // 弱信号（仅链接+长文本）：片段文本与纯文本对不上 → 不命中
+        let body = "This is a long enough sentence that exceeds fifty characters total yes";
+        let fragment = format!("<a href=\"https://example.com\">完全不同的链接文本</a>{}", body);
+        let plain = format!("{}\n{}", body, body); // 纯文本与片段内容不匹配
+        assert!(!detect_doc_fragment(&fragment, &plain));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_text_substantially_matches_identical() {
+        assert!(text_substantially_matches("hello world", "hello world"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_text_substantially_matches_different() {
+        assert!(!text_substantially_matches("hello world", "completely different text"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_text_substantially_matches_ratio_below_half() {
+        // 短者 < 长者的 50% → false
+        let short = "ab";
+        let long = "abcdefghijklmnopqrstuvwxyz";
+        assert!(!text_substantially_matches(short, long));
     }
 }

@@ -531,6 +531,23 @@ export function GeneralTab({
           <p>💡 建议保持开启，避免敏感信息意外留存</p>
         </>}
       />
+      <ToggleRow icon="📄" gradient="linear-gradient(135deg, #3B82F6, #6366F1)" label="文档保真采集" desc="从 Word/网页等复制时保留格式结构" value={config.doc_capture} onChange={(v) => updateAndSave({ doc_capture: v })}
+        tooltip="开启后，从 Word/Excel/网页复制带表格/标题/列表的内容时，会保留 HTML 格式片段，便于清洗与转 Markdown"
+        detailTitle="文档保真采集"
+        detail={<>
+          <p>开启后，从 Word/Excel/网页复制<b>带结构的内容</b>（表格、标题、列表）时，会保留 HTML 格式片段，不再只存纯文本。</p>
+          <p>📌 保留的结构可在编辑器中清洗、转 Markdown、表格保真输出</p>
+          <p>💡 无结构的普通复制（聊天、记事本）不受影响</p>
+        </>}
+      />
+      <ToggleRow icon="📋" gradient="linear-gradient(135deg, #8B5CF6, #6366F1)" label="保留格式粘贴" desc="粘贴文档/图文时保留富格式" value={config.paste_format_default !== "plain"} onChange={(v) => updateAndSave({ paste_format_default: v ? "auto" : "plain" })}
+        tooltip="开启时粘贴文档/图文内容保留富格式（CF_HTML）；关闭则全部粘贴纯文本"
+        detailTitle="保留格式粘贴"
+        detail={<>
+          <p>开启时，粘贴文档或图文内容到目标应用时保留<b>富格式</b>（表格、链接、加粗等）。</p>
+          <p>关闭后，所有内容一律粘贴为纯文本——适合需要干净粘贴到终端/代码编辑器的场景</p>
+        </>}
+      />
       <div className={styles.sRow}>
         <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #F43F5E, #E11D48)" }}>🚫</span>
         <div className={`${styles.sRowBody}`}>

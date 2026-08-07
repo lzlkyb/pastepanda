@@ -16,7 +16,8 @@ import { confirmAutoTags, removeItemTags } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 import { TagRow } from "@/components/TagBadge";
 import { logger } from "@/lib/logger";
-import { pasteText, togglePin, deleteHistory, copyItemToClipboard } from "@/lib/api";
+import { pasteText, pasteRich, togglePin, deleteHistory, copyItemToClipboard } from "@/lib/api";
+import { sanitizeDocHtml } from "@/lib/docPipeline";
 import { Pin, ImageIcon, Images, Link2, AtSign, Code2, Phone, FileText, Terminal, Type, Check, Hash, Lock, Palette } from "lucide-react";
 import styles from "./CardList.module.css";
 
@@ -849,8 +850,12 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
 
   // 变换枢纽：当前内容是否有可用变换（json 数组 / 按列值 等），有才显示右键入口
   const hubAvailable = useMemo(
-    () => applicableTransforms({ text: item.text || "", contentType: subType }).length > 0,
-    [item.text, subType],
+    () => applicableTransforms({
+      text: item.text || "",
+      contentType: subType,
+      html: item.type === "doc" || item.type === "rich" ? item.content : undefined,
+    }).length > 0,
+    [item.text, item.content, item.type, subType],
   );
   const handleOpenHub = useCallback(() => {
     useDialogStore.getState().openHub(item);
@@ -870,9 +875,22 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
       }
     },
     onPaste: async () => {
-      // U1：仅粘贴成功时弹成功提示（pasteText 失败时已自行弹错误 toast）
-      const ok = await pasteText(item.text);
-      if (ok) toast("已粘贴", "success");
+      // P5：doc/rich 条目粘贴保留富格式（CF_HTML），其余纯文本；
+      // paste_format_default=plain 时全部退纯文本（Raycast 式全局开关）
+      // doc 条目的 content 是原始 CF_HTML（可能含 mso 噪声），粘贴前先清洗
+      const cfg = useAppStore.getState().config;
+      const asRich = cfg.paste_format_default !== "plain" &&
+        (item.type === "doc" || item.type === "rich") && !!item.content;
+      if (asRich) {
+        const html = item.type === "doc"
+          ? sanitizeDocHtml(item.content)
+          : item.content;
+        const ok = await pasteRich(html, item.text);
+        if (ok) toast("已粘贴", "success");
+      } else {
+        const ok = await pasteText(item.text);
+        if (ok) toast("已粘贴", "success");
+      }
     },
     onPasteTransform: handlePasteTransform,
     onOpenHub: hubAvailable ? handleOpenHub : undefined,

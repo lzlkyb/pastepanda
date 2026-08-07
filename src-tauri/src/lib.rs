@@ -239,6 +239,12 @@ pub fn run() {
                         .collect()
                 })
                 .unwrap_or_default();
+            // P1 文档采集：结构化文本复制保留 CF_HTML。默认 true（与前端 DEFAULT_CONFIG 对齐），
+            // 未保存过配置的用户也能直接用上文档保真采集
+            let doc_capture_enabled = saved_config
+                .get("doc_capture")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
             let hotkey_config = hotkey_manager::HotkeyConfig {
                 show_window: saved_config
                     .get("hotkey")
@@ -309,6 +315,8 @@ pub fn run() {
             monitor.update_auto_strip_cache(auto_strip_enabled);
             // 修复 U36：初始化敏感内容防护缓存
             monitor.update_sensitive_cache(skip_sensitive_enabled, excluded_apps_list);
+            // P1 文档采集：初始化 doc_capture 缓存
+            monitor.update_doc_capture_cache(doc_capture_enabled);
             monitor.start();
             app.manage(monitor);
 

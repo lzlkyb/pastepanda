@@ -310,22 +310,6 @@
   box-shadow: 0 6px 20px var(--accent-shadow);
 }
 
-.btnDownload:disabled {
-  cursor: default;
-}
-
-/* 下载进度填充：宽度由内联 style 按 progress 驱动 */
-.dlFill {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 0%;
-  background: rgba(255, 255, 255, 0.22);
-  pointer-events: none;
-  transition: width 0.25s ease;
-}
-
 .dlLabel {
   position: relative;
   z-index: 1;

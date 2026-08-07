@@ -208,11 +208,11 @@ pub fn save_config(
             .unwrap_or(false);
         monitor.update_auto_strip_cache(auto_strip);
 
-        // 修复 U36：刷新敏感内容防护缓存（默认开启）
+        // 修复 U36：刷新敏感内容防护缓存（默认关闭，与 lib.rs 和前端 DEFAULT_CONFIG 对齐）
         let skip_sensitive = config
             .get("skip_sensitive")
             .and_then(|v| v.as_bool())
-            .unwrap_or(true);
+            .unwrap_or(false);
         let excluded_apps: Vec<String> = config
             .get("excluded_apps")
             .and_then(|v| v.as_str())
@@ -224,6 +224,13 @@ pub fn save_config(
             })
             .unwrap_or_default();
         monitor.update_sensitive_cache(skip_sensitive, excluded_apps);
+
+        // P1 文档采集：刷新 doc_capture 缓存（默认开启）
+        let doc_capture = config
+            .get("doc_capture")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        monitor.update_doc_capture_cache(doc_capture);
     }
 
     Ok(())

@@ -22,6 +22,7 @@ interface PasteItem {
 function typeLabel(item: PasteItem): string {
   if (item.type === "image") return "🖼 图片";
   if (item.type === "rich") return "🖼️ 图文";
+  if (item.type === "doc") return "📄 文档";
   if (item.type === "file") return "📁 文件";
   const ct = item.content_type.toLowerCase();
   if (ct.includes("sql")) return "📋 SQL";
@@ -36,6 +37,7 @@ function typeLabel(item: PasteItem): string {
 function typeIcon(item: PasteItem): string {
   if (item.type === "image") return "🖼";
   if (item.type === "rich") return "🖼️";
+  if (item.type === "doc") return "📄";
   if (item.type === "file") return "📁";
   const ct = item.content_type.toLowerCase();
   if (ct.includes("sql")) return "📋";
@@ -50,6 +52,7 @@ function typeIcon(item: PasteItem): string {
 function typeName(item: PasteItem): string {
   if (item.type === "image") return "图片";
   if (item.type === "rich") return "图文";
+  if (item.type === "doc") return "文档";
   if (item.type === "file") return "文件";
   const ct = item.content_type.toLowerCase();
   if (ct.includes("sql")) return "SQL";
@@ -170,7 +173,7 @@ export function QuickPastePanel() {
     try {
       if (item.type === "image" && item.content) {
         await invoke("paste_image", { imagePath: item.content });
-      } else if (item.type === "rich" && item.content) {
+      } else if ((item.type === "rich" || item.type === "doc") && item.content) {
         await invoke("paste_rich", { htmlFragment: item.content, plainText: item.text });
       } else if (item.type === "file" && item.content) {
         await invoke("paste_text", { text: item.content });

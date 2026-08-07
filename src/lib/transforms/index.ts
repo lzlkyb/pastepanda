@@ -18,6 +18,7 @@ import { codecTransforms } from "./codecTransforms";
 import { sqlTransforms } from "./sqlTransforms";
 import { logTransforms } from "./logTransforms";
 import { numberTransforms } from "./numberTransforms";
+import { docTransforms } from "./docTransforms";
 
 registerTransform(sqlInTransform);
 registerTransform(columnToSqlInTransform);
@@ -31,6 +32,7 @@ codecTransforms.forEach(registerTransform);
 sqlTransforms.forEach(registerTransform);
 logTransforms.forEach(registerTransform);
 numberTransforms.forEach(registerTransform);
+docTransforms.forEach(registerTransform);
 
 export * from "./types";
 export * from "./registry";
@@ -49,3 +51,4 @@ export { logTransforms } from "./logTransforms";
 export { sqlInReverseTransform, extractInValues } from "./sqlInReverse";
 export { queryResultToSqlTransform, parseTable, tableToInsert } from "./queryResultToSql";
 export { numberTransforms } from "./numberTransforms";
+export { docTransforms } from "./docTransforms";

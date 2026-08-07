@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tauri::Emitter;
 use tauri_plugin_updater::UpdaterExt;
 
@@ -214,9 +216,21 @@ pub fn start_update(app: tauri::AppHandle) {
                 let u = update.clone();
                 let ap = app_progress.clone();
                 let ar = app_ready.clone();
+                // 累加器建在闭包内部：重试时每次尝试重新从 0 开始，与重新下载的事实一致；
+                // 建在外面会让第二次尝试从上次的字节数接着涨，直接超过 100%。
+                let acc = Arc::new(AtomicU64::new(0));
                 async move {
                     u.download_and_install(
-                        move |downloaded, total| {
+                        // ⚠ 第一个参数是 **本次 chunk 的字节数**，不是累计下载量。
+                        // 插件内部就是 `on_chunk(chunk.len(), content_length)`
+                        // （tauri-plugin-updater 2.10.1 的 updater.rs）。
+                        // 原实现直接当累计值发给前端，而前端算 downloaded/total，
+                        // 于是 8KB/7.6MB ≈ 0 —— 进度条全程停在 0%、速率是两个 chunk 相减的
+                        // 噪声（常为负）、“已下载 MB”也只是最后一个 chunk 的大小。
+                        // 在这里累加，前端三处显示同时恢复，且 downloaded 字段名终于名副其实。
+                        move |chunk_len, total| {
+                            let downloaded =
+                                acc.fetch_add(chunk_len as u64, Ordering::Relaxed) + chunk_len as u64;
                             let _ = ap.emit(
                                 "update:progress",
                                 serde_json::json!({

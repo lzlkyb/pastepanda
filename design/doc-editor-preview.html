@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>DocEditor 三态预览 — 设计稿</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --glass: rgba(30,30,48,0.85);
+    --glass-border: rgba(255,255,255,0.08);
+    --accent: #6c8eef;
+    --text: #e0e0e8;
+    --text-dim: #8888a0;
+    --text-bright: #fff;
+    --radius: 12px;
+    --font: -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  .dialog-box {
+    width: 520px;
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius);
+    backdrop-filter: blur(20px);
+    overflow: hidden;
+  }
+  .dialog-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--glass-border);
+  }
+  .dialog-title { font-size: 14px; font-weight: 600; color: var(--text-bright); }
+  .dialog-close {
+    margin-left: auto;
+    background: none; border: none; color: var(--text-dim);
+    cursor: pointer; font-size: 16px; padding: 4px;
+  }
+  /* meta bar */
+  .meta-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--glass-border);
+    font-size: 12px;
+  }
+  .meta-badge {
+    background: rgba(108,142,239,0.15);
+    color: var(--accent);
+    padding: 2px 8px; border-radius: 6px;
+    font-weight: 500;
+  }
+  .meta-info { color: var(--text-dim); }
+  .meta-dirty { color: #f0a050; font-size: 11px; }
+  .fullscreen-btn {
+    margin-left: auto;
+    background: none; border: 1px solid var(--glass-border);
+    color: var(--text-dim); padding: 3px 10px; border-radius: 6px;
+    cursor: pointer; font-size: 11px;
+  }
+  /* tabs */
+  .tabs {
+    display: flex; gap: 2px; padding: 0 16px;
+    border-bottom: 1px solid var(--glass-border);
+  }
+  .tab {
+    background: none; border: none; border-bottom: 2px solid transparent;
+    color: var(--text-dim); cursor: pointer;
+    padding: 8px 14px; font-size: 13px; font-family: var(--font);
+    transition: color .15s, border-color .15s;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  /* content area */
+  .content-area {
+    padding: 16px;
+    min-height: 220px;
+    max-height: 340px;
+    overflow-y: auto;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  /* 原文 tab：渲染后的 HTML */
+  .rendered-html h1, .rendered-html h2, .rendered-html h3 { margin: 8px 0 4px; color: var(--text-bright); }
+  .rendered-html table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  .rendered-html th, .rendered-html td { border: 1px solid var(--glass-border); padding: 4px 8px; text-align: left; }
+  .rendered-html th { background: rgba(255,255,255,0.05); }
+  .rendered-html a { color: var(--accent); }
+  .rendered-html ul, .rendered-html ol { padding-left: 20px; margin: 4px 0; }
+  /* 清洗 tab */
+  .plain-text {
+    white-space: pre-wrap; word-break: break-word;
+    color: var(--text); font-family: "Cascadia Code", "Consolas", monospace; font-size: 12px;
+  }
+  /* Markdown tab：可编辑 */
+  .md-edit {
+    width: 100%; min-height: 200px;
+    background: rgba(0,0,0,0.2);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    color: var(--text); font-family: "Cascadia Code", "Consolas", monospace;
+    font-size: 12px; line-height: 1.5;
+    padding: 10px; resize: vertical;
+    outline: none;
+  }
+  .md-edit:focus { border-color: var(--accent); }
+  /* footer */
+  .dialog-footer {
+    display: flex; gap: 8px; justify-content: flex-end;
+    padding: 10px 16px;
+    border-top: 1px solid var(--glass-border);
+  }
+  .btn {
+    display: flex; align-items: center; gap: 5px;
+    padding: 6px 14px; border-radius: 8px;
+    font-size: 12px; cursor: pointer; border: 1px solid var(--glass-border);
+    background: rgba(255,255,255,0.04); color: var(--text);
+    transition: background .15s;
+  }
+  .btn:hover { background: rgba(255,255,255,0.08); }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { opacity: 0.9; }
+  .hint { font-size: 11px; color: var(--text-dim); margin-left: auto; padding-right: 8px; line-height: 28px; }
+</style>
+</head>
+<body>
+<div class="dialog-box">
+  <div class="dialog-header">
+    <span style="font-size:15px">📄</span>
+    <span class="dialog-title">编辑文档</span>
+    <span style="font-size:11px;color:var(--text-dim)">来自 Microsoft Word</span>
+    <button class="dialog-close">✕</button>
+  </div>
+
+  <!-- meta bar -->
+  <div class="meta-bar">
+    <span class="meta-badge">📄 文档</span>
+    <span class="meta-info">含 1 个表格</span>
+    <span class="meta-dirty">已修改</span>
+    <button class="fullscreen-btn">⤢ 全屏</button>
+  </div>
+
+  <!-- 三态 tabs -->
+  <div class="tabs">
+    <button class="tab active" data-tab="render">原文</button>
+    <button class="tab" data-tab="plain">清洗</button>
+    <button class="tab" data-tab="md">Markdown</button>
+  </div>
+
+  <!-- 原文 tab：渲染后的 HTML（只读预览） -->
+  <div class="content-area" id="tab-render">
+    <div class="rendered-html">
+      <h1>项目周报</h1>
+      <p>本周完成三项主要工作：</p>
+      <ul>
+        <li>文档处理采集层（P1）已上线</li>
+        <li>清洗转换管线（P2）测试通过</li>
+      </ul>
+      <table>
+        <tr><th>任务</th><th>状态</th></tr>
+        <tr><td>P1 采集</td><td>已完成</td></tr>
+        <tr><td>P2 管线</td><td>已完成</td></tr>
+      </table>
+      <p>详见 <a href="#">内部 Wiki</a></p>
+    </div>
+  </div>
+
+  <!-- 清洗 tab：纯文本（只读） -->
+  <div class="content-area" id="tab-plain" style="display:none">
+    <div class="plain-text">项目周报
+本周完成三项主要工作：
+- 文档处理采集层（P1）已上线
+- 清洗转换管线（P2）测试通过
+
+任务	状态
+P1 采集	已完成
+P2 管线	已完成
+
+详见 内部 Wiki</div>
+  </div>
+
+  <!-- Markdown tab：可编辑源码 -->
+  <div class="content-area" id="tab-md" style="display:none">
+    <textarea class="md-edit" spellcheck="false"># 项目周报
+
+本周完成三项主要工作：
+
+- 文档处理采集层（P1）已上线
+- 清洗转换管线（P2）测试通过
+
+| 任务 | 状态 |
+| --- | --- |
+| P1 采集 | 已完成 |
+| P2 管线 | 已完成 |
+
+详见 [内部 Wiki](#)</textarea>
+  </div>
+
+  <!-- footer -->
+  <div class="dialog-footer">
+    <span class="hint" id="footer-hint">原文态：复制/粘贴保留富格式</span>
+    <button class="btn" id="btn-copy">📋 复制</button>
+    <button class="btn btn-primary" id="btn-paste">📥 粘贴到前台</button>
+  </div>
+</div>
+
+<script>
+  // tab 切换交互
+  const tabs = document.querySelectorAll('.tab');
+  const panels = { render: 'tab-render', plain: 'tab-plain', md: 'tab-md' };
+  const hints = {
+    render: '原文态：复制/粘贴保留富格式（CF_HTML）',
+    plain: '清洗态：复制/粘贴纯文本',
+    md: 'Markdown 态：复制/粘贴 Markdown 源码',
+  };
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const key = tab.dataset.tab;
+      Object.entries(panels).forEach(([k, id]) => {
+        document.getElementById(id).style.display = k === key ? '' : 'none';
+      });
+      document.getElementById('footer-hint').textContent = hints[key];
+    });
+  });
+</script>
+</body>
+</html>

@@ -43,8 +43,7 @@ type TimelineRow =
 // ─── Component ──────────────────────────────────────────
 
 export function UpdateNotesDialog({ open, onClose, currentVersion }: UpdateNotesDialogProps) {
-  const { update, downloadAndInstall, skipThisVersion, status, progress, progressIndeterminate } =
-    useUpdate();
+  const { update, downloadAndInstall, skipThisVersion } = useUpdate();
   const anim = useDialogAnim();
   const [filter, setFilter] = useState<Filter>("all");
 
@@ -63,8 +62,6 @@ export function UpdateNotesDialog({ open, onClose, currentVersion }: UpdateNotes
   useEffect(() => {
     setFilter("all");
   }, [entry?.version]);
-
-  const isDownloading = status === "downloading";
 
   // 分类 chips + 总条数
   const chipData = useMemo<{ chips: ChipInfo[]; total: number }>(() => {
@@ -103,7 +100,12 @@ export function UpdateNotesDialog({ open, onClose, currentVersion }: UpdateNotes
   const isVisible = (catType: ChangeCategoryType) => filter === "all" || filter === catType;
 
   const handleDownload = () => {
+    // 点下载就关弹框：下载进度与“就绪后重启”由 TopBar 的 UpdateBadge 承担
+    // （它已有圆环百分比 + 速率，ready 后变成「重启」按钮）。
+    // 不关的旧行为会把主界面一直挡着，而且 status 进 ready 后弹框里那个按钮
+    // 会退回成「下载并更新」且可再点，看起来像什么都没发生。
     downloadAndInstall();
+    onClose();
   };
 
   const handleSkip = () => {
@@ -222,22 +224,13 @@ export function UpdateNotesDialog({ open, onClose, currentVersion }: UpdateNotes
                 >
                   跳过此版本
                 </button>
-                <button
-                  className={styles.btnDownload}
-                  onClick={handleDownload}
-                  disabled={isDownloading}
-                >
-                  <span
-                    className={styles.dlFill}
-                    style={{ width: isDownloading && !progressIndeterminate ? `${progress}%` : "0%" }}
-                  />
+                {/* 按钮不再兼作进度条：点下载后弹框立即关闭，下载期间它不可见
+                    （open 只在 status === "available" 时置 true），原来那套
+                    dlFill / “下载中 N%” 分支已永远不会命中，索性删干净 */}
+                <button className={styles.btnDownload} onClick={handleDownload}>
                   <span className={styles.dlLabel}>
                     <Download size={14} />
-                    {isDownloading
-                      ? progressIndeterminate
-                        ? "下载中…"
-                        : `下载中 ${progress}%`
-                      : "下载并更新"}
+                    下载并更新
                   </span>
                 </button>
               </div>
