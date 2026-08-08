@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>AI 设置面板 v2 · 分层渐进（设计稿）</title>
+<style>
+  /* 色值直接取自 src/styles/theme.css 的 ocean（默认）主题，保证稿子与实际效果一致 */
+  :root {
+    --card-bg:#fff; --dialog-bg:#fff;
+    --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+    --border-color:#E0E4EB;
+    --accent:#0284C7; --accent-light:#E0F2FE; --accent-solid:#027CBB; --accent-strong:#0273AD;
+    --search-border:#E0E4EB; --input-bg:#F1F5F9; --section-bg:#F0F4F8; --hover:#E8ECF2;
+    --green:#11813A; --green-bg:#DCFCE7; --green-border:#BBF7D0;
+    --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA;
+    --danger:#DC2626;
+  }
+  body{margin:0;padding:28px;background:#EEF2F7;font:13px/1.6 "Microsoft YaHei",system-ui,sans-serif;color:var(--text-primary);}
+  h1{font-size:16px;margin:0 0 4px;}
+  .note{color:var(--text-muted);font-size:12px;margin:0 0 20px;}
+  .stage{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start;}
+  .frame{width:420px;background:var(--dialog-bg);border:1px solid var(--border-color);border-radius:12px;overflow:hidden;box-shadow:0 6px 24px rgba(15,23,42,.08);}
+  .frameCap{font-size:11px;color:var(--text-muted);padding:6px 2px 8px;}
+  .tabbar{display:flex;gap:2px;padding:8px 10px 0;border-bottom:1px solid var(--border-color);}
+  .tab{font-size:12px;padding:6px 12px;border-radius:7px 7px 0 0;color:var(--text-secondary);cursor:default;}
+  .tab.on{background:var(--accent-light);color:var(--accent-strong);font-weight:600;}
+  .panel{padding:16px;display:flex;flex-direction:column;gap:16px;}
+
+  /* 步骤块 */
+  .step{display:flex;gap:11px;}
+  .stepNo{flex:0 0 20px;height:20px;border-radius:50%;background:var(--accent-light);color:var(--accent-strong);
+          font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:2px;}
+  .stepNo.done{background:var(--green-bg);color:var(--green);}
+  .stepBody{flex:1;min-width:0;display:flex;flex-direction:column;gap:7px;}
+  .stepTitle{font-size:12px;font-weight:600;}
+  .hint{font-size:11px;color:var(--text-muted);line-height:1.55;}
+
+  select,input{height:32px;padding:0 10px;border-radius:8px;border:1px solid var(--search-border);
+               background:var(--input-bg);color:var(--text-primary);font-size:12px;width:100%;box-sizing:border-box;font-family:inherit;}
+  .row{display:flex;gap:8px;align-items:center;}
+  .grow{flex:1;min-width:0;}
+  .link{font-size:11px;color:var(--accent-strong);text-decoration:none;white-space:nowrap;}
+  .link:hover{text-decoration:underline;}
+
+  .btn{height:32px;padding:0 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-primary);white-space:nowrap;font-family:inherit;}
+  .btn.primary{background:var(--accent-solid);color:#fff;border-color:var(--accent-solid);}
+  .btn.ghost{background:transparent;}
+
+  .ok{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--green);background:var(--green-bg);
+      border:1px solid var(--green-border);border-radius:8px;padding:7px 10px;}
+  .bad{font-size:11px;color:var(--danger);background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:7px 10px;line-height:1.6;}
+  .warnbox{display:flex;gap:8px;font-size:11px;color:var(--orange);background:var(--orange-bg);
+           border:1px solid var(--orange-border);border-radius:8px;padding:9px 11px;line-height:1.6;}
+
+  .usage{background:var(--section-bg);border-radius:8px;padding:10px 12px;font-size:11px;color:var(--text-secondary);
+         display:flex;flex-direction:column;gap:5px;}
+  .usage b{color:var(--text-primary);}
+  .bar{height:5px;border-radius:3px;background:var(--border-color);overflow:hidden;}
+  .barFill{height:100%;width:12%;background:var(--accent);}
+
+  .adv{border-top:1px solid var(--border-color);padding-top:12px;}
+  .advHead{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:default;}
+  .advBody{display:flex;flex-direction:column;gap:12px;margin-top:12px;}
+  .field{display:flex;flex-direction:column;gap:5px;}
+  .label{font-size:12px;font-weight:600;}
+  .divider{height:1px;background:var(--border-color);}
+  .tagRow{display:flex;gap:6px;flex-wrap:wrap;}
+  .tag{font-size:10px;padding:1px 7px;border-radius:5px;background:var(--section-bg);border:1px solid var(--border-color);color:var(--text-muted);}
+  .tag.free{color:var(--green);background:var(--green-bg);border-color:var(--green-border);}
+  table{border-collapse:collapse;font-size:11.5px;width:100%;}
+  th,td{border:1px solid var(--border-color);padding:5px 8px;text-align:left;}
+  th{background:var(--section-bg);font-weight:600;}
+  code{background:var(--section-bg);padding:1px 5px;border-radius:4px;font-size:11px;}
+</style>
+</head>
+<body>
+
+<h1>AI 设置面板 v2（分层渐进）</h1>
+<p class="note">设计稿 · 2026-08-08 · 色值取自 <code>src/styles/theme.css</code> 的 ocean 默认主题，与实际渲染一致</p>
+
+<div class="stage">
+
+  <!-- ① 未配置 -->
+  <div>
+    <div class="frameCap">状态 A·首次打开（未配置）——屏上只有两件事</div>
+    <div class="frame">
+      <div class="tabbar">
+        <div class="tab">⚙ 通用</div><div class="tab on">✨ AI</div>
+        <div class="tab">📖 帮助</div><div class="tab">ℹ 关于</div>
+      </div>
+      <div class="panel">
+        <div class="warnbox">
+          <span>⚠</span>
+          <span>AI 动作需要把你主动选中的那条内容发送给服务商。<b>不会自动上传任何历史记录</b>，看起来像密钥的内容会先拦下来。</span>
+        </div>
+
+        <div class="step">
+          <div class="stepNo">1</div>
+          <div class="stepBody">
+            <div class="stepTitle">选一个服务商</div>
+            <select>
+              <optgroup label="国内可直连">
+                <option>DeepSeek　便宜·中文好</option>
+                <option>通义千问（阿里）</option>
+                <option>智谱 GLM</option>
+                <option>Kimi（月之暗面）</option>
+                <option>豆包（火山方舟）</option>
+                <option>腾讯混元</option>
+                <option>百度千帆</option>
+                <option>讯飞星火</option>
+                <option>阶跃星辰</option>
+                <option>零一万物</option>
+                <option>MiniMax</option>
+                <option>硅基流动（聚合）</option>
+              </optgroup>
+              <optgroup label="本地 / 其他">
+                <option>Ollama（本地运行，免费）</option>
+                <option>OpenAI（通常需代理）</option>
+                <option>自定义 / 中转服务</option>
+              </optgroup>
+            </select>
+            <div class="row">
+              <span class="hint grow">国内直连，不需要代理。新用户通常有免费额度。</span>
+              <a class="link" href="#">去申请 API Key ↗</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="stepNo">2</div>
+          <div class="stepBody">
+            <div class="stepTitle">粘入 API Key</div>
+            <div class="row">
+              <input class="grow" type="password" placeholder="sk-…" />
+              <button class="btn primary">保存并测试</button>
+            </div>
+            <div class="hint">密钥以当前 Windows 用户身份加密后存在独立文件，<b>不会</b>写进配置库或配置备份。保存后无法再读出明文。</div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+        <div class="advHead">▸ 高级（接口地址、模型、预算、超时）</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ② 已就绪 -->
+  <div>
+    <div class="frameCap">状态 B·已配置——测试通过即自动启用，不再要用户去找开关</div>
+    <div class="frame">
+      <div class="tabbar">
+        <div class="tab">⚙ 通用</div><div class="tab on">✨ AI</div>
+        <div class="tab">📖 帮助</div><div class="tab">ℹ 关于</div>
+      </div>
+      <div class="panel">
+        <div class="step">
+          <div class="stepNo done">✓</div>
+          <div class="stepBody">
+            <div class="stepTitle">DeepSeek　<span class="tag">deepseek-chat</span></div>
+            <div class="ok">✓ 连通正常 · 实际模型 deepseek-v4-flash · 480ms</div>
+            <div class="row">
+              <span class="hint grow">密钥已加密存储</span>
+              <button class="btn ghost">重新测试</button>
+              <button class="btn ghost">更换密钥</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="usage">
+          <div>今日已用 <b>12 次</b> · 约 <b>¥0.21</b> / 上限 ¥3.00</div>
+          <div class="bar"><div class="barFill"></div></div>
+          <div>剩余额度约可再做 <b>160 次翻译</b> 或 <b>40 次长文摘要</b></div>
+        </div>
+
+        <div class="hint">变换中心已出现 <span class="tag">☁ AI</span> 分组：翻译 / 一句话摘要 / 解释代码 / 改写语气</div>
+
+        <div class="divider"></div>
+        <div class="advHead">▸ 高级（接口地址、模型、预算、超时）</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ③ 高级展开 -->
+  <div>
+    <div class="frameCap">状态 C·高级展开——原来的 6 个字段都在这，但要主动展开才看得到</div>
+    <div class="frame">
+      <div class="panel">
+        <div class="advHead">▾ 高级</div>
+        <div class="advBody">
+          <div class="field">
+            <span class="label">模型</span>
+            <select>
+              <option>deepseek-chat　便宜快速（推荐）</option>
+              <option>deepseek-reasoner　推理强·更贵更慢</option>
+            </select>
+            <span class="hint">剪贴板动作都是短文本，默认的便宜档完全够用。</span>
+          </div>
+
+          <div class="field">
+            <span class="label">每日费用上限</span>
+            <div class="row">
+              <span class="hint">¥</span>
+              <input class="grow" value="3.00" />
+            </div>
+            <span class="hint">约可做 <b>180 次翻译</b>。填 0 不限制。<br />
+              这个数字基于<b>估算</b>单价，用来拦住失控的连续调用，<b>不是对账</b>；真实金额以服务商账单为准。</span>
+          </div>
+
+          <div class="field">
+            <span class="label">接口地址</span>
+            <input placeholder="https://api.deepseek.com/v1（留空即默认）" />
+            <span class="hint">只有用中转服务时才需要改。</span>
+          </div>
+
+          <div class="field">
+            <span class="label">单次请求超时</span>
+            <div class="row"><input class="grow" value="60" /><span class="hint">秒</span></div>
+          </div>
+
+          <div class="divider"></div>
+          <div class="row">
+            <span class="hint grow">关闭后变换中心不再显示 AI 分组，密钥保留</span>
+            <button class="btn">停用 AI</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ④ 错误态与特例 -->
+  <div>
+    <div class="frameCap">状态 D·错误与特例——错误必须带“下一步做什么”</div>
+    <div class="frame">
+      <div class="panel">
+        <div class="field">
+          <span class="label">鉴权失败</span>
+          <div class="bad">API Key 无效或已过期（HTTP 401）。<br />
+            → 检查是否复制完整（常见问题：漏了开头的 <code>sk-</code> 或尾部有空格），或重新生成一个。</div>
+        </div>
+
+        <div class="field">
+          <span class="label">余额不足</span>
+          <div class="bad">账户余额不足或已欠费（HTTP 402）。<br />
+            → 去服务商控制台充值，或换一个有免费额度的服务商。</div>
+        </div>
+
+        <div class="field">
+          <span class="label">超时</span>
+          <div class="bad">请求超时（60 秒）。<br />
+            → 若选的是 OpenAI，国内直连通常不通，建议换国内服务商或填中转地址。</div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="field">
+          <span class="label">特例一：豆包（火山方舟）</span>
+          <input placeholder="ep-20260808xxxxxx-xxxxx" />
+          <span class="hint">火山方舟填的是<b>推理接入点 ID</b>而不是模型名。选中它时模型下拉会自动换成输入框并给出这段提示。</span>
+        </div>
+
+        <div class="field">
+          <span class="label">特例二：Ollama（本地）</span>
+          <div class="tagRow">
+            <span class="tag free">不需要 API Key</span>
+            <span class="tag free">完全本地·内容不出机器</span>
+            <span class="tag free">零费用</span>
+          </div>
+          <span class="hint">选中时隐藏密钥与预算，变换卡片上的「☁ 联网」徒标改成「本地」。需要用户自己已安装并启动 Ollama。</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ⑤ 用量统计与明细 -->
+  <div>
+    <div class="frameCap">状态 E·用量统计——每次调用都有记录，可自己对账</div>
+    <div class="frame">
+      <div class="panel">
+        <div class="row">
+          <span class="label grow">用量统计</span>
+          <select style="width:auto"><option>今日</option><option>近 7 天</option><option>近 30 天</option><option>全部</option></select>
+        </div>
+
+        <div class="usage">
+          <div>调用 <b>128 次</b> · token <b>34,512 + 8,940</b> · 估算 <b>¥1.87</b></div>
+          <div class="bar"><div class="barFill" style="width:62%"></div></div>
+          <div><b>缓存命中 41 次（32%）</b>，这部分没产生费用 · 失败 3 次</div>
+        </div>
+
+        <div class="field">
+          <span class="label">按动作</span>
+          <table>
+            <tr><th>动作</th><th>次数</th><th>token</th><th>估算</th></tr>
+            <tr><td>翻译</td><td>74</td><td>18,204</td><td>¥0.92</td></tr>
+            <tr><td>一句话摘要</td><td>31</td><td>16,880</td><td>¥0.71</td></tr>
+            <tr><td>解释代码</td><td>18</td><td>6,120</td><td>¥0.19</td></tr>
+            <tr><td>改写语气</td><td>5</td><td>2,248</td><td>¥0.05</td></tr>
+          </table>
+        </div>
+
+        <div class="field">
+          <div class="row">
+            <span class="label grow">最近明细</span>
+            <a class="link" href="#">导出 CSV</a>
+          </div>
+          <table>
+            <tr><th>时间</th><th>动作</th><th>模型</th><th>token</th><th>估算</th></tr>
+            <tr><td>14:22:07</td><td>翻译</td><td>deepseek-v4-flash</td><td>142+38</td><td>¥0.006</td></tr>
+            <tr><td>14:19:51</td><td>摘要</td><td>deepseek-v4-flash</td><td>1,204+52</td><td>¥0.031</td></tr>
+            <tr><td>14:18:30</td><td>翻译</td><td><span class="tag free">缓存</span></td><td>0+0</td><td>¥0</td></tr>
+            <tr><td>14:11:02</td><td>解释代码</td><td>deepseek-v4-flash</td><td>388+201</td><td>¥0.019</td></tr>
+            <tr><td>14:05:44</td><td>翻译</td><td style="color:var(--danger)">失败 401</td><td>0+0</td><td>¥0</td></tr>
+          </table>
+          <span class="hint">
+            <b>只记 token 数，不记内容。</b>这张表里永远不会出现你复制的原文或 AI 的回复。<br />
+            失败也记——有些失败（如超时但服务端已处理）仍可能计费，不记就对不上账。
+          </span>
+        </div>
+
+        <div class="divider"></div>
+        <div class="row">
+          <span class="hint grow">记录保留 90 天，超出自动清理</span>
+          <button class="btn ghost">立即清空</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<h1 style="margin-top:30px">厂商清单（已实测）</h1>
+<p class="note">2026-08-08 用假 Key 探测：返回 <b>401</b> 证明路径正确且为 OpenAI 兼容端点（404 才是路径错）</p>
+<table>
+  <tr><th>服务商</th><th>Base URL</th><th>默认模型</th><th>探测</th></tr>
+  <tr><td>DeepSeek（默认）</td><td><code>https://api.deepseek.com/v1</code></td><td>deepseek-chat</td><td>401 ✓</td></tr>
+  <tr><td>通义千问</td><td><code>https://dashscope.aliyuncs.com/compatible-mode/v1</code></td><td>qwen-turbo</td><td>401 ✓</td></tr>
+  <tr><td>智谱 GLM</td><td><code>https://open.bigmodel.cn/api/paas/v4</code></td><td>glm-4-flash</td><td>401 ✓</td></tr>
+  <tr><td>Kimi</td><td><code>https://api.moonshot.cn/v1</code></td><td>moonshot-v1-8k</td><td>401 ✓</td></tr>
+  <tr><td>豆包（火山方舟）</td><td><code>https://ark.cn-beijing.volces.com/api/v3</code></td><td>（接入点 ID）</td><td>401 ✓</td></tr>
+  <tr><td>腾讯混元</td><td><code>https://api.hunyuan.cloud.tencent.com/v1</code></td><td>hunyuan-turbos-latest</td><td>401 ✓</td></tr>
+  <tr><td>百度千帆</td><td><code>https://qianfan.baidubce.com/v2</code></td><td>ernie-4.5-turbo-128k</td><td>401 ✓</td></tr>
+  <tr><td>讯飞星火</td><td><code>https://spark-api-open.xf-yun.com/v1</code></td><td>generalv3.5</td><td>401 ✓</td></tr>
+  <tr><td>阶跃星辰</td><td><code>https://api.stepfun.com/v1</code></td><td>step-1-8k</td><td>401 ✓</td></tr>
+  <tr><td>零一万物</td><td><code>https://api.lingyiwanwu.com/v1</code></td><td>yi-lightning</td><td>401 ✓</td></tr>
+  <tr><td>MiniMax</td><td><code>https://api.minimax.chat/v1</code></td><td>abab6.5s-chat</td><td>401 ✓</td></tr>
+  <tr><td>硅基流动</td><td><code>https://api.siliconflow.cn/v1</code></td><td>Qwen/Qwen2.5-7B-Instruct</td><td>401 ✓</td></tr>
+  <tr><td>Ollama（本地）</td><td><code>http://localhost:11434/v1</code></td><td>qwen2.5</td><td>本机未装，<b>未验证</b></td></tr>
+  <tr><td>OpenAI</td><td><code>https://api.openai.com/v1</code></td><td>gpt-4o-mini</td><td>国内通常不通</td></tr>
+  <tr><td>自定义</td><td>用户自填</td><td>用户自填</td><td>—</td></tr>
+</table>
+
+<h1 style="margin-top:26px">相对当前版本的七处改动</h1>
+<table>
+  <tr><th>#</th><th>现状</th><th>改成</th></tr>
+  <tr><td>1</td><td>「启用开关」在第一位</td><td>去掉开关。<b>测试通过即自动启用</b>；高级区里留一个「停用」</td></tr>
+  <tr><td>2</td><td>6 个字段一屏摊开</td><td>第一屏只留选厂商 + 填 Key；其余收进「高级」</td></tr>
+  <tr><td>3</td><td>没有申请 Key 的入口</td><td>每个厂商带一条「去申请 API Key ↗」</td></tr>
+  <tr><td>4</td><td>保存后不自动测试</td><td>合并为一个「保存并测试」按钮</td></tr>
+  <tr><td>5</td><td>模型是自由输入框</td><td>改为下拉（每家 2–3 个）；仅自定义/火山方舟保留输入框</td></tr>
+  <tr><td>6</td><td>预算用美元</td><td>改人民币，并换算成「约可做 N 次翻译」</td></tr>
+  <tr><td>7</td><td>onBlur 隐式保存、错误不可操作</td><td>显式保存反馈；每条错误带“→ 下一步做什么”</td></tr>
+</table>
+
+<h1 style="margin-top:26px">token 记录的存储设计</h1>
+<p class="note">当前的 <code>ai_usage.json</code> 只存当日汇总，跨日归零、无法回溯。明细记录要能查能聚合，应该进 SQLite。</p>
+<pre style="background:var(--section-bg);border:1px solid var(--border-color);border-radius:8px;padding:12px;font-size:11.5px;overflow:auto">
+CREATE TABLE ai_usage_log (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_at        TEXT    NOT NULL,   -- 本地时间
+  action_id         TEXT    NOT NULL,   -- ai-translate / ai-summarize …
+  provider          TEXT    NOT NULL,   -- deepseek / qwen …
+  model             TEXT    NOT NULL,   -- 厂商实际返回的型号
+  prompt_tokens     INTEGER NOT NULL,
+  completion_tokens INTEGER NOT NULL,
+  cost_usd          REAL    NOT NULL,   -- 估算值
+  cached            INTEGER NOT NULL,   -- 1 = 命中缓存，token 与费用均为 0
+  latency_ms        INTEGER,
+  ok                INTEGER NOT NULL,   -- 失败也记
+  error             TEXT               -- 归一后的错误分类，<b>不含内容</b>
+);
+CREATE INDEX idx_ai_usage_created ON ai_usage_log(created_at);
+</pre>
+<ul style="font-size:12.5px;line-height:1.9;color:var(--text-secondary);max-width:900px">
+  <li><b>永不存内容。</b>这张表里没有任何字段装原文或回复——否则它就变成了第二份剪贴板历史。</li>
+  <li><b>失败也要记。</b>有些失败（超时但服务端已处理、返回了但解析失败）仍可能计费，不记就对不上账。</li>
+  <li><b>缓存命中也记（cost=0）。</b>这样能算出命中率——直接证明缓存到底省了多少钱。</li>
+  <li><b>预算判定改从这张表算</b>，<code>ai_usage.json</code> 可以废弃，少一个状态源。</li>
+  <li><b>与路线图里的 <code>action_events</code> 是两张表</b>：后者记的是“用户选了哪个动作”（含本地变换，服务于学习排序），前者记的是“花了多少 token”（只有云端，服务于计费）。目的不同，合并会互相污染。</li>
+</ul>
+
+<h1 style="margin-top:26px">待确认的取舍</h1>
+<ul style="font-size:12.5px;line-height:1.9;color:var(--text-secondary);max-width:900px">
+  <li><b>去掉总开关是否可接受？</b>测试通过即启用能去掉一步，但用户就失去了“配好了但暂时不想用”的快捷开关——我把它放到了高级区。</li>
+  <li><b>人民币换算依赖一张会漂移的汇率/单价表。</b>界面会明确写“估算·不是对账”，但它就是会不准。</li>
+  <li><b>13 个厂商的 URL 会变。</b>架构上加厂商零成本（全走同一套 OpenAI 兼容），但维护成本真实存在——所以「自定义」必须一直留着兜底。</li>
+  <li><b>Ollama 本机没验证过。</b>需要你或用户实际装一个才能确认。</li>
+</ul>
+
+</body>
+</html>

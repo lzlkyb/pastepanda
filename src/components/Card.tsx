@@ -848,13 +848,18 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     } catch { toast("粘贴失败", "error"); }
   }, [item.text, item.content, toast]);
 
-  // 变换枢纽：当前内容是否有可用变换（json 数组 / 按列值 等），有才显示右键入口
+  // 变换枢纽：当前内容是否有可用变换（json 数组 / 按列值 等），有才显示右键入口。
+  //
+  // **图片无条件显示**：它的 `text` 是空的，按这里算永远是 0 个变换；
+  // 而枢纽打开后会先本地 OCR，识别出文字才知道能做什么——能不能做得打开了才算得出来。
   const hubAvailable = useMemo(
-    () => applicableTransforms({
-      text: item.text || "",
-      contentType: subType,
-      html: item.type === "doc" || item.type === "rich" ? item.content : undefined,
-    }).length > 0,
+    () =>
+      item.type === "image" ||
+      applicableTransforms({
+        text: item.text || "",
+        contentType: subType,
+        html: item.type === "doc" || item.type === "rich" ? item.content : undefined,
+      }).length > 0,
     [item.text, item.content, item.type, subType],
   );
   const handleOpenHub = useCallback(() => {

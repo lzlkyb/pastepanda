@@ -16,6 +16,7 @@ fn fatal_startup_error(app: &tauri::AppHandle, title: &str, detail: impl std::fm
     std::process::exit(1);
 }
 
+pub mod ai;
 mod auto_cleanup;
 mod clipboard_monitor;
 mod commands;
@@ -172,6 +173,15 @@ pub fn run() {
             if let Err(e) = store.ensure_auto_tags() {
                 log::warn!("[ContentClassifier] 自动标签种子数据初始化失败: {}", e);
             }
+
+            // AI 用量明细：启动时清一次过期记录，并删掉 v6 之前那份已废弃的
+            // ai_usage.json（它看上去像权威数据源，实际已停止更新，留着只会带偏排查）
+            match store.ai_usage_purge(data_store::AI_USAGE_RETAIN_DAYS) {
+                Ok(n) if n > 0 => log::info!("[AI] 已清理 {} 条过期用量明细", n),
+                Ok(_) => {}
+                Err(e) => log::warn!("[AI] 清理过期用量明细失败: {}", e),
+            }
+            ai::budget::remove_legacy_usage_file(&app_dir);
 
             // 读取 LAN 同步配置（在 store 被 manage 之前）
             let lan_enabled = store
@@ -510,6 +520,26 @@ pub fn run() {
             commands::execute_replace,
             commands::get_regex_rules,
             commands::save_regex_rules,
+            // 云端 AI 地基（阶段 B0）——注意没有 ai_get_key，密钥不回读给前端
+            commands::ai_get_config,
+            commands::ai_set_config,
+            commands::ai_set_key,
+            commands::ai_has_key,
+            commands::ai_clear_key,
+            commands::ai_list_providers,
+            commands::ai_test_connection,
+            commands::ai_list_actions,
+            commands::ai_get_usage,
+            commands::ai_list_content_types,
+            commands::ai_list_custom_actions,
+            commands::ai_save_custom_action,
+            commands::ai_delete_custom_action,
+            commands::ai_reorder_custom_actions,
+            commands::ai_preview_custom,
+            commands::ai_list_usage_log,
+            commands::ai_get_usage_stats,
+            commands::ai_clear_usage_log,
+            commands::ai_run,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

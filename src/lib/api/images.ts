@@ -5,6 +5,35 @@ import { invoke } from "@tauri-apps/api/core";
 import { logger } from "@/lib/logger";
 import { getImageUrlCache, getMaxImageCacheSize, getThumbnailUrlCache, getMaxThumbnailCacheSize } from "./cache";
 
+/** OCR 识别出的一个词（带坐标框，用于框选） */
+export interface OcrWord {
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface OcrLine {
+  text: string;
+  words: OcrWord[];
+}
+
+export interface OcrResult {
+  lines: OcrLine[];
+  fullText: string;
+}
+
+/**
+ * 对图片文件做本地 OCR（Windows OCR 引擎）。
+ *
+ * **完全本地**：不联网、不花钱、图片不出机器。它与 AI 总开关无关，
+ * 关掉 AI 也能用——只是识别完之后没有云端动作可选。
+ */
+export async function ocrImage(path: string): Promise<OcrResult> {
+  return invoke<OcrResult>("ocr_image", { path });
+}
+
 /** 获取原图 URL（用于 img src 显示，使用 Tauri asset 协议） */
 export async function getImageDataUrl(filePath: string): Promise<string> {
   const imageUrlCache = getImageUrlCache();

@@ -51,6 +51,15 @@ export async function initBackend(): Promise<() => void> {
     logger.warn("加载标签失败", e);
   }
 
+  // 注册云端 AI 动作（定义以后端为单一数据源，故在运行时拉取）。
+  // 失败不影响其他功能——最多就是变换中心里没有 AI 那一组。
+  try {
+    const { initAiTransforms } = await import("@/lib/transforms");
+    await initAiTransforms();
+  } catch (e) {
+    logger.warn("注册 AI 动作失败，变换中心将不显示 AI 分组", e);
+  }
+
   // 修复 M7：统一收集 unlisten，任一 listen 失败时清理已注册的监听器，
   // 避免泄漏旧监听器导致重试后事件被双重处理
   const unlistens: Array<() => void> = [];

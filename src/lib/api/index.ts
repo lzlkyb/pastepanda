@@ -11,11 +11,52 @@ export { getStats, getStatsDetail, fetchCounts, fetchSidebarCounts, invalidateCo
 export type { Stats, StatsDetail, DailyCount, SidebarCounts } from "./cache";
 
 // 图片
-export { getImageDataUrl, getImageBase64, dataUrlToBlob, getImageThumbnail, getImageInfo } from "./images";
+export { getImageDataUrl, getImageBase64, dataUrlToBlob, getImageThumbnail, getImageInfo, ocrImage } from "./images";
+export type { OcrResult, OcrLine, OcrWord } from "./images";
 
 // 历史记录
 export { loadMoreHistory, deleteHistory, togglePin, searchHistory } from "./history";
 export type { SearchFilters } from "./history";
+
+// 云端 AI（注意：没有读取密钥的接口，只有 set / has / clear）
+export {
+  aiGetConfig,
+  aiSetConfig,
+  aiSetKey,
+  aiHasKey,
+  aiClearKey,
+  aiListProviders,
+  aiListActions,
+  aiListContentTypes,
+  aiListCustomActions,
+  aiSaveCustomAction,
+  aiDeleteCustomAction,
+  aiReorderCustomActions,
+  aiPreviewCustom,
+  aiGetUsage,
+  aiListUsageLog,
+  aiGetUsageStats,
+  aiClearUsageLog,
+  aiTestConnection,
+  aiRun,
+} from "./ai";
+export type {
+  AiConfig,
+  AiProtocol,
+  AiModelSpec,
+  AiProviderInfo,
+  AiActionMeta,
+  AiActionOptionSpec,
+  AiCustomAction,
+  AiContentTypeOption,
+  AiUsage,
+  AiUsageDaily,
+  AiUsageLogRow,
+  AiUsageByAction,
+  AiUsageStats,
+  AiTestResult,
+  AiRunResponse,
+} from "./ai";
 
 // 依次粘贴 / 索引粘贴
 export { sequentialPaste, indexPaste } from "./sequential";

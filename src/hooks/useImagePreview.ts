@@ -56,6 +56,8 @@ export interface UseImagePreviewReturn {
   // 预览状态
   previewImage: string | null;
   previewInfo: PreviewInfo | null;
+  /** 当前预览的条目（供“拿选中文字去变换”使用） */
+  previewItem: HistoryItem | null;
   previewLoading: boolean;
   previewScale: number;
   previewRotation: number;
@@ -122,6 +124,8 @@ export function useImagePreview(): UseImagePreviewReturn {
 
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [previewInfo, setPreviewInfo] = useState<PreviewInfo | null>(null);
+  // 当前预览的条目。留着是为了“框选一块 → 拿这段文字去变换”能把它交给枢纽
+  const [previewItem, setPreviewItem] = useState<HistoryItem | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewScale, setPreviewScale] = useState(1);
   const [previewRotation, setPreviewRotation] = useState(0);
@@ -160,6 +164,7 @@ export function useImagePreview(): UseImagePreviewReturn {
     const requestContent = item.content || null;
     setPreviewImage(null);
     setPreviewInfo(null);
+    setPreviewItem(item);
     previewContentRef.current = requestContent;
 
     // 重置 OCR 状态
@@ -230,6 +235,7 @@ export function useImagePreview(): UseImagePreviewReturn {
     previewContentRef.current = null;
     setPreviewImage(null);
     setPreviewInfo(null);
+    setPreviewItem(null);
     setPreviewScale(1);
     setPreviewRotation(0);
     setPreviewOffset({ x: 0, y: 0 });
@@ -686,7 +692,7 @@ export function useImagePreview(): UseImagePreviewReturn {
   return {
     previewImage, previewInfo, previewLoading,
     previewScale, previewRotation, previewOffset, isPanning,
-    previewContentRef, viewportRef,
+    previewContentRef, viewportRef, previewItem,
     ocrResult, ocrLoading, ocrActive, selectedWordIndices, isSelecting, selRect,
     exportFormat, exportQuality, exportEstimate, exporting,
     cropMode, cropRect, cropOriginal,

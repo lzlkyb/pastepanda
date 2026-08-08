@@ -55,6 +55,8 @@ describe("cn", () => {
   });
 
   it("handles conditional classes", () => {
+    // 常量条件是故意的：这里验的就是 `cond && cls` 这种写法在两种取值下的结果
+    // eslint-disable-next-line no-constant-binary-expression
     expect(cn("base", true && "active", false && "hidden")).toBe("base active");
   });
 });

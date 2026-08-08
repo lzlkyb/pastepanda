@@ -1,5 +1,5 @@
 /**
- * TransformHubDialog.tsx — 变换枢纽（卡片流，方案 A）。
+ * TransformHubDialog.tsx —— 变换枢纽（卡片流，方案 A）。
  *
  * 由右键「变换为…」经 dialogStore.openHub(item) 打开：
  * 把当前内容命中的所有注册变换（applicableTransforms，按匹配度排序）
@@ -10,144 +10,34 @@
  * - 每张卡的复制按钮只复制本卡产物，复制后不关闭，可连续复制多个；
  * - Esc 关闭。
  *
+ * 卡片本体已拆到 `transform/TransformCard.tsx`（本文件曾超过项目规则 #7 的 300 行上限）。
+ *
  * 挂载方式仿 ExtractDialog（常挂载 + 内部 AnimatePresence 门控退场动画）。
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Copy, Check, X, Sparkles, Database, Table, List, ClipboardPaste,
-  CaseUpper, CaseLower, Eraser, Pilcrow, Quote, RemoveFormatting, Link as LinkIcon,
-  Globe, Mail, Phone, Code, Minus, Hash, Palette, Folder, FileText,
-  type LucideIcon,
-} from "lucide-react";
+import { X, Sparkles, Loader2, RotateCw } from "lucide-react";
 import { useDialogStore } from "@/stores/dialogStore";
-import { applicableTransforms, type Transform, type TransformContext, type TransformOptionSpec } from "@/lib/transforms";
-import { pasteText } from "@/lib/api";
+import {
+  applicableTransforms,
+  type Transform,
+  type TransformContext,
+  type TransformResultMeta,
+} from "@/lib/transforms";
+import { ocrImage, pasteText } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { FocusTrap } from "@/components/FocusTrap";
 import { MelodyEmpty } from "@/components/MelodyEmpty";
+import { TransformCard } from "@/components/transform/TransformCard";
+import { specsFor, defaultOptsFromSpecs } from "@/components/transform/transformOptions";
 import styles from "./TransformHub.module.css";
-
-/** 图标语义键 → lucide 组件（逻辑层保持纯净，图标在 UI 层映射） */
-const ICONS: Record<string, LucideIcon> = {
-  database: Database, table: Table, rows: List,
-  "case-upper": CaseUpper, "case-lower": CaseLower, eraser: Eraser, pilcrow: Pilcrow,
-  quote: Quote, "remove-formatting": RemoveFormatting, link: LinkIcon, globe: Globe,
-  mail: Mail, phone: Phone, code: Code, minus: Minus, hash: Hash, palette: Palette,
-  folder: Folder, "file-text": FileText,
-};
-
-function TIcon({ name, size = 15 }: { name?: string; size?: number }) {
-  const C = (name && ICONS[name]) || Sparkles;
-  return <C size={size} />;
-}
-
-/** 解析变换的选项规格：动态 optionsFor 优先（选项随输入变化），回退静态 options */
-function specsFor(t: Transform, ctx: TransformContext): TransformOptionSpec[] {
-  return t.optionsFor?.(ctx) ?? t.options ?? [];
-}
-
-/** 从选项规格生成默认值表 */
-function defaultOptsFromSpecs(specs: TransformOptionSpec[]): Record<string, string> {
-  const o: Record<string, string> = {};
-  for (const spec of specs) if (spec.default) o[spec.key] = spec.default;
-  return o;
-}
-
-/** 单个变换卡片：选项 + 预览 + 复制/粘贴，全部自包含、互不干扰 */
-function TransformCard({
-  t, score, text, opts, html, specs, copied, onSetOpt, onCopy, onPaste,
-}: {
-  t: Transform;
-  score: number;
-  text: string;
-  opts: Record<string, string>;
-  /** P2：doc/rich 条目的 HTML 片段，透传给变换 run() */
-  html?: string;
-  specs: TransformOptionSpec[];
-  copied: boolean;
-  onSetOpt: (key: string, value: string) => void;
-  onCopy: () => void;
-  onPaste: () => void;
-}) {
-  // 本卡产物：支持同步和异步 run（配置转换调 Rust 侧为异步）
-  const [preview, setPreview] = useState<{ ok: boolean; output?: string; message?: string }>({ ok: false, message: "…" });
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    const result = t.run(text, { ...opts, ...(html ? { html } : {}) });
-    if (result instanceof Promise) {
-      setLoading(true);
-      result.then((r) => {
-        if (!cancelled) { setPreview(r); setLoading(false); }
-      });
-    } else {
-      setPreview(result);
-    }
-    return () => { cancelled = true; };
-  }, [t, text, opts, html]);
-
-  return (
-    <div className={styles.card}>
-      <div className={styles.cardHead}>
-        <span className={styles.cardIcon}><TIcon name={t.icon} /></span>
-        <span className={styles.cardMain}>
-          <span className={styles.cardLabel}>{t.label}</span>
-          {t.description && <span className={styles.cardDesc}>{t.description}</span>}
-        </span>
-        <span className={styles.score}>{Math.round(score * 100)}%</span>
-      </div>
-
-      {specs.length > 0 && (
-        <div className={styles.cardOpts}>
-          {specs.map((spec) => (
-            <div key={spec.key} className={styles.optGroup}>
-              <span className={styles.optLabel}>{spec.label}</span>
-              {spec.values.map((v) => (
-                <button
-                  key={v.value}
-                  className={`${styles.chip} ${(opts[spec.key] ?? spec.default) === v.value ? styles.chipOn : ""}`}
-                  onClick={() => onSetOpt(spec.key, v.value)}
-                >
-                  {v.label}
-                </button>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {loading ? (
-        <pre className={styles.cardPreview}>转换中…</pre>
-      ) : preview.ok ? (
-        <pre className={styles.cardPreview}>{preview.output}</pre>
-      ) : (
-        <pre className={styles.previewErr}>{preview.message ?? "无法转换"}</pre>
-      )}
-
-      <div className={styles.cardActions}>
-        <button
-          className={`${styles.copyBtn} ${copied ? styles.copyBtnDone : ""}`}
-          onClick={onCopy}
-          disabled={!preview.ok}
-        >
-          {copied ? <Check size={13} /> : <Copy size={13} />}
-          {copied ? "已复制" : "复制"}
-        </button>
-        <button className={styles.pasteBtn} onClick={onPaste} disabled={!preview.ok}>
-          <ClipboardPaste size={13} />
-          粘贴到前台
-        </button>
-      </div>
-    </div>
-  );
-}
 
 export function TransformHubDialog() {
   const item = useDialogStore((s) => s.hubItem);
+  // 图片预览里框选一块后传进来的文字；有它就不再自己 OCR
+  const override = useDialogStore((s) => s.hubText);
   const open = !!item;
   const anim = useDialogAnim();
   const { toast } = useToast();
@@ -159,15 +49,55 @@ export function TransformHubDialog() {
 
   const close = useCallback(() => useDialogStore.getState().closeHub(), []);
 
+  // ===== 图片：先本地 OCR，再把识别出的文字交给整套变换 =====
+  //
+  // 这样不用为图片另造一套动作：翻译/解释报错/提取要点那些现成的东西直接就能用。
+  // OCR 是本地引擎，**不受 AI 总开关影响**——关掉 AI 也能识别，只是下面没云端动作可选。
+  const isImage = item?.type === "image";
+  const [ocrText, setOcrText] = useState("");
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrError, setOcrError] = useState("");
+
+  const runOcr = useCallback(async () => {
+    const path = item?.content;
+    if (!path) return;
+    setOcrLoading(true);
+    setOcrError("");
+    try {
+      const r = await ocrImage(path);
+      const text = r.fullText.trim();
+      setOcrText(text);
+      if (!text) {
+        setOcrError("这张图里没识别出文字。手写、艺术字、分辨率太低都会这样。");
+      }
+    } catch (e) {
+      setOcrError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setOcrLoading(false);
+    }
+  }, [item?.content]);
+
+  // 换条目时重置；图片且没有覆盖文本时自动识别一次
+  useEffect(() => {
+    setOcrText("");
+    setOcrError("");
+    if (open && isImage && !override) void runOcr();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item?.id, open, isImage, override]);
+
+  /** 真正拿去做变换的文本：框选覆盖 > 图片 OCR > 条目自带的文本 */
+  const sourceText = override ?? (isImage ? ocrText : item?.text || "");
+
   // 变换上下文（动态选项解析的输入，如 SQL IN 的可选字段来自对象数组实际字段）
   const ctx = useMemo<TransformContext>(
     () => ({
-      text: item?.text || "",
-      contentType: item ? item.content_type || item.type : "",
+      text: sourceText,
+      // 图片 OCR 出来的就是普通文本，不能再拿 image 当类型（否则没一个变换会命中）
+      contentType: isImage ? "text" : item ? item.content_type || item.type : "",
       // P2 文档管线：doc/rich 条目把 CF_HTML 片段透传给文档类变换
       html: item && (item.type === "doc" || item.type === "rich") ? item.content : undefined,
     }),
-    [item],
+    [item, sourceText, isImage],
   );
 
   // 当前内容命中的变换（按匹配度排序），过滤 < 0.3 的噪声
@@ -192,43 +122,45 @@ export function TransformHubDialog() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item?.id]);
 
-  const optsFor = useCallback((t: Transform) => opts[t.id] ?? defaultOptsFromSpecs(specsFor(t, ctx)), [opts, ctx]);
+  const optsFor = useCallback(
+    (t: Transform) => opts[t.id] ?? defaultOptsFromSpecs(specsFor(t, ctx)),
+    [opts, ctx],
+  );
   const setOpt = useCallback(
     (id: string, key: string, value: string) =>
       setOpts((prev) => ({ ...prev, [id]: { ...(prev[id] ?? {}), [key]: value } })),
     [],
   );
 
-  // 复制指定卡的产物；复制后不关闭，允许连续复制多个
-  const copyTransform = useCallback(async (t: Transform) => {
-    if (!item) return;
-    const r = await t.run(item.text || "", { ...optsFor(t), ...(itemHtml ? { html: itemHtml } : {}) });
-    if (!r.ok || !r.output) {
-      toast(r.message ?? "无法转换", "error");
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(r.output);
-      const n = r.meta?.count;
-      toast(n ? `已复制「${t.label}」（${n} 个值）` : `已复制「${t.label}」`, "success");
-      setCopiedId(t.id);
-      setTimeout(() => setCopiedId((cur) => (cur === t.id ? null : cur)), 1200);
-    } catch {
-      toast("复制失败", "error");
-    }
-  }, [item, optsFor, toast, itemHtml]);
+  /**
+   * 复制卡片**已经算好的**产物。
+   *
+   * 不在这里重跑 `t.run()`：本地变换重跑是白费一次计算，
+   * 云端动作重跑则是多一次网络往返。
+   */
+  const copyOutput = useCallback(
+    async (t: Transform, output: string, meta?: TransformResultMeta) => {
+      try {
+        await navigator.clipboard.writeText(output);
+        const n = meta?.count;
+        toast(n ? `已复制「${t.label}」（${n} 个值）` : `已复制「${t.label}」`, "success");
+        setCopiedId(t.id);
+        setTimeout(() => setCopiedId((cur) => (cur === t.id ? null : cur)), 1200);
+      } catch {
+        toast("复制失败", "error");
+      }
+    },
+    [toast],
+  );
 
-  // 把指定卡的产物直接粘贴到前台窗口
-  const pasteTransform = useCallback(async (t: Transform) => {
-    if (!item) return;
-    const r = await t.run(item.text || "", { ...optsFor(t), ...(itemHtml ? { html: itemHtml } : {}) });
-    if (!r.ok || !r.output) {
-      toast(r.message ?? "无法转换", "error");
-      return;
-    }
-    const ok = await pasteText(r.output);
-    if (ok) toast(`已粘贴「${t.label}」`, "success");
-  }, [item, optsFor, toast, itemHtml]);
+  /** 把卡片已算好的产物直接粘贴到前台窗口 */
+  const pasteOutput = useCallback(
+    async (t: Transform, output: string) => {
+      const ok = await pasteText(output);
+      if (ok) toast(`已粘贴「${t.label}」`, "success");
+    },
+    [toast],
+  );
 
   // Esc 关闭（其余导航键交由卡片按钮 / Tab 处理）
   useEffect(() => {
@@ -239,6 +171,22 @@ export function TransformHubDialog() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, close]);
+
+  const renderCard = ({ transform: t, score }: { transform: Transform; score: number }) => (
+    <TransformCard
+      key={t.id}
+      t={t}
+      score={score}
+      text={sourceText}
+      html={itemHtml}
+      opts={optsFor(t)}
+      specs={specsFor(t, ctx)}
+      copied={copiedId === t.id}
+      onSetOpt={(k, v) => setOpt(t.id, k, v)}
+      onCopy={(output, meta) => void copyOutput(t, output, meta)}
+      onPaste={(output) => void pasteOutput(t, output)}
+    />
+  );
 
   // 常挂载，open=false 时由 AnimatePresence 驱动退场后再卸载
   return (
@@ -263,50 +211,57 @@ export function TransformHubDialog() {
               </div>
 
               <div className={styles.cards}>
-                {scored.length === 0 && (
+                {/* 图片：把本地识别结果摆出来并允许修改。
+                    让用户先看一眼再决定要不要发给模型——识别错了就没必要花这个钱。 */}
+                {isImage && !override && (
+                  <div className={styles.ocrBox}>
+                    <div className={styles.ocrHead}>
+                      {ocrLoading ? (
+                        <>
+                          <Loader2 size={12} className="spin" /> 本地识别中…
+                        </>
+                      ) : (
+                        <>本地识别结果（可修改）</>
+                      )}
+                      <button
+                        className={styles.ocrRetry}
+                        disabled={ocrLoading}
+                        onClick={() => void runOcr()}
+                      >
+                        <RotateCw size={11} /> 重新识别
+                      </button>
+                    </div>
+                    {!ocrLoading && (
+                      <textarea
+                        className={styles.ocrText}
+                        value={ocrText}
+                        placeholder="识别不出来时可以自己敲"
+                        onChange={(e) => setOcrText(e.target.value)}
+                      />
+                    )}
+                    {ocrError && <div className={styles.ocrErr}>{ocrError}</div>}
+                    <div className={styles.ocrNote}>
+                      图片不会被发送，只有上面这段文字会交给变换。
+                    </div>
+                  </div>
+                )}
+
+                {scored.length === 0 && !ocrLoading && (
                   <div className={styles.empty}>
                     <MelodyEmpty size={64} />
-                    此内容暂无可用变换
+                    {isImage && !sourceText ? "没有可用的文字，先试试重新识别或手动输入" : "此内容暂无可用变换"}
                   </div>
                 )}
                 {recommended.length > 0 && (
                   <>
                     <div className={styles.sectionLabel}>推荐</div>
-                    {recommended.map(({ transform: t, score }) => (
-                      <TransformCard
-                        key={t.id}
-                        t={t}
-                        score={score}
-                        text={item.text || ""}
-                        html={itemHtml}
-                        opts={optsFor(t)}
-                        specs={specsFor(t, ctx)}
-                        copied={copiedId === t.id}
-                        onSetOpt={(k, v) => setOpt(t.id, k, v)}
-                        onCopy={() => void copyTransform(t)}
-                        onPaste={() => void pasteTransform(t)}
-                      />
-                    ))}
+                    {recommended.map(renderCard)}
                   </>
                 )}
                 {others.length > 0 && (
                   <>
                     <div className={styles.sectionLabel}>其他工具</div>
-                    {others.map(({ transform: t, score }) => (
-                      <TransformCard
-                        key={t.id}
-                        t={t}
-                        score={score}
-                        text={item.text || ""}
-                        html={itemHtml}
-                        opts={optsFor(t)}
-                        specs={specsFor(t, ctx)}
-                        copied={copiedId === t.id}
-                        onSetOpt={(k, v) => setOpt(t.id, k, v)}
-                        onCopy={() => void copyTransform(t)}
-                        onPaste={() => void pasteTransform(t)}
-                      />
-                    ))}
+                    {others.map(renderCard)}
                   </>
                 )}
               </div>

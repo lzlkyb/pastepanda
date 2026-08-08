@@ -11,8 +11,8 @@
 
 import type { ContentFeatures } from "./analyzer";
 
-/** 变换分组，用于枢纽面板分类展示 */
-export type TransformGroup = "json" | "sql" | "web" | "text" | "log" | "doc";
+/** 变换分组，用于枢纽面板分类展示。`ai` 是唯一需要联网的一组 */
+export type TransformGroup = "json" | "sql" | "web" | "text" | "log" | "doc" | "ai";
 
 /** detect() 的输入上下文 */
 export interface TransformContext {
@@ -76,6 +76,13 @@ export interface Transform {
   detect(ctx: TransformContext): number;
   /** 执行变换，返回可复制产物（支持异步：配置转换等调 Rust 侧的变换返回 Promise） */
   run(text: string, opts?: Record<string, unknown>): TransformResult | Promise<TransformResult>;
+  /**
+   * 可选：标记这是一个**需要联网且可能计费**的变换。
+   *
+   * UI 要据此把它与本地瞬时变换区分开——后者点下去就出结果，前者会把
+   * 剪贴板内容发到外部服务并产生费用，不能长得一模一样。
+   */
+  remote?: boolean;
   /** 可选：声明支持的选项，供 UI 自动生成 chip */
   options?: TransformOptionSpec[];
   /**

@@ -11,6 +11,7 @@ import { FocusTrap } from "@/components/FocusTrap";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { useToast } from "@/components/Toast";
 import { getImageBase64, dataUrlToBlob } from "@/lib/api";
+import { useDialogStore } from "@/stores/dialogStore";
 import {
   EXPORT_FORMATS,
   EXPORT_FORMAT_ORDER,
@@ -30,7 +31,7 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
   const {
     previewImage, previewInfo, previewLoading,
     previewScale, previewRotation, previewOffset, isPanning,
-    previewContentRef, viewportRef,
+    previewContentRef, viewportRef, previewItem,
     ocrResult, ocrLoading, ocrActive, selectedWordIndices, isSelecting, selRect,
     exportFormat, exportQuality, exportEstimate, exporting,
     cropMode, cropRect, cropOriginal,
@@ -364,6 +365,22 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
                   }}
                 >
                   📋 复制选中
+                </button>
+                {/* 把选中的文字交给变换枢纽，而不是在这里再搭一套动作列表。
+                    两处各维护一份动作迟早会漂，而且自定义动作还得同步两遍。 */}
+                <button
+                  className={styles.ocrResultCopyBtn}
+                  disabled={selectedWordIndices.size === 0}
+                  title="拿选中的文字去翻译 / 解释 / 自定义动作"
+                  onClick={() => {
+                    const texts = getSelectedOcrTexts();
+                    if (texts.length === 0 || !previewItem) return;
+                    const item = previewItem;
+                    closePreview();
+                    useDialogStore.getState().openHub(item, texts.join(' '));
+                  }}
+                >
+                  ✨ 变换为…
                 </button>
               </div>
             )}

@@ -3,8 +3,15 @@ mod group;
 mod tag;
 mod snippet;
 mod config;
+mod ai_usage;
+mod ai_action;
 #[cfg(test)]
 mod tests;
+
+pub use ai_usage::{
+    AiUsageByAction, AiUsageDaily, AiUsageEntry, AiUsageLogRow, AI_USAGE_RETAIN_DAYS,
+};
+pub use ai_action::{CustomAction, MAX_ACTION_DESC_CHARS, MAX_ACTION_NAME_CHARS};
 
 use md5::{Digest, Md5};
 use rusqlite::{params, Connection};
@@ -231,6 +238,40 @@ impl DataStore {
                 enabled INTEGER NOT NULL DEFAULT 1,
                 preset INTEGER NOT NULL DEFAULT 0,
                 sort_order INTEGER NOT NULL DEFAULT 0
+            );
+
+            -- AI 调用明细账。**没有内容字段，也不得加**（见 data_store/ai_usage.rs）。
+            -- 它新建于 v6，不需要 ALTER 迁移：IF NOT EXISTS 就是幂等的。
+            CREATE TABLE IF NOT EXISTS ai_usage_log (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at        TEXT    NOT NULL,
+                action_id         TEXT    NOT NULL,
+                provider          TEXT    NOT NULL,
+                model             TEXT    NOT NULL,
+                prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+                completion_tokens INTEGER NOT NULL DEFAULT 0,
+                cost_usd          REAL    NOT NULL DEFAULT 0,
+                cached            INTEGER NOT NULL DEFAULT 0,
+                latency_ms        INTEGER NOT NULL DEFAULT 0,
+                ok                INTEGER NOT NULL DEFAULT 1,
+                error             TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_ai_usage_created ON ai_usage_log(created_at);
+
+            -- 用户自定义的 AI 动作（见 data_store/ai_action.rs）。
+            -- 名称 UNIQUE：两个同名动作在变换中心里根本分不清。
+            CREATE TABLE IF NOT EXISTS ai_custom_actions (
+                id            TEXT PRIMARY KEY,
+                name          TEXT NOT NULL UNIQUE,
+                description   TEXT NOT NULL DEFAULT '',
+                icon          TEXT NOT NULL DEFAULT 'sparkles',
+                template      TEXT NOT NULL,
+                max_tokens    INTEGER NOT NULL DEFAULT 2000,
+                content_types TEXT NOT NULL DEFAULT '',
+                enabled       INTEGER NOT NULL DEFAULT 1,
+                sort_order    INTEGER NOT NULL DEFAULT 0,
+                created_at    TEXT NOT NULL,
+                updated_at    TEXT NOT NULL
             );",
         )?;
 

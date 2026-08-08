@@ -13,6 +13,7 @@ import { hasUnseenEntries, getLastSeenVersion, setLastSeenVersion } from "@/lib/
 import { GeneralTab } from "@/components/settings/GeneralTab";
 import { HelpTabContent } from "@/components/settings/HelpTabContent";
 import { AboutTabContent } from "@/components/settings/AboutTabContent";
+import { AiTab } from "@/components/settings/AiTab";
 import styles from "./Settings.module.css";
 import { FocusTrap } from "@/components/FocusTrap";
 import { useDialogAnim } from "@/lib/dialogMotion";
@@ -24,7 +25,7 @@ const tabPanelVariants = {
 };
 const tabPanelTransition = { duration: 0.22, ease: [0.4, 0, 0.2, 1] as const };
 
-type SettingsTab = "general" | "help" | "about";
+type SettingsTab = "general" | "ai" | "help" | "about";
 
 export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const config = useAppStore((s) => s.config);
@@ -261,6 +262,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   const isBlossom = config.theme === "blossom";
   const tabs: { key: SettingsTab; label: string; icon: string }[] = [
     { key: "general", label: "通用", icon: isBlossom ? "🎀" : "⚙" },
+    { key: "ai", label: "AI", icon: isBlossom ? "🌸" : "✨" },
     { key: "help", label: "帮助", icon: isBlossom ? "💌" : "📖" },
     { key: "about", label: "关于", icon: isBlossom ? "💗" : "ℹ" },
   ];
@@ -313,6 +315,12 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                       handleExport={handleExport} handleImport={handleImport} handleCleanup={handleCleanup}
                       exporting={exporting} importing={importing}
                     />
+                  </motion.div>
+                )}
+
+                {activeTab === "ai" && (
+                  <motion.div key="tab-ai" variants={tabPanelVariants} initial="initial" animate="animate" exit="exit" transition={tabPanelTransition}>
+                    <AiTab />
                   </motion.div>
                 )}
 

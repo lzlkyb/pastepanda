@@ -1557,3 +1557,301 @@ fn test_pinyin_initials_truncated() {
     let initials = compute_pinyin_initials(&long_text);
     assert_eq!(initials.len(), 50);
 }
+
+// ============================================================
+// AI 用量明细账测试
+// ============================================================
+
+fn usage_entry(action: &str, p: u32, c: u32, cost: f64) -> AiUsageEntry {
+    AiUsageEntry {
+        action_id: action.to_string(),
+        provider: "deepseek".to_string(),
+        model: "deepseek-chat".to_string(),
+        prompt_tokens: p,
+        completion_tokens: c,
+        cost_usd: cost,
+        cached: false,
+        latency_ms: 120,
+        ok: true,
+        error: None,
+    }
+}
+
+#[test]
+fn test_ai_usage_log_has_no_content_column() {
+    // 这是条红线：明细表里不得出现任何能装下剪贴板内容的字段。
+    // 一旦有人为了"方便排查"加个 input/output/text 列，这个测试要立刻拦住。
+    let store = make_store();
+    let conn = store.lock_conn();
+    let mut stmt = conn
+        .prepare("SELECT name FROM pragma_table_info('ai_usage_log')")
+        .unwrap();
+    let cols: Vec<String> = stmt
+        .query_map([], |r| r.get::<_, String>(0))
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .collect();
+
+    assert!(!cols.is_empty(), "表没建起来");
+    for forbidden in ["text", "content", "input", "output", "prompt", "reply", "result"] {
+        assert!(
+            !cols.iter().any(|c| c == forbidden),
+            "ai_usage_log 出现了内容字段 `{}`——明细账绝不能变成第二份剪贴板历史",
+            forbidden
+        );
+    }
+}
+
+#[test]
+fn test_ai_usage_today_counts_billable_separately() {
+    let store = make_store();
+    // 2 次真实计费
+    store.ai_usage_add(&usage_entry("ai-translate", 100, 50, 0.01));
+    store.ai_usage_add(&usage_entry("ai-translate", 100, 50, 0.01));
+    // 1 次缓存命中（免费）
+    store.ai_usage_add(&AiUsageEntry {
+        cached: true,
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        cost_usd: 0.0,
+        ..usage_entry("ai-translate", 0, 0, 0.0)
+    });
+    // 1 次失败（免费）
+    store.ai_usage_add(&AiUsageEntry {
+        ok: false,
+        error: Some("鉴权失败".to_string()),
+        ..usage_entry("ai-summarize", 0, 0, 0.0)
+    });
+
+    let d = store.ai_usage_today();
+    assert_eq!(d.calls, 4, "总条数含缓存与失败");
+    assert_eq!(d.billable_calls, 2, "只有真实计费的才算 billable");
+    assert_eq!(d.cached_calls, 1);
+    assert_eq!(d.failed_calls, 1);
+    assert_eq!(d.prompt_tokens, 200);
+    assert_eq!(d.completion_tokens, 100);
+    assert!((d.cost_usd - 0.02).abs() < 1e-9);
+}
+
+#[test]
+fn test_ai_usage_empty_day_is_zero_not_error() {
+    // "今天还没用过"不是异常，不能让它把面板整个打不开
+    let store = make_store();
+    let d = store.ai_usage_today();
+    assert_eq!(d.calls, 0);
+    assert_eq!(d.cost_usd, 0.0);
+    assert!(store.ai_usage_recent(50).unwrap().is_empty());
+    assert!(store.ai_usage_daily(7).unwrap().is_empty());
+    assert!(store.ai_usage_by_action(7).unwrap().is_empty());
+}
+
+#[test]
+fn test_ai_usage_recent_is_newest_first_and_keeps_error() {
+    let store = make_store();
+    store.ai_usage_add(&usage_entry("ai-translate", 10, 5, 0.001));
+    store.ai_usage_add(&AiUsageEntry {
+        ok: false,
+        error: Some("请求超时（60 秒）".to_string()),
+        ..usage_entry("ai-summarize", 0, 0, 0.0)
+    });
+
+    let rows = store.ai_usage_recent(50).unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].entry.action_id, "ai-summarize", "应为时间倒序");
+    assert!(!rows[0].entry.ok);
+    assert!(rows[0].entry.error.as_deref().unwrap().contains("超时"));
+    assert_eq!(rows[1].entry.action_id, "ai-translate");
+    assert!(rows[1].entry.error.is_none());
+}
+
+#[test]
+fn test_ai_usage_long_error_is_truncated() {
+    // 服务商的错误体可能很长，整个存进来毫无必要
+    let store = make_store();
+    store.ai_usage_add(&AiUsageEntry {
+        ok: false,
+        error: Some("啊".repeat(5000)),
+        ..usage_entry("ai-rewrite", 0, 0, 0.0)
+    });
+    let rows = store.ai_usage_recent(1).unwrap();
+    let stored = rows[0].entry.error.as_deref().unwrap();
+    assert!(
+        stored.chars().count() <= 301,
+        "错误信息未截断，实际 {} 字",
+        stored.chars().count()
+    );
+}
+
+#[test]
+fn test_ai_usage_by_action_sorted_by_cost() {
+    let store = make_store();
+    store.ai_usage_add(&usage_entry("ai-translate", 10, 5, 0.001));
+    store.ai_usage_add(&usage_entry("ai-explain-code", 500, 500, 0.05));
+    store.ai_usage_add(&usage_entry("ai-translate", 10, 5, 0.001));
+
+    let by = store.ai_usage_by_action(7).unwrap();
+    assert_eq!(by.len(), 2);
+    assert_eq!(by[0].action_id, "ai-explain-code", "花费最多的排最前");
+    assert_eq!(by[1].action_id, "ai-translate");
+    assert_eq!(by[1].calls, 2);
+}
+
+#[test]
+fn test_ai_usage_clear_and_purge() {
+    let store = make_store();
+    store.ai_usage_add(&usage_entry("ai-translate", 10, 5, 0.001));
+
+    // 保留期内的记录不该被清掉
+    assert_eq!(store.ai_usage_purge(90).unwrap(), 0);
+    assert_eq!(store.ai_usage_today().calls, 1);
+
+    // 用户一键删除
+    assert_eq!(store.ai_usage_clear().unwrap(), 1);
+    assert_eq!(store.ai_usage_today().calls, 0);
+}
+
+// ============================================================
+// 自定义 AI 动作
+// ============================================================
+
+fn custom_action(name: &str, template: &str) -> CustomAction {
+    CustomAction {
+        id: String::new(),
+        name: name.to_string(),
+        description: String::new(),
+        icon: "sparkles".to_string(),
+        template: template.to_string(),
+        max_tokens: 500,
+        content_types: vec![],
+        enabled: true,
+        sort_order: 0,
+        created_at: String::new(),
+        updated_at: String::new(),
+    }
+}
+
+#[test]
+fn test_custom_action_roundtrip() {
+    let store = make_store();
+    let mut a = custom_action("写 commit", "根据 diff 写：{{内容}}");
+    a.content_types = vec!["code".to_string(), "text".to_string()];
+    let id = store.ai_custom_action_save(&a).unwrap();
+    assert!(!id.is_empty());
+
+    let list = store.ai_custom_actions().unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].name, "写 commit");
+    assert_eq!(list[0].max_tokens, 500);
+    assert_eq!(list[0].content_types, vec!["code", "text"], "类型要能原样读回");
+    assert!(list[0].enabled);
+    assert!(!list[0].created_at.is_empty());
+}
+
+#[test]
+fn test_custom_action_duplicate_name_rejected() {
+    // 两个同名动作在变换中心里根本分不清，必须在保存时就拦住
+    let store = make_store();
+    store
+        .ai_custom_action_save(&custom_action("润色", "{{内容}}"))
+        .unwrap();
+    let err = store
+        .ai_custom_action_save(&custom_action("润色", "另一个 {{内容}}"))
+        .unwrap_err();
+    assert!(err.contains("润色"), "报错要点出是哪个名字：{}", err);
+    assert!(!err.contains("UNIQUE"), "不该把 SQLite 的英文原文抛给用户");
+}
+
+#[test]
+fn test_custom_action_update_keeps_id_and_allows_same_name() {
+    let store = make_store();
+    let id = store
+        .ai_custom_action_save(&custom_action("提取待办", "{{内容}}"))
+        .unwrap();
+
+    let mut edit = custom_action("提取待办", "改过的 {{内容}}");
+    edit.id = id.clone();
+    edit.enabled = false;
+    // 改自己时不该被自己的名字挡住
+    let same = store.ai_custom_action_save(&edit).unwrap();
+    assert_eq!(same, id);
+
+    let got = store.ai_custom_action(&id).unwrap().unwrap();
+    assert_eq!(got.template, "改过的 {{内容}}");
+    assert!(!got.enabled);
+    assert_eq!(store.ai_custom_actions().unwrap().len(), 1, "不该多出一条");
+}
+
+#[test]
+fn test_custom_action_name_length_and_empty() {
+    let store = make_store();
+    assert!(store
+        .ai_custom_action_save(&custom_action("   ", "{{内容}}"))
+        .unwrap_err()
+        .contains("不能为空"));
+
+    let long = "字".repeat(MAX_ACTION_NAME_CHARS + 1);
+    assert!(store
+        .ai_custom_action_save(&custom_action(&long, "{{内容}}"))
+        .unwrap_err()
+        .contains("最长"));
+}
+
+#[test]
+fn test_custom_action_max_tokens_clamped() {
+    // 填 0 会让回答直接空掉，填 999999 只是白花钱
+    let store = make_store();
+    let mut a = custom_action("夹逼", "{{内容}}");
+    a.max_tokens = 0;
+    let id = store.ai_custom_action_save(&a).unwrap();
+    assert!(store.ai_custom_action(&id).unwrap().unwrap().max_tokens >= 50);
+
+    let mut b = custom_action("夹逼2", "{{内容}}");
+    b.max_tokens = 999_999;
+    let id2 = store.ai_custom_action_save(&b).unwrap();
+    assert!(store.ai_custom_action(&id2).unwrap().unwrap().max_tokens <= 4000);
+}
+
+#[test]
+fn test_custom_action_new_ones_go_last_and_reorder_works() {
+    let store = make_store();
+    let a = store.ai_custom_action_save(&custom_action("A", "{{内容}}")).unwrap();
+    let b = store.ai_custom_action_save(&custom_action("B", "{{内容}}")).unwrap();
+    let c = store.ai_custom_action_save(&custom_action("C", "{{内容}}")).unwrap();
+
+    let names: Vec<String> = store
+        .ai_custom_actions()
+        .unwrap()
+        .into_iter()
+        .map(|x| x.name)
+        .collect();
+    assert_eq!(names, vec!["A", "B", "C"], "新建的应排在最后");
+
+    store
+        .ai_custom_actions_reorder(&[c.clone(), a.clone(), b.clone()])
+        .unwrap();
+    let after: Vec<String> = store
+        .ai_custom_actions()
+        .unwrap()
+        .into_iter()
+        .map(|x| x.name)
+        .collect();
+    assert_eq!(after, vec!["C", "A", "B"]);
+}
+
+#[test]
+fn test_custom_action_delete_and_missing_id() {
+    let store = make_store();
+    let id = store.ai_custom_action_save(&custom_action("待删", "{{内容}}")).unwrap();
+    store.ai_custom_action_delete(&id).unwrap();
+    assert!(store.ai_custom_action(&id).unwrap().is_none());
+    // 删不存在的不报错（幂等）
+    store.ai_custom_action_delete("不存在").unwrap();
+
+    // 改一个已经被删掉的，要给出能看懂的提示而不是静默成功
+    let mut ghost = custom_action("幽灵", "{{内容}}");
+    ghost.id = id;
+    assert!(store
+        .ai_custom_action_save(&ghost)
+        .unwrap_err()
+        .contains("已经不存在"));
+}

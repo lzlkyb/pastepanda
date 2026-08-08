@@ -14,7 +14,14 @@ interface DialogState {
   closeEditor: (itemId?: string) => void;
   /** 变换枢纽目标记录（非 null 时 TransformHubDialog 打开） */
   hubItem: HistoryItem | null;
-  openHub: (item: HistoryItem) => void;
+  /**
+   * 覆盖枢纽要处理的文本。
+   *
+   * 给图片预览里的“框选一块 → 拿这段文字去变换”用。不这样做的话，
+   * 预览弹窗就得自己再搭一套动作列表，两份代码迟早漂。
+   */
+  hubText: string | null;
+  openHub: (item: HistoryItem, overrideText?: string) => void;
   closeHub: () => void;
 }
 
@@ -37,6 +44,8 @@ export const useDialogStore = create<DialogState>((set) => ({
       return { editorItem: null };
     }),
   hubItem: null,
-  openHub: (item) => set({ hubItem: item }),
-  closeHub: () => set({ hubItem: null }),
+  hubText: null,
+  openHub: (item, overrideText) =>
+    set({ hubItem: item, hubText: overrideText ?? null }),
+  closeHub: () => set({ hubItem: null, hubText: null }),
 }));

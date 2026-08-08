@@ -65,7 +65,70 @@
 }
 .cardIcon { display: inline-flex; color: var(--accent); flex-shrink: 0; }
 .cardMain { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.cardLabel { font-size: 13px; font-weight: 600; }
+.cardLabel {
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 联网徽标：让云端动作一眼区别于本地瞬时变换。
+   本地变换点下去就出结果，这些会把内容发到外部服务并计费，不能长得一样。 */
+.remoteBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9.5px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+}
+
+.remoteMeta {
+  margin: 5px 13px 0;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+/* “需要确认”不是错误（内容看着像密钥，后端拒发了），用警告色而非报错红 */
+.previewWarn {
+  margin: 0 13px;
+  background: var(--dialog-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 9px 11px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--orange);
+  white-space: pre-wrap;
+}
+
+.runBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 5px 13px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.runBtn:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.runBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 .cardDesc {
   font-size: 11px;
   color: var(--text-muted);
@@ -189,6 +252,78 @@
 }
 .pasteBtn:hover:not(:disabled) { border-color: var(--accent); color: var(--text-primary); }
 .pasteBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* 图片条目的本地 OCR 结果区。摆在卡片上方，先看再发 */
+.ocrBox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 11px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+}
+
+.ocrHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.ocrRetry {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 11px;
+  font-family: inherit;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.ocrRetry:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.ocrText {
+  min-height: 62px;
+  max-height: 160px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--search-border);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.ocrText:focus {
+  border-color: var(--accent);
+}
+
+.ocrErr {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--orange);
+}
+
+.ocrNote {
+  font-size: 10px;
+  color: var(--text-muted);
+}
 
 .empty {
   padding: 26px 12px;

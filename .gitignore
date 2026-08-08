@@ -32,3 +32,6 @@ src-tauri/config_backups/
 # 早期会话的临时产物（图片 base64 中转、暂缓的测试草稿）
 melody_b64.txt
 *.test.ts.pending
+
+# codegraph 索引产物（本地生成，勿入库）
+.codegraph/

@@ -1,6 +1,6 @@
 [package]
 name = "pastepanda"
-version = "5.6.4"
+version = "5.6.5"
 description = "PastePanda - Smart Clipboard Manager"
 authors = ["you"]
 edition = "2021"
@@ -49,6 +49,9 @@ rust_xlsxwriter = "0.8"
 serde_yaml = "0.9"
 encoding_rs = "0.8"
 chardetng = "0.1"
+# 云端 AI 地基（阶段 B0）：OpenAI 兼容的 /chat/completions 调用。
+# 用 rustls 而非 native-tls：免掉 OpenSSL 构建依赖，也不绑定系统 schannel 版本。
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 # tree-sitter 语言仲裁层（方案 B）：规则引擎存疑时用真实语法解析投票定语言
 tree-sitter = "0.26"
 tree-sitter-javascript = "0.25"
@@ -79,6 +82,8 @@ windows = { version = "0.58", features = [
     "Win32_System_ProcessStatus",
     "Win32_System_Threading",
     "Win32_Storage_FileSystem",
+    # DPAPI（CryptProtectData）：加密 AI API Key，避免它进明文的 config 表
+    "Win32_Security_Cryptography",
     "Media_Ocr",
     "Graphics_Imaging",
     "Storage",

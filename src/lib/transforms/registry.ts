@@ -15,6 +15,16 @@ export function registerTransform(t: Transform): void {
   registry.set(t.id, t);
 }
 
+/**
+ * 注销一个变换。返回是否真的删掉了。
+ *
+ * 给自定义 AI 动作用：用户删掉一个动作后，如果只重新注册不注销，
+ * 旧的会一直留在表里——点下去会报“未知的 AI 动作”。
+ */
+export function unregisterTransform(id: string): boolean {
+  return registry.delete(id);
+}
+
 /** 按 id 取变换 */
 export function getTransform(id: string): Transform | undefined {
   return registry.get(id);

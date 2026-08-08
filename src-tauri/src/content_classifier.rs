@@ -46,6 +46,30 @@ static BASE64_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^[A-Za-z0-9+/]+={0,2}$").unwrap()
 });
 
+/// 已知服务商的密钥前缀清单。
+///
+/// 这些串普遍含 `-`/`_`，或总长度不是 4 的倍数，因此走不到下面的通用 Base64 分支——
+/// 在补这张表之前，开着「敏感内容防护」也拦不住它们（`should_skip_sensitive_with` 直接调 `is_secret`）。
+///
+/// 前缀是各家固定的公开格式而非用户偏好，故写死在代码里、随版本更新，不做成可配项。
+/// 语义：`trimmed` 以 `prefix` 开头**且**总长度 > `min_len`。
+const SECRET_PREFIXES: &[(&str, usize)] = &[
+    ("sk-", 20),         // OpenAI / Anthropic（覆盖 sk-ant-、sk-proj- 等变体）
+    ("xoxb-", 20),       // Slack bot token
+    ("xoxp-", 20),       // Slack user token
+    ("xoxa-", 20),       // Slack app token
+    ("xoxe-", 20),       // Slack refresh token
+    ("xapp-", 20),       // Slack app-level token
+    ("AIza", 35),        // Google API Key（实际固定 39 位）
+    ("glpat-", 20),      // GitLab personal access token
+    ("ghp_", 30),        // GitHub PAT（经典）
+    ("gho_", 30),        // GitHub OAuth token
+    ("ghu_", 30),        // GitHub user-to-server token
+    ("ghs_", 30),        // GitHub server-to-server token
+    ("ghr_", 30),        // GitHub refresh token
+    ("github_pat_", 30), // GitHub PAT（细粒度）
+];
+
 // ===== 代码检测 — 通用关键字 =====
 static CODE_KEYWORD_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(function|return|class|import|export|const|let|var|if|else|for|while|switch|case|break|continue|try|catch|finally|throw|new|this|async|await|yield|typedef|struct|enum|interface|extends|implements|abstract|static|public|private|protected|void|int|float|double|bool|boolean|string|char|byte|long|short|echo|exit|fi|elif)\b").unwrap()
@@ -541,13 +565,25 @@ impl ContentClassifier {
             return true;
         }
 
-        // AWS Access Key
+        // AWS Access Key（固定 20 位，多一位少一位都不是，故不入前缀表）
         if trimmed.starts_with("AKIA") && trimmed.len() == 20 {
             return true;
         }
 
-        // GitHub Token
-        if (trimmed.starts_with("ghp_") || trimmed.starts_with("github_pat_")) && trimmed.len() > 30 {
+        // 服务商密钥前缀（OpenAI/Anthropic/Slack/Google/GitLab/GitHub 等，见 SECRET_PREFIXES）
+        // 额外要求单行且无空格：避免「以前缀开头的一段说明文字」被误判为密钥。
+        if !trimmed.contains(' ')
+            && !trimmed.contains('\n')
+            && SECRET_PREFIXES
+                .iter()
+                .any(|(prefix, min_len)| trimmed.starts_with(prefix) && trimmed.len() > *min_len)
+        {
+            return true;
+        }
+
+        // PEM 私钥块（RSA / EC / OPENSSH / PGP 等变体统一命中）。
+        // 它本身是多行内容，所以不能去蹭上面那条单行约束。
+        if trimmed.starts_with("-----BEGIN") && trimmed.contains("PRIVATE KEY") {
             return true;
         }
 
@@ -1018,6 +1054,49 @@ mod tests {
         let c = ContentClassifier::new();
         assert!(c.is_secret("github_pat_1234567890abcdef1234567890abcdef"));
         assert!(!c.is_secret("ghp_short")); // 太短
+    }
+
+    #[test]
+    fn test_is_secret_vendor_prefixes() {
+        let c = ContentClassifier::new();
+        // 以下全部含 `-`/`_` 或长度非 4 的倍数，走不到 Base64 分支，
+        // 必须由 SECRET_PREFIXES 命中（否则开着「敏感内容防护」仍会入库）。
+        assert!(c.is_secret("sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"));
+        assert!(c.is_secret("sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCD"));
+        assert!(c.is_secret("xoxb-1234567890-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx"));
+        assert!(c.is_secret("xapp-1-A01234567-1234567890123-abcdef0123456789"));
+        assert!(c.is_secret("AIzaSyB1234567890abcdefghijklmnopqrstuv")); // 39 位
+        assert!(c.is_secret("glpat-ABCDEFGHIJKLMNOPQRST"));
+        assert!(c.is_secret("gho_1234567890abcdef1234567890abcdef12"));
+    }
+
+    #[test]
+    fn test_is_secret_prefix_needs_min_length() {
+        let c = ContentClassifier::new();
+        // 前缀对上但长度不够 → 不触发，避免把普通短串当密钥
+        assert!(!c.is_secret("sk-learn"));
+        assert!(!c.is_secret("AIzaShortKey"));
+        assert!(!c.is_secret("glpat-tooshort"));
+    }
+
+    #[test]
+    fn test_is_secret_prefix_requires_single_line_no_space() {
+        let c = ContentClassifier::new();
+        // 以前缀开头的说明性文字不应被当成密钥
+        assert!(!c.is_secret("sk-ant 是 Anthropic 密钥的前缀，不是密钥本身"));
+        assert!(!c.is_secret("glpat-开头的一行说明 后面还有内容"));
+    }
+
+    #[test]
+    fn test_is_secret_pem_private_key() {
+        let c = ContentClassifier::new();
+        let rsa = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA1234\n-----END RSA PRIVATE KEY-----";
+        assert!(c.is_secret(rsa));
+        let openssh = "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEA\n-----END OPENSSH PRIVATE KEY-----";
+        assert!(c.is_secret(openssh));
+        // 证书是公开物，不应拦
+        let cert = "-----BEGIN CERTIFICATE-----\nMIIDdTCCAl2gAwIBAgIJAKl\n-----END CERTIFICATE-----";
+        assert!(!c.is_secret(cert));
     }
 
     #[test]

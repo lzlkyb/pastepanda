@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda · AI 自定义动作 设计稿</title>
+<style>
+:root{
+  --bg:#0f1115; --panel:#161920; --section:#1c2029; --border:#272c37;
+  --text:#e6e9ef; --text2:#a8b0be; --muted:#6f7887;
+  --accent:#4c8dff; --green:#3fb950; --orange:#d29922; --danger:#f0554b;
+  --input:#12151c;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font:13px/1.6 "Microsoft YaHei",system-ui,sans-serif;padding:28px}
+h1{font-size:17px;margin:0 0 4px}
+.sub{color:var(--muted);font-size:12px;margin-bottom:22px}
+h2{font-size:13px;margin:30px 0 10px;color:var(--text2);
+  border-left:3px solid var(--accent);padding-left:8px}
+.note{color:var(--muted);font-size:11.5px;margin:6px 0 12px}
+.panel{background:var(--panel);border:1px solid var(--border);
+  border-radius:10px;padding:14px 16px;max-width:640px}
+
+/* 字段 */
+.label{font-size:12px;font-weight:600;margin-bottom:6px}
+.hint{font-size:11px;color:var(--muted);line-height:1.5;margin-top:6px}
+input,textarea,select{width:100%;background:var(--input);color:var(--text);
+  border:1px solid var(--border);border-radius:8px;padding:7px 10px;
+  font:inherit;outline:none}
+textarea{min-height:120px;resize:vertical;font-family:Consolas,monospace;font-size:12px}
+input:focus,textarea:focus{border-color:var(--accent)}
+.field{margin-bottom:14px}
+
+/* 按钮 */
+.btn{border:1px solid var(--border);background:var(--section);color:var(--text);
+  border-radius:8px;padding:6px 14px;font:inherit;cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.danger{background:transparent;border-color:var(--danger);color:var(--danger)}
+.row{display:flex;gap:8px;align-items:center}
+
+/* 动作列表 */
+.list{border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.item{display:flex;align-items:center;gap:10px;padding:10px 12px;
+  border-bottom:1px solid var(--border);background:var(--section)}
+.item:last-child{border-bottom:none}
+.item .grip{color:var(--muted);cursor:grab}
+.item .body{flex:1;min-width:0}
+.item .name{font-weight:600}
+.item .desc{font-size:11px;color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tag{font-size:10px;padding:1px 6px;border-radius:999px;
+  background:rgba(76,141,255,.14);color:var(--accent);white-space:nowrap}
+.tag.all{background:rgba(255,255,255,.06);color:var(--muted)}
+.sw{width:30px;height:17px;border-radius:999px;background:var(--accent);
+  position:relative;flex-shrink:0;cursor:pointer}
+.sw::after{content:"";position:absolute;top:2px;right:2px;width:13px;height:13px;
+  border-radius:50%;background:#fff}
+.sw.off{background:#3a4150}
+.sw.off::after{right:auto;left:2px}
+
+/* 适用类型芯片 */
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{padding:4px 10px;border-radius:999px;border:1px solid var(--border);
+  background:var(--input);color:var(--text2);font-size:11px;cursor:pointer}
+.chip.on{border-color:var(--accent);color:var(--accent)}
+
+/* 错误态 */
+.err{border-color:var(--danger)!important}
+.errmsg{color:var(--danger);font-size:11px;margin-top:6px}
+
+/* 变换中心预览 */
+.card{background:var(--section);border:1px solid var(--border);border-radius:8px;
+  padding:9px 11px;margin-bottom:7px;display:flex;align-items:center;gap:9px}
+.card .ic{width:22px;height:22px;border-radius:6px;background:rgba(76,141,255,.14);
+  color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:12px}
+.card .t{flex:1}
+.card .t b{font-weight:600}
+.card .t span{display:block;font-size:11px;color:var(--muted)}
+.score{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
+.net{font-size:10px;color:var(--orange);border:1px solid var(--orange);
+  border-radius:999px;padding:0 5px}
+
+.cols{display:flex;gap:18px;flex-wrap:wrap}
+.cols>div{flex:1;min-width:290px}
+.k{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<h1>AI 自定义动作 · 设计稿</h1>
+<div class="sub">2026-08-08 · 对应方案 <code>docs/AI能力扩充方案-自定义动作.md</code> · 仅静态稿，不可交互</div>
+
+<!-- ===== 1. 列表 ===== -->
+<h2>① 设置 → AI → 自定义动作</h2>
+<div class="note">放在「用量明细」与「高级设置」之间。默认展开——它不是旋钮，是用户真会反复回来的地方。</div>
+<div class="panel">
+  <div class="row" style="justify-content:space-between;margin-bottom:10px">
+    <div class="label" style="margin:0">自定义动作</div>
+    <button class="btn primary">+ 新建</button>
+  </div>
+
+  <div class="list">
+    <div class="item">
+      <span class="grip">⋮⋮</span>
+      <div class="body">
+        <div class="name">写 commit message</div>
+        <div class="desc">根据 diff 写一条中文提交信息，首行不超 50 字</div>
+      </div>
+      <span class="tag">代码</span>
+      <div class="sw"></div>
+    </div>
+    <div class="item">
+      <span class="grip">⋮⋮</span>
+      <div class="body">
+        <div class="name">提取待办</div>
+        <div class="desc">从会议记录里抽出待办项，带负责人与截止时间</div>
+      </div>
+      <span class="tag all">全部类型</span>
+      <div class="sw"></div>
+    </div>
+    <div class="item">
+      <span class="grip">⋮⋮</span>
+      <div class="body">
+        <div class="name">翻译成日文</div>
+        <div class="desc">已停用</div>
+      </div>
+      <span class="tag all">全部类型</span>
+      <div class="sw off"></div>
+    </div>
+  </div>
+
+  <div class="hint">拖动可调顺序。停用的动作不会出现在变换中心，但模板保留。</div>
+</div>
+
+<!-- ===== 2. 编辑器 ===== -->
+<h2>② 新建 / 编辑</h2>
+<div class="cols">
+  <div>
+    <div class="note">正常态。占位符 <code class="k">{{内容}}</code> 在模板里高亮。</div>
+    <div class="panel">
+      <div class="field">
+        <div class="label">名称</div>
+        <input value="写 commit message">
+      </div>
+      <div class="field">
+        <div class="label">提示词模板</div>
+        <textarea>根据下面的 diff 写一条 commit message。要求：
+- 用中文，首行不超 50 字
+- 首行只说做了什么，不说怎么做的
+
+{{内容}}
+
+只输出 commit message 本身。</textarea>
+        <div class="hint">必须包含 <span class="k">{{内容}}</span>，它会被替换成剪贴板里的内容。模板最长 2000 字。</div>
+      </div>
+      <div class="field">
+        <div class="label">什么时候出现</div>
+        <div class="chips">
+          <span class="chip on">代码</span><span class="chip">JSON</span>
+          <span class="chip">链接</span><span class="chip">纯文本</span>
+          <span class="chip">配置</span><span class="chip">SQL</span>
+        </div>
+        <div class="hint">一个都不选 = 任何内容上都出现（但排在内置动作之后）。选了就只在对应类型上出现，并排在最前。</div>
+      </div>
+      <div class="field">
+        <div class="label">输出上限（token）</div>
+        <input value="500" style="width:120px">
+        <div class="hint">给小一点可以省钱，但太小会把回答截断。commit message 这类短产物 500 就够。</div>
+      </div>
+      <div class="row">
+        <button class="btn primary">保存</button>
+        <button class="btn">取消</button>
+        <button class="btn danger" style="margin-left:auto">删除</button>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="note">校验失败态。这是最容易犯的错，拦得早比让它发出去、拿回一个莫名其妙的结果强。</div>
+    <div class="panel">
+      <div class="field">
+        <div class="label">名称</div>
+        <input value="翻译" class="err">
+        <div class="errmsg">已经有一个叫“翻译”的动作了，换个名字吧。</div>
+      </div>
+      <div class="field">
+        <div class="label">提示词模板</div>
+        <textarea class="err" style="min-height:70px">把这段话润色一下，语气正式一点。</textarea>
+        <div class="errmsg">模板里没有 {{内容}}，模型会不知道要处理什么。把光标放到位置上点下面的按钮。</div>
+        <div class="row" style="margin-top:8px">
+          <button class="btn">插入 {{内容}}</button>
+        </div>
+      </div>
+      <div class="hint" style="border-top:1px solid var(--border);padding-top:10px">
+        <b style="color:var(--text2)">为什么不允许缺占位符：</b>
+        如果自动拼到末尾，“只输出结果本身”这类收尾约束就会被内容挤到前面，
+        模型很容易照旧带前言。强制占位符是为了把“夹心结构”变成默认。
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 3. 变换中心效果 ===== -->
+<h2>③ 变换中心里的效果（复制一段 diff 后）</h2>
+<div class="note">自定义动作与内置动作**同处一个列表、同一套排序**，不另开分组。右侧分数仅设计稿标注，界面上不显示。</div>
+<div class="panel">
+  <div class="card">
+    <div class="ic">✦</div>
+    <div class="t"><b>写 commit message</b><span>自定义 · 根据 diff 写一条中文提交信息</span></div>
+    <span class="net">联网</span><span class="score">0.75</span>
+  </div>
+  <div class="card">
+    <div class="ic">&lt;/&gt;</div>
+    <div class="t"><b>解释代码</b><span>内置 · 说清楚这段代码做了什么</span></div>
+    <span class="net">联网</span><span class="score">0.85</span>
+  </div>
+  <div class="card">
+    <div class="ic">≡</div>
+    <div class="t"><b>提取待办</b><span>自定义 · 适用全部类型</span></div>
+    <span class="net">联网</span><span class="score">0.45</span>
+  </div>
+  <div class="hint">不单开一个“我的动作”分组：用户要的是“对这段内容最合适的动作”，而不是“它是谁写的”。</div>
+</div>
+
+<!-- ===== 4. 内置扩容 ===== -->
+<h2>④ 内置动作扩容（4 → 10）</h2>
+<div class="panel">
+  <div class="chips">
+    <span class="chip on">翻译</span><span class="chip on">一句话摘要</span>
+    <span class="chip on">解释代码</span><span class="chip on">改写语气</span>
+    <span class="chip">润色纠错</span><span class="chip">提取要点</span>
+    <span class="chip">写 commit message</span><span class="chip">JSON → 类型定义</span>
+    <span class="chip">表格化</span><span class="chip">回复草稿</span>
+  </div>
+  <div class="hint">实心为现有四个，空心为新增。挑选标准：高频 + 一步到位 + 产物直接可用；
+  需要多轮对话才能完成的（如“帮我调试这段代码”）不收——那是对话工具的活。</div>
+</div>
+
+<!-- ===== 5. 待定 ===== -->
+<h2>⑤ 还没拍板的</h2>
+<div class="panel">
+  <div class="hint" style="line-height:1.8">
+  • 新建时要不要给几个**模板示例**可一键套用？好处是降低启动成本，坏处是多一层界面。<br>
+  • 编辑器要不要带**试跑**（拿当前剪贴板内容真发一次）？它会真计费，得在按钮上写明。<br>
+  • 自定义动作要不要允许指定**用哪个模型**（比如“写 commit”用便宜档，“润色”用强档）？
+  技术上容易，但会把“一个当前模型”这个心智模型打破。
+  </div>
+</div>
+
+</body>
+</html>

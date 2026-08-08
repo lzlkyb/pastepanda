@@ -1,0 +1,535 @@
+/* AI 设置面板。颜色全部走主题变量，不写硬编码色值，否则换皮肤会花。 */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 16px 18px;
+}
+
+/* ===== 状态栏 ===== */
+
+.statusBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.badgeReady {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+}
+
+.badgeOff {
+  color: var(--orange);
+  background: var(--section-bg);
+}
+
+.badgeIdle {
+  color: var(--text-muted);
+  background: var(--section-bg);
+}
+
+.statusText {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* ===== 主流程步骤 ===== */
+
+.step {
+  display: flex;
+  gap: 10px;
+}
+
+.stepNum {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stepBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stepTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.providerNote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* 文字按钮（去申请 Key / 错误提示里的下一步） */
+.linkBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.linkBtn:hover {
+  text-decoration: underline;
+}
+
+/* ===== 通用字段 ===== */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.input,
+.select {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--search-border);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.input:focus,
+.select:focus {
+  border-color: var(--accent);
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.rowGrow {
+  flex: 1;
+  min-width: 0;
+}
+
+.keySet {
+  color: var(--green);
+  vertical-align: -1px;
+}
+
+/* 联网提醒：这一栏存在的意义就是让用户知道剪贴板内容会离开本机 */
+.warn {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.warnIcon {
+  flex-shrink: 0;
+  color: var(--orange);
+}
+
+/* ===== 测试结果 ===== */
+
+.testResult {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--section-bg);
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.testOk {
+  color: var(--green);
+}
+
+.testFail {
+  color: var(--danger);
+}
+
+/* 下一步建议用次要色，不跟错误本文抢注意力 */
+.testHint {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  color: var(--text-muted);
+}
+
+/* ===== 用量 ===== */
+
+.usageCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--section-bg);
+}
+
+.usage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--section-bg);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* 卡片内部的那一行不再重复背景与内边距 */
+.usageCard .usage {
+  padding: 0;
+  background: none;
+}
+
+.usageNum {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.usageNote {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.usageBar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-color);
+  overflow: hidden;
+}
+
+.usageBarFill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+
+.usageBarFull {
+  height: 100%;
+  background: var(--danger);
+  transition: width 0.2s ease;
+}
+
+/* ===== 用量明细列表 ===== */
+
+.logList {
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
+  border-radius: 8px;
+  background: var(--section-bg);
+}
+
+.logRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.logRow:last-child {
+  border-bottom: none;
+}
+
+.logTime {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 动作名占余下空间，模型名过长时截断而不是把行撞开 */
+.logAction {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+
+.logMeta {
+  flex-shrink: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.tagCached {
+  flex-shrink: 0;
+  color: var(--green);
+}
+
+.tagFailed {
+  flex-shrink: 0;
+  color: var(--danger);
+}
+
+/* ===== 自定义动作 ===== */
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--section-bg);
+}
+
+.textarea {
+  min-height: 130px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--search-border);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.textarea:focus {
+  border-color: var(--accent);
+}
+
+.textareaShort {
+  min-height: 64px;
+}
+
+/* 试跑结果。用 pre 保留换行——很多模板的产物就是列表或表格 */
+.preview {
+  margin: 0;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.errMsg {
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--section-bg);
+  color: var(--danger);
+}
+
+/* 动作列表行。整行可点进编辑，右侧开关不连带触发 */
+.actionRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.actionRow:last-child {
+  border-bottom: none;
+}
+
+.actionMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.actionName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.actionDesc {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tagOn {
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* ===== 高级区 ===== */
+
+.advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.advancedToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.advancedHint {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.advancedBody {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* 模型快捷芯片。档位在上、模型 ID 在下：
+   用户先关心“便宜还是强”，而不是那串型号名；但型号也得看得见，
+   否则出了问题说不清自己到底在用哪个。 */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--search-border);
+  background: var(--input-bg);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.chip:hover {
+  border-color: var(--accent);
+}
+
+.chipTitle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.chipId {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.chipActive {
+  border-color: var(--accent);
+}
+
+.chipActive .chipTitle {
+  color: var(--accent);
+}
