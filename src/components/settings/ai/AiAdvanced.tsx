@@ -32,7 +32,7 @@ export function AiAdvanced(p: Props) {
       <button className={styles.advancedToggle} onClick={p.onToggle}>
         {p.open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         高级设置
-        <span className={styles.advancedHint}>接口地址、协议、超时、费用上限</span>
+        <span className={styles.advancedHint}>接口地址、协议、超时、思考、费用上限</span>
       </button>
 
       {!p.open ? null : (
@@ -98,6 +98,43 @@ export function AiAdvanced(p: Props) {
                 不是对账；真实金额以服务商账单为准。
               </span>
             </label>
+          )}
+
+          {/* 只向查实过写法的厂商显示。其他家摆出来就是个点了没反应的开关。 */}
+          {spec?.supportsThinkingOff && (
+            <div className={styles.field}>
+              <span className={styles.label}>关掉模型思考</span>
+              <div className={styles.row}>
+                <input
+                  type="checkbox"
+                  checked={config.thinkingOff}
+                  onChange={(e) => p.onSave({ thinkingOff: e.target.checked })}
+                />
+                <span className={styles.hint}>
+                  更快、更便宜。{spec.name}的新模型默认会先输出一大段思考，而那些 token
+                  照样计费、也照样占用动作的 token
+                  上限。剪贴板动作多是短产物，思考在这里几乎是纯成本。需要深度推理（如解释复杂报错）时再关掉它。
+                </span>
+              </div>
+            </div>
+          )}
+
+          {spec?.supportsThinkingOff && (
+            <div className={styles.field}>
+              <span className={styles.label}>关掉模型思考</span>
+              <div className={styles.row}>
+                <input
+                  type="checkbox"
+                  checked={config.thinkingOff}
+                  onChange={(e) => p.onSave({ thinkingOff: e.target.checked })}
+                />
+                <span className={styles.hint}>
+                  更快、便宜一个量级。DeepSeek / 智谱 / MiniMax / 千问 的新模型
+                  <strong>默认都会先思考</strong>，而思考的 token 照样计费。剪贴板动作多是短产物，
+                  这部分开销几乎全是浪费。碰到需要推理的任务（如解释复杂报错）再关掉它。
+                </span>
+              </div>
+            </div>
           )}
 
           <div className={styles.field}>

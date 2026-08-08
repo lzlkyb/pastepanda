@@ -1,0 +1,48 @@
+/* AI / 联网 / 会先思考 徽标的唯一样式源。
+   改这里 = 所有出现的地方一起变，这正是把它抽出来的目的。 */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  padding: 1px 5px;
+  border-radius: 5px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.badge svg {
+  flex: none;
+}
+
+/* AI：三种里唯一用强调色的。
+
+   字色用 --accent-strong 而非 --accent：仓库多处注释已记录过“accent 压
+   accent-light 在浅色主题下对比度不足 4.5:1”，这里沿用同一个结论。
+
+   描边不是装饰，是必需的：forest 主题里 --section-bg 与 --accent-light
+   是同一个值（都是 #ECFDF5），卡片坐在 section 底上时，没描边的徽标
+   会直接糊进背景里看不见。 */
+.ai {
+  background: var(--accent-light);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--accent-strong);
+}
+
+/* remote / thinking 是**提示**而非**标识**，故意降级为中性，
+   不跟 AI 抢注意力。 */
+.remote,
+.thinking {
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+}
+
+.xs {
+  font-size: 8.5px;
+  padding: 0 4px;
+  gap: 2px;
+}

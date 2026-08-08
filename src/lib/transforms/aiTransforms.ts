@@ -128,6 +128,7 @@ function makeRun(actionId: string) {
               model: r.model,
               promptTokens: r.promptTokens,
               completionTokens: r.completionTokens,
+              truncated: r.truncated,
             },
           };
         case "needsConfirm":

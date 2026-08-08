@@ -51,7 +51,12 @@ export function AiActionEditor({ action, contentTypes, onSaved, onCancel, onDele
   const [saving, setSaving] = useState(false);
   const [sample, setSample] = useState("");
   const [testing, setTesting] = useState(false);
-  const [output, setOutput] = useState<{ ok: boolean; text: string } | null>(null);
+  const [output, setOutput] = useState<{
+    ok: boolean;
+    text: string;
+    /** 回答撞到 token 上限被截断——这是“模板写得不好”之外的另一回事，要分开说 */
+    truncated?: boolean;
+  } | null>(null);
   const templateRef = useRef<HTMLTextAreaElement>(null);
 
   const isNew = !action;
@@ -117,7 +122,7 @@ export function AiActionEditor({ action, contentTypes, onSaved, onCancel, onDele
       const r = await aiPreviewCustom(draft.template, sample, draft.maxTokens, force);
       switch (r.status) {
         case "ok":
-          setOutput({ ok: true, text: r.content });
+          setOutput({ ok: true, text: r.content, truncated: r.truncated });
           break;
         case "needsConfirm":
           setOutput({ ok: false, text: `${r.reason}（再点一次试跑即确认发送）` });
@@ -225,7 +230,10 @@ export function AiActionEditor({ action, contentTypes, onSaved, onCancel, onDele
           style={{ width: 120 }}
           onChange={(e) => patch({ maxTokens: Number(e.target.value) || 800 })}
         />
-        <span className={styles.hint}>给小一点省钱，但太小会把回答截断。短产物 300～800 就够。</span>
+        <span className={styles.hint}>
+          给小一点省钱，但太小会把回答截断。短产物 300～800 就够；
+          用推理模型时思考也算在这份额度里，要给到 3000 以上。
+        </span>
       </label>
 
       <div className={styles.field}>
@@ -244,9 +252,17 @@ export function AiActionEditor({ action, contentTypes, onSaved, onCancel, onDele
           <span className={styles.hint}>不用先保存，拿当前模板直接发一次。</span>
         </div>
         {output && (
-          <pre className={`${styles.preview} ${output.ok ? "" : styles.testFail}`}>
-            {output.text}
-          </pre>
+          <>
+            <pre className={`${styles.preview} ${output.ok ? "" : styles.testFail}`}>
+              {output.text}
+            </pre>
+            {output.truncated && (
+              <span className={styles.hint}>
+                ⚠ 回答被上面的 token 上限截断了。调大再试一次；如果用的是推理模型，
+                思考过程也吃这份额度，往往要 3000 以上。
+              </span>
+            )}
+          </>
         )}
       </div>
 

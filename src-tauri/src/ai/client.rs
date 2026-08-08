@@ -15,7 +15,7 @@
 //! 只做一件事：发一次请求、把结果或**人看得懂的错误**拿回来。
 //! 不做重试（重试 = 重复计费，应该是调用方的决定），不做流式。
 
-use super::provider::{AiConfig, Protocol};
+use super::provider::{AiConfig, Protocol, ThinkingControl};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -61,6 +61,9 @@ pub enum AiError {
 
     #[error("模型没有返回任何内容")]
     EmptyReply,
+
+    #[error("模型把 {0} token 的额度全用在“思考”上了，没留下答案——请把该动作的 token 上限调大（推理模型建议 ≥3000），或换一个不带思考的模型")]
+    ThinkingOnly(u32),
 }
 
 /// 一次调用的结果。token 数用于预算统计；厂商不返回时为 0。
@@ -71,6 +74,9 @@ pub struct ChatOutcome {
     pub model: String,
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
+    /// 回答撞到 `max_tokens` 被截断了。**调用方必须处理**：
+    /// 截断的结果不该进缓存，否则半截答案会被当成正确结果反复返回 24 小时。
+    pub truncated: bool,
 }
 
 // ===== OpenAI 兼容的请求/响应 =====
@@ -81,6 +87,13 @@ struct OaMessage<'a> {
     content: &'a str,
 }
 
+/// 关思考的请求体（MiniMax / 智谱）。
+#[derive(Serialize)]
+struct ThinkingOff {
+    #[serde(rename = "type")]
+    kind: &'static str,
+}
+
 #[derive(Serialize)]
 struct OaRequest<'a> {
     model: &'a str,
@@ -89,18 +102,32 @@ struct OaRequest<'a> {
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
+    /// 两个关思考的字段写法不同，同时声明、按厂商二选一。
+    /// 都是 `Option` 且为 `None` 时不序列化——不支持的厂商报文里看不到任何多余字段。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<ThinkingOff>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enable_thinking: Option<bool>,
 }
 
 #[derive(Deserialize)]
 struct OaRespMessage {
     #[serde(default)]
     content: String,
+    /// 另一派推理模型把思维链单独放这个字段，而不是内联进 `content`。
+    /// 只用来判断“这是个会思考的模型”，**永远不当正文**。
+    #[serde(default)]
+    reasoning_content: String,
 }
 
 #[derive(Deserialize)]
 struct OaChoice {
     #[serde(default)]
     message: Option<OaRespMessage>,
+    /// `"length"` = 撞到 `max_tokens` 被截断。
+    /// 不读它的话，一次「答案根本没生成出来」的调用会被当成正常回答返回。
+    #[serde(default)]
+    finish_reason: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -165,6 +192,35 @@ struct AnResponse {
     content: Vec<AnContentBlock>,
     #[serde(default)]
     usage: Option<AnUsage>,
+    /// `"max_tokens"` = 被截断，对应 OpenAI 的 `finish_reason: "length"`。
+    #[serde(default)]
+    stop_reason: Option<String>,
+}
+
+/// 剥掉推理模型内联在正文里的思维链，返回（真正的回答, 是否检测到思考）。
+///
+/// 推理模型（实测 MiniMax-M3）在 OpenAI 兼容端点上会把思维链包在
+/// `<think>…</think>` 里一并塞进 `content`。不剥的话用户拿到的就是一大块
+/// “让我想想……”而不是答案。
+///
+/// **只在开头剥**。内联思维链总是出现在最前面，而剪贴板内容本身完全可能
+/// 含有 `<think>` 字样（比如在翻译一段 HTML）——全文搜索替换会误伤正常内容。
+///
+/// 未闭合的情况必须单独处理：`max_tokens` 用尽时思维链会断在半句上，
+/// 只有开标签没有闭标签，此时整段都是思考、正文一个字都没有。
+fn strip_thinking(raw: &str) -> (String, bool) {
+    const PAIRS: &[(&str, &str)] = &[("<think>", "</think>"), ("<thinking>", "</thinking>")];
+
+    let trimmed = raw.trim_start();
+    for (open, close) in PAIRS {
+        if let Some(rest) = trimmed.strip_prefix(open) {
+            return match rest.find(close) {
+                Some(i) => (rest[i + close.len()..].trim().to_string(), true),
+                None => (String::new(), true),
+            };
+        }
+    }
+    (trimmed.trim_end().to_string(), false)
 }
 
 /// 截断过长的错误体：厂商报错时常回一大块 HTML，直接摆给用户毫无意义。
@@ -255,6 +311,18 @@ async fn chat_openai(
         content: user,
     });
 
+    // 关“思考”：只向查实过写法的厂商发字段，其余一律不发。
+    // 这不是保守，是因为发错字段名的代价（整个请求 400）比“没关成”大得多。
+    let (thinking, enable_thinking) = if cfg.thinking_off {
+        match cfg.spec().thinking_control() {
+            ThinkingControl::TypeObject => (Some(ThinkingOff { kind: "disabled" }), None),
+            ThinkingControl::EnableFlag => (None, Some(false)),
+            ThinkingControl::Unsupported => (None, None),
+        }
+    } else {
+        (None, None)
+    };
+
     let model = cfg.effective_model();
     let body = OaRequest {
         model: &model,
@@ -262,6 +330,8 @@ async fn chat_openai(
         temperature: 0.3,
         stream: false,
         max_tokens,
+        thinking,
+        enable_thinking,
     };
 
     let resp = build_client(cfg.timeout_secs)?
@@ -283,21 +353,35 @@ async fn chat_openai(
         .await
         .map_err(|e| AiError::Decode(e.to_string()))?;
 
-    let content = parsed
-        .choices
-        .into_iter()
-        .find_map(|c| c.message.map(|m| m.content))
-        .unwrap_or_default();
+    let choice = parsed.choices.into_iter().next();
+    let truncated = choice
+        .as_ref()
+        .and_then(|c| c.finish_reason.as_deref())
+        .is_some_and(|r| r == "length");
+    let msg = choice.and_then(|c| c.message);
+    let raw = msg.as_ref().map(|m| m.content.as_str()).unwrap_or_default();
+    // 思维链在单独字段里的那一派模型：`content` 可能干净，但也可能因为
+    // 额度都花在思考上而为空。记下来用于区分报错。
+    let has_reasoning_field = msg
+        .as_ref()
+        .is_some_and(|m| !m.reasoning_content.trim().is_empty());
+
+    let (content, had_inline_thinking) = strip_thinking(raw);
     if content.trim().is_empty() {
+        // “模型没回话”与“模型光顾着思考了”是两件事，下一步完全不同，不能混成同一个报错
+        if had_inline_thinking || has_reasoning_field || truncated {
+            return Err(AiError::ThinkingOnly(max_tokens.unwrap_or(0)));
+        }
         return Err(AiError::EmptyReply);
     }
 
     let usage = parsed.usage.unwrap_or_default();
     Ok(ChatOutcome {
-        content: content.trim().to_string(),
+        content,
         model: if parsed.model.is_empty() { model } else { parsed.model },
         prompt_tokens: usage.prompt_tokens,
         completion_tokens: usage.completion_tokens,
+        truncated,
     })
 }
 
@@ -308,11 +392,14 @@ async fn chat_anthropic(
     user: &str,
     max_tokens: Option<u32>,
 ) -> Result<ChatOutcome, AiError> {
+    // Anthropic 的扩展思考是**默认关**的（要主动传 `thinking` 才开），
+    // 所以 thinking_off 开关在这条路径上无需做任何事。
     let model = cfg.effective_model();
+    let mt = max_tokens.unwrap_or(ANTHROPIC_DEFAULT_MAX_TOKENS);
     let body = AnRequest {
         model: &model,
         // Anthropic 必填，不能省
-        max_tokens: max_tokens.unwrap_or(ANTHROPIC_DEFAULT_MAX_TOKENS),
+        max_tokens: mt,
         system: system.filter(|s| !s.trim().is_empty()),
         messages: vec![AnMessage {
             role: "user",
@@ -342,7 +429,9 @@ async fn chat_anthropic(
         .await
         .map_err(|e| AiError::Decode(e.to_string()))?;
 
-    // 回复是内容块数组，只取 text 类型并拼起来
+    // 回复是内容块数组，只取 text 类型并拼起来。
+    // 开了扩展思考时还会有 `thinking` 块，它们在这里就被滤掉了——
+    // 不像 OpenAI 那边需要自己剥 `<think>` 标签。
     let content = parsed
         .content
         .iter()
@@ -350,7 +439,13 @@ async fn chat_anthropic(
         .map(|b| b.text.as_str())
         .collect::<Vec<_>>()
         .join("");
+    let truncated = parsed.stop_reason.as_deref() == Some("max_tokens");
     if content.trim().is_empty() {
+        // 全部额度都花在 thinking 块上，一个 text 块都没生成出来
+        let thought_only = parsed.content.iter().any(|b| b.kind == "thinking");
+        if thought_only || truncated {
+            return Err(AiError::ThinkingOnly(mt));
+        }
         return Err(AiError::EmptyReply);
     }
 
@@ -361,6 +456,7 @@ async fn chat_anthropic(
         // 字段名不同：input/output 而非 prompt/completion
         prompt_tokens: usage.input_tokens,
         completion_tokens: usage.output_tokens,
+        truncated,
     })
 }
 
@@ -381,6 +477,124 @@ mod tests {
     #[test]
     fn test_truncate_body_short_input_unchanged() {
         assert_eq!(truncate_body("  hello  ", 300), "hello");
+    }
+
+    #[test]
+    fn test_strip_thinking_removes_closed_block() {
+        let (body, had) = strip_thinking("<think>让我想想，这段要压一半…</think>\n压缩后的结果");
+        assert_eq!(body, "压缩后的结果");
+        assert!(had);
+
+        // 有些模型用 <thinking>
+        let (body, had) = strip_thinking("<thinking>xxx</thinking>答案");
+        assert_eq!(body, "答案");
+        assert!(had);
+    }
+
+    #[test]
+    fn test_strip_thinking_unclosed_means_nothing_left() {
+        // 这正是实测撞到的那一个：max_tokens 用尽，思维链断在半句上，
+        // 只有开标签没有闭标签。通行的 `<think>.*?</think>` 正则在这里匹配不上，
+        // 会把整坑思维链当成正文交给用户——也就是这个 bug 本身。
+        let (body, had) = strip_thinking("<think>先数一下字数，然后考虑哪些是冗余表达，接下来");
+        assert!(body.is_empty(), "未闭合 = 正文一个字都没有，实际：{:?}", body);
+        assert!(had);
+    }
+
+    #[test]
+    fn test_strip_thinking_only_at_start() {
+        // 剪贴板内容本身可能含 <think>（比如在翻译一段 HTML）。
+        // 全文搜索替换会把用户的真实内容吃掉，所以只认开头。
+        let raw = "这是正文。<think>这一段是用户自己的字</think>结尾";
+        let (body, had) = strip_thinking(raw);
+        assert_eq!(body, raw, "不在开头的 think 不能动");
+        assert!(!had);
+    }
+
+    #[test]
+    fn test_strip_thinking_passthrough() {
+        let (body, had) = strip_thinking("  普通回答  ");
+        assert_eq!(body, "普通回答");
+        assert!(!had);
+    }
+
+    #[test]
+    fn test_openai_parses_finish_reason_and_reasoning_field() {
+        // 两个字段不接的后果：截断被当成正常回答，思维链被当成正文
+        let raw = r#"{
+            "model": "MiniMax-M3",
+            "choices": [{
+                "message": {"role":"assistant","content":"","reasoning_content":"嗯…"},
+                "finish_reason": "length"
+            }],
+            "usage": {"prompt_tokens": 251, "completion_tokens": 1500}
+        }"#;
+        let parsed: OaResponse = serde_json::from_str(raw).unwrap();
+        let c = &parsed.choices[0];
+        assert_eq!(c.finish_reason.as_deref(), Some("length"));
+        assert_eq!(c.message.as_ref().unwrap().reasoning_content, "嗯…");
+    }
+
+    #[test]
+    fn test_anthropic_parses_stop_reason() {
+        let raw = r#"{
+            "model": "claude-haiku-4-5",
+            "content": [{"type":"text","text":"半截"}],
+            "stop_reason": "max_tokens"
+        }"#;
+        let parsed: AnResponse = serde_json::from_str(raw).unwrap();
+        assert_eq!(parsed.stop_reason.as_deref(), Some("max_tokens"));
+    }
+
+    #[test]
+    fn test_thinking_only_error_tells_user_what_to_do() {
+        // 这条报错存在的意义就是把“模型没回话”和“额度全花在思考上”分开，
+        // 因为两者的下一步完全不同（一个重试，一个调大上限）
+        let msg = AiError::ThinkingOnly(1500).to_string();
+        assert!(msg.contains("1500"), "要告诉用户当前上限是多少");
+        assert!(msg.contains("思考"));
+        assert!(msg.contains("3000"), "要给出可操作的建议值");
+    }
+
+    #[test]
+    fn test_thinking_off_serializes_per_vendor() {
+        let mk = |thinking, enable_thinking| OaRequest {
+            model: "m",
+            messages: vec![OaMessage { role: "user", content: "hi" }],
+            temperature: 0.3,
+            stream: false,
+            max_tokens: None,
+            thinking,
+            enable_thinking,
+        };
+
+        let j = serde_json::to_string(&mk(Some(ThinkingOff { kind: "disabled" }), None)).unwrap();
+        assert!(j.contains(r#""thinking":{"type":"disabled"}"#), "{j}");
+        assert!(!j.contains("enable_thinking"), "两个字段不能同时出现：{j}");
+
+        let j = serde_json::to_string(&mk(None, Some(false))).unwrap();
+        assert!(j.contains(r#""enable_thinking":false"#), "{j}");
+        assert!(!j.contains(r#""thinking""#), "{j}");
+
+        // 没核实过写法的厂商：报文里不得出现任何思考相关字段。
+        // 多发一个对方不认识的字段，代价可能是整个请求 400。
+        let j = serde_json::to_string(&mk(None, None)).unwrap();
+        assert!(!j.contains("thinking"), "{j}");
+    }
+
+    #[test]
+    fn test_thinking_control_only_for_documented_vendors() {
+        use crate::ai::provider::find;
+        // 四家有官方文档依据，且均为默认开思考
+        assert_eq!(find("deepseek").thinking_control(), ThinkingControl::TypeObject);
+        assert_eq!(find("zhipu").thinking_control(), ThinkingControl::TypeObject);
+        assert_eq!(find("minimax").thinking_control(), ThinkingControl::TypeObject);
+        assert_eq!(find("qwen").thinking_control(), ThinkingControl::EnableFlag);
+        // 其余必须保持沉默——尤其是 custom（中转服务，背后是什么完全未知）
+        assert_eq!(find("openai").thinking_control(), ThinkingControl::Unsupported);
+        assert_eq!(find("anthropic").thinking_control(), ThinkingControl::Unsupported);
+        assert_eq!(find("ollama").thinking_control(), ThinkingControl::Unsupported);
+        assert_eq!(find("custom").thinking_control(), ThinkingControl::Unsupported);
     }
 
     #[test]

@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AiBadge 设计稿 · PastePanda v5.6.6</title>
+<style>
+/* 6 套主题的真实变量值，抄自 src/styles/theme.css（2026-08-08） */
+[data-theme="ocean"]{--card-bg:#fff;--text-primary:#0F172A;--text-muted:#627083;--border-color:#E0E4EB;--accent:#0284C7;--accent-light:#E0F2FE;--accent-strong:#0273AD;--section-bg:#F0F4F8}
+[data-theme="midnight"]{--card-bg:#18181B;--text-primary:#E4E4E7;--text-muted:#8D8D95;--border-color:#27272A;--accent:#818CF8;--accent-light:#1E1B4B;--accent-strong:#818CF8;--section-bg:#0F0F11}
+[data-theme="forest"]{--card-bg:#fff;--text-primary:#171717;--text-muted:#726E6B;--border-color:#D1D9D3;--accent:#059669;--accent-light:#ECFDF5;--accent-strong:#04835B;--section-bg:#ECFDF5}
+[data-theme="blossom"]{--card-bg:#fff;--text-primary:#3D2231;--text-muted:#86596D;--border-color:#F9D3E2;--accent:#F0568C;--accent-light:#FFDDEC;--accent-strong:#B02C5D;--section-bg:#FFF0F6}
+[data-theme="dawn"]{--card-bg:#fff;--text-primary:#2B2016;--text-muted:#7D6B58;--border-color:#F0DDC8;--accent:#E8734A;--accent-light:#FFEDE2;--accent-strong:#B95432;--section-bg:#FFF4E6}
+[data-theme="ocean-dark"]{--card-bg:#0A1628;--text-primary:#E0E8F0;--text-muted:#7994B4;--border-color:#162B45;--accent:#3B9EFF;--accent-light:#0A1E3A;--accent-strong:#3B9EFF;--section-bg:#081018}
+
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+     background:var(--section-bg);color:var(--text-primary);padding:28px}
+h1{font-size:19px;margin:0 0 4px}
+h2{font-size:14px;margin:32px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border-color)}
+.sub{color:var(--text-muted);font-size:12.5px;margin:0 0 20px}
+.bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:22px}
+.bar button{font:inherit;font-size:12px;padding:5px 11px;border-radius:7px;cursor:pointer;
+  border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-primary)}
+.bar button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent-strong);font-weight:600}
+
+/* ============ 三种配色，只有 .badge 的这三条规则不同 ============ */
+.badge{display:inline-flex;align-items:center;gap:3px;font-size:9.5px;font-weight:600;
+  padding:1px 5px;border-radius:5px;line-height:1.5;white-space:nowrap;vertical-align:middle}
+.badge svg{width:10px;height:10px;flex:none}
+
+/* ① 复用 accent：底 accent-light，字 accent-strong（仓库既有约定） */
+.o1 .badge{background:var(--accent-light);border:1px solid transparent;color:var(--accent-strong)}
+/* ② 中性描边 + 只给图标上色：最克制 */
+.o2 .badge{background:var(--card-bg);border:1px solid var(--border-color);color:var(--text-muted)}
+.o2 .badge svg{color:var(--accent-strong)}
+/* ③ 描边用 accent、底透明：介于两者之间，不与选中态的实心高亮撞 */
+.o3 .badge{background:transparent;border:1px solid var(--accent);color:var(--accent-strong)}
+
+/* kind 变体：remote / thinking 一律降级为中性，避免和 AI 抢注意力 */
+.badge.remote,.badge.thinking{background:var(--card-bg)!important;
+  border:1px solid var(--border-color)!important;color:var(--text-muted)!important}
+.badge.remote svg,.badge.thinking svg{color:var(--text-muted)!important}
+.badge.xs{font-size:8.5px;padding:0 4px;gap:2px}
+.badge.xs svg{width:9px;height:9px}
+
+/* ============ 场景外壳 ============ */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px}
+.opt{border:1px solid var(--border-color);border-radius:10px;padding:14px;background:var(--card-bg)}
+.optName{font-size:12px;font-weight:700;margin-bottom:2px}
+.optNote{font-size:11px;color:var(--text-muted);margin-bottom:12px;line-height:1.5}
+
+.card{border:1px solid var(--border-color);border-radius:9px;background:var(--card-bg);padding:9px 0;margin-bottom:9px}
+.cardHead{display:flex;align-items:flex-start;gap:8px;padding:0 11px}
+.cardIcon{color:var(--text-muted);flex:none;margin-top:1px}
+.cardMain{flex:1;min-width:0}
+.cardLabel{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600}
+.cardDesc{display:block;font-size:11px;color:var(--text-muted);margin-top:1px}
+.score{font-size:10.5px;color:var(--text-muted);flex:none}
+.cardPre{margin:7px 11px 0;font-size:11px;color:var(--text-muted)}
+
+.row{display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--border-color);
+  border-radius:8px;background:var(--card-bg);margin-bottom:6px;font-size:12px}
+.row .nm{font-weight:600}
+.row .ds{color:var(--text-muted);font-size:11px;flex:1}
+
+.chip{display:inline-flex;flex-direction:column;gap:2px;padding:6px 9px;border-radius:8px;
+  border:1px solid var(--border-color);background:var(--card-bg);margin-right:6px}
+.chipT{font-size:11.5px;font-weight:600;display:flex;align-items:center;gap:5px}
+.chipI{font-size:10px;color:var(--text-muted)}
+
+.strip{display:flex;gap:5px;flex-wrap:wrap;padding:6px 9px;border-top:1px dashed var(--border-color);margin-top:7px}
+.act{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;padding:2px 7px;border-radius:6px;
+  border:1px solid var(--border-color);background:var(--card-bg)}
+
+.warn{margin-top:10px;padding:9px 11px;border-radius:8px;font-size:11.5px;line-height:1.6;
+  background:var(--card-bg);border:1px solid var(--border-color)}
+.warn b{color:var(--accent-strong)}
+</style>
+</head>
+<body data-theme="ocean">
+
+<h1>AiBadge · 统一组件设计稿</h1>
+<p class="sub">方案 A：抽 <code>src/components/AiBadge.tsx</code> + <code>AiBadge.module.css</code>，跟随仓库既有的 SourceBadge / TagBadge 约定。<br>
+切换下面的主题按钮，检查三种配色在 6 套主题下是否都站得住。</p>
+
+<div class="bar" id="themes">
+  <button aria-pressed="true" data-t="ocean">ocean（默认）</button>
+  <button data-t="midnight">midnight</button>
+  <button data-t="forest">forest ⚠</button>
+  <button data-t="blossom">blossom</button>
+  <button data-t="dawn">dawn</button>
+  <button data-t="ocean-dark">ocean-dark</button>
+</div>
+
+<div class="warn">
+  <b>先看 forest。</b>那套主题里 <code>--section-bg</code> 与 <code>--accent-light</code> 是同一个值（都是 <code>#ECFDF5</code>）。
+  配色①的徽标底色就是 <code>--accent-light</code>，当卡片本身坐在 section 底上时，徽标会糊进背景里。
+  这是选①必须先解决的问题（加一层描边即可），不是理论风险。
+</div>
+
+<h2>三种配色 × 变换卡片（主场景）</h2>
+<div class="grid">
+
+  <div class="opt o1">
+    <div class="optName">① 复用 accent（底 accent-light）</div>
+    <div class="optNote">自动跟随 6 套主题，零新增变量。风险：与“选中/激活”态用的是同一套色，可能被误读成“已选中”；forest 下会与背景同色。</div>
+    <div class="card">
+      <div class="cardHead">
+        <span class="cardIcon">◇</span>
+        <span class="cardMain">
+          <span class="cardLabel">解释报错
+            <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 2.6 8.6 6.1a2 2 0 0 1-1.2 1.2l-3.5 1.3a1 1 0 0 0 0 1.9l3.5 1.3a2 2 0 0 1 1.2 1.2l1.3 3.5a1 1 0 0 0 1.9 0l1.3-3.5a2 2 0 0 1 1.2-1.2l3.5-1.3a1 1 0 0 0 0-1.9l-3.5-1.3a2 2 0 0 1-1.2-1.2l-1.3-3.5a1 1 0 0 0-1.9 0Z"/><path d="M18 15.5 18.6 17l1.5.6-1.5.6L18 19.7l-.6-1.5-1.5-.6 1.5-.6Z"/></svg>AI</span>
+          </span>
+          <span class="cardDesc">看不懂的报错，说人话</span>
+        </span>
+        <span class="score">75%</span>
+      </div>
+      <div class="cardPre">点“运行”后才会发送到云端。</div>
+    </div>
+  </div>
+
+  <div class="opt o2">
+    <div class="optName">② 中性描边 + 图标着色</div>
+    <div class="optNote">最接近现状，改动感最弱。文字仍是 muted，弱点是“AI”两个字不够跳，扫一眼容易和普通说明混。</div>
+    <div class="card">
+      <div class="cardHead">
+        <span class="cardIcon">◇</span>
+        <span class="cardMain">
+          <span class="cardLabel">解释报错
+            <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 2.6 8.6 6.1a2 2 0 0 1-1.2 1.2l-3.5 1.3a1 1 0 0 0 0 1.9l3.5 1.3a2 2 0 0 1 1.2 1.2l1.3 3.5a1 1 0 0 0 1.9 0l1.3-3.5a2 2 0 0 1 1.2-1.2l3.5-1.3a1 1 0 0 0 0-1.9l-3.5-1.3a2 2 0 0 1-1.2-1.2l-1.3-3.5a1 1 0 0 0-1.9 0Z"/><path d="M18 15.5 18.6 17l1.5.6-1.5.6L18 19.7l-.6-1.5-1.5-.6 1.5-.6Z"/></svg>AI</span>
+          </span>
+          <span class="cardDesc">看不懂的报错，说人话</span>
+        </span>
+        <span class="score">75%</span>
+      </div>
+      <div class="cardPre">点“运行”后才会发送到云端。</div>
+    </div>
+  </div>
+
+  <div class="opt o3">
+    <div class="optName">③ accent 描边 + 透明底（推荐）</div>
+    <div class="optNote">跟随主题、字色达标，但不用实心高亮，因此不会和“已选中”撞。forest 下也不会糊进背景——因为底本来就是透明的。</div>
+    <div class="card">
+      <div class="cardHead">
+        <span class="cardIcon">◇</span>
+        <span class="cardMain">
+          <span class="cardLabel">解释报错
+            <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 2.6 8.6 6.1a2 2 0 0 1-1.2 1.2l-3.5 1.3a1 1 0 0 0 0 1.9l3.5 1.3a2 2 0 0 1 1.2 1.2l1.3 3.5a1 1 0 0 0 1.9 0l1.3-3.5a2 2 0 0 1 1.2-1.2l3.5-1.3a1 1 0 0 0 0-1.9l-3.5-1.3a2 2 0 0 1-1.2-1.2l-1.3-3.5a1 1 0 0 0-1.9 0Z"/><path d="M18 15.5 18.6 17l1.5.6-1.5.6L18 19.7l-.6-1.5-1.5-.6 1.5-.6Z"/></svg>AI</span>
+          </span>
+          <span class="cardDesc">看不懂的报错，说人话</span>
+        </span>
+        <span class="score">75%</span>
+      </div>
+      <div class="cardPre">点“运行”后才会发送到云端。</div>
+    </div>
+  </div>
+
+</div>
+
+<h2>推荐配色（③）在其余三个场景里的样子</h2>
+<div class="grid o3">
+
+  <div class="opt">
+    <div class="optName">场景 2 · 设置里的自定义动作列表</div>
+    <div class="optNote">让设置里和变换中心用同一个标识，用户不用二次学习。</div>
+    <div class="row"><span class="nm">精简一半</span><span class="ds">压到大约一半长</span>
+      <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 2.6 8.6 6.1a2 2 0 0 1-1.2 1.2l-3.5 1.3a1 1 0 0 0 0 1.9l3.5 1.3a2 2 0 0 1 1.2 1.2l1.3 3.5a1 1 0 0 0 1.9 0l1.3-3.5a2 2 0 0 1 1.2-1.2l3.5-1.3a1 1 0 0 0 0-1.9l-3.5-1.3a2 2 0 0 1-1.2-1.2l-1.3-3.5a1 1 0 0 0-1.9 0Z"/></svg>AI</span>
+    </div>
+    <div class="row"><span class="nm">提取待办</span><span class="ds">抽出可执行事项</span>
+      <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 2.6 8.6 6.1a2 2 0 0 1-1.2 1.2l-3.5 1.3a1 1 0 0 0 0 1.9l3.5 1.3a2 2 0 0 1 1.2 1.2l1.3 3.5a1 1 0 0 0 1.9 0l1.3-3.5a2 2 0 0 1 1.2-1.2l3.5-1.3a1 1 0 0 0 0-1.9l-3.5-1.3a2 2 0 0 1-1.2-1.2l-1.3-3.5a1 1 0 0 0-1.9 0Z"/></svg>AI</span>
+    </div>
+  </div>
+
+  <div class="opt">
+    <div class="optName">场景 3 · 模型芯片的「会先思考」</div>
+    <div class="optNote">现在是拼在字符串里的纯文本（<code>{m.reasoning ? " · 会先思考" : ""}</code>），本次一并收编为组件。它是<b>提示</b>不是<b>标识</b>，所以降级成中性色，不跟 AI 抢注意力。</div>
+    <div>
+      <span class="chip"><span class="chipT">快速（推荐）</span><span class="chipI">MiniMax-M2.7-highspeed</span></span>
+      <span class="chip"><span class="chipT">最新旗舰
+        <span class="badge thinking"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>会先思考</span>
+      </span><span class="chipI">MiniMax-M3</span></span>
+    </div>
+  </div>
+
+  <div class="opt">
+    <div class="optName">场景 4 · v6.0 卡片动作条（预留 size="xs"）</div>
+    <div class="optNote">路线图要把 top-N 动作前置到卡片上。现在不抽组件，到那时就是第三份实现。</div>
+    <div class="card" style="padding-bottom:0">
+      <div class="cardHead"><span class="cardMain"><span class="cardLabel">TypeError: Cannot read properties…</span>
+        <span class="cardDesc">VSCode · 3 分钟前</span></span></div>
+      <div class="strip">
+        <span class="act">格式化</span>
+        <span class="act">解释报错 <span class="badge xs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 2.6 8.6 6.1a2 2 0 0 1-1.2 1.2l-3.5 1.3a1 1 0 0 0 0 1.9l3.5 1.3a2 2 0 0 1 1.2 1.2l1.3 3.5a1 1 0 0 0 1.9 0l1.3-3.5a2 2 0 0 1 1.2-1.2l3.5-1.3a1 1 0 0 0 0-1.9l-3.5-1.3a2 2 0 0 1-1.2-1.2l-1.3-3.5a1 1 0 0 0-1.9 0Z"/></svg>AI</span></span>
+        <span class="act">搜索</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="opt">
+    <div class="optName">kind="remote" · 非 AI 的联网变换</div>
+    <div class="optNote">目前无人使用，但 <code>remote</code> 是通用契约（“会联网且可能计费”），不等于 AI。<b>显示与否由 remote 决定，写什么字由 group==="ai" 决定</b>——这样以后加短链之类的联网变换，不会被错标成 AI，也不会丢掉风险提示。</div>
+    <div class="row"><span class="nm">生成短链</span><span class="ds">（假想的非 AI 联网变换）</span>
+      <span class="badge remote"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .5-9 6 6 0 0 0-11.7-1.6A4 4 0 0 0 6.5 19Z"/></svg>联网</span>
+    </div>
+  </div>
+
+</div>
+
+<h2>组件接口</h2>
+<div class="opt">
+<pre style="margin:0;font-size:11.5px;line-height:1.7;overflow-x:auto">// src/components/AiBadge.tsx
+interface Props {
+  /** ai=✨AI（默认） | remote=☁联网 | thinking=🕐会先思考 */
+  kind?: "ai" | "remote" | "thinking";
+  /** xs 给 v6.0 卡片动作条用 */
+  size?: "sm" | "xs";
+}
+
+// 调用方不自己判断，避免有人漏判：
+&lt;AiBadge kind={t.group === "ai" ? "ai" : "remote"} /&gt;</pre>
+</div>
+
+<script>
+document.getElementById("themes").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  document.body.dataset.theme = b.dataset.t;
+  document.querySelectorAll("#themes button").forEach(x =>
+    x.setAttribute("aria-pressed", String(x === b)));
+});
+</script>
+</body>
+</html>

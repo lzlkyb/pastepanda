@@ -41,6 +41,8 @@ const DEFAULT_CONFIG: AiConfig = {
   model: "",
   dailyBudgetCny: 3,
   timeoutSecs: 60,
+  // 默认关掉思考：剪贴板动作多是短产物，思维链在这里几乎是纯成本
+  thinkingOff: true,
   protocol: "",
 };
 

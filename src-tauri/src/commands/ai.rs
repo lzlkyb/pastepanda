@@ -60,6 +60,10 @@ fn read_ai_config(store: &DataStore) -> Result<AiConfig, String> {
             .get("ai_timeout_secs")
             .and_then(|v| v.as_u64())
             .unwrap_or(d.timeout_secs),
+        thinking_off: raw
+            .get("ai_thinking_off")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(d.thinking_off),
     })
 }
 
@@ -83,6 +87,7 @@ fn write_ai_config(store: &DataStore, cfg: &AiConfig) -> Result<(), String> {
         );
         obj.insert("ai_daily_budget_cny".to_string(), json!(cfg.daily_budget_cny));
         obj.insert("ai_timeout_secs".to_string(), json!(cfg.timeout_secs));
+        obj.insert("ai_thinking_off".to_string(), json!(cfg.thinking_off));
     }
     store.save_config(&raw)
 }
@@ -106,12 +111,14 @@ pub fn ai_set_config(store: State<DataStore>, config: AiConfig) -> Result<(), St
         cfg.daily_budget_cny = 0.0;
     }
 
-    // 厂商/模型/地址/协议一变，旧结果就不再代表当前配置——不清会拿旧模型的产物充数
+    // 厂商/模型/地址/协议一变，旧结果就不再代表当前配置——不清会拿旧模型的产物充数。
+    // thinking_off 同理：开与不开思考，同一段输入的产物可能完全不同。
     let old = read_ai_config(&store)?;
     if old.provider != cfg.provider
         || old.effective_model() != cfg.effective_model()
         || old.effective_base_url() != cfg.effective_base_url()
         || old.effective_protocol() != cfg.effective_protocol()
+        || old.thinking_off != cfg.thinking_off
     {
         cache::clear();
     }
@@ -168,6 +175,11 @@ pub struct ProviderInfo {
     pub spec: &'static ProviderSpec,
     /// 界面据此在下拉里标“已配置”，告诉用户切过去不用重输密钥。
     pub has_key: bool,
+    /// 这家能不能“关掉思考”。前端据此决定要不要显示那个开关——
+    /// 摆一个点了没反应的开关，比不摆更坏。
+    ///
+    /// 同样放后端算：前端再维一份厂商 id 名单，两边必定会分叉。
+    pub supports_thinking_off: bool,
 }
 
 #[tauri::command]
@@ -179,6 +191,8 @@ pub fn ai_list_providers(app: tauri::AppHandle) -> Result<Vec<ProviderInfo>, Str
         .map(|spec| ProviderInfo {
             spec,
             has_key: configured.iter().any(|id| id == spec.id),
+            supports_thinking_off: spec.thinking_control()
+                != provider::ThinkingControl::Unsupported,
         })
         .collect())
 }
@@ -509,6 +523,9 @@ pub struct AiRunOk {
     pub cached: bool,
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
+    /// 回答撞到 token 上限被截断。内容仍然返回（半截总比没有强），
+    /// 但界面要说清楚，否则用户会把截断当成模型水平差。
+    pub truncated: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -645,6 +662,8 @@ pub async fn ai_run(
             cached: true,
             prompt_tokens: 0,
             completion_tokens: 0,
+            // 截断的结果压根不会进缓存，命中的一定是完整的
+            truncated: false,
         }));
     }
 
@@ -707,13 +726,18 @@ pub async fn ai_run(
             error: None,
         },
     );
-    cache::put(
-        cache_key,
-        cache::CachedValue {
-            content: outcome.content.clone(),
-            model: outcome.model.clone(),
-        },
-    );
+    // 截断的结果不进缓存。否则半截答案会被当成正确结果反复返回 24 小时，
+    // 而且因为命中缓存不花钱也不报错，用户重试多少次都一模一样，
+    // 看起来就像是“稳定复现的正确行为”。
+    if !outcome.truncated {
+        cache::put(
+            cache_key,
+            cache::CachedValue {
+                content: outcome.content.clone(),
+                model: outcome.model.clone(),
+            },
+        );
+    }
 
     Ok(AiRunResponse::Ok(AiRunOk {
         content: outcome.content,
@@ -721,6 +745,7 @@ pub async fn ai_run(
         cached: false,
         prompt_tokens: outcome.prompt_tokens,
         completion_tokens: outcome.completion_tokens,
+        truncated: outcome.truncated,
     }))
 }
 
@@ -812,6 +837,7 @@ pub async fn ai_preview_custom(
                 cached: false,
                 prompt_tokens: o.prompt_tokens,
                 completion_tokens: o.completion_tokens,
+                truncated: o.truncated,
             }))
         }
         Err(e) => {

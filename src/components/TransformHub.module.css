@@ -73,20 +73,8 @@
   gap: 6px;
 }
 
-/* 联网徽标：让云端动作一眼区别于本地瞬时变换。
-   本地变换点下去就出结果，这些会把内容发到外部服务并计费，不能长得一样。 */
-.remoteBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 9.5px;
-  font-weight: 600;
-  padding: 1px 5px;
-  border-radius: 5px;
-  background: var(--section-bg);
-  border: 1px solid var(--border-color);
-  color: var(--text-muted);
-}
+/* 徽标已抄到 components/AiBadge.module.css——它要同时出现在变换卡片、
+   模型芯片与 v6.0 的卡片动作条上，留在这里必然分叉。 */
 
 .remoteMeta {
   margin: 5px 13px 0;

@@ -23,6 +23,13 @@ export interface AiModelSpec {
   id: string;
   /** 给人看的说明，如“便宜快速（推荐）” */
   label: string;
+  /**
+   * 推理模型：回答前先输出一大段思维链，而思考的 token 照样计费、
+   * 也照样占用动作的 token 上限。
+   *
+   * 只是提示，并不完全（模型可以手填）。真正的保护在后端。
+   */
+  reasoning: boolean;
 }
 
 /**
@@ -37,6 +44,8 @@ export interface AiProviderInfo {
   /** 厂商默认地址，不带尾斜杠。空串表示必须用户自填 */
   baseUrl: string;
   models: AiModelSpec[];
+  /** 这家支不支持“关掉思考”（由后端派生，前端不另抄一份名单） */
+  supportsThinkingOff: boolean;
   /** 申请 API Key 的页面。空串表示没有（自定义/中转） */
   keyUrl: string;
   note: string;
@@ -64,6 +73,12 @@ export interface AiConfig {
   /** 日预算上限（**人民币**），0 表示不限制 */
   dailyBudgetCny: number;
   timeoutSecs: number;
+  /**
+   * 向支持的厂商请求“不要思考，直接回答”。**默认开**。
+   *
+   * 不支持的厂商上无效（不发字段），看 `supportsThinkingOff`。
+   */
+  thinkingOff: boolean;
   /** 协议覆盖，空串表示用厂商默认 */
   protocol: string;
 }
@@ -205,6 +220,11 @@ export type AiRunResponse =
       cached: boolean;
       promptTokens: number;
       completionTokens: number;
+      /**
+       * 回答撞到 token 上限被截断。内容仍然返回，但界面必须说明，
+       * 否则用户会把“断在半句”当成模型水平差。截断的结果不会进缓存。
+       */
+      truncated: boolean;
     }
   | { status: "needsConfirm"; reason: string }
   | { status: "budgetExceeded"; spentCny: number; budgetCny: number };

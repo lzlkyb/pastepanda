@@ -16,9 +16,10 @@ import {
   Copy, Check, Sparkles, Database, Table, List, ClipboardPaste,
   CaseUpper, CaseLower, Eraser, Pilcrow, Quote, RemoveFormatting, Link as LinkIcon,
   Globe, Mail, Phone, Code, Minus, Hash, Palette, Folder, FileText,
-  Cloud, Play, ShieldAlert, Languages, PenLine,
+  Play, ShieldAlert, Languages, PenLine,
   type LucideIcon,
 } from "lucide-react";
+import { AiBadge, badgeKindOf } from "@/components/AiBadge";
 import type { Transform, TransformOptionSpec, TransformResultMeta } from "@/lib/transforms";
 import styles from "../TransformHub.module.css";
 
@@ -131,11 +132,8 @@ export function TransformCard({
         <span className={styles.cardMain}>
           <span className={styles.cardLabel}>
             {t.label}
-            {isRemote && (
-              <span className={styles.remoteBadge} title="需要联网，会把这条内容发送到所选服务商并可能产生费用">
-                <Cloud size={10} />联网
-              </span>
-            )}
+            {/* 显不显示由 remote 决定（风险标记不能漏），写什么字由分组决定 */}
+            {isRemote && <AiBadge kind={badgeKindOf(t)} />}
           </span>
           {t.description && <span className={styles.cardDesc}>{t.description}</span>}
         </span>
@@ -175,6 +173,13 @@ export function TransformCard({
               {preview.meta?.cached ? "命中缓存，本次未计费" : `模型 ${preview.meta?.model ?? "-"}`}
             </div>
           )}
+          {/* 截断必须说出来：不说的话用户看到的只是一个断在半句的回答，
+              会归咎于模型不行，而不是去把 token 上限调大 */}
+          {preview.meta?.truncated ? (
+            <div className={styles.previewWarn}>
+              <ShieldAlert size={12} /> 回答被 token 上限截断了——去设置里把这个动作的上限调大再试。
+            </div>
+          ) : null}
         </>
       )}
       {preview.state === "err" && (

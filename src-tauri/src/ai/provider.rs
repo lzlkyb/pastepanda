@@ -71,6 +71,13 @@ pub struct ModelSpec {
     pub id: &'static str,
     /// 给人看的说明，如“便宜快速（推荐）”
     pub label: &'static str,
+    /// 推理模型：回答前先输出一大段思维链，而思考的 token **照样计费也照样占用**
+    /// `max_tokens` 额度。给小了会变成“额度全花在思考上、答案一个字都没生成”。
+    ///
+    /// 这个标记**只是界面提示**，不是安全网：它必然不全（用户可以手填任意模型名，
+    /// 厂商也会随时上新模型）。真正兑现的保护在 `client.rs`：剥离 `<think>`
+    /// 与截断检测对所有模型都生效，不依赖这张表准不准。
+    pub reasoning: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -101,10 +108,43 @@ pub struct ProviderSpec {
     pub protocol: Protocol,
 }
 
+/// 关掉“思考”要往请求里加什么字段。各家写法不统一，所以得分类。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThinkingControl {
+    /// 没有**已核实**的开关。不发任何额外字段——瞎猜字段名的后果是 400，
+    /// 比“没关成”严重得多。
+    Unsupported,
+    /// `"thinking": {"type": "disabled"}`
+    TypeObject,
+    /// `"enable_thinking": false`
+    EnableFlag,
+}
+
 impl ProviderSpec {
     /// 默认模型 = 清单里的第一项。
     pub fn default_model(&self) -> &'static str {
         self.models.first().map(|m| m.id).unwrap_or("")
+    }
+
+    /// 该厂商支持哪种“关掉思考”写法。
+    ///
+    /// **只列查到官方文档的四家**（2026-08-08 核实），而且四家都是**默认开思考**：
+    /// - DeepSeek v4：`thinking.type`，默认 enabled（effort=high）——它是我们的**默认厂商**
+    /// - 智谱 GLM-4.7：同形状
+    /// - MiniMax：同形状，但开的那个值叫 `adaptive` 而非 `enabled`
+    /// - 通义千问 3.5+：`enable_thinking`，默认 true
+    ///
+    /// 其他家一律 `Unsupported`。宁可不发也不瞎发：发个对方不认识的字段，
+    /// 乐观情况是被忽略，悲观情况是整个请求 400。
+    ///
+    /// 注意：我们只用 `disabled`，不用开启值，所以 MiniMax 那个
+    /// `adaptive`/`enabled` 的差异碰不到——四家关闭写法是一致的。
+    pub fn thinking_control(&self) -> ThinkingControl {
+        match self.id {
+            "deepseek" | "zhipu" | "minimax" => ThinkingControl::TypeObject,
+            "qwen" => ThinkingControl::EnableFlag,
+            _ => ThinkingControl::Unsupported,
+        }
     }
 
     /// 是否本地运行（内容不出机器、零费用）。
@@ -113,9 +153,19 @@ impl ProviderSpec {
     }
 }
 
+/// 写法：`"模型名" => "说明"`；推理模型在后面多写一个 `reasoning`。
+///
+/// 字面量用 `literal` 而非 `expr`：`expr` 片段后面只允许跟 `=>` / `,` / `;`，
+/// 接不上可选标记。
 macro_rules! models {
-    ($($id:expr => $label:expr),* $(,)?) => {
-        &[$(ModelSpec { id: $id, label: $label }),*]
+    (@flag) => { false };
+    (@flag reasoning) => { true };
+    ($($id:literal => $label:literal $($flag:ident)?),* $(,)?) => {
+        &[$(ModelSpec {
+            id: $id,
+            label: $label,
+            reasoning: models!(@flag $($flag)?),
+        }),*]
     };
 }
 
@@ -304,7 +354,10 @@ pub const PROVIDERS: &[ProviderSpec] = &[
         models: models![
             "MiniMax-M2.7-highspeed" => "快速（推荐）",
             "MiniMax-M2.7" => "标准",
-            "MiniMax-M3" => "最新旗舰",
+            // 实测：M3 会把思维链内联在 `<think>…</think>` 里塞进正文，
+            // 且官方文档写明 `thinking.type` 默认 `adaptive`。
+            // 其余几档没实测过，宁可不标也不瞎标。
+            "MiniMax-M3" => "最新旗舰" reasoning,
         ],
         key_url: "https://platform.minimaxi.com/user-center/basic-information/interface-key",
         note: "MiniMax 开放平台。海外账号需把地址改成 api.minimax.io/v1。",
@@ -432,6 +485,15 @@ pub struct AiConfig {
     pub daily_budget_cny: f64,
     /// 单次请求超时（秒）。
     pub timeout_secs: u64,
+    /// 向支持的厂商请求“不要思考，直接回答”。
+    ///
+    /// **默认开**。剪贴板动作绝大多数是短产物（翻译、改写、提要点），
+    /// 思维链在这个场景里几乎纯粹是成本：实测一次“精简一半”花掉 13.8 秒与
+    /// 1500 输出 token，而答案本身不到 20 字。
+    ///
+    /// 不支持的厂商上这个开关无效（不发字段），不会报错。
+    #[serde(default = "default_true")]
+    pub thinking_off: bool,
     /// 接口协议覆盖。为空则用厂商默认。
     ///
     /// 存在的意义：同一家常常两种格式都提供（如智谱），中转服务更是如此。
@@ -448,9 +510,14 @@ impl Default for AiConfig {
             model: String::new(),
             daily_budget_cny: 3.0,
             timeout_secs: 60,
+            thinking_off: true,
             protocol: String::new(),
         }
     }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl AiConfig {

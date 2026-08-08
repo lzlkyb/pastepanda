@@ -17,6 +17,7 @@ import type { RefObject } from "react";
 import { Check, ExternalLink, Loader2 } from "lucide-react";
 import type { AiConfig, AiProviderInfo } from "@/lib/api";
 import settings from "../../Settings.module.css";
+import { AiBadge } from "@/components/AiBadge";
 import styles from "../AiTab.module.css";
 
 interface Props {
@@ -125,7 +126,11 @@ export function AiSetupStep(p: Props) {
                     {m.label}
                     {m.id === activeModel && <Check size={11} />}
                   </span>
-                  <span className={styles.chipId}>{m.id}</span>
+                  <span className={styles.chipId}>
+                    {m.id}
+                    {/* 原本是拼在字符串里的纯文本，改用同一个徽标组件 */}
+                    {m.reasoning && <AiBadge kind="thinking" size="xs" />}
+                  </span>
                 </button>
               ))}
             </div>
@@ -147,6 +152,16 @@ export function AiSetupStep(p: Props) {
                 ? "清单只是快捷方式，输入框里可直接填任意模型。"
                 : "剪贴板动作都是短文本，默认档基本够用。清单外的新模型直接在输入框里填；留空则用第一档。"}
           </span>
+
+          {/* 推理模型的 token 语义和普通模型不一样，不说的话用户必然踩坑：
+              把上限按“短产物 300～800”给，结果额度全花在思考上、答案一个字都没有 */}
+          {chips.some((m) => m.id === activeModel && m.reasoning) && (
+            <span className={styles.hint}>
+              ⚠ 这是推理模型：回答前会先输出一大段思考，而思考的 token
+              照样计费、也照样占用动作的 token 上限。自定义动作的上限建议给到 3000
+              以上；只想要快且便宜的短产物，换回上面不带“会先思考”标记的档位更合适。
+            </span>
+          )}
         </div>
       </div>
 
