@@ -18,6 +18,7 @@ import { TagRow } from "@/components/TagBadge";
 import { logger } from "@/lib/logger";
 import { pasteText, pasteRich, togglePin, deleteHistory, copyItemToClipboard } from "@/lib/api";
 import { sanitizeDocHtml } from "@/lib/docPipeline";
+import { CardActionBar } from "@/components/card/CardActionBar";
 import { Pin, ImageIcon, Images, Link2, AtSign, Code2, Phone, FileText, Terminal, Type, Check, Hash, Lock, Palette } from "lucide-react";
 import styles from "./CardList.module.css";
 
@@ -557,6 +558,9 @@ const CardHoverPopover = memo(function CardHoverPopover({
           </div>
         )}
 
+        {/* 执行类动作条：当前内容可执行的 top-N 动作（v6.0 复制即执行） */}
+        <CardActionBar item={item} />
+
         {/* 操作按钮 */}
         <div className={styles.cardPopoverActions}>
           <button
@@ -639,6 +643,8 @@ const InlineCardActions = memo(function InlineCardActions({
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
+      {/* 执行类动作条：inline 模式空间小，紧凑排列 */}
+      <CardActionBar item={item} compact />
       <button className={`${styles.cardInlineBtn} ${styles.cardInlineBtnFav} ${item.pinned ? styles.cardInlineBtnFavActive : ""}${pinFlash ? ` ${styles.starPopping}` : ""}`} onClick={handleFav} title={item.pinned ? "取消置顶" : "置顶"}>
         {item.pinned ? "★" : "☆"}
       </button>
@@ -894,7 +900,12 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
         if (ok) toast("已粘贴", "success");
       } else {
         const ok = await pasteText(item.text);
-        if (ok) toast("已粘贴", "success");
+        if (ok) {
+          toast("已粘贴", "success");
+          // v6.1 粘贴信号回写（fire-and-forget）
+          const { logPasteEvent } = await import("@/lib/api/actionEvents");
+          logPasteEvent(item.id, item.content_type || item.type, item.source);
+        }
       }
     },
     onPasteTransform: handlePasteTransform,

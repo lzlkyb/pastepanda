@@ -60,6 +60,15 @@ export async function initBackend(): Promise<() => void> {
     logger.warn("注册 AI 动作失败，变换中心将不显示 AI 分组", e);
   }
 
+  // 加载个性化推荐状态（v6.1）：使用频次权重 + 「不再推荐」负反馈。
+  // 失败保持未加载 → 排序走冷启动（静态分），不影响任何功能。
+  try {
+    const { loadRecommendState } = await import("@/lib/recommend");
+    await loadRecommendState();
+  } catch (e) {
+    logger.warn("加载个性化推荐状态失败，排序将使用静态分", e);
+  }
+
   // 修复 M7：统一收集 unlisten，任一 listen 失败时清理已注册的监听器，
   // 避免泄漏旧监听器导致重试后事件被双重处理
   const unlistens: Array<() => void> = [];

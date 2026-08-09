@@ -152,6 +152,7 @@ pub(crate) fn is_unsafe_network_path(path: &str) -> bool {
 }
 
 mod ai;
+mod action_events;
 mod batch_replace;
 mod config_convert;
 mod encoding;
@@ -171,6 +172,7 @@ mod update;
 mod tests;
 
 pub use ai::*;
+pub use action_events::*;
 pub use batch_replace::*;
 pub use config_convert::*;
 pub use encoding::*;

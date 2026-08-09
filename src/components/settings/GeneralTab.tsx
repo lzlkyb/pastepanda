@@ -12,6 +12,7 @@ import { HotkeyRecorder } from "./HotkeyRecorder";
 import { LanSyncPanel } from "./LanSyncPanel";
 import { DeepCleanDialog } from "@/components/DeepCleanDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useDialogStore } from "@/stores/dialogStore";
 import styles from "../Settings.module.css";
 
 const THEME_PREVIEWS: Record<string, { bg: string; accent: string; text: string; barBg: string; bodyBg: string; lineBg: string }> = {
@@ -957,6 +958,24 @@ export function GeneralTab({
           {expiredCount > 0 ? `清理 ${expiredCount} 条` : "无过期"}
         </button>
       </div>
+      {/* v6.1 自我净化开关：保护常用内容不过期。关掉即退回"超期必清"旧行为 */}
+      <ToggleRow
+        icon="🛟"
+        gradient="linear-gradient(135deg, #10B981, #059669)"
+        label="保护常用内容"
+        desc="打标签 / 粘贴过 / 搜索找回过的内容不参与自动清理"
+        value={config.preserve_valued_content}
+        onChange={(v) => updateAndSave({ preserve_valued_content: v })}
+        tooltip="开启后打标签/粘贴过/搜索找回过的内容不参与自动清理"
+        detailTitle="保护常用内容"
+        detail={<>
+          <p>开启后，满足任一「有价值」信号的内容即使超过保留天数也<b>不会被自动清理</b>：</p>
+          <p>📌 被打过标签（手动或自动）</p>
+          <p>📌 被粘贴过（真正用上了）</p>
+          <p>📌 被搜索找回过</p>
+          <p>关闭则退回旧行为：超过保留天数、未置顶的记录一律清理。设置页的过期数量会相应变化。</p>
+        </>}
+      />
       <div className={styles.sRow}>
         <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #EF4444, #F97316)" }}>🎯</span>
         <div className={`${styles.sRowBody}`}>
@@ -977,6 +996,31 @@ export function GeneralTab({
           <div className={`${styles.sRowDesc}`}>按时间 / 类型 / 来源组合条件清理，支持预览与撤销</div>
         </div>
         <button className={styles.sAction} onClick={() => setShowDeepClean(true)}>打开</button>
+      </div>
+      {/* v6.1 红线②：学习日志可见可删 */}
+      <div className={styles.sRow}>
+        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #8B5CF6, #6366F1)" }}>🧠</span>
+        <div className={`${styles.sRowBody}`}>
+          <div className={`${styles.sRowLabel}`}>
+            系统学到了什么
+            <HelpTooltip
+              tooltip="查看使用统计与「不再推荐」清单，可一键清空。所有数据只存本机，不包含复制内容本身"
+              detailTitle="系统学到了什么"
+              detail={<>
+                <p>变换中心会根据你的使用习惯调整推荐排序（仅存本机）。</p>
+                <p>📌 这里能看到：近 30 天使用次数、最常用变换、已「不再推荐」的动作</p>
+                <p>📌 一键清空后，推荐会退回「对所有人一样」的默认排序</p>
+              </>}
+            />
+          </div>
+          <div className={`${styles.sRowDesc}`}>查看推荐学习记录，可一键清空（仅存本机）</div>
+        </div>
+        <button
+          className={styles.sAction}
+          onClick={() => useDialogStore.getState().openLearnings()}
+        >
+          查看
+        </button>
       </div>
       </div>
       <div ref={noResultRef} className={styles.settingsNoResult} style={{ display: "none" }}>

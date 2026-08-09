@@ -86,6 +86,61 @@ pub fn open_file_location(path: String) -> Result<(), String> {
     }
 }
 
+/// 协议白名单校验。独立抽出来：命令层与测试共用，且测试不会真的打开浏览器。
+pub(crate) fn is_allowed_open_url(url: &str) -> bool {
+    let t = url.trim();
+    t.starts_with("http://") || t.starts_with("https://") || t.starts_with("mailto:")
+}
+
+/// 打开 URL（http/https/mailto）——执行类动作（v6.0 复制即执行）的落地口。
+///
+/// **协议白名单是安全边界**：剪贴板内容可能来自任何网页或聊天窗口，如果不拦协议，
+/// 一个 `file:` / `cmd:` 链接就能让用户点一下打开任意本地程序。所以只放行
+/// 浏览器协议（http/https）与邮件协议（mailto），其余一律拒绝。IP/域名的
+/// 查询页由前端拼好 https:// 地址再调这里，同样走白名单。
+///
+/// 用 ShellExecuteW 而不是 `cmd /C start`：后者会经 shell 解析参数，
+/// 存在命令注入/参数注入风险（与 open_file_with_system 同一安全取舍）。
+#[tauri::command]
+pub fn open_url(url: String) -> Result<(), String> {
+    if !is_allowed_open_url(&url) {
+        return Err("只允许打开 http/https/mailto 链接".to_string());
+    }
+    let t = url.trim();
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows::core::PCWSTR;
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+        let uri: Vec<u16> = t.encode_utf16().chain(std::iter::once(0)).collect();
+        let verb: Vec<u16> = "open".encode_utf16().chain(std::iter::once(0)).collect();
+        let ret = unsafe {
+            ShellExecuteW(
+                HWND(std::ptr::null_mut()),
+                PCWSTR(verb.as_ptr()),
+                PCWSTR(uri.as_ptr()),
+                None,
+                None,
+                SW_SHOWNORMAL,
+            )
+        };
+        // ShellExecuteW 返回值 > 32 表示成功
+        if ret.0 as usize > 32 {
+            Ok(())
+        } else {
+            Err(format!("打开链接失败（错误码 {}）", ret.0 as usize))
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = t;
+        Err("不支持的平台".to_string())
+    }
+}
+
 /// 设置开机自启
 #[tauri::command]
 pub fn set_startup(enable: bool) -> Result<(), String> {

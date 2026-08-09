@@ -1838,6 +1838,10 @@ fn test_custom_action_new_ones_go_last_and_reorder_works() {
     assert_eq!(after, vec!["C", "A", "B"]);
 }
 
+// ============================================================
+// 动作使用日志（action_events）测试
+// ============================================================
+
 #[test]
 fn test_custom_action_delete_and_missing_id() {
     let store = make_store();
@@ -1855,3 +1859,402 @@ fn test_custom_action_delete_and_missing_id() {
         .unwrap_err()
         .contains("已经不存在"));
 }
+
+fn action_event(action: &str, ct: &str, app: &str, hour: i32, outcome: &str) -> ActionEvent {
+    ActionEvent {
+        action_id: action.to_string(),
+        content_type: ct.to_string(),
+        source_app: app.to_string(),
+        hour,
+        outcome: outcome.to_string(),
+        history_id: None,
+    }
+}
+
+/// 带 history_id 的事件（粘贴信号回写用）
+fn paste_event(history_id: &str, ct: &str) -> ActionEvent {
+    ActionEvent {
+        action_id: ACTION_ID_PASTE.to_string(),
+        content_type: ct.to_string(),
+        source_app: "Chrome".to_string(),
+        hour: 10,
+        outcome: OUTCOME_PASTED.to_string(),
+        history_id: Some(history_id.to_string()),
+    }
+}
+
+#[test]
+fn test_action_events_table_has_no_content_column() {
+    // 与 ai_usage_log 同一条红线：事件表里不得出现任何能装下剪贴板内容的字段。
+    // 一旦有人为了"方便排查"加个 input/output/text 列，这个测试要立刻拦住。
+    let store = make_store();
+    let conn = store.lock_conn();
+    let mut stmt = conn
+        .prepare("SELECT name FROM pragma_table_info('action_events')")
+        .unwrap();
+    let cols: Vec<String> = stmt
+        .query_map([], |r| r.get::<_, String>(0))
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .collect();
+
+    assert!(!cols.is_empty(), "表没建起来");
+    for forbidden in ["text", "content", "input", "output", "prompt", "reply", "result"] {
+        assert!(
+            !cols.iter().any(|c| c == forbidden),
+            "action_events 出现了内容字段 `{}`——事件日志绝不能变成第二份剪贴板历史",
+            forbidden
+        );
+    }
+}
+
+#[test]
+fn test_action_event_add_and_stats() {
+    let store = make_store();
+    store.action_event_add(&action_event("sql-in", "text", "VSCode", 10, OUTCOME_COPIED));
+    store.action_event_add(&action_event("sql-in", "text", "VSCode", 10, OUTCOME_COPIED));
+    store.action_event_add(&action_event("ai-translate", "text", "Chrome", 21, OUTCOME_PASTED));
+
+    let s = store.action_event_stats(30);
+    assert_eq!(s.total, 3);
+    assert_eq!(s.copied, 2);
+    assert_eq!(s.pasted, 1);
+    assert_eq!(s.abandoned, 0);
+    // top_actions 按次数降序：sql-in 2 次 > ai-translate 1 次
+    assert_eq!(s.top_actions.len(), 2);
+    assert_eq!(s.top_actions[0].action_id, "sql-in");
+    assert_eq!(s.top_actions[0].count, 2);
+    assert_eq!(s.top_actions[1].action_id, "ai-translate");
+}
+
+#[test]
+fn test_action_event_stats_empty_day_is_zero_not_error() {
+    // "还没用过"不是异常，不能让设置页整个打不开
+    let store = make_store();
+    let s = store.action_event_stats(7);
+    assert_eq!(s.total, 0);
+    assert_eq!(s.copied, 0);
+    assert_eq!(s.pasted, 0);
+    assert!(s.top_actions.is_empty());
+}
+
+#[test]
+fn test_action_event_clear_and_purge() {
+    let store = make_store();
+    store.action_event_add(&action_event("sql-in", "text", "VSCode", 10, OUTCOME_COPIED));
+
+    // 保留期内的记录不该被清掉
+    assert_eq!(store.action_event_purge(90).unwrap(), 0);
+    assert_eq!(store.action_event_stats(30).total, 1);
+
+    // 用户一键删除（红线②）
+    assert_eq!(store.action_event_clear().unwrap(), 1);
+    assert_eq!(store.action_event_stats(30).total, 0);
+}
+
+#[test]
+fn test_action_event_purge_removes_old() {
+    let store = make_store();
+    // 直接插入一条 100 天前的旧事件（保留期 90 天）
+    {
+        let conn = store.lock_conn();
+        let old = (chrono::Local::now() - chrono::Duration::days(100))
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+        conn.execute(
+            "INSERT INTO action_events (created_at, action_id, content_type, source_app, hour, outcome)
+             VALUES (?1, 'old-action', 'text', 'VSCode', 10, 'copied')",
+            params![old],
+        )
+        .unwrap();
+    }
+    store.action_event_add(&action_event("new-action", "text", "VSCode", 10, OUTCOME_COPIED));
+
+    assert_eq!(store.action_event_purge(90).unwrap(), 1, "只清掉 100 天前那条");
+    assert_eq!(store.action_event_stats(30).total, 1);
+}
+
+// ============================================================
+// v6.1：个性化权重聚合 + 负反馈
+// ============================================================
+
+#[test]
+fn test_action_event_with_history_id_round_trip() {
+    let store = make_store();
+    store.action_event_add(&paste_event("h-1", "text"));
+    // history_id 已写入（SQL 层面验证），且不破坏既有红线（无内容字段）
+    let conn = store.lock_conn();
+    let hid: String = conn
+        .query_row(
+            "SELECT history_id FROM action_events WHERE action_id = 'paste'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(hid, "h-1");
+}
+
+#[test]
+fn test_action_recommend_weights_aggregates_and_excludes_paste() {
+    let store = make_store();
+    // sql-in 在 json 内容上被复制 2 次、粘贴 1 次 → 权重 3
+    store.action_event_add(&action_event("sql-in", "json", "VSCode", 10, OUTCOME_COPIED));
+    store.action_event_add(&action_event("sql-in", "json", "VSCode", 10, OUTCOME_COPIED));
+    store.action_event_add(&action_event("sql-in", "json", "VSCode", 11, OUTCOME_PASTED));
+    // abandoned 不该加权
+    store.action_event_add(&action_event("sql-in", "json", "VSCode", 12, OUTCOME_ABANDONED));
+    // 别的类型 / 别的动作
+    store.action_event_add(&action_event("ai-translate", "text", "Chrome", 10, OUTCOME_COPIED));
+    // 粘贴哨兵必须被排除——否则"粘贴很多"会被当成"这个动作常用"
+    store.action_event_add(&paste_event("h-1", "json"));
+    store.action_event_add(&paste_event("h-2", "json"));
+
+    let weights = store.action_recommend_weights(30);
+    let sql_in_json = weights
+        .iter()
+        .find(|w| w.action_id == "sql-in" && w.content_type == "json")
+        .expect("应有 sql-in×json 权重");
+    assert_eq!(sql_in_json.count, 3, "copied+pasted 计入，abandoned 不计");
+    let ai_tr = weights
+        .iter()
+        .find(|w| w.action_id == "ai-translate")
+        .expect("应有 ai-translate 权重");
+    assert_eq!(ai_tr.count, 1);
+    assert!(
+        !weights.iter().any(|w| w.action_id == ACTION_ID_PASTE),
+        "粘贴哨兵必须排除在权重外"
+    );
+}
+
+#[test]
+fn test_action_recommend_weights_empty_is_not_error() {
+    let store = make_store();
+    assert!(store.action_recommend_weights(30).is_empty());
+}
+
+#[test]
+fn test_action_dismiss_add_is_idempotent() {
+    let store = make_store();
+    store.action_dismiss_add("ai-translate", "text");
+    store.action_dismiss_add("ai-translate", "text"); // 重复 = 幂等
+    store.action_dismiss_add("ai-translate", ""); // 全局不推荐（空类型）
+    store.action_dismiss_add("sql-in", "json");
+
+    let list = store.action_dismissals().unwrap();
+    assert_eq!(list.len(), 3);
+    assert!(
+        list.iter()
+            .any(|d| d.action_id == "ai-translate" && d.content_type == "text")
+    );
+    assert!(
+        list.iter()
+            .any(|d| d.action_id == "ai-translate" && d.content_type.is_empty())
+    );
+}
+
+#[test]
+fn test_action_learnings_clear_clears_both() {
+    let store = make_store();
+    store.action_event_add(&action_event("sql-in", "json", "VSCode", 10, OUTCOME_COPIED));
+    store.action_dismiss_add("ai-translate", "text");
+
+    let n = store.action_event_clear().unwrap();
+    assert_eq!(n, 1);
+    let n2 = store.action_dismissals_clear().unwrap();
+    assert_eq!(n2, 1);
+    assert!(store.action_dismissals().unwrap().is_empty());
+}
+
+// ============================================================
+// v6.1 自我净化：按价值豁免过期清理
+// ============================================================
+
+/// 造一条 N 天前的记录（过期候选）
+fn make_old_item(id: &str, days: i64) -> HistoryItem {
+    let t = (chrono::Local::now() - chrono::Duration::days(days))
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
+    make_item(id, &format!("Old {id}"), &t, "text")
+}
+
+#[test]
+fn test_value_preserve_tagged_not_expired() {
+    let store = make_store();
+    let tagged = make_old_item("tag-old", 100);
+    let plain = make_old_item("plain-old", 100);
+    store.insert_history(&tagged).unwrap();
+    store.insert_history(&plain).unwrap();
+
+    // 给 tagged 打标签（tags + history_tags）
+    {
+        let conn = store.lock_conn();
+        conn.execute(
+            "INSERT INTO tags (id, name, color, source, created_at)
+             VALUES ('tg1', '重要', '#ff0000', 'manual', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO history_tags (history_id, tag_id, source) VALUES ('tag-old', 'tg1', 'manual')",
+            [],
+        )
+        .unwrap();
+    }
+
+    let count = store.clear_history_with_undo("默认", Some(30)).unwrap().0;
+    assert_eq!(count, 1, "只有无价值的 plain-old 被清，打标签的豁免");
+    let result = store.get_history("默认", "all", "", 0, 10).unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].id, "tag-old");
+}
+
+#[test]
+fn test_value_preserve_pasted_not_expired() {
+    let store = make_store();
+    let pasted = make_old_item("past-old", 100);
+    let plain = make_old_item("plain-old", 100);
+    store.insert_history(&pasted).unwrap();
+    store.insert_history(&plain).unwrap();
+
+    // pasted 被粘贴过（action_events 带 history_id + outcome='pasted'）
+    store.action_event_add(&paste_event("past-old", "text"));
+
+    let count = store.clear_history_with_undo("默认", Some(30)).unwrap().0;
+    assert_eq!(count, 1, "被粘贴过的豁免，只有 plain-old 被清");
+    let result = store.get_history("默认", "all", "", 0, 10).unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].id, "past-old");
+}
+
+#[test]
+fn test_value_preserve_searched_not_expired() {
+    let store = make_store();
+    let searched = make_old_item("hit-old", 100);
+    let plain = make_old_item("plain-old", 100);
+    store.insert_history(&searched).unwrap();
+    store.insert_history(&plain).unwrap();
+
+    // searched 被搜索命中过
+    store
+        .lock_conn()
+        .execute(
+            "UPDATE history SET search_hit_count = search_hit_count + 1 WHERE id = 'hit-old'",
+            [],
+        )
+        .unwrap();
+
+    let count = store.clear_history_with_undo("默认", Some(30)).unwrap().0;
+    assert_eq!(count, 1, "被搜索命中过的豁免，只有 plain-old 被清");
+    let result = store.get_history("默认", "all", "", 0, 10).unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].id, "hit-old");
+}
+
+#[test]
+fn test_value_preserve_unvalued_all_cleared() {
+    let store = make_store();
+    store.insert_history(&make_old_item("a-old", 100)).unwrap();
+    store.insert_history(&make_old_item("b-old", 100)).unwrap();
+
+    let count = store.clear_history_with_undo("默认", Some(30)).unwrap().0;
+    assert_eq!(count, 2, "没有价值的过期记录照常全清");
+}
+
+#[test]
+fn test_count_expired_matches_clear_with_preserve() {
+    // 一致性约定：设置页的"过期计数"必须 = 实际清理数（豁免后都只算无价值条目）
+    let store = make_store();
+    let tagged = make_old_item("tag-old", 100);
+    let plain = make_old_item("plain-old", 100);
+    store.insert_history(&tagged).unwrap();
+    store.insert_history(&plain).unwrap();
+    {
+        let conn = store.lock_conn();
+        conn.execute(
+            "INSERT INTO tags (id, name, color, source, created_at)
+             VALUES ('tg2', '重要', '#ff0000', 'manual', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO history_tags (history_id, tag_id, source) VALUES ('tag-old', 'tg2', 'manual')",
+            [],
+        )
+        .unwrap();
+    }
+
+    let counted = store.count_expired_history("默认", 30).unwrap();
+    assert_eq!(counted, 1, "计数只算无价值的 plain-old");
+
+    let cleared = store.clear_history_with_undo("默认", Some(30)).unwrap().0;
+    assert_eq!(cleared, counted, "计数 = 实际清理数");
+}
+
+#[test]
+fn test_preserve_toggle_off_clears_valued() {
+    // 开关关闭 → 退回旧行为：高价值（打标签/粘贴过/搜索命中）也参与过期清理
+    let store = make_store();
+    // 关掉「保护常用内容」
+    store
+        .save_config(&serde_json::json!({ "preserve_valued_content": false }))
+        .unwrap();
+
+    let tagged = make_old_item("tag-old", 100);
+    let pasted = make_old_item("past-old", 100);
+    let searched = make_old_item("hit-old", 100);
+    store.insert_history(&tagged).unwrap();
+    store.insert_history(&pasted).unwrap();
+    store.insert_history(&searched).unwrap();
+    {
+        let conn = store.lock_conn();
+        conn.execute(
+            "INSERT INTO tags (id, name, color, source, created_at)
+             VALUES ('tg3', '重要', '#ff0000', 'manual', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO history_tags (history_id, tag_id, source) VALUES ('tag-old', 'tg3', 'manual')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE history SET search_hit_count = 1 WHERE id = 'hit-old'",
+            [],
+        )
+        .unwrap();
+    }
+    store.action_event_add(&paste_event("past-old", "text"));
+
+    let counted = store.count_expired_history("默认", 30).unwrap();
+    assert_eq!(counted, 3, "开关关闭时高价值也算过期");
+
+    let cleared = store.clear_history_with_undo("默认", Some(30)).unwrap().0;
+    assert_eq!(cleared, 3);
+    let result = store.get_history("默认", "all", "", 0, 10).unwrap();
+    assert_eq!(result.len(), 0, "全部清空");
+}
+
+#[test]
+fn test_search_hit_count_increments_on_search() {
+    let store = make_store();
+    store
+        .insert_history(&make_item("find-me", "unique-keyword-xyz", "2026-01-01 10:00:00", "text"))
+        .unwrap();
+
+    // 带搜索词的查询命中后计数 +1
+    let result = store.search_history("默认", "unique-keyword", "all", "", "", "all", &[], 10).unwrap();
+    assert_eq!(result.len(), 1);
+
+    let hit: i32 = store
+        .lock_conn()
+        .query_row(
+            "SELECT search_hit_count FROM history WHERE id = 'find-me'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(hit, 1);
+}
+
+

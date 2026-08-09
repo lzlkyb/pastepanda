@@ -24,6 +24,7 @@ import { useVirtualScroll } from "@/hooks/useVirtualScroll";
 import { prefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { ItemEditorDialog } from "@/components/editors/ItemEditorDialog";
 import { TransformHubDialog } from "@/components/TransformHubDialog";
+import { LearningsDialog } from "@/components/LearningsDialog";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -820,6 +821,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
         <>
           <ItemEditorDialog />
           <TransformHubDialog />
+          <LearningsDialog />
           {/* AnimatePresence 包裹条件挂载：关闭时子树保留到退场动画结束再卸载。
               各弹框组件内部不再自带 AnimatePresence（会形成独立 presence 边界、
               屏蔽外层退出信号），motion 元素直接参与本层 presence */}

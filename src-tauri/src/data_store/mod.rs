@@ -5,6 +5,7 @@ mod snippet;
 mod config;
 mod ai_usage;
 mod ai_action;
+mod action_events;
 #[cfg(test)]
 mod tests;
 
@@ -12,6 +13,11 @@ pub use ai_usage::{
     AiUsageByAction, AiUsageDaily, AiUsageEntry, AiUsageLogRow, AI_USAGE_RETAIN_DAYS,
 };
 pub use ai_action::{CustomAction, MAX_ACTION_DESC_CHARS, MAX_ACTION_NAME_CHARS};
+pub use action_events::{
+    ActionEvent, ActionEventCount, ActionEventStats, ActionDismissal, ActionWeightRow,
+    ACTION_EVENTS_RETAIN_DAYS, ACTION_ID_PASTE, OUTCOME_ABANDONED, OUTCOME_COPIED,
+    OUTCOME_PASTED,
+};
 
 use md5::{Digest, Md5};
 use rusqlite::{params, Connection};
@@ -272,6 +278,32 @@ impl DataStore {
                 sort_order    INTEGER NOT NULL DEFAULT 0,
                 created_at    TEXT NOT NULL,
                 updated_at    TEXT NOT NULL
+            );
+
+            -- 动作使用日志（见 data_store/action_events.rs）。
+            -- **没有内容字段，也不得加**：这里只记「动作 + 类型 + 来源 + 时段 + 结果」，
+            -- 存内容就等于多一份剪贴板历史。它是 v6.0 起一切学习能力的燃料。
+            -- history_id 是 v6.1 迁移列（见下方 ALTER），粘贴信号回写用它关联到具体条目。
+            CREATE TABLE IF NOT EXISTS action_events (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at   TEXT    NOT NULL,
+                action_id    TEXT    NOT NULL,
+                content_type TEXT    NOT NULL DEFAULT '',
+                source_app   TEXT    NOT NULL DEFAULT '',
+                hour         INTEGER NOT NULL DEFAULT 0,
+                outcome      TEXT    NOT NULL,
+                history_id   TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_action_events_created ON action_events(created_at);
+            CREATE INDEX IF NOT EXISTS idx_action_events_action ON action_events(action_id);
+
+            -- 「不再推荐这个」负反馈（v6.1，见 data_store/action_events.rs）。
+            -- (action_id, content_type) 主键去重：重复点不再推荐是幂等操作。
+            CREATE TABLE IF NOT EXISTS action_dismissals (
+                action_id    TEXT NOT NULL,
+                content_type TEXT NOT NULL DEFAULT '',
+                created_at   TEXT NOT NULL,
+                PRIMARY KEY (action_id, content_type)
             );",
         )?;
 
@@ -356,6 +388,28 @@ impl DataStore {
                     log::warn!("[DataStore] snippets.last_used_at 列已存在，忽略: {}", e);
                 } else {
                     log::error!("[DataStore] 添加 snippets.last_used_at 列失败: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
+        // 数据库迁移：为 action_events 添加 history_id 列（v6.1，粘贴信号回写关联用）
+        let has_history_id: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('action_events') WHERE name = 'history_id'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_history_id {
+            if let Err(e) = conn
+                .execute_batch("ALTER TABLE action_events ADD COLUMN history_id TEXT;")
+            {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] action_events.history_id 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 action_events.history_id 列失败: {}", e);
                     return Err(e);
                 }
             }
@@ -475,6 +529,29 @@ impl DataStore {
                  WHERE tag_id IN (SELECT id FROM tags WHERE source = 'auto')
                    AND history_tags.source = 'manual';",
             );
+        }
+
+        // 数据库迁移：为 history 添加 search_hit_count 列（v6.1 自我净化——
+        // "被搜索命中过"是高价值信号，豁免过期清理；get_history 搜索时批量 +1）
+        let has_search_hit: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('history') WHERE name = 'search_hit_count'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_search_hit {
+            if let Err(e) = conn.execute_batch(
+                "ALTER TABLE history ADD COLUMN search_hit_count INTEGER NOT NULL DEFAULT 0;",
+            ) {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] history.search_hit_count 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 history.search_hit_count 列失败: {}", e);
+                    return Err(e);
+                }
+            }
         }
 
         // 启用 WAL 模式 + 性能/可靠性优化

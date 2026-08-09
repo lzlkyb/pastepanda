@@ -58,6 +58,8 @@ export interface AppConfig {
   hotkey: string;
   theme: string;
   auto_cleanup_days: number;
+  /** v6.1 自我净化开关：保护常用内容（打标签/粘贴过/搜索找回过）不过期。默认开 */
+  preserve_valued_content: boolean;
   auto_strip: boolean;
   sequential_loop: boolean;
   hide_on_focus_out: boolean;
@@ -193,6 +195,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   hotkey: "ctrl+alt+v",
   theme: "light",
   auto_cleanup_days: 30,
+  preserve_valued_content: true,
   auto_strip: false,
   sequential_loop: false,
   hide_on_focus_out: false,

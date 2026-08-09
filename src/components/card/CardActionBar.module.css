@@ -1,0 +1,37 @@
+/* 卡片动作条（v6.0 复制即执行）：hover 时出现的执行类动作快捷按钮 */
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* inline 模式空间小，收紧间距 */
+.compact {
+  gap: 1px;
+}
+
+.btn {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.btn:hover {
+  background: var(--hover);
+  color: var(--accent);
+}
+
+.btn:active {
+  transform: scale(0.9);
+}

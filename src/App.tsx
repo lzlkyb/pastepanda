@@ -651,7 +651,12 @@ function App() {
             if (ok) window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴文件路径", type: "success" } }));
           } else {
             const ok = await pasteText(item.text);
-            if (ok) window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴", type: "success" } }));
+            if (ok) {
+              window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴", type: "success" } }));
+              // v6.1 粘贴信号回写（fire-and-forget）
+              const { logPasteEvent } = await import("@/lib/api/actionEvents");
+              logPasteEvent(item.id, item.content_type || item.type, item.source);
+            }
           }
         }
       }

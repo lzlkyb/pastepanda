@@ -67,6 +67,14 @@ export interface Transform {
   id: string;
   /** 展示名，如 "SQL IN" */
   label: string;
+  /**
+   * 变换种类：
+   * - `text`（默认）：run() 产出可复制的文本，UI 走「预览 → 复制/粘贴」；
+   * - `action`：run() 产生副作用（打开浏览器/资源管理器等），**不产出文本**，
+   *   UI 只显示「执行」按钮，没有预览、没有复制/粘贴。
+   * 未声明视为 `text`，向后兼容。
+   */
+  kind?: "text" | "action";
   /** 一句话描述，枢纽面板副标题用 */
   description?: string;
   /** 图标语义键（如 "database"），UI 层映射为 lucide 组件 */
@@ -74,7 +82,10 @@ export interface Transform {
   group: TransformGroup;
   /** 返回 0~1 的匹配度；0 表示不适用。多个变换可同时命中，按分数排序 */
   detect(ctx: TransformContext): number;
-  /** 执行变换，返回可复制产物（支持异步：配置转换等调 Rust 侧的变换返回 Promise） */
+  /**
+   * 执行变换。`text` 类返回可复制产物；`action` 类返回 ok 表示已执行，
+   * `output` 为空（UI 不展示产物）。
+   */
   run(text: string, opts?: Record<string, unknown>): TransformResult | Promise<TransformResult>;
   /**
    * 可选：标记这是一个**需要联网且可能计费**的变换。

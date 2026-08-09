@@ -1,5 +1,42 @@
 use super::*;
 
+/// 自我净化（v6.1）：高价值条目不参与过期清理，追加到过期清理的 WHERE 之后。
+///
+/// 三条高价值信号（路线图 v6.1「按价值清理」）：
+/// - **被打过标签**（history_tags 有记录）——用户主动标注 = 有价值；
+/// - **被粘贴过**（action_events 有 history_id 且 outcome='pasted'）——内容真正被用上；
+/// - **被搜索命中过**（search_hit_count > 0）——用户找回来过。
+///
+/// 满足任一 → 永久保留，不参与过期清理。都没有 → 只是"过期的临时内容"，优先清。
+/// 与 `clear_history_with_undo` 的 SELECT/DELETE、`count_expired_history` 共用，
+/// 保证设置页"过期计数" = 实际清理数（该一致性有既有约定与注释约束）。
+const VALUE_PRESERVE_SQL: &str = "
+    AND id NOT IN (SELECT DISTINCT history_id FROM history_tags WHERE history_id IS NOT NULL)
+    AND id NOT IN (SELECT DISTINCT history_id FROM action_events WHERE history_id IS NOT NULL AND outcome = 'pasted')
+    AND COALESCE(search_hit_count, 0) = 0";
+
+impl DataStore {
+    /// 读「保护常用内容」开关（v6.1）。默认 true：
+    /// - 开：VALUE_PRESERVE_SQL 生效，高价值条目豁免过期清理；
+    /// - 关：退回旧的「超期必清」（只看时间 + 置顶），隐私敏感用户可一键退回。
+    /// 与前端 DEFAULT_CONFIG.preserve_valued_content 对齐（老库没有该 key 时按 true 兜底）。
+    fn preserve_valued_enabled(&self) -> bool {
+        self.get_config()
+            .ok()
+            .and_then(|c| c.get("preserve_valued_content").and_then(|v| v.as_bool()))
+            .unwrap_or(true)
+    }
+
+    /// 按开关拼装豁免 SQL：开 → VALUE_PRESERVE_SQL；关 → 空串（无豁免）。
+    fn preserve_sql(&self) -> String {
+        if self.preserve_valued_enabled() {
+            VALUE_PRESERVE_SQL.to_string()
+        } else {
+            String::new()
+        }
+    }
+}
+
 impl DataStore {
     pub fn get_history(
         &self,
@@ -39,7 +76,6 @@ impl DataStore {
         sql.push_str(" ORDER BY pinned DESC, time DESC LIMIT ? OFFSET ?");
         params_vec.push(Box::new(limit.min(500))); // 单次查询上限 500 条
         params_vec.push(Box::new(offset));
-
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
             params_vec.iter().map(|p| p.as_ref()).collect();
 
@@ -72,6 +108,22 @@ impl DataStore {
         };
         drop(conn);
         self.load_tags_into_items(&mut items)?;
+
+        // v6.1 自我净化：简单搜索路径也记录命中（fire-and-forget）
+        if !search.is_empty() && !items.is_empty() {
+            let ids: Vec<String> = items.iter().map(|i| i.id.clone()).collect();
+            let placeholders: Vec<String> =
+                ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+            let sql = format!(
+                "UPDATE history SET search_hit_count = search_hit_count + 1 WHERE id IN ({})",
+                placeholders.join(","),
+            );
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+                ids.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+            if let Err(e) = self.lock_conn().execute(&sql, param_refs.as_slice()) {
+                log::warn!("[History] 搜索命中计数更新失败: {}", e);
+            }
+        }
 
         Ok(items)
     }
@@ -195,6 +247,23 @@ impl DataStore {
         };
         drop(conn);
         self.load_tags_into_items(&mut items)?;
+
+        // v6.1 自我净化：搜索命中即高价值信号（豁免过期清理）。
+        // 对本次命中并返回的条目批量 +1，fire-and-forget（写失败不阻塞搜索本身）。
+        if !search.is_empty() && !items.is_empty() {
+            let ids: Vec<String> = items.iter().map(|i| i.id.clone()).collect();
+            let placeholders: Vec<String> =
+                ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+            let sql = format!(
+                "UPDATE history SET search_hit_count = search_hit_count + 1 WHERE id IN ({})",
+                placeholders.join(","),
+            );
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+                ids.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+            if let Err(e) = self.lock_conn().execute(&sql, param_refs.as_slice()) {
+                log::warn!("[History] 搜索命中计数更新失败: {}", e);
+            }
+        }
 
         Ok(items)
     }
@@ -654,14 +723,20 @@ impl DataStore {
         let cutoff = chrono::Local::now() - chrono::Duration::days(days as i64);
         let cutoff_str = cutoff.format("%Y-%m-%d %H:%M:%S").to_string();
 
+        // 自我净化豁免 SQL：必须在 lock_conn 之前算好——preserve_sql 内部
+        // 会读 config（再锁一次），Mutex 不可重入，锁内调用会死锁。
+        let preserve_sql = self.preserve_sql();
+
         let conn = self.lock_conn();
 
-        // 1. 读取即将被删除的记录
+        // 1. 读取即将被删除的记录（v6.1 自我净化：开关开时高价值条目豁免）
         let mut items: Vec<HistoryItem> = {
-            let mut stmt = conn.prepare(
+            let sql = format!(
                 "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon, content_type
-                 FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2",
-            ).map_err(|e| e.to_string())?;
+                 FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2{}",
+                preserve_sql,
+            );
+            let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
             let result: Vec<HistoryItem> = stmt
                 .query_map(params![workspace, cutoff_str], |row| {
                     Ok(HistoryItem {
@@ -734,13 +809,14 @@ impl DataStore {
             }
         }
 
-        // 3. 事务删除
+        // 3. 事务删除（v6.1 自我净化：与第 1 步同样的豁免条件，保证"预览数 = 删除数"）
         // 改用 RAII 事务：手写 COMMIT 失败不回滚会让事务永久挂在共享连接上，drop 时自动 ROLLBACK 可避免
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-        let result = conn.execute(
-            "DELETE FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2",
-            params![workspace, cutoff_str],
+        let del_sql = format!(
+            "DELETE FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2{}",
+            preserve_sql,
         );
+        let result = conn.execute(&del_sql, params![workspace, cutoff_str]);
         match result {
             Ok(count) => {
                 tx.commit().map_err(|e| e.to_string())?;
@@ -762,13 +838,15 @@ impl DataStore {
         }
         let cutoff = chrono::Local::now() - chrono::Duration::days(before_days as i64);
         let cutoff_str = cutoff.format("%Y-%m-%d %H:%M:%S").to_string();
+        // 同 clear_history_with_undo：豁免 SQL 必须在加锁前算好（preserve_sql 内部会读 config）
+        let preserve_sql = self.preserve_sql();
         let conn = self.lock_conn();
+        let sql = format!(
+            "SELECT COUNT(*) FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2{}",
+            preserve_sql,
+        );
         let count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2",
-                params![workspace, cutoff_str],
-                |row| row.get(0),
-            )
+            .query_row(&sql, params![workspace, cutoff_str], |row| row.get(0))
             .map_err(|e| e.to_string())?;
         Ok(count.max(0) as u32)
     }

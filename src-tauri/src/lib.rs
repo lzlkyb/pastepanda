@@ -183,6 +183,13 @@ pub fn run() {
             }
             ai::budget::remove_legacy_usage_file(&app_dir);
 
+            // 动作使用日志：启动时清一次过期记录。学习价值在最近几周，旧事件没有留存意义
+            match store.action_event_purge(data_store::ACTION_EVENTS_RETAIN_DAYS) {
+                Ok(n) if n > 0 => log::info!("[ActionEvents] 已清理 {} 条过期事件", n),
+                Ok(_) => {}
+                Err(e) => log::warn!("[ActionEvents] 清理过期事件失败: {}", e),
+            }
+
             // 读取 LAN 同步配置（在 store 被 manage 之前）
             let lan_enabled = store
                 .get_config()
@@ -540,6 +547,17 @@ pub fn run() {
             commands::ai_get_usage_stats,
             commands::ai_clear_usage_log,
             commands::ai_run,
+            // 动作使用日志（v6.0 第一步：action_events 表）
+            commands::action_event_log,
+            commands::action_event_stats,
+            commands::action_event_clear,
+            // 个性化推荐数据（v6.1：权重聚合 / 不再推荐 / 一键清空学习记录）
+            commands::action_recommend_weights,
+            commands::action_dismiss_add,
+            commands::action_dismissals,
+            commands::action_learnings_clear,
+            // 执行类动作（v6.0 复制即执行）：协议白名单打开链接
+            commands::open_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

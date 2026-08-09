@@ -19,6 +19,7 @@ import { sqlTransforms } from "./sqlTransforms";
 import { logTransforms } from "./logTransforms";
 import { numberTransforms } from "./numberTransforms";
 import { docTransforms } from "./docTransforms";
+import { actionTransforms } from "./actionTransforms";
 
 // 注意：AI 动作**不在这里静态注册**。它们的定义（label / 选项）以后端为单一数据源，
 // 由 initBackend() 调 initAiTransforms() 拉取后注册，避免前后端各维护一份而漂移。
@@ -35,6 +36,7 @@ sqlTransforms.forEach(registerTransform);
 logTransforms.forEach(registerTransform);
 numberTransforms.forEach(registerTransform);
 docTransforms.forEach(registerTransform);
+actionTransforms.forEach(registerTransform);
 
 export * from "./types";
 export * from "./registry";
@@ -54,6 +56,7 @@ export { sqlInReverseTransform, extractInValues } from "./sqlInReverse";
 export { queryResultToSqlTransform, parseTable, tableToInsert } from "./queryResultToSql";
 export { numberTransforms } from "./numberTransforms";
 export { docTransforms } from "./docTransforms";
+export { actionTransforms } from "./actionTransforms";
 export {
   initAiTransforms,
   refreshAiAvailability,

@@ -20,11 +20,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Sparkles, Loader2, RotateCw } from "lucide-react";
 import { useDialogStore } from "@/stores/dialogStore";
 import {
-  applicableTransforms,
   type Transform,
   type TransformContext,
   type TransformResultMeta,
 } from "@/lib/transforms";
+import { recommendScored } from "@/lib/recommend";
 import { ocrImage, pasteText } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 import { useDialogAnim } from "@/lib/dialogMotion";
@@ -32,6 +32,7 @@ import { FocusTrap } from "@/components/FocusTrap";
 import { MelodyEmpty } from "@/components/MelodyEmpty";
 import { TransformCard } from "@/components/transform/TransformCard";
 import { specsFor, defaultOptsFromSpecs } from "@/components/transform/transformOptions";
+import { useActionEventLog } from "@/hooks/useActionEventLog";
 import styles from "./TransformHub.module.css";
 
 export function TransformHubDialog() {
@@ -100,10 +101,33 @@ export function TransformHubDialog() {
     [item, sourceText, isImage],
   );
 
-  // 当前内容命中的变换（按匹配度排序），过滤 < 0.3 的噪声
+  // 当前内容命中的变换（v6.1：个性化排序 = 静态分 × 个人使用频次，含负反馈剔除），过滤 < 0.3 的噪声
+  // learnRev 是负反馈后的刷新信号：点了「不再推荐」就 +1 触发重算
+  const [learnRev, setLearnRev] = useState(0);
   const scored = useMemo(
-    () => (item ? applicableTransforms(ctx).filter((s) => s.score >= 0.3) : []),
-    [item, ctx],
+    () => (item ? recommendScored(ctx).filter((s) => s.score >= 0.3) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [item, ctx, learnRev],
+  );
+
+  /**
+   * 负反馈：「不再推荐这个」。
+   * 记录到本地后刷新推荐状态 + 本组件重算排序（该卡片随即消失）。
+   */
+  const handleDismiss = useCallback(
+    async (actionId: string) => {
+      try {
+        const { actionDismissAdd } = await import("@/lib/api/actionEvents");
+        await actionDismissAdd(actionId, ctx.contentType);
+        const { refreshRecommendState } = await import("@/lib/recommend");
+        await refreshRecommendState();
+        setLearnRev((v) => v + 1);
+        toast(`不再推荐「${actionId}」`, "success");
+      } catch (e) {
+        toast(`操作失败：${e instanceof Error ? e.message : String(e)}`, "error");
+      }
+    },
+    [ctx.contentType, toast],
   );
 
   // 分区：推荐（≥0.6）vs 其他工具（0.3~0.6）
@@ -133,6 +157,14 @@ export function TransformHubDialog() {
   );
 
   /**
+   * 记一笔动作事件（v6.0 action_events 表）。
+   *
+   * fire-and-forget：写不进去也只是少一条统计，绝不能拖慢复制/粘贴本身。
+   * 只记「动作 + 内容类型 + 来源应用 + 时段 + 结果」，不含任何内容文本。
+   */
+  const logEvent = useActionEventLog(ctx.contentType, item?.source);
+
+  /**
    * 复制卡片**已经算好的**产物。
    *
    * 不在这里重跑 `t.run()`：本地变换重跑是白费一次计算，
@@ -142,6 +174,8 @@ export function TransformHubDialog() {
     async (t: Transform, output: string, meta?: TransformResultMeta) => {
       try {
         await navigator.clipboard.writeText(output);
+        // 复制成功 = 用户认可这个动作的产物，记一笔（fire-and-forget）
+        logEvent(t, "copied");
         const n = meta?.count;
         toast(n ? `已复制「${t.label}」（${n} 个值）` : `已复制「${t.label}」`, "success");
         setCopiedId(t.id);
@@ -150,16 +184,20 @@ export function TransformHubDialog() {
         toast("复制失败", "error");
       }
     },
-    [toast],
+    [toast, logEvent],
   );
 
   /** 把卡片已算好的产物直接粘贴到前台窗口 */
   const pasteOutput = useCallback(
     async (t: Transform, output: string) => {
       const ok = await pasteText(output);
-      if (ok) toast(`已粘贴「${t.label}」`, "success");
+      if (ok) {
+        toast(`已粘贴「${t.label}」`, "success");
+        // 粘贴成功 = 内容真正被用上，这是最有价值的「有价值」信号
+        logEvent(t, "pasted");
+      }
     },
-    [toast],
+    [toast, logEvent],
   );
 
   // Esc 关闭（其余导航键交由卡片按钮 / Tab 处理）
@@ -185,6 +223,8 @@ export function TransformHubDialog() {
       onSetOpt={(k, v) => setOpt(t.id, k, v)}
       onCopy={(output, meta) => void copyOutput(t, output, meta)}
       onPaste={(output) => void pasteOutput(t, output)}
+      contentType={ctx.contentType}
+      onDismiss={(id) => void handleDismiss(id)}
     />
   );
 

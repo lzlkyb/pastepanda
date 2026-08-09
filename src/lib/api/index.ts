@@ -73,5 +73,25 @@ export { fetchTags, createTag, updateTag, deleteTag, setItemTags, addItemTags, r
 // 应用信息
 export { getAppVersion, getAppName } from "./app";
 
+// 动作使用日志（v6.0 action_events：记录动作选择，只存本机、可一键清空）
+export {
+  logActionEvent,
+  logPasteEvent,
+  actionEventStats,
+  actionEventClear,
+  actionRecommendWeights,
+  actionDismissAdd,
+  actionDismissals,
+  actionLearningsClear,
+} from "./actionEvents";
+export type {
+  ActionEvent,
+  ActionOutcome,
+  ActionEventStats,
+  ActionEventCount,
+  ActionWeightRow,
+  ActionDismissal,
+} from "./actionEvents";
+
 // 初始化
 export { initBackend } from "./init";

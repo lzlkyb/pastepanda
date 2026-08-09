@@ -136,6 +136,33 @@
   flex-shrink: 0;
 }
 
+/* v6.1 负反馈：「不再推荐这个」——hover 才显现，避免噪音 */
+.dismissBtn {
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+  flex-shrink: 0;
+}
+.cardHead:hover .dismissBtn {
+  opacity: 0.7;
+}
+.dismissBtn:hover {
+  opacity: 1 !important;
+  background: var(--danger-hover);
+  color: #fff;
+}
+
 /* 卡内选项 chip 区（卡片底为 section-bg，chip 用 dialog-bg 提对比） */
 .cardOpts {
   display: flex;

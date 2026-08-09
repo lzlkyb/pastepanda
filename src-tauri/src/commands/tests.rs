@@ -1,6 +1,31 @@
 use super::*;
 
 // ============================================================
+// is_allowed_open_url（open_url 的协议白名单）
+// ============================================================
+
+#[test]
+fn test_open_url_allows_browser_and_mail() {
+    assert!(is_allowed_open_url("https://example.com"));
+    assert!(is_allowed_open_url("http://example.com/path?q=1"));
+    assert!(is_allowed_open_url("mailto:a@b.com"));
+    // 首尾空白允许（命令层会 trim）
+    assert!(is_allowed_open_url("  https://example.com  "));
+}
+
+#[test]
+fn test_open_url_rejects_other_protocols() {
+    // 这是安全边界：file:/cmd:/javascript: 等协议一旦放行，
+    // 剪贴板里任意一行内容就能让用户点一下打开本地程序或执行脚本
+    assert!(!is_allowed_open_url("file:///C:/Windows/notepad.exe"));
+    assert!(!is_allowed_open_url("cmd://echo%20hi"));
+    assert!(!is_allowed_open_url("javascript:alert(1)"));
+    assert!(!is_allowed_open_url("ftp://example.com"));
+    assert!(!is_allowed_open_url("example.com")); // 没写协议的一律不放行
+    assert!(!is_allowed_open_url(""));
+}
+
+// ============================================================
 // is_unsafe_network_path
 // ============================================================
 

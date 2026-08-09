@@ -23,6 +23,10 @@ interface DialogState {
   hubText: string | null;
   openHub: (item: HistoryItem, overrideText?: string) => void;
   closeHub: () => void;
+  /** 「系统学到了什么」（v6.1 红线②：学习日志可见可删） */
+  learningsOpen: boolean;
+  openLearnings: () => void;
+  closeLearnings: () => void;
 }
 
 /**
@@ -48,4 +52,7 @@ export const useDialogStore = create<DialogState>((set) => ({
   openHub: (item, overrideText) =>
     set({ hubItem: item, hubText: overrideText ?? null }),
   closeHub: () => set({ hubItem: null, hubText: null }),
+  learningsOpen: false,
+  openLearnings: () => set({ learningsOpen: true }),
+  closeLearnings: () => set({ learningsOpen: false }),
 }));
