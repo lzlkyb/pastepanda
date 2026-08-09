@@ -4,6 +4,7 @@ import { applyTheme, DEFAULT_THEME, ThemeKey } from "@/lib/theme";
 import { useAppStore, GroupFilter, HistoryItem, buildSearchKey } from "@/stores/appStore";
 import { useDialogStore } from "@/stores/dialogStore";
 import { TopBar } from "@/components/TopBar";
+import { SuggestionBar } from "@/components/SuggestionBar";
 import { CardList } from "@/components/CardList";
 import { QuickPreview } from "@/components/QuickPreview";
 import { SkinScene } from "@/components/SkinScene";
@@ -817,6 +818,8 @@ function App() {
           onToggleSidebar={toggleSidebar}
           sidebarOpen={sidebarOpen}
         />
+        {/* v6.2 主动建议：只在主窗口（用户已打开）inline 出现，绝不弹窗 */}
+        <SuggestionBar />
         <div className={appStyles.contentArea}>
           <Sidebar
             open={sidebarOpen}
