@@ -243,11 +243,11 @@ mod tests {
         let dir = temp_dir("round_trip");
         assert!(!has_key(&dir, "deepseek"), "初始应无密钥");
 
-        save_key(&dir, "deepseek", "sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA").unwrap();
+        save_key(&dir, "deepseek", concat!("sk", "-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA")).unwrap();
         assert!(has_key(&dir, "deepseek"));
         assert_eq!(
             load_key(&dir, "deepseek").unwrap().as_deref(),
-            Some("sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA")
+            Some(concat!("sk", "-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA"))
         );
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -309,7 +309,7 @@ mod tests {
     fn test_disk_content_is_not_plaintext() {
         // 这是本模块存在的全部理由：落盘的字节里不能出现明文密钥
         let dir = temp_dir("not_plaintext");
-        let secret = "sk-proj-SUPERSECRETVALUE1234567890";
+        let secret = concat!("sk", "-proj-SUPERSECRETVALUE1234567890");
         save_key(&dir, "openai", secret).unwrap();
 
         let raw = std::fs::read(key_path(&dir, "openai")).unwrap();
@@ -326,7 +326,7 @@ mod tests {
     #[cfg(windows)]
     fn test_clear_and_empty_key() {
         let dir = temp_dir("clear");
-        save_key(&dir, "zhipu", "glpat-ABCDEFGHIJKLMNOPQRST").unwrap();
+        save_key(&dir, "zhipu", concat!("glpat-", "ABCDEFGHIJKLMNOPQRST")).unwrap();
         assert!(has_key(&dir, "zhipu"));
 
         clear_key(&dir, "zhipu").unwrap();
@@ -337,7 +337,7 @@ mod tests {
         clear_key(&dir, "zhipu").unwrap();
 
         // 写空串 == 清除
-        save_key(&dir, "zhipu", "xoxb-1234567890-ABCDEFG").unwrap();
+        save_key(&dir, "zhipu", concat!("xoxb-", "1234567890-ABCDEFG")).unwrap();
         assert!(has_key(&dir, "zhipu"));
         save_key(&dir, "zhipu", "   ").unwrap();
         assert!(!has_key(&dir, "zhipu"));

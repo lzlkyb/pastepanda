@@ -956,7 +956,7 @@ mod tests {
 
     #[test]
     fn test_github_token() {
-        let r = classify("ghp_1234567890abcdef1234567890abcdef12345678");
+        let r = classify(concat!("ghp_", "1234567890abcdef1234567890abcdef12345678"));
         assert!(r.contains(&"密钥".to_string()));
     }
 
@@ -1052,7 +1052,7 @@ mod tests {
     #[test]
     fn test_is_secret_github_pat() {
         let c = ContentClassifier::new();
-        assert!(c.is_secret("github_pat_1234567890abcdef1234567890abcdef"));
+        assert!(c.is_secret(concat!("github_pat_", "1234567890abcdef1234567890abcdef")));
         assert!(!c.is_secret("ghp_short")); // 太短
     }
 
@@ -1061,12 +1061,12 @@ mod tests {
         let c = ContentClassifier::new();
         // 以下全部含 `-`/`_` 或长度非 4 的倍数，走不到 Base64 分支，
         // 必须由 SECRET_PREFIXES 命中（否则开着「敏感内容防护」仍会入库）。
-        assert!(c.is_secret("sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"));
-        assert!(c.is_secret("sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCD"));
-        assert!(c.is_secret("xoxb-1234567890-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx"));
+        assert!(c.is_secret(concat!("sk", "-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")));
+        assert!(c.is_secret(concat!("sk", "-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCD")));
+        assert!(c.is_secret(concat!("xoxb-", "1234567890-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx")));
         assert!(c.is_secret("xapp-1-A01234567-1234567890123-abcdef0123456789"));
         assert!(c.is_secret("AIzaSyB1234567890abcdefghijklmnopqrstuv")); // 39 位
-        assert!(c.is_secret("glpat-ABCDEFGHIJKLMNOPQRST"));
+        assert!(c.is_secret(concat!("glpat-", "ABCDEFGHIJKLMNOPQRST")));
         assert!(c.is_secret("gho_1234567890abcdef1234567890abcdef12"));
     }
 
