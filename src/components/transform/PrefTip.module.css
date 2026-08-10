@@ -1,0 +1,109 @@
+/**
+ * PrefTip.module.css —— 偏好自荐轻提示。
+ *
+ * 配色只用主题变量，不写硬颜色。
+ */
+
+.tip {
+  margin-top: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--accent-light);
+  /* 边框是必需而非装饰：forest 主题下 --section-bg 恰好等于 --accent-light（都是 #ECFDF5），
+     没边框这条提示就和上方结果区糊成一片 */
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.ico {
+  color: var(--accent-strong);
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.body {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+/* “我注意到什么”——accent 压 accent-light 浅色下不达 4.5:1，统一用加深版 */
+.obs {
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+.count {
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+/* 将要写进 action_prefs 的那句话——给个底让用户看清“到底记了什么” */
+.sentence {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.acts {
+  display: flex;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-primary);
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.primary {
+  /* 实心主按钮用 --accent-solid（白字压其上达 4.5:1），不用 --accent */
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
+  color: #fff;
+}
+
+.primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+  background: var(--accent-solid);
+}
+
+/* 零阅读成本的出口：不想读就直接叉掉，语义等同「不用」 */
+.close {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+}
+
+.close:hover {
+  color: var(--text-primary);
+}

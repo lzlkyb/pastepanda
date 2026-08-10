@@ -23,6 +23,15 @@ export interface Chain {
   name: string;
   description: string;
   steps: ChainStep[];
+  /**
+   * 步骤配置已损坏（后端解析 `steps` 失败）。
+   *
+   * 与“真的是空链”必须分开：两者的 `steps` 都是 `[]`，但前者是数据丢了
+   * （用户原本配过步骤），后者是用户本来就没配。提示文案不能一样。
+   */
+  corrupted?: boolean;
+  /** 损坏时的原始 JSON（给用户照着重建） */
+  rawSteps?: string;
 }
 
 /** 单步执行结果（供逐步预览） */

@@ -19,17 +19,20 @@ import {
   ShieldAlert, CheckCircle2, Plus, Pencil,
 } from "lucide-react";
 import { useDialogStore } from "@/stores/dialogStore";
-import { PRESET_CHAINS, getChainAsync, listAllChains, loadUserChains, invalidateUserChains, runChain } from "@/lib/chains/registry";
+import { PRESET_CHAINS, getChainAsync, loadUserChains, runChain } from "@/lib/chains/registry";
 import type { Chain, ChainRunResult, ChainRunStage } from "@/lib/chains/types";
 import { pasteText } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { FocusTrap } from "@/components/FocusTrap";
 import { SequenceDiscover } from "@/components/SequenceDiscover";
+import { AiBadge } from "@/components/AiBadge";
 import styles from "./ChainRunnerDialog.module.css";
 
 export function ChainRunnerDialog() {
   const text = useDialogStore((s) => s.chainText);
+  /** AI 临时编的链（B）：不在注册表里，只在本次会话有效 */
+  const adHoc = useDialogStore((s) => s.chainAdHoc);
   const close = useCallback(() => useDialogStore.getState().closeChain(), []);
   const open = text !== null;
   const anim = useDialogAnim();
@@ -55,11 +58,14 @@ export function ChainRunnerDialog() {
       setRunning(false);
       setExpanded(new Set());
       setCopied(false);
+      const ad = useDialogStore.getState().chainAdHoc;
       void loadUserChains(true).then((user) => {
-        const all = [...user, ...PRESET_CHAINS];
+        // AI 编的临时链排最前：它是用户刚才主动要的那一条
+        const all = [...(ad ? [ad] : []), ...user, ...PRESET_CHAINS];
         setAllChains(all);
-        // M4 跑链建议：hint 优先（预选链），否则保留当前，否则第一条
+        // 预选优先级：AI 临时链 > M4 建议的 hint > 保留当前 > 第一条
         setChainId((cur) => {
+          if (ad) return ad.id;
           const ids = new Set(all.map((c) => c.id));
           if (hint && ids.has(hint)) return hint;
           return ids.has(cur) ? cur : PRESET_CHAINS[0].id;
@@ -79,7 +85,9 @@ export function ChainRunnerDialog() {
     setRunning(true);
     setResult(null);
     try {
-      const target = await getChainAsync(chainId);
+      // AI 临时链不在注册表里，不能走 getChainAsync（那会报“链已不存在”）
+      const target =
+        adHoc && chainId === adHoc.id ? adHoc : await getChainAsync(chainId);
       if (!target) {
         toast("这条链已不存在", "error");
         return;
@@ -95,7 +103,7 @@ export function ChainRunnerDialog() {
     } finally {
       setRunning(false);
     }
-  }, [chainId, input, running, toast]);
+  }, [adHoc, chainId, input, running, toast]);
 
   const copy = useCallback(async () => {
     const out = result?.final ?? "";
@@ -128,7 +136,9 @@ export function ChainRunnerDialog() {
   const isPreset = (id: string) => PRESET_CHAINS.some((p) => p.id === id);
   const editChain = (c: Chain) =>
     useDialogStore.getState().openChainEditor({
-      id: c.id,
+      // AI 临时链的 id 不存在于 chain_defs 表。原样传过去会变成“更新一条不存在的链”，
+      // 置空才是用户想要的「存为我的链」（新建）。
+      id: adHoc && c.id === adHoc.id ? "" : c.id,
       name: c.name,
       description: c.description,
       steps: c.steps,
@@ -165,12 +175,19 @@ export function ChainRunnerDialog() {
                       className={`${styles.chainPick} ${c.id === chainId ? styles.chainPickOn : ""}`}
                       onClick={() => { setChainId(c.id); setResult(null); }}
                     >
-                      <span className={styles.chainPickName}>{c.name}</span>
+                      <span className={styles.chainPickName}>
+                        {c.name}
+                        {/* AI 临时链标上 AI：它与用户亲手配的链混在同一列表里，
+                            不标就分不清“这条是模型刚编的、没存过” */}
+                        {adHoc && c.id === adHoc.id && <AiBadge kind="ai" size="xs" />}
+                      </span>
                       <span className={styles.chainPickDesc}>{c.description}</span>
                       {!isPreset(c.id) && (
                         <span
                           className={styles.chainEdit}
-                          title="编辑这条链"
+                          title={
+                            adHoc && c.id === adHoc.id ? "存为我的链" : "编辑这条链"
+                          }
                           onClick={(e) => {
                             e.stopPropagation();
                             editChain(c);

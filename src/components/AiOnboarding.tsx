@@ -2,10 +2,14 @@
  * AiOnboarding.tsx —— v6.4 主窗口 AI 感知（方案 C）：首次配置成功后的引导。
  * 3 步教育（复制 → AI 快捷区 → 变换面板），一次性（localStorage 记已看），
  * 让新用户知道 AI 从哪用、怎么用。
+ *
+ * 不只讲怎么用，也必须讲代价：以前三步全在教操作，会联网、内容发给第三方、按用量计费
+ * 一个都没提；用户第一次知道价钱竟然是撞上「今日 AI 预算已用完」的时候。因此这里加了
+ * 一条告知（计费 + 日预算上限在哪设）：只陈述事实，不吓人。
  */
 import { memo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Sparkles } from "lucide-react";
+import { X, Sparkles, Info } from "lucide-react";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { FocusTrap } from "@/components/FocusTrap";
 import styles from "./AiOnboarding.module.css";
@@ -81,6 +85,16 @@ export const AiOnboarding = memo(function AiOnboarding({
                     </div>
                   </div>
                 ))}
+              </div>
+
+              {/* 告知条：它是用户在第一次花钱之前唯一能看到“这事会计费”的地方，勿删 */}
+              <div className={styles.notice}>
+                <Info size={13} className={styles.noticeIcon} />
+                <span>
+                  带 ✦ 的动作会把这条内容发送给你配的 AI 服务商处理，按用量计费；
+                  「粘贴脱敏」这类本地动作不出网、也不花钱。
+                  费用上限默认每天 ¥3，到额自动停——在「设置 → AI → 高级设置 → 每日费用上限」可改。
+                </span>
               </div>
 
               <div className={styles.actions}>

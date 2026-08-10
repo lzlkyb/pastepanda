@@ -4,17 +4,20 @@
  * 交互（对照 design/ai-quickbar-demo.html）：
  * - 复制内容（history[0] 变化）→ 按内容特征给出 2-3 个动作 + 「更多…」→ 变换面板；
  * - 点动作直接运行：AI 思考中 → 结果展开（预览 + 复制/粘贴）；本地动作（脱敏/摘要）零成本即时；
- * - 敏感内容 → 确认条（确认后 force 重跑）；预算超限 → 「去调整」跳设置；
+ * - 敏感内容 → 确认条（确认后 force 重跑）；出错一律给「去设置 AI / 去调整预算」出口；
  * - ✕ 关闭当前内容的快捷区（换内容重新出现）。
  *
- * 只在 AI 已启用时由 App 渲染（替代 SuggestionBar）。
+ * 门控（规则 15）：AI 不可用（未启用 / 没配密钥）时，需要 AI 的动作在
+ * matchQuickActions 里就过滤掉了——结果只剩本地动作或整条不渲染，绝不摆一排
+ * 点下去只会报错的按钮。App 那边的渲染条件只决定「用快捷区还是原建议条」，
+ * 不代表 AI 一定可用，所以可用性必须在这里自己再判一次。
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, X, Loader2, Copy, Check, ClipboardPaste, ShieldAlert } from "lucide-react";
+import { Sparkles, X, Loader2, Copy, ClipboardPaste, ShieldAlert } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { useDialogStore } from "@/stores/dialogStore";
-import { getTransform } from "@/lib/transforms";
+import { getTransform, isAiAvailable } from "@/lib/transforms";
 import { matchQuickActions, type QuickAction } from "@/lib/aiQuick";
 import { pasteText } from "@/lib/api";
 import { openAiSettings } from "@/lib/openAiSettings";
@@ -36,6 +39,8 @@ interface ActionState {
   output?: string;
   message?: string;
   meta?: QuickMeta;
+  /** 错误分类：来自 aiRun 三态的 meta 或本地判定，属结构化信息——勿回到用 message.includes 猜错误类型 */
+  errKind?: "budget" | "notReady" | "other";
 }
 
 const EMPTY: ActionState = { status: "idle" };
@@ -46,11 +51,18 @@ export const AiQuickBar = memo(function AiQuickBar() {
   const text = (topItem?.text || "").trim();
   const key = topItem?.id ?? "";
 
-  // 按内容匹配动作（内容变化即重算）
+  /**
+   * AI 是否可用：用与变换面板同一个判据 isAiAvailable()，保证「快捷区推的动作」与
+   * 「更多… 面板里能选的动作」不会一边有一边没。它是模块级缓存的同步值
+   * （设置改完会调 refreshAiAvailability），每次渲染现读即可。
+   */
+  const aiOk = isAiAvailable();
+
+  // 按内容匹配动作（内容或 AI 可用性变化即重算）
   const actions = useMemo(
-    () => (topItem ? matchQuickActions(text, topItem.content_type || topItem.type) : []),
+    () => (topItem ? matchQuickActions(text, topItem.content_type || topItem.type, aiOk) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [topItem?.id, topItem?.text],
+    [topItem?.id, topItem?.text, aiOk],
   );
   const [closed, setClosed] = useState(false);
   const [states, setStates] = useState<Record<string, ActionState>>({});
@@ -73,7 +85,20 @@ export const AiQuickBar = memo(function AiQuickBar() {
     async (a: QuickAction, force = false) => {
       const gen = genRef.current;
       const t = getTransform(a.id);
-      if (!t) return;
+      if (!t) {
+        // 动作没注册上（启动时 aiListActions 失败 / 后端未就绪）。这里以前是直接 return，
+        // 状态停在 idle：不 loading、不报错、不提示，用户点了完全没反应，只会以为程序卡了。
+        patch(
+          a.id,
+          {
+            status: "error",
+            message: "这个动作暂时不可用（AI 服务未就绪），可检查 AI 设置或重启应用",
+            errKind: "notReady",
+          },
+          gen,
+        );
+        return;
+      }
       patch(a.id, { status: "loading" }, gen);
       try {
         const r = await t.run(text, force ? { force: true } : undefined);
@@ -82,18 +107,20 @@ export const AiQuickBar = memo(function AiQuickBar() {
         } else if (r.meta?.needsConfirm) {
           patch(a.id, { status: "confirm", message: r.message }, gen);
         } else if (r.meta?.budgetExceeded) {
-          patch(a.id, { status: "error", message: "今日 AI 预算已用完" }, gen);
+          // 超预算是 aiRun 三态里的独立一支（meta.budgetExceeded），据此分类；
+          // 后端给的 message 已带具体金额，比自己拼一句更有用
+          patch(a.id, { status: "error", message: r.message || "今日 AI 花费已达上限", errKind: "budget" }, gen);
         } else {
-          patch(a.id, { status: "error", message: r.message || "执行失败" }, gen);
+          patch(a.id, { status: "error", message: r.message || "执行失败", errKind: "other" }, gen);
         }
       } catch (e) {
         patch(a.id, {
           status: "error",
           message: typeof e === "string" ? e : "执行失败",
+          errKind: "other",
         }, gen);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [text]
   );
 
@@ -118,7 +145,6 @@ export const AiQuickBar = memo(function AiQuickBar() {
   };
 
   if (!topItem || actions.length === 0 || closed) return null;
-  const active = states[actions[0]?.id ?? ""] ?? EMPTY;
 
   return (
     <AnimatePresence>
@@ -138,13 +164,23 @@ export const AiQuickBar = memo(function AiQuickBar() {
               return (
                 <button
                   key={a.id}
-                  className={`${styles.q}${st.status === "loading" ? ` ${styles.qRunning}` : ""}`}
+                  className={`${styles.q}${a.ai ? ` ${styles.qAi}` : ""}${st.status === "loading" ? ` ${styles.qRunning}` : ""}`}
                   onClick={() => void runAction(a)}
                   disabled={st.status === "loading"}
-                  title={a.ai ? `${a.label}（AI 服务）` : `${a.label}（本地处理）`}
+                  title={
+                    a.ai
+                      ? `${a.label}（AI 服务：这条内容会发送给你配的服务商，按用量计费）`
+                      : `${a.label}（本地处理，不出网、零成本）`
+                  }
                 >
-                  {st.status === "loading" ? <Loader2 size={11} className="spin" /> : null}
-                  {st.status === "loading" ? "AI 思考中…" : a.label}
+                  {st.status === "loading" ? (
+                    <Loader2 size={11} className="spin" />
+                  ) : a.ai ? (
+                    // 计费动作必须在点之前就看得出来：✦ 前缀 + accent 描边；本地动作保持中性
+                    <span className={styles.aiMark} aria-hidden="true">✦</span>
+                  ) : null}
+                  {/* 本地动作不能说「AI 思考中」（反向误导：让免费动作看起来在花钱/出网） */}
+                  {st.status === "loading" ? (a.ai ? "AI 思考中…" : "处理中…") : a.label}
                 </button>
               );
             })}
@@ -167,7 +203,10 @@ export const AiQuickBar = memo(function AiQuickBar() {
           if (st.status === "loading") {
             return (
               <div key={a.id} className={styles.resultBar}>
-                <div className={styles.thinking}><Loader2 size={13} className="spin" /> AI 思考中…</div>
+                {/* 本地动作别说「AI 思考中」——那是在告诉用户一个免费动作正在花钱/出网 */}
+                <div className={styles.thinking}>
+                  <Loader2 size={13} className="spin" /> {a.ai ? "AI 思考中…" : "处理中…"}
+                </div>
               </div>
             );
           }
@@ -185,9 +224,12 @@ export const AiQuickBar = memo(function AiQuickBar() {
             return (
               <div key={a.id} className={`${styles.gateBar} ${styles.err}`}>
                 <span>{st.message}</span>
-                {st.message?.includes("预算") && (
-                  <button className={styles.gbBtn} onClick={() => void openAiSettings()}>去调整预算</button>
-                )}
+                {/* 出错一律给出口：以前只有文案里带「预算」二字才有按钮，
+                    「未配置 API Key」这种明明可操作的错反而让用户自己猜去哪配。
+                    分类用结构化的 errKind，不再 includes 文案。 */}
+                <button className={styles.gbBtn} onClick={() => void openAiSettings()}>
+                  {st.errKind === "budget" ? "去调整预算" : "去设置 AI"}
+                </button>
               </div>
             );
           }
@@ -195,7 +237,10 @@ export const AiQuickBar = memo(function AiQuickBar() {
           return (
             <div key={a.id} className={styles.resultBar}>
               <div className={styles.rhead}>
-                ✦ {a.label} · {st.meta?.model ?? (a.ai ? "" : "本地")}
+                {/* ✦ 只给走了 AI 的结果；本地动作标「本地」，两者不能长得一样 */}
+                {a.ai ? "✦ " : ""}
+                {a.label}
+                {st.meta?.model ? ` · ${st.meta.model}` : a.ai ? "" : " · 本地"}
                 {st.meta?.cached ? " · 缓存命中" : ""}
                 {st.meta?.truncated ? " · ⚠ 被截断" : ""}
               </div>

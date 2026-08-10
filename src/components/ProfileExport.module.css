@@ -1,0 +1,56 @@
+/*
+ * ProfileExport 专属样式。
+ *
+ * 本组件主体复用 ProfileDialog.module.css（它同时供 ProfileDialog 使用，不能为
+ * 单一子组件往里塞），所以新增的提示 / 错误 / 状态色放这里。之前这些写成了
+ * 组件内的 CSSProperties 常量，随着数量变多反而把 tsx 顶到了 300 行上限。
+ *
+ * 颜色全走主题变量，不引入写死色。
+ */
+
+/* 勾选无效 / 全不勾 等前置说明 */
+.note {
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: -5px 0 9px;
+}
+
+/* JSON 格式下被禁用的大类 pill */
+.pillOff {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 预览生成失败时顶掉文本区的错误框 */
+.errBox {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 11px;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--danger);
+  background: var(--red-bg);
+}
+
+.errHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.errIcon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* 预览栏右侧状态灯：失败转红、生成中转灰，不能失败了还亮着绿灯 */
+.statusErr {
+  color: var(--danger);
+}
+
+.statusLoading {
+  color: var(--text-secondary);
+}

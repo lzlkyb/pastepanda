@@ -51,7 +51,9 @@ export function ConfirmDialog({
 
             {/* Body */}
             <div className="dialog-body" style={{ "--dialog-body-gap": "12px" } as React.CSSProperties}>
-              <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+              {/* pre-line：让调用方能用 \n 把“将写入哪些文件”这类清单分行列出。
+                  现有调用方的 message 均为单行模板串，不会因此多出换行。*/}
+              <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, whiteSpace: "pre-line" }}>
                 {message}
               </p>
             </div>

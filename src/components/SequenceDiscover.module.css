@@ -49,7 +49,7 @@
 
 .count {
   font-size: 10.5px;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
 }
 
 .ops {
@@ -58,14 +58,16 @@
   flex-shrink: 0;
 }
 
+/* 实心底 + 白字必须用 --accent-solid：白字压 --accent 只有 4.10:1（深色主题 2.98:1），
+   低于 4.5:1；11px 属正文级字号，拿不到大字豁免。边框跟着改，否则比底色浅会出现亮边 */
 .save {
   display: inline-flex;
   align-items: center;
   gap: 3px;
   padding: 3px 9px;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--accent-solid);
   border-radius: 7px;
-  background: var(--accent);
+  background: var(--accent-solid);
   color: #fff;
   font-size: 11px;
   cursor: pointer;
@@ -81,7 +83,9 @@
   cursor: not-allowed;
 }
 
-.ignore {
+/* 忽略 / 重命名：同一种弱图标按钮 */
+.ignore,
+.rename {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -90,11 +94,30 @@
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
   cursor: pointer;
 }
 
-.ignore:hover {
+.ignore:hover,
+.rename:hover {
   border-color: var(--border-color);
   color: var(--text-secondary);
+}
+
+/* 存之前改名用的输入框（占位完全替掉序列文字，不挤按钮） */
+.nameInput {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--dialog-bg);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.nameInput:focus {
+  outline: none;
+  border-color: var(--accent-strong);
 }

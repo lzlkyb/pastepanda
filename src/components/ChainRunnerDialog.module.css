@@ -15,7 +15,7 @@
 
 .headerSub {
   font-size: 12px;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
   margin-right: auto;
 }
 
@@ -53,7 +53,7 @@
   background: var(--accent-light);
 }
 .chainPickName { font-size: 12px; font-weight: 600; color: var(--text-primary); }
-.chainPickDesc { font-size: 11px; color: var(--text-tertiary); }
+.chainPickDesc { font-size: 11px; color: var(--text-muted); }
 .chainEdit {
   position: absolute;
   top: 3px;
@@ -64,7 +64,7 @@
   width: 18px;
   height: 18px;
   border-radius: 5px;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
   background: var(--hover);
   opacity: 0;
   transition: 0.15s;
@@ -103,7 +103,7 @@
   align-items: center;
   padding: 6px 10px;
   font-size: 11.5px;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
 }
 .resetBtn {
   display: inline-flex;
@@ -152,7 +152,7 @@
 }
 .runBtn:hover:not(:disabled) { filter: brightness(1.08); }
 .runBtn:disabled { opacity: 0.5; cursor: not-allowed; }
-.stepHint { font-size: 11.5px; color: var(--text-tertiary); }
+.stepHint { font-size: 11.5px; color: var(--text-muted); }
 
 /* B2：AI 步骤运行前确认 */
 .aiConfirm {
@@ -257,7 +257,7 @@
   padding: 0 10px 9px;
 }
 .stepIo { display: flex; flex-direction: column; gap: 3px; }
-.ioLabel { font-size: 10.5px; color: var(--text-tertiary); }
+.ioLabel { font-size: 10.5px; color: var(--text-muted); }
 .ioPreview {
   margin: 0;
   max-height: 64px;
@@ -273,7 +273,7 @@
   color: var(--green);
 }
 .stepError { font-size: 12px; color: var(--danger); }
-.stepMeta { font-size: 10.5px; color: var(--text-tertiary); align-self: flex-end; }
+.stepMeta { font-size: 10.5px; color: var(--text-muted); align-self: flex-end; }
 
 /* 失败提示 */
 .failBox {
@@ -360,6 +360,6 @@
 .idleHint {
   margin: 0 14px 12px;
   font-size: 12px;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
   text-align: center;
 }

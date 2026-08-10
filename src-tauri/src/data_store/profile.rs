@@ -29,6 +29,18 @@ pub struct ProfileRawStats {
 
 impl DataStore {
     /// 汇总画像原始数据（最近 N 天）。排除 `paste` 哨兵与 abandoned 结果。
+    ///
+    /// **三条 SQL 的 outcome 过滤必须与 `action_recommend_weights` /
+    /// `action_scene_weights` 对齐**（那两个一直有 `outcome IN ('copied','pasted')`，
+    /// 只有这里漏了）。漏了的后果在 `abandoned` 真被写入后立即生效：用户
+    /// **反复尝试又放弃**的动作会计入 action_counts 抬高角色权重、计入 total_events
+    /// 抬高 sample_events / confidence——越放弃，画像越"自信"。
+    ///
+    /// **另一条不变量**：`action_counts` 与 `hour_counts` 的 WHERE 必须完全一致。
+    /// `total_events` 是由 `action_counts` 求和得来的，而命令层算时段百分比时用
+    /// `total_events` 做分母、`hour_counts` 做分子——两条 WHERE 一旦错位，
+    /// 时段占比之和就不再是 100%。（content_type_counts 多一个 `content_type <> ''`
+    /// 是有意的：它单独用 total_ct 做分母，不参与 total_events。）
     pub fn profile_raw_stats(&self, days: u32) -> Result<ProfileRawStats, String> {
         let days = days.clamp(1, 365);
         let since = (chrono::Local::now() - chrono::Duration::days(days.max(1) as i64 - 1))
@@ -41,12 +53,13 @@ impl DataStore {
         let (action_counts, content_type_counts, hour_counts) = {
             let conn = self.lock_conn();
 
-            // 动作频率（排除哨兵）
+            // 动作频率（排除哨兵 + abandoned）
             let action_counts: Vec<(String, u32)> = {
                 let mut stmt = conn
                     .prepare(
                         "SELECT action_id, COUNT(*) AS c FROM action_events
                          WHERE created_at >= ?1 AND action_id != ?2
+                           AND outcome IN ('copied', 'pasted')
                          GROUP BY action_id ORDER BY c DESC",
                     )
                     .map_err(|e| e.to_string())?;
@@ -64,7 +77,9 @@ impl DataStore {
                 let mut stmt = conn
                     .prepare(
                         "SELECT content_type, COUNT(*) AS c FROM action_events
-                         WHERE created_at >= ?1 AND action_id != ?2 AND content_type <> ''
+                         WHERE created_at >= ?1 AND action_id != ?2
+                           AND outcome IN ('copied', 'pasted')
+                           AND content_type <> ''
                          GROUP BY content_type ORDER BY c DESC",
                     )
                     .map_err(|e| e.to_string())?;
@@ -77,12 +92,13 @@ impl DataStore {
                 rows.into_iter().filter_map(|r| r.ok()).collect()
             };
 
-            // 时段分布
+            // 时段分布。WHERE 与上面 action_counts **逐字一致**（见函数文档里的不变量）
             let hour_counts: Vec<(i64, u32)> = {
                 let mut stmt = conn
                     .prepare(
                         "SELECT hour, COUNT(*) AS c FROM action_events
                          WHERE created_at >= ?1 AND action_id != ?2
+                           AND outcome IN ('copied', 'pasted')
                          GROUP BY hour ORDER BY hour",
                     )
                     .map_err(|e| e.to_string())?;

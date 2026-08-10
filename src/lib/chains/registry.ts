@@ -10,8 +10,28 @@
 
 import { getTransform } from "@/lib/transforms/registry";
 import { chainList } from "@/lib/api/chains";
-import type { ChainDef } from "@/lib/api/chains";
-import type { Chain, ChainRunResult, ChainRunStage } from "./types";
+import type { Transform } from "@/lib/transforms";
+import type { Chain, ChainRunResult, ChainRunStage, ChainStepRisk } from "./types";
+
+/**
+ * 从变换自身属性推导步骤 risk。**这是唯一数据源**（ChainEditor 与 planner 共用）。
+ *
+ * 为何必须推导而不能“谁造链谁填”：
+ *
+ * 先说清一个容易误会的点——**risk 不是发送门禁**。{@link runChain} 里拦住
+ * “内容出网”的是 `if (t.remote)` + 默认拒绝，step.risk 只被写进 `stages`
+ * 做展示。所以填错 risk **不会**让内容静默发出去。
+ *
+ * 但它仍然必须准确，因为 **ChainRunnerDialog 靠 risk 告诉用户这条链会做什么**
+ * （含 AI 步骤的链标错会被显示成“全部本地变换”）。用户就是看着这句话决定
+ * 要不要跑的——一个说谎的安全提示比没有提示更坏。只要存在一条“调用方自己
+ * 填 risk”的路径，就会漂；而 AI 编链（planner）里这条路径的输入恰恰来自模型。
+ *
+ * `destructive`（如脱敏）目前只由预置链手写标注，推导不出来，所以不在这里猜。
+ */
+export function riskOf(t: Transform | undefined): ChainStepRisk {
+  return t?.remote ? "network" : "local";
+}
 
 /** 官方预置链（B1 四条约稿，全部 text 友好） */
 export const PRESET_CHAINS: Chain[] = [
@@ -78,6 +98,11 @@ export async function loadUserChains(force = false): Promise<Chain[]> {
       name: d.name,
       description: d.description,
       steps: d.steps,
+      // 后端会在 steps 解析失败时把这两个字段吐出来。不带过来的后果是：
+      // 损坏的链在界面上和“用户存了一条空链”长得一模一样，而后端为了区分这两者
+      // 特意加的字段就白加了。
+      corrupted: d.stepsCorrupted,
+      rawSteps: d.stepsRaw,
     }));
   } catch {
     userChainsCache = userChainsCache ?? [];
@@ -125,6 +150,29 @@ export function runChain(
   return (async () => {
     const stages: ChainRunStage[] = [];
     let current = input;
+
+    // **0 步的链必须算失败**。之前这里没有守卫，for 循环直接不执行 → 返回
+    // `{ ok: true, stages: [], final: input }`，即“什么都没做却报告成功”——
+    // 用户以为链跑过了，实际内容一个字没变。静默成功比失败更难排查。
+    //
+    // 两种来源的文案必须分开：`corrupted` 是后端解析 `steps` 失败退成的空数组
+    // （用户原本配过步骤，数据丢了）；普通空链是用户本来就没配。
+    if (chain.steps.length === 0) {
+      stages.push({
+        stepIndex: 0,
+        transformId: "",
+        label: chain.name,
+        risk: "local",
+        input: current,
+        output: "",
+        ok: false,
+        error: chain.corrupted
+          ? "这条链的步骤配置已损坏（后端无法解析），请重新配置后再跑"
+          : "这条链没有任何步骤，无从执行",
+        durationMs: 0,
+      });
+      return { ok: false, stages, final: current, failedAt: 0 };
+    }
 
     for (let i = 0; i < chain.steps.length; i++) {
       const step = chain.steps[i];

@@ -27,10 +27,11 @@
 
 .hint {
   font-size: 10.5px;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
 }
 
-.gen {
+.gen,
+.genArmed {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -44,13 +45,155 @@
   font-family: inherit;
 }
 
-.gen:hover:not(:disabled) {
+/* 两段式确认的第二段：换成警示色，让“再点一下就真出网了”在视觉上不可能看漏 */
+.genArmed {
+  border-color: var(--warning);
+  background: var(--warning);
+}
+
+.gen:hover:not(:disabled),
+.genArmed:hover:not(:disabled) {
   filter: brightness(1.1);
 }
 
-.gen:disabled {
+.gen:disabled,
+.genArmed:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* ===== 两段式确认的提示条 ===== */
+.confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 7px;
+  padding: 6px 9px;
+  border: 1px solid var(--orange-border);
+  border-radius: 8px;
+  background: var(--orange-bg);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--orange);
+}
+
+.confirmIcon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.confirmMsg {
+  flex: 1;
+  min-width: 0;
+}
+
+.confirmMsg b {
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.cancel {
+  flex-shrink: 0;
+  padding: 2px 9px;
+  border: 1px solid var(--orange-border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--orange);
+  font-size: 10.5px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.cancel:hover {
+  border-color: var(--orange);
+}
+
+/* ===== 失败留痕（不随 toast 消失） ===== */
+.err {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 7px;
+  padding: 6px 9px;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  background: var(--red-bg);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--danger);
+}
+
+.errIcon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.errMsg {
+  flex: 1;
+  min-width: 0;
+}
+
+.errBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  padding: 2px 9px;
+  border: 1px solid var(--danger);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--danger);
+  font-size: 10.5px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.errBtn:hover {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+/* ===== AI 未配置：整块折叠成一行提示 + 去处 ===== */
+.off {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 7px 11px;
+  border: 1px dashed var(--border-color);
+  border-radius: 12px;
+  background: var(--section-bg);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.offIcon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.offMsg {
+  flex: 1;
+  min-width: 0;
+}
+
+.offBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  padding: 2px 9px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  font-size: 10.5px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.offBtn:hover {
+  filter: brightness(1.05);
 }
 
 .result {
@@ -111,11 +254,25 @@
   color: var(--accent-strong);
 }
 
+/* 告知结果存在哪里、什么时候会消失——让用户自己能判断要不要现在复制 */
+.keep {
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* 隐私说明已从一行变成两三行（说清了“手写偏好会原样发出”），改顶对齐，否则图标会漂到中间 */
 .note {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
   margin-top: 8px;
   font-size: 10.5px;
-  color: var(--text-tertiary);
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
 }

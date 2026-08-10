@@ -211,6 +211,14 @@ pub fn run() {
                 Err(e) => log::warn!("[AI] 清理过期反馈失败: {}", e),
             }
 
+            // 偏好信号：同节奏过期。“你总把输出改短”本身就是习惯画像，
+            // 不自动过期就等于永久留存（同 ai_feedback 那个坑）。
+            match store.pref_signal_purge(data_store::PREF_SIGNAL_RETAIN_DAYS) {
+                Ok(n) if n > 0 => log::info!("[AI] 已清理 {} 条过期偏好信号", n),
+                Ok(_) => {}
+                Err(e) => log::warn!("[AI] 清理过期偏好信号失败: {}", e),
+            }
+
             // 读取 LAN 同步配置（在 store 被 manage 之前）
             let lan_enabled = store
                 .get_config()
@@ -529,6 +537,7 @@ pub fn run() {
             commands::get_source_app_icon,
             commands::clear_source_icon_cache,
             commands::take_pending_file_open,
+            commands::file_mtime_ms,
             commands::open_fullscreen_editor,
             commands::take_editor_init,
             commands::close_editor_window,
@@ -584,6 +593,14 @@ pub fn run() {
             commands::action_pref_get,
             commands::action_pref_set,
             commands::action_prefs_all,
+            // AI 编链：模型根据内容编一条动作链（用户确认后才跑）
+            commands::ai_plan_chain,
+            // 偏好自荐：特征信号 → 待确认的偏好建议
+            commands::pref_signal_add,
+            commands::pref_signal_top,
+            commands::pref_signal_accept,
+            commands::pref_signal_dismiss,
+            commands::pref_signal_clear,
             // 内容记忆（M5-1）：本地检索摘要
             commands::history_summaries_backfill,
             commands::history_summaries_count,

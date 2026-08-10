@@ -43,10 +43,15 @@
   font-family: inherit;
   transition: 0.15s;
 }
-.chainBtn:hover {
+.chainBtn:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--accent-strong);
   background: var(--accent-light);
+}
+/* 编链中 / 内容为空：禁用态要看得出来，否则用户会反复点 */
+.chainBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* 卡片列表（可滚动） */

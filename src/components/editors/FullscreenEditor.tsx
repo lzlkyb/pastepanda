@@ -14,7 +14,7 @@
  *   - 窗口已存在时 Rust 经 md-editor-load 事件推送新数据（key 变更整体重载）。
  */
 import { useRef, useState, useCallback, useEffect, useMemo, Suspense, lazy } from "react";
-import { FolderOpen, Save, X, Maximize2, Minimize2 } from "lucide-react";
+import { FolderOpen, Save, X, Maximize2, Minimize2, RefreshCw } from "lucide-react";
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from "@codemirror/view";
 import { EditorState, Compartment, type Extension } from "@codemirror/state";
 import { oneDark } from "@codemirror/theme-one-dark";
@@ -27,7 +27,8 @@ import { SkinScene } from "@/components/SkinScene";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
-import { save, open } from "@tauri-apps/plugin-dialog";
+import { save, open, ask } from "@tauri-apps/plugin-dialog";
+import { useFileWatch } from "./useFileWatch";
 import { writeFile, mkdir } from "@tauri-apps/plugin-fs";
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { useToast } from "@/components/Toast";
@@ -250,6 +251,63 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * 磁盘版本监听。只在文件模式有意义——剪贴板内容模式下 `currentFilePath`
+   * 为 null，hook 内部自动空转，不会白轮询。
+   */
+  const fileWatch = useFileWatch(currentFilePath);
+
+  /**
+   * 外部改动的处理：**没有未保存修改时直接重载**，有则弹窗让用户选。
+   *
+   * 不脏时不问：用户没改东西，“要不要重载”这个问题没有两个答案，
+   * 问了只是多一步。脏时必须问——重载会丢掉他正在写的东西。
+   */
+  useEffect(() => {
+    if (!fileWatch.externalChanged || !currentFilePath) return;
+    if (!isDirty) {
+      void loadFile(currentFilePath).then(() => {
+        toast("文件已在外部更新，已重新加载", "info");
+      });
+      return;
+    }
+    void (async () => {
+      const reload = await ask(
+        "这个文件已被外部程序修改。\n\n重新加载会丢掉你当前未保存的修改。",
+        {
+          title: "文件已在外部修改",
+          kind: "warning",
+          okLabel: "重新加载（丢弃我的修改）",
+          cancelLabel: "保留我的修改",
+        }
+      );
+      if (reload) await loadFile(currentFilePath);
+      // 选了保留：也要把标记清掉，否则每 2 秒弹一次。
+      // 代价是下次保存时靠冲突检测再拦一道——那才是真正会丢数据的时刻。
+      else await fileWatch.markSynced(currentFilePath);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileWatch.externalChanged, currentFilePath, isDirty]);
+
+  /**
+   * 工具栏的「重载」：从磁盘拿最新内容。
+   *
+   * 脏时先确认——这是个破坏性操作（等于丢弃自己的修改），
+   * 而工具栏按钮很容易误点。不脏就直接重载，没什么可问的。
+   */
+  const handleReloadFromDisk = async () => {
+    if (!currentFilePath) return;
+    if (isDirty) {
+      const ok = await ask(
+        "从磁盘重新加载会丢掉你当前未保存的修改。",
+        { title: "重新加载", kind: "warning", okLabel: "重新加载", cancelLabel: "取消" }
+      );
+      if (!ok) return;
+    }
+    await loadFile(currentFilePath);
+    toast("已从磁盘重新加载", "success");
+  };
+
   const loadFile = async (path: string) => {
     setLoading(true);
     try {
@@ -260,6 +318,8 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
       setFileName(path.split(/[\\/]/).pop() || spec.defaultFileName);
       // 打开文件后，文档身份变为文件（不再回写来源卡片）
       setEffectiveSourceId(null);
+      // 记下刚读到的是磁盘哪一版，后续才能判“外部改过了”
+      await fileWatch.markSynced(path);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       toast(msg || "无法打开文件", "error");
@@ -398,10 +458,29 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
     }
     // 3) 来自文件：写文件 + 按设置开关决定是否写入剪贴板历史
     try {
+      // 保存前的冲突检测。不查就是**静默覆盖外部的修改**——比丢自己的
+      // 编辑更糟，因为丢的是别人（或另一个工具）的活，而且没任何提示。
+      if (await fileWatch.checkNow()) {
+        const overwrite = await ask(
+          "这个文件在你编辑期间已被外部程序修改。\n\n继续保存会覆盖掉外部的改动。",
+          {
+            title: "文件已在外部修改",
+            kind: "warning",
+            okLabel: "仍然覆盖",
+            cancelLabel: "取消",
+          }
+        );
+        if (!overwrite) {
+          toast("已取消保存——可点工具栏的「重载」拿到最新内容", "info");
+          return;
+        }
+      }
       const encoder = new TextEncoder();
       await writeFile(currentFilePath, encoder.encode(text));
       setInitialContent(text);
       setIsDirty(false);
+      // 刚写的就是磁盘最新版，不更新的话下一轮轮询会把自己的保存认成外部改动
+      await fileWatch.markSynced(currentFilePath);
       try {
         const cfg = await invoke<{ md_save_to_history?: boolean; current_workspace?: string }>("get_config");
         if (cfg.md_save_to_history) {
@@ -429,6 +508,8 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
       if (!selectedPath) return;
       const encoder = new TextEncoder();
       await writeFile(selectedPath, encoder.encode(text));
+      // 另存为换了路径，重建 mtime 基准（hook 里路径变会先把基准置 0）
+      await fileWatch.markSynced(selectedPath);
       setCurrentFilePath(selectedPath);
       setFileName(selectedPath.split(/[\\/]/).pop() || spec.defaultFileName);
       setInitialContent(text);
@@ -494,9 +575,18 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
           // 卡片 → 回写数据库（主窗口经 history-item-updated 事件刷新）
           await invoke("update_history", { id: effectiveSourceId, text: snapshot });
         } else if (currentFilePath) {
+          // 自动保存是**无人值守**的，所以碰到外部改动时绝不能弹窗（用户可能
+          // 不在电脑前），也绝不能直接覆盖——那就是背景里静默干掉别人的修改。
+          //
+          // 正确做法：跳过本次、保留脏状态，交给轮询那条路（externalChanged
+          // → 弹二选一）去处理。跟下面“自动保存失败静默处理，保留脏状态”同一个思路。
+          if (await fileWatch.checkNow()) return;
           // 文件 → 写回磁盘（自动保存不写剪贴板历史，避免重复入历史）
           const encoder = new TextEncoder();
           await writeFile(currentFilePath, encoder.encode(snapshot));
+          // 必须更新：不更新的话下一轮轮询会把**自己刚写的**认成外部改动，
+          // 2 秒后弹一句“文件已在外部更新”并重载。
+          await fileWatch.markSynced(currentFilePath);
         }
         setInitialContent(snapshot);
         setIsDirty(false);
@@ -525,9 +615,24 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
     if (effectiveSourceId) {
       try { await invoke("update_history", { id: effectiveSourceId, text }); } catch { /* ignore */ }
     } else if (currentFilePath) {
+      // 关闭前保存同样要查冲突，而且这里是最后一道——窗口关掉后
+      // 用户就再没机会挑回来了。所以不确认就不关。
+      if (await fileWatch.checkNow()) {
+        const overwrite = await ask(
+          "这个文件已被外部程序修改。\n\n保存并关闭会覆盖掉外部的改动。",
+          {
+            title: "文件已在外部修改",
+            kind: "warning",
+            okLabel: "仍然覆盖并关闭",
+            cancelLabel: "不关闭，我自己处理",
+          }
+        );
+        if (!overwrite) return; // 注意：不调 onClose，窗口留着
+      }
       try {
         const encoder = new TextEncoder();
         await writeFile(currentFilePath, encoder.encode(text));
+        await fileWatch.markSynced(currentFilePath);
       } catch { /* ignore */ }
     }
     onClose();
@@ -780,6 +885,17 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
           )}
         </div>
         <div className={styles.toolbarRight}>
+          {/* 仅文件模式显示：剪贴板内容模式没有磁盘文件可重载，
+              摆一个点了没反应的按钮比不摆更坏（所以不是禁用，是不出现）。 */}
+          {currentFilePath && (
+            <button
+              className={styles.tbBtn}
+              onClick={() => void handleReloadFromDisk()}
+              title="从磁盘重新加载（文件在外部被修改过时用）"
+            >
+              <RefreshCw size={14} />
+            </button>
+          )}
           <button className={styles.tbBtn} onClick={handleOpen} title="打开文件">
             <FolderOpen size={14} />
           </button>

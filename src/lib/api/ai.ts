@@ -361,6 +361,23 @@ export async function aiTestConnection(): Promise<AiTestResult> {
  *
  * `force` 仅在用户已在敏感内容提示上确认后传 true。
  */
+/**
+ * 让模型根据内容编一条动作链（B）。
+ *
+ * `actions` 是**可用动作清单**，只能前端给——链的步骤是前端变换注册表里的 id，
+ * 后端不认识 `strip_html` 这些。返回的 `content` 是**模型原始文本**，
+ * 必须交给 `parseChainPlan` 解析 + 白名单校验，不能直接相信。
+ *
+ * 与 {@link aiRun} 同一套三态结果（正常 / 需确认 / 超预算）。
+ */
+export async function aiPlanChain(
+  text: string,
+  actions: { id: string; label: string; description: string }[],
+  force?: boolean,
+): Promise<AiRunResponse> {
+  return invoke<AiRunResponse>("ai_plan_chain", { text, actions, force });
+}
+
 export async function aiRun(
   actionId: string,
   text: string,

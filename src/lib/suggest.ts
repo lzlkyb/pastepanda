@@ -76,7 +76,27 @@ export type Suggestion =
 /**
  * 意图识别建议（V3-A）：结合内容+场景推断「你在做什么」，给任务级建议。
  * 只在置信度足够高时返回（排错/JSON/批量 = 高置信，优先于单动作建议）。
- * 通过 {@link detectIntent} 实现，本函数只做类型包装与兜底。
+ * 通过 {@link detectIntent} 实现，本函数做类型包装 + **注册表校验**。
+ *
+ * ## 为什么这里必须查注册表（不要当成多余的检查删掉）
+ *
+ * {@link detectIntent} 是**纯规则**函数，它写死的 actionIds 里有相当一部分是
+ * AI 动作（ai-explain-code / ai-key-points / ai-json-to-type / url-summary /
+ * ai-summarize / ai-polish / ai-tabulate）。这些动作定义在后端 Rust
+ * （src-tauri/src/ai/actions.rs），**运行时**才由 transforms/aiTransforms.ts 调
+ * registerTransform() 注册进前端注册表——AI 未启用 / 未配置 API Key 时，
+ * 它们根本不在表里。而 detectIntent 不查注册表。
+ *
+ * 于是会出现「承诺了做不到的事」：复制一段含报错字样的内容 → 建议条显示
+ * 「看起来你在排错 · 解释代码 → 提取要点」→ 点「使用」打开变换枢纽 →
+ * 枢纽里没有「解释代码」这张卡片。不崩溃，但是骗人。更糟的是
+ * 「AI 未配置」正是**新用户的默认状态**，也就是第一印象。
+ *
+ * 意图是唯一一条**绕过注册表**的建议来源（{@link suggestTop1} 走
+ * recommendScored，候选本来就是从注册表算出来的；{@link suggestChain} 也已经
+ * 用 getTransform 过滤过第一步），所以这道校验只能补在这里。补在这里而不是
+ * 组件里，还顺带同时修好两个调用方：SuggestionBar（主窗口）与
+ * TrayPopupSuggestion（托盘弹窗）复用本函数。
  */
 export function suggestIntent(
   ctx: TransformContext,
@@ -85,6 +105,19 @@ export function suggestIntent(
 ): Suggestion | null {
   const intent = detectIntent(ctx, scene, recents);
   if (!intent) return null;
+
+  // 主动作（actionIds[0]）= 建议条文案承诺的那个动作，也是两个调用方点「使用」时
+  // 唯一真正执行的动作。它不在注册表里 → 整个意图作废，宁可不给建议。
+  //
+  // 有意**不做**「主动作没了就让备选顶上」的降级：actionsText（如
+  // 「解释代码 → 提取要点」）是 intent.ts 里按意图手写的整句文案，没法按 id 拆改，
+  // 顶替之后界面说的仍然不是实际能做的——那只是换一种方式说谎。
+  //
+  // 同理**也不过滤备选动作**：备选在文案里没有可单独裁掉的片段，过滤只会让
+  // actionsText 与 actionIds 更不一致；且当前两个调用方都只读 actionIds[0]，
+  // 过滤备选没有任何用户可见收益。保持简单：只校验主动作。
+  if (!getTransform(intent.actionIds[0])) return null;
+
   return {
     kind: "intent",
     intentId: intent.id,
@@ -148,14 +181,39 @@ export function suggestSequence(
  * 跑链建议（M4）：当前内容命中某条预置链的**第一步**（detect 高分）→ 建议用链一次跑完。
  * 链 = 多步流水线，比单步动作更完整（如 HTML 不只剥标签，还清空行）。
  * 只在 top-1 / 序列都没命中时兜底（宁可漏报不可误报，主动建议是打断）。
+ *
+ * 同 {@link suggestIntent}，这里也有一道注册表校验，但要求更强：
+ * **链的每一步都必须在注册表里**，缺任何一步整条链不推（详见循环内注释）。
  */
 export function suggestChain(ctx: TransformContext): Suggestion | null {
   let best: { chainId: string; label: string; steps: number; score: number } | null = null;
   // 自定义链排在前面：同分时用户亲手配的链胜出（下面用的是严格大于）。
   // 不加这一句的后果：用户花功夫建了链，却永远只被推荐我们自带的预置链。
   for (const chain of [...cachedUserChains(), ...PRESET_CHAINS]) {
+    // 空步骤链无从跑起（自定义链来自后端 chain_defs 表，不保证非空），
+    // 顺手挡掉；也避开下面 steps[0] 读到 undefined 直接抛异常。
+    if (chain.steps.length === 0) continue;
+
     const first = getTransform(chain.steps[0].transformId);
-    if (!first) continue;
+
+    // **要求每一步都能在注册表里解析出来，缺任何一步整条链跳过。**
+    //
+    // 为何不是只校验第一步：第一步的 detect() 回答的是「这条链适不适用于
+    // 当前内容」（下面拿它打分），而「这条链能不能跑完」需要每一步都在——
+    // 这是两件事，旧代码只查 steps[0] 是把它们误当成了一件。
+    //
+    // 触发场景：自定义链允许包含 AI 步骤，而 AI 动作是**运行时**注册的
+    // （理由同 {@link suggestIntent} 那段注释）。用户在 AI 可用时建了一条
+    // 第 2 步是 AI 的链，之后没配 Key / 关掉了 AI：第一步是本地变换，照样命中、
+    // 链照样被推荐，点下去跑到中段才失败（runChain 会在该步返回
+    // 「变换不存在（未注册）」）。建议条承诺的是「用链一次跑完」，
+    // 那就得先确认真能跑完。
+    //
+    // 有意**不做**「跳过缺失的那步继续跑」：那样实际执行的流水线与链名
+    // 承诺的不一致（比如「敏感信息脱敏」少跑了脱敏那一步，还自称跑完了），
+    // 属于换一种方式说谎——与 suggestIntent 对主动作的取舍保持一致。
+    if (!first || chain.steps.some((s) => !getTransform(s.transformId))) continue;
+
     const score = first.detect(ctx);
     if (score >= CHAIN_MIN_SCORE && (!best || score > best.score)) {
       best = { chainId: chain.id, label: chain.name, steps: chain.steps.length, score };

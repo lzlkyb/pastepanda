@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { HistoryItem } from "@/stores/appStore";
 import type { ChainDef } from "@/lib/api/chains";
+import type { Chain } from "@/lib/chains/types";
 
 interface DialogState {
   /** 正在编辑的记录（非 null 时 ItemEditorDialog 打开） */
@@ -28,7 +29,15 @@ interface DialogState {
   chainText: string | null;
   /** 打开时预选的链 id（M4 跑链建议用；空则默认第一条） */
   chainIdHint: string | null;
-  openChain: (text: string, chainId?: string) => void;
+  /**
+   * AI 临时编的链（B）。**不入库**，只在本次运行器会话内有效。
+   *
+   * 为何需要这个字段：运行器原本按 id 从注册表取链，而 AI 编的链不在注册表里。
+   * 把它传进来而不是另建一个确认弹框，是为了直接复用运行器已有的逐步预览、
+   * 失败定位、AI 步骤确认与粘贴——重建一份等于重写三百行。
+   */
+  chainAdHoc: Chain | null;
+  openChain: (text: string, chainId?: string, adHoc?: Chain | null) => void;
   closeChain: () => void;
   /** 动作链编辑器（X1 B2）：非 null 时 ChainEditor 打开；传 null 表示新建 */
   chainEdit: ChainDef | null;
@@ -69,8 +78,11 @@ export const useDialogStore = create<DialogState>((set) => ({
   closeHub: () => set({ hubItem: null, hubText: null }),
   chainText: null,
   chainIdHint: null,
-  openChain: (text, chainId) => set({ chainText: text, chainIdHint: chainId ?? null }),
-  closeChain: () => set({ chainText: null, chainIdHint: null }),
+  chainAdHoc: null,
+  openChain: (text, chainId, adHoc) =>
+    set({ chainText: text, chainIdHint: chainId ?? null, chainAdHoc: adHoc ?? null }),
+  // 关闭时必须清 chainAdHoc：不清的话下一次普通开链会把上次 AI 编的链带出来
+  closeChain: () => set({ chainText: null, chainIdHint: null, chainAdHoc: null }),
   chainEdit: null,
   openChainEditor: (chain) => set({ chainEdit: chain }),
   closeChainEditor: () => set({ chainEdit: null }),

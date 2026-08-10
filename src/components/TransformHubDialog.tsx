@@ -32,6 +32,7 @@ import { FocusTrap } from "@/components/FocusTrap";
 import { MelodyEmpty } from "@/components/MelodyEmpty";
 import { TransformCard } from "@/components/transform/TransformCard";
 import { NlCommandBar } from "@/components/NlCommandBar";
+import { requestPlannedChain } from "@/lib/chains/planRequest";
 import type { NlParseResult } from "@/lib/nlActionParser";
 import { specsFor, defaultOptsFromSpecs } from "@/components/transform/transformOptions";
 import { useActionEventLog } from "@/hooks/useActionEventLog";
@@ -219,6 +220,52 @@ export function TransformHubDialog() {
 
   // v6.3 自然语言动作定位：命中动作卡片滚动到可视区 + 短暂高亮
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
+
+  /**
+   * B：让 AI 编一条链。
+   *
+   * **不做自动触发**——自动编链 = 每次复制都调一次云端，既花钱又把内容发出去，
+   * 而用户十次里有九次不需要链。编完也不直接跑：交给运行器预选，
+   * 用户看完步骤再点「运行」（红线①：永不自动执行）。
+   */
+  const [planning, setPlanning] = useState(false);
+  const planChain = useCallback(async () => {
+    if (planning || !sourceText.trim()) return;
+    setPlanning(true);
+    try {
+      let r = await requestPlannedChain(sourceText);
+      // 敏感内容：确认后带 force 重试一次（不递归，就一次）
+      if (r.status === "needsConfirm") {
+        if (!window.confirm(r.reason)) return;
+        r = await requestPlannedChain(sourceText, true);
+      }
+      if (r.status === "needsConfirm") return; // 带了 force 还要确认 → 当作放弃
+      if (r.status === "budgetExceeded") {
+        toast(
+          `今天的 AI 预算用完了（已花 ¥${r.spentCny.toFixed(2)} / ¥${r.budgetCny.toFixed(2)}）`,
+          "error",
+        );
+        return;
+      }
+      if (r.status === "unusable") {
+        // 不是故障，是“它没想出来”，文案要分开
+        toast("模型没编出可用的链——它给的步骤我们都没有", "info");
+        return;
+      }
+      // 静默丢弃会让人以为模型就是这么编的，得说一声
+      if (r.dropped.length > 0) {
+        toast(`已跳过 ${r.dropped.length} 个我们没有的动作：${r.dropped.join("、")}`, "info");
+      }
+      if (r.truncated) {
+        toast("模型输出被截断，这条链可能不完整", "warning");
+      }
+      useDialogStore.getState().openChain(sourceText, undefined, r.chain);
+    } catch (e) {
+      toast(`编链失败：${e}`, "error");
+    } finally {
+      setPlanning(false);
+    }
+  }, [planning, sourceText, toast]);
   const actionRefs = useRef(new Map<string, HTMLDivElement>());
   const activeTimerRef = useRef<number | null>(null);
 
@@ -300,6 +347,20 @@ export function TransformHubDialog() {
                   onClick={() => useDialogStore.getState().openChain(sourceText)}
                 >
                   <Workflow size={13} /> 动作链
+                </button>
+                {/* B：让 AI 根据当前内容编一条链（手动触发，编完仍需确认才跑） */}
+                <button
+                  className={styles.chainBtn}
+                  title="让 AI 看一眼内容，编一条多步流水线（你确认后才跑）"
+                  onClick={planChain}
+                  disabled={planning || !sourceText.trim()}
+                >
+                  {planning ? (
+                    <Loader2 size={13} className="spin" />
+                  ) : (
+                    <Sparkles size={13} />
+                  )}
+                  {planning ? "编链中…" : "AI 编链"}
                 </button>
                 <button onClick={close} className="dialog-close"
                   onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}

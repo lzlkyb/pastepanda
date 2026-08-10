@@ -17,6 +17,15 @@ export interface ChainDef {
   sortOrder?: number;
   createdAt?: string;
   updatedAt?: string;
+  /**
+   * 后端单向告知：`steps` 列的 JSON 解析失败了（并非用户存了一条空链）。
+   *
+   * 后端标为 `#[serde(skip_deserializing)]`，所以只会从后端流出、不接受从前端传入
+   * （否则前端能自称“我坏了”）。可选是为了兼容旧载荷。
+   */
+  stepsCorrupted?: boolean;
+  /** 解析失败时保留的原始 JSON，给用户照着重建（正常时为空） */
+  stepsRaw?: string;
 }
 
 export const chainList = () => invoke<ChainDef[]>("chain_list");

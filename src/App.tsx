@@ -67,7 +67,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   /** v6.4 审查：#10 从变换中心跳转时指定初始 tab（"ai"） */
   const [showSettingsTab, setShowSettingsTab] = useState<"general" | "ai" | "help" | "about" | undefined>(undefined);
-  /** v6.4 方案 B：AI 快捷区开关（AI 启用时替代建议条） */
+  /** v6.4 方案 B：AI 快捷区开关（AI **真能用**时才替代建议条；三态见 @/lib/aiAvailability） */
   const { status: aiStatus } = useAiStatus();
   /** v6.4 引导期：AI 感知 UI 只在「本版本更新后 1 周」显示，之后自动隐藏（不长期占顶部空间） */
   const [appVersion, setAppVersion] = useState("");
@@ -845,7 +845,9 @@ function App() {
           sidebarOpen={sidebarOpen}
         />
         {/* v6.2 主动建议：只在主窗口（用户已打开）inline 出现，绝不弹窗。
-            v6.4 方案 B：AI 已启用且处于引导期（更新后 1 周）→ 用 AI 快捷区替代；过期后回归原建议条 */}
+            v6.4 方案 B：AI 真能用且处于引导期（更新后 1 周）→ 用 AI 快捷区替代；过期后回归原建议条。
+            这里只认 "on"（唯一判定 @/lib/aiAvailability：开关开着 + 密钥配齐，本地厂商免密钥）——
+            "nokey"（已启用但缺密钥）必须走回建议条，否则会渲染出一排点下去必然失败的 AI 按钮 */}
         {aiStatus === "on" && aiAwareActive ? <AiQuickBar /> : <SuggestionBar />}
         <div className={appStyles.contentArea}>
           <Sidebar

@@ -12,33 +12,38 @@ import { registerTransform, unregisterTransform } from "./registry";
 import type { Transform, TransformContext, TransformResult } from "./types";
 import { logger } from "@/lib/logger";
 import {
-  aiGetConfig,
-  aiHasKey,
   aiListActions,
   aiListCustomActions,
-  aiListProviders,
   aiRun,
   type AiActionMeta,
   type AiCustomAction,
 } from "@/lib/api/ai";
+import {
+  getAiAvailability,
+  refreshAiAvailability,
+  setAiAvailabilityForTest,
+} from "@/lib/aiAvailability";
 
 /**
- * AI 是否可用（总开关开着 + 已配置密钥）。
+ * AI 是否可用（总开关开着 + 密钥配齐）。
  *
- * `detect()` 是同步的，拿不到异步状态，所以缓在模块层。
- * 未配置时所有 AI 动作打 0 分 → 根本不会出现在界面上，
+ * `detect()` 是同步的，拿不到异步状态，所以只能读缓存——但**缓存与判定都在
+ * `@/lib/aiAvailability` 里只有一份**，本模块不再自己存一个并行标志（以前这里一份、
+ * useAiStatus 一份，两套缓存算同一件事，就是胶囊撒谎的根因）。
+ * 不可用时所有 AI 动作打 0 分 → 根本不会出现在界面上，
  * 而不是摆一排点下去才报错的按钮。
  */
-let aiAvailable = false;
-
 export function isAiAvailable(): boolean {
-  return aiAvailable;
+  return getAiAvailability().status === "on";
 }
 
-/** 仅供初始化与测试使用 */
+/** 仅供初始化与测试使用（写的也是那份共享状态） */
 export function setAiAvailable(value: boolean): void {
-  aiAvailable = value;
+  setAiAvailabilityForTest(value ? "on" : "off");
 }
+
+// 判定实现已收口到 @/lib/aiAvailability，这里只转出，保持 transforms 一侧的导入路径不变
+export { refreshAiAvailability };
 
 /**
  * 各动作的匹配度打分。导出仅为了单测能直接验。
@@ -46,7 +51,7 @@ export function setAiAvailable(value: boolean): void {
  * 打分只看预分析好的 `features`，不重复解析文本。
  */
 export function scoreAiAction(actionId: string, ctx: TransformContext): number {
-  if (!aiAvailable) return 0;
+  if (!isAiAvailable()) return 0;
 
   const stats = ctx.features?.stats;
   const len = stats?.length ?? ctx.text.trim().length;
@@ -92,7 +97,7 @@ const HAND_TUNED = new Set([
  * 否则一个“适用全部”的自定义动作会把真正对口的那个挤下去。
  */
 export function scoreByContentTypes(types: string[], ctx: TransformContext): number {
-  if (!aiAvailable) return 0;
+  if (!isAiAvailable()) return 0;
   if (types.length === 0) return 0.45;
   return types.includes(ctx.contentType) ? 0.75 : 0;
 }
@@ -218,28 +223,15 @@ export async function reloadAiCustomActions(): Promise<void> {
  */
 export async function initAiTransforms(): Promise<void> {
   const actions = await aiListActions();
+  // 后端返回形状不对时别直接 `actions.forEach` —— 那会抛
+  // `TypeError: actions.forEach is not a function`，而调用方只 catch 成一条 warn，
+  // 结果是“AI 分组整体消失”但日志里只有一句看不出原因的类型错误。
+  // 测试日志里这条已经真实出现过。
+  if (!Array.isArray(actions)) {
+    throw new Error(`ai_list_actions 返回的不是数组（得到 ${typeof actions}）`);
+  }
   actions.forEach((a) => registerTransform(toTransform(a)));
   await reloadAiCustomActions();
   await refreshAiAvailability();
 }
 
-/**
- * 重新判定 AI 是否可用。设置面板改完配置/密钥后要调，
- * 否则动作不会即时出现或消失。
- */
-export async function refreshAiAvailability(): Promise<void> {
-  try {
-    const [cfg, hasKey, providers] = await Promise.all([
-      aiGetConfig(),
-      aiHasKey(),
-      aiListProviders(),
-    ]);
-    // Ollama 这类本地厂商根本不要密钥，如果一律要求 hasKey，
-    // 用户配好了也永远看不到 AI 动作
-    const spec = providers.find((p) => p.id === cfg.provider);
-    const keyOk = spec && !spec.needsKey ? true : hasKey;
-    setAiAvailable(cfg.enabled && keyOk);
-  } catch {
-    setAiAvailable(false);
-  }
-}

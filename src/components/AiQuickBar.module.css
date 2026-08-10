@@ -12,7 +12,8 @@
   border-radius: 10px;
   background: var(--dialog-bg, var(--card-bg));
   border: 1px solid var(--accent-border);
-  box-shadow: 0 1px 3px rgba(2, 132, 199, 0.08);
+  /* 不能硬编码天蓝：共 6 套主题（蓝/绿/紫/粉/橙/深色），定色下阴影色相与 accent 对不上 */
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .lbl {
@@ -48,8 +49,22 @@
 }
 
 .q:hover:not(:disabled) {
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，实心底改用加深版 --accent-solid */
+  background: var(--accent-solid);
   color: #fff;
+}
+
+/* 计费动作：比本地动作多一圈 accent 描边 + ✦ 标记，让用户在点之前就分得出哪下会花钱 */
+.qAi {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+  font-weight: 600;
+}
+
+.aiMark {
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.9;
 }
 
 .qRunning {
@@ -66,7 +81,8 @@
 }
 
 .more:hover {
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，实心底改用加深版 --accent-solid */
+  background: var(--accent-solid);
   color: #fff;
 }
 
@@ -165,8 +181,9 @@
 }
 
 .rbPri {
-  border-color: var(--accent);
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，实心主按钮背景改用加深版 --accent-solid */
+  border-color: var(--accent-solid);
+  background: var(--accent-solid);
   color: #fff;
 }
 
@@ -211,6 +228,8 @@
 }
 
 .gbBtn:hover {
-  background: currentColor;
-  color: #fff;
+  /* 原来是 background: currentColor + 白字：.sens 条的 currentColor 是 --orange，
+     白字压橙到不了 4.5:1。改成淡染底、文字继续用 currentColor，
+     对比度直接沿用条自身（橙/红）已达标的配色 */
+  background: color-mix(in srgb, currentColor 14%, transparent);
 }

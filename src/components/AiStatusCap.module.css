@@ -14,6 +14,8 @@
   white-space: nowrap;
 }
 
+/* 判定未回来时的占位骨架（组件在 loading 态渲染它）：
+   尺寸对齐真胶囊，避免胶囊异步就绪后插进 TopBar 造成布局跳动 */
 .loading {
   width: 64px;
   height: 24px;
@@ -30,9 +32,22 @@
 }
 
 .off:hover {
-  background: var(--accent);
+  /* 实心底 + 白字必须用 --accent-solid（白字压 --accent 只有 4.10:1，压 --accent-solid 是 4.56:1） */
+  background: var(--accent-solid);
   color: #fff;
   border-style: solid;
+}
+
+/* 已启用但缺密钥：警示色 —— 视觉上必须和「就绪」的绿区分开，
+   用户扫一眼就知道这是「还差一步」而不是「能用了」 */
+.nokey {
+  border: 1px solid var(--orange-border);
+  background: var(--orange-bg);
+  color: var(--warning);
+}
+
+.nokey:hover {
+  filter: brightness(1.05);
 }
 
 /* 已配置：状态胶囊（绿） */

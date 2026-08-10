@@ -66,9 +66,17 @@ export function profileExport(
   return invoke("profile_export", { format, categories });
 }
 
-/** 一键安装为 Claude Code / Cursor skill，返回安装目录 */
-export function profileInstallSkill(): Promise<string> {
-  return invoke("profile_install_skill");
+/**
+ * 一键安装为 Claude Code skill，返回安装目录。
+ * （旧注释写的是“Claude Code / Cursor”，但后端只拼 `~/.claude/skills`，不碰其它工具。）
+ *
+ * categories 与 {@link profileExport} 同义：不传 = 全部，空数组 = 一个都不要。
+ * 只影响 SKILL.md；references/profile.json 始终是完整快照（和 skill 预览里那份一致）。
+ */
+export function profileInstallSkill(
+  categories: ProfileCategory[],
+): Promise<string> {
+  return invoke("profile_install_skill", { categories });
 }
 
 /**

@@ -527,6 +527,30 @@ pub fn read_text_file_preview(path: String) -> Result<serde_json::Value, String>
     }))
 }
 
+/// 文件最后修改时间（毫秒）。给全屏编辑器检测“文件已在外部被改”用。
+///
+/// 为何不用 `@tauri-apps/plugin-fs` 的 `stat`：那需要单独配 capability 权限，
+/// 而这个命令跟 `read_text_file_full` 同一套校验、同一条路，行为可预测。
+///
+/// 拿不到 mtime 时返回 0 而不报错：调用方把 0 当作“未知，不做判断”，
+/// 比因为拿不到时间戳而让保存流程挂掉强。
+#[tauri::command]
+pub fn file_mtime_ms(path: String) -> Result<u64, String> {
+    if is_unsafe_network_path(&path) {
+        return Err("不支持的网络共享路径".to_string());
+    }
+    let meta = std::fs::metadata(&path).map_err(|e| format!("无法读取文件: {}", e))?;
+    if !meta.is_file() {
+        return Err("路径不是文件".to_string());
+    }
+    Ok(meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0))
+}
+
 /// 读取文本文件完整内容（编辑器用）：上限 10MB，返回 UTF-8 字符串。
 /// 二进制文件返回错误提示，前端据此处理。
 #[tauri::command]

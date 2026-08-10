@@ -1,88 +1,47 @@
 /**
  * hooks/useAiStatus.ts —— v6.4 主窗口 AI 感知（方案 A）：TopBar 胶囊状态。
  *
- * **模块级单例**（审查 #6 修复）：App 与 AiStatusCap 共享同一份状态与一次后端拉取，
- * 不再各拉一遍 aiGetConfig + aiGetUsageStats；30s TTL 防高频刷新。
+ * **这里不再自己判定也不再自己缓存**（收口）：
+ * 以前这个 hook 另写了一套两态判定（enabled && provider，没查密钥），
+ * 与 aiTransforms 的 aiAvailable 标志并行存在两份缓存、两套结论，
+ * 结果「已启用但没密钥」被胶囊说成「AI 就绪」。
+ * 现在它只是 `@/lib/aiAvailability`（唯一判定 + 唯一缓存）的 React 订阅壳。
+ *
  * 监听 `ai-config-changed` 事件（设置保存后 emit）即时刷新——配置完不用重启就生效。
  */
-import { useCallback, useEffect, useState } from "react";
-import { aiGetConfig, aiGetUsageStats } from "@/lib/api";
-import { logger } from "@/lib/logger";
+import { useEffect, useState } from "react";
+import {
+  ensureAiAvailabilityLoaded,
+  getAiAvailability,
+  refreshAiAvailability,
+  subscribeAiAvailability,
+  type AiAvailability,
+  type AiAvailabilityState,
+} from "@/lib/aiAvailability";
 
-export type AiStatus = "loading" | "off" | "on";
+/** 三态（+ loading）定义在 aiAvailability 里，这里只做别名保留旧名字 */
+export type AiStatus = AiAvailability;
 
-interface AiStatusState {
-  status: AiStatus;
-  weekCalls: number;
-  model: string;
-}
-
-const TTL_MS = 30_000;
-
-let state: AiStatusState = { status: "loading", weekCalls: 0, model: "" };
-let loadedAt = 0;
-let loading = false;
-let loadPromise: Promise<void> | null = null;
-const listeners = new Set<() => void>();
-
-function notify() {
-  listeners.forEach((l) => l());
-}
-
-async function doLoad(): Promise<void> {
-  loading = true;
-  try {
-    const [cfg, stats] = await Promise.all([aiGetConfig(), aiGetUsageStats(7)]);
-    const next: AiStatusState = cfg.enabled && cfg.provider.trim()
-      ? { status: "on", weekCalls: stats?.totalCalls ?? 0, model: cfg.model.trim() || "已配置" }
-      : { status: "off", weekCalls: 0, model: "" };
-    // enabled=false 时 stats 也白拉了——属已知小开销，保持简单
-    if (next.status !== state.status || next.weekCalls !== state.weekCalls) {
-      state = next;
-      notify();
-    } else {
-      state = next;
-    }
-    loadedAt = Date.now();
-  } catch (e) {
-    logger.warn("获取 AI 状态失败", e);
-    if (state.status === "loading") {
-      state = { status: "off", weekCalls: 0, model: "" };
-      notify();
-    }
-  } finally {
-    loading = false;
-  }
-}
-
-/** 惰性加载：未加载或超 TTL 才拉；并发只拉一次 */
-function ensureLoaded() {
-  if (state.status !== "loading" && Date.now() - loadedAt < TTL_MS) return;
-  if (loading) return;
-  loadPromise = doLoad();
-  loadPromise.catch(() => {});
-}
-
-export function useAiStatus(): AiStatusState {
-  const [snap, setSnap] = useState(state);
+export function useAiStatus(): AiAvailabilityState {
+  const [snap, setSnap] = useState(getAiAvailability);
 
   useEffect(() => {
-    const sub = () => setSnap(state); // 订阅：通知时读最新模块态
-    listeners.add(sub);
-    ensureLoaded();
+    const unsub = subscribeAiAvailability(() => setSnap(getAiAvailability()));
+    // 订阅前可能已经有其他订阅者拉回了结果，补一次同步免得错过
+    setSnap(getAiAvailability());
+    ensureAiAvailabilityLoaded();
     let unlisten: (() => void) | null = null;
-    // 设置里保存/测试成功后即时刷新（审查 #6：不用重启就能看到快捷区）
+    let alive = true;
     import("@tauri-apps/api/event")
-      .then(({ listen }) => listen("ai-config-changed", () => {
-        loadedAt = 0;
-        ensureLoaded();
-      }))
+      .then(({ listen }) => listen("ai-config-changed", () => void refreshAiAvailability()))
       .then((fn) => {
-        unlisten = fn;
+        if (alive) unlisten = fn;
+        else fn(); // 已卸载：监听器刚注册就得马上拆，不然永不释放
       })
       .catch(() => {});
     return () => {
-      listeners.delete(sub);
+      alive = false;
+      unsub();
       unlisten?.();
     };
   }, []);
@@ -92,6 +51,5 @@ export function useAiStatus(): AiStatusState {
 
 /** 供非 hook 场景（如事件回调）强制刷新 */
 export function refreshAiStatus() {
-  loadedAt = 0;
-  ensureLoaded();
+  void refreshAiAvailability();
 }

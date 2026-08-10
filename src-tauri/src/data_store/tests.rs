@@ -2408,6 +2408,9 @@ fn chain_def(name: &str, steps: &[&str]) -> ChainDef {
         sort_order: 0,
         created_at: String::new(),
         updated_at: String::new(),
+        // 下面两个是后端读出时单向置位的状态（步骤 JSON 已损坏），入参永远是默认值
+        steps_corrupted: false,
+        steps_raw: String::new(),
     }
 }
 
@@ -2456,6 +2459,90 @@ fn test_chain_bad_risk_rejected() {
     c.steps[0].risk = "hack".to_string();
     let err = store.chain_save(&c).unwrap_err();
     assert!(err.contains("风险"), "非法 risk 必须被拦：{}", err);
+}
+
+/// 回归（③）：步骤 JSON 解析失败不能伪装成"空链"。
+///
+/// 以前 `steps_from_json` 用 `unwrap_or_default()`，于是损坏链仍出现在列表里、
+/// 运行时什么都不做、也没报错；用户打开再保存又被"至少要有 1 个步骤"拦住
+/// ——既不能用、也不能就地改好，只能删掉重建。
+#[test]
+fn test_chain_corrupt_steps_flagged_not_silently_empty() {
+    let store = make_store();
+    let id = store.chain_save(&chain_def("坏链", &["strip"])).unwrap();
+    {
+        // 模拟"手工改库"/"未来字段调整"：transform_id 是必需字段，缺了整体解析失败
+        let conn = store.lock_conn();
+        conn.execute(
+            "UPDATE chain_defs SET steps = ?2 WHERE id = ?1",
+            params![id, r#"[{"risk":"local","label":"去空白"}]"#],
+        )
+        .unwrap();
+    }
+
+    let list = store.chains().unwrap();
+    assert_eq!(list.len(), 1);
+    assert!(list[0].steps.is_empty(), "解析不出步骤，确实拿不到可用的 steps");
+    assert!(
+        list[0].steps_corrupted,
+        "必须把「已损坏」标出来，不能和「没步骤」长得一模一样"
+    );
+    assert!(
+        list[0].steps_raw.contains("去空白"),
+        "原始 JSON 要留着供用户照着重建，实际：{:?}",
+        list[0].steps_raw
+    );
+}
+
+/// 正常链不能被误标为损坏（上一条的反面：别把守卫做成全面报警）。
+#[test]
+fn test_chain_normal_steps_not_flagged_corrupted() {
+    let store = make_store();
+    store.chain_save(&chain_def("正常链", &["strip", "upper"])).unwrap();
+    let list = store.chains().unwrap();
+    assert_eq!(list[0].steps.len(), 2);
+    assert!(!list[0].steps_corrupted);
+    assert!(list[0].steps_raw.is_empty(), "没损坏就不必重复带一份原文");
+}
+
+/// 回归（④）：INSERT/UPDATE 撞到 UNIQUE 索引时，不能把 SQLite 英文原文抛给用户。
+///
+/// `test_chain_duplicate_name_rejected` 盖的是"重名守卫"那条路；但守卫本身是一条
+/// COUNT 查询，它也会失败，而"检查 → INSERT"之间又有 TOCTOU 窗口。这条直接拿
+/// 一个**真实的** UNIQUE 错误去验证兜底翻译，把契约钉在那条路径上。
+#[test]
+fn test_chain_unique_violation_translated_to_chinese() {
+    let store = make_store();
+    store.chain_save(&chain_def("清洗", &["strip"])).unwrap();
+
+    // 绕过重名守卫，直接撞 UNIQUE 索引——守卫查询失败 / 并发时走的就是这条路
+    let err = {
+        let conn = store.lock_conn();
+        conn.execute(
+            "INSERT INTO chain_defs
+                (id, name, description, steps, sort_order, created_at, updated_at)
+             VALUES ('other-id', '清洗', '', '[]', 9, '2026-08-10 00:00:00', '2026-08-10 00:00:00')",
+            [],
+        )
+        .unwrap_err()
+    };
+    let msg = super::chains::map_chain_save_err(err, "清洗");
+    assert!(!msg.contains("UNIQUE"), "不该把 SQLite 的英文原文抛给用户：{}", msg);
+    assert!(msg.contains("清洗"), "报错要点出是哪个名字：{}", msg);
+}
+
+/// 非 UNIQUE 的真错误不能被误报为"重名"（否则用户改名字永远修不好）。
+#[test]
+fn test_chain_non_unique_error_keeps_original_message() {
+    let store = make_store();
+    let err = {
+        let conn = store.lock_conn();
+        conn.execute("INSERT INTO chain_defs_not_exist (id) VALUES ('x')", [])
+            .unwrap_err()
+    };
+    let msg = super::chains::map_chain_save_err(err, "无关名字");
+    assert!(msg.contains("保存动作链失败"), "应走通用分支：{}", msg);
+    assert!(!msg.contains("换个名字"), "不能把不相关的错误说成重名：{}", msg);
 }
 
 #[test]
@@ -2561,6 +2648,137 @@ fn test_action_pref_roundtrip_and_clear() {
     let all = store.action_prefs_all().unwrap();
     assert_eq!(all.len(), 2);
     assert!(all.iter().any(|r| r.action_id == "ai-summarize" && r.preference == "B"));
+}
+
+// ============================================================
+// 偏好自荐：pref_signals + pref_signal_done
+// ============================================================
+
+/// 白名单是“只落标签不落内容”这条红线的**唯一**保障，必须有测试盯。
+///
+/// 假设前端有 bug，把用户改过的正文当“特征”传上来——它必须落不进表，
+/// 否则这张表就变成了用户不知情的第二份剪贴板历史。
+#[test]
+fn test_pref_signal_rejects_non_whitelisted_feature() {
+    let store = make_store();
+    let bogus = vec![
+        "这是用户改过的译文正文，不应该落库".to_string(),
+        "SHORTER".to_string(), // 大小写不对也不算
+        "".to_string(),
+    ];
+    for _ in 0..5 {
+        store.pref_signal_add("ai-translate", &bogus);
+    }
+    assert!(
+        store.pref_signal_top("ai-translate").unwrap().is_none(),
+        "非白名单特征不得入表，更不得攒成建议"
+    );
+}
+
+#[test]
+fn test_pref_signal_needs_min_count() {
+    let store = make_store();
+    let f = vec!["shorter".to_string()];
+    // 差一次不提议——一两次改动是偶然，不是习惯
+    for _ in 0..(crate::data_store::PREF_SIGNAL_MIN_COUNT - 1) {
+        store.pref_signal_add("ai-translate", &f);
+    }
+    assert!(store.pref_signal_top("ai-translate").unwrap().is_none());
+
+    store.pref_signal_add("ai-translate", &f);
+    let top = store.pref_signal_top("ai-translate").unwrap().expect("达阈后应该有建议");
+    assert_eq!(top.feature, "shorter");
+    assert_eq!(top.count, crate::data_store::PREF_SIGNAL_MIN_COUNT);
+}
+
+#[test]
+fn test_pref_signal_top_picks_strongest_and_is_per_action() {
+    let store = make_store();
+    for _ in 0..3 {
+        store.pref_signal_add("ai-translate", &vec!["shorter".to_string()]);
+    }
+    for _ in 0..5 {
+        store.pref_signal_add("ai-translate", &vec!["dropped_greeting".to_string()]);
+    }
+    // 同一动作上取次数最多的那个
+    let top = store.pref_signal_top("ai-translate").unwrap().unwrap();
+    assert_eq!(top.feature, "dropped_greeting");
+    assert_eq!(top.count, 5);
+    // 别的动作不受影响（偏好是按动作存的）
+    assert!(store.pref_signal_top("ai-rewrite").unwrap().is_none());
+}
+
+#[test]
+fn test_pref_signal_done_stops_suggesting() {
+    let store = make_store();
+    for _ in 0..4 {
+        store.pref_signal_add("ai-translate", &vec!["shorter".to_string()]);
+    }
+    assert!(store.pref_signal_top("ai-translate").unwrap().is_some());
+
+    // 用户否决（或接受）后不再提
+    store.pref_signal_done("ai-translate", "shorter").unwrap();
+    assert!(
+        store.pref_signal_top("ai-translate").unwrap().is_none(),
+        "已处理的 (动作,特征) 不得重复提议"
+    );
+
+    // 但同一动作的**另一个方向**仍能提——否决的是那一条，不是整个动作
+    for _ in 0..3 {
+        store.pref_signal_add("ai-translate", &vec!["dropped_markdown".to_string()]);
+    }
+    let top = store.pref_signal_top("ai-translate").unwrap().unwrap();
+    assert_eq!(top.feature, "dropped_markdown");
+}
+
+#[test]
+fn test_pref_signal_done_rejects_invalid() {
+    let store = make_store();
+    assert!(store.pref_signal_done("ai-translate", "不存在的特征").is_err());
+    assert!(store.pref_signal_done("", "shorter").is_err());
+}
+
+#[test]
+fn test_pref_signal_clear_also_resets_done() {
+    let store = make_store();
+    for _ in 0..3 {
+        store.pref_signal_add("ai-translate", &vec!["shorter".to_string()]);
+    }
+    store.pref_signal_done("ai-translate", "shorter").unwrap();
+
+    let n = store.pref_signal_clear().unwrap();
+    assert_eq!(n, 3, "返回的是删掉的信号数");
+
+    // 清空后重新攒——用户说“忘掉你学到的”就应该真回到初始状态，
+    // 包括允许重新提议（否则清空反而永久封死了这条建议）
+    for _ in 0..3 {
+        store.pref_signal_add("ai-translate", &vec!["shorter".to_string()]);
+    }
+    assert!(
+        store.pref_signal_top("ai-translate").unwrap().is_some(),
+        "清空后应允许重新提议"
+    );
+}
+
+#[test]
+fn test_pref_signal_purge_keeps_done_marks() {
+    let store = make_store();
+    for _ in 0..3 {
+        store.pref_signal_add("ai-translate", &vec!["shorter".to_string()]);
+    }
+    store.pref_signal_done("ai-translate", "shorter").unwrap();
+
+    // retain_days 很大 → 什么都不清
+    assert_eq!(store.pref_signal_purge(3650).unwrap(), 0);
+
+    // 否决标记不跟着过期：重新攒够也不应该又开始提
+    for _ in 0..5 {
+        store.pref_signal_add("ai-translate", &vec!["shorter".to_string()]);
+    }
+    assert!(
+        store.pref_signal_top("ai-translate").unwrap().is_none(),
+        "否决应该是永久的，不能隔一阵重新骚扰"
+    );
 }
 
 // ============================================================
@@ -2874,4 +3092,151 @@ fn test_sequence_mining_below_threshold() {
         });
     }
     assert!(store.sequence_mining(30, 3, 4).unwrap().is_empty());
+}
+
+/// 用指定的 created_at 插一条动作事件。
+///
+/// 为什么不用 `action_event_add`：它只会写"现在"，而序列挖掘的时间边界判定
+/// 必须能造出**跨天**与**同一分钟**两种间隔。现有三条序列测试都在同一瞬间
+/// 连续插入，结构上无法暴露跨会话拼接的问题。
+fn insert_action_event_at(store: &DataStore, created_at: &str, action_id: &str, hour: i64) {
+    let conn = store.lock_conn();
+    conn.execute(
+        "INSERT INTO action_events (created_at, action_id, content_type, source_app, hour, outcome)
+         VALUES (?1, ?2, 'text', '', ?3, 'copied')",
+        params![created_at, action_id, hour],
+    )
+    .unwrap();
+}
+
+/// 日期字符串：今天往前 n 天的 `YYYY-MM-DD`。
+fn day_ago(n: i64) -> String {
+    (chrono::Local::now() - chrono::Duration::days(n))
+        .format("%Y-%m-%d")
+        .to_string()
+}
+
+/// 回归（①）：跨天的两个动作**不**构成序列。
+///
+/// 这是本轮最严重的一条：以前滑动窗口只看动作顺序、不看时间，所以
+/// 「下班前最后跑周报」+「次日开工首个解释代码」会被拼成一个合法的 [A,B] 窗口，
+/// 攒够 min_count 后运行器顶部就会冒出「发现你的高频操作：生成周报 → 解释代码」
+/// ——而这两步他从来没连着做过。
+#[test]
+fn test_sequence_mining_rejects_cross_day_pair() {
+    let store = make_store();
+    // 4 次“每天收工跑周报 → 次日开工解释代码”：顺序上相邻，但隔了 15 小时
+    for i in 0..4 {
+        let evening = day_ago(8 - i);
+        let morning = day_ago(7 - i);
+        insert_action_event_at(&store, &format!("{} 18:00:00", evening), "ai-weekly-report", 18);
+        insert_action_event_at(&store, &format!("{} 09:00:00", morning), "ai-explain-code", 9);
+    }
+
+    // 防此条测试“空跑”：若事件根本没插进去 / 掉到统计窗口外，
+    // 下面的 is_empty() 也会“通过”，但什么都没验证到。
+    assert_eq!(
+        store.action_event_stats(30).total,
+        8,
+        "8 条事件必须真的在 30 天统计窗口内，否则下面的断言是空跑"
+    );
+
+    let pats = store.sequence_mining(30, 3, 4).unwrap();
+    assert!(
+        pats.is_empty(),
+        "跨天的“伪相邻”不能成为序列（修之前这里会挖出 [周报, 解释代码] × 4），\
+         实际挖出：{:?}",
+        pats.iter().map(|p| (&p.actions, p.count)).collect::<Vec<_>>()
+    );
+}
+
+/// 回归（①反面）：同一分钟内连续的动作仍然构成序列。
+///
+/// 间隔闸不能把真序列一起切死。同时验证：每对之间隔了一小时，所以反向的
+/// [B,A]（跨对拼接）即使在顺序上出现 3 次，也不得被当成模式。
+#[test]
+fn test_sequence_mining_accepts_same_minute_pair() {
+    let store = make_store();
+    let day = day_ago(1);
+    for h in 10..14 {
+        insert_action_event_at(&store, &format!("{} {:02}:00:00", day, h), "ai-explain-code", h);
+        insert_action_event_at(&store, &format!("{} {:02}:00:30", day, h), "ai-extract-points", h);
+    }
+
+    let pats = store.sequence_mining(30, 3, 4).unwrap();
+    let p = pats
+        .iter()
+        .find(|p| p.actions == ["ai-explain-code", "ai-extract-points"])
+        .unwrap_or_else(|| {
+            panic!(
+                "同一分钟内的连续动作必须仍然构成序列，实际：{:?}",
+                pats.iter().map(|p| &p.actions).collect::<Vec<_>>()
+            )
+        });
+    assert_eq!(p.count, 4);
+    assert!(!p.last_used.is_empty(), "last_used 要指到真存在的那次连续操作");
+    assert!(
+        !pats
+            .iter()
+            .any(|p| p.actions == ["ai-extract-points", "ai-explain-code"]),
+        "隔了 1 小时的跨对拼接不能算模式：{:?}",
+        pats.iter().map(|p| (&p.actions, p.count)).collect::<Vec<_>>()
+    );
+}
+
+/// 回归（②）：`abandoned` 不计入 action_counts / total_events。
+///
+/// 漏了 outcome 过滤的后果：用户**反复尝试又放弃**的动作会抬高角色权重，
+/// 还抬高 sample_events / confidence——越放弃，画像越“自信”。
+#[test]
+fn test_profile_raw_stats_excludes_abandoned() {
+    let store = make_store();
+    store.action_event_add(&action_event("ai-polish", "text", "Word", 10, OUTCOME_COPIED));
+    store.action_event_add(&action_event("ai-polish", "text", "Word", 10, OUTCOME_PASTED));
+    // 同一个动作反复尝试又放弃 3 次
+    for _ in 0..3 {
+        store.action_event_add(&action_event("ai-polish", "text", "Word", 10, OUTCOME_ABANDONED));
+    }
+
+    let raw = store.profile_raw_stats(30).unwrap();
+    let c = raw
+        .action_counts
+        .iter()
+        .find(|(a, _)| a == "ai-polish")
+        .map(|(_, c)| *c)
+        .unwrap_or(0);
+    assert_eq!(c, 2, "只计 copied + pasted，abandoned 不计入动作频率");
+    assert_eq!(raw.total_events, 2, "abandoned 不能抬高样本量 / 置信度");
+    assert_eq!(
+        raw.content_type_counts
+            .iter()
+            .find(|(ct, _)| ct == "text")
+            .map(|(_, c)| *c)
+            .unwrap_or(0),
+        2,
+        "内容类型分布同样要排除 abandoned"
+    );
+}
+
+/// 不变量（②）：`action_counts` 与 `hour_counts` 的 WHERE 必须完全一致。
+///
+/// 命令层算时段百分比时用 `total_events`（= action_counts 求和）做分母、
+/// `hour_counts` 做分子；两条 WHERE 一旦错位，时段占比之和就不再是 100%。
+/// （注：total_events 是分母，hour_counts 是分子。）
+#[test]
+fn test_profile_raw_stats_hour_counts_match_total_events() {
+    let store = make_store();
+    store.action_event_add(&action_event("ai-polish", "text", "Word", 9, OUTCOME_COPIED));
+    store.action_event_add(&action_event("sql-in", "json", "VSCode", 14, OUTCOME_PASTED));
+    store.action_event_add(&action_event("sql-in", "json", "VSCode", 14, OUTCOME_ABANDONED));
+    store.action_event_add(&paste_event("h-1", "text"));
+
+    let raw = store.profile_raw_stats(30).unwrap();
+    let hour_sum: u32 = raw.hour_counts.iter().map(|(_, c)| *c).sum();
+    assert_eq!(
+        hour_sum, raw.total_events,
+        "hour_counts 总和必须等于 total_events（否则时段百分比的分母对不上）：\
+         hour_counts={:?}, total_events={}",
+        raw.hour_counts, raw.total_events
+    );
 }

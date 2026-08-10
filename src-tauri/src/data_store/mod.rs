@@ -7,6 +7,7 @@ mod ai_usage;
 mod ai_action;
 mod chains;
 mod ai_feedback;
+mod pref_signals;
 mod content_memory;
 mod profile;
 mod sequence_memory;
@@ -22,6 +23,9 @@ pub use chains::{ChainDef, ChainStepDef, MAX_CHAIN_DESC_CHARS, MAX_CHAIN_NAME_CH
 pub use ai_feedback::{
     ActionPrefRow, AiFeedback, AiFeedbackStat, AI_FEEDBACK_RETAIN_DAYS, FEEDBACK_ACCEPTED,
     FEEDBACK_EDITED, FEEDBACK_REJECTED,
+};
+pub use pref_signals::{
+    PrefSignalTop, PREF_FEATURES, PREF_SIGNAL_MIN_COUNT, PREF_SIGNAL_RETAIN_DAYS,
 };
 pub use content_memory::{
     HistorySummary, cosine_sim, decode_vec, encode_vec, summarize_text,
@@ -345,6 +349,28 @@ impl DataStore {
                 action_id   TEXT PRIMARY KEY,
                 preference  TEXT NOT NULL DEFAULT '',
                 updated_at  TEXT NOT NULL
+            );
+
+            -- 偏好信号（偏好自荐，见 data_store/pref_signals.rs）。
+            -- **没有内容字段，也不得加**：feature 是写死的枚举（PREF_FEATURES），
+            -- 前端本地比对（原文, 改后）后只上报标签，命令层再校一次白名单。
+            -- 存在的意义：ai_feedback 只知道“被改过”，这张表知道“往哪个方向改”。
+            CREATE TABLE IF NOT EXISTS pref_signals (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                action_id  TEXT NOT NULL,
+                feature    TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_pref_signals_action ON pref_signals(action_id);
+            CREATE INDEX IF NOT EXISTS idx_pref_signals_created ON pref_signals(created_at);
+
+            -- 已处理的 (动作, 特征)：接受过或否决过都记在这里，不再重复提议。
+            -- 不跟着 pref_signals 过期——否决是用户的明确表态，不能隔一阵就忘。
+            CREATE TABLE IF NOT EXISTS pref_signal_done (
+                action_id  TEXT NOT NULL,
+                feature    TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (action_id, feature)
             );
 
             -- 内容记忆（M5-1，见 data_store/content_memory.rs）。

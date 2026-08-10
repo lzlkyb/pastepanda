@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>设计稿：偏好自荐（A）+ AI 编链（B）</title>
+<style>
+:root, [data-theme="ocean"] {
+  --app-bg: #F7F7F8; --card-bg: #fff; --card-border: #E0E4EB;
+  --text-primary: #0F172A; --text-secondary: #495565; --text-muted: #627083;
+  --border-color: #E0E4EB;
+  --accent: #0284C7; --accent-light: #E0F2FE; --accent-strong: #0273AD; --accent-solid: #027CBB;
+  --section-bg: #F0F4F8; --hover: #E8ECF2; --dialog-bg: #fff;
+}
+[data-theme="forest"] {
+  --app-bg: linear-gradient(180deg,#F5F1E3 0%,#EAE5D1 55%,#DCD6BD 100%);
+  --card-bg: #fff; --card-border: #D1D9D3;
+  --text-primary: #171717; --text-secondary: #58524F; --text-muted: #726E6B;
+  --border-color: #D1D9D3;
+  --accent: #059669; --accent-light: #ECFDF5; --accent-strong: #04835B; --accent-solid: #059669;
+  --section-bg: #ECFDF5; --hover: #E8EDE8; --dialog-bg: #fff;
+}
+[data-theme="midnight"] {
+  --app-bg: radial-gradient(100% 80% at 50% -10%,#1C1832 0%,#0B0B13 55%,#07070C 100%);
+  --card-bg: #18181B; --card-border: #27272A;
+  --text-primary: #E4E4E7; --text-secondary: #AFAFB7; --text-muted: #8D8D95;
+  --border-color: #27272A;
+  --accent: #818CF8; --accent-light: #1E1B4B; --accent-strong: #818CF8; --accent-solid: #818CF8;
+  --section-bg: #0F0F11; --hover: #1F1F23; --dialog-bg: #18181B;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 28px;
+  font: 13px/1.6 "Microsoft YaHei UI", system-ui, sans-serif;
+  background: var(--app-bg); color: var(--text-primary);
+  min-height: 100vh;
+}
+.bar { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; align-items: center; }
+.bar button {
+  padding: 5px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-primary);
+  font: inherit;
+}
+.bar button[aria-pressed="true"] { background: var(--accent-light); color: var(--accent-strong); border-color: var(--accent); }
+.bar .note { color: var(--text-muted); font-size: 12px; }
+
+h2 { font-size: 15px; margin: 32px 0 6px; color: var(--text-primary); }
+h2:first-of-type { margin-top: 0; }
+.why { color: var(--text-muted); font-size: 12px; margin: 0 0 14px; max-width: 760px; }
+.stage {
+  background: var(--card-bg); border: 1px solid var(--card-border);
+  border-radius: 10px; padding: 16px; max-width: 620px; margin-bottom: 12px;
+}
+
+/* 仿“结果区”的上下文 */
+.result-box {
+  background: var(--section-bg); border: 1px solid var(--border-color);
+  border-radius: 8px; padding: 10px 12px; color: var(--text-secondary);
+  font-size: 12.5px; margin-bottom: 10px;
+}
+.meta-row { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.chip {
+  font-size: 11px; padding: 2px 8px; border-radius: 999px;
+  background: var(--section-bg); color: var(--text-muted); border: 1px solid var(--border-color);
+}
+.chip.edited { background: var(--accent-light); color: var(--accent-strong); border-color: var(--accent); }
+.btn-row { display: flex; gap: 8px; }
+.btn {
+  padding: 6px 12px; border-radius: 6px; font: inherit; cursor: pointer;
+  border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-primary);
+}
+.btn.primary { background: var(--accent-solid); border-color: var(--accent-solid); color: #fff; }
+
+/* ===== A：偏好自荐轻提示 ===== */
+.pref-tip {
+  margin-top: 12px;
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 12px; border-radius: 8px;
+  background: var(--accent-light);
+  /* 边框必需：forest 主题下 --section-bg 等于 --accent-light，没边框就和结果区糊在一起 */
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.pref-tip .ico { color: var(--accent-strong); font-size: 14px; line-height: 1.4; flex: 0 0 auto; }
+.pref-tip .body { flex: 1 1 auto; min-width: 0; }
+.pref-tip .obs { color: var(--accent-strong); font-weight: 600; }
+.pref-tip .sentence {
+  color: var(--text-primary); margin-top: 3px;
+  background: var(--card-bg); border: 1px solid var(--border-color);
+  border-radius: 5px; padding: 3px 7px; display: inline-block; font-size: 12.5px;
+}
+.pref-tip .acts { display: flex; gap: 6px; margin-top: 9px; }
+.pref-tip .acts .btn { padding: 4px 10px; font-size: 12px; }
+.pref-tip .x {
+  background: none; border: none; color: var(--text-muted); cursor: pointer;
+  font-size: 14px; padding: 0 2px; line-height: 1;
+}
+
+/* ===== B：AI 编链确认框 ===== */
+.dialog {
+  background: var(--dialog-bg); border: 1px solid var(--border-color);
+  border-radius: 12px; padding: 18px; max-width: 460px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.16);
+}
+.dialog h3 { margin: 0 0 4px; font-size: 14px; display: flex; align-items: center; gap: 7px; }
+.ai-badge {
+  font-size: 11px; padding: 1px 7px; border-radius: 999px; font-weight: 600;
+  background: var(--accent-light); color: var(--accent-strong);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.dialog .sub { color: var(--text-muted); font-size: 12px; margin: 0 0 14px; }
+.steps { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.step {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 10px; border-radius: 7px;
+  background: var(--section-bg); border: 1px solid var(--border-color);
+}
+.step .n {
+  flex: 0 0 auto; width: 19px; height: 19px; border-radius: 50%;
+  background: var(--accent-light); color: var(--accent-strong);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  font-size: 11px; display: grid; place-items: center; font-weight: 600;
+}
+.step .name { flex: 1 1 auto; }
+.risk { font-size: 10.5px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-color); color: var(--text-muted); }
+.risk.net { background: var(--accent-light); color: var(--accent-strong); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.dropped {
+  font-size: 11.5px; color: var(--text-muted);
+  border-left: 2px solid var(--border-color); padding-left: 8px; margin-bottom: 12px;
+}
+.dropped code { color: var(--text-secondary); }
+.dialog .foot { display: flex; gap: 8px; justify-content: flex-end; }
+.callout {
+  font-size: 11.5px; color: var(--text-muted); max-width: 620px;
+  border-left: 2px solid var(--accent); padding-left: 10px; margin: 6px 0 18px;
+}
+</style>
+</head>
+<body data-theme="ocean">
+
+<div class="bar">
+  <button aria-pressed="true" onclick="pick(this,'ocean')">ocean</button>
+  <button aria-pressed="false" onclick="pick(this,'forest')">forest</button>
+  <button aria-pressed="false" onclick="pick(this,'midnight')">midnight</button>
+  <span class="note">forest 是关键档：它的 --section-bg 恰好等于 --accent-light，没边框两层就糊一起</span>
+</div>
+
+<h2>A · 偏好自荐：改第 3 次之后才出现</h2>
+<p class="why">
+  位置在**结果区下方**而不是主窗口的建议条：用户刚改完就在这里问，上下文最相关。
+  放到 SuggestionBar 就变成“下次复制东西时突然弹一下”，那时候用户已经在干另一件事了。
+</p>
+<div class="stage">
+  <div class="result-box">Hello world（已经被你改过的译文）</div>
+  <div class="meta-row">
+    <span class="chip">模型 deepseek-v4</span>
+    <span class="chip edited">已修改</span>
+  </div>
+  <div class="btn-row">
+    <button class="btn">复制</button>
+    <button class="btn">粘贴到前台</button>
+  </div>
+
+  <div class="pref-tip">
+    <span class="ico">✦</span>
+    <div class="body">
+      <div><span class="obs">你常删掉开头的“以下是…”</span>（这是第 3 次）</div>
+      <div>要不要让我以后都记住：<span class="sentence">直接给结果，不要“以下是…”这类开场说明</span></div>
+      <div class="acts">
+        <button class="btn primary">记住</button>
+        <button class="btn">不用</button>
+      </div>
+    </div>
+    <button class="x" title="不用，且不要再问">✕</button>
+  </div>
+</div>
+<p class="callout">
+  点「记住」→ 写入 action_prefs，下次这个动作的 system prompt 就带上这句。<br>
+  点「不用」或 ✕ → 同一条 (动作, 特征) 永不再问（pref_signal_done）；但**同一动作的其他方向仍会问**。<br>
+  两个按钮 + 一个 ✕ 看上去重复，是故意的：✕ 给“我现在不想读这个”一个零阅读成本的出口。
+  如果你觉得多余，去掉 ✕ 只留两个按钮也行。
+</p>
+
+<h2>B · AI 编链：确认后才跑</h2>
+<p class="why">
+  每一步都看得见、risk 标在右边；被丢掉的步骤也告诉用户（静默丢弃会让人以为模型就是这么编的）。
+  步数上限 6：看不过来就无法确认，而确认是红线①的全部意义。
+</p>
+<div class="dialog">
+  <h3>网页残留清理 <span class="ai-badge">AI 编的</span></h3>
+  <p class="sub">先剥掉标签，再并空行，最后去首尾空白</p>
+  <div class="steps">
+    <div class="step"><span class="n">1</span><span class="name">剥 HTML 标签</span><span class="risk">本地</span></div>
+    <div class="step"><span class="n">2</span><span class="name">合并空行</span><span class="risk">本地</span></div>
+    <div class="step"><span class="n">3</span><span class="name">AI 提炼要点</span><span class="risk net">联网</span></div>
+  </div>
+  <div class="dropped">模型还提了 <code>summarize-deeply</code>，我们没有这个动作，已跳过。</div>
+  <div class="foot">
+    <button class="btn">取消</button>
+    <button class="btn">存为我的链</button>
+    <button class="btn primary">跑一下</button>
+  </div>
+</div>
+<p class="callout">
+  带联网步骤时，跑到那一步**还会再弹一次确认**（现有 runChain 的 onAiConfirm，不改）。
+  重复一次是对的：这里确认的是“这条链合理”，那里确认的是“这段内容可以发出去”。<br>
+  「存为我的链」→ 进 chain_defs 表，之后就是一条普通自定义链，不再需要模型。
+</p>
+
+<h2>入口放哪：我的建议</h2>
+<p class="why">
+  B 的入口放在**变换枢纽顶部**（挨着现有的 NlCommandBar），文案就叫「让 AI 编一条链」。
+  不做成自动触发——自动编链 = 每次复制都调一次云端，既花钱又把内容发出去，
+  而用户十次里有九次不需要链。例外：已有的 suggestChain 命中时优先推现成的链（零成本）。
+</p>
+
+<script>
+function pick(btn, t) {
+  document.body.dataset.theme = t;
+  document.querySelectorAll('.bar button').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+}
+</script>
+</body>
+</html>

@@ -21,6 +21,26 @@ const PENDING_BATCH: i64 = 200;
 /// 手动索引 / 自动补齐时单次 embedding 请求的文本条数。
 const EMBED_BATCH: usize = 20;
 
+/// 本轮 embedding 是否已触及日预算。
+///
+/// **必须在批处理循环内逐批测**。循环外的 `budget::check` 只是“进门查”：
+/// `semantic_index` 的 limit 上限 2000、`EMBED_BATCH` = 20，一次检查之后最多
+/// 能发 100 次请求；`semantic_search` 的自动补齐是 10 次。那等于用户设的
+/// 预算上限在这条路径上形同虚设（而 `ai_run` 那边是一次调用一次检查，很紧）。
+///
+/// **为什么不重查数据库**：用量是整轮结束后一次性记账的，循环期间
+/// `ai_usage_daily` 还是旧值，重查等于没查。所以用“库里的今日花费
+/// + 本轮本地累计估算”来判。
+///
+/// 预算 ≤ 0 表示不限制。
+fn budget_crossed(cfg: &AiConfig, today_cost_usd: f64, prompt_tokens: u32) -> bool {
+    let cap = cfg.daily_budget_usd();
+    if cap <= 0.0 {
+        return false;
+    }
+    today_cost_usd + budget::estimate_cost(cfg.spec(), prompt_tokens, 0) >= cap
+}
+
 /// 语义索引状态（设置页「AI 记忆增强」区展示用）。
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -194,6 +214,11 @@ pub async fn semantic_index(
                 if error.is_some() {
                     break;
                 }
+                // 跨线就停，不报错：未完成的会落到 pending_left，下次接着补。
+                if budget_crossed(&cfg, today_row.cost_usd, prompt_tokens) {
+                    log::info!("[语义索引] 触及日预算，本轮停在 {} 条", indexed);
+                    break;
+                }
             }
             Err(e) => {
                 error = Some(e.to_string());
@@ -275,6 +300,12 @@ pub async fn semantic_search(
                         let _ = store.semantic_vector_set(id, &out.model, vec);
                     }
                     prompt_tokens += out.prompt_tokens;
+                    // 同 `semantic_index`：预算得逐批测，不能只靠循环外那一次。
+                    // 这里停下来不影响搜索本身——补齐是附带的，已建好的向量照用。
+                    if budget_crossed(&cfg, today_row.cost_usd, prompt_tokens) {
+                        log::info!("[语义搜索] 自动补齐触及日预算，本轮提前停止");
+                        break;
+                    }
                 }
                 Err(e) => {
                     record_semantic_usage(
@@ -389,4 +420,46 @@ fn record_semantic_usage(
             ok,
             error,
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `budget_crossed` 现在同时把守 `semantic_index` 与 `semantic_search` 的补齐循环，
+    /// 是唯一的逐批预算闸门，行为得钉住。
+    #[test]
+    fn test_budget_crossed_semantics() {
+        let mut cfg = AiConfig::default();
+
+        // 预算 ≤ 0 = 不限制：无论花了多少都不该拦
+        cfg.daily_budget_cny = 0.0;
+        assert!(!budget_crossed(&cfg, 999.0, 1_000_000));
+
+        // 设 7.2 元 ≈ $1（USD_TO_CNY = 7.2）
+        cfg.daily_budget_cny = 7.2;
+        assert!((cfg.daily_budget_usd() - 1.0).abs() < 1e-9);
+
+        // 今日已花 $0，本轮 0 token → 没跨线
+        assert!(!budget_crossed(&cfg, 0.0, 0));
+
+        // 今日已花超过上限 → 跨线（哪怕本轮一个 token 都没用）
+        assert!(budget_crossed(&cfg, 1.5, 0));
+
+        // 关键用例：库里的今日花费尚未越线，靠**本轮本地累计**才越线。
+        // 这正是循环外那一次 budget::check 拦不住的情况——用量要等整轮结束才记账。
+        let spec = cfg.spec();
+        let tokens_for_one_usd = {
+            // 找一个能让估算费用超过剩余额度的 token 数
+            let mut t = 1_000u32;
+            while budget::estimate_cost(spec, t, 0) < 0.5 && t < 1_000_000_000 {
+                t = t.saturating_mul(2);
+            }
+            t
+        };
+        assert!(
+            budget_crossed(&cfg, 0.6, tokens_for_one_usd),
+            "已花 $0.6 + 本轮估算 ≥$0.5 应当越过 $1 上限"
+        );
+    }
 }

@@ -26,11 +26,13 @@ use tauri::{Manager, State};
 // 按职责拆分的子模块。`pub use` 保证命令路径不变（lib.rs 里仍是 `commands::ai::ai_run`），
 // 拆分对注册表零影响。
 mod actions_cmd;
+mod plan;
 mod providers;
 mod run;
 mod test_conn;
 mod usage;
 pub use actions_cmd::*;
+pub use plan::*;
 pub use providers::*;
 pub use run::*;
 pub use test_conn::*;

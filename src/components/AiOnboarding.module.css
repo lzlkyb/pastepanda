@@ -21,7 +21,8 @@
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: var(--accent);
+  /* 白色图标压 --accent 对比度不足 4.5:1，实心底改用加深版 --accent-solid */
+  background: var(--accent-solid);
   color: #fff;
   display: flex;
   align-items: center;
@@ -57,7 +58,8 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，实心底改用加深版 --accent-solid */
+  background: var(--accent-solid);
   color: #fff;
   display: flex;
   align-items: center;
@@ -86,6 +88,27 @@
   line-height: 1.6;
 }
 
+/* 计费 / 联网告知条：用中性的 section 底而不是黄红警告色——告知事实，不是吓人 */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 10px 20px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--section-bg);
+  font-size: 11px;
+  line-height: 1.65;
+  color: var(--text-secondary);
+}
+
+.noticeIcon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--accent-strong);
+}
+
 .actions {
   display: flex;
   justify-content: flex-end;
@@ -98,7 +121,8 @@
   padding: 7px 26px;
   font-size: 12px;
   font-weight: 600;
-  background: var(--accent);
+  /* 白字压 --accent 对比度不足 4.5:1，实心主按钮背景改用加深版 --accent-solid */
+  background: var(--accent-solid);
   color: #fff;
   cursor: pointer;
 }

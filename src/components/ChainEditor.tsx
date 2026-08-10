@@ -7,6 +7,8 @@
  * 交互约定：
  * - 步骤只能选 `kind !== "action"` 的变换（执行类有副作用，不该进文本流水线）；
  * - risk 自动标注：remote（AI）→ network，其余 → local；destructive 仅预置链用；
+ * - 保存前校验步骤引用的变换**仍存在于注册表**——这是前后端分层约定（见
+ *   data_store/chains.rs 顶部注释：后端不认识前端注册表），不校就两侧都没人管；
  * - 保存后失效运行器的链缓存（invalidateUserChains），下次打开即见。
  */
 
@@ -14,9 +16,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Plus, Trash2, ChevronUp, ChevronDown, Save } from "lucide-react";
 import { useDialogStore } from "@/stores/dialogStore";
-import { listTransforms } from "@/lib/transforms/registry";
+import { listTransforms, getTransform } from "@/lib/transforms/registry";
 import { chainSave, chainDelete } from "@/lib/api/chains";
-import { invalidateUserChains } from "@/lib/chains/registry";
+import { invalidateUserChains, riskOf } from "@/lib/chains/registry";
 import type { ChainDef } from "@/lib/api/chains";
 import type { ChainStep } from "@/lib/chains/types";
 import { useToast } from "@/components/Toast";
@@ -26,7 +28,26 @@ import styles from "./ChainEditor.module.css";
 
 const MAX_STEPS = 8;
 
+/**
+ * 链名长度上限（字符）。**必须与后端 data_store/chains.rs 的 MAX_CHAIN_NAME_CHARS 一致**
+ * ——超了 chain_save 直接报错；后端按 `chars().count()` 数（中文算 1 个）。
+ * 没有从 Rust 生成的共享常量，所以在这里手写并**导出**给其它造链入口复用
+ * （如 SequenceDiscover 算自动链名的截断长度），避免第二处手写 24 各自漂。
+ */
+export const MAX_CHAIN_NAME_CHARS = 24;
+
 const RISK_LABEL: Record<string, string> = { local: "本地", network: "联网", destructive: "修改" };
+
+/**
+ * 步骤引用了下拉里没有的变换时的兜底显示。受控 select 的 value 不在 options 里
+ * 会渲染成空白，而 transformId 非空又让原有 stepHint 不显示——用户既看不出这步
+ * 原来是什么，也没被告知有问题，点保存就把悬空 id 又存一遍。
+ */
+function danglingLabel(id: string): string {
+  const t = getTransform(id);
+  // 能查到 = 注册了但不可选（执行类）；查不到 = 已被注销（删掉/停用的自定义 AI 动作）
+  return t ? `${t.label}（不可用于链）` : `${id}（已失效）`;
+}
 
 export function ChainEditor() {
   const editing = useDialogStore((s) => s.chainEdit);
@@ -56,15 +77,23 @@ export function ChainEditor() {
   /** 可选的步骤变换：排除执行类（action），避免"流水线里夹一个打开浏览器" */
   const stepOptions = useMemo(
     () => listTransforms().filter((t) => t.kind !== "action"),
-    // 每次打开重新计算（变换注册表可能在运行期间变化，如 AI 动作初始化）
+    // `[open]` 是故意的，**不能**按 eslint 建议改成 `[]`：listTransforms() 不纯
+    // （模块级 Map，initAiTransforms / reloadAiCustomActions 在启动后、用户每次改 AI
+    // 自定义动作时都会增删它），而本组件常挂载（CardList 无条件渲染）。改 `[]`
+    // 会把下拉快照冻在首次挂载那一刻：启动后才配好 AI 的用户一辈子看不到 AI 步骤。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [open],
   );
 
+  /** 这步选的变换是否不在下拉里（已被注销，或历史数据里存了个执行类） */
+  const isDangling = (id: string) => !!id && !stepOptions.some((t) => t.id === id);
+
   const setStep = (i: number, transformId: string) => {
     const t = stepOptions.find((x) => x.id === transformId);
+    // risk 统一走 riskOf（与 AI 编链的 planner 共用同一份推导，见规则 #11）
     const step: ChainStep = {
       transformId,
-      risk: t?.remote ? "network" : "local",
+      risk: riskOf(t),
     };
     setDraft((d) => {
       const steps = [...d.steps];
@@ -105,6 +134,23 @@ export function ChainEditor() {
     }
     if (draft.steps.some((s) => !s.transformId)) {
       toast("还有步骤没选变换", "warning");
+      return;
+    }
+    // 分层约定：步骤引用的变换是否存在，由前端（变换注册表）在保存前校验——
+    // 后端不认识前端注册表（data_store/chains.rs 顶部注释）。之前两侧都没校，
+    // 悬空 id（如编辑一条引用了已删自定义 AI 动作的旧链）能一路存进库，
+    // 跑起来才停在「变换不存在（未注册）」。
+    const missingIdx = draft.steps.findIndex((s) => !getTransform(s.transformId));
+    if (missingIdx >= 0) {
+      toast(`第 ${missingIdx + 1} 步的变换已失效，请重新选一个`, "warning");
+      return;
+    }
+    // 执行类有副作用且不产出文本；下拉已排除，这里拦手工构造 / 历史数据绕过
+    const actionIdx = draft.steps.findIndex(
+      (s) => getTransform(s.transformId)?.kind === "action",
+    );
+    if (actionIdx >= 0) {
+      toast(`第 ${actionIdx + 1} 步是执行类动作（有副作用），不能放进链`, "warning");
       return;
     }
     try {
@@ -153,7 +199,7 @@ export function ChainEditor() {
                 <input
                   className={styles.input}
                   value={draft.name}
-                  maxLength={24}
+                  maxLength={MAX_CHAIN_NAME_CHARS}
                   placeholder="如：报错处理流水线"
                   onChange={(e) => patch({ name: e.target.value })}
                 />
@@ -182,6 +228,10 @@ export function ChainEditor() {
                       onChange={(e) => setStep(i, e.target.value)}
                     >
                       <option value="">选择变换…</option>
+                      {/* 兜住悬空 id，否则受控 select 显示空白，用户看不出这步原本是什么 */}
+                      {isDangling(s.transformId) && (
+                        <option value={s.transformId}>{danglingLabel(s.transformId)}</option>
+                      )}
                       {stepOptions.map((t) => (
                         <option key={t.id} value={t.id}>
                           {t.label}
@@ -205,6 +255,11 @@ export function ChainEditor() {
                     </span>
                     {!s.transformId && (
                       <span className={styles.stepHint}>从下拉里选一个变换</span>
+                    )}
+                    {isDangling(s.transformId) && (
+                      <span className={styles.stepHint}>
+                        这一步的变换已不可用（被删除 / 停用，或不允许用于链），请重新选一个
+                      </span>
                     )}
                   </div>
                 ))}

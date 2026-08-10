@@ -1662,7 +1662,7 @@
 .semanticHitsCount {
   font-size: 10.5px;
   font-weight: 400;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
 }
 .semanticHit {
   padding: 7px 0;
@@ -1685,7 +1685,7 @@
 }
 .semanticHitTime {
   font-size: 10.5px;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
 }
 .semanticHitText {
   font-size: 12px;

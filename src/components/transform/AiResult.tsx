@@ -11,8 +11,16 @@
 import { useState } from "react";
 import { Copy, Check, ClipboardPaste, ShieldAlert } from "lucide-react";
 import type { Transform, TransformResultMeta } from "@/lib/transforms";
-import { aiFeedbackAdd, hashResult } from "@/lib/api/aiFeedback";
+import {
+  aiFeedbackAdd,
+  hashResult,
+  prefSignalAdd,
+  prefSignalTop,
+  type PrefSignalTop,
+} from "@/lib/api/aiFeedback";
+import { extractPrefFeatures } from "@/lib/prefLearn";
 import { EditableResult } from "@/components/transform/EditableResult";
+import { PrefTip } from "@/components/transform/PrefTip";
 import styles from "../TransformHub.module.css";
 
 /** AI 结果元信息（cached/model/truncated 显式类型，仍兼容宽松的 TransformResultMeta） */
@@ -40,14 +48,36 @@ export function AiResult({
   const [editedText, setEditedText] = useState<string | null>(null);
   const final = editedText ?? output;
   const wasEdited = editedText !== null;
+  /** 攒够同方向信号后的待确认偏好建议（未达阈值 / 已处理 → null） */
+  const [prefSignal, setPrefSignal] = useState<PrefSignalTop | null>(null);
 
-  /** 回写反馈信号：只记动作 id + 结果哈希（fire-and-forget） */
+  /**
+   * 回写反馈信号：只记动作 id + 结果哈希（fire-and-forget）。
+   *
+   * 改过的话额外算一次**偏好方向**：哈希只能告诉后端“被改过”，反推不出风格——
+   * 没有方向，系统就只能提醒用户去手动写偏好，它自己学不到东西。
+   * `extractPrefFeatures` 在**本地**比对，上报的只有枚举标签（如 `shorter`），
+   * 原文与改动一个字都不出这个函数（后端还会再校一次白名单）。
+   */
   const log = (out: string) => {
     void aiFeedbackAdd({
       actionId: t.id,
       outcome: wasEdited ? "edited" : "accepted",
       resultHash: hashResult(out),
     });
+    if (wasEdited) {
+      const features = extractPrefFeatures(output, out);
+      if (features.length === 0) return;
+      // 先记这一笔，再问“够不够提议了”——顺序不能倒，否则第 3 次改完拿到的
+      // 还是 2 次的计数，建议要拖到第 4 次才出现。
+      // 查不到（未达阈值或已被否决）就安静保持 null，不打扰。
+      void prefSignalAdd(t.id, features)
+        .then(() => prefSignalTop(t.id))
+        .then(setPrefSignal)
+        .catch(() => {
+          // 记账与查询失败都不影响用户拿到产物，静默即可
+        });
+    }
   };
 
   return (
@@ -89,6 +119,9 @@ export function AiResult({
           粘贴到前台
         </button>
       </div>
+      {prefSignal && (
+        <PrefTip signal={prefSignal} onDone={() => setPrefSignal(null)} />
+      )}
     </>
   );
 }

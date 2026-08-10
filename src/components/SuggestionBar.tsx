@@ -77,6 +77,8 @@ function describe(s: Suggestion): string {
 export const SuggestionBar = memo(function SuggestionBar() {
   const { toast } = useToast();
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
+  /** 鼠标在建议条上（用于暂停自动收起） */
+  const [hovered, setHovered] = useState(false);
   const lastKeyRef = useRef<string>("");
 
   // 最新条目（history[0] 是剪贴板最新捕获）
@@ -150,12 +152,22 @@ export const SuggestionBar = memo(function SuggestionBar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topItem?.id, topItem?.text]);
 
-  // 8 秒无操作自动收起
+  /**
+   * 自动收起。**鼠标悬在条上时暂停计时**，离开后重新计时。
+   *
+   * 8 秒对“解释报错”这类要先读懂内容的建议太短，而鼠标移到条上
+   * 就是“我在看”的明确信号——此时把它抽走是敌意的。
+   *
+   * **有意不把“自动收起”当作弱负反馈记下来**：窗口可能在后台、用户可能
+   * 正在别处打字、也可能只是离开了座位——噪比信号大。把这种数据喂进推荐
+   * 权重，违反的正是本模块自己写的“宁可漏报不可误报”。
+   * 真实的否决只有一个入口：用户点 ✕。
+   */
   useEffect(() => {
-    if (!suggestion) return;
+    if (!suggestion || hovered) return;
     const t = window.setTimeout(() => setSuggestion(null), AUTO_HIDE_MS);
     return () => window.clearTimeout(t);
-  }, [suggestion]);
+  }, [suggestion, hovered]);
 
   /** 使用建议：意图 → 执行主动作；链 → 打开运行器并预选；执行类 → 直接 run；其余 → 打开枢纽定位 */
   const handleUse = useCallback(async () => {
@@ -223,6 +235,8 @@ export const SuggestionBar = memo(function SuggestionBar() {
           animate={{ opacity: 1, y: 0, height: "auto" }}
           exit={{ opacity: 0, y: -8, height: 0 }}
           transition={{ duration: 0.18 }}
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
         >
           <span className={styles.icon}><Lightbulb size={13} /></span>
           <span className={styles.text}>{describe(suggestion)}</span>

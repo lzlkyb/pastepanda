@@ -17,7 +17,6 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use tauri::State;
 
-use crate::commands::system::is_allowed_open_url;
 use crate::data_store::DataStore;
 
 /// 返回给前端的摘要数据
@@ -137,6 +136,16 @@ fn extract_from_html(url: &str, body: &str) -> UrlSummary {
     }
 }
 
+/// 抓取专用的协议白名单：**只放 http/https**。
+///
+/// 不复用 `is_allowed_open_url`——那个是给「打开 URL」用的，它放行 `mailto:`
+/// （在那个场景合理），而抓取一个 mailto 毫无意义。之前没出事是靠第二道
+/// `host_str()` 返 None 兜住的，属于**巧合而非设计**：哪天第二道放宽，第一道就漏。
+fn is_fetchable_url(url: &str) -> bool {
+    let t = url.trim();
+    t.starts_with("http://") || t.starts_with("https://")
+}
+
 /// 审查 backlog：#14 抓取 SSRF 防护 —— 剪贴板诱饵 URL 可能指向内网/保留地址
 /// （localhost、192.168.*、10.* 等），抓取就等于替攻击者探测内网。这里拦截字面 IP
 /// 的私有段与常见保留主机名（域名不解析，避免 DNS rebinding 面扩大）。
@@ -151,7 +160,12 @@ fn url_host_blocked(url: &str) -> bool {
     if host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local") {
         return true;
     }
-    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+    // `host_str()` 对 IPv6 返回的是**带方括号**的形式（如 `"[::1]"`），
+    // 而 `IpAddr::parse` 不接受方括号。不先去掉的话下面整段 IPv6 处理
+    // （unique-local / v4-mapped）**从来不会执行**——它们看着周全，实际是死代码，
+    // 实测 `http://[::1]/` 直接放行。
+    let bare = host.trim_start_matches('[').trim_end_matches(']');
+    if let Ok(ip) = bare.parse::<std::net::IpAddr>() {
         if ip.is_loopback() || ip.is_unspecified() || ip.is_multicast() {
             return true;
         }
@@ -182,7 +196,7 @@ pub async fn fetch_url_summary(
     _store: State<'_, DataStore>,
     url: String,
 ) -> Result<UrlSummary, String> {
-    if url.len() > 2048 || !is_allowed_open_url(&url) {
+    if url.len() > 2048 || !is_fetchable_url(&url) {
         return Err("仅支持 http/https 链接".to_string());
     }
     if url_host_blocked(&url) {
@@ -195,6 +209,22 @@ pub async fn fetch_url_summary(
 
     // 异步抓取 + 提取
     let client = reqwest::Client::builder()
+        // **重定向必须逐跳重查**。之前没设 policy，reqwest 默认跟随最多 10 次，
+        // 而校验只在初始 URL 上做一次——于是
+        //     http://evil.com/ → 302 → http://192.168.1.1/admin
+        // 就能完整绕过整个 SSRF 防护，而诱饵 URL 是攻击者完全可控的。
+        //
+        // 为何不简单地 `Policy::none()`：http→https 的重定向太普遍，
+        // 一律禁掉会让这个功能对一大片站点失效。
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 5 {
+                return attempt.error(std::io::Error::other("重定向次数过多"));
+            }
+            if url_host_blocked(attempt.url().as_str()) {
+                return attempt.error(std::io::Error::other("重定向到了本地/内网地址"));
+            }
+            attempt.follow()
+        }))
         .timeout(FETCH_TIMEOUT)
         .connect_timeout(Duration::from_secs(10))
         .user_agent(
@@ -251,6 +281,50 @@ pub fn __clear_url_cache_for_test() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 抓取的协议白名单必须只放 http/https。
+    ///
+    /// 之前复用的 `is_allowed_open_url` 会放行 `mailto:`，靠第二道 host 检查兜住——
+    /// 那是巧合不是设计。这条测试把第一道门自己钉住。
+    #[test]
+    fn test_only_http_is_fetchable() {
+        assert!(is_fetchable_url("http://example.com/a"));
+        assert!(is_fetchable_url(" https://example.com/a "));
+        assert!(!is_fetchable_url("mailto:a@b.com"));
+        assert!(!is_fetchable_url("file:///C:/Windows/win.ini"));
+        assert!(!is_fetchable_url("ftp://example.com/x"));
+        assert!(!is_fetchable_url(""));
+    }
+
+    /// SSRF 防护：字面内网/保留地址必须被拦。
+    ///
+    /// 重定向逐跳重查用的是同一个函数，所以这里每一条也同时是
+    /// “http://evil.com → 302 → 内网” 那条绕过路径的回归。
+    #[test]
+    fn test_ssrf_blocks_internal_hosts() {
+        for bad in [
+            "http://localhost/",
+            "http://foo.localhost/",
+            "http://nas.local/",
+            "http://127.0.0.1/",
+            "http://0.0.0.0/",
+            "http://192.168.1.1/admin",
+            "http://10.0.0.5/",
+            "http://172.16.0.1/",
+            // 云厂商元数据端点——拓到就可能拿到临时凭证
+            "http://169.254.169.254/latest/meta-data/",
+            // IPv6：host_str() 带方括号，不先剥掉的话整段 IPv6 处理都是死代码
+            "http://[::1]/",
+            "http://[fd00::1]/",              // unique-local
+            "http://[::ffff:192.168.1.1]/",   // v4-mapped 的私有地址
+            "mailto:a@b.com", // 没有 host → 也该拦
+        ] {
+            assert!(url_host_blocked(bad), "应该拦住：{bad}");
+        }
+        for ok in ["http://example.com/", "https://8.8.8.8/"] {
+            assert!(!url_host_blocked(ok), "不应该拦：{ok}");
+        }
+    }
 
     #[test]
     fn extract_title_and_paragraphs() {
