@@ -2257,4 +2257,135 @@ fn test_search_hit_count_increments_on_search() {
     assert_eq!(hit, 1);
 }
 
+// ============================================================
+// v6.2 场景权重：来源+时段感知
+// ============================================================
+
+#[test]
+fn test_hour_bucket_and_source_cat() {
+    use crate::data_store::{hour_bucket, source_cat};
+    assert_eq!(hour_bucket(10), "work");
+    assert_eq!(hour_bucket(17), "work");
+    assert_eq!(hour_bucket(18), "evening");
+    assert_eq!(hour_bucket(23), "evening");
+    assert_eq!(hour_bucket(0), "night");
+    assert_eq!(hour_bucket(8), "night");
+
+    assert_eq!(source_cat("VS Code"), "ide");
+    assert_eq!(source_cat("Chrome"), "browser");
+    assert_eq!(source_cat("Terminal"), "terminal");
+    assert_eq!(source_cat("微信"), "chat");
+    assert_eq!(source_cat("不知名应用"), "other");
+}
+
+#[test]
+fn test_action_scene_weights_aggregates() {
+    let store = make_store();
+    // 工作时间（10 点）在 VS Code 复制 json → sql-in
+    store.action_event_add(&action_event("sql-in", "json", "VS Code", 10, OUTCOME_COPIED));
+    store.action_event_add(&action_event("sql-in", "json", "VS Code", 11, OUTCOME_COPIED));
+    // 晚间（21 点）在 Chrome 复制 text → ai-translate
+    store.action_event_add(&action_event("ai-translate", "text", "Chrome", 21, OUTCOME_COPIED));
+    // 同一场景不同 app 合并（Edge 也归 browser）
+    store.action_event_add(&action_event("ai-translate", "text", "Edge", 22, OUTCOME_PASTED));
+    // paste 哨兵排除
+    store.action_event_add(&paste_event("h-1", "json"));
+
+    let scenes = store.action_scene_weights(30);
+    let sql_ide = scenes
+        .iter()
+        .find(|s| s.action_id == "sql-in" && s.hour_bucket == "work" && s.source_cat == "ide")
+        .expect("应聚合出 sql-in×work×ide");
+    assert_eq!(sql_ide.count, 2);
+
+    let tr_browser = scenes
+        .iter()
+        .find(|s| s.action_id == "ai-translate" && s.hour_bucket == "evening" && s.source_cat == "browser")
+        .expect("Chrome+Edge 应合并为 browser");
+    assert_eq!(tr_browser.count, 2);
+
+    assert!(
+        !scenes.iter().any(|s| s.action_id == ACTION_ID_PASTE),
+        "粘贴哨兵必须排除在场景权重外"
+    );
+}
+
+// ============================================================
+// v6.4 D 搜索：FTS5 全文索引（中文 bigram）
+// ============================================================
+
+#[test]
+fn test_to_ngram_chinese_mixed() {
+    use crate::data_store::history::to_ngram;
+    // 中文 → 每个中文字符的单字 + 相邻二字 bigram（顺序：先单字后 bigram）
+    assert_eq!(to_ngram("上周"), "上 上周 周");
+    // 中英混排 → ASCII 段原样
+    assert_eq!(to_ngram("API文档"), "API 文 文档 档");
+    // 3 字 → 单字 + 相邻 bigram
+    assert_eq!(to_ngram("复制粘贴"), "复 复制 制 制粘 粘 粘贴 贴");
+    // 空串
+    assert_eq!(to_ngram(""), "");
+}
+
+#[test]
+fn test_fts_search_chinese_hit() {
+    let store = make_store();
+    store
+        .insert_history(&make_item("f1", "上周复制的那个API文档地址", "2026-08-01 10:00:00", "text"))
+        .unwrap();
+    store
+        .insert_history(&make_item("f2", "这是一条无关的英语内容 hello world", "2026-08-01 11:00:00", "text"))
+        .unwrap();
+
+    // 中文关键词走 FTS5 bigram 命中
+    let items = store
+        .search_history("默认", "复制", "all", "", "", "all", &[], 10)
+        .unwrap();
+    assert!(items.iter().any(|i| i.id == "f1"), "中文「复制」应命中 f1");
+
+    // 中英混合关键词
+    let items = store
+        .search_history("默认", "API文档", "all", "", "", "all", &[], 10)
+        .unwrap();
+    assert!(items.iter().any(|i| i.id == "f1"), "「API文档」应命中 f1");
+
+    // 不相关词不命中
+    let items = store
+        .search_history("默认", "无关词", "all", "", "", "all", &[], 10)
+        .unwrap();
+    assert!(!items.iter().any(|i| i.id == "f1"));
+}
+
+#[test]
+fn test_fts_delete_removes_index() {
+    let store = make_store();
+    store
+        .insert_history(&make_item("f3", "要删除的临时内容", "2026-08-01 12:00:00", "text"))
+        .unwrap();
+    assert!(!store
+        .search_history("默认", "临时内容", "all", "", "", "all", &[], 10)
+        .unwrap()
+        .is_empty());
+
+    store.delete_history(&["f3".to_string()]).unwrap();
+    assert!(store
+        .search_history("默认", "临时内容", "all", "", "", "all", &[], 10)
+        .unwrap()
+        .is_empty(), "删除后 FTS 索引应同步移除");
+}
+
+#[test]
+fn test_fts_fallback_like_on_special_chars() {
+    let store = make_store();
+    store
+        .insert_history(&make_item("f4", "含(括号)的内容片段", "2026-08-01 13:00:00", "text"))
+        .unwrap();
+
+    // 括号是 FTS5 MATCH 语法字符 → fts_safe=false → 回退 LIKE 仍能命中
+    let items = store
+        .search_history("默认", "(括号", "all", "", "", "all", &[], 10)
+        .unwrap();
+    assert!(items.iter().any(|i| i.id == "f4"), "特殊字符查询应回退 LIKE 命中");
+}
+
 

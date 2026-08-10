@@ -57,6 +57,14 @@
 /* 悬停仅高亮边框，不改变任何选中 / 待复制状态 */
 .card:hover { border-color: var(--accent); }
 
+/* v6.3 自然语言动作定位：卡片外层短暂高亮（1.8s 后自动消失） */
+.cardActiveWrap {
+  border-radius: 12px;
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
 .cardHead {
   display: flex;
   align-items: center;

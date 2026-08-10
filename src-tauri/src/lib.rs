@@ -553,11 +553,14 @@ pub fn run() {
             commands::action_event_clear,
             // 个性化推荐数据（v6.1：权重聚合 / 不再推荐 / 一键清空学习记录）
             commands::action_recommend_weights,
+            commands::action_recommend_scene_weights,
             commands::action_dismiss_add,
             commands::action_dismissals,
             commands::action_learnings_clear,
             // 执行类动作（v6.0 复制即执行）：协议白名单打开链接
             commands::open_url,
+            // v6.4 链接摘要（六大王牌 A，阶段 1：抓页 + 本地正文提取）
+            commands::fetch_url_summary,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

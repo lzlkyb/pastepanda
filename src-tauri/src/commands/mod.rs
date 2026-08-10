@@ -167,6 +167,7 @@ mod snippets;
 mod system;
 mod tags;
 mod update;
+mod url_summary;
 
 #[cfg(test)]
 mod tests;
@@ -187,3 +188,4 @@ pub use snippets::*;
 pub use system::*;
 pub use tags::*;
 pub use update::*;
+pub use url_summary::*;

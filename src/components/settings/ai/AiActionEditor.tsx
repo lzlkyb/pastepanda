@@ -28,7 +28,7 @@ const EMPTY: AiCustomAction = {
   description: "",
   icon: "sparkles",
   template: "",
-  maxTokens: 800,
+  maxTokens: 1024,
   contentTypes: [],
   enabled: true,
   sortOrder: 0,
@@ -228,7 +228,7 @@ export function AiActionEditor({ action, contentTypes, onSaved, onCancel, onDele
           max={4000}
           value={draft.maxTokens}
           style={{ width: 120 }}
-          onChange={(e) => patch({ maxTokens: Number(e.target.value) || 800 })}
+          onChange={(e) => patch({ maxTokens: Number(e.target.value) || 1024 })}
         />
         <span className={styles.hint}>
           给小一点省钱，但太小会把回答截断。短产物 300～800 就够；

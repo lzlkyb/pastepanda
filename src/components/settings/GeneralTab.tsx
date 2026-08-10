@@ -12,6 +12,7 @@ import { HotkeyRecorder } from "./HotkeyRecorder";
 import { LanSyncPanel } from "./LanSyncPanel";
 import { DeepCleanDialog } from "@/components/DeepCleanDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { WeekReportDialog } from "@/components/WeekReportDialog";
 import { useDialogStore } from "@/stores/dialogStore";
 import styles from "../Settings.module.css";
 
@@ -108,6 +109,9 @@ export function GeneralTab({
 
   // 深度清理弹窗开关（数据管理 → 深度清理）
   const [showDeepClean, setShowDeepClean] = useState(false);
+
+  // v6.4 E 剪贴板周报弹窗开关
+  const [showWeekReport, setShowWeekReport] = useState(false);
 
   // ── 数据仪表盘：来源 Top 5 折叠状态 + 更新时间 + 派生指标 ──
   const [srcOpen, setSrcOpen] = useState(false);
@@ -284,6 +288,18 @@ export function GeneralTab({
                   <span className={styles.bCellAvg}>7日均 {dash.weekAvg}</span>
                 </div>
               </div>
+            </div>
+
+            {/* v6.4 E 剪贴板周报入口（行为侧写，不读内容） */}
+            <div className={styles.subTitle}>
+              剪贴板周报
+              <span className={styles.subHint}>本周复制/粘贴的行为统计 + AI 解读</span>
+              <button
+                className={styles.weekReportBtn}
+                onClick={() => setShowWeekReport(true)}
+              >
+                打开周报
+              </button>
             </div>
 
             {/* 近 7 天趋势 */}
@@ -1028,6 +1044,8 @@ export function GeneralTab({
       </div>
       {/* 深度清理弹窗：portal 到 body，open 门控显隐 */}
       <DeepCleanDialog open={showDeepClean} onClose={() => setShowDeepClean(false)} />
+      {/* v6.4 E 剪贴板周报 */}
+      {showWeekReport && <WeekReportDialog onClose={() => setShowWeekReport(false)} />}
       {/* 修复：改保留天数变严格时的二次确认（自动清理不可撤销，必须让用户先知道会删多少条） */}
       <ConfirmDialog key="cleanup-days-confirm"
         open={!!pendingCleanup}

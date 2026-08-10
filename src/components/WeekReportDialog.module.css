@@ -1,0 +1,180 @@
+/* v6.4 E 剪贴板周报：行为侧写统计 + AI 文案 */
+
+.box {
+  display: flex;
+  flex-direction: column;
+}
+
+.headerIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 40px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.cold {
+  padding: 30px 20px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+.overview {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px 0;
+}
+
+.ovItem {
+  flex: 1;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 10px 0;
+  text-align: center;
+  background: var(--section-bg);
+}
+
+.ovNum {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.ovLabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.section {
+  margin: 12px 16px 0;
+}
+
+.sectionTitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.barRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.barLabel {
+  width: 52px;
+  font-size: 12px;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.barTrack {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--section-bg);
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.barVal {
+  width: 36px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.actionChip {
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 3px 10px;
+  font-size: 11px;
+  background: var(--section-bg);
+  color: var(--text-primary);
+}
+
+.aiBox {
+  margin: 12px 16px 0;
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: rgba(168, 85, 247, 0.08);
+}
+
+.aiLabel {
+  font-size: 11px;
+  color: #a855f7;
+  margin-bottom: 4px;
+}
+
+.aiText {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
+
+.actionsRow {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 16px 14px;
+}
+
+.aiBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 12px;
+  background: rgba(168, 85, 247, 0.16);
+  color: #a855f7;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.aiBtn:hover:not(:disabled) {
+  background: #a855f7;
+  color: #fff;
+}
+
+.aiBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

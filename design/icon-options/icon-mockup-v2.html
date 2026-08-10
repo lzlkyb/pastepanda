@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PastePanda 视觉焕新效果图 · 真实资产</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; background: #efece6; color: #2b2b2b; padding: 32px 20px 60px; }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 700; }
+  .sub { color: #8a8578; font-size: 13px; margin: 6px 0 26px; line-height: 1.7; }
+  h2 { font-size: 15px; font-weight: 700; margin: 36px 0 12px; display: flex; align-items: center; gap: 8px; }
+  h2::before { content: ""; width: 4px; height: 14px; border-radius: 2px; background: #6ECFB2; }
+  .note { font-size: 12px; color: #8a8578; margin: -6px 0 12px; }
+  img.di { display: inline-block; flex: none; box-shadow: 0 1px 2px rgba(0,0,0,.12); vertical-align: -4px; }
+
+  /* hero */
+  .hero { display: flex; align-items: center; gap: 20px; background: #fff; border-radius: 18px; padding: 22px 26px; box-shadow: 0 2px 10px rgba(0,0,0,.07); }
+  .hero .txt b { font-size: 17px; }
+  .hero .txt p { font-size: 12.5px; color: #8a8578; margin-top: 6px; line-height: 1.7; }
+
+  /* logo 尺寸梯 */
+  .taskbar { display: flex; align-items: center; gap: 14px; border-radius: 12px; padding: 10px 16px; margin-bottom: 10px; }
+  .taskbar .app { display: flex; gap: 8px; align-items: center; font-size: 12.5px; font-weight: 600; }
+  .taskbar .sizes { margin-left: auto; display: flex; gap: 16px; align-items: flex-end; }
+  .taskbar .sizes .s { text-align: center; font-size: 10px; opacity: .6; }
+  .taskbar .sizes .s img { display: block; margin: 0 auto 3px; }
+  .taskbar.light { background: #f5f5f5; color: #333; box-shadow: inset 0 0 0 1px #e4e4e4; }
+  .taskbar.dark { background: #1f2430; color: #dfe3ea; }
+  .compare { display: flex; gap: 26px; margin-top: 14px; }
+  .compare .c { background: #fff; border-radius: 14px; padding: 14px 20px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.07); }
+  .compare .c em { display: block; font-style: normal; font-size: 11px; color: #8a8578; margin-top: 8px; }
+
+  /* 全套 */
+  .set { display: grid; grid-template-columns: repeat(8, 1fr); gap: 10px; }
+  .set .cell { background: #fff; border-radius: 14px; padding: 13px 4px 9px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .set .cell em { display: block; font-style: normal; font-size: 10.5px; color: #77716a; margin-top: 7px; }
+
+  /* 主窗口 */
+  .win { border-radius: 16px; overflow: hidden; display: flex; height: 430px; box-shadow: 0 8px 28px rgba(0,0,0,.14); }
+  .win .side { width: 170px; flex: none; padding: 14px 10px; }
+  .win .side .grp { font-size: 10px; opacity: .55; margin: 10px 8px 4px; letter-spacing: 1px; }
+  .win .side .it { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 6px 8px; border-radius: 9px; }
+  .win .side .it .cnt { margin-left: auto; font-size: 10.5px; opacity: .5; }
+  .win .main { flex: 1; padding: 14px 16px; display: flex; flex-direction: column; gap: 9px; overflow: hidden; }
+  .card { border-radius: 12px; padding: 10px 12px; display: flex; gap: 10px; align-items: flex-start; }
+  .card .body { flex: 1; min-width: 0; }
+  .card .t { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .m { font-size: 10.5px; opacity: .55; margin-top: 4px; display: flex; gap: 6px; align-items: center; }
+  .card .m .tag { border-radius: 5px; padding: 1px 6px; font-size: 10px; opacity: .9; }
+  .card .acts { display: flex; gap: 6px; align-items: center; padding-top: 2px; }
+  .light .win { background: #f7f5f0; } .light .side { background: #efede7; }
+  .light .side .it.on { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.08); font-weight: 600; }
+  .light .card { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
+  .light .card .m .tag { background: #eef7f3; color: #3d9c81; }
+  .dark .win { background: #14171f; color: #e8eaf0; } .dark .side { background: #10131a; }
+  .dark .side .it.on { background: rgba(110,207,178,.16); font-weight: 600; }
+  .dark .card { background: #1c2029; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+  .dark .card .m .tag { background: rgba(110,207,178,.16); color: #7fd8be; }
+
+  /* 菜单/标题/快捷粘贴 */
+  .row3 { display: grid; grid-template-columns: 240px 1fr 260px; gap: 14px; align-items: start; }
+  .menu { background: #fff; border-radius: 12px; padding: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.16); }
+  .menu .mi { display: flex; align-items: center; gap: 9px; font-size: 12.5px; padding: 7px 9px; border-radius: 8px; }
+  .menu .sep { height: 1px; background: #eee; margin: 5px 8px; }
+  .titles { display: flex; flex-wrap: wrap; gap: 8px; }
+  .titles .tb { background: #fff; border-radius: 10px; padding: 8px 12px; font-size: 12.5px; font-weight: 600; display: flex; gap: 7px; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .qp { background: #20242e; border-radius: 14px; padding: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.25); display: flex; flex-direction: column; gap: 4px; }
+  .qp .q { display: flex; align-items: center; gap: 9px; color: #e8eaf0; font-size: 12px; padding: 7px 8px; border-radius: 9px; }
+  .qp .q.on { background: rgba(110,207,178,.18); }
+  .qp .q .ty { margin-left: auto; font-size: 10px; opacity: .5; }
+  footer { margin-top: 40px; font-size: 12px; color: #8a8578; line-height: 1.8; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PastePanda 视觉焕新效果图</h1>
+  <p class="sub">本页所有图标与 logo 均为已生成的真实资产（32 枚 3D 黏土图标 + 圆角熊猫 logo），按应用内实际尺寸嵌入界面模拟。确认后即落地到代码。</p>
+
+  <div class="hero">
+    <img data-logo="new" style="width:96px;height:96px" alt="new logo">
+    <div class="txt">
+      <b>新 logo · 3D 黏土熊猫抱剪贴板</b>
+      <p>薄荷绿圆角底，呼应 PastePanda 品牌名与剪贴板管理器定位；<br>托盘 / 任务栏 / 开始菜单将统一使用这套图标。</p>
+    </div>
+  </div>
+
+  <h2>logo 实际尺寸 · 浅色 / 深色任务栏</h2>
+  <div class="taskbar light">
+    <div class="app"><img data-logo="new" style="width:20px;height:20px"> PastePanda — 已保存 248 条</div>
+    <div class="sizes">
+      <div class="s"><img data-logo="new" style="width:16px;height:16px">16 托盘</div>
+      <div class="s"><img data-logo="new" style="width:24px;height:24px">24 任务栏</div>
+      <div class="s"><img data-logo="new" style="width:32px;height:32px">32 标题栏</div>
+      <div class="s"><img data-logo="new" style="width:48px;height:48px">48 开始菜单</div>
+    </div>
+  </div>
+  <div class="taskbar dark">
+    <div class="app"><img data-logo="new" style="width:20px;height:20px"> PastePanda — 监听中</div>
+    <div class="sizes">
+      <div class="s"><img data-logo="new" style="width:16px;height:16px">16 托盘</div>
+      <div class="s"><img data-logo="new" style="width:24px;height:24px">24 任务栏</div>
+      <div class="s"><img data-logo="new" style="width:32px;height:32px">32 标题栏</div>
+      <div class="s"><img data-logo="new" style="width:48px;height:48px">48 开始菜单</div>
+    </div>
+  </div>
+  <div class="compare">
+    <div class="c"><img data-logo="old" style="width:56px;height:56px"><em>现在：Tauri 默认模板图标</em></div>
+    <div class="c"><img data-logo="new" style="width:56px;height:56px"><em>新：黏土熊猫</em></div>
+  </div>
+
+  <h2>全套 32 枚图标</h2>
+  <div class="set">
+    <div class="cell"><img class="di" data-icon="text" data-size="38"><em>文本</em></div>
+    <div class="cell"><img class="di" data-icon="image" data-size="38"><em>图片</em></div>
+    <div class="cell"><img class="di" data-icon="rich" data-size="38"><em>图文</em></div>
+    <div class="cell"><img class="di" data-icon="doc" data-size="38"><em>文档</em></div>
+    <div class="cell"><img class="di" data-icon="csv" data-size="38"><em>表格</em></div>
+    <div class="cell"><img class="di" data-icon="json" data-size="38"><em>JSON</em></div>
+    <div class="cell"><img class="di" data-icon="html" data-size="38"><em>HTML</em></div>
+    <div class="cell"><img class="di" data-icon="link" data-size="38"><em>链接</em></div>
+    <div class="cell"><img class="di" data-icon="code" data-size="38"><em>代码</em></div>
+    <div class="cell"><img class="di" data-icon="folder" data-size="38"><em>目录</em></div>
+    <div class="cell"><img class="di" data-icon="file" data-size="38"><em>文件</em></div>
+    <div class="cell"><img class="di" data-icon="color" data-size="38"><em>颜色</em></div>
+    <div class="cell"><img class="di" data-icon="number" data-size="38"><em>数字</em></div>
+    <div class="cell"><img class="di" data-icon="secret" data-size="38"><em>密钥</em></div>
+    <div class="cell"><img class="di" data-icon="mail" data-size="38"><em>邮件</em></div>
+    <div class="cell"><img class="di" data-icon="phone" data-size="38"><em>电话</em></div>
+    <div class="cell"><img class="di" data-icon="copy" data-size="38"><em>复制</em></div>
+    <div class="cell"><img class="di" data-icon="clipboard" data-size="38"><em>剪贴板</em></div>
+    <div class="cell"><img class="di" data-icon="pencil" data-size="38"><em>编辑</em></div>
+    <div class="cell"><img class="di" data-icon="trash" data-size="38"><em>删除</em></div>
+    <div class="cell"><img class="di" data-icon="star" data-size="38"><em>收藏</em></div>
+    <div class="cell"><img class="di" data-icon="pin" data-size="38"><em>置顶</em></div>
+    <div class="cell"><img class="di" data-icon="gear" data-size="38"><em>设置</em></div>
+    <div class="cell"><img class="di" data-icon="search" data-size="38"><em>搜索</em></div>
+    <div class="cell"><img class="di" data-icon="warn" data-size="38"><em>警告</em></div>
+    <div class="cell"><img class="di" data-icon="refresh" data-size="38"><em>刷新</em></div>
+    <div class="cell"><img class="di" data-icon="robot" data-size="38"><em>AI</em></div>
+    <div class="cell"><img class="di" data-icon="qr" data-size="38"><em>二维码</em></div>
+    <div class="cell"><img class="di" data-icon="tag" data-size="38"><em>标签</em></div>
+    <div class="cell"><img class="di" data-icon="scissors" data-size="38"><em>剪切</em></div>
+    <div class="cell"><img class="di" data-icon="wrench" data-size="38"><em>工具</em></div>
+    <div class="cell"><img class="di" data-icon="panda" data-size="38"><em>熊猫</em></div>
+  </div>
+
+  <h2>主窗口 · 经典白主题</h2>
+  <div class="light">
+    <div class="win">
+      <div class="side">
+        <div class="grp">分组</div>
+        <div class="it on"><img class="di" data-icon="clipboard" data-size="17">全部<span class="cnt">248</span></div>
+        <div class="it"><img class="di" data-icon="star" data-size="17">收藏<span class="cnt">12</span></div>
+        <div class="it"><img class="di" data-icon="folder" data-size="17">未分组<span class="cnt">31</span></div>
+        <div class="grp">来源</div>
+        <div class="it"><img class="di" data-icon="html" data-size="17">浏览器<span class="cnt">96</span></div>
+        <div class="it"><img class="di" data-icon="code" data-size="17">代码<span class="cnt">54</span></div>
+        <div class="it"><img class="di" data-icon="color" data-size="17">设计<span class="cnt">18</span></div>
+        <div class="it"><img class="di" data-icon="doc" data-size="17">办公<span class="cnt">42</span></div>
+      </div>
+      <div class="main">
+        <div class="card"><img class="di" data-icon="doc" data-size="26"><div class="body"><div class="t">Q3 销售汇总（Word 带表格）</div><div class="m"><span class="tag">文档</span>Word · 2 分钟前</div></div><div class="acts"><img class="di" data-icon="copy" data-size="15"><img class="di" data-icon="pencil" data-size="15"><img class="di" data-icon="star" data-size="15"><img class="di" data-icon="pin" data-size="15"><img class="di" data-icon="trash" data-size="15"></div></div>
+        <div class="card"><img class="di" data-icon="rich" data-size="26"><div class="body"><div class="t">新品发布文案 v2（含配图）</div><div class="m"><span class="tag">图文</span>企业微信 · 14 分钟前</div></div><div class="acts"><img class="di" data-icon="copy" data-size="15"><img class="di" data-icon="pencil" data-size="15"><img class="di" data-icon="star" data-size="15"><img class="di" data-icon="pin" data-size="15"><img class="di" data-icon="trash" data-size="15"></div></div>
+        <div class="card"><img class="di" data-icon="csv" data-size="26"><div class="body"><div class="t">user_growth_2026Q3.tsv</div><div class="m"><span class="tag">表格</span>Excel · 1 小时前</div></div><div class="acts"><img class="di" data-icon="copy" data-size="15"><img class="di" data-icon="pencil" data-size="15"><img class="di" data-icon="star" data-size="15"><img class="di" data-icon="pin" data-size="15"><img class="di" data-icon="trash" data-size="15"></div></div>
+        <div class="card"><img class="di" data-icon="link" data-size="26"><div class="body"><div class="t">https://github.com/lzlkyb/pastepanda</div><div class="m"><span class="tag">链接</span>Chrome · 3 小时前</div></div><div class="acts"><img class="di" data-icon="copy" data-size="15"><img class="di" data-icon="pencil" data-size="15"><img class="di" data-icon="star" data-size="15"><img class="di" data-icon="pin" data-size="15"><img class="di" data-icon="trash" data-size="15"></div></div>
+        <div class="card"><img class="di" data-icon="color" data-size="26"><div class="body"><div class="t">#6ECFB2 · 薄荷绿</div><div class="m"><span class="tag">颜色</span>Figma · 昨天</div></div><div class="acts"><img class="di" data-icon="copy" data-size="15"><img class="di" data-icon="pencil" data-size="15"><img class="di" data-icon="star" data-size="15"><img class="di" data-icon="pin" data-size="15"><img class="di" data-icon="trash" data-size="15"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <h2>主窗口 · 午夜主题（深色）</h2>
+  <p class="note">奶白瓷砖在深色下变成醒目小贴纸，类型一眼可辨。</p>
+  <div class="dark">
+    <div class="win" style="height:300px">
+      <div class="side">
+        <div class="grp">分组</div>
+        <div class="it on"><img class="di" data-icon="clipboard" data-size="17">全部<span class="cnt">248</span></div>
+        <div class="it"><img class="di" data-icon="star" data-size="17">收藏<span class="cnt">12</span></div>
+        <div class="it"><img class="di" data-icon="robot" data-size="17">AI 生成<span class="cnt">7</span></div>
+      </div>
+      <div class="main">
+        <div class="card"><img class="di" data-icon="secret" data-size="26"><div class="body"><div class="t">sk-live-••••••••••••</div><div class="m"><span class="tag">密钥</span>VS Code · 刚刚</div></div><div class="acts"><img class="di" data-icon="copy" data-size="15"><img class="di" data-icon="star" data-size="15"></div></div>
+        <div class="card"><img class="di" data-icon="json" data-size="26"><div class="body"><div class="t">{ "theme": "midnight", "gpu": false … }</div><div class="m"><span class="tag">JSON</span>VS Code · 8 分钟前</div></div><div class="acts"><img class="di" data-icon="copy" data-size="15"><img class="di" data-icon="star" data-size="15"></div></div>
+        <div class="card"><img class="di" data-icon="image" data-size="26"><div class="body"><div class="t">banner_final_v3.png</div><div class="m"><span class="tag">图片</span>资源管理器 · 20 分钟前</div></div><div class="acts"><img class="di" data-icon="copy" data-size="15"><img class="di" data-icon="star" data-size="15"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <h2>右键菜单 · 编辑器标题 · 快捷粘贴</h2>
+  <div class="row3">
+    <div class="menu">
+      <div class="mi"><img class="di" data-icon="copy" data-size="16">复制</div>
+      <div class="mi"><img class="di" data-icon="pencil" data-size="16">编辑</div>
+      <div class="mi"><img class="di" data-icon="star" data-size="16">收藏</div>
+      <div class="mi"><img class="di" data-icon="pin" data-size="16">置顶</div>
+      <div class="sep"></div>
+      <div class="mi"><img class="di" data-icon="link" data-size="16">粘贴为 Markdown 链接</div>
+      <div class="mi"><img class="di" data-icon="csv" data-size="16">粘贴为 GFM 表格</div>
+      <div class="mi"><img class="di" data-icon="qr" data-size="16">生成二维码</div>
+      <div class="mi"><img class="di" data-icon="robot" data-size="16">确认自动标签</div>
+      <div class="sep"></div>
+      <div class="mi"><img class="di" data-icon="trash" data-size="16">删除</div>
+    </div>
+    <div class="titles">
+      <div class="tb"><img class="di" data-icon="doc" data-size="17">编辑文档</div>
+      <div class="tb"><img class="di" data-icon="csv" data-size="17">编辑表格</div>
+      <div class="tb"><img class="di" data-icon="json" data-size="17">编辑 JSON</div>
+      <div class="tb"><img class="di" data-icon="html" data-size="17">编辑 HTML</div>
+      <div class="tb"><img class="di" data-icon="color" data-size="17">编辑颜色</div>
+      <div class="tb"><img class="di" data-icon="secret" data-size="17">编辑密钥</div>
+      <div class="tb"><img class="di" data-icon="link" data-size="17">编辑链接</div>
+      <div class="tb"><img class="di" data-icon="number" data-size="17">编辑数字</div>
+      <div class="tb"><img class="di" data-icon="text" data-size="17">编辑记录</div>
+    </div>
+    <div class="qp">
+      <div class="q on"><img class="di" data-icon="doc" data-size="18">Q3 销售汇总（Word 带表格）<span class="ty">文档</span></div>
+      <div class="q"><img class="di" data-icon="text" data-size="18">周报要点：1. 图标焕新 2. …<span class="ty">文本</span></div>
+      <div class="q"><img class="di" data-icon="rich" data-size="18">新品发布文案 v2（含配图）<span class="ty">图文</span></div>
+      <div class="q"><img class="di" data-icon="code" data-size="18">const icon = clay("doc", 16)<span class="ty">代码</span></div>
+    </div>
+  </div>
+
+  <footer>
+    说明：① 图标以圆角小瓷砖承载（圆角约 24%），浅色主题下是奶白徽章、深色主题下是醒目贴纸；② 32 枚覆盖类型 / 来源 / 动作 / 状态四类，个别暂未覆盖的冷门 emoji（如主题装饰 🎀💗）保留原样；③ logo 已去水印并加圆角透明遮罩，确认后用 tauri icon 生成 ico/各尺寸全套。
+  </footer>
+</div>
+<script>
+  const ICONS = __ICONS_JSON__;
+  const LOGO = "__LOGO__";
+  const OLD = "__OLD__";
+  document.querySelectorAll("img.di[data-icon]").forEach(el => {
+    const s = +(el.dataset.size || 18);
+    el.src = ICONS[el.dataset.icon] || "";
+    el.width = s; el.height = s;
+    el.style.borderRadius = Math.round(s * 0.24) + "px";
+  });
+  document.querySelectorAll("img[data-logo]").forEach(el => {
+    el.src = el.dataset.logo === "old" ? OLD : LOGO;
+    el.style.borderRadius = "22%";
+  });
+</script>
+</body>
+</html>

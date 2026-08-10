@@ -42,7 +42,8 @@ describe("suggestTop1（单条 top-1）", () => {
     // 数据充足且常用 json-insert，使 recommendScored 首位稳定命中
     (invoke as unknown as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce([w("json-insert", "json", 20)])
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce([]) // action_recommend_scene_weights
+      .mockResolvedValueOnce([]); // action_dismissals
     await loadRecommendState();
 
     const s = suggestTop1(ctx(JSON_TEXT, "json"));
@@ -54,7 +55,8 @@ describe("suggestTop1（单条 top-1）", () => {
   it("低匹配内容（普通一句话）→ null（不确定就不主动）", async () => {
     (invoke as unknown as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce([]) // action_recommend_scene_weights
+      .mockResolvedValueOnce([]); // action_dismissals
     await loadRecommendState();
 
     const s = suggestTop1(ctx("今天天气不错"));

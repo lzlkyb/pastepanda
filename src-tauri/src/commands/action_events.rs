@@ -8,7 +8,7 @@
 //!   `action_learnings_clear` 一键清空（事件 + 负反馈一起清）。
 
 use crate::data_store::{
-    ActionDismissal, ActionEvent, ActionEventStats, ActionWeightRow, DataStore,
+    ActionDismissal, ActionEvent, ActionEventStats, ActionWeightRow, DataStore, SceneWeightRow,
 };
 use tauri::State;
 
@@ -41,6 +41,17 @@ pub fn action_recommend_weights(
     days: Option<u32>,
 ) -> Vec<ActionWeightRow> {
     store.action_recommend_weights(days.unwrap_or(14))
+}
+
+/// 场景权重（v6.2 来源+时段感知）：近 N 天按
+/// (动作 × 内容类型 × 时段桶 × 来源类别) 的使用频次。
+/// 前端据此在「工作时间 IDE / 晚上浏览器」等场景下微调推荐。
+#[tauri::command]
+pub fn action_recommend_scene_weights(
+    store: State<DataStore>,
+    days: Option<u32>,
+) -> Vec<SceneWeightRow> {
+    store.action_scene_weights(days.unwrap_or(14))
 }
 
 /// 记一条「不再推荐这个」负反馈。(action_id, content_type) 重复记幂等。

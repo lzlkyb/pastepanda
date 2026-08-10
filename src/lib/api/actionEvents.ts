@@ -49,6 +49,17 @@ export interface ActionWeightRow {
   count: number;
 }
 
+/** 场景权重的一行（v6.2 来源+时段感知）：某内容类型下某动作在某场景的使用频次 */
+export interface SceneWeightRow {
+  actionId: string;
+  contentType: string;
+  /** work(9-17) / evening(18-23) / night(0-8) */
+  hourBucket: string;
+  /** ide / browser / terminal / chat / other */
+  sourceCat: string;
+  count: number;
+}
+
 /** 一条「不再推荐这个」负反馈（v6.1） */
 export interface ActionDismissal {
   actionId: string;
@@ -104,6 +115,11 @@ export async function actionEventClear(): Promise<number> {
 /** 个性化权重：近 N 天按 (动作 × 内容类型) 的使用频次（默认 14 天） */
 export async function actionRecommendWeights(days?: number): Promise<ActionWeightRow[]> {
   return invoke("action_recommend_weights", { days });
+}
+
+/** 场景权重：近 N 天按 (动作 × 内容类型 × 时段桶 × 来源类别) 的使用频次（v6.2） */
+export async function actionRecommendSceneWeights(days?: number): Promise<SceneWeightRow[]> {
+  return invoke("action_recommend_scene_weights", { days });
 }
 
 /** 记一条「不再推荐这个」；contentType 传空串 = 在哪儿都不推荐 */

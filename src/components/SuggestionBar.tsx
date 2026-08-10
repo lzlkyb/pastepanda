@@ -18,6 +18,7 @@ import { suggestTop1, suggestSequence, type Suggestion } from "@/lib/suggest";
 import { getTransform } from "@/lib/transforms";
 import { actionDismissAdd } from "@/lib/api/actionEvents";
 import { useToast } from "@/components/Toast";
+import { sceneOf } from "@/lib/recommend";
 import styles from "./SuggestionBar.module.css";
 
 /** 无操作自动收起时长 */
@@ -49,8 +50,10 @@ export const SuggestionBar = memo(function SuggestionBar() {
       text,
       contentType: topItem.content_type || topItem.type,
     };
+    // v6.2 场景感知：当前小时 + 来源应用 → 时段桶 × 来源类别
+    const scene = sceneOf(new Date().getHours(), topItem.source);
 
-    const top1 = suggestTop1(ctx);
+    const top1 = suggestTop1(ctx, scene);
     const seq = top1 ? null : suggestSequence(
       useAppStore.getState().history.slice(0, 3).map((h) => ({ text: h.text || "" })),
     );

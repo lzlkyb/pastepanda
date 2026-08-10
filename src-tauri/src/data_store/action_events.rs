@@ -78,6 +78,60 @@ pub struct ActionWeightRow {
     pub count: u32,
 }
 
+/// 场景权重的一行（v6.2 来源+时段感知）：
+/// 某内容类型下某动作在「某时段桶 × 某来源类别」的使用频次。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneWeightRow {
+    pub action_id: String,
+    pub content_type: String,
+    /// `work`(9-17) / `evening`(18-23) / `night`(0-8)
+    pub hour_bucket: String,
+    /// `ide` / `browser` / `terminal` / `chat` / `other`
+    pub source_cat: String,
+    pub count: u32,
+}
+
+/// 时段桶：工作时间（9-17）/ 晚间（18-23）/ 深夜-凌晨（0-8）
+pub fn hour_bucket(hour: i32) -> &'static str {
+    match hour {
+        9..=17 => "work",
+        18..=23 => "evening",
+        _ => "night",
+    }
+}
+
+/// 来源应用 → 类别（基于 SOURCE_MAP 规范化后的 displayName 做关键字归类）。
+/// 用于场景感知：工作时间在 IDE 复制 → 偏工程动作；晚上浏览器复制 → 偏阅读类。
+pub fn source_cat(app: &str) -> &'static str {
+    let a = app.to_lowercase();
+    const IDE: &[&str] = &[
+        "vscode", "visual studio", "code", "codebuddy", "idea", "jetbrains", "webstorm",
+        "pycharm", "goland", "xcode",
+    ];
+    const BROWSER: &[&str] = &[
+        "chrome", "edge", "firefox", "safari", "opera", "brave", "360", "qq浏览器", "浏览器",
+    ];
+    const TERMINAL: &[&str] = &[
+        "terminal", "powershell", "cmd", "命令提示符", "conhost", "windowsterminal",
+    ];
+    const CHAT: &[&str] = &[
+        "微信", "wechat", "企业微信", "wecom", "qq", "钉钉", "dingtalk", "telegram", "slack",
+        "飞书",
+    ];
+    if IDE.iter().any(|k| a.contains(k)) {
+        "ide"
+    } else if BROWSER.iter().any(|k| a.contains(k)) {
+        "browser"
+    } else if TERMINAL.iter().any(|k| a.contains(k)) {
+        "terminal"
+    } else if CHAT.iter().any(|k| a.contains(k)) {
+        "chat"
+    } else {
+        "other"
+    }
+}
+
 /// 一条「不再推荐这个」负反馈（v6.1）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -225,6 +279,74 @@ impl DataStore {
         })
         .map(|rows| rows.filter_map(|r| r.ok()).collect())
         .unwrap_or_default()
+    }
+
+    /// 场景权重（v6.2 来源+时段感知）：近 N 天按
+    /// (内容类型 × 动作 × 时段桶 × 来源类别) 聚合使用频次。
+    ///
+    /// - 时段桶用 SQL CASE（hour 列），来源类别在 Rust 里对 source_app 归类后合并；
+    /// - 同样排除 `paste` 哨兵与 abandoned；
+    /// - 返回空表不是错误——场景数据不足时前端走退化（只按全局权重）。
+    pub fn action_scene_weights(&self, days: u32) -> Vec<SceneWeightRow> {
+        let conn = self.lock_conn();
+        let days = days.clamp(1, 365);
+        let since = (chrono::Local::now() - chrono::Duration::days(days.max(1) as i64 - 1))
+            .format("%Y-%m-%d 00:00:00")
+            .to_string();
+
+        let mut stmt = match conn.prepare(
+            "SELECT content_type, action_id,
+                    CASE WHEN hour BETWEEN 9 AND 17 THEN 'work'
+                         WHEN hour BETWEEN 18 AND 23 THEN 'evening'
+                         ELSE 'night' END AS hb,
+                    source_app,
+                    COUNT(*) AS c
+             FROM action_events
+             WHERE created_at >= ?1
+               AND action_id != ?2
+               AND outcome IN ('copied', 'pasted')
+             GROUP BY content_type, action_id, hb, source_app
+             ORDER BY c DESC",
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!("[ActionEvents] 场景权重聚合查询失败：{}", e);
+                return Vec::new();
+            }
+        };
+        let rows: Vec<(String, String, String, String, i64)> = stmt
+            .query_map(params![since, ACTION_ID_PASTE], |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get::<_, i64>(4)?,
+                ))
+            })
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default();
+        drop(stmt);
+
+        // 来源类别归类后合并（同 cat 不同 app 累加）
+        let mut acc: std::collections::HashMap<(String, String, String, String), u32> =
+            std::collections::HashMap::new();
+        for (ct, aid, hb, app, c) in rows {
+            *acc.entry((ct, aid, hb, source_cat(&app).to_string()))
+                .or_insert(0) += c as u32;
+        }
+        let mut out: Vec<SceneWeightRow> = acc
+            .into_iter()
+            .map(|((content_type, action_id, hour_bucket, source_cat), count)| SceneWeightRow {
+                action_id,
+                content_type,
+                hour_bucket,
+                source_cat,
+                count,
+            })
+            .collect();
+        out.sort_by(|a, b| b.count.cmp(&a.count));
+        out
     }
 
     /// 记一条「不再推荐这个」。(action_id, content_type) 重复记会被主键吞掉（幂等）。

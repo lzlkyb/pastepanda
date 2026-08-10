@@ -15,7 +15,7 @@
  * 挂载方式仿 ExtractDialog（常挂载 + 内部 AnimatePresence 门控退场动画）。
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Sparkles, Loader2, RotateCw } from "lucide-react";
 import { useDialogStore } from "@/stores/dialogStore";
@@ -24,13 +24,15 @@ import {
   type TransformContext,
   type TransformResultMeta,
 } from "@/lib/transforms";
-import { recommendScored } from "@/lib/recommend";
+import { recommendScored, sceneOf } from "@/lib/recommend";
 import { ocrImage, pasteText } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { FocusTrap } from "@/components/FocusTrap";
 import { MelodyEmpty } from "@/components/MelodyEmpty";
 import { TransformCard } from "@/components/transform/TransformCard";
+import { NlCommandBar } from "@/components/NlCommandBar";
+import type { NlParseResult } from "@/lib/nlActionParser";
 import { specsFor, defaultOptsFromSpecs } from "@/components/transform/transformOptions";
 import { useActionEventLog } from "@/hooks/useActionEventLog";
 import styles from "./TransformHub.module.css";
@@ -105,7 +107,12 @@ export function TransformHubDialog() {
   // learnRev 是负反馈后的刷新信号：点了「不再推荐」就 +1 触发重算
   const [learnRev, setLearnRev] = useState(0);
   const scored = useMemo(
-    () => (item ? recommendScored(ctx).filter((s) => s.score >= 0.3) : []),
+    () =>
+      item
+        ? recommendScored(ctx, sceneOf(new Date().getHours(), item.source)).filter(
+            (s) => s.score >= 0.3,
+          )
+        : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [item, ctx, learnRev],
   );
@@ -210,22 +217,65 @@ export function TransformHubDialog() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, close]);
 
+  // v6.3 自然语言动作定位：命中动作卡片滚动到可视区 + 短暂高亮
+  const [activeActionId, setActiveActionId] = useState<string | null>(null);
+  const actionRefs = useRef(new Map<string, HTMLDivElement>());
+  const activeTimerRef = useRef<number | null>(null);
+
+  /** NL 指令结果处理：未命中/AI 未启用 → 提示；命中 → 预填参数 + 滚动定位 */
+  const handleNlApply = useCallback(
+    (r: NlParseResult) => {
+      if (!r.actionId) {
+        toast("没听懂，试试：改得正式一点 / 翻译成英文 / 总结要点", "info");
+        return;
+      }
+      if (r.aiDisabled) {
+        toast("AI 未启用——先到设置里启用并配置服务商", "info");
+        return;
+      }
+      // 预填参数（如 tone=formal），用户点运行即生效
+      if (r.params) {
+        setOpts((prev) => ({
+          ...prev,
+          [r.actionId!]: { ...(prev[r.actionId!] ?? {}), ...r.params! },
+        }));
+      }
+      const el = actionRefs.current.get(r.actionId!);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        setActiveActionId(r.actionId!);
+        if (activeTimerRef.current !== null) window.clearTimeout(activeTimerRef.current);
+        activeTimerRef.current = window.setTimeout(() => setActiveActionId(null), 1800);
+      }
+      toast(`已定位「${r.label ?? r.actionId}」`, "success");
+    },
+    [toast],
+  );
+
   const renderCard = ({ transform: t, score }: { transform: Transform; score: number }) => (
-    <TransformCard
+    <div
       key={t.id}
-      t={t}
-      score={score}
-      text={sourceText}
-      html={itemHtml}
-      opts={optsFor(t)}
-      specs={specsFor(t, ctx)}
-      copied={copiedId === t.id}
-      onSetOpt={(k, v) => setOpt(t.id, k, v)}
-      onCopy={(output, meta) => void copyOutput(t, output, meta)}
-      onPaste={(output) => void pasteOutput(t, output)}
-      contentType={ctx.contentType}
-      onDismiss={(id) => void handleDismiss(id)}
-    />
+      ref={(el) => {
+        if (el) actionRefs.current.set(t.id, el);
+        else actionRefs.current.delete(t.id);
+      }}
+      className={activeActionId === t.id ? styles.cardActiveWrap : undefined}
+    >
+      <TransformCard
+        t={t}
+        score={score}
+        text={sourceText}
+        html={itemHtml}
+        opts={optsFor(t)}
+        specs={specsFor(t, ctx)}
+        copied={copiedId === t.id}
+        onSetOpt={(k, v) => setOpt(t.id, k, v)}
+        onCopy={(output, meta) => void copyOutput(t, output, meta)}
+        onPaste={(output) => void pasteOutput(t, output)}
+        contentType={ctx.contentType}
+        onDismiss={(id) => void handleDismiss(id)}
+      />
+    </div>
   );
 
   // 常挂载，open=false 时由 AnimatePresence 驱动退场后再卸载
@@ -249,6 +299,9 @@ export function TransformHubDialog() {
                   <X size={16} />
                 </button>
               </div>
+
+              {/* v6.3 自然语言动作：一句话定位到对应变换 */}
+              <NlCommandBar onResult={handleNlApply} />
 
               <div className={styles.cards}>
                 {/* 图片：把本地识别结果摆出来并允许修改。

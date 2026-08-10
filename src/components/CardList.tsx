@@ -23,6 +23,7 @@ import { useLoadMore } from "@/hooks/useLoadMore";
 import { useVirtualScroll } from "@/hooks/useVirtualScroll";
 import { prefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { ItemEditorDialog } from "@/components/editors/ItemEditorDialog";
+import { MergeDialog, type MergeItem } from "@/components/MergeDialog";
 import { TransformHubDialog } from "@/components/TransformHubDialog";
 import { LearningsDialog } from "@/components/LearningsDialog";
 import { listen } from "@tauri-apps/api/event";
@@ -481,6 +482,9 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   const handleManageRegexRules = useCallback(() => setShowRegexRules(true), []);
 
   // ── 批量操作 ──
+  // v6.4 C 合并粘贴：非空 = 打开合并面板
+  const [mergeItems, setMergeItems] = useState<MergeItem[] | null>(null);
+
   const handleBatchDelete = useCallback(async () => {
     const ids = [...selectedIds];
     if (ids.length === 0) return;
@@ -501,23 +505,6 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
       }
     } catch {
       toast("导出失败", "error");
-    }
-  }, [selectedIds, items, toast]);
-
-  const handleBatchCopy = useCallback(async () => {
-    const ids = [...selectedIds];
-    if (ids.length === 0) return;
-    const textItems = items.filter((i) => ids.includes(i.id) && i.type === "text");
-    if (textItems.length === 0) {
-      toast("选中的记录中没有文本内容", "info");
-      return;
-    }
-    const merged = textItems.map((i) => i.text).join("\n");
-    try {
-      await navigator.clipboard.writeText(merged);
-      toast(`已合并复制 ${textItems.length} 条文本`, "success");
-    } catch {
-      toast("复制失败", "error");
     }
   }, [selectedIds, items, toast]);
 
@@ -711,8 +698,21 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                   {selectedCount >= items.length ? <CheckSquare size={12} /> : <Square size={12} />}
                   {selectedCount >= items.length ? "取消全选" : "全选"}
                 </button>
-                <button onClick={handleBatchCopy} className={styles.batchBtn} title="合并复制选中文本" aria-label="合并复制选中文本">
-                  <Copy size={12} /> 合并复制
+                <button
+                  onClick={() => {
+                    const textItems = items
+                      .filter((i) => selectedIds.has(i.id) && i.type === "text" && i.text?.trim())
+                      .map((i) => ({ id: i.id, text: i.text! }));
+                    if (textItems.length === 0) {
+                      toast("选中的记录中没有文本内容", "info");
+                      return;
+                    }
+                    setMergeItems(textItems); // v6.4 C 合并面板
+                  }}
+                  className={styles.batchBtn}
+                  title="合并选中文本（分隔符/编号/预览后粘贴）"
+                  aria-label="合并粘贴">
+                  <Copy size={12} /> 合并
                 </button>
                 <button onClick={handleBatchExport} className={styles.batchBtn} title="导出选中记录" aria-label="导出选中记录">
                   <FileDown size={12} /> 导出
@@ -845,6 +845,10 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
               <Suspense key="regex-rules-dialog" fallback={null}>
                 <ErrorBoundary fallback={null}><RegexRulesDialog onClose={() => setShowRegexRules(false)} /></ErrorBoundary>
               </Suspense>
+            )}
+            {/* v6.4 C 合并粘贴面板 */}
+            {mergeItems && (
+              <MergeDialog items={mergeItems} onClose={() => setMergeItems(null)} />
             )}
           </AnimatePresence>
           <TagEditor open={!!tagEditorItem} item={tagEditorItem} onClose={() => setTagEditorItem(null)} />

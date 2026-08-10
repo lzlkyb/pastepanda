@@ -100,6 +100,31 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "npx tauri dev" -W
 
 ---
 
+## 15. AI 功能必须受 AI 开关控制（红线）
+
+所有调用 AI/云端能力的代码路径都必须受「AI 可用性」门控。判定机制是单一数据源：
+
+- **前端**：`src/lib/transforms/aiTransforms.ts` 的 `aiAvailable`（= `config.ai_enabled` && 有可用 key，默认 **false**），由 `refreshAiAvailability()` 计算；
+- **后端**：`commands/ai.rs` 统一校验 `cfg.enabled`（`config.ai_enabled`，默认关，测通自动开）+ `ai/client.rs` 校验 key（无 key 拒绝，先于网络请求）。
+
+**硬性要求：**
+
+1. **未启用（`ai_enabled=false`）或未配置 key → 零可见、零请求、零费用**：
+   - 前端：AI 变换/动作/建议不得出现在任何界面（`scoreAiAction` 首行 `!aiAvailable` 返回 0，`applicableTransforms` 按 score>0 过滤）；
+   - 后端：命令入口拒绝并返回「AI 功能未启用」；
+2. **新增任何 AI 功能**（变换 / 动作 / 主动建议里的 AI 项 / 试跑 / 预览 / 摘要等）必须做到：
+   - 前端入口走 `aiAvailable` 门控（score=0 或条件渲染，不得裸调）；
+   - 后端命令校验 `cfg.enabled`；
+   - 计费路径（真正调用模型）双保险：`enabled` 且 key 都存在才放行；
+3. **仅有的例外（用户显式触发的配置流程）**：
+   - `ai_test_connection`（测试连接，真实计费但需用户主动点、无 key 先报错）；
+   - `ai_preview_custom`（试跑自定义动作——配置中本来就该能试，不试跑测不通就无法自动启用）；
+   - 例外仍然要求：key 校验 + 出网闸 + 预算照走，不允许无 key 调用；
+4. **本地能力不算 AI 功能**：OCR（Windows 本地引擎）、自动打标签（本地正则规则）不联网不花钱，不受本规则约束；
+5. **违规判定**：后端任何命令若调用模型但未先校验 `cfg.enabled`（且不属于第 3 条例外），视为违规——新增代码时以此自查。
+
+---
+
 ## 发版流程
 
 ### ⚠️ 硬性前置（违反会导致更新弹框 + 关于页日志空白）

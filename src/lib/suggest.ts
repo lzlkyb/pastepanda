@@ -10,7 +10,7 @@
  * - **序列识别**：最近 3 条同类（如全是 IPv4 / 全是邮箱）→ "合并成 SQL IN"。
  *   变换本身早就有了，缺的是"注意到你在做一件多步的事"。
  */
-import { recommendScored } from "@/lib/recommend";
+import { recommendScored, type Scene } from "@/lib/recommend";
 import type { TransformContext } from "@/lib/transforms";
 
 /**
@@ -48,9 +48,13 @@ export type Suggestion =
       mergedText: string;
     };
 
-/** 单条 top-1 建议：当前内容最可能用的动作（分数不足返回 null） */
-export function suggestTop1(ctx: TransformContext): Suggestion | null {
-  const top = recommendScored(ctx)[0];
+/** 单条 top-1 建议：当前内容最可能用的动作（分数不足返回 null）。
+ *  scene 可选：提供「当前小时 + 来源应用」时启用场景感知（v6.2）。 */
+export function suggestTop1(
+  ctx: TransformContext,
+  scene?: Scene,
+): Suggestion | null {
+  const top = recommendScored(ctx, scene)[0];
   if (!top || top.score < TOP1_MIN_SCORE) return null;
   return {
     kind: "action",

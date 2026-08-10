@@ -18,6 +18,10 @@ export type { OcrResult, OcrLine, OcrWord } from "./images";
 export { loadMoreHistory, deleteHistory, togglePin, searchHistory } from "./history";
 export type { SearchFilters } from "./history";
 
+// 链接摘要（v6.4 A）
+export { fetchUrlSummary } from "./url";
+export type { UrlSummary } from "./url";
+
 // 云端 AI（注意：没有读取密钥的接口，只有 set / has / clear）
 export {
   aiGetConfig,
@@ -80,6 +84,7 @@ export {
   actionEventStats,
   actionEventClear,
   actionRecommendWeights,
+  actionRecommendSceneWeights,
   actionDismissAdd,
   actionDismissals,
   actionLearningsClear,
@@ -90,6 +95,7 @@ export type {
   ActionEventStats,
   ActionEventCount,
   ActionWeightRow,
+  SceneWeightRow,
   ActionDismissal,
 } from "./actionEvents";
 

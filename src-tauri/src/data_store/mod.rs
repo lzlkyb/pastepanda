@@ -15,8 +15,8 @@ pub use ai_usage::{
 pub use ai_action::{CustomAction, MAX_ACTION_DESC_CHARS, MAX_ACTION_NAME_CHARS};
 pub use action_events::{
     ActionEvent, ActionEventCount, ActionEventStats, ActionDismissal, ActionWeightRow,
-    ACTION_EVENTS_RETAIN_DAYS, ACTION_ID_PASTE, OUTCOME_ABANDONED, OUTCOME_COPIED,
-    OUTCOME_PASTED,
+    SceneWeightRow, ACTION_EVENTS_RETAIN_DAYS, ACTION_ID_PASTE, OUTCOME_ABANDONED,
+    OUTCOME_COPIED, OUTCOME_PASTED, hour_bucket, source_cat,
 };
 
 use md5::{Digest, Md5};
@@ -500,6 +500,56 @@ impl DataStore {
                     log::error!("[DataStore] 添加 content_type 列失败: {}", e);
                     return Err(e);
                 }
+            }
+        }
+
+        // v6.4 D 搜索：FTS5 全文索引（外部内容表，rowid 关联）。索引内容在 Rust 侧做
+        // 字符 bigram 预处理（to_ngram），中文才能被分词命中；增删改在 history.rs 同步。
+        conn.execute_batch(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS history_fts USING fts5(
+                text, pinyin, content,
+                content='history',
+                content_rowid='rowid'
+            );",
+        )?;
+
+        // 首次建表（或索引为空）时全量回填存量数据。回填失败只 warn，不阻断启动。
+        let fts_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM history_fts", [], |r| r.get(0))
+            .unwrap_or(0);
+        if fts_count == 0 {
+            match conn.prepare("SELECT rowid, text, pinyin_initials, content FROM history") {
+                Ok(mut stmt) => match stmt.query_map([], |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                    ))
+                }) {
+                    Ok(rows) => {
+                        let mut backfilled = 0u32;
+                        for row in rows {
+                            if let Ok((rowid, text, pinyin, content)) = row {
+                                let _ = conn.execute(
+                                    "INSERT INTO history_fts (rowid, text, pinyin, content) VALUES (?1, ?2, ?3, ?4)",
+                                    rusqlite::params![
+                                        rowid,
+                                        crate::data_store::history::to_ngram(&text),
+                                        crate::data_store::history::to_ngram(&pinyin),
+                                        crate::data_store::history::to_ngram(&content),
+                                    ],
+                                );
+                                backfilled += 1;
+                            }
+                        }
+                        if backfilled > 0 {
+                            log::info!("[FTS] 已回填 {} 条历史记录到全文索引", backfilled);
+                        }
+                    }
+                    Err(e) => log::warn!("[FTS] 存量回填查询失败: {}", e),
+                },
+                Err(e) => log::warn!("[FTS] 存量回填准备失败: {}", e),
             }
         }
 

@@ -24,7 +24,10 @@ import {
   __resetRecommendForTest,
   MIN_EVENTS,
   STRENGTH,
+  LOW_CONF_THRESHOLD,
+  AI_BOOST_SCORE,
 } from "@/lib/recommend";
+import { setAiAvailable } from "@/lib/transforms/aiTransforms";
 import { analyzeContent } from "@/lib/transforms/analyzer";
 import type { TransformContext } from "@/lib/transforms/types";
 
@@ -42,18 +45,32 @@ function w(actionId: string, contentType: string, count: number) {
   return { actionId, contentType, count };
 }
 
-/** mock invoke：第一次调用返回权重，第二次返回负反馈 */
+/** 造场景权重行 */
+function sw(
+  actionId: string,
+  contentType: string,
+  hourBucket: string,
+  sourceCat: string,
+  count: number,
+) {
+  return { actionId, contentType, hourBucket, sourceCat, count };
+}
+
+/** mock invoke：第一次返回全局权重，第二次返回场景权重，第三次返回负反馈 */
 const weights = (
   rows: ReturnType<typeof w>[],
   dis: { actionId: string; contentType: string; createdAt: string }[] = [],
+  scenes: ReturnType<typeof sw>[] = [],
 ) => {
   (invoke as unknown as ReturnType<typeof vi.fn>)
     .mockResolvedValueOnce(rows) // action_recommend_weights
+    .mockResolvedValueOnce(scenes) // action_recommend_scene_weights
     .mockResolvedValueOnce(dis); // action_dismissals
 };
 
 beforeEach(() => {
   __resetRecommendForTest();
+  setAiAvailable(false); // AI 兜底测试会临时开启，其他测试保持关闭（避免 AI 动作混入）
   vi.clearAllMocks();
 });
 
@@ -145,5 +162,165 @@ describe("参数健全性", () => {
   it("MIN_EVENTS 与 STRENGTH 是可调常量（写死以防魔法数漂移）", () => {
     expect(MIN_EVENTS).toBe(20);
     expect(STRENGTH).toBe(1.5);
+  });
+});
+
+// ============================================================
+// v6.2 场景感知（来源+时段）
+// ============================================================
+
+describe("hourBucketOf / sourceCatOf / sceneOf", () => {
+  it("时段桶边界正确", async () => {
+    const { hourBucketOf } = await import("@/lib/recommend");
+    expect(hourBucketOf(10)).toBe("work");
+    expect(hourBucketOf(17)).toBe("work");
+    expect(hourBucketOf(18)).toBe("evening");
+    expect(hourBucketOf(23)).toBe("evening");
+    expect(hourBucketOf(0)).toBe("night");
+    expect(hourBucketOf(8)).toBe("night");
+  });
+
+  it("来源类别归类正确", async () => {
+    const { sourceCatOf } = await import("@/lib/recommend");
+    expect(sourceCatOf("VS Code")).toBe("ide");
+    expect(sourceCatOf("Chrome")).toBe("browser");
+    expect(sourceCatOf("Terminal")).toBe("terminal");
+    expect(sourceCatOf("微信")).toBe("chat");
+    expect(sourceCatOf("未知应用")).toBe("other");
+  });
+});
+
+describe("场景感知排序", () => {
+  it("当前场景常用动作被加成排前（工作时间 IDE 偏工程）", async () => {
+    // 全局接近：json-insert(11) 略常用；场景 work×ide 里 sql-in(18) 绝对主导
+    const rows = [w("json-insert", "json", 11), w("sql-in", "json", 9)];
+    const scenes = [
+      sw("sql-in", "json", "work", "ide", 18),
+      sw("json-insert", "json", "work", "ide", 1),
+    ];
+    weights(rows, [], scenes);
+    await loadRecommendState();
+
+    // 无场景：json-insert 排前（全局权重主导）
+    const plain = recommendScored(ctx(JSON_TEXT, "json")).map((s) => s.transform.id);
+    expect(plain.indexOf("json-insert")).toBeLessThan(plain.indexOf("sql-in"));
+
+    // 场景 work×ide：sql-in 被场景加成（18/19 占比）→ 反超
+    const scened = recommendScored(ctx(JSON_TEXT, "json"), {
+      hourBucket: "work",
+      sourceCat: "ide",
+    }).map((s) => s.transform.id);
+    expect(scened.indexOf("sql-in")).toBeLessThan(scened.indexOf("json-insert"));
+  });
+
+  it("场景数据不足（< SCENE_MIN_EVENTS）→ 退化为纯全局权重", async () => {
+    const rows = [w("json-insert", "json", 20), w("sql-in", "json", 1)];
+    // 场景总次数只有 3（< 5）
+    const scenes = [
+      sw("sql-in", "json", "work", "ide", 2),
+      sw("json-insert", "json", "work", "ide", 1),
+    ];
+    weights(rows, [], scenes);
+    await loadRecommendState();
+
+    const scened = recommendScored(ctx(JSON_TEXT, "json"), {
+      hourBucket: "work",
+      sourceCat: "ide",
+    }).map((s) => s.transform.id);
+    expect(scened.indexOf("json-insert")).toBeLessThan(scened.indexOf("sql-in"));
+  });
+
+  it("传入场景但全局数据不足 → 仍冷启动（静态分）", async () => {
+    weights([w("json-insert", "json", 2)]);
+    await loadRecommendState();
+
+    const { applicableTransforms } = await import("@/lib/transforms");
+    const staticList = applicableTransforms(ctx(JSON_TEXT, "json")).map((s) => s.transform.id);
+    const scened = recommendScored(ctx(JSON_TEXT, "json"), {
+      hourBucket: "work",
+      sourceCat: "ide",
+    }).map((s) => s.transform.id);
+    expect(scened).toEqual(staticList);
+  });
+});
+
+// ============================================================
+// v6.3 AI 兜底：本地规则拿不准时，AI 动作抬进推荐区
+// ============================================================
+
+describe("AI 兜底（低置信提升）", () => {
+  // AI 动作是运行时 initAiTransforms 注册的，测试环境不跑 → 手动注册一个 remote 动作模拟。
+  // detect 也模拟真实 AI 动作的门控（aiAvailable=false 时返回 0，规则 15）。
+  async function registerFakeAi() {
+    const { registerTransform } = await import("@/lib/transforms");
+    const { isAiAvailable } = await import("@/lib/transforms/aiTransforms");
+    registerTransform({
+      id: "ai-fake",
+      label: "测试AI",
+      group: "ai",
+      remote: true,
+      detect: () => (isAiAvailable() ? 0.55 : 0),
+      run: async () => ({ ok: true, output: "x" }),
+    } as never);
+  }
+
+  // 英文长句：本地动作最高 0.25（strip 系列），maxLocal < 0.5 → 触发兜底
+  const PLAIN_EN =
+    "The quick brown fox jumps over the lazy dog while the sun sets in the west.";
+
+  it("AI 可用 + 非代码 + 本地全低分 → AI 动作抬到 AI_BOOST_SCORE", async () => {
+    setAiAvailable(true);
+    await registerFakeAi();
+    weights([], []);
+    await loadRecommendState();
+
+    const list = recommendScored(ctx(PLAIN_EN));
+    const ai = list.find((s) => s.transform.id === "ai-fake");
+    expect(ai).toBeDefined();
+    expect(ai!.score).toBeGreaterThanOrEqual(AI_BOOST_SCORE);
+  });
+
+  it("AI 不可用 → 不兜底（AI 动作 score=0 不可见）", async () => {
+    setAiAvailable(false);
+    await registerFakeAi();
+    weights([], []);
+    await loadRecommendState();
+
+    const list = recommendScored(ctx(PLAIN_EN));
+    expect(list.find((s) => s.transform.id === "ai-fake")).toBeUndefined();
+  });
+
+  it("代码/结构化内容 → 不兜底（本地规则明确，AI 不适合）", async () => {
+    setAiAvailable(true);
+    await registerFakeAi();
+    weights([], []);
+    await loadRecommendState();
+
+    // json 内容：sql-in 等高置信本地动作存在，且 isCodeish 阻止兜底
+    const list = recommendScored(ctx(JSON_TEXT, "json"));
+    const ai = list.find((s) => s.transform.id === "ai-fake");
+    // isCodeish → 不兜底：ai-fake 保持 0.55（若出现）或 sql-in 高分在前
+    if (ai) {
+      expect(ai.score).toBeLessThan(AI_BOOST_SCORE);
+    }
+  });
+
+  it("本地已有高分动作 → 不兜底（规则拿得准）", async () => {
+    setAiAvailable(true);
+    await registerFakeAi();
+    weights([], []);
+    await loadRecommendState();
+
+    // 中文句子命中 unicode_encode 0.6（本地拿得准）→ 不兜底
+    const list = recommendScored(ctx("这是一段普通的中文内容，讲的是今天发生的事情。"));
+    const ai = list.find((s) => s.transform.id === "ai-fake");
+    if (ai) {
+      expect(ai.score).toBeLessThan(AI_BOOST_SCORE);
+    }
+  });
+
+  it("阈值常量防漂移", () => {
+    expect(LOW_CONF_THRESHOLD).toBe(0.5);
+    expect(AI_BOOST_SCORE).toBe(0.6);
   });
 });

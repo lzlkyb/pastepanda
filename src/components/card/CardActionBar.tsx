@@ -12,7 +12,7 @@
  */
 import { memo, useMemo } from "react";
 import { getTransform } from "@/lib/transforms";
-import { recommendScored } from "@/lib/recommend";
+import { recommendScored, sceneOf } from "@/lib/recommend";
 import type { HistoryItem } from "@/stores/appStore";
 import { TIcon } from "@/components/transform/TransformCard";
 import { useToast } from "@/components/Toast";
@@ -37,10 +37,14 @@ export const CardActionBar = memo(function CardActionBar({
     if (item.type !== "text") return [];
     const text = item.text || "";
     if (!text.trim()) return [];
-    return recommendScored({
-      text,
-      contentType: item.content_type || item.type,
-    })
+    return recommendScored(
+      {
+        text,
+        contentType: item.content_type || item.type,
+      },
+      // v6.2 场景感知：当前小时 + 来源应用
+      sceneOf(new Date().getHours(), item.source),
+    )
       .filter((s) => s.transform.kind === "action")
       .slice(0, MAX_ACTIONS)
       .map((s) => ({ t: s.transform, text }));

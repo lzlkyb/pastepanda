@@ -232,12 +232,15 @@ pub async fn ai_test_connection(app: tauri::AppHandle) -> Result<AiTestResult, S
     cfg.validate()?;
 
     let started = std::time::Instant::now();
+    // 测试上限用 1024 而不是 16：不带思考的模型实际只输出几个 token（上限 ≠ 预分配，不会多花钱），
+    // 而带思考的推理模型（如 Agnes-2.5-flash）思考过程就要吃掉几百 token——16 会全部耗在思考上，
+    // 答案一个字都生成不出来，测试必然报「额度全用在思考上」。
     let result = crate::ai::chat(
         &cfg,
         &key,
         Some("你是连通性测试助手，只需按要求回答，不要其他内容。"),
         "回复两个字：正常",
-        Some(16),
+        Some(1024),
     )
     .await;
     let latency_ms = started.elapsed().as_millis() as u64;

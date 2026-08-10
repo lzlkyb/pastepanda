@@ -26,7 +26,7 @@ export const ACTION_TEMPLATES: ActionTemplate[] = [
     description: "从会议记录里抽出待办项",
     icon: "check-square",
     contentTypes: [],
-    maxTokens: 800,
+    maxTokens: 1024,
     template:
       "从下面的记录里抽出待办项，每行一条，格式：- [ ] 事项（负责人，截止时间）。\n" +
       "没写负责人或时间的就留空，不要猜。\n\n{{内容}}\n\n只输出列表。",
@@ -39,7 +39,7 @@ export const ACTION_TEMPLATES: ActionTemplate[] = [
     description: "根据描述给几个命名候选",
     icon: "tag",
     contentTypes: ["text", "code"],
-    maxTokens: 300,
+    maxTokens: 1024,
     template:
       "下面是对一个变量/函数的描述。给 5 个英文命名候选，每行一个，后面用——接一句中文理由。\n" +
       "先给最推荐的那个。\n\n{{内容}}",
@@ -83,7 +83,7 @@ export const ACTION_TEMPLATES: ActionTemplate[] = [
     description: "这条报错什么意思、常见原因",
     icon: "circle-alert",
     contentTypes: ["log", "shell", "code"],
-    maxTokens: 800,
+    maxTokens: 1024,
     template:
       "下面是一段报错。用中文说清楚：它到底在说什么、最常见的两三个原因、先查什么。\n" +
       "不确定的地方直接说不确定，不要编一个听起来合理的答案。\n\n{{内容}}",

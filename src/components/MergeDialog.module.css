@@ -1,0 +1,136 @@
+/* v6.4 C 连续合并粘贴：合并面板 */
+
+.box {
+  display: flex;
+  flex-direction: column;
+}
+
+.headerSub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.seps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 16px;
+}
+
+.sepBtn {
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  padding: 4px 10px;
+  font-size: 12px;
+  background: var(--section-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.sepBtn:hover {
+  border-color: var(--accent);
+}
+
+.sepBtnActive {
+  border-color: var(--accent);
+  background: var(--accent-light);
+  color: var(--accent-strong);
+}
+
+.customInput {
+  width: 90px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  padding: 3px 8px;
+  font-size: 12px;
+  background: var(--section-bg);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.customInput:focus {
+  border-color: var(--accent);
+}
+
+.previewWrap {
+  margin: 10px 16px 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.previewLabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.preview {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: var(--section-bg);
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-primary);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 12px 16px 14px;
+}
+
+.pasteBtn,
+.copyBtn,
+.aiBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.aiBtn {
+  background: rgba(168, 85, 247, 0.16);
+  color: #a855f7;
+}
+
+.aiBtn:hover:not(:disabled) {
+  background: #a855f7;
+  color: #fff;
+}
+
+.aiBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.pasteBtn {
+  background: var(--accent);
+  color: #fff;
+}
+
+.pasteBtn:hover {
+  filter: brightness(1.08);
+}
+
+.copyBtn {
+  background: var(--accent-light);
+  color: var(--accent-strong);
+}
+
+.copyBtn:hover {
+  background: var(--accent);
+  color: #fff;
+}

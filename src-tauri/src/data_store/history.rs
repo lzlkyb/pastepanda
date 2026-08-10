@@ -1,5 +1,62 @@
 use super::*;
 
+/// v6.4 D 搜索：中文/混合文本 → 字符 bigram token 串（FTS5 预处理）。
+///
+/// FTS5 默认 unicode61 分词把 CJK 当成单个 token（整句一个词），中文搜索会完全失效。
+/// 这里把中文字符拆成「单字 + 相邻二字 bigram」空格分隔：
+/// - 索引侧与查询侧都走同一函数，2 字查询词 = bigram 本身精确命中；
+/// - 3+ 字查询词拆成 bigram 组合（隐式 AND）命中；
+/// - ASCII 字母数字连续段原样保留（unicode61 自己按边界切词），中英混排自然兼容。
+///
+/// 例：`上周API文档` → `上 周 上周 API 文 档 文档`
+pub fn to_ngram(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let n = chars.len();
+    let mut out: Vec<String> = Vec::with_capacity(n * 2);
+    let mut i = 0;
+    while i < n {
+        let c = chars[i];
+        if is_cjk(c) {
+            // 单字
+            out.push(c.to_string());
+            // 与下一个相邻中文字符组成 bigram
+            if i + 1 < n && is_cjk(chars[i + 1]) {
+                let mut pair = String::with_capacity(2);
+                pair.push(c);
+                pair.push(chars[i + 1]);
+                out.push(pair);
+            }
+            i += 1;
+        } else {
+            // ASCII 字母数字连续段原样保留（unicode61 会按边界切词）
+            let mut buf = String::new();
+            while i < n && !is_cjk(chars[i]) {
+                buf.push(chars[i]);
+                i += 1;
+            }
+            out.push(buf);
+        }
+    }
+    out.join(" ")
+}
+
+/// CJK 判定（含扩展区与全角符号近似处理）
+fn is_cjk(c: char) -> bool {
+    matches!(c,
+        '\u{4E00}'..='\u{9FFF}'   // 基本区
+        | '\u{3400}'..='\u{4DBF}' // 扩展 A
+        | '\u{F900}'..='\u{FAFF}' // 兼容区
+        | '\u{20000}'..='\u{2A6DF}' // 扩展 B
+    )
+}
+
+/// 判断查询词是否需要回退 LIKE（含 FTS5 MATCH 语法特殊字符）
+fn fts_safe(query: &str) -> bool {
+    !query
+        .chars()
+        .any(|c| matches!(c, '"' | '*' | '-' | ':' | '(' | ')' | '^' | '~' | '\\' | '[' | ']' | '{' | '}' | '+'))
+}
+
 /// 自我净化（v6.1）：高价值条目不参与过期清理，追加到过期清理的 WHERE 之后。
 ///
 /// 三条高价值信号（路线图 v6.1「按价值清理」）：
@@ -16,6 +73,51 @@ const VALUE_PRESERVE_SQL: &str = "
     AND COALESCE(search_hit_count, 0) = 0";
 
 impl DataStore {
+    /// 同步单条记录到 FTS 索引（insert/update 后调用）。失败只 warn，不阻断主流程。
+    fn sync_fts_upsert(&self, conn: &rusqlite::Connection, id: &str) {
+        let res = conn
+            .query_row(
+                "SELECT rowid, text, pinyin_initials, content FROM history WHERE id = ?1",
+                [id],
+                |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                    ))
+                },
+            )
+            .and_then(|(rowid, text, pinyin, content)| {
+                conn.execute(
+                    "INSERT INTO history_fts (rowid, text, pinyin, content) VALUES (?1, ?2, ?3, ?4)
+                     ON CONFLICT(rowid) DO UPDATE SET
+                        text = excluded.text, pinyin = excluded.pinyin, content = excluded.content",
+                    rusqlite::params![rowid, to_ngram(&text), to_ngram(&pinyin), to_ngram(&content)],
+                )
+            });
+        if let Err(e) = res {
+            log::warn!("[FTS] 索引同步失败 (id={}): {}", id, e);
+        }
+    }
+
+    /// 从 FTS 索引删除（delete 后调用）
+    fn sync_fts_delete(&self, conn: &rusqlite::Connection, id: &str) {
+        let res = conn.query_row("SELECT rowid FROM history WHERE id = ?1", [id], |r| {
+            r.get::<_, i64>(0)
+        });
+        match res {
+            Ok(rowid) => {
+                if let Err(e) = conn.execute("DELETE FROM history_fts WHERE rowid = ?1", [rowid]) {
+                    log::warn!("[FTS] 索引删除失败 (id={}): {}", id, e);
+                }
+            }
+            Err(_) => {
+                // 记录已被删（级联场景），rowid 未知——清掉该 id 不可行，忽略
+            }
+        }
+    }
+
     /// 读「保护常用内容」开关（v6.1）。默认 true：
     /// - 开：VALUE_PRESERVE_SQL 生效，高价值条目豁免过期清理；
     /// - 关：退回旧的「超期必清」（只看时间 + 置顶），隐私敏感用户可一键退回。
@@ -128,6 +230,96 @@ impl DataStore {
         Ok(items)
     }
 
+    /// v6.4 FTS5 快速路径：中文/混合关键词走全文索引（bigram 预处理），
+    /// 远快于 LIKE 三字段全扫。失败/空结果返回 Err/空 Vec，由调用方回退 LIKE。
+    fn try_search_fts(
+        &self,
+        workspace: &str,
+        search: &str,
+        filter: &str,
+        time_filter: &str,
+        source: &str,
+        group_filter: &str,
+        tag_ids: &[String],
+        limit: u32,
+    ) -> Result<Vec<HistoryItem>, ()> {
+        let conn = self.lock_conn();
+
+        let mut sql = String::from(
+            "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon, content_type
+             FROM history WHERE workspace = ?1
+             AND history.rowid IN (SELECT rowid FROM history_fts WHERE history_fts MATCH ?2)",
+        );
+        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> =
+            vec![Box::new(workspace.to_string()), Box::new(to_ngram(search))];
+
+        // 以下过滤子句与 search_history 的 LIKE 版保持一致
+        if filter == "pinned" {
+            sql.push_str(" AND pinned = 1");
+        } else if filter == "image" {
+            sql.push_str(" AND type IN ('image', 'rich')");
+        } else if filter != "all" {
+            sql.push_str(" AND type = ?");
+            params_vec.push(Box::new(filter.to_string()));
+        }
+        let cutoff_str = match time_filter {
+            "today" => chrono::Local::now().format("%Y-%m-%d 00:00:00").to_string(),
+            "week" => (chrono::Local::now() - chrono::Duration::days(7))
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string(),
+            "month" => (chrono::Local::now() - chrono::Duration::days(30))
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string(),
+            _ => String::new(),
+        };
+        if !cutoff_str.is_empty() {
+            sql.push_str(" AND time >= ?");
+            params_vec.push(Box::new(cutoff_str));
+        }
+        if !source.is_empty() {
+            sql.push_str(" AND source = ?");
+            params_vec.push(Box::new(source.to_string()));
+        }
+        if group_filter == "ungrouped" {
+            sql.push_str(" AND group_id IS NULL");
+        } else if group_filter != "all" && !group_filter.is_empty() {
+            sql.push_str(" AND group_id = ?");
+            params_vec.push(Box::new(group_filter.to_string()));
+        }
+        for tag_id in tag_ids {
+            sql.push_str(" AND id IN (SELECT history_id FROM history_tags WHERE tag_id = ?)");
+            params_vec.push(Box::new(tag_id.clone()));
+        }
+        sql.push_str(" ORDER BY pinned DESC, time DESC LIMIT ?");
+        params_vec.push(Box::new(limit.min(1000)));
+
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+
+        let mut stmt = conn.prepare(&sql).map_err(|_| ())?;
+        let rows = stmt
+            .query_map(param_refs.as_slice(), |row| {
+                Ok(HistoryItem {
+                    id: row.get(0)?,
+                    text: row.get(1)?,
+                    time: row.get(2)?,
+                    item_type: row.get(3)?,
+                    content: row.get(4)?,
+                    pinned: row.get::<_, i32>(5)? != 0,
+                    source: row.get(6)?,
+                    workspace: row.get(7)?,
+                    md5: row.get(8)?,
+                    pinyin_initials: row.get(9)?,
+                    group_id: row.get(10)?,
+                    source_icon: row.get(11)?,
+                    content_type: row.get(12)?,
+                    tags: Vec::new(),
+                })
+            })
+            .map_err(|_| ())?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
     /// 全量搜索：把全部筛选条件下推到 SQL，直接扫整表，
     /// 不依赖前端分页加载的内存窗口（修复"搜索只覆盖已加载记录"）。
     /// 语义与前端 getFilteredItems 保持一致：
@@ -146,6 +338,42 @@ impl DataStore {
         tag_ids: &[String],
         limit: u32,
     ) -> Result<Vec<HistoryItem>, String> {
+        // v6.4 FTS5 快速路径：命中即返回；空结果/出错（旧库无索引、语法异常）回退 LIKE。
+        // ⚠️ 必须在 lock_conn() 之前调用 try_search_fts（它内部会 lock_conn；
+        //     Mutex 不可重入，先锁再调会死锁——delete_history 踩过同一坑）。
+        if !search.is_empty() && fts_safe(search) {
+            if let Ok(fts_items) = self.try_search_fts(
+                workspace,
+                search,
+                filter,
+                time_filter,
+                source,
+                group_filter,
+                tag_ids,
+                limit,
+            ) {
+                if !fts_items.is_empty() {
+                    // 搜索命中计数（独立取锁）
+                    let ids: Vec<String> = fts_items.iter().map(|i| i.id.clone()).collect();
+                    let placeholders: Vec<String> = ids
+                        .iter()
+                        .enumerate()
+                        .map(|(i, _)| format!("?{}", i + 1))
+                        .collect();
+                    let sql = format!(
+                        "UPDATE history SET search_hit_count = search_hit_count + 1 WHERE id IN ({})",
+                        placeholders.join(","),
+                    );
+                    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+                        ids.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+                    if let Err(e) = self.lock_conn().execute(&sql, param_refs.as_slice()) {
+                        log::warn!("[History] 搜索命中计数更新失败: {}", e);
+                    }
+                    return Ok(fts_items);
+                }
+            }
+        }
+
         let conn = self.lock_conn();
 
         let mut sql = String::from(
@@ -346,6 +574,8 @@ impl DataStore {
             ],
         )
         .map_err(|e| e.to_string())?;
+        // v6.4 FTS 索引同步（bigram 预处理在 sync_fts_upsert 内做）
+        self.sync_fts_upsert(&conn, &item.id);
         Ok(())
     }
 
@@ -365,6 +595,8 @@ impl DataStore {
         if affected == 0 {
             return Err("记录不存在".to_string());
         }
+        // v6.4 FTS 索引同步
+        self.sync_fts_upsert(&conn, id);
         Ok(())
     }
 
@@ -406,6 +638,8 @@ impl DataStore {
         if affected == 0 {
             return Err("记录不存在".to_string());
         }
+        // v6.4 FTS 索引同步（content 与 text 都变了）
+        self.sync_fts_upsert(&conn, id);
 
         // 算出“旧有、新无”的图片作为清理候选
         let old_imgs = Self::extract_local_image_files_from_rich_content(&old_content);
@@ -520,6 +754,13 @@ impl DataStore {
                 }
                 paths
             };
+
+            // v6.4 先删 FTS 索引（须在主表 DELETE 前按 rowid 匹配——之后 rowid 就查不到了）
+            let fts_delete_sql = format!(
+                "DELETE FROM history_fts WHERE rowid IN (SELECT rowid FROM history WHERE id IN ({}))",
+                placeholders.join(",")
+            );
+            let _ = conn.execute(&fts_delete_sql, param_refs.as_slice());
 
             let delete_sql = format!(
                 "DELETE FROM history WHERE id IN ({})",

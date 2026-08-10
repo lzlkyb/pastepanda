@@ -227,7 +227,9 @@ pub const ACTIONS: &[AiAction] = &[
         label: "一句话摘要",
         description: "把长内容压成一句话",
         icon: "file-text",
-        max_tokens: 200,
+        // 上限 ≠ 预分配：抬到 1024 不给不带思考的模型增加成本（它们实际只输出几十 token），
+        // 但给带思考的推理模型留出「思考 + 答案」的空间（思考本身就要几百 token）
+        max_tokens: 1024,
         options: &[],
         content_types: &[],
     },
@@ -236,7 +238,7 @@ pub const ACTIONS: &[AiAction] = &[
         label: "解释代码",
         description: "说清楚这段代码做了什么",
         icon: "code",
-        max_tokens: 800,
+        max_tokens: 1024,
         options: &[],
         content_types: &["code", "shell"],
     },
@@ -265,7 +267,7 @@ pub const ACTIONS: &[AiAction] = &[
         label: "提取要点",
         description: "把长段落拆成条目列表",
         icon: "list",
-        max_tokens: 800,
+        max_tokens: 1024,
         options: &[],
         content_types: &["text", "markdown", "log"],
     },
@@ -274,7 +276,7 @@ pub const ACTIONS: &[AiAction] = &[
         label: "写 commit message",
         description: "根据 diff 写一条提交信息",
         icon: "git-commit-horizontal",
-        max_tokens: 300,
+        max_tokens: 1024,
         options: &[],
         content_types: &["code"],
     },
@@ -304,6 +306,25 @@ pub const ACTIONS: &[AiAction] = &[
         max_tokens: 1200,
         options: REPLY_OPTS,
         content_types: &["text"],
+    },
+    // v6.4 六大王牌：C 合并粘贴的 AI 增强 + E 剪贴板周报
+    AiAction {
+        id: "ai-merge-polish",
+        label: "合并整理",
+        description: "合并多段内容：去重、顺排、润色",
+        icon: "merge",
+        max_tokens: 2000,
+        options: &[],
+        content_types: &[],
+    },
+    AiAction {
+        id: "ai-weekly-report",
+        label: "生成周报",
+        description: "把本周行为统计翻译成周报文字",
+        icon: "calendar-range",
+        max_tokens: 1500,
+        options: &[],
+        content_types: &[],
     },
 ];
 
@@ -421,6 +442,18 @@ pub fn build_prompt(
                 trimmed
             )
         }
+        "ai-merge-polish" => format!(
+            "下面是用分隔符拼起来的多段内容，帮我整理成一份连贯的文本：\
+             去掉完全重复的段落，按合理的逻辑顺序重排，顺手修正明显语病，\
+             不要编造原文没有的内容，不要加标题。直接输出整理结果：\n\n{}",
+            trimmed
+        ),
+        "ai-weekly-report" => format!(
+            "下面是我本周使用剪贴板的行为统计（只有数字和分类，没有具体内容）。\
+             用中文写一段 3~5 行的周报，说说我这周的工作节奏和侧重点，\
+             语气自然不浮夸，不要编造统计里不存在的细节：\n\n{}",
+            trimmed
+        ),
         other => return Err(format!("动作 {} 尚未实现", other)),
     };
 
@@ -476,6 +509,28 @@ mod tests {
     fn test_input_at_exact_limit_accepted() {
         let exact: String = "字".repeat(MAX_INPUT_CHARS);
         assert!(build_prompt("ai-summarize", &exact, &HashMap::new(), None).is_ok());
+    }
+
+    // v6.4 六大王牌：C 合并增强 + E 周报的动作提示词
+    #[test]
+    fn test_merge_polish_prompt() {
+        let (_, user, _) =
+            build_prompt("ai-merge-polish", "段落一\n段落二", &HashMap::new(), None).unwrap();
+        assert!(user.contains("重复"));
+        assert!(user.contains("段落一"));
+    }
+
+    #[test]
+    fn test_weekly_report_prompt() {
+        let (_, user, _) = build_prompt(
+            "ai-weekly-report",
+            "内容类型：代码 60%，链接 20%",
+            &HashMap::new(),
+            None,
+        )
+        .unwrap();
+        assert!(user.contains("行为统计"));
+        assert!(user.contains("代码 60%"));
     }
 
     #[test]

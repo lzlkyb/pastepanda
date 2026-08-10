@@ -7,6 +7,7 @@ import { pasteText, pasteImage, pasteRich } from "@/lib/api";
 import { VersionBadge } from "@/components/VersionBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { SkinScene } from "@/components/SkinScene";
+import { TrayPopupSuggestion } from "@/components/TrayPopupSuggestion";
 import { useAppStore } from "@/stores/appStore";
 
 // ===== 数据类型 =====
@@ -16,6 +17,8 @@ interface RecentItem {
   preview: string;
   text: string;
   content?: string; // U33：图片路径/文件路径，粘贴时按类型路由（text 为占位预览文本）
+  source?: string; // v6.2：来源应用（场景感知建议条用）
+  contentType?: string; // v6.2：内容类型（场景感知建议条用）
 }
 
 interface StatsData {
@@ -530,6 +533,13 @@ export function TrayPopup() {
             </span>
             最近复制
           </div>
+          {/* v6.2 主动建议（托盘版）：最新记录的一个最可能动作 */}
+          <TrayPopupSuggestion
+            item={recents[0]}
+            recents={recents}
+            onToast={showToast}
+            onHide={safeHide}
+          />
           <div className="tray-popup-recents">
             {recents.map((item, idx) => {
               const isActive = activeIdx === idx;

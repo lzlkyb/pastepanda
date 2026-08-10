@@ -542,6 +542,21 @@
   color: var(--text-secondary);
 }
 .subHint { font-size: 10px; font-weight: 500; color: var(--text-muted); }
+/* v6.4 E 周报入口按钮 */
+.weekReportBtn {
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  padding: 3px 10px;
+  font-size: 11px;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.weekReportBtn:hover {
+  background: var(--accent);
+  color: #fff;
+}
 .bChartWrap { padding: 6px 14px 10px; }
 .bChart { position: relative; }
 .bGridLine {

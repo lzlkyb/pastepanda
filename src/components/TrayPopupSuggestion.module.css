@@ -1,0 +1,71 @@
+/* v6.2 托盘弹窗建议条：紧凑一行，放在「最近复制」上方 */
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 10px 2px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: rgba(127, 127, 127, 0.08);
+  border: 1px solid rgba(127, 127, 127, 0.18);
+  font-size: 11px;
+  color: var(--text-primary, #e8e8e8);
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: var(--accent-light, rgba(59, 158, 255, 0.18));
+  color: var(--accent-strong, #5bb3ff);
+  flex-shrink: 0;
+}
+
+.text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.useBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: none;
+  border-radius: 5px;
+  padding: 2px 6px;
+  font-size: 11px;
+  background: var(--accent-light, rgba(59, 158, 255, 0.18));
+  color: var(--accent-strong, #5bb3ff);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.useBtn:hover {
+  background: var(--accent, #3b9eff);
+  color: #fff;
+}
+
+.xBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted, #999);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.xBtn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #fff;
+}

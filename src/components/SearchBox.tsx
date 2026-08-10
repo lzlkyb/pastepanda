@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore } from "@/stores/appStore";
+import { parseSearchQuery } from "@/lib/searchQuery";
 import { X } from "lucide-react";
 import styles from "./TopBar.module.css";
 
@@ -64,7 +65,12 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
       return;
     }
     debounceTimerRef.current = window.setTimeout(() => {
-      setSearchKeyword(value);
+      // v6.4 NL 搜索：句首时间词（上周/今天/本月…）→ 顺带设置时间过滤，关键词原样保留
+      const parsed = parseSearchQuery(value);
+      if (parsed.timeFilter !== "all") {
+        useAppStore.getState().setTimeFilter(parsed.timeFilter);
+      }
+      setSearchKeyword(parsed.keyword);
     }, 200);
   }, [setSearchKeyword]);
 
@@ -75,9 +81,14 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
     updateClearBtn();
     // 回车搜索不需要防抖，立即生效
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-    setSearchKeyword(kw);
-    if (kw.trim()) {
-      addSearchHistory(kw.trim());
+    // v6.4 NL 搜索：句首时间词解析（回车同样生效）
+    const parsed = parseSearchQuery(kw);
+    if (parsed.timeFilter !== "all") {
+      useAppStore.getState().setTimeFilter(parsed.timeFilter);
+    }
+    setSearchKeyword(parsed.keyword);
+    if (parsed.keyword.trim()) {
+      addSearchHistory(parsed.keyword.trim());
     }
     setShowHistory(false);
   }, [setSearchKeyword, addSearchHistory, updateClearBtn]);
