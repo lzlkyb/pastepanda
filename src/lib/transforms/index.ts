@@ -22,6 +22,7 @@ import { docTransforms } from "./docTransforms";
 import { actionTransforms } from "./actionTransforms";
 import { maskTransform } from "./maskTransform";
 import { urlSummaryTransform } from "./urlSummaryTransform";
+import { jsonFormatTransform } from "./jsonFormatTransform";
 
 // 注意：AI 动作**不在这里静态注册**。它们的定义（label / 选项）以后端为单一数据源，
 // 由 initBackend() 调 initAiTransforms() 拉取后注册，避免前后端各维护一份而漂移。
@@ -41,6 +42,7 @@ docTransforms.forEach(registerTransform);
 actionTransforms.forEach(registerTransform);
 registerTransform(maskTransform); // v6.4 B 粘贴脱敏
 registerTransform(urlSummaryTransform); // v6.4 A 链接摘要（阶段 1 本地）
+registerTransform(jsonFormatTransform); // v6.4 M1 动作链步骤：JSON 格式化
 
 export * from "./types";
 export * from "./registry";

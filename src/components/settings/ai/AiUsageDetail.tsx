@@ -102,26 +102,24 @@ export function AiUsageDetail() {
         <div className={styles.advancedBody}>
           {stats && stats.totalCalls > 0 ? (
             <>
-              <div className={styles.usage}>
-                <span>
-                  近 {stats.days} 天{" "}
-                  <span className={styles.usageNum}>{stats.totalCalls}</span> 次
-                </span>
-                <span>
-                  token{" "}
-                  <span className={styles.usageNum}>
-                    {stats.totalPromptTokens}+{stats.totalCompletionTokens}
-                  </span>
-                </span>
-                <span>
-                  约 <span className={styles.usageNum}>¥{stats.totalCostCny.toFixed(3)}</span>
-                </span>
-                <span>
-                  缓存命中{" "}
-                  <span className={styles.usageNum}>
-                    {Math.round(stats.cacheHitRate * 100)}%
-                  </span>
-                </span>
+              {/* v6.4 汇总条：次数 / token / 缓存命中率 */}
+              <div className={styles.sumGrid}>
+                <div className={styles.sumItem}>
+                  <b className={styles.sumNum}>{stats.totalCalls}</b>
+                  <span className={styles.sumLabel}>近 {stats.days} 天调用</span>
+                </div>
+                <div className={styles.sumItem}>
+                  <b className={styles.sumNum}>
+                    {(stats.totalPromptTokens + stats.totalCompletionTokens) / 1000 >= 1
+                      ? `${((stats.totalPromptTokens + stats.totalCompletionTokens) / 1000).toFixed(1)}k`
+                      : stats.totalPromptTokens + stats.totalCompletionTokens}
+                  </b>
+                  <span className={styles.sumLabel}>token</span>
+                </div>
+                <div className={styles.sumItem}>
+                  <b className={styles.sumNum}>{Math.round(stats.cacheHitRate * 100)}%</b>
+                  <span className={styles.sumLabel}>缓存命中</span>
+                </div>
               </div>
 
               {stats.byAction.length > 0 && (
@@ -141,26 +139,35 @@ export function AiUsageDetail() {
 
               <div className={styles.field}>
                 <span className={styles.label}>最近 {rows.length} 次调用</span>
+                {/* v6.4 表头 */}
+                <div className={styles.logHead}>
+                  <span className={styles.logHeadTime}>时间</span>
+                  <span className={styles.logHeadAction}>动作</span>
+                  <span className={styles.logHeadModel}>模型</span>
+                  <span className={styles.logHeadTok}>token</span>
+                  <span className={styles.logHeadRes}>结果</span>
+                </div>
                 <div className={styles.logList}>
                   {rows.map((r) => (
-                    <div key={r.id} className={styles.logRow}>
+                    <div key={r.id} className={styles.logDetail}>
                       <span className={styles.logTime}>{shortTime(r.createdAt)}</span>
                       <span className={styles.logAction}>
                         {labels[r.actionId] ?? r.actionId}
                       </span>
-                      <span className={styles.logMeta} title={r.model}>
+                      <span className={styles.logModel} title={r.model}>
                         {r.model}
                       </span>
+                      <span className={styles.logTok}>
+                        {r.cached ? "—" : `${r.promptTokens}+${r.completionTokens}`}
+                      </span>
                       {r.cached ? (
-                        <span className={styles.tagCached}>缓存·免费</span>
+                        <span className={styles.tagCached}>缓存</span>
                       ) : !r.ok ? (
                         <span className={styles.tagFailed} title={r.error ?? ""}>
-                          失败
+                          ✗
                         </span>
                       ) : (
-                        <span className={styles.logMeta}>
-                          {r.promptTokens}+{r.completionTokens} · {r.latencyMs}ms
-                        </span>
+                        <span className={styles.logCheck}>✓</span>
                       )}
                     </div>
                   ))}

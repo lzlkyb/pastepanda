@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda AI UI 统一美化 v2 设计稿</title>
+<style>
+  :root{
+    --bg:#F4F6F9; --card:#fff; --border:#E2E8F0; --text:#0F172A; --text2:#64748B; --text3:#94A3B8;
+    --accent:#0284C7; --accent-light:#E0F2FE; --accent-strong:#0369A1;
+    --green:#15803D; --green-light:#DCFCE7; --green-border:var(--green-border);
+    --orange:#C54A0A; --orange-light:#FFF7ED;
+    --danger:#EF4444; --danger-bg:#FEE2E2; --hover:#F1F5F9; --section:#F8FAFC;
+  }
+  /* 深色主题示例（ocean-dark）：accent 换 #818CF8，绿底换暗色 */
+  .dark-demo{
+    --bg:#0F0F11; --card:#18181B; --border:#27272A; --text:#E4E4E7; --text2:#A1A1AA; --text3:#71717A;
+    --accent:#818CF8; --accent-light:#1E1B4B; --accent-strong:#818CF8;
+    --green:#4ADE80; --green-light:#14532D; --green-border:#166534;
+    --orange:#FB923C; --orange-light:#431407;
+    --section:#0F0F11;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:#E8EDF3;padding:28px;color:var(--text)}
+  .wrap{max-width:820px;margin:0 auto}
+  h1{font-size:20px;margin-bottom:4px}
+  .sub{font-size:13px;color:var(--text2);margin-bottom:20px}
+  .badge-note{background:var(--accent-light);border:1px solid var(--accent);border-radius:10px;padding:10px 12px;font-size:12px;color:#6B21A8;margin-bottom:18px;line-height:1.7}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(15,23,42,.06)}
+  .card h2{font-size:14px;margin-bottom:2px}
+  .card .pos{font-size:11px;color:var(--text3);margin-bottom:12px}
+  .card .pos code{background:var(--hover);border-radius:4px;padding:1px 5px;color:var(--text2)}
+  .note{font-size:11px;color:var(--text3);margin-top:12px;line-height:1.7}
+
+  /* ① AI 卡片运行态（紫 spinner） */
+  .tcard{width:100%;border:1px solid var(--accent);border-radius:12px;background:var(--card);overflow:hidden;box-shadow:0 0 0 3px rgba(168,85,247,.1)}
+  .tcard-head{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--border)}
+  .tcard .badge{display:inline-flex;align-items:center;gap:3px;font-size:9px;border-radius:4px;padding:1px 5px;background:var(--accent-light);color:var(--accent-strong);font-weight:600}
+  .tcard .name{font-size:12px;font-weight:600}
+  .tcard .score{margin-left:auto;font-size:10px;color:var(--text3)}
+  .run{display:flex;align-items:center;gap:8px;padding:12px;font-size:12px;color:var(--accent-strong)}
+  .spin{width:16px;height:16px;border:2px solid var(--accent);border-top-color:var(--accent);border-radius:50%;animation:rot 0.8s linear infinite}
+  @keyframes rot{to{transform:rotate(360deg)}}
+  .runMeta{font-size:10px;color:var(--text3)}
+
+  /* ③ AI 结果区 */
+  .result{display:flex;flex-direction:column;gap:8px;padding:12px}
+  .resultOut{border:1px solid var(--border);border-radius:9px;background:var(--section);padding:8px 10px;font-size:11px;line-height:1.7;white-space:pre-wrap;color:var(--text)}
+  .metaRow{display:flex;align-items:center;gap:6px;font-size:10px}
+  .chipModel{border:1px solid var(--accent);border-radius:12px;padding:2px 8px;background:var(--accent-light);color:var(--accent-strong)}
+  .chipCached{border:1px solid var(--green-border);border-radius:12px;padding:2px 8px;background:var(--green-light);color:var(--green)}
+  .chipTime{color:var(--text3)}
+  .truncWarn{display:flex;gap:6px;align-items:flex-start;border:1px solid #FDE68A;border-radius:8px;background:var(--orange-light);color:#92400E;font-size:11px;padding:6px 8px}
+  .resultActs{display:flex;gap:6px}
+  .rb{display:inline-flex;align-items:center;gap:3px;border:1px solid var(--border);border-radius:7px;padding:4px 12px;font-size:11px;background:var(--section);color:var(--text2);cursor:pointer}
+  .rb.primary{border-color:var(--accent);background:var(--accent);color:#fff}
+
+  /* ② AiActionEditor */
+  .editor{display:flex;flex-direction:column;gap:12px}
+  .field label{display:block;font-size:12px;color:var(--text2);margin-bottom:4px}
+  .input,.ta{width:100%;border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:12px;background:var(--card);outline:none;font-family:inherit;color:var(--text)}
+  .input:focus,.ta:focus{border-color:var(--accent)}
+  .ta{min-height:88px;resize:vertical;line-height:1.6}
+  .tplRow{display:flex;align-items:center;gap:8px}
+  .btnSec{border:1px solid var(--border);border-radius:7px;padding:4px 10px;font-size:11px;background:var(--section);color:var(--text2);cursor:pointer}
+  .tplHint{font-size:10px;color:var(--text3);flex:1}
+  .ph{display:inline-block;border:1px dashed var(--accent);border-radius:5px;padding:0 4px;background:var(--accent-light);color:var(--accent-strong);font-size:10px}
+  .trial{border:1px solid var(--border);border-radius:9px;padding:8px 10px;background:var(--section)}
+  .trialHead{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);margin-bottom:6px}
+  .trialIn{width:100%;border:1px solid var(--border);border-radius:7px;padding:6px 8px;font-size:11px;margin-bottom:6px;background:var(--card)}
+  .trialOut{border:1px solid var(--accent);border-radius:7px;background:var(--accent-light);padding:6px 8px;font-size:11px;color:var(--accent-strong);min-height:40px}
+  .foot{margin-top:18px;padding-top:12px;border-top:1px dashed var(--border);font-size:11px;color:var(--text3);line-height:1.9}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PastePanda · AI UI 统一美化（3 处）</h1>
+  <div class="sub">AI 专属强调（跟随主题 accent）：运行态 / 结果区 / 编辑器 —— 与本地动作一眼区分，能力零削减，6 套主题全适配</div>
+
+  <div class="badge-note">
+    <b>设计语言（修正）</b>：AI 强调统一跟随主题 <b>--accent</b>（与现有 AiBadge 一致，不引紫色）；状态色全走主题变量：缓存绿 --success（新增）、截断黄 --warning/--orange-bg、敏感红 --danger。深色主题由变量自动适配。
+    运行中（紫 spinner）、结果元信息（模型紫 chip / 缓存绿 chip）、截断警示（黄底）、敏感确认（红底，沿用）。
+  </div>
+
+  <div class="grid">
+
+    <!-- ① 运行态 -->
+    <div class="card">
+      <h2>① AI 动作卡运行态</h2>
+      <div class="pos">组件 <code>TransformCard.tsx</code>（运行中分支）</div>
+      <div class="tcard">
+        <div class="tcard-head">
+          <span class="badge">✦ AI</span>
+          <span class="name">翻译</span>
+          <span class="score">92%</span>
+        </div>
+        <div class="run">
+          <span class="spin"></span>
+          <span>AI 思考中…</span>
+          <span class="runMeta">deepseek-chat · 本地识别 ✓</span>
+        </div>
+      </div>
+      <div class="note">
+        升级：AI 动作运行中 → 紫色 spinner + 「AI 思考中…」（本地动作仍是灰「执行中…」）；
+        元信息行可显示模型名，让用户知道在花谁的钱。
+      </div>
+    </div>
+
+    <!-- ③ 结果区 -->
+    <div class="card">
+      <h2>③ AI 结果区</h2>
+      <div class="pos">组件 <code>AiResult.tsx</code>（结果 + 元信息 + 截断）</div>
+      <div class="tcard">
+        <div class="tcard-head">
+          <span class="badge">✦ AI</span>
+          <span class="name">翻译</span>
+          <span class="score">✓ 已就绪</span>
+        </div>
+        <div class="result">
+          <div class="resultOut">把下面的内容翻译成英文：hello world<br>翻译结果…</div>
+          <div class="metaRow">
+            <span class="chipModel">deepseek-chat</span>
+            <span class="chipCached">缓存命中 · 未计费</span>
+            <span class="chipTime">312ms</span>
+          </div>
+          <div class="truncWarn">⚠ 回答撞到长度上限被截断——已展示部分内容，重试或增大自定义动作的 token 上限。</div>
+          <div class="resultActs">
+            <span class="rb">复制</span>
+            <span class="rb primary">粘贴到前台</span>
+            <span class="rb">✎ 编辑</span>
+          </div>
+        </div>
+      </div>
+      <div class="note">
+        升级：模型 → 紫色 chip；缓存 → 绿色 chip（原「命中缓存，本次未计费」文字）；
+        截断警示统一黄底卡片；耗时角标（可选）。
+      </div>
+    </div>
+
+    <!-- ② 编辑器 -->
+    <div class="card" style="grid-column:1/-1">
+      <h2>② 自定义动作编辑器（AiActionEditor）</h2>
+      <div class="pos">组件 <code>AiActionEditor.tsx</code> ｜ 名称 / 描述 / 模板 / 试跑</div>
+      <div class="editor">
+        <div class="field">
+          <label>提示词模板</label>
+          <textarea class="ta" placeholder="把下面的内容…&#10;&#10;{{内容}}&#10;&#10;只输出结果本身。"></textarea>
+          <div class="tplRow">
+            <button class="btnSec">插入 {{内容}}</button>
+            <span class="tplHint">占位符 <span class="ph">&#123;&#123;内容&#125;&#125;</span> 会被替换成剪贴板内容，把「只输出结果本身」写在它后面效果更好。</span>
+          </div>
+        </div>
+        <div class="trial">
+          <div class="trialHead">✦ 试跑（不落盘、不换库）</div>
+          <input class="trialIn" value="把这段改成正式语气">
+          <div class="trialOut">好的，这是试跑结果预览…</div>
+        </div>
+      </div>
+      <div class="note">
+        升级：textarea 描边圆角 + 占位符紫色虚线 chip（替代纯文本 {{内容}}）；试跑区独立卡片（输入样例 + 紫色结果预览）。
+      </div>
+    </div>
+
+  </div>
+
+  <div class="foot">
+    <b>改动清单</b><br>
+    ① <code>TransformCard.tsx</code>：运行中分支 —— AI 动作显示 accent spinner「AI 思考中…」+ 模型名（本地动作不变）；<br>
+    ② <code>AiActionEditor.tsx</code>：textarea 样式 + 占位符 chip 化 + 试跑结果卡片；<br>
+    ③ <code>AiResult.tsx</code>：模型 accent chip / 缓存绿 chip / 耗时角标 / 截断黄卡片；<br>
+    ④ <b>主题适配</b>：不引紫色——AI 强调走 <code>--accent</code>（与 AiBadge 一致）；<code>theme.css</code> 6 套主题新增 <code>--success/--success-bg/--success-border</code>（缓存绿，深色主题配暗绿底浅绿字）；截断用已有 <code>--warning/--orange-bg</code>；敏感红 <code>--danger</code>；<br>
+    ⑤ 能力零削减：敏感确认（红）、编辑回写、复制/粘贴全部保留；<br>
+    ⑥ 改动集中在 3 个组件 + 1 个 CSS + theme.css（+8 变量），不动数据与逻辑。
+  </div>
+
+  <!-- 深色主题适配验证 -->
+  <div class="dark-demo" style="margin-top:20px;border:1px solid #27272A;border-radius:14px;padding:18px;background:var(--bg)">
+    <h2 style="font-size:14px;color:var(--text);margin-bottom:4px">深色主题验证（ocean-dark / midnight）</h2>
+    <div class="sub" style="color:var(--text2)">同一套变量在暗背景下的观感：accent 亮紫蓝、绿底变暗、黄底变暗——无需任何硬编码</div>
+    <div class="grid">
+      <div class="card" style="background:var(--card);border-color:var(--border)">
+        <div class="tcard" style="border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent)">
+          <div class="tcard-head" style="border-color:var(--border)">
+            <span class="badge" style="background:var(--accent-light);color:var(--accent-strong)">✦ AI</span>
+            <span class="name" style="color:var(--text)">翻译</span>
+          </div>
+          <div class="run" style="color:var(--accent-strong)">
+            <span class="spin" style="border-color:var(--border);border-top-color:var(--accent)"></span>
+            <span>AI 思考中…</span>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="background:var(--card);border-color:var(--border)">
+        <div class="metaRow">
+          <span class="chipModel" style="background:var(--accent-light);color:var(--accent-strong);border-color:var(--accent)">deepseek-chat</span>
+          <span class="chipCached" style="background:var(--green-light);color:var(--green);border-color:var(--green-border)">缓存命中</span>
+        </div>
+        <div class="truncWarn" style="background:var(--orange-light);color:var(--orange);border-color:var(--orange-border, #9A3412)">⚠ 回答撞到长度上限被截断</div>
+        <div style="margin-top:8px;font-size:10px;color:var(--text3)">全部变量主题化：ocean-dark/midnight 自动生效，零硬编码</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

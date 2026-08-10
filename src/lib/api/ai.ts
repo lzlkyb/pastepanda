@@ -60,6 +60,8 @@ export interface AiProviderInfo {
   protocol: AiProtocol;
   /** 这家是否已存过密钥——下拉里据此标“已配置” */
   hasKey: boolean;
+  /** v6.4：true = 用户添加的自定义服务商（可多个，各自独立配置/密钥） */
+  custom?: boolean;
 }
 
 export interface AiConfig {
@@ -253,6 +255,40 @@ export async function aiClearKey(provider?: string): Promise<void> {
 
 export async function aiListProviders(): Promise<AiProviderInfo[]> {
   return invoke<AiProviderInfo[]>("ai_list_providers");
+}
+
+// ===== v6.4 AI 面板 v2：per-provider 配置 + 自定义服务商多实例 =====
+
+/** 指定服务商的 模型/地址/协议（切换时回填，不动当前选中） */
+export interface ProviderConfigValue {
+  baseUrl: string;
+  model: string;
+  protocol: AiProtocol | "";
+}
+
+/** 读取指定服务商已保存的模型/地址/协议 */
+export async function aiGetProviderConfig(providerId: string): Promise<ProviderConfigValue> {
+  return invoke<ProviderConfigValue>("ai_get_provider_config", { providerId });
+}
+
+/** 自定义服务商条目（保存入参） */
+export interface CustomProviderInput {
+  /** 为空 = 新增（后端生成 id）；非空 = 更新 */
+  id?: string;
+  name: string;
+  baseUrl: string;
+  model: string;
+  protocol?: AiProtocol | "";
+}
+
+/** 新增或更新自定义服务商，返回其 id */
+export async function aiSaveCustomProvider(item: CustomProviderInput): Promise<string> {
+  return invoke<string>("ai_save_custom_provider", { item });
+}
+
+/** 删除自定义服务商（含其密钥文件） */
+export async function aiDeleteCustomProvider(id: string): Promise<void> {
+  return invoke("ai_delete_custom_provider", { id });
 }
 
 /** 内置动作清单。自定义走 {@link aiListCustomActions} */

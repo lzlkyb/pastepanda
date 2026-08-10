@@ -12,7 +12,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Circle, PauseCircle } from "lucide-react";
 import {
   aiClearKey,
+  aiDeleteCustomProvider,
   aiGetConfig,
+  aiGetProviderConfig,
   aiGetUsage,
   aiHasKey,
   aiListProviders,
@@ -31,6 +33,10 @@ import { AiAdvanced } from "./ai/AiAdvanced";
 import { AiUsageCard } from "./ai/AiUsageCard";
 import { AiUsageDetail } from "./ai/AiUsageDetail";
 import { AiCustomActions } from "./ai/AiCustomActions";
+import {
+  AiCustomProviderDialog,
+  type CustomEditorState,
+} from "./ai/AiCustomProviderDialog";
 import { hintForError, FALLBACK_PROVIDER, type AiErrorAction } from "./ai/errorHint";
 import styles from "./AiTab.module.css";
 
@@ -59,6 +65,8 @@ export function AiTab() {
   const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const keyRef = useRef<HTMLInputElement>(null);
+  // v6.4 自定义服务商编辑器（null = 关闭）
+  const [customEditor, setCustomEditor] = useState<CustomEditorState | null>(null);
 
   const spec = providers.find((it) => it.id === config.provider) ?? null;
   const isLocal = !!spec && !spec.needsKey;
@@ -116,11 +124,26 @@ export function AiTab() {
 
   const changeProvider = useCallback(
     async (id: string) => {
-      // 换厂商必须清掉地址/模型/协议的覆盖值，否则会拿上一家的值去请求新家
+      // v6.4 AI 面板 v2：per-provider 存储，切换不再清空落盘——
+      // 1) 先把当前家的草稿落盘（写进它的 overrides/数组项）；
+      // 2) 读新家已保存的 模型/地址/协议 回填；
+      // 3) 只切 provider 与值，切走切回配置都在。
       setKeyInput("");
       setTestMsg(null);
-      await persist({ ...config, provider: id, baseUrl: "", model: "", protocol: "" });
-      // 新厂商可能早就存过密钥（密钥按厂商分开存）；用量也要重拉，它带着预算与次数估算
+      try {
+        await persist(config); // 当前家：ai_set_config 按 provider 落位
+        const pc = await aiGetProviderConfig(id);
+        await persist({
+          ...config,
+          provider: id,
+          baseUrl: pc.baseUrl,
+          model: pc.model,
+          protocol: pc.protocol ?? "",
+        });
+      } catch (e) {
+        toast(`切换服务商失败：${err(e)}`, "error");
+      }
+      // 新厂商可能早就存过密钥（密钥按厂商分开存）；用量也要重拉
       try {
         const [keyed, use] = await Promise.all([aiHasKey(id), aiGetUsage()]);
         setHasKey(keyed);
@@ -129,7 +152,7 @@ export function AiTab() {
         logger.warn("切换服务商后刷新状态失败", e);
       }
     },
-    [config, persist]
+    [config, persist, toast]
   );
 
   const saveAndTest = useCallback(async () => {
@@ -180,6 +203,30 @@ export function AiTab() {
   }, [config.provider, spec, toast]);
 
   const hint = testMsg && !testMsg.ok ? hintForError(testMsg.text) : null;
+
+  // ── v6.4 自定义服务商管理 ──
+  const handleCustomSaved = useCallback(
+    async (id: string, isNew: boolean) => {
+      setCustomEditor(null);
+      await reload();
+      if (isNew) await changeProvider(id); // 新增后直接切过去配置
+    },
+    [reload, changeProvider]
+  );
+
+  const handleCustomDeleted = useCallback(
+    async (id: string) => {
+      try {
+        await aiDeleteCustomProvider(id);
+        toast("已删除自定义服务商", "success");
+        await reload();
+        if (config.provider === id) await changeProvider(FALLBACK_PROVIDER);
+      } catch (e) {
+        toast(`删除失败：${err(e)}`, "error");
+      }
+    },
+    [reload, changeProvider, config.provider, toast]
+  );
 
   const runHintAction = (action: AiErrorAction) => {
     if (action === "focusKey") keyRef.current?.focus();
@@ -236,6 +283,9 @@ export function AiTab() {
         onCommit={commit}
         onSave={saveNow}
         onSaveAndTest={() => void saveAndTest()}
+        onAddCustom={() => setCustomEditor({ mode: "add" })}
+        onEditCustom={(item) => setCustomEditor({ mode: "edit", item })}
+        onDeleteCustom={(id) => void handleCustomDeleted(id)}
       />
 
       {testMsg && (
@@ -273,6 +323,15 @@ export function AiTab() {
         onSave={saveNow}
         onClearKey={() => void clearKey()}
       />
+
+      {/* v6.4 自定义服务商弹窗 */}
+      {customEditor && (
+        <AiCustomProviderDialog
+          editor={customEditor}
+          onClose={() => setCustomEditor(null)}
+          onSaved={(id, isNew) => void handleCustomSaved(id, isNew)}
+        />
+      )}
     </div>
   );
 }

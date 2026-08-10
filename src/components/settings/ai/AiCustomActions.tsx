@@ -74,13 +74,6 @@ export function AiCustomActions() {
     }
   };
 
-  const typeLabel = (a: AiCustomAction): string => {
-    if (a.contentTypes.length === 0) return "全部类型";
-    return a.contentTypes
-      .map((id) => types.find((t) => t.id === id)?.label ?? id)
-      .join(" · ");
-  };
-
   return (
     <div className={styles.advanced}>
       <button className={styles.advancedToggle} onClick={() => setOpen((v) => !v)}>
@@ -105,28 +98,36 @@ export function AiCustomActions() {
       ) : (
         <div className={styles.advancedBody}>
           {list.length === 0 ? (
-            <span className={styles.hint}>
-              还没有自定义动作。它们会与内置动作同处一个列表、同一套排序。
-            </span>
+            <div className={styles.emptyHint}>
+              还没有自定义动作。点「新建动作」创建第一个——它们会与内置动作同处一个列表、同一套排序。
+            </div>
           ) : (
             <div className={styles.logList}>
               {list.map((a) => (
                 <div key={a.id} className={styles.actionRow}>
                   <button className={styles.actionMain} onClick={() => setEditing(a)}>
                     <span className={styles.actionName}>{a.name}</span>
-                    <span className={styles.actionDesc}>
-                      {a.description || a.template.slice(0, 40)}
+                    <span className={styles.actionTpl}>
+                      {a.description || a.template.slice(0, 60)}
                     </span>
                   </button>
-                  <span className={a.contentTypes.length ? styles.tagOn : styles.logMeta}>
-                    {typeLabel(a)}
-                  </span>
+                  <span className={styles.actionChipAi}>AI</span>
                   <input
                     type="checkbox"
                     checked={a.enabled}
                     title={a.enabled ? "已启用" : "已停用"}
                     onChange={() => void toggleEnabled(a)}
                   />
+                  <button className={styles.actionBtn} onClick={() => setEditing(a)} title="编辑">
+                    ✎
+                  </button>
+                  <button
+                    className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
+                    onClick={() => void remove(a.id)}
+                    title="删除"
+                  >
+                    ✕
+                  </button>
                 </div>
               ))}
             </div>

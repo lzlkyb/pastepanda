@@ -26,6 +26,28 @@
   font-size: 11px;
   color: var(--text-muted);
 }
+/* X1 B1：动作链入口按钮 */
+.chainBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: 0.15s;
+}
+.chainBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  background: var(--accent-light);
+}
 
 /* 卡片列表（可滚动） */
 .cards {
@@ -84,23 +106,57 @@
 /* 徽标已抄到 components/AiBadge.module.css——它要同时出现在变换卡片、
    模型芯片与 v6.0 的卡片动作条上，留在这里必然分叉。 */
 
-.remoteMeta {
-  margin: 5px 13px 0;
-  font-size: 10.5px;
-  color: var(--text-muted);
+.editedBadge {
+  padding: 0 6px;
+  border-radius: 99px;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 600;
 }
 
 /* “需要确认”不是错误（内容看着像密钥，后端拒发了），用警告色而非报错红 */
 .previewWarn {
   margin: 0 13px;
-  background: var(--dialog-bg);
-  border: 1px solid var(--border-color);
+  background: var(--orange-bg);
+  border: 1px solid var(--orange-border);
   border-radius: 8px;
   padding: 9px 11px;
   font-size: 11.5px;
   line-height: 1.6;
   color: var(--orange);
   white-space: pre-wrap;
+}
+
+/* v6.4：AI 结果元信息 —— 模型 accent chip / 缓存绿 chip（主题变量） */
+.aiMetaRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 13px 0;
+  font-size: 10px;
+}
+
+.chipModel {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  padding: 2px 9px;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+}
+
+.chipCached {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--success-border);
+  border-radius: 12px;
+  padding: 2px 9px;
+  background: var(--success-bg);
+  color: var(--success);
 }
 
 .runBtn {
@@ -214,6 +270,19 @@
   word-break: break-all;
   max-height: 130px;
   overflow: auto;
+}
+/* v6.4：AI 动作运行态 —— accent spinner「AI 思考中…」 */
+.aiRunning {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 13px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--accent-light);
+  border: 1px solid var(--accent-border);
+  font-size: 12px;
+  color: var(--accent-strong);
 }
 .previewErr {
   margin: 0 13px;

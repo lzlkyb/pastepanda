@@ -100,6 +100,7 @@
   --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0; /* 对比度改进：green-on-green-bg 改前3.00:1→改后4.53:1，顺带修好Toast绿图标2.82→4.10:1（仅浅色三主题ocean/forest/blossom，深色四套已达标未改） */
   --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA; /* 对比度改进：orange-on-orange-bg 改前3.35:1→改后4.54:1 */
   --warning: var(--orange);
+  --success: #15803D; --success-bg: #DCFCE7; --success-border: #86EFAC; /* v6.4 AI UI：缓存绿（浅色主题） */
   --red-bg: #FEF2F2; --danger: #D82525; /* 对比度改进：danger-on-red-bg 改前4.41:1→改后4.56:1 */
   --danger-hover: #B91C1C;
   --version-badge-gradient: linear-gradient(135deg, #0284C7, #0369A1);
@@ -187,6 +188,7 @@
   --green: #4ADE80; --green-bg: #052E16; --green-border: #166534;
   --orange: #FB923C; --orange-bg: #431407; --orange-border: #9A3412;
   --warning: var(--orange);
+  --success: #4ADE80; --success-bg: #14532D; --success-border: #166534; /* v6.4 AI UI：缓存绿（深色主题） */
   --red-bg: #450A0A; --danger: #F87171;
   --danger-hover: #FCA5A5;
   --version-badge-gradient: linear-gradient(135deg, #818CF8, #6366F1);
@@ -261,6 +263,7 @@
   --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0; /* 对比度改进：green-on-green-bg 改前3.00:1→改后4.53:1，顺带修好Toast绿图标2.82→4.10:1（仅浅色三主题ocean/forest/blossom，深色四套已达标未改） */
   --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA; /* 对比度改进：orange-on-orange-bg 改前3.35:1→改后4.54:1 */
   --warning: var(--orange);
+  --success: #15803D; --success-bg: #DCFCE7; --success-border: #86EFAC; /* v6.4 AI UI：缓存绿（浅色主题） */
   --red-bg: #FEF2F2; --danger: #D82525; /* 对比度改进：danger-on-red-bg 改前4.41:1→改后4.56:1 */
   --danger-hover: #B91C1C;
   --version-badge-gradient: linear-gradient(135deg, #059669, #047857);
@@ -335,6 +338,7 @@
   --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
   --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
   --warning: var(--orange);
+  --success: #15803D; --success-bg: #DCFCE7; --success-border: #86EFAC; /* v6.4 AI UI：缓存绿（浅色主题） */
   --red-bg: #FEF2F2; --danger: #D82525;
   --danger-hover: #B91C1C;
   --version-badge-gradient: linear-gradient(135deg, #F0568C, #CE3B70);
@@ -409,6 +413,7 @@
   --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
   --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
   --warning: var(--orange);
+  --success: #15803D; --success-bg: #DCFCE7; --success-border: #86EFAC; /* v6.4 AI UI：缓存绿（浅色主题） */
   --red-bg: #FEF2F2; --danger: #D82525;
   --danger-hover: #B91C1C;
   --version-badge-gradient: linear-gradient(135deg, #E8734A, #C85A34);
@@ -483,6 +488,7 @@
   --green: #4ADE80; --green-bg: #052E16; --green-border: #166534;
   --orange: #FB923C; --orange-bg: #431407; --orange-border: #9A3412;
   --warning: var(--orange);
+  --success: #4ADE80; --success-bg: #14532D; --success-border: #166534; /* v6.4 AI UI：缓存绿（深色主题） */
   --red-bg: #3A1525; --danger: #FF6B8A;
   --danger-hover: #FF9DBD;
   --version-badge-gradient: linear-gradient(135deg, #3B9EFF, #1A7DE0);

@@ -383,10 +383,14 @@ impl DataStore {
         let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> =
             vec![Box::new(workspace.to_string())];
 
-        // 搜索关键词：text + 拼音首字母 + content（图片文件名 / 文件路径）
+        // 搜索关键词：text + 拼音首字母 + content（图片文件名 / 文件路径）+ 内容记忆摘要（M5-1）
         if !search.is_empty() {
-            sql.push_str(" AND (text LIKE ? ESCAPE '\\' OR pinyin_initials LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\')");
+            sql.push_str(
+                " AND (text LIKE ? ESCAPE '\\' OR pinyin_initials LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\'\
+                 OR id IN (SELECT history_id FROM history_summaries WHERE summary LIKE ? ESCAPE '\\'))",
+            );
             let pattern = format!("%{}%", escape_like_pattern(search));
+            params_vec.push(Box::new(pattern.clone()));
             params_vec.push(Box::new(pattern.clone()));
             params_vec.push(Box::new(pattern.clone()));
             params_vec.push(Box::new(pattern));
@@ -576,6 +580,23 @@ impl DataStore {
         .map_err(|e| e.to_string())?;
         // v6.4 FTS 索引同步（bigram 预处理在 sync_fts_upsert 内做）
         self.sync_fts_upsert(&conn, &item.id);
+        // M5-1 内容记忆：同步生成检索摘要（纯规则、本地；敏感内容跳过）。
+        // 写不进去不阻塞主流程（记账类操作）。
+        if item.item_type == "text" && !item.text.is_empty() {
+            let classifier = crate::content_classifier::ContentClassifier::new();
+            if !classifier.is_secret(&item.text) {
+                let summary = summarize_text(&item.text);
+                if !summary.is_empty() {
+                    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+                    let _ = conn.execute(
+                        "INSERT INTO history_summaries (history_id, summary, created_at)
+                         VALUES (?1, ?2, ?3)
+                         ON CONFLICT(history_id) DO UPDATE SET summary = ?2",
+                        params![item.id, summary, now],
+                    );
+                }
+            }
+        }
         Ok(())
     }
 

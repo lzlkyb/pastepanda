@@ -4,14 +4,18 @@
  * 2. **只给 top-1**：永远只返回一个建议，不给列表；
  * 3. **一眼可否决**：组件层 ✕ → action_dismissals，否决被记住。
  *
- * 两种建议：
+ * 三种建议：
  * - **单条 top-1**：新内容命中 recommendScored 首位且分数足够高（≥ {@link TOP1_MIN_SCORE}），
  *   表示"这个内容你大概率要用某个动作"；
  * - **序列识别**：最近 3 条同类（如全是 IPv4 / 全是邮箱）→ "合并成 SQL IN"。
- *   变换本身早就有了，缺的是"注意到你在做一件多步的事"。
+ *   变换本身早就有了，缺的是"注意到你在做一件多步的事"；
+ * - **跑链建议（M4）**：当前内容命中某条预置链的第一步（如含 HTML → 「网页 → 纯文本」链、
+ *   含手机号 → 「敏感信息脱敏」链）→ "用链一次跑完"。链 = 多步流水线，比单步更完整。
  */
 import { recommendScored, type Scene } from "@/lib/recommend";
 import type { TransformContext } from "@/lib/transforms";
+import { PRESET_CHAINS, getPresetChain } from "@/lib/chains/registry";
+import { getTransform } from "@/lib/transforms";
 
 /**
  * top-1 建议的最低分数。**宁可漏报不可误报**（主动建议是打断，做错一次用户就永久关掉）：
@@ -46,6 +50,14 @@ export type Suggestion =
       texts: string[];
       /** 合并后的输入（如 JSON 数组），供变换 run / 枢纽使用 */
       mergedText: string;
+    }
+  | {
+      kind: "chain";
+      chainId: string;
+      label: string;
+      text: string;
+      /** 命中的是链的第几步（从 1 起，用于文案） */
+      stepCount: number;
     };
 
 /** 单条 top-1 建议：当前内容最可能用的动作（分数不足返回 null）。
@@ -96,3 +108,31 @@ export function suggestSequence(
   }
   return null;
 }
+
+/**
+ * 跑链建议（M4）：当前内容命中某条预置链的**第一步**（detect 高分）→ 建议用链一次跑完。
+ * 链 = 多步流水线，比单步动作更完整（如 HTML 不只剥标签，还清空行）。
+ * 只在 top-1 / 序列都没命中时兜底（宁可漏报不可误报，主动建议是打断）。
+ */
+export function suggestChain(ctx: TransformContext): Suggestion | null {
+  let best: { chainId: string; label: string; steps: number; score: number } | null = null;
+  for (const chain of PRESET_CHAINS) {
+    const first = getTransform(chain.steps[0].transformId);
+    if (!first) continue;
+    const score = first.detect(ctx);
+    if (score >= CHAIN_MIN_SCORE && (!best || score > best.score)) {
+      best = { chainId: chain.id, label: chain.name, steps: chain.steps.length, score };
+    }
+  }
+  if (!best) return null;
+  return {
+    kind: "chain",
+    chainId: best.chainId,
+    label: best.label,
+    text: ctx.text,
+    stepCount: best.steps,
+  };
+}
+
+/** 跑链建议的最低第一步分数。同 top-1：宁可漏报不可误报。 */
+export const CHAIN_MIN_SCORE = 0.6;

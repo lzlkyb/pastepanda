@@ -191,7 +191,7 @@ export function AiActionEditor({ action, contentTypes, onSaved, onCancel, onDele
         />
         <div className={styles.row}>
           <button className={settings.btnSecondary} onClick={insertPlaceholder}>
-            插入 {PLACEHOLDER}
+            插入 <span className={styles.ph}>{"{{内容}}"}</span>
           </button>
           <span className={styles.hint}>
             它会被替换成剪贴板里的内容。把“只输出结果本身”这类要求写在它<strong>后面</strong>效果更好。
@@ -253,7 +253,7 @@ export function AiActionEditor({ action, contentTypes, onSaved, onCancel, onDele
         </div>
         {output && (
           <>
-            <pre className={`${styles.preview} ${output.ok ? "" : styles.testFail}`}>
+            <pre className={`${styles.preview} ${output.ok ? styles.previewAi : styles.testFail}`}>
               {output.text}
             </pre>
             {output.truncated && (

@@ -17,7 +17,7 @@ use crate::data_store::{
     AiUsageByAction, AiUsageDaily, AiUsageEntry, AiUsageLogRow, CustomAction, DataStore,
 };
 use md5::{Digest, Md5};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -30,6 +30,30 @@ fn ai_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("无法获取应用数据目录：{}", e))
 }
 
+/// 自定义服务商（用户可添加多个中转/代理服务，每个独立存配置与密钥）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomProvider {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    pub model: String,
+    pub protocol: String,
+}
+
+/// ai_save_custom_provider 的入参（id 为空 = 新增）。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomProviderInput {
+    #[serde(default)]
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    pub model: String,
+    #[serde(default)]
+    pub protocol: String,
+}
+
 /// 从 config 表读出 AI 配置；缺字段一律回退默认值，不报错。
 fn read_ai_config(store: &DataStore) -> Result<AiConfig, String> {
     let raw = store.get_config()?;
@@ -40,18 +64,20 @@ fn read_ai_config(store: &DataStore) -> Result<AiConfig, String> {
             .unwrap_or("")
             .to_string()
     };
+    let provider = {
+        let p = s("ai_provider");
+        if p.is_empty() { d.provider } else { p }
+    };
+    let (base_url, model, protocol) = resolve_provider_values(&raw, &provider, &s);
     Ok(AiConfig {
         enabled: raw
             .get("ai_enabled")
             .and_then(|v| v.as_bool())
             .unwrap_or(d.enabled),
-        provider: {
-            let p = s("ai_provider");
-            if p.is_empty() { d.provider } else { p }
-        },
-        base_url: s("ai_base_url"),
-        model: s("ai_model"),
-        protocol: s("ai_protocol"),
+        provider,
+        base_url,
+        model,
+        protocol,
         daily_budget_cny: raw
             .get("ai_daily_budget_cny")
             .and_then(|v| v.as_f64())
@@ -67,24 +93,132 @@ fn read_ai_config(store: &DataStore) -> Result<AiConfig, String> {
     })
 }
 
+/// 读取自定义服务商列表（config 表 `ai_custom_providers`，JSON 数组）。
+fn read_custom_providers(store: &DataStore) -> Result<Vec<CustomProvider>, String> {
+    let raw = store.get_config()?;
+    Ok(raw
+        .get("ai_custom_providers")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| serde_json::from_value::<CustomProvider>(v.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+/// 内置服务商的 per-provider 覆盖（`ai_provider_overrides` JSON 对象）。
+fn read_overrides(store: &DataStore) -> Value {
+    store
+        .get_config()
+        .ok()
+        .and_then(|raw| raw.get("ai_provider_overrides").cloned())
+        .unwrap_or_else(|| Value::Object(serde_json::Map::new()))
+}
+
+fn is_builtin_provider(id: &str) -> bool {
+    provider::PROVIDERS.iter().any(|p| p.id == id)
+}
+
+fn custom_by_id(raw: &Value, id: &str) -> Option<CustomProvider> {
+    raw.get("ai_custom_providers")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| {
+            arr.iter()
+                .find(|v| v.get("id").and_then(|x| x.as_str()) == Some(id))
+        })
+        .and_then(|v| serde_json::from_value::<CustomProvider>(v.clone()).ok())
+}
+
+/// 解析指定 provider 的 baseUrl/model/protocol：
+/// - 内置：`ai_provider_overrides[id]`，字段缺失回退旧 key（迁移）；
+/// - 自定义：`ai_custom_providers` 数组项。
+fn resolve_provider_values(
+    raw: &Value,
+    provider_id: &str,
+    legacy: &impl Fn(&str) -> String,
+) -> (String, String, String) {
+    let empty = || String::new();
+    if is_builtin_provider(provider_id) {
+        let get_override = |k: &str| -> Option<String> {
+            raw.get("ai_provider_overrides")
+                .and_then(|v| v.get(provider_id))
+                .and_then(|v| v.get(k))
+                .and_then(|v| v.as_str())
+                .map(|x| x.to_string())
+                .filter(|x| !x.is_empty())
+        };
+        let fallback = |ov: Option<String>, legacy_val: String| ov.unwrap_or(legacy_val);
+        (
+            fallback(get_override("baseUrl"), legacy("ai_base_url")),
+            fallback(get_override("model"), legacy("ai_model")),
+            fallback(get_override("protocol"), legacy("ai_protocol")),
+        )
+    } else if let Some(c) = custom_by_id(raw, provider_id) {
+        (c.base_url, c.model, c.protocol)
+    } else {
+        (empty(), empty(), empty())
+    }
+}
+
 /// 写回 config 表。单独抽出来是因为几个命令都要用。
 fn write_ai_config(store: &DataStore, cfg: &AiConfig) -> Result<(), String> {
     let mut raw = store.get_config()?;
     if let Some(obj) = raw.as_object_mut() {
         obj.insert("ai_enabled".to_string(), Value::Bool(cfg.enabled));
         obj.insert("ai_provider".to_string(), Value::String(cfg.provider.clone()));
-        obj.insert(
-            "ai_base_url".to_string(),
-            Value::String(cfg.base_url.trim().to_string()),
-        );
-        obj.insert(
-            "ai_model".to_string(),
-            Value::String(cfg.model.trim().to_string()),
-        );
-        obj.insert(
-            "ai_protocol".to_string(),
-            Value::String(cfg.protocol.trim().to_string()),
-        );
+        // 模型/地址/协议按 provider 独立落位（内置 → overrides；自定义 → 数组项）
+        if is_builtin_provider(&cfg.provider) {
+            let mut overrides = obj
+                .get("ai_provider_overrides")
+                .cloned()
+                .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+            if let Value::Object(m) = &mut overrides {
+                let entry = m
+                    .entry(cfg.provider.clone())
+                    .or_insert_with(|| Value::Object(serde_json::Map::new()));
+                if let Value::Object(e) = entry {
+                    e.insert("baseUrl".to_string(), Value::String(cfg.base_url.trim().to_string()));
+                    e.insert("model".to_string(), Value::String(cfg.model.trim().to_string()));
+                    e.insert("protocol".to_string(), Value::String(cfg.protocol.trim().to_string()));
+                }
+            }
+            obj.insert("ai_provider_overrides".to_string(), overrides);
+        } else {
+            // 自定义：更新数组中同名 id 项，不存在则补一条
+            let mut customs: Vec<CustomProvider> = obj
+                .get("ai_custom_providers")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| serde_json::from_value::<CustomProvider>(v.clone()).ok())
+                        .collect()
+                })
+                .unwrap_or_default();
+            let mut found = false;
+            for c in customs.iter_mut() {
+                if c.id == cfg.provider {
+                    c.base_url = cfg.base_url.trim().to_string();
+                    c.model = cfg.model.trim().to_string();
+                    c.protocol = cfg.protocol.trim().to_string();
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                customs.push(CustomProvider {
+                    id: cfg.provider.clone(),
+                    name: "自定义服务商".to_string(),
+                    base_url: cfg.base_url.trim().to_string(),
+                    model: cfg.model.trim().to_string(),
+                    protocol: cfg.protocol.trim().to_string(),
+                });
+            }
+            obj.insert(
+                "ai_custom_providers".to_string(),
+                serde_json::to_value(&customs).unwrap_or(Value::Array(vec![])),
+            );
+        }
         obj.insert("ai_daily_budget_cny".to_string(), json!(cfg.daily_budget_cny));
         obj.insert("ai_timeout_secs".to_string(), json!(cfg.timeout_secs));
         obj.insert("ai_thinking_off".to_string(), json!(cfg.thinking_off));
@@ -132,12 +266,120 @@ fn target_provider(
     explicit: Option<String>,
 ) -> Result<String, String> {
     if let Some(p) = explicit {
-        if !p.trim().is_empty() {
-            return Ok(provider::find(&p).id.to_string());
+        let pid = p.trim();
+        if !pid.is_empty() {
+            // 内置走归一化；自定义 id 原样（密钥本就按 id 分文件存）
+            if is_builtin_provider(pid) {
+                return Ok(pid.to_string());
+            }
+            return Ok(pid.to_string());
         }
     }
     let store = app.state::<DataStore>();
-    Ok(read_ai_config(&store)?.spec().id.to_string())
+    Ok(read_ai_config(&store)?.provider)
+}
+
+/// 读取指定服务商的 模型/地址/协议（切换服务商时前端回填用，不动当前选中）。
+#[tauri::command]
+pub fn ai_get_provider_config(
+    store: State<DataStore>,
+    provider_id: String,
+) -> Result<ProviderConfigValue, String> {
+    let raw = store.get_config()?;
+    let legacy = |key: &str| -> String {
+        raw.get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    let (base_url, model, protocol) = resolve_provider_values(&raw, &provider_id, &legacy);
+    Ok(ProviderConfigValue { base_url, model, protocol })
+}
+
+/// 指定服务商的 模型/地址/协议。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConfigValue {
+    pub base_url: String,
+    pub model: String,
+    pub protocol: String,
+}
+
+/// 新增或更新自定义服务商。id 为空 = 新增（自动生成），返回该条 id。
+#[tauri::command]
+pub fn ai_save_custom_provider(
+    store: State<DataStore>,
+    item: CustomProviderInput,
+) -> Result<String, String> {
+    let mut customs = read_custom_providers(&store)?;
+    let id = if item.id.trim().is_empty() {
+        format!(
+            "custom_{:x}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0)
+        )
+    } else {
+        item.id.trim().to_string()
+    };
+    if let Some(existing) = customs.iter_mut().find(|c| c.id == id) {
+        existing.name = item.name.trim().to_string();
+        existing.base_url = item.base_url.trim().to_string();
+        existing.model = item.model.trim().to_string();
+        existing.protocol = item.protocol.trim().to_string();
+    } else {
+        customs.push(CustomProvider {
+            id: id.clone(),
+            name: item.name.trim().to_string(),
+            base_url: item.base_url.trim().to_string(),
+            model: item.model.trim().to_string(),
+            protocol: item.protocol.trim().to_string(),
+        });
+    }
+    write_custom_providers(&store, &customs)?;
+    Ok(id)
+}
+
+/// 删除自定义服务商。若删除的是当前选中的服务商，切回默认。
+#[tauri::command]
+pub fn ai_delete_custom_provider(
+    app: tauri::AppHandle,
+    store: State<DataStore>,
+    id: String,
+) -> Result<(), String> {
+    let mut customs = read_custom_providers(&store)?;
+    let before = customs.len();
+    customs.retain(|c| c.id != id);
+    if customs.len() == before {
+        return Err("未找到该自定义服务商".to_string());
+    }
+    write_custom_providers(&store, &customs)?;
+    // 当前选中被删 → 切回默认厂商（顺便清掉指向已删除项的配置）
+    let cfg = read_ai_config(&store)?;
+    if cfg.provider == id {
+        let mut next = cfg;
+        next.provider = provider::DEFAULT_PROVIDER.to_string();
+        next.base_url = String::new();
+        next.model = String::new();
+        next.protocol = String::new();
+        let _ = write_ai_config(&store, &next);
+    }
+    // 密钥文件随 id 一起清掉
+    let _ = secret_store::clear_key(&ai_data_dir(&app)?, &id);
+    Ok(())
+}
+
+/// 写入自定义服务商列表。
+fn write_custom_providers(store: &DataStore, items: &[CustomProvider]) -> Result<(), String> {
+    let mut raw = store.get_config()?;
+    if let Some(obj) = raw.as_object_mut() {
+        obj.insert(
+            "ai_custom_providers".to_string(),
+            serde_json::to_value(items).unwrap_or(Value::Array(vec![])),
+        );
+    }
+    store.save_config(&raw)
 }
 
 /// 写入密钥（传空串等于清除）。不指定厂商时写给当前选中的那家。
@@ -183,18 +425,57 @@ pub struct ProviderInfo {
 }
 
 #[tauri::command]
-pub fn ai_list_providers(app: tauri::AppHandle) -> Result<Vec<ProviderInfo>, String> {
+pub fn ai_list_providers(
+    app: tauri::AppHandle,
+    store: State<DataStore>,
+) -> Result<Vec<Value>, String> {
     let dir = ai_data_dir(&app)?;
     let configured = secret_store::configured_providers(&dir);
-    Ok(provider::PROVIDERS
-        .iter()
-        .map(|spec| ProviderInfo {
-            spec,
-            has_key: configured.iter().any(|id| id == spec.id),
-            supports_thinking_off: spec.thinking_control()
-                != provider::ThinkingControl::Unsupported,
-        })
-        .collect())
+    let mut out: Vec<Value> = Vec::with_capacity(provider::PROVIDERS.len() + 4);
+
+    // 内置 15 家
+    for spec in provider::PROVIDERS.iter() {
+        out.push(json!({
+            "id": spec.id,
+            "name": spec.name,
+            "baseUrl": spec.base_url,
+            "models": spec.models,
+            "supportsThinkingOff": spec.thinking_control() != provider::ThinkingControl::Unsupported,
+            "keyUrl": spec.key_url,
+            "note": spec.note,
+            "needsKey": spec.needs_key,
+            "modelIsFreeText": spec.model_is_free_text,
+            "modelHint": spec.model_hint,
+            "priceIn": spec.price_in,
+            "priceOut": spec.price_out,
+            "protocol": spec.protocol.id(),
+            "hasKey": configured.iter().any(|id| id == spec.id),
+            "custom": false,
+        }));
+    }
+
+    // 自定义服务商（用户添加的多个中转/代理）
+    for c in read_custom_providers(&store)? {
+        out.push(json!({
+            "id": c.id,
+            "name": c.name,
+            "baseUrl": c.base_url,
+            "models": [],
+            "supportsThinkingOff": true,
+            "keyUrl": "",
+            "note": "自定义服务商",
+            "needsKey": true,
+            "modelIsFreeText": true,
+            "modelHint": "模型名",
+            "priceIn": 0.0,
+            "priceOut": 0.0,
+            "protocol": if c.protocol.is_empty() { "openai".to_string() } else { c.protocol },
+            "hasKey": configured.iter().any(|id| id == &c.id),
+            "custom": true,
+        }));
+    }
+
+    Ok(out)
 }
 
 /// 连通性测试结果。
@@ -682,6 +963,19 @@ pub async fn ai_run(
         }
     }
 
+    // M3 偏好学习：动作偏好指令拼进 system prompt（“译文更简洁”之类）。
+    // 偏好变化会清缓存（action_pref_set 里 cache::clear()），这里无需担心旧缓存命中。
+    // 在 await 前取好值，锁不跨 await。
+    let system = {
+        let store = app.state::<DataStore>();
+        let pref = store.action_pref_get(&action_id)?;
+        if pref.is_empty() {
+            system
+        } else {
+            format!("{}\n\n用户偏好：{}", system, pref)
+        }
+    };
+
     let started = std::time::Instant::now();
     let result = crate::ai::chat(&cfg, &key, Some(system.as_str()), &user, Some(max_tokens)).await;
     let latency_ms = started.elapsed().as_millis() as u64;
@@ -862,5 +1156,90 @@ pub async fn ai_preview_custom(
             );
             Err(msg)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_store::DataStore;
+
+    fn make_store() -> DataStore {
+        DataStore::new(":memory:").expect("内存库")
+    }
+
+    /// 写 → 读往返：内置服务商的模型/地址独立于其他家
+    #[test]
+    fn test_builtin_provider_values_roundtrip() {
+        let store = make_store();
+        let mut cfg = AiConfig::default();
+        cfg.provider = "deepseek".to_string();
+        cfg.base_url = "https://a.example.com/v1".to_string();
+        cfg.model = "deepseek-chat".to_string();
+        write_ai_config(&store, &cfg).unwrap();
+
+        let read = read_ai_config(&store).unwrap();
+        assert_eq!(read.provider, "deepseek");
+        assert_eq!(read.model, "deepseek-chat");
+        assert_eq!(read.base_url, "https://a.example.com/v1");
+    }
+
+    /// 切到另一家再切回：deepseek 的值仍在（不再被清空覆盖）
+    #[test]
+    fn test_switch_provider_keeps_previous_values() {
+        let store = make_store();
+        // 配置 deepseek
+        let mut a = AiConfig::default();
+        a.provider = "deepseek".to_string();
+        a.model = "deepseek-chat".to_string();
+        a.base_url = "https://a.example.com/v1".to_string();
+        write_ai_config(&store, &a).unwrap();
+        // 切到 qwen 配自己的
+        let mut b = AiConfig::default();
+        b.provider = "qwen".to_string();
+        b.model = "qwen-max".to_string();
+        b.base_url = "https://b.example.com/v1".to_string();
+        write_ai_config(&store, &b).unwrap();
+        // 切回 deepseek：值应原样保留
+        let read = read_ai_config(&store).unwrap();
+        read.provider == "deepseek".to_string();
+        // 直接读 deepseek 的值
+        let raw = store.get_config().unwrap();
+        let legacy = |k: &str| raw.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let (base_url, model, _) = resolve_provider_values(&raw, "deepseek", &legacy);
+        assert_eq!(model, "deepseek-chat");
+        assert_eq!(base_url, "https://a.example.com/v1");
+    }
+
+    /// 自定义服务商：写入数组、多实例互不影响
+    #[test]
+    fn test_custom_provider_roundtrip() {
+        let store = make_store();
+        let mut customs = read_custom_providers(&store).unwrap();
+        customs.push(CustomProvider {
+            id: "custom_1".to_string(),
+            name: "公司中转".to_string(),
+            base_url: "https://relay.example.com/v1".to_string(),
+            model: "gpt-4o".to_string(),
+            protocol: "openai".to_string(),
+        });
+        write_custom_providers(&store, &customs).unwrap();
+
+        // 作为当前 provider 读写
+        let mut cfg = AiConfig::default();
+        cfg.provider = "custom_1".to_string();
+        cfg.base_url = "https://relay.example.com/v1".to_string();
+        cfg.model = "gpt-4o".to_string();
+        write_ai_config(&store, &cfg).unwrap();
+
+        let read = read_ai_config(&store).unwrap();
+        assert_eq!(read.provider, "custom_1");
+        assert_eq!(read.model, "gpt-4o");
+
+        // 两个自定义互不影响
+        let raw = store.get_config().unwrap();
+        let legacy = |k: &str| raw.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let (_, m2, _) = resolve_provider_values(&raw, "custom_2", &legacy);
+        assert_eq!(m2, "", "未配置的自定义返回空，不与 custom_1 串");
     }
 }

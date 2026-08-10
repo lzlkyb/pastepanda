@@ -25,6 +25,8 @@ import { prefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { ItemEditorDialog } from "@/components/editors/ItemEditorDialog";
 import { MergeDialog, type MergeItem } from "@/components/MergeDialog";
 import { TransformHubDialog } from "@/components/TransformHubDialog";
+import { ChainRunnerDialog } from "@/components/ChainRunnerDialog";
+import { ChainEditor } from "@/components/ChainEditor";
 import { LearningsDialog } from "@/components/LearningsDialog";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -821,6 +823,8 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
         <>
           <ItemEditorDialog />
           <TransformHubDialog />
+          <ChainRunnerDialog />
+          <ChainEditor />
           <LearningsDialog />
           {/* AnimatePresence 包裹条件挂载：关闭时子树保留到退场动画结束再卸载。
               各弹框组件内部不再自带 AnimatePresence（会形成独立 presence 边界、

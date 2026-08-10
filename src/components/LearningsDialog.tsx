@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Trash2, Brain, RefreshCw } from "lucide-react";
+import { X, Trash2, Brain, RefreshCw, Save } from "lucide-react";
 import { useDialogStore } from "@/stores/dialogStore";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { FocusTrap } from "@/components/FocusTrap";
@@ -19,6 +19,15 @@ import {
   type ActionEventStats,
   type ActionDismissal,
 } from "@/lib/api/actionEvents";
+import {
+  aiFeedbackStats,
+  aiFeedbackClear,
+  actionPrefsAll,
+  actionPrefSet,
+  type AiFeedbackStat,
+  type ActionPrefRow,
+} from "@/lib/api/aiFeedback";
+import { historySummariesCount, historySummariesClear } from "@/lib/api/contentMemory";
 import { useToast } from "@/components/Toast";
 import styles from "./Learnings.module.css";
 
@@ -30,14 +39,26 @@ export function LearningsDialog() {
 
   const [stats, setStats] = useState<ActionEventStats | null>(null);
   const [dismissals, setDismissals] = useState<ActionDismissal[]>([]);
+  const [fbStats, setFbStats] = useState<AiFeedbackStat[]>([]);
+  const [prefs, setPrefs] = useState<Record<string, string>>({});
+  const [memCount, setMemCount] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
 
-  /** 拉取统计 + 负反馈 */
+  /** 拉取统计 + 负反馈 + AI 结果反馈 + 内容记忆 */
   const load = useCallback(async () => {
     try {
-      const [s, d] = await Promise.all([actionEventStats(30), actionDismissals()]);
+      const [s, d, fb, p, mem] = await Promise.all([
+        actionEventStats(30),
+        actionDismissals(),
+        aiFeedbackStats(30),
+        actionPrefsAll(),
+        historySummariesCount(),
+      ]);
       setStats(s);
       setDismissals(d);
+      setFbStats(fb.filter((x) => x.total >= 5));
+      setPrefs(Object.fromEntries(p.map((r) => [r.actionId, r.preference])));
+      setMemCount(mem);
     } catch (e) {
       toast(`读取学习记录失败：${e instanceof Error ? e.message : String(e)}`, "error");
     }
@@ -49,6 +70,9 @@ export function LearningsDialog() {
     else {
       setStats(null);
       setDismissals([]);
+      setFbStats([]);
+      setPrefs({});
+      setMemCount(null);
     }
   }, [open, load]);
 
@@ -66,6 +90,43 @@ export function LearningsDialog() {
       toast(`清空失败：${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
       setBusy(false);
+    }
+  }, [load, toast]);
+
+  /** 保存某动作的偏好指令（清 AI 缓存，下次调用生效） */
+  const savePref = useCallback(
+    async (actionId: string, preference: string) => {
+      try {
+        await actionPrefSet(actionId, preference);
+        toast(preference ? `已保存「${actionId}」偏好` : `已清除「${actionId}」偏好`, "success");
+      } catch (e) {
+        toast(`保存失败：${e instanceof Error ? e.message : String(e)}`, "error");
+      }
+    },
+    [toast],
+  );
+
+  /** 一键清空 AI 结果反馈 */
+  const clearFeedback = useCallback(async () => {
+    if (!window.confirm("清空 AI 结果反馈？只影响「哪些动作常被修改」的统计，不影响偏好指令。")) return;
+    try {
+      const n = await aiFeedbackClear();
+      toast(`已清空 ${n} 条 AI 反馈`, "success");
+      void load();
+    } catch (e) {
+      toast(`清空失败：${e instanceof Error ? e.message : String(e)}`, "error");
+    }
+  }, [load, toast]);
+
+  /** 一键清空内容记忆（M5-1）。删了不自动补存量（红线②：删了就是删了）。 */
+  const clearMemory = useCallback(async () => {
+    if (!window.confirm("清空内容记忆？之后搜索不再通过摘要辅助命中（新复制的内容仍会记）。")) return;
+    try {
+      const n = await historySummariesClear();
+      toast(`已清空 ${n} 条内容记忆`, "success");
+      void load();
+    } catch (e) {
+      toast(`清空失败：${e instanceof Error ? e.message : String(e)}`, "error");
     }
   }, [load, toast]);
 
@@ -156,6 +217,85 @@ export function LearningsDialog() {
                       </div>
                     </>
                   )}
+
+                  {/* AI 结果反馈（M3 偏好学习） */}
+                  <div className={styles.fbSection}>
+                    <div className={styles.sectionTitle}>
+                      AI 结果反馈
+                      {fbStats.length > 0 && (
+                        <button className={styles.fbClear} onClick={() => void clearFeedback()}>
+                          <Trash2 size={11} /> 清空
+                        </button>
+                      )}
+                    </div>
+                    <div className={styles.fbNote}>
+                      你<b>改过</b>的 AI 产物 = 对输出不满意的信号。在这里给动作写一句偏好指令
+                      （如「译文更简洁」「不要译称呼」），下次调用会自动带上。
+                    </div>
+                    {fbStats.length === 0 ? (
+                      <div className={styles.empty}>
+                        还没有足够反馈——AI 结果如果被改过，这里会显示出来
+                      </div>
+                    ) : (
+                      <div className={styles.list}>
+                        {fbStats.map((s) => {
+                          const rate = Math.round(s.editRate * 100);
+                          return (
+                            <div key={s.actionId} className={styles.fbRow}>
+                              <div className={styles.fbHead}>
+                                <span className={styles.name}>{s.actionId}</span>
+                                <span className={rate >= 40 ? styles.rateBad : styles.rateOk}>
+                                  {rate}% 被改
+                                </span>
+                              </div>
+                              <div className={styles.fbPref}>
+                                <input
+                                  className={styles.fbInput}
+                                  value={prefs[s.actionId] ?? ""}
+                                  placeholder="偏好指令（可选），如：更简洁"
+                                  onChange={(e) =>
+                                    setPrefs((p) => ({ ...p, [s.actionId]: e.target.value }))
+                                  }
+                                />
+                                <button
+                                  className={styles.fbSave}
+                                  onClick={() => void savePref(s.actionId, prefs[s.actionId] ?? "")}
+                                >
+                                  <Save size={11} />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 内容记忆（M5-1） */}
+                  <div className={styles.fbSection}>
+                    <div className={styles.sectionTitle}>
+                      内容记忆
+                      {memCount !== null && memCount > 0 && (
+                        <button className={styles.fbClear} onClick={() => void clearMemory()}>
+                          <Trash2 size={11} /> 清空
+                        </button>
+                      )}
+                    </div>
+                    <div className={styles.fbNote}>
+                      为历史内容生成的<b>本地检索摘要</b>（域名 / 邮箱 / 正文开头）——搜索时能多一路命中，
+                      只在本机、敏感内容不记、清空后不自动补存量。
+                    </div>
+                    {memCount === null ? (
+                      <div className={styles.empty}>加载中…</div>
+                    ) : (
+                      <div className={styles.summary}>
+                        <div className={styles.sumItem}>
+                          <b>{memCount}</b>
+                          <span>已记忆条数</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                   {/* 清空 */}
                   <button className={styles.clearBtn} onClick={() => void handleClear()} disabled={busy}>

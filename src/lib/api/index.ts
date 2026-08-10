@@ -37,6 +37,10 @@ export {
   aiDeleteCustomAction,
   aiReorderCustomActions,
   aiPreviewCustom,
+  // v6.4 AI 面板 v2：per-provider 配置 + 自定义服务商多实例
+  aiGetProviderConfig,
+  aiSaveCustomProvider,
+  aiDeleteCustomProvider,
   aiGetUsage,
   aiListUsageLog,
   aiGetUsageStats,
@@ -60,6 +64,9 @@ export type {
   AiUsageStats,
   AiTestResult,
   AiRunResponse,
+  // v6.4 AI 面板 v2
+  ProviderConfigValue,
+  CustomProviderInput,
 } from "./ai";
 
 // 依次粘贴 / 索引粘贴

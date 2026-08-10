@@ -14,6 +14,7 @@
  */
 
 import type { RefObject } from "react";
+import { useState } from "react";
 import { Check, ExternalLink, Loader2 } from "lucide-react";
 import type { AiConfig, AiProviderInfo } from "@/lib/api";
 import settings from "../../Settings.module.css";
@@ -37,6 +38,10 @@ interface Props {
   /** 点芯片这种一步到位的操作立即落盘 */
   onSave: (patch: Partial<AiConfig>) => void;
   onSaveAndTest: () => void;
+  /** v6.4：自定义服务商管理 */
+  onAddCustom: () => void;
+  onEditCustom: (item: { id: string; name: string; baseUrl: string; model: string; protocol: string }) => void;
+  onDeleteCustom: (id: string) => void;
 }
 
 async function openExternal(url: string) {
@@ -68,24 +73,112 @@ export function AiSetupStep(p: Props) {
   const canTest = testing ? false : !needsKey || hasKey || !!keyInput.trim();
   const actionLabel = keyInput.trim() || !(hasKey || !needsKey) ? "保存并测试" : "测试连通性";
 
+  // v6.4：模型芯片折叠——前 4 个常用，多的收进「更多模型 ▾」
+  const [modelsOpen, setModelsOpen] = useState(false);
+  const VISIBLE_CHIPS = 4;
+  const renderChip = (m: (typeof chips)[number]) => (
+    <button
+      key={m.id}
+      className={`${styles.chip} ${m.id === activeModel ? styles.chipActive : ""}`}
+      onClick={() => p.onSave({ model: m.id })}
+    >
+      <span className={styles.chipTitle}>
+        {m.label}
+        {m.id === activeModel && <Check size={11} />}
+      </span>
+      <span className={styles.chipId}>
+        {m.id}
+        {/* 原本是拼在字符串里的纯文本，改用同一个徽标组件 */}
+        {m.reasoning && <AiBadge kind="thinking" size="xs" />}
+      </span>
+    </button>
+  );
+
   return (
     <>
       <div className={styles.step}>
         <span className={styles.stepNum}>1</span>
         <div className={styles.stepBody}>
           <span className={styles.stepTitle}>选服务商</span>
-          <select
-            className={styles.select}
-            value={config.provider}
-            onChange={(e) => p.onProviderChange(e.target.value)}
-          >
-            {p.providers.map((it) => (
-              <option key={it.id} value={it.id}>
-                {it.name}
-                {it.hasKey ? "（已配置）" : ""}
-              </option>
-            ))}
-          </select>
+
+          {/* v6.4：卡片网格（内置 + 自定义）替代原下拉 */}
+          <div className={styles.provSection}>
+            <span className={styles.provGroupLabel}>内置服务商</span>
+            <div className={styles.provGrid}>
+              {p.providers
+                .filter((it) => !it.custom)
+                .map((it) => {
+                  const on = it.id === config.provider;
+                  return (
+                    <button
+                      key={it.id}
+                      className={`${styles.provCard}${on ? ` ${styles.provCardOn}` : ""}`}
+                      onClick={() => p.onProviderChange(it.id)}
+                      title={it.note}
+                    >
+                      <span className={styles.provName}>{it.name}</span>
+                      <span className={styles.provTags}>
+                        {!it.needsKey && <span className={styles.provTagLocal}>本地</span>}
+                        {it.hasKey && <span className={styles.provTagSet}>已配置</span>}
+                      </span>
+                      {on && <span className={styles.provCk}>✓</span>}
+                    </button>
+                  );
+                })}
+            </div>
+          </div>
+
+          <div className={styles.provSection}>
+            <span className={styles.provGroupLabel}>
+              自定义服务商
+              <span className={styles.provGroupHint}>可添加多个中转 / 代理服务</span>
+            </span>
+            <div className={styles.provGrid}>
+              {p.providers
+                .filter((it) => it.custom)
+                .map((it) => {
+                  const on = it.id === config.provider;
+                  return (
+                    <button
+                      key={it.id}
+                      className={`${styles.provCard}${on ? ` ${styles.provCardOn}` : ""}`}
+                      onClick={() => p.onProviderChange(it.id)}
+                      title={it.baseUrl || it.note}
+                    >
+                      <span className={styles.provName}>{it.name}</span>
+                      <span className={styles.provTags}>
+                        {it.hasKey && <span className={styles.provTagSet}>已配置</span>}
+                      </span>
+                      {on && <span className={styles.provCk}>✓</span>}
+                      <span
+                        className={styles.provEdit}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          p.onEditCustom({ id: it.id, name: it.name, baseUrl: it.baseUrl, model: "", protocol: "" });
+                        }}
+                        title="编辑"
+                      >
+                        ✎
+                      </span>
+                      <span
+                        className={styles.provDel}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          p.onDeleteCustom(it.id);
+                        }}
+                        title="删除"
+                      >
+                        ✕
+                      </span>
+                    </button>
+                  );
+                })}
+              <button className={styles.provAdd} onClick={p.onAddCustom}>
+                ＋ 添加自定义
+              </button>
+            </div>
+          </div>
+
           {spec && (
             <div className={styles.providerNote}>
               <span>{spec.note}</span>
@@ -106,6 +199,11 @@ export function AiSetupStep(p: Props) {
               onBlur={p.onCommit}
             />
           )}
+          {spec?.custom && (
+            <span className={styles.hint}>
+              自定义服务商：模型/地址/密钥按这条独立保存。切到别的家再回来，配置原样还在。
+            </span>
+          )}
         </div>
       </div>
 
@@ -116,24 +214,18 @@ export function AiSetupStep(p: Props) {
 
           {chips.length > 0 && (
             <div className={styles.chips}>
-              {chips.map((m) => (
-                <button
-                  key={m.id}
-                  className={`${styles.chip} ${m.id === activeModel ? styles.chipActive : ""}`}
-                  onClick={() => p.onSave({ model: m.id })}
-                >
-                  <span className={styles.chipTitle}>
-                    {m.label}
-                    {m.id === activeModel && <Check size={11} />}
-                  </span>
-                  <span className={styles.chipId}>
-                    {m.id}
-                    {/* 原本是拼在字符串里的纯文本，改用同一个徽标组件 */}
-                    {m.reasoning && <AiBadge kind="thinking" size="xs" />}
-                  </span>
-                </button>
-              ))}
+              {chips.slice(0, VISIBLE_CHIPS).map(renderChip)}
             </div>
+          )}
+
+          {/* v6.4：模型多的家折叠，避免横向溢出 */}
+          {chips.length > VISIBLE_CHIPS && (
+            <>
+              {modelsOpen && <div className={styles.moreGrid}>{chips.slice(VISIBLE_CHIPS).map(renderChip)}</div>}
+              <button className={styles.moreBtn} onClick={() => setModelsOpen((v) => !v)}>
+                {modelsOpen ? "▴ 收起" : `▾ 更多模型（这家共 ${chips.length} 个）`}
+              </button>
+            </>
           )}
 
           {/* 输入框对所有服务商常驻：清单永远会过时，不能把人锁在里面 */}
@@ -170,6 +262,7 @@ export function AiSetupStep(p: Props) {
         <div className={styles.stepBody}>
           <span className={styles.stepTitle}>
             {needsKey ? "粘贴 API Key" : "确认本地服务已启动"}
+            {hasKey && <span className={styles.keyBadge}>✓ 已存过密钥</span>}
           </span>
 
           {needsKey ? (
@@ -202,11 +295,6 @@ export function AiSetupStep(p: Props) {
           <span className={styles.hint}>
             {needsKey ? (
               <>
-                {hasKey && (
-                  <>
-                    <Check size={11} className={styles.keySet} /> 这家已存过密钥。
-                  </>
-                )}
                 密钥以当前 Windows 用户身份加密后单独存放，<strong>不进</strong>配置库与配置备份；
                 保存后无法再读出明文。每家服务商分开存，切回来不用重输。
               </>

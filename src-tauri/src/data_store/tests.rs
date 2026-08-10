@@ -2388,4 +2388,255 @@ fn test_fts_fallback_like_on_special_chars() {
     assert!(items.iter().any(|i| i.id == "f4"), "特殊字符查询应回退 LIKE 命中");
 }
 
+// ============================================================
+// X1 B2：自定义动作链（chain_defs 表）
+// ============================================================
 
+fn chain_def(name: &str, steps: &[&str]) -> ChainDef {
+    ChainDef {
+        id: String::new(),
+        name: name.to_string(),
+        description: String::new(),
+        steps: steps
+            .iter()
+            .map(|t| ChainStepDef {
+                transform_id: t.to_string(),
+                risk: "local".to_string(),
+                label: String::new(),
+            })
+            .collect(),
+        sort_order: 0,
+        created_at: String::new(),
+        updated_at: String::new(),
+    }
+}
+
+#[test]
+fn test_chain_roundtrip() {
+    let store = make_store();
+    let id = store
+        .chain_save(&chain_def("报错处理", &["strip", "mask-sensitive"]))
+        .unwrap();
+    assert!(!id.is_empty());
+
+    let list = store.chains().unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].name, "报错处理");
+    assert_eq!(list[0].steps.len(), 2);
+    assert_eq!(list[0].steps[1].transform_id, "mask-sensitive");
+    assert_eq!(list[0].steps[0].risk, "local", "risk 要能原样读回");
+}
+
+#[test]
+fn test_chain_duplicate_name_rejected() {
+    // 两条同名链在运行器里分不清，必须在保存时就拦住
+    let store = make_store();
+    store.chain_save(&chain_def("清洗", &["strip"])).unwrap();
+    let err = store.chain_save(&chain_def("清洗", &["upper"])).unwrap_err();
+    assert!(err.contains("清洗"), "报错要点出是哪个名字：{}", err);
+    assert!(!err.contains("UNIQUE"), "不该把 SQLite 的英文原文抛给用户");
+}
+
+#[test]
+fn test_chain_empty_or_oversized_steps_rejected() {
+    let store = make_store();
+    assert!(
+        store.chain_save(&chain_def("空链", &[])).unwrap_err().contains("至少"),
+        "空步骤链必须被拦"
+    );
+    let many: Vec<&str> = vec!["strip"; MAX_CHAIN_STEPS + 1];
+    let err = store.chain_save(&chain_def("超长", &many)).unwrap_err();
+    assert!(err.contains("最多"), "超步数必须被拦：{}", err);
+}
+
+#[test]
+fn test_chain_bad_risk_rejected() {
+    let store = make_store();
+    let mut c = chain_def("坏风险", &["strip"]);
+    c.steps[0].risk = "hack".to_string();
+    let err = store.chain_save(&c).unwrap_err();
+    assert!(err.contains("风险"), "非法 risk 必须被拦：{}", err);
+}
+
+#[test]
+fn test_chain_delete_and_reorder() {
+    let store = make_store();
+    let a = store.chain_save(&chain_def("A链", &["strip"])).unwrap();
+    let b = store.chain_save(&chain_def("B链", &["upper"])).unwrap();
+
+    store.chains_reorder(&[b.clone(), a.clone()]).unwrap();
+    let list = store.chains().unwrap();
+    assert_eq!(list[0].id, b, "重排后 B 在前");
+    assert_eq!(list[1].id, a);
+
+    store.chain_delete(&a).unwrap();
+    let list = store.chains().unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].id, b);
+}
+
+#[test]
+fn test_chain_update_keeps_id_and_allows_same_name() {
+    let store = make_store();
+    let id = store.chain_save(&chain_def("邮件链", &["strip"])).unwrap();
+
+    let mut edit = chain_def("邮件链", &["strip", "mask-sensitive"]);
+    edit.id = id.clone();
+    // 改自己时不该被自己的名字挡住
+    let same = store.chain_save(&edit).unwrap();
+    assert_eq!(same, id);
+
+    let got = store.chains().unwrap().pop().unwrap();
+    assert_eq!(got.steps.len(), 2, "步骤更新应生效");
+    assert_eq!(store.chains().unwrap().len(), 1, "不该多出一条");
+}
+
+
+
+// ============================================================
+// M3 偏好学习：ai_feedback + action_prefs
+// ============================================================
+
+fn fb(action: &str, outcome: &str) -> AiFeedback {
+    AiFeedback {
+        action_id: action.to_string(),
+        content_type: "text".to_string(),
+        outcome: outcome.to_string(),
+        result_hash: "hash1".to_string(),
+    }
+}
+
+#[test]
+fn test_ai_feedback_stats_aggregates_and_edit_rate() {
+    let store = make_store();
+    // 4 次调用：2 次直接复制(accepted) + 2 次改过(edited)
+    store.ai_feedback_add(&fb("ai-translate", FEEDBACK_ACCEPTED));
+    store.ai_feedback_add(&fb("ai-translate", FEEDBACK_ACCEPTED));
+    store.ai_feedback_add(&fb("ai-translate", FEEDBACK_EDITED));
+    store.ai_feedback_add(&fb("ai-translate", FEEDBACK_EDITED));
+    // 另一个动作只 1 次
+    store.ai_feedback_add(&fb("ai-summarize", FEEDBACK_ACCEPTED));
+
+    let stats = store.ai_feedback_stats(30).unwrap();
+    assert_eq!(stats.len(), 2);
+    let t = stats.iter().find(|s| s.action_id == "ai-translate").unwrap();
+    assert_eq!(t.total, 4);
+    assert_eq!(t.accepted, 2);
+    assert_eq!(t.edited, 2);
+    assert!((t.edit_rate - 0.5).abs() < 1e-9, "edit_rate 应为 0.5：{}", t.edit_rate);
+}
+
+#[test]
+fn test_ai_feedback_ignores_unknown_outcome() {
+    let store = make_store();
+    store.ai_feedback_add(&fb("ai-translate", "weird"));
+    assert_eq!(store.ai_feedback_stats(30).unwrap().len(), 0, "非法 outcome 不入库");
+}
+
+#[test]
+fn test_ai_feedback_clear_and_days_window() {
+    let store = make_store();
+    store.ai_feedback_add(&fb("ai-translate", FEEDBACK_EDITED));
+    let n = store.ai_feedback_clear().unwrap();
+    assert_eq!(n, 1);
+    assert_eq!(store.ai_feedback_stats(30).unwrap().len(), 0);
+}
+
+#[test]
+fn test_action_pref_roundtrip_and_clear() {
+    let store = make_store();
+    // 未设置 → 空串
+    assert_eq!(store.action_pref_get("ai-translate").unwrap(), "");
+
+    store.action_pref_set("ai-translate", "译文更简洁").unwrap();
+    assert_eq!(store.action_pref_get("ai-translate").unwrap(), "译文更简洁");
+
+    // 空串 = 清除
+    store.action_pref_set("ai-translate", "  ").unwrap();
+    assert_eq!(store.action_pref_get("ai-translate").unwrap(), "");
+
+    // prefs_all
+    store.action_pref_set("ai-translate", "A").unwrap();
+    store.action_pref_set("ai-summarize", "B").unwrap();
+    let all = store.action_prefs_all().unwrap();
+    assert_eq!(all.len(), 2);
+    assert!(all.iter().any(|r| r.action_id == "ai-summarize" && r.preference == "B"));
+}
+
+// ============================================================
+// M5-1 内容记忆：summarize_text + history_summaries
+// ============================================================
+
+#[test]
+fn test_summarize_text_extracts_domain_email_body() {
+    use crate::data_store::summarize_text;
+    let s = summarize_text("参考 https://www.github.com/a/b 和 http://docs.rs/rmcp，联系 alice@example.com");
+    assert!(s.contains("github.com"), "去 www 的域名：{}", s);
+    assert!(s.contains("docs.rs"));
+    assert!(s.contains("alice@example.com"));
+    assert!(s.contains("正文："));
+}
+
+#[test]
+fn test_summarize_text_plain_body_only() {
+    use crate::data_store::summarize_text;
+    let s = summarize_text("这是一段普通的中文文本，没有链接也没有邮箱。");
+    assert!(!s.contains("域名："), "不应有域名段");
+    assert!(!s.contains("邮箱："), "不应有邮箱段");
+    assert!(s.contains("正文："));
+}
+
+#[test]
+fn test_summarize_text_empty() {
+    use crate::data_store::summarize_text;
+    assert!(summarize_text("").is_empty());
+    assert!(summarize_text("   \n  ").is_empty());
+}
+
+#[test]
+fn test_history_summary_ensure_and_read() {
+    let store = make_store();
+    store
+        .insert_history(&make_item("m1", "文档 https://docs.rs/rmcp 的用法", "2026-08-10 10:00:00", "text"))
+        .unwrap();
+    // insert_history 内已同步生成摘要（M5-1 接入）
+    let s = store.history_summary("m1").unwrap();
+    assert!(s.contains("docs.rs"), "插入时生成的摘要应含域名：{}", s);
+
+    // 幂等：再 ensure 一次不报错
+    store.history_summary_ensure("m1", "新文本 https://x.com").unwrap();
+    let s2 = store.history_summary("m1").unwrap();
+    assert!(s2.contains("x.com"), "ensure 应更新摘要：{}", s2);
+}
+
+#[test]
+fn test_history_summary_skips_secret() {
+    let store = make_store();
+    // 密钥内容不生成摘要（指纹也不留）
+    store
+        .insert_history(&make_item("sec1", "sk-abcdef1234567890abcdef1234567890", "2026-08-10 10:00:00", "text"))
+        .unwrap();
+    assert_eq!(store.history_summary("sec1").unwrap(), "", "敏感内容不记摘要");
+}
+
+#[test]
+fn test_history_summaries_backfill_and_clear() {
+    let store = make_store();
+    // 直接插入（模拟存量历史，无摘要）
+    store
+        .insert_history(&make_item("b1", "https://example.com/page", "2026-08-01 10:00:00", "text"))
+        .unwrap();
+    // 手动删掉摘要模拟"存量未回填"（insert 已自动生成，这里清掉再回填验证）
+    store.history_summaries_clear().unwrap();
+
+    let n = store.history_summaries_backfill(100).unwrap();
+    assert_eq!(n, 1, "应回填 1 条：{n}");
+    assert!(store.history_summary("b1").unwrap().contains("example.com"));
+
+    // 清空
+    let c = store.history_summaries_clear().unwrap();
+    assert_eq!(c, 1);
+    assert_eq!(store.history_summaries_count().unwrap(), 0, "清空后计数为 0");
+    // 清空后不自动补存量
+    assert_eq!(store.history_summaries_backfill(100).unwrap(), 0, "清空后不补存量");
+}

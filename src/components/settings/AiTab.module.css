@@ -152,6 +152,155 @@
   border-color: var(--accent);
 }
 
+/* v6.4 AI 面板 v2：服务商卡片网格 */
+.provSection {
+  margin-bottom: 12px;
+}
+
+.provGroupLabel {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.provGroupHint {
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+
+.provGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.provCard {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--search-border);
+  border-radius: 9px;
+  padding: 7px 8px;
+  background: var(--section-bg);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  overflow: hidden;
+}
+
+.provCard:hover {
+  border-color: var(--accent);
+}
+
+.provCardOn {
+  border-color: var(--accent);
+  background: var(--accent-light);
+  box-shadow: 0 0 0 3px var(--accent-soft, rgba(2, 132, 199, 0.12));
+}
+
+.provName {
+  font-size: 12px;
+  color: var(--text-primary);
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.provTags {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.provTagSet,
+.provTagLocal {
+  font-size: 9px;
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-weight: 600;
+}
+
+.provTagSet {
+  background: var(--success-bg, #dcfce7);
+  color: var(--success, #15803d);
+}
+
+.provTagLocal {
+  background: var(--accent-light);
+  color: var(--accent-strong);
+}
+
+.provCk {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.provEdit,
+.provDel {
+  position: absolute;
+  top: 4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--hover-bg, rgba(127, 127, 127, 0.1));
+}
+
+.provEdit {
+  right: 22px;
+}
+
+.provDel {
+  right: 4px;
+  color: var(--danger, #ef4444);
+}
+
+.provEdit:hover {
+  color: var(--text-primary);
+}
+
+.provDel:hover {
+  background: var(--danger-bg, #fee2e2);
+}
+
+.provAdd {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px dashed var(--accent);
+  border-radius: 9px;
+  padding: 7px 8px;
+  font-size: 12px;
+  color: var(--accent-strong);
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.provAdd:hover {
+  background: var(--accent-light);
+}
+
 .row {
   display: flex;
   gap: 8px;
@@ -166,6 +315,50 @@
 .keySet {
   color: var(--green);
   vertical-align: -1px;
+}
+
+/* v6.4：密钥状态徽标（步骤标题旁）+ 模型「更多」折叠 */
+.keyBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--success, #15803d);
+  background: var(--success-bg, #dcfce7);
+  border-radius: 12px;
+  padding: 2px 8px;
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+
+.moreBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px dashed var(--search-border);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+  margin-top: 2px;
+}
+
+.moreBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.moreGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  border: 1px solid var(--search-border);
+  border-radius: 9px;
+  padding: 8px;
+  background: var(--section-bg);
 }
 
 /* 联网提醒：这一栏存在的意义就是让用户知道剪贴板内容会离开本机 */
@@ -202,11 +395,13 @@
 }
 
 .testOk {
-  color: var(--green);
+  color: var(--success, #15803d);
+  background: var(--success-bg, #dcfce7);
 }
 
 .testFail {
   color: var(--danger);
+  background: var(--danger-bg, #fee2e2);
 }
 
 /* 下一步建议用次要色，不跟错误本文抢注意力 */
@@ -227,6 +422,50 @@
   padding: 10px 12px;
   border-radius: 8px;
   background: var(--section-bg);
+}
+
+/* v6.4 用量卡：环形 + 进度条 + 剩余次数 */
+.usageRingWrap {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.usageRing {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.usageRingInner {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--section-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-strong);
+}
+
+.usageMeta {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.usageTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .usage {
@@ -438,6 +677,63 @@
   white-space: nowrap;
 }
 
+/* v6.4：自定义动作行 —— 模板摘要 + AI 角标 + 行内 ✎/✕ */
+.actionTpl {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actionChipAi {
+  font-size: 9px;
+  border-radius: 4px;
+  padding: 1px 5px;
+  background: var(--ai-bg, #f3e8ff);
+  color: #7e22ce;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.actionBtn {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: none;
+  background: var(--hover-bg, rgba(127, 127, 127, 0.1));
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.actionBtn:hover {
+  background: var(--section-bg);
+  color: var(--text-primary);
+}
+
+.actionBtnDanger {
+  color: var(--danger);
+}
+
+.actionBtnDanger:hover {
+  background: var(--danger-bg, #fee2e2);
+}
+
+.emptyHint {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 14px 10px;
+  border: 1px dashed var(--border-color);
+  border-radius: 9px;
+  line-height: 1.6;
+}
+
 .tagOn {
   flex-shrink: 0;
   font-size: 10px;
@@ -483,6 +779,92 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+/* v6.4 高级区：seg 协议切换 / 数字输入行 / Toggle 开关 */
+.segs {
+  display: flex;
+  gap: 6px;
+}
+
+.seg {
+  border: 1px solid var(--search-border);
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 12px;
+  background: var(--section-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.segOn {
+  border-color: var(--accent);
+  background: var(--accent-light);
+  color: var(--accent-strong);
+}
+
+.advInputRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.numInput {
+  width: 110px;
+  border: 1px solid var(--search-border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.numInput:focus {
+  border-color: var(--accent);
+}
+
+.advInputRow .hint {
+  margin: 0;
+  flex: 1;
+}
+
+/* checkbox → 圆钮开关 */
+.toggleCheck {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 34px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--border-color);
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.2s;
+  margin: 0;
+}
+
+.toggleCheck::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.2s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.toggleCheck:checked {
+  background: var(--accent);
+}
+
+.toggleCheck:checked::after {
+  left: 16px;
 }
 
 /* 模型快捷芯片。档位在上、模型 ID 在下：
@@ -532,4 +914,125 @@
 
 .chipActive .chipTitle {
   color: var(--accent);
+}
+
+/* v6.4 用量明细：汇总条 + 表头 + 对齐列 */
+.sumGrid {
+  display: flex;
+  gap: 8px;
+}
+
+.sumItem {
+  flex: 1;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  padding: 8px 0;
+  text-align: center;
+  background: var(--section-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sumNum {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.sumLabel {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.logHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  font-size: 10px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.logHeadTime,
+.logTime {
+  width: 74px;
+  flex-shrink: 0;
+}
+
+.logHeadAction,
+.logAction {
+  flex: 1;
+  min-width: 0;
+}
+
+.logHeadModel,
+.logModel {
+  width: 92px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logHeadTok,
+.logTok {
+  width: 62px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.logHeadRes {
+  width: 40px;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.logDetail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.logDetail:last-child {
+  border-bottom: none;
+}
+
+.logCheck {
+  width: 40px;
+  flex-shrink: 0;
+  text-align: center;
+  color: var(--success, #15803d);
+  font-weight: 700;
+}
+
+.logDetail .tagCached,
+.logDetail .tagFailed {
+  width: 40px;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+/* v6.4 AI 编辑器：占位符 chip + 试跑结果 accent 卡 */
+.ph {
+  display: inline-block;
+  border: 1px dashed var(--accent-border);
+  border-radius: 5px;
+  padding: 0 4px;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.previewAi {
+  background: var(--accent-light);
+  border-color: var(--accent-border);
+  color: var(--accent-strong);
 }

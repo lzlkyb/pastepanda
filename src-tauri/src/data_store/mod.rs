@@ -5,6 +5,9 @@ mod snippet;
 mod config;
 mod ai_usage;
 mod ai_action;
+mod chains;
+mod ai_feedback;
+mod content_memory;
 mod action_events;
 #[cfg(test)]
 mod tests;
@@ -13,6 +16,11 @@ pub use ai_usage::{
     AiUsageByAction, AiUsageDaily, AiUsageEntry, AiUsageLogRow, AI_USAGE_RETAIN_DAYS,
 };
 pub use ai_action::{CustomAction, MAX_ACTION_DESC_CHARS, MAX_ACTION_NAME_CHARS};
+pub use chains::{ChainDef, ChainStepDef, MAX_CHAIN_DESC_CHARS, MAX_CHAIN_NAME_CHARS, MAX_CHAIN_STEPS};
+pub use ai_feedback::{
+    ActionPrefRow, AiFeedback, AiFeedbackStat, FEEDBACK_ACCEPTED, FEEDBACK_EDITED, FEEDBACK_REJECTED,
+};
+pub use content_memory::{HistorySummary, summarize_text};
 pub use action_events::{
     ActionEvent, ActionEventCount, ActionEventStats, ActionDismissal, ActionWeightRow,
     SceneWeightRow, ACTION_EVENTS_RETAIN_DAYS, ACTION_ID_PASTE, OUTCOME_ABANDONED,
@@ -296,6 +304,50 @@ impl DataStore {
             );
             CREATE INDEX IF NOT EXISTS idx_action_events_created ON action_events(created_at);
             CREATE INDEX IF NOT EXISTS idx_action_events_action ON action_events(action_id);
+
+            -- 用户自定义的动作链（X1 B2，见 data_store/chains.rs）。
+            -- steps 存 JSON 数组（[{transformId, risk, label}]）——有序快照，从不单独查询。
+            -- 名称 UNIQUE：两条同名链在运行器里分不清。
+            CREATE TABLE IF NOT EXISTS chain_defs (
+                id          TEXT PRIMARY KEY,
+                name        TEXT NOT NULL UNIQUE,
+                description TEXT NOT NULL DEFAULT '',
+                steps       TEXT NOT NULL DEFAULT '[]',
+                sort_order  INTEGER NOT NULL DEFAULT 0,
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL
+            );
+
+            -- AI 结果反馈（M3 偏好学习，见 data_store/ai_feedback.rs）。
+            -- **没有内容字段，也不得加**：只记动作、类型、三态与产物哈希。
+            -- result_hash 是产物去重统计用的散列（非明文），用于统计同款结果被改过几次。
+            CREATE TABLE IF NOT EXISTS ai_feedback (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at   TEXT    NOT NULL,
+                action_id    TEXT    NOT NULL,
+                content_type TEXT    NOT NULL DEFAULT '',
+                outcome      TEXT    NOT NULL,
+                result_hash  TEXT    NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_ai_feedback_created ON ai_feedback(created_at);
+            CREATE INDEX IF NOT EXISTS idx_ai_feedback_action ON ai_feedback(action_id);
+
+            -- 动作偏好指令（M3，见 data_store/ai_feedback.rs）。
+            -- 一句话指令，由 ai_run 拼进 system prompt；action_id 主键。
+            CREATE TABLE IF NOT EXISTS action_prefs (
+                action_id   TEXT PRIMARY KEY,
+                preference  TEXT NOT NULL DEFAULT '',
+                updated_at  TEXT NOT NULL
+            );
+
+            -- 内容记忆（M5-1，见 data_store/content_memory.rs）。
+            -- history 原文的「检索摘要」（域名/邮箱/正文头），只在本机、可一键清空。
+            -- 敏感内容不记；清空后不自动补存量。
+            CREATE TABLE IF NOT EXISTS history_summaries (
+                history_id  TEXT PRIMARY KEY,
+                summary     TEXT NOT NULL,
+                created_at  TEXT NOT NULL
+            );
 
             -- 「不再推荐这个」负反馈（v6.1，见 data_store/action_events.rs）。
             -- (action_id, content_type) 主键去重：重复点不再推荐是幂等操作。

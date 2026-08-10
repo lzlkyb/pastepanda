@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { HistoryItem } from "@/stores/appStore";
+import type { ChainDef } from "@/lib/api/chains";
 
 interface DialogState {
   /** 正在编辑的记录（非 null 时 ItemEditorDialog 打开） */
@@ -23,6 +24,16 @@ interface DialogState {
   hubText: string | null;
   openHub: (item: HistoryItem, overrideText?: string) => void;
   closeHub: () => void;
+  /** 动作链运行器（X1 B1）：非 null 时 ChainRunnerDialog 打开，文本是要处理的内容 */
+  chainText: string | null;
+  /** 打开时预选的链 id（M4 跑链建议用；空则默认第一条） */
+  chainIdHint: string | null;
+  openChain: (text: string, chainId?: string) => void;
+  closeChain: () => void;
+  /** 动作链编辑器（X1 B2）：非 null 时 ChainEditor 打开；传 null 表示新建 */
+  chainEdit: ChainDef | null;
+  openChainEditor: (chain: ChainDef | null) => void;
+  closeChainEditor: () => void;
   /** 「系统学到了什么」（v6.1 红线②：学习日志可见可删） */
   learningsOpen: boolean;
   openLearnings: () => void;
@@ -52,6 +63,13 @@ export const useDialogStore = create<DialogState>((set) => ({
   openHub: (item, overrideText) =>
     set({ hubItem: item, hubText: overrideText ?? null }),
   closeHub: () => set({ hubItem: null, hubText: null }),
+  chainText: null,
+  chainIdHint: null,
+  openChain: (text, chainId) => set({ chainText: text, chainIdHint: chainId ?? null }),
+  closeChain: () => set({ chainText: null, chainIdHint: null }),
+  chainEdit: null,
+  openChainEditor: (chain) => set({ chainEdit: chain }),
+  closeChainEditor: () => set({ chainEdit: null }),
   learningsOpen: false,
   openLearnings: () => set({ learningsOpen: true }),
   closeLearnings: () => set({ learningsOpen: false }),

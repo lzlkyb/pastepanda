@@ -1,0 +1,53 @@
+/**
+ * chains/types.ts — 动作链的类型定义（X1 · 可保存的"粘贴动作链"）。
+ *
+ * 链 = 有序的变换步骤。上一步的输出作为下一步的输入，线性执行（首版不做分支画布）。
+ * 每步标注 risk：local（纯本地）/ network（联网）/ destructive（修改性，如脱敏）。
+ * 设计对齐 docs/功能清单-v6.x.md 的 X1 规划：失败定位到步骤、失败保留原始内容。
+ */
+
+/** 步骤风险等级。UI 据此显示徽标，提示用户"这一步会做什么"。 */
+export type ChainStepRisk = "local" | "network" | "destructive";
+
+/** 链中的一个步骤：引用一个已注册变换（transforms/registry） */
+export interface ChainStep {
+  transformId: string;
+  risk: ChainStepRisk;
+  /** 覆盖显示名；缺省用变换自身的 label */
+  label?: string;
+}
+
+/** 一条链的定义 */
+export interface Chain {
+  id: string;
+  name: string;
+  description: string;
+  steps: ChainStep[];
+}
+
+/** 单步执行结果（供逐步预览） */
+export interface ChainRunStage {
+  stepIndex: number;
+  transformId: string;
+  label: string;
+  risk: ChainStepRisk;
+  /** 该步的输入（上一步的输出） */
+  input: string;
+  output: string;
+  ok: boolean;
+  error?: string;
+  durationMs: number;
+}
+
+/** 整条链的运行结果 */
+export interface ChainRunResult {
+  ok: boolean;
+  stages: ChainRunStage[];
+  /**
+   * 最终输出。失败时 = 最后一个成功步骤的输出（"失败保留原文，不静默粘半成品"，
+   * 但不把原始内容扔掉——用户仍可复制这个中间产物）。
+   */
+  final: string;
+  /** 失败步骤的索引（0 起）；成功时为 undefined */
+  failedAt?: number;
+}

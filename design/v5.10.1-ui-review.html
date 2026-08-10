@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda v5.10.1 UI 变更设计稿</title>
+<style>
+  :root{
+    --bg:#F4F6F9; --card:#ffffff; --border:#E2E8F0; --text:#0F172A; --text2:#64748B; --text3:#94A3B8;
+    --accent:#0284C7; --accent-light:#E0F2FE; --accent-strong:#0369A1; --danger:#EF4444; --danger-hover:#FEE2E2;
+    --ai:#A855F7; --ai-light:#F3E8FF; --section:#F8FAFC; --hover:#F1F5F9;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:#E8EDF3;padding:24px;color:var(--text)}
+  .page{max-width:1100px;margin:0 auto}
+  h1{font-size:20px;margin-bottom:4px}
+  .sub{font-size:13px;color:var(--text2);margin-bottom:20px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(15,23,42,.06)}
+  .card h2{font-size:14px;margin-bottom:2px}
+  .card .pos{font-size:11px;color:var(--text3);margin-bottom:12px}
+  .card .pos code{background:var(--hover);border-radius:4px;padding:1px 5px;color:var(--text2)}
+  .note{font-size:11px;color:var(--text3);margin-top:12px;line-height:1.6}
+
+  /* === 主窗口模拟（480×340 顶部） === */
+  .win{width:480px;background:var(--bg);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(15,23,42,.1)}
+  .topbar{display:flex;align-items:center;gap:6px;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--card)}
+  .topbar .logo{width:22px;height:22px;border-radius:6px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px}
+  .topbar .t{font-size:12px;font-weight:600;color:var(--text)}
+  .topbar .sp{flex:1}
+  .tb-btn{width:26px;height:26px;border-radius:7px;background:var(--hover);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text2)}
+
+  /* === SuggestionBar（主窗口建议条） === */
+  .sug{display:flex;align-items:center;gap:8px;margin:8px 14px 6px;padding:6px 10px;border-radius:9px;background:var(--card);border:1px solid var(--border);box-shadow:0 1px 2px rgba(15,23,42,.06);font-size:12px}
+  .sug .ic{width:20px;height:20px;border-radius:6px;background:var(--accent-light);color:var(--accent-strong);display:flex;align-items:center;justify-content:center;font-size:11px}
+  .sug .tx{flex:1;color:var(--text)}
+  .sug .use{display:flex;align-items:center;gap:3px;border:none;border-radius:6px;padding:3px 8px;font-size:12px;background:var(--accent-light);color:var(--accent-strong);cursor:pointer}
+  .sug .x{width:20px;height:20px;border:none;border-radius:6px;background:transparent;color:var(--text3);cursor:pointer}
+
+  /* === 列表占位 === */
+  .list{padding:0 14px 10px;display:flex;flex-direction:column;gap:8px}
+  .li{height:34px;border-radius:9px;background:var(--card);border:1px solid var(--border)}
+  .li.n{margin-top:2px}
+
+  /* === 托盘弹窗建议条 === */
+  .tray{width:300px;background:#1E293B;border-radius:12px;overflow:hidden;border:1px solid #334155;box-shadow:0 4px 12px rgba(15,23,42,.35)}
+  .tray-head{display:flex;align-items:center;gap:8px;padding:10px 12px;color:#E2E8F0;font-size:12px;font-weight:600;border-bottom:1px solid #334155}
+  .tray-head .dot{width:8px;height:8px;border-radius:50%;background:#22C55E}
+  .tray-sug{display:flex;align-items:center;gap:6px;margin:6px 10px 2px;padding:5px 8px;border-radius:7px;background:rgba(127,127,127,.12);border:1px solid rgba(127,127,127,.25);font-size:11px;color:#E8E8E8}
+  .tray-sug .ic{width:18px;height:18px;border-radius:5px;background:rgba(59,158,255,.18);color:#5BB3FF;display:flex;align-items:center;justify-content:center;font-size:10px}
+  .tray-sug .tx{flex:1}
+  .tray-sug .use{display:flex;align-items:center;gap:2px;border:none;border-radius:5px;padding:2px 6px;font-size:11px;background:rgba(59,158,255,.18);color:#5BB3FF;cursor:pointer}
+  .tray-sug .x{width:18px;height:18px;border:none;border-radius:5px;background:transparent;color:#94A3B8;cursor:pointer}
+  .tray-list{padding:4px 10px 8px;display:flex;flex-direction:column;gap:6px}
+  .tl{height:26px;border-radius:7px;background:#334155}
+
+  /* === 枢纽 NL 输入框 + 卡片高亮 === */
+  .hub{width:460px;background:var(--card);border-radius:14px;border:1px solid var(--border);overflow:hidden;box-shadow:0 4px 16px rgba(15,23,42,.15)}
+  .hub-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--border)}
+  .hub-head .ic{width:24px;height:24px;border-radius:7px;background:var(--accent-light);color:var(--accent-strong);display:flex;align-items:center;justify-content:center;font-size:13px}
+  .hub-head h3{font-size:14px;color:var(--text)}
+  .hub-head .cnt{font-size:11px;color:var(--text3);flex:1}
+  .hub-head .x{width:24px;height:24px;border-radius:7px;border:none;background:transparent;color:var(--text3);cursor:pointer}
+  .nl{display:flex;align-items:center;gap:8px;margin:10px 14px 0;padding:5px 8px 5px 10px;border-radius:9px;background:var(--bg);border:1px solid var(--accent);font-size:12px}
+  .nl .ic{width:20px;height:20px;border-radius:6px;background:var(--accent-light);color:var(--accent-strong);display:flex;align-items:center;justify-content:center;font-size:11px}
+  .nl input{flex:1;border:none;outline:none;background:transparent;font-size:12px;color:var(--text)}
+  .nl input::placeholder{color:var(--text3)}
+  .nl .go{width:22px;height:22px;border:none;border-radius:6px;background:var(--accent-light);color:var(--accent-strong);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px}
+  .hub-sec{font-size:11px;color:var(--text3);padding:12px 14px 4px}
+  .card1{position:relative;margin:6px 14px 8px;border:1px solid var(--accent);border-radius:12px;background:var(--section);box-shadow:0 0 0 4px rgba(2,132,199,.15)}
+  .card1 .head{display:flex;align-items:center;gap:6px;padding:8px 10px}
+  .card1 .head .ci{width:18px;height:18px;border-radius:5px;background:var(--accent-light);color:var(--accent-strong);display:flex;align-items:center;justify-content:center;font-size:10px}
+  .card1 .head b{font-size:12px;color:var(--text)}
+  .card1 .head .score{margin-left:auto;font-size:10px;color:var(--text3)}
+  .card1 .out{margin:0 10px 8px;font-size:11px;color:var(--text2);background:var(--card);border:1px solid var(--border);border-radius:7px;padding:6px 8px}
+  .card1 .row{display:flex;gap:6px;padding:0 10px 8px}
+  .card1 .row .b{flex:1;text-align:center;border:1px solid var(--border);border-radius:6px;padding:4px 0;font-size:11px;color:var(--text2);background:var(--card)}
+  .card2{margin:6px 14px 8px;border:1px solid var(--border);border-radius:12px;background:var(--section);padding:10px}
+  .card2 .t{font-size:12px;color:var(--text);margin-bottom:6px}
+  .card2 .hl{font-size:11px;color:var(--accent-strong);background:var(--accent-light);border-radius:6px;padding:4px 8px;display:inline-block}
+
+  /* === 合并面板 === */
+  .md{width:460px;background:var(--card);border-radius:14px;border:1px solid var(--border);overflow:hidden;box-shadow:0 4px 16px rgba(15,23,42,.15)}
+  .md-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--border)}
+  .md-head h3{font-size:14px}
+  .md-head .cnt{font-size:11px;color:var(--text3);flex:1}
+  .md-seps{display:flex;flex-wrap:wrap;gap:6px;padding:10px 14px 0}
+  .sep{border:1px solid var(--border);border-radius:7px;padding:4px 10px;font-size:12px;background:var(--section);color:var(--text);cursor:pointer}
+  .sep.on{border-color:var(--accent);background:var(--accent-light);color:var(--accent-strong)}
+  .md-prev{margin:10px 14px 0}
+  .md-prev .l{font-size:11px;color:var(--text3);margin-bottom:4px}
+  .md-prev .box{max-height:120px;overflow:auto;border:1px solid var(--border);border-radius:9px;background:var(--section);padding:8px 10px;font-size:12px;line-height:1.6;white-space:pre-wrap}
+  .md-acts{display:flex;gap:8px;justify-content:flex-end;padding:12px 14px 14px}
+  .a{display:flex;align-items:center;gap:4px;border:none;border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer}
+  .a.ai{background:rgba(168,85,247,.16);color:var(--ai)}
+  .a.paste{background:var(--accent);color:#fff}
+  .a.copy{background:var(--accent-light);color:var(--accent-strong)}
+
+  /* === 周报 === */
+  .wr{width:460px;background:var(--card);border-radius:14px;border:1px solid var(--border);overflow:hidden;box-shadow:0 4px 16px rgba(15,23,42,.15)}
+  .wr-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--border)}
+  .wr-head .ic{width:24px;height:24px;border-radius:7px;background:var(--accent-light);color:var(--accent-strong);display:flex;align-items:center;justify-content:center;font-size:13px}
+  .wr-head h3{font-size:14px}
+  .wr-ov{display:flex;gap:8px;padding:10px 14px 0}
+  .ov{flex:1;border:1px solid var(--border);border-radius:10px;padding:10px 0;text-align:center;background:var(--section)}
+  .ov .n{font-size:22px;font-weight:700}
+  .ov .l{font-size:11px;color:var(--text3);margin-top:2px}
+  .wr-sec{margin:12px 14px 0}
+  .wr-sec .t{font-size:12px;color:var(--text3);margin-bottom:6px}
+  .bar{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .bar .lb{width:52px;font-size:12px}
+  .bar .tk{flex:1;height:8px;border-radius:4px;background:var(--section);overflow:hidden}
+  .bar .fl{height:100%;border-radius:4px;background:var(--accent)}
+  .bar .v{width:36px;text-align:right;font-size:11px;color:var(--text3)}
+  .wr-chip{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{border:1px solid var(--border);border-radius:12px;padding:3px 10px;font-size:11px;background:var(--section);color:var(--text)}
+  .wr-ai{margin:12px 14px 0;border:1px solid rgba(168,85,247,.35);border-radius:10px;padding:8px 10px;background:rgba(168,85,247,.08)}
+  .wr-ai .l{font-size:11px;color:var(--ai);margin-bottom:4px}
+  .wr-ai .t{font-size:12px;line-height:1.7}
+  .wr-act{display:flex;justify-content:flex-end;padding:12px 14px 14px}
+
+  /* === 设置页周报入口 === */
+  .set{width:560px;background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  .set-sec{border-bottom:1px solid var(--border);padding:14px}
+  .set-title{display:flex;align-items:center;justify-content:space-between;font-size:11px;font-weight:600;color:var(--text2);padding:8px 14px;background:var(--section)}
+  .set-title .hint{font-size:10px;font-weight:500;color:var(--text3)}
+  .set-title .btn{border:1px solid var(--accent);border-radius:7px;padding:3px 10px;font-size:11px;background:var(--accent-light);color:var(--accent-strong);cursor:pointer}
+  .set-body{min-height:120px;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px}
+  .foot{margin-top:24px;padding-top:12px;border-top:1px dashed var(--border);font-size:11px;color:var(--text3);line-height:1.8}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>PastePanda v5.10.1 — UI 变更设计稿</h1>
+  <div class="sub">覆盖本次发布的 6 处 UI 改动（样式/结构/文案均对照真实组件源码）｜确认后如需调整请指出</div>
+
+  <div class="grid">
+
+    <!-- 1. 主窗口建议条 -->
+    <div class="card">
+      <h2>① 主窗口主动建议条</h2>
+      <div class="pos">组件 <code>SuggestionBar.tsx</code> ｜ 位置：TopBar 下方</div>
+      <div class="win">
+        <div class="topbar">
+          <div class="logo">🐼</div><div class="t">PastePanda</div><div class="sp"></div>
+          <div class="tb-btn">⚙</div>
+        </div>
+        <div class="sug">
+          <div class="ic">💡</div>
+          <div class="tx">用「SQL IN」处理这段内容？</div>
+          <div class="use">使用 →</div>
+          <div class="x">✕</div>
+        </div>
+        <div class="list">
+          <div class="li"></div><div class="li"></div><div class="li n"></div><div class="li"></div>
+        </div>
+      </div>
+      <div class="note">行为：复制新内容触发 top-1 建议；✕ = 写入「不再推荐」并记住；8 秒无操作自动收起；同一内容不重复提示。</div>
+    </div>
+
+    <!-- 2. 托盘弹窗建议条 -->
+    <div class="card">
+      <h2>② 托盘弹窗建议条</h2>
+      <div class="pos">组件 <code>TrayPopupSuggestion.tsx</code> ｜ 位置：「最近复制」列表上方</div>
+      <div class="tray">
+        <div class="tray-head"><span class="dot"></span> PastePanda</div>
+        <div class="tray-sug">
+          <div class="ic">💡</div>
+          <div class="tx">把 3 个同类内容合并成「SQL IN」？</div>
+          <div class="use">使用 →</div>
+          <div class="x">✕</div>
+        </div>
+        <div class="tray-list"><div class="tl"></div><div class="tl"></div><div class="tl"></div></div>
+      </div>
+      <div class="note">行为：打开托盘时基于最新记录给 top-1/序列建议；「使用」→ 变换结果直接粘贴前台并收起；✕ 记住不再建议（暗色弹窗）。</div>
+    </div>
+
+    <!-- 3. 枢纽 NL 输入框 + 卡片高亮 -->
+    <div class="card">
+      <h2>③ 变换枢纽：自然语言指令 + 定位高亮</h2>
+      <div class="pos">组件 <code>NlCommandBar.tsx</code> + 卡片高亮 ｜ 位置：枢纽标题下</div>
+      <div class="hub">
+        <div class="hub-head">
+          <div class="ic">✨</div><h3>变换为…</h3><span class="cnt">3 个可用变换</span>
+          <div class="x">✕</div>
+        </div>
+        <div class="nl">
+          <div class="ic">💡</div>
+          <input placeholder="想做什么？如：改得正式一点 / 翻译成英文 / 总结要点">
+          <div class="go">⏎</div>
+        </div>
+        <div class="hub-sec">推荐</div>
+        <div class="card1">
+          <div class="head"><div class="ci">✒</div><b>改写语气</b><span class="score">85%</span></div>
+          <div class="out">已预填参数「正式」…（定位高亮 1.8s 后消失）</div>
+          <div class="row"><div class="b">复制</div><div class="b">粘贴</div></div>
+        </div>
+        <div class="card2">
+          <div class="t">其他工具</div><span class="hl">命中「ai-rewrite」→ 滚动定位 + 高亮 + 预填 tone=formal</span>
+        </div>
+      </div>
+      <div class="note">行为：输入「改得正式一点」→ 解析为 ai-rewrite+tone=formal → 滚动到该卡 + accent 高亮 + 参数预填；未听懂给示例提示；AI 未启用提示先配置。</div>
+    </div>
+
+    <!-- 4. 合并面板 -->
+    <div class="card">
+      <h2>④ 多选合并面板</h2>
+      <div class="pos">组件 <code>MergeDialog.tsx</code> ｜ 触发：多选历史 →「合并」</div>
+      <div class="md">
+        <div class="md-head"><h3>合并粘贴</h3><span class="cnt">3 条已选</span><div class="hub-head x" style="border:none">✕</div></div>
+        <div class="md-seps">
+          <div class="sep on">换行</div><div class="sep">逗号</div><div class="sep">分号</div><div class="sep">编号列表</div><div class="sep">自定义</div>
+        </div>
+        <div class="md-prev">
+          <div class="l">预览</div>
+          <div class="box">第一段素材内容<br>第二段素材内容<br>第三段素材内容</div>
+        </div>
+        <div class="md-acts">
+          <div class="a ai">✦ AI 整理</div>
+          <div class="a paste">↩ 粘贴到前台</div>
+          <div class="a copy">复制</div>
+        </div>
+      </div>
+      <div class="note">行为：分隔符实时切换预览；「AI 整理」= 去重+顺排+润色（仅 AI 启用时显示，失败退回规则版）；粘贴后自动收起。</div>
+    </div>
+
+    <!-- 5. 剪贴板周报 -->
+    <div class="card">
+      <h2>⑤ 剪贴板周报</h2>
+      <div class="pos">组件 <code>WeekReportDialog.tsx</code> ｜ 触发：设置页 → 剪贴板周报</div>
+      <div class="wr">
+        <div class="wr-head"><div class="ic">📊</div><h3>剪贴板周报</h3><div class="hub-head x" style="border:none">✕</div></div>
+        <div class="wr-ov">
+          <div class="ov"><div class="n">286</div><div class="l">复制</div></div>
+          <div class="ov"><div class="n">142</div><div class="l">已粘贴</div></div>
+          <div class="ov"><div class="n">50%</div><div class="l">转化率</div></div>
+        </div>
+        <div class="wr-sec">
+          <div class="t">内容类型</div>
+          <div class="bar"><span class="lb">文本</span><div class="tk"><div class="fl" style="width:70%"></div></div><span class="v">200</span></div>
+          <div class="bar"><span class="lb">图片</span><div class="tk"><div class="fl" style="width:20%"></div></div><span class="v">58</span></div>
+        </div>
+        <div class="wr-sec">
+          <div class="t">活跃时段</div>
+          <div class="bar"><span class="lb">工作时间</span><div class="tk"><div class="fl" style="width:65%"></div></div><span class="v">186</span></div>
+          <div class="bar"><span class="lb">晚间</span><div class="tk"><div class="fl" style="width:25%"></div></div><span class="v">72</span></div>
+        </div>
+        <div class="wr-sec">
+          <div class="t">常用动作</div>
+          <div class="wr-chip"><span class="chip">sql-in × 8</span><span class="chip">json-insert × 5</span><span class="chip">ai-summarize × 3</span></div>
+        </div>
+        <div class="wr-ai">
+          <div class="l">AI 解读</div>
+          <div class="t">你本周的复制集中在工作时间，偏代码与结构化内容，粘贴转化率约一半——复制更聚焦，用得更实。</div>
+        </div>
+        <div class="wr-act"><div class="a ai">✦ AI 生成周报文字</div></div>
+      </div>
+      <div class="note">行为：只统计不读内容（红线）；总记录 &lt;50 提示"再攒攒"；AI 解读仅启用 AI 时显示按钮。</div>
+    </div>
+
+    <!-- 6. 设置页周报入口 -->
+    <div class="card">
+      <h2>⑥ 设置页：剪贴板周报入口</h2>
+      <div class="pos">位置：GeneralTab 数据仪表盘「近 7 天趋势」上方</div>
+      <div class="set">
+        <div class="set-sec" style="padding:0">
+          <div class="set-title">
+            剪贴板周报
+            <span class="hint">本周复制/粘贴的行为统计 + AI 解读</span>
+            <div class="btn">打开周报</div>
+          </div>
+          <div class="set-body">（下方为原「近 7 天趋势」图表区域）</div>
+        </div>
+      </div>
+      <div class="note">行为：按钮打开 WeekReportDialog；样式 = accent 描边小按钮，与设置页整体风格一致。</div>
+    </div>
+
+  </div>
+
+  <div class="foot">
+    <b>确认清单</b>：① 建议条位置与自动收起节奏 ② 托盘建议条在暗色弹窗中的观感 ③ 枢纽指令框文案与定位高亮 ④ 合并面板交互与 AI 按钮 ⑤ 周报信息密度 ⑥ 周报入口位置。<br>
+    有异议的项指出编号即可，我调整后重新出稿（本次已发版的 UI 也可在下一版前微调）。
+  </div>
+</div>
+</body>
+</html>

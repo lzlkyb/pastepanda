@@ -174,6 +174,19 @@ pub fn run() {
                 log::warn!("[ContentClassifier] 自动标签种子数据初始化失败: {}", e);
             }
 
+            // M5-1 内容记忆：启动时懒回填历史摘要（纯规则，不阻塞主流程）。
+            // 只补一次（幂等）；清空后不自动补存量（红线②：删了就是删了）。
+            // 2000 条规则摘要（正则 + 截断）耗时在百毫秒级，可接受。
+            let started = std::time::Instant::now();
+            match store.history_summaries_backfill(2000) {
+                Ok(n) => log::info!(
+                    "[内容记忆] 启动回填 {} 条摘要（{}ms）",
+                    n,
+                    started.elapsed().as_millis()
+                ),
+                Err(e) => log::warn!("[内容记忆] 启动回填失败: {}", e),
+            }
+
             // AI 用量明细：启动时清一次过期记录，并删掉 v6 之前那份已废弃的
             // ai_usage.json（它看上去像权威数据源，实际已停止更新，留着只会带偏排查）
             match store.ai_usage_purge(data_store::AI_USAGE_RETAIN_DAYS) {
@@ -535,6 +548,10 @@ pub fn run() {
             commands::ai_clear_key,
             commands::ai_list_providers,
             commands::ai_test_connection,
+            // v6.4 AI 面板 v2：per-provider 配置 + 自定义服务商多实例
+            commands::ai_get_provider_config,
+            commands::ai_save_custom_provider,
+            commands::ai_delete_custom_provider,
             commands::ai_list_actions,
             commands::ai_get_usage,
             commands::ai_list_content_types,
@@ -547,6 +564,22 @@ pub fn run() {
             commands::ai_get_usage_stats,
             commands::ai_clear_usage_log,
             commands::ai_run,
+            // 动作链（X1 B2）：自定义链 CRUD
+            commands::chain_list,
+            commands::chain_save,
+            commands::chain_delete,
+            commands::chain_reorder,
+            // AI 结果反馈 + 动作偏好（M3 偏好学习）
+            commands::ai_feedback_add,
+            commands::ai_feedback_stats,
+            commands::ai_feedback_clear,
+            commands::action_pref_get,
+            commands::action_pref_set,
+            commands::action_prefs_all,
+            // 内容记忆（M5-1）：本地检索摘要
+            commands::history_summaries_backfill,
+            commands::history_summaries_count,
+            commands::history_summaries_clear,
             // 动作使用日志（v6.0 第一步：action_events 表）
             commands::action_event_log,
             commands::action_event_stats,

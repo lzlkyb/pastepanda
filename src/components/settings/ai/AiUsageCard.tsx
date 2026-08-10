@@ -21,17 +21,19 @@ export function AiUsageCard({ usage, isLocal }: Props) {
 
   if (isLocal) {
     return (
-      <div className={styles.usage}>
-        <span>
-          今日调用 <span className={styles.usageNum}>{usage.calls}</span> 次
-        </span>
-        <span>
-          token{" "}
-          <span className={styles.usageNum}>
-            {usage.promptTokens}+{usage.completionTokens}
+      <div className={styles.usageCard}>
+        <div className={styles.usage}>
+          <span>
+            今日调用 <span className={styles.usageNum}>{usage.calls}</span> 次
           </span>
-        </span>
-        <span className={styles.usageNote}>本地模型，零费用，内容不出这台电脑。</span>
+          <span>
+            token{" "}
+            <span className={styles.usageNum}>
+              {usage.promptTokens}+{usage.completionTokens}
+            </span>
+          </span>
+          <span className={styles.usageNote}>本地模型，零费用，内容不出这台电脑。</span>
+        </div>
       </div>
     );
   }
@@ -41,36 +43,30 @@ export function AiUsageCard({ usage, isLocal }: Props) {
 
   return (
     <div className={styles.usageCard}>
-      <div className={styles.usage}>
-        <span>
-          今日调用 <span className={styles.usageNum}>{usage.calls}</span> 次
-        </span>
-        <span>
-          token{" "}
-          <span className={styles.usageNum}>
-            {usage.promptTokens}+{usage.completionTokens}
-          </span>
-        </span>
-        <span>
-          约花费{" "}
-          <span className={styles.usageNum}>¥{usage.costCny.toFixed(3)}</span>
-          {capped && <span className={styles.usageNote}> / ¥{usage.budgetCny.toFixed(2)}</span>}
-        </span>
-      </div>
-
-      {capped && (
-        <div className={styles.usageBar}>
-          <div
-            className={pct >= 100 ? styles.usageBarFull : styles.usageBarFill}
-            style={{ width: `${pct}%` }}
-          />
+      <div className={styles.usageRingWrap}>
+        <div
+          className={styles.usageRing}
+          style={{ background: `conic-gradient(var(--accent) 0 ${pct}%, var(--section-bg) ${pct}% 100%)` }}
+        >
+          <span className={styles.usageRingInner}>{capped ? `${Math.round(pct)}%` : "∞"}</span>
         </div>
-      )}
-
-      <div className={styles.usageNote}>
-        {usage.remainingCalls === null
-          ? "未设上限。金额为估算值，真实账单以服务商为准。"
-          : `预算内大约还能再做 ${usage.remainingCalls} 次。金额为估算值，真实账单以服务商为准。`}
+        <div className={styles.usageMeta}>
+          <span className={styles.usageTitle}>
+            今日用量 · 已用 ¥{usage.costCny.toFixed(2)}
+            {capped && <> / ¥{usage.budgetCny.toFixed(2)}</>}
+          </span>
+          <div className={styles.usageBar}>
+            <div
+              className={pct >= 100 ? styles.usageBarFull : styles.usageBarFill}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <span className={styles.usageNote}>
+            {usage.remainingCalls === null
+              ? "未设上限。金额为估算值，真实账单以服务商为准。"
+              : `预算内大约还能再做 ${usage.remainingCalls} 次。金额为估算值，真实账单以服务商为准。`}
+          </span>
+        </div>
       </div>
     </div>
   );

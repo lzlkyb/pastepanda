@@ -169,3 +169,89 @@
   background: var(--hover);
   color: var(--accent);
 }
+
+/* ===== AI 结果反馈（M3 偏好学习） ===== */
+.fbSection {
+  margin-top: 14px;
+}
+.fbClear {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.fbClear:hover { border-color: var(--danger); color: var(--danger); }
+.fbNote {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+.fbNote b { color: var(--text-secondary); }
+.fbRow {
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--section-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.fbHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.rateBad {
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: var(--danger);
+  color: #fff;
+}
+.rateOk {
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: var(--green-bg);
+  color: var(--green);
+}
+.fbPref {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.fbInput {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 9px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--dialog-bg);
+  color: var(--text-primary);
+  font-size: 11.5px;
+  font-family: inherit;
+}
+.fbInput:focus { outline: none; border-color: var(--accent); }
+.fbSave {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.fbSave:hover { background: var(--accent-solid); color: #fff; }

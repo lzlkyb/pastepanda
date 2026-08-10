@@ -29,6 +29,12 @@ export interface SuggestItem {
   contentType?: string;
 }
 
+/** 建议去重 key（M4 加了 chain 变体后，三种类型字段不同，统一收口） */
+function suggestionKey(s: Suggestion): string {
+  if (s.kind === "chain") return `${s.kind}:${s.chainId}:${s.text}`;
+  return `${s.kind}:${s.transformId}:${s.kind === "action" ? s.text : s.mergedText}`;
+}
+
 export const TrayPopupSuggestion = memo(function TrayPopupSuggestion({
   item,
   recents,
@@ -68,11 +74,12 @@ export const TrayPopupSuggestion = memo(function TrayPopupSuggestion({
       ? null
       : suggestSequence(recents.slice(0, 3).map((r) => ({ text: r.text || "" })));
     const s = top1 ?? seq;
-    if (!s) {
+    if (!s || s.kind === "chain") {
+      // 托盘不做链建议（链需要多步预览，不适合"点了就用"的快速场景）
       if (suggestion) setSuggestion(null);
       return;
     }
-    const key = `${s.kind}:${s.transformId}:${s.kind === "action" ? s.text : s.mergedText}`;
+    const key = suggestionKey(s);
     // 刚被 ✕ 否决过的同一条建议不再出现（本次会话）
     if (key === dismissedKey) {
       if (suggestion) setSuggestion(null);
@@ -87,6 +94,7 @@ export const TrayPopupSuggestion = memo(function TrayPopupSuggestion({
   /** 使用：text/序列 → 变换结果粘贴前台；action → 直接执行 */
   const handleUse = useCallback(async () => {
     if (!suggestion) return;
+    if (suggestion.kind === "chain") return; // 托盘不做链建议（类型守卫）
     const t = getTransform(suggestion.transformId);
     if (!t) return;
 
@@ -115,14 +123,11 @@ export const TrayPopupSuggestion = memo(function TrayPopupSuggestion({
   /** 否决：写入「不再推荐」+ 刷新 + 本次会话不再显示 */
   const handleDismiss = useCallback(async () => {
     if (!suggestion) return;
+    if (suggestion.kind === "chain") return; // 托盘不做链建议（类型守卫）
     const ct = item?.contentType || "text";
     await actionDismissAdd(suggestion.transformId, ct).catch(() => {});
     await refreshRecommendState().catch(() => {});
-    setDismissedKey(
-      `${suggestion.kind}:${suggestion.transformId}:${
-        suggestion.kind === "action" ? suggestion.text : suggestion.mergedText
-      }`,
-    );
+    setDismissedKey(suggestionKey(suggestion));
     setSuggestion(null);
     onToast(`不再建议「${suggestion.label}」`, "info", 1000);
   }, [suggestion, item, onToast]);

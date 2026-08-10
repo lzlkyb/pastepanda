@@ -17,7 +17,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Sparkles, Loader2, RotateCw } from "lucide-react";
+import { X, Sparkles, Loader2, RotateCw, Workflow } from "lucide-react";
 import { useDialogStore } from "@/stores/dialogStore";
 import {
   type Transform,
@@ -293,6 +293,14 @@ export function TransformHubDialog() {
                 <span className={styles.headerIcon}><Sparkles size={16} /></span>
                 <h2 className="dialog-title">变换为…</h2>
                 <span className={styles.headerSub}>{scored.length} 个可用变换</span>
+                {/* X1 B1：动作链入口——把多步粘贴流程串成一个按钮 */}
+                <button
+                  className={styles.chainBtn}
+                  title="动作链：多步粘贴流程一键跑完"
+                  onClick={() => useDialogStore.getState().openChain(sourceText)}
+                >
+                  <Workflow size={13} /> 动作链
+                </button>
                 <button onClick={close} className="dialog-close"
                   onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
                   onMouseLeave={(e) => (e.currentTarget.style.background = "")}>

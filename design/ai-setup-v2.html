@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda AI 配置面板 v2 设计稿</title>
+<style>
+  :root{
+    --bg:#F4F6F9; --card:#fff; --border:#E2E8F0; --text:#0F172A; --text2:#64748B; --text3:#94A3B8;
+    --accent:#0284C7; --accent-light:#E0F2FE; --accent-strong:#0369A1; --danger:#EF4444;
+    --green:#22C55E; --green-light:#DCFCE7; --orange:#F59E0B; --orange-light:#FEF3C7;
+    --hover:#F1F5F9; --section:#F8FAFC;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:#E8EDF3;padding:28px;color:var(--text)}
+  .wrap{max-width:760px;margin:0 auto}
+  h1{font-size:20px;margin-bottom:4px}
+  .sub{font-size:13px;color:var(--text2);margin-bottom:20px}
+  .note{background:var(--orange-light);border:1px solid #FDE68A;border-radius:10px;padding:10px 12px;font-size:12px;color:#92400E;margin-bottom:18px;line-height:1.7}
+
+  /* ===== 设置面板容器 ===== */
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;box-shadow:0 2px 8px rgba(15,23,42,.08)}
+
+  /* 状态栏 */
+  .status{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border)}
+  .badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;border-radius:20px;padding:3px 10px;font-weight:600}
+  .badge.idle{background:var(--hover);color:var(--text2)}
+  .badge.ready{background:var(--green-light);color:#15803D}
+  .badge.off{background:var(--orange-light);color:#B45309}
+  .statusText{font-size:12px;color:var(--text2)}
+
+  /* 隐私警示 */
+  .warn{display:flex;gap:8px;padding:10px 16px;background:#FFF7ED;border-bottom:1px solid #FED7AA;font-size:11px;color:#9A3412;line-height:1.7}
+  .warn .ic{color:#F59E0B;flex-shrink:0;margin-top:1px}
+
+  /* ===== 步骤 ===== */
+  .step{display:flex;gap:12px;padding:16px}
+  .stepNum{width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+  .stepBody{flex:1}
+  .stepTitle{font-size:13px;font-weight:600;color:var(--text);display:block;margin-bottom:8px}
+  .hint{display:block;font-size:11px;color:var(--text3);margin-top:8px;line-height:1.6}
+
+  /* 步骤1：服务商卡片网格（核心交互变化：下拉 → 网格） */
+  .provGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .provCard{position:relative;display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:10px;padding:8px 10px;background:var(--section);cursor:pointer;transition:border-color .15s,box-shadow .15s,background .15s;text-align:left;font-family:inherit}
+  .provCard:hover{border-color:var(--accent)}
+  .provCard.on{border-color:var(--accent);background:var(--accent-light);box-shadow:0 0 0 3px rgba(2,132,199,.12)}
+  .provLogo{width:26px;height:26px;border-radius:8px;background:var(--hover);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;overflow:hidden}
+  .provName{font-size:12px;color:var(--text);font-weight:500;line-height:1.3}
+  .provMeta{display:flex;gap:4px;margin-top:2px}
+  .tag{font-size:9px;border-radius:4px;padding:1px 5px;font-weight:600}
+  .tag.set{background:var(--green-light);color:#15803D}
+  .tag.local{background:var(--accent-light);color:var(--accent-strong)}
+  .tag.cfg{background:var(--orange-light);color:#B45309}
+  .provCard .ck{position:absolute;right:6px;top:6px;width:14px;height:14px;border-radius:50%;background:var(--accent);color:#fff;font-size:9px;display:none;align-items:center;justify-content:center}
+  .provCard.on .ck{display:flex}
+
+  /* 地址（自定义/中转 展开） */
+  .baseUrl{margin-top:10px}
+  .baseUrl label{font-size:11px;color:var(--text2);display:block;margin-bottom:4px}
+  .input{width:100%;border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:12px;background:var(--card);color:var(--text);outline:none}
+  .input:focus{border-color:var(--accent)}
+
+  /* 步骤2：模型 chips + 手填 */
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+  .chip{display:flex;flex-direction:column;gap:2px;border:1px solid var(--border);border-radius:9px;padding:6px 10px;background:var(--section);cursor:pointer;text-align:left;font-family:inherit;transition:border-color .15s,background .15s}
+  .chip:hover{border-color:var(--accent)}
+  .chip.on{border-color:var(--accent);background:var(--accent-light)}
+  .chipTitle{font-size:12px;color:var(--text);display:flex;align-items:center;gap:4px}
+  .chipId{font-size:10px;color:var(--text3)}
+  .chip.on .chipId{color:var(--accent-strong)}
+  .reason{display:inline-flex;align-items:center;font-size:9px;border-radius:4px;padding:1px 4px;background:#F3E8FF;color:#7E22CE;font-weight:600}
+  .saveNote{font-size:10px;color:var(--green);margin-left:2px}
+
+  /* 步骤3：密钥 + 测试 */
+  .row{display:flex;gap:8px}
+  .rowGrow{flex:1}
+  .btnPrimary{display:inline-flex;align-items:center;gap:4px;border:none;border-radius:8px;padding:7px 16px;font-size:12px;font-weight:600;background:var(--accent);color:#fff;cursor:pointer;white-space:nowrap}
+  .btnPrimary:hover{filter:brightness(1.08)}
+  .btnPrimary:disabled{opacity:.5;cursor:default}
+
+  /* 切换提示条（per-provider 说明） */
+  .switchTip{display:flex;gap:8px;align-items:flex-start;background:var(--accent-light);border:1px solid #BAE6FD;border-radius:9px;padding:8px 10px;font-size:11px;color:var(--accent-strong);line-height:1.6;margin-top:10px}
+
+  /* 高级区（折叠示意） */
+  .adv{margin:0 16px 16px;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  .advHead{display:flex;align-items:center;gap:6px;padding:10px 12px;font-size:12px;color:var(--text2);cursor:pointer;background:var(--section)}
+  .advHead .arr{transition:transform .2s}
+  .advBody{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px}
+  .advField label{font-size:11px;color:var(--text2);display:block;margin-bottom:4px}
+  .advField .v{font-size:11px;color:var(--text);background:var(--section);border:1px solid var(--border);border-radius:7px;padding:6px 9px}
+
+  .foot{margin-top:18px;padding-top:12px;border-top:1px dashed var(--border);font-size:11px;color:var(--text3);line-height:1.9}
+  code{background:var(--hover);border-radius:4px;padding:1px 5px;color:var(--text2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PastePanda · AI 配置面板 v2</h1>
+  <div class="sub">交互优化 + per-provider 配置（根治"切走切回丢配置"）｜对照真实 16 家服务商清单</div>
+
+  <div class="note">
+    <b>本次修复的核心问题：</b>切换服务商时会"落盘清空"上一家的模型/地址（单份存储），导致切回来配置丢失。
+    <b>v2 方案：</b>后端每家的 模型/地址/协议 独立保存（<code>ai_provider_overrides</code>），切换只换显示、不动数据——切走切回配置都在。
+  </div>
+
+  <div class="panel">
+    <!-- 状态栏 -->
+    <div class="status">
+      <span class="badge ready">✓ 已就绪</span>
+      <span class="statusText">当前使用 DeepSeek。切到别的家再切回来，模型与地址还在。</span>
+    </div>
+
+    <!-- 隐私警示（保留） -->
+    <div class="warn"><span class="ic">⚠</span><span>你主动对某条内容执行 AI 动作时，该条内容会被发送到所选服务商。PastePanda 不会自动上传任何历史记录。看起来像密钥/凭证的内容会先拦下来请你确认。（当前选的不是本地模型）</span></div>
+
+    <!-- 步骤 1：选服务商（下拉 → 卡片网格） -->
+    <div class="step">
+      <div class="stepNum">1</div>
+      <div class="stepBody">
+        <span class="stepTitle">选服务商</span>
+        <!-- 内置服务商网格 -->
+        <span class="stepTitle" style="font-size:12px;color:var(--text2);margin-bottom:6px">内置服务商</span>
+        <div class="provGrid">
+          <div class="provCard on">
+            <div class="provLogo">🖥</div>
+            <div>
+              <div class="provName">DeepSeek</div>
+              <div class="provMeta"><span class="tag set">已配置</span></div>
+            </div>
+            <span class="ck">✓</span>
+          </div>
+          <div class="provCard">
+            <div class="provLogo">🌙</div>
+            <div>
+              <div class="provName">通义千问</div>
+              <div class="provMeta"><span class="tag set">已配置</span></div>
+            </div>
+          </div>
+          <div class="provCard">
+            <div class="provLogo">🧠</div>
+            <div>
+              <div class="provName">智谱 GLM</div>
+              <div class="provMeta"></div>
+            </div>
+          </div>
+          <div class="provCard">
+            <div class="provLogo">💬</div>
+            <div>
+              <div class="provName">Kimi</div>
+              <div class="provMeta"></div>
+            </div>
+          </div>
+          <div class="provCard">
+            <div class="provLogo">🫘</div>
+            <div>
+              <div class="provName">豆包</div>
+              <div class="provMeta"></div>
+            </div>
+          </div>
+          <div class="provCard">
+            <div class="provLogo">🐧</div>
+            <div>
+              <div class="provName">腾讯混元</div>
+              <div class="provMeta"></div>
+            </div>
+          </div>
+          <div class="provCard">
+            <div class="provLogo">🤖</div>
+            <div>
+              <div class="provName">百度千帆</div>
+              <div class="provMeta"></div>
+            </div>
+          </div>
+          <div class="provCard">
+            <div class="provLogo">⚡</div>
+            <div>
+              <div class="provName">讯飞星火</div>
+              <div class="provMeta"></div>
+            </div>
+          </div>
+          <div class="provCard">
+            <div class="provLogo">▲</div>
+            <div>
+              <div class="provName">OpenAI</div>
+              <div class="provMeta"></div>
+            </div>
+          </div>
+          <div class="provCard">
+            <div class="provLogo">✳</div>
+            <div>
+              <div class="provName">Anthropic</div>
+              <div class="provMeta"></div>
+            </div>
+          </div>
+          <div class="provCard" style="justify-content:center;color:var(--text3);font-size:11px;background:transparent;border-style:dashed;cursor:default">…共 15 家</div>
+        </div>
+
+        <!-- 自定义服务商（多实例） -->
+        <span class="stepTitle" style="font-size:12px;color:var(--text2);margin:12px 0 6px">自定义服务商 <span style="font-weight:500;color:var(--text3)">（可添加多个中转/代理服务）</span></span>
+        <div class="provGrid">
+          <div class="provCard">
+            <div class="provLogo">🔧</div>
+            <div>
+              <div class="provName">公司中转站</div>
+              <div class="provMeta"><span class="tag set">已配置</span></div>
+            </div>
+            <span class="ck">✓</span>
+            <div class="tag" style="position:absolute;right:24px;top:6px;background:var(--hover);color:var(--text3)">✎</div>
+            <div class="tag" style="position:absolute;right:6px;top:24px;background:var(--danger);color:#fff">✕</div>
+          </div>
+          <div class="provCard">
+            <div class="provLogo">🔧</div>
+            <div>
+              <div class="provName">ChatGLM 代理</div>
+              <div class="provMeta"></div>
+            </div>
+            <div class="tag" style="position:absolute;right:24px;top:6px;background:var(--hover);color:var(--text3)">✎</div>
+            <div class="tag" style="position:absolute;right:6px;top:24px;background:var(--danger);color:#fff">✕</div>
+          </div>
+          <div class="provCard" style="justify-content:center;gap:4px;color:var(--accent-strong);border-style:dashed;border-color:var(--accent)">
+            <span style="font-size:16px">＋</span> 添加自定义
+          </div>
+        </div>
+        <span class="hint">每个自定义服务商独立保存 名称/地址/模型/密钥——添加第二个中转站互不影响，切到哪个用哪个。</span>
+
+        <!-- 自定义/中转展开的地址（per-provider） -->
+        <div class="baseUrl">
+          <label>接口地址（该服务商独立保存）</label>
+          <input class="input" value="https://api.deepseek.com/v1" placeholder="https://你的中转地址/v1">
+        </div>
+
+        <div class="switchTip">
+          <span>💡</span>
+          <span>刚切回 DeepSeek：地址与模型已自动带入此前保存的值（<code>ai_provider_overrides["deepseek"]</code>）。不再出现"切走就丢"。</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 步骤 2：选模型 -->
+    <div class="step">
+      <div class="stepNum">2</div>
+      <div class="stepBody">
+        <span class="stepTitle">选模型 <span class="saveNote">（改完自动保存到当前服务商）</span></span>
+        <div class="chips">
+          <div class="chip on">
+            <span class="chipTitle">DeepSeek V3 ✓</span>
+            <span class="chipId">deepseek-chat</span>
+          </div>
+          <div class="chip">
+            <span class="chipTitle">DeepSeek R1 <span class="reason">先思考</span></span>
+            <span class="chipId">deepseek-reasoner</span>
+          </div>
+        </div>
+        <input class="input" value="deepseek-chat" placeholder="清单外模型直接填">
+        <span class="hint">清单只是快捷方式，输入框里可直接填任意模型。留空则用第一档。手填的值同样只存在当前服务商名下。</span>
+      </div>
+    </div>
+
+    <!-- 步骤 3：密钥 + 测试 -->
+    <div class="step">
+      <div class="stepNum">3</div>
+      <div class="stepBody">
+        <span class="stepTitle">粘贴 API Key</span>
+        <div class="row">
+          <input class="input rowGrow" type="password" value="" placeholder="已保存；输入新密钥可替换">
+          <button class="btnPrimary">保存并测试</button>
+        </div>
+        <span class="hint">✓ 这家已存过密钥。密钥加密后单独存放、不进配置库；每家分开存，切回来不用重输。保存并测试 = 落盘 + 连通性测试一次完成。</span>
+      </div>
+    </div>
+
+    <!-- 高级区（保留折叠） -->
+    <div class="adv">
+      <div class="advHead"><span class="arr">▸</span> 高级设置（超时 / 日预算 / 思考开关）</div>
+      <div class="advBody" style="display:none">
+        <div class="advField"><label>超时（秒）</label><div class="v">60</div></div>
+        <div class="advField"><label>每日预算（元）</label><div class="v">3</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <b>v2 交互变化清单</b><br>
+    ① 服务商：下拉 → <b>3 列卡片网格</b>（内置 15 家 + 自定义区），名称 + 「已配置/本地」角标 + 选中描边；<br>
+    ② 修复：切服务商<b>不再落盘清空</b>——每家的模型/地址/协议后端独立存（<code>ai_provider_overrides</code>），切走切回原样带入；<br>
+    ③ <b>自定义服务商支持多个</b>：<code>ai_custom_providers</code> 数组，每个独立 名称/地址/模型/密钥（✎ 编辑 / ✕ 删除 / ＋ 添加）；<br>
+    ④ 模型区明确"改完自动保存到<b>当前</b>服务商"；<br>
+    ⑤ 地址输入随选中卡片出现（自定义项显示该项地址），值按服务商隔离；<br>
+    ⑥ 隐私警示、高级区、密钥加密策略全部保留不动。
+  </div>
+</div>
+</body>
+</html>

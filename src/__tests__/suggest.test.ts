@@ -15,12 +15,15 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 import {
   suggestTop1,
   suggestSequence,
+  suggestChain,
   TOP1_MIN_SCORE,
   SEQUENCE_MIN_COUNT,
 } from "@/lib/suggest";
 import { __resetRecommendForTest, loadRecommendState } from "@/lib/recommend";
 import { analyzeContent } from "@/lib/transforms/analyzer";
 import type { TransformContext } from "@/lib/transforms/types";
+// 触发内置变换注册（strip_html / mask-sensitive 等，suggestChain 依赖）
+import "@/lib/transforms";
 
 const JSON_TEXT = '[{"id":1,"name":"a"},{"id":2,"name":"b"}]';
 
@@ -116,5 +119,33 @@ describe("suggestSequence（序列识别）", () => {
 
   it("数量下限常量防漂移", () => {
     expect(SEQUENCE_MIN_COUNT).toBe(3);
+  });
+});
+
+describe("suggestChain（M4 跑链建议）", () => {
+  it("含 HTML 标签的文本 → 建议「网页 → 纯文本」链", () => {
+    const s = suggestChain(ctx("<p>Hello</p>\n<b>World</b>"));
+    expect(s).not.toBeNull();
+    if (!s) return;
+    expect(s.kind).toBe("chain");
+    if (s.kind === "chain") {
+      expect(s.chainId).toBe("web-to-text");
+      expect(s.stepCount).toBeGreaterThan(1);
+    }
+  });
+
+  it("含手机号的内容 → 建议「敏感信息脱敏」链", () => {
+    const s = suggestChain(ctx("联系我 13812345678 或者 13900001111"));
+    expect(s).not.toBeNull();
+    if (s?.kind === "chain") expect(s.chainId).toBe("mask-and-paste");
+  });
+
+  it("普通文本没有链命中 → null", () => {
+    const s = suggestChain(ctx("今天天气不错，去吃个饭吧"));
+    expect(s).toBeNull();
+  });
+
+  it("空文本 → null", () => {
+    expect(suggestChain(ctx(""))).toBeNull();
   });
 });

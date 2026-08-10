@@ -49,54 +49,62 @@ export function AiAdvanced(p: Props) {
             <span className={styles.hint}>留空则用厂商默认地址。填中转服务时写到 /v1 为止。</span>
           </label>
 
-          <label className={styles.field}>
+          {/* v6.4：协议下拉 → seg 切换（空值 = 厂商默认，高亮对应档；点击即覆盖） */}
+          <div className={styles.field}>
             <span className={styles.label}>接口协议</span>
-            <select
-              className={styles.select}
-              value={config.protocol}
-              onChange={(e) => p.onSave({ protocol: e.target.value })}
-            >
-              <option value="">
-                厂商默认（{spec?.protocol === "anthropic" ? "Anthropic" : "OpenAI 兼容"}）
-              </option>
-              <option value="openai">OpenAI 兼容 · /chat/completions</option>
-              <option value="anthropic">Anthropic Messages · /messages</option>
-            </select>
+            <div className={styles.segs}>
+              {(["openai", "anthropic"] as const).map((proto) => {
+                const active =
+                  (config.protocol || spec?.protocol || "openai") === proto;
+                return (
+                  <button
+                    key={proto}
+                    className={`${styles.seg}${active ? ` ${styles.segOn}` : ""}`}
+                    onClick={() => p.onSave({ protocol: proto })}
+                  >
+                    {proto === "openai" ? "OpenAI 兼容" : "Anthropic 协议"}
+                  </button>
+                );
+              })}
+            </div>
             <span className={styles.hint}>
               同一家常常两种都提供（如智谱），中转服务更是如此。选错时的典型症状是 404。
             </span>
-          </label>
+          </div>
 
           <label className={styles.field}>
             <span className={styles.label}>请求超时（秒）</span>
-            <input
-              className={styles.input}
-              type="number"
-              min={5}
-              max={300}
-              value={config.timeoutSecs}
-              onChange={(e) => p.onDraft({ timeoutSecs: Number(e.target.value) || 60 })}
-              onBlur={p.onCommit}
-            />
-            <span className={styles.hint}>太短会把正常回答切断，太长等于卡界面。默认 60 秒。</span>
+            <div className={styles.advInputRow}>
+              <input
+                className={styles.numInput}
+                type="number"
+                min={5}
+                max={300}
+                value={config.timeoutSecs}
+                onChange={(e) => p.onDraft({ timeoutSecs: Number(e.target.value) || 60 })}
+                onBlur={p.onCommit}
+              />
+              <span className={styles.hint}>太短会把正常回答切断，太长等于卡界面。默认 60 秒。</span>
+            </div>
           </label>
 
           {!isLocal && (
             <label className={styles.field}>
               <span className={styles.label}>每日费用上限（元）</span>
-              <input
-                className={styles.input}
-                type="number"
-                min={0}
-                step={1}
-                value={config.dailyBudgetCny}
-                onChange={(e) => p.onDraft({ dailyBudgetCny: Number(e.target.value) || 0 })}
-                onBlur={p.onCommit}
-              />
-              <span className={styles.hint}>
-                填 0 表示不限制。这个数字基于<strong>估算</strong>单价，用来拦住失控的连续调用，
-                不是对账；真实金额以服务商账单为准。
-              </span>
+              <div className={styles.advInputRow}>
+                <input
+                  className={styles.numInput}
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={config.dailyBudgetCny}
+                  onChange={(e) => p.onDraft({ dailyBudgetCny: Number(e.target.value) || 0 })}
+                  onBlur={p.onCommit}
+                />
+                <span className={styles.hint}>
+                  0 = 不限制。按<strong>估算</strong>单价拦截失控调用，不是对账；真实金额以服务商账单为准。
+                </span>
+              </div>
             </label>
           )}
 
@@ -107,31 +115,14 @@ export function AiAdvanced(p: Props) {
               <div className={styles.row}>
                 <input
                   type="checkbox"
+                  className={styles.toggleCheck}
                   checked={config.thinkingOff}
                   onChange={(e) => p.onSave({ thinkingOff: e.target.checked })}
                 />
                 <span className={styles.hint}>
-                  更快、更便宜。{spec.name}的新模型默认会先输出一大段思考，而那些 token
-                  照样计费、也照样占用动作的 token
-                  上限。剪贴板动作多是短产物，思考在这里几乎是纯成本。需要深度推理（如解释复杂报错）时再关掉它。
-                </span>
-              </div>
-            </div>
-          )}
-
-          {spec?.supportsThinkingOff && (
-            <div className={styles.field}>
-              <span className={styles.label}>关掉模型思考</span>
-              <div className={styles.row}>
-                <input
-                  type="checkbox"
-                  checked={config.thinkingOff}
-                  onChange={(e) => p.onSave({ thinkingOff: e.target.checked })}
-                />
-                <span className={styles.hint}>
-                  更快、便宜一个量级。DeepSeek / 智谱 / MiniMax / 千问 的新模型
-                  <strong>默认都会先思考</strong>，而思考的 token 照样计费。剪贴板动作多是短产物，
-                  这部分开销几乎全是浪费。碰到需要推理的任务（如解释复杂报错）再关掉它。
+                  更快、更便宜。{spec.name}的新模型
+                  <strong>默认都会先思考</strong>，而思考的 token 照样计费、也照样占用动作的
+                  token 上限。剪贴板动作多是短产物，思考在这里几乎是纯成本。需要深度推理（如解释复杂报错）时再打开它。
                 </span>
               </div>
             </div>
@@ -142,6 +133,7 @@ export function AiAdvanced(p: Props) {
             <div className={styles.row}>
               <input
                 type="checkbox"
+                className={styles.toggleCheck}
                 checked={config.enabled}
                 onChange={(e) => p.onSave({ enabled: e.target.checked })}
               />

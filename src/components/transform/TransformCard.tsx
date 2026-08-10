@@ -20,13 +20,14 @@ import {
   Copy, Check, Sparkles, Database, Table, List, ClipboardPaste,
   CaseUpper, CaseLower, Eraser, Pilcrow, Quote, RemoveFormatting, Link as LinkIcon,
   Globe, Mail, Phone, Code, Minus, Hash, Palette, Folder, FileText,
-  Play, ShieldAlert, Languages, PenLine, Search, X,
+  Play, ShieldAlert, Languages, PenLine, Search, X, Loader2,
   type LucideIcon,
 } from "lucide-react";
 import { AiBadge, badgeKindOf } from "@/components/AiBadge";
 import type { Transform, TransformOptionSpec, TransformResultMeta } from "@/lib/transforms";
 import { parseReplyCandidates } from "@/lib/replyCandidates";
 import { ReplyCandidates } from "@/components/transform/ReplyCandidates";
+import { AiResult } from "@/components/transform/AiResult";
 import styles from "../TransformHub.module.css";
 
 /** 图标语义键 → lucide 组件（逻辑层保持纯净，图标在 UI 层映射） */
@@ -201,7 +202,15 @@ export function TransformCard({
         </pre>
       )}
       {preview.state === "loading" && (
-        <pre className={styles.cardPreview}>{isRemote ? "请求中…" : isAction ? "执行中…" : "转换中…"}</pre>
+        isRemote ? (
+          /* v6.4：AI 动作运行态 —— accent spinner + 「AI 思考中…」 */
+          <div className={styles.aiRunning}>
+            <Loader2 size={13} className="spin" />
+            <span>AI 思考中…</span>
+          </div>
+        ) : (
+          <pre className={styles.cardPreview}>{isAction ? "执行中…" : "转换中…"}</pre>
+        )
       )}
       {preview.state === "done" && (
         <pre className={styles.cardPreview}>已执行 ✓</pre>
@@ -214,21 +223,18 @@ export function TransformCard({
               onCopy={(o) => onCopy(o, preview.meta)}
               onPaste={onPaste}
             />
+          ) : isRemote ? (
+            <AiResult
+              t={t}
+              output={preview.output}
+              meta={preview.meta}
+              copied={copied}
+              onCopy={onCopy}
+              onPaste={onPaste}
+            />
           ) : (
             <pre className={styles.cardPreview}>{preview.output}</pre>
           )}
-          {isRemote && (
-            <div className={styles.remoteMeta}>
-              {preview.meta?.cached ? "命中缓存，本次未计费" : `模型 ${preview.meta?.model ?? "-"}`}
-            </div>
-          )}
-          {/* 截断必须说出来：不说的话用户看到的只是一个断在半句的回答，
-              会归咎于模型不行，而不是去把 token 上限调大 */}
-          {preview.meta?.truncated ? (
-            <div className={styles.previewWarn}>
-              <ShieldAlert size={12} /> 回答被 token 上限截断了——去设置里把这个动作的上限调大再试。
-            </div>
-          ) : null}
         </>
       )}
       {preview.state === "err" && (
@@ -278,8 +284,8 @@ export function TransformCard({
           </button>
         )}
 
-        {/* 执行类动作没有复制/粘贴（没有产物可复制）；多候选中每个候选块自带操作，也隐藏共用按钮 */}
-        {!isAction && !isMultiCandidate && (
+        {/* 本地变换的复制/粘贴（AI 单结果在 AiResult 里、多候选在候选块里各自有） */}
+        {!isAction && !isMultiCandidate && !isRemote && (
           <>
             <button
               className={`${styles.copyBtn} ${copied ? styles.copyBtnDone : ""}`}

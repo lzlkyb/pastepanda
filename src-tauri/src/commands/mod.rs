@@ -153,8 +153,11 @@ pub(crate) fn is_unsafe_network_path(path: &str) -> bool {
 
 mod ai;
 mod action_events;
+mod ai_feedback;
 mod batch_replace;
+mod chains;
 mod config_convert;
+mod content_memory;
 mod encoding;
 mod export;
 mod groups;
@@ -174,8 +177,11 @@ mod tests;
 
 pub use ai::*;
 pub use action_events::*;
+pub use ai_feedback::*;
 pub use batch_replace::*;
+pub use chains::*;
 pub use config_convert::*;
+pub use content_memory::*;
 pub use encoding::*;
 pub use export::*;
 pub use groups::*;

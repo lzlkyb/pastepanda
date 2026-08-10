@@ -1,0 +1,365 @@
+/* 动作链运行器（X1 B1） */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.headerIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-strong);
+}
+
+.headerSub {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-right: auto;
+}
+
+/* 链选择 */
+.chainRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 0 14px;
+}
+.chainPicks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+}
+.chainPick {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--section-bg);
+  cursor: pointer;
+  font-family: inherit;
+  transition: 0.15s;
+  text-align: left;
+}
+.chainPick:hover { border-color: var(--accent); }
+.chainPickOn {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+.chainPickName { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+.chainPickDesc { font-size: 11px; color: var(--text-tertiary); }
+.chainEdit {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  color: var(--text-tertiary);
+  background: var(--hover);
+  opacity: 0;
+  transition: 0.15s;
+}
+.chainPick:hover .chainEdit { opacity: 1; }
+.chainEdit:hover { color: var(--accent-strong); }
+.newBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent-strong);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: 0.15s;
+}
+.newBtn:hover { background: var(--accent-light); }
+
+/* 输入区 */
+.inputBox {
+  margin: 0 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--dialog-bg);
+  overflow: hidden;
+}
+.inputHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+.resetBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: var(--accent-strong);
+  font-size: 11.5px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.resetBtn:hover { text-decoration: underline; }
+.inputPreview {
+  margin: 0 10px 8px;
+  max-height: 72px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+/* 运行行 */
+.runRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+}
+.runBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent-solid);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: 0.15s;
+}
+.runBtn:hover:not(:disabled) { filter: brightness(1.08); }
+.runBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.stepHint { font-size: 11.5px; color: var(--text-tertiary); }
+
+/* B2：AI 步骤运行前确认 */
+.aiConfirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 14px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--accent-light);
+  border: 1px solid var(--accent);
+  font-size: 12px;
+  color: var(--text-primary);
+  flex-wrap: wrap;
+}
+.aiConfirm > span { flex: 1; min-width: 180px; }
+.aiGo,
+.aiNo {
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: 0.15s;
+}
+.aiGo {
+  border: none;
+  background: var(--accent-solid);
+  color: #fff;
+}
+.aiGo:hover { filter: brightness(1.08); }
+.aiNo {
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+}
+.aiNo:hover { border-color: var(--accent); color: var(--text-primary); }
+
+/* 步骤流 */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 14px;
+  max-height: 240px;
+  overflow: auto;
+}
+.step {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--section-bg);
+  overflow: hidden;
+}
+.stepOk { border-color: var(--green-border); }
+.stepFail { border-color: var(--danger); }
+.stepHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.stepIdx {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--green-bg);
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.stepFail .stepIdx { background: var(--danger); color: #fff; }
+.stepLabel { font-size: 12.5px; font-weight: 600; color: var(--text-primary); flex: 1; }
+.riskLocal {
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: var(--green-bg);
+  color: var(--green);
+  flex-shrink: 0;
+}
+.riskDanger {
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: var(--danger);
+  color: #fff;
+  flex-shrink: 0;
+}
+.stepOkIcon { color: var(--green); flex-shrink: 0; }
+.stepFailIcon { color: var(--danger); flex-shrink: 0; }
+.stepDetail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 10px 9px;
+}
+.stepIo { display: flex; flex-direction: column; gap: 3px; }
+.ioLabel { font-size: 10.5px; color: var(--text-tertiary); }
+.ioPreview {
+  margin: 0;
+  max-height: 64px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--green-bg);
+  border: 1px solid var(--green-border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  color: var(--green);
+}
+.stepError { font-size: 12px; color: var(--danger); }
+.stepMeta { font-size: 10.5px; color: var(--text-tertiary); align-self: flex-end; }
+
+/* 失败提示 */
+.failBox {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 14px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.failHint { font-size: 11px; opacity: 0.85; width: 100%; }
+
+/* 最终结果 */
+.finalBox {
+  margin: 0 14px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--dialog-bg);
+  overflow: hidden;
+}
+.finalHead {
+  padding: 6px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.finalPreview {
+  margin: 0 10px 8px;
+  max-height: 110px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--green);
+  background: var(--green-bg);
+  border: 1px solid var(--green-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.finalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 10px 9px;
+}
+.copyBtn,
+.pasteBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 5px 13px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: 0.15s;
+}
+.copyBtn {
+  background: var(--accent-light);
+  border: 1px solid var(--accent);
+  color: var(--accent-strong);
+}
+.copyBtn:hover:not(:disabled) { background: var(--accent-solid); color: #fff; }
+.copyDone {
+  background: var(--green-bg);
+  border: 1px solid var(--green-border);
+  color: var(--green);
+}
+.pasteBtn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+.pasteBtn:hover:not(:disabled) { border-color: var(--accent); color: var(--text-primary); }
+.copyBtn:disabled,
+.pasteBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.idleHint {
+  margin: 0 14px 12px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
