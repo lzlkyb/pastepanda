@@ -47,8 +47,26 @@ fn extract_emails(text: &str) -> Vec<String> {
 
 /// 正文开头（去空白压缩，最多 80 字符）——保留「这段话大概在讲什么」的痕迹
 fn body_head(text: &str) -> String {
-    let s: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    s.chars().take(80).collect()
+    // 审查 backlog：#10 流式取前 80 字 —— 不再 split+join 全量复制（历史正文可达数 MB）
+    let mut out = String::new();
+    let mut count = 0usize;
+    for w in text.split_whitespace() {
+        if count >= 80 {
+            break;
+        }
+        if !out.is_empty() {
+            out.push(' ');
+            count += 1;
+        }
+        for ch in w.chars() {
+            if count >= 80 {
+                break;
+            }
+            out.push(ch);
+            count += 1;
+        }
+    }
+    out
 }
 
 /// 从文本生成检索摘要（纯规则、零 LLM、可测）。
@@ -159,30 +177,47 @@ impl DataStore {
             .filter_map(|r| r.ok())
             .collect();
 
+        // 审查 backlog：#9 包事务 —— 此前逐条 autocommit，500 行回填要 500 次独立提交，
+        // 且启动时阻塞其它 DB 操作；改为单事务分批提交。
+        conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
         let mut n = 0u32;
-        for (id, text) in rows {
-            let classifier = crate::content_classifier::ContentClassifier::new();
-            if classifier.is_secret(&text) {
-                continue;
+        let result = (|| -> Result<u32, String> {
+            for (id, text) in rows {
+                let classifier = crate::content_classifier::ContentClassifier::new();
+                if classifier.is_secret(&text) {
+                    continue;
+                }
+                let summary = summarize_text(&text);
+                if summary.is_empty() {
+                    continue;
+                }
+                let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+                conn.execute(
+                    "INSERT OR IGNORE INTO history_summaries (history_id, summary, created_at)
+                     VALUES (?1, ?2, ?3)",
+                    params![id, summary, now],
+                )
+                .map_err(|e| e.to_string())?;
+                n += 1;
             }
-            let summary = summarize_text(&text);
-            if summary.is_empty() {
-                continue;
+            // 置位"已回填过"（此后不再自动补存量）
+            conn.execute(
+                "INSERT OR REPLACE INTO config (key, value) VALUES ('content_memory_backfilled', '1')",
+                [],
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(n)
+        })();
+        match result {
+            Ok(n) => {
+                conn.execute_batch("COMMIT").map_err(|e| e.to_string())?;
+                Ok(n)
             }
-            let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-            let _ = conn.execute(
-                "INSERT OR IGNORE INTO history_summaries (history_id, summary, created_at)
-                 VALUES (?1, ?2, ?3)",
-                params![id, summary, now],
-            );
-            n += 1;
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                Err(e)
+            }
         }
-        // 置位"已回填过"（此后不再自动补存量）
-        let _ = conn.execute(
-            "INSERT OR REPLACE INTO config (key, value) VALUES ('content_memory_backfilled', '1')",
-            [],
-        );
-        Ok(n)
     }
 
     /// 内容记忆条目数（设置页展示用）。
@@ -196,10 +231,151 @@ impl DataStore {
     }
 
     /// 一键清空内容记忆。**删了不自动补存量**（新条目继续记）。
+    /// 语义向量是摘要的派生物，一并清空（红线②：删摘要 = 删向量）。
     pub fn history_summaries_clear(&self) -> Result<u32, String> {
         let conn = self.lock_conn();
-        conn.execute("DELETE FROM history_summaries", [])
+        let n = conn
+            .execute("DELETE FROM history_summaries", [])
             .map(|n| n as u32)
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        let _ = conn.execute("DELETE FROM semantic_vectors", []);
+        Ok(n)
+    }
+}
+
+// ===================== M5-2 语义向量（云端 embedding 的本地索引） =====================
+
+/// 两个 f32 向量的余弦相似度（纯函数，可测）。
+/// 任意一侧为零向量返回 0.0（没有可比性）。
+pub fn cosine_sim(a: &[f32], b: &[f32]) -> f32 {
+    if a.is_empty() || b.is_empty() || a.len() != b.len() {
+        return 0.0;
+    }
+    let mut dot = 0.0f64;
+    let mut na = 0.0f64;
+    let mut nb = 0.0f64;
+    for (x, y) in a.iter().zip(b.iter()) {
+        let x = *x as f64;
+        let y = *y as f64;
+        dot += x * y;
+        na += x * x;
+        nb += y * y;
+    }
+    if na <= 0.0 || nb <= 0.0 {
+        return 0.0;
+    }
+    (dot / (na.sqrt() * nb.sqrt())) as f32
+}
+
+/// 向量 BLOB 编解码：f32 LE 字节序列。
+pub fn encode_vec(v: &[f32]) -> Vec<u8> {
+    v.iter().flat_map(|f| f.to_le_bytes()).collect()
+}
+
+pub fn decode_vec(bytes: &[u8]) -> Vec<f32> {
+    bytes
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect()
+}
+
+impl DataStore {
+    /// 写入一条语义向量（幂等 upsert）。
+    pub fn semantic_vector_set(
+        &self,
+        history_id: &str,
+        model: &str,
+        vec: &[f32],
+    ) -> Result<(), String> {
+        let conn = self.lock_conn();
+        let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        conn.execute(
+            "INSERT INTO semantic_vectors (history_id, model, dim, vector, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(history_id) DO UPDATE SET model = ?2, dim = ?3, vector = ?4, created_at = ?5",
+            params![history_id, model, vec.len() as i64, encode_vec(vec), now],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// 语义向量条数（设置页展示用）。
+    pub fn semantic_vectors_count(&self) -> Result<u32, String> {
+        let conn = self.lock_conn();
+        conn.query_row("SELECT COUNT(*) FROM semantic_vectors", [], |r| {
+            r.get::<_, i64>(0)
+        })
+        .map(|n| n as u32)
+        .map_err(|e| e.to_string())
+    }
+
+    /// 有摘要但还没有向量的历史（语义索引待补齐队列）。
+    /// 摘要已经过敏感过滤（M5-1 的 is_secret 检查），所以这里只需摘要非空。
+    pub fn semantic_vector_pending(&self, limit: i64) -> Result<Vec<(String, String)>, String> {
+        let conn = self.lock_conn();
+        let rows: Vec<(String, String)> = conn
+            .prepare(
+                "SELECT s.history_id, s.summary FROM history_summaries s
+                 LEFT JOIN semantic_vectors v ON v.history_id = s.history_id
+                 WHERE v.history_id IS NULL AND s.summary <> ''
+                 LIMIT ?1",
+            )
+            .map_err(|e| e.to_string())?
+            .query_map([limit], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// 全表余弦检索：返回 (history_id, score, created_at, text) 降序，取 top_k。
+    /// 只返回仍存在于 history 表的条目（被清理的向量已无意义）。
+    /// 几千条 × 千维的量级全扫描是毫秒级，不需要真向量库。
+    pub fn semantic_search_vectors(
+        &self,
+        query: &[f32],
+        top_k: usize,
+    ) -> Result<Vec<(String, f32, String, String)>, String> {
+        let conn = self.lock_conn();
+        // 审查 backlog：#8 先只取向量定 top_k，再按 id 回查 text —— 此前全表把每条 h.text
+        // 全文拉进内存再排序（历史正文可达数 MB × 全量）。
+        let rows: Vec<(String, Vec<f32>)> = conn
+            .prepare("SELECT v.history_id, v.vector FROM semantic_vectors v")
+            .map_err(|e| e.to_string())?
+            .query_map([], |r| {
+                Ok((r.get(0)?, decode_vec(&r.get::<_, Vec<u8>>(1)?)))
+            })
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let mut scored: Vec<(String, f32)> = rows
+            .into_iter()
+            .map(|(id, v)| {
+                let s = cosine_sim(query, &v);
+                (id, s)
+            })
+            .filter(|(_, s)| *s > 0.0)
+            .collect();
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.truncate(top_k);
+
+        if scored.is_empty() {
+            return Ok(vec![]);
+        }
+        // 只对 top_k 个 id 回查 time/text（JOIN history 过滤已删除的）
+        let mut out: Vec<(String, f32, String, String)> = Vec::with_capacity(scored.len());
+        let mut stmt = conn
+            .prepare("SELECT h.time, h.text FROM history h WHERE h.id = ?1")
+            .map_err(|e| e.to_string())?;
+        for (id, s) in scored {
+            let detail = stmt
+                .query_row([&id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .ok();
+            if let Some((time, text)) = detail {
+                out.push((id, s, time, text));
+            }
+        }
+        Ok(out)
     }
 }

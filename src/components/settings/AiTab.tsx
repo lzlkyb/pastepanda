@@ -37,6 +37,7 @@ import {
   AiCustomProviderDialog,
   type CustomEditorState,
 } from "./ai/AiCustomProviderDialog";
+import { AiOnboarding, aiOnboardingSeen, markAiOnboardingSeen } from "@/components/AiOnboarding";
 import { hintForError, FALLBACK_PROVIDER, type AiErrorAction } from "./ai/errorHint";
 import styles from "./AiTab.module.css";
 
@@ -67,6 +68,12 @@ export function AiTab() {
   const keyRef = useRef<HTMLInputElement>(null);
   // v6.4 自定义服务商编辑器（null = 关闭）
   const [customEditor, setCustomEditor] = useState<CustomEditorState | null>(null);
+  // v6.4 审查修复：#4 清空密钥二次确认（密钥不可恢复）
+  const [confirmClearKey, setConfirmClearKey] = useState(false);
+  // v6.4 审查修复：#5 reload 失败不再静默——错误条 + 重试
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // v6.4 主窗口 AI 感知（方案 C）：首次配置成功弹引导
+  const [showOnboard, setShowOnboard] = useState(false);
 
   const spec = providers.find((it) => it.id === config.provider) ?? null;
   const isLocal = !!spec && !spec.needsKey;
@@ -84,7 +91,9 @@ export function AiTab() {
       setProviders(provs);
       setHasKey(keyed);
       setUsage(use);
+      setLoadError(null);
     } catch (e) {
+      setLoadError(err(e));
       logger.warn("加载 AI 设置失败", e);
     }
   }, []);
@@ -173,6 +182,18 @@ export function AiTab() {
           `已就绪 · ${r.model} · ${r.latencyMs}ms · 回复“${r.reply}”` +
           (r.autoEnabled ? " · 已自动启用" : ""),
       });
+      // v6.4 方案 C：首次配置成功 → 弹 3 步引导（只弹一次）
+      if (!aiOnboardingSeen()) {
+        markAiOnboardingSeen();
+        setShowOnboard(true);
+      }
+      // v6.4 审查：#6 通知主窗口 AI 状态即时刷新（快捷区/胶囊不用重启生效）
+      try {
+        const { emit } = await import("@tauri-apps/api/event");
+        await emit("ai-config-changed");
+      } catch {
+        /* 事件失败不打扰 */
+      }
       await reload();
       await refreshAiAvailability();
     } catch (e) {
@@ -193,6 +214,7 @@ export function AiTab() {
     try {
       await aiClearKey(config.provider);
       setHasKey(false);
+      setConfirmClearKey(false);
       setTestMsg(null);
       await refreshAiAvailability();
       setProviders(await aiListProviders());
@@ -269,6 +291,16 @@ export function AiTab() {
         </span>
       </div>
 
+      {/* v6.4 审查：#5 加载失败错误条 + 重试 */}
+      {loadError && (
+        <div className={styles.loadError}>
+          <span>设置加载失败：{loadError}</span>
+          <button className={styles.retryBtn} onClick={() => void reload()}>
+            重试
+          </button>
+        </div>
+      )}
+
       <AiSetupStep
         providers={providers}
         spec={spec}
@@ -332,6 +364,9 @@ export function AiTab() {
           onSaved={(id, isNew) => void handleCustomSaved(id, isNew)}
         />
       )}
+
+      {/* v6.4 方案 C：首次配置成功引导 */}
+      <AiOnboarding open={showOnboard} onClose={() => setShowOnboard(false)} />
     </div>
   );
 }

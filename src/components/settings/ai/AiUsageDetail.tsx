@@ -8,7 +8,7 @@
  * 设置面板都去查三次库。
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import {
   aiClearUsageLog,
@@ -41,9 +41,12 @@ export function AiUsageDetail() {
   const [rows, setRows] = useState<AiUsageLogRow[]>([]);
   const [labels, setLabels] = useState<Record<string, string>>(EXTRA_LABELS);
   const [confirmClear, setConfirmClear] = useState(false);
+  /** v6.4 审查：#6 加载失败与空态区分 */
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadFailed(false);
     try {
       const [s, r, actions, custom] = await Promise.all([
         aiGetUsageStats(7),
@@ -63,23 +66,31 @@ export function AiUsageDetail() {
       });
       setLabels(map);
     } catch (e) {
+      setLoadFailed(true);
       logger.warn("加载 AI 用量明细失败", e);
     } finally {
       setLoading(false);
     }
   }, []);
 
+  /** 审查 backlog：#10 首次展开加载后复用 —— 反复开关不再重复拉 4 个命令；清空后 load 会刷新数据 */
+  const loadedOnce = useRef(false);
+
   const toggle = () => {
     const next = !open;
     setOpen(next);
     setConfirmClear(false);
-    if (next) void load();
+    if (next && !loadedOnce.current) {
+      loadedOnce.current = true;
+      void load();
+    }
   };
 
   const clear = async () => {
     try {
       await aiClearUsageLog();
       setConfirmClear(false);
+      loadedOnce.current = true; // 数据已由下面的 load 刷新
       await load();
     } catch (e) {
       logger.warn("清空 AI 用量明细失败", e);
@@ -97,6 +108,14 @@ export function AiUsageDetail() {
       {!open ? null : loading && !stats ? (
         <div className={styles.usageNote}>
           <Loader2 size={12} className="spin" /> 加载中…
+        </div>
+      ) : loadFailed ? (
+        /* v6.4 审查：#6 失败≠空态 */
+        <div className={styles.row} style={{ padding: "6px 12px" }}>
+          <span className={styles.hint}>加载失败，请重试。</span>
+          <button className={settings.btnSecondary} onClick={() => void load()}>
+            重试
+          </button>
         </div>
       ) : (
         <div className={styles.advancedBody}>

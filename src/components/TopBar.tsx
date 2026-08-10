@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback, Fragment } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, FilterType, TimeFilter, SourceFilter } from "@/stores/appStore";
+import { AiStatusCap } from "@/components/AiStatusCap";
 import { getAppVersion, getAppName, fetchCounts, toggleStackMode } from "@/lib/api";
 import { cleanSourceName, getSourceIcon, fetchRealSourceIcon } from "@/lib/source-mappings";
 import SourceBadge from "@/components/SourceBadge";
@@ -227,6 +228,8 @@ export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEnco
               </>
             )}
           </div>
+          {/* v6.4 主窗口 AI 感知（方案 A）：胶囊 —— 未配置=引流入口 / 已配置=状态 */}
+          <AiStatusCap />
           <IconBtn tip="设置 · 帮助 · 关于" hue="violet" onClick={onSettings}>
             <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
           </IconBtn>

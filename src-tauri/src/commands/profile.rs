@@ -1,0 +1,797 @@
+//! 用户画像命令层（M6-2/M6-3）。
+//!
+//! **画像 = 纯函数(现有数据) + 用户覆盖**——不做持久表、不做同步：
+//! 每次打开「我的画像」时从 action_events / ai_feedback / action_prefs 实时聚合
+//! （几千条量级毫秒级），用户修正存 config 表 `profile_overrides`，永远最新。
+//!
+//! 隐私（红线②同构）：画像只含**统计值**（动作名/内容类型/时段/偏好指令），
+//! 不含任何内容文本；导出是唯一出网口，由用户主动触发、前端预览确认、导出前过
+//! 敏感清洗。
+
+use crate::content_classifier::ContentClassifier;
+use crate::data_store::{DataStore, ProfileRawStats};
+use serde::Serialize;
+use tauri::{Manager, State};
+
+/// 画像默认统计窗口（天）。
+const PROFILE_DAYS: u32 = 30;
+
+// ===================== 数据结构 =====================
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleScore {
+    pub role: String,
+    pub label: String,
+    /// 归一化打分 0~1（最高分角色 = 1.0）。
+    pub score: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DomainShare {
+    pub domain: String,
+    /// 百分比（向下取整）。
+    pub pct: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TopAction {
+    pub action_id: String,
+    pub count: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HourSegment {
+    pub label: String,
+    pub pct: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrefItem {
+    pub action_id: String,
+    pub preference: String,
+    pub edit_rate: f64,
+}
+
+/// 完整画像（前端「我的画像」展示 + 导出数据源）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserProfile {
+    /// 角色概率（降序）。
+    pub role_scores: Vec<RoleScore>,
+    /// 内容领域分布（降序）。
+    pub domains: Vec<DomainShare>,
+    /// 高频动作 top 8。
+    pub top_actions: Vec<TopAction>,
+    /// 活跃时段分布（4 段）。
+    pub hours: Vec<HourSegment>,
+    /// 风格偏好（动作偏好指令 + 被改率）。
+    pub prefs: Vec<PrefItem>,
+    /// 用户手动覆盖（config `profile_overrides`）。
+    pub overrides: serde_json::Value,
+    /// 样本：参与统计的动作事件总数。
+    pub sample_events: u32,
+    /// 置信度提示（样本不足时前端标注）。
+    pub confidence: f32,
+}
+
+// ===================== 规则打分（v1 纯规则，零 LLM） =====================
+
+/// 动作 → 角色加分（权重）。只列有区分度的动作，中性动作不计。
+fn action_role_weight(action: &str) -> &'static [(&'static str, f32)] {
+    use std::sync::OnceLock;
+    static MAP: OnceLock<std::collections::HashMap<&'static str, Vec<(&'static str, f32)>>> =
+        OnceLock::new();
+    let map = MAP.get_or_init(|| {
+        let mut m = std::collections::HashMap::new();
+        m.insert("ai-explain-code", vec![("developer", 1.2)]);
+        m.insert("ai-json-to-type", vec![("developer", 1.2)]);
+        m.insert("json_format", vec![("developer", 1.0)]);
+        m.insert("sql-in", vec![("developer", 0.9)]);
+        m.insert("column-to-sql-in", vec![("developer", 0.8)]);
+        m.insert("delimited-to-sql-in", vec![("developer", 0.8)]);
+        m.insert("sql_format", vec![("developer", 0.8)]);
+        m.insert("ai-commit-message", vec![("developer", 0.8)]);
+        m.insert("sql_keywords_upper", vec![("developer", 0.5)]);
+        m.insert("url-summary", vec![("research", 1.2)]);
+        m.insert("ai-summarize", vec![("research", 0.5)]);
+        m.insert("doc_clean_html", vec![("research", 0.3)]);
+        m.insert("ai-polish", vec![("writer", 1.2)]);
+        m.insert("ai-rewrite", vec![("writer", 1.0)]);
+        m.insert("ai-merge-polish", vec![("writer", 0.8)]);
+        m.insert("ai-key-points", vec![("writer", 0.4)]);
+        m.insert("ai-reply-draft", vec![("comm", 1.2)]);
+        m.insert("ai-weekly-report", vec![("ops", 1.0), ("comm", 0.4)]);
+        m.insert("ai-tabulate", vec![("ops", 0.8)]);
+        m.insert("mask-sensitive", vec![("ops", 0.4)]);
+        m.insert("query-result-to-sql", vec![("data", 1.0)]);
+        m.insert("config_to_json", vec![("data", 0.5)]);
+        m
+    });
+    map.get(action).map(|v| v.as_slice()).unwrap_or(&[])
+}
+
+/// 内容类型 → 角色加分。
+fn content_type_role_weight(ct: &str) -> &'static [(&'static str, f32)] {
+    match ct {
+        "code" | "json" | "shell" | "log" | "xml" | "yaml" | "sql" => {
+            &[("developer", 1.0), ("data", 0.3)]
+        }
+        "url" => &[("research", 0.8)],
+        _ => &[],
+    }
+}
+
+/// 内容类型 → 领域标签（前端展示用）。未知类型归 "other"。
+fn domain_label(ct: &str) -> &'static str {
+    match ct {
+        "code" | "shell" | "log" | "xml" | "yaml" => "代码",
+        "json" | "sql" => "结构化数据",
+        "url" => "链接",
+        "text" => "文本",
+        "image" => "图片",
+        "file" => "文件",
+        _ => "其他",
+    }
+}
+
+const ROLES: &[(&str, &str)] = &[
+    ("developer", "开发者"),
+    ("research", "研究/学习"),
+    ("writer", "文案/写作"),
+    ("comm", "沟通/客服"),
+    ("ops", "运营/行政"),
+    ("data", "数据/分析"),
+];
+
+const HOUR_SEGMENTS: &[(&str, std::ops::Range<i64>)] = &[
+    ("凌晨 0-6 点", 0..6),
+    ("上午 6-12 点", 6..12),
+    ("下午 12-18 点", 12..18),
+    ("晚上 18-24 点", 18..24),
+];
+
+fn build_profile(raw: &ProfileRawStats) -> UserProfile {
+    // 角色打分：动作权重 × 次数 + 内容类型权重 × 次数
+    let mut scores: std::collections::HashMap<&str, f64> = std::collections::HashMap::new();
+    for (action, count) in &raw.action_counts {
+        let w = action_role_weight(action);
+        for (role, weight) in w {
+            *scores.entry(role).or_insert(0.0) += *weight as f64 * *count as f64;
+        }
+    }
+    for (ct, count) in &raw.content_type_counts {
+        let w = content_type_role_weight(ct);
+        for (role, weight) in w {
+            *scores.entry(role).or_insert(0.0) += *weight as f64 * *count as f64;
+        }
+    }
+    let max_score = scores.values().cloned().fold(0.0f64, f64::max);
+    let mut role_scores: Vec<RoleScore> = ROLES
+        .iter()
+        .map(|(role, label)| RoleScore {
+            role: role.to_string(),
+            label: label.to_string(),
+            score: if max_score > 0.0 {
+                (scores.get(role).copied().unwrap_or(0.0) / max_score) as f32
+            } else {
+                0.0
+            },
+        })
+        .filter(|r| r.score > 0.0)
+        .collect();
+    role_scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+
+    // 内容领域分布
+    let total_ct: u32 = raw.content_type_counts.iter().map(|(_, c)| c).sum();
+    let mut domains: Vec<DomainShare> = raw
+        .content_type_counts
+        .iter()
+        .map(|(ct, c)| DomainShare {
+            domain: domain_label(ct).to_string(),
+            pct: if total_ct > 0 {
+                (*c * 100 / total_ct) as u32
+            } else {
+                0
+            },
+        })
+        .collect();
+    // 同领域合并（如 code/shell 都是"代码"）
+    let mut merged: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    for d in domains.drain(..) {
+        *merged.entry(d.domain).or_insert(0) += d.pct;
+    }
+    let mut domains: Vec<DomainShare> = merged
+        .into_iter()
+        .map(|(domain, pct)| DomainShare { domain, pct })
+        .collect();
+    domains.sort_by(|a, b| b.pct.cmp(&a.pct));
+
+    // 高频动作
+    let top_actions: Vec<TopAction> = raw
+        .action_counts
+        .iter()
+        .take(8)
+        .map(|(action_id, count)| TopAction {
+            action_id: action_id.clone(),
+            count: *count,
+        })
+        .collect();
+
+    // 活跃时段
+    let total_h = raw.total_events.max(1);
+    let mut hours: Vec<HourSegment> = HOUR_SEGMENTS
+        .iter()
+        .map(|(label, range)| {
+            let c: u32 = raw
+                .hour_counts
+                .iter()
+                .filter(|(h, _)| range.contains(h))
+                .map(|(_, c)| c)
+                .sum();
+            HourSegment {
+                label: label.to_string(),
+                pct: (c * 100 / total_h) as u32,
+            }
+        })
+        .collect();
+    hours.sort_by(|a, b| b.pct.cmp(&a.pct));
+
+    // 风格偏好：偏好指令 + 被改率
+    let mut prefs: Vec<PrefItem> = raw
+        .prefs
+        .iter()
+        .map(|p| PrefItem {
+            action_id: p.action_id.clone(),
+            preference: p.preference.clone(),
+            edit_rate: raw
+                .feedback
+                .iter()
+                .find(|f| f.action_id == p.action_id)
+                .map(|f| f.edit_rate)
+                .unwrap_or(0.0),
+        })
+        .collect();
+    // 没有偏好指令但被改率高的动作 → 提示候选（供前端"一键加偏好"）
+    for f in &raw.feedback {
+        if f.total >= 5 && f.edit_rate >= 0.4 && !prefs.iter().any(|p| p.action_id == f.action_id) {
+            prefs.push(PrefItem {
+                action_id: f.action_id.clone(),
+                preference: String::new(),
+                edit_rate: f.edit_rate,
+            });
+        }
+    }
+    prefs.sort_by(|a, b| b.edit_rate.partial_cmp(&a.edit_rate).unwrap_or(std::cmp::Ordering::Equal));
+
+    let sample_events = raw.total_events;
+    let confidence = (sample_events as f32 / 300.0).clamp(0.0, 1.0);
+
+    UserProfile {
+        role_scores,
+        domains,
+        top_actions,
+        hours,
+        prefs,
+        overrides: serde_json::Value::Null,
+        sample_events,
+        confidence,
+    }
+}
+
+/// 角色 → 擅长动作（画像驱动推荐的加成来源）。
+/// 权重 0~1：该动作对判断"这个角色"的代表性。
+fn role_actions(role: &str) -> &'static [(&'static str, f32)] {
+    match role {
+        "developer" => &[
+            ("ai-explain-code", 1.0),
+            ("json_format", 0.9),
+            ("sql-in", 0.8),
+            ("ai-commit-message", 0.7),
+            ("sql_format", 0.6),
+        ],
+        "research" => &[("url-summary", 1.0), ("ai-summarize", 0.7)],
+        "writer" => &[("ai-polish", 1.0), ("ai-rewrite", 0.9), ("ai-merge-polish", 0.7)],
+        "comm" => &[("ai-reply-draft", 1.0)],
+        "ops" => &[
+            ("ai-weekly-report", 1.0),
+            ("ai-tabulate", 0.7),
+            ("mask-sensitive", 0.5),
+        ],
+        "data" => &[
+            ("query-result-to-sql", 1.0),
+            ("config_to_json", 0.6),
+            ("json_format", 0.5),
+        ],
+        _ => &[],
+    }
+}
+
+/// 一条动作加成（画像 v2 推荐注入）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionBoost {
+    pub action_id: String,
+    /// 排序乘法加成（1 + boost 作为 roleFactor）。
+    pub boost: f32,
+}
+
+/// 画像驱动的推荐加成：主导/次要角色 → 该角色擅长动作的加成表。
+///
+/// 只返回 ≥0.35 置信度的角色贡献；同一动作取各角色加成最大值（不叠加，防雪球）。
+/// 前端 recommendScored 排序时乘 roleFactor = 1 + boost。
+#[tauri::command]
+pub fn profile_action_boosts(store: State<DataStore>) -> Result<Vec<ActionBoost>, String> {
+    let raw = store.profile_raw_stats(PROFILE_DAYS)?;
+    let profile = build_profile(&raw);
+    let mut boosts: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
+    for rs in &profile.role_scores {
+        if rs.score < 0.35 {
+            continue;
+        }
+        for (action, w) in role_actions(&rs.role) {
+            let b = rs.score * w * 0.35;
+            let e = boosts.entry(action.to_string()).or_insert(0.0);
+            if b > *e {
+                *e = b;
+            }
+        }
+    }
+    let mut out: Vec<ActionBoost> = boosts
+        .into_iter()
+        .map(|(action_id, boost)| ActionBoost { action_id, boost })
+        .filter(|a| a.boost > 0.05)
+        .collect();
+    out.sort_by(|a, b| b.boost.partial_cmp(&a.boost).unwrap_or(std::cmp::Ordering::Equal));
+    Ok(out)
+}
+
+// ===================== 命令 =====================
+
+/// LLM 精炼画像（V3-C）：把统计画像润色成一段自然语言描述。
+///
+/// 出网内容 = **纯统计值**（角色概率 / 领域占比 / 动作 id / 时段 / 偏好指令），
+/// 不含任何内容文本；偏好指令出网前过 is_secret 清洗；过日预算；计入用量明细。
+/// 手动触发（按钮），不缓存——每次生成都是用户主动、可见的一次出网。
+#[tauri::command]
+pub async fn profile_refine(app: tauri::AppHandle) -> Result<String, String> {
+    // 1. 配置 + 密钥（块内取，锁不跨 await）
+    let (cfg, key) = {
+        let store = app.state::<DataStore>();
+        let cfg = crate::commands::ai::read_ai_config(&store)?;
+        let dir = crate::commands::ai::ai_data_dir(&app)?;
+        let key = crate::ai::secret_store::load_key(&dir, &cfg.provider)?.unwrap_or_default();
+        if cfg.spec().needs_key && key.trim().is_empty() {
+            return Err("未配置当前服务商的 API Key".to_string());
+        }
+        (cfg, key)
+    };
+    if !cfg.enabled {
+        return Err("AI 功能未启用".to_string());
+    }
+    cfg.validate()?;
+    let spec = cfg.spec();
+
+    // 2. 画像数据（实时聚合，纯统计）
+    let raw = app.state::<DataStore>().profile_raw_stats(PROFILE_DAYS)?;
+    let profile = build_profile(&raw);
+    if profile.sample_events < 10 {
+        return Err("行为样本不足（至少需要 10 条操作记录），暂时无法生成可靠的画像描述".to_string());
+    }
+
+    // 3. 精简输入 + 敏感清洗（偏好指令过 is_secret，像密钥就不发）
+    let classifier = ContentClassifier::new();
+    let prefs: Vec<String> = profile
+        .prefs
+        .iter()
+        .filter(|p| !p.preference.is_empty() && !classifier.is_secret(&p.preference))
+        .map(|p| format!("{}：{}", p.action_id, p.preference))
+        .collect();
+    let input = serde_json::json!({
+        "角色概率": profile.role_scores.iter().take(3)
+            .map(|r| format!("{} {:.0}%", r.label, r.score * 100.0)).collect::<Vec<_>>(),
+        "内容领域": profile.domains.iter()
+            .map(|d| format!("{} {}%", d.domain, d.pct)).collect::<Vec<_>>(),
+        "高频动作": profile.top_actions.iter().take(6)
+            .map(|a| format!("{}（{} 次）", a.action_id, a.count)).collect::<Vec<_>>(),
+        "活跃时段": profile.hours.iter()
+            .map(|h| format!("{} {}%", h.label, h.pct)).collect::<Vec<_>>(),
+        "风格偏好": prefs,
+        "样本量": profile.sample_events,
+    });
+
+    // 4. 预算检查（本地厂商零费用跳过）
+    if !spec.is_local() {
+        let today = app.state::<DataStore>().ai_usage_daily(1)?;
+        let today_row = today.first().cloned().unwrap_or_default();
+        if let Err((spent, budget_usd)) = crate::ai::budget::check(&today_row, cfg.daily_budget_usd()) {
+            return Err(format!(
+                "今日预算已用完（已用 ${:.2}，上限 ${:.2}）——画像精炼需要出网计费",
+                spent, budget_usd
+            ));
+        }
+    }
+
+    // 5. 生成
+    let system = "你是用户画像分析师。根据提供的行为统计数据，用简体中文写 2~3 句自然连贯的用户画像描述（像人话，不是列表）。只描述统计里能看到的事实，不编造、不说教、不用敬语。这段描述会被粘贴给其它 AI 工具，让它在任务开始前快速了解用户。";
+    let user = format!("行为统计数据：\n{}", serde_json::to_string_pretty(&input).map_err(|e| e.to_string())?);
+    let started = std::time::Instant::now();
+    let result = crate::ai::chat(&cfg, &key, Some(system), &user, Some(600)).await;
+    let latency_ms = started.elapsed().as_millis() as u64;
+
+    // 6. 用量记账（失败也记，账目才对得上）
+    let outcome = match result {
+        Ok(o) => o,
+        Err(e) => {
+            let msg = e.to_string();
+            let _ = app.state::<DataStore>().ai_usage_add(&crate::data_store::AiUsageEntry {
+                action_id: "profile-refine".to_string(),
+                provider: spec.id.to_string(),
+                model: cfg.effective_model(),
+                prompt_tokens: 0,
+                completion_tokens: 0,
+                cost_usd: 0.0,
+                cached: false,
+                latency_ms,
+                ok: false,
+                error: Some(msg.clone()),
+            });
+            return Err(msg);
+        }
+    };
+    let _ = app.state::<DataStore>().ai_usage_add(&crate::data_store::AiUsageEntry {
+        action_id: "profile-refine".to_string(),
+        provider: spec.id.to_string(),
+        model: outcome.model.clone(),
+        prompt_tokens: outcome.prompt_tokens,
+        completion_tokens: outcome.completion_tokens,
+        cost_usd: crate::ai::budget::estimate_cost(spec, outcome.prompt_tokens, outcome.completion_tokens),
+        cached: false,
+        latency_ms,
+        ok: true,
+        error: None,
+    });
+    Ok(outcome.content)
+}
+
+/// 画像查询（实时聚合 + 用户覆盖合并）。
+#[tauri::command]
+pub fn profile_get(store: State<DataStore>) -> Result<UserProfile, String> {
+    let raw = store.profile_raw_stats(PROFILE_DAYS)?;
+    let mut profile = build_profile(&raw);
+    // 用户覆盖（config `profile_overrides` JSON 对象，如 {"role": "developer"}）
+    let cfg = store.get_config()?;
+    profile.overrides = cfg
+        .get("profile_overrides")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    Ok(profile)
+}
+
+/// 用户修正画像字段（写入 config `profile_overrides`，如 role / domain）。
+#[tauri::command]
+pub fn profile_set_override(
+    store: State<DataStore>,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    if key.is_empty() {
+        return Err("key 不能为空".to_string());
+    }
+    let mut raw = store.get_config()?;
+    if let Some(obj) = raw.as_object_mut() {
+        let overrides = obj
+            .entry("profile_overrides".to_string())
+            .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+        if let serde_json::Value::Object(m) = overrides {
+            if value.trim().is_empty() {
+                m.remove(&key);
+            } else {
+                m.insert(key, serde_json::Value::String(value.trim().to_string()));
+            }
+        }
+    }
+    store.save_config(&raw)?;
+    Ok(())
+}
+
+/// 一键安装为 Claude Code / Cursor 的 skill：
+/// 写入 `~/.claude/skills/pastepanda-profile/SKILL.md` + `references/profile.json`。
+/// 返回安装目录（前端提示用）。全程本地写文件，无网络。
+#[tauri::command]
+pub fn profile_install_skill(store: State<DataStore>) -> Result<String, String> {
+    let raw = store.profile_raw_stats(PROFILE_DAYS)?;
+    let profile = build_profile(&raw);
+    let cfg = store.get_config()?;
+    let overrides = cfg
+        .get("profile_overrides")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    let wanted = |_: &str| true;
+    let md = render_md(&profile, &overrides, &wanted);
+    let mut p = profile;
+    p.overrides = overrides;
+    let json = serde_json::to_string_pretty(&p).map_err(|e| e.to_string())?;
+
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .map_err(|_| "无法定位用户主目录（USERPROFILE / HOME 均未设置）".to_string())?;
+    let base = std::path::Path::new(&home)
+        .join(".claude")
+        .join("skills")
+        .join("pastepanda-profile");
+
+    let skill_md = format!(
+        "---\nname: pastepanda-profile\ndescription: 用户的 PastePanda 行为画像——角色、内容领域、风格偏好与使用红线。在任何任务开始时先读此画像以贴合用户习惯。\n---\n\n{}",
+        md
+    );
+
+    std::fs::create_dir_all(base.join("references")).map_err(|e| e.to_string())?;
+    std::fs::write(base.join("SKILL.md"), skill_md).map_err(|e| e.to_string())?;
+    std::fs::write(base.join("references").join("profile.json"), json)
+        .map_err(|e| e.to_string())?;
+    Ok(base.display().to_string())
+}
+
+/// 导出画像。format: `md`（5 大类通用格式）| `json`（结构化）| `skill`（SKILL.md 包）。
+/// categories: 大类子集（md/skill 生效），如 ["profession","preferences","instructions"]；
+/// 空数组 = 全部。导出前过敏感清洗（兜底）。
+#[tauri::command]
+pub fn profile_export(
+    store: State<DataStore>,
+    format: String,
+    categories: Option<Vec<String>>,
+) -> Result<String, String> {
+    let raw = store.profile_raw_stats(PROFILE_DAYS)?;
+    let profile = build_profile(&raw);
+    let cfg = store.get_config()?;
+    let overrides = cfg
+        .get("profile_overrides")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    let wanted = |cat: &str| -> bool {
+        let cats = categories.clone().unwrap_or_default();
+        cats.is_empty() || cats.iter().any(|c| c == cat)
+    };
+
+    match format.as_str() {
+        "json" => {
+            let mut p = profile;
+            p.overrides = overrides;
+            serde_json::to_string_pretty(&p).map_err(|e| e.to_string())
+        }
+        "md" => Ok(render_md(&profile, &overrides, &wanted)),
+        "skill" => {
+            let md = render_md(&profile, &overrides, &wanted);
+            let mut p = profile;
+            p.overrides = overrides;
+            let json = serde_json::to_string_pretty(&p).map_err(|e| e.to_string())?;
+            let mut s = String::new();
+            s.push_str("# pastepanda-profile 技能包\n\n");
+            s.push_str("生成时间：");
+            s.push_str(&chrono::Local::now().format("%Y-%m-%d %H:%M").to_string());
+            s.push_str("\n\n---\n\n");
+            s.push_str("## SKILL.md\n\n");
+            s.push_str("```markdown\n");
+            s.push_str("---\n");
+            s.push_str("name: pastepanda-profile\n");
+            s.push_str("description: 用户的 PastePanda 行为画像——角色、内容领域、风格偏好与使用红线。在任何任务开始时先读此画像以贴合用户习惯。\n");
+            s.push_str("---\n\n");
+            s.push_str(&md);
+            s.push_str("```\n\n---\n\n");
+            s.push_str("## references/profile.json\n\n");
+            s.push_str("```json\n");
+            s.push_str(&json);
+            s.push_str("\n```\n");
+            Ok(s)
+        }
+        other => Err(format!("未知导出格式：{other}（支持 md / json / skill）")),
+    }
+}
+
+/// 渲染 5 大类 Markdown（copy-my-profile 兼容结构）。
+fn render_md(
+    profile: &UserProfile,
+    overrides: &serde_json::Value,
+    wanted: &dyn Fn(&str) -> bool,
+) -> String {
+    let mut s = String::new();
+    s.push_str("# 用户画像（PastePanda 生成）\n\n");
+    s.push_str("> 由 PastePanda 根据最近 30 天剪贴板使用行为自动生成。\n");
+    s.push_str("> 本文件仅含行为统计，不含具体内容；敏感信息已清洗。\n\n");
+    let mut any = false;
+    if wanted("profession") {
+        s.push_str("## Profession\n\n");
+        if let Some(r) = profile.role_scores.first() {
+            let ov = overrides.get("role").and_then(|v| v.as_str()).unwrap_or("");
+            let role_label = if !ov.is_empty() {
+                ov.to_string()
+            } else {
+                format!("{}（置信度 {:.0}%）", r.label, r.score * 100.0)
+            };
+            s.push_str(&format!("- 推断角色：{role_label}\n"));
+        }
+        if !profile.domains.is_empty() {
+            let ds = profile
+                .domains
+                .iter()
+                .map(|d| format!("{} {}%", d.domain, d.pct))
+                .collect::<Vec<_>>()
+                .join(" · ");
+            s.push_str(&format!("- 内容领域：{ds}\n"));
+        }
+        s.push('\n');
+        any = true;
+    }
+    if wanted("projects") && !profile.top_actions.is_empty() {
+        s.push_str("## Projects\n\n");
+        s.push_str("- 高频动作：");
+        let acts = profile
+            .top_actions
+            .iter()
+            .map(|a| format!("{}（{} 次）", a.action_id, a.count))
+            .collect::<Vec<_>>()
+            .join(" · ");
+        s.push_str(&format!("{acts}\n"));
+        s.push_str(&format!(
+            "- 活跃时段：{}\n\n",
+            profile
+                .hours
+                .iter()
+                .map(|h| format!("{} {}%", h.label, h.pct))
+                .collect::<Vec<_>>()
+                .join(" · ")
+        ));
+        any = true;
+    }
+    if wanted("preferences") && !profile.prefs.is_empty() {
+        s.push_str("## Preferences\n\n");
+        let classifier = ContentClassifier::new();
+        for p in &profile.prefs {
+            let pref_text = if classifier.is_secret(&p.preference) {
+                "（已隐藏，内容疑似敏感）".to_string()
+            } else {
+                p.preference.clone()
+            };
+            if !pref_text.is_empty() && pref_text != "（已隐藏，内容疑似敏感）" {
+                s.push_str(&format!("- {}：{}\n", p.action_id, pref_text));
+            } else if pref_text.is_empty() {
+                s.push_str(&format!(
+                    "- {}：结果常被修改（被改率 {:.0}%）——建议为该动作设定偏好\n",
+                    p.action_id,
+                    p.edit_rate * 100.0
+                ));
+            }
+        }
+        s.push('\n');
+        any = true;
+    }
+    if wanted("instructions") {
+        s.push_str("## Instructions\n\n");
+        s.push_str("- 所有输出使用简体中文\n");
+        s.push_str("- 涉及密钥/凭证/敏感信息时拒绝处理，且不写入任何记忆\n");
+        s.push_str("- 需要联网或调用云端 API 前先征得确认\n");
+        if let serde_json::Value::Object(m) = overrides {
+            if let Some(v) = m.get("instructions") {
+                s.push_str(&format!("- （用户自定义）{}\n", v.as_str().unwrap_or("")));
+            }
+        }
+        s.push('\n');
+        any = true;
+    }
+    if !any {
+        s = "# 用户画像\n\n（未选择任何导出类别）\n".to_string();
+    }
+    s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn raw_with(actions: &[(&str, u32)], ctypes: &[(&str, u32)]) -> ProfileRawStats {
+        ProfileRawStats {
+            action_counts: actions.iter().map(|(a, c)| (a.to_string(), *c)).collect(),
+            content_type_counts: ctypes.iter().map(|(c, n)| (c.to_string(), *n)).collect(),
+            hour_counts: vec![(10, 3)],
+            feedback: vec![],
+            prefs: vec![],
+            total_events: actions.iter().map(|(_, c)| c).sum(),
+        }
+    }
+
+    #[test]
+    fn test_developer_dominant_with_code_actions() {
+        let raw = raw_with(
+            &[("ai-explain-code", 5), ("json_format", 4), ("sql-in", 2)],
+            &[("code", 6), ("json", 4)],
+        );
+        let p = build_profile(&raw);
+        let top = p.role_scores.first().unwrap();
+        assert_eq!(top.role, "developer");
+        assert!((top.score - 1.0).abs() < 1e-6, "最高分应归一为 1.0");
+    }
+
+    #[test]
+    fn test_writer_dominant_with_reply_actions() {
+        let raw = raw_with(&[("ai-polish", 6), ("ai-rewrite", 4)], &[("text", 10)]);
+        let p = build_profile(&raw);
+        assert_eq!(p.role_scores.first().unwrap().role, "writer");
+    }
+
+    #[test]
+    fn test_domains_merged_and_sorted() {
+        let raw = raw_with(
+            &[("ai-explain-code", 2)],
+            &[("code", 6), ("shell", 3), ("url", 1)],
+        );
+        let p = build_profile(&raw);
+        // code + shell 都归"代码"，应合并
+        let code = p.domains.iter().find(|d| d.domain == "代码").unwrap();
+        assert_eq!(code.pct, 90, "代码 9/10 = 90%");
+        assert!(p.domains[0].domain == "代码", "代码应排最前");
+    }
+
+    #[test]
+    fn test_confidence_scales_with_samples() {
+        let raw = raw_with(&[("ai-reply-draft", 20)], &[("text", 20)]);
+        assert!((build_profile(&raw).confidence - 20.0 / 300.0).abs() < 0.01);
+        let raw2 = raw_with(&[("ai-reply-draft", 600)], &[("text", 600)]);
+        assert!((build_profile(&raw2).confidence - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_empty_profile_no_panic() {
+        let raw = ProfileRawStats::default();
+        let p = build_profile(&raw);
+        assert!(p.role_scores.is_empty());
+        assert!(p.domains.is_empty());
+    }
+
+    #[test]
+    fn test_developer_role_boosts_code_actions() {
+        // developer 满格 → ai-explain-code 拿到 max 加成
+        let raw = raw_with(
+            &[("ai-explain-code", 5), ("json_format", 4)],
+            &[("code", 6), ("json", 4)],
+        );
+        let p = build_profile(&raw);
+        let top = p.role_scores.first().unwrap();
+        assert_eq!(top.role, "developer");
+        assert!((top.score - 1.0).abs() < 1e-6);
+
+        // 手动验证加成计算（developer 1.0 × ai-explain-code 1.0 × 0.35 = 0.35）
+        let dev = role_actions("developer");
+        let ec = dev.iter().find(|(a, _)| *a == "ai-explain-code").unwrap();
+        assert!((ec.1 - 1.0).abs() < 1e-6);
+        let boost = top.score * ec.1 * 0.35;
+        assert!((boost - 0.35).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_low_confidence_role_no_boost() {
+        // 全零数据 → 无角色 → 无加成
+        let raw = ProfileRawStats::default();
+        let p = build_profile(&raw);
+        assert!(p.role_scores.is_empty());
+        // 没有任何角色达到 0.35 → role_actions 遍历空 → 无 boost
+        let mut boosts = std::collections::HashMap::new();
+        for rs in &p.role_scores {
+            if rs.score < 0.35 {
+                continue;
+            }
+            for (action, w) in role_actions(&rs.role) {
+                let b = rs.score * w * 0.35;
+                let e = boosts.entry(action.to_string()).or_insert(0.0);
+                if b > *e {
+                    *e = b;
+                }
+            }
+        }
+        assert!(boosts.is_empty());
+    }
+}

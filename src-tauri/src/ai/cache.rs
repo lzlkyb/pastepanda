@@ -6,7 +6,7 @@
 //!
 //! 代价是重启后缓存清空，这是有意接受的取舍。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -103,6 +103,27 @@ pub fn clear() {
     if let Ok(mut map) = CACHE.lock() {
         map.clear();
     }
+}
+
+/// 正在计算中的缓存键集合（single-flight，审查 backlog：#4 防同内容并发双倍计费）。
+/// 同一内容并发触发同一动作时，只放行一个真实 API 调用，其余等待其缓存结果。
+static INFLIGHT: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// 登记在跑；返回 false 表示已有同 key 在跑（应等待而非重复调用）。
+pub fn inflight_add(key: &str) -> bool {
+    INFLIGHT.lock().map(|mut s| s.insert(key.to_string())).unwrap_or(true)
+}
+
+/// 调用完成（无论成败）后释放。
+pub fn inflight_done(key: &str) {
+    if let Ok(mut s) = INFLIGHT.lock() {
+        s.remove(key);
+    }
+}
+
+/// 是否仍在跑。
+pub fn inflight_active(key: &str) -> bool {
+    INFLIGHT.lock().map(|s| s.contains(key)).unwrap_or(false)
 }
 
 #[cfg(test)]

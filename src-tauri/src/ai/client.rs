@@ -17,6 +17,7 @@
 
 use super::provider::{AiConfig, Protocol, ThinkingControl};
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 use std::time::Duration;
 
 /// Anthropic 的 `max_tokens` 是必填项，调用方没给时用这个。
@@ -249,13 +250,24 @@ fn map_status(code: u16, raw_body: &str) -> AiError {
     }
 }
 
-fn build_client(timeout_secs: u64) -> Result<reqwest::Client, AiError> {
+/// 审查 backlog：#5 连接池复用 —— 每请求新建 client 会反复 TCP/TLS 握手；
+/// 连接池常驻进程，超时按请求覆盖（reqwest 支持 per-request timeout）。
+static CLIENT: LazyLock<Option<reqwest::Client>> = LazyLock::new(|| {
     reqwest::Client::builder()
-        .timeout(Duration::from_secs(timeout_secs))
         .connect_timeout(Duration::from_secs(10))
         .user_agent(concat!("PastePanda/", env!("CARGO_PKG_VERSION")))
         .build()
-        .map_err(|e| AiError::Network(e.to_string()))
+        .ok()
+});
+
+/// 取那个常驻的连接池 client。
+///
+/// **不收 timeout 参数**：超时已经改成 per-request 设（见下面三个调用处的
+/// `.timeout(...)`）。再留个用不上的参数会让人以为超时在这里生效。
+fn build_client() -> Result<reqwest::Client, AiError> {
+    CLIENT
+        .clone()
+        .ok_or_else(|| AiError::Network("HTTP 客户端初始化失败".to_string()))
 }
 
 fn map_send_error(e: reqwest::Error, timeout_secs: u64) -> AiError {
@@ -313,7 +325,13 @@ async fn chat_openai(
 
     // 关“思考”：只向查实过写法的厂商发字段，其余一律不发。
     // 这不是保守，是因为发错字段名的代价（整个请求 400）比“没关成”大得多。
-    let (thinking, enable_thinking) = if cfg.thinking_off {
+    // 自定义/中转服务商的 id 不在 PROVIDERS 里，而 `find()` 会**回退到默认厂商**（deepseek）——
+    // 直接拿 spec 算 thinking_control 会把 DeepSeek 的开关字段塞给一个未知的中转服务，
+    // 对方不认识就是 400。只有 id 真的命中内置表时才能用它的写法。
+    let is_builtin = super::provider::PROVIDERS
+        .iter()
+        .any(|p| p.id == cfg.provider.trim());
+    let (thinking, enable_thinking) = if cfg.thinking_off && is_builtin {
         match cfg.spec().thinking_control() {
             ThinkingControl::TypeObject => (Some(ThinkingOff { kind: "disabled" }), None),
             ThinkingControl::EnableFlag => (None, Some(false)),
@@ -334,10 +352,11 @@ async fn chat_openai(
         enable_thinking,
     };
 
-    let resp = build_client(cfg.timeout_secs)?
+    let resp = build_client()?
         .post(cfg.request_url())
         .bearer_auth(api_key.trim())
         .json(&body)
+        .timeout(Duration::from_secs(cfg.timeout_secs))
         .send()
         .await
         .map_err(|e| map_send_error(e, cfg.timeout_secs))?;
@@ -408,12 +427,13 @@ async fn chat_anthropic(
         temperature: 0.3,
     };
 
-    let resp = build_client(cfg.timeout_secs)?
+    let resp = build_client()?
         .post(cfg.request_url())
         // 注意：不是 Bearer，是 x-api-key
         .header("x-api-key", api_key.trim())
         .header("anthropic-version", ANTHROPIC_VERSION)
         .json(&body)
+        .timeout(Duration::from_secs(cfg.timeout_secs))
         .send()
         .await
         .map_err(|e| map_send_error(e, cfg.timeout_secs))?;
@@ -457,6 +477,113 @@ async fn chat_anthropic(
         prompt_tokens: usage.input_tokens,
         completion_tokens: usage.output_tokens,
         truncated,
+    })
+}
+
+// ===================== embedding（M5-2 语义索引） =====================
+
+/// 一次 embedding 调用的结果。`prompt_tokens` 用于预算统计。
+#[derive(Debug, Clone, Serialize)]
+pub struct EmbeddingOutcome {
+    pub vectors: Vec<Vec<f32>>,
+    pub model: String,
+    pub prompt_tokens: u32,
+}
+
+#[derive(Serialize)]
+struct OaEmbedRequest<'a> {
+    model: &'a str,
+    input: Vec<&'a str>,
+}
+
+#[derive(Deserialize)]
+struct OaEmbedData {
+    #[serde(default)]
+    embedding: Vec<f32>,
+    #[serde(default)]
+    index: usize,
+}
+
+#[derive(Deserialize, Default)]
+struct OaEmbedResponse {
+    #[serde(default)]
+    data: Vec<OaEmbedData>,
+    #[serde(default)]
+    model: String,
+    #[serde(default)]
+    usage: Option<OaUsage>,
+}
+
+/// 批量文本转向量（OpenAI 兼容 `/embeddings`）。
+///
+/// 只有 OpenAI 兼容协议才有这个端点（Anthropic 协议没有 embedding），
+/// 协议不符直接报配置错误。一次可传多条文本，按 `input` 顺序返回。
+pub async fn embedding(
+    cfg: &AiConfig,
+    api_key: &str,
+    model: &str,
+    texts: &[String],
+) -> Result<EmbeddingOutcome, AiError> {
+    cfg.validate().map_err(AiError::Config)?;
+    if cfg.effective_protocol() != Protocol::OpenAi {
+        return Err(AiError::Config(
+            "当前服务商不是 OpenAI 兼容协议，没有 /embeddings 接口——语义索引需要 OpenAI 兼容厂商".to_string(),
+        ));
+    }
+    if cfg.spec().needs_key && api_key.trim().is_empty() {
+        return Err(AiError::Config("未配置 API Key".to_string()));
+    }
+    if texts.is_empty() {
+        return Err(AiError::Config("没有要向量化的文本".to_string()));
+    }
+
+    let body = OaEmbedRequest {
+        model,
+        input: texts.iter().map(|s| s.as_str()).collect(),
+    };
+    let url = format!("{}/embeddings", cfg.effective_base_url());
+    let resp = build_client()?
+        .post(&url)
+        .bearer_auth(api_key.trim())
+        .json(&body)
+        .timeout(Duration::from_secs(cfg.timeout_secs))
+        .send()
+        .await
+        .map_err(|e| map_send_error(e, cfg.timeout_secs))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let raw = resp.text().await.unwrap_or_default();
+        return Err(map_status(status.as_u16(), &raw));
+    }
+    let parsed: OaEmbedResponse = resp
+        .json()
+        .await
+        .map_err(|e| AiError::Decode(e.to_string()))?;
+
+    // 按 index 排序：服务商不保证顺序
+    let mut ordered = parsed.data;
+    ordered.sort_by_key(|d| d.index);
+    let vectors: Vec<Vec<f32>> = ordered.into_iter().map(|d| d.embedding).collect();
+    if vectors.len() != texts.len() {
+        return Err(AiError::Decode(format!(
+            "返回 {} 条向量，期望 {} 条",
+            vectors.len(),
+            texts.len()
+        )));
+    }
+    if vectors.iter().any(|v| v.is_empty()) {
+        return Err(AiError::Decode("返回了空向量".to_string()));
+    }
+
+    Ok(EmbeddingOutcome {
+        vectors,
+        model: if parsed.model.is_empty() {
+            model.to_string()
+        } else {
+            parsed.model
+        },
+        prompt_tokens: parsed.usage.as_ref().map(|u| u.prompt_tokens).unwrap_or(0),
     })
 }
 

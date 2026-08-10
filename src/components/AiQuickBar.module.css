@@ -1,0 +1,216 @@
+/* v6.4 主窗口 AI 感知（方案 B）：AI 快捷区 */
+
+.wrap {
+  padding: 0 12px;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: var(--dialog-bg, var(--card-bg));
+  border: 1px solid var(--accent-border);
+  box-shadow: 0 1px 3px rgba(2, 132, 199, 0.08);
+}
+
+.lbl {
+  font-size: 10px;
+  color: var(--accent-strong);
+  font-weight: 700;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  letter-spacing: 0.3px;
+}
+
+.acts {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.q {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--accent-border);
+  border-radius: 7px;
+  padding: 3px 9px;
+  font-size: 11px;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  font-family: inherit;
+}
+
+.q:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
+
+.qRunning {
+  border-color: var(--border-color);
+  background: var(--section-bg);
+  color: var(--text-secondary);
+  cursor: default;
+}
+
+.more {
+  border-style: dashed;
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.more:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.hintTxt {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.x {
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.x:hover {
+  background: var(--hover-bg, rgba(127, 127, 127, 0.1));
+  color: var(--text-primary);
+}
+
+/* 结果区 */
+.resultBar {
+  margin-top: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--dialog-bg, var(--card-bg));
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.thinking {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--accent-strong);
+  padding: 4px 2px;
+}
+
+.rhead {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.rbody {
+  font-size: 11px;
+  color: var(--text-primary);
+  line-height: 1.6;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  padding: 6px 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 120px;
+  overflow: auto;
+}
+
+.racts {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.rb {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  padding: 3px 12px;
+  font-size: 11px;
+  background: var(--section-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.rb:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.rbPri {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.rbPri:hover {
+  color: #fff;
+  filter: brightness(1.08);
+}
+
+/* 确认 / 错误条 */
+.gateBar {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+
+.sens {
+  background: var(--orange-bg);
+  border: 1px solid var(--orange-border);
+  color: var(--orange);
+}
+
+.err {
+  background: var(--danger-bg, #fef2f2);
+  border: 1px solid var(--danger-border, #fecaca);
+  color: var(--danger);
+}
+
+.gbBtn {
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-size: 11px;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+}
+
+.gbBtn:hover {
+  background: currentColor;
+  color: #fff;
+}

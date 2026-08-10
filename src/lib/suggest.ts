@@ -4,7 +4,9 @@
  * 2. **只给 top-1**：永远只返回一个建议，不给列表；
  * 3. **一眼可否决**：组件层 ✕ → action_dismissals，否决被记住。
  *
- * 三种建议：
+ * 四种建议：
+ * - **意图识别（V3-A）**：结合内容+场景推断「你在做什么」（排错/JSON/收集链接/
+ *   批量/提炼/财务），给任务级建议（主动作 + 备选动作集）。置信度高才返回；
  * - **单条 top-1**：新内容命中 recommendScored 首位且分数足够高（≥ {@link TOP1_MIN_SCORE}），
  *   表示"这个内容你大概率要用某个动作"；
  * - **序列识别**：最近 3 条同类（如全是 IPv4 / 全是邮箱）→ "合并成 SQL IN"。
@@ -14,8 +16,9 @@
  */
 import { recommendScored, type Scene } from "@/lib/recommend";
 import type { TransformContext } from "@/lib/transforms";
-import { PRESET_CHAINS, getPresetChain } from "@/lib/chains/registry";
+import { PRESET_CHAINS, cachedUserChains } from "@/lib/chains/registry";
 import { getTransform } from "@/lib/transforms";
+import { detectIntent } from "@/lib/intent";
 
 /**
  * top-1 建议的最低分数。**宁可漏报不可误报**（主动建议是打断，做错一次用户就永久关掉）：
@@ -36,6 +39,16 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** 一条建议 */
 export type Suggestion =
+  | {
+      kind: "intent";
+      intentId: string;
+      label: string;
+      /** 动作集文案（如「解释代码 → 提取要点」） */
+      actionsText: string;
+      /** 建议动作（按优先级；第一个是主动作） */
+      actionIds: string[];
+      text: string;
+    }
   | {
       kind: "action";
       transformId: string;
@@ -59,6 +72,28 @@ export type Suggestion =
       /** 命中的是链的第几步（从 1 起，用于文案） */
       stepCount: number;
     };
+
+/**
+ * 意图识别建议（V3-A）：结合内容+场景推断「你在做什么」，给任务级建议。
+ * 只在置信度足够高时返回（排错/JSON/批量 = 高置信，优先于单动作建议）。
+ * 通过 {@link detectIntent} 实现，本函数只做类型包装与兜底。
+ */
+export function suggestIntent(
+  ctx: TransformContext,
+  scene?: Scene,
+  recents?: { text: string }[],
+): Suggestion | null {
+  const intent = detectIntent(ctx, scene, recents);
+  if (!intent) return null;
+  return {
+    kind: "intent",
+    intentId: intent.id,
+    label: intent.label,
+    actionsText: intent.actionsText,
+    actionIds: intent.actionIds,
+    text: ctx.text,
+  };
+}
 
 /** 单条 top-1 建议：当前内容最可能用的动作（分数不足返回 null）。
  *  scene 可选：提供「当前小时 + 来源应用」时启用场景感知（v6.2）。 */
@@ -116,7 +151,9 @@ export function suggestSequence(
  */
 export function suggestChain(ctx: TransformContext): Suggestion | null {
   let best: { chainId: string; label: string; steps: number; score: number } | null = null;
-  for (const chain of PRESET_CHAINS) {
+  // 自定义链排在前面：同分时用户亲手配的链胜出（下面用的是严格大于）。
+  // 不加这一句的后果：用户花功夫建了链，却永远只被推荐我们自带的预置链。
+  for (const chain of [...cachedUserChains(), ...PRESET_CHAINS]) {
     const first = getTransform(chain.steps[0].transformId);
     if (!first) continue;
     const score = first.detect(ctx);

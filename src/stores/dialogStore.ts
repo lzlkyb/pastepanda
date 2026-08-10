@@ -38,6 +38,10 @@ interface DialogState {
   learningsOpen: boolean;
   openLearnings: () => void;
   closeLearnings: () => void;
+  /** 「我的画像」（M6-2/M6-3）：画像预览 + 导出 */
+  profileOpen: boolean;
+  openProfile: () => void;
+  closeProfile: () => void;
 }
 
 /**
@@ -73,4 +77,7 @@ export const useDialogStore = create<DialogState>((set) => ({
   learningsOpen: false,
   openLearnings: () => set({ learningsOpen: true }),
   closeLearnings: () => set({ learningsOpen: false }),
+  profileOpen: false,
+  openProfile: () => set({ profileOpen: true }),
+  closeProfile: () => set({ profileOpen: false }),
 }));

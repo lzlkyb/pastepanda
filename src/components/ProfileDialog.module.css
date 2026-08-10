@@ -1,0 +1,537 @@
+/* ProfileDialog — 我的画像（M6-2/M6-3）· v5 样式 */
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 18px 12px;
+  border-bottom: 1px solid var(--border-color);
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), transparent);
+}
+.headTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.headIcon {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-light);
+  border: 1px solid var(--accent-border, var(--border-color));
+  color: var(--accent-strong);
+}
+.headSub {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  margin-left: 2px;
+}
+
+.body {
+  padding: 14px 16px 16px;
+  max-height: 66vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 44px 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.warn {
+  font-size: 10.5px;
+  color: var(--amber, #b45309);
+  background: var(--amber-bg, #fef3c7);
+  border: 1px solid var(--amber-border, #fde68a);
+  border-radius: 9px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ===== 角色区：雷达图 + 主导卡 ===== */
+.roleArea {
+  display: grid;
+  grid-template-columns: 232px 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 14px;
+  background: linear-gradient(160deg, var(--accent-light), color-mix(in srgb, var(--accent) 5%, transparent) 60%, transparent);
+  border: 1px solid var(--border-color);
+}
+.radarWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.radarTitle {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.8px;
+}
+
+.roleMain {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.mainRole {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 12px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, var(--accent-light), color-mix(in srgb, var(--accent) 5%, transparent));
+  border: 1px solid var(--accent-border, var(--border-color));
+}
+.roleEmoji {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+}
+.roleInfo { flex: 1; min-width: 0; }
+.roleName {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.roleTag {
+  font-size: 9.5px;
+  color: var(--green);
+  background: var(--green-bg);
+  border: 1px solid var(--green-border);
+  padding: 1px 6px;
+  border-radius: 99px;
+  font-weight: 500;
+}
+.roleDesc {
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  margin-top: 3px;
+  line-height: 1.45;
+}
+.confidenceBar {
+  height: 4px;
+  border-radius: 99px;
+  background: rgba(255,255,255,0.08);
+  margin-top: 6px;
+  overflow: hidden;
+}
+.confidenceBar i {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+}
+.roleFixRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.select {
+  padding: 3px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--dialog-bg);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-family: inherit;
+  max-width: 130px;
+}
+.select:focus { outline: none; border-color: var(--accent); }
+.fixHint {
+  font-size: 9.5px;
+  color: var(--text-tertiary);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* ===== 通用卡片 ===== */
+.twoCol {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.card {
+  padding: 12px 13px;
+  border-radius: 14px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+}
+.cardTitle {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cardDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+}
+.empty {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  padding: 6px 0;
+}
+
+/* 领域环形图 */
+.donutWrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.donut {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  position: relative;
+}
+.donut::after {
+  content: "";
+  position: absolute;
+  inset: 9px;
+  border-radius: 50%;
+  background: var(--section-bg);
+}
+.donutCenter {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+.donutCenter b { font-size: 13px; color: var(--text-primary); }
+.donutCenter span { font-size: 8.5px; color: var(--text-tertiary); }
+.legend { display: flex; flex-direction: column; gap: 5px; }
+.legendRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}
+.legendRow i { width: 7px; height: 7px; border-radius: 3px; }
+.legendPct {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+/* 活跃时段 */
+.hours { display: flex; flex-direction: column; gap: 8px; }
+.hourRow { display: flex; align-items: center; gap: 7px; }
+.hourLabel {
+  width: 66px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.hourBarBg {
+  flex: 1;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--border-color);
+  overflow: hidden;
+}
+.hourBar {
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+}
+.hourPct {
+  width: 30px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-align: right;
+}
+
+/* 高频动作 */
+.chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.chip {
+  font-size: 10px;
+  padding: 3px 9px;
+  border-radius: 99px;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  background: var(--dialog-bg);
+}
+.chip b { color: var(--accent-strong); font-weight: 500; }
+
+/* 风格偏好 */
+.prefList { display: flex; flex-direction: column; }
+.pref {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--border-color);
+}
+.pref:last-child { border-bottom: none; }
+.prefTag {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: var(--accent-strong);
+  background: var(--accent-light);
+  padding: 2px 8px;
+  border-radius: 99px;
+  flex-shrink: 0;
+}
+.prefTxt { color: var(--text-primary); }
+.prefHint { color: var(--amber, #b45309); font-size: 10px; }
+
+/* 使用红线 */
+.instrRow { display: flex; gap: 8px; }
+.input {
+  flex: 1;
+  padding: 7px 11px;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: var(--dialog-bg);
+  color: var(--text-primary);
+  font-size: 11.5px;
+  font-family: inherit;
+}
+.input:focus { outline: none; border-color: var(--accent); }
+.instrDefault {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-top: 6px;
+}
+
+/* ===== 导出区（v5） ===== */
+.exportCard {
+  padding: 14px;
+  border-radius: 14px;
+  background: linear-gradient(160deg, var(--accent-light), color-mix(in srgb, var(--accent) 4%, transparent) 60%, transparent);
+  border: 1px solid var(--accent-border, var(--border-color));
+}
+.exportHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 11px;
+}
+.exportSub {
+  font-size: 9.5px;
+  color: var(--text-tertiary);
+  font-weight: 400;
+  margin-left: 4px;
+}
+
+.fmtCards {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 11px;
+}
+.fmtCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 11px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--section-bg);
+  cursor: pointer;
+  font-family: inherit;
+  transition: 0.15s;
+  text-align: left;
+}
+.fmtCard:hover { border-color: var(--accent); }
+.fmtCardOn {
+  border-color: var(--accent);
+  background: linear-gradient(160deg, var(--accent-light), color-mix(in srgb, var(--accent) 5%, transparent));
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.fmtIcon {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--dialog-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+.fmtCardOn .fmtIcon {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+.fmtName { font-size: 11px; font-weight: 600; color: var(--text-primary); }
+.fmtDesc { font-size: 9px; color: var(--text-tertiary); line-height: 1.35; }
+
+.catRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 11px;
+}
+.catLabel { font-size: 10px; color: var(--text-tertiary); }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: 0.15s;
+  user-select: none;
+}
+.pill:hover { border-color: var(--accent); color: var(--accent-strong); }
+.pillOn {
+  border-color: var(--accent);
+  background: var(--accent-light);
+  color: var(--accent-strong);
+}
+
+.targetHint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  background: var(--green-bg);
+  border: 1px solid var(--green-border);
+  border-radius: 8px;
+  padding: 6px 9px;
+  margin-bottom: 9px;
+  line-height: 1.5;
+}
+.targetIcon { color: var(--green); margin-top: 1px; flex-shrink: 0; }
+.targetHint code {
+  font-family: var(--font-mono, monospace);
+  font-size: 9.5px;
+  color: var(--green);
+  background: var(--dialog-bg);
+  padding: 0 5px;
+  border-radius: 4px;
+}
+
+.previewBox {
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--dialog-bg);
+}
+.previewBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  background: var(--section-bg);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 9.5px;
+  color: var(--text-tertiary);
+}
+.previewStatus {
+  margin-left: auto;
+  color: var(--green);
+  font-size: 9.5px;
+}
+.previewArea {
+  width: 100%;
+  height: 128px;
+  resize: vertical;
+  padding: 9px 11px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 10.5px;
+  font-family: var(--font-mono, monospace);
+  line-height: 1.55;
+  white-space: pre;
+  border: none;
+  outline: none;
+}
+.previewArea::placeholder { color: var(--text-tertiary); }
+
+.opRow {
+  display: flex;
+  gap: 7px;
+  margin-top: 9px;
+  align-items: center;
+}
+.opBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 13px;
+  border-radius: 9px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: 0.15s;
+}
+.opBtn:hover { border-color: var(--accent); color: var(--accent-strong); }
+.opBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+.opBtnPrimary {
+  border: none;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #fff;
+  font-weight: 500;
+  margin-left: auto;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.opBtnPrimary:hover { filter: brightness(1.1); color: #fff; }
+
+.note {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  line-height: 1.65;
+  border-top: 1px dashed var(--border-color);
+  padding-top: 10px;
+}
+.note b { color: var(--text-secondary); }

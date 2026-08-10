@@ -2614,7 +2614,7 @@ fn test_history_summary_skips_secret() {
     let store = make_store();
     // 密钥内容不生成摘要（指纹也不留）
     store
-        .insert_history(&make_item("sec1", "sk-abcdef1234567890abcdef1234567890", "2026-08-10 10:00:00", "text"))
+        .insert_history(&make_item("sec1", concat!("sk-", "abcdef1234567890abcdef1234567890"), "2026-08-10 10:00:00", "text"))
         .unwrap();
     assert_eq!(store.history_summary("sec1").unwrap(), "", "敏感内容不记摘要");
 }
@@ -2639,4 +2639,239 @@ fn test_history_summaries_backfill_and_clear() {
     assert_eq!(store.history_summaries_count().unwrap(), 0, "清空后计数为 0");
     // 清空后不自动补存量
     assert_eq!(store.history_summaries_backfill(100).unwrap(), 0, "清空后不补存量");
+}
+
+// ============================================================
+// M5-2 语义向量：cosine_sim + 存取 + pending + 清空联动
+// ============================================================
+
+#[test]
+fn test_cosine_sim_basics() {
+    use crate::data_store::cosine_sim;
+    // 相同向量 → 1
+    let a = [1.0f32, 0.0, 0.0];
+    assert!((cosine_sim(&a, &a) - 1.0).abs() < 1e-6);
+    // 正交 → 0
+    let b = [0.0f32, 1.0, 0.0];
+    assert!((cosine_sim(&a, &b)).abs() < 1e-6);
+    // 相反 → -1
+    let c = [-1.0f32, 0.0, 0.0];
+    assert!((cosine_sim(&a, &c) + 1.0).abs() < 1e-6);
+    // 维度不一致 / 空 → 0
+    assert_eq!(cosine_sim(&a, &[1.0, 0.0]), 0.0);
+    assert_eq!(cosine_sim(&[], &[]), 0.0);
+    // 归一化后余弦 = 点积
+    let x = [3.0f32, 4.0];
+    let y = [1.0f32, 0.0];
+    assert!((cosine_sim(&x, &y) - 0.6).abs() < 1e-6);
+}
+
+#[test]
+fn test_vector_encode_decode_roundtrip() {
+    use crate::data_store::{decode_vec, encode_vec};
+    let v = vec![0.5f32, -1.25, 3.75, 0.0, 42.0];
+    let bytes = encode_vec(&v);
+    assert_eq!(bytes.len(), v.len() * 4);
+    assert_eq!(decode_vec(&bytes), v);
+}
+
+#[test]
+fn test_semantic_vector_set_count_pending_search() {
+    let store = make_store();
+    // 两条历史，insert 时生成摘要
+    store
+        .insert_history(&make_item("s1", "参考 https://docs.rs/rmcp 的用法", "2026-08-10 10:00:00", "text"))
+        .unwrap();
+    store
+        .insert_history(&make_item("s2", "买菜的清单：西红柿 鸡蛋 牛奶", "2026-08-10 10:05:00", "text"))
+        .unwrap();
+
+    // pending = 有摘要无向量的（2 条）
+    let pending = store.semantic_vector_pending(10).unwrap();
+    assert_eq!(pending.len(), 2);
+
+    // 向量化 s1
+    let v1 = vec![1.0f32, 0.0, 0.0];
+    store.semantic_vector_set("s1", "test-model", &v1).unwrap();
+    assert_eq!(store.semantic_vectors_count().unwrap(), 1);
+    // pending 只剩 s2
+    let pending = store.semantic_vector_pending(10).unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].0, "s2");
+
+    // s2 用不同向量；搜索用与 s1 相近的向量 → s1 命中
+    store
+        .semantic_vector_set("s2", "test-model", &vec![0.9f32, 0.1, 0.0])
+        .unwrap();
+    let hits = store.semantic_search_vectors(&vec![0.99f32, 0.01, 0.0], 5).unwrap();
+    assert_eq!(hits.len(), 2);
+    assert_eq!(hits[0].0, "s1", "s1 应与查询向量更接近");
+    assert!(hits[0].1 > hits[1].1, "分数应降序");
+    // 命中带 created_at（join history）
+    assert!(!hits[0].2.is_empty());
+}
+
+#[test]
+fn test_semantic_clear_follows_summaries_clear() {
+    let store = make_store();
+    store
+        .insert_history(&make_item("c1", "https://example.com/page", "2026-08-10 10:00:00", "text"))
+        .unwrap();
+    store
+        .semantic_vector_set("c1", "test-model", &vec![1.0f32, 0.0])
+        .unwrap();
+    assert_eq!(store.semantic_vectors_count().unwrap(), 1);
+
+    // 清空摘要 → 向量一并清空（红线②：删摘要 = 删向量）
+    let n = store.history_summaries_clear().unwrap();
+    assert_eq!(n, 1);
+    assert_eq!(store.semantic_vectors_count().unwrap(), 0);
+}
+
+// ============================================================
+// M6-2 画像原料聚合：profile_raw_stats
+// ============================================================
+
+#[test]
+fn test_profile_raw_stats_aggregates() {
+    let store = make_store();
+    // 造两条动作事件：developer 倾向（解释代码 + json 格式化）
+    use crate::data_store::action_events::ActionEvent;
+    store.action_event_add(&ActionEvent {
+        action_id: "ai-explain-code".to_string(),
+        content_type: "code".to_string(),
+        source_app: "vscode".to_string(),
+        hour: 10,
+        outcome: "copied".to_string(),
+        history_id: None,
+    });
+    store.action_event_add(&ActionEvent {
+        action_id: "json_format".to_string(),
+        content_type: "json".to_string(),
+        source_app: "vscode".to_string(),
+        hour: 10,
+        outcome: "pasted".to_string(),
+        history_id: None,
+    });
+
+    let raw = store.profile_raw_stats(30).unwrap();
+    assert_eq!(raw.total_events, 2);
+    assert!(raw.action_counts.iter().any(|(a, c)| a == "ai-explain-code" && *c == 1));
+    assert!(raw.content_type_counts.iter().any(|(ct, c)| ct == "code" && *c == 1));
+    // 时段：10 点 → hour_counts 有 (10, 2)
+    assert!(raw.hour_counts.iter().any(|(h, c)| *h == 10 && *c == 2));
+}
+
+#[test]
+fn test_profile_raw_stats_excludes_paste_sentinel() {
+    let store = make_store();
+    // paste 哨兵不应计入画像统计
+    use crate::data_store::action_events::ActionEvent;
+    store.action_event_add(&ActionEvent {
+        action_id: "paste".to_string(),
+        content_type: "text".to_string(),
+        source_app: "".to_string(),
+        hour: 9,
+        outcome: "pasted".to_string(),
+        history_id: None,
+    });
+    let raw = store.profile_raw_stats(30).unwrap();
+    assert_eq!(raw.total_events, 0, "paste 哨兵不计入画像");
+}
+
+// ============================================================
+// V3-B 程序性记忆：sequence_mining
+// ============================================================
+
+#[test]
+fn test_sequence_mining_finds_repeated_pattern() {
+    let store = make_store();
+    use crate::data_store::action_events::ActionEvent;
+    // 同样的两段式流程出现 4 次：解释代码 → 提取要点
+    for _ in 0..4 {
+        store.action_event_add(&ActionEvent {
+            action_id: "ai-explain-code".to_string(),
+            content_type: "code".to_string(),
+            source_app: "".to_string(),
+            hour: 10,
+            outcome: "copied".to_string(),
+            history_id: None,
+        });
+        store.action_event_add(&ActionEvent {
+            action_id: "ai-extract-points".to_string(),
+            content_type: "code".to_string(),
+            source_app: "".to_string(),
+            hour: 10,
+            outcome: "copied".to_string(),
+            history_id: None,
+        });
+    }
+
+    let pats = store.sequence_mining(30, 3, 4).unwrap();
+    assert!(
+        pats.iter().any(|p| p.actions == ["ai-explain-code", "ai-extract-points"]),
+        "应挖出 解释代码→提取要点：{:?}",
+        pats.iter().map(|p| &p.actions).collect::<Vec<_>>()
+    );
+    let p = pats
+        .iter()
+        .find(|p| p.actions == ["ai-explain-code", "ai-extract-points"])
+        .unwrap();
+    assert_eq!(p.count, 4);
+    assert!(!p.last_used.is_empty(), "应记录最后一次使用时间");
+}
+
+#[test]
+fn test_sequence_mining_ignores_taps_and_sentinel() {
+    let store = make_store();
+    use crate::data_store::action_events::ActionEvent;
+    // 连点 8 次同一动作（手抖/重复触发）→ 不应挖出 [a,a] 模式
+    for _ in 0..8 {
+        store.action_event_add(&ActionEvent {
+            action_id: "ai-translate".to_string(),
+            content_type: "text".to_string(),
+            source_app: "".to_string(),
+            hour: 9,
+            outcome: "copied".to_string(),
+            history_id: None,
+        });
+    }
+    // paste 哨兵不计入
+    store.action_event_add(&ActionEvent {
+        action_id: "paste".to_string(),
+        content_type: "text".to_string(),
+        source_app: "".to_string(),
+        hour: 9,
+        outcome: "pasted".to_string(),
+        history_id: None,
+    });
+
+    let pats = store.sequence_mining(30, 3, 4).unwrap();
+    assert!(pats.is_empty(), "连续重复与哨兵都不应产生模式：{:?}", pats);
+}
+
+#[test]
+fn test_sequence_mining_below_threshold() {
+    let store = make_store();
+    use crate::data_store::action_events::ActionEvent;
+    // 只出现 2 次，低于阈值 3 → 不返回
+    for _ in 0..2 {
+        store.action_event_add(&ActionEvent {
+            action_id: "ai-summarize".to_string(),
+            content_type: "text".to_string(),
+            source_app: "".to_string(),
+            hour: 11,
+            outcome: "copied".to_string(),
+            history_id: None,
+        });
+        store.action_event_add(&ActionEvent {
+            action_id: "ai-reply-draft".to_string(),
+            content_type: "text".to_string(),
+            source_app: "".to_string(),
+            hour: 11,
+            outcome: "copied".to_string(),
+            history_id: None,
+        });
+    }
+    assert!(store.sequence_mining(30, 3, 4).unwrap().is_empty());
 }

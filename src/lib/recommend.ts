@@ -29,6 +29,7 @@ import {
   actionRecommendWeights,
   type SceneWeightRow,
 } from "@/lib/api/actionEvents";
+import { profileActionBoosts } from "@/lib/api/profile";
 import { isAiAvailable } from "@/lib/transforms/aiTransforms";
 
 /** 冷启动阈值：总使用事件少于这个数就不应用权重（新用户前两周的数据量级） */
@@ -96,19 +97,24 @@ let sceneWeights: Map<string, number> | null = null; // 场景键 -> 使用频�
 let sceneTotals: Map<string, number> | null = null; // 场景聚合键 -> 该场景总次数
 let dismissals: Set<string> | null = null; // 复合键集合（含 "\u0000actionId" 全局项）
 let totalEvents = 0;
+/** 画像驱动推荐加成（v6.5）：actionId -> boost（角色 → 擅长动作） */
+let roleBoosts: Map<string, number> | null = null;
+/** 画像加成缓存时间戳（画像变化慢，60s 缓存足够） */
+let roleBoostsLoadedAt = 0;
 
 /** 推荐是否已就绪（未就绪 = 冷启动，走静态分） */
 export function isRecommendReady(): boolean {
   return weights !== null && dismissals !== null;
 }
 
-/** 拉取权重 + 场景权重 + 负反馈，替换模块级缓存。失败保持未加载状态（冷启动兜底）。 */
+/** 拉取权重 + 场景权重 + 负反馈 + 画像加成，替换模块级缓存。失败保持未加载状态（冷启动兜底）。 */
 export async function loadRecommendState(): Promise<void> {
   try {
-    const [rows, scenes, dis] = await Promise.all([
+    const [rows, scenes, dis, boosts] = await Promise.all([
       actionRecommendWeights(14),
       actionRecommendSceneWeights(14),
       actionDismissals(),
+      profileActionBoosts().catch(() => []),
     ]);
     const w = new Map<string, number>();
     const totals = new Map<string, number>();
@@ -131,6 +137,9 @@ export async function loadRecommendState(): Promise<void> {
     sceneTotals = st;
     totalEvents = total;
     dismissals = new Set(dis.map((d) => key(d.contentType, d.actionId)));
+    // 画像加成（独立于冷启动：画像只要有角色就有加成，哪怕行为事件少）
+    roleBoosts = new Map(boosts.map((b) => [b.actionId, b.boost]));
+    roleBoostsLoadedAt = Date.now();
   } catch {
     weights = null;
     typeTotals = null;
@@ -138,12 +147,19 @@ export async function loadRecommendState(): Promise<void> {
     sceneTotals = null;
     dismissals = null;
     totalEvents = 0;
+    roleBoosts = null;
+    roleBoostsLoadedAt = 0;
   }
 }
 
 /** 手动刷新（「不再推荐」后调用，让负反馈立即生效） */
 export async function refreshRecommendState(): Promise<void> {
   await loadRecommendState();
+}
+
+/** 画像角色加成因子（1 + boost）。画像未加载时 = 1（不影响现有排序）。 */
+export function roleFactorOf(actionId: string): number {
+  return 1 + (roleBoosts?.get(actionId) ?? 0);
 }
 
 /** 仅供测试：重置模块状态 */
@@ -154,6 +170,8 @@ export function __resetRecommendForTest(): void {
   sceneTotals = null;
   dismissals = null;
   totalEvents = 0;
+  roleBoosts = null;
+  roleBoostsLoadedAt = 0;
 }
 
 // ===== 排序 =====
@@ -235,7 +253,7 @@ function orderKey(
     sceneFactor = sceneTotal > 0 ? 1 + STRENGTH * (sc / sceneTotal) : 1;
   }
 
-  return s.score * globalFactor * sceneFactor;
+  return s.score * globalFactor * sceneFactor * roleFactorOf(s.transform.id);
 }
 
 /** 某内容类型的总使用次数（供 UI 判断学习程度，如「学了 37 次」） */

@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我的画像 · v5 导出区美化设计稿</title>
+<style>
+  :root {
+    --bg: #0f1520;
+    --surface: rgba(22,32,46,0.85);
+    --surface2: #1b2735;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.14);
+    --text: #e8edf4;
+    --text2: #a8b3c2;
+    --text3: #6b7688;
+    --accent: #4fa3ff;
+    --accent-soft: rgba(79,163,255,0.13);
+    --cyan: #38e1d4;
+    --purple: #9d7bff;
+    --green: #34d399;
+    --amber: #f5a623;
+    --pink: #ff7ab6;
+    --radius: 14px;
+    --font: "PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    --mono: "Cascadia Code","Consolas",monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: radial-gradient(1000px 700px at 70% -10%, #16233a 0%, #0b1018 55%);
+    font-family: var(--font);
+    color: var(--text);
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; padding: 30px 16px;
+  }
+  .canvas { width: 520px; }
+  .canvas::before {
+    content: "PastePanda · 我的画像 v5 设计稿（重点：导出区美化 · 其余同 v4）";
+    display: block; font-size: 11px; color: var(--text3); margin-bottom: 10px; letter-spacing: 0.4px;
+  }
+
+  .dialog {
+    background: var(--surface);
+    backdrop-filter: blur(18px);
+    border: 1px solid var(--border2);
+    border-radius: 16px;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
+    overflow: hidden;
+  }
+  .head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 13px 18px 12px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(255,255,255,0.03), transparent);
+  }
+  .headTitle { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+  .headIcon {
+    width: 24px; height: 24px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--accent-soft), var(--accent-soft));
+    border: 1px solid rgba(79,163,255,0.35);
+    display: flex; align-items: center; justify-content: center; font-size: 12px;
+  }
+  .headSub { font-size: 10px; font-weight: 400; color: var(--text3); margin-left: 2px; }
+  .close { width: 26px; height: 26px; border: none; background: transparent; color: var(--text3); border-radius: 8px; cursor: pointer; font-size: 14px; }
+  .close:hover { background: var(--surface2); color: var(--text); }
+
+  .body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 14px; }
+
+  .warn {
+    font-size: 10.5px; color: var(--amber);
+    background: rgba(245,166,35,0.1); border: 1px solid rgba(245,166,35,0.3);
+    border-radius: 9px; padding: 6px 10px;
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  /* ===== 导出区（v5 美化核心） ===== */
+  .exportCard {
+    padding: 14px;
+    border-radius: var(--radius);
+    background: linear-gradient(160deg, rgba(79,163,255,0.07), rgba(56,225,212,0.04) 60%, transparent);
+    border: 1px solid rgba(79,163,255,0.25);
+  }
+  .exportHead {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600; color: var(--text2);
+    margin-bottom: 11px;
+  }
+  .exportHead .sub { font-size: 9.5px; color: var(--text3); font-weight: 400; margin-left: 4px; }
+
+  /* 格式卡片三选一 */
+  .fmtCards { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 11px; }
+  .fmtCard {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+    padding: 10px 11px;
+    border: 1px solid var(--border2); border-radius: 10px;
+    background: var(--surface2); cursor: pointer;
+    transition: 0.15s;
+    text-align: left;
+  }
+  .fmtCard:hover { border-color: var(--accent); }
+  .fmtCard.on {
+    border-color: var(--accent);
+    background: linear-gradient(160deg, rgba(79,163,255,0.18), rgba(79,163,255,0.05));
+    box-shadow: 0 0 0 1px rgba(79,163,255,0.4), inset 0 0 0 1px rgba(79,163,255,0.2);
+  }
+  .fmtIcon {
+    width: 26px; height: 26px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,0.05); border: 1px solid var(--border2);
+    font-size: 13px;
+  }
+  .fmtCard.on .fmtIcon {
+    background: var(--accent-soft); border-color: rgba(79,163,255,0.5);
+  }
+  .fmtName { font-size: 11px; font-weight: 600; color: var(--text); }
+  .fmtDesc { font-size: 9px; color: var(--text3); line-height: 1.35; }
+
+  /* 大类 pill */
+  .catRow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 11px; }
+  .catLabel { font-size: 10px; color: var(--text3); }
+  .pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px; border-radius: 99px;
+    border: 1px solid var(--border2);
+    background: transparent; color: var(--text2);
+    font-size: 10.5px; cursor: pointer; font-family: var(--font);
+    transition: 0.15s;
+    user-select: none;
+  }
+  .pill:hover { border-color: var(--accent); color: var(--accent); }
+  .pill.on {
+    border-color: rgba(79,163,255,0.55);
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  /* 目标提示条（SKILL 选中时显示） */
+  .targetHint {
+    display: flex; align-items: flex-start; gap: 6px;
+    font-size: 10px; color: var(--text2);
+    background: rgba(56,225,212,0.08); border: 1px solid rgba(56,225,212,0.25);
+    border-radius: 8px; padding: 6px 9px;
+    margin-bottom: 9px; line-height: 1.5;
+  }
+  .targetHint code {
+    font-family: var(--mono); font-size: 9.5px;
+    color: var(--cyan); background: rgba(56,225,212,0.1);
+    padding: 0 5px; border-radius: 4px;
+  }
+
+  /* 预览 + 操作 */
+  .previewBox {
+    border: 1px solid var(--border2); border-radius: 10px;
+    overflow: hidden; background: rgba(11,16,24,0.6);
+  }
+  .previewBar {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 11px;
+    background: rgba(255,255,255,0.03);
+    border-bottom: 1px solid var(--border);
+    font-size: 9.5px; color: var(--text3);
+  }
+  .previewBar .status { margin-left: auto; color: var(--green); font-size: 9.5px; }
+  .preview textarea {
+    width: 100%; height: 128px; resize: vertical;
+    padding: 9px 11px;
+    background: transparent; color: var(--text);
+    font-size: 10.5px; font-family: var(--mono);
+    line-height: 1.55; white-space: pre;
+    border: none; outline: none;
+  }
+  .opRow { display: flex; gap: 7px; margin-top: 9px; align-items: center; }
+  .opBtn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 6px 13px; border-radius: 9px;
+    border: 1px solid var(--border2);
+    background: transparent; color: var(--text2);
+    font-size: 11px; cursor: pointer; font-family: var(--font);
+    transition: 0.15s;
+  }
+  .opBtn:hover { border-color: var(--accent); color: var(--accent); }
+  .opBtn.primary {
+    border: none;
+    background: linear-gradient(135deg, var(--accent), #2f7fd9);
+    color: #fff; font-weight: 500;
+    box-shadow: 0 4px 14px rgba(79,163,255,0.3);
+    margin-left: auto;
+  }
+  .opBtn.primary:hover { filter: brightness(1.1); color: #fff; }
+  .opBtn.done { border-color: rgba(52,211,153,0.5); color: var(--green); }
+
+  .note {
+    font-size: 10px; color: var(--text3); line-height: 1.65;
+    border-top: 1px dashed var(--border); padding-top: 10px;
+  }
+  .note b { color: var(--text2); }
+</style>
+</head>
+<body>
+<div class="canvas">
+  <div class="dialog">
+    <div class="head">
+      <div class="headTitle">
+        <span class="headIcon">👤</span>
+        我的画像
+        <span class="headSub">行为统计实时聚合 · 不含内容</span>
+      </div>
+      <button class="close">✕</button>
+    </div>
+
+    <div class="body">
+      <!-- 其余区块同 v4（此设计稿聚焦导出区） -->
+      <div class="warn">⚠ 样本偏少（86 条行为）——置信度 29%，随使用积累画像会更准</div>
+
+      <!-- ===== 导出区 v5 ===== -->
+      <div class="exportCard">
+        <div class="exportHead">
+          <span>🖨 导出画像</span>
+          <span class="sub">产物仅含统计 · 可带去任何 AI 工具 · 选择即实时预览</span>
+        </div>
+
+        <!-- 格式卡片三选一 -->
+        <div class="fmtCards">
+          <div class="fmtCard on">
+            <div class="fmtIcon">📄</div>
+            <div class="fmtName">Markdown</div>
+            <div class="fmtDesc">5 大类通用格式<br>粘贴给任意 LLM</div>
+          </div>
+          <div class="fmtCard">
+            <div class="fmtIcon">{ }</div>
+            <div class="fmtName">JSON</div>
+            <div class="fmtDesc">结构化数据<br>备份 / 二次开发</div>
+          </div>
+          <div class="fmtCard">
+            <div class="fmtIcon">📦</div>
+            <div class="fmtName">SKILL 技能包</div>
+            <div class="fmtDesc">装进 Claude Code<br>Cursor / Codex</div>
+          </div>
+        </div>
+
+        <!-- 大类 pill 勾选 -->
+        <div class="catRow">
+          <span class="catLabel">包含：</span>
+          <button class="pill on">✓ 职业画像</button>
+          <button class="pill on">✓ 工作习惯</button>
+          <button class="pill on">✓ 风格偏好</button>
+          <button class="pill on">✓ 使用红线</button>
+        </div>
+
+        <!-- SKILL 目标提示（选中 SKILL 时显示） -->
+        <div class="targetHint">
+          <span>💡</span>
+          <span>将 SKILL.md 保存到 <code>~/.claude/skills/pastepanda-profile/</code>
+          （或 Cursor 的 skills 目录），之后对它说"按我的习惯来"即可生效。</span>
+        </div>
+
+        <!-- 预览 + 操作 -->
+        <div class="previewBox">
+          <div class="previewBar">
+            预览
+            <span class="status">● 实时生成 · 本地完成</span>
+          </div>
+          <div class="preview">
+            <textarea readonly># 用户画像（PastePanda 生成）
+
+> 由 PastePanda 根据最近 30 天剪贴板使用行为自动生成。
+> 本文件仅含行为统计，不含具体内容；敏感信息已清洗。
+
+## Profession
+- 推断角色：开发者（置信度 72%）
+- 内容领域：代码 60% · 链接 25% · 文本 15%
+
+## Projects
+- 高频动作：ai-explain-code（24 次）· json_format（18 次）· sql-in（11 次）
+- 活跃时段：上午 6-12 点 58% · 下午 12-18 点 36%
+
+## Preferences
+- ai-translate：译文更简洁
+- ai-reply-draft：结果常被修改（被改率 55%）
+
+## Instructions
+- 所有输出使用简体中文
+- 涉及密钥/凭证/敏感信息时拒绝处理，且不写入任何记忆
+- 需要联网或调用云端 API 前先征得确认</textarea>
+          </div>
+        </div>
+
+        <div class="opRow">
+          <button class="opBtn">⧉ 复制</button>
+          <button class="opBtn">↓ 保存文件</button>
+          <button class="opBtn primary">📦 装进 Claude Code →</button>
+        </div>
+      </div>
+
+      <div class="note">
+        <b>隐私说明：</b>画像只含行为统计（动作名 / 内容类型 / 时段 / 偏好指令），不包含你复制过的任何内容；
+        导出是唯一出网口，需你主动触发并预览确认；敏感信息自动清洗；可一键清除重建。
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

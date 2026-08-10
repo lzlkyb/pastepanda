@@ -19,6 +19,9 @@
 
 use super::*;
 
+/// 审查 backlog：#13 偏好指令最大长度（会拼进每次请求的 system prompt）
+const PREF_MAX_CHARS: usize = 500;
+
 /// 反馈保留天数。与 action_events 一致。
 pub const AI_FEEDBACK_RETAIN_DAYS: u32 = 90;
 
@@ -129,6 +132,20 @@ impl DataStore {
         Ok(rows)
     }
 
+    /// 清过期反馈（启动时跑一次，与 `ai_usage_purge` / `action_event_purge` 同节奏）。
+    ///
+    /// 红线②的“用户可见可删”不只是给一个清空按钮——**不自动过期就等于永久留存**。
+    /// 这张表记的虽然不含内容文本，但“你在哪些动作上反复改过输出”本身就是习惯画像。
+    pub fn ai_feedback_purge(&self, retain_days: u32) -> Result<u32, String> {
+        let conn = self.lock_conn();
+        let cutoff = (chrono::Local::now() - chrono::Duration::days(retain_days.max(1) as i64))
+            .format("%Y-%m-%d 00:00:00")
+            .to_string();
+        conn.execute("DELETE FROM ai_feedback WHERE created_at < ?1", params![cutoff])
+            .map(|n| n as u32)
+            .map_err(|e| e.to_string())
+    }
+
     /// 一键清空全部反馈（红线②：用户可见可删）。
     pub fn ai_feedback_clear(&self) -> Result<u32, String> {
         let conn = self.lock_conn();
@@ -156,6 +173,10 @@ impl DataStore {
             return Ok(());
         }
         let pref = preference.trim();
+        // 审查 backlog：#13 偏好会拼进每次请求的 system prompt，必须限长，否则可膨胀请求体
+        if pref.chars().count() > PREF_MAX_CHARS {
+            return Err(format!("偏好指令过长（最多 {} 字）", PREF_MAX_CHARS));
+        }
         let conn = self.lock_conn();
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         if pref.is_empty() {

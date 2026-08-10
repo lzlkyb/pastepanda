@@ -255,3 +255,23 @@
   flex-shrink: 0;
 }
 .fbSave:hover { background: var(--accent-solid); color: #fff; }
+
+/* 「我的画像」入口（M6-2） */
+.profileBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.profileBtn:hover {
+  background: var(--accent);
+  color: #fff;
+}

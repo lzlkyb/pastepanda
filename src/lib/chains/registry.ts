@@ -90,6 +90,16 @@ export function invalidateUserChains(): void {
   userChainsCache = null;
 }
 
+/**
+ * 同步读已缓存的自定义链。**只读缓存，不触发加载。**
+ *
+ * 给同步路径（主动建议）用：缓存没热就只看预置链，不为了“顺便给个建议”
+ * 去起一次异步加载——建议本身是附带能力，不该引入等待。
+ */
+export function cachedUserChains(): Chain[] {
+  return userChainsCache ?? [];
+}
+
 /** 全部链：用户自定义在前，预置在后 */
 export async function listAllChains(): Promise<Chain[]> {
   const user = await loadUserChains();
@@ -129,9 +139,16 @@ export function runChain(
         return { ok: false, stages, final: current, failedAt: i };
       }
 
-      // AI 步骤：先确认再发送（红线：云端内容不自动执行）
-      if (t.remote && onAiConfirm) {
-        const confirmed = await onAiConfirm({ transformId: t.id, label }, i);
+      // AI 步骤：先确认再发送（红线：云端内容不自动执行）。
+      //
+      // **没传回调 = 视为未确认**，而不是跳过检查。之前写的是
+      // `t.remote && onAiConfirm`，安全检查靠调用方自觉传参；而路线图还要加
+      // 卡片动作条 / 托盘等入口，任何一处忘了传，剪贴板内容就会在用户没
+      // 确认的情况下发到云端。默认拒绝才是把红线从“自觉”变成“强制”。
+      if (t.remote) {
+        const confirmed = onAiConfirm
+          ? await onAiConfirm({ transformId: t.id, label }, i)
+          : false;
         if (!confirmed) {
           stages.push({
             stepIndex: i, transformId: t.id, label, risk: step.risk,

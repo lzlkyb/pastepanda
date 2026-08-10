@@ -5,6 +5,9 @@ import { useAppStore, GroupFilter, HistoryItem, buildSearchKey } from "@/stores/
 import { useDialogStore } from "@/stores/dialogStore";
 import { TopBar } from "@/components/TopBar";
 import { SuggestionBar } from "@/components/SuggestionBar";
+import { AiQuickBar } from "@/components/AiQuickBar";
+import { useAiStatus } from "@/hooks/useAiStatus";
+import { aiAwarenessActive } from "@/lib/aiAwareness";
 import { CardList } from "@/components/CardList";
 import { QuickPreview } from "@/components/QuickPreview";
 import { SkinScene } from "@/components/SkinScene";
@@ -62,6 +65,20 @@ function App() {
   const { toast } = useToast();
   const anim = useDialogAnim();
   const [showSettings, setShowSettings] = useState(false);
+  /** v6.4 审查：#10 从变换中心跳转时指定初始 tab（"ai"） */
+  const [showSettingsTab, setShowSettingsTab] = useState<"general" | "ai" | "help" | "about" | undefined>(undefined);
+  /** v6.4 方案 B：AI 快捷区开关（AI 启用时替代建议条） */
+  const { status: aiStatus } = useAiStatus();
+  /** v6.4 引导期：AI 感知 UI 只在「本版本更新后 1 周」显示，之后自动隐藏（不长期占顶部空间） */
+  const [appVersion, setAppVersion] = useState("");
+  // aiAwarenessActive 有 localStorage 写副作用，不能在 render 期调用（审查 backlog）——放到 effect
+  const [aiAwareActive, setAiAwareActive] = useState(false);
+  useEffect(() => {
+    import("@/lib/api").then((m) => m.getAppVersion().then(setAppVersion)).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (appVersion) setAiAwareActive(aiAwarenessActive(appVersion));
+  }, [appVersion]);
   const [showSequential, setShowSequential] = useState(false);
   const [showSnippets, setShowSnippets] = useState(false);
   const [showExtract, setShowExtract] = useState(false);
@@ -423,6 +440,7 @@ function App() {
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | null = null;
+    let unlistenAi: (() => void) | null = null;
     async function setup() {
       try {
         const { listen } = await import("@tauri-apps/api/event");
@@ -430,11 +448,18 @@ function App() {
         const fn = await listen("tray-open-settings", () => {
           setShowSettings(true);
         });
+        // v6.4 审查：#10 变换中心预算超限 → 跳到设置 AI tab
+        const fnAi = await listen("open-ai-settings", () => {
+          setShowSettingsTab("ai");
+          setShowSettings(true);
+        });
         if (cancelled) {
           // effect 已在本次 setup 完成前被清理（StrictMode 重挂载 / HMR），立即取消订阅，避免监听器泄漏
           fn();
+          fnAi();
         } else {
           unlisten = fn;
+          unlistenAi = fnAi;
         }
       } catch (e) { logger.warn("注册托盘事件监听失败", e); }
     }
@@ -442,6 +467,7 @@ function App() {
     return () => {
       cancelled = true;
       if (unlisten) unlisten();
+      if (unlistenAi) unlistenAi();
     };
   }, []);
 
@@ -818,8 +844,9 @@ function App() {
           onToggleSidebar={toggleSidebar}
           sidebarOpen={sidebarOpen}
         />
-        {/* v6.2 主动建议：只在主窗口（用户已打开）inline 出现，绝不弹窗 */}
-        <SuggestionBar />
+        {/* v6.2 主动建议：只在主窗口（用户已打开）inline 出现，绝不弹窗。
+            v6.4 方案 B：AI 已启用且处于引导期（更新后 1 周）→ 用 AI 快捷区替代；过期后回归原建议条 */}
+        {aiStatus === "on" && aiAwareActive ? <AiQuickBar /> : <SuggestionBar />}
         <div className={appStyles.contentArea}>
           <Sidebar
             open={sidebarOpen}
@@ -887,7 +914,7 @@ function App() {
 
         <Suspense fallback={null}>
           <ErrorBoundary fallback={null} componentName="设置面板">
-            <SettingsDialog open={showSettings} onClose={() => setShowSettings(false)} />
+            <SettingsDialog open={showSettings} onClose={() => setShowSettings(false)} initialTab={showSettingsTab} />
           </ErrorBoundary>
           <ErrorBoundary fallback={null} componentName="依次粘贴">
             <SequentialPasteDialog open={showSequential} onClose={() => setShowSequential(false)} />

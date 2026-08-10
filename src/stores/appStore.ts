@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { logger } from "@/lib/logger";
+import type { SemanticHit } from "@/lib/api/semantic";
 
 // ===== 数据类型 =====
 
@@ -108,6 +109,8 @@ interface AppState {
 
   // UI 状态
   searchKeyword: string;
+  /** M5-2 语义命中（开关开启时并行产生；关闭/失败为空） */
+  semanticHits: SemanticHit[];
   filterType: FilterType;
   timeFilter: TimeFilter;
   sourceFilter: SourceFilter;
@@ -149,6 +152,7 @@ interface AppState {
   clearAll: () => void;
 
   setSearchKeyword: (kw: string) => void;
+  setSemanticHits: (hits: SemanticHit[]) => void;
   setSearchResults: (results: HistoryItem[] | null, key: string) => void;
   setSearchLoading: (loading: boolean) => void;
   setFilterType: (ft: FilterType) => void;
@@ -258,6 +262,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // UI 状态
   searchKeyword: "",
+  semanticHits: [],
   filterType: "all",
   timeFilter: "all",
   sourceFilter: "",
@@ -435,6 +440,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   setSearchResults: (results, key) =>
     set({ searchResults: results, searchResultsKey: key, searchLoading: false }),
+  setSemanticHits: (hits) => set({ semanticHits: hits }),
   setSearchLoading: (loading) => set({ searchLoading: loading }),
   setFilterType: (ft) => set({ filterType: ft, selectedIds: new Set(), focusId: null, lastClickedId: null }),
   setTimeFilter: (tf) => set({ timeFilter: tf, selectedIds: new Set(), focusId: null, lastClickedId: null }),

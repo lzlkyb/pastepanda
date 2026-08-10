@@ -58,9 +58,22 @@ export function AiActionEditor({ action, contentTypes, onSaved, onCancel, onDele
     truncated?: boolean;
   } | null>(null);
   const templateRef = useRef<HTMLTextAreaElement>(null);
+  /** v6.4 审查修复：#1 敏感试跑确认 —— needsConfirm 后按钮改「确认发送」并传 force=true */
+  const [confirming, setConfirming] = useState(false);
+  /** v6.4 审查修复：#3 模板/样例变化后旧结果作废 */
+  const [dirtySinceRun, setDirtySinceRun] = useState(false);
+  /** v6.4 审查修复：#2 删除二次确认 */
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const isNew = !action;
-  const patch = (p: Partial<AiCustomAction>) => setDraft((d) => ({ ...d, ...p }));
+  const patch = (p: Partial<AiCustomAction>) => {
+    if (p.template !== undefined && p.template !== draft.template) setDirtySinceRun(true);
+    setDraft((d) => ({ ...d, ...p }));
+  };
+  const changeSample = (v: string) => {
+    setSample(v);
+    if (output) setDirtySinceRun(true);
+  };
 
   const applyTemplate = (t: ActionTemplate) => {
     setDraft({
@@ -117,6 +130,8 @@ export function AiActionEditor({ action, contentTypes, onSaved, onCancel, onDele
 
   const tryRun = async (force = false) => {
     setTesting(true);
+    setConfirming(false); // 结果决定最终状态：needsConfirm 会重新置 true
+    setDirtySinceRun(false);
     setOutput(null);
     try {
       const r = await aiPreviewCustom(draft.template, sample, draft.maxTokens, force);
@@ -125,7 +140,8 @@ export function AiActionEditor({ action, contentTypes, onSaved, onCancel, onDele
           setOutput({ ok: true, text: r.content, truncated: r.truncated });
           break;
         case "needsConfirm":
-          setOutput({ ok: false, text: `${r.reason}（再点一次试跑即确认发送）` });
+          setConfirming(true);
+          setOutput({ ok: false, text: `${r.reason}（再点一次确认发送）` });
           break;
         case "budgetExceeded":
           setOutput({
@@ -242,12 +258,19 @@ export function AiActionEditor({ action, contentTypes, onSaved, onCancel, onDele
           className={`${styles.textarea} ${styles.textareaShort}`}
           value={sample}
           placeholder="粘一段示例内容，用它试一下效果"
-          onChange={(e) => setSample(e.target.value)}
+          onChange={(e) => changeSample(e.target.value)}
         />
         <div className={styles.row}>
-          <button className={settings.btnSecondary} disabled={!canTest} onClick={() => void tryRun()}>
+          <button
+            className={settings.btnSecondary}
+            disabled={!canTest}
+            onClick={() => {
+              const force = confirming;
+              void tryRun(force);
+            }}
+          >
             {testing ? <Loader2 size={12} className="spin" /> : <Play size={12} />}
-            {testing ? "试跑中…" : "试跑（会真实计费）"}
+            {testing ? "试跑中…" : confirming ? "确认发送（内容将上云）" : "试跑（会真实计费）"}
           </button>
           <span className={styles.hint}>不用先保存，拿当前模板直接发一次。</span>
         </div>
@@ -264,6 +287,11 @@ export function AiActionEditor({ action, contentTypes, onSaved, onCancel, onDele
             )}
           </>
         )}
+        {output && dirtySinceRun && (
+          <span className={styles.hint}>
+            ⚠ 模板或样例已改动，上面的结果是修改前的——再点一次试跑才是新效果。
+          </span>
+        )}
       </div>
 
       {error && <div className={styles.errMsg}>{error}</div>}
@@ -275,15 +303,29 @@ export function AiActionEditor({ action, contentTypes, onSaved, onCancel, onDele
         <button className={settings.btnSecondary} onClick={onCancel}>
           取消
         </button>
-        {!isNew && (
-          <button
-            className={settings.btnDanger}
-            style={{ marginLeft: "auto" }}
-            onClick={() => onDelete(draft.id)}
-          >
-            删除
-          </button>
-        )}
+        {!isNew &&
+          (confirmDelete ? (
+            <>
+              <button
+                className={settings.btnDanger}
+                style={{ marginLeft: "auto" }}
+                onClick={() => onDelete(draft.id)}
+              >
+                确认删除（不可恢复）
+              </button>
+              <button className={settings.btnSecondary} onClick={() => setConfirmDelete(false)}>
+                取消
+              </button>
+            </>
+          ) : (
+            <button
+              className={settings.btnDanger}
+              style={{ marginLeft: "auto" }}
+              onClick={() => setConfirmDelete(true)}
+            >
+              删除
+            </button>
+          ))}
       </div>
     </div>
   );

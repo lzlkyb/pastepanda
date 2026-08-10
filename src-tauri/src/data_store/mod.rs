@@ -8,6 +8,8 @@ mod ai_action;
 mod chains;
 mod ai_feedback;
 mod content_memory;
+mod profile;
+mod sequence_memory;
 mod action_events;
 #[cfg(test)]
 mod tests;
@@ -18,9 +20,14 @@ pub use ai_usage::{
 pub use ai_action::{CustomAction, MAX_ACTION_DESC_CHARS, MAX_ACTION_NAME_CHARS};
 pub use chains::{ChainDef, ChainStepDef, MAX_CHAIN_DESC_CHARS, MAX_CHAIN_NAME_CHARS, MAX_CHAIN_STEPS};
 pub use ai_feedback::{
-    ActionPrefRow, AiFeedback, AiFeedbackStat, FEEDBACK_ACCEPTED, FEEDBACK_EDITED, FEEDBACK_REJECTED,
+    ActionPrefRow, AiFeedback, AiFeedbackStat, AI_FEEDBACK_RETAIN_DAYS, FEEDBACK_ACCEPTED,
+    FEEDBACK_EDITED, FEEDBACK_REJECTED,
 };
-pub use content_memory::{HistorySummary, summarize_text};
+pub use content_memory::{
+    HistorySummary, cosine_sim, decode_vec, encode_vec, summarize_text,
+};
+pub use profile::ProfileRawStats;
+pub use sequence_memory::SequencePattern;
 pub use action_events::{
     ActionEvent, ActionEventCount, ActionEventStats, ActionDismissal, ActionWeightRow,
     SceneWeightRow, ACTION_EVENTS_RETAIN_DAYS, ACTION_ID_PASTE, OUTCOME_ABANDONED,
@@ -346,6 +353,17 @@ impl DataStore {
             CREATE TABLE IF NOT EXISTS history_summaries (
                 history_id  TEXT PRIMARY KEY,
                 summary     TEXT NOT NULL,
+                created_at  TEXT NOT NULL
+            );
+
+            -- 语义向量（M5-2，见 data_store/content_memory.rs）。
+            -- 摘要（非原文）送云端 embedding 得到的向量，**存在本地**做余弦检索；
+            -- 随摘要一起清空（删摘要 = 删向量）。model 记录生成它的模型，维度不一致时丢弃重建。
+            CREATE TABLE IF NOT EXISTS semantic_vectors (
+                history_id  TEXT PRIMARY KEY,
+                model       TEXT NOT NULL,
+                dim         INTEGER NOT NULL,
+                vector      BLOB NOT NULL,
                 created_at  TEXT NOT NULL
             );
 

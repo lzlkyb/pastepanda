@@ -137,6 +137,45 @@ fn extract_from_html(url: &str, body: &str) -> UrlSummary {
     }
 }
 
+/// 审查 backlog：#14 抓取 SSRF 防护 —— 剪贴板诱饵 URL 可能指向内网/保留地址
+/// （localhost、192.168.*、10.* 等），抓取就等于替攻击者探测内网。这里拦截字面 IP
+/// 的私有段与常见保留主机名（域名不解析，避免 DNS rebinding 面扩大）。
+fn url_host_blocked(url: &str) -> bool {
+    let Ok(u) = reqwest::Url::parse(url.trim()) else {
+        return true;
+    };
+    let Some(host) = u.host_str() else {
+        return true;
+    };
+    let host = host.to_ascii_lowercase();
+    if host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local") {
+        return true;
+    }
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        if ip.is_loopback() || ip.is_unspecified() || ip.is_multicast() {
+            return true;
+        }
+        match ip {
+            std::net::IpAddr::V4(v4) => {
+                if v4.is_private() || v4.is_link_local() {
+                    return true;
+                }
+            }
+            std::net::IpAddr::V6(v6) => {
+                if v6.is_unique_local() {
+                    return true;
+                }
+                if let Some(v4) = v6.to_ipv4_mapped() {
+                    if v4.is_private() || v4.is_link_local() || v4.is_loopback() {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
 /// 抓取 URL 并返回粗摘要（阶段 1：本地，无 LLM）。
 #[tauri::command]
 pub async fn fetch_url_summary(
@@ -145,6 +184,9 @@ pub async fn fetch_url_summary(
 ) -> Result<UrlSummary, String> {
     if url.len() > 2048 || !is_allowed_open_url(&url) {
         return Err("仅支持 http/https 链接".to_string());
+    }
+    if url_host_blocked(&url) {
+        return Err("不支持本地/内网地址".to_string());
     }
 
     if let Some(cached) = cache_get(&url) {
@@ -162,7 +204,7 @@ pub async fn fetch_url_summary(
         .build()
         .map_err(|e| format!("HTTP 客户端初始化失败: {e}"))?;
 
-    let resp = client
+    let mut resp = client
         .get(&url)
         .send()
         .await
@@ -172,13 +214,23 @@ pub async fn fetch_url_summary(
         return Err(format!("页面返回 HTTP {}", resp.status()));
     }
 
-    let bytes = resp
-        .bytes()
+    // 审查 backlog：#6 流式限流 —— 先看 Content-Length 快速拒绝，再边读边计数，
+    // 恶意大页不会整块进内存（此前先全量下载再判上限）。
+    if let Some(len) = resp.content_length() {
+        if len > MAX_BODY_BYTES as u64 {
+            return Err("页面过大，已放弃抓取".to_string());
+        }
+    }
+    let mut bytes: Vec<u8> = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
         .await
         .map_err(|e| format!("读取页面失败: {e}"))?
-        .to_vec();
-    if bytes.len() > MAX_BODY_BYTES {
-        return Err("页面过大，已放弃抓取".to_string());
+    {
+        bytes.extend_from_slice(&chunk);
+        if bytes.len() > MAX_BODY_BYTES {
+            return Err("页面过大，已放弃抓取".to_string());
+        }
     }
 
     let body = String::from_utf8_lossy(&bytes).into_owned();

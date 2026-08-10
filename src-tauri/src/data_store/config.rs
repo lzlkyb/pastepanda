@@ -1,4 +1,12 @@
 use super::*;
+use std::sync::LazyLock;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+/// 审查 backlog：#11 备份限频 —— 1 分钟内至多备份一次配置（AI 设置保存会连发多次 save_config）
+static LAST_BACKUP: LazyLock<Mutex<Instant>> =
+    LazyLock::new(|| Mutex::new(Instant::now() - Duration::from_secs(3600)));
+const BACKUP_INTERVAL: Duration = Duration::from_secs(60);
 
 impl DataStore {
     pub fn get_stats(&self, workspace: &str) -> Result<Stats, String> {
@@ -399,8 +407,16 @@ impl DataStore {
     }
 
     pub fn save_config(&self, config: &serde_json::Value) -> Result<(), String> {
-        // 先备份当前配置（写入前备份，保留最近 10 个版本）
-        let _ = self.backup_config();
+        // 审查 backlog：#11 备份限频 —— AI 设置保存会触发多次 save_config
+        // （配置/密钥/自动启用等），每次都全表读+写备份+轮换太浪费；1 分钟内至多备份一次，
+        // 配置本体照常写入。
+        {
+            let mut last = LAST_BACKUP.lock().unwrap_or_else(|e| e.into_inner());
+            if last.elapsed() >= BACKUP_INTERVAL {
+                let _ = self.backup_config();
+                *last = Instant::now();
+            }
+        }
 
         let mut conn = self.lock_conn();
         if let serde_json::Value::Object(map) = config {

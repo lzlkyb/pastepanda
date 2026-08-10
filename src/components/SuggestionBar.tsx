@@ -14,7 +14,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Lightbulb, X, ArrowRight } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { useDialogStore } from "@/stores/dialogStore";
-import { suggestTop1, suggestSequence, suggestChain, type Suggestion } from "@/lib/suggest";
+import { suggestTop1, suggestSequence, suggestChain, suggestIntent, type Suggestion } from "@/lib/suggest";
 import { getTransform } from "@/lib/transforms";
 import { actionDismissAdd } from "@/lib/api/actionEvents";
 import { aiFeedbackStats, actionPrefsAll } from "@/lib/api/aiFeedback";
@@ -29,28 +29,42 @@ const AUTO_HIDE_MS = 8000;
 const EDIT_RATE_BAD = 0.4;
 
 /** 反馈统计与偏好的模块级缓存（建议条是高频触发，避免每次 invoke） */
-let fbCache: { actionId: string; editRate: number }[] | null = null;
-let prefActions: Set<string> | null = null;
+interface FbData {
+  fb: { actionId: string; editRate: number }[] | null;
+  prefs: Set<string> | null;
+}
+let fbCache: FbData["fb"] = null;
+let prefActions: FbData["prefs"] = null;
 let fbCacheLoadedAt = 0;
+/** 审查 backlog：冷启动并发去重——inflight promise 共享，避免两个 effect 同时通过缓存检查重复拉取 */
+let inflight: Promise<FbData> | null = null;
 
-/** 拉取反馈/偏好（60s 缓存） */
-async function loadFeedback(): Promise<{ fb: typeof fbCache; prefs: typeof prefActions }> {
+/** 拉取反馈/偏好（60s 缓存，并发共享同一请求） */
+function loadFeedback(): Promise<FbData> {
   const now = Date.now();
   if (fbCache && prefActions && now - fbCacheLoadedAt < 60_000) {
-    return { fb: fbCache, prefs: prefActions };
+    return Promise.resolve({ fb: fbCache, prefs: prefActions } as FbData);
   }
-  const [stats, prefs] = await Promise.all([
-    aiFeedbackStats(30).catch(() => []),
-    actionPrefsAll().catch(() => []),
-  ]);
-  fbCache = stats.filter((s) => s.total >= 5);
-  prefActions = new Set(prefs.map((p) => p.actionId));
-  fbCacheLoadedAt = now;
-  return { fb: fbCache, prefs: prefActions };
+  if (inflight) return inflight;
+  inflight = (async () => {
+    const [stats, prefs] = await Promise.all([
+      aiFeedbackStats(30).catch(() => []),
+      actionPrefsAll().catch(() => []),
+    ]);
+    fbCache = stats.filter((s) => s.total >= 5);
+    prefActions = new Set(prefs.map((p) => p.actionId));
+    fbCacheLoadedAt = Date.now();
+    inflight = null;
+    return { fb: fbCache, prefs: prefActions } as FbData;
+  })();
+  return inflight;
 }
 
-/** 建议条文案：动作 → 单步；序列 → 合并；链（M4）→ 多步一次跑完 */
+/** 建议条文案：意图 → 任务级；动作 → 单步；序列 → 合并；链（M4）→ 多步一次跑完 */
 function describe(s: Suggestion): string {
+  if (s.kind === "intent") {
+    return `${s.label}——要连着「${s.actionsText}」一起做吗？`;
+  }
   if (s.kind === "sequence") {
     return `把 ${s.texts.length} 个同类内容合并成「${s.label}」？`;
   }
@@ -74,6 +88,9 @@ export const SuggestionBar = memo(function SuggestionBar() {
     const text = (topItem.text || "").trim();
     if (!text) return;
 
+    // v6.4 审查：#4 竞态防护——内容快速切换时，旧内容的异步建议晚返回直接丢弃
+    let cancelled = false;
+
     const ctx = {
       text,
       contentType: topItem.content_type || topItem.type,
@@ -84,6 +101,16 @@ export const SuggestionBar = memo(function SuggestionBar() {
     void (async () => {
       const { fb, prefs } = await loadFeedback();
       const history = useAppStore.getState().history.slice(0, 3).map((h) => ({ text: h.text || "" }));
+
+      // 意图识别优先（V3-A：任务级理解）；主动作"常被改"且无偏好 → 放弃意图
+      let intent = suggestIntent(ctx, scene, history);
+      if (intent && intent.kind === "intent") {
+        const mainAction = intent.actionIds[0];
+        const stat = fb?.find((s) => s.actionId === mainAction);
+        if (stat && stat.editRate >= EDIT_RATE_BAD && !prefs?.has(mainAction)) {
+          intent = null;
+        }
+      }
 
       // top-1 优先；若该动作"常被改"且用户没给它设偏好指令 → 放弃（宁可漏报，不推不满意的）
       const top1Raw = suggestTop1(ctx, scene);
@@ -97,7 +124,8 @@ export const SuggestionBar = memo(function SuggestionBar() {
 
       const seq = top1 ? null : suggestSequence(history);
       const chain = !top1 && !seq ? suggestChain(ctx) : null;
-      const s = top1 ?? seq ?? chain;
+      const s = intent ?? top1 ?? seq ?? chain;
+      if (cancelled) return; // 内容已切换，丢弃过期建议
       if (!s) {
         if (suggestion) setSuggestion(null);
         return;
@@ -109,11 +137,16 @@ export const SuggestionBar = memo(function SuggestionBar() {
           ? `${s.kind}:${s.chainId}:${s.text}`
           : s.kind === "action"
             ? `${s.kind}:${s.transformId}:${s.text}`
-            : `${s.kind}:${s.transformId}:${s.mergedText}`;
+            : s.kind === "intent"
+              ? `${s.kind}:${s.intentId}:${s.text}`
+              : `${s.kind}:${s.transformId}:${s.mergedText}`;
       if (key === lastKeyRef.current) return;
       lastKeyRef.current = key;
       setSuggestion(s);
     })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topItem?.id, topItem?.text]);
 
@@ -124,28 +157,35 @@ export const SuggestionBar = memo(function SuggestionBar() {
     return () => window.clearTimeout(t);
   }, [suggestion]);
 
-  /** 使用建议：链 → 打开运行器并预选；执行类 → 直接 run；其余 → 打开枢纽定位 */
+  /** 使用建议：意图 → 执行主动作；链 → 打开运行器并预选；执行类 → 直接 run；其余 → 打开枢纽定位 */
   const handleUse = useCallback(async () => {
     if (!suggestion) return;
     const store = useAppStore.getState();
     const item = store.history[0];
     const targetText =
-      suggestion.kind === "action" || suggestion.kind === "chain"
+      suggestion.kind === "action" ||
+      suggestion.kind === "chain" ||
+      suggestion.kind === "intent"
         ? suggestion.text
         : suggestion.mergedText;
 
     if (suggestion.kind === "chain") {
       // 跑链建议（M4）：打开运行器并预选这条链
       useDialogStore.getState().openChain(targetText, suggestion.chainId);
-    } else if (suggestion.kind === "action" && suggestion.transformId === "act-open-url") {
+    } else if (
+      (suggestion.kind === "action" && suggestion.transformId === "act-open-url") ||
+      (suggestion.kind === "intent" && suggestion.actionIds[0] === "act-open-url")
+    ) {
       // 执行类：直接 run（与卡片动作条一致）
-      const t = getTransform(suggestion.transformId);
+      const tid =
+        suggestion.kind === "intent" ? suggestion.actionIds[0] : suggestion.transformId;
+      const t = getTransform(tid);
       if (t) {
         const r = await t.run(targetText);
-        toast(r.ok ? `已执行「${suggestion.label}」` : r.message || "执行失败", r.ok ? "success" : "error");
+        toast(r.ok ? `已执行「${t.label}」` : r.message || "执行失败", r.ok ? "success" : "error");
       }
     } else {
-      // text 类 / 序列：打开变换枢纽并定位（用户仍可预览/选择/否决）
+      // text 类 / 序列 / 意图：打开变换枢纽并定位（用户仍可预览/选择/否决）
       if (item) {
         useDialogStore.getState().openHub(item, targetText);
       }
@@ -153,17 +193,24 @@ export const SuggestionBar = memo(function SuggestionBar() {
     setSuggestion(null);
   }, [suggestion, toast]);
 
-  /** 否决：动作类写入「不再推荐」；链类低频、仅本次收起（不持久，避免链名污染动作表） */
+  /**
+   * 否决：动作类写入「不再推荐」；链类/意图类低频、仅本次收起（不持久，避免污染动作表）。
+   *
+   * **文案必须跟着分岔**：只本次收起却告诉用户「不再建议」，下次它又冒出来，
+   * 用户得到的结论是“这功能坏了”——而路线图约束③ 的原文是「否决被记住」，
+   * 紧接着写的是「做错一次用户就永久关掉这个功能」。取舍可以不持久，但不能说谎。
+   */
   const handleDismiss = useCallback(async () => {
     if (!suggestion) return;
-    if (suggestion.kind !== "chain") {
+    const persisted = suggestion.kind !== "chain" && suggestion.kind !== "intent";
+    if (persisted) {
       const ct = useAppStore.getState().history[0]?.content_type || "text";
       await actionDismissAdd(suggestion.transformId, ct).catch(() => {});
       const { refreshRecommendState } = await import("@/lib/recommend");
       await refreshRecommendState().catch(() => {});
     }
     setSuggestion(null);
-    toast(`不再建议「${suggestion.label}」`, "info");
+    toast(persisted ? `不再建议「${suggestion.label}」` : "已收起", "info");
   }, [suggestion, toast]);
 
   return (

@@ -9,6 +9,34 @@
 //! 另加一个应用级 entropy，使别的程序即使拿到字节也不能直接调 DPAPI 解开。
 
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{Duration, Instant, SystemTime};
+
+/// 审查 backlog：#12 已配置服务商列表缓存 —— 每个密钥文件都要 DPAPI 解密判断，
+/// 设置页每次打开/状态刷新都会调，5 秒内且目录未变时直接复用。
+static CONFIGURED_CACHE: Mutex<Option<(SystemTime, Instant, Vec<String>)>> = Mutex::new(None);
+const CONFIGURED_TTL: Duration = Duration::from_secs(5);
+
+fn configured_providers_compute(app_dir: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(app_dir) else {
+        return Vec::new();
+    };
+    let mut ids: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            let id = name.strip_prefix("ai_key_")?.strip_suffix(".bin")?.to_string();
+            // 真去解一次：文件在但解不开（拷自其他机器）不算已配置
+            if has_key(app_dir, &id) {
+                Some(id)
+            } else {
+                None
+            }
+        })
+        .collect();
+    ids.sort();
+    ids
+}
 
 /// 应用级 entropy：防止别的进程拿走 blob 后直接 CryptUnprotectData。
 /// 改动它会使已存的 Key 全部失效（用户需重新输入），因此带了版本后缀。
@@ -195,24 +223,20 @@ pub fn has_key(app_dir: &Path, provider: &str) -> bool {
 ///
 /// 界面用它在厂商下拉里标出“已配置”，让用户知道切过去不用重新输入。
 pub fn configured_providers(app_dir: &Path) -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(app_dir) else {
-        return Vec::new();
-    };
-    let mut ids: Vec<String> = entries
-        .filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let name = e.file_name().to_string_lossy().to_string();
-            let id = name.strip_prefix("ai_key_")?.strip_suffix(".bin")?.to_string();
-            // 真去解一次：文件在但解不开（拷自其他机器）不算已配置
-            if has_key(app_dir, &id) {
-                Some(id)
-            } else {
-                None
+    let dir_mtime = std::fs::metadata(app_dir).and_then(|m| m.modified()).ok();
+    if let Ok(mut guard) = CONFIGURED_CACHE.lock() {
+        if let Some((mt, at, ids)) = guard.as_ref() {
+            if at.elapsed() < CONFIGURED_TTL && dir_mtime.as_ref() == Some(mt) {
+                return ids.clone();
             }
-        })
-        .collect();
-    ids.sort();
-    ids
+        }
+        let ids = configured_providers_compute(app_dir);
+        if let Some(mt) = dir_mtime {
+            *guard = Some((mt, Instant::now(), ids.clone()));
+        }
+        return ids;
+    }
+    configured_providers_compute(app_dir)
 }
 
 /// 删除某厂商的密钥文件（不存在也算成功）。

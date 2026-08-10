@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda · AI 快捷区交互演示（方案 B）</title>
+<style>
+  :root{
+    --bg:#F4F6F9; --card:#fff; --border:#E2E8F0; --text:#0F172A; --text2:#64748B; --text3:#94A3B8;
+    --accent:#0284C7; --accent-light:#E0F2FE; --accent-strong:#0369A1; --accent-border:#7DD3FC;
+    --green:#15803D; --green-light:#DCFCE7; --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA;
+    --danger:#DC2626; --danger-bg:#FEF2F2; --hover:#F1F5F9; --section:#F8FAFC;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:#E8EDF3;padding:28px;color:var(--text)}
+  .wrap{max-width:860px;margin:0 auto}
+  h1{font-size:20px;margin-bottom:4px}
+  .sub{font-size:13px;color:var(--text2);margin-bottom:16px}
+  .demoNote{background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:10px;padding:10px 12px;font-size:12px;color:#92400E;margin-bottom:18px;line-height:1.7}
+
+  /* 控制台 */
+  .console{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px}
+  .console .lbl{font-size:11px;color:var(--text3)}
+  .mockBtn{border:1px solid var(--border);border-radius:8px;padding:5px 12px;font-size:12px;background:var(--section);color:var(--text);cursor:pointer;transition:all .15s}
+  .mockBtn:hover{border-color:var(--accent);color:var(--accent-strong)}
+  .mockBtn.on{border-color:var(--accent);background:var(--accent-light);color:var(--accent-strong)}
+  .toggleWrap{display:flex;align-items:center;gap:6px;margin-left:auto;font-size:11px;color:var(--text2)}
+  .toggle{width:34px;height:20px;border-radius:10px;background:var(--border);position:relative;cursor:pointer;transition:background .2s}
+  .toggle::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+  .toggle.on{background:var(--accent)}
+  .toggle.on::after{left:16px}
+
+  /* 主窗口 */
+  .win{width:500px;background:var(--bg);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(15,23,42,.1);margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--border);background:var(--card)}
+  .logo{width:22px;height:22px;border-radius:6px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px}
+  .t{font-size:12px;font-weight:600}
+  .sp{flex:1}
+  .aiCap{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;border-radius:20px;padding:4px 11px}
+  .aiCap.on{border:1px solid #BBF7D0;background:var(--green-light);color:var(--green)}
+  .aiCap.off{border:1px dashed var(--accent);background:var(--accent-light);color:var(--accent-strong)}
+  .tb{width:24px;height:24px;border-radius:7px;background:var(--hover);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text2)}
+
+  /* 快捷区 */
+  .aiQuick{display:flex;align-items:center;gap:6px;margin:8px 12px 0;padding:7px 10px;border-radius:10px;background:var(--card);border:1px solid var(--accent-border);box-shadow:0 1px 3px rgba(2,132,199,.08)}
+  .aiQuick .lbl{font-size:10px;color:var(--accent-strong);font-weight:700;flex-shrink:0;display:flex;align-items:center;gap:3px;letter-spacing:.3px}
+  .aiQuick .acts{display:flex;gap:5px;flex-wrap:wrap}
+  .q{display:inline-flex;align-items:center;gap:3px;border:1px solid var(--accent-border);border-radius:7px;padding:3px 9px;font-size:11px;background:var(--accent-light);color:var(--accent-strong);cursor:pointer;transition:all .15s;font-family:inherit}
+  .q:hover{background:var(--accent);color:#fff}
+  .q.more{border-style:dashed;background:transparent;color:var(--text2)}
+  .q.more:hover{background:var(--accent);color:#fff}
+  .q.run{border-color:var(--border);background:var(--section);color:var(--text2);cursor:default}
+  .aiQuick .hintTxt{margin-left:auto;font-size:10px;color:var(--text3);flex-shrink:0}
+  .aiQuick .x{margin-left:2px;width:18px;height:18px;border:none;border-radius:5px;background:transparent;color:var(--text3);cursor:pointer;flex-shrink:0;font-size:11px}
+  .aiQuick .x:hover{background:var(--hover);color:var(--text)}
+
+  /* 结果行（快捷区内展开） */
+  .resultBar{margin:6px 12px 0;border:1px solid var(--border);border-radius:10px;background:var(--card);padding:8px 10px;display:flex;flex-direction:column;gap:6px}
+  .resultBar .rhead{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text3)}
+  .resultBar .rbody{font-size:11px;color:var(--text);line-height:1.6;background:var(--section);border:1px solid var(--border);border-radius:7px;padding:6px 8px}
+  .resultBar .racts{display:flex;gap:6px;justify-content:flex-end}
+  .rb{display:inline-flex;align-items:center;gap:3px;border:1px solid var(--border);border-radius:7px;padding:3px 12px;font-size:11px;background:var(--section);color:var(--text2);cursor:pointer}
+  .rb:hover{border-color:var(--accent)}
+  .rb.pri{border-color:var(--accent);background:var(--accent);color:#fff}
+  .thinking{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--accent-strong);padding:6px 10px}
+  .spin{width:14px;height:14px;border:2px solid var(--accent-border);border-top-color:var(--accent);border-radius:50%;animation:rot .8s linear infinite}
+  @keyframes rot{to{transform:rotate(360deg)}}
+
+  /* 门控/确认条 */
+  .gateBar{margin:6px 12px 0;display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:9px;font-size:11px;flex-wrap:wrap}
+  .gateBar.off{background:var(--accent-light);border:1px solid var(--accent-border);color:var(--accent-strong)}
+  .gateBar.sens{background:var(--orange-bg);border:1px solid var(--orange-border);color:#92400E}
+  .gbBtn{border:1px solid currentColor;border-radius:6px;padding:2px 10px;font-size:11px;background:transparent;cursor:pointer;font-family:inherit}
+  .gbBtn:hover{background:currentColor;color:#fff}
+
+  .list{padding:8px 12px 10px;display:flex;flex-direction:column;gap:8px}
+  .li{height:34px;border-radius:9px;background:var(--card);border:1px solid var(--border)}
+
+  .steps{margin-top:20px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;font-size:12px;line-height:1.8;color:var(--text2)}
+  .steps b{color:var(--text)}
+  .foot{margin-top:16px;padding-top:12px;border-top:1px dashed var(--border);font-size:11px;color:var(--text3);line-height:1.9}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PastePanda · AI 快捷区（方案 B）交互演示</h1>
+  <div class="sub">模拟真实操作：点「模拟复制」→ 快捷区按内容出现按钮 → 点按钮看运行 / 结果 / 门控 / 敏感确认</div>
+
+  <div class="demoNote">
+    <b>交互规则</b>：① 复制内容 → 快捷区出现（按内容类型匹配 2-3 个 AI 动作 + 「更多…」→ 变换面板）；
+    ② 点按钮<b>直接运行</b>，下方展开结果（AI 思考中 → 预览 + 复制/粘贴）；③ AI 未启用 → 点击出现引导条「去设置启用」；
+    ④ 内容含敏感信息 → 先确认再发送；⑤ ✕ 关闭当前内容的快捷区（换内容重新出现）。
+  </div>
+
+  <!-- 控制台 -->
+  <div class="console">
+    <span class="lbl">模拟复制：</span>
+    <button class="mockBtn on" data-demo="en">📄 英文文本</button>
+    <button class="mockBtn" data-demo="link">🔗 网页链接</button>
+    <button class="mockBtn" data-demo="phone">📱 含手机号文本</button>
+    <button class="mockBtn" data-demo="long">📚 长篇文章</button>
+    <div class="toggleWrap">
+      <span>AI 已启用</span>
+      <div class="toggle on" id="aiToggle" onclick="toggleAi()"></div>
+    </div>
+  </div>
+
+  <!-- 主窗口 -->
+  <div class="win">
+    <div class="topbar">
+      <div class="logo">🐼</div><div class="t">PastePanda</div><div class="sp"></div>
+      <span class="aiCap on" id="cap">✦ AI 就绪</span>
+      <div class="tb">⚙</div><div class="tb">─</div>
+    </div>
+
+    <!-- 快捷区 -->
+    <div id="quickBar" class="aiQuick" style="display:none">
+      <span class="lbl">✦ AI</span>
+      <div class="acts" id="acts"></div>
+      <span class="hintTxt" id="hintTxt"></span>
+      <button class="x" onclick="hideQuick()" title="关闭">✕</button>
+    </div>
+    <!-- 结果 / 门控区 -->
+    <div id="outArea"></div>
+
+    <div class="list">
+      <div class="li"></div><div class="li"></div><div class="li"></div>
+      <div class="li"></div>
+    </div>
+  </div>
+
+  <div class="steps">
+    <b>操作流程</b><br>
+    1. 点上方「模拟复制」任一种内容 → 主窗口列表上方出现 <b>✦ AI 快捷区</b>，按钮按内容变化：英文 → 翻译/总结/改写；链接 → 链接摘要/总结；含手机号 → 粘贴脱敏/总结；长文 → 总结/改写/提取要点；<br>
+    2. 点任意按钮（AI 启用时）→ 按钮变「AI 思考中…」→ 下方展开结果：预览 + [复制][粘贴到前台]；<br>
+    3. 把右上「AI 已启用」关掉再点按钮 → 出现引导条「AI 未启用 → 去设置启用」（点击跳设置 AI tab）；<br>
+    4. 复制含手机号内容点「粘贴脱敏」→ 先出确认条（内容含敏感信息），确认后才运行；<br>
+    5. ✕ 可关闭当前快捷区；换内容重新出现。
+  </div>
+
+  <div class="foot">
+    <b>待确认点</b>：① 快捷区与现有单条建议（SuggestionBar）的关系——建议：快捷区<b>取代</b>建议条位置（AI 已启用时），未启用时仍是原建议条；② 「更多…」打开变换面板并定位 AI 分组；③ 快捷区关闭后换内容再出现（不因 8 秒收起，比建议条更持久）。
+  </div>
+</div>
+
+<script>
+const DEMOS = {
+  en: {
+    hint: "识别为：英文文本",
+    actions: [
+      { label: "翻译", result: "Hello, world. → 你好，世界。" },
+      { label: "总结", result: "一句话总结：这是常见的问候语示例。" },
+      { label: "改写语气", result: "用更正式的语气重写后的结果……" },
+    ],
+  },
+  link: {
+    hint: "识别为：网页链接",
+    actions: [
+      { label: "链接摘要", result: "标题：文档首页\n正文摘要：这是 PastePanda 的使用文档……" },
+      { label: "总结", result: "总结：一篇介绍剪贴板工具的文档。" },
+    ],
+  },
+  phone: {
+    hint: "识别为：含敏感信息（手机号）",
+    actions: [
+      { label: "粘贴脱敏", result: "138****1234（已脱敏，保留前缀可辨识）", sensitive: true },
+      { label: "总结", result: "一句话总结该内容……" },
+    ],
+  },
+  long: {
+    hint: "识别为：长文本（约 2000 字）",
+    actions: [
+      { label: "总结", result: "要点：\n1. …\n2. …\n3. …" },
+      { label: "改写语气", result: "更简洁的版本……" },
+      { label: "提取要点", result: "- 要点一\n- 要点二\n- 要点三" },
+    ],
+  },
+};
+let aiEnabled = true;
+let pendingAction = null;
+
+function toggleAi() {
+  aiEnabled = !aiEnabled;
+  document.getElementById("aiToggle").classList.toggle("on", aiEnabled);
+  const cap = document.getElementById("cap");
+  cap.className = "aiCap " + (aiEnabled ? "on" : "off");
+  cap.textContent = aiEnabled ? "✦ AI 就绪" : "✦ 开启 AI";
+  hideOut();
+}
+
+document.querySelectorAll(".mockBtn").forEach((b) => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll(".mockBtn").forEach((x) => x.classList.remove("on"));
+    b.classList.add("on");
+    showQuick(b.dataset.demo);
+  });
+});
+
+function showQuick(demoId) {
+  const d = DEMOS[demoId];
+  document.getElementById("quickBar").style.display = "flex";
+  document.getElementById("hintTxt").textContent = d.hint;
+  const acts = document.getElementById("acts");
+  acts.innerHTML = "";
+  d.actions.forEach((a) => {
+    const btn = document.createElement("button");
+    btn.className = "q";
+    btn.textContent = a.label;
+    btn.onclick = () => runAction(a, d.hint);
+    acts.appendChild(btn);
+  });
+  const more = document.createElement("button");
+  more.className = "q more";
+  more.textContent = "更多…";
+  more.title = "打开变换面板（定位 AI 分组）";
+  acts.appendChild(more);
+  hideOut();
+}
+
+function hideQuick() {
+  document.getElementById("quickBar").style.display = "none";
+  hideOut();
+}
+
+function hideOut() {
+  document.getElementById("outArea").innerHTML = "";
+  pendingAction = null;
+}
+
+function runAction(a, hint) {
+  const out = document.getElementById("outArea");
+  // 1) AI 未启用 → 引导条
+  if (!aiEnabled) {
+    out.innerHTML = `
+      <div class="gateBar off">
+        <span>AI 未启用——「${a.label}」需要 AI 服务。</span>
+        <button class="gbBtn" onclick="toSettings()">去设置启用 →</button>
+      </div>`;
+    return;
+  }
+  // 2) 敏感内容 → 确认条
+  if (a.sensitive) {
+    pendingAction = a;
+    out.innerHTML = `
+      <div class="gateBar sens">
+        <span>⚠ 内容包含敏感信息（手机号），发送后可能被服务商记录。</span>
+        <button class="gbBtn" onclick="confirmSend()">确认发送</button>
+        <button class="gbBtn" onclick="hideOut()">取消</button>
+      </div>`;
+    return;
+  }
+  doRun(a);
+}
+
+function confirmSend() {
+  if (pendingAction) {
+    hideOut();
+    doRun(pendingAction);
+    pendingAction = null;
+  }
+}
+
+function doRun(a) {
+  const out = document.getElementById("outArea");
+  out.innerHTML = `
+    <div class="resultBar">
+      <div class="thinking"><span class="spin"></span> AI 思考中…</div>
+    </div>`;
+  setTimeout(() => {
+    out.innerHTML = `
+      <div class="resultBar">
+        <div class="rhead">✦ ${a.label} · deepseek-chat · 312ms</div>
+        <div class="rbody">${a.result.replace(/\n/g, "<br>")}</div>
+        <div class="racts">
+          <span class="rb" onclick="copied(this)">复制</span>
+          <span class="rb pri" onclick="copied(this)">粘贴到前台</span>
+        </div>
+      </div>`;
+  }, 1200);
+}
+
+function copied(el) {
+  el.textContent = "✓ 完成";
+  setTimeout(() => { el.textContent = el.textContent.startsWith("✓") ? (el.classList.contains("pri") ? "粘贴到前台" : "复制") : el.textContent; }, 1500);
+}
+
+function toSettings() {
+  document.getElementById("outArea").innerHTML = `
+    <div class="gateBar off"><span>已跳转：设置 → AI 配置（演示）</span></div>`;
+}
+</script>
+</body>
+</html>

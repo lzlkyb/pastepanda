@@ -467,6 +467,23 @@ pub fn find(id: &str) -> &'static ProviderSpec {
         .expect("厂商表里必须包含默认厂商")
 }
 
+/// 支持 OpenAI 兼容 `/embeddings` 的厂商 → 默认 embedding 模型（M5-2 语义索引）。
+///
+/// 只有查实过接口写法的才列入（与「关思考」同策略：没把握的不画饼）。
+/// 返回 `(默认模型, 向量维度)`；`None` = 该厂商没有可用的 embedding 接口
+/// （DeepSeek / Kimi / StepFun 等没有，Anthropic 协议也没有）。
+pub fn embedding_model_for(provider: &str) -> Option<(&'static str, usize)> {
+    match find(provider).id {
+        "openai" => Some(("text-embedding-3-small", 1536)),
+        "zhipu" => Some(("embedding-3", 2048)),
+        "qwen" => Some(("text-embedding-v3", 1024)),
+        "siliconflow" => Some(("BAAI/bge-m3", 1024)),
+        "volcengine" => Some(("doubao-embedding-text-240715", 2048)),
+        "hunyuan" => Some(("hunyuan-embedding", 1024)),
+        _ => None,
+    }
+}
+
 /// AI 配置。**不含 API Key**——Key 在 [`super::secret_store`]，两者存储位置完全分离。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

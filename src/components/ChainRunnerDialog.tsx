@@ -25,6 +25,7 @@ import { pasteText } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { FocusTrap } from "@/components/FocusTrap";
+import { SequenceDiscover } from "@/components/SequenceDiscover";
 import styles from "./ChainRunnerDialog.module.css";
 
 export function ChainRunnerDialog() {
@@ -151,6 +152,9 @@ export function ChainRunnerDialog() {
                   <X size={16} />
                 </button>
               </div>
+
+              {/* V3-B 程序性记忆：高频操作 → 一键存成链 */}
+              <SequenceDiscover open={open} />
 
               {/* 链选择：自定义链在前，预置链在后 */}
               <div className={styles.chainRow}>

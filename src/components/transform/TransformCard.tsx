@@ -24,6 +24,14 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AiBadge, badgeKindOf } from "@/components/AiBadge";
+import { useDialogStore } from "@/stores/dialogStore";
+import { openAiSettings } from "@/lib/openAiSettings";
+
+/** v6.4 审查：#10 预算超限 → 关枢纽并跳到设置 AI tab */
+async function goAdjustBudget() {
+  useDialogStore.getState().closeHub();
+  await openAiSettings();
+}
 import type { Transform, TransformOptionSpec, TransformResultMeta } from "@/lib/transforms";
 import { parseReplyCandidates } from "@/lib/replyCandidates";
 import { ReplyCandidates } from "@/components/transform/ReplyCandidates";
@@ -238,9 +246,19 @@ export function TransformCard({
         </>
       )}
       {preview.state === "err" && (
-        <pre className={preview.needsConfirm ? styles.previewWarn : styles.previewErr}>
-          {preview.needsConfirm && <ShieldAlert size={12} />} {preview.message}
-        </pre>
+        <>
+          <pre className={preview.needsConfirm ? styles.previewWarn : styles.previewErr}>
+            {preview.needsConfirm && <ShieldAlert size={12} />} {preview.message}
+          </pre>
+          {/* v6.4 审查：#10 预算超限给操作入口：去设置调高 */}
+          {preview.budgetExceeded && (
+            <div className={styles.budgetRow}>
+              <button className={styles.budgetBtn} onClick={() => void goAdjustBudget()}>
+                去调整每日预算
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       <div className={styles.cardActions}>

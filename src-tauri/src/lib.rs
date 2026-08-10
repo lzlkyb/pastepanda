@@ -203,6 +203,14 @@ pub fn run() {
                 Err(e) => log::warn!("[ActionEvents] 清理过期事件失败: {}", e),
             }
 
+            // AI 反馈：同上。之前 `AI_FEEDBACK_RETAIN_DAYS` 定义了但从未被使用，
+            // 结果是反馈数据永久留存——红线②里“自动过期”那一半一直没落地。
+            match store.ai_feedback_purge(data_store::AI_FEEDBACK_RETAIN_DAYS) {
+                Ok(n) if n > 0 => log::info!("[AI] 已清理 {} 条过期反馈", n),
+                Ok(_) => {}
+                Err(e) => log::warn!("[AI] 清理过期反馈失败: {}", e),
+            }
+
             // 读取 LAN 同步配置（在 store 被 manage 之前）
             let lan_enabled = store
                 .get_config()
@@ -580,6 +588,20 @@ pub fn run() {
             commands::history_summaries_backfill,
             commands::history_summaries_count,
             commands::history_summaries_clear,
+            // 语义索引（M5-2）：云端 embedding + 本地向量检索
+            commands::semantic_status,
+            commands::semantic_set_config,
+            commands::semantic_index,
+            commands::semantic_search,
+            // 用户画像（M6-2/M6-3）：聚合 + 覆盖 + 导出
+            commands::profile_refine,
+            commands::profile_get,
+            commands::profile_set_override,
+            commands::profile_export,
+            commands::profile_install_skill,
+            commands::profile_action_boosts,
+            // 程序性记忆（V3-B）：高频动作序列
+            commands::sequence_suggest,
             // 动作使用日志（v6.0 第一步：action_events 表）
             commands::action_event_log,
             commands::action_event_stats,

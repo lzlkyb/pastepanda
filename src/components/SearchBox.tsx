@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore } from "@/stores/appStore";
 import { parseSearchQuery } from "@/lib/searchQuery";
+import { semanticSearch } from "@/lib/api/semantic";
 import { X } from "lucide-react";
 import styles from "./TopBar.module.css";
 
@@ -62,6 +63,7 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     if (!value) {
       setSearchKeyword("");
+      useAppStore.getState().setSemanticHits([]);
       return;
     }
     debounceTimerRef.current = window.setTimeout(() => {
@@ -71,6 +73,15 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
         useAppStore.getState().setTimeFilter(parsed.timeFilter);
       }
       setSearchKeyword(parsed.keyword);
+      // M5-2 语义搜索：失败（未开启/厂商不支持/预算）静默，自动退回关键词
+      const kw = parsed.keyword.trim();
+      if (kw) {
+        void semanticSearch(kw, 6)
+          .then((hits) => useAppStore.getState().setSemanticHits(hits))
+          .catch(() => useAppStore.getState().setSemanticHits([]));
+      } else {
+        useAppStore.getState().setSemanticHits([]);
+      }
     }, 200);
   }, [setSearchKeyword]);
 
@@ -87,8 +98,17 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
       useAppStore.getState().setTimeFilter(parsed.timeFilter);
     }
     setSearchKeyword(parsed.keyword);
-    if (parsed.keyword.trim()) {
-      addSearchHistory(parsed.keyword.trim());
+    // M5-2 语义搜索（回车同路径）
+    const semKw = parsed.keyword.trim();
+    if (semKw) {
+      void semanticSearch(semKw, 6)
+        .then((hits) => useAppStore.getState().setSemanticHits(hits))
+        .catch(() => useAppStore.getState().setSemanticHits([]));
+    } else {
+      useAppStore.getState().setSemanticHits([]);
+    }
+    if (kw) {
+      addSearchHistory(kw);
     }
     setShowHistory(false);
   }, [setSearchKeyword, addSearchHistory, updateClearBtn]);
@@ -135,6 +155,7 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
           updateClearBtn();
           if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
           setSearchKeyword("");
+          useAppStore.getState().setSemanticHits([]);
           setShowHistory(searchHistory.length > 0);
         }}
         className={styles.searchClear}

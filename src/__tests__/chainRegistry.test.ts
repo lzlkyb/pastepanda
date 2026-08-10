@@ -106,6 +106,41 @@ describe("runChain · AI 步骤确认（B2）", () => {
     }
   });
 
+  it("不传确认钩子时，AI 步骤必须被拒而不是静默执行", async () => {
+    // 红线回归：之前的条件是 `t.remote && onAiConfirm`，没传回调等于跳过检查，
+    // 剪贴板内容会在用户未确认时直接发到云端。路线图还要加新入口，
+    // 这条测试就是防止那时候有人忘了传参。
+    let ran = false;
+    const remoteT: Transform = {
+      id: "fake-remote-2",
+      label: "假远程2",
+      description: "",
+      group: "ai",
+      remote: true,
+      detect: () => 0.5,
+      run: async (text) => {
+        ran = true;
+        return { ok: true, output: `AI(${text})` };
+      },
+    };
+    registerTransform(remoteT);
+    try {
+      const chain: Chain = {
+        id: "ai-chain-2",
+        name: "AI 链",
+        description: "",
+        steps: [{ transformId: "fake-remote-2", risk: "network" }],
+      };
+      const r = await runChain(chain, "hello"); // 注意：没传 onAiConfirm
+      expect(r.ok).toBe(false);
+      expect(r.failedAt).toBe(0);
+      expect(r.final).toBe("hello");
+      expect(ran).toBe(false); // 最关键：run() 压根没被调用，内容没出网
+    } finally {
+      unregisterTransform("fake-remote-2");
+    }
+  });
+
   it("本地变换（非 remote）不触发确认钩子", async () => {
     const chain = getPresetChain("web-to-text")!;
     let calls = 0;

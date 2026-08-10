@@ -11,10 +11,10 @@ import { StackBanner } from "@/components/StackBanner";
 import { MdAssocBanner } from "@/components/MdAssocBanner";
 import { TagEditor } from "@/components/TagEditor";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { getImageThumbnail, copyItemToClipboard, deleteHistory } from "@/lib/api";
+import { getImageThumbnail, copyItemToClipboard, deleteHistory, copyOnly, pasteText } from "@/lib/api";
 import { getAllRules } from "@/lib/regexRules";
 import { thumbnailSourcePath } from "@/lib/richContent";
-import { ClipboardList, Copy, Search, Zap, CheckSquare, Square, FileDown, Trash2, GitCompare, FileX } from "lucide-react";
+import { ClipboardList, Copy, Search, Zap, CheckSquare, Square, FileDown, Trash2, GitCompare, FileX, Sparkles, ClipboardPaste } from "lucide-react";
 import { Timeline } from "@/components/Timeline";
 import Lenis from "lenis";
 import styles from "./CardList.module.css";
@@ -28,6 +28,7 @@ import { TransformHubDialog } from "@/components/TransformHubDialog";
 import { ChainRunnerDialog } from "@/components/ChainRunnerDialog";
 import { ChainEditor } from "@/components/ChainEditor";
 import { LearningsDialog } from "@/components/LearningsDialog";
+import { ProfileDialog } from "@/components/ProfileDialog";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -157,6 +158,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   const stackMode = useAppStore((s) => s.stackMode);
   const stackItems = useAppStore((s) => s.stackItems);
   const stackDoneIds = useAppStore((s) => s.stackDoneIds);
+  const semanticHits = useAppStore((s) => s.semanticHits);
   const stackOrderMap = useMemo(() => {
     if (!stackMode) return null;
     const m = new Map<string, number>();
@@ -572,6 +574,42 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
         <div role="status" aria-live="polite" style={{ position: "absolute", width: 1, height: 1, margin: -1, padding: 0, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0 }}>
           {items.length === 0 ? "没有符合条件的记录" : `共 ${items.length} 条记录`}
         </div>
+        {/* M5-2 语义命中：按"意思"搜到的历史（开关开启时），展示在关键词结果上方 */}
+        {searchMode && semanticHits.length > 0 && (
+          <div className={styles.semanticHits}>
+            <div className={styles.semanticHitsTitle}>
+              <Sparkles size={12} /> 语义命中
+              <span className={styles.semanticHitsCount}>
+                {semanticHits.length} 条 · 按意思匹配，非关键词
+              </span>
+            </div>
+            {semanticHits.map((h) => (
+              <div key={h.historyId} className={styles.semanticHit}>
+                <div className={styles.semanticHitHead}>
+                  <span className={styles.semanticHitScore}>{Math.round(h.score * 100)}% 相似</span>
+                  <span className={styles.semanticHitTime}>{h.createdAt}</span>
+                </div>
+                <div className={styles.semanticHitText}>{h.summary || h.text}</div>
+                <div className={styles.semanticHitActions}>
+                  <button
+                    className={styles.semanticHitBtn}
+                    onClick={() => void copyOnly(h.text)}
+                    title="复制全文"
+                  >
+                    <Copy size={11} /> 复制
+                  </button>
+                  <button
+                    className={styles.semanticHitBtn}
+                    onClick={() => void pasteText(h.text)}
+                    title="粘贴到前台应用"
+                  >
+                    <ClipboardPaste size={11} /> 粘贴
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         {/* #6 列表 ⇄ 空状态切换：mode="wait" 先退场再入场，避免两分支同时占位跳动；
             initial={false} 保证应用首屏（空剪贴板/已有记录）不做入场动画 */}
         <AnimatePresence mode="wait" initial={false}>
@@ -826,6 +864,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
           <ChainRunnerDialog />
           <ChainEditor />
           <LearningsDialog />
+          <ProfileDialog />
           {/* AnimatePresence 包裹条件挂载：关闭时子树保留到退场动画结束再卸载。
               各弹框组件内部不再自带 AnimatePresence（会形成独立 presence 边界、
               屏蔽外层退出信号），motion 元素直接参与本层 presence */}

@@ -101,22 +101,9 @@ impl DataStore {
         }
     }
 
-    /// 从 FTS 索引删除（delete 后调用）
-    fn sync_fts_delete(&self, conn: &rusqlite::Connection, id: &str) {
-        let res = conn.query_row("SELECT rowid FROM history WHERE id = ?1", [id], |r| {
-            r.get::<_, i64>(0)
-        });
-        match res {
-            Ok(rowid) => {
-                if let Err(e) = conn.execute("DELETE FROM history_fts WHERE rowid = ?1", [rowid]) {
-                    log::warn!("[FTS] 索引删除失败 (id={}): {}", id, e);
-                }
-            }
-            Err(_) => {
-                // 记录已被删（级联场景），rowid 未知——清掉该 id 不可行，忽略
-            }
-        }
-    }
+    // 曾有一个单条 `sync_fts_delete`；删除路径统一走 `delete_history(&[String])`，
+    // 它在同一个函数里批量清 history_fts（见下方 fts_delete_sql），故该方法从未被
+    // 调用，已删。两条删除路径并存才是真隐患：漏走一条就意味着删掉的内容仍能被搜到。
 
     /// 读「保护常用内容」开关（v6.1）。默认 true：
     /// - 开：VALUE_PRESERVE_SQL 生效，高价值条目豁免过期清理；

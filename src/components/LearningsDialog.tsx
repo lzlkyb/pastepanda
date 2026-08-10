@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Trash2, Brain, RefreshCw, Save } from "lucide-react";
+import { X, Trash2, Brain, RefreshCw, Save, UserRound } from "lucide-react";
 import { useDialogStore } from "@/stores/dialogStore";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { FocusTrap } from "@/components/FocusTrap";
@@ -28,6 +28,7 @@ import {
   type ActionPrefRow,
 } from "@/lib/api/aiFeedback";
 import { historySummariesCount, historySummariesClear } from "@/lib/api/contentMemory";
+import { semanticStatus } from "@/lib/api/semantic";
 import { useToast } from "@/components/Toast";
 import styles from "./Learnings.module.css";
 
@@ -42,23 +43,26 @@ export function LearningsDialog() {
   const [fbStats, setFbStats] = useState<AiFeedbackStat[]>([]);
   const [prefs, setPrefs] = useState<Record<string, string>>({});
   const [memCount, setMemCount] = useState<number | null>(null);
+  const [semVectorCount, setSemVectorCount] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
 
   /** 拉取统计 + 负反馈 + AI 结果反馈 + 内容记忆 */
   const load = useCallback(async () => {
     try {
-      const [s, d, fb, p, mem] = await Promise.all([
+      const [s, d, fb, p, mem, sem] = await Promise.all([
         actionEventStats(30),
         actionDismissals(),
         aiFeedbackStats(30),
         actionPrefsAll(),
         historySummariesCount(),
+        semanticStatus().catch(() => null),
       ]);
       setStats(s);
       setDismissals(d);
       setFbStats(fb.filter((x) => x.total >= 5));
       setPrefs(Object.fromEntries(p.map((r) => [r.actionId, r.preference])));
       setMemCount(mem);
+      setSemVectorCount(sem?.enabled ? sem.vectorCount : null);
     } catch (e) {
       toast(`读取学习记录失败：${e instanceof Error ? e.message : String(e)}`, "error");
     }
@@ -73,6 +77,7 @@ export function LearningsDialog() {
       setFbStats([]);
       setPrefs({});
       setMemCount(null);
+      setSemVectorCount(null);
     }
   }, [open, load]);
 
@@ -153,6 +158,13 @@ export function LearningsDialog() {
               <div className="dialog-header">
                 <span className={styles.headerIcon}><Brain size={16} /></span>
                 <h2 className="dialog-title">系统学到了什么</h2>
+                <button
+                  className={styles.profileBtn}
+                  onClick={() => useDialogStore.getState().openProfile()}
+                  title="查看 / 导出我的行为画像"
+                >
+                  <UserRound size={12} /> 我的画像
+                </button>
                 <button onClick={close} className="dialog-close"
                   onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
                   onMouseLeave={(e) => (e.currentTarget.style.background = "")}>
@@ -293,6 +305,12 @@ export function LearningsDialog() {
                           <b>{memCount}</b>
                           <span>已记忆条数</span>
                         </div>
+                        {semVectorCount !== null && (
+                          <div className={styles.sumItem}>
+                            <b>{semVectorCount}</b>
+                            <span>语义向量（M5-2）</span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

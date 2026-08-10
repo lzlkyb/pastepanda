@@ -27,7 +27,7 @@ const tabPanelTransition = { duration: 0.22, ease: [0.4, 0, 0.2, 1] as const };
 
 type SettingsTab = "general" | "ai" | "help" | "about";
 
-export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function SettingsDialog({ open, onClose, initialTab }: { open: boolean; onClose: () => void; initialTab?: SettingsTab }) {
   const config = useAppStore((s) => s.config);
   const updateConfig = useAppStore((s) => s.updateConfig);
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
@@ -56,7 +56,8 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
 
   useEffect(() => {
     if (open) {
-      setActiveTab("general");
+      // v6.4 审查：#10 从变换中心跳转过来时直接定位到指定 tab
+      setActiveTab(initialTab ?? "general");
       setScrolled(false);
       getStatsDetail(config.current_workspace).then(setStats).catch(() => {});
       getAppVersion().then(setAppVersion);

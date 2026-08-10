@@ -1036,3 +1036,34 @@
   border-color: var(--accent-border);
   color: var(--accent-strong);
 }
+
+/* v6.4 审查：#5 AI 设置加载失败错误条 */
+.loadError {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 16px 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--danger-bg, #fee2e2);
+  border: 1px solid var(--danger-border, #fecaca);
+  color: var(--danger);
+  font-size: 11px;
+}
+
+.retryBtn {
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-size: 11px;
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.retryBtn:hover {
+  background: var(--danger);
+  color: #fff;
+}

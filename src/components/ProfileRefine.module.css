@@ -1,0 +1,121 @@
+/* ===== V3-C LLM 精炼画像 ===== */
+
+.wrap {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--accent);
+  border-radius: 12px;
+  background: var(--accent-light);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-strong);
+}
+
+.hint {
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+}
+
+.gen {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.gen:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.gen:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.text {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--section-bg);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-primary);
+}
+
+.ops {
+  display: flex;
+  gap: 6px;
+}
+
+.copy,
+.copyDone,
+.reg {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 11px;
+  border-radius: 7px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.copy {
+  border: 1px solid var(--accent);
+  background: var(--accent-light);
+  color: var(--accent-strong);
+}
+
+.copyDone {
+  border: 1px solid var(--green-border);
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.reg {
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.reg:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.note {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+}

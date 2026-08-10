@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda 主窗口 AI 感知方案设计稿</title>
+<style>
+  :root{
+    --bg:#F4F6F9; --card:#fff; --border:#E2E8F0; --text:#0F172A; --text2:#64748B; --text3:#94A3B8;
+    --accent:#0284C7; --accent-light:#E0F2FE; --accent-strong:#0369A1; --accent-border:#7DD3FC;
+    --green:#15803D; --green-light:#DCFCE7; --hover:#F1F5F9; --section:#F8FAFC; --ai-badge:#F3E8FF;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:#E8EDF3;padding:28px;color:var(--text)}
+  .wrap{max-width:860px;margin:0 auto}
+  h1{font-size:20px;margin-bottom:4px}
+  .sub{font-size:13px;color:var(--text2);margin-bottom:20px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  .note{background:var(--green-light);border:1px solid #BBF7D0;border-radius:10px;padding:10px 12px;font-size:12px;color:#166534;margin-bottom:18px;line-height:1.7}
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;border-radius:20px;padding:4px 12px;font-weight:600}
+  .badge.off{border:1px solid var(--accent);background:var(--accent-light);color:var(--accent-strong);cursor:pointer}
+  .badge.on{background:var(--green-light);color:var(--green)}
+
+  /* 主窗口 */
+  .win{width:480px;background:var(--bg);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(15,23,42,.1);margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--border);background:var(--card)}
+  .logo{width:22px;height:22px;border-radius:6px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;flex-shrink:0}
+  .t{font-size:12px;font-weight:600}
+  .sp{flex:1}
+  .tb{width:24px;height:24px;border-radius:7px;background:var(--hover);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text2)}
+  .tb.set{background:rgba(168,85,247,.12);color:#7E22CE}
+
+  .list{padding:8px 12px 10px;display:flex;flex-direction:column;gap:8px}
+  .li{height:34px;border-radius:9px;background:var(--card);border:1px solid var(--border)}
+
+  /* 方案 A：TopBar AI 胶囊 */
+  .aiCap{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;border-radius:20px;padding:4px 11px;cursor:pointer;transition:all .15s}
+  .aiCap.off{border:1px dashed var(--accent);background:var(--accent-light);color:var(--accent-strong)}
+  .aiCap.off:hover{background:var(--accent);color:#fff}
+  .aiCap.on{border:1px solid #BBF7D0;background:var(--green-light);color:var(--green)}
+
+  /* 方案 B：AI 快捷区 */
+  .aiQuick{display:flex;align-items:center;gap:6px;margin:8px 12px 2px;padding:7px 10px;border-radius:10px;background:var(--card);border:1px solid var(--accent-border);box-shadow:0 1px 3px rgba(2,132,199,.08)}
+  .aiQuick .lbl{font-size:10px;color:var(--accent-strong);font-weight:600;flex-shrink:0;display:flex;align-items:center;gap:3px}
+  .aiQuick .acts{display:flex;gap:5px;flex-wrap:wrap}
+  .q{display:inline-flex;align-items:center;gap:3px;border:1px solid var(--accent-border);border-radius:7px;padding:3px 9px;font-size:11px;background:var(--accent-light);color:var(--accent-strong);cursor:pointer}
+  .q:hover{background:var(--accent);color:#fff}
+  .q.more{border-style:dashed;background:transparent}
+  .aiQuick .hintTxt{margin-left:auto;font-size:10px;color:var(--text3)}
+
+  .foot{margin-top:20px;padding-top:12px;border-top:1px dashed var(--border);font-size:11px;color:var(--text3);line-height:1.9}
+  .sec{font-size:13px;font-weight:700;margin:20px 0 8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PastePanda · 主窗口 AI 感知方案</h1>
+  <div class="sub">让"AI 时代"在主窗口第一眼可见、复制后直接用 —— 三件套：A 状态胶囊 + B AI 快捷区 + C 首次引导</div>
+
+  <div class="note">
+    <b>问题</b>：AI 能力全藏在「变换面板 / 托盘建议 / 设置页」，主窗口零 AI 元素——老用户打开软件完全感知不到 AI 存在，也找不到入口。
+    <b>方案</b>：① TopBar 常驻 AI 胶囊（入口+状态）② 复制后 AI 快捷动作区（直接点直接用）③ 首次配置后一次性引导。
+  </div>
+
+  <!-- ============ 方案 A：TopBar AI 胶囊 ============ -->
+  <div class="sec">方案 A · TopBar AI 胶囊（常驻入口 + 状态）</div>
+  <div class="grid">
+    <div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:6px">未配置 AI（默认态，零配置用户第一眼看到）</div>
+      <div class="win">
+        <div class="topbar">
+          <div class="logo">🐼</div><div class="t">PastePanda</div><div class="sp"></div>
+          <span class="aiCap off">✦ 开启 AI</span>
+          <div class="tb">⚙</div><div class="tb">─</div>
+        </div>
+        <div class="list"><div class="li"></div><div class="li"></div><div class="li"></div></div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-top:8px;line-height:1.7">
+        未配置 → 显示「✦ 开启 AI」引流胶囊（accent 虚线描边）。<b>点击直接跳设置 → AI tab</b>（复用现有 initialTab 机制）。零配置用户不再"找不到 AI"。
+      </div>
+    </div>
+    <div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:6px">已配置 AI（状态 + 用量可见）</div>
+      <div class="win">
+        <div class="topbar">
+          <div class="logo">🐼</div><div class="t">PastePanda</div><div class="sp"></div>
+          <span class="aiCap on">✦ AI 就绪</span>
+          <div class="tb">⚙</div><div class="tb">─</div>
+        </div>
+        <div class="list"><div class="li"></div><div class="li"></div><div class="li"></div></div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-top:8px;line-height:1.7">
+        已启用 → 绿色胶囊「✦ AI 就绪」；<b>hover 显示</b>：本周使用 N 次 · 当前模型（让价值可见）。点击同样进设置 AI tab。
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 方案 B：AI 快捷区 ============ -->
+  <div class="sec">方案 B · AI 快捷动作区（复制后直接点，不用进变换面板）</div>
+  <div class="win">
+    <div class="topbar">
+      <div class="logo">🐼</div><div class="t">PastePanda</div><div class="sp"></div>
+      <span class="aiCap on">✦ AI 就绪</span>
+      <div class="tb">⚙</div><div class="tb">─</div>
+    </div>
+    <div class="aiQuick">
+      <span class="lbl">✦ AI</span>
+      <div class="acts">
+        <span class="q">翻译</span>
+        <span class="q">总结</span>
+        <span class="q">改写语气</span>
+        <span class="q more">更多…</span>
+      </div>
+      <span class="hintTxt">识别为：英文文本</span>
+    </div>
+    <div class="list"><div class="li"></div><div class="li"></div><div class="li"></div></div>
+  </div>
+  <div style="font-size:11px;color:var(--text2);margin-top:8px;line-height:1.7;max-width:480px">
+    复制内容后（history[0] 变化），在主窗口列表上方出现一行 <b>AI 快捷动作</b>：
+    按内容类型匹配 2-3 个（英文→翻译/总结；长文本→总结/改写；含敏感→脱敏；链接→摘要）+「更多…」打开变换面板。
+    点击按钮<b>直接运行</b>（受规则 15 门控，未启用显示引导）。比现有单条建议更显性、可多点。
+  </div>
+
+  <!-- ============ 方案 C：首次引导 ============ -->
+  <div class="sec">方案 C · 首次配置成功后一次性引导（可选）</div>
+  <div class="win" style="width:520px">
+    <div style="background:linear-gradient(180deg,#EAF6FD,#CFE9F8);padding:16px 20px;text-align:center">
+      <div style="font-size:16px;font-weight:700;color:var(--accent-strong)">✦ AI 已就绪</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:4px">以后复制内容，随时能用 AI 处理</div>
+    </div>
+    <div style="padding:14px 20px;display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;gap:10px;align-items:flex-start;font-size:12px">
+        <span style="width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">1</span>
+        <span>复制任意内容（网页、代码、长文…）</span>
+      </div>
+      <div style="display:flex;gap:10px;align-items:flex-start;font-size:12px">
+        <span style="width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">2</span>
+        <span>主窗口出现 <b>✦ AI 快捷区</b>，点「翻译 / 总结 / 改写」直接出结果</span>
+      </div>
+      <div style="display:flex;gap:10px;align-items:flex-start;font-size:12px">
+        <span style="width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">3</span>
+        <span>或在变换面板里找到 AI 分组，还有脱敏、链接摘要、回复草稿</span>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px">
+        <span style="border:1px solid var(--border);border-radius:8px;padding:5px 14px;font-size:12px;color:var(--text2);cursor:pointer">知道了</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <b>落地清单</b><br>
+    ① <code>TopBar</code>：加 AI 胶囊（未配置「✦ 开启 AI」/ 已配置「✦ AI 就绪」，点击复用 open-ai-settings 跳转）；<br>
+    ② 新组件 <code>AiQuickBar</code>：列表上方，复制后按内容类型给 2-3 个 AI 动作按钮 + 「更多…」，点按钮直接 run（门控）；<br>
+    ③ 新组件 <code>AiOnboarding</code>：首次配置成功弹一次 3 步引导（localStorage 记已看）；<br>
+    ④ 数据：AI 使用次数用现有 ai_usage（本周聚合），胶囊 tooltip 展示；<br>
+    ⑤ 全部主题变量，无硬编码；未配置态是重点——让零配置用户第一眼看到入口。
+  </div>
+</div>
+</body>
+</html>

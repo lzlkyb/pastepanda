@@ -33,6 +33,8 @@ export function AiCustomActions() {
   const [list, setList] = useState<AiCustomAction[]>([]);
   const [types, setTypes] = useState<AiContentTypeOption[]>([]);
   const [editing, setEditing] = useState<Editing>(null);
+  /** v6.4 审查修复：#2 行内删除二次确认 */
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -123,10 +125,17 @@ export function AiCustomActions() {
                   </button>
                   <button
                     className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
-                    onClick={() => void remove(a.id)}
-                    title="删除"
+                    onClick={() => {
+                      if (confirmDeleteId === a.id) {
+                        setConfirmDeleteId(null);
+                        void remove(a.id);
+                      } else {
+                        setConfirmDeleteId(a.id);
+                      }
+                    }}
+                    title={confirmDeleteId === a.id ? "再点一次确认删除" : "删除"}
                   >
-                    ✕
+                    {confirmDeleteId === a.id ? "确认?" : "✕"}
                   </button>
                 </div>
               ))}

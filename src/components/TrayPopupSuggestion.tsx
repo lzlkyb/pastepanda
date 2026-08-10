@@ -12,7 +12,7 @@
  */
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Lightbulb, X, ArrowRight } from "lucide-react";
-import { suggestTop1, suggestSequence, type Suggestion } from "@/lib/suggest";
+import { suggestTop1, suggestSequence, suggestIntent, type Suggestion } from "@/lib/suggest";
 import { loadRecommendState, refreshRecommendState, sceneOf } from "@/lib/recommend";
 import { getTransform } from "@/lib/transforms";
 import { actionDismissAdd } from "@/lib/api/actionEvents";
@@ -29,9 +29,10 @@ export interface SuggestItem {
   contentType?: string;
 }
 
-/** 建议去重 key（M4 加了 chain 变体后，三种类型字段不同，统一收口） */
+/** 建议去重 key（M4 加了 chain、V3-A 加了 intent 变体后，四类字段不同，统一收口） */
 function suggestionKey(s: Suggestion): string {
   if (s.kind === "chain") return `${s.kind}:${s.chainId}:${s.text}`;
+  if (s.kind === "intent") return `${s.kind}:${s.intentId}:${s.text}`;
   return `${s.kind}:${s.transformId}:${s.kind === "action" ? s.text : s.mergedText}`;
 }
 
@@ -69,11 +70,12 @@ export const TrayPopupSuggestion = memo(function TrayPopupSuggestion({
     const ctx = { text, contentType: item.contentType || "text" };
     const scene = sceneOf(new Date().getHours(), item.source || "");
 
-    const top1 = suggestTop1(ctx, scene);
+    const intent = suggestIntent(ctx, scene, recents.slice(0, 3).map((r) => ({ text: r.text || "" })));
+    const top1 = intent ? null : suggestTop1(ctx, scene);
     const seq = top1
       ? null
       : suggestSequence(recents.slice(0, 3).map((r) => ({ text: r.text || "" })));
-    const s = top1 ?? seq;
+    const s = intent ?? top1 ?? seq;
     if (!s || s.kind === "chain") {
       // 托盘不做链建议（链需要多步预览，不适合"点了就用"的快速场景）
       if (suggestion) setSuggestion(null);
@@ -91,16 +93,18 @@ export const TrayPopupSuggestion = memo(function TrayPopupSuggestion({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item?.text, item?.id, dismissedKey]);
 
-  /** 使用：text/序列 → 变换结果粘贴前台；action → 直接执行 */
+  /** 使用：text/序列 → 变换结果粘贴前台；action/intent → 执行主动作 */
   const handleUse = useCallback(async () => {
     if (!suggestion) return;
     if (suggestion.kind === "chain") return; // 托盘不做链建议（类型守卫）
-    const t = getTransform(suggestion.transformId);
+    const t = getTransform(
+      suggestion.kind === "intent" ? suggestion.actionIds[0] : suggestion.transformId,
+    );
     if (!t) return;
 
-    if (suggestion.kind === "action") {
+    if (suggestion.kind === "action" || suggestion.kind === "intent") {
       const r = await t.run(suggestion.text);
-      onToast(r.ok ? `已执行「${suggestion.label}」` : r.message || "执行失败", r.ok ? "success" : "error", 1200);
+      onToast(r.ok ? `已执行「${t.label}」` : r.message || "执行失败", r.ok ? "success" : "error", 1200);
     } else {
       // 序列/text：产出文本 → 粘贴到前台（与弹窗其他粘贴一致）
       const r = await t.run(suggestion.mergedText);
@@ -120,16 +124,20 @@ export const TrayPopupSuggestion = memo(function TrayPopupSuggestion({
     onHide();
   }, [suggestion, onToast, onHide]);
 
-  /** 否决：写入「不再推荐」+ 刷新 + 本次会话不再显示 */
+  /** 否决：写入「不再推荐」+ 刷新 + 本次会话不再显示（intent 仅本次收起，不持久） */
   const handleDismiss = useCallback(async () => {
     if (!suggestion) return;
     if (suggestion.kind === "chain") return; // 托盘不做链建议（类型守卫）
-    const ct = item?.contentType || "text";
-    await actionDismissAdd(suggestion.transformId, ct).catch(() => {});
-    await refreshRecommendState().catch(() => {});
+    // 意图类不入动作表（同主窗口），所以文案也不能说“不再建议”
+    const persisted = suggestion.kind !== "intent";
+    if (persisted) {
+      const ct = item?.contentType || "text";
+      await actionDismissAdd(suggestion.transformId, ct).catch(() => {});
+      await refreshRecommendState().catch(() => {});
+    }
     setDismissedKey(suggestionKey(suggestion));
     setSuggestion(null);
-    onToast(`不再建议「${suggestion.label}」`, "info", 1000);
+    onToast(persisted ? `不再建议「${suggestion.label}」` : "已收起", "info", 1000);
   }, [suggestion, item, onToast]);
 
   if (!suggestion) return null;
@@ -140,7 +148,9 @@ export const TrayPopupSuggestion = memo(function TrayPopupSuggestion({
       <span className={styles.text}>
         {suggestion.kind === "sequence"
           ? `把 ${suggestion.texts.length} 个同类内容合并成「${suggestion.label}」？`
-          : `用「${suggestion.label}」处理这段内容？`}
+          : suggestion.kind === "intent"
+            ? `${suggestion.label}？用「${suggestion.actionsText}」处理`
+            : `用「${suggestion.label}」处理这段内容？`}
       </span>
       <button className={styles.useBtn} onClick={() => void handleUse()}>
         使用 <ArrowRight size={11} />

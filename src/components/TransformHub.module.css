@@ -284,6 +284,27 @@
   font-size: 12px;
   color: var(--accent-strong);
 }
+
+/* v6.4 审查：#10 预算超限跳转按钮 */
+.budgetRow {
+  margin: 6px 13px 0;
+}
+
+.budgetBtn {
+  border: 1px solid var(--accent-border);
+  border-radius: 7px;
+  padding: 4px 10px;
+  font-size: 11px;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  cursor: pointer;
+}
+
+.budgetBtn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
 .previewErr {
   margin: 0 13px;
   background: var(--dialog-bg);
