@@ -303,7 +303,8 @@ pub const ACTIONS: &[AiAction] = &[
         label: "回复草稿",
         description: "对收到的消息写一段可直接发的回复",
         icon: "reply",
-        max_tokens: 1200,
+        // 一次出 3 个语气候选，比单段回复长；上限要留够（1200 会截断第三段）
+        max_tokens: 2000,
         options: REPLY_OPTS,
         content_types: &["text"],
     },
@@ -436,8 +437,10 @@ pub fn build_prompt(
         "ai-reply-draft" => {
             let stance = opt_or_default(&action.options[0], opts);
             format!(
-                "下面是我收到的消息。以{}的态度替我写一段可以直接发出去的回复，\
-                 语言与原消息一致，不要写称呼以外的套话：\n\n{}",
+                "下面是我收到的消息。以{}的态度替我写一段可以直接发出去的回复，语言与原消息一致。\n\n\
+                 给出 3 个不同语气的候选，每段以标题行开头（标题独占一行），格式如下：\n\
+                 ---正式版---\n（正式、书面的回复）\n---简洁版---\n（简洁直白的回复）\n---轻松版---\n（轻松口语化的回复）\n\n\
+                 只输出这 3 段，不要加其他说明，每段都可以直接发送：\n\n{}",
                 stance_name(stance),
                 trimmed
             )
@@ -531,6 +534,36 @@ mod tests {
         .unwrap();
         assert!(user.contains("行为统计"));
         assert!(user.contains("代码 60%"));
+    }
+
+    #[test]
+    fn test_reply_draft_prompt_asks_three_tone_candidates() {
+        // 六大王牌 F：回复草稿一次要 3 个语气候选，且标题行格式固定，
+        // 前端才解析得出来（---正式版--- / ---简洁版--- / ---轻松版---）
+        let (_, user, _) = build_prompt(
+            "ai-reply-draft",
+            "明天开会吗？",
+            &HashMap::new(),
+            None,
+        )
+        .unwrap();
+        assert!(user.contains("---正式版---"), "必须要求正式版候选：{user}");
+        assert!(user.contains("---简洁版---"), "必须要求简洁版候选：{user}");
+        assert!(user.contains("---轻松版---"), "必须要求轻松版候选：{user}");
+        // 默认态度是答应
+        assert!(user.contains("答应"), "默认 stance 应为答应：{user}");
+    }
+
+    #[test]
+    fn test_reply_draft_max_tokens_enough_for_three_candidates() {
+        let (_, _, max_tokens) = build_prompt(
+            "ai-reply-draft",
+            "x",
+            &HashMap::new(),
+            None,
+        )
+        .unwrap();
+        assert!(max_tokens >= 1800, "3 个候选需要更大上限，当前 {max_tokens}");
     }
 
     #[test]

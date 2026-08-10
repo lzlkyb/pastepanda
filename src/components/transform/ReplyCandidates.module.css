@@ -1,0 +1,83 @@
+/* 回复草稿多候选展示块（六大王牌 F） */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 13px;
+}
+
+.block {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--dialog-bg);
+  padding: 8px 0 9px;
+}
+
+.title {
+  margin: 0 11px 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent-strong);
+}
+
+.preview {
+  margin: 0 11px;
+  background: var(--green-bg);
+  border: 1px solid var(--green-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--green);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 96px;
+  overflow: auto;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 11px 0;
+}
+
+.copy,
+.paste {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 11px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+.copy {
+  background: var(--accent-light);
+  border: 1px solid var(--accent);
+  color: var(--accent-strong);
+}
+.copy:hover {
+  background: var(--accent-solid);
+  color: #fff;
+}
+.copyDone {
+  background: var(--green-bg);
+  border-color: var(--green-border);
+  color: var(--green);
+}
+
+.paste {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+.paste:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}

@@ -25,6 +25,8 @@ import {
 } from "lucide-react";
 import { AiBadge, badgeKindOf } from "@/components/AiBadge";
 import type { Transform, TransformOptionSpec, TransformResultMeta } from "@/lib/transforms";
+import { parseReplyCandidates } from "@/lib/replyCandidates";
+import { ReplyCandidates } from "@/components/transform/ReplyCandidates";
 import styles from "../TransformHub.module.css";
 
 /** 图标语义键 → lucide 组件（逻辑层保持纯净，图标在 UI 层映射） */
@@ -139,6 +141,12 @@ export function TransformCard({
 
   const hasOutput = preview.state === "ok";
 
+  // 六大王牌 F：回复草稿的结果可能是多语气候选（---标题--- 分隔）。
+  // 解析失败自动回退单候选（原文），不影响其它动作的正常展示。
+  const previewCandidates =
+    preview.state === "ok" ? parseReplyCandidates(preview.output) : [];
+  const isMultiCandidate = previewCandidates.length > 1;
+
   return (
     <div className={styles.card}>
       <div className={styles.cardHead}>
@@ -200,7 +208,15 @@ export function TransformCard({
       )}
       {preview.state === "ok" && (
         <>
-          <pre className={styles.cardPreview}>{preview.output}</pre>
+          {isMultiCandidate ? (
+            <ReplyCandidates
+              candidates={previewCandidates}
+              onCopy={(o) => onCopy(o, preview.meta)}
+              onPaste={onPaste}
+            />
+          ) : (
+            <pre className={styles.cardPreview}>{preview.output}</pre>
+          )}
           {isRemote && (
             <div className={styles.remoteMeta}>
               {preview.meta?.cached ? "命中缓存，本次未计费" : `模型 ${preview.meta?.model ?? "-"}`}
@@ -262,8 +278,8 @@ export function TransformCard({
           </button>
         )}
 
-        {/* 执行类动作没有复制/粘贴（没有产物可复制） */}
-        {!isAction && (
+        {/* 执行类动作没有复制/粘贴（没有产物可复制）；多候选中每个候选块自带操作，也隐藏共用按钮 */}
+        {!isAction && !isMultiCandidate && (
           <>
             <button
               className={`${styles.copyBtn} ${copied ? styles.copyBtnDone : ""}`}
