@@ -1,6 +1,6 @@
 #!/bin/sh
 # ────────────────────────────────────────────────────
-#  pre-push — push 前自动运行前端 + Rust 测试
+#  pre-push — push 前自动跑密钥守卫 + 前端 + Rust 测试
 #
 #  安装：cp .githooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
 #  跳过：git push --no-verify
@@ -10,18 +10,27 @@ set -e
 
 echo ""
 echo "══════════════════════════════════════════════"
-echo "  Pre-push: 运行测试..."
+echo "  Pre-push: 守卫 + 测试..."
 echo "══════════════════════════════════════════════"
 echo ""
 
+# ── 密钥明文守卫 ────────────────────────────
+# 放在最前：只是几条 grep（秒级），而下面两步要十几分钟。
+# v6.10.0 的教训：一个测试用的假 Slack token 让 GitHub push protection
+# 直接拒了 push（GH013），而那时 commit 已经建好、tag 也已打上，
+# 只能 amend 重写 + 重打 tag。在本地提前拦，代价只是改一行。
+echo "[1/3] 密钥明文守卫..."
+bash tools/check_no_plaintext_secrets.sh
+echo ""
+
 # ── 前端测试 ──────────────────────────────────────
-echo "[1/2] 前端 Vitest..."
+echo "[2/3] 前端 Vitest..."
 npx vitest --run
 echo "  ✅ 前端测试通过"
 echo ""
 
 # ── Rust 测试 ─────────────────────────────────────
-echo "[2/2] Rust cargo test..."
+echo "[3/3] Rust cargo test..."
 cd src-tauri && cargo test
 echo "  ✅ Rust 测试通过"
 echo ""

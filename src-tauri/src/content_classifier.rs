@@ -1151,9 +1151,9 @@ mod tests {
         assert!(c.is_secret(concat!("sk", "-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCD")));
         assert!(c.is_secret(concat!("xoxb-", "1234567890-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx")));
         assert!(c.is_secret("xapp-1-A01234567-1234567890123-abcdef0123456789"));
-        assert!(c.is_secret("AIzaSyB1234567890abcdefghijklmnopqrstuv")); // 39 位
+        assert!(c.is_secret(concat!("AIza", "SyB1234567890abcdefghijklmnopqrstuv"))); // 39 位
         assert!(c.is_secret(concat!("glpat-", "ABCDEFGHIJKLMNOPQRST")));
-        assert!(c.is_secret("gho_1234567890abcdef1234567890abcdef12"));
+        assert!(c.is_secret(concat!("gho_", "1234567890abcdef1234567890abcdef12")));
     }
 
     #[test]
@@ -1494,15 +1494,15 @@ mod tests {
         let c = ContentClassifier::new();
         // 各服务商密钥前缀(JWT/AWS/PEM/Base64 之外,前缀表内)
         let positives = [
-            "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789",
-            "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789",
+            concat!("sk", "-", "proj-abcdefghijklmnopqrstuvwxyz0123456789"),
+            concat!("sk", "-", "ant-api03-abcdefghijklmnopqrstuvwxyz0123456789"),
             concat!("xoxb", "-", "123456789012-1234567890123-abcdefghijklmnop"),
-            "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
-            "glpat-abcdefghijklmnopqrstuvwxyz0123456789",
+            concat!("ghp_", "abcdefghijklmnopqrstuvwxyz0123456789"),
+            concat!("glpat", "-", "abcdefghijklmnopqrstuvwxyz0123456789"),
             "AKIAIOSFODNN7EXAMPLE",
             "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
             "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA1vP9o4QfQJfK\n-----END RSA PRIVATE KEY-----",
-            "AIzaSyDlpT5qXs4vJZqZkQl0xWvWw1i6rY2sQ",
+            concat!("AIza", "SyDlpT5qXs4vJZqZkQl0xWvWw1i6rY2sQ"),
         ];
         for s in positives {
             assert!(c.is_secret(s), "应判为敏感: {s:?}");

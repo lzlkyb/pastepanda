@@ -31,12 +31,24 @@ EX_TEST=(--exclude-dir=__tests__ --exclude-dir=tests --exclude="*.test.ts"
          --exclude="*.test.tsx" --exclude="test_*.py")
 
 echo "检查明文密钥残留"
-echo "  • sk- key：$SRC 与 src/、tools/（排除测试桩）"
+echo "  • sk- key（含 sk-proj- / sk-ant-api03- 新格式）：$SRC 与 src/、tools/（排除测试桩）"
+echo "  • 其它厂商 token 前缀（xox* / gh?_ / glpat- / AIza）：同上"
 echo "  • 兑换码 secret：**整仓**（之前只看 src-tauri/src，于是 tools/ 里的明文完全漏掉）"
 fail=0
 
 # 1) 明文 sk- key(排除测试桩 sk-mock / sk-whatever,它们不是真实密钥)
-hits=$(grep -rnE '"sk-[A-Za-z0-9]{8,}"' "$SRC" "$ROOT/src" "$ROOT/tools" \
+#
+# 两条正则并列，因为旧那一条有个真洞：'"sk-[A-Za-z0-9]{8,}"' 要求 sk- 之后
+# 一路字母数字直到引号，而 OpenAI/Anthropic **现在的真实格式**是 sk-proj-… /
+# sk-ant-api03-…，中间带连字符——旧正则对它们完全无效。不删旧条只加新条。
+#
+# 新条阈值取 32 而不是 16，是为了用**长度**而不是关键词区分桩与真 key：
+# 仓里的桩主体是 19~25 字符（sk-deepseek-xxxx… / sk-legacy-0000… / sk-test-key-…），
+# 而各家 sk- 系真实 key 是 48 位起（sk-proj- 上百位）。
+# **别改成往排除名单里堆 test/mock/厂商名**：grep -v 是整行生效的，
+# 那样一把真 key 被粘进测试文件就永远拦不到——而那正是本守卫要防的场景。
+# 代价：短于 35 位的真 key 会漏，但目前 sk- 家族没有厂商发这么短的。
+hits=$(grep -rnE '"sk-[A-Za-z0-9]{8,}"|"sk-[A-Za-z0-9_-]{32,}"' "$SRC" "$ROOT/src" "$ROOT/tools" \
   "${EX[@]}" "${EX_TEST[@]}" --exclude="$SELF" 2>/dev/null \
   | grep -vE 'sk-mock|sk-whatever' || true)
 if [ -n "$hits" ]; then
@@ -45,6 +57,27 @@ if [ -n "$hits" ]; then
   fail=1
 else
   echo "  ✓ 无明文 sk- key"
+fi
+
+# 1b) 其它厂商的完整 token 明文
+#
+# 为什么必须有这一条：GitHub 的 push protection 按**形状**匹配，一个连续的
+# xoxb-… 字面量就会让整个 push 被拒（GH013）——而那时 commit 已经建好，
+# 只能 amend 重写、tag 也得重打。v6.10.0 就是这么被拦了一次，而当时本脚本
+# 只查 sk- 与兑换码 secret，完全没拦住。本地提前发现，代价只是改一行。
+#
+# 判据是「前缀 + 足够长的主体，且在**同一个**字符串字面量里」，所以：
+#   - 检测表里的纯前缀常量（"ghp_"、"glpat-"）主体不够长 → 不报
+#   - 测试正例按仓库约定拆成 concat!("xoxb", "-", "…") → 完整 token 不在同一
+#     字面量里 → 不报（这也正是 GitHub 不拦拆开写法的原因）
+hits1b=$(grep -rnE '"(xox[abprs]-[A-Za-z0-9-]{16,}|gh[pousr]_[A-Za-z0-9]{16,}|glpat-[A-Za-z0-9_-]{16,}|AIza[A-Za-z0-9_-]{16,})"' \
+  "$SRC" "$ROOT/src" "$ROOT/tools" "${EX[@]}" "${EX_TEST[@]}" --exclude="$SELF" 2>/dev/null || true)
+if [ -n "$hits1b" ]; then
+  echo "❌ 发现明文厂商 token（拆成 concat! 即可，参 content_classifier.rs 的测试正例）:"
+  echo "$hits1b"
+  fail=1
+else
+  echo "  ✓ 无明文其它厂商 token"
 fi
 
 # 2) 明文 REDEEM_SECRET 常量
