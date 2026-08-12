@@ -11,7 +11,14 @@
 import { getTransform } from "@/lib/transforms/registry";
 import { chainList } from "@/lib/api/chains";
 import type { Transform } from "@/lib/transforms";
-import type { Chain, ChainRunResult, ChainRunStage, ChainStepRisk } from "./types";
+import { maskSensitiveText } from "@/lib/mask";
+import type {
+  Chain,
+  ChainRunResult,
+  ChainRunStage,
+  ChainStepCondition,
+  ChainStepRisk,
+} from "./types";
 
 /**
  * 从变换自身属性推导步骤 risk。**这是唯一数据源**（ChainEditor 与 planner 共用）。
@@ -31,6 +38,40 @@ import type { Chain, ChainRunResult, ChainRunStage, ChainStepRisk } from "./type
  */
 export function riskOf(t: Transform | undefined): ChainStepRisk {
   return t?.remote ? "network" : "local";
+}
+
+/**
+ * 步骤执行条件判定（v6.3，纯本地规则零 LLM）：
+ * - `always`（缺省）：无条件，恒执行；
+ * - `is-json`：内容可被 JSON.parse（对象或数组）；
+ * - `contains-secret`：内容里识别出密钥/手机号/邮箱/身份证/IP；
+ * - `is-code`：内容像代码（函数/类/关键字/分号等结构化特征）。
+ */
+export function matchesCondition(
+  cond: ChainStepCondition | undefined,
+  text: string,
+): boolean {
+  if (!cond || cond.type === "always") return true;
+  const t = (text || "").trim();
+  switch (cond.type) {
+    case "is-json": {
+      try {
+        JSON.parse(t);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    case "contains-secret":
+      return maskSensitiveText(t).count > 0;
+    case "is-code":
+      return (
+        t.length > 20 &&
+        /(function\s|class\s|import\s|const\s|let\s|=>|\{[\s\S]*\}|;)/.test(t)
+      );
+    default:
+      return true;
+  }
 }
 
 /** 官方预置链（B1 四条约稿，全部 text 友好） */
@@ -71,6 +112,33 @@ export const PRESET_CHAINS: Chain[] = [
       { transformId: "html_decode", risk: "local" },
       { transformId: "strip_lines", risk: "local" },
       { transformId: "strip", risk: "local" },
+    ],
+  },
+  // ===== v6.3 条件链（条件不满足的步骤自动跳过，输出原样传递） =====
+  {
+    id: "auto-mask",
+    name: "敏感自动脱敏",
+    description: "含密钥 / 手机号时脱敏，否则原样",
+    steps: [
+      { transformId: "mask-sensitive", risk: "destructive", condition: { type: "contains-secret" } },
+    ],
+  },
+  {
+    id: "json-clean-cond",
+    name: "JSON 条件格式化",
+    description: "是 JSON 才格式化，否则原样",
+    steps: [
+      { transformId: "json_format", risk: "local", condition: { type: "is-json" } },
+    ],
+  },
+  // ===== v6.6 会话级编排（输入 = 工作记忆拼接的连续复制内容） =====
+  {
+    id: "error-triage",
+    name: "排错流水线",
+    description: "合并连续复制的报错 → 修复（会话编排）",
+    steps: [
+      { transformId: "ai-merge-polish", risk: "network" },
+      { transformId: "ai-fix-code", risk: "network", condition: { type: "is-code" } },
     ],
   },
 ];
@@ -185,6 +253,16 @@ export function runChain(
           input: current, output: "", ok: false, error: "变换不存在（未注册）", durationMs: 0,
         });
         return { ok: false, stages, final: current, failedAt: i };
+      }
+
+      // v6.3 条件执行：条件不满足 → 跳过（输出=输入，原样传递）。
+      // 放在 AI 确认之前：跳过的步骤不会执行，也就无需联网确认。
+      if (step.condition && !matchesCondition(step.condition, current)) {
+        stages.push({
+          stepIndex: i, transformId: t.id, label, risk: step.risk,
+          input: current, output: current, ok: true, durationMs: 0, skipped: true,
+        });
+        continue;
       }
 
       // AI 步骤：先确认再发送（红线：云端内容不自动执行）。

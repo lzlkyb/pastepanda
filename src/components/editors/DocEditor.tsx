@@ -14,7 +14,7 @@ import { useToast } from "@/components/Toast";
 import { useAppStore } from "@/stores/appStore";
 import type { EditorProps } from "@/lib/editorRegistry";
 import { sanitizeDocHtml, htmlToMarkdown } from "@/lib/docPipeline";
-import { copyRichOnly, pasteRich, copyOnly, pasteText } from "@/lib/api";
+import { copyRichOnly, pasteRichGuarded, copyOnly, pasteTextGuarded } from "@/lib/api";
 import styles from "./DocEditor.module.css";
 
 type Tab = "render" | "plain" | "md";
@@ -88,13 +88,13 @@ export function DocEditor({ item, registerActions }: EditorProps) {
     const tab = tabRef.current;
     try {
       if (tab === "render") {
-        const ok = await pasteRich(htmlRef.current, plainText);
+        const ok = await pasteRichGuarded(htmlRef.current, plainText);
         if (ok) toast("已粘贴富格式", "success");
       } else if (tab === "plain") {
-        const ok = await pasteText(plainText);
+        const ok = await pasteTextGuarded(plainText);
         if (ok) toast("已粘贴纯文本", "success");
       } else {
-        const ok = await pasteText(mdRef.current);
+        const ok = await pasteTextGuarded(mdRef.current);
         if (ok) toast("已粘贴 Markdown", "success");
       }
     } catch (e) {

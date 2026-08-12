@@ -87,7 +87,7 @@ export function useVirtualScroll({
       scrollTimerRef.current = null;
       setIsScrolling(false);
     }, 120);
-  }, []);
+  }, [scrollRef]);
 
   // ── 卸载时清理 timer ──
   useEffect(() => {
@@ -178,7 +178,7 @@ export function useVirtualScroll({
       lenis.destroy();
       lenisRef.current = null;
     };
-  }, [scrollRef, triggerLoadMore, handleScroll]);
+  }, [scrollRef, lenisRef, triggerLoadMore, handleScroll]);
 
   // ── 滚动到指定卡片索引 ──
   // M26：getOffsetForIndex 综合"已挂载行的实测高度 + 未挂载行的估算"；
@@ -207,7 +207,7 @@ export function useVirtualScroll({
         }
       }
     }, 850);
-  }, [items, virtualizer]);
+  }, [items, virtualizer, lenisRef]);
 
   // ── 监听 App.tsx 键盘导航的滚动请求 ──
   useEffect(() => {
@@ -227,7 +227,7 @@ export function useVirtualScroll({
     if (!lenis) return;
     const target = Math.max(0, Math.min(lenis.limit, lenis.scroll + deltaY));
     lenis.scrollTo(target, { lerp: 0.08, duration: 1.2 });
-  }, []);
+  }, [lenisRef]);
 
   // ── 拖拽时间轴滚动 ──
   const handleDragScroll = useCallback((scrollTop: number) => {
@@ -235,7 +235,7 @@ export function useVirtualScroll({
     if (lenis) {
       lenis.scrollTo(scrollTop, { immediate: true });
     }
-  }, []);
+  }, [lenisRef]);
 
   // ── 时间轴节点计算 ──
   const timelineNodes = useMemo<TimelineNode[]>(() => {

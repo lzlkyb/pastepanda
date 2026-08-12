@@ -19,7 +19,9 @@
   user-select: none;
   transition: background 0.15s, border-color 0.15s;
 }
-.badge:hover {
+/* :not(.noHover) 而不是另写一条覆盖规则：覆盖得把静止态的底色/描边值再抄一份，
+   以后改静止态会忘了改那份。这里直接不让 hover 生效，没有重复值。 */
+.badge:not(.noHover):hover {
   background: var(--hover, #f1f5f9);
   border-color: color-mix(in srgb, var(--text-muted) 35%, transparent);
 }
@@ -71,7 +73,7 @@
   background: transparent;
   padding: 0 4px;
 }
-.plain:hover {
+.plain:not(.noHover):hover {
   background: var(--section-bg, #f1f5f9);
   border-color: var(--border-color, #e2e8f0);
 }

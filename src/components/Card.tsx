@@ -1,7 +1,7 @@
 import { memo, useState, useCallback, useContext, useRef, useEffect, useMemo, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
-import { relativeTime } from "@/lib/utils";
+import { relativeTime, parseFilePaths } from "@/lib/utils";
 import { getContentTypeMeta, isCodeLike } from "@/lib/contentTypes";
 import { detectColor } from "@/lib/color";
 import { maskSecretText } from "@/lib/secret";
@@ -16,7 +16,9 @@ import { confirmAutoTags, removeItemTags } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 import { TagRow } from "@/components/TagBadge";
 import { logger } from "@/lib/logger";
-import { pasteText, pasteRich, togglePin, deleteHistory, copyItemToClipboard } from "@/lib/api";
+import { pasteRichGuarded, togglePin, deleteHistory, copyItemToClipboard } from "@/lib/api";
+import { pasteGuarded } from "@/lib/pasteGuard";
+import { useActionEventLog } from "@/hooks/useActionEventLog";
 import { sanitizeDocHtml } from "@/lib/docPipeline";
 import { CardActionBar } from "@/components/card/CardActionBar";
 import { Pin, ImageIcon, Images, Link2, AtSign, Code2, Phone, FileText, Terminal, Type, Check, Hash, Lock, Palette } from "lucide-react";
@@ -57,16 +59,9 @@ const ICONS: Record<string, React.FC<{ size?: number; color?: string; strokeWidt
   rich:      Images,
 };
 
-/** 解析文件路径 content JSON，返回路径数组 */
-function parseFilePaths(content: string): string[] {
-  if (!content) return [];
-  try {
-    const parsed = JSON.parse(content);
-    if (Array.isArray(parsed)) return parsed.map(String);
-    if (typeof parsed === "string") return [parsed];
-  } catch { /* not JSON, treat as plain path */ }
-  return content ? [content] : [];
-}
+// 本地那份 parseFilePaths 已删：收口到 lib/utils（规则 #11）。
+// 它与 pasteTransform 那份行为不一致（这份 map(String) 会把数字/null 当路径，
+// 且 JSON 解析失败时把整个 content 当单路径而不按换行切）。
 
 /** 搜索关键词高亮组件 */
 export const HighlightText = memo(function HighlightText({ text, highlight }: { text: string; highlight: string }) {
@@ -117,6 +112,8 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
 }) {
   const [hovered, setHovered] = useState(false);
   const [popoverFlipDown, setPopoverFlipDown] = useState(false);
+  /** popover 估计高度（预览+动作条+按钮）；卡片距顶小于它 → 翻转到下方，避免被裁切 */
+  const POPOVER_EST_HEIGHT = 360;
   const config = useAppStore((s) => s.config);
   const clickTimerRef = useRef<number | null>(null);
   const closeTimerRef = useRef<number | null>(null);
@@ -164,6 +161,16 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
   //   完全不依赖 DOM 事件冒泡、dispatchEvent、React 合成事件。
   const ctxTrigger = useContext(CtxMenuCtx);
   const cardRef = useRef<HTMLDivElement>(null);
+  // 审查：卸载时清理虚拟行 zIndex（hover 中条目被删除时 mouseLeave 不触发，内联 zIndex 残留）
+  useEffect(() => {
+    // 在 effect 内先拷贝 ref：cleanup 执行时 cardRef.current 可能已被 React 置空，
+    // 拿挂载时的节点才能稳定清掉父级虚拟行的内联 zIndex
+    const el = cardRef.current;
+    return () => {
+      const virtualItem = el?.parentElement;
+      if (virtualItem) (virtualItem as HTMLElement).style.zIndex = "";
+    };
+  }, []);
   useEffect(() => {
     const el = cardRef.current;
     if (!el || !ctxTrigger) return;
@@ -226,11 +233,12 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
   const enterHover = useCallback(() => {
     cancelCloseTimer();
     // 修复 U21：卡片靠近视口顶部、上方空间不足时，弹层翻转到下方展开，
-    // 避免被 .contentArea{overflow:hidden} 裁剪导致顶部卡片按钮够不着
+    // 避免被 .contentArea{overflow:hidden} 裁剪导致顶部卡片按钮够不着。
+    // 审查：按 popover 估计高度判定（原固定 260 只覆盖最顶部，滚动区中上部仍被裁切）
     const el = cardRef.current;
     if (el) {
       const rect = el.getBoundingClientRect();
-      setPopoverFlipDown(rect.top < 260);
+      setPopoverFlipDown(rect.top < POPOVER_EST_HEIGHT);
     }
     // U42：意图延迟 — 鼠标停留约 180ms 才打开，避免快速划过卡片时弹层闪烁；
     // 已经打开（如从弹层移回卡片）则保持，不重复延迟
@@ -313,7 +321,7 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
             </div>
           ) : imageState?.status === "silent" ? (
             <div className={`${styles.cardIcon} ${iconBg}`}>
-              <ImageIcon size={18} color="#9CA3AF" strokeWidth={2.2} />
+              <ImageIcon size={18} color="var(--text-muted)" strokeWidth={2.2} />
             </div>
           ) : imageState?.status === "error" ? (
             <div className={`${styles.cardIcon} ${styles.cardImgError}`}>
@@ -468,16 +476,8 @@ const CardHoverPopover = memo(function CardHoverPopover({
   // 短文本：无需预览，只保留操作按钮（纯文本、≤40 字符、无换行）
   const isShortPlainText = item.type === "text" && subType === "text" && (item.text?.length ?? 0) <= 40 && !item.text?.includes("\n");
 
-  // 文件路径解析
-  let fileList: string[] = [];
-  if (item.type === "file") {
-    try {
-      const parsed = JSON.parse(item.content || "[]");
-      fileList = Array.isArray(parsed) ? parsed.map(String) : (item.content ? [item.content] : []);
-    } catch {
-      fileList = item.content ? [item.content] : [];
-    }
-  }
+  // 文件路径解析（走共享的 parseFilePaths，不再就地再写一遍 try/JSON.parse）
+  const fileList: string[] = item.type === "file" ? parseFilePaths(item.content || "") : [];
 
   return (
     <motion.div
@@ -510,7 +510,7 @@ const CardHoverPopover = memo(function CardHoverPopover({
           ) : subType === "email" ? (
             <div className={styles.cardPopoverText}>
               <div className={styles.cardPopoverLinkHost}>📧 {item.text}</div>
-              <div className={styles.cardPopoverLinkPath}>邮箱地址 · 点击复制打开邮件</div>
+              <div className={styles.cardPopoverLinkPath}>邮箱地址 · 点击复制邮箱</div>
             </div>
           ) : subType === "phone" ? (
             <div className={styles.cardPopoverText}>
@@ -775,6 +775,10 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
 
   const canQrCode = item.type === "text" && (hasUrl || (item.text || "").length <= 300);
 
+  // 行为埋点：卡片右键的粘贴变换此前完全没记（只有变换中心记），
+  // 于是“用户其实经常从右键用某个变换”这件事，推荐系统一无所知
+  const logEvent = useActionEventLog(item.content_type || item.type, item.source);
+
   const handlePasteTransform = useCallback(async (transform: string) => {
     let text = item.text || "";
     const content = item.content || "";
@@ -848,11 +852,16 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
           text = r.output;
         }
       }
-      // U1：仅粘贴成功时弹成功提示（pasteText 失败时已自行弹错误 toast）
-      const ok = await pasteText(text);
-      if (ok) toast("已粘贴", "success");
+      // U1：仅粘贴成功时弹成功提示（pasteGuarded 失败时已自行弹错误 toast）
+      // v6.2 粘贴守卫：敏感内容先确认（脱敏后粘贴），目标应用感知
+      const ok = await pasteGuarded(text);
+      if (ok) {
+        toast("已粘贴", "success");
+        // 粘贴成功才记，与变换中心同口径（失败不算使用）
+        logEvent(transform, "pasted");
+      }
     } catch { toast("粘贴失败", "error"); }
-  }, [item.text, item.content, toast]);
+  }, [item.text, item.content, toast, logEvent]);
 
   // 变换枢纽：当前内容是否有可用变换（json 数组 / 按列值 等），有才显示右键入口。
   //
@@ -896,10 +905,17 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
         const html = item.type === "doc"
           ? sanitizeDocHtml(item.content)
           : item.content;
-        const ok = await pasteRich(html, item.text);
-        if (ok) toast("已粘贴", "success");
+        const ok = await pasteRichGuarded(html, item.text);
+        if (ok) {
+          toast("已粘贴", "success");
+          // 修复：富文本分支此前漏了价值信号回写，导致 doc/rich 条目被粘贴后
+          // 既不参与「按价值清理」也不进粘贴权重（下面纯文本分支一直有）
+          const { logPasteEvent } = await import("@/lib/api/actionEvents");
+          logPasteEvent(item.id, item.content_type || item.type, item.source);
+        }
       } else {
-        const ok = await pasteText(item.text);
+        // v6.2 粘贴守卫：敏感内容先确认（脱敏后粘贴）
+        const ok = await pasteGuarded(item.text);
         if (ok) {
           toast("已粘贴", "success");
           // v6.1 粘贴信号回写（fire-and-forget）
@@ -937,7 +953,7 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     hasUrl,
     hasAutoTags,
     pinned: item.pinned,
-  }), [item, subType, hasUrl, isFilePath, fileTarget, canQrCode, hasAutoTags, toast, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, handlePasteTransform, handleOpenHub, hubAvailable, handleAddSnippet, handleOpenUrl, handleOpenFile, handleRevealFile, handleConfirmAutoTags, handleRemoveAutoTags, togglePin]);
+  }), [item, subType, hasUrl, isFilePath, fileTarget, canQrCode, hasAutoTags, toast, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, handlePasteTransform, handleOpenHub, hubAvailable, handleAddSnippet, handleOpenUrl, handleOpenFile, handleRevealFile, handleConfirmAutoTags, handleRemoveAutoTags]);
 
   return (
     <Card item={item} selected={selected} onClick={onClick} onDoubleClick={onDoubleClick} index={index} imageState={imageState} searchKeyword={searchKeyword} onRetryImage={onRetryImage} pasting={pasting} menuItems={menuItems} onEdit={onEdit} disablePreview={disablePreview} stackOrder={stackOrder} stackDone={stackDone} />

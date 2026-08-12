@@ -42,6 +42,8 @@ function useVersionStatus() {
 
 export function AboutTabContent({ appName, appVersion }: { appName: string; appVersion: string }) {
   const versionStatus = useVersionStatus();
+  // 审查：错误态给重试（此前只有"错误"文案无恢复入口）
+  const { status, checkForUpdate } = useUpdate();
   const theme = useAppStore((s) => s.config.theme);
   const isBlossom = theme === "blossom";
 
@@ -71,6 +73,15 @@ export function AboutTabContent({ appName, appVersion }: { appName: string; appV
             <span className={`${aboutStyles.aboutVersionStatus} ${aboutStyles[versionStatus.cls]}`}>
               <span className={`${aboutStyles.aboutStatusDot} ${aboutStyles[versionStatus.dotCls]}`} />
               {versionStatus.label}
+              {status === "error" && (
+                <button
+                  className={aboutStyles.aboutRetry}
+                  onClick={() => void checkForUpdate()}
+                  title="重新检查更新"
+                >
+                  重试
+                </button>
+              )}
             </span>
           </div>
         </div>

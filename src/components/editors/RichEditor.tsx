@@ -291,11 +291,11 @@ export function RichEditor({ item, registerActions }: EditorProps) {
 
   const paste = useCallback(async () => {
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("paste_rich", {
-        htmlFragment: htmlRef.current,
-        plainText: richToPlainText(htmlRef.current),
-      });
+      // 走守卫版（红线②）：原先直接 invoke("paste_rich")，绕过了敏感确认。
+      // 编辑器里的内容同样可能含密钥/手机号，不能因为“是用户自己编的”就免检。
+      const { pasteRichGuarded } = await import("@/lib/api/paste");
+      const ok = await pasteRichGuarded(htmlRef.current, richToPlainText(htmlRef.current));
+      if (!ok) return; // 取消或失败（失败时 api 层已弹错）
       toast("已粘贴", "success");
     } catch (e) {
       toast("粘贴失败: " + (e instanceof Error ? e.message : String(e)), "error");

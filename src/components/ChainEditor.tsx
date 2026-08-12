@@ -12,12 +12,13 @@
  * - 保存后失效运行器的链缓存（invalidateUserChains），下次打开即见。
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Plus, Trash2, ChevronUp, ChevronDown, Save } from "lucide-react";
 import { useDialogStore } from "@/stores/dialogStore";
 import { listTransforms, getTransform } from "@/lib/transforms/registry";
 import { chainSave, chainDelete } from "@/lib/api/chains";
+import { confirmDialog } from "@/lib/confirm";
 import { invalidateUserChains, riskOf } from "@/lib/chains/registry";
 import type { ChainDef } from "@/lib/api/chains";
 import type { ChainStep } from "@/lib/chains/types";
@@ -38,6 +39,13 @@ export const MAX_CHAIN_NAME_CHARS = 24;
 
 const RISK_LABEL: Record<string, string> = { local: "本地", network: "联网", destructive: "修改" };
 
+/** v6.10：执行条件的白话说明（设计稿：非「无条件」时在步骤下解释跳过语义） */
+const COND_HINT: Record<string, string> = {
+  "is-json": "是 JSON 时——不是 JSON 会自动跳过这步",
+  "contains-secret": "含敏感时——不含敏感会自动跳过这步",
+  "is-code": "是代码时——不是代码会自动跳过这步",
+};
+
 /**
  * 步骤引用了下拉里没有的变换时的兜底显示。受控 select 的 value 不在 options 里
  * 会渲染成空白，而 transformId 非空又让原有 stepHint 不显示——用户既看不出这步
@@ -53,6 +61,21 @@ export function ChainEditor() {
   const editing = useDialogStore((s) => s.chainEdit);
   const close = useCallback(() => useDialogStore.getState().closeChainEditor(), []);
   const open = editing !== null;
+  // 审查：Esc 关闭（全局 Esc 对部分场景让位，组件自兜底）
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // 同 ProfileDialog：必须是 close 而不是 close()。依赖数组在渲染期构造，
+    // 写成调用会让每次渲染都执行一次关闭动作，弹窗永远打不开。
+  }, [open, close]);
+
   const anim = useDialogAnim();
   const { toast } = useToast();
 
@@ -98,6 +121,18 @@ export function ChainEditor() {
     setDraft((d) => {
       const steps = [...d.steps];
       steps[i] = step;
+      return { ...d, steps };
+    });
+  };
+
+  /** v6.3 条件执行：给某步设执行条件（undefined = always 无条件） */
+  const setCondition = (i: number, type: string) => {
+    setDraft((d) => {
+      const steps = [...d.steps];
+      const s = { ...steps[i] };
+      if (type === "always") delete s.condition;
+      else s.condition = { type } as ChainStep["condition"];
+      steps[i] = s;
       return { ...d, steps };
     });
   };
@@ -165,6 +200,13 @@ export function ChainEditor() {
 
   const remove = async () => {
     if (!draft.id) return;
+    // 审查：删除链不可恢复，统一确认弹窗（此前 window.confirm 与全站风格割裂）
+    const ok = await confirmDialog({
+      title: "删除链",
+      message: `删除链「${draft.name}」？此操作不可恢复。`,
+      confirmText: "删除",
+    });
+    if (!ok) return;
     try {
       await chainDelete(draft.id);
       invalidateUserChains();
@@ -195,7 +237,9 @@ export function ChainEditor() {
               </div>
 
               <div className={styles.field}>
-                <label className={styles.label}>名称</label>
+                <label className={styles.label}>
+                  名称 <span className={styles.charCount}>{draft.name.length}/{MAX_CHAIN_NAME_CHARS}</span>
+                </label>
                 <input
                   className={styles.input}
                   value={draft.name}
@@ -205,7 +249,9 @@ export function ChainEditor() {
                 />
               </div>
               <div className={styles.field}>
-                <label className={styles.label}>描述（可选）</label>
+                <label className={styles.label}>
+                  描述（可选） <span className={styles.charCount}>{draft.description.length}/60</span>
+                </label>
                 <input
                   className={styles.input}
                   value={draft.description}
@@ -220,58 +266,80 @@ export function ChainEditor() {
                   <div className={styles.empty}>还没有步骤——点下方「添加步骤」开始。</div>
                 )}
                 {draft.steps.map((s, i) => (
-                  <div key={i} className={styles.step}>
-                    <span className={styles.stepIdx}>{i + 1}</span>
-                    <select
-                      className={styles.select}
-                      value={s.transformId}
-                      onChange={(e) => setStep(i, e.target.value)}
-                    >
-                      <option value="">选择变换…</option>
-                      {/* 兜住悬空 id，否则受控 select 显示空白，用户看不出这步原本是什么 */}
-                      {isDangling(s.transformId) && (
-                        <option value={s.transformId}>{danglingLabel(s.transformId)}</option>
+                  <Fragment key={i}>
+                    <div className={styles.editStep}>
+                      <div className={styles.editStepRow}>
+                        <span className={styles.editIdx}>{i + 1}</span>
+                        <select
+                          className={styles.sel}
+                          value={s.transformId}
+                          onChange={(e) => setStep(i, e.target.value)}
+                        >
+                          <option value="">选择变换…</option>
+                          {/* 兜住悬空 id，否则受控 select 显示空白，用户看不出这步原本是什么 */}
+                          {isDangling(s.transformId) && (
+                            <option value={s.transformId}>{danglingLabel(s.transformId)}</option>
+                          )}
+                          {stepOptions.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.label}
+                              {t.remote ? "（AI）" : ""}
+                            </option>
+                          ))}
+                        </select>
+                        <span className={`${styles.riskChip} ${s.risk === "network" ? styles.riskNet : s.risk === "destructive" ? styles.riskDanger : styles.riskLocal}`}>
+                          {RISK_LABEL[s.risk] ?? s.risk}
+                        </span>
+                        <select
+                          className={styles.condSel}
+                          value={s.condition?.type ?? "always"}
+                          onChange={(e) => setCondition(i, e.target.value)}
+                          title="执行条件：不满足时该步自动跳过"
+                        >
+                          <option value="always">无条件</option>
+                          <option value="is-json">是 JSON 时</option>
+                          <option value="contains-secret">含敏感时</option>
+                          <option value="is-code">是代码时</option>
+                        </select>
+                        <span className={styles.editBtns}>
+                          <button className={styles.iconBtn} onClick={() => move(i, -1)} disabled={i === 0} title="上移">
+                            <ChevronUp size={13} />
+                          </button>
+                          <button className={styles.iconBtn} onClick={() => move(i, 1)} disabled={i === draft.steps.length - 1} title="下移">
+                            <ChevronDown size={13} />
+                          </button>
+                          <button className={`${styles.iconBtn} ${styles.delBtn}`} onClick={() => removeStep(i)} title="删除此步">
+                            <Trash2 size={13} />
+                          </button>
+                        </span>
+                      </div>
+                      {/* v6.10：条件说明提示（非无条件时解释跳过语义） */}
+                      {s.condition && (
+                        <div className={styles.condHint}>
+                          ⚠ {COND_HINT[s.condition.type] ?? "满足条件才执行这步"}
+                        </div>
                       )}
-                      {stepOptions.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.label}
-                          {t.remote ? "（AI）" : ""}
-                        </option>
-                      ))}
-                    </select>
-                    <span className={s.risk === "network" ? styles.riskNet : styles.riskLocal}>
-                      {RISK_LABEL[s.risk] ?? s.risk}
-                    </span>
-                    <span className={styles.stepBtns}>
-                      <button className={styles.iconBtn} onClick={() => move(i, -1)} disabled={i === 0} title="上移">
-                        <ChevronUp size={13} />
-                      </button>
-                      <button className={styles.iconBtn} onClick={() => move(i, 1)} disabled={i === draft.steps.length - 1} title="下移">
-                        <ChevronDown size={13} />
-                      </button>
-                      <button className={`${styles.iconBtn} ${styles.dangerBtn}`} onClick={() => removeStep(i)} title="删除此步">
-                        <Trash2 size={13} />
-                      </button>
-                    </span>
-                    {!s.transformId && (
-                      <span className={styles.stepHint}>从下拉里选一个变换</span>
-                    )}
-                    {isDangling(s.transformId) && (
-                      <span className={styles.stepHint}>
-                        这一步的变换已不可用（被删除 / 停用，或不允许用于链），请重新选一个
-                      </span>
-                    )}
-                  </div>
+                      {!s.transformId && (
+                        <div className={styles.editHint}>从下拉里选一个变换</div>
+                      )}
+                      {isDangling(s.transformId) && (
+                        <div className={`${styles.editHint} ${styles.danglingHint}`}>
+                          ⚠ 这一步的变换已不可用（被删除 / 停用，或不允许用于链），请重新选一个
+                        </div>
+                      )}
+                    </div>
+                    {i < draft.steps.length - 1 && <div className={styles.stepConnector} />}
+                  </Fragment>
                 ))}
               </div>
 
-              <button className={styles.addBtn} onClick={addStep}>
+              <button className={styles.addStep} onClick={addStep}>
                 <Plus size={13} /> 添加步骤（{draft.steps.length}/{MAX_STEPS}）
               </button>
 
-              <div className={styles.actions}>
+              <div className={styles.editActions}>
                 {draft.id ? (
-                  <button className={styles.deleteBtn} onClick={() => void remove()}>
+                  <button className={styles.delChain} onClick={() => void remove()}>
                     <Trash2 size={13} /> 删除这条链
                   </button>
                 ) : (

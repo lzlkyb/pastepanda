@@ -15,10 +15,11 @@
 
 import type { RefObject } from "react";
 import { useState } from "react";
-import { Check, ExternalLink, Loader2 } from "lucide-react";
+import { Check, ExternalLink, Eye, EyeOff, Loader2 } from "lucide-react";
 import type { AiConfig, AiProviderInfo } from "@/lib/api";
 import settings from "../../Settings.module.css";
 import { AiBadge } from "@/components/AiBadge";
+import { AiProviderGrid } from "./AiProviderGrid";
 import styles from "../AiTab.module.css";
 
 interface Props {
@@ -55,6 +56,8 @@ async function openExternal(url: string) {
 
 export function AiSetupStep(p: Props) {
   const { spec, config, keyInput, hasKey, testing } = p;
+  // 审查：密钥可见性切换
+  const [showKey, setShowKey] = useState(false);
 
   // 地址为空的厂商（自定义/中转）不填地址就没法请求，得摆在主流程
   const needsBaseUrl = !!spec && !spec.baseUrl;
@@ -76,6 +79,7 @@ export function AiSetupStep(p: Props) {
   // v6.4：模型芯片折叠——前 4 个常用，多的收进「更多模型 ▾」
   const [modelsOpen, setModelsOpen] = useState(false);
   const VISIBLE_CHIPS = 4;
+
   const renderChip = (m: (typeof chips)[number]) => (
     <button
       key={m.id}
@@ -101,83 +105,17 @@ export function AiSetupStep(p: Props) {
         <div className={styles.stepBody}>
           <span className={styles.stepTitle}>选服务商</span>
 
-          {/* v6.4：卡片网格（内置 + 自定义）替代原下拉 */}
-          <div className={styles.provSection}>
-            <span className={styles.provGroupLabel}>内置服务商</span>
-            <div className={styles.provGrid}>
-              {p.providers
-                .filter((it) => !it.custom)
-                .map((it) => {
-                  const on = it.id === config.provider;
-                  return (
-                    <button
-                      key={it.id}
-                      className={`${styles.provCard}${on ? ` ${styles.provCardOn}` : ""}`}
-                      onClick={() => p.onProviderChange(it.id)}
-                      title={it.note}
-                    >
-                      <span className={styles.provName}>{it.name}</span>
-                      <span className={styles.provTags}>
-                        {!it.needsKey && <span className={styles.provTagLocal}>本地</span>}
-                        {it.hasKey && <span className={styles.provTagSet}>已配置</span>}
-                      </span>
-                      {on && <span className={styles.provCk}>✓</span>}
-                    </button>
-                  );
-                })}
-            </div>
-          </div>
+          {/* 卡片网格（内置 + 自定义）替代原下拉。抽成单独组件是为了
+              把本文件压回 300 行以内（规则 #7）。 */}
+          <AiProviderGrid
+            providers={p.providers}
+            currentId={config.provider}
+            onProviderChange={p.onProviderChange}
+            onAddCustom={p.onAddCustom}
+            onEditCustom={p.onEditCustom}
+            onDeleteCustom={p.onDeleteCustom}
+          />
 
-          <div className={styles.provSection}>
-            <span className={styles.provGroupLabel}>
-              自定义服务商
-              <span className={styles.provGroupHint}>可添加多个中转 / 代理服务</span>
-            </span>
-            <div className={styles.provGrid}>
-              {p.providers
-                .filter((it) => it.custom)
-                .map((it) => {
-                  const on = it.id === config.provider;
-                  return (
-                    <button
-                      key={it.id}
-                      className={`${styles.provCard}${on ? ` ${styles.provCardOn}` : ""}`}
-                      onClick={() => p.onProviderChange(it.id)}
-                      title={it.baseUrl || it.note}
-                    >
-                      <span className={styles.provName}>{it.name}</span>
-                      <span className={styles.provTags}>
-                        {it.hasKey && <span className={styles.provTagSet}>已配置</span>}
-                      </span>
-                      {on && <span className={styles.provCk}>✓</span>}
-                      <span
-                        className={styles.provEdit}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          p.onEditCustom({ id: it.id, name: it.name, baseUrl: it.baseUrl, model: "", protocol: "" });
-                        }}
-                        title="编辑"
-                      >
-                        ✎
-                      </span>
-                      <span
-                        className={styles.provDel}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          p.onDeleteCustom(it.id);
-                        }}
-                        title="删除"
-                      >
-                        ✕
-                      </span>
-                    </button>
-                  );
-                })}
-              <button className={styles.provAdd} onClick={p.onAddCustom}>
-                ＋ 添加自定义
-              </button>
-            </div>
-          </div>
 
           {spec && (
             <div className={styles.providerNote}>
@@ -270,7 +208,7 @@ export function AiSetupStep(p: Props) {
               <input
                 ref={p.keyRef}
                 className={`${styles.input} ${styles.rowGrow}`}
-                type="password"
+                type={showKey ? "text" : "password"}
                 value={keyInput}
                 placeholder={hasKey ? "已保存；输入新密钥可替换" : "sk-..."}
                 onChange={(e) => p.onKeyInput(e.target.value)}
@@ -278,6 +216,16 @@ export function AiSetupStep(p: Props) {
                   if (e.key === "Enter" && canTest) p.onSaveAndTest();
                 }}
               />
+              {/* 审查：密钥可见性切换（长密钥输错难排查） */}
+              <button
+                type="button"
+                className={settings.btnSecondary}
+                title={showKey ? "隐藏密钥" : "显示密钥"}
+                onClick={() => setShowKey((v) => !v)}
+                style={{ flexShrink: 0 }}
+              >
+                {showKey ? <EyeOff size={13} /> : <Eye size={13} />}
+              </button>
               <button className={settings.btnPrimary} disabled={!canTest} onClick={p.onSaveAndTest}>
                 {testing && <Loader2 size={12} className="spin" />}
                 {testing ? "测试中…" : actionLabel}

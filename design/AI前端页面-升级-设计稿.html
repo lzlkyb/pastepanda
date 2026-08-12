@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 前端页面升级设计稿（v6.10）</title>
+<style>
+  :root {
+    --panel:#ffffff; --section:#f6f8fa; --section2:#eef1f5; --border:#e2e7ef;
+    --text:#14181f; --text2:#3c4351; --muted:#8a92a3;
+    --accent:#1d9e75; --accent-strong:#0f7a58; --accent-light:#e2f5ed; --accent-border:#9fd6c0;
+    --green:#1d9e75; --green-bg:#e2f5ed; --green-border:#9fd6c0;
+    --orange:#b45309; --orange-bg:#fef3e2; --orange-border:#f0c48a;
+    --red:#b3261e; --red-bg:#fdeaea; --red-border:#eeb8b2;
+    --teal-bg:#e3f4f8; --teal-border:#a8d6e2; --purple:#7c3aed; --purple-bg:#f1eafd; --purple-border:#d3c0f5;
+  }
+  body{background:#eef0f4;color:var(--text);font-family:"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;margin:0;padding:28px 32px;overflow-x:hidden;}
+  h1{font-size:19px;margin:0 0 4px;}
+  .pageSub{font-size:12px;color:var(--muted);margin-bottom:24px;}
+  .section{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:22px;box-shadow:0 2px 10px rgba(15,23,42,.05);max-width:900px;}
+  .secHead{display:flex;align-items:baseline;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+  .secTag{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;color:#fff;}
+  .tagP{background:var(--accent);} .tagE{background:#5b6b8c;} .tagG{background:var(--orange);} .tagB{background:var(--purple);}
+  .secTitle{font-size:14.5px;font-weight:700;}
+  .secDesc{font-size:11px;color:var(--muted);}
+  .stage{border:1px dashed var(--border);border-radius:12px;padding:18px;margin-bottom:14px;background:var(--section);overflow-x:auto;}
+  .stageLabel{display:block;font-size:11px;font-weight:700;color:var(--text2);margin-bottom:10px;}
+  .callout{background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:10px;padding:10px 14px;font-size:11.5px;color:#7c4a12;line-height:1.8;}
+  .callout b{color:var(--orange);}
+  .note{font-size:11px;color:var(--muted);line-height:1.8;}
+
+  .win{width:420px;background:var(--panel);border:1px solid rgba(15,23,42,.12);border-radius:14px;overflow:hidden;box-shadow:0 18px 44px rgba(15,23,42,.16);max-width:100%;box-sizing:border-box;}
+  .winLg{width:560px;max-width:100%;box-sizing:border-box;}
+  .winMain{width:760px;max-width:100%;box-sizing:border-box;}
+
+  /* ===== 场景1：设置 AI 页分区重构 ===== */
+  .setPanel{display:flex;flex-direction:column;gap:14px;padding:14px 16px 16px;background:var(--panel);}
+  .statusRow{display:flex;align-items:center;gap:8px;}
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;}
+  .badgeReady{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);}
+  .statusText{font-size:11px;color:var(--muted);}
+  .groupTitle{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--text2);letter-spacing:.5px;margin-top:2px;}
+  .groupTitle::after{content:"";flex:1;height:1px;background:var(--border);margin-left:8px;}
+  .groupTitle .gDot{width:6px;height:6px;border-radius:50%;background:var(--accent);}
+
+  .cfgRow{display:flex;align-items:center;gap:10px;background:var(--section);border:1px solid var(--border);border-radius:12px;padding:10px 12px;}
+  .av{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;background:var(--accent-light);color:var(--accent-strong);}
+  .cfgInfo{flex:1;min-width:0;}
+  .cfgName{font-size:12.5px;font-weight:700;}
+  .cfgModel{font-size:10.5px;color:var(--muted);display:block;margin-top:1px;}
+  .testBtn{font-size:11px;font-weight:600;color:var(--accent-strong);background:var(--accent-light);border:1px solid var(--accent-border);border-radius:8px;padding:6px 12px;cursor:pointer;}
+  .chev{margin-left:6px;}
+
+  .provGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+  .provCard{border:1.5px solid var(--border);border-radius:10px;padding:9px 8px;text-align:left;background:var(--panel);cursor:pointer;position:relative;}
+  .provCardOn{border-color:var(--accent);background:var(--accent-light);}
+  .provName{font-size:11px;font-weight:600;display:block;color:var(--text2);}
+  .provTags{display:flex;gap:4px;margin-top:5px;}
+  .tag{font-size:8.5px;font-weight:600;padding:1px 5px;border-radius:5px;}
+  .tagLocal{background:var(--teal-bg);color:#14708a;}
+  .tagSet{background:var(--green-bg);color:var(--green);}
+  .tagBuiltin{background:var(--purple-bg);color:var(--purple);}
+  .provCk{position:absolute;top:6px;right:6px;width:16px;height:16px;border-radius:50%;background:var(--accent);color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;}
+  .provExpand{grid-column:1/-1;font-size:10.5px;color:var(--accent-strong);background:var(--accent-light);border:1px dashed var(--accent);border-radius:8px;padding:6px 0;cursor:pointer;text-align:center;}
+
+  .stepRow{display:flex;align-items:center;gap:8px;margin-top:10px;}
+  .stepNum{width:20px;height:20px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;background:var(--section2);color:var(--text2);}
+  .stepNumDone{background:var(--green-bg);color:var(--green);}
+  .keyInput{flex:1;font-size:12px;padding:7px 10px;border:1px solid var(--border);border-radius:9px;outline:none;}
+  .keyInput:focus{border-color:var(--accent);}
+  .eyeBtn{width:26px;height:26px;border-radius:7px;border:1px solid var(--border);background:var(--panel);color:var(--muted);cursor:pointer;}
+  .saveTestBtn{font-size:12px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent-strong));color:#fff;border:none;border-radius:9px;padding:7px 16px;cursor:pointer;}
+  .stepDone{color:var(--green);font-size:11px;font-weight:600;display:flex;align-items:center;gap:4px;}
+
+  .usageCard{display:flex;align-items:center;gap:14px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px;}
+  .ringWrap{display:flex;align-items:center;gap:12px;}
+  .ring{width:54px;height:54px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .ringInner{width:42px;height:42px;border-radius:50%;background:var(--panel);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--accent-strong);}
+  .uTitle{font-size:12px;font-weight:700;}
+  .uBar{height:5px;border-radius:99px;background:var(--section2);margin-top:6px;overflow:hidden;}
+  .uBarFill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-strong));}
+  .uNote{font-size:10px;color:var(--muted);margin-top:5px;}
+
+  .quotaCard{display:flex;align-items:center;gap:12px;background:var(--purple-bg);border:1px solid var(--purple-border);border-radius:12px;padding:12px;position:relative;}
+  .quotaIcon{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--purple),#9d6ef0);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+  .qTitle{font-size:12px;font-weight:700;}
+  .qSub{font-size:10px;color:#6b5a8f;margin-top:2px;}
+  .qGo{position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:10.5px;font-weight:600;color:var(--purple);background:#fff;border:1px solid var(--purple-border);border-radius:8px;padding:6px 10px;cursor:pointer;}
+  .qGo:hover{background:var(--purple);color:#fff;}
+
+  /* ===== 场景2：主窗口 AI 快捷区 ===== */
+  .mainFrame{width:680px;background:linear-gradient(180deg,#f7f8fa,#eef0f4);border:1px solid rgba(15,23,42,.12);border-radius:12px;overflow:hidden;max-width:100%;box-sizing:border-box;}
+  .topbar{height:36px;background:var(--panel);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 12px;gap:8px;}
+  .searchPh{width:200px;height:20px;border-radius:6px;background:var(--section);}
+  .qb{background:var(--panel);border:1px solid var(--border);border-radius:12px;margin:10px 12px;overflow:hidden;}
+  .qbBar{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--section);border-bottom:1px solid var(--border);}
+  .qbLbl{display:flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:var(--accent-strong);flex-shrink:0;}
+  .qbActs{display:flex;gap:6px;flex-wrap:wrap;}
+  .qbBtn{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:6px 12px;border-radius:9px;border:1px solid var(--border);background:var(--panel);color:var(--text2);cursor:pointer;}
+  .qbBtn:hover{border-color:var(--accent);color:var(--accent-strong);}
+  .qbBtnAi{border-color:var(--accent-border);background:var(--accent-light);color:var(--accent-strong);}
+  .qbBtnAi .aiStar{color:var(--accent);}
+  .qbBtnLocal .locTag{font-size:8.5px;font-weight:700;color:#14708a;background:var(--teal-bg);border-radius:4px;padding:1px 4px;}
+  .qbMore{color:var(--muted);border-style:dashed;}
+  .qbType{margin-left:auto;font-size:10px;color:var(--muted);flex-shrink:0;}
+  .qbX{width:20px;height:20px;border-radius:6px;border:none;background:transparent;color:var(--muted);cursor:pointer;flex-shrink:0;}
+
+  .qbResult{border-top:1px solid var(--border);padding:10px 12px;display:flex;flex-direction:column;gap:8px;}
+  .qrHead{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--text2);}
+  .qrMeta{font-size:9.5px;color:var(--muted);font-weight:400;display:flex;gap:6px;align-items:center;}
+  .metaChip{font-size:9px;font-weight:600;padding:1px 6px;border-radius:5px;}
+  .metaCached{background:var(--green-bg);color:var(--green);}
+  .metaTrunc{background:var(--orange-bg);color:var(--orange);}
+  .metaModel{color:var(--muted);}
+  .qrBody{background:var(--section);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-family:Consolas,monospace;font-size:10.5px;color:var(--text2);line-height:1.6;max-height:72px;overflow:hidden;}
+  .qrActs{display:flex;gap:6px;}
+  .qrBtn{font-size:10.5px;font-weight:600;padding:5px 11px;border-radius:7px;border:1px solid var(--border);background:var(--panel);color:var(--text2);cursor:pointer;}
+  .qrBtnPri{background:linear-gradient(135deg,var(--accent),var(--accent-strong));color:#fff;border:none;}
+  .qrCollapse{margin-left:auto;width:20px;height:20px;border-radius:6px;border:none;background:transparent;color:var(--muted);cursor:pointer;font-size:11px;}
+
+  .qbGate{display:flex;align-items:center;gap:8px;border-top:1px dashed var(--border);padding:9px 12px;font-size:10.5px;flex-wrap:wrap;}
+  .gateSens{background:var(--orange-bg);color:#7c4a12;}
+  .gateErr{background:var(--red-bg);color:var(--red);}
+  .gateBtn{margin-left:auto;font-size:10.5px;font-weight:600;padding:4px 11px;border-radius:7px;border:none;cursor:pointer;}
+  .gateGo{background:var(--orange);color:#fff;}
+  .gateSet{background:var(--red);color:#fff;}
+
+  /* ===== 场景3：免费额度弹窗信息架构 ===== */
+  .qDialog{display:flex;flex-direction:column;gap:12px;padding:14px 16px 16px;}
+  .qdBalance{display:flex;align-items:center;gap:14px;}
+  .qdRing{width:84px;height:84px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .qdRingIn{width:66px;height:66px;border-radius:50%;background:var(--panel);display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .qdRingIn b{font-size:15px;}
+  .qdRingIn span{font-size:9px;color:var(--muted);margin-top:1px;}
+  .qdMeta{flex:1;display:flex;flex-direction:column;gap:6px;}
+  .qdTitle{font-size:12.5px;font-weight:700;}
+  .qdBar{height:6px;border-radius:99px;background:var(--section2);overflow:hidden;}
+  .qdBarFill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-strong));}
+  .qdNote{font-size:9.5px;color:var(--muted);line-height:1.6;}
+
+  .ladder{display:flex;gap:6px;}
+  .ld{flex:1;border:1px solid var(--border);border-radius:10px;padding:8px 0;text-align:center;background:var(--panel);}
+  .ldDone{background:linear-gradient(140deg,var(--teal-bg),var(--green-bg));border-color:var(--green-border);}
+  .ldToday{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-light);position:relative;}
+  .ldBadge{width:24px;height:24px;border-radius:50%;margin:0 auto;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:var(--section2);color:var(--text2);}
+  .ldDone .ldBadge{background:var(--green);color:#fff;}
+  .ldToday .ldBadge{background:var(--accent);color:#fff;box-shadow:0 0 0 4px var(--accent-light);}
+  .ldLabel{font-size:8.5px;color:var(--muted);margin-top:4px;display:block;}
+  .ldAmt{font-size:9px;font-weight:700;color:var(--accent-strong);display:block;margin-top:1px;}
+  .ldDone .ldAmt{color:var(--green);}
+  .ldTodayChip{position:absolute;top:-7px;left:50%;transform:translateX(-50%);font-size:8px;font-weight:700;background:var(--accent);color:#fff;border-radius:4px;padding:1px 5px;}
+
+  .signRow{display:flex;align-items:center;gap:10px;}
+  .signBtn{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;font-size:12.5px;font-weight:700;padding:10px 0;border-radius:10px;border:none;background:linear-gradient(135deg,var(--accent),var(--accent-strong));color:#fff;cursor:pointer;}
+  .signHint{font-size:9.5px;color:var(--muted);}
+
+  .redeemBox{background:var(--section);border:1px solid var(--border);border-radius:10px;padding:10px 12px;}
+  .redeemRow{display:flex;align-items:center;gap:8px;}
+  .redeemInput{flex:1;font-family:Consolas,monospace;font-size:11px;padding:6px 9px;border:1px solid var(--border);border-radius:8px;outline:none;background:var(--panel);}
+  .redeemInput:focus{border-color:var(--accent);}
+  .pasteCode{font-size:10px;font-weight:600;color:var(--accent-strong);background:var(--accent-light);border:1px solid var(--accent-border);border-radius:7px;padding:5px 9px;cursor:pointer;}
+  .redeemGo{font-size:11px;font-weight:700;background:var(--purple);color:#fff;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;}
+  .redeemHelp{font-size:9px;color:var(--muted);margin-top:6px;}
+
+  /* ===== 场景4：AI 引导 ===== */
+  .ob{background:var(--panel);border:1px solid rgba(15,23,42,.12);border-radius:14px;overflow:hidden;width:520px;max-width:100%;box-sizing:border-box;}
+  .obHero{background:var(--accent-light);padding:18px 20px;text-align:center;}
+  .obIcon{width:38px;height:38px;border-radius:11px;background:var(--accent-solid,#0f7a58);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;margin:0 auto 6px;}
+  .obTitle{font-size:16px;font-weight:700;color:var(--accent-strong);}
+  .obSub{font-size:11.5px;color:var(--text2);margin-top:3px;}
+  .obSteps{padding:14px 20px 4px;display:flex;flex-direction:column;gap:10px;}
+  .obStep{display:flex;gap:10px;align-items:flex-start;}
+  .obStepIcon{width:26px;height:26px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;}
+  .obStepT{font-size:12.5px;font-weight:600;}
+  .obStepD{font-size:11px;color:var(--text2);line-height:1.6;}
+  .obBtn{display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;font-weight:700;padding:11px 0;border-radius:11px;border:none;background:linear-gradient(135deg,var(--accent),var(--accent-strong));color:#fff;cursor:pointer;margin:12px 20px 0;}
+</style>
+</head>
+<body>
+
+<h1>AI 前端页面升级设计稿</h1>
+<div class="pageSub">覆盖 4 大高频场景 · 全部主题变量 · 6 套主题自动适配 · v6.10</div>
+
+<!-- ================= 场景 1：设置 → AI 页 ================= -->
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagP">场景 1 · 设置 → AI 页</span>
+    <span class="secTitle">分区重构（分组标题 + 概念分离 + 人性化文案）</span>
+    <span class="secDesc">AiTab w420 · 纵向 7 块 → 5 组带标题</span>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">升级后（配置卡折叠态 · 默认已配置）</span>
+    <div class="win">
+      <div class="setPanel">
+        <!-- 顶部状态行：精简为一句，不重复配置卡信息 -->
+        <div class="statusRow">
+          <span class="badge badgeReady">✓ 已就绪</span>
+          <span class="statusText">当前使用 DeepSeek · 变换中心已解锁 4 个 AI 动作</span>
+        </div>
+
+        <!-- 分组 1：服务 -->
+        <div class="groupTitle"><span class="gDot"></span>服务</div>
+        <div class="cfgRow">
+          <span class="av">D</span>
+          <span class="cfgInfo">
+            <span class="cfgName">DeepSeek</span>
+            <span class="cfgModel">deepseek-chat · 预算 ¥3/日</span>
+          </span>
+          <button class="testBtn">测试连接</button>
+          <span class="chev">▾</span>
+        </div>
+
+        <!-- 分组 2：用量（自己的钱） -->
+        <div class="groupTitle"><span class="gDot"></span>用量 · 今日</div>
+        <div class="usageCard">
+          <div class="ringWrap">
+            <div class="ring" style="background:conic-gradient(var(--accent) 0 42%, var(--section2) 42% 100%)">
+              <span class="ringInner">42%</span>
+            </div>
+            <div style="flex:1">
+              <div class="uTitle">已用 ¥1.26 / ¥3.00</div>
+              <div class="uBar"><div class="uBarFill" style="width:42%"></div></div>
+              <div class="uNote">预算内大约还能再做 300 次 · 金额为估算，以服务商账单为准</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 分组 3：免费额度（与用量视觉区分：紫色系 + 独立卡） -->
+        <div class="groupTitle"><span class="gDot"></span>免费额度</div>
+        <div class="quotaCard">
+          <span class="quotaIcon">✦</span>
+          <div>
+            <div class="qTitle">剩余 93.1 万 token</div>
+            <div class="qSub">内置 Agnes · 签到累计到 100 万 · 兑换码不限</div>
+          </div>
+          <button class="qGo">去签到 / 兑换 →</button>
+        </div>
+
+        <!-- 分组 4：自定义动作 + 高级（折叠示意） -->
+        <div class="groupTitle"><span class="gDot"></span>自定义动作 · 高级</div>
+        <div style="font-size:11px;color:var(--muted);text-align:center;padding:6px 0">（自定义动作编辑器 / 高级设置折叠区，维持现状）</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">配置卡展开态（三步向导 · 人性化测试结果）</span>
+    <div class="win">
+      <div class="setPanel">
+        <div class="groupTitle"><span class="gDot"></span>服务</div>
+        <div class="provGrid">
+          <div class="provCard"><span class="provName">DeepSeek</span><span class="provTags"><span class="tag tagSet">已配置</span></span><span class="provCk">✓</span></div>
+          <div class="provCard provCardOn"><span class="provName">Kimi</span><span class="provTags"><span class="tag tagBuiltin">内置免费</span></span><span class="provCk">✓</span></div>
+          <div class="provCard"><span class="provName">Ollama</span><span class="provTags"><span class="tag tagLocal">本地</span></span></div>
+          <div class="provCard"><span class="provName">通义千问</span></div>
+          <div class="provCard"><span class="provName">豆包</span></div>
+          <div class="provCard"><span class="provName">文心一言</span></div>
+          <div class="provCard"><span class="provName">MiniMax</span></div>
+          <div class="provCard"><span class="provName">智谱</span></div>
+          <button class="provExpand">展开全部 16 家 ▾</button>
+        </div>
+
+        <div class="stepRow">
+          <span class="stepNum stepNumDone">✓</span>
+          <span class="stepDone">已选服务商</span>
+        </div>
+        <div class="stepRow">
+          <span class="stepNum stepNumDone">✓</span>
+          <span class="stepDone">已填 API Key（不显示明文，可重填）</span>
+        </div>
+        <div class="stepRow">
+          <span class="stepNum">3</span>
+          <input class="keyInput" placeholder="粘贴 API Key（sk-…）">
+          <button class="eyeBtn">👁</button>
+          <button class="saveTestBtn">保存并测试</button>
+        </div>
+        <!-- 人性化测试结果：不摆 ms / 原始回复 -->
+        <div style="font-size:11px;color:var(--green);background:var(--green-bg);border:1px solid var(--green-border);border-radius:9px;padding:8px 11px;display:flex;gap:6px;align-items:center;margin-top:4px">
+          ✓ 连接成功，可以开始用了
+          <span style="color:var(--muted);font-weight:400">（模型 DeepSeek·chat 正常响应）</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout"><b>升级点：</b>① 7 块内容 → <b>5 个带标题分组</b>（服务 / 用量·今日 / 免费额度 / 自定义动作·高级），扫视一眼定位;② 用量卡（自己花的钱）与免费额度卡（内置 token）<b>视觉彻底分离</b>——用量走绿色 accent 系、额度走紫色系 + 「去签到/兑换」CTA;③ 服务商卡加<b>「内置免费」紫标</b>（与自配/本地并列一眼可分）;④ 顶部状态行精简为一句、不再与配置卡重复;⑤ 测试结果<b>去掉 ms 与原始回复</b>,改成「连接成功，可以开始用了」+ 模型名小字;⑥ 用量/额度卡各自带块标题。</div>
+</div>
+
+<!-- ================= 场景 2：主窗口 AI 快捷区 ================= -->
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagE">场景 2 · 主窗口 AI 快捷区</span>
+    <span class="secTitle">AiQuickBar 升级（图标化 + 结果卡片化 + 可收起）</span>
+    <span class="secDesc">顶部快捷条 · 结果独立卡片</span>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">运行两个动作后（结果各自成卡，可单独收起）</span>
+    <div class="mainFrame">
+      <div class="topbar"><span class="searchPh"></span></div>
+      <div class="qb">
+        <div class="qbBar">
+          <span class="qbLbl">✦ AI</span>
+          <div class="qbActs">
+            <button class="qbBtn qbBtnAi"><span class="aiStar">✦</span> 翻译</button>
+            <button class="qbBtn qbBtnAi"><span class="aiStar">✦</span> 总结</button>
+            <button class="qbBtn qbBtnLocal"><span class="locTag">本地</span> 脱敏</button>
+            <button class="qbBtn qbBtnLocal"><span class="locTag">本地</span> 摘要</button>
+            <button class="qbBtn qbMore">更多…</button>
+          </div>
+          <span class="qbType">文本</span>
+          <button class="qbX">✕</button>
+        </div>
+
+        <!-- 结果卡 1：本地动作 -->
+        <div class="qbResult">
+          <div class="qrHead">
+            <span class="locTag" style="font-size:8.5px;font-weight:700;color:#14708a;background:var(--teal-bg);border-radius:4px;padding:1px 5px">本地</span>
+            脱敏
+            <span class="qrMeta"><span class="metaModel">· 0.3s</span></span>
+            <button class="qrCollapse">▴</button>
+          </div>
+          <div class="qrBody">张三 → [姓名]；138-0013-8000 → [手机号]…</div>
+          <div class="qrActs">
+            <button class="qrBtn">⧉ 复制</button>
+            <button class="qrBtn qrBtnPri">📋 粘贴到前台</button>
+          </div>
+        </div>
+
+        <!-- 结果卡 2：AI 动作（模型 + 缓存/截断 meta chip 化） -->
+        <div class="qbResult" style="border-top:1px dashed var(--border)">
+          <div class="qrHead">
+            <span class="aiStar" style="color:var(--accent)">✦</span>
+            翻译
+            <span class="qrMeta">
+              <span class="metaModel">agnes-2.5-flash</span>
+              <span class="metaChip metaCached">缓存命中</span>
+            </span>
+            <button class="qrCollapse">▴</button>
+          </div>
+          <div class="qrBody">The clipboard is the user's real-time context…</div>
+          <div class="qrActs">
+            <button class="qrBtn">⧉ 复制</button>
+            <button class="qrBtn qrBtnPri">📋 粘贴到前台</button>
+          </div>
+        </div>
+
+        <!-- 错误条（结构化出口） -->
+        <div class="qbGate gateErr">
+          <span>免费额度已用完</span>
+          <button class="gateBtn gateSet">去签到 / 兑换</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">敏感内容确认条（红线：先确认后出网）</span>
+    <div class="mainFrame">
+      <div class="topbar"><span class="searchPh"></span></div>
+      <div class="qb">
+        <div class="qbBar">
+          <span class="qbLbl">✦ AI</span>
+          <div class="qbActs">
+            <button class="qbBtn qbBtnAi"><span class="aiStar">✦</span> 翻译</button>
+          </div>
+          <span class="qbType">文本</span>
+          <button class="qbX">✕</button>
+        </div>
+        <div class="qbGate gateSens">
+          ⚠ 这条内容看起来像密钥/凭证，发送会离开这台电脑
+          <button class="gateBtn gateGo">确认发送</button>
+          <button class="gateBtn" style="background:transparent;border:1px solid var(--orange-border);color:#7c4a12">取消</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout"><b>升级点：</b>① 「✦」字符 → <b>图标化 + 语义化标签</b>：AI 动作「✦ + accent 描边」、本地动作「本地」绿松 tag,一眼分清花不花钱、出不出去;② 结果区从「融合在条里的裸文本」→ <b>独立卡片</b>（头部：类型标签 + 动作名 + 模型/meta chip + 收起按钮;正文有边界;操作按钮齐全）;③ meta 信息 chip 化（缓存命中绿 chip、截断橙 chip、模型灰字）,不再挤成一行;④ 每张结果卡可<b>单独收起</b>;⑤ 敏感确认 / 错误条保留结构化出口（去签到兑换 / 去设置 AI）。</div>
+</div>
+
+<!-- ================= 场景 3：免费额度弹窗 ================= -->
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagG">场景 3 · 免费额度弹窗</span>
+    <span class="secTitle">QuotaDialog 信息架构（分区 + 兑换增强）</span>
+    <span class="secDesc">w420 · 余额 / 阶梯 / 兑换 三区带标题</span>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">升级后</span>
+    <div class="win">
+      <div style="display:flex;align-items:center;gap:8px;padding:13px 16px;border-bottom:1px solid var(--border);background:var(--section)">
+        <span style="width:26px;height:26px;border-radius:8px;background:var(--accent-light);color:var(--accent-strong);display:flex;align-items:center;justify-content:center;font-size:13px">🎁</span>
+        <span style="font-size:14px;font-weight:700">免费额度</span>
+        <span style="font-size:10.5px;color:var(--muted);margin-left:4px">内置 Agnes · 内容会发送到该服务商</span>
+        <button style="margin-left:auto;width:24px;height:24px;border-radius:7px;border:none;background:transparent;color:var(--muted);cursor:pointer">✕</button>
+      </div>
+      <div class="qDialog">
+        <div class="groupTitle"><span class="gDot"></span>余额</div>
+        <div class="qdBalance">
+          <div class="qdRing" style="background:conic-gradient(var(--accent) 0 7%, var(--section2) 7% 100%)">
+            <div class="qdRingIn"><b>7%</b><span>已用</span></div>
+          </div>
+          <div class="qdMeta">
+            <div class="qdTitle">剩余 93.1 万 token</div>
+            <div class="qdBar"><div class="qdBarFill" style="width:7%"></div></div>
+            <div class="qdNote">已用 6.9 万 / 累计 100 万（初始 10 万 + 签到 90 万）<br>签到累计到 100 万上限 · 兑换码不设上限 · 缓存命中不计费</div>
+          </div>
+        </div>
+
+        <div class="groupTitle"><span class="gDot"></span>每日签到</div>
+        <div class="ladder">
+          <div class="ld ldDone"><span class="ldBadge">✓</span><span class="ldLabel">第1天</span><span class="ldAmt">2万</span></div>
+          <div class="ld ldDone"><span class="ldBadge">✓</span><span class="ldLabel">第2天</span><span class="ldAmt">3万</span></div>
+          <div class="ld ldDone"><span class="ldBadge">✓</span><span class="ldLabel">第3天</span><span class="ldAmt">4万</span></div>
+          <div class="ld ldToday"><span class="ldTodayChip">今天</span><span class="ldBadge">5</span><span class="ldLabel">第4天</span><span class="ldAmt">5万</span></div>
+          <div class="ld"><span class="ldBadge">5</span><span class="ldLabel">第5天</span><span class="ldAmt">5万</span></div>
+          <div class="ld"><span class="ldBadge">5</span><span class="ldLabel">第6天</span><span class="ldAmt">5万</span></div>
+          <div class="ld"><span class="ldBadge">5</span><span class="ldLabel">第7天</span><span class="ldAmt">5万</span></div>
+        </div>
+        <div class="signRow">
+          <button class="signBtn">🔥 今日签到 +5 万</button>
+          <span class="signHint">连续 7 天共得 29 万 · 断签重来</span>
+        </div>
+
+        <div class="groupTitle"><span class="gDot"></span>兑换码</div>
+        <div class="redeemBox">
+          <div class="redeemRow">
+            <input class="redeemInput" placeholder="P1-XXXX-XXXX">
+            <button class="pasteCode">粘贴</button>
+            <button class="redeemGo">兑换</button>
+          </div>
+          <div class="redeemHelp">兑换码由活动/社区发放 · 不设上限 · 已用码不能重复兑换</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout"><b>升级点：</b>① 弹窗 5 块内容 → <b>3 个带标题分区</b>（余额 / 每日签到 / 兑换码）;② 兑换区增强：输入框等宽字体 + <b>「粘贴」快捷按钮</b>（自动取剪贴板）+ 兑换码示例占位 + 底部规则说明;③ 阶梯格「今天」chip 上浮更明显、奖励数字统一;④ 签到按钮带今日可得数字、右侧 hint 带累计目标;⑤ 余额区环形图 <b>「已用」语义</b>（原来「剩余 %」与进度条方向相反易误解）。</div>
+</div>
+
+<!-- ================= 场景 4：AI 首次引导 ================= -->
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagB">场景 4 · AI 首次引导</span>
+    <span class="secTitle">AiOnboarding 微调（图标化步骤 + 分区告知）</span>
+    <span class="secDesc">w520 · 配置成功后一次性弹出</span>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">升级后</span>
+    <div class="ob">
+      <div class="obHero">
+        <div class="obIcon">✦</div>
+        <div class="obTitle">AI 已就绪</div>
+        <div class="obSub">以后复制内容，随时能用 AI 处理</div>
+      </div>
+      <div class="obSteps">
+        <div class="obStep">
+          <span class="obStepIcon" style="background:var(--accent-light)">⧉</span>
+          <div><div class="obStepT">复制任意内容</div><div class="obStepD">网页、代码、长文……复制即捕获</div></div>
+        </div>
+        <div class="obStep">
+          <span class="obStepIcon" style="background:var(--accent-light)">✦</span>
+          <div><div class="obStepT">列表上方直接用 AI</div><div class="obStepD">点「翻译 / 总结 / 改写」直接出结果，本地动作零成本</div></div>
+        </div>
+        <div class="obStep">
+          <span class="obStepIcon" style="background:var(--purple-bg)">🎁</span>
+          <div><div class="obStepT">免费额度 + 每日签到</div><div class="obStepD">内置 Agnes 送 10 万 token，每天签到越签越多</div></div>
+        </div>
+      </div>
+      <button class="obBtn">知道了，开始用</button>
+    </div>
+  </div>
+
+  <div class="callout"><b>升级点：</b>① 步骤加<b>图标块</b>（不再纯文字）;② 新增第三步「免费额度 + 每日签到」——新用户配置完自己的服务商也能知道有内置免费可切换;③ 计费告知保留（在底部,此处略）;④ 主按钮文案「知道了，开始用」更有行动感。</div>
+</div>
+
+<div class="note">规则核对：全部 var(--xxx) 主题变量（amber→--orange）;红线不变（AI 先确认后出网、敏感拦截、密钥只写不读、删除/清空二次确认）;结构沿用现有组件分层（AiTab 编排 + ai/ 子块、AiQuickBar 门控与代际、QuotaDialog 纯本地记账）。</div>
+
+</body>
+</html>

@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PastePanda 用户粘性 v6.8 设计稿 — P1 数据见证 + P2 AI 人格化</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --border: rgba(15, 23, 42, 0.12);
+    --section: #f8f9fb;
+    --text: #1e293b;
+    --text2: #5b6472;
+    --muted: #8a93a2;
+    --accent: #4fa3ff;
+    --accent-strong: #2b6fd4;
+    --accent-light: #e8f1fd;
+    --green: #15803d;
+    --green-bg: #e8f7ee;
+    --green-border: #bfe6ce;
+    --amber: #b45309;
+    --amber-bg: #fdf3e0;
+    --amber-border: #f5dfae;
+    --purple: #7d5fd3;
+    --purple-bg: #f0ecfd;
+    --pink: #d4537e;
+    --pink-bg: #fdeef3;
+    --teal: #0f8a76;
+    --teal-bg: #e4f6f2;
+    --radius: 14px;
+    --mono: "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; padding: 28px 20px 60px; }
+  .pageTitle { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+  .pageSub { font-size: 12px; color: var(--muted); margin-bottom: 22px; line-height: 1.6; }
+  .pageSub b { color: var(--text2); }
+
+  .section { margin-bottom: 44px; }
+  .secHead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+  .secTag { font-size: 11px; font-weight: 600; padding: 2px 10px; border-radius: 99px; letter-spacing: 0.5px; }
+  .tagP1 { background: var(--accent-light); color: var(--accent-strong); border: 1px solid var(--accent); }
+  .tagP2 { background: var(--purple-bg); color: var(--purple); border: 1px solid var(--purple); }
+  .secTitle { font-size: 15px; font-weight: 600; }
+  .secDesc { font-size: 12px; color: var(--muted); }
+
+  .stage { display: flex; justify-content: center; padding: 34px 16px; background: #e9ebef; border-radius: 16px; position: relative; margin-bottom: 12px; }
+  .stageLabel { position: absolute; top: 8px; left: 12px; font-size: 10.5px; color: #7b8494; letter-spacing: 0.4px; }
+
+  /* ===== 弹窗通用 ===== */
+  .dialog { background: var(--panel); border: 1px solid rgba(15,23,42,0.1); border-radius: 16px; box-shadow: 0 18px 50px rgba(15,23,42,0.16); overflow: hidden; }
+  .d-head { display: flex; align-items: center; justify-content: space-between; padding: 13px 18px 12px; border-bottom: 1px solid var(--border); }
+  .d-headL { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+  .d-icon { width: 24px; height: 24px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: var(--accent-light); border: 1px solid var(--accent); color: var(--accent-strong); font-size: 12px; }
+  .d-sub { font-size: 10px; font-weight: 400; color: var(--muted); margin-left: 2px; }
+  .d-x { width: 24px; height: 24px; border-radius: 7px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
+  .d-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 14px; }
+
+  .card { padding: 12px 13px; border-radius: var(--radius); background: var(--section); border: 1px solid var(--border); }
+  .cardT { font-size: 11.5px; font-weight: 600; color: var(--text2); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .dot { width: 7px; height: 7px; border-radius: 99px; }
+  .badgeNew { font-size: 8.5px; font-weight: 600; color: var(--green); background: var(--green-bg); border: 1px solid var(--green-border); padding: 1px 7px; border-radius: 99px; margin-left: 4px; letter-spacing: 0.4px; }
+
+  /* ===== 我的轨迹（活跃日历） ===== */
+  .trajTop { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .streak { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 600; color: var(--amber); background: var(--amber-bg); border: 1px solid var(--amber-border); padding: 3px 10px; border-radius: 99px; }
+  .streak i { font-style: normal; font-size: 11px; }
+  .cal { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; }
+  .calCol { display: flex; flex-direction: column; gap: 4px; }
+  .calDay { aspect-ratio: 1; border-radius: 3.5px; background: rgba(15,23,42,0.07); }
+  .calDay.d1 { background: #cfe5fb; }
+  .calDay.d2 { background: #9ccbf7; }
+  .calDay.d3 { background: #5fa5ee; }
+  .calDay.d4 { background: var(--accent-strong); }
+  .calDay.today { outline: 2px solid var(--purple); outline-offset: 1px; }
+  .trajMeta { display: flex; justify-content: space-between; margin-top: 9px; font-size: 9.5px; color: var(--muted); }
+  .trajLegend { display: flex; align-items: center; gap: 3px; }
+  .trajLegend i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+  .trajLegend span { font-size: 9px; color: var(--muted); }
+
+  /* ===== 成就墙 ===== */
+  .achGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .ach { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 10px 4px 9px; border-radius: 11px; background: var(--panel); border: 1px solid var(--border); }
+  .ach.un { opacity: 0.5; filter: grayscale(1); }
+  .achIcon { width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 15px; background: var(--accent-light); border: 1px solid var(--accent); }
+  .achG { background: var(--green-bg); border-color: var(--green-border); }
+  .achP { background: var(--purple-bg); border-color: var(--purple); }
+  .achT { background: var(--teal-bg); border-color: var(--teal); }
+  .achName { font-size: 9.5px; font-weight: 600; color: var(--text2); text-align: center; line-height: 1.3; }
+  .achDesc { font-size: 8px; color: var(--muted); text-align: center; line-height: 1.3; }
+  .achFoot { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; font-size: 10px; color: var(--muted); }
+  .achProg { display: flex; align-items: center; gap: 6px; }
+  .achProgBg { width: 76px; height: 5px; border-radius: 99px; background: rgba(15,23,42,0.08); overflow: hidden; }
+  .achProgBg i { display: block; height: 100%; width: 38%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--accent-strong)); }
+  .achProgTxt { font-size: 9.5px; color: var(--muted); }
+  .achMore { font-size: 10px; color: var(--accent-strong); cursor: pointer; }
+
+  /* ===== 周报增强 ===== */
+  .ovGrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .ov { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 9px 2px; border-radius: 10px; background: var(--section); border: 1px solid var(--border); }
+  .ov.hl { background: linear-gradient(160deg, var(--green-bg), transparent); border-color: var(--green-border); }
+  .ovNum { font-size: 15px; font-weight: 700; color: var(--text); }
+  .ov.hl .ovNum { color: var(--green); }
+  .ovLabel { font-size: 8.5px; color: var(--muted); }
+  .bars { display: flex; flex-direction: column; gap: 8px; }
+  .barRow { display: flex; align-items: center; gap: 7px; }
+  .barLabel { width: 52px; font-size: 10px; color: var(--text2); flex-shrink: 0; }
+  .barTrack { flex: 1; height: 6px; border-radius: 99px; background: var(--border); overflow: hidden; }
+  .barFill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--accent-strong)); }
+  .barVal { width: 26px; font-size: 10px; color: var(--muted); text-align: right; }
+  .sectT { font-size: 11px; font-weight: 600; color: var(--text2); margin-bottom: 9px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chip { font-size: 10px; padding: 3px 9px; border-radius: 99px; border: 1px solid var(--border); color: var(--text2); background: var(--panel); }
+
+  /* 本周挑战 */
+  .chal { display: flex; align-items: center; gap: 9px; padding: 9px 11px; border-radius: 11px; background: var(--panel); border: 1px solid var(--border); }
+  .chal + .chal { margin-top: 7px; }
+  .chal.done { opacity: 0.6; }
+  .chalIcon { width: 28px; height: 28px; border-radius: 9px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; background: var(--accent-light); border: 1px solid var(--accent); color: var(--accent-strong); }
+  .chalP { background: var(--purple-bg); border-color: var(--purple); color: var(--purple); }
+  .chalInfo { flex: 1; min-width: 0; }
+  .chalName { font-size: 11px; font-weight: 600; color: var(--text); }
+  .chalDesc { font-size: 9.5px; color: var(--muted); margin-top: 1px; }
+  .chalGo { flex-shrink: 0; font-size: 10px; font-weight: 500; color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-strong)); border: none; padding: 5px 12px; border-radius: 8px; cursor: pointer; }
+  .chalOk { flex-shrink: 0; font-size: 10px; font-weight: 500; color: var(--green); background: var(--green-bg); border: 1px solid var(--green-border); padding: 4px 10px; border-radius: 8px; }
+
+  /* ===== 里程碑弹窗 ===== */
+  .ms { position: relative; text-align: center; padding: 26px 24px 22px; }
+  .msBurst { width: 74px; height: 74px; margin: 0 auto 14px; border-radius: 24px; display: flex; align-items: center; justify-content: center; font-size: 32px; background: linear-gradient(150deg, var(--accent-light), var(--purple-bg)); border: 1px solid var(--accent); }
+  .msBurst.g { background: linear-gradient(150deg, var(--green-bg), var(--teal-bg)); border-color: var(--green); }
+  .msBurst.p { background: linear-gradient(150deg, var(--purple-bg), var(--pink-bg)); border-color: var(--purple); }
+  .msTag { display: inline-block; font-size: 9.5px; font-weight: 600; letter-spacing: 1px; color: var(--accent-strong); background: var(--accent-light); border: 1px solid var(--accent); padding: 2px 12px; border-radius: 99px; margin-bottom: 10px; }
+  .msTag.g { color: var(--green); background: var(--green-bg); border-color: var(--green-border); }
+  .msTag.p { color: var(--purple); background: var(--purple-bg); border-color: var(--purple); }
+  .msTitle { font-size: 19px; font-weight: 700; margin-bottom: 10px; }
+  .msQuote { font-size: 12.5px; color: var(--text2); line-height: 1.8; padding: 0 8px; margin-bottom: 16px; }
+  .msQuote b { color: var(--text); }
+  .msStats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 18px; }
+  .msStat { padding: 10px 4px; border-radius: 11px; background: var(--section); border: 1px solid var(--border); }
+  .msStat b { display: block; font-size: 15px; color: var(--text); }
+  .msStat span { font-size: 9px; color: var(--muted); }
+  .msBtns { display: flex; justify-content: center; gap: 8px; }
+  .msBtn { font-size: 11px; font-weight: 500; padding: 7px 18px; border-radius: 9px; border: 1px solid var(--border); background: var(--panel); color: var(--text2); cursor: pointer; }
+  .msBtnPrimary { border: none; background: linear-gradient(135deg, var(--accent), var(--accent-strong)); color: #fff; }
+
+  .note { font-size: 10px; color: var(--muted); line-height: 1.7; border-top: 1px dashed var(--border); padding-top: 10px; }
+  .note b { color: var(--text2); }
+  .callout { font-size: 11px; line-height: 1.7; color: var(--text2); background: var(--amber-bg); border: 1px solid var(--amber-border); border-radius: 10px; padding: 9px 12px; margin-bottom: 14px; }
+  .callout b { color: var(--amber); }
+</style>
+</head>
+<body>
+
+<div class="pageTitle">PastePanda 用户粘性 — P1 数据见证 + P2 AI 人格化 设计稿</div>
+<div class="pageSub">对应《PastePanda-用户粘性规划.md》A2 活跃日历 / A3 成就徽章 / B3 效率见证 / B1 里程碑时刻 / B2 个性化周挑战。<br>
+<b>规格</b>：画像弹窗 520px（真实 w520）· 周报弹窗 460px（真实 w460）· 里程碑弹窗 520px。全部区块沿用现有卡片体系（--section-bg / --border-color / --accent 主题变量），随 6 套主题自动适配。<b>红线</b>：日历/成就/挑战/里程碑全部本地聚合行为统计，不含任何复制内容。</div>
+
+<!-- ================= P1 ================= -->
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagP1">P1 · 数据见证</span>
+    <span class="secTitle">① 我的画像 v6 — 新增「我的轨迹」+「成就墙」</span>
+    <span class="secDesc">ProfileDialog（w520）· 拆子组件 ProfileTrajectory / AchievementsCard，主文件保持 ≤300 行</span>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">浅色示意 · 实际渲染随主题</span>
+    <div class="dialog" style="width:520px">
+      <div class="d-head">
+        <div class="d-headL"><span class="d-icon">👤</span> 我的画像 <span class="d-sub">行为统计实时聚合 · 不含内容</span></div>
+        <button class="d-x">✕</button>
+      </div>
+      <div class="d-body">
+        <div class="card">
+          <div class="cardT"><span class="dot" style="background:#38e1d4"></span>我的轨迹 <span class="badgeNew">NEW</span><span style="margin-left:auto;font-size:9.5px;color:var(--muted)">最近 12 周 · 行为统计</span></div>
+          <div class="trajTop">
+            <div style="font-size:10.5px;color:var(--text2)">活跃日历 <span style="color:var(--muted)">（颜色越深 = 当天操作越多）</span></div>
+            <span class="streak"><i>🔥</i> 连续活跃 6 周</span>
+          </div>
+          <div class="cal">
+            <div class="calCol"><div class="calDay"></div><div class="calDay d1"></div><div class="calDay d2"></div><div class="calDay d1"></div><div class="calDay"></div><div class="calDay d2"></div><div class="calDay d3"></div></div>
+            <div class="calCol"><div class="calDay d1"></div><div class="calDay d2"></div><div class="calDay d3"></div><div class="calDay d4"></div><div class="calDay d2"></div><div class="calDay d1"></div><div class="calDay"></div></div>
+            <div class="calCol"><div class="calDay"></div><div class="calDay d1"></div><div class="calDay d2"></div><div class="calDay d2"></div><div class="calDay d3"></div><div class="calDay d4"></div><div class="calDay d4"></div></div>
+            <div class="calCol"><div class="calDay d3"></div><div class="calDay d4"></div><div class="calDay d2"></div><div class="calDay d1"></div><div class="calDay"></div><div class="calDay d1"></div><div class="calDay d2"></div></div>
+            <div class="calCol"><div class="calDay d2"></div><div class="calDay d3"></div><div class="calDay d4"></div><div class="calDay d4"></div><div class="calDay d3"></div><div class="calDay d2"></div><div class="calDay d1"></div></div>
+            <div class="calCol"><div class="calDay"></div><div class="calDay"></div><div class="calDay d1"></div><div class="calDay d2"></div><div class="calDay d3"></div><div class="calDay d3"></div><div class="calDay d4"></div></div>
+            <div class="calCol"><div class="calDay d4"></div><div class="calDay d3"></div><div class="calDay d2"></div><div class="calDay d1"></div><div class="calDay d1"></div><div class="calDay d2"></div><div class="calDay d3"></div></div>
+            <div class="calCol"><div class="calDay d3"></div><div class="calDay d4"></div><div class="calDay d4"></div><div class="calDay d3"></div><div class="calDay d2"></div><div class="calDay d1"></div><div class="calDay d2"></div></div>
+            <div class="calCol"><div class="calDay d2"></div><div class="calDay d3"></div><div class="calDay d3"></div><div class="calDay d4"></div><div class="calDay d4"></div><div class="calDay d3"></div><div class="calDay d2"></div></div>
+            <div class="calCol"><div class="calDay d1"></div><div class="calDay d2"></div><div class="calDay d2"></div><div class="calDay d3"></div><div class="calDay d3"></div><div class="calDay d4"></div><div class="calDay d4"></div></div>
+            <div class="calCol"><div class="calDay d4"></div><div class="calDay d3"></div><div class="calDay d2"></div><div class="calDay d1"></div><div class="calDay"></div><div class="calDay d1"></div><div class="calDay d2"></div></div>
+            <div class="calCol"><div class="calDay d3"></div><div class="calDay d3"></div><div class="calDay d4"></div><div class="calDay today"></div><div class="calDay"></div><div class="calDay"></div><div class="calDay"></div></div>
+          </div>
+          <div class="trajMeta">
+            <div class="trajLegend"><i style="background:rgba(15,23,42,0.07)"></i><span>少</span><i style="background:#cfe5fb"></i><i style="background:#9ccbf7"></i><i style="background:#5fa5ee"></i><i style="background:#2b6fd4"></i><span>多</span></div>
+            <div>最近 12 周活跃 58 天 · 平均每周 4.8 天</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="cardT"><span class="dot" style="background:#f5a623"></span>成就墙 <span class="badgeNew">NEW</span><span style="margin-left:auto;font-size:9.5px;color:var(--muted)">8 / 12 已解锁</span></div>
+          <div class="achGrid">
+            <div class="ach"><div class="achIcon achG">✨</div><div class="achName">第一次飞跃</div><div class="achDesc">首次使用 AI 动作</div></div>
+            <div class="ach"><div class="achIcon achP">🧩</div><div class="achName">结构化人生</div><div class="achDesc">首次生成 JSON / SQL</div></div>
+            <div class="ach"><div class="achIcon achT">🛠</div><div class="achName">我会排错</div><div class="achDesc">用过排错流水线</div></div>
+            <div class="ach"><div class="achIcon achG">🔗</div><div class="achName">方法论之父</div><div class="achDesc">保存第一条自定义链</div></div>
+            <div class="ach un"><div class="achIcon">📦</div><div class="achName">可移植的灵魂</div><div class="achDesc">导出画像 / SKILL</div></div>
+            <div class="ach un"><div class="achIcon">🏔</div><div class="achName">百炼成钢</div><div class="achDesc">累计复制 10 万次</div></div>
+            <div class="ach un"><div class="achIcon">🕰</div><div class="achName">老兵不死</div><div class="achDesc">连续活跃 12 周</div></div>
+            <div class="ach un"><div class="achIcon">🧠</div><div class="achName">画像觉醒</div><div class="achDesc">画像完成 AI 精炼</div></div>
+          </div>
+          <div class="achFoot">
+            <div class="achProg"><div class="achProgBg"><i></i></div><span class="achProgTxt">12 个成就 · 已解锁 8 个</span></div>
+            <span class="achMore">查看全部 →</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="cardT"><span class="dot" style="background:#9d7bff"></span>活跃时段</div>
+          <div class="bars">
+            <div class="barRow"><span class="barLabel">工作时间</span><div class="barTrack"><div class="barFill" style="width:78%"></div></div><span class="barVal">58%</span></div>
+            <div class="barRow"><span class="barLabel">晚间</span><div class="barTrack"><div class="barFill" style="width:42%"></div></div><span class="barVal">30%</span></div>
+            <div class="barRow"><span class="barLabel">深夜</span><div class="barTrack"><div class="barFill" style="width:16%"></div></div><span class="barVal">12%</span></div>
+          </div>
+        </div>
+
+        <div class="note"><b>隐私说明：</b>画像只含行为统计（动作名 / 内容类型 / 时段 / 偏好指令），不包含你复制过的任何内容；导出是唯一出网口，需你主动触发并预览确认；敏感信息自动清洗；可一键清除重建。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout"><b>放置说明：</b>「我的轨迹」紧跟角色区（行为轨迹是画像的自然延伸）；「成就墙」放高频动作区附近。因 ProfileDialog 已 348 行，两个新区块各拆独立子组件 <b>ProfileTrajectory.tsx / AchievementsCard.tsx</b>，守卫 300 行规则。</div>
+</div>
+
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagP1">P1 · 数据见证</span>
+    <span class="secTitle">② 剪贴板周报 v2 — 效率见证 + 本周挑战</span>
+    <span class="secDesc">WeekReportDialog（w460）· overview 3 格 → 5 格 · 新增「本周挑战」区</span>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">浅色示意 · 实际渲染随主题</span>
+    <div class="dialog" style="width:460px">
+      <div class="d-head">
+        <div class="d-headL"><span class="d-icon">📊</span> 剪贴板周报</div>
+        <button class="d-x">✕</button>
+      </div>
+      <div class="d-body">
+        <div class="ovGrid">
+          <div class="ov"><div class="ovNum">1,284</div><div class="ovLabel">复制</div></div>
+          <div class="ov"><div class="ovNum">862</div><div class="ovLabel">已粘贴</div></div>
+          <div class="ov"><div class="ovNum">67%</div><div class="ovLabel">转化率</div></div>
+          <div class="ov hl"><div class="ovNum">≈ 38<span style="font-size:9px">分</span></div><div class="ovLabel">AI 省时 <span class="badgeNew">NEW</span></div></div>
+          <div class="ov hl"><div class="ovNum">6<span style="font-size:9px">周</span></div><div class="ovLabel">连续活跃 <span class="badgeNew">NEW</span></div></div>
+        </div>
+
+        <div>
+          <div class="sectT">内容类型</div>
+          <div class="bars">
+            <div class="barRow"><span class="barLabel">文本</span><div class="barTrack"><div class="barFill" style="width:72%"></div></div><span class="barVal">924</span></div>
+            <div class="barRow"><span class="barLabel">图片</span><div class="barTrack"><div class="barFill" style="width:22%"></div></div><span class="barVal">286</span></div>
+            <div class="barRow"><span class="barLabel">文件</span><div class="barTrack"><div class="barFill" style="width:6%"></div></div><span class="barVal">74</span></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="sectT">常用动作</div>
+          <div class="chips"><span class="chip">ai-summarize × 12</span><span class="chip">mask-sensitive × 9</span><span class="chip">json_format × 6</span><span class="chip">url-summary × 5</span></div>
+        </div>
+
+        <div class="card" style="background:linear-gradient(160deg,var(--accent-light),transparent)">
+          <div class="cardT"><span class="dot" style="background:#4fa3ff"></span>本周挑战 <span class="badgeNew">NEW</span><span style="margin-left:auto;font-size:9.5px;color:var(--muted)">画像推荐 · 完成零惩罚</span></div>
+          <div class="chal">
+            <div class="chalIcon">🌐</div>
+            <div class="chalInfo">
+              <div class="chalName">试试 AI 翻译</div>
+              <div class="chalDesc">你上周复制了大量外文，翻译可能是你想要的下一个动作</div>
+            </div>
+            <button class="chalGo">去试试</button>
+          </div>
+          <div class="chal done">
+            <div class="chalIcon chalP">🔗</div>
+            <div class="chalInfo">
+              <div class="chalName">建一条你的专属链</div>
+              <div class="chalDesc">完成 ✓ · 解锁成就「方法论之父」</div>
+            </div>
+            <span class="chalOk">✓ 已完成</span>
+          </div>
+        </div>
+
+        <div class="callout" style="margin-bottom:0;background:var(--green-bg);border-color:var(--green-border)"><b style="color:var(--green)">AI 解读：</b>“这周你复制 1,284 次，转化率 67%——比上周高 8 个百分点。图片多了不少，深夜效率也不错。”</div>
+
+        <button style="font-size:11px;font-weight:500;color:var(--accent-strong);background:var(--accent-light);border:1px solid var(--accent);border-radius:9px;padding:7px 14px;cursor:pointer;align-self:center">✦ AI 生成周报文字</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout"><b>实现说明：</b>「AI 省时」= AI 动作次数 × 单动作估算耗时（规则估算，文案标注“约/估算”，诚实原则）；「连续活跃」= 周粒度 streak（有 1 周宽限保护）。本周挑战 1–2 条，来自 <b>画像/行为缺口推荐</b>（如周内未用过的 AI 动作），点「去试试」跳对应功能；完成状态本地记录，解锁成就联动。</div>
+</div>
+
+<!-- ================= P2 ================= -->
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagP2">P2 · AI 人格化</span>
+    <span class="secTitle">③ 里程碑时刻 — 「有思想」的 AI 祝贺</span>
+    <span class="secDesc">MilestoneDialog（w520）· 条件触发（安装周年 / 复制 10 万次 / 画像首次精炼）· 展示后记已读，可在画像页回看</span>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">状态 A · 安装周年</span>
+    <div class="dialog" style="width:520px">
+      <div class="ms">
+        <div class="msBurst">🎂</div>
+        <div class="msTag">陪伴一周年 · 2026-08-11</div>
+        <div class="msTitle">你用 PastePanda 整整一年了</div>
+        <div class="msQuote">这一年你复制了 <b>128,473 次</b>，处理最多的内容是 <b>代码</b>，深夜 11 点是你最高产的时段。<br>谢谢你还在——你的每一步，都让我更懂你。</div>
+        <div class="msStats">
+          <div class="msStat"><b>128,473</b><span>累计复制</span></div>
+          <div class="msStat"><b>86%</b><span>内容转化率</span></div>
+          <div class="msStat"><b>💻→🧮</b><span>画像进化轨迹</span></div>
+        </div>
+        <div class="msBtns">
+          <button class="msBtn">查看我的画像</button>
+          <button class="msBtn msBtnPrimary">收下这份回忆</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">状态 B · 复制 10 万次里程碑</span>
+    <div class="dialog" style="width:520px">
+      <div class="ms">
+        <div class="msBurst g">🏔</div>
+        <div class="msTag g">里程碑达成 · 第 100,000 次复制</div>
+        <div class="msTitle">十万分之一，也是十万分之一</div>
+        <div class="msQuote">从第 1 次到第 100,000 次，你的画像从 <b>沟通/客服型</b> 成长为 <b>数据/分析型</b>。<br>这一万次 AI 帮忙、38 条自定义动作，都是你亲手攒出来的。</div>
+        <div class="msStats">
+          <div class="msStat"><b>100,000</b><span>累计复制</span></div>
+          <div class="msStat"><b>12</b><span>成就已解锁</span></div>
+          <div class="msStat"><b>38</b><span>自定义动作</span></div>
+        </div>
+        <div class="msBtns">
+          <button class="msBtn">分享这张卡</button>
+          <button class="msBtn msBtnPrimary">继续前进</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">状态 C · 画像首次 AI 精炼（画像觉醒）</span>
+    <div class="dialog" style="width:520px">
+      <div class="ms">
+        <div class="msBurst p">🧠</div>
+        <div class="msTag p">画像觉醒 · 首次 LLM 精炼完成</div>
+        <div class="msTitle">我开始读懂你了</div>
+        <div class="msQuote">你的核心身份：<b>开发者</b>，关注 <b>效率与安全</b>。习惯在深夜处理代码，偏好结构化输出。<br>这份画像会随你的使用持续进化，你也可以随时修正我。</div>
+        <div class="msStats">
+          <div class="msStat"><b>开发者</b><span>核心角色</span></div>
+          <div class="msStat"><b>92%</b><span>画像置信度</span></div>
+          <div class="msStat"><b>3,206</b><span>行为样本</span></div>
+        </div>
+        <div class="msBtns">
+          <button class="msBtn">查看画像详情</button>
+          <button class="msBtn msBtnPrimary">导出我的画像</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout"><b>设计要点：</b>① 文案全部由<b>画像数据</b>驱动（统计值 + 角色/领域），绝无内容片段；② AI 文案可选走 ai_run 管线（敏感拦截/预算）或本地模板——设计稿两种皆可，默认模板先行；③ 触发条件本地判断（action_events 计数 / 安装日期 / 精炼事件），展示后记 localStorage 已读；④ 关闭入口 + 「查看画像」转化，不做强制弹窗、不打断操作（可设置关闭）。</div>
+</div>
+
+</body>
+</html>

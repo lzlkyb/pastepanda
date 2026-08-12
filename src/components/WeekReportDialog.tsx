@@ -13,7 +13,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Sparkles, Loader2, BarChart3 } from "lucide-react";
 import { getStatsDetail, type StatsDetail } from "@/lib/api/cache";
 import { actionEventStats } from "@/lib/api/actionEvents";
-import { aiRun } from "@/lib/api/ai";
+import { aiRun, aiGetUsageStats } from "@/lib/api/ai";
+import { statsSticky, type StickyStats } from "@/lib/api/sticky";
+import { suggestChallenges, type ChallengeDef } from "@/lib/challenges";
 import { isAiAvailable } from "@/lib/transforms/aiTransforms";
 import { hourBuckets, statsToText, WEEK_REPORT_MIN_EVENTS as MIN_EVENTS } from "@/lib/weekReport";
 import { useToast } from "@/components/Toast";
@@ -36,15 +38,20 @@ export const WeekReportDialog = memo(function WeekReportDialog({
   const [aiText, setAiText] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [cold, setCold] = useState(false);
+  /** v6.8：本周 AI 调用次数（估算省时用）与连续活跃周数 */
+  const [aiCalls, setAiCalls] = useState(0);
+  const [sticky, setSticky] = useState<StickyStats | null>(null);
 
   // 打开时拉数据
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const workspace = "默认"; // 与仪表盘一致（后续可接当前工作区）
-      const [s, events] = await Promise.all([
+      const [s, events, usage, st] = await Promise.all([
         getStatsDetail(workspace),
         actionEventStats(30).catch(() => null),
+        aiGetUsageStats(7).catch(() => null),
+        statsSticky().catch(() => null),
       ]);
       if (cancelled) return;
       if (s) {
@@ -55,6 +62,8 @@ export const WeekReportDialog = memo(function WeekReportDialog({
         setPasted(events.pasted ?? 0);
         setTopActions(events.topActions ?? []);
       }
+      if (usage) setAiCalls(usage.totalCalls ?? 0);
+      if (st) setSticky(st);
     })();
     return () => {
       cancelled = true;
@@ -100,6 +109,10 @@ export const WeekReportDialog = memo(function WeekReportDialog({
 
   const buckets = stats ? hourBuckets(stats.hours) : null;
   const conversion = stats && stats.total > 0 ? Math.round((pasted / stats.total) * 100) : 0;
+  // v6.8：AI 省时 = 7 天 AI 调用 × 单次估算 1.5 分钟（诚实标注"约/估算"）
+  const aiMinutes = Math.round(aiCalls * 1.5);
+  const weekStreak = sticky?.activeWeekStreak ?? 0;
+  const challenges: ChallengeDef[] = sticky ? suggestChallenges(sticky) : [];
 
   return (
     <AnimatePresence>
@@ -126,7 +139,7 @@ export const WeekReportDialog = memo(function WeekReportDialog({
               </div>
             ) : (
               <>
-                {/* 周概览 */}
+                {/* 周概览（v6.8：+AI 省时 / 连续活跃） */}
                 <div className={styles.overview}>
                   <div className={styles.ovItem}>
                     <div className={styles.ovNum}>{stats.total}</div>
@@ -139,6 +152,14 @@ export const WeekReportDialog = memo(function WeekReportDialog({
                   <div className={styles.ovItem}>
                     <div className={styles.ovNum}>{conversion}%</div>
                     <div className={styles.ovLabel}>转化率</div>
+                  </div>
+                  <div className={`${styles.ovItem} ${styles.ovHl}`}>
+                    <div className={styles.ovNum}>≈{aiMinutes}<span className={styles.ovUnit}>分</span></div>
+                    <div className={styles.ovLabel}>AI 省时·约</div>
+                  </div>
+                  <div className={`${styles.ovItem} ${styles.ovHl}`}>
+                    <div className={styles.ovNum}>{weekStreak}<span className={styles.ovUnit}>周</span></div>
+                    <div className={styles.ovLabel}>连续活跃</div>
                   </div>
                 </div>
 
@@ -200,6 +221,32 @@ export const WeekReportDialog = memo(function WeekReportDialog({
                           {a.actionId} × {a.count}
                         </span>
                       ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* v6.8 粘性 B2：本周挑战（画像驱动 · 完成零惩罚） */}
+                {challenges.length > 0 && (
+                  <div className={styles.section}>
+                    <div className={styles.sectionTitle}>本周挑战</div>
+                    <div className={styles.chalList}>
+                      {challenges.slice(0, 2).map((c) => {
+                        const isDone = c.done(sticky!);
+                        return (
+                          <div key={c.id} className={`${styles.chal} ${isDone ? styles.chalDone : ""}`}>
+                            <span className={styles.chalIcon}>{c.icon}</span>
+                            <div className={styles.chalInfo}>
+                              <div className={styles.chalName}>{c.name}</div>
+                              <div className={styles.chalDesc}>{isDone ? "已完成" : c.hint}</div>
+                            </div>
+                            {isDone ? (
+                              <span className={styles.chalOk}>✓ 已完成</span>
+                            ) : (
+                              <span className={styles.chalGo}>{c.desc}</span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

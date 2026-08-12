@@ -67,12 +67,28 @@ pub fn insert_markdown_history(
 ) -> Result<(), String> {
     use crate::content_classifier::ContentClassifier;
     use crate::data_store::compute_pinyin_initials;
-    use md5::{Digest, Md5};
 
-    let hash = format!("{:x}", Md5::new().chain_update(text.as_bytes()).finalize());
+    let hash = crate::hashing::content_md5(&text);
     let pinyin_initials = compute_pinyin_initials(&text);
     let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let labels = ContentClassifier::new().classify(&text);
+    let target_workspace = if workspace.is_empty() {
+        "默认".to_string()
+    } else {
+        workspace
+    };
+
+    // 智能合并：同一内容重复保存（编辑器 Ctrl+S 多次、内容未变）只更新时间不新建，
+    // 与剪贴板捕获的 text 合并口径一致（内容变化 → md5 变 → 自然新建，不会丢新内容）
+    if let Ok(Some(existing)) = store.find_latest_by_md5(&hash, &target_workspace, "text") {
+        store.update_history_time(&existing.id, &now_str).ok();
+        log::info!(
+            "[Markdown 编辑器] 智能合并重复保存 (id={})",
+            existing.id
+        );
+        return Ok(());
+    }
+
     let item = HistoryItem {
         id: uuid::Uuid::new_v4().to_string(),
         text: text.clone(),
@@ -81,11 +97,7 @@ pub fn insert_markdown_history(
         content: String::new(),
         pinned: false,
         source: "Markdown 编辑器".to_string(),
-        workspace: if workspace.is_empty() {
-            "默认".to_string()
-        } else {
-            workspace
-        },
+        workspace: target_workspace,
         md5: Some(hash),
         pinyin_initials: Some(pinyin_initials),
         group_id: None,

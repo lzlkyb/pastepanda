@@ -20,18 +20,21 @@ export const THEMES: Theme[] = [
 
 export const DEFAULT_THEME: ThemeKey = "ocean-dark";
 
+/** 清除主题过渡的定时器（模块级：快速连切时只保留最后一次） */
+let transitionTimer: ReturnType<typeof setTimeout> | null = null;
+
 /** 将主题应用到 document.documentElement */
 export function applyTheme(themeKey: ThemeKey) {
   document.documentElement.setAttribute("data-theme", themeKey);
   // 添加主题切换过渡 — 覆盖更多 CSS 变量相关属性
   document.documentElement.style.transition = "background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease";
   // 延迟清除过渡，确保动画播放完毕后不再影响后续即时切换
-  const clearTimer = setTimeout(() => {
+  // 防止快速切换主题时旧定时器残留：先清上一次的，再排新的
+  if (transitionTimer !== null) clearTimeout(transitionTimer);
+  transitionTimer = setTimeout(() => {
     document.documentElement.style.transition = "";
+    transitionTimer = null;
   }, 350);
-  // 防止快速切换主题时旧定时器残留
-  (applyTheme as any)._clearTimer?.();
-  (applyTheme as any)._clearTimer = () => clearTimeout(clearTimer);
 }
 
 /** 获取当前主题 */

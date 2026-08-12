@@ -47,8 +47,13 @@ export const aiFeedbackClear = () => invoke<number>("ai_feedback_clear");
 export const actionPrefGet = (actionId: string) =>
   invoke<string>("action_pref_get", { actionId });
 
+/**
+ * 写动作偏好指令。
+ * 返回 true = 这条含疑似敏感信息（密钥/个人信息），**已存下但不会随请求发给云端**。
+ * 调用方必须把这件事告诉用户，否则偏好会静默失效。
+ */
 export const actionPrefSet = (actionId: string, preference: string) =>
-  invoke<void>("action_pref_set", { actionId, preference });
+  invoke<boolean>("action_pref_set", { actionId, preference });
 
 export const actionPrefsAll = () => invoke<ActionPrefRow[]>("action_prefs_all");
 

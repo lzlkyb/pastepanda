@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PastePanda 签到送 Token — v6.9 设计稿 v3（签到 UI 美化）</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --border: rgba(15, 23, 42, 0.12);
+    --section: #f8f9fb;
+    --text: #1e293b;
+    --text2: #5b6472;
+    --muted: #8a93a2;
+    --accent: #4fa3ff;
+    --accent-strong: #2b6fd4;
+    --accent-light: #e8f1fd;
+    --green: #15803d;
+    --green-bg: #e8f7ee;
+    --green-border: #bfe6ce;
+    --amber: #b45309;
+    --amber-bg: #fdf3e0;
+    --amber-border: #f5dfae;
+    --purple: #7d5fd3;
+    --purple-bg: #f0ecfd;
+    --teal: #0f8a76;
+    --teal-bg: #e4f6f2;
+    --radius: 14px;
+    --mono: "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; padding: 28px 20px 60px; }
+  .pageTitle { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+  .pageSub { font-size: 12px; color: var(--muted); margin-bottom: 22px; line-height: 1.6; }
+  .pageSub b { color: var(--text2); }
+  .section { margin-bottom: 44px; }
+  .secHead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .secTag { font-size: 11px; font-weight: 600; padding: 2px 10px; border-radius: 99px; letter-spacing: 0.5px; }
+  .tagP { background: var(--purple-bg); color: var(--purple); border: 1px solid var(--purple); }
+  .tagG { background: var(--green-bg); color: var(--green); border: 1px solid var(--green); }
+  .tagA { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber); }
+  .secTitle { font-size: 15px; font-weight: 600; }
+  .secDesc { font-size: 12px; color: var(--muted); }
+  .stage { display: flex; justify-content: center; padding: 34px 16px; background: #e9ebef; border-radius: 16px; position: relative; margin-bottom: 12px; }
+  .stageLabel { position: absolute; top: 8px; left: 12px; font-size: 10.5px; color: #7b8494; letter-spacing: 0.4px; }
+  .callout { font-size: 11px; line-height: 1.7; color: var(--text2); background: var(--amber-bg); border: 1px solid var(--amber-border); border-radius: 10px; padding: 9px 12px; margin-bottom: 14px; }
+  .callout b { color: var(--amber); }
+  .dialog { background: var(--panel); border: 1px solid rgba(15,23,42,0.1); border-radius: 16px; box-shadow: 0 18px 50px rgba(15,23,42,0.16); overflow: hidden; }
+  .d-head { display: flex; align-items: center; justify-content: space-between; padding: 13px 16px 12px; border-bottom: 1px solid var(--border); }
+  .d-title { font-size: 14px; font-weight: 600; }
+  .d-x { width: 24px; height: 24px; border-radius: 7px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
+  .d-body { padding: 14px 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+  .cfgCard { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .cfgHead { width: 100%; display: flex; align-items: center; gap: 9px; padding: 11px 12px; background: var(--section); border: none; cursor: pointer; font-family: inherit; text-align: left; }
+  .cfgAvatar { width: 30px; height: 30px; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: var(--accent-light); border: 1px solid var(--accent); color: var(--accent-strong); font-size: 13px; flex-shrink: 0; }
+  .cfgTitles { flex: 1; min-width: 0; }
+  .cfgName { display: block; font-size: 12.5px; font-weight: 600; color: var(--text); }
+  .cfgModel { display: block; font-size: 10px; color: var(--muted); margin-top: 1px; }
+
+  .quotaCard { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .quotaHead { display: flex; align-items: center; gap: 7px; padding: 11px 13px 0; font-size: 12px; font-weight: 600; color: var(--text2); }
+  .quotaHeadIcon { width: 22px; height: 22px; border-radius: 7px; display: flex; align-items: center; justify-content: center; background: linear-gradient(140deg, var(--green-bg), var(--teal-bg)); border: 1px solid var(--green-border); font-size: 12px; }
+  .quotaBadge { font-size: 8.5px; font-weight: 600; color: var(--green); background: var(--green-bg); border: 1px solid var(--green-border); padding: 1px 7px; border-radius: 99px; margin-left: 4px; letter-spacing: 0.4px; }
+  .quotaSub { margin-left: auto; font-size: 9.5px; color: var(--muted); font-weight: 400; }
+  .quotaMain { display: flex; align-items: center; gap: 14px; padding: 13px 13px 0; }
+  .quotaRing { width: 78px; height: 78px; border-radius: 50%; flex-shrink: 0; position: relative; display: flex; align-items: center; justify-content: center; }
+  .quotaRing::after { content: ""; position: absolute; inset: 9px; border-radius: 50%; background: var(--panel); }
+  .quotaRingInner { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; }
+  .quotaRingInner b { font-size: 15px; color: var(--text); }
+  .quotaRingInner span { font-size: 8px; color: var(--muted); }
+  .quotaMeta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+  .quotaTitle { font-size: 11px; color: var(--text2); }
+  .quotaTitle b { color: var(--text); font-size: 12.5px; }
+  .quotaBar { height: 7px; border-radius: 99px; background: var(--section); overflow: hidden; border: 1px solid var(--border); }
+  .quotaBarFill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--accent-strong)); }
+  .quotaNote { font-size: 9.5px; color: var(--muted); line-height: 1.5; }
+
+  /* ===== v3：签到 UI 美化版 ===== */
+  .signBox { padding: 13px 13px 14px; border-top: 1px dashed var(--border); margin-top: 12px; }
+
+  /* streak 头卡：渐变圆 + 大数字 */
+  .signHead { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .streakMedal { width: 40px; height: 40px; border-radius: 13px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(145deg, #fff7e6, var(--amber-bg)); border: 1px solid var(--amber-border); box-shadow: 0 2px 8px rgba(180, 83, 9, 0.14); }
+  .streakMedal b { font-size: 14px; line-height: 1; color: var(--amber); }
+  .streakMedal span { font-size: 7px; color: var(--amber); margin-top: 1px; letter-spacing: 0.5px; }
+  .streakInfo { flex: 1; min-width: 0; }
+  .streakTitle { font-size: 12.5px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 5px; }
+  .streakFire { font-size: 13px; }
+  .streakSub { font-size: 9.5px; color: var(--muted); margin-top: 2px; }
+  .streakTotal { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; padding: 5px 10px; border-radius: 9px; background: linear-gradient(150deg, var(--green-bg), transparent); border: 1px solid var(--green-border); }
+  .streakTotal span { font-size: 8px; color: var(--muted); }
+  .streakTotal b { font-size: 11.5px; color: var(--green); }
+
+  /* 徽章阶梯：圆形徽章 */
+  .ladder { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 12px; }
+  .day { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .badge { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; position: relative; border: 1.5px solid var(--border); background: var(--section); color: var(--muted); transition: 0.2s; }
+  .dayLabel { font-size: 8px; color: var(--muted); line-height: 1; }
+  .dayAmt { font-size: 9.5px; font-weight: 700; color: var(--text2); line-height: 1; }
+  /* 已签：渐变填充 + ✓ */
+  .dayDone .badge { background: linear-gradient(145deg, var(--teal), var(--green)); border-color: var(--green); color: #fff; box-shadow: 0 2px 6px rgba(21, 128, 61, 0.25); }
+  .dayDone .dayAmt { color: var(--green); }
+  .dayDone .dayLabel { color: var(--green); }
+  /* 今天：accent 光环 + 呼吸 */
+  .dayToday .badge { border: 2px solid var(--accent); color: var(--accent-strong); background: linear-gradient(145deg, var(--accent-light), #fff); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); animation: pulse 1.8s ease-in-out infinite; }
+  .dayToday .dayAmt { color: var(--accent-strong); }
+  .dayToday .dayLabel { color: var(--accent-strong); font-weight: 700; }
+  .todayChip { position: absolute; top: -6px; right: -8px; font-size: 6.5px; font-weight: 700; color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-strong)); padding: 1px 5px; border-radius: 99px; letter-spacing: 0.3px; box-shadow: 0 1px 4px rgba(43, 111, 212, 0.35); }
+  /* 未来：灰 + 虚线 */
+  .dayFuture .badge { border-style: dashed; opacity: 0.85; }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+    50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 30%, transparent); }
+  }
+
+  /* CTA */
+  .signCta { display: flex; align-items: center; gap: 9px; }
+  .signCtaBtn { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 8px 16px; border-radius: 10px; border: none; background: linear-gradient(135deg, var(--accent), var(--accent-strong)); color: #fff; cursor: pointer; box-shadow: 0 3px 12px color-mix(in srgb, var(--accent) 35%, transparent); }
+  .signCtaBtn:hover { filter: brightness(1.08); }
+  .signCtaBtn.done { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); box-shadow: none; }
+  .signCtaHint { font-size: 9px; color: var(--muted); line-height: 1.55; }
+  .signBreak { font-size: 9px; color: var(--amber); margin-top: 8px; display: flex; align-items: center; gap: 4px; }
+
+  .redeemRow { display: flex; align-items: center; gap: 8px; padding: 0 13px 12px; }
+  .redeemInput { flex: 1; padding: 7px 11px; border: 1px solid var(--border); border-radius: 9px; background: var(--section); color: var(--text); font-size: 11px; font-family: var(--mono); letter-spacing: 0.5px; }
+  .redeemInput:focus { outline: none; border-color: var(--accent); }
+  .redeemBtn { flex-shrink: 0; font-size: 11px; font-weight: 500; padding: 7px 14px; border-radius: 9px; border: 1px solid var(--border); background: var(--panel); color: var(--text2); cursor: pointer; }
+  .redeemBtn:hover { border-color: var(--accent); color: var(--accent-strong); }
+  .redeemOk { font-size: 9.5px; color: var(--green); padding: 0 13px 10px; display: flex; align-items: center; gap: 4px; }
+  .usageCard { border: 1px solid var(--border); border-radius: 12px; padding: 11px 13px; }
+  .usageTitle { font-size: 10.5px; color: var(--muted); }
+  .note { font-size: 10px; color: var(--muted); line-height: 1.7; border-top: 1px dashed var(--border); padding-top: 10px; }
+  .note b { color: var(--text2); }
+
+  .cap { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 10px; border-radius: 99px; font-size: 11px; font-weight: 500; cursor: pointer; border: 1px solid; }
+  .capEmpty { border-color: var(--amber-border); background: var(--amber-bg); color: var(--amber); border-style: dashed; }
+  .capEmpty:hover { border-style: solid; }
+  .capLive { border-color: var(--green-border); background: var(--green-bg); color: var(--green); }
+
+  .ob { position: relative; padding: 24px 22px 20px; }
+  .obHero { text-align: center; margin-bottom: 16px; }
+  .obHeroIcon { width: 58px; height: 58px; margin: 0 auto 10px; border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 26px; background: linear-gradient(150deg, var(--green-bg), var(--teal-bg)); border: 1px solid var(--green); }
+  .obTitle { font-size: 17px; font-weight: 700; }
+  .obSub { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+  .obSteps { display: flex; flex-direction: column; gap: 9px; margin-bottom: 14px; }
+  .obStep { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 11px; background: var(--section); border: 1px solid var(--border); }
+  .obStepIcon { width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 14px; background: var(--accent-light); border: 1px solid var(--accent); }
+  .obStepBody { flex: 1; }
+  .obStepTitle { display: block; font-size: 11.5px; font-weight: 600; color: var(--text); }
+  .obStepDesc { display: block; font-size: 10px; color: var(--muted); margin-top: 1px; line-height: 1.45; }
+  .obBtn { width: 100%; padding: 9px; border: none; border-radius: 10px; background: linear-gradient(135deg, var(--accent), var(--accent-strong)); color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .obBtnSub { width: 100%; margin-top: 8px; padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: transparent; color: var(--text2); font-size: 11px; cursor: pointer; }
+  .obX { position: absolute; top: 12px; right: 12px; width: 24px; height: 24px; border-radius: 7px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; }
+
+  .warnBar { display: flex; align-items: center; gap: 7px; padding: 8px 11px; border-radius: 10px; background: var(--amber-bg); border: 1px solid var(--amber-border); font-size: 10.5px; color: var(--amber); line-height: 1.5; }
+  .warnBarBtn { margin-left: auto; flex-shrink: 0; font-size: 10px; font-weight: 600; color: #fff; background: var(--amber); border: none; padding: 4px 10px; border-radius: 7px; cursor: pointer; }
+
+  /* ===== v4：左下角每日签到浮窗（WorkBuddy 式） ===== */
+  .floatCard { width: 336px; border-radius: 14px; background: var(--panel); border: 1px solid rgba(15,23,42,0.1); box-shadow: 0 14px 36px rgba(15,23,42,0.18); padding: 13px 14px 11px; position: relative; }
+  .floatHead { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700; color: var(--text); }
+  .floatHeadIcon { width: 22px; height: 22px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 12px; background: linear-gradient(140deg, var(--green-bg), var(--teal-bg)); border: 1px solid var(--green-border); }
+  .floatX { position: absolute; top: 10px; right: 10px; width: 20px; height: 20px; border-radius: 6px; border: none; background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; }
+  .floatX:hover { background: var(--section); color: var(--text2); }
+  .floatBody { display: flex; align-items: center; gap: 12px; margin-top: 11px; }
+  .floatMedal { width: 44px; height: 44px; border-radius: 14px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(145deg, #fff7e6, var(--amber-bg)); border: 1px solid var(--amber-border); box-shadow: 0 2px 8px rgba(180, 83, 9, 0.14); }
+  .floatMedal b { font-size: 15px; line-height: 1; color: var(--amber); }
+  .floatMedal span { font-size: 7px; color: var(--amber); margin-top: 1px; letter-spacing: 0.5px; }
+  .floatInfo { flex: 1; min-width: 0; }
+  .floatTitle { font-size: 11.5px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 4px; }
+  .floatSub { font-size: 9px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+  .floatSub b { color: var(--amber); }
+  .floatBtn { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 8px 15px; border-radius: 10px; border: none; background: linear-gradient(135deg, var(--accent), var(--accent-strong)); color: #fff; cursor: pointer; box-shadow: 0 3px 10px color-mix(in srgb, var(--accent) 32%, transparent); }
+  .floatBtn.done { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); box-shadow: none; }
+  .floatFoot { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border); font-size: 8.5px; color: var(--muted); }
+  .floatFoot a { color: var(--accent-strong); cursor: pointer; font-weight: 600; }
+  .winFrame { position: relative; width: 620px; height: 380px; background: linear-gradient(180deg, #f7f8fa, #eef0f4); border: 1px solid rgba(15,23,42,0.12); border-radius: 12px; overflow: hidden; }
+  .winTopbar { position: absolute; top: 0; left: 0; right: 0; height: 40px; background: #fff; border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 14px; gap: 8px; }
+  .winList { position: absolute; top: 41px; left: 0; right: 0; bottom: 0; padding: 14px 16px; }
+  .winItem { height: 52px; background: #fff; border: 1px solid rgba(15,23,42,0.07); border-radius: 10px; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+
+<div class="pageTitle">PastePanda 签到送 Token — v6.9 设计稿 v3（签到 UI 美化版）</div>
+<div class="pageSub">v3 改动：签到区从"方块格子"升级为<b>圆形徽章阶梯</b>——已签渐变✓ / 今天呼吸光环 / 未来虚线灰；streak 头卡升级为<b>奖章 + 大数字 + 7 天总奖励 chip</b>。<br>
+<b>奖励规则不变</b>：初始 100 万 · 第 1 天 2 万 → 每天 +1 万 → 第 4 天起封顶 5 万/天 · 连续 7 天 = <b>29 万</b>。初始 10 万，签到累计封顶 100 万，<b>兑换码不设上限</b>。</div>
+
+<!-- ================= 场景 1：设置 → AI → 免费额度卡 ================= -->
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagP">场景 1 · 独立签到弹窗（方案 A）</span>
+    <span class="secTitle">「免费额度」签到弹窗</span>
+    <span class="secDesc">w420 · 主窗口胶囊点击打开 · 新组件 QuotaDialog.tsx</span>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">状态 A · 连续 3 天，今天可签（第 4 天）</span>
+    <div class="dialog" style="width:420px">
+      <div class="d-head"><span class="d-title">免费额度</span><button class="d-x">✕</button></div>
+      <div class="d-body">
+        <div class="quotaCard">
+          <div class="quotaHead">
+            <span class="quotaHeadIcon">🎁</span> 免费额度
+            <span class="quotaBadge">NEW</span>
+            <span class="quotaSub">内置 Agnes · 内容会发送到该服务商</span>
+          </div>
+          <div class="quotaMain">
+            <div class="quotaRing" style="background:conic-gradient(#1d9e75 0 36%, #f8f9fb 36% 100%)">
+              <div class="quotaRingInner"><b>36%</b><span>剩余 12.1 万</span></div>
+            </div>
+            <div class="quotaMeta">
+              <span class="quotaTitle">已用 <b>6.9 万</b> / 累计 19 万（初始 10 万 + 签到 9 万）</span>
+              <div class="quotaBar"><div class="quotaBarFill" style="width:36%"></div></div>
+              <span class="quotaNote">签到累计到 100 万上限 · 兑换码不设上限 · 缓存命中不计费</span>
+            </div>
+          </div>
+
+          <!-- ★ v3 签到徽章阶梯 -->
+          <div class="signBox">
+            <div class="signHead">
+              <div class="streakMedal"><b>3</b><span>天</span></div>
+              <div class="streakInfo">
+                <span class="streakTitle"><span class="streakFire">🔥</span> 连续签到 3 天</span>
+                <span class="streakSub">今天签完第 4 天，连续 7 天拿满 29 万</span>
+              </div>
+              <div class="streakTotal"><span>连续 7 天共得</span><b>29 万</b></div>
+            </div>
+
+            <div class="ladder">
+              <div class="day dayDone">
+                <span class="badge">✓</span><span class="dayLabel">第1天</span><span class="dayAmt">2万</span>
+              </div>
+              <div class="day dayDone">
+                <span class="badge">✓</span><span class="dayLabel">第2天</span><span class="dayAmt">3万</span>
+              </div>
+              <div class="day dayDone">
+                <span class="badge">✓</span><span class="dayLabel">第3天</span><span class="dayAmt">4万</span>
+              </div>
+              <div class="day dayToday">
+                <span class="badge">5万<span class="todayChip">今天</span></span><span class="dayLabel">第4天</span><span class="dayAmt">+5万</span>
+              </div>
+              <div class="day dayFuture">
+                <span class="badge">5万</span><span class="dayLabel">第5天</span><span class="dayAmt">5万</span>
+              </div>
+              <div class="day dayFuture">
+                <span class="badge">5万</span><span class="dayLabel">第6天</span><span class="dayAmt">5万</span>
+              </div>
+              <div class="day dayFuture">
+                <span class="badge">5万</span><span class="dayLabel">第7天</span><span class="dayAmt">5万</span>
+              </div>
+            </div>
+
+            <div class="signCta">
+              <button class="signCtaBtn">🔥 今日签到 +5 万</button>
+              <span class="signCtaHint">断签将从第 1 天重新开始<br>今天签完，明天阶梯自动滚动</span>
+            </div>
+          </div>
+
+          <div class="redeemRow">
+            <input class="redeemInput" placeholder="输入兑换码，如 P1-XXXX-XXXX" />
+            <button class="redeemBtn">兑换</button>
+          </div>
+        </div>
+
+        <div class="note"><b>与自配服务商隔离：</b>免费额度只在你选「内置 Agnes」时生效；切到自己配置的服务商后按金额计费，免费额度原样保留、互不冲突。「设置 → AI」也可打开本弹窗。<br><b>隐私：</b>token 计量在本地；签到与兑换不联网、不上传任何内容。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">状态 B · 刚签到（今日已签）</span>
+    <div class="dialog" style="width:420px">
+      <div class="d-body">
+        <div class="quotaCard">
+          <div class="signBox">
+            <div class="signHead">
+              <div class="streakMedal"><b>4</b><span>天</span></div>
+              <div class="streakInfo">
+                <span class="streakTitle"><span class="streakFire">🔥</span> 连续签到 4 天</span>
+                <span class="streakSub">明天第 5 天，继续拿满 29 万</span>
+              </div>
+              <div class="streakTotal"><span>连续 7 天共得</span><b>29 万</b></div>
+            </div>
+            <div class="ladder">
+              <div class="day dayDone"><span class="badge">✓</span><span class="dayLabel">第2天</span><span class="dayAmt">3万</span></div>
+              <div class="day dayDone"><span class="badge">✓</span><span class="dayLabel">第3天</span><span class="dayAmt">4万</span></div>
+              <div class="day dayDone"><span class="badge">✓</span><span class="dayLabel">第4天</span><span class="dayAmt">5万</span></div>
+              <div class="day dayDone"><span class="badge">✓</span><span class="dayLabel">今天</span><span class="dayAmt">+5万</span></div>
+              <div class="day dayFuture"><span class="badge">5万</span><span class="dayLabel">明天</span><span class="dayAmt">5万</span></div>
+              <div class="day dayFuture"><span class="badge">5万</span><span class="dayLabel">第6天</span><span class="dayAmt">5万</span></div>
+              <div class="day dayFuture"><span class="badge">5万</span><span class="dayLabel">第7天</span><span class="dayAmt">5万</span></div>
+            </div>
+            <div class="signCta">
+              <button class="signCtaBtn done">✓ 今日已签到</button>
+              <span class="signCtaHint">明天可得 5 万<br>连续 7 天后保持 5 万/天</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">状态 C · 刚起步（连续 1 天）· 看得到爬升</span>
+    <div class="dialog" style="width:420px">
+      <div class="d-body">
+        <div class="quotaCard">
+          <div class="signBox">
+            <div class="signHead">
+              <div class="streakMedal"><b>1</b><span>天</span></div>
+              <div class="streakInfo">
+                <span class="streakTitle"><span class="streakFire">🔥</span> 连续签到 1 天</span>
+                <span class="streakSub">坚持 7 天，29 万到手</span>
+              </div>
+              <div class="streakTotal"><span>连续 7 天共得</span><b>29 万</b></div>
+            </div>
+            <div class="ladder">
+              <div class="day dayDone"><span class="badge">✓</span><span class="dayLabel">第1天</span><span class="dayAmt">2万</span></div>
+              <div class="day dayToday"><span class="badge">3万<span class="todayChip">今天</span></span><span class="dayLabel">第2天</span><span class="dayAmt">+3万</span></div>
+              <div class="day dayFuture"><span class="badge">4万</span><span class="dayLabel">第3天</span><span class="dayAmt">4万</span></div>
+              <div class="day dayFuture"><span class="badge">5万</span><span class="dayLabel">第4天</span><span class="dayAmt">5万</span></div>
+              <div class="day dayFuture"><span class="badge">5万</span><span class="dayLabel">第5天</span><span class="dayAmt">5万</span></div>
+              <div class="day dayFuture"><span class="badge">5万</span><span class="dayLabel">第6天</span><span class="dayAmt">5万</span></div>
+              <div class="day dayFuture"><span class="badge">5万</span><span class="dayLabel">第7天</span><span class="dayAmt">5万</span></div>
+            </div>
+            <div class="signCta">
+              <button class="signCtaBtn">🔥 今日签到 +3 万</button>
+              <span class="signCtaHint">明天可得 4 万 · 后天起封顶 5 万/天</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">状态 D · 断签警示（从今天重新开始）</span>
+    <div class="dialog" style="width:420px">
+      <div class="d-body">
+        <div class="quotaCard">
+          <div class="signBox">
+            <div class="signHead">
+              <div class="streakMedal"><b>0</b><span>天</span></div>
+              <div class="streakInfo">
+                <span class="streakTitle" style="color:var(--amber)">💔 已断签 · 重新开始</span>
+                <span class="streakSub">昨天未签到，今天签了从头累计</span>
+              </div>
+              <div class="streakTotal"><span>连续 7 天共得</span><b>29 万</b></div>
+            </div>
+            <div class="ladder">
+              <div class="day dayToday"><span class="badge">2万<span class="todayChip">今天</span></span><span class="dayLabel">第1天</span><span class="dayAmt">+2万</span></div>
+              <div class="day dayFuture"><span class="badge">3万</span><span class="dayLabel">第2天</span><span class="dayAmt">3万</span></div>
+              <div class="day dayFuture"><span class="badge">4万</span><span class="dayLabel">第3天</span><span class="dayAmt">4万</span></div>
+              <div class="day dayFuture"><span class="badge">5万</span><span class="dayLabel">第4天</span><span class="dayAmt">5万</span></div>
+              <div class="day dayFuture"><span class="badge">5万</span><span class="dayLabel">第5天</span><span class="dayAmt">5万</span></div>
+              <div class="day dayFuture"><span class="badge">5万</span><span class="dayLabel">第6天</span><span class="dayAmt">5万</span></div>
+              <div class="day dayFuture"><span class="badge">5万</span><span class="dayLabel">第7天</span><span class="dayAmt">5万</span></div>
+            </div>
+            <div class="signCta">
+              <button class="signCtaBtn">🔥 今日签到 +2 万</button>
+              <span class="signCtaHint">断签从 2 万重新开始，别让火焰熄灭</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout"><b>v3 美化说明：</b>① 徽章从方块升级为<b>圆形奖章</b>——已签渐变填充（teal→green）+ 白色 ✓ + 投影；今天 accent 双环 + <b>呼吸动画</b> + 右上「今天」小胶囊；未来虚线灰态；② streak 头卡改为<b>渐变奖章</b>（大数字天数）+ 火焰标题 + 右侧「连续 7 天共得 29 万」绿色 chip；③ CTA 按钮带 🔥 + 今日数额，渐变光晕；④ 全部用主题变量（--accent/--green/--amber），6 套主题自动适配，深色下同样成立。</div>
+</div>
+
+<!-- ================= 场景 2：主窗口 AI 胶囊 ================= -->
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagA">场景 2 · 主窗口 TopBar</span>
+    <span class="secTitle">「余额不足」警示胶囊（异常态）</span>
+    <span class="secDesc">非常驻 · 仅余额耗尽时显示 · 点击开签到弹窗</span>
+  </div>
+  <div class="stage" style="justify-content:flex-start; padding-left:60px">
+    <span class="stageLabel">仅余额耗尽时显示（异常态，非常驻）· 点击开弹窗去签到</span>
+    <div style="display:flex; align-items:center; gap:10px; background:#fff; border:1px solid rgba(15,23,42,0.1); border-radius:12px; padding:10px 16px">
+      <span style="font-size:12px;color:var(--muted)">搜索</span>
+      <span style="margin-left:auto;display:flex;align-items:center;gap:8px">
+        <button class="cap capEmpty">✦ 余额不足</button>
+        <span style="width:26px;height:26px;border-radius:8px;background:var(--green-bg);border:1px solid var(--green-border);display:inline-flex;align-items:center;justify-content:center;font-size:12px">⚙</span>
+      </span>
+    </div>
+  </div>
+  <div class="callout"><b>规则（v5）：</b>① 剩余额度<b>不在主窗口常驻显示</b>（TopBar 保持干净）；② 仅当余额耗尽时显示 amber「余额不足」警示胶囊（异常态，点击开签到弹窗）；③ 其余情况维持现状（off/nokey 引导胶囊、on 隐藏）。</div>
+</div>
+
+<!-- ================= 场景 3：首次引导 ================= -->
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagG">场景 3 · 首次启动引导</span>
+    <span class="secTitle">「送你 100 万 token」弹窗</span>
+    <span class="secDesc">仿 AiOnboarding w520 · 一次弹出 · localStorage 记已看</span>
+  </div>
+  <div class="stage">
+    <span class="stageLabel">首次启动 / 首次打开 AI 设置时</span>
+    <div class="dialog" style="width:520px">
+      <div class="ob">
+        <button class="obX">✕</button>
+        <div class="obHero">
+          <div class="obHeroIcon">🎁</div>
+          <div class="obTitle">送你 10 万 token 体验 AI</div>
+          <div class="obSub">内置免费模型 Agnes · 签到累计可到 100 万 · 不用填 API Key</div>
+        </div>
+        <div class="obSteps">
+          <div class="obStep">
+            <span class="obStepIcon">⚡</span>
+            <div class="obStepBody">
+              <span class="obStepTitle">复制任意内容，AI 直接可用</span>
+              <span class="obStepDesc">复制后主窗口出现 ✦ AI 快捷区：翻译 / 总结 / 改写 / 解释代码</span>
+            </div>
+          </div>
+          <div class="obStep">
+            <span class="obStepIcon">🔥</span>
+            <div class="obStepBody">
+              <span class="obStepTitle">每天签到，越签越多</span>
+              <span class="obStepDesc">第 1 天 2 万 → 每天 +1 万 → 封顶 5 万/天；连续 7 天共 29 万</span>
+            </div>
+          </div>
+          <div class="obStep">
+            <span class="obStepIcon">🔑</span>
+            <div class="obStepBody">
+              <span class="obStepTitle">额度用完还能兑换 / 换自己的 Key</span>
+              <span class="obStepDesc">输入兑换码加额度；或到服务商列表切回你自己的 API Key</span>
+            </div>
+          </div>
+        </div>
+        <button class="obBtn">立即签到，领取 2 万 token</button>
+        <button class="obBtnSub">先逛逛，之后在设置里也能签到</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 场景 4：余额不足拦截 ================= -->
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagA">场景 4 · AI 动作时拦截</span>
+    <span class="secTitle">余额不足提示条</span>
+    <span class="secDesc">TransformCard / AiQuickBar 复用 budgetExceeded 样式</span>
+  </div>
+  <div class="stage">
+    <span class="stageLabel">用户点了 AI 动作但免费额度已用完</span>
+    <div style="width:420px; background:#fff; border:1px solid rgba(15,23,42,0.1); border-radius:12px; padding:14px">
+      <div class="warnBar">
+        ⚠ 免费额度已用完（剩余 0）。签到或兑换后继续使用。
+        <button class="warnBarBtn">去签到</button>
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.6">提示条下方保持原动作卡片（AI 结果区不出现假结果）；点「去签到」跳设置 AI 页并定位到额度卡。</div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ================= 场景 5：左下角每日签到浮窗（新增） ================= -->
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagG">场景 5 · 主窗口左下角（v4 新增）</span>
+    <span class="secTitle">每日签到浮窗（WorkBuddy 式）</span>
+    <span class="secDesc">每天首次启动/打开主窗口弹出 · 不打断操作 · 可关闭当天不再弹</span>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">状态 1 · 每天启动时左下角弹出（未签到）</span>
+    <div class="winFrame">
+      <div class="winTopbar"><span style="width:18px;height:18px;border-radius:6px;background:var(--accent-light);border:1px solid var(--accent)"></span><span style="font-size:11px;color:var(--muted)">搜索</span><span style="margin-left:auto;display:flex;gap:6px"><span style="width:24px;height:24px;border-radius:8px;background:var(--green-bg);border:1px solid var(--green-border);display:inline-flex;align-items:center;justify-content:center;font-size:11px">⚙</span></span></div>
+      <div class="winList"><div class="winItem"></div><div class="winItem"></div><div class="winItem"></div></div>
+      <div style="position:absolute; left:16px; bottom:14px; z-index:2">
+        <div class="floatCard">
+          <button class="floatX">✕</button>
+          <div class="floatHead"><span class="floatHeadIcon">🎁</span> 每日签到</div>
+          <div class="floatBody">
+            <div class="floatMedal"><b>3</b><span>天</span></div>
+            <div class="floatInfo">
+              <div class="floatTitle">🔥 连续签到 3 天</div>
+              <div class="floatSub">今天签到得 <b>+5 万</b> token<br>连续 7 天共 29 万</div>
+            </div>
+            <button class="floatBtn">🔥 签到</button>
+          </div>
+          <div class="floatFoot"><span>初始 10 万 · 签到累计到 100 万</span><a>查看额度明细 →</a></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">状态 2 · 点击签到后（✓ 已签到，1.5s 后自动收起）</span>
+    <div class="winFrame">
+      <div class="winTopbar"><span style="width:18px;height:18px;border-radius:6px;background:var(--accent-light);border:1px solid var(--accent)"></span><span style="font-size:11px;color:var(--muted)">搜索</span><span style="margin-left:auto;display:flex;gap:6px"><span style="width:24px;height:24px;border-radius:8px;background:var(--green-bg);border:1px solid var(--green-border);display:inline-flex;align-items:center;justify-content:center;font-size:11px">⚙</span></span></div>
+      <div class="winList"><div class="winItem"></div><div class="winItem"></div><div class="winItem"></div></div>
+      <div style="position:absolute; left:16px; bottom:14px; z-index:2">
+        <div class="floatCard">
+          <div class="floatHead"><span class="floatHeadIcon">✅</span> 签到成功</div>
+          <div class="floatBody">
+            <div class="floatMedal" style="background:linear-gradient(145deg,var(--teal-bg),var(--green-bg)); border-color:var(--green-border)"><b style="color:var(--green)">4</b><span>天</span></div>
+            <div class="floatInfo">
+              <div class="floatTitle">🔥 连续签到 4 天</div>
+              <div class="floatSub">+5 万已到账 · 明天可得 <b>5 万</b><br>明天见，别让火焰熄灭</div>
+            </div>
+            <button class="floatBtn done">✓ 已签到</button>
+          </div>
+          <div class="floatFoot"><span>今天不会再弹 · 明天打开再签</span><a>查看额度明细 →</a></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout"><b>触发与交互规则：</b>① <b>每天首次启动 / 主窗口打开</b>时检查：免费额度服务商启用 + 今日未签到 + 今日未弹过 → 左下角弹出；② 浮窗<b>非 modal</b>（无遮罩、不打断操作），用户可直接继续用软件；③ 点「🔥 签到」→ 签到成功变「✓ 已签到」态，1.5 秒后自动收起，当天不再弹；④ 点右上 ✕ → 直接收起，当天不再弹（未签到的用户可从主窗口额度胶囊再签）；⑤ 点「查看额度明细 →」→ 打开完整签到弹窗（场景 1）；⑥ 弹出状态记录在本地（当天一次），不联网。</div>
+</div>
+
+</body>
+</html>

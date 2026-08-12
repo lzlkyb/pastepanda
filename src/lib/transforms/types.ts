@@ -14,10 +14,30 @@ import type { ContentFeatures } from "./analyzer";
 /** 变换分组，用于枢纽面板分类展示。`ai` 是唯一需要联网的一组 */
 export type TransformGroup = "json" | "sql" | "web" | "text" | "log" | "doc" | "ai";
 
+/**
+ * 条目上的标签（只取打分需要的两个字段）。
+ *
+ * 不直接用 stores 里的 `Tag`：lib 层不应依赖 store 的类型，
+ * 而且 detect() 用不到 id / color / created_at。
+ */
+export interface ContextTag {
+  name: string;
+  /** manual = 用户手工打的（意图）；auto = 后端 ContentClassifier 产的（事实） */
+  source: "manual" | "auto";
+}
+
 /** detect() 的输入上下文 */
 export interface TransformContext {
   /** 剪贴板原文 */
   text: string;
+  /**
+   * 条目标签。**不进 `analyzeContent`**——它不是从文本分析出来的，而是条目自带的元数据，
+   * 由调用方直接传。两类标签的价值完全不同：
+   * - `auto` 里的**语言级标签**（Rust / Java / SQL …）是 content_type 给不了的粒度
+   *   —— content_type 到 `code` 就到顶了；
+   * - `manual` 是用户**意图**（“待回复”、“周报素材”），文本里根本判不出来。
+   */
+  tags?: ContextTag[];
   /** 后端粗分类：json | number | code | color | text | doc | rich */
   contentType: string;
   /**

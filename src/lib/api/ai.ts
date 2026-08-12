@@ -60,8 +60,12 @@ export interface AiProviderInfo {
   protocol: AiProtocol;
   /** 这家是否已存过密钥——下拉里据此标“已配置” */
   hasKey: boolean;
+  /** 自定义服务商已存模型（编辑弹窗回填用；内置厂商无此字段） */
+  model?: string;
   /** v6.4：true = 用户添加的自定义服务商（可多个，各自独立配置/密钥） */
   custom?: boolean;
+  /** v6.9：true = 内置免费额度服务商（签到送 token，走 token 配额计费） */
+  builtinFree?: boolean;
 }
 
 export interface AiConfig {
@@ -83,6 +87,14 @@ export interface AiConfig {
   thinkingOff: boolean;
   /** 协议覆盖，空串表示用厂商默认 */
   protocol: string;
+  /**
+   * 把用户**手工**标签名当意图上下文拼进 prompt。**默认开**。
+   *
+   * 开着时标签名会随内容一起发给服务商（它们常含客户名/项目名/人名），
+   * 但也与正文同过一道出网闸。前端不判这个开关，只负责展示与修改；
+   * 真正的判断在后端（见 provider.rs 的 tags_as_context）。
+   */
+  tagsAsContext: boolean;
 }
 
 export interface AiActionOptionValue {
@@ -229,7 +241,7 @@ export type AiRunResponse =
       truncated: boolean;
     }
   | { status: "needsConfirm"; reason: string }
-  | { status: "budgetExceeded"; spentCny: number; budgetCny: number };
+  | { status: "budgetExceeded"; spentCny: number; budgetCny: number; isQuota?: boolean };
 
 export async function aiGetConfig(): Promise<AiConfig> {
   return invoke<AiConfig>("ai_get_config");

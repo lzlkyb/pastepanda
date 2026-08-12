@@ -2,7 +2,7 @@
  * BatchReplaceDialog.tsx — 文件级批量查找替换。
  * 选择文件 → 输入查找/替换 → 预览命中 → 执行替换（自动备份 .bak）。
  */
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, FolderOpen, Search, Replace, CheckCircle2, XCircle } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
@@ -44,6 +44,18 @@ export function BatchReplaceDialog({ open, onClose }: { open: boolean; onClose: 
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const anim = useDialogAnim();
+
+  // 审查：关窗后重置全部 state —— 此前重开沿用上次的路径/模式/结果，有误执行风险
+  useEffect(() => {
+    if (!open) {
+      setPaths([]);
+      setPattern("");
+      setReplacement("");
+      setPreviewResults(null);
+      setReplaceResults(null);
+      setLoading(false);
+    }
+  }, [open]);
 
   const selectFiles = useCallback(async () => {
     try {

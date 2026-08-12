@@ -9,7 +9,7 @@
 //! 设置页也有「立即建立索引」按钮（`semantic_index`）。
 
 use crate::ai::provider;
-use crate::ai::{budget, client, secret_store, AiConfig};
+use crate::ai::{budget, client, AiConfig};
 use crate::content_classifier::ContentClassifier;
 use crate::data_store::AiUsageEntry;
 use crate::data_store::DataStore;
@@ -153,7 +153,7 @@ pub fn semantic_status(store: State<DataStore>) -> Result<SemanticStatus, String
         model,
         default_model,
         vector_count: store.semantic_vectors_count()?,
-        pending: store.semantic_vector_pending(10_000)?.len() as u32,
+        pending: store.semantic_vector_pending_count()?,
     })
 }
 
@@ -174,9 +174,9 @@ pub async fn semantic_index(
     if cfg.effective_protocol() != crate::ai::provider::Protocol::OpenAi {
         return Err("当前服务商不是 OpenAI 兼容协议，没有 /embeddings 接口".to_string());
     }
-    let data_dir = crate::commands::ai::ai_data_dir(&app)?;
-    let key = secret_store::load_key(&data_dir, &cfg.provider)?
-        .unwrap_or_default();
+    // 走统一的密钥解析：内置免费（Agnes）没有用户密钥文件，
+    // 直接 load_key 会拿到空字串、带空密钥出网
+    let key = crate::commands::ai::resolve_ai_key(&app, &cfg)?;
     if cfg.spec().needs_key && key.trim().is_empty() {
         return Err("未配置当前服务商的 API Key".to_string());
     }
@@ -245,7 +245,7 @@ pub async fn semantic_index(
     }
     Ok(SemanticIndexResult {
         indexed,
-        pending_left: store.semantic_vector_pending(10_000)?.len() as u32,
+        pending_left: store.semantic_vector_pending_count()?,
     })
 }
 
@@ -266,16 +266,20 @@ pub async fn semantic_search(
     if !enabled {
         return Err("AI 记忆增强未开启——先在 AI 设置里打开开关".to_string());
     }
-    // 搜索词也要过敏感防护：密钥这类东西不该出网
+    // 搜索词也要过敏感防护：密钥与个人信息都不该出网。
+    // 用 is_sensitive_for_egress 而不是 is_secret：本命令确实会把 query 发去云端做 embedding，
+    // 而下面那句报错本身就写着“不会发送到云端”——它就是个出网口。
     let classifier = ContentClassifier::new();
-    if classifier.is_secret(&query) {
-        return Err("搜索词疑似敏感内容，已拦截——语义搜索不会把密钥发送到云端".to_string());
+    if classifier.is_sensitive_for_egress(&query) {
+        return Err(
+            "搜索词含敏感信息（密钥或个人信息），已拦截——语义搜索不会把它们发送到云端"
+                .to_string(),
+        );
     }
 
     let cfg = crate::commands::ai::read_ai_config(&store)?;
     let (model, _) = resolve_embed_model(&cfg, &override_model)?;
-    let data_dir = crate::commands::ai::ai_data_dir(&app)?;
-    let key = secret_store::load_key(&data_dir, &cfg.provider)?.unwrap_or_default();
+    let key = crate::commands::ai::resolve_ai_key(&app, &cfg)?;
 
     // 懒构建：先把没向量化的摘要补上（最多一批），再搜索
     let pending = store.semantic_vector_pending(PENDING_BATCH)?;

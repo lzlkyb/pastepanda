@@ -9,13 +9,6 @@
 
 /* ===== 状态栏 ===== */
 
-.statusBar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
 .badge {
   display: inline-flex;
   align-items: center;
@@ -40,12 +33,6 @@
 .badgeIdle {
   color: var(--text-muted);
   background: var(--section-bg);
-}
-
-.statusText {
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--text-secondary);
 }
 
 /* ===== 主流程步骤 ===== */
@@ -180,8 +167,24 @@
 .provCard {
   position: relative;
   display: flex;
-  align-items: center;
-  gap: 6px;
+  /*
+   * 08-11 方案 1：名字独占第一行（可折两行完整显示），标签下移到第二行。
+   *
+   * 为什么必须换成两行——这是数学问题，不是 CSS 写法问题：
+   * 弹窗 .dialog-box.w420 = 420px，body padding 20px → 内容宽 380px；
+   * repeat(3, 1fr) + gap 6 → 列宽 122.7px；扣 padding 8×2 与 border 1×2 → 卡内 104.7px。
+   * 而「百度千帆（文心）」这类 8 个汉字的名字在 12px 字号下要 108px。
+   * 也就是说**一个标签都没有时也放不下**。
+   * 上一轮用 ellipsis 只是把「高度不齐」换成了「名字不全」，两个都不该接受。
+   */
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 3px;
+  /* 固定高度而非 min-height：让每一行都严格等高，不靠内容碰巧一样。
+     63 = 名字两行 30 + gap 3 + 标签行 14 + padding 7×2 + border 1×2 */
+  height: 63px;
+  box-sizing: border-box;
   border: 1px solid var(--search-border);
   border-radius: 9px;
   padding: 7px 8px;
@@ -200,7 +203,7 @@
 .provCardOn {
   border-color: var(--accent);
   background: var(--accent-light);
-  box-shadow: 0 0 0 3px var(--accent-soft, rgba(2, 132, 199, 0.12));
+  box-shadow: 0 0 0 3px var(--accent-light, rgba(2, 132, 199, 0.12));
 }
 
 .provName {
@@ -208,21 +211,47 @@
   color: var(--text-primary);
   font-weight: 500;
   line-height: 1.25;
+  /* 折行到两行、而不是省略号：104.7px × 2 行 ≈ 209px 容量，
+     最长的「内置免费（Agnes）」119px、「Anthropic Claude」112px 都能完整看到。
+     word-break 必需：纯 ASCII 名（Anthropic Claude）默认整词不断，
+     不加它第二行不会承接，仍会被裁掉。 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+/* 自定义服务商卡右上角有 ✎ / ✕ 两个绝对定位按钮（一直占到距右 38px），
+   名字第一行必须给它们让位。内置卡没有这两个按钮，所以不加这个类。 */
+.provNameInset {
+  padding-right: 40px;
 }
 
 .provTags {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-left: auto;
+  /* 横排而不是纵向堆叠——堆叠是卡片高度不一致的直接原因 */
+  flex-direction: row;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
 }
 
-.provTagSet,
-.provTagLocal {
+/*
+ * 标签尺寸的**唯一定义**，三个标签只负责颜色。
+ *
+ * 原先 font-size / radius / padding / weight 只写在 `.provTagSet, .provTagLocal` 上，
+ * 而 `.provTagBuiltin` 不在这个选择器里——“内置免费”标签于是继承了默认字号、
+ * 没有内边距与圆角，比右侧“已配置”大一圈。这是用户看到“Agnes 卡跟别人不一样”
+ * 的主因。新增标签时只要带上 `.provTag` 就不会再漏。
+ */
+.provTag {
   font-size: 9px;
   border-radius: 4px;
   padding: 1px 4px;
   font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
 }
 
 .provTagSet {
@@ -235,10 +264,23 @@
   color: var(--accent-strong);
 }
 
+/* v6.10：内置免费服务商紫标（项目无紫色 token，小面积固定色保证跨主题辨识） */
+.provTagBuiltin {
+  background: #f3e8ff;
+  color: #7c3aed;
+  border: 1px solid #d8b4fe;
+}
+
+/*
+ * 08-11：从 position:absolute 改成标签行里靠右的 inline 元素。
+ * 原来它是 right:4px top:4px，而 .provDel **也是** right:4px top:4px——两者完全重叠，
+ * 选中自定义服务商时 ✕ 删除按钮直接盖住 ✓；内置卡上它则压住最右侧标签。
+ * 放进标签行后这两个碰撞一起消失，且内置卡右上角再无绝对元素，
+ * 名字可以用满整个 104.7px。
+ */
 .provCk {
-  position: absolute;
-  right: 4px;
-  top: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
   width: 14px;
   height: 14px;
   border-radius: 50%;
@@ -262,7 +304,7 @@
   justify-content: center;
   font-size: 10px;
   color: var(--text-muted);
-  background: var(--hover-bg, rgba(127, 127, 127, 0.1));
+  background: var(--hover, rgba(127, 127, 127, 0.1));
 }
 
 .provEdit {
@@ -279,7 +321,7 @@
 }
 
 .provDel:hover {
-  background: var(--danger-bg, #fee2e2);
+  background: var(--red-bg, #fee2e2);
 }
 
 .provAdd {
@@ -365,8 +407,9 @@
 .warn {
   display: flex;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 9px 11px;
   border-radius: 8px;
+  margin-bottom: 12px;
   background: var(--section-bg);
   border: 1px solid var(--border-color);
   font-size: 11px;
@@ -401,7 +444,7 @@
 
 .testFail {
   color: var(--danger);
-  background: var(--danger-bg, #fee2e2);
+  background: var(--red-bg, #fee2e2);
 }
 
 /* 下一步建议用次要色，不跟错误本文抢注意力 */
@@ -691,7 +734,7 @@
   border-radius: 4px;
   padding: 1px 5px;
   background: var(--ai-bg, #f3e8ff);
-  color: #7e22ce;
+  color: var(--accent);
   font-weight: 600;
   flex-shrink: 0;
 }
@@ -701,7 +744,7 @@
   height: 22px;
   border-radius: 6px;
   border: none;
-  background: var(--hover-bg, rgba(127, 127, 127, 0.1));
+  background: var(--hover, rgba(127, 127, 127, 0.1));
   color: var(--text-secondary);
   cursor: pointer;
   font-size: 11px;
@@ -721,7 +764,7 @@
 }
 
 .actionBtnDanger:hover {
-  background: var(--danger-bg, #fee2e2);
+  background: var(--red-bg, #fee2e2);
 }
 
 .emptyHint {
@@ -745,35 +788,6 @@
 }
 
 /* ===== 高级区 ===== */
-
-.advanced {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-color);
-}
-
-.advancedToggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  text-align: left;
-}
-
-.advancedHint {
-  font-weight: 400;
-  font-size: 11px;
-  color: var(--text-muted);
-}
 
 .advancedBody {
   display: flex;
@@ -1043,10 +1057,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin: 0 16px 10px;
+  /* 原来是 margin: 0 16px 10px——叠在 .panel 的 padding: 14px 16px 上，
+     实际左右缩进 32px，比同页其它块窄一圈。.panel 已经有 gap，
+     这里不需要任何 margin。 */
   padding: 8px 10px;
   border-radius: 8px;
-  background: var(--danger-bg, #fee2e2);
+  background: var(--red-bg, #fee2e2);
   border: 1px solid var(--danger-border, #fecaca);
   color: var(--danger);
   font-size: 11px;
@@ -1066,4 +1082,416 @@
 .retryBtn:hover {
   background: var(--danger);
   color: #fff;
+}
+
+/* ===== 08-11 重设计：配置卡（未配置展开 / 已配置折叠） ===== */
+/* v6.10 分组标题（设置 AI 页分区） */
+/* ==========================================================================
+   08-11 方案 B：顶部状态摘要卡 + 手风琴统一外壳
+   --------------------------------------------------------------------------
+   改版前这一页有 4 套互不相同的区块外壳：
+     ① .cfgCard      1px 边框 + 12px 圆角（重）
+     ② .usageCard    无边框、--section-bg 底 + 8px 圆角（中）
+     ③ .advanced ×3  无底无框，只有一条 border-top（轻）
+     ④ QuotaEntryCard 自己一套，定义在另一个 CSS 文件里
+   没有任何规则解释为什么这块有框、那块只有一条线。现在只剩下面这一套
+   .accItem / .accHead，所有可折叠区块都走它。
+   ========================================================================== */
+
+/* ---------- 摘要卡 ---------- */
+
+.heroCard {
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+  /* 渐变只压一层很淡的主题色：它是全页唯一的“主角”，但设置页不该有大色块 */
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent);
+}
+
+.heroTop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 13px 10px;
+}
+
+.heroAvatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  /* 白字压 --accent 对比度不足 4.5:1，实心底改用加深版 --accent-solid */
+  background: linear-gradient(135deg, var(--accent), var(--accent-solid));
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.heroTitles {
+  flex: 1;
+  min-width: 0;
+}
+
+.heroName {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* 厂商名长时先挤徽标而不是撑破卡片 */
+  min-width: 0;
+}
+
+.heroModel {
+  display: block;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-family: Consolas, monospace;
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 列数由 TSX 按实际格子数动态给（本地模型没有金额、拉不到额度就少一格），
+   固定 repeat(3) 会留下空格子 */
+.heroStats {
+  display: grid;
+  border-top: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--section-bg) 60%, transparent);
+}
+
+.heroStat {
+  padding: 8px 6px;
+  text-align: center;
+  border-right: 1px solid var(--border-color);
+  min-width: 0;
+}
+
+.heroStat:last-child {
+  border-right: none;
+}
+
+.heroStatNum {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+/* ¥ / k 这类单位比数字小一号，让数字本身抓眼 */
+.heroStatNum small {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.heroStatLabel {
+  font-size: 9.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.heroActions {
+  display: flex;
+  gap: 6px;
+  padding: 9px 12px;
+  border-top: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--section-bg) 60%, transparent);
+}
+
+.heroBtn,
+.heroBtnMain {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-size: 11.5px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.heroBtnMain {
+  flex: 1;
+  border: none;
+  /* 同上：白字要压加深版才够对比度 */
+  background: var(--accent-solid);
+  color: #fff;
+  font-weight: 600;
+}
+
+.heroBtnMain:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.heroBtn {
+  border: 1px solid var(--border-color);
+  background: var(--section-bg);
+  color: var(--text-primary);
+}
+
+.heroBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+/* ---------- 手风琴 ---------- */
+
+.acc {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.accItem {
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--section-bg);
+}
+
+.accItemOpen {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+/* 头部是 flex 行，里面三个**并列**节点（主按钮 / 可选操作 / 收展按钮）。
+   旧的 .cfgHead 是“一个 button 包住所有东西”，里面又嵌了「测试连接」button——
+   嵌套按钮是无效 HTML，还得靠 stopPropagation 才不会连带折叠。 */
+.accHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 6px;
+}
+
+.accHeadOpen {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.accHeadMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 4px 10px 12px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.accIcon {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  flex-shrink: 0;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.accTitles {
+  flex: 1;
+  min-width: 0;
+}
+
+.accName {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* 折叠态也能看到关键值（「12 次 · ¥0.08」），所以必须单行省略而不是换行——
+   换行会让四个条目高度参差，又回到改版前那个毛病 */
+.accSub {
+  display: block;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accChev {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.accChev:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+.accBody {
+  padding: 11px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--panel-bg, transparent);
+}
+
+/* ==========================================================================
+   08-11 「自进化」区（方案 B）——从「设置 › 通用」搬进 AI 页
+   ========================================================================== */
+
+/* 红线②声明条：常驻、绿色（这是承诺不是警告，所以不用橙/红） */
+.redline {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--green-bg);
+  border: 1px solid var(--green-border);
+  font-size: 10.5px;
+  color: var(--green);
+  line-height: 1.55;
+}
+
+/* 三个数字格。与摘要卡的 .heroStats 同形但独立命名：
+   那个在渐变卡里、列数由 JS 动态给；这里固定三格且在白底行内。 */
+.evoStats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--panel-bg, transparent);
+  overflow: hidden;
+}
+
+.evoStat {
+  padding: 8px 6px;
+  text-align: center;
+  border-right: 1px solid var(--border-color);
+  min-width: 0;
+}
+
+.evoStat:last-child {
+  border-right: none;
+}
+
+.evoNum {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.evoNum small {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.evoLabel {
+  font-size: 9.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* 功能行。可能是 <button>（整行可点）也可能是 <div>（右侧另有按钮），
+   所以要把 button 的默认样式全抹平，否则两种行长得不一样。 */
+.evoRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--panel-bg, transparent);
+  font-family: inherit;
+  text-align: left;
+  color: var(--text-primary);
+}
+
+/* 只有整行可点的那种才给手型与 hover */
+button.evoRow {
+  cursor: pointer;
+}
+
+button.evoRow:hover {
+  border-color: var(--accent);
+  background: var(--hover);
+}
+
+/* 虚线 = 「这一项其实管的是变换中心排序，含本地变换」，与纯 AI 项区分开 */
+.evoRowDashed {
+  border-style: dashed;
+}
+
+.evoName {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+/* 图标与文字同排（我的画像那一行） */
+.evoName > svg {
+  vertical-align: -2px;
+  margin-right: 4px;
+}
+
+.evoDesc {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.evoChev {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.evoBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--section-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.evoBtnDanger {
+  border-color: var(--red-border);
+  color: var(--danger);
+}
+
+.evoBtnDanger:hover {
+  background: var(--red-bg);
 }

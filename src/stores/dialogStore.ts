@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { HistoryItem } from "@/stores/appStore";
 import type { ChainDef } from "@/lib/api/chains";
 import type { Chain } from "@/lib/chains/types";
+import type { MilestoneEvent } from "@/lib/milestones";
 
 interface DialogState {
   /** 正在编辑的记录（非 null 时 ItemEditorDialog 打开） */
@@ -51,6 +52,28 @@ interface DialogState {
   profileOpen: boolean;
   openProfile: () => void;
   closeProfile: () => void;
+  /** 粘贴守卫（v6.2）：粘贴前敏感确认条（参考 ChainRunnerDialog 的 pendingAi promise 模式） */
+  pasteGuard: {
+    text: string;
+    maskPreview: string;
+    targetApp: string | null;
+    resolve: (v: "mask" | "raw" | "cancel") => void;
+  } | null;
+  openPasteGuard: (p: {
+    text: string;
+    maskPreview: string;
+    targetApp: string | null;
+    resolve: (v: "mask" | "raw" | "cancel") => void;
+  }) => void;
+  closePasteGuard: () => void;
+  /** 里程碑时刻（v6.8 粘性 B1）：非 null 时 MilestoneDialog 打开 */
+  milestone: MilestoneEvent | null;
+  openMilestone: (m: MilestoneEvent) => void;
+  closeMilestone: () => void;
+  /** 免费额度签到弹窗（v6.9）：true 时 QuotaDialog 打开 */
+  quotaOpen: boolean;
+  openQuota: () => void;
+  closeQuota: () => void;
 }
 
 /**
@@ -92,4 +115,13 @@ export const useDialogStore = create<DialogState>((set) => ({
   profileOpen: false,
   openProfile: () => set({ profileOpen: true }),
   closeProfile: () => set({ profileOpen: false }),
+  pasteGuard: null,
+  openPasteGuard: (p) => set({ pasteGuard: p }),
+  closePasteGuard: () => set({ pasteGuard: null }),
+  milestone: null,
+  openMilestone: (m) => set({ milestone: m }),
+  closeMilestone: () => set({ milestone: null }),
+  quotaOpen: false,
+  openQuota: () => set({ quotaOpen: true }),
+  closeQuota: () => set({ quotaOpen: false }),
 }));

@@ -108,6 +108,28 @@
   animation: spin 1s linear infinite;
 }
 
+/*
+ * `.spin` —— 全仓 31 处写的都是 `className="spin"`（如 <Loader2 className="spin" />），
+ * 但在 2026-08-11 之前全仓**没有任何地方定义过全局 `.spin`**：
+ * 唯一一处 `.spin` 在 EncodingDialog.module.css 里，而 CSS Module 的类名会被哈希成
+ * `_spin_xxxxx`，不会产生全局类。结果是那 31 个“转圈”图标**全部是静止的**，
+ * 用户实测到的现象就是“AI 跑的时候没有任何动态效果”。
+ *
+ * 补在这里而不是把 31 处改成 `.spin-icon`：改 1 处就能让 31 处全活，
+ * 且以后再有人写 `className="spin"` 也不会再踩这个坑。
+ */
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+/* 无障碍：用户开了“减少动画”就不转，但图标仍在（不影响“正在处理”的语义） */
+@media (prefers-reduced-motion: reduce) {
+  .spin,
+  .spin-icon {
+    animation: none;
+  }
+}
+
 /* ===== 统一版本徽章（自 app.css 迁入，多窗口入口共用） ===== */
 .version-badge {
   display: inline-flex;

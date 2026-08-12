@@ -10,48 +10,122 @@
   flex-direction: column;
 }
 
-/* 头部：图标 + 标题 + 可用数 + 关闭，左对齐排列 */
+/* 头部：图标 + 标题 + 可用数 + 关闭，左对齐排列。
+
+   两个链入口曾经也在这行，结果是**真的画到了弹窗外面**：
+   主窗口 480px 时弹窗实际只有 448px（max-width: calc(100vw - 32px)），
+   减掉左右 padding 20×2 只剩 408px，而六个元素加 gap 已经是 ~406px——
+   一进「编链中…」态再宽 12px 就爆了。链入口已下移到 .chainRow。
+
+   下面三道防线不能删：就算链按钮搬走了，将来再往 header 加东西
+   一样会重蹈覆辙——flex 子项默认 min-width:auto，不收缩就直接顶出去。 */
 .hub :global(.dialog-header) {
   justify-content: flex-start;
   gap: 9px;
+  min-width: 0;
 }
+/* 防线一：图标与关闭按钮定宽，永不参与挤压 */
 .headerIcon {
   display: inline-flex;
   align-items: center;
   color: var(--accent);
+  flex-shrink: 0;
 }
+/* 防线二：标题可收缩，溢出转省略号而不是顶破布局。
+   它是这行里唯一允许被压的东西（“变换为…”本来就是个固定短标题）。 */
+.hub :global(.dialog-title) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* margin-left:auto 现在才真的成立：它后面只剩关闭按钮，
+   效果就是“计数右对齐、关闭贴最右”。
+   （之前它后面还跟着两个按钮，等于把那一整块推到右边，左侧留大片空白。） */
 .headerSub {
   margin-left: auto;
-  margin-right: 4px;
   font-size: 11px;
   color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
-/* X1 B1：动作链入口按钮 */
-.chainBtn {
-  display: inline-flex;
+
+/* ===== 链入口（独立一行双 tile）=====
+   位置在 NlCommandBar 与卡片区之间：三者都是“怎么处理这段内容”，
+   从一句话 → 一条链 → 单个变换，粒度递减。
+   横向 margin 跟齐 NlCommandBar 的 14px。 */
+.chainRow {
+  display: flex;
+  gap: 8px;
+  margin: 10px 14px 0;
+  flex-shrink: 0;
+}
+.chainTile {
+  flex: 1;
+  /* min-width:0 是必需的：不写的话 tile 会被内部文字撑到比一半宽，
+     两张加起来又把这行顶出去——和 header 溢出是同一个成因。 */
+  min-width: 0;
+  display: flex;
   align-items: center;
-  gap: 5px;
-  margin-right: 8px;
-  padding: 4px 10px;
+  gap: 9px;
+  padding: 9px 11px;
+  border-radius: 11px;
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 11.5px;
-  font-weight: 600;
+  background: var(--card-bg);
   cursor: pointer;
   font-family: inherit;
-  transition: 0.15s;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
 }
-.chainBtn:hover:not(:disabled) {
+.chainTile:hover:not(:disabled) {
   border-color: var(--accent);
-  color: var(--accent-strong);
   background: var(--accent-light);
 }
-/* 编链中 / 内容为空：禁用态要看得出来，否则用户会反复点 */
-.chainBtn:disabled {
+.chainTile:disabled {
   opacity: 0.5;
   cursor: default;
+}
+.chainTileIcon {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+/* AI 那张用品牌色：图标实色取渐变起点，与 AiMark 对齐 */
+.chainTileIcon[data-ai="1"] {
+  background: var(--accent-light);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--brand-ai-from);
+}
+.chainTileText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+.chainTileName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 副标题：原本这句话只存在于 title 悬停提示里，等于没有。
+   禁用时这里要换成**原因**（“没有可处理的文字”），
+   而不是只变灏——只变灏的话用户不知道为什么点不了，会反复点。 */
+.chainTileDesc {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 卡片列表（可滚动） */
@@ -108,8 +182,9 @@
   gap: 6px;
 }
 
-/* 徽标已抄到 components/AiBadge.module.css——它要同时出现在变换卡片、
-   模型芯片与 v6.0 的卡片动作条上，留在这里必然分叉。 */
+/* AI 徽标不在这里：它要同时出现在变换卡片、模型芯片、卡片动作条、
+   顶栏品牌与引流胶囊，留在这里必然分叉。
+   现在全站 AI 标识只有一个实现：components/ai/AiMark（AiBadge 只是它的薄壳）。 */
 
 .editedBadge {
   padding: 0 6px;
@@ -193,6 +268,22 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 推荐理由（“为什么排这里”）。用 accent 而不是 muted：
+   它是个性化信息，和静态描述（cardDesc）得一眼分得开。 */
+.why {
+  font-size: 11px;
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.why svg { flex-shrink: 0; opacity: 0.85; }
+/* 负面理由（产物常被改）退回 muted：它解释降权，不该看着像推荐理由 */
+.whyMuted { color: var(--text-muted); }
+
 .score {
   margin-left: auto;
   font-size: 10px;
@@ -448,4 +539,219 @@
   text-align: center;
   font-size: 12.5px;
   color: var(--text-muted);
+}
+
+/* v6.10 流式打字机（变换中心结果区） */
+.streamBox {
+  font-size: 11px;
+  color: var(--text-primary);
+  line-height: 1.6;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 7px 10px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  min-height: 30px;
+  font-family: inherit;
+}
+.caret {
+  display: inline-block;
+  width: 6px;
+  height: 13px;
+  background: var(--accent);
+  vertical-align: -2px;
+  margin-left: 1px;
+  animation: caretBlink 0.9s steps(1) infinite;
+}
+@keyframes caretBlink {
+  0%, 55% { opacity: 1; }
+  56%, 100% { opacity: 0; }
+}
+
+/* v6.10 追问轮次（变换中心） */
+.followTurns {
+  margin-top: 8px;
+  margin-left: 14px;
+  border-left: 2px solid var(--accent-border);
+  padding-left: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.followTurn { display: flex; flex-direction: column; gap: 4px; }
+.followQ { font-size: 10px; font-weight: 600; color: var(--text-secondary); }
+.followQ::before { content: "你："; color: var(--text-muted); font-weight: 400; }
+.followA {
+  margin: 0;
+  font-size: 10.5px;
+  color: var(--text-primary);
+  line-height: 1.6;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  padding: 5px 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.followPending {
+  font-size: 10px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* ==========================================================================
+   08-11 AI 运行态（方案 A2）+ 待发送内容卡（方案 B1）
+   ========================================================================== */
+
+/* ---------- A2：思考态 ---------- */
+
+/* 三点依次跳动。放在「AI 思考中」后面，配合已修好的全局 .spin 一起表达“在跑”。
+   首字到达前云端常要 1~3 秒（推理模型更久），这段时间只能靠它。 */
+@keyframes dotJump {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+.dots {
+  display: inline-flex;
+  gap: 3px;
+  align-items: flex-end;
+  height: 13px;
+}
+
+.dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: dotJump 1.2s ease-in-out infinite;
+}
+
+.dots i:nth-child(2) { animation-delay: 0.15s; }
+.dots i:nth-child(3) { animation-delay: 0.3s; }
+
+/* 当前模型名，摆在思考条右端：让「花的是哪家的额度」当场可见。
+   取自 useAiStatus() 的缓存快照（30s TTL），不新增任何请求。 */
+.runModel {
+  margin-left: auto;
+  font-size: 10.5px;
+  opacity: 0.75;
+  font-family: Consolas, monospace;
+  max-width: 44%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 骨架条：首字到达前占位。高度 6px 是对着 11px 字号的小写字高取的——
+   9px 看着像一根胖胶囊，不像“这儿待会儿会出现一行字”。 */
+@keyframes shimmer {
+  0% { background-position: -180px 0; }
+  100% { background-position: 180px 0; }
+}
+
+.skel {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--hover) 25%, var(--section-bg) 50%, var(--hover) 75%);
+  background-size: 360px 100%;
+  animation: shimmer 1.3s linear infinite;
+}
+
+/* 骨架容器复用 .streamBox 的外观，但去掉 min-height、收紧内边距。
+   代价说明：这样骨架盒约 20px、而 .streamBox 是 30px，首字到达时盒子会长高约 10px。
+   这是「紧凑」与「完全不跳」之间的取舍，选了前者（用户实测嫌 30px 太高）。
+   若要改回不跳，把下面的 min-height 设成 30px 即可。 */
+.skelBox {
+  min-height: 0;
+  padding: 6px 10px;
+}
+
+/* 无障碍：减少动画时不做流光/跳动，保留静态占位（语义仍然是“在等结果”） */
+@media (prefers-reduced-motion: reduce) {
+  .dots i { animation: none; opacity: 0.7; }
+  .skel { animation: none; background: var(--hover); }
+}
+
+/* ---------- B1：待发送内容卡 ---------- */
+
+/* 橙色 = “待确认、点了才会出网”。
+   改之前这里用的是 .cardPreview（绿色成功框）装一句“点运行后才会发送到云端”，
+   既看不到要发什么，颜色语义还是反的（绿色应当留给真正跑出来的结果）。 */
+.willSend {
+  margin: 0 13px;
+  border: 1px solid var(--orange-border);
+  background: var(--orange-bg);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.wsHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--orange);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--orange-border);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.wsFold {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--accent-strong);
+  flex-shrink: 0;
+}
+
+.wsBody {
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  font-family: "Cascadia Code", Consolas, monospace;
+  max-height: 76px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* 收起态：单行省略，卡片省高度 */
+.wsBodyFold {
+  max-height: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wsFoot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 5px 10px;
+  font-size: 10px;
+  color: var(--text-muted);
+  border-top: 1px dashed var(--orange-border);
+}
+
+.wsPill {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--dialog-bg);
+  border: 1px solid var(--orange-border);
+  color: var(--orange);
+  white-space: nowrap;
 }

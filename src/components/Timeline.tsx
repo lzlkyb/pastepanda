@@ -73,9 +73,7 @@ export function Timeline({
   onDragScroll,
   onWheelScroll,
   onTriggerEnter,
-  onTimelineLeave,
   onExpandChange,
-  scrollRef,
 }: TimelineProps) {
   const [dragging, setDragging] = useState(false);
   const [capsuleDragging, setCapsuleDragging] = useState(false);
@@ -87,7 +85,8 @@ export function Timeline({
   // #8 展开状态变化时通知父组件调整卡片 padding
   useEffect(() => {
     onExpandChange?.(isExpanded);
-  }, [isExpanded]);
+    // onExpandChange 父侧传的是 setState（React 保证恒引用），列进依赖无开销
+  }, [isExpanded, onExpandChange]);
 
   // #6 计算当前分组的卡片数量
   const currentGroupCount = useMemo(() => {
@@ -109,7 +108,6 @@ export function Timeline({
     const activeGroups = groupOrder.filter(g => counts[g] && counts[g] > 0);
     const totalLabels = activeGroups.length * labelRatio;
     const nodeRatioTotal = total / (total + totalLabels);
-    const labelRatioTotal = totalLabels / (total + totalLabels);
 
     const segments: { group: TimeGroup; pct: number }[] = [];
     let remaining = 100;
@@ -129,7 +127,7 @@ export function Timeline({
   // #4 分组标签悬停预览 — 计算每个分组的时间范围和卡片数
   const groupPreviews = useMemo(() => {
     const groupOrder: TimeGroup[] = ["today", "yesterday", "thisWeek", "earlier"];
-    const result: Record<TimeGroup, { count: number; timeRange: string }> = {} as any;
+    const result = {} as Record<TimeGroup, { count: number; timeRange: string }>;
     for (const g of groupOrder) {
       const idx = groupIndices[g];
       if (idx === undefined || idx < 0) continue;

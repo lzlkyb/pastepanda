@@ -1,4 +1,8 @@
 use crate::data_store::{compute_pinyin_initials, DataStore, HistoryItem};
+// 内容 md5 走共享实现：原先本文件自己拄了一份 `md5_hex`，注释写着“与
+// clipboard_monitor::md5_hex 同口径”——但那只是注释承诺。智能合并完全依赖
+// 两边真的算出同一个值，不一致就会堆重复记录。
+use crate::hashing::content_md5;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::UdpSocket;
@@ -459,6 +463,58 @@ impl LanSync {
                             }
                         };
 
+                        // 智能合并：同步消息按内容 md5 去重——同一内容被多台设备连续广播、
+                        // 或本机已存在相同内容时，只更新时间不新建（此前 LAN 同步完全不去重，
+                        // md5 也存 None，收到几条广播就堆几条重复记录）
+                        let sync_hash = content_md5(&final_text);
+                        let store = app_handle.try_state::<DataStore>();
+                        let mut merged = false;
+                        if let Some(ref store) = store {
+                            if let Ok(Some(existing)) =
+                                store.find_latest_by_md5(&sync_hash, "默认", &item_type)
+                            {
+                                merged = true;
+                                // 写入失败时不能 emit 新时间：那会让界面显示“刚刚”而 DB 里还是
+                                // 旧时间，下次重载就跳回去。内容本身不会丢（那条记录本就存在），
+                                // 所以仍然 merged/continue，只是不拿不存在的时间去骗前端。
+                                let time_written =
+                                    match store.update_history_time(&existing.id, &now_str) {
+                                        Err(e) => {
+                                            log::warn!(
+                                                "[LanSync] 更新重复同步记录时间失败: {}",
+                                                e
+                                            );
+                                            false
+                                        }
+                                        Ok(_) => {
+                                            log::info!(
+                                                "[LanSync] 智能合并重复同步内容 (id={})",
+                                                existing.id
+                                            );
+                                            true
+                                        }
+                                    };
+                                let shown_time = if time_written {
+                                    now_str.clone()
+                                } else {
+                                    existing.time.clone()
+                                };
+                                let updated_item = HistoryItem {
+                                    time: shown_time,
+                                    source: source.clone(),
+                                    group_id: existing.group_id.clone(),
+                                    ..existing
+                                };
+                                let _ = app_handle.emit(
+                                    "clipboard-changed",
+                                    serde_json::json!({ "item": updated_item }),
+                                );
+                            }
+                        }
+                        if merged {
+                            continue;
+                        }
+
                         let item = HistoryItem {
                             id: uuid::Uuid::new_v4().to_string(),
                             text: final_text,
@@ -468,7 +524,7 @@ impl LanSync {
                             pinned: false,
                             source,
                             workspace: "默认".to_string(),
-                            md5: None,
+                            md5: Some(sync_hash),
                             pinyin_initials,
                             group_id: None,
                             source_icon: None,

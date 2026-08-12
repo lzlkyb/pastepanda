@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda · AI 栏↔卡片锛定（方案 C）设计稿</title>
+<style>
+/* ========================================================================
+   尺寸与变量**全部抄自真实代码**：
+   - AiQuickBar.tsx:68      const topItem = useAppStore((s) => s.history[0])
+                            → 取的是**全量已加载窗口**的第一条，
+                              而列表显示的是 store.getFilteredItems()
+   - AiQuickBar.module.css  .wrap padding:0 12px
+                            .bar  flex/gap:6px/padding:7px 10px/radius:10px
+                                  border:1px solid var(--accent-border)
+                            .acts flex/gap:5px/flex-wrap:wrap
+                            .q    radius:7px/padding:3px 9px/11px/accent-light
+   - CardList.module.css    .card padding:12px 16px/radius:16px/height:72px
+                                  position:relative/**overflow:hidden**
+                                  background:var(--glass-card-bg)
+                            .card::before      光泽层 inset:0 / z-index:0
+                            .cardPinned::after 置顶图钉 📌 / z-index:5
+   ===================================================================== */
+.t-oceandark{
+  --app-bg:#0E3355;--dialog-bg:#0A1628;--card-bg:#0A1628;
+  --glass-card-bg:rgba(10,22,40,.55);--glass-card-border:#162B45;
+  --glass-card-shadow:0 2px 8px rgba(0,0,0,.3);--glass-shimmer-static:rgba(255,255,255,.04);
+  --text-primary:#E0E8F0;--text-secondary:#A2B6CD;--text-muted:#7994B4;
+  --border-color:#162B45;--accent:#3B9EFF;--accent-light:#0A1E3A;--accent-strong:#3B9EFF;
+  --accent-border:rgba(59,158,255,.35);--section-bg:#081018;
+  --brand-ai-from:#A8DEFF;--brand-ai-to:#D8CCFF;
+}
+.t-ocean{
+  --app-bg:#F7F7F8;--dialog-bg:#fff;--card-bg:#fff;
+  --glass-card-bg:rgba(255,255,255,.85);--glass-card-border:#E0E4EB;
+  --glass-card-shadow:0 2px 8px rgba(0,0,0,.06);--glass-shimmer-static:rgba(255,255,255,.5);
+  --text-primary:#0F172A;--text-secondary:#495565;--text-muted:#627083;
+  --border-color:#E0E4EB;--accent:#0284C7;--accent-light:#E0F2FE;--accent-strong:#0273AD;
+  --accent-border:rgba(2,132,199,.35);--section-bg:#F0F4F8;
+  --brand-ai-from:#1D4ED8;--brand-ai-to:#6D28D9;
+}
+*{box-sizing:border-box}
+body{margin:0;padding:28px 24px 60px;background:#14161A;color:#C9D2DD;
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.7}
+h1{font-size:19px;color:#fff;margin:0 0 4px}
+h2{font-size:15px;color:#fff;margin:34px 0 6px}
+h3{font-size:13px;color:#DDE4EC;margin:20px 0 4px}
+.sub{color:#7C8899;font-size:12px;margin:0 0 22px}
+.note{color:#8D9AAB;font-size:12px;margin:4px 0 14px;max-width:940px}
+.note b{color:#D6DEE8;font-weight:600}
+.bad{border-left:3px solid #E06C6C;background:rgba(224,108,108,.08);padding:10px 14px;margin:12px 0 18px;max-width:940px;border-radius:0 6px 6px 0}
+.bad b{color:#F09A9A}
+.warn{border-left:3px solid #E8A33D;background:rgba(232,163,61,.08);padding:10px 14px;margin:12px 0 18px;max-width:940px;border-radius:0 6px 6px 0}
+.warn b{color:#F0BC6B}
+hr{border:0;border-top:1px solid #262A31;margin:30px 0 0}
+code{background:#1C2027;padding:1px 5px;border-radius:4px;font-size:11.5px}
+table{border-collapse:collapse;margin:12px 0 0;font-size:12.5px;max-width:940px}
+th,td{border:1px solid #2A2F37;padding:7px 11px;text-align:left;vertical-align:top}
+th{background:#1C2027;color:#E4EAF1;font-weight:600}
+td{color:#B4BECB}
+td.y{color:#6FD68B} td.n{color:#E07C7C}
+
+/* 面板模拟：侧边栏展开时 cardPanel = 480 - 180 = 300px（最窄情况） */
+.stage{display:flex;gap:26px;flex-wrap:wrap;margin:16px 0 0;align-items:flex-start}
+.cap{font-size:11px;color:#6E7A8A;margin:0 0 6px}
+.panel{width:300px;background:var(--app-bg);border:1px solid var(--border-color);
+  border-radius:10px;padding:10px 0;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+.panel.wide{width:480px}
+
+/* AiQuickBar */
+.aiWrap{padding:0 12px}
+.aiBar{display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:10px;
+  background:var(--dialog-bg);border:1px solid var(--accent-border);
+  box-shadow:0 1px 3px color-mix(in srgb,var(--accent) 10%,transparent);
+  flex-wrap:wrap}
+.aiLbl{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;
+  letter-spacing:.3px;color:var(--brand-ai-from);flex:none}
+.grad{background:linear-gradient(92deg,var(--brand-ai-from),var(--brand-ai-to));
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.acts{display:flex;gap:5px;flex-wrap:wrap}
+.q{display:inline-flex;align-items:center;gap:3px;border:1px solid var(--accent-border);
+  border-radius:7px;padding:3px 9px;font-size:11px;background:var(--accent-light);
+  color:var(--accent-strong)}
+.hintTxt{margin-left:auto;font-size:11px;color:var(--text-muted);flex-shrink:0}
+.aiX{width:18px;height:18px;border-radius:5px;display:inline-flex;
+  align-items:center;justify-content:center;color:var(--text-muted);flex:none}
+
+/* 新增：目标摘要行 */
+.tgt{display:flex;align-items:center;gap:5px;width:100%;min-width:0;
+  padding-top:6px;margin-top:1px;border-top:1px dashed var(--accent-border);
+  font-size:10.5px;color:var(--text-muted)}
+/* 来源标签 = 卡片同款 SourceBadge size="small"（值取自 SourceBadge.module.css .small + .badge），
+   真实代码里不是这几条自绘样式，是那个组件。noHover 关掉 hover 亮底（摘要行不可点）。 */
+.tgtBadge{display:inline-flex;align-items:center;gap:4px;height:18px;padding:0 8px;
+  font-size:10px;font-weight:600;border-radius:6px;max-width:90px;flex:none;
+  color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  background:var(--glass-icon-bg,rgba(255,255,255,.05));
+  border:1px solid var(--glass-icon-border,rgba(255,255,255,.08))}
+.tgtTxt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tgtOff{flex:none;margin-left:auto;font-size:9.5px;padding:1px 5px;border-radius:5px;
+  background:var(--section-bg);border:1px solid var(--border-color);color:var(--text-muted)}
+
+/* 卡片 */
+.cards{padding:10px 16px 0;display:flex;flex-direction:column;gap:10px}
+.card{padding:12px 16px;border-radius:16px;height:72px;position:relative;overflow:hidden;
+  background:var(--glass-card-bg);border:1px solid var(--glass-card-border);
+  box-shadow:var(--glass-card-shadow);display:flex;flex-direction:column;justify-content:center;gap:3px}
+.cTxt{font-size:12.5px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cMeta{font-size:10.5px;color:var(--text-muted)}
+/* 卡片侧**零改动**：不加高亮、不加微标。
+   现有选中态（CardList.tsx:810 的 selected）保持原样，
+   “在处理哪条”完全靠 AI 栏里那行摘要表达。 */
+.pin::after{content:'📌';position:absolute;left:2px;top:4px;font-size:10px;line-height:1;z-index:5}
+
+.badge{position:absolute;right:10px;top:8px;font-size:9px;font-weight:700;
+  padding:1px 5px;border-radius:5px;background:var(--accent-light);
+  border:1px solid var(--accent-border)}
+</style>
+</head>
+<body>
+
+<h1>AI 栏 ↔ 卡片锛定（方案丙：跟随焦点 + 新内容拉回最新 + 摘要行）</h1>
+<p class="sub">2026-08-12 · 面板宽 300px（480 窗口 − 180 侧边栏，最窄情况）· 尺寸取自真实代码</p>
+
+<div class="bad">
+<b>根因：AI 栏硬绑 <code>history[0]</code>，与用户选了哪张卡毫无关系。</b><br>
+<code>AiQuickBar.tsx:68</code> 是 <code>useAppStore((s) =&gt; s.history[0])</code>——取**全量已加载窗口**的第一条。
+而 store 里早就有 <code>focusId</code>（键盘导航焦点）与 <code>selectedIds</code>（批量多选），AI 栏一个都没读。<br><br>
+<b>而卡片的选中高亮已经存在</b>（<code>CardList.tsx:810</code>）：<br>
+<code>selected={focusId === item.id || selectedIds.has(item.id)}</code><br>
+→ 所以只要让 AI 栏跟随 <code>focusId</code>，<b>锛定就天然成立，不需要新增任何高亮样式</b>。
+初稿里那套“额外加 inset box-shadow 左边条 + AI 处理中微标”已作废。<br><br>
+摘要行仍然要做：焦点为空时回落到 <code>history[0]</code>，那条可能不在视野里；
+且“正在处理哪条”本身就该说清楚。
+</div>
+
+<div class="warn">
+<b>行为规则（方案丙）</b><br>
+① <b>目标 = <code>focusId ?? history[0]</code></b>——键盘 ↑↓ 或点卡片切焦点，AI 栏（含可用动作列表）跟着换；<br>
+② <b>新剪贴板内容到达时清空 <code>focusId</code></b>（挂在 <code>prependItem</code>），拉回最新条——
+不这样做的话，用户上次留下的焦点会让 AI 栏指着旧条目，刚复制的反而不管，跟“复制即用”直接打架；<br>
+③ <b>只跟 <code>focusId</code>，不跟 <code>selectedIds</code></b>——后者是多选集，而 AI 动作是单条操作，多选时根本无法定义“处理哪条”。
+</div>
+
+<hr>
+
+<h2>态 1 · 焦点在最新条（刚复制完）</h2>
+<div class="warn">
+<b>卡片侧零改动。</b>不加左边条、不加“AI 处理中”微标，现有选中态保持原样。<br>
+所以“在处理哪条”<b>完全靠 AI 栏里那一行摘要</b>表达——这也是本次唯一新增的 UI。
+</div>
+<div class="stage">
+  <div>
+    <p class="cap">ocean-dark · 300px</p>
+    <div class="panel t-oceandark">
+      <div class="aiWrap">
+        <div class="aiBar">
+          <span class="aiLbl">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
+            <span class="grad">AI</span>
+          </span>
+          <div class="acts">
+            <span class="q">解释报错</span>
+            <span class="q">总结</span>
+            <span class="q">更多…</span>
+          </div>
+          <span class="hintTxt">文本</span>
+          <span class="aiX">✕</span>
+          <!-- 新增：目标摘要行 -->
+          <div class="tgt">
+            <span class="tgtBadge">💬 微信</span>
+            <span class="tgtTxt">下单失败 orderId=88213 uid=40021 NullPointerException</span>
+          </div>
+        </div>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <span class="cTxt">下单失败 orderId=88213 uid=40021</span>
+          <span class="cMeta">微信 · 刚刚</span>
+        </div>
+        <div class="card">
+          <span class="cTxt">SELECT * FROM orders WHERE id IN (…)</span>
+          <span class="cMeta">VSCode · 3 分钟前</span>
+        </div>
+        <div class="card pin">
+          <span class="cTxt">https://example.com/docs/api</span>
+          <span class="cMeta">Chrome · 1 小时前</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <p class="cap">ocean（浅色）· 300px</p>
+    <div class="panel t-ocean">
+      <div class="aiWrap">
+        <div class="aiBar">
+          <span class="aiLbl">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
+            <span class="grad">AI</span>
+          </span>
+          <div class="acts">
+            <span class="q">解释报错</span>
+            <span class="q">总结</span>
+            <span class="q">更多…</span>
+          </div>
+          <span class="hintTxt">文本</span>
+          <span class="aiX">✕</span>
+          <div class="tgt">
+            <span class="tgtBadge">💬 微信</span>
+            <span class="tgtTxt">下单失败 orderId=88213 uid=40021 NullPointerException</span>
+          </div>
+        </div>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <span class="cTxt">下单失败 orderId=88213 uid=40021</span>
+          <span class="cMeta">微信 · 刚刚</span>
+        </div>
+        <div class="card">
+          <span class="cTxt">SELECT * FROM orders WHERE id IN (…)</span>
+          <span class="cMeta">VSCode · 3 分钟前</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>态 2 · 搜索/筛选：降级为仅摘要，并明说“不在当前列表”</h2>
+<p class="note">
+这是方案 C 最关键的一态。光把高亮去掉不够——用户会以为 AI 栏在处理搜索结果里的第一条。
+所以摘要行右侧补一个<b>「不在当前列表」微标</b>，把这个事实直接说出来。
+</p>
+<div class="stage">
+  <div>
+    <p class="cap">搜索“订单”时</p>
+    <div class="panel t-oceandark">
+      <div class="aiWrap">
+        <div class="aiBar">
+          <span class="aiLbl">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
+            <span class="grad">AI</span>
+          </span>
+          <div class="acts">
+            <span class="q">解释报错</span>
+            <span class="q">总结</span>
+            <span class="q">更多…</span>
+          </div>
+          <span class="hintTxt">文本</span>
+          <span class="aiX">✕</span>
+          <div class="tgt">
+            <span class="tgtBadge">💬 微信</span>
+            <span class="tgtTxt">下单失败 orderId=88213 uid=40021</span>
+            <span class="tgtOff">不在当前列表</span>
+          </div>
+        </div>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <span class="cTxt">订单导出.xlsx</span>
+          <span class="cMeta">资源管理器 · 昨天</span>
+        </div>
+        <div class="card">
+          <span class="cTxt">订单状态枚举：PAID / SHIPPED</span>
+          <span class="cMeta">VSCode · 前天</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>态 3 · AI 栏未显示时：卡片不得高亮</h2>
+<p class="note">
+AI 栏有三个不渲染的条件（<code>AiQuickBar.tsx:300</code>）：<code>!topItem</code>、<code>actions.length === 0</code>、<code>closed</code>（用户点了 ✕）。
+<b>这三种情况下卡片都不能还高亮着</b>——否则就成了一个指向不存在之物的标记。
+</p>
+<div class="stage">
+  <div>
+    <p class="cap">用户点了 ✕ 关掉 AI 栏</p>
+    <div class="panel t-oceandark">
+      <div class="cards" style="padding-top:0">
+        <div class="card">
+          <span class="cTxt">下单失败 orderId=88213 uid=40021</span>
+          <span class="cMeta">微信 · 刚刚</span>
+        </div>
+        <div class="card">
+          <span class="cTxt">SELECT * FROM orders WHERE id IN (…)</span>
+          <span class="cMeta">VSCode · 3 分钟前</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>实现上的三个硬约束</h2>
+
+<div class="warn">
+<b>① 搜索模式下，<code>focusId</code> 指向的条目不一定在 <code>history</code> 数组里。</b><br>
+<code>getFilteredItems()</code> 在搜索模式直接返回 <code>searchResults</code>（后端全量搜索结果，
+<b>包含尚未分页加载到内存的记录</b>）。所以拿 <code>focusId</code> 去 <code>history.find()</code> 会找不到。<br>
+→ 解析顺序必须是：<code>searchResults</code> → <code>history</code> → 回落 <code>history[0]</code>。
+只查一边就会在搜索时静默退回最新条，而用户明明选中了另一条。
+</div>
+
+<div class="warn">
+<b>② 不要为了拿到目标而订阅整个 <code>history</code> 数组。</b><br>
+现在是 <code>useAppStore((s) =&gt; s.history[0])</code>——只在**第一条变了**时重渲染。
+改成订阅 <code>s.history</code> 全数组的话，任何一条置顶/删除/标签变动都会让 AI 栏重渲染，
+而它里面挂着在飞的 AI 请求状态。<br>
+→ 订阅 <code>focusId</code> + <code>history[0]</code> + <code>historyVersion</code>，在 <code>useMemo</code> 里用
+<code>getState()</code> 做查找。
+</div>
+
+<div class="warn">
+<b>③ 300px 宽带不下“摘要与动作同行”。</b><br>
+<code>.bar</code> 需要补上 <code>flex-wrap:wrap</code>（原代码没有，本次一并加），摘要行再用 <code>width:100%</code> 强制占满一行（自然换行到第二行），
+上方用一条 <code>1px dashed var(--accent-border)</code> 分隔，而不是另开一个容器——
+保持“它属于这个 AI 栏”的包裹关系。垂直多占约 <b>22px</b>。
+</p>
+</div>
+
+<div class="warn">
+<b>④ 来源图标是双模式的，稿里画的只是其中一档。</b><br>
+<code>config.source_icon_mode</code> 有 <code>"emoji"</code> / <code>"app"</code> 两档，
+且**默认值是 <code>"app"</code>**（真实程序图标）。上面三个主题示意里胶囊内的 💬 是 <b>emoji 档</b>，
+默认配置下那个位置是 11×11px 的真实应用图标。<br>
+→ 这一格完整交给 <code>&lt;SourceBadge size="small" noHover /&gt;</code>（与卡片同一个组件、同一档尺寸），
+双模式解析在它内部的 <code>useSourceIcon(source, source_icon)</code> 里（规则 #11）；
+<code>source_icon</code> 必须传，它是缓存 key，不传就会拿窗口标题做 key、每条重新提取一次。<br>
+<code>noHover</code> 是本次给 SourceBadge 新加的开关：卡片可点，hover 亮底是正常反馈；
+摘要行点了没反应，亮底就是假的可交互暗示。静止外观两边完全一致。
+</div>
+
+<h3>摘要行的内容取舍</h3>
+<table>
+<tr><th style="width:110px">元素</th><th>取值</th><th>为什么</th></tr>
+<tr><td>来源图标 + 名</td><td><code>&lt;SourceBadge size="small" noHover /&gt;</code>，与卡片同款</td><td>最快的识别维度——用户记得“刚从微信复制的”比记得正文开头省力；跟卡片长得不一样反而要多认一次</td></tr>
+<tr><td>正文预览</td><td><code>topItem.text</code> 单行截断</td><td>真正的确认依据。单行 + ellipsis，不换行（换行会把栏撑得很高）</td></tr>
+<tr><td>时间</td><td class="n">不放</td><td>300px 下与正文抢宽，而它对“是哪条”几乎无贡献（总是“刚刚”）</td></tr>
+<tr><td>「不在当前列表」</td><td>仅当目标不在 <code>getFilteredItems()</code> 里时</td><td>这一态不说清，用户会认为 AI 栏在处理搜索结果的第一条</td></tr>
+<tr><td>卡片上的微标</td><td>“AI 处理中”（品牌渐变）</td><td>左边条只能说“这条特殊”，说不了“特殊在哪”；两者配合才完整</td></tr>
+</table>
+
+<p class="note" style="margin-top:16px">
+卡片上那个微标用的是<b>已统一的品牌渐变</b>（<code>--brand-ai-from/to</code>），
+与顶栏上标、AiBadge、AI 栏标签同一套语言——一眼就能把它与 AI 栏关联起来。
+</p>
+
+</body>
+</html>

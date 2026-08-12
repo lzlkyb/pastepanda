@@ -8,7 +8,10 @@
 import { useMemo, type CSSProperties } from "react";
 import type { RoleScore } from "@/lib/api/profile";
 
-/** 六角色固定顺序（与后端 ROLES 一致），决定六个轴各占哪个方位 */
+/**
+ * 六角色固定顺序（与后端 src-tauri/src/data_store/profile.rs 的 ROLES 手写保持一致）——
+ * 加角色必须两端同步改，否则雷达轴与后端统计对不上。
+ */
 export const ROLES_ORDER = ["developer", "research", "writer", "comm", "ops", "data"];
 const ROLE_LABELS: Record<string, string> = {
   developer: "开发",

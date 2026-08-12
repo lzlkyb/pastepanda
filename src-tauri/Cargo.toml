@@ -1,6 +1,6 @@
 [package]
 name = "pastepanda"
-version = "6.0.0"
+version = "6.10.0"
 description = "PastePanda - Smart Clipboard Manager"
 authors = ["you"]
 edition = "2021"
@@ -52,7 +52,9 @@ encoding_rs = "0.8"
 chardetng = "0.1"
 # 云端 AI 地基（阶段 B0）：OpenAI 兼容的 /chat/completions 调用。
 # 用 rustls 而非 native-tls：免掉 OpenSSL 构建依赖，也不绑定系统 schannel 版本。
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+# v6.10 流式输出：SSE 逐块解析（reqwest bytes_stream 的 StreamExt）
+futures-util = "0.3"
 # tree-sitter 语言仲裁层（方案 B）：规则引擎存疑时用真实语法解析投票定语言
 tree-sitter = "0.26"
 tree-sitter-javascript = "0.25"
@@ -66,6 +68,10 @@ tree-sitter-html = "0.23"
 tree-sitter-css = "0.25"
 tree-sitter-bash = "0.25"
 tree-sitter-sequel = "0.3"
+
+[dev-dependencies]
+# v6.10 测试基建：本地 mock OpenAI 服务（tiny_http 轻量、仅测试用，不进发布包）
+tiny_http = "0.12"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

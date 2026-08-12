@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda · 主窗口左上角 AI 标识 设计稿</title>
+<style>
+/* ========================================================================
+   本稿变量与尺寸**全部抄自真实代码**，不是估的：
+   - 主题变量：src/styles/theme.css（ocean 默认浅色 / ocean-dark 深色）
+   - 顶栏结构：src/components/TopBar.tsx:167-186
+   - 顶栏样式：src/components/TopBar.module.css
+       .header       padding:16px 16px 0
+       .headerTop    flex / space-between / margin-bottom:12px
+       .headerTitle  flex / align-center / gap:8px
+       .sidebarToggle 28x28 / radius 8px
+       .headerTitleText 15px / 700 / --text-primary
+       .headerIcons  flex / gap:2px
+       .iconBtn      28x28 / radius 8px
+   - AI 徽章样式：src/components/AiBadge.module.css（.badge + .ai）
+   - 右上角胶囊：src/components/AiStatusCap.module.css（.cap 高 22px / radius 11px）
+   窗口宽度取 480px —— TopBar.tsx:20 注释写明「480px 默认窗宽」。
+   ===================================================================== */
+
+/* ── ocean（默认浅色）── theme.css:68 起 */
+.t-ocean {
+  --app-bg: #F7F7F8;
+  --card-bg: #fff;
+  --card-border: #E0E4EB;
+  --text-primary: #0F172A;
+  --text-secondary: #495565;
+  --text-muted: #627083;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --accent-solid: #027CBB;
+  --accent-strong: #0273AD;
+  --section-bg: #F0F4F8;
+  --success: #16A34A;
+}
+
+/* ── ocean-dark（玻璃拟态深色）── theme.css:468 起 */
+.t-oceandark {
+  --app-bg: radial-gradient(130% 110% at 70% -5%, #1E5A82 0%, #0E3355 42%, #061A33 100%);
+  --card-bg: #0A1628;
+  --card-border: #162B45;
+  --text-primary: #E0E8F0;
+  --text-secondary: #A2B6CD;
+  --text-muted: #7994B4;
+  --border-color: #162B45;
+  --accent: #3B9EFF;
+  --accent-light: #0A1E3A;
+  --accent-solid: #2D78C2;
+  --accent-strong: #3B9EFF;
+  --section-bg: #081018;
+  --success: #22C55E;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 28px 24px 60px;
+  background: #14161A;
+  color: #C9D2DD;
+  font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 13px;
+  line-height: 1.7;
+}
+h1 { font-size: 19px; color: #fff; margin: 0 0 4px; }
+h2 { font-size: 15px; color: #fff; margin: 34px 0 6px; }
+.sub { color: #7C8899; font-size: 12px; margin: 0 0 22px; }
+.note { color: #8D9AAB; font-size: 12px; margin: 4px 0 14px; max-width: 900px; }
+.note b { color: #D6DEE8; font-weight: 600; }
+.warn {
+  border-left: 3px solid #E8A33D; background: rgba(232,163,61,.08);
+  padding: 10px 14px; margin: 12px 0 18px; max-width: 900px; border-radius: 0 6px 6px 0;
+}
+.warn b { color: #F0BC6B; }
+hr { border: 0; border-top: 1px solid #262A31; margin: 30px 0 0; }
+
+/* ===== 480px 窗口模拟 ===== */
+.stage { display: flex; gap: 22px; flex-wrap: wrap; margin: 14px 0 0; }
+.win {
+  width: 480px;
+  background: var(--app-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0,0,0,.4);
+}
+.winTag {
+  font-size: 11px; color: #6E7A8A; margin: 0 0 6px; letter-spacing: .3px;
+}
+
+/* .header —— TopBar.module.css:4 */
+.header { padding: 16px 16px 0; }
+/* .headerTop —— :10 */
+.headerTop { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+/* .headerTitle —— :17 */
+.headerTitle { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* .sidebarToggle —— :21 */
+.sidebarToggle {
+  width: 28px; height: 28px; border: none; background: transparent;
+  border-radius: 8px; cursor: pointer; display: flex; align-items: center;
+  justify-content: center; color: var(--text-secondary); font-size: 15px; flex: none;
+}
+/* .headerTitleIcon —— :56 */
+.headerTitleIcon { display: flex; align-items: center; justify-content: center; flex: none; }
+.headerTitleIcon .fallback {
+  width: 20px; height: 20px; border-radius: 5px; font-size: 13px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent-light); border: 1px solid var(--border-color);
+}
+/* .headerTitleText —— :66 */
+.headerTitleText { font-size: 15px; font-weight: 700; color: var(--text-primary); white-space: nowrap; }
+/* UpdateBadge 位（真实组件，此处只占位示意） */
+.updBadge {
+  font-size: 9.5px; font-weight: 600; padding: 1px 5px; border-radius: 5px;
+  color: var(--text-muted); background: var(--section-bg);
+  border: 1px solid var(--border-color); white-space: nowrap;
+}
+/* .headerIcons —— :72 */
+.headerIcons { display: flex; gap: 2px; align-items: center; flex: none; }
+.iconBtn {
+  width: 28px; height: 28px; border: none; background: transparent; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-secondary); position: relative; flex: none;
+}
+.iconBtn svg { width: 16px; height: 16px; }
+/* .headerDivider —— :79 */
+.headerDivider { width: 1px; height: 16px; background: var(--border-color); flex: none; margin: 0 4px; }
+/* AiStatusDot —— AiStatusDot.module.css */
+.aiDot {
+  position: absolute; top: 2px; right: 2px; width: 6px; height: 6px;
+  border-radius: 50%; background: var(--success); border: 1px solid var(--card-bg);
+}
+/* AiStatusCap —— AiStatusCap.module.css .cap + .off */
+.aiCap {
+  display: inline-flex; align-items: center; gap: 3px; height: 22px; padding: 0 9px;
+  font-size: 11px; font-weight: 600; border-radius: 11px; white-space: nowrap;
+  border: 1px dashed var(--accent); background: var(--accent-light); color: var(--accent-strong);
+}
+/* 搜索框位（只画一条，说明标题行下方还有内容，不喧宾夺主） */
+.searchStub {
+  height: 32px; border-radius: 8px; background: var(--card-bg);
+  border: 1px solid var(--border-color); margin: 0 16px 14px;
+  display: flex; align-items: center; padding: 0 10px;
+  color: var(--text-muted); font-size: 12px;
+}
+
+/* ========== 方案 A：标题后 AI 徽章（复用 AiBadge .ai） ========== */
+/* AiBadge.module.css .badge：9.5px / 600 / padding 1px 5px / radius 5px / gap 3px
+   .ai：--accent-light 底 + color-mix(accent 35%) 描边 + --accent-strong 字 */
+.aBadge {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 9.5px; font-weight: 600; line-height: 1.5;
+  padding: 1px 5px; border-radius: 5px; white-space: nowrap; vertical-align: middle;
+  background: var(--accent-light);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--accent-strong);
+  flex: none;
+}
+.aBadge svg { width: 10px; height: 10px; flex: none; }
+
+/* ========== 方案 B：图标右下角标（零占宽） ========== */
+.bWrap { position: relative; display: flex; align-items: center; flex: none; }
+.bCorner {
+  position: absolute; right: -3px; bottom: -3px;
+  width: 11px; height: 11px; border-radius: 50%;
+  background: var(--accent-solid); border: 1.5px solid var(--app-bg);
+  display: flex; align-items: center; justify-content: center;
+}
+.t-oceandark .bCorner { border-color: #0E3355; }
+.bCorner svg { width: 6px; height: 6px; color: #fff; }
+
+/* ========== 方案 C：渐变 AI 上标（并进品牌字）——已选定并实现 ==========
+   端点色与真实代码一致：theme.css 的 --brand-ai-from / --brand-ai-to，
+   TopBar.module.css 的 .brandTitle / .brandAiSup。
+   初稿写的是 var(--accent) → #9B6BFF，**实测不达标已废弃**：
+     --accent 压 ocean 底 3.82:1 / 压 ocean-dark 顶部 2.65:1；#9B6BFF 压 ocean 底 3.30:1。
+   9px/800 算小字，标准是 4.5:1。 */
+.t-ocean { --brand-ai-from: #1D4ED8; --brand-ai-to: #6D28D9; }      /* 浅色档 6.25:1 / 6.63:1 */
+.t-oceandark { --brand-ai-from: #A8DEFF; --brand-ai-to: #D8CCFF; } /* 深色档 5.13:1 / 4.93:1 */
+.cTitle { display: inline-flex; align-items: flex-start; white-space: nowrap; }
+.cSup {
+  font-size: 9px; font-weight: 800; letter-spacing: .5px; margin-left: 3px;
+  line-height: 1; position: relative; top: 1px;
+  background: linear-gradient(92deg, var(--brand-ai-from) 0%, var(--brand-ai-to) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+/* 放大镜（把 20px 区域放大 4 倍看细节） */
+.zoomRow { display: flex; gap: 26px; flex-wrap: wrap; align-items: flex-end; margin-top: 10px; }
+.zoom { text-align: center; }
+.zoom .box {
+  transform: scale(3.4); transform-origin: bottom left;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px; border-radius: 4px;
+}
+.zoom .cap2 { font-size: 11px; color: #6E7A8A; margin-top: 74px; }
+
+/* 对比表 */
+table { border-collapse: collapse; margin: 12px 0 0; font-size: 12.5px; max-width: 940px; }
+th, td { border: 1px solid #2A2F37; padding: 7px 11px; text-align: left; vertical-align: top; }
+th { background: #1C2027; color: #E4EAF1; font-weight: 600; }
+td { color: #B4BECB; }
+td.y { color: #6FD68B; } td.n { color: #E07C7C; }
+.pick { color: #6FD68B; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>主窗口左上角 AI 标识 · 设计稿</h1>
+<p class="sub">2026-08-12 · 窗口宽度 480px（TopBar.tsx:20 注明的默认窗宽）· 变量与尺寸取自真实代码</p>
+
+<div class="warn">
+<b>先说一个必须先解决的冲突。</b><br>
+顶栏<b>右侧已经有一个 <code>✦ AI</code></b>：<code>AiStatusCap</code>（AiStatusCap.tsx:88），未配置时显示虚线胶囊「✦ AI」引流去设置。
+如果左上角照搬同一个 <code>✦ AI</code>，未配置的用户会在同一行看到<b>两个一模一样的东西</b>——那不叫强化，叫重复。<br><br>
+所以两者要<b>语义分层</b>，本稿三个方案都按这个前提设计：<br>
+· <b>左上角 = 品牌</b>：这个产品是 AI 的。永远在，不可点，不反映任何状态。<br>
+· <b>右上角 = 状态与入口</b>：你的 AI 配好了没。配好就消失（收成设置按钮上的绿点）。
+</div>
+
+<hr>
+
+<h2>方案 A：标题后挂一枚 AI 徽章<span class="pick"> · 推荐</span></h2>
+<p class="note">
+直接复用 <b>AiBadge 的 <code>.ai</code> 样式</b>（AiBadge.module.css:29）——9.5px / 600 / <code>--accent-light</code> 底 / <code>accent 35%</code> 描边 / <code>--accent-strong</code> 字。
+这套视觉语言用户在<b>变换卡片上已经见过</b>，放到标题旁边不需要重新学。零新增样式源，改 AiBadge 一处全站跟着变（这正是当初抽出它的目的）。<br>
+占宽约 <b>34px</b>，480px 下左侧仍有余量。
+</p>
+<div class="stage">
+  <div>
+    <p class="winTag">ocean（默认浅色）</p>
+    <div class="win t-ocean">
+      <div class="header">
+        <div class="headerTop">
+          <div class="headerTitle">
+            <button class="sidebarToggle">☰</button>
+            <span class="headerTitleIcon"><span class="fallback">🐼</span></span>
+            <span class="headerTitleText">PastePanda</span>
+            <span class="aBadge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>AI</span>
+            <span class="updBadge">v6.9</span>
+          </div>
+          <div class="headerIcons">
+            <span class="iconBtn"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2.6 2.9 7.66a.95.95 0 0 0 0 1.68L12 14.4l9.1-5.06a.95.95 0 0 0 0-1.68Z" fill="currentColor" fill-opacity=".88"/><path d="m3.2 12.4 8.8 4.9 8.8-4.9" stroke="currentColor" stroke-opacity=".5" stroke-width="2.1" stroke-linecap="round"/><path d="m3.2 16.9 8.8 4.9 8.8-4.9" stroke="currentColor" stroke-opacity=".26" stroke-width="2.1" stroke-linecap="round"/></svg></span>
+            <span class="iconBtn"><svg viewBox="0 0 24 24" fill="none"><path d="M9 7.6V6.1a2.6 2.6 0 0 1 2.6-2.6h.8A2.6 2.6 0 0 1 15 6.1v1.5" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/><rect x="2.9" y="7.6" width="18.2" height="12.6" rx="2.7" fill="currentColor" fill-opacity=".22" stroke="currentColor" stroke-width="2.1"/><path d="M2.9 12.4h18.2" stroke="currentColor" stroke-opacity=".55" stroke-width="2.1"/></svg></span>
+            <span class="iconBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="aiDot"></span></span>
+            <span class="headerDivider"></span>
+            <span class="iconBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></span>
+            <span class="iconBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19M6.61 6.61A18.45 18.45 0 0 0 2 12s3 8 10 8a9.12 9.12 0 0 0 5.39-1.61M2 2l20 20"/></svg></span>
+          </div>
+        </div>
+      </div>
+      <div class="searchStub">搜索历史记录…</div>
+    </div>
+  </div>
+
+  <div>
+    <p class="winTag">ocean-dark（深色）</p>
+    <div class="win t-oceandark">
+      <div class="header">
+        <div class="headerTop">
+          <div class="headerTitle">
+            <button class="sidebarToggle">☰</button>
+            <span class="headerTitleIcon"><span class="fallback">🐼</span></span>
+            <span class="headerTitleText">PastePanda</span>
+            <span class="aBadge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>AI</span>
+            <span class="updBadge">v6.9</span>
+          </div>
+          <div class="headerIcons">
+            <span class="aiCap"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>AI</span>
+            <span class="iconBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+            <span class="headerDivider"></span>
+            <span class="iconBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></span>
+            <span class="iconBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19M6.61 6.61A18.45 18.45 0 0 0 2 12s3 8 10 8a9.12 9.12 0 0 0 5.39-1.61M2 2l20 20"/></svg></span>
+          </div>
+        </div>
+      </div>
+      <div class="searchStub">搜索历史记录…</div>
+    </div>
+  </div>
+</div>
+<p class="note" style="margin-top:14px">
+右边这张是<b>未配置 AI</b> 的样子——左品牌徽章（实线、静态）和右状态胶囊（虚线、可点、22px 高）<b>形态明显不同</b>，不会被读成同一个东西。
+配好之后右侧胶囊消失，只剩左边的品牌徽章 + 设置按钮上的绿点。
+</p>
+
+<hr>
+
+<h2>方案 B：图标右下角标（零占宽）</h2>
+<p class="note">
+在 20px 的 AppIcon 右下叠一枚 11px 实心圆角标。<code>position:absolute</code>，<b>横向一个像素都不占</b>——480px 窗宽下最安全。
+语义是「应用图标本身被 AI 加持了」。<br>
+<b>代价：太小。</b>11px 的角标在 100% 缩放下几乎是个装饰点，达不到「宣示进入 AI 时代」的效果——那是本次需求的原话。
+</p>
+<div class="stage">
+  <div>
+    <p class="winTag">ocean-dark</p>
+    <div class="win t-oceandark">
+      <div class="header">
+        <div class="headerTop">
+          <div class="headerTitle">
+            <button class="sidebarToggle">☰</button>
+            <span class="bWrap">
+              <span class="headerTitleIcon"><span class="fallback">🐼</span></span>
+              <span class="bCorner"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.2 5.8L20 10l-5.8 2.2L12 18l-2.2-5.8L4 10l5.8-2.2z"/></svg></span>
+            </span>
+            <span class="headerTitleText">PastePanda</span>
+            <span class="updBadge">v6.9</span>
+          </div>
+          <div class="headerIcons">
+            <span class="iconBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="aiDot"></span></span>
+            <span class="headerDivider"></span>
+            <span class="iconBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></span>
+          </div>
+        </div>
+      </div>
+      <div class="searchStub">搜索历史记录…</div>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>方案 C：品牌字里的渐变 AI 上标<span class="pick"> · 已选定并实现</span></h2>
+<p class="note">
+把 <code>AI</code> 做成蓝→紫渐变上标贴在 <code>PastePanda</code> 后面，宣示感最强，最像「产品改朝换代了」。
+</p>
+<div class="warn">
+<b>对比度复验结果：初稿的配色三项全不达标，已换掉。</b><br>
+9px/800 算小字，标准 4.5:1。初稿写的 <code>var(--accent) → #9B6BFF</code> 实测：<br>
+· <code>--accent</code> #0284C7 压 ocean 底 #F7F7F8 —— <b>3.82:1</b> ✗<br>
+· <code>#9B6BFF</code> 压 ocean 底 —— <b>3.30:1</b> ✗<br>
+· <code>--accent</code> #3B9EFF 压 ocean-dark 顶部 #1E5A82 —— <b>2.65:1</b> ✗<br><br>
+改成<b>按明暗分两档的固定品牌色</b>（不跟 <code>--accent</code> 走，因为它标的是产品身份而非当前主题）：<br>
+· 浅色档 <code>#1D4ED8 → #6D28D9</code>：ocean 6.25/6.63、forest 5.93、blossom 5.61/5.95 —— 全过<br>
+· 深色档 <code>#A8DEFF → #D8CCFF</code>：ocean-dark 5.13/4.93（两档里最紧）、midnight >12 —— 全过<br><br>
+另外补了一条 <code>@media (forced-colors: active)</code> 退回实心色：渐变文字靠 <code>color:transparent</code> 露背景，Windows 高对比度下 background 被换掉就会<b>整个字消失</b>。
+</div>
+<div class="stage">
+  <div>
+    <p class="winTag">ocean-dark</p>
+    <div class="win t-oceandark">
+      <div class="header">
+        <div class="headerTop">
+          <div class="headerTitle">
+            <button class="sidebarToggle">☰</button>
+            <span class="headerTitleIcon"><span class="fallback">🐼</span></span>
+            <span class="cTitle"><span class="headerTitleText">PastePanda</span><span class="cSup">AI</span></span>
+            <span class="updBadge">v6.9</span>
+          </div>
+          <div class="headerIcons">
+            <span class="iconBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="aiDot"></span></span>
+            <span class="headerDivider"></span>
+            <span class="iconBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></span>
+          </div>
+        </div>
+      </div>
+      <div class="searchStub">搜索历史记录…</div>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>三方案放大 3.4 倍看细节</h2>
+<div class="zoomRow t-oceandark" style="background:#0E3355;padding:20px 24px;border-radius:10px">
+  <div class="zoom">
+    <div class="box">
+      <span class="headerTitleIcon"><span class="fallback">🐼</span></span>
+      <span class="headerTitleText">PastePanda</span>
+      <span class="aBadge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>AI</span>
+    </div>
+    <div class="cap2">方案 A</div>
+  </div>
+  <div class="zoom">
+    <div class="box">
+      <span class="bWrap">
+        <span class="headerTitleIcon"><span class="fallback">🐼</span></span>
+        <span class="bCorner"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.2 5.8L20 10l-5.8 2.2L12 18l-2.2-5.8L4 10l5.8-2.2z"/></svg></span>
+      </span>
+      <span class="headerTitleText">PastePanda</span>
+    </div>
+    <div class="cap2">方案 B</div>
+  </div>
+  <div class="zoom">
+    <div class="box">
+      <span class="headerTitleIcon"><span class="fallback">🐼</span></span>
+      <span class="cTitle"><span class="headerTitleText">PastePanda</span><span class="cSup">AI</span></span>
+    </div>
+    <div class="cap2">方案 C</div>
+  </div>
+</div>
+
+<hr>
+
+<h2>对比</h2>
+<table>
+<tr><th style="width:120px"></th><th>A · 标题后徽章</th><th>B · 图标角标</th><th>C · 渐变上标</th></tr>
+<tr><td>宣示强度</td><td class="y">够（有字有色块）</td><td class="n">弱（11px 装饰点）</td><td class="y">最强</td></tr>
+<tr><td>占横向宽</td><td>约 34px</td><td class="y">0</td><td>约 18px</td></tr>
+<tr><td>新增样式源</td><td class="y">0（复用 AiBadge）</td><td>1 个角标类</td><td class="n">1 套渐变文字（第 4 种 AI 视觉）</td></tr>
+<tr><td>与右侧胶囊冲突</td><td class="y">形态不同，可区分</td><td class="y">无</td><td class="y">无</td></tr>
+<tr><td>6 套主题适配</td><td class="y">自动（全用变量）</td><td class="y">自动</td><td class="n">紫端要逐主题验对比度</td></tr>
+<tr><td>改动量</td><td class="y">TopBar.tsx 一行</td><td>1 组件 + 1 css</td><td>1 组件 + 1 css + 对比度复验</td></tr>
+</table>
+
+<hr>
+
+<h2>渐变字推广到全站 AI 标识</h2>
+<p class="note">
+选定 C 之后，同一套蓝→紫渐变字推到了其它 AI 标识处。样式只存一份：<code>globals.css</code> 的全局类 <code>.aiGrad</code>（四个入口都引了 globals.css）。
+</p>
+<table>
+<tr><th style="width:170px">位置</th><th style="width:90px">改不改</th><th>理由</th></tr>
+<tr><td>顶栏品牌上标</td><td class="y">✓ 渐变</td><td>本次新增的品牌标识</td></tr>
+<tr><td><code>AiBadge kind="ai"</code></td><td class="y">✓ 渐变</td><td>变换卡片 / 动作链里的 AI 标识，与品牌同一含义</td></tr>
+<tr><td><code>AiStatusCap .off</code></td><td class="y">✓ 渐变</td><td>未配置的引流胶囊，也是“这是 AI”</td></tr>
+<tr><td><code>AiBadge remote / thinking</code></td><td class="n">✗ 不改</td><td>它们是<b>中性提示</b>（会联网 / 会先思考），原设计就故意降级不跟 AI 抢注意力</td></tr>
+<tr><td><code>AiStatusCap .nokey</code> / 余额不足</td><td class="n">✗ 不改</td><td><b>警示态</b>。换成品牌蓝紫 = 把“还差一步”说成“一切就绪”</td></tr>
+<tr><td><code>AiStatusDot</code>（绿点）</td><td class="n">✗ 不改</td><td>那是状态指示灯，不是 AI 标识；而且 6px 圆点上渐变看不出来</td></tr>
+</table>
+<p class="note" style="margin-top:12px">
+<b>两个实现上的坑，已处理：</b><br>
+① <b>图标不能继承渐变</b>。图标是 <code>currentColor</code> 描边的 svg，而渐变那套的 <code>color</code> 是 <code>transparent</code>——直接把图标画没。图标改用实色 <code>var(--brand-ai-from)</code>（渐变起点色，与文字对齐）。<br>
+② <b>徽章外壳不能直接扔渐变</b>。<code>background-clip:text</code> 征用 <code>background</code>，而外壳的 background 已经是徽章底色了——两个只能活一个。渐变只能包在内层的文字 span 上。<br>
+另外 <code>.off:hover</code> 会换成深色实心底，浅色主题下的深蓝/深紫渐变压上去看不清，hover 时单独退回白字。
+</p>
+
+<hr>
+
+<p class="note" style="margin-top:18px">
+<b>我推荐 A。</b>它是唯一一个既够醒目、又不新造视觉语言的方案——用户在变换卡片上已经认得这枚徽章，
+把它挂到品牌名旁边，读出来就是「这个软件的 AI 和你刚才用的是同一个 AI」，而不是又一个装饰。
+B 太轻达不到需求，C 的宣示力要用「第四种 AI 视觉 + 六套主题重新验对比度」去换，不划算。
+</p>
+
+</body>
+</html>

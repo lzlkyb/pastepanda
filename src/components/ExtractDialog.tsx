@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Link2, AtSign, Phone, Code2, Hash, Copy, CheckSquare, Save, LucideIcon } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "@/stores/appStore";
+import { useAppStore, type HistoryItem } from "@/stores/appStore";
 import { useToast } from "@/components/Toast";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { logger } from "@/lib/logger";
@@ -21,7 +21,7 @@ const EXTRACT_CONFIGS: { key: ExtractType; label: string; Icon: LucideIcon; rege
 ];
 
 // 各类型数量统计（memo：避免每次渲染对全量历史跑 5 个正则 — M23）
-const useTypeCounts = (history: any[], ws: string) =>
+const useTypeCounts = (history: HistoryItem[], ws: string) =>
   useMemo(() => {
     const allText = history
       .filter((h) => h.workspace === ws && h.type === "text")
@@ -39,6 +39,7 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
   const [type, setType] = useState<ExtractType>("url");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
+  const [savingSingle, setSavingSingle] = useState(false); // 审查：单条保存防双击
   const { toast } = useToast();
   const anim = useDialogAnim();
 
@@ -116,6 +117,8 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
 
   // 保存单条为片段
   const saveSingleAsSnippet = async (item: string) => {
+    if (savingSingle) return; // 审查：防双击重复保存
+    setSavingSingle(true);
     try {
       const name = item.length > 50 ? item.slice(0, 47) + "..." : item;
       await invoke("add_snippet", { name, content: item });
@@ -123,6 +126,8 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
     } catch (e) {
       logger.warn("保存片段失败", e);
       toast("保存片段失败", "error");
+    } finally {
+      setSavingSingle(false);
     }
   };
 
@@ -159,13 +164,7 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
                 const Icon = cfg.Icon;
                 return (
                   <button key={cfg.key} onClick={() => { setType(cfg.key); setSelected(new Set()); }}
-                    className={`${styles.extractTypeBtn}${active ? ` ${styles.active}` : ""}`}
-                    style={{
-                      background: active ? "var(--accent)" : "transparent",
-                      color: active ? "#fff" : "var(--text-secondary)",
-                    }}
-                    onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = "var(--hover)"; }}
-                    onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}>
+                    className={`${styles.extractTypeBtn}${active ? ` ${styles.active}` : ""}`}>
                     <Icon size={13} /> {cfg.label}
                     <span className={styles.tabCount}>{cfg.count}</span>
                   </button>
@@ -183,19 +182,19 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
                 results.map((item, i) => {
                   const isSel = selected.has(item);
                   return (
-                    <div key={i} onClick={() => toggleSelect(item)}
-                      className={`${styles.extractResult}${isSel ? ` ${styles.selected}` : ""}`}
-                      style={{
-                        background: isSel ? "var(--accent-light)" : "var(--card-bg)",
-                        border: `1px solid ${isSel ? "var(--accent)" : "var(--border-color)"}`,
+                    <div key={i}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => toggleSelect(item)}
+                      onKeyDown={(e) => {
+                        // 审查：键盘可达（此前 div onClick 纯键盘无法选择）
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          toggleSelect(item);
+                        }
                       }}
-                      onMouseEnter={(e) => { if (!isSel) e.currentTarget.style.background = "var(--hover)"; }}
-                      onMouseLeave={(e) => { if (!isSel) e.currentTarget.style.background = "var(--card-bg)"; }}>
-                      <div className={`${styles.extractCheckbox}${isSel ? ` ${styles.checked}` : ""}`}
-                        style={{
-                          background: isSel ? "var(--accent)" : "transparent",
-                          border: `1.5px solid ${isSel ? "var(--accent)" : "var(--border-color)"}`,
-                        }}>
+                      className={`${styles.extractResult}${isSel ? ` ${styles.selected}` : ""}`}>
+                      <div className={`${styles.extractCheckbox}${isSel ? ` ${styles.checked}` : ""}`}>
                         {isSel && <CheckSquare size={10} color="#fff" />}
                       </div>
                       <span className={styles.extractResultText}>{item}</span>
@@ -203,7 +202,10 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
                         <button className={`${styles.extractItemActionBtn} ${styles.copy}`}
                           onClick={(e) => {
                             e.stopPropagation();
-                            navigator.clipboard.writeText(item).catch(() => {});
+                            navigator.clipboard
+                              .writeText(item)
+                              .then(() => toast("已复制", "success"))
+                              .catch(() => toast("复制失败", "error"));
                           }}
                           title="复制">
                           <Copy size={12} />
@@ -233,9 +235,11 @@ export function ExtractDialog({ open, onClose }: { open: boolean; onClose: () =>
                   </button>
                 </div>
                 <div className={styles.extractFooterRight}>
-                  <button className={`${styles.btnSmV2} ${styles.outline}`} onClick={copySelected}
-                    disabled={selected.size === 0}>
-                    <Copy size={12} /> 复制选中
+                  {/* 未选任何项时降级为「复制全部」：原来这里是个灰掉的死按钮，
+                      而 copyAll 已经写好却没接到任何地方 */}
+                  <button className={`${styles.btnSmV2} ${styles.outline}`}
+                    onClick={selected.size === 0 ? copyAll : copySelected}>
+                    <Copy size={12} /> {selected.size === 0 ? "复制全部" : "复制选中"}
                   </button>
                   <button className={`${styles.btnSmV2} ${styles.primary}`} onClick={saveSelectedAsSnippets}
                     disabled={selected.size === 0 || saving}>

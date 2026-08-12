@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda · 变换中心链入口 溢出修复与美化 设计稿</title>
+<style>
+/* ========================================================================
+   尺寸与变量**全部抄自真实代码**：
+   - dialog.css:21  .dialog-box   max-width: calc(100vw - 32px)
+   - dialog.css:51  .dialog-box.w460  width:460px; max-height:78vh
+   - dialog.css:56  .dialog-header    height:48px; padding:0 20px; flex; space-between
+   - dialog.css:66  .dialog-title     15px / 600
+   - dialog.css:72  .dialog-close     28x28 / radius 8
+   - TransformHub.module.css:14 .hub .dialog-header  justify-content:flex-start; gap:9px
+   - TransformHub.module.css:23 .headerSub  margin-left:auto; margin-right:4px; 11px
+   - TransformHub.module.css:30 .chainBtn   padding:4px 10px; gap:5px; margin-right:8px; 11.5px/600
+   - TransformHub.module.css:58 .cards      flex:1; overflow-y:auto
+   - NlCommandBar.module.css:3  .bar        margin:8px 14px 0; padding:5px 8px 5px 10px; radius 9
+   ===================================================================== */
+
+.t-ocean {
+  --app-bg:#F7F7F8; --card-bg:#fff; --dialog-bg:#fff; --text-primary:#0F172A;
+  --text-secondary:#495565; --text-muted:#627083; --border-color:#E0E4EB;
+  --accent:#0284C7; --accent-light:#E0F2FE; --accent-solid:#027CBB; --accent-strong:#0273AD;
+  --section-bg:#F0F4F8; --hover:rgba(0,0,0,.05);
+  --brand-ai-from:#1D4ED8; --brand-ai-to:#6D28D9;
+}
+.t-oceandark {
+  --app-bg:#0E3355; --card-bg:#0A1628; --dialog-bg:#0A1628; --text-primary:#E0E8F0;
+  --text-secondary:#A2B6CD; --text-muted:#7994B4; --border-color:#162B45;
+  --accent:#3B9EFF; --accent-light:#0A1E3A; --accent-solid:#2D78C2; --accent-strong:#3B9EFF;
+  --section-bg:#081018; --hover:rgba(255,255,255,.06);
+  --brand-ai-from:#A8DEFF; --brand-ai-to:#D8CCFF;
+}
+
+* { box-sizing:border-box; }
+body{margin:0;padding:28px 24px 60px;background:#14161A;color:#C9D2DD;
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.7;}
+h1{font-size:19px;color:#fff;margin:0 0 4px}
+h2{font-size:15px;color:#fff;margin:34px 0 6px}
+.sub{color:#7C8899;font-size:12px;margin:0 0 22px}
+.note{color:#8D9AAB;font-size:12px;margin:4px 0 14px;max-width:940px}
+.note b{color:#D6DEE8;font-weight:600}
+.bad{border-left:3px solid #E06C6C;background:rgba(224,108,108,.08);padding:10px 14px;margin:12px 0 18px;max-width:940px;border-radius:0 6px 6px 0}
+.bad b{color:#F09A9A}
+.ok{border-left:3px solid #5FBF7F;background:rgba(95,191,127,.08);padding:10px 14px;margin:12px 0 18px;max-width:940px;border-radius:0 6px 6px 0}
+.ok b{color:#88D6A2}
+hr{border:0;border-top:1px solid #262A31;margin:30px 0 0}
+.pick{color:#6FD68B;font-weight:600}
+code{background:#1C2027;padding:1px 5px;border-radius:4px;font-size:11.5px}
+table{border-collapse:collapse;margin:12px 0 0;font-size:12.5px;max-width:940px}
+th,td{border:1px solid #2A2F37;padding:7px 11px;text-align:left;vertical-align:top}
+th{background:#1C2027;color:#E4EAF1;font-weight:600}
+td{color:#B4BECB}
+td.y{color:#6FD68B} td.n{color:#E07C7C}
+
+/* ===== 弹窗模拟 ===== */
+.stage{display:flex;gap:26px;flex-wrap:wrap;margin:14px 0 0;align-items:flex-start}
+.wrap{position:relative}
+.tag{font-size:11px;color:#6E7A8A;margin:0 0 6px;letter-spacing:.3px}
+/* 主窗口 480px 时，.dialog-box 实际宽 = min(460, 480-32) = 448 */
+.box{
+  width:448px;background:var(--dialog-bg);border:1px solid var(--border-color);
+  border-radius:16px;display:flex;flex-direction:column;overflow:hidden;
+  box-shadow:0 12px 40px rgba(0,0,0,.45);
+}
+/* 演示溢出用：不裁切，让超出部分真的画出去 */
+.box.leak{overflow:visible}
+
+.header{display:flex;align-items:center;height:48px;padding:0 20px;flex-shrink:0;
+  border-bottom:1px solid var(--border-color);justify-content:flex-start;gap:9px}
+.hIcon{display:inline-flex;align-items:center;color:var(--accent);flex:none}
+.hTitle{font-size:15px;font-weight:600;color:var(--text-primary);margin:0;white-space:nowrap}
+.hSub{margin-left:auto;margin-right:4px;font-size:11px;color:var(--text-muted);white-space:nowrap}
+.chainBtn{display:inline-flex;align-items:center;gap:5px;margin-right:8px;padding:4px 10px;
+  border:1px solid var(--border-color);border-radius:8px;background:transparent;
+  color:var(--text-secondary);font-size:11.5px;font-weight:600;font-family:inherit;white-space:nowrap}
+.close{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+  border:none;background:transparent;color:var(--text-secondary);flex:none}
+
+/* 修后：header 只剩四个元素 */
+.header.fixed .hSub{margin-left:auto}
+.header.fixed .hIcon,.header.fixed .close{flex:none}
+.header.fixed .hTitle{flex:none}
+
+/* NlCommandBar */
+.nl{display:flex;align-items:center;gap:8px;margin:8px 14px 0;padding:5px 8px 5px 10px;
+  border-radius:9px;background:var(--dialog-bg);border:1px solid var(--border-color)}
+.nlIcon{width:20px;height:20px;border-radius:6px;background:var(--accent-light);color:var(--accent-strong);
+  display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.nlInput{flex:1;font-size:12px;color:var(--text-muted);min-width:0}
+.nlGo{width:22px;height:22px;border-radius:6px;background:var(--accent-light);color:var(--accent-strong);
+  display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+
+/* 卡片区占位 */
+.cards{padding:4px 0 8px;min-height:96px}
+.secLabel{padding:10px 14px 2px;font-size:10.5px;font-weight:700;letter-spacing:.5px;color:var(--text-muted)}
+.cardStub{margin:6px 14px;height:44px;border-radius:10px;border:1px solid var(--border-color);
+  background:var(--card-bg);display:flex;align-items:center;padding:0 12px;gap:8px;
+  font-size:12px;color:var(--text-secondary)}
+.cardStub .dot{width:22px;height:22px;border-radius:7px;background:var(--accent-light);color:var(--accent-strong);
+  display:inline-flex;align-items:center;justify-content:center;flex:none}
+
+/* ========== 方案 A：链入口下移成双 tile ========== */
+.chainRow{display:flex;gap:8px;margin:10px 14px 0}
+.tile{
+  flex:1;min-width:0;display:flex;align-items:center;gap:9px;
+  padding:9px 11px;border-radius:11px;
+  border:1px solid var(--border-color);background:var(--card-bg);
+  cursor:pointer;font-family:inherit;text-align:left;transition:.15s;
+}
+.tile:hover{border-color:var(--accent);background:var(--accent-light)}
+.tileIco{width:28px;height:28px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.tileIco.plain{background:var(--section-bg);border:1px solid var(--border-color);color:var(--text-secondary)}
+.tileIco.ai{background:var(--accent-light);border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);color:var(--brand-ai-from)}
+.tileTxt{display:flex;flex-direction:column;min-width:0;gap:1px}
+.tileName{font-size:12px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tileDesc{font-size:10.5px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.grad{background:linear-gradient(92deg,var(--brand-ai-from) 0%,var(--brand-ai-to) 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.tile.disabled{opacity:.5;cursor:default}
+.tile.disabled:hover{border-color:var(--border-color);background:var(--card-bg)}
+
+/* ========== 方案 B：收成图标按钮 ========== */
+.iconOnly{width:28px;height:28px;border-radius:8px;border:1px solid var(--border-color);
+  background:transparent;color:var(--text-secondary);display:inline-flex;align-items:center;justify-content:center;flex:none}
+
+/* ========== 方案 C：单一下拉 ========== */
+.menuWrap{position:relative}
+.menu{position:absolute;top:34px;right:0;width:220px;padding:5px;border-radius:11px;
+  background:var(--dialog-bg);border:1px solid var(--border-color);box-shadow:0 10px 28px rgba(0,0,0,.35);z-index:5}
+.mItem{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:8px}
+.mItem:hover{background:var(--hover)}
+
+.arrow{position:absolute;font-size:11px;color:#E07C7C;white-space:nowrap}
+</style>
+</head>
+<body>
+
+<h1>变换中心 · 链入口溢出修复与美化</h1>
+<p class="sub">2026-08-12 · 主窗口 480px 下弹窗实际宽 448px（<code>min(460, 100vw-32)</code>）· 尺寸取自真实代码</p>
+
+<div class="bad">
+<b>现状：标题栏单行塞了 6 个元素，算不下。</b><br>
+<code>.dialog-header</code> 高 48px、左右 padding 20，内容区只有 <b>408px</b>（448 − 40）。而里面是：<br>
+图标 16 + 「变换为…」~75 + 「N 个可用变换」~76 + 动作链 ~80 + AI 编链 ~86 + 关闭 28 + 5×gap 45 = <b>~406px</b>。<br><br>
+三个造成溢出的真因：<br>
+① <b>没有任何元素写 <code>flex-shrink:0</code></b>，也没有 <code>min-width:0</code>——按钮里的文字直接顶出去；<br>
+② <b><code>.headerSub</code> 带 <code>margin-left:auto</code></b>，把它后面的四个元素整块推向右侧，<code>justify-content:flex-start</code> 等于白写；<br>
+③ <b>进入「编链中…」态会再宽 ~12px</b>（四字+省略号 vs “AI 编链”），正好把已经贴边的布局顶破。<br><br>
+弹窗本身有 <code>max-width</code> 但 header 内容不收缩、<code>overflow</code> 默认 visible，所以它真的能画到弹窗外面。
+</div>
+
+<h2>现状复现（不裁切，让溢出真的画出去）</h2>
+<div class="stage">
+  <div class="wrap">
+    <p class="tag">ocean-dark · 平常态</p>
+    <div class="box leak t-oceandark">
+      <div class="header">
+        <span class="hIcon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg></span>
+        <h2 class="hTitle">变换为…</h2>
+        <span class="hSub">12 个可用变换</span>
+        <button class="chainBtn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M6 9v6a3 3 0 0 0 3 3h6"/></svg> 动作链</button>
+        <button class="chainBtn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg> AI 编链</button>
+        <button class="close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
+      <div class="nl">
+        <span class="nlIcon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h7"/></svg></span>
+        <span class="nlInput">试试“转成 SQL IN”</span>
+        <span class="nlGo"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg></span>
+      </div>
+      <div class="cards">
+        <div class="secLabel">推荐</div>
+        <div class="cardStub"><span class="dot">▤</span> SQL IN</div>
+        <div class="cardStub"><span class="dot">{}</span> JSON 格式化</div>
+      </div>
+    </div>
+    <div class="arrow" style="top:26px;left:452px">← 关闭按钮已被顶到弹窗外</div>
+  </div>
+
+  <div class="wrap">
+    <p class="tag">ocean-dark · 「编链中…」态（再宽 12px，溢出更多）</p>
+    <div class="box leak t-oceandark">
+      <div class="header">
+        <span class="hIcon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg></span>
+        <h2 class="hTitle">变换为…</h2>
+        <span class="hSub">12 个可用变换</span>
+        <button class="chainBtn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M6 9v6a3 3 0 0 0 3 3h6"/></svg> 动作链</button>
+        <button class="chainBtn" style="opacity:.5"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" stroke-dasharray="40 20"/></svg> 编链中…</button>
+        <button class="close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
+      <div class="cards"><div class="cardStub"><span class="dot">▤</span> SQL IN</div></div>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>方案 A：链入口下移为独立一行双 tile<span class="pick"> · 推荐</span></h2>
+<p class="note">
+header 回归四个元素（图标 + 标题 + 计数 + 关闭），共 <b>~204px</b>，宽裕一半。<br>
+链入口拿到整行 <b>420px</b>（448 − 14×2 margin），两个 tile 各 <b>206px</b>（(420−8)/2）——
+不但不挤，还能把“这个按钮到底干什么”写出来。原来那句话只存在于 <code>title</code> 悬停提示里，等于没有。<br>
+位置放在 <b>NlCommandBar 下方、卡片区上方</b>：三者都是“怎么处理这段内容”，从一句话→一条链→单个变换，粒度递减，顺序自然。
+</p>
+<div class="stage">
+  <div>
+    <p class="tag">ocean-dark</p>
+    <div class="box t-oceandark">
+      <div class="header fixed">
+        <span class="hIcon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg></span>
+        <h2 class="hTitle">变换为…</h2>
+        <span class="hSub">12 个可用变换</span>
+        <button class="close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
+      <div class="nl">
+        <span class="nlIcon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h7"/></svg></span>
+        <span class="nlInput">试试“转成 SQL IN”</span>
+        <span class="nlGo"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg></span>
+      </div>
+      <div class="chainRow">
+        <button class="tile">
+          <span class="tileIco plain"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M6 9v6a3 3 0 0 0 3 3h6"/></svg></span>
+          <span class="tileTxt"><span class="tileName">动作链</span><span class="tileDesc">多步流程一键跑完</span></span>
+        </button>
+        <button class="tile">
+          <span class="tileIco ai"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg></span>
+          <span class="tileTxt"><span class="tileName grad">AI 编链</span><span class="tileDesc">让 AI 看内容配流水线</span></span>
+        </button>
+      </div>
+      <div class="cards">
+        <div class="secLabel">推荐</div>
+        <div class="cardStub"><span class="dot">▤</span> SQL IN</div>
+        <div class="cardStub"><span class="dot">{}</span> JSON 格式化</div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <p class="tag">ocean（默认浅色）· AI 编链禁用态（内容为空）</p>
+    <div class="box t-ocean">
+      <div class="header fixed">
+        <span class="hIcon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg></span>
+        <h2 class="hTitle">变换为…</h2>
+        <span class="hSub">12 个可用变换</span>
+        <button class="close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
+      <div class="nl">
+        <span class="nlIcon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h7"/></svg></span>
+        <span class="nlInput">试试“转成 SQL IN”</span>
+        <span class="nlGo"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg></span>
+      </div>
+      <div class="chainRow">
+        <button class="tile">
+          <span class="tileIco plain"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M6 9v6a3 3 0 0 0 3 3h6"/></svg></span>
+          <span class="tileTxt"><span class="tileName">动作链</span><span class="tileDesc">多步流程一键跑完</span></span>
+        </button>
+        <button class="tile disabled">
+          <span class="tileIco ai"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg></span>
+          <span class="tileTxt"><span class="tileName grad">AI 编链</span><span class="tileDesc">没有可处理的文字</span></span>
+        </button>
+      </div>
+      <div class="cards">
+        <div class="secLabel">推荐</div>
+        <div class="cardStub"><span class="dot">▤</span> SQL IN</div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="note" style="margin-top:14px">
+两个细节：<b>禁用态把副标题换成原因</b>（“没有可处理的文字”）而不是只变灏——现在的实现只有 <code>opacity:.5</code>，
+用户不知道为什么点不了。<b>“AI 编链”四个字用刚统一的品牌渐变</b>（<code>--brand-ai-from/to</code>），
+与顶栏、AiBadge 同一套语言。
+</p>
+
+<hr>
+
+<h2>方案 B：header 内收成图标按钮</h2>
+<p class="note">
+两个按钮只留 28×28 图标，文字进 <code>title</code>。header 降到 ~<b>250px</b>，不再溢出。<br>
+<b>代价：可发现性归零。</b>动作链是低频但高价值的功能，变成两个没有标签的小图标之后，新用户基本不会发现它们——这与“美化升级”的目标相反。
+</p>
+<div class="stage">
+  <div>
+    <p class="tag">ocean-dark</p>
+    <div class="box t-oceandark">
+      <div class="header fixed">
+        <span class="hIcon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg></span>
+        <h2 class="hTitle">变换为…</h2>
+        <span class="hSub">12 个可用变换</span>
+        <button class="iconOnly" title="动作链"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M6 9v6a3 3 0 0 0 3 3h6"/></svg></button>
+        <button class="iconOnly" title="AI 编链" style="color:var(--brand-ai-from)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg></button>
+        <button class="close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
+      <div class="cards">
+        <div class="secLabel">推荐</div>
+        <div class="cardStub"><span class="dot">▤</span> SQL IN</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>方案 C：合成一个「链」下拉</h2>
+<p class="note">
+header 只留一个「链 ▾」按钮，点开选“选一条现成的”/“让 AI 编一条”。最省空间，且两个入口天然同类、归成一组也合理。<br>
+<b>代价：多一次点击，而且要新写一套下拉（外点关闭 / 键盘导航 / 层级）。</b>为了省 200px 引入一个新控件，不划算。
+</p>
+<div class="stage">
+  <div>
+    <p class="tag">ocean-dark（展开态）</p>
+    <div class="box t-oceandark" style="overflow:visible">
+      <div class="header fixed">
+        <span class="hIcon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg></span>
+        <h2 class="hTitle">变换为…</h2>
+        <span class="hSub">12 个可用变换</span>
+        <span class="menuWrap">
+          <button class="chainBtn" style="margin-right:8px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M6 9v6a3 3 0 0 0 3 3h6"/></svg> 链 ▾</button>
+          <div class="menu">
+            <div class="mItem"><span class="tileIco plain" style="width:24px;height:24px;border-radius:7px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M6 9v6a3 3 0 0 0 3 3h6"/></svg></span><span class="tileTxt"><span class="tileName">选一条现成的</span><span class="tileDesc">多步流程一键跑完</span></span></div>
+            <div class="mItem"><span class="tileIco ai" style="width:24px;height:24px;border-radius:7px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg></span><span class="tileTxt"><span class="tileName grad">让 AI 编一条</span><span class="tileDesc">看内容配流水线</span></span></div>
+          </div>
+        </span>
+        <button class="close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
+      <div class="cards" style="min-height:130px">
+        <div class="secLabel">推荐</div>
+        <div class="cardStub"><span class="dot">▤</span> SQL IN</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>对比</h2>
+<table>
+<tr><th style="width:150px"></th><th>A · 下移双 tile</th><th>B · 图标按钮</th><th>C · 合成下拉</th></tr>
+<tr><td>header 占宽</td><td class="y">~204 / 408</td><td class="y">~250 / 408</td><td class="y">~270 / 408</td></tr>
+<tr><td>“编链中…”变宽会再溢出</td><td class="y">不会（在独立行）</td><td class="y">不会（图标定宽）</td><td class="y">不会</td></tr>
+<tr><td>能否说清用途</td><td class="y">能（副标题一行）</td><td class="n">不能（只剩 tooltip）</td><td>展开后能</td></tr>
+<tr><td>可发现性</td><td class="y">最好</td><td class="n">最差</td><td>中</td></tr>
+<tr><td>禁用态能说原因</td><td class="y">能</td><td class="n">不能</td><td>能</td></tr>
+<tr><td>新增控件</td><td class="y">无</td><td class="y">无</td><td class="n">要写下拉（外点/键盘/层级）</td></tr>
+<tr><td>垂直占高</td><td>+46px</td><td class="y">0</td><td class="y">0</td></tr>
+</table>
+
+<p class="note" style="margin-top:18px">
+<b>推荐 A。</b>它是唯一一个既修掉溢出、又真的把体验往上提的：两个链入口从“标题栏里挤的两个小按钮”
+变成“能看懂的两张卡”，而且把原本只存在于 <code>title</code> 里的说明搬到了可见处。<br>
+代价是垂直多占 46px——卡片区是 <code>flex:1; overflow-y:auto</code>，少看到的那点可以滚，而横向溢出是没得救的。
+</p>
+
+<hr>
+
+<h2>无论选哪个都要一并修的两条</h2>
+<p class="note">
+① <b><code>.hub :global(.dialog-header)</code> 补 <code>min-width:0</code>，各子项补 <code>flex-shrink:0</code>，标题补 <code>overflow:hidden; text-overflow:ellipsis</code></b>。
+现在没有任何一道防线——就算把链按钮搬走，将来再往 header 加东西会重蹈覆辙。<br>
+② <b><code>.headerSub</code> 的 <code>margin-left:auto</code> 要配合新结构重新审一遍</b>。搬走链按钮后它后面只剩关闭按钮，
+“计数右对齐、关闭贴最右”才是它本来想要的效果，这时候它才真的成立。
+</p>
+
+</body>
+</html>

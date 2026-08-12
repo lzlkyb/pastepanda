@@ -15,12 +15,13 @@
  * 本地变换重跑是白费，云端动作重跑是多一次往返。
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Copy, Check, Sparkles, Database, Table, List, ClipboardPaste,
   CaseUpper, CaseLower, Eraser, Pilcrow, Quote, RemoveFormatting, Link as LinkIcon,
   Globe, Mail, Phone, Code, Minus, Hash, Palette, Folder, FileText,
   Play, ShieldAlert, Languages, PenLine, Search, X, Loader2,
+  Clock, UserRound, Info, Workflow,
   type LucideIcon,
 } from "lucide-react";
 import { AiBadge, badgeKindOf } from "@/components/AiBadge";
@@ -32,10 +33,18 @@ async function goAdjustBudget() {
   useDialogStore.getState().closeHub();
   await openAiSettings();
 }
-import type { Transform, TransformOptionSpec, TransformResultMeta } from "@/lib/transforms";
+import type { RecommendReason, Transform, TransformOptionSpec, TransformResultMeta } from "@/lib/transforms";
+import { getTransform } from "@/lib/transforms";
 import { parseReplyCandidates } from "@/lib/replyCandidates";
 import { ReplyCandidates } from "@/components/transform/ReplyCandidates";
 import { AiResult } from "@/components/transform/AiResult";
+import { onAiChunk, ensureAiChunkListener } from "@/lib/useAiStream";
+// FollowupInput 已从 AiQuickBar.tsx 独立成文件（本处与 AI 快捷栏共用，
+// 再寄在对方组件里会在拆子组件时变成环依赖）
+import { FollowupInput } from "@/components/ai/FollowupInput";
+import { useToast } from "@/components/Toast";
+import { useAiStatus } from "@/hooks/useAiStatus";
+import { countChars, estimateTokens } from "@/lib/utils";
 import styles from "../TransformHub.module.css";
 
 /** 图标语义键 → lucide 组件（逻辑层保持纯净，图标在 UI 层映射） */
@@ -54,11 +63,30 @@ export function TIcon({ name, size = 15 }: { name?: string; size?: number }) {
   return <C size={size} />;
 }
 
+/** 理由图标：五种理由各给一个，光看图标就能分出是“常用”还是“被降权” */
+function ReasonIcon({ kind }: { kind: RecommendReason["kind"] }) {
+  const C =
+    kind === "scene" ? Clock
+    : kind === "sequence" ? Workflow
+    : kind === "role" ? UserRound
+    : kind === "quality" ? Info
+    : Sparkles;
+  return <C size={10} />;
+}
+
 type Preview =
   /** 云端动作/执行类动作：等用户点“运行/执行”，在那之前什么都不发 */
   | { state: "idle" }
-  | { state: "loading" }
-  | { state: "ok"; output: string; meta?: TransformResultMeta }
+  | { state: "loading"; streamText?: string }
+  | {
+      state: "ok";
+      output: string;
+      meta?: TransformResultMeta;
+      /** v6.10 追问：多轮问题/答案 */
+      followQs?: string[];
+      followAs?: string[];
+      followPending?: boolean;
+    }
   /** 仅执行类动作：run() 成功但无产物（副作用已完成） */
   | { state: "done" }
   | {
@@ -67,17 +95,26 @@ type Preview =
       /** 内容看起来是密钥，后端拒发了，等用户确认 */
       needsConfirm?: boolean;
       budgetExceeded?: boolean;
+      /** v6.9：内置免费额度不足（引导签到/兑换而非调预算） */
+      isQuota?: boolean;
     };
 
 export function TransformCard({
-  t, score, text, opts, html, specs, copied, onSetOpt, onCopy, onPaste, contentType, onDismiss,
+  t, score, text, opts, html, userTags, specs, copied, onSetOpt, onCopy, onPaste, onDismiss, reason,
 }: {
   t: Transform;
   score: number;
+  /** 推荐理由（“为什么排这里”）。冷启动 / 无主导因子时不传 */
+  reason?: RecommendReason;
   text: string;
   opts: Record<string, string>;
   /** P2：doc/rich 条目的 HTML 片段，透传给变换 run() */
   html?: string;
+  /**
+   * 条目的手工标签名（已拼串）。跟 `html` 走同一条路：本组件拿不到 item，
+   * 由 hub 上层传下来，在两处 `t.run` 里当成 opts 带给后端（见 lib/aiTags.ts）。
+   */
+  userTags?: string;
   specs: TransformOptionSpec[];
   copied: boolean;
   onSetOpt: (key: string, value: string) => void;
@@ -90,18 +127,46 @@ export function TransformCard({
 }) {
   const isRemote = !!t.remote;
   const isAction = t.kind === "action";
+  const { toast } = useToast();
   const [preview, setPreview] = useState<Preview>(
     isRemote || isAction ? { state: "idle" } : { state: "loading" }
   );
+  /** B1：待发送内容默认收起为一行——变换中心常常同屏多张卡，全部展开会把面板撑得很长 */
+  const [sendOpen, setSendOpen] = useState(false);
+  /** 当前模型名（运行条与待发送卡都要显）。
+   *  用已有的可用性快照（30s TTL 缓存、已被其它组件订阅），**不新增任何请求**。
+   *  注：它只有模型名，没有服务商显示名；拿后者要额外调 aiListProviders()，
+   *  为一个辅助信息每张卡多一次请求不值得。 */
+  const aiStatus = useAiStatus();
+  // 审查：execute 竞态防护 —— 远程动作运行中用户改 chip/OCR 更新文本，
+  // 旧请求晚到会覆盖新上下文的结果；代际计数让过期结果直接丢弃。
+  const runSeqRef = useRef(0);
 
   const execute = useCallback(
     async (force: boolean) => {
-      setPreview({ state: "loading" });
+      const seq = ++runSeqRef.current;
+      setPreview({ state: "loading", streamText: "" });
+      // v6.10 流式：远程动作注册增量监听（打字机）。
+      // 先 await 监听就绪再发请求（同 AiQuickBar）：listen() 异步注册，不等会丢首次开头几块
+      if (isRemote) await ensureAiChunkListener();
+      const offStream = isRemote
+        ? onAiChunk(t.id, (d) => {
+            if (runSeqRef.current !== seq) return;
+            setPreview((p) =>
+              p.state === "loading"
+                ? { state: "loading", streamText: (p.streamText ?? "") + d }
+                : p
+            );
+          })
+        : () => {};
       const r = await t.run(text, {
         ...opts,
         ...(html ? { html } : {}),
+        ...(userTags ? { userTags } : {}),
         ...(force ? { force: true } : {}),
       });
+      offStream();
+      if (runSeqRef.current !== seq) return; // 有新请求/内容变化，丢弃过期结果
       if (r.ok && r.output !== undefined) {
         setPreview({ state: "ok", output: r.output, meta: r.meta });
       } else if (r.ok && isAction) {
@@ -113,13 +178,55 @@ export function TransformCard({
           message: r.message ?? "无法转换",
           needsConfirm: r.meta?.needsConfirm === true,
           budgetExceeded: r.meta?.budgetExceeded === true,
+          isQuota: r.meta?.isQuota === true,
         });
       }
     },
-    [t, text, opts, html, isAction]
+    [t, text, opts, html, userTags, isAction, isRemote]
+  );
+
+  // v6.10 追问：对云端动作结果继续处理（ai-followup）
+  const runFollowup = useCallback(
+    async (q: string) => {
+      if (preview.state !== "ok" || preview.followPending) return;
+      const ft = getTransform("ai-followup");
+      if (!ft) {
+        toast(`追问暂不可用：${"AI 服务未就绪"}`, "error");
+        return;
+      }
+      setPreview((p) =>
+        p.state === "ok"
+          ? { ...p, followPending: true, followQs: [...(p.followQs ?? []), q] }
+          : p
+      );
+      const content = `${q}\n\n（上次结果）\n${preview.output}`;
+      try {
+        const r = await ft.run(content);
+        setPreview((p) => {
+          if (p.state !== "ok") return p;
+          const answers = [...(p.followAs ?? [])];
+          if (r.ok && r.output !== undefined) answers.push(r.output);
+          else answers.push(`（追问失败：${r.message ?? "未知错误"}）`);
+          return { ...p, followPending: false, followAs: answers };
+        });
+      } catch (e) {
+        setPreview((p) =>
+          p.state === "ok"
+            ? {
+                ...p,
+                followPending: false,
+                followAs: [...(p.followAs ?? []), `（追问失败：${typeof e === "string" ? e : "未知错误"}）`],
+              }
+            : p
+        );
+      }
+    },
+    [preview, toast]
   );
 
   useEffect(() => {
+    // 审查：内容/选项变化 → 作废在途 execute（旧请求晚到不再覆盖新结果）
+    runSeqRef.current += 1;
     // 云端动作 / 执行类动作：不自动跑。前者避免打开面板就发内容花钱，
     // 后者避免打开面板就执行副作用（打开浏览器/资源管理器）。
     if (isRemote || isAction) {
@@ -127,7 +234,7 @@ export function TransformCard({
       return;
     }
     let cancelled = false;
-    const result = t.run(text, { ...opts, ...(html ? { html } : {}) });
+    const result = t.run(text, { ...opts, ...(html ? { html } : {}), ...(userTags ? { userTags } : {}) });
     if (result instanceof Promise) {
       setPreview({ state: "loading" });
       result.then((r) => {
@@ -146,14 +253,15 @@ export function TransformCard({
       );
     }
     return () => { cancelled = true; };
-  }, [t, text, opts, html, isRemote, isAction]);
+  }, [t, text, opts, html, userTags, isRemote, isAction]);
 
   const hasOutput = preview.state === "ok";
 
   // 六大王牌 F：回复草稿的结果可能是多语气候选（---标题--- 分隔）。
-  // 解析失败自动回退单候选（原文），不影响其它动作的正常展示。
+  // 审查：按动作 id 触发（而不是按输出形状嗅探）——别的动作恰好输出两个 "---" 标题
+  // 不会被误切成候选卡（且候选路径丢失编辑/反馈/截断提示）。
   const previewCandidates =
-    preview.state === "ok" ? parseReplyCandidates(preview.output) : [];
+    preview.state === "ok" && t.id === "ai-reply-draft" ? parseReplyCandidates(preview.output) : [];
   const isMultiCandidate = previewCandidates.length > 1;
 
   return (
@@ -167,6 +275,14 @@ export function TransformCard({
             {isRemote && <AiBadge kind={badgeKindOf(t)} />}
           </span>
           {t.description && <span className={styles.cardDesc}>{t.description}</span>}
+          {/* 理由另起一行，不抢描述的位：描述告诉你“这是什么”，
+              理由告诉你“为什么给你看”，两者对新老用户各有用 */}
+          {reason && (
+            <span className={`${styles.why}${reason.kind === "quality" ? ` ${styles.whyMuted}` : ""}`}>
+              <ReasonIcon kind={reason.kind} />
+              {reason.text}
+            </span>
+          )}
         </span>
         <span className={styles.score}>{Math.round(score * 100)}%</span>
         {/* v6.1 负反馈：不再推荐这个动作（对该内容类型）。点一下从排序里消失 */}
@@ -205,17 +321,64 @@ export function TransformCard({
       )}
 
       {preview.state === "idle" && (
-        <pre className={styles.cardPreview}>
-          {isAction ? "点「执行」后才会打开/定位。" : "点“运行”后才会发送到云端。"}
-        </pre>
+        isRemote ? (
+          /*
+           * B1 待发送内容卡。改之前这里只有一句“点运行后才会发送到云端”，
+           * 用户把面板打开放一会儿就忘了要发的到底是哪条内容；
+           * 而且那句提示用的是 .cardPreview（绿色成功框），语义是反的。
+           */
+          <div className={styles.willSend}>
+            <button
+              className={styles.wsHead}
+              onClick={() => setSendOpen((v) => !v)}
+              aria-expanded={sendOpen}
+            >
+              ↑ 运行后将发送以下内容
+              {aiStatus.model && <span className={styles.runModel}>{aiStatus.model}</span>}
+              <span className={styles.wsFold}>{sendOpen ? "收起 ▴" : "展开 ▾"}</span>
+            </button>
+            <div className={`${styles.wsBody}${sendOpen ? "" : ` ${styles.wsBodyFold}`}`}>
+              {text}
+            </div>
+            <div className={styles.wsFoot}>
+              <span className={styles.wsPill}>{countChars(text)} 字</span>
+              {/* 必须带“≈”：真实分词由各家 tokenizer 决定，这只是量级参考 */}
+              <span className={styles.wsPill}>≈ {estimateTokens(text)} token</span>
+              <span>内容不会自动上传，只在你点运行时发一次</span>
+            </div>
+          </div>
+        ) : (
+          <pre className={styles.cardPreview}>点「执行」后才会打开/定位。</pre>
+        )
       )}
       {preview.state === "loading" && (
         isRemote ? (
-          /* v6.4：AI 动作运行态 —— accent spinner + 「AI 思考中…」 */
-          <div className={styles.aiRunning}>
-            <Loader2 size={13} className="spin" />
-            <span>AI 思考中…</span>
-          </div>
+          /* v6.4：AI 动作运行态 —— accent spinner + 「AI 思考中…」；v6.10 流式打字机 */
+          preview.streamText ? (
+            <div className={styles.streamBox}>
+              {preview.streamText}
+              <span className={styles.caret} aria-hidden="true" />
+            </div>
+          ) : (
+            /*
+             * A2：首个 token 到达前的等待态。云端首字延迟常在 1~3 秒，推理模型更久，
+             * 这段时间以前只有一个**不转的**图标加一行静止文字（.spin 当时没有全局定义）。
+             * 现在：旋转图标 + 三点跳动 + 模型名 + 一根流光骨架占住结果区。
+             */
+            <>
+              <div className={styles.aiRunning} style={{ marginBottom: 7 }}>
+                <Loader2 size={13} className="spin" />
+                <span>AI 思考中</span>
+                <span className={styles.dots} aria-hidden="true">
+                  <i /><i /><i />
+                </span>
+                {aiStatus.model && <span className={styles.runModel}>{aiStatus.model}</span>}
+              </div>
+              <div className={`${styles.streamBox} ${styles.skelBox}`} aria-hidden="true">
+                <div className={styles.skel} style={{ width: "62%" }} />
+              </div>
+            </>
+          )
         ) : (
           <pre className={styles.cardPreview}>{isAction ? "执行中…" : "转换中…"}</pre>
         )
@@ -243,6 +406,31 @@ export function TransformCard({
           ) : (
             <pre className={styles.cardPreview}>{preview.output}</pre>
           )}
+
+          {/* v6.10 追问：云端动作结果下叠加轮次 + 追问输入（复用 AiQuickBar 的 FollowupInput） */}
+          {isRemote && (preview.followQs ?? []).length > 0 && (
+            <div className={styles.followTurns}>
+              {(preview.followQs ?? []).map((q, i) => (
+                <div key={i} className={styles.followTurn}>
+                  <div className={styles.followQ}>{q}</div>
+                  {i < (preview.followAs ?? []).length && (
+                    <pre className={styles.followA}>{(preview.followAs ?? [])[i]}</pre>
+                  )}
+                  {i === (preview.followQs ?? []).length - 1 && preview.followPending && (
+                    <div className={styles.followPending}>
+                      <Loader2 size={11} className="spin" /> 处理中…
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {isRemote && (
+            <FollowupInput
+              disabled={!!preview.followPending}
+              onSubmit={(q) => void runFollowup(q)}
+            />
+          )}
         </>
       )}
       {preview.state === "err" && (
@@ -253,8 +441,11 @@ export function TransformCard({
           {/* v6.4 审查：#10 预算超限给操作入口：去设置调高 */}
           {preview.budgetExceeded && (
             <div className={styles.budgetRow}>
-              <button className={styles.budgetBtn} onClick={() => void goAdjustBudget()}>
-                去调整每日预算
+              <button
+                className={styles.budgetBtn}
+                onClick={() => (preview.isQuota ? useDialogStore.getState().openQuota() : void goAdjustBudget())}
+              >
+                {preview.isQuota ? "去签到 / 兑换" : "去调整每日预算"}
               </button>
             </div>
           )}
@@ -292,7 +483,9 @@ export function TransformCard({
             {preview.state === "err" && preview.needsConfirm ? (
               <><ShieldAlert size={13} />仍然发送</>
             ) : (
-              <><Play size={13} />运行</>
+              /* 文案写成“运行并发送”：点下去会发生什么就写在按钮上，
+                 不靠旁边那句提示字去提醒 */
+              <><Play size={13} />运行并发送</>
             )}
           </button>
         )}

@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AI 运行态 + 变换卡待发送内容 · 设计稿（2026-08-11）</title>
+<style>
+  /* 色值全部取自 src/styles/theme.css 亮色主题的真实 token */
+  :root {
+    --text-primary: #1F2937;
+    --text-secondary: #4B5563;
+    --text-muted: #6B7280;
+    --border-color: #E5E7EB;
+    --section-bg: #F8FAFC;
+    --dialog-bg: #FFFFFF;
+    --hover: #E8ECF2;
+    --accent: #0284C7;
+    --accent-solid: #0369A1;
+    --accent-strong: #0369A1;
+    --accent-light: rgba(2, 132, 199, 0.12);
+    --accent-border: rgba(2, 132, 199, 0.35);
+    --green: #11813A;
+    --green-bg: #DCFCE7;
+    --green-border: #BBF7D0;
+    --orange: #C54A0A;
+    --orange-bg: #FFF7ED;
+    --orange-border: #FED7AA;
+    --danger: #D82525;
+    --red-bg: #FEF2F2;
+  }
+  body {
+    margin: 0; padding: 24px; background: #EEF2F6;
+    font-family: "Microsoft YaHei", -apple-system, sans-serif;
+    color: var(--text-primary);
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 30px 0 10px; padding-bottom: 6px; border-bottom: 2px solid var(--accent); }
+  .sub { font-size: 12px; color: var(--text-muted); margin: 0 0 8px; line-height: 1.7; }
+  .lane { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+
+  /* 变换中心弹窗：dialog-box w460（TransformHubDialog 实际宽度） */
+  .dlg { width: 460px; background: var(--dialog-bg); border-radius: 12px;
+         box-shadow: 0 8px 28px rgba(0,0,0,.12); overflow: hidden; }
+  .dlgHead { padding: 11px 16px; border-bottom: 1px solid var(--border-color);
+             font-size: 13px; font-weight: 700; }
+  .dlgBody { padding: 12px 0 14px; }
+
+  .caseT { font-size: 12.5px; font-weight: 700; margin: 0 0 3px; display: flex; align-items: center; gap: 7px; }
+  .tag { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; }
+  .bad { background: #FEE2E2; color: #B91C1C; }
+  .rec { background: #EDE9FE; color: #6D28D9; }
+  .ok  { background: var(--green-bg); color: var(--green); }
+  .note { font-size: 11.5px; color: var(--text-muted); margin: 0 0 10px; line-height: 1.65; }
+  .metric { font-size: 11px; color: var(--text-muted); font-family: Consolas, monospace; margin: 8px 0 0; }
+  code { background: #F1F5F9; padding: 1px 4px; border-radius: 3px; font-size: 10.5px; }
+
+  /* ===== 真实卡片结构（TransformHub.module.css 原值） ===== */
+  .cardHead { display: flex; align-items: center; gap: 8px; padding: 9px 13px 7px; }
+  .cIcon { width: 24px; height: 24px; border-radius: 7px; flex-shrink: 0;
+           background: var(--accent-light); color: var(--accent-strong);
+           display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+  .cName { font-size: 12.5px; font-weight: 700; flex: 1; }
+  .cBadge { font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 4px;
+            background: #F3E8FF; color: #7C3AED; border: 1px solid #D8B4FE; }
+  .cardOpts { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 2px 13px 10px; }
+  .optLabel { font-size: 10.5px; color: var(--text-muted); align-self: center; }
+  .chip { font-family: "Cascadia Code", Consolas, monospace; font-size: 11px;
+          padding: 3px 9px; border-radius: 6px; background: var(--dialog-bg);
+          border: 1px solid var(--border-color); color: var(--text-secondary); cursor: pointer; }
+  .chipOn { border-color: var(--accent); color: var(--accent-strong); background: var(--accent-light); }
+
+  /* 现状：.cardPreview 是**绿色成功框**，idle 提示也用了它 */
+  .cardPreview { margin: 0 13px; background: var(--green-bg); border: 1px solid var(--green-border);
+                 border-radius: 8px; padding: 9px 11px;
+                 font-family: "Cascadia Code", Consolas, monospace; font-size: 11.5px;
+                 color: var(--green); white-space: pre-wrap; word-break: break-all;
+                 max-height: 130px; overflow: auto; }
+  /* 现状：.aiRunning */
+  .aiRunning { display: flex; align-items: center; gap: 7px; margin: 0 13px;
+               padding: 9px 11px; border-radius: 8px; background: var(--accent-light);
+               border: 1px solid var(--accent-border); font-size: 12px; color: var(--accent-strong); }
+  /* 现状：.streamBox + .caret（这两个是好的，caretBlink 真的在闪） */
+  .streamBox { margin: 0 13px; font-size: 11px; color: var(--text-primary); line-height: 1.6;
+               background: var(--section-bg); border: 1px solid var(--border-color);
+               border-radius: 8px; padding: 7px 10px; white-space: pre-wrap;
+               word-break: break-all; min-height: 30px; }
+  .caret { display: inline-block; width: 6px; height: 13px; background: var(--accent);
+           vertical-align: -2px; margin-left: 1px; animation: caretBlink .9s steps(1) infinite; }
+  @keyframes caretBlink { 0%,55% { opacity: 1; } 56%,100% { opacity: 0; } }
+
+  .btnRow { display: flex; gap: 7px; padding: 9px 13px 0; }
+  .btnP { border: none; background: var(--accent-solid); color: #fff; border-radius: 7px;
+          padding: 6px 12px; font-size: 11.5px; font-weight: 600; cursor: pointer;
+          display: inline-flex; align-items: center; gap: 5px; font-family: inherit; }
+  .btnS { border: 1px solid var(--border-color); background: var(--dialog-bg);
+          color: var(--text-primary); border-radius: 7px; padding: 6px 12px;
+          font-size: 11.5px; cursor: pointer; font-family: inherit; }
+
+  /* ===== 图标旋转：对照演示 ===== */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .ic { display: inline-block; width: 13px; height: 13px; }
+  .icSpin { animation: spin 1s linear infinite; }
+  .svgL { width: 13px; height: 13px; }
+
+  /* ===== 方案 A1：三点跳动 ===== */
+  @keyframes dotJump {
+    0%, 60%, 100% { transform: translateY(0); opacity: .45; }
+    30% { transform: translateY(-4px); opacity: 1; }
+  }
+  .dots { display: inline-flex; gap: 3px; align-items: flex-end; height: 13px; }
+  .dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--accent);
+            animation: dotJump 1.2s ease-in-out infinite; }
+  .dots i:nth-child(2) { animation-delay: .15s; }
+  .dots i:nth-child(3) { animation-delay: .3s; }
+
+  /* ===== 方案 A2：骨架屏 + 流光 ===== */
+  @keyframes shimmer { 0% { background-position: -180px 0; } 100% { background-position: 180px 0; } }
+  /* 6px 而不是 9px：单行时 9px 看着像一根胖胶囊，不像文字占位。
+     11px 字号的小写字高大约就是 6～7px，跟它对齐才像“这儿待会儿会出现一行字”。 */
+  .skel { height: 6px; border-radius: 3px; margin-bottom: 5px;
+          background: linear-gradient(90deg, var(--hover) 25%, #F6F8FB 50%, var(--hover) 75%);
+          background-size: 360px 100%; animation: shimmer 1.3s linear infinite; }
+  .skel:last-child { margin-bottom: 0; }
+  /* 单行骨架时把盒子也收一收：去掉 min-height、缩内边距，
+     不让一根细条孤零零地浮在一个 30px 高的空盒子里。 */
+  .streamBox.skelBox { min-height: 0; padding: 6px 10px; }
+
+  /* ===== 方案 A3：边框流光 ===== */
+  @keyframes borderSweep { to { transform: rotate(1turn); } }
+  .glowWrap { position: relative; margin: 0 13px; border-radius: 8px; padding: 1px; overflow: hidden; }
+  .glowWrap::before {
+    content: ""; position: absolute; inset: -60%;
+    background: conic-gradient(from 0deg, transparent 0 70%, var(--accent) 85%, transparent 100%);
+    animation: borderSweep 1.8s linear infinite;
+  }
+  .glowInner { position: relative; border-radius: 7px; background: var(--accent-light);
+               padding: 9px 11px; font-size: 12px; color: var(--accent-strong);
+               display: flex; align-items: center; gap: 7px; }
+
+  /* ===== 方案 B：待发送内容卡 ===== */
+  .willSend { margin: 0 13px; border: 1px solid var(--orange-border); background: var(--orange-bg);
+              border-radius: 8px; overflow: hidden; }
+  .wsHead { display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+            font-size: 10.5px; font-weight: 700; color: var(--orange);
+            border-bottom: 1px solid var(--orange-border); }
+  .wsBody { padding: 8px 10px; font-size: 11px; line-height: 1.6; color: var(--text-primary);
+            font-family: "Cascadia Code", Consolas, monospace;
+            max-height: 76px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+  .wsFoot { display: flex; align-items: center; gap: 8px; padding: 5px 10px;
+            font-size: 10px; color: var(--text-muted); border-top: 1px dashed var(--orange-border); }
+  .wsPill { font-size: 9.5px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
+            background: #fff; border: 1px solid var(--orange-border); color: var(--orange); }
+  .fold { font-size: 10.5px; color: var(--accent-strong); cursor: pointer; margin-left: auto; }
+
+  .ruler { margin: 12px 0 0; font-size: 11px; color: var(--text-muted);
+           border-top: 1px dashed var(--border-color); padding-top: 9px; line-height: 1.8; width: 460px; }
+  table { border-collapse: collapse; font-size: 11.5px; margin-top: 8px; }
+  th, td { border: 1px solid var(--border-color); padding: 4px 8px; text-align: left; }
+  th { background: #F8FAFC; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>AI 运行态 + 变换卡「待发送内容」</h1>
+<p class="sub">
+  2026-08-11 · 卡片结构与色值全部取自 <code>TransformHub.module.css</code> 与 <code>theme.css</code> 的真实值（规则 #12）。<br>
+  弹窗宽度 460px = <code>dialog-box.w460</code>。
+</p>
+
+<!-- ============ 根因 ============ -->
+<h2>先说根因：那个转圈图标从来没转过</h2>
+<div class="lane">
+  <div>
+    <p class="caseT">现状 <span class="tag bad">真问题，不是审美问题</span></p>
+    <p class="note" style="width:460px">
+      代码里写的是 <code>&lt;Loader2 size={13} className="spin" /&gt;</code>，全仓 <strong>31 处</strong>、横跨 <strong>17 个文件</strong>。<br>
+      但 <code>.spin</code> 全仓只在 <code>EncodingDialog.module.css</code> 里定义过一次——而那是 <strong>CSS Module</strong>，
+      类名构建时会被哈希成 <code>_spin_xxxxx</code>，<strong>不会产生全局 <code>.spin</code></strong>。<br>
+      真正存在的全局动画类叫 <code>.spin-icon</code>（<code>src/styles/buttons.css</code>）。
+      所以这 31 个图标<strong>全部是静止的</strong>。
+    </p>
+    <div class="dlg" style="width:460px">
+      <div class="dlgHead">对比：同一个图标，左=现状（不转）右=修后（转）</div>
+      <div class="dlgBody">
+        <div class="aiRunning">
+          <svg class="ic svgL" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+            <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+          </svg>
+          <span>AI 思考中…　<span style="opacity:.6">← 现状：不动</span></span>
+        </div>
+        <div style="height:8px"></div>
+        <div class="aiRunning">
+          <svg class="ic icSpin svgL" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+            <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+          </svg>
+          <span>AI 思考中…　<span style="opacity:.6">← 加上动画</span></span>
+        </div>
+      </div>
+    </div>
+    <p class="ruler">
+      这一条不管选哪个美化方案都要先修，否则再好的设计也是静的。<br>
+      两种修法：① 在全局样式补一个 <code>.spin { animation: spin 1s linear infinite }</code>（改 1 处，31 处全活）；
+      ② 把 31 处都改成已有的 <code>.spin-icon</code>（改 31 处）。<strong>推荐 ①。</strong><br>
+      顺带：我今天写的 <code>AiHeroCard.tsx</code> 也照抄了这个坏模式，一并修。
+    </p>
+  </div>
+</div>
+
+<!-- ============ A：思考态 ============ -->
+<h2>A。AI 思考态（首个 token 到达前）</h2>
+<p class="sub" style="width:920px">
+  注意：<strong>流式开始后是好的</strong>——<code>.streamBox</code> + <code>.caret</code> 的 <code>caretBlink</code> 真的在闪。
+  问题只发生在<strong>第一个字到达之前</strong>：只有一个不转的图标加一行静止文字。
+  云端首字延迟常在 <strong>1～3 秒</strong>，推理模型更久，这段时间全靠它表达“在干活”。
+</p>
+<div class="lane">
+
+  <div>
+    <p class="caseT">A1。旋转图标 + 三点跳动 <span class="tag ok">最轻</span></p>
+    <p class="note">保持现有 <code>.aiRunning</code> 盒子不变，只把图标修活 + 文字后面加三个依次跳动的点。</p>
+    <div class="dlg">
+      <div class="dlgHead">变换中心</div>
+      <div class="dlgBody">
+        <div class="cardHead">
+          <span class="cIcon">文</span><span class="cName">翻译成英文</span>
+          <span class="cBadge">AI · 云端</span>
+        </div>
+        <div class="aiRunning">
+          <svg class="ic icSpin svgL" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+          <span>AI 思考中</span>
+          <span class="dots"><i></i><i></i><i></i></span>
+        </div>
+      </div>
+    </div>
+    <p class="ruler">
+      ✔ 改动最小：一条全局 <code>.spin</code> + 一个 <code>.dots</code>（约 10 行 CSS）<br>
+      ✔ 不改布局，任何用到 <code>.aiRunning</code> 的地方自动受益<br>
+      ✘ 表现力一般，“等很久”时仍然没有进展感
+    </p>
+  </div>
+
+  <div>
+    <p class="caseT">A2。骨架屏 + 流光 <span class="tag rec">推荐</span></p>
+    <p class="note">首字到达前用<strong>一根细条</strong>带流光的骨架占住；首字一到就换成 <code>.streamBox</code> 打字机。<br>
+      尺寸：条高 <code>6px</code>（对齐 11px 字号的小写字高），盒子 <code>min-height: 0</code> + <code>padding: 6px 10px</code>，
+      总高约 <strong>20px</strong>。</p>
+    <div class="dlg">
+      <div class="dlgHead">变换中心</div>
+      <div class="dlgBody">
+        <div class="cardHead">
+          <span class="cIcon">文</span><span class="cName">翻译成英文</span>
+          <span class="cBadge">AI · 云端</span>
+        </div>
+        <div class="aiRunning" style="margin-bottom:7px">
+          <svg class="ic icSpin svgL" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+          <span>AI 思考中</span>
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span style="margin-left:auto;font-size:10.5px;opacity:.75">DeepSeek</span>
+        </div>
+        <div class="streamBox skelBox">
+          <div class="skel" style="width:62%"></div>
+        </div>
+      </div>
+    </div>
+    <p class="ruler">
+      ✔ 流光是横向扫过，天然传达“在产出内容”而不是“卡住了”<br>
+      ✘ <strong>换来的代价：首字到达时盒子会长高约 10px。</strong>
+      我上一版写的“一行骨架 = min-height，布局不跳”在压矮之后就不成立了：
+      现在骨架盒约 20px，而 <code>.streamBox</code> 的 <code>min-height</code> 是 30px。<br>
+      　　想完全不跳，把 <code>.skelBox</code> 的 <code>min-height</code> 设回 <code>30px</code> 即可（代价就是你刚说的“太高”）；
+      中间值 <code>22～24px</code> 可以兼顾。这是个取舍，不是两边都能占。<br>
+      ✔ 右上角补上当前服务商名，花的是谁的额度一目了然<br>
+      ✘ 比 A1 多一个骨架组件（约 15 行 CSS + 3 行 JSX）<br>
+      ✘ <code>prefers-reduced-motion</code> 下要降级成静态灰块（必须写）
+    </p>
+  </div>
+
+  <div>
+    <p class="caseT">A3。边框流光 <span class="tag bad">不推荐</span></p>
+    <p class="note">用 <code>conic-gradient</code> 让一道光沿着边框转。好看，但代价在性能。</p>
+    <div class="dlg">
+      <div class="dlgHead">变换中心</div>
+      <div class="dlgBody">
+        <div class="cardHead">
+          <span class="cIcon">文</span><span class="cName">翻译成英文</span>
+          <span class="cBadge">AI · 云端</span>
+        </div>
+        <div class="glowWrap">
+          <div class="glowInner">
+            <svg class="ic icSpin svgL" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            <span>AI 思考中…</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="ruler">
+      ✔ 视觉最强<br>
+      ✘ <strong>违反项目规则 8.1</strong>：常驻 <code>infinite</code> 动画 + <code>conic-gradient</code> 大尺寸伪元素（<code>inset:-60%</code>），
+        每帧重绘一块比卡片大得多的区域<br>
+      ✘ 变换中心可能同时展示多张卡，<strong>N 张卡 = N 份这个动画</strong>（规则 8.1：数量就是常驻合成层数）<br>
+      ✘ 与规则 8.4 相冲：旋转与渐变同时动画，无法缓存纹理
+    </p>
+  </div>
+
+</div>
+
+<!-- ============ B：待发送内容 ============ -->
+<h2>B。变换卡 idle 态：让用户看到“到底要发什么”</h2>
+<p class="sub" style="width:920px">
+  现状代码：<code>{preview.state === "idle" &amp;&amp; &lt;pre className={styles.cardPreview}&gt;点“运行”后才会发送到云端。&lt;/pre&gt;}</code><br>
+  两个毛病：① <strong>完全看不到要发的内容</strong>；② 用的是 <code>.cardPreview</code>，而它是
+  <strong>绿色成功框</strong>（<code>--green-bg</code> / <code>--green-border</code> / <code>--green</code>）——
+  把一句“尚未执行”的提示摆在绿色成功框里，语义是反的。<br>
+  <strong>好消息：</strong><code>text</code> 本身就是 <code>TransformCard</code> 的 prop，待发送内容拿得到，不需改数据流。
+</p>
+<div class="lane">
+
+  <div>
+    <p class="caseT">现状 <span class="tag bad">要改</span></p>
+    <div class="dlg">
+      <div class="dlgHead">变换中心</div>
+      <div class="dlgBody">
+        <div class="cardHead">
+          <span class="cIcon">文</span><span class="cName">翻译成英文</span>
+          <span class="cBadge">AI · 云端</span>
+        </div>
+        <div class="cardOpts">
+          <span class="optLabel">语言</span>
+          <button class="chip chipOn">英文</button><button class="chip">日文</button>
+        </div>
+        <pre class="cardPreview" style="margin:0 13px">点“运行”后才会发送到云端。</pre>
+        <div class="btnRow"><button class="btnP">▶ 运行</button></div>
+      </div>
+    </div>
+    <p class="metric">绿色成功框里装一句提示 · 看不到待发内容</p>
+  </div>
+
+  <div>
+    <p class="caseT">B1。待发送内容卡（折叠）<span class="tag rec">推荐</span></p>
+    <p class="note">橙色“即将出网”语义框：内容预览（最多 4 行可滚）+ 字数/估算 token + 去向服务商。</p>
+    <div class="dlg">
+      <div class="dlgHead">变换中心</div>
+      <div class="dlgBody">
+        <div class="cardHead">
+          <span class="cIcon">文</span><span class="cName">翻译成英文</span>
+          <span class="cBadge">AI · 云端</span>
+        </div>
+        <div class="cardOpts">
+          <span class="optLabel">语言</span>
+          <button class="chip chipOn">英文</button><button class="chip">日文</button>
+        </div>
+        <div class="willSend">
+          <div class="wsHead">
+            ↑ 将发送以下内容到 DeepSeek
+            <span class="fold">收起 ▴</span>
+          </div>
+          <div class="wsBody">季度商务评审会议纪要：本季度渠道收入同比增长 18%，其中华东区贡献了主要增量。下季度重点：① 推进经销商分层运营；② 完成价格体系重构并同步到全量门店。</div>
+          <div class="wsFoot">
+            <span class="wsPill">92 字</span>
+            <span class="wsPill">≈ 140 token</span>
+            <span>内容不会自动上传，只在你点运行时发一次</span>
+          </div>
+        </div>
+        <div class="btnRow">
+          <button class="btnP">▶ 运行并发送</button>
+          <button class="btnS">改用本地变换</button>
+        </div>
+      </div>
+    </div>
+    <p class="ruler">
+      ✔ <strong>直接回答“我要发的是什么”</strong>，不需要回去看卡片<br>
+      ✔ 颜色语义改对：橙色 = “待确认、会出网”，绿色框留给真正的结果<br>
+      ✔ 按钮文案从“运行”改成“<strong>运行并发送</strong>”，点下去会发生什么写在按钮上<br>
+      ✔ 字数/token 让“这次大概花多少”可估<br>
+      ✘ 卡片变高（+约 76px）；多张卡同屏时要靠折叠控制总高度<br>
+      ✘ token 估算需要一个估值函数（中文约 1.5 字/token，只能写“≈”）
+    </p>
+  </div>
+
+  <div>
+    <p class="caseT">B2。一行摘要 <span class="tag ok">最紧凑</span></p>
+    <p class="note">只摆一行（前 ~30 字 + 省略号），点标题展开看全文。</p>
+    <div class="dlg">
+      <div class="dlgHead">变换中心</div>
+      <div class="dlgBody">
+        <div class="cardHead">
+          <span class="cIcon">文</span><span class="cName">翻译成英文</span>
+          <span class="cBadge">AI · 云端</span>
+        </div>
+        <div class="willSend">
+          <div class="wsHead">
+            ↑ 将发送到 DeepSeek · 92 字
+            <span class="fold">展开 ▾</span>
+          </div>
+          <div class="wsBody" style="max-height:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">季度商务评审会议纪要：本季度渠道收入同比增长 18%，其中华东区…</div>
+        </div>
+        <div class="btnRow"><button class="btnP">▶ 运行并发送</button></div>
+      </div>
+    </div>
+    <p class="ruler">
+      ✔ 卡片只高 约 44px，多张卡同屏友好<br>
+      ✔ 仍然回答了“发什么”（前 30 字通常足够认出来）<br>
+      ✘ 长内容只能看开头，不展开无法核对全文<br>
+      ✘ 没有 token 估值位置（或者挤到标题里变得拥挤）
+    </p>
+  </div>
+
+</div>
+
+<!-- ============ 对比 ============ -->
+<h2>一张表</h2>
+<div class="dlg" style="width:620px">
+  <div class="dlgHead">方案对比与推荐</div>
+  <div style="padding:12px 16px 16px">
+    <table style="width:100%">
+      <tr><th>思考态</th><th>表现力</th><th>布局不跳</th><th>性能（规则 8.1）</th><th>改动量</th></tr>
+      <tr><td>A1 图标+三点</td><td>一般</td><td>—</td><td>好</td><td>最小</td></tr>
+      <tr><td><strong>A2 骨架屏+流光</strong></td><td><strong>好</strong></td><td><strong>是 ✔</strong></td><td>好（仅背景位移）</td><td>中</td></tr>
+      <tr><td>A3 边框流光</td><td>最强</td><td>—</td><td><strong>差 ✘</strong></td><td>中</td></tr>
+    </table>
+    <table style="width:100%;margin-top:14px">
+      <tr><th>idle 态</th><th>看得到待发内容</th><th>token 估值</th><th>卡片高度</th></tr>
+      <tr><td>现状</td><td><strong>否 ✘</strong></td><td>无</td><td>基准</td></tr>
+      <tr><td><strong>B1 内容卡</strong></td><td><strong>全文可滚 ✔</strong></td><td>有</td><td>+76px</td></tr>
+      <tr><td>B2 一行摘要</td><td>前 30 字</td><td>无</td><td>+44px</td></tr>
+    </table>
+    <p class="ruler" style="width:auto">
+      推荐 <strong>A2 + B1</strong>。两者配合后一次完整体验是：
+      看到要发的内容与代价 → 点“运行并发送” → 骨架流光表示在跑 → 首字到达原地换成打字机 → 结果。<br>
+      卡片变高介意的话，选 <strong>A2 + B2</strong>（摘要行）。<br>
+      <strong>不管选哪个，那条全局 <code>.spin</code> 必须先补</strong>——否则 31 处 spinner 依旧不转。
+    </p>
+    <p class="ruler" style="width:auto">
+      <strong>本稿没有涉及、但同属“其它 AI 页面”的待办：</strong>
+      主窗 <code>AiQuickBar</code> 的运行态（同一个不转的 spinner + “AI 思考中…”纯文字）、
+      <code>ChainRunnerDialog</code>（链式多步运行，没有步骤进度指示）。
+      这两处用同一套 A2 组件就能直接复用——要不要一并做，你定。
+    </p>
+  </div>
+</div>
+
+</body>
+</html>

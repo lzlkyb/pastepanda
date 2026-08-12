@@ -16,9 +16,10 @@
  */
 import { recommendScored, type Scene } from "@/lib/recommend";
 import type { TransformContext } from "@/lib/transforms";
-import { PRESET_CHAINS, cachedUserChains } from "@/lib/chains/registry";
+import { PRESET_CHAINS, cachedUserChains, getPresetChain } from "@/lib/chains/registry";
 import { getTransform } from "@/lib/transforms";
 import { detectIntent } from "@/lib/intent";
+import { mergeSessionTexts, type SessionBucket } from "@/lib/sessionContext";
 
 /**
  * top-1 建议的最低分数。**宁可漏报不可误报**（主动建议是打断，做错一次用户就永久关掉）：
@@ -71,6 +72,17 @@ export type Suggestion =
       text: string;
       /** 命中的是链的第几步（从 1 起，用于文案） */
       stepCount: number;
+    }
+  | {
+      kind: "session";
+      transformId: string;
+      label: string;
+      /** 会话桶内容（工作记忆 v6.1） */
+      texts: string[];
+      /** 拼接后的输入（--- 分隔），供 AI 合并 */
+      mergedText: string;
+      /** v6.6 会话级编排：命中的编排链（如「排错流水线」），建议条点击后预选并填入会话 */
+      planChainId?: string;
     };
 
 /**
@@ -229,5 +241,122 @@ export function suggestChain(ctx: TransformContext): Suggestion | null {
   };
 }
 
+/**
+ * 会话感知建议（v6.1 工作记忆）：连续复制的同类内容聚成一个会话 →
+ * 建议「AI 合并」。
+ *
+ * 只在以下情况给：桶 ≥2 条、全部同类（代码/文本/markdown/log）、
+ * AI 合并动作可用（没配 AI 不推——推了也执行不了）。
+ * 价值：你连着复制 3 段代码拼一个函数、3 段素材拼一篇文章时，
+ * 系统第一次"注意到你在拼"——把单条工具变成懂上下文的助手。
+ */
+export function suggestSession(bucket: SessionBucket | null): Suggestion | null {
+  if (!bucket || bucket.texts.length < 2) return null;
+  // AI 合并动作必须可用（未配 AI 时 ai-merge-polish 未注册）
+  if (!getTransform("ai-merge-polish")) return null;
+  // 只推"明显同类"的会话：类型不一致的复制串多半不是同一件事
+  const firstType = bucket.types[0];
+  if (!["code", "text", "markdown", "log"].includes(firstType)) return null;
+  if (!bucket.types.every((t) => t === firstType)) return null;
+
+  const mergedText = mergeSessionTexts(bucket);
+
+  // v6.6 会话级编排：整桶代码 + 含报错特征 → 建议「排错流水线」一键编排
+  // （合并 → 修复，打开运行器预选链 + 填入会话，用户确认后跑）
+  if (firstType === "code" && looksLikeErrors(mergedText)) {
+    const triage = getPresetChain("error-triage");
+    if (triage) {
+      return {
+        kind: "session",
+        transformId: "ai-merge-polish",
+        label: "一起排错",
+        texts: bucket.texts,
+        mergedText,
+        planChainId: triage.id,
+      };
+    }
+  }
+
+  return {
+    kind: "session",
+    transformId: "ai-merge-polish",
+    label: "AI 合并",
+    texts: bucket.texts,
+    mergedText,
+  };
+}
+
+/** 拼接内容是否像报错/堆栈（v6.6 编排判据，粗匹配） */
+function looksLikeErrors(text: string): boolean {
+  return /(error|exception|panic|traceback|failed|failure|crash|报错|异常|崩溃|堆栈|at\s+[\w.]+\s*\(|\s+at\s+\w+)/i.test(
+    text.slice(0, 3000),
+  );
+}
+
 /** 跑链建议的最低第一步分数。同 top-1：宁可漏报不可误报。 */
 export const CHAIN_MIN_SCORE = 0.6;
+
+// ===== 审查：edit-rate 抑制共享（主窗建议条与托盘建议行为一致）=====
+
+/** 被改率 ≥ 该值 = "常被改"，建议降权（除非已设偏好指令） */
+export const EDIT_RATE_BAD = 0.4;
+
+/** 反馈统计与偏好的模块级缓存（建议是高触发路径，避免每次 invoke） */
+interface FbData {
+  fb: { actionId: string; editRate: number }[] | null;
+  prefs: Set<string> | null;
+}
+let fbCache: FbData["fb"] = null;
+let prefActions: FbData["prefs"] = null;
+let fbCacheLoadedAt = 0;
+let inflight: Promise<FbData> | null = null;
+
+/** 拉取反馈/偏好（60s 缓存，并发共享同一请求） */
+export function loadFeedback(): Promise<FbData> {
+  const now = Date.now();
+  if (fbCache && prefActions && now - fbCacheLoadedAt < 60_000) {
+    return Promise.resolve({ fb: fbCache, prefs: prefActions });
+  }
+  if (inflight) return inflight;
+  inflight = (async () => {
+    const [{ aiFeedbackStats }, { actionPrefsAll }] = await Promise.all([
+      import("@/lib/api/aiFeedback"),
+      import("@/lib/api/aiFeedback"),
+    ]);
+    const [stats, prefs] = await Promise.all([
+      aiFeedbackStats(30).catch(() => []),
+      actionPrefsAll().catch(() => []),
+    ]);
+    fbCache = stats.filter((s) => s.total >= 5);
+    prefActions = new Set(prefs.map((p) => p.actionId));
+    fbCacheLoadedAt = Date.now();
+    inflight = null;
+    return { fb: fbCache, prefs: prefActions };
+  })();
+  return inflight;
+}
+
+/** 学习数据被清空/修改后调用，立即失效缓存（避免 60s 内按旧 edit-rate 抑制） */
+export function invalidateLearningCache(): void {
+  fbCache = null;
+  prefActions = null;
+  fbCacheLoadedAt = 0;
+  inflight = null;
+}
+
+/**
+ * edit-rate 抑制：某动作"常被改"且用户没给它设偏好指令 → 放弃建议（宁可漏报，不推不满意的）。
+ * 主窗建议条与托盘建议共用，保证行为一致。
+ */
+export function suppressByEditRate<T extends Suggestion | null>(
+  top1: T,
+  fb: FbData["fb"],
+  prefs: FbData["prefs"],
+): T {
+  if (!top1 || top1.kind !== "action") return top1;
+  const stat = fb?.find((s) => s.actionId === top1.transformId);
+  if (stat && stat.editRate >= EDIT_RATE_BAD && !prefs?.has(top1.transformId)) {
+    return null as T;
+  }
+  return top1;
+}

@@ -33,3 +33,35 @@ pub fn sequence_suggest(store: State<DataStore>) -> Result<Vec<SequenceSuggestio
         })
         .collect())
 }
+
+/// 一条二元转移（前端推荐排序用）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SequenceTransitionRow {
+    /// 上一个动作 id
+    pub from: String,
+    /// 紧接着做的动作 id
+    pub to: String,
+    /// 该转移在统计窗口内出现次数
+    pub count: u32,
+}
+
+/// 环境智能：二元转移表（“做完 A 你常接着做 B”）。
+///
+/// 与 `sequence_suggest` 同源同规则，但用途不同：那个是提示用户存成动作链，
+/// 这个是嗂给推荐排序。**仍然是纯行为统计，不含任何内容，不出网。**
+///
+/// 窗口与阈值写死 30 天 / 3 次，与 `sequence_suggest` 一致：
+/// 两者取不同窗口的话，会出现“发现面板说你常这么干、推荐却不加分”的矛盾。
+#[tauri::command]
+pub fn sequence_transitions(store: State<DataStore>) -> Result<Vec<SequenceTransitionRow>, String> {
+    let rows = store.sequence_transitions(30, 3)?;
+    Ok(rows
+        .into_iter()
+        .map(|t| SequenceTransitionRow {
+            from: t.from,
+            to: t.to,
+            count: t.count,
+        })
+        .collect())
+}

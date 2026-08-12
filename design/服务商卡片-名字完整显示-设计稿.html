@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>服务商卡片 · 名字完整显示 · 设计稿（2026-08-11）</title>
+<style>
+  /* 用真实变量值，尽量还原 PastePanda 亮色主题 */
+  :root {
+    --text-primary: #1f2937;
+    --text-muted: #6b7280;
+    --search-border: #e5e7eb;
+    --section-bg: #ffffff;
+    --accent: #0284c7;
+    --accent-strong: #0369a1;
+    --accent-light: rgba(2, 132, 199, 0.12);
+    --success-bg: #dcfce7;
+    --success: #15803d;
+  }
+  body {
+    margin: 0; padding: 24px;
+    background: #f1f5f9;
+    font-family: "Microsoft YaHei", -apple-system, sans-serif;
+    color: var(--text-primary);
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { font-size: 12px; color: var(--text-muted); margin: 0 0 24px; }
+
+  /* 关键：完整还原真实约束 —— 弹窗 420px，body 左右各 20px padding */
+  .dialog {
+    width: 420px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.12);
+    margin-bottom: 28px;
+  }
+  .dialogBody { padding: 16px 20px; }   /* → 内容宽 380px */
+
+  .caseTitle {
+    font-size: 13px; font-weight: 700; margin: 0 0 2px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .badge {
+    font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px;
+  }
+  .bad  { background: #fee2e2; color: #b91c1c; }
+  .good { background: #dcfce7; color: #15803d; }
+  .rec  { background: #ede9fe; color: #6d28d9; }
+  .caseNote { font-size: 11.5px; color: var(--text-muted); margin: 0 0 12px; line-height: 1.6; }
+  .metric {
+    font-size: 11px; color: var(--text-muted); margin: 10px 0 0;
+    font-family: Consolas, monospace;
+  }
+
+  .provGroupLabel {
+    display: block; font-size: 11px; font-weight: 600;
+    color: var(--text-muted); margin-bottom: 6px;
+  }
+
+  /* ===== 公共：卡片外观（与仓库 AiTab.module.css 一致） ===== */
+  .provGrid { display: grid; gap: 6px; }
+  .provCard {
+    position: relative;
+    box-sizing: border-box;
+    border: 1px solid var(--search-border);
+    border-radius: 9px;
+    padding: 7px 8px;
+    background: var(--section-bg);
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    overflow: hidden;
+  }
+  .provCard:hover { border-color: var(--accent); }
+  .provCardOn {
+    border-color: var(--accent);
+    background: var(--accent-light);
+    box-shadow: 0 0 0 3px var(--accent-light);
+  }
+  .provName { font-size: 12px; color: var(--text-primary); font-weight: 500; line-height: 1.25; }
+  .provTags { display: flex; gap: 3px; }
+  .provTag {
+    font-size: 9px; border-radius: 4px; padding: 1px 4px;
+    font-weight: 600; line-height: 1.5; white-space: nowrap;
+  }
+  .provTagSet     { background: var(--success-bg); color: var(--success); }
+  .provTagLocal   { background: var(--accent-light); color: var(--accent-strong); }
+  .provTagBuiltin { background: #f3e8ff; color: #7c3aed; border: 1px solid #d8b4fe; }
+  .provCk {
+    position: absolute; right: 4px; top: 4px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--accent); color: #fff; font-size: 9px;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ===== 现状：三列 + 单行 + ellipsis（上一轮的结果） ===== */
+  .cur .provGrid { grid-template-columns: repeat(3, 1fr); }
+  .cur .provCard { display: flex; align-items: center; gap: 6px; min-height: 38px; }
+  .cur .provName {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .cur .provTags { margin-left: auto; flex-shrink: 0; }
+
+  /* ===== 方案 1：三列 + 上下两行 + 名字最多两行不截断（= 实际已实现的代码） ===== */
+  .p1 .provGrid { grid-template-columns: repeat(3, 1fr); }
+  .p1 .provCard {
+    display: flex; flex-direction: column;
+    align-items: stretch; justify-content: space-between;
+    gap: 3px;
+    /* 固定高度 = 名字两行(30) + gap(3) + 标签行(14) + padding(14) + border(2) */
+    height: 63px;
+  }
+  .p1 .provName {
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+    /* 折行而不是省略：所有名字都能看全 */
+    word-break: break-word;
+  }
+  .p1 .provTags { flex-shrink: 0; }
+  /* ✓ 不再绝对定位，而是做标签行里靠右的一个成员。
+     这比「给卡片加 padding-right」更彻底：内置卡右上角彻底没了绝对元素，
+     名字能用满 104.7px；且同时解掉了 ✓ 与 ✕ 同坐标的重叠。 */
+  .p1 .provCk { position: static; margin-left: auto; }
+
+  /* ===== 方案 2：两列 + 单行 + 名字去括号后缀 ===== */
+  .p2 .provGrid { grid-template-columns: repeat(2, 1fr); }
+  .p2 .provCard {
+    display: flex; align-items: center; gap: 6px; min-height: 38px;
+    padding-right: 22px;
+  }
+  .p2 .provName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .p2 .provTags { margin-left: auto; flex-shrink: 0; }
+
+  /* ===== 方案 3：三列 + 单行 + 标签改圆点 ===== */
+  .p3 .provGrid { grid-template-columns: repeat(3, 1fr); }
+  .p3 .provCard {
+    display: flex; align-items: center; gap: 6px; min-height: 38px;
+    padding-right: 20px;
+  }
+  .p3 .provName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .p3 .provTags { margin-left: auto; flex-shrink: 0; gap: 3px; align-items: center; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dotBuiltin { background: #7c3aed; }
+  .dotLocal   { background: var(--accent); }
+  .dotSet     { background: var(--success); }
+  .legend {
+    display: flex; gap: 12px; align-items: center;
+    font-size: 10.5px; color: var(--text-muted); margin-top: 8px;
+  }
+  .legend span { display: flex; align-items: center; gap: 4px; }
+
+  .ruler {
+    margin: 14px 0 0; font-size: 11px; color: var(--text-muted);
+    border-top: 1px dashed var(--search-border); padding-top: 10px; line-height: 1.7;
+  }
+  code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+  table { border-collapse: collapse; font-size: 11.5px; margin-top: 8px; }
+  th, td { border: 1px solid var(--search-border); padding: 4px 8px; text-align: left; }
+  th { background: #f8fafc; font-weight: 600; }
+  .num { font-family: Consolas, monospace; text-align: right; }
+</style>
+</head>
+<body>
+
+<h1>服务商卡片 · 名字完整显示</h1>
+<p class="sub">2026-08-11 · 所有示例按真实约束渲染：弹窗 <code>420px</code>、body padding <code>20px</code> → 内容宽 <code>380px</code>。截断是真实发生的，不是示意图。</p>
+
+<!-- ====================== 根因 ====================== -->
+<div class="dialog"><div class="dialogBody">
+  <p class="caseTitle">根因：三列布局在 420px 弹窗里放不下 <span class="badge bad">数学问题</span></p>
+  <p class="caseNote">
+    列宽 = (380 − 6×2) ÷ 3 = <strong>122.7px</strong>；扣掉 padding 8×2 与 border 1×2 → 卡内可用 <strong>104.7px</strong>。
+  </p>
+  <table>
+    <tr><th>卡片</th><th>名字需要</th><th>标签占用</th><th>名字实得</th><th>结果</th></tr>
+    <tr><td>内置免费（Agnes）+ 已配置</td><td class="num">119</td><td class="num">84</td><td class="num">14.7</td><td>一个字都放不下</td></tr>
+    <tr><td>Ollama（本地）+ 已配置</td><td class="num">88</td><td class="num">64</td><td class="num">34.7</td><td>Oll…</td></tr>
+    <tr><td>DeepSeek + 已配置</td><td class="num">56</td><td class="num">35</td><td class="num">63.7</td><td>勉强</td></tr>
+    <tr><td><strong>百度千帆（文心）· 无标签</strong></td><td class="num">108</td><td class="num">0</td><td class="num">104.7</td><td><strong>还差 3.3px</strong></td></tr>
+  </table>
+  <p class="ruler">
+    最后一行是关键：<strong>一个标签都没有时，8 个汉字仍然放不下。</strong>
+    所以只要「名字 + 标签同一行 + 三列」，怎么调 CSS 都必然截断——上一轮的 ellipsis 只是把「高度不齐」换成了「名字不全」。<br>
+    另外顺手查出<strong>两个碰撞</strong>（比初稿写的多一个）：<code>.provCk</code>（选中的 ✓）是 <code>position:absolute; right:4px; top:4px</code>——
+    ① 在内置卡上它<strong>压住最右侧标签</strong>（选中 Agnes 时 ✓ 盖住「已配置」）；
+    ② <code>.provDel</code>（删除 ✕）<strong>也是</strong> <code>right:4px; top:4px</code>，两者<strong>坐标完全重叠</strong>——选中自定义服务商时 ✕ 直接盖住 ✓。<br>
+    实现时的做法比初稿更彻底：不是给卡片加 <code>padding-right</code>，而是把 ✓ 改成标签行里靠右的 inline 元素（<code>margin-left:auto</code>）。
+    两个碰撞一起消失，且内置卡右上角再无绝对元素，名字能用满 104.7px。
+    自定义卡因为还有 ✎ / ✕（占到距右 38px），单独给名字加 <code>.provNameInset { padding-right: 40px }</code>。
+  </p>
+</div></div>
+
+<!-- ====================== 现状 ====================== -->
+<div class="dialog cur"><div class="dialogBody">
+  <p class="caseTitle">现状（上一轮方案 A）：等高了，但名字看不全 <span class="badge bad">要改</span></p>
+  <p class="caseNote">三列 · 单行 · ellipsis。同行等高做到了，代价是名字被吃掉。</p>
+  <span class="provGroupLabel">内置服务商</span>
+  <div class="provGrid">
+    <button class="provCard provCardOn"><span class="provName">DeepSeek</span><span class="provTags"><span class="provTag provTagSet">已配置</span></span><span class="provCk">✓</span></button>
+    <button class="provCard"><span class="provName">通义千问（阿里）</span><span class="provTags"></span></button>
+    <button class="provCard"><span class="provName">智谱 GLM</span><span class="provTags"></span></button>
+    <button class="provCard"><span class="provName">Kimi（月之暗面）</span><span class="provTags"></span></button>
+    <button class="provCard"><span class="provName">百度千帆（文心）</span><span class="provTags"></span></button>
+    <button class="provCard"><span class="provName">Anthropic Claude</span><span class="provTags"></span></button>
+    <button class="provCard"><span class="provName">Ollama（本地）</span><span class="provTags"><span class="provTag provTagLocal">本地</span><span class="provTag provTagSet">已配置</span></span></button>
+    <button class="provCard"><span class="provName">内置免费（Agnes）</span><span class="provTags"><span class="provTag provTagBuiltin">内置免费</span><span class="provTag provTagSet">已配置</span></span></button>
+    <button class="provCard"><span class="provName">硅基流动（聚合）</span><span class="provTags"></span></button>
+  </div>
+  <p class="metric">网格高 126px · 名字完整率 ≈ 2/9</p>
+</div></div>
+
+<!-- ====================== 方案 1 ====================== -->
+<div class="dialog p1"><div class="dialogBody">
+  <p class="caseTitle">方案 1：上下两行，名字最多两行、绝不截断 <span class="badge rec">推荐</span></p>
+  <p class="caseNote">
+    名字独占一行（可折两行），标签下移。卡片固定 <code>height: 63px</code> 让所有行严格对齐。<br>
+    <strong>不改任何文案、不动列数、标签保持文字可读。</strong>
+  </p>
+  <span class="provGroupLabel">内置服务商</span>
+  <div class="provGrid">
+    <!-- 注意：✓ 在 provTags **内部**（与实际代码一致），不再是 provTags 的兄弟节点 -->
+    <button class="provCard provCardOn"><span class="provName">DeepSeek</span><span class="provTags"><span class="provTag provTagSet">已配置</span><span class="provCk">✓</span></span></button>
+    <button class="provCard"><span class="provName">通义千问（阿里）</span><span class="provTags"></span></button>
+    <button class="provCard"><span class="provName">智谱 GLM</span><span class="provTags"></span></button>
+    <button class="provCard"><span class="provName">Kimi（月之暗面）</span><span class="provTags"></span></button>
+    <button class="provCard"><span class="provName">百度千帆（文心）</span><span class="provTags"></span></button>
+    <button class="provCard"><span class="provName">Anthropic Claude</span><span class="provTags"></span></button>
+    <button class="provCard"><span class="provName">Ollama（本地）</span><span class="provTags"><span class="provTag provTagLocal">本地</span><span class="provTag provTagSet">已配置</span></span></button>
+    <button class="provCard"><span class="provName">内置免费（Agnes）</span><span class="provTags"><span class="provTag provTagBuiltin">内置免费</span><span class="provTag provTagSet">已配置</span></span></button>
+    <button class="provCard"><span class="provName">硅基流动（聚合）</span><span class="provTags"></span></button>
+  </div>
+  <p class="metric">网格高 201px（+75px）· 名字完整率 <strong>9/9</strong></p>
+  <p class="ruler">
+    ✔ 名字 100% 完整，一个都不截<br>
+    ✔ 主体是 CSS；TSX 只动了两处——把 ✓ 挂进标签行（修两个碰撞）+ 自定义卡名字加 <code>provNameInset</code><br>
+    ✘ 网格高 75px，8 家从 3 行变 3 行（行更高），要多滚一点<br>
+    ✘ 卡片留白变多，视觉密度下降
+  </p>
+</div></div>
+
+<!-- ====================== 方案 2 ====================== -->
+<div class="dialog p2"><div class="dialogBody">
+  <p class="caseTitle">方案 2：两列宽卡 + 单行 + 名字去括号后缀 <span class="badge good">可选</span></p>
+  <p class="caseNote">
+    列宽升到 <strong>187px</strong>（卡内 169px）；同时把显示名的括号后缀剥掉——<strong>因为括号里的信息和标签重复</strong>：
+    <code>Ollama（本地）</code> 已有「本地」标签，<code>内置免费（Agnes）</code> 已有「内置免费」标签。完整名进 tooltip。
+  </p>
+  <span class="provGroupLabel">内置服务商</span>
+  <div class="provGrid">
+    <button class="provCard provCardOn" title="DeepSeek"><span class="provName">DeepSeek</span><span class="provTags"><span class="provTag provTagSet">已配置</span></span><span class="provCk">✓</span></button>
+    <button class="provCard" title="通义千问（阿里）"><span class="provName">通义千问</span><span class="provTags"></span></button>
+    <button class="provCard" title="智谱 GLM"><span class="provName">智谱 GLM</span><span class="provTags"></span></button>
+    <button class="provCard" title="Kimi（月之暗面）"><span class="provName">Kimi</span><span class="provTags"></span></button>
+    <button class="provCard" title="百度千帆（文心）"><span class="provName">百度千帆</span><span class="provTags"></span></button>
+    <button class="provCard" title="Anthropic Claude"><span class="provName">Anthropic Claude</span><span class="provTags"></span></button>
+    <button class="provCard" title="Ollama（本地）"><span class="provName">Ollama</span><span class="provTags"><span class="provTag provTagLocal">本地</span><span class="provTag provTagSet">已配置</span></span></button>
+    <button class="provCard" title="内置免费（Agnes）"><span class="provName">Agnes</span><span class="provTags"><span class="provTag provTagBuiltin">内置免费</span><span class="provTag provTagSet">已配置</span></span></button>
+  </div>
+  <p class="metric">网格高 170px（+44px）· 名字完整率 8/8（去括号后）</p>
+  <p class="ruler">
+    ✔ 保持单行，读起来最干净；信息不重复<br>
+    ✔ 网格只高 44px，比方案 1 省<br>
+    ✘ 一行只 2 家，扫视 14 家要 7 行（默认收 8 家仍是 4 行）<br>
+    ✘ 需要新增一个展示层函数 <code>shortProviderName()</code>（按规则 #11 放 <code>lib/utils.ts</code>），并配 tooltip 保留全名<br>
+    ✘ 剥括号是「产品决策」：你可能就是想让用户一眼看到「月之暗面」而不是只有「Kimi」
+  </p>
+</div></div>
+
+<!-- ====================== 方案 3 ====================== -->
+<div class="dialog p3"><div class="dialogBody">
+  <p class="caseTitle">方案 3：三列单行 + 标签压成彩色圆点 <span class="badge bad">不推荐</span></p>
+  <p class="caseNote">标签宽度从 84px 降到 19px，名字实得 79.7px。但 79.7px 只够 4 个汉字，所以<strong>必须同时改名</strong>（<code>Anthropic Claude</code> → <code>Claude</code>）。</p>
+  <span class="provGroupLabel">内置服务商</span>
+  <div class="provGrid">
+    <button class="provCard provCardOn" title="DeepSeek · 已配置"><span class="provName">DeepSeek</span><span class="provTags"><span class="dot dotSet"></span></span><span class="provCk">✓</span></button>
+    <button class="provCard" title="通义千问（阿里）"><span class="provName">通义千问</span><span class="provTags"></span></button>
+    <button class="provCard" title="智谱 GLM"><span class="provName">智谱 GLM</span><span class="provTags"></span></button>
+    <button class="provCard" title="Kimi（月之暗面）"><span class="provName">Kimi</span><span class="provTags"></span></button>
+    <button class="provCard" title="百度千帆（文心）"><span class="provName">百度千帆</span><span class="provTags"></span></button>
+    <button class="provCard" title="Anthropic Claude"><span class="provName">Claude</span><span class="provTags"></span></button>
+    <button class="provCard" title="Ollama（本地）· 已配置"><span class="provName">Ollama</span><span class="provTags"><span class="dot dotLocal"></span><span class="dot dotSet"></span></span></button>
+    <button class="provCard" title="内置免费（Agnes）· 已配置"><span class="provName">Agnes</span><span class="provTags"><span class="dot dotBuiltin"></span><span class="dot dotSet"></span></span></button>
+    <button class="provCard" title="硅基流动（聚合）"><span class="provName">硅基流动</span><span class="provTags"></span></button>
+  </div>
+  <div class="legend">
+    <span><span class="dot dotBuiltin"></span>内置免费</span>
+    <span><span class="dot dotLocal"></span>本地</span>
+    <span><span class="dot dotSet"></span>已配置</span>
+  </div>
+  <p class="metric">网格高 126px（+0px）· 名字完整率 9/9（重度改名后）</p>
+  <p class="ruler">
+    ✔ 高度零增长，最紧凑<br>
+    ✘ <strong>「已配置」是用户最需要的状态，压成一个绿点后必须靠图例才认得</strong><br>
+    ✘ 「内置免费 + 送 10 万 token」这个卖点变成一个紫点，等于藏起来<br>
+    ✘ 改名幅度最大，且和方案 2 一样是产品决策
+  </p>
+</div></div>
+
+<!-- ====================== 对比 ====================== -->
+<div class="dialog"><div class="dialogBody">
+  <p class="caseTitle">一张表对比</p>
+  <table>
+    <tr><th></th><th>名字完整</th><th>网格高</th><th>标签可读</th><th>改动面</th><th>要改文案</th></tr>
+    <tr><td>现状</td><td>2/9 ✘</td><td class="num">126</td><td>是</td><td>—</td><td>否</td></tr>
+    <tr><td><strong>方案 1</strong></td><td><strong>9/9 ✔</strong></td><td class="num">201</td><td>是</td><td>纯 CSS</td><td><strong>否</strong></td></tr>
+    <tr><td>方案 2</td><td>8/8 ✔</td><td class="num">170</td><td>是</td><td>CSS + 工具函数</td><td>是（剥括号）</td></tr>
+    <tr><td>方案 3</td><td>9/9 ✔</td><td class="num">126</td><td><strong>否</strong></td><td>CSS + TSX + 图例</td><td>是（大改）</td></tr>
+  </table>
+  <p class="ruler">
+    推荐<strong>方案 1</strong>：唯一一个「名字全对、标签全可读、不用改任何产品文案」的解。
+    代价只是 75px 高度——而这是设置面板，不是主列表，纵向空间没那么金贵。<br>
+    如果你觉得 201px 太高，退路是<strong>方案 1 + 默认只显示 6 家</strong>（<code>VISIBLE_PROVS: 8 → 6</code>）→ 网格回到 134px，且 6 家足够覆盖绝大多数人。
+  </p>
+  <p class="ruler">
+    <strong>已顺手修的既有缺陷：</strong><code>.provCk</code> 绝对定位，既压住最右侧标签，又与 <code>.provDel</code> 坐标完全重叠（选中自定义服务商时 ✕ 盖住 ✓）——已改为标签行里靠右的 inline 元素。
+  </p>
+</div></div>
+
+</body>
+</html>

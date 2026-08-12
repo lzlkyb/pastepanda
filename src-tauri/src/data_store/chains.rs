@@ -34,6 +34,9 @@ pub struct ChainStepDef {
     /// 覆盖显示名（可选；缺省用变换自身的 label）
     #[serde(default)]
     pub label: String,
+    /// v6.3 条件执行：{"type":"is-json"} 等；缺省 = always（无条件执行）。
+    #[serde(default)]
+    pub condition: Option<serde_json::Value>,
 }
 
 fn default_risk() -> String {

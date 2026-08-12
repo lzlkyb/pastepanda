@@ -324,7 +324,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           pinyin_initials: item.pinyin_initials || oldItem.pinyin_initials,
         };
         // 修复 Low（Zustand 反模式）：_filterCache 通过返回 partial 清除，而非原地突变 s
-        return { history: [updated, ...s.history.slice(0, dupIdx), ...s.history.slice(dupIdx + 1)], _filterCache: null, historyVersion: s.historyVersion + 1 };
+        // focusId 也要清：理由同下方新增分支（重复复制同一段内容也是一次“刚复制”）
+        return { history: [updated, ...s.history.slice(0, dupIdx), ...s.history.slice(dupIdx + 1)], _filterCache: null, historyVersion: s.historyVersion + 1, focusId: null };
       }
       // 限制前端缓存最大 500 条，防止内存泄漏（淘汰时跳过 pinned 条目，避免收藏项消失）
       if (s.history.length >= 500) {
@@ -332,9 +333,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         const trimmed = lastUnpinnedIdx >= 0
           ? [...s.history.slice(0, lastUnpinnedIdx), ...s.history.slice(lastUnpinnedIdx + 1)]
           : s.history.slice(0, 499); // 全是 pinned 的极端情况才强制截断
-        return { history: [item, ...trimmed], _filterCache: null, historyVersion: s.historyVersion + 1 };
+        return { history: [item, ...trimmed], _filterCache: null, historyVersion: s.historyVersion + 1, focusId: null };
       }
-      return { history: [item, ...s.history], _filterCache: null, historyVersion: s.historyVersion + 1 };
+      // focusId 清空：新内容入库 = 一次“刚复制”，AI 快捷栏靠 focusId ?? history[0]
+      // 定位目标，不清的话用户上次留下的焦点会让它一直指着旧条目，
+      // 刚复制的那条反而没人管——跟“复制即用”直接打架。
+      return { history: [item, ...s.history], _filterCache: null, historyVersion: s.historyVersion + 1, focusId: null };
     }),
   // 智能合并：将已有记录移到顶部并更新时间
   moveToTop: (id: string, newTime: string) =>
@@ -344,7 +348,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       const item = { ...s.history[idx], time: newTime };
       const newHistory = [item, ...s.history.slice(0, idx), ...s.history.slice(idx + 1)];
       // 修复 Low（Zustand 反模式）：通过返回 partial 清缓存（重排不改变 length，缓存键不会自动失效）
-      return { history: newHistory, _filterCache: null, historyVersion: s.historyVersion + 1 };
+      // 同样清 focusId：这条路径是“又复制了一次已存在的内容”，对用户而言
+      // 与复制一段全新内容无区别，漏了就会出现“逆向合并后 AI 栏没跟上”。
+      return { history: newHistory, _filterCache: null, historyVersion: s.historyVersion + 1, focusId: null };
     }),
   removeItems: (ids) =>
     set((s) => {

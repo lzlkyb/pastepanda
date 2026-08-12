@@ -34,8 +34,13 @@ pub fn ai_save_custom_provider(
     if let Some(existing) = customs.iter_mut().find(|c| c.id == id) {
         existing.name = item.name.trim().to_string();
         existing.base_url = item.base_url.trim().to_string();
-        existing.model = item.model.trim().to_string();
-        existing.protocol = item.protocol.trim().to_string();
+        // 审查：编辑时 model/protocol 传空 = 保留原值（防前端漏传把已存配置清掉）
+        if !item.model.trim().is_empty() {
+            existing.model = item.model.trim().to_string();
+        }
+        if !item.protocol.trim().is_empty() {
+            existing.protocol = item.protocol.trim().to_string();
+        }
     } else {
         customs.push(CustomProvider {
             id: id.clone(),
@@ -131,7 +136,7 @@ pub fn ai_list_providers(
     let configured = secret_store::configured_providers(&dir);
     let mut out: Vec<Value> = Vec::with_capacity(provider::PROVIDERS.len() + 4);
 
-    // 内置 15 家
+    // 内置 16 家（v6.9 含 builtin-agnes 内置免费额度）
     for spec in provider::PROVIDERS.iter() {
         out.push(json!({
             "id": spec.id,
@@ -149,6 +154,8 @@ pub fn ai_list_providers(
             "protocol": spec.protocol.id(),
             "hasKey": configured.iter().any(|id| id == spec.id),
             "custom": false,
+            // v6.9：内置免费额度服务商（前端据此显示「免费额度」角标与配额 UI）
+            "builtinFree": spec.is_builtin_free(),
         }));
     }
 
@@ -171,6 +178,7 @@ pub fn ai_list_providers(
             "priceIn": 0.0,
             "priceOut": 0.0,
             "protocol": if c.protocol.is_empty() { "openai".to_string() } else { c.protocol },
+            "model": c.model, // 审查：供编辑弹窗回填（此前列表不返回 model，编辑会清空已存模型）
             "hasKey": configured.iter().any(|id| id == &c.id),
             "custom": true,
         }));

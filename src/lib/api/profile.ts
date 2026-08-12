@@ -80,6 +80,20 @@ export function profileInstallSkill(
 }
 
 /**
+ * 工作流技能包（v6.4 S1）：把自定义 AI 动作 + 动作链打包成 SKILL.md，
+ * 装进 ~/.claude/skills/pastepanda-workflows/（26+ 平台可调用）。
+ */
+/** 工作流导出结果：装到哪了 + 因含敏感信息被跳过几条 */
+export type SkillInstallResult = { path: string; skipped: number };
+
+/**
+ * 把自定义动作/动作链导出为 skill。
+ * 后端会把含密钥/个人信息的条目整条剔除（导出物会被外部 AI 工具自动读取），
+ * `skipped > 0` 时必须告知用户，否则他会以为动作丢了。
+ */
+export const skillInstallWorkflows = () => invoke<SkillInstallResult>("skill_install_workflows");
+
+/**
  * LLM 精炼画像（V3-C）：把统计画像润色成自然语言描述。
  * 出网内容 = 纯统计值（角色/领域/动作 id/时段/偏好），过敏感清洗 + 日预算。
  */

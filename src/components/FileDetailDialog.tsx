@@ -1,29 +1,16 @@
 import { useState, useEffect, useCallback, useMemo, type ReactNode } from "react";
 import { motion } from "framer-motion";
+import { invoke } from "@tauri-apps/api/core";
 import { X, FolderOpen, Copy, ExternalLink, Loader, Check } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { useDialogAnim } from "@/lib/dialogMotion";
-import { relativeTime } from "@/lib/utils";
+import { relativeTime, errText } from "@/lib/utils";
 import SourceBadge from "@/components/SourceBadge";
 import { HistoryItem } from "@/stores/appStore";
 import { getFileIcon, getFileIconColor } from "@/lib/source-mappings";
-import { parseFilePaths } from "@/lib/pasteTransform";
+import { parseFilePaths } from "@/lib/utils";
 import { getImageDataUrl } from "@/lib/api";
 import { FocusTrap } from "@/components/FocusTrap";
-
-// 预加载 Tauri API 模块
-let _invoke: any = null;
-let _openUrl: any = null;
-const preloadApi = async () => {
-  if (!_invoke) {
-    const core = await import("@tauri-apps/api/core");
-    _invoke = core.invoke;
-  }
-  if (!_openUrl) {
-    const opener = await import("@tauri-apps/plugin-opener");
-    _openUrl = opener.openUrl;
-  }
-};
 
 type FileMeta = { size: number; exists: boolean };
 type TextPreviewData = {
@@ -86,7 +73,6 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
           const url = await getImageDataUrl(previewPath);
           if (!cancelled) setImagePreviewUrl(url || "");
         } else {
-          const { invoke } = await import("@tauri-apps/api/core");
           const data = await invoke<TextPreviewData>("read_text_file_preview", { path: previewPath });
           if (!cancelled) setPreviewData(data);
         }
@@ -239,14 +225,11 @@ function SingleFileBody({ path, item }: { path: string; item: HistoryItem }) {
   const [fileInfo, setFileInfo] = useState<FileMeta | null>(null);
   const [openingFile, setOpeningFile] = useState(false);
   const [openingFolder, setOpeningFolder] = useState(false);
-  const [apiReady, setApiReady] = useState(false);
 
   useEffect(() => {
-    preloadApi().then(() => setApiReady(true));
     let cancelled = false;
     (async () => {
       try {
-        const { invoke } = await import("@tauri-apps/api/core");
         const info = await invoke<FileMeta>("get_file_info", { path });
         if (!cancelled) setFileInfo(info);
       } catch {
@@ -273,11 +256,10 @@ function SingleFileBody({ path, item }: { path: string; item: HistoryItem }) {
     if (openingFile || !fileExists) return;
     setOpeningFile(true);
     try {
-      await preloadApi();
-      await _invoke("open_file_with_system", { path });
+      await invoke("open_file_with_system", { path });
       toast(`已打开 ${fileName}`, "success");
-    } catch (e: any) {
-      toast(e?.toString?.() || "无法打开文件", "error");
+    } catch (e) {
+      toast(errText(e, "无法打开文件"), "error");
     } finally {
       setOpeningFile(false);
     }
@@ -287,10 +269,9 @@ function SingleFileBody({ path, item }: { path: string; item: HistoryItem }) {
     if (openingFolder || !fileExists) return;
     setOpeningFolder(true);
     try {
-      await preloadApi();
-      await _invoke("open_file_location", { path });
-    } catch (e: any) {
-      toast(e?.toString?.() || "无法打开文件夹", "error");
+      await invoke("open_file_location", { path });
+    } catch (e) {
+      toast(errText(e, "无法打开文件夹"), "error");
     } finally {
       setOpeningFolder(false);
     }
@@ -331,13 +312,13 @@ function SingleFileBody({ path, item }: { path: string; item: HistoryItem }) {
           label={openingFile ? "打开中…" : "打开文件"}
           onClick={handleOpenFile}
           primary
-          disabled={!fileExists || openingFile || !apiReady}
+          disabled={!fileExists || openingFile}
         />
         <FileActionBtn
           icon={openingFolder ? <Loader size={14} className="spin" /> : <FolderOpen size={14} />}
           label={openingFolder ? "打开中…" : "打开文件夹"}
           onClick={handleOpenFolder}
-          disabled={!fileExists || openingFolder || !apiReady}
+          disabled={!fileExists || openingFolder}
         />
         <FileActionBtn
           icon={<Copy size={14} />}
@@ -355,14 +336,11 @@ function MultiFileBody({ paths, item, onSelectPreview, selectedPath }: {
 }) {
   const { toast } = useToast();
   const [infoMap, setInfoMap] = useState<Record<string, FileMeta>>({});
-  const [apiReady, setApiReady] = useState(false);
   const [busyPath, setBusyPath] = useState<string | null>(null);
 
   useEffect(() => {
-    preloadApi().then(() => setApiReady(true));
     let cancelled = false;
     (async () => {
-      const { invoke } = await import("@tauri-apps/api/core");
       const entries = await Promise.all(paths.map(async (p) => {
         try {
           const info = await invoke<FileMeta>("get_file_info", { path: p });
@@ -385,11 +363,10 @@ function MultiFileBody({ paths, item, onSelectPreview, selectedPath }: {
     if (busyPath) return;
     setBusyPath(p);
     try {
-      await preloadApi();
-      await _invoke("open_file_with_system", { path: p });
+      await invoke("open_file_with_system", { path: p });
       toast(`已打开 ${nameOf(p)}`, "success");
-    } catch (e: any) {
-      toast(e?.toString?.() || "无法打开文件", "error");
+    } catch (e) {
+      toast(errText(e, "无法打开文件"), "error");
     } finally {
       setBusyPath(null);
     }
@@ -399,10 +376,9 @@ function MultiFileBody({ paths, item, onSelectPreview, selectedPath }: {
     if (busyPath) return;
     setBusyPath(p);
     try {
-      await preloadApi();
-      await _invoke("open_file_location", { path: p });
-    } catch (e: any) {
-      toast(e?.toString?.() || "无法打开文件夹", "error");
+      await invoke("open_file_location", { path: p });
+    } catch (e) {
+      toast(errText(e, "无法打开文件夹"), "error");
     } finally {
       setBusyPath(null);
     }
@@ -430,20 +406,19 @@ function MultiFileBody({ paths, item, onSelectPreview, selectedPath }: {
       return idx >= 0 ? p.slice(0, idx) : p;
     }));
     try {
-      await preloadApi();
       let opened = 0;
       for (const p of existing) {
         const idx = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
         const dir = idx >= 0 ? p.slice(0, idx) : p;
         if (dirs.has(dir)) {
           dirs.delete(dir);
-          await _invoke("open_file_location", { path: p });
+          await invoke("open_file_location", { path: p });
           opened++;
         }
       }
       toast(`已打开 ${opened} 个文件夹`, "success");
-    } catch (e: any) {
-      toast(e?.toString?.() || "无法打开文件夹", "error");
+    } catch (e) {
+      toast(errText(e, "无法打开文件夹"), "error");
     }
   }, [paths, infoMap, toast]);
 
@@ -507,10 +482,10 @@ function MultiFileBody({ paths, item, onSelectPreview, selectedPath }: {
                 </div>
               </div>
               <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                <RowIconBtn title="打开文件" disabled={!exists || busy || !apiReady} onClick={(e) => { e.stopPropagation(); openFile(p); }}>
+                <RowIconBtn title="打开文件" disabled={!exists || busy} onClick={(e) => { e.stopPropagation(); openFile(p); }}>
                   {busy ? <Loader size={13} className="spin" /> : <ExternalLink size={13} />}
                 </RowIconBtn>
-                <RowIconBtn title="打开文件夹" disabled={!exists || busy || !apiReady} onClick={(e) => { e.stopPropagation(); openFolder(p); }}>
+                <RowIconBtn title="打开文件夹" disabled={!exists || busy} onClick={(e) => { e.stopPropagation(); openFolder(p); }}>
                   <FolderOpen size={13} />
                 </RowIconBtn>
                 <RowIconBtn title="复制路径" onClick={(e) => { e.stopPropagation(); copyPath(p); }}>
@@ -529,7 +504,7 @@ function MultiFileBody({ paths, item, onSelectPreview, selectedPath }: {
           label="打开全部文件夹"
           onClick={openAllFolders}
           primary
-          disabled={!loaded || okCount === 0 || !apiReady}
+          disabled={!loaded || okCount === 0}
         />
         <FileActionBtn
           icon={<Copy size={14} />}

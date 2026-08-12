@@ -12,7 +12,6 @@ import { FocusTrap } from "@/components/FocusTrap";
 
 // v5.0.39 方案A渐进式优化：卡片布局+分类标签+常驻操作栏+快速预览弹窗
 const TAG_OPTIONS = ["API", "SQL", "配置", "模板", "命令"] as const;
-type TagType = (typeof TAG_OPTIONS)[number] | "";
 const FILTER_TAGS = ["全部", ...TAG_OPTIONS];
 
 interface Snippet {

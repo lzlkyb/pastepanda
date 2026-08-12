@@ -513,8 +513,12 @@ fn test_dedup_by_md5_workflow() {
     item2.md5 = Some(md5_hash.clone());
     store.insert_history(&item2).unwrap();
 
-    // 查找最新重复
-    let found = store.find_latest_by_md5(&md5_hash, "默认").unwrap().unwrap();
+    // 查找最新重复（第三参数 item_type：修复 rich/doc 合并失效时加的，
+    // 本用例造的是 text 类型记录）
+    let found = store
+        .find_latest_by_md5(&md5_hash, "默认", "text")
+        .unwrap()
+        .unwrap();
     assert_eq!(found.id, "dup-2"); // 时间更新的那条
 
     // 更新时间为现在
@@ -524,7 +528,10 @@ fn test_dedup_by_md5_workflow() {
     store.update_history_time("dup-1", &now).unwrap();
 
     // 现在最新的是 dup-1
-    let found = store.find_latest_by_md5(&md5_hash, "默认").unwrap().unwrap();
+    let found = store
+        .find_latest_by_md5(&md5_hash, "默认", "text")
+        .unwrap()
+        .unwrap();
     assert_eq!(found.id, "dup-1");
 }
 

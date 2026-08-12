@@ -12,11 +12,11 @@
  */
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Lightbulb, X, ArrowRight } from "lucide-react";
-import { suggestTop1, suggestSequence, suggestIntent, type Suggestion } from "@/lib/suggest";
+import { suggestTop1, suggestSequence, suggestIntent, loadFeedback, suppressByEditRate, type Suggestion } from "@/lib/suggest";
 import { loadRecommendState, refreshRecommendState, sceneOf } from "@/lib/recommend";
 import { getTransform } from "@/lib/transforms";
 import { actionDismissAdd } from "@/lib/api/actionEvents";
-import { pasteText } from "@/lib/api";
+import { pasteTextGuarded } from "@/lib/api";
 import { invoke } from "@tauri-apps/api/core";
 import styles from "./TrayPopupSuggestion.module.css";
 
@@ -71,27 +71,37 @@ export const TrayPopupSuggestion = memo(function TrayPopupSuggestion({
     const scene = sceneOf(new Date().getHours(), item.source || "");
 
     const intent = suggestIntent(ctx, scene, recents.slice(0, 3).map((r) => ({ text: r.text || "" })));
-    const top1 = intent ? null : suggestTop1(ctx, scene);
-    const seq = top1
-      ? null
-      : suggestSequence(recents.slice(0, 3).map((r) => ({ text: r.text || "" })));
-    const s = intent ?? top1 ?? seq;
-    if (!s || s.kind === "chain") {
-      // 托盘不做链建议（链需要多步预览，不适合"点了就用"的快速场景）
-      if (suggestion) setSuggestion(null);
-      return;
-    }
-    const key = suggestionKey(s);
-    // 刚被 ✕ 否决过的同一条建议不再出现（本次会话）
-    if (key === dismissedKey) {
-      if (suggestion) setSuggestion(null);
-      return;
-    }
-    if (key === lastKeyRef.current) return;
-    lastKeyRef.current = key;
-    setSuggestion(s);
+    // 审查：托盘与主窗建议一致 —— 也做 edit-rate 抑制（常被改且无偏好 → 不推）
+    const top1Raw = intent ? null : suggestTop1(ctx, scene);
+    let cancelled = false;
+    void (async () => {
+      const { fb, prefs } = await loadFeedback();
+      if (cancelled) return; // 内容已切换，丢弃过期建议
+      const top1 = suppressByEditRate(top1Raw, fb, prefs);
+      const seq = top1
+        ? null
+        : suggestSequence(recents.slice(0, 3).map((r) => ({ text: r.text || "" })));
+      const s = intent ?? top1 ?? seq;
+      if (!s || s.kind === "chain") {
+        // 托盘不做链建议（链需要多步预览，不适合"点了就用"的快速场景）
+        if (suggestion) setSuggestion(null);
+        return;
+      }
+      const key = suggestionKey(s);
+      // 刚被 ✕ 否决过的同一条建议不再出现（本次会话）
+      if (key === dismissedKey) {
+        if (suggestion) setSuggestion(null);
+        return;
+      }
+      if (key === lastKeyRef.current) return;
+      lastKeyRef.current = key;
+      setSuggestion(s);
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item?.text, item?.id, dismissedKey]);
+  }, [item?.id, item?.text, item?.contentType, item?.source, suggestion, dismissedKey, recents]);
 
   /** 使用：text/序列 → 变换结果粘贴前台；action/intent → 执行主动作 */
   const handleUse = useCallback(async () => {
@@ -114,7 +124,7 @@ export const TrayPopupSuggestion = memo(function TrayPopupSuggestion({
       }
       try {
         await invoke("save_foreground");
-        const ok = await pasteText(r.output);
+        const ok = await pasteTextGuarded(r.output);
         onToast(ok ? `已粘贴「${suggestion.label}」结果` : "粘贴失败", ok ? "success" : "error", 1000);
       } catch {
         onToast("粘贴失败", "error", 1200);

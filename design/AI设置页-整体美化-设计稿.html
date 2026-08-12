@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AI 设置页 · 整体美化 · 设计稿（2026-08-11）</title>
+<style>
+  :root {
+    --text-primary: #1f2937;
+    --text-secondary: #4b5563;
+    --text-muted: #6b7280;
+    --border-color: #e5e7eb;
+    --section-bg: #f8fafc;
+    --hover: rgba(127,127,127,.08);
+    --accent: #0284c7;
+    --accent-solid: #0369a1;
+    --accent-light: rgba(2,132,199,.12);
+    --green: #15803d;
+    --orange: #c2410c;
+    --danger: #d82525;
+    --red-bg: #fef2f2;
+  }
+  body {
+    margin: 0; padding: 24px;
+    background: #eef2f6;
+    font-family: "Microsoft YaHei", -apple-system, sans-serif;
+    color: var(--text-primary);
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { font-size: 12px; color: var(--text-muted); margin: 0 0 22px; line-height: 1.6; }
+  .lane { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+
+  /* 真实约束：弹窗 420px，.panel padding 14px 16px 18px → 内容宽 388px */
+  .dialog {
+    width: 420px; background: #fff; border-radius: 12px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.12);
+    display: flex; flex-direction: column;
+  }
+  .dlgTitle {
+    padding: 12px 16px; border-bottom: 1px solid var(--border-color);
+    font-size: 13px; font-weight: 700;
+  }
+  .panel {
+    display: flex; flex-direction: column; gap: 14px;
+    padding: 14px 16px 18px;
+    max-height: 620px; overflow-y: auto;
+  }
+
+  .caseHead { width: 420px; margin-bottom: 8px; }
+  .caseTitle { font-size: 13px; font-weight: 700; margin: 0 0 3px; display: flex; align-items: center; gap: 8px; }
+  .badgeTag { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; }
+  .bad { background: #fee2e2; color: #b91c1c; }
+  .rec { background: #ede9fe; color: #6d28d9; }
+  .ok  { background: #dcfce7; color: #15803d; }
+  .caseNote { font-size: 11.5px; color: var(--text-muted); margin: 0; line-height: 1.6; }
+  .metric { font-size: 11px; color: var(--text-muted); font-family: Consolas, monospace; margin: 8px 0 0; }
+
+  /* ===== 现状：四套卡片语言共存 ===== */
+  .statusBar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .sBadge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px;
+            border-radius: 999px; font-size: 11px; font-weight: 600;
+            color: var(--green); background: rgba(21,128,61,.12); }
+  .statusText { font-size: 11px; line-height: 1.5; color: var(--text-secondary); }
+
+  .groupTitle { display: flex; align-items: center; gap: 6px; font-size: 11px;
+                font-weight: 700; color: var(--text-secondary); letter-spacing: .5px; margin-top: 4px; }
+  .groupTitle::after { content: ""; flex: 1; height: 1px; background: var(--border-color); margin-left: 8px; }
+  .gDot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+
+  /* 外壳 ①：有边框卡（重） */
+  .cfgCard { border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; }
+  .cfgHead { display: flex; align-items: center; gap: 10px; width: 100%; padding: 11px 13px;
+             background: var(--section-bg); border: none; cursor: pointer; font-family: inherit; text-align: left; }
+  .cfgAvatar { width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
+               background: linear-gradient(135deg, var(--accent), var(--accent-solid));
+               color: #fff; display: inline-flex; align-items: center; justify-content: center;
+               font-weight: 700; font-size: 13.5px; }
+  .cfgTitles { flex: 1; min-width: 0; }
+  .cfgName { font-size: 13px; font-weight: 700; }
+  .cfgModel { font-size: 10.5px; color: var(--text-muted); margin-top: 1px;
+              font-family: Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cfgRight { display: flex; align-items: center; gap: 8px; flex-shrink: 0; color: var(--text-muted); font-size: 12px; }
+  .btnSec { border: 1px solid var(--border-color); background: #fff; border-radius: 7px;
+            padding: 4px 9px; font-size: 11px; cursor: pointer; font-family: inherit; color: var(--text-primary); }
+
+  /* 外壳 ②：无框底色卡（中） */
+  .usageCard { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+               border-radius: 8px; background: var(--section-bg); font-size: 11.5px; }
+  .usageNum { font-weight: 700; color: var(--accent); }
+
+  /* 外壳 ③：只一条上边框（轻） */
+  .advanced { display: flex; flex-direction: column; gap: 12px;
+              padding-top: 12px; border-top: 1px solid var(--border-color); }
+  .advToggle { display: flex; align-items: center; gap: 6px; padding: 0; border: none;
+               background: none; color: var(--text-primary); font-size: 12px; font-weight: 600;
+               font-family: inherit; cursor: pointer; text-align: left; }
+  .advHint { font-weight: 400; font-size: 11px; color: var(--text-muted); }
+
+  /* 外壳 ④：QuotaEntryCard（别的 CSS 文件，第四种长相） */
+  .qCard { border: 1px solid var(--accent-light); border-radius: 10px;
+           background: linear-gradient(135deg, rgba(2,132,199,.06), transparent); padding: 10px 12px; }
+  .qHead { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; }
+  .qIcon { width: 18px; height: 18px; border-radius: 5px; background: var(--accent-light);
+           display: inline-flex; align-items: center; justify-content: center; font-size: 10px; }
+  .qSub { font-size: 10.5px; color: var(--text-muted); font-weight: 400; }
+  .qBody { font-size: 11.5px; margin-top: 6px; color: var(--text-secondary); }
+
+  /* 错位的错误条 */
+  .loadError { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+               margin: 0 16px 10px; padding: 8px 10px; border-radius: 8px;
+               background: var(--red-bg); border: 1px solid #fecaca;
+               color: var(--danger); font-size: 11px; }
+  .retryBtn { border: 1px solid var(--danger); border-radius: 6px; padding: 2px 10px;
+              font-size: 11px; background: transparent; color: var(--danger); cursor: pointer; flex-shrink: 0; }
+
+  .annot { font-size: 10.5px; color: #b91c1c; font-weight: 700; margin: 0 0 -8px; padding-left: 2px; }
+  .annotB { color: #6d28d9; }
+
+  /* ===== 方案 A：统一卡片语言 ===== */
+  .block { border: 1px solid var(--border-color); border-radius: 10px; background: #fff; overflow: hidden; }
+  .blockHead { display: flex; align-items: center; gap: 9px; width: 100%; padding: 10px 12px;
+               background: var(--section-bg); border: none; cursor: pointer;
+               font-family: inherit; text-align: left; }
+  .blockIcon { width: 26px; height: 26px; border-radius: 7px; flex-shrink: 0;
+               background: var(--accent-light); color: var(--accent-solid);
+               display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+  .blockTitles { flex: 1; min-width: 0; }
+  .blockName { font-size: 12.5px; font-weight: 700; }
+  .blockSub { font-size: 10.5px; color: var(--text-muted); margin-top: 1px;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .blockChev { color: var(--text-muted); font-size: 11px; flex-shrink: 0; }
+  .blockBody { border-top: 1px solid var(--border-color); padding: 11px 12px 12px; font-size: 11.5px;
+               color: var(--text-secondary); line-height: 1.6; }
+
+  /* ===== 方案 B：摘要卡 + 手风琴 ===== */
+  .heroCard { border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden;
+              background: linear-gradient(135deg, rgba(2,132,199,.07), transparent); }
+  .heroTop { display: flex; align-items: center; gap: 10px; padding: 12px 13px 10px; }
+  .heroAvatar { width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+                background: linear-gradient(135deg, var(--accent), var(--accent-solid));
+                color: #fff; display: inline-flex; align-items: center; justify-content: center;
+                font-weight: 700; font-size: 14px; }
+  .heroName { font-size: 13.5px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+  .heroModel { font-size: 10.5px; color: var(--text-muted); font-family: Consolas, monospace; margin-top: 1px; }
+  .heroStats { display: grid; grid-template-columns: repeat(3, 1fr);
+               border-top: 1px solid var(--border-color); background: rgba(255,255,255,.6); }
+  .stat { padding: 8px 6px; text-align: center; border-right: 1px solid var(--border-color); }
+  .stat:last-child { border-right: none; }
+  .statNum { font-size: 14px; font-weight: 700; color: var(--text-primary); line-height: 1.2; }
+  .statNum small { font-size: 10px; font-weight: 600; color: var(--text-muted); }
+  .statLabel { font-size: 9.5px; color: var(--text-muted); margin-top: 2px; }
+  .heroActions { display: flex; gap: 6px; padding: 9px 12px;
+                 border-top: 1px solid var(--border-color); background: rgba(255,255,255,.6); }
+  .btnMain { flex: 1; border: none; background: var(--accent-solid); color: #fff;
+             border-radius: 7px; padding: 6px 10px; font-size: 11.5px; font-weight: 600;
+             cursor: pointer; font-family: inherit; }
+  .btnGhost { border: 1px solid var(--border-color); background: #fff; color: var(--text-primary);
+              border-radius: 7px; padding: 6px 10px; font-size: 11.5px; cursor: pointer; font-family: inherit; }
+
+  .acc { display: flex; flex-direction: column; gap: 6px; }
+  .accItem { border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; background: #fff; }
+  .accItemOpen { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
+  .accHead { display: flex; align-items: center; gap: 9px; width: 100%; padding: 10px 12px;
+             background: #fff; border: none; cursor: pointer; font-family: inherit; text-align: left; }
+  .accHeadOpen { background: var(--section-bg); }
+
+  /* ===== 方案 C：竖向子导航 ===== */
+  .cWrap { display: flex; gap: 0; }
+  .cNav { width: 88px; flex-shrink: 0; border-right: 1px solid var(--border-color);
+          display: flex; flex-direction: column; padding: 6px 0; }
+  .cNavItem { padding: 8px 10px; font-size: 11.5px; color: var(--text-secondary);
+              cursor: pointer; border-left: 2px solid transparent; }
+  .cNavOn { color: var(--accent-solid); font-weight: 700; background: var(--accent-light);
+            border-left-color: var(--accent); }
+  .cBody { flex: 1; min-width: 0; padding: 12px; }
+  .cGrid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .miniCard { border: 1px solid var(--border-color); border-radius: 8px; padding: 6px 7px;
+              font-size: 11px; height: 46px; box-sizing: border-box;
+              display: flex; flex-direction: column; justify-content: space-between; }
+
+  .ruler { margin: 12px 0 0; font-size: 11px; color: var(--text-muted);
+           border-top: 1px dashed var(--border-color); padding-top: 10px; line-height: 1.75; width: 420px; }
+  code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; font-size: 10.5px; }
+  table { border-collapse: collapse; font-size: 11.5px; margin-top: 8px; width: 100%; }
+  th, td { border: 1px solid var(--border-color); padding: 4px 7px; text-align: left; }
+  th { background: #f8fafc; font-weight: 600; }
+  .cmp { width: 560px; }
+</style>
+</head>
+<body>
+
+<h1>AI 设置页 · 整体美化</h1>
+<p class="sub">
+  2026-08-11 · 全部按真实约束渲染：弹窗 <code>420px</code>、<code>.panel</code> padding <code>14px 16px 18px</code> → 内容宽 <code>388px</code>。<br>
+  前置核查：<code>AiTab.module.css</code> 里 16 个无 fallback 的自定义属性<strong>全部有定义</strong>（包括 9 处 <code>--danger</code>）——
+  所以这页<strong>没有坏样式</strong>，问题全在布局层级。
+</p>
+
+<div class="lane">
+
+<!-- ====================== 现状 ====================== -->
+<div>
+  <div class="caseHead">
+    <p class="caseTitle">现状：一页里混了 4 套卡片语言 <span class="badgeTag bad">要改</span></p>
+    <p class="caseNote">没有任何规则解释为什么这块有框、那块只有一条线。</p>
+  </div>
+  <div class="dialog">
+    <div class="dlgTitle">⚙ 设置 › AI</div>
+    <div class="panel">
+
+      <p class="annot">↓ 这句话与下方卡头信息重复</p>
+      <div class="statusBar">
+        <span class="sBadge">● 已就绪</span>
+        <span class="statusText">当前使用 DeepSeek。</span>
+      </div>
+
+      <p class="annot">↓ 外壳① 有边框卡（重）· 折叠范式：整卡头 + Chevron</p>
+      <div class="groupTitle"><span class="gDot"></span>服务</div>
+      <div class="cfgCard">
+        <div class="cfgHead">
+          <span class="cfgAvatar">D</span>
+          <span class="cfgTitles">
+            <div class="cfgName">DeepSeek</div>
+            <div class="cfgModel">deepseek-chat · 预算 ¥3/日</div>
+          </span>
+          <span class="cfgRight"><button class="btnSec">测试连接</button> ›</span>
+        </div>
+      </div>
+
+      <p class="annot">↓ 外壳② 无框底色卡（中）</p>
+      <div class="groupTitle"><span class="gDot"></span>用量 · 今日</div>
+      <div class="usageCard">
+        <div>今日调用 <span class="usageNum">12</span> 次 · 花费 <span class="usageNum">¥0.08</span> / ¥3.00</div>
+      </div>
+
+      <p class="annot">↓ 外壳③ 只有一条上边框（轻）· 折叠范式：纯文字按钮（与上面不一致）</p>
+      <div class="advanced">
+        <div class="advToggle">› 用量明细 <span class="advHint">每次调用的 token 与花费，不含内容</span></div>
+      </div>
+
+      <p class="annot">↓ 外壳④ 第四种，样式定义在另一个 CSS 文件</p>
+      <div class="groupTitle"><span class="gDot"></span>免费额度</div>
+      <div class="qCard">
+        <div class="qHead"><span class="qIcon">◆</span>免费额度 <span class="qSub">内置 Agnes · 与自配隔离</span></div>
+        <div class="qBody">剩余 98,420 / 100,000 token</div>
+      </div>
+
+      <p class="annot">↓ 这个标题会孤儿化：未配置时 AiCustomActions 不渲染，标题仍在</p>
+      <div class="groupTitle"><span class="gDot"></span>自定义动作 · 高级</div>
+      <div class="advanced">
+        <div class="advToggle">› 自定义动作 <span class="advHint">自己写 prompt 模板</span></div>
+      </div>
+      <div class="advanced">
+        <div class="advToggle">› 高级 <span class="advHint">接口地址、协议、超时、思考、费用上限</span></div>
+      </div>
+
+      <p class="annot">↓ 错误条缩进错位：margin 16px 叠在 panel padding 16px 上 = 32px</p>
+      <div class="loadError">
+        <span>设置加载失败：示例</span>
+        <button class="retryBtn">重试</button>
+      </div>
+
+    </div>
+  </div>
+  <p class="metric">4 套外壳 · 2 种折叠范式 · 4 个分组标题（占 ~80px）· 7 个堆叠区块</p>
+</div>
+
+<!-- ====================== 方案 A ====================== -->
+<div>
+  <div class="caseHead">
+    <p class="caseTitle">方案 A：统一卡片语言 <span class="badgeTag ok">最省</span></p>
+    <p class="caseNote">4 套外壳 → 1 套 <code>.block</code>；两种折叠 → 1 种 <code>.blockHead</code>（4 个 GroupTitle 降到 2 个）。<strong>只治“乱”，不治“长”。</strong></p>
+  </div>
+  <div class="dialog">
+    <div class="dlgTitle">⚙ 设置 › AI</div>
+    <div class="panel">
+
+      <div class="statusBar">
+        <span class="sBadge">● 已就绪</span>
+        <span class="statusText">变换中心已有 4 个 AI 动作可用。</span>
+      </div>
+
+      <div class="groupTitle"><span class="gDot"></span>服务与用量</div>
+
+      <div class="block">
+        <div class="blockHead">
+          <span class="cfgAvatar">D</span>
+          <span class="blockTitles">
+            <div class="blockName">DeepSeek</div>
+            <div class="blockSub">deepseek-chat · 预算 ¥3/日</div>
+          </span>
+          <span class="cfgRight"><button class="btnSec">测试连接</button><span class="blockChev">›</span></span>
+        </div>
+      </div>
+
+      <div class="block">
+        <div class="blockHead">
+          <span class="blockIcon">◷</span>
+          <span class="blockTitles">
+            <div class="blockName">今日用量</div>
+            <div class="blockSub">12 次 · ¥0.08 / ¥3.00</div>
+          </span>
+          <span class="blockChev">›</span>
+        </div>
+      </div>
+
+      <div class="block">
+        <div class="blockHead">
+          <span class="blockIcon">◆</span>
+          <span class="blockTitles">
+            <div class="blockName">免费额度</div>
+            <div class="blockSub">剩余 98,420 / 100,000 token</div>
+          </span>
+          <span class="blockChev">›</span>
+        </div>
+      </div>
+
+      <div class="groupTitle"><span class="gDot"></span>进阶</div>
+
+      <div class="block">
+        <div class="blockHead">
+          <span class="blockIcon">✦</span>
+          <span class="blockTitles">
+            <div class="blockName">自定义动作</div>
+            <div class="blockSub">自己写 prompt 模板</div>
+          </span>
+          <span class="blockChev">›</span>
+        </div>
+      </div>
+
+      <div class="block">
+        <div class="blockHead">
+          <span class="blockIcon">⚙</span>
+          <span class="blockTitles">
+            <div class="blockName">高级</div>
+            <div class="blockSub">地址、协议、超时、思考、费用上限</div>
+          </span>
+          <span class="blockChev">›</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  <p class="metric">1 套外壳 · 1 种折叠 · 2 个分组标题 · 全收起高 ~330px</p>
+  <p class="ruler">
+    ✔ 四套卡片语言收成一套，扫视时“同类东西长得一样”<br>
+    ✔ 两种折叠范式统一（图标 + 标题 + 副标题 + Chevron）<br>
+    ✔ 副标题直接显示关键值，不展开也能看到用量/额度<br>
+    ✔ 一并修：孤儿标题、loadError 缩进错位、statusBar 与卡头重复<br>
+    ✘ 全部展开后还是很长（没有互斥）<br>
+    ✘ CSS 改动面大：~120 个类里动 30+，4 个子组件各改外壳一行
+  </p>
+</div>
+
+<!-- ====================== 方案 B ====================== -->
+<div>
+  <div class="caseHead">
+    <p class="caseTitle">方案 B：摘要卡 + 手风琴 <span class="badgeTag rec">推荐</span></p>
+    <p class="caseNote">顶部一张摘要卡把 3 个关键数字一屏摆完；下面手风琴<strong>同时只展开一个</strong>，页面高度基本恒定。</p>
+  </div>
+  <div class="dialog">
+    <div class="dlgTitle">⚙ 设置 › AI</div>
+    <div class="panel">
+
+      <p class="annot annotB">↓ 摘要卡：现在分散在 4 个块里的数字，合成一屏</p>
+      <div class="heroCard">
+        <div class="heroTop">
+          <span class="heroAvatar">D</span>
+          <span class="cfgTitles">
+            <div class="heroName">DeepSeek <span class="sBadge" style="padding:1px 6px;font-size:9.5px">已就绪</span></div>
+            <div class="heroModel">deepseek-chat</div>
+          </span>
+        </div>
+        <div class="heroStats">
+          <div class="stat"><div class="statNum">12</div><div class="statLabel">今日调用</div></div>
+          <div class="stat"><div class="statNum"><small>¥</small>0.08</div><div class="statLabel">今日花费 / ¥3</div></div>
+          <div class="stat"><div class="statNum">98.4<small>k</small></div><div class="statLabel">免费额度剩余</div></div>
+        </div>
+        <div class="heroActions">
+          <button class="btnMain">测试连接</button>
+          <button class="btnGhost">换服务商</button>
+          <button class="btnGhost">领免费额度</button>
+        </div>
+      </div>
+
+      <p class="annot annotB">↓ 手风琴：点开一个自动收起其他 → 页面高度不爆炸</p>
+      <div class="acc">
+
+        <div class="accItem accItemOpen">
+          <div class="accHead accHeadOpen">
+            <span class="blockIcon">☷</span>
+            <span class="blockTitles">
+              <div class="blockName">服务商与密钥</div>
+              <div class="blockSub">选厂商 · 粘密钥 · 测连接</div>
+            </span>
+            <span class="blockChev">⌄</span>
+          </div>
+          <div class="blockBody">
+            展开后是现有的 3 步流程 + 服务商网格（上一轮刚改完的两行卡片不动）。
+          </div>
+        </div>
+
+        <div class="accItem">
+          <div class="accHead">
+            <span class="blockIcon">◷</span>
+            <span class="blockTitles">
+              <div class="blockName">用量明细</div>
+              <div class="blockSub">每次调用的 token 与花费，不含内容</div>
+            </span>
+            <span class="blockChev">›</span>
+          </div>
+        </div>
+
+        <div class="accItem">
+          <div class="accHead">
+            <span class="blockIcon">✦</span>
+            <span class="blockTitles">
+              <div class="blockName">自定义动作</div>
+              <div class="blockSub">自己写 prompt 模板</div>
+            </span>
+            <span class="blockChev">›</span>
+          </div>
+        </div>
+
+        <div class="accItem">
+          <div class="accHead">
+            <span class="blockIcon">⚙</span>
+            <span class="blockTitles">
+              <div class="blockName">高级</div>
+              <div class="blockSub">地址、协议、超时、思考、费用上限</div>
+            </span>
+            <span class="blockChev">›</span>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+  <p class="metric">1 套外壳 · 1 种折叠 · 0 个分组标题 · 高度基本恒定</p>
+  <p class="ruler">
+    ✔ 包含方案 A 的全部好处（统一外壳 + 统一折叠）<br>
+    ✔ <strong>“现在能不能用 / 花了多少 / 还剩多少”三个问题一屏回答完</strong>（现在要看 4 个块）<br>
+    ✔ GroupTitle 全去掉，省下 ~80px；孤儿标题问题不再存在<br>
+    ✔ 互斥展开 → 不管点哪一项，页面高度都差不多<br>
+    ✘ 想同时对着看配置和用量明细，得来回点<br>
+    ✘ TSX 要加互斥展开状态（<code>openKey: string | null</code>），比 A 多一层改动<br>
+    ✘ 摘要卡的“免费额度剩余”需要从 <code>QuotaEntryCard</code> 把数据提上来（多一个读取）
+  </p>
+</div>
+
+<!-- ====================== 方案 C ====================== -->
+<div>
+  <div class="caseHead">
+    <p class="caseTitle">方案 C：左侧竖向子导航 <span class="badgeTag bad">不推荐</span></p>
+    <p class="caseNote">列出来只为对比——它在 420px 里会把刚改好的服务商网格挤坏。</p>
+  </div>
+  <div class="dialog">
+    <div class="dlgTitle">⚙ 设置 › AI</div>
+    <div class="cWrap">
+      <div class="cNav">
+        <div class="cNavItem cNavOn">服务</div>
+        <div class="cNavItem">用量</div>
+        <div class="cNavItem">免费额度</div>
+        <div class="cNavItem">自定义动作</div>
+        <div class="cNavItem">高级</div>
+      </div>
+      <div class="cBody">
+        <div style="font-size:11.5px;font-weight:700;margin-bottom:7px">内置服务商</div>
+        <p class="annot" style="margin-bottom:4px">↓ 只剩 264px → 被迫降为 2 列</p>
+        <div class="cGrid2">
+          <div class="miniCard"><div>DeepSeek</div><div style="font-size:9px;color:#15803d;font-weight:700">已配置</div></div>
+          <div class="miniCard"><div>通义千问（阿里）</div><div></div></div>
+          <div class="miniCard"><div>智谱 GLM</div><div></div></div>
+          <div class="miniCard"><div>Kimi（月之暗面）</div><div></div></div>
+          <div class="miniCard"><div>百度千帆（文心）</div><div></div></div>
+          <div class="miniCard"><div>内置免费（Agnes）</div><div style="font-size:9px;color:#7c3aed;font-weight:700">内置免费</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="metric">内容区 420 − 88（导航）− 1（分隔）− 24（padding）= <strong>307px</strong></p>
+  <p class="ruler">
+    ✔ 一次只看一块，纵向滚动几乎消失<br>
+    ✘ <strong>服务商网格从 3 列降到 2 列</strong>——上一轮刚做完的两行卡片相当于重做<br>
+    ✘ 5 个子页签里 3 个只有一两行内容，为了看一行字要切一次页<br>
+    ✘ 设置弹窗已经有一层顶部 tab（通用/AI/关于…），再嵌一层是双层导航<br>
+    ✘ 改动量最大：新增子路由状态 + 5 个子页布局重排
+  </p>
+</div>
+
+</div>
+
+<!-- ====================== 对比 ====================== -->
+<div class="dialog cmp" style="margin-top:28px">
+  <div class="dlgTitle">一张表对比</div>
+  <div style="padding:12px 16px 16px">
+    <table>
+      <tr><th></th><th>卡片语言</th><th>折叠范式</th><th>分组标题</th><th>关键数字一屏</th><th>服务商网格</th><th>改动量</th></tr>
+      <tr><td>现状</td><td>4 套 ✘</td><td>2 种 ✘</td><td>4 个（含孤儿）</td><td>否（4 块）</td><td>3 列</td><td>—</td></tr>
+      <tr><td><strong>方案 A</strong></td><td>1 套 ✔</td><td>1 种 ✔</td><td>2 个</td><td>部分（副标题）</td><td>3 列 ✔</td><td>中（主要 CSS）</td></tr>
+      <tr><td><strong>方案 B</strong></td><td>1 套 ✔</td><td>1 种 ✔</td><td><strong>0 个</strong></td><td><strong>是 ✔</strong></td><td>3 列 ✔</td><td>中偏大</td></tr>
+      <tr><td>方案 C</td><td>1 套</td><td>无需折叠</td><td>0 个</td><td>否</td><td><strong>2 列 ✘</strong></td><td>最大</td></tr>
+    </table>
+    <p class="ruler" style="width:auto">
+      推荐 <strong>方案 B</strong>。它含了 A 的全部收益，额外解决了“页面太长”和“关键信息分散在 4 个块里”。<br>
+      如果你觉得互斥手风琴“点来点去麻烦”，那就选 <strong>方案 A</strong>——它把“乱”治彻底了，只是页面依旧较长。<br>
+      也可以 <strong>先 A 后 B</strong>：先统一外壳（风险低、可单独验收），确认好看再加摘要卡与互斥。
+    </p>
+    <p class="ruler" style="width:auto">
+      <strong>三个方案都会顺手修的 4 个确定缺陷：</strong><br>
+      ① <code>GroupTitle “自定义动作 · 高级”</code> 无条件渲染，但 <code>AiCustomActions</code> 仅 <code>configured &amp;&amp; enabled</code> 时渲染 → 孤儿标题<br>
+      ② <code>.loadError</code> 的 <code>margin: 0 16px</code> 叠在 <code>.panel</code> 的 <code>padding: 16px</code> 上 → 缩进 32px，比同页其它块窄一圈<br>
+      ③ <code>statusBar</code> “当前使用 DeepSeek” 与正下方 <code>cfgHead</code> 信息重复<br>
+      ④ 两种折叠范式并存（<code>cfgCard</code> 整卡头+Chevron vs 3 处 <code>.advanced</code> 上边框+纯文字）
+    </p>
+    <p class="ruler" style="width:auto">
+      <strong>顺便报一个不属于“美化”但已超线的事：</strong>
+      <code>AiTab.tsx</code> 465 行、<code>AiSetupStep.tsx</code> 367 行，<strong>都破了项目规则 #7 的 300 行上限</strong>；
+      <code>AiTab.module.css</code> 1227 行 / ~120 个类。方案 A/B 都会动这两个文件，是顺带拆分的好时机——但拆分不是美化，要不要一起做由你定。
+    </p>
+  </div>
+</div>
+
+</body>
+</html>

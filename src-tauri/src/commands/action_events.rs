@@ -10,12 +10,15 @@
 use crate::data_store::{
     ActionDismissal, ActionEvent, ActionEventStats, ActionWeightRow, DataStore, SceneWeightRow,
 };
-use tauri::State;
+use tauri::{Emitter, State};
 
 /// 记一笔动作事件。无返回值、不报错——失败只在 Rust 侧记 warn 日志。
+/// 审查 #1（学习回流）：写成功后广播 `action-event-recorded`，前端 debounce 刷新推荐权重，
+/// 让"用了 → 权重变 → 建议变"在会话内可见，而不是等到下次启动。
 #[tauri::command]
-pub fn action_event_log(store: State<DataStore>, event: ActionEvent) {
+pub fn action_event_log(app: tauri::AppHandle, store: State<DataStore>, event: ActionEvent) {
     store.action_event_add(&event);
+    let _ = app.emit("action-event-recorded", ());
 }
 
 /// 最近 N 天的动作事件统计（默认 30 天，上限 365）。
@@ -69,6 +72,16 @@ pub fn action_dismiss_add(
 #[tauri::command]
 pub fn action_dismissals(store: State<DataStore>) -> Result<Vec<ActionDismissal>, String> {
     store.action_dismissals()
+}
+
+/// 恢复一条「不再推荐」（智能学习弹窗的恢复按钮）。
+#[tauri::command]
+pub fn action_dismiss_remove(
+    store: State<DataStore>,
+    action_id: String,
+    content_type: String,
+) -> Result<u32, String> {
+    store.action_dismiss_remove(&action_id, &content_type)
 }
 
 /// 一键清空全部学习记录（事件 + 负反馈），返回删除条数。红线②。

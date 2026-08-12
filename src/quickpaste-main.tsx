@@ -2,6 +2,10 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { MotionConfig } from "framer-motion";
 import { QuickPastePanel } from "./components/QuickPastePanel";
+// 快捷面板是**独立窗口、独立 React root**，它有自己一份 zustand 实例。
+// 不把守卫弹窗挂进来，面板里调 pasteTextGuarded 会设上 pasteGuard 状态却无人渲染，
+// promise 永远不 resolve——粘贴直接卡死，比不守卫更糟。
+import { PasteGuardDialog } from "./components/PasteGuardDialog";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { logger } from "./lib/logger";
 import { applyTheme, DEFAULT_THEME, ThemeKey } from "./lib/theme";
@@ -54,6 +58,7 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     >
       <MotionConfig reducedMotion="user">
         <QuickPastePanel />
+        <PasteGuardDialog />
       </MotionConfig>
     </ErrorBoundary>
   </React.StrictMode>,

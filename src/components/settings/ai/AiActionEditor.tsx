@@ -17,6 +17,7 @@ import {
   type AiCustomAction,
 } from "@/lib/api";
 import { ACTION_TEMPLATES, type ActionTemplate } from "./actionTemplates";
+import { budgetExceededMessage } from "@/lib/aiBudgetMsg";
 import settings from "../../Settings.module.css";
 import styles from "../AiTab.module.css";
 
@@ -146,7 +147,7 @@ export function AiActionEditor({ action, contentTypes, onSaved, onCancel, onDele
         case "budgetExceeded":
           setOutput({
             ok: false,
-            text: `今日花费已达上限（约 ¥${r.spentCny.toFixed(2)} / ¥${r.budgetCny.toFixed(2)}）`,
+            text: budgetExceededMessage(r.spentCny, r.budgetCny),
           });
           break;
       }

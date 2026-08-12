@@ -85,7 +85,7 @@ export function ConfigDiffDialog({ open, onClose }: { open: boolean; onClose: ()
       }
       setResult(r);
       setFilter("diff");
-    } catch (e: any) {
+    } catch (e) {
       logger.warn("配置对比失败", e);
       toast(typeof e === "string" ? e : "对比失败", "error");
     } finally {

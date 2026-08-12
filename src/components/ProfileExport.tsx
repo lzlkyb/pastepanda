@@ -19,13 +19,28 @@ import {
   AlertTriangle, RefreshCw,
 } from "lucide-react";
 import {
-  profileExport, profileInstallSkill,
+  profileExport, profileInstallSkill, skillInstallWorkflows,
   type ProfileFormat, type ProfileCategory,
 } from "@/lib/api/profile";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useToast } from "@/components/Toast";
+import { logActionEvent } from "@/lib/api/actionEvents";
 import styles from "./ProfileDialog.module.css";
 import ex from "./ProfileExport.module.css";
+
+/**
+ * 导出/安装成功记一笔行为事件（成就「可移植的灵魂」判定源）。
+ * contentType 空串：纯动作标记，不属于任何内容类型。
+ */
+function logProfileExport(): void {
+  logActionEvent({
+    actionId: "profile-export",
+    contentType: "",
+    sourceApp: "",
+    hour: new Date().getHours(),
+    outcome: "copied",
+  });
+}
 
 const FMT_CARDS: {
   id: ProfileFormat;
@@ -68,6 +83,7 @@ export function ProfileExport() {
   const [retry, setRetry] = useState(0);
   const [copied, setCopied] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const [installingWorkflows, setInstallingWorkflows] = useState(false);
   /** 安装前的二次确认（后端直接覆盖同名 SKILL.md） */
   const [confirmInstall, setConfirmInstall] = useState(false);
   const reqRef = useRef(0);
@@ -139,6 +155,7 @@ export function ProfileExport() {
       if (!path) return;
       await writeTextFile(path, text);
       toast(`已保存到 ${path}`, "success");
+      logProfileExport();
     } catch (e) {
       toast(`保存失败：${e instanceof Error ? e.message : String(e)}`, "error");
     }
@@ -150,6 +167,7 @@ export function ProfileExport() {
       // 传的是同一份勾选：预览里看到的 SKILL.md 就是落盘的 SKILL.md
       const dir = await profileInstallSkill(Array.from(cats));
       toast(`已安装到 ${dir}`, "success");
+      logProfileExport();
     } catch (e) {
       toast(`安装失败：${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
@@ -157,10 +175,32 @@ export function ProfileExport() {
     }
   }, [cats, toast]);
 
+  /** v6.4 S1：把自定义 AI 动作 + 动作链打包成 Skill 装进 Claude Code */
+  const installWorkflows = useCallback(async () => {
+    setInstallingWorkflows(true);
+    try {
+      const r = await skillInstallWorkflows();
+      // skipped > 0 必须明说：导出物会被外部 AI 工具自动读取，含密钥/个人信息的条目
+      // 被整条剔掉了；不说的话用户会以为自己的动作莫名其妙丢了
+      if (r.skipped > 0) {
+        toast(`已导出到 ${r.path}；${r.skipped} 条因含疑似敏感信息（密钥或个人信息）未导出`, "warning");
+      } else {
+        toast(`已导出到 ${r.path}`, "success");
+      }
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "error");
+    } finally {
+      setInstallingWorkflows(false);
+    }
+  }, [toast]);
+
   return (
     <div className={styles.exportCard}>
       <div className={styles.exportHead}>
-        <span className={styles.exportTitle}>导出画像</span>
+        {/* 不带 class：标题样式由父级 .exportHead 统一承担（font-size/weight/color），
+            .exportSub 才需要显式覆盖。原先引的 styles.exportTitle 在 css 里不存在，
+            是悬空引用（无视觉后果，但会让人以为这里有专属样式）。 */}
+        <span>导出画像</span>
         <span className={styles.exportSub}>产物仅含统计 · 可带去任何 AI 工具 · 选择即实时预览</span>
       </div>
 
@@ -273,6 +313,20 @@ export function ProfileExport() {
             {installing ? "安装中…" : "装进 Claude Code →"}
           </button>
         )}
+      </div>
+
+      {/* v6.4 S1：工作流技能包——独立于画像勾选，把自定义动作+链带走 */}
+      <div className={ex.workflowRow}>
+        <button
+          className={ex.workflowBtn}
+          onClick={() => void installWorkflows()}
+          disabled={installingWorkflows}
+          title="把自定义 AI 动作与动作链打包成 SKILL.md，装进 Claude Code / Cursor / Codex 等 26+ 平台"
+        >
+          {installingWorkflows ? <Loader2 size={12} className="spin" /> : <Package size={12} />}
+          {installingWorkflows ? "导出中…" : "导出我的动作与链为 Skill"}
+        </button>
+        <span className={ex.workflowHint}>把自定义 AI 动作 + 动作链打包，装进 Claude Code / Cursor</span>
       </div>
 
       <ConfirmDialog

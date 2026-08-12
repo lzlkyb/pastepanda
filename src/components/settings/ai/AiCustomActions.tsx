@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, Plus } from "lucide-react";
+import { Plus, Sparkles } from "lucide-react";
 import {
   aiDeleteCustomAction,
   aiListContentTypes,
@@ -21,15 +21,16 @@ import { reloadAiCustomActions } from "@/lib/transforms";
 import { logger } from "@/lib/logger";
 import { useToast } from "@/components/Toast";
 import { AiActionEditor } from "./AiActionEditor";
+import { AiSection } from "./AiSection";
 import settings from "../../Settings.module.css";
 import styles from "../AiTab.module.css";
 
 /** 编辑中：null 不在编辑，"new" 新建，否则是被编辑的动作 */
 type Editing = null | "new" | AiCustomAction;
 
-export function AiCustomActions() {
+/** 折叠态由父级互斥控制；副标题要用到 list.length，所以 AiSection 由本组件自己包。 */
+export function AiCustomActions({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const { toast } = useToast();
-  const [open, setOpen] = useState(true);
   const [list, setList] = useState<AiCustomAction[]>([]);
   const [types, setTypes] = useState<AiContentTypeOption[]>([]);
   const [editing, setEditing] = useState<Editing>(null);
@@ -77,16 +78,14 @@ export function AiCustomActions() {
   };
 
   return (
-    <div className={styles.advanced}>
-      <button className={styles.advancedToggle} onClick={() => setOpen((v) => !v)}>
-        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        自定义动作
-        <span className={styles.advancedHint}>
-          {list.length > 0 ? `已有 ${list.length} 个` : "写一段提示词，就多一个变换"}
-        </span>
-      </button>
-
-      {!open ? null : editing !== null ? (
+    <AiSection
+      icon={<Sparkles size={13} />}
+      title="自定义动作"
+      subtitle={list.length > 0 ? `已有 ${list.length} 个` : "写一段提示词，就多一个变换"}
+      open={open}
+      onToggle={onToggle}
+    >
+      {editing !== null ? (
         <AiActionEditor
           action={editing === "new" ? null : editing}
           contentTypes={types}
@@ -151,6 +150,6 @@ export function AiCustomActions() {
           </div>
         </div>
       )}
-    </div>
+    </AiSection>
   );
 }

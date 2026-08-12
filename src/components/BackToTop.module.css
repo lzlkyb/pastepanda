@@ -3,7 +3,15 @@
 .btn {
   position: fixed;
   right: 16px;
-  bottom: 80px;
+  /* 与左下角 SignFloat（left:16 / bottom:16）同一条底线。
+
+     原值是 80px，是个没有依据的魔法数：它大概想对应
+     .cardList 的 `padding: 10px 16px 80px`，但两者语义根本对不上——
+     bottom 相对**视口**，而那 80px 是**滚动内容末尾**的留白。
+     而视口底部并没有任何固定栏（.appShell 是 100vh + overflow:hidden，
+     滚动发生在 CardList 内部），所以它就悬在列表中下部，
+     横向遮住一张卡片右侧约 72px。 */
+  bottom: 16px;
   height: 38px;
   padding: 0 16px;
   border-radius: 19px;

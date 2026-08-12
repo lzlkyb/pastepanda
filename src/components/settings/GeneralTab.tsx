@@ -1,20 +1,21 @@
 import React, { useState, useRef, useLayoutEffect, useCallback, useEffect, useMemo } from "react";
-import { AppConfig, useAppStore } from "@/stores/appStore";
+import { AppConfig } from "@/stores/appStore";
 import { HelpTooltip } from "@/components/HelpTooltip";
 import { THEMES, applyTheme, ThemeKey } from "@/lib/theme";
 import { emit } from "@tauri-apps/api/event";
 import { useToast } from "@/components/Toast";
 import { logger } from "@/lib/logger";
 import { StatsDetail } from "@/lib/api";
-import { resolveSource, fetchRealSourceIcon } from "@/lib/source-mappings";
+import { resolveSource } from "@/lib/source-mappings";
+import { useSourceIcon } from "@/hooks/useSourceIcon";
 import { ToggleRow } from "./ToggleRow";
 import { HotkeyRecorder } from "./HotkeyRecorder";
 import { LanSyncPanel } from "./LanSyncPanel";
 import { DeepCleanDialog } from "@/components/DeepCleanDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { WeekReportDialog } from "@/components/WeekReportDialog";
-import { useDialogStore } from "@/stores/dialogStore";
 import styles from "../Settings.module.css";
+import settings from "../Settings.module.css";
 
 const THEME_PREVIEWS: Record<string, { bg: string; accent: string; text: string; barBg: string; bodyBg: string; lineBg: string }> = {
   "ocean":      { bg: "#F4F6F9", accent: "#0284C7", text: "#64748B", barBg: "#fff", bodyBg: "linear-gradient(180deg, #EAF6FD 0%, #CFE9F8 40%, #9ED0EA 75%, #79B8DD 100%)", lineBg: "#E0E4EB" },
@@ -38,6 +39,9 @@ interface GeneralTabProps {
   updateConfig: (partial: Record<string, unknown>) => void;
   updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
   stats: StatsDetail | null;
+  /** 审查：统计加载失败标记 + 重试（不再永久 spinner） */
+  statsError?: boolean;
+  onRetryStats?: () => void;
   /** 过期记录数（后端按清理条件精确统计，含"未置顶+超期"） */
   expiredCount: number;
   tabStyle: string;
@@ -49,21 +53,13 @@ interface GeneralTabProps {
   importing?: boolean;
 }
 
-/** 来源榜图标：复用侧边栏真实应用图标 / emoji 双模式逻辑（source_icon_mode + realIconCache） */
+/** 来源榜图标：真实应用图标 / emoji 双模式走 useSourceIcon（规则 #11） */
 function SourceRowIcon({ source, sourceIcon, fallbackEmoji, color }: { source: string; sourceIcon?: string | null; fallbackEmoji: string; color?: string }) {
-  const sourceIconMode = useAppStore((s) => s.config.source_icon_mode);
-  const cacheKey = sourceIcon || source;
-  const realIconUrl = useAppStore((s) => s.realIconCache[cacheKey]);
-
-  useEffect(() => {
-    if (sourceIconMode === "app" && source) {
-      fetchRealSourceIcon(source, sourceIcon);
-    }
-  }, [source, sourceIcon, sourceIconMode]);
+  const { realIconUrl } = useSourceIcon(source, sourceIcon);
 
   return (
     <span className={styles.bSrcIco} style={color ? { background: `${color}26` } : undefined}>
-      {sourceIconMode === "app" && realIconUrl ? (
+      {realIconUrl ? (
         <img src={realIconUrl} alt="" className={styles.bSrcIcoImg} />
       ) : (
         fallbackEmoji
@@ -73,7 +69,7 @@ function SourceRowIcon({ source, sourceIcon, fallbackEmoji, color }: { source: s
 }
 
 export function GeneralTab({
-  config, updateConfig, updateAndSave, stats, expiredCount,
+  config, updateAndSave, stats, statsError, onRetryStats, expiredCount,
   tabStyle, handleSwitchTabStyle,
   handleExport, handleImport, handleCleanup,
   exporting, importing,
@@ -260,6 +256,13 @@ export function GeneralTab({
           📊 剪贴板数据概览
           {loadedAt && <span className={styles.statsHeaderRight}>更新于 {loadedAt}</span>}
         </div>
+        {/* 审查：统计加载失败给重试（此前 stats 恒 null 永久空转） */}
+        {statsError && !stats && (
+          <div className={styles.statsFallback}>
+            <span>统计加载失败</span>
+            <button className={settings.btnSecondary} onClick={onRetryStats}>重试</button>
+          </div>
+        )}
         {stats && dash ? (
           <>
             {/* 核心指标 4 格 */}
@@ -1012,31 +1015,6 @@ export function GeneralTab({
           <div className={`${styles.sRowDesc}`}>按时间 / 类型 / 来源组合条件清理，支持预览与撤销</div>
         </div>
         <button className={styles.sAction} onClick={() => setShowDeepClean(true)}>打开</button>
-      </div>
-      {/* v6.1 红线②：学习日志可见可删 */}
-      <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #8B5CF6, #6366F1)" }}>🧠</span>
-        <div className={`${styles.sRowBody}`}>
-          <div className={`${styles.sRowLabel}`}>
-            系统学到了什么
-            <HelpTooltip
-              tooltip="查看使用统计与「不再推荐」清单，可一键清空。所有数据只存本机，不包含复制内容本身"
-              detailTitle="系统学到了什么"
-              detail={<>
-                <p>变换中心会根据你的使用习惯调整推荐排序（仅存本机）。</p>
-                <p>📌 这里能看到：近 30 天使用次数、最常用变换、已「不再推荐」的动作</p>
-                <p>📌 一键清空后，推荐会退回「对所有人一样」的默认排序</p>
-              </>}
-            />
-          </div>
-          <div className={`${styles.sRowDesc}`}>查看推荐学习记录，可一键清空（仅存本机）</div>
-        </div>
-        <button
-          className={styles.sAction}
-          onClick={() => useDialogStore.getState().openLearnings()}
-        >
-          查看
-        </button>
       </div>
       </div>
       <div ref={noResultRef} className={styles.settingsNoResult} style={{ display: "none" }}>

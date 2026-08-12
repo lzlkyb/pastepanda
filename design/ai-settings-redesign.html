@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 设置 · 交互重设计稿 v2（基于真实 UI）</title>
+<style>
+  :root, [data-theme="dark"] {
+    --bg:#0d1420; --panel:#16202e; --card:#1b2736; --section:#1f2c3d;
+    --border:#2a3a4e; --border-soft:#23324a; --search-border:#2e4057;
+    --text1:#e7edf5; --text2:#9fb0c4; --text3:#6b7d93;
+    --accent:#4fa3ff; --accent-solid:#2f86e8; --accent-strong:#8ec4ff;
+    --accent-light:rgba(79,163,255,.14); --accent-border:rgba(79,163,255,.35);
+    --green:#34d399; --green-bg:rgba(52,211,153,.12); --green-border:rgba(52,211,153,.3);
+    --orange:#fb923c; --orange-bg:rgba(251,146,60,.12); --orange-border:rgba(251,146,60,.3);
+    --danger:#f87171; --danger-bg:rgba(248,113,113,.1);
+    --hover:rgba(127,140,160,.09); --shadow:0 10px 34px rgba(0,0,0,.45);
+  }
+  [data-theme="light"] {
+    --bg:#eef2f7; --panel:#ffffff; --card:#f6f8fb; --section:#fafbfd;
+    --border:#dde5ef; --border-soft:#e6edf5; --search-border:#d5dfeb;
+    --text1:#1f2a3a; --text2:#5b6b80; --text3:#93a2b5;
+    --accent:#2f86e8; --accent-solid:#1d6fd0; --accent-strong:#1d6fd0;
+    --accent-light:rgba(47,134,232,.1); --accent-border:rgba(47,134,232,.3);
+    --green:#0f9d6e; --green-bg:rgba(15,157,110,.1); --green-border:rgba(15,157,110,.3);
+    --orange:#b7791f; --orange-bg:rgba(183,121,31,.1); --orange-border:rgba(183,121,31,.3);
+    --danger:#dc2626; --danger-bg:rgba(220,38,38,.07);
+    --hover:rgba(40,60,90,.07); --shadow:0 10px 30px rgba(30,50,80,.18);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;background:var(--bg);color:var(--text1);min-height:100vh;padding:36px 16px 60px;transition:background .2s}
+  .toolbar{position:fixed;top:14px;right:16px;z-index:50;display:flex;gap:6px;flex-wrap:wrap}
+  .toolbar button{border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text2);font-size:12px;padding:6px 11px;cursor:pointer;font-family:inherit}
+  .toolbar button.active{border-color:var(--accent);color:var(--accent)}
+  .wrap{max-width:660px;margin:0 auto}
+  .topNote{font-size:11.5px;color:var(--text3);margin-bottom:12px;line-height:1.7}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:16px;display:flex;flex-direction:column;gap:14px}
+
+  /* ===== 状态条（真实：未配置/已就绪/已停用 三态徽章）===== */
+  .statusBar{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 10px;border-radius:99px}
+  .badgeIdle{border:1px solid var(--border);color:var(--text2);background:var(--section)}
+  .badgeReady{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border)}
+  .badgeOff{background:var(--hover);color:var(--text2);border:1px solid var(--border)}
+  .statusText{font-size:11.5px;color:var(--text2);line-height:1.6}
+
+  /* ===== 配置卡（核心改动：默认折叠，按场景展开）===== */
+  .cfgCard{border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .cfgHead{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;user-select:none;background:var(--section)}
+  .cfgHead:hover{background:var(--hover)}
+  .cfgAvatar{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent-solid));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0}
+  .cfgName{font-size:13.5px;font-weight:700;display:flex;align-items:center;gap:7px}
+  .cfgModel{font-size:11px;color:var(--text3);margin-top:1px;font-family:Consolas,monospace}
+  .cfgHeadRight{margin-left:auto;display:flex;align-items:center;gap:8px}
+  .chev{color:var(--text3);font-size:11px;transition:transform .18s}
+  .chev.open{transform:rotate(180deg)}
+  .cfgBody{display:none;padding:14px;border-top:1px solid var(--border-soft);flex-direction:column;gap:0}
+  .cfgBody.open{display:block}
+
+  /* ===== 步骤（真实 3 步卡结构）===== */
+  .step{display:flex;gap:10px;padding:12px 0;border-bottom:1px dashed var(--border-soft)}
+  .step:last-of-type{border-bottom:none}
+  .stepNum{flex-shrink:0;width:19px;height:19px;border-radius:6px;background:var(--accent-light);color:var(--accent-strong);font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;margin-top:1px}
+  .stepBody{flex:1;min-width:0}
+  .stepTitle{font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px}
+  .keyBadge{font-size:10px;color:var(--green);background:var(--green-bg);border:1px solid var(--green-border);padding:1px 8px;border-radius:99px;font-weight:600}
+  .provGroupLabel{font-size:11px;color:var(--text2);font-weight:600;margin:8px 0 6px;display:flex;align-items:center;gap:6px}
+  .provGroupHint{font-size:10px;color:var(--text3);font-weight:400}
+  .provGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+  .provCard{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:3px;border:1px solid var(--search-border);border-radius:9px;padding:7px 8px;background:var(--section);cursor:pointer;text-align:left;font-family:inherit;transition:all .13s}
+  .provCard:hover{border-color:var(--accent-border)}
+  .provCard.on{border-color:var(--accent);background:var(--accent-light)}
+  .provName{font-size:11.5px;font-weight:600;color:var(--text1);display:flex;align-items:center;gap:4px;max-width:100%}
+  .provCk{color:var(--accent);font-size:10.5px}
+  .provTags{display:flex;gap:4px;flex-wrap:wrap}
+  .provTagLocal{font-size:9px;padding:0 6px;border-radius:99px;background:var(--green-bg);color:var(--green)}
+  .provTagSet{font-size:9px;padding:0 6px;border-radius:99px;background:var(--accent-light);color:var(--accent-strong)}
+  .provEdit,.provDel{position:absolute;right:5px;font-size:10px;color:var(--text3);cursor:pointer;padding:2px;border-radius:4px}
+  .provEdit{top:5px}.provDel{bottom:5px}
+  .provEdit:hover{color:var(--accent)}.provDel:hover{color:var(--danger)}
+  .provAdd{display:flex;align-items:center;justify-content:center;border:1px dashed var(--accent-border);border-radius:9px;color:var(--accent-strong);font-size:11.5px;background:transparent;cursor:pointer;font-family:inherit;padding:8px}
+  .provAdd:hover{background:var(--accent-light)}
+  .providerNote{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text3);margin-top:8px;flex-wrap:wrap}
+  .linkBtn{border:none;background:none;color:var(--accent);font-size:11px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:3px;padding:0}
+  .linkBtn:hover{text-decoration:underline}
+
+  .input{width:100%;padding:7px 10px;border:1px solid var(--search-border);border-radius:8px;background:var(--panel);color:var(--text1);font-size:12.5px;font-family:inherit;outline:none;margin-top:8px}
+  .input:focus{border-color:var(--accent)}
+  .input::placeholder{color:var(--text3)}
+
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .chip{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:6px 10px;border-radius:8px;border:1px solid var(--search-border);background:var(--panel);font-family:inherit;cursor:pointer;text-align:left}
+  .chip:hover{border-color:var(--accent-border)}
+  .chip.on{border-color:var(--accent);background:var(--accent-light)}
+  .chipTitle{font-size:11.5px;font-weight:600;display:flex;align-items:center;gap:4px}
+  .chipTitle svg{color:var(--accent)}
+  .chipId{font-size:10px;color:var(--text3);font-family:Consolas,monospace}
+  .moreBtn{border:none;background:none;color:var(--accent);font-size:11px;cursor:pointer;font-family:inherit;margin-top:6px;padding:0}
+  .hint{font-size:11px;color:var(--text3);line-height:1.6;display:block;margin-top:7px}
+  .hint strong{color:var(--text2)}
+  .hintWarn{color:var(--orange);background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:8px;padding:7px 10px;margin-top:8px}
+  .hintWarn strong{color:var(--orange)}
+
+  .row{display:flex;gap:7px;align-items:center;margin-top:8px;flex-wrap:wrap}
+  .rowGrow{flex:1;min-width:120px;margin-top:0}
+  .btn{border-radius:8px;font-size:12px;padding:7px 14px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);background:transparent;color:var(--text2)}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn.primary{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff;font-weight:600}
+  .btn.primary:hover{filter:brightness(1.1);color:#fff}
+  .btn.danger{border-color:var(--danger);color:var(--danger)}
+  .btn.danger:hover{background:var(--danger);color:#fff}
+  .btn:disabled{opacity:.5;cursor:default}
+  .eyeBtn{width:32px;height:32px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--text3);cursor:pointer;flex-shrink:0}
+
+  /* 测试结果：固定在步骤 3 下方（真实 testMsg 区） */
+  .testArea{margin-top:9px;min-height:34px}
+  .testBox{display:flex;flex-direction:column;gap:6px;border-radius:9px;padding:8px 12px;font-size:11.5px}
+  .testBox.ok{background:var(--green-bg);border:1px solid var(--green-border);color:var(--green)}
+  .testBox.fail{background:var(--danger-bg);border:1px solid color-mix(in srgb,var(--danger) 35%,transparent);color:var(--danger)}
+  .testHint{display:flex;align-items:center;gap:8px;color:var(--text2);font-size:11px}
+
+  /* ===== 用量卡（真实：环形 + 预算 + 次数）===== */
+  .usageCard{border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column}
+  .usageBody{display:flex;align-items:center;gap:14px;padding:13px 14px}
+  .ring{width:52px;height:52px;border-radius:50%;background:conic-gradient(var(--accent) 0 45%, var(--border-soft) 45% 100%);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .ringInner{width:40px;height:40px;border-radius:50%;background:var(--panel);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+  .usageMeta{flex:1;min-width:0}
+  .usageTitle{font-size:12.5px;font-weight:600}
+  .usageBar{height:5px;border-radius:99px;background:var(--border-soft);margin-top:7px;overflow:hidden}
+  .usageBarFill{height:100%;border-radius:99px;background:var(--accent)}
+  .usageBarFull{height:100%;border-radius:99px;background:var(--danger)}
+  .usageNote{font-size:10.5px;color:var(--text3);margin-top:6px;line-height:1.5}
+  .usageToggle{display:flex;align-items:center;gap:6px;padding:9px 14px;border-top:1px solid var(--border-soft);background:none;border-left:none;border-right:none;border-bottom:none;color:var(--text2);font-size:11.5px;cursor:pointer;font-family:inherit;text-align:left}
+  .usageToggle:hover{color:var(--accent)}
+  .detailBody{display:none;padding:0 14px 12px;font-size:11px;color:var(--text3)}
+  .detailBody.open{display:block}
+
+  /* ===== 折叠分区（自定义动作 / 高级设置）===== */
+  .fold{border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .foldHead{display:flex;align-items:center;gap:8px;padding:11px 14px;cursor:pointer;user-select:none;background:var(--section)}
+  .foldHead:hover{background:var(--hover)}
+  .foldIcon{width:22px;height:22px;border-radius:6px;background:var(--accent-light);color:var(--accent-strong);display:inline-flex;align-items:center;justify-content:center;font-size:11px}
+  .foldTitle{font-size:12.5px;font-weight:700;flex:1}
+  .foldHint{font-size:10.5px;color:var(--text3)}
+  .foldBody{display:none;padding:12px 14px;border-top:1px solid var(--border-soft)}
+  .foldBody.open{display:block}
+
+  .actionRow{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border-soft)}
+  .actionMain{flex:1;min-width:0;text-align:left;background:none;border:none;cursor:pointer;font-family:inherit;padding:0}
+  .actionName{font-size:12.5px;font-weight:600;color:var(--text1)}
+  .actionTpl{display:block;font-size:10.5px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .actionChipAi{font-size:9px;padding:1px 7px;border-radius:99px;background:var(--accent-light);color:var(--accent-strong);font-weight:700}
+  .actionBtn{border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text3);width:24px;height:24px;cursor:pointer;font-size:11px}
+  .actionBtn:hover{color:var(--accent);border-color:var(--accent)}
+  .actionBtnDanger:hover{color:var(--danger);border-color:var(--danger)}
+  .field{display:block;margin-bottom:11px}
+  .label{font-size:11.5px;color:var(--text2);font-weight:600;display:block;margin-bottom:5px}
+  .segs{display:flex;gap:6px}
+  .seg{flex:1;border:1px solid var(--search-border);border-radius:8px;padding:6px 0;background:var(--panel);color:var(--text2);font-size:11.5px;cursor:pointer;font-family:inherit}
+  .seg.on{border-color:var(--accent);background:var(--accent-light);color:var(--accent-strong);font-weight:600}
+  .numInput{width:120px;padding:6px 9px;border:1px solid var(--search-border);border-radius:8px;background:var(--panel);color:var(--text1);font-size:12.5px;font-family:inherit;outline:none}
+  .toggleRow{display:flex;align-items:center;gap:8px}
+  .toggleCheck{width:15px;height:15px;accent-color:var(--accent);cursor:pointer;flex-shrink:0}
+  .toggleRow .hint{margin-top:0}
+</style>
+</head>
+<body data-theme="dark">
+
+<div class="toolbar">
+  <button id="btnDark" class="active" onclick="setTheme('dark')">深色</button>
+  <button id="btnLight" onclick="setTheme('light')">浅色</button>
+  <span style="width:1px;background:var(--border)"></span>
+  <button id="btnNew" class="active" onclick="setScene('new')">未配置</button>
+  <button id="btnOn" onclick="setScene('on')">已就绪</button>
+  <button id="btnOff" onclick="setScene('off')">已停用</button>
+</div>
+
+<div class="wrap">
+  <div class="topNote">
+    <b style="color:var(--text2)">本稿基于真实组件重组织</b>：AiSetupStep（3 步卡）、AiUsageCard、AiCustomActions、AiUsageDetail、AiAdvanced 的字段与文案全部保留，
+    只改「组织与呈现」——<b>未配置默认展开 3 步、已配置默认折叠</b>；测试结果固定在步骤 3 下方；隐私警示并入配置卡；步骤 1 网格默认收 8 家可展开。
+  </div>
+
+  <div class="panel">
+
+    <!-- ① 状态条（真实三态） -->
+    <div class="statusBar">
+      <span class="badge badgeIdle" id="statusBadge"><span>●</span> 未配置</span>
+      <span class="statusText" id="statusText">
+        配好一家服务商，变换中心就会多出翻译 / 摘要 / 解释代码 / 改写四个动作。
+      </span>
+    </div>
+
+    <!-- ② 配置卡（核心交互改动） -->
+    <div class="cfgCard">
+      <div class="cfgHead" onclick="toggleClass('cfgBody', 'open'); document.querySelector('.cfgChev').classList.toggle('open')">
+        <div class="cfgAvatar" id="cfgAvatar">✦</div>
+        <div style="flex:1;min-width:0">
+          <div class="cfgName" id="cfgName">配置 AI 服务</div>
+          <div class="cfgModel" id="cfgModel">选一家服务商开始</div>
+        </div>
+        <div class="cfgHeadRight">
+          <button class="btn primary" onclick="event.stopPropagation();flash('已保存并测试 · 320ms · 回复「你好」')">测试连接</button>
+          <span class="chev cfgChev">▾</span>
+        </div>
+      </div>
+
+      <!-- 配置体：真实 3 步卡 -->
+      <div class="cfgBody" id="cfgBody" style="display:block">
+        <!-- 步骤 1：选服务商 -->
+        <div class="step">
+          <span class="stepNum">1</span>
+          <div class="stepBody">
+            <span class="stepTitle">选服务商</span>
+
+            <div class="provGroupLabel">内置服务商</div>
+            <div class="provGrid" id="provGrid">
+              <!-- 前 8 家 -->
+              <button class="provCard on"><span class="provName">DeepSeek <span class="provCk">✓</span></span><span class="provTags"><span class="provTagSet">已配置</span></span></button>
+              <button class="provCard"><span class="provName">OpenAI</span><span class="provTags"><span class="provTagSet">已配置</span></span></button>
+              <button class="provCard"><span class="provName">通义千问</span></button>
+              <button class="provCard"><span class="provName">Kimi</span></button>
+              <button class="provCard"><span class="provName">智谱</span></button>
+              <button class="provCard"><span class="provName">火山方舟</span></button>
+              <button class="provCard"><span class="provName">硅基流动</span></button>
+              <button class="provCard"><span class="provName">Ollama</span><span class="provTags"><span class="provTagLocal">本地</span></span></button>
+            </div>
+            <!-- 更多 8 家（折叠） -->
+            <div id="moreProvs" style="display:none" class="provGrid" style2="margin-top:7px">
+              <button class="provCard"><span class="provName">Gemini</span></button>
+              <button class="provCard"><span class="provName">Claude</span></button>
+              <button class="provCard"><span class="provName">Groq</span></button>
+              <button class="provCard"><span class="provName">Perplexity</span></button>
+              <button class="provCard"><span class="provName">Mistral</span></button>
+              <button class="provCard"><span class="provName">Moonshot</span></button>
+              <button class="provCard"><span class="provName">MiniMax</span></button>
+              <button class="provCard"><span class="provName">xAI</span></button>
+            </div>
+            <button class="moreBtn" id="moreProvBtn" onclick="toggleMoreProvs()">▾ 更多模型服务商（这家共 16 个）</button>
+
+            <div class="provGroupLabel">自定义服务商 <span class="provGroupHint">可添加多个中转 / 代理服务</span></div>
+            <div class="provGrid" style="grid-template-columns:repeat(4,1fr)">
+              <button class="provCard"><span class="provName">我的中转</span><span class="provTags"><span class="provTagSet">已配置</span></span><span class="provEdit">✎</span><span class="provDel">✕</span></button>
+              <button class="provAdd">＋ 添加自定义</button>
+            </div>
+
+            <div class="providerNote">
+              <span>DeepSeek：国内直连、价格低，API 兼容 OpenAI 格式，支持 JSON 输出。</span>
+              <button class="linkBtn">去申请 Key ↗</button>
+            </div>
+            <input class="input" placeholder="https://你的中转地址/v1" style="display:none">
+            <span class="hint" style="display:none">自定义服务商：模型/地址/密钥按这条独立保存。切到别的家再回来，配置原样还在。</span>
+          </div>
+        </div>
+
+        <!-- 步骤 2：选模型 -->
+        <div class="step">
+          <span class="stepNum">2</span>
+          <div class="stepBody">
+            <span class="stepTitle">选模型</span>
+            <div class="chips">
+              <button class="chip on"><span class="chipTitle">deepseek-chat ✓</span><span class="chipId">deepseek-chat</span></button>
+              <button class="chip"><span class="chipTitle">deepseek-reasoner</span><span class="chipId">deepseek-reasoner</span><span class="chipId" style="color:var(--accent-strong);background:var(--accent-light);border-radius:4px;padding:0 4px;width:fit-content">会先思考</span></button>
+            </div>
+            <input class="input" value="deepseek-chat" placeholder="deepseek-chat">
+            <span class="hint">剪贴板动作都是短文本，默认档基本够用。清单外的新模型直接在输入框里填；留空则用第一档。</span>
+            <div class="hintWarn">
+              ⚠ 这是推理模型：回答前会先输出一大段思考，而思考的 token 照样计费、也照样占用动作的 token 上限。
+              自定义动作的上限建议给到 3000 以上；只想要快且便宜的短产物，换回默认档更合适。
+            </div>
+          </div>
+        </div>
+
+        <!-- 步骤 3：密钥（测试结果固定在这下方） -->
+        <div class="step">
+          <span class="stepNum">3</span>
+          <div class="stepBody">
+            <span class="stepTitle">粘贴 API Key <span class="keyBadge">✓ 已存过密钥</span></span>
+            <div class="row">
+              <input class="input rowGrow" type="password" value="sk-••••••••••••••••••••••" placeholder="已保存；输入新密钥可替换">
+              <button class="eyeBtn">👁</button>
+              <button class="btn primary">保存并测试</button>
+            </div>
+            <span class="hint">密钥以当前 Windows 用户身份加密后单独存放，<strong>不进</strong>配置库与配置备份；保存后无法再读出明文。每家服务商分开存，切回来不用重输。</span>
+            <div class="testArea">
+              <div class="testBox ok" id="testBox" style="display:none">
+                <span>✓ 已就绪 · deepseek-chat · 320ms · 回复“你好” · 已自动启用</span>
+                <div class="testHint">
+                  <span>首次配置成功——已自动启用。现在复制任意内容，主窗口会出现 AI 快捷动作。</span>
+                  <button class="linkBtn">了解更多 ›</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ③ 用量卡（真实：环形 + 预算 + 明细入口） -->
+    <div class="usageCard">
+      <div class="usageBody">
+        <div class="ring"><div class="ringInner">45%</div></div>
+        <div class="usageMeta">
+          <div class="usageTitle">今日用量 · 已用 ¥2.25 / ¥5</div>
+          <div class="usageBar"><div class="usageBarFill" style="width:45%"></div></div>
+          <div class="usageNote">预算内大约还能再做 300 次。金额为估算值，真实账单以服务商为准。</div>
+        </div>
+      </div>
+      <button class="usageToggle" onclick="toggleClass('detailBody','open'); this.querySelector('.chev').classList.toggle('open')">
+        最近调用明细 <span class="chev">▾</span>
+      </button>
+      <div class="detailBody" id="detailBody">
+        <div style="display:flex;gap:8px;color:var(--text3);padding:4px 0;border-bottom:1px solid var(--border-soft);font-size:10.5px">
+          <span style="width:70px">时间</span><span style="flex:1">动作</span><span style="width:90px">模型</span><span style="width:50px">token</span><span style="width:50px">结果</span>
+        </div>
+        <div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-soft)">
+          <span style="width:70px;color:var(--text3)">09:12</span><span style="flex:1">翻译</span><span style="width:90px;color:var(--text3)">deepseek-chat</span><span style="width:50px;color:var(--text3)">1.2k</span><span style="width:50px;color:var(--green)">✓</span>
+        </div>
+        <div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-soft)">
+          <span style="width:70px;color:var(--text3)">08:57</span><span style="flex:1">总结</span><span style="width:90px;color:var(--text3)">deepseek-chat</span><span style="width:50px;color:var(--text3)">2.0k</span><span style="width:50px;color:var(--green)">✓</span>
+        </div>
+        <div style="display:flex;gap:8px;padding:6px 0">
+          <span style="width:70px;color:var(--text3)">08:41</span><span style="flex:1">改写语气</span><span style="width:90px;color:var(--text3)">deepseek-chat</span><span style="width:50px;color:var(--text3)">860</span><span style="width:50px;color:var(--green)">✓</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ④ 自定义动作（真实：列表 + 新建 + 就地编辑） -->
+    <div class="fold">
+      <div class="foldHead" onclick="toggleClass('actBody','open'); this.querySelector('.chev').classList.toggle('open')">
+        <span class="foldIcon">⚡</span>
+        <span class="foldTitle">自定义动作</span>
+        <span class="foldHint">已有 3 个</span>
+        <span class="chev">▾</span>
+      </div>
+      <div class="foldBody" id="actBody">
+        <div class="actionRow">
+          <button class="actionMain"><span class="actionName">周报生成</span><span class="actionTpl">把本周的聊天记录整理成结构化周报</span></button>
+          <span class="actionChipAi">AI</span>
+          <input type="checkbox" class="toggleCheck" checked title="已启用">
+          <button class="actionBtn">✎</button>
+          <button class="actionBtn actionBtnDanger">✕</button>
+        </div>
+        <div class="actionRow">
+          <button class="actionMain"><span class="actionName">SQL 审查</span><span class="actionTpl">检查 SQL 语句的注入风险与性能问题</span></button>
+          <span class="actionChipAi">AI</span>
+          <input type="checkbox" class="toggleCheck" checked title="已启用">
+          <button class="actionBtn">✎</button>
+          <button class="actionBtn actionBtnDanger">✕</button>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn">＋ 新建动作</button>
+          <span class="hint" style="margin-top:0">停用的不会出现在变换中心，但模板保留。</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑤ 高级设置（真实字段全保留） -->
+    <div class="fold">
+      <div class="foldHead" onclick="toggleClass('advBody','open'); this.querySelector('.chev').classList.toggle('open')">
+        <span class="foldIcon">⚙</span>
+        <span class="foldTitle">高级设置</span>
+        <span class="foldHint">接口地址、协议、超时、思考、费用上限</span>
+        <span class="chev">▾</span>
+      </div>
+      <div class="foldBody" id="advBody">
+        <label class="field">
+          <span class="label">接口地址</span>
+          <input class="input" style="margin-top:0" placeholder="留空则用厂商默认地址。填中转服务时写到 /v1 为止。">
+        </label>
+        <div class="field">
+          <span class="label">接口协议</span>
+          <div class="segs">
+            <button class="seg on">OpenAI 兼容</button>
+            <button class="seg">Anthropic 协议</button>
+          </div>
+          <span class="hint">同一家常常两种都提供（如智谱），中转服务更是如此。选错时的典型症状是 404。</span>
+        </div>
+        <div class="field">
+          <span class="label">请求超时（秒）</span>
+          <div class="row" style="margin-top:0">
+            <input class="numInput" type="number" value="60">
+            <span class="hint" style="margin-top:0">太短会把正常回答切断，太长等于卡界面。默认 60 秒。</span>
+          </div>
+        </div>
+        <div class="field">
+          <span class="label">每日费用上限（元）</span>
+          <div class="row" style="margin-top:0">
+            <input class="numInput" type="number" value="5">
+            <span class="hint" style="margin-top:0">0 = 不限制。按<strong>估算</strong>单价拦截失控调用，不是对账；真实金额以服务商账单为准。</span>
+          </div>
+        </div>
+        <div class="field">
+          <span class="label">关掉模型思考</span>
+          <div class="toggleRow">
+            <input type="checkbox" class="toggleCheck" checked>
+            <span class="hint">更快、更便宜。DeepSeek 的新模型<strong>默认都会先思考</strong>，而思考的 token 照样计费。剪贴板动作多是短产物，思考在这里几乎是纯成本。</span>
+          </div>
+        </div>
+        <div class="field">
+          <span class="label">启用 AI 动作</span>
+          <div class="toggleRow">
+            <input type="checkbox" class="toggleCheck" checked>
+            <span class="hint">关闭时变换中心不会出现 AI 分组。测试通过时会自动打开。</span>
+          </div>
+        </div>
+        <div class="field">
+          <span class="label">AI 记忆增强（语义搜索）</span>
+          <div class="toggleRow">
+            <input type="checkbox" class="toggleCheck">
+            <span class="hint">开启后，历史摘要会生成语义向量存在本地：搜「上周那个 API 文档」这类凭印象的查询能按<strong>意思</strong>命中。<strong>原文永不出本机</strong>。</span>
+          </div>
+        </div>
+        <div class="row">
+          <button class="btn danger">删除这家的密钥</button>
+          <span class="hint" style="margin-top:0">只删 DeepSeek 的，其他家不受影响。</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function setTheme(t){document.body.setAttribute('data-theme',t);btnDark.classList.toggle('active',t==='dark');btnLight.classList.toggle('active',t==='light')}
+function toggleClass(id,cls){document.getElementById(id).classList.toggle(cls)}
+function flash(m){alert(m)}
+function setScene(s){
+  const cfgBody=document.getElementById('cfgBody');
+  const testBox=document.getElementById('testBox');
+  const badge=document.getElementById('statusBadge');
+  const text=document.getElementById('statusText');
+  const avatar=document.getElementById('cfgAvatar');
+  const cname=document.getElementById('cfgName');
+  const cmodel=document.getElementById('cfgModel');
+  btnNew.classList.toggle('active',s==='new');btnOn.classList.toggle('active',s==='on');btnOff.classList.toggle('active',s==='off');
+  if(s==='new'){
+    cfgBody.style.display='block';
+    testBox.style.display='none';
+    badge.className='badge badgeIdle';badge.innerHTML='<span>●</span> 未配置';
+    text.textContent='配好一家服务商，变换中心就会多出翻译 / 摘要 / 解释代码 / 改写四个动作。';
+    avatar.textContent='✦';cname.textContent='配置 AI 服务';cmodel.textContent='选一家服务商开始';
+  }else if(s==='on'){
+    cfgBody.style.display='none';   // 已配置：默认折叠
+    testBox.style.display='flex';
+    badge.className='badge badgeReady';badge.innerHTML='<span>●</span> 已就绪';
+    text.textContent='当前使用 DeepSeek。';
+    avatar.textContent='D';cname.innerHTML='DeepSeek';cmodel.textContent='deepseek-chat · 本周 12 次 · 预算 ¥5/日';
+  }else{
+    cfgBody.style.display='none';
+    testBox.style.display='none';
+    badge.className='badge badgeOff';badge.innerHTML='<span>●</span> 已停用';
+    text.textContent='已配置但未启用，变换中心里看不到 AI 分组。';
+    avatar.textContent='D';cname.innerHTML='DeepSeek';cmodel.textContent='deepseek-chat · 已停用';
+  }
+}
+function toggleMoreProvs(){
+  const el=document.getElementById('moreProvs');
+  const btn=document.getElementById('moreProvBtn');
+  const show=el.style.display==='none';
+  el.style.display=show?'grid':'none';
+  btn.textContent=show?'▴ 收起':'▾ 更多模型服务商（这家共 16 个）';
+}
+</script>
+</body>
+</html>

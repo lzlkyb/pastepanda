@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef, lazy, Suspense, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { applyTheme, DEFAULT_THEME, ThemeKey } from "@/lib/theme";
-import { useAppStore, GroupFilter, HistoryItem, buildSearchKey } from "@/stores/appStore";
+import { useAppStore, HistoryItem, buildSearchKey } from "@/stores/appStore";
 import { useDialogStore } from "@/stores/dialogStore";
 import { TopBar } from "@/components/TopBar";
 import { SuggestionBar } from "@/components/SuggestionBar";
@@ -16,7 +16,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UpdateProvider, useUpdate } from "@/contexts/UpdateContext";
 import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
 import { logger } from "@/lib/logger";
-import { pasteText, pasteImage, pasteRich, deleteHistory, togglePin, toggleWindow, saveForeground, invalidateCountsCache, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
+import { pasteTextGuarded, pasteImage, pasteRichGuarded, deleteHistory, togglePin, toggleWindow, saveForeground, invalidateCountsCache, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
 import { resolveSource, getAutoTagIcon, getAutoTagColor } from "@/lib/source-mappings";
 import { migrateLegacyStorageKeys } from "@/lib/storageMigration";
 import { initRegexRules } from "@/lib/regexRules";
@@ -28,6 +28,7 @@ import type Lenis from "lenis";
 import appStyles from "./App.module.css";
 import { FocusTrap } from "@/components/FocusTrap";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ConfirmDialogHost } from "@/components/ConfirmDialogHost";
 import { useDialogAnim } from "@/lib/dialogMotion";
 
 // 修复 Low：应用更名后迁移历史版本遗留的 pasteship_* localStorage 键（幂等，仅执行一次）
@@ -58,7 +59,6 @@ function App() {
   const timeFilter = useAppStore((s) => s.timeFilter);
   const selectedTagIds = useAppStore((s) => s.selectedTagIds);
   const workspace = useAppStore((s) => s.config.current_workspace);
-  const getFilteredItems = useAppStore((s) => s.getFilteredItems);
   const historyVersion = useAppStore((s) => s.historyVersion);
   const setSearchResults = useAppStore((s) => s.setSearchResults);
   const setSearchLoading = useAppStore((s) => s.setSearchLoading);
@@ -79,6 +79,10 @@ function App() {
   useEffect(() => {
     if (appVersion) setAiAwareActive(aiAwarenessActive(appVersion));
   }, [appVersion]);
+  // 审查 #1（学习回流）：监听动作事件 → debounce 刷新推荐权重（会话内学习可见）
+  useEffect(() => {
+    void import("@/lib/recommend").then((m) => m.initLearnListener());
+  }, []);
   const [showSequential, setShowSequential] = useState(false);
   const [showSnippets, setShowSnippets] = useState(false);
   const [showExtract, setShowExtract] = useState(false);
@@ -135,7 +139,7 @@ function App() {
       window.removeEventListener("first-time-tip", toastHandler);
       window.removeEventListener("app-move-to-group", moveToGroupHandler);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [toast]);
 
   // 组件卸载时清理 retry 创建的监听器
@@ -352,7 +356,7 @@ function App() {
       // 修复：创建失败时此前无任何提示，用户以为分组已建好，实际后端未写入
       window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `创建分组「${name}」失败`, type: "error" } }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   const handleRenameGroup = useCallback(async (id: string, name: string) => {
@@ -500,7 +504,7 @@ function App() {
       cancelled = true;
       if (unlisten) unlisten();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [toast]);
 
   useEffect(() => {
@@ -627,6 +631,16 @@ function App() {
     if (e.key === "Escape") {
       e.preventDefault();
       // U4：Esc 分层 — 关最上层弹窗 → 关分组弹窗 → 清多选 → 最后才隐藏窗口
+      // 审查：store 型弹窗（dialogStore 管理）纳入分层且放最前——
+      // 之前单独打开链运行器/粘贴守卫按 Esc 会直接隐藏整个窗口（全局兜底 toggleWindow），
+      // 链运行器从枢纽打开时又被 hubItem 让位逻辑拦掉、无响应。
+      const d = useDialogStore.getState();
+      if (d.chainText) { d.closeChain(); return; }
+      if (d.chainEdit) { d.closeChainEditor(); return; }
+      if (d.pasteGuard) { d.closePasteGuard(); return; }
+      if (d.profileOpen) { d.closeProfile(); return; }
+      if (d.learningsOpen) { d.closeLearnings(); return; }
+      if (d.editorItem) { return; } // 编辑器自带 Esc（含未保存确认），全局不抢；也不隐藏窗口
       if (showSettings) { setShowSettings(false); return; }
       if (showSequential) { setShowSequential(false); return; }
       if (showSnippets) { setShowSnippets(false); return; }
@@ -670,14 +684,14 @@ function App() {
             const ok = await pasteImage(item.content);
             if (ok) window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴图片", type: "success" } }));
           } else if (item.type === "rich" && item.content) {
-            const ok = await pasteRich(item.content, item.text);
+            const ok = await pasteRichGuarded(item.content, item.text);
             if (ok) window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴图文", type: "success" } }));
           } else if (item.type === "file" && item.content) {
             // 文件粘贴：将文件路径写入剪贴板
-            const ok = await pasteText(item.content);
+            const ok = await pasteTextGuarded(item.content);
             if (ok) window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴文件路径", type: "success" } }));
           } else {
-            const ok = await pasteText(item.text);
+            const ok = await pasteTextGuarded(item.text);
             if (ok) {
               window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴", type: "success" } }));
               // v6.1 粘贴信号回写（fire-and-forget）
@@ -768,7 +782,9 @@ function App() {
         }
       }
     }
-  }, []); // 使用 ref 存储状态，避免频繁重新注册键盘事件
+    // 状态都走 ref 读，避免频繁重新注册键盘事件；
+    // toast 本身是 useCallback 恒引用，列进依赖不会引起重注册
+  }, [toast]);
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
@@ -892,7 +908,7 @@ function App() {
                     onClick={() => handleMoveToGroup(null)}
                     style={{ width: "100%", textAlign: "left", padding: "10px 16px", border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 13, display: "flex", alignItems: "center", gap: 10, borderRadius: 0 }}
                   >
-                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#9CA3AF", flexShrink: 0 }} />
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--text-muted)", flexShrink: 0 }} />
                     移除分组
                   </button>
                   {groups.map((g) => (
@@ -960,6 +976,8 @@ function App() {
           onConfirm={() => { void executeDeleteGroup(); }}
           onCancel={() => setDeleteGroupTarget(null)}
         />
+        {/* 审查：统一确认弹窗宿主（替代散落的 window.confirm） */}
+        <ConfirmDialogHost />
       </div>
       </UpdateProvider>
   );

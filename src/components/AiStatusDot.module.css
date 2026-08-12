@@ -1,0 +1,13 @@
+/* 审查方案 1：设置按钮右上角的 AI 状态绿点（已配置即隐后的状态指示） */
+
+.dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  border: 1px solid var(--dialog-bg, var(--card-bg));
+  pointer-events: none;
+}

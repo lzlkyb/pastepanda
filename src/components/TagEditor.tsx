@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAppStore, Tag, HistoryItem } from "@/stores/appStore";
+import { useAppStore, HistoryItem } from "@/stores/appStore";
 import { setItemTags, createTag } from "@/lib/api";
 import { TagBadge, AnimatedTagBadge } from "@/components/TagBadge";
 import { useToast } from "@/components/Toast";

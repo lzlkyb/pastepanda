@@ -34,6 +34,14 @@ export default tseslint.config(
     },
   },
   {
+    // 测试文件放宽：mock / 桩对象需要 any 来伪造第三方结构，
+    // 在这里强求真实类型只会写出一堆没人维护的假接口。
+    files: ["src/__tests__/**/*.{ts,tsx}"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+    },
+  },
+  {
     ignores: [
       "node_modules/",
       "dist/",

@@ -1,21 +1,22 @@
 /**
- * AI / 联网 / 会先思考 —— 三种小标记的**唯一实现**。
+ * AI / 联网 / 会先思考 —— 三种小标记。
  *
- * 为什么要抽成组件：同一个标记至少要出现在三处——变换卡片、模型芯片、
- * 以及路线图 v6.0 要前置到卡片上的动作条。抽之前它已经开始分叉了：
- * 一处是内联 JSX，另一处是拼在字符串里的纯文本。
+ * 外观已全部委托给 {@link AiMark}（全站 AI 标识的唯一外观实现），
+ * 本文件只剩两件事：**哪三种语义**，以及**每种配什么图标与文案**。
+ * 不要把颜色/尺寸写回来——同一枚“AI”还出现在顶栏品牌上标、
+ * AiStatusCap、AiQuickBar 与 AiOnboarding，写回来就又分叉了。
  *
- * 命名与目录跟随仓库既有的 `SourceBadge` / `TagBadge`，不新造目录。
+ * 命名与目录跟随仓库既有的 `SourceBadge` / `TagBadge`。
  */
 
 import { Sparkles, Cloud, Clock } from "lucide-react";
-import styles from "./AiBadge.module.css";
+import { AiMark } from "@/components/ai/AiMark";
 
 export type AiBadgeKind = "ai" | "remote" | "thinking";
 
 interface Props {
   /**
-   * - `ai`：这是一个 AI 能力（唯一用强调色的一种）
+   * - `ai`：这是一个 AI 能力（唯一用品牌渐变的一种）
    * - `remote`：会联网且可能计费，但不是 AI
    * - `thinking`：提示该模型会先输出思维链
    */
@@ -45,10 +46,15 @@ const META: Record<AiBadgeKind, { Icon: typeof Sparkles; text: string; title: st
 export function AiBadge({ kind = "ai", size = "sm" }: Props) {
   const { Icon, text, title } = META[kind];
   return (
-    <span className={`${styles.badge} ${styles[kind]} ${size === "xs" ? styles.xs : ""}`} title={title}>
-      <Icon size={size === "xs" ? 9 : 10} />
-      {text}
-    </span>
+    <AiMark
+      shape="badge"
+      // remote / thinking 是**提示**而非**标识**，故意降级为中性，不跟 AI 抢注意力
+      tone={kind === "ai" ? "brand" : "neutral"}
+      size={size}
+      icon={<Icon size={size === "xs" ? 9 : 10} />}
+      text={text}
+      title={title}
+    />
   );
 }
 

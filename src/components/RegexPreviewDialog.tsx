@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { X, Copy, Check } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { useDialogAnim } from "@/lib/dialogMotion";
-import { pasteText } from "@/lib/api";
+import { pasteTextGuarded } from "@/lib/api";
 import { safeApplyRegex, validateRegex, updateCustomRule, REGEX_TIME_BUDGET_MS, type RegexRule } from "@/lib/regexRules";
 import styles from "./RegexPreviewDialog.module.css";
 import { FocusTrap } from "@/components/FocusTrap";
@@ -92,7 +92,7 @@ export function RegexPreviewDialog({ text, rule, onClose }: RegexPreviewDialogPr
       updateCustomRule(rule.id, { pattern, replacement, flags });
     }
     // U1：仅粘贴成功时弹成功提示并关闭（pasteText 失败时已自行弹错误 toast，保留对话框便于重试）
-    const ok = await pasteText(preview.result);
+    const ok = await pasteTextGuarded(preview.result);
     if (ok) {
       toast("已粘贴替换结果", "success");
       onClose();

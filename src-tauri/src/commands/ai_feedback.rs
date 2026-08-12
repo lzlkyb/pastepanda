@@ -6,6 +6,7 @@
 //! **偏好指令变化会改变 AI 输出 → set 时清缓存**（旧缓存命中会拿旧偏好结果）。
 
 use crate::ai::cache;
+use crate::content_classifier::ContentClassifier;
 use crate::data_store::{AiFeedback, AiFeedbackStat, ActionPrefRow, DataStore, PrefSignalTop};
 use tauri::State;
 
@@ -33,12 +34,20 @@ pub fn action_pref_get(store: State<DataStore>, action_id: String) -> Result<Str
     store.action_pref_get(&action_id)
 }
 
+/// 写动作偏好指令。
+///
+/// 返回值 = **这条偏好会不会因含敏感信息而在出网时被跳过**（见 `ai/run.rs` 的拼接处）。
+///
+/// 为什么是“存下来 + 告知”而不是“拒绝存”：与 `sanitize_profile` 的取向一致
+///（「换而不是删：删了用户不知道有东西被藏了」）——判定会误伤，拒绝写入会让
+/// 用户连正常偏好都存不进去；而静默存下又不生效同样糟糕，所以把判定结果告诉前端。
 #[tauri::command]
-pub fn action_pref_set(store: State<DataStore>, action_id: String, preference: String) -> Result<(), String> {
+pub fn action_pref_set(store: State<DataStore>, action_id: String, preference: String) -> Result<bool, String> {
     store.action_pref_set(&action_id, &preference)?;
     // 偏好变了 = 输出会变，旧缓存不能再命中
     cache::clear();
-    Ok(())
+    let pref = preference.trim();
+    Ok(!pref.is_empty() && ContentClassifier::new().is_sensitive_for_egress(pref))
 }
 
 #[tauri::command]
@@ -84,9 +93,10 @@ pub fn pref_signal_accept(
     feature: String,
     preference: String,
 ) -> Result<(), String> {
-    // 先校验再写：特征非法就不应该动 action_prefs
-    store.pref_signal_done(&action_id, &feature)?;
+    // 先写偏好再标 done：若偏好写入失败（如超长），done 不落库 → 下次还能重提；
+    // 反过来（先 done 后写）失败时偏好丢失且永不重提，比不标更糟。
     store.action_pref_set(&action_id, &preference)?;
+    store.pref_signal_done(&action_id, &feature)?;
     // 偏好变了 = 输出会变，旧缓存不能再命中（同 action_pref_set）
     cache::clear();
     Ok(())

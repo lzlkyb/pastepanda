@@ -94,3 +94,7 @@ img { -webkit-user-drag: none; user-select: none; }
      一伸就盖到相邻的文字/图标上。现代浏览器（含 Tauri 用的 WebView2/Chromium）
      本身就会把 outline 贴合到元素自己的圆角上，不需要这行声明。 */
 }
+
+/* AI 渐变字曾经在这里做全局类（.aiGrad），已收回
+   components/ai/AiMark.module.css——现在只有 AiMark 一个消费方，
+   不再需要跨模块的全局类。新增 AI 标识请用 <AiMark>，不要在这里重建它。 */

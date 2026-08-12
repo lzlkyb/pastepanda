@@ -5,10 +5,10 @@
  * 规则版（本组件）：分隔符/编号拼接 + 实时预览 + 一键粘贴/复制，纯本地零成本。
  * AI 版（去重+顺排+润色）留待后续：需要后端动作，且用户未明确要求。
  */
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Copy, CornerDownLeft } from "lucide-react";
-import { pasteText } from "@/lib/api";
+import { pasteTextGuarded } from "@/lib/api";
 import { aiRun } from "@/lib/api/ai";
 import { isAiAvailable } from "@/lib/transforms/aiTransforms";
 import { mergeTexts, type MergeSeparator } from "@/lib/mergeText";
@@ -46,6 +46,11 @@ export const MergeDialog = memo(function MergeDialog({
   const [aiMerged, setAiMerged] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
 
+  // 审查：切换分隔符/自定义分隔后清掉旧 AI 结果（否则显示的是旧参数的合并，label 也不对）
+  useEffect(() => {
+    setAiMerged(null);
+  }, [separator, customSep]);
+
   // 合并结果（实时预览）
   const merged = useMemo(
     () => mergeTexts(items.map((i) => i.text), separator, customSep),
@@ -66,7 +71,8 @@ export const MergeDialog = memo(function MergeDialog({
         setAiMerged(r.content.trim());
         toast("AI 已整理（去重+顺排+润色）", "success");
       } else if (r.status === "budgetExceeded") {
-        toast("超出本月 AI 预算", "info");
+        // v6.9：内置免费额度不足 → 引导签到/兑换；否则原预算提示
+        toast(r.isQuota ? "免费额度已用完，去设置 → AI 签到或兑换" : "超出本月 AI 预算", "info");
       } else {
         toast("AI 合并失败，已保留规则版", "info");
       }
@@ -87,7 +93,7 @@ export const MergeDialog = memo(function MergeDialog({
   };
 
   const paste = async () => {
-    const ok = await pasteText(display);
+    const ok = await pasteTextGuarded(display);
     if (ok) {
       toast("已粘贴合并结果", "success");
       onClose();

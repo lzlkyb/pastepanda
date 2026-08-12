@@ -20,11 +20,6 @@ export interface MenuItem {
   children?: MenuItem[];
 }
 
-interface ContextMenuProps {
-  children: ReactNode;
-  items: MenuItem[];
-}
-
 // ★ React Context 传递 trigger 函数 + 动态菜单项，Card 直接调用，完全不依赖 DOM 事件冒泡
 export const CtxMenuCtx = createContext<((x: number, y: number, items: MenuItem[]) => void) | null>(null);
 
@@ -59,7 +54,7 @@ export function ContextMenu({ children }: { children: ReactNode }) {
       const rect = menuRef.current.getBoundingClientRect();
       setMenuSize({ width: rect.width, height: rect.height });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [pos, itemsKey]);
 
   // 智能翻折：默认右下弹出 → 空间不足时自动翻到左上

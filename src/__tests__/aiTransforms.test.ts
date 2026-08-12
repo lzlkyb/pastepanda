@@ -11,12 +11,23 @@ import {
   scoreAiAction,
   scoreByContentTypes,
   setAiAvailable,
+  languageTag,
+  tagBoost,
 } from "@/lib/transforms/aiTransforms";
 import { analyzeContent } from "@/lib/transforms/analyzer";
 import type { TransformContext } from "@/lib/transforms/types";
 
 function ctx(text: string, contentType = "text"): TransformContext {
   return { text, contentType, features: analyzeContent(text, contentType) };
+}
+
+/** 带标签的上下文 */
+function ctxTagged(
+  text: string,
+  contentType: string,
+  tags: Array<{ name: string; source: "manual" | "auto" }>,
+): TransformContext {
+  return { ...ctx(text, contentType), tags };
 }
 
 const LONG_EN =
@@ -87,6 +98,24 @@ describe("按内容类型打分（新增内置动作与自定义动作共用）"
     expect(scoreByContentTypes(["json"], ctx("一段普通文字", "text"))).toBe(0);
   });
 
+  it("语言级标签把解释代码再推高一档", () => {
+    const plain = ctx("function a() { return 1 }", "code");
+    const withLang = ctxTagged("function a() { return 1 }", "code", [
+      { name: "代码", source: "auto" },
+      { name: "TypeScript", source: "auto" },
+    ]);
+    expect(languageTag(withLang)).toBe("TypeScript");
+    expect(languageTag(plain)).toBeUndefined();
+    expect(scoreAiAction("ai-explain-code", withLang)).toBeGreaterThan(
+      scoreAiAction("ai-explain-code", plain),
+    );
+  });
+
+  it("只认 auto 来源的语言标签（手工打个叫 Rust 的标签不算）", () => {
+    const manualRust = ctxTagged("fn a() {}", "code", [{ name: "Rust", source: "manual" }]);
+    expect(languageTag(manualRust)).toBeUndefined();
+  });
+
   it("一个都没勾 = 适用全部，但要排在内置动作之后", () => {
     // 一段够长的中文：内置翻译在这里是 0.55
     const zh = ctx("这是一段足够长的中文内容，用来触发翻译与改写的推荐。".repeat(3));
@@ -96,5 +125,39 @@ describe("按内容类型打分（新增内置动作与自定义动作共用）"
     expect(anyType).toBeLessThan(scoreAiAction("ai-translate", zh));
     // 也要低于“勾了类型且命中”的那档
     expect(anyType).toBeLessThan(scoreByContentTypes(["text"], zh));
+  });
+});
+
+/**
+ * 手工标签带来的动作提权。
+ *
+ * 这几个动作靠的是**用户意图**，文本里根本判不出来，
+ * 没标签之前它们只能拿通用分、几乎永远排不上来。
+ */
+describe("手工标签提权", () => {
+  beforeEach(() => setAiAvailable(true));
+  afterAll(() => setAiAvailable(false));
+
+  it("“待回复”把回复草稿提上来", () => {
+    const c = ctxTagged("明天开会吗？", "text", [{ name: "待回复", source: "manual" }]);
+    expect(tagBoost("ai-reply-draft", c)).toBeGreaterThan(0);
+    // 不相关的动作不能跟着涨
+    expect(tagBoost("ai-translate", c)).toBe(0);
+  });
+
+  it("只认 manual：自动标签不携带意图", () => {
+    const c = ctxTagged("x", "text", [{ name: "待回复", source: "auto" }]);
+    expect(tagBoost("ai-reply-draft", c)).toBe(0);
+  });
+
+  it("没标签 = 0，不改变任何现有行为", () => {
+    expect(tagBoost("ai-reply-draft", ctx("x"))).toBe(0);
+    expect(tagBoost("ai-weekly-report", ctxTagged("x", "text", []))).toBe(0);
+  });
+
+  it("AI 不可用时标签也不能把动作推成正分", () => {
+    setAiAvailable(false);
+    const c = ctxTagged("x", "text", [{ name: "待回复", source: "manual" }]);
+    expect(tagBoost("ai-reply-draft", c)).toBe(0);
   });
 });

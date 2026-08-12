@@ -1,7 +1,6 @@
 use crate::content_classifier::ContentClassifier;
 use crate::data_store::{compute_pinyin_initials, DataStore, HistoryItem};
 use arboard::Clipboard;
-use md5::{Digest, Md5};
 use regex::Regex;
 use serde::Serialize;
 use std::sync::{
@@ -283,9 +282,9 @@ impl CaptureQueue {
 }
 
 /// MD5 hex 工具（两条监听路径共用）
-fn md5_hex(data: &[u8]) -> String {
-    format!("{:x}", Md5::new().chain_update(data).finalize())
-}
+// md5_hex 已移到 `crate::hashing`（内容哈希的单一实现）——之前 lan_sync 又拄了一份
+// 并在注释里声明“与本函数同口径”，而智能合并完全依赖两边真的同口径。
+use crate::hashing::md5_hex;
 
 /// 读取 bool 配置缓存（锁中毒时回退 false）
 fn read_bool_cache(cache: &std::sync::RwLock<bool>) -> bool {
@@ -1127,7 +1126,7 @@ fn process_text(
     let store = app_handle.try_state::<DataStore>();
     let mut existing_id: Option<String> = None;
     if let Some(ref store) = store {
-        if let Ok(Some(existing)) = store.find_latest_by_md5(&hash, "默认") {
+        if let Ok(Some(existing)) = store.find_latest_by_md5(&hash, "默认", "text") {
             // 找到重复内容，只更新时间戳（不创建新记录）
             existing_id = Some(existing.id.clone());
             if let Err(e) = store.update_history_time(&existing.id, &now_str) {
@@ -1287,6 +1286,36 @@ fn process_image(
 
     let source_icon = extract_source_icon(app_handle, &exe_path);
 
+    // 智能合并：同一张图片重复复制（截图后再次 Ctrl+C / 拖拽重触发）只更新一次时间，
+    // 不新建记录（此前 image 分支完全不去重，与 rich 同款欠账）
+    let store = app_handle.try_state::<DataStore>();
+    if let Some(ref store) = store {
+        if let Ok(Some(existing)) = store.find_latest_by_md5(&img_hash, "默认", "image") {
+            if let Err(e) = store.update_history_time(&existing.id, &now_str) {
+                log::warn!("[ClipboardMonitor] 更新重复图片时间失败: {}", e);
+            } else {
+                log::info!(
+                    "[ClipboardMonitor] 智能合并重复图片 (id={})",
+                    existing.id
+                );
+            }
+            let updated_item = HistoryItem {
+                time: now_str.clone(),
+                source: source_title.clone(),
+                source_icon: source_icon.clone(),
+                group_id: existing.group_id.clone(),
+                ..existing
+            };
+            if let Err(e) = app_handle.emit(
+                "clipboard-changed",
+                ClipboardChanged { item: updated_item },
+            ) {
+                log::warn!("[ClipboardMonitor] 推送图片合并事件失败: {}", e);
+            }
+            return;
+        }
+    }
+
     let item = HistoryItem {
         id: Uuid::new_v4().to_string(),
         text: format!("[图片] {}x{}", width, height),
@@ -1355,9 +1384,39 @@ fn process_rich(
     }
 
     let source_icon = extract_source_icon(app_handle, &exe_path);
-    let pinyin_initials = compute_pinyin_initials(&plain_text);
 
-    // 阶段1 不做智能合并去重（同 process_image/process_files，留待后续阶段补齐）
+    // 智能合并：检查是否已存在相同 md5 的富文本记录（同 process_text/process_doc 的做法，
+    // 避免同一图文在应用间反复复制时创建多条历史记录——此前该路径完全不去重，
+    // 删除后再次复制又会冒出新记录）
+    let store = app_handle.try_state::<DataStore>();
+    if let Some(ref store) = store {
+        if let Ok(Some(existing)) = store.find_latest_by_md5(&hash, "默认", "rich") {
+            if let Err(e) = store.update_history_time(&existing.id, &now_str) {
+                log::warn!("[ClipboardMonitor] 更新重复富文本时间失败: {}", e);
+            } else {
+                log::info!(
+                    "[ClipboardMonitor] 智能合并重复富文本 (id={})",
+                    existing.id
+                );
+            }
+            let updated_item = HistoryItem {
+                time: now_str.clone(),
+                source: source_title.clone(),
+                source_icon: source_icon.clone(),
+                group_id: existing.group_id.clone(),
+                ..existing
+            };
+            if let Err(e) = app_handle.emit(
+                "clipboard-changed",
+                ClipboardChanged { item: updated_item },
+            ) {
+                log::warn!("[ClipboardMonitor] 推送富文本合并事件失败: {}", e);
+            }
+            return;
+        }
+    }
+
+    let pinyin_initials = compute_pinyin_initials(&plain_text);
     let item = HistoryItem {
         id: Uuid::new_v4().to_string(),
         text: plain_text.clone(),
@@ -1375,7 +1434,7 @@ fn process_rich(
         tags: Vec::new(),
     };
 
-    if let Some(store) = app_handle.try_state::<DataStore>() {
+    if let Some(ref store) = store {
         if let Err(e) = store.insert_history(&item) {
             log::error!("[ClipboardMonitor] 插入富文本记录失败: {}", e);
             return;
@@ -1445,7 +1504,7 @@ fn process_doc(
     // 避免重复复制同一文档创建多条历史记录）
     let store = app_handle.try_state::<DataStore>();
     if let Some(ref store) = store {
-        if let Ok(Some(existing)) = store.find_latest_by_md5(&hash, "默认") {
+        if let Ok(Some(existing)) = store.find_latest_by_md5(&hash, "默认", "doc") {
             if let Err(e) = store.update_history_time(&existing.id, &now_str) {
                 log::warn!("[ClipboardMonitor] 更新重复文档时间失败: {}", e);
             } else {
@@ -1538,6 +1597,41 @@ fn process_files(
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| file_path.clone());
         let file_hash = md5_hex(file_path.as_bytes());
+
+        // 智能合并：同一文件路径重复复制只更新时间、不新建记录
+        // （此前 files 分支完全不去重，与 rich/image 同款欠账）
+        let store = app_handle.try_state::<DataStore>();
+        if let Some(ref store) = store {
+            if let Ok(Some(existing)) = store.find_latest_by_md5(&file_hash, "默认", "file") {
+                if let Err(e) = store.update_history_time(&existing.id, &now_str) {
+                    log::warn!("[ClipboardMonitor] 更新重复文件时间失败: {}", e);
+                } else {
+                    log::info!(
+                        "[ClipboardMonitor] 智能合并重复文件 (id={})",
+                        existing.id
+                    );
+                }
+                let updated_item = HistoryItem {
+                    time: now_str.clone(),
+                    source: source_title.clone(),
+                    source_icon: source_icon.clone(),
+                    group_id: existing.group_id.clone(),
+                    ..existing
+                };
+                if let Err(e) = app_handle.emit(
+                    "clipboard-changed",
+                    ClipboardChanged { item: updated_item },
+                ) {
+                    log::warn!("[ClipboardMonitor] 推送文件合并事件失败: {}", e);
+                }
+                // 合并命中：不新建记录，但 LAN 同步仍照发（对端更新到顶部）
+                if let Some(lan_sync) = app_handle.try_state::<crate::lan_sync::LanSync>() {
+                    lan_sync.send_item("file", file_path, "");
+                }
+                continue;
+            }
+        }
+
         let item = HistoryItem {
             id: Uuid::new_v4().to_string(),
             text: filename,
@@ -1554,7 +1648,7 @@ fn process_files(
             content_type: Some("file".to_string()),
             tags: Vec::new(),
         };
-        if let Some(store) = app_handle.try_state::<DataStore>() {
+        if let Some(ref store) = store {
             if let Err(e) = store.insert_history(&item) {
                 log::error!("[ClipboardMonitor] 插入文件记录失败: {}", e);
             }
@@ -1700,7 +1794,7 @@ fn run_polling_listener(
                     let store = app_handle.try_state::<DataStore>();
                     let mut existing_id: Option<String> = None;
                     if let Some(ref store) = store {
-                        if let Ok(Some(existing)) = store.find_latest_by_md5(&hash, "默认") {
+                        if let Ok(Some(existing)) = store.find_latest_by_md5(&hash, "默认", "text") {
                             existing_id = Some(existing.id.clone());
                             if let Err(e) = store.update_history_time(&existing.id, &now_str) {
                                 log::warn!(

@@ -260,6 +260,7 @@ impl DataStore {
              FROM action_events
              WHERE created_at >= ?1
                AND action_id != ?2
+               AND content_type != 'chain'
                AND outcome IN ('copied', 'pasted')
              GROUP BY action_id, content_type
              ORDER BY c DESC",
@@ -304,6 +305,7 @@ impl DataStore {
              FROM action_events
              WHERE created_at >= ?1
                AND action_id != ?2
+               AND content_type != 'chain'
                AND outcome IN ('copied', 'pasted')
              GROUP BY content_type, action_id, hb, source_app
              ORDER BY c DESC",
@@ -383,6 +385,24 @@ impl DataStore {
             .filter_map(|r| r.ok())
             .collect();
         Ok(rows)
+    }
+
+    /// 恢复某条「不再推荐」（智能学习弹窗的恢复按钮）。
+    /// 精确匹配 (action_id, content_type) 删除该条负反馈；content_type 空串 = 该动作所有内容类型都恢复。
+    pub fn action_dismiss_remove(&self, action_id: &str, content_type: &str) -> Result<u32, String> {
+        let conn = self.lock_conn();
+        if content_type.is_empty() {
+            conn.execute("DELETE FROM action_dismissals WHERE action_id = ?1", params![action_id])
+                .map(|n| n as u32)
+                .map_err(|e| e.to_string())
+        } else {
+            conn.execute(
+                "DELETE FROM action_dismissals WHERE action_id = ?1 AND content_type = ?2",
+                params![action_id, content_type],
+            )
+            .map(|n| n as u32)
+            .map_err(|e| e.to_string())
+        }
     }
 
     /// 清空负反馈（配合「清空学习记录」一起用）。

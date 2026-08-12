@@ -54,3 +54,39 @@
 .statusLoading {
   color: var(--text-secondary);
 }
+
+/* v6.4 S1：工作流技能包（自定义动作+链 → SKILL） */
+.workflowRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-color);
+}
+.workflowBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  font-size: 11.5px;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.workflowBtn:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
+.workflowBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.workflowHint {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}

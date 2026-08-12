@@ -497,6 +497,9 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
       const msg = e instanceof Error ? e.message : String(e);
       toast("保存失败: " + msg, "error");
     }
+    // 不能补 handleSaveAs：它就定义在下一行，写进依赖数组会 TDZ ReferenceError。
+    // 也不能补 fileWatch：useFileWatch 没 useMemo 包返回值，每渲染都是新对象。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveSourceId, currentFilePath, text, toast]);
 
   const handleSaveAs = useCallback(async () => {
@@ -519,6 +522,8 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
       const msg = e instanceof Error ? e.message : String(e);
       toast("保存失败: " + msg, "error");
     }
+    // fileWatch 每渲染都是新对象（useFileWatch 未 useMemo），补上会让本回调每渲染重建
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, fileName, spec, toast]);
 
   const handleOpen = useCallback(async () => {
@@ -598,6 +603,9 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
     return () => {
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     };
+    // 千万不能补 fileWatch：它每渲染换引用，而这是个 1s 防抖的自动保存。
+    // 补上之后定时器会被反复重排，自动保存就永远触发不了。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, initialContent, effectiveSourceId, currentFilePath, autoSaveEnabled]);
 
   // ─── Close with dirty guard ─────────────────────────
@@ -636,6 +644,8 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
       } catch { /* ignore */ }
     }
     onClose();
+    // fileWatch 同上（每渲染新对象）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveSourceId, currentFilePath, text, onClose]);
 
   // ─── Keyboard shortcuts ─────────────────────────────

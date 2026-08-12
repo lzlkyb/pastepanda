@@ -55,7 +55,7 @@
 
 .warn {
   font-size: 10.5px;
-  color: var(--amber, #b45309);
+  color: var(--warning, #b45309);
   background: var(--amber-bg, #fef3c7);
   border: 1px solid var(--amber-border, #fde68a);
   border-radius: 9px;
@@ -316,7 +316,7 @@
   flex-shrink: 0;
 }
 .prefTxt { color: var(--text-primary); }
-.prefHint { color: var(--amber, #b45309); font-size: 10px; }
+.prefHint { color: var(--warning, #b45309); font-size: 10px; }
 
 /* 使用红线 */
 .instrRow { display: flex; gap: 8px; }

@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 // 按职责拆分的子模块。`pub use` 保证命令路径不变（lib.rs 里仍是 `commands::ai::ai_run`），
 // 拆分对注册表零影响。
@@ -43,6 +43,34 @@ pub(crate) fn ai_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
         .map_err(|e| format!("无法获取应用数据目录：{}", e))
+}
+
+/// 给定服务商与“用户密钥文件里的值”，得出**最终要用的密钥**。
+///
+/// 抽成纯函数是为了能单测（不需要 AppHandle），较真的取值在 [`resolve_ai_key`]。
+pub(crate) fn pick_ai_key(provider_id: &str, user_key: String) -> String {
+    if provider_id == provider::BUILTIN_AGNES_ID {
+        // 内置密钥优先：这家本来就不让用户配密钥，
+        // 就算密钥文件里残留了旧值也不能拿它去请求。
+        provider::builtin_agnes_key()
+    } else {
+        user_key
+    }
+}
+
+/// 解析当前服务商要用的密钥。
+///
+/// **所有需要密钥的调用路径都必须走这里**，不要各自 `secret_store::load_key`。
+///
+/// 为什么要收口：v6.9 给内置免费（Agnes）加了应用内置公共 key，
+/// 但只补在了 `ai_run` 一处，其余五条路径（测试连接 / 规划 / 自定义动作试跑 /
+/// 画像精练 / 语义索引）还在读用户密钥文件——Agnes 根本没那个文件，
+/// 于是带着**空密钥**出网，必然 401。
+/// 用户看到的现象就是“模型明明能用，一测试就报错”。
+pub(crate) fn resolve_ai_key(app: &tauri::AppHandle, cfg: &AiConfig) -> Result<String, String> {
+    let dir = ai_data_dir(app)?;
+    let user_key = secret_store::load_key(&dir, &cfg.provider)?.unwrap_or_default();
+    Ok(pick_ai_key(&cfg.provider, user_key))
 }
 
 /// 自定义服务商（用户可添加多个中转/代理服务，每个独立存配置与密钥）。
@@ -105,6 +133,10 @@ pub(crate) fn read_ai_config(store: &DataStore) -> Result<AiConfig, String> {
             .get("ai_thinking_off")
             .and_then(|v| v.as_bool())
             .unwrap_or(d.thinking_off),
+        tags_as_context: raw
+            .get("ai_tags_as_context")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(d.tags_as_context),
     })
 }
 
@@ -232,6 +264,10 @@ fn write_ai_config(store: &DataStore, cfg: &AiConfig) -> Result<(), String> {
         obj.insert("ai_daily_budget_cny".to_string(), json!(cfg.daily_budget_cny));
         obj.insert("ai_timeout_secs".to_string(), json!(cfg.timeout_secs));
         obj.insert("ai_thinking_off".to_string(), json!(cfg.thinking_off));
+        obj.insert(
+            "ai_tags_as_context".to_string(),
+            json!(cfg.tags_as_context),
+        );
     }
     store.save_config(&raw)
 }
@@ -402,5 +438,34 @@ mod tests {
         let legacy = |k: &str| raw.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
         let (_, m2, _) = resolve_provider_values(&raw, "custom_2", &legacy);
         assert_eq!(m2, "", "未配置的自定义返回空，不与 custom_1 串");
+    }
+
+    // ===== 密钥解析的守卫 =====
+    //
+    // 背景：v6.9 给内置免费（Agnes）加了应用内置公共 key，但只补在 ai_run 一处。
+    // 其余五条路径（测试连接 / 规划 / 自定义动作试跑 / 画像精练 / 语义索引）
+    // 都在自己 load_key，Agnes 根本没那个文件 → 空密钥出网 → 401。
+    // 现在全部收口到 pick_ai_key / resolve_ai_key，这几条测试钉住不变量。
+
+    #[test]
+    fn builtin_free_always_uses_builtin_key() {
+        let k = pick_ai_key(provider::BUILTIN_AGNES_ID, String::new());
+        assert!(!k.is_empty(), "内置免费服务商拿到了空密钥（就是那个 401 的根因）");
+        assert_eq!(k, provider::builtin_agnes_key());
+    }
+
+    #[test]
+    fn builtin_free_ignores_stale_user_key() {
+        // 密钥文件里残留旧值也不能盖掉内置 key
+        let k = pick_ai_key(provider::BUILTIN_AGNES_ID, "stale-leftover".to_string());
+        assert_eq!(k, provider::builtin_agnes_key());
+    }
+
+    #[test]
+    fn other_providers_use_user_key() {
+        // 仓库惯例：假 key 用 concat! 拼接，避开 GitHub 密钥扇描拦截
+        let user = concat!("sk-", "unit-test-not-a-real-key").to_string();
+        assert_eq!(pick_ai_key("deepseek", user.clone()), user);
+        assert_eq!(pick_ai_key("custom_1", user.clone()), user);
     }
 }

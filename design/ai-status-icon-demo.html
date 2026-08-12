@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda · AI 状态瘦身演示（未配置图标化）</title>
+<style>
+  :root{
+    --bg:#F4F6F9; --card:#fff; --border:#E2E8F0; --text:#0F172A; --text2:#64748B; --text3:#94A3B8;
+    --accent:#0284C7; --accent-light:#E0F2FE; --accent-strong:#0369A1; --accent-border:#7DD3FC;
+    --green:#15803D; --green-light:#DCFCE7; --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA;
+    --hover:#F1F5F9;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:#E8EDF3;padding:28px;color:var(--text)}
+  .wrap{max-width:720px;margin:0 auto}
+  h1{font-size:19px;margin-bottom:4px}
+  .sub{font-size:13px;color:var(--text2);margin-bottom:16px}
+  .note{background:var(--accent-light);border:1px solid var(--accent-border);border-radius:10px;padding:10px 12px;font-size:12px;color:var(--accent-strong);margin-bottom:18px;line-height:1.7}
+
+  /* 控制台 */
+  .console{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px}
+  .console .lbl{font-size:11px;color:var(--text3)}
+  .mockBtn{border:1px solid var(--border);border-radius:8px;padding:5px 12px;font-size:12px;background:var(--bg);color:var(--text);cursor:pointer}
+  .mockBtn:hover{border-color:var(--accent);color:var(--accent-strong)}
+  .mockBtn.on{border-color:var(--accent);background:var(--accent-light);color:var(--accent-strong)}
+
+  /* 主窗口 */
+  .win{width:520px;background:var(--bg);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(15,23,42,.1);margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--border);background:var(--card)}
+  .logo{width:22px;height:22px;border-radius:6px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px}
+  .t{font-size:12px;font-weight:600}
+  .sp{flex:1}
+  .tb{width:24px;height:24px;border-radius:7px;background:var(--hover);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text2)}
+  .tb.set{background:rgba(168,85,247,.12);color:#7E22CE}
+
+  /* AI 状态徽标（新）——「✦ AI」紧凑小徽标，比原文字胶囊省一半 */
+  .aiIconWrap{position:relative}
+  .aiIcon{display:inline-flex;align-items:center;gap:3px;height:22px;border-radius:11px;padding:0 9px;font-size:11px;font-weight:600;cursor:pointer;transition:all .15s}
+  .aiIcon.off{border:1px dashed var(--accent);color:var(--accent-strong);background:transparent}
+  .aiIcon.off:hover{background:var(--accent);color:#fff;border-style:solid}
+  .aiIcon.nokey{border:1px solid var(--orange-border);color:var(--orange);background:var(--orange-bg)}
+  .aiIcon.nokey:hover{background:var(--orange);color:#fff}
+  /* hover 引导卡片 */
+  .aiTip{position:absolute;top:calc(100% + 6px);right:0;width:230px;background:var(--card);border:1px solid var(--border);border-radius:10px;box-shadow:0 4px 14px rgba(15,23,42,.14);padding:10px 12px;font-size:11px;color:var(--text2);line-height:1.7;z-index:20;display:none}
+  .aiIconWrap:hover .aiTip{display:block}
+  .aiTip b{color:var(--accent-strong)}
+  .aiTip .acts{margin-top:6px;display:flex;flex-wrap:wrap;gap:4px}
+  .aiTip .q{display:inline-flex;align-items:center;gap:2px;border:1px solid var(--accent-border);border-radius:5px;padding:1px 6px;font-size:10px;background:var(--accent-light);color:var(--accent-strong)}
+
+  /* 设置按钮绿点 */
+  .setWrap{position:relative;display:inline-flex}
+  .dot{position:absolute;top:2px;right:2px;width:6px;height:6px;border-radius:50%;background:var(--green);border:1px solid var(--card)}
+  .dot.acc{background:var(--accent)}
+  .dot.amb{background:var(--orange)}
+
+  .list{padding:8px 12px 10px;display:flex;flex-direction:column;gap:8px}
+  .li{height:34px;border-radius:9px;background:var(--card);border:1px solid var(--border)}
+
+  .steps{margin-top:18px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;font-size:12px;line-height:1.9;color:var(--text2)}
+  .steps b{color:var(--text)}
+  .foot{margin-top:14px;padding-top:12px;border-top:1px dashed var(--border);font-size:11px;color:var(--text3);line-height:1.9}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PastePanda · AI 状态瘦身演示</h1>
+  <div class="sub">未配置/缺密钥从 70px 文字胶囊 → 16px 图标；已配置收进设置按钮绿点（方案 1 + 方案 B 组合）</div>
+
+  <div class="note">
+    <b>变化</b>：① 未配置 → 紧凑「✦ AI」徽标（accent 虚线，比原文字胶囊省一半宽；hover 出完整引导卡片，点击直达 AI 配置）；
+    ② 缺密钥 → 「⚠ AI」橙色警示徽标；③ 已配置 → TopBar 无徽标，设置按钮右上角 6px 绿点（hover 看用量）。
+    <b>全部功能保留</b>：快捷区（复制即用）、点击徽标跳设置 AI tab。
+  </div>
+
+  <!-- 控制台 -->
+  <div class="console">
+    <span class="lbl">模拟状态：</span>
+    <button class="mockBtn on" data-s="off">未配置</button>
+    <button class="mockBtn" data-s="nokey">缺密钥</button>
+    <button class="mockBtn" data-s="on">已配置</button>
+  </div>
+
+  <!-- 主窗口 -->
+  <div class="win">
+    <div class="topbar">
+      <div class="logo">🐼</div><div class="t">PastePanda</div><div class="sp"></div>
+      <!-- AI 状态徽标（未配置/缺密钥时显示；已配置时隐藏） -->
+      <div class="aiIconWrap" id="aiIconWrap">
+        <div class="aiIcon off" id="aiIcon">✦ AI</div>
+        <div class="aiTip" id="aiTip">
+          <b>✦ 开启 AI</b><br>
+          翻译 / 总结 / 改写 / 脱敏 / 链接摘要<br>
+          <div class="acts">
+            <span class="q">翻译</span><span class="q">总结</span><span class="q">改写</span><span class="q">脱敏</span>
+          </div>
+        </div>
+      </div>
+      <div class="tb">⚙</div><div class="tb set"><span class="setWrap" id="setWrap">⚙<span class="dot" id="setDot" style="display:none"></span></span></div><div class="tb">─</div>
+    </div>
+    <div class="list">
+      <div class="li"></div><div class="li"></div><div class="li"></div>
+      <div class="li"></div>
+    </div>
+  </div>
+
+  <div class="steps">
+    <b>三种状态对应</b><br>
+    1. <b>未配置</b>：「✦ AI」紧凑徽标（比原胶囊省一半）→ hover 出引导卡片（能力清单）→ 点击直达设置 AI tab；<br>
+    2. <b>缺密钥</b>：「⚠ AI」橙色徽标（已启用但用不了，必须让用户知道）→ hover 提示"去填密钥"；<br>
+    3. <b>已配置</b>：TopBar 无任何徽标 → 设置按钮右上角 6px 绿点（hover 显示"AI 就绪 · 本周 N 次 · 模型"）。
+  </div>
+
+  <div class="foot">
+    <b>占用对比</b>：未配置从 ~70px 胶囊 → ~40px 紧凑徽标（-40%）；已配置从 ~70px → 0（仅绿点）。
+    <b>可识别性</b>：保留「AI」字样，用户一眼知道是 AI 入口。
+  </div>
+</div>
+
+<script>
+const TIPS = {
+  off: {
+    cls: "off", icon: "✦ AI",
+    html: '<b>✦ 开启 AI</b><br>翻译 / 总结 / 改写 / 脱敏 / 链接摘要<div class="acts"><span class="q">翻译</span><span class="q">总结</span><span class="q">改写</span><span class="q">脱敏</span></div>',
+    dot: "acc", dotTitle: "可开启 AI：翻译 / 总结 / 改写…（点设置配置）",
+  },
+  nokey: {
+    cls: "nokey", icon: "⚠ AI",
+    html: '<b>⚠ AI 待配置</b><br>已启用但缺 API Key，点此去填（密钥按服务商分开存）',
+    dot: "amb", dotTitle: "AI 已启用但缺密钥",
+  },
+  on: {
+    cls: "", icon: "",
+    html: '<b>✦ AI 已就绪</b><br>本周使用 12 次 · deepseek-chat<br>点设置可调整模型/预算',
+    dot: "", dotTitle: "AI 已就绪 · 本周使用 12 次 · deepseek-chat",
+  },
+};
+document.querySelectorAll(".mockBtn").forEach((b) => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll(".mockBtn").forEach((x) => x.classList.remove("on"));
+    b.classList.add("on");
+    apply(b.dataset.s);
+  });
+});
+function apply(s) {
+  const t = TIPS[s];
+  const wrap = document.getElementById("aiIconWrap");
+  const icon = document.getElementById("aiIcon");
+  const tip = document.getElementById("aiTip");
+  const dot = document.getElementById("setDot");
+  if (s === "on") {
+    wrap.style.display = "none"; // 已配置：无胶囊
+  } else {
+    wrap.style.display = "block";
+    icon.className = "aiIcon " + t.cls;
+    icon.textContent = t.icon;
+    tip.innerHTML = t.html;
+  }
+  // 设置按钮点：已配置绿点 / 未配置 accent 点 / 缺密钥橙点
+  dot.style.display = "block";
+  dot.className = "dot" + (t.dot ? " " + t.dot : "");
+  document.getElementById("setWrap").parentElement.title = t.dotTitle;
+}
+apply("off");
+</script>
+</body>
+</html>

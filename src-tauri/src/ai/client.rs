@@ -63,7 +63,7 @@ pub enum AiError {
     #[error("模型没有返回任何内容")]
     EmptyReply,
 
-    #[error("模型把 {0} token 的额度全用在“思考”上了，没留下答案——请把该动作的 token 上限调大（推理模型建议 ≥3000），或换一个不带思考的模型")]
+    #[error("模型把全部 token 都花在「思考」上了，没留下答案——已自动放宽到 {0} 重试仍失败。请把该动作的 token 上限调到 ≥3000，或在「设置 → AI」关闭「先思考再回答」")]
     ThinkingOnly(u32),
 }
 
@@ -147,6 +147,33 @@ struct OaResponse {
     choices: Vec<OaChoice>,
     #[serde(default)]
     usage: Option<OaUsage>,
+}
+
+// v6.10 流式（SSE）：`data: {...}` 逐块结构
+#[derive(Deserialize)]
+struct OaStreamChunk {
+    #[serde(default)]
+    model: String,
+    #[serde(default)]
+    choices: Vec<OaStreamChoice>,
+    #[serde(default)]
+    usage: Option<OaUsage>,
+}
+#[derive(Deserialize)]
+struct OaStreamChoice {
+    #[serde(default)]
+    delta: Option<OaStreamDelta>,
+    /// `"length"` = 撞到 `max_tokens` 被截断
+    #[serde(default)]
+    finish_reason: Option<String>,
+}
+#[derive(Deserialize, Default)]
+struct OaStreamDelta {
+    #[serde(default)]
+    content: String,
+    /// 推理模型的思维链（流式也走这个字段，只用来判 ThinkingOnly，不当正文）
+    #[serde(default)]
+    reasoning_content: String,
 }
 
 // ===== Anthropic Messages 的请求/响应 =====
@@ -282,12 +309,18 @@ fn map_send_error(e: reqwest::Error, timeout_secs: u64) -> AiError {
 ///
 /// * `system` —— 可选的系统提示词
 /// * `max_tokens` —— 上限；Anthropic 必填，`None` 时用默认值
+///
+/// **v6.9 自动放宽**：推理模型（reasoning/thinking）常把全部额度花在思考上、
+/// content 为空。如果收到 `ThinkingOnly`，自动把 `max_tokens` 翻倍重试一次，
+/// 封顶 8000（Anthropic 硬上限）；仍失败才报错。这免去了"调一次报错→用户手动
+/// 改动作 max_tokens→再来一次"的循环。
 pub async fn chat(
     cfg: &AiConfig,
     api_key: &str,
     system: Option<&str>,
     user: &str,
     max_tokens: Option<u32>,
+    on_delta: Option<&(dyn Fn(&str) + Send + Sync)>,
 ) -> Result<ChatOutcome, AiError> {
     cfg.validate().map_err(AiError::Config)?;
 
@@ -296,9 +329,28 @@ pub async fn chat(
         return Err(AiError::Config("未配置 API Key".to_string()));
     }
 
-    match cfg.effective_protocol() {
-        Protocol::OpenAi => chat_openai(cfg, api_key, system, user, max_tokens).await,
+    let first = match cfg.effective_protocol() {
+        Protocol::OpenAi => chat_openai(cfg, api_key, system, user, max_tokens, on_delta).await,
+        // v6.10：Anthropic 协议暂不流式（SSE 事件格式不同），on_delta 忽略
         Protocol::Anthropic => chat_anthropic(cfg, api_key, system, user, max_tokens).await,
+    };
+
+    // 自动放宽：只有 ThinkingOnly 才重试一次（×2，封顶 8000；None 时默认 4000）
+    match first {
+        Err(AiError::ThinkingOnly(_)) => {
+            let bumped = max_tokens
+                .map(|x| (x as u64 * 2).min(8000) as u32)
+                .or(Some(4000));
+            let second = match cfg.effective_protocol() {
+                Protocol::OpenAi => chat_openai(cfg, api_key, system, user, bumped, on_delta).await,
+                Protocol::Anthropic => chat_anthropic(cfg, api_key, system, user, bumped).await,
+            };
+            second.map_err(|e| match e {
+                AiError::ThinkingOnly(_) => AiError::ThinkingOnly(bumped.unwrap_or(0)),
+                other => other,
+            })
+        }
+        other => other,
     }
 }
 
@@ -308,6 +360,7 @@ async fn chat_openai(
     system: Option<&str>,
     user: &str,
     max_tokens: Option<u32>,
+    on_delta: Option<&(dyn Fn(&str) + Send + Sync)>,
 ) -> Result<ChatOutcome, AiError> {
     let mut messages = Vec::with_capacity(2);
     if let Some(sys) = system {
@@ -346,7 +399,7 @@ async fn chat_openai(
         model: &model,
         messages,
         temperature: 0.3,
-        stream: false,
+        stream: on_delta.is_some(),
         max_tokens,
         thinking,
         enable_thinking,
@@ -365,6 +418,11 @@ async fn chat_openai(
     if !status.is_success() {
         let raw = resp.text().await.unwrap_or_default();
         return Err(map_status(status.as_u16(), &raw));
+    }
+
+    // v6.10 流式分支：SSE 逐块（data: {...}），边收边回调
+    if let Some(cb) = on_delta {
+        return chat_openai_stream(resp, &model, max_tokens, cb).await;
     }
 
     let parsed: OaResponse = resp
@@ -398,6 +456,90 @@ async fn chat_openai(
     Ok(ChatOutcome {
         content,
         model: if parsed.model.is_empty() { model } else { parsed.model },
+        prompt_tokens: usage.prompt_tokens,
+        completion_tokens: usage.completion_tokens,
+        truncated,
+    })
+}
+
+/// v6.10 流式：SSE `data: {...}` 逐块解析，边收边回调 on_delta，
+/// 同时累计 content / reasoning / usage / finish_reason，结束时组装完整 outcome。
+async fn chat_openai_stream(
+    resp: reqwest::Response,
+    model: &str,
+    max_tokens: Option<u32>,
+    on_delta: &(dyn Fn(&str) + Send + Sync),
+) -> Result<ChatOutcome, AiError> {
+    use futures_util::StreamExt;
+
+    let mut stream = resp.bytes_stream();
+    let mut buf: Vec<u8> = Vec::new();
+    let mut content = String::new();
+    let mut reasoning = String::new();
+    let mut model_out = model.to_string();
+    let mut usage = OaUsage::default();
+    let mut truncated = false;
+    let mut done = false;
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| AiError::Http {
+            status: 0,
+            body: format!("流式读取失败：{e}"),
+        })?;
+        buf.extend_from_slice(&chunk);
+        // 按行拆（SSE 每条 data 以 \n 结尾）。
+        // **坑（v6.10 测试抓到）**：pos 是相对 buf[start..] 的偏移，必须 start += pos + 1；
+        // 写成 start = pos + 1 会让 start 倒退，内层 while 死循环——流式功能真机挂死。
+        let mut start = 0;
+        while let Some(pos) = buf[start..].iter().position(|&b| b == b'\n') {
+            let line = std::str::from_utf8(&buf[start..start + pos]).unwrap_or("");
+            start += pos + 1;
+            let line = line.trim();
+            if let Some(data) = line.strip_prefix("data:") {
+                let data = data.trim();
+                if data == "[DONE]" {
+                    done = true;
+                    break;
+                }
+                if let Ok(parsed) = serde_json::from_str::<OaStreamChunk>(data) {
+                    if !parsed.model.is_empty() {
+                        model_out = parsed.model;
+                    }
+                    if let Some(u) = parsed.usage {
+                        usage = u;
+                    }
+                    if let Some(choice) = parsed.choices.into_iter().next() {
+                        if choice.finish_reason.as_deref() == Some("length") {
+                            truncated = true;
+                        }
+                        if let Some(delta) = choice.delta {
+                            if !delta.content.is_empty() {
+                                content.push_str(&delta.content);
+                                on_delta(&delta.content);
+                            }
+                            reasoning.push_str(&delta.reasoning_content);
+                        }
+                    }
+                }
+            }
+        }
+        buf.drain(..start);
+        if done {
+            break;
+        }
+    }
+
+    let content = strip_thinking(&content).0;
+    if content.trim().is_empty() {
+        // 流式下同规则：内容空 + 有思维链/截断 → ThinkingOnly
+        if !reasoning.trim().is_empty() || truncated {
+            return Err(AiError::ThinkingOnly(max_tokens.unwrap_or(0)));
+        }
+        return Err(AiError::EmptyReply);
+    }
+    Ok(ChatOutcome {
+        content,
+        model: model_out,
         prompt_tokens: usage.prompt_tokens,
         completion_tokens: usage.completion_tokens,
         truncated,
@@ -752,7 +894,7 @@ mod tests {
     async fn test_chat_rejects_empty_key_before_network() {
         // 没有 Key 时必须在发请求**之前**就失败，否则会白白等一个超时
         let cfg = AiConfig::default();
-        let err = chat(&cfg, "   ", None, "hi", None).await.unwrap_err();
+        let err = chat(&cfg, "   ", None, "hi", None, None).await.unwrap_err();
         assert!(matches!(err, AiError::Config(_)));
     }
 
@@ -767,7 +909,7 @@ mod tests {
             timeout_secs: 5,
             ..Default::default()
         };
-        let err = chat(&cfg, "", None, "hi", None).await.unwrap_err();
+        let err = chat(&cfg, "", None, "hi", None, None).await.unwrap_err();
         assert!(
             !matches!(err, AiError::Config(_)),
             "本地厂商不应因缺密钥而被拦，实际：{}",
@@ -781,7 +923,7 @@ mod tests {
             provider: "custom".to_string(),
             ..Default::default()
         };
-        let err = chat(&cfg, "sk-whatever", None, "hi", None)
+        let err = chat(&cfg, "sk-whatever", None, "hi", None, None)
             .await
             .unwrap_err();
         assert!(matches!(err, AiError::Config(_)));
@@ -866,6 +1008,7 @@ mod tests {
             Some("你是连通性测试助手，只需按要求回答，不要其他内容。"),
             "回复两个字：正常",
             Some(1024),
+            None,
         )
         .await
         .expect("调用失败");

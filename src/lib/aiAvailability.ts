@@ -114,6 +114,18 @@ export function ensureAiAvailabilityLoaded(): void {
   void load().catch(() => {});
 }
 
+/** 审查：事件监听模块级注册一次 —— 此前 useAiStatus 每个订阅者各注册一个
+ *  listen("ai-config-changed")（App + 胶囊双监听重复刷新）。 */
+let eventListenerInstalled = false;
+
+export function ensureAiConfigListener(): void {
+  if (eventListenerInstalled) return;
+  eventListenerInstalled = true;
+  import("@tauri-apps/api/event")
+    .then(({ listen }) => listen("ai-config-changed", () => void refreshAiAvailability()))
+    .catch(() => {});
+}
+
 /**
  * 强制重新判定。设置面板改完配置/密钥后必须调，否则动作与胶囊都不会即时变。
  * 若已有请求在飞，先等它落地再重来——避免拿到「写配置之前」的结果。

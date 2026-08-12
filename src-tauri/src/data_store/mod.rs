@@ -12,6 +12,8 @@ mod content_memory;
 mod profile;
 mod sequence_memory;
 mod action_events;
+mod sticky;
+mod quota;
 #[cfg(test)]
 mod tests;
 
@@ -31,11 +33,16 @@ pub use content_memory::{
     HistorySummary, cosine_sim, decode_vec, encode_vec, summarize_text,
 };
 pub use profile::ProfileRawStats;
-pub use sequence_memory::SequencePattern;
+pub use sequence_memory::{SequencePattern, SequenceTransition};
 pub use action_events::{
     ActionEvent, ActionEventCount, ActionEventStats, ActionDismissal, ActionWeightRow,
     SceneWeightRow, ACTION_EVENTS_RETAIN_DAYS, ACTION_ID_PASTE, OUTCOME_ABANDONED,
     OUTCOME_COPIED, OUTCOME_PASTED, hour_bucket, source_cat,
+};
+pub use sticky::{CalendarDay, StickyStats};
+pub use quota::{
+    QuotaBlock, QuotaInfo, RedeemResult, SignResult, generate_redeem_code, redeem_secret,
+    verify_redeem_code, DAILY_SPEND_CAP, INITIAL_GRANT, SIGN_CAP,
 };
 
 use md5::{Digest, Md5};
@@ -315,6 +322,22 @@ impl DataStore {
             );
             CREATE INDEX IF NOT EXISTS idx_action_events_created ON action_events(created_at);
             CREATE INDEX IF NOT EXISTS idx_action_events_action ON action_events(action_id);
+
+            -- v6.9 免费额度账本（签到送 token，见 data_store/quota.rs）。
+            -- 单行（id=1）本地账本：只记数字（token 额度），不含任何内容。
+            CREATE TABLE IF NOT EXISTS ai_quota (
+                id           INTEGER PRIMARY KEY CHECK (id = 1),
+                device_id    TEXT    NOT NULL,
+                granted      INTEGER NOT NULL DEFAULT 100000,
+                sign_added   INTEGER NOT NULL DEFAULT 0,
+                spent        INTEGER NOT NULL DEFAULT 0,
+                sign_date    TEXT,
+                sign_streak  INTEGER NOT NULL DEFAULT 0,
+                redeemed     TEXT    NOT NULL DEFAULT '[]',
+                today        TEXT    NOT NULL DEFAULT '',
+                today_spent  INTEGER NOT NULL DEFAULT 0,
+                updated_at   TEXT    NOT NULL
+            );
 
             -- 用户自定义的动作链（X1 B2，见 data_store/chains.rs）。
             -- steps 存 JSON 数组（[{transformId, risk, label}]）——有序快照，从不单独查询。

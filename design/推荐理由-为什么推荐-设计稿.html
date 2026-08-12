@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>推荐理由设计稿 · PastePanda</title>
+<style>
+  /* —— 真实变量（拉自 src/styles/theme.css 的 ocean-dark 块）—— */
+  :root{
+    --text-primary:#E0E8F0;
+    --text-secondary:#A2B6CD;
+    --text-muted:#7994B4;
+    --border-color:#162B45;
+    --accent:#3B9EFF;
+    --dialog-bg:#0A1628;
+    --section-bg:#081018;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;padding:28px;background:#050B14;
+    font:13px/1.5 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    color:var(--text-primary);
+  }
+  h1{font-size:17px;margin:0 0 4px}
+  .lead{color:var(--text-muted);font-size:12px;margin:0 0 24px;max-width:900px}
+  .row{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap}
+  .col{flex:0 0 auto}
+  .colTitle{font-size:12px;font-weight:700;margin:0 0 2px}
+  .colNote{font-size:11px;color:var(--text-muted);margin:0 0 10px;max-width:460px;min-height:32px}
+
+  /* —— 变换中心容器：真实 w460 —— */
+  .hub{width:460px;background:var(--dialog-bg);border:1px solid var(--border-color);border-radius:12px;overflow:hidden}
+  .hubHead{padding:12px 14px;border-bottom:1px solid var(--border-color);display:flex;align-items:baseline;gap:8px}
+  .hubTitle{font-size:13px;font-weight:700}
+  .hubSub{font-size:11px;color:var(--text-muted)}
+  .sectionLabel{font-size:11px;font-weight:700;color:var(--text-secondary);padding:10px 14px 0}
+
+  /* —— 卡片：照抄 TransformHub.module.css —— */
+  .card{margin:10px 12px;border:1px solid var(--border-color);border-radius:12px;background:var(--section-bg);overflow:hidden}
+  .cardHead{display:flex;align-items:center;gap:9px;padding:11px 13px 8px}
+  .cardIcon{display:inline-flex;color:var(--accent);flex-shrink:0}
+  .cardMain{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
+  .cardLabel{font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+  .cardDesc{font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .score{margin-left:auto;font-size:10px;font-weight:700;color:var(--text-muted);background:var(--dialog-bg);border:1px solid var(--border-color);border-radius:5px;padding:1px 5px;flex-shrink:0}
+
+  /* —— 新增：理由行 —— */
+  .why{font-size:11px;color:var(--accent);display:inline-flex;align-items:center;gap:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .why svg{flex-shrink:0;opacity:.85}
+  .whyMuted{color:var(--text-muted)}
+
+  /* 方案 C：tooltip */
+  .scoreHint{position:relative;cursor:help;border-color:var(--accent);color:var(--accent)}
+  .tip{position:absolute;right:0;top:calc(100% + 6px);background:var(--dialog-bg);border:1px solid var(--accent);
+       border-radius:7px;padding:6px 9px;font-size:11px;font-weight:400;color:var(--text-secondary);
+       white-space:nowrap;z-index:5;box-shadow:0 6px 18px rgba(0,0,0,.45)}
+  .tipRow{display:flex;justify-content:space-between;gap:14px;line-height:1.7}
+  .tipRow b{color:var(--text-primary);font-weight:600}
+
+  .legend{margin-top:26px;border-top:1px solid var(--border-color);padding-top:16px}
+  table{border-collapse:collapse;font-size:12px}
+  th,td{text-align:left;padding:5px 14px 5px 0;vertical-align:top}
+  th{color:var(--text-secondary);font-weight:600;font-size:11px}
+  td code{color:var(--accent);font-size:11px}
+  .tag{display:inline-block;font-size:10px;padding:1px 6px;border-radius:4px;border:1px solid var(--border-color);color:var(--text-muted)}
+</style>
+</head>
+<body>
+
+<h1>推荐理由（“为什么推荐这个”）设计稿</h1>
+<p class="lead">
+  容器 460px（真实 <code>dialog-box w460</code>）、变量取自 theme.css 的 ocean-dark、卡片样式照抄 TransformHub.module.css。
+  三个方案的差别只在“理由放哪”，文案与触发规则相同。
+</p>
+
+<div class="row">
+
+  <!-- ============ 方案 A ============ -->
+  <div class="col">
+    <p class="colTitle">方案 A：理由单独一行（描述之下）</p>
+    <p class="colNote">保留原有描述，理由另起一行。信息最完整，代价是每张卡片高 ~16px。</p>
+    <div class="hub">
+      <div class="hubHead"><span class="hubTitle">变换中心</span><span class="hubSub">7 个可用变换</span></div>
+      <div class="sectionLabel">推荐</div>
+
+      <div class="card">
+        <div class="cardHead">
+          <span class="cardIcon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h10M4 17h7"/></svg></span>
+          <span class="cardMain">
+            <span class="cardLabel">SQL IN 子句</span>
+            <span class="cardDesc">把数组值拼成 IN (...)</span>
+            <span class="why">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v6M12 16v6M2 12h6M16 12h6"/></svg>
+              你对 JSON 用过 12 次
+            </span>
+          </span>
+          <span class="score">92%</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="cardHead">
+          <span class="cardIcon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></span>
+          <span class="cardMain">
+            <span class="cardLabel">JSON 格式化</span>
+            <span class="cardDesc">缩进与排版规整</span>
+            <span class="why">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+              你这个时段常用
+            </span>
+          </span>
+          <span class="score">78%</span>
+        </div>
+      </div>
+
+      <div class="sectionLabel">其它</div>
+      <div class="card">
+        <div class="cardHead">
+          <span class="cardIcon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+          <span class="cardMain">
+            <span class="cardLabel">AI 总结</span>
+            <span class="cardDesc">提炼要点</span>
+            <span class="why whyMuted">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+              产物常被你修改，已往后排
+            </span>
+          </span>
+          <span class="score">41%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 方案 B ============ -->
+  <div class="col">
+    <p class="colTitle">方案 B：理由替掉描述（不增高）</p>
+    <p class="colNote">有理由时显理由，没理由时显描述。高度不变，代价是首次用的人看不到“这个变换干嘛的”。</p>
+    <div class="hub">
+      <div class="hubHead"><span class="hubTitle">变换中心</span><span class="hubSub">7 个可用变换</span></div>
+      <div class="sectionLabel">推荐</div>
+
+      <div class="card">
+        <div class="cardHead">
+          <span class="cardIcon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h10M4 17h7"/></svg></span>
+          <span class="cardMain">
+            <span class="cardLabel">SQL IN 子句</span>
+            <span class="why">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v6M12 16v6M2 12h6M16 12h6"/></svg>
+              你对 JSON 用过 12 次
+            </span>
+          </span>
+          <span class="score">92%</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="cardHead">
+          <span class="cardIcon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></span>
+          <span class="cardMain">
+            <span class="cardLabel">JSON 格式化</span>
+            <span class="why">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+              你这个时段常用
+            </span>
+          </span>
+          <span class="score">78%</span>
+        </div>
+      </div>
+
+      <div class="sectionLabel">其它</div>
+      <div class="card">
+        <div class="cardHead">
+          <span class="cardIcon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+          <span class="cardMain">
+            <span class="cardLabel">Base64 解码</span>
+            <span class="cardDesc">把 Base64 转回原文</span>
+          </span>
+          <span class="score">35%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 方案 C ============ -->
+  <div class="col">
+    <p class="colTitle">方案 C：百分比 hover 展开明细</p>
+    <p class="colNote">卡片完全不变，把理由挂在那个本来就没人看懂的百分比上。信息最全，但必须 hover 才发现。</p>
+    <div class="hub">
+      <div class="hubHead"><span class="hubTitle">变换中心</span><span class="hubSub">7 个可用变换</span></div>
+      <div class="sectionLabel">推荐</div>
+
+      <div class="card">
+        <div class="cardHead">
+          <span class="cardIcon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h10M4 17h7"/></svg></span>
+          <span class="cardMain">
+            <span class="cardLabel">SQL IN 子句</span>
+            <span class="cardDesc">把数组值拼成 IN (...)</span>
+          </span>
+          <span class="score scoreHint">92%
+            <span class="tip">
+              <span class="tipRow"><span>基础匹配</span><b>0.70</b></span>
+              <span class="tipRow"><span>你对 JSON 用过 12 次</span><b>× 1.9</b></span>
+              <span class="tipRow"><span>这个时段常用</span><b>× 1.3</b></span>
+            </span>
+          </span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="cardHead">
+          <span class="cardIcon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></span>
+          <span class="cardMain">
+            <span class="cardLabel">JSON 格式化</span>
+            <span class="cardDesc">缩进与排版规整</span>
+          </span>
+          <span class="score">78%</span>
+        </div>
+      </div>
+      <div style="padding:0 14px 12px;font-size:11px;color:var(--text-muted)">↑ tooltip 已常驻展开以便看稿，实际为 hover 触发</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ============ 理由文案表 ============ -->
+<div class="legend">
+  <p class="colTitle" style="margin-bottom:10px">理由文案与触发条件（三个方案共用）</p>
+  <table>
+    <tr><th>来源因子</th><th>触发条件</th><th>文案</th></tr>
+    <tr><td><code>globalFactor</code></td><td>该内容类型下用过 ≥ 3 次</td><td>你对 JSON 用过 12 次</td></tr>
+    <tr><td><code>sceneFactor</code></td><td>场景加成 &gt; 全局加成</td><td>你这个时段常用 / 在 VS Code 里常用</td></tr>
+    <tr><td><code>roleFactor</code></td><td>画像加成 &gt; 1.1</td><td>常用于你这类工作</td></tr>
+    <tr><td><code>qualityFactor</code></td><td>&lt; 0.9（产物常被改/丢）</td><td class="tag">负面</td></tr>
+    <tr><td></td><td></td><td>产物常被你修改，已往后排</td></tr>
+    <tr><td>AI 兜底</td><td>本地规则全低分时抬分</td><td>本地规则拿不准，AI 可能合适</td></tr>
+    <tr><td>无</td><td>冷启动 / 所有因子≈1</td><td><span class="tag">不显示理由</span></td></tr>
+  </table>
+  <p style="font-size:11px;color:var(--text-muted);margin-top:12px;max-width:900px">
+    规则：<b>只显示最主要的那一个因子</b>（偏离 1 最多的），不堆叠。冷启动阶段一律不显示——
+    没学到东西时假装懂你，比不说话更损伤信任。
+  </p>
+</div>
+
+</body>
+</html>

@@ -263,7 +263,7 @@ describe("isInCooldown", () => {
 describe("load-more state machine", () => {
   it("lock prevents concurrent loads", () => {
     let loadingLock = false;
-    let hasMore = true;
+    const hasMore = true;
     let loadingMore = false;
 
     function tryLoad(): boolean {
@@ -284,7 +284,7 @@ describe("load-more state machine", () => {
   });
 
   it("hasMore=false stops all loads", () => {
-    let hasMore = false;
+    const hasMore = false;
     let loadingLock = false;
     let loadingMore = false;
 

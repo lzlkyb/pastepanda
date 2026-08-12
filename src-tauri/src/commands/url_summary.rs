@@ -94,7 +94,8 @@ fn extract_from_html(url: &str, body: &str) -> UrlSummary {
     // 收拢段落/列表文本（文章正文主要在这两处；script/style/nav 的文本不在 p/li 里，
     // 天然被跳过——不依赖 DOM 删除）。空行分隔。
     let mut parts: Vec<String> = Vec::new();
-    let mut push_block = |t: &str, parts: &mut Vec<String>| {
+    // 不需要 mut：parts 是参数传进来的，闭包本身不捕获可变状态
+    let push_block = |t: &str, parts: &mut Vec<String>| {
         let cleaned = t.split_whitespace().collect::<Vec<_>>().join(" ");
         if cleaned.chars().count() >= 20 {
             parts.push(cleaned);

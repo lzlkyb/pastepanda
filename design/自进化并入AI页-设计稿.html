@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>「自进化」并入 AI 页 · 设计稿（2026-08-11）</title>
+<style>
+  :root {
+    --text-primary: #1F2937; --text-secondary: #4B5563; --text-muted: #6B7280;
+    --border-color: #E5E7EB; --section-bg: #F8FAFC; --dialog-bg: #FFFFFF; --hover: #E8ECF2;
+    --accent: #0284C7; --accent-solid: #0369A1; --accent-strong: #0369A1;
+    --accent-light: rgba(2,132,199,.12); --accent-border: rgba(2,132,199,.35);
+    --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+    --orange: #C54A0A; --orange-bg: #FFF7ED; --orange-border: #FED7AA;
+    --danger: #D82525; --red-bg: #FEF2F2;
+  }
+  body { margin:0; padding:24px; background:#EEF2F6;
+         font-family:"Microsoft YaHei",-apple-system,sans-serif; color:var(--text-primary); }
+  h1 { font-size:18px; margin:0 0 4px; }
+  h2 { font-size:15px; margin:30px 0 10px; padding-bottom:6px; border-bottom:2px solid var(--accent); }
+  .sub { font-size:12px; color:var(--text-muted); margin:0 0 10px; line-height:1.75; }
+  .lane { display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap; }
+
+  /* 设置弹窗 = dialog-box.w420，body padding 20px → 内容 380px */
+  .dlg { width:420px; background:var(--dialog-bg); border-radius:12px;
+         box-shadow:0 8px 28px rgba(0,0,0,.12); overflow:hidden; }
+  .dlgHead { padding:11px 16px; border-bottom:1px solid var(--border-color); font-size:13px; font-weight:700; }
+  .tabBar { display:flex; gap:4px; padding:8px 16px 0; border-bottom:1px solid var(--border-color); }
+  .tab { font-size:11.5px; padding:5px 10px; border-radius:7px 7px 0 0; color:var(--text-muted); cursor:pointer; }
+  .tabOn { color:var(--accent-strong); background:var(--accent-light); font-weight:700; }
+  .panel { display:flex; flex-direction:column; gap:14px; padding:14px 16px 18px; }
+
+  .caseT { font-size:12.5px; font-weight:700; margin:0 0 3px; display:flex; align-items:center; gap:7px; }
+  .tag { font-size:10px; font-weight:700; padding:2px 7px; border-radius:999px; }
+  .bad { background:#FEE2E2; color:#B91C1C; }
+  .rec { background:#EDE9FE; color:#6D28D9; }
+  .ok  { background:var(--green-bg); color:var(--green); }
+  .note { font-size:11.5px; color:var(--text-muted); margin:0 0 10px; line-height:1.65; }
+  code { background:#F1F5F9; padding:1px 4px; border-radius:3px; font-size:10.5px; }
+
+  /* 手风琴（与刚实现的 AiSection 一致） */
+  .acc { display:flex; flex-direction:column; gap:6px; }
+  .accItem { border:1px solid var(--border-color); border-radius:10px; overflow:hidden; background:var(--section-bg); }
+  .accItemOpen { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-light); }
+  .accHead { display:flex; align-items:center; gap:6px; padding-right:6px; }
+  .accHeadOpen { border-bottom:1px solid var(--border-color); }
+  .accMain { flex:1; min-width:0; display:flex; align-items:center; gap:9px;
+             padding:10px 4px 10px 12px; border:none; background:none; cursor:pointer; text-align:left; }
+  .accIcon { width:26px; height:26px; border-radius:7px; flex-shrink:0; background:var(--accent-light);
+             color:var(--accent-strong); display:inline-flex; align-items:center; justify-content:center; font-size:12px; }
+  .accName { display:block; font-size:12.5px; font-weight:700; }
+  .accSub { display:block; font-size:10.5px; color:var(--text-muted); margin-top:1px;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .accChev { flex-shrink:0; width:22px; height:22px; display:inline-flex; align-items:center;
+             justify-content:center; color:var(--text-muted); font-size:11px; }
+  .accBody { padding:11px 12px 12px; display:flex; flex-direction:column; gap:10px; }
+
+  /* 摘要卡 */
+  .hero { border:1px solid var(--border-color); border-radius:12px; overflow:hidden;
+          background:linear-gradient(135deg, rgba(2,132,199,.07), transparent); }
+  .heroTop { display:flex; align-items:center; gap:10px; padding:12px 13px 10px; }
+  .heroAv { width:34px; height:34px; border-radius:10px; flex-shrink:0;
+            background:linear-gradient(135deg,var(--accent),var(--accent-solid)); color:#fff;
+            display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; }
+  .heroName { font-size:13.5px; font-weight:700; }
+  .heroModel { font-size:10.5px; color:var(--text-muted); font-family:Consolas,monospace; margin-top:1px; }
+  .heroStats { display:grid; grid-template-columns:repeat(3,1fr); border-top:1px solid var(--border-color);
+               background:rgba(255,255,255,.6); }
+  .st { padding:8px 6px; text-align:center; border-right:1px solid var(--border-color); }
+  .st:last-child { border-right:none; }
+  .stN { font-size:14px; font-weight:700; line-height:1.2; }
+  .stN small { font-size:10px; font-weight:600; color:var(--text-muted); }
+  .stL { font-size:9.5px; color:var(--text-muted); margin-top:2px; }
+
+  /* 自进化内部的子项行 */
+  .subRow { display:flex; align-items:center; gap:8px; padding:7px 9px; border-radius:8px;
+            background:var(--dialog-bg); border:1px solid var(--border-color); }
+  .subName { font-size:11.5px; font-weight:600; flex:1; min-width:0; }
+  .subDesc { display:block; font-size:10px; color:var(--text-muted); font-weight:400; margin-top:1px; }
+  .subN { font-size:10px; font-weight:700; padding:1px 6px; border-radius:999px;
+          background:var(--accent-light); color:var(--accent-strong); flex-shrink:0; }
+  .miniBtn { font-size:10px; padding:2px 7px; border-radius:6px; border:1px solid var(--border-color);
+             background:var(--dialog-bg); color:var(--text-secondary); cursor:pointer; flex-shrink:0; }
+  .miniDanger { border-color:var(--orange-border); color:var(--danger); }
+
+  /* 红线② 声明条 */
+  .redline { display:flex; gap:6px; align-items:flex-start; padding:7px 9px; border-radius:8px;
+             background:var(--green-bg); border:1px solid var(--green-border);
+             font-size:10.5px; color:var(--green); line-height:1.55; }
+
+  /* 现状：通用 tab 里的一行 */
+  .sRow { display:flex; align-items:center; gap:10px; padding:9px 0; }
+  .sIcon { width:26px; height:26px; border-radius:8px; flex-shrink:0; color:#fff;
+           background:linear-gradient(135deg,#8B5CF6,#6366F1);
+           display:inline-flex; align-items:center; justify-content:center; font-size:13px; }
+  .sLabel { font-size:12.5px; font-weight:600; }
+  .sDesc { font-size:10.5px; color:var(--text-muted); margin-top:1px; }
+  .sAct { font-size:11px; padding:4px 10px; border-radius:7px; border:1px solid var(--border-color);
+          background:var(--dialog-bg); cursor:pointer; }
+
+  .ruler { margin:12px 0 0; font-size:11px; color:var(--text-muted);
+           border-top:1px dashed var(--border-color); padding-top:9px; line-height:1.8; width:420px; }
+  table { border-collapse:collapse; font-size:11.5px; margin-top:8px; width:100%; }
+  th,td { border:1px solid var(--border-color); padding:4px 8px; text-align:left; }
+  th { background:#F8FAFC; font-weight:600; }
+</style>
+</head>
+<body>
+
+<h1>「自进化」并入 AI 页</h1>
+<p class="sub">
+  2026-08-11 · 卡片结构与手风琴样式取自刚实现的 <code>AiSection</code> / <code>AiTab.module.css</code>（规则 #12）。<br>
+  设置弹窗 <code>420px</code>。
+</p>
+
+<!-- ===== 现状与清单 ===== -->
+<h2>现状：入口在「通用」，内容在一个独立大弹窗</h2>
+<div class="lane">
+  <div>
+    <p class="caseT">入口：设置 › 通用 里的一行</p>
+    <div class="dlg">
+      <div class="dlgHead">⚙ 设置</div>
+      <div class="tabBar">
+        <span class="tab tabOn">⚙ 通用</span><span class="tab">✦ AI</span>
+        <span class="tab">📖 帮助</span><span class="tab">ℹ 关于</span>
+      </div>
+      <div class="panel">
+        <div class="sRow">
+          <span class="sIcon">🧠</span>
+          <div style="flex:1;min-width:0">
+            <div class="sLabel">自进化</div>
+            <div class="sDesc">查看自进化数据与偏好调优，可一键清空（仅存本机）</div>
+          </div>
+          <button class="sAct">查看</button>
+        </div>
+      </div>
+    </div>
+    <p class="ruler">
+      点「查看」打开一个独立弹窗 <code>LearningsDialog</code>（427 行）。
+    </p>
+  </div>
+
+  <div>
+    <p class="caseT">弹窗里的 6 个功能块（真实文案）</p>
+    <div class="dlg">
+      <div class="dlgHead">🧠 自进化　　　　　　　　[人 我的画像]</div>
+      <div class="panel" style="gap:9px">
+        <div class="redline">✓　以下学习数据<b>仅存本机</b>，不含任何复制内容本身，可随时查看或清空。</div>
+        <div class="subRow"><span class="subName">KPI 概览<span class="subDesc">近 30 天使用统计</span></span></div>
+        <div class="subRow"><span class="subName">推荐偏好<span class="subDesc">最常用的变换动作——会排在变换中心更靠前</span></span></div>
+        <div class="subRow"><span class="subName">已停用推荐<span class="subDesc">点过「不再推荐」的，可随时恢复</span></span></div>
+        <div class="subRow"><span class="subName">输出偏好调优<span class="subDesc">AI 结果编辑率 + 每个动作的偏好指令</span></span><button class="miniBtn miniDanger">清空</button></div>
+        <div class="subRow"><span class="subName">本地检索记忆<span class="subDesc">语义索引（embedding）</span></span><button class="miniBtn miniDanger">清空</button></div>
+        <div class="subRow"><span class="subName">清空学习记录<span class="subDesc">排序退回「对所有人一样」</span></span><button class="miniBtn miniDanger">清空</button></div>
+      </div>
+    </div>
+    <p class="ruler">
+      <strong>关键分歧（决定方案怎么选）：</strong>这 6 块里并不全是 AI。<br>
+      · <span style="color:var(--accent-strong)">属于 AI</span>：输出偏好调优、本地检索记忆（embedding）、我的画像（有 LLM 精练）<br>
+      · <span style="color:var(--orange)">不属于 AI</span>：<strong>推荐偏好</strong>与<strong>已停用推荐</strong>——它们管的是
+      变换中心的排序，<strong>大小写转换、JSON 格式化这类本地变换也受影响</strong>。
+    </p>
+  </div>
+</div>
+
+<!-- ===== 方案 ===== -->
+<h2>三个方案</h2>
+<div class="lane">
+
+  <!-- A -->
+  <div>
+    <p class="caseT">A。整块搬：手风琴新增一项「自进化」 <span class="tag ok">诉求 100% 满足</span></p>
+    <p class="note">弹窗内容全部搬进 AI tab，删掉通用里那一行与 <code>LearningsDialog</code>。</p>
+    <div class="dlg">
+      <div class="dlgHead">⚙ 设置</div>
+      <div class="tabBar">
+        <span class="tab">⚙ 通用</span><span class="tab tabOn">✦ AI</span>
+        <span class="tab">📖 帮助</span><span class="tab">ℹ 关于</span>
+      </div>
+      <div class="panel">
+        <div class="hero">
+          <div class="heroTop">
+            <span class="heroAv">D</span>
+            <span style="flex:1;min-width:0">
+              <div class="heroName">DeepSeek</div>
+              <div class="heroModel">deepseek-chat</div>
+            </span>
+          </div>
+          <div class="heroStats">
+            <div class="st"><div class="stN">12</div><div class="stL">今日调用</div></div>
+            <div class="st"><div class="stN"><small>¥</small>0.08</div><div class="stL">今日花费</div></div>
+            <div class="st"><div class="stN">98.4<small>k</small></div><div class="stL">免费额度</div></div>
+          </div>
+        </div>
+        <div class="acc">
+          <div class="accItem"><div class="accHead"><button class="accMain">
+            <span class="accIcon">☷</span><span><span class="accName">服务商与密钥</span><span class="accSub">DeepSeek · deepseek-chat</span></span>
+          </button><span class="accChev">›</span></div></div>
+          <div class="accItem"><div class="accHead"><button class="accMain">
+            <span class="accIcon">◷</span><span><span class="accName">用量</span><span class="accSub">今日 12 次 · ¥0.08</span></span>
+          </button><span class="accChev">›</span></div></div>
+          <div class="accItem accItemOpen"><div class="accHead accHeadOpen"><button class="accMain">
+            <span class="accIcon">🧠</span><span><span class="accName">自进化</span><span class="accSub">仅存本机 · 可随时清空</span></span>
+          </button><span class="accChev">⌄</span></div>
+            <div class="accBody">
+              <div class="redline">✓　学习数据<b>仅存本机</b>，不含复制内容本身。</div>
+              <div class="subRow"><span class="subName">我的画像</span><button class="miniBtn">查看</button></div>
+              <div class="subRow"><span class="subName">推荐偏好</span><span class="subN">8</span><span class="accChev">›</span></div>
+              <div class="subRow"><span class="subName">已停用推荐</span><span class="subN">2</span><span class="accChev">›</span></div>
+              <div class="subRow"><span class="subName">输出偏好调优</span><span class="subN">3</span><button class="miniBtn miniDanger">清空</button></div>
+              <div class="subRow"><span class="subName">本地检索记忆</span><span class="subN">412</span><button class="miniBtn miniDanger">清空</button></div>
+              <div class="subRow"><span class="subName">清空全部学习记录</span><button class="miniBtn miniDanger">清空</button></div>
+            </div>
+          </div>
+          <div class="accItem"><div class="accHead"><button class="accMain">
+            <span class="accIcon">✦</span><span><span class="accName">自定义动作</span><span class="accSub">已有 3 个</span></span>
+          </button><span class="accChev">›</span></div></div>
+          <div class="accItem"><div class="accHead"><button class="accMain">
+            <span class="accIcon">⚙</span><span><span class="accName">高级</span><span class="accSub">地址、协议、超时、费用上限</span></span>
+          </button><span class="accChev">›</span></div></div>
+        </div>
+      </div>
+    </div>
+    <p class="ruler">
+      ✔ 一个 tab 找到 AI 相关的全部；通用 tab 少一行<br>
+      ✔ 红线②的“可见可删”仍在，且层级从“两层（tab→弹窗）”降到“一层”<br>
+      ✘ <strong>语义不准</strong>：推荐偏好/已停用推荐管的是变换中心排序，本地变换也在内，却被放到了 AI 页<br>
+      ✘ 手风琴从 4 项变 5 项；自进化展开后内容最多，二级展开会变成<strong>三层嵌套</strong><br>
+      ✘ <code>LearningsDialog</code> 427 行的内容要重排进 380px 宽的面板，改动量最大
+    </p>
+  </div>
+
+  <!-- B -->
+  <div>
+    <p class="caseT">B。搬入口 + 保留大窗 <span class="tag rec">推荐</span></p>
+    <p class="note">AI tab 新增「自进化」项，里面放 <strong>红线声明 + KPI + 各块计数与清空</strong>；
+      明细列表（哪些动作、哪些停用项）点「看全部」仍进现有大窗。通用里那一行删掉。</p>
+    <div class="dlg">
+      <div class="dlgHead">⚙ 设置</div>
+      <div class="tabBar">
+        <span class="tab">⚙ 通用</span><span class="tab tabOn">✦ AI</span>
+        <span class="tab">📖 帮助</span><span class="tab">ℹ 关于</span>
+      </div>
+      <div class="panel">
+        <div class="acc">
+          <div class="accItem"><div class="accHead"><button class="accMain">
+            <span class="accIcon">☷</span><span><span class="accName">服务商与密钥</span><span class="accSub">DeepSeek · deepseek-chat</span></span>
+          </button><span class="accChev">›</span></div></div>
+          <div class="accItem"><div class="accHead"><button class="accMain">
+            <span class="accIcon">◷</span><span><span class="accName">用量</span><span class="accSub">今日 12 次 · ¥0.08</span></span>
+          </button><span class="accChev">›</span></div></div>
+          <div class="accItem accItemOpen"><div class="accHead accHeadOpen"><button class="accMain">
+            <span class="accIcon">🧠</span><span><span class="accName">自进化</span><span class="accSub">近 30 天 168 次 · 仅存本机</span></span>
+          </button><span class="accChev">⌄</span></div>
+            <div class="accBody">
+              <div class="redline">✓　学习数据<b>仅存本机</b>，不含复制内容本身，可随时查看或清空。</div>
+              <div class="heroStats" style="border:1px solid var(--border-color);border-radius:8px;background:var(--dialog-bg)">
+                <div class="st"><div class="stN">168</div><div class="stL">30 天使用</div></div>
+                <div class="st"><div class="stN">42<small>%</small></div><div class="stL">AI 结果编辑率</div></div>
+                <div class="st"><div class="stN">2</div><div class="stL">已停用推荐</div></div>
+              </div>
+              <div class="subRow"><span class="subName">我的画像<span class="subDesc">基于使用统计，可用 AI 精练</span></span><button class="miniBtn">查看</button></div>
+              <div class="subRow"><span class="subName">输出偏好调优<span class="subDesc">3 个动作已设偏好指令</span></span><button class="miniBtn miniDanger">清空</button></div>
+              <div class="subRow"><span class="subName">本地检索记忆<span class="subDesc">412 条向量</span></span><button class="miniBtn miniDanger">清空</button></div>
+              <div class="subRow" style="border-style:dashed">
+                <span class="subName">推荐偏好 · 已停用推荐<span class="subDesc">管的是变换中心排序（含本地变换）</span></span>
+                <button class="miniBtn">看全部</button>
+              </div>
+            </div>
+          </div>
+          <div class="accItem"><div class="accHead"><button class="accMain">
+            <span class="accIcon">✦</span><span><span class="accName">自定义动作</span><span class="accSub">已有 3 个</span></span>
+          </button><span class="accChev">›</span></div></div>
+          <div class="accItem"><div class="accHead"><button class="accMain">
+            <span class="accIcon">⚙</span><span><span class="accName">高级</span><span class="accSub">地址、协议、超时、费用上限</span></span>
+          </button><span class="accChev">›</span></div></div>
+        </div>
+      </div>
+    </div>
+    <p class="ruler">
+      ✔ 入口搬到 AI tab，通用里那一行删掉 —— 诉求的主体满足了<br>
+      ✔ 常用操作（看画像、清空某一类）**不用再开弹窗**，一层到位<br>
+      ✔ 427 行的明细列表留在大窗里——那些内容本来就更适合宽弹窗，不必硬塞进 380px<br>
+      ✔ “推荐偏好/已停用”用<strong>虚线行 + 一句说明</strong>标出它们管的是排序，语义不被抹掉<br>
+      ✘ 仍然存在一个弹窗（但只在看明细时才开）<br>
+      ✘ 需要一个“摘要接口”（现在统计是弹窗打开时才拉，要改成 AI tab 也能拿到计数）
+    </p>
+  </div>
+
+  <!-- C -->
+  <div>
+    <p class="caseT">C。按语义拆分 <span class="tag bad">与你的诉求相反</span></p>
+    <p class="note">AI 相关的进 AI tab；管变换中心排序的两块留在通用。</p>
+    <div class="dlg">
+      <div class="dlgHead">⚙ 设置</div>
+      <div class="tabBar">
+        <span class="tab tabOn">⚙ 通用</span><span class="tab">✦ AI</span>
+        <span class="tab">📖 帮助</span><span class="tab">ℹ 关于</span>
+      </div>
+      <div class="panel">
+        <div class="sRow">
+          <span class="sIcon">⇅</span>
+          <div style="flex:1;min-width:0">
+            <div class="sLabel">推荐排序</div>
+            <div class="sDesc">常用变换会排得更靠前；已停用的可恢复（含本地变换）</div>
+          </div>
+          <button class="sAct">查看</button>
+        </div>
+        <div style="font-size:10.5px;color:var(--text-muted);padding-left:36px;margin-top:-6px">
+          …“输出偏好调优 / 检索记忆 / 我的画像”已移到 <b>AI</b> 页
+        </div>
+      </div>
+    </div>
+    <p class="ruler">
+      ✔ <strong>语义最准</strong>：每块都在它真正归属的地方<br>
+      ✘ <strong>与你的诉求相反</strong>：“自进化”被拆成两处，找东西反而变难<br>
+      ✘ “自进化”这个名字会消失（它本来是个完整概念）<br>
+      — 列在这里只为说明：如果将来有人问“为什么本地变换的排序在 AI 页里”，答案就在这个权衡里
+    </p>
+  </div>
+
+</div>
+
+<!-- ===== 对比 ===== -->
+<h2>一张表</h2>
+<div class="dlg" style="width:640px">
+  <div class="dlgHead">对比与推荐</div>
+  <div style="padding:12px 16px 16px">
+    <table>
+      <tr><th></th><th>入口在 AI 页</th><th>层级</th><th>语义准确</th><th>红线②可见可删</th><th>改动量</th></tr>
+      <tr><td>现状</td><td><strong>否</strong>（在通用）</td><td>tab→弹窗</td><td>—</td><td>✔</td><td>—</td></tr>
+      <tr><td>A 整块搬</td><td>✔</td><td>tab→项→二级</td><td><strong>否</strong></td><td>✔</td><td><strong>最大</strong></td></tr>
+      <tr><td><strong>B 搬入口+留大窗</strong></td><td><strong>✔</strong></td><td>tab→项（明细才开窗）</td><td>✔（标注说明）</td><td>✔</td><td>中</td></tr>
+      <tr><td>C 拆分</td><td>部分</td><td>两处</td><td><strong>最准</strong></td><td>✔</td><td>中</td></tr>
+    </table>
+    <p class="ruler" style="width:auto">
+      推荐 <strong>B</strong>：入口和高频操作（看画像、清空某一类）都携到 AI tab，
+      而 427 行的明细列表留在宽弹窗里——那些内容硬塞进 380px 只会变难用。<br>
+      如果你就是要“一个弹窗都不要”，那选 <strong>A</strong>，但要接受三层嵌套与更大的重排工作量。
+    </p>
+    <p class="ruler" style="width:auto">
+      <strong>不管选哪个，两条不能破：</strong><br>
+      ① <strong>红线②</strong>：使用日志永不出本机、且用户可见可删。搬家后“清空”入口<strong>不能变得更难找</strong>（现在是 2 步，B 是 2 步，A 是 2 步）。<br>
+      ② <strong>红线①</strong>：学习只影响排序、永不自动执行。搬家不涉及行为变更，但文案里“会排在更靠前”这句话要保留。
+    </p>
+  </div>
+</div>
+
+</body>
+</html>

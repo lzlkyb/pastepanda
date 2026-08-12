@@ -327,7 +327,7 @@ body {
 
 .tray-popup-item:hover,
 .tray-popup-item.active {
-  background: var(--hover-bg, var(--section-bg));
+  background: var(--hover, var(--section-bg));
 }
 
 .tray-popup-item:active {

@@ -69,6 +69,17 @@
   color: var(--text-primary);
 }
 
+/* ===== 品牌 AI 上标 =====
+   语义分层，这一条改之前先看：
+   - 这里是**品牌**——「这个产品是 AI 的」。永远在、不可点、不反映任何状态；
+   - 顶栏右侧的 AiStatusCap 才是**状态与入口**——未配置时引流，配好就消失。
+   两者不能长得一样：未配置时它们同时在场，长得像就成了同一行两个「AI」。 */
+.brandTitle {
+  display: inline-flex;
+  align-items: flex-start;
+  white-space: nowrap;
+}
+
 .headerIcons {
   display: flex;
   gap: 2px;
@@ -613,7 +624,7 @@
 }
 
 .circleTabActive .circleBadge {
-  background: #FF3B30;
+  background: var(--danger);
 }
 
 /* ===== 标签筛选栏 ===== */
@@ -870,4 +881,10 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 审查方案 1：设置按钮 AI 绿点定位容器 */
+.settingsWrap {
+  position: relative;
+  display: inline-flex;
 }

@@ -1,0 +1,52 @@
+/* 追问输入框。从 AiQuickBar.module.css 搬过来：这三条被 AiQuickBar 与
+   TransformCard 两处共用，组件既然独立成文件，样式就不应该还寄在
+   其中一个调用方的 module 里。 */
+
+.followRow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.followInput {
+  flex: 1;
+  font-size: 11px;
+  padding: 5px 9px;
+  border: 1px dashed var(--accent-border);
+  border-radius: 7px;
+  background: var(--section-bg);
+  outline: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  transition: 0.15s;
+}
+
+.followInput:focus {
+  border-color: var(--accent);
+  border-style: solid;
+  background: var(--dialog-bg);
+}
+
+.followInput:disabled {
+  opacity: 0.6;
+}
+
+.followGo {
+  font-size: 10.5px;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 5px 13px;
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.followGo:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

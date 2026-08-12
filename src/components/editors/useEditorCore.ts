@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useToast } from "@/components/Toast";
-import { pasteText } from "@/lib/api";
+import { pasteTextGuarded } from "@/lib/api";
 import { useAppStore, type HistoryItem } from "@/stores/appStore";
 import type { EditorActions } from "@/lib/editorRegistry";
 
@@ -88,7 +88,7 @@ export function useEditorCore(item: HistoryItem, registerActions: (a: EditorActi
 
   const paste = useCallback(async () => {
     // 仅粘贴成功时弹成功提示（pasteText 失败时已自行弹错误 toast）
-    const ok = await pasteText(textRef.current);
+    const ok = await pasteTextGuarded(textRef.current);
     if (ok) toast("已粘贴", "success");
   }, [toast]);
 

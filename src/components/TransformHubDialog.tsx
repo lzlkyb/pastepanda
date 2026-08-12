@@ -18,14 +18,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Sparkles, Loader2, RotateCw, Workflow } from "lucide-react";
+import { AiMark } from "@/components/ai/AiMark";
 import { useDialogStore } from "@/stores/dialogStore";
+import { confirmDialog } from "@/lib/confirm";
 import {
+  type ScoredTransform,
   type Transform,
   type TransformContext,
   type TransformResultMeta,
 } from "@/lib/transforms";
 import { recommendScored, sceneOf } from "@/lib/recommend";
-import { ocrImage, pasteText } from "@/lib/api";
+import { manualTagsOpt } from "@/lib/aiTags";
+import { ocrImage, pasteTextGuarded } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { FocusTrap } from "@/components/FocusTrap";
@@ -33,6 +37,7 @@ import { MelodyEmpty } from "@/components/MelodyEmpty";
 import { TransformCard } from "@/components/transform/TransformCard";
 import { NlCommandBar } from "@/components/NlCommandBar";
 import { requestPlannedChain } from "@/lib/chains/planRequest";
+import { getSession, mergeSessionTexts } from "@/lib/sessionContext";
 import type { NlParseResult } from "@/lib/nlActionParser";
 import { specsFor, defaultOptsFromSpecs } from "@/components/transform/transformOptions";
 import { useActionEventLog } from "@/hooks/useActionEventLog";
@@ -98,6 +103,9 @@ export function TransformHubDialog() {
       text: sourceText,
       // 图片 OCR 出来的就是普通文本，不能再拿 image 当类型（否则没一个变换会命中）
       contentType: isImage ? "text" : item ? item.content_type || item.type : "",
+      // 标签参与打分：自动标签里的语言级（Rust/Java/SQL…）是 content_type 给不了的粒度；
+      // 手工标签能把 ai-reply-draft / ai-weekly-report 这类靠意图的动作浮上来（见 tagBoost）。
+      tags: item?.tags?.map((t) => ({ name: t.name, source: t.source })),
       // P2 文档管线：doc/rich 条目把 CF_HTML 片段透传给文档类变换
       html: item && (item.type === "doc" || item.type === "rich") ? item.content : undefined,
     }),
@@ -144,6 +152,8 @@ export function TransformHubDialog() {
 
   // P2：doc/rich 条目的 HTML 片段，注入到变换的 opts 供 run() 取用
   const itemHtml = item && (item.type === "doc" || item.type === "rich") ? item.content : undefined;
+  /** 手工标签名，与 itemHtml 同一条路透传给 TransformCard → 后端的 ai_tags_as_context */
+  const itemUserTags = manualTagsOpt(item?.tags);
 
   // 打开 / 切换内容时重置选项与复制反馈
   useEffect(() => {
@@ -198,7 +208,7 @@ export function TransformHubDialog() {
   /** 把卡片已算好的产物直接粘贴到前台窗口 */
   const pasteOutput = useCallback(
     async (t: Transform, output: string) => {
-      const ok = await pasteText(output);
+      const ok = await pasteTextGuarded(output);
       if (ok) {
         toast(`已粘贴「${t.label}」`, "success");
         // 粘贴成功 = 内容真正被用上，这是最有价值的「有价值」信号
@@ -233,11 +243,27 @@ export function TransformHubDialog() {
     if (planning || !sourceText.trim()) return;
     setPlanning(true);
     try {
-      let r = await requestPlannedChain(sourceText);
+      // v6.5 记忆×编链：把工作记忆会话拼进输入，模型能看出"这是连续内容"
+      // （后端会做 1500 字采样，这里只拼会话的前 800 字，避免被采样截掉主体）
+      const session = getSession();
+      const sessionTail =
+        session && session.texts.length > 1
+          ? mergeSessionTexts(session).slice(0, 800)
+          : null;
+      const planInput = sessionTail
+        ? `${sourceText}\n\n--- 之前连续复制的上下文（供参考，不用全部处理） ---\n${sessionTail}`
+        : sourceText;
+      let r = await requestPlannedChain(planInput);
       // 敏感内容：确认后带 force 重试一次（不递归，就一次）
       if (r.status === "needsConfirm") {
-        if (!window.confirm(r.reason)) return;
-        r = await requestPlannedChain(sourceText, true);
+        const ok = await confirmDialog({
+          title: "确认发送",
+          message: r.reason,
+          confirmText: "确认发送",
+          variant: "warning",
+        });
+        if (!ok) return;
+        r = await requestPlannedChain(planInput, true);
       }
       if (r.status === "needsConfirm") return; // 带了 force 还要确认 → 当作放弃
       if (r.status === "budgetExceeded") {
@@ -268,6 +294,12 @@ export function TransformHubDialog() {
   }, [planning, sourceText, toast]);
   const actionRefs = useRef(new Map<string, HTMLDivElement>());
   const activeTimerRef = useRef<number | null>(null);
+  // 审查：卸载时清理定位高亮 timer（避免卸载后 setState）
+  useEffect(() => {
+    return () => {
+      if (activeTimerRef.current !== null) window.clearTimeout(activeTimerRef.current);
+    };
+  }, []);
 
   /** NL 指令结果处理：未命中/AI 未启用 → 提示；命中 → 预填参数 + 滚动定位 */
   const handleNlApply = useCallback(
@@ -299,7 +331,7 @@ export function TransformHubDialog() {
     [toast],
   );
 
-  const renderCard = ({ transform: t, score }: { transform: Transform; score: number }) => (
+  const renderCard = ({ transform: t, score, reason }: ScoredTransform) => (
     <div
       key={t.id}
       ref={(el) => {
@@ -313,6 +345,7 @@ export function TransformHubDialog() {
         score={score}
         text={sourceText}
         html={itemHtml}
+        userTags={itemUserTags}
         opts={optsFor(t)}
         specs={specsFor(t, ctx)}
         copied={copiedId === t.id}
@@ -320,6 +353,7 @@ export function TransformHubDialog() {
         onCopy={(output, meta) => void copyOutput(t, output, meta)}
         onPaste={(output) => void pasteOutput(t, output)}
         contentType={ctx.contentType}
+        reason={reason}
         onDismiss={(id) => void handleDismiss(id)}
       />
     </div>
@@ -340,28 +374,6 @@ export function TransformHubDialog() {
                 <span className={styles.headerIcon}><Sparkles size={16} /></span>
                 <h2 className="dialog-title">变换为…</h2>
                 <span className={styles.headerSub}>{scored.length} 个可用变换</span>
-                {/* X1 B1：动作链入口——把多步粘贴流程串成一个按钮 */}
-                <button
-                  className={styles.chainBtn}
-                  title="动作链：多步粘贴流程一键跑完"
-                  onClick={() => useDialogStore.getState().openChain(sourceText)}
-                >
-                  <Workflow size={13} /> 动作链
-                </button>
-                {/* B：让 AI 根据当前内容编一条链（手动触发，编完仍需确认才跑） */}
-                <button
-                  className={styles.chainBtn}
-                  title="让 AI 看一眼内容，编一条多步流水线（你确认后才跑）"
-                  onClick={planChain}
-                  disabled={planning || !sourceText.trim()}
-                >
-                  {planning ? (
-                    <Loader2 size={13} className="spin" />
-                  ) : (
-                    <Sparkles size={13} />
-                  )}
-                  {planning ? "编链中…" : "AI 编链"}
-                </button>
                 <button onClick={close} className="dialog-close"
                   onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
                   onMouseLeave={(e) => (e.currentTarget.style.background = "")}>
@@ -371,6 +383,48 @@ export function TransformHubDialog() {
 
               {/* v6.3 自然语言动作：一句话定位到对应变换 */}
               <NlCommandBar onResult={handleNlApply} />
+
+              {/* 链入口：两者曾经是 dialog-header 里的两个小按钮，主窗口 480px 下
+                  那行只有 408px 可用而内容已 ~406px，「编链中…」态直接把关闭按钮顶到弹窗外。
+                  下移到独立一行后拿到整行 420px，顺便把原本只在 title 里的说明携到了可见处。
+                  位置在 NlCommandBar 与卡片区之间：三者都回答“怎么处理这段内容”，
+                  从一句话 → 一条链 → 单个变换，粒度递减。 */}
+              <div className={styles.chainRow}>
+                <button
+                  className={styles.chainTile}
+                  onClick={() => useDialogStore.getState().openChain(sourceText)}
+                >
+                  <span className={styles.chainTileIcon}><Workflow size={15} /></span>
+                  <span className={styles.chainTileText}>
+                    <span className={styles.chainTileName}>动作链</span>
+                    <span className={styles.chainTileDesc}>多步流程一键跑完</span>
+                  </span>
+                </button>
+                {/* 让 AI 根据当前内容编一条链（手动触发，编完仍需确认才跑） */}
+                <button
+                  className={styles.chainTile}
+                  onClick={planChain}
+                  disabled={planning || !sourceText.trim()}
+                >
+                  <span className={styles.chainTileIcon} data-ai="1">
+                    {planning ? <Loader2 size={15} className="spin" /> : <Sparkles size={15} />}
+                  </span>
+                  <span className={styles.chainTileText}>
+                    <span className={styles.chainTileName}>
+                      {/* “AI”走全站统一的品牌渐变（AiMark），不在这里另写一份 */}
+                      <AiMark shape="text" text={planning ? "编链中…" : "AI 编链"} />
+                    </span>
+                    {/* 禁用时说**原因**而不是只变灏——否则用户不知道为什么点不了，会反复点 */}
+                    <span className={styles.chainTileDesc}>
+                      {!sourceText.trim()
+                        ? "没有可处理的文字"
+                        : planning
+                          ? "正在让 AI 看内容…"
+                          : "让 AI 看内容配流水线"}
+                    </span>
+                  </span>
+                </button>
+              </div>
 
               <div className={styles.cards}>
                 {/* 图片：把本地识别结果摆出来并允许修改。

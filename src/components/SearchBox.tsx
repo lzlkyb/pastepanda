@@ -128,7 +128,8 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
         onInput={(e) => {
           const v = (e.target as HTMLInputElement).value;
           updateClearBtn();
-          if (!v) setShowHistory(true);
+          // 审查：非空时收起历史下拉（此前只处理空值显示，输入关键词时下拉一直悬浮遮挡）
+          setShowHistory(searchHistory.length > 0 && !v);
           scheduleSearch(v);
         }}
         onFocus={() => {

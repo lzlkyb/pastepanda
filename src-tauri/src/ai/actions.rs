@@ -212,6 +212,36 @@ const REPLY_OPTS: &[ActionOptionSpec] = &[ActionOptionSpec {
     default: "accept",
 }];
 
+const TYPE_TARGET_VALUES: &[ActionOptionValue] = &[
+    ActionOptionValue { value: "ts", label: "TypeScript" },
+    ActionOptionValue { value: "java", label: "Java" },
+    ActionOptionValue { value: "rust", label: "Rust" },
+    ActionOptionValue { value: "go", label: "Go" },
+    ActionOptionValue { value: "python", label: "Python" },
+];
+
+/// JSON 转类型的目标语言。
+///
+/// 默认 `ts` 是故意的：改动前这个动作硬编码只出 TypeScript，
+/// 默认值不变才能保证老用户不选也得到同一个结果。
+const JSON_TO_TYPE_OPTS: &[ActionOptionSpec] = &[ActionOptionSpec {
+    key: "target",
+    label: "目标语言",
+    values: TYPE_TARGET_VALUES,
+    default: "ts",
+}];
+
+/// 选项值 → prompt 里用的语言名。未知值回退 TypeScript，与 opt_or_default 同一口径。
+fn type_target_name(target: &str) -> &'static str {
+    match target {
+        "java" => "Java",
+        "rust" => "Rust",
+        "go" => "Go",
+        "python" => "Python",
+        _ => "TypeScript",
+    }
+}
+
 pub const ACTIONS: &[AiAction] = &[
     AiAction {
         id: "ai-translate",
@@ -283,11 +313,49 @@ pub const ACTIONS: &[AiAction] = &[
     AiAction {
         id: "ai-json-to-type",
         label: "JSON → 类型定义",
-        description: "生成 TypeScript interface",
+        description: "按所选语言生成类型定义",
         icon: "braces",
         max_tokens: 1500,
-        options: &[],
+        options: JSON_TO_TYPE_OPTS,
         content_types: &["json"],
+    },
+    AiAction {
+        id: "ai-fix-code",
+        label: "修复代码",
+        description: "修掉报错与坏代码，输出可直接用的版本",
+        icon: "wrench",
+        max_tokens: 2000,
+        options: &[],
+        content_types: &["code", "shell"],
+    },
+    AiAction {
+        id: "ai-regex-generate",
+        label: "生成正则",
+        description: "根据自然语言描述生成正则表达式",
+        icon: "regex",
+        max_tokens: 800,
+        options: &[],
+        content_types: &["text"],
+    },
+    AiAction {
+        id: "ai-sql-generate",
+        label: "生成 SQL",
+        description: "根据自然语言描述生成 SQL 查询",
+        icon: "database",
+        max_tokens: 1000,
+        options: &[],
+        content_types: &["text"],
+    },
+    AiAction {
+        // v6.10 结果追问：对上一次 AI 结果继续处理（「再短一点 / 翻译成英文…」）。
+        // 不在快捷区/变换面板独立展示（没有"对哪段"的前置上下文），只由结果卡触发。
+        id: "ai-followup",
+        label: "继续处理",
+        description: "对上一次结果继续追问",
+        icon: "message-square",
+        max_tokens: 2000,
+        options: &[],
+        content_types: &["text"],
     },
     AiAction {
         id: "ai-tabulate",
@@ -376,15 +444,41 @@ fn stance_name(code: &str) -> &'static str {
     }
 }
 
+/// `build_prompt` 的附加上下文。
+///
+/// 用结构体而不是继续加位置参数：语言与用户标签是连着加的两项，
+/// 分两次改签名等于把二十处测试调用改两遍。带 `Default`，以后加字段不用再动调用方。
+#[derive(Debug, Default, Clone, Copy)]
+pub struct PromptCtx<'a> {
+    /// 后端 `ContentClassifier` 当场算的粗分类。
+    pub content_type: Option<&'a str>,
+    /// 语言级标签（Rust / Java / SQL …）。同样来自 classifier，前端不参与：
+    /// `content_type` 到 `code` 就到顶了，这一层才分得出是哪门语言。
+    pub language: Option<&'a str>,
+    /// 用户**手工**标签名（已拼好的一串）。只有 `ai_tags_as_context` 开着才有值。
+    ///
+    /// **这是唯一由前端传进来的一项**：标签是按条目 id 存的用户数据，后端在这里拿不到；
+    /// 而它会随内容出网，所以命令层必须先把它过一道出网闸（见 run.rs）。
+    pub user_tags: Option<&'a str>,
+}
+
+/// 把语言标签拼成 prompt 里的前置定语（没标签就是空串，句子仍然通顺）。
+fn lang_prefix(language: Option<&str>) -> String {
+    match language {
+        Some(l) if !l.trim().is_empty() => format!("{} ", l.trim()),
+        _ => String::new(),
+    }
+}
+
 /// 构造一次调用的 (system, user, max_tokens)。
 ///
-/// `content_type` 由命令层用 `ContentClassifier` 当场算出来传进来，
+/// `ctx.content_type` 与 `ctx.language` 由命令层用 `ContentClassifier` 当场算出来传进来，
 /// **不由前端传**——这样它与入库时的分类天然一致，也不用改变换契约。
 pub fn build_prompt(
     action_id: &str,
     text: &str,
     opts: &HashMap<String, String>,
-    content_type: Option<&str>,
+    ctx: PromptCtx<'_>,
 ) -> Result<(String, String, u32), String> {
     let action = find_action(action_id).ok_or_else(|| format!("未知的 AI 动作：{}", action_id))?;
     let trimmed = check_input(text)?;
@@ -401,7 +495,8 @@ pub fn build_prompt(
         }
         "ai-summarize" => format!("用一句话概括下面的内容：\n\n{}", trimmed),
         "ai-explain-code" => format!(
-            "用中文简明扼要地说明下面这段代码做了什么，不要逐行翻译：\n\n{}",
+            "用中文简明扼要地说明下面这段 {}代码做了什么，不要逐行翻译：\n\n{}",
+            lang_prefix(ctx.language),
             trimmed
         ),
         "ai-rewrite" => {
@@ -425,9 +520,43 @@ pub fn build_prompt(
              若改动较多，首行后空一行再列要点：\n\n{}",
             trimmed
         ),
-        "ai-json-to-type" => format!(
-            "把下面的 JSON 转成 TypeScript 类型定义。嵌套对象拆成独立 interface；\
-             数组取元素的共同类型；拿不准的字段用 unknown 而不是 any：\n\n{}",
+        // 目标语言走**动作选项**而不是语言标签：输入是 JSON，它自己没有语言标签
+        // （classifier 给的就是“JSON”），转成哪门语言只能由用户选。
+        "ai-json-to-type" => {
+            let target = opt_or_default(&action.options[0], opts);
+            format!(
+                "把下面的 JSON 转成 {} 的类型定义。嵌套对象拆成独立类型；\
+                 数组取元素的共同类型；拿不准的字段用该语言里最保守的未知类型，不要用等价于任意类型的宽松写法；\
+                 只输出代码，不要解释：\n\n{}",
+                type_target_name(target),
+                trimmed
+            )
+        }
+        "ai-fix-code" => format!(
+            "修复下面这段 {}代码里的错误（语法、逻辑、运行时问题均可），输出修复后的完整代码。\
+             拿不准的地方保留原样并加一行注释说明你的判断。\
+             用代码块包裹输出，不要逐行解释：\n\n{}",
+            lang_prefix(ctx.language),
+            trimmed
+        ),
+        "ai-regex-generate" => format!(
+            "根据下面的自然语言描述生成一个正则表达式。\
+             只输出一行正则（不要代码块、不要解释），要求：\
+             准确匹配描述的场景、考虑常见边界（如手机号 1[3-9] 开头、邮箱 @ 后带域名）；\
+             如果描述本身有歧义，选最可能的一种并只输出它。\n\n描述：{}",
+            trimmed
+        ),
+        "ai-sql-generate" => format!(
+            "根据下面的自然语言描述生成一条 SQL 查询。\
+             只输出 SQL（不要代码块、不要解释）；\
+             表名与列名用下划线命名，条件按描述推断；\
+             如果描述里有歧义，选最合理的解释并只用注释说明假设。\n\n描述：{}",
+            trimmed
+        ),
+        "ai-followup" => format!(
+            "这是对上一次 AI 结果的继续处理。内容 = 用户的追问 + 上一次的结果。\
+             严格按用户追问执行（如「再短一点」「翻译成英文」「换个语气」），\
+             只输出处理后的结果，不要解释过程、不要重复追问内容：\n\n{}",
             trimmed
         ),
         "ai-tabulate" => format!(
@@ -460,7 +589,21 @@ pub fn build_prompt(
         other => return Err(format!("动作 {} 尚未实现", other)),
     };
 
-    Ok((system_prompt(content_type), user, action.max_tokens))
+    // ai_tags_as_context：把用户手工标签当意图上下文拼进去。
+    //
+    // **集中注入一次**，不给十六个动作各改一遍 prompt——那样以后加动作必漏。
+    // 放在正文**之前**：模型得先知道“这条是干什么用的”，再读内容。
+    // 带上“不要在输出里提及”：否则模型容易把标签名复述进结果里。
+    let user = match ctx.user_tags {
+        Some(tags) if !tags.trim().is_empty() => format!(
+            "（用户给这条内容打的标签，仅用于理解意图，不要在输出里提及）：{}\n\n{}",
+            tags.trim(),
+            user
+        ),
+        _ => user,
+    };
+
+    Ok((system_prompt(ctx.content_type), user, action.max_tokens))
 }
 
 #[cfg(test)]
@@ -478,7 +621,7 @@ mod tests {
     fn test_every_action_builds_a_prompt() {
         // 防止“加了动作但忘了写分支”：注册表里每一项都必须能造出 prompt
         for a in ACTIONS {
-            let r = build_prompt(a.id, "hello world", &HashMap::new(), None);
+            let r = build_prompt(a.id, "hello world", &HashMap::new(), PromptCtx::default());
             assert!(r.is_ok(), "动作 {} 造不出 prompt：{:?}", a.id, r.err());
             let (system, user, max_tokens) = r.unwrap();
             assert!(system.contains("只输出处理结果"));
@@ -489,13 +632,13 @@ mod tests {
 
     #[test]
     fn test_unknown_action_rejected() {
-        let err = build_prompt("ai-不存在", "x", &HashMap::new(), None).unwrap_err();
+        let err = build_prompt("ai-不存在", "x", &HashMap::new(), PromptCtx::default()).unwrap_err();
         assert!(err.contains("未知的 AI 动作"));
     }
 
     #[test]
     fn test_empty_input_rejected() {
-        let err = build_prompt("ai-summarize", "   \n  ", &HashMap::new(), None).unwrap_err();
+        let err = build_prompt("ai-summarize", "   \n  ", &HashMap::new(), PromptCtx::default()).unwrap_err();
         assert!(err.contains("为空"));
     }
 
@@ -503,7 +646,7 @@ mod tests {
     fn test_oversized_input_rejected_not_truncated() {
         // 宁可报错也不静默截断——截断会悄无声息地改变语义
         let long: String = "字".repeat(MAX_INPUT_CHARS + 1);
-        let err = build_prompt("ai-translate", &long, &HashMap::new(), None).unwrap_err();
+        let err = build_prompt("ai-translate", &long, &HashMap::new(), PromptCtx::default()).unwrap_err();
         assert!(err.contains("过长"));
         assert!(err.contains(&MAX_INPUT_CHARS.to_string()));
     }
@@ -511,16 +654,44 @@ mod tests {
     #[test]
     fn test_input_at_exact_limit_accepted() {
         let exact: String = "字".repeat(MAX_INPUT_CHARS);
-        assert!(build_prompt("ai-summarize", &exact, &HashMap::new(), None).is_ok());
+        assert!(build_prompt("ai-summarize", &exact, &HashMap::new(), PromptCtx::default()).is_ok());
     }
 
     // v6.4 六大王牌：C 合并增强 + E 周报的动作提示词
     #[test]
     fn test_merge_polish_prompt() {
         let (_, user, _) =
-            build_prompt("ai-merge-polish", "段落一\n段落二", &HashMap::new(), None).unwrap();
+            build_prompt("ai-merge-polish", "段落一\n段落二", &HashMap::new(), PromptCtx::default()).unwrap();
         assert!(user.contains("重复"));
         assert!(user.contains("段落一"));
+    }
+
+    // v6.1 S3：修复代码动作
+    #[test]
+    fn test_fix_code_prompt() {
+        let (_, user, _) =
+            build_prompt("ai-fix-code", "function a( { return 1 }", &HashMap::new(), PromptCtx::default()).unwrap();
+        assert!(user.contains("修复"), "prompt 应要求修复代码");
+        assert!(user.contains("function a( { return 1 }"), "原文应完整带入");
+    }
+
+    // v6.4 E：自然语言 → 正则
+    #[test]
+    fn test_regex_generate_prompt() {
+        let (_, user, _) =
+            build_prompt("ai-regex-generate", "把 138 开头的手机号换掉", &HashMap::new(), PromptCtx::default()).unwrap();
+        assert!(user.contains("正则"), "prompt 应要求生成正则");
+        assert!(user.contains("138 开头的手机号"), "描述应完整带入");
+        assert!(user.contains("只输出一行"), "应要求只输出一行正则");
+    }
+
+    // v6.7：自然语言 → SQL
+    #[test]
+    fn test_sql_generate_prompt() {
+        let (_, user, _) =
+            build_prompt("ai-sql-generate", "查昨天下单超过 100 元的订单", &HashMap::new(), PromptCtx::default()).unwrap();
+        assert!(user.contains("SQL"), "prompt 应要求生成 SQL");
+        assert!(user.contains("昨天下单超过 100 元"), "描述应完整带入");
     }
 
     #[test]
@@ -529,7 +700,7 @@ mod tests {
             "ai-weekly-report",
             "内容类型：代码 60%，链接 20%",
             &HashMap::new(),
-            None,
+            PromptCtx::default(),
         )
         .unwrap();
         assert!(user.contains("行为统计"));
@@ -544,7 +715,7 @@ mod tests {
             "ai-reply-draft",
             "明天开会吗？",
             &HashMap::new(),
-            None,
+            PromptCtx::default(),
         )
         .unwrap();
         assert!(user.contains("---正式版---"), "必须要求正式版候选：{user}");
@@ -560,7 +731,7 @@ mod tests {
             "ai-reply-draft",
             "x",
             &HashMap::new(),
-            None,
+            PromptCtx::default(),
         )
         .unwrap();
         assert!(max_tokens >= 1800, "3 个候选需要更大上限，当前 {max_tokens}");
@@ -568,7 +739,7 @@ mod tests {
 
     #[test]
     fn test_translate_option_applied() {
-        let (_, user, _) = build_prompt("ai-translate", "hello", &opts(&[("lang", "ja")]), None).unwrap();
+        let (_, user, _) = build_prompt("ai-translate", "hello", &opts(&[("lang", "ja")]), PromptCtx::default()).unwrap();
         assert!(user.contains("日文"));
         assert!(!user.contains("韩文"));
     }
@@ -577,10 +748,10 @@ mod tests {
     fn test_unknown_option_value_falls_back_to_default() {
         // 前端传了离谱值不应该报错，按默认跑
         let (_, user, _) =
-            build_prompt("ai-translate", "hello", &opts(&[("lang", "火星文")]), None).unwrap();
+            build_prompt("ai-translate", "hello", &opts(&[("lang", "火星文")]), PromptCtx::default()).unwrap();
         assert!(user.contains("中文"), "应回退到默认的中文");
 
-        let (_, user2, _) = build_prompt("ai-rewrite", "hello", &opts(&[("tone", "xxx")]), None).unwrap();
+        let (_, user2, _) = build_prompt("ai-rewrite", "hello", &opts(&[("tone", "xxx")]), PromptCtx::default()).unwrap();
         assert!(user2.contains("简洁"), "应回退到默认的简洁");
     }
 
@@ -619,8 +790,8 @@ mod tests {
 
         for (id, text) in samples {
             let (system, user, max_tokens) =
-                build_prompt(id, text, &HashMap::new(), None).expect("prompt 构造失败");
-            let out = crate::ai::chat(&cfg, &key, Some(system.as_str()), &user, Some(max_tokens))
+                build_prompt(id, text, &HashMap::new(), PromptCtx::default()).expect("prompt 构造失败");
+            let out = crate::ai::chat(&cfg, &key, Some(system.as_str()), &user, Some(max_tokens), None)
                 .await
                 .unwrap_or_else(|e| panic!("{} 调用失败：{}", id, e));
 
@@ -696,19 +867,106 @@ mod tests {
 
     // ===== 内容类型注入 =====
 
+    /// 语言级标签必须真的进 prompt——这是整个 C3 的目的。
+    /// 不进的话“识别出 Rust”就只是个不影响输出的内部状态。
+    #[test]
+    fn test_language_goes_into_code_prompts() {
+        for id in ["ai-explain-code", "ai-fix-code"] {
+            let (_, user, _) = build_prompt(
+                id,
+                "fn main() {}",
+                &HashMap::new(),
+                PromptCtx {
+                    language: Some("Rust"),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert!(user.contains("Rust"), "{id} 没把语言写进 prompt：{user}");
+        }
+    }
+
+    /// 没识别出语言时句子仍然要通顺（lang_prefix 返回空串），
+    /// 不能出现“这段  代码”这种双空格或坠落的占位符。
+    #[test]
+    fn test_no_language_leaves_prompt_clean() {
+        let (_, user, _) =
+            build_prompt("ai-explain-code", "x = 1", &HashMap::new(), PromptCtx::default()).unwrap();
+        assert!(!user.contains("{}"), "占位符没被填：{user}");
+        assert!(!user.contains("  "), "留下了双空格：{user}");
+    }
+
+    /// json-to-type 的目标语言走动作选项；默认必须仍是 TypeScript
+    /// （改动前硬编码只出 TS，默认值变了就是默默改了老用户的结果）。
+    #[test]
+    fn test_json_to_type_target_option() {
+        let (_, dflt, _) = build_prompt(
+            "ai-json-to-type",
+            "{\"a\":1}",
+            &HashMap::new(),
+            PromptCtx::default(),
+        )
+        .unwrap();
+        assert!(dflt.contains("TypeScript"), "默认应仍为 TypeScript：{dflt}");
+
+        let (_, java, _) = build_prompt(
+            "ai-json-to-type",
+            "{\"a\":1}",
+            &opts(&[("target", "java")]),
+            PromptCtx::default(),
+        )
+        .unwrap();
+        assert!(java.contains("Java"), "target=java 未生效：{java}");
+        assert!(!java.contains("TypeScript"), "不该还提 TypeScript：{java}");
+    }
+
+    /// 标签上下文：有值就拼在正文**之前**，无值时 prompt 不应有任何变化。
+    #[test]
+    fn test_user_tags_injected_before_body() {
+        let (_, with_tags, _) = build_prompt(
+            "ai-summarize",
+            "BODYMARK",
+            &HashMap::new(),
+            PromptCtx {
+                user_tags: Some("TAGMARK"),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let ti = with_tags.find("TAGMARK").expect("标签没拼进去");
+        let bi = with_tags.find("BODYMARK").expect("正文丢了");
+        assert!(ti < bi, "标签必须在正文之前：{with_tags}");
+
+        let (_, plain, _) =
+            build_prompt("ai-summarize", "BODYMARK", &HashMap::new(), PromptCtx::default()).unwrap();
+        assert!(!plain.contains("TAGMARK"));
+        // 空串/纯空白等于没标签，不能拼一行空提示进去
+        let (_, blank, _) = build_prompt(
+            "ai-summarize",
+            "BODYMARK",
+            &HashMap::new(),
+            PromptCtx {
+                user_tags: Some("   "),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(blank, plain, "空白标签不应改变 prompt");
+    }
+
     #[test]
     fn test_content_type_goes_into_system_prompt() {
         let (with, _, _) =
-            build_prompt("ai-summarize", "hello", &HashMap::new(), Some("json")).unwrap();
+            build_prompt("ai-summarize", "hello", &HashMap::new(), PromptCtx { content_type: Some("json"), ..Default::default() }).unwrap();
         assert!(with.contains("JSON"), "内容类型没注入：{}", with);
 
         let (without, _, _) =
-            build_prompt("ai-summarize", "hello", &HashMap::new(), None).unwrap();
+            build_prompt("ai-summarize", "hello", &HashMap::new(), PromptCtx::default()).unwrap();
         assert!(!without.contains("内容类型是"));
 
         // 认不出来的类型不注入，而不是把原始 id 喂给模型
         let (unknown, _, _) =
-            build_prompt("ai-summarize", "hello", &HashMap::new(), Some("火星类型")).unwrap();
+            build_prompt("ai-summarize", "hello", &HashMap::new(), PromptCtx { content_type: Some("火星类型"), ..Default::default() }).unwrap();
         assert!(!unknown.contains("火星类型"));
     }
 

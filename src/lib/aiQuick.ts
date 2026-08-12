@@ -1,91 +1,136 @@
 /**
- * lib/aiQuick.ts —— v6.4 主窗口 AI 感知（方案 B）：AI 快捷区的动作匹配规则。
- * 纯函数：按内容特征给出 2-3 个快捷动作（AI 动作 + 本地动作如粘贴脱敏）。
- * AI 是否可用由调用方传入（见 matchQuickActions 的 aiOk），这里不碰任何全局状态。
+ * lib/aiQuick.ts —— AI 快捷区的动作**取舍策略**。
+ *
+ * 它不再自己判内容。以前这里有一条 if/else 链（链接 / 脱敏 / 英文 / 长文 / 兜底），
+ * 而变换中心那边的 `scoreAiAction` 在干同一件事——两套并行推荐逻辑，而这边那套是残缺的：
+ *
+ * - `contentType` 只被用来判一件事（是不是 link），而 content_type 共 18 种；
+ * - 于是 **代码会被推「翻译」**：代码里 `function`/`const`/`return` 都是拉丁 token，
+ *   isEnglishish 必然 ≥25%；而 `content_type === "code"` 明明已经识别出来了却没参与匹配。
+ *   scoreAiAction 那边对这一点是对的（isCodeish 直接给翻译/改写/总结 0 分）。
+ * - 后端注册了 16 个 AI 动作，这里只硬写了 5 个（ai-explain-code / ai-fix-code /
+ *   ai-commit-message / ai-json-to-type / ai-tabulate / ai-sql-generate … 全漏了）。
+ *
+ * 现在打分全交给 `applicableTransforms()`（它会跑 analyzeContent 建 features、
+ * 对每个变换调 detect、按分降序），**排好序的候选以参数传进来**。
+ * 依赖注入而不是在这里 import 注册表，是为了：① 本模块仍是纯函数，单测不必
+ * 初始化整个变换注册表；② lib 层不依赖注册表的初始化时序。
+ *
+ * 本模块只剩四件事：白名单（快捷栏不是第二个变换中心）、出网标记、
+ * 短文本兜底、上限截断。
  */
-import { maskSensitiveText } from "@/lib/mask";
 
 export interface QuickAction {
   id: string;
   label: string;
   /**
-   * true = 靠 AI 服务完成：会把内容发给第三方模型、按用量计费。
-   * 两层含义捆在一起：既用于 AI 不可用时过滤，也用于界面把“这下会花钱”标出来（✦）。
+   * true = 靠 AI 服务完成，或至少会把内容发到第三方（可能计费）。
+   * 两层含义捆在一起：既用于 AI 不可用时过滤，也用于界面把「这下会花钱/出网」标出来（✦）。
    */
   ai: boolean;
 }
 
-const URL_RE = /^https?:\/\/[^\s]+$/i;
-const LINK_TYPE = "link";
-
-/** 英文占比粗略判断（≥25% 的拉丁字母 token 视为英文内容） */
-function isEnglishish(text: string): boolean {
-  const words = text.split(/\s+/).filter(Boolean);
-  if (words.length === 0) return false;
-  const latin = words.filter((w) => /[A-Za-z]{2,}/.test(w)).length;
-  return latin / words.length >= 0.25;
+/**
+ * 候选动作：由调用方从 `applicableTransforms()` 的结果映射而来，
+ * **已按匹配度降序**。只取需要的四个字段，不把整个 Transform（带 run/detect）拖进来。
+ */
+export interface QuickCandidate {
+  id: string;
+  label: string;
+  group: string;
+  /** Transform.remote：需要联网且可能计费 */
+  remote?: boolean;
 }
 
-const ACTIONS = {
-  // AI 可用时会走 ai-summarize 精炼（计费），所以算 AI 动作；
-  // AI 不可用时它虽然能退回本地粗摘要，但那时整条快捷区（抬头就写着✦ AI）本身就不该出，
-  // 需要它的人在变换面板里照样找得到（urlSummaryTransform 的 detect 不受 AI 门控）
-  "url-summary": { id: "url-summary", label: "链接摘要", ai: true },
-  "ai-translate": { id: "ai-translate", label: "翻译", ai: true },
-  "ai-summarize": { id: "ai-summarize", label: "总结", ai: true },
-  "ai-rewrite": { id: "ai-rewrite", label: "改写语气", ai: true },
-  "ai-key-points": { id: "ai-key-points", label: "提取要点", ai: true },
-  // 注册 id 是 mask-sensitive（勿改回 mask，否则 getTransform 找不到，按钮点了没反应）
-  "mask-sensitive": { id: "mask-sensitive", label: "粘贴脱敏", ai: false },
-} as const;
+/**
+ * 允许出现在快捷栏的**非 ai 分组**动作。
+ *
+ * 不能直接把 `applicableTransforms()` 的前三名摆上去——那里还有大小写转换、
+ * base64、SQL 格式化等几十个，快捷栏不是第二个变换中心。只放两类：
+ * - 与「刚复制完就想立即做」高度相关的本地零成本动作（脱敏、路径三件）；
+ * - 链接摘要（group 是 web，但语义上属于 AI 能力）。
+ */
+const NON_AI_ALLOW = new Set([
+  "mask-sensitive",
+  "url-summary",
+  // 图片/文件条目的路径支路用（本地、零成本、不出网）
+  "path_name",
+  "path_fslash",
+  "path_bslash",
+]);
 
 /**
- * 按内容匹配快捷动作（去重、最多 max 个）。
+ * 会出网但既不在 ai 分组、也没标 `remote: true` 的动作。
  *
- * `aiOk`（AI 是否可用）由调用方传进来（AiQuickBar 读 isAiAvailable()），不在这里直接调：
- * 一是保持纯函数、单测不必 mock 变换模块；二是 lib 层不依赖变换注册表的初始化时序。
- * **必须显式传**（不给默认值）：给了默认 true 就等于把这个坑重新埋回去。
+ * `url-summary` 会实际抓取那个 URL（内容出网），但它自己没标 remote。
+ * 那是它自身的分类问题，且改动面不小——`chains/registry.ts` 正是用 `t.remote`
+ * 当动作链的出网确认闸（默认拒绝），给它补上会连带改链的行为。
+ * 这里先把它按出网对待，保证风险标记不漏（AiBadge 那边的原则：一个都不能漏）。
  */
-export function matchQuickActions(
-  text: string,
-  contentType: string,
-  aiOk: boolean,
-  max = 3,
-): QuickAction[] {
-  const t = (text || "").trim();
-  if (!t) return [];
+const NETWORK_ANYWAY = new Set(["url-summary"]);
+
+/**
+ * 短文本兜底。
+ *
+ * `scoreAiAction` 里 ai-summarize 要求 >200 字、ai-rewrite 要求 ≥50 字（“短文本没什么
+ * 可摘的”——对变换中心那个满屏候选列表而言是对的）。但快捷栏只有 2-3 个位，
+ * “复制了一句话”是最常见的场景，一个动作都不给会让整条 AI 栏直接消失。
+ */
+const FALLBACK: readonly QuickAction[] = [
+  { id: "ai-summarize", label: "总结", ai: true },
+  { id: "ai-rewrite", label: "改写语气", ai: true },
+];
+
+export interface MatchQuickOptions {
+  /** 实际会被送进动作的输入文本（文件/图片条目是从路径派生的，不是 item.text） */
+  text: string;
+  /** AI 是否可用（总开关 + 密钥）。不可用时一个 AI 动作也不给。 */
+  aiOk: boolean;
+  /** 已按匹配度降序的候选（来自 applicableTransforms） */
+  candidates: QuickCandidate[];
+  /**
+   * 输入是从文件/图片**路径**派生的。
+   *
+   * 此时只允许本地动作：路径里带用户名、目录结构、项目名，不能因为
+   * “反正有个输入”就隐式发给模型。用户想让 AI 看，得自己去变换中心选。
+   */
+  pathDerived?: boolean;
+  /** 上限（默认 3） */
+  max?: number;
+}
+
+/**
+ * 按候选排名给出快捷动作（去重、最多 max 个）。
+ *
+ * 注意本函数**不再接 contentType**：类型已经在打分阶段（detect）起作用了，
+ * 再接一次就是把删掉的那套并行判断请回来。
+ */
+export function matchQuickActions(opts: MatchQuickOptions): QuickAction[] {
+  const { text, aiOk, candidates, pathDerived = false, max = 3 } = opts;
+  if (!text.trim()) return [];
+
   const out: QuickAction[] = [];
-  const push = (id: keyof typeof ACTIONS) => {
-    if (!out.some((a) => a.id === id)) out.push(ACTIONS[id]);
+  const seen = new Set<string>();
+  const push = (a: QuickAction) => {
+    if (seen.has(a.id)) return;
+    seen.add(a.id);
+    out.push(a);
   };
 
-  const isLink = URL_RE.test(t) || contentType === LINK_TYPE;
-  const sensitive = t.length > 0 && maskSensitiveText(t).count > 0;
-  const english = isEnglishish(t);
-  const long = t.length > 200;
+  for (const c of candidates) {
+    if (c.group !== "ai" && !NON_AI_ALLOW.has(c.id)) continue;
+    const ai = c.group === "ai" || !!c.remote || NETWORK_ANYWAY.has(c.id);
+    if (pathDerived && ai) continue;
+    push({ id: c.id, label: c.label, ai });
+  }
 
-  if (isLink) {
-    push("url-summary");
-    push("ai-summarize");
-  } else if (sensitive) {
-    push("mask-sensitive");
-    push("ai-summarize");
-  } else if (english) {
-    push("ai-translate");
-    push("ai-summarize");
-    push("ai-rewrite");
-  } else if (long) {
-    push("ai-summarize");
-    push("ai-rewrite");
-    push("ai-key-points");
-  } else {
-    // 兜底：任何文本都能总结/改写
-    push("ai-summarize");
-    push("ai-rewrite");
+  // 路径派生的输入不兜底：兜底项全是 AI 动作，而这种输入本就不该出网。
+  if (!pathDerived && !out.some((a) => a.ai)) {
+    FALLBACK.forEach(push);
   }
 
   // AI 不可用 → 一个 AI 动作也不给（否则就是摆一排点下去只会报错的按钮，
   // 而变换面板那边 scoreAiAction 首行就 return 0、一个都不推，两处必须一致）。
-  // 过滤后只剩本地动作（如 mask-sensitive）或为空；为空时调用方据此整条不渲染。
+  // 过滤后只剩本地动作或为空；为空时调用方据此整条不渲染。
   return out.filter((a) => aiOk || !a.ai).slice(0, max);
 }

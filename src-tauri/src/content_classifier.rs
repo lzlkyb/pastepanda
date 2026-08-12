@@ -46,6 +46,43 @@ static BASE64_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^[A-Za-z0-9+/]+={0,2}$").unwrap()
 });
 
+// ===== 个人信息（PII）—— **仅用于出网判据**，不进 `is_secret` =====
+//
+// 为何单独一套：`is_secret` 同时服务于内容分类（clipboard_monitor 是否记录、
+// history / content_memory 是否排除）。把邮箱/IP 加进去会让日常内容大面积被当密钥
+// 处理，代价太大；而“发给第三方”这个动作的风险阀值本来就应该更低。
+// 前端 `lib/mask.ts`（粘贴守卫）一直认这 4 类，而出网侧不认——方向是反的：
+// 强判据装在“本地粘贴”上，弱判据装在“发给云端”上。本节就是把那半扇门补上。
+static PII_PHONE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"1[3-9][0-9]{9}").unwrap());
+static PII_ID_CARD_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[0-9]{17}[0-9Xx]").unwrap());
+static PII_IPV4_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[0-9]{1,3}(?:\.[0-9]{1,3}){3}").unwrap());
+static PII_EMAIL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}").unwrap()
+});
+// 与下方已有的 EMAIL_RE / PHONE_RE 区分开：那两个是**锚定**的（`^…$`），回答的是
+// “整条内容就是一个邮箱/手机号吗”，给内容类型分类用；这里的 PII_* 是**内嵌**匹配，
+// 回答的是“文本里含不含个人信息”。两者是不同问题，不能合并。
+
+/// 要求匹配两侧不是 ASCII 数字，等价于 `(?<!\d)…(?!\d)`。
+///
+/// Rust 的 regex crate 不支持环视，而前端 `mask.ts` 用的就是环视。用 `\b` 代替会
+/// 比前端**更宽松**（`abc13812345678` 这种字母紧贴数字的情况会漏），而这是安全闸，
+/// 寄严不寄宽，所以手工查边界保证与前端同语义。
+fn has_match_digit_bounded(re: &Regex, text: &str) -> bool {
+    re.find_iter(text).any(|m| {
+        let left_ok = text[..m.start()]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !c.is_ascii_digit());
+        let right_ok = text[m.end()..]
+            .chars()
+            .next()
+            .is_none_or(|c| !c.is_ascii_digit());
+        left_ok && right_ok
+    })
+}
+
 /// 已知服务商的密钥前缀清单。
 ///
 /// 这些串普遍含 `-`/`_`，或总长度不是 4 的倍数，因此走不到下面的通用 Base64 分支——
@@ -343,6 +380,19 @@ impl ContentClassifier {
         vec!["纯文本".to_string()]
     }
 
+    /// 从 labels 里取**语言级**标签（LANGUAGE_PROFILES 的 label）。
+    ///
+    /// `content_type_from_labels` 只能给到 `code`，这一层才分得出是哪门语言。
+    /// prompt 里写明语言对输出质量影响很大：同一段 `fn` 在 Rust 与 Go 里含义完全不同。
+    ///
+    /// 返回 `&'static str` 而不是拷贝：语言名是编译期常量表里的，不需要堆分配。
+    pub fn language_from_labels(labels: &[String]) -> Option<&'static str> {
+        LANGUAGE_PROFILES
+            .iter()
+            .map(|p| p.label)
+            .find(|l| labels.iter().any(|x| x == l))
+    }
+
     /// 从 classify() 返回的标签列表派生 content_type（单一分类入口）。
     /// 映射规则：第一个标签决定主类型。
     pub fn content_type_from_labels(labels: &[String]) -> &'static str {
@@ -556,7 +606,32 @@ impl ContentClassifier {
         total >= 2.0 && ts_only >= 2.0 && ts_only / total > 0.6
     }
 
-    /// 检测密钥/Token
+    /// 含个人信息（手机号 / 邮箱 / 身份证 / IPv4）——与前端 `lib/mask.ts` 同四类。
+    ///
+    /// **只给出网判据用**，不参与内容分类（理由见文件上方 PII 节的注释）。
+    pub fn has_pii(text: &str) -> bool {
+        has_match_digit_bounded(&PII_PHONE_RE, text)
+            || has_match_digit_bounded(&PII_ID_CARD_RE, text)
+            || has_match_digit_bounded(&PII_IPV4_RE, text)
+            || PII_EMAIL_RE.is_match(text)
+    }
+
+    /// **出网判据的唯一入口**：密钥 或 个人信息。
+    ///
+    /// 所有“把内容交给第三方”的路径都走这里，不要直接用 `is_secret`：
+    /// `ai_run` / `ai_plan_chain` / `ai_test_action` / `semantic_search` / `profile_refine`。
+    /// `is_secret` 仍然只服务于内容分类（是否记录/排除/展示为敏感）。
+    ///
+    /// 已知代价：任何含邮箱或 IP 的文本都会触发一次出网确认（包括“帮我润色这封
+    /// 邮件”这种正当请求），以及 `1.2.3.4` 这种版本号会被当成 IPv4。
+    /// 这是有意的取舍：门只是**确认**而不是拒绝（force 可过），宁可多问一句。
+    pub fn is_sensitive_for_egress(&self, text: &str) -> bool {
+        self.is_secret(text) || Self::has_pii(text)
+    }
+
+    /// 检测密钥/Token。
+    ///
+    /// 注意：**出网路径不该直接调它**，用 [`Self::is_sensitive_for_egress`]。
     pub fn is_secret(&self, text: &str) -> bool {
         let trimmed = text.trim();
 
@@ -570,13 +645,24 @@ impl ContentClassifier {
             return true;
         }
 
-        // 服务商密钥前缀（OpenAI/Anthropic/Slack/Google/GitLab/GitHub 等，见 SECRET_PREFIXES）
-        // 额外要求单行且无空格：避免「以前缀开头的一段说明文字」被误判为密钥。
-        if !trimmed.contains(' ')
-            && !trimmed.contains('\n')
-            && SECRET_PREFIXES
-                .iter()
-                .any(|(prefix, min_len)| trimmed.starts_with(prefix) && trimmed.len() > *min_len)
+        // 服务商密钥前缀（OpenAI/Anthropic/Slack/Google/GitLab/GitHub 等，见 SECRET_PREFIXES）。
+        //
+        // 按 **token** 判，而不是整串 `starts_with`：原实现要求“整条内容就是一个密钥”
+        // （starts_with + 无空格无换行），于是 `OPENAI_KEY=sk-xxxx…`、`key: sk-xxxx…`
+        // 这类配置片段全部漏过。而 `is_secret` **同时就是 AI 出网门**
+        // （commands/ai/run.rs、commands/ai/plan.rs），漏过 = 直接发给云端第三方。
+        // 前端的 lib/mask.ts 一直是内嵌匹配（粘贴守卫能拦），两边判据不一致。
+        //
+        // 切 token 的字符集 = 密钥合法字符（字母/数字/-/_），所以 `=`、`:`、引号、
+        // 逗号都是分隔符；长度阀值仍用同一张前缀表，所以“以前缀开头的说明文字”
+        // （如 `sk-ant 是…前缀`）仍然因 token 太短而不命中——比旧的“无空格”限制更精确。
+        if trimmed
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+            .any(|tok| {
+                SECRET_PREFIXES
+                    .iter()
+                    .any(|(prefix, min_len)| tok.starts_with(prefix) && tok.len() > *min_len)
+            })
         {
             return true;
         }
@@ -1084,7 +1170,59 @@ mod tests {
         let c = ContentClassifier::new();
         // 以前缀开头的说明性文字不应被当成密钥
         assert!(!c.is_secret("sk-ant 是 Anthropic 密钥的前缀，不是密钥本身"));
+
+        // 内嵌密钥（回归）：旧实现用整串 starts_with + “无空格”，下面这些全部漏过。
+        // is_secret 同时是 AI 出网门，漏过就是把密钥发给云端第三方。
+        assert!(
+            c.is_secret(concat!("OPENAI_KEY=sk", "-proj-abcdefghijklmnopqrstuvwxyz0123456789")),
+            "环境变量形式的内嵌密钥应判敏感"
+        );
+        assert!(
+            c.is_secret(concat!("key: sk", "-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")),
+            "冒号形式的内嵌密钥应判敏感"
+        );
+        assert!(
+            c.is_secret(concat!("给你个 token \"ghp_", "1234567890abcdef1234567890abcdef12\"，帮我看看")),
+            "引号包裹、中文句子中的内嵌密钥应判敏感"
+        );
+        assert!(
+            c.is_secret(concat!("line1\nAPI=xoxb-", "1234567890-1234567890123-AbCdEfGhIjKlMnOpQrSt\nline3")),
+            "多行配置里的内嵌密钥应判敏感"
+        );
+        // 切 token 后长度阀值仍生效：短前缀不因为“现在支持内嵌”而变成误报
+        assert!(!c.is_secret("配置项叫 sk-key，值自己填"));
+        assert!(!c.is_secret("OPENAI_KEY=sk-你的密钥"));
         assert!(!c.is_secret("glpat-开头的一行说明 后面还有内容"));
+    }
+
+    /// PII 只进出网判据，**不影响** `is_secret` 的分类语义。
+    ///
+    /// 这条是边界护栏：如果将来有人把 PII 推进 `is_secret`，日常内容（任何带邮箱
+    /// 或 IP 的文本）会被 clipboard_monitor / history / content_memory 当密钥排除。
+    #[test]
+    fn test_pii_only_affects_egress_not_classification() {
+        let c = ContentClassifier::new();
+        for s in [
+            "联系 13812345678",
+            "邮箱 zhang.san@example.com",
+            "服务器 10.0.19.194",
+            "身份证 11010519491231002X",
+        ] {
+            assert!(ContentClassifier::has_pii(s), "应识别为 PII: {s:?}");
+            assert!(c.is_sensitive_for_egress(s), "出网应拦: {s:?}");
+            assert!(!c.is_secret(s), "但不该被当成密钥（会影响入库/排除）: {s:?}");
+        }
+    }
+
+    /// 数字边界：手机号/身份证/IP 嵌在更长的数字串里不算。
+    /// （前端 mask.ts 用 `(?<!\d)…(?!\d)`，Rust 无环视，手工查边界必须同语义）
+    #[test]
+    fn test_pii_digit_boundary() {
+        assert!(!ContentClassifier::has_pii("9913812345678123"), "嵌在长数字串里不算手机号");
+        assert!(ContentClassifier::has_pii("tel:13812345678,谢谢"), "标点包围的手机号应识别");
+        // 普通文本不该误报
+        assert!(!ContentClassifier::has_pii("今天天气不错，开了 3 个会"));
+        assert!(!ContentClassifier::has_pii("function add(a, b) { return a + b; }"));
     }
 
     #[test]
@@ -1346,6 +1484,48 @@ mod tests {
         // syslog 格式：仅有时间戳无级别
         let r = classify("Jan  5 12:00:01 myhost sshd[1234]: Accepted password\nJan  5 12:00:02 myhost sshd[1234]: session opened");
         assert!(r.contains(&"日志".to_string()));
+    }
+
+    // ===== v6.10 测试规划 G1：敏感识别系统化用例集 =====
+    // 覆盖密钥/Token 的正例与反例,防「加了前缀漏判/长了误判」这类回归。
+
+    #[test]
+    fn test_secret_caseset_positive() {
+        let c = ContentClassifier::new();
+        // 各服务商密钥前缀(JWT/AWS/PEM/Base64 之外,前缀表内)
+        let positives = [
+            "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789",
+            "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789",
+            concat!("xoxb", "-", "123456789012-1234567890123-abcdefghijklmnop"),
+            "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+            "glpat-abcdefghijklmnopqrstuvwxyz0123456789",
+            "AKIAIOSFODNN7EXAMPLE",
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
+            "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA1vP9o4QfQJfK\n-----END RSA PRIVATE KEY-----",
+            "AIzaSyDlpT5qXs4vJZqZkQl0xWvWw1i6rY2sQ",
+        ];
+        for s in positives {
+            assert!(c.is_secret(s), "应判为敏感: {s:?}");
+        }
+    }
+
+    #[test]
+    fn test_secret_caseset_negative() {
+        let c = ContentClassifier::new();
+        // 明显非密钥:短串、带空格的说明、驼峰标识符、普通长词
+        let negatives = [
+            "sk-",
+            "sk-short",
+            "请把 API Key 填入设置页面",
+            "calculateTotalPriceWithDiscountAndTax12345678",
+            "hello world this is a normal sentence",
+            "AKIAIOSFODNN7EXAMPL",       // 19 位,不足 20
+            "AKIAIOSFODNN7EXAMPLE!",    // 21 位且含符号
+            "The quick brown fox jumps over the lazy dog",
+        ];
+        for s in negatives {
+            assert!(!c.is_secret(s), "不应判为敏感: {s:?}");
+        }
     }
 }
 

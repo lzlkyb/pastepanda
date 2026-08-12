@@ -2,8 +2,11 @@ import { useState, useMemo, useEffect, useRef, useCallback, Fragment } from "rea
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, FilterType, TimeFilter, SourceFilter } from "@/stores/appStore";
 import { AiStatusCap } from "@/components/AiStatusCap";
+import { AiStatusDot } from "@/components/AiStatusDot";
+import { AiMark } from "@/components/ai/AiMark";
 import { getAppVersion, getAppName, fetchCounts, toggleStackMode } from "@/lib/api";
-import { cleanSourceName, getSourceIcon, fetchRealSourceIcon } from "@/lib/source-mappings";
+import { cleanSourceName } from "@/lib/source-mappings";
+import { useSourceIcon } from "@/hooks/useSourceIcon";
 import SourceBadge from "@/components/SourceBadge";
 import { UpdateBadge } from "@/components/UpdateBadge";
 import { TagBadge, AnimatedTagBadge } from "@/components/TagBadge";
@@ -177,7 +180,12 @@ export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEnco
             ☰
           </button>
           <span className={styles.headerTitleIcon}><AppIcon size={20} /></span>
-          <span className={styles.headerTitleText}>{appName}</span>
+          <span className={styles.brandTitle}>
+            <span className={styles.headerTitleText}>{appName}</span>
+            {/* 品牌标识：这个产品是 AI 的。不可点、不随 AI 配置状态变化——
+                「配好了没」由右侧 AiStatusCap / AiStatusDot 承担，两者不重叠。 */}
+            <AiMark shape="sup" text="AI" title="PastePanda 的能力由 AI 驱动" />
+          </span>
           <UpdateBadge currentVersion={appVersion} />
         </div>
         <div className={styles.headerIcons} data-tauri-drag-region="false">
@@ -228,11 +236,16 @@ export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEnco
               </>
             )}
           </div>
-          {/* v6.4 主窗口 AI 感知（方案 A）：胶囊 —— 未配置=引流入口 / 已配置=状态 */}
+          {/* v6.4 主窗口 AI 感知（方案 A）：胶囊 —— 未配置=引流入口；已配置=不渲染（状态收进设置按钮绿点） */}
           <AiStatusCap />
-          <IconBtn tip="设置 · 帮助 · 关于" hue="violet" onClick={onSettings}>
-            <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-          </IconBtn>
+          {/* 审查方案 1：设置按钮带 AI 状态绿点 —— 已就绪时右上角一个 6px 绿点（hover 看详情），
+              不占额外空间，能力入口在快捷区 */}
+          <span className={styles.settingsWrap}>
+            <IconBtn tip="设置 · 帮助 · 关于" hue="violet" onClick={onSettings}>
+              <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+            </IconBtn>
+            <AiStatusDot />
+          </span>
           {/* 分隔线：功能按钮组（栈模式/工具箱/设置）与窗口控制组（最小化/隐藏）分开 */}
           <span className={styles.headerDivider} aria-hidden="true" />
           <IconBtn tip="最小化到任务栏" onClick={minimizeWin}>
@@ -247,7 +260,7 @@ export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEnco
       {/* 搜索框 + Tab 在同一个容器内，保证宽度完全一致 */}
       <div className={styles.headerControls}>
         {/* 搜索 + 时间/来源筛选同行（方案 A：筛选并入搜索行，省一行垂直空间） */}
-        <div className={styles.searchFilterRow}>
+        <div className={styles.searchFilterRow} data-tauri-drag-region="false">
           <SearchBox fill />
           <FilterDropdown
             label="时间"
@@ -421,7 +434,7 @@ function FilterDropdown<T extends string>({ label, value, options, onChange, aut
   const activeLabel = options.find((o) => o.key === value)?.label || label;
 
   return (
-    <div className={`${styles.filterDropdown}${auto ? ` ${styles.filterDropdownAuto}` : ""}`} ref={ref}>
+    <div className={`${styles.filterDropdown}${auto ? ` ${styles.filterDropdownAuto}` : ""}`} ref={ref} data-tauri-drag-region="false">
       <button className={styles.filterDropdownBtn} onClick={() => setOpen(!open)}>
         <span>{activeLabel}</span>
         <ChevronDown size={12} style={{ transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0)" }} />
@@ -482,6 +495,10 @@ function SourceFilterDropdown({ value, onChange, workspace, auto }: {
     });
     return Array.from(map.entries())
       .sort(([a], [b]) => cleanSourceName(a).localeCompare(cleanSourceName(b), "zh"));
+    // historyLen 看着多余，实则是 history 的廉价代理：history 每次 store 更新都换引用，
+    // 直接依赖它等于不缓存；删掉 historyLen 则会让这个 memo 永不更新。
+    // 代价：条数不变但某条的 source 被改了不会重算（已知取舍）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyLen, workspace]);
 
   // source → source_icon 的快速查找表
@@ -494,31 +511,21 @@ function SourceFilterDropdown({ value, onChange, workspace, auto }: {
   // 当前选中来源的 source_icon
   const selectedSourceIcon = value ? sourceIconMap.get(value) ?? null : null;
 
-  // 当前选中来源的显示名称
-  const sourceIconMode = useAppStore((s) => s.config.source_icon_mode);
-  const activeCacheKey = selectedSourceIcon || value;
-  const activeIconUrl = useAppStore((s) => s.realIconCache[activeCacheKey]);
-
-  useEffect(() => {
-    if (sourceIconMode === "app" && value) {
-      fetchRealSourceIcon(value, selectedSourceIcon);
-    }
-  }, [value, sourceIconMode, selectedSourceIcon]);
+  // 当前选中来源的图标与显示名：双模式解析走 useSourceIcon（规则 #11）。
+  // displayName / emoji 也一并由它给，不再单调 cleanSourceName / getSourceIcon
+  // —— 那两个本来就是 resolveSource 的包装，分开调等于解析两次。
+  const { displayName, emoji, realIconUrl } = useSourceIcon(value, selectedSourceIcon);
 
   const activeLabel = useMemo(() => {
     if (!value) return "全部来源";
-    const cleaned = cleanSourceName(value);
-    // 真实图标模式：显示真实图标
-    if (sourceIconMode === "app" && activeIconUrl) {
-      return <><img src={activeIconUrl} alt="" className={styles.filterDropdownIcon} /> {cleaned}</>;
+    if (realIconUrl) {
+      return <><img src={realIconUrl} alt="" className={styles.filterDropdownIcon} /> {displayName}</>;
     }
-    // emoji 模式
-    const icon = getSourceIcon(value);
-    return <>{icon && <span>{icon}</span>} {cleaned}</>;
-  }, [value, sourceIconMode, activeIconUrl]);
+    return <>{emoji && <span>{emoji}</span>} {displayName}</>;
+  }, [value, displayName, emoji, realIconUrl]);
 
   return (
-    <div className={`${styles.filterDropdown}${auto ? ` ${styles.filterDropdownAuto}` : ""}`} ref={ref}>
+    <div className={`${styles.filterDropdown}${auto ? ` ${styles.filterDropdownAuto}` : ""}`} ref={ref} data-tauri-drag-region="false">
       <button className={styles.filterDropdownBtn} onClick={() => setOpen(!open)}>
         {activeLabel}
         <ChevronDown size={12} style={{ transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0)" }} />

@@ -1,0 +1,131 @@
+/* ===== v6.2 粘贴守卫确认条 ===== */
+
+.wrap {
+  padding: 16px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--danger);
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.target {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 99px;
+  white-space: nowrap;
+}
+
+.desc {
+  margin: 12px 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.preview {
+  margin-bottom: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--section-bg);
+  overflow: hidden;
+}
+
+.previewLabel {
+  padding: 5px 10px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.previewText {
+  margin: 0;
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 140px;
+  overflow: auto;
+}
+
+.ops {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.mask,
+.raw,
+.cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.mask {
+  border: 1px solid var(--danger);
+  background: var(--danger);
+  color: #fff;
+}
+
+.mask:hover {
+  filter: brightness(1.1);
+}
+
+.raw {
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.raw:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.cancel {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.cancel:hover {
+  color: var(--text-secondary);
+}
+
+.note {
+  margin-top: 10px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}

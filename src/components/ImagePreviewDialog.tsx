@@ -10,7 +10,6 @@ import { X, ZoomIn, ZoomOut, RotateCw, Copy, Download, ScanText, Pin, FileDown, 
 import { FocusTrap } from "@/components/FocusTrap";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { useToast } from "@/components/Toast";
-import { getImageBase64, dataUrlToBlob } from "@/lib/api";
 import { useDialogStore } from "@/stores/dialogStore";
 import {
   EXPORT_FORMATS,
@@ -18,7 +17,7 @@ import {
   formatBytes,
   type ExportFormat,
 } from "@/lib/imageFormat";
-import type { UseImagePreviewReturn, CropRect } from "@/hooks/useImagePreview";
+import type { UseImagePreviewReturn } from "@/hooks/useImagePreview";
 import styles from "./CardList.module.css";
 
 export interface ImagePreviewDialogProps {

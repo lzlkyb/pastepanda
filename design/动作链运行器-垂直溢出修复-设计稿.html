@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda · 动作链运行器 垂直溢出修复与美化 设计稿</title>
+<style>
+/* ========================================================================
+   尺寸与变量**全部抄自真实代码**：
+   - ChainRunnerDialog.tsx:209  className={`dialog-box w460 ${styles.wrap}`}
+     → .wrap **就是 dialog-box 本身**，不是内层容器！
+   - ChainRunnerDialog.module.css:3 .wrap  display:flex; flex-direction:column; gap:10px
+     → 无 overflow-y、无 min-height:0、子项无 flex:1
+   - dialog.css:51 .dialog-box.w460  width:460px; max-height:78vh
+   - dialog.css:21 .dialog-box       flex column，**无 overflow:hidden**
+   - .inputBody max-height:84px；.ioBox max-height:64px；.finalBody max-height:120px
+   ===================================================================== */
+.t-oceandark{
+  --dialog-bg:#0A1628;--card-bg:#0A1628;--text-primary:#E0E8F0;--text-secondary:#A2B6CD;
+  --text-muted:#7994B4;--border-color:#162B45;--accent:#3B9EFF;--accent-light:#0A1E3A;
+  --accent-strong:#3B9EFF;--accent-solid:#2D78C2;--section-bg:#081018;
+  --green:#4ADE80;--green-bg:#052E1A;--green-border:#166534;
+  --danger:#F87171;--red-bg:#2E0A0A;--red-border:#7F1D1D;
+  --orange:#FBBF24;--orange-bg:#2A1F05;--orange-border:#78500A;
+  --accent-glow:rgba(59,158,255,.12);--brand-ai-from:#A8DEFF;--brand-ai-to:#D8CCFF;
+}
+*{box-sizing:border-box}
+body{margin:0;padding:28px 24px 60px;background:#14161A;color:#C9D2DD;
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.7}
+h1{font-size:19px;color:#fff;margin:0 0 4px}
+h2{font-size:15px;color:#fff;margin:34px 0 6px}
+.sub{color:#7C8899;font-size:12px;margin:0 0 22px}
+.note{color:#8D9AAB;font-size:12px;margin:4px 0 14px;max-width:940px}
+.note b{color:#D6DEE8;font-weight:600}
+.bad{border-left:3px solid #E06C6C;background:rgba(224,108,108,.08);padding:10px 14px;margin:12px 0 18px;max-width:940px;border-radius:0 6px 6px 0}
+.bad b{color:#F09A9A}
+hr{border:0;border-top:1px solid #262A31;margin:30px 0 0}
+.pick{color:#6FD68B;font-weight:600}
+code{background:#1C2027;padding:1px 5px;border-radius:4px;font-size:11.5px}
+table{border-collapse:collapse;margin:12px 0 0;font-size:12.5px;max-width:940px}
+th,td{border:1px solid #2A2F37;padding:7px 11px;text-align:left;vertical-align:top}
+th{background:#1C2027;color:#E4EAF1;font-weight:600}
+td{color:#B4BECB}
+td.y{color:#6FD68B} td.n{color:#E07C7C}
+
+/* 视口模拟：用 78vh 的等比高度。取一个 900px 高的屏，78vh = 702px */
+.viewport{position:relative;width:496px;height:702px;border:1px dashed #3A4048;border-radius:8px;
+  background:repeating-linear-gradient(45deg,#191C21,#191C21 8px,#1C2026 8px,#1C2026 16px);
+  padding:0;overflow:visible}
+.vpTag{position:absolute;right:-4px;top:-20px;font-size:10.5px;color:#6E7A8A}
+.stage{display:flex;gap:34px;flex-wrap:wrap;margin:26px 0 0;align-items:flex-start}
+.cap{font-size:11px;color:#6E7A8A;margin:0 0 6px}
+
+/* 弹窗 */
+.box{width:460px;max-height:702px;background:var(--dialog-bg);border:1px solid var(--border-color);
+  border-radius:16px;display:flex;flex-direction:column;gap:10px;
+  box-shadow:0 12px 40px rgba(0,0,0,.5);margin:12px 18px}
+.box.leak{/* 现状：无 overflow，子项不收缩 → 内容直接画到盒子外 */}
+
+.hdr{display:flex;align-items:center;height:48px;padding:0 20px;flex-shrink:0;gap:9px;
+  border-bottom:1px solid var(--border-color)}
+.hIco{color:var(--accent-strong);display:inline-flex;flex:none}
+.hTitle{font-size:15px;font-weight:600;color:var(--text-primary);margin:0;white-space:nowrap}
+.hSub{font-size:12px;color:var(--text-muted);margin-right:auto;white-space:nowrap}
+.close{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+  border:none;background:transparent;color:var(--text-secondary);flex:none}
+
+.chainRow{display:flex;align-items:center;gap:8px;padding:0 14px;flex-shrink:0}
+.tabs{flex:1;min-width:0;display:flex;gap:6px;overflow-x:auto}
+.tab{flex-shrink:0;padding:6px 12px;border:1px solid var(--border-color);border-radius:10px;
+  background:var(--dialog-bg);font-size:12px;color:var(--text-secondary);white-space:nowrap}
+.tabOn{background:var(--accent-light);border-color:var(--accent);color:var(--accent-strong);font-weight:700}
+.newBtn{flex-shrink:0;font-size:11px;font-weight:600;color:var(--accent-strong);background:var(--accent-light);
+  border:1px dashed var(--accent);border-radius:10px;padding:6px 11px;white-space:nowrap}
+
+.inputCard{background:var(--section-bg);border:1px solid var(--border-color);border-radius:12px;
+  overflow:hidden;margin:0 14px;flex-shrink:0}
+.icHead{display:flex;align-items:center;gap:8px;padding:7px 12px;font-size:11px;color:var(--text-secondary);
+  border-bottom:1px dashed var(--border-color)}
+.icBody{margin:0;padding:10px 12px;font-family:Consolas,monospace;font-size:11px;color:var(--text-secondary);
+  line-height:1.7;max-height:84px;overflow:hidden;white-space:pre-wrap;word-break:break-all}
+
+.runRow{display:flex;align-items:center;gap:10px;padding:0 14px;flex-shrink:0}
+.runBtn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:13px;
+  font-weight:700;padding:11px 0;border-radius:11px;border:none;color:#fff;
+  background:linear-gradient(135deg,var(--accent),var(--accent-strong));box-shadow:0 4px 12px var(--accent-glow)}
+.chip{flex-shrink:0;font-size:10.5px;color:var(--orange);background:var(--orange-bg);
+  border:1px solid var(--orange-border);border-radius:999px;padding:5px 11px;white-space:nowrap}
+
+.steps{display:flex;flex-direction:column;padding:0 14px}
+.step{border:1px solid var(--green-border);border-radius:12px;background:var(--dialog-bg);overflow:hidden}
+.sArrow{width:2px;height:12px;background:var(--border-color);margin:0 auto}
+.sHead{display:flex;align-items:center;gap:8px;padding:10px 12px}
+.sIdx{width:22px;height:22px;border-radius:50%;flex:none;display:inline-flex;align-items:center;
+  justify-content:center;font-size:11px;font-weight:700;background:var(--green-bg);color:var(--green)}
+.sName{font-size:12.5px;font-weight:600;color:var(--text-primary)}
+.sChip{font-size:9.5px;font-weight:600;padding:2px 7px;border-radius:6px;background:var(--section-bg);
+  color:var(--text-secondary);border:1px solid var(--border-color);flex:none}
+.sStat{margin-left:auto;font-size:10.5px;color:var(--green);font-weight:600;flex:none}
+.sDetail{padding:4px 12px 12px;border-top:1px dashed var(--border-color);display:flex;flex-direction:column;gap:8px}
+.ioL{font-size:9.5px;font-weight:700;color:var(--text-muted);letter-spacing:.5px}
+.ioB{background:var(--section-bg);border:1px solid var(--border-color);border-radius:8px;padding:8px 10px;
+  font-family:Consolas,monospace;font-size:10.5px;color:var(--text-secondary);line-height:1.6;
+  max-height:64px;overflow:hidden;white-space:pre-wrap;word-break:break-all;margin:0}
+.ioA{text-align:center;font-size:11px;color:var(--accent);line-height:1}
+
+.finalCard{border-radius:12px;border:1px solid var(--green-border);overflow:hidden;margin:0 14px}
+.fHead{display:flex;align-items:center;gap:6px;padding:9px 12px;font-size:11.5px;font-weight:700;
+  background:var(--green-bg);color:var(--green);border-bottom:1px dashed var(--green-border)}
+.fBody{margin:0;padding:10px 12px;font-family:Consolas,monospace;font-size:11px;color:var(--text-secondary);
+  line-height:1.7;max-height:120px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+.fActs{display:flex;gap:8px;padding:0 12px 12px}
+.aBtn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;font-size:11.5px;
+  font-weight:600;padding:8px 0;border-radius:9px;border:1px solid var(--border-color);
+  background:var(--dialog-bg);color:var(--text-secondary)}
+.aBtn.primary{border:none;background:linear-gradient(135deg,var(--accent),var(--accent-strong));color:#fff}
+
+/* 修后：分区 */
+.fixedTop{display:flex;flex-direction:column;gap:10px;flex-shrink:0}
+.scrollBody{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;
+  padding-bottom:12px;border-top:1px solid var(--border-color);padding-top:10px}
+.scrollHint{position:absolute;font-size:10.5px;color:#6FD68B;white-space:nowrap}
+.leakMark{position:absolute;font-size:10.5px;color:#E07C7C;white-space:nowrap}
+</style>
+</head>
+<body>
+
+<h1>动作链运行器 · 垂直溢出修复与美化</h1>
+<p class="sub">2026-08-12 · 虚线格子区 = <code>max-height:78vh</code> 的可用高度（取 900px 屏 → 702px）· 尺寸取自真实代码</p>
+
+<div class="bad">
+<b>根因：整个弹窗没有任何滚动容器。</b><br>
+<code>ChainRunnerDialog.tsx:209</code> 写的是 <code>className={`dialog-box w460 ${styles.wrap}`}</code>——
+<b><code>.wrap</code> 就是 dialog-box 本身</b>，不是内层容器。而它只写了：<br>
+<code>display:flex; flex-direction:column; gap:10px</code><br><br>
+于是：<br>
+① <b>没有子项是 <code>flex:1; overflow-y:auto</code></b>——变换中心有 <code>.cards{flex:1;overflow-y:auto}</code> 所以没事，这里缺这一层；<br>
+② <b><code>.dialog-box</code> 没有 <code>overflow:hidden</code></b>（dialog.css:21 可查），
+所以 <code>max-height:78vh</code> 只管住了盒子自己的高度，<b>内容照样画到盒子外、直到屏幕外</b>；<br>
+③ <b>flex 子项默认 <code>min-height:auto</code></b>，即使加了 overflow 也不会收缩，必须配 <code>min-height:0</code>；<br>
+④ <b><code>gap:10px</code> × 8 个子项 = 白吃 80px</b>，小屏上雪上加霜。<br><br>
+子项最多能到 8 个：header / SequenceDiscover / chainRow / inputCard / runRow / aiConfirm / steps / failBox / finalCard / idleHint。
+<b>每一步展开后是 “头 42 + 输入框 64 + 箭头 + 输出框 64 + 耗时” ≈ 200px</b>，四步链就是 800px——单此一项就超过 702px 的全部预算。
+</div>
+
+<h2>现状复现：四步链跑完、步骤全展开</h2>
+<p class="note">这是真实默认行为——<code>ChainRunnerDialog.tsx:141</code> 跑完后 <code>setExpanded(new Set(r.stages.map((_, i) =&gt; i)))</code>，<b>所有步骤默认全展开</b>。</p>
+<div class="stage">
+  <div>
+    <p class="cap">现状（虚线区以外就是溢出到屏幕外的部分）</p>
+    <div class="viewport t-oceandark">
+      <span class="vpTag">78vh = 702px</span>
+      <div class="box leak">
+        <div class="hdr">
+          <span class="hIco"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+          <h2 class="hTitle">动作链</h2>
+          <span class="hSub">把多步粘贴流程串成一个按钮</span>
+          <button class="close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        </div>
+        <div class="chainRow">
+          <div class="tabs">
+            <span class="tab tabOn">日志清洗</span>
+            <span class="tab">SQL 整理</span>
+            <span class="tab">脱敏后翻译</span>
+          </div>
+          <span class="newBtn">+ 新建</span>
+        </div>
+        <div class="inputCard">
+          <div class="icHead"><span>输入 <span style="color:var(--text-muted)">（842 字）</span></span></div>
+          <pre class="icBody">2026-08-12 10:22:01 ERROR [pool-3-thread-7] c.a.s.OrderService
+  — 下单失败 orderId=88213 uid=40021
+java.lang.NullPointerException: Cannot invoke "getAmount()"
+	at c.a.s.OrderService.calc(OrderService.java:214)</pre>
+        </div>
+        <div class="runRow">
+          <span class="runBtn">▶ 运行整条链</span>
+          <span class="chip">4 步 · 含 AI 步骤</span>
+        </div>
+        <div class="steps">
+          <div class="step">
+            <div class="sHead"><span class="sIdx">1</span><span class="sName">去时间戳</span><span class="sChip">本地</span><span class="sStat">✓ 12ms</span></div>
+            <div class="sDetail">
+              <div><div class="ioL">输入</div><pre class="ioB">2026-08-12 10:22:01 ERROR [pool-3-thread-7] …</pre></div>
+              <div class="ioA">↓</div>
+              <div><div class="ioL">输出</div><pre class="ioB">ERROR [pool-3-thread-7] c.a.s.OrderService …</pre></div>
+            </div>
+          </div>
+          <div class="sArrow"></div>
+          <div class="step">
+            <div class="sHead"><span class="sIdx">2</span><span class="sName">提取堆栈</span><span class="sChip">本地</span><span class="sStat">✓ 8ms</span></div>
+            <div class="sDetail">
+              <div><div class="ioL">输入</div><pre class="ioB">ERROR [pool-3-thread-7] c.a.s.OrderService …</pre></div>
+              <div class="ioA">↓</div>
+              <div><div class="ioL">输出</div><pre class="ioB">java.lang.NullPointerException
+	at c.a.s.OrderService.calc(OrderService.java:214)</pre></div>
+            </div>
+          </div>
+          <div class="sArrow"></div>
+          <div class="step">
+            <div class="sHead"><span class="sIdx">3</span><span class="sName">脱敏</span><span class="sChip">修改性</span><span class="sStat">✓ 5ms</span></div>
+            <div class="sDetail">
+              <div><div class="ioL">输入</div><pre class="ioB">java.lang.NullPointerException … uid=40021</pre></div>
+              <div class="ioA">↓</div>
+              <div><div class="ioL">输出</div><pre class="ioB">java.lang.NullPointerException … uid=****</pre></div>
+            </div>
+          </div>
+          <div class="sArrow"></div>
+          <div class="step">
+            <div class="sHead"><span class="sIdx">4</span><span class="sName">AI 解释报错</span><span class="sChip">联网</span><span class="sStat">✓ 2.1s</span></div>
+            <div class="sDetail">
+              <div><div class="ioL">输入</div><pre class="ioB">java.lang.NullPointerException … uid=****</pre></div>
+              <div class="ioA">↓</div>
+              <div><div class="ioL">输出</div><pre class="ioB">OrderService.calc 第 214 行对一个可能为 null 的对象调了 getAmount()。
+建议先判空或用 Optional 包一层。</pre></div>
+            </div>
+          </div>
+        </div>
+        <div class="finalCard">
+          <div class="fHead">✓ 最终结果</div>
+          <pre class="fBody">OrderService.calc 第 214 行对一个可能为 null 的对象调了 getAmount()。
+建议先判空或用 Optional 包一层。</pre>
+          <div class="fActs"><span class="aBtn">⇧ 复制</span><span class="aBtn primary">→ 粘贴</span></div>
+        </div>
+      </div>
+      <span class="leakMark" style="top:712px;left:20px">↑ 从这里开始已经在屏幕外：最终结果与复制/粘贴根本点不到</span>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>方案 A：上区固定 + 结果区滚动<span class="pick"> · 推荐</span></h2>
+<p class="note">
+把内容分两区：<b>上区固定</b>（链选择 + 输入 + 运行按钮，<code>flex-shrink:0</code>），
+<b>下区滚动</b>（步骤流 + AI 确认 + 失败提示 + 最终结果，<code>flex:1; min-height:0; overflow-y:auto</code>）。<br>
+关键理由：<b>「运行整条链」是主操作，不能被结果顶走</b>。改了输入想重跑一次、或换一条链再跑，
+都不应该要先滚回顶部。而“输入是什么”也得一直看得见，否则对不上步骤里的 I/O。
+</p>
+<div class="stage">
+  <div>
+    <p class="cap">修后：全部内容都在虚线区内，结果区自己滚</p>
+    <div class="viewport t-oceandark">
+      <span class="vpTag">78vh = 702px</span>
+      <div class="box" style="height:678px;overflow:hidden">
+        <div class="hdr">
+          <span class="hIco"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+          <h2 class="hTitle">动作链</h2>
+          <span class="hSub">把多步流程串成一个按钮</span>
+          <button class="close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        </div>
+        <div class="fixedTop">
+          <div class="chainRow">
+            <div class="tabs">
+              <span class="tab tabOn">日志清洗</span>
+              <span class="tab">SQL 整理</span>
+              <span class="tab">脱敏后翻译</span>
+            </div>
+            <span class="newBtn">+ 新建</span>
+          </div>
+          <div class="inputCard">
+            <div class="icHead"><span>输入 <span style="color:var(--text-muted)">（842 字）</span></span></div>
+            <pre class="icBody">2026-08-12 10:22:01 ERROR [pool-3-thread-7] c.a.s.OrderService
+  — 下单失败 orderId=88213 uid=40021
+java.lang.NullPointerException: Cannot invoke "getAmount()"</pre>
+          </div>
+          <div class="runRow">
+            <span class="runBtn">▶ 运行整条链</span>
+            <span class="chip">4 步 · 含 AI</span>
+          </div>
+        </div>
+        <div class="scrollBody">
+          <div class="steps">
+            <div class="step">
+              <div class="sHead"><span class="sIdx">1</span><span class="sName">去时间戳</span><span class="sChip">本地</span><span class="sStat">✓ 12ms</span></div>
+              <div class="sDetail">
+                <div><div class="ioL">输入</div><pre class="ioB">2026-08-12 10:22:01 ERROR [pool-3-thread-7] …</pre></div>
+                <div class="ioA">↓</div>
+                <div><div class="ioL">输出</div><pre class="ioB">ERROR [pool-3-thread-7] c.a.s.OrderService …</pre></div>
+              </div>
+            </div>
+            <div class="sArrow"></div>
+            <div class="step">
+              <div class="sHead"><span class="sIdx">2</span><span class="sName">提取堆栈</span><span class="sChip">本地</span><span class="sStat">✓ 8ms</span></div>
+              <div class="sDetail">
+                <div><div class="ioL">输入</div><pre class="ioB">ERROR [pool-3-thread-7] c.a.s.OrderService …</pre></div>
+                <div class="ioA">↓</div>
+                <div><div class="ioL">输出</div><pre class="ioB">java.lang.NullPointerException
+	at c.a.s.OrderService.calc(OrderService.java:214)</pre></div>
+              </div>
+            </div>
+            <div class="sArrow"></div>
+            <div class="step">
+              <div class="sHead"><span class="sIdx">3</span><span class="sName">脱敏</span><span class="sChip">修改性</span><span class="sStat">✓ 5ms</span></div>
+              <div class="sDetail">
+                <div><div class="ioL">输入</div><pre class="ioB">… uid=40021</pre></div>
+                <div class="ioA">↓</div>
+                <div><div class="ioL">输出</div><pre class="ioB">… uid=****</pre></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <span class="scrollHint" style="top:640px;left:200px">↕ 结果区可滚，上方不动</span>
+    </div>
+  </div>
+</div>
+<p class="note" style="margin-top:14px">
+上区固定高度 ≈ <b>48（header）+ 44（chainRow）+ 130（inputCard）+ 45（runRow）+ 30（gap）= 297px</b>，
+702px 下给结果区剩 <b>~405px</b>（刚好两步展开），剩下滚——比现在“根本看不到结果”好得多。<br>
+顺带修两个真问题：<b>① <code>gap:10px</code> 在滚动区内改成 8px</b>（八个子项时能省出一整步的高度）；
+<b>② <code>.dialog-box</code> 补 <code>overflow:hidden</code></b>，否则 16px 圆角会被滚动内容的方角顶破。
+</p>
+
+<hr>
+
+<h2>方案 B：整体滚动（最小改动）</h2>
+<p class="note">
+header 下面所有东西包一层 <code>.body{flex:1;min-height:0;overflow-y:auto}</code>。<b>只动 CSS + 一个 div，不拆结构。</b><br>
+<b>代价：运行按钮会随内容滚走。</b>跑完一条四步链之后，想改输入重跑、或换另一条链，
+得先往上滚 500px——而“跑一次看看、不对再换一条”正是这个面板最常见的用法。
+</p>
+
+<h2>方案 C：运行后切换视图</h2>
+<p class="note">
+运行前只显示配置（链/输入/运行），运行后整面切成结果页 + 一个「← 返回」。空间利用最大化。<br>
+<b>两个代价：</b>① 看不到输入了，而步骤里的“输入→输出”需要跟原文对照；
+② 多一个视图状态要管（何时重置、换链时要不要退回），而现在的 bug 只是“少了一个滚动容器”。
+</p>
+
+<hr>
+
+<h2>对比</h2>
+<table>
+<tr><th style="width:170px"></th><th>A · 上固定下滚动</th><th>B · 整体滚动</th><th>C · 切换视图</th></tr>
+<tr><td>修掉垂直溢出</td><td class="y">是</td><td class="y">是</td><td class="y">是</td></tr>
+<tr><td>运行按钮始终可见</td><td class="y">是</td><td class="n">不是（滚走）</td><td class="y">是</td></tr>
+<tr><td>输入始终可见</td><td class="y">是</td><td class="n">不是</td><td class="n">不是</td></tr>
+<tr><td>换链重跑的成本</td><td class="y">0</td><td class="n">要先滚回顶</td><td>要先退出结果页</td></tr>
+<tr><td>结果区可用高</td><td>~405px</td><td class="y">全部</td><td class="y">最大</td></tr>
+<tr><td>改动量</td><td>CSS + 包两层 div</td><td class="y">CSS + 包一层 div</td><td class="n">新增视图状态</td></tr>
+</table>
+
+<p class="note" style="margin-top:18px">
+<b>推荐 A。</b>这个面板的真实用法是“选一条 → 跑 → 看步骤 → 不对就换一条再跑”，
+把链选择、输入、运行这三样钉在上面，正好把这个循环的成本降到零。<br>
+B 虽然最省事，但它把主操作扔进了滚动区——修掉了溢出，却换来每次重跑都要滚屏。
+</p>
+
+</body>
+</html>

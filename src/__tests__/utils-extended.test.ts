@@ -6,7 +6,6 @@ import {
   relativeTime,
   getLangLabel,
 } from "@/lib/utils";
-import { resolveSource } from "@/lib/source-mappings";
 
 /** 格式化本地时间为 "YYYY-MM-DD HH:mm:ss"（与 Rust chrono::Local 写入格式一致） */
 function fmtLocal(d: Date = new Date()): string {

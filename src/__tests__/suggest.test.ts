@@ -20,6 +20,7 @@ import {
   suggestSequence,
   suggestChain,
   suggestIntent,
+  suggestSession,
   TOP1_MIN_SCORE,
   SEQUENCE_MIN_COUNT,
 } from "@/lib/suggest";
@@ -27,6 +28,7 @@ import { __resetRecommendForTest, loadRecommendState } from "@/lib/recommend";
 import { analyzeContent } from "@/lib/transforms/analyzer";
 import { registerTransform, unregisterTransform } from "@/lib/transforms/registry";
 import { loadUserChains, invalidateUserChains } from "@/lib/chains/registry";
+import { pushToSession, getSession, __resetSessionForTest } from "@/lib/sessionContext";
 import { detectIntent } from "@/lib/intent";
 import type { ChainDef } from "@/lib/api/chains";
 import type { Transform, TransformContext } from "@/lib/transforms/types";
@@ -368,5 +370,79 @@ describe("suggestChain（跑链建议·全步骤注册表校验）", () => {
     const s = suggestChain(ctx(HTML_TEXT));
     if (s?.kind !== "chain") throw new Error("应为链建议");
     expect(s.chainId).toBe("web-to-text");
+  });
+});
+
+describe("suggestSession（v6.1 工作记忆）", () => {
+  it("连续 2 条同类代码 → AI 合并建议", () => {
+    __resetSessionForTest();
+    // 注册 ai-merge-polish 变换（内置 AI 动作测试环境可能未注册，这里手动注册假变换）
+    registerTransform({
+      id: "ai-merge-polish",
+      label: "AI 合并",
+      description: "",
+      group: "ai",
+      remote: true,
+      detect: () => 0,
+      run: async (t: string) => ({ ok: true, output: t }),
+    });
+
+    pushToSession("代码段一", "code");
+    pushToSession("代码段二", "code");
+    const s = suggestSession(getSession());
+    expect(s).not.toBeNull();
+    if (s?.kind !== "session") throw new Error("应为会话建议");
+    expect(s.transformId).toBe("ai-merge-polish");
+    expect(s.texts.length).toBe(2);
+    expect(s.mergedText).toContain("---");
+    __resetSessionForTest();
+  });
+
+  it("少于 2 条 / 混类 / 非代码文本类型 → null", () => {
+    __resetSessionForTest();
+
+    // 1 条 → null
+    pushToSession("只有一条", "text");
+    expect(suggestSession(getSession())).toBeNull();
+
+    // 混类 → null
+    pushToSession("第二条", "text");
+    pushToSession("第三条", "url");
+    expect(suggestSession(getSession())).toBeNull();
+
+    // 非目标类型（如 url / json）→ null
+    __resetSessionForTest();
+    pushToSession("https://a.com", "url");
+    pushToSession("https://b.com", "url");
+    expect(suggestSession(getSession())).toBeNull();
+
+    __resetSessionForTest();
+  });
+});
+
+describe("suggestSession · v6.6 会话级编排", () => {
+  it("整桶报错代码 → 建议「一起排错」并带编排链", () => {
+    __resetSessionForTest();
+    pushToSession("ERROR: Cannot find module 'x'", "code");
+    pushToSession("at Object.<anonymous> (app.js:1:1)", "code");
+    pushToSession("error TS2304: Cannot find name 'x'", "code");
+    const s = suggestSession(getSession());
+    expect(s).not.toBeNull();
+    if (s?.kind !== "session") throw new Error("应为会话建议");
+    expect(s.label).toBe("一起排错");
+    expect(s.planChainId).toBe("error-triage");
+    expect(s.mergedText).toContain("ERROR");
+    __resetSessionForTest();
+  });
+
+  it("普通代码会话 → 仍建议 AI 合并（不带编排链）", () => {
+    __resetSessionForTest();
+    pushToSession("const a = 1;", "code");
+    pushToSession("const b = 2;", "code");
+    const s = suggestSession(getSession());
+    if (s?.kind !== "session") throw new Error("应为会话建议");
+    expect(s.label).toBe("AI 合并");
+    expect(s.planChainId).toBeUndefined();
+    __resetSessionForTest();
   });
 });

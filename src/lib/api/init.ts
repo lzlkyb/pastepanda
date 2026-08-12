@@ -7,7 +7,7 @@ import { useAppStore, HistoryItem, Tag } from "@/stores/appStore";
 import { logger } from "@/lib/logger";
 import { invalidateCountsCache } from "./cache";
 import { sequentialPaste, indexPaste } from "./sequential";
-import { toggleStackMode, stackPasteNext, stackPasteAll, isStackPasteAllRunning, abortStackPasteAll } from "./stack";
+import { toggleStackMode, stackPasteNext, isStackPasteAllRunning, abortStackPasteAll } from "./stack";
 
 /** 初始化 Tauri 后端连接 */
 export async function initBackend(): Promise<() => void> {
@@ -205,6 +205,15 @@ export async function initBackend(): Promise<() => void> {
   } catch (e) {
     unlistens.forEach((u) => u());
     throw e;
+  }
+
+  // 审查：预载用户自定义链（registry 的 userChainsCache）——否则本会话新建的链
+  // 进不了 suggestChain 的链建议（要等打开链运行器才加载）
+  try {
+    const { loadUserChains } = await import("@/lib/chains/registry");
+    await loadUserChains();
+  } catch {
+    /* 链加载失败不阻塞启动 */
   }
 
   // Ctrl+A 全选改为应用内快捷键，不再通过全局热键事件

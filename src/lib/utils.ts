@@ -248,3 +248,79 @@ export function highlightCodeSync(text: string, _language: string): string {
 
 // 已迁移至 src/lib/source-mappings.ts，此处保留兼容重导出
 export { cleanSourceName, getSourceIcon } from "./source-mappings";
+
+// ==================== AI 用量估算 ====================
+
+/**
+ * 粗略估算一段文本大约占多少 token。
+ *
+ * 用途：变换卡在“还没发送”时告诉用户这次大概多大体量，好判断要不要真发。
+ *
+ * 算法：CJK（中日韩）按 1.5 token/字，其余字符按 4 字符/token。
+ *
+ * **这只是量级参考，不是准确值**：真实分词由各家 tokenizer 决定，
+ * 同一段中文在不同服务商下可以差到 ±50%（DeepSeek/通义这类中文词表明显更省）。
+ * 所以**展示时必须带“≈”**，不能拿它去算钱。
+ *
+ * 用 for...of 而不是下标遍历：后者会把 emoji 等代理对拆成两个“字符”。
+ */
+export function estimateTokens(text: string): number {
+  if (!text) return 0;
+  let cjk = 0;
+  let other = 0;
+  for (const ch of text) {
+    if (/[一-鿿぀-ヿ가-힯]/.test(ch)) cjk++;
+    else other++;
+  }
+  return Math.max(1, Math.round(cjk * 1.5 + other / 4));
+}
+
+/** 字数（按**码点**数，emoji 算 1 个）。与 estimateTokens 配套展示。
+ *  不用 text.length：它数的是 UTF-16 代码单元，一个 emoji 会被算成 2。 */
+export function countChars(text: string): number {
+  return text ? [...text].length : 0;
+}
+
+/**
+ * 把 catch 到的未知错误转成可展示文案。
+ *
+ * Tauri 的 invoke 失败时抛的是**字符串**（Rust 端 `Err(String)`），
+ * 而前端自己的异常抛的是 Error，两者得分开取：
+ * 直接 String(e) 会把 Error 变成 "Error: xxx"，把普通对象变成 "[object Object]"。
+ */
+export function errText(e: unknown, fallback: string): string {
+  if (typeof e === "string" && e.trim()) return e;
+  if (e instanceof Error && e.message) return e.message;
+  const s = e == null ? "" : String(e);
+  return s && s !== "[object Object]" ? s : fallback;
+}
+
+/**
+ * 解析 file / image 条目的 `content` 字段为路径数组。
+ *
+ * `content` 的存法不止一种（历史原因）：JSON 数组、JSON 单字符串、
+ * 裸路径、换行分隔的多路径都可能，所以四种都得接。
+ *
+ * 收口缘由（规则 #11）：之前共存三份实现且**行为不一致**——
+ * pasteTransform 那份 JSON 解析失败后按换行切分，Card 那两份直接把整个
+ * content 当单路径，于是同一条多文件记录在不同地方能解出不同的个数。
+ * 这里取并集：先 JSON，再按换行切，每项 trim 后去空。
+ */
+export function parseFilePaths(content: string): string[] {
+  if (!content) return [];
+  try {
+    const parsed: unknown = JSON.parse(content);
+    if (Array.isArray(parsed)) {
+      // 只收字符串项：Card 那份用的是 map(String)，会把数字/null 变成
+      // "1"/"null" 当成路径交下去。丢掉非字符串才是对的。
+      return parsed.filter((p): p is string => typeof p === "string").map((p) => p.trim()).filter(Boolean);
+    }
+    if (typeof parsed === "string" && parsed.trim()) return [parsed.trim()];
+  } catch {
+    /* 不是 JSON，当纯路径处理 */
+  }
+  return content
+    .split("\n")
+    .map((p) => p.trim())
+    .filter(Boolean);
+}

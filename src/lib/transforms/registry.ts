@@ -35,10 +35,22 @@ export function listTransforms(): Transform[] {
   return [...registry.values()];
 }
 
+/**
+ * 推荐理由（“为什么排这里”）。由 `recommendScored` 在**排完序之后**填，
+ * `applicableTransforms` 的静态结果不带（冷启动时本来就无理由可说）。
+ */
+export interface RecommendReason {
+  /** usage/scene/sequence/role = 正面；quality = 负面（解释为什么被往后排） */
+  kind: "usage" | "scene" | "sequence" | "role" | "quality";
+  text: string;
+}
+
 /** 命中项：变换 + 匹配度 */
 export interface ScoredTransform {
   transform: Transform;
   score: number;
+  /** 仅个性化排序后存在；冷启动 / 无明显主导因子时为 undefined */
+  reason?: RecommendReason;
 }
 
 /**

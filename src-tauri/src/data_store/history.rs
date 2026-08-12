@@ -590,7 +590,7 @@ impl DataStore {
     /// 更新历史记录的文本内容（编辑对话框用）— 同时更新 md5、拼音和 content_type
     pub fn update_history(&self, id: &str, text: &str) -> Result<(), String> {
         let conn = self.lock_conn();
-        let md5_hash = format!("{:x}", Md5::new().chain_update(text.as_bytes()).finalize());
+        let md5_hash = crate::hashing::content_md5(text);
         let pinyin_initials = compute_pinyin_initials(text);
         let labels = crate::content_classifier::ContentClassifier::new().classify(text);
         let content_type = crate::content_classifier::ContentClassifier::content_type_from_labels(&labels);
@@ -605,7 +605,41 @@ impl DataStore {
         }
         // v6.4 FTS 索引同步
         self.sync_fts_upsert(&conn, id);
+        // 审查 #9：编辑文本后重建内容记忆摘要（旧摘要/派生向量作废）
+        self.sync_summary(&conn, id, text);
         Ok(())
+    }
+
+    /// 内容记忆（M5-1）：为单条记录同步检索摘要。
+    /// 文本变化（编辑/回写）后调用：先删旧摘要与派生向量，再按新文本重建；
+    /// 敏感内容跳过；写失败不阻塞主流程（记账类操作）。
+    fn sync_summary(&self, conn: &rusqlite::Connection, id: &str, text: &str) {
+        let _ = conn.execute(
+            "DELETE FROM history_summaries WHERE history_id = ?1",
+            params![id],
+        );
+        let _ = conn.execute(
+            "DELETE FROM semantic_vectors WHERE history_id = ?1",
+            params![id],
+        );
+        if text.trim().is_empty() {
+            return;
+        }
+        let classifier = crate::content_classifier::ContentClassifier::new();
+        if classifier.is_secret(text) {
+            return;
+        }
+        let summary = summarize_text(text);
+        if summary.is_empty() {
+            return;
+        }
+        let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let _ = conn.execute(
+            "INSERT INTO history_summaries (history_id, summary, created_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(history_id) DO UPDATE SET summary = ?2",
+            params![id, summary, now],
+        );
     }
 
     /// 更新图文混排（rich）记录：同时写回 HTML 片段（content）与纯文本（text）。
@@ -648,6 +682,8 @@ impl DataStore {
         }
         // v6.4 FTS 索引同步（content 与 text 都变了）
         self.sync_fts_upsert(&conn, id);
+        // 审查 #9：富文本编辑后同样重建内容记忆摘要（按纯文本）
+        self.sync_summary(&conn, id, plain_text);
 
         // 算出“旧有、新无”的图片作为清理候选
         let old_imgs = Self::extract_local_image_files_from_rich_content(&old_content);
@@ -667,19 +703,22 @@ impl DataStore {
         Ok(())
     }
 
-    /// 查找与给定 md5 相同的最近一条文本记录（用于智能合并重复内容）
+    /// 查找与给定 md5 相同的最近一条记录（智能合并重复内容，按类型精确匹配）。
+    /// 修复：原实现 SQL 硬编码 type='text'，导致 rich/doc 类型记录永远查不到——
+    /// process_doc 的合并形同虚设、process_rich 无法合并（图文/文档重复入库）。
     /// 修复 Low：增加 workspace 过滤，避免跨工作区误合并
     pub fn find_latest_by_md5(
         &self,
         md5: &str,
         workspace: &str,
+        item_type: &str,
     ) -> Result<Option<HistoryItem>, String> {
         let conn = self.lock_conn();
         let result = conn.query_row(
             "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon, content_type
-             FROM history WHERE md5 = ?1 AND type = 'text' AND workspace = ?2
+             FROM history WHERE md5 = ?1 AND type = ?3 AND workspace = ?2
              ORDER BY time DESC LIMIT 1",
-            params![md5, workspace],
+            params![md5, workspace, item_type],
             |row| {
                 Ok(HistoryItem {
                     id: row.get(0)?,
@@ -769,6 +808,23 @@ impl DataStore {
                 placeholders.join(",")
             );
             let _ = conn.execute(&fts_delete_sql, param_refs.as_slice());
+
+            // 审查 #9：内容记忆与历史生命周期级联 —— 摘要与派生向量随记录一起删，
+            // 否则 semantic_vector_pending 会给已删条目的摘要补向量（白烧 embedding 预算）
+            let _ = conn.execute(
+                &format!(
+                    "DELETE FROM history_summaries WHERE history_id IN ({})",
+                    placeholders.join(",")
+                ),
+                param_refs.as_slice(),
+            );
+            let _ = conn.execute(
+                &format!(
+                    "DELETE FROM semantic_vectors WHERE history_id IN ({})",
+                    placeholders.join(",")
+                ),
+                param_refs.as_slice(),
+            );
 
             let delete_sql = format!(
                 "DELETE FROM history WHERE id IN ({})",
@@ -939,6 +995,17 @@ impl DataStore {
         // 显式事务：批量清理要么全成功要么全回滚
         // 改用 RAII 事务：COMMIT 失败不回滚会导致事务永久挂在共享连接上，Transaction drop 时自动 ROLLBACK 可避免
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        // 审查 #9：内容记忆级联 —— 摘要与派生向量随记录一起删
+        let _ = conn.execute(
+            "DELETE FROM history_summaries WHERE history_id IN
+             (SELECT id FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2)",
+            params![workspace, cutoff_str],
+        );
+        let _ = conn.execute(
+            "DELETE FROM semantic_vectors WHERE history_id IN
+             (SELECT id FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2)",
+            params![workspace, cutoff_str],
+        );
         let result = conn.execute(
             "DELETE FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2",
             params![workspace, cutoff_str],
@@ -1061,6 +1128,23 @@ impl DataStore {
         // 3. 事务删除（v6.1 自我净化：与第 1 步同样的豁免条件，保证"预览数 = 删除数"）
         // 改用 RAII 事务：手写 COMMIT 失败不回滚会让事务永久挂在共享连接上，drop 时自动 ROLLBACK 可避免
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        // 审查 #9：内容记忆级联 —— 摘要与派生向量随记录一起删（条件与主表完全一致）
+        let _ = conn.execute(
+            &format!(
+                "DELETE FROM history_summaries WHERE history_id IN
+                 (SELECT id FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2{})",
+                preserve_sql,
+            ),
+            params![workspace, cutoff_str],
+        );
+        let _ = conn.execute(
+            &format!(
+                "DELETE FROM semantic_vectors WHERE history_id IN
+                 (SELECT id FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2{})",
+                preserve_sql,
+            ),
+            params![workspace, cutoff_str],
+        );
         let del_sql = format!(
             "DELETE FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2{}",
             preserve_sql,

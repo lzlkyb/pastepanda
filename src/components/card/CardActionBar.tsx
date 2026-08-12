@@ -41,6 +41,19 @@ export const CardActionBar = memo(function CardActionBar({
       {
         text,
         contentType: item.content_type || item.type,
+        /**
+         * 标签一并传进去，让三处构造 TransformContext 的地方（本栏 / AI 快捷栏 / 变换中心）
+         * 保持一致的上下文。
+         *
+         * **它当前对本栏不产生任何效果**，得说清楚：标签只影响 AI 动作的打分
+         * （languageTag 推高 ai-explain-code、tagBoost 浮出 ai-reply-draft 等），
+         * 而那些全是 `kind: "text"`，下面的 `kind === "action"` 过滤会全部剔掉。
+         *
+         * 仍然传的理由：以后出现第一个 `kind: "action"` 的 AI 动作、或哪个本地
+         * 动作的 detect 开始读 tags 时，这里不需要再想起来补一次——三处 ctx 里
+         * 少一处字段，正是“为什么只有这个入口行为不一样”这类 bug 的温床。
+         */
+        tags: item.tags?.map((t) => ({ name: t.name, source: t.source })),
       },
       // v6.2 场景感知：当前小时 + 来源应用
       sceneOf(new Date().getHours(), item.source),

@@ -96,8 +96,13 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
     <div className={styles.lanPanel}>
       <div className={`${styles.lanPanelHeader}`}>
         <div className={styles.lanStatus}>
-          <div className={styles.lanDot} />
-          <span className={`${styles.lanStatusText}`}>监听中 — 等待其他设备连接</span>
+          {/* 审查：绿点跟随真实状态（无设备=灰），不再恒亮假绿 */}
+          <div className={`${styles.lanDot}${devices.length === 0 ? ` ${styles.off}` : ""}`} />
+          <span className={`${styles.lanStatusText}`}>
+            {devices.length > 0
+              ? `已连接 ${devices.length} 台设备`
+              : "监听中 — 等待其他设备连接"}
+          </span>
         </div>
         <button className={styles.lanRefreshBtn} onClick={refreshDevices} disabled={loading}>
           {loading ? "⏳" : "🔄"} 刷新
@@ -161,7 +166,8 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
           {devices.map((d, idx) => (
             <div key={d.device_id ? `device-${d.device_id}-${idx}` : `device-${idx}`} className={`${styles.lanDeviceItem}`}>
               <div className={`${styles.lanDeviceAvatar}`} style={{
-                background: `hsl(${d.device_id.charCodeAt(0) * 40 % 360}, 60%, 55%)`,
+                // 审查：空 device_id 时 charCodeAt 是 NaN → 兜底 0（无效色）
+                background: `hsl(${(d.device_id.charCodeAt(0) || 0) * 40 % 360}, 60%, 55%)`,
               }}>
                 {d.device_name.charAt(0).toUpperCase()}
               </div>

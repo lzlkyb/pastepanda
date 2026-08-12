@@ -66,7 +66,7 @@ export function FullscreenLaunchButton({ itemId, text, contentType, language }: 
 }
 
 /** 文本变换工具栏（编辑模式下显示）；prepend 渲染类型专用工具（如 JSON 格式化/压缩） */
-export function TransformToolbar({ text, transform, undo, redo, isModified, showOriginal, onToggleOriginal, isHtmlContent, prepend }: {
+export function TransformToolbar({ transform, undo, redo, isModified, showOriginal, onToggleOriginal, isHtmlContent, prepend }: {
   text: string;
   transform: (fn: (s: string) => string) => void;
   undo: () => void;

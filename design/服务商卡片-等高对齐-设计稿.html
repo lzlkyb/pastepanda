@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>内置服务商卡片 · 等高对齐设计稿</title>
+<style>
+  :root{
+    --text-primary:#0f172a; --text-secondary:#475569; --text-muted:#627083;
+    --section-bg:#f8fafc; --search-border:#e2e8f0;
+    --accent:#0284c7; --accent-light:#e0f2fe; --accent-strong:#0369a1;
+    --success:#15803d; --success-bg:#dcfce7;
+    --page:#fff;
+  }
+  body{margin:0;padding:24px;background:#eef2f6;font:13px/1.5 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:var(--text-primary)}
+  h1{font-size:17px;margin:0 0 4px}
+  .sub{font-size:12px;color:var(--text-secondary);margin:0 0 18px}
+  .panel{background:var(--page);border:1px solid var(--search-border);border-radius:12px;padding:14px;max-width:520px;margin:0 0 18px}
+  .panel h2{font-size:13px;margin:0 0 3px}
+  .panel .why{font-size:11.5px;color:var(--text-secondary);margin:0 0 10px;line-height:1.6}
+  .tag-bad{display:inline-block;background:#fee2e2;color:#b91c1c;border-radius:4px;padding:0 5px;font-size:10px;font-weight:600}
+  .tag-ok{display:inline-block;background:var(--success-bg);color:var(--success);border-radius:4px;padding:0 5px;font-size:10px;font-weight:600}
+
+  /* ===== 公用：网格 ===== */
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+
+  /* ===== 现状（复现问题） ===== */
+  .cur .card{position:relative;display:flex;align-items:center;gap:6px;border:1px solid var(--search-border);
+    border-radius:9px;padding:7px 8px;background:var(--section-bg);text-align:left;cursor:pointer}
+  .cur .name{font-size:12px;font-weight:500;line-height:1.25}
+  .cur .tags{display:flex;flex-direction:column;gap:2px;margin-left:auto}
+  .cur .tSet,.cur .tLocal{font-size:9px;border-radius:4px;padding:1px 4px;font-weight:600}
+  .cur .tSet{background:var(--success-bg);color:var(--success)}
+  .cur .tLocal{background:var(--accent-light);color:var(--accent-strong)}
+  /* 漏出共享规则：无 font-size / padding / radius */
+  .cur .tBuiltin{background:#f3e8ff;color:#7c3aed;border:1px solid #d8b4fe}
+
+  /* ===== 方案 A：等高 + 标签横排单行 ===== */
+  .a .card{position:relative;display:flex;align-items:center;gap:6px;min-height:38px;box-sizing:border-box;
+    border:1px solid var(--search-border);border-radius:9px;padding:7px 8px;background:var(--section-bg);cursor:pointer}
+  .a .name{font-size:12px;font-weight:500;line-height:1.25;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .a .tags{display:flex;flex-direction:row;gap:3px;margin-left:auto;flex-shrink:0}
+  .a .tag{font-size:9px;border-radius:4px;padding:1px 4px;font-weight:600;line-height:1.5;white-space:nowrap}
+  .a .tSet{background:var(--success-bg);color:var(--success)}
+  .a .tLocal{background:var(--accent-light);color:var(--accent-strong)}
+  .a .tBuiltin{background:#f3e8ff;color:#7c3aed;border:1px solid #d8b4fe}
+
+  /* ===== 方案 B：两行结构（名称 / 标签各一行） ===== */
+  .b .card{position:relative;display:flex;flex-direction:column;justify-content:center;gap:3px;height:48px;box-sizing:border-box;
+    border:1px solid var(--search-border);border-radius:9px;padding:6px 8px;background:var(--section-bg);cursor:pointer}
+  .b .name{font-size:12px;font-weight:500;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .b .tags{display:flex;gap:3px;min-height:14px}
+  .b .tag{font-size:9px;border-radius:4px;padding:1px 4px;font-weight:600;line-height:1.5;white-space:nowrap}
+  .b .tSet{background:var(--success-bg);color:var(--success)}
+  .b .tLocal{background:var(--accent-light);color:var(--accent-strong)}
+  .b .tBuiltin{background:#f3e8ff;color:#7c3aed;border:1px solid #d8b4fe}
+
+  /* ===== 方案 C：只显一个主标签（优先级）+ 已配置用小圆点 ===== */
+  .c .card{position:relative;display:flex;align-items:center;gap:6px;min-height:38px;box-sizing:border-box;
+    border:1px solid var(--search-border);border-radius:9px;padding:7px 8px;background:var(--section-bg);cursor:pointer}
+  .c .name{font-size:12px;font-weight:500;line-height:1.25;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .c .right{display:flex;align-items:center;gap:4px;margin-left:auto;flex-shrink:0}
+  .c .tag{font-size:9px;border-radius:4px;padding:1px 4px;font-weight:600;line-height:1.5;white-space:nowrap}
+  .c .tLocal{background:var(--accent-light);color:var(--accent-strong)}
+  .c .tBuiltin{background:#f3e8ff;color:#7c3aed;border:1px solid #d8b4fe}
+  .c .dot{width:6px;height:6px;border-radius:50%;background:var(--success)}
+
+  .on{border-color:var(--accent)!important;background:var(--accent-light)!important;box-shadow:0 0 0 3px var(--accent-light)}
+  .ck{position:absolute;right:4px;top:4px;width:14px;height:14px;border-radius:50%;background:var(--accent);color:#fff;
+    font-size:9px;display:flex;align-items:center;justify-content:center}
+  .note{font-size:11px;color:var(--text-muted);margin-top:8px;line-height:1.6}
+  code{background:#f1f5f9;padding:0 3px;border-radius:3px;font-size:11px}
+</style>
+</head>
+<body>
+
+<h1>内置服务商卡片 · 等高对齐</h1>
+<p class="sub">实测反馈“每个大小不一致”。下面先复现现状，再给三个方案。取数据与真实预置表一致。</p>
+
+<div class="panel cur">
+  <h2>现状 <span class="tag-bad">三个问题叠在一起</span></h2>
+  <p class="why">
+    <b>① <code>.provTagBuiltin</code> 漏出了共享规则</b>（真 bug）：<code>font-size:9px / padding / radius / weight</code>
+    只写在 <code>.provTagSet, .provTagLocal</code> 上，“内置免费”标签继承了默认字号、没有内边距。<br>
+    <b>② 卡片无固定高度，标签纵向堆叠</b>（<code>flex-direction:column</code>）：两个标签的卡比一个的高一截。<br>
+    <b>③ 长厂商名换行</b>再高一行。
+  </p>
+  <div class="grid">
+    <button class="card"><span class="name">DeepSeek</span><span class="tags"></span></button>
+    <button class="card"><span class="name">通义千问</span><span class="tags"><span class="tSet">已配置</span></span></button>
+    <button class="card"><span class="name">Ollama（本地）</span><span class="tags"><span class="tLocal">本地</span><span class="tSet">已配置</span></span></button>
+    <button class="card on"><span class="name">内置免费（Agnes）</span><span class="tags"><span class="tBuiltin">内置免费</span><span class="tSet">已配置</span></span><span class="ck">✓</span></button>
+    <button class="card"><span class="name">智谱 GLM</span><span class="tags"></span></button>
+    <button class="card"><span class="name">月之暗面 Kimi</span><span class="tags"></span></button>
+  </div>
+  <p class="note">注意第三、第四张卡明显更高，且“内置免费”标签与右侧“已配置”字号不一致。</p>
+</div>
+
+<div class="panel a">
+  <h2>方案 A：等高 + 标签横排 <span class="tag-ok">推荐</span></h2>
+  <p class="why">
+    <code>min-height:38px</code> 保底等高；<code>.provTags</code> 改 <code>row</code>；标签尺寸收成一个
+    <code>.provTag</code> 基类（三个标签只负责颜色）；名称单行省略号。<b>改动最小，不动结构。</b>
+  </p>
+  <div class="grid">
+    <button class="card"><span class="name">DeepSeek</span><span class="tags"></span></button>
+    <button class="card"><span class="name">通义千问</span><span class="tags"><span class="tag tSet">已配置</span></span></button>
+    <button class="card"><span class="name">Ollama（本地）</span><span class="tags"><span class="tag tLocal">本地</span><span class="tag tSet">已配置</span></span></button>
+    <button class="card on"><span class="name">内置免费（Agnes）</span><span class="tags"><span class="tag tBuiltin">内置免费</span><span class="tag tSet">已配置</span></span><span class="ck">✓</span></button>
+    <button class="card"><span class="name">智谱 GLM</span><span class="tags"></span></button>
+    <button class="card"><span class="name">月之暗面 Kimi</span><span class="tags"></span></button>
+  </div>
+  <p class="note">风险：三列 × 两标签时右侧较挤，名称会提前省略（已在 Ollama / Agnes 两张上体现）。</p>
+</div>
+
+<div class="panel b">
+  <h2>方案 B：两行结构（名称一行 / 标签一行）</h2>
+  <p class="why">
+    <code>height:48px</code> 硬等高；标签行固定 <code>min-height:14px</code>（无标签时也占位）。
+    名称抿到完整宽度，<b>长厂商名不再提前省略</b>。代价：网格整体变高约 25%。
+  </p>
+  <div class="grid">
+    <button class="card"><span class="name">DeepSeek</span><span class="tags"></span></button>
+    <button class="card"><span class="name">通义千问</span><span class="tags"><span class="tag tSet">已配置</span></span></button>
+    <button class="card"><span class="name">Ollama（本地）</span><span class="tags"><span class="tag tLocal">本地</span><span class="tag tSet">已配置</span></span></button>
+    <button class="card on"><span class="name">内置免费（Agnes）</span><span class="tags"><span class="tag tBuiltin">内置免费</span><span class="tag tSet">已配置</span></span><span class="ck">✓</span></button>
+    <button class="card"><span class="name">智谱 GLM</span><span class="tags"></span></button>
+    <button class="card"><span class="name">月之暗面 Kimi</span><span class="tags"></span></button>
+  </div>
+</div>
+
+<div class="panel c">
+  <h2>方案 C：只显一个主标签 + 已配置用小圆点</h2>
+  <p class="why">
+    标签优先级：内置免费 &gt; 本地；“已配置”降为一个绿圆点。卡片永远只有一行、一个标签，
+    <b>宽度压力最小</b>。代价：“已配置”从文字变图形，需靠 <code>title</code> 补说明（无障碍转弱）。
+  </p>
+  <div class="grid">
+    <button class="card"><span class="name">DeepSeek</span><span class="right"></span></button>
+    <button class="card"><span class="name">通义千问</span><span class="right"><span class="dot" title="已配置"></span></span></button>
+    <button class="card"><span class="name">Ollama（本地）</span><span class="right"><span class="tag tLocal">本地</span><span class="dot" title="已配置"></span></span></button>
+    <button class="card on"><span class="name">内置免费（Agnes）</span><span class="right"><span class="tag tBuiltin">内置免费</span><span class="dot" title="已配置"></span></span><span class="ck">✓</span></button>
+    <button class="card"><span class="name">智谱 GLM</span><span class="right"></span></button>
+    <button class="card"><span class="name">月之暗面 Kimi</span><span class="right"></span></button>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>另一件不属于“美化”但请一并定的事</h2>
+  <p class="why">
+    Agnes 在预置表里排<b>第 14 位</b>，而 <code>VISIBLE_PROVS = 8</code>，所以它默认被折叠在
+    「▾ 更多服务商」里。而它的定位是“免配 key、打开即用、送 10 万 token”——
+    <b>新用户根本看不到它</b>。建议前端把 <code>builtinFree</code> 排到首位（不动 Rust 预置表的厂商分组），
+    一行代码。这属于产品层面，我不自作主张。
+  </p>
+</div>
+
+</body>
+</html>

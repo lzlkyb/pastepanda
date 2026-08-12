@@ -115,8 +115,7 @@ pub async fn ai_plan_chain(
     let (cfg, key) = {
         let store = app.state::<DataStore>();
         let cfg = read_ai_config(&store)?;
-        let dir = ai_data_dir(&app)?;
-        let key = secret_store::load_key(&dir, &cfg.provider)?.unwrap_or_default();
+        let key = resolve_ai_key(&app, &cfg)?;
         if cfg.spec().needs_key && key.is_empty() {
             return Err("尚未配置 API Key".to_string());
         }
@@ -131,9 +130,9 @@ pub async fn ai_plan_chain(
 
     // 出网闸：同 `ai_run`。“只是让它帮我想个方案”不是例外——内容照样要出本机。
     let classifier = ContentClassifier::new();
-    if !force && !spec.is_local() && classifier.is_secret(&text) {
+    if !force && !spec.is_local() && classifier.is_sensitive_for_egress(&text) {
         return Ok(AiRunResponse::NeedsConfirm(AiRunNeedsConfirm {
-            reason: "这段内容看起来是密钥或凭证。让模型编链也需要把它发到云端，确认要继续吗？"
+            reason: "这段内容含敏感信息（密钥凭证，或手机号/邮箱/身份证/IP 这类个人信息）。让模型编链也需要把它发到云端，确认要继续吗？"
                 .to_string(),
         }));
     }
@@ -143,6 +142,8 @@ pub async fn ai_plan_chain(
         let today = { app.state::<DataStore>().ai_usage_today() };
         if let Err((spent_usd, budget_usd)) = budget::check(&today, cfg.daily_budget_usd()) {
             return Ok(AiRunResponse::BudgetExceeded(AiRunBudgetExceeded {
+                is_quota: false,
+                quota_reason: None,
                 spent_cny: spent_usd * provider::USD_TO_CNY,
                 budget_cny: budget_usd * provider::USD_TO_CNY,
             }));
@@ -153,7 +154,7 @@ pub async fn ai_plan_chain(
 
     let started = std::time::Instant::now();
     let result =
-        crate::ai::chat(&cfg, &key, Some(system.as_str()), &user, Some(PLAN_MAX_TOKENS)).await;
+        crate::ai::chat(&cfg, &key, Some(system.as_str()), &user, Some(PLAN_MAX_TOKENS), None).await;
     let latency_ms = started.elapsed().as_millis() as u64;
 
     // 用一个固定的伪动作 id 记账，让用量页能看出“编链花了多少钱”

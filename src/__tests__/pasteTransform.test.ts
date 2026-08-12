@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { applyPasteTransform, parseFilePaths } from "@/lib/pasteTransform";
-
-const t = (text: string, content = "") => applyPasteTransform({ text, content }, "");
+import { applyPasteTransform } from "@/lib/pasteTransform";
+// parseFilePaths 已收口到 lib/utils（原来 pasteTransform / Card 各一份、行为不一致）
+import { parseFilePaths } from "@/lib/utils";
 
 // ============================================================
 // 文本通用变换

@@ -14,53 +14,24 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Lightbulb, X, ArrowRight } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { useDialogStore } from "@/stores/dialogStore";
-import { suggestTop1, suggestSequence, suggestChain, suggestIntent, type Suggestion } from "@/lib/suggest";
+import { suggestTop1, suggestSequence, suggestChain, suggestIntent, suggestSession, loadFeedback, suppressByEditRate, invalidateLearningCache, type Suggestion } from "@/lib/suggest";
+import { getSession, pushToSession, resetSession } from "@/lib/sessionContext";
 import { getTransform } from "@/lib/transforms";
 import { actionDismissAdd } from "@/lib/api/actionEvents";
-import { aiFeedbackStats, actionPrefsAll } from "@/lib/api/aiFeedback";
 import { useToast } from "@/components/Toast";
 import { sceneOf } from "@/lib/recommend";
+import { cleanSourceName } from "@/lib/source-mappings";
 import styles from "./SuggestionBar.module.css";
 
 /** 无操作自动收起时长 */
 const AUTO_HIDE_MS = 8000;
 
-/** 被改率 ≥ 该值 = "常被改"，建议降权（除非已设偏好指令） */
-const EDIT_RATE_BAD = 0.4;
-
-/** 反馈统计与偏好的模块级缓存（建议条是高频触发，避免每次 invoke） */
-interface FbData {
-  fb: { actionId: string; editRate: number }[] | null;
-  prefs: Set<string> | null;
-}
-let fbCache: FbData["fb"] = null;
-let prefActions: FbData["prefs"] = null;
-let fbCacheLoadedAt = 0;
-/** 审查 backlog：冷启动并发去重——inflight promise 共享，避免两个 effect 同时通过缓存检查重复拉取 */
-let inflight: Promise<FbData> | null = null;
-
-/** 拉取反馈/偏好（60s 缓存，并发共享同一请求） */
-function loadFeedback(): Promise<FbData> {
-  const now = Date.now();
-  if (fbCache && prefActions && now - fbCacheLoadedAt < 60_000) {
-    return Promise.resolve({ fb: fbCache, prefs: prefActions } as FbData);
-  }
-  if (inflight) return inflight;
-  inflight = (async () => {
-    const [stats, prefs] = await Promise.all([
-      aiFeedbackStats(30).catch(() => []),
-      actionPrefsAll().catch(() => []),
-    ]);
-    fbCache = stats.filter((s) => s.total >= 5);
-    prefActions = new Set(prefs.map((p) => p.actionId));
-    fbCacheLoadedAt = Date.now();
-    inflight = null;
-    return { fb: fbCache, prefs: prefActions } as FbData;
-  })();
-  return inflight;
+/** 审查：学习数据被清空/修改后（LearningsDialog 等）调用，立即失效缓存 */
+export function invalidateSuggestionFeedbackCache(): void {
+  invalidateLearningCache();
 }
 
-/** 建议条文案：意图 → 任务级；动作 → 单步；序列 → 合并；链（M4）→ 多步一次跑完 */
+/** 建议条文案：意图 → 任务级；动作 → 单步；序列 → 合并；链（M4）→ 多步一次跑完；会话（v6.1）→ 正在拼 */
 function describe(s: Suggestion): string {
   if (s.kind === "intent") {
     return `${s.label}——要连着「${s.actionsText}」一起做吗？`;
@@ -71,6 +42,9 @@ function describe(s: Suggestion): string {
   if (s.kind === "chain") {
     return `用「${s.label}」链一次跑完（${s.stepCount} 步）？`;
   }
+  if (s.kind === "session") {
+    return `看起来你在拼 ${s.texts.length} 段内容——要「${s.label}」成一份吗？`;
+  }
   return `用「${s.label}」处理这段内容？`;
 }
 
@@ -80,15 +54,20 @@ export const SuggestionBar = memo(function SuggestionBar() {
   /** 鼠标在建议条上（用于暂停自动收起） */
   const [hovered, setHovered] = useState(false);
   const lastKeyRef = useRef<string>("");
+  /** 审查：否决时用的 contentType —— 记录建议计算那一刻的（点击时 history[0] 可能已漂移） */
+  const dismissContentTypeRef = useRef<string>("");
 
   // 最新条目（history[0] 是剪贴板最新捕获）
   const topItem = useAppStore((s) => s.history[0]);
 
-  // 新内容到达 → 计算建议（单条 top-1 优先，其次序列，最后跑链）
+  // 新内容到达 → 计算建议（意图 > top-1 > 序列 > 会话 > 跑链）
   useEffect(() => {
     if (!topItem || topItem.type !== "text") return;
     const text = (topItem.text || "").trim();
     if (!text) return;
+
+    // v6.1 工作记忆：新内容进会话桶（90s 间隔聚合，纯内存不落盘）
+    pushToSession(text, topItem.content_type || topItem.type);
 
     // v6.4 审查：#4 竞态防护——内容快速切换时，旧内容的异步建议晚返回直接丢弃
     let cancelled = false;
@@ -98,7 +77,9 @@ export const SuggestionBar = memo(function SuggestionBar() {
       contentType: topItem.content_type || topItem.type,
     };
     // v6.2 场景感知：当前小时 + 来源应用 → 时段桶 × 来源类别
-    const scene = sceneOf(new Date().getHours(), topItem.source);
+    // 审查 #2：与学习端一致，先 cleanSourceName 再分类（记录端 actionEvents.ts 也是清洗后存），
+    // 避免"学的和用的对不上"（如 "WeChat.exe" 与 "WeChat" 各归各）
+    const scene = sceneOf(new Date().getHours(), cleanSourceName(topItem.source || ""));
 
     void (async () => {
       const { fb, prefs } = await loadFeedback();
@@ -109,24 +90,19 @@ export const SuggestionBar = memo(function SuggestionBar() {
       if (intent && intent.kind === "intent") {
         const mainAction = intent.actionIds[0];
         const stat = fb?.find((s) => s.actionId === mainAction);
-        if (stat && stat.editRate >= EDIT_RATE_BAD && !prefs?.has(mainAction)) {
+        if (stat && stat.editRate >= 0.4 && !prefs?.has(mainAction)) {
           intent = null;
         }
       }
 
       // top-1 优先；若该动作"常被改"且用户没给它设偏好指令 → 放弃（宁可漏报，不推不满意的）
-      const top1Raw = suggestTop1(ctx, scene);
-      let top1: ReturnType<typeof suggestTop1> = top1Raw;
-      if (top1Raw && top1Raw.kind === "action") {
-        const stat = fb?.find((s) => s.actionId === top1Raw.transformId);
-        if (stat && stat.editRate >= EDIT_RATE_BAD && !prefs?.has(top1Raw.transformId)) {
-          top1 = null;
-        }
-      }
+      const top1 = suppressByEditRate(suggestTop1(ctx, scene), fb, prefs);
 
       const seq = top1 ? null : suggestSequence(history);
-      const chain = !top1 && !seq ? suggestChain(ctx) : null;
-      const s = intent ?? top1 ?? seq ?? chain;
+      // v6.1 会话感知：连续同类复制（正在拼内容）→ AI 合并建议
+      const session = !top1 && !seq ? suggestSession(getSession()) : null;
+      const chain = !top1 && !seq && !session ? suggestChain(ctx) : null;
+      const s = intent ?? top1 ?? seq ?? session ?? chain;
       if (cancelled) return; // 内容已切换，丢弃过期建议
       if (!s) {
         if (suggestion) setSuggestion(null);
@@ -144,6 +120,7 @@ export const SuggestionBar = memo(function SuggestionBar() {
               : `${s.kind}:${s.transformId}:${s.mergedText}`;
       if (key === lastKeyRef.current) return;
       lastKeyRef.current = key;
+      dismissContentTypeRef.current = topItem?.content_type || topItem?.type || "text";
       setSuggestion(s);
     })();
     return () => {
@@ -184,6 +161,9 @@ export const SuggestionBar = memo(function SuggestionBar() {
     if (suggestion.kind === "chain") {
       // 跑链建议（M4）：打开运行器并预选这条链
       useDialogStore.getState().openChain(targetText, suggestion.chainId);
+    } else if (suggestion.kind === "session" && suggestion.planChainId) {
+      // v6.6 会话级编排：打开运行器预选编排链 + 填入会话内容
+      useDialogStore.getState().openChain(targetText, suggestion.planChainId);
     } else if (
       (suggestion.kind === "action" && suggestion.transformId === "act-open-url") ||
       (suggestion.kind === "intent" && suggestion.actionIds[0] === "act-open-url")
@@ -197,11 +177,13 @@ export const SuggestionBar = memo(function SuggestionBar() {
         toast(r.ok ? `已执行「${t.label}」` : r.message || "执行失败", r.ok ? "success" : "error");
       }
     } else {
-      // text 类 / 序列 / 意图：打开变换枢纽并定位（用户仍可预览/选择/否决）
+      // text 类 / 序列 / 意图 / 会话：打开变换枢纽并定位（用户仍可预览/选择/否决）
       if (item) {
         useDialogStore.getState().openHub(item, targetText);
       }
     }
+    // 会话建议被使用 → 任务已承接，清空工作记忆（内容本来就不该留着）
+    if (suggestion.kind === "session") resetSession();
     setSuggestion(null);
   }, [suggestion, toast]);
 
@@ -214,13 +196,20 @@ export const SuggestionBar = memo(function SuggestionBar() {
    */
   const handleDismiss = useCallback(async () => {
     if (!suggestion) return;
-    const persisted = suggestion.kind !== "chain" && suggestion.kind !== "intent";
+    // 会话/链/意图类低频、仅本次收起（不持久，避免污染动作表）
+    const persisted =
+      suggestion.kind !== "chain" &&
+      suggestion.kind !== "intent" &&
+      suggestion.kind !== "session";
     if (persisted) {
-      const ct = useAppStore.getState().history[0]?.content_type || "text";
+      // 审查：用建议计算时的 contentType（而非点击时的 history[0]——8 秒内复制新内容会记错类型）
+      const ct = dismissContentTypeRef.current || "text";
       await actionDismissAdd(suggestion.transformId, ct).catch(() => {});
       const { refreshRecommendState } = await import("@/lib/recommend");
       await refreshRecommendState().catch(() => {});
     }
+    // 会话被否决 → 也清掉工作记忆（下次同批内容重新聚合，不重复打扰）
+    if (suggestion.kind === "session") resetSession();
     setSuggestion(null);
     toast(persisted ? `不再建议「${suggestion.label}」` : "已收起", "info");
   }, [suggestion, toast]);

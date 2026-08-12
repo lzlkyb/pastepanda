@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import {
   ensureAiAvailabilityLoaded,
+  ensureAiConfigListener,
   getAiAvailability,
   refreshAiAvailability,
   subscribeAiAvailability,
@@ -30,19 +31,10 @@ export function useAiStatus(): AiAvailabilityState {
     // 订阅前可能已经有其他订阅者拉回了结果，补一次同步免得错过
     setSnap(getAiAvailability());
     ensureAiAvailabilityLoaded();
-    let unlisten: (() => void) | null = null;
-    let alive = true;
-    import("@tauri-apps/api/event")
-      .then(({ listen }) => listen("ai-config-changed", () => void refreshAiAvailability()))
-      .then((fn) => {
-        if (alive) unlisten = fn;
-        else fn(); // 已卸载：监听器刚注册就得马上拆，不然永不释放
-      })
-      .catch(() => {});
+    // 审查：事件监听在 aiAvailability 模块级注册一次，这里不再各自 listen
+    ensureAiConfigListener();
     return () => {
-      alive = false;
       unsub();
-      unlisten?.();
     };
   }, []);
 

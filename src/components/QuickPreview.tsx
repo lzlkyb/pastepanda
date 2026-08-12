@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Copy, ClipboardPaste, Loader2 } from "lucide-react";
 import { useToast } from "@/components/Toast";
-import { pasteText } from "@/lib/api";
+import { pasteTextGuarded } from "@/lib/api";
 import { highlightCode, getLangLabel } from "@/lib/utils";
 import { FocusTrap } from "@/components/FocusTrap";
 import { useDialogAnim } from "@/lib/dialogMotion";
@@ -73,7 +73,7 @@ export function QuickPreview() {
 
   const handlePaste = async () => {
     // U1：仅粘贴成功时弹成功提示（pasteText 失败时已自行弹错误 toast）
-    const ok = await pasteText(text);
+    const ok = await pasteTextGuarded(text);
     if (ok) toast("已粘贴", "success");
   };
 

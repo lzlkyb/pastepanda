@@ -187,3 +187,19 @@
 .aboutDialog {
   max-height: 85vh;
 }
+
+/* 审查：更新检查错误态重试按钮 */
+.aboutRetry {
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 1px 8px;
+  font-size: 11px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  margin-left: 6px;
+}
+.aboutRetry:hover {
+  background: var(--accent);
+  color: #fff;
+}

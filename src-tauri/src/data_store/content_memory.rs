@@ -328,6 +328,20 @@ impl DataStore {
         Ok(rows)
     }
 
+    /// 审查：待补向量数量（仅 COUNT，不载入内容）——此前调用方传 10_000 全量载入只取 len()
+    pub fn semantic_vector_pending_count(&self) -> Result<u32, String> {
+        let conn = self.lock_conn();
+        conn.query_row(
+            "SELECT COUNT(*) FROM history_summaries s
+             LEFT JOIN semantic_vectors v ON v.history_id = s.history_id
+             WHERE v.history_id IS NULL AND s.summary <> ''",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|n| n as u32)
+        .map_err(|e| e.to_string())
+    }
+
     /// 全表余弦检索：返回 (history_id, score, created_at, text) 降序，取 top_k。
     /// 只返回仍存在于 history 表的条目（被清理的向量已无意义）。
     /// 几千条 × 千维的量级全扫描是毫秒级，不需要真向量库。

@@ -10,6 +10,7 @@
 import { memo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Sparkles, Info } from "lucide-react";
+import { AiMark } from "@/components/ai/AiMark";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { FocusTrap } from "@/components/FocusTrap";
 import styles from "./AiOnboarding.module.css";
@@ -34,9 +35,10 @@ export function markAiOnboardingSeen() {
 }
 
 const STEPS = [
-  { title: "复制任意内容", desc: "网页、代码、长文、带敏感信息的文本……复制即捕获。" },
-  { title: "主窗口直接用 AI", desc: "复制后列表上方出现 ✦ AI 快捷区，点「翻译 / 总结 / 改写」直接出结果。" },
-  { title: "变换面板还有更多", desc: "脱敏、链接摘要、回复草稿、自定义动作——复制后按 Ctrl+Shift+V 都能找到。" },
+  { icon: "⧉", title: "复制任意内容", desc: "网页、代码、长文、带敏感信息的文本……复制即捕获。" },
+  { icon: "✦", title: "主窗口直接用 AI", desc: "复制后列表上方出现 ✦ AI 快捷区，点「翻译 / 总结 / 改写」直接出结果。" },
+  { icon: "🎁", title: "变换面板还有更多", desc: "脱敏、链接摘要、回复草稿、自定义动作——复制后按 Ctrl+Shift+V 都能找到。" },
+  { icon: "🔥", title: "免费额度 + 每日签到", desc: "内置 Agnes 送 10 万 token，每天签到越签越多——设置 → AI 可切换。" },
 ];
 
 export const AiOnboarding = memo(function AiOnboarding({
@@ -71,14 +73,16 @@ export const AiOnboarding = memo(function AiOnboarding({
             >
               <div className={styles.hero}>
                 <span className={styles.heroIcon}><Sparkles size={18} /></span>
-                <div className={styles.heroTitle}>✦ AI 已就绪</div>
+                {/* 这里曾经硬写一个 ✦ 字符，而上面 36px 的 heroIcon 已经是同一枚 Sparkles——
+                    重复了。现在只把句子里的“AI”交给 AiMark 上品牌渐变（text 形态字号继承标题）。 */}
+                <div className={styles.heroTitle}><AiMark shape="text" text="AI" /> 已就绪</div>
                 <div className={styles.heroSub}>以后复制内容，随时能用 AI 处理</div>
               </div>
 
               <div className={styles.steps}>
-                {STEPS.map((s, i) => (
+                {STEPS.map((s) => (
                   <div key={s.title} className={styles.step}>
-                    <span className={styles.stepNum}>{i + 1}</span>
+                    <span className={styles.stepIcon}>{s.icon}</span>
                     <div className={styles.stepBody}>
                       <span className={styles.stepTitle}>{s.title}</span>
                       <span className={styles.stepDesc}>{s.desc}</span>
@@ -105,7 +109,7 @@ export const AiOnboarding = memo(function AiOnboarding({
                     onClose();
                   }}
                 >
-                  知道了
+                  知道了，开始用
                 </button>
               </div>
               <button

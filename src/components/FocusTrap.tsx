@@ -10,7 +10,17 @@ import { useEffect, useRef, ReactNode } from "react";
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function FocusTrap({ children, active = true }: { children: ReactNode; active?: boolean }) {
+export function FocusTrap({
+  children,
+  active = true,
+  initialFocus,
+}: {
+  children: ReactNode;
+  active?: boolean;
+  /** 审查：指定挂载后聚焦的元素选择器——默认聚焦首个可聚焦元素（常是头部 X 按钮），
+   *  会把 ConfirmDialog/PasteGuard 的 autoFocus 主操作覆盖掉；传 selector 如 "[data-autofocus]" 跳过头部 */
+  initialFocus?: string;
+}) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -20,9 +30,11 @@ export function FocusTrap({ children, active = true }: { children: ReactNode; ac
 
     const prevFocused = document.activeElement as HTMLElement | null;
 
-    // 挂载时聚焦首个可聚焦元素（对话框打开即获得焦点）
-    const first = el.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
-    if (first) first.focus();
+    // 挂载时聚焦：优先 initialFocus 指定元素，否则首个可聚焦元素
+    const target = initialFocus
+      ? el.querySelector<HTMLElement>(initialFocus)
+      : el.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+    if (target) target.focus();
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Tab") return;
@@ -59,6 +71,9 @@ export function FocusTrap({ children, active = true }: { children: ReactNode; ac
         prevFocused.focus();
       }
     };
+    // initialFocus 只在 active 变 true 的那一瞬消费（决定初始焦点）。
+    // 把它列进依赖，父组件改一下选择器就会重装 keydown 并把焦点抢回去。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
   return (

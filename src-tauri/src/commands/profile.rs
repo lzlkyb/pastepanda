@@ -5,13 +5,24 @@
 //! （几千条量级毫秒级），用户修正存 config 表 `profile_overrides`，永远最新。
 //!
 //! 隐私（红线②同构）：画像只含**统计值**（动作名/内容类型/时段/偏好指令），
-//! 不含任何内容文本。三条对外路径，都由用户主动触发、且都先过 `sanitize_profile`：
+//! 不含任何内容文本。对外路径共 5 条，**判据同源**
+//! （都是 `ContentClassifier::is_sensitive_for_egress`，只是包装不同）：
 //!
-//! - `profile_export` / `profile_install_skill`——**写本地文件**，不出网；
-//! - `profile_refine`——**这才是唯一的出网口**，把统计值发给云端服务商润色。
+//! **写本地文件**（用户主动触发）：
+//! - `profile_export` / `profile_install_skill`——画像本体，先过 `sanitize_profile`；
+//! - `skill_install_workflows`——自定义动作/动作链。名称/描述/提示词模板/步骤标签
+//!   全是用户自由文本，命中敏感**整条剔除**（`any_sensitive`）。
+//!   注意：写到 `~/.claude/skills/` 下的东西会被外部 AI 工具**自动读取**，
+//!   名为“本地文件”，实际等同于一条间接出网通道。
 //!
-//! （旧注释写的是“导出是唯一出网口”——那会把红线的位置指错：真正会把数据
-//! 交给第三方的是 `profile_refine`，而导出只是落到用户自己的盘上。）
+//! **发往云端第三方**：
+//! - `profile_refine`——手动按钮，把统计值发给服务商润色，不缓存；
+//! - **`ai/run.rs` 的 system 拼接**——每次 AI 调用都带上 `action_prefs`
+//!   （它就是画像字段之一），命中敏感整条不拼（`compose_system_with_pref`）。
+//!
+//! （这句话改过两次：最早写“导出是唯一出网口”，后改成“`profile_refine` 才是唯一出网口”——
+//! 两次都不准：偏好指令随**每次** AI 调用出网，频率比前两者高得多。
+//! 以后再加出口，请同步改这里。）
 
 use crate::content_classifier::ContentClassifier;
 use crate::data_store::{DataStore, ProfileRawStats};
@@ -283,7 +294,10 @@ fn build_profile(raw: &ProfileRawStats) -> UserProfile {
         top_actions,
         hours,
         prefs,
-        overrides: serde_json::Value::Null,
+        // 空**对象**而不是 Null：前端类型写的是 `Record<string, string>`，
+        // 给 null 会让 `p.overrides.role` 直接抛“Cannot read properties of null”。
+        // 见 overrides_or_empty() 的说明。
+        overrides: empty_overrides(),
         sample_events,
         confidence,
     }
@@ -356,7 +370,7 @@ pub fn profile_action_boosts(store: State<DataStore>) -> Result<Vec<ActionBoost>
     Ok(out)
 }
 
-// ===================== 出网载荷（唯一把画像发给云端第三方的地方） =====================
+// ===================== 出网载荷（画像**描述**的出网口；另一条在 ai/run.rs） =====================
 
 /// action_id → 人类可读名称（出网前必做的翻译）。
 ///
@@ -435,8 +449,9 @@ fn build_refine_input(
 /// 出网内容 = **纯统计值**（角色概率 / 领域占比 / 动作名 / 时段 / 偏好指令），
 /// 不含任何内容文本；过日预算；计入用量明细。
 ///
-/// 这是全项目**唯一把用户画像发往云端第三方**的路径，所以：
-/// ① 敏感判定只用 [`sanitize_profile`]（和写本地文件的两条路径同一个源，
+/// 这是画像**描述**的出网口。另一条是 `ai/run.rs` 拼进 system 的 `action_prefs`，
+/// 那条**每次 AI 调用都走**，频率高得多（见模块头的出口清单）。所以：
+/// ① 敏感判定只用 [`sanitize_profile`]（和写本地文件的几条路径同一个源，
 ///    不在这里另写一份）；② 载荷组装在 [`build_refine_input`] 里，那里有单测。
 /// 手动触发（按钮），不缓存——每次生成都是用户主动、可见的一次出网。
 #[tauri::command]
@@ -445,8 +460,8 @@ pub async fn profile_refine(app: tauri::AppHandle) -> Result<String, String> {
     let (cfg, key) = {
         let store = app.state::<DataStore>();
         let cfg = crate::commands::ai::read_ai_config(&store)?;
-        let dir = crate::commands::ai::ai_data_dir(&app)?;
-        let key = crate::ai::secret_store::load_key(&dir, &cfg.provider)?.unwrap_or_default();
+        // 走统一的密钥解析（内置免费没有用户密钥文件）
+        let key = crate::commands::ai::resolve_ai_key(&app, &cfg)?;
         if cfg.spec().needs_key && key.trim().is_empty() {
             return Err("未配置当前服务商的 API Key".to_string());
         }
@@ -497,7 +512,7 @@ pub async fn profile_refine(app: tauri::AppHandle) -> Result<String, String> {
     let system = "你是用户画像分析师。根据提供的行为统计数据，用简体中文写 2~3 句自然连贯的用户画像描述（像人话，不是列表）。只描述统计里能看到的事实，不编造、不说教、不用敬语。这段描述会被粘贴给其它 AI 工具，让它在任务开始前快速了解用户。";
     let user = format!("行为统计数据：\n{}", serde_json::to_string_pretty(&input).map_err(|e| e.to_string())?);
     let started = std::time::Instant::now();
-    let result = crate::ai::chat(&cfg, &key, Some(system), &user, Some(600)).await;
+    let result = crate::ai::chat(&cfg, &key, Some(system), &user, Some(600), None).await;
     let latency_ms = started.elapsed().as_millis() as u64;
 
     // 7. 用量记账（失败也记，账目才对得上）
@@ -542,10 +557,7 @@ pub fn profile_get(store: State<DataStore>) -> Result<UserProfile, String> {
     let mut profile = build_profile(&raw);
     // 用户覆盖（config `profile_overrides` JSON 对象，如 {"role": "developer"}）
     let cfg = store.get_config()?;
-    profile.overrides = cfg
-        .get("profile_overrides")
-        .cloned()
-        .unwrap_or(serde_json::Value::Null);
+    profile.overrides = overrides_or_empty(&cfg);
     Ok(profile)
 }
 
@@ -595,10 +607,7 @@ pub fn profile_install_skill(
     // 自己处理的一串文本。之前 references/profile.json 写的是未清洗的原文。
     let profile = sanitize_profile(build_profile(&raw));
     let cfg = store.get_config()?;
-    let overrides = cfg
-        .get("profile_overrides")
-        .cloned()
-        .unwrap_or(serde_json::Value::Null);
+    let overrides = overrides_or_empty(&cfg);
     let wanted = cat_filter(&categories);
     let md = render_md(&profile, &overrides, &wanted);
     let mut p = profile;
@@ -625,6 +634,150 @@ pub fn profile_install_skill(
     Ok(base.display().to_string())
 }
 
+/// 工作流技能包（v6.4 S1，生态调研：Agent Skills 标准）：把用户自定义 AI 动作
+/// + 自定义动作链打包成 SKILL.md 装进 ~/.claude/skills/pastepanda-workflows/，
+/// Claude Code / Cursor / Codex 等 26+ 平台可直接调用。
+///
+/// 意义：用户亲手配置的文本处理流程 = 现成的"方法论包"，一键可移植到任何 AI 工具。
+/// 只含动作模板与步骤清单（用户写的 prompt），不涉及剪贴板内容。
+///
+/// **但“不涉及剪贴板内容”不等于安全**：动作名 / 描述 / 提示词模板 / 步骤标签
+/// 全是用户自由输入，而导出物是专门给外部 AI 工具自动读取的——等同于一条出网通道。
+/// 所以与 [`profile_install_skill`] 一样要过 [`sanitize_sensitive_text`]。
+#[tauri::command]
+pub fn skill_install_workflows(store: State<DataStore>) -> Result<SkillInstallResult, String> {
+    let all_actions = store.ai_custom_actions()?;
+    let all_chains = store.chains()?;
+    if all_actions.is_empty() && all_chains.is_empty() {
+        return Err("还没有自定义 AI 动作或动作链——先在设置里创建一个再导出".to_string());
+    }
+
+    // 敏感过滤必须在**这一处**做，不能交给下面 md / json 两个渲染分支：
+    // 这正是 [`profile_export`] 踩过的坑——md 里写着已隐藏，同目录的
+    // references/*.json 里却是明文。这里两份同样都包含 name/description/template。
+    //
+    // 命中就**整条剔除**而不是换占位：一个模板被换成占位文案的动作条目，
+    // 对读它的 AI 工具毫无用处（根本无法执行），占位只是噪声——
+    // 与 [`build_refine_input`] 剔除已被替换的偏好项同理。
+    let (n_actions, n_chains) = (all_actions.len(), all_chains.len());
+    let actions: Vec<_> = all_actions
+        .into_iter()
+        .filter(|a| !any_sensitive(&[&a.name, &a.description, &a.template]))
+        .collect();
+    let chains: Vec<_> = all_chains
+        .into_iter()
+        .filter(|c| {
+            let labels: Vec<&str> = c.steps.iter().map(|s| s.label.as_str()).collect();
+            !any_sensitive(&[&c.name, &c.description]) && !any_sensitive(&labels)
+        })
+        .collect();
+    let skipped = (n_actions - actions.len()) + (n_chains - chains.len());
+
+    if actions.is_empty() && chains.is_empty() {
+        return Err(
+            "所有自定义动作与动作链都含疑似敏感信息（密钥或个人信息），未导出任何内容"
+                .to_string(),
+        );
+    }
+
+    let mut md = String::new();
+    md.push_str("# PastePanda 自定义工作流\n\n");
+    md.push_str("> 由 PastePanda 从用户的自定义 AI 动作与动作链自动生成（含模板与步骤）。\n");
+    md.push_str("> 这些是用户亲手配置的文本处理流程，处理对应内容时按需调用。\n\n");
+
+    if !actions.is_empty() {
+        md.push_str("## 自定义 AI 动作\n\n");
+        for a in &actions {
+            md.push_str(&format!("### {}\n\n", a.name));
+            if !a.description.is_empty() {
+                md.push_str(&format!("{}\n\n", a.description));
+            }
+            let types = if a.content_types.is_empty() {
+                "不限".to_string()
+            } else {
+                a.content_types.join(" / ")
+            };
+            md.push_str(&format!("- 适用内容类型：{}\n", types));
+            md.push_str(&format!("- 提示词模板（`{{{{内容}}}}` 是待处理文本）：{}\n\n", a.template));
+        }
+    }
+
+    if !chains.is_empty() {
+        md.push_str("## 自定义动作链\n\n");
+        for c in &chains {
+            md.push_str(&format!("### {}\n\n", c.name));
+            if !c.description.is_empty() {
+                md.push_str(&format!("{}\n\n", c.description));
+            }
+            let steps: Vec<String> = c
+                .steps
+                .iter()
+                .map(|s| {
+                    if s.label.is_empty() {
+                        s.transform_id.clone()
+                    } else {
+                        format!("{}（{}）", s.label, s.transform_id)
+                    }
+                })
+                .collect();
+            md.push_str(&format!("步骤：{}\n\n", steps.join(" → ")));
+        }
+    }
+
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .map_err(|_| "无法定位用户主目录（USERPROFILE / HOME 均未设置）".to_string())?;
+    let base = std::path::Path::new(&home)
+        .join(".claude")
+        .join("skills")
+        .join("pastepanda-workflows");
+
+    let skill_md = format!(
+        "---\nname: pastepanda-workflows\ndescription: 用户的 PastePanda 自定义 AI 动作与动作链——文本处理流程清单。处理文本/代码/JSON 等任务时，先看这里有没有可直接调用的动作或流程。\n---\n\n{}",
+        md
+    );
+    let json = serde_json::json!({
+        "actions": actions.iter().map(|a| serde_json::json!({
+            "name": a.name, "description": a.description,
+            "template": a.template, "contentTypes": a.content_types,
+        })).collect::<Vec<_>>(),
+        "chains": chains.iter().map(|c| serde_json::json!({
+            "name": c.name, "description": c.description,
+            "steps": c.steps.iter().map(|s| s.transform_id.clone()).collect::<Vec<_>>(),
+        })).collect::<Vec<_>>(),
+    });
+
+    std::fs::create_dir_all(base.join("references")).map_err(|e| e.to_string())?;
+    std::fs::write(base.join("SKILL.md"), skill_md).map_err(|e| e.to_string())?;
+    std::fs::write(
+        base.join("references").join("workflows.json"),
+        serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(SkillInstallResult {
+        path: base.display().to_string(),
+        skipped,
+    })
+}
+
+/// 导出结果：装到哪了 + 因含敏感信息被跳过几条。
+///
+/// `skipped` 必须回传给前端：静默少导出几条，用户会以为自己的动作丢了。
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillInstallResult {
+    pub path: String,
+    pub skipped: usize,
+}
+
+/// 导出前的敏感判定：任一字段命中就算整条敏感。
+///
+/// 包成函数而不是在 filter 里堆 `||`：一是能单测（这是隐私红线），
+/// 二是以后加字段时不会漏掉某一处。判据仍只有 [`sanitize_sensitive_text`] 一个源。
+fn any_sensitive(fields: &[&str]) -> bool {
+    fields.iter().any(|s| sanitize_sensitive_text(s).is_some())
+}
+
 /// 敏感内容的占位文案。
 ///
 /// 提到模块级是因为出网路径要靠它认出"这一条被清洗过"（认出后整条剔除，
@@ -634,15 +787,24 @@ const HIDDEN: &str = "（已隐藏：内容疑似敏感，未写入导出）";
 
 /// 敏感文本的**唯一判定源**：疑似敏感返回 `Some(占位文案)`，干净返回 `None`。
 ///
-/// 全文件只有这里调 `is_secret`。所有"要把数据拿出去"的路径——写本地文件的
-/// [`profile_export`] / [`profile_install_skill`]，以及真的发去云端第三方的
-/// [`profile_refine`]——都必须经由它或 [`sanitize_profile`]，不许各自内联一份
-/// 判定。理由：内联版本改一处会漏另一处，而漏掉的偏偏可能是出网那条。
+/// 本文件只有这里调 `is_secret`。所有"要把数据拿出去"的路径都必须经由它
+/// 或 [`sanitize_profile`] / [`any_sensitive`]，不许各自内联一份判定：
+/// [`profile_export`] / [`profile_install_skill`]（画像）、
+/// [`skill_install_workflows`]（自定义动作）、[`profile_refine`]（出网）。
+///
+/// **模块外还有一条**：`ai/run.rs` 的 `compose_system_with_pref` 直接调
+/// `is_sensitive_for_egress`——它不需要占位文案（命中就整条不拼），所以不走
+/// 本函数，但**判据是同一个**。那不是第二套判定。
+///
+/// 理由：内联版本改一处会漏另一处，而漏掉的偏偏可能是出网那条。
 fn sanitize_sensitive_text(text: &str) -> Option<&'static str> {
     if text.trim().is_empty() {
         return None;
     }
-    if ContentClassifier::new().is_secret(text) {
+    // 用出网判据（密钥 + 个人信息）而不是单纯 is_secret：本函数服务的几条路径里，
+    // profile_refine 直接发云端，而 export / install_skill / install_workflows 写的是
+    // **会被 AI 工具自动读取**的目录——里面的手机号/邮箱同样不应该原样带出去。
+    if ContentClassifier::new().is_sensitive_for_egress(text) {
         Some(HIDDEN)
     } else {
         None
@@ -662,6 +824,15 @@ fn sanitize_profile(mut p: UserProfile) -> UserProfile {
     for item in &mut p.prefs {
         if let Some(hidden) = sanitize_sensitive_text(&item.preference) {
             item.preference = hidden.to_string();
+        }
+    }
+    // 审查：overrides.instructions（用户自由文本红线）同样清洗——
+    // 导出 md / 安装 skill 时它会原样落盘（~/.claude/skills），不能把密钥带出去
+    if let serde_json::Value::Object(m) = &mut p.overrides {
+        if let Some(serde_json::Value::String(v)) = m.get_mut("instructions") {
+            if let Some(hidden) = sanitize_sensitive_text(v) {
+                *v = hidden.to_string();
+            }
         }
     }
     p
@@ -686,6 +857,30 @@ fn cat_filter(categories: &Option<Vec<String>>) -> impl Fn(&str) -> bool + '_ {
     }
 }
 
+/// 空的覆盖集（空 JSON 对象，**不是** Null）。
+fn empty_overrides() -> serde_json::Value {
+    serde_json::Value::Object(serde_json::Map::new())
+}
+
+/// 从 config 读 `profile_overrides`；缺失或类型不对时回退到**空对象**。
+///
+/// 为何不能回退到 `Value::Null`（旧实现）：
+/// - 前端 `UserProfile.overrides` 的类型是 `Record<string, string>`，声明非空；
+///   后端发 null 就是**类型在说谎**，tsc 抓不到（跨 IPC 边界无校验）。
+/// - `ProfileDialog` 里 `typeof p.overrides.role` 于是抛
+///   “Cannot read properties of null (reading 'role')”——**任何从未设过覆盖的用户**
+///   （即每个全新安装）打开“我的画像”都会直接失败。
+/// - `sanitize_profile` 里的 `if let Value::Object(m) = &mut p.overrides` 对 Null 不匹配，
+///   于是覆盖项的敏感清洗被**静默跳过**。
+fn overrides_or_empty(cfg: &serde_json::Value) -> serde_json::Value {
+    match cfg.get("profile_overrides") {
+        Some(v) if v.is_object() => v.clone(),
+        // 包括三种情况：键缺失、值是 null、值类型不对（存成了字符串等）。
+        // 后两种也不能透给前端——前端会当它是 Record 直接取字段。
+        _ => empty_overrides(),
+    }
+}
+
 /// 导出画像。format: `md`（5 大类通用格式）| `json`（结构化）| `skill`（SKILL.md 包）。
 /// categories: 大类子集（md/skill 生效），如 ["profession","preferences","instructions"]；
 /// 语义见 [`cat_filter`]：不传 = 全部，空数组 = 一个都不要。导出前过敏感清洗（兜底）。
@@ -705,10 +900,7 @@ pub fn profile_export(
     // 对自己遮蔽没有意义；只有“要拿出去”的路径才需要清洗。
     let profile = sanitize_profile(build_profile(&raw));
     let cfg = store.get_config()?;
-    let overrides = cfg
-        .get("profile_overrides")
-        .cloned()
-        .unwrap_or(serde_json::Value::Null);
+    let overrides = overrides_or_empty(&cfg);
     let wanted = cat_filter(&categories);
 
     match format.as_str() {
@@ -843,6 +1035,28 @@ fn render_md(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 隐私回归：工作流导出的四个用户自由文本字段，任一含敏感就整条不导。
+    ///
+    /// 导出物写在 ~/.claude/skills/ 下，会被外部 AI 工具**自动读取**，
+    /// 等同于一条出网通道。而模板是用户手写的 prompt，最可能夹带密钥。
+    #[test]
+    fn test_any_sensitive_flags_secret_in_any_field() {
+        let secret = concat!("sk-", "abcdef1234567890abcdef1234567890");
+        // 提示词模板里的密钥——最可能的泄露点（用户把 key 写进自定义 prompt）
+        assert!(any_sensitive(&["正常动作名", "描述", secret]));
+        // 动作名里的密钥同样要拦
+        assert!(any_sensitive(&[secret, "描述", "模板"]));
+        // 正常内容不该误伤
+        assert!(!any_sensitive(&["翻译", "把内容译成中文", "请翻译：{{内容}}"]));
+        assert!(!any_sensitive(&[]));
+    }
+
+    /// 与出网闸同一判据：is_sensitive_for_egress = is_secret || has_pii
+    #[test]
+    fn test_any_sensitive_flags_pii() {
+        assert!(any_sensitive(&["署名用 zhangsan@example.com"]));
+    }
 
     /// 隐私回归：导出 / 安装技能包前，疑似密钥的偏好指令不得原样带出。
     ///
@@ -1112,6 +1326,31 @@ mod tests {
             }
         }
         assert!(boosts.is_empty());
+    }
+
+    /// `overrides` 永远是 **对象**而不是 null。
+    ///
+    /// 回归：旧实现在“用户从未设过覆盖”时给 `Value::Null`，而前端类型声明的是
+    /// `Record<string, string>`（非空）。结果 `typeof p.overrides.role` 抛
+    /// “Cannot read properties of null (reading 'role')”——**每个全新安装**打开
+    /// “我的画像”都直接失败。tsc 抓不到：跨 IPC 的类型无运行时校验。
+    #[test]
+    fn test_overrides_is_object_not_null() {
+        let p = build_profile(&ProfileRawStats::default());
+        assert!(
+            p.overrides.is_object(),
+            "overrides 必须是对象（即使为空），实际：{}",
+            p.overrides
+        );
+        // 空 config 也要得到空对象，不是 null
+        assert!(overrides_or_empty(&serde_json::json!({})).is_object());
+        // 值是 null 时同样回退（旧配置里可能真的存了 null）
+        assert!(overrides_or_empty(&serde_json::json!({"profile_overrides": null})).is_object());
+        // 类型不对（存了个字符串）时也回退，不把字符串透给前端
+        assert!(overrides_or_empty(&serde_json::json!({"profile_overrides": "oops"})).is_object());
+        // 正常对象原样透传
+        let ok = overrides_or_empty(&serde_json::json!({"profile_overrides": {"role": "dev"}}));
+        assert_eq!(ok.get("role").and_then(|v| v.as_str()), Some("dev"));
     }
 
     /// 大类过滤：`None`（调用方不传）= 全部。

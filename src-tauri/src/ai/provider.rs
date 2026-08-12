@@ -148,9 +148,36 @@ impl ProviderSpec {
     }
 
     /// 是否本地运行（内容不出机器、零费用）。
+    ///
+    /// **显式白名单（ollama）**：不要按「needs_key=false 且 price=0」推断——
+    /// builtin-agnes 也是免 key + 免费，但它是**远程**的（内容出网、有配额）。
+    /// 按旧推断它会被当成 local，出网敏感闸和配额检查全部跳过，等于裸奔。
     pub fn is_local(&self) -> bool {
-        !self.needs_key && self.price_in == 0.0 && self.price_out == 0.0
+        self.id == "ollama"
     }
+
+    /// 是否内置免费额度服务商（token 配额计费，替代金额预算）。
+    pub fn is_builtin_free(&self) -> bool {
+        self.id == BUILTIN_AGNES_ID
+    }
+}
+
+/// 内置免费额度服务商 id（签到送 token 玩法的载体，与自配服务商完全隔离）。
+pub const BUILTIN_AGNES_ID: &str = "builtin-agnes";
+/// 内置公共免费 API key（应用作者在 Agnes 后台申请）。
+///
+/// 不存明文：编译期 XOR 混淆 + 运行时还原（见 `crate::mask`），防止
+/// `strings` 级别的明文扫描直接搜到 `sk-` 前缀。免费场景 key 仍内置在
+/// 客户端、可被逆向提取，属可接受取舍。
+pub fn builtin_agnes_key() -> String {
+    const XOR: u8 = 0x5A;
+    const BUF: &[u8] = &[
+        0x29, 0x31, 0x77, 0x20, 0x1c, 0x6d, 0x2e, 0x31, 0x09, 0x36, 0x63, 0x17, 0x30, 0x69,
+        0x63, 0x6c, 0x2d, 0x6e, 0x6e, 0x6b, 0x6d, 0x18, 0x02, 0x09, 0x11, 0x1d, 0x38, 0x2c,
+        0x0a, 0x3b, 0x34, 0x1c, 0x0e, 0x36, 0x0f, 0x2b, 0x69, 0x0d, 0x15, 0x2d, 0x38, 0x39,
+        0x13, 0x17, 0x23, 0x6e, 0x14, 0x08, 0x3b, 0x6a, 0x19,
+    ];
+    crate::mask::reveal_xor(BUF, XOR)
 }
 
 /// 写法：`"模型名" => "说明"`；推理模型在后面多写一个 `reasoning`。
@@ -399,6 +426,28 @@ pub const PROVIDERS: &[ProviderSpec] = &[
         price_out: 0.0,
         protocol: Protocol::OpenAi,
     },
+    // ===== v6.9 内置免费额度服务商（签到送 token 载体，见 data_store/quota.rs） =====
+    // 免用户 key + 免费 + 远程。token 配额计费，与自配服务商完全隔离（见
+    // 《PastePanda-签到送Token-规划.md》§10.11）。is_local() 是白名单（ollama），
+    // 所以这里不会误判成本地——出网闸与配额检查都会正常生效。
+    ProviderSpec {
+        id: BUILTIN_AGNES_ID,
+        name: "内置免费（Agnes）",
+        // 2026-08-11 实测：api.agnes-ai.cn 对该 key 返回 401「无效的令牌」，
+        // apihub.agnes-ai.com 200 正常——两域名不互通，用 apihub（用户本地自配同款）。
+        base_url: "https://apihub.agnes-ai.com/v1",
+        models: models![
+            "agnes-2.5-flash" => "免费 · 每日签到送 token",
+        ],
+        key_url: "",
+        note: "内置免费模型：打开即用，送 10 万 token 起步，每天签到领更多（累计到 100 万，兑换码不限）。内容会发送到 Agnes。",
+        needs_key: false,
+        model_is_free_text: false,
+        model_hint: "",
+        price_in: 0.0,
+        price_out: 0.0,
+        protocol: Protocol::OpenAi,
+    },
     ProviderSpec {
         id: "openai",
         name: "OpenAI",
@@ -516,6 +565,19 @@ pub struct AiConfig {
     /// 存在的意义：同一家常常两种格式都提供（如智谱），中转服务更是如此。
     #[serde(default)]
     pub protocol: String,
+    /// 把用户**手工**标签名当意图上下文拼进 prompt。
+    ///
+    /// **默认开**。它接的是一类文本里根本判不出来的信息——“这条是要回复的”、
+    /// “这条是周报素材”——没它时 ai-reply-draft / ai-weekly-report 这几个动作
+    /// 几乎永远推不准。
+    ///
+    /// 代价必须说清：标签名常含客户名/项目名/人名，开着就会随内容一起发给服务商。
+    /// 所以它必须与正文**同过一道出网闸**（见 commands/ai/run.rs），不能绕过。
+    ///
+    /// 前端不读这个开关：它无条件把标签名传给后端（Tauri IPC 不出本机），
+    /// 由后端在这里一处决定用不用——否则“要不要发”的判断会散到多个调用点。
+    #[serde(default = "default_true")]
+    pub tags_as_context: bool,
 }
 
 impl Default for AiConfig {
@@ -529,6 +591,7 @@ impl Default for AiConfig {
             timeout_secs: 60,
             thinking_off: true,
             protocol: String::new(),
+            tags_as_context: true,
         }
     }
 }
@@ -606,6 +669,30 @@ impl AiConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn builtin_agnes_key_reveals_valid_key() {
+        // 防误改混淆字节导致还原出坏 key（比如手滑改错一位）
+        let k = builtin_agnes_key();
+        assert!(k.starts_with("sk-"), "必须以 sk- 开头，实际: {}", &k[..k.len().min(20)]);
+        assert_eq!(k.len(), 51, "内置 key 长度必须保持 51");
+        assert!(k.bytes().all(|b| b.is_ascii()), "key 必须全 ASCII");
+    }
+
+    #[test]
+    fn builtin_agnes_uses_working_endpoint() {
+        // 2026-08-11 实测：.cn 域名对该 key 401，apihub.agnes-ai.com 200。
+        // 防以后有人把域名改回 .cn（那会让整个免费功能全部 401）。
+        let spec = PROVIDERS
+            .iter()
+            .find(|p| p.id == BUILTIN_AGNES_ID)
+            .expect("builtin-agnes 必须在预置列表");
+        assert!(
+            spec.base_url.contains("apihub.agnes-ai.com"),
+            "builtin-agnes base_url 必须是 apihub.agnes-ai.com（.cn 实测 401），当前: {}",
+            spec.base_url
+        );
+    }
 
     #[test]
     fn test_default_is_deepseek_and_disabled() {

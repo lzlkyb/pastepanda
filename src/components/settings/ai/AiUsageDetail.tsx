@@ -8,8 +8,8 @@
  * 设置面板都去查三次库。
  */
 
-import { useCallback, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import {
   aiClearUsageLog,
   aiGetUsageStats,
@@ -34,8 +34,15 @@ function shortTime(s: string): string {
   return s.length >= 16 ? s.slice(5, 16) : s;
 }
 
+/**
+ * 本组件只渲染**内容**，外壳由 AiTab 里的 AiSection 提供（方案 B）。
+ *
+ * 注意一个前提：AiSection 折叠时**不渲染 children**，所以对本组件而言
+ * “挂载”就等于“展开”、“收起”就是真的卸载。因此：
+ *   · 不需要 open 参数（挂载时它永远是 true）
+ *   · 也无法做“首次展开后复用”——任何 ref/state 都会随卸载销毁
+ */
 export function AiUsageDetail() {
-  const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<AiUsageStats | null>(null);
   const [rows, setRows] = useState<AiUsageLogRow[]>([]);
@@ -73,39 +80,36 @@ export function AiUsageDetail() {
     }
   }, []);
 
-  /** 审查 backlog：#10 首次展开加载后复用 —— 反复开关不再重复拉 4 个命令；清空后 load 会刷新数据 */
-  const loadedOnce = useRef(false);
-
-  const toggle = () => {
-    const next = !open;
-    setOpen(next);
-    setConfirmClear(false);
-    if (next && !loadedOnce.current) {
-      loadedOnce.current = true;
-      void load();
-    }
-  };
+  // 挂载即加载（= 展开即加载）。
+  //
+  // 此前这里有一个 loadedOnce ref 做“首次展开后复用、反复开关不重复拉 4 个命令”，
+  // 但在折叠会卸载组件的前提下它根本不生效（ref 随卸载销毁），
+  // 留着只是个假象。删掉而不是假装还在优化：现在每次展开都重新拉一次，
+  // 代价是多四个本地命令，好处是看到的数据总是新的。
+  // （“确认清空”的危险态也由卸载自动重置，不用手动清。）
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const clear = async () => {
     try {
       await aiClearUsageLog();
       setConfirmClear(false);
-      loadedOnce.current = true; // 数据已由下面的 load 刷新
       await load();
     } catch (e) {
+      // 审查：清空失败要给用户提示（此前仅 warn，用户点了确认后静默失败）
       logger.warn("清空 AI 用量明细失败", e);
+      window.dispatchEvent(
+        new CustomEvent("app-toast", {
+          detail: { message: "清空用量明细失败，请重试", type: "error" },
+        })
+      );
     }
   };
 
   return (
-    <div className={styles.advanced}>
-      <button className={styles.advancedToggle} onClick={toggle}>
-        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        用量明细
-        <span className={styles.advancedHint}>每次调用的 token 与花费，不含内容</span>
-      </button>
-
-      {!open ? null : loading && !stats ? (
+    <div className={styles.advancedBody}>
+      {loading && !stats ? (
         <div className={styles.usageNote}>
           <Loader2 size={12} className="spin" /> 加载中…
         </div>
@@ -158,7 +162,8 @@ export function AiUsageDetail() {
 
               <div className={styles.field}>
                 <span className={styles.label}>最近 {rows.length} 次调用</span>
-                {/* v6.4 表头 */}
+                {/* v6.4 表头；审查：无记录时隐藏表头（空列表不摆空表头） */}
+                {rows.length > 0 && (
                 <div className={styles.logHead}>
                   <span className={styles.logHeadTime}>时间</span>
                   <span className={styles.logHeadAction}>动作</span>
@@ -166,6 +171,7 @@ export function AiUsageDetail() {
                   <span className={styles.logHeadTok}>token</span>
                   <span className={styles.logHeadRes}>结果</span>
                 </div>
+                )}
                 <div className={styles.logList}>
                   {rows.map((r) => (
                     <div key={r.id} className={styles.logDetail}>

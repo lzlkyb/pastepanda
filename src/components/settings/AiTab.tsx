@@ -1,328 +1,117 @@
 /**
- * AI 设置面板。负责状态与编排，具体块在 `./ai/` 下。
+ * AI 设置面板。**只负责编排**：一张摘要卡 + 四个互斥手风琴区块。
  *
- * **分层渐进**：主流程只有“选服务商 → 粘密钥 → 保存并测试”两步，
- * 地址/模型/协议/超时/预算全在折叠的高级区。十六家厂商如果把所有旋钮一字排开，
- * 用户第一眼看到的就是一堆不知道该不该动的字段。
+ * 状态与副作用在 useAiSettings；服务商网格在 AiProviderGrid；
+ * 折叠外壳在 AiSection。这么拆是因为改版前这个文件 465 行，
+ * 破了项目规则 #7 的 300 行上限。
  *
- * **密钥只写不读**：后端没有返回密钥的接口，所以这里只能显示“已配置 / 未配置”。
+ * **为什么是手风琴而不是一列卡片堆叠**（方案 B）：
+ * 改版前一页有 7 个区块、**4 套互不相同的卡片外壳**（有框卡 `.cfgCard` /
+ * 无框底色卡 `.usageCard` / 只有一条上边框 `.advanced` ×3 / QuotaEntryCard 自己一套）、
+ * 2 种折叠范式，而“现在能不能用 / 花了多少 / 还剩多少”三个数字分散在 4 个块里。
+ * 现在：摘要卡一屏答完那三个问题，其余全部收进同一种外壳的手风琴，
+ * 同时只展开一个 → 页面高度基本恒定。
+ *
+ * 四个区块里两个由这里包 AiSection、两个（自定义动作 / 高级）自己包——
+ * 因为它们的副标题要用自己内部的数据（如“已有 3 个”），提到父级得多传一层。
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, Circle, PauseCircle } from "lucide-react";
-import {
-  aiClearKey,
-  aiDeleteCustomProvider,
-  aiGetConfig,
-  aiGetProviderConfig,
-  aiGetUsage,
-  aiHasKey,
-  aiListProviders,
-  aiSetConfig,
-  aiSetKey,
-  aiTestConnection,
-  type AiConfig,
-  type AiProviderInfo,
-  type AiUsage,
-} from "@/lib/api";
-import { refreshAiAvailability } from "@/lib/transforms";
-import { useToast } from "@/components/Toast";
-import { logger } from "@/lib/logger";
+import { useEffect, useState } from "react";
+import { AlertTriangle, Clock3, Server } from "lucide-react";
+import { useDialogStore } from "@/stores/dialogStore";
 import { AiSetupStep } from "./ai/AiSetupStep";
 import { AiAdvanced } from "./ai/AiAdvanced";
 import { AiUsageCard } from "./ai/AiUsageCard";
 import { AiUsageDetail } from "./ai/AiUsageDetail";
 import { AiCustomActions } from "./ai/AiCustomActions";
-import {
-  AiCustomProviderDialog,
-  type CustomEditorState,
-} from "./ai/AiCustomProviderDialog";
-import { AiOnboarding, aiOnboardingSeen, markAiOnboardingSeen } from "@/components/AiOnboarding";
+import { AiCustomProviderDialog } from "./ai/AiCustomProviderDialog";
+import { AiHeroCard } from "./ai/AiHeroCard";
+import { AiEvolution } from "./ai/AiEvolution";
+import { AiSection } from "./ai/AiSection";
+import { useAiSettings } from "./ai/useAiSettings";
+import { AiOnboarding } from "@/components/AiOnboarding";
 import { hintForError, FALLBACK_PROVIDER, type AiErrorAction } from "./ai/errorHint";
 import styles from "./AiTab.module.css";
 
-const DEFAULT_CONFIG: AiConfig = {
-  enabled: false,
-  provider: FALLBACK_PROVIDER,
-  baseUrl: "",
-  model: "",
-  dailyBudgetCny: 3,
-  timeoutSecs: 60,
-  // 默认关掉思考：剪贴板动作多是短产物，思维链在这里几乎是纯成本
-  thinkingOff: true,
-  protocol: "",
-};
-
-const err = (e: unknown) => (e instanceof Error ? e.message : String(e));
+type SectionKey = "setup" | "usage" | "evolution" | "actions" | "advanced";
 
 export function AiTab() {
-  const { toast } = useToast();
-  const [config, setConfig] = useState<AiConfig>(DEFAULT_CONFIG);
-  const [providers, setProviders] = useState<AiProviderInfo[]>([]);
-  const [hasKey, setHasKey] = useState(false);
-  const [keyInput, setKeyInput] = useState("");
-  const [usage, setUsage] = useState<AiUsage | null>(null);
-  const [testing, setTesting] = useState(false);
-  const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const keyRef = useRef<HTMLInputElement>(null);
-  // v6.4 自定义服务商编辑器（null = 关闭）
-  const [customEditor, setCustomEditor] = useState<CustomEditorState | null>(null);
-  // v6.4 审查修复：#4 清空密钥二次确认（密钥不可恢复）
-  const [confirmClearKey, setConfirmClearKey] = useState(false);
-  // v6.4 审查修复：#5 reload 失败不再静默——错误条 + 重试
-  const [loadError, setLoadError] = useState<string | null>(null);
-  // v6.4 主窗口 AI 感知（方案 C）：首次配置成功弹引导
-  const [showOnboard, setShowOnboard] = useState(false);
+  const s = useAiSettings();
+  const [openKey, setOpenKey] = useState<SectionKey | null>(null);
 
-  const spec = providers.find((it) => it.id === config.provider) ?? null;
-  const isLocal = !!spec && !spec.needsKey;
-  const configured = isLocal || hasKey;
-
-  const reload = useCallback(async () => {
-    try {
-      const [cfg, provs, keyed, use] = await Promise.all([
-        aiGetConfig(),
-        aiListProviders(),
-        aiHasKey(),
-        aiGetUsage(),
-      ]);
-      setConfig(cfg);
-      setProviders(provs);
-      setHasKey(keyed);
-      setUsage(use);
-      setLoadError(null);
-    } catch (e) {
-      setLoadError(err(e));
-      logger.warn("加载 AI 设置失败", e);
-    }
-  }, []);
-
+  // 未配置 → 自动展开「服务商与密钥」（新用户进来第一件事就是配）；
+  // 配好后自动收起，不长期占住主视区。
+  //
+  // 必须等 providers 拉回来再判：初始态下 hasKey 还是 false，configured 也就是 false，
+  // 不拦的话已配置的用户每次打开设置都会看到这个区块闪开一下又收起。
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    if (!s.providers.length) return;
+    setOpenKey(s.configured ? null : "setup");
+  }, [s.providers.length, s.configured]);
 
-  /** 落盘并让变换中心里的 AI 动作即时出现/消失 */
-  const persist = useCallback(
-    async (next: AiConfig) => {
-      setConfig(next);
-      try {
-        await aiSetConfig(next);
-        await refreshAiAvailability();
-      } catch (e) {
-        toast(`保存 AI 设置失败：${err(e)}`, "error");
-      }
-    },
-    [toast]
-  );
+  /** 互斥：点开一个自动收起其他；点已展开的那个则收起 */
+  const toggle = (k: SectionKey) => setOpenKey((prev) => (prev === k ? null : k));
 
-  const draft = useCallback((patch: Partial<AiConfig>) => {
-    setConfig((prev) => ({ ...prev, ...patch }));
-  }, []);
-
-  const commit = useCallback(() => {
-    void persist(config);
-  }, [config, persist]);
-
-  const saveNow = useCallback(
-    (patch: Partial<AiConfig>) => {
-      void persist({ ...config, ...patch });
-    },
-    [config, persist]
-  );
-
-  const changeProvider = useCallback(
-    async (id: string) => {
-      // v6.4 AI 面板 v2：per-provider 存储，切换不再清空落盘——
-      // 1) 先把当前家的草稿落盘（写进它的 overrides/数组项）；
-      // 2) 读新家已保存的 模型/地址/协议 回填；
-      // 3) 只切 provider 与值，切走切回配置都在。
-      setKeyInput("");
-      setTestMsg(null);
-      try {
-        await persist(config); // 当前家：ai_set_config 按 provider 落位
-        const pc = await aiGetProviderConfig(id);
-        await persist({
-          ...config,
-          provider: id,
-          baseUrl: pc.baseUrl,
-          model: pc.model,
-          protocol: pc.protocol ?? "",
-        });
-      } catch (e) {
-        toast(`切换服务商失败：${err(e)}`, "error");
-      }
-      // 新厂商可能早就存过密钥（密钥按厂商分开存）；用量也要重拉
-      try {
-        const [keyed, use] = await Promise.all([aiHasKey(id), aiGetUsage()]);
-        setHasKey(keyed);
-        setUsage(use);
-      } catch (e) {
-        logger.warn("切换服务商后刷新状态失败", e);
-      }
-    },
-    [config, persist, toast]
-  );
-
-  const saveAndTest = useCallback(async () => {
-    setTesting(true);
-    setTestMsg(null);
-    try {
-      const key = keyInput.trim();
-      if (key) {
-        await aiSetKey(key, config.provider);
-        setKeyInput("");
-      }
-      // 配置必须先落盘：ai_test_connection 读的是库里的配置，不是界面上的草稿
-      await aiSetConfig(config);
-      const r = await aiTestConnection();
-      setTestMsg({
-        ok: true,
-        text:
-          `已就绪 · ${r.model} · ${r.latencyMs}ms · 回复“${r.reply}”` +
-          (r.autoEnabled ? " · 已自动启用" : ""),
-      });
-      // v6.4 方案 C：首次配置成功 → 弹 3 步引导（只弹一次）
-      if (!aiOnboardingSeen()) {
-        markAiOnboardingSeen();
-        setShowOnboard(true);
-      }
-      // v6.4 审查：#6 通知主窗口 AI 状态即时刷新（快捷区/胶囊不用重启生效）
-      try {
-        const { emit } = await import("@tauri-apps/api/event");
-        await emit("ai-config-changed");
-      } catch {
-        /* 事件失败不打扰 */
-      }
-      await reload();
-      await refreshAiAvailability();
-    } catch (e) {
-      setTestMsg({ ok: false, text: err(e) });
-      // 失败也可能是“密钥存了但不对”，状态得跟上
-      try {
-        setHasKey(await aiHasKey(config.provider));
-        setProviders(await aiListProviders());
-      } catch {
-        /* 读不到就维持原样，不再叠一层错误提示 */
-      }
-    } finally {
-      setTesting(false);
-    }
-  }, [config, keyInput, reload]);
-
-  const clearKey = useCallback(async () => {
-    try {
-      await aiClearKey(config.provider);
-      setHasKey(false);
-      setConfirmClearKey(false);
-      setTestMsg(null);
-      await refreshAiAvailability();
-      setProviders(await aiListProviders());
-      toast(`已删除 ${spec?.name ?? "当前服务商"} 的密钥`, "success");
-    } catch (e) {
-      toast(`删除密钥失败：${err(e)}`, "error");
-    }
-  }, [config.provider, spec, toast]);
-
-  const hint = testMsg && !testMsg.ok ? hintForError(testMsg.text) : null;
-
-  // ── v6.4 自定义服务商管理 ──
-  const handleCustomSaved = useCallback(
-    async (id: string, isNew: boolean) => {
-      setCustomEditor(null);
-      await reload();
-      if (isNew) await changeProvider(id); // 新增后直接切过去配置
-    },
-    [reload, changeProvider]
-  );
-
-  const handleCustomDeleted = useCallback(
-    async (id: string) => {
-      try {
-        await aiDeleteCustomProvider(id);
-        toast("已删除自定义服务商", "success");
-        await reload();
-        if (config.provider === id) await changeProvider(FALLBACK_PROVIDER);
-      } catch (e) {
-        toast(`删除失败：${err(e)}`, "error");
-      }
-    },
-    [reload, changeProvider, config.provider, toast]
-  );
+  const hint = s.testMsg && !s.testMsg.ok ? hintForError(s.testMsg.text) : null;
 
   const runHintAction = (action: AiErrorAction) => {
-    if (action === "focusKey") keyRef.current?.focus();
-    else if (action === "openAdvanced") setAdvancedOpen(true);
-    else if (action === "switchProvider") void changeProvider(FALLBACK_PROVIDER);
+    if (action === "focusKey") {
+      setOpenKey("setup");
+      // 密钥输入框只在区块展开后才挂载，所以不能立即 focus。
+      // setTimeout 0 会排到下一个宏任务，那时 React 已经提交完这次渲染。
+      setTimeout(() => s.keyRef.current?.focus(), 0);
+    } else if (action === "openAdvanced") {
+      setOpenKey("advanced");
+    } else if (action === "switchProvider") {
+      void s.changeProvider(FALLBACK_PROVIDER);
+    }
   };
+
+  const setupSub = s.configured
+    ? `${s.spec?.name ?? s.config.provider} · ${s.config.model || s.spec?.models?.[0]?.id || "…"}`
+    : "选厂商 · 粘密钥 · 测连接";
+
+  const usageSub = !s.usage
+    ? "每次调用的 token 与花费，不含内容"
+    : s.isLocal
+      ? `今日 ${s.usage.calls} 次 · token ${s.usage.promptTokens + s.usage.completionTokens}`
+      : `今日 ${s.usage.calls} 次 · ¥${s.usage.costCny.toFixed(2)}`;
 
   return (
     <div className={styles.panel}>
-      <div className={styles.statusBar}>
-        {!configured ? (
-          <span className={`${styles.badge} ${styles.badgeIdle}`}>
-            <Circle size={11} /> 未配置
-          </span>
-        ) : config.enabled ? (
-          <span className={`${styles.badge} ${styles.badgeReady}`}>
-            <CheckCircle2 size={11} /> 已就绪
-          </span>
-        ) : (
-          <span className={`${styles.badge} ${styles.badgeOff}`}>
-            <PauseCircle size={11} /> 已停用
-          </span>
-        )}
-        <span className={styles.statusText}>
-          {!configured
-            ? "配好一家服务商，变换中心就会多出翻译 / 摘要 / 解释代码 / 改写四个动作。"
-            : config.enabled
-              ? `当前使用 ${spec?.name ?? config.provider}。`
-              : "已配置但未启用，变换中心里看不到 AI 分组。"}
-        </span>
-      </div>
-
-      {/* 这一栏不能去掉：用户有权在开启前知道剪贴板内容会离开本机 */}
-      <div className={styles.warn}>
-        <AlertTriangle size={14} className={styles.warnIcon} />
-        <span>
-          你主动对某条内容执行 AI 动作时，该条内容会被发送到所选服务商。
-          PastePanda 不会自动上传任何历史记录。看起来像密钥/凭证的内容会先拦下来请你确认。
-          {isLocal && "（当前选的是本地模型，内容不出这台电脑。）"}
-        </span>
-      </div>
-
-      {/* v6.4 审查：#5 加载失败错误条 + 重试 */}
-      {loadError && (
+      {/* 加载失败错误条 + 重试。不静默：读不到配置而页面看起来正常是最坑的。 */}
+      {s.loadError && (
         <div className={styles.loadError}>
-          <span>设置加载失败：{loadError}</span>
-          <button className={styles.retryBtn} onClick={() => void reload()}>
+          <span>设置加载失败：{s.loadError}</span>
+          <button className={styles.retryBtn} onClick={() => void s.reload()}>
             重试
           </button>
         </div>
       )}
 
-      <AiSetupStep
-        providers={providers}
-        spec={spec}
-        config={config}
-        keyInput={keyInput}
-        hasKey={hasKey}
-        testing={testing}
-        keyRef={keyRef}
-        onProviderChange={(id) => void changeProvider(id)}
-        onKeyInput={setKeyInput}
-        onDraft={draft}
-        onCommit={commit}
-        onSave={saveNow}
-        onSaveAndTest={() => void saveAndTest()}
-        onAddCustom={() => setCustomEditor({ mode: "add" })}
-        onEditCustom={(item) => setCustomEditor({ mode: "edit", item })}
-        onDeleteCustom={(id) => void handleCustomDeleted(id)}
+      <AiHeroCard
+        spec={s.spec}
+        config={s.config}
+        configured={s.configured}
+        isLocal={s.isLocal}
+        usage={s.usage}
+        quota={s.quota}
+        testing={s.testing}
+        onTest={() => void s.saveAndTest()}
+        onOpenSetup={() => setOpenKey("setup")}
+        onOpenQuota={() => useDialogStore.getState().openQuota()}
       />
 
-      {testMsg && (
-        <div className={`${styles.testResult} ${testMsg.ok ? styles.testOk : styles.testFail}`}>
-          <div>{testMsg.text}</div>
+      {/*
+       * 测试结果必须摆在**摘要卡旁边的顶层**，不能放进「服务商与密钥」区块。
+       * 刚改完时它在那个区块里，而已配置的用户 openKey 是 null、区块是收起的，
+       * AiSection 收起时不渲染 children——于是点摘要卡上的「测试连接」没任何反馈，
+       * 失败也静默。规则：触发按钮常驻可见，它的结果就必须同样常驻可见。
+       * （步骤 3 里的「保存并测试」也走同一个 testMsg，摆在顶层两边都照顾到。）
+       */}
+      {s.testMsg && (
+        <div className={`${styles.testResult} ${s.testMsg.ok ? styles.testOk : styles.testFail}`}>
+          <div>{s.testMsg.text}</div>
           {hint && (
             <div className={styles.testHint}>
               <span>{hint.hint}</span>
@@ -336,37 +125,92 @@ export function AiTab() {
         </div>
       )}
 
-      <AiUsageCard usage={usage} isLocal={isLocal} />
+      <div className={styles.acc}>
+        <AiSection
+          icon={<Server size={13} />}
+          title="服务商与密钥"
+          subtitle={setupSub}
+          open={openKey === "setup"}
+          onToggle={() => toggle("setup")}
+        >
+          {/* 这一条不能去掉：用户有权在开启前知道剪贴板内容会离开本机。 */}
+          <div className={styles.warn}>
+            <AlertTriangle size={14} className={styles.warnIcon} />
+            <span>
+              你主动对某条内容执行 AI 动作时，该条内容会被发送到所选服务商。
+              PastePanda 不会自动上传任何历史记录。看起来像密钥/凭证的内容会先拦下来请你确认。
+              {s.isLocal && "（当前选的是本地模型，内容不出这台电脑。）"}
+            </span>
+          </div>
 
-      {/* 没有可用模型时不显示：在那儿写模板是空转。
-          用量明细不跟着藏——那是已经花掉的钱的记录，关个开关就看不到自己的账说不过去。 */}
-      {configured && config.enabled && <AiCustomActions />}
+          <AiSetupStep
+            providers={s.providers}
+            spec={s.spec}
+            config={s.config}
+            keyInput={s.keyInput}
+            hasKey={s.hasKey}
+            testing={s.testing}
+            keyRef={s.keyRef}
+            onProviderChange={(id) => void s.changeProvider(id)}
+            onKeyInput={s.setKeyInput}
+            onDraft={s.draft}
+            onCommit={s.commit}
+            onSave={s.saveNow}
+            onSaveAndTest={() => void s.saveAndTest()}
+            onAddCustom={() => s.setCustomEditor({ mode: "add" })}
+            onEditCustom={(item) => s.setCustomEditor({ mode: "edit", item })}
+            onDeleteCustom={(id) => void s.handleCustomDeleted(id)}
+          />
+        </AiSection>
 
-      <AiUsageDetail />
+        <AiSection
+          icon={<Clock3 size={13} />}
+          title="用量"
+          subtitle={usageSub}
+          open={openKey === "usage"}
+          onToggle={() => toggle("usage")}
+        >
+          <AiUsageCard usage={s.usage} isLocal={s.isLocal} />
+          {/* AiSection 折叠时不渲染 children，所以“展开”就是“挂载”：
+              它自己在 mount 时拉数据，不需要再传 open。
+              好处仍在：没展开过就一次库都不查。 */}
+          <AiUsageDetail />
+        </AiSection>
 
-      <AiAdvanced
-        open={advancedOpen}
-        onToggle={() => setAdvancedOpen((v) => !v)}
-        config={config}
-        spec={spec}
-        hasKey={hasKey}
-        onDraft={draft}
-        onCommit={commit}
-        onSave={saveNow}
-        onClearKey={() => void clearKey()}
-      />
+        {/* 自进化（原在「设置 › 通用」的一行🧠，08-11 搬到这里）。
+            不跟着 configured 藏：它记的是你已经产生的使用痕迹，
+            红线②要求任何时候都可见可删，不能因为没配 AI 就看不到。 */}
+        <AiEvolution open={openKey === "evolution"} onToggle={() => toggle("evolution")} />
 
-      {/* v6.4 自定义服务商弹窗 */}
-      {customEditor && (
+        {/* 没有可用模型时不显示：在那儿写模板是空转。
+            用量区不跟着藏——那是已经花掉的钱的记录，关个开关就看不到自己的账说不过去。 */}
+        {s.configured && s.config.enabled && (
+          <AiCustomActions open={openKey === "actions"} onToggle={() => toggle("actions")} />
+        )}
+
+        <AiAdvanced
+          open={openKey === "advanced"}
+          onToggle={() => toggle("advanced")}
+          config={s.config}
+          spec={s.spec}
+          hasKey={s.hasKey}
+          onDraft={s.draft}
+          onCommit={s.commit}
+          onSave={s.saveNow}
+          onClearKey={() => void s.clearKey()}
+        />
+      </div>
+
+      {s.customEditor && (
         <AiCustomProviderDialog
-          editor={customEditor}
-          onClose={() => setCustomEditor(null)}
-          onSaved={(id, isNew) => void handleCustomSaved(id, isNew)}
+          editor={s.customEditor}
+          onClose={() => s.setCustomEditor(null)}
+          onSaved={(id, isNew) => void s.handleCustomSaved(id, isNew)}
         />
       )}
 
-      {/* v6.4 方案 C：首次配置成功引导 */}
-      <AiOnboarding open={showOnboard} onClose={() => setShowOnboard(false)} />
+      {/* 首次配置成功引导 */}
+      <AiOnboarding open={s.showOnboard} onClose={() => s.setShowOnboard(false)} />
     </div>
   );
 }

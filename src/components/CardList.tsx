@@ -11,7 +11,7 @@ import { StackBanner } from "@/components/StackBanner";
 import { MdAssocBanner } from "@/components/MdAssocBanner";
 import { TagEditor } from "@/components/TagEditor";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { getImageThumbnail, copyItemToClipboard, deleteHistory, copyOnly, pasteText } from "@/lib/api";
+import { getImageThumbnail, copyItemToClipboard, deleteHistory, copyOnly, pasteTextGuarded } from "@/lib/api";
 import { getAllRules } from "@/lib/regexRules";
 import { thumbnailSourcePath } from "@/lib/richContent";
 import { ClipboardList, Copy, Search, Zap, CheckSquare, Square, FileDown, Trash2, GitCompare, FileX, Sparkles, ClipboardPaste } from "lucide-react";
@@ -29,6 +29,11 @@ import { ChainRunnerDialog } from "@/components/ChainRunnerDialog";
 import { ChainEditor } from "@/components/ChainEditor";
 import { LearningsDialog } from "@/components/LearningsDialog";
 import { ProfileDialog } from "@/components/ProfileDialog";
+import { PasteGuardDialog } from "@/components/PasteGuardDialog";
+import { MilestoneDialog } from "@/components/MilestoneDialog";
+import { QuotaDialog } from "@/components/QuotaDialog";
+import { SignFloat } from "@/components/SignFloat";
+import { FreeQuotaOnboarding } from "@/components/FreeQuotaOnboarding";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -339,7 +344,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
       ],
       { duration: 260, easing: "ease-out" },
     );
-  }, [filterKey]);
+  }, [filterKey, lenisRef]);
 
   // ── 缩略图可视窗口范围 ──
   const vItemsNow = virtualizer.getVirtualItems();
@@ -492,7 +497,20 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   const handleBatchDelete = useCallback(async () => {
     const ids = [...selectedIds];
     if (ids.length === 0) return;
-    await deleteHistory(ids);
+    try {
+      const n = await deleteHistory(ids);
+      if (n === 0) {
+        // 审查：后端失败/未删时给反馈（此前静默，用户以为删了）
+        window.dispatchEvent(
+          new CustomEvent("app-toast", { detail: { message: "删除失败，请重试", type: "error" } })
+        );
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      window.dispatchEvent(
+        new CustomEvent("app-toast", { detail: { message: `删除失败：${msg}`, type: "error" } })
+      );
+    }
   }, [selectedIds]);
 
   const handleBatchExport = useCallback(async () => {
@@ -600,7 +618,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                   </button>
                   <button
                     className={styles.semanticHitBtn}
-                    onClick={() => void pasteText(h.text)}
+                    onClick={() => void pasteTextGuarded(h.text)}
                     title="粘贴到前台应用"
                   >
                     <ClipboardPaste size={11} /> 粘贴
@@ -865,6 +883,11 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
           <ChainEditor />
           <LearningsDialog />
           <ProfileDialog />
+          <PasteGuardDialog />
+          <MilestoneDialog />
+          <QuotaDialog />
+          <SignFloat />
+          <FreeQuotaOnboarding />
           {/* AnimatePresence 包裹条件挂载：关闭时子树保留到退场动画结束再卸载。
               各弹框组件内部不再自带 AnimatePresence（会形成独立 presence 边界、
               屏蔽外层退出信号），motion 元素直接参与本层 presence */}

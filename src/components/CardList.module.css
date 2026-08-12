@@ -261,7 +261,7 @@
 }
 
 .stackBadgeDone {
-  background: #9CA3AF;
+  background: var(--text-muted);
   box-shadow: none;
   animation: none;
 }

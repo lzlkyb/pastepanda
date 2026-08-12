@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useAppStore } from "@/stores/appStore";
-import { fetchRealSourceIcon } from "@/lib/source-mappings";
+import { useSourceIcon } from "@/hooks/useSourceIcon";
 import styles from "./Sidebar.module.css";
 import melodyUrl from "@/assets/melody.png";
 
@@ -16,7 +16,7 @@ export interface SidebarGroup {
   section?: "builtin" | "user" | "source" | "auto"; // 所属区域
   /** 来源分组的原始 source 字符串（用于 SourceBadge 获取真实图标） */
   sourceRaw?: string;
-  /** 来源分组的 source_icon 文件名（用于 fetchRealSourceIcon） */
+  /** 来源分组的 source_icon 文件名（传给 useSourceIcon 当缓存 key） */
   sourceIcon?: string | null;
 }
 
@@ -35,19 +35,13 @@ interface SidebarProps {
 const PRESET_COLORS = ["#3B82F6", "#22C55E", "#F97316", "#A855F7", "#EF4444", "#EC4899", "#14B8A6", "#F59E0B", "#6366F1"];
 const PRESET_ICONS = ["📁", "📂", "🏷️", "📌", "⭐", "❤️", "🔥", "💼", "🎯", "📝", "💡", "🔖"];
 
-/** 来源分组图标：支持真实应用图标 + emoji 回退 */
+/** 来源分组图标：真实应用图标 + emoji 回退（双模式解析走 useSourceIcon）。
+    回退用传入的 fallbackEmoji 而不是 hook 里的 emoji：分组自己带图标（用户可改），
+    优先级高于 SOURCE_MAP 的预设。 */
 function SourceGroupIcon({ source, sourceIcon, fallbackEmoji }: { source: string; sourceIcon?: string | null; fallbackEmoji: string }) {
-  const sourceIconMode = useAppStore((s) => s.config.source_icon_mode);
-  const cacheKey = sourceIcon || source;
-  const realIconUrl = useAppStore((s) => s.realIconCache[cacheKey]);
+  const { realIconUrl } = useSourceIcon(source, sourceIcon);
 
-  useEffect(() => {
-    if (sourceIconMode === "app" && source) {
-      fetchRealSourceIcon(source, sourceIcon);
-    }
-  }, [source, sourceIcon, sourceIconMode]);
-
-  if (sourceIconMode === "app" && realIconUrl) {
+  if (realIconUrl) {
     return <img src={realIconUrl} alt="" className={styles.sourceIcon} />;
   }
   return <span className={styles.icon}>{fallbackEmoji}</span>;

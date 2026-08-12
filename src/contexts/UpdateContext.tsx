@@ -155,6 +155,10 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       if (downloadTimeoutRef.current) clearTimeout(downloadTimeoutRef.current);
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
+    // 不能补依赖：checkForUpdate / silentCheck 都定义在本 effect 之后，
+    // 写进依赖数组会在 const 初始化前读取 → TDZ ReferenceError。
+    // 而且这是启动检查 + 轮询定时器，本来就只能装一次。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ─── 静默检查（不改变 UI 状态，仅内部记录）─────────
@@ -180,7 +184,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       checkingRef.current = false;
       localStorage.setItem(LAST_CHECK_KEY, String(Date.now()));
     }
-  }, []);
+  }, [clearUptodateTimer]);
 
   // ─── 检查更新（统一走 Rust 多源路径）─────────────────
 
@@ -229,7 +233,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       checkingRef.current = false;
       localStorage.setItem(LAST_CHECK_KEY, String(Date.now()));
     }
-  }, []);
+  }, [clearUptodateTimer, toast]);
 
   // ─── 下载并安装（后台线程，不阻塞 UI）────────────
 
@@ -384,7 +388,8 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     return () => {
       unlisteners.forEach((fn) => fn());
     };
-  }, []);
+    // clearUptodateTimer / toast 都是 useCallback 恒引用，列进去不会重装监听
+  }, [clearUptodateTimer, toast]);
 
   // ─── 重启应用 ────────────────────────────────────────
 
@@ -401,7 +406,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   const markInstalled = useCallback(() => {
     clearUptodateTimer();
     setStatus("installed");
-  }, []);
+  }, [clearUptodateTimer]);
 
   // ─── 跳过当前版本 ───────────────────────────────────
 
@@ -412,7 +417,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       setStatus("idle");
       toast(`已跳过 v${update.version}`, "info");
     }
-  }, [update]);
+  }, [update, toast]);
 
   return (
     <UpdateContext.Provider

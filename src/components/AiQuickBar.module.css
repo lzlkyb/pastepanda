@@ -7,6 +7,14 @@
 .bar {
   display: flex;
   align-items: center;
+  /* 必须换行：最后一个子项 .tgt（目标摘要行）带 width:100%，靠它落到第二行。
+     漏了这一句的话，width:100% 不会另起一行——它只是让 .tgt 变成一个「想占满整宽」
+     但 flex-shrink:1 的同行子项，于是五个子项全挤在一行里互相压：
+     .acts 被压扁、摘要文字只剩几个字、那条 border-top 虚线横在同一行上。
+     （能被压的只有 .acts：AiMark 是 flex:none，.hintTxt/.x 是 flex-shrink:0。）
+     换行打开后，.acts 会先在自己内部折行来吸收挤压，所以
+     「类型标签 + 关闭」不会被顶到第二行去和摘要行抢位置。 */
+  flex-wrap: wrap;
   gap: 6px;
   padding: 7px 10px;
   border-radius: 10px;
@@ -16,15 +24,54 @@
   box-shadow: 0 1px 3px color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-.lbl {
-  font-size: 10px;
-  color: var(--accent-strong);
-  font-weight: 700;
-  flex-shrink: 0;
-  display: inline-flex;
+/* 栏内标题的 .lbl 已删：改用 <AiMark shape="label">，字号/间距都在
+   components/ai/AiMark.module.css 里，不在这里重复一份。 */
+
+/* ===== 目标摘要行 =====
+   告诉用户“AI 栏现在处理的是哪条”。卡片侧不加任何高亮，
+   所以这一行是用户判断目标的**唯一依据**。
+
+   width:100% 强制占满一行：.bar 是 flex-wrap:wrap，这样它会自然换到下一行，
+   而不是跟动作按钮抢 300px 里那点宽度（侧边栏展开时面板就这么窄）。
+   用虚线而不是实线分隔：它与上方动作属于同一个栏，不是另一个区块。 */
+.tgt {
+  display: flex;
   align-items: center;
-  gap: 3px;
-  letter-spacing: 0.3px;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  padding-top: 6px;
+  margin-top: 1px;
+  border-top: 1px dashed var(--accent-border);
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+/* .tgtIco / .tgtImg / .tgtSrc / .tgtDot 已删：来源标签改用与卡片同款的
+   <SourceBadge size="small" noHover />，图标、名称、双模式切换全在
+   SourceBadge.module.css 里，这边不再平行维护一套。 */
+
+/* 唯一允许被压的元素。min-width:0 不能省——flex 子项默认 min-width:auto，
+   不写的话长文本会把整行顶宽，省略号永远不会出现。 */
+.tgtTxt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 目标不在当前筛选/搜索结果里时才出现。
+   用中性色而非警示色：这不是错误，只是个事实陈述。 */
+.tgtOff {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 9.5px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .acts {
@@ -62,7 +109,7 @@
 }
 
 .aiMark {
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1;
   opacity: 0.9;
 }
@@ -88,7 +135,7 @@
 
 .hintTxt {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
   flex-shrink: 0;
 }
@@ -108,7 +155,7 @@
 }
 
 .x:hover {
-  background: var(--hover-bg, rgba(127, 127, 127, 0.1));
+  background: var(--hover, rgba(127, 127, 127, 0.1));
   color: var(--text-primary);
 }
 
@@ -137,7 +184,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
 }
 
@@ -211,7 +258,7 @@
 }
 
 .err {
-  background: var(--danger-bg, #fef2f2);
+  background: var(--red-bg, #fef2f2);
   border: 1px solid var(--danger-border, #fecaca);
   color: var(--danger);
 }
@@ -233,3 +280,161 @@
      对比度直接沿用条自身（橙/红）已达标的配色 */
   background: color-mix(in srgb, currentColor 14%, transparent);
 }
+
+/* v6.10 升级：本地 tag / 结果卡 meta chip / 收起 */
+
+/* 本地动作：中性灰边 + 「本地」tag，与 AI 动作（✦ accent 描边）权重区分 */
+.qLocal {
+  border-color: var(--border-color);
+  background: var(--section-bg);
+  color: var(--text-secondary);
+}
+.qLocal:hover:not(:disabled) {
+  background: var(--section-bg);
+  color: var(--text-primary);
+}
+
+.locTag {
+  font-size: 8.5px;
+  font-weight: 700;
+  color: #14708a;
+  background: var(--teal-bg, #e3f4f8);
+  border-radius: 4px;
+  padding: 1px 5px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+/* 结果卡头部：名称 + meta chip 区 */
+.rName {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.rmeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 2px;
+  min-width: 0;
+}
+.rModel {
+  font-size: 9.5px;
+  color: var(--text-muted);
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.metaChip {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+.metaCached {
+  background: var(--green-bg, #dcfce7);
+  color: var(--green, #15803d);
+  border: 1px solid var(--green-border, #bbf7d0);
+}
+.metaTrunc {
+  background: var(--orange-bg, #fef3e2);
+  color: var(--orange, #b45309);
+  border: 1px solid var(--orange-border, #f0c48a);
+}
+
+/* 结果卡收起按钮 */
+.rCollapse {
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.rCollapse:hover {
+  background: var(--hover, rgba(127, 127, 127, 0.1));
+  color: var(--text-primary);
+}
+
+/* v6.10 流式打字机 */
+.streamBox {
+  font-size: 11px;
+  color: var(--text-primary);
+  line-height: 1.6;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  padding: 6px 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  min-height: 30px;
+  font-family: inherit;
+}
+.caret {
+  display: inline-block;
+  width: 6px;
+  height: 13px;
+  background: var(--accent);
+  vertical-align: -2px;
+  margin-left: 1px;
+  animation: caretBlink 0.9s steps(1) infinite;
+}
+@keyframes caretBlink {
+  0%, 55% { opacity: 1; }
+  56%, 100% { opacity: 0; }
+}
+
+/* v6.10 追问轮次叠加 */
+.turnBox {
+  margin-left: 14px;
+  border-left: 2px solid var(--accent-border);
+  padding-left: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.turnGroup { display: flex; flex-direction: column; gap: 4px; }
+.turnQ {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.turnQ::before { content: "你："; color: var(--text-muted); font-weight: 400; }
+.turnA {
+  font-size: 10.5px;
+  color: var(--text-primary);
+  line-height: 1.6;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  padding: 5px 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.turnPending {
+  font-size: 10px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* 追问输入框的样式已搬到 ai/FollowupInput.module.css：
+   那个组件被本栏与 TransformCard 两处共用，样式不应该还寄在其中一个调用方的 module 里。 */
+
+/* v6.10 继续处理 / 还原 */
+.rbMore { border-color: var(--accent-border); color: var(--accent-strong); }
+.rbGhost { border: none; background: transparent; color: var(--text-muted); font-weight: 400; }
+.rbGhost:hover:not(:disabled) { color: var(--accent-strong); border: none; background: transparent; }
+.rbGhost:disabled { opacity: 0.5; cursor: default; }
+
+/* v6.10 拖拽排序 */
+.q[draggable="true"] { cursor: grab; }
+.q[draggable="true"]:active { cursor: grabbing; }

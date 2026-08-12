@@ -17,6 +17,28 @@ pub fn paste_text(engine: State<PasteEngine>, text: String) -> Result<PasteResul
     engine.execute_paste(Some(text))
 }
 
+/// 粘贴前检查（v6.2）：目标应用感知——告诉前端"要粘到哪个应用"。
+/// 敏感检测由前端做（maskSensitiveText 纯本地同步），这里只负责窗口信息
+/// （窗口信息只有 Rust 侧拿得到）。
+#[derive(serde::Serialize)]
+pub struct PastePrecheck {
+    /// 目标应用名（如 "EXCEL" / "chrome"）；无则 None
+    pub target_app: Option<String>,
+    /// 目标应用类别：browser / excel / word / office / ide / terminal / other
+    pub target_category: Option<String>,
+}
+
+#[tauri::command]
+pub fn paste_precheck(engine: State<PasteEngine>) -> Result<PastePrecheck, String> {
+    let (app, cat) = engine
+        .foreground_app()
+        .unwrap_or_else(|| (String::new(), String::new()));
+    Ok(PastePrecheck {
+        target_app: if app.is_empty() { None } else { Some(app) },
+        target_category: if cat.is_empty() { None } else { Some(cat) },
+    })
+}
+
 /// 仅复制文本到剪贴板（不粘贴）
 #[tauri::command]
 pub fn copy_only(engine: State<PasteEngine>, text: String) -> Result<(), String> {

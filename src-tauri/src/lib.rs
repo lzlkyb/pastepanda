@@ -23,10 +23,12 @@ mod commands;
 pub mod content_classifier;
 pub mod data_store;
 pub mod error;
+pub mod hashing;
 mod hotkey_manager;
 mod icon_extractor;
 mod lan_sync;
 mod lang_arbiter;
+mod mask;
 mod paste_engine;
 mod pinned_window;
 mod quick_paste;
@@ -463,6 +465,7 @@ pub fn run() {
             commands::get_sidebar_counts,
             commands::search_history,
             commands::paste_text,
+            commands::paste_precheck,
             commands::paste_image,
             commands::paste_rich,
             commands::copy_rich_only,
@@ -616,9 +619,18 @@ pub fn run() {
             commands::profile_set_override,
             commands::profile_export,
             commands::profile_install_skill,
+            commands::skill_install_workflows,
             commands::profile_action_boosts,
             // 程序性记忆（V3-B）：高频动作序列
             commands::sequence_suggest,
+            // 环境智能：二元转移表（做完 A 常接着做 B）嗂给推荐排序
+            commands::sequence_transitions,
+            // 粘性数据（v6.8）：活跃日历 / 连续周数 / 成就 / 里程碑
+            commands::stats_sticky,
+            // 免费额度（v6.9 签到送 token）：总览 / 签到 / 兑换
+            commands::ai_quota_get,
+            commands::ai_quota_sign,
+            commands::ai_quota_redeem,
             // 动作使用日志（v6.0 第一步：action_events 表）
             commands::action_event_log,
             commands::action_event_stats,
@@ -628,6 +640,7 @@ pub fn run() {
             commands::action_recommend_scene_weights,
             commands::action_dismiss_add,
             commands::action_dismissals,
+            commands::action_dismiss_remove,
             commands::action_learnings_clear,
             // 执行类动作（v6.0 复制即执行）：协议白名单打开链接
             commands::open_url,

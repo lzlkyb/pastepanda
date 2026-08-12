@@ -86,6 +86,17 @@
   --dialog-bg: #fff;
   --section-bg: #F0F4F8;
   --toggle-off-bg: #E2E8F0;
+  /* 品牌 AI 上标（顶栏标识）：蓝 → 紫渐变的两个端点。
+     **品牌色恒定，不跟主题变色**——它标的是产品身份，不是当前状态；
+     跟着 --accent 走的话，同一个标识在六套主题里会长成六个样。
+     只按明暗分两档，因为 9px 粗体属于小字，两档都得过 4.5:1。
+     浅色档这对值是逐主题取「header 处最差底色」实测出来的：
+       #1D4ED8 → ocean 6.25:1 / forest 5.93:1 / blossom 5.61:1
+       #6D28D9 → ocean 6.63:1 / blossom 5.95:1
+     顺带记一笔别再踩：--accent 自己压 app-bg 只有 3.82:1（ocean），
+     它是为「压在 --accent-light 上」调的，不能拿来当正文小字色。 */
+  --brand-ai-from: #1D4ED8;
+  --brand-ai-to: #6D28D9;
   --toggle-off-label: #94A3B8;
   --card-selected-bg: #E0F2FE;
   --card-selected-border: #0284C7;
@@ -103,6 +114,17 @@
   --success: #15803D; --success-bg: #DCFCE7; --success-border: #86EFAC; /* v6.4 AI UI：缓存绿（浅色主题） */
   --red-bg: #FEF2F2; --danger: #D82525; /* 对比度改进：danger-on-red-bg 改前4.41:1→改后4.56:1 */
   --danger-hover: #B91C1C;
+  /* 红色档补齐 border：原本只有 --red-bg / --danger，而 green/orange/success
+     三档都是 bg + 主色 + border 三件套。ChainEditor / ChainRunnerDialog 里有
+     7 处无兵底的 `var(--red-border)`，之前声明直接失效、边框回落成继承色。
+
+     只在这里写一次就覆盖全部 7 套主题：css 自定义属性是**惰性求值**的——
+     各主题未重定义它时继承这一行，而里面的 var(--danger) / var(--red-bg)
+     用的是当前主题自己的值。比手写 7 份 hex 安全：不靠我凭空拍色，
+     不绕过这个文件的对比度校验流程。
+     （边框不承载文字，适用 3:1 非文本对比度；35% 混入量可辨。若后续想要
+     和 green-border 完全对齐的手选色，在各主题块里覆写本变量即可。） */
+  --red-border: color-mix(in srgb, var(--danger) 35%, var(--red-bg));
   --version-badge-gradient: linear-gradient(135deg, #0284C7, #0369A1);
   --version-badge-shadow: rgba(2, 132, 199, 0.35);
   --update-badge-gradient: linear-gradient(135deg, #059669, #047857);
@@ -175,6 +197,10 @@
   --dialog-bg: #18181B;
   --section-bg: #0F0F11;
   --toggle-off-bg: #3F3F46;
+  /* 品牌 AI 上标：深色档（浅色档的值定义在 :root，深色主题在这里整体覆盖）。
+     midnight 底极暗（#1C1832），这对值有 12:1 以上，宽裕。 */
+  --brand-ai-from: #A8DEFF;
+  --brand-ai-to: #D8CCFF;
   --toggle-off-label: #71717A;
   --card-selected-bg: #1E1B4B;
   --card-selected-border: #818CF8;
@@ -475,6 +501,12 @@
   --dialog-bg: #0A1628;
   --section-bg: #081018;
   --toggle-off-bg: #1E3D60;
+  /* 品牌 AI 上标：深色档。**本主题是两档里最紧的一个**——app-bg 顶部是
+     #1E5A82，比 midnight 亮得多，浅色档那对压上去只有 2.6:1，必须整体提亮。
+     紫比蓝天生更暗（绿分量低），所以紫端要提得更多才追得上：
+       #A8DEFF 5.13:1 / #D8CCFF 4.93:1。再往下调任何一档都会跌破 4.5。 */
+  --brand-ai-from: #A8DEFF;
+  --brand-ai-to: #D8CCFF;
   --toggle-off-label: #5577A0;
   --card-selected-bg: #0A1E3A;
   --card-selected-border: #3B9EFF;

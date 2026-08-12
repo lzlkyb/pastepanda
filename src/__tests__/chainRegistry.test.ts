@@ -154,14 +154,45 @@ describe("runChain · AI 步骤确认（B2）", () => {
 });
 
 describe("PRESET_CHAINS · 预置链定义", () => {
+  /**
+   * error-triage 链引用的 ai-merge-polish / ai-fix-code 是 Rust 后端 AI 动作，
+   * 运行时由 initAiTransforms 从 ai_list_actions 动态注册（单一数据源在后端），
+   * 测试环境没有后端，故注册桩变换让"预置链引用必须存在"的校验同样覆盖 AI 链。
+   */
+  const AI_STUBS: Transform[] = [
+    {
+      id: "ai-merge-polish",
+      label: "AI 合并",
+      description: "",
+      group: "ai",
+      remote: true,
+      detect: () => 0,
+      run: async (t) => ({ ok: true, output: t }),
+    },
+    {
+      id: "ai-fix-code",
+      label: "AI 修复代码",
+      description: "",
+      group: "ai",
+      remote: true,
+      detect: () => 0,
+      run: async (t) => ({ ok: true, output: t }),
+    },
+  ];
+
   it("至少 3 条，且都引用了已注册的变换", async () => {
-    expect(PRESET_CHAINS.length).toBeGreaterThanOrEqual(3);
-    for (const chain of PRESET_CHAINS) {
-      expect(chain.steps.length).toBeGreaterThan(0);
-      for (const step of chain.steps) {
-        const { getTransform } = await import("@/lib/transforms/registry");
-        expect(getTransform(step.transformId), `${chain.id}.${step.transformId}`).toBeDefined();
+    AI_STUBS.forEach((s) => registerTransform(s));
+    try {
+      expect(PRESET_CHAINS.length).toBeGreaterThanOrEqual(3);
+      for (const chain of PRESET_CHAINS) {
+        expect(chain.steps.length).toBeGreaterThan(0);
+        for (const step of chain.steps) {
+          const { getTransform } = await import("@/lib/transforms/registry");
+          expect(getTransform(step.transformId), `${chain.id}.${step.transformId}`).toBeDefined();
+        }
       }
+    } finally {
+      AI_STUBS.forEach((s) => unregisterTransform(s.id));
     }
   });
 
@@ -171,5 +202,44 @@ describe("PRESET_CHAINS · 预置链定义", () => {
         expect(["local", "network", "destructive"]).toContain(step.risk);
       }
     }
+  });
+});
+
+describe("matchesCondition + 条件执行（v6.3）", () => {
+  it("is-json：JSON 输入执行，普通文本跳过", async () => {
+    const chain = getPresetChain("json-clean-cond")!;
+    const ok = await runChain(chain, '{"a":1,"b":[1,2]}');
+    expect(ok.ok).toBe(true);
+    expect(ok.final).toContain("\n  \"a\""); // 真的格式化了
+    expect(ok.stages[0].skipped).toBeUndefined();
+
+    const skipped = await runChain(chain, "这不是 JSON");
+    expect(skipped.ok).toBe(true);
+    expect(skipped.stages[0].skipped).toBe(true);
+    expect(skipped.final).toBe("这不是 JSON"); // 原样传递
+  });
+
+  it("contains-secret：含密钥执行脱敏，普通文本跳过", async () => {
+    const chain = getPresetChain("auto-mask")!;
+    const masked = await runChain(chain, "联系我 13812345678");
+    expect(masked.ok).toBe(true);
+    expect(masked.final).toContain("***");
+
+    const plain = await runChain(chain, "今天天气不错");
+    expect(plain.ok).toBe(true);
+    expect(plain.stages[0].skipped).toBe(true);
+    expect(plain.final).toBe("今天天气不错");
+  });
+
+  it("matchesCondition 各类型判定", async () => {
+    const { matchesCondition } = await import("@/lib/chains/registry");
+    expect(matchesCondition(undefined, "任意")).toBe(true);
+    expect(matchesCondition({ type: "always" }, "任意")).toBe(true);
+    expect(matchesCondition({ type: "is-json" }, '{"a":1}')).toBe(true);
+    expect(matchesCondition({ type: "is-json" }, "普通文本")).toBe(false);
+    expect(matchesCondition({ type: "contains-secret" }, "key: sk-abc12345")).toBe(true);
+    expect(matchesCondition({ type: "contains-secret" }, "普通文本")).toBe(false);
+    expect(matchesCondition({ type: "is-code" }, "function a() { return 1 }")).toBe(true);
+    expect(matchesCondition({ type: "is-code" }, "普通的一句话")).toBe(false);
   });
 });

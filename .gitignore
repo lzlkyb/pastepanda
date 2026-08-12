@@ -35,3 +35,6 @@ melody_b64.txt
 
 # codegraph 索引产物（本地生成，勿入库）
 .codegraph/
+
+# 兑换码生成器的 Python 字节码（.pyc 里会带上运行时用过的字符串）
+tools/__pycache__/

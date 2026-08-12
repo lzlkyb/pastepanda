@@ -17,3 +17,18 @@ export interface SequenceSuggestion {
 
 /** 程序性记忆：最近高频动作序列（纯行为统计，无内容） */
 export const sequenceSuggest = () => invoke<SequenceSuggestion[]>("sequence_suggest");
+
+/** 一条二元转移：你在 from 之后紧接着做 to 的次数 */
+export interface SequenceTransition {
+  from: string;
+  to: string;
+  count: number;
+}
+
+/**
+ * 环境智能：二元转移表（“做完 A 你常接着做 B”）。
+ *
+ * 与 {@link sequenceSuggest} 同源同规则（同一张表 / 同一套会话间隔规则 / 30 天 3 次），
+ * 但用途不同：那个给人看（提示存成动作链），这个嗂给 recommend 排序。
+ */
+export const sequenceTransitions = () => invoke<SequenceTransition[]>("sequence_transitions");

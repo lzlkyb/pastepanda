@@ -35,6 +35,8 @@ export function SettingsDialog({ open, onClose, initialTab }: { open: boolean; o
     () => localStorage.getItem("tabStyle") || "segmented",
   );
   const [stats, setStats] = useState<StatsDetail | null>(null);
+  /** 审查：统计加载失败标记（界面给重试，不再永久 spinner） */
+  const [statsError, setStatsError] = useState(false);
   const [appName, setAppName] = useState("PastePanda");
   const [appVersion, setAppVersion] = useState("?.?.?");
   const [showCleanupConfirm, setShowCleanupConfirm] = useState(false);
@@ -59,10 +61,20 @@ export function SettingsDialog({ open, onClose, initialTab }: { open: boolean; o
       // v6.4 审查：#10 从变换中心跳转过来时直接定位到指定 tab
       setActiveTab(initialTab ?? "general");
       setScrolled(false);
-      getStatsDetail(config.current_workspace).then(setStats).catch(() => {});
+      // 审查：stats 失败不再静默——置错误标记，界面给重试
+      setStatsError(false);
+      getStatsDetail(config.current_workspace)
+        .then((s) => {
+          setStats(s);
+          setStatsError(false);
+        })
+        .catch(() => setStatsError(true));
       getAppVersion().then(setAppVersion);
       getAppName().then(setAppName).catch(() => setAppName("PastePanda"));
     }
+    // initialTab 只在弹窗打开那一刻消费。列进依赖的话，父组件改一次这个 prop
+    // 就会把用户手动切过去的 tab 拉回来。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, config.current_workspace]);
 
   const handleBodyScroll = useCallback(() => {
@@ -311,7 +323,10 @@ export function SettingsDialog({ open, onClose, initialTab }: { open: boolean; o
                   <motion.div key="tab-general" variants={tabPanelVariants} initial="initial" animate="animate" exit="exit" transition={tabPanelTransition}>
                     <GeneralTab
                       config={config} updateConfig={updateConfig} updateAndSave={updateAndSave}
-                      stats={stats} expiredCount={expiredCount}
+                      stats={stats} statsError={statsError} onRetryStats={() => {
+                        setStatsError(false);
+                        getStatsDetail(config.current_workspace).then(setStats).catch(() => setStatsError(true));
+                      }} expiredCount={expiredCount}
                       tabStyle={tabStyle} handleSwitchTabStyle={handleSwitchTabStyle}
                       handleExport={handleExport} handleImport={handleImport} handleCleanup={handleCleanup}
                       exporting={exporting} importing={importing}

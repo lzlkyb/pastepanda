@@ -1,0 +1,94 @@
+/* QuotaEntryCard — 设置 AI 页免费额度只读卡（v6.9 · v6.10 紫色系升级） */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px 13px;
+  border-radius: 12px;
+  background: #f5f0ff;
+  border: 1px solid #d8c4f5;
+}
+.head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #5b3f8f;
+}
+.icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(140deg, #7c3aed, #9d6ef0);
+  border: 1px solid #b79af0;
+  color: #fff;
+}
+.sub {
+  margin-left: auto;
+  font-size: 9px;
+  color: #8b74b8;
+  font-weight: 400;
+}
+.body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.title {
+  font-size: 11px;
+  color: #6b5a8f;
+}
+.title b {
+  font-size: 14px;
+  color: #4c1d95;
+}
+.canSign {
+  margin-left: 8px;
+  font-size: 9px;
+  font-weight: 600;
+  color: #7c3aed;
+  background: #ede4ff;
+  border: 1px solid #d3bdf5;
+  padding: 1px 7px;
+  border-radius: 99px;
+}
+.bar {
+  height: 5px;
+  border-radius: 99px;
+  background: #e6daf7;
+  overflow: hidden;
+}
+.barFill {
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #7c3aed, #9d6ef0);
+}
+.meta {
+  font-size: 9px;
+  color: #8b74b8;
+}
+.btn {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 9px;
+  border: 1px solid #b79af0;
+  background: #fff;
+  color: #7c3aed;
+  cursor: pointer;
+  transition: 0.15s;
+}
+.btn:hover { background: #7c3aed; color: #fff; }

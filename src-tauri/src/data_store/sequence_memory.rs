@@ -28,6 +28,23 @@ use super::DataStore;
 /// （吃饭、下班、次日开工）都是小时级，离 10 分钟还差一个数量级，不会漏切。
 const SESSION_GAP_SECS: i64 = 10 * 60;
 
+/// 转移表条数上限。这不是“只要前 N 名”的产品取舍，是防失控的兵：
+/// min_count 已经把偶发组合滤掉了，实际转移对远达不到这个量级；
+/// 万一哪天动作数暴涨，也不能让它无界地往前端传。
+const MAX_TRANSITIONS: usize = 200;
+
+/// 一条二元转移：你在 `from` 之后**紧接着**做 `to` 的次数。
+///
+/// 与 {@link SequencePattern} 的区别：那个是给人看的「你常这样操作 → 存成动作链？」，
+/// 所以只取 top-10；这个是给**推荐排序**用的，需要尽量完整的转移表，
+/// 且前端要拿它算 P(to|from)，所以不能像模式那样被截断。
+#[derive(Debug, Clone)]
+pub struct SequenceTransition {
+    pub from: String,
+    pub to: String,
+    pub count: u32,
+}
+
 /// 一条高频动作序列模式。
 #[derive(Debug, Clone)]
 pub struct SequencePattern {
@@ -40,6 +57,84 @@ pub struct SequencePattern {
 }
 
 impl DataStore {
+    /// 按时间升序取动作事件（created_at, action_id），排除 paste 哨兵。
+    ///
+    /// 抽出来是因为 `sequence_mining` 与 `sequence_transitions` 必须看**同一份数据**：
+    /// 两边各写一遍 SQL 的话，哪天改了过滤条件（比如再排掉一种哨兵）就会只改一边，
+    /// 结果是「发现面板里有这条序列、推荐却不认」这种没人会去查的不一致。
+    ///
+    /// **只在取数据期间持锁**：后续统计全是纯内存计算，整段握着锁会把剪贴板监听线程的
+    /// action_event_add / insert_history（同一把 lock_conn）一起阻住。
+    fn load_action_rows(&self, since: &str) -> Result<Vec<(String, String)>, String> {
+        let conn = self.lock_conn();
+        let mut stmt = conn
+            .prepare(
+                "SELECT created_at, action_id FROM action_events
+                 WHERE created_at >= ?1 AND action_id != ?2
+                 ORDER BY created_at ASC, id ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let out: Vec<(String, String)> = stmt
+            .query_map(params![since, crate::data_store::ACTION_ID_PASTE], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(out)
+        // stmt、conn（MutexGuard）随函数结束立即释放
+    }
+
+    /// 二元转移统计：「做了 A 之后紧接着做 B」各出现多少次。
+    ///
+    /// 给推荐排序用（环境智能）：前端拿它算 P(to|from)，给「刚做完 A」时的 B 加分。
+    ///
+    /// 两条与 `sequence_mining` 完全一致的规则，改一边就要改两边：
+    /// - **跨会话的相邻不算**（`SessionBreaks`）——周一下班前最后一个动作和周三上班后
+    ///   第一个动作不是一次「连着做」；
+    /// - **自转移不算**（a == b）——那是手抖重复，不是习惯。
+    ///
+    /// `min_count`：至少连着做过几次才算习惯（与 `sequence_mining` 同为 3）。
+    /// 返回按 count 降序，上限 {@link MAX_TRANSITIONS} 条。
+    pub fn sequence_transitions(
+        &self,
+        days: i64,
+        min_count: u32,
+    ) -> Result<Vec<SequenceTransition>, String> {
+        // 上界必须 clamp（与 sequence_mining 对齐）：chrono::Duration::days() 传极大值会 panic
+        let days = days.clamp(1, 365);
+        let since = (chrono::Local::now() - chrono::Duration::days(days - 1))
+            .format("%Y-%m-%d 00:00:00")
+            .to_string();
+
+        let rows = self.load_action_rows(&since)?;
+        if rows.len() < 2 {
+            return Ok(vec![]);
+        }
+        let breaks = SessionBreaks::from_rows(&rows);
+
+        let mut freq: HashMap<(String, String), u32> = HashMap::new();
+        for i in 0..rows.len() - 1 {
+            if !breaks.is_continuous(i, 2) {
+                continue;
+            }
+            let (a, b) = (&rows[i].1, &rows[i + 1].1);
+            if a == b {
+                continue;
+            }
+            *freq.entry((a.clone(), b.clone())).or_insert(0) += 1;
+        }
+
+        let mut out: Vec<SequenceTransition> = freq
+            .into_iter()
+            .filter(|(_, c)| *c >= min_count)
+            .map(|((from, to), count)| SequenceTransition { from, to, count })
+            .collect();
+        out.sort_by(|a, b| b.count.cmp(&a.count).then(a.from.cmp(&b.from)));
+        out.truncate(MAX_TRANSITIONS);
+        Ok(out)
+    }
+
     /// 挖掘高频动作序列。
     ///
     /// - `days`：统计窗口（默认 30 天）
@@ -62,30 +157,9 @@ impl DataStore {
             .format("%Y-%m-%d 00:00:00")
             .to_string();
 
-        // 取数据要持锁，但**只在取数据期间持锁**：下面的 freq 统计 / 倒序扫描 / 排序
-        // 全是纯内存计算，一条 SQL 都不发。整段握着锁的话，剪贴板监听线程的
-        // action_event_add / insert_history（同一把 lock_conn，DataStore 是单连接 +
-        // std Mutex）会被一起阻塞——用户打开动作链运行器的瞬间复制内容就会卡一下。
-        let rows: Vec<(String, String)> = {
-            let conn = self.lock_conn();
-            // 按时间升序取动作序列（排除 paste 哨兵——"粘贴"是动作的结果不是意图）
-            let mut stmt = conn
-                .prepare(
-                    "SELECT created_at, action_id FROM action_events
-                     WHERE created_at >= ?1 AND action_id != ?2
-                     ORDER BY created_at ASC, id ASC",
-                )
-                .map_err(|e| e.to_string())?;
-            let out: Vec<(String, String)> = stmt
-                .query_map(params![since, crate::data_store::ACTION_ID_PASTE], |r| {
-                    Ok((r.get(0)?, r.get(1)?))
-                })
-                .map_err(|e| e.to_string())?
-                .filter_map(|r| r.ok())
-                .collect();
-            out
-            // stmt 、conn（MutexGuard）随块结束立即释放
-        };
+        // 取数与 sequence_transitions 共用同一个函数（排除 paste 哨兵——
+        // 粘贴是动作的结果不是意图），两边必须看同一份数据。
+        let rows = self.load_action_rows(&since)?;
 
         let actions: Vec<&str> = rows.iter().map(|(_, a)| a.as_str()).collect();
         if actions.len() < 2 {

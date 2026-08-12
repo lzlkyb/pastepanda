@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>动作链 UI 升级设计稿（v6.9）</title>
+<style>
+  :root {
+    --panel:#ffffff; --section:#f6f8fa; --section2:#eef1f5; --border:#e2e7ef;
+    --text:#14181f; --text2:#3c4351; --muted:#8a92a3; --accent:#1d9e75; --accent-strong:#0f7a58;
+    --accent-light:#e2f5ed; --amber:#b45309; --amber-bg:#fef3e2; --amber-border:#f0c48a;
+    --green:#1d9e75; --green-bg:#e2f5ed; --green-border:#9fd6c0; --red:#b3261e; --red-bg:#fdeaea; --red-border:#eeb8b2;
+    --teal-bg:#e3f4f8; --teal-border:#a8d6e2;
+  }
+  body{background:#eef0f4;color:var(--text);font-family:"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;margin:0;padding:28px 32px;}
+  h1{font-size:19px;margin:0 0 4px;}
+  .pageSub{font-size:12px;color:var(--muted);margin-bottom:24px;}
+  .section{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:22px;box-shadow:0 2px 10px rgba(15,23,42,.05);}
+  .secHead{display:flex;align-items:baseline;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+  .secTag{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;color:#fff;}
+  .tagP{background:var(--accent);} .tagE{background:#5b6b8c;} .tagG{background:var(--amber);}
+  .secTitle{font-size:14.5px;font-weight:700;}
+  .secDesc{font-size:11px;color:var(--muted);}
+  .stage{border:1px dashed var(--border);border-radius:12px;padding:18px;margin-bottom:14px;background:var(--section);}
+  .stageLabel{display:block;font-size:11px;font-weight:700;color:var(--text2);margin-bottom:10px;}
+  .callout{background:var(--amber-bg);border:1px solid var(--amber-border);border-radius:10px;padding:10px 14px;font-size:11.5px;color:#7c4a12;line-height:1.8;}
+  .callout b{color:var(--amber);}
+  .note{font-size:11px;color:var(--muted);line-height:1.8;}
+
+  /* ===== 弹窗骨架 ===== */
+  .win{width:460px;background:var(--panel);border:1px solid rgba(15,23,42,.12);border-radius:14px;overflow:hidden;box-shadow:0 18px 44px rgba(15,23,42,.16);}
+  .d-head{display:flex;align-items:center;gap:8px;padding:13px 16px;border-bottom:1px solid var(--border);background:var(--section);}
+  .d-icon{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--accent-light);color:var(--accent-strong);font-size:13px;}
+  .d-title{font-size:14px;font-weight:700;}
+  .d-sub{font-size:10.5px;color:var(--muted);margin-left:4px;}
+  .d-x{margin-left:auto;width:24px;height:24px;border-radius:7px;border:none;background:transparent;color:var(--muted);cursor:pointer;font-size:12px;}
+  .d-x:hover{background:var(--section2);color:var(--text2);}
+  .d-body{padding:14px 16px 16px;display:flex;flex-direction:column;gap:12px;max-height:560px;overflow:auto;}
+
+  /* ===== 场景1：运行器 ===== */
+  .chainTabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:thin;}
+  .chainTab{flex-shrink:0;display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:10px;border:1px solid var(--border);background:var(--panel);font-size:12px;color:var(--text2);cursor:pointer;position:relative;transition:all .15s;}
+  .chainTab:hover{border-color:var(--accent);}
+  .chainTabOn{background:var(--accent-light);border-color:var(--accent);color:var(--accent-strong);font-weight:700;}
+  .chainTabDesc{font-size:10px;color:var(--muted);font-weight:400;margin-left:2px;}
+  .chainTabEdit{display:none;width:16px;height:16px;border-radius:5px;background:var(--section2);color:var(--text2);align-items:center;justify-content:center;font-size:9px;cursor:pointer;}
+  .chainTab:hover .chainTabEdit{display:flex;}
+  .aiChip{font-size:8.5px;font-weight:700;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;padding:1px 5px;border-radius:5px;letter-spacing:.3px;}
+  .chainRow2{display:flex;align-items:center;gap:8px;}
+  .newChain{flex-shrink:0;display:flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:var(--accent-strong);background:var(--accent-light);border:1px dashed var(--accent);border-radius:10px;padding:7px 11px;cursor:pointer;}
+  .newChain:hover{background:var(--accent);color:#fff;}
+
+  .inputCard{background:var(--section);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+  .inputCardHead{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:11px;color:var(--text2);border-bottom:1px dashed var(--border);}
+  .count{color:var(--muted);}
+  .miniBtn{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:var(--text2);background:var(--panel);border:1px solid var(--border);border-radius:7px;padding:3px 8px;cursor:pointer;}
+  .miniBtn:hover{border-color:var(--accent);color:var(--accent-strong);}
+  .sessionBtn{color:var(--accent-strong);border-color:var(--accent);}
+  .inputBody{padding:10px 12px;font-family:Consolas,Monaco,monospace;font-size:11px;color:var(--text2);line-height:1.7;max-height:84px;overflow:hidden;white-space:pre-wrap;word-break:break-all;}
+  .inputEmpty{color:var(--muted);}
+
+  .runRow{display:flex;align-items:center;gap:10px;}
+  .runBtn{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;font-weight:700;padding:11px 0;border-radius:11px;border:none;background:linear-gradient(135deg,var(--accent),var(--accent-strong));color:#fff;cursor:pointer;box-shadow:0 4px 12px rgba(29,158,117,.28);}
+  .runBtn:disabled{opacity:.55;cursor:default;}
+  .stepMetaChip{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--text2);background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:5px 11px;flex-shrink:0;}
+  .stepMetaChip.ai{color:var(--amber);border-color:var(--amber-border);background:var(--amber-bg);}
+
+  .flow{display:flex;flex-direction:column;gap:0;}
+  .stepCard{border:1px solid var(--border);border-radius:12px;background:var(--panel);overflow:hidden;}
+  .stepCardOk{border-color:var(--green-border);}
+  .stepCardFail{border-color:var(--red-border);}
+  .stepHead{display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;}
+  .stepIdx{width:22px;height:22px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:var(--section2);color:var(--text2);}
+  .stepCardOk .stepIdx{background:var(--green-bg);color:var(--green);}
+  .stepCardFail .stepIdx{background:var(--red-bg);color:var(--red);}
+  .stepName{font-size:12.5px;font-weight:600;}
+  .riskChip{font-size:9.5px;font-weight:600;padding:2px 7px;border-radius:6px;}
+  .riskLocal{background:var(--teal-bg);color:#14708a;border:1px solid var(--teal-border);}
+  .riskNet{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-border);}
+  .riskDanger{background:var(--red-bg);color:var(--red);border:1px solid var(--red-border);}
+  .stepStatus{margin-left:auto;display:flex;align-items:center;gap:5px;font-size:10.5px;}
+  .okText{color:var(--green);font-weight:600;}
+  .failText{color:var(--red);font-weight:600;}
+  .skippedText{color:var(--muted);}
+  .stepArrow{width:2px;height:12px;background:var(--border);margin:0 auto;}
+  .stepDetail{padding:4px 12px 12px;border-top:1px dashed var(--border);display:flex;flex-direction:column;gap:8px;}
+  .ioRow{display:flex;flex-direction:column;gap:3px;}
+  .ioLabel{font-size:9.5px;font-weight:700;color:var(--muted);letter-spacing:.5px;}
+  .ioBox{background:var(--section);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-family:Consolas,Monaco,monospace;font-size:10.5px;color:var(--text2);line-height:1.6;max-height:64px;overflow:hidden;white-space:pre-wrap;word-break:break-all;}
+  .ioArrow{text-align:center;font-size:11px;color:var(--accent);line-height:1;}
+  .ioError{font-size:10.5px;color:var(--red);background:var(--red-bg);border-radius:8px;padding:8px 10px;}
+  .ioMs{font-size:9.5px;color:var(--muted);text-align:right;}
+
+  .aiConfirm{display:flex;align-items:center;gap:8px;background:var(--amber-bg);border:1px solid var(--amber-border);border-radius:10px;padding:9px 12px;font-size:11px;color:#7c4a12;flex-wrap:wrap;}
+  .aiConfirm span{flex:1;min-width:200px;}
+  .aiGo{font-size:11px;font-weight:700;background:var(--amber);color:#fff;border:none;border-radius:8px;padding:5px 13px;cursor:pointer;}
+  .aiNo{font-size:11px;background:transparent;border:1px solid var(--amber-border);color:#7c4a12;border-radius:8px;padding:5px 11px;cursor:pointer;}
+
+  .finalCard{border-radius:12px;border:1px solid;overflow:hidden;}
+  .finalOk{border-color:var(--green-border);}
+  .finalFail{border-color:var(--red-border);}
+  .finalHead{display:flex;align-items:center;gap:6px;padding:9px 12px;font-size:11.5px;font-weight:700;border-bottom:1px dashed;}
+  .finalOk .finalHead{background:var(--green-bg);color:var(--green);border-color:var(--green-border);}
+  .finalFail .finalHead{background:var(--red-bg);color:var(--red);border-color:var(--red-border);}
+  .finalBody{padding:10px 12px;font-family:Consolas,Monaco,monospace;font-size:11px;color:var(--text2);line-height:1.7;max-height:120px;overflow:auto;white-space:pre-wrap;word-break:break-all;}
+  .finalActions{display:flex;gap:8px;padding:0 12px 12px;}
+  .actBtn{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;font-size:11.5px;font-weight:600;padding:8px 0;border-radius:9px;cursor:pointer;border:1px solid var(--border);background:var(--panel);color:var(--text2);}
+  .actBtn:hover{border-color:var(--accent);color:var(--accent-strong);}
+  .pasteBtn{border:none;background:linear-gradient(135deg,var(--accent),var(--accent-strong));color:#fff;}
+  .pasteBtn:hover{opacity:.92;color:#fff;}
+  .maskedRow{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--green);background:var(--green-bg);border-radius:8px;padding:6px 10px;margin:0 12px 10px;}
+
+  .idleHint{text-align:center;font-size:11px;color:var(--muted);padding:6px 0 2px;}
+
+  /* ===== 场景2：编辑器 ===== */
+  .field{margin-bottom:2px;}
+  .label{display:block;font-size:11px;font-weight:700;color:var(--text2);margin-bottom:5px;}
+  .input{width:100%;box-sizing:border-box;font-size:12.5px;padding:8px 11px;border:1px solid var(--border);border-radius:9px;background:var(--panel);color:var(--text);outline:none;}
+  .input:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-light);}
+  .charCount{float:right;font-size:9.5px;color:var(--muted);font-weight:400;}
+
+  .editSteps{display:flex;flex-direction:column;gap:0;}
+  .editStep{border:1px solid var(--border);border-radius:12px;background:var(--panel);padding:10px 12px;}
+  .editStepRow{display:flex;align-items:center;gap:8px;}
+  .editIdx{width:22px;height:22px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:var(--accent-light);color:var(--accent-strong);}
+  .sel{flex:1;min-width:0;font-size:11.5px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);outline:none;cursor:pointer;}
+  .sel:focus{border-color:var(--accent);}
+  .condSel{width:96px;flex-shrink:0;font-size:10.5px;padding:6px 6px;border:1px solid var(--border);border-radius:8px;background:var(--section);color:var(--text2);outline:none;cursor:pointer;}
+  .editBtns{display:flex;gap:3px;flex-shrink:0;}
+  .iconBtn{width:24px;height:24px;border-radius:7px;border:1px solid var(--border);background:var(--panel);color:var(--text2);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;}
+  .iconBtn:hover:not(:disabled){border-color:var(--accent);color:var(--accent-strong);}
+  .iconBtn:disabled{opacity:.35;cursor:default;}
+  .delBtn:hover:not(:disabled){border-color:var(--red);color:var(--red);}
+  .editStepConnector{width:2px;height:10px;background:var(--border);margin:0 auto;}
+  .editHint{font-size:10px;color:var(--muted);margin-top:6px;display:flex;align-items:center;gap:4px;}
+
+  .addStep{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--accent-strong);background:var(--accent-light);border:1px dashed var(--accent);border-radius:10px;padding:9px 0;cursor:pointer;margin-top:2px;}
+  .addStep:hover{background:var(--accent);color:#fff;}
+
+  .editActions{display:flex;align-items:center;gap:8px;margin-top:2px;}
+  .delChain{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--red);background:var(--red-bg);border:1px solid var(--red-border);border-radius:9px;padding:8px 12px;cursor:pointer;}
+  .delChain:hover{background:var(--red);color:#fff;}
+  .saveBtn{margin-left:auto;display:flex;align-items:center;gap:5px;font-size:12px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent-strong));color:#fff;border:none;border-radius:9px;padding:8px 22px;cursor:pointer;}
+  .saveBtn:hover{opacity:.92;}
+</style>
+</head>
+<body>
+
+<h1>动作链 UI 升级设计稿</h1>
+<div class="pageSub">基于真实源码 1:1（ChainRunnerDialog / ChainEditor · w460）· 全部主题变量 · 6 套主题自动适配 · v6.9</div>
+
+<!-- ================= 场景 1：运行器 ================= -->
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagP">场景 1 · 动作链运行器</span>
+    <span class="secTitle">ChainRunnerDialog 升级版（w460）</span>
+    <span class="secDesc">链选择 tab 化 · 步骤卡片+连接线 · 结果色彩化</span>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">状态 A · 空闲（链选择 → 输入 → 运行）</span>
+    <div class="win">
+      <div class="d-head">
+        <span class="d-icon">▶</span>
+        <span class="d-title">动作链</span>
+        <span class="d-sub">把多步粘贴流程串成一个按钮</span>
+        <button class="d-x">✕</button>
+      </div>
+      <div class="d-body">
+        <div class="chainRow2">
+          <div class="chainTabs">
+            <div class="chainTab chainTabOn">
+              一起排错 <span class="aiChip">AI</span>
+              <span class="chainTabEdit">✎</span>
+            </div>
+            <div class="chainTab">JSON 整理<span class="chainTabDesc">· 格式化</span></div>
+            <div class="chainTab">去敏感信息<span class="chainTabDesc">· 脱敏</span></div>
+            <div class="chainTab">报错流水线<span class="chainTabDesc">· 排错</span></div>
+          </div>
+          <button class="newChain">＋ 新建</button>
+        </div>
+
+        <div class="inputCard">
+          <div class="inputCardHead">
+            <span>输入 <span class="count">（246 字）</span></span>
+            <span style="margin-left:auto;display:flex;gap:6px">
+              <button class="miniBtn">↺ 撤销到原始</button>
+              <button class="miniBtn sessionBtn">⧉ 填入会话（5 条）</button>
+            </span>
+          </div>
+          <div class="inputBody">SELECT * FROM orders WHERE created_at &gt; '2026-08-01';\n-- 这段 SQL 报错：near "SELECT": syntax error\n...（复制的报错内容）</div>
+        </div>
+
+        <div class="runRow">
+          <button class="runBtn">▶ 运行整条链</button>
+          <span class="stepMetaChip ai">2 步 · 含 AI 步骤</span>
+        </div>
+
+        <div class="idleHint">点「运行整条链」开始——每步结果都会展示，失败会明确到第几步。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">状态 B · 运行后（步骤流 + 最终结果，全部展开）</span>
+    <div class="win">
+      <div class="d-head">
+        <span class="d-icon">▶</span>
+        <span class="d-title">动作链</span>
+        <span class="d-sub">把多步粘贴流程串成一个按钮</span>
+        <button class="d-x">✕</button>
+      </div>
+      <div class="d-body">
+        <div class="chainRow2">
+          <div class="chainTabs">
+            <div class="chainTab chainTabOn">一起排错 <span class="aiChip">AI</span></div>
+            <div class="chainTab">JSON 整理</div>
+          </div>
+          <button class="newChain">＋ 新建</button>
+        </div>
+
+        <div class="flow">
+          <div class="stepCard stepCardOk">
+            <div class="stepHead">
+              <span class="stepIdx">1</span>
+              <span class="stepName">AI 合并</span>
+              <span class="riskChip riskNet">联网</span>
+              <span class="stepStatus"><span class="okText">✓ 完成</span></span>
+            </div>
+            <div class="stepDetail">
+              <div class="ioRow"><span class="ioLabel">输入</span><div class="ioBox">（3 段复制内容合并）</div></div>
+              <div class="ioArrow">▼</div>
+              <div class="ioRow"><span class="ioLabel">输出</span><div class="ioBox">整理后的报错信息 + 上下文…</div></div>
+              <div class="ioMs">1.2s</div>
+            </div>
+          </div>
+          <div class="stepArrow"></div>
+          <div class="stepCard stepCardOk">
+            <div class="stepHead">
+              <span class="stepIdx">2</span>
+              <span class="stepName">AI 修复代码</span>
+              <span class="riskChip riskNet">联网</span>
+              <span class="stepStatus"><span class="okText">✓ 完成</span></span>
+            </div>
+            <div class="stepDetail">
+              <div class="ioRow"><span class="ioLabel">输入</span><div class="ioBox">整理后的报错信息…</div></div>
+              <div class="ioArrow">▼</div>
+              <div class="ioRow"><span class="ioLabel">输出</span><div class="ioBox">修复后的 SQL：SELECT id, name FROM orders WHERE …</div></div>
+              <div class="ioMs">2.8s</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="finalCard finalOk">
+          <div class="finalHead">✓ 最终结果</div>
+          <div class="finalBody">修复后的 SQL 语句…</div>
+          <div class="maskedRow">🛡 结果已脱敏，可放心粘贴</div>
+          <div class="finalActions">
+            <button class="actBtn">⧉ 复制</button>
+            <button class="actBtn pasteBtn">📋 粘贴到前台</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">状态 C · 中途失败 + AI 确认条</span>
+    <div class="win">
+      <div class="d-head">
+        <span class="d-icon">▶</span>
+        <span class="d-title">动作链</span>
+        <span class="d-sub">把多步粘贴流程串成一个按钮</span>
+        <button class="d-x">✕</button>
+      </div>
+      <div class="d-body">
+        <div class="aiConfirm">
+          ⚠ <span>步骤 2「AI 修复代码」会把内容发送到云端（可能计费）。继续？</span>
+          <button class="aiGo">继续</button>
+          <button class="aiNo">取消</button>
+        </div>
+
+        <div class="flow">
+          <div class="stepCard stepCardOk">
+            <div class="stepHead">
+              <span class="stepIdx">1</span>
+              <span class="stepName">AI 合并</span>
+              <span class="riskChip riskNet">联网</span>
+              <span class="stepStatus"><span class="okText">✓ 完成</span></span>
+            </div>
+          </div>
+          <div class="stepArrow"></div>
+          <div class="stepCard stepCardFail">
+            <div class="stepHead">
+              <span class="stepIdx">2</span>
+              <span class="stepName">AI 修复代码</span>
+              <span class="riskChip riskNet">联网</span>
+              <span class="stepStatus"><span class="failText">✗ 失败</span></span>
+            </div>
+            <div class="stepDetail">
+              <div class="ioRow"><span class="ioLabel">输入</span><div class="ioBox">（第 1 步输出）</div></div>
+              <div class="ioError">模型把全部 token 花在「思考」上…（错误信息）</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="finalCard finalFail">
+          <div class="finalHead">✗ 中间结果（保留到失败前）</div>
+          <div class="finalBody">第 1 步「AI 合并」的产物，已保留可复制…</div>
+          <div class="finalActions">
+            <button class="actBtn">⧉ 复制</button>
+            <button class="actBtn pasteBtn">📋 粘贴到前台</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout"><b>交互升级点：</b>① 链选择从竖排大按钮 → <b>横向滚动胶囊 tab</b>（名字+AI 徽标+悬停编辑笔），自定义链再多也不占高度、一屏扫完；② 步骤流加<b>垂直连接线</b>，步骤间关系一眼可见；③ 展开详情加「输入 ▼ 输出」箭头分隔 + 耗时右对齐，前后对比不再靠猜；④ 最终结果<b>成功绿边 / 失败红边</b>色彩化，脱敏提示内嵌；⑤ AI 确认条 amber 警示保持「先确认再出网」红线；⑥ 链 tab 选中态 accent 高亮 + 悬停才显示编辑笔，避免误触。</div>
+</div>
+
+<!-- ================= 场景 2：编辑器 ================= -->
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagE">场景 2 · 动作链编辑器</span>
+    <span class="secTitle">ChainEditor 升级版（w460）</span>
+    <span class="secDesc">步骤卡片化 · 操作分组 · 风险/条件可视化</span>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">状态 A · 新建（空草稿）</span>
+    <div class="win">
+      <div class="d-head">
+        <span class="d-icon">＋</span>
+        <span class="d-title">新建动作链</span>
+        <span class="d-sub">步骤按顺序执行，上一步输出喂给下一步</span>
+        <button class="d-x">✕</button>
+      </div>
+      <div class="d-body">
+        <div class="field">
+          <label class="label">名称 <span class="charCount">0/24</span></label>
+          <input class="input" placeholder="如：报错处理流水线">
+        </div>
+        <div class="field">
+          <label class="label">描述（可选） <span class="charCount">0/60</span></label>
+          <input class="input" placeholder="这条链是做什么的">
+        </div>
+
+        <div class="editSteps">
+          <div class="editStep">
+            <div class="editStepRow">
+              <span class="editIdx">1</span>
+              <select class="sel"><option>选择变换…</option></select>
+              <select class="condSel"><option>无条件</option><option>是 JSON 时</option><option>含敏感时</option><option>是代码时</option></select>
+              <span class="editBtns">
+                <button class="iconBtn" disabled>▲</button>
+                <button class="iconBtn">▼</button>
+                <button class="iconBtn delBtn">🗑</button>
+              </span>
+            </div>
+            <div class="editHint">从下拉里选一个变换</div>
+          </div>
+          <div class="editStepConnector"></div>
+          <div class="editStep">
+            <div class="editStepRow">
+              <span class="editIdx">2</span>
+              <select class="sel"><option>AI 合并（AI）</option></select>
+              <span class="riskChip riskNet">联网</span>
+              <select class="condSel"><option>无条件</option></select>
+              <span class="editBtns">
+                <button class="iconBtn">▲</button>
+                <button class="iconBtn" disabled>▼</button>
+                <button class="iconBtn delBtn">🗑</button>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <button class="addStep">＋ 添加步骤（2/8）</button>
+
+        <div class="editActions">
+          <button class="saveBtn">💾 保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">状态 B · 编辑已有链（条件 + 失效步骤兜底）</span>
+    <div class="win">
+      <div class="d-head">
+        <span class="d-icon">＋</span>
+        <span class="d-title">编辑动作链</span>
+        <span class="d-sub">步骤按顺序执行，上一步输出喂给下一步</span>
+        <button class="d-x">✕</button>
+      </div>
+      <div class="d-body">
+        <div class="field">
+          <label class="label">名称 <span class="charCount">6/24</span></label>
+          <input class="input" value="报错处理流水线">
+        </div>
+        <div class="field">
+          <label class="label">描述（可选） <span class="charCount">12/60</span></label>
+          <input class="input" value="收集报错→修复代码">
+        </div>
+
+        <div class="editSteps">
+          <div class="editStep">
+            <div class="editStepRow">
+              <span class="editIdx">1</span>
+              <select class="sel"><option>AI 合并（AI）</option></select>
+              <span class="riskChip riskNet">联网</span>
+              <select class="condSel"><option>无条件</option></select>
+              <span class="editBtns">
+                <button class="iconBtn" disabled>▲</button>
+                <button class="iconBtn">▼</button>
+                <button class="iconBtn delBtn">🗑</button>
+              </span>
+            </div>
+            <div class="editHint">⚠ 条件是「是代码时」——不是代码会自动跳过这步</div>
+          </div>
+          <div class="editStepConnector"></div>
+          <div class="editStep">
+            <div class="editStepRow">
+              <span class="editIdx">2</span>
+              <select class="sel"><option>ai-fix-code（已失效）</option></select>
+              <span class="riskChip riskNet">联网</span>
+              <select class="condSel"><option>是代码时</option></select>
+              <span class="editBtns">
+                <button class="iconBtn">▲</button>
+                <button class="iconBtn" disabled>▼</button>
+                <button class="iconBtn delBtn">🗑</button>
+              </span>
+            </div>
+            <div class="editHint" style="color:var(--red)">⚠ 这一步的变换已不可用（被删除/停用），请重新选一个</div>
+          </div>
+        </div>
+
+        <button class="addStep">＋ 添加步骤（2/8）</button>
+
+        <div class="editActions">
+          <button class="delChain">🗑 删除这条链</button>
+          <button class="saveBtn">💾 保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout"><b>交互升级点：</b>① 步骤行从「下拉+标签+3 图标一字排」→ <b>卡片化</b>：变换下拉（主）+ 条件下拉（次）+ 操作组右对齐，主次分明不易误触；② 步骤间加<b>连接线</b>，顺序关系可视化；③ 条件下拉选中非「无条件」时，步骤下方显示<b>条件说明提示</b>（如「是代码时——不是代码会自动跳过」）；④ 失效变换显示红字兜底说明（保留现有 danglingLabel 逻辑）；⑤ 名称/描述字段加<b>字符计数</b>（与后端 MAX_CHAIN_NAME_CHARS=24 对齐）；⑥ 操作按钮 <b>▲▼🗑 分组</b>、悬停红/绿反馈，删除链用 confirmDialog（不可恢复）。</div>
+</div>
+
+<div class="note">规则核对：结构与真实组件 1:1（ChainRunnerDialog / ChainEditor 的 JSX 区块一一对应，w460）；全部 var(--xxx) 主题变量 → 6 套主题自动适配；红线不变：运行必须手动触发（红线①）、AI 步骤先确认后出网、删除链先确认不可恢复。风险标签沿用 local/network/destructive 三态语义。</div>
+
+</body>
+</html>

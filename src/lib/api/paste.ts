@@ -3,6 +3,73 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "@/lib/logger";
+import { maskSensitiveText } from "@/lib/mask";
+import { useDialogStore } from "@/stores/dialogStore";
+
+/** 目标应用可读名（守卫确认条的提示文案） */
+function targetAppLabel(category: TargetCategory | null, app: string | null): string | null {
+  if (app) return app;
+  if (!category) return null;
+  const map: Record<string, string> = {
+    browser: "浏览器",
+    excel: "Excel",
+    word: "Word",
+    office: "WPS 办公",
+    ide: "代码编辑器",
+    terminal: "终端",
+    other: "其他应用",
+  };
+  return map[category] ?? null;
+}
+
+/**
+ * 粘贴守卫（v6.2 下沉到 API 层，审查 #8）：
+ * 所有用户触发的粘贴（卡片/托盘/快捷区/链/序列/编辑器…）都走这里——
+ * 敏感内容先弹确认条（[脱敏后粘贴]/[原样粘贴]/[取消]），不再依赖各调用点手动包裹。
+ * 内容不敏感 → 直接粘贴（本地检测零 IPC 开销）。
+ */
+export async function pasteTextGuarded(text: string): Promise<boolean> {
+  const trimmed = (text || "").trim();
+  if (!trimmed) return false;
+
+  const { text: masked, count } = maskSensitiveText(trimmed);
+  if (count > 0 && masked !== trimmed) {
+    const check = await pastePrecheck();
+    const decision = await new Promise<"mask" | "raw" | "cancel">((resolve) => {
+      useDialogStore.getState().openPasteGuard({
+        text: trimmed,
+        maskPreview: masked,
+        targetApp: targetAppLabel(check.targetCategory, check.targetApp),
+        resolve,
+      });
+    });
+    useDialogStore.getState().closePasteGuard();
+    if (decision === "cancel") return false;
+    return decision === "mask" ? pasteText(masked) : pasteText(trimmed);
+  }
+  return pasteText(trimmed);
+}
+
+/** 富文本粘贴同样走敏感闸（按纯文本检测；脱敏后连富文本一起换掉） */
+export async function pasteRichGuarded(html: string, text: string): Promise<boolean> {
+  const trimmed = (text || "").trim();
+  const { text: masked, count } = maskSensitiveText(trimmed);
+  if (count > 0 && masked !== trimmed) {
+    const check = await pastePrecheck();
+    const decision = await new Promise<"mask" | "raw" | "cancel">((resolve) => {
+      useDialogStore.getState().openPasteGuard({
+        text: trimmed,
+        maskPreview: masked,
+        targetApp: targetAppLabel(check.targetCategory, check.targetApp),
+        resolve,
+      });
+    });
+    useDialogStore.getState().closePasteGuard();
+    if (decision === "cancel") return false;
+    return decision === "mask" ? pasteRich(masked, masked) : pasteRich(html, trimmed);
+  }
+  return pasteRich(html, trimmed);
+}
 
 /** 粘贴文本，返回是否成功 */
 export async function pasteText(text: string): Promise<boolean> {
@@ -18,6 +85,24 @@ export async function pasteText(text: string): Promise<boolean> {
     const msg = e instanceof Error ? e.message : String(e);
     window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `粘贴失败: ${msg}`, type: "error" } }));
     return false;
+  }
+}
+
+/** 目标应用类别 */
+export type TargetCategory = "browser" | "excel" | "word" | "office" | "ide" | "terminal" | "other";
+
+/** 粘贴前检查（v6.2）：目标应用感知 */
+export interface PastePrecheck {
+  targetApp: string | null;
+  targetCategory: TargetCategory | null;
+}
+
+/** 查询粘贴目标应用（Rust 侧读前台窗口进程名） */
+export async function pastePrecheck(): Promise<PastePrecheck> {
+  try {
+    return await invoke<PastePrecheck>("paste_precheck");
+  } catch {
+    return { targetApp: null, targetCategory: null };
   }
 }
 

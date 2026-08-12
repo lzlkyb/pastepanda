@@ -8,7 +8,7 @@
 }
 
 .hero {
-  background: linear-gradient(180deg, var(--accent-light), var(--accent-light));
+  background: var(--accent-light);
   padding: 18px 20px;
   text-align: center;
   display: flex;
@@ -68,6 +68,21 @@
   font-weight: 700;
   flex-shrink: 0;
   margin-top: 1px;
+}
+
+/* v6.10：步骤图标块（替换数字） */
+.stepIcon {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: var(--accent-light);
+  border: 1px solid var(--accent-border);
+  color: var(--accent-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
 }
 
 .stepBody {
@@ -148,6 +163,6 @@
 }
 
 .closeBtn:hover {
-  background: var(--hover-bg, rgba(127, 127, 127, 0.1));
+  background: var(--hover, rgba(127, 127, 127, 0.1));
   color: var(--text-primary);
 }

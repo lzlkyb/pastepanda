@@ -1,0 +1,157 @@
+/* AiMark —— 全站 AI 标识的唯一样式源。改这里 = 所有出现的地方一起变。 */
+
+.mark {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  flex: none;
+}
+
+.mark svg {
+  flex: none;
+}
+
+/* ===== 形态（只管盒子与字号）===== */
+
+/* 句子里的两个字：字号/粗细全部继承周围，自己不定任何尺寸。 */
+.text {
+  gap: 3px;
+}
+
+/* 品牌上标：贴在产品名后面。top:1px 是为了跟 15px 标题的字顶对齐，
+   容器那边要配 align-items:flex-start。 */
+.sup {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  line-height: 1;
+  margin-left: 3px;
+  position: relative;
+  top: 1px;
+  gap: 2px;
+}
+
+/* 裸标签：有图标有字，但不带盒子——用在本身已经有容器底色的地方
+   （如 AiQuickBar 的栏内标题），再套一层底只会变脏。 */
+.label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  gap: 3px;
+}
+
+.badge {
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  padding: 1px 5px;
+  border-radius: 5px;
+  gap: 3px;
+  vertical-align: middle;
+}
+
+.cap {
+  height: 22px;
+  padding: 0 9px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 11px;
+  gap: 3px;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+/* 仅 badge：更小一档 */
+.badge.xs {
+  font-size: 8.5px;
+  padding: 0 4px;
+  gap: 2px;
+}
+
+/* ===== 语气 =====
+   这里的 color **只服务图标**（currentColor 的 svg）与 non-brand 的文字；
+   brand 的文字走下面的 .grad 渐变。brand 取渐变起点色，让图标与文字对齐。 */
+.brand {
+  color: var(--brand-ai-from);
+}
+
+.neutral {
+  color: var(--text-muted);
+}
+
+.warn {
+  color: var(--warning);
+}
+
+/* ===== 语气 × 带盒子的形态 =====
+   描边不是装饰，是必需的：forest 主题里 --section-bg 与 --accent-light
+   是同一个值（都是 #ECFDF5），卡片坐在 section 底上时，没描边的徽章
+   会直接糊进背景里看不见。
+   描边继续用 --accent 而不跟着改成品牌蓝：它是结构分界线而不是标识，
+   跟着变会在 forest / blossom 这种非蓝系主题里和底色打架。 */
+.badge.brand {
+  background: var(--accent-light);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.badge.neutral {
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+}
+
+.badge.warn {
+  background: var(--orange-bg);
+  border: 1px solid var(--orange-border);
+}
+
+/* 未配置的引流胶囊：虚线 = “还没开”，与实线的已就绪态分开 */
+.cap.brand {
+  background: var(--accent-light);
+  border: 1px dashed var(--accent);
+}
+
+.cap.warn {
+  background: var(--orange-bg);
+  border: 1px solid var(--orange-border);
+}
+
+/* 实心底 + 白字必须用 --accent-solid（白字压 --accent 只有 4.10:1，
+   压 --accent-solid 是 4.56:1） */
+.cap.brand:hover {
+  background: var(--accent-solid);
+  color: #fff;
+  border-style: solid;
+}
+
+/* hover 后底色变深色实心，浅色主题下那对深蓝/深紫渐变压上去就看不清了，
+   必须把渐变关掉退回白字。 */
+.cap.brand:hover .grad {
+  background: none;
+  color: #fff;
+}
+
+.cap.warn:hover {
+  filter: brightness(1.05);
+}
+
+/* ===== 品牌渐变字 =====
+   颜色不写死，走 theme.css 的 --brand-ai-from / --brand-ai-to（按明/暗两档，
+   已逐主题验过 4.5:1）。**切勿换成 var(--accent)**：它压 app-bg 在 ocean 上
+   只有 3.82:1、压 ocean-dark 顶部只有 2.65:1，而 AI 标识都是 9~11px 的小字。 */
+.grad {
+  background: linear-gradient(92deg, var(--brand-ai-from) 0%, var(--brand-ai-to) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* 渐变字是靠 color:transparent 露出背景画出来的——渐变一旦没画，字就彻底消失。
+   强制配色模式（Windows 高对比度）会把 background 整个换掉，必须退回实心色。 */
+@media (forced-colors: active) {
+  .grad {
+    background: none;
+    color: CanvasText;
+  }
+}

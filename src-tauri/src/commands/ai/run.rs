@@ -30,6 +30,47 @@ pub struct AiRunNeedsConfirm {
 pub struct AiRunBudgetExceeded {
     pub spent_cny: f64,
     pub budget_cny: f64,
+    /// v6.9：true = 内置免费额度不足（替代金额预算的拦截），
+    /// 前端据此提示「去签到 / 兑换」而不是「今日预算用完」。
+    #[serde(default)]
+    pub is_quota: bool,
+    /// v6.9 缺陷修复：配额拦截的具体原因，前端给不同引导。
+    /// - `"exhausted"` → 余额耗尽，引导签到/兑换
+    /// - `"dailyCap"` → 今日用量已达上限，引导明天再试
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quota_reason: Option<String>,
+}
+
+/// v6.9 缺陷修复：内置免费额度动作的 max_tokens 下限。
+/// agnes-2.5-flash 是推理模型，reasoning 会先吃掉一部分 token，
+/// max_tokens 太小会导致输出截断/为空（曾实测「16 token 全用在思考」）。
+const BUILTIN_MAX_TOKENS_MIN: u32 = 2048;
+
+// v6.9：内置免费额度本地限流（保护免费 key 的 RPM，免费用户实际 ~20/分钟，
+// 客户端留余量压到 10/分钟）。进程内滑动窗口。
+static BUILTIN_CALLS: std::sync::Mutex<std::collections::VecDeque<std::time::Instant>> =
+    std::sync::Mutex::new(std::collections::VecDeque::new());
+const BUILTIN_RATE_PER_MIN: usize = 10;
+
+/// 内置免费额度限流：60s 窗口内 ≤10 次。超限返回 false（调用方拒绝）。
+fn builtin_rate_ok() -> bool {
+    let mut q = match BUILTIN_CALLS.lock() {
+        Ok(q) => q,
+        Err(_) => return false, // 锁异常：宁可拒绝也不裸奔
+    };
+    let now = std::time::Instant::now();
+    while q
+        .front()
+        .map(|t| now.duration_since(*t).as_secs() >= 60)
+        .unwrap_or(false)
+    {
+        q.pop_front();
+    }
+    if q.len() >= BUILTIN_RATE_PER_MIN {
+        return false;
+    }
+    q.push_back(now);
+    true
 }
 
 /// `ai_run` 的返回。
@@ -67,8 +108,9 @@ pub async fn ai_run(
     let (cfg, key) = {
         let store = app.state::<DataStore>();
         let cfg = read_ai_config(&store)?;
-        let dir = ai_data_dir(&app)?;
-        let key = secret_store::load_key(&dir, &cfg.provider)?.unwrap_or_default();
+        // 内置免费用应用内置公共 key、其余读用户密钥——这个判断已收口到
+        // resolve_ai_key，不再在这里展开（以前只有这一处知道内置 key）。
+        let key = resolve_ai_key(&app, &cfg)?;
         if cfg.spec().needs_key && key.is_empty() {
             return Err("尚未配置 API Key".to_string());
         }
@@ -82,22 +124,43 @@ pub async fn ai_run(
 
     let spec = cfg.spec();
 
+    let classifier = ContentClassifier::new();
+
+    // 用户手工标签（前端无条件传，用不用在这里一处决定）。
+    // 关着就直接丢掉——不进 prompt、也不进下面的出网闸探针。
+    let user_tags: Option<String> = if cfg.tags_as_context {
+        opts.get("userTags")
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    } else {
+        None
+    };
+
     // 出网闸：内容像密钥就不发，等用户明确确认。
     // 本地厂商跳过——内容根本不出机器，再问一遍是白打断。
-    // 这里复用的就是「敏感内容防护」那套判定（is_secret），
-    // 只不过那边管的是“要不要入库”，这边管的是“要不要出网”。
-    let classifier = ContentClassifier::new();
-    if !force && !spec.is_local() && classifier.is_secret(&text) {
+    // 用 `is_sensitive_for_egress`（密钥 + 个人信息）而不是 `is_secret`：
+    // 后者管的是“要不要入库/排除”，这边管的是“要不要出网”——
+    // 后者风险更高，阀值就应该更低，不能两边用同一个判据。
+    //
+    // **标签名必须一起扫**：tags_as_context 默认开，而标签名也会随内容发出去。
+    // 只扫正文的话，一个叫“张三 13800138000”的标签会直接绕过这道门。
+    let egress_probe = match &user_tags {
+        Some(t) => format!("{}\n{}", text, t),
+        None => text.clone(),
+    };
+    if !force && !spec.is_local() && classifier.is_sensitive_for_egress(&egress_probe) {
         return Ok(AiRunResponse::NeedsConfirm(AiRunNeedsConfirm {
-            reason: "这段内容看起来是密钥或凭证。发送到云端意味着它会离开这台电脑，确认要继续吗？"
+            reason: "这段内容含敏感信息（密钥凭证，或手机号/邮箱/身份证/IP 这类个人信息）。发送到云端意味着它会离开这台电脑，确认要继续吗？"
                 .to_string(),
         }));
     }
 
-    // 内容类型在后端当场算，不让前端传：这样它与入库时的分类用的是同一套判定，
-    // 也不用为了一个字符串去改变换契约
+    // 内容类型与语言在后端当场算，不让前端传：这样它与入库时的分类用的是同一套判定，
+    // 也不用为了一个字符串去改变换契约。
+    // language 是同一批 labels 里的语言级标签（content_type 到 code 就到顶了）。
     let labels = classifier.classify(&text);
     let content_type = ContentClassifier::content_type_from_labels(&labels);
+    let language = ContentClassifier::language_from_labels(&labels);
 
     // 内置优先；找不到再查自定义。守卫限在块里，下面有 await
     let custom: Option<CustomAction> = if actions::find_action(&action_id).is_some() {
@@ -124,7 +187,16 @@ pub async fn ai_run(
             )
         }
         None => {
-            let (s, u, m) = actions::build_prompt(&action_id, &text, &opts, Some(content_type))?;
+            let (s, u, m) = actions::build_prompt(
+                &action_id,
+                &text,
+                &opts,
+                actions::PromptCtx {
+                    content_type: Some(content_type),
+                    language,
+                    user_tags: user_tags.as_deref(),
+                },
+            )?;
             (s, u, m, action_id.clone())
         }
     };
@@ -196,32 +268,94 @@ pub async fn ai_run(
 
     // 本地厂商零费用，不受预算约束
     if !spec.is_local() {
-        // 守卫限在这个块里：下面就是 await，DataStore 的锁不能活过去
-        let today = { app.state::<DataStore>().ai_usage_today() };
-        if let Err((spent_usd, budget_usd)) = budget::check(&today, cfg.daily_budget_usd()) {
-            cache::inflight_done(&cache_key);
-            return Ok(AiRunResponse::BudgetExceeded(AiRunBudgetExceeded {
-                spent_cny: spent_usd * provider::USD_TO_CNY,
-                budget_cny: budget_usd * provider::USD_TO_CNY,
-            }));
+        // v6.9：内置免费额度 → token 配额 + 本地限流（替代金额预算，与自配服务商隔离）
+        if spec.is_builtin_free() {
+            if !builtin_rate_ok() {
+                cache::inflight_done(&cache_key);
+                return Err("免费额度请求太频繁，请稍后再试（每分钟最多 10 次）".to_string());
+            }
+            // 前置检查（余额 + 每日上限），细分原因给前端不同引导（v6.9 缺陷修复）
+            match { app.state::<DataStore>().quota_check() } {
+                Err(block) => {
+                    cache::inflight_done(&cache_key);
+                    let reason = match block {
+                        crate::data_store::QuotaBlock::Exhausted => "exhausted",
+                        crate::data_store::QuotaBlock::DailyCap => "dailyCap",
+                    };
+                    return Ok(AiRunResponse::BudgetExceeded(AiRunBudgetExceeded {
+                        spent_cny: 0.0,
+                        budget_cny: 0.0,
+                        is_quota: true,
+                        quota_reason: Some(reason.to_string()),
+                    }));
+                }
+                Ok(_) => {}
+            }
+        } else {
+            // 守卫限在这个块里：下面就是 await，DataStore 的锁不能活过去
+            let today = { app.state::<DataStore>().ai_usage_today() };
+            if let Err((spent_usd, budget_usd)) = budget::check(&today, cfg.daily_budget_usd()) {
+                cache::inflight_done(&cache_key);
+                return Ok(AiRunResponse::BudgetExceeded(AiRunBudgetExceeded {
+                    spent_cny: spent_usd * provider::USD_TO_CNY,
+                    budget_cny: budget_usd * provider::USD_TO_CNY,
+                    is_quota: false,
+                    quota_reason: None,
+                }));
+            }
         }
     }
 
     // M3 偏好学习：动作偏好指令拼进 system prompt（“译文更简洁”之类）。
     // 偏好变化会清缓存（action_pref_set 里 cache::clear()），这里无需担心旧缓存命中。
     // 在 await 前取好值，锁不跨 await。
+    //
+    // **偏好指令必须过上面同一道出网闸**：它是用户自由输入（LearningsDialog 的输入框），
+    // 且与 `text` 进的是**同一个请求**——只拦 text 不拦 pref 等于大门锁了窗户开着。
+    // 这也是 `profile_refine` / `profile_export` / `profile_install_skill` 三条路径
+    // 已经在做的事（`sanitize_profile`），只是这条频率最高的路径一直漏了。
+    //
+    // 命中就**整条不拼**，而不是换成占位文案：占位文案拼进 prompt 对模型是纯噪声
+    //（与 `build_refine_input` 剔除已被替换的偏好项同理）。
+    // 本地厂商不过滤：内容根本不出机器，与上面出网闸的 `!spec.is_local()` 保持一致。
     let system = {
         let store = app.state::<DataStore>();
         let pref = store.action_pref_get(&action_id)?;
-        if pref.is_empty() {
-            system
-        } else {
-            format!("{}\n\n用户偏好：{}", system, pref)
-        }
+        compose_system_with_pref(system, &pref, spec.is_local(), &classifier)
     };
 
     let started = std::time::Instant::now();
-    let result = crate::ai::chat(&cfg, &key, Some(system.as_str()), &user, Some(max_tokens)).await;
+    // v6.9 缺陷修复：内置免费服务商强制 max_tokens 下限（推理模型 reasoning 占 token）
+    let mt = if spec.is_builtin_free() {
+        max_tokens.max(BUILTIN_MAX_TOKENS_MIN)
+    } else {
+        max_tokens
+    };
+
+    // v6.10 流式：远程服务商逐块 emit（前端打字机）。本地(Ollama)无意义不发。
+    // 闭包捕获 app + action_id，事件带 actionId 让前端结果卡对号入座。
+    let stream_cb: Option<Box<dyn Fn(&str) + Send + Sync>> = if !spec.is_local() {
+        let app2 = app.clone();
+        let aid = action_id.clone();
+        Some(Box::new(move |d: &str| {
+            let _ = app2.emit(
+                "ai-run-chunk",
+                serde_json::json!({ "actionId": aid, "delta": d }),
+            );
+        }))
+    } else {
+        None
+    };
+
+    let result = crate::ai::chat(
+        &cfg,
+        &key,
+        Some(system.as_str()),
+        &user,
+        Some(mt),
+        stream_cb.as_deref(),
+    )
+    .await;
     let latency_ms = started.elapsed().as_millis() as u64;
 
     let outcome = match result {
@@ -284,6 +418,15 @@ pub async fn ai_run(
         cache::inflight_done(&cache_key);
     }
 
+    // v6.9：内置免费额度成功调用后扣减 token（缓存命中已在上方 return，不扣）。
+    // 前置检查已保证余额>0，扣减失败只可能是竞态/异常——不吞掉结果，只记日志。
+    if spec.is_builtin_free() {
+        let total = outcome.prompt_tokens as u64 + outcome.completion_tokens as u64;
+        if let Err(e) = app.state::<DataStore>().quota_spend(total) {
+            log::warn!("[Quota] 扣减失败（结果仍返回）：{}", e);
+        }
+    }
+
     Ok(AiRunResponse::Ok(AiRunOk {
         content: outcome.content,
         model: outcome.model,
@@ -317,8 +460,7 @@ pub async fn ai_preview_custom(
     let (cfg, key) = {
         let store = app.state::<DataStore>();
         let cfg = read_ai_config(&store)?;
-        let dir = ai_data_dir(&app)?;
-        let key = secret_store::load_key(&dir, &cfg.provider)?.unwrap_or_default();
+        let key = resolve_ai_key(&app, &cfg)?;
         if cfg.spec().needs_key && key.is_empty() {
             return Err("尚未配置 API Key，先在上面填一个再试跑".to_string());
         }
@@ -328,39 +470,95 @@ pub async fn ai_preview_custom(
     let spec = cfg.spec();
 
     let classifier = ContentClassifier::new();
-    if !force && !spec.is_local() && classifier.is_secret(&text) {
+    if !force && !spec.is_local() && classifier.is_sensitive_for_egress(&text) {
         return Ok(AiRunResponse::NeedsConfirm(AiRunNeedsConfirm {
-            reason: "试跑用的这段内容看起来是密钥或凭证。发送到云端意味着它会离开这台电脑，确认要继续吗？"
+            reason: "试跑用的这段内容含敏感信息（密钥凭证，或手机号/邮箱/身份证/IP 这类个人信息）。发送到云端意味着它会离开这台电脑，确认要继续吗？"
                 .to_string(),
         }));
     }
     let labels = classifier.classify(&text);
     let content_type = ContentClassifier::content_type_from_labels(&labels);
 
-    let (system, user, mt) = actions::build_custom_prompt(
+    let (system, user, mut mt) = actions::build_custom_prompt(
         &template,
         &text,
         max_tokens.unwrap_or(2000).clamp(50, 4000),
         Some(content_type),
     )?;
+    // v6.9 缺陷修复：内置免费服务商强制 max_tokens 下限（推理模型 reasoning 占 token）
+    if spec.is_builtin_free() {
+        mt = mt.max(BUILTIN_MAX_TOKENS_MIN);
+    }
 
     if !spec.is_local() {
-        let today = { app.state::<DataStore>().ai_usage_today() };
-        if let Err((spent_usd, budget_usd)) = budget::check(&today, cfg.daily_budget_usd()) {
-            return Ok(AiRunResponse::BudgetExceeded(AiRunBudgetExceeded {
-                spent_cny: spent_usd * provider::USD_TO_CNY,
-                budget_cny: budget_usd * provider::USD_TO_CNY,
-            }));
+        // v6.9 缺陷修复：试跑路径此前绕过内置免费配额（不限流/不查余额/不扣减）。
+        // 与主路径对齐：限流 → 配额检查（细分原因）→ 成功后再扣减。
+        if spec.is_builtin_free() {
+            if !builtin_rate_ok() {
+                return Err("免费额度请求太频繁，请稍后再试（每分钟最多 10 次）".to_string());
+            }
+            match { app.state::<DataStore>().quota_check() } {
+                Err(block) => {
+                    let reason = match block {
+                        crate::data_store::QuotaBlock::Exhausted => "exhausted",
+                        crate::data_store::QuotaBlock::DailyCap => "dailyCap",
+                    };
+                    return Ok(AiRunResponse::BudgetExceeded(AiRunBudgetExceeded {
+                        spent_cny: 0.0,
+                        budget_cny: 0.0,
+                        is_quota: true,
+                        quota_reason: Some(reason.to_string()),
+                    }));
+                }
+                Ok(_) => {}
+            }
+        } else {
+            let today = { app.state::<DataStore>().ai_usage_today() };
+            if let Err((spent_usd, budget_usd)) = budget::check(&today, cfg.daily_budget_usd()) {
+                return Ok(AiRunResponse::BudgetExceeded(AiRunBudgetExceeded {
+                    spent_cny: spent_usd * provider::USD_TO_CNY,
+                    budget_cny: budget_usd * provider::USD_TO_CNY,
+                    is_quota: false,
+                    quota_reason: None,
+                }));
+            }
         }
     }
 
     let started = std::time::Instant::now();
-    let result = crate::ai::chat(&cfg, &key, Some(system.as_str()), &user, Some(mt)).await;
+    // v6.10 流式：试跑也逐块 emit（编辑器里长模板迭代时打字机反馈）
+    let stream_cb: Option<Box<dyn Fn(&str) + Send + Sync>> = if !spec.is_local() {
+        let app2 = app.clone();
+        Some(Box::new(move |d: &str| {
+            let _ = app2.emit(
+                "ai-run-chunk",
+                serde_json::json!({ "actionId": "custom-preview", "delta": d }),
+            );
+        }))
+    } else {
+        None
+    };
+    let result = crate::ai::chat(
+        &cfg,
+        &key,
+        Some(system.as_str()),
+        &user,
+        Some(mt),
+        stream_cb.as_deref(),
+    )
+    .await;
     let latency_ms = started.elapsed().as_millis() as u64;
 
     // 试跑也进用量明细：它花的是同一份预算，不记就对不上账
     match result {
         Ok(o) => {
+            // v6.9 缺陷修复：试跑路径补内置免费额度扣减（此前绕过，白嫖后门）
+            if spec.is_builtin_free() {
+                let total = o.prompt_tokens as u64 + o.completion_tokens as u64;
+                if let Err(e) = app.state::<DataStore>().quota_spend(total) {
+                    log::warn!("[Quota] 试跑扣减失败（结果仍返回）：{}", e);
+                }
+            }
             record_usage(
                 &app,
                 AiUsageEntry {
@@ -404,5 +602,69 @@ pub async fn ai_preview_custom(
             );
             Err(msg)
         }
+    }
+}
+
+/// 把动作偏好拼进 system prompt。
+///
+/// 从 `ai_run` 里抽出来的理由与 [`build_refine_input`]（profile.rs）相同：
+/// 原命令是 `async` 且要 `AppHandle`，没法单测；而这里决定的是
+/// **到底把哪些字节发给第三方**，是隐私红线，必须有测试盯着。
+fn compose_system_with_pref(
+    system: String,
+    pref: &str,
+    is_local: bool,
+    classifier: &ContentClassifier,
+) -> String {
+    // 本地厂商（Ollama）不过滤：内容根本不出机器，与出网闸的 `!spec.is_local()` 一致
+    if pref.is_empty() || (!is_local && classifier.is_sensitive_for_egress(pref)) {
+        return system;
+    }
+    format!("{}\n\n用户偏好：{}", system, pref)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SYS: &str = "你是一个翻译助手";
+
+    fn compose(pref: &str, is_local: bool) -> String {
+        compose_system_with_pref(SYS.to_string(), pref, is_local, &ContentClassifier::new())
+    }
+
+    #[test]
+    fn test_empty_pref_keeps_system_unchanged() {
+        assert_eq!(compose("", false), SYS);
+    }
+
+    #[test]
+    fn test_normal_pref_is_appended() {
+        let out = compose("译文更简洁", false);
+        assert!(out.starts_with(SYS));
+        assert!(out.contains("译文更简洁"));
+    }
+
+    /// 核心回归：偏好里的密钥曾经会跟着请求一起发给云端第三方。
+    /// `text` 有出网闸、`pref` 没有，而两者进的是同一个请求。
+    #[test]
+    fn test_secret_pref_is_dropped_for_remote() {
+        let pref = concat!("sk-", "abcdef1234567890abcdef1234567890");
+        assert_eq!(compose(pref, false), SYS, "含密钥的偏好不得拼进出网的 system");
+    }
+
+    #[test]
+    fn test_pii_pref_is_dropped_for_remote() {
+        // 与出网闸同一判据：is_sensitive_for_egress = is_secret || has_pii
+        let pref = "签名用我的邮箱 zhangsan@example.com";
+        assert_eq!(compose(pref, false), SYS, "含个人信息的偏好不得出网");
+    }
+
+    /// 本地厂商不出网，不该为了隐私而牺牲功能。
+    #[test]
+    fn test_secret_pref_kept_for_local_provider() {
+        let pref = concat!("sk-", "abcdef1234567890abcdef1234567890");
+        let out = compose(pref, true);
+        assert!(out.contains(pref), "本地厂商应照常拼接（内容不离开这台电脑）");
     }
 }

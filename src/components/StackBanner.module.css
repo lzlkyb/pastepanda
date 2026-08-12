@@ -286,7 +286,7 @@
 }
 
 .chipDone .ord {
-  background: #9CA3AF;
+  background: var(--text-muted);
   color: #fff;
   animation: none;
 }

@@ -5,21 +5,12 @@
  */
 import { detectColor, toHex, toRgb, toHsl } from "@/lib/color";
 import { urlHostPath } from "@/lib/url";
+// 路径解析已收口到 lib/utils（规则 #11），不再在本文件里维护一份
+import { parseFilePaths } from "@/lib/utils";
 
 /** 去除 HTML 标签 */
 function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, "");
-}
-
-/** 解析文件路径列表（JSON 数组或单路径） */
-export function parseFilePaths(content: string): string[] {
-  if (!content) return [];
-  try {
-    const parsed = JSON.parse(content);
-    if (Array.isArray(parsed)) return parsed.filter((p) => typeof p === "string");
-  } catch { /* not JSON */ }
-  // 单路径或换行分隔
-  return content.split("\n").filter((p) => p.trim());
 }
 
 export interface TransformInput {
@@ -32,7 +23,7 @@ export interface TransformInput {
  * @returns 变换后的文本；如果变换不适用（如 color 解析失败），返回原文
  */
 export function applyPasteTransform(input: TransformInput, transform: string): string {
-  let text = input.text || "";
+  const text = input.text || "";
   const content = input.content || "";
 
   switch (transform) {

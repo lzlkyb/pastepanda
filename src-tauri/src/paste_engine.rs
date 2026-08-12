@@ -24,6 +24,44 @@ pub struct PasteEngine {
     own_pid: u32,
 }
 
+/// 按可执行文件名归类前台应用（v6.2 目标感知粘贴）。
+/// 返回 (应用名, 类别)，类别供前端决定粘贴前建议（Excel→表格化等）。
+#[cfg(target_os = "windows")]
+fn categorize_app(exe: &str) -> (String, String) {
+    let label = exe.trim_end_matches(".exe").to_string();
+    let cat = if exe.contains("chrome")
+        || exe.contains("msedge")
+        || exe.contains("firefox")
+        || exe.contains("opera")
+        || exe.contains("brave")
+    {
+        "browser"
+    } else if exe.contains("excel") {
+        "excel"
+    } else if exe.contains("winword") {
+        "word"
+    } else if exe.contains("wps") {
+        "office"
+    } else if exe.contains("code.exe")
+        || exe.contains("devenv")
+        || exe.contains("idea")
+        || exe.contains("rider")
+        || exe.contains("pycharm")
+    {
+        "ide"
+    } else if exe.contains("cmd.exe")
+        || exe.contains("powershell")
+        || exe.contains("windowsterminal")
+        || exe.contains("wt.exe")
+        || exe.contains("alacritty")
+    {
+        "terminal"
+    } else {
+        "other"
+    };
+    (label, cat.to_string())
+}
+
 impl PasteEngine {
     pub fn new(app_handle: AppHandle, paste_suppress: Arc<PasteSuppress>) -> Self {
         let own_pid = std::process::id();
@@ -98,6 +136,57 @@ impl PasteEngine {
     }
     #[cfg(not(target_os = "windows"))]
     pub fn capture_foreground_now(&self) -> Option<isize> {
+        None
+    }
+
+    /// 识别前台应用的名称与类别（v6.2 目标感知粘贴）。
+    /// 优先用手动保存的句柄（用户从主窗/托盘点粘贴前保存的那个），
+    /// 其次实时抓当前前台窗口。返回 (应用名, 类别)。
+    #[cfg(target_os = "windows")]
+    pub fn foreground_app(&self) -> Option<(String, String)> {
+        use windows::Win32::Foundation::CloseHandle;
+        use windows::Win32::System::Threading::{
+            OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+        use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+
+        let hwnd = {
+            let guard = self.last_foreground_hwnd.lock().ok()?;
+            guard.map(|(h, _)| h)
+        }
+        .or_else(|| self.capture_foreground_now())?;
+
+        unsafe {
+            let mut pid: u32 = 0;
+            GetWindowThreadProcessId(
+                windows::Win32::Foundation::HWND(hwnd as *mut _),
+                Some(&mut pid),
+            );
+            if pid == 0 {
+                return None;
+            }
+            let Ok(proc) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
+                return None;
+            };
+            let mut buf = [0u16; 512];
+            let mut len = buf.len() as u32;
+            let ok = QueryFullProcessImageNameW(
+                proc,
+                windows::Win32::System::Threading::PROCESS_NAME_WIN32,
+                windows::core::PWSTR(buf.as_mut_ptr()),
+                &mut len,
+            );
+            let _ = CloseHandle(proc);
+            if ok.is_err() {
+                return None;
+            }
+            let path = String::from_utf16_lossy(&buf[..len as usize]);
+            let exe = path.rsplit('\\').next().unwrap_or("").to_ascii_lowercase();
+            Some(categorize_app(&exe))
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    pub fn foreground_app(&self) -> Option<(String, String)> {
         None
     }
 
@@ -771,7 +860,22 @@ mod tests {
     /// 真实剪贴板往返：写入 write_rich_to_clipboard 后直接读真实剪贴板，验证 CF_UNICODETEXT
     /// 和 CF_HTML 两个格式同时写入成功且内容正确（不需要构造 PasteEngine 实例，因为
     /// write_rich_to_clipboard 是不带 self 的关联函数）。
+    ///
+    /// **为什么标 `#[ignore]`（2026-08-11）**：它写的是**真实系统剪贴板**。
+    /// 只要开发机上 PastePanda 正在运行，它的剪贴板监听就会把下面这个测试片段
+    /// 当成一条图文内容记录进历史——用户实测到的现象是“图文类型每隔一段时间就
+    /// 自己多出一模一样的一条，而且一直是这一条”，实际上每跑一次 `cargo test` 就污染一次
+    /// （历史里曾因此积了 20 条，同一个 md5）。
+    ///
+    /// “测完再恢复原内容”救不了：监听端已经看到中间态了。所以只能不自动跑。
+    ///
+    /// CF_HTML 的构造/解析往返已有**纯内存**单测覆盖
+    /// （`clipboard_monitor.rs` 的 `test_parse_cf_html_fragment_byte_offset_with_chinese`），
+    /// 日常回归不缺这一条；本测试验的是 Win32 写入路径，改动那部分代码时手动跑：
+    ///   `cargo test -- --ignored test_write_rich_to_clipboard_round_trip`
+    /// 跑之前先退出 PastePanda，否则依旧会往历史里多一条。
     #[test]
+    #[ignore = "写真实系统剪贴板：会被正在运行的 PastePanda 采集成一条历史（见上方注释）"]
     fn test_write_rich_to_clipboard_round_trip() {
         use windows::core::w;
         use windows::Win32::Foundation::HGLOBAL;

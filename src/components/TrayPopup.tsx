@@ -3,7 +3,7 @@ import { ThemeKey, DEFAULT_THEME } from "@/lib/theme";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { pasteText, pasteImage, pasteRich } from "@/lib/api";
+import { pasteTextGuarded, pasteImage, pasteRichGuarded } from "@/lib/api";
 import { VersionBadge } from "@/components/VersionBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { SkinScene } from "@/components/SkinScene";
@@ -62,15 +62,6 @@ const SvgIcon: React.FC<{ children: React.ReactNode; size?: number }> = ({ child
   <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     {children}
   </svg>
-);
-
-// 剪贴板图标
-const IconClipboard = () => (
-  <SvgIcon size={18}>
-    <rect x="8" y="2" width="8" height="4" rx="1.5"/>
-    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
-    <path d="M9 13h6"/>
-  </SvgIcon>
 );
 
 // 日历图标（今日）
@@ -164,6 +155,8 @@ export function TrayPopup() {
   // 主题从本窗口独立 store 读取（popup-main 启动与收到 theme-changed 广播时写入），
   // 与 SkinScene 读同一份 store，保证场景与弹窗内容主题一致
   const themeKey = (useAppStore((s) => s.config.theme) || DEFAULT_THEME) as ThemeKey;
+  // 审查：显示热键提示用真实配置（此前硬编码 "Ctrl+Alt+V"，用户自定义后误导）
+  const showHotkey = (useAppStore((s) => s.config.hotkey) as string | undefined) || "Ctrl+Alt+V";
   const [toast, setToast] = useState<ToastState>({ visible: false, message: "", type: "info" });
   const [operationLoading, setOperationLoading] = useState<string | null>(null); // 正在执行的操作 id
   const menuRef = useRef<HTMLDivElement>(null);
@@ -352,11 +345,11 @@ export function TrayPopup() {
       if (item.type === "image" && item.content) {
         ok = await pasteImage(item.content);
       } else if (item.type === "rich" && item.content) {
-        ok = await pasteRich(item.content, item.text);
+        ok = await pasteRichGuarded(item.content, item.text);
       } else if (item.type === "file" && item.content) {
-        ok = await pasteText(item.content);
+        ok = await pasteTextGuarded(item.content);
       } else {
-        ok = await pasteText(item.text);
+        ok = await pasteTextGuarded(item.text);
       }
       // U1：仅粘贴成功时弹成功提示（pasteText/pasteImage 失败时已自行弹错误 toast）
       if (ok) showToast("已粘贴", "success", 800);
@@ -380,13 +373,17 @@ export function TrayPopup() {
   const memPercent = stats ? Math.min((stats.db_size_kb / 1024 / stats.max_size_mb) * 100, 100) : 0;
 
   // 构建菜单项
+  // 每次渲染重建 → 下面的 keydown effect 每次都重注册（行为正确，只是白花开销）。
+  // 要根治得把 doShow / doToggleMonitor / doSettings / doExit 一并 useCallback 化，
+  // 不在本次 lint 清理的范围内。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const menuItems: MenuItemDef[] = [
     {
       id: "show",
       iconClass: "icon-blue",
       iconSvg: <IconSidebar />,
       label: "显示主窗口",
-      hint: "Ctrl+Alt+V",
+      hint: showHotkey,
       onClick: doShow,
     },
     {
@@ -415,6 +412,8 @@ export function TrayPopup() {
   ];
 
   // 键盘导航
+  // 同上：随 menuItems 一起每渲染重建
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const allItems = [...recents.map((r) => ({ id: r.id, type: "recent" as const })), ...menuItems.map((m) => ({ id: m.id, type: "action" as const }))];
 
   useEffect(() => {
@@ -445,6 +444,11 @@ export function TrayPopup() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [activeIdx, allItems, recents, menuItems, doPaste]);
+
+  // 审查：内容刷新后钳制高亮（recents 变化时 activeIdx 可能指向已不存在的项）
+  useEffect(() => {
+    setActiveIdx((i) => Math.min(i, allItems.length - 1));
+  }, [allItems.length]);
 
   return (
     <>

@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>v7.0 AI 中枢化 设计稿</title>
+<style>
+  :root {
+    --panel:#ffffff; --section:#f6f8fa; --section2:#eef1f5; --border:#e2e7ef;
+    --text:#14181f; --text2:#3c4351; --muted:#8a92a3;
+    --accent:#1d9e75; --accent-strong:#0f7a58; --accent-light:#e2f5ed; --accent-border:#9fd6c0;
+    --green:#1d9e75; --green-bg:#e2f5ed; --green-border:#9fd6c0;
+    --orange:#b45309; --orange-bg:#fef3e2; --orange-border:#f0c48a;
+    --red:#b3261e; --red-bg:#fdeaea; --red-border:#eeb8b2;
+    --teal-bg:#e3f4f8; --teal-border:#a8d6e2; --purple:#7c3aed; --purple-bg:#f3e8ff; --purple-border:#d8b4fe;
+    --blue:#185fa5; --blue-bg:#e6f1fb; --blue-border:#b5d4f4;
+  }
+  body{background:#eef0f4;color:var(--text);font-family:"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;margin:0;padding:28px 32px;overflow-x:hidden;}
+  h1{font-size:19px;margin:0 0 4px;}
+  .pageSub{font-size:12px;color:var(--muted);margin-bottom:24px;}
+  .section{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:22px;box-shadow:0 2px 10px rgba(15,23,42,.05);max-width:960px;}
+  .secHead{display:flex;align-items:baseline;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+  .secTag{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;color:#fff;}
+  .tagP{background:var(--accent);} .tagE{background:#5b6b8c;} .tagG{background:var(--orange);} .tagB{background:var(--purple);}
+  .secTitle{font-size:14.5px;font-weight:700;}
+  .secDesc{font-size:11px;color:var(--muted);}
+  .stage{border:1px dashed var(--border);border-radius:12px;padding:18px;margin-bottom:14px;background:var(--section);overflow-x:auto;}
+  .stageLabel{display:block;font-size:11px;font-weight:700;color:var(--text2);margin-bottom:10px;}
+  .callout{background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:10px;padding:10px 14px;font-size:11.5px;color:#7c4a12;line-height:1.8;}
+  .callout b{color:var(--orange);}
+  .note{font-size:11px;color:var(--muted);line-height:1.8;}
+  .winMain{width:680px;max-width:100%;background:linear-gradient(180deg,#f7f8fa,#eef0f4);border:1px solid rgba(15,23,42,.12);border-radius:12px;overflow:hidden;box-sizing:border-box;position:relative;}
+  .topbar{height:36px;background:var(--panel);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 12px;gap:8px;}
+  .searchPh{width:200px;height:20px;border-radius:6px;background:var(--section);}
+  .listArea{padding:10px 12px;display:flex;flex-direction:column;gap:8px;}
+  .listItem{height:44px;background:var(--panel);border:1px solid rgba(15,23,42,.07);border-radius:10px;}
+
+  /* ===== 场景1：对话中枢面板 ===== */
+  .panelMask{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,.22);z-index:2;}
+  .chatPanel{position:absolute;top:0;right:0;bottom:0;width:340px;background:var(--panel);border-left:1px solid var(--border);z-index:3;display:flex;flex-direction:column;}
+  .chHead{display:flex;align-items:center;gap:7px;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--section);}
+  .chTitle{font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:5px;}
+  .chSub{font-size:9.5px;color:var(--muted);margin-left:auto;}
+  .chClose{width:22px;height:22px;border-radius:6px;border:none;background:transparent;color:var(--muted);cursor:pointer;}
+  .ctxChip{display:flex;align-items:center;gap:6px;margin:8px 12px 0;padding:6px 9px;background:var(--accent-light);border:1px solid var(--accent-border);border-radius:8px;font-size:10px;color:var(--accent-strong);}
+  .ctxChip b{font-weight:700;}
+  .ctxText{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .chMsgs{flex:1;overflow:auto;padding:10px 12px;display:flex;flex-direction:column;gap:10px;}
+  .msg{display:flex;flex-direction:column;gap:4px;max-width:92%;}
+  .msgUser{align-self:flex-end;align-items:flex-end;}
+  .msgAi{align-self:flex-start;}
+  .bubble{padding:8px 11px;border-radius:11px;font-size:11px;line-height:1.65;}
+  .msgUser .bubble{background:var(--accent);color:#fff;border-bottom-right-radius:3px;}
+  .msgAi .bubble{background:var(--section);border:1px solid var(--border);border-bottom-left-radius:3px;}
+  .msgAi .bubble.code{font-family:Consolas,monospace;background:#0f172a;color:#dbeafe;border:none;}
+  .msgSrc{display:flex;gap:5px;align-items:center;font-size:9px;color:var(--muted);}
+  .srcTag{font-size:8.5px;font-weight:600;padding:1px 6px;border-radius:5px;}
+  .srcContent{background:var(--teal-bg);color:#14708a;}
+  .srcEpis{background:var(--orange-bg);color:var(--orange);}
+  .srcSem{background:var(--purple-bg);color:var(--purple);}
+  .srcProc{background:var(--blue-bg);color:var(--blue);}
+  .chInput{border-top:1px solid var(--border);padding:9px 12px;display:flex;flex-direction:column;gap:6px;}
+  .chInputRow{display:flex;gap:6px;align-items:center;}
+  .chInputBox{flex:1;font-size:11.5px;padding:7px 10px;border:1px solid var(--border);border-radius:9px;outline:none;background:var(--section);}
+  .chInputBox:focus{border-color:var(--accent);}
+  .chSend{font-size:11px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent-strong));color:#fff;border:none;border-radius:9px;padding:7px 14px;cursor:pointer;}
+  .slashChips{display:flex;gap:5px;flex-wrap:wrap;}
+  .slash{font-size:9px;color:var(--accent-strong);background:var(--accent-light);border:1px solid var(--accent-border);border-radius:6px;padding:2px 7px;cursor:pointer;}
+  .slashMuted{color:var(--muted);background:var(--section);border-color:var(--border);}
+
+  /* ===== 场景2：建议流水线卡 ===== */
+  .pipeCard{margin-top:8px;border:1px solid var(--accent);border-radius:12px;background:var(--panel);padding:10px 12px;box-shadow:0 4px 14px rgba(29,158,117,.12);}
+  .pipeHead{display:flex;align-items:center;gap:7px;}
+  .sceneTag{font-size:9.5px;font-weight:700;color:var(--accent-strong);background:var(--accent-light);border:1px solid var(--accent-border);border-radius:6px;padding:2px 8px;}
+  .pipeTitle{font-size:12px;font-weight:700;}
+  .pipeWhy{margin-left:auto;font-size:9.5px;color:var(--muted);cursor:pointer;}
+  .pipeWhyOpen{color:var(--accent-strong);}
+  .pipeSteps{display:flex;align-items:center;gap:5px;margin:9px 0;}
+  .pStep{display:flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:4px 9px;border-radius:8px;background:var(--section);border:1px solid var(--border);color:var(--text2);}
+  .pStepAi{border-color:var(--accent-border);background:var(--accent-light);color:var(--accent-strong);}
+  .pArrow{font-size:10px;color:var(--muted);}
+  .pipeWhyBox{font-size:10px;color:var(--muted);background:var(--section);border-radius:8px;padding:7px 10px;margin-bottom:8px;line-height:1.7;}
+  .pipeActs{display:flex;gap:8px;}
+  .pipeRun{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;font-size:11.5px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent-strong));color:#fff;border:none;border-radius:9px;padding:8px 0;cursor:pointer;}
+  .pipeEdit{font-size:11px;font-weight:600;color:var(--text2);background:var(--panel);border:1px solid var(--border);border-radius:9px;padding:8px 14px;cursor:pointer;}
+
+  /* ===== 场景4：画像趋势 ===== */
+  .trendRow{display:flex;gap:14px;align-items:flex-start;}
+  .radarBox{width:250px;flex-shrink:0;}
+  .trendSide{flex:1;display:flex;flex-direction:column;gap:10px;}
+  .trendNarr{font-size:11.5px;line-height:1.8;color:var(--text2);background:var(--section);border:1px solid var(--border);border-radius:10px;padding:9px 12px;}
+  .trendNarr b{color:var(--accent-strong);}
+  .dimList{display:flex;flex-direction:column;gap:6px;}
+  .dimRow{display:flex;align-items:center;gap:8px;font-size:11px;}
+  .dimName{width:44px;color:var(--text2);flex-shrink:0;}
+  .dimBar{flex:1;height:5px;border-radius:99px;background:var(--section2);overflow:hidden;position:relative;}
+  .dimBarCur{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-strong));}
+  .dimBarPrev{position:absolute;left:0;top:-3px;height:2px;background:var(--muted);opacity:.55;}
+  .dimDelta{width:52px;text-align:right;font-weight:600;font-size:10.5px;flex-shrink:0;}
+  .deltaUp{color:var(--green);} .deltaDown{color:var(--red);} .deltaFlat{color:var(--muted);}
+</style>
+</head>
+<body>
+
+<h1>v7.0 AI 中枢化 · 设计稿</h1>
+<div class="pageSub">对话中枢 + 场景流水线 + 统一回忆 + 画像趋势 · 全部主题变量 · 红线不变（不自动执行 / 先确认后出网 / 本地检索）</div>
+
+<!-- ================= 场景 1：对话中枢面板 ================= -->
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagP">场景 1 · 对话中枢</span>
+    <span class="secTitle">AiChatPanel · 右侧滑出面板（w340）</span>
+    <span class="secDesc">动作 / 追问 / 回忆 / 链执行 统一自然语言入口</span>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">对话绑定当前剪贴板上下文（顶部蓝色上下文条）· 消息流混排 AI 结果 / 追问 / recall</span>
+    <div class="winMain">
+      <div class="topbar"><span class="searchPh"></span><span style="margin-left:auto;width:22px;height:22px;border-radius:7px;background:var(--green-bg);border:1px solid var(--green-border);display:inline-flex;align-items:center;justify-content:center;font-size:11px">⚙</span></div>
+      <div class="listArea"><div class="listItem"></div><div class="listItem"></div><div class="listItem"></div></div>
+      <div class="panelMask"></div>
+      <div class="chatPanel">
+        <div class="chHead">
+          <span class="chTitle">✦ AI 对话</span>
+          <span class="chSub">绑定剪贴板 · 只在你发送时出网</span>
+          <button class="chClose">▸</button>
+        </div>
+        <div class="ctxChip">
+          <span style="font-weight:700">当前上下文</span>
+          <span class="ctxText">SELECT * FROM orders…（报错片段，3 行）</span>
+          <span style="font-weight:700;cursor:pointer;flex-shrink:0">✕</span>
+        </div>
+        <div class="chMsgs">
+          <div class="msg msgUser"><div class="bubble">翻译这段</div></div>
+          <div class="msg msgAi">
+            <div class="bubble">The SELECT statement is missing the FROM clause…</div>
+            <div class="msgSrc"><span class="srcTag srcContent">内容 · SQL</span></div>
+          </div>
+          <div class="msg msgUser"><div class="bubble">/recall 上次那个报错怎么修的</div></div>
+          <div class="msg msgAi">
+            <div class="bubble">上周处理过同类报错：先合并上下文 → AI 修复 → 脱敏后粘贴。<br>修复要点：<code>WHERE created_at</code> 少了个引号。</div>
+            <div class="msgSrc">
+              <span class="srcTag srcEpis">情节 · 上周</span>
+              <span class="srcTag srcProc">程序性 · 链</span>
+            </div>
+          </div>
+          <div class="msg msgUser"><div class="bubble">再修一下</div></div>
+          <div class="msg msgAi">
+            <div class="bubble code">SELECT id, name FROM orders WHERE created_at &gt; '2026-08-01';</div>
+            <div class="msgSrc"><span class="srcTag srcSem">语义 · 画像偏好</span></div>
+          </div>
+        </div>
+        <div class="chInput">
+          <div class="slashChips">
+            <span class="slash">/翻译</span><span class="slash">/总结</span><span class="slash">/修复</span><span class="slash">/recall</span><span class="slash slashMuted">/链</span>
+          </div>
+          <div class="chInputRow">
+            <input class="chInputBox" placeholder="发送消息，或输 / 触发动作…（Enter 发送）">
+            <button class="chSend">发送</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout"><b>交互规则：</b>① 右上「✦ AI 对话」按钮打开/收起（动画滑入滑出，不改变主窗口布局宽度）;② 面板顶部<b>上下文条</b>显示当前绑定的剪贴板内容（可 ✕ 解绑）;③ 消息混排：AI 动作结果（带来源标签）/ 用户追问 / recall 结果;④ 输入框支持 <b>/ 斜杠命令</b>（/翻译 /总结 /修复 /recall /链），chips 点击即填;⑤ <b>红线</b>：面板只是入口——用户发送才触发动作，AI 永不自动执行;敏感内容照旧先确认;recall 纯本地。</div>
+</div>
+
+<!-- ================= 场景 2：建议流水线卡 ================= -->
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagG">场景 2 · 场景识别 → 流水线建议</span>
+    <span class="secTitle">复制后自动识别场景，弹「建议流水线」卡（error-triage 泛化）</span>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">复制一段报错代码后 · 快捷区下方</span>
+    <div class="winMain">
+      <div class="topbar"><span class="searchPh"></span></div>
+      <div class="listArea">
+        <!-- 快捷区（简化示意） -->
+        <div style="display:flex;gap:6px;align-items:center;padding:7px 10px;background:var(--panel);border:1px solid var(--accent-border);border-radius:10px;margin-bottom:4px">
+          <span style="font-size:10.5px;font-weight:700;color:var(--accent-strong)">✦ AI</span>
+          <span style="font-size:10.5px;padding:3px 9px;border-radius:7px;border:1px solid var(--accent);background:var(--accent-light);color:var(--accent-strong);font-weight:600">✦ 翻译</span>
+          <span style="font-size:10.5px;padding:3px 9px;border-radius:7px;border:1px solid var(--accent);background:var(--accent-light);color:var(--accent-strong);font-weight:600">✦ 修复</span>
+          <span style="margin-left:auto;font-size:10px;color:var(--muted)">代码</span>
+        </div>
+
+        <!-- 建议流水线卡 -->
+        <div class="pipeCard">
+          <div class="pipeHead">
+            <span class="sceneTag">已识别 · 代码排错</span>
+            <span class="pipeTitle">建议流水线</span>
+            <span class="pipeWhy">为什么推荐 ▾</span>
+          </div>
+          <div class="pipeSteps">
+            <span class="pStep pStepAi">✦ AI 合并</span><span class="pArrow">→</span>
+            <span class="pStep pStepAi">✦ AI 修复代码</span><span class="pArrow">→</span>
+            <span class="pStep">🛡 脱敏</span>
+          </div>
+          <div class="pipeWhyBox">
+            你本周复制报错片段 9 次，上次用「一起排错」链成功过 2 次；画像「开发」维度 +18%。<b>只建议不自动跑</b>，点执行才开始。
+          </div>
+          <div class="pipeActs">
+            <button class="pipeRun">▶ 一键执行流水线</button>
+            <button class="pipeEdit">编辑</button>
+          </div>
+        </div>
+
+        <div class="listItem"></div>
+        <div class="listItem"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout"><b>交互规则：</b>① 复制内容后，场景识别（本地规则 + 画像加权，云端 LLM 可选）命中 → 快捷区下方弹「建议流水线」卡;② 卡显示：场景标签 + 链步骤 chips（AI 步骤 ✦ 描边 / 本地步骤中性）+ 「为什么推荐」可展开（行为依据,可解释）;③ <b>红线</b>：只建议不自动跑，执行永远等用户点「一键执行」;④ 点「编辑」进 ChainEditor 调整;⑤ 同一内容只建议一次（dismiss 后不重复）;⑥ 未命中场景不弹,不打扰。</div>
+</div>
+
+<!-- ================= 场景 3：统一回忆（并入场景 1 演示,此页简示） ================= -->
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagB">场景 3 · 统一回忆 recall</span>
+    <span class="secTitle">跨四层记忆检索（在对话内触发，带来源标签）</span>
+    <span class="secDesc">内容 / 情节 / 语义 / 程序性 混排</span>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">/recall 结果 · 消息带来源标签（内容-绿松 / 情节-橙 / 语义-紫 / 程序性-蓝）</span>
+    <div class="winMain">
+      <div class="topbar"><span class="searchPh"></span></div>
+      <div class="listArea" style="max-width:520px">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;color:var(--muted)">/recall 上周处理过的报错</div>
+          <div style="font-size:11px;color:var(--text2);line-height:1.7">
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="srcTag srcEpis">情节 · 上周三</span><span>处理过 1 次同型报错（error-triage 链）</span></div>
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="srcTag srcProc">程序性 · 链</span><span>「一起排错」链已用 2 次，成功率 100%</span></div>
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="srcTag srcContent">内容 · 摘要</span><span>报错主题：SQL 引号缺失 → 合并上下文 → 修复</span></div>
+            <div style="display:flex;gap:6px;align-items:center"><span class="srcTag srcSem">语义 · 画像</span><span>「开发」维度 68 分（+18%），偏好：修复后脱敏</span></div>
+          </div>
+          <div style="font-size:9.5px;color:var(--muted)">全部本地检索 · 内容不出网</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 场景 4：画像趋势 ================= -->
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagE">场景 4 · 画像趋势</span>
+    <span class="secTitle">ProfileRadar「vs 上周」（双雷达叠加 + 维度变化 + 叙事）</span>
+    <span class="secDesc">画像是动词：看得见成长与退化</span>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">画像页雷达区升级</span>
+    <div class="trendRow">
+      <div class="radarBox">
+        <svg viewBox="0 0 220 220" width="100%" role="img" aria-label="本周 vs 上周画像雷达">
+          <polygon points="110,30 149,70 149,150 110,190 71,150 71,70" fill="none" stroke="var(--border-color,#e2e7ef)" stroke-width="1"/>
+          <polygon points="110,60 138,88 138,132 110,160 82,132 82,88" fill="none" stroke="var(--border-color,#e2e7ef)" stroke-width="1"/>
+          <polygon points="110,90 127,107 127,123 110,130 93,123 93,107" fill="none" stroke="var(--border-color,#e2e7ef)" stroke-width="1"/>
+          <line x1="110" y1="30" x2="110" y2="190" stroke="var(--border-color,#e2e7ef)" stroke-width="0.8"/>
+          <line x1="71" y1="70" x2="149" y2="150" stroke="var(--border-color,#e2e7ef)" stroke-width="0.8"/>
+          <line x1="149" y1="70" x2="71" y2="150" stroke="var(--border-color,#e2e7ef)" stroke-width="0.8"/>
+          <polygon points="110,66 131,86 128,116 112,142 92,128 89,92" fill="rgba(138,146,163,.12)" stroke="#8a92a3" stroke-width="1" stroke-dasharray="3,3"/>
+          <polygon points="110,46 143,74 143,126 110,164 82,140 78,78" fill="rgba(29,158,117,.18)" stroke="#1d9e75" stroke-width="1.5"/>
+          <circle cx="110" cy="46" r="2.5" fill="#1d9e75"/>
+          <circle cx="143" cy="74" r="2.5" fill="#1d9e75"/>
+          <circle cx="143" cy="126" r="2.5" fill="#1d9e75"/>
+          <circle cx="110" cy="164" r="2.5" fill="#1d9e75"/>
+          <circle cx="82" cy="140" r="2.5" fill="#1d9e75"/>
+          <circle cx="78" cy="78" r="2.5" fill="#1d9e75"/>
+          <text x="110" y="24" text-anchor="middle" font-size="10" fill="#3c4351">开发</text>
+          <text x="163" y="72" text-anchor="middle" font-size="10" fill="#3c4351">数据</text>
+          <text x="163" y="138" text-anchor="middle" font-size="10" fill="#3c4351">运营</text>
+          <text x="110" y="208" text-anchor="middle" font-size="10" fill="#3c4351">沟通</text>
+          <text x="57" y="138" text-anchor="middle" font-size="10" fill="#3c4351">文案</text>
+          <text x="57" y="72" text-anchor="middle" font-size="10" fill="#3c4351">研究</text>
+        </svg>
+        <div style="display:flex;gap:10px;font-size:10px;color:var(--muted);justify-content:center;margin-top:4px">
+          <span><span style="display:inline-block;width:10px;height:2px;background:#1d9e75;vertical-align:middle;margin-right:3px"></span>本周</span>
+          <span><span style="display:inline-block;width:10px;height:2px;background:#8a92a3;vertical-align:middle;margin-right:3px"></span>上周</span>
+        </div>
+      </div>
+      <div class="trendSide">
+        <div class="trendNarr">
+          <b>本周画像变化：</b>「开发」+18%「数据」+6%「文案」-4%——最近复制以代码/报错为主。<br>
+          <b>本周新能力：</b>SQL 生成工具使用 3 次、动作链「一起排错」首次跑通。
+        </div>
+        <div class="dimList">
+          <div class="dimRow"><span class="dimName">开发</span><span class="dimBar"><span class="dimBarPrev" style="width:50%"></span><span class="dimBarCur" style="width:68%"></span></span><span class="dimDelta deltaUp">+18%</span></div>
+          <div class="dimRow"><span class="dimName">数据</span><span class="dimBar"><span class="dimBarPrev" style="width:44%"></span><span class="dimBarCur" style="width:50%"></span></span><span class="dimDelta deltaUp">+6%</span></div>
+          <div class="dimRow"><span class="dimName">研究</span><span class="dimBar"><span class="dimBarPrev" style="width:38%"></span><span class="dimBarCur" style="width:40%"></span></span><span class="dimDelta deltaFlat">±0</span></div>
+          <div class="dimRow"><span class="dimName">文案</span><span class="dimBar"><span class="dimBarPrev" style="width:52%"></span><span class="dimBarCur" style="width:48%"></span></span><span class="dimDelta deltaDown">-4%</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout"><b>交互规则：</b>① 雷达叠加：上周灰色虚线 + 本周实心 accent;② 右侧维度条：本周进度 + 上周基线刻度 + 变化箭头（涨绿跌红）;③ 顶部叙事行由后端生成（维度 delta + 新增能力,纯统计无内容）;④ 快照每周一次（最多 12 份）,全部本地。</div>
+</div>
+
+<div class="note">规则核对：全部主题变量;红线贯穿（对话只在你发送时出网 / 流水线只建议不自动跑 / recall 与画像趋势纯本地）;新组件 AiChatPanel / ScenePlanner 建议卡 / Recall 结果卡 / ProfileRadar 趋势叠加,挂载位置：主窗口 TopBar 右「✦ AI 对话」按钮、快捷区下方、画像页雷达区。</div>
+
+</body>
+</html>

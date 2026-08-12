@@ -326,7 +326,7 @@ fn test_find_latest_by_md5_found() {
     let md5 = item.md5.clone().unwrap();
     store.insert_history(&item).unwrap();
 
-    let found = store.find_latest_by_md5(&md5, "默认").unwrap();
+    let found = store.find_latest_by_md5(&md5, "默认", "text").unwrap();
     assert!(found.is_some());
     assert_eq!(found.unwrap().id, "md5-1");
 }
@@ -334,8 +334,27 @@ fn test_find_latest_by_md5_found() {
 #[test]
 fn test_find_latest_by_md5_not_found() {
     let store = make_store();
-    let found = store.find_latest_by_md5("nonexistent_md5", "默认").unwrap();
+    let found = store.find_latest_by_md5("nonexistent_md5", "默认", "text").unwrap();
     assert!(found.is_none());
+}
+
+/// 回归：rich/doc 类型记录必须能被对应类型查到（此前 SQL 硬编码 type='text'，
+/// 导致图文/文档的智能合并永远不命中、反复复制反复入库）。
+#[test]
+fn test_find_latest_by_md5_by_type() {
+    let store = make_store();
+    let rich = make_item("rich-1", "图文内容", "2024-01-01 10:00:00", "rich");
+    let md5 = rich.md5.clone().unwrap();
+    store.insert_history(&rich).unwrap();
+
+    // 用 rich 类型能找到
+    let found = store.find_latest_by_md5(&md5, "默认", "rich").unwrap();
+    assert!(found.is_some());
+    assert_eq!(found.unwrap().item_type, "rich");
+
+    // 用 text 类型查不到（类型隔离，不能误合并到文本记录）
+    let found_text = store.find_latest_by_md5(&md5, "默认", "text").unwrap();
+    assert!(found_text.is_none());
 }
 
 #[test]
@@ -353,7 +372,7 @@ fn test_find_latest_by_md5_returns_latest() {
     store.insert_history(&item2).unwrap();
 
     let found = store
-        .find_latest_by_md5(&md5_hash, "默认")
+        .find_latest_by_md5(&md5_hash, "默认", "text")
         .unwrap()
         .unwrap();
     assert_eq!(found.id, "dup-2"); // 应该返回时间更新的那条
@@ -368,10 +387,10 @@ fn test_find_latest_by_md5_workspace_isolated() {
     store.insert_history(&item).unwrap();
 
     // 不同 workspace 下不应命中
-    let found = store.find_latest_by_md5(&md5, "默认").unwrap();
+    let found = store.find_latest_by_md5(&md5, "默认", "text").unwrap();
     assert!(found.is_none());
     // 相同 workspace 下应命中
-    let found = store.find_latest_by_md5(&md5, "其他工作区").unwrap();
+    let found = store.find_latest_by_md5(&md5, "其他工作区", "text").unwrap();
     assert!(found.is_some());
 }
 
@@ -2403,6 +2422,7 @@ fn chain_def(name: &str, steps: &[&str]) -> ChainDef {
                 transform_id: t.to_string(),
                 risk: "local".to_string(),
                 label: String::new(),
+                condition: None,
             })
             .collect(),
         sort_order: 0,
@@ -3116,6 +3136,82 @@ fn day_ago(n: i64) -> String {
         .to_string()
 }
 
+/// 转移表：连着做够次数就计入，且分次数可靠。
+#[test]
+fn test_sequence_transitions_counts_pairs() {
+    let store = make_store();
+    let day = day_ago(1);
+    // 四次「解释代码 → 提取要点」，每对隔一小时（对内 30 秒，没跨会话）
+    for h in 10..14 {
+        insert_action_event_at(&store, &format!("{} {:02}:00:00", day, h), "ai-explain-code", h);
+        insert_action_event_at(&store, &format!("{} {:02}:00:30", day, h), "ai-extract-points", h);
+    }
+
+    let ts = store.sequence_transitions(30, 3).unwrap();
+    let hit = ts
+        .iter()
+        .find(|t| t.from == "ai-explain-code" && t.to == "ai-extract-points")
+        .unwrap_or_else(|| panic!("应挖出该转移，实际：{:?}", ts));
+    assert_eq!(hit.count, 4);
+    // 反向对在顺序上也出现了 3 次（上一对的尾 → 下一对的头），
+    // 但那中间隔了一小时，跨了会话间隔——不能算。
+    assert!(
+        !ts.iter()
+            .any(|t| t.from == "ai-extract-points" && t.to == "ai-explain-code"),
+        "跨会话的反向拼接不能成为转移：{:?}",
+        ts
+    );
+}
+
+/// 转移表与 `sequence_mining` 共用同一套规则：跨天伪相邻一律不算。
+///
+/// 单独再验一遍而不是“反正共用了 SessionBreaks”：两个函数现在是共享取数，
+/// 但循环里的连续性判定是各写一遍的——漏写一行就会静默地把跨天对算进去。
+#[test]
+fn test_sequence_transitions_rejects_cross_day_pair() {
+    let store = make_store();
+    for i in 0..4 {
+        let evening = day_ago(8 - i);
+        let morning = day_ago(7 - i);
+        insert_action_event_at(&store, &format!("{} 18:00:00", evening), "ai-weekly-report", 18);
+        insert_action_event_at(&store, &format!("{} 09:00:00", morning), "ai-explain-code", 9);
+    }
+    // 防空跑：事件必须真的在 30 天窗口内，否则下面的 is_empty() 什么也没验到
+    assert_eq!(store.action_event_stats(30).total, 8);
+    assert!(
+        store.sequence_transitions(30, 3).unwrap().is_empty(),
+        "跨天的伪相邻不能成为转移"
+    );
+}
+
+/// 转移表：低于阈值不返回，自转移（手抖重复）不计。
+#[test]
+fn test_sequence_transitions_threshold_and_self_loop() {
+    let store = make_store();
+    let day = day_ago(1);
+    // A→B 只出现 2 次（< 3）
+    for h in 10..12 {
+        insert_action_event_at(&store, &format!("{} {:02}:00:00", day, h), "ai-summarize", h);
+        insert_action_event_at(&store, &format!("{} {:02}:00:30", day, h), "ai-reply-draft", h);
+    }
+    // 同一动作连点 6 次（相邻自转移 5 次，足够过阈值，但不应计入）
+    for i in 0..6 {
+        insert_action_event_at(&store, &format!("{} 15:00:{:02}", day, i * 5), "ai-translate", 15);
+    }
+
+    let ts = store.sequence_transitions(30, 3).unwrap();
+    assert!(
+        !ts.iter().any(|t| t.from == "ai-summarize"),
+        "出现 2 次低于阈值 3，不应返回：{:?}",
+        ts
+    );
+    assert!(
+        !ts.iter().any(|t| t.from == t.to),
+        "自转移是手抖重复，不是习惯：{:?}",
+        ts
+    );
+}
+
 /// 回归（①）：跨天的两个动作**不**构成序列。
 ///
 /// 这是本轮最严重的一条：以前滑动窗口只看动作顺序、不看时间，所以
@@ -3239,4 +3335,439 @@ fn test_profile_raw_stats_hour_counts_match_total_events() {
          hour_counts={:?}, total_events={}",
         raw.hour_counts, raw.total_events
     );
+}
+
+// ============================================================
+// v6.8：粘性数据（活跃日历 / 连续周数 / 成就 / 里程碑）
+// ============================================================
+
+/// 在指定天数前插入一条 action_event（直接 SQL 指定 created_at）
+fn insert_event_on(store: &DataStore, days_ago: i64, action: &str, ct: &str) {
+    let ts = (chrono::Local::now() - chrono::Duration::days(days_ago))
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
+    let conn = store.lock_conn();
+    conn.execute(
+        "INSERT INTO action_events (created_at, action_id, content_type, source_app, hour, outcome)
+         VALUES (?1, ?2, ?3, 'Test', 10, 'copied')",
+        params![ts, action, ct],
+    )
+    .unwrap();
+}
+
+fn insert_usage(store: &DataStore, action_id: &str) {
+    store.ai_usage_add(&AiUsageEntry {
+        action_id: action_id.to_string(),
+        provider: "test".to_string(),
+        model: "test".to_string(),
+        prompt_tokens: 1,
+        completion_tokens: 1,
+        cost_usd: 0.0,
+        cached: false,
+        latency_ms: 0,
+        ok: true,
+        error: None,
+    });
+}
+
+fn insert_chain(store: &DataStore, id: &str) {
+    let conn = store.lock_conn();
+    conn.execute(
+        "INSERT INTO chain_defs (id, name, description, steps, sort_order, created_at, updated_at)
+         VALUES (?1, ?1, '', '[]', 0, datetime('now'), datetime('now'))",
+        params![id],
+    )
+    .unwrap();
+}
+
+#[test]
+fn test_sticky_empty() {
+    let store = make_store();
+    let s = store.sticky_stats();
+    assert_eq!(s.calendar.len(), 84, "日历必须是完整 84 天");
+    assert!(s.calendar.iter().all(|d| d.count == 0));
+    assert_eq!(s.active_days, 0);
+    assert_eq!(s.active_week_streak, 0);
+    assert_eq!(s.history_count, 0);
+    assert!(s.first_history_at.is_none());
+    assert_eq!(s.custom_chain_count, 0);
+    assert!(!s.ai_used && !s.tool_used && !s.triage_used && !s.profile_exported && !s.profile_refined);
+}
+
+#[test]
+fn test_sticky_calendar_and_streak() {
+    let store = make_store();
+    // 今天 + 昨天 + 前天
+    insert_event_on(&store, 0, "ai-summarize", "text");
+    insert_event_on(&store, 1, "sql-in", "text");
+    insert_event_on(&store, 2, "json_format", "json");
+    // 连续三周活跃（本周 / 上周 / 上上周，7 天步长落点同星期几）
+    insert_event_on(&store, 0, "mask-sensitive", "text");
+    insert_event_on(&store, 7, "mask-sensitive", "text");
+    insert_event_on(&store, 14, "mask-sensitive", "text");
+
+    let s = store.sticky_stats();
+    assert_eq!(s.calendar.len(), 84);
+    // 今天/昨天/前天 + 上周同日 + 上上周同日（streak 用），都在 84 天窗口内
+    assert_eq!(s.active_days, 5, "3 个近期日 + 2 个周间隔日");
+    // 今天 count = 2（ai-summarize + mask-sensitive）
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let today_entry = s.calendar.iter().find(|d| d.date == today).unwrap();
+    assert_eq!(today_entry.count, 2);
+    // 最后一天是今天
+    assert_eq!(s.calendar.last().unwrap().date, today);
+    assert_eq!(s.active_week_streak, 3, "本周/上周/上上周连续活跃");
+}
+
+#[test]
+fn test_sticky_streak_breaks_with_gap() {
+    let store = make_store();
+    // 本周 + 上上周（上周缺）→ 连续中断，streak 只算本周 = 1
+    insert_event_on(&store, 0, "a", "text");
+    insert_event_on(&store, 14, "a", "text");
+    let s = store.sticky_stats();
+    assert_eq!(s.active_week_streak, 1, "上周缺口 → 连续中断");
+}
+
+#[test]
+fn test_sticky_achievements_and_milestones() {
+    let store = make_store();
+    // 成就布尔：AI 用过 / 生成工具用过 / 排错链跑过 / 画像精炼过
+    insert_usage(&store, "ai-translate");
+    insert_usage(&store, "ai-sql-generate");
+    insert_usage(&store, "profile-refine");
+    insert_event_on(&store, 0, "error-triage", "chain");
+    insert_event_on(&store, 0, "profile-export", "");
+    // 自定义链 2 条
+    insert_chain(&store, "chain-a");
+    insert_chain(&store, "chain-b");
+    // history 3 条（第一条是过去时间 → first_history_at 应取最早）
+    store
+        .insert_history(&make_item("h-old", "最早", "2026-01-05 09:00:00", "text"))
+        .unwrap();
+    store
+        .insert_history(&make_item("h-mid", "中间", "2026-02-01 10:00:00", "text"))
+        .unwrap();
+    store
+        .insert_history(&make_item("h-new", "最近", "2026-08-01 11:00:00", "text"))
+        .unwrap();
+
+    let s = store.sticky_stats();
+    assert!(s.ai_used, "ai_translate 在 ai_usage_log → ai_used");
+    assert!(s.tool_used, "ai-sql-generate 在 ai_usage_log → tool_used");
+    assert!(s.triage_used, "error-triage/chain 在 action_events → triage_used");
+    assert!(s.profile_exported, "profile-export 在 action_events → exported");
+    assert!(s.profile_refined, "profile-refine 在 ai_usage_log → refined");
+    assert_eq!(s.custom_chain_count, 2);
+    assert_eq!(s.history_count, 3);
+    assert_eq!(s.first_history_at.as_deref(), Some("2026-01-05 09:00:00"));
+}
+
+#[test]
+fn test_sticky_ai_used_via_action_events() {
+    let store = make_store();
+    // 只在 action_events 里出现过 AI 动作（如通过变换枢纽触发的 ai-merge-polish）
+    insert_event_on(&store, 0, "ai-merge-polish", "code");
+    let s = store.sticky_stats();
+    assert!(s.ai_used);
+    assert!(!s.tool_used, "ai-merge-polish 不是生成工具");
+}
+
+// ============================================================
+// v6.9：免费额度（签到 / 兑换 / 计量）
+// ============================================================
+
+/// 把账本签到日期直接改成 N 天前（模拟连续签到 / 断签）
+fn set_sign_date(store: &DataStore, days_ago: i64) {
+    let ts = (chrono::Local::now() - chrono::Duration::days(days_ago))
+        .format("%Y-%m-%d")
+        .to_string();
+    let conn = store.lock_conn();
+    conn.execute("UPDATE ai_quota SET sign_date=?1 WHERE id=1", params![ts])
+        .unwrap();
+}
+
+#[test]
+fn test_quota_init() {
+    let store = make_store();
+    let q = store.quota_get().unwrap();
+    assert_eq!(q.granted, crate::data_store::quota::INITIAL_GRANT);
+    assert_eq!(q.sign_added, 0);
+    assert_eq!(q.remaining, 100_000);
+    assert!(q.can_sign);
+    assert_eq!(q.sign_streak, 0);
+    assert!(!q.device_id.is_empty());
+    // device_id 幂等：再次读取同 id
+    let q2 = store.quota_get().unwrap();
+    assert_eq!(q2.device_id, q.device_id);
+    assert_eq!(q2.granted, q.granted);
+}
+
+#[test]
+fn test_quota_sign_rewards_streak() {
+    let store = make_store();
+    // 第 1 天：2 万
+    let r1 = store.quota_sign().unwrap();
+    assert!(r1.ok);
+    assert_eq!(r1.reward, crate::data_store::quota::SIGN_BASE);
+    assert_eq!(r1.streak, 1);
+    // 同一天重复签到被拒
+    let dup = store.quota_sign().unwrap();
+    assert!(!dup.ok);
+
+    // 模拟昨天签过 → 第 2 天：3 万
+    set_sign_date(&store, 1);
+    let r2 = store.quota_sign().unwrap();
+    assert_eq!(r2.streak, 2);
+    assert_eq!(r2.reward, 30_000);
+
+    // 第 3 天：4 万
+    set_sign_date(&store, 1);
+    let r3 = store.quota_sign().unwrap();
+    assert_eq!(r3.streak, 3);
+    assert_eq!(r3.reward, 40_000);
+
+    // 第 4 天起封顶 5 万
+    set_sign_date(&store, 1);
+    let r4 = store.quota_sign().unwrap();
+    assert_eq!(r4.streak, 4);
+    assert_eq!(r4.reward, 50_000);
+
+    // 断签：昨天没签（改到 3 天前）→ 重置 streak=1，2 万
+    set_sign_date(&store, 3);
+    let r5 = store.quota_sign().unwrap();
+    assert_eq!(r5.streak, 1);
+    assert_eq!(r5.reward, 20_000);
+}
+
+#[test]
+fn test_quota_sign_capped_at_1m() {
+    let store = make_store();
+    store.quota_get().unwrap(); // 先触发账本初始化，UPDATE 才会命中行
+    // 把签到累计推到接近上限：90 万 - 2 万 = 88 万
+    let conn = store.lock_conn();
+    conn.execute("UPDATE ai_quota SET sign_added=?1, granted=?2 WHERE id=1",
+        params![880_000i64, 980_000i64]).unwrap();
+    drop(conn);
+    // 再签到：应得 2 万但只剩 2 万空间 → 实际 2 万（此时满 90 万 = 100 万总）
+    let r = store.quota_sign().unwrap();
+    assert!(r.ok);
+    assert_eq!(r.reward, 20_000);
+    let q = store.quota_get().unwrap();
+    assert_eq!(q.granted, 1_000_000);
+    // 再签到：无空间 → 0 到账但 streak 照常
+    set_sign_date(&store, 1);
+    let r2 = store.quota_sign().unwrap();
+    assert!(r2.ok);
+    assert_eq!(r2.reward, 0);
+    assert_eq!(r2.streak, 2);
+}
+
+#[test]
+fn test_quota_redeem_ok_and_idempotent() {
+    let store = make_store();
+    let secret = crate::data_store::quota::redeem_secret();
+    let code = crate::data_store::quota::generate_redeem_code("GRP1", 100_000, "20300101", &secret);
+    let before = store.quota_get().unwrap().granted;
+    let r = store.quota_redeem(&code).unwrap();
+    assert!(r.ok);
+    assert_eq!(r.amount, 100_000);
+    let after = store.quota_get().unwrap().granted;
+    assert_eq!(after, before + 100_000);
+    // 重复兑换被拒（幂等）
+    let dup = store.quota_redeem(&code).unwrap();
+    assert!(!dup.ok);
+    assert_eq!(store.quota_get().unwrap().granted, after);
+}
+
+#[test]
+fn test_quota_redeem_invalid_or_expired() {
+    let store = make_store();
+    let secret = crate::data_store::quota::redeem_secret();
+    // 坏码
+    assert!(!store.quota_redeem("P1-XXXX-YYYY").unwrap().ok);
+    // 签名错误
+    let bad = "P1-ABCD10000020300101-deadbeef";
+    assert!(!store.quota_redeem(bad).unwrap().ok);
+    // 过期码
+    let expired = crate::data_store::quota::generate_redeem_code("GRP1", 10_000, "20200101", &secret);
+    assert!(!store.quota_redeem(&expired).unwrap().ok);
+    // 面额为 0 的码
+    let zero = crate::data_store::quota::generate_redeem_code("GRP1", 0, "20300101", &secret);
+    assert!(!store.quota_redeem(&zero).unwrap().ok);
+    // 兑换失败不改变余额
+    let q = store.quota_get().unwrap();
+    assert_eq!(q.granted, crate::data_store::quota::INITIAL_GRANT);
+}
+
+#[test]
+fn test_quota_spend_and_daily_cap() {
+    let store = make_store();
+    store.quota_get().unwrap(); // 触发初始化
+    store.quota_spend(1_000).unwrap();
+    let q = store.quota_get().unwrap();
+    assert_eq!(q.spent, 1_000);
+    assert_eq!(q.remaining, 100_000 - 1_000);
+    assert_eq!(q.today_spent, 1_000);
+    // 余额不足
+    {
+        let conn = store.lock_conn();
+        conn.execute("UPDATE ai_quota SET granted=500 WHERE id=1", []).unwrap();
+    }
+    assert!(store.quota_spend(501).is_err());
+    assert!(store.quota_spend(500).is_ok());
+    // 每日上限
+    {
+        let conn = store.lock_conn();
+        conn.execute("UPDATE ai_quota SET granted=100000000, today_spent=?1 WHERE id=1",
+            params![99_999i64]).unwrap();
+    }
+    assert!(store.quota_spend(2).is_err(), "超过每日 10 万上限");
+}
+
+#[test]
+fn test_redeem_code_roundtrip_verify() {
+    use crate::data_store::quota::{generate_redeem_code, verify_redeem_code};
+    let secret = crate::data_store::quota::redeem_secret();
+    let code = generate_redeem_code("TEST", 50_000, "20300101", &secret);
+    let p = verify_redeem_code(&code, &secret).unwrap();
+    assert_eq!(p.batch, "TEST");
+    assert_eq!(p.amount, 50_000);
+    assert_eq!(p.expiry, "20300101");
+    // 大小写不敏感
+    assert!(verify_redeem_code(&code.to_lowercase(), &secret).is_some());
+    // 篡改 payload → 验签失败
+    let tampered = format!("{}-{}", "P1", {
+        let payload = "TEST05000020300101";
+        let sig = payload; // 占位
+        sig
+    });
+    assert!(verify_redeem_code(&tampered, &secret).is_none());
+}
+
+/// G2 测试抓到的真实 bug 回归:同批次批量生成必须序号递增、码唯一;
+/// 客户端验签对带序号的 22 位码必须通过。
+#[test]
+fn test_redeem_seq_uniqueness() {
+    use crate::data_store::quota::{generate_redeem_code_seq, verify_redeem_code};
+    let secret = crate::data_store::quota::redeem_secret();
+    let codes: Vec<String> = (1..=5)
+        .map(|i| generate_redeem_code_seq("GRP1", i, 100_000, "20300101", &secret))
+        .collect();
+    // 5 个码必须两两不同
+    for i in 0..codes.len() {
+        for j in i + 1..codes.len() {
+            assert_ne!(codes[i], codes[j], "序号 {} 与 {} 的码重复", i + 1, j + 1);
+        }
+    }
+    // 每个码都可验签、批次/面额/有效期正确
+    for c in &codes {
+        let p = verify_redeem_code(c, &secret).expect("带序号码必须可验签");
+        assert_eq!(p.batch, "GRP1");
+        assert_eq!(p.amount, 100_000);
+        assert_eq!(p.expiry, "20300101");
+    }
+    // 旧 18 位格式(无序号)仍兼容
+    let old = crate::data_store::quota::generate_redeem_code("GRP1", 100_000, "20300101", &secret);
+    let p = verify_redeem_code(&old, &secret).expect("旧 18 位码必须仍可验签");
+    assert_eq!(p.amount, 100_000);
+}
+
+#[test]
+fn test_quota_check_states() {
+    use crate::data_store::quota::{DAILY_SPEND_CAP, QuotaBlock};
+    let store = make_store();
+    store.quota_get().unwrap(); // 触发初始化
+    // 初始：可调用
+    assert_eq!(store.quota_check(), Ok(()));
+    // 每日上限：今日已用 = cap → DailyCap
+    {
+        let conn = store.lock_conn();
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        conn.execute(
+            "UPDATE ai_quota SET today=?1, today_spent=?2 WHERE id=1",
+            params![today, DAILY_SPEND_CAP as i64],
+        )
+        .unwrap();
+    }
+    assert_eq!(store.quota_check(), Err(QuotaBlock::DailyCap));
+    // 余额 0 → Exhausted
+    {
+        let conn = store.lock_conn();
+        conn.execute("UPDATE ai_quota SET granted=0, today_spent=0 WHERE id=1", [])
+            .unwrap();
+    }
+    assert_eq!(store.quota_check(), Err(QuotaBlock::Exhausted));
+    // 恢复后可调用
+    {
+        let conn = store.lock_conn();
+        conn.execute("UPDATE ai_quota SET granted=1000 WHERE id=1", []).unwrap();
+    }
+    assert_eq!(store.quota_check(), Ok(()));
+}
+
+// ============================================================
+// v6.10 测试规划 G3/G4：画像聚合与序列挖掘边界用例
+// ============================================================
+
+#[test]
+fn test_profile_raw_stats_empty() {
+    let store = make_store();
+    let raw = store.profile_raw_stats(30).unwrap();
+    assert_eq!(raw.total_events, 0);
+    assert!(raw.action_counts.is_empty());
+    assert!(raw.content_type_counts.is_empty());
+    assert!(raw.hour_counts.is_empty());
+    // 窗口=0 不应 panic(容错返回空)
+    let raw0 = store.profile_raw_stats(0).unwrap();
+    assert_eq!(raw0.total_events, 0);
+}
+
+#[test]
+fn test_profile_raw_stats_window_truncation() {
+    let store = make_store();
+    // 两天前的事件:30 天窗口应计入,但 1 天窗口应排除
+    let conn = store.lock_conn();
+    let ts = (chrono::Local::now() - chrono::Duration::days(2))
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
+    conn.execute(
+        "INSERT INTO action_events (created_at, action_id, content_type, source_app, hour, outcome)
+         VALUES (?1, 'ai-summarize', 'text', '', 10, 'copied')",
+        params![ts],
+    ).unwrap();
+    drop(conn);
+    let w30 = store.profile_raw_stats(30).unwrap();
+    assert_eq!(w30.total_events, 1);
+    let w1 = store.profile_raw_stats(1).unwrap();
+    assert_eq!(w1.total_events, 0, "1 天窗口应排除 2 天前事件");
+}
+
+#[test]
+fn test_sequence_mining_long_sequence_stable() {
+    let store = make_store();
+    use crate::data_store::action_events::ActionEvent;
+    // 超长同模式序列(50 轮):不应 panic、应稳定找到模式、无重复计数爆表
+    for _ in 0..50 {
+        store.action_event_add(&ActionEvent {
+            action_id: "ai-translate".to_string(),
+            content_type: "text".to_string(),
+            source_app: "".to_string(),
+            hour: 10,
+            outcome: "copied".to_string(),
+            history_id: None,
+        });
+        store.action_event_add(&ActionEvent {
+            action_id: "ai-copy-polish".to_string(),
+            content_type: "text".to_string(),
+            source_app: "".to_string(),
+            hour: 10,
+            outcome: "copied".to_string(),
+            history_id: None,
+        });
+    }
+    let seqs = store.sequence_mining(30, 3, 4).unwrap();
+    // 50 轮 > 阈值,至少出现一次模式;结果数量有上限(不爆表)
+    assert!(!seqs.is_empty());
+    assert!(seqs.len() <= 10, "序列建议有数量上限(实现 truncate(10))");
 }

@@ -15,6 +15,8 @@ import { profileGet, profileSetOverride, type UserProfile } from "@/lib/api/prof
 import { ProfileRadar } from "@/components/ProfileRadar";
 import { ProfileExport } from "@/components/ProfileExport";
 import { ProfileRefine } from "@/components/ProfileRefine";
+import { ProfileTrajectory } from "@/components/ProfileTrajectory";
+import { AchievementsCard } from "@/components/AchievementsCard";
 import { useToast } from "@/components/Toast";
 import styles from "./ProfileDialog.module.css";
 
@@ -39,6 +41,22 @@ const ROLE_EMOJI: Record<string, string> = {
 export function ProfileDialog() {
   const open = useDialogStore((s) => s.profileOpen);
   const close = useCallback(() => useDialogStore.getState().closeProfile(), []);
+  // 审查：Esc 关闭（全局 Esc 对部分场景让位，组件自兜底）
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // 依赖写 close 而不是 close()：依赖数组是**渲染期构造**的，写成调用形式
+    // 等于每次渲染都真的执行一次 closeProfile()——点开弹窗 → 重渲染 → 自己把
+    // 自己关了，现象就是“按钮点下去没反应”。
+  }, [open, close]);
+
   const anim = useDialogAnim();
   const { toast } = useToast();
 
@@ -50,9 +68,14 @@ export function ProfileDialog() {
     try {
       const p = await profileGet();
       setProfile(p);
-      setRoleDraft(typeof p.overrides.role === "string" ? p.overrides.role : "");
+      // 用 ?. 而不是直读：类型写的是 `Record<string, string>`（非空），但后端曾在
+      // “用户从未设过覆盖”时发 null，于是这里抛
+      // “Cannot read properties of null (reading 'role')”——每个全新安装都打不开画像。
+      // 后端已改成恒返回空对象（overrides_or_empty），这里再加一道：跨 IPC 的类型
+      // 无任何运行时校验，tsc 给不了保证，不能只靠后端自律。
+      setRoleDraft(typeof p.overrides?.role === "string" ? p.overrides.role : "");
       setInstrDraft(
-        typeof p.overrides.instructions === "string" ? p.overrides.instructions : "",
+        typeof p.overrides?.instructions === "string" ? p.overrides.instructions : "",
       );
     } catch (e) {
       toast(`读取画像失败：${e instanceof Error ? e.message : String(e)}`, "error");
@@ -78,13 +101,15 @@ export function ProfileDialog() {
   const donutStyle = useMemo(() => {
     if (!profile || profile.domains.length === 0) return null;
     let acc = 0;
+    // 审查：pct 是 0-100 的百分比，conic-gradient 用角度 → ×3.6 才是度数；
+    // 此前直接用 pct 当 deg，环只填 ~28% 看起来像坏了。全部领域画满（>3 类其余用灰色）。
     const stops = profile.domains
-      .slice(0, 3)
       .map((d, i) => {
-        const from = acc;
+        const from = acc * 3.6;
         acc += d.pct;
         const colors = ["#4fa3ff", "#38e1d4", "#9d7bff"];
-        return `${colors[i]} ${from}deg ${acc}deg`;
+        const color = i < 3 ? colors[i] : "#cbd5e1";
+        return `${color} ${from}deg ${acc * 3.6}deg`;
       })
       .join(", ");
     return { background: `conic-gradient(${stops})` };
@@ -195,6 +220,9 @@ export function ProfileDialog() {
                     {/* V3-C：AI 画像描述（LLM 润色，手动触发出网） */}
                     <ProfileRefine />
 
+                    {/* v6.8 粘性 A2：我的轨迹（活跃日历 + 连续周数） */}
+                    <ProfileTrajectory />
+
                     {/* 两列：领域环形图 + 活跃时段 */}
                     <div className={styles.twoCol}>
                       <div className={styles.card}>
@@ -263,6 +291,9 @@ export function ProfileDialog() {
                         </div>
                       </div>
                     )}
+
+                    {/* v6.8 粘性 A3：成就墙 */}
+                    <AchievementsCard />
 
                     {/* 风格偏好 */}
                     {profile.prefs.length > 0 && (

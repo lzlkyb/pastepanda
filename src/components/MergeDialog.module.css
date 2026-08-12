@@ -103,11 +103,11 @@
 
 .aiBtn {
   background: rgba(168, 85, 247, 0.16);
-  color: #a855f7;
+  color: var(--accent);
 }
 
 .aiBtn:hover:not(:disabled) {
-  background: #a855f7;
+  background: var(--accent);
   color: #fff;
 }
 

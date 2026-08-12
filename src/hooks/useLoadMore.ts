@@ -107,7 +107,7 @@ export function useLoadMore({ scrollRef, lenisRef, itemsLength, enabled = true }
         loadCooldownRef.current = Date.now() + 500;
       });
     }
-  }, []);
+  }, [lenisRef]);
 
   // 手动重试加载
   const handleRetryLoadMore = useCallback(() => {

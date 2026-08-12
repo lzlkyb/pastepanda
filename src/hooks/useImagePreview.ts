@@ -284,6 +284,8 @@ export function useImagePreview(): UseImagePreviewReturn {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+    // 不能补 getSelectedOcrTexts：它定义在本 effect 之后，写进依赖数组会 TDZ ReferenceError
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewImage, previewLoading, closePreview, ocrActive, selectedWordIndices, cropMode, toast]);
 
   const handlePreviewWheel = useCallback((e: React.WheelEvent) => {
@@ -635,7 +637,7 @@ export function useImagePreview(): UseImagePreviewReturn {
       return;
     }
     // draw：左上角为起点，右下角为当前鼠标
-    let x1 = drag.sx, y1 = drag.sy, x2 = mx, y2 = my;
+    const x1 = drag.sx, y1 = drag.sy, x2 = mx, y2 = my;
     let rx = Math.min(x1, x2), ry = Math.min(y1, y2);
     let rw = Math.abs(x2 - x1), rh = Math.abs(y2 - y1);
     if (rx < 0) { rw += rx; rx = 0; }
@@ -674,7 +676,7 @@ export function useImagePreview(): UseImagePreviewReturn {
     setCropMode(false);
     setCropRect(null);
     toast("裁剪完成", "success");
-  }, [cropRect, previewImage, previewInfo, cropOriginal, bakeImage, toast]);
+  }, [cropRect, previewImage, cropOriginal, bakeImage, toast]);
 
   const cancelCrop = useCallback(() => {
     setCropMode(false);

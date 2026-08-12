@@ -3,7 +3,7 @@
  */
 import { useAppStore } from "@/stores/appStore";
 import { logger } from "@/lib/logger";
-import { pasteText } from "./paste";
+import { pasteTextGuarded } from "./paste";
 
 /** 依次粘贴互斥锁：防止快速连按导致同一条被粘贴两次 */
 let seqPasteBusy = false;
@@ -64,7 +64,7 @@ async function sequentialPasteInner() {
   logger.info(`[sequentialPaste] 粘贴第 ${idx + 1}/${textItems.length} 条: ${item.text.slice(0, 30)}...`);
 
   // 调用后端粘贴引擎，成功后推进指针，失败不推进
-  const ok = await pasteText(item.text);
+  const ok = await pasteTextGuarded(item.text);
   if (!ok) {
     logger.warn(`[sequentialPaste] 粘贴失败，指针保持 ${idx}`);
     return; // 粘贴失败不推进指针
@@ -105,7 +105,7 @@ export async function indexPaste(n: number) {
   if (!item) return;
 
   // U1：仅粘贴成功时弹成功提示（pasteText 失败时已自行弹错误 toast）
-  const ok = await pasteText(item.text);
+  const ok = await pasteTextGuarded(item.text);
   if (ok) {
     window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已粘贴第 ${n} 条`, type: "success" } }));
   }

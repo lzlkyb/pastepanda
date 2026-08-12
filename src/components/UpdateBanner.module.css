@@ -32,7 +32,7 @@
 }
 
 .updateBadgeReady {
-  background: #34C759;
+  background: var(--green);
   color: #fff;
   cursor: pointer;
   animation: badge-pulse 2s infinite;

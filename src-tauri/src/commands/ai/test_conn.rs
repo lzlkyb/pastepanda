@@ -32,8 +32,10 @@ pub async fn ai_test_connection(app: tauri::AppHandle) -> Result<AiTestResult, S
     let (cfg, key) = {
         let store = app.state::<DataStore>();
         let cfg = read_ai_config(&store)?;
-        let dir = ai_data_dir(&app)?;
-        let key = secret_store::load_key(&dir, &cfg.provider)?.unwrap_or_default();
+        // 必须走 resolve_ai_key：内置免费（Agnes）没有用户密钥文件，
+        // 以前这里直接 load_key 拿到空字串，测试必然 401——
+        // 而主动作走的 ai_run 有内置 key，于是“能用但一测就错”。
+        let key = resolve_ai_key(&app, &cfg)?;
         if cfg.spec().needs_key && key.is_empty() {
             return Err("尚未配置 API Key".to_string());
         }
@@ -51,6 +53,7 @@ pub async fn ai_test_connection(app: tauri::AppHandle) -> Result<AiTestResult, S
         Some("你是连通性测试助手，只需按要求回答，不要其他内容。"),
         "回复两个字：正常",
         Some(1024),
+        None,
     )
     .await;
     let latency_ms = started.elapsed().as_millis() as u64;

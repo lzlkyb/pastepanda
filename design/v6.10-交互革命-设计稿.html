@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>v6.10 交互革命 · 设计稿</title>
+<style>
+  :root {
+    --panel:#ffffff; --section:#f6f8fa; --section2:#eef1f5; --border:#e2e7ef;
+    --text:#14181f; --text2:#3c4351; --muted:#8a92a3;
+    --accent:#1d9e75; --accent-strong:#0f7a58; --accent-light:#e2f5ed; --accent-border:#9fd6c0;
+    --green:#1d9e75; --green-bg:#e2f5ed; --green-border:#9fd6c0;
+    --orange:#b45309; --orange-bg:#fef3e2; --orange-border:#f0c48a;
+    --red:#b3261e; --red-bg:#fdeaea; --red-border:#eeb8b2;
+    --teal-bg:#e3f4f8; --teal-border:#a8d6e2;
+  }
+  body{background:#eef0f4;color:var(--text);font-family:"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;margin:0;padding:28px 32px;overflow-x:hidden;}
+  h1{font-size:19px;margin:0 0 4px;}
+  .pageSub{font-size:12px;color:var(--muted);margin-bottom:24px;}
+  .section{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:22px;box-shadow:0 2px 10px rgba(15,23,42,.05);max-width:960px;}
+  .secHead{display:flex;align-items:baseline;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+  .secTag{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;color:#fff;}
+  .tagP{background:var(--accent);} .tagE{background:#5b6b8c;} .tagG{background:var(--orange);}
+  .secTitle{font-size:14.5px;font-weight:700;}
+  .secDesc{font-size:11px;color:var(--muted);}
+  .stage{border:1px dashed var(--border);border-radius:12px;padding:18px;margin-bottom:14px;background:var(--section);overflow-x:auto;}
+  .stageLabel{display:block;font-size:11px;font-weight:700;color:var(--text2);margin-bottom:10px;}
+  .callout{background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:10px;padding:10px 14px;font-size:11.5px;color:#7c4a12;line-height:1.8;}
+  .callout b{color:var(--orange);}
+  .note{font-size:11px;color:var(--muted);line-height:1.8;}
+
+  .winMain{width:680px;max-width:100%;background:linear-gradient(180deg,#f7f8fa,#eef0f4);border:1px solid rgba(15,23,42,.12);border-radius:12px;overflow:hidden;box-sizing:border-box;position:relative;}
+  .topbar{height:36px;background:var(--panel);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 12px;gap:8px;}
+  .searchPh{width:200px;height:20px;border-radius:6px;background:var(--section);}
+  .listArea{padding:10px 12px;display:flex;flex-direction:column;gap:8px;}
+  .listItem{height:44px;background:var(--panel);border:1px solid rgba(15,23,42,.07);border-radius:10px;}
+
+  /* ===== 快捷区 ===== */
+  .qb{background:var(--panel);border:1px solid var(--border);border-radius:12px;margin-bottom:6px;overflow:hidden;}
+  .qbBar{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--section);border-bottom:1px solid var(--border);}
+  .qbLbl{display:flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:var(--accent-strong);flex-shrink:0;}
+  .qbActs{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+  .qbBtn{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:5px 11px;border-radius:8px;border:1px solid var(--border);background:var(--panel);color:var(--text2);cursor:pointer;position:relative;}
+  .qbBtnAi{border-color:var(--accent-border);background:var(--accent-light);color:var(--accent-strong);}
+  .qbBtnLocal{background:var(--section);color:var(--text2);}
+  .dragHandle{width:8px;height:16px;border-radius:2px;background:var(--muted);opacity:.4;cursor:grab;flex-shrink:0;}
+  .qbBtnDrag{position:relative;padding-left:6px;}
+  .qbMore{color:var(--muted);border-style:dashed;}
+  .qbType{margin-left:auto;font-size:10px;color:var(--muted);flex-shrink:0;}
+  .qbX{width:20px;height:20px;border-radius:6px;border:none;background:transparent;color:var(--muted);cursor:pointer;flex-shrink:0;}
+
+  /* ===== 结果卡 ===== */
+  .qrCard{border-top:1px solid var(--border);padding:10px 12px;display:flex;flex-direction:column;gap:8px;}
+  .qrHead{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;}
+  .locTag{font-size:8.5px;font-weight:700;color:#14708a;background:var(--teal-bg);border-radius:4px;padding:1px 5px;}
+  .qrMeta{display:flex;gap:5px;align-items:center;margin-left:2px;font-weight:400;}
+  .metaChip{font-size:9px;font-weight:600;padding:1px 6px;border-radius:5px;}
+  .metaCached{background:var(--green-bg);color:var(--green);}
+  .metaTrunc{background:var(--orange-bg);color:var(--orange);}
+  .rModel{font-size:9.5px;color:var(--muted);}
+  .qrCollapse{margin-left:auto;width:20px;height:20px;border-radius:6px;border:none;background:transparent;color:var(--muted);cursor:pointer;font-size:11px;}
+
+  /* 流式输出打字机 */
+  .streamBox{background:var(--section);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-family:Consolas,monospace;font-size:10.5px;color:var(--text2);line-height:1.7;min-height:52px;position:relative;}
+  .streamBox .caret{display:inline-block;width:6px;height:13px;background:var(--accent);vertical-align:-2px;animation:blink 0.9s infinite;}
+  @keyframes blink{0%,60%{opacity:1}61%,100%{opacity:0}}
+  .streamStatus{font-size:9px;color:var(--muted);display:flex;gap:5px;align-items:center;}
+
+  /* 追问条 */
+  .followRow{display:flex;gap:6px;align-items:center;}
+  .followInput{flex:1;font-size:11px;padding:6px 9px;border:1px dashed var(--accent-border);border-radius:8px;background:var(--section);outline:none;color:var(--text2);}
+  .followInput:focus{border-color:var(--accent);border-style:solid;background:var(--panel);}
+  .followGo{font-size:10.5px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent-strong));color:#fff;border:none;border-radius:8px;padding:6px 12px;cursor:pointer;}
+
+  /* 操作行 */
+  .qrActs{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+  .qrBtn{font-size:10.5px;font-weight:600;padding:5px 11px;border-radius:7px;border:1px solid var(--border);background:var(--panel);color:var(--text2);cursor:pointer;}
+  .qrBtnPri{background:linear-gradient(135deg,var(--accent),var(--accent-strong));color:#fff;border:none;}
+  .qrBtnGhost{border:none;background:transparent;color:var(--muted);font-weight:400;}
+  .qrBtnGhost:hover{color:var(--accent-strong);}
+  .sep{width:1px;height:14px;background:var(--border);}
+
+  /* 追问轮次叠加 */
+  .turnBox{margin-left:14px;border-left:2px solid var(--accent-border);padding-left:10px;display:flex;flex-direction:column;gap:6px;}
+  .turnUser{font-size:10.5px;color:var(--text2);}
+  .turnAi{font-size:10.5px;color:var(--text-primary);line-height:1.7;background:var(--section);border:1px solid var(--border);border-radius:8px;padding:6px 9px;}
+
+  /* ===== 变换中心卡片 ===== */
+  .hubCard{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:11px 12px;display:flex;flex-direction:column;gap:8px;width:560px;max-width:100%;}
+  .hubTitle{font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px;}
+  .hubStatus{font-size:10px;color:var(--green);font-weight:600;display:flex;align-items:center;gap:4px;margin-left:auto;}
+  .hubOut{background:var(--section);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:11px;color:var(--text2);line-height:1.7;white-space:pre-wrap;max-height:90px;overflow:auto;}
+
+  /* 拖拽排序提示 */
+  .dragTip{font-size:9.5px;color:var(--muted);margin-left:4px;}
+</style>
+</head>
+<body>
+
+<h1>v6.10 交互革命 · 设计稿</h1>
+<div class="pageSub">流式输出 / 结果追问 / 结果回退 / 动作连做 / 快捷区排序 · 全部主题变量 · 红线不变</div>
+
+<!-- ================= 场景 1：快捷区结果卡升级 ================= -->
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagP">场景 1 · AI 快捷区结果卡</span>
+    <span class="secTitle">AiQuickBar：流式 + 追问 + 回退 + 连做</span>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">状态 A · 运行中（流式打字机 · 内容边出边看）</span>
+    <div class="winMain">
+      <div class="topbar"><span class="searchPh"></span></div>
+      <div class="listArea">
+        <div class="qb">
+          <div class="qbBar">
+            <span class="qbLbl">✦ AI</span>
+            <div class="qbActs">
+              <span class="qbBtn qbBtnAi">✦ 翻译</span>
+              <span class="qbBtn qbBtnAi">✦ 总结</span>
+              <span class="qbBtn qbBtnLocal">本地 脱敏</span>
+              <span class="qbBtn qbMore">更多…</span>
+            </div>
+            <span class="qbType">文本</span>
+            <button class="qbX">✕</button>
+          </div>
+          <div class="qrCard">
+            <div class="qrHead">✦ 翻译<span class="qrMeta"><span class="rModel">agnes-2.5-flash</span></span><button class="qrCollapse">▴</button></div>
+            <div class="streamBox">The clipboard is the user's real-time contex<span class="caret"></span></div>
+            <div class="streamStatus"><span>正在输出…</span><span style="margin-left:auto">可随时复制当前内容</span></div>
+          </div>
+        </div>
+        <div class="listItem"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">状态 B · 完成后（追问输入框 + 还原 + 继续处理 + 复制/粘贴）</span>
+    <div class="winMain">
+      <div class="topbar"><span class="searchPh"></span></div>
+      <div class="listArea">
+        <div class="qb">
+          <div class="qbBar">
+            <span class="qbLbl">✦ AI</span>
+            <div class="qbActs">
+              <span class="qbBtn qbBtnAi">✦ 翻译</span>
+              <span class="qbBtn qbBtnAi">✦ 总结</span>
+              <span class="qbBtn qbBtnLocal">本地 脱敏</span>
+              <span class="qbBtn qbMore">更多…</span>
+            </div>
+            <span class="qbType">文本</span>
+            <button class="qbX">✕</button>
+          </div>
+          <div class="qrCard">
+            <div class="qrHead">✦ 翻译<span class="qrMeta"><span class="rModel">agnes-2.5-flash</span><span class="metaChip metaCached">缓存命中</span></span><button class="qrCollapse">▴</button></div>
+            <div class="streamBox" style="min-height:0">The clipboard is the user's real-time context for "what are you working on".</div>
+            <div class="followRow">
+              <input class="followInput" placeholder="追问：再短一点 / 翻译成英文…（Enter 发送）">
+              <button class="followGo">追问</button>
+            </div>
+            <div class="qrActs">
+              <button class="qrBtn">⧉ 复制</button>
+              <button class="qrBtn qrBtnPri">📋 粘贴到前台</button>
+              <span class="sep"></span>
+              <button class="qrBtn">▸ 继续处理…</button>
+              <button class="qrBtn qrBtnGhost">↺ 还原原文</button>
+            </div>
+          </div>
+        </div>
+        <div class="listItem"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">状态 C · 追问后（同卡内叠加轮次 · 可继续追问）</span>
+    <div class="winMain">
+      <div class="topbar"><span class="searchPh"></span></div>
+      <div class="listArea">
+        <div class="qb">
+          <div class="qbBar">
+            <span class="qbLbl">✦ AI</span>
+            <div class="qbActs"><span class="qbBtn qbBtnAi">✦ 翻译</span></div>
+            <span class="qbType">文本</span>
+            <button class="qbX">✕</button>
+          </div>
+          <div class="qrCard">
+            <div class="qrHead">✦ 翻译 · 第 1 轮<span class="qrMeta"><span class="rModel">agnes-2.5-flash</span></span><button class="qrCollapse">▴</button></div>
+            <div class="streamBox" style="min-height:0">The clipboard is the user's real-time context…</div>
+            <div class="turnBox">
+              <div class="turnUser">你：再短一点</div>
+              <div class="turnAi">Clipboard = your real-time context.</div>
+              <div class="turnUser">你：翻译成中文</div>
+              <div class="turnAi">剪贴板 = 你在处理什么的实时上下文。</div>
+            </div>
+            <div class="followRow">
+              <input class="followInput" placeholder="继续追问…">
+              <button class="followGo">追问</button>
+            </div>
+            <div class="qrActs">
+              <button class="qrBtn">⧉ 复制最新</button>
+              <button class="qrBtn qrBtnPri">📋 粘贴到前台</button>
+              <span class="sep"></span>
+              <button class="qrBtn">▸ 继续处理…</button>
+              <button class="qrBtn qrBtnGhost">↺ 还原原文</button>
+            </div>
+          </div>
+        </div>
+        <div class="listItem"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout"><b>交互规则：</b>① <b>流式</b>：运行中正文打字机 + 光标闪烁 + 状态行「正在输出…可随时复制当前内容」（可先复制半成品）;② <b>追问</b>：结果下常驻虚线输入框（「再短一点 / 翻译成英文…」），Enter/按钮发送，多轮在<b>同卡内左缩进叠加</b>，来源 = sessionContext;③ <b>还原</b>：替换式动作（翻译/改写/修复）显示「↺ 还原原文」，回到处理前文本;④ <b>继续处理</b>：▸ 打开变换中心并把结果预填为输入，可多跳;⑤ <b>红线</b>：追问每轮用户主动触发、独立走出网闸;还原/继续均为本地操作。</div>
+</div>
+
+<!-- ================= 场景 2：变换中心结果面板 ================= -->
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagE">场景 2 · 变换中心结果面板</span>
+    <span class="secTitle">TransformCard：同一套能力（流式 / 追问 / 还原 / 继续）</span>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">动作执行后</span>
+    <div class="hubCard">
+      <div class="hubTitle">✦ 翻译<span class="hubStatus">✓ 完成</span></div>
+      <div class="hubOut">The clipboard is the user's real-time context for "what are you working on".</div>
+      <div class="followRow">
+        <input class="followInput" placeholder="追问：换个语气 / 只要前两句…">
+        <button class="followGo">追问</button>
+      </div>
+      <div class="qrActs">
+        <button class="qrBtn">⧉ 复制</button>
+        <button class="qrBtn qrBtnPri">📋 粘贴到前台</button>
+        <span class="sep"></span>
+        <button class="qrBtn">▸ 继续处理…</button>
+        <button class="qrBtn qrBtnGhost">↺ 还原原文</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout"><b>说明：</b>变换中心与快捷区共用同一套「结果卡能力」（流式/追问/还原/继续），组件抽取共用（规则 #11），避免两处各写一遍。</div>
+</div>
+
+<!-- ================= 场景 3：快捷区拖拽排序 ================= -->
+<div class="section">
+  <div class="secHead">
+    <span class="secTag tagG">场景 3 · 快捷区排序</span>
+    <span class="secTitle">长按拖拽调整动作顺序（存 localStorage）</span>
+  </div>
+
+  <div class="stage">
+    <span class="stageLabel">拖拽中 · 每个按钮带拖动手柄（≡）</span>
+    <div class="winMain">
+      <div class="topbar"><span class="searchPh"></span></div>
+      <div class="listArea">
+        <div class="qb">
+          <div class="qbBar">
+            <span class="qbLbl">✦ AI</span>
+            <div class="qbActs">
+              <span class="qbBtn qbBtnDrag qbBtnAi" style="opacity:.55"><span class="dragHandle"></span>✦ 翻译</span>
+              <span class="qbBtn qbBtnDrag qbBtnAi" style="border:2px solid var(--accent)"><span class="dragHandle"></span>✦ 修复</span>
+              <span class="qbBtn qbBtnDrag qbBtnLocal"><span class="dragHandle"></span>本地 脱敏</span>
+              <span class="qbBtn qbBtnDrag qbBtnLocal"><span class="dragHandle"></span>本地 摘要</span>
+              <span class="qbBtn qbMore">更多…</span>
+            </div>
+            <span class="qbType">文本</span>
+            <button class="qbX">✕</button>
+          </div>
+          <div class="dragTip" style="padding:6px 10px">长按左侧手柄拖动排序 · 顺序按你习惯保存，重启不丢</div>
+        </div>
+        <div class="listItem"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout"><b>交互规则：</b>① 每个动作按钮左侧加 <b>≡ 拖动手柄</b>（hover 显示，平时弱化）;② 长按 200ms 进入拖拽，拖动实时换位（动画跟随），拖拽中高亮;③ 松手落位 → localStorage 存顺序，下次打开快捷区按新顺序;④ 与「更多…」/结果区互不干扰（拖拽仅限按钮条）。</div>
+</div>
+
+<div class="note">规则核对：全部主题变量;红线不变（追问独立出网闸 / 还原为本地操作 / 排序纯本地）;能力抽取共用组件（结果卡能力在快捷区与变换中心一致）。</div>
+
+</body>
+</html>

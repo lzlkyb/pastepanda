@@ -15,7 +15,6 @@ import {
   DEFAULT_THEME,
   applyTheme,
   getCurrentTheme,
-  type ThemeKey,
 } from "@/lib/theme";
 
 describe("THEMES 常量", () => {

@@ -1,62 +1,15 @@
-/* v6.4 主窗口 AI 感知（方案 A）：TopBar AI 胶囊 */
+/* AiStatusCap —— 胶囊本身的外观已移到 components/ai/AiMark（shape="cap"）。
+   这里只剩一个它管不着的东西：判定未回来时的占位骨架。 */
 
-.cap {
+/* 占位骨架：尺寸必须与 AiMark 的 .cap 对齐（22px 高 / radius 11px），
+   否则胶囊异步就绪后插进 TopBar 会把右侧图标挤一下。
+   它不是标识（无字无图标），所以不走 AiMark。 */
+.skeleton {
   display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  border-radius: 20px;
-  padding: 4px 11px;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-  font-family: inherit;
-  white-space: nowrap;
-}
-
-/* 判定未回来时的占位骨架（组件在 loading 态渲染它）：
-   尺寸对齐真胶囊，避免胶囊异步就绪后插进 TopBar 造成布局跳动 */
-.loading {
-  width: 64px;
-  height: 24px;
-  background: var(--hover-bg, rgba(127, 127, 127, 0.08));
+  width: 46px;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--hover, rgba(127, 127, 127, 0.08));
   border: 1px solid transparent;
   cursor: default;
-}
-
-/* 未配置：引流入口（accent 虚线） */
-.off {
-  border: 1px dashed var(--accent);
-  background: var(--accent-light);
-  color: var(--accent-strong);
-}
-
-.off:hover {
-  /* 实心底 + 白字必须用 --accent-solid（白字压 --accent 只有 4.10:1，压 --accent-solid 是 4.56:1） */
-  background: var(--accent-solid);
-  color: #fff;
-  border-style: solid;
-}
-
-/* 已启用但缺密钥：警示色 —— 视觉上必须和「就绪」的绿区分开，
-   用户扫一眼就知道这是「还差一步」而不是「能用了」 */
-.nokey {
-  border: 1px solid var(--orange-border);
-  background: var(--orange-bg);
-  color: var(--warning);
-}
-
-.nokey:hover {
-  filter: brightness(1.05);
-}
-
-/* 已配置：状态胶囊（绿） */
-.on {
-  border: 1px solid var(--success-border);
-  background: var(--success-bg);
-  color: var(--success);
-}
-
-.on:hover {
-  filter: brightness(1.05);
 }

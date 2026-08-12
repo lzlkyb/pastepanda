@@ -106,8 +106,11 @@ pub fn batch_convert_encoding(
 fn do_convert(path: &str, target_encoding: &str, remove_bom: bool) -> Result<Option<String>, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("读取文件失败: {e}"))?;
 
-    // 检测当前编码
-    let (has_bom, content_bytes) = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+    // 检测当前编码。这里只需要剥掉 BOM 后的字节；
+    // “要不要给输出加 BOM”只看参数 remove_bom 与目标编码（见下方写入处），
+    // 不看源文件原本有没有 BOM，所以这个布尔值在本函数里用不到。
+    // （对外暴露 has_bom 的是上面的检测命令，给界面展示用。）
+    let (_has_bom, content_bytes) = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
         (true, &bytes[3..])
     } else if bytes.starts_with(&[0xFF, 0xFE]) {
         (true, &bytes[2..])

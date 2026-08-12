@@ -5,7 +5,7 @@
  * 交互约定与卡片一致：复制不重跑 run()，直接用已算出的产物。
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Copy, ClipboardPaste } from "lucide-react";
 import type { ReplyCandidate } from "@/lib/replyCandidates";
 import styles from "./ReplyCandidates.module.css";
@@ -21,11 +21,22 @@ export function ReplyCandidates({
 }) {
   // 局部"已复制"状态：只标记刚复制的那一个，2 秒后回落
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  // 审查：timer 清理（卸载后不再 setState）
+  const copyTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
+    };
+  }, []);
 
   const handleCopy = (i: number, text: string) => {
     onCopy(text);
     setCopiedIdx(i);
-    window.setTimeout(() => setCopiedIdx((cur) => (cur === i ? null : cur)), 2000);
+    if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = window.setTimeout(
+      () => setCopiedIdx((cur) => (cur === i ? null : cur)),
+      2000,
+    );
   };
 
   return (

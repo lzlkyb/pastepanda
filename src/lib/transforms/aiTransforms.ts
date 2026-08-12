@@ -11,6 +11,7 @@
 import { registerTransform, unregisterTransform } from "./registry";
 import type { Transform, TransformContext, TransformResult } from "./types";
 import { logger } from "@/lib/logger";
+import { budgetExceededMessage } from "@/lib/aiBudgetMsg";
 import {
   aiListActions,
   aiListCustomActions,
@@ -58,6 +59,7 @@ export function scoreAiAction(actionId: string, ctx: TransformContext): number {
   const type = ctx.contentType;
   // 代码/结构化数据不适合翻译和改写（会把标识符一并改掉）
   const isCodeish = type === "code" || type === "json" || type === "config";
+  const lang = languageTag(ctx);
 
   switch (actionId) {
     case "ai-translate":
@@ -70,8 +72,10 @@ export function scoreAiAction(actionId: string, ctx: TransformContext): number {
       return !isCodeish && len > 200 ? 0.7 : 0;
 
     case "ai-explain-code":
-      if (type === "code") return 0.85;
-      if (ctx.features?.sql) return 0.6;
+      // 知道是哪门语言时再提一档：后端 prompt 会把语言写进去（见 build_prompt），
+      // 输出质量差别很大，值得排在普通代码前面
+      if (type === "code") return lang ? 0.95 : 0.85;
+      if (lang === "SQL" || ctx.features?.sql) return 0.6;
       return 0;
 
     case "ai-rewrite":
@@ -80,6 +84,66 @@ export function scoreAiAction(actionId: string, ctx: TransformContext): number {
     default:
       return 0;
   }
+}
+
+/**
+ * 后端 ContentClassifier 产出的**语言级**自动标签（content_classifier.rs 的 LANGUAGE_PROFILES）。
+ *
+ * 这是 content_type 给不了的粒度：content_type 到 `code` 就到顶了，
+ * 判不出是 Rust 还是 Java。名字必须与后端的 label 逐字一致。
+ */
+const LANGUAGE_TAGS = new Set([
+  "Python",
+  "JavaScript",
+  "TypeScript",
+  "Rust",
+  "Java",
+  "Go",
+  "SQL",
+  "HTML",
+  "CSS",
+  "Shell",
+]);
+
+/** 取条目上的语言级自动标签（没有则 undefined）。导出仅为单测。 */
+export function languageTag(ctx: TransformContext): string | undefined {
+  return ctx.tags?.find((t) => t.source === "auto" && LANGUAGE_TAGS.has(t.name))?.name;
+}
+
+/**
+ * 手工标签 → 该浮出哪个动作。
+ *
+ * 这几个动作靠的是**用户意图**，文本里根本判不出来（“这条是要回复的”、
+ * “这条是周报素材”），所以在没有标签之前它们只能拿通用分、几乎永远排不上来。
+ *
+ * **这张表注定是低召回的启发式，没命中不算错**：中文标签名千变万化，所以故意做小。
+ * 真正的意图信息走另一条路：标签名会随内容进 prompt（ai_tags_as_context）。
+ * 所以不要往这里堆同义词——那就变成又一处硬编码的并行判断。
+ */
+const INTENT_TAG_RULES: Array<{ re: RegExp; actions: string[] }> = [
+  { re: /回复|回信|待回/, actions: ["ai-reply-draft"] },
+  { re: /周报|日报|月报|汇报/, actions: ["ai-weekly-report"] },
+  { re: /提交|commit/i, actions: ["ai-commit-message"] },
+];
+
+/**
+ * 标签带来的额外分数。
+ *
+ * **必须用 `Math.max` 叠到基础分上，不能把这几个动作塞进 HAND_TUNED**：
+ * 那样它们会丢掉现有的 scoreByContentTypes 分数，没标签时直接从变换中心里消失。
+ * 标签只能把动作往上提，绝不把已有分数压下去。
+ */
+export function tagBoost(actionId: string, ctx: TransformContext): number {
+  // 与 scoreAiAction / scoreByContentTypes 同一道门控：不守的话 AI 不可用时
+  // 标签会把动作推成正分，摆出一个点下去只会报错的按钮。
+  if (!isAiAvailable()) return 0;
+  const manual = ctx.tags?.filter((t) => t.source === "manual") ?? [];
+  if (manual.length === 0) return 0;
+  for (const rule of INTENT_TAG_RULES) {
+    if (!rule.actions.includes(actionId)) continue;
+    if (manual.some((t) => rule.re.test(t.name))) return 0.9;
+  }
+  return 0;
 }
 
 /** 上面那个 switch 里手调过规则的四个动作。其余全走通用打分 */
@@ -113,10 +177,11 @@ function makeRun(actionId: string) {
     text: string,
     opts?: Record<string, unknown>
   ): Promise<TransformResult> => {
-    // opts 里混着枢纽传的非动作字段（如 html / force），只挑字符串选项送给后端
+    // 变换枢纽注入的控制字段（非动作选项，不送给后端）——显式列出，避免魔法数字式黑名单
+    const CONTROL_FIELDS = new Set(["force", "html"]);
     const actionOpts: Record<string, string> = {};
     for (const [k, v] of Object.entries(opts ?? {})) {
-      if (k === "force" || k === "html") continue;
+      if (CONTROL_FIELDS.has(k)) continue;
       if (typeof v === "string") actionOpts[k] = v;
     }
     const force = opts?.force === true;
@@ -141,9 +206,13 @@ function makeRun(actionId: string) {
         case "budgetExceeded":
           return {
             ok: false,
-            message: `今日 AI 花费已达上限（约 ¥${r.spentCny.toFixed(2)} / ¥${r.budgetCny.toFixed(2)}），可在设置 → AI 里调高`,
+            // v6.9：内置免费额度不足 → 单独文案 + isQuota 标记（前端按钮分支：去签到/兑换）
+            message: r.isQuota
+              ? "免费额度已用完，签到或兑换后继续使用"
+              : budgetExceededMessage(r.spentCny, r.budgetCny),
             meta: {
               budgetExceeded: true,
+              isQuota: r.isQuota === true,
               spentCny: r.spentCny,
               budgetCny: r.budgetCny,
             },
@@ -164,10 +233,13 @@ function toTransform(meta: AiActionMeta): Transform {
     icon: meta.icon,
     group: "ai",
     remote: true,
-    detect: (ctx) =>
-      HAND_TUNED.has(meta.id)
+    detect: (ctx) => {
+      const base = HAND_TUNED.has(meta.id)
         ? scoreAiAction(meta.id, ctx)
-        : scoreByContentTypes(meta.contentTypes ?? [], ctx),
+        : scoreByContentTypes(meta.contentTypes ?? [], ctx);
+      // max 而不是相加：标签只能把动作往上提，不能压低已有分数
+      return Math.max(base, tagBoost(meta.id, ctx));
+    },
     run: makeRun(meta.id),
     options: meta.options.length
       ? meta.options.map((o) => ({
