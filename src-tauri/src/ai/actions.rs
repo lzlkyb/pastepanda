@@ -395,7 +395,52 @@ pub const ACTIONS: &[AiAction] = &[
         options: &[],
         content_types: &[],
     },
+    // ===== 流程图画布内部动作（见 INTERNAL_ACTION_IDS，不进变换中心的清单）=====
+    //
+    // 为什么不复用 ai-rewrite：它的模板是「用 X 的语气改写下面的内容，保持原意不变：{内容}」。
+    // 把「请输出 mermaid」这类指令塞进它的内容槽，模型看到的任务就成了「把这段指令换个语气重写」，
+    // 返回的是一段散文而不是图（且「保持原意不变」与「生成流程图」直接冲突）。
+    // 指令必须在模板里、用户内容在占位处，这是整张表的统一约定。
+    AiAction {
+        id: "ai-diagram",
+        label: "生成流程图",
+        description: "把一句话需求画成 Mermaid flowchart",
+        icon: "workflow",
+        // 比改写类动作小：12 节点以内的 flowchart 很难超 800 token，给 1500 留足余量
+        max_tokens: 1500,
+        options: &[],
+        content_types: &[],
+    },
+    AiAction {
+        id: "ai-diagram-expand",
+        label: "展开子流程",
+        description: "把一个流程节点拆成 3~6 个子步骤",
+        icon: "git-branch",
+        max_tokens: 800,
+        options: &[],
+        content_types: &[],
+    },
+    AiAction {
+        id: "ai-diagram-label",
+        label: "润色节点文字",
+        description: "把流程图节点文字改得更专业简洁",
+        icon: "pen-line",
+        // 只返回一短句，上限给大了只会鼓励模型扯长
+        max_tokens: 200,
+        options: &[],
+        content_types: &[],
+    },
 ];
+
+/// 流程图画布内部专用的动作：`ai_run` 照常受理，但不出现在 `ai_list_actions` 的清单里。
+///
+/// 前端 `initAiTransforms` 会把清单里的**每一条**都注册成变换，不过滤的话
+/// 这三条会出现在卡片的变换中心里——而它们的输入输出都是画布专用格式，对普通内容无意义。
+pub const INTERNAL_ACTION_IDS: &[&str] = &["ai-diagram", "ai-diagram-expand", "ai-diagram-label"];
+
+pub fn is_internal_action(id: &str) -> bool {
+    INTERNAL_ACTION_IDS.contains(&id)
+}
 
 pub fn find_action(id: &str) -> Option<&'static AiAction> {
     ACTIONS.iter().find(|a| a.id == id)
@@ -586,6 +631,30 @@ pub fn build_prompt(
              语气自然不浮夸，不要编造统计里不存在的细节：\n\n{}",
             trimmed
         ),
+        // 下面三条是流程图画布专用。语法举例写得具体，是因为 parseMermaid 只认
+        // ASCII 节点 id；模型若用中文做 id（如 开始[开始]）会整行解不出来。
+        "ai-diagram" => format!(
+            "把下面的需求画成一张 Mermaid flowchart。\
+             首行必须是 flowchart TD；\
+             节点 id 用英文字母或字母加数字（如 A、B1），不要用中文做 id；\
+             节点写成 A[标签] / B(圆角) / C{{判断}}，连线写成 A --> B 或 A -->|说明| B；\
+             标签用中文，控制在 12 个节点以内。\
+             只输出 mermaid 代码本身，不要任何解释文字：\n\n需求：{}",
+            trimmed
+        ),
+        "ai-diagram-expand" => format!(
+            "把下面这个流程节点展开成 3~6 个有序子步骤，输出一张 Mermaid flowchart。\
+             首行必须是 flowchart TD；\
+             节点 id 用英文字母或字母加数字，不要用中文做 id；\
+             节点写成 A[标签] / B(圆角) / C{{判断}}；标签用中文，控制在 6 个节点以内。\
+             只输出 mermaid 代码本身，不要任何解释文字：\n\n待展开的节点：{}",
+            trimmed
+        ),
+        "ai-diagram-label" => format!(
+            "把下面这句流程图节点文字改写得更专业、通顺、简洁，控制在 12 个字以内。\
+             只返回改写后的文字本身，不要解释、不要引号、不要 Markdown：\n\n原文：{}",
+            trimmed
+        ),
         other => return Err(format!("动作 {} 尚未实现", other)),
     };
 
@@ -762,6 +831,40 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), total, "动作 id 有重复");
+    }
+
+    #[test]
+    fn test_internal_action_ids_all_exist() {
+        // 防止名单里拼错 id：拼错不会报错，只会让该动作静默泄露到变换中心里
+        for id in INTERNAL_ACTION_IDS {
+            assert!(find_action(id).is_some(), "INTERNAL_ACTION_IDS 里的 {} 不在 ACTIONS 表里", id);
+            assert!(is_internal_action(id));
+        }
+        assert!(!is_internal_action("ai-rewrite"), "普通动作不能被当成内部动作");
+    }
+
+    /// 流程图三条动作的 prompt 必须自己带全部指令。
+    ///
+    /// 回归：这三个功能最早复用 ai-rewrite，把指令拼在用户文本里一起传，
+    /// 结果落到 ai-rewrite 模板的内容槽里 → 模型去改写指令而不是画图。
+    #[test]
+    fn test_diagram_prompts_are_self_contained() {
+        let (_, user, max_tokens) =
+            build_prompt("ai-diagram", "登录流程", &HashMap::new(), PromptCtx::default()).unwrap();
+        assert!(user.contains("flowchart TD"), "必须告诉模型首行格式");
+        assert!(user.contains("不要用中文做 id"), "parseMermaid 只认 ASCII 节点 id");
+        assert!(user.contains("C{判断}"), "format! 里的 {{}} 转义写错会把语法例子吐掉");
+        assert!(user.trim_end().ends_with("登录流程"), "用户内容在末尾，指令在前");
+        assert_eq!(max_tokens, 1500);
+
+        let (_, user2, _) =
+            build_prompt("ai-diagram-expand", "校验参数", &HashMap::new(), PromptCtx::default()).unwrap();
+        assert!(user2.contains("flowchart TD") && user2.contains("3~6"));
+
+        let (_, user3, _) =
+            build_prompt("ai-diagram-label", "处理", &HashMap::new(), PromptCtx::default()).unwrap();
+        assert!(user3.contains("只返回改写后的文字本身"));
+        assert!(!user3.contains("flowchart"), "润色只改文字，不该让模型输出图");
     }
 
     /// 真实跑一遍全部动作，验证**系统提示词真的压住了前言**。

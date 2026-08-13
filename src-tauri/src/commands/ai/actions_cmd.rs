@@ -11,7 +11,14 @@ use super::*;
 /// 可用动作清单（含选项规格，前端据此自动生成 chip）。仅内置；自定义走 [`ai_list_custom_actions`]。
 #[tauri::command]
 pub fn ai_list_actions() -> Vec<AiAction> {
-    actions::ACTIONS.to_vec()
+    // 滤掉画布内部动作：前端 initAiTransforms 会把这份清单里的每一条都注册成变换，
+    // 而 ai-diagram 这三条的输入输出都是流程图专用格式，摆到卡片的变换中心里只会干扰。
+    // 不影响 ai_run：它走 find_action，照旧能找到。
+    actions::ACTIONS
+        .iter()
+        .filter(|a| !actions::is_internal_action(a.id))
+        .cloned()
+        .collect()
 }
 
 // ===== 自定义动作 =====

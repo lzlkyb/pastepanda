@@ -7,6 +7,7 @@ import { detectColor } from "@/lib/color";
 import { maskSecretText } from "@/lib/secret";
 import { URL_SCHEME_RE, urlHost, urlPathname, fileUrlToLocalPath } from "@/lib/url";
 import { thumbnailSourcePath } from "@/lib/richContent";
+import { parseDiagram, diagramTitle } from "@/lib/diagram/types";
 import { applicableTransforms, getTransform } from "@/lib/transforms";
 import { useDialogStore } from "@/stores/dialogStore";
 import type { CSSProperties } from "react";
@@ -21,7 +22,7 @@ import { pasteGuarded } from "@/lib/pasteGuard";
 import { useActionEventLog } from "@/hooks/useActionEventLog";
 import { sanitizeDocHtml } from "@/lib/docPipeline";
 import { CardActionBar } from "@/components/card/CardActionBar";
-import { Pin, ImageIcon, Images, Link2, AtSign, Code2, Phone, FileText, Terminal, Type, Check, Hash, Lock, Palette } from "lucide-react";
+import { Pin, ImageIcon, Images, Link2, AtSign, Code2, Phone, FileText, Terminal, Type, Check, Hash, Lock, Palette, Workflow } from "lucide-react";
 import styles from "./CardList.module.css";
 
 const LazyMdRenderer = lazy(() => import("@/components/MarkdownRenderer").then(m => ({ default: m.MarkdownRenderer })));
@@ -57,6 +58,7 @@ const ICONS: Record<string, React.FC<{ size?: number; color?: string; strokeWidt
   image:     ImageIcon,
   file:      FileText,
   rich:      Images,
+  diagram:   Workflow,
 };
 
 // 本地那份 parseFilePaths 已删：收口到 lib/utils（规则 #11）。
@@ -136,6 +138,10 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
       const firstName = paths[0].split(/[/\\]/).pop() || paths[0];
       return paths.length > 1 ? `${firstName} 等 ${paths.length} 个文件` : firstName;
     }
+    // 流程图：标题取节点标签拼接，空则回退「流程图（N 节点）」
+    if (item.type === "diagram") {
+      return diagramTitle(parseDiagram(item.content));
+    }
     // P4：密钥脱敏 — 卡片标题不展示明文，前 8 字符 + 遮罩（复制操作不受影响，仍取真实值）
     if (subType === "secret") return maskSecretText(item.text || "");
     const flat = (item.text || "").slice(0, 501).replace(/\r?\n/g, " ").trim() || "(空)";
@@ -154,6 +160,7 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
   const iconBg = item.type === "image" ? styles.bgPink
     : item.type === "file" ? styles.bgGreen
     : item.type === "rich" ? styles.bgAmber
+    : item.type === "diagram" ? styles.bgBlue
     : isCodeLike(subType) ? styles.bgPurple
     : styles.bgBlue;
 
@@ -561,6 +568,16 @@ const CardHoverPopover = memo(function CardHoverPopover({
         {/* 执行类动作条：当前内容可执行的 top-N 动作（v6.0 复制即执行） */}
         <CardActionBar item={item} />
 
+        {item.type === "diagram" && (() => {
+          const doc = parseDiagram(item.content);
+          return (
+            <div className={styles.cardPopoverText}>
+              <div className={styles.cardPopoverLinkHost}>📊 流程图</div>
+              <div className={styles.cardPopoverLinkPath}>{doc.nodes.length} 个节点 · {doc.edges.length} 条连线</div>
+            </div>
+          );
+        })()}
+
         {/* 操作按钮 */}
         <div className={styles.cardPopoverActions}>
           <button
@@ -573,7 +590,7 @@ const CardHoverPopover = memo(function CardHoverPopover({
           <button className={styles.cardPopoverBtn} onClick={handleCopy} title="复制">
             📋 <span>复制</span>
           </button>
-          {item.type === "text" && onEdit && (
+          {(item.type === "text" || item.type === "diagram") && onEdit && (
             <button className={styles.cardPopoverBtn} onClick={handleEdit} title="编辑">
               ✏️ <span>编辑</span>
             </button>
@@ -651,7 +668,7 @@ const InlineCardActions = memo(function InlineCardActions({
       <button className={`${styles.cardInlineBtn} ${styles.cardInlineBtnCopy}`} onClick={handleCopy} title="复制">
         📋
       </button>
-      {item.type === "text" && onEdit && (
+      {(item.type === "text" || item.type === "diagram") && onEdit && (
         <button className={`${styles.cardInlineBtn} ${styles.cardInlineBtnEdit}`} onClick={handleEdit} title="编辑">
           ✏️
         </button>
@@ -882,7 +899,7 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
   }, [item]);
 
   const menuItems = useMemo(() => createCardMenuItems({
-    onEdit: item.type === "text" && onEdit ? () => onEdit(item) : undefined,
+    onEdit: (item.type === "text" || item.type === "diagram") && onEdit ? () => onEdit(item) : undefined,
     onMarkdownPreview: item.type === "text" && subType === "markdown" && onEdit ? () => onEdit(item) : undefined,
     isMarkdown: item.type === "text" && subType === "markdown",
     onEditTags: onEditTags ? () => onEditTags(item) : undefined,

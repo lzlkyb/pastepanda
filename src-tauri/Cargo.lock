@@ -3492,7 +3492,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pastepanda"
-version = "6.10.0"
+version = "6.11.0"
 dependencies = [
  "arboard",
  "base64 0.22.1",

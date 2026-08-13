@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="ocean-dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PastePanda · 流程图画布空态引导（设计稿）</title>
+<style>
+  /* 复刻真实 --diagram-* 令牌（默认 ocean-dark 主题取值） */
+  :root {
+    --diagram-canvas-bg: #0b1220;
+    --diagram-node-bg: #ffffff;
+    --diagram-node-text: #0f172a;
+    --diagram-node-border: #e0e4eb;
+    --diagram-node-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    --diagram-edge: #64748b;
+    --diagram-edge-selected: #0284c7;
+    --diagram-panel-bg: rgba(15,23,42,0.7);
+    --diagram-panel-border: rgba(255,255,255,0.14);
+    --diagram-panel-hover: rgba(255,255,255,0.1);
+    --accent: #0284c7;
+    --text-primary: #e2e8f0;
+    --text-muted: #94a3b8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    background: #060b16;
+    color: var(--text-primary);
+    padding: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    align-items: center;
+  }
+  .doc-title { font-size: 15px; font-weight: 600; color: #cbd5e1; letter-spacing: .3px; }
+  .doc-title small { display:block; font-weight: 400; font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+  /* ── 画布容器（复刻 DiagramCanvas .root） ── */
+  .canvas {
+    position: relative;
+    width: min(880px, 96vw);
+    height: 520px;
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--diagram-canvas-bg);
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  /* 点阵背景（复刻 React Flow Background Dots） */
+  .canvas::before {
+    content: "";
+    position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(255,255,255,0.14) 1px, transparent 1px);
+    background-size: 18px 18px;
+  }
+
+  /* ── 玻璃工具栏（复刻 .toolbar） ── */
+  .toolbar {
+    position: absolute; top: 12px; left: 12px; z-index: 6;
+    display: flex; align-items: center; gap: 4px;
+    padding: 5px 7px; border-radius: 10px;
+    background: var(--diagram-panel-bg);
+    border: 1px solid var(--diagram-panel-border);
+    backdrop-filter: blur(10px) saturate(1.3);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+  }
+  .tool-btn {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 8px; font-size: 12px; color: var(--text-primary);
+    background: transparent; border: none; border-radius: 7px; cursor: pointer;
+  }
+  .tool-btn:hover { background: var(--diagram-panel-hover); }
+  .divider { width: 1px; height: 18px; background: var(--diagram-panel-border); margin: 0 2px; }
+  .layout-wrap { display: inline-flex; align-items: center; gap: 3px; }
+  .engine-select {
+    font-size: 11px; padding: 3px 4px; border-radius: 7px;
+    color: var(--text-primary);
+    background: var(--diagram-panel-hover);
+    border: 1px solid var(--diagram-panel-border);
+  }
+
+  /* ── 空态浮层（本次新增） ── */
+  .empty-state {
+    position: absolute; inset: 0; z-index: 4;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 4px; text-align: center; pointer-events: none;
+  }
+  .empty-icon {
+    width: 64px; height: 64px; border-radius: 18px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--diagram-panel-border);
+    color: #64748b; margin-bottom: 6px;
+  }
+  .empty-title { font-size: 15px; font-weight: 600; color: #e2e8f0; }
+  .empty-sub { font-size: 12.5px; color: var(--text-muted); margin-bottom: 14px; }
+
+  .empty-actions {
+    display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
+    pointer-events: auto;
+  }
+  .empty-action {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 9px 13px; font-size: 12.5px; border-radius: 10px;
+    color: var(--text-primary); cursor: pointer;
+    background: var(--diagram-panel-bg);
+    border: 1px solid var(--diagram-panel-border);
+    backdrop-filter: blur(10px);
+    transition: background .15s, border-color .15s;
+  }
+  .empty-action:hover { background: var(--diagram-panel-hover); border-color: var(--accent); }
+  .empty-action .ic { color: var(--accent); display: inline-flex; }
+  .empty-action.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .empty-action.primary .ic { color: #fff; }
+
+  .empty-hint {
+    margin-top: 18px; font-size: 11px; color: #64748b;
+    display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;
+  }
+  .empty-hint kbd {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    background: rgba(255,255,255,0.08); border: 1px solid var(--diagram-panel-border);
+    border-radius: 5px; padding: 1px 6px; font-size: 10.5px; color: #cbd5e1;
+  }
+
+  .legend { width: min(880px,96vw); font-size: 12px; color: var(--text-muted); line-height: 1.7; }
+  .legend b { color: #cbd5e1; font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="doc-title">
+    流程图 · 画布空态引导（设计稿）
+    <small>节点为空时显示，居中玻璃浮层；沿用现有浮层风格（规则 8.3：浮层可玻璃，节点仍实底）</small>
+  </div>
+
+  <div class="canvas">
+    <!-- 玻璃工具栏（已有） -->
+    <div class="toolbar">
+      <button class="tool-btn"><span>＋</span> 节点</button>
+      <button class="tool-btn"><span>❮⟩</span> 导入</button>
+      <span class="divider"></span>
+      <button class="tool-btn">↶</button>
+      <button class="tool-btn">↷</button>
+      <span class="divider"></span>
+      <div class="layout-wrap">
+        <button class="tool-btn">▦ 布局</button>
+        <select class="engine-select"><option>紧凑</option><option>大图</option><option>自动</option></select>
+      </div>
+    </div>
+
+    <!-- 空态浮层（本次新增） -->
+    <div class="empty-state">
+      <div class="empty-icon">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+          <rect x="3" y="4" width="7" height="5" rx="1.5"/>
+          <rect x="14" y="15" width="7" height="5" rx="1.5"/>
+          <path d="M10 6.5h4a2 2 0 0 1 2 2v6.5" stroke-dasharray="2 2"/>
+        </svg>
+      </div>
+      <div class="empty-title">画布还是空的</div>
+      <div class="empty-sub">双击画布空白处，或从下面任选一种方式开始</div>
+
+      <div class="empty-actions">
+        <div class="empty-action primary">
+          <span class="ic">＋</span> 双击空白添加节点
+        </div>
+        <div class="empty-action">
+          <span class="ic">❮⟩</span> 导入 Mermaid 文本
+        </div>
+        <div class="empty-action">
+          <span class="ic">▦</span> 点「节点」按钮
+        </div>
+      </div>
+
+      <div class="empty-hint">
+        <span><kbd>Ctrl</kbd>+<kbd>Z</kbd> 撤销</span>
+        <span><kbd>Delete</kbd> 删除</span>
+        <span><kbd>Ctrl</kbd>+<kbd>D</kbd> 复制</span>
+        <span><kbd>F</kbd> 适配</span>
+        <span><kbd>L</kbd> 布局</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <b>说明</b>：空态浮层 <code>pointer-events:none</code>，仅三个引导按钮可点（<code>pointer-events:auto</code>），
+    不阻挡画布双击/拖拽。引导按钮均为<u>提示性质</u>——「双击空白」只是说明交互；「导入 Mermaid」与「节点按钮」点击会触发对应真实操作（打开导入框 / 调 addNode）。
+    快捷键提示行（底部 kbd）仅展示，不拦截按键。<br/>
+    触发条件：<code>nodes.length === 0</code>（无节点即显示；有节点立即隐藏）。AI 生成入口在编辑器外壳，画布本身不感知 AI 状态，故空态不提 AI。
+  </div>
+</body>
+</html>

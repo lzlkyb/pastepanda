@@ -456,3 +456,43 @@
 .compact :global(.md-alert-ic svg) { width: 11px; height: 11px; }
 .compact :global(.md-alert-t) { font-size: 11px; margin-bottom: 1px; }
 .compact :global(.md-alert p:not(.md-alert-t)) { font-size: 11.5px; }
+
+/* ===== mermaid 渲染块（P0 渲染 · 闭环入口）===== */
+
+.md :global(.md-codeblock-mermaid) { border-top-color: #0EA5E9; }
+
+.md :global(.md-mermaid-body) {
+  padding: 14px 10px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 44px;
+  /* 点阵画布底纹，与流程图编辑器观感一致 */
+  background:
+    radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--text-muted) 14%, transparent) 1px, transparent 0) 0 0 / 18px 18px;
+}
+
+.md :global(.md-mermaid-body svg) { max-width: 100%; height: auto; }
+
+.md :global(.md-mermaid-edit) {
+  margin-left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font-size: 11px;
+  font-family: inherit;
+  padding: 3px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.md :global(.md-mermaid-edit:hover) { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+
+/* 渲染失败：回退为源码块 */
+.md :global(.md-mermaid-error .md-mermaid-raw) { display: block !important; }
+.md :global(.md-mermaid-error .md-mermaid-body) { display: none; }
+.md :global(.md-mermaid-error .md-mermaid-edit) { display: none; }

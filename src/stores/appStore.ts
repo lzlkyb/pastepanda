@@ -25,8 +25,8 @@ export interface HistoryItem {
   id: string;
   text: string;
   time: string;
-  /** rich = 图文混排（CF_HTML 采集）；doc = 结构化文档（P1：有结构无图的 CF_HTML） */
-  type: "text" | "image" | "file" | "rich" | "doc";
+  /** rich = 图文混排（CF_HTML 采集）；doc = 结构化文档；diagram = 流程图（JSON 存 content） */
+  type: "text" | "image" | "file" | "rich" | "doc" | "diagram";
   content: string; // 空 / 图片路径 / 文件路径JSON
   pinned: boolean;
   source: string;

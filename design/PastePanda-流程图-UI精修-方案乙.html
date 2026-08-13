@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>PastePanda 流程图 UI 精修 · 方案乙（浮层精修）</title>
+<style>
+/* ============================================================
+   本稿的所有令牌值都从 src/styles/theme.css 的 ocean / midnight 两套
+   真实主题里抄来（规则 #12：设计稿样式必须与真实代码一致）。
+   凡是新增的值，都在旁边注明推导方式，实现时照抄即可。
+   ============================================================ */
+:root {
+  /* ocean（默认浅色）真实值 */
+  --app-bg: #F7F7F8;
+  --card-bg: #fff;
+  --text-primary: #0F172A;
+  --text-secondary: #495565;
+  --text-muted: #627083;
+  --border-color: #E0E4EB;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --accent-strong: #0273AD;
+  --hover: #E8ECF2;
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+  --green: #11813A; --orange: #C54A0A; --danger: #D82525;
+  --glass-popover-bg: rgba(255,255,255,0.72);
+  --glass-popover-border: rgba(15,23,42,0.10);
+
+  /* 流程图令牌（theme.css 现有） */
+  --diagram-node-bg: var(--card-bg);
+  --diagram-node-text: var(--text-primary);
+  --diagram-node-border: var(--border-color);
+  --diagram-node-shadow: var(--shadow-md);
+  --diagram-panel-bg: var(--glass-popover-bg);
+  --diagram-panel-border: var(--glass-popover-border);
+  --diagram-panel-hover: rgba(15,23,42,0.06);
+
+  /* ★ 新增 1：画布底色不再等于 --app-bg。
+     往 text-primary 掺 8% —— 浅色主题得到浅灰、深色主题得到更深，一条式子服务 6 套主题。 */
+  --diagram-canvas-bg: color-mix(in srgb, var(--app-bg) 92%, var(--text-primary));
+  /* ★ 新增 2：浮层模糊值统一成一个令牌。现在 toolbar/propPanel/shapeLibrary/statusBar
+     /emptyAction/exportMenu/aiPanel 各写一遍 blur()，改一次要改 7 处。 */
+  --diagram-float-blur: blur(10px) saturate(1.3);
+}
+[data-skin="dark"] {
+  /* midnight（深色）真实值 */
+  --app-bg: #0B1220;
+  --card-bg: #131C2E;
+  --text-primary: #E6EDF7;
+  --text-secondary: #A9B6C9;
+  --text-muted: #8494AB;
+  --border-color: #24314A;
+  --accent: #38BDF8;
+  --accent-light: rgba(56,189,248,0.16);
+  --accent-strong: #38BDF8;
+  --hover: #1B2540;
+  --shadow-md: 0 4px 14px rgba(0,0,0,0.4);
+  --green: #34D399; --orange: #FB923C; --danger: #F87171;
+  --glass-popover-bg: rgba(19,28,46,0.72);
+  --glass-popover-border: rgba(255,255,255,0.12);
+  --diagram-panel-hover: rgba(255,255,255,0.09);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 28px 32px 60px;
+  font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  background: var(--app-bg); color: var(--text-primary);
+}
+h1 { font-size: 20px; margin: 0 0 4px; }
+h2 { font-size: 15px; margin: 34px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border-color); }
+.lede { color: var(--text-muted); font-size: 12.5px; margin: 0 0 6px; }
+.skinbtn {
+  position: fixed; top: 16px; right: 20px; z-index: 99;
+  padding: 6px 14px; font: inherit; font-size: 12px; cursor: pointer;
+  border-radius: 8px; border: 1px solid var(--border-color);
+  background: var(--card-bg); color: var(--text-primary);
+}
+
+/* ─────────── 画布区（1:1 复刻 .root） ─────────── */
+.stage { position: relative; border-radius: 10px; overflow: hidden; margin-top: 12px; }
+.stage.w880 { width: 880px; height: 480px; }   /* 内嵌弹窗形态 */
+.stage.wide { width: 100%; height: 520px; }    /* 全屏形态 */
+
+.canvas {
+  position: absolute; inset: 0;
+  background: var(--diagram-canvas-bg);
+  /* ★ 纸感：内圈 1px + 顶部内投影。inset 阴影不会被 overflow:hidden 吃掉，
+     也不占布局，不影响 React Flow 的命中区域。 */
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 8%, transparent),
+    inset 0 10px 26px -14px color-mix(in srgb, var(--text-primary) 22%, transparent);
+  /* 点阵：与 <Background gap={22} size={1.4}/> 等效的静态复刻 */
+  background-image: radial-gradient(
+    color-mix(in srgb, var(--accent) 16%, transparent) 1.4px, transparent 1.4px);
+  background-size: 22px 22px;
+}
+
+/* ── 玻璃浮层公共皮 ── */
+.float {
+  position: absolute; z-index: 6;
+  background: var(--diagram-panel-bg);
+  border: 1px solid var(--diagram-panel-border);
+  backdrop-filter: var(--diagram-float-blur);
+  box-shadow: var(--shadow-md);
+}
+
+/* ── 顶部工具栏：left 从 12px 让到 174px（150 库宽 + 12 间距 + 12 边距） ── */
+.toolbar {
+  top: 12px; left: 174px;
+  display: flex; align-items: center; gap: 4px;
+  padding: 5px 7px; border-radius: 10px;
+}
+.tbtn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 8px; font: inherit; font-size: 12px;
+  color: var(--diagram-node-text); background: transparent;
+  border: none; border-radius: 7px; cursor: pointer;
+}
+.tbtn:hover { background: var(--diagram-panel-hover); }
+.tbtn.dim { opacity: .35; }
+.vdiv { width: 1px; height: 18px; background: var(--diagram-panel-border); margin: 0 2px; }
+.sel {
+  font: inherit; font-size: 11px; padding: 3px 6px; border-radius: 6px;
+  color: var(--diagram-node-text); background: var(--diagram-panel-hover);
+  border: 1px solid var(--diagram-panel-border);
+}
+
+/* ── 左侧形状库：top 从 64px 提到 12px，与工具栏顶对齐 ──
+   两块玻璃从「上下相隔 4px」变成「左右相隔 12px」，撕裂感消失。
+   两列网格 + 图标底块保持不变（上一轮已定）。 */
+.lib {
+  top: 12px; left: 12px; width: 150px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  padding: 10px; border-radius: 12px;
+}
+.libTitle {
+  grid-column: 1/-1; font-size: 10px; font-weight: 700;
+  letter-spacing: .5px; opacity: .7;
+}
+.libBtn {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 7px 4px; border-radius: 9px; cursor: pointer;
+  border: 1px solid var(--diagram-panel-border);
+  background: transparent; color: var(--diagram-node-text);
+  transition: transform .18s, box-shadow .18s, border-color .18s, background .15s;
+}
+.libBtn:hover {
+  transform: translateY(-2px); background: var(--diagram-panel-hover);
+  border-color: var(--accent); box-shadow: var(--shadow-md);
+}
+.libBtn.wide { grid-column: 1/-1; flex-direction: row; justify-content: center; gap: 7px; }
+.libIco {
+  width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center;
+  background: var(--accent-light); color: var(--accent-strong);
+}
+.libIco svg { width: 16px; height: 16px; }
+.libLbl { font-size: 10.5px; font-weight: 600; line-height: 1; white-space: nowrap; }
+
+/* ── 右侧属性面板：184 → 220px ── */
+.prop { top: 12px; right: 12px; width: 220px; padding: 10px 12px; border-radius: 12px; }
+.propTitle { font-size: 11px; font-weight: 600; opacity: .8; margin-bottom: 8px; }
+.prow {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 8px; font-size: 12px;
+}
+.prow.stack { display: block; }
+.prow.stack > span { display: block; margin-bottom: 5px; }
+.pinput {
+  flex: 1; min-width: 0; padding: 5px 8px; font: inherit; font-size: 12px;
+  border-radius: 7px; color: var(--diagram-node-text);
+  background: var(--diagram-panel-hover);
+  border: 1px solid var(--diagram-panel-border); outline: none;
+}
+.swatches { display: flex; flex-wrap: wrap; gap: 5px; }
+.sw { width: 18px; height: 18px; border-radius: 5px; border: 2px solid transparent; cursor: pointer; padding: 0; }
+.sw.on { border-color: #fff; box-shadow: 0 0 0 2px rgba(0,0,0,.3); }
+
+/* ★ 核心修复：形状按钮从 flex 单行改 4 列网格。
+   原来 11×26px+10×4px=326px 塞进 160px 内容区，flex-shrink 把每个压到约 11px。 */
+.shapeGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.sbtn {
+  width: 100%; aspect-ratio: 1; display: grid; place-items: center;
+  border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--diagram-panel-border);
+  background: transparent; color: var(--diagram-node-text);
+}
+.sbtn:hover { background: var(--diagram-panel-hover); border-color: var(--accent); }
+.sbtn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.sbtn svg { width: 16px; height: 16px; }
+.sizeBtns { display: flex; gap: 4px; }
+.zbtn {
+  min-width: 26px; height: 24px; padding: 0 6px; font: inherit; font-size: 11px;
+  border-radius: 6px; border: 1px solid var(--diagram-panel-border);
+  background: transparent; color: var(--diagram-node-text); cursor: pointer;
+}
+.zbtn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.delBtn {
+  width: 100%; margin-top: 2px; display: inline-flex; align-items: center;
+  justify-content: center; gap: 5px; padding: 6px; font: inherit; font-size: 12px;
+  border-radius: 8px; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, transparent); color: var(--danger);
+}
+
+/* ── 底部状态栏：位置不动（左下 Controls / 右下 MiniMap 已占位，居中是唯一空位）──
+   改的是：可选文字（去掉 pointer-events:none）、文案精简、数字加粗。 */
+.status {
+  bottom: 12px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+  padding: 5px 12px; border-radius: 999px; font-size: 11.5px;
+  color: var(--diagram-node-text); white-space: nowrap;
+}
+.status b { font-weight: 700; color: var(--accent-strong); }
+.sdiv { width: 1px; height: 12px; background: var(--diagram-panel-border); }
+
+/* ── React Flow 自带控件（位置示意） ── */
+.rfctl {
+  bottom: 12px; left: 12px; width: 26px; border-radius: 8px; overflow: hidden;
+}
+.rfctl i {
+  display: grid; place-items: center; height: 24px; font-size: 12px; font-style: normal;
+  color: var(--diagram-node-text);
+  border-bottom: 1px solid var(--diagram-panel-border);
+}
+.rfctl i:last-child { border-bottom: none; }
+.rfmap {
+  bottom: 12px; right: 12px; width: 132px; height: 84px; border-radius: 8px;
+  background: var(--diagram-panel-bg); overflow: hidden;
+}
+/* ★ MiniMap 节点也要主题化：现在只给了 border，节点块还是 React Flow 默认的 #e2e2e2 */
+.rfmap span {
+  position: absolute; border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* ─────────── 节点 ─────────── */
+.node {
+  position: absolute; min-width: 96px; max-width: 220px;
+  padding: 10px 14px; border-radius: 13px;
+  background: var(--diagram-node-bg); color: var(--diagram-node-text);
+  /* ★ 语义色插进 fallback 链中间：手选的 --node-stroke 最高优先，
+     其次形状默认色 --shape-tint，最后才是中性描边。 */
+  border: 1px solid var(--node-stroke, var(--shape-tint, var(--diagram-node-border)));
+  box-shadow: var(--diagram-node-shadow);
+  font-size: 13px; line-height: 1.4; text-align: center;
+  transition: box-shadow .18s, transform .18s, border-color .18s;
+}
+/* ★ 有语义色的形状带 6% 淡底，让它在一屏白盒子里跳出来但不刺眼 */
+.node[style*="--shape-tint"] {
+  background: color-mix(in srgb, var(--shape-tint) 6%, var(--diagram-node-bg));
+}
+.node:hover { transform: translateY(-2px); }
+/* ★ 新增：拖拽中反馈。现在拖节点没有任何视觉变化 */
+.node.dragging {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 12px 28px -8px color-mix(in srgb, var(--text-primary) 40%, transparent);
+  cursor: grabbing;
+}
+.node.sel { box-shadow: 0 0 0 2px var(--accent), var(--diagram-node-shadow); }
+
+.shape_rect { border-radius: 8px; }
+.shape_round { border-radius: 24px; }
+.shape_pill { border-radius: 999px; }
+.shape_ellipse {
+  border-radius: 50%; aspect-ratio: 1; min-width: 92px; padding: 20px;
+  border: 1.5px solid var(--node-stroke, var(--shape-tint, var(--diagram-node-border)));
+}
+.shape_cylinder { border-radius: 50% / 18%; padding: 16px 20px; min-width: 116px; }
+.shape_diamond, .shape_hexagon {
+  border: none; border-radius: 0; background: transparent; box-shadow: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.shape_diamond::before, .shape_hexagon::before {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(135deg,
+    var(--node-stroke, var(--shape-tint, var(--accent))),
+    color-mix(in srgb, var(--node-stroke, var(--shape-tint, var(--accent))) 52%, #fff));
+  clip-path: var(--shape-clip);
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,.22));
+}
+.shape_diamond::after, .shape_hexagon::after {
+  content: ""; position: absolute; inset: 1.6px;
+  /* ★ 裁剪形状的底色也吃语义色，否则内部是纯白、与描边脱节 */
+  background: color-mix(in srgb, var(--shape-tint, transparent) 6%, var(--diagram-node-bg));
+  clip-path: var(--shape-clip);
+}
+.shape_diamond > span, .shape_hexagon > span { position: relative; z-index: 1; }
+.shape_diamond { --shape-clip: polygon(50% 0,100% 50%,50% 100%,0 50%); padding: 26px 34px; min-width: 128px; min-height: 96px; }
+.shape_hexagon { --shape-clip: polygon(22% 0,78% 0,100% 50%,78% 100%,22% 100%,0 50%); padding: 14px 38px; min-width: 148px; min-height: 68px; }
+
+/* 连线（静态 SVG 复刻） */
+.wires { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+.wires path {
+  fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+  stroke: color-mix(in srgb, var(--accent) 55%, var(--text-muted)); opacity: .8;
+}
+.wires path.key { stroke: var(--accent); stroke-width: 2.2; opacity: 1; stroke-dasharray: 7 6; animation: flow 1s linear infinite; }
+@keyframes flow { to { stroke-dashoffset: -26; } }
+.wlbl { font-size: 10.5px; font-weight: 700; fill: var(--accent-strong); }
+.wlblbg { fill: var(--accent-light); rx: 999px; ry: 999px; }
+/* ★ 新增：框选矩形。现在用的是 React Flow 默认的半透明蓝，与主题无关 */
+.selbox {
+  position: absolute; border: 1px dashed var(--accent); border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/* ─────────── 对照表 ─────────── */
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+th { font-size: 11px; letter-spacing: .4px; color: var(--text-muted); font-weight: 700; }
+code {
+  font-family: ui-monospace, Consolas, monospace; font-size: 11.5px;
+  background: var(--hover); padding: 1px 5px; border-radius: 4px;
+}
+.tag { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+.tag.fix { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+.tag.new { background: var(--accent-light); color: var(--accent-strong); }
+.tag.keep { background: color-mix(in srgb, var(--green) 12%, transparent); color: var(--green); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: var(--text-muted); margin: 10px 0 0; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 5px; vertical-align: -1px; }
+</style>
+</head>
+<body>
+<button class="skinbtn" onclick="var r=document.documentElement;r.getAttribute('data-skin')==='dark'?r.removeAttribute('data-skin'):r.setAttribute('data-skin','dark')">切换深色 / 浅色</button>
+
+<h1>流程图 UI 精修 · 方案乙</h1>
+<p class="lede">
+  保留浮层结构，修掉可感知的五处问题。所有颜色走 <code>--diagram-*</code> 令牌，6 套主题自适应；
+  节点无 <code>backdrop-filter</code>（规则 8.3），玻璃只在浮层。
+</p>
+
+<h2>形态一 · 内嵌弹窗（880px）</h2>
+<div class="stage w880">
+  <div class="canvas"></div>
+
+  <!-- 连线 -->
+  <svg class="wires" viewBox="0 0 880 480">
+    <path d="M420 128 L420 168" marker-end="url(#a)"/>
+    <path class="key" d="M420 264 L420 306"/>
+    <path d="M492 216 C560 216 566 216 566 250 L566 306"/>
+    <rect class="wlblbg" x="572" y="246" width="30" height="15"/>
+    <text class="wlbl" x="580" y="257">否</text>
+    <rect class="wlblbg" x="426" y="278" width="30" height="15"/>
+    <text class="wlbl" x="434" y="289">是</text>
+    <path d="M420 366 L420 400"/>
+  </svg>
+
+  <!-- 节点：pill 起止=绿 / diamond 判断=橙 / cylinder 存储=紫 / rect 保持中性 -->
+  <div class="node shape_pill" style="--shape-tint:var(--green); left:372px; top:92px;"><span>开始</span></div>
+  <div class="node shape_rect" style="left:366px; top:168px;"><span>校验参数</span></div>
+  <div class="node shape_diamond" style="--shape-tint:var(--orange); left:356px; top:170px;"><span>合法？</span></div>
+  <div class="node shape_rect sel" style="left:360px; top:306px;"><span>写入数据</span></div>
+  <div class="node shape_cylinder" style="--shape-tint:#8B5CF6; left:508px; top:306px;"><span>错误日志</span></div>
+  <div class="node shape_pill" style="--shape-tint:var(--green); left:378px; top:400px;"><span>结束</span></div>
+
+  <!-- 左侧形状库：top 提到 12px -->
+  <div class="float lib">
+    <div class="libTitle">形状</div>
+    <button class="libBtn"><span class="libIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="1.5"/></svg></span><span class="libLbl">矩形</span></button>
+    <button class="libBtn"><span class="libIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="4"/></svg></span><span class="libLbl">圆角</span></button>
+    <button class="libBtn"><span class="libIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="5"/></svg></span><span class="libLbl">起止</span></button>
+    <button class="libBtn"><span class="libIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="7"/></svg></span><span class="libLbl">圆形</span></button>
+    <button class="libBtn"><span class="libIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 4l8 8-8 8-8-8z"/></svg></span><span class="libLbl">菱形</span></button>
+    <button class="libBtn"><span class="libIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M8 5h8l4 7-4 7H8l-4-7z"/></svg></span><span class="libLbl">六边形</span></button>
+    <button class="libBtn"><span class="libIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M7 6h14l-4 12H3z"/></svg></span><span class="libLbl">平行四边</span></button>
+    <button class="libBtn"><span class="libIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M8 6h8l4 12H4z"/></svg></span><span class="libLbl">梯形</span></button>
+    <button class="libBtn"><span class="libIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M4 7c0-1.7 3.6-3 8-3s8 1.3 8 3v10c0 1.7-3.6 3-8 3s-8-1.3-8-3z"/><path d="M4 7c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></span><span class="libLbl">圆柱</span></button>
+    <button class="libBtn"><span class="libIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="1"/><path d="M7 7v10M17 7v10"/></svg></span><span class="libLbl">双框</span></button>
+    <button class="libBtn wide"><span class="libIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 8h14M5 12h14M5 16h9" stroke-dasharray="3 2"/></svg></span><span class="libLbl">文本</span></button>
+  </div>
+
+  <!-- 顶部工具栏：left 让到 174px -->
+  <div class="float toolbar">
+    <button class="tbtn">＋ 节点</button>
+    <button class="tbtn">⌗ 导入</button>
+    <span class="vdiv"></span>
+    <button class="tbtn dim">↶</button>
+    <button class="tbtn">↷</button>
+    <span class="vdiv"></span>
+    <button class="tbtn">▦ 布局</button>
+    <select class="sel"><option>紧凑</option></select>
+  </div>
+
+  <!-- 右侧属性面板：220px + 形状 4 列网格 -->
+  <div class="float prop">
+    <div class="propTitle">节点属性</div>
+    <div class="prow"><span>文字</span><input class="pinput" value="写入数据"></div>
+    <div class="prow"><span>颜色</span><div class="swatches">
+      <button class="sw on" style="background:#0284C7"></button>
+      <button class="sw" style="background:#11813A"></button>
+      <button class="sw" style="background:#C54A0A"></button>
+      <button class="sw" style="background:#8B5CF6"></button>
+      <button class="sw" style="background:#D82525"></button>
+    </div></div>
+    <div class="prow stack"><span>形状</span><div class="shapeGrid">
+      <button class="sbtn on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="7" width="18" height="10" rx="1.5"/></svg></button>
+      <button class="sbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="7" width="18" height="10" rx="4"/></svg></button>
+      <button class="sbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="7" width="18" height="10" rx="5"/></svg></button>
+      <button class="sbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="7"/></svg></button>
+      <button class="sbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 4l8 8-8 8-8-8z"/></svg></button>
+      <button class="sbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M8 5h8l4 7-4 7H8l-4-7z"/></svg></button>
+      <button class="sbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M7 6h14l-4 12H3z"/></svg></button>
+      <button class="sbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M8 6h8l4 12H4z"/></svg></button>
+      <button class="sbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M4 7c0-1.7 3.6-3 8-3s8 1.3 8 3v10c0 1.7-3.6 3-8 3s-8-1.3-8-3z"/><path d="M4 7c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></button>
+      <button class="sbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="7" width="18" height="10" rx="1"/><path d="M7 7v10M17 7v10"/></svg></button>
+      <button class="sbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 8h14M5 12h14M5 16h9" stroke-dasharray="3 2"/></svg></button>
+    </div></div>
+    <div class="prow"><span>字号</span><div class="sizeBtns">
+      <button class="zbtn">小</button><button class="zbtn">中</button>
+      <button class="zbtn">大</button><button class="zbtn on">默认</button>
+    </div></div>
+    <button class="delBtn">🗑 删除节点</button>
+  </div>
+
+  <!-- React Flow 自带控件（说明状态栏为什么不能贴角） -->
+  <div class="float rfctl"><i>＋</i><i>－</i><i>⛶</i><i>🔒</i></div>
+  <div class="float rfmap">
+    <span style="left:44%;top:14%;width:14%;height:9%"></span>
+    <span style="left:42%;top:32%;width:18%;height:9%"></span>
+    <span style="left:40%;top:50%;width:22%;height:12%"></span>
+    <span style="left:66%;top:52%;width:18%;height:9%"></span>
+    <span style="left:44%;top:76%;width:14%;height:9%"></span>
+  </div>
+
+  <!-- 状态栏：位置不变，文案精简 + 数字加粗 + 可选中 -->
+  <div class="float status">
+    <span>节点 <b>6</b></span><span class="sdiv"></span>
+    <span>连线 <b>5</b></span><span class="sdiv"></span>
+    <span>紧凑</span><span class="sdiv"></span>
+    <span><b>100%</b></span>
+  </div>
+</div>
+<p class="legend">
+  <span><i style="background:var(--green)"></i>起止 pill</span>
+  <span><i style="background:var(--orange)"></i>判断 diamond</span>
+  <span><i style="background:#8B5CF6"></i>存储 cylinder</span>
+  <span><i style="background:#06B6D4"></i>输入输出 parallelogram</span>
+  <span><i style="background:var(--border-color)"></i>rect / round / text 保持中性</span>
+</p>
+
+<h2>形态二 · 全屏（同一套 CSS，仅画布变宽）</h2>
+<div class="stage wide">
+  <div class="canvas"></div>
+  <svg class="wires" viewBox="0 0 1200 520" preserveAspectRatio="none">
+    <path d="M600 120 L600 164"/>
+    <path class="key" d="M600 262 L600 306"/>
+    <path d="M676 212 C760 212 768 212 768 250 L768 306"/>
+    <path d="M600 366 L600 404"/>
+  </svg>
+  <div class="node shape_pill" style="--shape-tint:var(--green); left:552px; top:84px;"><span>开始</span></div>
+  <div class="node shape_hexagon" style="--shape-tint:var(--accent); left:526px; top:164px;"><span>准备上下文</span></div>
+  <div class="node shape_rect dragging" style="left:540px; top:306px;"><span>写入数据（拖拽中）</span></div>
+  <div class="node shape_cylinder" style="--shape-tint:#8B5CF6; left:710px; top:306px;"><span>错误日志</span></div>
+  <div class="node shape_pill" style="--shape-tint:var(--green); left:558px; top:404px;"><span>结束</span></div>
+  <div class="selbox" style="left:500px; top:290px; width:340px; height:80px;"></div>
+  <div class="float lib">
+    <div class="libTitle">形状</div>
+    <button class="libBtn"><span class="libIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="7" width="18" height="10" rx="1.5"/></svg></span><span class="libLbl">矩形</span></button>
+    <button class="libBtn"><span class="libIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="7" width="18" height="10" rx="4"/></svg></span><span class="libLbl">圆角</span></button>
+    <button class="libBtn"><span class="libIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="7" width="18" height="10" rx="5"/></svg></span><span class="libLbl">起止</span></button>
+    <button class="libBtn"><span class="libIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="7"/></svg></span><span class="libLbl">圆形</span></button>
+    <button class="libBtn"><span class="libIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 4l8 8-8 8-8-8z"/></svg></span><span class="libLbl">菱形</span></button>
+    <button class="libBtn"><span class="libIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M8 5h8l4 7-4 7H8l-4-7z"/></svg></span><span class="libLbl">六边形</span></button>
+    <button class="libBtn wide"><span class="libIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 8h14M5 12h14M5 16h9" stroke-dasharray="3 2"/></svg></span><span class="libLbl">…共 11 种</span></button>
+  </div>
+  <div class="float toolbar">
+    <button class="tbtn">＋ 节点</button><button class="tbtn">⌗ 导入</button>
+    <span class="vdiv"></span><button class="tbtn">↶</button><button class="tbtn">↷</button>
+    <span class="vdiv"></span><button class="tbtn">▦ 布局</button><select class="sel"><option>紧凑</option></select>
+  </div>
+  <div class="float status">
+    <span>节点 <b>6</b></span><span class="sdiv"></span>
+    <span>连线 <b>5</b></span><span class="sdiv"></span>
+    <span>紧凑</span><span class="sdiv"></span><span><b>100%</b></span>
+  </div>
+  <div class="float rfctl"><i>＋</i><i>－</i><i>⛶</i><i>🔒</i></div>
+</div>
+
+<h2>改动清单</h2>
+<table>
+<thead><tr><th style="width:64px"></th><th style="width:170px">位置</th><th>现在</th><th>改成</th></tr></thead>
+<tbody>
+<tr><td><span class="tag fix">修 BUG</span></td><td><code>.shapeBtns</code></td>
+  <td>flex 单行无 wrap，11×26px + 10×4px = <b>326px</b> 塞进 160px 内容区，<code>flex-shrink</code> 把每个按钮压到约 <b>11px</b>，图标全糊</td>
+  <td><code>grid-template-columns: repeat(4,1fr)</code> + <code>aspect-ratio:1</code>；面板宽 184 → 220px，一格约 46px</td></tr>
+<tr><td><span class="tag fix">修</span></td><td><code>.shapeLibrary</code> / <code>.toolbar</code></td>
+  <td>库 <code>top:64</code>、栏 <code>top:12</code>，两条玻璃边框上下只隔 4px，看起来是一块被撕开</td>
+  <td>库提到 <code>top:12</code>，栏 <code>left:12 → 174</code>；改成左右并排、间距 12px</td></tr>
+<tr><td><span class="tag new">新</span></td><td><code>--diagram-canvas-bg</code></td>
+  <td><code>var(--app-bg)</code> —— 与 app 底色同值，画布没有边界</td>
+  <td><code>color-mix(in srgb, var(--app-bg) 92%, var(--text-primary))</code> + 内圈 1px + 顶部内投影；浅色变浅灰、深色变更深，一条式子服务 6 主题</td></tr>
+<tr><td><span class="tag new">新</span></td><td>节点语义色</td>
+  <td>只有手动 <code>data-colored</code> 才有色，一屏全是同一个白盒</td>
+  <td><code>--shape-tint</code> 插进 <code>var(--node-stroke, var(--shape-tint, …))</code> 链中间：起止绿 / 判断橙 / 存储紫 / 输入输出青 / 准备蓝；<b>rect·round·text 保持中性</b>，否则满屏彩色更乱。手选描边仍最高优先</td></tr>
+<tr><td><span class="tag keep">位置不动</span></td><td><code>.statusBar</code></td>
+  <td>底部居中，但 <code>pointer-events:none</code> 点不了；末尾「类型 diagram · 已派生 Mermaid 副本」把条子拉得很长，横向盖住画布</td>
+  <td><b>位置是对的</b>——左下被 <code>&lt;Controls&gt;</code> 占、右下被 <code>&lt;MiniMap&gt;</code> 占（nodes&gt;10），居中是唯一空位。去掉 <code>pointer-events</code>、删掉尾巴那句、数字用 <code>&lt;b&gt;</code> 加粗</td></tr>
+<tr><td><span class="tag new">新</span></td><td>缺失状态</td>
+  <td>拖拽中无反馈；框选用 React Flow 默认蓝，不跟主题；MiniMap 只给了 border，节点块还是默认 <code>#e2e2e2</code></td>
+  <td>补 <code>.dragging</code>（抬 4px + 放大 1.02 + 强阴影 + <code>cursor:grabbing</code>）、<code>.react-flow__selection</code>（accent 虚线 + 10% 底）、<code>.react-flow__minimap-node</code>（accent 45%）</td></tr>
+<tr><td><span class="tag new">新</span></td><td><code>--diagram-float-blur</code></td>
+  <td><code>blur(10px) saturate(1.3)</code> 在 toolbar / propPanel / shapeLibrary / statusBar / emptyAction / exportMenu / aiPanel <b>各写一遍，共 7 处</b></td>
+  <td>抽成 theme.css 里的一个令牌，7 处引用（规则 #11 单一数据源）</td></tr>
+</tbody>
+</table>
+
+<h2>不做的事</h2>
+<table>
+<tbody>
+<tr><td style="width:180px">节点玻璃拟态</td><td>规则 8.3 明令禁止：节点是重复元素，每个 <code>backdrop-filter</code> 都是一个独立合成层，N 个节点 = N 层</td></tr>
+<tr><td>节点图标 + 副标题</td><td>要扩 <code>DiagramNodeData</code>，且 Mermaid 表达不了 → 导出即丢，破坏往返闭环</td></tr>
+<tr><td>三栏 grid 骨架</td><td>内嵌弹窗只有 880px，左 188 + 右 236 后画布只剩 456px，比现在更糟（= 方案甲被否的原因）</td></tr>
+<tr><td>状态栏改全宽底栏</td><td>会压住 Controls 与 MiniMap；要么给这两个换位置，牵连更多</td></tr>
+</tbody>
+</table>
+
+</body>
+</html>

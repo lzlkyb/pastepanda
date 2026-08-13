@@ -1,0 +1,946 @@
+/* 流程图画布样式 —— 节点实底+柔和阴影（规则 8.3：禁止玻璃/backdrop-filter）；
+   玻璃只用在工具栏 / 属性面板浮层。全部颜色走 theme.css 的 --diagram-* 令牌，6 主题自适应。 */
+
+.root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+  background: var(--diagram-canvas-bg, #0b1220);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* React Flow 主题变量桥接（v12 用 --xy-*） */
+.root :global(.react-flow) {
+  --xy-background-color: transparent;
+  --xy-edge-stroke: var(--diagram-edge, #64748b);
+  --xy-edge-stroke-selected: var(--diagram-edge-selected, #0284c7);
+  --xy-edge-stroke-width: 1.6;
+  --xy-connectionline-stroke: var(--accent, #0284c7);
+  --xy-minimap-background-color: var(--diagram-panel-bg, rgba(15, 23, 42, 0.6));
+  width: 100%;
+  height: 100%;
+}
+/* 连线：向设计稿对齐——accent 与 text-muted 混色、稍粗、圆端、带透明度，
+   比纯灰的默认边更能与节点拉开层次 */
+.root :global(.react-flow__edge-path) {
+  stroke: color-mix(in srgb, var(--accent, #0284c7) 55%, var(--text-muted, #64748b));
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.8;
+}
+/* hover：只提亮加粗，不上动画——鼠标扫过就闪会很吵 */
+.root :global(.react-flow__edge:hover .react-flow__edge-path) {
+  stroke: var(--accent, #0284c7);
+  stroke-width: 2.2;
+  opacity: 1;
+}
+/* 选中：走设计稿 .edge.key 那套流动虚线，“被强调的线”用同一种视觉语言 */
+.root :global(.react-flow__edge.selected .react-flow__edge-path),
+.root :global(.react-flow__edge:focus .react-flow__edge-path) {
+  stroke: var(--accent, #0284c7);
+  stroke-width: 2.2;
+  opacity: 1;
+  stroke-dasharray: 7 6;
+  animation: edgeFlow 1s linear infinite;
+}
+/* 边标签：药丸（设计稿 .edge-label）。rx 在 SVG rect 上可以用 CSS 设，
+   取很大的值会被限到高度一半，得到胶囊形 */
+.root :global(.react-flow__edge-text) {
+  fill: var(--accent-strong, #0369a1);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.root :global(.react-flow__edge-textbg) {
+  fill: var(--accent-light, #e0f2fe);
+  rx: 999px;
+  ry: 999px;
+}
+/* 连接点：平时隐形，hover 节点 / 选中节点才显（设计稿 .handle）。
+   常驻的话节点一多就是满屏小蓝点，是“乱”的一大来源。
+   用 opacity 而不是 display：不影响命中区域，从节点体拖出连线照旧能用。 */
+.root :global(.react-flow__handle) {
+  background: var(--accent, #0284c7);
+  border: 2px solid var(--diagram-node-bg, #fff);
+  width: 9px;
+  height: 9px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.root :global(.react-flow__node:hover .react-flow__handle),
+.root :global(.react-flow__node.selected .react-flow__handle),
+.root :global(.react-flow__handle.connectingfrom),
+.root :global(.react-flow__handle.connectingto) {
+  opacity: 1;
+}
+/* 画布点阵：设计稿用的是 accent 混色而不是中性灰 */
+.root :global(.react-flow__background circle) {
+  fill: color-mix(in srgb, var(--accent, #0284c7) 16%, transparent);
+}
+.root :global(.react-flow__controls) {
+  background: var(--diagram-panel-bg, rgba(15, 23, 42, 0.7));
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  overflow: hidden;
+  backdrop-filter: blur(8px);
+}
+.root :global(.react-flow__controls-button) {
+  background: transparent;
+  border-bottom: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.1));
+  color: var(--diagram-node-text, #e2e8f0);
+  fill: var(--diagram-node-text, #e2e8f0);
+}
+.root :global(.react-flow__controls-button:hover) {
+  background: var(--diagram-panel-hover, rgba(255, 255, 255, 0.08));
+}
+.root :global(.react-flow__minimap) {
+  border-radius: 8px;
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.12));
+}
+.root :global(.react-flow__attribution) {
+  display: none;
+}
+
+/* ── 工具栏（玻璃浮层） ── */
+.toolbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 7px;
+  border-radius: 10px;
+  background: var(--diagram-panel-bg, rgba(15, 23, 42, 0.66));
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.12));
+  backdrop-filter: blur(10px) saturate(1.3);
+  box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.18));
+}
+.toolBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--diagram-node-text, #e2e8f0);
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.toolBtn:hover:not(:disabled) {
+  background: var(--diagram-panel-hover, rgba(255, 255, 255, 0.1));
+}
+.toolBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.divider {
+  width: 1px;
+  height: 18px;
+  background: var(--diagram-panel-border, rgba(255, 255, 255, 0.14));
+  margin: 0 2px;
+}
+
+/* ── 属性面板（玻璃浮层） ── */
+.propPanel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 6;
+  width: 184px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--diagram-panel-bg, rgba(15, 23, 42, 0.72));
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.14));
+  backdrop-filter: blur(10px) saturate(1.3);
+  box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.2));
+  color: var(--diagram-node-text, #e2e8f0);
+}
+.propTitle {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.8;
+  margin-bottom: 8px;
+}
+.propRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+/* 属性面板的文本输入框（节点文字 / 连线说明共用一份） */
+.propInput {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  font-size: 12px;
+  border-radius: 7px;
+  color: var(--diagram-node-text, #e2e8f0);
+  background: var(--diagram-panel-hover, rgba(255, 255, 255, 0.08));
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.16));
+  outline: none;
+}
+.propInput:focus {
+  border-color: var(--accent, #0284c7);
+}
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.swatchActive {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.3);
+}
+.shapeBtns {
+  display: flex;
+  gap: 4px;
+}
+.shapeBtn {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.16));
+  background: transparent;
+  color: var(--diagram-node-text, #e2e8f0);
+  cursor: pointer;
+}
+.shapeBtnActive {
+  background: var(--accent, #0284c7);
+  border-color: var(--accent, #0284c7);
+  color: #fff;
+}
+.delBtn {
+  width: 100%;
+  margin-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px;
+  font-size: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--red-border, rgba(216, 37, 37, 0.4));
+  background: var(--red-bg, rgba(254, 242, 242, 0.1));
+  color: var(--danger, #ef4444);
+  cursor: pointer;
+}
+.delBtn:hover {
+  background: var(--danger, #ef4444);
+  color: #fff;
+}
+
+/* ── 节点：实底 + 柔和阴影，禁止玻璃 ── */
+.node {
+  position: relative;
+  min-width: 96px;
+  max-width: 220px;
+  padding: 10px 14px;
+  border-radius: 13px;
+  background: var(--diagram-node-bg, #ffffff);
+  color: var(--diagram-node-text, #0f172a);
+  border: 1px solid var(--node-stroke, var(--diagram-node-border, #e0e4eb));
+  box-shadow: var(--diagram-node-shadow, 0 2px 8px rgba(0, 0, 0, 0.18));
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+  transition: box-shadow 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+}
+/* hover 微抬（设计稿 .node:hover）。transform 加在内层 .node 上是安全的——
+   React Flow 用的是外层 .react-flow__node 的 transform 摆位置，两者不打架 */
+.node:hover {
+  transform: translateY(-2px);
+}
+/* 自定义颜色：用描边 + 淡底色表达（替代设计稿没有的左侧竖条），保持与设计一致的「边框」语言。
+   菱形走 ::before 渐变、焦点走渐变环，已在组件里排除 data-colored，避免冲突。 */
+.node[data-colored="true"] {
+  border-color: var(--node-accent, var(--accent, #0284c7));
+  background: color-mix(in srgb, var(--node-accent, var(--accent, #0284c7)) 9%, var(--diagram-node-bg, #ffffff));
+}
+.nodeLabel {
+  display: block;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.nodeSelected {
+  box-shadow: 0 0 0 2px var(--node-accent, var(--accent, #0284c7)), var(--diagram-node-shadow, 0 2px 8px rgba(0, 0, 0, 0.18));
+}
+.nodeEditing {
+  padding: 4px 6px;
+}
+.nodeInput {
+  width: 100%;
+  min-width: 90px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+}
+
+/* ===== 形状变体 =====
+   相邻形状必须一眼能分开。之前 rect 跟基础的 13px 同值、round 只 16px，
+   ellipse 与 pill 都是 999px 只差一层底色——名义上 6 种，实际只有 4 组能辨识，
+   点「圆角」出来的东西和「矩形」长得一模一样。 */
+
+/* .shape_rect 必须显式声明：组件里拼的是 styles[`shape_${shape}`]，
+   缺了它会取到 undefined，className 里就出现字面量 "undefined"。 */
+.shape_rect {
+  border-radius: 8px;
+}
+.shape_round {
+  border-radius: 24px;
+}
+/* 连接点 / 状态：真圆。aspect-ratio 让它随文字长大仍保持正圆 */
+.shape_ellipse {
+  border-radius: 50%;
+  aspect-ratio: 1;
+  min-width: 92px;
+  padding: 20px;
+  border: 1.5px solid var(--node-stroke, var(--diagram-node-border, #e0e4eb));
+  background: var(--diagram-node-bg, #ffffff);
+}
+/* 数据 / 存储：圆柱。border-radius 的「水平半径 / 垂直半径」写法——
+   水平取 50% 让相邻两角的椭圆在中点接上，得到上下弧面、左右直边的罐子形。 */
+.shape_cylinder {
+  border-radius: 50% / 18%;
+  padding: 16px 20px;
+  min-width: 116px;
+}
+/* 子程序 / 预定义过程：矩形 + 左右内竖线（mermaid subroutine 的画法） */
+.shape_subroutine {
+  border-radius: 4px;
+  padding: 10px 20px;
+}
+.shape_subroutine::before,
+.shape_subroutine::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--node-stroke, var(--diagram-node-border, #e0e4eb));
+}
+.shape_subroutine::before {
+  left: 5px;
+}
+.shape_subroutine::after {
+  right: 5px;
+}
+/* ── clip-path 类形状（菱形 / 六边形 / 平行四边形 / 梯形）──
+   四者共用同一套结构：::before 整块填描边色，::after 内缩 1.6px 盖上底色，
+   露出来的一圈就是描边。每种形状只需要给出 --shape-clip 与合适的 padding。
+
+   为何用 clip-path 而不是 rotate（菱形最早的写法）：
+     1) .node 宽度随文字增长，盒子非正方时转 45° 出来的是斜长条；
+     2) 转完外接框放大到 √2 倍，尖角跑到盒子外面，而 Handle 是 React Flow
+        按盒子边中点摆的 → 连线接在形状肚子里；
+     3) 旧实现还给标签补了 rotate(-45deg) 做反向抵消，但容器根本没转（只有 ::before 转了），
+        结果文字被实打实转成了斜的。
+
+   **裁的是伪元素而不是 .node 本身**：clip-path 会连子元素一起裁（含命中区域），
+   裁 .node 的话四个 Handle 会被切掉外半边、变得不好点。 */
+.shape_diamond,
+.shape_hexagon,
+.shape_parallelogram,
+.shape_trapezoid {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* 描边层。优先读 --node-stroke：旧实现用的是渐变 border-box，压根不读描边色，
+   导致属性面板给菱形选「描边」没任何反应。 */
+.shape_diamond::before,
+.shape_hexagon::before,
+.shape_parallelogram::before,
+.shape_trapezoid::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    var(--node-stroke, var(--node-accent, var(--accent, #3b9eff))),
+    color-mix(in srgb, var(--node-stroke, var(--node-accent, var(--accent, #3b9eff))) 52%, #ffffff)
+  );
+  clip-path: var(--shape-clip);
+  /* box-shadow 会被 clip-path 裁掉，阴影得用 filter——它跟着裁剪后的轮廓走 */
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.22));
+}
+/* 底色层 */
+.shape_diamond::after,
+.shape_hexagon::after,
+.shape_parallelogram::after,
+.shape_trapezoid::after {
+  content: "";
+  position: absolute;
+  inset: 1.6px;
+  background: var(--diagram-node-bg, #ffffff);
+  clip-path: var(--shape-clip);
+}
+/* 伪元素是定位元素，默认会盖在静态的标签上，得把标签提到上层 */
+.shape_diamond .nodeLabel,
+.shape_diamond .nodeInput,
+.shape_hexagon .nodeLabel,
+.shape_hexagon .nodeInput,
+.shape_parallelogram .nodeLabel,
+.shape_parallelogram .nodeInput,
+.shape_trapezoid .nodeLabel,
+.shape_trapezoid .nodeInput {
+  position: relative;
+  z-index: 1;
+}
+/* Handle 要压过 ::after，否则内侧半边被底色盖住 */
+.shape_diamond :global(.react-flow__handle),
+.shape_hexagon :global(.react-flow__handle),
+.shape_parallelogram :global(.react-flow__handle),
+.shape_trapezoid :global(.react-flow__handle) {
+  z-index: 2;
+}
+/* 选中 / 焦点：原来的 box-shadow 打在矩形盒子上，对裁剪形状是个方框。
+   改成加粗描边层 + 跟轮廓走的 drop-shadow。 */
+.shape_diamond.nodeSelected,
+.shape_hexagon.nodeSelected,
+.shape_parallelogram.nodeSelected,
+.shape_trapezoid.nodeSelected {
+  box-shadow: none;
+}
+.shape_diamond.nodeSelected::before,
+.shape_hexagon.nodeSelected::before,
+.shape_parallelogram.nodeSelected::before,
+.shape_trapezoid.nodeSelected::before {
+  background: var(--node-accent, var(--accent, #0284c7));
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.22))
+    drop-shadow(0 0 4px color-mix(in srgb, var(--node-accent, var(--accent, #0284c7)) 65%, transparent));
+}
+.shape_diamond.nodeSelected::after,
+.shape_hexagon.nodeSelected::after,
+.shape_parallelogram.nodeSelected::after,
+.shape_trapezoid.nodeSelected::after {
+  inset: 3.5px;
+}
+.shape_diamond.nodeFocal,
+.shape_hexagon.nodeFocal,
+.shape_parallelogram.nodeFocal,
+.shape_trapezoid.nodeFocal {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+.shape_diamond.nodeFocal::before,
+.shape_hexagon.nodeFocal::before,
+.shape_parallelogram.nodeFocal::before,
+.shape_trapezoid.nodeFocal::before {
+  background: linear-gradient(135deg, var(--accent, #3b9eff), #22d3ee);
+  filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--accent, #3b9eff) 32%, transparent));
+}
+.shape_diamond.nodeFocal::after,
+.shape_hexagon.nodeFocal::after,
+.shape_parallelogram.nodeFocal::after,
+.shape_trapezoid.nodeFocal::after {
+  inset: 2px;
+}
+
+/* 各裁剪形状的轮廓与内边距。padding 要让文字落在内切区里：
+   菱形可用宽高约为外框的一半，所以它的 padding 最大。 */
+.shape_diamond {
+  --shape-clip: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  padding: 26px 34px;
+  min-width: 128px;
+  min-height: 96px;
+}
+.shape_hexagon {
+  --shape-clip: polygon(22% 0, 78% 0, 100% 50%, 78% 100%, 22% 100%, 0 50%);
+  padding: 14px 38px;
+  min-width: 148px;
+  min-height: 68px;
+}
+.shape_parallelogram {
+  --shape-clip: polygon(16% 0, 100% 0, 84% 100%, 0 100%);
+  padding: 12px 34px;
+  min-width: 148px;
+  min-height: 60px;
+}
+.shape_trapezoid {
+  --shape-clip: polygon(18% 0, 82% 0, 100% 100%, 0 100%);
+  padding: 12px 38px;
+  min-width: 152px;
+  min-height: 62px;
+}
+/* 编辑态：.nodeEditing 会把 padding 压到 4px 6px，裁剪形状会塌，这里顶回来 */
+.shape_diamond.nodeEditing {
+  padding: 20px 26px;
+}
+.shape_hexagon.nodeEditing {
+  padding: 12px 30px;
+}
+.shape_parallelogram.nodeEditing {
+  padding: 10px 28px;
+}
+.shape_trapezoid.nodeEditing {
+  padding: 10px 30px;
+}
+
+/* 焦点路径上的边：流动虚线（设计稿 .edge.key）。
+   任一端是焦点节点就算，判定在组件里做。 */
+.edgeKey :global(.react-flow__edge-path) {
+  stroke: var(--accent, #0284c7);
+  stroke-width: 2.2;
+  opacity: 1;
+  stroke-dasharray: 7 6;
+  animation: edgeFlow 1s linear infinite;
+}
+@keyframes edgeFlow {
+  to {
+    stroke-dashoffset: -26;
+  }
+}
+
+/* 起止 / 端点：胶囊（设计稿 pill） */
+.shape_pill {
+  border-radius: 999px;
+  padding: 10px 22px;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--accent, #0284c7) 32%, transparent);
+  background: var(--accent-light, #e0f2fe);
+}
+
+/* 文本 / 注释节点：虚线描边、弱化底色，不做实底色块 */
+.shape_text {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--diagram-node-bg, #fff) 70%, transparent);
+  font-style: italic;
+  color: var(--diagram-node-text, #475569);
+}
+
+/* 焦点路径节点：渐变描边强调（设计稿 focal） */
+.nodeFocal {
+  border: 1.6px solid transparent;
+  background:
+    linear-gradient(var(--diagram-node-bg, #fff), var(--diagram-node-bg, #fff)) padding-box,
+    linear-gradient(135deg, var(--accent, #3b9eff), #22d3ee) border-box;
+  box-shadow: 0 8px 26px color-mix(in srgb, var(--accent, #3b9eff) 28%, transparent);
+}
+
+/* ── 属性面板的「焦点路径」分段控件 + AI 增强 ── */
+.seg {
+  display: flex;
+  gap: 3px;
+  background: var(--diagram-panel-hover, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  padding: 3px;
+}
+.segBtn {
+  flex: 1;
+  min-width: 28px;
+  padding: 4px 6px;
+  font-size: 11.5px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--diagram-node-text, #e2e8f0);
+  cursor: pointer;
+}
+.segBtnActive {
+  background: var(--diagram-node-bg, #fff);
+  color: var(--diagram-node-text, #0f172a);
+  box-shadow: var(--shadow-md, 0 2px 6px rgba(0, 0, 0, 0.2));
+}
+.aiEnhance {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.12));
+}
+.propLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--diagram-node-text, #e2e8f0);
+  opacity: 0.85;
+}
+.aiEnhanceBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.16));
+  background: linear-gradient(135deg, var(--accent, #3b9eff), #22d3ee);
+  color: #fff;
+  cursor: pointer;
+}
+.aiEnhanceBtn:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+.aiEnhanceBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── 布局引擎选择器（玻璃浮层内） ── */
+.layoutWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.engineSelect {
+  font-size: 11px;
+  padding: 3px 4px;
+  border-radius: 7px;
+  color: var(--diagram-node-text, #e2e8f0);
+  background: var(--diagram-panel-hover, rgba(255, 255, 255, 0.08));
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.16));
+  cursor: pointer;
+  outline: none;
+}
+.engineSelect option {
+  color: #0f172a;
+  background: #fff;
+}
+.spin {
+  animation: diagram-spin 0.8s linear infinite;
+}
+@keyframes diagram-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── 导入 Mermaid 模态框（玻璃浮层） ── */
+.modalOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 6, 23, 0.55);
+  backdrop-filter: blur(2px);
+}
+.modal {
+  width: min(440px, 88%);
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: var(--diagram-panel-bg, rgba(15, 23, 42, 0.92));
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.16));
+  backdrop-filter: blur(14px) saturate(1.3);
+  box-shadow: var(--shadow-lg, 0 12px 40px rgba(0, 0, 0, 0.4));
+  color: var(--diagram-node-text, #e2e8f0);
+}
+.modalTitle {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.modalHint {
+  font-size: 12px;
+  opacity: 0.7;
+  margin: 0 0 10px;
+}
+.modalTextarea {
+  width: 100%;
+  min-height: 132px;
+  resize: vertical;
+  box-sizing: border-box;
+  padding: 10px;
+  border-radius: 9px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--diagram-node-text, #e2e8f0);
+  background: rgba(2, 6, 23, 0.4);
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.16));
+  outline: none;
+}
+.modalTextarea:focus {
+  border-color: var(--accent, #0284c7);
+}
+.modalError {
+  margin-top: 8px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  color: var(--danger, #fca5a5);
+  background: var(--red-bg, rgba(254, 226, 226, 0.12));
+  border: 1px solid var(--red-border, rgba(248, 113, 113, 0.4));
+}
+.modalActions {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.ghostBtn,
+.primaryBtn {
+  padding: 6px 14px;
+  font-size: 12.5px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.18));
+}
+.ghostBtn {
+  background: transparent;
+  color: var(--diagram-node-text, #e2e8f0);
+}
+.ghostBtn:hover {
+  background: var(--diagram-panel-hover, rgba(255, 255, 255, 0.08));
+}
+.primaryBtn {
+  background: var(--accent, #0284c7);
+  border-color: var(--accent, #0284c7);
+  color: #fff;
+}
+.primaryBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.primaryBtn:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+
+/* ── 空态引导浮层（规则 8.3：浮层可玻璃；不阻挡画布交互） ── */
+.emptyState {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  pointer-events: none;
+}
+.emptyIcon {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--diagram-panel-bg, rgba(15, 23, 42, 0.5));
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.14));
+  color: var(--diagram-edge, #64748b);
+  margin-bottom: 6px;
+}
+.emptyTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--diagram-node-text, #e2e8f0);
+}
+.emptySub {
+  font-size: 12.5px;
+  color: var(--text-muted, #94a3b8);
+  margin-bottom: 14px;
+}
+.emptyActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  pointer-events: auto;
+}
+.emptyAction,
+.emptyActionPrimary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 13px;
+  font-size: 12.5px;
+  font-family: inherit;
+  border-radius: 10px;
+  color: var(--diagram-node-text, #e2e8f0);
+  cursor: pointer;
+  background: var(--diagram-panel-bg, rgba(15, 23, 42, 0.7));
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.14));
+  backdrop-filter: blur(10px) saturate(1.3);
+  transition: background 0.15s, border-color 0.15s;
+}
+.emptyAction:hover,
+.emptyActionPrimary:hover {
+  background: var(--diagram-panel-hover, rgba(255, 255, 255, 0.1));
+  border-color: var(--accent, #0284c7);
+}
+.emptyActionPrimary {
+  background: var(--accent, #0284c7);
+  border-color: var(--accent, #0284c7);
+  color: #fff;
+}
+.emptyHint {
+  margin-top: 18px;
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+  pointer-events: auto;
+}
+.emptyHint kbd {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  background: var(--diagram-panel-hover, rgba(255, 255, 255, 0.08));
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.14));
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  color: #cbd5e1;
+}
+
+/* ── 左侧形状库（玻璃浮层） ── */
+/* 形状库：两列卡片网格（向设计稿的 .leftbar 对齐）。
+   不用设计稿的 188px 单列带副标题卡片：11 种形状排单列是 628px 高，
+   全屏放得下但内嵌弹窗（.dialog-box.wDiagram 高 82vh）放不下。
+   两列 + 副标题进 tooltip，一套布局同时服务两种形态。 */
+.shapeLibrary {
+  position: absolute;
+  top: 64px;
+  left: 12px;
+  z-index: 6;
+  width: 150px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--diagram-panel-bg, rgba(15, 23, 42, 0.66));
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.12));
+  backdrop-filter: blur(10px) saturate(1.3);
+  box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.18));
+}
+/* 标题横跨两列（设计稿 .panel-h：小字 + 字距 + 弱色） */
+.libTitle {
+  grid-column: 1 / -1;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  opacity: 0.7;
+  color: var(--diagram-node-text, #e2e8f0);
+}
+.libShapeBtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 4px;
+  border-radius: 9px;
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.16));
+  background: transparent;
+  color: var(--diagram-node-text, #e2e8f0);
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease,
+    background 0.15s ease;
+}
+/* hover 上抬 + 阴影（同设计稿 .shape:hover） */
+.libShapeBtn:hover {
+  transform: translateY(-2px);
+  background: var(--diagram-panel-hover, rgba(255, 255, 255, 0.1));
+  border-color: var(--accent, #0284c7);
+  box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.2));
+}
+/* 形状个数为奇数时，最后一格横跨两列，避免右下角空一个洞 */
+.libShapeWide {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  justify-content: center;
+  gap: 7px;
+}
+/* 图标底块（设计稿 .shape .ico：accent-light 底 + accent-strong 前景） */
+.libShapeIco {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  background: var(--accent-light, rgba(2, 132, 199, 0.18));
+  color: var(--accent-strong, #38bdf8);
+}
+.libShapeIco svg {
+  width: 16px;
+  height: 16px;
+}
+.libShapeLbl {
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* ── 底部状态栏（玻璃浮层） ── */
+.statusBar {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: var(--diagram-node-text, #e2e8f0);
+  background: var(--diagram-panel-bg, rgba(15, 23, 42, 0.66));
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.12));
+  backdrop-filter: blur(10px) saturate(1.3);
+  box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.18));
+  pointer-events: none;
+  white-space: nowrap;
+}
+.statusDivider {
+  width: 1px;
+  height: 12px;
+  background: var(--diagram-panel-border, rgba(255, 255, 255, 0.18));
+}
+
+/* ── 字号按钮（属性面板内） ── */
+.sizeBtns {
+  display: flex;
+  gap: 4px;
+}
+.sizeBtn {
+  min-width: 26px;
+  height: 24px;
+  padding: 0 6px;
+  font-size: 11px;
+  border-radius: 6px;
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.16));
+  background: transparent;
+  color: var(--diagram-node-text, #e2e8f0);
+  cursor: pointer;
+}
+.sizeBtn:hover {
+  background: var(--diagram-panel-hover, rgba(255, 255, 255, 0.1));
+}
+.sizeBtnActive {
+  background: var(--accent, #0284c7);
+  border-color: var(--accent, #0284c7);
+  color: #fff;
+}

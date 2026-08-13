@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef, lazy, Suspense, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { applyTheme, DEFAULT_THEME, ThemeKey } from "@/lib/theme";
+import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, HistoryItem, buildSearchKey } from "@/stores/appStore";
 import { useDialogStore } from "@/stores/dialogStore";
 import { TopBar } from "@/components/TopBar";
@@ -20,6 +21,7 @@ import { pasteTextGuarded, pasteImage, pasteRichGuarded, deleteHistory, togglePi
 import { resolveSource, getAutoTagIcon, getAutoTagColor } from "@/lib/source-mappings";
 import { migrateLegacyStorageKeys } from "@/lib/storageMigration";
 import { initRegexRules } from "@/lib/regexRules";
+import { parseDiagram, diagramTitle } from "@/lib/diagram/types";
 import { Loader2, X, Heart } from "lucide-react";
 import { BackToTop } from "@/components/BackToTop";
 import { ScrollProvider } from "@/contexts/ScrollContext";
@@ -64,6 +66,20 @@ function App() {
   const setSearchLoading = useAppStore((s) => s.setSearchLoading);
   const { toast } = useToast();
   const anim = useDialogAnim();
+
+  /** 新建流程图：写入空文档到历史库，再直接打开全屏编辑器 */
+  const handleNewDiagram = useCallback(() => {
+    const ws = workspace || "默认";
+    const content = JSON.stringify({ version: 1, nodes: [], edges: [] });
+    invoke<string>("insert_diagram_history", { content, text: diagramTitle(parseDiagram(content)), workspace: ws })
+      .then((id) => {
+        invoke("open_fullscreen_editor", { sourceId: id, content, contentType: "diagram", language: null }).catch(() => {});
+      })
+      .catch((e) => {
+        logger.error("新建流程图失败", e);
+        toast("新建流程图失败：" + String(e), "error");
+      });
+  }, [workspace, toast]);
   const [showSettings, setShowSettings] = useState(false);
   /** v6.4 审查：#10 从变换中心跳转时指定初始 tab（"ai"） */
   const [showSettingsTab, setShowSettingsTab] = useState<"general" | "ai" | "help" | "about" | undefined>(undefined);
@@ -83,6 +99,27 @@ function App() {
   useEffect(() => {
     void import("@/lib/recommend").then((m) => m.initLearnListener());
   }, []);
+  // Phase 3 闭环入口：markdown 卡片里的 mermaid「编辑」按钮 → 解析成图 → 写入历史库 → 开全屏编辑器
+  useEffect(() => {
+    const onMermaidEdit = (e: Event) => {
+      const source = (e as CustomEvent<{ source: string }>).detail?.source || "";
+      if (!source.trim()) return;
+      const ws = workspace || "默认";
+      void import("@/lib/diagram/types").then(({ parseMermaid, serializeDiagram }) => {
+        const content = serializeDiagram(parseMermaid(source));
+        invoke<string>("insert_diagram_history", { content, text: diagramTitle(parseDiagram(content)), workspace: ws })
+          .then((id) =>
+            invoke("open_fullscreen_editor", { sourceId: id, content, contentType: "diagram", language: null }),
+          )
+          .catch((err) => {
+            logger.error("mermaid 编辑失败", err);
+            toast("打开流程图编辑失败：" + String(err), "error");
+          });
+      });
+    };
+    window.addEventListener("pp:mermaid-edit", onMermaidEdit);
+    return () => window.removeEventListener("pp:mermaid-edit", onMermaidEdit);
+  }, [workspace, toast]);
   const [showSequential, setShowSequential] = useState(false);
   const [showSnippets, setShowSnippets] = useState(false);
   const [showExtract, setShowExtract] = useState(false);
@@ -857,6 +894,7 @@ function App() {
           onEncoding={() => setShowEncoding(true)}
           onBatchReplace={() => setShowBatchReplace(true)}
           onConfigDiff={() => setShowConfigDiff(true)}
+          onNewDiagram={handleNewDiagram}
           onToggleSidebar={toggleSidebar}
           sidebarOpen={sidebarOpen}
         />

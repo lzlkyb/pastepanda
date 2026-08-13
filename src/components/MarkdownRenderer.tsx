@@ -2,6 +2,8 @@ import { memo, useMemo, useRef, useEffect, useState } from "react";
 import { marked, type Tokens } from "marked";
 import DOMPurify from "dompurify";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { mermaidBlockHtml, mapMermaidTheme } from "@/lib/mermaidBlock";
 import styles from "./MarkdownRenderer.module.css";
 
 // marked 全局配置（只执行一次）
@@ -22,11 +24,17 @@ const COPY_ICON =
   '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
   '<path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg>';
 
+function currentTheme(): string {
+  if (typeof document === "undefined") return "neutral";
+  return document.documentElement.getAttribute("data-theme") || "neutral";
+}
+
 marked.use({
   renderer: {
     code({ text, lang }: Tokens.Code): string {
       const language = (lang || "").trim().split(/\s+/)[0].toLowerCase();
       const langLabel = language ? escapeHtml(language) : "text";
+      if (language === "mermaid") return mermaidBlockHtml(text);
       return (
         `<div class="md-codeblock">` +
         `<div class="md-codehead">` +
@@ -269,6 +277,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
     import("highlight.js/lib/common").then((hljs) => {
       if (cancelled) return;
       blocks.forEach((block) => {
+        if ((block as HTMLElement).closest(".md-codeblock-mermaid")) return; // mermaid 源码块不高亮
         hljs.default.highlightElement(block as HTMLElement);
       });
     }).catch(() => { /* hljs 加载失败时保持纯文本 */ })
@@ -278,6 +287,66 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
       });
     return () => { cancelled = true; };
   }, [html, showLineNumbers]);
+
+  // mermaid 流程图渲染（仅当页面含 mermaid 块才懒加载 mermaid 库）
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const blocks = el.querySelectorAll<HTMLElement>(".md-codeblock-mermaid");
+    if (blocks.length === 0) return;
+    // hover 弹窗空间有限：展示源码而非渲染 SVG
+    if (compact) {
+      blocks.forEach((b) => {
+        const raw = b.querySelector<HTMLElement>(".md-mermaid-raw");
+        if (raw) raw.style.display = "";
+      });
+      return;
+    }
+    let cancelled = false;
+    let mermaidMod: typeof import("mermaid") | null = null;
+    const renderAll = (theme: string) => {
+      if (!mermaidMod) return;
+      const mermaid = mermaidMod.default;
+      mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: mapMermaidTheme(theme) });
+      let seq = 0;
+      blocks.forEach((b) => {
+        const body = b.querySelector<HTMLElement>(".md-mermaid-body");
+        const raw = b.querySelector<HTMLElement>(".md-mermaid-raw code");
+        if (!body || !raw) return;
+        const src = raw.textContent ?? "";
+        const id = `mermaid-${Date.now()}-${seq++}`;
+        mermaid
+          .render(id, src)
+          .then(({ svg }) => {
+            if (cancelled) return;
+            body.innerHTML = svg;
+            b.classList.remove("md-mermaid-error");
+          })
+          .catch(() => {
+            if (cancelled) return;
+            b.classList.add("md-mermaid-error");
+            const pre = b.querySelector<HTMLElement>(".md-mermaid-raw");
+            if (pre) pre.style.display = "";
+            body.style.display = "none";
+          });
+      });
+    };
+    import("mermaid")
+      .then((m) => {
+        if (cancelled) return;
+        mermaidMod = m;
+        renderAll(currentTheme());
+      })
+      .catch(() => { /* mermaid 加载失败时保持源码块（已隐藏），不影响其余内容 */ });
+    const unsubPromise = listen<{ theme?: string }>("theme-changed", () => {
+      if (cancelled || !mermaidMod) return;
+      renderAll(currentTheme());
+    });
+    return () => {
+      cancelled = true;
+      unsubPromise.then((u) => u());
+    };
+  }, [html, compact]);
 
   // 块级行号注入：每个非 hr 顶层块插入 md-blknum 编号（点击闪烁见委托事件）。
   // dangerouslySetInnerHTML 重渲染会整体替换子树，故 html 变化后需重新注入；
@@ -311,6 +380,14 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
           block.classList.add("md-flash");
           setTimeout(() => block.classList.remove("md-flash"), 900);
         }
+        return;
+      }
+      // mermaid「编辑」按钮：派发事件，由顶层监听打开流程图编辑器（闭环入口）
+      const editBtn = (e.target as HTMLElement).closest(".md-mermaid-edit") as HTMLButtonElement | null;
+      if (editBtn && el.contains(editBtn)) {
+        const raw = editBtn.closest(".md-codeblock-mermaid")?.querySelector(".md-mermaid-raw code");
+        const source = raw?.textContent ?? "";
+        window.dispatchEvent(new CustomEvent("pp:mermaid-edit", { detail: { source } }));
         return;
       }
       const btn = (e.target as HTMLElement).closest(".md-copybtn") as HTMLButtonElement | null;

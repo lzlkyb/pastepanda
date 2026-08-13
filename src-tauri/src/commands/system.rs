@@ -858,6 +858,7 @@ pub async fn open_fullscreen_editor(
         Some("html") => "PastePanda HTML 编辑器",
         Some("text") => "PastePanda 文本编辑器",
         Some("csv") => "PastePanda 表格编辑器",
+        Some("diagram") => "PastePanda 流程图编辑器",
         Some("code") | Some("config") | Some("shell") => "PastePanda 代码编辑器",
         _ => "PastePanda Markdown 编辑器",
     };

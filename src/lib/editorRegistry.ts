@@ -108,6 +108,9 @@ const RichEditor = lazy(() =>
 const DocEditor = lazy(() =>
   import("@/components/editors/DocEditor").then((m) => ({ default: m.DocEditor }))
 );
+const DiagramEditor = lazy(() =>
+  import("@/components/editors/DiagramEditor").then((m) => ({ default: m.DiagramEditor }))
+);
 const FileEditor = lazy(() =>
   import("@/components/FileDetailDialog").then((m) => ({ default: m.FileDetailDialog }))
 );
@@ -138,6 +141,9 @@ const TYPE_EDITORS: Partial<Record<HistoryItem["type"], EditorDefinition>> = {
   rich: { component: RichEditor, width: "w520", title: "🖼️📝 编辑图文", footer: ["copy", "paste"] },
   // P4：结构化文档三态预览（原文/清洗/Markdown），与 rich 同走 shell 变体
   doc: { component: DocEditor, width: "w520", title: "📄 编辑文档", footer: ["copy", "paste"] },
+  // 流程图：拖拽画布为首要路径，走 shell 变体（与图文一致：外壳保保存/未保存确认/Ctrl+Enter），
+  // 另提供「全屏」按钮跳到 OS 全屏窗口（DiagramFullscreen）。节点属性/连线在画布内完成。
+  diagram: { component: DiagramEditor, width: "wDiagram", title: "📊 编辑流程图", footer: ["copy"] },
 };
 
 /** 按 item 的 type + content_type 分派编辑器（type 优先，文本类按 content_type） */

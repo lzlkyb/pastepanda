@@ -42,6 +42,10 @@ import styles from "./FullscreenEditor.module.css";
 const LazyRichFullscreen = lazy(() =>
   import("./fullscreen/RichFullscreen").then((m) => ({ default: m.RichFullscreen }))
 );
+/** 流程图全屏（React Flow）——惰加载：独立 OS 窗口，绕开 CodeMirror 路径 */
+const LazyDiagramFullscreen = lazy(() =>
+  import("./DiagramFullscreen").then((m) => ({ default: m.DiagramFullscreen }))
+);
 
 /** Rust 传递的编辑器初始数据（take_editor_init 返回值 / md-editor-load 事件载荷） */
 interface EditorInit {
@@ -157,6 +161,15 @@ export function FullscreenEditor() {
       {init.contentType === "rich" ? (
         <Suspense fallback={<div className={styles.overlay}><div className={styles.loading}>加载中…</div></div>}>
           <LazyRichFullscreen
+            key={init.nonce}
+            sourceId={init.sourceId}
+            initContent={init.content}
+            onClose={handleClose}
+          />
+        </Suspense>
+      ) : init.contentType === "diagram" ? (
+        <Suspense fallback={<div className={styles.overlay}><div className={styles.loading}>加载中…</div></div>}>
+          <LazyDiagramFullscreen
             key={init.nonce}
             sourceId={init.sourceId}
             initContent={init.content}

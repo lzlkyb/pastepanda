@@ -166,6 +166,19 @@ export const FULLSCREEN_TYPES: Record<FullscreenType, FullscreenTypeSpec> = {
     defaultMode: "edit",
     FormatBar: CodeFormatBar,
   },
+
+  // 流程图：实际走独立全屏窗口（DiagramFullscreen，绕开 CodeMirror），
+  // 这里仅登记最小规格，避免 resolveFullscreenType 回退到 text。
+  diagram: {
+    key: "diagram",
+    icon: "📊",
+    label: "流程图",
+    defaultFileName: "未命名.panda",
+    fileFilter: { name: "PastePanda 流程图", extensions: ["panda"] },
+    language: () => [],
+    modes: [{ key: "edit" as const, title: "仅编辑", Icon: PanelLeft }],
+    defaultMode: "edit",
+  },
 };
 
 /** 走代码编辑器的内容类型（代码 / 配置文件 / 命令行） */

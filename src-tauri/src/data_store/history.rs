@@ -74,7 +74,7 @@ const VALUE_PRESERVE_SQL: &str = "
 
 impl DataStore {
     /// 同步单条记录到 FTS 索引（insert/update 后调用）。失败只 warn，不阻断主流程。
-    fn sync_fts_upsert(&self, conn: &rusqlite::Connection, id: &str) {
+    pub(crate) fn sync_fts_upsert(&self, conn: &rusqlite::Connection, id: &str) {
         let res = conn
             .query_row(
                 "SELECT rowid, text, pinyin_initials, content FROM history WHERE id = ?1",

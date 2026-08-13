@@ -51,6 +51,8 @@
 .dialog-box.w460 { width: 460px; max-height: 78vh; }
 /* 图文混排编辑：正文内嵌图片，窗口窄了图会被压得很小，给到 520px */
 .dialog-box.w520 { width: 520px; max-height: 82vh; }
+/* 流程图画布：需要较大横向空间，桌面端尽量铺开（超宽则受 max-width 约束） */
+.dialog-box.wDiagram { width: min(880px, 92vw); height: 82vh; max-height: 88vh; }
 
 /* ===== Dialog Header ===== */
 .dialog-header {

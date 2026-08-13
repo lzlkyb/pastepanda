@@ -6,7 +6,7 @@
 export type ContentType =
   | "text" | "link" | "email" | "phone" | "color" | "file_path"
   | "code" | "json" | "markdown" | "html" | "config" | "csv"
-  | "shell" | "log" | "secret" | "number" | "image" | "file";
+  | "shell" | "log" | "secret" | "number" | "image" | "file" | "diagram";
 
 export interface ContentTypeMeta {
   /** 中文显示标签 */
@@ -37,6 +37,7 @@ export const CONTENT_TYPE_META: Record<ContentType, ContentTypeMeta> = {
   number:    { label: "数字",     color: "#0EA5E9", monospace: true },
   image:     { label: "图片",     color: "#EC4899", monospace: false },
   file:      { label: "文件",     color: "#06B6D4", monospace: false },
+  diagram:   { label: "流程图",   color: "#0EA5E9", monospace: false },
 };
 
 /** 获取 content_type 的元信息（容错：未知类型回退到 text） */

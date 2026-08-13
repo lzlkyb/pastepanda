@@ -545,6 +545,8 @@ pub fn run() {
             commands::take_editor_init,
             commands::close_editor_window,
             commands::insert_markdown_history,
+            commands::insert_diagram_history,
+            commands::update_diagram_history,
             commands::export_history_csv,
             commands::export_history_xlsx,
             commands::detect_config_format,

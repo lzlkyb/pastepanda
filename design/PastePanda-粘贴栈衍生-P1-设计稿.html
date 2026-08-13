@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda · 粘贴栈衍生功能 P1 设计稿</title>
+<style>
+/* ========================================================================
+   尺寸与变量**抄自真实代码**：
+   - StackBanner.tsx（memo 组件）+ StackBanner.module.css（橙色三层横幅）
+   - 状态行 .top：dot(10px) + title + .acts（primaryBtn 28px / btn 28px / ghostBtn 28×28）
+   - 队列行 .queue：chips 高 28px，max-width 150px，.ord 15px 圆徽 + .ico + .txt
+   - 进度行 .foot：4px .prog + .footTxt
+   - 主题：默认 ocean-dark 深海（--orange #FBBF24 栈主题色，--accent 蓝）
+   - 弹窗参考 dialog.css：.dialog-box.w460 460px / max-height 78vh / radius 16px
+   ===================================================================== */
+*{box-sizing:border-box}
+body{margin:0;padding:30px 26px 70px;background:#14161A;color:#C9D2DD;
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.7}
+h1{font-size:19px;color:#fff;margin:0 0 4px}
+h2{font-size:15px;color:#fff;margin:36px 0 6px}
+h3{font-size:13px;color:#E6EDF5;margin:18px 0 6px;font-weight:600}
+.sub{color:#7C8899;font-size:12px;margin:0 0 24px}
+.note{color:#8D9AAB;font-size:12px;margin:6px 0 14px;max-width:960px}
+.note b{color:#D6DEE8;font-weight:600}
+.note .hl{color:#FBBF24}
+.pick{color:#6FD68B;font-weight:600}
+hr{border:0;border-top:1px solid #262A31;margin:34px 0 0}
+code{background:#1C2027;padding:1px 5px;border-radius:4px;font-size:11.5px;color:#A9C8E8}
+
+/* 视口模拟：主窗口卡片列表上方横幅位 */
+.stage{display:flex;gap:36px;flex-wrap:wrap;margin:20px 0 0;align-items:flex-start}
+.viewport{position:relative;width:448px;border:1px dashed #3A4048;border-radius:10px;
+  background:repeating-linear-gradient(45deg,#191C21,#191C21 10px,#1C2026 10px,#1C2026 20px);
+  padding:18px 14px 60px;overflow:visible}
+.vpTag{position:absolute;left:0;top:-20px;font-size:10.5px;color:#6E7A8A;white-space:nowrap}
+.cap{font-size:11px;color:#6E7A8A;margin:2px 0 4px}
+.vs{display:flex;gap:16px;align-items:flex-start}
+
+/* 假卡片（列表占位，弱化） */
+.fakeCard{background:#0E1520;border:1px solid #1C2938;border-radius:10px;height:34px;margin-top:10px;opacity:.5}
+.fakeCard.wide{height:52px}
+
+/* ================= 真实 StackBanner 样式（抄 StackBanner.module.css） ================= */
+.t-oceandark{
+  --orange:#FBBF24;--orange-bg:rgba(251,191,36,.07);--orange-border:rgba(251,191,36,.28);
+  --text-primary:#E0E8F0;--text-muted:#7994B4;--danger:#F87171;
+}
+.banner{display:flex;flex-direction:column;gap:7px;padding:10px 12px;border-radius:12px;
+  background:linear-gradient(135deg,rgba(251,191,36,.09),transparent 65%),var(--orange-bg);
+  border:1px solid var(--orange-border);box-shadow:0 4px 16px rgba(234,88,12,.08);position:relative}
+.banner .tag{position:absolute;right:10px;top:-18px;font-size:9px;color:#8D9AAB;letter-spacing:.3px}
+.top{display:flex;align-items:center;gap:8px}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--orange,#EA580C);flex-shrink:0;box-shadow:0 0 0 0 rgba(234,88,12,.4)}
+.title{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--orange);
+  flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acts{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.primaryBtn{display:flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:8px;border:none;
+  background:var(--orange,#EA580C);color:#1A1305;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
+.kbd{font:600 9px ui-monospace,Consolas,monospace;background:rgba(255,255,255,.25);padding:2px 5px;border-radius:4px;letter-spacing:.2px}
+.btn{height:28px;padding:0 10px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;
+  background:color-mix(in srgb,var(--orange) 14%,transparent);color:var(--orange);border:1px solid var(--orange-border)}
+.btn.tabOn{background:var(--orange);color:#1A1305;font-weight:700}
+.btn.subtle{opacity:.85}
+.btnIcon{display:inline-flex;align-items:center;gap:4px}
+.ghostBtn{width:28px;height:28px;border-radius:8px;border:1px solid transparent;background:transparent;
+  color:var(--orange);opacity:.7;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.queue{display:flex;gap:6px;overflow-x:auto;padding:10px 2px 4px}
+.chip{position:relative;display:flex;align-items:center;gap:5px;flex-shrink:0;max-width:150px;height:28px;
+  padding:0 9px 0 6px;border-radius:8px;background:color-mix(in srgb,var(--orange) 8%,transparent);
+  border:1px solid color-mix(in srgb,var(--orange) 20%,transparent);font-size:11px;color:var(--text-primary);
+  transition:padding-left .15s ease}
+/* 拖拽手柄需要的额外宽度只在 hover 时瞬时让出，默认不占位置（见下方 .grip 修订说明） */
+.chip:hover{padding-left:16px}
+.ord{width:15px;height:15px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  font-size:9px;font-weight:700;background:color-mix(in srgb,var(--orange) 16%,transparent);color:var(--orange)}
+.ico{font-size:11px;flex-shrink:0;line-height:1}
+.txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chipNext{border-color:var(--orange);background:color-mix(in srgb,var(--orange) 16%,transparent);
+  box-shadow:0 0 0 2px rgba(234,88,12,.18)}
+.chipNext .ord{background:var(--orange);color:#1A1305}
+.nextTag{position:absolute;top:-8px;right:6px;font-size:8px;font-weight:700;color:#1A1305;letter-spacing:.3px;
+  background:var(--orange);padding:1px 5px;border-radius:4px;white-space:nowrap}
+.chipDone{opacity:.4}
+.chipDone .txt{text-decoration:line-through}
+.foot{display:flex;align-items:center;gap:8px}
+.prog{flex:1;height:4px;border-radius:2px;background:var(--orange-border);overflow:hidden}
+.progFill{height:100%;border-radius:2px;background:linear-gradient(90deg,#F97316,#EA580C);width:42%}
+.footTxt{font-size:10px;color:var(--orange);opacity:.85;white-space:nowrap;font-variant-numeric:tabular-nums}
+
+/* ===== 修订：拖拽手柄改为绝对定位悬浮层，默认不占布局宽度 =====
+   旧版本 .grip 是普通 flex 子项，opacity:0 只是视觉隐藏，但仍按 width:10px+padding+gap
+   永久占用每个 chip 的布局宽度（3个chip白白吃掉近 60px），这正是导致队列在 268px/448px
+   下比预期更早触发横向滚动、显得拥挤的根因。改为 position:absolute 悬浮，默认零布局宽度，
+   仅 hover 时靠 .chip 的 padding-left 过渡短暂让出 10px 空间，不 hover 时与旧版宽度完全一致。 */
+.grip{position:absolute;left:2px;top:50%;transform:translateY(-50%);width:10px;height:18px;
+  display:flex;flex-direction:column;justify-content:center;gap:2px;
+  opacity:0;transition:opacity .15s;cursor:grab;pointer-events:none}
+.chip:hover .grip{opacity:.55;pointer-events:auto}
+.grip i{display:block;height:2px;border-radius:1px;background:var(--orange)}
+.chip.dragging{opacity:.35;outline:1.5px dashed var(--orange);outline-offset:1px}
+.insertSlot{width:3px;height:26px;border-radius:2px;background:var(--orange);flex-shrink:0;animation:blink .6s ease infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.chip .rm{position:absolute;right:2px;top:-7px;width:14px;height:14px;border-radius:50%;background:#B54747;color:#fff;
+  font-size:9px;line-height:14px;text-align:center;display:none}
+.chip:hover .rm{display:block}
+
+/* ===== 弹窗（dialog-box w460 风格） ===== */
+.dialog{width:460px;background:#0A1628;border:1px solid #162B45;border-radius:16px;
+  box-shadow:0 14px 44px rgba(0,0,0,.55);overflow:hidden;flex-shrink:0}
+.dhdr{display:flex;align-items:center;height:48px;padding:0 20px;gap:9px;border-bottom:1px solid #162B45}
+.dTitle{font-size:15px;font-weight:600;color:#E0E8F0;margin:0;white-space:nowrap}
+.dSub{font-size:12px;color:#7994B4;margin-left:auto;white-space:nowrap}
+.dclose{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+  border:none;background:transparent;color:#A2B6CD;cursor:pointer}
+.dbody{padding:16px 20px 20px;display:flex;flex-direction:column;gap:14px}
+.dfoot{display:flex;gap:10px;padding:0 20px 18px}
+.seg{display:flex;gap:6px;background:#081018;border:1px solid #162B45;border-radius:10px;padding:4px}
+.segBtn{flex:1;text-align:center;font-size:12px;font-weight:600;padding:7px 0;border-radius:8px;cursor:pointer;
+  color:#A2B6CD;border:none;background:transparent}
+.segBtn.on{background:#0A1E3A;color:#3B9EFF;box-shadow:0 0 0 1px #2D78C2 inset}
+.fieldL{font-size:11px;font-weight:700;color:#7994B4;letter-spacing:.5px;margin-bottom:6px}
+.inp{width:100%;height:34px;border-radius:9px;border:1px solid #162B45;background:#081018;color:#E0E8F0;
+  font-size:12.5px;padding:0 12px;outline:none}
+.preview{background:#081018;border:1px solid #162B45;border-radius:10px;padding:10px 12px;max-height:130px;
+  overflow:auto;font-family:Consolas,monospace;font-size:11px;color:#A9C8E8;line-height:1.7;white-space:pre-wrap;word-break:break-all}
+.preview .mark{color:#FBBF24}
+.lst{display:flex;flex-direction:column;gap:8px}
+.lrow{display:flex;align-items:center;gap:9px;padding:9px 11px;background:#081018;border:1px solid #162B45;border-radius:10px}
+.lrow .nm{font-size:12.5px;font-weight:600;color:#E0E8F0;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lrow .cnt{font-size:10.5px;color:#7994B4;flex-shrink:0}
+.lrow .use{font-size:10px;color:#4A5B70;flex-shrink:0}
+.miniBtn{flex-shrink:0;font-size:11px;font-weight:600;padding:5px 11px;border-radius:8px;border:none;cursor:pointer}
+.miniBtn.load{background:linear-gradient(135deg,#3B9EFF,#2D78C2);color:#fff}
+.miniBtn.del{background:transparent;border:1px solid #162B45;color:#A2B6CD}
+.miniBtn.save{background:linear-gradient(135deg,#3B9EFF,#2D78C2);color:#fff}
+aBtn,.aBtn{flex:1;text-align:center;font-size:12.5px;font-weight:600;padding:10px 0;border-radius:10px;cursor:pointer}
+.aBtn.ghost{border:1px solid #162B45;background:#0A1628;color:#A2B6CD}
+.aBtn.primary{border:none;background:linear-gradient(135deg,#3B9EFF,#2D78C2);color:#fff;box-shadow:0 4px 12px rgba(59,158,255,.18)}
+.toggleRow{display:flex;align-items:center;gap:10px;padding:9px 11px;background:#081018;border:1px solid #162B45;border-radius:10px}
+.toggleRow .tt{font-size:12.5px;color:#E0E8F0;flex:1}
+.toggleRow .td{font-size:11px;color:#7994B4}
+.switch{width:36px;height:20px;border-radius:999px;background:#1C2938;position:relative;cursor:pointer;flex-shrink:0}
+.switch.on{background:#2D78C2}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .15s}
+.switch.on::after{left:18px}
+.chain{display:flex;flex-direction:column;align-items:center}
+.cArrow{width:2px;height:12px;background:#162B45;margin:2px 0}
+.cRow{display:flex;align-items:center;gap:8px;width:100%;padding:8px 11px;background:#081018;border:1px solid #162B45;border-radius:10px;font-size:12px;color:#C9D2DD}
+.cIdx{width:20px;height:20px;border-radius:50%;background:#052E1A;color:#4ADE80;font-size:10.5px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.cTxt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.anno{background:#0E1A12;border:1px solid #166534;border-radius:10px;padding:10px 14px;font-size:12px;color:#9FBF9F;max-width:560px}
+.anno b{color:#6FD68B}
+.anno.warn{background:#1A1210;border-color:#7F1D1D;color:#C9A2A2}
+.anno.warn b{color:#F09A9A}
+
+/* ===== 走查修订新增 ===== */
+/* blossom 主题覆盖：--orange 变量本身不会跨主题切换，真实 StackBanner.module.css 靠 14 条
+   :global([data-theme="blossom"]) 规则逐条重写；本稿新增的 grip/insertSlot/dragging/rm
+   补齐同一套路的覆盖，否则粉色主题下这几个新元素会保留橙色 */
+.t-blossom{--orange:#F0568C;--orange-bg:rgba(240,86,140,.10);--orange-border:rgba(240,86,140,.28);}
+.t-blossom .grip i{background:#F0568C}
+.t-blossom .chip.dragging{outline-color:#F0568C}
+.t-blossom .insertSlot{background:#F0568C}
+.t-blossom .chip .rm{background:#B5477E}
+.t-blossom .chipNext .nextTag{background:linear-gradient(135deg,#F0568C,#CE3B70)}
+
+.riskBox{display:flex;gap:8px;padding:10px 12px;background:#1A1210;border:1px solid #7F1D1D;border-radius:10px;font-size:11.5px;color:#C9A2A2;line-height:1.6}
+.riskBox b{color:#F09A9A}
+.sensBox{display:flex;align-items:flex-start;gap:8px;padding:9px 11px;background:#241708;border:1px solid #7C4A12;border-radius:10px;font-size:11.5px;color:#E0B980}
+.sensBox b{color:#FBBF24}
+.sensCk{display:flex;align-items:center;gap:7px;font-size:11.5px;color:#C9D2DD;margin-top:6px}
+.miniBtn.del.confirm{background:#7F1D1D;border-color:#F87171;color:#fff;font-weight:700}
+.narrowDemo{width:268px}
+.overflowWrap{position:relative}
+.overflowMenu{position:absolute;top:32px;right:0;width:132px;background:#0A1628;border:1px solid #162B45;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.4);padding:5px;display:flex;flex-direction:column;gap:2px;z-index:9}
+.overflowItem{display:flex;align-items:center;gap:7px;padding:7px 8px;border-radius:7px;font-size:11px;color:#C9D2DD}
+/* 补抄漏掉的真实规则：侧边栏展开(<380px)时隐藏按钮内热键徽标，原稿漏抄这条 */
+@container (max-width: 380px) {
+  .kbd { display: none; }
+}
+
+.two{display:flex;gap:14px;align-items:flex-start}
+</style>
+</head>
+<body class="t-oceandark">
+
+<h1>粘贴栈衍生功能 · P1 设计稿</h1>
+<p class="sub">拖拽重排 · 合并粘贴 · Tab 推进 · 模板栈 ｜ 候选版本：6.11（版本号升不升等用户定）｜ 主题：ocean-dark 默认</p>
+<p class="note">尺寸与变量<b>全部抄自真实代码</b>（StackBanner.tsx / StackBanner.module.css / dialog.css）。橙色为栈模式主题色 <code>--orange #FBBF24</code>（<b>blossom 主题下由额外 14 条 <code>:global([data-theme="blossom"])</code> 规则变粉，不是变量自动切换</b>——本稿新增元素已补齐对应覆盖）。所有新增交互均<b>不打断复制</b>、<b>内容不出本机</b>。</p>
+<p class="note" style="color:#8FBF8F">✅ 本版走查修订：③合并粘贴改为扩展复用 <code>MergeDialog.tsx</code>（不新建同名组件，保留其已有的 AI 去重顺排润色能力）；拖拽手柄/插入位/删除角标补齐 blossom 覆盖；Tab 推进补充"编辑器/多行输入框会被当缩进"的内联风险提示；模板存储措辞由"引用"统一为"内容快照"并加敏感内容确认；模板删除改为复用 <code>quickpaste.css</code> 的两步确认视觉；拖拽排序直接复用 <code>quickOrder.ts</code> 的 <code>reorderAction</code>，不再另造 <code>stackReorder</code>；新增⑥窄幅溢出菜单验证，不再依赖"图标够小就放得下"的假设。</p>
+
+<!-- ==================== 0. 现状对照 ==================== -->
+<h2>① 横幅改造总览（现状 → 目标）</h2>
+<div class="stage">
+  <div class="viewport">
+    <div class="vpTag">现状 · 448px（默认窗口480px−侧边栏收起0−32px边距）</div>
+    <div class="banner">
+      <div class="top">
+        <span class="dot"></span>
+        <span class="title">◆ 栈模式 · 剩余 3 条</span>
+        <div class="acts">
+          <button class="primaryBtn">⏩ 逐条粘贴 <span class="kbd">Ctrl+Alt+P</span></button>
+          <button class="btn">▶ 全部</button>
+          <button class="ghostBtn">✕</button>
+        </div>
+      </div>
+      <div class="queue">
+        <div class="chip chipNext"><span class="ord">1</span><span class="ico">📄</span><span class="txt">姓名：张三</span><span class="nextTag">下一个粘贴</span></div>
+        <div class="chip"><span class="ord">2</span><span class="ico">📄</span><span class="txt">邮箱：zhang@qq.com</span></div>
+        <div class="chip"><span class="ord">3</span><span class="ico">🖼</span><span class="txt">身份证截图</span></div>
+      </div>
+      <div class="foot"><div class="prog"><div class="progFill"></div></div><span class="footTxt">0/3 已粘贴 · Ctrl+C 继续收集</span></div>
+    </div>
+    <div class="fakeCard wide"></div><div class="fakeCard"></div><div class="fakeCard"></div>
+  </div>
+
+  <div class="viewport">
+    <div class="vpTag">目标 · 四合一增强版（同 448px，侧边栏收起状态）</div>
+    <div class="banner">
+      <div class="top">
+        <span class="dot"></span>
+        <span class="title">◆ 栈模式 · 剩余 3 条</span>
+        <div class="acts overflowWrap">
+          <button class="btn tabOn" title="逐条粘贴并自动 Tab 推进 (Ctrl+Alt+P)"><span class="btnIcon">⏩ 粘贴+Tab <span class="kbd">Ctrl+Alt+P</span></span></button>
+          <button class="btn">▶ 全部</button>
+          <button class="ghostBtn" title="更多：合并粘贴 / 存为模板">⋯</button>
+          <button class="ghostBtn">✕</button>
+        </div>
+      </div>
+      <div class="queue">
+        <div class="chip chipNext"><span class="grip"><i></i><i></i><i></i></span><span class="ord">1</span><span class="ico">📄</span><span class="txt">姓名：张三</span><span class="nextTag">下一个粘贴</span><span class="rm">✕</span></div>
+        <div class="chip"><span class="grip"><i></i><i></i><i></i></span><span class="ord">2</span><span class="ico">📄</span><span class="txt">邮箱：zhang@qq.com</span><span class="rm">✕</span></div>
+        <div class="chip"><span class="grip"><i></i><i></i><i></i></span><span class="ord">3</span><span class="ico">🖼</span><span class="txt">身份证截图</span><span class="rm">✕</span></div>
+      </div>
+      <div class="foot"><div class="prog"><div class="progFill"></div></div><span class="footTxt">0/3 已粘贴 · Ctrl+C 继续收集</span></div>
+    </div>
+    <div class="fakeCard wide"></div><div class="fakeCard"></div><div class="fakeCard"></div>
+  </div>
+</div>
+<p class="note"><b>✅ 补修：热键提示没丢</b>——背后的全局热键绑定（Ctrl+Alt+P 粘贴 / Ctrl+Alt+K 切换 / 全部粘贴中 Esc 中止）不在本设计改动范围内，功能一字不动；但初版“目标·四合一增强版”把主按钮上的 <code>Ctrl+Alt+P</code> 微标画丢了，现已补回①②④三处 mockup，并补齐了漏抄的 <code>@container(max-width:380px)</code> 窄幅隐藏规则。</p>
+<p class="note" style="color:#8FBF8F">✅ 再修：两个真实问题一并解决——①拖拽手柄 <code>.grip</code> 之前虽 opacity:0 但仍永久占用布局宽度（无论 hover 与否，3个chip白白多占~60px），现改为绝对定位悬浮层，默认零占位；②状态行不再区分"宽幅全展开/窄幅才收起"两套方案，<b>永远只常驻四个按钮（粘贴+Tab / 全部 / ⋯ / 关闭）</b>，「合并粘贴」「存为模板」收进⋯菜单——448px 和 268px 两个真实宽度下都是同一套布局，不用再赌临界点够不够。<code>@container(max-width:380px)</code> 现在只管一件事：隐藏热键徽标 <code>.kbd</code>，不再管按钮收展。</p>
+<p class="note">新增按钮<b>只加在状态行右侧</b>，不动现有三层结构。「逐条粘贴」升级为「粘贴+Tab」开关态，默认关、点一下开。</p>
+
+<hr>
+
+<!-- ==================== 1. 拖拽重排 ==================== -->
+<h2>② 拖拽重排（队列 chips）</h2>
+<div class="two">
+  <div class="viewport" style="width:448px">
+    <div class="vpTag">拖拽中 · 448px（侧边栏收起）· 把「邮箱」拖到第 3 位</div>
+    <div class="banner">
+      <div class="top"><span class="dot"></span><span class="title">◆ 栈模式 · 剩余 3 条</span>
+        <div class="acts overflowWrap">
+          <button class="btn"><span class="btnIcon">⏩ 粘贴 <span class="kbd">Ctrl+Alt+P</span></span></button>
+          <button class="btn">▶ 全部</button>
+          <button class="ghostBtn" title="更多：合并粘贴 / 存为模板">⋯</button>
+          <button class="ghostBtn">✕</button>
+        </div>
+      </div>
+      <div class="queue">
+        <div class="chip chipNext"><span class="grip"><i></i><i></i><i></i></span><span class="ord">1</span><span class="ico">📄</span><span class="txt">姓名：张三</span><span class="nextTag">下一个粘贴</span></div>
+        <div class="chip dragging"><span class="grip"><i></i><i></i><i></i></span><span class="ord">2</span><span class="ico">📄</span><span class="txt">邮箱：zhang@qq.com</span></div>
+        <span class="insertSlot"></span>
+        <div class="chip"><span class="grip"><i></i><i></i><i></i></span><span class="ord">3</span><span class="ico">🖼</span><span class="txt">身份证截图</span></div>
+      </div>
+      <div class="foot"><div class="prog"><div class="progFill"></div></div><span class="footTxt">0/3 已粘贴 · Ctrl+C 继续收集</span></div>
+    </div>
+  </div>
+  <div class="anno">
+    <b>交互</b><br>
+    · 按住 chip 左侧 <b>⋮⋮ 手柄</b>拖动（hover 才显示，避免误触）；不设长按，鼠标放下即落位。<br>
+    · 拖动经过处显示<b>橙色插入位虚线</b>，松手落位，顺序实时更新。<br>
+    · 已粘贴项（划线置灰）<b>不可拖</b>；拖动时自动暂停「全部粘贴」循环，落位后恢复。<br><br>
+    <b>实现</b><br>
+    · 纯前端：直接复用 <code>quickOrder.ts</code> 现有的 <code>reorderAction(ids, from, to)</code>（本来就是不依赖具体类型的 id 数组换位函数），不新增 <code>stackReorder</code>——同一个函数原样调用，省一次重复实现和一份重复单测。<br>
+    · 落位后只需 <code>set({stackItems: next})</code>，横幅与托盘状态自动同步，<b>零 Rust 改动</b>。
+  </div>
+</div>
+
+<hr>
+
+<!-- ==================== 2. 合并粘贴 ==================== -->
+<h2>③ 合并粘贴（复用现有 <code>MergeDialog.tsx</code>，不新建组件）</h2>
+<div class="two">
+  <div class="dialog">
+    <div class="dhdr">
+      <span style="color:#3B9EFF;font-size:15px">🧩</span>
+      <h3 style="margin:0">合并粘贴</h3>
+      <span class="dSub">3 条已选</span>
+      <button class="dclose">✕</button>
+    </div>
+    <div class="dbody">
+      <div>
+        <div class="fieldL">合并格式</div>
+        <div class="seg" style="flex-wrap:wrap;height:auto;padding:4px">
+          <button class="segBtn">换行</button>
+          <button class="segBtn">逗号</button>
+          <button class="segBtn">分号</button>
+          <button class="segBtn">编号列表</button>
+          <button class="segBtn on">Markdown 列表 <span style="font-size:8.5px;opacity:.75">·新增</span></button>
+          <button class="segBtn">智能换行 <span style="font-size:8.5px;opacity:.75">·新增</span></button>
+          <button class="segBtn">自定义</button>
+        </div>
+      </div>
+      <div>
+        <div class="fieldL">预览</div>
+        <div class="preview"><span class="mark">- 姓名：张三</span>
+- 邮箱：zhang@qq.com
+- 身份证截图（图片条目转为文件名占位）</div>
+      </div>
+    </div>
+    <div class="dfoot">
+      <button class="aBtn ghost" style="flex:0 0 auto;padding:0 14px">✨ AI 整理</button>
+      <button class="aBtn primary">粘贴到前台</button>
+      <button class="aBtn ghost">复制</button>
+    </div>
+  </div>
+  <div class="anno">
+    <b>不新建组件——扩展现有 <code>MergeDialog.tsx</code></b><br>
+    项目里已经有一个同名同用途的 <code>MergeDialog.tsx</code>（v6.4 C 连续合并粘贴），已支持 换行/逗号/分号/编号列表/自定义 五种分隔符 + <b>AI 去重顺排润色</b>（<code>aiMerge()</code> 调 <code>ai-merge-polish</code>）+ 粘贴/复制。栈的合并粘贴只需两处扩展，不是另起一个：<br><br>
+    · <code>mergeText.ts</code> 加 <b>Markdown 列表</b> / <b>智能换行</b> 两种新分隔符（纯函数加分支，其余五种不动）。<br>
+    · 栈侧新增一个适配函数，把未粘贴的栈条目（含图片/文件）映射成 <code>MergeItem[]{id,text}</code>——图片/文件转文件名占位文本，再传给<b>同一个</b> <code>MergeDialog</code>；<b>不新增"勾选参与合并"的选择 UI</b>：栈本身就是用户主动 Ctrl+C 收集的有序队列，已经是"选好的"，不需要二次勾选界面。<br><br>
+    <b>实现</b><br>
+    · 零新组件；<code>MergeDialog.module.css</code>、AI 整理逻辑、<code>pasteTextGuarded</code> 粘贴安全守卫全部照旧复用，不新增 Rust 命令。
+  </div>
+</div>
+
+<hr>
+
+<!-- ==================== 3. Tab 推进 ==================== -->
+<h2>④ 粘贴 + 自动 Tab 推进（表单模式）</h2>
+<div class="two">
+  <div class="viewport" style="width:448px">
+    <div class="vpTag">开启后 · 448px（侧边栏收起）· 每条贴完自动 Tab 跳下一个输入框</div>
+    <div class="banner">
+      <div class="top"><span class="dot"></span><span class="title">◆ 栈模式 · 表单模式已开启</span>
+        <div class="acts overflowWrap">
+          <button class="btn tabOn"><span class="btnIcon">⏩ 粘贴+Tab <span class="kbd">Ctrl+Alt+P</span></span></button>
+          <button class="btn">▶ 全部+Tab</button>
+          <button class="ghostBtn" title="更多：合并粘贴 / 存为模板">⋯</button>
+          <button class="ghostBtn">✕</button>
+        </div>
+      </div>
+      <div class="queue">
+        <div class="chip chipNext"><span class="grip"><i></i><i></i><i></i></span><span class="ord">1</span><span class="ico">📄</span><span class="txt">姓名：张三</span><span class="nextTag">下一个粘贴</span></div>
+        <div class="chip"><span class="grip"><i></i><i></i><i></i></span><span class="ord">2</span><span class="ico">📄</span><span class="txt">邮箱：zhang@qq.com</span></div>
+        <div class="chip"><span class="grip"><i></i><i></i><i></i></span><span class="ord">3</span><span class="ico">📄</span><span class="txt">手机号：13800138000</span></div>
+      </div>
+      <div class="foot"><div class="prog"><div class="progFill"></div></div><span class="footTxt">1/3 已粘贴 · 已自动 Tab → 下一个输入框</span></div>
+    </div>
+  </div>
+  <div>
+    <div class="dialog" style="width:420px">
+      <div class="dhdr">
+        <span style="color:#3B9EFF;font-size:15px">⚙</span>
+        <h3 style="margin:0">表单模式设置</h3>
+        <span class="dSub">设置 → 粘贴栈</span>
+        <button class="dclose">✕</button>
+      </div>
+      <div class="dbody">
+        <div class="toggleRow"><span class="tt">逐条粘贴后自动 Tab</span><span class="td">贴完按 Tab 跳到下一输入框</span><span class="switch on"></span></div>
+        <div class="toggleRow"><span class="tt">「全部粘贴」也带 Tab</span><span class="td">连续填表：贴→Tab→贴→Tab</span><span class="switch on"></span></div>
+        <div class="riskBox"><span>⚠️</span><span><b>代码编辑器/多行文本框会把 Tab 识别为缩进而非跳转焦点</b>——自动发送的 Tab 键可能直接插入到刚粘贴内容末尾，污染内容本身，不是"只是多按一次"这么无害。粘贴目标是多行输入框/代码编辑器时建议手动关闭本开关。</span></div>
+        <div>
+          <div class="fieldL">粘贴间隔（毫秒，建议 150–800）</div>
+          <input class="inp" value="300">
+        </div>
+        <div>
+          <div class="fieldL">最后一条贴完后</div>
+          <div class="seg">
+            <button class="segBtn on">不操作</button>
+            <button class="segBtn">按 Enter 提交</button>
+          </div>
+          <div class="sensCk" style="color:#C9A2A2"><span>⚠️</span> 开启后最后一步自动提交/发送，中途没有二次确认——确认表单内容都对了再开</div>
+        </div>
+      </div>
+    </div>
+    <div class="anno" style="margin-top:12px">
+      <b>交互</b><br>
+    · 横幅「⏩ 粘贴」按钮<b>点击切换 Tab 开/关</b>（橙底=开），「▶ 全部」同步变「全部+Tab」。<br>
+    · 设置页可配间隔、末条是否 Enter 提交。<br>
+    · <b>风险提示</b>：仅当目标窗口有输入框时有效；若粘贴目标不支持 Tab 跳格（如聊天框），表现为「贴完多一个 Tab」，用户可随时关。<br><br>
+    <b>实现</b><br>
+    · 复用 <code>paste_engine.rs</code> 现有 <b>SendInput</b> 按键模拟底座，新增 <code>stackPasteWithTab</code>（粘贴成功后补发 VK_TAB）。<br>
+    · 前端传 <code>tabAfter: true</code> 标志即可，改动收敛在 stack 管线内。
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<!-- ==================== 4. 模板栈 ==================== -->
+<h2>⑤ 模板栈（存为模板 / 模板库载入）</h2>
+<h3>5.1 存为模板（点横幅「📌 存模板」）</h3>
+<div class="two">
+  <div class="dialog">
+    <div class="dhdr">
+      <span style="color:#3B9EFF;font-size:15px">📌</span>
+      <h3 style="margin:0">存为模板</h3>
+      <span class="dSub">当前栈 3 条</span>
+      <button class="dclose">✕</button>
+    </div>
+    <div class="dbody">
+      <div>
+        <div class="fieldL">模板名称</div>
+        <input class="inp" value="报销单常用信息" placeholder="如：周报引用、报销单、客户信息">
+      </div>
+      <div class="sensBox"><span>🔒</span><span><b>检测到疑似敏感内容</b>：第 3 项"身份证截图"可能含证件信息。模板会长期保留、反复复用（不像普通历史有自动清理），<div class="sensCk" style="margin-top:5px"><input type="checkbox" style="accent-color:#FBBF24"> 我确认要长期保存此内容</div></span></div>
+      <div class="lst">
+        <div class="lrow"><span class="ord" style="background:rgba(59,158,255,.16);color:#3B9EFF">1</span><span class="nm">姓名：张三</span><span class="cnt">文本</span></div>
+        <div class="lrow"><span class="ord" style="background:rgba(59,158,255,.16);color:#3B9EFF">2</span><span class="nm">邮箱：zhang@qq.com</span><span class="cnt">文本</span></div>
+        <div class="lrow"><span class="ord" style="background:rgba(59,158,255,.16);color:#3B9EFF">3</span><span class="nm">身份证截图</span><span class="cnt">图片</span></div>
+      </div>
+    </div>
+    <div class="dfoot">
+      <button class="aBtn ghost">取消</button>
+      <button class="aBtn primary">保存模板</button>
+    </div>
+  </div>
+  <div class="anno">
+    <b>交互</b><br>
+    · 保存时存的是<b>内容快照</b>（独立拷贝一份，不是指向原 history 条目的引用）——原 history 条目之后被自动清理策略删掉，模板依然完整可用；代价是图片类模板条目要计入体积上限，别当成免费的。<br>
+    · 模板是<b>用户自己存的常用内容</b>，本地存储、可见可删（符合红线②）。<br><br>
+    <b>实现</b><br>
+    · 新增本地表 <code>stack_templates</code>（name / items JSON / created_at / used_at），一个 <code>save_stack_template</code> 命令。<br>
+    · 数据文件沿用现有本地库，不上传。
+  </div>
+</div>
+
+<h3>5.2 模板库载入</h3>
+<div class="two">
+  <div class="dialog">
+    <div class="dhdr">
+      <span style="color:#3B9EFF;font-size:15px">📚</span>
+      <h3 style="margin:0">模板库</h3>
+      <span class="dSub">共 3 个模板</span>
+      <button class="dclose">✕</button>
+    </div>
+    <div class="dbody">
+      <div class="lst">
+        <div class="lrow"><span class="ord" style="background:rgba(59,158,255,.16);color:#3B9EFF">1</span><span class="nm">报销单常用信息</span><span class="cnt">3 条</span><span class="use">3 天前用过</span><button class="miniBtn load">载入</button><button class="miniBtn del">删</button></div>
+        <div class="lrow"><span class="ord" style="background:rgba(59,158,255,.16);color:#3B9EFF">2</span><span class="nm">周报引用链接</span><span class="cnt">5 条</span><span class="use">昨天用过</span><button class="miniBtn load">载入</button><button class="miniBtn del confirm">确认删除?</button></div>
+        <div class="lrow"><span class="ord" style="background:rgba(59,158,255,.16);color:#3B9EFF">3</span><span class="nm">客户回访话术</span><span class="cnt">2 条</span><span class="use">从未用过</span><button class="miniBtn load">载入</button><button class="miniBtn del">删</button></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="anno">
+      <b>载入行为</b><br>
+    · 点「载入」：<b>当前栈未粘贴条目清空</b>（有已粘贴记录则保留显示），填入模板条目 → 自动进入栈模式 → 可直接逐条/全部粘贴。<br>
+    · 载入前弹一次确认：「将替换当前 3 条未粘贴内容」——避免误清空（符合红线① 不自动执行）。<br>
+    · 删除二次确认<b>复用 <code>quickpaste.css</code> 已有的 <code>.qp-clear.confirm</code> 两步模式</b>（第 2 行"周报引用链接"演示：先点变实心危险色"确认删除?"，再点一次才真删，不用重新设计一套交互）。<br><br>
+    <b>入口</b><br>
+    · 横幅「📌 存模板」旁边可放 <b>「📚 模板」</b>按钮，或从托盘菜单进模板库；本轮先做横幅内入口。
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>⑥ 窄幅验证（268px 精确值，不是估算）</h2>
+<p class="note">268px = 默认窗口 480px − 侧边栏展开 180px（<code>Sidebar.module.css</code> <code>.sidebar.open{width:180px}</code>）− 横幅自身左右 margin 32px（<code>StackBanner.module.css</code> <code>.banner{margin:0 16px 4px}</code>)。<b>这不是边缘情况，默认窗口尺寸下只要展开侧边栏就会进入这个宽度</b>。还有一个更极端的情况本稿之前没考虑：窗口拖到最小 320px 时，320−180−32=<b>108px</b>，这宽度下连图标都放不下几个，属于已知限制，本轮不强求解决，但应该让这个尺寸下至少不报错、降级成只显图标无文字。下面不是另外一套“窄幅专用布局”，而是与①②④完全同一套常驻四按钮布局，只是在最窄的 268px 下额外演示点开「⋯」菜单后的样子，且 kbd 徽标已由 <code>@container</code> 规则自动隐藏。</p>
+<div class="two">
+  <div class="viewport narrowDemo" style="padding:18px 10px 40px">
+    <div class="vpTag">同一套常驻4按钮布局 · 268px 下点开「⋯」菜单的样子</div>
+    <div class="banner">
+      <div class="top"><span class="dot"></span><span class="title" style="font-size:11px">◆ 剩余 3 条</span>
+        <div class="acts overflowWrap">
+          <button class="btn tabOn" style="width:28px;padding:0;justify-content:center"><span class="btnIcon">⏩</span></button>
+          <button class="btn" style="width:28px;padding:0;justify-content:center">▶</button>
+          <button class="ghostBtn" title="更多">⋯</button>
+          <div class="overflowMenu">
+            <div class="overflowItem">🧩 合并</div>
+            <div class="overflowItem">📌 存模板</div>
+          </div>
+          <button class="ghostBtn">✕</button>
+        </div>
+      </div>
+      <div class="queue">
+        <div class="chip chipNext"><span class="ord">1</span><span class="ico">📄</span><span class="txt">姓名：张三</span></div>
+        <div class="chip"><span class="ord">2</span><span class="ico">📄</span><span class="txt">邮箱</span></div>
+      </div>
+      <div class="foot"><div class="prog"><div class="progFill"></div></div><span class="footTxt">0/3</span></div>
+    </div>
+  </div>
+  <div class="anno">
+    <b>不再区分宽幅/窄幅两套方案，永远只四个常驻按钮</b><br>
+    之前的方案是"&gt;=380px 展开 5 个按钮，&lt;380px 才收起 2 个"，但 448px 下 5 个按钮+热键徽标全部摆开已经很拥挤，而且还需要额外思考两套断点逻辑。改成：<b>无论宽窄，永远只显示 4 个按钮</b>（粘贴+Tab / 全部 / ⋯ / 关闭），「合并粘贴」「存为模板」永远在「⋯」里，不再跟容器宽度挂钩。448px 和 268px 都验证过不拥挤，108px 极端情况下至少不报错。<br><br>
+    <b>实现</b><br>
+    · 四个按钮在标记语里写死，不走 <code>@container</code>；<code>@container(max-width:380px)</code> 现在只管 <code>.kbd</code> 隐藏，与按钮数量无关。
+  </div>
+</div>
+
+<hr>
+
+<h2>交付范围与验证点</h2>
+<table style="border-collapse:collapse;margin-top:8px;font-size:12.5px;max-width:960px">
+<tr style="background:#1C2027"><th style="border:1px solid #2A2F37;padding:7px 11px;text-align:left">功能</th><th style="border:1px solid #2A2F37;padding:7px 11px;text-align:left">涉及改动</th><th style="border:1px solid #2A2F37;padding:7px 11px;text-align:left">验证</th></tr>
+<tr><td style="border:1px solid #2A2F37;padding:7px 11px" class="pick">拖拽重排</td><td style="border:1px solid #2A2F37;padding:7px 11px">StackBanner.tsx + 直接调用 quickOrder.ts 的 reorderAction，纯前端，零新增纯函数</td><td style="border:1px solid #2A2F37;padding:7px 11px">单测 + tauri dev 拖一遍</td></tr>
+<tr><td style="border:1px solid #2A2F37;padding:7px 11px" class="pick">合并粘贴</td><td style="border:1px solid #2A2F37;padding:7px 11px">扩展现有 MergeDialog.tsx/mergeText.ts（+2种分隔符）+ 栈条目适配函数，纯前端，零新组件</td><td style="border:1px solid #2A2F37;padding:7px 11px">单测新增分隔符 + 真机贴一次（含图片占位场景）</td></tr>
+<tr><td style="border:1px solid #2A2F37;padding:7px 11px" class="pick">⭐菜单永久化 + 拖拽手柄修复</td><td style="border:1px solid #2A2F37;padding:7px 11px">StackBanner.tsx acts 区永远只展 4 按钮（不再走 @container）；.grip 改绝对定位悬浮层，默认不占布局，纯前端</td><td style="border:1px solid #2A2F37;padding:7px 11px">448px/268px 两个真实宽度 + 108px 极端值真机核对都不挤爆/不过早滚动</td></tr>
+<tr><td style="border:1px solid #2A2F37;padding:7px 11px" class="pick">Tab 推进</td><td style="border:1px solid #2A2F37;padding:7px 11px">paste_engine.rs 补 VK_TAB 模拟 + stack 传参</td><td style="border:1px solid #2A2F37;padding:7px 11px">cargo check + 真机填表验证</td></tr>
+<tr><td style="border:1px solid #2A2F37;padding:7px 11px" class="pick">模板栈</td><td style="border:1px solid #2A2F37;padding:7px 11px">stack_templates 表 + 2 个命令 + TemplateDialog</td><td style="border:1px solid #2A2F37;padding:7px 11px">cargo test + 真机存/载/删</td></tr>
+</table>
+<p class="note" style="margin-top:10px">确认稿后按规则先改<b>最轻的拖拽重排</b>（纯前端、零 Rust），其余逐项推进。版本号未经许可<b>不升</b>。</p>
+
+</body>
+</html>

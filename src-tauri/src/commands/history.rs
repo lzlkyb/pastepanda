@@ -1,4 +1,5 @@
 use crate::data_store::{DataStore, HistoryItem, SidebarCounts, Stats, StatsDetail};
+use rusqlite::params;
 use tauri::{Emitter, Manager, State};
 
 #[tauri::command]
@@ -107,6 +108,105 @@ pub fn insert_markdown_history(
     };
     store.insert_history(&item)?;
     let _ = app.emit("clipboard-changed", serde_json::json!({ "item": item }));
+    Ok(())
+}
+
+/// 将流程图编辑器产出的内容作为新记录写入剪贴板历史。
+/// diagram 以 item_type="diagram" 入库，nodes/edges/direction 的 JSON 放在 content 字段，
+/// text 字段放可搜索的纯文本（节点标签拼接），便于 FTS 检索。
+/// 智能合并：相同内容（md5 相同，同 workspace、同类型）重复保存只更新时间不新建，
+/// 与剪贴板捕获 / Markdown 编辑器合并口径一致。
+#[tauri::command]
+pub fn insert_diagram_history(
+    app: tauri::AppHandle,
+    store: State<DataStore>,
+    content: String,
+    text: String,
+    workspace: String,
+) -> Result<String, String> {
+    use crate::data_store::compute_pinyin_initials;
+    let hash = crate::hashing::content_md5(&content);
+    let pinyin_initials = compute_pinyin_initials(&text);
+    let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let target_workspace = if workspace.is_empty() {
+        "默认".to_string()
+    } else {
+        workspace
+    };
+
+    // 空图不参与 md5 合并：空文档的 content 恒为 {"version":1,"nodes":[],"edges":[]}，
+    // md5 也就恒定，每次「新建流程图」都会命中上一条空记录、返回同一个 id，
+    // 双开两个新建窗口时两边 sourceId 相同，保存会互相覆盖。
+    let is_empty_doc = serde_json::from_str::<serde_json::Value>(&content)
+        .ok()
+        .and_then(|v| v.get("nodes").and_then(|n| n.as_array()).map(|a| a.is_empty()))
+        .unwrap_or(false);
+    if !is_empty_doc {
+        if let Ok(Some(existing)) = store.find_latest_by_md5(&hash, &target_workspace, "diagram") {
+            store.update_history_time(&existing.id, &now_str).ok();
+            let _ = app.emit(
+                "history-item-updated",
+                serde_json::json!({ "id": existing.id, "content": content, "text": text }),
+            );
+            return Ok(existing.id);
+        }
+    }
+
+    let item = HistoryItem {
+        id: uuid::Uuid::new_v4().to_string(),
+        text: text.clone(),
+        time: now_str,
+        item_type: "diagram".to_string(),
+        content,
+        pinned: false,
+        source: "流程图".to_string(),
+        workspace: target_workspace,
+        md5: Some(hash),
+        pinyin_initials: Some(pinyin_initials),
+        group_id: None,
+        source_icon: None,
+        content_type: Some("diagram".to_string()),
+        tags: Vec::new(),
+    };
+    store.insert_history(&item)?;
+    let _ = app.emit("clipboard-changed", serde_json::json!({ "item": item }));
+    Ok(item.id)
+}
+
+/// 更新流程图记录（item_type="diagram"）的内容与可搜索文本。
+///
+/// 修复「新建流程图点击保存报错记录不存在」：
+/// 此前流程图保存复用了 `update_history_rich`，而该函数第 668 行仅查询 `type = 'rich'` 的记录，
+/// 但 `insert_diagram_history` 把流程图存成了 `item_type="diagram"`，导致更新时 SELECT 查不到 → 报“记录不存在”。
+/// 流程图内容是其 JSON（nodes/edges），不是 HTML 富文本，因此独立建一条按 `type='diagram'` 定位的更新路径，
+/// 仅更新 content/text/md5/pinyin_initials（content_type 锁定为 'diagram'）。
+#[tauri::command]
+pub fn update_diagram_history(
+    app: tauri::AppHandle,
+    store: State<DataStore>,
+    id: String,
+    content: String,
+    text: String,
+) -> Result<(), String> {
+    use crate::data_store::compute_pinyin_initials;
+    let hash = crate::hashing::content_md5(&content);
+    let pinyin_initials = compute_pinyin_initials(&text);
+    let conn = store.lock_conn();
+    let affected = conn
+        .execute(
+            "UPDATE history SET content = ?1, text = ?2, md5 = ?3, pinyin_initials = ?4, content_type = 'diagram' WHERE id = ?5 AND type = 'diagram'",
+            params![content, text, hash, pinyin_initials, id],
+        )
+        .map_err(|e| e.to_string())?;
+    if affected == 0 {
+        return Err("记录不存在".to_string());
+    }
+    store.sync_fts_upsert(&conn, &id);
+    drop(conn);
+    let _ = app.emit(
+        "history-item-updated",
+        serde_json::json!({ "id": id, "content": content, "text": text }),
+    );
     Ok(())
 }
 

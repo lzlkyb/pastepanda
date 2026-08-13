@@ -52,6 +52,21 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ===== 流程图 --diagram-* 令牌（规则 8.3：节点实底、玻璃只在浮层） ===== */
+/* 只在本处声明一次，值全部引用各主题自身令牌，运行时惰性求值 → 6 主题自适应，无需逐主题重写 */
+:root {
+  --diagram-canvas-bg: var(--app-bg, #0b1220);
+  --diagram-node-bg: var(--card-bg, #ffffff);
+  --diagram-node-text: var(--text-primary, #0f172a);
+  --diagram-node-border: var(--border-color, #e0e4eb);
+  --diagram-node-shadow: var(--shadow-md, 0 2px 8px rgba(0, 0, 0, 0.18));
+  --diagram-edge: var(--text-muted, #64748b);
+  --diagram-edge-selected: var(--accent, #0284c7);
+  --diagram-panel-bg: var(--glass-popover-bg, rgba(15, 23, 42, 0.7));
+  --diagram-panel-border: var(--glass-popover-border, rgba(255, 255, 255, 0.14));
+  --diagram-panel-hover: var(--glass-shimmer, rgba(255, 255, 255, 0.1));
+}
+
 /* ===== 主题变量 ===== */
 
 /* ── 1. ocean 海洋（默认浅色·通用）── */

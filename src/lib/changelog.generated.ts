@@ -3,6 +3,41 @@ import type { ChangelogEntry } from "./changelog";
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "6.11.0",
+    date: "2026-08-13",
+    summary: "**流程图编辑器**（新内容类型 `diagram`，内嵌弹窗 + 全屏两...",
+    categories: [
+      {
+        type: "feat",
+        name: "新增",
+        items: [
+          { text: "**流程图编辑器**（新内容类型 `diagram`，内嵌弹窗 + 全屏两种形态共用一套画布）： - **11 种节点形状**，取值集**故意以 Mermaid 的形状词汇为界**——导入 / 导出 / AI 生成三条路全走 Mermaid，加一个 Mermaid 表达不了的形状一导出就丢、往返就破。菱形 / 六边形 / 平行四边形 / 梯形用 `clip-path` 配一对伴随伪元素画（**裁伪元素而不是裁 `.node`**：`clip-path` 会连子元素的命中区域一起裁，裁盒子会把四个连接点切掉外半边） - **Mermaid 双向闭环**：从 Mermaid 文本导入，导出 Mermaid / PNG / SVG / `.panda` - **两套自动布局引擎**：dagre（紧凑）/ elkjs（大图）/ 自动（按节点数选） - **连线锚点按相对位置算**：同列走上→下、同行走左→右、回边走同侧绕行；手拖过的边不被重算 - **焦点路径**：标记焦点节点后，与它相连的连线走流动虚线 - 撤销 / 重做、框选、节点颜色 / 描边 / 字号、双击改文字" },
+          { text: "**流程图专用 AI 动作三个**：`ai-diagram`（根据描述生成）/ `ai-diagram-expand`（展开子流程）/ `ai-diagram-label`（润色文案）。**不复用 `ai-rewrite`**：它的服务端模板是「用…语气改写下面的内容」，把指令塞进待改写位置会让模型改写指令本身。这三个是**画布内部动作**，已从 `ai_list_actions` 过滤，不会被 `initAiTransforms` 注册成卡片变换" },
+          { text: "**Markdown 渲染器支持 mermaid 代码块**直接出图" },
+        ],
+      },
+      {
+        type: "fix",
+        name: "修复",
+        items: [
+          { text: "**`parseMermaid` 整行丢弃同行「声明 + 连线」**：两条整行锚定的正则只能匹配“纯声明行”或“纯连线行”，而 `A[开始] --> B[结束]` 两边都不是——改成逐 token 扫描" },
+          { text: "**`shapeAndLabel` 除了无引号 `[…]` 之外全部解错**：改成成对的 open/close 表，并修好 `toMermaid` 里 ellipse 与 pill 的包裹符碰撞" },
+          { text: "**所有连线从节点顶部接到顶部**：导入 / AI 生成的裸边没带锚点，React Flow 会回落 `handles[0]`——也就是声明顺序里的第一个（Top）" },
+          { text: "**菱形文字被转成 -45°**：旧实现从设计稿抄了一个反向旋转，但容器本身没转（只有 `::before` 转了）" },
+          { text: "**空流程图会与历史条目 md5 合并**：`insert_diagram_history` 对“零节点文档”跳过去重，否则新建的空图会套到上一个空图的记录上" },
+          { text: "**`.shape_rect` 未声明**：组件拼的是 `shape_` 前缀拼形状名，缺了就取到 `undefined`，className 里出现字面量 `\"undefined\"`；同时加 `asShape()` 在数据层收敛未知形状值" },
+        ],
+      },
+      {
+        type: "other",
+        name: "清理",
+        items: [
+          { text: "移除未使用的 `zundo` 依赖（撤销栈是 `useDiagramModel` 里手写的，全项目零引用）" },
+        ],
+      },
+    ],
+  },
+  {
     version: "6.10.0",
     date: "2026-08-12",
     summary: "**AI 栏建议按内容与标签细化**： - **打分收口到变换中心**：A...",

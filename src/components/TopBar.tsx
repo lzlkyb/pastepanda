@@ -35,7 +35,7 @@ const TIME_OPTIONS: { key: TimeFilter; label: string }[] = [
 ];
 
 /** 工具箱分组面板（方案 A）：片段库 / 内容提取从顶栏独立按钮迁入此处；依次粘贴从主窗口常驻 FAB 迁入此处 */
-type ToolKey = "sequential" | "snippets" | "extract" | "encoding" | "replace" | "diff";
+type ToolKey = "sequential" | "snippets" | "extract" | "encoding" | "replace" | "diff" | "newdiagram";
 const TOOLBOX_GROUPS: {
   label: string;
   items: { key: ToolKey; icon: string; name: string; desc: string; hue: string }[];
@@ -46,6 +46,7 @@ const TOOLBOX_GROUPS: {
       { key: "sequential", icon: "📋", name: "依次粘贴", desc: "按顺序逐条粘贴文本 · Ctrl+Alt+Q", hue: "cyan" },
       { key: "snippets", icon: "📝", name: "片段库",   desc: "常用文本收藏，一键粘贴",             hue: "amber" },
       { key: "extract",  icon: "🧲", name: "内容提取", desc: "从记录中批量提取链接 / 邮箱 / 电话", hue: "rose" },
+      { key: "newdiagram", icon: "📊", name: "新建流程图", desc: "从零绘制，或让 AI 一键生成", hue: "cyan" },
     ],
   },
   {
@@ -81,9 +82,9 @@ function getTabStyle(): TabStyle {
   try { return (localStorage.getItem("tabStyle") as TabStyle) || "segmented"; } catch { return "segmented"; }
 }
 
-export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEncoding, onBatchReplace, onConfigDiff, onToggleSidebar, sidebarOpen }: {
+export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEncoding, onBatchReplace, onConfigDiff, onNewDiagram, onToggleSidebar, sidebarOpen }: {
   onSettings?: () => void; onSequential?: () => void; onSnippets?: () => void; onExtract?: () => void;
-  onEncoding?: () => void; onBatchReplace?: () => void; onConfigDiff?: () => void;
+  onEncoding?: () => void; onBatchReplace?: () => void; onConfigDiff?: () => void; onNewDiagram?: () => void;
   onToggleSidebar?: () => void; sidebarOpen?: boolean;
 }) {
   const filterType = useAppStore((s) => s.filterType);
@@ -164,6 +165,7 @@ export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEnco
     encoding: onEncoding,
     replace: onBatchReplace,
     diff: onConfigDiff,
+    newdiagram: onNewDiagram,
   };
 
   return (

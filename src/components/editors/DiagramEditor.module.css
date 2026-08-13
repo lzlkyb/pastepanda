@@ -1,0 +1,210 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 70vh;
+}
+
+.actionBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.spacer {
+  flex: 1;
+}
+
+/* AI 入口：渐变 CTA（设计稿 .btn.ai-cta）。
+   旁边就是 Mermaid / 导出 / 保存这些平权重的按钮，渐变实底才能把主线入口提出来。 */
+.aiBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: linear-gradient(135deg, var(--accent, #0284c7), #22d3ee);
+  color: #fff;
+  box-shadow: 0 3px 14px color-mix(in srgb, var(--accent, #0284c7) 35%, transparent);
+  cursor: pointer;
+  transition: filter 0.16s ease, transform 0.16s ease;
+}
+.aiBtn:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+/* 全屏顶栏的文档标题：取节点标签拼串，很容易很长，必须限宽截断，
+   否则会把右侧的按钮组顶出去。.fileName 是多个编辑器共用的，不在那边改。 */
+.docTitle {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ghostBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  font-size: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #e0e4eb);
+  background: var(--card-bg, #fff);
+  color: var(--text-secondary, #495565);
+  cursor: pointer;
+}
+.ghostBtn:hover {
+  background: var(--hover, #e8ecf2);
+}
+
+.exportWrap {
+  position: relative;
+}
+.exportMenu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  flex-direction: column;
+  min-width: 168px;
+  padding: 5px;
+  border-radius: 10px;
+  background: var(--glass-popover-bg, #fff);
+  border: 1px solid var(--glass-popover-border, rgba(0, 0, 0, 0.1));
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-md, 0 6px 18px rgba(0, 0, 0, 0.18));
+}
+.exportWrap:hover .exportMenu,
+.exportMenu:hover {
+  display: flex;
+}
+.exportMenu button {
+  text-align: left;
+  padding: 7px 9px;
+  font-size: 12px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-primary, #0f172a);
+  cursor: pointer;
+}
+.exportMenu button:hover {
+  background: var(--hover, #e8ecf2);
+}
+
+.aiPanel {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--glass-popover-bg, #fff);
+  border: 1px solid var(--accent-border, rgba(2, 132, 199, 0.3));
+  backdrop-filter: blur(8px);
+}
+.aiTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+.aiPanelTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-strong, #0273ad);
+}
+.aiBadge {
+  font-size: 9.5px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-light, rgba(2, 132, 199, 0.14));
+  color: var(--accent-strong, #0273ad);
+}
+.aiDesc {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted, #64748b);
+  margin-bottom: 8px;
+}
+.aiChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 10px;
+}
+.aiChip {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  border: 1px solid var(--border-color, #e0e4eb);
+  background: transparent;
+  color: var(--text-secondary, #495565);
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.aiChip:hover {
+  border-color: var(--accent, #0284c7);
+  color: var(--accent-strong, #0273ad);
+}
+.aiInput {
+  width: 100%;
+  resize: vertical;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #e0e4eb);
+  background: var(--input-bg, #f1f5f9);
+  color: var(--text-primary, #0f172a);
+  padding: 7px 9px;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.aiInput:focus {
+  border-color: var(--accent, #0284c7);
+}
+.aiPanelBtns {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.cancelBtn {
+  padding: 5px 12px;
+  font-size: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #e0e4eb);
+  background: transparent;
+  color: var(--text-secondary, #495565);
+  cursor: pointer;
+}
+.genBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 14px;
+  font-size: 12px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent, #0284c7);
+  color: #fff;
+  cursor: pointer;
+}
+.genBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.spin {
+  animation: diagramSpin 0.8s linear infinite;
+}
+@keyframes diagramSpin {
+  to { transform: rotate(360deg); }
+}
+
+.canvasWrap {
+  flex: 1;
+  min-height: 0;
+  border-radius: 10px;
+  overflow: hidden;
+}
