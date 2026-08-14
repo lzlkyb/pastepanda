@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda · 表格复制 → 自动拆行入栈 → 依次粘贴 设计稿（方案 A+B）</title>
+<style>
+/* ========================================================================
+   尺寸与变量**抄自真实代码**：
+   - StackBanner.tsx + StackBanner.module.css：橙色三层横幅（状态行/队列/进度）
+   - appStore.ts：stackPush 去重/50 上限；init.ts:77-99 剪贴板监听（栈模式才入栈，普通复制静默）
+   - queryResultToSql.ts：parseTable（Tab 分隔 + MySQL 边框，列数一致校验）
+   - GeneralTab.tsx：设置行样式（sRowLabel / sRowDesc / HotkeyRecorder）
+   - 主题：默认 ocean-dark 深海（--orange #FBBF24 栈主题色 / --accent 蓝 #3B9EFF）
+   - StackBanner.tsx 当前 acts 行真实结构（P4 已上线，2026-08-14 审查后对齐）：
+     逐条粘贴 / 全部 / ⋯溢出菜单（合并粘贴·Tab推进·存为模板·模板库）/ 退出——
+     本设计稿新功能项加进⋯菜单，不再单独占按钮位，避免重蹈"按钮太多要横滑"的老问题
+   ===================================================================== */
+*{box-sizing:border-box}
+body{margin:0;padding:30px 26px 70px;background:#14161A;color:#C9D2DD;
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.7}
+h1{font-size:19px;color:#fff;margin:0 0 4px}
+h2{font-size:15px;color:#fff;margin:36px 0 6px}
+h3{font-size:13px;color:#E6EDF5;margin:18px 0 6px;font-weight:600}
+.sub{color:#7C8899;font-size:12px;margin:0 0 24px}
+.note{color:#8D9AAB;font-size:12px;margin:6px 0 14px;max-width:980px}
+.note b{color:#D6DEE8;font-weight:600}
+.note .hl{color:#FBBF24}
+.pick{color:#6FD68B;font-weight:600}
+hr{border:0;border-top:1px solid #262A31;margin:34px 0 0}
+code{background:#1C2027;padding:1px 5px;border-radius:4px;font-size:11.5px;color:#A9C8E8}
+
+.stage{display:flex;gap:30px;flex-wrap:wrap;margin:20px 0 0;align-items:flex-start}
+.viewport{position:relative;width:520px;border:1px dashed #3A4048;border-radius:10px;
+  background:repeating-linear-gradient(45deg,#191C21,#191C21 10px,#1C2026 10px,#1C2026 20px);
+  padding:20px 14px 70px;overflow:visible}
+.vpTag{position:absolute;left:0;top:-20px;font-size:10.5px;color:#6E7A8A;white-space:nowrap}
+.fakeCard{background:#0E1520;border:1px solid #1C2938;border-radius:10px;height:34px;margin-top:10px;opacity:.5}
+.fakeCard.wide{height:52px}
+.two{display:flex;gap:16px;align-items:flex-start}
+
+/* ===== 真实 StackBanner（抄 StackBanner.module.css） ===== */
+.banner{display:flex;flex-direction:column;gap:7px;padding:10px 12px;border-radius:12px;
+  background:linear-gradient(135deg,rgba(251,191,36,.09),transparent 65%),rgba(251,191,36,.07);
+  border:1px solid rgba(251,191,36,.28);box-shadow:0 4px 16px rgba(234,88,12,.08);position:relative}
+.banner .tag{position:absolute;right:10px;top:-18px;font-size:9px;color:#8D9AAB;letter-spacing:.3px}
+.top{display:flex;align-items:center;gap:8px}
+.dot{width:10px;height:10px;border-radius:50%;background:#FBBF24;flex-shrink:0;box-shadow:0 0 0 0 rgba(234,88,12,.4)}
+.title{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:#FBBF24;
+  flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acts{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.primaryBtn{display:flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:8px;border:none;
+  background:#FBBF24;color:#1A1305;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
+.kbd{font:600 9px ui-monospace,Consolas,monospace;background:rgba(255,255,255,.25);padding:2px 5px;border-radius:4px}
+.btn{height:28px;padding:0 10px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;
+  background:rgba(251,191,36,.14);color:#FBBF24;border:1px solid rgba(251,191,36,.28)}
+.overflowWrap{position:relative}
+.overflowMenu{position:absolute;top:32px;right:0;min-width:150px;background:#12161C;border:1px solid #262A31;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.35);padding:5px;display:flex;flex-direction:column;gap:2px;z-index:20}
+.overflowItem{display:flex;align-items:center;gap:7px;padding:7px 9px;border-radius:7px;font-size:11.5px;color:#E0E8F0;background:transparent;border:none;text-align:left;cursor:pointer;white-space:nowrap;font-family:inherit}
+.overflowItem:hover{background:rgba(255,255,255,.07)}
+.overflowItem.new{background:rgba(59,158,255,.14);color:#3B9EFF}
+.ghostBtn{width:28px;height:28px;border-radius:8px;border:1px solid transparent;background:transparent;
+  color:#FBBF24;opacity:.7;cursor:pointer}
+.queue{display:flex;gap:6px;overflow-x:auto;padding:10px 2px 4px}
+.chip{display:flex;align-items:center;gap:5px;flex-shrink:0;max-width:140px;height:28px;padding:0 9px 0 6px;
+  border-radius:8px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.2);
+  font-size:11px;color:#E0E8F0}
+.ord{width:15px;height:15px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  font-size:9px;font-weight:700;background:rgba(251,191,36,.16);color:#FBBF24}
+.txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chipNext{border-color:#FBBF24;background:rgba(251,191,36,.16);box-shadow:0 0 0 2px rgba(234,88,12,.18)}
+.chipNext .ord{background:#FBBF24;color:#1A1305}
+.nextTag{position:absolute;top:-8px;right:6px;font-size:8px;font-weight:700;color:#1A1305;background:#FBBF24;
+  padding:1px 5px;border-radius:4px;white-space:nowrap}
+.chipDone{opacity:.4}
+.chipDone .txt{text-decoration:line-through}
+.foot{display:flex;align-items:center;gap:8px}
+.prog{flex:1;height:4px;border-radius:2px;background:rgba(251,191,36,.28);overflow:hidden}
+.progFill{height:100%;background:linear-gradient(90deg,#F97316,#EA580C);width:42%}
+.footTxt{font-size:10px;color:#FBBF24;opacity:.85;white-space:nowrap}
+
+/* toast 提示条 */
+.toast{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:10px;font-size:12px;
+  background:#0E1A2C;border:1px solid rgba(251,191,36,.4);color:#E0E8F0;margin:0 0 8px}
+.toast .tIco{color:#FBBF24}
+.toast .mergeBtn{margin-left:auto;flex-shrink:0;font-size:10.5px;font-weight:600;padding:4px 10px;border-radius:7px;
+  border:none;background:rgba(59,158,255,.16);color:#3B9EFF;cursor:pointer}
+
+/* 设置行（抄 GeneralTab sRow 风格） */
+.setCard{width:440px;background:#0A1628;border:1px solid #162B45;border-radius:14px;overflow:hidden;flex-shrink:0}
+.setHdr{display:flex;align-items:center;height:44px;padding:0 16px;gap:8px;border-bottom:1px solid #162B45;
+  font-size:13.5px;font-weight:600;color:#E0E8F0}
+.setBody{display:flex;flex-direction:column}
+.sRow{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid #101D33}
+.sRow:last-child{border-bottom:none}
+.sLabel{font-size:12.5px;color:#E0E8F0;flex:1}
+.sDesc{font-size:11px;color:#7994B4;width:100%}
+.switch{width:36px;height:20px;border-radius:999px;background:#1C2938;position:relative;cursor:pointer;flex-shrink:0}
+.switch.on{background:#2D78C2}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .15s}
+.switch.on::after{left:18px}
+.seg{display:flex;gap:6px;background:#081018;border:1px solid #162B45;border-radius:9px;padding:3px}
+.segBtn{font-size:11px;font-weight:600;padding:5px 10px;border-radius:7px;cursor:pointer;color:#A2B6CD;
+  border:none;background:transparent}
+.segBtn.on{background:#0A1E3A;color:#3B9EFF;box-shadow:0 0 0 1px #2D78C2 inset}
+
+.anno{background:#0E1A12;border:1px solid #166534;border-radius:10px;padding:12px 14px;font-size:12px;color:#9FBF9F;max-width:560px}
+.anno b{color:#6FD68B}
+.anno.warn{background:#1A1210;border-color:#7F1D1D;color:#C9A2A2}
+.anno.warn b{color:#F09A9A}
+table.t{border-collapse:collapse;margin-top:8px;font-size:12.5px;max-width:980px}
+table.t th,table.t td{border:1px solid #2A2F37;padding:7px 11px;text-align:left;vertical-align:top}
+table.t th{background:#1C2027;color:#E4EAF1;font-weight:600}
+table.t td{color:#B4BECB}
+</style>
+</head>
+<body>
+
+<h1>表格复制 → 自动拆行入栈 → 依次粘贴 设计稿（方案 A+B 融合）</h1>
+<p class="sub">核心：把"拆分"从主动操作变成"复制时自动发生"——复制表格 = 自动按行入栈，照常 Ctrl+Alt+P 逐条贴 ｜ 纯本地零出网 ｜ 候选版本 6.11</p>
+<p class="note">尺寸与变量<b>全部抄自真实代码</b>（StackBanner / init.ts 剪贴板监听 / appStore stackPush / GeneralTab 设置行 / queryResultToSql 的 <code>parseTable</code>）。<b>不打扰性已验证</b>：检测只在栈模式入栈路径执行（init.ts:84-91），普通复制走 prependItem 静默记录、连 toast 都不弹。</p>
+
+<!-- ==================== 0. 方案总览 ==================== -->
+<h2>① 方案总览：A（自动拆行入栈）+ B（热键自适应）</h2>
+<table class="t">
+<tr><th style="width:20%">分支</th><th>行为</th><th style="width:34%">触发条件</th></tr>
+<tr><td class="pick">A · 栈模式自动拆行</td><td>复制表格 → 自动按行拆分入栈（toast「已按行拆 5 条」+ 横幅「合并还原」兜底）</td><td>栈模式已开启 + 剪贴板命中表格（parseTable）</td></tr>
+<tr><td class="pick">B · 热键自适应</td><td>非栈模式按 Ctrl+Alt+P 且剪贴板是表格 → 自动开栈拆行 + 贴第一条</td><td>栈模式未开 + 剪贴板命中表格（原热键在此场景是静默无操作，纯增益）</td></tr>
+</table>
+<p class="note">两条规则共用同一个检测与拆分器；红线不变：拆分本地、粘贴走 <code>pasteTextGuarded</code> 安全闸、队列可见可中止、绝不自动连贴。</p>
+
+<hr>
+
+<!-- ==================== 1. 场景 A：栈模式复制表格 ==================== -->
+<h2>② 场景 A：栈模式开着，在 Excel 复制表格（2 步）</h2>
+<div class="stage">
+  <div class="viewport">
+    <div class="vpTag">步骤 1 · 复制表格 → 自动拆行入栈</div>
+    <div class="toast"><span class="tIco">▦</span> 检测到表格（5 行 × 3 列）· 已按行拆成 5 条入栈
+      <button class="mergeBtn">撤销拆分</button>
+    </div>
+    <div class="banner">
+      <div class="top">
+        <span class="dot"></span>
+        <span class="title">◆ 栈模式 · 剩余 5 条（表格拆分）</span>
+        <div class="acts">
+          <button class="primaryBtn">⏩ 逐条粘贴 <span class="kbd">Ctrl+Alt+P</span></button>
+          <button class="btn">▶ 全部</button>
+          <div class="overflowWrap">
+            <button class="ghostBtn" title="更多操作">⋯</button>
+            <div class="overflowMenu">
+              <button class="overflowItem new">📐 撤销拆分（还原整表）</button>
+              <button class="overflowItem">🧩 合并粘贴</button>
+              <button class="overflowItem">⇥ 开启 Tab 推进</button>
+              <button class="overflowItem">📌 存为模板</button>
+              <button class="overflowItem">📚 模板库</button>
+            </div>
+          </div>
+          <button class="ghostBtn">✕</button>
+        </div>
+      </div>
+      <div class="queue">
+        <div class="chip chipNext" style="position:relative"><span class="ord">1</span><span class="txt">张三 · zhang@qq.com</span><span class="nextTag">下一个粘贴</span></div>
+        <div class="chip"><span class="ord">2</span><span class="txt">李四 · li@qq.com</span></div>
+        <div class="chip"><span class="ord">3</span><span class="txt">王五 · wang@qq.com</span></div>
+        <div class="chip"><span class="ord">4</span><span class="txt">赵六</span></div>
+        <div class="chip"><span class="ord">5</span><span class="txt">孙七</span></div>
+      </div>
+      <div class="foot"><div class="prog"><div class="progFill"></div></div><span class="footTxt">0/5 已粘贴 · Ctrl+C 可继续收集</span></div>
+    </div>
+    <div class="fakeCard wide"></div><div class="fakeCard"></div><div class="fakeCard"></div>
+  </div>
+  <div>
+    <div class="anno">
+      <b>交互</b><br>
+    · 复制表格 = 自动拆行入栈，<b>无需右键、无需找卡片、无需手动进栈</b>。<br>
+    · toast 明确告知「已按行拆 5 条」；「⋯」菜单里的<b>「撤销拆分」</b>一键并回整块（误判/不想要拆分时用）——
+      和已有的「🧩 合并粘贴」（把多条内容并成一条贴出去）是两回事，名字/图标特意做区分，避免点混。<br>
+    · 之后是粘贴栈既有体验：逐条 <code>Ctrl+Alt+P</code> / 「▶ 全部」一键贴完 / 贴完自动退出。<br><br>
+    <b>拆行格式</b>（设置可配）<br>
+    · 默认<b>原始行</b>（保留 Tab）；可选<b>「字段: 值」</b>（"姓名: 张三"）填表更易读。<br>
+    · 表头默认<b>排除</b>。<br><br>
+    <b>不打扰</b><br>
+    · 栈模式本来就有入栈 toast（现有行为 init.ts:87-89），拆行只是文案变化；普通复制（未开栈）零提示零检测。<br><br>
+    <b>「已粘贴」尾巴的已知限定</b><br>
+    · 横幅「已粘贴」划线尾巴是拿 <code>stackDoneIds</code> 反查 <code>history</code> 渲染的；拆表生成的行是全新合成条目，
+      不登记进 <code>history</code>（避免连带触发 AI 自动分类等只该由真实剪贴板事件产生的副作用）。
+      所以这几行贴完后只是从队列消失，<b>不会</b>出现在「已粘贴」划线尾巴里——这是本设计的选择，不是遗漏。
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<!-- ==================== 2. 场景 B：热键自适应 ==================== -->
+<h2>③ 场景 B：没开栈，直接按 Ctrl+Alt+P（2 步）</h2>
+<div class="stage">
+  <div class="viewport">
+    <div class="vpTag">步骤 1 · 在 Excel 复制表格 → 切到目标窗口按 Ctrl+Alt+P</div>
+    <div class="fakeCard wide" style="padding:8px 12px;font-size:11px;color:#7994B4;display:flex;align-items:center">
+      📋 刚从 Excel 复制客户表（5 行 × 3 列）
+    </div>
+    <div class="fakeCard"></div>
+    <div class="fakeCard"></div>
+    <div class="toast" style="margin-top:14px"><span class="tIco">⚡</span> 检测到表格 · 已自动拆行入栈并粘贴第 1 条（剩余 4 条）
+      <button class="mergeBtn">撤销拆分</button>
+    </div>
+  </div>
+  <div>
+    <div class="anno">
+      <b>交互</b><br>
+    · 栈没开时按 <code>Ctrl+Alt+P</code> 原本<b>静默无操作</b>（<code>stackPasteNext</code> 内 <code>!store.stackMode</code> 直接 return）——本方案把它变成"自动开栈 + 拆行入栈 + 贴第一条"，<b>纯增益，不改变任何现有习惯</b>。<br>
+    · 表格检测<b>读 <code>useAppStore.getState().history[0]</code></b>（Rust 后台剪贴板监听器早同步好的最新一条），<b>不用</b> <code>navigator.clipboard.readText()</code>——
+      后者依赖当前文档拥有焦点，而这个场景恰恰是"焦点在外部应用上，按热键让 PastePanda 后台代劳"，此时调用大概率读失败/被拒绝。
+      读 history[0] 同样零 Rust，且和依次粘贴/索引粘贴等其它热键功能读取剪贴板内容的方式保持一致。<br>
+    · 继续按 <code>Ctrl+Alt+P</code> 贴完剩余；栈模式自动开启，横幅出现。<br><br>
+    <b>为什么不是"直接连贴 5 条"？</b><br>
+    · 逐条模式保留<b>队列可见、可中止、贴错可停</b>（可托付执行红线）；要一次贴完点「▶ 全部」即可。<br>
+    · 2 步 vs 5 步的差距主要来自<b>去掉"右键→变换→找卡"</b>，连贴只多省一次按键，却丢全部可控性。
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<!-- ==================== 3. 设置 ==================== -->
+<h2>④ 设置（设置 → 快捷键/粘贴 区域，沿用 GeneralTab 行式）</h2>
+<div class="two">
+  <div class="setCard">
+    <div class="setHdr">⚙ 表格拆分</div>
+    <div class="setBody">
+      <div class="sRow">
+        <div><div class="sLabel">表格自动拆行入栈</div><div class="sDesc">复制表格时按行拆分（关闭 = 表格整块入栈）</div></div>
+        <span class="switch on"></span>
+      </div>
+      <div class="sRow">
+        <div><div class="sLabel">拆行格式</div><div class="sDesc">入栈后每条的样子</div></div>
+        <div class="seg"><button class="segBtn on">原始行</button><button class="segBtn">字段: 值</button></div>
+      </div>
+      <div class="sRow">
+        <div><div class="sLabel">表头</div><div class="sDesc">拆分时是否保留第一行</div></div>
+        <div class="seg"><button class="segBtn on">排除</button><button class="segBtn">包含</button></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="anno warn" style="margin-bottom:10px">
+      <b>边界</b><br>
+    · 栈上限 50 条：表格超 50 行 → toast 提示「表格 62 行，仅前 50 条入栈」，不静默截断。<br>
+      <code>stackPush</code> 本身是静默 <code>slice(0,50)</code> 的纯 setter、不返回丢弃数，
+      这条精确文案需要拆分器调用前自己先读 <code>stackItems.length</code> 算好这批能塞几条、丢几条——
+      比"stackPush 前加个判断分支"工作量略多，别按最小估法排期。<br>
+    · 「单列拆分」（竖着复制一列 ID）作为拆分器选项预留，v1 只做按行。
+    </div>
+    <div class="anno">
+      <b>红线不变</b><br>
+    · 拆分纯本地（parseTable 现成）；粘贴走安全闸；队列可见可中止；自动拆行是<b>用户先开栈或先按热键</b>才触发，非后台自动行为。
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>⑤ 交付范围与验证点</h2>
+<table class="t">
+<tr><th style="width:24%">改动</th><th>内容</th><th style="width:32%">验证</th></tr>
+<tr><td class="pick">新增 <code>tableSplit.ts</code></td><td>纯函数 <code>splitTableToRows(text,{format,includeHeader})</code>，复用 <code>parseTable</code>；返回 string[]；<b>单测</b>：Tab 分隔 / MySQL 边框 / 单行 / 超 50 条截断</td><td>vitest</td></tr>
+<tr><td class="pick">stackPush 加表格分支</td><td><code>appStore.stackPush</code> 入口前判断 <code>splitTableToRows</code> 命中 → 逐行入栈，且预读剩余容量算好丢弃数；记录"来自拆分"标记供撤销拆分。<b>不登记进 history</b>（贴完不进「已粘贴」尾巴，属预期）</td><td>单测 + 真机复制表格入栈 + 验证截断提示文案精确</td></tr>
+<tr><td class="pick">撤销拆分</td><td>栈横幅「⋯」菜单加「撤销拆分」项（拆分行并回整块，toast 里也有按钮）；<b>与「合并粘贴」区分名字/图标</b>，不复用</td><td>真机：误拆后一键还原</td></tr>
+<tr><td class="pick">B 热键自适应</td><td><code>hotkey-stack-paste</code> 分支：栈未开 + 读 <code>history[0]</code> 判断是表格（不用 <code>navigator.clipboard.readText()</code>，焦点在外部应用时不可靠）→ 开栈拆行 + 贴第一条（复用 stack.ts 既有互斥锁）</td><td>真机：不点开栈、焦点在别的应用上直接按热键</td></tr>
+<tr><td>设置项</td><td>GeneralTab 加 3 行：自动拆行开关（默认开）/ 格式 / 表头</td><td>tsc + 真机切换</td></tr>
+</table>
+<p class="note" style="margin-top:10px">全部<b>纯前端改动（零 Rust）</b>；不新增热键；版本号未经许可<b>不升</b>。确认稿后从 <code>tableSplit.ts</code> + 单测开始。</p>
+
+</body>
+</html>
