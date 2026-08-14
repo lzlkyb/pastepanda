@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { applyTheme, DEFAULT_THEME, ThemeKey } from "@/lib/theme";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, HistoryItem, buildSearchKey } from "@/stores/appStore";
-import { useDialogStore } from "@/stores/dialogStore";
+import { useDialogStore, anyDialogOpen } from "@/stores/dialogStore";
 import { TopBar } from "@/components/TopBar";
 import { SuggestionBar } from "@/components/SuggestionBar";
 import { AiQuickBar } from "@/components/AiQuickBar";
@@ -655,7 +655,13 @@ function App() {
     if (useDialogStore.getState().hubItem) return;
     // 弹窗打开时：ESC/? 正常工作，其余列表导航按键被屏蔽（让弹窗内部控件如 Tab 可以正常使用）
     const { showSettings, showSequential, showSnippets, showExtract, showEncoding, showBatchReplace, showConfigDiff, moveToGroup } = dialogStatesRef.current;
-    const dialogOpen = showSettings || showSequential || showSnippets || showExtract || showEncoding || showBatchReplace || showConfigDiff || moveToGroup || fileDetailOpenRef.current;
+    // anyDialogOpen 覆盖 dialogStore 管的那批（卡片编辑弹框 / 链运行 / 粘贴守卫 / 画像 / 里程碑 …）。
+    // 原先这里只手写了上面那串 show* 局部状态，漏掉了 store 那批：
+    // 开着卡片编辑弹框按 Delete/Backspace 会直接删掉主窗口选中的卡片。
+    const dialogOpen =
+      showSettings || showSequential || showSnippets || showExtract || showEncoding ||
+      showBatchReplace || showConfigDiff || moveToGroup || fileDetailOpenRef.current ||
+      anyDialogOpen(useDialogStore.getState());
     const isListNavKey = ["ArrowDown", "ArrowUp", "Enter", "Delete", "Backspace", "Home", "End"].includes(e.key)
       || (e.ctrlKey && (e.key === "d" || e.key === "z" || e.key === "s" || e.key === "h" || e.key === "a"));
     if (dialogOpen && e.key !== "Escape" && e.key !== "?" && isListNavKey) return;

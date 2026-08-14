@@ -829,7 +829,14 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
     requestAnimationFrame(() => { scrollSyncSource.current = null; });
   }, []);
 
-  // Attach scroll listeners（spec.scrollSync 为 true 才挂载）
+  // Attach scroll listeners（spec.scrollSync 为 true 才挂载）。
+  // 依赖数组必须带 loading：从外部文件打开时 loading 初始为 true，渲染函数会提前 return 只出
+  // 一个“加载中”占位（editorPane/previewPane 都不渲染），此时两个 ref 都是 null，这里
+  // 挂不上任何监听器；loadFile 完成后 loading 才变 false、真正的编辑区/预览区才挂载。
+  // 不把 loading 放进依赖数组，这个 effect 就只在第一次（ref 全是 null）跑一次，
+  // 之后再也不会重跑，滚动同步从此失效——正是“从外部 md 文件打开”才复现、
+  // 从卡片内容打开不复现的原因（后者 initFilePath 为空，loading 从一开始就是 false，
+  // 首次渲染就直接是完整 UI，没有这个提前 return 的中间态）。
   useEffect(() => {
     if (!spec.scrollSync) return;
     const editorScroller = editorRef.current?.querySelector(".cm-scroller");
@@ -840,7 +847,7 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
       if (editorScroller) editorScroller.removeEventListener("scroll", handleEditorScroll);
       if (previewEl) previewEl.removeEventListener("scroll", handlePreviewScroll);
     };
-  }, [handleEditorScroll, handlePreviewScroll, viewMode, spec.scrollSync]);
+  }, [handleEditorScroll, handlePreviewScroll, viewMode, spec.scrollSync, loading]);
 
   // ─── Resize drag ────────────────────────────────────
   const handleResizeStart = useCallback((e: React.MouseEvent) => {

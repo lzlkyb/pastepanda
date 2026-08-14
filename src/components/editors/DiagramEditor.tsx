@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Sparkles, Download, Maximize2 } from "lucide-react";
+import { Sparkles, Maximize2 } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { useDialogStore } from "@/stores/dialogStore";
 import { getAiAvailability } from "@/lib/aiAvailability";
@@ -23,6 +23,7 @@ import {
 import { DiagramCanvas, type DiagramCanvasHandle } from "./DiagramCanvas";
 import { DiagramAiPanel } from "./diagram/DiagramAiPanel";
 import { useDiagramExport } from "./diagram/useDiagramExport";
+import { ExportMenu } from "./diagram/ExportMenu";
 import styles from "./DiagramEditor.module.css";
 
 export function DiagramEditor({ item, registerActions }: { item: import("@/stores/appStore").HistoryItem; registerActions: (a: import("@/lib/editorRegistry").EditorActions) => void }) {
@@ -114,17 +115,7 @@ export function DiagramEditor({ item, registerActions }: { item: import("@/store
           </button>
         )}
         <div className={styles.spacer} />
-        <div className={styles.exportWrap}>
-          <button className={styles.ghostBtn} onClick={() => exportAs("png")} title="导出 PNG">
-            <Download size={14} /> 导出
-          </button>
-          <div className={styles.exportMenu}>
-            <button onClick={() => exportAs("png")}>🖼 PNG 图片</button>
-            <button onClick={() => exportAs("svg")}>📐 SVG 矢量</button>
-            <button onClick={() => exportAs("mermaid")}>🧩 Mermaid 源码</button>
-            <button onClick={() => exportAs("panda")}>💾 PastePanda 文件</button>
-          </div>
-        </div>
+        <ExportMenu onExport={exportAs} />
         <button className={styles.ghostBtn} onClick={launchFullscreen} title="全屏编辑">
           <Maximize2 size={14} /> 全屏
         </button>

@@ -8,7 +8,10 @@
  */
 import { useCallback, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { addEdge, type Connection, type Edge } from "@xyflow/react";
-import { newId, type DNode, type NodeShape } from "@/lib/diagram/types";
+import {
+  newId, edgeLineOf, makeGroup, GROUP_W, GROUP_H,
+  type DNode, type NodeShape, type EdgeLine,
+} from "@/lib/diagram/types";
 
 interface Snap {
   nodes: DNode[];
@@ -108,6 +111,28 @@ export function useDiagramModel(o: DiagramModelOpts) {
     [addNodeAt, screenToFlowPosition, rootRef],
   );
 
+  /** 在指定画布坐标建区域框。插在数组**最前面**：与 zIndex:-1 一致，
+   *  也让序列化结果与 Mermaid 导入的顺序一致（框在前、节点在后）。 */
+  const addGroupAt = useCallback(
+    (pos: { x: number; y: number }) => {
+      pushHistory();
+      const id = newId("g");
+      const box = makeGroup(id, pos, { w: GROUP_W, h: GROUP_H }, { label: "新分组" });
+      setNodes((ns) => [box, ...ns]);
+      setSelectedId(id);
+      setTimeout(emit, 0);
+    },
+    [pushHistory, setNodes, setSelectedId, emit],
+  );
+
+  const addGroup = useCallback(() => {
+    const rect = rootRef.current?.getBoundingClientRect();
+    const center = rect
+      ? screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+      : { x: 200, y: 160 };
+    addGroupAt({ x: center.x - GROUP_W / 2, y: center.y - GROUP_H / 2 });
+  }, [addGroupAt, screenToFlowPosition, rootRef]);
+
   const commitLabel = useCallback(
     (id: string, label: string) => {
       setEditingId(null);
@@ -126,6 +151,29 @@ export function useDiagramModel(o: DiagramModelOpts) {
       if (edge && (edge.label || "") === label) return; // 说明没变不记历史
       pushHistory();
       setEdges((es) => es.map((e) => (e.id === id ? { ...e, label: label || undefined } : e)));
+      setTimeout(emit, 0);
+    },
+    [edges, pushHistory, setEdges, emit],
+  );
+
+  /** 改连线线型（实 / 虚 / 粗）。solid 是默认值，**改回 solid 时要把字段删掉**，
+   *  与 parseDiagram / serializeDiagram 的约定一致（solid 不入库）；
+   *  否则落盘里会多一个 line:"solid"，与直接新建的边序列化结果不等，
+   *  而「未保存」是靠序列化串比对基线判的——会凭空亮红点。 */
+  const setEdgeLine = useCallback(
+    (id: string, line: EdgeLine) => {
+      const edge = edges.find((e) => e.id === id);
+      if (edge && edgeLineOf(edge) === line) return; // 线型没变不记历史
+      pushHistory();
+      setEdges((es) =>
+        es.map((e) => {
+          if (e.id !== id) return e;
+          const data: Record<string, unknown> = { ...(e.data ?? {}) };
+          if (line === "solid") delete data.line;
+          else data.line = line;
+          return { ...e, data: Object.keys(data).length > 0 ? data : undefined };
+        }),
+      );
       setTimeout(emit, 0);
     },
     [edges, pushHistory, setEdges, emit],
@@ -206,13 +254,14 @@ export function useDiagramModel(o: DiagramModelOpts) {
   const setNodeShape = useCallback((shape: NodeShape) => patchSelected({ shape }), [patchSelected]);
   const setNodeFontSize = useCallback((fontSize?: number) => patchSelected({ fontSize }), [patchSelected]);
   const setNodeStroke = useCallback((stroke?: string) => patchSelected({ stroke }), [patchSelected]);
+  const setNodeTextColor = useCallback((textColor?: string) => patchSelected({ textColor }), [patchSelected]);
   const setNodeFocal = useCallback((focal: boolean) => patchSelected({ focal }), [patchSelected]);
 
   return {
     past, future, pushHistory, resetHistory, undo, redo,
-    onConnect, addNode, addNodeAt, commitLabel, setEdgeLabel,
+    onConnect, addNode, addNodeAt, addGroup, addGroupAt, commitLabel, setEdgeLabel, setEdgeLine,
     deleteNode, deleteEdge, deleteTarget, deleteSelected,
     duplicateNode, copySelected, pasteClipboard, hasClipboard,
-    setNodeColor, setNodeShape, setNodeFontSize, setNodeStroke, setNodeFocal,
+    setNodeColor, setNodeShape, setNodeFontSize, setNodeStroke, setNodeTextColor, setNodeFocal,
   };
 }

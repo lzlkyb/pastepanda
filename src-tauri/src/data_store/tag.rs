@@ -241,12 +241,20 @@ impl DataStore {
     /// 确保自动标签种子数据存在（首次启动时插入）
     pub fn ensure_auto_tags(&self) -> Result<(), String> {
         let conn = self.lock_conn();
-        let auto_tags: [(&str, &str, &str); 30] = [
+        let auto_tags: [(&str, &str, &str); 32] = [
             // 主类别
             ("auto-code", "代码", "#6366F1"),
             // 图文混排：走自动标签而不是卡片上写死的徽标，这样才能与其它标签
             // 统一管理：点卡片上的标签可筛选、也会出现在筛选标签列表里
             ("auto-rich", "图文", "#D97706"),
+            // 流程图 / 文档：同上，类型标识走标签体系。
+            //
+            // 这两行是补的：`resolve_auto_tag_ids` 按 name 查、查不到就跳过，
+            // 所以种子表里没的名字**发了 TagJob 也是静默失效**——
+            // 「文档」一直在 process_doc 里 push 着，但从来没真正落到过卡片上。
+            // 流程图的色与前端 contentTypes.ts 里 diagram 的 #0EA5E9 保持一致。
+            ("auto-diagram", "流程图", "#0EA5E9"),
+            ("auto-doc", "文档", "#A21CAF"),
             ("auto-link", "链接", "#06B6D4"),
             ("auto-json", "JSON", "#F59E0B"),
             ("auto-config", "配置文件", "#10B981"),

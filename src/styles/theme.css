@@ -55,16 +55,26 @@
 /* ===== 流程图 --diagram-* 令牌（规则 8.3：节点实底、玻璃只在浮层） ===== */
 /* 只在本处声明一次，值全部引用各主题自身令牌，运行时惰性求值 → 6 主题自适应，无需逐主题重写 */
 :root {
-  --diagram-canvas-bg: var(--app-bg, #0b1220);
+  /* 画布底色不能等于 --app-bg：同值时画布与外面连成一片，看不出这是一块工作区。
+     往 --text-primary 掺 8%：浅色主题得浅灰、深色主题得更深，一条式子服务 6 套主题，
+     不用逐主题改写（搭配 .root 的 inset 内圈 + 内投影，见 DiagramCanvas.module.css）。 */
+  --diagram-canvas-bg: color-mix(in srgb, var(--app-bg, #0b1220) 92%, var(--text-primary, #0f172a));
   --diagram-node-bg: var(--card-bg, #ffffff);
   --diagram-node-text: var(--text-primary, #0f172a);
   --diagram-node-border: var(--border-color, #e0e4eb);
   --diagram-node-shadow: var(--shadow-md, 0 2px 8px rgba(0, 0, 0, 0.18));
   --diagram-edge: var(--text-muted, #64748b);
+  /* 连线与箭头的颜色必须是同一个值：箭头是单独的 <marker>，
+     不共用路径的 stroke，分两处写必定跑偏。也因此不再给路径加 opacity——
+     opacity 只作用在路径上，箭头会比线深一截。 */
+  --diagram-edge-line: color-mix(in srgb, var(--accent, #0284c7) 55%, var(--text-muted, #64748b));
   --diagram-edge-selected: var(--accent, #0284c7);
   --diagram-panel-bg: var(--glass-popover-bg, rgba(15, 23, 42, 0.7));
   --diagram-panel-border: var(--glass-popover-border, rgba(255, 255, 255, 0.14));
   --diagram-panel-hover: var(--glass-shimmer, rgba(255, 255, 255, 0.1));
+  /* 浮层模糊：工具栏 / 属性面板 / 属性抽屉 / 形状库 / 状态栏 / 空态按钮 六处共用一份，
+     以前各写一遍 blur(10px) saturate(1.3)，调一次要改六处（规则 #11 单一数据源）。 */
+  --diagram-float-blur: blur(10px) saturate(1.3);
 }
 
 /* ===== 主题变量 ===== */

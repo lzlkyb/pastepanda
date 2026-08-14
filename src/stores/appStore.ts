@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { logger } from "@/lib/logger";
 import type { SemanticHit } from "@/lib/api/semantic";
+import { reorderAction } from "@/lib/quickOrder";
+import { splitTableToRows } from "@/lib/tableSplit";
 
 // ===== 数据类型 =====
 
@@ -87,6 +89,9 @@ export interface AppConfig {
   window_animation: boolean; // 弹框与全屏窗口打开/关闭动画（方案 B 玻璃浮升），关闭后即时显隐
   doc_capture: boolean; // P1：结构化文本复制保留 CF_HTML（文档保真采集）
   paste_format_default: "auto" | "plain"; // P5：doc/rich 粘贴默认格式（auto=富格式，plain=纯文本）
+  table_split_enabled: boolean; // 表格拆分入栈（方案 A/B）总开关，默认开
+  table_split_format: "raw" | "field-value"; // 拆行后每条的文本格式：raw=原始行，field-value=字段: 值
+  table_split_include_header: boolean; // 拆行时是否保留表头行，默认排除
 }
 
 // ===== Store 接口 =====
@@ -138,6 +143,10 @@ interface AppState {
   stackPasted: number; // 本轮实际已粘贴条数
   stackCollected: number; // 本轮真实收集总条数（含被 50 条上限截断丢弃的，进度分母用它，避免虚高）
   stackPasteAllActive: boolean; // U58：「全部粘贴」循环进行中（用于显示进度条与中止按钮）
+  /** P3 粘贴+Tab 推进开关：开启后每次栈顶粘贴成功后自动补发 Tab 键。默认关 */
+  stackTabAdvance: boolean;
+  /** 表格拆分：最近一次拆分的原始整表文本 + 拆出的条目 id 列表，供「撤销拆分」使用。null = 无可撤销 */
+  stackLastSplit: { originalText: string; itemIds: string[] } | null;
 
   // 动作
   setHistory: (items: HistoryItem[]) => void;
@@ -178,6 +187,20 @@ interface AppState {
   setStackMode: (active: boolean) => void;
   stackPush: (item: HistoryItem) => void;
   stackMarkPasted: () => void;
+  /** P1 拖拽重排：把 fromId 拖到 toId 的位置（仅在未粘贴的 stackItems 中排序，不影响已粘贴项） */
+  stackReorder: (fromId: string, toId: string) => void;
+  /** P1 星号删除角标：从 stackItems 中直接移除该条（不粘贴，不计入已粘贴统计） */
+  stackRemoveItem: (id: string) => void;
+  /** P3 粘贴+Tab 开关取反 */
+  toggleStackTabAdvance: () => void;
+  /** P4 模板库载入：替换当前未粘贴的 stackItems、自动进入栈模式，保留已有的已粘贴统计 */
+  stackLoadTemplate: (items: { type: HistoryItem["type"]; text: string; content: string }[]) => void;
+  /** 表格拆分（方案 A/B）：命中表格则按行拆分逐条入栈并返回拆分统计；未命中/非文本/非栈模式则降级为普通 stackPush 并返回 null */
+  stackPushOrSplit: (item: HistoryItem) => { splitCount: number; totalRows: number } | null;
+  /** 撤销最近一次表格拆分：移除还在队列中的拆分行，还原为一条原始整表文本（已粘贴的行不受影响） */
+  stackUndoSplit: () => void;
+  /** 合并粘贴成功后调用：把参与合并的那几条从未粘贴队列中移除并标记为已粘贴，避免后续逐条/全部粘贴时重复粘贴同一批内容 */
+  stackConsumeMerged: (ids: string[]) => void;
   exitStackMode: () => void;
 
   updateConfig: (partial: Partial<AppConfig>) => void;
@@ -226,6 +249,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   window_animation: true,
   doc_capture: true,
   paste_format_default: "auto",
+  table_split_enabled: true,
+  table_split_format: "raw",
+  table_split_include_header: false,
 };
 
 // ===== 搜索模式辅助 =====
@@ -281,6 +307,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   stackPasted: 0,
   stackCollected: 0,
   stackPasteAllActive: false,
+  stackTabAdvance: false,
+  stackLastSplit: null,
   realIconCache: {},
   searchHistory: (() => {
     try {
@@ -552,10 +580,125 @@ export const useAppStore = create<AppState>((set, get) => ({
       const [pasted, ...rest] = s.stackItems;
       const done = new Set(s.stackDoneIds);
       done.add(pasted.id);
-      return { stackItems: rest, stackDoneIds: done, stackPasted: s.stackPasted + 1 };
+      // 若这一条属于最近一次表格拆分，说明部分内容已经贴出去了——此时如果还允许「撤销拆分」，会把整张原表重新塞回队列，
+      // 导致已经贴过的部分被重复粘贴一次，所以要把可撤销记录一并清掉
+      const stillUndoable = s.stackLastSplit && !s.stackLastSplit.itemIds.includes(pasted.id);
+      return {
+        stackItems: rest,
+        stackDoneIds: done,
+        stackPasted: s.stackPasted + 1,
+        stackLastSplit: stillUndoable ? s.stackLastSplit : null,
+      };
+    }),
+  // 拖拽重排：直接复用 quickOrder.ts 的 reorderAction（id 数组换位纯函数），不再另写一份
+  stackReorder: (fromId, toId) =>
+    set((s) => {
+      if (!s.stackMode) return s;
+      const ids = s.stackItems.map((i) => i.id);
+      const fromIdx = ids.indexOf(fromId);
+      const toIdx = ids.indexOf(toId);
+      if (fromIdx < 0 || toIdx < 0) return s;
+      const nextIds = reorderAction(ids, fromIdx, toIdx);
+      if (!nextIds) return s;
+      const byId = new Map(s.stackItems.map((i) => [i.id, i]));
+      return { stackItems: nextIds.map((id) => byId.get(id)!) };
+    }),
+  // 删除角标：仅从未粘贴队列移除，不影响 stackCollected/stackDoneIds/stackPasted 的历史统计
+  stackRemoveItem: (id) =>
+    set((s) => {
+      if (!s.stackMode) return s;
+      const next = s.stackItems.filter((i) => i.id !== id);
+      if (next.length === s.stackItems.length) return s;
+      return { stackItems: next };
+    }),
+  toggleStackTabAdvance: () => set((s) => ({ stackTabAdvance: !s.stackTabAdvance })),
+  stackLoadTemplate: (items) =>
+    set((s) => {
+      const now = new Date().toISOString();
+      const loaded: HistoryItem[] = items.map((it) => ({
+        id: crypto.randomUUID(),
+        text: it.text,
+        time: now,
+        type: it.type,
+        content: it.content,
+        pinned: false,
+        source: "template",
+        workspace: s.config.current_workspace,
+      }));
+      return {
+        stackMode: true,
+        stackItems: loaded,
+        stackCollected: s.stackCollected + loaded.length,
+      };
+    }),
+  // 表格拆分：检测只对文本/图文类型做，命中则逐行拆分入栈（不登记进 history，避免连带触发只该由真实剪贴板事件产生的副作用）；
+  // 未命中时降级为普通整条入栈，与现有行为完全一致。
+  stackPushOrSplit: (item) => {
+    const s = get();
+    if (!s.stackMode) return null;
+    if (s.config.table_split_enabled && (item.type === "text" || item.type === "rich")) {
+      const split = splitTableToRows(item.text || "", {
+        format: s.config.table_split_format,
+        includeHeader: s.config.table_split_include_header,
+      });
+      if (split && split.rows.length > 0) {
+        // 注意：不能逐行调 stackPush 循环推入——它两个行为都不适合批量拆分场景：
+        // ① 头插会把最后逐行 push 的行顶到最前面，与表格原始顺序相反；
+        // ② 它的去重只比当前栈顶，循环里每 push 一行栈顶就变了，表格里相邻两行完全相同时会被静默吸掉。
+        // 直接构造好整批按表格顺序的条目一次性 set()，两个问题同时解决。
+        const now = new Date().toISOString();
+        const newItems: HistoryItem[] = split.rows.map((rowText) => ({
+          id: crypto.randomUUID(),
+          text: rowText,
+          time: now,
+          type: "text",
+          content: "",
+          pinned: false,
+          source: item.source,
+          workspace: s.config.current_workspace,
+        }));
+        set((s2) => ({
+          stackItems: [...newItems, ...s2.stackItems].slice(0, 50),
+          stackCollected: s2.stackCollected + newItems.length,
+          stackLastSplit: { originalText: item.text, itemIds: newItems.map((i) => i.id) },
+        }));
+        return { splitCount: split.rows.length, totalRows: split.totalRows };
+      }
+    }
+    get().stackPush(item);
+    return null;
+  },
+  stackUndoSplit: () =>
+    set((s) => {
+      const last = s.stackLastSplit;
+      if (!last) return s;
+      const idSet = new Set(last.itemIds);
+      const remaining = s.stackItems.filter((i) => !idSet.has(i.id));
+      if (remaining.length === s.stackItems.length) return { stackLastSplit: null };
+      const restored: HistoryItem = {
+        id: crypto.randomUUID(),
+        text: last.originalText,
+        time: new Date().toISOString(),
+        type: "text",
+        content: "",
+        pinned: false,
+        source: "clipboard",
+        workspace: s.config.current_workspace,
+      };
+      return { stackItems: [restored, ...remaining], stackLastSplit: null };
+    }),
+  stackConsumeMerged: (ids) =>
+    set((s) => {
+      const idSet = new Set(ids);
+      const consumed = s.stackItems.filter((i) => idSet.has(i.id));
+      if (consumed.length === 0) return s;
+      const remaining = s.stackItems.filter((i) => !idSet.has(i.id));
+      const done = new Set(s.stackDoneIds);
+      consumed.forEach((i) => done.add(i.id));
+      return { stackItems: remaining, stackDoneIds: done, stackPasted: s.stackPasted + consumed.length };
     }),
   exitStackMode: () =>
-    set({ stackMode: false, stackItems: [], stackDoneIds: new Set(), stackPasted: 0, stackCollected: 0, stackPasteAllActive: false }),
+    set({ stackMode: false, stackItems: [], stackDoneIds: new Set(), stackPasted: 0, stackCollected: 0, stackPasteAllActive: false, stackLastSplit: null }),
 
   // 来源图标缓存
   setRealIconUrl: (key, url) => set((s) => ({

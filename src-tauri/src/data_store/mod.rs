@@ -14,6 +14,7 @@ mod sequence_memory;
 mod action_events;
 mod sticky;
 mod quota;
+mod stack_templates;
 #[cfg(test)]
 mod tests;
 
@@ -43,6 +44,9 @@ pub use sticky::{CalendarDay, StickyStats};
 pub use quota::{
     QuotaBlock, QuotaInfo, RedeemResult, SignResult, generate_redeem_code, redeem_secret,
     verify_redeem_code, DAILY_SPEND_CAP, INITIAL_GRANT, SIGN_CAP,
+};
+pub use stack_templates::{
+    StackTemplate, StackTemplateItem, MAX_STACK_TEMPLATE_ITEMS, MAX_STACK_TEMPLATE_NAME_CHARS,
 };
 
 use md5::{Digest, Md5};
@@ -423,6 +427,17 @@ impl DataStore {
                 content_type TEXT NOT NULL DEFAULT '',
                 created_at   TEXT NOT NULL,
                 PRIMARY KEY (action_id, content_type)
+            );
+
+            -- 粘贴栈常用模板（P4，见 data_store/stack_templates.rs）。
+            -- items 存 JSON 数组（内容快照，不引用 history）；name UNIQUE。
+            -- used_at 为 NULL 表示从未用过，载入时回写。
+            CREATE TABLE IF NOT EXISTS stack_templates (
+                id          TEXT PRIMARY KEY,
+                name        TEXT NOT NULL UNIQUE,
+                items       TEXT NOT NULL DEFAULT '[]',
+                created_at  TEXT NOT NULL,
+                used_at     TEXT
             );",
         )?;
 

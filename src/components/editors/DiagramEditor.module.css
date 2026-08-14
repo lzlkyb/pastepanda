@@ -64,8 +64,11 @@
 .exportWrap {
   position: relative;
 }
+/* 显隐由 React 控（ExportMenu.tsx），不再靠 hover。
+   旧写法是 `display:none` + `.exportWrap:hover`，而菜单从按钮下方 4px 开始——
+   鼠标跃过那 4px 时既不在按钮上也不在菜单上，hover 一断菜单就没了、再也进不去。 */
 .exportMenu {
-  display: none;
+  display: flex;
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
@@ -78,10 +81,6 @@
   border: 1px solid var(--glass-popover-border, rgba(0, 0, 0, 0.1));
   backdrop-filter: blur(10px);
   box-shadow: var(--shadow-md, 0 6px 18px rgba(0, 0, 0, 0.18));
-}
-.exportWrap:hover .exportMenu,
-.exportMenu:hover {
-  display: flex;
 }
 .exportMenu button {
   text-align: left;

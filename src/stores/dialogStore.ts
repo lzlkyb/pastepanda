@@ -4,7 +4,7 @@ import type { ChainDef } from "@/lib/api/chains";
 import type { Chain } from "@/lib/chains/types";
 import type { MilestoneEvent } from "@/lib/milestones";
 
-interface DialogState {
+export interface DialogState {
   /** 正在编辑的记录（非 null 时 ItemEditorDialog 打开） */
   editorItem: HistoryItem | null;
   openEditor: (item: HistoryItem) => void;
@@ -74,6 +74,30 @@ interface DialogState {
   quotaOpen: boolean;
   openQuota: () => void;
   closeQuota: () => void;
+}
+
+/**
+ * 本 store 里是否有任何弹窗开着。
+ *
+ * **放在这里而不是让调用方自己枚举**：App.tsx 的全局键盘守卫原先手写了一串
+ * `showSettings || showSnippets || …`，却漏了本 store 管的弹窗——于是开着卡片编辑弹框
+ * 按 Delete/Backspace 会直接删掉主窗口选中的卡片（Esc 分层那边倒是考虑了 editorItem，
+ * 两边一直不同步）。新增弹窗时只要在本文件补一处，不会再出现半边漏掉。
+ *
+ * 注：hubItem（变换枢纽）也在内——调用方已单独对它提前 return，重复包含无害。
+ */
+export function anyDialogOpen(s: DialogState): boolean {
+  return Boolean(
+    s.editorItem ||
+      s.hubItem ||
+      s.chainText ||
+      s.chainEdit ||
+      s.learningsOpen ||
+      s.profileOpen ||
+      s.pasteGuard ||
+      s.milestone ||
+      s.quotaOpen,
+  );
 }
 
 /**

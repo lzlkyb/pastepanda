@@ -25,6 +25,7 @@ import {
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useToast } from "@/components/Toast";
 import { logActionEvent } from "@/lib/api/actionEvents";
+import { errText } from "@/lib/utils";
 import styles from "./ProfileDialog.module.css";
 import ex from "./ProfileExport.module.css";
 
@@ -157,7 +158,7 @@ export function ProfileExport() {
       toast(`已保存到 ${path}`, "success");
       logProfileExport();
     } catch (e) {
-      toast(`保存失败：${e instanceof Error ? e.message : String(e)}`, "error");
+      toast(`保存失败：${errText(e, "未知错误")}`, "error");
     }
   }, [format, text, toast]);
 

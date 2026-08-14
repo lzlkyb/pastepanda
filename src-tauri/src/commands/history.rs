@@ -159,7 +159,16 @@ pub fn insert_diagram_history(
         item_type: "diagram".to_string(),
         content,
         pinned: false,
-        source: "流程图".to_string(),
+        // source 是「从哪个应用来的」，不是内容类型。
+        // 原先写死了 "流程图"，会在卡片上以来源徽标的形式与「微信 / Chrome」并排，
+        // 语义错位，还会污染按来源筛选与使用日志统计（logPasteEvent / useActionEventLog 都拿 item.source）。
+        // 类型标识已改走下方的「流程图」自动标签。
+        //
+        // 但也不能留空串：前端是 `{item.source && <SourceBadge/>}`，空串会让流程图卡片的
+        // 来源位独独缺一块，又是另一种不一致。填 "PastePanda"：它本就是**已有的取值**
+        // （从 PastePanda 自身窗口复制时抓到的就是这个窗口标题，库里已有 text/image/rich 三类共二十多条），
+        // 而流程图确实就是在本应用里产生的——既不撞类型语义，也与现有数据对齐。
+        source: "PastePanda".to_string(),
         workspace: target_workspace,
         md5: Some(hash),
         pinyin_initials: Some(pinyin_initials),
@@ -169,6 +178,14 @@ pub fn insert_diagram_history(
         tags: Vec::new(),
     };
     store.insert_history(&item)?;
+    // 类型标识必须走标签体系（同 rich 的「图文」、doc 的「文档」）：
+    // 只有标签才能点击筛选、才会出现在筛选标签列表里、才能被用户统一管理。
+    // 写在 insert 之后：worker 要按 history_id 写 history_tags，记录得先存在。
+    crate::clipboard_monitor::enqueue_auto_tags(
+        app.clone(),
+        item.id.clone(),
+        vec!["流程图".to_string()],
+    );
     let _ = app.emit("clipboard-changed", serde_json::json!({ "item": item }));
     Ok(item.id)
 }

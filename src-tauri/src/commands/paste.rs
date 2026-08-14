@@ -119,6 +119,20 @@ pub fn save_foreground(engine: State<PasteEngine>) -> Result<(), String> {
     Ok(())
 }
 
+/// P3 粘贴+Tab 推进：发送单次 Tab 键（在前端确认栈顶粘贴成功后调用）
+#[tauri::command]
+pub fn paste_send_tab(engine: State<PasteEngine>) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        engine.send_tab_key()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = engine;
+        Err("仅支持 Windows".to_string())
+    }
+}
+
 /// 切换窗口显示/隐藏
 #[tauri::command]
 pub fn toggle_window(app: tauri::AppHandle) -> Result<(), String> {

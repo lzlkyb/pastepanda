@@ -73,7 +73,7 @@ export type {
 export { sequentialPaste, indexPaste } from "./sequential";
 
 // 剪贴板栈
-export { toggleStackMode, exitStack, stackPasteNext, stackPasteAll, isStackPasteAllRunning, abortStackPasteAll } from "./stack";
+export { toggleStackMode, exitStack, stackPasteNext, stackPasteAll, isStackPasteAllRunning, abortStackPasteAll, stackAutoSplitAndPasteFirst } from "./stack";
 
 // 分组
 export { fetchGroups, createGroup, updateGroup, deleteGroup, reorderGroups, moveToGroup } from "./groups";

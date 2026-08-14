@@ -5,7 +5,7 @@
 import { useCallback, useState, type Dispatch, type SetStateAction } from "react";
 import type { Edge } from "@xyflow/react";
 import { autoLayout, autoLayoutElk, parseMermaid, type DiagramDoc, type DNode } from "@/lib/diagram/types";
-import type { LayoutEngine } from "./DiagramToolbar";
+import type { LayoutEngine } from "./chrome/types";
 
 /** 切换到 elk 引擎的节点数阈值（layoutEngine === "auto" 时） */
 const ELK_AUTO_THRESHOLD = 30;

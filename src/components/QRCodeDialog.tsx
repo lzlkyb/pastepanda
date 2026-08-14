@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { X, Copy, Download } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { useDialogAnim } from "@/lib/dialogMotion";
+import { errText } from "@/lib/utils";
 import styles from "./QRCodeDialog.module.css";
 import { FocusTrap } from "@/components/FocusTrap";
 
@@ -60,7 +61,7 @@ export function QRCodeDialog({ text, onClose }: { text: string; onClose: () => v
       if (!blob) { toast("复制失败", "error"); return; }
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       toast("已复制二维码图片", "success");
-    } catch { toast("复制失败", "error"); }
+    } catch (e) { toast("复制失败：" + errText(e, "未知错误"), "error"); }
   }, [toast]);
 
   const handleSavePng = useCallback(async () => {
@@ -79,7 +80,7 @@ export function QRCodeDialog({ text, onClose }: { text: string; onClose: () => v
       const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
       await writeFile(path, bytes);
       toast("已保存 PNG", "success");
-    } catch { toast("保存失败", "error"); }
+    } catch (e) { toast("保存失败：" + errText(e, "未知错误"), "error"); }
   }, [toast]);
 
   return (

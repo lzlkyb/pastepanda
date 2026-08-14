@@ -5,10 +5,15 @@
 import { useCallback, useState, type Dispatch, type SetStateAction } from "react";
 import type { Edge } from "@xyflow/react";
 import { expandSubflow, polishNodeLabel } from "@/lib/diagram/aiGenerate";
-import { newId, DEFAULT_EDGE_HANDLES, AUTO_ROUTE_DATA, routeAutoEdges, type DNode } from "@/lib/diagram/types";
+import {
+  newId, autoLayout, DEFAULT_EDGE_HANDLES, AUTO_ROUTE_DATA, routeAutoEdges, type DNode,
+} from "@/lib/diagram/types";
 import { errText } from "@/lib/utils";
 import { useAiStatus } from "@/hooks/useAiStatus";
 import { useToast } from "@/components/Toast";
+
+/** 子流程顶部距选中节点顶部的距离（节点高约 64 + 一段留白） */
+const EXPAND_GAP_Y = 130;
 
 export interface DiagramAiOpts {
   selectedNode: DNode | null;
@@ -49,18 +54,34 @@ export function useDiagramAi(o: DiagramAiOpts) {
     setAiBusy(true);
     try {
       const sub = await expandSubflow(selectedNode.data.label);
+      if (sub.nodes.length === 0) {
+        toast("AI 没有给出可用的子流程", "info");
+        return;
+      }
       pushHistory();
-      const baseX = selectedNode.position.x;
-      const baseY = selectedNode.position.y + 110;
+
+      // AI 返回的子图只有拓扑、没有位置，先用 dagre 排一遍再整体平移到选中节点下方。
+      //
+      // 旧实现是给每个子节点撒一个随机抖动（x ±80 / y +0~60），
+      // 四五个节点全落在同一个 160×60 的小框里，必然堆成一堆；
+      // 而且 Math.random() 让撤销重做后的位置每次都不一样。
+      const laid = autoLayout(sub);
+      const xs = laid.nodes.map((n) => n.position.x);
+      const ys = laid.nodes.map((n) => n.position.y);
+      // 水平居中对齐到选中节点：dagre 布局里节点宽度是统一值，
+      // 所以对齐「左上角 x 的中点」等价于对齐中心，不需要拿节点宽度。
+      const offsetX = selectedNode.position.x - (Math.min(...xs) + Math.max(...xs)) / 2;
+      const offsetY = selectedNode.position.y + EXPAND_GAP_Y - Math.min(...ys);
+
       const remap = new Map<string, string>();
-      const newNodes: DNode[] = sub.nodes.map((n) => {
+      const newNodes: DNode[] = laid.nodes.map((n) => {
         const id = newId();
         remap.set(n.id, id);
         return {
           ...n,
           id,
           type: "diagram",
-          position: { x: baseX + (Math.random() * 160 - 80), y: baseY + Math.random() * 60 },
+          position: { x: n.position.x + offsetX, y: n.position.y + offsetY },
         };
       });
       // 锚点要显式带上：裸边会被 React Flow 画成 top→top，看着就是接错位。

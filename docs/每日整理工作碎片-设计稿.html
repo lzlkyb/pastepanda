@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>每日整理工作碎片 · 设计稿</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#121821; --panel-2:#19212c; --border:#27313f;
+    --text:#cdd9e5; --muted:#8a99ab; --green:#34d399; --red:#f87171;
+    --cyan:#22d3ee; --brand:#3b82f6; --brand-2:#60a5fa; --accent:#f59e0b;
+  }
+  html{scroll-behavior:smooth;scroll-padding-top:20px}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,Arial,sans-serif;
+    line-height:1.65;font-size:15px}
+  a{color:var(--brand-2);text-decoration:none}
+  code{font-family:Consolas,Menlo,monospace;font-size:13px;background:var(--panel-2);padding:1px 6px;border-radius:4px;color:#f1c40f}
+  .layout{display:flex;max-width:1180px;margin:0 auto}
+  nav{position:sticky;top:0;align-self:flex-start;width:230px;height:100vh;overflow:auto;
+    padding:26px 14px;border-right:1px solid var(--border);font-size:13.5px}
+  nav h4{margin:0 0 10px;color:var(--muted);font-size:11px;letter-spacing:1px;text-transform:uppercase}
+  nav a{display:block;padding:6px 10px;border-radius:6px;color:var(--muted);margin-bottom:2px}
+  nav a:hover{background:var(--panel);color:var(--text)}
+  nav a.active{background:var(--panel-2);color:var(--brand-2);border-left:2px solid var(--brand)}
+  main{flex:1;padding:30px 38px 90px;min-width:0}
+  .hero{background:linear-gradient(135deg,#121821,#0e141d);border:1px solid var(--border);
+    border-radius:14px;padding:34px 36px;margin-bottom:34px;position:relative;overflow:hidden}
+  .hero:before{content:"";position:absolute;right:-60px;top:-60px;width:220px;height:220px;
+    background:radial-gradient(circle,rgba(59,130,246,.18),transparent 70%)}
+  .hero h1{margin:0 0 6px;font-size:30px;color:#fff}
+  .hero .sub{color:var(--muted);font-size:15px}
+  .badges{margin-top:16px;display:flex;gap:10px;flex-wrap:wrap}
+  .badge{font-size:12.5px;padding:4px 11px;border-radius:999px;border:1px solid var(--border)}
+  .badge.plan{background:rgba(245,158,11,.14);border-color:rgba(245,158,11,.4);color:var(--accent)}
+  .badge.tip{background:rgba(34,211,238,.12);border-color:rgba(34,211,238,.4);color:var(--cyan)}
+  .verdict{margin-top:18px;background:rgba(248,113,113,.07);border:1px solid rgba(248,113,113,.25);
+    border-left:3px solid var(--red);border-radius:8px;padding:13px 16px;color:#f4d4d4;font-size:14px}
+  h2{margin:42px 0 16px;font-size:22px;color:#fff;border-bottom:1px solid var(--border);padding-bottom:8px}
+  h3{margin:22px 0 10px;font-size:17px;color:var(--brand-2)}
+  p{margin:10px 0}
+  .muted{color:var(--muted)}
+  .small{font-size:13px}
+  .grid{display:grid;gap:14px}
+  .g2{grid-template-columns:1fr 1fr}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:880px){.g2,.g4{grid-template-columns:1fr}nav{display:none}}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 18px}
+  .card h4{margin:0 0 8px;font-size:15px;color:#fff}
+  .card .tag{font-size:11px;color:var(--cyan);font-family:Consolas,monospace}
+  .nogo{background:rgba(248,113,113,.06);border-color:rgba(248,113,113,.3)}
+  .nogo h4{color:var(--red)}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border)}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  .ok{color:var(--green)} .no{color:var(--red)} .plan{color:var(--accent)}
+  /* 双层结构图 */
+  .layers{border:1px solid var(--border);border-radius:12px;overflow:hidden;margin:14px 0}
+  .layer{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;gap:14px;align-items:flex-start}
+  .layer:last-child{border-bottom:none}
+  .layer .ln{font-family:Consolas,monospace;font-size:12px;color:var(--muted);min-width:120px}
+  .layer.l0{background:rgba(52,211,153,.07)} .layer.l1{background:rgba(34,211,238,.06)}
+  .layer.l2{background:rgba(59,130,246,.06)} .layer.l3{background:rgba(245,158,11,.06)}
+  .flow{font-family:Consolas,monospace;font-size:13px;color:#cdd9e5;white-space:pre-wrap;line-height:1.7;
+    background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 18px;overflow-x:auto}
+  .flow .b{color:var(--brand-2)} .flow .c{color:var(--cyan)} .flow .g{color:var(--green)}
+  .flow .y{color:var(--accent)} .flow .r{color:var(--red)}
+  /* 优先级 */
+  .tier{border-top:3px solid var(--border);border-radius:10px;background:var(--panel);
+    border:1px solid var(--border);border-top-width:3px;padding:14px 16px}
+  .tier.p0{border-top-color:var(--red)} .tier.p1{border-top-color:var(--accent)} .tier.p2{border-top-color:var(--brand)}
+  .tier .th{font-weight:700;color:#fff;margin-bottom:8px;font-size:15px}
+  .tier ul{margin:0;padding-left:18px;font-size:13.5px}
+  .tier li{margin:5px 0}
+  /* 验收 checklist */
+  .chk{list-style:none;padding:0;margin:10px 0}
+  .chk li{padding:7px 0 7px 30px;position:relative;border-bottom:1px dashed var(--border);font-size:14px}
+  .chk li:before{content:"☐";position:absolute;left:4px;color:var(--muted);font-size:16px}
+  .risk{background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.28);border-radius:10px;padding:14px 16px}
+  .risk b{color:var(--accent)}
+  /* 界面线框 mockup */
+  .mock{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:0;overflow:hidden;margin:16px 0}
+  .mock .bar{background:var(--panel-2);padding:10px 16px;border-bottom:1px solid var(--border);
+    font-size:13px;color:var(--muted);display:flex;justify-content:space-between}
+  .mock .body{display:grid;grid-template-columns:1fr 1.2fr;gap:0}
+  @media(max-width:760px){.mock .body{grid-template-columns:1fr}}
+  .mock .col{padding:16px 18px}
+  .mock .col.l{border-right:1px solid var(--border)}
+  .mock .mtitle{font-size:13px;color:var(--brand-2);margin-bottom:10px;font-weight:600}
+  .statrow{display:flex;justify-content:space-between;font-size:12.5px;padding:6px 0;border-bottom:1px dashed var(--border)}
+  .mini{background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12.5px}
+  .mini .t{color:#fff;font-weight:600;margin-bottom:4px}
+  .mini .m{color:var(--muted)}
+  .btn{display:inline-block;background:var(--brand);color:#fff;font-size:12px;padding:6px 12px;border-radius:6px;margin-top:6px;cursor:pointer}
+  .btn.amber{background:var(--accent)}
+  .toTop{position:fixed;right:24px;bottom:24px;background:var(--panel-2);border:1px solid var(--border);
+    color:var(--brand-2);border-radius:50%;width:42px;height:42px;display:flex;align-items:center;justify-content:center;
+    font-size:18px;cursor:pointer;opacity:.85;z-index:10}
+  .toTop:hover{opacity:1}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav id="nav">
+  <h4>目录</h4>
+  <a href="#ref">0 · 调研参照</a>
+  <a href="#s1">1 · 背景与问题</a>
+  <a href="#s2">2 · 目标 / 非目标</a>
+  <a href="#s3">3 · 用户场景</a>
+  <a href="#s4">4 · 功能定义</a>
+  <a href="#ui">5 · 界面设计稿</a>
+  <a href="#s5">6 · 技术方案</a>
+  <a href="#s6">7 · 路线图</a>
+  <a href="#s7">8 · 验收标准</a>
+  <a href="#s8">9 · 风险与开放问题</a>
+  <a href="#s9">10 · 变通方案</a>
+</nav>
+
+<main>
+  <div class="hero">
+    <h1>每日整理工作碎片</h1>
+    <div class="sub">把一整天散落的复制 / 粘贴碎片，自动聚合成一份可回顾、可沉淀的「今日简报」——行为级默认，授权后内容级准确。</div>
+    <div class="badges">
+      <span class="badge plan">📋 规划中 · 未落地</span>
+      <span class="badge tip">对齐 H3 ⭐必做 / C3 / E</span>
+      <span class="badge">v0.2 内容级准确决策版 · 2026-08-14</span>
+    </div>
+    <div class="verdict">⚠️ <b>核心决策（2026-08-14）</b>：产品要求「内容层也要准」→ 采用<b>按需授权读原文</b>。默认行为级（零原文、隐私最佳），用户点"用全文生成"临时读取该范围原文送 AI，拿到语义级准确总结。红线②从"绝不读"修正为"默认不读、授权才读、全程可审计"。</div>
+  </div>
+
+  <!-- 0 调研参照 -->
+  <h2 id="ref">0 · 调研参照：别人怎么做（2026-08-13 调研）</h2>
+  <p class="muted small">为让方案准确，调研了三类产品。核心发现：<b style="color:var(--accent)">主流剪贴板管理器普遍不做日报/周报，只做记录+检索</b>——PastePanda 做「日整理」是差异化蓝海；而「日报周报」做得最成熟的是时间追踪类与 AI 回顾类。</p>
+  <div class="grid g2">
+    <div class="card">
+      <div class="tag">① 剪贴板管理器</div>
+      <h4>CleanClip / Paste / Mac 系</h4>
+      <p class="small muted">能力集中在：自动记录、搜索、收藏列表（书签）、<b>智能列表（按条件过滤）</b>、粘贴栈、跟随当前 App。<b>均无聚合日报/周报</b>。CleanClip 仅有「无限收藏列表」让用户手动归类。</p>
+      <p class="small" style="color:var(--green)">→ 竞品空白，本功能即差异化切入点。</p>
+    </div>
+    <div class="card">
+      <div class="tag">② 时间追踪类</div>
+      <h4>RescueTime / Rize / Dayflow</h4>
+      <p class="small muted">日报/周报结构最成熟：总时长+生产力分、按<b>类别/应用/时段</b>分解、最高效日、目标进度、<b>每周邮件推送</b>。Rize 可设追踪时段（非工作停追，护隐私）；Dayflow 时间轴卡片+环形图/热力图/周对比+导出 HTML 报告。</p>
+      <p class="small" style="color:var(--brand-2)">→ 直接借鉴「结构模板 + 邮件/推送 + 可视化」。</p>
+    </div>
+    <div class="card">
+      <div class="tag">③ AI 回顾类</div>
+      <h4>MineContext(字节) / SelfManager / Taskade</h4>
+      <p class="small muted"><b>本地存储、主动交付</b>：MineContext 自动生成<b>日报+待办</b>、周五推周报、关联相关聊天/资料，并可<b>基于总结追问对话</b>（"我这周时间分配合理吗？"）。SelfManager 走「review → 对话 → 下一步行动」闭环。Taskade 跨项目自动周状态。</p>
+      <p class="small" style="color:var(--cyan)">→ 借鉴「本地优先 + 主动交付 + 可追问 + 关联待办」。</p>
+    </div>
+    <div class="card">
+      <div class="tag">④ 周回顾方法论</div>
+      <h4>Notion / Obsidian / Todoist</h4>
+      <p class="small muted">Notion 可组合周控制面板，AI 把长笔记总结成行动清单；"Friday Packet"范式：亮点 + 决策 + 未决项，tag 到项目。强调<b>回顾要影响「下周三大要务」才有效</b>。</p>
+      <p class="small" style="color:var(--accent)">→ 借鉴「回顾必须落到下一步行动」。</p>
+    </div>
+  </div>
+
+  <h3>横向对比（决定 PastePanda 该做什么、不做什么）</h3>
+  <table>
+    <thead><tr><th>维度</th><th>剪贴板管理器</th><th>时间追踪</th><th>AI 回顾</th><th>PastePanda 取法</th></tr></thead>
+    <tbody>
+      <tr><td>数据粒度</td><td>复制内容/来源App</td><td>窗口/应用时长</td><td>上下文+聊天</td><td><b>内容类型+来源App+主题簇</b>（无时长，不硬凑）</td></tr>
+      <tr><td>日报</td><td class="no">无</td><td class="ok">有</td><td class="ok">有</td><td class="plan">做（蓝海）</td></tr>
+      <tr><td>周报</td><td class="no">无</td><td class="ok">有</td><td class="ok">有</td><td class="ok">已有（v6.4）</td></tr>
+      <tr><td>AI 洞察</td><td class="no">无</td><td class="no">弱</td><td class="ok">强</td><td class="plan">行为级默认 + 授权读原文（语义级）</td></tr>
+      <tr><td>隐私</td><td>本地</td><td>本地/云端</td><td>多本地</td><td><b>本地 + 默认不读 + 授权才读 + 可审计</b></td></tr>
+      <tr><td>推送</td><td>—</td><td>邮件周报</td><td>主动弹</td><td>托盘推送+手动+随启补报</td></tr>
+    </tbody>
+  </table>
+
+  <h3>对本案的 5 条修正</h3>
+  <div class="grid g2">
+    <div class="risk"><b>① 差异化而非跟风：</b>剪贴板赛道无人做整理，重点不是"再做个统计"，而是把碎片<b>变成可行动的洞察</b>。</div>
+    <div class="risk"><b>② 不硬凑生产力分：</b>没有窗口时长数据，日报聚焦<b>内容类型占比/来源App/主题簇</b>，不做 RescueTime 式"效率分"。</div>
+    <div class="risk"><b>③ 加"关联待办/延伸"：</b>参照 MineContext，日整理应能从碎片里<b>提取待办、关联工作区</b>，而非仅描述。</div>
+    <div class="risk"><b>④ 加"可追问对话"：</b>参照 SelfManager，简报不应是一次性总结，应支持<b>"就今天这些，我下周该优先做什么？"</b>类追问。</div>
+    <div class="risk"><b>⑤ 推送而非仅被动：</b>参照 Rize/RescueTime，用<b>托盘定时推送</b>主动交付，避免"功能有了没人看"。</div>
+    <div class="risk"><b>⑥ 护隐私的时段开关：</b>借鉴 Rize「可设追踪/整理时段」，非工作时段不纳入，呼应本地优先定位。</div>
+  </div>
+
+  <!-- 1 -->
+  <h2 id="s1">1 · 背景与问题</h2>
+  <p>PastePanda 当前被动记录用户每天的工作碎片，但缺失「每日自动聚合整理」。</p>
+  <table>
+    <thead><tr><th>能力</th><th>状态</th><th>粒度</th><th>是否读内容</th></tr></thead>
+    <tbody>
+      <tr><td>剪贴板历史 / 工作区 / 片段库</td><td class="ok">✅ 已落地</td><td>单条碎片</td><td>是（本地）</td></tr>
+      <tr><td>周报（E，行为统计）</td><td class="ok">✅ 已落地 v6.4</td><td>按周 · 行为级</td><td>否（仅统计）</td></tr>
+      <tr><td>AI 单条总结（ai-summarize）</td><td class="ok">✅ 已落地</td><td>单条</td><td>是（用户选中后读原文）</td></tr>
+      <tr><td><b>每日整理 / 日记 / 日报</b></td><td class="no">❌ 未落地</td><td>按天 · 聚合</td><td>需设计（默认不读，授权读原文）</td></tr>
+    </tbody>
+  </table>
+  <div class="verdict" style="background:rgba(59,130,246,.07);border-color:rgba(59,130,246,.3);border-left-color:var(--brand);color:#bcd4f5">
+    💡 用户真实诉求：「我每天复制粘贴几十条东西，下班前能不能帮我<b>自动理一遍今天都干了啥 / 攒了啥</b>，而不是让我自己翻历史？」——且要求<b>内容层面也要准</b>。
+  </div>
+
+  <!-- 2 -->
+  <h2 id="s2">2 · 目标 / 非目标</h2>
+  <div class="grid g2">
+    <div class="card">
+      <h4>✅ 产品目标</h4>
+      <ul class="small" style="margin:0;padding-left:18px">
+        <li>每天结束（或随时）一键看「今日工作碎片整理」</li>
+        <li>自动归类当天复制 / 粘贴的主题</li>
+        <li>提炼高频任务 / 项目 / 关键词</li>
+        <li>生成口语化「今日小结」——<b>行为级默认，授权后内容级准确</b></li>
+        <li>支持沉淀进工作区 / 片段库，成为长期资产</li>
+      </ul>
+    </div>
+    <div class="card nogo">
+      <h4>❌ 非目标（明确不做）</h4>
+      <ul class="small" style="margin:0;padding-left:18px">
+        <li>宠物养成 / 情感陪伴 / 聊天式对话（H 系列边界）</li>
+        <li>跨设备云端内容同步（仅局域网加密同步）</li>
+        <li>自动替用户执行动作——只整理、不行动（守红线③）</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 3 -->
+  <h2 id="s3">3 · 用户场景</h2>
+  <div class="grid g4">
+    <div class="card"><div class="tag">职场白领</div><h4>多源复制</h4><p class="small muted">一天在群 / 文档间复制需求、链接、表格 → 看「今天主处理 X 项目，含 8 链接、2 表格」，自动归类。</p></div>
+    <div class="card"><div class="tag">开发者</div><h4>Debug 流</h4><p class="small muted">授权后生成「今天 debug 了 Y，涉及这些报错与关键代码，下周优先收尾 Z」，可一键存工作区。</p></div>
+    <div class="card"><div class="tag">研究者/学生</div><h4>资料收集</h4><p class="small muted">复制论文、网页、引用 → 生成「今日收集」清单，按来源分组，方便写笔记。</p></div>
+    <div class="card"><div class="tag">所有人</div><h4>周期回顾</h4><p class="small muted">想回顾「这周忙了啥」→ 日整理是周报的内容素材，二者打通。</p></div>
+  </div>
+
+  <!-- 4 -->
+  <h2 id="s4">4 · 功能定义</h2>
+  <p><b>日整理 = 自动聚合当天（默认 00:00–now）全部工作碎片 + 生成一份结构化「今日简报」。</b>一份简报包含两层：</p>
+  <div class="layers">
+    <div class="layer l0"><div class="ln">行为层<br/>(永远可用)</div><div>
+      <b>零内容出网</b>，复用周报统计能力：今日复制 / 粘贴次数、按小时分布；内容类型占比（文本/图片/文件/链接）；来源 App TopN、高频时段、常用动作；自动聚类「主题标签」（基于来源+关键词本地提取，非 LLM）。
+    </div></div>
+    <div class="layer l1"><div class="ln">内容层<br/>(授权读原文)</div><div>
+      <b>产品已决策内容层也要准</b>，主路径为用户<b>显式授权后读取原文</b>（参照 MineContext / SelfManager）：
+      <b>行为级小结（默认兜底，零原文）</b>：仅喂元信息/摘要 → "复制 X 次、60% 来自 VS Code"；
+      <b>内容级小结（授权后·语义准确）</b>：点"用全文生成"或"深入总结这簇"后临时读该范围原文送 AI → 能说出"今天在对接支付接口、修了 Y bug、与 Z 对接需求"；
+      另含「行动建议 / 关联待办 / 可追问对话」，让简报落到下一步行动。
+    </div></div>
+  </div>
+  <h3>触发方式</h3>
+  <div class="grid g2">
+    <div class="card"><h4>⏰ 定时</h4><p class="small muted">默认每天 20:00 托盘弹「今日整理好了」提示（可关）。</p></div>
+    <div class="card"><h4>🖱 手动 / 随启</h4><p class="small muted">顶栏「工具箱」→「今日整理」；热键 <code>Ctrl+Shift+D</code>；启动发现昨天没整理则补「昨日简报」。</p></div>
+  </div>
+  <h3>隐私红线（硬约束 · 2026-08-14 已调整）</h3>
+  <div class="verdict" style="background:rgba(248,113,113,.07);border-color:rgba(248,113,113,.25);border-left-color:var(--red);color:#f4d4d4">
+    守红线②（<code>redlineGuard</code> 测试覆盖），明确"内容级准确"边界：行为层<b>绝不读原文</b>；内容层<b>默认不读</b>，仅用户<b>显式授权</b>后才读指定范围原文，且须<b>明示同意 + 仅本次发送不留存 + 总开关默认关 + 审计日志</b>；未授权自动降级行为级。红线②从"绝不读"修正为"<b>默认不读、授权才读、全程可审计</b>"。
+  </div>
+
+  <!-- 5 界面设计稿 -->
+  <h2 id="ui">5 · 界面设计稿（DailyBriefDialog 雏形）</h2>
+  <p class="muted small">以下为低保真线框，用于对齐布局与信息层级，非最终视觉。</p>
+  <div class="mock">
+    <div class="bar"><span>📋 今日整理 · 2026-08-13</span><span>复制到工作区 ✕</span></div>
+    <div class="body">
+      <div class="col l">
+        <div class="mtitle">行为层 · 今日统计（零内容出网）</div>
+        <div class="statrow"><span>复制 / 粘贴</span><span class="ok">42 / 31 次</span></div>
+        <div class="statrow"><span>类型占比</span><span>文本 70% · 链接 18% · 图片 12%</span></div>
+        <div class="statrow"><span>来源 Top</span><span>VS Code · 微信 · 浏览器</span></div>
+        <div class="statrow"><span>高频时段</span><span>10–12 / 15–17 点</span></div>
+        <div class="statrow"><span>主题簇</span><span>3 簇 · 已自动打标</span></div>
+        <div class="btn">AI 行为级小结</div>
+        <div class="btn amber">用全文生成（授权读原文）→</div>
+      </div>
+      <div class="col">
+        <div class="mtitle">内容层 · 主题簇卡片（本地摘要 · 授权后内容级）</div>
+        <div class="mini"><div class="t">🔖 簇1 · 周会准备</div><div class="m">12 条 · 含需求文档、2 个链接、1 表格</div><div class="btn">存入「周会」工作区</div></div>
+        <div class="mini"><div class="t">🔖 簇2 · 接口联调</div><div class="m">8 条 · 报错日志、API 文档、commit</div><div class="btn">存入「开发」工作区</div><div class="btn amber" style="margin-left:6px">深入总结这簇（读原文）</div></div>
+        <div class="mini"><div class="t">🔖 簇3 · 待办收集</div><div class="m">5 条 · 待办、网址、电话</div><div class="btn">加入片段库</div></div>
+      </div>
+    </div>
+  </div>
+
+  <h3>授权读原文弹窗（内容级准确的关键交互）</h3>
+  <div class="mock">
+    <div class="bar"><span>🔒 授权读取原文</span><span>✕</span></div>
+    <div class="body" style="grid-template-columns:1fr">
+      <div class="col">
+        <p class="small" style="color:var(--text)">即将把 <b style="color:var(--accent)">「接口联调」簇的 8 条内容</b> 发送给已配置的 AI 提供商（如硅基流动 / OpenAI）以生成语义级总结。</p>
+        <p class="small muted">· 原文仅本次发送，不留存、不进局域网同步流<br/>· 可在「设置 → 隐私」关闭"允许读原文"总开关<br/>· 每次读取均有审计日志记录</p>
+        <div><span class="btn amber">✓ 我同意，生成内容级小结</span>&nbsp;<span class="btn" style="background:var(--panel-2);color:var(--muted)">取消（用行为级）</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6 技术方案 -->
+  <h2 id="s5">6 · 技术方案</h2>
+  <h3>数据来源（复用现有，零新增采集）</h3>
+  <table>
+    <thead><tr><th>数据</th><th>来源</th><th>备注</th></tr></thead>
+    <tbody>
+      <tr><td>当日碎片列表</td><td><code>data_store</code> 历史表（按 <code>created_at</code> 过滤）</td><td>已有</td></tr>
+      <tr><td>每日复制计数</td><td>后端 <code>stats_sticky</code> / 每日计数</td><td>已有（喂周报）</td></tr>
+      <tr><td>来源 App</td><td>历史 <code>source</code> 字段</td><td>后端 GROUP BY</td></tr>
+      <tr><td>工作区归属 / 类型</td><td>工作区表 / 历史 <code>type</code></td><td>已有</td></tr>
+    </tbody>
+  </table>
+  <h3>模块关系</h3>
+  <div class="flow"><span class="b">剪贴板历史</span> ─┐
+<span class="b">工作区</span>     ─┼─▶ <span class="c">日整理引擎(本地聚类)</span> ─▶ <span class="b">DailyBriefDialog</span>
+<span class="b">片段库</span>     ─┘            │
+                          ├─▶ <span class="g">行为统计</span>（喂周报 / 年度报告）
+                          └─▶ <span class="y">ai-daily-brief</span> 模式一(零原文)/模式二(授权读原文)
+
+聚类：source + 本地关键词提取（复用 ExtractDialog）
+去噪：过滤密码 / 验证码 / 敏感项（复用 mask-sensitive）
+摘要：每条 ≤40 字本地摘要（首行/标题/文件名），不送 AI
+AI  ：ai-daily-brief 模式二复用 ai-summarize 的"选中即授权读"信任模型</div>
+  <h3>存储</h3>
+  <p class="small muted">新增本地表 <code>daily_brief</code>（日期、统计 JSON、主题簇、摘要、AI 小结、沉淀标记），保留策略默认 90 天，供周报 / 年度报告复用为素材。</p>
+
+  <!-- 7 路线图 -->
+  <h2 id="s6">7 · 路线图（对齐既有编号）</h2>
+  <div class="grid g4">
+    <div class="tier p0"><div class="th">P0 · E / H3</div><ul>
+      <li><b>E</b> 周报 ✅已完成</li>
+      <li><b>H3</b> 日报启动卡 ⭐</li>
+      <li>行为层日整理 + 入口</li>
+      <li>估时 3–4 天</li>
+    </ul></div>
+    <div class="tier p1"><div class="th">P1 · C3</div><ul>
+      <li><b>C3</b> 日记 / 周报打通</li>
+      <li>内容层<b>授权读原文</b>（语义级准确）</li>
+      <li>依赖 H3 + ai-daily-brief 模式二</li>
+      <li>估时 2–3 天</li>
+    </ul></div>
+    <div class="tier p2"><div class="th">P2 · 扩展</div><ul>
+      <li>年度报告「复制人生」</li>
+      <li>复用日整理素材</li>
+      <li>依赖 E + C3</li>
+      <li>估时 2 天</li>
+    </ul></div>
+    <div class="tier"><div class="th">建议顺序</div><ul>
+      <li>① 行为层 + H3（零 AI 可用）</li>
+      <li>② 内容层授权读原文（语义级）</li>
+      <li>③ 打通年度报告</li>
+    </ul></div>
+  </div>
+
+  <!-- 8 验收 -->
+  <h2 id="s7">8 · 验收标准</h2>
+  <ul class="chk">
+    <li>当天复制内容在「今日整理」里能聚合成可阅读简报</li>
+    <li>行为层统计不读取任何原文，通过 <code>redlineGuard</code> 类隐私测试</li>
+    <li><b>内容级小结在授权后能产出语义级准确总结</b>（含具体项目/任务名，非仅行为描述）</li>
+    <li>每次读原文前<b>明示授权弹窗</b>+用户确认，原文仅本次发送、不留存</li>
+    <li>设置内含"允许读原文"总开关（默认关）+ 审计日志记录每次读取</li>
+    <li>用户未授权时<b>自动降级</b>行为级小结，功能不中断</li>
+    <li>主题簇可一键存入工作区 / 片段库</li>
+    <li>日整理结果可被周报、年度报告复用</li>
+    <li>定时 / 手动 / 随启补报 三种入口均可用</li>
+    <li>冷启动（当天 &lt; N 条）提示「再攒攒」，不硬出空报告</li>
+  </ul>
+
+  <!-- 9 风险 -->
+  <h2 id="s8">9 · 风险与开放问题</h2>
+  <div class="grid g2">
+    <div class="risk"><b>① 授权合规与隐私（已决策走 B）：</b>产品要求内容级准确 → 采用"按需授权读原文"。落地须保证：① 每次读取前<b>明示</b>发送范围与去向+用户勾选同意；② 原文<b>仅本次发送、不留存、不进同步流</b>；③ "允许读原文"总开关（默认关）+ <b>审计日志</b>可查；④ 不同 AI 提供商数据出境合规（尤其境外模型）；⑤ 未授权自动<b>降级</b>行为级，功能不中断。红线②修正为"默认不读、授权才读、全程可审计"。</div>
+    <div class="risk"><b>② 聚类质量：</b>纯本地关键词聚类可能不准，是否上轻量本地小模型？先规则版，AI 增强后置。</div>
+    <div class="risk"><b>③ 通知疲劳：</b>定时提醒可能烦，默认关 / 仅首次引导开启。</div>
+    <div class="risk"><b>④ 与周报重叠：</b>统计高度重合，需抽公共统计层，避免两套实现。</div>
+    <div class="risk"><b>⑤ 存储膨胀：</b>日整理长期留存需清理策略（保留 90 天 / 仅留统计）。</div>
+  </div>
+
+  <!-- 10 变通 -->
+  <h2 id="s9">10 · 变通方案（上线前可用）</h2>
+  <div class="card">
+    <p class="small" style="margin:0">功能落地前，用户可用现有能力手动凑出类似效果：</p>
+    <ol class="small" style="margin:8px 0 0">
+      <li>一天相关碎片复制进同一<b>工作区</b>；</li>
+      <li>工作区内 <code>Ctrl+A</code> 全选 → 变换面板用 <code>ai-summarize</code> 汇总成一段（即现有"选中即读原文"的内容级模式）；</li>
+      <li>或导出工作区，丢给任意 AI 写「今日日报」。</li>
+    </ol>
+    <p class="small muted" style="margin:10px 0 0">⚠️ 现有 <code>ai-summarize</code> 已是"用户选中内容 → 读原文 → 总结"的内容级能力，已证明可行；日整理只是把它从"手动选"升级为"自动聚类 + 一键授权读"，复用同一授权信任模型。</p>
+  </div>
+
+  <p class="muted small" style="margin-top:40px;border-top:1px solid var(--border);padding-top:16px">
+    本设计稿对应规划文档 <code>docs/每日整理工作碎片-规划.md</code>（v0.2）。周报已实现 v6.4，原 AI 架构文档将其标「未落地」以源码为准已修正。
+  </p>
+</main>
+</div>
+<div class="toTop" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="回到顶部">↑</div>
+<script>
+  const links=[...document.querySelectorAll('nav a')];
+  const secs=links.map(a=>document.querySelector(a.getAttribute('href')));
+  const obs=new IntersectionObserver(es=>{
+    es.forEach(e=>{if(e.isIntersecting){
+      const id='#'+e.target.id;
+      links.forEach(l=>l.classList.toggle('active',l.getAttribute('href')===id));
+    }});
+  },{rootMargin:'-20% 0px -70% 0px'});
+  secs.forEach(s=>s&&obs.observe(s));
+</script>
+</body>
+</html>

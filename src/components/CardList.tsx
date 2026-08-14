@@ -13,6 +13,7 @@ import { TagEditor } from "@/components/TagEditor";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { getImageThumbnail, copyItemToClipboard, deleteHistory, copyOnly, pasteTextGuarded } from "@/lib/api";
 import { getAllRules } from "@/lib/regexRules";
+import { errText } from "@/lib/utils";
 import { thumbnailSourcePath } from "@/lib/richContent";
 import { ClipboardList, Copy, Search, Zap, CheckSquare, Square, FileDown, Trash2, GitCompare, FileX, Sparkles, ClipboardPaste } from "lucide-react";
 import { Timeline } from "@/components/Timeline";
@@ -525,8 +526,9 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
         await writeTextFile(path, JSON.stringify(selectedItems, null, 2));
         toast(`已导出 ${selectedItems.length} 条记录`, "success");
       }
-    } catch {
-      toast("导出失败", "error");
+    } catch (e) {
+      // 不能把真实原因吞掉：fs 权限不足、路径被占用这些靠「导出失败」四个字根本查不出来
+      toast("导出失败：" + errText(e, "未知错误"), "error");
     }
   }, [selectedIds, items, toast]);
 

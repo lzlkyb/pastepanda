@@ -7,6 +7,8 @@
 import { describe, it, expect } from "vitest";
 
 import {
+  asEdgeLine,
+  edgeLineOf,
   emptyDoc,
   parseDiagram,
   serializeDiagram,
@@ -21,6 +23,7 @@ import {
   asShape,
   pickEdgeHandles,
   routeAutoEdges,
+  isGroup,
   type DiagramDoc,
   type DNode,
 } from "@/lib/diagram/types";
@@ -279,11 +282,23 @@ describe("parseMermaid（AI 返回容错解析）", () => {
     expect(shape("F")).toBe("ellipse");
   });
 
-  it("跳过注释与子图 / 样式声明行，不会把它们当成节点", () => {
+  it("跳过注释与样式声明行，不会把它们当成节点", () => {
     const doc = parseMermaid(
       "flowchart TD\n%% 这是注释\nsubgraph 分组\nA[一] --> B[二]\nend\nstyle A fill:#f00",
     );
-    expect(doc.nodes.map((n) => n.id).sort()).toEqual(["A", "B"]);
+    // 图元节点只有 A / B；%% 与 style 行仍然整行跳过
+    expect(doc.nodes.filter((n) => !isGroup(n)).map((n) => n.id).sort()).toEqual(["A", "B"]);
+  });
+
+  // 行为变更（第三批②）：subgraph 以前被 DIRECTIVE_RE 整行丢弃，导入一个带分组的图
+  // 分组就静静没了；现在它会生成一个区域框节点。更全的往返用例在 diagramGroup.test.ts。
+  it("subgraph 生成区域框，无 id 写法拿整行当标题", () => {
+    const doc = parseMermaid(
+      "flowchart TD\nsubgraph 分组\nA[一] --> B[二]\nend",
+    );
+    const groups = doc.nodes.filter(isGroup);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].data.label).toBe("分组");
   });
 });
 
@@ -490,5 +505,75 @@ describe("autoLayoutElk（elkjs 大图布局）", () => {
     const laid = await autoLayoutElk(doc);
     expect(laid.nodes).toHaveLength(4);
     expect(laid.edges).toHaveLength(4);
+  });
+});
+
+describe("连线线型（Mermaid --> / -.-> / ==> 往返）", () => {
+  it("三种连接符都能解析成对应线型", () => {
+    const doc = parseMermaid("flowchart TD\nA[a] --> B[b]\nB -.-> C[c]\nC ==> D[d]");
+    expect(doc.edges).toHaveLength(3);
+    expect(edgeLineOf(doc.edges[0])).toBe("solid");
+    expect(edgeLineOf(doc.edges[1])).toBe("dashed");
+    expect(edgeLineOf(doc.edges[2])).toBe("thick");
+  });
+
+  it("带说明的虚线 / 粗线：线型与说明互不干扰", () => {
+    // 这条盯的是 CONNECTOR_RE 改成两个捕获组后的分工：
+    // 第 1 组连接符、第 2 组说明——谁序号弄错都会在这里爆
+    const doc = parseMermaid("flowchart TD\nA[a] -.->|失败| B[b]\nA ==>|主路| C[c]");
+    expect(edgeLineOf(doc.edges[0])).toBe("dashed");
+    expect(doc.edges[0].label).toBe("失败");
+    expect(edgeLineOf(doc.edges[1])).toBe("thick");
+    expect(doc.edges[1].label).toBe("主路");
+  });
+
+  it("导出时写回对应的连接符（以前一律写 -->，线型往返就丢）", () => {
+    const mmd = toMermaid(parseMermaid("flowchart TD\nA[a] -.-> B[b]\nB ==> C[c]"));
+    expect(mmd).toContain("-.->");
+    expect(mmd).toContain("==>");
+  });
+
+  it("Mermaid → 文档 → Mermaid 全链路保线型", () => {
+    const src = "flowchart TD\nA[开始] --> B[校验]\nB -.->|异常| C[日志]\nB ==>|主路| D[写入]";
+    const round = toMermaid(parseDiagram(serializeDiagram(parseMermaid(src))));
+    expect(round).toContain("-.->|异常|");
+    expect(round).toContain("==>|主路|");
+  });
+
+  it("solid 不入库：默认线型不写 line 字段", () => {
+    // 否则直接新建的边与「手动选回实线」的边序列化结果不等，
+    // 而「未保存」是靠序列化串比对基线判的，会凭空亮红点
+    const json = serializeDiagram(parseMermaid("flowchart TD\nA[a] --> B[b]"));
+    expect(JSON.parse(json).edges[0].line).toBeUndefined();
+    const dashed = serializeDiagram(parseMermaid("flowchart TD\nA[a] -.-> B[b]"));
+    expect(JSON.parse(dashed).edges[0].line).toBe("dashed");
+  });
+
+  it("旧文档（没有 line 字段）回落成实线，不报错", () => {
+    const legacy = JSON.stringify({
+      version: 1,
+      nodes: [
+        { id: "a", position: { x: 0, y: 0 }, data: { label: "a" } },
+        { id: "b", position: { x: 0, y: 200 }, data: { label: "b" } },
+      ],
+      edges: [{ id: "e0", source: "a", target: "b" }],
+    });
+    const doc = parseDiagram(legacy);
+    expect(edgeLineOf(doc.edges[0])).toBe("solid");
+  });
+
+  it("asEdgeLine 收敛未知值", () => {
+    expect(asEdgeLine("dashed")).toBe("dashed");
+    expect(asEdgeLine("thick")).toBe("thick");
+    expect(asEdgeLine("wavy")).toBe("solid");
+    expect(asEdgeLine(undefined)).toBe("solid");
+    expect(asEdgeLine(42)).toBe("solid");
+  });
+
+  it("无箭头连接 --- / === 的已知取舍：往返后会长出箭头", () => {
+    // 本项目的模型里没有「有无箭头」这一维（流程图里罕用）。
+    // 这条不是在认可 bug，是把取舍钉住：哪天改成支持了，这条会失败提醒改测试。
+    expect(toMermaid(parseMermaid("flowchart TD\nA[a] --- B[b]"))).toContain("-->");
+    expect(toMermaid(parseMermaid("flowchart TD\nA[a] === B[b]"))).toContain("==>");
   });
 });

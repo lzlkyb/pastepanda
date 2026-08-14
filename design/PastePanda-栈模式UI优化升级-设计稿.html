@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda · 栈模式 UI 优化升级 设计稿（A vs B 对比）</title>
+<style>
+/* ========================================================================
+   尺寸与变量全部取自真实代码：
+   - StackBanner.tsx / StackBanner.module.css：三层结构（状态行/队列行/进度行）、
+     chip max-width:150px height:28px、gap:6/7px、圆角 8-12px
+   - 主题：沿用本项目历次设计稿的深色演示底（真实主题色 --orange 在 ocean 浅色下是
+     #C54A0A，在 midnight/dark 系是 #FB923C；模块自身 CSS 里写的 fallback 是 #EA580C，
+     这里延续用 #EA580C 演示，和 chip-内容预览设计稿保持同一套视觉基准）
+   ===================================================================== */
+*{box-sizing:border-box}
+body{margin:0;padding:30px 26px 70px;background:#14161A;color:#C9D2DD;
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.7}
+h1{font-size:19px;color:#fff;margin:0 0 4px}
+h2{font-size:15px;color:#fff;margin:36px 0 6px}
+h3{font-size:12.5px;color:#9FB0C4;margin:18px 0 8px;text-transform:uppercase;letter-spacing:.4px}
+.sub{color:#7C8899;font-size:12px;margin:0 0 24px}
+.note{color:#8D9AAB;font-size:12px;margin:6px 0 14px;max-width:920px}
+.note b{color:#D6DEE8;font-weight:600}
+.pick{color:#6FD68B;font-weight:600}
+hr{border:0;border-top:1px solid #262A31;margin:34px 0 0}
+code{background:#1C2027;padding:1px 5px;border-radius:4px;font-size:11.5px;color:#A9C8E8}
+
+.stage{display:flex;gap:30px;flex-wrap:wrap;margin:20px 0 0;align-items:flex-start}
+.viewport{position:relative;width:420px;border:1px dashed #3A4048;border-radius:10px;
+  background:repeating-linear-gradient(45deg,#191C21,#191C21 10px,#1C2026 10px,#1C2026 20px);
+  padding:22px 16px;overflow:visible}
+.vpTag{position:absolute;left:0;top:-20px;font-size:10.5px;color:#6E7A8A;white-space:nowrap}
+
+/* ===== 真实 StackBanner 基础样式（参照 StackBanner.module.css） ===== */
+.banner{display:flex;flex-direction:column;gap:7px;padding:10px 12px;border-radius:12px;
+  background:linear-gradient(135deg,rgba(234,88,12,.09),transparent 65%),rgba(234,88,12,.07);
+  border:1px solid rgba(234,88,12,.28);position:relative}
+.top{display:flex;align-items:center;gap:8px}
+.dot{width:10px;height:10px;border-radius:50%;background:#EA580C;flex-shrink:0}
+.title{font-size:12px;font-weight:600;color:#EA580C;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:5px}
+.acts{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.primaryBtn{display:flex;align-items:center;gap:6px;height:26px;padding:0 9px;border-radius:8px;border:none;
+  background:#EA580C;color:#fff;font-size:11px;font-weight:700;white-space:nowrap}
+.btn{height:26px;padding:0 9px;border-radius:8px;font-size:11px;font-weight:600;
+  background:rgba(234,88,12,.14);color:#EA580C;border:1px solid rgba(234,88,12,.28);white-space:nowrap}
+.ghostBtn{width:26px;height:26px;border-radius:8px;border:1px solid transparent;background:transparent;
+  color:#EA580C;opacity:.75;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.kbd{font:600 8.5px ui-monospace,Consolas,monospace;background:rgba(255,255,255,.2);padding:2px 4px;border-radius:4px}
+
+.queue{display:flex;gap:6px;overflow-x:auto;padding:8px 2px 2px;flex-wrap:wrap}
+.chip{position:relative;display:flex;align-items:center;gap:5px;flex-shrink:0;max-width:150px;height:28px;padding:0 9px 0 6px;
+  border-radius:8px;background:rgba(234,88,12,.08);border:1px solid rgba(234,88,12,.2);
+  font-size:11px;color:#E0E8F0}
+.ord{width:15px;height:15px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  font-size:9px;font-weight:700;background:rgba(234,88,12,.16);color:#EA580C}
+.txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chipNext{border-color:#EA580C;background:rgba(234,88,12,.16)}
+.chipNext .ord{background:#EA580C;color:#fff}
+.foot{display:flex;align-items:center;gap:8px}
+.prog{flex:1;height:4px;border-radius:2px;background:rgba(234,88,12,.28);overflow:hidden}
+.progFill{height:100%;border-radius:2px;background:linear-gradient(90deg,#F97316,#EA580C)}
+.footTxt{font-size:10px;color:#EA580C;opacity:.85;white-space:nowrap}
+
+/* ===== 现状（对照基线） ===== */
+.baseline .top{gap:6px}
+.baseline .title{font-size:12px}
+
+/* ===== 方案 A：三层收拢 + chip 双行信息卡 ===== */
+.aBanner .top{gap:6px}
+.aBanner .prog{height:3px;margin-top:1px}
+.aChip{height:38px;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;padding:4px 9px 4px 6px;max-width:118px}
+.aChip .row1{display:flex;align-items:center;gap:4px;width:100%}
+.aChip .typeTag{font-size:8.5px;font-weight:700;color:#EA580C;background:rgba(234,88,12,.18);
+  padding:1px 4px;border-radius:4px;letter-spacing:.2px;flex-shrink:0}
+.aChip .row2{font-size:10.5px;color:#C9D2DD;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%}
+.aChip.chipNext .row1 .ord{background:#EA580C;color:#fff}
+
+/* ===== 方案 B：工具条 + 独立卡片面板 ===== */
+.bToolbar{display:flex;align-items:center;gap:8px;padding:0 2px}
+.bCard{margin-top:4px;padding:9px 10px 8px;border-radius:10px;background:rgba(0,0,0,.18);
+  border:1px solid rgba(255,255,255,.06)}
+.bChip{height:30px;font-size:11.5px;padding:0 10px 0 7px}
+.bChip.chipNext{border-left:3px solid #EA580C;border-top-color:rgba(234,88,12,.2);border-right-color:rgba(234,88,12,.2);border-bottom-color:rgba(234,88,12,.2);padding-left:7px}
+.bChip.chipNext .nextBar{display:none}
+.bFoot{margin-top:8px}
+
+.anno{background:#0E1A12;border:1px solid #166534;border-radius:10px;padding:12px 14px;font-size:12px;color:#9FBF9F;max-width:600px}
+.anno b{color:#6FD68B}
+.anno.warn{background:#1A1210;border-color:#7F1D1D;color:#C9A2A2}
+.anno.warn b{color:#F09A9A}
+.anno.neutral{background:#12161C;border-color:#2A3038;color:#AEB8C4}
+.anno.neutral b{color:#D6DEE8}
+table.t{border-collapse:collapse;margin-top:8px;font-size:12.5px;max-width:1000px}
+table.t th,table.t td{border:1px solid #2A2F37;padding:7px 11px;text-align:left;vertical-align:top}
+table.t th{background:#1C2027;color:#E4EAF1;font-weight:600}
+table.t td{color:#B4BECB}
+</style>
+</head>
+<body>
+
+<h1>栈模式 UI 优化升级 · 方案 A vs 方案 B 对比</h1>
+<p class="sub">目标：解决「状态行按钮太多太挤」「队列 chip 信息量太单薄」「三层结构层级不清」三个问题 ｜ 候选版本：待定</p>
+<p class="note">样式与结构<b>全部取自真实代码</b>（<code>StackBanner.tsx</code> / <code>StackBanner.module.css</code>）：
+三层结构（状态行 / 队列 chips 行 / 进度行）、chip <code>max-width:150px height:28px</code>、
+橙色主题色 <code>--orange</code>（模块内 fallback 值 <code>#EA580C</code>）。演示统一用横向 420px 视口，
+对应侧边栏收起时的横幅宽度。</p>
+
+<hr>
+
+<h2>现状（对照基线）</h2>
+<div class="stage">
+  <div class="viewport">
+    <div class="vpTag">当前真实结构：状态行 / 队列行 / 进度行 三层</div>
+    <div class="banner baseline">
+      <div class="top">
+        <span class="dot"></span>
+        <div class="title">🗂 栈模式 · 剩余 3 条</div>
+        <div class="acts">
+          <div class="primaryBtn">⏩ 粘贴+Tab <span class="kbd">Ctrl+Alt+P</span></div>
+          <div class="btn">▶ 全部+Tab</div>
+          <div class="ghostBtn">⋯</div>
+          <div class="ghostBtn">✕</div>
+        </div>
+      </div>
+      <div class="queue">
+        <div class="chip chipNext"><span class="ord">1</span><span class="txt">张三 · zhang@qq.com</span></div>
+        <div class="chip"><span class="ord">2</span><span class="txt">李四 · li@qq.com</span></div>
+        <div class="chip"><span class="ord">3</span><span class="txt">D-HC6239772</span></div>
+      </div>
+      <div class="foot">
+        <div class="prog"><div class="progFill" style="width:25%"></div></div>
+        <span class="footTxt">1/4 已粘贴 · Ctrl+C 继续收集</span>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="anno warn">
+      <b>问题对应</b><br>
+    · 状态行同时挤了标题 + 主按钮(带热键标签) + 次按钮 + ⋯菜单 + 退出，共 4 个可点元素<br>
+    · chip 只有「序号 + 图标 + 单行文字」，看不出这条是表格拆分来的还是普通文本、有多少字<br>
+    · 三层视觉权重接近（背景色、字号相似），眼睛不知道该先看哪层
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>① 方案 A：三层收拢 + chip 双行信息卡（推荐）</h2>
+<div class="stage">
+  <div class="viewport">
+    <div class="vpTag">进度条并入状态行下沿，chip 升级双行</div>
+    <div class="banner aBanner">
+      <div class="top">
+        <span class="dot"></span>
+        <div class="title">栈模式 · 3条</div>
+        <div class="acts">
+          <div class="primaryBtn">⏩ <span class="kbd">Ctrl+Alt+P</span></div>
+          <div class="btn">▶ 全部</div>
+          <div class="ghostBtn">⋯</div>
+          <div class="ghostBtn">✕</div>
+        </div>
+      </div>
+      <div class="prog"><div class="progFill" style="width:25%"></div></div>
+      <div class="queue">
+        <div class="chip aChip chipNext">
+          <div class="row1"><span class="ord">1</span><span class="typeTag">表格</span></div>
+          <div class="row2">张三 · zhang@qq.com</div>
+        </div>
+        <div class="chip aChip">
+          <div class="row1"><span class="ord">2</span><span class="typeTag">表格</span></div>
+          <div class="row2">李四 · li@qq.com</div>
+        </div>
+        <div class="chip aChip">
+          <div class="row1"><span class="ord">3</span><span class="typeTag">文本</span></div>
+          <div class="row2">D-HC6239772</div>
+        </div>
+      </div>
+      <div class="foot">
+        <span class="footTxt">1/4 已粘贴 · Ctrl+C 继续收集</span>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="anno">
+      <b>做法</b><br>
+    · 进度条从独立一行「收编」成状态行下方的一条 3px 细线，视觉上和状态行绑成一体（操作层），
+      不再单独占用一整行高度。<br>
+    · 主按钮文案精简（热键标签保留，长文案去掉，hover 时用 <code>title</code> 补充说明），
+      「全部粘贴」保留在外层（判断为仍是高频操作，不下沉到菜单）。<br>
+    · chip 从单行升级双行：第一行 序号 + 类型角标（表格/文本/图片/文件，复用现有 <code>getTypeIcon</code> 逻辑扩展），
+      第二行摘要文字。hover 预览卡功能不变。<br><br>
+    <b>优点</b>：三个症状一次性解决，状态行/队列层通过「细进度线归入操作层、chip 变厚重归入内容层」两个动作
+      就把层级拉开，不引入新交互范式，改动集中在现有组件迭代。<br>
+    <b>缺点</b>：chip 变高（28px→38px）后同屏可见数量减少，横向滚动出现得比现在更早；
+      <code>StackBanner.tsx</code> 目前接近 300 行硬性上限，chip 渲染这块需要顺手拆到独立子组件
+      <code>StackChip.tsx</code>（符合项目规则 7）。
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>② 方案 B：工具条 + 队列独立卡片面板</h2>
+<div class="stage">
+  <div class="viewport">
+    <div class="vpTag">状态行进一步精简，队列包一层独立卡片容器做物理分层</div>
+    <div class="banner" style="background:rgba(234,88,12,.05)">
+      <div class="bToolbar">
+        <span class="dot"></span>
+        <div class="title">栈模式 · 78% · 剩余3条</div>
+        <div class="acts">
+          <div class="primaryBtn">⏩ <span class="kbd">Ctrl+Alt+P</span></div>
+          <div class="ghostBtn">⋯</div>
+          <div class="ghostBtn">✕</div>
+        </div>
+      </div>
+      <div class="bCard">
+        <div class="queue">
+          <div class="chip bChip chipNext"><span class="nextBar"></span><span class="ord">1</span><span class="txt">张三 · zhang@qq.com</span></div>
+          <div class="chip bChip"><span class="ord">2</span><span class="txt">李四 · li@qq.com</span></div>
+          <div class="chip bChip"><span class="ord">3</span><span class="txt">D-HC6239772</span></div>
+        </div>
+        <div class="foot bFoot">
+          <div class="prog"><div class="progFill" style="width:25%"></div></div>
+          <span class="footTxt">1/4 已粘贴</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="anno">
+      <b>做法</b><br>
+    · 工具条只留 4 样：脉冲点 + 标题（剩余数和百分比合并进同一行文案，不再靠单独进度行）
+      + 主按钮 + ⋯菜单（「全部粘贴」下沉进菜单，因为它是批量态操作）+ 退出。<br>
+    · 队列 + 进度整体包进一张独立卡片（更深的背景色块 + 圆角），
+      物理上和上面的工具条分离成两层。<br>
+    · 「下一个粘贴」用左侧 3px 色条强调，去掉悬浮在 chip 右上角的「下一个粘贴」文字角标
+      （角标文字在 chip 变窄或内容多时容易和文字重叠）。<br><br>
+    <b>优点</b>：状态行元素最少（比现状少 2 个），层级靠「工具条 vs 卡片容器」两个物理分层解决，
+      视觉最干净利落，chip 保持单行不增高。<br>
+    <b>缺点</b>：「全部粘贴」下沉进菜单——你之前确认过表格拆分后经常需要连续粘贴一整表，
+      这个操作原本是仅次于「逐条粘贴」的高频操作，收进菜单会多一次点击，
+      需要你确认这个降频是否可接受；chip 信息量没有变化（这点不如方案 A）。
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>③ 方案对比</h2>
+<table class="t">
+<tr><th style="width:14%">方案</th><th>状态行元素数</th><th>chip 信息量</th><th>层级手段</th><th>风险</th></tr>
+<tr><td class="pick">A 三层收拢+双行卡</td><td>4 个（不变，只精简文案）</td><td><b>提升</b>（加类型角标）</td><td>进度条并入操作层 + chip 加厚归入内容层</td><td>chip 变高、同屏可见数变少；StackBanner.tsx 需拆子组件</td></tr>
+<tr><td>B 工具条+卡片面板</td><td><b>3 个</b>（全部粘贴下沉）</td><td>不变</td><td>工具条/卡片两个物理容器分层</td><td>「全部粘贴」降频，需你确认可接受</td></tr>
+</table>
+<p class="note" style="margin-top:10px">个人倾向 <b>方案 A</b>：三个症状一次性解决，且不改变任何现有操作的可达性（没有把任何按钮藏起来），
+只是把信息重新分层、chip 信息更丰富。如果你更在意「状态行尽量少」、且能接受「全部粘贴」变成菜单里的操作，选 <b>方案 B</b>。
+确认方案后我再拆分实现步骤（含 <code>StackChip.tsx</code> 拆分、type 角标的取数逻辑、CSS 改动），走 TDD 落地。</p>
+
+</body>
+</html>

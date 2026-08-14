@@ -29,6 +29,26 @@ struct TagJob {
     labels: Vec<String>,
 }
 
+/// 排一条自动标签写入。
+///
+/// 对外的**唯一入口**：channel 与 TagJob 保持私有，命令层（如流程图入库）也能打标签。
+/// 原先四处调用点各抄一遍「构造 TagJob + send + 失败时 warn」，收口到这里（规则 #11）。
+///
+/// 注意：标签名必须已在 `ensure_auto_tags` 的种子表里——`resolve_auto_tag_ids` 是
+/// 「按 name 查，查不到就跳过」，没种子的名字会**静默失效**（「文档」就这么一直没生效过）。
+pub(crate) fn enqueue_auto_tags(app: AppHandle, history_id: String, labels: Vec<String>) {
+    if labels.is_empty() {
+        return;
+    }
+    if let Err(e) = tag_tx().send(TagJob {
+        app,
+        history_id,
+        labels,
+    }) {
+        log::warn!("[ContentClassifier] 标签写入通道已关闭: {}", e);
+    }
+}
+
 /// 获取标签写入 channel 发送端（首次调用启动 worker 线程）
 fn tag_tx() -> &'static mpsc::Sender<TagJob> {
     static TX: OnceLock<mpsc::Sender<TagJob>> = OnceLock::new();
@@ -1190,13 +1210,7 @@ fn process_text(
         }
 
         // 自动标签写入：发送到 channel，单 worker 顺序消化（突发不丢）
-        if let Err(e) = tag_tx().send(TagJob {
-            app: app_handle.clone(),
-            history_id: item.id.clone(),
-            labels: labels.clone(),
-        }) {
-            log::warn!("[ContentClassifier] 标签写入通道已关闭: {}", e);
-        }
+        enqueue_auto_tags(app_handle.clone(), item.id.clone(), labels.clone());
 
         // 推送事件到前端
         if let Err(e) = app_handle.emit(
@@ -1444,13 +1458,7 @@ fn process_rich(
     // 打上「图文」自动标签（同 process_text 的做法）。
     // 类型标识必须走标签体系，不能只在卡片上画个写死的徽标：
     // 标签才能点击筛选、才会出现在筛选标签列表里、才能被用户统一管理。
-    if let Err(e) = tag_tx().send(TagJob {
-        app: app_handle.clone(),
-        history_id: item.id.clone(),
-        labels: vec!["图文".to_string()],
-    }) {
-        log::warn!("[ContentClassifier] 标签写入通道已关闭: {}", e);
-    }
+    enqueue_auto_tags(app_handle.clone(), item.id.clone(), vec!["图文".to_string()]);
 
     if let Err(e) = app_handle.emit(
         "clipboard-changed",
@@ -1562,13 +1570,7 @@ fn process_doc(
         }
     }
 
-    if let Err(e) = tag_tx().send(TagJob {
-        app: app_handle.clone(),
-        history_id: item.id.clone(),
-        labels,
-    }) {
-        log::warn!("[ContentClassifier] 标签写入通道已关闭: {}", e);
-    }
+    enqueue_auto_tags(app_handle.clone(), item.id.clone(), labels);
 
     if let Err(e) = app_handle.emit(
         "clipboard-changed",
@@ -1858,13 +1860,7 @@ fn run_polling_listener(
                         }
 
                         // 自动标签写入：发送到 channel，单 worker 顺序消化（突发不丢）
-                        if let Err(e) = tag_tx().send(TagJob {
-                            app: app_handle.clone(),
-                            history_id: item.id.clone(),
-                            labels: labels.clone(),
-                        }) {
-                            log::warn!("[ContentClassifier] 标签写入通道已关闭: {}", e);
-                        }
+                        enqueue_auto_tags(app_handle.clone(), item.id.clone(), labels.clone());
 
                         if let Err(e) = app_handle.emit(
                             "clipboard-changed",

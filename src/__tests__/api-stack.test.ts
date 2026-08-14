@@ -8,6 +8,7 @@ import {
   stackPasteAll,
   isStackPasteAllRunning,
   abortStackPasteAll,
+  stackAutoSplitAndPasteFirst,
 } from "@/lib/api";
 
 // ============================================================
@@ -47,6 +48,9 @@ function resetStore() {
       ...useAppStore.getState().config,
       current_workspace: "默认",
       stack_paste_hotkey: "ctrl+shift+p",
+      table_split_enabled: true,
+      table_split_format: "raw",
+      table_split_include_header: false,
     },
     _filterCache: null,
   });
@@ -313,4 +317,87 @@ describe("stackPasteAll", () => {
     );
     expect(pasteCalls).toHaveLength(2);
   }, 10000);
+
+  it("全部粘贴过程中不逐条弹「已粘贴，剩余」 toast（横幅进度条已够，避免刷屏）", async () => {
+    const items = [
+      makeItem({ id: "a", text: "1" }),
+      makeItem({ id: "b", text: "2" }),
+      makeItem({ id: "c", text: "3" }),
+    ];
+    useAppStore.setState({ stackMode: true, stackItems: items });
+    const { messages, cleanup } = collectToasts();
+
+    await stackPasteAll();
+
+    expect(messages.some((m) => m.includes("已粘贴，剩余"))).toBe(false);
+    cleanup();
+  }, 10000);
+});
+
+// ============================================================
+// stackAutoSplitAndPasteFirst（表格拆分入栈，方案 B：热键自适应）
+// ============================================================
+describe("stackAutoSplitAndPasteFirst", () => {
+  it("栈未开 + 剪贴板最新内容（history[0]）是表格 → 自动开栈拆行并贴第一条", async () => {
+    // 注意：测试数据不能包含邮箱/手机号等敏感内容特征，否则会触发 pasteTextGuarded 的敏感内容确认弹窗（需真实 UI 才能 resolve，测试会卡死超时）
+    const top = makeItem({ id: "raw", text: "姓名\t城市\n张三\t北京\n李四\t上海" });
+    useAppStore.setState({ history: [top] });
+    const { messages, cleanup } = collectToasts();
+
+    const handled = await stackAutoSplitAndPasteFirst();
+
+    expect(handled).toBe(true);
+    expect(useAppStore.getState().stackMode).toBe(true);
+    // 拆分行顺序必须与表格一致（张三在上），贴第一条应该贴张三，剩下李四
+    expect(useAppStore.getState().stackItems.map((i) => i.text)).toEqual(["李四\t上海"]);
+    expect(invoke).toHaveBeenCalledWith("paste_text", { text: "张三\t北京" });
+    expect(messages.some((m) => m.includes("已自动拆行入栈并粘贴第 1 条"))).toBe(true);
+    cleanup();
+  });
+
+  it("首行粘贴失败时不误报成功 toast，且队列不弹出（仍视为已处理，不回退到静默无操作）", async () => {
+    const top = makeItem({ id: "raw", text: "姓名\t城市\n张三\t北京\n李四\t上海" });
+    useAppStore.setState({ history: [top] });
+    // 只让 paste_text 失败；stackAutoSplitAndPasteFirst 会先调 set_stack_mode，用 mockRejectedValueOnce 会被那一调先消耗掉
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "paste_text") throw new Error("paste error");
+      return { success: true };
+    });
+    const { messages, cleanup } = collectToasts();
+
+    const handled = await stackAutoSplitAndPasteFirst();
+
+    expect(handled).toBe(true);
+    expect(useAppStore.getState().stackMode).toBe(true);
+    // 粘贴失败，队列不弹出，两行都还在
+    expect(useAppStore.getState().stackItems).toHaveLength(2);
+    expect(messages.some((m) => m.includes("已自动拆行入栈并粘贴第 1 条"))).toBe(false);
+    cleanup();
+  });
+
+  it("栈未开 + 剪贴板不是表格 → 返回 false，不开栈", async () => {
+    useAppStore.setState({ history: [makeItem({ id: "a", text: "普通文字" })] });
+
+    const handled = await stackAutoSplitAndPasteFirst();
+
+    expect(handled).toBe(false);
+    expect(useAppStore.getState().stackMode).toBe(false);
+  });
+
+  it("栈已经开着 → 返回 false（交给正常粘贴流程处理）", async () => {
+    useAppStore.setState({
+      stackMode: true,
+      history: [makeItem({ id: "raw", text: "姓名\t邮箱\n张三\tzhang@qq.com" })],
+    });
+
+    const handled = await stackAutoSplitAndPasteFirst();
+
+    expect(handled).toBe(false);
+  });
+
+  it("history 为空 → 返回 false", async () => {
+    const handled = await stackAutoSplitAndPasteFirst();
+    expect(handled).toBe(false);
+    expect(useAppStore.getState().stackMode).toBe(false);
+  });
 });

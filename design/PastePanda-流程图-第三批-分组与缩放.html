@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>PastePanda 流程图 · 第三批设计稿（分组框 / 节点缩放 / 文字色 / 形状分类）</title>
+<style>
+  /* ============================================================
+     取值全部抄自真实源码，不是重画（规则 #12）：
+       .node            → DiagramCanvas.module.css:「.node {」
+       .propPanel       → 同文件 220px / rgba(15,23,42,.72) / blur(10px) saturate(1.3)
+       .shapeLibrary    → 同文件 150px / 两列 / gap 6 / padding 10
+       .libShapeBtn/Ico → 同文件 radius 9、图标块 26px radius 7
+     新增部分（分组框、缩放手柄、文字色行）按同一套变量推导，落地时可直接搬。
+     ============================================================ */
+  :root {
+    --app-bg: #0b1220;
+    --text-primary: #e2e8f0;
+    --text-muted: #94a3b8;
+    --accent: #0284c7;
+    --accent-strong: #38bdf8;
+    --accent-light: rgba(2, 132, 199, 0.18);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.2);
+
+    --diagram-canvas-bg: color-mix(in srgb, var(--app-bg) 92%, var(--text-primary));
+    --diagram-node-bg: #172033;
+    --diagram-node-text: #e2e8f0;
+    --diagram-node-border: #2b3648;
+    --diagram-node-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+    --diagram-panel-bg: rgba(15, 23, 42, 0.72);
+    --diagram-panel-border: rgba(255, 255, 255, 0.14);
+    --diagram-panel-hover: rgba(255, 255, 255, 0.08);
+    --diagram-float-blur: blur(10px) saturate(1.3);
+    --diagram-edge-line: color-mix(in srgb, var(--accent) 55%, var(--text-muted));
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 28px;
+    background: #070c17;
+    color: var(--text-primary);
+    font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 {
+    font-size: 15px;
+    margin: 34px 0 10px;
+    padding-left: 10px;
+    border-left: 3px solid var(--accent-strong);
+  }
+  .sub { color: var(--text-muted); font-size: 12.5px; margin: 0 0 8px; }
+  .note {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--diagram-panel-border);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 9px 12px;
+    margin: 10px 0 0;
+  }
+  .note b { color: var(--text-primary); }
+  code {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 12px;
+    background: rgba(255, 255, 255, 0.07);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  /* ── 画布模拟 ── */
+  .canvas {
+    position: relative;
+    height: 400px;
+    border-radius: 14px;
+    overflow: hidden;
+    background:
+      radial-gradient(circle, rgba(255, 255, 255, 0.09) 1.4px, transparent 1.4px)
+        0 0 / 22px 22px,
+      var(--diagram-canvas-bg);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 8%, transparent),
+      inset 0 10px 26px -14px rgba(0, 0, 0, 0.6);
+  }
+
+  /* ── 节点（原样抄真实 .node） ── */
+  .node {
+    position: absolute;
+    min-width: 96px;
+    max-width: 220px;
+    padding: 10px 14px;
+    border-radius: 13px;
+    background: var(--diagram-node-bg);
+    color: var(--diagram-node-text);
+    border: 1px solid var(--node-stroke, var(--diagram-node-border));
+    box-shadow: var(--diagram-node-shadow);
+    font-size: 13px;
+    line-height: 1.4;
+    text-align: center;
+  }
+  .node .lbl { color: var(--node-text-color, inherit); }
+  .node.sel {
+    border-color: var(--accent-strong);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-strong) 45%, transparent),
+      var(--diagram-node-shadow);
+  }
+
+  /* ── 【新】区域框 group ──
+     zIndex:-1 压在节点下；标题栏是唯一的 dragHandle；框体 pointer-events:none，
+     所以框内空白处仍然能框选 / 拖画布。 */
+  .group {
+    position: absolute;
+    border-radius: 14px;
+    border: 1.5px dashed color-mix(in srgb, var(--group-tint, var(--accent)) 62%, transparent);
+    background: color-mix(in srgb, var(--group-tint, var(--accent)) 8%, transparent);
+  }
+  .group .ghead {
+    position: absolute;
+    top: -11px;
+    left: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 22px;
+    padding: 0 10px;
+    border-radius: 7px;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    cursor: move;
+    color: #fff;
+    background: color-mix(in srgb, var(--group-tint, var(--accent)) 82%, #0b1220);
+    box-shadow: var(--shadow-md);
+  }
+  /* 选中态：底色抽掉，只留描边+标题。
+     原因写在稿子里的说明块——React Flow 选中时会把节点 z 抬到 +1000，
+     底色留着就会盖住框里的节点。 */
+  .group.sel { border-style: solid; border-width: 2px; background: transparent; }
+
+  /* ── 【新】缩放手柄（NodeResizer 的 8 点 + 4 边） ── */
+  .rz { position: absolute; width: 8px; height: 8px; border-radius: 2px;
+        background: var(--accent-strong); border: 1px solid #0b1220; }
+  .rz.tl { left: -4px; top: -4px; cursor: nwse-resize; }
+  .rz.tr { right: -4px; top: -4px; cursor: nesw-resize; }
+  .rz.bl { left: -4px; bottom: -4px; cursor: nesw-resize; }
+  .rz.br { right: -4px; bottom: -4px; cursor: nwse-resize; }
+  .rz.tc { left: calc(50% - 4px); top: -4px; cursor: ns-resize; }
+  .rz.bc { left: calc(50% - 4px); bottom: -4px; cursor: ns-resize; }
+  .rz.lc { left: -4px; top: calc(50% - 4px); cursor: ew-resize; }
+  .rz.rc { right: -4px; top: calc(50% - 4px); cursor: ew-resize; }
+
+  /* ── 面板（原样抄真实 .propPanel / .shapeLibrary） ── */
+  .panel {
+    width: 220px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--diagram-panel-bg);
+    border: 1px solid var(--diagram-panel-border);
+    backdrop-filter: var(--diagram-float-blur);
+    box-shadow: var(--shadow-md);
+    color: var(--diagram-node-text);
+  }
+  .ptitle { font-size: 11px; font-weight: 600; opacity: 0.8; margin-bottom: 8px; }
+  .prow {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; margin-bottom: 8px; font-size: 12px;
+  }
+  .prowStack { margin-bottom: 8px; font-size: 12px; }
+  .prowStack > span { display: block; margin-bottom: 5px; }
+  .pinput {
+    flex: 1; min-width: 0; padding: 5px 8px; font-size: 12px; border-radius: 7px;
+    color: var(--diagram-node-text); background: var(--diagram-panel-hover);
+    border: 1px solid rgba(255, 255, 255, 0.16); outline: none;
+  }
+  .swatches { display: flex; flex-wrap: wrap; gap: 5px; }
+  .sw { width: 18px; height: 18px; border-radius: 5px; border: 2px solid transparent; cursor: pointer; }
+  .sw.on { border-color: #fff; box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.3); }
+  /* 文字色的「默认」格：斜杠表示跟随主题，不是一个具体颜色 */
+  .sw.auto {
+    background:
+      linear-gradient(135deg, transparent 44%, var(--text-muted) 44%, var(--text-muted) 56%, transparent 56%),
+      var(--diagram-panel-hover);
+    border: 2px solid rgba(255, 255, 255, 0.22);
+  }
+
+  .lib {
+    width: 150px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 10px;
+    border-radius: 12px; background: rgba(15, 23, 42, 0.66);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    backdrop-filter: var(--diagram-float-blur); box-shadow: var(--shadow-md);
+  }
+  .libTitle {
+    grid-column: 1 / -1; font-size: 10px; font-weight: 700;
+    letter-spacing: 0.5px; opacity: 0.7;
+  }
+  /* 【新】组标题：比总标题弱一档，上面留 4px 呼吸；第一个组不留 */
+  .libGroup {
+    grid-column: 1 / -1; font-size: 9.5px; font-weight: 700; letter-spacing: 0.6px;
+    opacity: 0.5; margin-top: 4px; padding-top: 5px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .libGroup.first { margin-top: 0; padding-top: 0; border-top: none; }
+  .shape {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 7px 4px; border-radius: 9px; border: 1px solid rgba(255, 255, 255, 0.16);
+    background: transparent; color: var(--diagram-node-text); cursor: pointer;
+  }
+  .shape.wide { grid-column: 1 / -1; flex-direction: row; justify-content: center; gap: 7px; }
+  .ico {
+    width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center;
+    background: var(--accent-light); color: var(--accent-strong);
+  }
+  .ico svg { width: 16px; height: 16px; }
+  .slbl { font-size: 10.5px; font-weight: 600; line-height: 1; white-space: nowrap; }
+
+  .cols { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
+  pre {
+    background: rgba(255, 255, 255, 0.04); border: 1px solid var(--diagram-panel-border);
+    border-radius: 9px; padding: 11px 13px; font-size: 12px; overflow-x: auto;
+    font-family: ui-monospace, Consolas, monospace; margin: 10px 0 0;
+  }
+  table { border-collapse: collapse; font-size: 12.5px; margin-top: 10px; width: 100%; }
+  th, td { border: 1px solid var(--diagram-panel-border); padding: 6px 10px; text-align: left; }
+  th { background: rgba(255, 255, 255, 0.05); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>流程图 · 第三批设计稿</h1>
+<p class="sub">
+  2026-08-14 ｜ 四项：② subgraph 区域框（方案乙·几何包含）、⑦ 节点缩放、⑨ 文字色、⑩ 形状库分类。<br />
+  下面所有玻璃浮层 / 节点的尺寸、圆角、透明度都直接取自 <code>DiagramCanvas.module.css</code>，不是重画。
+</p>
+
+<!-- ============================ ② 区域框 ============================ -->
+<h2>② subgraph 区域框：几何包含，不用 parentId</h2>
+<div class="canvas">
+  <!-- 未选中的组 -->
+  <div class="group" style="--group-tint:#8b5cf6; left:34px; top:52px; width:268px; height:296px;">
+    <span class="ghead">⠿ 登录校验</span>
+  </div>
+  <div class="node" style="left:96px; top:86px;"><span class="lbl">读取账号</span></div>
+  <div class="node" style="left:96px; top:172px;"><span class="lbl">校验密码</span></div>
+  <div class="node" style="left:96px; top:262px;"><span class="lbl">写会话</span></div>
+
+  <!-- 选中的组：底色抽掉，描边转实线加粗，四角出缩放手柄 -->
+  <div class="group sel" style="--group-tint:#10b981; left:352px; top:52px; width:250px; height:200px;">
+    <span class="ghead">⠿ 失败处理</span>
+    <i class="rz tl"></i><i class="rz tc"></i><i class="rz tr"></i>
+    <i class="rz lc"></i><i class="rz rc"></i>
+    <i class="rz bl"></i><i class="rz bc"></i><i class="rz br"></i>
+  </div>
+  <div class="node" style="left:404px; top:92px;"><span class="lbl">提示错误</span></div>
+  <div class="node" style="left:404px; top:172px;"><span class="lbl">重新登录</span></div>
+</div>
+
+<div class="note">
+  <b>为什么不是 React Flow 原生的 <code>parentId</code> 容器：</b>
+  原生容器会把子节点的 <code>position</code> 变成<b>相对父节点</b>的坐标，而
+  <code>types.ts</code> 的 <code>pickEdgeHandles()</code> 直接拿 <code>n.position</code> 比大小判断上下行——
+  父子混算之后所有<b>回边</b>的锚点判定全部作废；<code>autoLayout</code> 的 dagre 也不认 parent，会把子节点摊平出框。
+  改成几何包含后，全部是绝对坐标，<code>pickEdgeHandles</code> / <code>autoLayout</code> / <code>serializeDiagram</code> 一行不动。
+</div>
+<div class="note">
+  <b>选中态为什么把底色抽掉：</b>React Flow 选中节点时会把它的 z 抬高 1000（<code>calculateZ</code>：
+  <code>zIndex + (selected ? SELECTED_NODE_Z : 0)</code>）。区域框平时是 <code>zIndex:-1</code> 压在节点下面，
+  一旦选中就翻到最上层——底色留着会糊住框内所有节点。所以选中时只留描边和标题栏。
+</div>
+<div class="note">
+  <b>只能按标题栏拖：</b><code>pointer-events:none</code> 加在节点<b>外壳</b>
+  <code>.react-flow__node-group</code> 上（只写内层没用，外壳才是命中区域），节点用 <code>dragHandle</code> 指定标题栏。
+  否则整块区域都吃走鼠标事件，框内空白处就没法框选、也拖不动画布。
+  拖标题栏时在 <code>onNodeDrag</code> 里按位移同步平移框内节点；把节点拖出框即自动脱组。
+</div>
+
+<h3 style="font-size:13.5px;margin:18px 0 0;">归属判定与 Mermaid 往返</h3>
+<div class="cols">
+  <div style="flex:1;min-width:300px;">
+    <table>
+      <tr><th>规则</th><th>取值</th></tr>
+      <tr><td>成员判定</td><td>节点<b>中心点</b>落在框矩形内</td></tr>
+      <tr><td>重叠归属</td><td>面积<b>最小</b>的框优先（嵌套 subgraph 自然成立）</td></tr>
+      <tr><td>脱组</td><td>拖出框即脱离，不留残留字段</td></tr>
+      <tr><td>自动布局</td><td>group 不进 dagre/elk，布局后按成员包围盒 + 24px 内边距重新贴合</td></tr>
+      <tr><td>连线</td><td>group 不可连线（不出 Handle）</td></tr>
+    </table>
+  </div>
+  <div style="flex:1;min-width:300px;">
+<pre>flowchart TD
+  subgraph g1["登录校验"]
+    n1["读取账号"]
+    n2["校验密码"]
+    n3["写会话"]
+  end
+  subgraph g2["失败处理"]
+    n4["提示错误"]
+    n5["重新登录"]
+  end
+  n1 --&gt; n2
+  n2 -.-&gt;|失败| n4
+  n4 --&gt; n5</pre>
+  </div>
+</div>
+<div class="note">
+  当前 <code>DIRECTIVE_RE</code>（types.ts:429）把 <code>subgraph</code> / <code>end</code> 整行丢弃，导入即丢分组。
+  新解析器改成维护一个组栈：遇 <code>subgraph</code> 入栈、遇 <code>end</code> 出栈，期间出现的节点记进该组；
+  布局完成后按成员包围盒生成框。导出时反过来按几何包含算成员，每个节点只声明一次。
+</div>
+
+<!-- ============================ ⑦ 缩放 ============================ -->
+<h2>⑦ 节点缩放：NodeResizer 双向拖拽</h2>
+<div class="canvas" style="height:230px;">
+  <div class="node" style="left:48px; top:70px;"><span class="lbl">默认自适应</span></div>
+  <div class="node sel" style="left:230px; top:44px; width:300px; height:120px; max-width:none; display:grid; place-items:center;">
+    <span class="lbl">手动拉宽拉高后<br />文字居中不变形</span>
+    <i class="rz tl"></i><i class="rz tc"></i><i class="rz tr"></i>
+    <i class="rz lc"></i><i class="rz rc"></i>
+    <i class="rz bl"></i><i class="rz bc"></i><i class="rz br"></i>
+  </div>
+</div>
+<div class="note">
+  <b>手柄只在选中时出现</b>（<code>isVisible={selected}</code>），下限 <code>minWidth 96 / minHeight 40</code>——
+  与 <code>.node</code> 现有的 <code>min-width:96px</code> 对齐。<br />
+  <b>必须连带改三处写死的常量：</b><code>autoLayout</code>、<code>autoLayoutElk</code>、<code>pickEdgeHandles</code> 里的
+  <code>NODE_W=168 / NODE_H=64</code>。不改的话，一个拉到 300px 宽的节点在自动布局里仍按 168 排，
+  相邻节点会压上去；<code>centerOf()</code> 也会把中心算偏，回边挑错锚点。改成读
+  <code>n.width ?? NODE_W</code>，三处都是纯函数，直接补单测。<br />
+  尺寸落在 <code>node.width / node.height</code> <b>顶层字段</b>（已在 <code>@xyflow/react</code> 打包产物里确认：
+  dimensions change 走 <code>element.width = change.dimensions.width</code>），不是 <code>data</code>，序列化要跟着写。
+</div>
+
+<!-- ============================ ⑨ 文字色 ============================ -->
+<h2>⑨ 节点文字色</h2>
+<div class="cols">
+  <div class="canvas" style="flex:1; min-width:340px; height:190px;">
+    <div class="node" style="left:40px; top:36px;"><span class="lbl">默认跟随主题</span></div>
+    <div class="node" style="left:40px; top:106px; --node-text-color:#f59e0b;"><span class="lbl">警告步骤</span></div>
+    <div class="node" style="left:212px; top:36px; --node-stroke:#ef4444; --node-text-color:#ef4444;"><span class="lbl">失败分支</span></div>
+    <div class="node" style="left:212px; top:106px; --node-text-color:#10b981;"><span class="lbl">校验通过</span></div>
+  </div>
+  <div class="panel">
+    <div class="ptitle">节点属性</div>
+    <div class="prow"><span>文字</span><input class="pinput" value="校验密码" /></div>
+    <div class="prowStack">
+      <span>填充色</span>
+      <div class="swatches">
+        <i class="sw on" style="background:#0284C7"></i><i class="sw" style="background:#8B5CF6"></i>
+        <i class="sw" style="background:#EC4899"></i><i class="sw" style="background:#10B981"></i>
+        <i class="sw" style="background:#F59E0B"></i><i class="sw" style="background:#EF4444"></i>
+        <i class="sw" style="background:#06B6D4"></i><i class="sw" style="background:#6366F1"></i>
+      </div>
+    </div>
+    <div class="prowStack">
+      <span>文字色 <b style="opacity:.55;font-weight:400">（新）</b></span>
+      <div class="swatches">
+        <i class="sw auto on" title="默认 · 跟随主题"></i>
+        <i class="sw" style="background:#F8FAFC"></i><i class="sw" style="background:#0F172A"></i>
+        <i class="sw" style="background:#F59E0B"></i><i class="sw" style="background:#EF4444"></i>
+        <i class="sw" style="background:#10B981"></i>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="note">
+  第一格是<b>「默认」</b>而不是某个具体颜色——斜杠格 = 删掉 <code>textColor</code> 字段、回落主题色。
+  与 <code>stroke</code> 的做法一致：默认值不入库，否则序列化串会和新建节点不等，「未保存」红点会凭空亮起。
+  Mermaid 不承载样式，文字色与现有的填充色 / 描边色一样<b>往返即丢</b>（属于已知取舍，不在本批扩大）。
+</div>
+
+<!-- ============================ ⑩ 形状分类 ============================ -->
+<h2>⑩ 形状库分类</h2>
+<div class="cols">
+  <div class="lib">
+    <div class="libTitle">形状</div>
+
+    <div class="libGroup first">基础</div>
+    <button class="shape"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="1.5"/></svg></span><span class="slbl">矩形</span></button>
+    <button class="shape"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="4"/></svg></span><span class="slbl">圆角</span></button>
+    <button class="shape"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="5"/></svg></span><span class="slbl">起止</span></button>
+    <button class="shape"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="7"/></svg></span><span class="slbl">圆形</span></button>
+    <button class="shape wide"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 8h14M5 12h14M5 16h9" stroke-dasharray="3 2"/></svg></span><span class="slbl">文本</span></button>
+
+    <div class="libGroup">流程</div>
+    <button class="shape"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 4l8 8-8 8-8-8z"/></svg></span><span class="slbl">菱形</span></button>
+    <button class="shape"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M8 5h8l4 7-4 7H8l-4-7z"/></svg></span><span class="slbl">六边形</span></button>
+    <button class="shape"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M7 6h14l-4 12H3z"/></svg></span><span class="slbl">平行四边</span></button>
+    <button class="shape"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M8 6h8l4 12H4z"/></svg></span><span class="slbl">梯形</span></button>
+
+    <div class="libGroup">数据</div>
+    <button class="shape"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M4 7c0-1.7 3.6-3 8-3s8 1.3 8 3v10c0 1.7-3.6 3-8 3s-8-1.3-8-3z"/><path d="M4 7c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></span><span class="slbl">圆柱</span></button>
+    <button class="shape"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="1"/><path d="M7 7v10M17 7v10"/></svg></span><span class="slbl">双框</span></button>
+
+    <div class="libGroup">分组</div>
+    <button class="shape wide" style="border-style:dashed"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2" stroke-dasharray="3 2"/><path d="M3 9h7"/></svg></span><span class="slbl">区域框</span></button>
+  </div>
+
+  <div style="flex:1; min-width:300px;">
+    <div class="note" style="margin-top:0">
+      <b>组标题比总标题弱一档</b>（10px/0.7 → 9.5px/0.5），靠一条 8% 的分隔线断开，
+      避免四个同级标题互相打架。第一个组不留上边距和分隔线。<br />
+      <b>「区域框」进形状库</b>，与形状同一个拖放通道（<code>SHAPE_DRAG_MIME</code>），
+      落到画布即生成一个默认 260×180 的空框。<br />
+      <b>竖栏要补 <code>max-height: calc(100% - 24px)</code> + <code>overflow-y:auto</code></b>：
+      加 4 个组标题后整栏约长 78px，内嵌弹框里（画布高 82vh）会顶到底。
+    </div>
+    <div class="note">
+      <b>分组只加在左侧常驻竖栏</b>。属性面板里那个 4/6 列的紧凑形状网格保持平铺——
+      那里一格才 46px，塞组标题会把网格撑成三段，还会把浮岛顶出可视区。
+      两处仍然共用 <code>shapes.tsx</code> 这一份数据（规则 #11 单一数据源），只是渲染方式不同。
+    </div>
+  </div>
+</div>
+
+<h2>落地顺序</h2>
+<table>
+  <tr><th>#</th><th>改动</th><th>波及</th><th>风险</th></tr>
+  <tr><td>⑨</td><td>textColor 字段 + 色板</td><td>types.ts / DiagramNode / fields.tsx / CSS</td><td>低（纯展示层）</td></tr>
+  <tr><td>⑩</td><td>SHAPES 加 group + 竖栏分组渲染</td><td>shapes.tsx / ShapeLibraryGrid / CSS</td><td>低</td></tr>
+  <tr><td>⑦</td><td>NodeResizer + 尺寸接进布局</td><td>types.ts 三个纯函数 / DiagramNode / 序列化</td><td>中（有单测兜底）</td></tr>
+  <tr><td>②</td><td>group 节点 + 几何包含 + Mermaid 往返</td><td>types.ts / 模型层 / 两套 chrome / Mermaid 双向</td><td>中高</td></tr>
+</table>
+
+</body>
+</html>

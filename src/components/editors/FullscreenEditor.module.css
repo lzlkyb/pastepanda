@@ -71,9 +71,16 @@
   background: linear-gradient(180deg, var(--header-bg-start, #fff) 0%, var(--app-bg, #F8F9FB) 100%);
   border-bottom: 1px solid var(--border-color, rgba(0, 0, 0, 0.06));
   flex-shrink: 0;
-  /* 皮肤场景：内容层统一 z-1，压在 SkinScene（fixed z-0）之上 */
+  /* 皮肤场景：内容层压在 SkinScene（fixed z-0）之上 */
   position: relative;
-  z-index: 1;
+  /* 不能用 z-index:1（本文件其余内容块的通用值）：
+     position 非 static + z-index 非 auto 会**创建层叠上下文**，
+     工具栏里的导出下拉（.exportMenu, z-index:20）会被困在内部、对外只算第 1 层；
+     而后面画布容器里的形状库是 z-index:6、属性浮岛 7、右键菜单 20，
+     它们直接参与 .overlay 的上下文 → 整条工具栏连同下拉一起被盖住，
+     点导出项实际点到的是形状库（凭空多出一个节点）。
+     30 高于画布内所有 chrome 层（最高 20）。 */
+  z-index: 30;
 }
 
 .toolbarLeft {

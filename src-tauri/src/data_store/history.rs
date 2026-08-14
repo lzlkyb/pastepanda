@@ -150,6 +150,11 @@ impl DataStore {
             // 图文混排归入「图片」筛选：两者都是带图内容，用户找图时希望一起看到。
             // 只想看图文时用「图文」自动标签精确筛（不单独占一个顶部标签页，避免拥挤）。
             sql.push_str(" AND type IN ('image', 'rich')");
+        } else if filter == "text" {
+            // 流程图 / 文档同归「文本」筛选（同图文归入图片的取舍）：
+            // 它们本质都是文档类内容，只在「全部」里出现会让人以为弄丢了。
+            // 想精确筛时用「流程图」「文档」自动标签。
+            sql.push_str(" AND type IN ('text', 'diagram', 'doc')");
         } else if filter != "all" {
             sql.push_str(" AND type = ?");
             params_vec.push(Box::new(filter.to_string()));
@@ -245,6 +250,8 @@ impl DataStore {
             sql.push_str(" AND pinned = 1");
         } else if filter == "image" {
             sql.push_str(" AND type IN ('image', 'rich')");
+        } else if filter == "text" {
+            sql.push_str(" AND type IN ('text', 'diagram', 'doc')");
         } else if filter != "all" {
             sql.push_str(" AND type = ?");
             params_vec.push(Box::new(filter.to_string()));
@@ -390,6 +397,8 @@ impl DataStore {
             // 图文混排归入「图片」筛选：两者都是带图内容，用户找图时希望一起看到。
             // 只想看图文时用「图文」自动标签精确筛（不单独占一个顶部标签页，避免拥挤）。
             sql.push_str(" AND type IN ('image', 'rich')");
+        } else if filter == "text" {
+            sql.push_str(" AND type IN ('text', 'diagram', 'doc')");
         } else if filter != "all" {
             sql.push_str(" AND type = ?");
             params_vec.push(Box::new(filter.to_string()));
@@ -1352,6 +1361,10 @@ impl DataStore {
                     // 不统一的后果很别扭：用户选「图片」去清理，预览里看到的与实际删的不一致，
                     // 图文记录会被遗留下来。
                     sql.push_str(" AND type IN ('image', 'rich')");
+                } else if t == "text" {
+                    // 同理，与顶部「文本」筛选口径对齐，否则按「文本」清理时
+                    // 预览里列出了流程图 / 文档、实际却删不掉它们。
+                    sql.push_str(" AND type IN ('text', 'diagram', 'doc')");
                 } else {
                     sql.push_str(" AND type = ?");
                     params_vec.push(Box::new(t.to_string()));

@@ -66,6 +66,10 @@ export interface DiagramNodeData {
   focal?: boolean;
   /** 描边色（独立覆盖默认边框色；缺省跟随主题边框） */
   stroke?: string;
+  /** 文字色（缺省跟随主题的 --diagram-node-text）。
+   *  与 stroke 一样「默认值不入库」：缺省时整个字段不写，否则序列化串会和
+   *  新建节点不等，而「未保存」是靠序列化串比对基线判的——会凭空亮红点。 */
+  textColor?: string;
   [key: string]: unknown;
 }
 
@@ -99,6 +103,170 @@ export const DEFAULT_EDGE_HANDLES = { sourceHandle: "bottom", targetHandle: "top
  * 手拖出来的边不带这个标记，锚点完全由用户决定，布局不得推翻。
  */
 export const AUTO_ROUTE_DATA = { autoRoute: true } as const;
+
+/**
+ * 连线线型。对齐 Mermaid 的三种连接符：`-->` 实线 / `-.->` 虚线 / `==>` 粗线。
+ *
+ * 解析器一直认得这三种（见 CONNECTOR_RE），但以前没把“是哪种”存下来，
+ * 导出时一律写回 `-->`——导入一个带虚线的图，往返一轮线型就没了。
+ *
+ * 注：Mermaid 的无箭头连接（`---` / `===`）仍会在往返后长出箭头，
+ * 因为本项目的模型里没有“有无箭头”这一维（流程图里罕用，暂不引入）。
+ */
+export type EdgeLine = "solid" | "dashed" | "thick";
+
+const EDGE_LINES: ReadonlySet<string> = new Set<EdgeLine>(["solid", "dashed", "thick"]);
+
+export function asEdgeLine(v: unknown): EdgeLine {
+  return typeof v === "string" && EDGE_LINES.has(v) ? (v as EdgeLine) : "solid";
+}
+
+/** 从边上读线型。data 是 Record<string, unknown>，直接读拿到的是 unknown，得过一道收敛。 */
+export function edgeLineOf(e: DEdge): EdgeLine {
+  return asEdgeLine(e.data?.line);
+}
+
+/** 线型 → Mermaid 连接符 */
+const LINE_CONNECTOR: Record<EdgeLine, string> = {
+  solid: "-->",
+  dashed: "-.->",
+  thick: "==>",
+};
+
+/** Mermaid 连接符 → 线型。`-.-` 开头是虚线，`=` 开头是粗线，其余实线。 */
+export function lineOfConnector(conn: string): EdgeLine {
+  if (conn.startsWith("-.")) return "dashed";
+  if (conn.startsWith("=")) return "thick";
+  return "solid";
+}
+/* ===================== 区域框（subgraph 分组） =====================
+ *
+ * 分组用一个单独的 group 节点表达，混在 doc.nodes 里，**全部是绝对坐标**。
+ *
+ * 为什么不用 React Flow 原生的 parentId 容器：原生容器会把子节点的 position
+ * 变成**相对父节点**的坐标，而本文件的 pickEdgeHandles() 直接拿 position 比大小
+ * 判断上下行——父子混算之后所有回边的锚点判定全部作废；
+ * 序列化、AI 展开、复制粘贴也得跟着改。
+ *
+ * 归属不存字段，而是**按几何包含算**（节点中心落在框里 = 属于该框）：
+ * 拖出框即脱组，不会留下一个指向旧框的残留字段。
+ */
+
+export const GROUP_TYPE = "group";
+
+/** 新建区域框的默认尺寸 */
+export const GROUP_W = 260;
+export const GROUP_H = 180;
+
+/** 从 Mermaid 导入时，框比成员包围盒向外撑多少 */
+export const GROUP_PAD = 24;
+/** 框顶额外留的位置：标题栏骑在框的上边上，不留就会压到第一行节点 */
+export const GROUP_HEAD_ROOM = 18;
+
+/**
+ * 区域框压在节点下面。
+ * React Flow 的 calculateZ 是 `zIndex + (selected ? SELECTED_NODE_Z : 0)`，
+ * 所以选中时它会翻到最上层——选中态的底色在 CSS 里被抽掉，就是为了这一帧不糊住框内节点。
+ */
+export const GROUP_Z = -1;
+
+/**
+ * 拖拽句柄的选择器。**必须是不过 CSS Modules 哈希的全局类名**，
+ * 因为 React Flow 拿着它去 querySelector，拿不到哈希后的名字。
+ * 只能按标题栏拖：框体是 pointer-events:none，否则整块区域吃走鼠标事件，
+ * 框内空白处就无法框选、也拖不动画布。
+ */
+export const GROUP_DRAG_HANDLE = ".diagram-group-head";
+
+export function isGroup(n: DNode): boolean {
+  return n.type === GROUP_TYPE;
+}
+
+/** 区域框的唯一构造入口（parseDiagram / parseMermaid / 手动新建 共用），
+ *  避免 zIndex / dragHandle 这两个容易漏的字段在三处各写一遍。 */
+export function makeGroup(
+  id: string,
+  position: { x: number; y: number },
+  size: { w: number; h: number },
+  data: { label: string; color?: string },
+): DNode {
+  return {
+    id,
+    type: GROUP_TYPE,
+    position,
+    width: size.w,
+    height: size.h,
+    zIndex: GROUP_Z,
+    dragHandle: GROUP_DRAG_HANDLE,
+    data: { label: data.label, ...(data.color ? { color: data.color } : {}) },
+  };
+}
+
+/** 区域框的矩形（没存尺寸的旧数据回落默认值） */
+function groupRect(g: DNode): { x: number; y: number; w: number; h: number } {
+  return { x: g.position.x, y: g.position.y, w: g.width ?? GROUP_W, h: g.height ?? GROUP_H };
+}
+
+/**
+ * 算每个区域框的成员：节点**中心点**落在框矩形内即属于该框。
+ *
+ * 用中心而不是包围盒全含：否则一个只露出一角的节点既不算入组、拖回去也不算，手感发粘。
+ * 重叠时取**面积最小**的框，嵌套 subgraph 就自然成立（内层框更小，赢过外层）。
+ */
+export function groupMembers(nodes: DNode[]): Map<string, string[]> {
+  const groups = nodes.filter(isGroup);
+  const out = new Map<string, string[]>(groups.map((g) => [g.id, [] as string[]]));
+  if (groups.length === 0) return out;
+  for (const n of nodes) {
+    if (isGroup(n)) continue;
+    const { w, h } = nodeSize(n);
+    const cx = n.position.x + w / 2;
+    const cy = n.position.y + h / 2;
+    let bestId: string | null = null;
+    let bestArea = Infinity;
+    for (const g of groups) {
+      const r = groupRect(g);
+      if (cx < r.x || cx > r.x + r.w || cy < r.y || cy > r.y + r.h) continue;
+      const area = r.w * r.h;
+      if (area < bestArea) {
+        bestArea = area;
+        bestId = g.id;
+      }
+    }
+    if (bestId) out.get(bestId)!.push(n.id);
+  }
+  return out;
+}
+
+/**
+ * 区域框之间的嵌套关系：parentId -> 子框。顶层框挂在 key = "" 下。
+ * “被包含”按矩形全含判，父取**包含它的最小那个框**（与成员归属同一套规则）。
+ * 导出 Mermaid 时靠它把 subgraph 写成嵌套的，否则导入时的嵌套一导出就踩平了。
+ */
+export function groupTree(groups: DNode[]): Map<string, DNode[]> {
+  const tree = new Map<string, DNode[]>([["", [] as DNode[]]]);
+  groups.forEach((g) => tree.set(g.id, []));
+  for (const g of groups) {
+    const r = groupRect(g);
+    let parentId = "";
+    let bestArea = Infinity;
+    for (const h of groups) {
+      if (h.id === g.id) continue;
+      const hr = groupRect(h);
+      const contains =
+        hr.x <= r.x && hr.y <= r.y && hr.x + hr.w >= r.x + r.w && hr.y + hr.h >= r.y + r.h;
+      if (!contains) continue;
+      const area = hr.w * hr.h;
+      if (area < bestArea) {
+        bestArea = area;
+        parentId = h.id;
+      }
+    }
+    tree.get(parentId)!.push(g);
+  }
+  return tree;
+}
+
 export const NODE_COLORS = [
   "#0284C7", "#8B5CF6", "#EC4899", "#10B981",
   "#F59E0B", "#EF4444", "#06B6D4", "#6366F1",
@@ -115,10 +283,32 @@ export function parseDiagram(content: string | undefined | null): DiagramDoc {
   try {
     const raw = JSON.parse(content) as Partial<DiagramDoc>;
     if (!raw || !Array.isArray(raw.nodes)) return emptyDoc();
-    const nodes: DNode[] = raw.nodes.map((n, i) => ({
-      id: n?.id || `n${i}`,
+    // 手动缩放过的尺寸。只收正数：0 / 负数 / NaN 都会让 React Flow 把节点渲染成一条线，
+    // 而且一旦写进去就拖不回来了（手柄也跟着塌陷）。
+    const size = (v: unknown): number | undefined =>
+      typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined;
+    const nodes: DNode[] = raw.nodes.map((n, i) => {
+      const id = n?.id || `n${i}`;
+      const position = n?.position || { x: 40 + (i % 4) * 60, y: 40 + Math.floor(i / 4) * 60 };
+      // 区域框走它自己的构造入口：zIndex / dragHandle 不入库（它们是渲染约定、不是数据），
+      // 每次读盘重新盖上，旧文档也能直接拿到新行为。
+      if (n?.type === GROUP_TYPE) {
+        return makeGroup(
+          id,
+          position,
+          { w: size(n?.width) ?? GROUP_W, h: size(n?.height) ?? GROUP_H },
+          {
+            label: typeof n?.data?.label === "string" ? n.data.label : "",
+            color: typeof n?.data?.color === "string" ? n.data.color : undefined,
+          },
+        );
+      }
+      return {
+      id,
       type: "diagram",
-      position: n?.position || { x: 40 + (i % 4) * 60, y: 40 + Math.floor(i / 4) * 60 },
+      position,
+      ...(size(n?.width) !== undefined ? { width: size(n?.width) } : {}),
+      ...(size(n?.height) !== undefined ? { height: size(n?.height) } : {}),
       data: {
         label: typeof n?.data?.label === "string" ? n.data.label : "",
         color: n?.data?.color,
@@ -126,16 +316,24 @@ export function parseDiagram(content: string | undefined | null): DiagramDoc {
         fontSize: typeof n?.data?.fontSize === "number" ? n.data.fontSize : undefined,
         focal: n?.data?.focal === true ? true : undefined,
         stroke: typeof n?.data?.stroke === "string" ? n.data.stroke : undefined,
+        textColor: typeof n?.data?.textColor === "string" ? n.data.textColor : undefined,
       },
-    }));
-    const ids = new Set(nodes.map((n) => n.id));
+      };
+    });
+    // 连线只能接非区域框的节点：区域框不出 Handle，指向它的边渲染时会掉到默认锚点上、拿不到位置
+    const ids = new Set(nodes.filter((n) => !isGroup(n)).map((n) => n.id));
     const edges: DEdge[] = (Array.isArray(raw.edges) ? raw.edges : [])
       .filter((e) => e && ids.has(e.source) && ids.has(e.target))
       .map((e, i) => {
         // autoRoute 不在 React Flow 的 Edge 类型里，是本项目自己落盘的字段
-        const stored = e as DEdge & { autoRoute?: boolean };
+        const stored = e as DEdge & { autoRoute?: boolean; line?: unknown };
         // 没存过锚点 = 旧文档或导入/AI 生成的裸边，一律当自动边，交给下面 routeAutoEdges 重算
         const auto = stored.autoRoute === true || typeof e.sourceHandle !== "string";
+        const line = asEdgeLine(stored.line);
+        // autoRoute 与 line 两个字段都可能缺席，都缺席时就不要给个空对象
+        const data: Record<string, unknown> = {};
+        if (auto) data.autoRoute = true;
+        if (line !== "solid") data.line = line;
         return {
           id: e.id || `e${i}`,
           source: e.source,
@@ -146,7 +344,7 @@ export function parseDiagram(content: string | undefined | null): DiagramDoc {
           label: typeof e.label === "string" ? e.label : undefined,
           type: e.type || "smoothstep",
           animated: e.animated,
-          data: auto ? { ...AUTO_ROUTE_DATA } : undefined,
+          data: Object.keys(data).length > 0 ? data : undefined,
         };
       });
     return { version: DIAGRAM_VERSION, nodes, edges: routeAutoEdges(nodes, edges) };
@@ -158,9 +356,22 @@ export function parseDiagram(content: string | undefined | null): DiagramDoc {
 export function serializeDiagram(doc: DiagramDoc): string {
   return JSON.stringify({
     version: DIAGRAM_VERSION,
-    nodes: doc.nodes.map((n) => ({
+    nodes: doc.nodes.map((n) => (isGroup(n) ? {
+      // 区域框：只落盘 type / 位置 / 尺寸 / 标题 / 颜色。
+      // 成员列表**不落盘**——归属是几何算出来的，存一份就会与真实位置脱节。
+      id: n.id,
+      type: GROUP_TYPE,
+      position: n.position,
+      width: n.width ?? GROUP_W,
+      height: n.height ?? GROUP_H,
+      data: { label: n.data.label, ...(n.data.color ? { color: n.data.color } : {}) },
+    } : {
       id: n.id,
       position: n.position,
+      // 手动缩放的尺寸在 node 顶层（NodeResizer 写的就是这两个字段），不在 data 里。
+      // 没缩放过就不写：默认值入库会让序列化串与新建节点不等，凭空亮「未保存」红点。
+      ...(typeof n.width === "number" ? { width: n.width } : {}),
+      ...(typeof n.height === "number" ? { height: n.height } : {}),
       data: {
         label: n.data.label,
         color: n.data.color,
@@ -168,6 +379,7 @@ export function serializeDiagram(doc: DiagramDoc): string {
         ...(typeof n.data.fontSize === "number" ? { fontSize: n.data.fontSize } : {}),
         ...(n.data.focal ? { focal: true } : {}),
         ...(typeof n.data.stroke === "string" ? { stroke: n.data.stroke } : {}),
+        ...(typeof n.data.textColor === "string" ? { textColor: n.data.textColor } : {}),
       },
     })),
     edges: doc.edges.map((e) => ({
@@ -181,6 +393,9 @@ export function serializeDiagram(doc: DiagramDoc): string {
       animated: e.animated,
       // 自动布线标记要落盘：重开后才分得清哪些边可以随布局重算、哪些是用户手定的
       autoRoute: e.data?.autoRoute === true ? true : undefined,
+      // 线型同理；与 autoRoute 一样平铺在边对象顶层，而不是嵌在 data 里，
+      // 保持落盘格式扁平、与已存文档兼容（旧文档没这个字段 → asEdgeLine 回落 solid）
+      line: edgeLineOf(e) === "solid" ? undefined : edgeLineOf(e),
     })),
   });
 }
@@ -191,16 +406,22 @@ export function nodeLabelsText(doc: DiagramDoc): string {
   return labels.join(" / ");
 }
 
-/** 卡片默认标题（无标签时） */
+/** 卡片默认标题（无标签时）。计数不算区域框——它不是“节点”，
+ *  两个节点加一个框显示「3 节点」会让人以为丢了一个。 */
 export function diagramTitle(doc: DiagramDoc): string {
   const t = nodeLabelsText(doc);
-  return t || `流程图（${doc.nodes.length} 节点）`;
+  return t || `流程图（${doc.nodes.filter((n) => !isGroup(n)).length} 节点）`;
 }
 
 /** 转 Mermaid 文本（导出 / 互操作 / AI 生成回灌都用它） */
 export function toMermaid(doc: DiagramDoc): string {
+  // 分组用 g 前缀、节点用 n 前缀，两套计数分开。
+  // 不能统一数：那样导出会写出 `subgraph n1[…]` 这种看着像节点的块名，
+  // 而且一旦将来改了遍历顺序，组名与节点名就可能撞上。
   const idMap = new Map<string, string>();
-  doc.nodes.forEach((n, i) => idMap.set(n.id, `n${i + 1}`));
+  let gi = 0;
+  let ni = 0;
+  doc.nodes.forEach((n) => idMap.set(n.id, isGroup(n) ? `g${++gi}` : `n${++ni}`));
   // 与下方 SHAPE_WRAPPERS 一一对应，保证「导出 Mermaid → 再导入」形状不漂移。
   // 每种包裹符只能归一个形状用，共用会让形状在往返时丢失（之前 ellipse 与 pill 共用
   // (["x"]) 就出过这个问题）。text 在 mermaid 里没有对应形状，退化成 rect
@@ -218,30 +439,86 @@ export function toMermaid(doc: DiagramDoc): string {
     subroutine: (s) => `[["${s}"]]`,
     text: (s) => `["${s}"]`,
   };
+  const esc = (s: string) => s.replace(/"/g, '\\"').replace(/\n/g, " ");
+  const declOf = (n: DNode) =>
+    `${idMap.get(n.id)}` + shapeWrappers[n.data.shape || "rect"](esc(n.data.label || ""));
+
   const lines: string[] = ["flowchart TD"];
-  doc.nodes.forEach((n) => {
-    const safe = (n.data.label || "").replace(/"/g, '\\"').replace(/\n/g, " ");
-    const wrap = shapeWrappers[n.data.shape || "rect"];
-    lines.push(`  ${idMap.get(n.id)}` + wrap(safe));
+
+  // 先写 subgraph 块，再写没入组的节点，最后写边。
+  // 每个节点只能声明一次：mermaid 里重复声明不报错，但节点会被归到先出现的那个 subgraph，
+  // 写两遍就等于把归属交给了行序。
+  const groups = doc.nodes.filter(isGroup);
+  const flow = doc.nodes.filter((n) => !isGroup(n));
+  const byId = new Map(flow.map((n) => [n.id, n]));
+  const members = groupMembers(doc.nodes);
+  const tree = groupTree(groups);
+  const emitted = new Set<string>();
+
+  const emitGroup = (g: DNode, depth: number) => {
+    const ids = members.get(g.id) ?? [];
+    const kids = tree.get(g.id) ?? [];
+    // 既没成员也没子框的空框不导：mermaid 会画出一个空盒子，往返回来又变成零尺寸。
+    // 代价：刚拖出来还没装东西的空框导出会丢（属于已知取舍，JSON 落盘不丢）。
+    if (ids.length === 0 && kids.length === 0) return;
+    const pad = "  ".repeat(depth + 1);
+    lines.push(`${pad}subgraph ${idMap.get(g.id)}["${esc(g.data.label || "分组")}"]`);
+    ids.forEach((id) => {
+      const n = byId.get(id);
+      if (!n) return;
+      emitted.add(id);
+      lines.push(`${pad}  ${declOf(n)}`);
+    });
+    kids.forEach((k) => emitGroup(k, depth + 1));
+    lines.push(`${pad}end`);
+  };
+
+  (tree.get("") ?? []).forEach((g) => emitGroup(g, 0));
+  flow.forEach((n) => {
+    if (emitted.has(n.id)) return;
+    lines.push(`  ${declOf(n)}`);
   });
+
   doc.edges.forEach((e) => {
     const from = idMap.get(e.source);
     const to = idMap.get(e.target);
     if (!from || !to) return;
     const label = e.label ? `|${String(e.label).replace(/\|/g, " ")}|` : "";
-    lines.push(`  ${from} -->${label} ${to}`);
+    lines.push(`  ${from} ${LINE_CONNECTOR[edgeLineOf(e)]}${label} ${to}`);
   });
   return lines.join("\n");
 }
 
-const NODE_W = 168;
-const NODE_H = 64;
+/** 未手动缩放的节点的估算尺寸。真实渲染尺寸由 CSS 决定（min-width 96 / max-width 220），
+ *  这里只是给布局与锚点判定用的中间值。 */
+export const NODE_W = 168;
+export const NODE_H = 64;
 
 /** 纵向差小于一个节点高就当同一层，不算上下行 */
 const SAME_RANK_DY = NODE_H;
 
+/**
+ * 节点的实际尺寸。
+ *
+ * **不能再用写死的 168×64**：NodeResizer 把手动缩放的结果写在 `node.width` /
+ * `node.height` 顶层字段上（见 @xyflow 的 dimensions change：`element.width = ...`）。
+ * 拉到 300px 宽的节点如果在布局里仍按 168 算，相邻节点会压上去；
+ * centerOf 算偏后回边还会挑错锚点。
+ *
+ * measured 是 React Flow 渲染后回填的实测值（未手动缩放时就靠它拿到真实宽高），
+ * 纯数据场景（单测 / 导入后还没渲染）拿不到，才回落到常量。
+ */
+export function nodeSize(n: DNode): { w: number; h: number } {
+  const m = (n as DNode & { measured?: { width?: number; height?: number } }).measured;
+  return {
+    w: n.width ?? m?.width ?? NODE_W,
+    h: n.height ?? m?.height ?? NODE_H,
+  };
+}
+
 function centerOf(n: DNode): { x: number; y: number } {
-  return { x: n.position.x + NODE_W / 2, y: n.position.y + NODE_H / 2 };
+  const { w, h } = nodeSize(n);
+  return { x: n.position.x + w / 2, y: n.position.y + h / 2 };
 }
 
 /**
@@ -294,20 +571,51 @@ export function routeAutoEdges(nodes: DNode[], edges: DEdge[]): DEdge[] {
   });
 }
 
-/** dagre 自动布局（自上而下），返回新位置后的文档副本 */
+/**
+ * dagre 自动布局（自上而下），返回新位置后的文档副本。
+ *
+ * 有区域框时走 dagre 的**复合图**（compound）：把框当 cluster、成员 setParent 进去，
+ * dagre 会保证同组节点排在一块儿，并直接算出 cluster 的 x/y/width/height，拿来当框的新矩形。
+ * 不能简单地「先布局再把框贴到成员包围盒」：dagre 不知道分组时会把同组节点打散，
+ * 贴出来的框会把别的节点圈进去——归属是几何算的，下一次就错了。
+ *
+ * 空框（没成员）不进图：dagre 对无子节点的 cluster 不给尺寸，会把位置算成 NaN。
+ */
 export function autoLayout(doc: DiagramDoc): DiagramDoc {
-  const g = new dagre.graphlib.Graph();
+  const members = groupMembers(doc.nodes);
+  const parentOf = new Map<string, string>();
+  members.forEach((ids, gid) => ids.forEach((id) => parentOf.set(id, gid)));
+  const clusters = doc.nodes.filter((n) => isGroup(n) && (members.get(n.id)?.length ?? 0) > 0);
+
+  const g = new dagre.graphlib.Graph({ compound: clusters.length > 0 });
   // 间距对着 168×64 的节点给：太挤的话斜线会贴着节点边缘走，回边也没地方绕
   g.setGraph({ rankdir: "TB", nodesep: 80, ranksep: 100, marginx: 24, marginy: 24 });
   g.setDefaultEdgeLabel(() => ({}));
+  clusters.forEach((c) => g.setNode(c.id, {}));
   doc.nodes.forEach((n) => {
-    g.setNode(n.id, { width: NODE_W, height: NODE_H });
+    if (isGroup(n)) return;
+    const { w, h } = nodeSize(n);
+    g.setNode(n.id, { width: w, height: h });
+    const p = parentOf.get(n.id);
+    if (p) g.setParent(n.id, p);
   });
   doc.edges.forEach((e) => g.setEdge(e.source, e.target));
   dagre.layout(g);
   const nodes = doc.nodes.map((n) => {
-    const p = g.node(n.id);
-    return { ...n, position: { x: Math.round(p.x - NODE_W / 2), y: Math.round(p.y - NODE_H / 2) } };
+    const p = g.node(n.id) as { x?: number; y?: number; width?: number; height?: number } | undefined;
+    if (!p || p.x == null || p.y == null) return n; // 未入图的空框：原位不动
+    if (isGroup(n)) {
+      if (!p.width || !p.height) return n;
+      return {
+        ...n,
+        position: { x: Math.round(p.x - p.width / 2), y: Math.round(p.y - p.height / 2) },
+        width: Math.round(p.width),
+        height: Math.round(p.height),
+      };
+    }
+    // dagre 返回的是中心点，换回左上角时要用**该节点自己的**尺寸，不是常量
+    const { w, h } = nodeSize(n);
+    return { ...n, position: { x: Math.round(p.x - w / 2), y: Math.round(p.y - h / 2) } };
   });
   // 位置变了，自动边的锚点必须跟着重算，否则回边会沿着旧方向绕
   return { ...doc, nodes, edges: routeAutoEdges(nodes, doc.edges) };
@@ -377,8 +685,13 @@ function shapeAndLabel(wrapper: string): { label: string; shape: NodeShape } {
 const NODE_TOKEN_RE =
   /^([A-Za-z0-9_]+)\s*(\(\[[\s\S]*?\]\)|\[\[[\s\S]*?\]\]|\(\([\s\S]*?\)\)|\{\{[\s\S]*?\}\}|\[[\s\S]*?\]|\([\s\S]*?\)|\{[\s\S]*?\})?/;
 
-/** 节点之间的连接符（含可选的 |说明|）：--> -.-> ==> --- === 及其加长写法 */
-const CONNECTOR_RE = /^\s*(?:-\.-*->|-{2,}>|={2,}>|-{2,}|={2,})\s*(?:\|([^|]*)\|\s*)?/;
+/** 节点之间的连接符（含可选的 |说明|）：--> -.-> ==> --- === 及其加长写法。
+ *  第 1 组捕连接符本身（用于定线型），第 2 组捕说明文字。 */
+const CONNECTOR_RE = /^\s*(-\.-*->|-{2,}>|={2,}>|-{2,}|={2,})\s*(?:\|([^|]*)\|\s*)?/;
+
+/** `subgraph …` 行。第 1 组是后面的全部内容（id + 可选包裹，或直接一个标题）。
+ *  它必须在 DIRECTIVE_RE 之前试，因为 DIRECTIVE_RE 也匹配 subgraph。 */
+const SUBGRAPH_RE = /^subgraph\s+(.+)$/i;
 
 /** 非图元的声明行（子图 / 样式 / 交互），直接跳过，否则会被当成节点 id */
 const DIRECTIVE_RE = /^(?:flowchart|graph|subgraph|end|classDef|class|style|linkStyle|click|direction)\b/i;
@@ -394,8 +707,13 @@ const DIRECTIVE_RE = /^(?:flowchart|graph|subgraph|end|classDef|class|style|link
 export function parseMermaid(text: string): DiagramDoc {
   const src = extractMermaid(text);
   const nodes: { id: string; label: string; shape: NodeShape }[] = [];
-  const edges: { source: string; target: string; label?: string }[] = [];
+  const edges: { source: string; target: string; label?: string; line: EdgeLine }[] = [];
   const byId = new Map<string, { id: string; label: string; shape: NodeShape }>();
+  // subgraph 栈：遇 subgraph 入栈、遇 end 出栈，期间出现的节点记进栈上**所有**组，
+  // 这样嵌套 subgraph 时外层框也包得住内层的节点。
+  const stack: string[] = [];
+  const groups: { id: string; label: string; depth: number; nodeIds: string[] }[] = [];
+  const groupById = new Map<string, (typeof groups)[number]>();
 
   // 同一节点可能先在连线里以裸 id 出现、之后才带标签声明（反之亦然），
   // 所以后到的标签 / 形状要能补写进先建的空节点，不能简单「见过就跳过」。
@@ -405,17 +723,46 @@ export function parseMermaid(text: string): DiagramDoc {
       const n = { id, label: label ?? "", shape: shape ?? ("rect" as NodeShape) };
       byId.set(id, n);
       nodes.push(n);
-      return;
+    } else {
+      if (label && !exist.label) exist.label = label;
+      if (shape && exist.shape === "rect") exist.shape = shape;
     }
-    if (label && !exist.label) exist.label = label;
-    if (shape && exist.shape === "rect") exist.shape = shape;
+    // 归组：栈上每一层都记一份（去重）
+    for (const gid of stack) {
+      const g = groupById.get(gid);
+      if (g && !g.nodeIds.includes(id)) g.nodeIds.push(id);
+    }
   };
 
   src.split(/\r?\n/).forEach((raw) => {
     let rest = raw.trim();
-    if (!rest || rest.startsWith("%%") || DIRECTIVE_RE.test(rest)) return;
+    if (!rest || rest.startsWith("%%")) return;
+
+    // subgraph / end 要在 DIRECTIVE_RE 之前拦：那条正则把它俩当非图元声明整行丢弃，
+    // 以前导入一个带分组的图，分组就静静没了。
+    const sg = rest.match(SUBGRAPH_RE);
+    if (sg) {
+      // 三种写法：`subgraph 标题` / `subgraph id[标题]` / `subgraph id["标题"]`
+      const body = sg[1].trim();
+      const nm = body.match(NODE_TOKEN_RE);
+      const hasWrapper = Boolean(nm && nm[2]);
+      const id = hasWrapper ? nm![1] : `sg${groups.length + 1}`;
+      const label = hasWrapper ? shapeAndLabel(nm![2]!).label : unquote(body);
+      const g = { id, label, depth: stack.length, nodeIds: [] as string[] };
+      groups.push(g);
+      groupById.set(id, g);
+      stack.push(id);
+      return;
+    }
+    if (/^end\b/i.test(rest)) {
+      stack.pop();
+      return;
+    }
+
+    if (DIRECTIVE_RE.test(rest)) return;
     let prev: string | null = null;
     let pendingLabel: string | undefined;
+    let pendingLine: EdgeLine = "solid";
     // NODE_TOKEN_RE 至少吞 1 个字符、CONNECTOR_RE 至少吞 2 个，rest 严格变短，不会死循环。
     for (;;) {
       const nm = rest.match(NODE_TOKEN_RE);
@@ -423,12 +770,13 @@ export function parseMermaid(text: string): DiagramDoc {
       const id = nm[1];
       const parsed = nm[2] ? shapeAndLabel(nm[2]) : null;
       pushNode(id, parsed?.label, parsed?.shape);
-      if (prev) edges.push({ source: prev, target: id, label: pendingLabel });
+      if (prev) edges.push({ source: prev, target: id, label: pendingLabel, line: pendingLine });
       prev = id;
       rest = rest.slice(nm[0].length);
       const cm = rest.match(CONNECTOR_RE);
       if (!cm) break;
-      pendingLabel = cm[1]?.trim() || undefined;
+      pendingLine = lineOfConnector(cm[1]);
+      pendingLabel = cm[2]?.trim() || undefined;
       rest = rest.slice(cm[0].length);
     }
   });
@@ -448,11 +796,52 @@ export function parseMermaid(text: string): DiagramDoc {
       label: e.label,
       type: "smoothstep",
       ...DEFAULT_EDGE_HANDLES,
-      data: { ...AUTO_ROUTE_DATA },
+      // solid 不入库：它是默认值，edgeLineOf 读不到时自然回落成 solid，存了只是噪声
+      data: { ...AUTO_ROUTE_DATA, ...(e.line !== "solid" ? { line: e.line } : {}) },
     })),
   };
   // autoLayout 会顺手把锚点算好（routeAutoEdges）
-  return autoLayout(doc);
+  const laid = autoLayout(doc);
+  if (groups.length === 0) return laid;
+
+  // 区域框在**布局之后**才能生成：它的矩形就是成员的包围盒，
+  // 而成员位置要等 dagre 排完才知道。
+  const pos = new Map(laid.nodes.map((n) => [n.id, n]));
+  const maxDepth = groups.reduce((m, g) => Math.max(m, g.depth), 0);
+  const boxes: DNode[] = [];
+  // 已用掉的 id（先装上所有图元节点，每造一个框再补进去）。
+  // 两种撞车都得防：手写的 mermaid 里 subgraph 的 id 可能和某个节点同名（两者在 mermaid 里
+  // 是两个命名空间），也可能两个 subgraph 自己重名。到了本项目里它们同在 doc.nodes
+  // 一个数组里——重名会让 React Flow 拿到两个同 id 节点，渲染与选中都会错乱。
+  const usedIds = new Set(pos.keys());
+  for (const g of groups) {
+    const ns = g.nodeIds.map((id) => pos.get(id)).filter((n): n is DNode => Boolean(n));
+    if (ns.length === 0) continue; // 空 subgraph：无处定位，不生成
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const n of ns) {
+      const { w, h } = nodeSize(n);
+      x0 = Math.min(x0, n.position.x);
+      y0 = Math.min(y0, n.position.y);
+      x1 = Math.max(x1, n.position.x + w);
+      y1 = Math.max(y1, n.position.y + h);
+    }
+    // 外层框给更大的内边距：嵌套时外层的成员集包含内层，同一个 padding 会让两个框重合，
+    // 而归属取面积最小的框——重合时就变成拼遍历顺序了。
+    const pad = GROUP_PAD + (maxDepth - g.depth) * 14;
+    let boxId = g.id;
+    for (let seq = 1; usedIds.has(boxId); seq += 1) boxId = `${g.id}__grp${seq}`;
+    usedIds.add(boxId);
+    boxes.push(
+      makeGroup(
+        boxId,
+        { x: Math.round(x0 - pad), y: Math.round(y0 - pad - GROUP_HEAD_ROOM) },
+        { w: Math.round(x1 - x0 + pad * 2), h: Math.round(y1 - y0 + pad * 2 + GROUP_HEAD_ROOM) },
+        { label: g.label },
+      ),
+    );
+  }
+  // 框排在前面：与 zIndex:-1 一致，也让序列化结果稳定
+  return { ...laid, nodes: [...boxes, ...laid.nodes] };
 }
 
 /** elkjs 的最小图结构（只声明本模块用到的字段） */
@@ -468,6 +857,10 @@ interface ElkGraph {
  * 节点尺寸用估算常量；返回新位置后的文档副本。
  */
 export async function autoLayoutElk(doc: DiagramDoc): Promise<DiagramDoc> {
+  // 有区域框时直接转 dagre 的复合图。
+  // elk 要支持分组得把 children 写成嵌套结构（本批未做）；不转的话框会停在原地，
+  // 把布局后跑过来的其它节点圈进去——归属是几何算的，那就是真把分组改错了。
+  if (doc.nodes.some(isGroup)) return autoLayout(doc);
   // 动态 import elkjs bundled（不进主包）；bundled 版内置布局逻辑，无需 web worker。
   // elkjs 未随包发类型声明，只能在 import 这一处放宽；图结构本身用下方 ElkGraph 约束。
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -482,7 +875,10 @@ export async function autoLayoutElk(doc: DiagramDoc): Promise<DiagramDoc> {
       "elk.layered.spacing.nodeNodeBetweenLayers": "100",
       "elk.spacing.nodeNode": "80",
     },
-    children: doc.nodes.map((n) => ({ id: n.id, width: NODE_W, height: NODE_H })),
+    children: doc.nodes.map((n) => {
+      const { w, h } = nodeSize(n);
+      return { id: n.id, width: w, height: h };
+    }),
     edges: doc.edges.map((e, i) => ({
       id: `elk_e${i}`,
       sources: [e.source],

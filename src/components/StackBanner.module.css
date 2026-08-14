@@ -158,6 +158,60 @@
   background: color-mix(in srgb, var(--orange) 10%, transparent);
 }
 
+/* P4 低频操作溢出菜单：不再让状态行永远展开 5 个按钮 */
+.overflowWrap {
+  position: relative;
+}
+
+.overflowMenu {
+  position: absolute;
+  top: 32px;
+  right: 0;
+  min-width: 136px;
+  background: var(--dialog-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.2));
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 20;
+}
+
+.overflowItem {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.overflowItem:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.overflowItem:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* 表格拆分专属项（撤销拆分）与通用操作项之间的分组分隔线 */
+.overflowDivider {
+  height: 1px;
+  margin: 2px 4px;
+  background: var(--border-color);
+  opacity: 0.6;
+}
+
 /* U58：中止按钮 */
 .abortBtn {
   display: flex;
@@ -220,6 +274,137 @@
   font-size: 11px;
   color: var(--text-primary);
   transition: all 0.2s;
+}
+
+/* P1 拖拽重排：手柄需要的额外宽度只在 hover 那一个 chip 上瞬时让出，默认不占位，
+   避免每个 chip 永久变宽挤占队列空间 */
+.chip:hover {
+  padding-left: 16px;
+}
+
+.grip {
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 10px;
+  height: 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  cursor: grab;
+  pointer-events: none;
+}
+
+.chip:hover .grip {
+  opacity: 0.55;
+  pointer-events: auto;
+}
+
+.grip i {
+  display: block;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--orange);
+}
+
+.chip.dragging {
+  opacity: 0.35;
+  outline: 1.5px dashed var(--orange);
+  outline-offset: 1px;
+}
+
+/* chip 内容预览卡：替代原生 title，视觉语言与 .overflowMenu 同一套悬浮面板变量。
+   portal 到 body，position:fixed + JS 直接算好的像素坐标（见 StackBanner.tsx 的 useLayoutEffect），
+   避开 .queue 的 overflow-x:auto 附带的 overflow-y 裁剪。 */
+.hoverCard {
+  position: fixed;
+  min-width: 160px;
+  max-width: 240px;
+  background: var(--dialog-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  padding: 8px 10px;
+  font-size: 11.5px;
+  color: var(--text-primary);
+  box-shadow: var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.2));
+  white-space: normal;
+  word-break: break-all;
+  line-height: 1.5;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.hoverCard::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  background: var(--dialog-bg);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+/* 默认在 chip 上方展开：箭头在卡片底部指向 chip */
+.hoverCard:not([data-flip="down"])::after {
+  bottom: -5px;
+  border-right: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* 上方空间不够时翻到下方展开：箭头换到卡片顶部指向 chip */
+.hoverCard[data-flip="down"]::after {
+  top: -5px;
+  border-left: 1px solid var(--border-color);
+  border-top: 1px solid var(--border-color);
+}
+
+.hoverCard .hcLabel {
+  font-size: 9.5px;
+  color: var(--orange);
+  font-weight: 700;
+  margin-bottom: 3px;
+  letter-spacing: 0.3px;
+}
+
+.insertSlot {
+  width: 3px;
+  height: 26px;
+  border-radius: 2px;
+  background: var(--orange);
+  flex-shrink: 0;
+  animation: insertSlotBlink 0.6s ease infinite;
+}
+
+@keyframes insertSlotBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* 删除角标：hover 时才显示，不影响布局（position:absolute + display:none 双重保障） */
+.chip .rm {
+  position: absolute;
+  right: 2px;
+  top: -7px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #fff;
+  font-size: 9px;
+  line-height: 14px;
+  text-align: center;
+  display: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.chip:hover .rm {
+  display: block;
 }
 
 .ord {
@@ -423,4 +608,22 @@
 
 :global([data-theme="blossom"]) .footTxt {
   color: var(--accent-strong);
+}
+
+/* chip 内容预览卡的 hcLabel 同样用了 --orange，沿用同一套逐条覆盖 */
+:global([data-theme="blossom"]) .hcLabel {
+  color: var(--accent-strong);
+}
+
+/* P1 拖拽重排新元素：--orange 不跨主题自动变化，沿用上方已有的逐条覆盖套路 */
+:global([data-theme="blossom"]) .grip i {
+  background: #F0568C;
+}
+
+:global([data-theme="blossom"]) .chip.dragging {
+  outline-color: #F0568C;
+}
+
+:global([data-theme="blossom"]) .insertSlot {
+  background: #F0568C;
 }

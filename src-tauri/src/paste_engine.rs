@@ -828,6 +828,68 @@ impl PasteEngine {
     /// Edit/富文本控件），把 WM_PASTE 投给它；取不到焦点控件则退回顶层窗口。
     /// 注意：对完整性级别高于本进程的目标，WM_PASTE 同样会被 UIPI 消息过滤拦截，
     /// 此时返回 false，由调用方报明确错误而非谎报成功。
+    /// P3 粘贴+Tab 推进：发送单次 Tab 键（在栈顶粘贴成功后调用）。
+    ///
+    /// **必须先释放物理按住的修饰键再发 Tab、发完再按回**——本功能由
+    /// 全局热键 Ctrl+Alt+P 触发，若用户物理按住这个热键不放（连点场景），
+    /// 此时物理 Ctrl+Alt 混着合成 Tab 会被系统识别成 Ctrl+Alt+Tab（切任务/虚拟桌面），
+    /// 而不是目标应用里的 Tab 跳格——同样的隐患在上方 restore_and_send_ctrl_v
+    /// 处理 V 时已经修过一次，这里照同一套套路再修一遍。
+    #[cfg(target_os = "windows")]
+    pub fn send_tab_key(&self) -> Result<(), String> {
+        use windows::Win32::UI::Input::KeyboardAndMouse::*;
+
+        unsafe {
+            let mod_keys = [VK_CONTROL, VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN];
+            let held: Vec<bool> = mod_keys
+                .iter()
+                .map(|k| (GetAsyncKeyState(k.0 as i32) as u16) & 0x8000 != 0)
+                .collect();
+
+            // 最多 12 事件：5(释放修饰键) + Tab↓ + Tab↑ + 5(按回修饰键)
+            let mut inputs: [INPUT; 12] = std::mem::zeroed();
+            let mut n = 0usize;
+
+            for (i, k) in mod_keys.iter().enumerate() {
+                if held[i] {
+                    inputs[n].r#type = INPUT_KEYBOARD;
+                    inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(k.0 as u16);
+                    inputs[n].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
+                    n += 1;
+                }
+            }
+
+            inputs[n].r#type = INPUT_KEYBOARD;
+            inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(VK_TAB.0 as u16);
+            n += 1;
+            inputs[n].r#type = INPUT_KEYBOARD;
+            inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(VK_TAB.0 as u16);
+            inputs[n].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
+            n += 1;
+
+            for (i, k) in mod_keys.iter().enumerate() {
+                if held[i] {
+                    inputs[n].r#type = INPUT_KEYBOARD;
+                    inputs[n].Anonymous.ki.wVk = VIRTUAL_KEY(k.0 as u16);
+                    n += 1;
+                }
+            }
+
+            let sent = SendInput(&inputs[..n], std::mem::size_of::<INPUT>() as i32);
+            if sent != n as u32 {
+                return Err(format!(
+                    "Tab 键注入被拦截（{}/{}），可能是 UIPI 权限隔离",
+                    sent, n
+                ));
+            }
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    pub fn send_tab_key(&self) -> Result<(), String> {
+        Err("仅支持 Windows".to_string())
+    }
+
     #[cfg(target_os = "windows")]
     fn post_wm_paste(&self, hwnd: windows::Win32::Foundation::HWND) -> bool {
         use windows::Win32::Foundation::*;

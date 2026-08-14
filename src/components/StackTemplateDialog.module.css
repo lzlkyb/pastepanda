@@ -1,0 +1,198 @@
+/* P4 粘贴栈常用模板：存为模板 / 模板库 */
+
+.headerSub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.fieldLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
+  margin-bottom: 6px;
+}
+
+.nameInput {
+  width: 100%;
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid var(--border-color);
+  background: var(--section-bg);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  padding: 0 12px;
+  outline: none;
+}
+
+.nameInput:focus {
+  border-color: var(--accent);
+}
+
+.sensBox {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: var(--orange-bg, rgba(251, 191, 36, 0.1));
+  border: 1px solid var(--orange-border, rgba(251, 191, 36, 0.3));
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.sensCk {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: var(--text-primary);
+  margin-top: 6px;
+}
+
+.itemList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.itemRow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  font-size: 12px;
+}
+
+.itemOrd {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.itemText {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+
+.emptyHint {
+  padding: 20px 10px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.tplRow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+}
+
+.tplName {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tplMeta {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.miniLoad,
+.miniDel {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 11px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.miniLoad {
+  background: var(--accent);
+  color: #fff;
+}
+
+.miniLoad:hover {
+  filter: brightness(1.08);
+}
+
+.miniDel {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.miniDel:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.ghostBtn {
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  border-radius: 8px;
+  padding: 7px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.ghostBtn:hover {
+  background: var(--hover);
+}
+
+.primaryBtn {
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 8px;
+  padding: 7px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.primaryBtn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.primaryBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

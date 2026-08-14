@@ -906,6 +906,41 @@ export function GeneralTab({
           }
         }} />
       </div>
+      <ToggleRow icon="📐" gradient="linear-gradient(135deg, #FB923C, #EA580C)" label="表格自动拆行入栈" desc="栈模式下复制表格时自动按行拆分（关闭=表格整块入栈）" value={config.table_split_enabled}
+        tooltip="栈模式下复制表格（或非栈模式下按栈粘贴热键且剪贴板是表格）会自动按行拆分，可在「⋯」菜单里一键撤销"
+        detailTitle="表格自动拆行入栈"
+        detail={<>
+          <p>开启后，在栈模式下复制表格内容会自动按行拆分成多条独立文本入栈，依次粘贴时一次贴一行。</p>
+          <p>非栈模式下按粘贴热键且剪贴板是表格，也会自动开栈拆行并贴第一条。</p>
+          <p>误拆时可在栈横幅「⋯」菜单里点「撤销拆分」一键还原。</p>
+        </>}
+        onChange={(v) => updateAndSave({ table_split_enabled: v })} />
+      {config.table_split_enabled && (
+        <>
+          <div className={styles.sRow}>
+            <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #FB923C, #EA580C)" }}>📝</span>
+            <div className={`${styles.sRowBody}`}>
+              <div className={`${styles.sRowLabel}`}>拆行格式</div>
+              <div className={`${styles.sRowDesc}`}>入栈后每条的文本样子</div>
+            </div>
+            <div className={styles.sSegGroup}>
+              <button className={`${styles.sSegOpt}${config.table_split_format === "raw" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ table_split_format: "raw" })}>原始行</button>
+              <button className={`${styles.sSegOpt}${config.table_split_format === "field-value" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ table_split_format: "field-value" })}>字段: 值</button>
+            </div>
+          </div>
+          <div className={styles.sRow}>
+            <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #FB923C, #EA580C)" }}>🏷️</span>
+            <div className={`${styles.sRowBody}`}>
+              <div className={`${styles.sRowLabel}`}>表头</div>
+              <div className={`${styles.sRowDesc}`}>拆分时是否保留第一行表头</div>
+            </div>
+            <div className={styles.sSegGroup}>
+              <button className={`${styles.sSegOpt}${!config.table_split_include_header ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ table_split_include_header: false })}>排除</button>
+              <button className={`${styles.sSegOpt}${config.table_split_include_header ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ table_split_include_header: true })}>包含</button>
+            </div>
+          </div>
+        </>
+      )}
       <div className={styles.sRow}>
         <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #14B8A6, #0D9488)" }}>⚡</span>
         <div className={`${styles.sRowBody}`}>

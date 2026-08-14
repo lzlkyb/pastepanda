@@ -28,15 +28,20 @@ const SEP_LABELS: Record<MergeSeparator, string> = {
   comma: "逗号",
   semicolon: "分号",
   numbered: "编号列表",
+  markdown: "Markdown 列表",
+  smart: "智能换行",
   custom: "自定义",
 };
 
 export const MergeDialog = memo(function MergeDialog({
   items,
   onClose,
+  onPasted,
 }: {
   items: MergeItem[];
   onClose: () => void;
+  /** 粘贴成功后回调，带上实际参与合并的条目 id。粘贴栏用它把这些条目从未粘贴队列中消费掉，避免后续逐条/全部粘贴时重复粘贴同一批内容；非粘贴栏场景不传则无副作用 */
+  onPasted?: (ids: string[]) => void;
 }) {
   const { toast } = useToast();
   const { backdrop, panel } = useDialogAnim();
@@ -96,6 +101,7 @@ export const MergeDialog = memo(function MergeDialog({
     const ok = await pasteTextGuarded(display);
     if (ok) {
       toast("已粘贴合并结果", "success");
+      onPasted?.(items.map((i) => i.id));
       onClose();
     }
   };

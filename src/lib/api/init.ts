@@ -7,7 +7,7 @@ import { useAppStore, HistoryItem, Tag } from "@/stores/appStore";
 import { logger } from "@/lib/logger";
 import { invalidateCountsCache } from "./cache";
 import { sequentialPaste, indexPaste } from "./sequential";
-import { toggleStackMode, stackPasteNext, isStackPasteAllRunning, abortStackPasteAll } from "./stack";
+import { toggleStackMode, stackPasteNext, isStackPasteAllRunning, abortStackPasteAll, stackAutoSplitAndPasteFirst } from "./stack";
 
 /** 初始化 Tauri 后端连接 */
 export async function initBackend(): Promise<() => void> {
@@ -82,11 +82,16 @@ export async function initBackend(): Promise<() => void> {
       const typeLabel = t === "image" ? "图片" : t === "rich" ? "图文" : t === "file" ? "文件" : "文本";
       const isLanSync = event.payload.item.source?.startsWith("局域网:");
       if (store.stackMode) {
-        // 栈模式：入栈并使用专属提示
+        // 栈模式：入栈并使用专属提示；命中表格则自动按行拆分（方案 A）
         const before = store.stackItems.length;
-        store.stackPush(event.payload.item);
+        const split = store.stackPushOrSplit(event.payload.item);
         const after = useAppStore.getState().stackItems.length;
-        if (after > before) {
+        if (split) {
+          const message = split.totalRows > split.splitCount
+            ? `表格 ${split.totalRows} 行，仅前 ${split.splitCount} 条入栈`
+            : `已按行拆 ${split.splitCount} 条入栈`;
+          window.dispatchEvent(new CustomEvent("app-toast", { detail: { message, type: "info" } }));
+        } else if (after > before) {
           window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `入栈 ${after} 条`, type: "info" } }));
         }
       } else {
@@ -200,6 +205,8 @@ export async function initBackend(): Promise<() => void> {
         abortStackPasteAll();
         return;
       }
+      // B 方案：栈未开时若剪贴板是表格 → 自动开栈拆行并贴第一条；否则回退原有行为
+      if (await stackAutoSplitAndPasteFirst()) return;
       await stackPasteNext();
     }));
   } catch (e) {

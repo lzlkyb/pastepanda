@@ -6,7 +6,7 @@
  * 样式复用 FullscreenEditor.module.css，保证工具栏观感一致。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Save, X, Maximize2, Minimize2, Sparkles, Download, FileCode } from "lucide-react";
+import { Save, X, Maximize2, Minimize2, Sparkles, FileCode } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -20,6 +20,7 @@ import { parseDiagram, serializeDiagram, toMermaid, diagramTitle } from "@/lib/d
 import { DiagramCanvas, type DiagramCanvasHandle } from "./DiagramCanvas";
 import { DiagramAiPanel } from "./diagram/DiagramAiPanel";
 import { useDiagramExport } from "./diagram/useDiagramExport";
+import { ExportMenu } from "./diagram/ExportMenu";
 import styles from "./FullscreenEditor.module.css";
 import editorStyles from "./DiagramEditor.module.css";
 
@@ -176,17 +177,7 @@ export function DiagramFullscreen({
           <button className={editorStyles.ghostBtn} onClick={copyMermaid} title="复制 Mermaid 源码">
             <FileCode size={14} /> Mermaid
           </button>
-          <div className={editorStyles.exportWrap}>
-            <button className={editorStyles.ghostBtn} onClick={() => exportAs("png")}>
-              <Download size={14} /> 导出
-            </button>
-            <div className={editorStyles.exportMenu}>
-              <button onClick={() => exportAs("png")}>🖼 PNG 图片</button>
-              <button onClick={() => exportAs("svg")}>📐 SVG 矢量</button>
-              <button onClick={() => exportAs("mermaid")}>🧩 Mermaid 源码</button>
-              <button onClick={() => exportAs("panda")}>💾 PastePanda 文件</button>
-            </div>
-          </div>
+          <ExportMenu onExport={exportAs} />
         </div>
         <div className={styles.toolbarRight}>
           <button className={`${styles.tbBtn} ${styles.tbBtnPrimary}`} onClick={handleSave} title="保存 Ctrl+S">

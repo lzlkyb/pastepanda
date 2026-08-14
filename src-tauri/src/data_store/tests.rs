@@ -1432,13 +1432,17 @@ fn test_ensure_auto_tags() {
     store.ensure_auto_tags().unwrap();
 
     let tags = store.get_tags().unwrap();
-    // 应该有 30 个自动标签种子
-    assert_eq!(tags.len(), 30);
+    // 应该有 32 个自动标签种子
+    assert_eq!(tags.len(), 32);
     // 全部 source 为 "auto"
     assert!(tags.iter().all(|t| t.source == "auto"));
-    // 图文混排的类型标识必须在标签体系里（而不是卡片上写死的徽标），
-    // 否则点不了筛选、也不会出现在筛选标签列表里
-    assert!(tags.iter().any(|t| t.name == "图文"));
+    // 类型标识必须在标签体系里（而不是卡片上写死的徽标），
+    // 否则点不了筛选、也不会出现在筛选标签列表里。
+    // 流程图 / 文档是后补的：种子表里没有的名字，resolve_auto_tag_ids 会静默跳过，
+    // 「文档」因此一直在 push 但从来没落到过卡片上。
+    for name in ["图文", "流程图", "文档"] {
+        assert!(tags.iter().any(|t| t.name == name), "缺少类型标签种子: {}", name);
+    }
 }
 
 #[test]
@@ -1448,7 +1452,7 @@ fn test_ensure_auto_tags_idempotent() {
     store.ensure_auto_tags().unwrap();
 
     let tags = store.get_tags().unwrap();
-    assert_eq!(tags.len(), 30); // 不应重复插入
+    assert_eq!(tags.len(), 32); // 不应重复插入
 }
 
 #[test]

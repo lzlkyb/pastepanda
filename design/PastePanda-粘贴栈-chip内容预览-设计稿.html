@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda · 粘贴栈 chip 内容预览 设计稿（3 方案对比）</title>
+<style>
+/* ========================================================================
+   尺寸与变量全部取自真实代码：
+   - StackBanner.tsx / StackBanner.module.css：橙色三层横幅，chip max-width:150px、
+     height:28px，队列 gap:6px，banner 宽度按侧边栏状态实测 268px/448px
+   - 主题：默认 ocean-dark 深海（--orange #EA580C 栈主题色）
+   ===================================================================== */
+*{box-sizing:border-box}
+body{margin:0;padding:30px 26px 70px;background:#14161A;color:#C9D2DD;
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.7}
+h1{font-size:19px;color:#fff;margin:0 0 4px}
+h2{font-size:15px;color:#fff;margin:36px 0 6px}
+.sub{color:#7C8899;font-size:12px;margin:0 0 24px}
+.note{color:#8D9AAB;font-size:12px;margin:6px 0 14px;max-width:900px}
+.note b{color:#D6DEE8;font-weight:600}
+.pick{color:#6FD68B;font-weight:600}
+hr{border:0;border-top:1px solid #262A31;margin:34px 0 0}
+code{background:#1C2027;padding:1px 5px;border-radius:4px;font-size:11.5px;color:#A9C8E8}
+
+.stage{display:flex;gap:30px;flex-wrap:wrap;margin:20px 0 0;align-items:flex-start}
+.viewport{position:relative;width:280px;border:1px dashed #3A4048;border-radius:10px;
+  background:repeating-linear-gradient(45deg,#191C21,#191C21 10px,#1C2026 10px,#1C2026 20px);
+  padding:20px 14px;overflow:visible}
+.vpTag{position:absolute;left:0;top:-20px;font-size:10.5px;color:#6E7A8A;white-space:nowrap}
+
+/* ===== 真实 StackBanner（参照 StackBanner.module.css） ===== */
+.banner{display:flex;flex-direction:column;gap:7px;padding:10px 12px;border-radius:12px;
+  background:linear-gradient(135deg,rgba(234,88,12,.09),transparent 65%),rgba(234,88,12,.07);
+  border:1px solid rgba(234,88,12,.28);position:relative}
+.top{display:flex;align-items:center;gap:8px}
+.dot{width:10px;height:10px;border-radius:50%;background:#EA580C;flex-shrink:0}
+.title{font-size:12px;font-weight:600;color:#EA580C;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.queue{display:flex;gap:6px;overflow-x:auto;padding:8px 2px 2px;flex-wrap:wrap}
+.chip{position:relative;display:flex;align-items:center;gap:5px;flex-shrink:0;max-width:150px;height:28px;padding:0 9px 0 6px;
+  border-radius:8px;background:rgba(234,88,12,.08);border:1px solid rgba(234,88,12,.2);
+  font-size:11px;color:#E0E8F0}
+.ord{width:15px;height:15px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  font-size:9px;font-weight:700;background:rgba(234,88,12,.16);color:#EA580C}
+.txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chipNext{border-color:#EA580C;background:rgba(234,88,12,.16)}
+.chipNext .ord{background:#EA580C;color:#fff}
+
+/* 方案 A：自定义悬浮预览卡（替代原生 title） */
+.hoverCard{position:absolute;top:-8px;left:50%;transform:translate(-50%,-100%);
+  min-width:200px;max-width:260px;background:#12161C;border:1px solid #2A3038;border-radius:9px;
+  padding:9px 11px;font-size:11.5px;color:#E0E8F0;box-shadow:0 8px 20px rgba(0,0,0,.4);z-index:30;
+  white-space:normal;word-break:break-all;line-height:1.5}
+.hoverCard::after{content:"";position:absolute;bottom:-5px;left:50%;transform:translateX(-50%) rotate(45deg);
+  width:9px;height:9px;background:#12161C;border-right:1px solid #2A3038;border-bottom:1px solid #2A3038}
+.hoverCard .hcLabel{font-size:9.5px;color:#EA580C;font-weight:700;margin-bottom:3px;letter-spacing:.3px}
+
+/* 方案 B：展开式预览列表 */
+.expandBtn{display:flex;align-items:center;gap:5px;font-size:10.5px;color:#EA580C;opacity:.8;
+  cursor:pointer;padding:2px 4px;margin-top:2px;user-select:none}
+.expandBtn:hover{opacity:1}
+.previewList{display:flex;flex-direction:column;gap:4px;margin-top:4px;padding:8px 9px;
+  background:#12161C;border:1px solid #262A31;border-radius:8px}
+.previewRow{display:flex;align-items:flex-start;gap:7px;font-size:11px;color:#C9D2DD;line-height:1.5}
+.previewRow .pOrd{flex-shrink:0;width:15px;height:15px;border-radius:50%;background:rgba(234,88,12,.16);
+  color:#EA580C;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}
+.previewRow .pTxt{word-break:break-all}
+.previewRow.done{opacity:.4}
+.previewRow.done .pTxt{text-decoration:line-through}
+
+/* 方案 C：两行 clamp，不再单行截断 */
+.chip2{max-width:150px;height:auto;min-height:28px;padding:5px 9px 5px 6px;align-items:flex-start}
+.chip2 .txt2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  white-space:normal;word-break:break-all;line-height:1.35}
+
+.anno{background:#0E1A12;border:1px solid #166534;border-radius:10px;padding:12px 14px;font-size:12px;color:#9FBF9F;max-width:560px}
+.anno b{color:#6FD68B}
+.anno.warn{background:#1A1210;border-color:#7F1D1D;color:#C9A2A2}
+.anno.warn b{color:#F09A9A}
+table.t{border-collapse:collapse;margin-top:8px;font-size:12.5px;max-width:980px}
+table.t th,table.t td{border:1px solid #2A2F37;padding:7px 11px;text-align:left;vertical-align:top}
+table.t th{background:#1C2027;color:#E4EAF1;font-weight:600}
+table.t td{color:#B4BECB}
+</style>
+</head>
+<body>
+
+<h1>粘贴栈 chip 内容预览 · 3 方案对比</h1>
+<p class="sub">解决"队列条数多、内容相近时容易选错要合并/存模板的是哪几条"的问题 ｜ 候选版本：待定</p>
+<p class="note">尺寸与变量<b>全部取自真实代码</b>（StackBanner.tsx / StackBanner.module.css：chip max-width 150px、
+橙色主题色 <code>--orange #EA580C</code>）。<b>现状</b>：chip 文本单行 ellipsis 截断，只能靠原生 <code>title</code>
+悬浮提示查看全文——原生提示延迟高、样式无法控制、手机/触屏设备用不了。</p>
+
+<hr>
+
+<h2>① 方案 A：自定义悬浮预览卡（推荐）</h2>
+<div class="stage">
+  <div class="viewport">
+    <div class="vpTag">hover 在第 2 个 chip 上</div>
+    <div class="banner">
+      <div class="top"><span class="dot"></span><div class="title">栈模式 · 剩余 3 条</div></div>
+      <div class="queue">
+        <div class="chip chipNext"><span class="ord">1</span><span class="txt">张三 · zhang@qq.com</span></div>
+        <div class="chip" style="position:relative">
+          <div class="hoverCard">
+            <div class="hcLabel">完整内容</div>
+            李四 · li@qq.com · 上海市浦东新区XX路XX号
+          </div>
+          <span class="ord">2</span><span class="txt">李四 · li@qq.com · 上海...</span>
+        </div>
+        <div class="chip"><span class="ord">3</span><span class="txt">王五 · wang@qq.com</span></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="anno">
+      <b>做法</b><br>
+    · hover 300ms 后浮出自定义卡片（非原生 <code>title</code>），深色主题、可换行、可控最大宽度。<br>
+    · 用现有 <code>useDialogAnim</code> 同款 fade+scale 过渡，零新依赖。<br><br>
+    <b>优点</b>：改动最小（只加一个悬浮层组件），不改变现有交互习惯，单条快速核对足够用。<br>
+    <b>缺点</b>：还是"一次只能看一条"，要核对整批内容仍需逐个 hover。
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>② 方案 B：展开式预览列表</h2>
+<div class="stage">
+  <div class="viewport">
+    <div class="vpTag">点击「展开预览」后</div>
+    <div class="banner">
+      <div class="top"><span class="dot"></span><div class="title">栈模式 · 剩余 3 条</div></div>
+      <div class="queue">
+        <div class="chip chipNext"><span class="ord">1</span><span class="txt">张三 · zhang@qq.com</span></div>
+        <div class="chip"><span class="ord">2</span><span class="txt">李四 · li@qq.com · 上海...</span></div>
+        <div class="chip"><span class="ord">3</span><span class="txt">王五 · wang@qq.com</span></div>
+      </div>
+      <div class="expandBtn">⌄ 收起预览</div>
+      <div class="previewList">
+        <div class="previewRow"><span class="pOrd">1</span><span class="pTxt">张三 · zhang@qq.com</span></div>
+        <div class="previewRow"><span class="pOrd">2</span><span class="pTxt">李四 · li@qq.com · 上海市浦东新区XX路XX号</span></div>
+        <div class="previewRow"><span class="pOrd">3</span><span class="pTxt">王五 · wang@qq.com</span></div>
+        <div class="previewRow done"><span class="pOrd">✓</span><span class="pTxt">赵六（已粘贴）</span></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="anno">
+      <b>做法</b><br>
+    · 横幅新增一行「⌄ 展开预览 / ⌃ 收起预览」，点击后在队列下方展开完整列表（含已粘贴项，划线区分）。<br>
+    · 状态存在组件本地 <code>useState</code>，不写入 store，纯前端零成本。<br><br>
+    <b>优点</b>：一次性看到<b>全部</b>条目全文，合并/存模板前核对最彻底。<br>
+    <b>缺点</b>：多一次点击才能看到，且横幅纵向变高，队列条数多时预览列表本身也会很长（需要限高+内部滚动）。
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>③ 方案 C：chip 改两行显示（不加新交互）</h2>
+<div class="stage">
+  <div class="viewport">
+    <div class="vpTag">chip 从单行截断改为两行 clamp</div>
+    <div class="banner">
+      <div class="top"><span class="dot"></span><div class="title">栈模式 · 剩余 3 条</div></div>
+      <div class="queue">
+        <div class="chip chip2"><span class="ord">1</span><span class="txt2">张三 · zhang@qq.com</span></div>
+        <div class="chip chip2"><span class="ord">2</span><span class="txt2">李四 · li@qq.com · 上海市浦东新区XX路XX号</span></div>
+        <div class="chip chip2"><span class="ord">3</span><span class="txt2">王五 · wang@qq.com</span></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="anno warn">
+      <b>做法</b><br>
+    · <code>.txt</code> 从 <code>white-space:nowrap</code> 改成 <code>-webkit-line-clamp:2</code>，chip 高度从固定 28px 变成自适应。<br><br>
+    <b>优点</b>：零交互改动，多数情况下两行已经够看清内容。<br>
+    <b>缺点</b>：chip 高度不再统一，拖拽重排、hover 手柄/删除角标的定位（现在是 <code>position:absolute;top:-7px</code> 这类写死数值）
+    都要跟着重新适配，<b>牵连面最大</b>；很长的内容两行依然放不下。
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>④ 交付范围对比</h2>
+<table class="t">
+<tr><th style="width:16%">方案</th><th>改动量</th><th>解决程度</th><th>风险</th></tr>
+<tr><td class="pick">A 悬浮预览卡</td><td>新增一个悬浮层组件 + hover 状态，纯前端零 Rust</td><td>单条核对，够用但不是全局视角</td><td>低</td></tr>
+<tr><td class="pick">B 展开预览列表</td><td>新增展开按钮 + 列表区块，纯前端零 Rust</td><td>全批次核对，最彻底</td><td>低，横幅纵向变高需注意窄窗口下的滚动</td></tr>
+<tr><td>C 两行 clamp</td><td>改 chip 高度模型，连带拖拽手柄/删除角标定位</td><td>部分缓解，长内容仍看不全</td><td><b>中</b>——牵连 P1 拖拽重排已有的绝对定位元素</td></tr>
+</table>
+<p class="note" style="margin-top:10px">个人倾向 <b>方案 A</b>（合并/存模板前顺手 hover 一下就够，改动最小最安全）；如果你们经常需要"一眼看完整批"，选 <b>方案 B</b>。<b>不建议方案 C</b>，牵连面最大且治标不治本。确认方案后再动代码。</p>
+
+</body>
+</html>

@@ -9,6 +9,12 @@
   background: var(--diagram-canvas-bg, #0b1220);
   border-radius: 10px;
   overflow: hidden;
+  /* 纸感：内圈 1px + 顶部内投影。画布底色本身已与 --app-bg 拉开（见 theme.css），
+     再加这两层才看得出“一张纸”。用 inset 而不是 border：不占布局、
+     不影响 React Flow 的命中区域与坐标换算。 */
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--text-primary, #0f172a) 8%, transparent),
+    inset 0 10px 26px -14px color-mix(in srgb, var(--text-primary, #0f172a) 22%, transparent);
 }
 
 /* React Flow 主题变量桥接（v12 用 --xy-*） */
@@ -25,26 +31,37 @@
 /* 连线：向设计稿对齐——accent 与 text-muted 混色、稍粗、圆端、带透明度，
    比纯灰的默认边更能与节点拉开层次 */
 .root :global(.react-flow__edge-path) {
-  stroke: color-mix(in srgb, var(--accent, #0284c7) 55%, var(--text-muted, #64748b));
-  stroke-width: 1.8;
+  stroke: var(--diagram-edge-line, #64748b);
+  /* 线宽走 --edge-w 而不是写死：粗线（.edgeThick）只需改这个值，hover / 选中的
+     加粗就能在它基础上叠，不会把粗线反而压回细线——否则得跟 .selected 比优先级。 */
+  stroke-width: var(--edge-w, 1.8);
   stroke-linecap: round;
   stroke-linejoin: round;
-  opacity: 0.8;
+  /* 不再给 opacity：箭头是单独的 <marker>，opacity 只作用在路径上，
+     加了箭头会比线深一截。透明度去掉后连线也稍实一点，对流程图反而更清楚。 */
 }
 /* hover：只提亮加粗，不上动画——鼠标扫过就闪会很吵 */
 .root :global(.react-flow__edge:hover .react-flow__edge-path) {
   stroke: var(--accent, #0284c7);
-  stroke-width: 2.2;
-  opacity: 1;
+  stroke-width: calc(var(--edge-w, 1.8) + 0.4);
 }
 /* 选中：走设计稿 .edge.key 那套流动虚线，“被强调的线”用同一种视觉语言 */
 .root :global(.react-flow__edge.selected .react-flow__edge-path),
 .root :global(.react-flow__edge:focus .react-flow__edge-path) {
   stroke: var(--accent, #0284c7);
-  stroke-width: 2.2;
-  opacity: 1;
+  stroke-width: calc(var(--edge-w, 1.8) + 0.4);
   stroke-dasharray: 7 6;
   animation: edgeFlow 1s linear infinite;
+}
+
+/* ── 线型（对齐 Mermaid 的 --> / -.-> / ==> 三种连接符）──
+   类加在外层 .react-flow__edge 上，--edge-w 自然继承给里面的 path。
+   虚线不给动画：流动虚线已经是「选中 / 焦点路径」的语义，两者撞了就分不出来。 */
+.root .edgeDashed :global(.react-flow__edge-path) {
+  stroke-dasharray: 7 6;
+}
+.edgeThick {
+  --edge-w: 3.4;
 }
 /* 边标签：药丸（设计稿 .edge-label）。rx 在 SVG rect 上可以用 CSS 设，
    取很大的值会被限到高度一半，得到胶囊形 */
@@ -102,12 +119,23 @@
 .root :global(.react-flow__attribution) {
   display: none;
 }
+/* 框选矩形：React Flow 默认是一片与主题无关的半透明蓝 */
+.root :global(.react-flow__selection) {
+  background: color-mix(in srgb, var(--accent, #0284c7) 10%, transparent);
+  border: 1px dashed var(--accent, #0284c7);
+  border-radius: 4px;
+}
+/* MiniMap 里的节点块：原先只给了容器 border，块还是 React Flow 默认的 #e2e2e2，
+   深色主题下是一片刺眼的亮灰 */
+.root :global(.react-flow__minimap-node) {
+  fill: color-mix(in srgb, var(--accent, #0284c7) 45%, transparent);
+  stroke: none;
+}
 
 /* ── 工具栏（玻璃浮层） ── */
 .toolbar {
   position: absolute;
   top: 12px;
-  left: 12px;
   z-index: 6;
   display: flex;
   align-items: center;
@@ -116,8 +144,29 @@
   border-radius: 10px;
   background: var(--diagram-panel-bg, rgba(15, 23, 42, 0.66));
   border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.12));
-  backdrop-filter: blur(10px) saturate(1.3);
+  backdrop-filter: var(--diagram-float-blur, blur(10px) saturate(1.3));
   box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.18));
+}
+/* 宽档：left 从 12px 让到 174px（150 形状库宽 + 12 间距 + 12 边距）。
+   原先形状库 top:64 / 工具栏 top:12，两条玻璃边框上下只隔 4px，看起来是一块被撕开。 */
+.toolbarRoomy {
+  left: 174px;
+}
+/* 紧凑档：形状库改成 popover，左侧不再有常驻竖栏，工具栏回到 12px */
+.toolbarCompact {
+  left: 12px;
+}
+/* 紧凑档只隐文字标签、图标照旧：工具栏从约 340px 缩到约 293px。
+   标签必须包在 .tbLbl 里——裸文本节点 CSS 选不中。 */
+.toolbarCompact .tbLbl {
+  display: none;
+}
+.toolbarCompact .toolBtn {
+  padding: 4px 6px;
+}
+.caret {
+  font-size: 8px;
+  opacity: 0.7;
 }
 .toolBtn {
   display: inline-flex;
@@ -139,6 +188,14 @@
   opacity: 0.35;
   cursor: default;
 }
+/* 形状库 popover 开着时的触发器高亮 */
+.toolBtnOn {
+  background: var(--accent, #0284c7);
+  color: #fff;
+}
+.toolBtnOn:hover:not(:disabled) {
+  background: var(--accent, #0284c7);
+}
 .divider {
   width: 1px;
   height: 18px;
@@ -152,12 +209,13 @@
   top: 12px;
   right: 12px;
   z-index: 6;
-  width: 184px;
+  /* 184 → 220px：11 个形状按 4 列摆，一格才能到约 46px */
+  width: 220px;
   padding: 10px 12px;
   border-radius: 12px;
   background: var(--diagram-panel-bg, rgba(15, 23, 42, 0.72));
   border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.14));
-  backdrop-filter: blur(10px) saturate(1.3);
+  backdrop-filter: var(--diagram-float-blur, blur(10px) saturate(1.3));
   box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.2));
   color: var(--diagram-node-text, #e2e8f0);
 }
@@ -174,6 +232,15 @@
   gap: 8px;
   margin-bottom: 8px;
   font-size: 12px;
+}
+/* 控件宽于标签时换成上下排（形状网格就是这种） */
+.propRowStack {
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.propRowStack > span {
+  display: block;
+  margin-bottom: 5px;
 }
 /* 属性面板的文本输入框（节点文字 / 连线说明共用一份） */
 .propInput {
@@ -207,13 +274,33 @@
   border-color: #fff;
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.3);
 }
-.shapeBtns {
-  display: flex;
-  gap: 4px;
+/* 「默认」格（文字色）：一道斜杠表示「不指定、跟随主题」。
+   不能拿某个具体色块充数——主题一切换，那个色块就和实际文字色对不上了。 */
+.swatchAuto {
+  background:
+    linear-gradient(
+      135deg,
+      transparent 44%,
+      var(--text-muted, #94a3b8) 44%,
+      var(--text-muted, #94a3b8) 56%,
+      transparent 56%
+    ),
+    var(--diagram-panel-hover, rgba(255, 255, 255, 0.08));
+}
+/* 形状按钮网格。原先是 flex 单行无 wrap，11×26px + 10×4px = 326px 塞进 160px 内容区，
+   flex-shrink 把每个按钮压到约 11px、图标全糊。
+   列数由壳给：宽档的竖向面板 4 列，紧凑档的贴底抽屉横着摆 6 列。 */
+.shapeGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+}
+.shapeGrid6 {
+  grid-template-columns: repeat(6, 1fr);
 }
 .shapeBtn {
-  width: 26px;
-  height: 26px;
+  width: 100%;
+  aspect-ratio: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -247,6 +334,81 @@
   background: var(--danger, #ef4444);
   color: #fff;
 }
+/* 紧凑档抽屉标题行里只容得下一个图标。必须写在 .delBtn 之后：
+   两者优先级相同，写在前面会被 .delBtn 的 width:100% 盖回去。 */
+.delBtnIcon {
+  width: auto;
+  margin-top: 0;
+  padding: 4px 9px;
+  flex: none;
+}
+
+/* ── 区域框（subgraph 分组） ──
+
+   pointer-events:none **必须落在 React Flow 的节点外壳上**，只写内层 .groupBox 没用：
+   外壳（.react-flow__node，类名带 -group 后缀，见 @xyflow 打包产物里的
+   `react-flow__node-${nodeType}`）才是真正的命中区域——内层设 none 只是内层不接事件，
+   外壳依旧把整块框区域的点击全吃掉，框内空白处就框选不了、也拖不动画布。
+
+   pointer-events 是可继承属性，所以写在外壳上一次就够；标题栏与缩放手柄各自改回 auto。
+   事件冒泡不受 pointer-events 影响，所以点标题栏时 RF 挂在外壳上的选中 / 拖拽监听仍然能收到。 */
+.root :global(.react-flow__node-group) {
+  pointer-events: none;
+}
+.groupBox {
+  width: 100%;
+  height: 100%;
+  border-radius: 14px;
+  border: 1.5px dashed color-mix(in srgb, var(--group-tint, var(--accent, #0284c7)) 62%, transparent);
+  background: color-mix(in srgb, var(--group-tint, var(--accent, #0284c7)) 8%, transparent);
+}
+/* 选中态把底色抽掉。
+   React Flow 选中节点时会把 z 抬高 SELECTED_NODE_Z（calculateZ），而区域框平时是
+   zIndex:-1 压在节点下面——一选中就翻到最上层，底色留着会糊住框内所有节点。 */
+.groupBoxSel {
+  background: transparent;
+  border-style: solid;
+  border-width: 2px;
+}
+/* 标题栏骑在框的上边上。它带的全局类名 diagram-group-head 就是 React Flow 的 dragHandle，
+   所以拖整组 = 拖这条栏。 */
+.groupHead {
+  position: absolute;
+  top: -11px;
+  left: 12px;
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  max-width: calc(100% - 24px);
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: move;
+  color: #fff;
+  background: color-mix(in srgb, var(--group-tint, var(--accent, #0284c7)) 82%, #0b1220);
+  box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.2));
+}
+.groupHeadInput {
+  width: 96px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  /* 同 .nodeInput：解掉从 .react-flow__node 继承下来的 user-select: none */
+  -webkit-user-select: text;
+  user-select: text;
+}
+/* 缩放手柄继承了外壳的 pointer-events:none，得把事件收回来，否则根本拖不动 */
+.groupBox :global(.react-flow__resize-control) {
+  pointer-events: auto;
+}
 
 /* ── 节点：实底 + 柔和阴影，禁止玻璃 ── */
 .node {
@@ -256,7 +418,10 @@
   padding: 10px 14px;
   border-radius: 13px;
   background: var(--diagram-node-bg, #ffffff);
-  color: var(--diagram-node-text, #0f172a);
+  /* --node-text-color 只在节点设了文字色时由组件内联下发；缺省仍走主题令牌。
+     写在 .node 而不是 .nodeLabel 上，是为了双击改文案时的 <input>（color: inherit）
+     也跟着变色，否则一进编辑态文字会突然跳回主题色。 */
+  color: var(--node-text-color, var(--diagram-node-text, #0f172a));
   border: 1px solid var(--node-stroke, var(--diagram-node-border, #e0e4eb));
   box-shadow: var(--diagram-node-shadow, 0 2px 8px rgba(0, 0, 0, 0.18));
   font-size: 13px;
@@ -269,6 +434,13 @@
 .node:hover {
   transform: translateY(-2px);
 }
+/* 拖拽中：原来拖节点零反馈，分不出“拖起来了”还是“只是选中了”。
+   dragging 类在外层 .react-flow__node 上（React Flow 加的），所以得从那里往内选。 */
+.root :global(.react-flow__node.dragging) .node {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 12px 28px -8px color-mix(in srgb, var(--text-primary, #0f172a) 40%, transparent);
+  cursor: grabbing;
+}
 /* 自定义颜色：用描边 + 淡底色表达（替代设计稿没有的左侧竖条），保持与设计一致的「边框」语言。
    菱形走 ::before 渐变、焦点走渐变环，已在组件里排除 data-colored，避免冲突。 */
 .node[data-colored="true"] {
@@ -280,8 +452,30 @@
   word-break: break-word;
   white-space: pre-wrap;
 }
+/* 手动缩放过的节点：撑满 React Flow 给外层设的宽高。
+   必须解掉 max-width:220px——不解的话拖到 300 也只显 220，手柄跑到节点外面去了。
+   改成弹性居中，否则拉高后文字顶在最上面。 */
+.nodeResized {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .nodeSelected {
   box-shadow: 0 0 0 2px var(--node-accent, var(--accent, #0284c7)), var(--diagram-node-shadow, 0 2px 8px rgba(0, 0, 0, 0.18));
+}
+/* 缩放手柄跟主题走（默认是 React Flow 的蓝，与 6 套主题都对不上） */
+.root :global(.react-flow__resize-control.handle) {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  border: 1px solid var(--diagram-node-bg, #fff);
+  background: var(--accent, #0284c7);
+}
+.root :global(.react-flow__resize-control.line) {
+  border-color: color-mix(in srgb, var(--accent, #0284c7) 55%, transparent);
 }
 .nodeEditing {
   padding: 4px 6px;
@@ -295,6 +489,10 @@
   color: inherit;
   font: inherit;
   text-align: center;
+  /* base.css 里 `.react-flow__node { user-select: none }`，而 user-select 是**可继承属性**，
+     输入框会跟着变成不可选——光给输入框加 nodrag 拦住拖拽还不够，拖着选字仍然选不中。 */
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* ===== 形状变体 =====
@@ -325,6 +523,9 @@
   border-radius: 50% / 18%;
   padding: 16px 20px;
   min-width: 116px;
+  --shape-tint: #8b5cf6;
+  border: 1px solid var(--node-stroke, var(--shape-tint));
+  background: color-mix(in srgb, var(--shape-tint) 7%, var(--diagram-node-bg, #ffffff));
 }
 /* 子程序 / 预定义过程：矩形 + 左右内竖线（mermaid subroutine 的画法） */
 .shape_subroutine {
@@ -382,8 +583,12 @@
   inset: 0;
   background: linear-gradient(
     135deg,
-    var(--node-stroke, var(--node-accent, var(--accent, #3b9eff))),
-    color-mix(in srgb, var(--node-stroke, var(--node-accent, var(--accent, #3b9eff))) 52%, #ffffff)
+    var(--node-stroke, var(--shape-tint, var(--node-accent, var(--accent, #3b9eff)))),
+    color-mix(
+      in srgb,
+      var(--node-stroke, var(--shape-tint, var(--node-accent, var(--accent, #3b9eff)))) 52%,
+      #ffffff
+    )
   );
   clip-path: var(--shape-clip);
   /* box-shadow 会被 clip-path 裁掉，阴影得用 filter——它跟着裁剪后的轮廓走 */
@@ -399,6 +604,14 @@
   inset: 1.6px;
   background: var(--diagram-node-bg, #ffffff);
   clip-path: var(--shape-clip);
+}
+/* 带语义色的裁剪形状，内部底色也带上一点，否则描边有色而内部纯白、两层脱节。
+   梯形不在列里（它保持中性），所以不能写进上面那条共用规则——
+   --shape-tint 未定义时 color-mix 拿不到颜色，整条声明会废掉。 */
+.shape_diamond::after,
+.shape_hexagon::after,
+.shape_parallelogram::after {
+  background: color-mix(in srgb, var(--shape-tint) 6%, var(--diagram-node-bg, #ffffff));
 }
 /* 伪元素是定位元素，默认会盖在静态的标签上，得把标签提到上层 */
 .shape_diamond .nodeLabel,
@@ -466,18 +679,21 @@
 /* 各裁剪形状的轮廓与内边距。padding 要让文字落在内切区里：
    菱形可用宽高约为外框的一半，所以它的 padding 最大。 */
 .shape_diamond {
+  --shape-tint: var(--orange, #c54a0a);
   --shape-clip: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
   padding: 26px 34px;
   min-width: 128px;
   min-height: 96px;
 }
 .shape_hexagon {
+  --shape-tint: var(--accent, #0284c7);
   --shape-clip: polygon(22% 0, 78% 0, 100% 50%, 78% 100%, 22% 100%, 0 50%);
   padding: 14px 38px;
   min-width: 148px;
   min-height: 68px;
 }
 .shape_parallelogram {
+  --shape-tint: #06b6d4;
   --shape-clip: polygon(16% 0, 100% 0, 84% 100%, 0 100%);
   padding: 12px 34px;
   min-width: 148px;
@@ -518,13 +734,20 @@
   }
 }
 
-/* 起止 / 端点：胶囊（设计稿 pill） */
+/* ===== 形状语义色（起止 / 端点的胶囊从这里开始） =====
+   只给语义强、认知统一的五种上色：起止绿 / 判断橙 / 存储紫 / 输入输出青 / 准备蓝。
+   **rect · round · text · ellipse · 梯形 · 双框故意保持中性**：它们最常用，
+   一起上色就是满屏彩色，比全白盒子更乱。
+
+   --shape-tint 插在 fallback 链中间：手选的 --node-stroke 优先级最高，
+   其次形状默认色，最后才是中性描边 —— 所以属性面板选描边仍然盖得住语义色。 */
 .shape_pill {
   border-radius: 999px;
   padding: 10px 22px;
   justify-content: center;
-  border: 1px solid color-mix(in srgb, var(--accent, #0284c7) 32%, transparent);
-  background: var(--accent-light, #e0f2fe);
+  --shape-tint: var(--green, #11813a);
+  border: 1px solid var(--node-stroke, var(--shape-tint));
+  background: color-mix(in srgb, var(--shape-tint) 8%, var(--diagram-node-bg, #ffffff));
 }
 
 /* 文本 / 注释节点：虚线描边、弱化底色，不做实底色块 */
@@ -781,7 +1004,7 @@
   cursor: pointer;
   background: var(--diagram-panel-bg, rgba(15, 23, 42, 0.7));
   border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.14));
-  backdrop-filter: blur(10px) saturate(1.3);
+  backdrop-filter: var(--diagram-float-blur, blur(10px) saturate(1.3));
   transition: background 0.15s, border-color 0.15s;
 }
 .emptyAction:hover,
@@ -821,8 +1044,6 @@
    两列 + 副标题进 tooltip，一套布局同时服务两种形态。 */
 .shapeLibrary {
   position: absolute;
-  top: 64px;
-  left: 12px;
   z-index: 6;
   width: 150px;
   display: grid;
@@ -832,8 +1053,32 @@
   border-radius: 12px;
   background: var(--diagram-panel-bg, rgba(15, 23, 42, 0.66));
   border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.12));
-  backdrop-filter: blur(10px) saturate(1.3);
+  backdrop-filter: var(--diagram-float-blur, blur(10px) saturate(1.3));
   box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.18));
+}
+/* 宽档：左侧常驻竖栏，与工具栏顶对齐、左右相隔 12px。
+   max-height 必须给：加了三个组标题后整栏长了约 60px，
+   内嵌弹框里画布才 82vh，不限高会直接顶出画布底部。 */
+.libRail {
+  top: 12px;
+  left: 12px;
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+}
+/* 紧凑档：工具栏里的 popover，挂在工具栏下方。z-index 要高于遮罩 */
+.libPop {
+  top: 52px;
+  left: 12px;
+  z-index: 8;
+  max-height: calc(100% - 64px);
+  overflow-y: auto;
+}
+/* popover 的透明遮罩：点画布任意处关形状库。
+   不能用 :focus-out 之类——形状库里点完要继续接着点，焦点不一定在里面。 */
+.popBackdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
 }
 /* 标题横跨两列（设计稿 .panel-h：小字 + 字距 + 弱色） */
 .libTitle {
@@ -843,6 +1088,32 @@
   letter-spacing: 0.5px;
   opacity: 0.7;
   color: var(--diagram-node-text, #e2e8f0);
+}
+/* 一个分组段。它自己横跨外层两列，内部再开一个同规格的两列网格——
+   这样 .libShapeWide（组内奇数时末项跨两列）在每个组里都能各算各的。 */
+.libSection {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+/* 组标题：比「形状」总标题弱一档（10px/0.7 → 9.5px/0.5），
+   靠一条 8% 的分隔线断开，避免四个同级标题互相打架。 */
+.libGroup {
+  grid-column: 1 / -1;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  opacity: 0.5;
+  color: var(--diagram-node-text, #e2e8f0);
+  margin-top: 4px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.libGroupFirst {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
 }
 .libShapeBtn {
   display: flex;
@@ -864,6 +1135,10 @@
   background: var(--diagram-panel-hover, rgba(255, 255, 255, 0.1));
   border-color: var(--accent, #0284c7);
   box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.2));
+}
+/* 区域框按钮：虚线边框，一眼区分于上面那些实体形状 */
+.libGroupBtn {
+  border-style: dashed;
 }
 /* 形状个数为奇数时，最后一格横跨两列，避免右下角空一个洞 */
 .libShapeWide {
@@ -909,15 +1184,248 @@
   color: var(--diagram-node-text, #e2e8f0);
   background: var(--diagram-panel-bg, rgba(15, 23, 42, 0.66));
   border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.12));
-  backdrop-filter: blur(10px) saturate(1.3);
+  backdrop-filter: var(--diagram-float-blur, blur(10px) saturate(1.3));
   box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.18));
-  pointer-events: none;
   white-space: nowrap;
+}
+/* 数字加粗：一排等权重的小字里，要看的就是数字 */
+.statusBar b {
+  font-weight: 700;
+  color: var(--accent-strong, #38bdf8);
+}
+/* 紧凑档：贴右下（这一档不渲染 MiniMap，右下是空的），内容只留节点数与缩放。
+   顶部一行只剩 378−293 = 85px，完整串约 130px 放不下；
+   而抽屉一开就会盖住右下，所以组件里只在无选中时渲染它。 */
+.statusMini {
+  left: auto;
+  right: 12px;
+  transform: none;
 }
 .statusDivider {
   width: 1px;
   height: 12px;
   background: var(--diagram-panel-border, rgba(255, 255, 255, 0.18));
+}
+
+/* ── 紧凑档：属性贴底抽屉（玻璃浮层） ──
+   宽档三块并排需 758px，而默认 480px 窗口下画布只有 402px：
+   工具栏(12‥352) 与右侧面板(206‥390) 会重叠 146px。改成贴底就不再抢横向。
+
+   left 从 46px 起：让开左下的 <Controls>（宽 26 + 边距 12 + 间距 8），
+   否则抽屉一开就把缩放按钮盖死。 */
+.propSheet {
+  position: absolute;
+  left: 46px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 6;
+  padding: 9px 11px 10px;
+  border-radius: 14px;
+  color: var(--diagram-node-text, #e2e8f0);
+  background: var(--diagram-panel-bg, rgba(15, 23, 42, 0.72));
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.14));
+  backdrop-filter: var(--diagram-float-blur, blur(10px) saturate(1.3));
+  box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.2));
+}
+/* 抽屉随选中节点翻面：节点在画布下半时抽屉贴顶，不再盖住它。
+   top 取 56 而不是 12：让开顶部工具栏（top:12 + 高约 37）。
+   left 也回到 12：贴顶时不需要再给左下的 <Controls> 让位。 */
+.propSheetTop {
+  top: 56px;
+  bottom: auto;
+  left: 12px;
+}
+.sheetHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.sheetTitle {
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0.8;
+}
+/* 节点/连线数与缩放放在这里：紧凑档的状态栏在右下，会被本抽屉盖住 */
+.sheetMeta {
+  font-size: 10.5px;
+  color: var(--text-muted, #94a3b8);
+  margin-left: auto;
+}
+.sheetGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px 12px;
+}
+/* 抽屉里需要横跨两列的行（形状 6 列网格 / AI 增强） */
+.sheetFull {
+  grid-column: 1 / -1;
+}
+/* 抽屉里的行不再靠 margin 拉开，间距交给 .sheetGrid 的 gap */
+.sheetGrid .propRow,
+.sheetGrid .propRowStack {
+  margin-bottom: 0;
+}
+
+/* ── 属性浮岛（宽档：贴在选中节点上方的一排高频动作）──
+   位置由 JS 算（placeAnchored），这里只给皮。它是 .root 的子元素而不在
+   .react-flow__viewport 里——那层带 transform，会跟缩放一起缩小。 */
+.island {
+  position: absolute;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 7px;
+  border-radius: 11px;
+  color: var(--diagram-node-text, #e2e8f0);
+  background: var(--diagram-panel-bg, rgba(15, 23, 42, 0.74));
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.14));
+  backdrop-filter: var(--diagram-float-blur, blur(10px) saturate(1.3));
+  box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.2));
+}
+/* 指向节点的小尖角。默认在底边（浮岛在节点上方），
+   上方放不下翻到下方时由 .islandBelow 把尖角改到顶边。 */
+.island::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  margin-left: -5px;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  transform: rotate(45deg);
+  background: var(--diagram-panel-bg, rgba(15, 23, 42, 0.74));
+  border-right: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.14));
+  border-bottom: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.14));
+}
+.islandBelow::after {
+  bottom: auto;
+  top: -5px;
+  border-right: none;
+  border-bottom: none;
+  border-left: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.14));
+  border-top: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.14));
+}
+.islandBtn {
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.islandBtn:hover:not(:disabled) {
+  background: var(--diagram-panel-hover, rgba(255, 255, 255, 0.1));
+}
+.islandBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.islandBtnOn {
+  background: var(--accent, #0284c7);
+  color: #fff;
+}
+.islandBtnOn:hover:not(:disabled) {
+  background: var(--accent, #0284c7);
+}
+.islandBtnDanger {
+  color: var(--danger, #ef4444);
+}
+.islandBtn svg {
+  width: 15px;
+  height: 15px;
+}
+.islandDivider {
+  width: 1px;
+  height: 20px;
+  background: var(--diagram-panel-border, rgba(255, 255, 255, 0.18));
+  margin: 0 1px;
+}
+.islandDot {
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+}
+
+/* ── 右键菜单（两档共用）── */
+.menuBackdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 19;
+}
+.menu {
+  position: absolute;
+  z-index: 20;
+  min-width: 168px;
+  padding: 5px;
+  border-radius: 10px;
+  color: var(--diagram-node-text, #e2e8f0);
+  background: var(--diagram-panel-bg, rgba(15, 23, 42, 0.74));
+  border: 1px solid var(--diagram-panel-border, rgba(255, 255, 255, 0.14));
+  backdrop-filter: var(--diagram-float-blur, blur(10px) saturate(1.3));
+  box-shadow: var(--shadow-md, 0 6px 18px rgba(0, 0, 0, 0.28));
+}
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 9px;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.menuItem:hover:not(:disabled) {
+  background: var(--diagram-panel-hover, rgba(255, 255, 255, 0.1));
+}
+.menuItem:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.menuItemOn {
+  color: var(--accent-strong, #38bdf8);
+  font-weight: 600;
+}
+.menuItemDanger {
+  color: var(--danger, #ef4444);
+}
+/* 快捷键提示靠 margin-left:auto 推到右端 */
+.menuKbd {
+  margin-left: auto;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10px;
+  color: var(--text-muted, #94a3b8);
+}
+.menuSep {
+  height: 1px;
+  background: var(--diagram-panel-border, rgba(255, 255, 255, 0.18));
+  margin: 4px 2px;
+}
+
+/* ── 形状拖拽的落点预览 ──
+   pointer-events: none 是必需的：否则它自己会吃掉 dragover，
+   预览框一出现就再也不跟鼠标了。 */
+.dropGhost {
+  position: absolute;
+  z-index: 5;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  white-space: nowrap;
+  pointer-events: none;
+  color: var(--accent-strong, #38bdf8);
+  border: 1.5px dashed var(--accent, #0284c7);
+  background: color-mix(in srgb, var(--accent, #0284c7) 10%, transparent);
 }
 
 /* ── 字号按钮（属性面板内） ── */
