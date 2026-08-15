@@ -19,6 +19,7 @@ pub mod actions;
 pub mod budget;
 pub mod cache;
 pub mod client;
+pub mod profile_prompt;
 pub mod provider;
 pub mod secret_store;
 

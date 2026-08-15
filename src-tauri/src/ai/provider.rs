@@ -578,6 +578,23 @@ pub struct AiConfig {
     /// 由后端在这里一处决定用不用——否则“要不要发”的判断会散到多个调用点。
     #[serde(default = "default_true")]
     pub tags_as_context: bool,
+    /// 把用户画像压成一段描述拼进 system prompt（D1）。
+    ///
+    /// **默认开**（用户 2026-08-14 拍定）。它要解的是“四层记忆里只有语义层（画像）
+    /// 从未真正改变过 AI 行为”——偏好→prompt、反馈→排序、序列→排序都已经通了，
+    /// 就差这一条。默认关的话绝大多数人永远不会开，这个断点等于没修。
+    ///
+    /// 代价必须说清楚：这是一条**新的出网通道**。以前只有剪贴板正文、手工标签名、
+    /// 偏好指令会发给第三方，现在多了一段“你是怎么用这个软件的”。三件事抵消它：
+    /// ① 片段是**纯本地固定文案的组合**（见 `ai::profile_prompt`），不含任何剪贴板内容、
+    ///   不含自定义动作名、不含任何用户自由输入的字符；
+    /// ② 设置页把它**原样展示**出来，用户随时能看到实际发了什么；
+    /// ③ 仍然过与正文同一道出网闸（`is_sensitive_for_egress`）。
+    ///
+    /// 与 `tags_as_context` 一样：**前端不判这个开关**，由后端在 `commands/ai/run.rs`
+    /// 一处决定用不用，否则“要不要发”的判断会散到多个调用点。
+    #[serde(default = "default_true")]
+    pub profile_as_context: bool,
 }
 
 impl Default for AiConfig {
@@ -592,6 +609,7 @@ impl Default for AiConfig {
             thinking_off: true,
             protocol: String::new(),
             tags_as_context: true,
+            profile_as_context: true,
         }
     }
 }

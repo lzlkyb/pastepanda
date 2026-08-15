@@ -686,6 +686,18 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
 }) {
   const { toast } = useToast();
 
+  /**
+   * 当前条目在列表里的下标，给粘贴埋点用（v6.15）。
+   *
+   * **用 ref 而不是直接用 `index`**：下面的 `menuItems` 是 `useMemo` 缓存的，
+   * 而 `index` 会随列表滚动/过滤频繁变。把 `index` 加进依赖数组会让每个列表项
+   * 在每次位置变化时重建整个右键菜单；不加则埋点会记到**过期的下标**。
+   * ref 两边都顺——menuItems 不用重算，读到的又永远是当前值。
+   * （eslint 的 exhaustive-deps 当时真的揪住了这个 bug。）
+   */
+  const indexRef = useRef(index);
+  indexRef.current = index;
+
   const hasUrl = URL_SCHEME_RE.test(item.text || "");
 
   // 前端长度防护：直接传全文 content 到后端，30MB 的粘贴会变成 30MB 的片段行，导致片段库永久卡死；
@@ -928,7 +940,7 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
           // 修复：富文本分支此前漏了价值信号回写，导致 doc/rich 条目被粘贴后
           // 既不参与「按价值清理」也不进粘贴权重（下面纯文本分支一直有）
           const { logPasteEvent } = await import("@/lib/api/actionEvents");
-          logPasteEvent(item.id, item.content_type || item.type, item.source);
+          logPasteEvent(item.id, item.content_type || item.type, item.source, indexRef.current);
         }
       } else {
         // v6.2 粘贴守卫：敏感内容先确认（脱敏后粘贴）
@@ -937,7 +949,7 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
           toast("已粘贴", "success");
           // v6.1 粘贴信号回写（fire-and-forget）
           const { logPasteEvent } = await import("@/lib/api/actionEvents");
-          logPasteEvent(item.id, item.content_type || item.type, item.source);
+          logPasteEvent(item.id, item.content_type || item.type, item.source, indexRef.current);
         }
       }
     },

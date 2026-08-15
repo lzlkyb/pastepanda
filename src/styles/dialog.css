@@ -10,6 +10,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* 弹框内子滚动区滚到底时，不再沿祖先链穿透滚动底层主列表（原生 overscroll 兜底，配合 useModalScrollLock 暂停 Lenis） */
+  overscroll-behavior: contain;
   /* 遮罩层主题化：blossom 为玫瑰色，其余主题中性灰黑（见 theme.css --overlay-bg） */
   background: var(--overlay-bg);
 }
@@ -1158,13 +1160,19 @@
   display: block;
 }
 .file-preview-code-wrap {
-  max-height: 200px;
+  flex: 1;
+  min-height: 240px;
+  max-height: 48vh;
   overflow: auto;
   border-radius: 8px;
   border: 1px solid var(--border-color);
   background: var(--card-bg);
+  display: flex;
+  flex-direction: column;
 }
 .file-preview-code {
+  flex: 1;
+  min-height: 0;
   margin: 0;
   padding: 8px 10px;
   font-family: 'SF Mono', Consolas, monospace;
@@ -1223,4 +1231,185 @@
   border: 1px dashed var(--border-color);
   border-radius: 8px;
   background: var(--card-bg);
+}
+
+/* ===== 文件详情 · A 方案（预览即主角） ===== */
+/* 弹框整体给更高上限，让预览占主区 */
+.dialog-box.fd-dialog { max-height: 86vh; }
+
+/* 元信息收进可折叠紧凑条：单文件默认折叠，把纵向空间让给预览 */
+.fd-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 12px 16px;
+}
+.fd-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.fd-strip:hover { background: var(--hover); }
+.fd-strip-icon {
+  width: 36px; height: 36px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0;
+}
+.fd-strip-main { flex: 1; min-width: 0; }
+.fd-strip-name {
+  font-size: 13px; font-weight: 600; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fd-strip-sub { font-size: 11px; margin-top: 1px; color: var(--text-muted); display: flex; align-items: center; }
+.fd-strip-chev { color: var(--text-muted); transition: transform 0.2s; flex-shrink: 0; }
+.fd-strip-chev.open { transform: rotate(180deg); }
+.fd-info-rows { display: flex; flex-direction: column; gap: 9px; padding: 2px 2px 0; }
+.fd-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* 预览面板作为主区填充 */
+.file-preview-panel.fd-preview {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px 12px;
+  border: none;
+  background: transparent;
+}
+
+/* 文本工具栏：复制全文 / 编辑器打开 / 搜索 */
+.file-preview-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.fpt-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.fpt-btn:hover { border-color: var(--accent); color: var(--accent); }
+.file-search { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+.file-search input {
+  width: 118px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-family: inherit;
+  outline: none;
+}
+.file-search input:focus { border-color: var(--accent); }
+.file-search-count { font-size: 10.5px; color: var(--text-muted); min-width: 34px; text-align: center; }
+.file-search button {
+  width: 22px; height: 22px;
+  border-radius: 5px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px;
+  transition: all 0.15s;
+}
+.file-search button:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Shiki 高亮块：行号 + 搜索命中 */
+.file-preview-code.shiki-code { display: block; }
+.file-preview-code.shiki-code .line { display: block; position: relative; padding-left: 3em; }
+.file-preview-code.shiki-code { counter-reset: ln; }
+.file-preview-code.shiki-code .line::before {
+  counter-increment: ln;
+  content: counter(ln);
+  position: absolute;
+  left: 0;
+  width: 2.4em;
+  text-align: right;
+  color: var(--text-muted);
+  opacity: 0.5;
+  user-select: none;
+}
+.file-preview-code .line.search-hit { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.file-preview-code .line.search-active { background: color-mix(in srgb, var(--orange) 30%, transparent); }
+mark.file-search-hit {
+  background: color-mix(in srgb, var(--orange) 38%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* 图片 hero：点击放大查看，复用 ImagePreviewDialog */
+.file-preview-img-hero {
+  flex: 1;
+  min-height: 200px;
+  max-height: 50vh;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 8px;
+  background: repeating-conic-gradient(var(--card-bg) 0% 25%, var(--section-bg) 0% 50%) 50% / 14px 14px;
+  border: 1px dashed var(--border-color);
+  position: relative;
+}
+.file-preview-img-big {
+  max-width: 100%;
+  max-height: 48vh;
+  object-fit: contain;
+  display: block;
+  cursor: zoom-in;
+  transition: transform 0.15s;
+}
+.file-preview-img-big:hover { transform: scale(1.01); }
+.file-preview-enlarge {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  transition: filter 0.15s;
+}
+.file-preview-enlarge:hover { filter: brightness(1.08); }
+
+/* 空态 hero：二进制 / 缺失 / 空文件 给出下一步引导 */
+.file-preview-empty.fd-empty {
+  flex: 1;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
 }

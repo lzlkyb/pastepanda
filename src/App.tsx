@@ -160,7 +160,7 @@ function App() {
   useEffect(() => {
     const toastHandler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      if (detail?.message) toast(detail.message, detail.type || "info");
+      if (detail?.message) toast(detail.message, detail.type || "info", undefined, undefined, undefined, detail.copyText);
     };
     const moveToGroupHandler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
@@ -722,24 +722,43 @@ function App() {
       if (targetId) {
         const item = filtered.find((i) => i.id === targetId);
         if (item) {
+          // 粘贴信号回写统一走这个闭包。
+          //
+          // **修复（v6.15）**：以前只有下面的纯文本分支记了事件，
+          // image / rich / file 三个分支全漏了。后果不只是统计少几条：
+          // history 的「按价值豁免过期清理」靠 paste 信号判定一条内容有没有被用过，
+          // 图片粘贴不记事件 → 图片会被当成“没价值”清掉，哪怕天天在用。
+          const logPaste = async () => {
+            const { logPasteEvent } = await import("@/lib/api/actionEvents");
+            // 热键粘贴走的是当前可见列表，下标直接用 filtered 里的位置
+            const idx = filtered.findIndex((i) => i.id === item.id);
+            logPasteEvent(item.id, item.content_type || item.type, item.source, idx);
+          };
           // U1：仅粘贴成功时弹成功提示（pasteText/pasteImage 失败时已自行弹错误 toast）
           if (item.type === "image" && item.content) {
             const ok = await pasteImage(item.content);
-            if (ok) window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴图片", type: "success" } }));
+            if (ok) {
+              window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴图片", type: "success" } }));
+              await logPaste();
+            }
           } else if (item.type === "rich" && item.content) {
             const ok = await pasteRichGuarded(item.content, item.text);
-            if (ok) window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴图文", type: "success" } }));
+            if (ok) {
+              window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴图文", type: "success" } }));
+              await logPaste();
+            }
           } else if (item.type === "file" && item.content) {
             // 文件粘贴：将文件路径写入剪贴板
             const ok = await pasteTextGuarded(item.content);
-            if (ok) window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴文件路径", type: "success" } }));
+            if (ok) {
+              window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴文件路径", type: "success" } }));
+              await logPaste();
+            }
           } else {
             const ok = await pasteTextGuarded(item.text);
             if (ok) {
               window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴", type: "success" } }));
-              // v6.1 粘贴信号回写（fire-and-forget）
-              const { logPasteEvent } = await import("@/lib/api/actionEvents");
-              logPasteEvent(item.id, item.content_type || item.type, item.source);
+              await logPaste();
             }
           }
         }

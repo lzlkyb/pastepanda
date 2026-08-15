@@ -26,6 +26,7 @@ import {
 import { aiFeedbackStats, aiFeedbackClear, actionPrefsAll } from "@/lib/api/aiFeedback";
 import { historySummariesCount, historySummariesClear } from "@/lib/api/contentMemory";
 import { AiSection } from "./AiSection";
+import { AiProfileInject } from "./AiProfileInject";
 import styles from "../AiTab.module.css";
 
 interface Summary {
@@ -43,7 +44,15 @@ interface Summary {
   memory: number;
 }
 
-export function AiEvolution({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+interface Props {
+  open: boolean;
+  onToggle: () => void;
+  /** D1：画像是否拼进 AI 的 system prompt（`AiConfig.profileAsContext`） */
+  profileAsContext: boolean;
+  onProfileAsContextChange: (v: boolean) => void;
+}
+
+export function AiEvolution({ open, onToggle, profileAsContext, onProfileAsContextChange }: Props) {
   const { toast } = useToast();
   const [sum, setSum] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(false);
@@ -161,6 +170,9 @@ export function AiEvolution({ open, onToggle }: { open: boolean; onToggle: () =>
             </span>
             <ChevronRight size={13} className={styles.evoChev} />
           </button>
+
+          {/* 紧跟在「我的画像」下面：上一行回答“画像是什么”，这一行回答“画像被拿去干什么”。 */}
+          <AiProfileInject enabled={profileAsContext} onChange={onProfileAsContextChange} />
 
           {/* 注意：这个清空只清**反馈统计**，不动偏好指令——与弹窗里的文案一致。
               两者写成两行而不合并，就是为了不让人以为清反馈会把偏好指令一起删了。 */}

@@ -1495,3 +1495,69 @@ button.evoRow:hover {
 .evoBtnDanger:hover {
   background: var(--red-bg);
 }
+
+/* ==========================================================================
+   D1 画像注入（AiProfileInject）
+   ========================================================================== */
+
+/* 开关的“开”态。沿用 .evoBtn 而不另做一个 toggle 控件：
+   这一块周围全是 .evoRow + .evoBtn 的语言，插个开关拨块进来反而破。 */
+.evoBtnOn {
+  border-color: var(--green-border);
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.injectWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* 往里缩：视觉上隶属于上方的开关行，一眼能看出是它的展开内容 */
+  margin: -4px 0 0 10px;
+}
+
+.injectHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.injectHead b {
+  color: var(--text-color);
+  font-weight: 600;
+  font-size: 10.5px;
+}
+
+/* 片段原文。等宽 + 可选中：展示的就是实际拼进 prompt 的那串字符，
+   用户得能直接复制出去比对。 */
+.injectBox {
+  padding: 8px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--code-bg);
+  font-family: ui-monospace, Consolas, "Microsoft YaHei", monospace;
+  font-size: 10.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* “开了却什么都没发”的原因提示。用警告色而非 .redline 的绿色：
+   那是“放心”的语义，这里是“注意，与你以为的不一样”。 */
+.stateNote {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--amber-bg);
+  border: 1px solid var(--amber-border);
+  color: var(--amber);
+  font-size: 10.5px;
+  line-height: 1.55;
+}

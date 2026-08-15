@@ -180,7 +180,12 @@ export function AiTab() {
         {/* 自进化（原在「设置 › 通用」的一行🧠，08-11 搬到这里）。
             不跟着 configured 藏：它记的是你已经产生的使用痕迹，
             红线②要求任何时候都可见可删，不能因为没配 AI 就看不到。 */}
-        <AiEvolution open={openKey === "evolution"} onToggle={() => toggle("evolution")} />
+        <AiEvolution
+          open={openKey === "evolution"}
+          onToggle={() => toggle("evolution")}
+          profileAsContext={s.config.profileAsContext}
+          onProfileAsContextChange={(v) => s.saveNow({ profileAsContext: v })}
+        />
 
         {/* 没有可用模型时不显示：在那儿写模板是空转。
             用量区不跟着藏——那是已经花掉的钱的记录，关个开关就看不到自己的账说不过去。 */}

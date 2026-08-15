@@ -5,15 +5,17 @@
 }
 
 .bar {
+  position: relative; /* 锚点：.x 绝对定位固定右上角（方案 A，永不换行） */
   display: flex;
   align-items: center;
   /* 必须换行：最后一个子项 .tgt（目标摘要行）带 width:100%，靠它落到第二行。
      漏了这一句的话，width:100% 不会另起一行——它只是让 .tgt 变成一个「想占满整宽」
      但 flex-shrink:1 的同行子项，于是五个子项全挤在一行里互相压：
      .acts 被压扁、摘要文字只剩几个字、那条 border-top 虚线横在同一行上。
-     （能被压的只有 .acts：AiMark 是 flex:none，.hintTxt/.x 是 flex-shrink:0。）
+     （能被压的只有 .acts：AiMark 是 flex:none，.hintTxt 是 flex-shrink:0。
+     .x 已 absolute 移出 flex 流，不参与挤压。）
      换行打开后，.acts 会先在自己内部折行来吸收挤压，所以
-     「类型标签 + 关闭」不会被顶到第二行去和摘要行抢位置。 */
+     「类型标签」不会被顶到第二行去和摘要行抢位置。 */
   flex-wrap: wrap;
   gap: 6px;
   padding: 7px 10px;
@@ -78,6 +80,8 @@
   display: flex;
   gap: 5px;
   flex-wrap: wrap;
+  /* 方案 C：允许动作区被压缩（按钮内部先折行），避免把类型标签/徽章挤出主行 */
+  min-width: 0;
 }
 
 .q {
@@ -138,9 +142,20 @@
   font-size: 11px;
   color: var(--text-muted);
   flex-shrink: 0;
+  /* 给右上角绝对定位的 .x 让位，类型标签/徽章不会被它盖住 */
+  padding-right: 22px;
+  /* 方案 C：类型标签 + 徽章永不内部折行（要么整组在主行，要么整组折行） */
+  white-space: nowrap;
 }
 
 .x {
+  /* 方案 A：× 固定右上角，永不参与换行。
+     图片 OCR 识别出文字时主行有「3 个动作按钮 + 更多… + 类型标签 + 已识别 N 字」，
+     flex-wrap 会把原来的 × 挤到第二行；absolute 移出 flex 流后恒居右上角，
+     top/right 与 .bar 的 padding(7px/10px) 对齐。 */
+  position: absolute;
+  top: 7px;
+  right: 10px;
   width: 18px;
   height: 18px;
   border: none;
@@ -148,7 +163,6 @@
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -438,3 +452,49 @@
 /* v6.10 拖拽排序 */
 .q[draggable="true"] { cursor: grab; }
 .q[draggable="true"]:active { cursor: grabbing; }
+
+/* v6.15 图片自动 OCR 暖启动态 */
+.ocrPending {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.ocrSpinner {
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: ocrSpin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes ocrSpin {
+  to { transform: rotate(360deg); }
+}
+.ocrBadge {
+  margin-left: 6px;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--green, #15803d);
+  background: var(--green-bg, #dcfce7);
+  border: 1px solid var(--green-border, #bbf7d0);
+  border-radius: 4px;
+  padding: 0 5px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+/* 图片 OCR 完成但无文字：中性灰空态徽章（区别于「已识别 N 字」的成功绿徽章） */
+.ocrBadgeMuted {
+  margin-left: 6px;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 0 5px;
+  line-height: 1.5;
+  white-space: nowrap;
+}

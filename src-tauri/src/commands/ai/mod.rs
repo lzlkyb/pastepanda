@@ -137,6 +137,10 @@ pub(crate) fn read_ai_config(store: &DataStore) -> Result<AiConfig, String> {
             .get("ai_tags_as_context")
             .and_then(|v| v.as_bool())
             .unwrap_or(d.tags_as_context),
+        profile_as_context: raw
+            .get("ai_profile_as_context")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(d.profile_as_context),
     })
 }
 

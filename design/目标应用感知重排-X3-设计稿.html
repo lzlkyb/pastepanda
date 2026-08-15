@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda · 目标应用感知重排（X3）设计稿</title>
+<style>
+  :root{--bg:#f6f7f9;--panel:#fff;--text:#1f2328;--muted:#6b7280;--border:#e3e5e8;
+    --amber:#b45309;--amber-bg:#fffbeb;--amber-bd:#fde68a;
+    --ok:#15803d;--ok-bg:#f0fdf4;--ok-bd:#bbf7d0;--code:#f6f8fa;--accent:#0ea5e9}
+  @media(prefers-color-scheme:dark){:root{--bg:#16181c;--panel:#1d2026;--text:#e6e8ea;--muted:#9aa2ad;
+    --border:#2c3038;--amber:#fbbf24;--amber-bg:rgba(245,158,11,.1);--amber-bd:rgba(245,158,11,.28);
+    --ok:#4ade80;--ok-bg:rgba(34,197,94,.1);--ok-bd:rgba(34,197,94,.28);--code:#14161a;--accent:#38bdf8}}
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px 20px 60px;background:var(--bg);color:var(--text);
+    font:13px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:880px;margin:0 auto}
+  h1{font-size:19px;margin:0 0 6px}
+  h2{font-size:14px;margin:30px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+  h3{font-size:12.5px;margin:18px 0 8px;color:var(--muted)}
+  .lead{color:var(--muted);font-size:12px;margin:0 0 4px}
+  .meta{color:var(--muted);font-size:11px;margin:0 0 20px}
+  code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;background:var(--code);padding:1px 4px;border-radius:4px}
+  pre{background:var(--code);padding:10px 12px;border-radius:8px;font-size:11px;overflow-x:auto;line-height:1.6}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin:8px 0}
+  th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{font-size:11px;color:var(--muted);font-weight:600}
+  ol,ul{padding-left:20px} li{margin:5px 0}
+  .warn{border-left:3px solid var(--amber);background:var(--amber-bg);padding:10px 12px;
+    border-radius:0 8px 8px 0;margin:10px 0;font-size:12px}
+  .ok{border-left:3px solid var(--ok);background:var(--ok-bg);padding:10px 12px;
+    border-radius:0 8px 8px 0;margin:10px 0;font-size:12px}
+
+  /* 列表模拟 */
+  .win{width:340px;background:var(--panel);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  .hint{display:flex;align-items:center;gap:6px;padding:5px 10px;font-size:10.5px;
+    background:var(--ok-bg);color:var(--ok);border-bottom:1px solid var(--border)}
+  .hint b{font-weight:600}
+  .hintX{margin-left:auto;opacity:.6;cursor:pointer}
+  .row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--border);font-size:11.5px}
+  .row:last-child{border-bottom:none}
+  .row .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    font-family:ui-monospace,Consolas,monospace;font-size:10.5px}
+  .row .age{flex-shrink:0;font-size:9.5px;color:var(--muted)}
+  .badge{flex-shrink:0;font-size:9px;padding:1px 5px;border-radius:4px;
+    background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok-bd)}
+  .grid{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+  .note{flex:1;min-width:250px;font-size:12px;color:var(--muted)}
+  .note b{color:var(--text)}
+  .tag{display:inline-block;font-size:10px;padding:1px 7px;border-radius:999px;
+    border:1px solid var(--border);color:var(--muted);margin-bottom:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>目标应用感知重排（X3）· 设计稿</h1>
+<p class="lead">唤起时根据**你要粘到哪个应用**软重排历史列表。三支柱里 ② 环境智能从“排序层”迈向“在场层”的最低成本切口。</p>
+<p class="meta">2026-08-14 · 软重排（加权不置顶）+ 埋点 · <b>不依赖 action_events，不受推荐冷启动死锁影响</b></p>
+
+<h2>一、地基已全部具备（原估 5-7 天 → 实际 1-2 天）</h2>
+
+<p>原方案要新建一整套 <code>src-tauri/src/context/</code> + <code>app_rules</code> 表。核实后发现全部已有：</p>
+
+<table>
+<tr><th>原计划要建</th><th>实际已有</th></tr>
+<tr><td>焦点窗口 → 进程名</td><td><code>paste_engine.rs:146</code> <code>foreground_app()</code>（<code>GetWindowThreadProcessId</code> + <code>QueryFullProcessImageNameW</code>）</td></tr>
+<tr><td><b>唤起时抓目标窗口的时序机制</b></td><td><code>save_foreground_hwnd()</code>——为了“粘贴时切回去”本来就在唤起前保存了 HWND，<b>还处理了三个边界</b>（桌面窗口 / shell 窗口 / 自身窗口）</td></tr>
+<tr><td>5 类应用预设表</td><td><code>categorize_app(exe)</code>（<code>paste_engine.rs:30</code>），而且粒度更细：<code>browser/excel/word/office/ide/terminal/…</code></td></tr>
+<tr><td>唤起时机的接入点</td><td><code>App.tsx:214</code> 已在唤起时调 <code>saveForeground()</code></td></tr>
+<tr><td>列表排序点</td><td><code>appStore.ts:821</code> 已有二次排序（<code>pinned</code> → <code>timeStamp</code>）且带 <code>_filterCache</code></td></tr>
+</table>
+
+<div class="ok">
+<b>分类用 <code>categorize_app</code> 而不是 <code>source_cat</code></b>。两个区别：
+<code>categorize_app</code> 在 <code>paste_engine.rs</code>、直接从**目标窗口 exe** 来，且多了
+<code>excel/word/office</code> 这几类——正好是“前台是 Excel → 优先表格”需要的粒度；
+<code>source_cat</code> 在 <code>action_events.rs</code>、给的是**来源 App** 的粗分类（5 类）。
+<br><br>
+顺带记一笔：<b>这两套分类现在并存，是个既有的重复</b>。本项不顺手合并（两边用途真不同：
+一个算“从哪来”、一个算“往哪去”），但不要再添第三套。
+</div>
+
+<h2>二、排序算法：时间分桶 + 桶内加权</h2>
+
+<p><b>硬约束：不能破坏“刚复制就粘”这个最常见场景。</b>下面两种直觉方案都会破坏它：</p>
+
+<table>
+<tr><th>方案</th><th>为何不行</th></tr>
+<tr><td>分数相乘（像推荐那样）</td><td>时间序与分数不同量纲，没法直接相乘；强行归一化就变成黑箱调参</td></tr>
+<tr><td>时间偏移（匹配的算“年轻 N 分钟”）</td><td>偏移量只要大于零，<b>就一定存在一个区间让刚复制的条目被反超</b>（N 分钟前的匹配项追平 0 分钟前的不匹配项）。clamp 又会造成大片并列</td></tr>
+</table>
+
+<h3>采用：时间分桶</h3>
+
+<pre>排序键（从高到低）：
+  1. pinned            —— 置顶永远最前（不变）
+  2. bucket(timeStamp) —— 时间桶，新桶在前（1 小时一桶）
+  3. 桶内：匹配当前目标应用的在前      ← 新增的唯一一条
+  4. timeStamp 倒序  —— 同桶同匹配状态时仍按时间</pre>
+
+<div class="ok">
+<b>为什么分桶能保住“刚复制就粘”</b>：刚复制的条目必在**最新桶**，而它在那个桶里时间最新。
+即使它不匹配当前应用，也只可能被**同一小时内**的匹配项超过——而那种情况下“同一阵复制的、
+更适合当前应用的那条”排前面本身就是对的。三天前的东西永远不会窜到今天前面。
+</div>
+
+<p><b>桶大小取 1 小时的依据</b>（实测本机 540 条）：相邻复制间隔中位 <code>168 秒</code>、p90 <code>1862 秒</code>（约 31 分钟）。
+1 小时桶内通常有多条（所以重排真的会发生），而跳桶又足够快（不会把半天前的东西搅进来）。</p>
+
+<h3>“匹配”的定义</h3>
+<table>
+<tr><th>目标应用类别</th><th>优先的 content_type</th></tr>
+<tr><td><code>terminal</code></td><td><code>shell</code> / <code>file_path</code> / <code>code</code></td></tr>
+<tr><td><code>ide</code></td><td><code>code</code> / <code>json</code> / <code>log</code> / <code>sql</code> / <code>xml</code> / <code>yaml</code></td></tr>
+<tr><td><code>excel</code></td><td><code>csv</code> / <code>number</code> / 带制表符的 <code>text</code></td></tr>
+<tr><td><code>word</code> / <code>office</code></td><td><code>rich</code> / <code>doc</code> / <code>markdown</code></td></tr>
+<tr><td><code>browser</code></td><td><code>link</code> / <code>text</code></td></tr>
+<tr><td><code>chat</code></td><td><code>text</code> / <code>image</code></td></tr>
+</table>
+<p style="font-size:12px;color:var(--muted)">映射表做成常量，不开设置项——同置顶的理由：用户无法判断这张表对不对。</p>
+
+<h2>三、UI：一行可关提示（否则是静默改行为）</h2>
+
+<div class="grid">
+  <div class="win">
+    <div class="hint">◉ 当前要粘到 <b>终端</b> · 已优先命令与路径 <span class="hintX">✕</span></div>
+    <div class="row"><span class="t">docker compose up -d --build</span><span class="badge">适合</span><span class="age">2分前</span></div>
+    <div class="row"><span class="t">D:\work\aier\src\main\java</span><span class="badge">适合</span><span class="age">18分前</span></div>
+    <div class="row"><span class="t">接口名：获取对接系统物料信息</span><span class="age">9分前</span></div>
+    <div class="row"><span class="t">SELECT * FROM sm_funcregister</span><span class="badge">适合</span><span class="age">41分前</span></div>
+    <div class="row"><span class="t">页签项目编辑——备注文字</span><span class="age">35分前</span></div>
+  </div>
+  <div class="note">
+    <span class="tag">为何必须有提示</span>
+    <p><b>没有提示就是静默改行为。</b>用户会发现“顺序怎么又不一样了”但不知道为什么——
+      而列表顺序是用户建立肌肉记忆的东西，悄悄改了却不说，体验是变差不是变好。</p>
+    <p>看第 2 行与第 3 行：<b>18 分前的路径排在了 9 分前的文本前面</b>（同一个小时桶内，
+      匹配终端的优先）。而 2 分前那条仍在最顶——“刚复制就粘”没被破坏。</p>
+    <p>第 4 行（41 分前的 SQL）虽然也匹配，但它在**下一个桶**，所以排在本桶所有条目之后。</p>
+    <p><b>提示可关</b>（✕），关后不再弹；重排本身也能在设置里整体关掉。</p>
+  </div>
+</div>
+
+<h3>“适合”徽标要不要？</h3>
+<p>图里画了，但<b>建议首版不加</b>：480px 默认窗宽下每行已经有内容 + 时间 + （可能的）来源徽标 + 标签，
+再加一个徽标会挤。顶部那一行提示已经说清了“为何这个顺序”。先上提示，徽标等反馈。</p>
+
+<h2>四、埋点：这是能证伪它的唯一办法</h2>
+
+<div class="warn">
+<b>X3 隐含一个未验证的假设</b>：“用户唤起后需要在列表里找”。
+如果实际主要是“复制完立刻粘”，那第一条就是要的，重排毫无价值。
+<b>现在没有任何数据能回答这个</b>——所以必须顺带加埋点，否则做完也不知道有没用。
+</div>
+
+<p>粘贴时多记两个字段：</p>
+<pre>{
+  listIndex:   粘的是当前列表的第几条（0-based）
+  targetCat:   目标应用类别（terminal / ide / excel / …）
+  reordered:   本次是否应用了重排（开关开没开 / 有没抽到目标 App）
+}</pre>
+
+<p><b>一周后能回答的问题</b>：</p>
+<ul>
+<li>平均 <code>listIndex</code> 是多少？如果本来就接近 0（都粘第一条）——<b>X3 直接下线，没必要</b></li>
+<li><code>reordered=true</code> 与 <code>false</code> 两组的平均 <code>listIndex</code> 差多少？降了就是真有效</li>
+<li>哪些 <code>targetCat</code> 下降得明显？只在那几类下开启就行</li>
+</ul>
+
+<p><b>埋点只写本机</b>（红线②），不含任何内容本身，只有一个下标与一个类别枚举。</p>
+
+<h2>五、实现约束</h2>
+<ol>
+<li><b><code>_filterCache</code> 的 key 必须含目标应用类别</b>。<code>appStore.ts</code> 的过滤结果是缓存的，
+  不动 key 的话切了应用顺序不会变——这与 D1 里 <code>profile_sig</code> 必须进 <code>cache_id</code> 是同一类问题。</li>
+<li><b>只重排，不改内容</b>（红线①）。原方案里的“浏览器地址栏 → 自动去跟踪参数”**不做**：
+  那是篡改内容。要做也该是“推荐一个去参数的变换”。</li>
+<li><b>密码框检测不做</b>。原方案的“密码框默认不展示普通历史”需要识别焦点元素类型，
+  跨应用不可靠；误判后果严重（该显示时不显示）。</li>
+<li><b>抓不到目标 App 时完全退回现有行为</b>（<code>foreground_app()</code> 返回 <code>None</code>，
+  非 Windows 平台恒为 <code>None</code>）——不提示、不重排。</li>
+<li><b>默认开</b>，但设置里可关。理由同置顶：默认关的话绝大多数人不会去开，也就永远收不到验收数据。
+  （它不是出网功能，默认开的隐私代价为零。）</li>
+<li><b>不新建表</b>。映射表是常量；埋点复用现有 <code>action_events</code>（它已有 <code>outcome='pasted'</code>）。</li>
+</ol>
+
+<div class="warn">
+<b>本轮不做</b>：“对某规则确认多次后→一键设为此应用默认”（需要行为数据，又转回死锁）、
+自定义应用规则 UI、按目标 App 推荐**动作**（那是另一件事，且它依赖 action_events）。
+</div>
+
+</div>
+</body>
+</html>

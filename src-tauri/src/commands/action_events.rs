@@ -8,7 +8,8 @@
 //!   `action_learnings_clear` 一键清空（事件 + 负反馈一起清）。
 
 use crate::data_store::{
-    ActionDismissal, ActionEvent, ActionEventStats, ActionWeightRow, DataStore, SceneWeightRow,
+    ActionDismissal, ActionEvent, ActionEventStats, ActionPin, ActionWeightRow, DataStore,
+    SceneWeightRow,
 };
 use tauri::{Emitter, State};
 
@@ -84,7 +85,39 @@ pub fn action_dismiss_remove(
     store.action_dismiss_remove(&action_id, &content_type)
 }
 
+// ===================== 常用置顶（v6.14，正向偏好） =====================
+
+/// 置顶一个动作（幂等）。content_type 空串 = 全局置顶。
+///
+/// 后端会顺手清掉该动作的「不再推荐」——前端不用调两次，
+/// 也不会因为某个入口忘了调而留下矛盾状态。
+#[tauri::command]
+pub fn action_pin_add(store: State<DataStore>, action_id: String, content_type: String) {
+    store.action_pin_add(&action_id, &content_type);
+}
+
+/// 全部置顶列表。
+#[tauri::command]
+pub fn action_pins(store: State<DataStore>) -> Result<Vec<ActionPin>, String> {
+    store.action_pins()
+}
+
+/// 取消置顶。返回删除条数。
+#[tauri::command]
+pub fn action_pin_remove(
+    store: State<DataStore>,
+    action_id: String,
+    content_type: String,
+) -> Result<u32, String> {
+    store.action_pin_remove(&action_id, &content_type)
+}
+
 /// 一键清空全部学习记录（事件 + 负反馈），返回删除条数。红线②。
+///
+/// **不碰 `action_pins`**：置顶是用户**显式设的偏好**，不是系统学来的产物。
+/// 这一点与 `action_prefs`（输出偏好指令）一致——那个也不被本命令清，
+/// 且自进化面板里已经写明“清反馈不影响偏好指令”。把用户手动设的东西当成
+/// “学习记录”一起清掉，在用户看来就是把他的配置弄没了。
 #[tauri::command]
 pub fn action_learnings_clear(store: State<DataStore>) -> Result<u32, String> {
     let n1 = store.action_event_clear()?;

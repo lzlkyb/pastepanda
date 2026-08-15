@@ -85,23 +85,27 @@ code{background:#1C2027;padding:1px 5px;border-radius:4px;font-size:11.5px;color
 .toast .mergeBtn{margin-left:auto;flex-shrink:0;font-size:10.5px;font-weight:600;padding:4px 10px;border-radius:7px;
   border:none;background:rgba(59,158,255,.16);color:#3B9EFF;cursor:pointer}
 
-/* 设置行（抄 GeneralTab sRow 风格） */
+/* 设置行（抄 Settings.module.css：sRowIcon 36px / sRowBody / sVal 值徽章 / sToggle iOS 开关 44×26） */
 .setCard{width:440px;background:#0A1628;border:1px solid #162B45;border-radius:14px;overflow:hidden;flex-shrink:0}
 .setHdr{display:flex;align-items:center;height:44px;padding:0 16px;gap:8px;border-bottom:1px solid #162B45;
   font-size:13.5px;font-weight:600;color:#E0E8F0}
 .setBody{display:flex;flex-direction:column}
-.sRow{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid #101D33}
+.sRow{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #101D33}
 .sRow:last-child{border-bottom:none}
-.sLabel{font-size:12.5px;color:#E0E8F0;flex:1}
-.sDesc{font-size:11px;color:#7994B4;width:100%}
-.switch{width:36px;height:20px;border-radius:999px;background:#1C2938;position:relative;cursor:pointer;flex-shrink:0}
-.switch.on{background:#2D78C2}
-.switch::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .15s}
-.switch.on::after{left:18px}
-.seg{display:flex;gap:6px;background:#081018;border:1px solid #162B45;border-radius:9px;padding:3px}
-.segBtn{font-size:11px;font-weight:600;padding:5px 10px;border-radius:7px;cursor:pointer;color:#A2B6CD;
-  border:none;background:transparent}
-.segBtn.on{background:#0A1E3A;color:#3B9EFF;box-shadow:0 0 0 1px #2D78C2 inset}
+.sRowIcon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+  font-size:16px;flex-shrink:0}
+.sRowBody{flex:1;min-width:0}
+.sRowLabel{font-size:13px;font-weight:600;color:#E0E8F0}
+.sRowDesc{font-size:11px;color:#7994B4;margin-top:2px}
+.sVal{font-size:12px;font-weight:600;color:#3B9EFF;padding:3px 10px;background:rgba(59,158,255,.14);
+  border-radius:6px;white-space:nowrap;cursor:pointer;border:none;font-family:inherit;flex-shrink:0;transition:opacity .15s}
+.sVal:hover{opacity:.85}
+.sToggle{display:inline-block;width:44px;height:26px;border-radius:13px;border:none;cursor:pointer;
+  position:relative;flex-shrink:0;transition:background .25s;padding:0;background:#1C2938}
+.sToggle.on{background:#2D78C2}
+.sToggle::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;
+  background:#fff;transition:left .25s}
+.sToggle.on::after{left:21px}
 
 .anno{background:#0E1A12;border:1px solid #166534;border-radius:10px;padding:12px 14px;font-size:12px;color:#9FBF9F;max-width:560px}
 .anno b{color:#6FD68B}
@@ -229,16 +233,28 @@ table.t td{color:#B4BECB}
     <div class="setHdr">⚙ 表格拆分</div>
     <div class="setBody">
       <div class="sRow">
-        <div><div class="sLabel">表格自动拆行入栈</div><div class="sDesc">复制表格时按行拆分（关闭 = 表格整块入栈）</div></div>
-        <span class="switch on"></span>
+        <span class="sRowIcon" style="background:linear-gradient(135deg,#F97316,#EA580C)">📚</span>
+        <div class="sRowBody">
+          <div class="sRowLabel">表格自动拆行入栈</div>
+          <div class="sRowDesc">复制表格时按行拆分（关闭 = 表格整块入栈）</div>
+        </div>
+        <span class="sToggle on"></span>
       </div>
       <div class="sRow">
-        <div><div class="sLabel">拆行格式</div><div class="sDesc">入栈后每条的样子</div></div>
-        <div class="seg"><button class="segBtn on">原始行</button><button class="segBtn">字段: 值</button></div>
+        <span class="sRowIcon" style="background:linear-gradient(135deg,#8B5CF6,#5856D6)">📄</span>
+        <div class="sRowBody">
+          <div class="sRowLabel">拆行格式</div>
+          <div class="sRowDesc">入栈后每条的样子 · 点击切换</div>
+        </div>
+        <button class="sVal" title="点击切换">原始行 ⇄</button>
       </div>
       <div class="sRow">
-        <div><div class="sLabel">表头</div><div class="sDesc">拆分时是否保留第一行</div></div>
-        <div class="seg"><button class="segBtn on">排除</button><button class="segBtn">包含</button></div>
+        <span class="sRowIcon" style="background:linear-gradient(135deg,#0EA5E9,#0284C7)">📋</span>
+        <div class="sRowBody">
+          <div class="sRowLabel">表头</div>
+          <div class="sRowDesc">拆分时是否保留第一行 · 点击切换</div>
+        </div>
+        <button class="sVal" title="点击切换">排除 ⇄</button>
       </div>
     </div>
   </div>

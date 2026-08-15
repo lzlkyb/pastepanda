@@ -36,7 +36,7 @@ pub use content_memory::{
 pub use profile::ProfileRawStats;
 pub use sequence_memory::{SequencePattern, SequenceTransition};
 pub use action_events::{
-    ActionEvent, ActionEventCount, ActionEventStats, ActionDismissal, ActionWeightRow,
+    ActionEvent, ActionEventCount, ActionEventStats, ActionDismissal, ActionPin, ActionWeightRow,
     SceneWeightRow, ACTION_EVENTS_RETAIN_DAYS, ACTION_ID_PASTE, OUTCOME_ABANDONED,
     OUTCOME_COPIED, OUTCOME_PASTED, hour_bucket, source_cat,
 };
@@ -322,7 +322,12 @@ impl DataStore {
                 source_app   TEXT    NOT NULL DEFAULT '',
                 hour         INTEGER NOT NULL DEFAULT 0,
                 outcome      TEXT    NOT NULL,
-                history_id   TEXT
+                history_id   TEXT,
+                -- v6.15 X3 埋点：仅 action_id='paste' 时写。用于回答一个现在无法回答的问题：
+                -- “用户粘的是列表的第几条”——如果本来就都粘第一条，那按目标应用重排（X3）就没必要做。
+                -- 只存一个下标与一个类别枚举，不含任何内容本身（红线②）。
+                paste_index  INTEGER,
+                target_cat   TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_action_events_created ON action_events(created_at);
             CREATE INDEX IF NOT EXISTS idx_action_events_action ON action_events(action_id);
@@ -423,6 +428,21 @@ impl DataStore {
             -- 「不再推荐这个」负反馈（v6.1，见 data_store/action_events.rs）。
             -- (action_id, content_type) 主键去重：重复点不再推荐是幂等操作。
             CREATE TABLE IF NOT EXISTS action_dismissals (
+                action_id    TEXT NOT NULL,
+                content_type TEXT NOT NULL DEFAULT '',
+                created_at   TEXT NOT NULL,
+                PRIMARY KEY (action_id, content_type)
+            );
+
+            -- 「常用置顶」正向偏好（v6.14，见 data_store/action_events.rs）。
+            -- 与上面的 action_dismissals 一正一负：一个说“别推这个”，一个说“这个给我排前面”。
+            --
+            -- 为何需要它：推荐的五个因子里四个（global/scene/sequence/quality）都吃行为数据，
+            -- 而行为数据在冷启动时根本不存在——形成“推荐不准 → 用户不用 → 没数据 → 更不准”的死锁。
+            -- 置顶是唯一能从内部打破它的动作：用户直接表达意图→开始用→行为数据有了→四个因子活过来。
+            --
+            -- content_type 空串 = 全局置顶。本版只用全局，但存结构先留好按类型细化的位置。
+            CREATE TABLE IF NOT EXISTS action_pins (
                 action_id    TEXT NOT NULL,
                 content_type TEXT NOT NULL DEFAULT '',
                 created_at   TEXT NOT NULL,
@@ -544,6 +564,33 @@ impl DataStore {
                     log::warn!("[DataStore] action_events.history_id 列已存在，忽略: {}", e);
                 } else {
                     log::error!("[DataStore] 添加 action_events.history_id 列失败: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
+        // v6.15 X3 埋点：paste_index / target_cat（两列一起加，缺一不可——
+        // 只有下标没类别无法分组对比，只有类别没下标则什么也算不出来）。
+        for (col, ddl) in [
+            ("paste_index", "ALTER TABLE action_events ADD COLUMN paste_index INTEGER;"),
+            ("target_cat", "ALTER TABLE action_events ADD COLUMN target_cat TEXT;"),
+        ] {
+            let exists = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('action_events') WHERE name = ?1",
+                    [col],
+                    |row| row.get::<_, i32>(0),
+                )
+                .unwrap_or(0)
+                > 0;
+            if exists {
+                continue;
+            }
+            if let Err(e) = conn.execute_batch(ddl) {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] action_events.{} 列已存在，忽略: {}", col, e);
+                } else {
+                    log::error!("[DataStore] 添加 action_events.{} 列失败: {}", col, e);
                     return Err(e);
                 }
             }

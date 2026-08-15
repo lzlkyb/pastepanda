@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda · 动作置顶（打破推荐冷启动）设计稿</title>
+<style>
+  :root{--bg:#f6f7f9;--panel:#fff;--text:#1f2328;--muted:#6b7280;--border:#e3e5e8;
+    --amber:#b45309;--amber-bg:#fffbeb;--amber-bd:#fde68a;
+    --ok:#15803d;--ok-bg:#f0fdf4;--ok-bd:#bbf7d0;--code:#f6f8fa;--danger:#b91c1c}
+  @media(prefers-color-scheme:dark){:root{--bg:#16181c;--panel:#1d2026;--text:#e6e8ea;--muted:#9aa2ad;
+    --border:#2c3038;--amber:#fbbf24;--amber-bg:rgba(245,158,11,.1);--amber-bd:rgba(245,158,11,.28);
+    --ok:#4ade80;--ok-bg:rgba(34,197,94,.1);--ok-bd:rgba(34,197,94,.28);--code:#14161a;--danger:#f87171}}
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px 20px 60px;background:var(--bg);color:var(--text);
+    font:13px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:860px;margin:0 auto}
+  h1{font-size:19px;margin:0 0 6px}
+  h2{font-size:14px;margin:30px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+  .lead{color:var(--muted);font-size:12px;margin:0 0 4px}
+  .meta{color:var(--muted);font-size:11px;margin:0 0 20px}
+  code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;background:var(--code);padding:1px 4px;border-radius:4px}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin:8px 0}
+  th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{font-size:11px;color:var(--muted);font-weight:600}
+  ol,ul{padding-left:20px} li{margin:5px 0}
+  .warn{border-left:3px solid var(--amber);background:var(--amber-bg);padding:10px 12px;
+    border-radius:0 8px 8px 0;margin:10px 0;font-size:12px}
+  .ok{border-left:3px solid var(--ok);background:var(--ok-bg);padding:10px 12px;
+    border-radius:0 8px 8px 0;margin:10px 0;font-size:12px}
+
+  /* 变换中心模拟（宽度按弹窗真实观感） */
+  .hub{width:360px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px}
+  .secLabel{font-size:10px;color:var(--muted);font-weight:600;margin:8px 0 5px;letter-spacing:.5px}
+  .card{display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid var(--border);
+    border-radius:8px;margin-bottom:5px;font-size:11.5px}
+  .card b{font-weight:600}
+  .cardBody{flex:1;min-width:0}
+  .cardDesc{font-size:10px;color:var(--muted);line-height:1.4}
+  .star{flex-shrink:0;font-size:12px;color:var(--muted);cursor:pointer}
+  .star.on{color:#f59e0b}
+  .pinned{border-color:var(--ok-bd);background:var(--ok-bg)}
+  .score{flex-shrink:0;font-size:9.5px;color:var(--muted);font-family:ui-monospace,monospace}
+  .grid{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}
+  .note{flex:1;min-width:250px;font-size:12px;color:var(--muted)}
+  .note b{color:var(--text)}
+  .tag{display:inline-block;font-size:10px;padding:1px 7px;border-radius:999px;
+    border:1px solid var(--border);color:var(--muted);margin-bottom:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>动作置顶 · 设计稿</h1>
+<p class="lead">让用户直接说“这几个我常用”，不用等系统学。目标不只是排序可用，而是**从内部打破“推荐不准→不用→更不准”的死锁**。</p>
+<p class="meta">2026-08-14 · 全局置顶（不分内容类型）· 本轮只做置顶 · UI 复用现有分组与卡片，零新视觉语言</p>
+
+<h2>一、为何是置顶（而不是继续调排序）</h2>
+
+<p>实测本机数据：</p>
+<table>
+  <tr><th>表</th><th>行数</th><th>后果</th></tr>
+  <tr><td><code>action_events</code></td><td><b>3</b>（AUTOINCREMENT seq 也是 3，历史上就写过这么多）</td><td><code>global</code>/<code>scene</code>/<code>sequence</code> 三个因子无数据可吃，恒为 1</td></tr>
+  <tr><td><code>ai_feedback</code></td><td>0</td><td><code>quality</code> 恒为 1——D2a 的降权无数据可降</td></tr>
+  <tr><td><code>action_prefs</code></td><td>0</td><td>偏好注入无内容</td></tr>
+  <tr><td>画像（算自 action_events）</td><td>几乎空</td><td><code>role</code> 恒为 1；<b>D1 的注入片段永远是空串</b>（MIN_EVENTS=30，实际 2）</td></tr>
+</table>
+
+<p><b>五因子里四个恒为 1，现在真正在起作用的只有基础分</b>。
+而基础分算的是 <code>applicableTransforms</code> 的“这个变换能不能处理这类内容”——
+<b>能处理 ≠ 想用</b>。这就是用户报的两个症状的根源：“推的用不上” + “有用的排后面”。</p>
+
+<div class="warn">
+<b>现有手段只有负向，没有正向</b>：<code>action_dismiss_add</code>（不再推荐）存在，
+但**没有任何让用户说“这个给我排前面”的办法**。只能等系统学，而系统学不到。
+</div>
+
+<div class="ok">
+<b>置顶同时解决三件事</b>：① 立刻生效，不用等学习；
+② <b>用户开始用了 → <code>action_events</code> 有数据 → 那四个因子活过来</b>（唯一能从内部打破死锁的动作）；
+③ 与 <code>action_dismissals</code> 一正一负对称，不往上加新概念。
+仍守红线①：置顶只影响排序，不自动执行任何东西。
+</div>
+
+<h2>二、UI：在现有两组前面插一组</h2>
+
+<p>变换中心已经是分组结构（<code>sectionLabel</code> + <code>renderCard</code>），直接加一组：</p>
+
+<div class="grid">
+  <div class="hub">
+    <div class="secLabel">常用</div>
+    <div class="card pinned">
+      <span class="star on">★</span>
+      <span class="cardBody"><b>SQL IN</b><div class="cardDesc">把多行值拼成 IN (…)</div></span>
+      <span class="score">0.42</span>
+    </div>
+    <div class="card pinned">
+      <span class="star on">★</span>
+      <span class="cardBody"><b>JSON 格式化</b><div class="cardDesc">缩进与排版</div></span>
+      <span class="score">0.28</span>
+    </div>
+
+    <div class="secLabel">推荐</div>
+    <div class="card">
+      <span class="star">☆</span>
+      <span class="cardBody"><b>去除空行</b><div class="cardDesc">清理多余换行</div></span>
+      <span class="score">0.71</span>
+    </div>
+
+    <div class="secLabel">其他工具</div>
+    <div class="card">
+      <span class="star">☆</span>
+      <span class="cardBody"><b>翻译</b><div class="cardDesc">云端</div></span>
+      <span class="score">0.35</span>
+    </div>
+  </div>
+  <div class="note">
+    <span class="tag">关键细节</span>
+    <p><b>看“常用”里的分数：0.42 与 0.28。</b>
+      后者低于列表的 <code>0.3</code> 门槛——如果不特殊处理，
+      用户置顶了它却<b>看不到它</b>。这是必然 bug，见下一节 ①。</p>
+    <p><s>★ 放在卡片最左而不是右侧：右侧已经有“不再推荐”与选项入口，再塞一个会让右边变成按钮堆。</s></p>
+    <p><b>实现时改了：★ 放在右侧「不再推荐」旁边。</b>
+      看了真实代码后上面那个理由不成立——卡片头只有
+      <code>[图标][名字/描述][分数][X]</code>，右侧就一个 X，不是按钮堆。
+      而置顶与 dismiss 是同一件事的正反面，摆在一起语义对称；
+      插在图标前面反而打断了“图标 → 名字”的视觉序列。</p>
+    <p><b>又一个实现时才发现的关键点</b>：<code>.dismissBtn</code> 的 CSS 是 <code>opacity: 0</code>，
+      它**默认完全隐藏**，只在 hover 卡片时浮现（这也解释了为何用户不知道“不再推荐”存在）。
+      ★ <b>故意不照抄</b>：对负向低频操作隐藏是合理的，但置顶是我们**希望用户去用**的操作——
+      它是打破死锁的唯一入口，藏起来等于没做。所以：未置顶 <code>opacity .35</code>（常显但低调）、
+      hover 卡片 <code>.8</code>、已置顶恒为 <code>1</code> + 琥珀色。</p>
+    <p>没置顶任何动作时，<b>“常用”组整个不渲染</b>（与现有两组的
+      <code>length > 0 &&</code> 一致），不留空标题。</p>
+  </div>
+</div>
+
+<h2>三、四个必须处理的细节</h2>
+
+<table>
+<tr><th>#</th><th>问题</th><th>处理</th></tr>
+<tr>
+  <td>①</td>
+  <td><b>0.3 门槛会吃掉置顶</b>。列表是
+    <code>recommendScored(...).filter(s =&gt; s.score &gt;= 0.3)</code>，
+    低分动作直接消失。而现在四个因子恒为 1，<code>score</code> 就等于基础分，
+    很多真正常用的工具分数并不高。</td>
+  <td><b>置顶的动作无条件绕过 0.3 门槛</b>。
+    否则就是“我明明置顶了却没用”——比不做还糟。</td>
+</tr>
+<tr>
+  <td>②</td>
+  <td>置顶怎么影响排序？如果再乘一个因子，会被其它因子稀释，
+    达不到“恒排最前”。</td>
+  <td><b>分组前置，不乘因子</b>。置顶组整体排在推荐组之前；
+    组内部仍按原有打分排（不另发明一套置顶内部序）。</td>
+</tr>
+<tr>
+  <td>③</td>
+  <td><code>action_dismiss_remove</code> 里 <code>content_type</code> 空串是
+    <b>“删该动作的所有记录”的通配语义</b>；
+    而本轮空串要表示“全局置顶”。两个语义会撞。</td>
+  <td><code>pin_remove</code> 用<b>精确匹配</b>
+    （<code>WHERE action_id=?1 AND content_type=?2</code>），不复制通配行为。
+    本轮两者等价，但将来按内容类型细化时不会埋坑。</td>
+</tr>
+<tr>
+  <td>④</td>
+  <td>置顶了但同时被 dismiss 过，听谁的？</td>
+  <td><b>置顶赢</b>（后设的意图覆盖先前的），且置顶时自动移除该动作的 dismiss 记录——
+    否则会出现“它在常用组里但又被标为不推荐”的矛盾状态。</td>
+</tr>
+</table>
+
+<h2>四、存储与实现约束</h2>
+
+<p>表结构照 <code>action_dismissals</code> 对称（建在 <code>data_store/mod.rs</code> 同一处）：</p>
+<pre style="background:var(--code);padding:10px;border-radius:8px;font-size:11px;overflow-x:auto">-- 「常用置顶」正向偏好。与 action_dismissals 一正一负。
+-- content_type 空串 = 全局置顶（本轮只用全局，但存结构先预留按类型细化的位置）。
+CREATE TABLE IF NOT EXISTS action_pins (
+    action_id    TEXT NOT NULL,
+    content_type TEXT NOT NULL DEFAULT '',
+    created_at   TEXT NOT NULL,
+    PRIMARY KEY (action_id, content_type)
+);</pre>
+
+<ol>
+<li><b>三个命令</b>：<code>action_pin_add</code> / <code>action_pins</code> / <code>action_pin_remove</code>，
+  照 <code>action_dismiss_*</code> 的形状做（<code>INSERT OR IGNORE</code> 幂等）。</li>
+<li><b>置顶后立刻重排可见</b>。现有已有 <code>learnRev</code> 机制（点了“不再推荐”就 +1 触发重算），
+  置顶走同一条路，不另建刷新机制。</li>
+<li><b>不动 <code>recommendScored</code> 的打分公式</b>。置顶是展示层的分组，
+  不污染那个已经有五个因子的乘法式——将来四个因子有数据了，置顶仍然应该恒在最前。</li>
+<li><b>AiQuickBar 同步</b>：它也消费推荐排序，置顶必须在那里也生效，
+  否则两个入口给出不同顺序。</li>
+<li><b>上限</b>：不限置顶个数，但超过 5 个时在 UI 提示一句——全部置顶等于没置顶。
+  （提示而不阻止：这是用户自己的选择。）</li>
+</ol>
+
+<div class="warn">
+<b>本轮不做</b>：按内容类型置顶（存结构已留位）、置顶组内拖拽排序、
+置信度门槛降噪、首次引导预设。先看“有用的能排前面”是不是真的让你用得起来——
+<b>如果 action_events 开始涨，就说明死锁破了</b>，那才轮到那些。
+</div>
+
+</div>
+</body>
+</html>

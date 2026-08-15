@@ -620,7 +620,21 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                   </button>
                   <button
                     className={styles.semanticHitBtn}
-                    onClick={() => void pasteTextGuarded(h.text)}
+                    onClick={() => {
+                      // 修复（v6.15）：这条路径之前完全没记粘贴信号，
+                      // 于是从语义搜索里找到并用上的内容，在「按价值豁免清理」看来等于从未被用过。
+                      void (async () => {
+                        const ok = await pasteTextGuarded(h.text);
+                        if (!ok) return;
+                        // semanticHits 只带 historyId/score/summary，没有 content_type 与 source，
+                        // 回到 history 里补；拿不到（已分页刷出去）就传空串，宁可少一个维度也要把价值信号记上。
+                        const it = useAppStore.getState().history.find((x) => x.id === h.historyId);
+                        const { logPasteEvent } = await import("@/lib/api/actionEvents");
+                        // 下标传 -1：这是**搜出来的**不是列表里浏览到的。
+                        // -1 的占比本身就是“搜索 vs 浏览”的比例，对判定 X3 同样有用。
+                        logPasteEvent(h.historyId, it?.content_type || it?.type || "", it?.source || "", -1);
+                      })();
+                    }}
                     title="粘贴到前台应用"
                   >
                     <ClipboardPaste size={11} /> 粘贴

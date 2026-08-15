@@ -1,7 +1,8 @@
 import { useState, useCallback, useMemo, createContext, useContext, ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle2, AlertCircle, AlertTriangle, Info, X, RotateCcw } from "lucide-react";
+import { CheckCircle2, AlertCircle, AlertTriangle, Info, X, RotateCcw, Copy, Check } from "lucide-react";
 import styles from "./Toast.module.css";
+import { copyToClipboard } from "@/lib/utils";
 
 type ToastType = "success" | "error" | "info" | "warning" | "loading";
 
@@ -12,10 +13,11 @@ interface ToastItem {
   duration: number;
   onRetry?: () => void;
   actionLabel?: string;
+  copyText?: string;
 }
 
 interface ToastContextType {
-  toast: (message: string, type?: ToastType, duration?: number, onRetry?: () => void, actionLabel?: string) => void;
+  toast: (message: string, type?: ToastType, duration?: number, onRetry?: () => void, actionLabel?: string, copyText?: string) => void;
 }
 
 const ToastContext = createContext<ToastContextType>({ toast: () => {} });
@@ -30,11 +32,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const MAX_TOASTS = 5; // 最多同时显示 5 个 toast
 
-  const toast = useCallback((message: string, type: ToastType = "info", duration?: number, onRetry?: () => void, actionLabel?: string) => {
+  const toast = useCallback((message: string, type: ToastType = "info", duration?: number, onRetry?: () => void, actionLabel?: string, copyText?: string) => {
     const d = duration ?? (type === "error" ? 5000 : 4000);
     const id = ++toastId;
     setToasts((prev) => {
-      const next = [...prev, { id, type, message, duration: d, onRetry, actionLabel }];
+      const next = [...prev, { id, type, message, duration: d, onRetry, actionLabel, copyText }];
       // 超出限制时移除最早的 toast
       if (next.length > MAX_TOASTS) {
         return next.slice(next.length - MAX_TOASTS);
@@ -45,6 +47,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const dismiss = (id: number) => setToasts((prev) => prev.filter((t) => t.id !== id));
+
+  // 复制反馈状态：记录当前处于「已复制」态的 toast id（1.5s 后复原，不弹额外 toast）
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+
+  const handleCopy = useCallback(async (t: ToastItem) => {
+    const ok = await copyToClipboard(t.copyText ?? t.message);
+    if (ok) {
+      setCopiedId(t.id);
+      setTimeout(() => setCopiedId((prev) => (prev === t.id ? null : prev)), 1500);
+    } else {
+      toast("复制失败", "error");
+    }
+  }, [toast]);
 
   // 稳定的 context value：避免每次 Provider 渲染（toast 列表变化）都让所有消费者重渲染
   const ctxValue = useMemo(() => ({ toast }), [toast]);
@@ -106,6 +121,21 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                     <RotateCcw size={12} />
                   </button>
                 ) : null}
+                {t.type === "error" && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleCopy(t); }}
+                    className={`${styles.toastCopy}${copiedId === t.id ? " " + styles.copied : ""}`}
+                    title="复制错误信息"
+                  >
+                    {copiedId === t.id ? (
+                      <>
+                        <Check size={12} /> 已复制
+                      </>
+                    ) : (
+                      <Copy size={12} />
+                    )}
+                  </button>
+                )}
                 <button onClick={() => dismiss(t.id)} className={styles.toastClose}>
                   <X size={14} />
                 </button>

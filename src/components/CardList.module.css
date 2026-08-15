@@ -1070,28 +1070,49 @@
   background: var(--accent-light);
 }
 
+/* 结构解耦：stage 不裁切，仅作工具条定位层；视口仍 overflow:hidden 裁图片缩放/平移 */
+.imageDetailStage {
+  position: relative;
+  border-radius: 10px;
+  /* 继承原视口的弹性占位，避免包裹后视口塌缩 */
+  flex: 1;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+}
+/* A方案② 悬浮胶囊工具条：浮在图片视口上方（不再占正文行，400px 画布下不换行） */
 .imageDetailToolbar {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 10px;
-  border-radius: 10px;
-  background: var(--section-bg);
-  border: 1px solid var(--border-color);
-  flex-wrap: wrap;
+  gap: 2px;
+  padding: 4px 6px;
+  border-radius: 11px;
+  background: var(--glass-popover-bg);
+  border: 1px solid var(--glass-popover-border);
+  backdrop-filter: blur(12px) saturate(1.3);
+  -webkit-backdrop-filter: blur(12px) saturate(1.3);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
+  flex-wrap: nowrap;
+  width: max-content;
+  max-width: 96%;
   transition: background 0.3s, border-color 0.3s;
 }
 .imageDetailToolbarHint {
-  margin-left: auto;
-  font-size: 10px;
+  margin-left: 4px;
+  font-size: 9px;
   color: var(--text-muted);
   white-space: nowrap;
   user-select: none;
 }
 .imageDetailToolBtn {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
@@ -1100,16 +1121,17 @@
   align-items: center;
   justify-content: center;
   transition: all 0.15s;
+  flex-shrink: 0;
 }
 .imageDetailToolBtn:hover {
-  background: var(--card-bg);
+  background: var(--hover);
   color: var(--text-primary);
 }
 .imageDetailZoomLabel {
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 600;
   color: var(--text-secondary);
-  min-width: 40px;
+  min-width: 32px;
   text-align: center;
   font-variant-numeric: tabular-nums;
   user-select: none;
@@ -1120,7 +1142,9 @@
   overflow: hidden;
   background: var(--section-bg);
   border: 1px solid var(--border-color);
-  min-height: 320px;
+  /* A方案①：flex:1 吃满剩余高度（删 320px 写死 → 400px 画布下图片纵向 +60%） */
+  flex: 1;
+  min-height: 200px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1135,9 +1159,17 @@
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   user-select: none;
   -webkit-user-drag: none;
+  display: block;
   /* #14 载入交叉淡入：挂载时（弹框打开/加载完成）淡入一次；
      内联 transition 只服务平移缩放的 transform，此处用 animation 走独立通道 */
   animation: imageDetailIn 0.3s ease;
+}
+/* A：图片 + OCR 词框共用 transform 容器 —— transform 非 none 时自动成为 absolute 词框的包含块，
+   词框用图片像素坐标即可与图片完全对齐（缩放/平移/旋转/动画全程同步，不再反算 rect） */
+.imageDetailTransform {
+  position: relative;
+  flex-shrink: 0;
+  line-height: 0;
 }
 
 @keyframes imageDetailIn {
@@ -1209,6 +1241,14 @@
 .pinToolBtn:hover {
   background: rgba(236, 72, 153, 0.1) !important;
   color: #db2777 !important;
+}
+/* 裁剪按钮：与置顶/识别文字一致，按内容自适应宽度，避免中文标签被挤成竖排 */
+.cropToolBtn {
+  width: auto !important;
+  padding: 0 10px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 2px;
 }
 
 .ocrSpinnerSmall {
@@ -1295,35 +1335,100 @@
   cursor: not-allowed;
 }
 
-/* OCR 纯文本面板 */
+/* OCR 折叠抽屉（A方案③） */
 .ocrFullTextPanel {
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--accent-border);
   border-radius: 8px;
   overflow: hidden;
   flex-shrink: 0;
+  position: relative; /* 实体 popover 相对面板定位 */
+  transition: border-color 0.2s;
 }
-.ocrFullTextHeader {
+.ocrFullTextPanel.ocrDrawerOpen {
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+}
+.ocrDrawerHead {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  background: var(--orange-bg);
-  border-bottom: 1px solid var(--orange-border);
+  gap: 7px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  background: var(--accent-light);
+  border-bottom: 1px solid var(--accent-border);
   font-size: 12px;
   font-weight: 600;
-  color: var(--orange);
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: background 0.15s;
+}
+.ocrDrawerHead:hover {
+  background: color-mix(in srgb, var(--accent-light) 92%, var(--hover));
+}
+.ocrDrawerTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-strong);
+  white-space: nowrap;
+}
+.ocrDrawerCount {
+  font-size: 9.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ocrDrawerChev {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--accent-strong);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+.ocrDrawerBody {
+  animation: ocrDrawerIn 0.2s ease;
+}
+@keyframes ocrDrawerIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ocrFullTextActions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.ocrFullTextEditToggle {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--accent-border);
+  background: transparent;
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-weight: 500;
+  font-family: inherit;
+}
+.ocrFullTextEditToggle:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .ocrFullTextCopyBtn {
-  font-size: 10px;
-  padding: 3px 8px;
-  border-radius: 4px;
-  border: 1px solid var(--orange-border);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--accent-border);
   background: var(--card-bg);
-  color: var(--orange);
+  color: var(--accent-strong);
   cursor: pointer;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  font-family: inherit;
 }
 .ocrFullTextCopyBtn:hover {
-  background: var(--orange-border);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .ocrFullTextBody {
   padding: 10px 12px;
@@ -1332,11 +1437,210 @@
   color: var(--text-primary);
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 120px;
+  max-height: 140px;
   overflow-y: auto;
-  background: var(--orange-bg);
+  background: var(--card-bg);
   user-select: text;
 }
+.ocrFullTextEdit {
+  width: 100%;
+  min-height: 140px;
+  max-height: 240px;
+  padding: 10px 12px;
+  border: none;
+  outline: none;
+  resize: vertical;
+  font-size: 12px;
+  line-height: 1.7;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--card-bg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ===== 微信增强① 实体高亮（URL/电话/邮箱，本地正则识别，零出网） ===== */
+.ocrEntity {
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 0 2px;
+  margin: 0 -1px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-style: dotted;
+  transition: all 0.12s;
+}
+.ocrEntityUrl {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.ocrEntityUrl:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.ocrEntityPhone {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 10%, transparent);
+  text-decoration-color: color-mix(in srgb, var(--green) 55%, transparent);
+}
+.ocrEntityPhone:hover { background: color-mix(in srgb, var(--green) 22%, transparent); }
+.ocrEntityEmail {
+  color: var(--orange);
+  background: color-mix(in srgb, var(--orange) 10%, transparent);
+  text-decoration-color: color-mix(in srgb, var(--orange) 55%, transparent);
+}
+.ocrEntityEmail:hover { background: color-mix(in srgb, var(--orange) 22%, transparent); }
+
+/* ===== 微信增强① 实体 popover（glass 浮层令牌） ===== */
+.ocrEntityPop {
+  position: absolute;
+  z-index: 20;
+  min-width: 172px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--glass-popover-bg);
+  border: 1px solid var(--glass-popover-border);
+  backdrop-filter: blur(12px) saturate(1.3);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.ocrEntityPopTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 6px;
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 4px;
+}
+.ocrEntityPopValue {
+  padding: 0 8px 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+.ocrEntityPopBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.ocrEntityPopBtn:hover { background: var(--hover); }
+
+/* ===== 微信增强② 下一步动作工具栏（收敛复制全部/存为卡片/翻译/搜索） ===== */
+.ocrActionToolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--accent-border);
+  background: color-mix(in srgb, var(--card-bg) 88%, transparent);
+}
+.ocrActionLabel {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-right: 2px;
+  white-space: nowrap;
+}
+.ocrActionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.ocrActionBtn:hover { background: var(--hover); color: var(--text-primary); }
+.ocrActionBtnPrimary {
+  background: var(--accent-solid);
+  color: #fff;
+  border-color: transparent;
+}
+.ocrActionBtnPrimary:hover { opacity: 0.9; color: #fff; background: var(--accent-solid); }
+/* 微信增强③ 按需点亮：未选词置灰 */
+.ocrActionBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ===== 微信增强④ 校对模式：左原图缩略 + 右可编辑文本 ===== */
+.ocrProofPanel {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--card-bg);
+}
+.ocrProofThumb {
+  width: 128px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--app-bg) 60%, #000);
+  overflow: hidden;
+  align-self: flex-start;
+}
+.ocrProofThumb img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.ocrProofEdit {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  min-height: 160px;
+  max-height: 260px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  outline: none;
+  resize: vertical;
+  font-size: 12px;
+  line-height: 1.7;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--section-bg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 选词栏次要动作（变换为…/搜索）：ghost 样式 + 未选词置灰（微信增强③ 按需点亮） */
+.ocrResultGhostBtn {
+  font-size: 10px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--accent-border);
+  background: transparent;
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: inherit;
+}
+.ocrResultGhostBtn:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.ocrResultGhostBtn:disabled { opacity: 0.35; cursor: not-allowed; }
 
 .ocrOverlayContainer {
   overflow: hidden;
@@ -1347,6 +1651,18 @@
 }
 
 /* ===== 图片导出行（格式转换 + 压缩） ===== */
+/* A方案④ 导出浮层：点 footer「导出」展开，浮在 footer 上方 */
+.imageExportPop {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-color);
+  background: var(--section-bg);
+  animation: ocrDrawerIn 0.18s ease;
+}
+.imageExportPop .imageExportRow {
+  border: none;
+  border-radius: 0;
+  padding: 8px 14px;
+}
 .imageExportRow {
   display: flex;
   align-items: center;

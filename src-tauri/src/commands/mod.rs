@@ -160,7 +160,9 @@ mod stack_template;
 mod config_convert;
 mod content_memory;
 mod semantic;
-mod profile;
+// pub(crate)：`ai::profile_prompt` 要用 build_profile / HOUR_SEGMENTS（避免把角色与
+// 领域分类逻辑再写一份）。对外仍然不暴露。
+pub(crate) mod profile;
 mod sequence;
 mod sticky;
 mod quota;

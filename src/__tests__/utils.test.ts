@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { relativeTime, truncate, cn } from "@/lib/utils";
+import { relativeTime, truncate, cn, looksLikeIdentifier } from "@/lib/utils";
 
 /** 格式化本地时间为 "YYYY-MM-DD HH:mm:ss"（与 Rust chrono::Local 写入格式一致） */
 function fmtLocal(d: Date = new Date()): string {
@@ -58,5 +58,48 @@ describe("cn", () => {
     // 常量条件是故意的：这里验的就是 `cond && cls` 这种写法在两种取值下的结果
     // eslint-disable-next-line no-constant-binary-expression
     expect(cn("base", true && "active", false && "hidden")).toBe("base active");
+  });
+});
+
+/**
+ * 标识符形态判据。这个谓词同时被 AI 打分与快捷栏兜底消费，
+ * 一改就同时影响两处，所以在这里守住边界。
+ */
+describe("looksLikeIdentifier", () => {
+  it("识别类名 / 字段名 / 常量 / 单号 / 文件名", () => {
+    for (const t of [
+      "itemVO",
+      "INCCForHHOrSSService",
+      "SYSTEMCODE",
+      "MODULEID",
+      "C0805041350000005382",
+      "receivablebill_his.xml",
+      "com.example.Foo",
+      "src/lib/utils.ts",
+      "v6.16.0",
+    ]) {
+      expect(looksLikeIdentifier(t), t).toBe(true);
+    }
+  });
+
+  it("成句的自然语言不算——有空白就直接放过", () => {
+    for (const t of ["hello world", "这是一句中文", "Qwen-Image 3.0", "B · 内嵌只做预览"]) {
+      expect(looksLikeIdentifier(t), t).toBe(false);
+    }
+  });
+
+  it("单个纯小写词不算（可能真是个外文词，该能翻译）", () => {
+    expect(looksLikeIdentifier("serendipity")).toBe(false);
+    expect(looksLikeIdentifier("hello")).toBe(false);
+  });
+
+  it("空串 / 纯空白不算", () => {
+    expect(looksLikeIdentifier("")).toBe(false);
+    expect(looksLikeIdentifier("   ")).toBe(false);
+  });
+
+  it("纯中文短标签不算标识符（它们靠长度门槛拦，不靠形态）", () => {
+    expect(looksLikeIdentifier("配置组")).toBe(false);
+    expect(looksLikeIdentifier("签到额度")).toBe(false);
   });
 });

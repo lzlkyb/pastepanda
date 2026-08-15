@@ -21,7 +21,7 @@ import {
   CaseUpper, CaseLower, Eraser, Pilcrow, Quote, RemoveFormatting, Link as LinkIcon,
   Globe, Mail, Phone, Code, Minus, Hash, Palette, Folder, FileText,
   Play, ShieldAlert, Languages, PenLine, Search, X, Loader2,
-  Clock, UserRound, Info, Workflow,
+  Clock, UserRound, Info, Workflow, Star,
   type LucideIcon,
 } from "lucide-react";
 import { AiBadge, badgeKindOf } from "@/components/AiBadge";
@@ -101,6 +101,7 @@ type Preview =
 
 export function TransformCard({
   t, score, text, opts, html, userTags, specs, copied, onSetOpt, onCopy, onPaste, onDismiss, reason,
+  pinned, onTogglePin,
 }: {
   t: Transform;
   score: number;
@@ -124,6 +125,15 @@ export function TransformCard({
   contentType?: string;
   /** v6.1：点击「不再推荐这个」后回调（父组件刷新排序） */
   onDismiss?: (actionId: string) => void;
+  /** v6.14：该动作是否已被置顶 */
+  pinned?: boolean;
+  /**
+   * v6.14：切换置顶。与 `onDismiss` 一正一负，所以按钮也摆在一起。
+   *
+   * `next` 由调用方算好传进来，不让卡片自己取反：置顶状态的真相在
+   * `recommend.ts` 的模块级缓存里，卡片只是展示层。
+   */
+  onTogglePin?: (actionId: string, next: boolean) => void;
 }) {
   const isRemote = !!t.remote;
   const isAction = t.kind === "action";
@@ -285,6 +295,24 @@ export function TransformCard({
           )}
         </span>
         <span className={styles.score}>{Math.round(score * 100)}%</span>
+        {/* v6.14 正向偏好：置顶。摆在「不再推荐」旁边——两者是同一件事的正反面，
+            分开摆反而让用户找不到。
+            为何需要它：推荐的五个因子里四个吃行为数据，而冷启动时没有行为数据——
+            “推荐不准→不用→更不准”的死锁只能由用户直接表达意图来打破。 */}
+        {onTogglePin && (
+          <button
+            className={`${styles.pinBtn}${pinned ? ` ${styles.pinBtnOn}` : ""}`}
+            title={pinned ? "取消常用" : "设为常用（排到最前）"}
+            aria-label={pinned ? "取消常用" : "设为常用"}
+            aria-pressed={!!pinned}
+            onClick={(e) => {
+              e.stopPropagation();
+              onTogglePin(t.id, !pinned);
+            }}
+          >
+            <Star size={11} fill={pinned ? "currentColor" : "none"} />
+          </button>
+        )}
         {/* v6.1 负反馈：不再推荐这个动作（对该内容类型）。点一下从排序里消失 */}
         {onDismiss && (
           <button

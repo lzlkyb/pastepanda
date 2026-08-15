@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="ocean-dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Toast 报错可复制 · 设计稿（方案 A）</title>
+<style>
+  /* ===== 主题令牌（逐字取自 theme.css，确保 1:1 还原 6 套主题）===== */
+  :root,
+  [data-theme="ocean"] {
+    --app-bg: #F7F7F8;
+    --card-bg: #fff; --text-primary: #0F172A; --text-muted: #627083; --border-color: #E0E4EB;
+    --accent: #0284C7; --accent-light: #E0F2FE; --accent-strong: #0273AD; --hover: #E8ECF2;
+    --green: #11813A; --danger: #D82525; --danger-hover: #B91C1C;
+    --glass-popover-bg: rgba(255,255,255,0.97);
+    --glass-popover-border: rgba(0,0,0,0.06);
+    --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+  }
+  [data-theme="midnight"] {
+    --app-bg: radial-gradient(100% 80% at 50% -10%, #1C1832 0%, #0B0B13 55%, #07070C 100%);
+    --card-bg: #18181B; --text-primary: #E4E4E7; --text-muted: #8D8D95; --border-color: #27272A;
+    --accent: #818CF8; --accent-light: #1E1B4B; --accent-strong: #818CF8; --hover: #1F1F23;
+    --green: #4ADE80; --danger: #F87171; --danger-hover: #FCA5A5;
+    --glass-popover-bg: rgba(20,20,24,0.85);
+    --glass-popover-border: rgba(255,255,255,0.07);
+    --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.25);
+  }
+  [data-theme="forest"] {
+    --app-bg: linear-gradient(180deg, #F5F1E3 0%, #EAE5D1 55%, #DCD6BD 100%);
+    --card-bg: #fff; --text-primary: #171717; --text-muted: #726E6B; --border-color: #D1D9D3;
+    --accent: #059669; --accent-light: #ECFDF5; --accent-strong: #04835B; --hover: #E8EDE8;
+    --green: #11813A; --danger: #D82525; --danger-hover: #B91C1C;
+    --glass-popover-bg: rgba(255,255,255,0.85);
+    --glass-popover-border: rgba(0,0,0,0.06);
+    --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+  }
+  [data-theme="blossom"] {
+    --app-bg: linear-gradient(168deg, #FFE4EF 0%, #FFC9DD 42%, #FFAECF 78%, #FF9BC4 100%);
+    --card-bg: #fff; --text-primary: #3D2231; --text-muted: #86596D; --border-color: #F9D3E2;
+    --accent: #F0568C; --accent-light: #FFDDEC; --accent-strong: #B02C5D; --hover: #FBE7F0;
+    --green: #11813A; --danger: #D82525; --danger-hover: #B91C1C;
+    --glass-popover-bg: rgba(255,255,255,0.85);
+    --glass-popover-border: rgba(0,0,0,0.06);
+    --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+  }
+  [data-theme="dawn"] {
+    --app-bg: linear-gradient(180deg, #FFF8EE 0%, #FFE9D2 42%, #FFD9AE 72%, #F9C78F 100%);
+    --card-bg: #fff; --text-primary: #2B2016; --text-muted: #7D6B58; --border-color: #F0DDC8;
+    --accent: #E8734A; --accent-light: #FFEDE2; --accent-strong: #B95432; --hover: #F7E9DA;
+    --green: #11813A; --danger: #D82525; --danger-hover: #B91C1C;
+    --glass-popover-bg: rgba(255,255,255,0.85);
+    --glass-popover-border: rgba(0,0,0,0.06);
+    --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+  }
+  [data-theme="ocean-dark"] {
+    --app-bg: radial-gradient(130% 110% at 70% -5%, #1E5A82 0%, #0E3355 42%, #061A33 100%);
+    --card-bg: #0A1628; --text-primary: #E0E8F0; --text-muted: #7994B4; --border-color: #162B45;
+    --accent: #3B9EFF; --accent-light: #0A1E3A; --accent-strong: #3B9EFF; --hover: #0F1F35;
+    --green: #4ADE80; --danger: #FF6B8A; --danger-hover: #FF9DBD;
+    --glass-popover-bg: rgba(10,22,40,0.85);
+    --glass-popover-border: rgba(255,255,255,0.08);
+    --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.25);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--app-bg);
+    color: var(--text-primary);
+    transition: background 0.3s ease;
+  }
+
+  /* ===== 说明条（仅设计稿辅助，非组件） ===== */
+  .spec {
+    position: fixed; top: 16px; left: 16px; z-index: 900;
+    max-width: 320px; padding: 12px 14px; border-radius: 10px;
+    background: var(--glass-popover-bg);
+    border: 1px solid var(--glass-popover-border);
+    box-shadow: var(--glass-popover-shadow);
+    backdrop-filter: blur(blur) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    font-size: 12px; line-height: 1.6; color: var(--text-primary);
+  }
+  .spec h3 { margin: 0 0 6px; font-size: 13px; }
+  .spec code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; opacity: 0.85; }
+  .spec ul { margin: 6px 0 0; padding-left: 16px; }
+  .spec li { margin: 2px 0; }
+
+  /* ===== 主题切换器（仅设计稿辅助） ===== */
+  .themes {
+    position: fixed; bottom: 16px; left: 16px; z-index: 900;
+    display: flex; gap: 6px; flex-wrap: wrap; max-width: 360px;
+  }
+  .themes button {
+    cursor: pointer; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+    border: 1px solid var(--glass-popover-border);
+    background: var(--glass-popover-bg); color: var(--text-primary);
+    backdrop-filter: blur(16px) saturate(1.4); -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    box-shadow: var(--glass-popover-shadow);
+    transition: all 0.15s;
+  }
+  .themes button:hover { background: var(--hover); }
+  .themes button.active { border-color: var(--accent); color: var(--accent); }
+
+  /* ============================================================ */
+  /* ===== 以下为 Toast 组件 1:1 还原（对齐 Toast.module.css） ===== */
+  /* ============================================================ */
+  .toastContainer {
+    position: fixed;
+    top: 60px;            /* U53: 下移避开标题栏右上角按钮 */
+    right: 16px;
+    z-index: 800;         /* --z-toast */
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+    max-width: 320px;
+  }
+
+  .toastItem {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    border-radius: 12px;
+    pointer-events: auto;
+    background: var(--glass-popover-bg);
+    backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    border: 1px solid var(--glass-popover-border);
+    box-shadow: var(--glass-popover-shadow);
+    color: var(--text-primary);
+    position: relative;
+    overflow: hidden;
+    font-family: inherit;
+  }
+
+  /* 渐变进度条（按类型着色） */
+  .toastItem::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0;
+    height: 3px;
+    border-radius: 0 3px 3px 0;
+    animation: toastProgress var(--toast-duration, 5000ms) linear forwards;
+  }
+  @keyframes toastProgress {
+    from { width: 100%; }
+    to   { width: 0%; }
+  }
+  .error::after   { background: linear-gradient(90deg, var(--danger), color-mix(in srgb, var(--danger) 75%, black)); }
+  .success::after { background: linear-gradient(90deg, var(--green), color-mix(in srgb, var(--green) 75%, black)); }
+
+  /* 图标色块容器 */
+  .toastIconBox {
+    width: 26px; height: 26px; min-width: 26px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; border: 1px solid transparent;
+  }
+  .errorBox {
+    background: color-mix(in srgb, var(--danger) 14%, transparent);
+    border-color: color-mix(in srgb, var(--danger) 25%, transparent);
+    color: var(--danger);
+  }
+  .successBox {
+    background: color-mix(in srgb, var(--green) 14%, transparent);
+    border-color: color-mix(in srgb, var(--green) 25%, transparent);
+    color: var(--green);
+  }
+  .toastIcon { flex-shrink: 0; }
+
+  .toastMsg {
+    font-size: 12px; font-weight: 500; flex: 1;
+    color: var(--text-primary);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* ===== 新增：复制按钮（方案 A，图标式，复用 toastRetry 样式基调） ===== */
+  .toastCopy {
+    flex-shrink: 0; cursor: pointer;
+    opacity: 0.6;
+    border: none; background: transparent; color: inherit;
+    padding: 2px; display: flex; align-items: center; gap: 3px;
+    border-radius: 4px; transition: all 0.15s;
+    font-size: 11px; font-weight: 600; font-family: inherit;
+  }
+  .toastCopy:hover { opacity: 1; background: var(--hover); }
+  .toastCopy.copied { opacity: 1; color: var(--green); }
+
+  .toastClose {
+    flex-shrink: 0; cursor: pointer; opacity: 0.5;
+    border: none; background: transparent; color: inherit;
+    padding: 0; display: flex; transition: opacity 0.15s;
+  }
+  .toastClose:hover { opacity: 1; }
+
+  svg { display: block; }
+</style>
+</head>
+<body>
+
+  <!-- 设计稿辅助说明 -->
+  <div class="spec">
+    <h3>Toast 报错可复制 · 方案 A</h3>
+    仅 <code>error</code> 类型 toast 自动带「复制」图标按钮（对齐 <code>toastRetry</code> 图标式样式）。
+    <ul>
+      <li>默认复制 <code>message</code>；调用方可传 <code>copyText</code> 复制更完整技术错误（raw/stack）。</li>
+      <li>点击后按钮内联变「已复制 ✓」（同一条 toast = 同可见域，符合规则 15），不弹额外 toast。</li>
+      <li>复制走 <code>copyToClipboard()</code> 工具（navigator.clipboard → 失败兜底 Tauri invoke）。</li>
+      <li>success 等类型不带复制按钮（见下例）。</li>
+    </ul>
+  </div>
+
+  <!-- 主题切换器 -->
+  <div class="themes">
+    <button data-t="ocean" >ocean</button>
+    <button data-t="midnight" >midnight</button>
+    <button data-t="forest" >forest</button>
+    <button data-t="blossom" >blossom</button>
+    <button data-t="dawn" >dawn</button>
+    <button data-t="ocean-dark" class="active">ocean-dark（默认）</button>
+  </div>
+
+  <!-- ===== Toast 容器（真实定位：右上角 fixed） ===== -->
+  <div class="toastContainer">
+
+    <!-- ① error + 复制按钮（默认态，可点击体验复制反馈） -->
+    <div class="toastItem error" style="--toast-duration: 5000ms;">
+      <span class="toastIconBox errorBox">
+        <svg class="toastIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+      </span>
+      <span class="toastMsg">粘贴失败：剪贴板访问被拒绝（权限未授予）</span>
+      <button class="toastCopy" title="复制错误信息">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+        </svg>
+      </button>
+      <button class="toastClose" title="关闭">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- ② error + 复制成功后的内联反馈态（静态示例，展示点击后样式） -->
+    <div class="toastItem error" style="--toast-duration: 5000ms;">
+      <span class="toastIconBox errorBox">
+        <svg class="toastIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+      </span>
+      <span class="toastMsg">更新检查失败：网络连接超时（code=ETIMEDOUT）</span>
+      <button class="toastCopy copied" title="复制错误信息">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        已复制
+      </button>
+      <button class="toastClose" title="关闭">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- ③ success 类型：不带复制按钮（证明方案 A 仅 error 触发） -->
+    <div class="toastItem success" style="--toast-duration: 4000ms;">
+      <span class="toastIconBox successBox">
+        <svg class="toastIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+      </span>
+      <span class="toastMsg">设置已保存</span>
+      <button class="toastClose" title="关闭">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+
+  </div>
+
+<script>
+  // 主题切换（设计稿辅助）
+  const root = document.documentElement;
+  document.querySelectorAll('.themes button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      root.setAttribute('data-theme', btn.dataset.t);
+      document.querySelectorAll('.themes button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // 复制按钮交互（还原真实行为：点击 → 内联「已复制」→ 1.5s 复原）
+  document.querySelectorAll('.toastCopy:not(.copied)').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const item = btn.closest('.toastItem');
+      const msg = item.querySelector('.toastMsg').textContent;
+      // 设计稿环境无真实剪贴板权限，静默忽略；真实组件走 copyToClipboard()
+      if (navigator.clipboard) navigator.clipboard.writeText(msg).catch(() => {});
+      const copyIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+      const checkIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+      const original = copyIcon;
+      btn.classList.add('copied');
+      btn.innerHTML = checkIcon + ' 已复制';
+      setTimeout(() => {
+        btn.classList.remove('copied');
+        btn.innerHTML = original;
+      }, 1500);
+    });
+  });
+</script>
+</body>
+</html>

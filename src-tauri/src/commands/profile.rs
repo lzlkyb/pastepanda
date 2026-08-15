@@ -29,8 +29,9 @@ use crate::data_store::{DataStore, ProfileRawStats};
 use serde::Serialize;
 use tauri::{Manager, State};
 
-/// 画像默认统计窗口（天）。
-const PROFILE_DAYS: u32 = 30;
+/// 画像默认统计窗口（天）。`pub(crate)`：`ai_run` 的 D1 注入要用**同一个窗口**取数，
+/// 否则设置页预览的片段与实际发出去的可能不是同一段。
+pub(crate) const PROFILE_DAYS: u32 = 30;
 
 // ===================== 数据结构 =====================
 
@@ -164,14 +165,18 @@ const ROLES: &[(&str, &str)] = &[
     ("data", "数据/分析"),
 ];
 
-const HOUR_SEGMENTS: &[(&str, std::ops::Range<i64>)] = &[
+/// 时段分桶。`pub(crate)` 是为了让 `ai::profile_prompt` 能把“当前几点”反查回区间——
+/// 否则它只能拿 `HourSegment.label` 那个中文串去猜区间，或者自己再定义一份。
+pub(crate) const HOUR_SEGMENTS: &[(&str, std::ops::Range<i64>)] = &[
     ("凌晨 0-6 点", 0..6),
     ("上午 6-12 点", 6..12),
     ("下午 12-18 点", 12..18),
     ("晚上 18-24 点", 18..24),
 ];
 
-fn build_profile(raw: &ProfileRawStats) -> UserProfile {
+/// `pub(crate)`：`ai::profile_prompt` 要直接消费它的产物（角色归一化、领域合并、
+/// 时段分桶），而不是自己再写一遍 `ct == "json"` 之类的判断。
+pub(crate) fn build_profile(raw: &ProfileRawStats) -> UserProfile {
     // 角色打分：动作权重 × 次数 + 内容类型权重 × 次数
     let mut scores: std::collections::HashMap<&str, f64> = std::collections::HashMap::new();
     for (action, count) in &raw.action_counts {
@@ -370,7 +375,60 @@ pub fn profile_action_boosts(store: State<DataStore>) -> Result<Vec<ActionBoost>
     Ok(out)
 }
 
-// ===================== 出网载荷（画像**描述**的出网口；另一条在 ai/run.rs） =====================
+/// 设置页「实际会发出去的内容」预览（D1）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfilePromptPreview {
+    /// 片段原文。空 = 本次不会注入任何东西。
+    pub text: String,
+    /// 字符数（前端显示“共 N 字”）。
+    pub chars: u32,
+    /// 片段非空却被出网闸整条拦下。
+    ///
+    /// 开了开关、预览里也看得到片段，实际却一直没发出去——不报就是静默失败。
+    pub blocked: bool,
+    /// 当前样本量（用于区分“样本不够”与“没有可说的特征”）。
+    pub sample_events: u32,
+    /// 注入门槛，前端拿它写“需至少 N 次”，不在前端硬写数字。
+    pub min_events: u32,
+}
+
+/// 预览即将拼进 system prompt 的画像片段。
+///
+/// **展示的必须就是实际拼进去的那串字符**，不是它的抽象描述——这是 D1 默认开的前提：
+/// 用户随时能看到自己到底发了什么出去。所以这里与 `ai_run` 用同一个函数、
+/// 同一个统计窗口（[`PROFILE_DAYS`]），不另写一套。
+///
+/// `action_id` 传 `None`：反馈那一条随当前动作变化，设置页没有“当前动作”这个概念，
+/// 展示一条只对某个动作成立的句子反而误导。
+#[tauri::command]
+pub fn profile_prompt_preview(store: State<DataStore>) -> Result<ProfilePromptPreview, String> {
+    let raw = store.profile_raw_stats(PROFILE_DAYS)?;
+    let hour = {
+        use chrono::Timelike;
+        chrono::Local::now().hour()
+    };
+    let text = crate::ai::profile_prompt::profile_to_prompt(&raw, None, hour);
+    let blocked = !text.is_empty()
+        && crate::content_classifier::ContentClassifier::new().is_sensitive_for_egress(&text);
+    Ok(ProfilePromptPreview {
+        chars: text.chars().count() as u32,
+        blocked,
+        sample_events: raw.total_events,
+        min_events: crate::ai::profile_prompt::MIN_EVENTS,
+        text,
+    })
+}
+
+// ===================== 出网载荷（画像**描述**的出网口） =====================
+//
+// 2026-08-14（D1）起，画像一共有**两条**出网路径，别再当成一条：
+// ① 本节的 `profile_refine` / `profile_export` / `profile_install_skill`：
+//    发的是**画像描述**（含自定义动作名等用户自由输入），用户手动触发、不缓存，
+//    靠 `sanitize_profile` + `display_action_name` 清洗。
+// ② `commands/ai/run.rs` 的 D1 注入（`ai_profile_as_context`，**默认开**）：
+//    发的是 `ai::profile_prompt` 生成的**固定文案组合**（不含任何用户输入的字符），
+//    随每次 AI 调用走，靠 `is_sensitive_for_egress` 把门（与正文同一道闸）。
 
 /// action_id → 人类可读名称（出网前必做的翻译）。
 ///

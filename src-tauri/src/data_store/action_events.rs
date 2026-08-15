@@ -46,6 +46,19 @@ pub struct ActionEvent {
     /// 关联的历史条目 id。粘贴回写必填，动作事件可空（v6.1 新增列，老数据为 NULL）
     #[serde(default)]
     pub history_id: Option<String>,
+    /// 粘的是当前列表的第几条（0-based）。**仅 `paste` 哨兵写**（v6.15）。
+    ///
+    /// 存它是为了回答一个现在无法回答、但直接决定 X3（目标应用感知重排）要不要做的问题：
+    /// **用户到底是不是在列表里找东西？** 如果平均下标本来就接近 0（都粘第一条），
+    /// 那重排毫无价值——这比任何主观感受都可靠。
+    #[serde(default)]
+    pub paste_index: Option<i64>,
+    /// 目标应用类别（terminal / ide / excel / browser / chat / …）。**仅 `paste` 哨兵写**。
+    ///
+    /// 注意与 `source_app` 的区别：后者是内容“从哪来”，这个是“往哪去”。
+    /// 取值来自已有的 `paste_precheck.target_category`（底层是 `categorize_app`）。
+    #[serde(default)]
+    pub target_cat: Option<String>,
 }
 
 /// 按动作聚合的计数。
@@ -142,6 +155,16 @@ pub struct ActionDismissal {
     pub created_at: String,
 }
 
+/// 一条「常用置顶」（v6.14）。与 [`ActionDismissal`] 一正一负。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionPin {
+    pub action_id: String,
+    /// 空串 = 全局置顶（本版只用全局）；否则只在该内容类型下置顶。
+    pub content_type: String,
+    pub created_at: String,
+}
+
 fn now_str() -> String {
     chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }
@@ -152,8 +175,9 @@ impl DataStore {
         let conn = self.lock_conn();
         if let Err(err_db) = conn.execute(
             "INSERT INTO action_events
-                (created_at, action_id, content_type, source_app, hour, outcome, history_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                (created_at, action_id, content_type, source_app, hour, outcome, history_id,
+                 paste_index, target_cat)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 now_str(),
                 e.action_id,
@@ -162,6 +186,8 @@ impl DataStore {
                 e.hour,
                 e.outcome,
                 e.history_id,
+                e.paste_index,
+                e.target_cat,
             ],
         ) {
             log::warn!("[ActionEvents] 事件写入失败：{}", err_db);
@@ -411,6 +437,73 @@ impl DataStore {
         conn.execute("DELETE FROM action_dismissals", [])
             .map(|n| n as u32)
             .map_err(|e| e.to_string())
+    }
+
+    // ===================== 常用置顶（v6.14，正向偏好） =====================
+
+    /// 置顶一个动作。重复置顶幂等。
+    ///
+    /// **顺手清掉该动作的「不再推荐」记录**：否则会出现“它在常用组里、
+    /// 又同时被标为不推荐”的矛盾状态。后设的意图覆盖先前的，这是用户的预期。
+    ///
+    /// **删 dismiss 必须在同一个 `conn` 上直接执行，不能调 `action_dismiss_remove`**：
+    /// 后者内部又会 `lock_conn()`，而这里已经持锁——std Mutex 不可重入，会直接死锁。
+    /// （同样的坑在 `profile_raw_stats` 里已经踩过一次，那里用块作用域提前释锁解决。）
+    pub fn action_pin_add(&self, action_id: &str, content_type: &str) {
+        let conn = self.lock_conn();
+        if let Err(e) = conn.execute(
+            "INSERT OR IGNORE INTO action_pins (action_id, content_type, created_at)
+             VALUES (?1, ?2, ?3)",
+            params![action_id, content_type, now_str()],
+        ) {
+            log::warn!("[ActionPin] 写入失败: {}", e);
+            return;
+        }
+        // 删该动作的全部 dismiss（不分 content_type）：用户都把它置顶了，
+        // 再留着任何维度的“不推荐”都是在与用户对着干。
+        if let Err(e) = conn.execute(
+            "DELETE FROM action_dismissals WHERE action_id = ?1",
+            params![action_id],
+        ) {
+            log::warn!("[ActionPin] 清理 dismiss 失败: {}", e);
+        }
+    }
+
+    /// 全部置顶列表。按置顶时间倒序（最近置顶的在前）。
+    pub fn action_pins(&self) -> Result<Vec<ActionPin>, String> {
+        let conn = self.lock_conn();
+        let mut stmt = conn
+            .prepare(
+                "SELECT action_id, content_type, created_at FROM action_pins
+                 ORDER BY created_at DESC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(ActionPin {
+                    action_id: r.get(0)?,
+                    content_type: r.get(1)?,
+                    created_at: r.get(2)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+
+    /// 取消置顶。
+    ///
+    /// **精确匹配，不像 `action_dismiss_remove` 那样把空串当通配符**：
+    /// 那边空串意为“删该动作的所有记录”，而这边空串是一个**真实取值**（= 全局置顶）。
+    /// 两个语义撞在一起的后果现在看不出来（本版只有全局，两者等价），
+    /// 但将来支持按内容类型置顶时，“取消全局置顶”会连带删掉所有按类型的置顶。
+    pub fn action_pin_remove(&self, action_id: &str, content_type: &str) -> Result<u32, String> {
+        let conn = self.lock_conn();
+        conn.execute(
+            "DELETE FROM action_pins WHERE action_id = ?1 AND content_type = ?2",
+            params![action_id, content_type],
+        )
+        .map(|n| n as u32)
+        .map_err(|e| e.to_string())
     }
 
     /// 删除超出保留期的事件。启动时跑一次就够。

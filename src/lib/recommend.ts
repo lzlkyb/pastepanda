@@ -27,9 +27,11 @@ import {
 } from "@/lib/transforms";
 import {
   actionDismissals,
+  actionPins,
   actionRecommendSceneWeights,
   actionRecommendWeights,
   lastActionId,
+  type ActionPin,
 } from "@/lib/api/actionEvents";
 import { sequenceTransitions, type SequenceTransition } from "@/lib/api/sequence";
 import { aiFeedbackStats, type AiFeedbackStat } from "@/lib/api/aiFeedback";
@@ -139,6 +141,13 @@ let qualityFactors: Map<string, number> | null = null;
  * 而且与 global / scene 那两个因子的“占比归一化”写法对不上。
  */
 let seqProbs: Map<string, number> | null = null;
+/**
+ * 常用置顶（v6.14）：用户显式标的“这个给我排前面”。本版只有全局置顶，所以只存 actionId。
+ *
+ * **它不参与乘法打分**（不像其他因子）：乘因子会被其它因子稀释，达不到“恒排最前”。
+ * 置顶的语义是**分组前置**，由展示层（TransformHubDialog）拿 `isPinnedAction` 分组。
+ */
+let pinnedIds: Set<string> | null = null;
 /** 画像加成缓存时间戳（画像变化慢，60s 缓存足够） */
 let roleBoostsLoadedAt = 0;
 /**
@@ -159,7 +168,7 @@ export async function loadRecommendState(): Promise<void> {
   try {
     // 命中 TTL 时不再发画像请求，用 null 占位表示“沿用上次的 roleBoosts”
     const reuseBoosts = roleBoosts !== null && Date.now() - roleBoostsLoadedAt < ROLE_BOOSTS_TTL_MS;
-    const [rows, scenes, dis, boosts, feedback, transitions] = await Promise.all([
+    const [rows, scenes, dis, boosts, feedback, transitions, pins] = await Promise.all([
       actionRecommendWeights(14),
       actionRecommendSceneWeights(14),
       actionDismissals(),
@@ -168,6 +177,8 @@ export async function loadRecommendState(): Promise<void> {
       aiFeedbackStats(FEEDBACK_DAYS).catch(() => [] as AiFeedbackStat[]),
       // 序列转移同理：拉不到就退化成没有序列加成，不能拖垂整个推荐
       sequenceTransitions().catch(() => [] as SequenceTransition[]),
+      // 置顶同理：拉不到就当没置顶，不能把整个推荐拖死
+      actionPins().catch(() => [] as ActionPin[]),
     ]);
     const w = new Map<string, number>();
     const totals = new Map<string, number>();
@@ -202,6 +213,8 @@ export async function loadRecommendState(): Promise<void> {
         .map((s) => [s.actionId, computeQualityFactor(s)]),
     );
     seqProbs = buildSeqProbs(transitions);
+    // 本版只有全局置顶，所以不看 contentType。将来按类型细化时这里要改成复合键。
+    pinnedIds = new Set(pins.map((p) => p.actionId));
   } catch {
     weights = null;
     typeTotals = null;
@@ -213,6 +226,7 @@ export async function loadRecommendState(): Promise<void> {
     roleBoostsLoadedAt = 0;
     qualityFactors = null;
     seqProbs = null;
+    pinnedIds = null;
   }
 }
 
@@ -301,6 +315,19 @@ export function qualityFactorOf(actionId: string): number {
   return qualityFactors?.get(actionId) ?? 1;
 }
 
+/**
+ * 该动作是否被用户置顶（v6.14）。
+ *
+ * 置顶**不进打分公式**，而是给展示层做分组用：置顶组整体排在推荐组之前。
+ * 理由见 `pinnedIds` 的注释——乘因子会被稀释，做不到“恒排最前”。
+ *
+ * 未加载时返回 false：不置顶任何东西，也就不会打乱现有排序
+ * （与其他因子的“未加载 = 不影响现有排序”一致）。
+ */
+export function isPinnedAction(actionId: string): boolean {
+  return pinnedIds?.has(actionId) ?? false;
+}
+
 /** 仅供测试：重置模块状态 */
 export function __resetRecommendForTest(): void {
   weights = null;
@@ -313,6 +340,7 @@ export function __resetRecommendForTest(): void {
   roleBoostsLoadedAt = 0;
   qualityFactors = null;
   seqProbs = null;
+  pinnedIds = null;
 }
 
 // ===== 排序 =====

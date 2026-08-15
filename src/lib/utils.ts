@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -231,6 +232,34 @@ export async function highlightCode(text: string): Promise<HighlightResult> {
   }
 }
 
+/**
+ * 单 token 的**标识符 / 路径 / 单号**形态——不是自然语言句子。
+ *
+ * 用户剪贴板里大量内容是 `itemVO` / `MODULEID` / `receivablebill_his.xml` /
+ * `C0805041350000005382` 这类东西。它们既不能翻译（没有语义）、也不能润色
+ * （没有错别字）、更没有要点可提，所以所有面向散文的 AI 动作都应该避开它们。
+ *
+ * 判据核心是“**单 token**”：自然语言哪怕很短也有空白分隔（"hello world"），
+ * 没有空白的一串字符不是句子。单个纯小写词不算——那可能真是个外文词。
+ *
+ * 放在 utils 而不是 aiTransforms（规则 #11 单一数据源）：打分要用它，
+ * `aiQuick` 的短文本兜底也要用它——兜底是硬编码 push、**完全绕过打分**，
+ * 不共用同一个判据的话，打分刚排除的标识符会被兜底原样塞回来（实测过）。
+ */
+export function looksLikeIdentifier(text: string): boolean {
+  const t = text.trim();
+  // 有空白 = 成句，不在此列
+  if (!t || /\s/.test(t)) return false;
+  // 下划线 / 路径分隔 / 扩展名 / 命名空间
+  if (/[_/\\.:#@]/.test(t)) return true;
+  // 含数字：单据号、编码、版本号
+  if (/\d/.test(t)) return true;
+  // 全大写：常量名 SYSTEMCODE
+  if (/^[A-Z]+$/.test(t)) return true;
+  // 驼峰：itemVO / INCCForHHOrSSService
+  return /[a-z][A-Z]/.test(t);
+}
+
 /** 根据语言名获取显示标签 */
 export function getLangLabel(language: string): string {
   return LANG_LABELS[language] || (language === "errorlog" ? "错误日志" : "文本");
@@ -324,3 +353,76 @@ export function parseFilePaths(content: string): string[] {
     .map((p) => p.trim())
     .filter(Boolean);
 }
+
+/**
+ * 复制文本到剪贴板。
+ *
+ * 优先用 `navigator.clipboard.writeText`（需安全上下文 + 用户手势）；
+ * 失败（如子窗口失焦、非聚焦态）兜底走 Tauri 原生 `copy_only` 命令
+ * （src-tauri/src/commands/paste.rs，参数名 text）。
+ *
+ * 返回是否成功，便于调用方做内联反馈（如 toast 内的「已复制 ✓」）。
+ * 收口缘由（规则 #11）：全项目 40+ 处内联 `navigator.clipboard` 散落，
+ * 统一经此函数，避免重复且保证兜底一致。
+ */
+export async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      await invoke("copy_only", { text });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+/** OCR 文本里可被"识别即操作"的实体类型。 */
+export type OcrEntityType = "url" | "phone" | "email";
+
+export interface OcrEntity {
+  type: OcrEntityType;
+  value: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * 从文本中提取 URL / 手机号 / 邮箱（本地正则，零出网，符合隐私红线）。
+ *
+ * 仅用保守规则避免误判：
+ * - URL: `https?://` 起手
+ * - 手机号: 大陆 11 位 `1[3-9]\d{9}`（前后非数字）
+ * - 邮箱: 标准 `name@host.tld`
+ * 不识别纯连续数字串（发票号/订单号等），避免把普通数字当电话。
+ *
+ * 多规则命中时按 start 排序并去重叠（URL 里的数字不会被判成电话）。
+ */
+export function extractEntities(text: string): OcrEntity[] {
+  const raw: OcrEntity[] = [];
+  const collect = (type: OcrEntityType, re: RegExp) => {
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      raw.push({ type, value: m[0], start: m.index, end: m.index + m[0].length });
+    }
+  };
+  collect("url", /https?:\/\/[^\s]+/gi);
+  collect("email", /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g);
+  collect("phone", /(?<!\d)1[3-9]\d{9}(?!\d)/g);
+  collect("phone", /(?<!\d)0\d{2,3}[\s-]\d{7,8}(?!\d)/g);
+
+  raw.sort((a, b) => a.start - b.start || a.end - b.end);
+  const out: OcrEntity[] = [];
+  let lastEnd = -1;
+  for (const e of raw) {
+    if (e.start >= lastEnd) {
+      out.push(e);
+      lastEnd = e.end;
+    }
+  }
+  return out;
+}
+

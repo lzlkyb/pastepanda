@@ -38,6 +38,70 @@ static ENV_LINE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^\s*[A-Z_][A-Z0-9_]*\s*=\s*").unwrap()
 });
 
+/// 配置行：`key = value`，key 不含空格。
+///
+/// 原来 TOML 判据只看 `t.contains('=')`，于是 SQL 的 `set vbdef16='112'`、
+/// Java 的 `String condition=SqlUtils_Pub.getInStr(...)` 全被当成配置行——
+/// 实测 10 条「配置文件+TOML」里有 3 条是 SQL、1 条是 Java。
+static CONFIG_KV_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*[A-Za-z_][\w.-]*\s*=").unwrap());
+
+/// SQL 的 DDL/DML 语句开头（**多行**，任一行命中即算）。这几个开头无歧义。
+///
+/// 与 {@link SINGLE_LINE_SQL_RE} 的区别：后者 `^` 只锚字符串开头，
+/// 而真实的 SQL 常以注释起头（`--ICl单号完整修复`），拿不到。
+static SQL_STMT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        // 表名用 [\w.] 而不是 \w：真实 SQL 里常带 schema 限定（`update aier633.po_order_b set`），
+        // 只写 \w+ 会在点上断掉、整条匹配失败。
+        r"(?im)^\s*(insert\s+into|create\s+table|drop\s+table|alter\s+table|delete\s+from|update\s+[\w.]+\s+set)\b",
+    )
+    .unwrap()
+});
+
+/// `select ... from` 组合。**单靠它不能定案**：
+/// 英文散文“Select the best option from the list”同样满足。
+static SQL_SELECT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?is)\bselect\b.*?\bfrom\b").unwrap());
+
+/// `select ... from` 之外的结构证据：子句关键字 / `select *` /
+/// 带点的限定名（`orderb.vbdef16`）/ 分号结尾。散文几乎不会命中这些。
+static SQL_EVIDENCE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?is)(\bwhere\b|\bjoin\b|\bgroup\s+by\b|\border\s+by\b|select\s+\*|\w+\.\w+\s*[,\s]|;\s*$)")
+        .unwrap()
+});
+
+/// 是不是 SQL。
+///
+/// 分两档是因为两类证据强度不同：DDL/DML 开头无歧义；
+/// `select ... from` 会与英文散文撞车，必须再要一道结构证据。
+fn looks_like_sql(text: &str) -> bool {
+    SQL_STMT_RE.is_match(text)
+        || (SQL_SELECT_RE.is_match(text) && SQL_EVIDENCE_RE.is_match(text))
+}
+
+/// 中文（CJK 统一表意）字符占非空白字符的比例。
+fn cjk_ratio(text: &str) -> f64 {
+    let total = text.chars().filter(|c| !c.is_whitespace()).count();
+    if total == 0 {
+        return 0.0;
+    }
+    let cjk = text
+        .chars()
+        .filter(|c| ('\u{4e00}'..='\u{9fff}').contains(c))
+        .count();
+    cjk as f64 / total as f64
+}
+
+/// 中文过半的内容不是代码。
+///
+/// 代码里的中文只出现在注释与字符串里，占比不会过半。
+/// 实测拦的是这条：「模型把 16token 的额度全用在“思考”上了…」（CJK 66%）
+/// ——它带引号、横线与英文 token，恰好凑够了 is_code 的特征比例。
+///
+/// 带中文注释的 SQL 不受影响：它在 classify 里走更早的 SQL 分支。
+const CODE_MAX_CJK_RATIO: f64 = 0.5;
+
 // ===== 密钥/Token 检测 =====
 static JWT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$").unwrap()
@@ -158,6 +222,31 @@ static FILE_PATH_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)^([A-Z]:\\|\\\\|/[\w.]|[.~]/)").unwrap()
 });
 
+/// 文件名：单 token 且以**小写字母开头**的扩展名结尾。
+///
+/// 扩展名要求小写字母开头是故意的，它同时挡掉两类误判：
+/// `v6.16.0`（版本号，`.0` 数字开头）、`com.example.Foo`（Java 全限定名，`.Foo` 大写）。
+static FILENAME_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[^\s]+\.[a-z][a-z0-9]{0,7}$").unwrap());
+
+/// 顶级域名尾缀。`example.com` 在**形态上与文件名无法区分**，
+/// 而 URL_RE 要求带 scheme（`https://`）拦不住裸域名，只能靠这张小名单。
+/// 不求全，只挡最常见的几个。
+static TLD_TAIL: &[&str] = &[
+    ".com", ".cn", ".org", ".net", ".io", ".dev", ".ai", ".co", ".me", ".app", ".xyz",
+];
+
+/// 驼峰：itemVO / INCCForHHOrSSService
+static IDENT_CAMEL_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[a-z][A-Z]").unwrap());
+
+/// 全大写常量名：SYSTEMCODE / MODULEID
+static IDENT_UPPER_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[A-Z][A-Z0-9_]{2,}$").unwrap());
+
+/// 下划线 / 点分隔的符号名：pk_order / com.example.Foo
+static IDENT_SEP_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[A-Za-z][A-Za-z0-9]*([_.][A-Za-z0-9]+)+$").unwrap());
+
 // ===== Markdown 检测 =====
 static MD_HEADING_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?m)^#{1,6}\s+\S").unwrap()
@@ -201,7 +290,9 @@ static COMMON_COMMANDS: &[&str] = &[
     "cat", "tail", "head", "grep", "find", "xargs", "tee", "awk", "sed",
     "chmod", "chown", "ln",
     "ping", "tracert", "nslookup", "netstat", "tasklist", "taskkill",
-    "claude", "codebuddy",
+    // 注意：这里故意**不收** claude / codebuddy 这类工具名。
+    // 它们同时也是日常句子的开头词，收了代价是
+    // 「claude.md 做任何功能都要考虑性能问题」被当成命令行（实测命中）。
 ];
 
 /// 语言特征（按语言，值越大越具特征性）
@@ -263,7 +354,16 @@ static LANGUAGE_PROFILES: &[LanguageProfile] = &[
     },
     LanguageProfile {
         label: "CSS",
-        keywords: &["{ ", "px", "em", "rem", "vh", "vw", "color:", "background:", "margin:", "padding:", "display:", "position:", "font-size:", "@media", "@keyframes", "@import", "flex", "grid", "#"],
+        // 删了两类关键词，都是实测逐出来的：
+        //
+        // ① `"{ "` 与 `"#"`：零区分度，任何带花括号或 # 的文本都拿 +3，
+        //    而且带符号不走词边界、永远是子串匹配。
+        // ② 单位 `px/em/rem/vh/vw`：它们在真实 CSS 里**总是紧跟数字**（`2em`、`10px`），
+        //    词边界匹配天然拿不到；而不要词边界又会命中 `system`/`item`/`problem`。
+        //    两头都不成立，只能删——CSS 的真实信号是 `selector {`、`@media` 与 `property:`。
+        //
+        // 不删的代价实测看得到：一段 PowerShell 同时被标成 Shell 和 CSS。
+        keywords: &["color:", "background:", "margin:", "padding:", "display:", "position:", "font-size:", "@media", "@keyframes", "@import", "flex", "grid"],
         patterns: &[re!(r"[.#][\w-]+\s*\{"), re!(r"@media"), re!(r"@keyframes")],
     },
     LanguageProfile {
@@ -310,8 +410,20 @@ impl ContentClassifier {
             return vec!["JSON".to_string()];
         }
 
-        // 超短文本 (< 15 字符，不含特殊格式)
-        if text.len() < 15 && !text.contains('\n') && !text.contains("://") {
+        // ===== 0.8 单 token 符号形态（标识符 / 编号 / 文件名）=====
+        // 必须在下面的“超短文本”早退**之前**：`itemVO`（6 字）、`SYSTEMCODE`（10 字）
+        // 都短于早退阈值，放在后面就永远拿不到标签。
+        if let Some(l) = self.detect_symbol(text) {
+            return vec![l.to_string()];
+        }
+
+        // 超短文本（< 15 **字符**，不含特殊格式）
+        //
+        // 用字符数而不是 `text.len()`（字节）：一个中文字占 3 字节，按字节算的话
+        // 中文 5 字就过了阈值、要继续往下跑代码/命令检测，而 ASCII 要 15 个字符
+        // 才过——中英文阈值差 3 倍。「claude.md 做任何功能都要考虑性能问题」
+        // 被判成命令行就是这样漏下去的。
+        if text.chars().count() < 15 && !text.contains('\n') && !text.contains("://") {
             return vec!["纯文本".to_string()];
         }
 
@@ -328,6 +440,19 @@ impl ContentClassifier {
         // ===== 1.6 HTML 检测 =====
         if self.is_html(text) {
             return vec!["HTML".to_string()];
+        }
+
+        // ===== 1.7 SQL（强特征，必须先于配置 / CSV / 代码）=====
+        //
+        // SQL 是最容易被各种间接判据抢走的内容：
+        // - `set vbdef16='112'` 像配置行（实测 3 条被当成 TOML）；
+        // - `INSERT INTO t (A, B, C)` 每行逗号数相同，像 CSV（实测 1 条）；
+        // - 多行 SQL 又常常过不了 is_code 的特征比例门槛——大量 SQL 关键字
+        //   不在 CODE_KEYWORD_RE 里（实测 5 条直接漏成纯文本）。
+        //
+        // 给它一条明路，比让它去挤那些间接判据可靠得多。
+        if looks_like_sql(text) {
+            return vec!["代码".to_string(), "SQL".to_string()];
         }
 
         // ===== 2. 配置文件检测 =====
@@ -413,6 +538,11 @@ impl ContentClassifier {
             Some("密钥") => "secret",
             Some("代码") => "code",
             Some("纯文本") => "text",
+            // 符号形态三类（见 detect_symbol）**故意不新增 content_type**：
+            // 新增一个类型会连带 SELECTABLE_CONTENT_TYPES、AI 动作的 content_types、
+            // 前端筛选与变换 detect 全部要改，而这三类对“能做什么变换”而言就是文本。
+            // 它们的价值全在**标签**上：卡片上显示「标识符」比「纯文本」有信息。
+            Some("标识符") | Some("编号") | Some("文件名") => "text",
             _ => "text",
         }
     }
@@ -479,10 +609,12 @@ impl ContentClassifier {
             .iter()
             .filter(|l| {
                 let t = l.trim();
-                !t.is_empty() && !t.starts_with('#') && !t.starts_with('[') && t.contains('=')
+                !t.is_empty() && !t.starts_with('#') && !t.starts_with('[') && CONFIG_KV_RE.is_match(t)
             })
             .count() as f64;
-        if has_section || (toml_lines / total > 0.5 && total > 3.0) {
+        // has_section **不再单独判定 TOML**：只有 `[section]` 而没有任何 key=value 的内容
+        // 更可能是其它东西，让它落到下面的 INI 分支去判。
+        if (has_section && toml_lines > 0.0) || (toml_lines / total > 0.5 && total > 3.0) {
             return Some("TOML".to_string());
         }
 
@@ -712,6 +844,10 @@ impl ContentClassifier {
         if lines.len() < 2 {
             return false;
         }
+        // 中文过半 → 不是代码（见 CODE_MAX_CJK_RATIO）
+        if cjk_ratio(text) > CODE_MAX_CJK_RATIO {
+            return false;
+        }
 
         let effective: Vec<&str> = lines
             .iter()
@@ -754,6 +890,12 @@ impl ContentClassifier {
         }
         let t = text.trim();
         if t.len() < 15 {
+            return false;
+        }
+        // 中文过半 → 不是代码（见 CODE_MAX_CJK_RATIO）。
+        // 这条闸必须在 is_code 与本函数**两处都有**：它们是两个并行入口，
+        // 只守一边的话单行内容会从另一边溢过去（实测过）。
+        if cjk_ratio(t) > CODE_MAX_CJK_RATIO {
             return false;
         }
         // 路径 1：行首强关键字（大小写敏感/不敏感按关键字类型区分）
@@ -840,6 +982,63 @@ impl ContentClassifier {
         false
     }
 
+    /// 单 token 的**符号形态**：文件名 / 编号 / 标识符。
+    ///
+    /// 这是把「纯文本」从 77.9% 降下来的主要手段。拿真实库里 479 条走分类器的
+    /// 历史回放过：「纯文本」里有 **20.1%** 是 `itemVO` / `SYSTEMCODE` /
+    /// `C0805041350000005382` / `receivablebill_his.xml` 这类东西——
+    /// 标成「纯文本」不算错，但一点信息也没给。
+    ///
+    /// 判据核心与前端 `looksLikeIdentifier`（lib/utils.ts）同源：**单 token**。
+    /// 自然语言哪怕很短也有空白分隔，没有空白的一串字符不是句子。
+    ///
+    /// **但中文不用空格**，“无空白”对中文句子同样成立，所以中文必须先排除，
+    /// 否则「这个搬到后端去了应该」会被当成标识符（实测这一桶有 74 条）。
+    /// 文件名是例外：它在中文排除**之前**判，因为「PastePanda-AI架构与路线图.md」
+    /// 确实是文件名。
+    fn detect_symbol(&self, text: &str) -> Option<&'static str> {
+        let t = text.trim();
+        // 有空白 = 成句，不在此列
+        if t.is_empty() || t.chars().any(|c| c.is_whitespace()) {
+            return None;
+        }
+        // URL / 密钥有各自更精确的检测，不能在这里截走
+        if URL_RE.is_match(t) || t.contains("://") || self.is_secret(t) {
+            return None;
+        }
+        // 3 个字符以下没有形态可言
+        if t.chars().count() < 3 {
+            return None;
+        }
+
+        let lower = t.to_ascii_lowercase();
+        // ① 文件名（允许中文名）
+        if FILENAME_RE.is_match(t) && !TLD_TAIL.iter().any(|d| lower.ends_with(d)) {
+            return Some("文件名");
+        }
+
+        // 以下两类排除中文——见上方注释
+        if t.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)) {
+            return None;
+        }
+
+        // ② 编号：字母数字串且数字过半（单据号 C0805041350000005382、物料编码）
+        //   纯数字不会走到这里：上面的“数字”检测已经拦住了
+        let digits = t.chars().filter(|c| c.is_ascii_digit()).count();
+        let len = t.chars().count();
+        if len >= 6 && digits * 2 >= len && t.chars().all(|c| c.is_ascii_alphanumeric()) {
+            return Some("编号");
+        }
+
+        // ③ 标识符：驼峰 / 全大写 / 下划线或点分隔。
+        //   单个纯小写词（serendipity）一条都不命中——那可能真是个外文词，
+        //   与前端 looksLikeIdentifier 保持一致。
+        if IDENT_CAMEL_RE.is_match(t) || IDENT_UPPER_RE.is_match(t) || IDENT_SEP_RE.is_match(t) {
+            return Some("标识符");
+        }
+        None
+    }
+
     /// 检测文件路径（单行或少量行）
     fn is_file_path(&self, text: &str) -> bool {
         let lines: Vec<&str> = text.lines().collect();
@@ -874,11 +1073,42 @@ impl ContentClassifier {
     }
 }
 
-/// 语言特征计分：关键词命中 +3（大小写不敏感），正则模式命中 +5（匹配原始文本）
+/// 关键词命中判定。
+///
+/// 原来一律用 `contains` 做**子串**匹配，代价很大：
+/// - CSS 的 `em` 命中 `system` / `item` / `problem`；
+/// - Shell 的 `fi` 命中 `file` / `config` / `profile`；
+/// - JavaScript 的 `let` 命中 `complete` / `delete` / `tablet`。
+///
+/// 于是任何提到文件的文本都能拿到 Shell 的 +3 分。实测出现过
+/// 一段 PowerShell 同时被标成 Shell 和 CSS、一段 Java 被标成 JavaScript。
+///
+/// 现在：**纯字母数字的关键词要求词边界**；含符号的（`=>`、`${`、`System.out`）
+/// 本身已足够特征化，仍用子串。
+///
+/// 词边界直接看字节而不转正则：关键词表是编译期常量，一个一个编译正则不值得。
+/// 多字节 UTF-8 的续字节 ≥ 0x80，`is_ascii_alphanumeric()` 为 false，
+/// 恰好被当成边界——中文紧邻关键词时确实应该算边界。
+fn keyword_hit(text_lower: &str, kw_lower: &str) -> bool {
+    if !kw_lower.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return text_lower.contains(kw_lower);
+    }
+    let bytes = text_lower.as_bytes();
+    let is_word = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    text_lower.match_indices(kw_lower).any(|(i, m)| {
+        let before_ok = i == 0 || !is_word(bytes[i - 1]);
+        let end = i + m.len();
+        let after_ok = end >= bytes.len() || !is_word(bytes[end]);
+        before_ok && after_ok
+    })
+}
+
+/// 语言特征计分：关键词命中 +3（大小写不敏感，见 {@link keyword_hit}），
+/// 正则模式命中 +5（匹配原始文本）
 fn profile_score(profile: &LanguageProfile, text: &str, text_lower: &str) -> i32 {
     let mut score = 0i32;
     for kw in profile.keywords {
-        if text_lower.contains(&kw.to_ascii_lowercase()) {
+        if keyword_hit(text_lower, &kw.to_ascii_lowercase()) {
             score += 3;
         }
     }
@@ -1526,6 +1756,150 @@ mod tests {
         for s in negatives {
             assert!(!c.is_secret(s), "不应判为敏感: {s:?}");
         }
+    }
+
+    // ===================================================================
+    // v6.17 分类器修正。
+    //
+    // **每条断言都对应一个真实数据里量到的错**——拿本机库里 479 条
+    // 真正走分类器的历史回放出来的，不是想象的边界。
+    // 回放结果：「纯文本」77.9% → 53.4%，确定误判 2.5% → 0%。
+    // ===================================================================
+
+    /// 真实历史里的原文。改动前这些全部被标成「纯文本」。
+    #[test]
+    fn test_symbol_labels_from_real_data() {
+        let c = ContentClassifier::new();
+        let cases = [
+            // 驼峰 / 全大写标识符
+            ("itemVO", "标识符"),
+            ("INCCForHHOrSSService", "标识符"),
+            ("SYSTEMCODE", "标识符"),
+            ("MODULEID", "标识符"),
+            ("EyeYDRestResource", "标识符"),
+            ("com.example.Foo", "标识符"),
+            // 单据号 / 编码（字母开头 + 数字过半）
+            ("C0805041350000005382", "编号"),
+            // 文件名（含中文名也算）
+            ("receivablebill_his.xml", "文件名"),
+            ("PastePanda-AI架构与路线图.md", "文件名"),
+        ];
+        for (text, want) in cases {
+            let labels = c.classify(text);
+            assert_eq!(labels.first().map(|s| s.as_str()), Some(want), "{text:?} 应为 {want}");
+            // 故意不新增 content_type，下游不受影响
+            assert_eq!(ContentClassifier::content_type_from_labels(&labels), "text");
+        }
+    }
+
+    #[test]
+    fn test_symbol_labels_do_not_swallow_others() {
+        let c = ContentClassifier::new();
+        // 中文不用空格，“无空白”对中文句子同样成立——它们不是标识符
+        for s in ["这个搬到后端去了应该", "粘贴安全流程", "我送你去1号然后自己开车来高速"] {
+            assert_eq!(c.classify(s).first().map(|x| x.as_str()), Some("纯文本"), "{s:?}");
+        }
+        // 单个纯小写词可能真是外文词，不当标识符
+        assert_eq!(c.classify("serendipity").first().map(|x| x.as_str()), Some("纯文本"));
+        // 版本号不是文件名（`.0` 数字开头）
+        assert_ne!(c.classify("v6.16.0").first().map(|x| x.as_str()), Some("文件名"));
+        // 裸域名不是文件名（URL_RE 要求 scheme，拦不住，靠 TLD_TAIL）
+        assert_ne!(c.classify("example.com").first().map(|x| x.as_str()), Some("文件名"));
+        // 专用检测优先：邮箱 / 颜色 / 链接 / 密钥 / 纯数字不能被符号形态抢走
+        assert_eq!(c.classify("yubing_kuang@kingdee.com").first().map(|x| x.as_str()), Some("邮箱"));
+        assert_eq!(c.classify("#F3F5F7").first().map(|x| x.as_str()), Some("颜色"));
+        assert_eq!(c.classify("https://github.com/lzlkyb/cc-bridge").first().map(|x| x.as_str()), Some("链接"));
+        assert_eq!(c.classify("11813361").first().map(|x| x.as_str()), Some("数字"));
+    }
+
+    /// SQL 曾被三种间接判据分别抢走：配置文件（3 条）、表格（1 条）、纯文本（5 条）。
+    #[test]
+    fn test_sql_wins_over_config_csv_and_plain() {
+        let c = ContentClassifier::new();
+        let sqls = [
+            "create table pu_pupriceadjustbill_h (\n  pk_head char(20),\n  vbillcode varchar(40)\n)",
+            "alter table pu_pupriceadjustbill_b\n  add constraint pk_b primary key (pk_body)",
+            "--ICl单号完整修复\nselect orderb.vbdef16, orderb.pk_order\nfrom po_order_b orderb",
+            "INSERT INTO AIERHZ.IC_INVCOUNT_SN (VSNCODE, BISONHAND)\nVALUES ('a', 1),\n('b', 2)",
+            "update aier633.po_order_b set vbdef16='112'\nwhere pk_order='x'",
+        ];
+        for s in sqls {
+            let labels = c.classify(s);
+            assert_eq!(labels, vec!["代码".to_string(), "SQL".to_string()], "{s:?}");
+        }
+    }
+
+    /// `select ... from` 单靠自己不能定案：英文散文同样满足。
+    ///
+    /// 这里直接验 `looks_like_sql`（本次新加的判据）而不验 `classify`：
+    /// 这句散文仍会被**早就存在的** `SINGLE_LINE_SQL_RE`（is_code_single_line 里）
+    /// 当成单行 SQL。那是另一个问题，不在本次改动范围：想修就得区分
+    /// “简短的真 SQL（`select a from b`）”与“英文散文”，而这两者在现有特征下
+    /// 本质上不可分——而且它在本机 479 条真实历史里一条都没出现过。
+    #[test]
+    fn test_select_from_prose_is_not_sql() {
+        assert!(!looks_like_sql("Select the best option from the list and tell me why"));
+        // 真 SQL：带结构证据的都认
+        assert!(looks_like_sql("select * from t"));
+        assert!(looks_like_sql("select a.b, a.c from t a where a.x = 1"));
+        assert!(looks_like_sql("update aier633.po_order_b set vbdef16='112'"));
+    }
+
+    /// 中文过半的内容不是代码/命令行。两个入口（多行/单行）都要守。
+    #[test]
+    fn test_chinese_prose_is_not_code_or_command() {
+        let c = ContentClassifier::new();
+        // 单行：带引号、横线与英文 token，恰好凑够了 is_code_single_line 的结构
+        let s1 = "模型把 16token 的额度全用在“思考”上了，没留下答案——请把该动作的 token 上限调大(至少 512)";
+        assert_ne!(c.classify(s1).first().map(|x| x.as_str()), Some("代码"), "{s1:?}");
+        // `claude` 不在 COMMON_COMMANDS 里，这句不应成命令行
+        let s2 = "claude.md 做任何功能都要考虑性能问题";
+        assert_ne!(c.classify(s2).first().map(|x| x.as_str()), Some("命令行"), "{s2:?}");
+    }
+
+    /// 关键词要词边界：不该因为 `system` 含 `em` 就拿 CSS 分。
+    #[test]
+    fn test_keyword_hit_requires_word_boundary() {
+        assert!(!keyword_hit("the system item problem", "em"));
+        // 只有独立成词才算。（正因为 `2em` 这种写法拿不到，
+        //  CSS 的单位关键词已经整批删掉，见 test_css_profile_has_no_unit_keywords）
+        assert!(keyword_hit("2 em spacing", "em"));
+        // Shell 的 `fi` 不该命中 file / config / profile
+        assert!(!keyword_hit("read the config file profile", "fi"));
+        assert!(keyword_hit("if [ -f x ]; then echo 1; fi", "fi"));
+        // JavaScript 的 `let` 不该命中 complete / delete / tablet
+        assert!(!keyword_hit("complete the delete on tablet", "let"));
+        assert!(keyword_hit("let x = 1", "let"));
+        // 含符号的关键词仍用子串（本身已足够特征化）
+        assert!(keyword_hit("const f = () => 1", "=>"));
+    }
+
+    /// CSS 的单位关键词必须保持删除状态。
+    ///
+    /// 它们既不能走词边界（真 CSS 里是 `2em`、`10px`，前面紧跟数字），
+    /// 也不能不走（会命中 `system`/`item`/`problem`）——两头都不成立。
+    /// 这条测试防的是“以后有人觉得 CSS 识别弱了又把它们加回去”。
+    #[test]
+    fn test_css_profile_has_no_unit_keywords() {
+        let css = LANGUAGE_PROFILES.iter().find(|p| p.label == "CSS").unwrap();
+        for bad in ["px", "em", "rem", "vh", "vw", "#", "{ "] {
+            assert!(!css.keywords.contains(&bad), "CSS 不该再有关键词 {bad:?}");
+        }
+        // 真实信号仍在
+        assert!(css.keywords.contains(&"@media"));
+        assert!(css.keywords.contains(&"color:"));
+    }
+
+    /// TOML 判据不能只看“行里有 =”。
+    #[test]
+    fn test_config_needs_real_kv_lines() {
+        let c = ContentClassifier::new();
+        // 真配置：仍该识别
+        let toml = "[package]\nname = \"pastepanda\"\nversion = \"6.17.0\"\nedition = \"2021\"";
+        assert_eq!(c.classify(toml).first().map(|x| x.as_str()), Some("配置文件"));
+        // Java 赋值行（`String x=...`）key 里带空格，不算配置行
+        let java = "String condition=SqlUtils_Pub.getInStr(\"sn.vdef1\", list);\nString other=build(a);\nreturn condition;";
+        assert_ne!(c.classify(java).first().map(|x| x.as_str()), Some("配置文件"), "{java:?}");
     }
 }
 

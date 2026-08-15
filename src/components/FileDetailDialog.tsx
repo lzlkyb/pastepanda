@@ -1,16 +1,17 @@
-import { useState, useEffect, useCallback, useMemo, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
-import { X, FolderOpen, Copy, ExternalLink, Loader, Check } from "lucide-react";
+import { X, FolderOpen, Copy, ExternalLink, Loader, Check, Search, Maximize2, ChevronDown } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { useDialogAnim } from "@/lib/dialogMotion";
-import { relativeTime, errText } from "@/lib/utils";
+import { relativeTime, errText, highlightCode } from "@/lib/utils";
 import SourceBadge from "@/components/SourceBadge";
 import { HistoryItem } from "@/stores/appStore";
 import { getFileIcon, getFileIconColor } from "@/lib/source-mappings";
 import { parseFilePaths } from "@/lib/utils";
 import { getImageDataUrl } from "@/lib/api";
 import { FocusTrap } from "@/components/FocusTrap";
+import { useDialogStore } from "@/stores/dialogStore";
 
 type FileMeta = { size: number; exists: boolean };
 type TextPreviewData = {
@@ -28,6 +29,16 @@ const extOf = (p: string) => {
   return (m?.[1] || "").toLowerCase();
 };
 const isImageFile = (p: string) => IMAGE_EXT_SET.has(extOf(p));
+
+/** 文本文件 → 全屏编辑器 contentType 映射（与 FullscreenEditor 注册表对齐） */
+const TEXT_CONTENT_TYPE: Record<string, string> = {
+  md: "markdown", markdown: "markdown", json: "json",
+  html: "html", htm: "html", csv: "csv", tsv: "csv", log: "log", txt: "text",
+  js: "code", ts: "code", tsx: "code", jsx: "code", py: "code", rs: "code",
+  go: "code", java: "code", c: "code", cpp: "code", sh: "shell", yml: "code",
+  yaml: "code", xml: "code", css: "code", sql: "code",
+};
+const textContentType = (ext: string) => TEXT_CONTENT_TYPE[ext] || "text";
 
 const formatSize = (bytes: number) => {
   if (!bytes || bytes === 0) return "未知";
@@ -49,6 +60,7 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
   }, [item?.content]);
   const isMulti = paths.length > 1;
   const time = relativeTime(item.time);
+  const [metaOpen, setMetaOpen] = useState(false);
 
   // ④ 快速预览共享状态：单文件模式默认选中唯一路径，多文件模式默认选中第一个。
   const [previewPath, setPreviewPath] = useState<string>(paths[0] || "");
@@ -105,25 +117,26 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
       <FocusTrap>
       <motion.div
         {...anim.panel}
-        className={`dialog-box ${isMulti ? "w420" : "w380"}`}
+        className={`dialog-box w420 fd-dialog`}
         onClick={(e) => e.stopPropagation()}>
 
           {/* Header */}
           <div className="dialog-header">
-            <h2 className="dialog-title">{isMulti ? `📁 文件详情 · ${paths.length} 个文件` : "文件详情"}</h2>
-            <button onClick={onClose} className="dialog-close"><X size={16} /></button>
+            <h2 className="dialog-title">{isMulti ? `📁 文件详情 · ${paths.length} 个文件` : "📁 文件详情"}</h2>
+            <button className="dialog-close" onClick={onClose}><X size={16} /></button>
           </div>
 
           {isMulti
             ? <MultiFileBody paths={paths} item={item} onSelectPreview={setPreviewPath} selectedPath={previewPath} />
-            : <SingleFileBody path={paths[0] || item.content || ""} item={item} />}
+            : <SingleFileBody path={paths[0] || item.content || ""} item={item} metaOpen={metaOpen} setMetaOpen={setMetaOpen} />}
 
-          {/* ④ 快速预览 */}
+          {/* ④ 快速预览 —— 改为占据主区（flex:1） */}
           <PreviewPanel
             path={previewPath}
             data={previewData}
             imageUrl={imagePreviewUrl}
             loading={previewLoading}
+            item={item}
           />
 
           {/* Footer */}
@@ -137,90 +150,235 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
   );
 }
 
-/** ④ 快速预览面板：图片缩略图 / 文本前 N 行（带行号）/ 二进制或不存在占位 */
-function PreviewPanel({ path, data, imageUrl, loading }: {
-  path: string; data: TextPreviewData | null; imageUrl: string; loading: boolean;
+/** ④ 快速预览面板（主区版）：图片 hero / 文本高亮+搜索+复制全文+编辑器打开 / 二进制·缺失引导 */
+function PreviewPanel({ path, data, imageUrl, loading, item }: {
+  path: string; data: TextPreviewData | null; imageUrl: string; loading: boolean; item: HistoryItem;
 }) {
   const { toast } = useToast();
+  const openEditor = useDialogStore((s) => s.openEditor);
+  const isImage = isImageFile(path);
+
+  const enlargeImage = useCallback(() => {
+    openEditor({ ...item, id: `${item.id}-img`, type: "image", content: path } as HistoryItem);
+  }, [openEditor, item, path]);
+
+  const openSys = useCallback(async () => {
+    try { await invoke("open_file_with_system", { path }); }
+    catch (e) { toast(errText(e, "无法打开文件"), "error"); }
+  }, [path, toast]);
+
+  const openLoc = useCallback(async () => {
+    try { await invoke("open_file_location", { path }); }
+    catch (e) { toast(errText(e, "无法打开文件夹"), "error"); }
+  }, [path, toast]);
+
   if (!path) return null;
 
-  const isImage = isImageFile(path);
-  const copyPreview = async () => {
-    if (!data || data.kind !== "text") return;
-    try {
-      await navigator.clipboard.writeText(data.lines.join("\n"));
-      toast("预览文本已复制", "success");
-    } catch { toast("复制失败", "error"); }
-  };
-
   return (
-    <div className="file-preview-panel">
-      <div className="file-preview-head">
-        <span className="file-preview-label">快速预览</span>
-        {data?.kind === "text" && data.lines.length > 0 && (
-          <button className="file-preview-copy" onClick={copyPreview} title="复制预览文本">
-            <Copy size={12} /> 复制
-          </button>
-        )}
-      </div>
-
+    <div className="file-preview-panel fd-preview">
       {loading && (
         <div className="file-preview-loading">
           <Loader size={13} className="spin" /> 加载预览…
         </div>
       )}
 
-      {!loading && isImage && (
-        imageUrl
-          ? (
-            <div className="file-preview-img-wrap">
-              <img src={imageUrl} alt={nameOf(path)} className="file-preview-img" />
-            </div>
-          )
-          : <div className="file-preview-empty">无法加载图片预览</div>
+      {!loading && isImage && imageUrl && (
+        <div className="file-preview-img-hero">
+          <img src={imageUrl} alt={nameOf(path)} className="file-preview-img-big" onClick={enlargeImage} />
+          <button className="file-preview-enlarge" onClick={enlargeImage} title="点击放大查看">
+            <Maximize2 size={14} /> 放大查看
+          </button>
+        </div>
+      )}
+
+      {!loading && isImage && !imageUrl && (
+        <div className="file-preview-empty fd-empty">
+          <span>无法加载图片预览</span>
+          <FileActionBtn icon={<ExternalLink size={14} />} label="用系统打开" onClick={openSys} />
+        </div>
       )}
 
       {!loading && !isImage && data?.kind === "text" && data.lines.length > 0 && (
-        <>
-          <div className="file-preview-code-wrap">
-            <pre className="file-preview-code">
-              <code>
-                {data.lines.map((line, i) => (
-                  <div key={i} className="file-preview-line">
-                    <span className="file-preview-ln">{i + 1}</span>
-                    <span className="file-preview-txt">{line || " "}</span>
-                  </div>
-                ))}
-              </code>
-            </pre>
-          </div>
-          <div className="file-preview-meta">
-            <span>共 {data.total_lines} 行</span>
-            {data.extension && <span className="file-preview-ext">.{data.extension}</span>}
-            {data.truncated && <span className="file-preview-truncated">仅预览前部分</span>}
-          </div>
-        </>
+        <TextPreviewBody data={data} path={path} />
       )}
 
       {!loading && !isImage && data?.kind === "binary" && (
-        <div className="file-preview-empty">
+        <div className="file-preview-empty fd-empty">
           <span>🧩 二进制文件 · {formatSize(data.file_size)}</span>
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>无法内联预览，可在系统中打开查看</span>
+          <FileActionBtn icon={<ExternalLink size={14} />} label="用系统打开" onClick={openSys} />
         </div>
       )}
 
       {!loading && !isImage && data?.kind === "missing" && (
-        <div className="file-preview-empty">文件不存在或已移动</div>
+        <div className="file-preview-empty fd-empty">
+          <span style={{ color: "var(--danger, #EF4444)" }}>⚠ 文件不存在或已移动</span>
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>可打开原所在文件夹确认</span>
+          <FileActionBtn icon={<FolderOpen size={14} />} label="打开所在文件夹" onClick={openLoc} />
+        </div>
       )}
 
       {!loading && !isImage && data?.kind === "text" && data.lines.length === 0 && (
-        <div className="file-preview-empty">空文件</div>
+        <div className="file-preview-empty fd-empty">空文件</div>
       )}
     </div>
   );
 }
 
-/** 单文件主体（保留原有布局；path 为解析后的真实路径） */
-function SingleFileBody({ path, item }: { path: string; item: HistoryItem }) {
+/** 文本预览主体：语法高亮 + 行号 + 面板内搜索 + 复制全文 + 编辑器打开 */
+function TextPreviewBody({ data, path }: { data: TextPreviewData; path: string }) {
+  const { toast } = useToast();
+  const [query, setQuery] = useState("");
+  const [activeMatch, setActiveMatch] = useState(0);
+  const [highlightHtml, setHighlightHtml] = useState("");
+  const [showSearch, setShowSearch] = useState(false);
+  const codeRef = useRef<HTMLPreElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const lines = data.lines;
+
+  // 语法高亮（异步，Shiki；失败/无高亮回退纯文本）
+  useEffect(() => {
+    let cancelled = false;
+    highlightCode(lines.join("\n"))
+      .then((r) => { if (!cancelled) setHighlightHtml(r.html || ""); })
+      .catch(() => { if (!cancelled) setHighlightHtml(""); });
+    return () => { cancelled = true; };
+  }, [lines]);
+
+  // 注入 data-line 以便搜索高亮命中行（容忍 class="line" 带空格/额外属性）
+  const processedHtml = useMemo(() => {
+    if (!highlightHtml) return "";
+    let i = 0;
+    return highlightHtml.replace(/<span class="line"[^>]*>/g, (m) => m.replace(/<span class="line"/, `<span class="line" data-line="${++i}"`));
+  }, [highlightHtml]);
+
+  const matchLines = useMemo(() => {
+    if (!query) return [];
+    const q = query.toLowerCase();
+    const res: number[] = [];
+    lines.forEach((ln, i) => { if (ln.toLowerCase().includes(q)) res.push(i); });
+    return res;
+  }, [query, lines]);
+
+  // 命中行高亮 + 滚动到当前命中
+  useEffect(() => {
+    const root = codeRef.current;
+    if (!root) return;
+    root.querySelectorAll(".line").forEach((el) => el.classList.remove("search-hit", "search-active"));
+    if (!query || matchLines.length === 0) return;
+    const idx = matchLines[Math.min(activeMatch, matchLines.length - 1)];
+    matchLines.forEach((li) => {
+      const el = root.querySelector(`.line[data-line="${li + 1}"]`);
+      if (el) el.classList.add("search-hit");
+    });
+    const activeEl = root.querySelector(`.line[data-line="${idx + 1}"]`) as HTMLElement | null;
+    if (activeEl) { activeEl.classList.add("search-active"); activeEl.scrollIntoView({ block: "center" }); }
+  }, [query, matchLines, activeMatch, processedHtml]);
+
+  // Ctrl/Cmd+F 聚焦搜索
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setShowSearch(true);
+        setTimeout(() => searchInputRef.current?.focus(), 0);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const copyFull = useCallback(async () => {
+    try {
+      const full = await invoke<string>("read_text_file_full", { path });
+      await navigator.clipboard.writeText(full);
+      toast("已复制全文", "success");
+    } catch { toast("复制失败", "error"); }
+  }, [path, toast]);
+
+  const openInEditor = useCallback(() => {
+    invoke("open_fullscreen_editor", { filePath: path, contentType: textContentType(data.extension) }).catch(() => {});
+  }, [path, data.extension]);
+
+  const nextMatch = useCallback(() => {
+    if (matchLines.length) setActiveMatch((m) => (m + 1) % matchLines.length);
+  }, [matchLines.length]);
+  const prevMatch = useCallback(() => {
+    if (matchLines.length) setActiveMatch((m) => (m - 1 + matchLines.length) % matchLines.length);
+  }, [matchLines.length]);
+
+  return (
+    <>
+      <div className="file-preview-toolbar">
+        <button className="fpt-btn" onClick={copyFull} title="复制文件全文"><Copy size={12} /> 复制全文</button>
+        <button className="fpt-btn" onClick={openInEditor} title="在编辑器中打开"><ExternalLink size={12} /> 编辑器打开</button>
+        <button className="fpt-btn" onClick={() => { setShowSearch((s) => !s); setTimeout(() => searchInputRef.current?.focus(), 0); }} title="搜索 (Ctrl+F)"><Search size={12} /> 搜索</button>
+        {showSearch && (
+          <span className="file-search">
+            <input
+              ref={searchInputRef}
+              value={query}
+              placeholder="搜索…"
+              onChange={(e) => { setQuery(e.target.value); setActiveMatch(0); }}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.shiftKey ? prevMatch() : nextMatch(); } }}
+            />
+            <span className="file-search-count">{matchLines.length ? `${Math.min(activeMatch + 1, matchLines.length)}/${matchLines.length}` : "0"}</span>
+            <button onClick={prevMatch} title="上一个">↑</button>
+            <button onClick={nextMatch} title="下一个">↓</button>
+          </span>
+        )}
+      </div>
+
+      <div className="file-preview-code-wrap">
+        {processedHtml ? (
+          <pre className="file-preview-code shiki-code" ref={codeRef}>
+            <code dangerouslySetInnerHTML={{ __html: processedHtml }} />
+          </pre>
+        ) : (
+          <pre className="file-preview-code" ref={codeRef}>
+            <code>
+              {lines.map((line, i) => (
+                <div key={i} className="file-preview-line">
+                  <span className="file-preview-ln">{i + 1}</span>
+                  <span className="file-preview-txt">{renderPlainLine(line, query)}</span>
+                </div>
+              ))}
+            </code>
+          </pre>
+        )}
+      </div>
+
+      <div className="file-preview-meta">
+        <span>共 {data.total_lines} 行</span>
+        {data.extension && <span className="file-preview-ext">.{data.extension}</span>}
+        {data.truncated && <span className="file-preview-truncated">仅预览前部分</span>}
+      </div>
+    </>
+  );
+}
+
+/** 纯文本分支：在命中行内高亮匹配子串 */
+function renderPlainLine(line: string, query: string): ReactNode {
+  if (!query) return line || " ";
+  const lower = line.toLowerCase();
+  const q = query.toLowerCase();
+  const parts: ReactNode[] = [];
+  let from = 0;
+  let idx = 0;
+  while ((idx = lower.indexOf(q, from)) !== -1) {
+    if (idx > from) parts.push(line.slice(from, idx));
+    parts.push(<mark key={from} className="file-search-hit">{line.slice(idx, idx + q.length)}</mark>);
+    from = idx + q.length;
+  }
+  if (from < line.length) parts.push(line.slice(from));
+  return parts.length ? parts : (line || " ");
+}
+
+/** 单文件主体：元信息收进可折叠紧凑条，预览占主区 */
+function SingleFileBody({ path, item, metaOpen, setMetaOpen }: {
+  path: string; item: HistoryItem; metaOpen: boolean; setMetaOpen: (v: boolean) => void;
+}) {
   const { toast } = useToast();
   const [fileInfo, setFileInfo] = useState<FileMeta | null>(null);
   const [openingFile, setOpeningFile] = useState(false);
@@ -278,54 +436,54 @@ function SingleFileBody({ path, item }: { path: string; item: HistoryItem }) {
   }, [path, openingFolder, fileExists, toast]);
 
   return (
-    <div className="dialog-body" style={{ "--dialog-body-gap": "16px" } as React.CSSProperties}>
-      {/* 文件图标 + 名称 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <div style={{
-          width: 48, height: 48, borderRadius: 12,
-          background: iconColor,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 22, flexShrink: 0,
-        }}>{fileIcon}</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {fileName}
-          </div>
-          <div style={{ fontSize: 11, marginTop: 2, color: fileMissing ? "var(--danger, #EF4444)" : "var(--text-muted)" }}>
-            {fileInfo === null ? "检查中…" : fileExists ? <><Check size={12} style={{marginRight:2,color:"var(--green)"}} /> 文件正常</> : "⚠ 文件不存在或已移动"}
+    <div className="fd-body">
+      {/* 可折叠紧凑条 */}
+      <div
+        className="fd-strip"
+        role="button"
+        tabIndex={0}
+        onClick={() => setMetaOpen(!metaOpen)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setMetaOpen(!metaOpen); }}>
+        <div className="fd-strip-icon" style={{ background: iconColor }}>{fileIcon}</div>
+        <div className="fd-strip-main">
+          <div className="fd-strip-name" title={fileName}>{fileName}</div>
+          <div className="fd-strip-sub">
+            {fileInfo === null
+              ? "检查中…"
+              : fileExists
+                ? <><Check size={11} style={{ marginRight: 2, color: "var(--green)" }} /> 文件正常</>
+                : "⚠ 已移动或不存在"}
           </div>
         </div>
+        <ChevronDown size={16} className={`fd-strip-chev ${metaOpen ? "open" : ""}`} />
       </div>
 
-      {/* 信息列表 */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <InfoRow label="完整路径" value={path} mono />
-        <InfoRow label="文件大小" value={fileInfo ? formatSize(fileInfo.size) : "…"} />
-        <InfoRow label="复制时间" value={item.time || "未知"} />
-        <InfoRow label="来源" value={item.source ? <SourceBadge source={item.source} /> : "未知"} />
-      </div>
-
-      {/* 操作按钮 */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <FileActionBtn
-          icon={openingFile ? <Loader size={14} className="spin" /> : <ExternalLink size={14} />}
-          label={openingFile ? "打开中…" : "打开文件"}
-          onClick={handleOpenFile}
-          primary
-          disabled={!fileExists || openingFile}
-        />
-        <FileActionBtn
-          icon={openingFolder ? <Loader size={14} className="spin" /> : <FolderOpen size={14} />}
-          label={openingFolder ? "打开中…" : "打开文件夹"}
-          onClick={handleOpenFolder}
-          disabled={!fileExists || openingFolder}
-        />
-        <FileActionBtn
-          icon={<Copy size={14} />}
-          label="复制路径"
-          onClick={handleCopyPath}
-        />
-      </div>
+      {metaOpen && (
+        <>
+          <div className="fd-info-rows">
+            <InfoRow label="完整路径" value={path} mono />
+            <InfoRow label="文件大小" value={fileInfo ? formatSize(fileInfo.size) : "…"} />
+            <InfoRow label="复制时间" value={item.time || "未知"} />
+            <InfoRow label="来源" value={item.source ? <SourceBadge source={item.source} /> : "未知"} />
+          </div>
+          <div className="fd-actions">
+            <FileActionBtn
+              icon={openingFile ? <Loader size={14} className="spin" /> : <ExternalLink size={14} />}
+              label={openingFile ? "打开中…" : "打开文件"}
+              onClick={handleOpenFile}
+              primary
+              disabled={!fileExists || openingFile}
+            />
+            <FileActionBtn
+              icon={openingFolder ? <Loader size={14} className="spin" /> : <FolderOpen size={14} />}
+              label={openingFolder ? "打开中…" : "打开文件夹"}
+              onClick={handleOpenFolder}
+              disabled={!fileExists || openingFolder}
+            />
+            <FileActionBtn icon={<Copy size={14} />} label="复制路径" onClick={handleCopyPath} />
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -423,7 +581,7 @@ function MultiFileBody({ paths, item, onSelectPreview, selectedPath }: {
   }, [paths, infoMap, toast]);
 
   return (
-    <div className="dialog-body" style={{ "--dialog-body-gap": "12px" } as React.CSSProperties}>
+    <div className="fd-body" style={{ gap: 12 }}>
       {/* 汇总信息 */}
       <div style={{
         display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
@@ -446,7 +604,7 @@ function MultiFileBody({ paths, item, onSelectPreview, selectedPath }: {
       {/* 文件列表（点击行切换预览） */}
       <div style={{
         display: "flex", flexDirection: "column", gap: 6,
-        maxHeight: 300, overflowY: "auto", paddingRight: 2,
+        maxHeight: 240, overflowY: "auto", paddingRight: 2,
       }}>
         {paths.map((p) => {
           const info = infoMap[p];

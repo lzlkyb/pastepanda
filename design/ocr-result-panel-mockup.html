@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="ocean-dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OCR 识别结果面板升级 · 方案 A 设计稿</title>
+<style>
+  /* ===== 主题令牌（逐字取自 theme.css，保证 1:1 还原） ===== */
+  :root,
+  [data-theme="ocean"] { --app-bg:#F7F7F8; --card-bg:#fff; --card-border:#E0E4EB; --text-primary:#0F172A; --text-muted:#627083; --border-color:#E0E4EB; --accent:#0284C7; --accent-light:#E0F2FE; --accent-border:color-mix(in srgb,#0284C7 35%,transparent); --accent-solid:#027CBB; --accent-strong:#0273AD; --hover:#E8ECF2; --input-bg:#F1F5F9; --section-bg:#F0F4F8; --green:#11813A; --green-bg:#DCFCE7; --green-border:#BBF7D0; --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA; --glass-dialog-bg:#FFFFFF; --glass-dialog-filter:none; --overlay-bg:rgba(0,0,0,0.35); --danger:#D82525; }
+  [data-theme="midnight"] { --app-bg:radial-gradient(100% 80% at 50% -10%,#1C1832 0%,#0B0B13 55%,#07070C 100%); --card-bg:#18181B; --card-border:#27272A; --text-primary:#E4E4E7; --text-muted:#8D8D95; --border-color:#27272A; --accent:#818CF8; --accent-light:#1E1B4B; --accent-border:color-mix(in srgb,#818CF8 35%,transparent); --accent-solid:#666FC4; --accent-strong:#818CF8; --hover:#1F1F23; --input-bg:#27272A; --section-bg:#0F0F11; --green:#4ADE80; --green-bg:#052E16; --green-border:#166534; --orange:#FB923C; --orange-bg:#431407; --orange-border:#9A3412; --glass-dialog-bg:rgba(20,20,24,0.66); --glass-dialog-filter:blur(22px) saturate(1.4); --overlay-bg:rgba(0,0,0,0.35); --danger:#F87171; }
+  [data-theme="forest"] { --app-bg:linear-gradient(180deg,#F5F1E3 0%,#EAE5D1 55%,#DCD6BD 100%); --card-bg:#fff; --card-border:#D1D9D3; --text-primary:#171717; --text-muted:#726E6B; --border-color:#D1D9D3; --accent:#059669; --accent-light:#ECFDF5; --accent-border:color-mix(in srgb,#059669 35%,transparent); --accent-solid:#05875F; --accent-strong:#04835B; --hover:#E8EDE8; --input-bg:#F5F5F4; --section-bg:#ECFDF5; --green:#11813A; --green-bg:#DCFCE7; --green-border:#BBF7D0; --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA; --glass-dialog-bg:rgba(255,255,255,0.66); --glass-dialog-filter:blur(22px) saturate(1.4); --overlay-bg:rgba(0,0,0,0.35); --danger:#D82525; }
+  [data-theme="blossom"] { --app-bg:linear-gradient(168deg,#FFE4EF 0%,#FFC9DD 42%,#FFAECF 78%,#FF9BC4 100%); --card-bg:#fff; --card-border:#F9D3E2; --text-primary:#3D2231; --text-muted:#86596D; --border-color:#F9D3E2; --accent:#F0568C; --accent-light:#FFDDEC; --accent-border:color-mix(in srgb,#F0568C 35%,transparent); --accent-solid:#CE3B70; --accent-strong:#B02C5D; --hover:#FBE7F0; --input-bg:#FFF0F6; --section-bg:#FFF0F6; --green:#11813A; --green-bg:#DCFCE7; --green-border:#BBF7D0; --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA; --glass-dialog-bg:rgba(255,255,255,0.66); --glass-dialog-filter:blur(22px) saturate(1.4); --overlay-bg:rgba(122,31,70,0.32); --danger:#D82525; }
+  [data-theme="dawn"] { --app-bg:linear-gradient(180deg,#FFF8EE 0%,#FFE9D2 42%,#FFD9AE 72%,#F9C78F 100%); --card-bg:#fff; --card-border:#F0DDC8; --text-primary:#2B2016; --text-muted:#7D6B58; --border-color:#F0DDC8; --accent:#E8734A; --accent-light:#FFEDE2; --accent-border:color-mix(in srgb,#E8734A 35%,transparent); --accent-solid:#C85A34; --accent-strong:#B95432; --hover:#F7E9DA; --input-bg:#FFF4E6; --section-bg:#FFF4E6; --green:#11813A; --green-bg:#DCFCE7; --green-border:#BBF7D0; --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA; --glass-dialog-bg:rgba(255,255,255,0.66); --glass-dialog-filter:blur(22px) saturate(1.4); --overlay-bg:rgba(0,0,0,0.35); --danger:#D82525; }
+  [data-theme="ocean-dark"] { --app-bg:radial-gradient(130% 110% at 70% -5%,#1E5A82 0%,#0E3355 42%,#061A33 100%); --card-bg:#0A1628; --card-border:#162B45; --text-primary:#E0E8F0; --text-muted:#7994B4; --border-color:#162B45; --accent:#3B9EFF; --accent-light:#0A1E3A; --accent-border:color-mix(in srgb,#3B9EFF 35%,transparent); --accent-solid:#2D78C2; --accent-strong:#3B9EFF; --hover:#0F1F35; --input-bg:#162B45; --section-bg:#081018; --green:#4ADE80; --green-bg:#052E16; --green-border:#166534; --orange:#FB923C; --orange-bg:#431407; --orange-border:#9A3412; --glass-dialog-bg:rgba(10,22,40,0.66); --glass-dialog-filter:blur(22px) saturate(1.4); --overlay-bg:rgba(0,0,0,0.35); --danger:#FF6B8A; }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: var(--app-bg);
+    color: var(--text-primary);
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .stage { position: relative; width: 900px; max-width: 100%; }
+
+  /* ===== 遮罩 + 对话框（玻璃磨砂，贴近真实 dialog.css） ===== */
+  .backdrop { position: fixed; inset: 0; background: var(--overlay-bg); display:flex; align-items:center; justify-content:center; padding:24px; }
+  .dialog-box {
+    width: 880px; max-width: 100%;
+    background: var(--glass-dialog-bg);
+    backdrop-filter: var(--glass-dialog-filter, none);
+    -webkit-backdrop-filter: var(--glass-dialog-filter, none);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.45);
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    max-height: 92vh;
+  }
+  .dialog-title { display:flex; align-items:center; gap:8px; padding:12px 16px; font-size:13px; font-weight:600; border-bottom:1px solid var(--border-color); }
+  .dialog-title .dot { width:8px; height:8px; border-radius:50%; background:var(--accent); }
+
+  /* ===== 工具栏（贴 imageDetailToolbar） ===== */
+  .toolbar { display:flex; align-items:center; gap:6px; padding:8px 12px; border-bottom:1px solid var(--border-color); flex-wrap:wrap; }
+  .toolBtn {
+    height:32px; min-width:32px; padding:0 10px;
+    display:flex; align-items:center; gap:4px;
+    border:1px solid var(--border-color); border-radius:7px;
+    background:transparent; color:var(--text-primary); cursor:pointer; font-size:12px;
+    transition: background .15s, border-color .15s;
+  }
+  .toolBtn:hover { background: var(--hover); }
+  .zoomLabel { font-size:12px; color:var(--text-muted); min-width:42px; text-align:center; }
+  .sep { width:1px; height:20px; background:var(--border-color); margin:0 4px; }
+  .ocrActive { background: color-mix(in srgb, var(--green) 15%, transparent); color: var(--green); border-color: color-mix(in srgb, var(--green) 35%, transparent); }
+  .pinBtn { color: #ec4899; border-color: color-mix(in srgb,#ec4899 30%,transparent); }
+  .pinBtn:hover { background: rgba(236,72,153,0.1); }
+  .hint { margin-left:auto; font-size:11px; color:var(--text-muted); }
+
+  /* ===== 图片查看区（贴 imageDetailViewport） ===== */
+  .viewport {
+    position: relative; flex:1; min-height: 280px;
+    display:flex; align-items:center; justify-content:center;
+    padding:16px; background: var(--section-bg);
+    overflow:hidden;
+  }
+  .imgMock {
+    position:relative; width:100%; max-width:560px; aspect-ratio: 16/10;
+    border-radius:8px; border:1px solid var(--border-color);
+    background: linear-gradient(135deg, #1f2937, #374151);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
+    user-select:none;
+  }
+  /* OCR 词框（贴 ocrWordBox） */
+  .wordBox {
+    position:absolute; border-radius:2px; cursor:pointer; pointer-events:auto;
+    border:1px solid rgba(99,102,241,0.35); background: rgba(99,102,241,0.06);
+    transition: background .15s, border-color .15s;
+    display:flex; align-items:center; justify-content:center;
+    font-size:10px; color: rgba(255,255,255,.85);
+  }
+  .wordBox:hover { background: rgba(99,102,241,0.15); border-color: rgba(99,102,241,0.6); }
+  .wordBox.sel { border:1.5px solid rgba(16,185,129,0.8); background: rgba(16,185,129,0.18); color:#fff; }
+  .selBoxDash { position:absolute; border:1px dashed #6366f1; background:rgba(99,102,241,0.1); pointer-events:none; }
+
+  /* ===== OCR 结果常驻面板（方案 A 核心改动） ===== */
+  .ocrPanel { border-top:1px solid var(--border-color); background: var(--card-bg); }
+  .ocrHead {
+    display:flex; align-items:center; gap:8px; padding:9px 12px;
+    background: var(--accent-light); border-bottom:1px solid var(--accent-border);
+  }
+  .ocrHead .title { font-size:12px; font-weight:600; color:var(--accent-strong); }
+  .ocrHead .spacer { flex:1; }
+  .collapseBtn {
+    width:26px; height:26px; border:1px solid var(--accent-border); border-radius:6px;
+    background:transparent; color:var(--accent-strong); cursor:pointer; font-size:13px;
+  }
+  .collapseBtn:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  /* 主复制按钮（全部复制）—— 实心主色，内联✓反馈 */
+  .copyAllBtn {
+    display:flex; align-items:center; gap:4px;
+    height:28px; padding:0 12px; border:none; border-radius:6px;
+    background: var(--accent-solid); color:#fff; font-size:12px; font-weight:500; cursor:pointer;
+    transition: opacity .15s, background .15s;
+  }
+  .copyAllBtn:hover { opacity:.9; }
+  .copyAllBtn.done { background: var(--green); }
+
+  .ocrBody { padding:10px 12px; }
+  .ocrBody.collapsed { display:none; }
+  .editLabel { font-size:11px; color:var(--text-muted); margin-bottom:6px; display:flex; align-items:center; gap:6px; }
+  .editLabel .tag { font-size:10px; padding:1px 6px; border-radius:4px; background:var(--orange-bg); color:var(--orange); border:1px solid var(--orange-border); }
+  textarea.ocrText {
+    width:100%; min-height:96px; resize:vertical;
+    padding:10px 12px; border:1px solid var(--border-color); border-radius:8px;
+    background: var(--input-bg); color: var(--text-primary);
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size:12px; line-height:1.7; outline:none;
+  }
+  textarea.ocrText:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-border); }
+
+  /* 选中词子行（贴 ocrResultBar 思路，但常驻可见） */
+  .selRow { display:flex; align-items:center; gap:10px; margin-top:10px; padding:8px 10px; border-radius:8px; background: var(--accent-light); border:1px solid var(--accent-border); }
+  .selRow.hidden { display:none; }
+  .selCount { font-size:11px; color:var(--accent-strong); font-weight:500; white-space:nowrap; }
+  .selCount strong { font-size:13px; }
+  .selRow .spacer { flex:1; }
+  .miniBtn { font-size:11px; padding:4px 10px; border-radius:5px; border:1px solid var(--accent-border); background:transparent; color:var(--accent-strong); cursor:pointer; }
+  .miniBtn:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .copySelBtn { border:none; background: var(--accent-solid); color:#fff; display:flex; align-items:center; gap:3px; }
+  .copySelBtn:hover { opacity:.9; }
+  .copySelBtn:disabled { opacity:.4; cursor:not-allowed; }
+  .copySelBtn.done { background: var(--green); }
+
+  /* ===== 主题切换器 ===== */
+  .themeSwitch { position: fixed; left:16px; bottom:16px; display:flex; gap:6px; z-index:50; }
+  .themeSwitch button { width:auto; padding:6px 10px; font-size:11px; border-radius:8px; border:1px solid var(--border-color); background:var(--card-bg); color:var(--text-primary); cursor:pointer; }
+  .themeSwitch button.on { background: var(--accent); color:#fff; border-color: var(--accent); }
+
+  .note { position:fixed; right:16px; bottom:16px; max-width:280px; font-size:11px; color:var(--text-muted); background:var(--card-bg); border:1px solid var(--border-color); border-radius:10px; padding:10px 12px; line-height:1.6; }
+</style>
+</head>
+<body>
+  <div class="backdrop">
+    <div class="dialog-box">
+      <div class="dialog-title"><span class="dot"></span> 图片预览 · 识别文字（方案 A 常驻结果面板）</div>
+
+      <!-- 工具栏 -->
+      <div class="toolbar">
+        <button class="toolBtn">－</button>
+        <span class="zoomLabel">100%</span>
+        <button class="toolBtn">＋</button>
+        <button class="toolBtn">1:1</button>
+        <button class="toolBtn">⟳</button>
+        <span class="sep"></span>
+        <button class="toolBtn ocrActive">🔍 文字已识别</button>
+        <button class="toolBtn pinBtn">📌 置顶</button>
+        <button class="toolBtn">✂ 裁剪</button>
+        <span class="hint">点击图片文字选词 · 拖拽框选 · Ctrl+C 复制</span>
+      </div>
+
+      <!-- 图片查看区 + OCR 词框叠加层 -->
+      <div class="viewport">
+        <div class="imgMock" id="imgMock">
+          <div class="wordBox" style="left:6%; top:14%; width:14%; height:11%;" data-w="w1">Error</div>
+          <div class="wordBox sel" style="left:22%; top:14%; width:12%; height:11%;" data-w="w2">failed</div>
+          <div class="wordBox" style="left:36%; top:14%; width:6%; height:11%;" data-w="w3">to</div>
+          <div class="wordBox sel" style="left:44%; top:14%; width:16%; height:11%;" data-w="w4">connect</div>
+          <div class="wordBox sel" style="left:62%; top:14%; width:14%; height:11%;" data-w="w5">server</div>
+          <div class="wordBox" style="left:10%; top:42%; width:22%; height:11%;" data-w="w6">Connection</div>
+          <div class="wordBox" style="left:34%; top:42%; width:10%; height:11%;" data-w="w7">timed</div>
+          <div class="wordBox" style="left:46%; top:42%; width:12%; height:11%;" data-w="w8">out</div>
+          <div class="wordBox" style="left:8%; top:70%; width:30%; height:11%;" data-w="w9">(0x800700A1)</div>
+          <div class="selBoxDash" style="left:20%; top:10%; width:58%; height:18%;"></div>
+        </div>
+      </div>
+
+      <!-- OCR 结果常驻面板（方案 A：与词框叠加层并存，不再互斥） -->
+      <div class="ocrPanel">
+        <div class="ocrHead">
+          <span class="title">🔍 识别结果</span>
+          <span class="spacer"></span>
+          <button class="collapseBtn" id="collapseBtn" title="折叠/展开">▾</button>
+          <button class="copyAllBtn" id="copyAllBtn">📋 全部复制</button>
+        </div>
+        <div class="ocrBody" id="ocrBody">
+          <div class="editLabel">识别文字（可先修正错字再复制）<span class="tag">可编辑</span></div>
+          <textarea class="ocrText" id="ocrText">Error failed to connect server
+Connection timed out
+指定的路径包含一个或多个无效字符 (0x800700A1)</textarea>
+          <div class="selRow" id="selRow">
+            <span class="selCount">已选 <strong id="selNum">3</strong> 个词</span>
+            <span class="spacer"></span>
+            <button class="miniBtn" id="clearBtn">清除</button>
+            <button class="miniBtn">✨ 变换为…</button>
+            <button class="copySelBtn" id="copySelBtn">📋 复制选中</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="themeSwitch" id="themeSwitch">
+    <button data-t="ocean">ocean</button>
+    <button data-t="midnight">midnight</button>
+    <button data-t="forest">forest</button>
+    <button data-t="blossom">blossom</button>
+    <button data-t="dawn">dawn</button>
+    <button data-t="ocean-dark" class="on">ocean-dark</button>
+  </div>
+
+  <div class="note">
+    方案 A 设计要点：<br>
+    ① 结果面板<strong>常驻</strong>，与词框叠加层并存，复制永远可达，不再需先关叠加层；<br>
+    ② 全文<strong>可编辑</strong>，先改错字再复制；<br>
+    ③ 复制走统一 <code>copyToClipboard()</code>（navigator.clipboard + Tauri 兜底），按钮内联「已复制 ✓」；<br>
+    ④ 6 主题令牌自动适配。
+  </div>
+
+<script>
+  // 主题切换
+  const sw = document.getElementById('themeSwitch');
+  sw.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.documentElement.setAttribute('data-theme', b.dataset.t);
+    [...sw.children].forEach(c => c.classList.toggle('on', c === b));
+  });
+
+  // 词框点击选词
+  const selNum = document.getElementById('selNum');
+  document.querySelectorAll('.wordBox').forEach(box => {
+    box.addEventListener('click', () => {
+      box.classList.toggle('sel');
+      const n = document.querySelectorAll('.wordBox.sel').length;
+      selNum.textContent = n;
+      const row = document.getElementById('selRow');
+      row.classList.toggle('hidden', n === 0);
+    });
+  });
+
+  // 全部复制 → 内联「已复制 ✓」
+  const copyAll = document.getElementById('copyAllBtn');
+  copyAll.addEventListener('click', () => {
+    copyAll.classList.add('done');
+    copyAll.textContent = '✓ 已复制';
+    setTimeout(() => { copyAll.classList.remove('done'); copyAll.textContent = '📋 全部复制'; }, 1500);
+  });
+
+  // 复制选中 → 内联「已复制 ✓」
+  const copySel = document.getElementById('copySelBtn');
+  copySel.addEventListener('click', () => {
+    copySel.classList.add('done');
+    copySel.textContent = '✓ 已复制';
+    setTimeout(() => { copySel.classList.remove('done'); copySel.textContent = '📋 复制选中'; }, 1500);
+  });
+
+  // 折叠/展开
+  const collapseBtn = document.getElementById('collapseBtn');
+  const ocrBody = document.getElementById('ocrBody');
+  collapseBtn.addEventListener('click', () => {
+    const c = ocrBody.classList.toggle('collapsed');
+    collapseBtn.textContent = c ? '▸' : '▾';
+  });
+
+  // 清除选中
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    document.querySelectorAll('.wordBox.sel').forEach(b => b.classList.remove('sel'));
+    selNum.textContent = 0;
+    document.getElementById('selRow').classList.add('hidden');
+  });
+</script>
+</body>
+</html>

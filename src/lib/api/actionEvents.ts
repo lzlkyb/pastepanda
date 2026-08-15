@@ -25,6 +25,15 @@ export interface ActionEvent {
   outcome: ActionOutcome;
   /** 关联的历史条目 id。粘贴信号回写必填（actionId="paste"）；动作事件可省略 */
   historyId?: string;
+  /**
+   * 粘的是当前列表的第几条（0-based）。**仅 paste 写**（v6.15）。
+   *
+   * `-1` = 不是从列表浏览选的（如从语义搜索结果里直接粘）。
+   * 这个区分存在本身就有信息量：-1 的占比 = “搜索 vs 浏览”的比例。
+   */
+  pasteIndex?: number;
+  /** 目标应用类别（往哪去，不是从哪来）。**仅 paste 写** */
+  targetCat?: string;
 }
 
 export interface ActionEventCount {
@@ -124,15 +133,35 @@ export function logPasteEvent(
   historyId: string,
   contentType: string,
   sourceApp: string,
+  listIndex?: number,
 ): void {
-  logActionEvent({
-    actionId: "paste",
-    contentType,
-    sourceApp: cleanSourceName(sourceApp),
-    hour: new Date().getHours(),
-    outcome: "pasted",
-    historyId,
-  });
+  // v6.15：多带两个字段（粘的第几条 + 往哪类应用粘）。
+  //
+  // 为何要这两个：X3（目标应用感知重排）隐含一个未验证的假设——“用户唤起后需要在列表里找”。
+  // 如果实际上平均下标接近 0（都粘第一条），那重排根本不必做。
+  // 先量一周再决定，比直接写 1-2 天的重排逻辑便宜得多。
+  //
+  // targetCat 在这里自己拉而不让调用方传：它需要一次 IPC，而四个调用点都不关心这事。
+  // 时序上安全：粘贴完成后前台已切回目标应用，而 `last_foreground_hwnd` 也还存着。
+  void (async () => {
+    let targetCat: string | undefined;
+    try {
+      const { pastePrecheck } = await import("./paste");
+      targetCat = (await pastePrecheck()).targetCategory ?? undefined;
+    } catch {
+      /* 拉不到就不带，统计少一个维度而已 */
+    }
+    logActionEvent({
+      actionId: "paste",
+      contentType,
+      sourceApp: cleanSourceName(sourceApp),
+      hour: new Date().getHours(),
+      outcome: "pasted",
+      historyId,
+      pasteIndex: listIndex,
+      targetCat,
+    });
+  })();
 }
 
 /** 最近 N 天的事件统计（默认 30 天） */
@@ -172,7 +201,40 @@ export async function actionDismissRemove(actionId: string, contentType: string)
   return invoke("action_dismiss_remove", { actionId, contentType });
 }
 
-/** 一键清空全部学习记录（事件 + 负反馈），返回删除条数 */
+/**
+ * 一键清空全部学习记录（事件 + 负反馈），返回删除条数。
+ *
+ * **不含置顶**：置顶是用户显式设的偏好，不是学习产物（同偏好指令）。
+ */
 export async function actionLearningsClear(): Promise<number> {
   return invoke("action_learnings_clear");
+}
+
+// ===== v6.14：常用置顶（正向偏好） =====
+
+/** 一条「常用置顶」。与 [`ActionDismissal`] 一正一负。 */
+export interface ActionPin {
+  actionId: string;
+  /** 空串 = 全局置顶（本版只用全局） */
+  contentType: string;
+  createdAt: string;
+}
+
+/**
+ * 置顶一个动作（幂等）。contentType 传空串 = 全局置顶。
+ *
+ * 后端会顺手清掉该动作的「不再推荐」，前端不用再调一次 remove。
+ */
+export async function actionPinAdd(actionId: string, contentType = ""): Promise<void> {
+  return invoke("action_pin_add", { actionId, contentType });
+}
+
+/** 全部置顶列表 */
+export async function actionPins(): Promise<ActionPin[]> {
+  return invoke("action_pins");
+}
+
+/** 取消置顶。**精确匹配**：contentType 空串只删全局那一条，不是通配符 */
+export async function actionPinRemove(actionId: string, contentType = ""): Promise<number> {
+  return invoke("action_pin_remove", { actionId, contentType });
 }

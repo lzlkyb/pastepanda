@@ -109,3 +109,27 @@ export interface ActionBoost {
 export function profileActionBoosts(): Promise<ActionBoost[]> {
   return invoke("profile_action_boosts");
 }
+
+/** 即将拼进 system prompt 的画像片段（D1 预览） */
+export interface ProfilePromptPreview {
+  /** 片段原文。空 = 本次不会注入任何东西 */
+  text: string;
+  /** 字符数 */
+  chars: number;
+  /** 片段非空却被出网闸整条拦下（开了开关却什么都没发，必须让用户看见） */
+  blocked: boolean;
+  /** 当前样本量 */
+  sampleEvents: number;
+  /** 注入门槛（前端不硬写数字，后端改了这里跟着变） */
+  minEvents: number;
+}
+
+/**
+ * 预览画像注入片段。
+ *
+ * 拿到的就是 `ai_run` 实际拼进去的那串字符（同一个函数、同一个统计窗口），
+ * 不是另外生成的描述——这是该功能默认开的前提。
+ */
+export function profilePromptPreview(): Promise<ProfilePromptPreview> {
+  return invoke("profile_prompt_preview");
+}

@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda · 画像注入 AI 输出（D1）设计稿</title>
+<style>
+  /* 下面这一块变量取自项目真实主题，不是拍的 */
+  :root {
+    --bg: #f6f7f9;
+    --panel-bg: #ffffff;
+    --text: #1f2328;
+    --text-muted: #6b7280;
+    --border-color: #e3e5e8;
+    --green: #15803d;
+    --green-bg: #f0fdf4;
+    --green-border: #bbf7d0;
+    --accent: #0ea5e9;
+    --warn: #b45309;
+    --warn-bg: #fffbeb;
+    --warn-border: #fde68a;
+    --code-bg: #f6f8fa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181c;
+      --panel-bg: #1d2026;
+      --text: #e6e8ea;
+      --text-muted: #9aa2ad;
+      --border-color: #2c3038;
+      --green: #4ade80;
+      --green-bg: rgba(34,197,94,.10);
+      --green-border: rgba(34,197,94,.28);
+      --accent: #38bdf8;
+      --warn: #fbbf24;
+      --warn-bg: rgba(245,158,11,.10);
+      --warn-border: rgba(245,158,11,.28);
+      --code-bg: #14161a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 20px 60px;
+    background: var(--bg); color: var(--text);
+    font: 13px/1.7 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 19px; margin: 0 0 6px; }
+  h2 { font-size: 14px; margin: 34px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border-color); }
+  .lead { color: var(--text-muted); font-size: 12px; margin: 0 0 4px; }
+  .meta { color: var(--text-muted); font-size: 11px; margin: 0 0 20px; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; background: var(--code-bg); padding: 1px 4px; border-radius: 4px; }
+
+  /* ===== 设置面板模拟器（宽度按真实 AI 页 380px） ===== */
+  .panel {
+    width: 380px; background: var(--panel-bg);
+    border: 1px solid var(--border-color); border-radius: 10px;
+    overflow: hidden;
+  }
+  .accHead { display: flex; align-items: center; gap: 8px; padding: 9px 11px; border-bottom: 1px solid var(--border-color); }
+  .accIcon { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 6px; background: var(--green-bg); color: var(--green); font-size: 11px; }
+  .accName { font-size: 12px; font-weight: 600; }
+  .accSub { font-size: 10px; color: var(--text-muted); }
+  /* 真实值：AiTab.module.css:1349 */
+  .accBody { padding: 11px 12px 12px; display: flex; flex-direction: column; gap: 12px; }
+  /* 真实值：AiTab.module.css:1362 */
+  .redline {
+    display: flex; gap: 6px; align-items: flex-start;
+    padding: 7px 9px; border-radius: 8px;
+    background: var(--green-bg); border: 1px solid var(--green-border);
+    font-size: 10.5px; color: var(--green); line-height: 1.55;
+  }
+  /* 真实值：AiTab.module.css:1418 */
+  .evoRow {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 7px 9px; border-radius: 8px;
+    border: 1px solid var(--border-color); background: transparent;
+    text-align: left;
+  }
+  /* 真实值：AiTab.module.css:1447 */
+  .evoName { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; font-size: 11.5px; font-weight: 600; }
+  /* 真实值：AiTab.module.css:1463 */
+  .evoDesc { font-size: 10px; color: var(--text-muted); font-weight: 400; line-height: 1.45; }
+  .evoChev { flex-shrink: 0; color: var(--text-muted); font-size: 11px; }
+
+  /* 开关：沿用 Settings.module.css 的 .sToggle 视觉语言（ToggleRow.tsx） */
+  .toggle {
+    flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px;
+    font-size: 10px; padding: 2px 7px 2px 3px; border-radius: 999px;
+    border: 1px solid var(--border-color); background: transparent; color: var(--text-muted);
+  }
+  .toggle .thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--text-muted); }
+  .toggle.on { border-color: var(--green-border); background: var(--green-bg); color: var(--green); }
+  .toggle.on .thumb { background: var(--green); }
+
+  /* 新增：注入片段原样预览区 */
+  .injectBox {
+    border: 1px solid var(--border-color); border-radius: 8px;
+    background: var(--code-bg); padding: 8px 9px;
+    font-family: ui-monospace, Consolas, "Microsoft YaHei", monospace;
+    font-size: 10.5px; line-height: 1.6; color: var(--text);
+    white-space: pre-wrap; word-break: break-word;
+    user-select: text;
+  }
+  .injectHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 10px; color: var(--text-muted); margin-bottom: 5px; }
+  .injectHead b { color: var(--text); font-weight: 600; font-size: 10.5px; }
+  .miniBtn { font-size: 10px; padding: 2px 7px; border-radius: 6px; border: 1px solid var(--border-color); background: transparent; color: var(--text-muted); }
+  .stateNote {
+    display: flex; gap: 6px; align-items: flex-start;
+    padding: 7px 9px; border-radius: 8px; font-size: 10.5px; line-height: 1.55;
+    background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn);
+  }
+
+  /* ===== 说明排版 ===== */
+  .grid { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-start; }
+  .caseNote { flex: 1; min-width: 260px; font-size: 12px; color: var(--text-muted); }
+  .caseNote b { color: var(--text); }
+  .tag { display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border-color); color: var(--text-muted); margin-bottom: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  th, td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+  th { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+  ol, ul { padding-left: 20px; }
+  li { margin: 5px 0; }
+  .warnBlock { border-left: 3px solid var(--warn); background: var(--warn-bg); padding: 10px 12px; border-radius: 0 8px 8px 0; font-size: 12px; margin: 12px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>画像注入 AI 输出（D1）· 设计稿</h1>
+  <p class="lead">把用户画像（<code>role_scores</code> 等）映射成一段 system prompt 片段，让 AI 输出真的随使用习惯变化。路线图 P0 的最后一项。</p>
+  <p class="meta">2026-08-14 · 方案甲（最小可用，不含 A/B）· 样式取自 <code>AiTab.module.css</code> 真实值（行号已标在 CSS 注释里）</p>
+
+  <h2>放在哪里</h2>
+  <p><b>设置 › AI › 自进化</b>（<code>AiEvolution.tsx</code>），紧跟在「我的画像」那一行下面。理由是语义连续：上一行回答「画像是什么」，这一行回答「画像被拿去干什么」。不新开区块。</p>
+
+  <h2>状态 A · 默认（开）</h2>
+  <div class="grid">
+    <div class="panel">
+      <div class="accHead">
+        <span class="accIcon">◉</span>
+        <span><span class="accName">自进化</span><br><span class="accSub">近 30 天 214 次 · 仅存本机</span></span>
+      </div>
+      <div class="accBody">
+        <div class="redline">
+          <span>⛨</span>
+          <span>学习数据<b>仅存本机</b>，不含任何复制内容本身，可随时查看或清空。它只影响推荐排序，<b>永不自动执行任何动作</b>。</span>
+        </div>
+
+        <div class="evoRow">
+          <span class="evoName">○ 我的画像
+            <span class="evoDesc">基于使用统计，可用 AI 精炼成一段描述</span>
+          </span>
+          <span class="evoChev">›</span>
+        </div>
+
+        <!-- ↓↓↓ 新增的一行 ↓↓↓ -->
+        <div class="evoRow">
+          <span class="evoName">画像影响 AI 输出
+            <span class="evoDesc">开启后，会把一段描述你使用习惯的文字随请求发给模型</span>
+          </span>
+          <button class="toggle on"><span class="thumb"></span>开</button>
+        </div>
+        <!-- ↑↑↑ 新增的一行 ↑↑↑ -->
+
+        <div class="evoRow">
+          <span class="evoName">AI 结果反馈
+            <span class="evoDesc">7 个动作有统计 · 只影响“哪些动作常被修改”</span>
+          </span>
+          <button class="miniBtn">清空</button>
+        </div>
+      </div>
+    </div>
+    <div class="caseNote">
+      <span class="tag">默认态</span>
+      <p><b>默认开</b>（用户 2026-08-14 拍定，覆盖了初稿的“默认关”）。理由：默认关的话绝大多数人永远不会去开，这个断点等于没修——四层记忆里就差这一条没通。</p>
+      <p>代价不回避：这是一条<b>新的出网通道</b>。三件事抵消它：① 片段是纯本地固定文案的组合，不含剪贴板内容 / 自定义动作名 / 任何用户自由输入；② 下方的预览区把它原样摊开；③ 仍过与正文同一道出网闸。</p>
+      <p>文案不用“智能”“个性化”这类词，直接说清楚<b>会发东西出去</b>。</p>
+    </div>
+  </div>
+
+  <h2>状态 B · 开启（带原样预览）</h2>
+  <div class="grid">
+    <div class="panel">
+      <div class="accBody">
+        <div class="evoRow">
+          <span class="evoName">画像影响 AI 输出
+            <span class="evoDesc">开启后，会把一段描述你使用习惯的文字随请求发给模型</span>
+          </span>
+          <button class="toggle on"><span class="thumb"></span>开</button>
+        </div>
+
+        <div>
+          <div class="injectHead">
+            <b>实际会发出去的内容（原文）</b>
+            <button class="miniBtn">刷新</button>
+          </div>
+          <div class="injectBox">用户经常处理代码，遇代码优先解释思路而非逐句翻译。
+用户常用 JSON/SQL，格式化时保持结构完整。
+默认使用中文表达。</div>
+          <div class="evoDesc" style="margin-top:6px">共 48 字 · 上限 300 字 · 会随使用习惯变化，随时回来看</div>
+        </div>
+      </div>
+    </div>
+    <div class="caseNote">
+      <span class="tag">核心设计</span>
+      <p><b>原样展示，不做任何美化。</b>展示的必须就是拼进 prompt 的那串字符，不是它的“抽象描述”。等宽字体 + 可选中，用户能直接复制出去比对。</p>
+      <p>这一步是本轮最重要的交付物：<b>先用人眼验片段质量</b>。映射表写歪了的话，开一天就能看出来，比跑两周 A/B 快得多。</p>
+      <p>数字（共 48 字）不是装饰：300 字上限是硬约束，得让用户看得到离上限还有多远。</p>
+    </div>
+  </div>
+
+  <h2>状态 C · 样本不够，没东西可注入</h2>
+  <div class="grid">
+    <div class="panel">
+      <div class="accBody">
+        <div class="evoRow">
+          <span class="evoName">画像影响 AI 输出
+            <span class="evoDesc">开启后，会把一段描述你使用习惯的文字随请求发给模型</span>
+          </span>
+          <button class="toggle on"><span class="thumb"></span>开</button>
+        </div>
+        <div class="stateNote">
+          <span>⚠</span>
+          <span>使用记录还不够（需至少 30 次动作），<b>本次不会注入任何内容</b>。开关可以先留着，攒够了自动生效。</span>
+        </div>
+      </div>
+    </div>
+    <div class="caseNote">
+      <span class="tag">空态</span>
+      <p>开了开关却什么都没发生，必须说清楚原因。否则用户会以为功能坏了，或者更糟——以为正在发而实际没发，两种误解都不行。</p>
+    </div>
+  </div>
+
+  <h2>状态 D · 片段被出网闸拦下</h2>
+  <div class="grid">
+    <div class="panel">
+      <div class="accBody">
+        <div class="evoRow">
+          <span class="evoName">画像影响 AI 输出
+            <span class="evoDesc">开启后，会把一段描述你使用习惯的文字随请求发给模型</span>
+          </span>
+          <button class="toggle on"><span class="thumb"></span>开</button>
+        </div>
+        <div class="stateNote">
+          <span>⚠</span>
+          <span>生成的片段里含有疑似密钥或个人信息（多半来自自定义动作名），<b>已整条不发</b>。改掉那个动作名就能恢复。</span>
+        </div>
+      </div>
+    </div>
+    <div class="caseNote">
+      <span class="tag">路线图没写的一态</span>
+      <p><code>compose_system_with_pref</code> 对偏好指令的现有做法是<b>命中就整条丢弃</b>（不换占位文案，因为占位文案对模型是纯噪声）。画像片段走同一条闸。</p>
+      <p>但丢弃必须<b>可见</b>：用户开了开关、预览里也能看到片段，却因为含敏感词一直没真正发出去——不提示就是静默失败。</p>
+    </div>
+  </div>
+
+  <h2>映射表（纯本地规则，不调模型）</h2>
+  <table>
+    <tr><th>画像信号</th><th>触发条件</th><th>注入片段</th></tr>
+    <tr><td>角色特征</td><td>code 内容占比 &gt; 40%</td><td>用户经常处理代码，遇代码优先解释思路而非逐句翻译。</td></tr>
+    <tr><td>内容类型</td><td>json/sql 占比高</td><td>用户常用 JSON/SQL，格式化时保持结构完整。</td></tr>
+    <tr><td>时段活跃</td><td><b>当前时刻</b>落在长期统计的高峰区间内</td><td>当前处于用户高频使用时段，输出保持精炼。</td></tr>
+    <tr><td>反馈倾向</td><td>某动作 edit_rate &gt; 0.4 且样本 ≥ 10</td><td>用户经常手动修改本动作输出，请贴合常见偏好。</td></tr>
+    <tr><td>语言倾向</td><td>中文内容占比高</td><td>默认使用中文表达。</td></tr>
+  </table>
+  <p class="evoDesc" style="margin-top:8px">时段那一条是路线图已纠正过的坑：早期版本的触发条件是“长期高峰在 9-11 点”但文案写“当前时段”，导致高峰在上午的人晚上十点用也会被错误注入。</p>
+
+  <h2>实现约束（写代码时对照这份）</h2>
+  <ol>
+    <li><b>新文件</b> <code>src-tauri/src/ai/profile_prompt.rs</code>，纯函数 <code>profile_to_prompt(&amp;ProfileRawStats) -&gt; String</code>。纯函数才能单测——它决定的是“把哪些字节发给第三方”，与 <code>compose_system_with_pref</code> 同级别的隐私红线。</li>
+    <li><b>拼接顺序：画像在前，偏好在后。</b> <code>action_prefs</code> 是用户<b>显式</b>设的，画像是<b>推断</b>的；两者冲突时必须显式的赢，而 LLM 对靠后的指令权重更高。路线图没写这一条。</li>
+    <li><b>出网闸复用 <code>classifier.is_sensitive_for_egress()</code></b>，不是路线图说的 <code>sanitize_profile</code>。后者是 <code>profile.rs</code> 那条路径的做法；<code>run.rs</code> 这条路径一直用的是前者（<code>is_secret || has_pii</code>）。两条路径两套判定迟早不一致。</li>
+    <li><b><code>profile_sig</code> 挂进 <code>cache_id</code>，不改 <code>make_key</code> 签名。</b> <code>cache::make_key</code> 全项目只有一个生产调用点（<code>run.rs:204</code>），且传的就是 <code>cache_id</code>；自定义动作已在用 <code>format!("{}#{}", action_id, template_fingerprint(..))</code> 往这个位置挂指纹。画像签名同理——<b>零签名改动、零测试改动</b>。</li>
+    <li><b>签名必须粗粒度离散化。</b>画像是持续漂移的，直接拿原值算签名会让 24h 缓存几乎永远命不中。先映射到几个档位再哈希。</li>
+    <li><b>关闭时零开销。</b>开关关着就不读 <code>profile_raw_stats</code>、不算签名、<code>cache_id</code> 不变——与现有行为完全一致，旧缓存照常命中。</li>
+    <li><b>本地厂商（Ollama）不过滤</b>，与现有 <code>is_local</code> 分支保持一致。</li>
+    <li><b>预览走新命令</b> <code>profile_prompt_preview</code>，返回 <code>{ text, chars, blocked }</code>。<code>blocked</code> 就是状态 D 那个提示的数据源。</li>
+    <li><b>同步改注释</b>：<code>commands/profile.rs</code> 现有注释写“这是全项目唯一把用户画像发往云端第三方的路径”，D1 上线后不再成立，必须改成两条路径。</li>
+  </ol>
+
+  <div class="warnBlock">
+    <b>本轮不做的：</b>A/B 自比（随机分组 + 归一化编辑距离）。它的代价是缓存命中率腰斩（同一内容分裂成两个 key），而它要回答的问题——“画像注入有没有用”——在映射表质量未经人眼验证前测也白测。等甲稳定、片段看着靠谱了，再决定值不值得付这个代价。
+  </div>
+
+</div>
+</body>
+</html>

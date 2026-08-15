@@ -98,25 +98,44 @@ describe("matchQuickActions 出网标记", () => {
 /**
  * scoreAiAction 里 ai-summarize 要求 >200 字、ai-rewrite 要求 ≥50 字，
  * 所以“复制了一句话”这个最常见场景会一个候选都拿不到。
+ *
+ * 兜底有三道门（长度 / 形态 / 路径派生），下面逐条守。
+ * 后两道是拿 492 条真实历史回放逐出来的：兜底是硬编码 push、完全绕过打分，
+ * 不守就会把打分刚排除的内容原样塞回来。
  */
 describe("matchQuickActions 短文本兜底", () => {
+  /** 够长（≥ FALLBACK_MIN_CHARS）且成句，兜底该生效 */
+  const LONG = "这是一段够长的普通中文内容，用来触发短文本兜底";
+
   it("一个 AI 候选都没时补上总结 + 改写", () => {
-    const r = matchQuickActions({ text: TEXT, aiOk: true, candidates: [] });
+    const r = matchQuickActions({ text: LONG, aiOk: true, candidates: [] });
     expect(r.map((a) => a.id)).toEqual(["ai-summarize", "ai-rewrite"]);
   });
 
   it("已有 AI 候选时不追加兜底", () => {
-    const r = matchQuickActions({ text: TEXT, aiOk: true, candidates: [ai("ai-explain-code")] });
+    const r = matchQuickActions({ text: LONG, aiOk: true, candidates: [ai("ai-explain-code")] });
     expect(r.map((a) => a.id)).toEqual(["ai-explain-code"]);
   });
 
   it("只有本地候选时仍补兜底（本地动作不算 AI）", () => {
     const r = matchQuickActions({
-      text: TEXT,
+      text: LONG,
       aiOk: true,
       candidates: [cand("mask-sensitive", "text")],
     });
     expect(r.map((a) => a.id)).toEqual(["mask-sensitive", "ai-summarize", "ai-rewrite"]);
+  });
+
+  it("太短不兜底：给 3 个字补一个「总结」和空着一样糟", () => {
+    expect(matchQuickActions({ text: "配置组", aiOk: true, candidates: [] })).toEqual([]);
+  });
+
+  it("标识符 / 路径 / 单号不兜底——它们没有“要点”也没有“语气”", () => {
+    // 三个都 ≥20 字，只被形态判据挡住。这三条是真实历史里拉出来的，
+    // 它们确实被兜底以“一句话摘要 / 改写语气”的形式塞回过。
+    for (const t of ["INCCForHHOrSSService", "C0805041350000005382", "receivablebill_his.xml"]) {
+      expect(matchQuickActions({ text: t, aiOk: true, candidates: [] }), t).toEqual([]);
+    }
   });
 });
 

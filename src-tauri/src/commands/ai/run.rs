@@ -201,6 +201,43 @@ pub async fn ai_run(
         }
     };
 
+    // D1 画像注入：片段必须**在 cache_key 之前**算出来。
+    //
+    // 偏好指令不进缓存键是因为它有“一改就清缓存”的钩子（`action_pref_set` 里的
+    // `cache::clear()`）；画像没有这种钩子——它随使用持续漂移，没任何“设置动作”可挂。
+    // 不拼进 `cache_id` 的后果：早上带 A 片段算出的结果，到片段已变成 B 时还会被
+    // 24h 缓存原样吐回来，注入形同虚设。
+    //
+    // 挂在 `cache_id` 而不改 `cache::make_key` 的签名：自定义动作已经在用
+    // `format!("{}#{}", action_id, template_fingerprint(..))` 往这个位置挂指纹。
+    //
+    // 关闭时**零开销**：不读 `profile_raw_stats`、不算签名、`cache_id` 原样不动，旧缓存照常命中。
+    let profile_fragment = if cfg.profile_as_context {
+        // 守卫限在块里：下面还有 await，DataStore 的锁不能活过去。
+        let raw = {
+            let store = app.state::<DataStore>();
+            store.profile_raw_stats(crate::commands::profile::PROFILE_DAYS)
+        };
+        // 读不出来就不注入（而不是报错）：画像是锦上添花，不能反过来卡死一次 AI 调用。
+        raw.map(|r| {
+            use chrono::Timelike;
+            let hour = chrono::Local::now().hour();
+            crate::ai::profile_prompt::profile_to_prompt(&r, Some(&action_id), hour)
+        })
+        .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let cache_id = if profile_fragment.is_empty() {
+        cache_id
+    } else {
+        format!(
+            "{}@{}",
+            cache_id,
+            crate::ai::profile_prompt::profile_sig(&profile_fragment)
+        )
+    };
+
     let cache_key = cache::make_key(&cache_id, &opts, text.trim());
     if let Some(hit) = cache::get(&cache_key) {
         // 缓存命中也记一笔（cost = 0）——这是证明缓存到底省了多少钱的唯一数据。
@@ -321,6 +358,11 @@ pub async fn ai_run(
     let system = {
         let store = app.state::<DataStore>();
         let pref = store.action_pref_get(&action_id)?;
+        // 顺序有意：**画像先拼、偏好后拼**，所以偏好落在更靠后的位置。
+        // `action_prefs` 是用户**显式**写的，画像是**推断**的；两者冲突时必须显式的赢，
+        // 而 LLM 对更靠后的指令权重更高。反过来拼的话，用户手写的“译文更简洁”
+        // 会被一句统计推出来的“先给结论再给展开”压过去。
+        let system = compose_system_with_profile(system, &profile_fragment, spec.is_local(), &classifier);
         compose_system_with_pref(system, &pref, spec.is_local(), &classifier)
     };
 
@@ -605,6 +647,26 @@ pub async fn ai_preview_custom(
     }
 }
 
+/// 把画像片段拼进 system prompt（D1）。
+///
+/// 与 [`compose_system_with_pref`] 分两个函数而不合并：两者的**数据性质不同**。
+/// 偏好是用户自由输入的文本（可能混入密钥）；画像片段是本地固定文案的组合，
+/// 理论上不可能含敏感信息。**但仍然过同一道闸**：“理论上不可能”不是不检的理由——
+/// 映射表以后如果加进了自定义动作名之类的东西，这道闸就是唯一的兵。
+///
+/// 命中就**整条不拼**，与偏好一致（占位文案对模型是纯噪声）。
+fn compose_system_with_profile(
+    system: String,
+    profile: &str,
+    is_local: bool,
+    classifier: &ContentClassifier,
+) -> String {
+    if profile.is_empty() || (!is_local && classifier.is_sensitive_for_egress(profile)) {
+        return system;
+    }
+    format!("{}\n\n用户习惯：{}", system, profile)
+}
+
 /// 把动作偏好拼进 system prompt。
 ///
 /// 从 `ai_run` 里抽出来的理由与 [`build_refine_input`]（profile.rs）相同：
@@ -636,6 +698,58 @@ mod tests {
     #[test]
     fn test_empty_pref_keeps_system_unchanged() {
         assert_eq!(compose("", false), SYS);
+    }
+
+    // ===== D1 画像注入 =====
+
+    fn compose_profile(profile: &str, is_local: bool) -> String {
+        compose_system_with_profile(
+            SYS.to_string(),
+            profile,
+            is_local,
+            &ContentClassifier::new(),
+        )
+    }
+
+    #[test]
+    fn test_空画像片段不改变_system() {
+        assert_eq!(compose_profile("", false), SYS);
+    }
+
+    #[test]
+    fn test_画像片段拼在用户习惯标题下() {
+        let out = compose_profile("用户经常处理代码。", false);
+        assert!(out.starts_with(SYS));
+        assert!(out.contains("用户习惯：用户经常处理代码。"), "实际：{}", out);
+    }
+
+    /// 回归：片段现在是本地固定文案，但映射表以后可能加进用户输入的东西，
+    /// 这道闸得一直在。
+    #[test]
+    fn test_含敏感信息的画像片段不得出网() {
+        let p = "用户经常处理代码，常用密钥 sk-abcdefghijklmnopqrstuvwxyz0123456789。";
+        assert_eq!(compose_profile(p, false), SYS, "含密钥的片段不得拼进出网的 system");
+    }
+
+    #[test]
+    fn test_本地厂商不过滤画像片段() {
+        let p = "手机号 13800138000。";
+        assert!(
+            compose_profile(p, true).contains("13800138000"),
+            "本地厂商内容不出机器，不该过滤"
+        );
+    }
+
+    /// 本轮最容易退化的一点：两段都拼时，**偏好必须在画像后面**。
+    /// 偏好是用户显式写的，画像是推断的，冲突时显式的赢；LLM 对靠后的指令权重更高。
+    #[test]
+    fn test_偏好必须拼在画像之后() {
+        let c = ContentClassifier::new();
+        let s = compose_system_with_profile(SYS.to_string(), "习惯句。", false, &c);
+        let s = compose_system_with_pref(s, "偏好句。", false, &c);
+        let i_profile = s.find("用户习惯").expect("应含画像段");
+        let i_pref = s.find("用户偏好").expect("应含偏好段");
+        assert!(i_profile < i_pref, "偏好必须在后：{}", s);
     }
 
     #[test]

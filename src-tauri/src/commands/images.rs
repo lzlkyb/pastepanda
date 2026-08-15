@@ -338,7 +338,11 @@ fn ocr_image_impl(path: &str) -> Result<OcrResult, String> {
     // 统一走白名单 + canonicalize（兼防 UNC 凭据泄漏），并做头部尺寸校验防解压炸弹。
     let canonical = validate_image_file_path(path)?;
     check_image_decode_limits(&canonical)?;
-    let canonical_str = canonical.to_string_lossy().to_string();
+    // 校验（白名单/存在性/尺寸）已在 validate_image_file_path 完成。
+    // 但 std::fs::canonicalize 在 Windows 上会返回带 `\\?\` 设备命名空间前缀的路径，
+    // 而 WinRT 的 StorageFile::GetFileFromPathAsync 只接受标准 Win32 路径（C:\...），
+    // 喂入 `\\?\...` 会报 ERROR_INVALID_NAME (0x800700A1)。此处剥掉前缀再交给 WinRT。
+    let canonical_str = strip_verbatim_prefix(&canonical);
 
     // 1. 用 StorageFile 打开图片文件
     let file = StorageFile::GetFileFromPathAsync(&HSTRING::from(canonical_str))
@@ -428,6 +432,14 @@ fn ocr_image_impl(path: &str) -> Result<OcrResult, String> {
         .join("\n");
 
     Ok(OcrResult { lines, full_text })
+}
+
+/// 去掉 Windows 设备命名空间前缀 `\\?\`（std::fs::canonicalize 在 Windows 上会加上），
+/// 因为 WinRT StorageFile::GetFileFromPathAsync 只接受标准 Win32 路径（C:\...）。
+/// 非 Windows 平台不会出现该前缀，调用为 no-op。
+fn strip_verbatim_prefix(path: &std::path::Path) -> String {
+    let s = path.to_string_lossy().to_string();
+    s.strip_prefix(r"\\?\").map(|stripped| stripped.to_string()).unwrap_or(s)
 }
 
 #[cfg(not(target_os = "windows"))]

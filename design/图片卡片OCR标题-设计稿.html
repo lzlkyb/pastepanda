@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda · 图片卡片 OCR 文字入标题 · 设计稿（方案 B：持久化）</title>
+<style>
+  :root{--bg:#f6f7f9;--panel:#fff;--text:#1f2328;--muted:#6b7280;--border:#e3e5e8;
+    --thumb:#f1f2f4;--green:#15803d;--green-bg:#dcfce7;--green-bd:#bbf7d0;
+    --amber:#b45309;--amber-bg:#fffbeb;--amber-bd:#fde68a;--code:#f6f8fa}
+  @media(prefers-color-scheme:dark){:root{--bg:#16181c;--panel:#1d2026;--text:#e6e8ea;--muted:#9aa2ad;
+    --border:#2c3038;--thumb:#23262e;--green:#4ade80;--green-bg:rgba(34,197,94,.1);--green-bd:rgba(34,197,94,.28);
+    --amber:#fbbf24;--amber-bg:rgba(245,158,11,.1);--amber-bd:rgba(245,158,11,.28);--code:#14161a}}
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px 20px 60px;background:var(--bg);color:var(--text);
+    font:13px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:920px;margin:0 auto}
+  h1{font-size:19px;margin:0 0 6px}
+  h2{font-size:14px;margin:30px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+  .lead{color:var(--muted);font-size:12px;margin:0 0 4px}
+  .meta{color:var(--muted);font-size:11px;margin:0 0 20px}
+  code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;background:var(--code);padding:1px 4px;border-radius:4px}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin:8px 0}
+  th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{font-size:11px;color:var(--muted);font-weight:600}
+  ol,ul{padding-left:20px} li{margin:5px 0}
+  .warn{border-left:3px solid var(--amber);background:var(--amber-bg);padding:10px 12px;
+    border-radius:0 8px 8px 0;margin:10px 0;font-size:12px}
+  .ok{border-left:3px solid var(--green);background:var(--green-bg);padding:10px 12px;
+    border-radius:0 8px 8px 0;margin:10px 0;font-size:12px}
+
+  /* ── 真实卡片结构模拟（对齐 Card.tsx / CardList.module.css）── */
+  .cards{display:flex;flex-direction:column;gap:10px;width:420px;background:var(--panel);
+    border:1px solid var(--border);border-radius:12px;padding:12px;margin:12px 0}
+  .card{display:flex;align-items:flex-start;gap:10px;padding:9px 10px;border:1px solid var(--border);
+    border-radius:12px;background:var(--panel);position:relative}
+  .thumb{width:42px;height:42px;min-width:42px;min-height:42px;border-radius:12px;overflow:hidden;
+    background:var(--thumb);flex-shrink:0}
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .thumb .ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+    font-size:18px;color:var(--muted)}
+  .content{flex:1;min-width:0;overflow:hidden}
+  .title{font-size:13px;font-weight:600;color:var(--text);line-height:1.4;word-break:break-word;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-height:36px}
+  .title.muted{color:var(--muted);font-weight:500}
+  .sub{font-size:11px;color:var(--muted);margin-top:2px;display:flex;align-items:center;gap:6px;
+    white-space:nowrap;overflow:hidden}
+  .badge{display:inline-flex;align-items:center;font-size:9.5px;font-weight:600;border-radius:4px;
+    padding:0 5px;line-height:1.5;white-space:nowrap}
+  .badge.src{color:var(--muted);background:var(--thumb);border:1px solid var(--border)}
+  .badge.size{color:var(--muted);background:var(--panel);border:1px solid var(--border)}
+  .badge.ocr{color:var(--green);background:var(--green-bg);border:1px solid var(--green-bd)}
+  .badge.tag{color:var(--muted);background:var(--thumb);border:1px solid var(--border)}
+  .time{margin-left:auto;font-size:11px;color:var(--muted);flex-shrink:0;padding-left:6px}
+  .spinner{width:11px;height:11px;border:2px solid var(--border);border-top-color:var(--green);
+    border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0;display:inline-block;vertical-align:-2px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .grid{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
+  .note{flex:1;min-width:280px;font-size:12px;color:var(--muted)}
+  .note b{color:var(--text)}
+  .stateTag{display:inline-block;font-size:10px;padding:1px 7px;border-radius:999px;
+    border:1px solid var(--border);color:var(--muted);margin-bottom:8px}
+  .cmp{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
+  .cmpCol{flex:1;min-width:300px}
+  .cmpLabel{font-size:11px;font-weight:600;color:var(--muted);margin:0 0 6px;letter-spacing:.5px}
+  .strike{text-decoration:line-through;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>图片卡片 · OCR 文字入标题</h1>
+<p class="lead">主窗口卡片：图片复制进来后，标题自动显示本地 OCR 识别出的文字，取代 <code>[图片] 554x265</code> 占位；识别结果入库持久化，每张图只识别一次。</p>
+<p class="meta">2026-08-14 · 方案 B（OCR 结果入库）· 主窗口卡片（Card.tsx 标题区）· 尺寸信息降级到副行 · 复用现有本地 OCR 引擎（不联网、不花钱、不受 AI 开关约束）</p>
+
+<h2>一、现状问题</h2>
+<div class="cmp">
+  <div class="cmpCol">
+    <p class="cmpLabel">现状（标题直接显示后端占位 text）</p>
+    <div class="cards" style="margin-top:0">
+      <div class="card">
+        <div class="thumb"><span class="ph">🖼</span></div>
+        <div class="content">
+          <div class="title">[图片] 554x265</div>
+          <div class="sub"><span class="badge src">📋 截图工具</span><span class="badge tag">#截图</span></div>
+        </div>
+        <span class="time">2 分钟前</span>
+      </div>
+    </div>
+    <p>缩略图已经在了，标题还重复一遍「图片」——占位感强，信息量为零。</p>
+  </div>
+  <div class="cmpCol">
+    <p class="cmpLabel">目标（识别文字进标题，尺寸降级到副行）</p>
+    <div class="cards" style="margin-top:0">
+      <div class="card">
+        <div class="thumb"><span class="ph">🖼</span></div>
+        <div class="content">
+          <div class="title">pandas 导出 Excel 时如何保留单元格格式？</div>
+          <div class="sub"><span class="badge src">📋 截图工具</span><span class="badge size">554×265</span><span class="badge ocr">OCR</span><span class="badge tag">#截图</span></div>
+        </div>
+        <span class="time">2 分钟前</span>
+      </div>
+    </div>
+    <p>一眼看出内容是什么，能直接判断要不要点开。副行 <code>554×265</code> 变成有用的元数据。</p>
+  </div>
+</div>
+
+<h2>二、四种卡片状态</h2>
+<div class="cards">
+  <div class="card">
+    <div class="thumb"><span class="ph">🖼</span></div>
+    <div class="content">
+      <div class="title muted"><span class="spinner"></span> 识别图片文字中…</div>
+      <div class="sub"><span class="badge src">📋 截图工具</span><span class="badge size">554×265</span></div>
+    </div>
+    <span class="time">2 分钟前</span>
+  </div>
+  <div class="card">
+    <div class="thumb"><span class="ph">🖼</span></div>
+    <div class="content">
+      <div class="title">useEffect 的依赖数组里有对象字面量时，每次渲染都会重新执行——正确做法是拆出稳定引用…</div>
+      <div class="sub"><span class="badge src">📋 微信截图</span><span class="badge size">554×265</span><span class="badge ocr">已识别 48 字</span><span class="badge tag">#代码</span></div>
+    </div>
+    <span class="time">5 分钟前</span>
+  </div>
+  <div class="card">
+    <div class="thumb"><span class="ph">🖼</span></div>
+    <div class="content">
+      <div class="title muted">未识别到文字</div>
+      <div class="sub"><span class="badge src">📋 微信截图</span><span class="badge size">554×265</span></div>
+    </div>
+    <span class="time">8 分钟前</span>
+  </div>
+  <div class="card">
+    <div class="thumb"><span class="ph">🖼</span></div>
+    <div class="content">
+      <div class="title">截图_20260814_153022.png</div>
+      <div class="sub"><span class="badge src">📋 微信截图</span><span class="badge size">554×265</span></div>
+    </div>
+    <span class="time">昨天 14:30</span>
+  </div>
+</div>
+
+<table>
+  <tr><th>状态</th><th>标题（cardTitle）</th><th>副行（cardSub）</th><th>何时出现</th></tr>
+  <tr><td><b>① 识别中</b></td><td class="muted">「识别图片文字中…」灰字 + 旋转 spinner</td><td>来源 + 尺寸</td><td>卡片进视口、库里还没有该图 OCR 结果，正在跑本地识别</td></tr>
+  <tr><td><b>② 有文字</b></td><td>OCR 文本（2 行截断，<code>cardTitle</code> 现有 <code>-webkit-line-clamp:2</code>）</td><td>来源 + 尺寸 + 绿色 <code>OCR</code> 徽标（已识别 N 字）+ 标签</td><td>识别成功且非空；或历史记录读库命中</td></tr>
+  <tr><td><b>③ 无文字</b></td><td class="muted">「未识别到文字」灰字</td><td>来源 + 尺寸</td><td>识别完成但无文字（纯图标/照片）</td></tr>
+  <tr><td><b>④ 失败/缺失</b></td><td>图片文件名（<code>content</code> 取 basename，回退「图片」）</td><td>来源 + 尺寸</td><td>识别报错（文件被删/损坏），或图片文件本身找不到</td></tr>
+</table>
+
+<p class="warn"><b>文案与视觉全部沿用现有范式，不发明新语言</b>：spinner /「识别图片文字中…」/「未识别到文字」/ 绿色「已识别 N 字」徽标均来自 <code>AiQuickBar</code>（<code>ocrPending / ocrBadge / ocrBadgeMuted</code>）；「文件名回退」与文件卡片 U19 行为一致。标题两行截断用 <code>cardTitle</code> 现有样式，零新增 CSS 结构。</p>
+
+<h2>三、持久化设计（方案 B 核心）</h2>
+<div class="ok">
+<b>每张图片只识别一次，重启不重跑。</b>识别结果写库；历史加载时直接带出，卡片渲染 <b>同步显示</b>，无需前端等待。
+</div>
+<table>
+  <tr><th>层</th><th>做法</th></tr>
+  <tr><td><b>数据库</b></td><td>新表 <code>image_ocr_cache(id, image_path UNIQUE, full_text, updated_at)</code>；<code>full_text</code> 为空串表示「识别过但无文字」（防止无文字图片反复重试）</td></tr>
+  <tr><td><b>后端命令</b></td><td><code>ocr_image</code> 增强为查库优先：命中（含空串命中）直接返回；未命中 → 本地识别 → 入库 → 返回。仍走 <code>spawn_blocking</code> + 现有路径白名单校验</td></tr>
+  <tr><td><b>历史查询</b></td><td><code>get_history</code> JOIN 缓存表，<code>HistoryItem</code> 增加可选 <code>ocr_text</code> 字段；图片卡片渲染优先读它</td></tr>
+  <tr><td><b>采集流程</b></td><td><b>不自发 OCR</b>——剪贴板写入路径不增加任何阻塞；OCR 全部由前端「卡片进视口」懒触发（与缩略图同一时机）</td></tr>
+  <tr><td><b>附带收益</b></td><td><code>ocr_text</code> 可接 FTS5 → <b>图片内容第一次能被全文搜索</b>（架构文档 §2.1/§3.3 明确的洞，本轮可顺手关掉）</td></tr>
+</table>
+
+<h2>四、性能与并发（对照 claude.md 规则 8）</h2>
+<ul>
+  <li><b>懒加载对齐缩略图</b>：复用 <code>CardList</code> 现有「可视窗口 ±4 缓冲」触发点（<code>thumbWindowKey</code> effect），OCR 与缩略图同一时机发起，滚动中的卡片不触发</li>
+  <li><b>并发队列</b>：同一时刻只跑 1 个 OCR 任务，其余排队（<code>ocr_image</code> 走 <code>spawn_blocking</code>，但 WinRT 识别约 0.3-1s，串行避免多个阻塞线程叠加）</li>
+  <li><b>双缓存</b>：内存 Map（path→结果，滚动回滚不重查库）+ 数据库持久层</li>
+  <li><b>代际守卫</b>：条目滚出视口即作废自己发起的请求结果，不污染新条目（参照 AiQuickBar <code>ocrToken</code> 范式）</li>
+  <li><b>量级实测</b>：图片仅占历史 6.1%（33/545），同时可见图片卡片通常 ≤ 个位数；一次会话内首次滚动有少量「识别中」状态，之后全为同步命中</li>
+  <li><b>错误降级</b>：识别失败静默回退文件名态，不弹 toast、不影响列表滚动</li>
+</ul>
+
+<h2>五、实现要点</h2>
+<table>
+  <tr><th>文件</th><th>改动</th></tr>
+  <tr><td><code>src-tauri/src/data_store/</code></td><td>建 <code>image_ocr_cache</code> 表 + <code>get_ocr_text / set_ocr_text</code>（含空串命中）</td></tr>
+  <tr><td><code>src-tauri/src/commands/images.rs</code></td><td><code>ocr_image</code> 查库优先 + 识别后写库</td></tr>
+  <tr><td><code>src-tauri/src/commands/history.rs</code></td><td>查询 JOIN 返回 <code>ocr_text</code>（可选字段，缺省 <code>None</code>）</td></tr>
+  <tr><td><code>src/stores/appStore.ts</code></td><td><code>HistoryItem</code> 增加 <code>ocr_text?</code>；前端识别成功后局部更新该条</td></tr>
+  <tr><td><code>src/components/Card.tsx</code></td><td>title 计算加图片分支：<code>ocr_text</code> → 识别中/无文字/失败四态；副行渲染尺寸徽标（从占位提取 WxH）+ OCR 徽标</td></tr>
+  <tr><td><code>src/components/CardList.tsx</code> + <code>src/hooks/useCardOcr.ts</code>（新）</td><td>视口懒触发、并发队列、内存缓存、代际守卫、写库命令调用（<code>hooks/</code> 独立文件，<code>CardList.tsx</code> 已超 300 行红线，不往里堆）</td></tr>
+  <tr><td>测试</td><td>Rust：缓存命中/空串命中/写库；Vitest：title 四态计算 + 尺寸提取 + 队列守卫</td></tr>
+</table>
+
+<p class="warn"><b>不改动</b>：后端 <code>"[图片] WxH"</code> 占位格式不变（AiQuickBar / TrayPopup / 粘贴栈多处依赖它做类型判断）；其余窗口（托盘弹窗/快捷面板）本轮保持现状，后续可按同一范式统一。</p>
+
+</div>
+</body>
+</html>

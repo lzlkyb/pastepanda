@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AI 页未来感美化 · B方案（微动效）设计稿（2026-08-15）</title>
+<style>
+  /* ===== 与 src/styles/theme.css 对齐的变量（规则 12：真实 token） ===== */
+  :root {
+    /* ocean 浅色档 */
+    --text-primary:#1F2937; --text-secondary:#4B5563; --text-muted:#6B7280;
+    --border-color:#E5E7EB; --section-bg:#F8FAFC; --dialog-bg:#FFFFFF; --hover:#E8ECF2;
+    --accent:#0284C7; --accent-solid:#027CBB; --accent-strong:#0273AD;
+    --accent-light:#E0F2FE; --accent-border:color-mix(in srgb,#0284C7 35%,transparent);
+    --accent-glow:rgba(2,132,199,.12);
+    --hero-glow:radial-gradient(ellipse 200px 120px at 50% 20%, rgba(2,132,199,.10), transparent);
+    --brand-ai-from:#1D4ED8; --brand-ai-to:#6D28D9;
+    --green:#11813A; --green-bg:#DCFCE7; --green-border:#BBF7D0;
+    --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA;
+    --danger:#D82525; --red-bg:#FEF2F2;
+    --search-border:#D9DEE6;
+    --card-bg:#FFFFFF;
+  }
+  /* midnight 深色档（与 theme.css [data-theme="midnight"] 对齐） */
+  [data-theme="midnight"] {
+    --text-primary:#E4E4E7; --text-secondary:#AFAFB7; --text-muted:#8D8D95;
+    --border-color:#27272A; --section-bg:#0F0F11; --dialog-bg:#18181B; --hover:#1F1F23;
+    --accent:#818CF8; --accent-solid:#666FC4; --accent-strong:#818CF8;
+    --accent-light:#1E1B4B; --accent-border:color-mix(in srgb,#818CF8 35%,transparent);
+    --accent-glow:rgba(129,140,248,.12);
+    --hero-glow:radial-gradient(ellipse 200px 120px at 50% 20%, rgba(129,140,248,.10), transparent);
+    --brand-ai-from:#A8DEFF; --brand-ai-to:#D8CCFF;
+    --green:#4ADE80; --green-bg:#052E16; --green-border:#166534;
+    --orange:#FB923C; --orange-bg:#431407; --orange-border:#9A3412;
+    --danger:#F87171; --red-bg:#450A0A;
+    --search-border:#3F3F46;
+    --card-bg:#18181B;
+  }
+  body { margin:0; padding:24px; background:#EEF2F6;
+         font-family:"Microsoft YaHei",-apple-system,sans-serif; color:#1F2937; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  h2 { font-size:15px; margin:34px 0 10px; padding-bottom:6px; border-bottom:2px solid #0284C7; }
+  .sub { font-size:12px; color:#6B7280; margin:0 0 12px; line-height:1.75; }
+  .lane { display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap; }
+  code { background:#F1F5F9; padding:1px 4px; border-radius:3px; font-size:10.5px; }
+  .caseT { font-size:12.5px; font-weight:700; margin:0 0 6px; display:flex; align-items:center; gap:7px; }
+  .tag { font-size:10px; font-weight:700; padding:2px 7px; border-radius:999px; }
+  .rec { background:#EDE9FE; color:#6D28D9; }
+  .now { background:#F1F5F9; color:#475569; }
+
+  /* 设置弹窗 = dialog-box.w420，body padding 20px → 内容 380px */
+  .dlg { width:420px; background:var(--dialog-bg); border-radius:12px;
+         box-shadow:0 8px 28px rgba(0,0,0,.12); overflow:hidden; color:var(--text-primary); }
+  .dlgHead { padding:11px 16px; border-bottom:1px solid var(--border-color); font-size:13px; font-weight:700;
+             display:flex; align-items:center; gap:8px; }
+  .tabBar { display:flex; gap:4px; padding:8px 16px 0; border-bottom:1px solid var(--border-color); }
+  .tab { font-size:11.5px; padding:5px 10px; border-radius:7px 7px 0 0; color:var(--text-muted); cursor:pointer; }
+  .tabOn { color:var(--accent-strong); background:var(--accent-light); font-weight:700; }
+  .panel { display:flex; flex-direction:column; gap:14px; padding:14px 16px 18px; }
+  [data-theme="midnight"].dlg { box-shadow:0 8px 28px rgba(0,0,0,.5); border:1px solid #27272A; }
+
+  /* ============ 现状样式（真实 AiTab.module.css 原样） ============ */
+  .heroCard { border:1px solid var(--border-color); border-radius:12px; overflow:hidden;
+              background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent); }
+  .heroTop { display:flex; align-items:center; gap:10px; padding:12px 13px 10px; }
+  .heroAvatar { width:34px; height:34px; border-radius:10px; flex-shrink:0;
+                background:linear-gradient(135deg,var(--accent),var(--accent-solid)); color:#fff;
+                display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; }
+  .heroTitles { flex:1; min-width:0; }
+  .heroName { font-size:13.5px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px; }
+  .heroModel { display:block; font-size:10.5px; color:var(--text-muted); font-family:Consolas,monospace; margin-top:1px; }
+  .badge { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:999px;
+           font-size:11px; font-weight:600; flex-shrink:0; }
+  .badgeReady { color:var(--green); background:color-mix(in srgb, var(--green) 12%, transparent); }
+  .heroStats { display:grid; grid-template-columns:repeat(3,1fr); border-top:1px solid var(--border-color);
+               background:color-mix(in srgb, var(--section-bg) 60%, transparent); }
+  .heroStat { padding:8px 6px; text-align:center; border-right:1px solid var(--border-color); }
+  .heroStat:last-child { border-right:none; }
+  .heroStatNum { font-size:14px; font-weight:700; color:var(--text-primary); line-height:1.2; }
+  .heroStatNum small { font-size:10px; font-weight:600; color:var(--text-muted); }
+  .heroStatLabel { font-size:9.5px; color:var(--text-muted); margin-top:2px; }
+  .heroActions { display:flex; gap:6px; padding:9px 12px; border-top:1px solid var(--border-color);
+                 background:color-mix(in srgb, var(--section-bg) 60%, transparent); }
+  .heroBtn, .heroBtnMain { display:inline-flex; align-items:center; justify-content:center; gap:4px;
+                 border-radius:7px; padding:6px 10px; font-size:11.5px; font-family:inherit; cursor:pointer; white-space:nowrap; }
+  .heroBtnMain { flex:1; border:none; background:var(--accent-solid); color:#fff; font-weight:600; }
+  .heroBtn { border:1px solid var(--border-color); background:var(--section-bg); color:var(--text-primary); }
+  .acc { display:flex; flex-direction:column; gap:6px; }
+  .accItem { border:1px solid var(--border-color); border-radius:10px; overflow:hidden; background:var(--section-bg); }
+  .accItemOpen { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-light); }
+  .accHead { display:flex; align-items:center; gap:6px; padding-right:6px; }
+  .accHeadOpen { border-bottom:1px solid var(--border-color); }
+  .accHeadMain { flex:1; min-width:0; display:flex; align-items:center; gap:9px;
+                 padding:10px 4px 10px 12px; border:none; background:none; cursor:pointer;
+                 font-family:inherit; text-align:left; }
+  .accIcon { width:26px; height:26px; border-radius:7px; flex-shrink:0; background:var(--accent-light);
+             color:var(--accent-strong); display:inline-flex; align-items:center; justify-content:center; font-size:12px; }
+  .accName { display:block; font-size:12.5px; font-weight:700; color:var(--text-primary); }
+  .accSub { display:block; font-size:10.5px; color:var(--text-muted); margin-top:1px;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .accChev { flex-shrink:0; width:22px; height:22px; display:inline-flex; align-items:center;
+             justify-content:center; color:var(--text-muted); font-size:11px; }
+  .accBody { padding:11px 12px 12px; font-size:11px; color:var(--text-muted);
+             background:var(--dialog-bg); }
+
+  /* ==========================================================================
+     B 方案：未来感增量（新样式，落地时追加进 AiTab.module.css）
+     ========================================================================== */
+
+  /* 1) heroCard：渐变描边 + 品牌光斑底（border-box/padding-box 双层渐变，单元素无伪元素） */
+  .heroCardNew {
+    position:relative;
+    border:1px solid transparent;
+    border-radius:12px;
+    overflow:hidden;
+    background:
+      /* 内容底：面板色 + 顶部品牌光斑 + 淡 accent 斜向渐变 */
+      linear-gradient(var(--dialog-bg), var(--dialog-bg)) padding-box,
+      /* 渐变描边：品牌蓝→紫（与顶栏 AiMark 的 --brand-ai-* 同一词汇） */
+      linear-gradient(135deg,
+        color-mix(in srgb, var(--brand-ai-from) 55%, transparent),
+        color-mix(in srgb, var(--brand-ai-to) 45%, transparent) 60%,
+        color-mix(in srgb, var(--accent) 25%, transparent)) border-box;
+    box-shadow: 0 4px 16px var(--accent-glow);
+  }
+  /* 顶部光斑（静态，--hero-glow 现成 token） */
+  .heroCardNew::before {
+    content:""; position:absolute; inset:0;
+    background: var(--hero-glow);
+    pointer-events:none;
+  }
+
+  /* 2) 扫描线：顶部 1px 亮线缓慢扫过（纯 transform/opacity，GPU 层） */
+  .heroScan {
+    position:absolute; left:0; right:0; top:0; height:1px; overflow:hidden; pointer-events:none;
+  }
+  .heroScan::before {
+    content:""; position:absolute; top:0; left:0; width:96px; height:1px;
+    background:linear-gradient(90deg, transparent, var(--brand-ai-from) 40%, var(--brand-ai-to) 60%, transparent);
+    animation:heroScanMove 6s cubic-bezier(.4,0,.2,1) infinite;
+    opacity:0;
+  }
+  @keyframes heroScanMove {
+    0%   { transform:translateX(-96px); opacity:0; }
+    12%  { opacity:.85; }
+    55%  { opacity:.55; }
+    78%  { transform:translateX(324px); opacity:0; }  /* 420-96=324：扫到右缘 */
+    100% { transform:translateX(324px); opacity:0; }
+  }
+
+  /* 3) 内部光斑缓慢漂移（纯 transform，10s，一个合成层） */
+  .heroOrb {
+    position:absolute; width:170px; height:110px; right:-30px; top:-26px;
+    border-radius:50%; pointer-events:none;
+    background:radial-gradient(closest-side,
+      color-mix(in srgb, var(--brand-ai-from) 16%, transparent), transparent 72%);
+    animation:heroOrbDrift 10s ease-in-out infinite;
+  }
+  @keyframes heroOrbDrift {
+    0%,100% { transform:translate(0,0); opacity:.85; }
+    50%     { transform:translate(-26px,10px); opacity:1; }
+  }
+
+  /* 4) 状态徽标：呼吸光点（opacity+scale 合成层动画；静态 box-shadow 光晕） */
+  .badgeDot {
+    width:6px; height:6px; border-radius:50%; background:var(--green); flex-shrink:0;
+    box-shadow:0 0 6px color-mix(in srgb, var(--green) 65%, transparent);
+    animation:badgePulse 2.4s ease-in-out infinite;
+  }
+  @keyframes badgePulse {
+    0%,100% { opacity:.45; transform:scale(.85); }
+    50%     { opacity:1;   transform:scale(1.1); }
+  }
+
+  /* 5) 数字格：等宽数字 + 微光晕（静态 text-shadow，不动画） */
+  .heroStatNumNew {
+    font-variant-numeric:tabular-nums;
+    letter-spacing:.02em;
+    text-shadow:0 0 12px var(--accent-glow);
+  }
+
+  /* 6) 手风琴头部：图标渐变底 + 展开态底部渐变发光线 */
+  .accIconNew {
+    background:linear-gradient(135deg,
+      color-mix(in srgb, var(--brand-ai-from) 14%, transparent),
+      color-mix(in srgb, var(--brand-ai-to) 12%, transparent));
+    border:1px solid color-mix(in srgb, var(--brand-ai-from) 22%, transparent);
+    box-shadow:inset 0 1px 0 color-mix(in srgb, var(--brand-ai-from) 10%, transparent);
+  }
+  /* 展开条目的发光描边更克制地聚焦 */
+  .accItemOpenNew {
+    border-color:color-mix(in srgb, var(--brand-ai-from) 45%, transparent);
+    box-shadow:0 0 0 3px var(--accent-glow), 0 2px 10px var(--accent-glow);
+  }
+  /* 展开态头部下方的 1px 渐变发光线（替代素色 border-bottom） */
+  .accHeadOpenNew {
+    border-bottom:none;
+    position:relative;
+  }
+  .accHeadOpenNew::after {
+    content:""; position:absolute; left:12px; right:12px; bottom:0; height:1px;
+    background:linear-gradient(90deg,
+      transparent,
+      color-mix(in srgb, var(--brand-ai-from) 45%, transparent) 30%,
+      color-mix(in srgb, var(--brand-ai-to) 40%, transparent) 70%,
+      transparent);
+  }
+
+  table { border-collapse:collapse; font-size:11.5px; margin-top:8px; width:100%; }
+  th,td { border:1px solid #E5E7EB; padding:5px 8px; text-align:left; vertical-align:top; }
+  th { background:#F8FAFC; font-weight:600; }
+  .perfNote { width:860px; margin-top:10px; font-size:11.5px; color:#6B7280; line-height:1.8;
+              border-top:1px dashed #E5E7EB; padding-top:9px; }
+</style>
+</head>
+<body>
+
+<h1>AI 页未来感美化 · B 方案（微动效）</h1>
+<p class="sub">
+  2026-08-15 · 结构/字号/间距 1:1 取自真实 <code>AiHeroCard.tsx</code> / <code>AiSection.tsx</code> / <code>AiTab.module.css</code>（规则 12）。<br>
+  新样式全部走现有 token：<code>--brand-ai-from/to</code>（与顶栏 AiMark 同源）· <code>--accent-glow</code> · <code>--hero-glow</code> —— 六套主题自动适配。<br>
+  设置弹窗 <code>420px</code>（dialog-box.w420），动效可在此页面直接看到。
+</p>
+
+<!-- ================= 浅色主题：现状 vs B方案 ================= -->
+<h2>① 浅色（ocean）：现状 vs B 方案</h2>
+<div class="lane">
+
+  <!-- 现状 -->
+  <div>
+    <p class="caseT"><span class="tag now">现状</span> 素卡 + 静态徽标</p>
+    <div class="dlg">
+      <div class="dlgHead">设置</div>
+      <div class="tabBar"><span class="tab">通用</span><span class="tab tabOn">AI</span><span class="tab">帮助</span><span class="tab">关于</span></div>
+      <div class="panel">
+        <div class="heroCard">
+          <div class="heroTop">
+            <span class="heroAvatar">A</span>
+            <span class="heroTitles">
+              <span class="heroName">Anthropic Claude <span class="badge badgeReady">● 已就绪</span></span>
+              <span class="heroModel">claude-sonnet-4-5</span>
+            </span>
+          </div>
+          <div class="heroStats">
+            <div class="heroStat"><div class="heroStatNum">12</div><div class="heroStatLabel">今日调用</div></div>
+            <div class="heroStat"><div class="heroStatNum"><small>¥</small>0.08</div><div class="heroStatLabel">今日花费 / ¥5</div></div>
+            <div class="heroStat"><div class="heroStatNum">8.6<small>万</small></div><div class="heroStatLabel">免费额度剩余</div></div>
+          </div>
+          <div class="heroActions">
+            <button class="heroBtnMain">⚡ 测试连接</button>
+            <button class="heroBtn">⇄ 换服务商</button>
+            <button class="heroBtn">🎁 领免费额度</button>
+          </div>
+        </div>
+        <div class="acc">
+          <div class="accItem accItemOpen">
+            <div class="accHead accHeadOpen">
+              <button class="accHeadMain">
+                <span class="accIcon">🖥</span>
+                <span><span class="accName">服务商与密钥</span><span class="accSub">Anthropic Claude · claude-sonnet-4-5</span></span>
+              </button>
+              <button class="accChev">▾</button>
+            </div>
+            <div class="accBody">（区块内容…）</div>
+          </div>
+          <div class="accItem">
+            <div class="accHead">
+              <button class="accHeadMain">
+                <span class="accIcon">🕒</span>
+                <span><span class="accName">用量</span><span class="accSub">今日 12 次 · ¥0.08</span></span>
+              </button>
+              <button class="accChev">▸</button>
+            </div>
+          </div>
+          <div class="accItem">
+            <div class="accHead">
+              <button class="accHeadMain">
+                <span class="accIcon">🧠</span>
+                <span><span class="accName">自进化</span><span class="accSub">偏好 6 条 · 模型 2 个 · 动作 1 个</span></span>
+              </button>
+              <button class="accChev">▸</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B 方案 -->
+  <div>
+    <p class="caseT"><span class="tag rec">B 方案</span> 渐变描边 + 扫描线 + 呼吸光点（可动）</p>
+    <div class="dlg">
+      <div class="dlgHead">设置</div>
+      <div class="tabBar"><span class="tab">通用</span><span class="tab tabOn">AI</span><span class="tab">帮助</span><span class="tab">关于</span></div>
+      <div class="panel">
+        <div class="heroCard heroCardNew">
+          <span class="heroScan"></span>
+          <span class="heroOrb"></span>
+          <div class="heroTop">
+            <span class="heroAvatar">A</span>
+            <span class="heroTitles">
+              <span class="heroName">Anthropic Claude
+                <span class="badge badgeReady"><span class="badgeDot"></span>已就绪</span>
+              </span>
+              <span class="heroModel">claude-sonnet-4-5</span>
+            </span>
+          </div>
+          <div class="heroStats">
+            <div class="heroStat"><div class="heroStatNum heroStatNumNew">12</div><div class="heroStatLabel">今日调用</div></div>
+            <div class="heroStat"><div class="heroStatNum heroStatNumNew"><small>¥</small>0.08</div><div class="heroStatLabel">今日花费 / ¥5</div></div>
+            <div class="heroStat"><div class="heroStatNum heroStatNumNew">8.6<small>万</small></div><div class="heroStatLabel">免费额度剩余</div></div>
+          </div>
+          <div class="heroActions">
+            <button class="heroBtnMain">⚡ 测试连接</button>
+            <button class="heroBtn">⇄ 换服务商</button>
+            <button class="heroBtn">🎁 领免费额度</button>
+          </div>
+        </div>
+        <div class="acc">
+          <div class="accItem accItemOpenNew">
+            <div class="accHead accHeadOpenNew">
+              <button class="accHeadMain">
+                <span class="accIcon accIconNew">🖥</span>
+                <span><span class="accName">服务商与密钥</span><span class="accSub">Anthropic Claude · claude-sonnet-4-5</span></span>
+              </button>
+              <button class="accChev">▾</button>
+            </div>
+            <div class="accBody">（区块内容…）</div>
+          </div>
+          <div class="accItem">
+            <div class="accHead">
+              <button class="accHeadMain">
+                <span class="accIcon accIconNew">🕒</span>
+                <span><span class="accName">用量</span><span class="accSub">今日 12 次 · ¥0.08</span></span>
+              </button>
+              <button class="accChev">▸</button>
+            </div>
+          </div>
+          <div class="accItem">
+            <div class="accHead">
+              <button class="accHeadMain">
+                <span class="accIcon accIconNew">🧠</span>
+                <span><span class="accName">自进化</span><span class="accSub">偏好 6 条 · 模型 2 个 · 动作 1 个</span></span>
+              </button>
+              <button class="accChev">▸</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ================= 深色主题：B方案 ================= -->
+<h2>② 深色（midnight）：B 方案——渐变描边与光效在暗底上更出彩</h2>
+<div class="lane">
+  <div>
+    <p class="caseT"><span class="tag rec">B 方案</span> 深色档 token 自动切换</p>
+    <div class="dlg" data-theme="midnight">
+      <div class="dlgHead">设置</div>
+      <div class="tabBar"><span class="tab">通用</span><span class="tab tabOn">AI</span><span class="tab">帮助</span><span class="tab">关于</span></div>
+      <div class="panel">
+        <div class="heroCard heroCardNew">
+          <span class="heroScan"></span>
+          <span class="heroOrb"></span>
+          <div class="heroTop">
+            <span class="heroAvatar">A</span>
+            <span class="heroTitles">
+              <span class="heroName">内置免费（Agnes）
+                <span class="badge badgeReady"><span class="badgeDot"></span>已就绪</span>
+              </span>
+              <span class="heroModel">agnes-default</span>
+            </span>
+          </div>
+          <div class="heroStats">
+            <div class="heroStat"><div class="heroStatNum heroStatNumNew">12</div><div class="heroStatLabel">今日调用</div></div>
+            <div class="heroStat"><div class="heroStatNum heroStatNumNew"><small>¥</small>0.00</div><div class="heroStatLabel">今日花费</div></div>
+            <div class="heroStat"><div class="heroStatNum heroStatNumNew">8.6<small>万</small></div><div class="heroStatLabel">免费额度剩余</div></div>
+          </div>
+          <div class="heroActions">
+            <button class="heroBtnMain">⚡ 测试连接</button>
+            <button class="heroBtn">⇄ 换服务商</button>
+            <button class="heroBtn">🎁 领免费额度</button>
+          </div>
+        </div>
+        <div class="acc">
+          <div class="accItem accItemOpenNew">
+            <div class="accHead accHeadOpenNew">
+              <button class="accHeadMain">
+                <span class="accIcon accIconNew">🖥</span>
+                <span><span class="accName">服务商与密钥</span><span class="accSub">内置免费（Agnes） · agnes-default</span></span>
+              </button>
+              <button class="accChev">▾</button>
+            </div>
+            <div class="accBody">（区块内容…）</div>
+          </div>
+          <div class="accItem">
+            <div class="accHead">
+              <button class="accHeadMain">
+                <span class="accIcon accIconNew">🕒</span>
+                <span><span class="accName">用量</span><span class="accSub">今日 12 次 · ¥0.00</span></span>
+              </button>
+              <button class="accChev">▸</button>
+            </div>
+          </div>
+          <div class="accItem">
+            <div class="accHead">
+              <button class="accHeadMain">
+                <span class="accIcon accIconNew">🧠</span>
+                <span><span class="accName">自进化</span><span class="accSub">偏好 6 条 · 模型 2 个 · 动作 1 个</span></span>
+              </button>
+              <button class="accChev">▸</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="perfNote" style="width:420px">
+    <b>性能自查（规则 8）</b><br>
+    · 常驻动画共 <b>3 个合成层</b>：扫描线（heroScan）/ 光斑漂移（heroOrb）/ 呼吸光点（badgeDot），全部 <code>transform + opacity</code>，GPU 加速，零重绘。<br>
+    · 无光晕动画（box-shadow 全静态）、无 filter blur 动画、无 backdrop-filter 新增。<br>
+    · 设置弹窗是模态窗口：关闭即组件卸载，动画随组件消失，不存在「多窗口 hide 后照跑」的乘法问题（规则 8.2 不适用）。<br>
+    · 新增动画只在「已就绪」徽标与 hero 卡上，未配置态 hero 卡也显示扫描线（频率 6s，几乎无感）。<br><br>
+    <b>兼容性</b><br>
+    · 颜色零硬编码：全部 <code>--brand-ai-from/to</code> · <code>--accent-glow</code> · <code>--hero-glow</code> · <code>--accent*</code>，六套主题（ocean / ocean-dark / midnight / forest / blossom / dawn）token 都已定义，自动适配。<br>
+    · <code>prefers-reduced-motion</code> 落地时会加媒体查询关动画（可选，见改动清单 #6）。
+  </div>
+</div>
+
+<!-- ================= 改动清单 ================= -->
+<h2>③ 改动清单（落地范围）</h2>
+<table>
+  <tr><th style="width:36px">#</th><th style="width:180px">位置</th><th>变化</th></tr>
+  <tr><td>1</td><td><code>AiTab.module.css</code> 的 <code>.heroCard</code></td><td>升级为渐变描边（padding-box / border-box 双层渐变）+ <code>--hero-glow</code> 光斑底 + <code>--accent-glow</code> 外发光；新增 <code>.heroScan</code>（扫描线）与 <code>.heroOrb</code>（漂移光斑）两个子元素样式 + 2 个 keyframes。</td></tr>
+  <tr><td>2</td><td><code>AiHeroCard.tsx</code></td><td>heroCard 内加 <code>&lt;span className={styles.heroScan}/&gt;</code> 与 <code>&lt;span className={styles.heroOrb}/&gt;</code> 两个装饰节点；「已就绪」徽标的 CheckCircle2 旁加 <code>.badgeDot</code> 呼吸光点（图标保留）。</td></tr>
+  <tr><td>3</td><td><code>.badgeReady</code> + 新增 <code>.badgeDot</code></td><td>呼吸光点：opacity+scale 2.4s；静态 box-shadow 光晕（不动画）。</td></tr>
+  <tr><td>4</td><td><code>.heroStatNum</code></td><td>加 <code>tabular-nums</code> + 轻微 letter-spacing + 静态 <code>text-shadow: 0 0 12px var(--accent-glow)</code>。</td></tr>
+  <tr><td>5</td><td><code>.accIcon</code> / <code>.accItemOpen</code> / <code>.accHeadOpen</code></td><td>accIcon 换品牌渐变底 + 微边框；展开条目描边光晕聚焦（--accent-glow）；展开头部底部 1px 渐变发光线（::after 实现，替代素色 border-bottom）。</td></tr>
+  <tr><td>6</td><td>（可选）</td><td><code>@media (prefers-reduced-motion: reduce)</code> 关闭 3 个动画——无障碍兜底。</td></tr>
+</table>
+<p class="perfNote">
+  <b>不改的部分</b>：AiTab 的编排逻辑、AiSection 结构、手风琴互斥、测试结果条、warn 条、红线声明条——全部保持原样。<br>
+  <b>为什么与整体风格协调</b>：品牌渐变（蓝→紫）与顶栏 AiMark、TransformHub 的 AI 角标同源（--brand-ai-*）；光晕强度压在 --accent-glow（12% alpha）这一档，和卡片 hover 光晕同级，不会比主窗卡片更跳。
+</p>
+
+</body>
+</html>

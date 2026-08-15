@@ -11,6 +11,7 @@
 import { registerTransform, unregisterTransform } from "./registry";
 import type { Transform, TransformContext, TransformResult } from "./types";
 import { logger } from "@/lib/logger";
+import { looksLikeIdentifier } from "@/lib/utils";
 import { budgetExceededMessage } from "@/lib/aiBudgetMsg";
 import {
   aiListActions,
@@ -64,11 +65,14 @@ export function scoreAiAction(actionId: string, ctx: TransformContext): number {
   switch (actionId) {
     case "ai-translate":
       if (isCodeish || len < 10) return 0;
+      // 标识符/路径/单号不是外文，见 looksLikeIdentifier
+      if (looksLikeIdentifier(ctx.text)) return 0;
       // 成段的纯 ASCII 文字多半是外文，此时翻译最可能是用户想要的
       return stats?.hasUnicode === false ? 0.8 : 0.55;
 
     case "ai-summarize":
       // 短文本没什么可摘的，摆出来只会干扰选择
+      if (looksLikeIdentifier(ctx.text)) return 0;
       return !isCodeish && len > 200 ? 0.7 : 0;
 
     case "ai-explain-code":
@@ -79,6 +83,8 @@ export function scoreAiAction(actionId: string, ctx: TransformContext): number {
       return 0;
 
     case "ai-rewrite":
+      // 长 base64 / 长路径这类单 token 也会过 50 字门槛，但它们没有“语气”可改
+      if (looksLikeIdentifier(ctx.text)) return 0;
       return !isCodeish && len >= 50 ? 0.5 : 0;
 
     default:
@@ -155,13 +161,89 @@ const HAND_TUNED = new Set([
 ]);
 
 /**
- * 通用打分：只看适用内容类型。给新增内置动作与自定义动作用。
+ * 通用打分的**最小输入长度**：短于它这个动作就没意义。
+ *
+ * 起因：`scoreByContentTypes` 原来对声明了当前 content_type 的动作一律给 0.75，
+ * **完全不看长度**。拿 492 条真实历史回放：<10 字的 128 条里有 **79.7%**
+ * 拿到「润色纠错 / 提取要点 / 生成正则」这一模一样的三个按钮——
+ * 给 3 个字的「配置组」提取要点。
+ *
+ * 手调动作（{@link HAND_TUNED}）不走这里：它们的长度门槛写在 scoreAiAction 的 switch 里。
+ */
+const MIN_CHARS: Record<string, number> = {
+  // 要点是从“长段落”里提的（它自己的 description 就写着“把长段落拆成条目列表”）
+  "ai-key-points": 120,
+  // 表格化至少得有几项可排
+  "ai-tabulate": 60,
+  // 润色纠错修的是“错别字与语病”，不成句就无病可纠。
+  // 门槛压得低（不是 50）：中文一句话十几个字很常见，卡到 50 会把真正该润的也滤掉。
+  "ai-polish": 10,
+};
+
+/**
+ * 针对“**散文**”的动作：输入必须是成句的自然语言。
+ *
+ * 与 {@link looksLikeIdentifier} 配合使用。它本来只拦翻译，但实测发现
+ * `SYSTEMCODE` / `INCCForHHOrSSService` / `C0805041350000005382` /
+ * `receivablebill_his.xml` 这类单 token 同样会拿到“润色纠错”——
+ * 一个类名没有错别字，一个单据号没有要点。同一个判据对整批散文动作都成立。
+ *
+ * 手调的三个（翻译/摘要/改写）在 scoreAiAction 里各自拦，不进这张表。
+ */
+const PROSE_ONLY = new Set(["ai-polish", "ai-key-points", "ai-tabulate"]);
+
+/**
+ * **意图型动作**：内容本身判不出该不该用它，基础分归零。
+ *
+ * 它们声明的 content_types（如 `["text"]`）真实含义是“任何文本都能塞进来”，
+ * 而 scoreByContentTypes 把它当成了“任何文本都该推荐”——这是建模错误。
+ * 实测占位：生成正则 44.9%、合并整理 17.3%、生成周报 15.0%。
+ *
+ * **归零不等于消失**：标签（{@link INTENT_TAG_RULES}，走 tagBoost 的 Math.max）、
+ * 个人使用频次（recommend.ts）、置顶（action_pins）都能把它们提回来——
+ * 那才是“意图”该有的来源。
+ */
+const INTENT_ONLY = new Set([
+  // 输入是“想要什么”的自然语言描述，与剪贴板里的内容长得一模一样，分不出来
+  "ai-regex-generate",
+  "ai-sql-generate",
+  "ai-reply-draft",
+  // 输入应该是行为统计 / 多段集合，不是当前这一条。
+  // 这两个的 content_types 是 `[]`，旧逻辑里“不限类型”=0.45，
+  // 于是它们给**每一条内容**都垫了底分——这也是短文本兜底从未触发过的原因。
+  "ai-weekly-report",
+  "ai-merge-polish",
+  // 追问：它**必须保留注册**（TransformCard / useAiQuickRun 都用
+  // getTransform("ai-followup") 拿它，不注册就变“追问暂不可用”），
+  // 但绝不能进推荐：没有“对哪段结果追问”的前置上下文。
+  // 后端 actions.rs 已经这么写了注释，但从未真正实现——它一直在拿 0.75，
+  // 只是注册序靠后、被前面几个平票的动作挤出了前 3 名而没被发现。
+  "ai-followup",
+]);
+
+/**
+ * 通用打分：适用内容类型 + 最小长度 + 意图型归零。给新增内置动作与自定义动作用。
  *
  * 不限类型的排得比内置手调规则靠后（0.45 < 翻译的 0.55）——
  * 否则一个“适用全部”的自定义动作会把真正对口的那个挤下去。
+ * （内置动作里原本吃这个 0.45 的两个已进 {@link INTENT_ONLY}，
+ * 所以这一支现在基本只服务于没填类型的自定义动作。）
+ *
+ * @param actionId 动作 id。为了能查 MIN_CHARS / INTENT_ONLY 而加，与 scoreAiAction 同形。
  */
-export function scoreByContentTypes(types: string[], ctx: TransformContext): number {
+export function scoreByContentTypes(
+  actionId: string,
+  types: string[],
+  ctx: TransformContext,
+): number {
   if (!isAiAvailable()) return 0;
+  if (INTENT_ONLY.has(actionId)) return 0;
+  if (PROSE_ONLY.has(actionId) && looksLikeIdentifier(ctx.text)) return 0;
+  const min = MIN_CHARS[actionId];
+  if (min !== undefined) {
+    const len = ctx.features?.stats?.length ?? ctx.text.trim().length;
+    if (len < min) return 0;
+  }
   if (types.length === 0) return 0.45;
   return types.includes(ctx.contentType) ? 0.75 : 0;
 }
@@ -236,7 +318,7 @@ function toTransform(meta: AiActionMeta): Transform {
     detect: (ctx) => {
       const base = HAND_TUNED.has(meta.id)
         ? scoreAiAction(meta.id, ctx)
-        : scoreByContentTypes(meta.contentTypes ?? [], ctx);
+        : scoreByContentTypes(meta.id, meta.contentTypes ?? [], ctx);
       // max 而不是相加：标签只能把动作往上提，不能压低已有分数
       return Math.max(base, tagBoost(meta.id, ctx));
     },
@@ -261,7 +343,7 @@ function toCustomTransform(a: AiCustomAction): Transform {
     icon: a.icon || "sparkles",
     group: "ai",
     remote: true,
-    detect: (ctx) => scoreByContentTypes(a.contentTypes, ctx),
+    detect: (ctx) => scoreByContentTypes(a.id, a.contentTypes, ctx),
     run: makeRun(a.id),
   };
 }

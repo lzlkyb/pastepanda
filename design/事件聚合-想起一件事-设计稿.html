@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda · 事件聚合（想起一件事）设计稿</title>
+<style>
+  :root {
+    --bg:#f6f7f9; --panel:#fff; --text:#1f2328; --muted:#6b7280; --border:#e3e5e8;
+    --accent:#0ea5e9; --warn:#b45309; --warn-bg:#fffbeb; --warn-bd:#fde68a;
+    --ok:#15803d; --ok-bg:#f0fdf4; --ok-bd:#bbf7d0; --code:#f6f8fa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#16181c; --panel:#1d2026; --text:#e6e8ea; --muted:#9aa2ad; --border:#2c3038;
+      --accent:#38bdf8; --warn:#fbbf24; --warn-bg:rgba(245,158,11,.1); --warn-bd:rgba(245,158,11,.28);
+      --ok:#4ade80; --ok-bg:rgba(34,197,94,.1); --ok-bd:rgba(34,197,94,.28); --code:#14161a;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px 20px 60px;background:var(--bg);color:var(--text);
+    font:13px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:880px;margin:0 auto}
+  h1{font-size:19px;margin:0 0 6px}
+  h2{font-size:14px;margin:32px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+  h3{font-size:12.5px;margin:20px 0 8px;color:var(--muted)}
+  .lead{color:var(--muted);font-size:12px;margin:0 0 4px}
+  .meta{color:var(--muted);font-size:11px;margin:0 0 20px}
+  code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;background:var(--code);padding:1px 4px;border-radius:4px}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin:8px 0}
+  th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{font-size:11px;color:var(--muted);font-weight:600}
+  ol,ul{padding-left:20px} li{margin:5px 0}
+  .box{border:1px solid var(--border);border-radius:8px;background:var(--panel);padding:12px 14px;margin:10px 0}
+  .warn{border-left:3px solid var(--warn);background:var(--warn-bg);padding:10px 12px;border-radius:0 8px 8px 0;margin:10px 0;font-size:12px}
+  .ok{border-left:3px solid var(--ok);background:var(--ok-bg);padding:10px 12px;border-radius:0 8px 8px 0;margin:10px 0;font-size:12px}
+
+  /* 模拟真实下拉（复用 FilterDropdown 的视觉） */
+  .ddWrap{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start}
+  .dd{width:300px;background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+  .ddHead{display:flex;align-items:center;justify-content:space-between;padding:6px 9px;
+    border-bottom:1px solid var(--border);font-size:11.5px;font-weight:600}
+  .ddHead small{color:var(--muted);font-weight:400;font-size:10px}
+  .ddItem{padding:6px 9px;font-size:11.5px;border-bottom:1px solid var(--border);
+    display:flex;justify-content:space-between;gap:8px}
+  .ddItem:last-child{border-bottom:none}
+  .ddItem.on{background:var(--ok-bg);color:var(--ok);font-weight:600}
+  .ddItem small{color:var(--muted);font-size:10px;flex-shrink:0}
+  .ddNote{padding:8px 9px;font-size:10.5px;color:var(--muted);background:var(--code)}
+  .real{font-family:ui-monospace,Consolas,"Microsoft YaHei",monospace;font-size:11px}
+  .caseNote{flex:1;min-width:240px;font-size:12px;color:var(--muted)}
+  .caseNote b{color:var(--text)}
+  .tag{display:inline-block;font-size:10px;padding:1px 7px;border-radius:999px;
+    border:1px solid var(--border);color:var(--muted);margin-bottom:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>事件聚合（“想起一件事”）· 设计稿</h1>
+<p class="lead">把时间上相邻的剪贴板条目聚成“事件”，让记忆从**条目级**进到**情境级**。三支柱里 ① 的情境化，也是 ②③ 跃迁的共同前提。</p>
+<p class="meta">2026-08-14 · 方案：纯本地规则分段，零出网 · 第一个出口：搜索按事件筛 · <b>下方所有事件样例均为真实数据跑出来的，不是编的</b></p>
+
+<h2>一、分段规则（阈值有实测依据，不是拍的）</h2>
+
+<p><b>事件 = 时间上连续的一批条目</b>。相邻两条间隔超过阈值就断段。</p>
+
+<p>本机 540 条真实数据的间隔分布：中位 <code>168 秒</code>（复制是密集行为）、p90 <code>1862 秒</code>。按不同阈值分段：</p>
+
+<table>
+  <tr><th>阈值</th><th>断点数</th><th>平均每段</th><th>判断</th></tr>
+  <tr><td>5 分钟</td><td>202</td><td>2.7 条</td><td>太碎——两三条不构成“一件事”</td></tr>
+  <tr><td>10 分钟</td><td>148</td><td>3.6 条</td><td>仍偏碎</td></tr>
+  <tr><td>15 分钟</td><td>108</td><td>5.0 条</td><td>可用</td></tr>
+  <tr style="background:var(--ok-bg)"><td><b>20 分钟</b></td><td><b>87</b></td><td><b>6.1 条</b></td><td><b>选它</b>。正好是“调一个接口用了几段”的粒度</td></tr>
+  <tr><td>30 分钟</td><td>55</td><td>9.6 条</td><td>开始把不相关的事揉在一起</td></tr>
+  <tr><td>60 分钟</td><td>28</td><td>18.6 条</td><td>太粗，让“事件”失去意义</td></tr>
+</table>
+
+<div class="ok">
+<b>阈值做成常量</b>（<code>EVENT_GAP_SECS = 1200</code>），不开设置项。理由：用户无法判断“20 分钟”对不对，
+把一个没人能回答的参数丢给用户不是灵活是推责。先写死，将来真有人提再说。
+</div>
+
+<h2>二、标题格式：三种候选（全部是真实数据）</h2>
+
+<p>在最近 300 条上跑出 <b>41 段，平均 7.3 条/段</b>。以下三列是同一批事件的三种写法：</p>
+
+<div class="ddWrap">
+  <div class="dd">
+    <div class="ddHead">A · 起止时间 + 来源 + 条数 <small>推荐</small></div>
+    <div class="ddItem real">14:59-15:46 · 页签项目编辑 <small>8 条</small></div>
+    <div class="ddItem real">12:19-13:14 · Excel <small>17 条</small></div>
+    <div class="ddItem real">11:40-11:49 · 流程图 <small>4 条</small></div>
+    <div class="ddItem real">09:09-09:15 · WorkBuddy <small>7 条</small></div>
+    <div class="ddItem real">08:41-08:47 · Xterminal <small>2 条</small></div>
+    <div class="ddNote">起止时间本身就含时长信息，而且“下午三点多那阵”是人找东西的主锚点</div>
+  </div>
+  <div class="dd">
+    <div class="ddHead">B · 日期 + 条数类型 + 来源</div>
+    <div class="ddItem real">08-14 14:59 · 8 条文本 · 页签项目编辑</div>
+    <div class="ddItem real">08-14 12:19 · 17 条文本 · Excel</div>
+    <div class="ddItem real">08-14 11:40 · 4 条流程图 · 流程图</div>
+    <div class="ddItem real">08-14 09:47 · 4 条markdown · PastePanda Markdow</div>
+    <div class="ddNote">信息最多，但也最长；且暂不知道内容类型对“找得到”到底有多大用</div>
+  </div>
+  <div class="dd">
+    <div class="ddHead">C · 来源 + 内容 + 时长</div>
+    <div class="ddItem real">Excel · 17 段文本 · 56 分钟</div>
+    <div class="ddItem real">页签项目编辑 · 8 段文本 · 47 分钟</div>
+    <div class="ddItem real">流程图 · 4 段流程图 · 9 分钟</div>
+    <div class="ddNote">丢了绝对时间 → 无法回答“上周三那阵”，而那正是这个功能的主场景</div>
+  </div>
+</div>
+
+<div class="box">
+<b>推荐 A，但日期需要相对化处理</b>（真数据暴露的问题，见下一节 ④）：
+<ul>
+<li>今天：<code class="real">14:59-15:46 · Excel · 8 条</code></li>
+<li>昨天：<code class="real">昨天 18:35 · 图片和视频 · 3 条</code></li>
+<li>更早：<code class="real">8-11 09:20 · Eclipse · 12 条</code></li>
+</ul>
+</div>
+
+<h2>三、真实数据暴露的四个问题（编样例绝对发现不了）</h2>
+
+<table>
+  <tr><th>#</th><th>真实输出</th><th>问题与对策</th></tr>
+  <tr>
+    <td>①</td>
+    <td class="real">页签项目编辑<br>65数据字典(Beta) Creat<br>PastePanda Markdow</td>
+    <td><b>来源名归一化必须用项目现有的 <code>cleanSourceName()</code></b>。
+      我在探针里自己写的简易归一化（按 <code> - </code> 切开取末段）对中文窗口标题完全无效，还把名字截断了。
+      <code>source</code> 存的是**完整窗口标题**（如 <code class="real">aier - newar/…/InvcountImportablePanel.java - Eclipse IDE</code>），
+      同一个 App 的不同窗口会被当成不同来源。绝不自写第二套。</td>
+  </tr>
+  <tr>
+    <td>②</td>
+    <td class="real">4 条markdown</td>
+    <td><code>content_type</code> 存在 <code>markdown</code> 这类值，中文名映射要用项目现有的（不在 <code>TABS</code> 里的那些也得有兼容）。
+      拉不到中文名时**宁可省掉这一段**，不要把英文 id 直接拼给用户。</td>
+  </tr>
+  <tr>
+    <td>③</td>
+    <td class="real">流程图 · 4 条流程图 · 流程图</td>
+    <td>来源名与内容类型名**重复**时读起来很蠢。对策：两者相同则只保留一个。</td>
+  </tr>
+  <tr>
+    <td>④</td>
+    <td class="real">08-14 14:59（今天的事件）</td>
+    <td>今天的事件带日期前缀是纯噪音。对策：今天只显示时间，昨天显示“昨天”，更早才显示日期。</td>
+  </tr>
+</table>
+
+<h2>四、UI：零新视觉，复用现有下拉</h2>
+
+<p>顶栏已经有 <code>FilterDropdown&lt;T&gt;({ label, value, options: {key,label}[], onChange, auto })</code>，
+而 <code>SourceFilterDropdown</code> 就是“动态拉 options 的下拉”的现成先例。
+事件筛选<b>直接照它做</b>：每个事件就是一条 <code>{ key: "range:起~止", label: "14:59-15:46 · Excel · 8 条" }</code>。</p>
+
+<div class="ddWrap">
+  <div class="dd">
+    <div class="ddHead">事件 <small>顶栏第三个下拉</small></div>
+    <div class="ddItem on">全部</div>
+    <div class="ddItem real">14:59-15:46 · 页签项目编辑 <small>8 条</small></div>
+    <div class="ddItem real">12:19-13:14 · Excel <small>17 条</small></div>
+    <div class="ddItem real">11:40-11:49 · 流程图 <small>4 条</small></div>
+    <div class="ddItem real">昨天 18:35 · 图片和视频 <small>3 条</small></div>
+    <div class="ddNote">与「时间」「来源」并列。<b>不塞进时间下拉</b>：那会让“本周”与“某个事件”互相覆盖的语义变乱</div>
+  </div>
+  <div class="caseNote">
+    <span class="tag">为何不开新面板</span>
+    <p><b>第一刀不做事件视图、不做事件命名、不做事件编辑。</b>
+      先用一个下拉验证一件事：“想起一件事”这个能力到底有不有用。</p>
+    <p>若有用，再往上长（事件视图 / AI 命名 / 作为第六个推荐因子）；
+      若无用，成本就停在一个下拉 + 一个纯函数，删起来也干净。</p>
+  </div>
+</div>
+
+<h3>空态</h3>
+<div class="dd" style="width:340px">
+  <div class="ddHead">事件</div>
+  <div class="ddItem on">全部</div>
+  <div class="ddNote">还没有可识别的事件——需要同一阵里至少复制两条。<br>
+    只有孤零条目时不构成事件，这是预期行为。</div>
+</div>
+<p style="font-size:12px;color:var(--muted)"><b>单条段不算事件</b>（真数据里 41 段里有不少是 1 条的）。
+一条孤零的复制不是“一件事”，把它列出来只会把下拉凑成垃圾。下拉里只给 <b>≥ 2 条</b> 的段。</p>
+
+<h2>五、实现约束</h2>
+<ol>
+<li><b>只查五列</b>：<code>id / time / source / type / content_type</code>。<b>不碰 <code>text</code> 与 <code>content</code></b>——
+  聚合只需要元信息，把内容也拉出来是白花内存（图片的 <code>content</code> 是 base64）。</li>
+<li><b>纯函数分段</b>：输入一串按时间降序的元信息，输出事件列表。不碰 IO、不取当前时间——
+  否则“今天/昨天”的相对日期逻辑永远只能在特定日子跑测试（同 D1 里 <code>hour</code> 作为参数的理由）。</li>
+<li><b>不建新表</b>。事件是**算出来的**而不是存出来的：零迁移、零一致性问题
+  （删条目/合并条目自动生效）。540 条 → 88 段是一次线性扫描；即使 5 万条也完全扛得住。</li>
+<li><b>按事件筛走 <code>filter="range:起~止"</code></b>，不改 <code>get_history</code> 签名。
+  <code>filter</code> 本来就已经承担了 <code>today/week/month</code> 的时间语义，<code>history.rs</code> 里也已有 <code>time &gt;= ?</code>。
+  <b>四处 filter 分支都要覆盖</b>（list / FTS / LIKE / bulk-cleanup）——上一轮改 <code>text</code> 筛选时就是四处都得改。</li>
+<li><b>工作区隔离</b>：聚合必须带 <code>workspace</code> 条件，否则别的工作区的条目会污染分段。</li>
+<li><b>零出网</b>。分段与命名全是本地规则，不调任何模型。红线②完全兼容。</li>
+</ol>
+
+<div class="warn">
+<b>本轮不做的</b>：事件视图（历史列表按事件折叠）、AI 生成事件名、事件作为第六个推荐因子、
+跨事件的语义关联。这些都要等“按事件筛”被真正用过之后再谈——先验证能力有用，再往上堆。
+</div>
+
+</div>
+</body>
+</html>

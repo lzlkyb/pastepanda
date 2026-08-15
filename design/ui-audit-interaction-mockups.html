@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PastePanda · 全项目 UI 交互审计设计稿</title>
+<style>
+  /* ===== 主题令牌（取自 theme.css 的 ocean / ocean-dark 真实变量，内联供离线预览） ===== */
+  :root, .theme-ocean-dark {
+    --bg: #0b1220;
+    --bg-2: #0e1626;
+    --panel: rgba(255,255,255,.04);
+    --panel-2: rgba(255,255,255,.06);
+    --card-bg: rgba(255,255,255,.05);
+    --card-bg-hover: rgba(255,255,255,.09);
+    --border: rgba(255,255,255,.10);
+    --border-strong: rgba(255,255,255,.18);
+    --text: #e8edf6;
+    --text-2: #aab4c5;
+    --text-muted: #6b7689;
+    --accent: #6366f1;
+    --accent-strong: #818cf8;
+    --accent-2: #22d3ee;
+    --danger: #ef4444;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --glass: rgba(20,28,46,.72);
+    --shadow: 0 12px 40px rgba(0,0,0,.45);
+    --radius: 12px;
+  }
+  .theme-ocean {
+    --bg: #eef2f9;
+    --bg-2: #e6ecf5;
+    --panel: rgba(255,255,255,.7);
+    --panel-2: rgba(255,255,255,.9);
+    --card-bg: rgba(255,255,255,.85);
+    --card-bg-hover: rgba(255,255,255,1);
+    --border: rgba(15,23,42,.10);
+    --border-strong: rgba(15,23,42,.20);
+    --text: #1a2233;
+    --text-2: #46506180;
+    --text-2: #465061;
+    --text-muted: #8a93a6;
+    --accent: #4f46e5;
+    --accent-strong: #4338ca;
+    --accent-2: #0891b2;
+    --danger: #dc2626;
+    --ok: #10b981;
+    --warn: #d97706;
+    --glass: rgba(255,255,255,.8);
+    --shadow: 0 12px 40px rgba(31,41,55,.18);
+    --radius: 12px;
+  }
+
+  * { box-sizing: border-box; }
+  html,body { margin:0; padding:0; font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+  body { background: radial-gradient(1200px 700px at 70% -10%, rgba(99,102,241,.18), transparent 60%), var(--bg); color: var(--text); min-height:100vh; }
+  .wrap { display:flex; min-height:100vh; }
+
+  /* 控制面板 */
+  .ctrl { width: 260px; flex-shrink:0; padding: 22px 18px; border-right:1px solid var(--border); position:sticky; top:0; height:100vh; overflow:auto; background: var(--panel); backdrop-filter: blur(12px); }
+  .ctrl h1 { font-size:15px; margin:0 0 2px; letter-spacing:.3px; }
+  .ctrl .sub { font-size:11px; color:var(--text-muted); margin-bottom:18px; line-height:1.5; }
+  .grp { margin-bottom:18px; }
+  .grp .lbl { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.6px; margin-bottom:8px; }
+  .tab { display:block; width:100%; text-align:left; border:1px solid var(--border); background:var(--card-bg); color:var(--text); padding:10px 12px; border-radius:10px; cursor:pointer; margin-bottom:7px; font-size:12.5px; transition:.15s; }
+  .tab small { display:block; color:var(--text-muted); font-size:10.5px; margin-top:3px; line-height:1.4; }
+  .tab:hover { background:var(--card-bg-hover); }
+  .tab.active { border-color:var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .themeBtns { display:flex; gap:8px; }
+  .themeBtns button { flex:1; border:1px solid var(--border); background:var(--card-bg); color:var(--text); padding:8px; border-radius:9px; cursor:pointer; font-size:11.5px; }
+  .themeBtns button.active { border-color:var(--accent); color:var(--accent-strong); }
+  .pill { display:inline-block; font-size:10px; padding:2px 7px; border-radius:99px; background: color-mix(in srgb,var(--warn) 18%, transparent); color:var(--warn); margin-left:6px; vertical-align:middle; }
+  .legend { font-size:11px; color:var(--text-2); line-height:1.7; }
+  .legend b { color:var(--text); }
+
+  /* 舞台 */
+  .stage { flex:1; padding:26px; display:flex; flex-direction:column; align-items:center; gap:18px; }
+  .surf { display:none; width:100%; max-width:760px; }
+  .surf.active { display:block; }
+  .surfTitle { font-size:13px; font-weight:600; margin: 4px 0 2px; }
+  .surfDesc { font-size:11.5px; color:var(--text-muted); margin:0 0 16px; line-height:1.6; }
+  .surfDesc b { color: var(--accent-strong); }
+
+  /* ===== 手机框（主窗 480px / 托盘 340px） ===== */
+  .frame { width:480px; margin:0 auto; background: var(--glass); border:1px solid var(--border); border-radius:16px; box-shadow: var(--shadow); overflow:hidden; backdrop-filter: blur(20px); }
+  .frame.tray { width:340px; }
+  .frame-scroll { max-height: 70vh; overflow:auto; }
+
+  /* 顶栏 */
+  .topbar { display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid var(--border); }
+  .brand { display:flex; align-items:center; gap:7px; font-weight:600; font-size:13px; flex:1; }
+  .brand .logo { width:20px;height:20px;border-radius:6px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:flex; align-items:center; justify-content:center; color:#fff; font-size:11px; }
+  .iconbtn { width:30px;height:30px; border-radius:8px; border:1px solid var(--border); background:var(--card-bg); color:var(--text-2); display:flex; align-items:center; justify-content:center; cursor:pointer; }
+  .iconbtn.on { color:var(--accent-strong); border-color:var(--accent); background: color-mix(in srgb,var(--accent) 14%, transparent); }
+  .tabs { display:flex; gap:4px; padding:8px 10px 0; }
+  .tabitem { flex:1; text-align:center; font-size:11.5px; padding:7px 0; border-radius:8px 8px 0 0; color:var(--text-muted); cursor:pointer; border-bottom:2px solid transparent; }
+  .tabitem.active { color:var(--accent-strong); border-bottom-color:var(--accent); background: var(--card-bg); }
+
+  /* 列表 */
+  .list { padding:10px; display:flex; flex-direction:column; gap:8px; }
+  .card { display:flex; align-items:center; gap:10px; padding:10px; border:1px solid var(--border); border-radius:10px; background:var(--card-bg); position:relative; transition:.12s; }
+  .card:hover { background:var(--card-bg-hover); }
+  .card.sel { border-color:var(--accent); background: color-mix(in srgb,var(--accent) 12%, transparent); box-shadow:0 0 0 1px var(--accent) inset; }
+  .chk { width:18px;height:18px;border-radius:6px;border:1.5px solid var(--border-strong); flex-shrink:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:11px; transition:.12s; }
+  .chk.show { opacity:1; }
+  .chk.hidden { opacity:0; pointer-events:none; }
+  .chk.on { background:var(--accent); border-color:var(--accent); }
+  .ci { width:34px;height:34px;border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:15px; }
+  .ci.blue{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent-strong);}
+  .ci.green{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok);}
+  .ci.pink{background:color-mix(in srgb,#ec4899 20%,transparent);color:#ec4899;}
+  .ci.amber{background:color-mix(in srgb,var(--warn) 20%,transparent);color:var(--warn);}
+  .ct { flex:1; min-width:0; }
+  .ct .t { font-size:12.5px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ct .s { font-size:10.5px; color:var(--text-muted); margin-top:2px; display:flex; gap:6px; align-items:center; }
+  .time { font-size:10px; color:var(--text-muted); flex-shrink:0; }
+
+  /* 卡片常驻操作轨 */
+  .rail { display:flex; align-items:center; gap:3px; flex-shrink:0; }
+  .rail .ab { width:26px;height:26px;border-radius:7px;border:1px solid transparent;background:transparent;color:var(--text-2);display:flex;align-items:center;justify-content:center;cursor:pointer; }
+  .rail .ab.copy { color:var(--accent-strong); background: color-mix(in srgb,var(--accent) 14%, transparent); }
+  .rail .ab.more { opacity:0; transition:.12s; }
+  .card:hover .rail .ab.more { opacity:1; }
+  .rail .ab:hover { background: var(--card-bg-hover); }
+
+  /* 批量工具条 */
+  .batchbar { display:flex; align-items:center; gap:8px; padding:9px 12px; border-top:1px solid var(--border); background: color-mix(in srgb,var(--accent) 10%, var(--panel)); flex-wrap:wrap; }
+  .batchbar .lab { font-size:11.5px; color:var(--accent-strong); font-weight:600; margin-right:2px; }
+  .bbtn { border:1px solid var(--border); background:var(--card-bg); color:var(--text); padding:5px 9px; border-radius:8px; font-size:11px; cursor:pointer; display:flex; align-items:center; gap:4px; }
+  .bbtn:hover { background:var(--card-bg-hover); }
+  .bbtn.danger { color:var(--danger); }
+  .bbtn.danger:hover { background: color-mix(in srgb,var(--danger) 14%, transparent); }
+
+  .hint { font-size:11px; color:var(--text-muted); text-align:center; padding:8px; line-height:1.6; }
+  .hint b { color:var(--accent-strong); }
+
+  /* 托盘 */
+  .tp-header { display:flex; align-items:center; gap:8px; padding:12px; }
+  .tp-logo { width:24px;height:24px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px; }
+  .tp-name { font-weight:600; font-size:13px; flex:1; }
+  .tp-dot { width:8px;height:8px;border-radius:50%; background:var(--ok); }
+  .tp-cards { display:flex; gap:6px; padding:0 12px 10px; }
+  .tp-card { flex:1; border:1px solid var(--border); border-radius:9px; padding:8px; text-align:center; background:var(--card-bg); }
+  .tp-card .v { font-size:15px; font-weight:700; }
+  .tp-card .l { font-size:10px; color:var(--text-muted); margin-top:2px; }
+  .tp-sec { font-size:11px; color:var(--text-muted); padding:8px 12px 4px; display:flex; align-items:center; gap:6px; }
+  .tp-item { display:flex; align-items:center; gap:9px; padding:9px 12px; cursor:pointer; position:relative; border-left:2px solid transparent; }
+  .tp-item:hover, .tp-item.active { background: var(--card-bg-hover); border-left-color: var(--accent); }
+  .tp-sec-actions { display:none; gap:4px; margin-left:auto; }
+  .tp-item:hover .tp-sec-actions, .tp-item.active .tp-sec-actions { display:flex; }
+  .tp-mini { width:24px;height:24px;border-radius:6px;border:1px solid var(--border);background:var(--card-bg);color:var(--text-2);display:flex;align-items:center;justify-content:center;font-size:11px; cursor:pointer; }
+  .tp-mini:hover { color:var(--accent-strong); border-color:var(--accent); }
+  .tp-prev { font-size:11.5px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0; }
+  .tp-foot { padding:8px 12px; border-top:1px solid var(--border); font-size:10.5px; color:var(--text-muted); display:flex; align-items:center; gap:6px; }
+  .tp-actions { padding:8px 12px 12px; display:flex; flex-direction:column; gap:4px; }
+  .tp-act { display:flex; align-items:center; gap:9px; padding:8px 10px; border:1px solid var(--border); border-radius:9px; background:var(--card-bg); font-size:12px; color:var(--text); cursor:pointer; }
+  .tp-act:hover { background:var(--card-bg-hover); }
+  .tp-act.danger { color:var(--danger); }
+
+  .callout { width:100%; max-width:760px; margin:0 auto; border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:10px; padding:12px 14px; background:var(--panel); font-size:11.5px; color:var(--text-2); line-height:1.7; }
+  .callout b { color:var(--text); }
+  svg { display:block; }
+</style>
+</head>
+<body class="theme-ocean-dark">
+<div class="wrap">
+  <!-- 控制面板 -->
+  <aside class="ctrl">
+    <h1>UI 交互审计 · 设计稿</h1>
+    <div class="sub">PastePanda 全项目交互痛点审查<br/>（主列表 / 顶栏 / 托盘弹窗 已逐行读源码）<br/>每个主题＝一套 1:1 真实可交互预览</div>
+
+    <div class="grp">
+      <div class="lbl">设计稿主题</div>
+      <div class="themeBtns">
+        <button class="tbtn active" data-theme="ocean-dark" onclick="setTheme('ocean-dark')">深海</button>
+        <button class="tbtn" data-theme="ocean" onclick="setTheme('ocean')">海洋</button>
+      </div>
+    </div>
+
+    <div class="grp">
+      <div class="lbl">痛点设计稿</div>
+      <button class="tab active" onclick="show('s1',this)">① 列表多选可发现性<span class="pill">高价值</span><small>当前只能键盘 Ctrl+点 进入多选，无可见勾选入口</small></button>
+      <button class="tab" onclick="show('s2',this)">② 卡片常驻主操作<span class="pill">中</span><small>复制/置顶/删除仅 hover 弹层出现，新用户不知能操作</small></button>
+      <button class="tab" onclick="show('s3',this)">③ 托盘弹窗增强<span class="pill">中</span><small>托盘每条只能"粘贴"，不能复制/置顶/预览</small></button>
+    </div>
+
+    <div class="grp">
+      <div class="lbl">其余已审查面（良好，暂不单独出稿）</div>
+      <div class="legend">
+        • <b>顶栏筛选</b>：来源/时间/标签筛选已并入顶栏，可发现性 OK<br/>
+        • <b>空状态/引导</b>：搜索无结果、空剪贴板引导已完善<br/>
+        • <b>右键菜单</b>：智能翻折/键盘导航/子菜单已成熟<br/>
+        • <b>键盘体系</b>：↑↓/Enter/Space/Delete/Ctrl+A… 已完整<br/>
+        • 设置/各编辑弹框未深读，可后续单独审计
+      </div>
+    </div>
+  </aside>
+
+  <!-- 舞台 -->
+  <main class="stage">
+
+    <!-- ① 多选可发现性 -->
+    <section class="surf active" id="s1">
+      <div class="surfTitle">① 主列表 · 多选可发现性</div>
+      <div class="surfDesc">现状：多选取态由 <b>Ctrl+A / Ctrl+点击 / Shift+点击</b> 触发，列表里<b>没有任何勾选框</b>；鼠标用户完全不知道能批量操作（合并/导出/对比/删除）。<br/>方案：顶栏常驻「☑ 批量」开关 + 卡片 hover 左侧浮出勾选框；开关开启后全部卡片显勾选，选中态高亮，底部出现批量工具条（已是现有 batchToolbar，只是让它"够得着"）。</div>
+
+      <div class="frame">
+        <div class="topbar">
+          <div class="brand"><span class="logo">P</span> PastePanda</div>
+          <div class="iconbtn on" title="批量管理">☑</div>
+          <div class="iconbtn" title="工具箱">🧰</div>
+          <div class="iconbtn" title="设置">⚙</div>
+        </div>
+        <div class="tabs">
+          <div class="tabitem active">全部</div><div class="tabitem">文本</div><div class="tabitem">图片</div><div class="tabitem">文件</div><div class="tabitem">收藏</div>
+        </div>
+        <div class="list frame-scroll">
+          <!-- 选中态 -->
+          <div class="card sel">
+            <div class="chk on show">✓</div>
+            <div class="ci blue">📝</div>
+            <div class="ct"><div class="t">git rebase -i HEAD~3 冲突解决后…</div><div class="s"><span>终端</span>·<span>代码</span></div></div>
+            <div class="time">2分钟</div>
+          </div>
+          <div class="card sel">
+            <div class="chk on show">✓</div>
+            <div class="ci green">📁</div>
+            <div class="ct"><div class="t">report-2026.xlsx 等 3 个文件</div><div class="s"><span>资源管理器</span>·<span>文件</span></div></div>
+            <div class="time">8分钟</div>
+          </div>
+          <!-- 未选（批量模式下勾选框仍可见，暗色） -->
+          <div class="card">
+            <div class="chk show"></div>
+            <div class="ci pink">🖼</div>
+            <div class="ct"><div class="t">截图 2026-08-15 14.22.png</div><div class="s"><span>截图工具</span>·<span>图片</span></div></div>
+            <div class="time">15分钟</div>
+          </div>
+          <div class="card">
+            <div class="chk show"></div>
+            <div class="ci amber">🔗</div>
+            <div class="ct"><div class="t">https://paste-panda.dev/docs</div><div class="s"><span>Chrome</span>·<span>链接</span></div></div>
+            <div class="time">20分钟</div>
+          </div>
+          <div class="hint">提示：点 <b>☑ 批量</b> 进入多选，或直接 <b>Ctrl+点击</b> 卡片；选中后底部出现合并 / 导出 / 对比 / 删除</div>
+        </div>
+        <div class="batchbar">
+          <span class="lab">已选 2 条</span>
+          <div class="bbtn">▢ 全选</div>
+          <div class="bbtn">⧉ 合并</div>
+          <div class="bbtn">⤓ 导出</div>
+          <div class="bbtn">⇄ 对比</div>
+          <div class="bbtn danger">🗑 删除</div>
+        </div>
+      </div>
+
+      <div class="callout">落地影响：纯前端，复用现有 <b>batchToolbar</b> 与 <b>selectItem(id, ctrl, shift)</b> 逻辑；新增点＝顶栏「批量」开关 state + 卡片勾选框（默认 hover 显、批量模式常显）。零 Rust。</div>
+    </section>
+
+    <!-- ② 卡片常驻主操作 -->
+    <section class="surf" id="s2">
+      <div class="surfTitle">② 卡片 · 常驻主操作（复制始终可见）</div>
+      <div class="surfDesc">现状：复制/置顶/编辑/删除只在 <b>hover 弹出的 Popover</b> 或 inline 模式里出现。快速扫一眼列表的用户<b>不知道卡片能直接操作</b>，必须悬停才见。<br/>方案：卡片右侧常驻一条<b>低调操作轨</b>——「复制」始终可见（主操作），hover 时再展开「置顶/编辑/删除」。与现有 Popover 并行存在、互不冲突，降低对 hover 的依赖。</div>
+
+      <div class="frame">
+        <div class="topbar">
+          <div class="brand"><span class="logo">P</span> PastePanda</div>
+          <div class="iconbtn" title="工具箱">🧰</div>
+          <div class="iconbtn" title="设置">⚙</div>
+        </div>
+        <div class="list frame-scroll">
+          <!-- 常态：仅复制常驻 -->
+          <div class="card">
+            <div class="ci blue">📝</div>
+            <div class="ct"><div class="t">周会纪要：Q3 目标对齐、风险同步…</div><div class="s"><span>飞书</span>·<span>文本</span></div></div>
+            <div class="time">3分钟</div>
+            <div class="rail">
+              <div class="ab copy" title="复制">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              </div>
+            </div>
+          </div>
+          <!-- hover 态：展开更多 -->
+          <div class="card" style="background:var(--card-bg-hover)">
+            <div class="ci green">📁</div>
+            <div class="ct"><div class="t">build/app.exe 等 2 个文件</div><div class="s"><span>资源管理器</span>·<span>文件</span></div></div>
+            <div class="time">9分钟</div>
+            <div class="rail">
+              <div class="ab copy" title="复制">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              </div>
+              <div class="ab more" title="置顶">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 17v5"/><path d="M9 10.8V4a1 1 0 0 1 2 0v4.8l4.2-1.6A1 1 0 0 1 16 8v2.2l-4 1.5V14l4 1.5V17l-6-2.2V10.8z"/></svg>
+              </div>
+              <div class="ab more" title="编辑">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+              </div>
+              <div class="ab more" title="删除" style="color:var(--danger)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="ci pink">🖼</div>
+            <div class="ct"><div class="t">设计稿 v3.png</div><div class="s"><span>截图工具</span>·<span>图片</span></div></div>
+            <div class="time">12分钟</div>
+            <div class="rail">
+              <div class="ab copy" title="复制">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout">落地影响：在 <b>Card.tsx</b> 的 <code>cardContent</code> 右侧追加常驻操作轨（复制始终显，其余 hover 显）。与现有 <b>CardHoverPopover / InlineCardActions</b> 并存，不改既有交互。复制按钮复用 <code>copyItemToClipboard</code>。零 Rust。</div>
+    </section>
+
+    <!-- ③ 托盘增强 -->
+    <section class="surf" id="s3">
+      <div class="surfTitle">③ 托盘弹窗 · 复制 / 置顶 / 预览</div>
+      <div class="surfDesc">现状：托盘「最近复制」每条<b>只能点一下粘贴</b>——想先复制而不粘贴、想把常用项置顶、或想先看一眼大图/全文再决定，都做不到。<br/>方案：每条 hover/选中时右侧浮出「复制 / 置顶」小按钮；图片 / 长文本项增加展开箭头，就地内联预览。主操作仍是点击即粘贴（保持快速场景），次操作可选。</div>
+
+      <div class="frame tray">
+        <div class="tp-header">
+          <div class="tp-logo">P</div>
+          <div class="tp-name">PastePanda</div>
+          <div class="tp-dot"></div>
+        </div>
+        <div class="tp-cards">
+          <div class="tp-card"><div class="v">5</div><div class="l">今日</div></div>
+          <div class="tp-card"><div class="v">1,284</div><div class="l">总计</div></div>
+          <div class="tp-card"><div class="v">12</div><div class="l">置顶</div></div>
+        </div>
+        <div class="tp-sec">🕐 最近复制</div>
+        <!-- active / hover 态：浮出次操作 -->
+        <div class="tp-item active">
+          <span class="ci blue" style="width:26px;height:26px;border-radius:7px;font-size:13px">📝</span>
+          <span class="tp-prev">API_KEY=sk-xxxx…（密钥已脱敏）</span>
+          <span class="tp-sec-actions">
+            <span class="tp-mini" title="复制">⧉</span>
+            <span class="tp-mini" title="置顶">📌</span>
+          </span>
+        </div>
+        <div class="tp-item">
+          <span class="ci pink" style="width:26px;height:26px;border-radius:7px;font-size:13px">🖼</span>
+          <span class="tp-prev">截图 2026-08-15 14.22.png</span>
+          <span class="tp-sec-actions">
+            <span class="tp-mini" title="复制">⧉</span>
+            <span class="tp-mini" title="置顶">📌</span>
+            <span class="tp-mini" title="预览">🔍</span>
+          </span>
+        </div>
+        <div class="tp-item">
+          <span class="ci green" style="width:26px;height:26px;border-radius:7px;font-size:13px">📁</span>
+          <span class="tp-prev">./dist/app.exe</span>
+          <span class="tp-sec-actions">
+            <span class="tp-mini" title="复制">⧉</span>
+            <span class="tp-mini" title="置顶">📌</span>
+          </span>
+        </div>
+        <!-- 内联预览展开示例 -->
+        <div class="tp-item" style="display:block;background:var(--card-bg)">
+          <div style="display:flex;align-items:center;gap:9px">
+            <span class="ci pink" style="width:26px;height:26px;border-radius:7px;font-size:13px">🖼</span>
+            <span class="tp-prev">流程图设计稿.png</span>
+            <span class="tp-sec-actions" style="display:flex">
+              <span class="tp-mini" title="复制">⧉</span>
+              <span class="tp-mini" title="置顶">📌</span>
+            </span>
+          </div>
+          <div style="margin-top:8px;height:90px;border-radius:8px;border:1px solid var(--border);background:linear-gradient(135deg,#1e293b,#334155);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:11px">🖼 图片缩略预览（点击展开查看大图）</div>
+        </div>
+        <div class="tp-sec">⚙ 操作</div>
+        <div class="tp-actions">
+          <div class="tp-act">▣ 显示主窗口 <span style="margin-left:auto;color:var(--text-muted);font-size:10px">Ctrl+Alt+V</span></div>
+          <div class="tp-act">⏸ 暂停监听</div>
+          <div class="tp-act">⚙ 设置…</div>
+          <div class="tp-act danger">⏻ 退出</div>
+        </div>
+        <div class="tp-foot">🗄 数据库 3.2 MB / 100 MB · 3.2%</div>
+      </div>
+
+      <div class="callout">落地影响：扩展 <b>TrayPopup.tsx / TrayPopupSuggestion</b>，每条加次操作按钮（复制走 <code>copyOnly</code>、置顶走 <code>toggle_pin</code> 命令、预览走现有 <code>openEditor</code>）；内联预览复用图片缩略图。纯前端（Rust 已有对应命令）。</div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+  function setTheme(t){
+    document.body.className = 'theme-' + t;
+    document.querySelectorAll('.tbtn').forEach(b=>b.classList.toggle('active', b.dataset.theme===t));
+  }
+  function show(id, el){
+    document.querySelectorAll('.surf').forEach(s=>s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    el.classList.add('active');
+  }
+</script>
+</body>
+</html>

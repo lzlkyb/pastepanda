@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="ocean-dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OCR 结果 UI · 微信风格增强设计稿</title>
+<style>
+  /* ===== 6 套主题令牌（逐字取自 src/styles/theme.css，仅保留 OCR 组件所用变量） ===== */
+  :root, [data-theme="ocean"] {
+    --accent:#0284C7; --accent-light:#E0F2FE; --accent-border:color-mix(in srgb,var(--accent) 35%,transparent); --accent-solid:#027CBB; --accent-strong:#0273AD;
+    --text-primary:#0F172A; --text-muted:#627083; --card-bg:#fff; --border-color:#E0E4EB; --hover:#E8ECF2;
+    --green:#11813A; --green-bg:#DCFCE7; --green-border:#BBF7D0;
+    --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA;
+    --glass-popover-bg:rgba(255,255,255,0.97); --glass-popover-border:rgba(0,0,0,0.06); --glass-popover-shadow:0 12px 36px rgba(0,0,0,0.1),0 2px 8px rgba(0,0,0,0.05);
+    --overlay-bg:rgba(0,0,0,0.35); --app-bg:#F7F7F8;
+  }
+  [data-theme="midnight"] {
+    --accent:#818CF8; --accent-light:#1E1B4B; --accent-border:color-mix(in srgb,var(--accent) 35%,transparent); --accent-solid:#666FC4; --accent-strong:#818CF8;
+    --text-primary:#E4E4E7; --text-muted:#8D8D95; --card-bg:#18181B; --border-color:#27272A; --hover:#1F1F23;
+    --green:#4ADE80; --green-bg:#052E16; --green-border:#166534;
+    --orange:#FB923C; --orange-bg:#431407; --orange-border:#9A3412;
+    --glass-popover-bg:rgba(20,20,24,0.85); --glass-popover-border:rgba(255,255,255,0.07); --glass-popover-shadow:0 12px 40px rgba(0,0,0,0.45),0 2px 8px rgba(0,0,0,0.25);
+    --overlay-bg:rgba(0,0,0,0.35); --app-bg:radial-gradient(100% 80% at 50% -10%,#1C1832,#0B0B13);
+  }
+  [data-theme="forest"] {
+    --accent:#059669; --accent-light:#ECFDF5; --accent-border:color-mix(in srgb,var(--accent) 35%,transparent); --accent-solid:#05875F; --accent-strong:#04835B;
+    --text-primary:#171717; --text-muted:#726E6B; --card-bg:#fff; --border-color:#D1D9D3; --hover:#E8EDE8;
+    --green:#11813A; --green-bg:#DCFCE7; --green-border:#BBF7D0;
+    --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA;
+    --glass-popover-bg:rgba(255,255,255,0.85); --glass-popover-border:rgba(0,0,0,0.06); --glass-popover-shadow:0 12px 36px rgba(0,0,0,0.1),0 2px 8px rgba(0,0,0,0.05);
+    --overlay-bg:rgba(0,0,0,0.35); --app-bg:#F5F1E3;
+  }
+  [data-theme="blossom"] {
+    --accent:#F0568C; --accent-light:#FFDDEC; --accent-border:color-mix(in srgb,var(--accent) 35%,transparent); --accent-solid:#CE3B70; --accent-strong:#B02C5D;
+    --text-primary:#3D2231; --text-muted:#86596D; --card-bg:#fff; --border-color:#F9D3E2; --hover:#FBE7F0;
+    --green:#11813A; --green-bg:#DCFCE7; --green-border:#BBF7D0;
+    --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA;
+    --glass-popover-bg:rgba(255,255,255,0.85); --glass-popover-border:rgba(0,0,0,0.06); --glass-popover-shadow:0 12px 36px rgba(0,0,0,0.1),0 2px 8px rgba(0,0,0,0.05);
+    --overlay-bg:rgba(122,31,70,0.32); --app-bg:#FFE4EF;
+  }
+  [data-theme="dawn"] {
+    --accent:#E8734A; --accent-light:#FFEDE2; --accent-border:color-mix(in srgb,var(--accent) 35%,transparent); --accent-solid:#C85A34; --accent-strong:#B95432;
+    --text-primary:#2B2016; --text-muted:#7D6B58; --card-bg:#fff; --border-color:#F0DDC8; --hover:#F7E9DA;
+    --green:#11813A; --green-bg:#DCFCE7; --green-border:#BBF7D0;
+    --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA;
+    --glass-popover-bg:rgba(255,255,255,0.85); --glass-popover-border:rgba(0,0,0,0.06); --glass-popover-shadow:0 12px 36px rgba(0,0,0,0.1),0 2px 8px rgba(0,0,0,0.05);
+    --overlay-bg:rgba(0,0,0,0.35); --app-bg:#FFF8EE;
+  }
+  [data-theme="ocean-dark"] {
+    --accent:#3B9EFF; --accent-light:#0A1E3A; --accent-border:color-mix(in srgb,var(--accent) 35%,transparent); --accent-solid:#2D78C2; --accent-strong:#3B9EFF;
+    --text-primary:#E0E8F0; --text-muted:#7994B4; --card-bg:#0A1628; --border-color:#162B45; --hover:#0F1F35;
+    --green:#4ADE80; --green-bg:#052E16; --green-border:#166534;
+    --orange:#FB923C; --orange-bg:#431407; --orange-border:#9A3412;
+    --glass-popover-bg:rgba(10,22,40,0.85); --glass-popover-border:rgba(255,255,255,0.08); --glass-popover-shadow:0 12px 40px rgba(0,0,0,0.5),0 2px 8px rgba(0,0,0,0.25);
+    --overlay-bg:rgba(0,0,0,0.35); --app-bg:radial-gradient(130% 110% at 70% -5%,#1E5A82,#0E3355 42%,#061A33);
+  }
+
+  * { box-sizing:border-box; }
+  body {
+    margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--app-bg); color:var(--text-primary); padding:20px; line-height:1.5;
+    transition:background .3s,color .3s;
+  }
+  .topbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:18px; }
+  .topbar h1 { font-size:18px; margin:0; }
+  .topbar .sub { font-size:12px; color:var(--text-muted); margin-top:2px; }
+  .theme-switch { display:flex; gap:6px; }
+  .theme-switch button {
+    font-size:11px; padding:5px 10px; border-radius:6px; cursor:pointer;
+    border:1px solid var(--border-color); background:var(--card-bg); color:var(--text-primary);
+  }
+  .theme-switch button.active { background:var(--accent-light); border-color:var(--accent-border); color:var(--accent-strong); font-weight:600; }
+
+  .page { display:flex; flex-direction:column; gap:18px; max-width:860px; margin:0 auto; }
+  .section {
+    background:var(--card-bg); border:1px solid var(--border-color); border-radius:12px;
+    padding:16px; box-shadow:0 2px 10px rgba(0,0,0,0.06);
+  }
+  .section h2 { font-size:14px; margin:0 0 4px; display:flex; align-items:center; gap:8px; }
+  .section h2 .tag { font-size:10px; padding:2px 7px; border-radius:10px; background:var(--accent-light); color:var(--accent-strong); font-weight:600; }
+  .section .desc { font-size:12px; color:var(--text-muted); margin:0 0 12px; }
+
+  /* ===== OCR 结果面板（延续方案 A 常驻结构） ===== */
+  .ocr-panel { border:1px solid var(--accent-border); border-radius:8px; overflow:hidden; }
+  .ocr-header {
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:8px 12px; background:var(--accent-light); border-bottom:1px solid var(--accent-border);
+  }
+  .ocr-header .title { font-size:12px; font-weight:600; color:var(--accent-strong); }
+  .ocr-actions { display:flex; align-items:center; gap:6px; }
+  .ocr-edit-toggle {
+    font-size:11px; padding:4px 10px; border-radius:5px; cursor:pointer; font-weight:500; font-family:inherit;
+    border:1px solid var(--accent-border); background:transparent; color:var(--accent-strong);
+  }
+  .ocr-edit-toggle:hover { background:color-mix(in srgb,var(--accent) 12%,transparent); }
+  .ocr-copy-btn {
+    font-size:11px; padding:4px 10px; border-radius:5px; cursor:pointer; font-weight:500; font-family:inherit;
+    display:flex; align-items:center; gap:3px; border:1px solid var(--accent-border); background:var(--card-bg); color:var(--accent-strong);
+  }
+  .ocr-copy-btn:hover { background:color-mix(in srgb,var(--accent) 12%,transparent); }
+  .ocr-copy-btn.solid { background:var(--accent-solid); color:#fff; border-color:transparent; }
+  .ocr-copy-btn.solid:hover { opacity:.9; }
+
+  /* 下一步工具栏（② 收敛） */
+  .ocr-toolbar { display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid var(--accent-border); flex-wrap:wrap; }
+  .ocr-tool {
+    font-size:11px; padding:6px 12px; border-radius:6px; cursor:pointer; font-weight:500; font-family:inherit; display:flex; align-items:center; gap:4px;
+    border:1px solid var(--accent-border); background:var(--card-bg); color:var(--accent-strong);
+  }
+  .ocr-tool:hover { background:color-mix(in srgb,var(--accent) 12%,transparent); }
+  .ocr-tool.primary { background:var(--accent-solid); color:#fff; border-color:transparent; }
+  .ocr-tool.primary:hover { opacity:.9; }
+  .ocr-tool:disabled, .ocr-tool.disabled { opacity:.4; cursor:not-allowed; }
+  .ocr-tool .dot { width:6px; height:6px; border-radius:50%; background:var(--accent); }
+
+  /* 实体高亮（①） */
+  .ocr-body { padding:12px; font-size:13px; line-height:1.9; color:var(--text-primary); max-height:200px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
+  .ent { border-radius:3px; padding:0 2px; cursor:pointer; font-weight:500; transition:background .15s; }
+  .ent-url  { color:var(--accent); background:color-mix(in srgb,var(--accent) 12%,transparent); border-bottom:1px solid var(--accent); }
+  .ent-tel  { color:var(--green);  background:var(--green-bg); border-bottom:1px solid var(--green-border); }
+  .ent-email{ color:var(--orange); background:var(--orange-bg); border-bottom:1px solid var(--orange-border); }
+  .ent:hover { filter:brightness(1.05); }
+
+  /* 实体操作 popover（① 细节） */
+  .pop-wrap { position:relative; display:inline; }
+  .popover {
+    position:absolute; top:140%; left:0; z-index:20; min-width:140px;
+    background:var(--glass-popover-bg); border:1px solid var(--glass-popover-border); box-shadow:var(--glass-popover-shadow);
+    border-radius:10px; padding:6px; display:none; backdrop-filter:blur(10px);
+  }
+  .popover.open { display:block; }
+  .popover button {
+    display:flex; align-items:center; gap:7px; width:100%; text-align:left; font-size:12px; padding:7px 9px;
+    border:none; background:transparent; color:var(--text-primary); border-radius:6px; cursor:pointer; font-family:inherit;
+  }
+  .popover button:hover { background:var(--hover); }
+  .popover .ico { color:var(--accent); }
+
+  /* 选词态栏（③ 按需点亮） */
+  .ocr-selbar { display:flex; align-items:center; gap:10px; padding:8px 12px; background:var(--accent-light); border-top:1px solid var(--accent-border); flex-wrap:wrap; }
+  .ocr-selbar .count { font-size:11px; color:var(--accent-strong); font-weight:500; white-space:nowrap; }
+  .ocr-selbar .count strong { font-size:13px; }
+  .ocr-selbar .preview { flex:1; font-size:11px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ocr-selbar .mini { font-size:10px; padding:3px 9px; border-radius:5px; cursor:pointer; border:1px solid var(--accent-border); background:var(--card-bg); color:var(--accent-strong); }
+  .ocr-selbar .mini:hover { background:color-mix(in srgb,var(--accent) 12%,transparent); }
+  .ocr-selbar .mini.primary { background:var(--accent-solid); color:#fff; border-color:transparent; }
+  .ocr-selbar .mini:disabled { opacity:.4; cursor:not-allowed; }
+
+  /* 校对模式（④） */
+  .proof { display:none; gap:12px; padding:12px; border-top:1px solid var(--accent-border); }
+  .proof.open { display:flex; }
+  .proof .orig { flex:1; min-width:0; border-radius:8px; background:linear-gradient(135deg,var(--accent-light),var(--hover)); display:flex; align-items:center; justify-content:center; color:var(--text-muted); font-size:12px; min-height:120px; border:1px dashed var(--accent-border); }
+  .proof textarea { flex:1; min-width:0; min-height:120px; padding:10px 12px; border:1px solid var(--accent-border); border-radius:8px; font-size:12px; line-height:1.7; font-family:inherit; color:var(--text-primary); background:var(--card-bg); resize:vertical; outline:none; }
+
+  /* 空格拼接对比（⑤） */
+  .join-cmp { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .join-card { border:1px solid var(--border-color); border-radius:8px; padding:10px 12px; }
+  .join-card .lab { font-size:11px; font-weight:600; margin-bottom:6px; color:var(--accent-strong); }
+  .join-card .txt { font-size:12px; line-height:1.7; color:var(--text-primary); word-break:break-all; }
+  .bad { color:var(--text-muted); }
+  .good { color:var(--green); }
+
+  .hint { font-size:11px; color:var(--text-muted); margin-top:8px; }
+  kbd { font-family:inherit; font-size:10px; padding:1px 5px; border:1px solid var(--border-color); border-radius:4px; background:var(--hover); color:var(--text-muted); }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <h1>📷 OCR 结果 UI · 微信风格增强</h1>
+      <div class="sub">方案 A 常驻面板 + 微信 4 借鉴点：① 实体快捷 ② 工具栏收敛 ③ 按需点亮 ④ 校对+拼接 ｜ 纯前端零 Rust，版本号不升</div>
+    </div>
+    <div class="theme-switch" id="themeSwitch">
+      <button data-t="ocean">ocean</button>
+      <button data-t="midnight">midnight</button>
+      <button data-t="forest">forest</button>
+      <button data-t="blossom">blossom</button>
+      <button data-t="dawn">dawn</button>
+      <button data-t="ocean-dark" class="active">ocean-dark</button>
+    </div>
+  </div>
+
+  <div class="page">
+
+    <!-- ① 常驻面板 + 实体高亮 + 工具栏 -->
+    <div class="section">
+      <h2><span class="tag">①+②</span> 常驻结果面板 · 实体高亮 · 下一步工具栏</h2>
+      <p class="desc">识别结果常驻（与词框叠加并存，延续方案 A）。全文自动高亮 URL / 电话 / 邮箱；顶部收敛为一组「下一步」动作：复制全部（主）/ 存为卡片 / 翻译 / 搜索。点击蓝色 URL 试试弹出的快捷操作。</p>
+      <div class="ocr-panel">
+        <div class="ocr-header">
+          <span class="title">🔍 全部识别文字</span>
+          <div class="ocr-actions">
+            <button class="ocr-edit-toggle" id="proofToggle">校对</button>
+            <button class="ocr-copy-btn solid" onclick="simCopy(this)">📋 全部复制</button>
+          </div>
+        </div>
+        <div class="ocr-toolbar">
+          <button class="ocr-tool primary" onclick="simCopy(this)"><span class="dot"></span>复制全部</button>
+          <button class="ocr-tool" onclick="toast('已存为卡片')">💾 存为卡片</button>
+          <button class="ocr-tool" onclick="toast('已打开翻译')">🌐 翻译</button>
+          <button class="ocr-tool disabled" id="searchTool" title="选中文字后亮起">🔎 搜索</button>
+        </div>
+        <div class="ocr-body" id="ocrBody">
+会议通知
+时间：2026年8月20日 下午2:00
+地点：深圳市南山区科技园路1号
+联系人：张三
+电话：<span class="ent ent-tel" data-type="tel" onclick="openPop(this)">13800138000</span>
+邮箱：<span class="ent ent-email" data-type="email" onclick="openPop(this)">zhangsan@example.com</span>
+详情见官网 <span class="ent ent-url" data-type="url" onclick="openPop(this)">https://www.example.com/meeting</span>
+请准时参加，谢谢！</div>
+        <div class="proof" id="proof">
+          <div class="orig">🖼 原图缩略（对照改错）</div>
+          <textarea>会议通知
+时间：2026年8月20日 下午2:00
+地点：深圳市南山区科技园路1号
+联系人：张三
+电话：13800138000
+邮箱：zhangsan@example.com
+详情见官网 https://www.example.com/meeting
+请准时参加，谢谢！</textarea>
+        </div>
+      </div>
+      <div class="hint">实体高亮配色复用主题令牌：URL→<code>--accent</code>、电话→<code>--green</code>、邮箱→<code>--orange</code>，6 主题自动适配。点击实体弹出「复制 / 打开 / 存为卡片」等动作（本地正则识别，零出网，符合隐私红线）。</div>
+    </div>
+
+    <!-- ① 实体 popover 详解 -->
+    <div class="section">
+      <h2><span class="tag">①</span> 点击实体 → 快捷操作浮层</h2>
+      <p class="desc">仿微信「识别即操作」：选中 URL 飘蓝可「打开链接」，电话可「呼叫 / 存通讯录」，邮箱可「发邮件」。下方为三种实体的浮层示意。</p>
+      <div style="display:flex; gap:16px; flex-wrap:wrap;">
+        <div class="pop-wrap" style="position:relative;">
+          <span class="ent ent-url">https://a.b/c</span>
+          <div class="popover open" style="position:static; display:block; margin-top:6px;">
+            <button><span class="ico">⧉</span> 复制链接</button>
+            <button><span class="ico">↗</span> 打开链接</button>
+            <button><span class="ico">💾</span> 存为卡片</button>
+          </div>
+        </div>
+        <div class="pop-wrap" style="position:relative;">
+          <span class="ent ent-tel">13800138000</span>
+          <div class="popover open" style="position:static; display:block; margin-top:6px;">
+            <button><span class="ico">⧉</span> 复制号码</button>
+            <button><span class="ico">📞</span> 呼叫</button>
+            <button><span class="ico">👤</span> 存通讯录</button>
+          </div>
+        </div>
+        <div class="pop-wrap" style="position:relative;">
+          <span class="ent ent-email">a@b.com</span>
+          <div class="popover open" style="position:static; display:block; margin-top:6px;">
+            <button><span class="ico">⧉</span> 复制</button>
+            <button><span class="ico">✉</span> 发送邮件</button>
+            <button><span class="ico">💾</span> 存为卡片</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ③ 按需点亮 -->
+    <div class="section">
+      <h2><span class="tag">③</span> 选词态 · 动作「按需点亮」</h2>
+      <p class="desc">仿微信搜一搜：未选词时「搜索 / 变换为」置灰，选中具体词后亮起。点下方按钮模拟选词，观察工具栏与选词栏的变化。</p>
+      <div class="ocr-panel">
+        <div class="ocr-toolbar">
+          <button class="ocr-tool primary" onclick="simCopy(this)"><span class="dot"></span>复制全部</button>
+          <button class="ocr-tool disabled" id="tfTool" title="选中文字后亮起">✨ 变换为…</button>
+          <button class="ocr-tool disabled" id="searchTool2" title="选中文字后亮起">🔎 搜索</button>
+        </div>
+        <div class="ocr-selbar" id="selbar" style="display:none;">
+          <span class="count">已选 <strong>2</strong> 个词</span>
+          <span class="preview">13800138000 zhangsan@example.com</span>
+          <button class="mini">清除</button>
+          <button class="mini primary" onclick="simCopy(this)">📋 复制选中</button>
+          <button class="mini primary" onclick="toast('已送往变换枢纽')">✨ 变换为…</button>
+        </div>
+        <div class="ocr-body">会议通知
+时间：2026年8月20日 下午2:00
+地点：深圳市南山区科技园路1号
+联系人：张三
+电话：<span style="background:var(--green-bg);border-radius:3px;padding:0 2px;">13800138000</span>
+邮箱：<span style="background:var(--orange-bg);border-radius:3px;padding:0 2px;">zhangsan@example.com</span>
+详情见官网 https://www.example.com/meeting</div>
+      </div>
+      <button class="ocr-edit-toggle" style="margin-top:10px;" onclick="toggleSelect()">▶ 模拟选词 / 取消</button>
+    </div>
+
+    <!-- ④ 校对模式 -->
+    <div class="section">
+      <h2><span class="tag">④</span> 校对模式 · 对照原图改错</h2>
+      <p class="desc">点「校对」后，左侧显示原图缩略、右侧可编辑文本，对照原图改 OCR 错字（仿微信电脑端右侧面板对照原文）。改完仍可「全部复制」拿到修正后文本。</p>
+      <div class="ocr-panel">
+        <div class="ocr-header">
+          <span class="title">🔍 全部识别文字</span>
+          <div class="ocr-actions">
+            <button class="ocr-edit-toggle" onclick="toggleProof2()">校对</button>
+            <button class="ocr-copy-btn solid" onclick="simCopy(this)">📋 全部复制</button>
+          </div>
+        </div>
+        <div class="proof" id="proof2">
+          <div class="orig">🖼 原图缩略（对照改错）</div>
+          <textarea>会议通知
+时间：2026年8月20日 下午2:00
+（对照原图：把误识的「下年」改为「下午」）</textarea>
+        </div>
+        <div class="ocr-body" style="max-height:90px;">会议通知
+时间：2026年下年8月20日 下午2:00
+…（OCR 把「午」误识为「年」）</div>
+      </div>
+      <button class="ocr-edit-toggle" style="margin-top:10px;" onclick="toggleProof2()">▶ 切换校对模式</button>
+    </div>
+
+    <!-- ⑤ 空格拼接 -->
+    <div class="section">
+      <h2><span class="tag">⑤</span> 选词拼接 · 按相邻智能加空格</h2>
+      <p class="desc">微信细节：连选的同段词不额外加空格，跨行才换行。现固定 <code>join(' ')</code> 连选也加空格（左），改为按词框坐标判相邻（右）。</p>
+      <div class="join-cmp">
+        <div class="join-card">
+          <div class="lab bad">改前 · 固定加空格</div>
+          <div class="txt bad">深圳市 南山区 科技园路 1号</div>
+          <div class="txt bad" style="margin-top:6px;">（地址被切成碎词，复制出来不自然）</div>
+        </div>
+        <div class="join-card">
+          <div class="lab good">改后 · 相邻判断</div>
+          <div class="txt good">深圳市南山区科技园路1号</div>
+          <div class="txt good" style="margin-top:6px;">（同行相邻词合并，跨行才换行）</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+<script>
+  // 主题切换
+  const sw = document.getElementById('themeSwitch');
+  sw.addEventListener('click', e => {
+    const b = e.target.closest('button'); if(!b) return;
+    document.documentElement.setAttribute('data-theme', b.dataset.t);
+    sw.querySelectorAll('button').forEach(x => x.classList.toggle('active', x===b));
+  });
+
+  // ① 实体 popover
+  function openPop(el){
+    document.querySelectorAll('.popover').forEach(p=>p.classList.remove('open'));
+    const type = el.dataset.type;
+    const val = el.textContent.trim();
+    const items = {
+      url:   [['⧉','复制链接'],['↗','打开链接'],['💾','存为卡片']],
+      tel:   [['⧉','复制号码'],['📞','呼叫'],['👤','存通讯录']],
+      email: [['⧉','复制'],['✉','发送邮件'],['💾','存为卡片']],
+    }[type] || [['⧉','复制']];
+    const pop = document.createElement('div');
+    pop.className = 'popover open';
+    pop.innerHTML = items.map(([i,l])=>`<button onclick="toast('${l}：${val}')"><span class="ico">${i}</span> ${l}</button>`).join('');
+    document.body.appendChild(pop);
+    const r = el.getBoundingClientRect();
+    pop.style.position='fixed'; pop.style.top=(r.bottom+6)+'px'; pop.style.left=r.left+'px';
+    setTimeout(()=>{ document.addEventListener('click', function h(e){ if(!pop.contains(e.target)&&e.target!==el){ pop.remove(); document.removeEventListener('click',h);} }); },0);
+  }
+
+  // ② 复制全部 内联反馈
+  function simCopy(btn){ const o=btn.textContent; btn.textContent='✓ 已复制'; setTimeout(()=>btn.textContent=o,1500); }
+
+  // ③ 模拟选词
+  function toggleSelect(){
+    const on = document.getElementById('selbar').style.display!=='none';
+    document.getElementById('selbar').style.display = on ? 'none':'flex';
+    document.getElementById('tfTool').classList.toggle('disabled', on);
+    document.getElementById('searchTool2').classList.toggle('disabled', on);
+    document.getElementById('searchTool').classList.toggle('disabled', on);
+  }
+
+  // ④ 校对模式
+  function toggleProof2(){ document.getElementById('proof2').classList.toggle('open'); }
+  document.getElementById('proofToggle').addEventListener('click', ()=>document.getElementById('proof').classList.toggle('open'));
+
+  // toast 占位
+  function toast(m){ const t=document.createElement('div'); t.textContent=m;
+    t.style.cssText='position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:var(--accent-solid);color:#fff;padding:8px 16px;border-radius:8px;font-size:12px;z-index:99;box-shadow:0 6px 20px rgba(0,0,0,.3)';
+    document.body.appendChild(t); setTimeout(()=>t.remove(),1500); }
+</script>
+</body>
+</html>

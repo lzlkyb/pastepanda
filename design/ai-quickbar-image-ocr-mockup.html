@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI 栏 · 图片 OCR 推荐 · 设计稿</title>
+<style>
+  :root {
+    /* 模拟 ocean-dark（深海）主题玻璃令牌，贴合 theme.css 变量名 */
+    --accent: #6d8bff;
+    --accent-border: color-mix(in srgb, #6d8bff 38%, transparent);
+    --accent-solid: #4f6ff0;
+    --accent-strong: #9fb4ff;
+    --accent-light: color-mix(in srgb, #6d8bff 12%, transparent);
+    --dialog-bg: #1a1d2b;
+    --card-bg: #1f2333;
+    --section-bg: #23273a;
+    --border-color: #2c3146;
+    --text-primary: #e7eaf3;
+    --text-secondary: #aab1c6;
+    --text-muted: #767e96;
+    --hover: rgba(127,127,127,0.12);
+    --danger: #ff7a7a;
+    --danger-border: #5b2c2c;
+    --orange: #ffb35c;
+    --orange-bg: color-mix(in srgb, #ffb35c 12%, transparent);
+    --orange-border: color-mix(in srgb, #ffb35c 35%, transparent);
+    --green: #5fd39a;
+    --teal-bg: color-mix(in srgb, #34d0c4 12%, transparent);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 18px 60px;
+    background: #0e1018;
+    color: var(--text-primary);
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1 { font-size: 17px; margin: 0 0 4px; }
+  .sub { font-size: 12px; color: var(--text-muted); margin: 0 0 18px; line-height: 1.6; }
+  .sub code { background: var(--section-bg); padding: 1px 6px; border-radius: 5px; color: var(--accent-strong); font-size: 11px; }
+  .root { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
+  .palette { width: 168px; flex-shrink: 0; display: flex; flex-direction: column; gap: 7px; }
+  .ptitle { font-size: 11px; color: var(--text-muted); margin: 6px 0 2px; }
+  .ptab {
+    text-align: left; border: 1px solid var(--border-color); background: var(--section-bg);
+    color: var(--text-secondary); border-radius: 9px; padding: 9px 11px; font-size: 12px;
+    cursor: pointer; font-family: inherit; transition: .15s;
+  }
+  .ptab:hover { border-color: var(--accent-border); color: var(--text-primary); }
+  .ptab.on { background: var(--accent-light); border-color: var(--accent); color: var(--accent-strong); font-weight: 600; }
+  .ptab small { display: block; font-size: 10px; color: var(--text-muted); margin-top: 3px; font-weight: 400; }
+  .stage { flex: 1; min-width: 360px; max-width: 460px; }
+  .note { margin-top: 14px; font-size: 11.5px; color: var(--text-secondary); line-height: 1.7;
+    background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px 14px; }
+  .note b { color: var(--accent-strong); }
+  .note .ok { color: var(--green); }
+  .note .bad { color: var(--danger); }
+
+  /* ===== 真实 AiQuickBar 结构（.wrap/.bar/.tgt/.q …… 与线上同名 class） ===== */
+  .wrap { padding: 0 12px; }
+  .bar {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+    padding: 7px 10px; border-radius: 10px;
+    background: var(--dialog-bg); border: 1px solid var(--accent-border);
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  .aiMark { font-size: 11px; line-height: 1; opacity: .9; display: inline-flex; align-items: center; gap: 3px;
+    color: var(--accent-strong); font-weight: 600; }
+  .acts { display: flex; gap: 5px; flex-wrap: wrap; }
+  .q {
+    display: inline-flex; align-items: center; gap: 3px; border: 1px solid var(--accent-border);
+    border-radius: 7px; padding: 3px 9px; font-size: 11px; background: var(--accent-light);
+    color: var(--accent-strong); cursor: pointer; font-family: inherit; transition: .15s;
+  }
+  .qAi { border-color: var(--accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent); font-weight: 600; }
+  .qLocal { border-color: var(--border-color); background: var(--section-bg); color: var(--text-secondary); }
+  .locTag { font-size: 8.5px; font-weight: 700; color: #14708a; background: var(--teal-bg);
+    border-radius: 4px; padding: 1px 5px; }
+  .qRunning { border-color: var(--border-color); background: var(--section-bg); color: var(--text-secondary); cursor: default; }
+  .more { border-style: dashed; background: transparent; color: var(--text-secondary); }
+  .hintTxt { margin-left: auto; font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+  .x { width: 18px; height: 18px; border: none; border-radius: 5px; background: transparent;
+    color: var(--text-muted); cursor: pointer; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; }
+  .x:hover { background: var(--hover); color: var(--text-primary); }
+  .tgt { display: flex; align-items: center; gap: 5px; width: 100%; min-width: 0; padding-top: 6px;
+    margin-top: 1px; border-top: 1px dashed var(--accent-border); font-size: 10.5px; color: var(--text-muted); }
+  .tgtTxt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .srcBadge { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border-radius: 5px;
+    background: var(--section-bg); border: 1px solid var(--border-color); font-size: 10px; flex-shrink: 0; }
+  .thinking { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--accent-strong); padding: 4px 2px; }
+  .spinner { width: 13px; height: 13px; border: 2px solid var(--accent-border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .badgeNew { font-size: 9px; padding: 1px 6px; border-radius: 5px; background: var(--accent-light);
+    color: var(--accent-strong); border: 1px solid var(--accent-border); }
+  .badgeNone { font-size: 9px; padding: 1px 6px; border-radius: 5px; background: var(--section-bg);
+    color: var(--text-muted); border: 1px solid var(--border-color); }
+  .ic { width: 12px; height: 12px; display: inline-block; vertical-align: -2px; }
+</style>
+</head>
+<body>
+  <h1>AI 栏 · 图片自动 OCR 推荐（方案 A）设计稿</h1>
+  <p class="sub">
+    根因：<code>AiQuickBar.tsx:82-94</code> 图片 <code>type==="image"</code> 且 <code>text</code> 为空时落入 <code>parseFilePaths</code>，
+    被当成 <code>file_path</code>（<code>pathDerived=true</code>）→ AI 栏只推「路径名/正斜杠/反斜杠」三个路径变换，<b>完全没用图片内容</b>。<br>
+    修复对齐已验证范式 <code>TransformHubDialog.tsx:61-105</code>：图片自动本地 OCR → 用识别文字作输入推荐。零 Rust、符合隐私红线（不联网、不存储）。
+  </p>
+
+  <div class="root">
+    <div class="palette">
+      <div class="ptitle">切换状态 →</div>
+      <button class="ptab on" data-s="old">① 旧态（当前 bug）<small>图片被当文件路径</small></button>
+      <button class="ptab" data-s="loading">② 识别中<small>本地 OCR 暖启动</small></button>
+      <button class="ptab" data-s="done">③ 已识别 → 基于文字推荐<small>这才是用户要的</small></button>
+      <button class="ptab" data-s="empty">④ 无文字 → 回落路径<small>不丢原功能</small></button>
+    </div>
+
+    <div class="stage">
+      <div class="wrap"><div class="bar" id="bar"></div></div>
+      <div class="note" id="note"></div>
+    </div>
+  </div>
+
+<script>
+  const ICON = {
+    spark: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/></svg>',
+    scan: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M3 12h18"/></svg>',
+    pin: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3z"/></svg>',
+    x: '<svg class="ic" />',
+  };
+  const X_SVG = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+
+  // 四种状态数据
+  const STATES = {
+    old: {
+      hint: '图片',
+      badge: null,
+      actions: [
+        { t: '路径名', local: true },
+        { t: '正斜杠', local: true },
+        { t: '反斜杠', local: true },
+      ],
+      tgt: 'screenshot_2026-08-15.png · 微信',
+      note: '<b class="bad">旧态（bug）</b>：图片进来被识别成「文件路径」类型，AI 栏只推三个路径变换（本地·路径名/正斜杠/反斜杠）。复制一张含报错截图的图片，栏里却建议"把路径里的斜杠换掉"——<b class="bad">完全没用到图片里的文字</b>。类型标签虽显示"图片"，但推荐内容错得离谱。'
+    },
+    loading: {
+      hint: '图片',
+      badge: null,
+      loading: true,
+      tgt: 'screenshot_2026-08-15.png · 微信',
+      note: '<b>② 识别中</b>：检测到 <code>type==="image"</code> 且无 <code>text</code> → 自动 <code>invoke("ocr_image",{path})</code>（本地引擎，<b class="ok">不受 AI 开关影响</b>）。此间动作区显示「识别图片文字中…」占位，OCR 完成前不推任何动作，避免错推路径三件套。代际守卫：焦点切走则本次 OCR 作废。'
+    },
+    done: {
+      hint: '图片',
+      badge: '已识别 132 字',
+      actions: [
+        { t: '解释报错', ai: true },
+        { t: '搜索方案', ai: true },
+        { t: '复制文字', local: true },
+      ],
+      tgt: 'screenshot_2026-08-15.png · 微信',
+      note: '<b class="ok">③ 已识别（目标态）</b>：OCR 拿到 <code>fullText</code>（如一段报错栈）→ 以文字为输入、<code>inputType</code> 由内容推导（这里命中代码/报错）、<code>pathDerived=false</code> → 正常走 <code>applicableTransforms</code>，AI 栏推「解释报错 / 搜索方案 / 复制文字」。<b class="ok">终于用上了图片里的真实内容</b>。类型标签仍显示"图片"，加小徽章「已识别 132 字」让用户知道推荐依据。'
+    },
+    empty: {
+      hint: '图片',
+      badge: '未识别到文字',
+      actions: [
+        { t: '路径名', local: true },
+        { t: '正斜杠', local: true },
+        { t: '反斜杠', local: true },
+      ],
+      tgt: 'icon_asset.png · 设计稿',
+      note: '<b>④ 无文字 → 回落</b>：纯图标/手写/低清图 OCR 为空时，<b class="ok">回落到原路径三件套</b>（保留现有功能，不丢），而非整条消失。徽章变「未识别到文字」明示原因。这是方案 A 的兜底分支，保证"有图就有合理推荐"。'
+    }
+  };
+
+  function render(s) {
+    const st = STATES[s];
+    const bar = document.getElementById('bar');
+    let html = `<span class="aiMark">${ICON.spark}AI</span>`;
+    if (st.loading) {
+      html += `<span class="thinking"><span class="spinner"></span>识别图片文字中…</span>`;
+    } else {
+      html += `<span class="acts">`;
+      st.actions.forEach(a => {
+        if (a.ai) html += `<button class="q qAi">${ICON.scan}${a.t} ✦</button>`;
+        else if (a.local) html += `<button class="q qLocal">${a.t} <span class="locTag">本地</span></button>`;
+        else html += `<button class="q">${a.t}</button>`;
+      });
+      html += `<button class="q more">更多…</button></span>`;
+    }
+    let hint = st.hint;
+    if (st.badge === '已识别 132 字') hint += ` <span class="badgeNew">${st.badge}</span>`;
+    else if (st.badge === '未识别到文字') hint += ` <span class="badgeNone">${st.badge}</span>`;
+    html += `<span class="hintTxt">${hint}</span>`;
+    html += `<button class="x">${X_SVG}</button>`;
+    html += `<div class="tgt"><span class="srcBadge">${ICON.pin}微信</span><span class="tgtTxt">${st.tgt}</span></div>`;
+    bar.innerHTML = html;
+    document.getElementById('note').innerHTML = st.note;
+  }
+
+  document.querySelectorAll('.ptab').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.ptab').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      render(b.dataset.s);
+    });
+  });
+  render('old');
+</script>
+</body>
+</html>

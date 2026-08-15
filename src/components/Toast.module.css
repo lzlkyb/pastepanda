@@ -99,6 +99,13 @@
   font-size: 12px;
   font-weight: 500;
   flex: 1;
+  /* 关键：flex 子项默认 min-width:auto 不会收缩到比内容窄。
+     长错误消息（技术错误/无空格长串）若不换行会撑开宽度，
+     把后面的复制按钮挤到 toastItem 的 overflow:hidden 之外裁掉。
+     min-width:0 让它可收缩并断词换行，给按钮留出空间。 */
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   color: var(--text-primary);
 }
 
@@ -118,6 +125,37 @@
 .toastRetry:hover {
   opacity: 1;
   background: var(--hover);
+}
+
+/* 报错可复制按钮（方案 A）：图标式，复用 toastRetry 基调，零新增配色 */
+.toastCopy {
+  flex-shrink: 0;
+  cursor: pointer;
+  opacity: 0.85;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  padding: 3px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  border-radius: 5px;
+  transition: all 0.15s;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+}
+
+.toastCopy:hover {
+  opacity: 1;
+  background: var(--hover);
+  border-color: var(--glass-popover-border);
+}
+
+/* 复制成功反馈态：绿色对勾 + 文字，仍在同一 toast 内（同可见域，符合规则 15） */
+.toastCopy.copied {
+  opacity: 1;
+  color: var(--green);
 }
 
 .toastAction {

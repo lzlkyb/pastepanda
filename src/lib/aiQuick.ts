@@ -20,6 +20,8 @@
  * 短文本兜底、上限截断。
  */
 
+import { looksLikeIdentifier } from "@/lib/utils";
+
 export interface QuickAction {
   id: string;
   label: string;
@@ -75,11 +77,25 @@ const NETWORK_ANYWAY = new Set(["url-summary"]);
  * `scoreAiAction` 里 ai-summarize 要求 >200 字、ai-rewrite 要求 ≥50 字（“短文本没什么
  * 可摘的”——对变换中心那个满屏候选列表而言是对的）。但快捷栏只有 2-3 个位，
  * “复制了一句话”是最常见的场景，一个动作都不给会让整条 AI 栏直接消失。
+ *
+ * 历史坑（拿 492 条真实历史回放才发现）：这段兜底曾经是**死代码**，一次都没跑过。
+ * 因为 ai-merge-polish / ai-weekly-report 的 content_types 是 `[]`，旧逻辑里
+ * “不限类型”=0.45，于是它俩给每一条内容都垫了底分，“一个 AI 候选都没有”永远不成立。
+ * 把那两个归入意图型之后它才真正启用。
  */
 const FALLBACK: readonly QuickAction[] = [
   { id: "ai-summarize", label: "总结", ai: true },
   { id: "ai-rewrite", label: "改写语气", ai: true },
 ];
+
+/**
+ * 兜底的最小长度。
+ *
+ * 兜底要解决的是“快捷栏空着”，但给 3 个字的标签补一个“总结”，
+ * 和它要解决的问题一样糟——那只是把空白换成了噪声。
+ * 真的短到没东西可处理时，整条不渲染才是诚实的。
+ */
+const FALLBACK_MIN_CHARS = 20;
 
 export interface MatchQuickOptions {
   /** 实际会被送进动作的输入文本（文件/图片条目是从路径派生的，不是 item.text） */
@@ -124,8 +140,20 @@ export function matchQuickActions(opts: MatchQuickOptions): QuickAction[] {
     push({ id: c.id, label: c.label, ai });
   }
 
-  // 路径派生的输入不兜底：兜底项全是 AI 动作，而这种输入本就不该出网。
-  if (!pathDerived && !out.some((a) => a.ai)) {
+  // 兜底三道门：
+  // ① 路径派生的输入不兜底——兜底项全是 AI 动作，而这种输入本就不该出网；
+  // ② 太短不兜底（见 FALLBACK_MIN_CHARS）；
+  // ③ 标识符/路径/单号不兜底。这道门是实测逐出来的：打分已经把
+  //   `INCCForHHOrSSService` / `C0805041350000005382` 排除了，而兜底是硬编码 push，
+  //   于是又把它们以“总结 / 改写语气”的形式塞了回来。
+  //   兜底可以放宽**长度**阀值（快捷栏只有 3 个位，这是它存在的理由），
+  //   但不能放宽**形态**判据——那不是尺度问题，是“根本不适用”。
+  if (
+    !pathDerived &&
+    !out.some((a) => a.ai) &&
+    text.trim().length >= FALLBACK_MIN_CHARS &&
+    !looksLikeIdentifier(text)
+  ) {
     FALLBACK.forEach(push);
   }
 

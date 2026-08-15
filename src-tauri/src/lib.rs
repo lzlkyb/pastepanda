@@ -628,6 +628,7 @@ pub fn run() {
             commands::profile_install_skill,
             commands::skill_install_workflows,
             commands::profile_action_boosts,
+            commands::profile_prompt_preview,
             // 程序性记忆（V3-B）：高频动作序列
             commands::sequence_suggest,
             // 环境智能：二元转移表（做完 A 常接着做 B）嗂给推荐排序
@@ -648,6 +649,9 @@ pub fn run() {
             commands::action_dismiss_add,
             commands::action_dismissals,
             commands::action_dismiss_remove,
+            commands::action_pin_add,
+            commands::action_pins,
+            commands::action_pin_remove,
             commands::action_learnings_clear,
             // 执行类动作（v6.0 复制即执行）：协议白名单打开链接
             commands::open_url,

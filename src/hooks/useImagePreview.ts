@@ -7,7 +7,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { HistoryItem } from "@/stores/appStore";
-import { getImageThumbnail, getImageDataUrl, getImageInfo } from "@/lib/api";
+import { getImageThumbnail, getImageDataUrl, getImageInfo, getImageBase64 } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 import {
   type ExportFormat,
@@ -108,9 +108,11 @@ export interface UseImagePreviewReturn {
   handleOcrRecognize: () => void;
   toggleOcrOverlay: () => void;
   getSelectedOcrTexts: () => string[];
+  /** 微信借鉴⑤：按词框相邻判断拼接（相邻不加空格、换行加空格） */
+  getSelectedOcrJoined: () => string;
   handleOcrWordClick: (lineIdx: number, wordIdx: number, e: React.MouseEvent) => void;
   handleOcrSelectStart: (e: React.MouseEvent) => void;
-  handleOcrSelectMove: (e: React.MouseEvent) => void;
+  handleOcrSelectMove: (e: MouseEvent) => void; // window 级原生事件（拖出视口不中断）
   handleOcrSelectEnd: () => void;
   handlePinImage: () => void;
 }
@@ -138,6 +140,13 @@ export function useImagePreview(): UseImagePreviewReturn {
   const [ocrActive, setOcrActive] = useState(false);
   const [selectedWordIndices, setSelectedWordIndices] = useState<Set<string>>(new Set());
   const [isSelecting, setIsSelecting] = useState(false);
+  /** isSelecting 的 ref 镜像：window 原生监听里读它（state 闭包在重渲染前是旧值，
+   *  会吞掉 mousedown 后第一批 mousemove；ref 永远最新，实时选词不依赖 React 渲染时序） */
+  const isSelectingRef = useRef(false);
+  /** rAF 节流：mousemove 高频触发，但 setState + 全量重渲染几百个词框 DOM 很贵，
+   *  每帧最多处理一次，避免拖动时主线程卡死（表现为"选词没反应"） */
+  const selectRafRef = useRef<number | null>(null);
+  const lastSelRectRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
   const [selRect, setSelRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   // 导出（格式转换 + 压缩）状态
   const [exportFormat, setExportFormat] = useState<ExportFormat>("png");
@@ -150,6 +159,10 @@ export function useImagePreview(): UseImagePreviewReturn {
   const [cropOriginal, setCropOriginal] = useState<string | null>(null);
   const cropDragRef = useRef<{ mode: "draw" | "move" | "resize"; handle: string; sx: number; sy: number; start: CropRect } | null>(null);
   const selStartRef = useRef({ x: 0, y: 0 });
+  /** 微信式选词：本次 mousedown 是否已产生位移（区分"单击点选"与"拖拽框选"） */
+  const selectDraggedRef = useRef(false);
+  /** 本次拖拽是否 Ctrl/Meta 追加模式（实时命中时保留已选，不替换） */
+  const selectAppendRef = useRef(false);
   const panStartRef = useRef({ x: 0, y: 0, offsetX: 0, offsetY: 0 });
   const viewportRef = useRef<HTMLDivElement>(null);
   // 使用 ref 存储预览状态，避免 closePreview 闭包导致 ESC 监听器频繁重新注册
@@ -367,8 +380,39 @@ export function useImagePreview(): UseImagePreviewReturn {
     return texts;
   }, [ocrResult, selectedWordIndices]);
 
+  /** 微信借鉴⑤：按词框坐标相邻判断拼接 —— 同一行相邻的词不加空格、换行/跨行加空格，
+   *  替代固定 join(' ')（连选时不会出现「深圳市 南山区 科技园路 1号」这类硬空格）。 */
+  const getSelectedOcrJoined = useCallback((): string => {
+    if (!ocrResult) return "";
+    const sel: { li: number; wi: number; word: OcrWordInfo }[] = [];
+    selectedWordIndices.forEach((key) => {
+      const [li, wi] = key.split("-").map(Number);
+      const word = ocrResult.lines[li]?.words[wi];
+      if (word) sel.push({ li, wi, word });
+    });
+    sel.sort((a, b) => a.li - b.li || a.wi - b.wi);
+    let out = "";
+    let prev: { li: number; word: OcrWordInfo } | null = null;
+    for (const s of sel) {
+      if (!prev) {
+        out = s.word.text;
+      } else {
+        const sameLine = s.li === prev.li;
+        // 相邻判定：同一行，且当前词左缘未超过前词右缘 + 半字高容差（OCR 词框常略有缝隙/重叠）
+        const prevRight = prev.word.x + prev.word.width;
+        const gap = s.word.x - prevRight;
+        const adjacent = sameLine && gap <= Math.max(10, prev.word.height * 0.6) && gap > -prev.word.width;
+        out += (adjacent ? "" : " ") + s.word.text;
+      }
+      prev = s;
+    }
+    return out;
+  }, [ocrResult, selectedWordIndices]);
+
   const handleOcrWordClick = useCallback((lineIdx: number, wordIdx: number, e: React.MouseEvent) => {
     e.stopPropagation();
+    // 拖拽结束落在词框上会带出一个 click，忽略它（框选结果已由实时命中维护）
+    if (selectDraggedRef.current) return;
     const key = `${lineIdx}-${wordIdx}`;
     setSelectedWordIndices(prev => {
       const next = new Set(prev);
@@ -387,73 +431,108 @@ export function useImagePreview(): UseImagePreviewReturn {
     });
   }, []);
 
+  // ===== 微信式选词（A+B）：起点可落词框、move/up 走 window、拖动过程实时命中高亮 =====
+
+  /** 把当前选区（viewport 坐标）与词框 DOM（渲染后实时位置，含 transform）做重叠测试。
+   *  词框与图片同处一个 transform 容器 → 缩放/平移/旋转/动画全程对齐，命中永不漂移。 */
+  const computeHitWords = useCallback((sel: { x: number; y: number; w: number; h: number }): Set<string> => {
+    const hit = new Set<string>();
+    const viewport = viewportRef.current;
+    if (!viewport) return hit;
+    const vpRect = viewport.getBoundingClientRect();
+    const boxes = viewport.querySelectorAll<HTMLElement>("[data-ocr-word-box]");
+    for (const box of boxes) {
+      const key = box.dataset.key;
+      if (!key) continue;
+      const r = box.getBoundingClientRect();
+      const wx = r.left - vpRect.left;
+      const wy = r.top - vpRect.top;
+      const overlap = !(wx + r.width < sel.x || wx > sel.x + sel.w ||
+                        wy + r.height < sel.y || wy > sel.y + sel.h);
+      if (overlap) hit.add(key);
+    }
+    return hit;
+  }, []);
+
   const handleOcrSelectStart = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
-    if ((e.target as HTMLElement).closest('[data-ocr-word-box]')) return;
     const viewport = e.currentTarget as HTMLElement;
     const rect = viewport.getBoundingClientRect();
+    selectDraggedRef.current = false;
+    selectAppendRef.current = !!(e.ctrlKey || e.metaKey);
+    isSelectingRef.current = true;
     setIsSelecting(true);
     selStartRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     setSelRect({ x: selStartRef.current.x, y: selStartRef.current.y, w: 0, h: 0 });
-    if (!e.ctrlKey && !e.metaKey) {
+    if (!selectAppendRef.current) {
       setSelectedWordIndices(new Set());
     }
   }, []);
 
-  const handleOcrSelectMove = useCallback((e: React.MouseEvent) => {
-    if (!isSelecting) return;
-    const viewport = e.currentTarget as HTMLElement;
+  const handleOcrSelectMove = useCallback((e: MouseEvent) => {
+    // 读 ref 而非 state：window 监听绑定后即使 React 还没重渲染，也能立即响应拖动
+    if (!isSelectingRef.current) return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
     const rect = viewport.getBoundingClientRect();
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
+    // 位移超过阈值才算"拖拽"（区分单击点选：单击时 selectDraggedRef 保持 false，由 click 走点选）
+    if (Math.abs(cx - selStartRef.current.x) > 3 || Math.abs(cy - selStartRef.current.y) > 3) {
+      selectDraggedRef.current = true;
+    }
     const x = Math.min(selStartRef.current.x, cx);
     const y = Math.min(selStartRef.current.y, cy);
     const w = Math.abs(cx - selStartRef.current.x);
     const h = Math.abs(cy - selStartRef.current.y);
-    setSelRect({ x, y, w, h });
-  }, [isSelecting]);
+    lastSelRectRef.current = { x, y, w, h };
+    // rAF 节流：每帧最多一次 setState + 命中测试（词框多时避免主线程卡死）
+    if (selectRafRef.current == null) {
+      selectRafRef.current = requestAnimationFrame(() => {
+        selectRafRef.current = null;
+        const sel = lastSelRectRef.current;
+        if (!sel) return;
+        setSelRect(sel);
+        // 实时命中：拖动过程就高亮命中词，不必等松开（微信手感）
+        if (selectDraggedRef.current && sel.w > 0 && sel.h > 0) {
+          const hit = computeHitWords(sel);
+          setSelectedWordIndices(prev => {
+            if (selectAppendRef.current) {
+              const next = new Set(prev);
+              hit.forEach((k) => next.add(k));
+              return next;
+            }
+            return hit;
+          });
+        }
+      });
+    }
+  }, [computeHitWords]);
 
   const handleOcrSelectEnd = useCallback(() => {
-    if (!isSelecting || !selRect || !ocrResult) {
-      setIsSelecting(false);
-      setSelRect(null);
-      return;
-    }
-    const viewport = viewportRef.current;
-    if (!viewport) { setIsSelecting(false); setSelRect(null); return; }
-    const vr = viewport.getBoundingClientRect();
-
-    setSelectedWordIndices(prev => {
-      const next = new Set(prev);
-      ocrResult.lines.forEach((line, li) => {
-        line.words.forEach((word, wi) => {
-          const imgEl = viewport.querySelector('img') as HTMLImageElement;
-          if (!imgEl) return;
-          const imgRect = imgEl.getBoundingClientRect();
-          const imgNaturalW = imgEl.naturalWidth || 1;
-          const imgNaturalH = imgEl.naturalHeight || 1;
-          const scaleX = imgRect.width / imgNaturalW;
-          const scaleY = imgRect.height / imgNaturalH;
-
-          const wx = imgRect.left - vr.left + word.x * scaleX;
-          const wy = imgRect.top - vr.top + word.y * scaleY;
-          const ww = word.width * scaleX;
-          const wh = word.height * scaleY;
-
-          const overlap = !(wx + ww < selRect!.x || wx > selRect!.x + selRect!.w ||
-                             wy + wh < selRect!.y || wy > selRect!.y + selRect!.h);
-          const key = `${li}-${wi}`;
-          if (overlap) {
-            next.add(key);
-          }
-        });
-      });
-      return next;
-    });
-
+    isSelectingRef.current = false;
     setIsSelecting(false);
+    if (selectRafRef.current != null) {
+      cancelAnimationFrame(selectRafRef.current);
+      selectRafRef.current = null;
+    }
     setSelRect(null);
-  }, [isSelecting, selRect, ocrResult]);
+    // 选择结果已由 move 实时维护，这里只收尾（勿再重算，避免与实时命中不一致）
+  }, []);
+
+  // A+B：OCR 框选 move/up 挂 window 级监听 —— 拖出视口不中断、在视口外松开也能收尾
+  // （对比之前挂在 viewport 上：onMouseLeave 直接掐断框选、视口外松手收不到 mouseup）
+  useEffect(() => {
+    if (!ocrActive) return;
+    const onMove = (e: MouseEvent) => handleOcrSelectMove(e);
+    const onUp = () => handleOcrSelectEnd();
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [ocrActive, handleOcrSelectMove, handleOcrSelectEnd]);
 
   const handlePinImage = useCallback(async () => {
     const path = previewContentRef.current;
@@ -468,11 +547,26 @@ export function useImagePreview(): UseImagePreviewReturn {
 
   // ========== 导出（格式转换 + 压缩） ==========
 
+  // 取得「干净」图片源：previewImage 通常是 convertFileSrc 产生的 asset://（或
+  // https://asset.localhost）URL，跨域加载到 canvas 会污染画布，导致 toDataURL/toBlob
+  // 抛 SecurityError 或返回 null（确认裁剪 / 导出均会失败）。因此优先用已是 data: 的同源
+  // 干净源（如二次裁剪结果），否则走 getImageBase64（Rust 返回 base64 data URL）拿干净源。
+  const getCleanImageSrc = useCallback(async (): Promise<string | null> => {
+    if (!previewImage) return null;
+    if (/^data:/i.test(previewImage)) return previewImage;
+    if (previewItem?.content) {
+      const b64 = await getImageBase64(previewItem.content).catch(() => "");
+      if (b64) return b64;
+    }
+    return null;
+  }, [previewImage, previewItem]);
+
   // 将当前预览图按目标格式/质量转码为 Blob（按原图自然尺寸绘制）。
   // jpeg 无透明通道，先铺白底避免透明区域变黑。
-  const transcodeToBlob = useCallback((format: ExportFormat, quality: number): Promise<Blob | null> => {
-    const src = previewImage;
-    if (!src) return Promise.resolve(null);
+  // 注意：必须用「干净」同源源（getCleanImageSrc），asset:// 会污染画布导致 toBlob 返回 null。
+  const transcodeToBlob = useCallback(async (format: ExportFormat, quality: number): Promise<Blob | null> => {
+    const src = await getCleanImageSrc();
+    if (!src) return null;
     const meta = EXPORT_FORMATS[format];
     return new Promise((resolve) => {
       const img = new Image();
@@ -494,7 +588,7 @@ export function useImagePreview(): UseImagePreviewReturn {
       img.onerror = () => resolve(null);
       img.src = src;
     });
-  }, [previewImage]);
+  }, [getCleanImageSrc]);
 
   // 防抖估算导出体积：格式/质量变化时重新 toBlob 取真实字节数。
   useEffect(() => {
@@ -538,7 +632,7 @@ export function useImagePreview(): UseImagePreviewReturn {
 
   // 将当前预览图按 scale/rotation 烘到 canvas，返回 canvas + 显示尺寸（viewport 坐标空间）。
   // 裁剪选区基于该空间，因此 视口内所见 = canvas 内所取。
-  const bakeImage = useCallback((): Promise<{ canvas: HTMLCanvasElement; displayW: number; displayH: number } | null> => {
+  const bakeImage = useCallback(async (): Promise<{ canvas: HTMLCanvasElement; displayW: number; displayH: number } | null> => {
     if (!previewImage) return Promise.resolve(null);
     const vp = viewportRef.current;
     if (!vp) return Promise.resolve(null);
@@ -550,6 +644,8 @@ export function useImagePreview(): UseImagePreviewReturn {
     canvas.height = h;
     const ctx = canvas.getContext("2d");
     if (!ctx) return Promise.resolve(null);
+    const src = await getCleanImageSrc();
+    if (!src) return Promise.resolve(null);
     return new Promise<{ canvas: HTMLCanvasElement; displayW: number; displayH: number } | null>((resolve) => {
       const img = new Image();
       img.onload = () => {
@@ -563,9 +659,9 @@ export function useImagePreview(): UseImagePreviewReturn {
         resolve({ canvas, displayW: w, displayH: h });
       };
       img.onerror = () => resolve(null);
-      img.src = previewImage;
+      img.src = src;
     });
-  }, [previewImage, previewScale, previewRotation]);
+  }, [previewImage, previewScale, previewRotation, getCleanImageSrc]);
 
   const handleCropMouseDown = useCallback((e: React.MouseEvent) => {
     if (!cropMode || !viewportRef.current) return;
@@ -655,27 +751,32 @@ export function useImagePreview(): UseImagePreviewReturn {
 
   const confirmCrop = useCallback(async () => {
     if (!cropRect || !previewImage || !viewportRef.current) return;
-    const baked = await bakeImage();
-    if (!baked) { toast("裁剪失败：无法渲染图片", "error"); return; }
-    const { canvas, displayW, displayH } = baked;
-    const sx = Math.max(0, Math.min(displayW, cropRect.x));
-    const sy = Math.max(0, Math.min(displayH, cropRect.y));
-    const sw = Math.max(1, Math.min(displayW - sx, cropRect.w));
-    const sh = Math.max(1, Math.min(displayH - sy, cropRect.h));
-    const out = document.createElement("canvas");
-    out.width = Math.round(sw);
-    out.height = Math.round(sh);
-    const octx = out.getContext("2d");
-    if (!octx) { toast("裁剪失败", "error"); return; }
-    octx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
-    const dataUrl = out.toDataURL("image/png");
-    const originalForRestore = cropOriginal ?? previewImage;
-    setCropOriginal(originalForRestore);
-    setPreviewImage(dataUrl);
-    setPreviewInfo((prev) => prev ? { ...prev, width: out.width, height: out.height, size_str: formatBytes(out.toDataURL("image/png").length) } : prev);
-    setCropMode(false);
-    setCropRect(null);
-    toast("裁剪完成", "success");
+    try {
+      const baked = await bakeImage();
+      if (!baked) { toast("裁剪失败：无法渲染图片", "error"); return; }
+      const { canvas, displayW, displayH } = baked;
+      const sx = Math.max(0, Math.min(displayW, cropRect.x));
+      const sy = Math.max(0, Math.min(displayH, cropRect.y));
+      const sw = Math.max(1, Math.min(displayW - sx, cropRect.w));
+      const sh = Math.max(1, Math.min(displayH - sy, cropRect.h));
+      const out = document.createElement("canvas");
+      out.width = Math.round(sw);
+      out.height = Math.round(sh);
+      const octx = out.getContext("2d");
+      if (!octx) { toast("裁剪失败", "error"); return; }
+      octx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+      const dataUrl = out.toDataURL("image/png");
+      const originalForRestore = cropOriginal ?? previewImage;
+      setCropOriginal(originalForRestore);
+      setPreviewImage(dataUrl);
+      setPreviewInfo((prev) => prev ? { ...prev, width: out.width, height: out.height, size_str: formatBytes(out.toDataURL("image/png").length) } : prev);
+      setCropMode(false);
+      setCropRect(null);
+      toast("裁剪完成", "success");
+    } catch (e) {
+      console.error("确认裁剪失败", e);
+      toast("裁剪失败，请重试", "error");
+    }
   }, [cropRect, previewImage, cropOriginal, bakeImage, toast]);
 
   const cancelCrop = useCallback(() => {
@@ -705,7 +806,7 @@ export function useImagePreview(): UseImagePreviewReturn {
     confirmCrop, cancelCrop, restoreOriginal,
     setPreviewScale, setPreviewRotation, setPreviewOffset, setSelectedWordIndices,
     handlePreviewWheel, handlePanStart, handlePanMove, handlePanEnd,
-    handleOcrRecognize, toggleOcrOverlay, getSelectedOcrTexts,
+    handleOcrRecognize, toggleOcrOverlay, getSelectedOcrTexts, getSelectedOcrJoined,
     handleOcrWordClick, handleOcrSelectStart, handleOcrSelectMove, handleOcrSelectEnd,
     handlePinImage,
   };

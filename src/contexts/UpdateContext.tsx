@@ -228,7 +228,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       setError(msg);
       setStatus("error");
       const fe = friendlyError(msg);
-      toast(`${fe.friendly}（${fe.raw}）`, "error");
+      toast(`${fe.friendly}（${fe.raw}）`, "error", undefined, undefined, undefined, fe.raw);
     } finally {
       checkingRef.current = false;
       localStorage.setItem(LAST_CHECK_KEY, String(Date.now()));

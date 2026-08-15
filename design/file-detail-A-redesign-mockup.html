@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>文件详情弹框 · A方案「预览即主角」设计稿</title>
+<style>
+  /* ===== 仅设计稿外壳：模拟桌面场景，让玻璃对话框透出 ===== */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif; }
+  body {
+    background:
+      radial-gradient(130% 110% at 70% -5%, #1E5A82 0%, #0E3355 42%, #061A33 100%);
+    min-height: 100vh; padding: 28px; color: #E0E8F0;
+  }
+  .mock-shell { display: flex; gap: 28px; align-items: flex-start; flex-wrap: wrap; justify-content: center; }
+  .mock-controls { width: 220px; flex-shrink: 0; }
+  .mock-controls h1 { font-size: 16px; margin: 0 0 4px; color: #fff; }
+  .mock-controls p { font-size: 12px; line-height: 1.6; color: #A2B6CD; margin: 0 0 16px; }
+  .mock-group { margin-bottom: 18px; }
+  .mock-group .lbl { font-size: 11px; color: #7994B4; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+  .mock-btn {
+    display: block; width: 100%; text-align: left; padding: 8px 12px; margin-bottom: 6px;
+    border-radius: 8px; border: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.04);
+    color: #E0E8F0; font-size: 13px; cursor: pointer; font-family: inherit; transition: all .15s;
+  }
+  .mock-btn:hover { border-color: rgba(59,158,255,.5); background: rgba(59,158,255,.10); }
+  .mock-btn.on { background: rgba(59,158,255,.18); border-color: #3B9EFF; color: #fff; font-weight: 600; }
+  .mock-note { font-size: 11px; color: #7994B4; line-height: 1.7; border-top: 1px solid rgba(255,255,255,.08); padding-top: 12px; }
+  .mock-note b { color: #A2B6CD; }
+
+  /* ===== 以下样式 1:1 对齐真实 dialog.css / theme.css 令牌 ===== */
+  .dialog-backdrop {
+    position: relative; /* 设计稿内不固定全屏，仅作容器 */
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,.35); border-radius: 16px; overflow: hidden;
+    width: 480px; min-height: 640px; padding: 24px;
+  }
+  .dialog-box {
+    width: 420px; max-height: 80vh; display: flex; flex-direction: column;
+    background: var(--glass-dialog-bg);
+    backdrop-filter: blur(22px) saturate(1.4); -webkit-backdrop-filter: blur(22px) saturate(1.4);
+    border: 1px solid var(--glass-popover-border);
+    border-radius: 16px; box-shadow: var(--glass-popover-shadow);
+    color: var(--text-primary);
+  }
+  .dialog-header { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; height: 48px; flex-shrink: 0; border-bottom: 1px solid var(--border-color); }
+  .dialog-title { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+  .dialog-close { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; border: none; background: transparent; color: var(--text-secondary); transition: background .15s; }
+  .dialog-close:hover { background: var(--hover); }
+  .dialog-body { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .dialog-footer { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; height: 48px; flex-shrink: 0; border-top: 1px solid var(--border-color); }
+  .dialog-footer span { font-size: 10px; color: var(--text-muted); }
+  .btn-primary { padding: 6px 14px; font-size: 12px; border-radius: 8px; border: none; background: var(--accent-solid); color: #fff; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .btn-ghost { padding: 5px 10px; font-size: 11px; border-radius: 6px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 4px; }
+  .icon { width: 14px; height: 14px; flex-shrink: 0; vertical-align: middle; }
+
+  /* ===== A方案新增：可折叠信息条 ===== */
+  .meta-strip { border: 1px solid var(--border-color); border-radius: 10px; background: var(--section-bg); overflow: hidden; }
+  .meta-strip-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer; }
+  .meta-icon { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; color: #fff; }
+  .meta-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta-chev { color: var(--text-muted); transition: transform .2s; flex-shrink: 0; }
+  .meta-chev.open { transform: rotate(180deg); }
+  .status-ok { font-size: 11px; color: var(--green); display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; }
+  .status-bad { font-size: 11px; color: var(--danger); display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; }
+  .meta-strip-body { display: none; flex-direction: column; gap: 9px; padding: 0 12px 12px; }
+  .meta-strip-body.open { display: flex; }
+  .meta-row { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
+  .meta-row .k { color: var(--text-muted); flex-shrink: 0; min-width: 56px; }
+  .meta-row .v { color: var(--text-primary); text-align: right; word-break: break-all; font-family: 'SF Mono', Consolas, monospace; font-size: 11.5px; }
+  .meta-actions { display: flex; gap: 8px; flex-wrap: wrap; padding-top: 2px; }
+  .fab { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-secondary); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s; }
+  .fab:hover { border-color: var(--accent); color: var(--accent); }
+  .fab.primary { background: var(--accent); color: #fff; border: none; }
+  .fab.primary:hover { filter: brightness(1.08); color: #fff; }
+  .fab:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* ===== A方案新增：预览主角区 ===== */
+  .preview-hero { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--section-bg); padding: 12px; }
+  .preview-hero-label { font-size: 11px; font-weight: 700; color: var(--text-muted); letter-spacing: .3px; display: flex; align-items: center; gap: 6px; }
+  .hero-toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .search-box { flex: 1; min-width: 120px; display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--card-bg); }
+  .search-box input { flex: 1; border: none; outline: none; background: transparent; color: var(--text-primary); font-size: 12px; font-family: inherit; min-width: 0; }
+  .search-box input::placeholder { color: var(--text-muted); }
+  .hero-btn { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 7px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-secondary); font-size: 11px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s; }
+  .hero-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .hero-btn.primary { background: var(--accent-light); color: var(--accent-strong); border-color: var(--accent); }
+
+  /* 文本查看器（复用 QuickPreview 的 .code-viewer 视觉语言） */
+  .code-viewer { display: flex; border-radius: 10px; border: 1px solid var(--border-color); background: var(--card-bg); overflow: auto; max-height: 320px; }
+  .code-lines { display: flex; flex-direction: column; padding: 10px 0; min-width: 36px; text-align: right; user-select: none; background: var(--section-bg); border-right: 1px solid var(--border-color); }
+  .code-ln { padding: 0 10px; font-family: 'SF Mono', Consolas, monospace; font-size: 12px; line-height: 22px; color: var(--text-muted); }
+  .code-text { flex: 1; margin: 0; padding: 10px 14px; font-family: 'SF Mono', Consolas, monospace; font-size: 13px; line-height: 22px; white-space: pre; color: var(--text-primary); }
+  /* 模拟 shiki 高亮（真实为 highlightCode） */
+  .tok-kw { color: #C792EA; } .tok-str { color: #C3E88D; } .tok-num { color: #F78C6C; } .tok-com { color: #637777; font-style: italic; } .tok-fn { color: #82AAFF; }
+  .hl { background: rgba(59,158,255,.28); border-radius: 2px; }
+  .hero-meta { display: flex; align-items: center; gap: 8px; font-size: 10.5px; color: var(--text-muted); flex-wrap: wrap; }
+  .ext-badge { padding: 1px 7px; border-radius: 4px; background: var(--accent-light); color: var(--accent-strong); font-weight: 700; font-family: 'SF Mono', Consolas, monospace; font-size: 10px; text-transform: uppercase; }
+
+  /* 图片 hero（点击放大 → 移交 ImagePreviewDialog） */
+  .img-hero { position: relative; display: flex; justify-content: center; align-items: center; max-height: 300px; padding: 8px; border-radius: 8px; background: repeating-conic-gradient(var(--card-bg) 0% 25%, var(--section-bg) 0% 50%) 50% / 14px 14px; border: 1px dashed var(--border-color); overflow: hidden; cursor: zoom-in; }
+  .img-hero img { max-width: 100%; max-height: 284px; object-fit: contain; display: block; border-radius: 4px; }
+  .img-hero-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: rgba(6,13,20,.45); opacity: 0; transition: opacity .2s; }
+  .img-hero:hover .img-hero-overlay { opacity: 1; }
+  .img-hero-overlay .big { font-size: 13px; font-weight: 700; color: #fff; display: inline-flex; align-items: center; gap: 6px; }
+  .img-hero-overlay .small { font-size: 11px; color: #A2B6CD; }
+  .img-hero-actions { display: flex; gap: 6px; margin-top: 4px; }
+
+  /* 二进制 / 缺失 空态 */
+  .hero-empty { padding: 20px; text-align: center; font-size: 12px; color: var(--text-muted); border: 1px dashed var(--border-color); border-radius: 8px; background: var(--card-bg); }
+  .hero-empty .big-ico { font-size: 28px; }
+  .hero-empty .hint { margin-top: 8px; font-size: 11px; line-height: 1.6; }
+  .hero-empty.bad { border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
+
+  /* 多文件汇总 + 列表 */
+  .multi-summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; border-radius: 10px; background: var(--section-bg); font-size: 13px; }
+  .multi-summary .ttl { font-weight: 700; color: var(--text-primary); }
+  .multi-summary .ok { font-size: 11px; color: var(--green); }
+  .multi-summary .bad { font-size: 11px; color: var(--danger); }
+  .file-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+  .file-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; cursor: pointer; border: 1px solid var(--border-color); background: var(--card-bg); transition: border-color .15s, background .15s; }
+  .file-row.sel { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--card-bg)); }
+  .file-row .nm { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-row .sub { font-size: 10.5px; color: var(--text-muted); }
+  .file-row .bad { color: var(--danger); }
+
+  /* ===== 主题令牌（真实 theme.css 子集） ===== */
+  [data-theme="ocean-dark"] {
+    --app-bg: radial-gradient(130% 110% at 70% -5%, #1E5A82 0%, #0E3355 42%, #061A33 100%);
+    --card-bg: #0A1628; --card-border: #162B45; --text-primary: #E0E8F0;
+    --text-secondary: #A2B6CD; --text-muted: #7994B4; --border-color: #162B45;
+    --accent: #3B9EFF; --accent-light: #0A1E3A; --accent-solid: #2D78C2; --accent-strong: #3B9EFF;
+    --section-bg: #081018; --hover: #0F1F35;
+    --green: #4ADE80; --danger: #FF6B8A;
+    --glass-popover-bg: rgba(10,22,40,0.85); --glass-popover-border: rgba(255,255,255,0.08);
+    --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.25);
+    --glass-dialog-bg: rgba(10,22,40,0.66); --glass-dialog-blur: 22px;
+    --overlay-bg: rgba(0,0,0,0.35);
+  }
+  [data-theme="ocean"] {
+    --card-bg: #fff; --card-border: #E0E4EB; --text-primary: #0F172A;
+    --text-secondary: #495565; --text-muted: #627083; --border-color: #E0E4EB;
+    --accent: #0284C7; --accent-light: #E0F2FE; --accent-solid: #027CBB; --accent-strong: #0273AD;
+    --section-bg: #F0F4F8; --hover: #E8ECF2;
+    --green: #11813A; --danger: #D82525;
+    --glass-popover-bg: rgba(255,255,255,0.97); --glass-popover-border: rgba(0,0,0,0.06);
+    --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+    --glass-dialog-bg: #FFFFFF; --glass-dialog-blur: 22px;
+    --overlay-bg: rgba(0,0,0,0.35);
+  }
+  /* lucide 图标描边统一 */
+  svg { stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+</style>
+</head>
+<body data-theme="ocean-dark">
+<div class="mock-shell">
+  <!-- 控制面板 -->
+  <div class="mock-controls">
+    <h1>文件详情弹框 · A方案</h1>
+    <p>预览即主角：信息收进可折叠条，预览占满主区。点击右侧状态切换查看不同文件类型。</p>
+    <div class="mock-group">
+      <div class="lbl">文件类型状态</div>
+      <button class="mock-btn on" data-state="text">📜 文本文件（高亮+搜索+全文）</button>
+      <button class="mock-btn" data-state="image">🖼 图片文件（点击放大移交查看器）</button>
+      <button class="mock-btn" data-state="multi">📁 多文件（列表+批量）</button>
+      <button class="mock-btn" data-state="binary">⚙ 二进制文件（空态引导）</button>
+      <button class="mock-btn" data-state="missing">📄 缺失文件（告警引导）</button>
+    </div>
+    <div class="mock-group">
+      <div class="lbl">主题</div>
+      <button class="mock-btn on" data-theme="ocean-dark">🌊 海洋深色（默认）</button>
+      <button class="mock-btn" data-theme="ocean">🤍 海洋浅色</button>
+    </div>
+    <div class="mock-note">
+      <b>交互亮点：</b><br>
+      ① 信息条默认折叠，把空间让给预览<br>
+      ② 文本：语法高亮 + 面板内搜索 + 复制全文 + 在编辑器中打开（走 read_text_file_full）<br>
+      ③ 图片：点击 hero 一键移交 ImagePreviewDialog（缩放/识别/裁剪全复用）<br>
+      ④ 多文件：列表选中即预览，批量打开/复制路径
+    </div>
+  </div>
+
+  <!-- 对话框 -->
+  <div class="dialog-backdrop">
+    <div class="dialog-box" id="dlg">
+      <div class="dialog-header">
+        <h2 class="dialog-title" id="dlgTitle">📄 文件详情</h2>
+        <button class="dialog-close" title="关闭"><svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
+      <div class="dialog-body" id="dlgBody"><!-- JS 注入 --></div>
+      <div class="dialog-footer">
+        <span id="dlgTime">复制于 2 分钟前</span>
+        <button class="btn-primary">关闭</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const ICON = {
+  chev: '<svg class="icon meta-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',
+  copy: '<svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  folder: '<svg class="icon" viewBox="0 0 24 24"><path d="M4 20a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2Z"/></svg>',
+  ext: '<svg class="icon" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
+  search: '<svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
+  edit: '<svg class="icon" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+  zoom: '<svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/></svg>',
+  scan: '<svg class="icon" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10"/></svg>',
+  crop: '<svg class="icon" viewBox="0 0 24 24"><path d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14"/></svg>',
+};
+
+const SAMPLE_TS = [
+  [0,'// pastepanda config loader'],
+  [1,'import { load } from "./core";'],
+  [2,''],
+  [3,'export function init(opts: Config) {'],
+  [4,'  const port = opts.port ?? 1420;'],
+  [5,'  const retry = opts.retry ?? 3;'],
+  [6,'  if (port < 1024) {'],
+  [7,'    throw new Error("privileged port");'],
+  [8,'  }'],
+  [9,'  return load({ port, retry, debug: true });'],
+  [10,'}'],
+];
+
+function renderText() {
+  document.getElementById('dlgTitle').textContent = '📄 文件详情';
+  const rows = SAMPLE_TS.map(([i,t]) => {
+    let html = t
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/\b(export|function|const|if|throw|new|return)\b/g,'<span class="tok-kw">$1</span>')
+      .replace(/("[^"]*"|'[^']*')/g,'<span class="tok-str">$1</span>')
+      .replace(/\b(\d+)\b/g,'<span class="tok-num">$1</span>')
+      .replace(/(\/\/.*)$/,'<span class="tok-com">$1</span>');
+    return `<span class="code-ln">${i+1}</span><span class="code-text">${html||' '}</span>`;
+  }).join('');
+  return `
+  ${metaStrip('📜','config.ts','linear-gradient(135deg,#3178C6,#2563EB)','ok')}
+  <div class="preview-hero">
+    <div class="preview-hero-label">${ICON.zoom} 文本预览 · 语法高亮</div>
+    <div class="hero-toolbar">
+      <div class="search-box">${ICON.search}<input id="searchInput" placeholder="搜索内容（Ctrl+F）…" oninput="doSearch()" /></div>
+      <button class="hero-btn" onclick="alert('已复制全文（走 read_text_file_full）')">${ICON.copy} 复制全文</button>
+      <button class="hero-btn primary" onclick="alert('移交 FullscreenEditor 打开')">${ICON.edit} 在编辑器中打开</button>
+    </div>
+    <div class="code-viewer" id="codeViewer">
+      <div class="code-lines">${SAMPLE_TS.map(([i])=>`<span class="code-ln">${i+1}</span>`).join('')}</div>
+      <pre class="code-text" id="codeText">${SAMPLE_TS.map(([i,t])=>t||' ').join('\n')}</pre>
+    </div>
+    <div class="hero-meta"><span class="ext-badge">.ts</span><span>共 11 行</span><span>2.1 KB</span><span id="matchInfo"></span></div>
+  </div>`;
+}
+
+function renderImage() {
+  document.getElementById('dlgTitle').textContent = '📄 文件详情';
+  return `
+  ${metaStrip('🖼️','screenshot_2026.png','linear-gradient(135deg,#8B5CF6,#7C3AED)','ok')}
+  <div class="preview-hero">
+    <div class="preview-hero-label">${ICON.zoom} 图片预览</div>
+    <div class="img-hero" onclick="alert('点击放大 → 移交 ImagePreviewDialog\\n（缩放 / 旋转 / 识别文字 / 裁剪 全复用）')">
+      <svg width="100%" height="200" viewBox="0 0 380 200" style="max-height:284px">
+        <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3B9EFF"/><stop offset="1" stop-color="#7C3AED"/></linearGradient></defs>
+        <rect width="380" height="200" rx="8" fill="url(#g)"/>
+        <circle cx="300" cy="50" r="26" fill="#FFD56B"/>
+        <path d="M0 160 Q95 110 190 150 T380 130 V200 H0 Z" fill="rgba(255,255,255,.25)"/>
+        <text x="20" y="185" fill="#fff" font-size="13" font-family="monospace">pastpanda_preview.png</text>
+      </svg>
+      <div class="img-hero-overlay">
+        <span class="big">${ICON.zoom} 点击放大查看</span>
+        <span class="small">移交应用内图片查看器 · 缩放 / 识别文字 / 裁剪</span>
+        <div class="img-hero-actions">
+          <span class="hero-btn">${ICON.scan} 识别文字</span>
+          <span class="hero-btn">${ICON.crop} 裁剪</span>
+        </div>
+      </div>
+    </div>
+    <div class="hero-meta"><span class="ext-badge">.png</span><span>1920 × 1080</span><span>842 KB</span></div>
+  </div>`;
+}
+
+function renderMulti() {
+  document.getElementById('dlgTitle').textContent = '📁 文件详情 · 5 个文件';
+  const files = [
+    ['📜','a.ts','1.2 KB',true,false],
+    ['📘','doc.docx','380 KB',true,false],
+    ['📗','data.xlsx','54 KB',true,false],
+    ['🖼️','pic.png','2.1 MB',true,false],
+    ['📄','old.pdf','缺失',false,true],
+  ];
+  const rows = files.map(([ico,nm,sub,ok,bad],i)=>`
+    <div class="file-row ${i===0?'sel':''}" onclick="this.parentNode.querySelectorAll('.file-row').forEach(r=>r.classList.remove('sel'));this.classList.add('sel')">
+      <div class="meta-icon" style="width:30px;height:30px;font-size:15px;background:${['linear-gradient(135deg,#3178C6,#2563EB)','linear-gradient(135deg,#3B82F6,#2563EB)','linear-gradient(135deg,#10B981,#059669)','linear-gradient(135deg,#8B5CF6,#7C3AED)','linear-gradient(135deg,#9CA3AF,#6B7280)'][i]}">${ico}</div>
+      <div style="flex:1;min-width:0"><div class="nm">${nm}</div><div class="sub ${bad?'bad':''}">${sub}</div></div>
+      ${bad?'<span class="status-bad">⚠ 已移动</span>':''}
+    </div>`).join('');
+  return `
+  <div class="multi-summary">
+    <span class="ttl">🗂 5 个文件</span>
+    <span>共 3.2 MB</span>
+    <span class="ok">✓ 4 正常</span>
+    <span class="bad">⚠ 1 已移动</span>
+  </div>
+  <div class="file-list">${rows}</div>
+  ${metaStrip('📜','a.ts','linear-gradient(135deg,#3178C6,#2563EB)','ok')}
+  <div class="preview-hero">
+    <div class="preview-hero-label">${ICON.zoom} 选中文件预览</div>
+    <div class="hero-toolbar">
+      <div class="search-box">${ICON.search}<input placeholder="搜索内容…"/></div>
+      <button class="hero-btn">${ICON.copy} 复制全文</button>
+      <button class="hero-btn primary">${ICON.edit} 打开编辑</button>
+    </div>
+    <div class="code-viewer"><div class="code-lines"><span class="code-ln">1</span><span class="code-ln">2</span></div><pre class="code-text">export const name = "a";\nconsole.log(name);</pre></div>
+  </div>
+  <div class="meta-actions">
+    <button class="fab primary">${ICON.folder} 打开全部文件夹</button>
+    <button class="fab">${ICON.copy} 复制全部路径</button>
+  </div>`;
+}
+
+function renderBinary() {
+  document.getElementById('dlgTitle').textContent = '📄 文件详情';
+  return `
+  ${metaStrip('⚙️','setup_v6.17.0_x64.exe','linear-gradient(135deg,#78716C,#57534E)','ok')}
+  <div class="preview-hero">
+    <div class="preview-hero-label">${ICON.zoom} 文件预览</div>
+    <div class="hero-empty">
+      <div class="big-ico">🧩</div>
+      <div>二进制文件 · 46.8 MB</div>
+      <div class="hint">此类文件无法内联预览。<br>点击下方按钮用系统程序打开，或在上方信息条「打开文件夹」定位。</div>
+    </div>
+    <div class="meta-actions">
+      <button class="fab primary">${ICON.ext} 打开文件</button>
+      <button class="fab">${ICON.folder} 打开文件夹</button>
+    </div>
+  </div>`;
+}
+
+function renderMissing() {
+  document.getElementById('dlgTitle').textContent = '📄 文件详情';
+  return `
+  ${metaStrip('📄','report_2025.pdf','linear-gradient(135deg,#9CA3AF,#6B7280)','bad')}
+  <div class="preview-hero">
+    <div class="preview-hero-label">${ICON.zoom} 文件预览</div>
+    <div class="hero-empty bad">
+      <div class="big-ico">⚠️</div>
+      <div>文件不存在或已移动</div>
+      <div class="hint">原始路径仍保留在下方信息条中，<br>可复制路径或打开所在文件夹确认。</div>
+    </div>
+    <div class="meta-actions">
+      <button class="fab">${ICON.copy} 复制路径</button>
+      <button class="fab">${ICON.folder} 打开文件夹</button>
+    </div>
+  </div>`;
+}
+
+function metaStrip(icon, name, grad, status) {
+  const badge = status==='ok'
+    ? '<span class="status-ok">✓ 文件正常</span>'
+    : '<span class="status-bad">⚠ 已移动</span>';
+  return `
+  <div class="meta-strip">
+    <div class="meta-strip-head" onclick="toggleMeta(this)">
+      <div class="meta-icon" style="background:${grad}">${icon}</div>
+      <div class="meta-name" title="${name}">${name}</div>
+      ${badge}
+      <span class="meta-chev">${ICON.chev}</span>
+    </div>
+    <div class="meta-strip-body">
+      <div class="meta-row"><span class="k">完整路径</span><span class="v">C:\\Users\\me\\Documents\\${name}</span></div>
+      <div class="meta-row"><span class="k">文件大小</span><span class="v">2.1 KB</span></div>
+      <div class="meta-row"><span class="k">复制时间</span><span class="v">2026-08-15 00:14</span></div>
+      <div class="meta-row"><span class="k">来源</span><span class="v">VS Code</span></div>
+      <div class="meta-actions">
+        <button class="fab primary">${ICON.ext} 打开文件</button>
+        <button class="fab">${ICON.folder} 打开文件夹</button>
+        <button class="fab">${ICON.copy} 复制路径</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function toggleMeta(head) {
+  const body = head.nextElementSibling;
+  const chev = head.querySelector('.meta-chev');
+  const open = body.classList.toggle('open');
+  chev.classList.toggle('open', open);
+}
+
+function doSearch() {
+  const q = document.getElementById('searchInput').value.trim();
+  const text = document.getElementById('codeText');
+  const info = document.getElementById('matchInfo');
+  if (!q) { text.innerHTML = SAMPLE_TS.map(([i,t])=>t||' ').join('\n'); info.textContent=''; return; }
+  let count = 0;
+  const out = SAMPLE_TS.map(([i,t])=>{
+    if (t.toLowerCase().includes(q.toLowerCase())) count++;
+    return t.replace(new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'), m=>`<span class="hl">${m}</span>`);
+  }).join('\n');
+  text.innerHTML = out;
+  info.textContent = `匹配 ${count} 行`;
+}
+
+const STATES = { text: renderText, image: renderImage, multi: renderMulti, binary: renderBinary, missing: renderMissing };
+function setState(s) {
+  document.getElementById('dlgBody').innerHTML = STATES[s]();
+}
+
+// 事件绑定
+document.querySelectorAll('[data-state]').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('[data-state]').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); setState(b.dataset.state);
+});
+document.querySelectorAll('[data-theme]').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('[data-theme]').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); document.body.dataset.theme = b.dataset.theme;
+  document.documentElement.setAttribute('data-theme', b.dataset.theme);
+});
+setState('text');
+</script>
+</body>
+</html>

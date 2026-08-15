@@ -45,6 +45,7 @@ const DEFAULT_CONFIG: AiConfig = {
   // 默认开：手工标签是“这条要干什么”的唯一来源，文本里判不出来。
   // 与后端 Default 保持一致（provider.rs），两边不一致会让首次打开设置面板就静默改写配置。
   tagsAsContext: true,
+  profileAsContext: true,
 };
 
 const err = (e: unknown) => (e instanceof Error ? e.message : String(e));

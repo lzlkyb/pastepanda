@@ -4,8 +4,18 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 /// 审查 backlog：#11 备份限频 —— 1 分钟内至多备份一次配置（AI 设置保存会连发多次 save_config）
-static LAST_BACKUP: LazyLock<Mutex<Instant>> =
-    LazyLock::new(|| Mutex::new(Instant::now() - Duration::from_secs(3600)));
+///
+/// **`None` = 本进程还没备份过，下次必备**。
+///
+/// 原先写的是 `Instant::now() - Duration::from_secs(3600)`（拿“一小时前”当初值来保证首次必备），
+/// 那是个**真 bug**：`Instant` 在 Windows 上从系统启动开始计时，开机不足 1 小时时
+/// 这个减法会 underflow 并 panic（"overflow when subtracting duration from instant"）。
+/// 而它在 `LazyLock` 里——一旦 panic 就中毒，**后续所有碰配置缓存的地方全挂**。
+/// 用户开机后一小时内启动（开机自启动场景几乎必然）就会踩到。
+///
+/// 改成 `Option` 后根本不做时间减法：语义更直白，也不可能溢出。
+/// （`ai/cache.rs:204` 已经用 `checked_sub` 避开了同一个坑，这处当时漏了。）
+static LAST_BACKUP: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(|| Mutex::new(None));
 const BACKUP_INTERVAL: Duration = Duration::from_secs(60);
 
 impl DataStore {
@@ -412,9 +422,10 @@ impl DataStore {
         // 配置本体照常写入。
         {
             let mut last = LAST_BACKUP.lock().unwrap_or_else(|e| e.into_inner());
-            if last.elapsed() >= BACKUP_INTERVAL {
+            // None（本进程首次）一律备；elapsed() 是“现在 − 过去”，永远不会溢出。
+            if last.is_none_or(|t| t.elapsed() >= BACKUP_INTERVAL) {
                 let _ = self.backup_config();
-                *last = Instant::now();
+                *last = Some(Instant::now());
             }
         }
 

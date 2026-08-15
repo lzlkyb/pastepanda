@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OCR 识别结果 UI · 当前实现 1:1 设计稿</title>
+<style>
+  /* ===== 6 套主题令牌（逐字取自 src/styles/theme.css）===== */
+  :root,
+  [data-theme="ocean"] {
+    --app-bg: #F7F7F8;
+    --card-bg: #fff; --card-border: #E0E4EB;
+    --text-primary: #0F172A; --text-secondary: #495565; --text-muted: #627083;
+    --border-color: #E0E4EB;
+    --accent: #0284C7; --accent-light: #E0F2FE;
+    --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
+    --accent-solid: #027CBB; --accent-strong: #0273AD;
+    --section-bg: #F0F4F8; --hover: #E8ECF2; --seg-bg: #E8E8ED; --seg-active-bg: #fff;
+    --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+    --overlay-bg: rgba(0, 0, 0, 0.35);
+    --glass-dialog-bg: #FFFFFF; --glass-dialog-filter: none;
+    --glass-popover-border: rgba(0,0,0,0.06);
+    --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+    --accent-shadow: rgba(2, 132, 199, 0.15);
+  }
+  [data-theme="midnight"] {
+    --app-bg: radial-gradient(100% 80% at 50% -10%, #1C1832 0%, #0B0B13 55%, #07070C 100%);
+    --card-bg: #18181B; --card-border: #27272A;
+    --text-primary: #E4E4E7; --text-secondary: #AFAFB7; --text-muted: #8D8D95;
+    --border-color: #27272A;
+    --accent: #818CF8; --accent-light: #1E1B4B;
+    --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
+    --accent-solid: #666FC4; --accent-strong: #818CF8;
+    --section-bg: #0F0F11; --hover: #1F1F23; --seg-bg: #27272A; --seg-active-bg: #3F3F46;
+    --green: #4ADE80; --green-bg: #052E16; --green-border: #166534;
+    --overlay-bg: rgba(0, 0, 0, 0.35);
+    --glass-dialog-bg: rgba(20,20,24,0.66); --glass-dialog-filter: blur(22px) saturate(1.4);
+    --glass-popover-border: rgba(255,255,255,0.07);
+    --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.25);
+    --accent-shadow: rgba(129, 140, 248, 0.2);
+  }
+  [data-theme="forest"] {
+    --app-bg: linear-gradient(180deg, #F5F1E3 0%, #EAE5D1 55%, #DCD6BD 100%);
+    --card-bg: #fff; --card-border: #D1D9D3;
+    --text-primary: #171717; --text-secondary: #58524F; --text-muted: #726E6B;
+    --border-color: #D1D9D3;
+    --accent: #059669; --accent-light: #ECFDF5;
+    --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
+    --accent-solid: #05875F; --accent-strong: #04835B;
+    --section-bg: #ECFDF5; --hover: #E8EDE8; --seg-bg: #E4E8E5; --seg-active-bg: #fff;
+    --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+    --overlay-bg: rgba(0, 0, 0, 0.35);
+    --glass-dialog-bg: rgba(255,255,255,0.66); --glass-dialog-filter: blur(22px) saturate(1.4);
+    --glass-popover-border: rgba(0,0,0,0.06);
+    --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+    --accent-shadow: rgba(5, 150, 105, 0.15);
+  }
+  [data-theme="blossom"] {
+    --app-bg: linear-gradient(168deg, #FFE4EF 0%, #FFC9DD 42%, #FFAECF 78%, #FF9BC4 100%);
+    --card-bg: #fff; --card-border: #F9D3E2;
+    --text-primary: #3D2231; --text-secondary: #5F4755; --text-muted: #86596D;
+    --border-color: #F9D3E2;
+    --accent: #F0568C; --accent-light: #FFDDEC;
+    --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
+    --accent-solid: #CE3B70; --accent-strong: #B02C5D;
+    --section-bg: #FFF0F6; --hover: #FBE7F0; --seg-bg: #F6DDE8; --seg-active-bg: #fff;
+    --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+    --overlay-bg: rgba(122, 31, 70, 0.32);
+    --glass-dialog-bg: rgba(255,255,255,0.66); --glass-dialog-filter: blur(22px) saturate(1.4);
+    --glass-popover-border: rgba(0,0,0,0.06);
+    --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+    --accent-shadow: rgba(240, 86, 140, 0.15);
+  }
+  [data-theme="dawn"] {
+    --app-bg: linear-gradient(180deg, #FFF8EE 0%, #FFE9D2 42%, #FFD9AE 72%, #F9C78F 100%);
+    --card-bg: #fff; --card-border: #F0DDC8;
+    --text-primary: #2B2016; --text-secondary: #5C4B38; --text-muted: #7D6B58;
+    --border-color: #F0DDC8;
+    --accent: #E8734A; --accent-light: #FFEDE2;
+    --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
+    --accent-solid: #C85A34; --accent-strong: #B95432;
+    --section-bg: #FFF4E6; --hover: #F7E9DA; --seg-bg: #F3E4D3; --seg-active-bg: #fff;
+    --green: #11813A; --green-bg: #DCFCE7; --green-border: #BBF7D0;
+    --overlay-bg: rgba(0, 0, 0, 0.35);
+    --glass-dialog-bg: rgba(255,255,255,0.66); --glass-dialog-filter: blur(22px) saturate(1.4);
+    --glass-popover-border: rgba(0,0,0,0.06);
+    --glass-popover-shadow: 0 12px 36px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+    --accent-shadow: rgba(232, 115, 74, 0.15);
+  }
+  [data-theme="ocean-dark"] {
+    --app-bg: radial-gradient(130% 110% at 70% -5%, #1E5A82 0%, #0E3355 42%, #061A33 100%);
+    --card-bg: #0A1628; --card-border: #162B45;
+    --text-primary: #E0E8F0; --text-secondary: #A2B6CD; --text-muted: #7994B4;
+    --border-color: #162B45;
+    --accent: #3B9EFF; --accent-light: #0A1E3A;
+    --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
+    --accent-solid: #2D78C2; --accent-strong: #3B9EFF;
+    --section-bg: #081018; --hover: #0F1F35; --seg-bg: #162B45; --seg-active-bg: #1E3D60;
+    --green: #4ADE80; --green-bg: #052E16; --green-border: #166534;
+    --overlay-bg: rgba(0, 0, 0, 0.35);
+    --glass-dialog-bg: rgba(10,22,40,0.66); --glass-dialog-filter: blur(22px) saturate(1.4);
+    --glass-popover-border: rgba(255,255,255,0.08);
+    --glass-popover-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.25);
+    --accent-shadow: rgba(59,158,255,0.2);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+  body { background: var(--app-bg); transition: background .3s; color: var(--text-primary); }
+
+  /* ===== dialog 外壳（取自 dialog.css）===== */
+  .dialog-backdrop {
+    position: fixed; inset: 0; z-index: 1000;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--overlay-bg);
+  }
+  .dialog-box {
+    background: var(--glass-dialog-bg);
+    backdrop-filter: var(--glass-dialog-filter, none);
+    -webkit-backdrop-filter: var(--glass-dialog-filter, none);
+    border: 1px solid var(--glass-popover-border);
+    border-radius: 16px;
+    display: flex; flex-direction: column;
+    box-shadow: var(--glass-popover-shadow);
+    max-width: calc(100vw - 32px);
+  }
+  .dialog-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px; height: 48px; flex-shrink: 0;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .dialog-title { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+  .dialog-close {
+    width: 28px; height: 28px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; border: none; background: transparent; color: var(--text-secondary);
+  }
+  .dialog-close:hover { background: var(--hover); }
+  .dialog-body {
+    flex: 1; overflow-y: auto; padding: 16px 20px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .dialog-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px; height: 48px; flex-shrink: 0; flex-wrap: nowrap; gap: 8px;
+    border-top: 1px solid var(--border-color);
+  }
+
+  /* ===== 图片详情（取自 CardList.module.css）===== */
+  .imageDetailDialog { width: 720px; max-width: 95vw; max-height: 92vh; }
+  .imageDetailMeta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .imageDetailTag { font-size: 11px; color: var(--text-muted); padding: 2px 8px; border-radius: 4px; background: var(--section-bg); font-variant-numeric: tabular-nums; }
+  .imageDetailTagAccent { color: var(--accent-strong); background: var(--accent-light); }
+  .imageDetailToolbar {
+    display: flex; align-items: center; gap: 4px; padding: 6px 10px;
+    border-radius: 10px; background: var(--section-bg); border: 1px solid var(--border-color);
+    flex-wrap: wrap; transition: background .3s, border-color .3s;
+  }
+  .imageDetailToolbarHint { margin-left: auto; font-size: 10px; color: var(--text-muted); white-space: nowrap; user-select: none; }
+  .imageDetailToolBtn {
+    width: 32px; height: 32px; border-radius: 8px; border: none; background: transparent;
+    color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .15s;
+  }
+  .imageDetailToolBtn:hover { background: var(--card-bg); color: var(--text-primary); }
+  .imageDetailZoomLabel { font-size: 12px; font-weight: 600; color: var(--text-secondary); min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; user-select: none; }
+  .imageDetailToolbarSep { width: 1px; height: 20px; background: var(--border-color); margin: 0 4px; }
+  .ocrToolBtn { width: auto !important; padding: 0 10px !important; display: flex !important; align-items: center !important; gap: 2px; }
+  .ocrToolBtnActive { background: color-mix(in srgb, var(--green) 15%, transparent) !important; color: var(--green) !important; }
+  .pinToolBtn { width: auto !important; padding: 0 10px !important; display: flex !important; align-items: center !important; gap: 2px; color: #ec4899 !important; }
+  .pinToolBtn:hover { background: rgba(236, 72, 153, 0.1) !important; color: #db2777 !important; }
+  .imageDetailViewport {
+    border-radius: 10px; overflow: hidden; background: var(--section-bg);
+    border: 1px solid var(--border-color); min-height: 320px;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .3s, border-color .3s; cursor: text; position: relative;
+  }
+  .imageDetailImg { max-width: none; max-height: none; border-radius: 4px; box-shadow: 0 4px 20px rgba(0,0,0,.15); user-select: none; }
+  .imageDetailHint { font-size: 10px; color: var(--text-muted); user-select: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* OCR 词框（行内样式与代码一致） */
+  .ocrOverlayContainer { position: absolute; inset: 0; pointer-events: none; }
+  .ocrWordBox { position: absolute; border-radius: 2px; pointer-events: auto; cursor: pointer; transition: background .15s, border-color .15s; }
+  .ocrWordBox:hover { background: rgba(99,102,241,0.15) !important; border-color: rgba(99,102,241,0.6) !important; }
+  .ocrWordSelected:hover { background: rgba(16,185,129,0.28) !important; border-color: rgba(16,185,129,0.9) !important; }
+
+  /* OCR 选中结果栏 */
+  .ocrResultBar {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    border-radius: 8px; background: var(--accent-light); border: 1px solid var(--accent-border); flex-shrink: 0;
+  }
+  .ocrResultCount { font-size: 11px; color: var(--accent-strong); font-weight: 500; white-space: nowrap; }
+  .ocrResultCount strong { font-size: 13px; }
+  .ocrResultPreview { flex: 1; font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .ocrResultClearBtn { font-size: 10px; padding: 3px 8px; border-radius: 4px; border: 1px solid var(--accent-border); background: transparent; color: var(--accent-strong); cursor: pointer; }
+  .ocrResultClearBtn:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .ocrResultCopyBtn {
+    font-size: 10px; padding: 4px 10px; border-radius: 5px; border: none;
+    background: var(--accent-solid); color: #fff; cursor: pointer; font-weight: 500;
+    display: flex; align-items: center; gap: 3px; transition: all .15s;
+  }
+  .ocrResultCopyBtn:hover { opacity: .9; }
+  .ocrResultCopyBtn:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* OCR 纯文本面板（常驻） */
+  .ocrFullTextPanel { border: 1px solid var(--accent-border); border-radius: 8px; overflow: hidden; flex-shrink: 0; }
+  .ocrFullTextHeader {
+    display: flex; align-items: center; justify-content: space-between; padding: 8px 12px;
+    background: var(--accent-light); border-bottom: 1px solid var(--accent-border);
+    font-size: 12px; font-weight: 600; color: var(--accent-strong);
+  }
+  .ocrFullTextActions { display: flex; align-items: center; gap: 6px; }
+  .ocrFullTextEditToggle {
+    font-size: 11px; padding: 4px 10px; border-radius: 5px; border: 1px solid var(--accent-border);
+    background: transparent; color: var(--accent-strong); cursor: pointer; font-weight: 500; font-family: inherit;
+  }
+  .ocrFullTextEditToggle:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .ocrFullTextCopyBtn {
+    font-size: 11px; padding: 4px 10px; border-radius: 5px; border: 1px solid var(--accent-border);
+    background: var(--card-bg); color: var(--accent-strong); cursor: pointer; font-weight: 500;
+    display: flex; align-items: center; font-family: inherit;
+  }
+  .ocrFullTextCopyBtn:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .ocrFullTextBody {
+    padding: 10px 12px; font-size: 12px; line-height: 1.7; color: var(--text-primary);
+    white-space: pre-wrap; word-break: break-word; max-height: 140px; overflow-y: auto;
+    background: var(--card-bg); user-select: text; min-width: 0;
+  }
+  .ocrFullTextEdit {
+    width: 100%; min-height: 140px; max-height: 240px; padding: 10px 12px; border: none; outline: none;
+    resize: vertical; font-size: 12px; line-height: 1.7; font-family: inherit; color: var(--text-primary);
+    background: var(--card-bg); white-space: pre-wrap; word-break: break-word;
+  }
+
+  /* 导出（取自 CardList.module.css） */
+  .imageExportRow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; border-radius: 10px; background: var(--section-bg); border: 1px solid var(--border-color); flex-shrink: 0; }
+  .imageExportLabel { font-size: 11px; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+  .imageExportSeg { display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--card-bg); border: 1px solid var(--border-color); }
+  .imageExportSegBtn { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 6px; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; transition: all .15s; font-family: inherit; }
+  .imageExportSegBtn:hover { color: var(--text-primary); }
+  .imageExportSegBtnActive { background: var(--accent-solid); color: #fff; box-shadow: 0 1px 4px rgba(0,120,212,.25); }
+  .imageExportQuality { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  .imageExportSlider { width: 90px; height: 4px; cursor: pointer; accent-color: var(--accent); }
+  .imageExportEstimate { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .imageExportBtn { display: flex; align-items: center; gap: 5px; margin-left: auto; font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 8px; border: none; background: var(--accent-solid); color: #fff; cursor: pointer; transition: all .15s; font-family: inherit; box-shadow: 0 2px 8px rgba(0,120,212,.25); }
+  .imageExportBtn:hover { opacity: .9; }
+
+  /* 底部按钮（取自 buttons.css） */
+  .btn-primary { display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; border-radius: 7px; border: none; background: var(--accent-solid); color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s; }
+  .btn-primary:hover { opacity: .9; box-shadow: 0 2px 8px var(--accent-shadow); }
+  .btn-secondary { display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; border-radius: 7px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-secondary); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s; }
+  .btn-secondary:hover { background: var(--section-bg); border-color: var(--accent); color: var(--accent); }
+
+  /* 主题切换器 */
+  .theme-switch { position: fixed; left: 16px; bottom: 16px; z-index: 2000; display: flex; gap: 6px; padding: 8px 10px; border-radius: 12px; background: var(--card-bg); border: 1px solid var(--border-color); box-shadow: 0 4px 16px rgba(0,0,0,.25); }
+  .theme-switch button { font-size: 11px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); cursor: pointer; font-family: inherit; }
+  .theme-switch button.active { background: var(--accent-solid); color: #fff; border-color: var(--accent-solid); }
+  .ctrl-row { position: fixed; right: 16px; bottom: 16px; z-index: 2000; display: flex; gap: 6px; padding: 8px 10px; border-radius: 12px; background: var(--card-bg); border: 1px solid var(--border-color); box-shadow: 0 4px 16px rgba(0,0,0,.25); }
+  .ctrl-row button { font-size: 11px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); cursor: pointer; font-family: inherit; }
+  .ctrl-row button.on { background: var(--accent-light); color: var(--accent-strong); border-color: var(--accent-border); }
+</style>
+</head>
+<body data-theme="ocean-dark">
+
+  <!-- ===== 弹窗：图片详情 + OCR 结果（当前已实现状态 1:1）===== -->
+  <div class="dialog-backdrop">
+    <div class="dialog-box imageDetailDialog">
+      <!-- Header -->
+      <div class="dialog-header">
+        <h2 class="dialog-title">🖼 图片详情</h2>
+        <button class="dialog-close" title="关闭">✕</button>
+      </div>
+
+      <!-- Body -->
+      <div class="dialog-body">
+        <!-- 元信息标签行 -->
+        <div class="imageDetailMeta">
+          <span class="imageDetailTag imageDetailTagAccent">📄 screenshot_2026.png</span>
+          <span class="imageDetailTag">1280 × 720</span>
+          <span class="imageDetailTag">342 KB</span>
+          <span class="imageDetailTag">来自剪贴板</span>
+        </div>
+
+        <!-- 工具栏 -->
+        <div class="imageDetailToolbar">
+          <button class="imageDetailToolBtn" title="缩小">−</button>
+          <span class="imageDetailZoomLabel">100%</span>
+          <button class="imageDetailToolBtn" title="放大">+</button>
+          <button class="imageDetailToolBtn" title="重置为 100% 并居中">1:1</button>
+          <button class="imageDetailToolBtn" title="旋转">⟳</button>
+          <span class="imageDetailToolbarSep"></span>
+          <button class="imageDetailToolBtn ocrToolBtn ocrToolBtnActive" title="关闭文字识别">🔍<span style="margin-left:4px;font-size:12px">文字已识别</span></button>
+          <button class="imageDetailToolBtn pinToolBtn" title="将图片钉在屏幕最上层">📌<span style="margin-left:4px;font-size:12px">置顶</span></button>
+          <button class="imageDetailToolBtn" title="进入/退出裁剪模式">✂<span style="margin-left:4px;font-size:12px">裁剪</span></button>
+          <span class="imageDetailToolbarHint">滚轮平移 · Ctrl+滚轮缩放 · 拖拽平移 · 0 重置 · R 旋转</span>
+        </div>
+
+        <!-- 图片查看区 + OCR 词框叠加层 -->
+        <div class="imageDetailViewport" id="viewport">
+          <div class="imageDetailImg" style="width:560px;height:280px;background:repeating-conic-gradient(var(--card-bg) 0% 25%, var(--section-bg) 0% 50%) 50% / 22px 22px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px;">（示例图片占位）</div>
+          <!-- OCR 词框叠加层（indigo 框，绿色=已选） -->
+          <div class="ocrOverlayContainer">
+            <div class="ocrWordBox" style="left:8%;top:12%;width:18%;height:7%;border:1px solid rgba(99,102,241,.35);background:rgba(99,102,241,.06);" title="PastePanda"></div>
+            <div class="ocrWordBox" style="left:28%;top:12%;width:22%;height:7%;border:1px solid rgba(99,102,241,.35);background:rgba(99,102,241,.06);" title="剪贴板内容中枢"></div>
+            <div class="ocrWordBox ocrWordSelected" style="left:8%;top:26%;width:30%;height:7%;border:1.5px solid rgba(16,185,129,.8);background:rgba(16,185,129,.18);" title="支持文字图片文件"></div>
+            <div class="ocrWordBox" style="left:40%;top:26%;width:24%;height:7%;border:1px solid rgba(99,102,241,.35);background:rgba(99,102,241,.06);" title="一站式管理"></div>
+            <div class="ocrWordBox" style="left:8%;top:40%;width:26%;height:7%;border:1px solid rgba(99,102,241,.35);background:rgba(99,102,241,.06);" title="AI 驱动智能分类"></div>
+            <div class="ocrWordBox" style="left:36%;top:40%;width:18%;height:7%;border:1px solid rgba(99,102,241,.35);background:rgba(99,102,241,.06);" title="动作链"></div>
+            <div class="ocrWordBox" style="left:8%;top:54%;width:34%;height:7%;border:1px solid rgba(99,102,241,.35);background:rgba(99,102,241,.06);" title="长按图片提取文字"></div>
+            <div class="ocrWordBox ocrWordSelected" style="left:44%;top:54%;width:22%;height:7%;border:1.5px solid rgba(16,185,129,.8);background:rgba(16,185,129,.18);" title="编辑并复制"></div>
+          </div>
+        </div>
+
+        <!-- OCR 选中结果栏（选词态，当前已选 2 个词） -->
+        <div class="ocrResultBar">
+          <span style="font-size:14px">🔍</span>
+          <span class="ocrResultCount">已选 <strong>2</strong> 个词</span>
+          <span class="ocrResultPreview">支持文字图片文件 编辑并复制</span>
+          <button class="ocrResultClearBtn" onclick="clearSel()">清除</button>
+          <button class="ocrResultCopyBtn" onclick="copySel(this)">📋 复制选中</button>
+          <button class="ocrResultCopyBtn" onclick="openHub()">✨ 变换为…</button>
+          <button class="ocrResultCopyBtn" onclick="copyAll(this)">📋 全部复制</button>
+        </div>
+
+        <!-- OCR 纯文本结果面板（常驻，与叠加层并存；当前只读态） -->
+        <div class="ocrFullTextPanel">
+          <div class="ocrFullTextHeader">
+            <span>🔍 全部识别文字</span>
+            <div class="ocrFullTextActions">
+              <button class="ocrFullTextEditToggle" id="editToggle" onclick="toggleEdit()">可编辑</button>
+              <button class="ocrFullTextCopyBtn" id="allCopy2" onclick="copyAll(this)">📋 全部复制</button>
+            </div>
+          </div>
+          <div class="ocrFullTextBody" id="ocrBody">PastePanda 剪贴板内容中枢
+支持文字、图片、文件、富文本的一站式管理
+AI 驱动的智能分类与动作链
+长按图片可提取文字并编辑复制</div>
+          <textarea class="ocrFullTextEdit" id="ocrEdit" style="display:none" spellcheck="false">PastePanda 剪贴板内容中枢
+支持文字、图片、文件、富文本的一站式管理
+AI 驱动的智能分类与动作链
+长按图片可提取文字并编辑复制</textarea>
+        </div>
+
+        <!-- 导出（格式转换 + 压缩） -->
+        <div class="imageExportRow">
+          <span class="imageExportLabel">导出</span>
+          <div class="imageExportSeg">
+            <button class="imageExportSegBtn imageExportSegBtnActive">PNG</button>
+            <button class="imageExportSegBtn">JPG</button>
+            <button class="imageExportSegBtn">WEBP</button>
+            <button class="imageExportSegBtn">BMP</button>
+          </div>
+          <div class="imageExportQuality">
+            <input type="range" class="imageExportSlider" min="10" max="100" value="90" disabled />
+            <span>90%</span>
+          </div>
+          <span class="imageExportEstimate">≈ 318 KB</span>
+          <button class="imageExportBtn">⬇ 导出</button>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="dialog-footer">
+        <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
+          <button class="btn-primary">📋 复制</button>
+          <button class="btn-secondary">💾 另存</button>
+        </div>
+        <span class="imageDetailHint" style="margin-left:16px">点击选词 · 拖拽框选 · Ctrl+C复制</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 主题切换器 -->
+  <div class="theme-switch" id="themeSwitch">
+    <button data-t="ocean" onclick="setTheme('ocean')">ocean</button>
+    <button data-t="midnight" onclick="setTheme('midnight')">midnight</button>
+    <button data-t="forest" onclick="setTheme('forest')">forest</button>
+    <button data-t="blossom" onclick="setTheme('blossom')">blossom</button>
+    <button data-t="dawn" onclick="setTheme('dawn')">dawn</button>
+    <button data-t="ocean-dark" class="active" onclick="setTheme('ocean-dark')">ocean-dark</button>
+  </div>
+
+  <!-- 交互控制（仅用于演示复制内联反馈，不改 UI 结构） -->
+  <div class="ctrl-row">
+    <button id="selMode" class="on" onclick="toggleSel()">选词态：开</button>
+  </div>
+
+<script>
+  function setTheme(t){
+    document.body.setAttribute('data-theme', t);
+    document.querySelectorAll('#themeSwitch button').forEach(b=>b.classList.toggle('active', b.dataset.t===t));
+  }
+  // 复制内联「✓ 已复制」反馈（模拟真实 copyToClipboard 成功路径）
+  function flash(btn, label){
+    const old = btn.innerHTML;
+    btn.innerHTML = '✓ 已复制';
+    setTimeout(()=>{ btn.innerHTML = old; }, 1500);
+  }
+  function copyAll(btn){ flash(btn); }
+  function copySel(btn){ flash(btn); }
+  function openHub(){ alert('→ 把选中文字交给 TransformHub（翻译/解释/自定义动作）'); }
+  function clearSel(){
+    document.querySelectorAll('.ocrWordSelected').forEach(w=>{
+      w.classList.remove('ocrWordSelected');
+      w.style.border='1px solid rgba(99,102,241,.35)';
+      w.style.background='rgba(99,102,241,.06)';
+    });
+    document.querySelector('.ocrResultCount').innerHTML='已选 <strong>0</strong> 个词';
+    document.querySelector('.ocrResultPreview').textContent='点击图片上的文字区域选择，或拖拽框选';
+    document.querySelectorAll('.ocrResultClearBtn').forEach(b=>b.remove());
+    document.querySelectorAll('.ocrResultCopyBtn').forEach(b=>{ if(b.textContent.includes('复制选中')) b.disabled=true; });
+  }
+  function toggleEdit(){
+    const body=document.getElementById('ocrBody');
+    const edit=document.getElementById('ocrEdit');
+    const btn=document.getElementById('editToggle');
+    const showingBody = body.style.display!=='none';
+    if(showingBody){ body.style.display='none'; edit.style.display='block'; btn.textContent='完成'; }
+    else { edit.style.display='none'; body.style.display='block'; btn.textContent='可编辑'; }
+  }
+  function toggleSel(){
+    const bar=document.querySelector('.ocrResultBar');
+    const btn=document.getElementById('selMode');
+    if(bar.style.display==='none'){ bar.style.display='flex'; btn.textContent='选词态：开'; btn.classList.add('on'); }
+    else { bar.style.display='none'; btn.textContent='选词态：关'; btn.classList.remove('on'); }
+  }
+</script>
+</body>
+</html>

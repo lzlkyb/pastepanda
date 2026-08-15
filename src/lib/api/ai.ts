@@ -95,6 +95,14 @@ export interface AiConfig {
    * 真正的判断在后端（见 provider.rs 的 tags_as_context）。
    */
   tagsAsContext: boolean;
+  /**
+   * 把用户画像压成一段描述拼进 system prompt（D1）。**默认开**。
+   *
+   * 发出去的是纯本地固定文案的组合（不含剪贴板内容、不含自定义动作名），
+   * 设置页会把它原样展示出来（`profilePromptPreview`）。
+   * 与 `tagsAsContext` 一样：前端不判这个开关，真正的判断在后端（provider.rs）。
+   */
+  profileAsContext: boolean;
 }
 
 export interface AiActionOptionValue {

@@ -1891,6 +1891,9 @@ fn action_event(action: &str, ct: &str, app: &str, hour: i32, outcome: &str) -> 
         hour,
         outcome: outcome.to_string(),
         history_id: None,
+        // v6.15 X3 埋点字段：测试不关心，一律 None
+        paste_index: None,
+        target_cat: None,
     }
 }
 
@@ -1903,6 +1906,9 @@ fn paste_event(history_id: &str, ct: &str) -> ActionEvent {
         hour: 10,
         outcome: OUTCOME_PASTED.to_string(),
         history_id: Some(history_id.to_string()),
+        // v6.15 X3 埋点字段：测试不关心，一律 None
+        paste_index: None,
+        target_cat: None,
     }
 }
 
@@ -2086,6 +2092,72 @@ fn test_action_learnings_clear_clears_both() {
     let n2 = store.action_dismissals_clear().unwrap();
     assert_eq!(n2, 1);
     assert!(store.action_dismissals().unwrap().is_empty());
+}
+
+// ============================================================
+// v6.14 常用置顶（正向偏好）
+// ============================================================
+
+#[test]
+fn test_action_pin_add_is_idempotent() {
+    let store = make_store();
+    store.action_pin_add("sql-in", "");
+    store.action_pin_add("sql-in", ""); // 重复 = 幂等
+    store.action_pin_add("json_format", "");
+
+    let list = store.action_pins().unwrap();
+    assert_eq!(list.len(), 2, "重复置顶不应该多出一条");
+    assert!(list.iter().all(|p| p.content_type.is_empty()), "本版只有全局置顶");
+}
+
+/// 置顶必须顺手清掉该动作的「不再推荐」，否则会出现
+/// “它在常用组里、又同时被标为不推荐”的矛盾状态。
+#[test]
+fn test_action_pin_add_clears_dismissals_of_same_action() {
+    let store = make_store();
+    store.action_dismiss_add("sql-in", "text");
+    store.action_dismiss_add("sql-in", ""); // 同一动作的另一个维度
+    store.action_dismiss_add("ai-translate", "text"); // 别的动作，不该被误删
+
+    store.action_pin_add("sql-in", "");
+
+    let left = store.action_dismissals().unwrap();
+    assert_eq!(left.len(), 1, "只应删掉 sql-in 的全部 dismiss：{:?}", left);
+    assert_eq!(left[0].action_id, "ai-translate", "别的动作的 dismiss 不能被误删");
+}
+
+/// 回归：`action_pin_remove` 用**精确匹配**，不能像 `action_dismiss_remove`
+/// 那样把空串当通配符——空串在这里是一个**真实取值**（= 全局置顶）。
+/// 不这么做的后果得等到支持按内容类型置顶时才爆：
+/// “取消全局置顶”会连带删掉所有按类型的置顶。
+#[test]
+fn test_action_pin_remove_is_exact_not_wildcard() {
+    let store = make_store();
+    store.action_pin_add("sql-in", ""); // 全局
+    store.action_pin_add("sql-in", "json"); // 按类型（本版 UI 不用，但存结构支持）
+
+    let n = store.action_pin_remove("sql-in", "").unwrap();
+    assert_eq!(n, 1, "只应删掉全局那一条");
+
+    let left = store.action_pins().unwrap();
+    assert_eq!(left.len(), 1, "按类型的置顶必须还在：{:?}", left);
+    assert_eq!(left[0].content_type, "json");
+}
+
+/// 置顶是用户**显式设的偏好**，不是学习产物，
+/// 不能被“清空全部学习记录”连带删掉（同 `action_prefs`）。
+#[test]
+fn test_learnings_clear_does_not_touch_pins() {
+    let store = make_store();
+    store.action_event_add(&action_event("sql-in", "json", "VSCode", 10, OUTCOME_COPIED));
+    store.action_dismiss_add("ai-translate", "text");
+    store.action_pin_add("sql-in", "");
+
+    store.action_event_clear().unwrap();
+    store.action_dismissals_clear().unwrap();
+
+    let pins = store.action_pins().unwrap();
+    assert_eq!(pins.len(), 1, "清学习记录不得动置顶（那是用户手动设的）");
 }
 
 // ============================================================
@@ -2986,6 +3058,9 @@ fn test_profile_raw_stats_aggregates() {
         hour: 10,
         outcome: "copied".to_string(),
         history_id: None,
+        // v6.15 X3 埋点字段：测试不关心，一律 None
+        paste_index: None,
+        target_cat: None,
     });
     store.action_event_add(&ActionEvent {
         action_id: "json_format".to_string(),
@@ -2994,6 +3069,9 @@ fn test_profile_raw_stats_aggregates() {
         hour: 10,
         outcome: "pasted".to_string(),
         history_id: None,
+        // v6.15 X3 埋点字段：测试不关心，一律 None
+        paste_index: None,
+        target_cat: None,
     });
 
     let raw = store.profile_raw_stats(30).unwrap();
@@ -3016,6 +3094,9 @@ fn test_profile_raw_stats_excludes_paste_sentinel() {
         hour: 9,
         outcome: "pasted".to_string(),
         history_id: None,
+        // v6.15 X3 埋点字段：测试不关心，一律 None
+        paste_index: None,
+        target_cat: None,
     });
     let raw = store.profile_raw_stats(30).unwrap();
     assert_eq!(raw.total_events, 0, "paste 哨兵不计入画像");
@@ -3038,6 +3119,9 @@ fn test_sequence_mining_finds_repeated_pattern() {
             hour: 10,
             outcome: "copied".to_string(),
             history_id: None,
+            // v6.15 X3 埋点字段：测试不关心，一律 None
+            paste_index: None,
+            target_cat: None,
         });
         store.action_event_add(&ActionEvent {
             action_id: "ai-extract-points".to_string(),
@@ -3046,6 +3130,9 @@ fn test_sequence_mining_finds_repeated_pattern() {
             hour: 10,
             outcome: "copied".to_string(),
             history_id: None,
+            // v6.15 X3 埋点字段：测试不关心，一律 None
+            paste_index: None,
+            target_cat: None,
         });
     }
 
@@ -3076,6 +3163,9 @@ fn test_sequence_mining_ignores_taps_and_sentinel() {
             hour: 9,
             outcome: "copied".to_string(),
             history_id: None,
+            // v6.15 X3 埋点字段：测试不关心，一律 None
+            paste_index: None,
+            target_cat: None,
         });
     }
     // paste 哨兵不计入
@@ -3086,6 +3176,9 @@ fn test_sequence_mining_ignores_taps_and_sentinel() {
         hour: 9,
         outcome: "pasted".to_string(),
         history_id: None,
+        // v6.15 X3 埋点字段：测试不关心，一律 None
+        paste_index: None,
+        target_cat: None,
     });
 
     let pats = store.sequence_mining(30, 3, 4).unwrap();
@@ -3105,6 +3198,9 @@ fn test_sequence_mining_below_threshold() {
             hour: 11,
             outcome: "copied".to_string(),
             history_id: None,
+            // v6.15 X3 埋点字段：测试不关心，一律 None
+            paste_index: None,
+            target_cat: None,
         });
         store.action_event_add(&ActionEvent {
             action_id: "ai-reply-draft".to_string(),
@@ -3113,6 +3209,9 @@ fn test_sequence_mining_below_threshold() {
             hour: 11,
             outcome: "copied".to_string(),
             history_id: None,
+            // v6.15 X3 埋点字段：测试不关心，一律 None
+            paste_index: None,
+            target_cat: None,
         });
     }
     assert!(store.sequence_mining(30, 3, 4).unwrap().is_empty());
@@ -3760,6 +3859,9 @@ fn test_sequence_mining_long_sequence_stable() {
             hour: 10,
             outcome: "copied".to_string(),
             history_id: None,
+            // v6.15 X3 埋点字段：测试不关心，一律 None
+            paste_index: None,
+            target_cat: None,
         });
         store.action_event_add(&ActionEvent {
             action_id: "ai-copy-polish".to_string(),
@@ -3768,6 +3870,9 @@ fn test_sequence_mining_long_sequence_stable() {
             hour: 10,
             outcome: "copied".to_string(),
             history_id: None,
+            // v6.15 X3 埋点字段：测试不关心，一律 None
+            paste_index: None,
+            target_cat: None,
         });
     }
     let seqs = store.sequence_mining(30, 3, 4).unwrap();

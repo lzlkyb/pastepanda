@@ -27,7 +27,7 @@ import {
   type TransformContext,
   type TransformResultMeta,
 } from "@/lib/transforms";
-import { recommendScored, sceneOf } from "@/lib/recommend";
+import { isPinnedAction, recommendScored, sceneOf } from "@/lib/recommend";
 import { manualTagsOpt } from "@/lib/aiTags";
 import { ocrImage, pasteTextGuarded } from "@/lib/api";
 import { useToast } from "@/components/Toast";
@@ -119,7 +119,12 @@ export function TransformHubDialog() {
     () =>
       item
         ? recommendScored(ctx, sceneOf(new Date().getHours(), item.source)).filter(
-            (s) => s.score >= 0.3,
+            // 置顶的动作**无条件绕过 0.3 门槛**。
+            //
+            // 不这么做会出一个必然 bug：现在五因子里四个因无行为数据而恒为 1，
+            // score 就等于基础分，而基础分算的是“能不能处理这类内容”——
+            // 很多真正常用的工具分数并不高。用户置顶了却看不到它，比不做还糟。
+            (s) => s.score >= 0.3 || isPinnedAction(s.transform.id),
           )
         : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -146,9 +151,42 @@ export function TransformHubDialog() {
     [ctx.contentType, toast],
   );
 
-  // 分区：推荐（≥0.6）vs 其他工具（0.3~0.6）
-  const recommended = useMemo(() => scored.filter((s) => s.score >= 0.6), [scored]);
-  const others = useMemo(() => scored.filter((s) => s.score < 0.6), [scored]);
+  /**
+   * 正向偏好：置顶 / 取消置顶。走与 `handleDismiss` 同一条刷新路径。
+   *
+   * 后端的 `action_pin_add` 会顺手清掉该动作的 dismiss，所以这里不用再调一次。
+   */
+  const handleTogglePin = useCallback(
+    async (actionId: string, next: boolean) => {
+      try {
+        const { actionPinAdd, actionPinRemove } = await import("@/lib/api/actionEvents");
+        // 全局置顶：contentType 传空串
+        if (next) await actionPinAdd(actionId, "");
+        else await actionPinRemove(actionId, "");
+        const { refreshRecommendState } = await import("@/lib/recommend");
+        await refreshRecommendState();
+        setLearnRev((v) => v + 1);
+        toast(next ? "已设为常用，以后排在最前" : "已取消常用", "success");
+      } catch (e) {
+        toast(`操作失败：${e instanceof Error ? e.message : String(e)}`, "error");
+      }
+    },
+    [toast],
+  );
+
+  // 分区：常用（置顶）→ 推荐（≥0.6）→ 其他工具（<0.6）
+  //
+  // 置顶是**分组前置**而不是再乘一个因子：乘因子会被其它因子稀释，做不到“恒排最前”。
+  // 组内部仍沿用 recommendScored 的原有排序（filter 天然保持顺序），不再发明一套置顶内部序。
+  const pinned = useMemo(() => scored.filter((s) => isPinnedAction(s.transform.id)), [scored]);
+  const recommended = useMemo(
+    () => scored.filter((s) => !isPinnedAction(s.transform.id) && s.score >= 0.6),
+    [scored],
+  );
+  const others = useMemo(
+    () => scored.filter((s) => !isPinnedAction(s.transform.id) && s.score < 0.6),
+    [scored],
+  );
 
   // P2：doc/rich 条目的 HTML 片段，注入到变换的 opts 供 run() 取用
   const itemHtml = item && (item.type === "doc" || item.type === "rich") ? item.content : undefined;
@@ -355,6 +393,8 @@ export function TransformHubDialog() {
         contentType={ctx.contentType}
         reason={reason}
         onDismiss={(id) => void handleDismiss(id)}
+        pinned={isPinnedAction(t.id)}
+        onTogglePin={(id, next) => void handleTogglePin(id, next)}
       />
     </div>
   );
@@ -467,6 +507,13 @@ export function TransformHubDialog() {
                     <MelodyEmpty size={64} />
                     {isImage && !sourceText ? "没有可用的文字，先试试重新识别或手动输入" : "此内容暂无可用变换"}
                   </div>
+                )}
+                {/* 常用（置顶）排最前。没置顶时整组不渲染，不留空标题。 */}
+                {pinned.length > 0 && (
+                  <>
+                    <div className={styles.sectionLabel}>常用</div>
+                    {pinned.map(renderCard)}
+                  </>
                 )}
                 {recommended.length > 0 && (
                   <>

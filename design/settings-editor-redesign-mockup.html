@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="ocean-dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PastePanda · 设置面板 & 编辑弹框 · 交互重构设计稿</title>
+<style>
+  /* ===== 主题令牌（与 theme.css 同源，自包含供预览） ===== */
+  :root[data-theme="ocean-dark"] {
+    --card-bg:#0F1F33; --section-bg:#0C1A2C; --input-bg:#0A1628; --dialog-bg:rgba(10,22,40,0.86);
+    --border-color:rgba(120,160,200,0.14); --text-primary:#E6EDF5; --text-secondary:#A9C0D8; --text-muted:#6B86A6;
+    --accent:#3B9EFF; --accent-solid:#2B7FE0; --accent-light:rgba(59,158,255,0.12); --accent-strong:#7FC0FF; --accent-shadow:rgba(59,158,255,0.30);
+    --green:#4ADE80; --danger:#FF6B8A; --orange:#FFA94D; --teal:#2DD4BF;
+    --seg-bg:rgba(255,255,255,0.04); --seg-active-bg:#162B45; --toggle-off-bg:#2A3A4F; --hover:rgba(255,255,255,0.05);
+    --search-bg:rgba(255,255,255,0.04); --search-border:rgba(120,160,200,0.18);
+    --body-bg:radial-gradient(130% 120% at 70% -5%, #14415F 0%, #0A2440 45%, #041225 100%);
+  }
+  :root[data-theme="ocean"] {
+    --card-bg:#FFFFFF; --section-bg:#F4F6F9; --input-bg:#EEF2F7; --dialog-bg:rgba(255,255,255,0.92);
+    --border-color:rgba(20,60,100,0.12); --text-primary:#1A2330; --text-secondary:#4A5B70; --text-muted:#8A99AB;
+    --accent:#0284C7; --accent-solid:#0369A1; --accent-light:rgba(2,132,199,0.10); --accent-strong:#0369A1; --accent-shadow:rgba(2,132,199,0.25);
+    --green:#16A34A; --danger:#DC2626; --orange:#EA580C; --teal:#0D9488;
+    --seg-bg:#E9EEF4; --seg-active-bg:#FFFFFF; --toggle-off-bg:#C7D2DE; --hover:rgba(0,0,0,0.04);
+    --search-bg:#FFFFFF; --search-border:rgba(20,60,100,0.18);
+    --body-bg:linear-gradient(180deg,#EAF6FD 0%,#CFE9F8 40%,#9ED0EA 75%,#79B8DD 100%);
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--body-bg); color:var(--text-primary); min-height:100vh; padding:24px; }
+  .stage { max-width:1080px; margin:0 auto; display:flex; gap:18px; align-items:flex-start; }
+  /* 左侧导航 */
+  .nav { width:188px; flex-shrink:0; background:var(--dialog-bg); -webkit-backdrop-filter:blur(20px); backdrop-filter:blur(20px);
+    border:1px solid var(--border-color); border-radius:14px; padding:10px; position:sticky; top:24px; }
+  .nav h4 { margin:4px 8px 10px; font-size:11px; color:var(--text-muted); letter-spacing:.5px; text-transform:uppercase; }
+  .navBtn { display:flex; align-items:center; gap:10px; width:100%; padding:10px 12px; border-radius:10px; border:none;
+    background:transparent; color:var(--text-secondary); font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; text-align:left; transition:.15s; }
+  .navBtn:hover { background:var(--hover); color:var(--text-primary); }
+  .navBtn.active { background:var(--accent-light); color:var(--accent-strong); }
+  .navBtn .ic { font-size:15px; }
+  .themeRow { display:flex; gap:6px; margin-top:14px; padding:0 6px; }
+  .themeRow button { flex:1; height:26px; border-radius:8px; border:1px solid var(--border-color); background:var(--input-bg);
+    color:var(--text-secondary); font-size:11px; cursor:pointer; font-family:inherit; }
+  .themeRow button.active { border-color:var(--accent); color:var(--accent-strong); background:var(--accent-light); }
+
+  /* 右侧内容区 */
+  .canvas { flex:1; min-width:0; display:flex; flex-direction:column; gap:14px; }
+  .panel { display:none; }
+  .panel.active { display:block; }
+
+  /* 弹框外壳（复用 dialog-box 视觉） */
+  .dialog { width:420px; max-width:100%; margin:0 auto; background:var(--dialog-bg); -webkit-backdrop-filter:blur(24px); backdrop-filter:blur(24px);
+    border:1px solid var(--border-color); border-radius:16px; box-shadow:0 24px 60px rgba(0,0,0,.4); overflow:hidden; display:flex; flex-direction:column; max-height:84vh; }
+  .dlgHead { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border-color); }
+  .dlgHead h2 { margin:0; font-size:14px; font-weight:700; }
+  .dlgClose { width:28px; height:28px; border-radius:8px; border:none; background:var(--hover); color:var(--text-secondary); cursor:pointer; font-size:14px; }
+  .dlgBody { overflow:auto; }
+  .dlgFoot { padding:10px 16px; border-top:1px solid var(--border-color); background:var(--section-bg); display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:10px; color:var(--text-muted); }
+  .segBar { display:flex; gap:2px; padding:4px; margin:8px 12px; background:var(--seg-bg); border-radius:10px; }
+  .segBar button { flex:1; height:30px; border:none; border-radius:8px; background:transparent; color:var(--text-muted); font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+  .segBar button.on { background:var(--seg-active-bg); color:var(--accent); box-shadow:0 1px 3px rgba(0,0,0,.08); }
+
+  /* 设置：搜索条 */
+  .search { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:8px; padding:10px 16px; border-bottom:1px solid var(--border-color); background:var(--dialog-bg); }
+  .searchBox { flex:1; display:flex; align-items:center; gap:8px; padding:6px 10px; border-radius:8px; border:1px solid var(--search-border); background:var(--search-bg); }
+  .searchBox input { flex:1; border:none; background:transparent; color:var(--text-primary); font-size:12px; outline:none; font-family:inherit; }
+  .searchIcon { color:var(--text-muted); font-size:13px; }
+
+  /* 可折叠分区 */
+  .sectionHead { display:flex; align-items:center; justify-content:space-between; padding:12px 16px 8px; font-size:11px; font-weight:700; color:var(--text-secondary);
+    text-transform:uppercase; letter-spacing:.5px; cursor:pointer; user-select:none; }
+  .sectionHead .chev { transition:transform .2s; color:var(--text-muted); font-size:10px; }
+  .sectionHead.collapsed .chev { transform:rotate(-90deg); }
+  .sectionBody { overflow:hidden; transition:max-height .3s ease; }
+  .sectionBody.collapsed { max-height:0 !important; }
+
+  .row { display:flex; align-items:center; gap:12px; padding:11px 16px; border-bottom:1px solid var(--border-color); }
+  .row:last-child { border-bottom:none; }
+  .rowIcon { width:34px; height:34px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0;
+    background:linear-gradient(135deg,#0078D4,#5856D6); color:#fff; }
+  .rowBody { flex:1; min-width:0; }
+  .rowLabel { font-size:13px; font-weight:600; }
+  .rowDesc { font-size:11px; color:var(--text-muted); margin-top:2px; }
+
+  /* 主题色板：预览-应用分离 */
+  .themeGrid { display:flex; gap:8px; flex-wrap:wrap; padding:4px 16px 14px; }
+  .swatch { width:62px; border-radius:10px; overflow:hidden; border:2px solid transparent; cursor:pointer; background:none; padding:0; position:relative; transition:.18s; }
+  .swatch .bar { height:22px; display:flex; align-items:center; padding:0 6px; gap:3px; border-bottom:1px solid rgba(0,0,0,.1); }
+  .swatch .bar i { width:6px; height:6px; border-radius:50%; }
+  .swatch .body { height:34px; padding:6px; display:flex; flex-direction:column; gap:3px; }
+  .swatch .body b { height:5px; border-radius:3px; }
+  .swatch.preview { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-shadow); }
+  .swatch .applyPill { position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.45); color:#fff; font-size:11px; font-weight:700; }
+  .swatch.preview .applyPill { display:flex; }
+  .swatch.active { border-color:var(--accent-strong); }
+
+  /* 数据仪表盘：可折叠 + 单行摘要 */
+  .dashCard { margin:6px 16px 12px; background:var(--section-bg); border:1px solid var(--border-color); border-radius:14px; overflow:hidden; }
+  .dashSummary { display:flex; align-items:center; gap:10px; padding:10px 14px; }
+  .dashSummary .t { font-size:12px; font-weight:600; color:var(--text-secondary); }
+  .dashSummary .nums { margin-left:auto; display:flex; gap:12px; font-size:11px; color:var(--text-muted); }
+  .dashSummary .nums b { color:var(--text-primary); font-variant-numeric:tabular-nums; }
+  .dashFull { padding:0 14px 12px; }
+  .grid4 { display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--border-color); border-radius:10px; overflow:hidden; }
+  .cell { background:var(--input-bg); padding:10px 4px; text-align:center; }
+  .cell .n { font-size:17px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .cell .l { font-size:9px; color:var(--text-muted); margin-top:2px; }
+  .twoCol { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; }
+  .mini { background:var(--input-bg); border-radius:10px; padding:10px; }
+
+  /* 清理按钮空态 */
+  .actionBtn { padding:5px 12px; border-radius:6px; border:1px solid var(--border-color); background:var(--card-bg); font-size:11px; font-weight:600; color:var(--text-secondary); cursor:pointer; font-family:inherit; white-space:nowrap; }
+  .actionBtn.danger { color:var(--danger); border-color:color-mix(in srgb,var(--danger) 30%,transparent); }
+  .actionBtn:disabled { opacity:.5; cursor:not-allowed; }
+
+  /* 编辑器通用 */
+  .edHead { display:flex; align-items:center; gap:10px; padding:12px 14px; border-bottom:1px solid var(--border-color); }
+  .edHead .title { font-size:13px; font-weight:700; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .dirtyDot { width:9px; height:9px; border-radius:50%; background:var(--text-muted); flex-shrink:0; }
+  .dirtyDot.on { background:var(--orange); box-shadow:0 0 6px color-mix(in srgb,var(--orange) 60%,transparent); }
+  .iconBtn { width:30px; height:30px; border-radius:8px; border:1px solid var(--border-color); background:var(--input-bg); color:var(--text-secondary); cursor:pointer; font-size:14px; display:flex; align-items:center; justify-content:center; }
+  .iconBtn:hover { color:var(--accent-strong); border-color:var(--accent); }
+  .edArea { width:100%; min-height:180px; resize:none; border:none; background:var(--input-bg); color:var(--text-primary); padding:14px; font-size:12.5px; line-height:1.6; outline:none; font-family:"SF Mono",Consolas,monospace; }
+  .edFoot { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 14px; border-top:1px solid var(--border-color); background:var(--section-bg); }
+  .edFoot .meta { font-size:10px; color:var(--text-muted); }
+  .edFoot .btns { display:flex; gap:6px; align-items:center; }
+  .btnPrimary { height:30px; padding:0 14px; border-radius:8px; border:none; background:var(--accent-solid); color:#fff; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; }
+  .linkBtn { background:none; border:none; color:var(--accent-strong); font-size:11px; cursor:pointer; font-family:inherit; text-decoration:underline; }
+
+  /* 全屏编辑器 */
+  .fsToolbar { display:flex; align-items:center; gap:6px; padding:8px 12px; border-bottom:1px solid var(--border-color); background:var(--section-bg); flex-wrap:wrap; }
+  .fsSeg { display:flex; background:var(--seg-bg); border-radius:8px; padding:3px; gap:2px; }
+  .fsSeg button { height:28px; padding:0 12px; border:none; border-radius:6px; background:transparent; color:var(--text-muted); font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+  .fsSeg button.on { background:var(--seg-active-bg); color:var(--accent); }
+  .fsSpacer { flex:1; }
+  .fsBody { display:flex; min-height:300px; }
+  .fsEditor { flex:1; min-width:0; background:var(--input-bg); color:var(--text-primary); padding:14px; font-size:12.5px; line-height:1.7; font-family:"SF Mono",Consolas,monospace; overflow:auto; }
+  .fsPreview { flex:1; min-width:0; border-left:1px solid var(--border-color); padding:14px; overflow:auto; }
+  .fsPreview h1 { font-size:18px; margin:0 0 10px; }
+  .fsPreview p { font-size:13px; line-height:1.7; color:var(--text-secondary); }
+  .fsPreview code { background:var(--card-bg); padding:1px 5px; border-radius:4px; font-size:12px; }
+  .fsStatus { display:flex; align-items:center; gap:14px; padding:8px 14px; border-top:1px solid var(--border-color); background:var(--section-bg); font-size:11px; color:var(--text-muted); }
+  .fsStatus .saved { color:var(--green); font-weight:600; }
+  .fsStatus .unsaved { color:var(--orange); font-weight:600; }
+  .findBar { display:none; align-items:center; gap:8px; padding:8px 12px; background:var(--card-bg); border-bottom:1px solid var(--border-color); }
+  .findBar.show { display:flex; }
+  .findBar input { flex:1; padding:6px 10px; border-radius:6px; border:1px solid var(--border-color); background:var(--input-bg); color:var(--text-primary); font-size:12px; outline:none; font-family:inherit; }
+  .findBar .count { font-size:11px; color:var(--text-muted); }
+
+  .note { max-width:420px; margin:6px auto 0; font-size:11px; color:var(--text-muted); line-height:1.6; padding:10px 14px; background:var(--dialog-bg); border:1px solid var(--border-color); border-radius:10px; }
+  .note b { color:var(--accent-strong); }
+  .tag { display:inline-block; font-size:10px; padding:1px 7px; border-radius:5px; background:var(--accent-light); color:var(--accent-strong); font-weight:600; margin-right:4px; }
+  .painList { max-width:420px; margin:0 auto; padding:0 4px; list-style:none; }
+  .painList li { font-size:11.5px; color:var(--text-secondary); line-height:1.6; padding:6px 0; border-bottom:1px dashed var(--border-color); }
+  .painList li b { color:var(--danger); }
+</style>
+</head>
+<body>
+<div class="stage">
+  <!-- 左侧导航 -->
+  <nav class="nav">
+    <h4>设计稿</h4>
+    <button class="navBtn active" data-target="settings"><span class="ic">⚙</span> 设置面板</button>
+    <button class="navBtn" data-target="modal"><span class="ic">✎</span> 模态编辑器</button>
+    <button class="navBtn" data-target="full"><span class="ic">🗔</span> 全屏编辑器</button>
+    <div class="themeRow">
+      <button data-theme="ocean-dark" class="active">深海</button>
+      <button data-theme="ocean">海洋</button>
+    </div>
+  </nav>
+
+  <div class="canvas">
+    <!-- ============ 设置面板 ============ -->
+    <section class="panel active" id="settings">
+      <div class="dialog">
+        <div class="dlgHead"><h2>⚙ 设置</h2><button class="dlgClose">✕</button></div>
+        <div class="segBar">
+          <button class="on">通用</button><button>AI</button><button>帮助</button><button>关于</button>
+        </div>
+        <div class="search">
+          <div class="searchBox"><span class="searchIcon">🔍</span><input placeholder="搜索设置项…" value=""></div>
+        </div>
+        <div class="dlgBody">
+
+          <!-- 数据统计：可折叠 + 单行摘要 -->
+          <div class="sectionHead" data-sec="dash">
+            <span>数据统计</span><span class="chev">▶</span>
+          </div>
+          <div class="sectionBody" data-body="dash">
+            <div class="dashCard">
+              <div class="dashSummary">
+                <span class="t">📊 剪贴板数据概览</span>
+                <span class="nums"><span>总 <b>1,284</b></span><span>本周 <b>+342</b></span><span>收藏 <b>37</b></span></span>
+              </div>
+              <div class="dashFull">
+                <div class="grid4">
+                  <div class="cell"><div class="n">1,284</div><div class="l">总记录</div></div>
+                  <div class="cell"><div class="n" style="color:var(--green)">37</div><div class="l">⭐收藏</div></div>
+                  <div class="cell"><div class="n" style="color:var(--accent)">58</div><div class="l">今日新增</div></div>
+                  <div class="cell"><div class="n" style="color:var(--orange)">49</div><div class="l">昨日</div></div>
+                </div>
+                <div class="twoCol">
+                  <div class="mini"><div style="font-size:10px;font-weight:600;color:var(--text-secondary);margin-bottom:8px">时段分布</div>
+                    <div style="display:flex;gap:2px;align-items:flex-end;height:48px">
+                      <i style="flex:1;background:var(--seg-active-bg);border-radius:2px 2px 0 0;height:30%"></i>
+                      <i style="flex:1;background:var(--seg-active-bg);border-radius:2px 2px 0 0;height:55%"></i>
+                      <i style="flex:1;background:var(--accent);border-radius:2px 2px 0 0;height:90%"></i>
+                      <i style="flex:1;background:var(--seg-active-bg);border-radius:2px 2px 0 0;height:40%"></i>
+                      <i style="flex:1;background:var(--seg-active-bg);border-radius:2px 2px 0 0;height:20%"></i>
+                    </div>
+                  </div>
+                  <div class="mini"><div style="font-size:10px;font-weight:600;color:var(--text-secondary);margin-bottom:8px">类型占比</div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <svg width="52" height="52" viewBox="0 0 76 76"><g transform="rotate(-90 38 38)">
+                        <circle cx="38" cy="38" r="30" fill="none" stroke="var(--input-bg)" stroke-width="10"/>
+                        <circle cx="38" cy="38" r="30" fill="none" stroke="var(--accent)" stroke-width="10" stroke-dasharray="120 68"/>
+                      </g><text x="38" y="42" text-anchor="middle" font-size="13" font-weight="700" fill="var(--text-primary)">62%</text></svg>
+                      <div style="font-size:10px;color:var(--text-secondary);line-height:1.8">文本 798<br>图片 312<br>文件 174</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 外观 -->
+          <div class="sectionHead" data-sec="appear"><span>外观</span><span class="chev">▶</span></div>
+          <div class="sectionBody" data-body="appear">
+            <div class="row">
+              <div class="rowIcon" style="background:linear-gradient(135deg,#0078D4,#5856D6)">🎨</div>
+              <div class="rowBody">
+                <div class="rowLabel">主题配色</div>
+                <div class="rowDesc">选择你喜欢的配色方案</div>
+                <div class="themeGrid" id="themeGrid">
+                  <!-- 6 套主题色板；点击=预览高亮，悬浮 apply，再点=应用并广播 -->
+                  <button class="swatch active" data-th="ocean-dark"><span class="bar" style="background:#0A1628"><i style="background:#3B9EFF"></i></span><span class="body" style="background:#041225"><b style="background:#fff;width:90%"></b><b style="background:#162B45;width:60%"></b></span><span class="applyPill">点击应用</span></button>
+                  <button class="swatch" data-th="ocean"><span class="bar" style="background:#fff"><i style="background:#0284C7"></i></span><span class="body" style="background:#CFE9F8"><b style="background:#fff;width:90%"></b><b style="background:#E0E4EB;width:60%"></b></span><span class="applyPill">点击应用</span></button>
+                  <button class="swatch" data-th="midnight"><span class="bar" style="background:#18181B"><i style="background:#818CF8"></i></span><span class="body" style="background:#07070C"><b style="background:#fff;width:90%"></b><b style="background:#27272A;width:60%"></b></span><span class="applyPill">点击应用</span></button>
+                  <button class="swatch" data-th="forest"><span class="bar" style="background:#fff"><i style="background:#059669"></i></span><span class="body" style="background:#DCD6BD"><b style="background:#fff;width:90%"></b><b style="background:#D1D9D3;width:60%"></b></span><span class="applyPill">点击应用</span></button>
+                  <button class="swatch" data-th="blossom"><span class="bar" style="background:#fff"><i style="background:#F0568C"></i></span><span class="body" style="background:#FFAECF"><b style="background:#fff;width:90%"></b><b style="background:#F9D3E2;width:60%"></b></span><span class="applyPill">点击应用</span></button>
+                  <button class="swatch" data-th="dawn"><span class="bar" style="background:#fff"><i style="background:#E8734A"></i></span><span class="body" style="background:#FFD9AE"><b style="background:#fff;width:90%"></b><b style="background:#F0DDC8;width:60%"></b></span><span class="applyPill">点击应用</span></button>
+                </div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="rowIcon" style="background:linear-gradient(135deg,#8B5CF6,#AF52DE)">📑</div>
+              <div class="rowBody"><div class="rowLabel">标签样式</div><div class="rowDesc">切换筛选标签的显示风格</div></div>
+              <button class="actionBtn">分段控件</button>
+            </div>
+          </div>
+
+          <!-- 通用 -->
+          <div class="sectionHead" data-sec="gen"><span>通用</span><span class="chev">▶</span></div>
+          <div class="sectionBody" data-body="gen">
+            <div class="row">
+              <div class="rowIcon" style="background:linear-gradient(135deg,#F59E0B,#FF9500)">🗑</div>
+              <div class="rowBody"><div class="rowLabel">自动清理</div><div class="rowDesc">清理超过该天数的记录（置顶除外）</div></div>
+              <div style="display:flex;gap:4px">
+                <button class="actionBtn">关</button><button class="actionBtn">7天</button><button class="actionBtn" style="border-color:var(--accent);color:var(--accent-strong)">30天</button>
+              </div>
+            </div>
+            <div class="row">
+              <div class="rowIcon" style="background:linear-gradient(135deg,#6366F1,#818CF8)">🖱️</div>
+              <div class="rowBody"><div class="rowLabel">卡片悬浮行为</div><div class="rowDesc">鼠标悬停卡片时的交互方式</div></div>
+              <div class="fsSeg"><button>🚫</button><button>👆</button><button class="on">💬</button></div>
+            </div>
+            <div class="row">
+              <div class="rowIcon" style="background:linear-gradient(135deg,#EF4444,#FF3B30)">👁</div>
+              <div class="rowBody"><div class="rowLabel">失焦自动隐藏</div><div class="rowDesc">窗口失去焦点时隐藏到托盘</div></div>
+              <div class="dirtyDot on" style="background:var(--green)"></div>
+            </div>
+          </div>
+
+          <!-- 数据管理 -->
+          <div class="sectionHead" data-sec="data"><span>数据管理</span><span class="chev">▶</span></div>
+          <div class="sectionBody" data-body="data">
+            <div class="row">
+              <div class="rowIcon" style="background:linear-gradient(135deg,#EF4444,#FF3B30)">🧹</div>
+              <div class="rowBody"><div class="rowLabel">清理过期记录</div><div class="rowDesc" id="cleanDesc">暂无过期记录</div></div>
+              <button class="actionBtn" id="cleanBtn" disabled>无过期</button>
+            </div>
+            <div style="padding:10px 16px;display:flex;gap:8px">
+              <button class="actionBtn">导出</button><button class="actionBtn">导入</button>
+              <button class="actionBtn">深度清理</button>
+            </div>
+          </div>
+
+        </div>
+        <div class="dlgFoot"><span>所有设置修改后自动保存</span><span>v6.10.0</span></div>
+      </div>
+      <div class="note">
+        <span class="tag">痛点→修复</span>
+        <b>S1 巨型仪表盘强占首屏</b>：数据统计默认<strong>折叠</strong>，仅留一行摘要（总/本周/收藏），需要再展开，首屏让给真正的设置。<br>
+        <span class="tag">S2 主题一键广播</span>：点击色板先<strong>预览高亮</strong>（applyPill 提示"点击应用"），再次点击才真正应用并同步所有窗口，避免误点整屏闪变。<br>
+        <span class="tag">S3 长列表无折叠</span>：每个分区标题可点击折叠，减少滚动。<br>
+        <span class="tag">S4 空态死按钮</span>：无过期时"清理"按钮<strong>禁用</strong>并显示"无过期"，消除"点了没反应"。
+      </div>
+    </section>
+
+    <!-- ============ 模态编辑器 ============ -->
+    <section class="panel" id="modal">
+      <div class="dialog">
+        <div class="edHead">
+          <span class="dirtyDot" id="mDirty"></span>
+          <span class="title">编辑 · 会议纪要.md</span>
+          <button class="iconBtn" id="mExpand" title="在完整编辑器中打开">⤢</button>
+          <button class="iconBtn" title="关闭">✕</button>
+        </div>
+        <div class="dlgBody">
+          <textarea class="edArea" id="mArea"># 周会纪要
+
+## 待办
+- [ ] 修复托盘弹窗只能粘贴的问题
+- [ ] 设置面板仪表盘可折叠
+
+## 结论
+下个版本优先做交互可发现性。
+
+（试着在这里输入，右上角的橙色点会变成"未保存"状态）</textarea>
+        </div>
+        <div class="edFoot">
+          <span class="meta" id="mMeta">0 字 · 1 行 · 已保存</span>
+          <div class="btns">
+            <button class="linkBtn" id="mExpandLink">在完整编辑器中打开</button>
+            <button class="actionBtn">复制</button>
+            <button class="btnPrimary" id="mSave">💾 保存</button>
+          </div>
+        </div>
+      </div>
+      <div class="note">
+        <span class="tag">痛点→修复</span>
+        <b>E1 模态信息贫乏</b>：标题栏新增<strong>脏状态点</strong>（编辑即变橙），随时知道有没有未保存改动；<br>
+        工具栏加入<strong>⤢ 展开全屏</strong>按钮，把当前条目转交全屏编辑器（<code>open_fullscreen_editor</code>），在 400px 小弹框里憋着改长文本的用户有了出路；<br>
+        底部加<strong>字数/行数</strong>实时统计。底部"保存"保留，另补充"在完整编辑器中打开"衔接入口。
+      </div>
+    </section>
+
+    <!-- ============ 全屏编辑器 ============ -->
+    <section class="panel" id="full">
+      <div class="dialog" style="max-height:88vh">
+        <div class="fsToolbar">
+          <div class="fsSeg" id="fsView">
+            <button data-v="edit">编辑</button>
+            <button data-v="split" class="on">分屏</button>
+            <button data-v="preview">预览</button>
+          </div>
+          <button class="iconBtn" id="fsFind" title="查找">🔍</button>
+          <button class="iconBtn" title="语言">Aₐ</button>
+          <button class="iconBtn" title="从磁盘重载">⟳</button>
+          <div class="fsSpacer"></div>
+          <button class="iconBtn" id="fsMin" title="最小化回剪贴板卡片">▢</button>
+        </div>
+        <div class="findBar" id="fsFindBar">
+          <input placeholder="查找…"><span class="count">3 / 5</span>
+          <button class="actionBtn">上一个</button><button class="actionBtn">下一个</button>
+        </div>
+        <div class="fsBody">
+          <div class="fsEditor" id="fsEditor"># 周会纪要
+
+## 待办
+- [ ] 修复托盘弹窗只能粘贴
+- [ ] 设置面板仪表盘可折叠
+
+## 结论
+下个版本优先做交互可发现性。
+
+> 选中分屏可同时看渲染效果。</div>
+          <div class="fsPreview" id="fsPreview">
+            <h1>周会纪要</h1>
+            <h2>待办</h2>
+            <p>- [ ] 修复托盘弹窗只能粘贴<br>- [ ] 设置面板仪表盘可折叠</p>
+            <h2>结论</h2>
+            <p>下个版本优先做<code>交互可发现性</code>。</p>
+          </div>
+        </div>
+        <div class="fsStatus">
+          <span id="fsSaved" class="saved">● 已保存</span>
+          <span>会议纪要.md</span>
+          <span>128 字 · 9 行</span>
+          <span style="margin-left:auto;display:flex;align-items:center;gap:6px">自动保存 <span class="dirtyDot on" style="background:var(--green)"></span></span>
+        </div>
+      </div>
+      <div class="note">
+        <span class="tag">痛点→修复</span>
+        <b>E2 孤窗感 / 返回路径</b>：顶部<strong>视图模式分段控件常驻</strong>（编辑/分屏/预览），<strong>🔍 查找</strong>常驻入口（点开查找条），不再藏进键盘快捷键；<br>
+        状态栏明确<strong>● 已保存 / ● 未保存·N 改动</strong>与字数行数，手动保存反馈不再只是一闪 toast；<br>
+        右上<strong>▢ 最小化回卡片</strong>给出清晰的返回路径，解决"跳进全屏窗口后不知怎么回列表"的困惑。
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+  // 导航切换
+  document.querySelectorAll('.navBtn').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.navBtn').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    document.getElementById(b.dataset.target).classList.add('active');
+  }));
+  // 主题切换
+  document.querySelectorAll('.themeRow button').forEach(b => b.addEventListener('click', () => {
+    document.documentElement.dataset.theme = b.dataset.theme;
+    document.querySelectorAll('.themeRow button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+  }));
+
+  // 设置：分区折叠
+  document.querySelectorAll('.sectionHead').forEach(h => h.addEventListener('click', () => {
+    const body = document.querySelector('[data-body="' + h.dataset.sec + '"]');
+    h.classList.toggle('collapsed');
+    body.classList.toggle('collapsed');
+    body.style.maxHeight = body.classList.contains('collapsed') ? '0px' : body.scrollHeight + 'px';
+  }));
+  // 初始化展开分区的 max-height
+  document.querySelectorAll('.sectionBody:not(.collapsed)').forEach(b => { b.style.maxHeight = b.scrollHeight + 'px'; });
+
+  // 设置：主题预览-应用分离
+  const grid = document.getElementById('themeGrid');
+  grid.querySelectorAll('.swatch').forEach(sw => {
+    sw.addEventListener('click', () => {
+      // 第一次点=预览；若已是预览态再点=应用
+      if (sw.classList.contains('preview')) {
+        grid.querySelectorAll('.swatch').forEach(x => { x.classList.remove('preview','active'); });
+        sw.classList.add('active');
+        document.documentElement.dataset.theme = sw.dataset.th;
+        document.querySelectorAll('.themeRow button').forEach(x => x.classList.toggle('active', x.dataset.theme === sw.dataset.th));
+      } else {
+        grid.querySelectorAll('.swatch').forEach(x => x.classList.remove('preview'));
+        sw.classList.add('preview');
+      }
+    });
+  });
+
+  // 设置：清理按钮空态演示（点这个小开关模拟 有/无 过期）
+  const cleanBtn = document.getElementById('cleanBtn');
+  const cleanDesc = document.getElementById('cleanDesc');
+  let hasExpired = false;
+  cleanDesc.addEventListener('click', () => {
+    hasExpired = !hasExpired;
+    if (hasExpired) { cleanBtn.disabled = false; cleanBtn.classList.add('danger'); cleanBtn.textContent = '清理 12 条'; cleanDesc.textContent = '12 条记录已过期'; }
+    else { cleanBtn.disabled = true; cleanBtn.classList.remove('danger'); cleanBtn.textContent = '无过期'; cleanDesc.textContent = '暂无过期记录'; }
+  });
+
+  // 模态编辑器：脏状态 + 字数统计 + 展开全屏
+  const mArea = document.getElementById('mArea');
+  const mDirty = document.getElementById('mDirty');
+  const mMeta = document.getElementById('mMeta');
+  const mSave = document.getElementById('mSave');
+  function mUpdate() {
+    const txt = mArea.value;
+    const lines = txt.split('\n').length;
+    const dirty = mArea.dataset.init !== txt;
+    mDirty.classList.toggle('on', dirty);
+    mMeta.textContent = txt.length + ' 字 · ' + lines + ' 行 · ' + (dirty ? '未保存' : '已保存');
+  }
+  mArea.dataset.init = mArea.value;
+  mArea.addEventListener('input', mUpdate);
+  mSave.addEventListener('click', () => { mArea.dataset.init = mArea.value; mUpdate(); });
+  document.getElementById('mExpand').addEventListener('click', () => alert('→ 已转交全屏编辑器（open_fullscreen_editor）\n当前内容会带入独立窗口，演示衔接关系。'));
+  document.getElementById('mExpandLink').addEventListener('click', () => alert('→ 在完整编辑器中打开'));
+
+  // 全屏编辑器：视图模式 + 查找条
+  const fsView = document.getElementById('fsView');
+  const fsEditor = document.getElementById('fsEditor');
+  const fsPreview = document.getElementById('fsPreview');
+  fsView.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    fsView.querySelectorAll('button').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    const v = b.dataset.v;
+    fsEditor.style.display = (v === 'preview') ? 'none' : 'block';
+    fsPreview.style.display = (v === 'edit') ? 'none' : 'block';
+  }));
+  document.getElementById('fsFind').addEventListener('click', () => {
+    document.getElementById('fsFindBar').classList.toggle('show');
+  });
+  document.getElementById('fsMin').addEventListener('click', () => alert('▢ 最小化回剪贴板卡片\n（关闭全屏窗口，焦点回到主列表）'));
+</script>
+</body>
+</html>

@@ -27,7 +27,13 @@ export class ErrorBoundary extends Component<Props, State> {
     logger.error("组件渲染崩溃", error, info.componentStack);
     // 发送 toast 通知（当 fallback 为 null 时用户至少能看到提示）
     const name = this.props.componentName || "组件";
-    const detail = { message: `${name}加载失败，请尝试刷新页面`, type: "error" as const };
+    const err = this.state.error;
+    const detail = {
+      message: `${name}加载失败，请尝试刷新页面`,
+      type: "error" as const,
+      // 让 toast 的「复制」按钮直接拿到技术错误（message + stack），便于反馈 bug
+      copyText: err ? `${err.message}\n\n${err.stack || ""}` : undefined,
+    };
     window.dispatchEvent(new CustomEvent("app-toast", { detail }));
   }
 

@@ -28,12 +28,17 @@ import { AiQuickResult } from "@/components/ai/AiQuickResult";
 import { useAppStore } from "@/stores/appStore";
 import { useDialogStore } from "@/stores/dialogStore";
 import { isAiAvailable, applicableTransforms } from "@/lib/transforms";
+import { isPinnedAction } from "@/lib/recommend";
 import { matchQuickActions } from "@/lib/aiQuick";
 import { parseFilePaths } from "@/lib/utils";
+import { ocrImage } from "@/lib/api/images";
 import { contentTypeLabel } from "@/lib/actionLabels";
 import { useToast } from "@/components/Toast";
 import { useAiQuickRun } from "@/hooks/useAiQuickRun";
 import styles from "./AiQuickBar.module.css";
+
+/** 模块级 OCR 请求令牌：每次发起图片 OCR 自增，换条目即作废旧请求的结果。 */
+let ocrToken = 0;
 
 export const AiQuickBar = memo(function AiQuickBar() {
   const { toast } = useToast();
@@ -67,6 +72,10 @@ export const AiQuickBar = memo(function AiQuickBar() {
   }, [focusId, latestItem, historyVersion]);
   const key = topItem?.id ?? "";
 
+  /** 图片条目自动 OCR 暖启动：本地识别、不联网不存储，仅用于本次推荐。 */
+  const [ocrText, setOcrText] = useState("");
+  const [ocrLoading, setOcrLoading] = useState(false);
+
   /**
    * 动作的**实际输入**与它的类型。
    *
@@ -79,6 +88,22 @@ export const AiQuickBar = memo(function AiQuickBar() {
    * 目录结构、项目名，不能因为“反正有个输入”就隐式发给模型。
    */
   const { text, inputType, pathDerived } = useMemo(() => {
+    // 图片条目：item.text 是 "[图片] WxH" 占位（非真实内容），一律走本地 OCR。
+    // 不能像文本那样直接拿 item.text 当输入——否则永远命中占位文本、OCR 分支到不了。
+    // 对齐 TransformHubDialog（sourceText = isImage ? ocrText : item.text）。
+    if (topItem?.type === "image") {
+      const ocr = ocrText.trim();
+      if (ocr) {
+        // 以文字内容推导类型：applicableTransforms 内部 analyzeContent 会从 OCR 文本
+        // 特征重判 code/link/json 等（与 TransformHubDialog contentType:"text" 一致）
+        return { text: ocr, inputType: "text", pathDerived: false };
+      }
+      // 方案 A：OCR 中或无文字都不再回落路径三件套（图片路径不是“文件路径”
+      // 变换的合理输入，推反斜杠路径纯属误导）。无文字时由「未从图片识别到文字」
+      // 显式空态承接，而非用本地路径变换假装“有功能”。
+      return { text: "", inputType: "text", pathDerived: false };
+    }
+    // 非图片：原有逻辑（文本类直接用 item.text；文件类从路径派生）
     const t = (topItem?.text || "").trim();
     if (t) {
       return {
@@ -87,10 +112,11 @@ export const AiQuickBar = memo(function AiQuickBar() {
         pathDerived: false,
       };
     }
+    // 非图片文件：从路径派生（保持原行为）
     const paths = parseFilePaths(topItem?.content || "");
     if (paths.length === 0) return { text: "", inputType: "text", pathDerived: false };
     return { text: paths.join("\n"), inputType: "file_path", pathDerived: true };
-  }, [topItem?.text, topItem?.content, topItem?.content_type, topItem?.type]);
+  }, [topItem?.text, topItem?.content, topItem?.content_type, topItem?.type, ocrText, ocrLoading]);
 
   /** 单行预览：换行先压成空格，否则多行文本在单行容器里只能看到第一行 */
   const tgtPreview = useMemo(() => {
@@ -149,7 +175,21 @@ export const AiQuickBar = memo(function AiQuickBar() {
       group: s.transform.group,
       remote: s.transform.remote,
     }));
-    return matchQuickActions({ text, aiOk, candidates, pathDerived });
+    // v6.14 置顶前置。与变换中心保持一致：两个入口不能给出不同顺序。
+    //
+    // 放在 matchQuickActions **之前**：它只取前 3 个（max=3），而且完全保持输入顺序，
+    // 所以前置必须在它之前发生，否则置顶的动作可能根本进不了那 3 个名额。
+    //
+    // 用稳定排序：组内仍沿用 applicableTransforms 的静态分顺序，只把置顶的整体抬到前面。
+    //
+    // 注意一个**固有限制**（不绕）：matchQuickActions 只收 AI 组与 NON_AI_ALLOW 白名单，
+    // 所以置顶一个普通本地变换（如“去除空行”）在这里仍不会出现——
+    // 那是 AiQuickBar 作为“AI 快捷条”的定位使然，不应该为了置顶去改它。
+    // 置顶在变换中心是无条件生效的。
+    const ordered = [...candidates].sort(
+      (a, b) => Number(isPinnedAction(b.id)) - Number(isPinnedAction(a.id)),
+    );
+    return matchQuickActions({ text, aiOk, candidates: ordered, pathDerived });
     // topItem?.tags 参与依赖：用户当场打上“待回复”这类标签后，建议应该立即重算。
     // disable 必须紧贴依赖数组上一行：中间夹一行注释它就落到注释上、对不到目标了。
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -163,6 +203,56 @@ export const AiQuickBar = memo(function AiQuickBar() {
     setClosed(false);
   }, [topItem?.id, topItem?.text]);
 
+  /**
+   * 图片条目：自动本地 OCR 暖启动（对齐 TransformHubDialog 范式，方案 A）。
+   *
+   * 只要 type==="image" 且有 content（图片路径）就跑本地 OCR；图片的 item.text
+   * 是 "[图片] WxH" 占位、永远非空，不能用 !text 判断要不要 OCR。
+   * 以 OCR 文本作为 AI 栏输入，而非把图片当文件路径去推 path_name/path_fslash/path_bslash。
+   *
+   * 代际守卫：焦点切走（topItem.id 变）即作废，避免旧 OCR 回填上一条图片。
+   * 完全本地、不受 AI 开关影响，符合隐私红线（不联网、不存储、仅本次推荐）。
+   */
+  useEffect(() => {
+    if (topItem?.type === "image" && topItem.content) {
+      // 请求令牌：换条目（topItem 变）即自增，确保只有“当前焦点图”的结果会被应用。
+      // 修复 StrictMode 双调用竞态：第一次（试探）调用的好结果不再被 cancelled 丢掉，
+      // 也不会被第二次并发调用的空结果覆盖；只采用最新焦点图的最佳（非空）结果。
+      const myToken = ++ocrToken;
+      setOcrLoading(true);
+      setOcrText("");
+      const runOcr = async () => {
+        // 串行重试最多 2 次：OCR 偶发瞬时返回空（并发/文件尚未落盘），重试即可拿到真实文字。
+        // 串行而非并发，避免自己制造竞态。
+        for (let attempt = 0; attempt < 2; attempt++) {
+          if (myToken !== ocrToken) return; // 已切换到别的条目，作废本次
+          try {
+            const res = await ocrImage(topItem.content);
+            if (myToken !== ocrToken) return;
+            const txt = (res?.fullText || "").trim();
+            if (txt) {
+              setOcrText(txt);
+              setOcrLoading(false);
+              return;
+            }
+          } catch {
+            if (myToken !== ocrToken) return;
+          }
+          // 空结果/失败：等 400ms 再试一次（仅 1 次重试）
+          if (attempt === 0) await new Promise((r) => setTimeout(r, 400));
+        }
+        if (myToken !== ocrToken) return;
+        setOcrText("");
+        setOcrLoading(false);
+      };
+      void runOcr();
+      return () => { ocrToken++; }; // 本 effect 卸载 → 作废自己发起的请求
+    }
+    // 非图片：无需 OCR
+    setOcrText("");
+    setOcrLoading(false);
+  }, [topItem?.id, topItem?.type, topItem?.content]);
+
   const run = useAiQuickRun({ item: topItem, text, toast });
 
   /** 更多 → 打开变换面板并定位 */
@@ -171,7 +261,16 @@ export const AiQuickBar = memo(function AiQuickBar() {
     useDialogStore.getState().openHub(topItem, text);
   }, [topItem, text]);
 
-  if (!topItem || actions.length === 0 || closed) return null;
+  // 图片正在本地 OCR（尚无文字）：单独承接占位态，不让整条消失，也不推路径三件套。
+  const isImageOcrPending = !!topItem && topItem.type === "image" && ocrLoading && !ocrText.trim();
+  // 图片 OCR 已完成、但没识别出文字：显式空态，不推路径三件套、也不整条消失。
+  const isImageOcrEmpty = !!topItem && topItem.type === "image" && !ocrLoading && !ocrText.trim();
+  // 图片 OCR 已识别到文字：主行空间紧张，有徽章时隐藏类型标签（徽章本身已表达
+  // 「图片 + 已识别 N 字」），保证类型/徽章/动作全部在主行（方案 C）。
+  const imageOcrHasText = !!topItem && topItem.type === "image" && !ocrLoading && !!ocrText.trim();
+
+  if (!topItem || closed) return null;
+  if (actions.length === 0 && !isImageOcrPending && !isImageOcrEmpty) return null;
 
   return (
     <AnimatePresence>
@@ -188,17 +287,34 @@ export const AiQuickBar = memo(function AiQuickBar() {
               用 label 形态（无底无边）是因为 .bar 本身已经有底色与描边，再套一层只会变脏。 */}
           <AiMark shape="label" icon={<Sparkles size={11} />} text="AI" />
 
-          <AiQuickActions
-            actions={actions}
-            states={run.states}
-            onRun={(a) => void run.runAction(a)}
-            onMore={openMore}
-          />
+          {isImageOcrPending ? (
+            <span className={styles.ocrPending}>
+              <span className={styles.ocrSpinner} />
+              识别图片文字中…
+            </span>
+          ) : isImageOcrEmpty ? (
+            <span className={styles.ocrBadgeMuted}>未从图片识别到文字</span>
+          ) : (
+            <AiQuickActions
+              actions={actions}
+              states={run.states}
+              onRun={(a) => void run.runAction(a)}
+              onMore={openMore}
+            />
+          )}
 
           <span className={styles.hintTxt}>
             {/* 走共享映射（规则 #11）。原来是手写三元：只认 link 与 text，
-                其余全部兜底到 `topItem.type` → 图文直接显示内部 id「rich」。 */}
-            {contentTypeLabel(topItem.content_type || topItem.type)}
+                其余全部兜底到 `topItem.type` → 图文直接显示内部 id「rich」。
+                方案 C：图片 OCR 识别到文字时隐藏类型标签——徽章「N 字」已表达
+                「图片 + 已识别 N 字」，再留类型标签只会把徽章挤出主行。 */}
+            {!imageOcrHasText && contentTypeLabel(topItem.content_type || topItem.type)}
+            {/* 图片 OCR 已识别到文字：徽章保留完整「已识别 N 字」文案
+                （单写「N 字」用户不知道含义）；类型标签已隐藏，徽章本身
+                已表达「图片 + 已识别 N 字」 */}
+            {imageOcrHasText && (
+              <span className={styles.ocrBadge}>已识别 {ocrText.trim().length} 字</span>
+            )}
           </span>
           <button className={styles.x} onClick={() => setClosed(true)} title="关闭">
             <X size={12} />

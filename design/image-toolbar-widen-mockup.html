@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>图片编辑框 · 悬浮工具条加宽适配设计稿</title>
+<style>
+  :root {
+    --bg: #0f1424;
+    --dialog-bg: rgba(20, 26, 44, 0.96);
+    --section-bg: #161c30;
+    --card-bg: #1c2440;
+    --border-color: rgba(120, 140, 200, 0.18);
+    --text-primary: #e7ecf6;
+    --text-secondary: #aab4d4;
+    --text-muted: #6b76a0;
+    --accent: #6366f1;
+    --accent-soft: rgba(99, 102, 241, 0.16);
+    --green: #10b981;
+    --glass-popover-bg: rgba(28, 34, 56, 0.82);
+    /* 玻璃令牌（与 theme.css 一致） */
+    --glass-popover-border: rgba(140, 160, 220, 0.22);
+    --hover: rgba(99, 102, 241, 0.14);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 26px;
+    background: radial-gradient(1200px 700px at 30% -10%, #1a2138 0%, var(--bg) 55%);
+    color: var(--text-primary);
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    display: flex; flex-direction: column; align-items: center; gap: 18px;
+  }
+  .page-title { font-size: 15px; font-weight: 700; letter-spacing: .3px; }
+  .page-sub { font-size: 12px; color: var(--text-muted); margin-top: -12px; }
+
+  /* ===== 仿 400px 画布（主窗 480 → 弹框内可用 ~400） ===== */
+  .canvas {
+    width: 400px; padding: 12px; border-radius: 14px;
+    background: var(--dialog-bg);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 24px 70px rgba(0,0,0,.5);
+  }
+  .dialog-head {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;
+  }
+  .dialog-head .ttl { font-weight: 600; color: var(--text-primary); }
+
+  /* ===== Stage：不裁切的包裹层（替代直接把 toolbar 放进 overflow:hidden 视口） ===== */
+  .stage { position: relative; border-radius: 10px; }
+
+  /* 视口：保留 overflow:hidden 只裁图片缩放/平移 */
+  .viewport {
+    height: 250px; border-radius: 10px; overflow: hidden;
+    background:
+      repeating-linear-gradient(45deg, #1a2138 0 12px, #18203a 12px 24px);
+    border: 1px solid var(--border-color);
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  .viewport .ph { color: var(--text-muted); font-size: 11px; }
+
+  /* ===== 修复后：胶囊按内容自然加宽、不被裁 ===== */
+  .toolbar {
+    position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+    z-index: 6; display: flex; align-items: center; gap: 2px;
+    padding: 4px 6px; border-radius: 11px;
+    background: var(--glass-popover-bg);
+    border: 1px solid var(--glass-popover-border);
+    backdrop-filter: blur(12px) saturate(1.3);
+    -webkit-backdrop-filter: blur(12px) saturate(1.3);
+    box-shadow: 0 4px 16px rgba(0,0,0,.24);
+    flex-wrap: nowrap;
+    /* 关键：不再受视口 overflow:hidden 裁切，按内容自然宽度 */
+    width: max-content; max-width: 96%;
+  }
+  .tbtn {
+    height: 26px; min-width: 26px; padding: 0 7px; border-radius: 7px;
+    border: none; background: transparent; color: var(--text-secondary);
+    cursor: pointer; display: inline-flex; align-items: center; gap: 3px;
+    font-size: 11px; font-family: inherit; transition: all .15s; white-space: nowrap;
+  }
+  .tbtn:hover { background: var(--hover); color: var(--text-primary); }
+  .tbtn .ico { width: 14px; height: 14px; display: inline-block; }
+  .zoom { font-size: 10px; font-weight: 600; min-width: 34px; text-align: center; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  .sep { width: 1px; height: 16px; background: var(--border-color); margin: 0 3px; }
+  .tbtn.active { color: var(--accent); background: var(--accent-soft); }
+
+  /* 底部模式提示浮标（仍在视口内，不裁） */
+  .hint { position: absolute; bottom: 8px; left: 10px; font-size: 9px; color: var(--text-muted); user-select: none; }
+
+  /* ===== Before：旧版裁切态（对照） ===== */
+  .before .toolbar { max-width: calc(100% - 16px); width: auto; }
+  .before .clip-mask {
+    position: absolute; top: 0; right: 0; width: 34px; height: 46px;
+    background: linear-gradient(90deg, transparent, var(--section-bg) 70%);
+    border-radius: 0 10px 0 0; pointer-events: none; z-index: 7;
+  }
+  .tag { display:inline-block; font-size:10px; padding:2px 8px; border-radius:20px; margin-left:6px; }
+  .tag.ok { background: rgba(16,185,129,.16); color: var(--green); }
+  .tag.bad { background: rgba(239,68,68,.16); color: #f87171; }
+  .toggle { display:flex; gap:8px; }
+  .toggle button {
+    font: inherit; font-size: 12px; padding: 6px 14px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-secondary);
+  }
+  .toggle button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .note { font-size: 11px; color: var(--text-muted); max-width: 400px; line-height: 1.6; text-align: center; }
+  .note b { color: var(--text-secondary); }
+</style>
+</head>
+<body>
+  <div class="page-title">图片编辑框 · 悬浮工具条加宽适配</div>
+  <div class="page-sub">保留「识别文字 / 置顶 / 裁剪」中文标签，仅做结构解耦 + 按内容加宽</div>
+
+  <div class="toggle">
+    <button id="btnAfter" class="on" onclick="setMode('after')">修复后（加宽·不裁）</button>
+    <button id="btnBefore" onclick="setMode('before')">旧版（裁切对照）</button>
+  </div>
+
+  <div class="canvas" id="canvas">
+    <div class="dialog-head">
+      <span class="ttl">预览图片.png</span>
+      <span>480 × 320 <span id="stateTag" class="tag ok">标签全显</span></span>
+    </div>
+
+    <div class="stage" id="stage">
+      <div class="viewport">
+        <span class="ph">图片预览区（缩放/平移在此被裁切，工具条已移出本层）</span>
+        <div class="hint">滚轮平移 · Ctrl+滚轮缩放 · 0 重置 · R 旋转</div>
+      </div>
+      <!-- 工具条：与视口平级，处于不裁切的 stage 内 -->
+      <div class="toolbar" id="toolbar">
+        <button class="tbtn"><span class="ico">🔍</span></button>
+        <span class="zoom">50%</span>
+        <button class="tbtn"><span class="ico">🔍+</span></button>
+        <button class="tbtn">1:1</button>
+        <button class="tbtn"><span class="ico">⟳</span></button>
+        <span class="sep"></span>
+        <button class="tbtn active"><span class="ico">📄</span>识别文字</button>
+        <button class="tbtn"><span class="ico">📌</span>置顶</button>
+        <button class="tbtn"><span class="ico">✂</span>裁剪</button>
+      </div>
+      <div class="clip-mask" id="clipMask" style="display:none"></div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>改动点：</b>视口外包一层 <code>.imageDetailStage</code>（不裁切），把 <code>.imageDetailToolbar</code> 从视口内移到 stage 层；<br/>
+    胶囊改 <code>width: max-content</code>（按内容自然加宽，不再被 <code>overflow:hidden</code> 裁），中文标签全部可见。纯前端、零 Rust。
+  </div>
+
+<script>
+  function setMode(mode) {
+    const canvas = document.getElementById('canvas');
+    const btnA = document.getElementById('btnAfter');
+    const btnB = document.getElementById('btnBefore');
+    const mask = document.getElementById('clipMask');
+    const tag = document.getElementById('stateTag');
+    if (mode === 'before') {
+      canvas.classList.add('before');
+      btnB.classList.add('on'); btnA.classList.remove('on');
+      mask.style.display = 'block';
+      tag.textContent = '右侧被裁'; tag.className = 'tag bad';
+    } else {
+      canvas.classList.remove('before');
+      btnA.classList.add('on'); btnB.classList.remove('on');
+      mask.style.display = 'none';
+      tag.textContent = '标签全显'; tag.className = 'tag ok';
+    }
+  }
+</script>
+</body>
+</html>

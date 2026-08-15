@@ -21,6 +21,12 @@ export interface OcrLine {
 
 export interface OcrResult {
   lines: OcrLine[];
+  /**
+   * 识别全文。注意：Rust 端 OcrResult 序列化为 snake_case 的 `full_text`（serde 默认），
+   * 不是这里的 `fullText`——历史 bug 曾导致各调用点读 `res.fullText` 恒为 undefined
+   * （AI 栏永远显示「未从图片识别到文字」、变换面板 OCR 抛错）。归一化在 ocrImage 包装层
+   * 完成（见下），调用方一律读 `fullText`。
+   */
   fullText: string;
 }
 
@@ -31,7 +37,10 @@ export interface OcrResult {
  * 关掉 AI 也能用——只是识别完之后没有云端动作可选。
  */
 export async function ocrImage(path: string): Promise<OcrResult> {
-  return invoke<OcrResult>("ocr_image", { path });
+  // Rust 返回 snake_case 的 full_text；这里统一映射成 fullText，
+  // 保证所有调用方（AI 栏 / 变换面板 / 未来任何调用）拿到的 fullText 都是真值。
+  const raw = await invoke<OcrResult & { full_text?: string }>("ocr_image", { path });
+  return { lines: raw.lines, fullText: raw.fullText ?? raw.full_text ?? "" };
 }
 
 /** 获取原图 URL（用于 img src 显示，使用 Tauri asset 协议） */

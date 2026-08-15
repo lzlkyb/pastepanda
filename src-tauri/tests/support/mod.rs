@@ -254,5 +254,7 @@ pub fn mock_config(base_url: &str) -> pastepanda_lib::ai::AiConfig {
         // 契约测试不走标签上下文：它会把一行前置文本拼进 prompt，
         // 而这批测试断言的是请求体的确切形状。
         tags_as_context: false,
+        // 同理：画像注入会往 system 里拼一段最多 300 字的使用习惯描述。
+        profile_as_context: false,
     }
 }
