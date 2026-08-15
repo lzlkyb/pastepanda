@@ -43,6 +43,10 @@ export interface HistoryItem {
   source_icon?: string | null;
   /** 内容类型（由 Rust ContentClassifier 在插入时计算并持久化） */
   content_type?: string;
+  /** 图片条目的 OCR 识别文本（后端 image_ocr_cache 回填）。
+   *  undefined=从未识别过；""=识别过但无文字；非空=识别结果。
+   *  识别文本是本地 OCR 产物，不出本机。 */
+  ocr_text?: string;
 }
 
 /** 顶部标签页筛选。注：没有 "rich" —— 图文混排归入 "image"（见下方过滤逻辑） */

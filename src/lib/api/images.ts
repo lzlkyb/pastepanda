@@ -43,6 +43,17 @@ export async function ocrImage(path: string): Promise<OcrResult> {
   return { lines: raw.lines, fullText: raw.fullText ?? raw.full_text ?? "" };
 }
 
+/**
+ * 带持久化缓存的 OCR：只返回识别全文（主窗口卡片标题用）。
+ *
+ * 与 `ocrImage` 的区别：后端查 `image_ocr_cache` 表优先——命中（含「识别过但无文字」
+ * 的空串）直接返回，零识别开销；未命中才本地识别并入库，之后所有路径走缓存。
+ * 返回 "" 表示「识别过但无文字」，识别失败抛异常（调用方回退文件名态）。
+ */
+export async function ocrImageCached(path: string): Promise<string> {
+  return await invoke<string>("ocr_image_cached", { path });
+}
+
 /** 获取原图 URL（用于 img src 显示，使用 Tauri asset 协议） */
 export async function getImageDataUrl(filePath: string): Promise<string> {
   const imageUrlCache = getImageUrlCache();

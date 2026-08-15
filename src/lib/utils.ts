@@ -426,3 +426,100 @@ export function extractEntities(text: string): OcrEntity[] {
   return out;
 }
 
+/**
+ * 从图片条目的占位文本（如 `[图片] 554x265`）提取尺寸。
+ * 匹配失败返回 null（非图片占位、格式异常都视为无尺寸信息）。
+ * 收口缘由（规则 #11）：占位格式由后端 clipboard_monitor 写入，
+ * 需要显示尺寸的调用点（主窗口卡片，后续托盘弹窗等）统一走这里，不各自解析。
+ */
+export function parseImagePlaceholderSize(text: string): { width: number; height: number } | null {
+  const m = /^\[图片\]\s*(\d+)\s*[xX×]\s*(\d+)/.exec((text || "").trim());
+  if (!m) return null;
+  return { width: Number(m[1]), height: Number(m[2]) };
+}
+
+/** 图片卡片 OCR 状态（由 useCardOcr 产出，后端回填的 ocr_text 不属于此状态）。 */
+export type ImageOcrState = {
+  /** idle=未发起（排队中）；ocr=识别中；done=已出结果；fail=识别失败 */
+  status: "idle" | "ocr" | "done" | "fail";
+  /** 识别文本；仅 status=done 时有意义（空串=识别过但无文字） */
+  text?: string;
+};
+
+/** 图片卡片标题/副行显示所需的最小输入（Card.tsx 的 item 子集）。 */
+export interface ImageCardDisplayInput {
+  type: string;
+  text: string;
+  content: string;
+  ocr_text?: string;
+}
+
+export interface ImageCardDisplay {
+  /** 卡片标题（cardTitle）最终文本 */
+  title: string;
+  /** 副行尺寸徽标文本（如 "554×265"），无尺寸信息时为 undefined */
+  sizeText?: string;
+  /** OCR 徽标文本（如 "已识别 48 字"），仅识别成功且有文字时出现 */
+  ocrLabel?: string;
+}
+
+/**
+ * 图片卡片显示决策（纯函数，供 Card.tsx 渲染 + 单测）。
+ *
+ * 状态优先级（与后端持久化语义严格对应）：
+ * 1. 有 OCR 文本（后端回填 ocr_text 非空，或前端识别完成非空）→ 标题=OCR 文本
+ * 2. 识别过但无文字（ocr_text === "" 或前端识别完成空串）→ 标题="未识别到文字"
+ * 3. 正在识别 → 标题="识别图片文字中…"
+ * 4. 其余（未识别/失败/无路径）→ 标题=文件名（content basename），回退「图片」
+ *
+ * 尺寸从占位文本 `[图片] WxH` 提取，独立于 OCR 状态——没有 OCR 结果也显示。
+ */
+export function resolveImageCardDisplay(item: ImageCardDisplayInput, ocrState?: ImageOcrState): ImageCardDisplay {
+  const size = parseImagePlaceholderSize(item.text || "");
+  const sizeText = size ? `${size.width}×${size.height}` : undefined;
+
+  // 后端 Rust Option::None 序列化为 null（不是字段缺失），必须同时排除 null 与 undefined。
+  // 后端回填（含空串）是持久化权威；前端状态只在后端没给（新条目）时兜底。
+  const ocrText = item.ocr_text != null ? item.ocr_text : ocrState?.status === "done" ? ocrState.text : undefined;
+
+  // 与 Card.tsx 原 title 逻辑同口径的 500 字符截断：OCR 全文可能很长，
+  // 超长文本进 DOM / 高亮 split 会拖垮列表（M24 同类问题）。
+  const clamp = (t: string) => {
+    const flat = t.slice(0, 501).replace(/\r?\n/g, " ").trim();
+    return flat.length > 500 ? flat.slice(0, 500) + "…" : flat;
+  };
+
+  if (ocrText !== undefined && ocrText !== "") {
+    return { title: clamp(ocrText), sizeText, ocrLabel: `已识别 ${ocrText.length} 字` };
+  }
+  if (ocrText === "") {
+    return { title: "未识别到文字", sizeText };
+  }
+  if (ocrState?.status === "ocr") {
+    return { title: "识别图片文字中…", sizeText };
+  }
+  const name = (item.content || "").split(/[/\\]/).pop();
+  return { title: name || "图片", sizeText };
+}
+
+/**
+ * 获取图片条目的**完整** OCR 文本（复制用，非截断标题）。
+ *
+ * 与 resolveImageCardDisplay 同源同判据：后端回填（item.ocr_text）优先，
+ * 前端实时识别结果（ocrState）兜底；两者都无或为 null → 返回 null（无文字）。
+ * 空串表示「识别过但无文字」，同样返回 null——没有可复制的内容。
+ *
+ * 收口缘由（规则 #11）：Popover「复制文字」按钮与右键「复制识别文字」项
+ * 必须复制同一份完整文本，禁止各自取截断标题或各写判断。
+ */
+export function getImageOcrFullText(
+  item: ImageCardDisplayInput,
+  ocrState?: ImageOcrState,
+): string | null {
+  // 同 resolveImageCardDisplay 的合并逻辑；!= null 兼容后端序列化的 null
+  const text = item.ocr_text != null ? item.ocr_text : ocrState?.status === "done" ? ocrState.text : undefined;
+  if (text === undefined || text === "") return null;
+  return text;
+}
+
+

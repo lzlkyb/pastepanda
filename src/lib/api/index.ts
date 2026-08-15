@@ -11,7 +11,7 @@ export { getStats, getStatsDetail, fetchCounts, fetchSidebarCounts, invalidateCo
 export type { Stats, StatsDetail, DailyCount, SidebarCounts } from "./cache";
 
 // 图片
-export { getImageDataUrl, getImageBase64, dataUrlToBlob, getImageThumbnail, getImageInfo, ocrImage } from "./images";
+export { getImageDataUrl, getImageBase64, dataUrlToBlob, getImageThumbnail, getImageInfo, ocrImage, ocrImageCached } from "./images";
 export type { OcrResult, OcrLine, OcrWord } from "./images";
 
 // 历史记录

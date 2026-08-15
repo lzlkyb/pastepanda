@@ -191,6 +191,7 @@ impl DataStore {
                         group_id: row.get(10)?,
                         source_icon: row.get(11)?,
                         content_type: row.get(12)?,
+                        ocr_text: None,
                         tags: Vec::new(),
                     })
                 })
@@ -202,6 +203,7 @@ impl DataStore {
         };
         drop(conn);
         self.load_tags_into_items(&mut items)?;
+        self.load_ocr_texts_into_items(&mut items)?;
 
         // v6.1 自我净化：简单搜索路径也记录命中（fire-and-forget）
         if !search.is_empty() && !items.is_empty() {
@@ -307,11 +309,14 @@ impl DataStore {
                     group_id: row.get(10)?,
                     source_icon: row.get(11)?,
                     content_type: row.get(12)?,
+                    ocr_text: None,
                     tags: Vec::new(),
                 })
             })
             .map_err(|_| ())?;
-        Ok(rows.filter_map(|r| r.ok()).collect())
+        let mut items = rows.filter_map(|r| r.ok()).collect::<Vec<HistoryItem>>();
+        self.load_ocr_texts_into_items(&mut items).map_err(|_| ())?;
+        Ok(items)
     }
 
     /// 全量搜索：把全部筛选条件下推到 SQL，直接扫整表，
@@ -464,6 +469,7 @@ impl DataStore {
                         group_id: row.get(10)?,
                         source_icon: row.get(11)?,
                         content_type: row.get(12)?,
+                        ocr_text: None,
                         tags: Vec::new(),
                     })
                 })
@@ -475,6 +481,7 @@ impl DataStore {
         };
         drop(conn);
         self.load_tags_into_items(&mut items)?;
+        self.load_ocr_texts_into_items(&mut items)?;
 
         // v6.1 自我净化：搜索命中即高价值信号（豁免过期清理）。
         // 对本次命中并返回的条目批量 +1，fire-and-forget（写失败不阻塞搜索本身）。
@@ -522,6 +529,7 @@ impl DataStore {
                         group_id: row.get(10)?,
                         source_icon: row.get(11)?,
                         content_type: row.get(12)?,
+                        ocr_text: None,
                         tags: Vec::new(),
                     })
                 })
@@ -743,6 +751,7 @@ impl DataStore {
                     group_id: row.get(10)?,
                     source_icon: row.get(11)?,
                     content_type: row.get(12)?,
+                    ocr_text: None,
                     tags: Vec::new(),
                 })
             },
@@ -977,6 +986,7 @@ impl DataStore {
                         group_id: row.get(10)?,
                         source_icon: row.get(11)?,
                         content_type: row.get(12)?,
+                        ocr_text: None,
                         tags: Vec::new(),
                     })
                 })
@@ -1078,6 +1088,7 @@ impl DataStore {
                         group_id: row.get(10)?,
                         source_icon: row.get(11)?,
                         content_type: row.get(12)?,
+                        ocr_text: None,
                         tags: Vec::new(),
                     })
                 })
@@ -1262,6 +1273,7 @@ impl DataStore {
                         group_id: row.get(10)?,
                         source_icon: row.get(11)?,
                         content_type: row.get(12)?,
+                        ocr_text: None,
                         tags: Vec::new(),
                     })
                 })
@@ -1425,6 +1437,7 @@ impl DataStore {
                         group_id: row.get(10)?,
                         source_icon: row.get(11)?,
                         content_type: row.get(12)?,
+                        ocr_text: None,
                         tags: Vec::new(),
                     })
                 })
@@ -1466,6 +1479,7 @@ impl DataStore {
                         group_id: row.get(10)?,
                         source_icon: row.get(11)?,
                         content_type: row.get(12)?,
+                        ocr_text: None,
                         tags: Vec::new(),
                     })
                 })
@@ -1649,6 +1663,31 @@ impl DataStore {
         for item in items.iter_mut() {
             if let Some(tags) = tag_map.get(&item.id) {
                 item.tags = tags.clone();
+            }
+        }
+        Ok(())
+    }
+
+    /// 批量回填图片条目的 OCR 文本（image_ocr_cache 一次性 IN 查询，同 load_tags 模式）。
+    /// 只对 type=image 且 content 非空 的条目查询；未识别过的条目保持 None（前端懒触发）。
+    pub(crate) fn load_ocr_texts_into_items(&self, items: &mut [HistoryItem]) -> Result<(), String> {
+        if items.is_empty() {
+            return Ok(());
+        }
+        let paths: Vec<String> = items
+            .iter()
+            .filter(|i| i.item_type == "image" && !i.content.is_empty())
+            .map(|i| i.content.clone())
+            .collect();
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let ocr_map = self.get_ocr_texts(&paths)?;
+        for item in items.iter_mut() {
+            if item.item_type == "image" {
+                if let Some(text) = ocr_map.get(&item.content) {
+                    item.ocr_text = Some(text.clone());
+                }
             }
         }
         Ok(())

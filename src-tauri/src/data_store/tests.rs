@@ -23,6 +23,7 @@ fn make_item(id: &str, text: &str, time: &str, item_type: &str) -> HistoryItem {
         group_id: None,
         source_icon: None,
         content_type: None,
+        ocr_text: None,
         tags: Vec::new(),
     }
 }
@@ -3879,4 +3880,92 @@ fn test_sequence_mining_long_sequence_stable() {
     // 50 轮 > 阈值,至少出现一次模式;结果数量有上限(不爆表)
     assert!(!seqs.is_empty());
     assert!(seqs.len() <= 10, "序列建议有数量上限(实现 truncate(10))");
+}
+
+// ============================================================
+// 图片 OCR 缓存（image_ocr_cache）测试
+// ============================================================
+
+#[test]
+fn test_ocr_text_set_get_and_upsert() {
+    let store = make_store();
+    // 未识别过 → None（区别于「识别过但无文字」的空串）
+    assert_eq!(store.get_ocr_text("C:\\img\\a.png").unwrap(), None);
+
+    // 写入 → 命中
+    store.set_ocr_text("C:\\img\\a.png", "hello world").unwrap();
+    assert_eq!(
+        store.get_ocr_text("C:\\img\\a.png").unwrap(),
+        Some("hello world".to_string())
+    );
+
+    // 空串 → 识别过但无文字（同样命中，防止反复重试）
+    store.set_ocr_text("C:\\img\\b.png", "").unwrap();
+    assert_eq!(store.get_ocr_text("C:\\img\\b.png").unwrap(), Some(String::new()));
+
+    // 覆盖写 → upsert 生效（不产生第二行）
+    store.set_ocr_text("C:\\img\\a.png", "updated").unwrap();
+    assert_eq!(
+        store.get_ocr_text("C:\\img\\a.png").unwrap(),
+        Some("updated".to_string())
+    );
+}
+
+#[test]
+fn test_ocr_texts_batch_query() {
+    let store = make_store();
+    store.set_ocr_text("p1", "text one").unwrap();
+    store.set_ocr_text("p2", "").unwrap();
+
+    let map = store
+        .get_ocr_texts(&["p1".to_string(), "p2".to_string(), "p3".to_string()])
+        .unwrap();
+    assert_eq!(map.get("p1").map(String::as_str), Some("text one"));
+    assert_eq!(map.get("p2").map(String::as_str), Some(""));
+    assert!(!map.contains_key("p3"), "未识别过的路径不应出现在结果里");
+
+    // 空输入直接返回空表（避免 IN () 语法错误）
+    assert!(store.get_ocr_texts(&[]).unwrap().is_empty());
+}
+
+#[test]
+fn test_history_query_backfills_ocr_text() {
+    let store = make_store();
+    // 图片条目：content 是图片路径
+    let mut img = make_item("img-1", "[图片] 100x100", "2024-01-01 10:00:00", "image");
+    img.content = "C:\\img\\shot.png".to_string();
+    store.insert_history(&img).unwrap();
+
+    // 文本条目：与图片条目混在一起，验证只有 image 类型被回填
+    let txt = make_item("txt-1", "hello", "2024-01-01 11:00:00", "text");
+    store.insert_history(&txt).unwrap();
+
+    // 未识别前：图片条目 ocr_text 为 None
+    let before = store.get_history("默认", "all", "", 0, 100).unwrap();
+    assert_eq!(
+        before.iter().find(|i| i.id == "img-1").unwrap().ocr_text,
+        None
+    );
+
+    // 识别入库后：get_history 回填 ocr_text（含空串）
+    store.set_ocr_text("C:\\img\\shot.png", "识别出的文字").unwrap();
+    let after = store.get_history("默认", "all", "", 0, 100).unwrap();
+    let hit = after.iter().find(|i| i.id == "img-1").unwrap();
+    assert_eq!(hit.ocr_text.as_deref(), Some("识别出的文字"));
+    // 文本条目不受影响
+    assert_eq!(after.iter().find(|i| i.id == "txt-1").unwrap().ocr_text, None);
+}
+
+#[test]
+fn test_search_history_backfills_ocr_text() {
+    let store = make_store();
+    let mut img = make_item("img-1", "[图片] 100x100", "2024-01-01 10:00:00", "image");
+    img.content = "C:\\img\\shot.png".to_string();
+    store.insert_history(&img).unwrap();
+    store.set_ocr_text("C:\\img\\shot.png", "报销单 2024-07").unwrap();
+
+    // 搜索命中（content LIKE 命中文件名）
+    let items = store.search_history("默认", "shot", "all", "", "", "", &[], 100).unwrap();
+    let hit = items.iter().find(|i| i.id == "img-1").unwrap();
+    assert_eq!(hit.ocr_text.as_deref(), Some("报销单 2024-07"));
 }

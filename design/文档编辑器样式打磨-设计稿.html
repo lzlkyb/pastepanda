@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda · 文档编辑器（DocEditor）样式打磨 · 设计稿</title>
+<style>
+  :root{--bg:#f6f7f9;--panel:#fff;--text:#1f2328;--muted:#6b7280;--secondary:#4b5563;
+    --border:#e3e5e8;--accent:#3b82f6;--accent-strong:#1d4ed8;--hover:rgba(0,0,0,.045);
+    --input-bg:rgba(0,0,0,.02);--code:#f6f8fa;--green:#15803d;--amber:#b45309;
+    --thumb:#f1f2f4}
+  @media(prefers-color-scheme:dark){:root{--bg:#16181c;--panel:#1d2026;--text:#e6e8ea;--muted:#9aa2ad;
+    --secondary:#c3c9d2;--border:#2c3038;--accent:#60a5fa;--accent-strong:#93c5fd;
+    --hover:rgba(255,255,255,.05);--input-bg:rgba(255,255,255,.03);--code:#14161a;
+    --green:#4ade80;--amber:#fbbf24;--thumb:#23262e}}
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px 20px 60px;background:var(--bg);color:var(--text);
+    font:13px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:980px;margin:0 auto}
+  h1{font-size:19px;margin:0 0 6px}
+  h2{font-size:14px;margin:30px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+  .lead{color:var(--muted);font-size:12px;margin:0 0 4px}
+  .meta{color:var(--muted);font-size:11px;margin:0 0 20px}
+  code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;background:var(--code);padding:1px 4px;border-radius:4px}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin:8px 0}
+  th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{font-size:11px;color:var(--muted);font-weight:600}
+  .grid{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
+  .col{flex:1;min-width:340px}
+  .colLabel{font-size:11px;font-weight:600;color:var(--muted);margin:0 0 8px;letter-spacing:.5px}
+  .warn{border-left:3px solid var(--amber);background:color-mix(in srgb, var(--amber) 8%, transparent);
+    padding:10px 12px;border-radius:0 8px 8px 0;margin:10px 0;font-size:12px}
+
+  /* ── 弹窗模拟（w520：520px 宽）── */
+  .dlg{width:520px;background:var(--panel);border:1px solid var(--border);border-radius:12px;
+    overflow:hidden;box-shadow:0 14px 36px rgba(0,0,0,.12)}
+  .dlgHead{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;
+    border-bottom:1px solid var(--border);font-size:14px;font-weight:600}
+  .dlgHead .x{color:var(--muted);font-size:14px;cursor:pointer}
+  .dlgFoot{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;
+    border-top:1px solid var(--border);font-size:10px;color:var(--muted)}
+
+  /* metaBar */
+  .meta{display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid var(--border);font-size:12px}
+  .badge{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);
+    padding:2px 8px;border-radius:6px;font-weight:500}
+  .metaInfo{color:var(--muted)}
+  .dirty{color:var(--amber);font-size:11px}
+  .full{margin-left:auto;background:none;border:1px solid var(--border);color:var(--muted);
+    padding:3px 10px;border-radius:6px;cursor:pointer;font-size:11px}
+
+  /* tabs：现状（下划线式）vs 目标（分段式） */
+  .tabs-old{display:flex;gap:2px;padding:0 16px;border-bottom:1px solid var(--border)}
+  .tab-old{background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);
+    cursor:pointer;padding:8px 14px;font-size:13px}
+  .tab-old.on{color:var(--accent);border-bottom-color:var(--accent)}
+  .tabs-new{display:flex;gap:3px;padding:8px 16px 0;border-bottom:1px solid var(--border)}
+  .tab-new{background:none;border:1px solid transparent;border-bottom:none;color:var(--muted);
+    cursor:pointer;padding:6px 14px;font-size:12.5px;border-radius:8px 8px 0 0;transition:all .15s}
+  .tab-new:hover{background:var(--hover);color:var(--secondary)}
+  .tab-new.on{background:var(--input-bg);border-color:var(--border);color:var(--accent-strong);font-weight:600}
+  .tab-new .cnt{font-size:10px;color:var(--muted);margin-left:4px;font-weight:400}
+
+  /* 内容区（目标：高度解绑，随弹窗自适应） */
+  .body{padding:16px;min-height:240px;max-height:52vh;overflow-y:auto;font-size:13px;line-height:1.7}
+
+  /* 原文态排版（目标） */
+  .doc h1{font-size:17px;margin:14px 0 6px;line-height:1.35}
+  .doc h2{font-size:15px;margin:12px 0 5px;line-height:1.35}
+  .doc h3{font-size:13.5px;margin:10px 0 4px}
+  .doc p{margin:6px 0}
+  .doc ul,.doc ol{margin:6px 0;padding-left:22px}
+  .doc li{margin:2px 0}
+  .doc blockquote{border-left:3px solid var(--accent);margin:8px 0;padding:2px 12px;
+    background:color-mix(in srgb,var(--accent) 5%,transparent);border-radius:0 6px 6px 0;
+    color:var(--secondary)}
+  .doc pre{background:var(--code);border:1px solid var(--border);border-radius:8px;
+    padding:10px 12px;overflow-x:auto;font-family:'SF Mono',Consolas,monospace;font-size:12px;margin:8px 0}
+  .doc code{font-family:'SF Mono',Consolas,monospace;font-size:12px}
+  .doc :not(pre)>code{background:var(--code);padding:1px 5px;border-radius:4px}
+  .doc img{max-width:100%;border-radius:8px;margin:6px 0}
+  .doc hr{border:none;border-top:1px dashed var(--border);margin:12px 0}
+  .doc strong{color:var(--text);font-weight:700}
+  .doc a{color:var(--accent)}
+
+  /* 表格（目标） */
+  .doc table{border-collapse:collapse;width:100%;margin:8px 0;font-size:12.5px}
+  .doc th,.doc td{border:1px solid var(--border);padding:6px 10px;text-align:left}
+  .doc thead th{background:color-mix(in srgb,var(--accent) 10%,transparent);font-weight:600;
+    color:var(--text);position:sticky;top:0}
+  .doc tbody tr:nth-child(even){background:color-mix(in srgb,var(--accent) 3%,transparent)}
+  .doc tbody tr:hover{background:color-mix(in srgb,var(--accent) 7%,transparent)}
+
+  /* 清洗态（目标） */
+  .plain{white-space:pre-wrap;word-break:break-word;color:var(--secondary);
+    font-family:'SF Mono',Consolas,'Cascadia Code',monospace;font-size:12.5px;line-height:1.8;
+    background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:12px}
+
+  /* Markdown 态（目标：聚焦态 + 微调） */
+  .md{width:100%;min-height:220px;background:var(--input-bg);border:1px solid var(--border);
+    border-radius:8px;color:var(--secondary);font-family:'SF Mono',Consolas,'Cascadia Code',monospace;
+    font-size:12.5px;line-height:1.7;padding:12px;resize:vertical;outline:none;transition:border-color .15s}
+  .md:focus{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 18%,transparent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>文档编辑器 · 样式打磨（方案 A）</h1>
+<p class="lead">DocEditor 三态（原文 / 清洗 / Markdown）排版升级：内容区高度解绑、原文态补齐完整文档排版、表格增强、tabs 分段化。<b>只动 CSS</b>（DocEditor.module.css），零逻辑风险。</p>
+<p class="meta">2026-08-14 · 方案 A（纯样式层）· 对齐 RichEditor 工具栏 / MarkdownRenderer 渲染水准 · 全部使用项目真实 CSS 变量</p>
+
+<h2>一、tabs：下划线式 → 分段式</h2>
+<div class="grid">
+  <div class="col">
+    <p class="colLabel">现状（光秃秃的下划线）</p>
+    <div class="dlg">
+      <div class="dlgHead">📄 编辑文档 <span class="x">✕</span></div>
+      <div class="meta"><span class="badge">📄 文档</span><span class="metaInfo">含表格</span><span class="dirty">可清洗</span><button class="full">⤢ 全屏</button></div>
+      <div class="tabs-old"><button class="tab-old on">原文</button><button class="tab-old">清洗</button><button class="tab-old">Markdown</button></div>
+      <div class="body" style="display:flex;align-items:center;justify-content:center;color:var(--muted)">内容区（高 340px 写死）</div>
+      <div class="dlgFoot">Ctrl+Enter 保存 · Esc 取消 <span>💾 保存</span></div>
+    </div>
+  </div>
+  <div class="col">
+    <p class="colLabel">目标（分段式，带容器底 + 计数）</p>
+    <div class="dlg">
+      <div class="dlgHead">📄 编辑文档 <span class="x">✕</span></div>
+      <div class="meta"><span class="badge">📄 文档</span><span class="metaInfo">含表格</span><span class="dirty">可清洗</span><button class="full">⤢ 全屏</button></div>
+      <div class="tabs-new"><button class="tab-new on">原文<span class="cnt">·</span></button><button class="tab-new">清洗<span class="cnt">1.2k</span></button><button class="tab-new">Markdown<span class="cnt">1.2k</span></button></div>
+      <div class="body" style="display:flex;align-items:center;justify-content:center;color:var(--muted)">内容区（随弹窗自适应，最高 52vh）</div>
+      <div class="dlgFoot">Ctrl+Enter 保存 · Esc 取消 <span>💾 保存</span></div>
+    </div>
+  </div>
+</div>
+<ul>
+  <li>分段式样式对齐 RichEditor 工具栏（<code>--input-bg</code> 底 + 边框 + 圆角）</li>
+  <li>激活态 <code>--accent-strong</code> 加粗（浅色主题对比度达标，遵循项目 WCAG 惯例）</li>
+  <li>「原文」tab 显示「·」（不可读/原始）；清洗/Markdown 显示字数（如 <code>1.2k</code>）</li>
+</ul>
+
+<h2>二、内容区：高度解绑</h2>
+<ul>
+  <li>现状 <code>max-height: 340px</code> 写死 → 目标 <code>max-height: 52vh</code>（弹窗 85vh 内自适应）</li>
+  <li>长文档不再挤在小窗里滚，弹窗多大内容多大</li>
+</ul>
+
+<h2>三、原文态：补齐完整文档排版</h2>
+<div class="dlg">
+  <div class="dlgHead">📄 编辑文档 <span class="x">✕</span></div>
+  <div class="meta"><span class="badge">📄 文档</span><span class="metaInfo">含表格</span><button class="full">⤢ 全屏</button></div>
+  <div class="tabs-new"><button class="tab-new on">原文</button><button class="tab-new">清洗</button><button class="tab-new">Markdown</button></div>
+  <div class="body">
+    <div class="doc">
+      <h1>一、项目背景</h1>
+      <p>这是一段<strong>普通段落</strong>文字，用于展示行高与间距。文档编辑器将按照真实文档的排版呈现，而不是一坨挤在一起的文字。</p>
+      <blockquote>引用块：关键决策说明，左侧强调条 + 浅色底。</blockquote>
+      <h2>1.1 任务清单</h2>
+      <ul>
+        <li>第一项待办：样式升级</li>
+        <li>第二项待办：表格增强</li>
+      </ul>
+      <p>行内代码示例 <code>update_history_rich</code> 与代码块：</p>
+      <pre>const stored = htmlRef.current;
+await invoke("update_history_rich", { id, htmlFragment: stored });</pre>
+      <table>
+        <thead><tr><th>模块</th><th>状态</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>原文态</td><td>✅</td><td>排版补齐</td></tr>
+          <tr><td>表格</td><td>✅</td><td>表头 + 斑马纹</td></tr>
+          <tr><td>Markdown</td><td>🔧</td><td>聚焦态微调</td></tr>
+        </tbody>
+      </table>
+      <hr>
+      <p>结尾段落 · 分割线以上展示 <code>hr</code> 样式。</p>
+    </div>
+  </div>
+  <div class="dlgFoot">Ctrl+Enter 保存 · Esc 取消 <span>💾 保存</span></div>
+</div>
+<table>
+  <tr><th>元素</th><th>现状</th><th>目标</th></tr>
+  <tr><td>标题 h1/h2/h3</td><td>只有 margin，无字号层级</td><td>17/15/13.5px 三级层级</td></tr>
+  <tr><td>段落</td><td>无间距</td><td><code>margin: 6px 0</code>，行高 1.7</td></tr>
+  <tr><td>引用块</td><td>无样式</td><td>accent 左条 + 浅色底 + 圆角</td></tr>
+  <tr><td>代码块 / 行内代码</td><td>无样式</td><td><code>--code</code> 底 + 边框 + 圆角，等宽字体</td></tr>
+  <tr><td>图片 / hr</td><td>无样式</td><td>圆角图 / 虚线分隔</td></tr>
+  <tr><td>加粗 / 链接</td><td>默认</td><td>加粗加强、链接 accent 色</td></tr>
+</table>
+
+<h2>四、表格增强</h2>
+<ul>
+  <li><b>表头</b>：accent 浅底加深 + 加粗（<code>position: sticky</code> 长表滚动时表头固定）</li>
+  <li><b>斑马纹</b>：偶数行 accent 3% 浅底，长表格行序可读</li>
+  <li><b>hover</b>：行悬停 accent 7% 高亮</li>
+  <li>内边距 4px → 6px 10px，单元格不挤</li>
+</ul>
+
+<h2>五、清洗 / Markdown 态微调</h2>
+<ul>
+  <li><b>清洗态</b>：文字色 <code>--text-secondary</code> → 更清晰的 <code>--secondary</code>；套容器（<code>--input-bg</code> 底 + 圆角），不再像"调试输出"</li>
+  <li><b>Markdown 态</b>：聚焦态加 accent 边框 + 2px 光晕（对齐项目 input 聚焦惯例）；字号 12 → 12.5px、行高 1.7</li>
+</ul>
+
+<div class="warn"><b>边界</b>：三态 <code>min-height</code> 保持（原文态可滚动）；「可清洗」徽标与全屏按钮不变；不引入任何新依赖、不改 DocEditor.tsx 结构。</div>
+
+</div>
+</body>
+</html>

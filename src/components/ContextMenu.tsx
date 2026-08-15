@@ -457,6 +457,8 @@ export function createCardMenuItems(opts: {
   onPaste: () => void;
   onPin: () => void;
   onDelete: () => void;
+  /** 图片且有 OCR 文本时：复制识别文字（调用方仅在 getImageOcrFullText 非空时注入） */
+  onCopyOcr?: () => void;
   onEdit?: () => void;
   onEditTags?: () => void;
   onMoveToGroup?: () => void;
@@ -606,6 +608,11 @@ function getTypeTools(opts: CardMenuOpts, primaryKey: string | null): MenuItem[]
   const tools: MenuItem[] = [];
   const st = opts.itemSubType;
 
+  // 图片且有 OCR 文本：复制识别文字（首位——图片专属的复制能力，调用方仅在
+  // getImageOcrFullText 非空时注入回调；与通用「复制到剪贴板」复制图片区分）
+  if (opts.itemType === "image" && opts.onCopyOcr) {
+    tools.push({ icon: <FileText size={14} />, label: "复制识别文字", onClick: opts.onCopyOcr });
+  }
   // 编辑入口（主操作不是编辑时，作为次级工具）
   if (opts.onEdit && primaryKey !== "edit") {
     tools.push({ icon: <Pencil size={14} />, label: editLabelFor(st), onClick: opts.onEdit });

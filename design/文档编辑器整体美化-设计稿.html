@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda · 文档编辑器整体美化 · 设计稿（方案 A）</title>
+<style>
+  :root{--bg:#f6f7f9;--panel:#fff;--text:#1f2328;--muted:#6b7280;--secondary:#4b5563;
+    --border:#e3e5e8;--accent:#3b82f6;--accent-strong:#1d4ed8;--hover:rgba(0,0,0,.045);
+    --input-bg:rgba(0,0,0,.02);--code:#f6f8fa;--card-bg:#fff;--card-shadow:0 1px 3px rgba(0,0,0,.06);
+    --amber:#b45309}
+  @media(prefers-color-scheme:dark){:root{--bg:#16181c;--panel:#1d2026;--text:#e6e8ea;--muted:#9aa2ad;
+    --secondary:#c3c9d2;--border:#2c3038;--accent:#60a5fa;--accent-strong:#93c5fd;
+    --hover:rgba(255,255,255,.05);--input-bg:rgba(255,255,255,.03);--code:#14161a;
+    --card-bg:#1a1d24;--card-shadow:0 2px 8px rgba(0,0,0,.25);--amber:#fbbf24}}
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px 20px 60px;background:var(--bg);color:var(--text);
+    font:13px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:980px;margin:0 auto}
+  h1{font-size:19px;margin:0 0 6px}
+  h2{font-size:14px;margin:30px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+  .lead{color:var(--muted);font-size:12px;margin:0 0 4px}
+  .meta{color:var(--muted);font-size:11px;margin:0 0 20px}
+  code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;background:var(--code);padding:1px 4px;border-radius:4px}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin:8px 0}
+  th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{font-size:11px;color:var(--muted);font-weight:600}
+  .grid{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
+  .col{flex:1;min-width:340px}
+  .colLabel{font-size:11px;font-weight:600;color:var(--muted);margin:0 0 8px;letter-spacing:.5px}
+  .warn{border-left:3px solid var(--amber);background:color-mix(in srgb, var(--amber) 8%, transparent);
+    padding:10px 12px;border-radius:0 8px 8px 0;margin:10px 0;font-size:12px}
+  .ok{border-left:3px solid #15803d;background:color-mix(in srgb,#15803d 8%,transparent);
+    padding:10px 12px;border-radius:0 8px 8px 0;margin:10px 0;font-size:12px}
+
+  .dlg{width:520px;background:var(--panel);border:1px solid var(--border);border-radius:16px;
+    overflow:hidden;box-shadow:0 14px 36px rgba(0,0,0,.12)}
+  .dlgHead{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:48px;
+    border-bottom:1px solid var(--border);font-size:15px;font-weight:600}
+  .dlgHead .x{color:var(--muted);font-size:14px;cursor:pointer;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:8px}
+  .dlgFoot{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;
+    border-top:1px solid var(--border);font-size:10px;color:var(--muted)}
+
+  /* metaBar：现状（硬边框 + 方形 badge）vs 目标（柔和 + 胶囊 + 来源时间） */
+  .meta-old{display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid var(--border);font-size:12px}
+  .badge-old{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);
+    padding:2px 8px;border-radius:6px;font-weight:500}
+  .meta-new{display:flex;align-items:center;gap:8px;padding:9px 16px 10px;font-size:11px;color:var(--text-secondary)}
+  .badge-new{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;
+    padding:2px 9px;border-radius:999px;background:color-mix(in srgb,var(--accent) 14%,transparent);
+    color:var(--accent-strong)}
+  .metaInfo{color:var(--muted)}
+  .dirty{color:var(--amber);font-size:11px}
+  .metaDiv{width:1px;height:12px;background:var(--border)}
+  .metaSrc{color:var(--muted);display:inline-flex;align-items:center;gap:4px}
+  .full{margin-left:auto;background:none;border:1px solid var(--border);color:var(--muted);
+    padding:3px 10px;border-radius:6px;cursor:pointer;font-size:11px}
+
+  /* tabs：目标（图标 + 激活渐变底） */
+  .tabs{display:flex;gap:4px;padding:0 16px 8px;border-bottom:1px solid var(--border)}
+  .tab{display:inline-flex;align-items:center;gap:5px;background:none;border:1px solid transparent;
+    color:var(--muted);cursor:pointer;padding:5px 12px;font-size:12.5px;font-family:inherit;
+    border-radius:8px;transition:all .15s}
+  .tab:hover{background:var(--hover);color:var(--secondary)}
+  .tab.on{background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 10%,transparent),color-mix(in srgb,var(--accent) 4%,transparent));
+    border-color:color-mix(in srgb,var(--accent) 28%,transparent);color:var(--accent-strong);font-weight:600}
+  .tab .cnt{font-size:10px;color:var(--muted);margin-left:2px;font-weight:400}
+
+  /* 纸面容器：三态共用 */
+  .body{padding:14px 16px 16px}
+  .paper{background:var(--card-bg);border:1px solid var(--border);border-radius:12px;
+    box-shadow:var(--card-shadow);padding:16px 18px;min-height:240px;max-height:48vh;overflow-y:auto;font-size:13px;line-height:1.7}
+  .paper::-webkit-scrollbar{width:6px}
+  .paper::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+  /* 原文态排版（纸面上） */
+  .doc h1{font-size:17px;margin:14px 0 6px;line-height:1.35}
+  .doc h2{font-size:15px;margin:12px 0 5px}
+  .doc p{margin:6px 0}
+  .doc ul,.doc ol{margin:6px 0;padding-left:22px}
+  .doc blockquote{border-left:3px solid var(--accent);margin:8px 0;padding:2px 12px;
+    background:color-mix(in srgb,var(--accent) 5%,transparent);border-radius:0 6px 6px 0;color:var(--secondary)}
+  .doc pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:10px 12px;
+    overflow-x:auto;font-family:'SF Mono',Consolas,monospace;font-size:12px;margin:8px 0}
+  .doc code{font-family:'SF Mono',Consolas,monospace;font-size:12px}
+  .doc :not(pre)>code{background:var(--code);padding:1px 5px;border-radius:4px}
+  .doc table{border-collapse:collapse;width:100%;margin:8px 0;font-size:12.5px}
+  .doc th,.doc td{border:1px solid var(--border);padding:6px 10px;text-align:left}
+  .doc thead th{background:color-mix(in srgb,var(--accent) 10%,transparent);font-weight:600;position:sticky;top:0}
+  .doc tbody tr:nth-child(even){background:color-mix(in srgb,var(--accent) 3%,transparent)}
+  .doc tbody tr:hover{background:color-mix(in srgb,var(--accent) 7%,transparent)}
+
+  /* 空态 */
+  .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+    min-height:200px;color:var(--muted);font-size:12px}
+  .empty .ic{font-size:26px;opacity:.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>文档编辑器 · 整体美化（方案 A）</h1>
+<p class="lead">DocEditor 视觉语言升级到软件整体风格：metaBar 柔和化 + 胶囊徽章 + 来源/时间信息、tabs 图标化 + 激活渐变、内容区"纸面"容器、滚动条与空态补全。<b>全部主题变量驱动，7 套主题自动适配。</b></p>
+<p class="meta">2026-08-14 · 方案 A（纯 CSS + 微量 tsx）· 对齐 RichEditor metaBadge / SettingsDialog 纸面层级 · 不动弹窗外壳（dialog-solid 是密集工作型弹框的既定决策）</p>
+
+<h2>一、metaBar：柔和分层 + 胶囊徽章 + 来源时间</h2>
+<div class="grid">
+  <div class="col">
+    <p class="colLabel">现状（硬边框 + 方形 badge）</p>
+    <div class="dlg">
+      <div class="dlgHead">📄 编辑文档 <span class="x">✕</span></div>
+      <div class="meta-old"><span class="badge-old">📄 文档</span><span class="metaInfo">含表格</span><span class="dirty">可清洗</span><button class="full">⤢ 全屏</button></div>
+      <div style="padding:16px;color:var(--muted);font-size:12px">内容区…</div>
+      <div class="dlgFoot">Ctrl+Enter 保存 · Esc 取消 <span>💾 保存</span></div>
+    </div>
+  </div>
+  <div class="col">
+    <p class="colLabel">目标（无边框分层 + 胶囊 + 来源/时间）</p>
+    <div class="dlg">
+      <div class="dlgHead">📄 编辑文档 <span class="x">✕</span></div>
+      <div class="meta-new">
+        <span class="badge-new">📄 文档</span>
+        <span class="metaInfo">含表格</span>
+        <span class="dirty">可清洗</span>
+        <span class="metaDiv"></span>
+        <span class="metaSrc">📋 微信截图 · 5 分钟前</span>
+        <button class="full">⤢ 全屏</button>
+      </div>
+      <div style="padding:16px;color:var(--muted);font-size:12px">内容区…</div>
+      <div class="dlgFoot">Ctrl+Enter 保存 · Esc 取消 <span>💾 保存</span></div>
+    </div>
+  </div>
+</div>
+<ul>
+  <li>badge 方形 → <b>胶囊</b>（圆角 999px，对齐 RichEditor 的 <code>metaBadge</code>），激活色用 <code>--accent-strong</code>（对比度达标）</li>
+  <li>来源 + 时间小字（tsx 读 <code>item.source</code> + <code>relativeTime(item.time)</code>，utils 现成），分隔符用 1px 竖线</li>
+  <li>去掉 metaBar 底部硬边框——内容区已有纸面容器，层次靠"分层"而非"划线"</li>
+</ul>
+
+<h2>二、tabs：图标化 + 激活渐变底</h2>
+<div class="dlg">
+  <div class="dlgHead">📄 编辑文档 <span class="x">✕</span></div>
+  <div class="meta-new">
+    <span class="badge-new">📄 文档</span>
+    <span class="metaInfo">含表格</span>
+    <span class="metaDiv"></span>
+    <span class="metaSrc">📋 微信截图 · 5 分钟前</span>
+    <button class="full">⤢ 全屏</button>
+  </div>
+  <div class="tabs">
+    <button class="tab on">📄 原文</button>
+    <button class="tab">📃 清洗<span class="cnt">1.2k</span></button>
+    <button class="tab">✍️ Markdown<span class="cnt">1.2k</span></button>
+  </div>
+  <div style="padding:16px;color:var(--muted);font-size:12px">内容区…</div>
+  <div class="dlgFoot">Ctrl+Enter 保存 · Esc 取消 <span>💾 保存</span></div>
+</div>
+<ul>
+  <li>图标：原文 📄 / 清洗 📃 / Markdown ✍️（区分三个态的语义）</li>
+  <li>激活态：<b>accent 渐变底</b>（10% → 4%）+ 28% 描边 + <code>--accent-strong</code> 文字，胶囊式圆角（8px）</li>
+  <li>字数计数保留（清洗/Markdown）</li>
+</ul>
+
+<h2>三、内容区：三态共用"纸面"容器</h2>
+<div class="dlg">
+  <div class="dlgHead">📄 编辑文档 <span class="x">✕</span></div>
+  <div class="meta-new">
+    <span class="badge-new">📄 文档</span>
+    <span class="metaInfo">含表格</span>
+    <span class="metaDiv"></span>
+    <span class="metaSrc">📋 微信截图 · 5 分钟前</span>
+    <button class="full">⤢ 全屏</button>
+  </div>
+  <div class="tabs"><button class="tab on">📄 原文</button><button class="tab">📃 清洗</button><button class="tab">✍️ Markdown</button></div>
+  <div class="body">
+    <div class="paper">
+      <div class="doc">
+        <h1>一、项目背景</h1>
+        <p>这是一段<strong>普通段落</strong>文字，展示纸面容器上的文档排版——背景与弹窗形成层次，阅读焦点更集中。</p>
+        <blockquote>引用块：左侧强调条 + 浅色底。</blockquote>
+        <table>
+          <thead><tr><th>模块</th><th>状态</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>纸面容器</td><td>✅</td><td>三态共用</td></tr>
+            <tr><td>滚动条</td><td>✅</td><td>6px 细条</td></tr>
+          </tbody>
+        </table>
+        <pre>const stored = htmlRef.current;</pre>
+      </div>
+    </div>
+  </div>
+  <div class="dlgFoot">Ctrl+Enter 保存 · Esc 取消 <span>💾 保存</span></div>
+</div>
+<ul>
+  <li><b>纸面容器</b>：<code>--card-bg</code> 底 + 12px 圆角 + <code>--card-shadow</code>——三态（原文/清洗/Markdown）同一容器，文字浮在"纸面"上，与弹窗背景分层（对齐 SettingsDialog 的层级语言）</li>
+  <li>滚动条 6px 细条 + 圆角 thumb（对齐 CardList）</li>
+  <li>原文态排版沿用上一轮成果，在纸面上更显精致</li>
+</ul>
+
+<h2>四、空态引导</h2>
+<div class="dlg">
+  <div class="dlgHead">📄 编辑文档 <span class="x">✕</span></div>
+  <div class="meta-new"><span class="badge-new">📄 文档</span><span class="metaDiv"></span><span class="metaSrc">📋 微信截图 · 昨天</span><button class="full">⤢ 全屏</button></div>
+  <div class="tabs"><button class="tab on">📄 原文</button><button class="tab">📃 清洗</button><button class="tab">✍️ Markdown</button></div>
+  <div class="body">
+    <div class="paper"><div class="empty"><span class="ic">📄</span><span>此文档没有可显示的内容</span><span style="font-size:11px">可切换到 Markdown 态编辑</span></div></div>
+  </div>
+  <div class="dlgFoot">Ctrl+Enter 保存 · Esc 取消 <span>💾 保存</span></div>
+</div>
+<ul>
+  <li>原文/清洗均空时：图标 + 温和文案（含引导），不再是"空白一块"</li>
+</ul>
+
+<div class="ok"><b>边界</b>：弹窗外壳（dialog-solid）不动——那是密集工作型弹框的既定决策（dialog.css 42-46 行注释）；全屏按钮、保存/关闭守卫、三态逻辑零改动；新增 tsx 仅 metaBar 的来源/时间两行 + tabs 图标。</div>
+
+</div>
+</body>
+</html>

@@ -15,6 +15,7 @@ import { useAppStore } from "@/stores/appStore";
 import type { EditorProps } from "@/lib/editorRegistry";
 import { sanitizeDocHtml, htmlToMarkdown } from "@/lib/docPipeline";
 import { copyRichOnly, pasteRichGuarded, copyOnly, pasteTextGuarded } from "@/lib/api";
+import { relativeTime } from "@/lib/utils";
 import styles from "./DocEditor.module.css";
 
 type Tab = "render" | "plain" | "md";
@@ -108,12 +109,37 @@ export function DocEditor({ item, registerActions }: EditorProps) {
 
   const hasTable = /<table/i.test(originalHtml);
 
+  // tab 字数计数（清洗/Markdown 显示，1.2k 格式；原文是渲染视图无字数）
+  const fmtCount = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n));
+
+  // 空态：原文/清洗都没有可显示的内容（md 态是可编辑入口，不归空态）
+  const isEmpty = !sanitizedHtml.trim() && !plainText.trim();
+
+  // 空态引导（原文/清洗共用）
+  const EmptyHint = (
+    <div className={styles.empty}>
+      <span className={styles.emptyIcon}>📄</span>
+      <span>此文档没有可显示的内容</span>
+      <span className={styles.emptySub}>可切换到 Markdown 态编辑</span>
+    </div>
+  );
+
   return (
     <>
       <div className={styles.metaBar}>
         <span className={styles.badge}>📄 文档</span>
         {hasTable && <span className={styles.metaInfo}>含表格</span>}
         {sanitizedHtml !== originalHtml && <span className={styles.dirty}>可清洗</span>}
+        {(item.source || item.time) && (
+          <>
+            <span className={styles.metaDiv} />
+            <span className={styles.metaSrc}>
+              {item.source && `📋 ${item.source}`}
+              {item.source && item.time && " · "}
+              {item.time && relativeTime(item.time)}
+            </span>
+          </>
+        )}
         <button
           type="button"
           className={styles.fullscreenBtn}
@@ -141,31 +167,37 @@ export function DocEditor({ item, registerActions }: EditorProps) {
             className={`${styles.tab}${activeTab === t ? ` ${styles.tabActive}` : ""}`}
             onClick={() => setActiveTab(t)}
           >
-            {t === "render" ? "原文" : t === "plain" ? "清洗" : "Markdown"}
+            {t === "render" ? "📄 原文" : t === "plain" ? "📃 清洗" : "✍️ Markdown"}
+            {t === "plain" && <span className={styles.tabCount}>{fmtCount(plainText.length)}</span>}
+            {t === "md" && <span className={styles.tabCount}>{fmtCount(markdown.length)}</span>}
           </button>
         ))}
       </div>
 
       <div className={styles.content}>
-        {activeTab === "render" && (
-          <div
-            className={styles.rendered}
-            dangerouslySetInnerHTML={{
-              __html: DOMPurify.sanitize(sanitizedHtml, { ADD_ATTR: ["colspan", "rowspan"] }),
-            }}
-          />
-        )}
-        {activeTab === "plain" && (
-          <pre className={styles.plainText}>{plainText}</pre>
-        )}
-        {activeTab === "md" && (
-          <textarea
-            className={styles.mdEdit}
-            value={markdown}
-            spellCheck={false}
-            onChange={(e) => { setMarkdown(e.target.value); setMdEdited(true); }}
-          />
-        )}
+        <div className={styles.paper}>
+          {activeTab === "render" && (
+            isEmpty ? EmptyHint : (
+              <div
+                className={styles.rendered}
+                dangerouslySetInnerHTML={{
+                  __html: DOMPurify.sanitize(sanitizedHtml, { ADD_ATTR: ["colspan", "rowspan"] }),
+                }}
+              />
+            )
+          )}
+          {activeTab === "plain" && (
+            isEmpty ? EmptyHint : <pre className={styles.plainText}>{plainText}</pre>
+          )}
+          {activeTab === "md" && (
+            <textarea
+              className={styles.mdEdit}
+              value={markdown}
+              spellCheck={false}
+              onChange={(e) => { setMarkdown(e.target.value); setMdEdited(true); }}
+            />
+          )}
+        </div>
       </div>
     </>
   );

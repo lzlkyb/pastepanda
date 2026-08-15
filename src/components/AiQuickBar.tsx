@@ -31,7 +31,7 @@ import { isAiAvailable, applicableTransforms } from "@/lib/transforms";
 import { isPinnedAction } from "@/lib/recommend";
 import { matchQuickActions } from "@/lib/aiQuick";
 import { parseFilePaths } from "@/lib/utils";
-import { ocrImage } from "@/lib/api/images";
+import { ocrImageCached } from "@/lib/api/images";
 import { contentTypeLabel } from "@/lib/actionLabels";
 import { useToast } from "@/components/Toast";
 import { useAiQuickRun } from "@/hooks/useAiQuickRun";
@@ -120,6 +120,15 @@ export const AiQuickBar = memo(function AiQuickBar() {
 
   /** 单行预览：换行先压成空格，否则多行文本在单行容器里只能看到第一行 */
   const tgtPreview = useMemo(() => {
+    // 图片：优先 OCR 文字（本栏已自动识别），其次识别中提示，最后文件名。
+    // 绝不显示后端占位 "[图片] WxH"——与主窗口卡片同一语义（resolveImageCardDisplay）。
+    if (topItem?.type === "image") {
+      const ocr = ocrText.replace(/\s+/g, " ").trim();
+      if (ocr) return ocr.length > 120 ? ocr.slice(0, 120) + "…" : ocr;
+      if (ocrLoading) return "识别图片文字中…";
+      const name = (topItem.content || "").split(/[/\\]/).pop();
+      return name || "图片";
+    }
     const t = (topItem?.text || "").replace(/\s+/g, " ").trim();
     if (t) return t;
     // 图片/文件条目没正文，以前这里直接显示“（空）”。改显示**文件名**而不是完整路径：
@@ -130,7 +139,7 @@ export const AiQuickBar = memo(function AiQuickBar() {
       return names.length > 1 ? `${names[0]} 等 ${names.length} 个文件` : names[0];
     }
     return "（空）";
-  }, [topItem?.text, topItem?.content]);
+  }, [topItem?.type, topItem?.text, topItem?.content, ocrText, ocrLoading]);
 
   /**
    * 目标是否**不在当前列表**。不说清这一态，用户会以为 AI 栏在处理
@@ -204,14 +213,14 @@ export const AiQuickBar = memo(function AiQuickBar() {
   }, [topItem?.id, topItem?.text]);
 
   /**
-   * 图片条目：自动本地 OCR 暖启动（对齐 TransformHubDialog 范式，方案 A）。
+   * 图片条目：自动本地 OCR 暖启动（方案 B：走带持久化缓存的 ocrImageCached）。
    *
-   * 只要 type==="image" 且有 content（图片路径）就跑本地 OCR；图片的 item.text
-   * 是 "[图片] WxH" 占位、永远非空，不能用 !text 判断要不要 OCR。
-   * 以 OCR 文本作为 AI 栏输入，而非把图片当文件路径去推 path_name/path_fslash/path_bslash。
+   * 与主窗口卡片共用 image_ocr_cache 表：同一张图卡片/AI 栏只识别一次，
+   * 重启后直接读库秒出。空串返回=「识别过但无文字」的持久化结论，**不重试**；
+   * 仅异常（文件损坏/引擎错误）才串行重试一次。
    *
    * 代际守卫：焦点切走（topItem.id 变）即作废，避免旧 OCR 回填上一条图片。
-   * 完全本地、不受 AI 开关影响，符合隐私红线（不联网、不存储、仅本次推荐）。
+   * 完全本地、不受 AI 开关影响，符合隐私红线（不联网、仅本地识别）。
    */
   useEffect(() => {
     if (topItem?.type === "image" && topItem.content) {
@@ -222,23 +231,19 @@ export const AiQuickBar = memo(function AiQuickBar() {
       setOcrLoading(true);
       setOcrText("");
       const runOcr = async () => {
-        // 串行重试最多 2 次：OCR 偶发瞬时返回空（并发/文件尚未落盘），重试即可拿到真实文字。
-        // 串行而非并发，避免自己制造竞态。
         for (let attempt = 0; attempt < 2; attempt++) {
           if (myToken !== ocrToken) return; // 已切换到别的条目，作废本次
           try {
-            const res = await ocrImage(topItem.content);
+            const txt = (await ocrImageCached(topItem.content)).trim();
             if (myToken !== ocrToken) return;
-            const txt = (res?.fullText || "").trim();
-            if (txt) {
-              setOcrText(txt);
-              setOcrLoading(false);
-              return;
-            }
+            // 空串=识别过但无文字（缓存结论），直接结束，不重试
+            setOcrText(txt);
+            setOcrLoading(false);
+            return;
           } catch {
             if (myToken !== ocrToken) return;
           }
-          // 空结果/失败：等 400ms 再试一次（仅 1 次重试）
+          // 异常：等 400ms 再试一次（仅 1 次重试）
           if (attempt === 0) await new Promise((r) => setTimeout(r, 400));
         }
         if (myToken !== ocrToken) return;

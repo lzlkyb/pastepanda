@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda · 图片卡片「复制识别文字」双入口 · 设计稿</title>
+<style>
+  :root{--bg:#f6f7f9;--panel:#fff;--text:#1f2328;--muted:#6b7280;--border:#e3e5e8;
+    --accent:#3b82f6;--accent-light:#eff6ff;--accent-strong:#1d4ed8;
+    --green:#15803d;--green-bg:#dcfce7;--green-bd:#bbf7d0;
+    --amber:#b45309;--amber-bg:#fffbeb;--amber-bd:#fde68a;--code:#f6f8fa;--thumb:#f1f2f4}
+  @media(prefers-color-scheme:dark){:root{--bg:#16181c;--panel:#1d2026;--text:#e6e8ea;--muted:#9aa2ad;
+    --border:#2c3038;--accent:#60a5fa;--accent-light:rgba(59,130,246,.14);--accent-strong:#93c5fd;
+    --green:#4ade80;--green-bg:rgba(34,197,94,.1);--green-bd:rgba(34,197,94,.28);
+    --amber:#fbbf24;--amber-bg:rgba(245,158,11,.1);--amber-bd:rgba(245,158,11,.28);
+    --code:#14161a;--thumb:#23262e}}
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px 20px 60px;background:var(--bg);color:var(--text);
+    font:13px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:940px;margin:0 auto}
+  h1{font-size:19px;margin:0 0 6px}
+  h2{font-size:14px;margin:30px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+  .lead{color:var(--muted);font-size:12px;margin:0 0 4px}
+  .meta{color:var(--muted);font-size:11px;margin:0 0 20px}
+  code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;background:var(--code);padding:1px 4px;border-radius:4px}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin:8px 0}
+  th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{font-size:11px;color:var(--muted);font-weight:600}
+  .warn{border-left:3px solid var(--amber);background:var(--amber-bg);padding:10px 12px;
+    border-radius:0 8px 8px 0;margin:10px 0;font-size:12px}
+  .ok{border-left:3px solid var(--green);background:var(--green-bg);padding:10px 12px;
+    border-radius:0 8px 8px 0;margin:10px 0;font-size:12px}
+  .grid{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+  .col{flex:1;min-width:300px}
+  .colLabel{font-size:11px;font-weight:600;color:var(--muted);margin:0 0 8px;letter-spacing:.5px}
+
+  /* ── 卡片 + Popover 模拟（对齐 Card.tsx / CardList.module.css）── */
+  .cards{display:flex;flex-direction:column;gap:8px;width:420px;background:var(--panel);
+    border:1px solid var(--border);border-radius:12px;padding:12px}
+  .card{display:flex;align-items:flex-start;gap:10px;padding:9px 10px;border:1px solid var(--border);
+    border-radius:12px;background:var(--panel)}
+  .thumb{width:42px;height:42px;min-width:42px;min-height:42px;border-radius:12px;overflow:hidden;
+    background:var(--thumb);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px}
+  .content{flex:1;min-width:0;overflow:hidden}
+  .title{font-size:13px;font-weight:600;color:var(--text);line-height:1.4;word-break:break-word;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .title.muted{color:var(--muted);font-weight:500}
+  .sub{font-size:11px;color:var(--muted);margin-top:2px;display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden}
+  .badge{display:inline-flex;align-items:center;font-size:9.5px;font-weight:600;border-radius:4px;padding:0 5px;line-height:1.5;white-space:nowrap}
+  .badge.src{color:var(--muted);background:var(--thumb);border:1px solid var(--border)}
+  .badge.size{color:var(--muted);background:var(--panel);border:1px solid var(--border)}
+  .badge.ocr{color:var(--green);background:var(--green-bg);border:1px solid var(--green-bd)}
+  .time{margin-left:auto;font-size:11px;color:var(--muted);flex-shrink:0;padding-left:6px}
+
+  /* Popover（对齐 cardPopover：玻璃底、悬浮在卡片上方） */
+  .pop{width:420px;background:var(--panel);border:1px solid var(--border);border-radius:12px;
+    box-shadow:0 12px 32px rgba(0,0,0,.12);padding:12px;margin-top:8px}
+  .popImg{height:96px;border-radius:8px;background:linear-gradient(135deg,#667eea,#764ba2);
+    display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;margin-bottom:10px}
+  .actions{display:flex;gap:4px;border-top:1px solid var(--border);padding-top:8px}
+  .btn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:3px;padding:5px 6px;
+    border-radius:7px;border:1px solid var(--border);background:var(--panel);font-size:11px;
+    color:var(--text);cursor:pointer;white-space:nowrap}
+  .btn.new{border-color:var(--green-bd);background:var(--green-bg);color:var(--green);font-weight:600}
+  .btn.danger:hover{background:rgba(220,38,38,.1);border-color:var(--border);color:#dc2626}
+
+  /* ── 右键菜单模拟（对齐 ContextMenu 结构：icon + label + 层级）── */
+  .ctx{width:240px;background:var(--panel);border:1px solid var(--border);border-radius:10px;
+    padding:5px;box-shadow:0 12px 32px rgba(0,0,0,.12)}
+  .ctxItem{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:6px;font-size:12px;cursor:pointer}
+  .ctxItem:hover{background:var(--accent-light);color:var(--accent-strong)}
+  .ctxItem .ic{width:16px;text-align:center;font-size:13px;color:var(--muted);flex-shrink:0}
+  .ctxItem .lbl{flex:1}
+  .ctxItem.new{color:var(--green);font-weight:600}
+  .ctxItem.new .ic{color:var(--green)}
+  .ctxSep{height:1px;background:var(--border);margin:4px 6px}
+  .ctxSub{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:6px;font-size:12px;color:var(--text)}
+  .ctxSub .arrow{margin-left:auto;color:var(--muted);font-size:10px}
+  .ctxLabel{font-size:10px;color:var(--muted);font-weight:600;padding:5px 9px 2px;letter-spacing:.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>图片卡片 · 复制识别文字（双入口）</h1>
+<p class="lead">图片卡片的 OCR 文字可以一键复制了：悬停 Popover 加「复制文字」按钮 + 右键菜单加「复制识别文字」项。复制的是<b>完整 OCR 文本</b>（非截断标题），与「复制图片」互不影响。</p>
+<p class="meta">2026-08-14 · 方案 C（Popover + 右键双入口）· 仅图片类型且有识别文字时显示 · 文案/图标沿用现有风格</p>
+
+<h2>一、Popover 入口（悬停）</h2>
+<div class="grid">
+  <div class="col">
+    <p class="colLabel">现状（图片 Popover 只有 3 个按钮）</p>
+    <div class="cards">
+      <div class="card">
+        <div class="thumb">🖼</div>
+        <div class="content">
+          <div class="title">pandas 导出 Excel 时如何保留单元格格式？</div>
+          <div class="sub"><span class="badge src">📋 截图工具</span><span class="badge size">599×874</span><span class="badge ocr">已识别 28 字</span></div>
+        </div>
+        <span class="time">2 分钟前</span>
+      </div>
+      <div class="pop">
+        <div class="popImg">🖼 图片预览（缩略图放大）</div>
+        <div class="actions">
+          <button class="btn">★ 置顶</button>
+          <button class="btn">📋 复制</button>
+          <button class="btn danger">🗑 删除</button>
+        </div>
+      </div>
+    </div>
+    <p>只能复制图片本身，OCR 文字只能看不能拷。</p>
+  </div>
+  <div class="col">
+    <p class="colLabel">目标（新增「📝 复制文字」）</p>
+    <div class="cards">
+      <div class="card">
+        <div class="thumb">🖼</div>
+        <div class="content">
+          <div class="title">pandas 导出 Excel 时如何保留单元格格式？</div>
+          <div class="sub"><span class="badge src">📋 截图工具</span><span class="badge size">599×874</span><span class="badge ocr">已识别 28 字</span></div>
+        </div>
+        <span class="time">2 分钟前</span>
+      </div>
+      <div class="pop">
+        <div class="popImg">🖼 图片预览（缩略图放大）</div>
+        <div class="actions">
+          <button class="btn">★ 置顶</button>
+          <button class="btn">📋 复制</button>
+          <button class="btn new">📝 复制文字</button>
+          <button class="btn danger">🗑 删除</button>
+        </div>
+      </div>
+    </div>
+    <p>一键复制完整识别文字，toast「已复制识别文字」。<b>绿色高亮</b>（同 OCR 徽标色系），与「复制图片」的普通按钮区分——用户一眼知道这是文字操作。</p>
+  </div>
+</div>
+<p class="warn"><b>显示条件</b>：仅当该图片<b>有识别文字</b>时出现。识别中 / 未识别到文字 / 失败时不显示（避免无意义的按钮）——与副行 OCR 徽标完全同源同判据。</p>
+
+<h2>二、右键菜单入口</h2>
+<div class="grid">
+  <div class="col">
+    <p class="colLabel">现状（图片右键：变换区只有 Markdown/Base64）</p>
+    <div class="ctx">
+      <div class="ctxItem"><span class="ic">🖼</span><span class="lbl">粘贴为 Markdown 图片</span></div>
+      <div class="ctxSep"></div>
+      <div class="ctxItem"><span class="ic">📋</span><span class="lbl">复制到剪贴板</span><span class="arrow">›</span></div>
+      <div class="ctxItem"><span class="ic">📌</span><span class="lbl">粘贴到前台</span></div>
+      <div class="ctxItem"><span class="ic">🧷</span><span class="lbl">粘贴并变换</span><span class="arrow">›</span></div>
+      <div class="ctxItem"><span class="ic">📄</span><span class="lbl">粘贴为 Markdown 图片</span></div>
+      <div class="ctxItem"><span class="ic">🔢</span><span class="lbl">粘贴为 Base64</span></div>
+      <div class="ctxSep"></div>
+      <div class="ctxItem"><span class="ic">⋯</span><span class="lbl">更多操作</span><span class="arrow">›</span></div>
+    </div>
+  </div>
+  <div class="col">
+    <p class="colLabel">目标（类型工具区首位新增「复制识别文字」）</p>
+    <div class="ctx">
+      <div class="ctxItem"><span class="ic">🖼</span><span class="lbl">粘贴为 Markdown 图片</span></div>
+      <div class="ctxSep"></div>
+      <div class="ctxItem"><span class="ic">📋</span><span class="lbl">复制到剪贴板</span></div>
+      <div class="ctxItem"><span class="ic">📌</span><span class="lbl">粘贴到前台</span></div>
+      <div class="ctxItem"><span class="ic">🧷</span><span class="lbl">粘贴并变换</span><span class="arrow">›</span></div>
+      <div class="ctxSep"></div>
+      <div class="ctxItem new"><span class="ic">📄</span><span class="lbl">复制识别文字</span></div>
+      <div class="ctxItem"><span class="ic">🖼</span><span class="lbl">粘贴为 Markdown 图片</span></div>
+      <div class="ctxItem"><span class="ic">🔢</span><span class="lbl">粘贴为 Base64</span></div>
+      <div class="ctxSep"></div>
+      <div class="ctxItem"><span class="ic">⋯</span><span class="lbl">更多操作</span><span class="arrow">›</span></div>
+    </div>
+  </div>
+</div>
+<p class="warn"><b>位置说明</b>：放在类型工具区（getTypeTools 图片分支）<b>首位</b>、Markdown/Base64 之前——它是图片专属的「复制」能力，与通用「复制到剪贴板」（复制图片）在同一菜单里靠分组区分，用户不会混淆。</p>
+
+<h2>三、行为与文案</h2>
+<table>
+  <tr><th>项</th><th>约定</th></tr>
+  <tr><td><b>复制内容</b></td><td><b>完整 OCR 文本</b>（item.ocr_text ?? 前端识别结果，与 resolveImageCardDisplay 同源同判据）——不是截断的卡片标题</td></tr>
+  <tr><td><b>复制方式</b></td><td>复用 <code>navigator.clipboard.writeText</code> / 兜底 <code>copyToClipboard</code>（utils，全项目收口版）</td></tr>
+  <tr><td><b>成功 toast</b></td><td>「已复制识别文字」（与「已复制图片」明确区分）</td></tr>
+  <tr><td><b>失败 toast</b></td><td>「复制失败」（沿现有错误样式）</td></tr>
+  <tr><td><b>显示条件</b></td><td>仅 <code>type==="image"</code> 且 OCR 文本非空；识别中/无文字/失败均不显示</td></tr>
+  <tr><td><b>与复制图片的关系</b></td><td>互不影响：原「复制」/「复制到剪贴板」仍复制图片，新入口复制文字</td></tr>
+</table>
+
+<div class="ok">
+<b>双入口共用同一收口函数</b>（规则 #11）：<code>copyImageOcrText(item, ocrState)</code> —— 获取完整文本 + 写入剪贴板 + toast 只写一份，Popover 按钮和右键菜单都调它。右键菜单的 <code>menuItems</code> useMemo 依赖需补 <code>ocrState</code>，保证识别完成后菜单项实时出现。
+</div>
+
+<h2>四、实现要点</h2>
+<table>
+  <tr><th>文件</th><th>改动</th></tr>
+  <tr><td><code>src/lib/utils.ts</code></td><td>加 <code>getImageOcrFullText(item, ocrState)</code>（完整文本获取，非空返回）+ <code>hasImageOcrText</code> 判据</td></tr>
+  <tr><td><code>src/components/Card.tsx</code></td><td>Popover 按钮区：有文字时插「📝 复制文字」按钮（绿色高亮，flex:1 与现有按钮同宽）；点击复制 + toast</td></tr>
+  <tr><td><code>src/components/ContextMenu.tsx</code></td><td>图片分支（getTypeTools）首位加「复制识别文字」项（有文字时）</td></tr>
+  <tr><td><code>src/components/Card.tsx</code>（CardWithContext）</td><td><code>menuItems</code> useMemo 依赖补 <code>ocrState</code>，注入新回调</td></tr>
+  <tr><td>测试</td><td>Vitest：<code>getImageOcrFullText</code>（完整文本/截断标题区分、null/空串/undefined 分支）</td></tr>
+</table>
+
+</div>
+</body>
+</html>

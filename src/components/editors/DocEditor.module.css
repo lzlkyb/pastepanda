@@ -1,20 +1,33 @@
-/* DocEditor.module.css — 用项目真实 CSS 变量（theme.css 定义的令牌） */
+/* DocEditor.module.css — 用项目真实 CSS 变量（theme.css 定义的令牌）
+ * v3（2026-08-14）：整体美化（方案 A）——
+ *  - metaBar 柔和分层：胶囊徽章 + 来源/时间信息，去硬边框
+ *  - tabs 图标化 + 激活渐变底
+ *  - 内容区三态共用「纸面」容器（--card-bg + 圆角 + 阴影，与弹窗分层）
+ *  - 滚动条细条化、空态引导
+ */
 
+/* ── metaBar：无硬边框的柔和分层 ── */
 .metaBar {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--border-color);
-  font-size: 12px;
+  padding: 9px 16px 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
 }
 
+/* 胶囊徽章（对齐 RichEditor metaBadge：圆角 999px） */
 .badge {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--accent);
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  /* accent 压浅色底对比度不足 4.5:1，用加深版 --accent-strong */
+  color: var(--accent-strong);
 }
 
 .metaInfo {
@@ -24,6 +37,23 @@
 .dirty {
   color: var(--warning);
   font-size: 11px;
+}
+
+/* 来源/时间分隔竖线 */
+.metaDiv {
+  width: 1px;
+  height: 12px;
+  background: var(--border-color);
+}
+
+.metaSrc {
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
 }
 
 .fullscreenBtn {
@@ -41,94 +71,229 @@
   border-color: var(--accent);
 }
 
+/* ── tabs：图标 + 激活渐变底（胶囊式圆角）── */
 .tabs {
   display: flex;
-  gap: 2px;
-  padding: 0 16px;
+  gap: 4px;
+  padding: 0 16px 8px;
   border-bottom: 1px solid var(--border-color);
 }
 
 .tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
+  border: 1px solid transparent;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 8px 14px;
-  font-size: 13px;
+  padding: 5px 12px;
+  font-size: 12.5px;
   font-family: inherit;
-  transition: color 0.15s, border-color 0.15s;
+  border-radius: 8px;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
 }
-.tab:hover { color: var(--text-secondary); }
+.tab:hover {
+  background: var(--hover, rgba(0, 0, 0, 0.04));
+  color: var(--text-secondary);
+}
 
 .tabActive {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 10%, transparent),
+    color-mix(in srgb, var(--accent) 4%, transparent)
+  );
+  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+  /* accent 压浅色底对比度不足 4.5:1，激活态用加深版 --accent-strong */
+  color: var(--accent-strong);
+  font-weight: 600;
 }
 
+/* 清洗/Markdown tab 的字数计数（如 1.2k） */
+.tabCount {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: 2px;
+  font-weight: 400;
+}
+
+/* ── 内容区：外层留白，内层纸面容器（三态共用）── */
 .content {
-  padding: 16px;
-  min-height: 220px;
-  max-height: 340px;
+  padding: 14px 16px 16px;
+}
+
+.paper {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: var(--glass-card-shadow, 0 1px 3px rgba(0, 0, 0, 0.06));
+  padding: 16px 18px;
+  min-height: 240px;
+  max-height: 48vh;
   overflow-y: auto;
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.7;
 }
+/* 细滚动条（对齐 CardList） */
+.paper::-webkit-scrollbar { width: 6px; }
+.paper::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
 
-/* 原文 tab：渲染后的 HTML */
+/* ── 原文 tab：完整文档排版（在纸面上）── */
+.rendered {
+  color: var(--text-primary);
+}
 .rendered :global(h1),
 .rendered :global(h2),
 .rendered :global(h3) {
-  margin: 8px 0 4px;
   color: var(--text-primary);
+  line-height: 1.35;
 }
-.rendered :global(table) {
-  border-collapse: collapse;
-  width: 100%;
+.rendered :global(h1) {
+  font-size: 17px;
+  margin: 14px 0 6px;
+}
+.rendered :global(h2) {
+  font-size: 15px;
+  margin: 12px 0 5px;
+}
+.rendered :global(h3) {
+  font-size: 13.5px;
+  margin: 10px 0 4px;
+}
+.rendered :global(p) {
+  margin: 6px 0;
+}
+.rendered :global(ul),
+.rendered :global(ol) {
+  margin: 6px 0;
+  padding-left: 22px;
+}
+.rendered :global(li) {
+  margin: 2px 0;
+}
+.rendered :global(blockquote) {
+  border-left: 3px solid var(--accent);
+  margin: 8px 0;
+  padding: 2px 12px;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  border-radius: 0 6px 6px 0;
+  color: var(--text-secondary);
+}
+.rendered :global(pre) {
+  background: var(--input-bg, rgba(0, 0, 0, 0.03));
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-family: 'SF Mono', Consolas, 'Cascadia Code', monospace;
+  font-size: 12px;
+  line-height: 1.6;
   margin: 8px 0;
 }
-.rendered :global(th),
-.rendered :global(td) {
-  border: 1px solid var(--border-color);
-  padding: 4px 8px;
-  text-align: left;
+.rendered :global(code) {
+  font-family: 'SF Mono', Consolas, 'Cascadia Code', monospace;
+  font-size: 12px;
 }
-.rendered :global(th) {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+.rendered :global(:not(pre) > code) {
+  background: var(--input-bg, rgba(0, 0, 0, 0.04));
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.rendered :global(img) {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 6px 0;
+}
+.rendered :global(hr) {
+  border: none;
+  border-top: 1px dashed var(--border-color);
+  margin: 12px 0;
+}
+.rendered :global(strong) {
+  color: var(--text-primary);
+  font-weight: 700;
 }
 .rendered :global(a) {
   color: var(--accent);
 }
-.rendered :global(ul),
-.rendered :global(ol) {
-  padding-left: 20px;
-  margin: 4px 0;
+
+/* ── 表格增强：表头加深 sticky + 斑马纹 + hover ── */
+.rendered :global(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+  font-size: 12.5px;
+}
+.rendered :global(th),
+.rendered :global(td) {
+  border: 1px solid var(--border-color);
+  padding: 6px 10px;
+  text-align: left;
+}
+.rendered :global(thead th) {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  font-weight: 600;
+  color: var(--text-primary);
+  /* 长表格滚动时表头固定（.paper 是滚动上下文） */
+  position: sticky;
+  top: 0;
+}
+.rendered :global(tbody tr:nth-child(even)) {
+  background: color-mix(in srgb, var(--accent) 3%, transparent);
+}
+.rendered :global(tbody tr:hover) {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
 
-/* 清洗 tab */
+/* ── 清洗 tab：纸面上的纯文字（容器由 .paper 承担）── */
 .plainText {
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-family: 'SF Mono', Consolas, 'Cascadia Code', monospace;
-  font-size: 12px;
+  font-size: 12.5px;
+  line-height: 1.8;
+  margin: 0;
 }
 
-/* Markdown tab：可编辑 */
+/* ── Markdown tab：可编辑，聚焦光晕对齐 input 惯例 ── */
 .mdEdit {
   width: 100%;
   min-height: 200px;
-  background: var(--input-bg, rgba(0, 0, 0, 0.15));
+  background: var(--input-bg, rgba(0, 0, 0, 0.02));
   border: 1px solid var(--border-color);
   border-radius: 8px;
   color: var(--text-secondary);
   font-family: 'SF Mono', Consolas, 'Cascadia Code', monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  padding: 10px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  padding: 12px;
   resize: vertical;
   outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 .mdEdit:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* ── 空态引导（原文/清洗均空）── */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 200px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.emptyIcon {
+  font-size: 26px;
+  opacity: 0.6;
+}
+.emptySub {
+  font-size: 11px;
+  opacity: 0.8;
 }

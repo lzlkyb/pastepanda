@@ -320,20 +320,54 @@ pub struct OcrResult {
 /// 对图片文件执行 OCR 文字识别（Windows OCR 引擎）
 /// 使用 async + spawn_blocking 避免阻塞主线程导致 UI 卡死
 #[tauri::command]
-pub async fn ocr_image(path: String) -> Result<OcrResult, String> {
-    tokio::task::spawn_blocking(move || ocr_image_impl(&path))
+pub async fn ocr_image(store: State<'_, DataStore>, path: String) -> Result<OcrResult, String> {
+    let path_inner = path.clone();
+    let result = tokio::task::spawn_blocking(move || ocr_image_impl(&path_inner))
         .await
-        .map_err(|e| format!("OCR 任务失败: {}", e))?
+        .map_err(|e| format!("OCR 任务失败: {}", e))??;
+    // 识别成功后顺手写缓存：**key 必须是原始 path（与 history.content 同源字符串）**，
+    // 不能拿 canonicalize 结果当 key——Windows 上它带 `\\?\` 前缀，而历史回填查询
+    // 用的是 content 原值，两端对不上就永远查不到（实测 bug）。
+    // 写缓存失败只跳过，不影响识别结果本身。
+    if let Err(e) = store.set_ocr_text(&path, &result.full_text) {
+        log::warn!("[OCR] 缓存写入失败 ({}): {}", path, e);
+    }
+    Ok(result)
 }
 
+/// 带持久化缓存的 OCR：只返回识别全文（主窗口卡片标题用）。
+///
+/// 与 `ocr_image` 的区别：
+/// - 查库优先——命中（含「识别过但无文字」的空串命中）直接返回，零识别开销；
+/// - 只返回 `full_text`，不返回词坐标框（框选功能继续用 `ocr_image`）；
+/// - 识别前做**图像预处理**（小图放大）提升 Windows OCR 准确率——纯文本消费
+///   不需要坐标，预处理不会像坐标版那样造成词框与原始图错位。
+///
+/// 缓存 key 用**原始 path**（与 history.content 同源，见 ocr_image 写缓存注释）；
+/// 不命中才本地识别并入库，之后所有路径（历史 JOIN 回填 / 再次调用）都走缓存。
+#[tauri::command]
+pub async fn ocr_image_cached(store: State<'_, DataStore>, path: String) -> Result<String, String> {
+    // 先查库：缓存 key 与 history.content 完全同串，回填与懒触发天然一致。
+    // 未校验路径也能查（缓存查询无害）；识别前仍有 validate + 尺寸校验兜底。
+    if let Some(cached) = store.get_ocr_text(&path)? {
+        return Ok(cached);
+    }
+    // 校验拿 canonical 判存在性/类型/尺寸；失败即返回，不触发识别。
+    validate_image_file_path(&path)?;
+    check_image_decode_limits(&std::path::Path::new(&path))?;
+    let path_inner = path.clone();
+    let result = tokio::task::spawn_blocking(move || ocr_image_cached_impl(&path_inner))
+        .await
+        .map_err(|e| format!("OCR 任务失败: {}", e))??;
+    store.set_ocr_text(&path, &result)?;
+    Ok(result)
+}
+
+/// 坐标版 OCR（框选功能用）：校验 + WinRT 识别，返回词坐标框。
+/// **不做图像预处理**——词框坐标必须与原始图片精确对应，
+/// 预处理（放大）会让坐标错位。预处理只走 `ocr_image_cached_impl`。
 #[cfg(target_os = "windows")]
 fn ocr_image_impl(path: &str) -> Result<OcrResult, String> {
-    use windows::core::HSTRING;
-    use windows::Globalization::Language;
-    use windows::Graphics::Imaging::BitmapDecoder;
-    use windows::Media::Ocr::OcrEngine;
-    use windows::Storage::{FileAccessMode, StorageFile};
-
     // 修复 C16/C18 同类问题：OCR 通道此前无任何路径校验，可读取任意文件。
     // 统一走白名单 + canonicalize（兼防 UNC 凭据泄漏），并做头部尺寸校验防解压炸弹。
     let canonical = validate_image_file_path(path)?;
@@ -343,9 +377,61 @@ fn ocr_image_impl(path: &str) -> Result<OcrResult, String> {
     // 而 WinRT 的 StorageFile::GetFileFromPathAsync 只接受标准 Win32 路径（C:\...），
     // 喂入 `\\?\...` 会报 ERROR_INVALID_NAME (0x800700A1)。此处剥掉前缀再交给 WinRT。
     let canonical_str = strip_verbatim_prefix(&canonical);
+    ocr_winrt_from_file(&canonical_str)
+}
+
+/// 文本版 OCR（卡片标题 / AI 栏）：校验 + **图像预处理**（小图放大）+ WinRT 识别。
+/// 只返回 full_text；预处理提升 Windows OCR 对小字号/低分辨率截图的识别准确率。
+#[cfg(target_os = "windows")]
+fn ocr_image_cached_impl(path: &str) -> Result<String, String> {
+    let prepared = preprocess_ocr_image(path)?;
+    let result = ocr_winrt_from_file(&prepared.0.to_string_lossy())?;
+    drop(prepared); // RAII 清理临时文件
+    Ok(result.full_text)
+}
+
+/// 图像预处理：小图放大（Windows OCR 对小字号识别差，放大直接缓解；大图不动省时间）。
+///
+/// - 触发条件：长边 < 1000px → Lanczos3 放大 2x（放大后长边 < 2000，像素 < 4MP，安全）；
+/// - 保持原色彩类型保存为临时 PNG：BitmapDecoder 解码后得到引擎可接受的
+///   BGRA8 SoftwareBitmap（灰度化需转 RGBA8 防格式拒绝，第一版不做，实测后再加）；
+/// - 临时文件用 RAII guard 删除（drop 即清理，异常路径不泄漏）。
+fn preprocess_ocr_image(path: &str) -> Result<(std::path::PathBuf, TempPng), String> {
+    use image::imageops::FilterType;
+    use image::GenericImageView;
+
+    let img = image::open(path).map_err(|e| format!("预处理解码失败: {e}"))?;
+    let (w, h) = img.dimensions();
+    let scaled = if w.max(h) < 1000 {
+        img.resize(w.saturating_mul(2), h.saturating_mul(2), FilterType::Lanczos3)
+    } else {
+        img
+    };
+    let tmp = std::env::temp_dir().join(format!("pastepanda_ocr_{}.png", uuid::Uuid::new_v4()));
+    scaled.save(&tmp).map_err(|e| format!("预处理保存失败: {e}"))?;
+    Ok((tmp.clone(), TempPng(tmp)))
+}
+
+/// 临时 PNG 文件的 RAII 清理守卫：drop 时删除（识别完成 / 中途报错都不泄漏）。
+struct TempPng(std::path::PathBuf);
+impl Drop for TempPng {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// WinRT OCR 核心：对**标准 Win32 路径**（已 strip `\\?\` 前缀）执行识别。
+/// 入参路径已由调用方完成白名单/存在性/尺寸校验。
+#[cfg(target_os = "windows")]
+fn ocr_winrt_from_file(win32_path: &str) -> Result<OcrResult, String> {
+    use windows::core::HSTRING;
+    use windows::Globalization::Language;
+    use windows::Graphics::Imaging::BitmapDecoder;
+    use windows::Media::Ocr::OcrEngine;
+    use windows::Storage::{FileAccessMode, StorageFile};
 
     // 1. 用 StorageFile 打开图片文件
-    let file = StorageFile::GetFileFromPathAsync(&HSTRING::from(canonical_str))
+    let file = StorageFile::GetFileFromPathAsync(&HSTRING::from(win32_path))
         .map_err(|e| format!("打开文件失败: {}", e))?
         .get()
         .map_err(|e| format!("等待文件打开失败: {}", e))?;
@@ -447,6 +533,11 @@ fn ocr_image_impl(_path: &str) -> Result<OcrResult, String> {
     Err("OCR 功能仅支持 Windows 系统".to_string())
 }
 
+#[cfg(not(target_os = "windows"))]
+fn ocr_image_cached_impl(_path: &str) -> Result<String, String> {
+    Err("OCR 功能仅支持 Windows 系统".to_string())
+}
+
 // ===== 置顶图片（原生 Windows 窗口） =====
 
 /// 创建原生 Windows 窗口显示置顶图片（GDI 渲染，不依赖 WebView）
@@ -466,4 +557,57 @@ pub fn close_pinned_image() -> Result<(), String> {
     log::info!("[pinned-image] close_pinned_image 被调用");
     crate::pinned_window::close_current_window();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::GenericImageView;
+
+    /// 生成一张指定尺寸的灰色渐变 PNG（用于验证预处理缩放逻辑）
+    fn make_png(path: &std::path::Path, w: u32, h: u32) {
+        let img = image::RgbImage::from_fn(w, h, |x, y| {
+            let v = ((x.wrapping_add(y)) % 255) as u8;
+            image::Rgb([v, v, v])
+        });
+        img.save(path).expect("测试图片保存失败");
+    }
+
+    /// 小图（长边 < 1000）→ 放大 2x；临时文件由 RAII guard 清理
+    #[test]
+    fn test_preprocess_scales_small_image() {
+        let dir = std::env::temp_dir();
+        let src = dir.join(format!("pp_ocr_src_{}.png", uuid::Uuid::new_v4()));
+        make_png(&src, 300, 200);
+
+        let (tmp, guard) = preprocess_ocr_image(src.to_string_lossy().as_ref()).expect("预处理失败");
+        let img = image::open(&tmp).expect("预处理产物打不开");
+        assert_eq!(img.dimensions(), (600, 400), "长边 300 < 1000 应放大 2x");
+        assert!(tmp.exists(), "预处理临时文件应存在");
+
+        drop(guard);
+        assert!(!tmp.exists(), "RAII guard drop 后临时文件应被删除");
+        let _ = std::fs::remove_file(&src);
+    }
+
+    /// 大图（长边 ≥ 1000）→ 不放大（省时间，避免无收益的像素翻倍）
+    #[test]
+    fn test_preprocess_keeps_large_image() {
+        let dir = std::env::temp_dir();
+        let src = dir.join(format!("pp_ocr_big_{}.png", uuid::Uuid::new_v4()));
+        make_png(&src, 2000, 1000);
+
+        let (tmp, guard) = preprocess_ocr_image(src.to_string_lossy().as_ref()).expect("预处理失败");
+        let img = image::open(&tmp).expect("预处理产物打不开");
+        assert_eq!(img.dimensions(), (2000, 1000), "长边 2000 ≥ 1000 不应放大");
+        drop(guard);
+        let _ = std::fs::remove_file(&src);
+    }
+
+    /// 预处理失败（文件不存在）→ 返回 Err，不产生临时文件
+    #[test]
+    fn test_preprocess_missing_file_errors() {
+        let missing = std::env::temp_dir().join("pp_ocr_no_such_file.png");
+        assert!(preprocess_ocr_image(missing.to_string_lossy().as_ref()).is_err());
+    }
 }

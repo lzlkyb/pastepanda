@@ -31,6 +31,7 @@ fn make_item(id: &str, text: &str, time: &str, item_type: &str) -> HistoryItem {
         source_icon: None,
         content_type: None,
         tags: Vec::new(),
+        ocr_text: None,
     }
 }
 

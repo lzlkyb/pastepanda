@@ -1,7 +1,7 @@
 import { memo, useState, useCallback, useContext, useRef, useEffect, useMemo, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
-import { relativeTime, parseFilePaths } from "@/lib/utils";
+import { relativeTime, parseFilePaths, resolveImageCardDisplay, getImageOcrFullText, copyToClipboard, type ImageOcrState } from "@/lib/utils";
 import { getContentTypeMeta, isCodeLike } from "@/lib/contentTypes";
 import { detectColor } from "@/lib/color";
 import { maskSecretText } from "@/lib/secret";
@@ -26,6 +26,23 @@ import { Pin, ImageIcon, Images, Link2, AtSign, Code2, Phone, FileText, Terminal
 import styles from "./CardList.module.css";
 
 const LazyMdRenderer = lazy(() => import("@/components/MarkdownRenderer").then(m => ({ default: m.MarkdownRenderer })));
+
+/**
+ * 复制图片的 OCR 识别文字（收口函数，规则 #11）。
+ * Popover「复制文字」按钮与右键「复制识别文字」项共用：
+ * 完整文本获取（getImageOcrFullText，非截断）+ 写入剪贴板（copyToClipboard 收口版）
+ * + toast 文案只写一份。无文字时静默返回（入口本就不该出现）。
+ */
+async function copyOcrTextToClipboard(
+  item: HistoryItem,
+  ocrState: ImageOcrState | undefined,
+  toast: (message: string, type?: "success" | "error") => void,
+): Promise<void> {
+  const text = getImageOcrFullText(item, ocrState);
+  if (!text) return;
+  const ok = await copyToClipboard(text);
+  toast(ok ? "已复制识别文字" : "复制失败", ok ? "success" : "error");
+}
 
 const PALETTE = ["#3B82F6", "#8B5CF6", "#EC4899", "#10B981", "#F59E0B", "#EF4444", "#06B6D4", "#6366F1"];
 
@@ -109,8 +126,8 @@ function usePinFlash(pinned: boolean): boolean {
   return flash;
 }
 
-export const Card = memo(function Card({ item, selected, onClick, onDoubleClick, index, imageState, searchKeyword, onRetryImage, pasting, menuItems, onEdit, disablePreview, stackOrder, stackDone }: {
-  item: HistoryItem; selected: boolean; onClick: (e: React.MouseEvent) => void; onDoubleClick: () => void; index: number; imageState?: ImgState; searchKeyword?: string; onRetryImage?: () => void; pasting?: boolean; menuItems?: MenuItem[]; onEdit?: (item: HistoryItem) => void; disablePreview?: boolean; stackOrder?: number; stackDone?: boolean;
+export const Card = memo(function Card({ item, selected, onClick, onDoubleClick, index, imageState, searchKeyword, onRetryImage, pasting, menuItems, onEdit, disablePreview, stackOrder, stackDone, ocrState }: {
+  item: HistoryItem; selected: boolean; onClick: (e: React.MouseEvent) => void; onDoubleClick: () => void; index: number; imageState?: ImgState; searchKeyword?: string; onRetryImage?: () => void; pasting?: boolean; menuItems?: MenuItem[]; onEdit?: (item: HistoryItem) => void; disablePreview?: boolean; stackOrder?: number; stackDone?: boolean; ocrState?: ImageOcrState;
 }) {
   const [hovered, setHovered] = useState(false);
   const [popoverFlipDown, setPopoverFlipDown] = useState(false);
@@ -129,6 +146,9 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
   // 颜色统一取自 contentTypes 映射；无特定 content_type 的纯文本保留原有哈希配色
   const iconColor = subType === "text" ? hashColor(item.text || "") : getContentTypeMeta(subType).color;
   const time = relativeTime(item.time);
+  // 图片卡片显示决策（OCR 文本 / 识别中 / 无文字 / 文件名回退 + 尺寸/OCR 徽标），
+  // 纯函数放 lib/utils.ts 便于单测；这里只消费结果。
+  const imgDisplay = item.type === "image" ? resolveImageCardDisplay(item, ocrState) : null;
   // MB 级文本先截断再扁平化，避免整块进 DOM / 高亮 split 拖垮列表（M24）
   const title = (() => {
     if (item.type === "file") {
@@ -142,6 +162,8 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
     if (item.type === "diagram") {
       return diagramTitle(parseDiagram(item.content));
     }
+    // 图片：OCR 文字 / 识别中 / 未识别到文字 / 文件名（见 resolveImageCardDisplay）
+    if (imgDisplay) return imgDisplay.title;
     // P4：密钥脱敏 — 卡片标题不展示明文，前 8 字符 + 遮罩（复制操作不受影响，仍取真实值）
     if (subType === "secret") return maskSecretText(item.text || "");
     const flat = (item.text || "").slice(0, 501).replace(/\r?\n/g, " ").trim() || "(空)";
@@ -384,6 +406,9 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
               </span>
             )}
             {item.source && <SourceBadge source={item.source} sourceIcon={item.source_icon} size="small" />}
+            {/* 图片卡片：尺寸徽标（从占位 [图片] WxH 提取）+ OCR 徽标（有识别文字时） */}
+            {imgDisplay?.sizeText && <span className={styles.cardSizeTag}>{imgDisplay.sizeText}</span>}
+            {imgDisplay?.ocrLabel && <span className={styles.cardOcrBadge}>{imgDisplay.ocrLabel}</span>}
             {parsedColor && (
               <span className={styles.colorFormatTag}>{parsedColor.format.toUpperCase()}</span>
             )}
@@ -404,7 +429,7 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
       {/* ★ 悬停 Popover 气泡弹窗（移到卡片外部，避免被 card overflow:hidden 裁剪） */}
       <AnimatePresence>
         {hovered && config.hover_mode === "popover" && !disablePreview && (
-          <CardHoverPopover item={item} imageState={imageState} subType={subType} isMd={isMd} onEdit={onEdit} onMouseEnter={enterHover} onMouseLeave={scheduleClose} flipDown={popoverFlipDown} />
+          <CardHoverPopover item={item} imageState={imageState} subType={subType} isMd={isMd} onEdit={onEdit} onMouseEnter={enterHover} onMouseLeave={scheduleClose} flipDown={popoverFlipDown} ocrState={ocrState} />
         )}
       </AnimatePresence>
 
@@ -432,6 +457,7 @@ const CardHoverPopover = memo(function CardHoverPopover({
   onMouseEnter,
   onMouseLeave,
   flipDown,
+  ocrState,
 }: {
   item: HistoryItem;
   imageState?: ImgState;
@@ -441,6 +467,7 @@ const CardHoverPopover = memo(function CardHoverPopover({
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
   flipDown?: boolean;
+  ocrState?: ImageOcrState;
 }) {
   const { toast } = useToast();
   const pinFlash = usePinFlash(item.pinned);
@@ -456,6 +483,13 @@ const CardHoverPopover = memo(function CardHoverPopover({
       toast("复制失败", "error");
     }
   }, [item, toast]);
+
+  // 复制识别文字：完整 OCR 文本（非截断标题），收口在 copyOcrTextToClipboard
+  const handleCopyOcr = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    void copyOcrTextToClipboard(item, ocrState, toast);
+  }, [item, ocrState, toast]);
 
   const handleFav = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -590,6 +624,11 @@ const CardHoverPopover = memo(function CardHoverPopover({
           <button className={styles.cardPopoverBtn} onClick={handleCopy} title="复制">
             📋 <span>复制</span>
           </button>
+          {getImageOcrFullText(item, ocrState) && (
+            <button className={`${styles.cardPopoverBtn} ${styles.cardPopoverBtnOcr}`} onClick={handleCopyOcr} title="复制识别文字">
+              📝 <span>复制文字</span>
+            </button>
+          )}
           {(item.type === "text" || item.type === "diagram") && onEdit && (
             <button className={styles.cardPopoverBtn} onClick={handleEdit} title="编辑">
               ✏️ <span>编辑</span>
@@ -681,8 +720,8 @@ const InlineCardActions = memo(function InlineCardActions({
 });
 
 /** 卡片上下文包装器（右键菜单 + 操作逻辑） */
-export const CardWithContext = memo(function CardWithContext({ item, selected, onClick, onDoubleClick, index, imageState, searchKeyword, onRetryImage, pasting, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, disablePreview, stackOrder, stackDone }: {
-  item: HistoryItem; selected: boolean; onClick: (e: React.MouseEvent) => void; onDoubleClick: () => void; index: number; imageState?: ImgState; searchKeyword?: string; onRetryImage?: () => void; pasting?: boolean; onEdit?: (item: HistoryItem) => void; onEditTags?: (item: HistoryItem) => void; onMoveToGroup?: (item: HistoryItem) => void; onQrCode?: (item: HistoryItem) => void; onRegexPreview?: (item: HistoryItem, ruleId: string) => void; onManageRegexRules?: () => void; disablePreview?: boolean; stackOrder?: number; stackDone?: boolean;
+export const CardWithContext = memo(function CardWithContext({ item, selected, onClick, onDoubleClick, index, imageState, searchKeyword, onRetryImage, pasting, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, disablePreview, stackOrder, stackDone, ocrState }: {
+  item: HistoryItem; selected: boolean; onClick: (e: React.MouseEvent) => void; onDoubleClick: () => void; index: number; imageState?: ImgState; searchKeyword?: string; onRetryImage?: () => void; pasting?: boolean; onEdit?: (item: HistoryItem) => void; onEditTags?: (item: HistoryItem) => void; onMoveToGroup?: (item: HistoryItem) => void; onQrCode?: (item: HistoryItem) => void; onRegexPreview?: (item: HistoryItem, ruleId: string) => void; onManageRegexRules?: () => void; disablePreview?: boolean; stackOrder?: number; stackDone?: boolean; ocrState?: ImageOcrState;
 }) {
   const { toast } = useToast();
 
@@ -923,6 +962,10 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
         toast("复制失败", "error");
       }
     },
+    // 图片且有 OCR 文本时：右键「复制识别文字」（收口 copyOcrTextToClipboard）
+    onCopyOcr: item.type === "image" && getImageOcrFullText(item, ocrState)
+      ? () => void copyOcrTextToClipboard(item, ocrState, toast)
+      : undefined,
     onPaste: async () => {
       // P5：doc/rich 条目粘贴保留富格式（CF_HTML），其余纯文本；
       // paste_format_default=plain 时全部退纯文本（Raycast 式全局开关）
@@ -982,9 +1025,9 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     hasUrl,
     hasAutoTags,
     pinned: item.pinned,
-  }), [item, subType, hasUrl, isFilePath, fileTarget, canQrCode, hasAutoTags, toast, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, handlePasteTransform, handleOpenHub, hubAvailable, handleAddSnippet, handleOpenUrl, handleOpenFile, handleRevealFile, handleConfirmAutoTags, handleRemoveAutoTags]);
+  }), [item, subType, hasUrl, isFilePath, fileTarget, canQrCode, hasAutoTags, toast, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, handlePasteTransform, handleOpenHub, hubAvailable, handleAddSnippet, handleOpenUrl, handleOpenFile, handleRevealFile, handleConfirmAutoTags, handleRemoveAutoTags, ocrState]);
 
   return (
-    <Card item={item} selected={selected} onClick={onClick} onDoubleClick={onDoubleClick} index={index} imageState={imageState} searchKeyword={searchKeyword} onRetryImage={onRetryImage} pasting={pasting} menuItems={menuItems} onEdit={onEdit} disablePreview={disablePreview} stackOrder={stackOrder} stackDone={stackDone} />
+    <Card item={item} selected={selected} onClick={onClick} onDoubleClick={onDoubleClick} index={index} imageState={imageState} searchKeyword={searchKeyword} onRetryImage={onRetryImage} pasting={pasting} menuItems={menuItems} onEdit={onEdit} disablePreview={disablePreview} stackOrder={stackOrder} stackDone={stackDone} ocrState={ocrState} />
   );
 });

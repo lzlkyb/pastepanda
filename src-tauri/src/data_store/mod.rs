@@ -1,6 +1,7 @@
 mod history;
 mod group;
 mod tag;
+mod image_ocr;
 mod snippet;
 mod config;
 mod ai_usage;
@@ -95,6 +96,11 @@ pub struct HistoryItem {
     /// 统一内容类型（由 ContentClassifier 在插入时计算）
     #[serde(default)]
     pub content_type: Option<String>,
+    /// 图片条目的 OCR 识别文本（image_ocr_cache 回填，仅 type=image 有值）。
+    /// 三种状态：None=从未识别过；Some("")=识别过但无文字（阻止前端反复重试）；
+    /// Some(非空)=识别结果。识别文本是本地 OCR 产物，不出本机。
+    #[serde(default)]
+    pub ocr_text: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -263,6 +269,17 @@ impl DataStore {
                 PRIMARY KEY (history_id, tag_id),
                 FOREIGN KEY (history_id) REFERENCES history(id) ON DELETE CASCADE,
                 FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+            );
+
+            -- 图片 OCR 结果缓存（见 data_store/image_ocr.rs）。
+            -- 目的：卡片标题自动显示 OCR 文字，每张图片只识别一次、重启不重跑。
+            -- full_text 为空串表示「识别过但无文字」——与「未识别过」区分，
+            -- 防止无文字图片（纯图标/照片）被反复送去识别。
+            -- 只存图片路径与识别文本，不存图片本体；文本是本地 OCR 产物，不出本机。
+            CREATE TABLE IF NOT EXISTS image_ocr_cache (
+                image_path TEXT PRIMARY KEY,
+                full_text TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS regex_rules (

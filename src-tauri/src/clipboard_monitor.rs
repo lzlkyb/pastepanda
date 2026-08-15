@@ -1199,6 +1199,7 @@ fn process_text(
             group_id: None,
             source_icon: source_icon.clone(),
             content_type: Some(ContentClassifier::content_type_from_labels(&labels).to_string()),
+            ocr_text: None,
             tags: Vec::new(),
         };
 
@@ -1344,6 +1345,7 @@ fn process_image(
         group_id: None,
         source_icon,
         content_type: Some("image".to_string()),
+        ocr_text: None,
         tags: Vec::new(),
     };
 
@@ -1445,6 +1447,7 @@ fn process_rich(
         group_id: None,
         source_icon,
         content_type: Some("rich".to_string()),
+        ocr_text: None,
         tags: Vec::new(),
     };
 
@@ -1560,6 +1563,7 @@ fn process_doc(
         group_id: None,
         source_icon,
         content_type: Some("doc".to_string()),
+        ocr_text: None,
         tags: Vec::new(),
     };
 
@@ -1648,6 +1652,7 @@ fn process_files(
             group_id: None,
             source_icon: source_icon.clone(),
             content_type: Some("file".to_string()),
+            ocr_text: None,
             tags: Vec::new(),
         };
         if let Some(ref store) = store {
@@ -1851,6 +1856,7 @@ fn run_polling_listener(
                                 ContentClassifier::content_type_from_labels(&labels).to_string(),
                             ),
                             tags: Vec::new(),
+                            ocr_text: None,
                         };
 
                         if let Some(ref store) = store {

@@ -530,6 +530,7 @@ impl LanSync {
                             source_icon: None,
                             content_type,
                             tags: Vec::new(),
+                            ocr_text: None,
                         };
 
                         let history_id = item.id.clone();
