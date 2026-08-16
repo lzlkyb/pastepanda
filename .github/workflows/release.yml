@@ -30,6 +30,7 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+          lfs: true
 
       - name: 🔑 准备签名密钥（文件路径方式）
         shell: pwsh

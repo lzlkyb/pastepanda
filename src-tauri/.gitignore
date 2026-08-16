@@ -6,5 +6,5 @@
 # will have schema files for capabilities auto-completion
 /gen/schemas
 
-# ocr-rs vendoring：预编译 MNN（约 170MB）不入库，构建时本地读取即可
-vendor/ocr-rs/3rd_party/
+# ocr-rs vendoring：预编译 MNN 通过 Git LFS 入库（单文件 ~179MB 超 GitHub 100MB 直推限制，改用 LFS）
+# vendor/ocr-rs/3rd_party/ 已取消忽略，由 .gitattributes 用 LFS 跟踪 *.lib

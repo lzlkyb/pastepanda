@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: 安装 Rust
         uses: dtolnay/rust-toolchain@stable
