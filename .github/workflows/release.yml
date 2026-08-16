@@ -30,7 +30,6 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
-          lfs: true
 
       - name: 🔑 准备签名密钥（文件路径方式）
         shell: pwsh
@@ -97,6 +96,13 @@ jobs:
           rm package-lock.json -ErrorAction SilentlyContinue
           rm -r node_modules -ErrorAction SilentlyContinue
           npm install
+
+      - name: 缓存 MNN 预编译（避免每次构建联网下载 180MB）
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/vendor/ocr-rs/3rd_party/prebuilt
+          key: ${{ runner.os }}-mnn-prebuilt-dev
+          restore-keys: ${{ runner.os }}-mnn-prebuilt-
 
       - name: 构建 Tauri 应用
         shell: pwsh

@@ -1,3 +1,0 @@
-# Git LFS：ocr-rs 预编译 MNN 静态库（单文件 ~179MB，超 GitHub 100MB 直推限制，必须用 LFS）
-vendor/ocr-rs/3rd_party/**/*.lib filter=lfs diff=lfs merge=lfs -text
-vendor/ocr-rs/3rd_party/**/*.dll filter=lfs diff=lfs merge=lfs -text
