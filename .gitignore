@@ -40,3 +40,4 @@ melody_b64.txt
 tools/__pycache__/
 # 项目记忆（工作日志，本地开发档案，不入库）
 .codebuddy/
+src-tauri/.libclang/
