@@ -265,6 +265,24 @@ npx vitest run
 cargo check --manifest-path src-tauri/Cargo.toml
 ```
 
+### OCR 引擎构建注意（重要）
+
+本项目的 OCR 基于 `ocr-rs`（PP-OCRv6，MNN 推理），已 **vendoring 进仓库**（`src-tauri/vendor/ocr-rs`），构建**完全离线**，无需联网下载预编译 MNN：
+
+- 依赖通过 `[patch.crates-io]` 指向本地 `vendor/ocr-rs`，预编译 MNN 在 `vendor/ocr-rs/3rd_party/prebuilt/`；`.gitignore` 已忽略该预编译目录（约 170MB），crate 源码入库。
+- 构建期仍需要 `libclang`（`bindgen` 生成 FFI）：`pip install libclang` 拿到 `libclang.dll`，编译前设 `LIBCLANG_PATH` 指向其目录并加入 `PATH`。这只是构建期依赖，发布版 exe 自包含。
+
+```bash
+# 示例：设置 libclang 后构建
+export LIBCLANG_PATH="$PWD/src-tauri/.libclang"   # 含 libclang.dll 的目录
+export PATH="$PATH:$LIBCLANG_PATH"
+
+npm run tauri build      # 前端 vite build → Rust 离线编译 → nsis 安装包
+```
+
+> 打包若提示 `TAURI_SIGNING_PRIVATE_KEY` 未设置，仅影响自动更新签名，不影响安装包。
+> 识别率评估、体积权衡与构建细节见 `docs/OCR引擎替换说明.md`。
+
 ---
 
 ## 🤝 贡献

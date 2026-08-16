@@ -317,7 +317,7 @@ pub struct OcrResult {
     pub full_text: String,
 }
 
-/// 对图片文件执行 OCR 文字识别（Windows OCR 引擎）
+/// 对图片文件执行 OCR 文字识别（PP-OCRv6 离线引擎，纯 Rust + MNN，模型随包发布）
 /// 使用 async + spawn_blocking 避免阻塞主线程导致 UI 卡死
 #[tauri::command]
 pub async fn ocr_image(store: State<'_, DataStore>, path: String) -> Result<OcrResult, String> {
@@ -340,8 +340,7 @@ pub async fn ocr_image(store: State<'_, DataStore>, path: String) -> Result<OcrR
 /// 与 `ocr_image` 的区别：
 /// - 查库优先——命中（含「识别过但无文字」的空串命中）直接返回，零识别开销；
 /// - 只返回 `full_text`，不返回词坐标框（框选功能继续用 `ocr_image`）；
-/// - 识别前做**图像预处理**（小图放大）提升 Windows OCR 准确率——纯文本消费
-///   不需要坐标，预处理不会像坐标版那样造成词框与原始图错位。
+/// - 引擎为 PP-OCRv6（离线、随包发布），识别准确率显著高于原 Windows 自带 OCR。
 ///
 /// 缓存 key 用**原始 path**（与 history.content 同源，见 ocr_image 写缓存注释）；
 /// 不命中才本地识别并入库，之后所有路径（历史 JOIN 回填 / 再次调用）都走缓存。
@@ -363,179 +362,131 @@ pub async fn ocr_image_cached(store: State<'_, DataStore>, path: String) -> Resu
     Ok(result)
 }
 
-/// 坐标版 OCR（框选功能用）：校验 + WinRT 识别，返回词坐标框。
-/// **不做图像预处理**——词框坐标必须与原始图片精确对应，
-/// 预处理（放大）会让坐标错位。预处理只走 `ocr_image_cached_impl`。
-#[cfg(target_os = "windows")]
+/// 坐标版 OCR（框选功能用）：校验 + PP-OCRv6 引擎识别，返回词坐标框。
+///
+/// 引擎为 PP-OCRv6（纯 Rust + MNN，模型随安装包发布，零外部依赖），跨平台可用。
+/// 不做图像预处理——词框坐标必须与原始图片精确对应。
 fn ocr_image_impl(path: &str) -> Result<OcrResult, String> {
-    // 修复 C16/C18 同类问题：OCR 通道此前无任何路径校验，可读取任意文件。
-    // 统一走白名单 + canonicalize（兼防 UNC 凭据泄漏），并做头部尺寸校验防解压炸弹。
     let canonical = validate_image_file_path(path)?;
     check_image_decode_limits(&canonical)?;
-    // 校验（白名单/存在性/尺寸）已在 validate_image_file_path 完成。
-    // 但 std::fs::canonicalize 在 Windows 上会返回带 `\\?\` 设备命名空间前缀的路径，
-    // 而 WinRT 的 StorageFile::GetFileFromPathAsync 只接受标准 Win32 路径（C:\...），
-    // 喂入 `\\?\...` 会报 ERROR_INVALID_NAME (0x800700A1)。此处剥掉前缀再交给 WinRT。
-    let canonical_str = strip_verbatim_prefix(&canonical);
-    ocr_winrt_from_file(&canonical_str)
+    ocr_recognize(&canonical, true)
 }
 
-/// 文本版 OCR（卡片标题 / AI 栏）：校验 + **图像预处理**（小图放大）+ WinRT 识别。
-/// 只返回 full_text；预处理提升 Windows OCR 对小字号/低分辨率截图的识别准确率。
-#[cfg(target_os = "windows")]
+/// 文本版 OCR（卡片标题 / AI 栏）：校验 + PP-OCRv6 引擎识别，只返回全文。
+///
+/// 与 `ocr_image` 区别同前：查库优先（见 ocr_image_cached 注释），仅返回 `full_text`。
 fn ocr_image_cached_impl(path: &str) -> Result<String, String> {
-    let prepared = preprocess_ocr_image(path)?;
-    let result = ocr_winrt_from_file(&prepared.0.to_string_lossy())?;
-    drop(prepared); // RAII 清理临时文件
+    let canonical = validate_image_file_path(path)?;
+    check_image_decode_limits(&canonical)?;
+    let result = ocr_recognize(&canonical, false)?;
     Ok(result.full_text)
 }
 
-/// 图像预处理：小图放大（Windows OCR 对小字号识别差，放大直接缓解；大图不动省时间）。
+/// 全局 OCR 引擎缓存。MNN 模型加载较重（数百 ms ~ 1s），首次识别时初始化一次，后续复用。
+static OCR_ENGINE: std::sync::OnceLock<std::sync::Mutex<ocr_rs::OcrEngine>> =
+    std::sync::OnceLock::new();
+
+/// 在候选目录中定位 OCR 模型目录：找到包含检测模型文件的目录即返回。
 ///
-/// - 触发条件：长边 < 1000px → Lanczos3 放大 2x（放大后长边 < 2000，像素 < 4MP，安全）；
-/// - 保持原色彩类型保存为临时 PNG：BitmapDecoder 解码后得到引擎可接受的
-///   BGRA8 SoftwareBitmap（灰度化需转 RGBA8 防格式拒绝，第一版不做，实测后再加）；
-/// - 临时文件用 RAII guard 删除（drop 即清理，异常路径不泄漏）。
-fn preprocess_ocr_image(path: &str) -> Result<(std::path::PathBuf, TempPng), String> {
-    use image::imageops::FilterType;
-    use image::GenericImageView;
-
-    let img = image::open(path).map_err(|e| format!("预处理解码失败: {e}"))?;
-    let (w, h) = img.dimensions();
-    let scaled = if w.max(h) < 1000 {
-        img.resize(w.saturating_mul(2), h.saturating_mul(2), FilterType::Lanczos3)
-    } else {
-        img
-    };
-    let tmp = std::env::temp_dir().join(format!("pastepanda_ocr_{}.png", uuid::Uuid::new_v4()));
-    scaled.save(&tmp).map_err(|e| format!("预处理保存失败: {e}"))?;
-    Ok((tmp.clone(), TempPng(tmp)))
-}
-
-/// 临时 PNG 文件的 RAII 清理守卫：drop 时删除（识别完成 / 中途报错都不泄漏）。
-struct TempPng(std::path::PathBuf);
-impl Drop for TempPng {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
+/// 搜索顺序（覆盖 dev / 打包后两种布局）：
+/// 1. 环境变量 `PASTEPANDA_OCR_MODELS_DIR`（调试用，强制指定）；
+/// 2. 从当前 exe 所在目录开始，逐级向上查找 `ocr_models/` 与 `resources/ocr_models/`
+///    —— 既覆盖 `tauri dev`（源码 `src-tauri/resources/ocr_models`），也覆盖安装包
+///    （Tauri 把 resources 复制到 exe 旁边的 `resources/ocr_models`）。
+fn resolve_ocr_models_dir() -> Option<std::path::PathBuf> {
+    const DET_MODEL: &str = "PP-OCRv6_small_det.mnn";
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(env_dir) = std::env::var("PASTEPANDA_OCR_MODELS_DIR") {
+        candidates.push(std::path::PathBuf::from(env_dir));
     }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let mut cur = Some(dir.to_path_buf());
+            while let Some(d) = cur {
+                candidates.push(d.join("ocr_models"));
+                candidates.push(d.join("resources").join("ocr_models"));
+                cur = d.parent().map(|p| p.to_path_buf());
+            }
+        }
+    }
+    candidates.into_iter().find(|p| p.join(DET_MODEL).is_file())
 }
 
-/// WinRT OCR 核心：对**标准 Win32 路径**（已 strip `\\?\` 前缀）执行识别。
-/// 入参路径已由调用方完成白名单/存在性/尺寸校验。
-#[cfg(target_os = "windows")]
-fn ocr_winrt_from_file(win32_path: &str) -> Result<OcrResult, String> {
-    use windows::core::HSTRING;
-    use windows::Globalization::Language;
-    use windows::Graphics::Imaging::BitmapDecoder;
-    use windows::Media::Ocr::OcrEngine;
-    use windows::Storage::{FileAccessMode, StorageFile};
-
-    // 1. 用 StorageFile 打开图片文件
-    let file = StorageFile::GetFileFromPathAsync(&HSTRING::from(win32_path))
-        .map_err(|e| format!("打开文件失败: {}", e))?
+/// 取得（惰性初始化）全局 OCR 引擎。
+fn get_ocr_engine() -> Result<&'static std::sync::Mutex<ocr_rs::OcrEngine>, String> {
+    if let Some(engine) = OCR_ENGINE.get() {
+        return Ok(engine);
+    }
+    let dir = resolve_ocr_models_dir().ok_or_else(|| {
+        "找不到 OCR 模型文件（PP-OCRv6_small_det.mnn）。请确认模型已随程序发布到 \
+         resources/ocr_models/ 目录，或通过环境变量 PASTEPANDA_OCR_MODELS_DIR 指定模型目录。"
+            .to_string()
+    })?;
+    let det = dir.join("PP-OCRv6_small_det.mnn");
+    let rec = dir.join("PP-OCRv6_small_rec.mnn");
+    let keys = dir.join("ppocr_keys_v6_small.txt");
+    let engine = ocr_rs::OcrEngine::new(det, rec, keys, None)
+        .map_err(|e| format!("OCR 引擎初始化失败: {}", e))?;
+    let _ = OCR_ENGINE.set(std::sync::Mutex::new(engine));
+    OCR_ENGINE
         .get()
-        .map_err(|e| format!("等待文件打开失败: {}", e))?;
+        .ok_or_else(|| "OCR 引擎缓存写入失败".to_string())
+}
 
-    // 2. 打开文件流 (需要 Storage_Streams feature)
-    let stream = file
-        .OpenAsync(FileAccessMode::Read)
-        .map_err(|e| format!("打开文件流失败: {}", e))?
-        .get()
-        .map_err(|e| format!("等待文件流失败: {}", e))?;
+/// 用 PP-OCRv6 引擎对图片执行识别。
+///
+/// - `with_coords = true`：返回按行分组的词坐标框（框选用，每行一个整行级文本框）；
+/// - `with_coords = false`：只返回拼接后的全文（卡片标题 / AI 栏用）。
+///
+/// PP-OCR 的检测输出为**行级**：每个识别结果是一整行文字 + 整行 bbox，故映射为
+/// 一个 `OcrLineInfo` 内含单个整行级 `OcrWordInfo`（框选高亮变为按行高亮，复制文字不受影响）。
+fn ocr_recognize(path: &std::path::Path, with_coords: bool) -> Result<OcrResult, String> {
+    let img = image::open(path).map_err(|e| format!("图片解码失败: {e}"))?;
+    let engine = get_ocr_engine()?;
+    let guard = engine
+        .lock()
+        .map_err(|_| "OCR 引擎锁已被污染（此前发生 panic），请重启应用".to_string())?;
+    let results = guard
+        .recognize(&img)
+        .map_err(|e| format!("OCR 识别失败: {}", e))?;
+    drop(guard);
 
-    // 3. 解码图片 (静态方法, 需要 Storage_Streams feature)
-    let decoder = BitmapDecoder::CreateAsync(&stream)
-        .map_err(|e| format!("创建解码器失败: {}", e))?
-        .get()
-        .map_err(|e| format!("解码图片失败: {}", e))?;
+    if !with_coords {
+        let full_text = results
+            .iter()
+            .map(|r| r.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        return Ok(OcrResult {
+            lines: Vec::new(),
+            full_text,
+        });
+    }
 
-    let bitmap = decoder
-        .GetSoftwareBitmapAsync()
-        .map_err(|e| format!("获取位图失败: {}", e))?
-        .get()
-        .map_err(|e| format!("读取位图数据失败: {}", e))?;
-
-    // 4. 创建 OCR 引擎（中文优先，回退英文）
-    let language = Language::CreateLanguage(&HSTRING::from("zh-Hans"))
-        .or_else(|_| Language::CreateLanguage(&HSTRING::from("en-US")))
-        .map_err(|_| "无法创建语言对象".to_string())?;
-
-    let engine = OcrEngine::TryCreateFromLanguage(&language)
-        .map_err(|e| format!("创建 OCR 引擎失败: {}. 请确保系统已安装中文语言包", e))?;
-
-    // 5. 执行 OCR
-    let ocr_result = engine
-        .RecognizeAsync(&bitmap)
-        .map_err(|e| format!("OCR 识别失败: {}", e))?
-        .get()
-        .map_err(|e| format!("获取 OCR 结果失败: {}", e))?;
-
-    // 6. 提取结果 (Lines/Words 需要 Foundation_Collections feature)
-    let lines = {
-        let ocr_lines = ocr_result
-            .Lines()
-            .map_err(|e| format!("获取 OCR 行失败: {}", e))?;
-        let count = ocr_lines
-            .Size()
-            .map_err(|e| format!("获取行数失败: {}", e))? as usize;
-        let mut lines_vec = Vec::with_capacity(count);
-        for i in 0..count {
-            let line = ocr_lines
-                .GetAt(i as u32)
-                .map_err(|e| format!("获取第 {} 行失败: {}", i, e))?;
-            let line_text = line.Text().unwrap_or_default().to_string();
-
-            let words_iv = line.Words().map_err(|e| format!("获取词列表失败: {}", e))?;
-            let wcount = words_iv
-                .Size()
-                .map_err(|e| format!("获取词数失败: {}", e))? as usize;
-            let mut words = Vec::with_capacity(wcount);
-            for j in 0..wcount {
-                let word = words_iv
-                    .GetAt(j as u32)
-                    .map_err(|e| format!("获取第 {}-{} 个词失败: {}", i, j, e))?;
-                let rect = word.BoundingRect().unwrap_or_default();
-                words.push(OcrWordInfo {
-                    text: word.Text().unwrap_or_default().to_string(),
-                    x: rect.X,
-                    y: rect.Y,
-                    width: rect.Width,
-                    height: rect.Height,
-                });
-            }
-            lines_vec.push(OcrLineInfo {
-                text: line_text,
-                words,
-            });
-        }
-        lines_vec
-    };
-
+    // 行级结果 → 逐行映射为 OcrLineInfo（含一个整行级词框）。
+    // PP-OCR 后处理已按阅读顺序（上→下、同高度左→右）返回，无需再排序。
+    // 注意：imageproc::rect::Rect 的 x/y/width/height 字段为私有，必须用同名方法访问。
+    let mut lines: Vec<OcrLineInfo> = Vec::with_capacity(results.len());
+    for r in &results {
+        let rect = &r.bbox.rect;
+        let text = r.text.clone();
+        lines.push(OcrLineInfo {
+            text: text.clone(),
+            words: vec![OcrWordInfo {
+                text,
+                x: rect.left() as f32,
+                y: rect.top() as f32,
+                width: rect.width() as f32,
+                height: rect.height() as f32,
+            }],
+        });
+    }
     let full_text = lines
         .iter()
         .map(|l| l.text.as_str())
         .collect::<Vec<_>>()
         .join("\n");
-
     Ok(OcrResult { lines, full_text })
-}
-
-/// 去掉 Windows 设备命名空间前缀 `\\?\`（std::fs::canonicalize 在 Windows 上会加上），
-/// 因为 WinRT StorageFile::GetFileFromPathAsync 只接受标准 Win32 路径（C:\...）。
-/// 非 Windows 平台不会出现该前缀，调用为 no-op。
-fn strip_verbatim_prefix(path: &std::path::Path) -> String {
-    let s = path.to_string_lossy().to_string();
-    s.strip_prefix(r"\\?\").map(|stripped| stripped.to_string()).unwrap_or(s)
-}
-
-#[cfg(not(target_os = "windows"))]
-fn ocr_image_impl(_path: &str) -> Result<OcrResult, String> {
-    Err("OCR 功能仅支持 Windows 系统".to_string())
-}
-
-#[cfg(not(target_os = "windows"))]
-fn ocr_image_cached_impl(_path: &str) -> Result<String, String> {
-    Err("OCR 功能仅支持 Windows 系统".to_string())
 }
 
 // ===== 置顶图片（原生 Windows 窗口） =====
@@ -559,55 +510,72 @@ pub fn close_pinned_image() -> Result<(), String> {
     Ok(())
 }
 
+/// OCR 端到端冒烟测试：加载 PP-OCRv6 模型并对 uploads/ 下的截图跑一次真实识别。
+/// 仅用于验证「模型能加载 + 引擎能跑通 + 坐标/文本能正确返回」，不依赖具体图片内容。
 #[cfg(test)]
-mod tests {
+mod ocr_smoke_tests {
     use super::*;
-    use image::GenericImageView;
+    use std::path::Path;
 
-    /// 生成一张指定尺寸的灰色渐变 PNG（用于验证预处理缩放逻辑）
-    fn make_png(path: &std::path::Path, w: u32, h: u32) {
-        let img = image::RgbImage::from_fn(w, h, |x, y| {
-            let v = ((x.wrapping_add(y)) % 255) as u8;
-            image::Rgb([v, v, v])
-        });
-        img.save(path).expect("测试图片保存失败");
-    }
-
-    /// 小图（长边 < 1000）→ 放大 2x；临时文件由 RAII guard 清理
     #[test]
-    fn test_preprocess_scales_small_image() {
-        let dir = std::env::temp_dir();
-        let src = dir.join(format!("pp_ocr_src_{}.png", uuid::Uuid::new_v4()));
-        make_png(&src, 300, 200);
+    fn smoke_ocr_engine_runs_on_sample_image() {
+        // 直接指向仓库内已下载的模型目录，避免测试时路径解析歧义
+        std::env::set_var(
+            "PASTEPANDA_OCR_MODELS_DIR",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/resources/ocr_models"),
+        );
+        // 取仓库 uploads/ 下第一张 png 作为样例（CARGO_MANIFEST_DIR 为 src-tauri，
+        // 故向上两级到达 clipboard-manager-tauri，再进 uploads）
+        let uploads = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("uploads");
+        let sample = std::fs::read_dir(&uploads)
+            .ok()
+            .and_then(|mut d| {
+                d.find_map(|e| {
+                    let p = e.ok()?.path();
+                    if p.extension().map(|x| x == "png").unwrap_or(false) {
+                        Some(p)
+                    } else {
+                        None
+                    }
+                })
+            });
+        let sample = match sample {
+            Some(p) => p,
+            None => {
+                eprintln!("跳过冒烟测试：uploads 下未找到 png 样例");
+                return;
+            }
+        };
 
-        let (tmp, guard) = preprocess_ocr_image(src.to_string_lossy().as_ref()).expect("预处理失败");
-        let img = image::open(&tmp).expect("预处理产物打不开");
-        assert_eq!(img.dimensions(), (600, 400), "长边 300 < 1000 应放大 2x");
-        assert!(tmp.exists(), "预处理临时文件应存在");
+        // 坐标版：验证模型加载成功且能返回行/词框
+        let coords = ocr_recognize(&sample, true)
+            .unwrap_or_else(|e| panic!("OCR(坐标版) 失败: {}", e));
+        println!(
+            "[OCR smoke] 坐标版：{} 行，全文长度 {} 字符",
+            coords.lines.len(),
+            coords.full_text.chars().count()
+        );
+        for (i, line) in coords.lines.iter().take(5).enumerate() {
+            if let Some(w) = line.words.first() {
+                println!(
+                    "  行{}: '{}' @ ({:.0},{:.0},{:.0}x{:.0})",
+                    i, line.text, w.x, w.y, w.width, w.height
+                );
+            }
+        }
 
-        drop(guard);
-        assert!(!tmp.exists(), "RAII guard drop 后临时文件应被删除");
-        let _ = std::fs::remove_file(&src);
-    }
-
-    /// 大图（长边 ≥ 1000）→ 不放大（省时间，避免无收益的像素翻倍）
-    #[test]
-    fn test_preprocess_keeps_large_image() {
-        let dir = std::env::temp_dir();
-        let src = dir.join(format!("pp_ocr_big_{}.png", uuid::Uuid::new_v4()));
-        make_png(&src, 2000, 1000);
-
-        let (tmp, guard) = preprocess_ocr_image(src.to_string_lossy().as_ref()).expect("预处理失败");
-        let img = image::open(&tmp).expect("预处理产物打不开");
-        assert_eq!(img.dimensions(), (2000, 1000), "长边 2000 ≥ 1000 不应放大");
-        drop(guard);
-        let _ = std::fs::remove_file(&src);
-    }
-
-    /// 预处理失败（文件不存在）→ 返回 Err，不产生临时文件
-    #[test]
-    fn test_preprocess_missing_file_errors() {
-        let missing = std::env::temp_dir().join("pp_ocr_no_such_file.png");
-        assert!(preprocess_ocr_image(missing.to_string_lossy().as_ref()).is_err());
+        // 文本版：仅返回全文
+        let text = ocr_recognize(&sample, false)
+            .unwrap_or_else(|e| panic!("OCR(文本版) 失败: {}", e));
+        assert!(
+            !text.full_text.is_empty() || coords.lines.is_empty(),
+            "若图片无文字属正常；有文字则应被识别出来"
+        );
+        println!("[OCR smoke] 全文预览:\n{}", text.full_text);
     }
 }
+
+

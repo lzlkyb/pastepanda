@@ -2,6 +2,13 @@
 
 PastePanda 版本更新日志。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [6.17.2] - 2026-08-16
+
+### 改进
+- **OCR 识别引擎升级为 PP-OCRv6**：从 Windows 自带 OCR 换成纯本地 MNN 推理引擎（ocr-rs），中文与复杂排版识别率更高，且跨平台、模型随安装包发布（约 15MB）
+- **OCR 构建完全离线**：OCR 依赖（ocr-rs 源码 + 预编译 MNN）vending 进仓库，构建不再联网下载；预编译库不入 git
+- **工程整理**：项目迁移至新目录，Rust 编译产物清理；`claude.md` 移入仓库根作为开发规则
+
 ## [6.17.1] - 2026-08-14
 
 ### 新增

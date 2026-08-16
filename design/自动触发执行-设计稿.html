@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>自动触发执行 · 方案对比设计稿</title>
+<style>
+  /* ===== 真实主题令牌（节选自 theme.css：ocean 浅 + ocean-dark 深） ===== */
+  :root, [data-theme="ocean"] {
+    --app-bg:#F7F7F8; --card-bg:#fff; --card-border:#E0E4EB;
+    --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+    --border-color:#E0E4EB; --accent:#0284C7; --accent-light:#E0F2FE;
+    --accent-border:color-mix(in srgb,var(--accent) 35%,transparent);
+    --accent-solid:#027CBB; --accent-strong:#0273AD;
+    --section-bg:#F0F4F8; --hover:#E8ECF2; --seg-bg:#E8E8ED; --seg-active-bg:#fff;
+    --brand-ai-from:#1D4ED8; --brand-ai-to:#6D28D9; --accent-glow:rgba(2,132,199,.12);
+    --glass-popover-bg:rgba(255,255,255,.97); --glass-popover-border:rgba(0,0,0,.06);
+    --green:#11813A; --green-bg:#DCFCE7; --green-border:#BBF7D0;
+    --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA;
+    --red-bg:#FEF2F2; --danger:#D82525;
+    --toggle-off-bg:#E2E8F0; --toggle-off-label:#94A3B8;
+  }
+  [data-theme="ocean-dark"] {
+    --app-bg:radial-gradient(130% 110% at 70% -5%,#1E5A82 0%,#0E3355 42%,#061A33 100%);
+    --card-bg:#0A1628; --card-border:#162B45; --text-primary:#E0E8F0;
+    --text-secondary:#A2B6CD; --text-muted:#7994B4; --border-color:#162B45;
+    --accent:#3B9EFF; --accent-light:#0A1E3A; --accent-border:color-mix(in srgb,var(--accent) 35%,transparent);
+    --accent-solid:#2D78C2; --accent-strong:var(--accent); --section-bg:#081018;
+    --hover:#0F1F35; --seg-bg:#162B45; --seg-active-bg:#1E3D60;
+    --brand-ai-from:#A8DEFF; --brand-ai-to:#D8CCFF; --accent-glow:rgba(59,158,255,.12);
+    --glass-popover-bg:rgba(10,22,40,.85); --glass-popover-border:rgba(255,255,255,.08);
+    --green:#4ADE80; --green-bg:#052E16; --green-border:#166534;
+    --orange:#FB923C; --orange-bg:#431407; --orange-border:#9A3412;
+    --red-bg:#3A1525; --danger:#FF6B8A; --toggle-off-bg:#1E3D60; --toggle-off-label:#5577A0;
+  }
+  *{box-sizing:border-box;font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;}
+  body{margin:0;padding:0;background:#0b0f17;color:#cbd5e1;}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 80px;}
+  h1{font-size:20px;color:#e2e8f0;margin:0 0 4px;}
+  .sub{color:#94a3b8;font-size:13px;margin-bottom:18px;}
+  .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:26px;flex-wrap:wrap;}
+  .toolbar .t{font-size:12px;color:#94a3b8;}
+  .seg{display:inline-flex;background:#1e293b;border-radius:8px;padding:3px;gap:2px;}
+  .seg button{border:none;background:transparent;color:#cbd5e1;font-size:12px;padding:5px 12px;border-radius:6px;cursor:pointer;font-family:inherit;}
+  .seg button.on{background:#334155;color:#fff;}
+  .appFrame{background:var(--app-bg);color:var(--text-primary);width:480px;border-radius:14px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.06);}
+  .appFrame.dark,[data-theme="ocean-dark"] .appFrame{box-shadow:0 18px 50px rgba(0,0,0,.6);}
+  .topbar{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border-color);}
+  .topbar .logo{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,var(--brand-ai-from),var(--brand-ai-to));display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:800;}
+  .topbar .title{font-size:13px;font-weight:600;}
+  .topbar .sp{margin-left:auto;font-size:11px;color:var(--text-muted);}
+  .list{padding:10px 12px;display:flex;flex-direction:column;gap:8px;max-height:560px;overflow:auto;}
+
+  /* ===== AI 快捷栏（复用 AiQuickBar 视觉） ===== */
+  .aiBar{position:relative;display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:7px 10px;border-radius:10px;background:var(--card-bg);border:1px solid var(--accent-border);box-shadow:0 1px 3px color-mix(in srgb,var(--accent) 10%,transparent);}
+  .aiMark{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:800;background:linear-gradient(135deg,var(--brand-ai-from),var(--brand-ai-to));-webkit-background-clip:text;background-clip:text;color:transparent;flex:none;}
+  .chip{display:inline-flex;align-items:center;gap:3px;border:1px solid var(--accent-border);border-radius:7px;padding:3px 9px;font-size:11px;background:var(--accent-light);color:var(--accent-strong);cursor:pointer;}
+  .chip.ai{border-color:var(--accent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 30%,transparent);font-weight:600;}
+  .chip.local{border-color:var(--border-color);background:var(--section-bg);color:var(--text-secondary);}
+  .chip.more{border-style:dashed;background:transparent;color:var(--text-secondary);}
+  .aiBar .autoTag{margin-left:auto;font-size:9px;font-weight:700;color:var(--accent);background:var(--accent-light);border:1px solid var(--accent-border);border-radius:4px;padding:1px 5px;}
+  .aiTgt{display:flex;align-items:center;gap:5px;width:100%;min-width:0;padding-top:6px;margin-top:1px;border-top:1px dashed var(--accent-border);font-size:10.5px;color:var(--text-muted);}
+  .aiTgt .txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+  /* ===== 卡片（复用 Card 视觉） ===== */
+  .card{display:flex;gap:10px;padding:9px 10px;border-radius:10px;background:var(--card-bg);border:1px solid var(--card-border);}
+  .card .ico{width:34px;height:34px;border-radius:9px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;font-size:15px;background:var(--accent-light);color:var(--accent-strong);}
+  .card .ico.img{background:#FCE7F3;color:#db2777;}
+  .card .body{flex:1;min-width:0;}
+  .card .t{font-size:12.5px;line-height:1.4;color:var(--text-primary);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+  .card .sub{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:5px;}
+  .badge{font-size:9.5px;font-weight:600;padding:1px 6px;border-radius:5px;display:inline-flex;align-items:center;gap:3px;}
+  .badge.src{background:var(--section-bg);border:1px solid var(--border-color);color:var(--text-muted);}
+  .badge.auto{background:var(--accent-light);border:1px solid var(--accent-border);color:var(--accent-strong);}
+  .badge.ocr{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);}
+  .badge.smart{background:var(--orange-bg);color:var(--orange);border:1px solid var(--orange-border);}
+  .badge.time{margin-left:auto;color:var(--text-muted);background:transparent;border:none;font-weight:400;}
+  .card .time{margin-left:auto;font-size:10.5px;color:var(--text-muted);align-self:flex-start;}
+
+  /* ===== 设置页（复用 AiTab 手风琴视觉） ===== */
+  .settings{width:480px;background:var(--app-bg);color:var(--text-primary);border-radius:14px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.06);padding:14px;}
+  .hero{border-radius:12px;padding:14px;background:linear-gradient(135deg,color-mix(in srgb,var(--brand-ai-from) 12%,var(--card-bg)),color-mix(in srgb,var(--brand-ai-to) 12%,var(--card-bg)));border:1px solid var(--accent-border);}
+  .hero .h{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;}
+  .hero .s{font-size:11.5px;color:var(--text-muted);margin-top:4px;}
+  .acc{margin-top:10px;border:1px solid var(--border-color);border-radius:12px;overflow:hidden;}
+  .accHead{display:flex;align-items:center;gap:8px;padding:11px 12px;background:var(--card-bg);cursor:pointer;}
+  .accHead .it{font-size:13px;font-weight:600;}
+  .accHead .st{font-size:10.5px;color:var(--text-muted);margin-left:6px;}
+  .accHead .chev{margin-left:auto;color:var(--text-muted);transition:transform .2s;}
+  .accBody{padding:10px 12px;border-top:1px solid var(--border-color);background:var(--card-bg);display:flex;flex-direction:column;gap:9px;}
+  .row{display:flex;align-items:center;gap:10px;}
+  .row .lbl{flex:1;min-width:0;}
+  .row .lbl .t{font-size:12px;color:var(--text-primary);}
+  .row .lbl .d{font-size:10.5px;color:var(--text-muted);margin-top:1px;}
+  .toggle{width:38px;height:22px;border-radius:999px;background:var(--toggle-off-bg);position:relative;flex-shrink:0;cursor:pointer;transition:background .2s;}
+  .toggle.on{background:var(--accent-solid);}
+  .toggle .kn{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 2px rgba(0,0,0,.3);}
+  .toggle.on .kn{left:18px;}
+  .note{display:flex;gap:6px;align-items:flex-start;font-size:10.5px;color:var(--text-muted);background:var(--section-bg);border:1px solid var(--border-color);border-radius:8px;padding:7px 9px;line-height:1.5;}
+  .audit{border:1px solid var(--border-color);border-radius:9px;overflow:hidden;}
+  .audit .it{display:flex;align-items:center;gap:8px;padding:7px 10px;font-size:11px;border-bottom:1px solid var(--border-color);}
+  .audit .it:last-child{border-bottom:none;}
+  .audit .dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0;}
+  .audit .meta{margin-left:auto;color:var(--text-muted);font-size:10px;}
+
+  /* 方案区 */
+  .plan{margin-bottom:34px;}
+  .planHead{display:flex;align-items:baseline;gap:10px;margin:0 0 12px;}
+  .planHead .n{font-size:15px;font-weight:800;color:#e2e8f0;}
+  .planHead .diff{font-size:12px;color:#7dd3fc;background:rgba(56,189,248,.12);padding:2px 9px;border-radius:6px;}
+  .planHead .why{font-size:11.5px;color:#94a3b8;}
+  .surfaces{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start;}
+  .surfLabel{font-size:11px;color:#64748b;margin:0 0 7px 2px;letter-spacing:.04em;}
+  .caption{font-size:11px;color:#64748b;margin-top:10px;line-height:1.6;max-width:480px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>自动触发执行 · 方案对比设计稿</h1>
+  <div class="sub">基于真实组件结构（AiQuickBar / Card / AiTab 手风琴）与 theme.css 令牌。红线①已放开：本地免费能力复制即跑，云端动作需显式预授权，自动执行须满足「可预览/可中断/可撤销/可审计」。</div>
+  <div class="toolbar">
+    <span class="t">主题：</span>
+    <div class="seg" id="themeSeg">
+      <button class="on" data-theme="ocean">浅色 ocean</button>
+      <button data-theme="ocean-dark">深色 ocean-dark</button>
+    </div>
+    <span class="t" style="margin-left:auto;">主窗宽 480px · 与真实一致</span>
+  </div>
+
+  <!-- ============ 方案 A ============ -->
+  <section class="plan">
+    <div class="planHead">
+      <span class="n">方案 A</span>
+      <span class="diff">本地免费层（推荐起步）</span>
+      <span class="why">零云端计费 · 红线最稳 · 几乎零新引擎</span>
+    </div>
+    <div class="surfaces">
+      <div>
+        <p class="surfLabel">主窗口 · 复制即自动处理</p>
+        <div class="appFrame" data-frame>
+          <div class="topbar"><span class="logo">P</span><span class="title">PastePanda</span><span class="sp">已捕获 1,284 条</span></div>
+          <div class="list">
+            <!-- 图片复制即本地 OCR，文字入索引可搜 -->
+            <div class="aiBar">
+              <span class="aiMark">✦ AI</span>
+              <span class="chip local">本地 · 已识别</span>
+              <span class="autoTag">自动 · 本地</span>
+              <div class="aiTgt"><span class="txt">📷 screenshot_2026.png · 识别到 32 字，已可搜索</span></div>
+            </div>
+            <div class="card">
+              <div class="ico img">🖼️</div>
+              <div class="body">
+                <div class="t">识别文字：登录页 / 用户名 admin / 验证码输入框…</div>
+                <div class="sub">
+                  <span class="badge ocr">已识别 32 字</span>
+                  <span class="badge src">Chrome</span>
+                  <span class="badge time">刚刚</span>
+                </div>
+              </div>
+            </div>
+            <!-- 文本复制即自动分类打标签 -->
+            <div class="card">
+              <div class="ico">🔗</div>
+              <div class="body">
+                <div class="t">https://github.com/lzlkyb/pastepanda — 一个本地优先的剪贴板管理器</div>
+                <div class="sub">
+                  <span class="badge auto">自动 · 链接</span>
+                  <span class="badge auto">自动 · 代码仓库</span>
+                  <span class="badge src">Edge</span>
+                  <span class="badge time">刚刚</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="caption">仅启用本地免费能力：图片复制即后台 OCR（复用现有 <code>ocr_image</code> 命令，文字入 FTS5 可搜），文本/代码复制即本地规则分类+打标签（复用已有 <code>source:"auto"</code> 标签机制）。完全不出网、不计费，红线②/③不受影响。</p>
+  </section>
+
+  <!-- ============ 方案 B ============ -->
+  <section class="plan">
+    <div class="planHead">
+      <span class="n">方案 B</span>
+      <span class="diff">+ 云端预授权动作链 + 审计面板</span>
+      <span class="why">需用户勾选才开 · 满足四要件</span>
+    </div>
+    <div class="surfaces">
+      <div>
+        <p class="surfLabel">主窗口 · 预授权动作自动跑</p>
+        <div class="appFrame" data-frame>
+          <div class="topbar"><span class="logo">P</span><span class="title">PastePanda</span><span class="sp">已捕获 1,284 条</span></div>
+          <div class="list">
+            <div class="aiBar">
+              <span class="aiMark">✦ AI</span>
+              <span class="chip ai">总结网页</span>
+              <span class="chip">重写</span>
+              <span class="autoTag">自动 · 已授权</span>
+              <div class="aiTgt"><span class="txt">🌐 复制链接 → 自动总结（你已开启「链接自动总结」）</span></div>
+            </div>
+            <div class="card">
+              <div class="ico">🌐</div>
+              <div class="body">
+                <div class="t">https://example.com/long-article — PastePanda v6 发布说明</div>
+                <div class="sub">
+                  <span class="badge auto">自动 · 已总结</span>
+                  <span class="badge src">Safari</span>
+                  <span class="badge time">刚刚</span>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="ico">📝</div>
+              <div class="body">
+                <div class="t">AI 总结：本文介绍 PastePanda 的本地优先架构，强调剪贴板内容不出本机…（点开看全文）</div>
+                <div class="sub">
+                  <span class="badge auto">自动摘要</span>
+                  <span class="badge time">刚刚</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <p class="surfLabel">设置 → AI → 新增「自动动作」区块</p>
+        <div class="settings" data-frame>
+          <div class="hero">
+            <div class="h"><span class="aiMark">✦ AI</span> 已就绪</div>
+            <div class="s">复制内容可自动处理。本地能力免费，云端动作需你逐项授权。</div>
+          </div>
+          <div class="acc">
+            <div class="accHead"><span>⚙️</span><span class="it">自动动作</span><span class="st">本地默认开 · 云端需授权</span><span class="chev">▾</span></div>
+            <div class="accBody">
+              <div class="row"><div class="lbl"><div class="t">图片复制即 OCR（本地）</div><div class="d">后台识别文字并加入搜索索引，不出网</div></div><div class="toggle on"><div class="kn"></div></div></div>
+              <div class="row"><div class="lbl"><div class="t">文本/代码自动分类打标签（本地）</div><div class="d">按内容特征自动归类，可一键确认</div></div><div class="toggle on"><div class="kn"></div></div></div>
+              <div class="row"><div class="lbl"><div class="t">复制链接自动总结网页</div><div class="d">云端 · 按用量计费 ¥</div></div><div class="toggle"><div class="kn"></div></div></div>
+              <div class="row"><div class="lbl"><div class="t">复制代码自动解释</div><div class="d">云端 · 按用量计费 ¥</div></div><div class="toggle"><div class="kn"></div></div></div>
+              <div class="note">ⓘ 勾选即代表「授权该类内容复制后自动执行」。每次自动执行都会记录在下方审计中，可随时中断、撤销。</div>
+            </div>
+          </div>
+          <div class="acc" style="margin-top:10px;">
+            <div class="accHead"><span>📋</span><span class="it">自动执行记录</span><span class="st">最近 5 条</span><span class="chev">▾</span></div>
+            <div class="accBody">
+              <div class="audit">
+                <div class="it"><span class="dot"></span>总结网页 · example.com<span class="meta">可撤销 · 12:04</span></div>
+                <div class="it"><span class="dot"></span>OCR · screenshot.png<span class="meta">本地 · 12:01</span></div>
+                <div class="it"><span class="dot"></span>自动标签 · github 链接<span class="meta">本地 · 11:58</span></div>
+                <div class="it"><span class="dot"></span>解释代码 · main.rs<span class="meta">可撤销 · 11:50</span></div>
+                <div class="it"><span class="dot"></span>OCR · wechat_img.png<span class="meta">本地 · 11:47</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="caption">在方案 A 基础上，设置页新增「自动动作」手风琴区块：本地能力默认开；云端动作（链接总结/代码解释）以开关形式逐项预授权。配套「自动执行记录」审计面板（满足四要件：可预览=结果先显示草稿、可中断=执行中可取消、可撤销=结果可回退、可审计=本面板）。</p>
+  </section>
+
+  <!-- ============ 方案 C ============ -->
+  <section class="plan">
+    <div class="planHead">
+      <span class="n">方案 C</span>
+      <span class="diff">+ 智能感知一键动作</span>
+      <span class="why">类 Clippy · 最强但最重</span>
+    </div>
+    <div class="surfaces">
+      <div>
+        <p class="surfLabel">主窗口 · 智能检测 → 一键动作</p>
+        <div class="appFrame" data-frame>
+          <div class="topbar"><span class="logo">P</span><span class="title">PastePanda</span><span class="sp">已捕获 1,284 条</span></div>
+          <div class="list">
+            <div class="card">
+              <div class="ico">📅</div>
+              <div class="body">
+                <div class="t">会议延期到 8 月 20 日 15:00，改线上腾讯会议</div>
+                <div class="sub">
+                  <span class="badge smart">检测到日期</span>
+                  <span class="badge auto">自动 · 日程</span>
+                  <span class="badge src">微信</span>
+                  <span class="badge time">刚刚</span>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="ico">📍</div>
+              <div class="body">
+                <div class="t">北京市海淀区中关村大街 1 号 微软大厦</div>
+                <div class="sub">
+                  <span class="badge smart">检测到地址</span>
+                  <span class="badge auto">自动 · 地点</span>
+                  <span class="badge src">备忘录</span>
+                  <span class="badge time">刚刚</span>
+                </div>
+              </div>
+            </div>
+            <div class="aiBar">
+              <span class="aiMark">✦ AI</span>
+              <span class="chip ai">加入日历</span>
+              <span class="chip ai">打开地图</span>
+              <span class="chip more">更多…</span>
+              <div class="aiTgt"><span class="txt">💡 检测到时间/地点信息，已为你准备一键动作</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="caption">在方案 B 基础上增加智能感知：复制文本自动识别日期/地址/电话等实体，卡片上浮现「检测到…」橙色智能徽标 + 一键动作（加入日历 / 打开地图）。这是竞品（Clippy）最显"AI 感"的能力，但依赖更多启发式与跨应用 API（日历/地图），实现最重，建议放最后。</p>
+  </section>
+
+  <p class="caption" style="color:#475569;">落点说明：主窗口复用 <code>AiQuickBar</code>（复制即 AI 栏，已有图片本地 OCR 暖启动）+ <code>Card</code> 的标签/徽章区（已有 <code>source:"auto"</code> 机制）；设置页复用 <code>AiTab</code> 手风琴，新增「自动动作」「自动执行记录」两个区块。所有自动执行均受 AI 开关门控与四要件约束。</p>
+</div>
+
+<script>
+  const seg = document.getElementById('themeSeg');
+  seg.addEventListener('click', (e) => {
+    const btn = e.target.closest('button'); if (!btn) return;
+    [...seg.children].forEach(b => b.classList.toggle('on', b === btn));
+    const t = btn.dataset.theme;
+    document.querySelectorAll('[data-frame]').forEach(f => {
+      f.style.setProperty('background', '');
+      if (t === 'ocean-dark') {
+        f.setAttribute('data-theme', 'ocean-dark');
+      } else {
+        f.removeAttribute('data-theme');
+      }
+    });
+  });
+</script>
+</body>
+</html>

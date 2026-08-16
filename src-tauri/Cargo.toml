@@ -1,6 +1,6 @@
 [package]
 name = "pastepanda"
-version = "6.17.1"
+version = "6.17.2"
 description = "PastePanda - Smart Clipboard Manager"
 authors = ["you"]
 edition = "2021"
@@ -33,6 +33,12 @@ scraper = "0.21"
 arboard = { version = "3", features = ["image-data"] }
 tokio = { version = "1", features = ["full"] }
 image = { version = "0.25", features = ["png"] }
+# PP-OCRv6 离线 OCR 引擎（纯 Rust + MNN，模型随包发布）。替换原 Windows 自带 OCR，
+# 中文识别率更高且跨平台。模型文件放在 resources/ocr_models/（见 tauri.conf.json）。
+# OCR 引擎：PP-OCRv6（MNN 推理）。ocr-rs 源码 vendoring 在 vendor/ocr-rs，
+# 其 build 脚本会优先读取 vendor/ocr-rs/3rd_party/prebuilt/ 里的预编译 MNN，
+# 因此构建完全离线、不再联网下载（预编译已 gitignore，见 .gitignore）。
+ocr-rs = "2.4.1"
 md-5 = "0.10"
 base64 = "0.22"
 ring = "0.17"
@@ -91,12 +97,6 @@ windows = { version = "0.58", features = [
     "Win32_Storage_FileSystem",
     # DPAPI（CryptProtectData）：加密 AI API Key，避免它进明文的 config 表
     "Win32_Security_Cryptography",
-    "Media_Ocr",
-    "Graphics_Imaging",
-    "Storage",
-    "Storage_Streams",
-    "Foundation_Collections",
-    "Globalization",
 ] }
 winreg = "0.52"
 
@@ -106,6 +106,13 @@ tauri-plugin-window-state = "2"
 
 [profile.release]
 codegen-units = 1
-lto = "thin"
-opt-level = "s"
+lto = "fat"
+opt-level = "z"
 strip = "symbols"
+panic = "abort"
+
+# 离线 OCR 构建：把 ocr-rs 重定向到仓库内 vendoring 副本，
+# 其 build 脚本会直接读取 vendor/ocr-rs/3rd_party/prebuilt/ 下的预编译 MNN，
+# 不再联网下载。
+[patch.crates-io]
+ocr-rs = { path = "vendor/ocr-rs" }
