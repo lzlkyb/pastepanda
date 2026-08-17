@@ -41,7 +41,14 @@ pub fn get_recent_texts_public(
             .into_iter()
             .map(|item| {
                 let preview = if item.item_type == "image" {
-                    "图片".to_string()
+                    // V6.19 托盘最近截图：图片条目显示 OCR 首行（有识别文字时），否则占位
+                    item.ocr_text
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|t| !t.is_empty())
+                        .and_then(|t| t.lines().next())
+                        .map(|t| truncate_preview(t, 26))
+                        .unwrap_or_else(|| "图片".to_string())
                 } else if item.item_type == "file" {
                     let name = std::path::Path::new(&item.text)
                         .file_name()

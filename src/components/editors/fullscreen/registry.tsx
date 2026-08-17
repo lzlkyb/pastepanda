@@ -182,7 +182,7 @@ export const FULLSCREEN_TYPES: Record<FullscreenType, FullscreenTypeSpec> = {
 };
 
 /** 走代码编辑器的内容类型（代码 / 配置文件 / 命令行） */
-const CODE_CONTENT_TYPES = new Set(["code", "config", "shell"]);
+const CODE_CONTENT_TYPES = new Set(["code", "config", "shell", "sql"]);
 /** 暂无专属编辑器、按纯文本处理的内容类型（避免误回退 markdown 语法模式） */
 const TEXT_CONTENT_TYPES = new Set(["number", "link", "email", "phone", "file_path", "secret"]);
 

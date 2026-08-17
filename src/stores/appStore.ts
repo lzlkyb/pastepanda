@@ -84,6 +84,9 @@ export interface AppConfig {
   stack_toggle_hotkey: string; // 栈模式开关快捷键
   stack_paste_hotkey: string; // 栈顶粘贴快捷键
   quick_paste_hotkey: string; // 快捷粘贴面板快捷键（类 Win+V）
+  screenshot_hotkey: string; // 截图标注快捷键（v6.18 截图功能）
+  auto_frame_window: boolean; // 截图自动框选光标所在窗口（微信同款，v6.19）
+  auto_chain_after_screenshot: string; // 截图完成后自动执行的动作链 id（空=不自动，仅纯本地步骤）
   quick_paste_layout: "grid" | "list"; // 快捷粘贴面板布局：grid=双栏网格，list=单栏列表
   skip_sensitive: boolean; // 修复 U36：不记录匹配密钥/凭证模式的内容
   excluded_apps: string; // 修复 U36：应用排除名单（逗号分隔，命中来源应用则不记录）
@@ -244,6 +247,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   stack_toggle_hotkey: "ctrl+alt+k",
   stack_paste_hotkey: "ctrl+alt+p",
   quick_paste_hotkey: "alt+v",
+  screenshot_hotkey: "ctrl+alt+a",
+  auto_frame_window: true, // 默认开启：截图自动框选光标所在窗口
+  auto_chain_after_screenshot: "", // 默认不自动执行动作链
   quick_paste_layout: "grid",
   skip_sensitive: false,
   excluded_apps: "",

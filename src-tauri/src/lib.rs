@@ -32,6 +32,7 @@ mod mask;
 mod paste_engine;
 mod pinned_window;
 mod quick_paste;
+mod screenshot;
 mod tray_manager;
 
 /// 首次启动时通过文件关联传入的待打开文件路径。
@@ -147,6 +148,15 @@ pub fn run() {
 
             // 全屏 Markdown 编辑器独立窗口的待取初始数据（初始为空）
             app.manage(PendingEditor(std::sync::Mutex::new(None)));
+
+            // 截图标注窗口的待编辑图片路径（贴图双击重编辑用，初始为空）
+            app.manage(screenshot::PendingShotEdit(std::sync::Mutex::new(None)));
+
+            // 截图并行预截屏缓存（open_screenshot_window 截屏与窗口创建并行，初始为空）
+            app.manage(screenshot::PendingShotCapture(std::sync::Mutex::new(None)));
+
+            // 全屏编辑器当前打开的文件（截图"插入到文档"用）
+            app.manage(screenshot::EditorTarget(std::sync::Mutex::new(None)));
 
             // 初始化 SQLite 数据库
             let app_dir = handle.path().app_data_dir().expect("无法获取应用数据目录");
@@ -319,6 +329,12 @@ pub fn run() {
                     .get("quick_paste_hotkey")
                     .and_then(|v| v.as_str())
                     .unwrap_or("Alt+V")
+                    .to_string(),
+                // 截图标注热键（v6.18 新增）；默认 Ctrl+Alt+A（区域截图直觉）
+                screenshot: saved_config
+                    .get("screenshot_hotkey")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Ctrl+Alt+A")
                     .to_string(),
             };
 
@@ -517,6 +533,30 @@ pub fn run() {
             commands::ocr_image_cached,
             commands::open_pinned_image,
             commands::close_pinned_image,
+            screenshot::capture_screen,
+            screenshot::capture_region,
+            screenshot::save_screenshot_image,
+            screenshot::close_screenshot_window,
+            screenshot::hide_screenshot_window,
+            screenshot::show_screenshot_window,
+            screenshot::snap_window_at,
+            screenshot::send_mouse_wheel,
+            screenshot::take_pending_shot_edit,
+            screenshot::virtual_screen_size,
+            screenshot::insert_screenshot_to_history,
+            screenshot::take_pending_shot_capture,
+            screenshot::mark_ocr_temp,
+            screenshot::get_cursor_pos,
+            screenshot::get_auto_frame_window,
+            screenshot::get_auto_chain_after_screenshot,
+            screenshot::set_editor_target,
+            screenshot::get_editor_target,
+            screenshot::insert_into_editor,
+            screenshot::emit_ocr_ready,
+            screenshot::list_pinned_images,
+            screenshot::close_pinned_image_by_path,
+            screenshot::open_pinned_panel,
+            screenshot::open_pinned_edit,
             commands::hide_tray_popup,
             quick_paste::hide_quick_paste,
             quick_paste::get_quick_paste_data,
@@ -621,6 +661,7 @@ pub fn run() {
             commands::semantic_set_config,
             commands::semantic_index,
             commands::semantic_search,
+            commands::sql_validate,
             // 用户画像（M6-2/M6-3）：聚合 + 覆盖 + 导出
             commands::profile_refine,
             commands::profile_get,

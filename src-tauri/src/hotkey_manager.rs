@@ -19,6 +19,7 @@ pub struct HotkeyConfig {
     pub stack_toggle: String,
     pub stack_paste: String,
     pub quick_paste: String,
+    pub screenshot: String,
 }
 
 impl Default for HotkeyConfig {
@@ -34,6 +35,8 @@ impl Default for HotkeyConfig {
             stack_paste: "Ctrl+Alt+P".to_string(),
             // Win+V 被系统保留，Alt+V 为最接近的替代；仅影响新安装用户
             quick_paste: "Alt+V".to_string(),
+            // 截图标注（区域截图直觉；Snipaste 为 F1，QQ 为 Ctrl+Alt+A）
+            screenshot: "Ctrl+Alt+A".to_string(),
         }
     }
 }
@@ -288,6 +291,27 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
         }
     } else {
         errors.push(format!("无效的快捷粘贴热键: {}", config.quick_paste));
+    }
+
+    // 截图标注（留空 = 禁用）
+    if config.screenshot.trim().is_empty() {
+        log::info!("[HotkeyManager] 截图热键已禁用（留空），跳过注册");
+    } else if let Ok(shortcut) = parse_shortcut(&config.screenshot) {
+        match gs.on_shortcut(shortcut, move |app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                log::info!("[HotkeyManager] 截图热键触发!");
+                crate::screenshot::open_screenshot_window(app);
+            }
+        }) {
+            Ok(_) => log::info!("[HotkeyManager] 注册截图热键: {}", config.screenshot),
+            Err(e) => {
+                let msg = format!("截图热键注册失败: {}", e);
+                log::warn!("[HotkeyManager] {}", msg);
+                errors.push(msg);
+            }
+        }
+    } else {
+        errors.push(format!("无效的截图热键: {}", config.screenshot));
     }
 
     if errors.is_empty() {

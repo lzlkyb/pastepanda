@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useState } from "react";
+import { useWindowVisible } from "@/hooks/useWindowVisible";
 import { motion, AnimatePresence } from "framer-motion";
 import { FileText, X } from "lucide-react";
 import { useToast } from "@/components/Toast";
@@ -46,11 +47,13 @@ export const MdAssocBanner = memo(function MdAssocBanner() {
 
   // 横幅可见期间每 2s 轮询一次，关联一生效立即消失（不完全依赖窗口焦点事件）
   const visible = !dismissed && status !== null && status !== "default";
+  // 窗口隐藏（hide()）时暂停轮询：WebView 仍存活，空转会烧 CPU（claude.md 规则 8）
+  const winVisible = useWindowVisible();
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || !winVisible) return;
     const timer = setInterval(() => void refresh(), 2000);
     return () => clearInterval(timer);
-  }, [visible, refresh]);
+  }, [visible, winVisible, refresh]);
 
   const handleGo = async () => {
     if (busy) return;

@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useWindowVisible } from "@/hooks/useWindowVisible";
 
 /** 轮询间隔。2 秒足够跟手，又不会让 stat 变成噪音。 */
 const POLL_MS = 2000;
@@ -71,11 +72,15 @@ export function useFileWatch(filePath: string | null): FileWatch {
     setExternalChanged(false);
   }, [filePath]);
 
+  // 窗口隐藏（辅助窗口 hide()）时暂停轮询：WebView 仍存活，空转会烧 CPU（claude.md 规则 8）
+  const winVisible = useWindowVisible();
+
   useEffect(() => {
     if (!filePath) {
       setExternalChanged(false);
       return;
     }
+    if (!winVisible) return;
     let stopped = false;
     const id = window.setInterval(() => {
       void (async () => {
@@ -87,7 +92,7 @@ export function useFileWatch(filePath: string | null): FileWatch {
       stopped = true;
       window.clearInterval(id);
     };
-  }, [filePath, checkNow]);
+  }, [filePath, checkNow, winVisible]);
 
   return { externalChanged, markSynced, checkNow };
 }

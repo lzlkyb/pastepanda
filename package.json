@@ -63,6 +63,7 @@
     "framer-motion": "^12.40.0",
     "highlight.js": "^11.11.1",
     "html-to-image": "^1.11.13",
+    "jsqr": "^1.4.0",
     "lenis": "^1.3.25",
     "lucide-react": "^1.21.0",
     "marked": "^18.0.6",

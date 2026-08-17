@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PastePanda · 编辑器增量 P1 设计稿（SQL 编辑器 + 正则测试器 + Diff）</title>
+<style>
+/* ========================================================================
+   尺寸与变量**抄自真实代码**：
+   - editorRegistry.ts：EDITOR_REGISTRY[content_type]（w420 shell 变体 / footer copy·paste·snippet）
+   - JsonEditor.tsx：useEditorCore + CodeTextArea + editorBits（MetaBar/TransformToolbar/FullscreenLaunchButton）
+   - RegexPreviewDialog.tsx：pattern/replacement/flags + validateRegex + safeApplyRegex + 高亮时间预算
+   - TransformCard.tsx AiResult：结果区 copyBtn/pasteBtn（加"打开编辑器"按钮位）
+   - DiffPane.tsx / DiffDialog.tsx：并排 diff 高亮（A3 复用）
+   - 主题：默认 ocean-dark 深海（--accent 蓝 #3B9EFF / 编辑器底色 #0A1628 / 代码区 #081018）
+   ===================================================================== */
+*{box-sizing:border-box}
+body{margin:0;padding:30px 26px 70px;background:#14161A;color:#C9D2DD;
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.7}
+h1{font-size:19px;color:#fff;margin:0 0 4px}
+h2{font-size:15px;color:#fff;margin:36px 0 6px}
+h3{font-size:13px;color:#E6EDF5;margin:18px 0 6px;font-weight:600}
+.sub{color:#7C8899;font-size:12px;margin:0 0 24px}
+.note{color:#8D9AAB;font-size:12px;margin:6px 0 14px;max-width:980px}
+.note b{color:#D6DEE8;font-weight:600}
+.pick{color:#6FD68B;font-weight:600}
+hr{border:0;border-top:1px solid #262A31;margin:34px 0 0}
+code{background:#1C2027;padding:1px 5px;border-radius:4px;font-size:11.5px;color:#A9C8E8}
+.stage{display:flex;gap:30px;flex-wrap:wrap;margin:20px 0 0;align-items:flex-start}
+.viewport{position:relative;width:560px;border:1px dashed #3A4048;border-radius:10px;
+  background:repeating-linear-gradient(45deg,#191C21,#191C21 10px,#1C2026 10px,#1C2026 20px);
+  padding:22px 14px 80px;overflow:visible}
+.vpTag{position:absolute;left:0;top:-20px;font-size:10.5px;color:#6E7A8A;white-space:nowrap}
+.two{display:flex;gap:16px;align-items:flex-start}
+.anno{background:#0E1A12;border:1px solid #166534;border-radius:10px;padding:12px 14px;font-size:12px;color:#9FBF9F;max-width:560px}
+.anno b{color:#6FD68B}
+.anno.warn{background:#1A1210;border-color:#7F1D1D;color:#C9A2A2}
+.anno.warn b{color:#F09A9A}
+table.t{border-collapse:collapse;margin-top:8px;font-size:12.5px;max-width:980px}
+table.t th,table.t td{border:1px solid #2A2F37;padding:7px 11px;text-align:left;vertical-align:top}
+table.t th{background:#1C2027;color:#E4EAF1;font-weight:600}
+table.t td{color:#B4BECB}
+
+/* ===== 编辑器弹窗（抄 editorRegistry w420 / JsonEditor 视觉） ===== */
+.ed{width:480px;background:#0A1628;border:1px solid #162B45;border-radius:16px;overflow:hidden;
+  box-shadow:0 14px 44px rgba(0,0,0,.55);flex-shrink:0;margin:6px 10px}
+.edHdr{display:flex;align-items:center;height:46px;padding:0 16px;gap:8px;border-bottom:1px solid #162B45}
+.edTitle{font-size:14px;font-weight:600;color:#E0E8F0;margin:0;white-space:nowrap}
+.edSub{margin-left:auto;font-size:11px;color:#7994B4;white-space:nowrap}
+.edX{width:26px;height:26px;border-radius:7px;border:none;background:transparent;color:#A2B6CD;font-size:12px}
+.edBody{padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.edFoot{display:flex;gap:8px;padding:0 14px 14px}
+.fBtn{flex:1;font-size:12px;font-weight:600;padding:9px 0;border-radius:9px;border:none;cursor:pointer;
+  background:#0A1628;border:1px solid #1C2C42;color:#A2B6CD}
+.fBtn.prim{background:linear-gradient(135deg,#3B9EFF,#2D78C2);color:#fff;border:none}
+.fBtn.hl{background:rgba(251,191,36,.14);color:#FBBF24;border:1px solid rgba(251,191,36,.3)}
+
+/* 代码区（CodeTextArea 视觉） */
+.codeBox{background:#081018;border:1px solid #162B45;border-radius:10px;overflow:hidden}
+.cbHead{display:flex;align-items:center;gap:8px;padding:7px 11px;font-size:10.5px;font-weight:700;
+  color:#7994B4;border-bottom:1px dashed #162B45;letter-spacing:.4px}
+.cbHead .r{margin-left:auto;color:#4ADE80}
+.cbBody{margin:0;padding:12px;font-family:Consolas,ui-monospace,monospace;font-size:12px;color:#A9C8E8;
+  line-height:1.75;white-space:pre-wrap;word-break:break-all;min-height:120px}
+.kw{color:#7CC7FF} .fn{color:#C5A8FF} .str{color:#9FD88F} .cm{color:#5A6E86;font-style:italic}
+.errLine{background:rgba(224,108,108,.14);box-shadow:inset 3px 0 0 #E06C6C}
+.errMsg{display:flex;align-items:center;gap:7px;padding:8px 11px;border-radius:8px;font-size:11.5px;
+  background:rgba(224,108,108,.1);border:1px solid rgba(224,108,108,.35);color:#F09A9A}
+.okMsg{display:flex;align-items:center;gap:7px;padding:8px 11px;border-radius:8px;font-size:11.5px;
+  background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.3);color:#6FD68B}
+
+/* 正则测试器双栏 */
+.reRow{display:flex;align-items:center;gap:8px}
+.reInput{flex:1;height:32px;border-radius:8px;border:1px solid #162B45;background:#081018;color:#E0E8F0;
+  font-family:Consolas,monospace;font-size:12px;padding:0 10px;outline:none}
+.reFlag{width:88px;height:32px;border-radius:8px;border:1px solid #162B45;background:#081018;color:#7994B4;
+  font-size:11px;text-align:center;font-family:Consolas,monospace}
+.hlWrap{background:#081018;border:1px solid #162B45;border-radius:10px;padding:10px 12px;font-size:12px;
+  line-height:1.9;font-family:Consolas,monospace;color:#C9D2DD;min-height:90px;white-space:pre-wrap;word-break:break-all}
+.mt{background:rgba(251,191,36,.28);border-radius:3px;box-shadow:0 0 0 1px rgba(251,191,36,.5)}
+.statRow{display:flex;gap:8px;flex-wrap:wrap}
+.stat{font-size:11px;color:#9FBF9F;background:#0E1A12;border:1px solid #166534;border-radius:7px;padding:4px 10px}
+.stat b{color:#4ADE80}
+
+/* Diff 并排 */
+.diffWrap{display:flex;gap:0;border:1px solid #162B45;border-radius:10px;overflow:hidden;background:#081018}
+.diffCol{flex:1;min-width:0;padding:10px 12px;font-family:Consolas,monospace;font-size:11.5px;line-height:1.8;color:#C9D2DD}
+.diffCol.old{border-right:1px solid #162B45;background:#120B0B}
+.diffCol.new{background:#0B120B}
+.dAdd{background:rgba(74,222,128,.13);color:#9FD88F;display:block}
+.dDel{background:rgba(224,108,108,.13);color:#F0A0A0;display:block}
+.dHdr{font-size:10px;font-weight:700;color:#7994B4;padding:4px 12px;letter-spacing:.4px;border-bottom:1px dashed #162B45}
+
+/* AI 结果区加按钮（AiResult 视觉） */
+.aiResult{background:#0E1A2C;border:1px solid #1C2C42;border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.aiOut{font-family:Consolas,monospace;font-size:11.5px;color:#A9C8E8;background:#081018;border:1px solid #162B45;
+  border-radius:8px;padding:9px 11px;max-height:110px;overflow:auto;white-space:pre-wrap}
+.aiActs{display:flex;gap:8px}
+.aiBtn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;font-size:11.5px;font-weight:600;
+  padding:8px 0;border-radius:8px;border:none;cursor:pointer}
+.aiBtn.cp{background:#0A1628;border:1px solid #1C2C42;color:#A2B6CD}
+.aiBtn.pst{background:linear-gradient(135deg,#3B9EFF,#2D78C2);color:#fff}
+.aiBtn.ed{background:rgba(251,191,36,.14);color:#FBBF24;border:1px solid rgba(251,191,36,.3)}
+</style>
+</head>
+<body>
+
+<h1>编辑器增量 P1 设计稿（方案 C 全套）</h1>
+<p class="sub">SQL 编辑器 + 正则测试器 + Diff 编辑器 + AI 生成结果「打开编辑器」闭环 + content_type 自动识别路由 ｜ 纯前端为主，SQL 校验 1 个 Rust 命令 ｜ 候选版本 6.18</p>
+<p class="note">结构与变量<b>抄自真实代码</b>（editorRegistry w420 shell / JsonEditor 的 useEditorCore+CodeTextArea+editorBits / RegexPreviewDialog 的 validateRegex+safeApplyRegex / AiResult 按钮区 / DiffPane）。内容类型路由：SQL 走 <code>ContentClassifier</code> 自动识别（analyzer.ts 已有 SqlFeatures 检测），regex 以「AI 结果打开编辑器」为主入口。</p>
+
+<hr>
+
+<!-- ==================== 1. SQL 编辑器 ==================== -->
+<h2>① SQL 编辑器（content_type=sql → 自动路由）</h2>
+<div class="stage">
+  <div class="viewport">
+    <div class="vpTag">弹窗态 · 复制 SQL → 双击/右键编辑 → 自动进 SQL 编辑器</div>
+    <div class="ed">
+      <div class="edHdr">
+        <span style="color:#3B9EFF">🗄</span>
+        <h3 class="edTitle" style="margin:0">编辑 SQL</h3>
+        <span class="edSub">sql · 本地校验 :memory:</span>
+        <button class="edX">✕</button>
+      </div>
+      <div class="edBody">
+        <div class="codeBox">
+          <div class="cbHead">CodeMirror · sql 语言 <span class="r">校验通过 ✓</span></div>
+          <div class="cbBody"><span class="kw">SELECT</span> u.<span class="fn">name</span>, COUNT(o.<span class="fn">id</span>) <span class="kw">AS</span> cnt<br>  <span class="kw">FROM</span> <span class="fn">users</span> u<br>  <span class="kw">LEFT JOIN</span> <span class="fn">orders</span> o <span class="kw">ON</span> o.<span class="fn">user_id</span> = u.<span class="fn">id</span><br>  <span class="kw">WHERE</span> u.<span class="fn">status</span> = <span class="str">'active'</span><br>  <span class="kw">GROUP BY</span> u.<span class="fn">name</span> <span class="cm">-- 本月活跃用户订单数</span></div>
+        </div>
+        <div class="okMsg">✓ SQLite :memory: EXPLAIN 校验通过（0 错误）</div>
+      </div>
+      <div class="edFoot">
+        <button class="fBtn">📋 复制</button>
+        <button class="fBtn prim">📤 粘贴到前台</button>
+        <button class="fBtn hl">⛶ 全屏</button>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="anno">
+      <b>交互</b><br>
+    · CodeMirror SQL 高亮（项目已用 CodeMirror，零新增）；底部<b>校验结果条</b>。<br>
+    · 校验：Rust 新增 <code>sql_validate</code> 命令 → SQLite <code>:memory:</code> 建临时库 <code>EXPLAIN</code> 只读校验，返回 <b>错误行号+消息</b>；写操作（INSERT/UPDATE/DROP…）直接拦截提示（红线：只读）。<br>
+    · 有错时错误行<b>红底标出</b> + 红色结果条显示错误信息。<br>
+    · 全屏：走现有 FullscreenLaunchButton 三态（编辑/分屏/预览）。<br><br>
+    <b>AI 联动</b><br>
+    · <code>ai-sql-generate</code> 结果 → AI 结果区「✏️ 打开编辑器」→ 预填 SQL 编辑器，改完复制/粘贴。闭环补齐。
+    </div>
+    <div class="anno warn" style="margin-top:10px">
+      <b>注意</b><br>
+    · EXPLAIN 校验不保证"能跑通"（表结构未知），只保证<b>语法正确</b>——文案写「语法校验」，不夸大成"可执行"。<br>
+    · 仅识别 DML/SELECT/DDL 语句；函数/方言（如 MySQL 特有语法）可能误报，提供「忽略错误」开关。
+    </div>
+  </div>
+</div>
+
+<!-- 错误态示意 -->
+<div class="stage">
+  <div class="ed">
+    <div class="edHdr"><span style="color:#3B9EFF">🗄</span><h3 class="edTitle" style="margin:0">编辑 SQL</h3><span class="edSub">sql · 1 处错误</span><button class="edX">✕</button></div>
+    <div class="edBody">
+      <div class="codeBox">
+        <div class="cbHead">CodeMirror · sql 语言 <span class="r" style="color:#F09A9A">校验失败 ✗</span></div>
+        <div class="cbBody"><span class="kw">SELECT</span> <span class="fn">id</span> <span class="kw">FROM</span> <span class="fn">users</span><br><span class="errLine"><span class="kw">WHERE</span> name <span class="kw">=</span> <span class="str">'张三</span></span></div>
+      </div>
+      <div class="errMsg">✗ 第 2 行：unterminated string literal —— 字符串缺少结束引号</div>
+    </div>
+    <div class="edFoot"><button class="fBtn">📋 复制</button><button class="fBtn prim">📤 粘贴到前台</button><button class="fBtn hl">⛶ 全屏</button></div>
+  </div>
+</div>
+
+<hr>
+
+<!-- ==================== 2. 正则测试器 ==================== -->
+<h2>② 正则测试器（升级 RegexPreviewDialog → 注册表编辑器）</h2>
+<div class="stage">
+  <div class="viewport">
+    <div class="vpTag">全屏态 · 双栏实时试跑（AI 生成正则 → 打开编辑器即试跑）</div>
+    <div class="ed" style="width:540px">
+      <div class="edHdr">
+        <span style="color:#3B9EFF">🔍</span>
+        <h3 class="edTitle" style="margin:0">正则测试器</h3>
+        <span class="edSub">regex · 实时匹配</span>
+        <button class="edX">✕</button>
+      </div>
+      <div class="edBody">
+        <div class="reRow">
+          <input class="reInput" value="(\d{3})[-](\d{4})" style="color:#7CC7FF">
+          <input class="reFlag" value="g" title="flags: g i m">
+          <span class="stat" style="margin-left:auto">匹配 <b>2</b> 处</span>
+        </div>
+        <div class="hlWrap">客户电话：<span class="mt">138-0000</span> 与 <span class="mt">139-1234</span>，备用 137-5678</div>
+        <div class="statRow">
+          <span class="stat">捕获组 <b>2</b></span>
+          <span class="stat">组1: 138 / 139 / 137</span>
+          <span class="stat">组2: 0000 / 1234 / 5678</span>
+          <span class="stat">执行 <b>1.2ms</b></span>
+        </div>
+        <div class="codeBox">
+          <div class="cbHead">替换预览（可选）</div>
+          <div class="cbBody" style="min-height:44px">客户电话：<span class="str">138-****</span> 与 <span class="str">139-****</span>，备用 <span class="str">137-****</span></div>
+        </div>
+      </div>
+      <div class="edFoot">
+        <button class="fBtn">📋 复制正则</button>
+        <button class="fBtn prim">📤 粘贴到前台</button>
+        <button class="fBtn hl">⛶ 全屏</button>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="anno">
+      <b>交互</b><br>
+    · <b>双栏</b>：上栏 正则+flags，下栏 测试文本（可直接改），<b>实时高亮匹配位</b>（橙底，复用 RegexPreviewDialog 的高亮渲染 + 时间预算）。<br>
+    · 新增统计条：<b>匹配数 / 捕获组 / 各组值 / 执行耗时</b>（防灾难性回溯超时中止）。<br>
+    · 替换预览可选折叠（默认展开，复用 safeApplyRegex 分块执行）。<br>
+    · 全屏三态复用现有 Fullscreen 基建。<br><br>
+    <b>AI 联动</b><br>
+    · <code>ai-regex-generate</code> 结果 → 「✏️ 打开编辑器」→ 预填正则 + 自动把<b>当前剪贴板内容</b>当测试文本，即开即试跑。<br>
+    · 正则语法错误实时红框 + 错误提示（复用 validateRegex）。
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<!-- ==================== 3. Diff 编辑器 ==================== -->
+<h2>③ Diff 编辑器（复用 DiffPane，低成本）</h2>
+<div class="stage">
+  <div class="viewport">
+    <div class="vpTag">弹窗态 · 粘贴"修改前/后"两段 → 并排对比</div>
+    <div class="ed" style="width:540px">
+      <div class="edHdr">
+        <span style="color:#3B9EFF">🔀</span>
+        <h3 class="edTitle" style="margin:0">Diff 对比</h3>
+        <span class="edSub">修改前 vs 修改后</span>
+        <button class="edX">✕</button>
+      </div>
+      <div class="edBody">
+        <div class="diffWrap">
+          <div class="diffCol old"><div class="dHdr">修改前</div><span class="dDel">error: 连接超时 (code 10060)</span>retry 3 次失败<span class="dDel">，检查代理设置</span>，请重试</div>
+          <div class="diffCol new"><div class="dHdr">修改后</div><span class="dAdd">timeout: 网关 504</span>retry 3 次失败<span class="dAdd">，尝试切换网络</span>，请重试</div>
+        </div>
+        <div class="statRow"><span class="stat">差异 <b>2</b> 处</span><span class="stat">按行对比</span></div>
+      </div>
+      <div class="edFoot">
+        <button class="fBtn">📋 复制新内容</button>
+        <button class="fBtn prim">📤 粘贴新内容</button>
+        <button class="fBtn hl">⛶ 全屏</button>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="anno">
+      <b>交互</b><br>
+    · 入口：<b>右键两条记录 → 「对比 Diff」</b>（新增菜单项）；或变换中心内对比（ConfigDiffDialog 同类入口）。<br>
+    · 组件：直接复用 <code>DiffPane.tsx</code>（动作链步骤对比已在用），包一层 shell 编辑器外壳。<br>
+    · 差异统计条 + 全屏；footer 复制/粘贴「新内容」。<br><br>
+    <b>后续延伸</b>（本次不做）：C1 粘贴历史对比（相邻同源条目自动 diff）——依赖本编辑器的 DiffPane 复用，P2 再上。
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<!-- ==================== 4. AI 闭环 ==================== -->
+<h2>④ AI 生成结果「✏️ 打开编辑器」按钮（TransformCard AiResult 区）</h2>
+<div class="stage">
+  <div class="viewport">
+    <div class="vpTag">变换中心 · ai-sql-generate 结果卡</div>
+    <div class="aiResult" style="width:480px;margin:8px 10px">
+      <div class="aiOut">SELECT u.name, COUNT(o.id) AS cnt<br>  FROM users u<br>  LEFT JOIN orders o ON o.user_id = u.id<br>  WHERE u.status = 'active'<br>  GROUP BY u.name</div>
+      <div class="aiActs">
+        <button class="aiBtn cp">📋 复制</button>
+        <button class="aiBtn pst">📤 粘贴到前台</button>
+        <button class="aiBtn ed">✏️ 打开编辑器</button>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="anno">
+      <b>实现</b><br>
+    · <code>AiResult.tsx</code> 按钮区：对 <code>ai-sql-generate</code> / <code>ai-regex-generate</code> 两个动作<b>额外渲染「✏️ 打开编辑器」</b>（其余动作不显示，最小侵入）。<br>
+    · 点击 → 构造 <code>HistoryItem</code>（type:text, content_type:sql|regex, text: 结果）→ <code>openEditor(item)</code> 打开对应编辑器。<br>
+    · 正则：编辑器打开时自动把<b>当前剪贴板/来源内容</b>作为测试文本预填。<br><br>
+    <b>内容类型路由</b><br>
+    · <code>sql</code>：ContentClassifier 识别（analyzer.ts 已有 SqlFeatures 检测，Rust 侧标签映射）→ 双击/右键自动进 SQL 编辑器。<br>
+    · <code>regex</code>：自动识别不可靠（易误判），<b>主入口 = AI 结果「打开编辑器」</b> + 手动「以正则打开」菜单（右键 → 打开方式 → 正则测试器）。
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<h2>⑤ 交付范围与验证点</h2>
+<table class="t">
+<tr><th style="width:22%">改动</th><th>内容</th><th style="width:30%">验证</th></tr>
+<tr><td class="pick">SqlEditor.tsx</td><td>shell 变体：CodeMirror + @codemirror/lang-sql + 校验结果条（错误行红底）；useEditorCore/editorBits 复用</td><td>tsc + 单测（高亮不测，校验逻辑抽纯函数）</td></tr>
+<tr><td class="pick">sql_validate（Rust）</td><td><code>:memory:</code> SQLite + EXPLAIN 只读校验，返回错误行/消息；写语句拦截；方言误报「忽略错误」开关</td><td>cargo test（合法/非法/写语句拦截）</td></tr>
+<tr><td class="pick">RegexTesterEditor.tsx</td><td>升级 RegexPreviewDialog：双栏 + 匹配数/捕获组统计 + 全屏三态</td><td>tsc + 单测（safeApplyRegex 已有测试）</td></tr>
+<tr><td class="pick">DiffEditor.tsx</td><td>复用 DiffPane + shell 外壳；右键「对比 Diff」入口</td><td>tsc + 真机两条记录对比</td></tr>
+<tr><td>注册 + 路由</td><td>EDITOR_REGISTRY 加 sql/regex；ContentClassifier 加 sql 标签→content_type；「以正则打开」右键入口</td><td>真机：复制 SQL 双击自动进 SQL 编辑器</td></tr>
+<tr><td>AI 闭环</td><td>AiResult 对 sql/regex 动作加「打开编辑器」按钮 → openEditor 预填</td><td>真机：AI 生成 SQL → 打开编辑器 → 校验/粘贴</td></tr>
+</table>
+<p class="note" style="margin-top:10px">红线：SQL 校验只读（:memory: + 写语句拦截）、正则纯本地执行、Diff 纯前端——内容不出本机。全量改动以纯前端为主 + 1 个 Rust 命令；版本号未经许可<b>不升</b>。确认稿后从 SqlEditor + sql_validate 开始。</p>
+
+</body>
+</html>

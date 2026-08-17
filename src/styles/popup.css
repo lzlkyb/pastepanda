@@ -356,6 +356,10 @@ body {
   flex-shrink: 0;
   color: #fff;
   font-size: 11px;
+  overflow: hidden; /* V6.19：图片缩略图填充 */
+}
+.tray-popup-item-icon.img { background: #101A30; padding: 0; }
+.tray-popup-item-icon.img img { width: 100%; height: 100%; object-fit: cover; }
   line-height: 1;
 }
 

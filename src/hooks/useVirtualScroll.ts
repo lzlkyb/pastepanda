@@ -137,11 +137,14 @@ export function useVirtualScroll({
 
     lenisRef.current = lenis;
 
+    // 用可变 rafId 跟踪最新帧：递归里持续更新，cleanup 才能取消“当前”帧，
+    // 否则只取消首帧、循环在卸载后永久存活（P0 资源泄漏）。
+    let rafId = 0;
     function raf(time: number) {
       lenis.raf(time);
-      requestAnimationFrame(raf);
+      rafId = requestAnimationFrame(raf);
     }
-    const rafId = requestAnimationFrame(raf);
+    rafId = requestAnimationFrame(raf);
 
     // scrollMetrics rAF 节流同步给 Timeline（直接用 Lenis 内部状态）
     let metricsRafId = 0;

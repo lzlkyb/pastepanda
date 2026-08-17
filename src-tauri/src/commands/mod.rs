@@ -160,6 +160,7 @@ mod stack_template;
 mod config_convert;
 mod content_memory;
 mod semantic;
+mod sql;
 // pub(crate)：`ai::profile_prompt` 要用 build_profile / HOUR_SEGMENTS（避免把角色与
 // 领域分类逻辑再写一份）。对外仍然不暴露。
 pub(crate) mod profile;
@@ -192,6 +193,7 @@ pub use stack_template::*;
 pub use config_convert::*;
 pub use content_memory::*;
 pub use semantic::*;
+pub use sql::*;
 pub use profile::*;
 pub use sequence::*;
 pub use sticky::*;

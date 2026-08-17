@@ -170,6 +170,11 @@ pub async fn semantic_index(
         return Err("AI 记忆增强未开启——先在 AI 设置里打开开关".to_string());
     }
     let cfg = crate::commands::ai::read_ai_config(&store)?;
+    // 红线（claude.md 规则 16）：所有 AI/云端路径必须受主开关 cfg.enabled 门控，
+    // 否则「主 AI 关、记忆增强开」时仍会出网调用 embedding 端点。
+    if !cfg.enabled {
+        return Err("AI 功能未启用——请先在 AI 设置中打开总开关".to_string());
+    }
     let (model, _) = resolve_embed_model(&cfg, &override_model)?;
     if cfg.effective_protocol() != crate::ai::provider::Protocol::OpenAi {
         return Err("当前服务商不是 OpenAI 兼容协议，没有 /embeddings 接口".to_string());
@@ -265,6 +270,11 @@ pub async fn semantic_search(
     let (enabled, override_model) = read_mem_config(&store);
     if !enabled {
         return Err("AI 记忆增强未开启——先在 AI 设置里打开开关".to_string());
+    }
+    // 红线（claude.md 规则 16）：主 AI 开关未启用时不得出网做 embedding 检索。
+    let cfg = crate::commands::ai::read_ai_config(&store)?;
+    if !cfg.enabled {
+        return Err("AI 功能未启用——请先在 AI 设置中打开总开关".to_string());
     }
     // 搜索词也要过敏感防护：密钥与个人信息都不该出网。
     // 用 is_sensitive_for_egress 而不是 is_secret：本命令确实会把 query 发去云端做 embedding，

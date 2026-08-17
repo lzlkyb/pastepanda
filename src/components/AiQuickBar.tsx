@@ -116,7 +116,7 @@ export const AiQuickBar = memo(function AiQuickBar() {
     const paths = parseFilePaths(topItem?.content || "");
     if (paths.length === 0) return { text: "", inputType: "text", pathDerived: false };
     return { text: paths.join("\n"), inputType: "file_path", pathDerived: true };
-  }, [topItem?.text, topItem?.content, topItem?.content_type, topItem?.type, ocrText, ocrLoading]);
+  }, [topItem?.text, topItem?.content, topItem?.content_type, topItem?.type, ocrText]);
 
   /** 单行预览：换行先压成空格，否则多行文本在单行容器里只能看到第一行 */
   const tgtPreview = useMemo(() => {

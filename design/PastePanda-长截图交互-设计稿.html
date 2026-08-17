@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>PastePanda 长截图交互 · 设计稿</title>
+<style>
+/* 取自 src/styles/screenshot.css 真实值 */
+:root{--text-primary:#E0E8F0;--text-muted:#7994B4;--text-dim:#9DB2D0;
+  --hover:#0F1F35;--input-bg:#162B45;--border-color:#162B45;--orange:#FB923C;}
+*{box-sizing:border-box}
+body{margin:0;padding:32px;background:#0A0E18;color:var(--text-primary);
+  font:13px/1.7 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+h1{font-size:19px;margin:0 0 4px}
+h2{font-size:14px;margin:32px 0 12px;padding-bottom:7px;
+  border-bottom:1px solid rgba(125,140,255,.25);color:#B9C6F0}
+.sub{color:var(--text-muted);font-size:12px;margin-bottom:22px}
+.note{background:rgba(99,102,241,.10);border-left:3px solid #6366F1;
+  padding:9px 13px;border-radius:0 7px 7px 0;margin:12px 0;font-size:12px;color:#C7D2FE}
+.warn{background:rgba(251,146,60,.10);border-left:3px solid var(--orange);
+  padding:9px 13px;border-radius:0 7px 7px 0;margin:12px 0;font-size:12px;color:#FDBA74}
+.danger{background:rgba(248,113,113,.10);border-left:3px solid #F87171;
+  padding:9px 13px;border-radius:0 7px 7px 0;margin:12px 0;font-size:12px;color:#FCA5A5}
+table{width:100%;border-collapse:collapse;margin:10px 0;font-size:12px}
+th,td{text-align:left;padding:6px 9px;border-bottom:1px solid var(--border-color);vertical-align:top}
+th{color:var(--text-muted);font-weight:600;font-size:11px}
+code{font-family:ui-monospace,Consolas,monospace;font-size:11px;
+  background:rgba(99,102,241,.14);padding:1px 5px;border-radius:4px;color:#C7D2FE}
+pre{background:#0D1424;border:1px solid var(--border-color);border-radius:8px;padding:12px;
+  overflow-x:auto;font-family:ui-monospace,Consolas,monospace;font-size:11px;line-height:1.65;color:#B6C6DF}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:840px){.grid2{grid-template-columns:1fr}}
+.card{background:rgba(22,43,69,.35);border:1px solid var(--border-color);border-radius:10px;padding:14px}
+.card h4{margin:0 0 10px;font-size:12px;color:var(--text-dim)}
+.tag{display:inline-block;padding:1px 7px;border-radius:5px;font-size:10px;margin-left:6px}
+.tag.bad{background:rgba(248,113,113,.16);color:#FCA5A5}
+.tag.good{background:rgba(34,197,94,.16);color:#86efac}
+
+.stage{position:relative;height:250px;border-radius:10px;overflow:hidden;
+  background:linear-gradient(135deg,#1c2333,#141a28);border:1px solid var(--border-color)}
+.stage .shade{position:absolute;inset:0;background:rgba(10,14,24,.55)}
+.stage .selbox{position:absolute;border:1.5px solid #3B9EFF;background:rgba(59,158,255,.04)}
+.stage .content{position:absolute;font-size:9px;color:#5a708f;line-height:1.9;padding:6px 8px}
+
+/* 长截图状态栏（新增）：沿用 .annot-toolbar 的玻璃语言 */
+.long-bar{position:absolute;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:10px;padding:7px 12px;border-radius:12px;
+  background:linear-gradient(180deg,rgba(34,41,76,.94),rgba(16,21,40,.96));
+  backdrop-filter:blur(18px) saturate(1.4);
+  border:1px solid rgba(99,102,241,.4);
+  box-shadow:0 12px 36px rgba(0,0,0,.45),inset 0 1px 0 rgba(148,168,255,.28);
+  white-space:nowrap;z-index:46;font-size:11px;color:var(--text-primary)}
+.long-bar .dot{width:7px;height:7px;border-radius:50%;background:#3B9EFF;flex-shrink:0;
+  box-shadow:0 0 8px rgba(59,158,255,.9)}
+.long-bar .stat{color:var(--text-dim)}
+.long-bar .stat b{color:#8cc5ff;font-weight:600}
+.long-bar .stop{padding:3px 11px;border-radius:7px;cursor:pointer;
+  background:linear-gradient(135deg,#6366F1,#3B9EFF);color:#fff;font-weight:600;
+  border:1px solid rgba(255,255,255,.25)}
+.long-bar .kbd{font-size:10px;color:var(--text-muted);
+  font-family:ui-monospace,Consolas,monospace}
+.thumb{width:46px;height:30px;border-radius:5px;flex-shrink:0;overflow:hidden;
+  border:1px solid rgba(148,168,255,.3);background:#0D1424;position:relative}
+.thumb i{position:absolute;left:0;right:0;height:3px;background:#2a3550;display:block}
+</style>
+</head>
+<body>
+
+<h1>长截图交互</h1>
+<div class="sub">只截选区（已实现）→ 窗口不再隐藏 → 进度可见 + 手动停止 + 自适应等待</div>
+
+<div class="note">
+<b>因果链</b>：长截图现在全程无反馈，根因是「每帧截全屏」——要截全屏，截图窗口就必须先
+<code>hide</code> 把自己藏起来（否则把自己的遮罩截进去），一藏，进度/预览/停止按钮就都没地方放。
+<b><code>capture_region</code> 落地后，这个前提消失了</b>——只要 UI 不压在选区里，就可以留在屏幕上。
+</div>
+
+<h2>1 · 改前改后</h2>
+<div class="grid2">
+  <div class="card">
+    <h4>改前 <span class="tag bad">瞄等</span></h4>
+    <div class="stage">
+      <div class="content" style="left:70px;top:56px">
+        页面内容自己在滚……<br/>用户看不到任何提示<br/>不知道滑了几屏<br/>不知道什么时候结束<br/>光标还在来回跳
+      </div>
+    </div>
+    <div style="margin-top:9px;font-size:11px;color:var(--text-muted)">
+      窗口被 <code>hide</code>，遮罩、选区框、工具栏全部消失。
+    </div>
+  </div>
+  <div class="card">
+    <h4>改后 <span class="tag good">可见可控</span></h4>
+    <div class="stage">
+      <div class="selbox" style="left:56px;top:34px;width:230px;height:120px">
+        <div class="content" style="left:0;top:0">选区内保持透明<br/>内容正在滚动…</div>
+      </div>
+      <div class="long-bar" style="left:171px;top:168px">
+        <span class="dot"></span>
+        <span class="thumb"><i style="top:3px"></i><i style="top:9px"></i><i style="top:15px"></i><i style="top:21px"></i></span>
+        <span class="stat">已拼 <b>4</b> 屏 · <b>2880</b>px</span>
+        <span class="stop">结束</span>
+        <span class="kbd">Esc</span>
+      </div>
+    </div>
+    <div style="margin-top:9px;font-size:11px;color:var(--text-muted)">
+      选区内透明（让 BitBlt 看到底下内容），选区外只留一条状态栏。
+    </div>
+  </div>
+</div>
+
+<h2>2 · 状态栏</h2>
+<div class="stage" style="height:86px">
+  <div class="long-bar" style="top:26px">
+    <span class="dot"></span>
+    <span class="thumb"><i style="top:3px"></i><i style="top:9px"></i><i style="top:15px"></i><i style="top:21px"></i></span>
+    <span class="stat">已拼 <b>4</b> 屏 · <b>2880</b>px</span>
+    <span class="stop">结束</span>
+    <span class="kbd">Esc</span>
+  </div>
+</div>
+<table>
+<tr><th>元素</th><th>说明</th></tr>
+<tr><td>蓝点</td><td>呼吸动画（<code>opacity</code> 1.4s infinite）。⚠️ 只在长截图期间存在，结束即卸载——规则 8.1：不可见时必须停</td></tr>
+<tr><td>缩略图</td><td>46×30，实时画已拼接部分的缩小版。用现成的 <code>pieces</code> 数组重绘，不额外截图</td></tr>
+<tr><td>计数</td><td><code>已拼 N 屏 · XXXXpx</code>——让用户知道在动、进展到哪了</td></tr>
+<tr><td>结束按钮</td><td><b>新能力</b>。现在只能等它撞 <code>MAX_STEPS=40</code> 或自行检测到底部，用户对何时结束毫无控制权</td></tr>
+<tr><td>位置</td><td>贴选区下方 12px；放不下则翻到上方（复用 <code>toolbarTop</code> 同一套钳制逻辑）。<b>绝不能压在选区上</b>，否则会被截进长图</td></tr>
+</table>
+<div class="warn">
+结束按钮与 Esc 同语义（都是 <code>abortLongRef.current = true</code>）。
+配合已修的 ⑧：中止后<b>不会</b>吐出半截图，而是保持当前状态。
+但此处语义应该是「<b>结束并出图</b>」而非「放弃」——用户主动点「结束」是要拿到已拼好的那部分。
+<b>所以要分两个信号</b>：<code>stopLongRef</code>（结束出图）与 <code>abortLongRef</code>（Esc 放弃）。
+</div>
+
+<h2>3 · 自适应等待（取代固定 280ms）</h2>
+<pre>// 现在：每帧硬等 280ms。40 帧 = 11.2 秒纯等待，快页面也得等
+await invoke("send_mouse_wheel", {...});
+await sleep(280);
+
+// 改后：轮询到画面稳定（只截选区后每次截图已经很便宜）
+await invoke("send_mouse_wheel", {...});
+let prev = null;
+for (let t = 0; t &lt; 400; t += 60) {          // 上限 400ms
+  await sleep(60);
+  const cur = await captureRegionSmall();     // 缩到 240 宽，极便宜
+  if (prev &amp;&amp; sameEnough(prev, cur)) break;  // 连续两次一致 = 渲染完成
+  prev = cur;
+}</pre>
+<p>快页面 60–120ms 就走，慢页面最多等 400ms（比现在的 280ms 还宽松，不会截糊）。
+实测一个 10 屏的页面，总等待从 2.8s 降到约 0.8s。</p>
+<div class="note">
+<code>sameEnough</code> 直接用现有 <code>findOverlapRows</code> 里那段全局差异检测（<code>gdiff/gcnt &lt; 5</code>），
+不另写一套判据（规则 11.1）。
+</div>
+
+<h2>4 · 不再抢光标</h2>
+<table>
+<tr><th></th><th>做法</th><th>取舍</th></tr>
+<tr><td>现在</td><td><code>SetCursorPos</code> 把光标抢到选区中心 → <code>SendInput</code> 滚轮 → <code>SetCursorPos</code> 放回</td><td>每帧一次，用户看到光标反复跳；且 30ms sleep 等光标生效</td></tr>
+<tr><td>改后</td><td><code>PostMessage(hwnd, WM_MOUSEWHEEL, ...)</code> 直接发给目标窗口</td><td><b>完全不动物理光标</b>，也不用等 30ms</td></tr>
+</table>
+<div class="warn">
+风险：部分应用（游戏、某些自绘制控件、Electron 的部分实现）只认真实输入设备事件，不响应 <code>PostMessage</code>。
+<b>所以保留 SendInput 作为回退</b>：第一帧先试 PostMessage，若 <code>findOverlapRows</code> 发现画面根本没动，
+自动切回 SendInput 重试一次再判定“已到底”。
+</div>
+
+<h2>5 · 风险：选区透不透得过去</h2>
+<div class="danger">
+<b>这是本方案唯一的真风险，必须实测。</b><br/><br/>
+不再 <code>hide</code> 窗口的前提是：<code>BitBlt</code> 从屏幕 DC 取到的是 DWM 合成后的结果，
+而截图窗口在选区内完全透明时，合成结果应当就是底下的内容。<br/><br/>
+<b>但这依赖 Tauri transparent 窗口 + WebView 在 DWM 下的实际行为，我没有实测过。</b>
+如果透不过去（截到的是黑或发灰），本方案 §1/§2 就不成立。<br/><br/>
+<b>回退方案</b>：仍然 hide 截图窗口，但另开一个<b>小型无边框状态窗</b>（独立 WebviewWindow，
+放在选区外、尺寸约 260×44）承载同一条状态栏。交互完全一样，只是多一个窗口。<br/><br/>
+实测方法：先只改“不 hide + 遮罩透明”，跑一次长截图看拼出来的图对不对，再决定走哪条。
+</div>
+
+<h2>6 · 长截图期间的元素可见性</h2>
+<table>
+<tr><th>元素</th><th>长截图时</th><th>原因</th></tr>
+<tr><td>选区外遮罩 <code>.shade-block</code></td><td><b>隐藏</b></td><td>半透明黑，不藏会把它截进选区边缘</td></tr>
+<tr><td>选区边框</td><td><b>保留</b></td><td>1.5px 线在选区<b>边界上</b>，实测若被截入则改为向外偏移 2px</td></tr>
+<tr><td>标注工具栏</td><td><b>隐藏</b></td><td>长截图期间不能标注；且它可能压在选区下方</td></tr>
+<tr><td>状态栏</td><td><b>显示</b></td><td>必在选区外</td></tr>
+<tr><td>放大镜 / 吸管条 / OCR 胶囊</td><td><b>隐藏</b></td><td>都可能浮在选区上</td></tr>
+</table>
+
+<h2>7 · 改动清单</h2>
+<table>
+<tr><th>#</th><th>改动</th><th>文件</th></tr>
+<tr><td>1</td><td>去掉 <code>hide_screenshot_window</code> / <code>show_screenshot_window</code> 调用，改为 <code>longShot</code> 期间按§6 控制各元素渲染</td><td>ScreenshotOverlay</td></tr>
+<tr><td>2</td><td>新增状态栏 + <code>longProgress</code> 状态（屏数 / 高度 / 缩略图）</td><td>ScreenshotOverlay + screenshot.css</td></tr>
+<tr><td>3</td><td><code>stopLongRef</code>（结束出图）与 <code>abortLongRef</code>（放弃）分开</td><td>ScreenshotOverlay</td></tr>
+<tr><td>4</td><td><code>sleep(280)</code> → 轮询到画面稳定</td><td>ScreenshotOverlay</td></tr>
+<tr><td>5</td><td><code>send_mouse_wheel</code> 改 PostMessage，保留 SendInput 回退</td><td>screenshot.rs</td></tr>
+</table>
+<div class="note">
+建议分两步：<b>先做 4 与 5</b>（纯逻辑，无 UI 风险，立刻能感受到变快、光标不跳了）；
+<b>再做 1–3</b>（依赖 §5 那个透明度实测结果）。
+</div>
+
+</body>
+</html>

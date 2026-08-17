@@ -62,8 +62,12 @@ export const SuggestionBar = memo(function SuggestionBar() {
 
   // 新内容到达 → 计算建议（意图 > top-1 > 序列 > 会话 > 跑链）
   useEffect(() => {
-    if (!topItem || topItem.type !== "text") return;
-    const text = (topItem.text || "").trim();
+    if (!topItem) return;
+    // V6.19 截图场景感知：图片条目（截图）用 OCR 全文参与建议，让"代码/链接/英文"内容
+    // 也能触发建议（此前 type!=="text" 直接跳过，截图永远没建议）
+    const text = (
+      topItem.type === "image" ? topItem.ocr_text || "" : topItem.text || ""
+    ).trim();
     if (!text) return;
 
     // v6.1 工作记忆：新内容进会话桶（90s 间隔聚合，纯内存不落盘）
@@ -83,7 +87,13 @@ export const SuggestionBar = memo(function SuggestionBar() {
 
     void (async () => {
       const { fb, prefs } = await loadFeedback();
-      const history = useAppStore.getState().history.slice(0, 3).map((h) => ({ text: h.text || "" }));
+      const history = useAppStore
+        .getState()
+        .history.slice(0, 3)
+        .map((h) => ({
+          // V6.19：截图条目用 OCR 全文参与序列/会话建议
+          text: h.type === "image" && h.ocr_text ? h.ocr_text : h.text || "",
+        }));
 
       // 意图识别优先（V3-A：任务级理解）；主动作"常被改"且无偏好 → 放弃意图
       let intent = suggestIntent(ctx, scene, history);

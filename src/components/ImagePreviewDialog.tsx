@@ -46,7 +46,7 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
     confirmCrop, cancelCrop, restoreOriginal,
     handlePreviewWheel, handlePanStart, handlePanMove, handlePanEnd,
     toggleOcrOverlay, getSelectedOcrTexts, getSelectedOcrJoined, handleOcrWordClick,
-    handleOcrSelectStart, handleOcrSelectMove, handleOcrSelectEnd,
+    handleOcrSelectStart,
     handlePinImage,
   } = preview;
 

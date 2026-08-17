@@ -6,7 +6,7 @@
  */
 
 import { Database, Loader2, Settings2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AiConfig, AiProviderInfo } from "@/lib/api";
 import {
   semanticStatus,
@@ -40,6 +40,9 @@ export function AiAdvanced(p: Props) {
   // M5-2 语义索引状态
   const [sem, setSem] = useState<SemanticStatus | null>(null);
   const [modelDraft, setModelDraft] = useState("");
+  // 用户是否改过 embedding 模型草稿：改过则展开时不被服务端值覆盖（P1 修复）
+  const modelDirtyRef = useRef(false);
+  const [semError, setSemError] = useState<string | null>(null);
   const [indexing, setIndexing] = useState(false);
   const { toast } = useToast();
 
@@ -47,15 +50,26 @@ export function AiAdvanced(p: Props) {
     try {
       const s = await semanticStatus();
       setSem(s);
-      setModelDraft(s.model);
-    } catch {
+      setSemError(null);
+      // 用户没改过草稿才用服务端值回填；改过则保留，避免覆盖未保存的编辑（P1 修复）
+      if (!modelDirtyRef.current) setModelDraft(s.model);
+    } catch (e) {
       setSem(null);
+      setSemError(`读取 AI 记忆增强状态失败：${e instanceof Error ? e.message : String(e)}`);
     }
   }, []);
 
   useEffect(() => {
     if (p.open) void loadSem();
   }, [p.open, loadSem]);
+
+  // 折叠卸载前先把草稿落盘：输入框靠 onBlur 提交，但折叠是卸载而非失焦，
+  // React 不会触发 blur，未失焦的值会静默丢失（P1 修复）。
+  useEffect(() => {
+    return () => {
+      p.onCommit();
+    };
+  }, [p]);
 
   const toggleSem = useCallback(
     async (enabled: boolean) => {
@@ -74,6 +88,7 @@ export function AiAdvanced(p: Props) {
     async () => {
       try {
         await semanticSetConfig(sem?.enabled ?? false, modelDraft);
+        modelDirtyRef.current = false;
         toast("embedding 模型已保存", "success");
         void loadSem();
       } catch (e) {
@@ -253,6 +268,11 @@ export function AiAdvanced(p: Props) {
               能按<strong>意思</strong>命中，而不是只按字面。摘要/搜索词会发给当前 AI 厂商计费
               （受日预算约束），<strong>原文永不出本机</strong>；关闭即退回关键词搜索，可随时清除。
             </span>
+            {semError && (
+              <span className={styles.hint} style={{ color: "var(--danger, #e5484d)" }}>
+                ⚠ {semError}
+              </span>
+            )}
           </div>
 
           {sem?.enabled && (
@@ -262,7 +282,10 @@ export function AiAdvanced(p: Props) {
                 style={{ width: 200, padding: "5px 9px", fontSize: 11.5 }}
                 value={modelDraft}
                 placeholder={sem.defaultModel || "embedding 模型名"}
-                onChange={(e) => setModelDraft(e.target.value)}
+                onChange={(e) => {
+                  modelDirtyRef.current = true;
+                  setModelDraft(e.target.value);
+                }}
                 onBlur={() => void saveModel()}
               />
               <button

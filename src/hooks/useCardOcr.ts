@@ -75,7 +75,6 @@ export function useCardOcr(
     }
     queueRef.current.push(...jobs);
     drain();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, thumbFirst, thumbLast, drain]);
 
   return byId;

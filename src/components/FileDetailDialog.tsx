@@ -321,7 +321,13 @@ function TextPreviewBody({ data, path }: { data: TextPreviewData; path: string }
               value={query}
               placeholder="搜索…"
               onChange={(e) => { setQuery(e.target.value); setActiveMatch(0); }}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.shiftKey ? prevMatch() : nextMatch(); } }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  if (e.shiftKey) prevMatch();
+                  else nextMatch();
+                }
+              }}
             />
             <span className="file-search-count">{matchLines.length ? `${Math.min(activeMatch + 1, matchLines.length)}/${matchLines.length}` : "0"}</span>
             <button onClick={prevMatch} title="上一个">↑</button>
@@ -399,7 +405,6 @@ function SingleFileBody({ path, item, metaOpen, setMetaOpen }: {
 
   const fileName = nameOf(path);
   const fileExists = fileInfo?.exists === true;
-  const fileMissing = fileInfo?.exists === false;
   const fileIcon = getFileIcon(fileName);
   const iconColor = getFileIconColor(fileName);
 

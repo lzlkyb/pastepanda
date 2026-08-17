@@ -3,6 +3,22 @@ import type { ChangelogEntry } from "./changelog";
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "6.17.2",
+    date: "2026-08-16",
+    summary: "**OCR 识别引擎升级为 PP-OCRv6**：从 Windows 自带...",
+    categories: [
+      {
+        type: "other",
+        name: "改进",
+        items: [
+          { text: "**OCR 识别引擎升级为 PP-OCRv6**：从 Windows 自带 OCR 换成纯本地 MNN 推理引擎（ocr-rs），中文与复杂排版识别率更高，且跨平台、模型随安装包发布（约 15MB）" },
+          { text: "**OCR 构建完全离线**：OCR 依赖（ocr-rs 源码 + 预编译 MNN）vending 进仓库，构建不再联网下载；预编译库不入 git" },
+          { text: "**工程整理**：项目迁移至新目录，Rust 编译产物清理；`claude.md` 移入仓库根作为开发规则" },
+        ],
+      },
+    ],
+  },
+  {
     version: "6.17.1",
     date: "2026-08-14",
     summary: "**图片自动识别文字**：图片复制进历史后，卡片上自动显示识别出的文字，不...",

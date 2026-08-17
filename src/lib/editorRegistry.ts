@@ -99,6 +99,9 @@ const PathEditor = lazy(() =>
 const NumberEditor = lazy(() =>
   import("@/components/editors/NumberEditor").then((m) => ({ default: m.NumberEditor }))
 );
+const SqlEditor = lazy(() =>
+  import("@/components/editors/SqlEditor").then((m) => ({ default: m.SqlEditor }))
+);
 const ImageEditor = lazy(() =>
   import("@/components/editors/ImageEditor").then((m) => ({ default: m.ImageEditor }))
 );
@@ -126,6 +129,8 @@ const EDITOR_REGISTRY: Partial<Record<string, EditorDefinition>> = {
   link: { component: LinkEditor, width: "w420", title: "🔗 编辑链接", footer: ["copy", "paste", "snippet"] },
   file_path: { component: PathEditor, width: "w420", title: "📁 编辑路径", footer: ["copy", "paste", "snippet"] },
   number: { component: NumberEditor, width: "w420", title: "🔢 编辑数字", footer: ["copy", "paste", "snippet"] },
+  // 编辑器增量 P1：SQL 编辑器（CodeMirror 高亮 + 本地只读语法校验）
+  sql: { component: SqlEditor, width: "w420", title: "🗄 编辑 SQL", footer: ["copy", "paste", "snippet"] },
 };
 
 const DEFAULT_EDITOR: EditorDefinition = {

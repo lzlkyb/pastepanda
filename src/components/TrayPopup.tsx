@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ThemeKey, DEFAULT_THEME } from "@/lib/theme";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { pasteTextGuarded, pasteImage, pasteRichGuarded } from "@/lib/api";
+import { thumbnailSourcePath } from "@/lib/richContent";
 import { VersionBadge } from "@/components/VersionBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { SkinScene } from "@/components/SkinScene";
@@ -394,6 +395,17 @@ export function TrayPopup() {
       onClick: doToggleMonitor,
     },
     {
+      id: "pinned_panel",
+      iconClass: "icon-purple",
+      iconSvg: <span style={{ fontSize: 13 }}>📌</span>,
+      label: "贴图管理…",
+      onClick: () => {
+        void invoke("open_pinned_panel").catch((e) => {
+          console.error("[TrayPopup] 打开贴图管理失败:", e);
+        });
+      },
+    },
+    {
       id: "settings",
       iconClass: "icon-purple",
       iconSvg: <IconSettings />,
@@ -549,6 +561,7 @@ export function TrayPopup() {
               const isActive = activeIdx === idx;
               const typeIcon = item.type === "image" ? "🖼" : item.type === "file" ? "📁" : "📝";
               const typeColor = item.type === "image" ? "icon-purple" : item.type === "file" ? "icon-orange" : "icon-blue";
+              const thumb = item.type === "image" ? thumbnailSourcePath(item) : null;
               return (
                   <button
                     key={item.id}
@@ -556,7 +569,14 @@ export function TrayPopup() {
                     onClick={() => doPaste(item)}
                     onMouseEnter={() => setActiveIdx(idx)}
                   >
-                  <span className={`tray-popup-item-icon ${typeColor}`}>{typeIcon}</span>
+                  {thumb ? (
+                    <span className="tray-popup-item-icon img">
+                      {/* Tauri 2 下裸路径不可直接加载，必须 convertFileSrc（asset protocol） */}
+                      <img src={convertFileSrc(thumb)} alt="" />
+                    </span>
+                  ) : (
+                    <span className={`tray-popup-item-icon ${typeColor}`}>{typeIcon}</span>
+                  )}
                   <span className="tray-popup-item-text">{item.preview}</span>
                   <span className="tray-popup-item-hint">粘贴</span>
                 </button>

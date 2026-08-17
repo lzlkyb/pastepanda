@@ -54,7 +54,7 @@ fn tag_tx() -> &'static mpsc::Sender<TagJob> {
     static TX: OnceLock<mpsc::Sender<TagJob>> = OnceLock::new();
     TX.get_or_init(|| {
         let (tx, rx) = mpsc::channel::<TagJob>();
-        std::thread::Builder::new()
+        if let Err(e) = std::thread::Builder::new()
             .name("auto-tag-writer".into())
             .spawn(move || {
                 for job in rx {
@@ -88,7 +88,9 @@ fn tag_tx() -> &'static mpsc::Sender<TagJob> {
                 }
                 log::info!("[ContentClassifier] auto-tag-writer 通道关闭，worker 退出");
             })
-            .expect("failed to spawn auto-tag-writer thread");
+            {
+                log::error!("[ContentClassifier] 启动 auto-tag-writer 线程失败: {}", e);
+            }
         tx
     })
 }
@@ -759,50 +761,55 @@ fn stage1_capture(
     //    不拦会把纯图片全误判成图文（实测踩过这个）。
     if let Some(fragment) = html_fragment_opt.as_deref() {
         if html_fragment_has_image(fragment) && html_fragment_has_text(fragment) {
-            let app_dir = app_handle.path().app_data_dir().unwrap_or_default();
-            let images_dir = app_dir.join("images");
-            let (rewritten, _saved_images) = localize_html_images(fragment, &images_dir);
+            // 图文混排需先把片段内联图片落地到本地（依赖应用数据目录）。
+            // 目录不可用时降级为下方纯文本分支，避免把图片写到 CWD（unwrap_or_default 的空路径）。
+            if let Ok(app_dir) = app_handle.path().app_data_dir() {
+                let images_dir = app_dir.join("images");
+                let (rewritten, _saved_images) = localize_html_images(fragment, &images_dir);
 
-            // 同一剪贴板会话里通常还有 CF_UNICODETEXT，优先直接复用作为纯文本表示；
-            // 少数应用（如“仅复制带标题的图片”场景）可能不写这个格式，
-            // 若为空则用片段自身去标签后的文字作为保底，避免卡片标题空白、搜索也搜不到
-            let mut plain_text = clipboard.get_text().unwrap_or_default();
-            if plain_text.trim().is_empty() {
-                plain_text = html_fragment_to_plain_text_fallback(&rewritten);
-            }
-
-            let hash = md5_hex(rewritten.as_bytes());
-
-            if paste_suppress.is_hash_suppressed(&hash) {
-                log::info!("[ClipboardMonitor] 跳过自身粘贴内容 (hash匹配·富文本)");
-                paste_suppress.clear_hash();
-                *last_text_hash = Some(hash);
-                return true;
-            }
-            if paste_suppress.has_expected_hash() {
-                if !paste_suppress.is_suppressed() {
-                    paste_suppress.clear_hash();
+                // 同一剪贴板会话里通常还有 CF_UNICODETEXT，优先直接复用作为纯文本表示；
+                // 少数应用（如"仅复制带标题的图片"场景）可能不写这个格式，
+                // 若为空则用片段自身去标签后的文字作为保底，避免卡片标题空白、搜索也搜不到
+                let mut plain_text = clipboard.get_text().unwrap_or_default();
+                if plain_text.trim().is_empty() {
+                    plain_text = html_fragment_to_plain_text_fallback(&rewritten);
                 }
-            } else if paste_suppress.is_suppressed() {
-                log::info!("[ClipboardMonitor] 跳过自身粘贴内容 (无hash路径·时间抑制窗口内·富文本)");
-                *last_text_hash = Some(hash);
+
+                let hash = md5_hex(rewritten.as_bytes());
+
+                if paste_suppress.is_hash_suppressed(&hash) {
+                    log::info!("[ClipboardMonitor] 跳过自身粘贴内容 (hash匹配·富文本)");
+                    paste_suppress.clear_hash();
+                    *last_text_hash = Some(hash);
+                    return true;
+                }
+                if paste_suppress.has_expected_hash() {
+                    if !paste_suppress.is_suppressed() {
+                        paste_suppress.clear_hash();
+                    }
+                } else if paste_suppress.is_suppressed() {
+                    log::info!("[ClipboardMonitor] 跳过自身粘贴内容 (无hash路径·时间抑制窗口内·富文本)");
+                    *last_text_hash = Some(hash);
+                    return true;
+                }
+
+                if Some(&hash) != last_text_hash.as_ref() {
+                    *last_text_hash = Some(hash.clone());
+
+                    let (title, exe_path) = capture_foreground_source(app_handle);
+                    queue.push(CapturedItem::Rich {
+                        html_fragment: rewritten,
+                        plain_text,
+                        hash,
+                        title,
+                        exe_path,
+                        time: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                    });
+                }
                 return true;
+            } else {
+                log::warn!("[ClipboardMonitor] 获取应用数据目录失败，图文富文本降级为纯文本采集");
             }
-
-            if Some(&hash) != last_text_hash.as_ref() {
-                *last_text_hash = Some(hash.clone());
-
-                let (title, exe_path) = capture_foreground_source(app_handle);
-                queue.push(CapturedItem::Rich {
-                    html_fragment: rewritten,
-                    plain_text,
-                    hash,
-                    title,
-                    exe_path,
-                    time: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-                });
-            }
-            return true;
         }
     }
 
@@ -1241,7 +1248,17 @@ fn process_image(
     now_str: String,
 ) {
     // 保存图片到磁盘
-    let app_dir = app_handle.path().app_data_dir().unwrap_or_default();
+    let app_dir = match app_handle.path().app_data_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            // 目录不可用则跳过本次图片保存（不写 CWD），避免数据落到错误位置
+            log::error!(
+                "[ClipboardMonitor] 获取应用数据目录失败 (跳过此次图片保存): {}",
+                e
+            );
+            return;
+        }
+    };
     let img_dir = app_dir.join("images");
     if let Err(e) = std::fs::create_dir_all(&img_dir) {
         log::error!(
@@ -1314,6 +1331,8 @@ fn process_image(
                     existing.id
                 );
             }
+            // V4 截图记忆：重复图片也补 OCR 摘要（语义检索可命中"那张图的字"）
+            ensure_image_ocr_memory(store, &existing.id, &img_path);
             let updated_item = HistoryItem {
                 time: now_str.clone(),
                 source: source_title.clone(),
@@ -1352,6 +1371,9 @@ fn process_image(
     if let Some(store) = app_handle.try_state::<DataStore>() {
         if let Err(e) = store.insert_history(&item) {
             log::error!("[ClipboardMonitor] 插入图片记录失败: {}", e);
+        } else {
+            // V4 截图记忆：图片有 OCR 缓存 → 写摘要进内容记忆（语义检索可命中）
+            ensure_image_ocr_memory(&store, &item.id, &img_path);
         }
     }
     if let Err(e) = app_handle.emit(
@@ -1369,6 +1391,25 @@ fn process_image(
             &format!("[图片] {}", img_path_str),
             &img_path_str,
         );
+    }
+}
+
+/// V4 截图记忆：图片入库时若已有 OCR 缓存（截图标注识别过），把识别全文写入
+/// 内容记忆摘要，使语义检索（"那张图的字"）能命中图片记录。失败仅 warn，不阻断采集。
+#[cfg(target_os = "windows")]
+fn ensure_image_ocr_memory(
+    store: &crate::data_store::DataStore,
+    history_id: &str,
+    img_path: &std::path::Path,
+) {
+    let path_str = img_path.to_string_lossy().to_string();
+    match store.get_ocr_text(&path_str) {
+        Ok(Some(text)) if !text.is_empty() => {
+            if let Err(e) = store.history_summary_ensure(history_id, &text) {
+                log::warn!("[ClipboardMonitor] 图片 OCR 记忆写入失败: {}", e);
+            }
+        }
+        _ => {}
     }
 }
 

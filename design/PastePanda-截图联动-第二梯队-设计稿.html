@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PastePanda · 截图联动 · 第二梯队设计稿</title>
+<style>
+  :root {
+    --bg: #0D1220; --panel: #131A2E; --card: #17203A;
+    --border: rgba(125, 140, 255, 0.16); --border-strong: rgba(99, 102, 241, 0.4);
+    --text: #E6EDF7; --muted: #8FA3C8; --faint: #5B6F96;
+    --indigo: #6366F1; --cyan: #22D3EE; --green: #22C55E;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0A0E18; font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    color: var(--text); padding: 18px 24px 60px;
+  }
+  .docbar {
+    position: sticky; top: 0; z-index: 30;
+    display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    background: rgba(13, 18, 32, 0.94); backdrop-filter: blur(10px);
+    border: 1px solid var(--border); border-radius: 12px; margin-bottom: 16px;
+    font-size: 12px;
+  }
+  .docbar .tag {
+    font-size: 10px; padding: 2px 8px; border-radius: 999px;
+    background: rgba(99,102,241,.2); border: 1px solid var(--border-strong); color: #B9C6F0;
+  }
+  .docbar .spacer { flex: 1; }
+  .docbar .note { font-size: 10px; color: var(--faint); }
+
+  .sectionTitle { font-size: 13px; font-weight: 700; margin: 22px 2px 10px; display: flex; align-items: center; gap: 8px; }
+  .sectionTitle .idx {
+    width: 20px; height: 20px; border-radius: 7px; font-size: 11px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #6366F1, #4F46E5); color: #fff;
+  }
+  .sectionTitle .desc { font-size: 10px; color: var(--faint); font-weight: 400; }
+
+  /* 设计画布区：白描线框 + 标注 */
+  .stage {
+    display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start;
+    padding: 18px; border: 1px dashed rgba(125,140,255,.28); border-radius: 14px;
+    background: rgba(19, 26, 46, 0.45);
+  }
+  .noteTag {
+    position: absolute; font-size: 9px; padding: 1px 7px; border-radius: 999px;
+    background: rgba(34,211,238,.14); border: 1px solid rgba(34,211,238,.35); color: #67E8F9;
+    white-space: nowrap; z-index: 5;
+  }
+  .noteTag.indigo { background: rgba(99,102,241,.16); border-color: rgba(99,102,241,.4); color: #A5B4FC; }
+  .noteTag.green { background: rgba(34,197,94,.13); border-color: rgba(34,197,94,.35); color: #86EFAC; }
+
+  /* ===== 托盘弹窗（#7） ===== */
+  .tray {
+    position: relative; width: 340px; border-radius: 14px; overflow: hidden;
+    background: linear-gradient(180deg, #171E38, #11172C);
+    border: 1px solid var(--border-strong); box-shadow: 0 22px 60px rgba(0,0,0,.55);
+  }
+  .tray .tHead { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--border); }
+  .tray .tHead .sp { flex: 1; }
+  .tray .tRow {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 11.5px;
+    border-bottom: 1px solid rgba(125,140,255,.07); cursor: pointer;
+  }
+  .tray .tRow:hover { background: rgba(99,102,241,.09); }
+  .tray .tRow .thumb { width: 30px; height: 22px; border-radius: 5px; overflow: hidden; background: #101A30; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  .tray .tRow .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .tray .tRow .txt { flex: 1; min-width: 0; }
+  .tray .tRow .txt .l1 { font-size: 11px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tray .tRow .txt .l2 { font-size: 9px; color: var(--faint); margin-top: 1px; }
+  .tray .tRow .shotTag { font-size: 8.5px; padding: 0 5px; border-radius: 999px; background: rgba(99,102,241,.16); color: #A5B4FC; border: 1px solid rgba(99,102,241,.3); flex-shrink: 0; }
+
+  /* ===== 截图完成出口（#5） ===== */
+  .shotPanel {
+    position: relative; width: 300px; border-radius: 14px; overflow: hidden;
+    background: linear-gradient(180deg, #1B2340, #101528);
+    border: 1px solid var(--border-strong); box-shadow: 0 22px 60px rgba(0,0,0,.55);
+  }
+  .shotPanel .pHead { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--border); }
+  .shotPanel .pRow { display: flex; align-items: center; gap: 9px; padding: 10px 12px; font-size: 11.5px; cursor: pointer; border-bottom: 1px solid rgba(125,140,255,.07); }
+  .shotPanel .pRow:hover { background: rgba(99,102,241,.09); }
+  .shotPanel .pRow .ic { width: 24px; height: 24px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 12px; background: rgba(99,102,241,.14); }
+  .shotPanel .pRow .lbl { font-size: 11.5px; color: var(--text); }
+  .shotPanel .pRow .sub { font-size: 9px; color: var(--faint); }
+  .shotPanel .pRow .k { margin-left: auto; font-size: 9px; color: var(--faint); }
+  .shotPanel .pRow.insert { border: 1px dashed rgba(34,211,238,.45); background: rgba(34,211,238,.07); }
+  .shotPanel .pRow.insert .ic { background: rgba(34,211,238,.16); }
+
+  /* 编辑器示意（#5 右侧） */
+  .editorMini {
+    position: relative; width: 320px; border-radius: 12px; overflow: hidden;
+    background: #141A2C; border: 1px solid var(--border);
+  }
+  .editorMini .eBar { display: flex; gap: 5px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  .editorMini .eBar button { font-size: 9px; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted); }
+  .editorMini .eBody { padding: 14px 16px; font-size: 12px; line-height: 2; color: var(--muted); font-family: ui-monospace, Consolas, monospace; }
+  .editorMini .eBody .caret { display: inline-block; width: 1.5px; height: 13px; background: #A5B4FC; vertical-align: middle; animation: blink 1s steps(1) infinite; }
+  .editorMini .eBody .inImg {
+    display: block; margin: 10px 0; padding: 8px; background: #0E1426; border: 1px dashed rgba(34,211,238,.5);
+    border-radius: 8px; font-size: 10px; color: #67E8F9; width: 200px; text-align: center;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ===== 动作链自动化（#6） ===== */
+  .chainBlock { position: relative; display: flex; gap: 12px; align-items: center; }
+  .chainFlow {
+    display: flex; flex-direction: column; gap: 6px; padding: 14px; border-radius: 12px;
+    background: #131A2E; border: 1px solid var(--border); width: 210px;
+  }
+  .chainFlow .step { display: flex; align-items: center; gap: 8px; font-size: 10.5px; color: var(--muted); padding: 6px 10px; border-radius: 8px; background: rgba(99,102,241,.08); border: 1px solid rgba(99,102,241,.2); }
+  .chainFlow .step .n { width: 16px; height: 16px; border-radius: 5px; background: rgba(99,102,241,.3); color: #C7D2FE; font-size: 9px; display: flex; align-items: center; justify-content: center; }
+  .chainFlow .step.done { border-color: rgba(34,197,94,.4); color: #86EFAC; }
+  .chainFlow .arr { text-align: center; color: var(--faint); font-size: 10px; line-height: 1; }
+  .chainToast {
+    width: 250px; padding: 10px 14px; border-radius: 12px;
+    background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(34,197,94,.4);
+    box-shadow: 0 12px 34px rgba(0,0,0,.5); font-size: 11px; color: #D1FAE5;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .chainToast .ic { width: 22px; height: 22px; border-radius: 7px; background: rgba(34,197,94,.16); display: flex; align-items: center; justify-content: center; font-size: 11px; }
+  .chainToast .k { margin-left: auto; font-size: 9px; color: #6EE7B7; }
+
+  /* ===== 建议条（#8） ===== */
+  .sugWrap { position: relative; width: 100%; }
+  .sugBar {
+    display: flex; align-items: center; gap: 10px; padding: 9px 14px;
+    border-radius: 12px; background: linear-gradient(90deg, rgba(99,102,241,.16), rgba(34,211,238,.1));
+    border: 1px solid var(--border-strong);
+  }
+  .sugBar .light { width: 7px; height: 7px; border-radius: 50%; background: #22D3EE; box-shadow: 0 0 8px #22D3EE; flex-shrink: 0; }
+  .sugBar .txt { flex: 1; font-size: 11.5px; color: #DCE4F5; }
+  .sugBar .txt b { color: #fff; font-weight: 600; }
+  .sugBar .act { font-size: 10.5px; padding: 4px 12px; border-radius: 8px; border: none; cursor: pointer; background: linear-gradient(135deg, #6366F1, #4F46E5); color: #fff; }
+  .sugBar .dismiss { font-size: 10px; color: var(--faint); cursor: pointer; background: none; border: none; padding: 4px; }
+  .sugStack { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; font-size: 10px; color: var(--faint); }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .legend .dot { width: 8px; height: 8px; border-radius: 3px; display: inline-block; }
+</style>
+</head>
+<body>
+  <div class="docbar">
+    <span>⚡ 截图 × 软件联动 · 第二梯队设计稿</span>
+    <span class="tag">4 项</span>
+    <span class="spacer"></span>
+    <span class="note">基于真实组件：TrayPopup / 截图结果面板 / SuggestionBar / Markdown 编辑器</span>
+  </div>
+
+  <!-- ===== #7 托盘最近截图 ===== -->
+  <div class="sectionTitle">
+    <span class="idx">1</span> 托盘弹窗 · 最近截图缩略图
+    <span class="desc">—— TrayPopup recents：截图显示缩略图 + 类型标签（现在是"图片"文字）</span>
+  </div>
+  <div class="stage">
+    <div style="position:relative">
+      <div class="tray">
+        <div class="tHead"><span>📋 PastePanda</span><span class="sp"></span><span style="font-size:9px">最近 6 条</span></div>
+        <div class="tRow">
+          <div class="thumb"><img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='60' height='44'><rect width='60' height='44' fill='%23101A30'/><rect x='6' y='6' width='34' height='5' rx='2.5' fill='%232B3B5F'/><rect x='6' y='15' width='48' height='3' rx='1.5' fill='%231E2C4C'/><rect x='6' y='22' width='40' height='3' rx='1.5' fill='%231E2C4C'/><rect x='6' y='32' width='24' height='4' rx='2' fill='%2330497A'/></svg>" /></div>
+          <div class="txt"><div class="l1">const config = { apiKey…</div><div class="l2">20:12 · 截图</div></div>
+          <span class="shotTag">代码</span>
+        </div>
+        <div class="tRow">
+          <div class="thumb"><img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='60' height='44'><rect width='60' height='44' fill='%23101A30'/><rect x='6' y='6' width='28' height='5' rx='2.5' fill='%232B3B5F'/><rect x='6' y='15' width='48' height='6' rx='2' fill='%23244060'/><rect x='6' y='25' width='48' height='6' rx='2' fill='%231E3050'/><rect x='6' y='35' width='30' height='6' rx='2' fill='%23244060'/></svg>" /></div>
+          <div class="txt"><div class="l1">季度支出汇总 合计 20,716 元…</div><div class="l2">19:48 · 截图</div></div>
+          <span class="shotTag">表格</span>
+        </div>
+        <div class="tRow">
+          <span style="font-size:13px">🔤</span>
+          <div class="txt"><div class="l1">接口文档：/api/v2/orders 说明</div><div class="l2">19:02 · 复制</div></div>
+        </div>
+      </div>
+      <span class="noteTag" style="top:-22px;right:8px">截图条目：缩略图 + OCR 首行 + 类型标签</span>
+    </div>
+    <div style="align-self:center;max-width:300px;font-size:11px;color:var(--muted);line-height:2">
+      <b style="color:var(--text)">改动</b>：TrayPopup 的 recents 渲染，图片类型条目由"图片"文字 → 显示 30×22 缩略图 + OCR 首行摘要 + auto 标签。<br/>
+      点击条目 = 复制该截图（现有 doPaste 逻辑不变）。<br/>
+      托盘上即可"看到最近截了什么"，无需打开主窗口。
+    </div>
+  </div>
+
+  <!-- ===== #5 截图 → 插入当前文档 ===== -->
+  <div class="sectionTitle">
+    <span class="idx">2</span> 截图 → 插入当前编辑文档
+    <span class="desc">—— 全屏编辑器打开时，截图完成出口出现「插入到文档」</span>
+  </div>
+  <div class="stage">
+    <div style="position:relative">
+      <div class="shotPanel">
+        <div class="pHead"><span>截图完成 · 选择出口</span></div>
+        <div class="pRow"><span class="ic">⬡</span><div><div class="lbl">复制图片</div></div><span class="k">Ctrl+C</span></div>
+        <div class="pRow insert"><span class="ic">📝</span><div><div class="lbl">插入到当前文档</div><div class="sub">全屏编辑器光标处（自动入库）</div></div><span class="k">Ctrl+Enter</span></div>
+        <div class="pRow"><span class="ic">📌</span><div><div class="lbl">贴图置顶</div></div><span class="k">Ctrl+P</span></div>
+        <div class="pRow"><span class="ic">📁</span><div><div class="lbl">保存到图库</div></div><span class="k">Ctrl+S</span></div>
+      </div>
+      <span class="noteTag indigo" style="top:-22px;left:8px">编辑器打开时才有此行（关闭则隐藏）</span>
+    </div>
+    <div style="position:relative">
+      <div class="editorMini">
+        <div class="eBar">
+          <button>B</button><button>I</button><button>代码块</button><button style="border-color:rgba(34,211,238,.5);color:#67E8F9">插图</button>
+        </div>
+        <div class="eBody">
+          # 发布说明<br/>
+          v6.19 更新内容：<span class="caret"></span><br/>
+          <span class="inImg">🖼 截图已插入（2026-08-16 20:12）</span><br/>
+          其余改进见下…
+        </div>
+      </div>
+      <span class="noteTag green" style="top:-22px;left:8px">图片落盘 + 写入当前 .md 的图片引用</span>
+    </div>
+    <div style="align-self:center;max-width:290px;font-size:11px;color:var(--muted);line-height:2">
+      <b style="color:var(--text)">交互</b>：截图完成 → 「插入到当前文档」→ 图片保存并插入编辑器光标处（markdown 图片语法 + 本地文件），保存 .md 时连同入库。<br/>
+      <span style="color:var(--faint)">实现注：需给 MarkdownEditor 补"插入图片"能力（当前无现成方法），成本中等。</span>
+    </div>
+  </div>
+
+  <!-- ===== #6 截图默认动作链 ===== -->
+  <div class="sectionTitle">
+    <span class="idx">3</span> 截图 → 默认动作链自动化
+    <span class="desc">—— 设置可配「截图完成后自动执行」，一键跑完整条链</span>
+  </div>
+  <div class="stage">
+    <div class="chainBlock">
+      <div style="position:relative">
+        <div class="chainFlow">
+          <div class="step done"><span class="n">1</span> 截图标注（Ctrl+Alt+A）</div>
+          <div class="arr">↓</div>
+          <div class="step done"><span class="n">2</span> OCR 识别文字</div>
+          <div class="arr">↓</div>
+          <div class="step"><span class="n">3</span> 送动作链「提炼要点」</div>
+          <div class="arr">↓</div>
+          <div class="step"><span class="n">4</span> 结果复制到剪贴板</div>
+        </div>
+        <span class="noteTag indigo" style="top:-22px;left:8px">设置页截图区块：「完成后自动执行动作链」下拉</span>
+      </div>
+      <div style="position:relative">
+        <div class="chainToast">
+          <span class="ic">⚡</span>
+          <div><div>动作链「提炼要点」已执行</div><div style="font-size:9px;color:#6EE7B7;margin-top:2px">结果已复制 · 点击查看</div></div>
+          <span class="k">Esc 关闭</span>
+        </div>
+        <span class="noteTag green" style="top:-22px;left:8px">截图完成自动跑链 → 结果 toast 直达</span>
+      </div>
+    </div>
+    <div style="align-self:center;max-width:260px;font-size:11px;color:var(--muted);line-height:2">
+      <b style="color:var(--text)">交互</b>：截图 → 标注 → 完成复制时，若配置了默认动作链则自动执行（OCR 文字为输入），结果 toast 显示可复制。<br/>
+      不配置 = 现行为（零打扰）。<br/>
+      <span style="color:var(--faint)">入口在设置页「截图」区块，下拉选择已有动作链。</span>
+    </div>
+  </div>
+
+  <!-- ===== #8 场景感知建议条 ===== -->
+  <div class="sectionTitle">
+    <span class="idx">4</span> 截图内容 → 场景感知建议条
+    <span class="desc">—— SuggestionBar 根据截图 OCR 内容给出对应快捷操作</span>
+  </div>
+  <div class="stage">
+    <div class="sugWrap">
+      <div class="sugStack">
+        <div class="sugBar">
+          <span class="light"></span>
+          <div class="txt">检测到截图包含<b>代码</b>（8 行）→ <b>复制为 Markdown 代码块</b>？</div>
+          <button class="act">复制代码块</button>
+          <button class="dismiss">✕</button>
+        </div>
+        <div class="sugBar">
+          <span class="light"></span>
+          <div class="txt">截图识别到<b>链接</b> → 打开 <b style="color:#67E8F9">github.com/lzlkyb/pastepanda</b>？</div>
+          <button class="act">打开链接</button>
+          <button class="dismiss">✕</button>
+        </div>
+        <div class="sugBar">
+          <span class="light"></span>
+          <div class="txt">截图识别到<b>英文内容</b> → 翻译成中文？</div>
+          <button class="act">翻译</button>
+          <button class="dismiss">✕</button>
+        </div>
+      </div>
+      <span class="noteTag" style="top:-22px;left:8px">截图入库后，建议条基于 OCR 内容给出 1 条最相关建议（可反馈）</span>
+    </div>
+  </div>
+
+  <div class="legend" style="margin-top:26px">
+    <span><span class="dot" style="background:#22D3EE"></span>新增交互点</span>
+    <span><span class="dot" style="background:#6366F1"></span>需新增后端能力</span>
+    <span><span class="dot" style="background:#22C55E"></span>复用现有链路</span>
+    <span style="margin-left:auto">优先级建议：#7 托盘缩略图（低）→ #8 场景建议（中）→ #6 默认动作链（中）→ #5 插入文档（中高）</span>
+  </div>
+</body>
+</html>

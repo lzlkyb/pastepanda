@@ -38,6 +38,7 @@ migrateLegacyStorageKeys();
 
 // 懒加载对话框组件 — 只在打开时才加载对应 JS chunk
 const SettingsDialog = lazy(() => import("@/components/SettingsDialog").then(m => ({ default: m.SettingsDialog })));
+const PinnedPanel = lazy(() => import("@/components/PinnedPanel"));
 const SnippetsDialog = lazy(() => import("@/components/SnippetsDialog").then(m => ({ default: m.SnippetsDialog })));
 const ExtractDialog = lazy(() => import("@/components/ExtractDialog").then(m => ({ default: m.ExtractDialog })));
 const EncodingDialog = lazy(() => import("@/components/EncodingDialog").then(m => ({ default: m.EncodingDialog })));
@@ -81,6 +82,8 @@ function App() {
       });
   }, [workspace, toast]);
   const [showSettings, setShowSettings] = useState(false);
+  /** v6.19 贴图管理面板（托盘"贴图管理"→ show-pinned-panel 事件打开） */
+  const [showPinnedPanel, setShowPinnedPanel] = useState(false);
   /** v6.4 审查：#10 从变换中心跳转时指定初始 tab（"ai"） */
   const [showSettingsTab, setShowSettingsTab] = useState<"general" | "ai" | "help" | "about" | undefined>(undefined);
   /** v6.4 方案 B：AI 快捷区开关（AI **真能用**时才替代建议条；三态见 @/lib/aiAvailability） */
@@ -289,11 +292,13 @@ function App() {
 
   // 侧边栏分组数据（计数全部来自后端聚合，前端只做名称清洗 + 图标映射 + 排序）
   const sidebarGroups = useMemo<SidebarGroup[]>(() => {
-    // 内置分组：全部 + 收藏 + 未分组
+    // 内置分组：全部 + 收藏 + 未分组 + 截图（V6.19 截图图库）
+    const shotCount = sidebarCounts?.sources.find((s) => s.source === "PastePanda 截图")?.count ?? 0;
     const builtin: SidebarGroup[] = [
       { id: "all", name: "全部", count: sidebarCounts?.total ?? 0, icon: "📋", isBuiltin: true, section: "builtin" as const },
       { id: "starred", name: "收藏", count: sidebarCounts?.pinned ?? 0, icon: "⭐", isBuiltin: true, section: "builtin" as const },
       { id: "ungrouped", name: "未分组", count: sidebarCounts?.ungrouped ?? 0, icon: "📂", isBuiltin: true, section: "builtin" as const },
+      { id: "shots", name: "截图", count: shotCount, icon: "📸", isBuiltin: true, section: "builtin" as const },
     ];
 
     // 用户自定义分组
@@ -357,6 +362,11 @@ function App() {
       setSourceFilter("");
       useAppStore.getState().setFilterType("all");
       setGroupFilter("ungrouped");
+    } else if (groupId === "shots") {
+      // V6.19 截图图库：等价于按来源「PastePanda 截图」过滤（复用 source 查询链路）
+      setGroupFilter("all");
+      useAppStore.getState().setFilterType("all");
+      setSourceFilter("PastePanda 截图");
     } else if (groupId.startsWith("source:")) {
       const source = groupId.slice(7);
       setGroupFilter("all");
@@ -463,6 +473,11 @@ function App() {
       setActiveGroupId(groupFilter);
       return;
     }
+    // V6.19：截图图库高亮「📸 截图」内置项（而不是来源分组的同源项）
+    if (sourceFilter === "PastePanda 截图") {
+      setActiveGroupId("shots");
+      return;
+    }
     if (sourceFilter) {
       setActiveGroupId(`source:${sourceFilter}`);
       return;
@@ -482,6 +497,8 @@ function App() {
     let cancelled = false;
     let unlisten: (() => void) | null = null;
     let unlistenAi: (() => void) | null = null;
+    let unlistenPin: (() => void) | null = null;
+    let unlistenOcr: (() => void) | null = null;
     async function setup() {
       try {
         const { listen } = await import("@tauri-apps/api/event");
@@ -494,13 +511,32 @@ function App() {
           setShowSettingsTab("ai");
           setShowSettings(true);
         });
+        // v6.19 托盘"贴图管理" → 贴图管理面板
+        const fnPin = await listen("show-pinned-panel", () => {
+          setShowPinnedPanel(true);
+        });
+        // V6.19 截图复制后 → 主窗口提示"文字已识别"
+        const fnOcr = await listen<{ text: string; count: number }>("screenshot-ocr-ready", (e) => {
+          window.dispatchEvent(
+            new CustomEvent("app-toast", {
+              detail: {
+                message: `📄 截图识别到 ${e.payload.count} 行文字 · 已存入剪贴板历史`,
+                type: "success",
+              },
+            }),
+          );
+        });
         if (cancelled) {
           // effect 已在本次 setup 完成前被清理（StrictMode 重挂载 / HMR），立即取消订阅，避免监听器泄漏
           fn();
           fnAi();
+          fnPin();
+          fnOcr();
         } else {
           unlisten = fn;
           unlistenAi = fnAi;
+          unlistenPin = fnPin;
+          unlistenOcr = fnOcr;
         }
       } catch (e) { logger.warn("注册托盘事件监听失败", e); }
     }
@@ -509,6 +545,8 @@ function App() {
       cancelled = true;
       if (unlisten) unlisten();
       if (unlistenAi) unlistenAi();
+      if (unlistenPin) unlistenPin();
+      if (unlistenOcr) unlistenOcr();
     };
   }, []);
 
@@ -996,6 +1034,9 @@ function App() {
         <Suspense fallback={null}>
           <ErrorBoundary fallback={null} componentName="设置面板">
             <SettingsDialog open={showSettings} onClose={() => setShowSettings(false)} initialTab={showSettingsTab} />
+            <Suspense fallback={null}>
+              <PinnedPanel open={showPinnedPanel} onClose={() => setShowPinnedPanel(false)} />
+            </Suspense>
           </ErrorBoundary>
           <ErrorBoundary fallback={null} componentName="依次粘贴">
             <SequentialPasteDialog open={showSequential} onClose={() => setShowSequential(false)} />

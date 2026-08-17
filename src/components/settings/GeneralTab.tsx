@@ -10,6 +10,7 @@ import { resolveSource } from "@/lib/source-mappings";
 import { useSourceIcon } from "@/hooks/useSourceIcon";
 import { ToggleRow } from "./ToggleRow";
 import { HotkeyRecorder } from "./HotkeyRecorder";
+import { chainList, type ChainDef } from "@/lib/api/chains";
 import { LanSyncPanel } from "./LanSyncPanel";
 import { DeepCleanDialog } from "@/components/DeepCleanDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -112,6 +113,11 @@ export function GeneralTab({
   // ── 数据仪表盘：来源 Top 5 折叠状态 + 更新时间 + 派生指标 ──
   const [srcOpen, setSrcOpen] = useState(false);
   const [loadedAt, setLoadedAt] = useState("");
+  // V6.19：截图默认动作链下拉的链列表
+  const [chains, setChains] = useState<ChainDef[]>([]);
+  useEffect(() => {
+    void chainList().then(setChains).catch((e) => logger.warn("动作链列表加载失败", e));
+  }, []);
   useEffect(() => {
     if (stats) {
       const d = new Date();
@@ -828,7 +834,7 @@ export function GeneralTab({
           <div className={`${styles.sRowLabel}`}>唤出窗口</div>
           <div className={`${styles.sRowDesc}`}>全局快捷键，在任何位置唤出</div>
         </div>
-        <HotkeyRecorder value={config.hotkey} allowClear taken={[config.sequential_hotkey ?? "", config.stack_toggle_hotkey ?? "", config.stack_paste_hotkey ?? "", config.quick_paste_hotkey ?? ""]} onChange={async (v) => {
+        <HotkeyRecorder value={config.hotkey} allowClear taken={[config.sequential_hotkey ?? "", config.stack_toggle_hotkey ?? "", config.stack_paste_hotkey ?? "", config.quick_paste_hotkey ?? "", config.screenshot_hotkey ?? ""]} onChange={async (v) => {
           const oldVal = config.hotkey;
           await updateAndSave({ hotkey: v });
           try {
@@ -849,7 +855,7 @@ export function GeneralTab({
           <div className={`${styles.sRowLabel}`}>依次粘贴</div>
           <div className={`${styles.sRowDesc}`}>按顺序逐条粘贴剪贴板</div>
         </div>
-        <HotkeyRecorder value={config.sequential_hotkey ?? ""} allowClear taken={[config.hotkey, config.stack_toggle_hotkey ?? "", config.stack_paste_hotkey ?? "", config.quick_paste_hotkey ?? ""]} onChange={async (v) => {
+        <HotkeyRecorder value={config.sequential_hotkey ?? ""} allowClear taken={[config.hotkey, config.stack_toggle_hotkey ?? "", config.stack_paste_hotkey ?? "", config.quick_paste_hotkey ?? "", config.screenshot_hotkey ?? ""]} onChange={async (v) => {
           const oldVal = config.sequential_hotkey ?? "";
           await updateAndSave({ sequential_hotkey: v });
           try {
@@ -870,7 +876,7 @@ export function GeneralTab({
           <div className={`${styles.sRowLabel}`}>收集模式开关</div>
           <div className={`${styles.sRowDesc}`}>进入/退出剪贴板收集模式（栈模式）</div>
         </div>
-        <HotkeyRecorder value={config.stack_toggle_hotkey ?? ""} allowClear taken={[config.hotkey, config.sequential_hotkey ?? "", config.stack_paste_hotkey ?? "", config.quick_paste_hotkey ?? ""]} onChange={async (v) => {
+        <HotkeyRecorder value={config.stack_toggle_hotkey ?? ""} allowClear taken={[config.hotkey, config.sequential_hotkey ?? "", config.stack_paste_hotkey ?? "", config.quick_paste_hotkey ?? "", config.screenshot_hotkey ?? ""]} onChange={async (v) => {
           const oldVal = config.stack_toggle_hotkey ?? "";
           await updateAndSave({ stack_toggle_hotkey: v });
           try {
@@ -891,7 +897,7 @@ export function GeneralTab({
           <div className={`${styles.sRowLabel}`}>粘贴最近收集</div>
           <div className={`${styles.sRowDesc}`}>粘贴最近收集的内容并移出收集列表</div>
         </div>
-        <HotkeyRecorder value={config.stack_paste_hotkey ?? ""} allowClear taken={[config.hotkey, config.sequential_hotkey ?? "", config.stack_toggle_hotkey ?? "", config.quick_paste_hotkey ?? ""]} onChange={async (v) => {
+        <HotkeyRecorder value={config.stack_paste_hotkey ?? ""} allowClear taken={[config.hotkey, config.sequential_hotkey ?? "", config.stack_toggle_hotkey ?? "", config.quick_paste_hotkey ?? "", config.screenshot_hotkey ?? ""]} onChange={async (v) => {
           const oldVal = config.stack_paste_hotkey ?? "";
           await updateAndSave({ stack_paste_hotkey: v });
           try {
@@ -947,7 +953,7 @@ export function GeneralTab({
           <div className={`${styles.sRowLabel}`}>快捷粘贴</div>
           <div className={`${styles.sRowDesc}`}>在光标处弹出面板，快速选择并粘贴（类 Win+V）</div>
         </div>
-        <HotkeyRecorder value={config.quick_paste_hotkey ?? ""} allowClear taken={[config.hotkey, config.sequential_hotkey ?? "", config.stack_toggle_hotkey ?? "", config.stack_paste_hotkey ?? ""]} onChange={async (v) => {
+        <HotkeyRecorder value={config.quick_paste_hotkey ?? ""} allowClear taken={[config.hotkey, config.sequential_hotkey ?? "", config.stack_toggle_hotkey ?? "", config.stack_paste_hotkey ?? "", config.screenshot_hotkey ?? ""]} onChange={async (v) => {
           const oldVal = config.quick_paste_hotkey ?? "";
           await updateAndSave({ quick_paste_hotkey: v });
           try {
@@ -961,6 +967,64 @@ export function GeneralTab({
             toast(`快捷键设置失败：${msg}。变更未生效，已恢复原值`, "error");
           }
         }} />
+      </div>
+      <div className={styles.sRow}>
+        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #8B5CF6, #6D28D9)" }}>📸</span>
+        <div className={`${styles.sRowBody}`}>
+          <div className={`${styles.sRowLabel}`}>截图标注</div>
+          <div className={`${styles.sRowDesc}`}>全局热键唤出截图：选区 → 标注 → OCR 识别 → 复制/保存/AI 处理</div>
+        </div>
+        <HotkeyRecorder value={config.screenshot_hotkey ?? ""} allowClear taken={[config.hotkey, config.sequential_hotkey ?? "", config.stack_toggle_hotkey ?? "", config.stack_paste_hotkey ?? "", config.quick_paste_hotkey ?? ""]} onChange={async (v) => {
+          const oldVal = config.screenshot_hotkey ?? "";
+          await updateAndSave({ screenshot_hotkey: v });
+          try {
+            const { invoke } = await import("@tauri-apps/api/core");
+            await invoke("reregister_hotkeys");
+            toast("快捷键已更新", "success");
+          } catch (e) {
+            await updateAndSave({ screenshot_hotkey: oldVal });
+            const msg = e instanceof Error ? e.message : String(e);
+            logger.warn("热键设置失败", e);
+            toast(`快捷键设置失败：${msg}。变更未生效，已恢复原值`, "error");
+          }
+        }} />
+      </div>
+      <div className={styles.sRow}>
+        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #F59E0B, #D97706)" }}>🪟</span>
+        <div className={`${styles.sRowBody}`}>
+          <div className={`${styles.sRowLabel}`}>自动框选当前窗口</div>
+          <div className={`${styles.sRowDesc}`}>
+            按截图热键后自动选中光标所在窗口（微信同款），可直接完成或重新拖选
+          </div>
+        </div>
+        <button
+          className={`${styles.sVal}${config.auto_frame_window ? ` ${styles.sValActive}` : ""}`}
+          onClick={() => void updateAndSave({ auto_frame_window: !config.auto_frame_window })}
+          title={config.auto_frame_window ? "点击关闭" : "点击开启"}
+        >
+          {config.auto_frame_window ? "开" : "关"}
+        </button>
+      </div>
+      <div className={styles.sRow}>
+        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #F59E0B, #D97706)" }}>⚡</span>
+        <div className={`${styles.sRowBody}`}>
+          <div className={`${styles.sRowLabel}`}>完成后自动执行动作链</div>
+          <div className={`${styles.sRowDesc}`}>
+            截图完成自动跑链（OCR 文字为输入）；自动执行仅限纯本地步骤，云端步骤会跳过
+          </div>
+        </div>
+        <select
+          className={styles.sVal}
+          style={{ width: 132 }}
+          value={config.auto_chain_after_screenshot ?? ""}
+          onChange={(e) => void updateAndSave({ auto_chain_after_screenshot: e.target.value })}
+          title="选择截图后自动执行的动作链"
+        >
+          <option value="">不自动执行</option>
+          {chains.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
       </div>
       <div className={styles.sRow}>
         <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #0EA5E9, #0284C7)" }}>🗂️</span>

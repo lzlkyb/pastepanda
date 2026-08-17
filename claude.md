@@ -15,12 +15,39 @@
 ## 5. 显式升级版本号后，等用户验证确认再提交 git
 仅当本次**显式**升级了版本号时适用：不要自动提交，等用户说"提交"或"commit"再操作。
 
-## 6. 预览测试用 Tauri dev 后台运行
-启动命令（在 clipboard-manager-tauri 目录下执行）：
-```powershell
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "npx tauri dev" -WindowStyle Minimized
-```
-通过独立 PowerShell 窗口后台启动，支持 Vite HMR 热更新，不阻塞主终端。改代码支持热更新无需反复重启。
+## 6. 预览测试用 Tauri dev 启动方式
+
+项目根目录：`D:\AItool\winapp\pastePanda`（旧称 `clipboard-manager-tauri` 已废弃，文档里若见到该名一律按本项目根目录理解）。
+
+### ⚠️ 硬性前置：Rust 编译必须设 `LIBCLANG_PATH`
+ocr-rs（vendored PP-OCR 引擎）的 bindgen 阶段需要 `libclang.dll`，项目自带于
+`src-tauri/.libclang/`。不设会在 `Compiling ocr-rs` 时崩：
+`Unable to find libclang ... set the LIBCLANG_PATH environment variable to a path where one of these files can be found`。
+项目约定**不**持久化 `.cargo/config`，所以每个新终端都要先设这个变量（见下）。
+
+### 启动命令（必须先在项目根目录下执行）
+- **Git Bash / WSL**：
+  ```bash
+  export LIBCLANG_PATH="$(pwd)/src-tauri/.libclang" && npm run tauri dev
+  ```
+- **PowerShell**：
+  ```powershell
+  $env:LIBCLANG_PATH = "$(Get-Location)/src-tauri/.libclang"; npm run tauri dev
+  ```
+- **cmd.exe**（注意：`set` 不加引号；跨盘切目录要 `cd /d`）：
+  ```cmd
+  set LIBCLANG_PATH=D:\AItool\winapp\pastePanda\src-tauri\.libclang
+  cd /d "D:\AItool\winapp\pastePanda"
+  npm run tauri dev
+  ```
+
+### 关键说明（踩坑点）
+1. **用 `npm run tauri dev`，不要裸 `npx tauri dev`**：`npm run tauri` 会先跑 `prebuild`（sync-version + gen-changelog）再把本地 `node_modules/.bin/tauri` 加入 PATH；裸 `npx tauri dev` 若不在项目目录内会去 registry 拉到一个同名废弃包 `tauri@0.15.0`（无 bin），报 `could not determine executable to run`。
+2. **目录必须正确**：命令失败最常见原因是在 `C:\Users\xxx` 主目录执行，导致本地 `.bin/tauri` 找不到。先 `cd` 进项目根目录。
+3. **一劳永逸**：cmd 里 `setx LIBCLANG_PATH "D:\AItool\winapp\pastePanda\src-tauri\.libclang"` 写进用户环境变量（注册表），重开终端后只需 `npm run tauri dev`，无需每次手动设。
+4. **首次编译约 1 分钟**（727 个 crate），之后 Vite HMR 热更新，改前端代码无需重启 dev。
+5. **无害日志**：启动时 `tauri_plugin_updater ... ERROR update endpoint did not respond` 是 dev 下连不上更新服务器，忽略即可，不影响功能。
+6. 后台运行可用 `Start-Process powershell -ArgumentList "-NoExit","-Command","$env:LIBCLANG_PATH='$(Get-Location)/src-tauri/.libclang'; npm run tauri dev" -WindowStyle Minimized`，不阻塞主终端。
 
 ## 7. 方案设计需考虑代码架构
 模块化、可维护性、扩展性，遵循项目已有的架构模式。
@@ -28,23 +55,11 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "npx tauri dev" -W
 **组件文件大小限制**（硬性规则）：
 - 单个 `.tsx` 组件文件 **禁止超过 300 行**（不含样式和类型定义）。
 - 如果功能增长导致文件膨胀，**必须先拆分再继续**，不能无限制堆积。
-- 拆分策略：
-  - **自定义 Hook**：将复杂状态逻辑、事件处理提取到 `hooks/useXxx.ts`
-  - **子组件**：将独立 UI 区块提取到 `components/XxxPanel.tsx` 或 `components/XxxItem.tsx`
-  - **工具函数**：将纯计算逻辑提取到 `lib/xxx.ts`
-- 当前超标文件（后续逐步重构）：
-  - `CardList.tsx`（53KB / ~1300 行）
-  - `SettingsDialog.tsx`（57KB / ~1400 行）
-  - `Card.tsx`（27KB / ~650 行）
-  - `TrayPopup.tsx`（20KB / ~480 行）
+- 拆分策略：自定义 Hook（`hooks/useXxx.ts`）/ 子组件（`components/XxxPanel.tsx`）/ 纯函数（`lib/xxx.ts`）。
 - 新增功能时：如果目标文件已接近 300 行，默认创建新文件而非追加代码。
 
 ## 8. 做任何功能都要考虑性能
-内存占用、加载速度、渲染效率、缓存策略。**不只在“设计方案”阶段，每次动手都要过下面的清单。**
-
-> 本条原文只有一行口号，没拦住 v5.5.2 掉的那批 GPU 常驻开销：
-> `SkinScene` 甚至在源码注释里写着“性能开销极小”，实测是 3 份并发动画。
-> 故改为可逐项比对的硬指标。
+内存占用、加载速度、渲染效率、缓存策略。**不只在"设计方案"阶段，每次动手都要过下面的清单。**
 
 ### 8.1 常驻循环与动画
 - 新增 `animation: … infinite`、`requestAnimationFrame` 递归、`setInterval` 之前先问：**不可见时会停吗？**
@@ -75,28 +90,15 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "npx tauri dev" -W
 如果 dev 已在运行，Vite HMR 会自动热更新。直接看效果即可，不要每次改完代码都尝试重新启动 dev。
 
 ## 11. 公共工具函数统一放 lib/utils.ts
-多个组件共用的纯函数（如 `cleanSourceName`、`getSourceIcon`、`relativeTime`、`truncate`、`detectTextType` 等）**必须**在 `src/lib/utils.ts` 中定义并 `export`，各组件通过 `import { xxx } from "@/lib/utils"` 引用。禁止在组件文件内重复定义相同的工具函数。确保单一数据源，便于统一维护和修改。
+多个组件共用的纯函数（如 `cn`、`relativeTime`、`truncate`、`stripHtml`、`parseFilePaths`、`getImageOcrFullText`、`resolveImageCardDisplay` 等）**必须**在 `src/lib/utils.ts` 中定义并 `export`，各组件通过 `import { xxx } from "@/lib/utils"` 引用。禁止在组件文件内重复定义相同的工具函数。确保单一数据源，便于统一维护和修改。
 
 ### 11.1 新增「某类特殊处理」必须找全同类调用点并收口
 
-本条管的不是纯函数，而是**分支逻辑**——它比重复的工具函数更难发现，
-且失败方式是 401 / 静默错误，而不是一眼能看出的重复代码。
-
-> 由来（2026-08-11 实测）：v6.9 给内置免费服务商（Agnes）加了应用内置公共 key，
-> 但**只补在了 `ai_run` 一处**。其余 5 条同样要密钥的路径（测试连接 / AI 规划 /
-> 自定义动作试跑 / 画像精练 / 语义索引）仍在各自 `secret_store::load_key`，
-> 而 Agnes 根本没有用户密钥文件 → 带着**空密钥**出网 → 必然 401。
-> 用户看到的现象是「模型明明能用，一点测试连接就报错」，而且已经存在很久，
-> 只因为测试结果当时被折叠区块吞掉（见规则 15）才一直没暴露。
->
-> 同一天另一例：内容 md5 有 5 处各写一份，`lan_sync` 的注释靠「承诺」声明与
-> `clipboard_monitor` 同口径——而 v6.8 智能合并正是依赖两者算出同一个值。
+本条管的不是纯函数，而是**分支逻辑**——它比重复的工具函数更难发现，失败方式是 401 / 静默错误。
 
 做法：
-- 加任何「某类 X 要特殊处理」的分支前，先 `grep` 出**所有做同一件事的取值点**，
-  收口成一个函数，把全部调用点改为调用它，而不是逐处补 `if`。
-- 收口后补一条**守卫单测**钉住不变量。需要运行环境的部分（AppHandle / IO）与纯判断分开，
-  纯判断那半单独抽函数以便无环境测试。
+- 加任何「某类 X 要特殊处理」的分支前，先 `grep` 出**所有做同一件事的取值点**，收口成一个函数，把全部调用点改为调用它，而不是逐处补 `if`。
+- 收口后补一条**守卫单测**钉住不变量。需要运行环境的部分（AppHandle / IO）与纯判断分开，纯判断那半单独抽函数以便无环境测试。
 - 验收标准：**如果第 7 个调用点被人新写出来时仍会走错，说明还没收口。**
 
 ## 12. 改动 UI 前必须读取真实组件源码
@@ -105,8 +107,8 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "npx tauri dev" -W
 ## 13. 文件存放目录规范
 | 文件类型 | 存放目录 |
 |---------|---------|
-| `.md` 文档 | `clipboard-manager-tauri/docs/` |
-| `.html` 设计稿 | `clipboard-manager-tauri/design/`
+| `.md` 文档 | `docs/`（项目根目录下） |
+| `.html` 设计稿 | `design/`（项目根目录下）
 
 ---
 
@@ -122,24 +124,15 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "npx tauri dev" -W
 
 ## 15. 反馈必须和触发在同一「可见性域」
 
-> 由来（2026-08-11 实测）：AI 设置页改成「顶部摘要卡 + 互斥手风琴」后，
-> **点「测试连接」页面完全没有任何反馈**。根因不在接口——测试结果那段 JSX 留在了
-> `<AiSection open={...}>` 内部，而已配置用户默认收起、该容器收起时不渲染 children，
-> 于是成功看不见、**失败完全静默**（失败只 `setState`，不发 toast）。
-
 - **15.1 触发常驻可见，结果就必须常驻可见。**
   把操作按钮提到卡头 / 摘要卡 / 工具栏时，**同一次改动**里要把它的成功与失败展示
   提到同一层级。按钮和它的反馈被拆进两个可见性域 = 用户眼里的「点了没反应」。
-
 - **15.2 条件渲染 children 的容器会卸载子组件。**
   `{open && children}` 这种写法在收起时**卸载**子树。把折叠态从子组件上提到父级后，
   必须重审子组件里所有「假定自己一直活着」的东西：`useRef` 缓存、一次性加载标记、
   未保存的草稿。
-  实证：`AiUsageDetail` 里防重复拉取的 `loadedOnce` 上提后彻底失效（ref 随卸载销毁），
-  而注释还写着「反复开关不再重复拉 4 个命令」——**优化没了，注释成了谎。**
   两个选择，任选但要写明：① 接受每次展开重新加载，把注释改成真话；
   ② 真要复用就把缓存提到不会被卸载的层级。
-
 - **15.3 失败路径只 `setState` 不弹 toast 时**，必须确认承载它的元素在**任何折叠状态**下
   都可见；做不到就改用 toast。静默失败比报错难查一个量级。
 
@@ -150,7 +143,7 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "npx tauri dev" -W
 所有调用 AI/云端能力的代码路径都必须受「AI 可用性」门控。判定机制是单一数据源：
 
 - **前端**：`src/lib/transforms/aiTransforms.ts` 的 `aiAvailable`（= `config.ai_enabled` && 有可用 key，默认 **false**），由 `refreshAiAvailability()` 计算；
-- **后端**：`commands/ai.rs` 统一校验 `cfg.enabled`（`config.ai_enabled`，默认关，测通自动开）+ `ai/client.rs` 校验 key（无 key 拒绝，先于网络请求）。
+- **后端**：`commands/ai/mod.rs`（AI 命令模块目录 `commands/ai/`，含 `plan.rs`/`run.rs`/`test_conn.rs`）统一校验 `cfg.enabled`（`config.ai_enabled`，默认关，测通自动开）；`ai/provider.rs` 与 `ai/client.rs` 校验 key（无 key 拒绝，先于网络请求）。
 
 **硬性要求：**
 
@@ -170,12 +163,26 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "npx tauri dev" -W
 
 ---
 
+## 17. 交互通用核心思想（2026-08 实测沉淀，跨功能适用）
+
+设计任何交互（截图 / 弹窗 / 面板 / 快捷键）时，先对照这套思想；具体实现细节留在代码注释里，不写进本文件。
+
+1. **鼠标全流程可达，键盘只做加速器**：所有功能都能纯鼠标完成；快捷键（数字键 / Enter / Ctrl+Z 等）只是熟练后的加速，绝不能成为必需路径。
+2. **高频路径一步到位**：默认动作 = 用户最常用的动作（如截图"完成"=直接复制，而不是先进中间面板再选出口）；低频出口收进「更多 / ⋯」次级入口，不挡主路。
+3. **有反馈、不靠猜**：任何可交互元素 hover 即有即时提示（名称+快捷键），选中/激活状态一眼可见；禁止裸图标、无态无反馈的设计。
+4. **移动即预览**：能 hover 实时生效（如选区跟随窗口）就绝不要求额外点击确认；需要区分"预览"与"确认"时，用位移阈值（如 4px）判定意图。
+5. **误触低成本**：关键操作可撤销（undo）；破坏性操作有确认；选区/编辑态可随时重来。
+6. **两级取消**：编辑态 Esc 先回上一步（回到选区/还原），再 Esc 才退出；不要一步退出把用户赶走。
+7. **交互一致**：同类操作（选中、拖拽、缩放、取色）在不同界面用同一套手势与反馈；状态机清晰，每个状态下可做的事语义单一。
+
+---
+
 ## 发版流程
 
 ### ⚠️ 硬性前置（违反会导致更新弹框 + 关于页日志空白）
 
 **打 tag 之前必须先完成：**
-1. 在 `CHANGELOG.md` 顶部写好新版本段落（按 Keep a Changelog 格式，含 新增/修复/技术/UI/UX 等分类）
+1. 在 `CHANGELOG.md` 顶部写好新版本段落（只分 `新增`/`改进`/`修复` 三类，见下方 CHANGELOG 写作规范；**禁止** 技术/UI/UX 等开发视角分类）
 2. 运行 `npm run prebuild`（内部执行 `sync-version.mjs && gen-changelog.mjs`），确认 `src/lib/changelog.generated.ts` 已包含新版本条目
 3. 提交上述两个文件的变更
 
@@ -187,7 +194,7 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "npx tauri dev" -W
 
 1. **递增版本号** — `tauri.conf.json` 中 patch 版本自动 +1（如 5.0.87 → 5.0.88）
 2. **确认 CHANGELOG.md 已就绪** — 检查新版本段落存在且 `changelog.generated.ts` 已重新生成
-3. **git add** — 暂存所有变更文件（排除 `src-tauri/config_backups/` 和 `src-tauri/cargo_check_result.txt`）
+3. **git add** — 暂存所有变更文件（排除 `src-tauri/config_backups/`）
 4. **生成 commit message** — 根据代码变更自动生成带前缀的 commit（`feat:`/`chg:`/`fix:`），标题 + 空行 + 详细变更列表
 5. **git commit** — 提交
 6. **git push origin master** — 推送代码
@@ -243,19 +250,6 @@ CHANGELOG.md 是**给用户看的**，不是给开发者看的。所有内容必
 ```
 ### 新增
 - 图片格式转换与压缩：支持 PNG/JPG/WebP 切换，可调质量，实时估算文件大小
-```
-
-❌ 错误（开发者视角）：
-```
-### UI/UX
-- FileDetailDialog 单文件 w380 / 多文件 w420 自适应宽度
-- 裁剪叠加层：55% 黑色遮罩 + 白色虚线选区 + 8 个带 accent 描边的手柄
-```
-
-✅ 正确（用户视角）：
-```
-### 改进
-- 文件详情弹窗自适应宽度，多文件列表支持点击切换预览
 ```
 
 **条目合并原则：**

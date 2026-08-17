@@ -632,6 +632,11 @@ pub fn reregister_hotkeys(app: tauri::AppHandle, store: State<DataStore>) -> Res
         .and_then(|v| v.as_str())
         .unwrap_or("Alt+V")
         .to_string();
+    let screenshot = config
+        .get("screenshot_hotkey")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Ctrl+Alt+A")
+        .to_string();
     let hotkey_config = crate::hotkey_manager::HotkeyConfig {
         show_window,
         seq_paste,
@@ -639,6 +644,7 @@ pub fn reregister_hotkeys(app: tauri::AppHandle, store: State<DataStore>) -> Res
         stack_toggle,
         stack_paste,
         quick_paste,
+        screenshot,
     };
     crate::hotkey_manager::reregister_global_hotkeys(&app, &hotkey_config)
 }

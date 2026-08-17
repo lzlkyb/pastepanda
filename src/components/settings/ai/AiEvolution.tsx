@@ -13,7 +13,7 @@
  * 而 AiSection 折叠时不渲染 children——被父级包就拿不到数据。
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Brain, ShieldCheck, Trash2, UserRound, ChevronRight, Loader2 } from "lucide-react";
 import { useDialogStore } from "@/stores/dialogStore";
 import { confirmDialog } from "@/lib/confirm";
@@ -56,6 +56,9 @@ export function AiEvolution({ open, onToggle, profileAsContext, onProfileAsConte
   const { toast } = useToast();
   const [sum, setSum] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(false);
+  // 一次性加载保护：本组件常驻挂载，加载失败后不再自动重试，
+  // 避免 effect 因 sum 仍为空而无限重入 + 反复弹 error toast（P1）。
+  const attemptedRef = useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,11 +91,14 @@ export function AiEvolution({ open, onToggle, profileAsContext, onProfileAsConte
     }
   }, [toast]);
 
-  // 只在展开时拉：大部分人打开设置不会点这一项，没必要每次都发 5 个命令。
-  // 本组件自己常驻挂载（它包着 AiSection），所以拉过一次后收起再展开不会重拉。
+  // 只在展开时拉一次：本组件常驻挂载（包着 AiSection），attemptedRef 保证无论
+  // 成功失败都只发一次，失败后不会因 sum 仍为空而无限重入（P1 修复）。
   useEffect(() => {
-    if (open && !sum && !loading) void load();
-  }, [open, sum, loading, load]);
+    if (open && !attemptedRef.current) {
+      attemptedRef.current = true;
+      void load();
+    }
+  }, [open, load]);
 
   /** 带二次确认的清空（红线②：可删，但删了就没了，得问一声） */
   const clearWith = useCallback(

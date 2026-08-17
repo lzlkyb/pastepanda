@@ -98,6 +98,8 @@ export function FullscreenEditor() {
     invoke<EditorInit | null>("take_editor_init")
       .then((data) => {
         if (!mounted) return;
+        // V6.19：注册编辑器目标文件（截图"插入到文档"用）
+        void invoke("set_editor_target", { editor_path: data?.filePath ?? null });
         setInit({
           sourceId: data?.sourceId ?? null,
           content: data?.content ?? null,
@@ -112,6 +114,8 @@ export function FullscreenEditor() {
       });
     // 后续打开：窗口已存在时 Rust emit md-editor-load 推送新数据，整体重载
     const unlisten = listen<EditorInit>("md-editor-load", (e) => {
+      // V6.19：更新编辑器目标文件
+      void invoke("set_editor_target", { editor_path: e.payload.filePath ?? null });
       // 退场动画中被复用（极罕见竞态）：重置关闭状态，让新内容正常入场
       closingRef.current = false;
       setClosing(false);
@@ -127,6 +131,8 @@ export function FullscreenEditor() {
     return () => {
       mounted = false;
       unlisten.then((fn) => fn());
+      // V6.19：编辑器关闭 → 清除目标（截图"插入到文档"入口隐藏）
+      void invoke("set_editor_target", { editor_path: null });
     };
   }, []);
 

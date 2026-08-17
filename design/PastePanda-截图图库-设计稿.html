@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PastePanda · 截图图库 · 设计稿（480 窗口真实布局）</title>
+<style>
+  :root {
+    --bg: #0D1220; --panel: #131A2E; --card: #17203A; --card-hover: #1C2645;
+    --border: rgba(125, 140, 255, 0.16); --border-strong: rgba(99, 102, 241, 0.4);
+    --text: #E6EDF7; --muted: #8FA3C8; --faint: #5B6F96;
+    --indigo: #6366F1; --cyan: #22D3EE; --green: #22C55E; --red: #F87171;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0A0E18; font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    color: var(--text); display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; padding: 24px;
+  }
+  .docbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 30;
+    display: flex; align-items: center; gap: 10px; padding: 10px 18px;
+    background: rgba(13, 18, 32, 0.92); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border); font-size: 12px;
+  }
+  .docbar .tag {
+    font-size: 10px; padding: 2px 8px; border-radius: 999px;
+    background: rgba(99,102,241,.2); border: 1px solid var(--border-strong); color: #B9C6F0;
+  }
+  .docbar .spacer { flex: 1; }
+  .docbar .note { font-size: 10px; color: var(--faint); }
+
+  /* 480×700 窗口模拟 */
+  .win {
+    width: 480px; height: 700px; border-radius: 14px; overflow: hidden;
+    background: var(--bg); border: 1px solid var(--border-strong);
+    box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6);
+    display: flex; flex-direction: column; position: relative;
+  }
+  /* 标题栏（无边框窗口拖拽区） */
+  .titlebar {
+    height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 12px;
+    background: linear-gradient(180deg, #161D36, #121830);
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .titlebar .logo { font-size: 12px; }
+  .titlebar .name { font-size: 11px; color: var(--muted); }
+  .titlebar .spacer { flex: 1; }
+  .titlebar .winBtn { width: 20px; height: 20px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--faint); }
+
+  .body { flex: 1; display: flex; min-height: 0; }
+
+  /* 侧栏 180px */
+  .sidebar {
+    width: 180px; flex-shrink: 0; background: var(--panel);
+    border-right: 1px solid var(--border); padding: 10px 8px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .sItem {
+    display: flex; align-items: center; gap: 7px; padding: 7px 9px;
+    border-radius: 9px; cursor: pointer; font-size: 11.5px; color: var(--muted);
+  }
+  .sItem:hover { background: rgba(99,102,241,.1); color: var(--text); }
+  .sItem.on { background: linear-gradient(135deg, rgba(99,102,241,.22), rgba(34,211,238,.12)); color: #E6EDF7; }
+  .sItem .ic { width: 16px; text-align: center; font-size: 13px; }
+  .sItem .cnt { margin-left: auto; font-size: 9.5px; color: var(--faint); }
+  .sItem.shot { border: 1px solid var(--border-strong); background: rgba(99,102,241,.14); color: #C7D2FE; }
+  .sItem.shot .cnt { color: #A5B4FC; }
+  .sSep { height: 1px; background: var(--border); margin: 7px 5px; }
+  .sLabel { font-size: 9.5px; color: var(--faint); padding: 3px 9px; }
+
+  /* 主区 300px */
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .topbar {
+    flex-shrink: 0; padding: 10px 10px 8px; border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, var(--header-bg-start, #141B33), var(--header-bg-end, #10162A));
+  }
+  .searchRow { display: flex; gap: 6px; align-items: center; }
+  .searchBox {
+    flex: 1; display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px; border-radius: 9px;
+    background: rgba(129, 140, 248, 0.1); border: 1px solid var(--border);
+  }
+  .searchBox input {
+    flex: 1; border: none; outline: none; background: transparent;
+    color: var(--text); font-size: 11.5px; width: 0;
+  }
+  .searchBox input::placeholder { color: var(--faint); }
+  .filterRow { display: flex; gap: 6px; margin-top: 8px; }
+  .filterSel {
+    font-size: 10.5px; padding: 3px 9px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--border); background: transparent; color: var(--muted);
+    display: flex; align-items: center; gap: 4px;
+  }
+  .filterSel.on { border-color: var(--border-strong); color: #C7D2FE; background: rgba(99,102,241,.14); }
+  .filterSel .n { opacity: .6; }
+
+  /* 截图列表（行卡片，对齐 CardList 72px） */
+  .list { flex: 1; overflow-y: auto; padding: 8px 10px; }
+  .shotRow {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+    border-radius: 12px; cursor: pointer; position: relative;
+    background: var(--card); border: 1px solid var(--border);
+    margin-bottom: 6px; transition: border-color .12s;
+  }
+  .shotRow:hover { border-color: var(--border-strong); }
+  .shotRow .thumb {
+    width: 52px; height: 40px; border-radius: 8px; overflow: hidden; flex-shrink: 0;
+    background: #101A30; display: flex; align-items: center; justify-content: center;
+  }
+  .shotRow .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .shotRow .info { flex: 1; min-width: 0; }
+  .shotRow .summary {
+    font-size: 11.5px; color: var(--text); line-height: 1.45;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .shotRow .sub { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
+  .shotRow .time { font-size: 9.5px; color: var(--faint); }
+  .tagPill {
+    font-size: 9px; padding: 0 6px; border-radius: 999px;
+    background: rgba(99,102,241,.16); color: #A5B4FC; border: 1px solid rgba(99,102,241,.3);
+  }
+  .tagPill.table { background: rgba(139,92,246,.16); color: #C4B5FD; border-color: rgba(139,92,246,.35); }
+  .tagPill.link { background: rgba(6,182,212,.14); color: #67E8F9; border-color: rgba(6,182,212,.3); }
+  .tagPill.secret { background: rgba(220,38,38,.14); color: #FCA5A5; border-color: rgba(220,38,38,.3); }
+  .shotRow .ops { display: flex; gap: 2px; opacity: 0; transition: opacity .12s; flex-shrink: 0; }
+  .shotRow:hover .ops { opacity: 1; }
+  .shotRow .opBtn {
+    width: 24px; height: 24px; border-radius: 7px; font-size: 10.5px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    background: transparent; border: none; color: var(--faint);
+  }
+  .shotRow .opBtn:hover { background: rgba(99,102,241,.2); color: #C7D2FE; }
+  .shotRow .opBtn.del:hover { background: rgba(248,113,113,.18); color: #FCA5A5; }
+
+  /* 空态 */
+  .empty { flex: 1; display: none; flex-direction: column; align-items: center; justify-content: center; color: var(--faint); }
+  .empty .big { font-size: 30px; margin-bottom: 8px; }
+  .empty .t1 { font-size: 12px; color: var(--muted); }
+  .empty .t2 { font-size: 10px; margin-top: 6px; line-height: 1.8; text-align: center; }
+  .empty kbd {
+    padding: 1px 6px; border-radius: 6px; font-size: 9px;
+    background: rgba(99,102,241,.2); border: 1px solid var(--border-strong); color: #C7D2FE;
+  }
+
+  /* 预览弹层（420 弹层，对齐 dialog 宽度规范） */
+  .previewMask {
+    position: absolute; inset: 0; z-index: 40; display: none;
+    background: rgba(5, 8, 16, 0.72); backdrop-filter: blur(6px);
+    align-items: center; justify-content: center;
+  }
+  .previewMask.show { display: flex; }
+  .preview {
+    width: 420px; max-width: 92%; border-radius: 14px; overflow: hidden;
+    background: var(--panel); border: 1px solid var(--border-strong);
+    box-shadow: 0 24px 70px rgba(0,0,0,.6);
+  }
+  .preview .pImg { background: #0A101F; display: flex; align-items: center; justify-content: center; max-height: 46vh; }
+  .preview .pImg img { max-width: 100%; max-height: 46vh; object-fit: contain; }
+  .preview .pBar { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px 12px; border-top: 1px solid var(--border); }
+  .preview .pText { width: 100%; font-size: 10.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .preview .pBtn {
+    flex: 1; min-width: 62px; font-size: 10.5px; padding: 5px 0; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--border); background: transparent; color: var(--muted);
+    text-align: center;
+  }
+  .preview .pBtn:hover { color: var(--text); border-color: var(--border-strong); }
+  .preview .pBtn.primary { background: linear-gradient(135deg, #6366F1, #4F46E5); color: #fff; border: none; }
+  .preview .pBtn.copyText { border-color: rgba(34,197,94,.4); color: #86EFAC; }
+</style>
+</head>
+<body>
+  <div class="docbar">
+    <span>📸 截图图库 · 设计稿 v2</span>
+    <span class="tag">480×700 真实窗口布局</span>
+    <span class="spacer"></span>
+    <span class="note">侧栏 180px · 主区 300px · 行式列表（对齐 CardList）· 预览 420 弹层</span>
+  </div>
+
+  <div class="win">
+    <!-- 标题栏 -->
+    <div class="titlebar">
+      <span class="logo">📋</span><span class="name">PastePanda</span>
+      <span class="spacer"></span>
+      <span class="winBtn">—</span><span class="winBtn">□</span><span class="winBtn">✕</span>
+    </div>
+
+    <div class="body">
+      <!-- 侧栏 180 -->
+      <aside class="sidebar">
+        <div class="sItem"><span class="ic">📋</span> 全部<span class="cnt">1,284</span></div>
+        <div class="sItem"><span class="ic">⭐</span> 收藏<span class="cnt">36</span></div>
+        <div class="sItem"><span class="ic">📂</span> 未分组<span class="cnt">112</span></div>
+        <div class="sItem shot on"><span class="ic">📸</span> 截图<span class="cnt">148</span></div>
+        <div class="sSep"></div>
+        <div class="sLabel">分组</div>
+        <div class="sItem"><span class="ic">💼</span> 工作<span class="cnt">213</span></div>
+        <div class="sItem"><span class="ic">🧾</span> 报销凭证<span class="cnt">17</span></div>
+      </aside>
+
+      <!-- 主区 300 -->
+      <div class="main">
+        <div class="topbar">
+          <div class="searchRow">
+            <div class="searchBox">
+              <span style="font-size:11px">🔍</span>
+              <input placeholder="搜截图内文字（OCR）" />
+            </div>
+          </div>
+          <div class="filterRow">
+            <span class="filterSel on">类型：全部</span>
+            <span class="filterSel">时间：全部</span>
+            <span class="filterSel">来源：全部</span>
+          </div>
+        </div>
+
+        <div class="list">
+          <div class="shotRow">
+            <div class="thumb"><img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='104' height='80'><rect width='104' height='80' fill='%23101A30'/><rect x='10' y='12' width='60' height='6' rx='3' fill='%232B3B5F'/><rect x='10' y='24' width='84' height='4' rx='2' fill='%231E2C4C'/><rect x='10' y='34' width='70' height='4' rx='2' fill='%231E2C4C'/><rect x='10' y='44' width='78' height='4' rx='2' fill='%231E2C4C'/><rect x='10' y='58' width='40' height='5' rx='2.5' fill='%2330497A'/></svg>" /></div>
+            <div class="info">
+              <div class="summary">const config = { apiKey: process.env.API_KEY… 初始化连接池与重试策略</div>
+              <div class="sub"><span class="time">20:12</span><span class="tagPill">代码</span></div>
+            </div>
+            <div class="ops">
+              <button class="opBtn" title="复制图片">⬡</button>
+              <button class="opBtn" title="复制文字">文</button>
+              <button class="opBtn" title="编辑">✎</button>
+              <button class="opBtn del" title="删除">🗑</button>
+            </div>
+          </div>
+
+          <div class="shotRow">
+            <div class="thumb"><img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='104' height='80'><rect width='104' height='80' fill='%23101A30'/><rect x='10' y='10' width='50' height='6' rx='3' fill='%232B3B5F'/><rect x='10' y='22' width='84' height='9' rx='3' fill='%23244060'/><rect x='10' y='35' width='84' height='9' rx='3' fill='%231E3050'/><rect x='10' y='48' width='84' height='9' rx='3' fill='%23244060'/><rect x='10' y='61' width='54' height='9' rx='3' fill='%231E3050'/></svg>" /></div>
+            <div class="info">
+              <div class="summary">季度支出汇总 部门 A 12,480 部门 B 8,236 合计 20,716 元…</div>
+              <div class="sub"><span class="time">19:48</span><span class="tagPill table">表格</span></div>
+            </div>
+            <div class="ops">
+              <button class="opBtn" title="复制图片">⬡</button>
+              <button class="opBtn" title="复制文字">文</button>
+              <button class="opBtn" title="编辑">✎</button>
+              <button class="opBtn del" title="删除">🗑</button>
+            </div>
+          </div>
+
+          <div class="shotRow">
+            <div class="thumb"><img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='104' height='80'><rect width='104' height='80' fill='%23101A30'/><rect x='10' y='16' width='84' height='6' rx='3' fill='%232B3B5F'/><rect x='10' y='28' width='70' height='4' rx='2' fill='%231E2C4C'/><rect x='10' y='38' width='76' height='4' rx='2' fill='%231E2C4C'/><rect x='10' y='52' width='52' height='9' rx='4.5' fill='%230E7490'/></svg>" /></div>
+            <div class="info">
+              <div class="summary">https://github.com/lzlkyb/pastepanda/releases… 发布说明与更新日志</div>
+              <div class="sub"><span class="time">18:02</span><span class="tagPill link">链接</span></div>
+            </div>
+            <div class="ops">
+              <button class="opBtn" title="复制图片">⬡</button>
+              <button class="opBtn" title="复制文字">文</button>
+              <button class="opBtn" title="编辑">✎</button>
+              <button class="opBtn del" title="删除">🗑</button>
+            </div>
+          </div>
+
+          <div class="shotRow">
+            <div class="thumb"><img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='104' height='80'><rect width='104' height='80' fill='%23101A30'/><rect x='10' y='12' width='52' height='6' rx='3' fill='%232B3B5F'/><rect x='10' y='24' width='84' height='12' rx='4' fill='%231A2440'/><rect x='10' y='42' width='84' height='12' rx='4' fill='%231A2440'/><rect x='10' y='60' width='62' height='12' rx='4' fill='%231A2440'/></svg>" /></div>
+            <div class="info">
+              <div class="summary">对话记录：多轮讨论截图记忆方案，确定分层架构与 export 格式</div>
+              <div class="sub"><span class="time">昨天</span><span class="tagPill">文档</span></div>
+            </div>
+            <div class="ops">
+              <button class="opBtn" title="复制图片">⬡</button>
+              <button class="opBtn" title="复制文字">文</button>
+              <button class="opBtn" title="编辑">✎</button>
+              <button class="opBtn del" title="删除">🗑</button>
+            </div>
+          </div>
+
+          <div class="shotRow">
+            <div class="thumb"><img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='104' height='80'><rect width='104' height='80' fill='%23101A30'/><rect x='10' y='12' width='52' height='6' rx='3' fill='%232B3B5F'/><rect x='10' y='24' width='84' height='4' rx='2' fill='%231E2C4C'/><rect x='10' y='42' width='36' height='12' rx='4' fill='%233F1D1D'/><rect x='10' y='62' width='44' height='5' rx='2.5' fill='%2330497A'/></svg>" /></div>
+            <div class="info">
+              <div class="summary">⚠️ 检测到疑似密钥：sk-xxxx… 已拦截云端出口</div>
+              <div class="sub"><span class="time">昨天 15:40</span><span class="tagPill secret">密钥</span></div>
+            </div>
+            <div class="ops">
+              <button class="opBtn" title="复制图片">⬡</button>
+              <button class="opBtn" title="复制文字">文</button>
+              <button class="opBtn" title="编辑">✎</button>
+              <button class="opBtn del" title="删除">🗑</button>
+            </div>
+          </div>
+
+          <div class="shotRow">
+            <div class="thumb"><img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='104' height='80'><rect width='104' height='80' fill='%23101A30'/><rect x='10' y='12' width='60' height='6' rx='3' fill='%232B3B5F'/><rect x='10' y='26' width='26' height='6' rx='3' fill='%2330497A'/><rect x='10' y='38' width='84' height='4' rx='2' fill='%231E2C4C'/><rect x='10' y='48' width='66' height='4' rx='2' fill='%231E2C4C'/><rect x='10' y='58' width='74' height='4' rx='2' fill='%231E2C4C'/><rect x='10' y='68' width='40' height='8' rx='4' fill='%230E7490'/></svg>" /></div>
+            <div class="info">
+              <div class="summary">npm install && npm run dev 构建输出… 依赖安装与热更新日志</div>
+              <div class="sub"><span class="time">周一</span><span class="tagPill">命令行</span></div>
+            </div>
+            <div class="ops">
+              <button class="opBtn" title="复制图片">⬡</button>
+              <button class="opBtn" title="复制文字">文</button>
+              <button class="opBtn" title="编辑">✎</button>
+              <button class="opBtn del" title="删除">🗑</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 空态 -->
+        <div class="empty" id="emptyState">
+          <div class="big">📸</div>
+          <div class="t1">还没有截图</div>
+          <div class="t2">按 <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>A</kbd> 开始截图<br/>OCR 识别与自动分类全程后台完成</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 预览弹层（420） -->
+    <div class="previewMask" id="previewMask">
+      <div class="preview">
+        <div class="pImg">
+          <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='420' height='280'><rect width='420' height='280' fill='%230A101F'/><rect x='42' y='42' width='250' height='17' rx='6' fill='%232B3B5F'/><rect x='42' y='74' width='336' height='11' rx='4' fill='%231E2C4C'/><rect x='42' y='93' width='294' height='11' rx='4' fill='%231E2C4C'/><rect x='42' y='112' width='315' height='11' rx='4' fill='%231E2C4C'/><rect x='42' y='142' width='140' height='14' rx='5' fill='%2330497A'/><rect x='42' y='170' width='336' height='50' rx='8' fill='%231C2850'/><rect x='42' y='182' width='126' height='24' rx='6' fill='%2330497A'/></svg>" />
+        </div>
+        <div class="pBar">
+          <span class="pText">const config = { apiKey…（识别 12 行文字）</span>
+          <button class="pBtn primary">复制图片</button>
+          <button class="pBtn copyText">复制文字</button>
+          <button class="pBtn">编辑</button>
+          <button class="pBtn">贴图</button>
+          <button class="pBtn">删除</button>
+          <button class="pBtn" id="previewClose">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 点击行卡片打开预览
+    document.querySelectorAll(".shotRow").forEach(c => {
+      c.onclick = () => document.getElementById("previewMask").classList.add("show");
+    });
+    document.getElementById("previewClose").onclick = () =>
+      document.getElementById("previewMask").classList.remove("show");
+    document.getElementById("previewMask").onclick = (e) => {
+      if (e.target === e.currentTarget)
+        document.getElementById("previewMask").classList.remove("show");
+    };
+    // 模拟空态切换（调试用：连续点标题栏 logo 切换）
+    let showList = true;
+    document.querySelector(".titlebar .logo").onclick = () => {
+      showList = !showList;
+      document.querySelector(".list").style.display = showList ? "block" : "none";
+      document.getElementById("emptyState").style.display = showList ? "none" : "flex";
+    };
+  </script>
+</body>
+</html>

@@ -16,15 +16,18 @@ use windows::Win32::Graphics::Gdi::{
     HBITMAP, HBRUSH, PAINTSTRUCT, SRCCOPY,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, ReleaseCapture, SetCapture, VK_CONTROL, VK_ESCAPE,
+    GetKeyState, ReleaseCapture, SetCapture, VK_CONTROL, VK_ESCAPE, VK_T,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
+    GetClientRect, GetMessageW,
     GetWindowLongPtrW, LoadCursorW, PostMessageW, PostQuitMessage, RegisterClassW,
-    SetWindowLongPtrW, ShowWindow, TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
+    SetWindowLongPtrW, ShowWindow, TranslateMessage, CS_DBLCLKS, CS_HREDRAW, CS_VREDRAW,
+    CW_USEDEFAULT,
     GWLP_USERDATA, IDC_ARROW, MSG, SW_SHOW, WM_CLOSE, WM_CREATE, WM_DESTROY, WM_ERASEBKGND,
-    WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONUP,
-    WM_SIZE, WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+    WM_PAINT, WM_RBUTTONUP, WM_SIZE, WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 /// 窗口运行时状态
@@ -44,6 +47,8 @@ struct WindowState {
     dib_bits: Option<*mut u8>,
     last_width: i32,
     last_height: i32,
+    /// 窗口透明度（255 = 不透明，T 键循环切换），SetLayeredWindowAttributes 生效
+    alpha: u8,
     /// 该窗口的代际号，用于在 WM_DESTROY 中判断这是否仍是当前被跟踪的窗口
     generation: u64,
 }
@@ -57,17 +62,19 @@ unsafe impl Sync for WindowState {}
 /// 表示“是否有窗口在跑”的做法：布尔值无法区分“哪一个”窗口，导致任意一个
 /// 窗口（哪怕已经被替换掉）的 WM_DESTROY 都会把标志错误地清成 false，
 /// 且原逻辑在“已有窗口运行”时只打日志，并没有真正阻止/替换创建新窗口。
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct PinnedWindowHandle {
     hwnd: isize,
     generation: u64,
+    /// 贴图图片路径（V6.19 贴图管理面板用）
+    path: String,
 }
 
 // HWND 只是一个句柄数值，跨线程传递该数值本身是安全的
 unsafe impl Send for PinnedWindowHandle {}
 
 static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
-static CURRENT_WINDOW: Mutex<Option<PinnedWindowHandle>> = Mutex::new(None);
+static CURRENT_WINDOW: Mutex<Vec<PinnedWindowHandle>> = Mutex::new(Vec::new());
 
 const CLASS_NAME: &str = "PinnedImageWindow";
 
@@ -277,12 +284,121 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_KEYDOWN => {
             if wparam.0 == VK_ESCAPE.0 as usize {
                 let _ = DestroyWindow(hwnd);
+            } else if wparam.0 == VK_T.0 as usize {
+                // T：循环切换透明度 255 → 180 → 110 → 60 → 255（贴图叠在工作区上时看底）
+                let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+                if ptr != 0 {
+                    let state = &mut *(ptr as *mut WindowState);
+                    state.alpha = match state.alpha {
+                        255 => 180,
+                        180 => 110,
+                        110 => 60,
+                        _ => 255,
+                    };
+                    use windows::Win32::Foundation::COLORREF;
+                    use windows::Win32::UI::WindowsAndMessaging::{
+                        SetLayeredWindowAttributes, LWA_ALPHA,
+                    };
+                    let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), state.alpha, LWA_ALPHA);
+                    log::info!("[pinned-window] 透明度调整为 {}", state.alpha);
+                }
+            }
+            LRESULT(0)
+        }
+
+        WM_LBUTTONDBLCLK => {
+            // 双击贴图 → 回到截图标注窗口重新编辑（按 hwnd 区分，多贴图各编辑各的）
+            let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+            if ptr != 0 {
+                if let Some((app, path)) = crate::screenshot::peek_pinned_edit_by_hwnd(hwnd.0 as isize)
+                {
+                    // 用 peek 不用 take：take 会把绑定从 map 里移除，双击一次之后
+                    // 再双击、以及右键菜单的「复制图片/重新编辑」就全失效了。
+                    // 清理改由 WM_DESTROY 里的 unbind_pinned_edit 负责。
+                    log::info!("[pinned-window] 双击贴图，进入重新编辑: {}", path);
+                    crate::screenshot::open_editor_window(&app, path);
+                }
             }
             LRESULT(0)
         }
 
         WM_RBUTTONUP => {
-            let _ = DestroyWindow(hwnd);
+            // V6.19 贴图右键菜单：复制图片 / 重新编辑 / 关闭 / 关闭全部
+            let (mx, my) = (
+                (lparam.0 & 0xFFFF) as i16 as i32,
+                ((lparam.0 >> 16) & 0xFFFF) as i16 as i32,
+            );
+            let info = crate::screenshot::peek_pinned_edit_by_hwnd(hwnd.0 as isize);
+            use windows::Win32::Graphics::Gdi::ClientToScreen;
+            use windows::Win32::UI::WindowsAndMessaging::{
+                AppendMenuW, CreatePopupMenu, DestroyMenu, TrackPopupMenu, MF_STRING,
+                TPM_RETURNCMD, TPM_RIGHTBUTTON,
+            };
+            if let Ok(hmenu) = unsafe { CreatePopupMenu() } {
+                if !hmenu.0.is_null() {
+                    let items = [
+                        ("复制图片", 1usize),
+                        ("重新编辑", 2),
+                        ("关闭", 3),
+                        ("关闭全部", 4),
+                    ];
+                    for (label, id) in items {
+                        let wide = to_wide(label);
+                        unsafe {
+                            let _ = AppendMenuW(hmenu, MF_STRING, id, PCWSTR(wide.as_ptr()));
+                        }
+                    }
+                    // 客户端坐标 → 屏幕坐标（菜单用屏幕坐标弹出）
+                    let mut pt = windows::Win32::Foundation::POINT { x: mx, y: my };
+                    unsafe {
+                        let _ = ClientToScreen(hwnd, &mut pt);
+                    }
+                    let cmd = unsafe {
+                        TrackPopupMenu(
+                            hmenu,
+                            TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                            pt.x,
+                            pt.y,
+                            0,
+                            hwnd,
+                            None,
+                        )
+                    };
+                    unsafe {
+                        let _ = DestroyMenu(hmenu);
+                    }
+                    // TPM_RETURNCMD：返回值即命令 id（BOOL 载体）
+                    let cmd_id = cmd.0 as u16;
+                    match cmd_id {
+                        1 => {
+                            // 复制图片到剪贴板
+                            if let Some((ref app, path)) = info {
+                                use tauri::Manager;
+                                if let Some(eng) =
+                                    app.try_state::<crate::paste_engine::PasteEngine>()
+                                {
+                                    if let Err(e) = eng.copy_image_only(&path) {
+                                        log::warn!("[pinned-window] 复制贴图失败: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                        2 => {
+                            // 重新编辑（回到截图标注窗口）
+                            if let Some((app, path)) = info {
+                                crate::screenshot::open_editor_window(&app, path);
+                            }
+                        }
+                        3 => {
+                            let _ = DestroyWindow(hwnd);
+                        }
+                        4 => {
+                            close_current_window();
+                        }
+                        _ => {}
+                    }
+                }
+            }
             LRESULT(0)
         }
 
@@ -297,18 +413,17 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 }
             }
 
-            // 只有当被销毁的窗口确实是当前全局跟踪的那一个（HWND + 代际号都匹配）时，
-            // 才清空全局状态；否则说明这是一个已经被新窗口替换掉的旧窗口，
-            // 它的销毁事件不应该覆盖新窗口写入的状态。
+            // 多贴图并存：从全局集合移除被销毁的窗口（HWND + 代际号都匹配才移除，
+            // 避免旧代窗口的销毁事件误清新窗口的状态）
             if let Ok(mut guard) = CURRENT_WINDOW.lock() {
-                let should_clear = match (*guard, destroyed_generation) {
-                    (Some(cur), Some(gen)) => cur.hwnd == hwnd.0 as isize && cur.generation == gen,
-                    _ => false,
-                };
-                if should_clear {
-                    *guard = None;
+                if let Some(gen) = destroyed_generation {
+                    guard.retain(|h| !(h.hwnd == hwnd.0 as isize && h.generation == gen));
                 }
             }
+
+            // 解除重编辑绑定：不清的话 PINNED_EDIT_MAP 只增不减，而且 Windows 会复用 HWND 数值，
+            // 新窗口拿到旧 hwnd 时会串到上一张图的路径（右键「复制图片」复制错图）。
+            crate::screenshot::unbind_pinned_edit(hwnd.0 as isize);
 
             let _ = PostQuitMessage(0);
             LRESULT(0)
@@ -324,7 +439,9 @@ fn register_class(instance: HINSTANCE) -> Result<(), String> {
         unsafe { LoadCursorW(None, IDC_ARROW) }.map_err(|e| format!("LoadCursor 失败: {:?}", e))?;
 
     let wc = WNDCLASSW {
-        style: CS_HREDRAW | CS_VREDRAW,
+        // CS_DBLCLKS 必须声明：窗口类没有它，系统就永远不发 WM_LBUTTONDBLCLK，
+        // 双击只会变成两次 WM_LBUTTONDOWN——下面那个「双击贴图重新编辑」分支会是死代码。
+        style: CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS,
         lpfnWndProc: Some(wndproc),
         hInstance: instance,
         hCursor: cursor,
@@ -337,17 +454,8 @@ fn register_class(instance: HINSTANCE) -> Result<(), String> {
 }
 
 pub fn create_native_window(image_path: &str) -> Result<(), String> {
-    // 单实例替换：若已有置顶窗口在运行，先关闭旧窗口，再创建新窗口。
-    // 原逻辑在“已有窗口运行”时只打了一条日志就往下走，既不 return 也不关闭旧窗口，
-    // 导致连续调用会同时存在多个原生窗口——这里改为“关旧开新”，与 close_pinned_image
-    // 所暗示的“同一时刻只应有一个置顶图片”的模型保持一致。
-    if let Some(prev) = CURRENT_WINDOW.lock().unwrap().take() {
-        log::info!("[pinned-window] 已有窗口运行中，关闭旧窗口后创建新窗口");
-        unsafe {
-            let _ = PostMessageW(HWND(prev.hwnd as *mut _), WM_CLOSE, WPARAM(0), LPARAM(0));
-        }
-    }
-
+    // 多贴图并存（V5）：不再"关旧开新"——多次贴图各自创建独立置顶窗口。
+    // 关闭由 close_current_window（关全部）或各窗口自身的 Esc/右键完成。
     // 修复 C18：先仅读头部校验尺寸上限，防解压炸弹
     crate::commands::check_image_decode_limits(std::path::Path::new(image_path))?;
     let img = image::open(image_path).map_err(|e| format!("无法加载图片: {}", e))?;
@@ -363,9 +471,10 @@ pub fn create_native_window(image_path: &str) -> Result<(), String> {
     );
 
     let generation = NEXT_GENERATION.fetch_add(1, Ordering::SeqCst);
+    let image_path_owned = image_path.to_string();
 
     std::thread::spawn(move || {
-        if let Err(e) = run_window_loop(pixels, img_width, img_height, generation) {
+        if let Err(e) = run_window_loop(pixels, img_width, img_height, generation, image_path_owned) {
             log::error!("[pinned-window] 窗口消息循环错误: {}", e);
         }
     });
@@ -373,11 +482,47 @@ pub fn create_native_window(image_path: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// 主动关闭当前正在显示的置顶窗口（如果有）。供 `close_pinned_image` 命令调用。
+/// 主动关闭全部置顶贴图窗口（供 `close_pinned_image` 命令调用）。
+/// 多贴图并存后语义为"关闭所有贴图"。
 pub fn close_current_window() {
-    if let Some(cur) = CURRENT_WINDOW.lock().unwrap().take() {
+    // 其他线程持锁期间 panic 会使 Mutex 中毒；中毒后直接 unwrap 会二次 panic。
+    // 这里恢复为 into_inner()，保证"关闭所有贴图"这一清理动作在任何情况下都能完成。
+    let windows = match CURRENT_WINDOW.lock() {
+        Ok(mut guard) => guard.drain(..).collect::<Vec<_>>(),
+        Err(poisoned) => poisoned.into_inner().drain(..).collect::<Vec<_>>(),
+    };
+    for w in windows {
         unsafe {
-            let _ = PostMessageW(HWND(cur.hwnd as *mut _), WM_CLOSE, WPARAM(0), LPARAM(0));
+            let _ = PostMessageW(HWND(w.hwnd as *mut _), WM_CLOSE, WPARAM(0), LPARAM(0));
+        }
+    }
+}
+
+/// 当前贴图路径列表（贴图管理面板，V6.19）
+pub fn list_pinned_images() -> Vec<String> {
+    let guard = CURRENT_WINDOW.lock().unwrap_or_else(|p| p.into_inner());
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for w in guard.iter() {
+        if seen.insert(w.path.clone()) {
+            out.push(w.path.clone());
+        }
+    }
+    out
+}
+
+/// 关闭指定路径的贴图窗口（V6.19 贴图管理面板"关闭单张"）
+pub fn close_pinned_by_path(path: &str) {
+    let windows = CURRENT_WINDOW
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .iter()
+        .filter(|w| w.path == path)
+        .map(|w| w.hwnd)
+        .collect::<Vec<_>>();
+    for hwnd in windows {
+        unsafe {
+            let _ = PostMessageW(HWND(hwnd as *mut _), WM_CLOSE, WPARAM(0), LPARAM(0));
         }
     }
 }
@@ -387,6 +532,7 @@ fn run_window_loop(
     img_width: u32,
     img_height: u32,
     generation: u64,
+    image_path: String,
 ) -> Result<(), String> {
     // GetModuleHandleW 返回 HMODULE，可转为 HINSTANCE
     let module = unsafe { windows::Win32::System::LibraryLoader::GetModuleHandleW(None) }
@@ -411,7 +557,7 @@ fn run_window_loop(
 
     let hwnd = unsafe {
         CreateWindowExW(
-            WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
             PCWSTR(class_name.as_ptr()),
             PCWSTR(title.as_ptr()),
             WS_OVERLAPPEDWINDOW | WS_VISIBLE,
@@ -431,11 +577,30 @@ fn run_window_loop(
         Err(e) => return Err(format!("CreateWindowExW 失败: {:?}", e)),
     };
 
-    // 登记为“当前置顶窗口”，供后续的单实例替换 / 主动关闭使用
-    *CURRENT_WINDOW.lock().unwrap() = Some(PinnedWindowHandle {
+    // 登记为"当前置顶窗口集合"的一员（供关闭/重编辑回调使用）。
+    // 中毒恢复：其他线程持锁 panic 后此处若直接 unwrap 会二次 panic，导致贴图登记失败。
+    let mut guard = match CURRENT_WINDOW.lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    guard.push(PinnedWindowHandle {
         hwnd: hwnd.0 as isize,
         generation,
+        path: image_path.to_string(),
     });
+    // ⚠️ 必须在进入消息循环前显式释放锁。本函数尾部就是 GetMessageW 消息循环，
+    // guard 若活到函数结束，这把锁会被本窗口线程一直占着直到窗口关闭，后果全部必然发生：
+    // ① 本线程的 WM_DESTROY 里还要再 lock 同一把非重入 Mutex → 自死锁，Esc 关不掉窗口；
+    // ② 第二张贴图的窗口线程卡死在这一行 → 窗口建出来了却没有消息循环，白屏无响应；
+    // ③ close_current_window / list_pinned_images / close_pinned_by_path 全部阻塞调用方。
+    // 改多贴图并存前这里是 `*CURRENT_WINDOW.lock().unwrap() = Some(..)`，临时值语句结束即释放，
+    // 换成具名 guard 后就丢掉了这个隐式释放点。
+    drop(guard);
+
+    // 多贴图重编辑：把最近一次贴图绑定到本窗口 hwnd（双击哪张就编辑哪张）
+    if let Some((app, path)) = crate::screenshot::take_pinned_edit_request() {
+        crate::screenshot::bind_pinned_edit(hwnd.0 as isize, &app, &path);
+    }
 
     // DWM 圆角
     {
@@ -469,6 +634,7 @@ fn run_window_loop(
         dib_bits: None,
         last_width: 0,
         last_height: 0,
+        alpha: 255,
         generation,
     });
 

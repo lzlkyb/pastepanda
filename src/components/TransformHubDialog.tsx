@@ -37,6 +37,7 @@ import { MelodyEmpty } from "@/components/MelodyEmpty";
 import { TransformCard } from "@/components/transform/TransformCard";
 import { NlCommandBar } from "@/components/NlCommandBar";
 import { requestPlannedChain } from "@/lib/chains/planRequest";
+import { isAiAvailable } from "@/lib/transforms/aiTransforms";
 import { getSession, mergeSessionTexts } from "@/lib/sessionContext";
 import type { NlParseResult } from "@/lib/nlActionParser";
 import { specsFor, defaultOptsFromSpecs } from "@/components/transform/transformOptions";
@@ -444,7 +445,7 @@ export function TransformHubDialog() {
                 <button
                   className={styles.chainTile}
                   onClick={planChain}
-                  disabled={planning || !sourceText.trim()}
+                  disabled={planning || !sourceText.trim() || !isAiAvailable()}
                 >
                   <span className={styles.chainTileIcon} data-ai="1">
                     {planning ? <Loader2 size={15} className="spin" /> : <Sparkles size={15} />}
@@ -456,11 +457,13 @@ export function TransformHubDialog() {
                     </span>
                     {/* 禁用时说**原因**而不是只变灏——否则用户不知道为什么点不了，会反复点 */}
                     <span className={styles.chainTileDesc}>
-                      {!sourceText.trim()
-                        ? "没有可处理的文字"
-                        : planning
-                          ? "正在让 AI 看内容…"
-                          : "让 AI 看内容配流水线"}
+                      {!isAiAvailable()
+                        ? "AI 功能未开启"
+                        : !sourceText.trim()
+                          ? "没有可处理的文字"
+                          : planning
+                            ? "正在让 AI 看内容…"
+                            : "让 AI 看内容配流水线"}
                     </span>
                   </span>
                 </button>

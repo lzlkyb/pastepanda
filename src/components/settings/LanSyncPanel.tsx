@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import { useWindowVisible } from "@/hooks/useWindowVisible";
 import { logger } from "@/lib/logger";
 import styles from "../Settings.module.css";
 
@@ -39,11 +40,14 @@ export function LanSyncPanel({ toast }: { toast: (msg: string, type?: "success" 
     } catch (e) { logger.warn("获取配对密钥失败", e); }
   }, []);
 
+  // 窗口隐藏（hide()）时暂停设备轮询：设置页 WebView 仍存活，空转会刷屏 / 烧 CPU（规则 8）
+  const winVisible = useWindowVisible();
   useEffect(() => {
+    if (!winVisible) return;
     refreshDevices();
     const timer = setInterval(refreshDevices, 5000);
     return () => clearInterval(timer);
-  }, [refreshDevices]);
+  }, [refreshDevices, winVisible]);
 
   useEffect(() => {
     refreshPairingKey();
