@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>PastePanda · 遮罩工具重做（马赛克 / 模糊 / 高亮 / 橡皮擦）设计稿</title>
+<style>
+:root{
+  --bg:#0B1120; --panel:#111A2E; --line:rgba(99,102,241,0.22);
+  --text-primary:#E0E8F0; --text-muted:#9DB2D0; --hover:#0F1F35;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text-primary);
+  font:14px/1.75 "Microsoft YaHei","PingFang SC",system-ui,sans-serif;padding:36px 28px 80px}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:22px;margin:0 0 6px;background:linear-gradient(135deg,#6366F1,#3B9EFF);
+  -webkit-background-clip:text;background-clip:text;color:transparent;display:inline-block}
+.sub{color:var(--text-muted);font-size:12.5px;margin:0 0 30px}
+h2{font-size:16px;margin:38px 0 12px;padding-left:10px;border-left:3px solid #6366F1}
+h3{font-size:13.5px;margin:22px 0 8px;color:#B9C6F0}
+p,li{font-size:13px;color:#C7D3E6}
+code{background:rgba(99,102,241,.16);padding:1px 5px;border-radius:4px;font-size:12px;color:#B9C6F0}
+pre{background:#070C16;border:1px solid var(--line);border-radius:8px;padding:12px 14px;
+  font-size:12px;color:#C7D3E6;overflow-x:auto;line-height:1.65}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin:14px 0}
+.bad{border-color:rgba(248,113,113,.35)}
+.good{border-color:rgba(34,197,94,.35)}
+.warn{border-color:rgba(250,204,21,.4)}
+.tag{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:999px;margin-right:6px;vertical-align:2px}
+.tag.x{background:rgba(248,113,113,.16);color:#FCA5A5;border:1px solid rgba(248,113,113,.4)}
+.tag.v{background:rgba(34,197,94,.16);color:#86EFAC;border:1px solid rgba(34,197,94,.4)}
+.tag.w{background:rgba(250,204,21,.14);color:#FDE68A;border:1px solid rgba(250,204,21,.4)}
+.stage{background:#070C16;border:1px dashed rgba(99,102,241,.28);border-radius:12px;
+  padding:28px 18px;margin:12px 0;display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start;justify-content:center}
+.cap{width:100%;text-align:center;font-size:11.5px;color:var(--text-muted);margin-top:4px}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+th{background:rgba(99,102,241,.12);color:#B9C6F0;font-weight:600}
+
+/* ===== 以下属性条样式从 src/styles/screenshot.css 原样搬运 ===== */
+.attr-bar{
+  position:relative;display:flex;align-items:center;gap:1px;
+  padding:4px 9px;border-radius:10px;white-space:nowrap;
+  background:rgba(15,23,42,.96);
+  border:1px solid rgba(148,168,255,.3);
+  box-shadow:0 8px 24px rgba(0,0,0,.42);
+}
+.attr-bar .albl{font-size:10px;color:#6E82A4;margin:0 5px 0 2px}
+.attr-bar .aval{font-size:10px;color:#8FA3C4;margin-left:4px;
+  font-variant-numeric:tabular-nums;min-width:30px}
+.attr-bar .asep{width:1px;height:16px;margin:0 7px;
+  background:linear-gradient(180deg,transparent,rgba(125,140,255,.45),transparent)}
+.cwrap{width:24px;height:24px;border-radius:6px;position:relative;
+  display:flex;align-items:center;justify-content:center;cursor:pointer}
+.cwrap:hover{background:rgba(148,168,255,.14)}
+.cp{width:14px;height:14px;border-radius:50%;display:block;
+  border:1.5px solid transparent;flex-shrink:0}
+.cp.on{border-color:#fff;box-shadow:0 0 0 2px rgba(59,158,255,.55)}
+.wpick{width:24px;height:24px;border-radius:6px;position:relative;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;color:#C9D6EA;font-size:10.5px}
+.wpick:hover{background:rgba(148,168,255,.14)}
+.wpick.on{background:rgba(59,158,255,.28);color:#fff}
+.wpick svg{width:15px;height:15px;display:block}
+.wdot{border-radius:50%;background:currentColor;display:block}
+
+/* ---------- 新增：形状切换（矩形 / 涂抹） ---------- */
+/* 不新开样式：直接复用 .wpick（同样的 24px 方形热区 + on 高亮）。
+   属性条上已经有三组在用它（粗细/强度/箭头），再发明一个只会不一致。*/
+
+/* 演示用：模拟画布效果 */
+.demo{width:300px;height:150px;border-radius:8px;position:relative;overflow:hidden;
+  border:1px solid rgba(148,168,255,.25);flex:none}
+.demo .txt{position:absolute;inset:0;padding:14px 16px;font-size:12.5px;line-height:1.9;color:#0B1120}
+.demo.light{background:#F3F6FB}
+.hl-alpha{position:absolute;left:14px;top:34px;width:190px;height:20px;
+  background:#facc15;opacity:.35}
+.hl-alpha2{position:absolute;left:60px;top:34px;width:90px;height:20px;
+  background:#facc15;opacity:.35}
+.hl-mult{position:absolute;left:14px;top:34px;width:190px;height:20px;
+  background:#facc15;mix-blend-mode:multiply}
+.hl-mult2{position:absolute;left:60px;top:34px;width:90px;height:20px;
+  background:#facc15;mix-blend-mode:multiply}
+
+/* 模糊边缘羽化示意 */
+.blurbox{position:absolute;left:30px;top:40px;width:120px;height:60px;
+  background:linear-gradient(135deg,#3B9EFF,#6D5CF0)}
+.blurbox.feather{
+  -webkit-mask-image:radial-gradient(ellipse at center, #000 55%, transparent 100%);
+  mask-image:radial-gradient(ellipse at center, #000 55%, transparent 100%);
+}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:11.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>遮罩工具重做（方案乙）</h1>
+<p class="sub">PastePanda · 2026-08-17 · 马赛克 / 模糊 加涂抹模式，高亮换乘法混合，模糊补 padding，橡皮擦正名</p>
+
+<h2>一、五个问题</h2>
+<div class="card bad">
+<table>
+<tr><th style="width:40px">#</th><th style="width:150px">问题</th><th>现状</th><th style="width:90px">本轮</th></tr>
+<tr><td>①</td><td>四个工具全是拖矩形</td><td>遮三处要拖三次，且矩形必然连带遮住不该遮的内容。QQ / 微信的马赛克都是涂抹式</td><td><span class="tag v">修</span></td></tr>
+<tr><td>②</td><td>高亮叠加变黑</td><td><code>globalAlpha=.35</code> + <code>fillRect</code>，叠三层接近不透明色块，底下文字看不见</td><td><span class="tag v">修</span></td></tr>
+<tr><td>③</td><td>模糊边缘羽化没真修好</td><td>注释说用不透明临时画布解决了，但问题不在 tmp 内部透明——在 tmp <b>外部没像素</b></td><td><span class="tag v">修</span></td></tr>
+<tr><td>④</td><td>模糊可被还原</td><td>卷积数学上可逆（去卷积）；马赛克格子够大时不可逆。<b>这是安全问题</b></td><td><span class="tag w">提示</span></td></tr>
+<tr><td>⑤</td><td>橡皮擦不是橡皮擦</td><td><code>eraseHits</code> 把路径命中的<b>整个标注元素</b>删掉，长曲线轻轻一擦整条消失</td><td><span class="tag w">正名</span></td></tr>
+</table>
+</div>
+
+<h2>二、② 高亮：半透明 → 乘法混合</h2>
+<div class="stage">
+  <div>
+    <div class="demo light">
+      <div class="txt">这是一行普通正文<br />高亮这行重点内容<br />下面还有一行</div>
+      <div class="hl-alpha"></div>
+      <div class="hl-alpha2"></div>
+    </div>
+    <div style="text-align:center;font-size:11.5px;color:#FCA5A5;margin-top:10px">改前 · globalAlpha 0.35</div>
+    <div style="text-align:center;font-size:11px;color:var(--text-muted)">中间叠了两层 → 明显变浑，文字被拉灰</div>
+  </div>
+  <div>
+    <div class="demo light">
+      <div class="txt">这是一行普通正文<br />高亮这行重点内容<br />下面还有一行</div>
+      <div class="hl-mult"></div>
+      <div class="hl-mult2"></div>
+    </div>
+    <div style="text-align:center;font-size:11.5px;color:#86EFAC;margin-top:10px">改后 · multiply</div>
+    <div style="text-align:center;font-size:11px;color:var(--text-muted)">叠加不变黑，<b>黑字仍然是黑字</b></div>
+  </div>
+  <div class="cap">乘法混合的物理意义就是“透明彩色滤镜”（MDN 原词），这正是荧光笔的行为</div>
+</div>
+<div class="card good">
+<pre>// 改前
+ctx.globalAlpha = 0.35;
+ctx.fillRect(x, y, w, h);
+
+// 改后：白底×黄 = 黄；黑字×黄 = 黑字（文字始终可读）
+ctx.globalCompositeOperation = "multiply";
+ctx.fillRect(x, y, w, h);</pre>
+<p style="margin-bottom:0"><span class="tag w">坑</span><code>globalCompositeOperation</code> 在 <code>ctx.save()/restore()</code> 里，而 <code>drawAnnot</code> 首尾已有 save/restore，所以不会泄到下一个标注。但合成时是按顺序逐个画的，<b>高亮必须只与底图相乘、不能与先前的标注相乘</b>——否则高亮盖到红框上会把红框染成橙色。实现上高亮要先于其他标注绘制（按 type 分两轮）。</p>
+</div>
+
+<h2>三、③ 模糊：补 padding</h2>
+<div class="stage">
+  <div>
+    <div class="demo light"><div class="blurbox feather"></div></div>
+    <div style="text-align:center;font-size:11.5px;color:#FCA5A5;margin-top:10px">改前 · 四周一圈发虚透出原图</div>
+  </div>
+  <div>
+    <div class="demo light"><div class="blurbox"></div></div>
+    <div style="text-align:center;font-size:11.5px;color:#86EFAC;margin-top:10px">改后 · 边缘实实在在</div>
+  </div>
+  <div class="cap">左图是示意（用遮罩模拟），实际现象是模糊块四边 alpha 下降</div>
+</div>
+<div class="card good">
+<p>根因：blur 卷积在 <code>tmp</code> 边界处要采样边界外，那里是空的。与 <code>tmp</code> 内部是不是不透明无关。</p>
+<pre>const pad = Math.ceil(radius * 2);           // 业界标准：外扩 2 倍半径
+// 采样时连 padding 一起从底图取（底图是全屏，周围真的有像素）
+tctx.drawImage(baseImg,
+  offX + x - pad, offY + y - pad, w + pad*2, h + pad*2,
+  0, 0, w + pad*2, h + pad*2);
+octx.filter = `blur(${radius}px)`;
+octx.drawImage(tmp, 0, 0);
+// 贴回时把 padding 裁掉，只要中间那块
+ctx.drawImage(out, pad, pad, w, h, x, y, w, h);</pre>
+<p style="margin-bottom:0"><span class="tag w">边界</span>选区贴屏幕边缘时 <code>x - pad</code> 会负。<code>drawImage</code> 对超出源图的部分按透明处理，所以那一侧仍会羽化——得先把采样矩形钉到底图边界内，再按实际钉住的量调整回贴偏移。这一步是纯计算，抽成函数可以配单测。</p>
+</div>
+
+<h2>四、① 涂抹模式（本轮重点）</h2>
+<h3>属性条新增「形状」组</h3>
+<div class="stage">
+  <div>
+    <div class="attr-bar">
+      <span class="albl">强度</span>
+      <span class="wpick">细</span>
+      <span class="wpick on">中</span>
+      <span class="wpick">粗</span>
+      <span class="aval">8px</span>
+    </div>
+    <div style="text-align:center;font-size:11.5px;color:#FCA5A5;margin-top:10px">改前</div>
+  </div>
+  <div>
+    <div class="attr-bar">
+      <span class="albl">形状</span>
+      <span class="wpick on" title="涂抹" style="outline:1px dashed rgba(125,224,196,.6);outline-offset:1px">
+        <svg viewBox="0 0 16 16"><path d="M2.6 11.6c2.2-4.4 4.2-6.2 6-5.4 1.8.8.6 3.4 2 4 1.4.6 2.4-.8 2.8-2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+      </span>
+      <span class="wpick" title="矩形" style="outline:1px dashed rgba(125,224,196,.6);outline-offset:1px">
+        <svg viewBox="0 0 16 16"><rect x="2.6" y="4" width="10.8" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+      </span>
+      <span class="asep"></span>
+      <span class="albl">强度</span>
+      <span class="wpick">细</span>
+      <span class="wpick on">中</span>
+      <span class="wpick">粗</span>
+      <span class="aval">8px</span>
+    </div>
+    <div style="text-align:center;font-size:11.5px;color:#86EFAC;margin-top:10px">改后 · 默认涂抹（跟 QQ 一致）</div>
+  </div>
+  <div class="cap">虚线框 = 新增。<b>不新开样式</b>，直接复用 <code>.wpick</code>（属性条上粗细/强度/箭头三组已经在用它）</div>
+</div>
+
+<div class="card">
+<h3>适用范围</h3>
+<table>
+<tr><th style="width:110px">工具</th><th style="width:120px">形状组</th><th>默认</th></tr>
+<tr><td>马赛克</td><td><span class="tag v">有</span></td><td><b>涂抹</b>（遗漏一处抹一下就行，不用重新拖框）</td></tr>
+<tr><td>模糊</td><td><span class="tag v">有</span></td><td><b>涂抹</b></td></tr>
+<tr><td>高亮</td><td><span class="tag v">有</span></td><td><b>涂抹</b>（沿文字行涂才是荧光笔）</td></tr>
+<tr><td>其余工具</td><td><span class="tag x">无</span></td><td>矩形/椭圆/箭头 本身就是形状，不适用</td></tr>
+</table>
+<p style="margin-bottom:0">形状选择<b>每个工具各自记住</b>（与现有属性记忆一致）：高亮习惯涂抹、马赛克偶尔想用矩形遮一大块，两者不应互相影响。</p>
+</div>
+
+<h3>实现：遮罩合成（不是逐笔重算）</h3>
+<div class="card good">
+<pre>// 关键：马赛克/模糊的内容按**整个包围盒**一次算好，笔刷只决定可见区域。
+// 若每笔单独算，重叠处的马赛克网格会对不齐（格子错位）。
+
+const box = 笔刷路径的包围盒（外扩 笔宽/2）
+
+A = 离屏画布；A 上画好 box 范围的马赛克 / 模糊
+B = A 同尺寸；在 B 上用 lineWidth = 笔宽 描笔刷路径
+
+A.globalCompositeOperation = "destination-in";
+A.drawImage(B, 0, 0);        // A 只剩笔刷覆盖到的部分
+ctx.drawImage(A, box.x, box.y);</pre>
+<p><span class="tag v">好处</span>马赛克格子始终对齐全局网格，来回涂不会出现格子打架；模糊也只算一次。</p>
+<p style="margin-bottom:0"><span class="tag w">注意</span><code>Annotation</code> 要新增两个字段：<code>shape?: "rect" | "brush"</code> 与复用现有的 <code>points</code>。<b>旧数据兼容：<code>shape</code> 缺省按 <code>"rect"</code></b>（现有行为），不会影响已存的标注。</p>
+</div>
+
+<h2>五、④ 模糊可还原的提示</h2>
+<div class="card warn">
+<p>模糊是卷积、数学上可逆（去卷积），半径小时能相当程度还原；马赛克格子够大时信息真的丢了。</p>
+<p><b>不做成弹窗、不做成拦截</b>——那是干扰。只在模糊工具的 tooltip 里多一句：</p>
+<pre>data-tip="模糊（遮密码/证件请用马赛克，模糊可被还原）"</pre>
+<p style="margin-bottom:0">理由：本产品有 <code>detectSensitiveText</code>，已经在意敏感内容；这条提示成本为零、只在悬停时出现，不干扰任何人。</p>
+</div>
+
+<h2>六、⑤ 橡皮擦正名</h2>
+<div class="card">
+<p><b>不改行为，只改名字和图标。</b>当前行为（路径划过去删除整个标注）本身很好用，问题只是名字在骗人。</p>
+<table>
+<tr><th style="width:120px"></th><th style="width:200px">改前</th><th>改后</th></tr>
+<tr><td>标签</td><td>橡皮擦</td><td><b>删除</b></td></tr>
+<tr><td>图标</td><td>橡皮形状</td><td>划除线 + 标注元素（表达“划一下删掉”）</td></tr>
+<tr><td>tooltip</td><td>橡皮擦（按 0）</td><td>划过标注将其删除（按 0）</td></tr>
+<tr><td><code>ToolId</code></td><td><code>"eraser"</code></td><td><b>不改</b>——改了要动 types / 快捷键 / 默认值 多处，风险大于收益</td></tr>
+</table>
+<p style="margin-bottom:0"><span class="tag x">不做</span>真橡皮擦（路径切分）。工作量接近前两项之和（要动 undo 栈语义、切分后的 id 分配），而用户想删整个标注的场景其实更多。</p>
+</div>
+
+<h2>七、改动清单</h2>
+<div class="card">
+<table>
+<tr><th style="width:250px">文件</th><th>改动</th></tr>
+<tr><td><code>lib/screenshot/types.ts</code></td><td><code>Annotation</code> 加 <code>shape?: "rect" | "brush"</code>（缺省 rect，旧数据兼容）</td></tr>
+<tr><td><code>lib/screenshot/draw.ts</code></td><td>高亮换 multiply；模糊加 padding；三个工具支持 brush 形状（遮罩合成）</td></tr>
+<tr><td><code>lib/screenshot/blurRect.ts</code>（新）</td><td>采样矩形 + padding 钉边界的纯计算，配单测</td></tr>
+<tr><td><code>components/screenshot/AttrBar.tsx</code></td><td>新增「形状」组（复用 .wpick）</td></tr>
+<tr><td><code>components/screenshot/tools.tsx</code></td><td>笔刷/矩形两个小图标；橡皮擦改名与图标；模糊 tooltip 加提示</td></tr>
+<tr><td><code>components/screenshot/ScreenshotOverlay.tsx</code></td><td>brush 模式下三个工具改走 points 采集；高亮先于其它标注绘制</td></tr>
+</table>
+<p style="margin-bottom:0">完成后 <code>draw.ts</code> 仍然是纯函数（不持组件状态），预览与合成依旧共用同一份实现。</p>
+</div>
+
+<p style="margin-top:34px;color:var(--text-muted);font-size:11.5px;text-align:center">
+PastePanda 设计稿 · 2026-08-17 · 属性条样式取自 <code>src/styles/screenshot.css</code>
+</p>
+
+</div>
+</body>
+</html>

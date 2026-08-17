@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>PastePanda · 截图主力出口上升到工具栏 设计稿</title>
+<style>
+:root{
+  --bg:#0B1120; --panel:#111A2E; --line:rgba(99,102,241,0.22);
+  --text-primary:#E0E8F0; --text-muted:#9DB2D0; --hover:#0F1F35;
+  --border-color:#162B45; --input-bg:#162B45; --green:#22c55e;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text-primary);
+  font:14px/1.75 "Microsoft YaHei","PingFang SC",system-ui,sans-serif;padding:36px 28px 80px}
+.wrap{max-width:1120px;margin:0 auto}
+h1{font-size:22px;margin:0 0 6px;background:linear-gradient(135deg,#6366F1,#3B9EFF);
+  -webkit-background-clip:text;background-clip:text;color:transparent;display:inline-block}
+.sub{color:var(--text-muted);font-size:12.5px;margin:0 0 30px}
+h2{font-size:16px;margin:38px 0 12px;padding-left:10px;border-left:3px solid #6366F1}
+h3{font-size:13.5px;margin:22px 0 8px;color:#B9C6F0}
+p,li{font-size:13px;color:#C7D3E6}
+code{background:rgba(99,102,241,.16);padding:1px 5px;border-radius:4px;font-size:12px;color:#B9C6F0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin:14px 0}
+.bad{border-color:rgba(248,113,113,.35)}
+.good{border-color:rgba(34,197,94,.35)}
+.tag{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:999px;margin-right:6px;vertical-align:2px}
+.tag.x{background:rgba(248,113,113,.16);color:#FCA5A5;border:1px solid rgba(248,113,113,.4)}
+.tag.v{background:rgba(34,197,94,.16);color:#86EFAC;border:1px solid rgba(34,197,94,.4)}
+.tag.i{background:rgba(59,158,255,.16);color:#8CC5FF;border:1px solid rgba(59,158,255,.4)}
+.stage{background:#070C16;border:1px dashed rgba(99,102,241,.28);border-radius:12px;
+  padding:30px 18px;margin:12px 0;display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start;justify-content:center}
+.cap{width:100%;text-align:center;font-size:11.5px;color:var(--text-muted);margin-top:4px}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+th{background:rgba(99,102,241,.12);color:#B9C6F0;font-weight:600}
+
+/* ====== 以下从 src/styles/screenshot.css 原样搬运 ====== */
+.annot-toolbar{
+  position:relative;display:flex;align-items:center;gap:2px;
+  padding:5px 7px;border-radius:12px;
+  background:linear-gradient(180deg,rgba(34,41,76,.94),rgba(16,21,40,.96));
+  border:1px solid rgba(99,102,241,.4);
+  box-shadow:0 12px 36px rgba(0,0,0,.45),inset 0 1px 0 rgba(148,168,255,.28),inset 0 -1px 0 rgba(0,0,0,.35);
+  white-space:nowrap;
+}
+.annot-toolbar.busy{opacity:.55}
+.tool{
+  min-width:38px;height:42px;border-radius:8px;padding:0 3px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  cursor:pointer;border:1px solid transparent;
+  color:var(--text-primary);font-size:12px;position:relative;transition:background .12s;
+}
+.tool .ic{display:flex}
+.tool .ic svg{width:17px;height:17px;display:block}
+.tool .lb{font-size:9px;line-height:1;letter-spacing:.2px;opacity:.72}
+.tool:hover{background:var(--hover)}
+.tool.on{background:linear-gradient(135deg,#3B9EFF,#6D5CF0);border-color:rgba(255,255,255,.4);
+  color:#fff;box-shadow:0 2px 12px rgba(59,158,255,.5)}
+.tool.dim{color:var(--text-muted)}
+.tool.longshot{color:#8CC5FF}
+.tool.disabled{opacity:.3;cursor:not-allowed}
+.tool.ocr-btn{color:#7DE0C4}
+.tool .badge{position:absolute;top:2px;right:1px;min-width:15px;height:15px;padding:0 3.5px;
+  border-radius:8px;font-size:9px;line-height:15px;font-weight:700;text-align:center;
+  background:linear-gradient(135deg,#3B9EFF,#6D5CF0);color:#fff;
+  box-shadow:0 0 0 1.5px rgba(20,26,50,.98)}
+.tool.done-btn,.tool.cancel-btn,.tool.more-btn{
+  flex-direction:row;min-width:0;height:34px;padding:0 12px;font-size:12px}
+.tool.done-btn{font-weight:600;color:#fff;background:linear-gradient(135deg,#6366F1,#3B9EFF);
+  border:1px solid rgba(255,255,255,.25);box-shadow:0 2px 10px rgba(99,102,241,.4)}
+.tool.cancel-btn{color:var(--text-muted)}
+.tool.more-btn{font-size:15px;font-weight:600;color:#9DB2D0;line-height:1}
+.tsep{width:1px;height:24px;margin:0 5px;
+  background:linear-gradient(180deg,transparent,rgba(125,140,255,.5),transparent)}
+
+/* 出口面板（原样） */
+.act-panel{position:relative;width:224px;
+  background:rgba(10,22,40,.92);border:1px solid var(--border-color);
+  border-radius:12px;box-shadow:0 14px 40px rgba(0,0,0,.4);overflow:hidden}
+.act-head{display:flex;align-items:center;gap:6px;padding:9px 12px;font-size:12px;font-weight:600;
+  border-bottom:1px solid var(--border-color);color:var(--text-primary)}
+.act-head .dot{width:7px;height:7px;border-radius:50%;background:var(--green)}
+.act-row{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:12px;color:var(--text-primary);cursor:pointer}
+.act-row:hover{background:var(--hover)}
+.act-row .ic{width:26px;height:26px;border-radius:7px;background:var(--input-bg);
+  display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+.act-row .lbl{font-size:12px}
+.act-row .sub{font-size:10px;color:#7994B4;margin-top:1px}
+.act-row .k{margin-left:auto;font-size:10px;color:#7994B4;font-family:ui-monospace,Consolas,monospace}
+.act-row.pin .ic{color:#ec4899}
+.act-row.ai .ic{background:linear-gradient(135deg,#5B6AF0,#7C5CF0);color:#fff}
+.act-row.chain .ic{background:linear-gradient(135deg,#0ea5e9,#06b6d4);color:#fff}
+
+/* ---------- 新增①：三个主力出口按钮的色调 ---------- */
+.tool.exit-save{color:#A5C8FF}
+.tool.exit-pin{color:#F9A8D4}
+.tool.exit-ai{color:#B9A6FF}
+
+/* ---------- 新增②：面板分组标题 ---------- */
+.act-group{padding:7px 12px 3px;font-size:10px;font-weight:600;letter-spacing:.5px;
+  color:#6E86A8;text-transform:none;
+  border-top:1px solid rgba(22,43,69,.8)}
+.act-group:first-of-type{border-top:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>主力出口上升到工具栏（方案 A）</h1>
+<p class="sub">PastePanda · 2026-08-17 · 把保存 / 贴图 / AI 从「⋯」里拿出来平铺，并修掉两个硬 bug</p>
+
+<h2>一、现状与两个硬 bug</h2>
+<div class="card bad">
+<p>「⋯」是工具栏 17 个按钮里<b>唯一没有中文标签的</b>，而“更多”这个词零语义。它后面藏了 9 个出口，至少 4 个是产品主力。</p>
+<p>
+  <span class="tag x">bug ①</span>
+  <b>result 态键盘完全无响应。</b><code>onKey</code> 只有 <code>p === "select"</code> 与
+  <code>p === "annotate"</code> 两个分支，<b>没有 result 分支</b>。所以出口面板上印着的
+  <code>Ctrl+C</code> / <code>Ctrl+S</code> / <code>Ctrl+Enter</code> 三个快捷键<b>全都不存在</b>——
+  界面写着快捷键，按了什么都不发生（规则 15.3）。
+</p>
+<p style="margin-bottom:0">
+  <span class="tag x">bug ②</span>
+  <code>saveToGallery</code> / <code>pinImage</code> 开头都是 <code>if (!resultPath) return</code>。
+  标注态 <code>resultPath</code> 是 <code>null</code>（它由 <code>ensureResultPath()</code> 在 finish/copyImage 里才生成），
+  所以这两个函数<b>直接搬到工具栏会静默无反应</b>——就是之前那一整轮“点了没反应”的同一个坑。
+</p>
+</div>
+
+<h2>二、新的第三组</h2>
+<h3>改前</h3>
+<div class="stage" style="padding:26px 14px">
+  <div class="annot-toolbar">
+    <div class="tsep"></div>
+    <div class="tool cancel-btn">✕ 取消</div>
+    <div class="tool done-btn">完成 ✓</div>
+    <div class="tool more-btn">⋯</div>
+  </div>
+  <div class="cap">主力出口全在那个无标签的「⋯」后面，最少 2 步</div>
+</div>
+
+<h3>改后</h3>
+<div class="stage" style="padding:26px 14px">
+  <div class="annot-toolbar">
+    <div class="tsep"></div>
+    <div class="tool cancel-btn">✕ 取消</div>
+    <div class="tsep"></div>
+    <div class="tool exit-save" style="outline:1px dashed rgba(165,200,255,.55);outline-offset:1px">
+      <span class="ic"><svg viewBox="0 0 16 16"><path d="M8 2.4v6.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5.3 6.5L8 9.2l2.7-2.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.6 10.6v1.9a1.1 1.1 0 0 0 1.1 1.1h8.6a1.1 1.1 0 0 0 1.1-1.1v-1.9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span class="lb">保存</span>
+    </div>
+    <div class="tool exit-pin" style="outline:1px dashed rgba(249,168,212,.55);outline-offset:1px">
+      <span class="ic"><svg viewBox="0 0 16 16"><path d="M6.1 2.6h3.8M8 9.4v4.1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M6.6 2.6v3.1L4.9 7.5a.6.6 0 0 0 .43 1.02h5.34a.6.6 0 0 0 .43-1.02L9.4 5.7V2.6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
+      <span class="lb">贴图</span>
+    </div>
+    <div class="tool exit-ai" style="outline:1px dashed rgba(185,166,255,.55);outline-offset:1px">
+      <span class="ic"><svg viewBox="0 0 16 16"><path d="M6.2 2.4l.95 2.45 2.45.95-2.45.95L6.2 9.2l-.95-2.45L2.8 5.8l2.45-.95z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M11.4 8.9l.62 1.58 1.58.62-1.58.62-.62 1.58-.62-1.58-1.58-.62 1.58-.62z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
+      <span class="lb">AI</span>
+    </div>
+    <div class="tsep"></div>
+    <div class="tool done-btn">完成 ✓</div>
+    <div class="tool more-btn" style="outline:1px dashed rgba(157,178,208,.5);outline-offset:1px;font-size:12px;font-weight:400">更多 ⋯</div>
+  </div>
+  <div class="cap">虚线框 = 改动处。三个主力出口平铺，「⋯」补上中文标签变成「更多 ⋯」</div>
+</div>
+
+<div class="card">
+<h3>为什么是这三个</h3>
+<table>
+<tr><th style="width:110px">出口</th><th style="width:90px">处置</th><th>理由</th></tr>
+<tr><td>📌 贴图置顶</td><td><span class="tag v">平铺</span></td><td>PastePanda 特色能力，高频，且无快捷键可走</td></tr>
+<tr><td>AI 处理</td><td><span class="tag v">平铺</span></td><td>产品主力，现在需要两步才能碰到</td></tr>
+<tr><td>⬇ 保存到图库</td><td><span class="tag v">平铺</span></td><td>通用高频，截图工具里它一律在主栏（QQ / 微信 / PixPin）</td></tr>
+<tr><td>译 翻译</td><td><span class="tag i">留面板</span></td><td>AI 面板里已经是第一项，提上来是重复入口</td></tr>
+<tr><td>⚡ 送动作链</td><td><span class="tag i">留面板</span></td><td>要先选链，本身就是两步操作，放工具栏省不下步数</td></tr>
+<tr><td>🔒 固定区域 / ↺ 重截 / 📝 插入文档</td><td><span class="tag i">留面板</span></td><td>低频</td></tr>
+</table>
+<p style="margin-bottom:0"><span class="tag i">注</span>AI 未启用时 AI 按钮<b>不渲染</b>（规则 16 红线）。它是启动时就定下的，一个会话内不会变，所以不会在用户眼前发生位移。</p>
+</div>
+
+<h2>三、整条工具栏与宽度校验</h2>
+<div class="stage" style="padding:34px 12px">
+  <div class="annot-toolbar">
+    <div class="tool on"><span class="ic"><svg viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span><span class="lb">矩形</span></div>
+    <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><ellipse cx="8" cy="8" rx="5.75" ry="4.25" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">椭圆</span></div>
+    <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3.2 12.8L11 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M12.9 3.1L12.4 7.9L8.1 3.6Z" fill="currentColor"/></svg></span><span class="lb">箭头</span></div>
+    <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M2.8 13.2l3.3-.8 6.7-6.7a1.3 1.3 0 0 0 0-1.9l-.6-.6a1.3 1.3 0 0 0-1.9 0L3.6 9.9l-.8 3.3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span><span class="lb">画笔</span></div>
+    <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M5.2 10.4l4.9-4.9 2.4 2.4-4.9 4.9H5.2v-2.4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><rect x="2.8" y="13.4" width="10.4" height="1.6" rx=".8" fill="currentColor" opacity=".8"/></svg></span><span class="lb">高亮</span></div>
+    <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 2.5h3.7v3.7H2.5zM9.8 2.5h3.7v3.7H9.8zM6.2 6.2h3.6v3.6H6.2zM2.5 9.8h3.7v3.7H2.5zM9.8 9.8h3.7v3.7H9.8z" fill="currentColor" opacity=".75"/></svg></span><span class="lb">马赛克</span></div>
+    <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3 3.8h10M8 3.8v8.4M5.8 12.2h4.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="lb">文字</span></div>
+    <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.9 6.6L8.4 5.6v5M6.9 10.6h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="lb">序号</span></div>
+    <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M8 2.2C8 2.2 3.8 7 3.8 9.6a4.2 4.2 0 0 0 8.4 0C12.2 7 8 2.2 8 2.2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span><span class="lb">模糊</span></div>
+    <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M9.1 2.9l4 4a1 1 0 0 1 0 1.4l-3.6 3.6H5.7L2.9 9.1a1 1 0 0 1 0-1.4l4.8-4.8a1 1 0 0 1 1.4 0z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="lb">橡皮擦</span></div>
+
+    <div class="tsep"></div>
+
+    <div class="tool dim"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3 6.2h7a3.4 3.4 0 1 1 0 6.8H6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.4 3L3.2 6.2l3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="lb">撤销</span></div>
+    <div class="tool dim disabled"><span class="ic"><svg viewBox="0 0 16 16"><path d="M13 6.2H6a3.4 3.4 0 1 0 0 6.8h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.6 3l3.2 3.2-3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="lb">重做</span></div>
+    <div class="tool longshot"><span class="ic"><svg viewBox="0 0 16 16"><rect x="4" y="1.8" width="8" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 8v5.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5.4 11l2.6 2.6L10.6 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="lb">长截图</span></div>
+    <div class="tool ocr-btn"><span class="badge">7</span><span class="ic"><svg viewBox="0 0 16 16"><path d="M3.4 2.4h6.1l3.1 3.1v8.1a1 1 0 0 1-1 1H3.4a1 1 0 0 1-1-1V3.4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.3 2.5v3.2h3.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M5 8.4h6M5 11h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="lb">取文字</span></div>
+
+    <div class="tsep"></div>
+
+    <div class="tool cancel-btn">✕ 取消</div>
+
+    <div class="tsep"></div>
+
+    <div class="tool exit-save"><span class="ic"><svg viewBox="0 0 16 16"><path d="M8 2.4v6.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5.3 6.5L8 9.2l2.7-2.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.6 10.6v1.9a1.1 1.1 0 0 0 1.1 1.1h8.6a1.1 1.1 0 0 0 1.1-1.1v-1.9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="lb">保存</span></div>
+    <div class="tool exit-pin"><span class="ic"><svg viewBox="0 0 16 16"><path d="M6.1 2.6h3.8M8 9.4v4.1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M6.6 2.6v3.1L4.9 7.5a.6.6 0 0 0 .43 1.02h5.34a.6.6 0 0 0 .43-1.02L9.4 5.7V2.6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span><span class="lb">贴图</span></div>
+    <div class="tool exit-ai"><span class="ic"><svg viewBox="0 0 16 16"><path d="M6.2 2.4l.95 2.45 2.45.95-2.45.95L6.2 9.2l-.95-2.45L2.8 5.8l2.45-.95z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M11.4 8.9l.62 1.58 1.58.62-1.58.62-.62 1.58-.62-1.58-1.58-.62 1.58-.62z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span><span class="lb">AI</span></div>
+
+    <div class="tsep"></div>
+
+    <div class="tool done-btn">完成 ✓</div>
+    <div class="tool more-btn" style="font-size:12px;font-weight:400">更多 ⋯</div>
+  </div>
+  <div class="cap">完整形态（已含上一轮的「取文字」）。取消单独成组——它是销毁动作，不能跟出口挤在一起</div>
+</div>
+
+<div class="card">
+<h3>宽度估算（CSS 像素）</h3>
+<table>
+<tr><th style="width:200px">阶段</th><th style="width:120px">主栏宽</th><th>结论</th></tr>
+<tr><td>改前</td><td>≈ 770</td><td>—</td></tr>
+<tr><td>改后（AI 开）</td><td><b>≈ 890</b></td><td>+3×38 按钮 + 1 条分隔线 + gap</td></tr>
+<tr><td>改后（AI 关）</td><td>≈ 850</td><td>AI 按钮不渲染</td></tr>
+</table>
+<p>对照真实可用宽度（需满足 890 &lt; vw − 16）：</p>
+<table>
+<tr><th style="width:200px">屏幕 × 缩放</th><th style="width:120px">CSS 像素宽</th><th>是否溢出</th></tr>
+<tr><td>1920 × 100%</td><td>1920</td><td><span class="tag v">安全</span></td></tr>
+<tr><td>1920 × 150%</td><td>1280</td><td><span class="tag v">安全</span></td></tr>
+<tr><td>2560 × 175%</td><td>1463</td><td><span class="tag v">安全</span></td></tr>
+<tr><td>1366 × 100%</td><td>1366</td><td><span class="tag v">安全</span></td></tr>
+<tr><td>1366 × 125%</td><td>1093</td><td><span class="tag v">安全</span>（余量 187）</td></tr>
+<tr><td>1280 × 150%</td><td>853</td><td><span class="tag x">会被截</span> — 极罕见组合</td></tr>
+</table>
+<p style="margin-bottom:0">
+  <code>layoutToolbar</code> 已有的兜底是“工具栏宽于视口时宁可右边被截也要保住左边”——<b>但现在右边是完成/更多，截掉它们比截掉左边工具糟得多</b>。
+  这条兜底的优先级要反过来，并补两条单测（1093 / 853）钉住行为。
+</p>
+</div>
+
+<h2>四、三个新按钮的行为（关键：不能静默）</h2>
+<div class="card good">
+<p>三个出口都需要已落盘的结果图，而标注态 <code>resultPath</code> 是 <code>null</code>。所以每个都走同一套：</p>
+<pre style="background:#070C16;border:1px solid var(--line);border-radius:8px;padding:12px 14px;font-size:12px;color:#C7D3E6;overflow-x:auto">setBusy(true)                    ← 整条栏变淡且不接点击
+  → await ensureResultPath()     ← 幂等，已有则直接返回
+  → 实际动作（存盘 / 开贴图窗 / 开 AI 面板）
+catch → showToast("保存失败：" + errText(e))
+finally → setBusy(false)</pre>
+<table>
+<tr><th style="width:110px">按钮</th><th style="width:150px">成功后</th><th>失败时</th></tr>
+<tr><td>保存</td><td>弹另存对话框 → toast “已保存”→ 关窗</td><td>toast 报错，<b>窗不关</b>（否则提示没地方显示）</td></tr>
+<tr><td>贴图</td><td>等贴图窗真的开起来再关本窗</td><td>toast 报错，窗不关</td></tr>
+<tr><td>AI</td><td>进 result 态并直接开 AI 面板</td><td>toast 报错，停在标注态</td></tr>
+</table>
+<p style="margin-bottom:0"><span class="tag x">绝不能写成</span><code>if (!resultPath) return</code> ——那就是把旧 bug 搬到了工具栏上，且更显眼。</p>
+</div>
+
+<h2>五、「更多」面板：分组</h2>
+<div class="stage" style="gap:34px">
+  <div>
+    <div class="act-panel">
+      <div class="act-head"><span class="dot"></span> 截图完成 · 选择出口</div>
+      <div class="act-row"><span class="ic">⬡</span><span><div class="lbl">复制图片</div><div class="sub">写入剪贴板历史</div></span><span class="k">Ctrl+C</span></div>
+      <div class="act-row"><span class="ic">⬇</span><span><div class="lbl">保存到图库</div><div class="sub">另存为图片文件</div></span><span class="k">Ctrl+S</span></div>
+      <div class="act-row pin"><span class="ic">📌</span><span><div class="lbl">贴图置顶</div><div class="sub">钉在屏幕上</div></span></div>
+      <div class="act-row ai"><span class="ic">AI</span><span><div class="lbl">AI 处理</div><div class="sub">解释 / 翻译 / 总结</div></span></div>
+      <div class="act-row ai"><span class="ic">译</span><span><div class="lbl">翻译</div><div class="sub">识别文字翻译成中文</div></span><span class="k">⚡</span></div>
+      <div class="act-row chain"><span class="ic">⚡</span><span><div class="lbl">送动作链</div><div class="sub">对识别文字跑自定义链</div></span></div>
+      <div class="act-row"><span class="ic">🔒</span><span><div class="lbl">记住为固定区域</div><div class="sub">下次截图直接用这块</div></span></div>
+      <div class="act-row"><span class="ic">↺</span><span><div class="lbl">重新截图</div><div class="sub">重选区域</div></span></div>
+    </div>
+    <div style="text-align:center;font-size:11.5px;color:#FCA5A5;margin-top:10px">改前 · 9 行平铺，无层次</div>
+  </div>
+
+  <div>
+    <div class="act-panel">
+      <div class="act-head"><span class="dot"></span> 截图完成 · 选择出口</div>
+      <div class="act-group">图片</div>
+      <div class="act-row"><span class="ic">⬡</span><span><div class="lbl">复制图片</div><div class="sub">写入剪贴板历史</div></span><span class="k">Ctrl+C</span></div>
+      <div class="act-row"><span class="ic">⬇</span><span><div class="lbl">保存到图库</div><div class="sub">另存为图片文件</div></span><span class="k">Ctrl+S</span></div>
+      <div class="act-row pin"><span class="ic">📌</span><span><div class="lbl">贴图置顶</div><div class="sub">钉在屏幕上</div></span></div>
+      <div class="act-group">文字</div>
+      <div class="act-row ai"><span class="ic">AI</span><span><div class="lbl">AI 处理</div><div class="sub">解释 / 翻译 / 总结</div></span></div>
+      <div class="act-row ai"><span class="ic">译</span><span><div class="lbl">翻译</div><div class="sub">识别文字翻译成中文</div></span><span class="k">⚡</span></div>
+      <div class="act-row chain"><span class="ic">⚡</span><span><div class="lbl">送动作链</div><div class="sub">对识别文字跑自定义链</div></span></div>
+      <div class="act-group">其它</div>
+      <div class="act-row"><span class="ic">🔒</span><span><div class="lbl">记住为固定区域</div><div class="sub">下次截图直接用这块</div></span></div>
+      <div class="act-row"><span class="ic">↺</span><span><div class="lbl">重新截图</div><div class="sub">重选区域</div></span></div>
+    </div>
+    <div style="text-align:center;font-size:11.5px;color:#86EFAC;margin-top:10px">改后 · 三组，扫视有落点</div>
+  </div>
+  <div class="cap">不删行：result 态仍需全部出口（用户可能从「更多」进来再选复制）。平铺只是多给一条路，不是搬走路。</div>
+</div>
+
+<h2>六、补齐 result 态键盘分支</h2>
+<div class="card good">
+<p>面板上印着的快捷键必须真存在，否则就是写了一个假承诺（规则 15.3）：</p>
+<table>
+<tr><th style="width:130px">按键</th><th style="width:170px">行为</th><th>备注</th></tr>
+<tr><td><code>Ctrl+C</code> / <code>Enter</code></td><td>复制图片并关窗</td><td>面板已印 Ctrl+C，Enter 与标注态保持一致</td></tr>
+<tr><td><code>Ctrl+S</code></td><td>保存到图库</td><td>面板已印</td></tr>
+<tr><td><code>Ctrl+Enter</code></td><td>插入到当前文档</td><td>仅 <code>editorTarget</code> 非空时生效（与行的可见条件一致）</td></tr>
+<tr><td><code>Esc</code></td><td>退回标注态</td><td>规则 17.6 两级取消：先退一步，再按才关窗</td></tr>
+<tr><td><code>Ctrl+R</code></td><td>展开/收起文字面板</td><td>已有，不变</td></tr>
+</table>
+<p style="margin-bottom:0"><span class="tag i">注意</span>新分支要复用 <code>copyImageRef</code> 这类 ref，不能直接调闭包里的函数——这个 effect 的依赖盖不全 <code>busy</code>/<code>resultPath</code>，拿到的会是陈旧值（annotate 态的 Enter 已经踩过这个坑并用 ref 解了）。</p>
+</div>
+
+<h2>七、改动清单</h2>
+<div class="card">
+<table>
+<tr><th style="width:280px">文件</th><th>改动</th></tr>
+<tr><td><code>tools.tsx</code></td><td>新增 <code>SAVE_ICON</code> / <code>PIN_ICON</code> / <code>AI_ICON</code>（同一套 stroke 1.5 round）</td></tr>
+<tr><td><code>AnnotToolbar.tsx</code></td><td>新增三个按钮 + <code>aiOk</code> 与三个回调 props；「⋯」改成「更多 ⋯」</td></tr>
+<tr><td><code>ScreenshotOverlay.tsx</code></td><td>三个包一层 <code>ensureResultPath</code> 的 handler；新增 result 态键盘分支</td></tr>
+<tr><td><code>ResultActions.tsx</code></td><td>插三个分组标题（不删行）</td></tr>
+<tr><td><code>screenshot.css</code></td><td>新增 <code>.tool.exit-save/pin/ai</code> 与 <code>.act-group</code></td></tr>
+<tr><td><code>toolbarPos.ts</code></td><td>反转“宽于视口”兜底的优先级（保右不保左）</td></tr>
+<tr><td><code>__tests__/screenshotToolbarPos.test.ts</code></td><td>新增 2 条：1093 不溢出、853 时右端不被截</td></tr>
+</table>
+</div>
+
+<p style="margin-top:34px;color:var(--text-muted);font-size:11.5px;text-align:center">
+PastePanda 设计稿 · 2026-08-17 · 工具栏与面板样式取自 <code>src/styles/screenshot.css</code>
+</p>
+
+</div>
+</body>
+</html>

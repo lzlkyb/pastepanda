@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>PastePanda 截图工具栏改版 · 设计稿</title>
+<style>
+  :root {
+    --bg: #0B1020;
+    --panel: #121A2E;
+    --line: rgba(148,168,255,0.16);
+    --text: #E0E8F0;
+    --muted: #8FA3C4;
+    --accent: #3B9EFF;
+    --indigo: #6366F1;
+    --red: #F87171;
+    --green: #22C55E;
+    --amber: #FBBF24;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 28px 80px;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: 14px; line-height: 1.7;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 36px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 13px; margin: 22px 0 8px; color: var(--accent); }
+  .sub { color: var(--muted); font-size: 12px; margin-bottom: 24px; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 12px;
+         background: rgba(148,168,255,0.1); padding: 1px 5px; border-radius: 4px; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 18px; font-size: 12.5px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; background: rgba(148,168,255,0.05); }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600; }
+  .t-bug { background: rgba(248,113,113,0.16); color: var(--red); }
+  .t-dead { background: rgba(251,191,36,0.16); color: var(--amber); }
+  .t-ux { background: rgba(59,158,255,0.16); color: var(--accent); }
+  .t-new { background: rgba(34,197,94,0.16); color: var(--green); }
+
+  /* ===== 舞台：模拟截图选区 ===== */
+  .stage {
+    position: relative; height: 300px; border-radius: 12px; overflow: hidden;
+    background:
+      linear-gradient(135deg, #1B2540 0%, #243456 40%, #1A2238 100%);
+    border: 1px solid var(--line); margin: 14px 0 8px;
+  }
+  .stage .shade { position: absolute; inset: 0; background: rgba(10,14,24,0.55); }
+  .stage .sel {
+    position: absolute; left: 60px; top: 34px; width: 330px; height: 150px;
+    border: 1px solid rgba(255,255,255,0.95);
+    outline: 1.5px solid var(--accent);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.55), 0 0 8px rgba(59,158,255,0.4);
+    background: linear-gradient(135deg, rgba(60,90,150,0.55), rgba(40,60,110,0.55));
+  }
+  .stage .sel-size {
+    position: absolute; left: 50%; top: -26px; transform: translateX(-50%);
+    padding: 3px 10px; border-radius: 6px; background: rgba(10,14,24,0.92);
+    font-size: 11px; white-space: nowrap; border: 1px solid rgba(255,255,255,0.16);
+  }
+  .hnd { position: absolute; width: 9px; height: 9px; background: var(--accent);
+         border: 1.5px solid #fff; border-radius: 2px; }
+
+  /* ===== 工具栏公共 ===== */
+  .tb {
+    position: absolute; display: flex; align-items: center; gap: 2px;
+    padding: 6px 8px; border-radius: 12px; white-space: nowrap;
+    background: linear-gradient(180deg, rgba(34,41,76,0.96), rgba(16,21,40,0.97));
+    border: 1px solid rgba(99,102,241,0.4);
+    box-shadow: 0 12px 36px rgba(0,0,0,0.45), inset 0 1px 0 rgba(148,168,255,0.28);
+  }
+  .tl {
+    width: 30px; height: 30px; border-radius: 8px; position: relative;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; border: 1px solid transparent; color: var(--text);
+    font-size: 13px; transition: background .12s;
+  }
+  .tl:hover { background: #0F1F35; }
+  .tl.on {
+    background: linear-gradient(135deg, #3B9EFF, #6D5CF0);
+    border-color: rgba(255,255,255,0.4); color: #fff;
+    box-shadow: 0 2px 12px rgba(59,158,255,0.5);
+  }
+  .tl.off { opacity: .32; cursor: not-allowed; }
+  .tl svg { width: 16px; height: 16px; }
+  .kbd { position: absolute; bottom: -1px; right: 1px; font-size: 7px; color: #7994B4;
+         font-family: ui-monospace, Consolas, monospace; }
+  .tl.on .kbd { color: rgba(255,255,255,.85); }
+  .sep { width: 1px; height: 20px; margin: 0 4px;
+         background: linear-gradient(180deg, transparent, rgba(125,140,255,.5), transparent); }
+  .btn-done { width: auto; padding: 0 14px; font-size: 11px; font-weight: 600; color: #fff;
+    background: linear-gradient(135deg, #6366F1, #3B9EFF);
+    border: 1px solid rgba(255,255,255,.25); box-shadow: 0 2px 10px rgba(99,102,241,.4); }
+  .btn-cancel { width: auto; padding: 0 11px; font-size: 11px; color: #9DB2D0; }
+  .btn-cancel:hover { background: rgba(248,113,113,.15); color: #FCA5A5; }
+  .btn-more { width: auto; padding: 0 12px; font-size: 15px; font-weight: 600; color: #9DB2D0; }
+  .cp { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid transparent; cursor: pointer; }
+  .cp.on { border-color: #fff; box-shadow: 0 0 0 2px rgba(59,158,255,.5); }
+
+  /* 方案A/B 的内联颜色组 */
+  .colors { display: flex; align-items: center; gap: 5px; padding: 0 2px; }
+  /* 方案C 的加大热区颜色组 */
+  .colors-hit { display: flex; align-items: center; gap: 0; }
+  .cwrap { width: 24px; height: 24px; border-radius: 6px; display: flex;
+           align-items: center; justify-content: center; cursor: pointer; }
+  .cwrap:hover { background: rgba(148,168,255,.14); }
+
+  /* 方案C 属性条 */
+  .attr {
+    position: absolute; display: flex; align-items: center; gap: 8px;
+    padding: 5px 10px; border-radius: 10px; white-space: nowrap;
+    background: rgba(15,23,42,0.96); border: 1px solid rgba(148,168,255,0.3);
+    box-shadow: 0 8px 24px rgba(0,0,0,.42); font-size: 11px; color: var(--muted);
+  }
+  .attr .lbl { font-size: 10.5px; color: #6E82A4; }
+  .w-dot { border-radius: 50%; background: #C9D6EA; cursor: pointer; }
+  .w-pick { width: 22px; height: 22px; border-radius: 6px; display: flex;
+            align-items: center; justify-content: center; cursor: pointer; }
+  .w-pick:hover { background: rgba(148,168,255,.14); }
+  .w-pick.on { background: rgba(59,158,255,.28); }
+
+  /* 状态条（长截图） */
+  .statusbar {
+    position: absolute; display: flex; align-items: center; gap: 10px;
+    padding: 7px 14px; border-radius: 999px; font-size: 11.5px;
+    background: rgba(15,23,42,0.95); border: 1px solid rgba(99,102,241,0.5);
+    box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  }
+  .spin { width: 12px; height: 12px; border-radius: 50%;
+          border: 2px solid rgba(99,102,241,.3); border-top-color: #6366F1;
+          animation: sp .8s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .mini { width: 26px; height: 40px; border-radius: 3px; border: 1px solid rgba(148,168,255,.3);
+          background: linear-gradient(180deg, #2B3C63, #1B2542); }
+  .sb-btn { padding: 2px 9px; border-radius: 6px; font-size: 10.5px; cursor: pointer;
+            border: 1px solid rgba(148,168,255,.35); color: #C9D6EA; }
+  .sb-btn.stop { border-color: rgba(34,197,94,.5); color: #86EFAC; }
+  .sb-btn.abort { border-color: rgba(248,113,113,.45); color: #FCA5A5; }
+
+  /* toast */
+  .toast {
+    position: absolute; left: 50%; transform: translateX(-50%); bottom: 14px;
+    padding: 7px 14px; border-radius: 9px; font-size: 11.5px;
+    background: rgba(15,23,42,.96); border: 1px solid rgba(248,113,113,.45); color: #FCA5A5;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  }
+  .toast.ok { border-color: rgba(34,197,94,.45); color: #86EFAC; }
+
+  .note { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+  .note b { color: var(--text); font-weight: 600; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+  .rec { border-left: 3px solid var(--green); padding-left: 12px; background: rgba(34,197,94,.06); }
+  .warn { border-left: 3px solid var(--amber); padding-left: 12px; background: rgba(251,191,36,.06);
+          padding-top: 8px; padding-bottom: 8px; border-radius: 0 8px 8px 0; }
+</style>
+</head>
+<body>
+
+<h1>PastePanda 截图工具栏改版 · 设计稿</h1>
+<div class="sub">2026-08-17 · 目标：① 修"点击没反应" ② 视觉与交互升级 ③ 补取消按钮</div>
+
+<h2>一、先说清"点击没反应"是哪七件事</h2>
+<p class="note">全部来自源码核对，不是猜测。修复方式与方案 A/B/C 无关，三个方案都必须做。</p>
+<table>
+  <tr><th style="width:30px">#</th><th style="width:210px">现象</th><th>根因</th><th style="width:78px">类型</th></tr>
+  <tr><td>1</td><td>撤销 / 重做点了没反应</td><td>栈空时 <code>undo()</code> 直接 return，按钮却没有禁用视觉，看不出来不可用</td><td><span class="tag t-bug">交互</span></td></tr>
+  <tr><td>2</td><td>完成 / ⋯ 点了没反应</td><td>合成或保存抛错时 catch 里只有 <code>logger.error</code>，UI 零反馈 —— 违反规则 15.3</td><td><span class="tag t-bug">静默</span></td></tr>
+  <tr><td>3</td><td>连点第二下无效</td><td><code>if (busy) return</code>，但 busy 期间按钮外观不变、无 loading 态</td><td><span class="tag t-bug">静默</span></td></tr>
+  <tr><td>4</td><td>长截图点了像卡死</td><td>窗口 hide 数秒无任何进度；中止或未捕获到内容时静默 return，界面回来什么都没发生</td><td><span class="tag t-bug">静默</span></td></tr>
+  <tr><td>5</td><td>长截图灰着但提示词不对</td><td>禁用条件含"正在长截图"，<code>data-tip</code> 却只按"有标注"分支写文案</td><td><span class="tag t-bug">静默</span></td></tr>
+  <tr><td>6</td><td>点颜色经常没换色</td><td><code>.cp</code> 命中区仅 14px 圆点，点偏落到容器空白上，那里没有 handler</td><td><span class="tag t-ux">热区</span></td></tr>
+  <tr><td>7</td><td>悬停颜色区无提示</td><td><code>.tool-colors</code> 写了 <code>data-tip</code>，但 CSS 只给 <code>.tool::after</code> / <code>.cp::after</code> 写了规则</td><td><span class="tag t-dead">死属性</span></td></tr>
+</table>
+
+<h3>另外三条不影响点击、但确实是坏的</h3>
+<table>
+  <tr><th style="width:210px">问题</th><th>说明</th><th style="width:78px">类型</th></tr>
+  <tr><td><code>.annot-toolbar.top-attached</code></td><td>CSS 里定义了这条类用于让 tooltip 上翻，但 JSX 的 className 恒为 <code>"annot-toolbar"</code>，从没人加过 —— 工具栏翻到选区上方时 tooltip 依然向下弹，正好压在画布上</td><td><span class="tag t-dead">死规则</span></td></tr>
+  <tr><td>工具栏水平恒屏幕居中</td><td><code>left: 50%</code> 只有 top 跟随选区。在屏幕右上角框一小块，工具栏飘在屏幕正中，鼠标要横穿半屏（违反规则 17.2）</td><td><span class="tag t-ux">定位</span></td></tr>
+  <tr><td>工具栏会钻进选区里</td><td><code>Math.max(8, sel.y - 8 - TB_H)</code>，选区又高又靠顶时 top 被钳到 8，工具栏压在画面上</td><td><span class="tag t-ux">定位</span></td></tr>
+  <tr><td>取消按钮缺失</td><td><code>.tool.cancel-btn</code> 样式（红色 hover）在 CSS 里写好了，JSX 从来没渲染过</td><td><span class="tag t-new">缺功能</span></td></tr>
+</table>
+
+<h2>二、三个视觉方案</h2>
+<p class="note">现状：单条栏塞了 <b>21 个元素</b>（11 工具 + 5 颜色 + 箭头样式 + 撤销 + 重做 + 长截图 + 完成 + ⋯），横向约 560px。挤是问题的根之一。</p>
+
+<!-- ============ 方案 A ============ -->
+<h3>方案 A · 微创新（保持单层）</h3>
+<div class="stage">
+  <div class="shade"></div>
+  <div class="sel">
+    <div class="sel-size">330 × 150</div>
+    <div class="hnd" style="left:-5px;top:-5px"></div>
+    <div class="hnd" style="right:-5px;top:-5px"></div>
+    <div class="hnd" style="left:-5px;bottom:-5px"></div>
+    <div class="hnd" style="right:-5px;bottom:-5px"></div>
+  </div>
+  <div class="tb" style="left:60px; top:198px">
+    <div class="tl on"><svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="kbd">1</span></div>
+    <div class="tl"><svg viewBox="0 0 16 16"><ellipse cx="8" cy="8" rx="6" ry="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="kbd">2</span></div>
+    <div class="tl"><svg viewBox="0 0 16 16"><path d="M2 13L11 4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7.5 4H12V8.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="kbd">3</span></div>
+    <div class="tl"><svg viewBox="0 0 16 16"><path d="M3 13l4-1 6.5-6.5a1.4 1.4 0 0 0 0-2L11.5 1.5a1.4 1.4 0 0 0-2 0L3 8l-1 4z" fill="none" stroke="currentColor" stroke-width="1.4"/></svg><span class="kbd">4</span></div>
+    <div class="tl"><svg viewBox="0 0 16 16"><rect x="2" y="8" width="12" height="4" rx="1" fill="currentColor" opacity=".7"/></svg><span class="kbd">5</span></div>
+    <div class="tl"><svg viewBox="0 0 16 16"><g fill="currentColor" opacity=".75"><rect x="2" y="2" width="4" height="4"/><rect x="8" y="2" width="4" height="4"/><rect x="5" y="5" width="4" height="4"/><rect x="2" y="8" width="4" height="4"/><rect x="8" y="8" width="4" height="4"/></g></svg><span class="kbd">6</span></div>
+    <div class="tl"><svg viewBox="0 0 16 16"><path d="M3 3.5h10M8 3.5v9" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><span class="kbd">7</span></div>
+    <div class="tl"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.4"/><text x="8" y="9.4" text-anchor="middle" font-size="7" font-weight="600" fill="currentColor">1</text></svg><span class="kbd">8</span></div>
+    <div class="tl"><svg viewBox="0 0 16 16"><circle cx="6" cy="5" r="3.4" fill="currentColor" opacity=".35"/><circle cx="11" cy="8" r="2.6" fill="currentColor" opacity=".55"/><circle cx="5" cy="11.5" r="2.2" fill="currentColor" opacity=".4"/></svg><span class="kbd">9</span></div>
+    <div class="tl"><svg viewBox="0 0 16 16"><path d="M9.5 3.5l3 3L7 12H3.5V8.5l6-5z" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2.5 12.5h7" stroke="currentColor" stroke-width="1.6"/></svg><span class="kbd">0</span></div>
+    <div class="tl"><svg viewBox="0 0 16 16"><path d="M10.5 2.5l3 3L7 12H4.5V9.5l6-7z" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M9 4l3 3" stroke="currentColor" stroke-width="1.4"/></svg></div>
+    <div class="sep"></div>
+    <div class="colors-hit">
+      <div class="cwrap"><span class="cp" style="background:#ef4444"></span></div>
+      <div class="cwrap"><span class="cp on" style="background:#3b9eff"></span></div>
+      <div class="cwrap"><span class="cp" style="background:#facc15"></span></div>
+      <div class="cwrap"><span class="cp" style="background:#22c55e"></span></div>
+      <div class="cwrap"><span class="cp" style="background:#1f2937"></span></div>
+    </div>
+    <div class="sep"></div>
+    <div class="tl" style="color:#8FA3C4"><svg viewBox="0 0 16 16"><path d="M13 5.5l-2-2v3h2z" fill="currentColor"/><path d="M3 8h10" stroke="currentColor" stroke-width="1.5"/></svg></div>
+    <div class="tl off" style="color:#8FA3C4"><svg viewBox="0 0 16 16"><path d="M3 6h7a3.5 3.5 0 1 1 0 7H6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.5 3L3 6l3.5 3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></div>
+    <div class="tl off" style="color:#8FA3C4"><svg viewBox="0 0 16 16"><path d="M13 6H6a3.5 3.5 0 1 0 0 7h4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.5 3L13 6l-3.5 3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></div>
+    <div class="sep"></div>
+    <div class="tl" style="color:#8cc5ff"><svg viewBox="0 0 16 16"><path d="M8 2v9" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M4.5 8L8 11.5 11.5 8" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M3 14h10" stroke="currentColor" stroke-width="1.6"/></svg></div>
+    <div class="tl btn-cancel">取消</div>
+    <div class="tl btn-done">完成 ✓</div>
+    <div class="tl btn-more">⋯</div>
+  </div>
+</div>
+<p class="note">改动最小：修完七条 bug + 加取消 + 颜色热区 14 → 24px + 撤销/重做置灰。<b>问题：21 个元素仍挤在一条 600px 的栏里，以后任何新功能都没地方放。</b></p>
+
+<!-- ============ 方案 B ============ -->
+<h3>方案 B · 对齐微信 / QQ（右对齐选区，压缩尺寸）</h3>
+<div class="stage">
+  <div class="shade"></div>
+  <div class="sel" style="left:300px; width:250px">
+    <div class="sel-size">250 × 150</div>
+    <div class="hnd" style="left:-5px;top:-5px"></div>
+    <div class="hnd" style="right:-5px;top:-5px"></div>
+    <div class="hnd" style="left:-5px;bottom:-5px"></div>
+    <div class="hnd" style="right:-5px;bottom:-5px"></div>
+  </div>
+  <div class="tb" style="right:56px; top:196px; gap:1px; padding:5px 7px">
+    <div class="tl on" style="width:27px;height:27px"><svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></div>
+    <div class="tl" style="width:27px;height:27px"><svg viewBox="0 0 16 16"><ellipse cx="8" cy="8" rx="6" ry="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></div>
+    <div class="tl" style="width:27px;height:27px"><svg viewBox="0 0 16 16"><path d="M2 13L11 4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7.5 4H12V8.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></div>
+    <div class="tl" style="width:27px;height:27px"><svg viewBox="0 0 16 16"><path d="M3 13l4-1 6.5-6.5a1.4 1.4 0 0 0 0-2L11.5 1.5a1.4 1.4 0 0 0-2 0L3 8l-1 4z" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></div>
+    <div class="tl" style="width:27px;height:27px"><svg viewBox="0 0 16 16"><rect x="2" y="8" width="12" height="4" rx="1" fill="currentColor" opacity=".7"/></svg></div>
+    <div class="tl" style="width:27px;height:27px"><svg viewBox="0 0 16 16"><g fill="currentColor" opacity=".75"><rect x="2" y="2" width="4" height="4"/><rect x="8" y="2" width="4" height="4"/><rect x="5" y="5" width="4" height="4"/><rect x="2" y="8" width="4" height="4"/><rect x="8" y="8" width="4" height="4"/></g></svg></div>
+    <div class="tl" style="width:27px;height:27px"><svg viewBox="0 0 16 16"><path d="M3 3.5h10M8 3.5v9" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></div>
+    <div class="tl" style="width:27px;height:27px"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.4"/><text x="8" y="9.4" text-anchor="middle" font-size="7" font-weight="600" fill="currentColor">1</text></svg></div>
+    <div class="tl" style="width:27px;height:27px"><svg viewBox="0 0 16 16"><circle cx="6" cy="5" r="3.4" fill="currentColor" opacity=".35"/><circle cx="11" cy="8" r="2.6" fill="currentColor" opacity=".55"/><circle cx="5" cy="11.5" r="2.2" fill="currentColor" opacity=".4"/></svg></div>
+    <div class="tl" style="width:27px;height:27px"><svg viewBox="0 0 16 16"><path d="M9.5 3.5l3 3L7 12H3.5V8.5l6-5z" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2.5 12.5h7" stroke="currentColor" stroke-width="1.6"/></svg></div>
+    <div class="sep"></div>
+    <div class="colors-hit">
+      <div class="cwrap" style="width:22px;height:22px"><span class="cp" style="background:#ef4444"></span></div>
+      <div class="cwrap" style="width:22px;height:22px"><span class="cp on" style="background:#3b9eff"></span></div>
+      <div class="cwrap" style="width:22px;height:22px"><span class="cp" style="background:#facc15"></span></div>
+      <div class="cwrap" style="width:22px;height:22px"><span class="cp" style="background:#22c55e"></span></div>
+      <div class="cwrap" style="width:22px;height:22px"><span class="cp" style="background:#1f2937"></span></div>
+    </div>
+    <div class="sep"></div>
+    <div class="tl off" style="width:27px;height:27px;color:#8FA3C4"><svg viewBox="0 0 16 16"><path d="M3 6h7a3.5 3.5 0 1 1 0 7H6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.5 3L3 6l3.5 3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></div>
+    <div class="tl off" style="width:27px;height:27px;color:#8FA3C4"><svg viewBox="0 0 16 16"><path d="M13 6H6a3.5 3.5 0 1 0 0 7h4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.5 3L13 6l-3.5 3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></div>
+    <div class="tl" style="width:27px;height:27px;color:#8cc5ff"><svg viewBox="0 0 16 16"><path d="M8 2v9" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M4.5 8L8 11.5 11.5 8" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M3 14h10" stroke="currentColor" stroke-width="1.6"/></svg></div>
+    <div class="tl btn-cancel" style="height:27px">取消</div>
+    <div class="tl btn-done" style="height:27px">完成</div>
+    <div class="tl btn-more" style="height:27px">⋯</div>
+  </div>
+</div>
+<p class="note">工具栏<b>右对齐选区右边缘</b>（微信 / QQ / Snipaste 都是这样），不再屏幕居中。按钮 30 → 27px，间距压紧，吸管收进 ⋯。<b>解决了"离选区太远"，但仍是单层，拥挤只是缓解。</b></p>
+
+<!-- ============ 方案 C ============ -->
+<h3>方案 C · 双层：主栏 + 属性条 <span class="tag t-new">推荐</span></h3>
+<div class="stage" style="height:330px">
+  <div class="shade"></div>
+  <div class="sel" style="left:220px; width:300px">
+    <div class="sel-size">300 × 150</div>
+    <div class="hnd" style="left:-5px;top:-5px"></div>
+    <div class="hnd" style="right:-5px;top:-5px"></div>
+    <div class="hnd" style="left:-5px;bottom:-5px"></div>
+    <div class="hnd" style="right:-5px;bottom:-5px"></div>
+  </div>
+  <!-- 主栏：右对齐选区 -->
+  <div class="tb" style="right:80px; top:196px">
+    <div class="tl"><svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="kbd">1</span></div>
+    <div class="tl"><svg viewBox="0 0 16 16"><ellipse cx="8" cy="8" rx="6" ry="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="kbd">2</span></div>
+    <div class="tl on"><svg viewBox="0 0 16 16"><path d="M2 13L11 4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7.5 4H12V8.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="kbd">3</span></div>
+    <div class="tl"><svg viewBox="0 0 16 16"><path d="M3 13l4-1 6.5-6.5a1.4 1.4 0 0 0 0-2L11.5 1.5a1.4 1.4 0 0 0-2 0L3 8l-1 4z" fill="none" stroke="currentColor" stroke-width="1.4"/></svg><span class="kbd">4</span></div>
+    <div class="tl"><svg viewBox="0 0 16 16"><rect x="2" y="8" width="12" height="4" rx="1" fill="currentColor" opacity=".7"/></svg><span class="kbd">5</span></div>
+    <div class="tl"><svg viewBox="0 0 16 16"><g fill="currentColor" opacity=".75"><rect x="2" y="2" width="4" height="4"/><rect x="8" y="2" width="4" height="4"/><rect x="5" y="5" width="4" height="4"/><rect x="2" y="8" width="4" height="4"/><rect x="8" y="8" width="4" height="4"/></g></svg><span class="kbd">6</span></div>
+    <div class="tl"><svg viewBox="0 0 16 16"><path d="M3 3.5h10M8 3.5v9" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><span class="kbd">7</span></div>
+    <div class="tl"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.4"/><text x="8" y="9.4" text-anchor="middle" font-size="7" font-weight="600" fill="currentColor">1</text></svg><span class="kbd">8</span></div>
+    <div class="tl"><svg viewBox="0 0 16 16"><circle cx="6" cy="5" r="3.4" fill="currentColor" opacity=".35"/><circle cx="11" cy="8" r="2.6" fill="currentColor" opacity=".55"/><circle cx="5" cy="11.5" r="2.2" fill="currentColor" opacity=".4"/></svg><span class="kbd">9</span></div>
+    <div class="tl"><svg viewBox="0 0 16 16"><path d="M9.5 3.5l3 3L7 12H3.5V8.5l6-5z" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2.5 12.5h7" stroke="currentColor" stroke-width="1.6"/></svg><span class="kbd">0</span></div>
+    <div class="sep"></div>
+    <div class="tl" style="color:#8FA3C4"><svg viewBox="0 0 16 16"><path d="M3 6h7a3.5 3.5 0 1 1 0 7H6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.5 3L3 6l3.5 3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></div>
+    <div class="tl off" style="color:#8FA3C4"><svg viewBox="0 0 16 16"><path d="M13 6H6a3.5 3.5 0 1 0 0 7h4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.5 3L13 6l-3.5 3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></div>
+    <div class="tl" style="color:#8cc5ff"><svg viewBox="0 0 16 16"><path d="M8 2v9" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M4.5 8L8 11.5 11.5 8" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M3 14h10" stroke="currentColor" stroke-width="1.6"/></svg></div>
+    <div class="sep"></div>
+    <div class="tl btn-cancel">✕ 取消</div>
+    <div class="tl btn-done">完成 ✓</div>
+    <div class="tl btn-more">⋯</div>
+  </div>
+  <!-- 属性条：仅绘制类工具选中时出现 -->
+  <div class="attr" style="right:80px; top:240px">
+    <span class="lbl">颜色</span>
+    <div class="colors-hit">
+      <div class="cwrap"><span class="cp" style="background:#ef4444"></span></div>
+      <div class="cwrap"><span class="cp on" style="background:#3b9eff"></span></div>
+      <div class="cwrap"><span class="cp" style="background:#facc15"></span></div>
+      <div class="cwrap"><span class="cp" style="background:#22c55e"></span></div>
+      <div class="cwrap"><span class="cp" style="background:#1f2937"></span></div>
+      <div class="cwrap" title="吸管取色" style="color:#9DB2D0"><svg viewBox="0 0 16 16" style="width:14px;height:14px"><path d="M10.5 2.5l3 3L7 12H4.5V9.5l6-7z" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M9 4l3 3" stroke="currentColor" stroke-width="1.4"/></svg></div>
+    </div>
+    <div class="sep" style="height:16px"></div>
+    <span class="lbl">粗细</span>
+    <div class="w-pick"><span class="w-dot" style="width:4px;height:4px"></span></div>
+    <div class="w-pick on"><span class="w-dot" style="width:7px;height:7px"></span></div>
+    <div class="w-pick"><span class="w-dot" style="width:10px;height:10px"></span></div>
+    <div class="sep" style="height:16px"></div>
+    <span class="lbl">箭头</span>
+    <div class="w-pick on"><svg viewBox="0 0 16 16" style="width:14px;height:14px;color:#C9D6EA"><path d="M13 5.5l-2-2v3h2z" fill="currentColor"/><path d="M3 8h10" stroke="currentColor" stroke-width="1.5"/></svg></div>
+    <div class="w-pick"><svg viewBox="0 0 16 16" style="width:14px;height:14px;color:#C9D6EA"><path d="M3 5.5l2-2v3H3zM13 5.5l-2-2v3h2z" fill="currentColor"/><path d="M4 8h8" stroke="currentColor" stroke-width="1.5"/></svg></div>
+  </div>
+</div>
+<div class="rec">
+  <p class="note" style="margin:8px 0"><b>主栏</b>：10 个绘制工具 + 撤销/重做 + 长截图 + 取消/完成/⋯ = 16 个，比现在少 5 个，且再加工具还有余地。<br>
+  <b>属性条</b>：颜色（含吸管）+ 粗细 + 箭头样式，<b>只在选中绘制类工具时出现</b>；选序号/橡皮/吸管时自动收起。属性记忆上次选择，所以实际不增加点击次数。<br>
+  <b>新增粗细选择</b>：现在线宽是写死的 <code>LINE_WIDTH</code> 常量，改不了 —— 顺手补上。</p>
+</div>
+<p class="note"><b>为什么推荐 C：</b>11 工具 + 属性混在一条里，未来加任何东西都没地方放，A/B 只是把问题推后。而且这个项目已经确立了"学微信"的方向，微信截图正是选完工具后在下方出属性条。</p>
+
+<h2>二半、图标重绘与中文标签（用户反馈：看不懂是干什么的）</h2>
+<p class="note"><b>先说结论：图标再怎么画也解决不了"看不懂"。</b>马赛克 / 模糊 / 高亮 这类概念本来就没有公认图形，
+纯图标方案下用户只能猜。所以两件事一起做：<b>每个按钮加常驻中文标签</b>（QQ 截图走的就是这条路，微信是纯图标但它只有 6 个工具）+ 图标统一重绘。</p>
+
+<h3>图标为什么"不好看"：四个具体原因</h3>
+<table>
+  <tr><th style="width:150px">问题</th><th>旧实现</th><th>新做法</th></tr>
+  <tr><td>粗细不一</td><td><code>stroke-width</code> 混用 1.4 / 1.5 / 1.6，11 个图标并排时轻重不一致</td><td>全部统一 1.5，抽成共用常量</td></tr>
+  <tr><td>端点尖刺</td><td>默认 butt 端点 + miter 拐角，16px 下有毛边</td><td>统一 <code>round</code> 端点与拐角</td></tr>
+  <tr><td>序号图标位置飘</td><td>内嵌 <code>&lt;text&gt;</code> 画数字 1，字体由系统决定，不同 DPI 下对不齐</td><td>数字用 <code>path</code> 手画，不依赖字体</td></tr>
+  <tr><td>图形与含义无关</td><td>模糊 = 三个半透明圆点；高亮 = 一个实心矩形（和"矩形"工具几乎一样）；箭头头是两条细线拼的直角</td><td>模糊 = 水滴（Photoshop 同款）；高亮 = 荧光笔斜笔头 + 色带；箭头头改实心三角</td></tr>
+</table>
+
+<h3>常驻标签的代价与应对</h3>
+<p class="note">按钮从 30×30 变为 38×42（图标 17px 在上、标签 9px 在下），主栏横向约 <b>620px</b>。
+一个高频后果是：<b>窄选区时工具栏比选区宽得多</b>。这正好是 §3.5 里定位规则要处理的第四条（工具栏宽于选区 → 改为左对齐选区左边缘）。
+快捷键角标从按钮右下角移除（标签占了那个位置），改到 tooltip 里说。</p>
+
+<h2>三、无论选哪个方案都要做的修复</h2>
+
+<h3>3.1 撤销 / 重做置灰（对应问题 1）</h3>
+<p class="note">栈空 → <code>.disabled</code>，<code>data-tip</code> 改为"没有可撤销的操作"。上面三个舞台里已经画成灰色了。</p>
+
+<h3>3.2 失败要看得见（对应问题 2 / 3 / 4 / 5）—— 规则 15.3</h3>
+<div class="stage" style="height:120px">
+  <div class="toast">⚠ 图片合成失败 · canvas 2d 不可用</div>
+</div>
+<div class="stage" style="height:120px">
+  <div class="toast ok">✓ 已复制到剪贴板</div>
+</div>
+<p class="note">复用已有的 <code>.picker-bar</code> 位置（底部居中），成功走绿色、失败走红色，3 秒自动消失。<b>覆盖点</b>：<code>finish</code> / <code>copyImage</code> / <code>ensureResultPath</code> / <code>saveToGallery</code> / <code>pinImage</code> / <code>copyText</code> 六个出口的 catch 分支。</p>
+
+<h3>3.3 busy 期间给出忙态（对应问题 3）</h3>
+<p class="note">busy 为真时：完成按钮文案变"处理中…"、整条主栏 <code>opacity: .6</code> 且不接收点击。不再是"点了什么都不发生"。</p>
+
+<h3>3.4 长截图状态条（对应问题 4）</h3>
+<div class="stage" style="height:140px">
+  <div class="statusbar" style="left:50%; transform:translateX(-50%); top:44px">
+    <span class="spin"></span>
+    <span>长截图中 · 已拼 <b>7</b> 屏 · 高度 <b>2140</b>px</span>
+    <span class="mini"></span>
+    <span class="sb-btn stop">停止并出图</span>
+    <span class="sb-btn abort">放弃</span>
+  </div>
+</div>
+<p class="note">这是之前那份长截图设计稿的 §1–3。<b>两个按钮语义必须分开</b>："停止并出图"= 用已拼的内容出图；"放弃"= 什么都不留。</p>
+<div class="warn">
+  <p class="note" style="margin:0 0 8px"><b>❗ 实施时发现的硬约束，比原来估计的严重</b></p>
+  <p class="note" style="margin:0 0 8px">后端 <code>hide_screenshot_window</code> 走的是 Tauri 的 <code>window.hide()</code>。
+  窗口一旦 hide，WebView <b>收不到任何输入事件</b>（键盘 / 鼠标 / 右键全部无效）。两个直接后果：</p>
+  <p class="note" style="margin:0 0 8px">① 状态条<b>没地方显示</b>（整个窗口都不可见）；<br>
+  ② 更要紧的：现有代码里的"长截图中 Esc / 右键中止"（<code>abortLongRef</code>）<b>是个死功能</b> ——
+  设计上它要求用户在窗口隐藏期间按键，而那时候根本没人接收这个按键。长截图一旦开始就<b>无法中途停下</b>，只能等 40 帧跑完。</p>
+  <p class="note" style="margin:0">所以"停止并出图 / 放弃"两个按钮不是画上去就行，<b>先得解决窗口可见性</b>。三条路子见下表。</p>
+</div>
+<div class="rec">
+  <p class="note" style="margin:8px 0"><b>✅ 已采用乙：独立小窗口（已实现）</b></p>
+  <p class="note" style="margin:0 0 8px">新增窗口 <code>longshot-status</code>（300×48 逻辑像素，无边框、置顶、不抢焦点），入口 <code>longshot.html</code>。</p>
+  <p class="note" style="margin:0 0 8px"><b>位置选择是关键</b>：后端 <code>pick_status_pos</code> 按优先级试六个候选位（右下 → 左下 → 右上 → 左上 → 底部居中 → 顶部居中），
+  取第一个<b>完全在屏幕内且与选区不相交</b>的。不相交就不会被每帧的 BitBlt 拼进长图 —— 这是确定的几何事实，不靠透明度赌。
+  六个位置都不行（选区占满屏幕）则<b>宁可不开窗</b>，并在隐藏前弹 toast 告知"本次无法中途停止"。配了 7 条 Rust 单测。</p>
+  <p class="note" style="margin:0"><b>通信链路</b>：主窗每拼一帧 <code>emit("longshot-progress")</code>（帧数/高度/26×40 缩略图）；
+  状态窗点按钮 <code>emit("longshot-control")</code> 回主窗设 <code>stopLongRef</code> / <code>abortLongRef</code>。
+  <b>这条链路只依赖一件已被现有代码证明的事</b>：隐藏的 WebView 仍能执行 JS 与收发 IPC（长截图循环本身就在隐藏期间跑并持续 invoke 后端）。零未知假设。</p>
+</div>
+<table>
+  <tr><th style="width:120px">路子</th><th>做法</th><th style="width:210px">风险</th></tr>
+  <tr><td><b>甲</b> 不隐藏窗口</td><td>长截图期间只隐藏遮罩/选区框/工具栏/画布，窗口本身保持可见但选区内完全透明；再给窗口开鼠标穿透（<code>set_ignore_cursor_events</code>）让滚轮能打到目标窗口</td><td>依赖两个<b>未实测</b>假设：① 完全透明区不会被 BitBlt 截进去；② 鼠标穿透后 <code>WindowFromPoint</code> 能拿到下层窗口。错了就是长图里夹一层遮罩，或者完全滚不动</td></tr>
+  <tr><td><b>乙</b> 独立小窗口</td><td>新建一个 260×44 的无边框 Tauri 窗口放屏幕角落（必然在选区外，不会被截进去），主窗照旧隐藏</td><td>要改 Rust 端 + 新 HTML 入口 + capability 配置；我<b>无法在本会话实测</b>，但逻辑上没有未知假设</td></tr>
+  <tr><td><b>丙</b> 只做结果反馈</td><td>过程中不显示，结束后用 toast 报告（已拼 N 屏 / 未捕获到内容 / 失败原因）</td><td>零风险，<b>已实现</b>。但解决不了"中途停不下来"</td></tr>
+</table>
+
+<h3>3.5 定位修复（对应"离选区太远"和"钻进选区"）</h3>
+<table>
+  <tr><th style="width:120px">场景</th><th>新规则</th></tr>
+  <tr><td>正常</td><td>工具栏<b>右边缘对齐选区右边缘</b>，位于选区下方 8px</td></tr>
+  <tr><td>下方放不下</td><td>翻到选区上方 8px，同时给根元素加 <code>top-attached</code> 类 → tooltip 改为向上弹（<b>修死规则</b>）</td></tr>
+  <tr><td>上下都放不下</td><td>贴在选区<b>内部底边</b>，加半透明底衬；不再钳到 <code>top: 8</code> 压住画面顶部</td></tr>
+  <tr><td>选区太窄</td><td>工具栏宽于选区时改为左对齐选区左边缘，并保证不超出屏幕（左右各留 8px）</td></tr>
+</table>
+
+<h3>3.6 取消按钮（用户点名要的）</h3>
+<p class="note">位置在"完成"左边，<code>.tool.cancel-btn</code> 样式已存在直接复用。<b>语义</b>：等同标注态右键 / Esc —— 清空标注回到选区态，而不是关窗（两级取消，规则 17.6）。<code>data-tip</code> 写"取消标注，回到选区（Esc / 右键）"。</p>
+
+<h2>四、待你拍板</h2>
+<table>
+  <tr><th style="width:90px">项</th><th>选项</th></tr>
+  <tr><td>视觉方案</td><td><b>A</b> 微创新 / <b>B</b> 右对齐压缩 / <b>C</b> 双层（推荐）</td></tr>
+  <tr><td>粗细选择</td><td>方案 C 顺带加"细/中/粗"三档（现在线宽写死）—— 要不要</td></tr>
+  <tr><td>长截图状态条</td><td>现在做，还是等主体改完实测通过再做（它依赖一个未实测的假设）</td></tr>
+</table>
+
+</body>
+</html>

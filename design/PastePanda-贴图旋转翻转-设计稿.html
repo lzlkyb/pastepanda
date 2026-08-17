@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PastePanda · 贴图旋转/翻转 · 交互设计稿</title>
+<style>
+  :root{
+    --bg:#0C1120; --panel1:#1B2340; --panel2:#101528;
+    --violet:#6366F1; --violet-soft:rgba(99,102,241,.35);
+    --txt:#E6EDF7; --txt2:#9DB2D0; --txt3:#6B7FA3;
+    --red:#FCA5A5; --red-bd:rgba(248,113,113,.45);
+    --green:#7DE2A6;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:-apple-system,"Segoe UI",system-ui,"Microsoft YaHei",sans-serif;padding:24px;line-height:1.6}
+  .wrap{max-width:980px;margin:0 auto}
+  h1{font-size:19px;font-weight:700;margin-bottom:4px}
+  .sub{color:var(--txt3);font-size:12px;margin-bottom:18px}
+  .note{background:rgba(99,102,241,.10);border:1px solid var(--violet-soft);border-radius:10px;padding:12px 14px;font-size:12.5px;color:var(--txt2);margin-bottom:22px}
+  .note b{color:var(--green)}
+  .note .bad{color:var(--red)}
+  .grid{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+  .card{background:linear-gradient(180deg,var(--panel1),var(--panel2));border:1px solid var(--violet-soft);border-radius:14px;padding:16px;flex:1;min-width:300px}
+  .card h2{font-size:14px;font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:6px}
+  .card .tag{font-size:10px;color:var(--txt3);margin-bottom:12px}
+  .sec{margin-bottom:26px}
+  /* 模拟 Win32 右键菜单 */
+  .menu{width:188px;background:#171C2E;border:1px solid rgba(125,140,255,.22);border-radius:8px;padding:5px;box-shadow:0 12px 30px rgba(0,0,0,.5);font-size:12px}
+  .mi{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px;color:var(--txt2);cursor:default}
+  .mi:hover{background:rgba(99,102,241,.25);color:#fff}
+  .mi .ic{width:16px;text-align:center;color:var(--violet);font-size:13px}
+  .mi .k{margin-left:auto;font-size:10px;color:var(--txt3)}
+  .sep{height:1px;background:rgba(125,140,255,.15);margin:5px 2px}
+  /* 浮层贴图示意 */
+  .stage{position:relative;height:230px;background:
+    repeating-conic-gradient(#1a2036 0% 25%, #141a2e 0% 50%) 50%/22px 22px;
+    border-radius:10px;border:1px dashed rgba(125,140,255,.25);overflow:hidden;display:flex;align-items:center;justify-content:center;margin-bottom:10px}
+  .shot{width:140px;height:96px;background:linear-gradient(135deg,#3B82F6,#8B5CF6);border-radius:6px;
+    transform:rotate(-12deg);box-shadow:0 8px 24px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px}
+  .hud{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);display:flex;gap:14px;
+    background:rgba(10,14,28,.82);border:1px solid rgba(125,140,255,.3);border-radius:20px;padding:5px 14px;font-size:11px;color:var(--txt2);backdrop-filter:blur(4px)}
+  .hud b{color:var(--txt);font-weight:600}
+  /* 管理面板 480 */
+  .pp{width:480px;max-height:560px;display:flex;flex-direction:column;background:linear-gradient(180deg,var(--panel1),var(--panel2));border:1px solid var(--violet-soft);border-radius:14px;box-shadow:0 24px 64px rgba(0,0,0,.5);overflow:hidden}
+  .pp-hd{display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid rgba(125,140,255,.18)}
+  .pp-hd .t{font-size:14px;font-weight:600}
+  .pp-hd .c{margin-left:auto;color:var(--txt3);font-size:11px;margin-right:10px}
+  .pp-bd{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px}
+  .row{display:flex;align-items:center;gap:10px;padding:8px;background:rgba(20,26,50,.7);border-radius:10px;border:1px solid rgba(99,102,241,.15)}
+  .thumb{width:64px;height:44px;border-radius:6px;overflow:hidden;background:#16233F;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+  .thumb img{max-width:100%;max-height:100%;object-fit:contain}
+  .nm{flex:1;font-size:11px;color:var(--txt2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .btn{padding:4px 10px;border-radius:6px;border:1px solid var(--violet-soft);background:transparent;color:#B9C6F0;font-size:10px;cursor:pointer;white-space:nowrap}
+  .btn.rot{border-color:rgba(125,211,252,.4);color:#BDE8FF}
+  .btn.close{border-color:var(--red-bd);color:var(--red)}
+  .pp-ft{display:flex;justify-content:flex-end;gap:8px;padding:10px 16px;border-top:1px solid rgba(125,140,255,.18)}
+  /* 快捷键表 */
+  table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid rgba(125,140,255,.12)}
+  th{color:var(--txt3);font-weight:500;font-size:11px}
+  td.k{color:var(--violet);font-weight:600;white-space:nowrap}
+  td small{color:var(--txt3)}
+  .imp{background:rgba(125,211,252,.08);border:1px solid rgba(125,211,252,.28);border-radius:10px;padding:12px 14px;font-size:12px;color:var(--txt2);margin-top:10px}
+  .imp code{background:#0E1326;padding:1px 6px;border-radius:4px;color:#BDE8FF;font-size:11px}
+  .legend{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--txt3);margin-right:14px}
+  .dot{width:8px;height:8px;border-radius:50%}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📌 贴图旋转 / 翻转 · 交互设计稿</h1>
+  <div class="sub">对标 Snipaste 贴图护城河 · 基于真实代码（src-tauri/src/pinned_window.rs · src/components/PinnedPanel.tsx）</div>
+
+  <div class="note">
+    ⚠️ <b>先纠正上一轮评估</b>：读源码后发现<b>滚轮缩放早已实现</b>（<code style="color:#BDE8FF">WM_MOUSEWHEEL</code> → <code style="color:#BDE8FF">state.scale</code> 0.1–10×，Ctrl+滚轮 0.05/格），<b>管理面板缩略图也已有</b>（<code style="color:#BDE8FF">get_image_data_url</code> 64×44）。
+    所以真实短板只有两项：<span class="bad">旋转</span>、<span class="bad">翻转</span>，以及<b>用户不可见当前缩放/角度</b>。本稿只补这两块 + 一个状态 HUD。
+  </div>
+
+  <div style="margin-bottom:14px">
+    <span class="legend"><span class="dot" style="background:var(--green)"></span>已实现</span>
+    <span class="legend"><span class="dot" style="background:var(--red)"></span>本稿新增</span>
+  </div>
+
+  <div class="grid">
+    <!-- A. 右键菜单 -->
+    <div class="card sec">
+      <h2>① 贴图右键菜单增强</h2>
+      <div class="tag">Win32 原生菜单（pinned_window.rs WM_RBUTTONUP）· 深色模拟</div>
+      <div class="menu">
+        <div class="mi"><span class="ic">📋</span>复制图片<span class="k">—</span></div>
+        <div class="mi"><span class="ic">✎</span>重新编辑<span class="k">双击</span></div>
+        <div class="sep"></div>
+        <div class="mi" style="background:rgba(99,102,241,.25);color:#fff"><span class="ic">↻</span>旋转 90°<span class="k">R</span></div>
+        <div class="mi"><span class="ic">⇄</span>水平翻转<span class="k">F</span></div>
+        <div class="mi"><span class="ic">⇅</span>垂直翻转<span class="k">V</span></div>
+        <div class="mi"><span class="ic">⤢</span>实际大小 (100%)<span class="k">1</span></div>
+        <div class="sep"></div>
+        <div class="mi"><span class="ic">✕</span>关闭<span class="k">Esc</span></div>
+        <div class="mi"><span class="ic">⊘</span>关闭全部</div>
+      </div>
+    </div>
+
+    <!-- B. 浮层 HUD -->
+    <div class="card sec">
+      <h2>② 贴图浮层状态 HUD</h2>
+      <div class="tag">Rust GDI 在贴图底部绘制（WM_PAINT 后叠加）+ 鼠标悬停/聚焦时显示</div>
+      <div class="stage">
+        <div class="shot">截图内容</div>
+        <div class="hud"><span>缩放 <b>100%</b></span><span>旋转 <b>-12°</b></span><span>透明度 <b>100%</b></span></div>
+      </div>
+      <div style="font-size:11px;color:var(--txt3)">解决「缩放/旋转看不见」痛点：HUD 实时回显 <b style="color:var(--txt2)">scale%</b> 与 <b style="color:var(--txt2)">rotation°</b>，与 Snipaste 底部状态条一致。</div>
+    </div>
+  </div>
+
+  <!-- C. 管理面板 -->
+  <div class="sec" style="margin-top:8px">
+    <div class="card">
+      <h2>③ 贴图管理面板增强（PinnedPanel，严格沿用现有 480 布局与配色）</h2>
+      <div class="tag">src/components/PinnedPanel.tsx · 每行在「复制/编辑/关闭」前插入「旋转 / 翻转」两个图标按钮</div>
+      <div class="pp">
+        <div class="pp-hd">
+          <span class="t">📌 贴图管理</span>
+          <span class="c">2 张贴图置顶中</span>
+          <span style="color:var(--txt3);cursor:pointer;font-size:15px">✕</span>
+        </div>
+        <div class="pp-bd">
+          <div class="row">
+            <div class="thumb"><img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='44'><rect width='64' height='44' fill='%233B82F6'/></svg>" alt=""/></div>
+            <span class="nm">2026-08-17_截图_1.png</span>
+            <button class="btn rot">↻</button>
+            <button class="btn rot">⇄</button>
+            <button class="btn">复制</button>
+            <button class="btn">编辑</button>
+            <button class="btn close">关</button>
+          </div>
+          <div class="row">
+            <div class="thumb"><img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='44'><rect width='64' height='44' fill='%238B5CF6'/></svg>" alt=""/></div>
+            <span class="nm">2026-08-17_截图_2.png</span>
+            <button class="btn rot">↻</button>
+            <button class="btn rot">⇄</button>
+            <button class="btn">复制</button>
+            <button class="btn">编辑</button>
+            <button class="btn close">关</button>
+          </div>
+        </div>
+        <div class="pp-ft">
+          <button class="btn close">关闭全部贴图</button>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--txt3);margin-top:10px">说明：面板按 <code style="color:#BDE8FF">path</code> 操作，需后端新增「按 path 定位窗口并改变换」的命令（见下方实现要点）。</div>
+    </div>
+  </div>
+
+  <!-- D. 快捷键 -->
+  <div class="sec">
+    <div class="card">
+      <h2>④ 快捷键体系（贴图聚焦时生效）</h2>
+      <table>
+        <tr><th>操作</th><th>快捷键</th><th>说明</th></tr>
+        <tr><td>缩放</td><td class="k">滚轮</td><td>±15%/格（<small>已有</small>）</td></tr>
+        <tr><td>精细缩放</td><td class="k">Ctrl + 滚轮</td><td>±5%/格（<small>已有</small>）</td></tr>
+        <tr><td>旋转 90°</td><td class="k">R</td><td><b style="color:var(--red)">新增</b> · 顺时针累加</td></tr>
+        <tr><td>水平翻转</td><td class="k">F</td><td><b style="color:var(--red)">新增</b></td></tr>
+        <tr><td>垂直翻转</td><td class="k">V</td><td><b style="color:var(--red)">新增</b></td></tr>
+        <tr><td>实际大小</td><td class="k">1</td><td><b style="color:var(--red)">新增</b> · scale=1，rotation/flip 清零可选</td></tr>
+        <tr><td>透明度循环</td><td class="k">T</td><td>255→180→110→60（<small>已有</small>）</td></tr>
+        <tr><td>重新编辑</td><td class="k">双击</td><td>回到截图标注（<small>已有</small>）</td></tr>
+        <tr><td>关闭</td><td class="k">Esc</td><td>（<small>已有</small>）</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- E. 实现要点 -->
+  <div class="imp">
+    <b style="color:#BDE8FF">落地要点（Rust 端 src-tauri/src/pinned_window.rs）</b><br/>
+    1. <code>WindowState</code> 增加 <code>rotation: f32</code>、<code>flip_h: bool</code>、<code>flip_v: bool</code> 三个字段（当前只有 scale/offset/alpha）。<br/>
+    2. <code>fill_buffer()</code> 绘制时应用变换：旋转用「先以中心为原点旋转采样坐标」或 GDI world transform；翻转即镜像采样（sx = flip_h ? img_w-1-sx : sx，sy 同理）。注意旋转后需按外接矩形扩大缓冲区，否则四角被裁。<br/>
+    3. <code>WM_KEYDOWN</code> 新增分支：<code>VK_R</code> → rotation = (rotation+90)%360；<code>VK_F</code> → flip_h=!flip_h；<code>VK_V</code> → flip_v=!flip_v；<code>'1'</code> → scale=1.0。<br/>
+    4. <code>WM_RBUTTONUP</code> 菜单 items 增加「旋转 90°/水平翻转/垂直翻转/实际大小」四项，cmd_id 接 5–8，复用现有 match 结构。<br/>
+    5. <b>HUD</b>：在 <code>WM_PAINT</code> 末尾用 GDI <code>DrawText</code> 在底部画一行「缩放 N% · 旋转 N°」（仅当窗口有焦点/鼠标在窗内时显示，避免遮挡）。<br/>
+    6. <b>管理面板按 path 操作</b>：新增命令 <code>transform_pinned(path, {rotation, flipH, flipV})</code>，经 <code>CURRENT_WINDOW</code> 按 path 找到 hwnd → <code>PostMessageW</code> 自定义 <code>WM_APP+1</code> 带新变换；或后端直接改对应 <code>WindowState</code>（需按 hwnd 取 USERDATA 指针）。<br/>
+    7. 验证：<code>npx tsc</code> → <code>cargo check</code>（带 LIBCLANG_PATH）→ 手动贴两张图分别 R/F/V 验证多贴图各改各的。
+  </div>
+</div>
+</body>
+</html>

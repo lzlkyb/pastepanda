@@ -48,6 +48,9 @@ ocr-rs（vendored PP-OCR 引擎）的 bindgen 阶段需要 `libclang.dll`，项�
 4. **首次编译约 1 分钟**（727 个 crate），之后 Vite HMR 热更新，改前端代码无需重启 dev。
 5. **无害日志**：启动时 `tauri_plugin_updater ... ERROR update endpoint did not respond` 是 dev 下连不上更新服务器，忽略即可，不影响功能。
 6. 后台运行可用 `Start-Process powershell -ArgumentList "-NoExit","-Command","$env:LIBCLANG_PATH='$(Get-Location)/src-tauri/.libclang'; npm run tauri dev" -WindowStyle Minimized`，不阻塞主终端。
+7. **重启前务必彻底释放 1420 端口**：`tauri dev` 会同时拉起 Rust 进程（`PastePanda.exe`）和一个独立的 Vite node 进程（监听 `localhost:1420`）。只 `taskkill` 掉 `PastePanda.exe` 不够——Vite 子进程仍占着 1420，下次启动会在 Vite 阶段报 `Port 1420 is already in use` 并异常退出（Rust 端起来了但前端连不上，窗口空白）。正确重启：先 `tasklist` 找到占用 1420 的 vite/node PID（`netstat -ano | grep ":1420"` 看 LISTENING 那行的 PID）一并 `taskkill /F`，再重新 `npm run tauri dev`。
+
+8. **本会话 bash 后台启动用 `nohup` 脱离，而非 `run_in_background`**：实测 WorkBuddy 的 Bash `run_in_background` 启动 `npm run tauri dev` 偶发在 ~13s 即被判定退出（npm 父进程被杀），只留下 Rust 端 `PastePanda.exe` 孤儿、前端 vite 未起来（1420 无 LISTENING、窗口空白）。可靠做法是在 Git Bash 里用 `(nohup npm run tauri dev > /tmp/pastepanda-dev.log 2>&1 < /dev/null &)` 让进程脱离父 shell 常驻，再 `netstat -ano | grep ":1420" | grep LISTENING` 轮询确认前端真正监听。本会话 PowerShell `Start-Process` 会被安全策略拦截（目标是指针器），git bash 下 `setsid` 不存在，故 `nohup` 是最稳解。
 
 ## 7. 方案设计需考虑代码架构
 模块化、可维护性、扩展性，遵循项目已有的架构模式。

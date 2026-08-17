@@ -36,8 +36,12 @@ body {
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 8px rgba(59, 158, 255, 0.4);
   pointer-events: none;
 }
+/* 竖向位置由 JS 的 layoutSizeLabel 给（跟随选区，贴屏幕底部时翻到上方）。
+   旧实现这里写死 `bottom: -30px`，选区贴屏幕底部时那 30px 落在屏幕外，
+   标签连带里面“单击进标注 · 拖选区移动 · 拖边缘缩放”那句操作提示一起被裁掉。
+   水平仍然居中于选区（left: 50% + translateX），那一维没有避让问题。 */
 .sel-size {
-  position: absolute; left: 50%; bottom: -30px; transform: translateX(-50%);
+  position: absolute; left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 8px;
   padding: 4px 12px; border-radius: 7px;
   background: rgba(10, 14, 24, 0.92); color: #fff;
@@ -45,6 +49,8 @@ body {
   font-size: 12px; font-variant-numeric: tabular-nums;
   white-space: nowrap; pointer-events: none;
 }
+/* 选区占满整屏、只能盖在选区内部时：调淡一点，尽量不遮住底下的画面 */
+.sel-size.inside { opacity: 0.9; }
 .sel-size .hint { color: rgba(255, 255, 255, 0.6); font-size: 11px; }
 
 /* ===== 标注画布容器（覆盖选区，1:1） ===== */
@@ -75,11 +81,13 @@ body {
 .ocr-line:hover .tip { opacity: 1; transform: translateY(0); }
 .ocr-line.copied .tip { opacity: 1; background: var(--green, #22c55e); transform: translateY(0); }
 
-/* ===== 标注工具栏（浮动，避让选区） ===== */
+/* ===== 标注主工具栏（V6.20 双层；位置全由 JS 的 layoutToolbar 给出） ===== */
+/* 旧实现写死 left: 50% —— 工具栏永远屏幕水平居中、只有 top 跟选区，
+   在屏幕右上角框一小块时工具栏飘在屏幕正中，鼠标要横穿半屏（违反规则 17.2）。 */
 .annot-toolbar {
-  position: absolute; left: 50%; transform: translateX(-50%);
+  position: absolute;
   display: flex; align-items: center; gap: 2px;
-  padding: 6px 8px; border-radius: 12px;
+  padding: 5px 7px; border-radius: 12px;
   /* indigo + cyan 玻璃渐变：对齐主 UI 设计语言（渐变徽章/细分割线/高光） */
   background: linear-gradient(180deg, rgba(34, 41, 76, 0.94), rgba(16, 21, 40, 0.96));
   backdrop-filter: blur(18px) saturate(1.4);
@@ -91,15 +99,24 @@ body {
     inset 0 -1px 0 rgba(0, 0, 0, 0.35);
   white-space: nowrap; z-index: 30;
 }
+/* 忙态：正在合成/保存时整条栏变淡且不接收点击。
+   旧实现 busy 期间按钮外观不变，入口处 `if (busy) return`，用户只看到"点了没反应"。 */
+.annot-toolbar.busy { opacity: 0.55; pointer-events: none; }
+
+/* 工具按钮：图标在上、常驻中文标签在下（QQ 截图同款）。
+   纯图标方案下马赛克 / 模糊 / 高亮 这类没有公认图形的概念只能靠猜。 */
 .tool {
-  width: 30px; height: 30px; border-radius: 8px;
-  display: flex; align-items: center; justify-content: center;
+  min-width: 38px; height: 42px; border-radius: 8px; padding: 0 3px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   cursor: pointer; border: 1px solid transparent;
-  color: var(--text-primary, #E0E8F0); font-size: 13px;
+  color: var(--text-primary, #E0E8F0); font-size: 12px;
   position: relative; transition: background 0.12s;
 }
-.tool svg { width: 16px; height: 16px; }
+.tool .ic { display: flex; }
+.tool .ic svg { width: 17px; height: 17px; display: block; }
+.tool .lb { font-size: 9px; line-height: 1; letter-spacing: 0.2px; opacity: 0.72; }
 .tool:hover { background: var(--hover, #0F1F35); }
+.tool:hover .lb { opacity: 1; }
 /* 选中工具：亮蓝渐变底 + 白图标，深色工具栏上也一眼可见（QQ/微信截图同款高亮） */
 .tool.on {
   background: linear-gradient(135deg, #3B9EFF, #6D5CF0);
@@ -107,11 +124,65 @@ body {
   color: #ffffff;
   box-shadow: 0 2px 12px rgba(59, 158, 255, 0.5);
 }
-.tool.on .kbd { color: rgba(255, 255, 255, 0.85); }
-.tool .kbd { position: absolute; bottom: -2px; right: 1px; font-size: 7px; color: var(--text-muted, #7994B4); font-family: ui-monospace, Consolas, monospace; }
+.tool.on .lb { opacity: 1; }
+/* 次要按钮（撤销 / 重做）与长截图的色调区分 */
+.tool.dim { color: var(--text-muted, #9DB2D0); }
+.tool.longshot { color: #8CC5FF; }
+.tool.disabled { opacity: 0.3; cursor: not-allowed; }
+.tool.disabled:hover { background: transparent; }
+
+/* 三个主力出口按钮（保存 / 贴图 / AI）。
+   各给一个色调，与已有的长截图蓝、取文字薄荷绿分开——出口区三个按钮挤在一起，
+   全白色会让用户要靠读字才能区分。 */
+.tool.exit-save { color: #A5C8FF; }
+.tool.exit-pin { color: #F9A8D4; }
+
+/* AI 按钮的图标色 = 品牌渐变起点（与 AiMark 的 .brand 一致）。 */
+.tool.exit-ai { color: var(--brand-ai-from); }
+/* “AI”是品牌标识而不是“矩形”“椭圆”那类描述文字，所以不跟 .lb 的 0.72 透明度：
+   渐变字本身靠 color:transparent 露背景画出来，再叠一层半透就洗成一团糊了。 */
+.tool.exit-ai .lb { opacity: 1; font-weight: 700; }
+
+/* ❗ 重绑 AI 品牌渐变色：主栏的底色是写死的深色玻璃（rgba(34,41,76,.94)），
+   不跟主题变；而 theme.css 里的 --brand-ai-from/to 是按主题发的——
+   浅色主题下它们是 #1D4ED8 / #6D28D9（深蓝→深紫，为浅底调的），
+   压在这块深底上几乎看不见。所以在这个**无条件深色**的表面上固定用深色档的那对值。
+   只重绑变量、不动渐变公式：公式仍然只在 AiMark.module.css 里有一份。
+   （出口面板 .act-panel 走 --glass-dialog-bg，是跟主题的，所以不能一起重绑。） */
+.annot-toolbar {
+  --brand-ai-from: #A8DEFF;
+  --brand-ai-to: #D8CCFF;
+}
+
+/* 取文字（OCR）按钮。
+   色调用薄荷绿：工具栏里蓝色系已被长截图与完成占了，再加一个蓝的会糊成一片。
+   无文字 / 未开始走通用的 .disabled（置灰但留在原位，不隐藏）。 */
+.tool.ocr-btn { color: #7DE0C4; }
+.tool.ocr-btn.busy { color: var(--text-muted, #9DB2D0); cursor: default; }
+.tool.ocr-btn.busy:hover { background: transparent; }
+.tool.ocr-btn.failed { color: #FCA5A5; }
+
+/* 角标：行数（或失败的 !）。
+   外描边用工具栏底色而不是透明——角标压在图标线条上时还能读。 */
+.tool .badge {
+  position: absolute; top: 2px; right: 1px;
+  min-width: 15px; height: 15px; padding: 0 3.5px;
+  border-radius: 8px; font-size: 9px; line-height: 15px; font-weight: 700; text-align: center;
+  background: linear-gradient(135deg, #3B9EFF, #6D5CF0); color: #fff;
+  box-shadow: 0 0 0 1.5px rgba(20, 26, 50, 0.98);
+  pointer-events: none;
+}
+.tool .badge.warn { background: linear-gradient(135deg, #F87171, #EF4444); }
+/* 识别中的转圈：尺寸必须与 .tool .ic svg 一致（17px），
+   否则识别完成那一瞬整条工具栏宽度会跳（它是右对齐的，会整体平移）。 */
+.tool .ocr-spin {
+  width: 17px; height: 17px; border-radius: 50%;
+  border: 2px solid rgba(157, 178, 208, 0.28); border-top-color: #7DE0C4;
+  animation: ocrSpin 0.8s linear infinite;
+}
 
 /* 即时气泡提示（替代原生 title 的延迟提示）：悬停即显示名称 + 快捷键 */
-.tool::after {
+.tool::after, .cwrap::after, .wpick::after {
   content: attr(data-tip);
   position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%);
   padding: 3px 8px; border-radius: 6px; font-size: 10px; white-space: nowrap;
@@ -120,56 +191,86 @@ body {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
   opacity: 0; pointer-events: none; transition: opacity 0.1s; z-index: 80;
 }
-.tool:hover::after { opacity: 1; }
-/* 工具栏贴屏幕底部时气泡上浮，避免溢出窗口 */
-.annot-toolbar.top-attached .tool::after {
+.tool:hover::after, .cwrap:hover::after, .wpick:hover::after { opacity: 1; }
+/* 工具栏翻到选区上方时气泡上浮。
+   ⚠️ 旧版这条规则存在却从没生效过——JSX 里 className 恒为 "annot-toolbar"，
+   .top-attached 从未被加上，于是工具栏在上方时 tooltip 仍向下弹，正好压在画布上。 */
+.annot-toolbar.top-attached .tool::after,
+.attr-bar.top-attached .cwrap::after,
+.attr-bar.top-attached .wpick::after {
   top: auto; bottom: calc(100% + 8px);
 }
 
-/* 颜色块 tooltip */
-.cp { position: relative; }
-.cp::after {
-  content: attr(data-tip);
-  position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%);
-  padding: 3px 8px; border-radius: 6px; font-size: 10px; white-space: nowrap;
-  background: rgba(15, 23, 42, 0.96); color: #E6EDF7;
-  border: 1px solid rgba(255, 255, 255, 0.16); opacity: 0; pointer-events: none;
-  transition: opacity 0.1s; z-index: 80;
+/* 文字类按钮（取消 / 完成 / ⋯）：横向单行，不走图标+标签的两行布局 */
+.tool.done-btn, .tool.cancel-btn, .tool.more-btn {
+  flex-direction: row; min-width: 0; height: 34px; padding: 0 12px; font-size: 12px;
 }
-.cp:hover::after { opacity: 1; }
-
-.tool.done-btn { width: auto; padding: 0 14px; font-size: 11px; font-weight: 600; color: #fff;
+.tool.done-btn { font-weight: 600; color: #fff;
   background: linear-gradient(135deg, #6366F1, #3B9EFF);
   border: 1px solid rgba(255, 255, 255, 0.25);
   box-shadow: 0 2px 10px rgba(99, 102, 241, 0.4);
 }
 .tool.done-btn:hover { filter: brightness(1.12); }
-.tool.cancel-btn { width: auto; padding: 0 10px; font-size: 11px; color: var(--text-muted, #9DB2D0); }
+.tool.cancel-btn { color: var(--text-muted, #9DB2D0); }
 .tool.cancel-btn:hover { background: rgba(248, 113, 113, 0.15); color: #FCA5A5; }
-.tool.more-btn { width: auto; padding: 0 12px; font-size: 15px; font-weight: 600; color: #9DB2D0; line-height: 1; }
+/* 字号从 15px/600 降到跟着组走：那两个值是为裸的「⋯」字符调的（它得够大才看得见），
+   现在内容是「更多 ⋯」，再用 15px 会比旁边的「取消」大一号。 */
+.tool.more-btn { color: #9DB2D0; line-height: 1; }
 .tool.more-btn:hover { background: rgba(99, 102, 241, 0.18); color: #B9C6F0; }
-.tool:disabled { opacity: 0.35; cursor: not-allowed; }
-/* ⚠️ 上面那条是死规则：.tool 渲染为 <div>，div 没有 disabled 状态，从未生效过。
-   真正生效的是下面的 class 版（长截图在已有标注时用它置灰）。 */
-.tool.disabled { opacity: 0.35; cursor: not-allowed; }
-.tool.disabled:hover { background: transparent; }
 /* 分组分隔线：indigo→cyan 渐变细线（对齐主 UI 的细分割线风格） */
-.tsep { width: 1px; height: 20px; margin: 0 4px;
+.tsep { width: 1px; height: 24px; margin: 0 5px;
   background: linear-gradient(180deg, transparent, rgba(125, 140, 255, 0.5), transparent); }
-.tool-colors { display: flex; align-items: center; gap: 5px; padding: 0 2px; }
+
+/* ===== 属性条（双层的第二层：颜色 / 粗细 / 箭头样式） ===== */
+.attr-bar {
+  position: absolute; display: flex; align-items: center; gap: 1px;
+  padding: 4px 9px; border-radius: 10px; white-space: nowrap; z-index: 31;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(148, 168, 255, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
+}
+.attr-bar .albl { font-size: 10px; color: #6E82A4; margin: 0 5px 0 2px; }
+/* 强度当前值：滚轮微调到非整档位时，这里仍能看到具体数字 */
+.attr-bar .aval {
+  font-size: 10px; color: #8FA3C4; margin-left: 4px;
+  font-variant-numeric: tabular-nums; min-width: 30px;
+}
+/* 强度档位是文字（细/中/粗），不是图标，需要自己的字号 */
+.wpick { font-size: 10.5px; }
+.attr-bar .asep { width: 1px; height: 16px; margin: 0 7px;
+  background: linear-gradient(180deg, transparent, rgba(125, 140, 255, 0.45), transparent); }
+
+/* 颜色：外层 24px 方形热区，内层才是 14px 色点。
+   旧实现把 onClick 直接挂在 14px 色点上，点偏一两像素就落到容器空白上，没任何反应。 */
+.cwrap {
+  width: 24px; height: 24px; border-radius: 6px; position: relative;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.cwrap:hover { background: rgba(148, 168, 255, 0.14); }
+.cwrap.picker { color: #9DB2D0; }
+.cwrap.picker svg { width: 15px; height: 15px; display: block; }
+.cwrap.picker.on { background: rgba(59, 158, 255, 0.3); color: #fff; }
 .cp {
-  width: 14px; height: 14px; border-radius: 50%; cursor: pointer;
+  width: 14px; height: 14px; border-radius: 50%; display: block;
   border: 1.5px solid transparent; flex-shrink: 0;
   transition: transform 0.1s;
 }
-.cp:hover { transform: scale(1.15); }
-.cp.on { border-color: #fff; box-shadow: 0 0 0 1.5px rgba(99, 102, 241, 0.8), 0 0 6px rgba(99, 102, 241, 0.5); }
+.cwrap:hover .cp { transform: scale(1.12); }
+.cp.on { border-color: #fff; box-shadow: 0 0 0 2px rgba(59, 158, 255, 0.55); }
 
-/* ===== 工具栏位置（select 态在底部居中，annotate 态跟随选区） ===== */
-.toolbar-select {
-  bottom: 18px; left: 50%; transform: translateX(-50%);
+/* 粗细 / 箭头样式选项 */
+.wpick {
+  width: 24px; height: 24px; border-radius: 6px; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: #C9D6EA;
 }
-.toolbar-annot { transform: translateX(-50%); }
+.wpick:hover { background: rgba(148, 168, 255, 0.14); }
+.wpick.on { background: rgba(59, 158, 255, 0.28); color: #fff; }
+.wpick svg { width: 15px; height: 15px; display: block; }
+.wdot { border-radius: 50%; background: currentColor; display: block; }
+
+/* 已删：.toolbar-select / .toolbar-annot 两条死规则。JSX 里从来没有这两个类名，
+   且它们的 translateX(-50%) 与新的 layoutToolbar 绝对定位直接冲突。 */
 
 /* ===== 顶部提示条 ===== */
 .shot-hint {
@@ -189,24 +290,48 @@ body {
 }
 
 /* ===== 文字标注输入框 ===== */
+/* 输入框必须与最终渲染的文字"看起来一样"，否则回车提交的那一瞬文字会变色 + 跳位。
+   三处改动：
+   ① 不写 color：旧值是固定白色，而 drawAnnot 用 a.color，于是"输入时白字、提交后变色"；
+   ② 不写 font-size：旧的 16px 从来没生效过（JSX 的 inline style 优先级更高），留着只会误导；
+   ③ border → outline、padding → 0：border 与 padding 会占布局，把输入框里的文字
+      顶下去 3px，而 canvas 上的文字没有这个偏移。outline 不占布局。
+   （color / font-size 由 JSX 的 inline style 给，跟随当前标注颜色与字号） */
+/* 四处改动（修“文字工具看不到任何东西”）：
+   ① background 从 transparent 改成半透明深底——完全透明时，小字压在任意底图上
+      （尤其同色区域）根本读不出来；QQ / 微信的文字输入框都有底。
+   ② 加 text-shadow：与提交后 canvas 上的描边对应（draw.ts 的 strokeText），
+      不加的话提交那一瞬文字会“突然长出描边”。
+   ③ placeholder 提亮：浏览器默认的灰在深色底图上等于不存在，
+      于是连“这里能打字”这个信号都没有。
+   ④ padding 仍为 0 且用 outline 不用 border：两者都不占布局，
+      否则输入框里的文字会比 canvas 上的位置偏几像素。
+   （color / font-size 由 JSX 的 inline style 给，跟随当前标注颜色与字号档位） */
 .text-draft {
   position: absolute; min-width: 40px;
-  border: 1px dashed var(--accent, #3B9EFF);
-  background: transparent; color: var(--text-primary, #fff);
-  font-size: 16px; outline: none; padding: 0 2px;
+  outline: 1px dashed var(--accent, #3B9EFF);
+  border: none;
+  background: rgba(10, 16, 32, 0.55);
+  padding: 0; line-height: 1;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.9), 0 0 1px rgba(0, 0, 0, 1);
   z-index: 35;
 }
+.text-draft::placeholder { color: rgba(220, 232, 248, 0.7); }
 
 /* ===== OCR 结果抽屉（右上） ===== */
+/* 位置与高度上限由 JS 的 layoutSidePanel 给出（跟随选区、避开工具栏）。
+   旧实现在这里写死 `right: 14px; top: 14px`，与选区无关：
+   选区在左下时视线要跨整屏，选区在右上时抽屉直接压在它上面。
+   width 改了的话要同步 ScreenshotOverlay 里的 OCR_PANEL_W。 */
 .ocr-drawer {
-  position: absolute; right: 14px; top: 14px; width: 252px;
+  position: absolute; width: 252px;
   background: var(--glass-dialog-bg, rgba(10, 22, 40, 0.92));
   backdrop-filter: blur(18px) saturate(1.3);
   -webkit-backdrop-filter: blur(18px) saturate(1.3);
   border: 1px solid var(--border-color, #162B45);
   border-radius: 12px; box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
   overflow: hidden; z-index: 50;
-  display: flex; flex-direction: column; max-height: 62vh;
+  display: flex; flex-direction: column;
 }
 .ocr-head {
   display: flex; align-items: center; gap: 6px;
@@ -249,8 +374,12 @@ body {
 .ocr-foot .fbtn.chain:hover { background: rgba(34, 197, 94, 0.12); }
 
 /* ===== 结果动作面板（右下） ===== */
+/* 位置由 JS 的 layoutToolbar 给出（贴选区下方，与标注工具栏同一个位置）。
+   result 态工具栏已经消失，那个位置正好空出来，而且鼠标刚从"⋯"移过来，位置连续。
+   旧实现写死 `right: 14px; bottom: 14px`，与选区无关：
+   选区在左上时要跨整屏去点出口，选区在右下时面板直接压在图上。 */
 .act-panel {
-  position: absolute; right: 14px; bottom: 14px; width: 224px;
+  position: absolute; width: 224px;
   background: var(--glass-dialog-bg, rgba(10, 22, 40, 0.92));
   backdrop-filter: blur(18px) saturate(1.3);
   -webkit-backdrop-filter: blur(18px) saturate(1.3);
@@ -258,6 +387,9 @@ body {
   border-radius: 12px; box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
   overflow: hidden; z-index: 50;
 }
+/* 上下都放不下、只能盖在选区内时：调淡一点，尽量让底下的图还看得见 */
+.act-panel.inside { opacity: 0.94; }
+.act-panel.inside:hover { opacity: 1; }
 .act-head {
   display: flex; align-items: center; gap: 6px;
   padding: 9px 12px; font-size: 12px; font-weight: 600;
@@ -285,6 +417,13 @@ body {
 .act-row.pin .ic { color: #ec4899; }
 .act-row.ai .ic { background: linear-gradient(135deg, #5B6AF0, #7C5CF0); color: #fff; }
 .act-row.chain .ic { background: linear-gradient(135deg, #0ea5e9, #06b6d4); color: #fff; }
+/* 面板分组标题：9 行平铺时扫视没有落点，分三组后每组 2-3 行。
+   不删行——工具栏平铺三个只是多给一条路，不是把路搬走（用户可能从「更多」进来再选复制）。 */
+.act-group {
+  padding: 7px 12px 3px; font-size: 10px; font-weight: 600; letter-spacing: 0.5px;
+  color: #6E86A8; border-top: 1px solid rgba(22, 43, 69, 0.8);
+}
+.act-group:first-of-type { border-top: 0; }
 
 /* ===== 底部动作弹层（AI / 动作链选择） ===== */
 .pop-layer {
@@ -429,6 +568,26 @@ body {
   font-size: 11px; line-height: 1.7; white-space: pre;
 }
 
+/* ===== 出口反馈提示（成功绿 / 失败红） =====
+   规则 15.3：完成 / 保存 / 贴图 / 复制 这些出口原来失败只写 logger，
+   UI 零反馈，用户看到的就是"点了没反应"。 */
+.shot-toast {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+  z-index: 70; display: flex; align-items: center; gap: 8px;
+  padding: 7px 14px; border-radius: 10px;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(248, 113, 113, 0.45); color: #FCA5A5;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font-size: 12px; white-space: nowrap;
+  animation: shotToastIn 0.18s ease;
+}
+.shot-toast.ok { border-color: rgba(34, 197, 94, 0.45); color: #86EFAC; }
+.shot-toast .ic { font-size: 13px; }
+@keyframes shotToastIn {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
 /* ===== 吸管取色色值条 ===== */
 .picker-bar {
   position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
@@ -452,17 +611,26 @@ body {
 }
 
 /* ===== OCR 识别过程可见（A 方案：识别中指示 / 完成胶囊） ===== */
+/* 两侧都放不下、只能盖在选区上时：调淡一点，尽量让底下内容还看得见 */
+.ocr-drawer.inside { opacity: 0.93; }
+.ocr-drawer.inside:hover { opacity: 1; }
+
+/* 位置同抽屉（同一锚点，点击原地展开），由 JS 给 left/top */
 .ocr-pill {
-  position: absolute; right: 14px; top: 14px; z-index: 55;
+  position: absolute; z-index: 55;
   display: flex; align-items: center; gap: 8px;
   padding: 7px 14px; border-radius: 999px;
   background: rgba(15, 23, 42, 0.94);
   border: 1px solid rgba(99, 102, 241, 0.45);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  font-size: 12px; color: #E6EDF7; cursor: pointer;
+  /* 只剩识别中一种形态，不可点，所以不能再给 pointer 光标（那是在骗点击） */
+  font-size: 12px; color: #E6EDF7; cursor: default;
   animation: ocrPillIn 0.25s ease;
   white-space: nowrap;
 }
+/* 胶囊现在只剩"识别中"一种形态。
+   完成态与失败态已改由工具栏「取文字」按钮的角标承接——
+   胶囊会 6s 自动收起，收起后标注态就再无任何 OCR 入口。 */
 .ocr-pill .spinner {
   width: 12px; height: 12px; border-radius: 50%;
   border: 2px solid rgba(99, 102, 241, 0.3); border-top-color: #6366F1;
@@ -472,4 +640,58 @@ body {
 @keyframes ocrPillIn {
   from { opacity: 0; transform: translateX(12px); }
   to { opacity: 1; transform: none; }
+}
+
+/* ===== 长截图状态小窗（独立窗口 longshot-status） =====
+   它是一个 300×48 的独立 Tauri 窗口，放在**选区之外**的屏幕角落。
+   必须在选区外：长截图每帧都对选区矩形做 BitBlt，压在选区上就会被拼进长图。
+   位置由后端 pick_status_pos 挑选（带单测），选区占满屏幕时干脆不开窗。 */
+.ls-bar {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 10px; border-radius: 10px;
+  background: rgba(15, 23, 42, 0.97);
+  border: 1px solid rgba(99, 102, 241, 0.5);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  color: #E6EDF7; font-size: 11.5px;
+  /* 截图窗的 body 光标是 crosshair，这个窗口继承了同一份样式表，要改回来 */
+  cursor: default;
+  -webkit-user-select: none; user-select: none;
+  overflow: hidden;
+}
+.ls-thumb {
+  width: 22px; height: 34px; object-fit: cover; border-radius: 3px;
+  border: 1px solid rgba(148, 168, 255, 0.35); flex-shrink: 0; background: #1B2542;
+}
+.ls-spin {
+  width: 14px; height: 14px; margin: 0 4px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid rgba(99, 102, 241, 0.3); border-top-color: #6366F1;
+  animation: ocrSpin 0.8s linear infinite;
+}
+.ls-txt { flex: 1; min-width: 0; }
+.ls-main { white-space: nowrap; }
+.ls-main b { font-variant-numeric: tabular-nums; color: #fff; }
+.ls-main .ls-h { margin-left: 6px; color: #8FA3C4; font-size: 10.5px; }
+.ls-sub {
+  font-size: 10px; color: #7B8FB0; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.ls-btn {
+  flex-shrink: 0; height: 24px; padding: 0 8px; border-radius: 6px;
+  background: transparent; cursor: pointer; font-size: 10.5px; white-space: nowrap;
+}
+.ls-btn.stop { border: 1px solid rgba(34, 197, 94, 0.5); color: #86EFAC; }
+.ls-btn.stop:hover { background: rgba(34, 197, 94, 0.15); }
+.ls-btn.abort { border: 1px solid rgba(248, 113, 113, 0.45); color: #FCA5A5; }
+.ls-btn.abort:hover { background: rgba(248, 113, 113, 0.15); }
+.ls-btn.off { opacity: 0.4; cursor: not-allowed; }
+.ls-btn.off:hover { background: transparent; }
+
+/* 橡皮范围圈层：叠在标注画布之上，只显示一个跟随鼠标的圆。
+   pointer-events: none 是关键 —— 它盖在画布上，吃了事件橡皮就没法用了。
+   z-index 取 34：高于标注画布、低于文字输入框（35），
+   否则文字输入框会被这一层压住（虽然两者不会同时出现，但别留这种隐患）。 */
+.eraser-cursor {
+  position: absolute; left: 0; top: 0;
+  pointer-events: none; z-index: 34;
 }

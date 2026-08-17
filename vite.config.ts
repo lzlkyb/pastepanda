@@ -44,6 +44,7 @@ export default defineConfig(async () => ({
         editor: resolve(projectRoot, "editor.html"),
         quickpaste: resolve(projectRoot, "quickpaste.html"),
         screenshot: resolve(projectRoot, "screenshot.html"),
+        longshot: resolve(projectRoot, "longshot.html"),
       },
     },
   },

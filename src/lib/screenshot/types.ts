@@ -59,4 +59,16 @@ export interface Annotation {
   arrowStyle?: "single" | "double";
   /** 马赛克色块 / 模糊半径（滚轮调节强度） */
   strength?: number;
+  /**
+   * 遮罩类工具（马赛克 / 模糊 / 高亮）的形状。
+   *
+   * - `"rect"`：拖矩形（旧行为）
+   * - `"brush"`：涂抹，路径存在 `points` 里。
+   *   ❗ 笔宽**不是** `width` —— 要过 `maskBrushWidth(a)`（= width × 8）。
+   *   `width` 那个 2/3/5 的档位是给描边定的，当涂抹笔刷细到没法用。
+   *
+   * ❗ **缺省必须当成 `"rect"`**：旧的标注没有这个字段，当成 brush 会因为
+   * 没有 points 而什么都不画——已存的标注会默默消失。
+   */
+  shape?: "rect" | "brush";
 }
