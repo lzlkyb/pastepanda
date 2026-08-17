@@ -169,10 +169,20 @@ pub fn get_image_thumbnail(app_handle: tauri::AppHandle, path: String) -> Result
     };
 
     // 写入 JPEG 格式（比 PNG 小 3-5 倍，适合照片类图片）
+    //
+    // 显式 to_rgb8：JPEG 没有 alpha 通道。
+    //
+    // ⚠️ 这里**不是**必需的修复，只是把隐式行为写明。实测过（见 thumb_diag 测试）：
+    // `DynamicImage::write_to(.., Jpeg)` 对 RGBA 输入会自己降到 RGB，不报错。
+    // 那个 "does not support the color type 'Rgba8'" 只发生在直接用
+    // `JpegEncoder` + `write_with_encoder` 时（screenshot.rs 的捕获路径是那种写法）。
+    //
+    // 保留它的理由：读代码的人不必去查 write_to 内部做了什么，
+    // 且以后若改成显式 encoder 也不会突然坏掉。
     let file =
         std::fs::File::create(&thumb_path).map_err(|e| format!("无法创建缩略图文件: {}", e))?;
     let mut writer = BufWriter::new(file);
-    output_img
+    image::DynamicImage::ImageRgb8(output_img.to_rgb8())
         .write_to(&mut writer, image::ImageFormat::Jpeg)
         .map_err(|e| format!("无法写入缩略图: {}", e))?;
     writer.flush().map_err(|e| e.to_string())?;
@@ -581,3 +591,62 @@ mod ocr_smoke_tests {
 }
 
 
+
+/// 诊断用：拿真实截图文件跑一遍缩略图生成的核心步骤，打印每一步的结果。
+///
+/// 为什么需要它：卡片显示“图片加载失败”时，前端只把错误吞进 logger.error，
+/// 而 dev 控制台不好取；直接在这里复现同一条链路能拿到确切的错误串。
+///
+/// 跑法：cargo test --lib thumb_diag -- --nocapture --ignored
+#[cfg(test)]
+mod thumb_diag {
+    #[test]
+    #[ignore]
+    fn thumb_diag() {
+        let dir = std::path::PathBuf::from(
+            std::env::var("APPDATA").unwrap_or_default(),
+        )
+        .join("com.pastepanda.app")
+        .join("screenshots");
+        println!("目录: {}", dir.display());
+
+        let mut files: Vec<_> = std::fs::read_dir(&dir)
+            .expect("读目录失败")
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_file())
+            .collect();
+        files.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
+
+        for e in files.iter().rev().take(3) {
+            let p = e.path();
+            println!("\n=== {} ({} bytes) ===", p.display(), e.metadata().map(|m| m.len()).unwrap_or(0));
+
+            match super::validate_image_file_path(&p.to_string_lossy()) {
+                Ok(c) => println!("  validate_image_file_path: OK -> {}", c.display()),
+                Err(err) => { println!("  validate_image_file_path: ERR {err}"); continue; }
+            }
+            match crate::commands::check_image_decode_limits(&p) {
+                Ok((w, h)) => println!("  check_image_decode_limits: OK {w}x{h}"),
+                Err(err) => { println!("  check_image_decode_limits: ERR {err}"); continue; }
+            }
+            let img = match image::open(&p) {
+                Ok(i) => { println!("  image::open: OK color={:?}", i.color()); i }
+                Err(err) => { println!("  image::open: ERR {err}"); continue; }
+            };
+            // 这一步就是修复点：不先 to_rgb8 的话 RGBA 输入会报
+            // "does not support the color type 'Rgba8'"
+            let mut buf: Vec<u8> = Vec::new();
+            let rgb = image::DynamicImage::ImageRgb8(img.to_rgb8());
+            match rgb.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Jpeg) {
+                Ok(()) => println!("  写 JPEG（先 to_rgb8）: OK {} bytes", buf.len()),
+                Err(err) => println!("  写 JPEG（先 to_rgb8）: ERR {err}"),
+            }
+            // 对照：不转 RGB 直接写，验证旧实现的失败
+            let mut buf2: Vec<u8> = Vec::new();
+            match img.write_to(&mut std::io::Cursor::new(&mut buf2), image::ImageFormat::Jpeg) {
+                Ok(()) => println!("  写 JPEG（旧实现，不转）: OK {} bytes", buf2.len()),
+                Err(err) => println!("  写 JPEG（旧实现，不转）: ERR {err}"),
+            }
+        }
+    }
+}

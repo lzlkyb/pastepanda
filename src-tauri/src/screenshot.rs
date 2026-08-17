@@ -16,8 +16,22 @@ use tauri::{AppHandle, Emitter, Manager};
 
 const WINDOW_LABEL: &str = "screenshot";
 
-/// 截图结果：PNG data URL + 虚拟屏幕物理坐标与尺寸
+/// 截图结果：data URL + 虚拟屏幕物理坐标与尺寸。
+///
+/// ⚠️ `rename_all = "camelCase"` 不能删：前端 `ScreenInfo` 读的是 `dataUrl` /
+/// `originX` / `originY`。之前漏了这行，serde 序列化出的是 snake_case，
+/// 前端取到的全是 `undefined` —— 而 JS 读不存在的属性不报错，于是一路静默降级：
+///   ① `img.src = undefined` → 底图永远加载失败 → 马赛克/模糊退化成色块、吸管取不到色；
+///   ② `ensureResultPath` 里同一句 loadImage 失败 → "完成"/"更多"点了没反应；
+///   ③ `toScreenPt` 拿 `originX` 算出 NaN → 长截图截区域坐标全错。
+/// 截图窗是全屏透明的，底图没加载时看到的是真实屏幕，肉眼完全看不出来。
+///
+/// 同形态的 bug 本项目已经出过一次：OcrResult 的 `full_text` vs `fullText`（见
+/// `src/lib/api/images.ts` 里的注释），当时的解法是"在 api 包装层归一化"。
+/// 截图这块没有包装层（直接 invoke<ScreenInfo>），于是同一个坑又踩了一遍。
+/// 靠"记得在包装层归一化"不可靠 —— 直接让后端输出 camelCase 才是治本。
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ScreenCapture {
     pub data_url: String,
     pub origin_x: i32,
@@ -75,16 +89,20 @@ fn capture_virtual_screen() -> Result<ScreenCapture, String> {
     capture_rect(origin_x, origin_y, width, height)
 }
 
-/// GDI 截屏实现：按屏幕坐标矩形取像素 → JPEG data URL。
+/// GDI 抓像素：按屏幕坐标矩形取 RGBA，**不做任何编码**。
+///
+/// 从 capture_rect 里拆出来的原因有两个：
+/// ① 编码格式选型（JPEG / PNG / 压缩等级）的基准必须拿**未经压缩的真实像素**去测——
+///    拿已经 JPEG 过一遍的图测 PNG，体积会因为 JPEG 振铃引入的高频噪声而明显偏大，
+///    结论会偏保守；
+/// ② 后续若把底图改成无损或改走 asset protocol，都只需要换编码那一段。
 #[cfg(target_os = "windows")]
-fn capture_rect(
+fn grab_rect_rgba(
     origin_x: i32,
     origin_y: i32,
     width: i32,
     height: i32,
-) -> Result<ScreenCapture, String> {
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
-    use std::io::Cursor;
+) -> Result<Vec<u8>, String> {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Gdi::{
         BitBlt, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, ReleaseDC,
@@ -124,7 +142,7 @@ fn capture_rect(
         // 故把可失败部分收进闭包，出来后无论成败都走同一段清理。
         let mut hbmp = HBITMAP::default();
         let mut old = HGDIOBJ::default();
-        let result = (|| -> Result<ScreenCapture, String> {
+        let result = (|| -> Result<Vec<u8>, String> {
         let mut bits: *mut core::ffi::c_void = std::ptr::null_mut();
         hbmp = CreateDIBSection(mem_dc, &bmi, DIB_RGB_COLORS, &mut bits, None, 0)
             .map_err(|e| format!("创建 DIB 位图失败: {e}"))?;
@@ -139,37 +157,7 @@ fn capture_rect(
             rgba.extend_from_slice(&[px[2], px[1], px[0], px[3]]);
         }
 
-        let img = image::RgbaImage::from_raw(width as u32, height as u32, rgba)
-            .ok_or_else(|| "像素数据构造失败".to_string())?;
-        // JPEG 0.9：4K 全屏 PNG（~20MB）编码/传输/解码比 JPEG（~4MB）慢约 5 倍，
-        // 截图打开与长截图每帧都受益；屏幕截图在 0.9 质量下几乎无可见损失
-        // （合成输出本来就是 JPEG 0.92，取色/马赛克采样在无损语义下人眼无感）。
-        // ⚠️ JPEG 无 alpha：编码前必须 Rgba8 → Rgb8，否则报
-        // "encoder or decoder for Jpeg does not support the color type 'Rgba8'"（实测坑）。
-        let rgb = image::DynamicImage::ImageRgba8(img).to_rgb8();
-        let mut jpg_buf = Cursor::new(Vec::new());
-        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpg_buf, 90);
-        rgb.write_with_encoder(encoder)
-            .map_err(|e| format!("JPEG 编码失败: {e}"))?;
-        log::info!(
-            "[Screenshot] 截屏成功 {}x{} @({},{}), jpeg {} bytes",
-            width,
-            height,
-            origin_x,
-            origin_y,
-            jpg_buf.get_ref().len()
-        );
-
-        Ok(ScreenCapture {
-            data_url: format!(
-                "data:image/jpeg;base64,{}",
-                STANDARD.encode(jpg_buf.into_inner())
-            ),
-            origin_x,
-            origin_y,
-            width,
-            height,
-        })
+        Ok(rgba)
         })();
 
         // 清理 GDI 资源（先还原对象再删位图，避免悬挂）——成功与失败路径共用
@@ -183,6 +171,67 @@ fn capture_rect(
     }
 }
 
+/// 抓像素 + 编码成 data URL。
+#[cfg(target_os = "windows")]
+fn capture_rect(
+    origin_x: i32,
+    origin_y: i32,
+    width: i32,
+    height: i32,
+) -> Result<ScreenCapture, String> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use image::codecs::png::{CompressionType, FilterType, PngEncoder};
+    use image::{ExtendedColorType, ImageEncoder};
+
+    let rgba = grab_rect_rgba(origin_x, origin_y, width, height)?;
+    let img = image::RgbaImage::from_raw(width as u32, height as u32, rgba)
+        .ok_or_else(|| "像素数据构造失败".to_string())?;
+
+    // 无损 PNG（Fast 压缩 + Up 滤波器）。
+    //
+    // 这里原本是 JPEG q90，注释写着“4K 全屏 PNG 编码/传输/解码比 JPEG 慢约 5 倍”。
+    // 那句话是错的 —— encode_bench 在 2560x1440（368 万像素）上的实测：
+    //
+    //   JPEG q90 (4:2:2)   150.3ms   0.70MB   base64 0.93MB   ← 旧实现
+    //   PNG Fast/Up         25.0ms   2.50MB   base64 3.34MB   ← 现在
+    //   PNG Fast/NoFilter   39.3ms  11.06MB
+    //   PNG Fast/Adaptive  154.9ms   1.88MB
+    //   PNG Default/Up     220.5ms   1.54MB
+    //   PNG Default/Adapt  384.1ms   1.48MB
+    //
+    // 旧结论大概是用 PNG **默认参数**（Default/Adaptive = 384ms）得出的。
+    // 换成 Fast/Up 后比 JPEG **快 6 倍**：`Up` 是逐行差分，而屏幕内容有大量
+    // 水平重复的纯色行，差分后几乎全零，既快又小。
+    //
+    // 为什么要无损：user 反馈“截图没有实际图片清晰”。image 0.25 的 JpegEncoder
+    // 写死 4:2:2 色度抽样（与 quality 无关，见 codecs/jpeg/encoder.rs），
+    // 叠上前端合成时的第二代 JPEG，屏幕文字边缘发虚并带彩色镶边。
+    // 现在两代都是无损了（前端那一代见 canvasToDataUrl）。
+    //
+    // 仍然转 RGB8：alpha 恒为 255，带上它白白多 25% 数据；且基准测的就是 RGB8。
+    let rgb = image::DynamicImage::ImageRgba8(img).to_rgb8();
+    let mut png_buf: Vec<u8> = Vec::new();
+    PngEncoder::new_with_quality(&mut png_buf, CompressionType::Fast, FilterType::Up)
+        .write_image(&rgb, width as u32, height as u32, ExtendedColorType::Rgb8)
+        .map_err(|e| format!("PNG 编码失败: {e}"))?;
+    log::info!(
+        "[Screenshot] 截屏成功 {}x{} @({},{}), png {} bytes",
+        width,
+        height,
+        origin_x,
+        origin_y,
+        png_buf.len()
+    );
+
+    Ok(ScreenCapture {
+        data_url: format!("data:image/png;base64,{}", STANDARD.encode(png_buf)),
+        origin_x,
+        origin_y,
+        width,
+        height,
+    })
+}
+
 /// 保存截图结果（PNG data URL → 应用数据目录 screenshots/，md5 去重），返回文件路径。
 /// 供 OCR / 复制图片 / 保存图库复用同一文件。
 #[tauri::command]
@@ -193,8 +242,15 @@ pub fn save_screenshot_image(
     use base64::{engine::general_purpose::STANDARD, Engine as _};
     use md5::{Digest, Md5};
 
-    // 截图合成图放宽到 50MB（4K 全屏 PNG 可能十几 MB），但仍设上限防 OOM
-    const MAX_IMAGE_BYTES: usize = 50 * 1024 * 1024;
+    // 上限从 50MB 抬到 120MB。
+    //
+    // 原因：合成输出从 JPEG 0.92 改回了无损 PNG（修“截图不如实际清晰”），
+    // 而 PNG 在屏幕内容上比 JPEG 大 4~6 倍。长截图的高度上限是 12000px
+    // （见前端 MAX_H），配 4K 宽选区就是 3000 万像素，文字密集的 PNG 能到 20～30MB。
+    //
+    // 为什么不能“到了上限再说”：这个报错发生在长截图的**最后一步**，
+    // 用户已经滴了半分钟滚轮，报一句“图片过大”就把成果全丢了。
+    const MAX_IMAGE_BYTES: usize = 120 * 1024 * 1024;
 
     let payload = match data_base64.find(',') {
         Some(idx) if data_base64.starts_with("data:") => &data_base64[idx + 1..],
@@ -250,6 +306,16 @@ pub fn open_screenshot_window(app: &AppHandle) {
     if let Some(engine) = app.try_state::<crate::paste_engine::PasteEngine>() {
         engine.save_foreground_hwnd();
     }
+    // ⚠️ 必须先清掉上一轮残留的预截屏，再启动新的。
+    //
+    // 竞态：预截屏是异步写入的（BitBlt + JPEG 编码几百毫秒），而 emit refresh 是立刻的。
+    // 若本轮"前端 take 早于后台线程写入"，前端会回退自截（拿到的图是对的），
+    // 但那个线程随后仍会把这一轮的图写进缓存且无人取走 —— 下次按热键，
+    // 前端一 take 就拿到上一次的画面，表现为"同一窗口第二次截图还是旧内容"，
+    // 而且一旦发生就永远慢一拍（每次都把本轮的图留给下一次）。
+    if let Some(p) = app.try_state::<PendingShotCapture>() {
+        *p.0.lock().unwrap_or_else(|x| x.into_inner()) = None;
+    }
     // 并行截屏（不阻塞热键回调；窗口创建期间编码完成）
     #[cfg(target_os = "windows")]
     {
@@ -257,7 +323,8 @@ pub fn open_screenshot_window(app: &AppHandle) {
         std::thread::spawn(move || {
             if let Ok(shot) = capture_virtual_screen() {
                 if let Some(p) = app2.try_state::<PendingShotCapture>() {
-                    *p.0.lock().unwrap_or_else(|x| x.into_inner()) = Some(shot);
+                    *p.0.lock().unwrap_or_else(|x| x.into_inner()) =
+                        Some((shot, std::time::Instant::now()));
                 }
             }
         });
@@ -272,12 +339,33 @@ pub fn open_screenshot_window(app: &AppHandle) {
 }
 
 /// 待取截屏缓存（open_screenshot_window 并行截屏后存入，前端挂载/刷新时 take 走）。
-pub struct PendingShotCapture(pub std::sync::Mutex<Option<ScreenCapture>>);
+/// 带写入时间：预截屏只在“刚按下热键”那一瞬有意义，隔了一段时间的一定是残留。
+pub struct PendingShotCapture(
+    pub std::sync::Mutex<Option<(ScreenCapture, std::time::Instant)>>,
+);
 
-/// 取走预截屏结果（一次性；None 表示窗口创建前截屏未完成，前端回退自行截屏）
+/// 预截屏的有效期。超过这个时长就不可能是本轮的结果，
+/// 宁可让前端自己重截（多几百毫秒），也不能给一张旧图。
+const PENDING_SHOT_TTL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// 取走预截屏结果（一次性；None 表示窗口创建前截屏未完成，前端回退自行截屏）。
+/// 除了 open 时会主动清空，这里再加一道 TTL —— 双保险，因为“发出旧图”是静默且难发现的错误。
 #[tauri::command]
-pub fn take_pending_shot_capture(state: tauri::State<'_, PendingShotCapture>) -> Option<ScreenCapture> {
-    state.0.lock().unwrap_or_else(|p| p.into_inner()).take()
+pub fn take_pending_shot_capture(
+    state: tauri::State<'_, PendingShotCapture>,
+) -> Option<ScreenCapture> {
+    let taken = state.0.lock().unwrap_or_else(|p| p.into_inner()).take();
+    match taken {
+        Some((shot, at)) if at.elapsed() < PENDING_SHOT_TTL => Some(shot),
+        Some((_, at)) => {
+            log::warn!(
+                "[Screenshot] 丢弃过期预截屏（{}ms 前写入），前端将自行重截",
+                at.elapsed().as_millis()
+            );
+            None
+        }
+        None => None,
+    }
 }
 
 /// 防止并发创建同名窗口（快速连按热键）
@@ -317,14 +405,37 @@ fn create_window(app: &AppHandle) {
         .build()
         {
             Ok(window) => {
+                // ⚠️ builder 的 inner_size / position 收的是**逻辑像素**
+                //（tauri 2.11 webview_window.rs 的 doc 原话："Window size in logical pixels"、
+                // "The initial position of the window in logical pixels"），
+                // 而 virtual_screen_metrics() 给的是**物理像素**——进程被 tao 设成了
+                // PER_MONITOR_AWARE_V2，GetSystemMetrics(SM_CXVIRTUALSCREEN) 不再虚拟化。
+                //
+                // 单位穿错的后果不是"窗口大一点"，而是三个看起来毫不相干的 bug
+                //（125% 缩放实测：2560x1440 被当逻辑值 → 实际窗口 3200x1800）：
+                //   ① .shot-bg 是 background-size:100% 100%，把底图铺满这个大出 25% 的
+                //      窗口 → **整个画面被放大 scale 倍**，跟微信截图的 1:1 一比就看出来；
+                //   ② 前端 clientX × dpr 算出的"物理坐标"整体被拉伸，左上角不偏、
+                //      越往右下偏得越多 → **吸附框右侧/下侧有偏差**（比例误差的指纹，
+                //      原点错才是整体平移）；
+                //   ③ 屏幕右下 (scale-1) 那一圈换算出的坐标超出真实屏幕范围，
+                //      snap_window_at 在屏幕外找不到任何窗口 → **那片区域吸附直接失效**。
+                //
+                // 所以这里必须用物理量再覆盖一次。build 时是 visible(false)，
+                // 在 show() 之前改完，用户看不到中间那一帧。
+                // 用物理坐标而不是在 builder 里除以 scale_factor：build 前拿不到目标
+                // 显示器的 scale，且多屏混合 DPI 时没有单一 scale 可用，物理坐标唯一。
+                let _ = window.set_size(tauri::PhysicalSize::new(w.max(1) as u32, h.max(1) as u32));
+                let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
                 let _ = window.show();
                 let _ = window.set_focus();
                 log::info!(
-                    "[Screenshot] 截图窗口已创建并显示 {}x{} @({},{})",
+                    "[Screenshot] 截图窗口已创建并显示 {}x{} @({},{}) 物理像素，scale={}",
                     w,
                     h,
                     x,
-                    y
+                    y,
+                    window.scale_factor().unwrap_or(1.0)
                 );
             }
             Err(e) => log::warn!("[Screenshot] 创建截图窗口失败: {}", e),
@@ -499,6 +610,39 @@ pub fn mark_ocr_temp(app: tauri::AppHandle, path: String) {
         Some(std::path::PathBuf::from(path));
 }
 
+/// 撤销临时登记：该文件已经“晋升”为正式结果图，不能再当临时文件删。
+///
+/// 为什么会发生“同一个文件既是临时图又是结果图”：
+/// `save_screenshot_image` 是 **md5 去重**的（`if !file_path.exists()` 不重写）。
+/// 提前 OCR 存的是选区原图；若用户**没画任何标注**，合成出的结果图像素
+/// 与选区原图完全一致 → md5 相同 → 拿到的是同一个路径。
+/// 于是卡片存了这个路径，而关窗时 `purge_ocr_temp` 把它删了——
+/// 卡片指向一个不存在的文件，缩略图生成失败，界面上就是“图片加载失败”。
+///
+/// 旧版没暴露是因为结果图当时是 JPEG、OCR 临时图是 PNG，字节不同所以 md5 不同；
+/// 把结果图改成无损 PNG 后两边就撞上了。
+///
+/// 顺带修掉一个对称的隐患：`mark_ocr_temp` 会先 `purge_ocr_temp()` 删上一张。
+/// 连续截两次相同内容时，第二次会把第一张已入库卡片的图删掉。
+#[tauri::command]
+pub fn unmark_ocr_temp(path: String) {
+    let mut slot = ocr_temp_slot().lock().unwrap_or_else(|p| p.into_inner());
+    // 只比较归一化后的路径：两边都来自 `save_screenshot_image` 的返回值，
+    // 字面上应该相等；但前端绕一圈传回来时不保证，所以用 canonicalize 兼底。
+    let same = match (slot.as_deref(), std::path::Path::new(&path).canonicalize()) {
+        (Some(cur), Ok(incoming)) => cur
+            .canonicalize()
+            .map(|c| c == incoming)
+            .unwrap_or_else(|_| cur == std::path::Path::new(&path)),
+        (Some(cur), Err(_)) => cur == std::path::Path::new(&path),
+        (None, _) => false,
+    };
+    if same {
+        log::info!("[Screenshot] 结果图与临时 OCR 图同一个文件，取消临时登记: {path}");
+        slot.take();
+    }
+}
+
 /// 关闭截图窗口（前端 Esc 取消 / 完成出口后调用；close 销毁窗口，资源干净释放）
 #[tauri::command]
 pub fn close_screenshot_window(app: tauri::AppHandle) {
@@ -506,6 +650,7 @@ pub fn close_screenshot_window(app: tauri::AppHandle) {
     // （Esc / 失焦自动取消 / 各个完成出口 / 截屏失败页的关闭按钮），
     // 它们最终都汇到这个命令，在这里收口才不会漏（规则 11.1）。
     purge_ocr_temp(&app);
+    unregister_longshot_escape(&app); // 兜底：长截图中强关窗也要释放全局 Esc
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
         let _ = window.close();
     }
@@ -519,12 +664,201 @@ pub fn hide_screenshot_window(app: tauri::AppHandle) {
     }
 }
 
+// ===== 长截图状态小窗口 =====
+//
+// 为什么需要一个独立窗口：长截图期间截图窗口被 hide()，而隐藏的 WebView
+// **收不到任何输入事件**（键盘/鼠标/右键全无效）。因此：
+// ① 进度无处显示；② 旧代码里的"长截图中 Esc 中止"是个死功能 —— 它要求用户在
+// 窗口隐藏期间按键，而那时候根本没人接收。
+//
+// 这个小窗口只依赖一件已被现有代码证明的事：隐藏的 WebView 仍能执行 JS 与收发 IPC
+// （长截图循环本身就在隐藏期间跑并持续 invoke 后端）。不依赖任何渲染/合成假设。
+
+const LONGSHOT_LABEL: &str = "longshot-status";
+
+/// 给状态窗选一个**不与选区相交**的位置。
+///
+/// 必须不相交：长截图每帧都对选区矩形做 BitBlt，状态窗一旦压在选区上就会被
+/// 拼进长图里。只要它完全在选区外，截图就是干净的 —— 这是确定的，不靠透明度赌。
+///
+/// 坐标全部是**虚拟屏幕物理像素**。候选位置按优先级试，都不行（选区几乎占满屏幕）
+/// 返回 None，调用方退回"不开状态窗，结束后用 toast 报告结果"。
+fn pick_status_pos(
+    sel: (i32, i32, i32, i32),
+    screen: (i32, i32, i32, i32),
+    win_w: i32,
+    win_h: i32,
+    gap: i32,
+) -> Option<(i32, i32)> {
+    let (sx, sy, sw, sh) = sel;
+    let (scx, scy, scw, sch) = screen;
+    let right = scx + scw - gap - win_w;
+    let bottom = scy + sch - gap - win_h;
+    let left = scx + gap;
+    let top = scy + gap;
+    let mid_x = scx + (scw - win_w) / 2;
+
+    // 优先右下（系统通知区，用户天然会往那看），然后其余三个角，
+    // 最后试选区正下方/正上方居中（选区靠一侧时这两个位置比角落更靠近视线）。
+    let candidates = [
+        (right, bottom),
+        (left, bottom),
+        (right, top),
+        (left, top),
+        (mid_x, bottom),
+        (mid_x, top),
+    ];
+    candidates
+        .into_iter()
+        .find(|&(x, y)| {
+            // 完全在屏幕内
+            x >= scx && y >= scy && x + win_w <= scx + scw && y + win_h <= scy + sch
+                // 与选区不相交
+                && (x + win_w <= sx || x >= sx + sw || y + win_h <= sy || y >= sy + sh)
+        })
+}
+
+/// 打开长截图状态小窗。参数是选区的虚拟屏幕物理矩形。
+///
+/// 返回是否真的开了窗：选区占满屏幕时找不到不相交的位置，此时宁可不开，
+/// 也不能把状态窗拼进用户的长图里。前端据此决定要不要提示"本次无法中途停止"。
+#[tauri::command]
+pub fn open_longshot_status(
+    app: tauri::AppHandle,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+) -> Result<bool, String> {
+    // 已存在就先关（上一轮异常退出残留）
+    if let Some(win) = app.get_webview_window(LONGSHOT_LABEL) {
+        let _ = win.close();
+    }
+    let (scw, sch, scx, scy) = virtual_screen_metrics();
+
+    let window = tauri::WebviewWindowBuilder::new(
+        &app,
+        LONGSHOT_LABEL,
+        tauri::WebviewUrl::App("longshot.html".into()),
+    )
+    .title("")
+    .inner_size(LONGSHOT_W, LONGSHOT_H)
+    .resizable(false)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .shadow(false)
+    .transparent(true)
+    .focused(false) // 不抢焦点：抢了会把滚轮目标窗口激活态打乱
+    .visible(false)
+    .build()
+    .map_err(|e| format!("创建长截图状态窗失败: {e}"))?;
+
+    // 窗口建好后才能读 scale_factor，拿它把逻辑尺寸换算成物理尺寸，
+    // 才能与选区（物理像素）做相交判断。
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let pw = (LONGSHOT_W * scale).round() as i32;
+    let ph = (LONGSHOT_H * scale).round() as i32;
+
+    match pick_status_pos((x, y, w, h), (scx, scy, scw, sch), pw, ph, 16) {
+        Some((px, py)) => {
+            let _ = window.set_position(tauri::PhysicalPosition::new(px, py));
+            let _ = window.show();
+            log::info!("[Screenshot] 长截图状态窗 @({},{}) {}x{}", px, py, pw, ph);
+            Ok(true)
+        }
+        None => {
+            // 选区占满屏幕：无处可放且不能遮挡，直接不开
+            let _ = window.close();
+            log::info!("[Screenshot] 选区占满屏幕，不开长截图状态窗（仍可按 Esc 退出）");
+            Ok(false)
+        }
+    }
+}
+
+/// 关闭长截图状态小窗（长截图结束/失败/放弃都走这里，在 finally 里调用）
+#[tauri::command]
+pub fn close_longshot_status(app: tauri::AppHandle) {
+    unregister_longshot_escape(&app);
+    if let Some(win) = app.get_webview_window(LONGSHOT_LABEL) {
+        let _ = win.close();
+    }
+}
+
+// ===== 长截图期间的全局 Esc（逃生舱） =====
+//
+// 状态小窗的"放弃"按钮需要用户用鼠标去点；这条全局 Esc 是第二道保险，
+// 它不依赖任何窗口可见性与焦点 —— 哪怕状态窗根本没开成，按 Esc 也能退出。
+//
+// 代价是长截图期间全局独占 Esc（几秒到几十秒）。因此注销放在四处：
+// close_longshot_status / show_screenshot_window / close_screenshot_window，
+// 任一路径都会释放，避免异常退出后 Esc 被永久占着。
+
+fn longshot_esc_shortcut() -> Option<tauri_plugin_global_shortcut::Shortcut> {
+    use std::str::FromStr;
+    tauri_plugin_global_shortcut::Shortcut::from_str("Escape").ok()
+}
+
+/// 武装长截图逃生舱（全局 Esc）。
+///
+/// 必须是**独立命令**、在一切之前调用：之前把注册写在 open_longshot_status 里、
+/// 而且在 WebviewWindowBuilder::build() 之后 —— 状态窗一旦创建失败就直接 return Err，
+/// 全局 Esc 根本没注册上。逃生舱不能依赖它要保护的东西。
+#[tauri::command]
+pub fn arm_longshot_escape(app: tauri::AppHandle) {
+    register_longshot_escape(&app);
+}
+
+fn register_longshot_escape(app: &AppHandle) {
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+    let Some(sc) = longshot_esc_shortcut() else {
+        return;
+    };
+    let res = app.global_shortcut().on_shortcut(sc, move |app, _sc, event| {
+        if event.state == ShortcutState::Pressed {
+            // 走与状态窗"放弃"按钮完全相同的链路，不另开一条分支（规则 11.1）
+            let _ = app.emit("longshot-control", "abort");
+        }
+    });
+    match res {
+        Ok(()) => log::info!("[Screenshot] 长截图全局 Esc 已注册"),
+        // 注册失败不能阻断长截图（比如 Esc 被别的程序占了），还有状态窗兜底
+        Err(e) => log::warn!("[Screenshot] 长截图全局 Esc 注册失败（不阻断）: {}", e),
+    }
+}
+
+fn unregister_longshot_escape(app: &AppHandle) {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    let Some(sc) = longshot_esc_shortcut() else {
+        return;
+    };
+    // 未注册时 unregister 会报错，这是正常情况（四处都调、幂等），走 debug 不刷 warn
+    if let Err(e) = app.global_shortcut().unregister(sc) {
+        log::debug!("[Screenshot] 长截图全局 Esc 注销（可能本就未注册）: {}", e);
+    }
+}
+
+/// 状态窗逻辑尺寸。写成常量是因为几何判断与建窗必须用同一份值。
+const LONGSHOT_W: f64 = 300.0;
+const LONGSHOT_H: f64 = 48.0;
+
 /// 重新显示截图窗口（长截图完成后恢复，状态保留）
 #[tauri::command]
 pub fn show_screenshot_window(app: tauri::AppHandle) {
+    unregister_longshot_escape(&app); // 长截图已结束，释放全局 Esc
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
         let _ = window.show();
         let _ = window.set_focus();
+        // ⚠️ set_focus() 在这里会静默失败：长截图期间往目标窗口注入滚轮把它激活了，
+        // 而 Windows 的"前台锁定超时"会拒绝非前台进程的 SetForegroundWindow（不报错）。
+        // 后果就是"窗口回来了但 Esc/右键失灵" —— 按键全发给了之前的前台窗口，
+        // 用户退不出截图。这里用 Ditto 配方硬抢回来。
+        #[cfg(target_os = "windows")]
+        if let Ok(h) = window.hwnd() {
+            if !crate::win_foreground::force_foreground(h.0 as isize) {
+                log::warn!("[Screenshot] 截图窗未能抢回前台，键盘快捷键可能失效");
+            }
+        }
     }
 }
 
@@ -717,13 +1051,82 @@ pub fn open_pinned_edit(app: tauri::AppHandle, path: String) {
 
 // ===== 吸附窗口（点击自动框选目标窗口） =====
 
-/// 吸附矩形（物理像素，虚拟屏幕坐标）
+/// 吸附矩形（物理像素，虚拟屏幕坐标）。
+/// 字段都是单词，目前不受命名影响；加上 rename_all 是为了以后添多词字段时不再踩同一个坑。
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SnapRect {
     pub x: i32,
     pub y: i32,
     pub w: i32,
     pub h: i32,
+}
+
+/// 从 DWM 视觉边界与 GetWindowRect 两个候选里挑一个可用的（纯逻辑，带单测）。
+///
+/// 矩形用 `(left, top, right, bottom)`，`None` = 该来源取值失败。
+/// 规则：DWM 成功且矩形有效就用 DWM；否则回退 GetWindowRect。
+///
+/// ⚠️ 抽成函数是为了让**命中测试与返回值走同一套边界**。旧实现里两者分开写：
+/// 命中测试用 GetWindowRect（含 DWM 投影阴影，Win10/11 上左/右/下各大 7~8px），
+/// 返回值用 DWMWA_EXTENDED_FRAME_BOUNDS（视觉边界）。差这 7~8px 的后果是
+///   ① 鼠标停在窗口外那圈阴影里时判定为命中，但框出来是视觉边界 → 鼠标在框外；
+///   ② 两窗口并排时阴影区重叠 → 命中 Z 序更上层那个，可视觉上鼠标在另一个窗口上
+///      → 框莫名跳到隔壁窗口。这就是“自动检测窗口不准确”的主因。
+fn pick_bounds(
+    dwm: Option<(i32, i32, i32, i32)>,
+    fallback: Option<(i32, i32, i32, i32)>,
+) -> Option<(i32, i32, i32, i32)> {
+    let valid = |r: &(i32, i32, i32, i32)| r.2 > r.0 && r.3 > r.1;
+    match dwm {
+        Some(r) if valid(&r) => Some(r),
+        _ => fallback.filter(valid),
+    }
+}
+
+/// 永远不该被吸附的系统外壳窗口类名。
+///
+/// 注意故意**没有**收 `Windows.UI.Core.CoreWindow`：开始菜单 / 搜索用它，
+/// 而它们没显示时本来就是 cloaked（已被 is_cloaked 拦掉）；真正显示着的时候
+/// 用户是有可能想截它的，黑名单会把这条路堵死。
+const SHELL_CLASSES: &[&str] = &[
+    "Shell_TrayWnd",                // 主任务栏
+    "Shell_SecondaryTrayWnd",       // 副屏任务栏（多显示器必踩，旧实现漏了）
+    "Progman",                      // 桌面
+    "WorkerW",                      // 桌面壁纸层
+    "XamlExplorerHostIslandWindow", // Win11 Alt+Tab / 贴靠布局浮层
+    "ForegroundStaging",            // 窗口切换过渡层
+];
+
+fn is_shell_class(name: &str) -> bool {
+    SHELL_CLASSES.contains(&name)
+}
+
+/// 面积辅助（`(l, t, r, b)` → 宽×高）。
+fn area(r: (i32, i32, i32, i32)) -> i64 {
+    ((r.2 - r.0) as i64).max(0) * ((r.3 - r.1) as i64).max(0)
+}
+
+/// 子窗口的矩形值不值得采用（纯逻辑，带单测）。false = 退回顶层窗口。
+///
+/// 两种情况必须退回：
+///   ① **子窗口几乎和顶层一样大**。Chrome / Electron 这类把整个客户区交给一个
+///      渲染子窗口（`Chrome_RenderWidgetHostHWND`），框它等于框整窗还少了标题栏，
+///      没有任何“更精确”的价值，反而让用户框不到完整窗口。
+///   ② **子窗口太小**。几像素宽的分隔条 / 滚动条箭头，框住没意义。
+///
+/// 阈值 92% 是拍的：标题栏 + 边框大约就占一个普通窗口 5~8% 的面积，
+/// 取 92% 能把“客户区全盘子窗”归到退回一边，而真正的面板 / 列表远小于这个比例。
+fn should_use_child(child: (i32, i32, i32, i32), top: (i32, i32, i32, i32)) -> bool {
+    const MIN_SIDE: i32 = 20;
+    if (child.2 - child.0) < MIN_SIDE || (child.3 - child.1) < MIN_SIDE {
+        return false;
+    }
+    let (ca, ta) = (area(child), area(top));
+    if ta <= 0 {
+        return false;
+    }
+    ca * 100 < ta * 92
 }
 
 /// 命中测试：给定物理坐标，返回光标下方有效窗口的屏幕矩形（排除自身/桌面/任务栏）。
@@ -742,13 +1145,106 @@ pub fn snap_window_at(app: tauri::AppHandle, x: i32, y: i32) -> Result<Option<Sn
     }
 }
 
+/// 取窗口的视觉边界（屏幕物理坐标，`(l, t, r, b)`）。**命中测试与返回值共用它。**
+#[cfg(target_os = "windows")]
+unsafe fn window_visual_rect(
+    hwnd: windows::Win32::Foundation::HWND,
+) -> Option<(i32, i32, i32, i32)> {
+    use windows::Win32::Foundation::RECT;
+    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+
+    let mut b = RECT::default();
+    let dwm = DwmGetWindowAttribute(
+        hwnd,
+        DWMWA_EXTENDED_FRAME_BOUNDS,
+        &mut b as *mut RECT as *mut core::ffi::c_void,
+        std::mem::size_of::<RECT>() as u32,
+    )
+    .is_ok()
+    .then_some((b.left, b.top, b.right, b.bottom));
+
+    let mut r = RECT::default();
+    let fb = GetWindowRect(hwnd, &mut r)
+        .is_ok()
+        .then_some((r.left, r.top, r.right, r.bottom));
+
+    pick_bounds(dwm, fb)
+}
+
+/// 从顶层窗口往下钻，找鼠标下最细的**真实子窗口**（控件级识别，QQ 截图同款）。
+///
+/// 三个必须算对的点：
+///   ① `ChildWindowFromPointEx` **只搜直接子窗口**（MSDN 原话：孙子及更深不搜），
+///      所以必须自己递归；
+///   ② **它要的是父窗口的客户区坐标，不是屏幕坐标**。每下钻一层都得重新
+///      `ScreenToClient` 一次 —— 这是这个 API 最容易错的地方，传屏幕坐标会得到
+///      “有时对有时不对”的结果（窗口在屏幕左上角时恰好能对）；
+///   ③ 终止条件用返回值语义：点在父窗口内但不落在任何合格子窗口内时，
+///      它**返回父窗口句柄**。所以“返回值 == 传入句柄”就是到底了。
+///
+/// `CWP_SKIPINVISIBLE | CWP_SKIPTRANSPARENT`：跳过不可见与透明子窗。
+/// 故意不加 `CWP_SKIPDISABLED` —— 置灰的控件用户照样可能想截。
+///
+/// `MAX_DEPTH` 是硬保险：理论上 ③ 就能终止，但这是跑在它进程外的推断，
+/// 遇到构造得很奇怪的窗口树（或枚举过程中窗口被重建）不能把 hover 路径挂死。
+#[cfg(target_os = "windows")]
+unsafe fn deepest_child_at(
+    top: windows::Win32::Foundation::HWND,
+    screen_pt: windows::Win32::Foundation::POINT,
+) -> windows::Win32::Foundation::HWND {
+    use windows::Win32::Graphics::Gdi::ScreenToClient;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        ChildWindowFromPointEx, CWP_SKIPINVISIBLE, CWP_SKIPTRANSPARENT,
+    };
+
+    const MAX_DEPTH: usize = 16;
+    let mut cur = top;
+    for _ in 0..MAX_DEPTH {
+        // 屏幕坐标 → 当前父窗口的客户区坐标（每层都要重算，见 ②）
+        let mut p = screen_pt;
+        if !ScreenToClient(cur, &mut p).as_bool() {
+            return cur;
+        }
+        let child = ChildWindowFromPointEx(cur, p, CWP_SKIPINVISIBLE | CWP_SKIPTRANSPARENT);
+        // NULL = 点在父窗外（不应该发生，但得防）；== cur = 到底了
+        if child.0.is_null() || child == cur {
+            return cur;
+        }
+        cur = child;
+    }
+    cur
+}
+
+/// 窗口是否被 DWM「隐身」。
+///
+/// 两类窗口 `IsWindowVisible` 返回 true 但实际看不见，旧实现一个都没排：
+///   ① UWP / Store 应用的挂起壳窗口（ApplicationFrameWindow）——应用挂起后仍占着原矩形，
+///      于是鼠标在桌面空白处却吸附到早就关掉的“设置”“日历”；
+///   ② **其他虚拟桌面上的窗口**——切到桌面 2 时桌面 1 的窗口照样 visible。
+/// Windows 自己的 Alt+Tab、任务栏都靠 DWMWA_CLOAKED 过滤这两类。
+///
+/// 取值失败按“没隐身”处理：宁可多枚举一个窗口，也不要因为一次 DWM 调用失败
+/// 就把正常窗口全部排掉（那会让吸附整体失灵）。
+#[cfg(target_os = "windows")]
+unsafe fn is_cloaked(hwnd: windows::Win32::Foundation::HWND) -> bool {
+    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+
+    let mut cloaked: u32 = 0;
+    let ok = DwmGetWindowAttribute(
+        hwnd,
+        DWMWA_CLOAKED,
+        &mut cloaked as *mut u32 as *mut core::ffi::c_void,
+        std::mem::size_of::<u32>() as u32,
+    )
+    .is_ok();
+    ok && cloaked != 0
+}
+
 #[cfg(target_os = "windows")]
 fn snap_window_impl(app: &tauri::AppHandle, x: i32, y: i32) -> Result<Option<SnapRect>, String> {
-    use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
-    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
-    use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetDesktopWindow, GetWindowRect, WNDENUMPROC,
-    };
+    use windows::Win32::Foundation::{HWND, LPARAM, POINT};
+    use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetDesktopWindow, WNDENUMPROC};
 
     unsafe {
         // 排除截图窗口自身（全屏透明覆盖层）
@@ -770,25 +1266,36 @@ fn snap_window_impl(app: &tauri::AppHandle, x: i32, y: i32) -> Result<Option<Sna
             return Ok(None);
         };
 
-        // 视觉边界优先（排除 DWM 阴影），失败回退 GetWindowRect
-        let mut bounds = RECT::default();
-        let hr = DwmGetWindowAttribute(
-            hwnd,
-            DWMWA_EXTENDED_FRAME_BOUNDS,
-            &mut bounds as *mut RECT as *mut core::ffi::c_void,
-            std::mem::size_of::<RECT>() as u32,
-        );
-        if hr.is_err() || bounds.right <= bounds.left || bounds.bottom <= bounds.top {
-            let mut r = RECT::default();
-            let _ = GetWindowRect(hwnd, &mut r);
-            bounds = r;
-        }
+        // 与命中测试同一套边界（见 pick_bounds 的注释）
+        let Some(top_rect) = window_visual_rect(hwnd) else {
+            return Ok(None);
+        };
 
+        // 控件级细化：往下钻到最细的真实子窗口，不值得采用则退回顶层。
+        //
+        // 子窗口用 GetWindowRect 而不是 window_visual_rect：EXTENDED_FRAME_BOUNDS
+        // 是给**顶层窗**算阴影的，子窗口根本没有 DWM 阴影，对它调那个要么失败
+        // 要么拿到奇怪值。
+        let leaf = deepest_child_at(hwnd, pt);
+        let rect = if leaf == hwnd {
+            top_rect
+        } else {
+            let mut cr = windows::Win32::Foundation::RECT::default();
+            let child = windows::Win32::UI::WindowsAndMessaging::GetWindowRect(leaf, &mut cr)
+                .is_ok()
+                .then_some((cr.left, cr.top, cr.right, cr.bottom));
+            match child {
+                Some(c) if should_use_child(c, top_rect) => c,
+                _ => top_rect,
+            }
+        };
+
+        let (l, t, r, b) = rect;
         Ok(Some(SnapRect {
-            x: bounds.left,
-            y: bounds.top,
-            w: bounds.right - bounds.left,
-            h: bounds.bottom - bounds.top,
+            x: l,
+            y: t,
+            w: r - l,
+            h: b - t,
         }))
     }
 }
@@ -798,38 +1305,116 @@ unsafe extern "system" fn enum_snap_proc(
     hwnd: windows::Win32::Foundation::HWND,
     lparam: windows::Win32::Foundation::LPARAM,
 ) -> windows::Win32::Foundation::BOOL {
-    use windows::Win32::Foundation::{HWND, POINT, RECT, TRUE};
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetClassNameW, GetWindowRect, IsIconic, IsWindowVisible,
-    };
+    use windows::Win32::Foundation::{HWND, POINT, TRUE};
+    use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, IsIconic, IsWindowVisible};
 
     let ctx = lparam.0 as *mut (HWND, POINT, HWND, Option<HWND>);
     let (self_hwnd, pt, desktop, found) = &mut *ctx;
+
+    // 检查顺序按开销从低到高排：本回调每次吸附会被调几百次
+    // （前端 90ms 节流），后两项都是 DWM 调用，能先被前面拦下就不要走。
     if hwnd == *self_hwnd || hwnd == *desktop {
         return TRUE;
     }
-    // 排除任务栏 / 桌面图标层
-    let mut cls: [u16; 64] = [0; 64];
-    let n = GetClassNameW(hwnd, &mut cls);
-    if n > 0 {
-        let name = String::from_utf16_lossy(&cls[..n as usize]);
-        if name == "Shell_TrayWnd" || name == "Progman" || name == "WorkerW" {
-            return TRUE;
-        }
+    if !IsWindowVisible(hwnd).as_bool() || IsIconic(hwnd).as_bool() {
+        return TRUE;
     }
-    if IsWindowVisible(hwnd).as_bool() && !IsIconic(hwnd).as_bool() {
-        let mut r = RECT::default();
-        if GetWindowRect(hwnd, &mut r).is_ok()
-            && pt.x >= r.left && pt.x < r.right
-            && pt.y >= r.top && pt.y < r.bottom
-            && (r.right - r.left) >= 20
-            && (r.bottom - r.top) >= 20
-        {
+
+    // 缓冲区 256：类名上限就是 256。旧实现给了 64，更长的类名会被静默截断、
+    // 比较随之失败（黑名单形同不存在）。
+    let mut cls: [u16; 256] = [0; 256];
+    let n = GetClassNameW(hwnd, &mut cls);
+    if n > 0 && is_shell_class(&String::from_utf16_lossy(&cls[..n as usize])) {
+        return TRUE;
+    }
+
+    // 隐身窗口（UWP 挂起壳 / 其它虚拟桌面）：visible 为 true 但看不见，必须排掉
+    if is_cloaked(hwnd) {
+        return TRUE;
+    }
+
+    // ⚠️ 命中测试必须用**视觉边界**，与返回值同源（见 pick_bounds 的注释）
+    if let Some((l, t, r, b)) = window_visual_rect(hwnd) {
+        if pt.x >= l && pt.x < r && pt.y >= t && pt.y < b && (r - l) >= 20 && (b - t) >= 20 {
             *found = Some(hwnd);
             return windows::Win32::Foundation::FALSE; // 停止遍历
         }
     }
     TRUE
+}
+
+#[cfg(test)]
+mod snap_tests {
+    use super::{is_shell_class, pick_bounds, should_use_child};
+
+    #[test]
+    fn test_prefer_dwm_when_valid() {
+        // DWM 给的是视觉边界，GetWindowRect 每边大 8px（阴影）
+        let dwm = Some((108, 100, 908, 700));
+        let fb = Some((100, 100, 916, 708));
+        assert_eq!(pick_bounds(dwm, fb), dwm);
+    }
+
+    #[test]
+    fn test_fallback_when_dwm_fails() {
+        let fb = Some((100, 100, 916, 708));
+        assert_eq!(pick_bounds(None, fb), fb);
+    }
+
+    #[test]
+    fn test_fallback_when_dwm_returns_degenerate_rect() {
+        // 实测过的坑：部分窗口 DWM 调用成功但给回全 0 / 零面积矩形，
+        // 光看 is_ok() 会拿到一个没用的矩形。
+        let fb = Some((100, 100, 916, 708));
+        assert_eq!(pick_bounds(Some((0, 0, 0, 0)), fb), fb);
+        assert_eq!(pick_bounds(Some((50, 50, 40, 60)), fb), fb); // right < left
+    }
+
+    #[test]
+    fn test_none_when_both_sources_unusable() {
+        assert_eq!(pick_bounds(None, None), None);
+        assert_eq!(pick_bounds(Some((0, 0, 0, 0)), Some((5, 5, 5, 5))), None);
+    }
+
+    #[test]
+    fn test_child_rejected_when_covers_whole_window() {
+        // Chrome / Electron：一个渲染子窗盖掉整个客户区（只少标题栏）。
+        // 框它等于框整窗还少了标题栏，没有任何价值，必须退回。
+        let top = (100, 100, 1300, 900); // 1200x800
+        let child = (100, 132, 1300, 900); // 1200x768 ≈ 96%
+        assert!(!should_use_child(child, top));
+    }
+
+    #[test]
+    fn test_child_accepted_when_meaningfully_smaller() {
+        let top = (100, 100, 1300, 900); // 1200x800
+        let panel = (100, 132, 400, 900); // 左侧边栏 300x768 ≈ 24%
+        assert!(should_use_child(panel, top));
+    }
+
+    #[test]
+    fn test_child_rejected_when_too_thin() {
+        // 几像素宽的分隔条 / 滚动条箭头：面积比很小但框住没意义
+        let top = (100, 100, 1300, 900);
+        assert!(!should_use_child((400, 132, 406, 900), top)); // 宽 6px
+        assert!(!should_use_child((100, 132, 400, 145), top)); // 高 13px
+    }
+
+    #[test]
+    fn test_child_rejected_when_top_degenerate() {
+        // 顶层矩形零面积时不能除零，也不能误判为“子窗更小”
+        assert!(!should_use_child((0, 0, 100, 100), (5, 5, 5, 5)));
+    }
+
+    #[test]
+    fn test_shell_class_blacklist() {
+        assert!(is_shell_class("Shell_TrayWnd"));
+        assert!(is_shell_class("Shell_SecondaryTrayWnd")); // 旧实现漏的副屏任务栏
+        assert!(is_shell_class("XamlExplorerHostIslandWindow"));
+        assert!(!is_shell_class("Chrome_WidgetWin_1")); // 普通应用窗不能被误排
+        // 故意不排：开始菜单显示着的时候用户可能想截它
+        assert!(!is_shell_class("Windows.UI.Core.CoreWindow"));
+    }
 }
 
 // ===== 长截图：滚动注入 =====
@@ -928,5 +1513,197 @@ fn send_wheel_via_input(x: i32, y: i32, delta: i32) -> Result<(), String> {
             return Err("发送滚轮事件失败".to_string());
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pick_status_pos;
+
+    // 1920x1080 主屏，状态窗 300x48，间距 16
+    const SCREEN: (i32, i32, i32, i32) = (0, 0, 1920, 1080);
+    const W: i32 = 300;
+    const H: i32 = 48;
+    const GAP: i32 = 16;
+
+    fn pick(sel: (i32, i32, i32, i32)) -> Option<(i32, i32)> {
+        pick_status_pos(sel, SCREEN, W, H, GAP)
+    }
+
+    /// 状态窗与选区相交 = 会被 BitBlt 拼进长图，这是这个函数唯一不能出错的地方
+    fn intersects(pos: (i32, i32), sel: (i32, i32, i32, i32)) -> bool {
+        let (x, y) = pos;
+        let (sx, sy, sw, sh) = sel;
+        !(x + W <= sx || x >= sx + sw || y + H <= sy || y >= sy + sh)
+    }
+
+    #[test]
+    fn 选区在左上时状态窗放右下() {
+        let sel = (100, 100, 400, 300);
+        let p = pick(sel).expect("左上小选区必然有位置");
+        assert_eq!(p, (1920 - GAP - W, 1080 - GAP - H));
+        assert!(!intersects(p, sel));
+    }
+
+    #[test]
+    fn 选区盖住右下角时改放左下() {
+        // 选区覆盖右下角候选位，右下不可用
+        let sel = (1400, 900, 500, 180);
+        let p = pick(sel).expect("左下应该可用");
+        assert_eq!(p, (GAP, 1080 - GAP - H));
+        assert!(!intersects(p, sel));
+    }
+
+    #[test]
+    fn 横贯屏幕底部的选区把状态窗挤到上方() {
+        // 底部整条被占：左下右下都不行，右上可用
+        let sel = (0, 800, 1920, 280);
+        let p = pick(sel).expect("上方应该可用");
+        assert_eq!(p.1, GAP);
+        assert!(!intersects(p, sel));
+    }
+
+    #[test]
+    fn 选区占满屏幕时不给位置() {
+        // 无处可放。宁可不开窗，也不能把状态窗拼进用户的长图
+        assert_eq!(pick((0, 0, 1920, 1080)), None);
+    }
+
+    #[test]
+    fn 只剩中间一条缝时也不会给出相交位置() {
+        // 上下各占一半多一点，四个角全被占，中间缝隙放不下 48 高
+        let sel = (0, 0, 1920, 1060);
+        match pick(sel) {
+            Some(p) => panic!("不该返回相交位置 {:?}", p),
+            None => {}
+        }
+    }
+
+    #[test]
+    fn 负原点副屏也能正确算位置() {
+        // 副屏摆在主屏左边：虚拟屏原点为负
+        let screen = (-1920, 0, 3840, 1080);
+        let sel = (-1800, 100, 400, 300);
+        let p = pick_status_pos(sel, screen, W, H, GAP).expect("有位置");
+        // 必须落在虚拟屏内，且不与选区相交
+        assert!(p.0 >= -1920 && p.0 + W <= 1920);
+        assert!(p.1 >= 0 && p.1 + H <= 1080);
+        let (sx, sy, sw, sh) = sel;
+        assert!(p.0 + W <= sx || p.0 >= sx + sw || p.1 + H <= sy || p.1 >= sy + sh);
+    }
+
+    #[test]
+    fn 紧贴选区边缘不算相交() {
+        // 选区右边缘正好等于状态窗左边缘：不相交，可以用
+        let sel = (0, 0, 1920 - GAP - W, 1080);
+        let p = pick(sel).expect("右侧缝隙刚好放得下");
+        assert_eq!(p.0, 1920 - GAP - W);
+        assert!(!intersects(p, sel));
+    }
+}
+
+/* ===================== 编码格式选型基准 =====================
+ *
+ * 背景：用户反馈"截图没有实际图片清晰"。原因是有损压缩叠了两代
+ *   ① 本文件 capture_rect：全屏 JPEG q90，且 image 0.25 的 JpegEncoder
+ *      写死 4:2:2 色度抽样（见 codecs/jpeg/encoder.rs 的 "subsampling ratio 4:2:2"，
+ *      与 quality 参数无关）；
+ *   ② 前端 canvasToDataUrl：合成图再编一次 JPEG 0.92。
+ *
+ * ② 改 PNG 几乎零代价（发生在用户点「完成」之后）。① 是否能改无损，
+ * 取决于编码耗时——截图窗打开是即时路径，用户已经抱怨过一次"截图速度有点慢"。
+ * 所以不能凭上面那句"慢约 5 倍"的注释下判断，必须实测。
+ *
+ * 跑法（必须在有桌面会话的环境下，GDI 需要真实屏幕）：
+ *   cd src-tauri && cargo test --release encode_bench -- --nocapture --ignored
+ *
+ * 标 #[ignore] 的理由：它依赖真实屏幕内容与机器性能，结果不是稳定断言，
+ * 不能进 CI 常规用例——它是一次性的选型工具，留在仓库里是为了以后
+ * 换 image 版本或换机器时能一键复测。
+ */
+#[cfg(all(test, target_os = "windows"))]
+mod encode_bench {
+    use std::io::Cursor;
+    use std::time::Instant;
+
+    fn ms(t: Instant) -> f64 {
+        t.elapsed().as_secs_f64() * 1000.0
+    }
+
+    #[test]
+    #[ignore]
+    fn encode_bench() {
+        // ❗ 必须先声明 per-monitor V2，否则这个基准是错的。
+        //
+        // 正式进程里这一步由 tao 帮忙做了（tao/src/platform_impl/windows/dpi.rs 的
+        // become_dpi_aware 调 SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2)），
+        // 但 cargo test 不走 tao——默认是 DPI unaware，于是
+        // GetSystemMetrics(SM_CXVIRTUALSCREEN) 返回的是**虚拟化后的逻辑像素**
+        // （150% 缩放下只有真实分辨率的 2/3），像素量差一半以上，
+        // 测出的编码耗时会严重偏乐观，拿这种数字做选型会得出错结论。
+        unsafe {
+            use windows::Win32::UI::HiDpi::{
+                SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+            };
+            let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        }
+
+        let (w, h, ox, oy) = super::virtual_screen_metrics();
+        println!("\n虚拟屏幕 {w}x{h} @({ox},{oy}) = {} 万像素", w * h / 10000);
+        println!("（请核对这个尺寸是不是你屏幕的真实分辨率——对不上就说明 DPI 声明没生效）");
+
+        // 抓一次原始像素，所有编码器共用同一份输入（公平对比）
+        let t = Instant::now();
+        let rgba = super::grab_rect_rgba(ox, oy, w, h).expect("抓屏失败");
+        let grab_ms = ms(t);
+        println!("BitBlt + BGRA→RGBA : {grab_ms:7.1} ms   {:6.1} MB 原始", rgba.len() as f64 / 1e6);
+
+        let img = image::RgbaImage::from_raw(w as u32, h as u32, rgba).expect("构造失败");
+        let rgb = image::DynamicImage::ImageRgba8(img.clone()).to_rgb8();
+
+        println!("\n{:<26} {:>9} {:>10} {:>9}", "编码方式", "耗时", "体积", "base64后");
+        println!("{}", "-".repeat(58));
+
+        let report = |name: &str, enc_ms: f64, bytes: usize| {
+            // base64 膨胀 4/3；data URL 要走一次 IPC 到 WebView
+            let b64_ms = {
+                use base64::{engine::general_purpose::STANDARD, Engine as _};
+                let buf = vec![0u8; bytes];
+                let t = Instant::now();
+                let _ = STANDARD.encode(&buf);
+                ms(t)
+            };
+            println!(
+                "{:<26} {:>7.1}ms {:>8.2}MB {:>7.2}MB (+{:.0}ms)",
+                name, enc_ms, bytes as f64 / 1e6, bytes as f64 * 4.0 / 3.0 / 1e6, b64_ms
+            );
+        };
+
+        // ① 现状基线
+        for q in [90u8, 95] {
+            let t = Instant::now();
+            let mut buf = Cursor::new(Vec::new());
+            let e = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, q);
+            rgb.write_with_encoder(e).unwrap();
+            let d = ms(t);
+            report(&format!("JPEG q{q} (4:2:2)"), d, buf.get_ref().len());
+        }
+
+        // ② PNG：压缩等级 × 滤波器
+        use image::codecs::png::{CompressionType as C, FilterType as F, PngEncoder};
+        use image::{ExtendedColorType, ImageEncoder};
+        for (cn, c) in [("Fast", C::Fast), ("Default", C::Default)] {
+            for (fnm, f) in [("NoFilter", F::NoFilter), ("Up", F::Up), ("Adaptive", F::Adaptive)] {
+                let t = Instant::now();
+                let mut buf: Vec<u8> = Vec::new();
+                PngEncoder::new_with_quality(&mut buf, c, f)
+                    .write_image(&rgb, w as u32, h as u32, ExtendedColorType::Rgb8)
+                    .unwrap();
+                let d = ms(t);
+                report(&format!("PNG {cn}/{fnm} (RGB8)"), d, buf.len());
+            }
+        }
+
+        println!("\n参考：截图窗打开是即时路径，用户可感知阈值约 300ms（含 grab {grab_ms:.0}ms）");
     }
 }

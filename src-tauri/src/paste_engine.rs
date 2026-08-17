@@ -285,10 +285,7 @@ impl PasteEngine {
 
         // 2. 写入剪贴板
         if let Some(ref t) = text {
-            let mut clipboard = Clipboard::new().map_err(|e| format!("无法打开剪贴板: {}", e))?;
-            clipboard
-                .set_text(t.as_str())
-                .map_err(|e| format!("无法写入剪贴板: {}", e))?;
+            Self::with_clipboard_retry("写入剪贴板", |cb| cb.set_text(t.as_str()))?;
         }
         result.clipboard_written = true;
 
@@ -319,11 +316,94 @@ impl PasteEngine {
 
     /// 仅复制不粘贴
     pub fn copy_only(&self, text: &str) -> Result<(), String> {
-        let mut clipboard = Clipboard::new().map_err(|e| format!("无法打开剪贴板: {}", e))?;
-        clipboard
-            .set_text(text)
-            .map_err(|e| format!("无法写入剪贴板: {}", e))?;
+        Self::with_clipboard_retry("复制文字", |cb| cb.set_text(text))?;
         Ok(())
+    }
+
+    /// 带重试的剪贴板写入。**所有写入路径都走它**（规则 11：公共函数收口）。
+    ///
+    /// 为什么必须重试：Windows 剪贴板是**全局互斥资源**，同一时刻只能有一个
+    /// 线程持有。任何其它程序（其他剪贴板工具、Office、远程桌面、输入法）都会
+    /// 瞬时占用它，而我们自己的剪贴板监听线程在 WM_CLIPBOARDUPDATE 后也会去读。
+    /// 单次尝试失败的典型错误就是
+    ///   - os error 1418 = ERROR_CLIPBOARD_NOT_OPEN
+    ///   - os error 5    = ERROR_ACCESS_DENIED
+    /// 这两个都是**瞬时性**的，隔几十毫秒再试几乎总能成功。
+    ///
+    /// 递增退避而不是固定间隔：占用方可能正在写一大块数据，固定 10ms 转 5 次
+    /// 总共只等 50ms，太短。
+    fn with_clipboard_retry<T>(
+        what: &str,
+        mut op: impl FnMut(&mut Clipboard) -> Result<T, arboard::Error>,
+    ) -> Result<T, String> {
+        const ATTEMPTS: u32 = 6;
+        let mut last = String::new();
+        for i in 0..ATTEMPTS {
+            if i > 0 {
+                // 20 / 40 / 60 / 80 / 100ms，累计约 300ms
+                std::thread::sleep(Duration::from_millis(20 * i as u64));
+            }
+            // Clipboard 实例也要重建：它内部持有的句柄在上一次失败后可能已不可用
+            match Clipboard::new() {
+                Ok(mut cb) => match op(&mut cb) {
+                    Ok(v) => return Ok(v),
+                    Err(e) => last = e.to_string(),
+                },
+                Err(e) => last = e.to_string(),
+            }
+        }
+        // 文案要让用户知道该怎么办，而不是只丢一个 os error 编号。
+        // 并且把**到底是谁占着**查出来——否则“被其他程序占用”只是个推测，
+        // 而且如果占着的其实是我们自己（监听线程泄了一个 OpenClipboard），
+        // 这条文案会把人往错方向引。
+        Err(format!(
+            "{what}失败：剪贴板写入被拒（已重试 {ATTEMPTS} 次）。{}原始错误：{last}",
+            Self::clipboard_holder_hint()
+        ))
+    }
+
+    /// 查当前是谁持有着剪贴板，返回一句可读提示（查不到就返回空串）。
+    ///
+    /// `GetOpenClipboardWindow()` 返回当前打开了剪贴板的窗口（无则 NULL），
+    /// 再反查它属于哪个进程。这比“可能被其他程序占用”有用得多：
+    /// 如果报出的是 PastePanda 自己，就说明是我们自己泄了一个 OpenClipboard；
+    /// 如果是别的程序，用户直接知道该关哪个。
+    #[cfg(target_os = "windows")]
+    fn clipboard_holder_hint() -> String {
+        use windows::Win32::Foundation::{HMODULE, MAX_PATH};
+        use windows::Win32::System::DataExchange::GetOpenClipboardWindow;
+        use windows::Win32::System::ProcessStatus::GetModuleFileNameExW;
+        use windows::Win32::System::Threading::{
+            OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+        };
+        use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+
+        unsafe {
+            // GetOpenClipboardWindow 在 windows 0.58 里返回 Result，Err = 没人打开
+            let Ok(hwnd) = GetOpenClipboardWindow() else {
+                // 没人持有却仍然写不进去 → 不是互斥问题，别让用户去关其他软件。
+                // 这种情况下 os error 1418 很可能只是 GetLastError 的陈旧残留值，
+                // 真正的失败原因在别处（如 GlobalAlloc / PNG 编码）。
+                return "当前没有任何进程持有剪贴板，因此**不是被占用**导致的。".to_string();
+            };
+            let mut pid: u32 = 0;
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+            let name = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid)
+                .ok()
+                .and_then(|h| {
+                    let mut buf = [0u16; MAX_PATH as usize];
+                    let n = GetModuleFileNameExW(h, HMODULE::default(), &mut buf);
+                    let _ = windows::Win32::Foundation::CloseHandle(h);
+                    (n > 0).then(|| String::from_utf16_lossy(&buf[..n as usize]))
+                })
+                .unwrap_or_else(|| "<无法查询进程名>".to_string());
+            format!("当前持有剪贴板的进程：pid={pid} {name}。")
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn clipboard_holder_hint() -> String {
+        String::new()
     }
 
     /// 仅复制图片到剪贴板（不粘贴）— 走 arboard，绕开 WebView2 Web Clipboard API 兼容问题
@@ -344,10 +424,8 @@ impl PasteEngine {
             height: height as usize,
             bytes: std::borrow::Cow::Borrowed(rgba.as_raw()),
         };
-        let mut clipboard = Clipboard::new().map_err(|e| format!("无法打开剪贴板: {}", e))?;
-        clipboard
-            .set_image(img_data)
-            .map_err(|e| format!("无法写入图片到剪贴板: {}", e))?;
+        // 重试里每次都重建 ImageData：它持有对 rgba 的借用，只是开销极小的浅克隆
+        Self::with_clipboard_retry("复制图片", |cb| cb.set_image(img_data.clone()))?;
         Ok(())
     }
 
@@ -586,10 +664,7 @@ impl PasteEngine {
             bytes: std::borrow::Cow::Borrowed(rgba.as_raw()),
         };
 
-        let mut clipboard = Clipboard::new().map_err(|e| format!("无法打开剪贴板: {}", e))?;
-        clipboard
-            .set_image(img_data)
-            .map_err(|e| format!("无法写入图片到剪贴板: {}", e))?;
+        Self::with_clipboard_retry("写入图片", |cb| cb.set_image(img_data.clone()))?;
 
         // 5. 粘贴前实时重抓前台窗口（排除自身）
         #[cfg(target_os = "windows")]

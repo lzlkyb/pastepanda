@@ -34,6 +34,7 @@ mod pinned_window;
 mod quick_paste;
 mod screenshot;
 mod tray_manager;
+mod win_foreground;
 
 /// 首次启动时通过文件关联传入的待打开文件路径。
 /// setup 阶段前端尚未加载，无法直接 emit 事件，
@@ -539,6 +540,9 @@ pub fn run() {
             screenshot::close_screenshot_window,
             screenshot::hide_screenshot_window,
             screenshot::show_screenshot_window,
+            screenshot::open_longshot_status,
+            screenshot::close_longshot_status,
+            screenshot::arm_longshot_escape,
             screenshot::snap_window_at,
             screenshot::send_mouse_wheel,
             screenshot::take_pending_shot_edit,
@@ -546,6 +550,7 @@ pub fn run() {
             screenshot::insert_screenshot_to_history,
             screenshot::take_pending_shot_capture,
             screenshot::mark_ocr_temp,
+            screenshot::unmark_ocr_temp,
             screenshot::get_cursor_pos,
             screenshot::get_auto_frame_window,
             screenshot::get_auto_chain_after_screenshot,

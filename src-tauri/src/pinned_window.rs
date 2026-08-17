@@ -545,15 +545,32 @@ fn run_window_loop(
     let class_name = to_wide(CLASS_NAME);
     let title = to_wide("置顶图片");
 
-    let initial_w = (img_width as f32 * 0.6).clamp(300.0, 1200.0) as i32;
-    let initial_h = (img_height as f32 * 0.6).clamp(200.0, 900.0) as i32;
-
-    let initial_scale =
-        if img_width as f32 / initial_w as f32 > img_height as f32 / initial_h as f32 {
-            initial_w as f32 / img_width as f32
-        } else {
-            initial_h as f32 / img_height as f32
+    // 贴图默认 **1:1 原始像素**。
+    //
+    // 旧实现是 (img_w × 0.6).clamp(300,1200) 再反算 scale，于是贴出来的图
+    // 永远比刚截的那块小 40%（小图还会被 clamp 的下限拉成不等比）——
+    // 用户报的「贴图显示的图片大小和截图的不一致」就是这个。
+    // 贴图的意义就是“贴出来的就是刚截的那块”，能直接压在原内容上对比；
+    // 缩过就没法比了（Snipaste 也是 1:1 起步，缩放交给滚轮）。
+    //
+    // 只有一种情况需要缩：图比屏幕工作区还大，1:1 会撑出屏幕。
+    // SM_CXFULLSCREEN / SM_CYFULLSCREEN 给的正是全屏窗口的客户区尺寸（已排除任务栏）。
+    let (fs_w, fs_h) = unsafe {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetSystemMetrics, SM_CXFULLSCREEN, SM_CYFULLSCREEN,
         };
+        let w = GetSystemMetrics(SM_CXFULLSCREEN);
+        let h = GetSystemMetrics(SM_CYFULLSCREEN);
+        // 取不到就按 1920x1080 兜底（只影响“超大图要不要缩”这一个判断）
+        (if w > 0 { w } else { 1920 }, if h > 0 { h } else { 1080 })
+    };
+    let fit = (fs_w as f32 * 0.9 / img_width.max(1) as f32)
+        .min(fs_h as f32 * 0.9 / img_height.max(1) as f32)
+        .min(1.0);
+    let initial_scale = fit;
+    // 这两个是期望的**客户区**尺寸；CreateWindowExW 要的是外框，建完再修正。
+    let client_w = (img_width as f32 * fit).round().max(1.0) as i32;
+    let client_h = (img_height as f32 * fit).round().max(1.0) as i32;
 
     let hwnd = unsafe {
         CreateWindowExW(
@@ -563,8 +580,8 @@ fn run_window_loop(
             WS_OVERLAPPEDWINDOW | WS_VISIBLE,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
-            initial_w,
-            initial_h,
+            client_w,
+            client_h,
             None,
             None,
             instance,
@@ -576,6 +593,64 @@ fn run_window_loop(
         Ok(h) => h,
         Err(e) => return Err(format!("CreateWindowExW 失败: {:?}", e)),
     };
+
+    // 把**客户区**调成真正的 client_w × client_h。
+    //
+    // CreateWindowExW 的宽高是**窗口外框**（含 WS_OVERLAPPEDWINDOW 的标题栏与边框），
+    // 而 fill_buffer 是按**客户区**画的 —— 直接把期望客户区尺寸传进去，图就会
+    // 少掉标题栏那一截高度（约 31px）与左右边框，“1:1” 就名不副实了。
+    //
+    // 用实测差值而不是 AdjustWindowRectEx：后者拿的是**系统 DPI**下的非客户区尺寸，
+    // 本进程是 per-monitor v2，窗口在 125% 屏上的标题栏比系统 DPI 算出来的高（除非
+    // 再去取 GetDpiForWindow 配 AdjustWindowRectExForDpi）。差值法不依赖 DPI，一定准。
+    //
+    // 位置故意放在 SetLayeredWindowAttributes **之前**：窗口是 WS_VISIBLE 建的，
+    // 但分层窗在首次设分层属性前不被 DWM 合成（见下面那段注释），
+    // 此时改尺寸用户看不到闪动。
+    unsafe {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetWindowRect, SetWindowPos, SWP_NOMOVE, SWP_NOZORDER,
+        };
+        let mut cr = RECT::default();
+        let mut wr = RECT::default();
+        if GetClientRect(hwnd, &mut cr).is_ok() && GetWindowRect(hwnd, &mut wr).is_ok() {
+            let chrome_w = (wr.right - wr.left) - (cr.right - cr.left);
+            let chrome_h = (wr.bottom - wr.top) - (cr.bottom - cr.top);
+            if let Err(e) = SetWindowPos(
+                hwnd,
+                HWND::default(),
+                0,
+                0,
+                client_w + chrome_w,
+                client_h + chrome_h,
+                SWP_NOMOVE | SWP_NOZORDER,
+            ) {
+                // 不能静默：失败的后果是贴图比截图小一圈，而那正是这次要修的 bug
+                log::warn!("[pinned-window] 修正客户区尺寸失败（贴图不会是 1:1）: {e:?}");
+            }
+        }
+    }
+
+    // ❗ 必须在这里就把分层属性初始化一次。
+    //
+    // 窗口带了 WS_EX_LAYERED，而分层窗口在首次调用 SetLayeredWindowAttributes
+    // （或 UpdateLayeredWindow）**之前根本不会被 DWM 合成** —— 用户看到的就是
+    // 一个空白透明框：窗体、标题栏、拖拽、右键菜单全都在，就是图不显示。
+    //
+    // 旧实现只在 T 键（循环切透明度）的处理里调它，所以贴图后必须先按一下 T
+    // 才能看见图——而界面上没任何地方写着要按 T。
+    //
+    // COLORREF(0) 在 LWA_ALPHA 模式下被忽略（它只在 LWA_COLORKEY 下作为色键生效），
+    // 所以不会把图里的黑色像素抠成透明。
+    unsafe {
+        use windows::Win32::Foundation::COLORREF;
+        use windows::Win32::UI::WindowsAndMessaging::{SetLayeredWindowAttributes, LWA_ALPHA};
+        if let Err(e) = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA) {
+            // 不能静默：这一步失败的后果就是“窗开了但看不见图”，
+            // 日志里没痕迹的话下一个人还要从头查一遍。
+            log::error!("[pinned-window] SetLayeredWindowAttributes 失败（贴图会不可见）: {e:?}");
+        }
+    }
 
     // 登记为"当前置顶窗口集合"的一员（供关闭/重编辑回调使用）。
     // 中毒恢复：其他线程持锁 panic 后此处若直接 unwrap 会二次 panic，导致贴图登记失败。

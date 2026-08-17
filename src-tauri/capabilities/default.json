@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main", "tray-popup", "md-editor", "quick-paste", "screenshot"],
+  "windows": ["main", "tray-popup", "md-editor", "quick-paste", "screenshot", "longshot-status"],
   "permissions": [
     "core:default",
     "core:event:default",
