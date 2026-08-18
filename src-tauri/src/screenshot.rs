@@ -1176,28 +1176,6 @@ fn area(r: (i32, i32, i32, i32)) -> i64 {
     ((r.2 - r.0) as i64).max(0) * ((r.3 - r.1) as i64).max(0)
 }
 
-/// 子窗口的矩形值不值得采用（纯逻辑，带单测）。false = 退回顶层窗口。
-///
-/// 两种情况必须退回：
-///   ① **子窗口几乎和顶层一样大**。Chrome / Electron 这类把整个客户区交给一个
-///      渲染子窗口（`Chrome_RenderWidgetHostHWND`），框它等于框整窗还少了标题栏，
-///      没有任何“更精确”的价值，反而让用户框不到完整窗口。
-///   ② **子窗口太小**。几像素宽的分隔条 / 滚动条箭头，框住没意义。
-///
-/// 阈值 92% 是拍的：标题栏 + 边框大约就占一个普通窗口 5~8% 的面积，
-/// 取 92% 能把“客户区全盘子窗”归到退回一边，而真正的面板 / 列表远小于这个比例。
-fn should_use_child(child: (i32, i32, i32, i32), top: (i32, i32, i32, i32)) -> bool {
-    const MIN_SIDE: i32 = 20;
-    if (child.2 - child.0) < MIN_SIDE || (child.3 - child.1) < MIN_SIDE {
-        return false;
-    }
-    let (ca, ta) = (area(child), area(top));
-    if ta <= 0 {
-        return false;
-    }
-    ca * 100 < ta * 92
-}
-
 /// 命中测试：给定物理坐标，返回光标下方有效窗口的屏幕矩形（排除自身/桌面/任务栏）。
 /// 用 EnumWindows 从 Z 序最上层开始遍历，跳过截图窗口自身后取第一个包含该点的可见窗口——
 /// 因为截图窗口全屏透明覆盖，WindowFromPoint 只会命中它自己。
@@ -1212,6 +1190,87 @@ pub fn snap_window_at(app: tauri::AppHandle, x: i32, y: i32) -> Result<Option<Sn
         let _ = (app, x, y);
         Ok(None)
     }
+}
+
+/// 枚举当前所有可见顶层窗口的视觉矩形（屏幕物理坐标），供拖选时「吸邻近窗口边缘」用。
+///
+/// 排除：截图窗口自身、桌面、任务栏 / 副屏任务栏（Shell_TrayWnd 等）、
+/// DWM 隐身窗（cloaked：挂起 UWP / 其他虚拟桌面）、最小化窗。
+/// 窗口在截图会话内不会移动，前端进会话时取一次即可，不必每帧枚举。
+#[tauri::command]
+pub fn enum_window_rects(app: tauri::AppHandle) -> Result<Vec<SnapRect>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        unsafe { enum_window_rects_impl(&app) }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        Ok(Vec::new())
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn enum_window_rects_impl(app: &tauri::AppHandle) -> Result<Vec<SnapRect>, String> {
+    use windows::Win32::Foundation::{HWND, LPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetDesktopWindow, WNDENUMPROC};
+
+    let self_hwnd = app
+        .get_webview_window(WINDOW_LABEL)
+        .and_then(|w| w.hwnd().ok())
+        .map(|h| HWND(h.0 as *mut _))
+        .unwrap_or_default();
+    let desktop = GetDesktopWindow();
+
+    let mut ctx = (self_hwnd, desktop, Vec::<(i32, i32, i32, i32)>::new());
+    let lparam = LPARAM(&mut ctx as *mut _ as isize);
+    let enum_fn: WNDENUMPROC = Some(enum_rects_proc);
+    let _ = EnumWindows(enum_fn, lparam);
+
+    Ok(ctx
+        .2
+        .into_iter()
+        .map(|(l, t, r, b)| SnapRect {
+            x: l,
+            y: t,
+            w: r - l,
+            h: b - t,
+        })
+        .collect())
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn enum_rects_proc(
+    hwnd: windows::Win32::Foundation::HWND,
+    lparam: windows::Win32::Foundation::LPARAM,
+) -> windows::Win32::Foundation::BOOL {
+    use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, IsIconic, IsWindowVisible};
+
+    let ctx = lparam.0 as *mut (
+        windows::Win32::Foundation::HWND,
+        windows::Win32::Foundation::HWND,
+        Vec<(i32, i32, i32, i32)>,
+    );
+    let (self_hwnd, desktop, out) = &mut *ctx;
+    if hwnd == *self_hwnd || hwnd == *desktop {
+        return windows::Win32::Foundation::BOOL(1);
+    }
+    if !IsWindowVisible(hwnd).as_bool() || IsIconic(hwnd).as_bool() {
+        return windows::Win32::Foundation::BOOL(1);
+    }
+    // 缓冲区 256：类名上限就是 256（同 enum_snap_proc）
+    let mut cls: [u16; 256] = [0; 256];
+    let n = GetClassNameW(hwnd, &mut cls);
+    if n > 0 && is_shell_class(&String::from_utf16_lossy(&cls[..n as usize])) {
+        return windows::Win32::Foundation::BOOL(1);
+    }
+    if is_cloaked(hwnd) {
+        return windows::Win32::Foundation::BOOL(1);
+    }
+    if let Some(rect) = window_visual_rect(hwnd) {
+        out.push(rect);
+    }
+    windows::Win32::Foundation::BOOL(1)
 }
 
 /// 取窗口的视觉边界（屏幕物理坐标，`(l, t, r, b)`）。**命中测试与返回值共用它。**
@@ -1257,32 +1316,101 @@ unsafe fn window_visual_rect(
 ///
 /// `MAX_DEPTH` 是硬保险：理论上 ③ 就能终止，但这是跑在它进程外的推断，
 /// 遇到构造得很奇怪的窗口树（或枚举过程中窗口被重建）不能把 hover 路径挂死。
+/// 收集从顶层窗到鼠标下最细真实子窗口的整条 HWND 链（top → … → leaf）。
+///
+/// 复用 deepest_child_at 的逐层下钻（ChildWindowFromPointEx 只搜直接子窗，
+/// 必须自己递归；每层都要 ScreenToClient 重算客户区坐标；返回值 == 传入句柄即到底），
+/// 区别是**每一层都记录 cur**，供 `pick_best_control` 在 window→叶子 之间挑
+/// 最合适的控件——而不是只取最深的叶子（那样要么框到 21px 小按钮，要么因太大退回整窗）。
 #[cfg(target_os = "windows")]
-unsafe fn deepest_child_at(
+unsafe fn control_chain_at(
     top: windows::Win32::Foundation::HWND,
     screen_pt: windows::Win32::Foundation::POINT,
-) -> windows::Win32::Foundation::HWND {
+) -> Vec<windows::Win32::Foundation::HWND> {
     use windows::Win32::Graphics::Gdi::ScreenToClient;
     use windows::Win32::UI::WindowsAndMessaging::{
         ChildWindowFromPointEx, CWP_SKIPINVISIBLE, CWP_SKIPTRANSPARENT,
     };
 
     const MAX_DEPTH: usize = 16;
+    let mut chain = Vec::with_capacity(MAX_DEPTH + 1);
     let mut cur = top;
+    chain.push(cur);
     for _ in 0..MAX_DEPTH {
-        // 屏幕坐标 → 当前父窗口的客户区坐标（每层都要重算，见 ②）
+        // 屏幕坐标 → 当前父窗口的客户区坐标（每层都要重算，见 deepest_child_at 注释 ②）
         let mut p = screen_pt;
         if !ScreenToClient(cur, &mut p).as_bool() {
-            return cur;
+            break;
         }
         let child = ChildWindowFromPointEx(cur, p, CWP_SKIPINVISIBLE | CWP_SKIPTRANSPARENT);
-        // NULL = 点在父窗外（不应该发生，但得防）；== cur = 到底了
+        // NULL = 点在父窗外（防意外）；== cur = 到底了
         if child.0.is_null() || child == cur {
-            return cur;
+            break;
         }
         cur = child;
+        chain.push(cur);
     }
-    cur
+    chain
+}
+
+/// 纯逻辑：从一组候选矩形里挑“最合适的截图区域”（不碰 Win32，可单测）。
+/// `pick_best_control` 负责把 HWND 链取成矩形后调用它。
+///
+/// 规则（物理像素）：
+///   - 最小边长 40px：排除分隔条 / 滚动条箭头 / 小图标这类“框住没意义”的碎屑；
+///   - 占顶层窗面积 5%~92%：排除几乎等于整窗的渲染宿主（Chrome/Electron 的
+///     Chrome_RenderWidgetHostHWND），也排除面积占比过小的残片。
+/// 返回 None = 链上没有可用控件，调用方应退回顶层窗整窗。
+fn select_best_rect(
+    rects: &[(i32, i32, i32, i32)],
+    top_rect: (i32, i32, i32, i32),
+) -> Option<(i32, i32, i32, i32)> {
+    const MIN_SIDE: i32 = 40;
+    const MIN_RATIO: i64 = 5; // 占顶层窗面积下限（%）
+    const MAX_RATIO: i64 = 92; // 上限（%）
+    let ta = area(top_rect);
+    if ta <= 0 {
+        return None;
+    }
+    let mut best: Option<(i32, i32, i32, i32)> = None;
+    let mut best_area: i64 = i64::MAX;
+    for &c in rects {
+        let (w, h) = (c.2 - c.0, c.3 - c.1);
+        if w < MIN_SIDE || h < MIN_SIDE {
+            continue;
+        }
+        let ca = area(c);
+        if ca * 100 < ta * MIN_RATIO || ca * 100 > ta * MAX_RATIO {
+            continue;
+        }
+        // 取“满足约束的最小区域”= 最精确、但仍是像样的控件（微信同款：框工具栏而非整窗或最深小按钮）
+        if ca < best_area {
+            best_area = ca;
+            best = Some(c);
+        }
+    }
+    best
+}
+
+/// 从 window→叶子 的 HWND 链里挑“最合适的截图区域”。
+///
+/// 微信的做法：悬停到面板 / 工具栏 / 列表就框那一整块，而不是框最深的 21px 小按钮、
+/// 也不是退回整窗。链上没有任何控件满足约束 → 退回顶层窗整窗。
+#[cfg(target_os = "windows")]
+unsafe fn pick_best_control(
+    chain: &[windows::Win32::Foundation::HWND],
+    top_rect: (i32, i32, i32, i32),
+) -> (i32, i32, i32, i32) {
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+
+    let mut rects = Vec::with_capacity(chain.len());
+    for &h in &chain[1..] {
+        let mut r = windows::Win32::Foundation::RECT::default();
+        if GetWindowRect(h, &mut r).is_ok() {
+            rects.push((r.left, r.top, r.right, r.bottom));
+        }
+    }
+    select_best_rect(&rects, top_rect).unwrap_or(top_rect)
 }
 
 /// 窗口是否被 DWM「隐身」。
@@ -1340,24 +1468,13 @@ fn snap_window_impl(app: &tauri::AppHandle, x: i32, y: i32) -> Result<Option<Sna
             return Ok(None);
         };
 
-        // 控件级细化：往下钻到最细的真实子窗口，不值得采用则退回顶层。
-        //
+        // 控件级细化：沿 window→叶子 的整条 HWND 链挑最合适的控件区域，
+        // 而非只取最深的叶子（那样要么框到 21px 小按钮、要么因太大退回整窗）。
         // 子窗口用 GetWindowRect 而不是 window_visual_rect：EXTENDED_FRAME_BOUNDS
         // 是给**顶层窗**算阴影的，子窗口根本没有 DWM 阴影，对它调那个要么失败
         // 要么拿到奇怪值。
-        let leaf = deepest_child_at(hwnd, pt);
-        let rect = if leaf == hwnd {
-            top_rect
-        } else {
-            let mut cr = windows::Win32::Foundation::RECT::default();
-            let child = windows::Win32::UI::WindowsAndMessaging::GetWindowRect(leaf, &mut cr)
-                .is_ok()
-                .then_some((cr.left, cr.top, cr.right, cr.bottom));
-            match child {
-                Some(c) if should_use_child(c, top_rect) => c,
-                _ => top_rect,
-            }
-        };
+        let chain = control_chain_at(hwnd, pt);
+        let rect = pick_best_control(&chain, top_rect);
 
         let (l, t, r, b) = rect;
         Ok(Some(SnapRect {
@@ -1414,7 +1531,7 @@ unsafe extern "system" fn enum_snap_proc(
 
 #[cfg(test)]
 mod snap_tests {
-    use super::{is_shell_class, pick_bounds, should_use_child};
+    use super::{is_shell_class, pick_bounds, select_best_rect};
 
     #[test]
     fn test_prefer_dwm_when_valid() {
@@ -1446,36 +1563,6 @@ mod snap_tests {
     }
 
     #[test]
-    fn test_child_rejected_when_covers_whole_window() {
-        // Chrome / Electron：一个渲染子窗盖掉整个客户区（只少标题栏）。
-        // 框它等于框整窗还少了标题栏，没有任何价值，必须退回。
-        let top = (100, 100, 1300, 900); // 1200x800
-        let child = (100, 132, 1300, 900); // 1200x768 ≈ 96%
-        assert!(!should_use_child(child, top));
-    }
-
-    #[test]
-    fn test_child_accepted_when_meaningfully_smaller() {
-        let top = (100, 100, 1300, 900); // 1200x800
-        let panel = (100, 132, 400, 900); // 左侧边栏 300x768 ≈ 24%
-        assert!(should_use_child(panel, top));
-    }
-
-    #[test]
-    fn test_child_rejected_when_too_thin() {
-        // 几像素宽的分隔条 / 滚动条箭头：面积比很小但框住没意义
-        let top = (100, 100, 1300, 900);
-        assert!(!should_use_child((400, 132, 406, 900), top)); // 宽 6px
-        assert!(!should_use_child((100, 132, 400, 145), top)); // 高 13px
-    }
-
-    #[test]
-    fn test_child_rejected_when_top_degenerate() {
-        // 顶层矩形零面积时不能除零，也不能误判为“子窗更小”
-        assert!(!should_use_child((0, 0, 100, 100), (5, 5, 5, 5)));
-    }
-
-    #[test]
     fn test_shell_class_blacklist() {
         assert!(is_shell_class("Shell_TrayWnd"));
         assert!(is_shell_class("Shell_SecondaryTrayWnd")); // 旧实现漏的副屏任务栏
@@ -1483,6 +1570,39 @@ mod snap_tests {
         assert!(!is_shell_class("Chrome_WidgetWin_1")); // 普通应用窗不能被误排
         // 故意不排：开始菜单显示着的时候用户可能想截它
         assert!(!is_shell_class("Windows.UI.Core.CoreWindow"));
+    }
+
+    #[test]
+    fn test_select_best_rect_prefers_smallest_usable() {
+        // 链上同时有侧栏(24%) / 列表(48%) / 21px 按钮碎屑：
+        // 应框最小的「像样控件」= 侧栏，而非按钮或整窗。
+        let top = (100, 100, 1300, 900); // 1200x800
+        let sidebar = (100, 132, 400, 900); // 300x768 ≈ 24%
+        let list = (400, 132, 1000, 900); // 600x768 ≈ 48%
+        let button = (410, 140, 431, 161); // 21x21 碎屑
+        let r = select_best_rect(&[sidebar, list, button], top).unwrap();
+        assert_eq!(r, sidebar);
+    }
+
+    #[test]
+    fn test_select_best_rect_falls_back_when_only_render_host() {
+        // Chrome/Electron 渲染宿主占 ~96%，不满足 <=92%，应退回整窗（None）。
+        let top = (100, 100, 1300, 900);
+        let host = (100, 132, 1300, 900);
+        assert!(select_best_rect(&[host], top).is_none());
+    }
+
+    #[test]
+    fn test_select_best_rect_rejects_tiny_and_degenerate() {
+        let top = (100, 100, 1300, 900);
+        assert!(select_best_rect(&[(410, 140, 431, 161)], top).is_none()); // 21px 碎屑
+        assert!(select_best_rect(&[(100, 100, 1300, 100)], top).is_none()); // 高 0 退化矩形
+        assert!(select_best_rect(&[], top).is_none()); // 空链
+    }
+
+    #[test]
+    fn test_select_best_rect_rejects_when_top_degenerate() {
+        assert!(select_best_rect(&[(0, 0, 100, 100)], (5, 5, 5, 5)).is_none());
     }
 }
 

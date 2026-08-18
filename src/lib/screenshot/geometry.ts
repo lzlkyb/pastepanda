@@ -74,6 +74,45 @@ export function applyMagnet(r: Rect, refs: Rect[], sw: number, sh: number): Rect
   return { x, y, w: Math.max(4, x2 - x), h: Math.max(4, y2 - y) };
 }
 
+/**
+ * 吸附迟滞：决定 hover 时是否从当前选区切换到新的吸附矩形。
+ *
+ * 防的是「光标在窗口 / 控件边界附近微抖」时，吸附框在「整窗 ↔ 子控件 / 邻窗」之间反复跳。
+ * 规则（px/py 为光标在底图局部坐标，hyst 默认 6）：
+ *   - 首次吸附（cur 为空）→ 直接采用 next；
+ *   - next 为空（桌面空白）→ 仅当光标明显离开当前窗口（超出 hyst）才清除，防边角闪烁；
+ *   - next 是当前 cur 的真子控件且光标明显在内（离各边 ≥ hyst）→ 下钻到子控件；
+ *   - 光标明显已离开当前选区 → 切换到 next（邻窗 / 兄弟控件 / 回到整窗）；
+ *   - 否则保持 cur（光标仍在当前区内、且未明确下钻）。
+ */
+export function resolveSnapTarget(
+  cur: Rect | null,
+  next: Rect | null,
+  px: number,
+  py: number,
+  hyst = 6,
+): Rect | null {
+  if (!cur) return next;
+  if (!next) return outsideRect(px, py, cur, hyst) ? null : cur;
+  const stillInsideCur = !outsideRect(px, py, cur, hyst);
+  const drillDown =
+    next.x >= cur.x - 0.5 &&
+    next.y >= cur.y - 0.5 &&
+    next.x + next.w <= cur.x + cur.w + 0.5 &&
+    next.y + next.h <= cur.y + cur.h + 0.5 &&
+    px >= next.x + hyst &&
+    px <= next.x + next.w - hyst &&
+    py >= next.y + hyst &&
+    py <= next.y + next.h - hyst;
+  if (stillInsideCur && !drillDown) return cur;
+  return next;
+}
+
+/** 点是否落在矩形外（含 margin 扩张），用于迟滞判定。 */
+function outsideRect(px: number, py: number, r: Rect, m: number): boolean {
+  return px < r.x - m || px > r.x + r.w + m || py < r.y - m || py > r.y + r.h + m;
+}
+
 /** 点到线段距离（箭头命中检测） */
 export function distToSegment(
   px: number,

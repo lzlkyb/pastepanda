@@ -26,6 +26,7 @@ import {
   applyMagnet,
   eraseStrokes,
   pointHitAnnot,
+  resolveSnapTarget,
   toLocalRect,
   toScreenPt,
 } from "@/lib/screenshot/geometry";
@@ -353,6 +354,8 @@ export function ScreenshotOverlay() {
   const snapTsRef = useRef(0);
   // V6.19 磁吸参照：最后一次 hover 命中的窗口（拖选/缩放时边缘对齐用）
   const lastSnapRef = useRef<Rect | null>(null);
+  // 拖选磁吸参照：会话开始枚举一次的所有可见窗口矩形（底图局部坐标），用于吸邻窗边缘
+  const winRectsRef = useRef<Rect[]>([]);
   const abortLongRef = useRef(false);
   /** 停止并出图：与 abort 语义不同 —— 用已拼的内容出图。
    *  两者都只能由状态小窗触发：长截图期间截图窗被 hide()，收不到任何按键。 */
@@ -501,6 +504,15 @@ export function ScreenshotOverlay() {
     const applyScreen = (s: ScreenInfo) => {
       if (disposed) return;
       setScreen(s);
+      // 枚举可见窗口矩形，供拖选时吸邻窗边缘（窗口在会话内不动，取一次即可）
+      void invoke<SnapRect[]>("enum_window_rects")
+        .then((list) => {
+          if (disposed) return;
+          winRectsRef.current = (list ?? []).map((r) => toLocalRect(s, r));
+        })
+        .catch(() => {
+          /* 枚举失败则无邻窗磁吸，不影响主流程 */
+        });
       // V5 固定区域：恢复上次记住的选区（钳制到当前屏幕）
       try {
         const raw = localStorage.getItem("pp_shot_region");
@@ -722,7 +734,7 @@ export function ScreenshotOverlay() {
         h: Math.min(h, sc.height),
       };
       // V6.19 磁吸：缩放时边缘对齐 屏幕边/中心线/hover 窗口边缘
-      setSel(applyMagnet(clamped, lastSnapRef.current ? [lastSnapRef.current] : [], sc.width, sc.height));
+      setSel(applyMagnet(clamped, [...winRectsRef.current, ...(lastSnapRef.current ? [lastSnapRef.current] : [])], sc.width, sc.height));
     };
     const onUp = () => {
       setResizing(null);
@@ -2620,7 +2632,7 @@ export function ScreenshotOverlay() {
         h: Math.abs(py - d.startY),
       };
       const draft = sc
-        ? applyMagnet(raw, lastSnapRef.current ? [lastSnapRef.current] : [], sc.width, sc.height)
+        ? applyMagnet(raw, [...winRectsRef.current, ...(lastSnapRef.current ? [lastSnapRef.current] : [])], sc.width, sc.height)
         : raw;
       setSelDraft(draft);
       updateMag(px, py);
@@ -2641,11 +2653,15 @@ export function ScreenshotOverlay() {
         .then((s) => {
           if (dragRef.current) return; // 已进入拖选
           if (phaseRef.current !== "select") return;
-          if (s && s.w >= 4 && s.h >= 4) {
-            const local = toLocalRect(screen, s);
-            lastSnapRef.current = local;
-            setSel(local);
+          const cur = lastSnapRef.current;
+          const next = s && s.w >= 4 && s.h >= 4 ? toLocalRect(screen, s) : null;
+          // 迟滞防抖：光标在边界附近微抖时不让吸附框在「整窗↔子控件/邻窗」间反复跳
+          const target = resolveSnapTarget(cur, next, px, py);
+          if (target) {
+            lastSnapRef.current = target;
+            setSel(target);
           } else {
+            lastSnapRef.current = null;
             setSel(null); // 桌面空白 → 无选区（微信同款全暗）
           }
         })
