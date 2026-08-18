@@ -354,7 +354,7 @@ body {
       否则输入框里的文字会比 canvas 上的位置偏几像素。
    （color / font-size 由 JSX 的 inline style 给，跟随当前标注颜色与字号档位） */
 .text-draft {
-  position: absolute; min-width: 40px;
+  position: absolute; min-width: 120px;
   outline: 1px dashed var(--accent, #3B9EFF);
   border: none;
   background: rgba(10, 16, 32, 0.55);
@@ -366,10 +366,11 @@ body {
   text-shadow: 0 0 3px rgba(0, 0, 0, 0.9), 0 0 1px rgba(0, 0, 0, 1);
   /* 提到工具栏(≤46)/浮层之上，避免点在工具栏附近时输入框被遮住而「看不见」 */
   z-index: 80;
-  /* textarea：不拖拽手柄、不出纵向滚动条（高度由 autoSizeText 撑开）；
-     white-space:pre + wrap=off 关闭软换行，所见即所得对齐 canvas（canvas 不软换行） */
+  /* textarea：不拖拽手柄；wrap=off + white-space:pre 关闭软换行（与 canvas 对齐）；
+     overflow:auto：单行超长时允许横向滚动，否则 overflow:hidden 会把后半段裁掉、还看不到。
+     高度由 autoSizeText 撑开，故不会出现纵向滚动条。 */
   resize: none;
-  overflow: hidden;
+  overflow: auto;
   white-space: pre;
 }
 .text-draft::placeholder { color: rgba(220, 232, 248, 0.7); }

@@ -306,6 +306,13 @@ export const TEXT_SIZES: { id: "sm" | "md" | "lg"; label: string; css: number }[
   { id: "lg", label: "大", css: 28 },
 ];
 
+/** 字号档位步进（供文字迷你工具条 A-/A+）：到头即停，不回环。 */
+export function stepTextSize(id: "sm" | "md" | "lg", dir: 1 | -1): "sm" | "md" | "lg" {
+  const i = TEXT_SIZES.findIndex((t) => t.id === id);
+  const j = Math.max(0, Math.min(TEXT_SIZES.length - 1, i + dir));
+  return TEXT_SIZES[j].id;
+}
+
 /** 遮罩类工具（马赛克 / 模糊 / 高亮）的形状切换图标 */
 export const SHAPE_BRUSH_ICON = (
   <svg viewBox="0 0 16 16">

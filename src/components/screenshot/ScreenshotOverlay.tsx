@@ -189,6 +189,11 @@ export function ScreenshotOverlay() {
   const [textDraft, setTextDraft] = useState<{ x: number; y: number; id?: number; value?: string } | null>(null);
   /** 文字输入框 DOM 引用：用 rAF 聚焦代替 autoFocus（见下方 effect 注释）。 */
   const textInputRef = useRef<HTMLTextAreaElement>(null);
+  /** 防止文字被重复提交：Enter 提交 / Esc 取消后，卸载时的 blur 不应再提交一次。
+   *  Enter 提交后浏览器可能补发一次 blur（导致落两份相同文字）；
+   *  Esc 取消本意是不提交，但 blur 也会触发 onBlur→submitText（变成"取消却落字"）。
+   *  两者都用这个标记拦截。每次进入新编辑会话（textDraft 变化）由下方 effect 重置。 */
+  const textSubmittedRef = useRef(false);
   // textarea 内容变化时按 scrollHeight 自适应高度，避免多行被裁切
   const autoSizeText = (el: HTMLTextAreaElement) => {
     el.style.height = "auto";
@@ -200,6 +205,8 @@ export function ScreenshotOverlay() {
   // 因此这里不用 autoFocus，改为在手势结束后（rAF）聚焦，彻底避开竞态，比 autoFocus 更可靠。
   useEffect(() => {
     if (!textDraft) return;
+    // 进入新编辑会话：清除上一次的"已提交/已取消"标记，避免误拦截本次提交。
+    textSubmittedRef.current = false;
     const el = textInputRef.current;
     if (!el) return;
     const id = requestAnimationFrame(() => {
@@ -3283,6 +3290,9 @@ export function ScreenshotOverlay() {
 
   /* 文字输入提交 */
   const submitText = (value: string) => {
+    // 防重入：Enter 已提交 / Esc 已取消后，卸载时的 blur 调到这里直接返回，不落第二份。
+    if (textSubmittedRef.current) return;
+    textSubmittedRef.current = true;
     if (textDraft && value.trim()) {
       // 真实包围盒写进 x2/y2：选中框、后续命中检测都准（否则退化为落点 8px）。
       const ext = measureTextExtent(value, fontPx);
@@ -3962,6 +3972,9 @@ export function ScreenshotOverlay() {
                   className="text-draft"
                   // 编辑已有文字时回填初始文本（新建则为空）
                   defaultValue={textDraft.value ?? ""}
+                  // wrap=off：关闭软换行，框内逻辑行数 = \n 行数 = canvas 渲染行数，
+                  // 所见即所得（否则框里折行、落字不折，预览与落字错位）。
+                  wrap="off"
                   // 在输入框内按下不冒泡到标注画布：避免点到输入框又触发 onAnnotMouseDown 重建/移位
                   onMouseDown={(e) => e.stopPropagation()}
                   // 内容变化按 scrollHeight 撑高（多行不被裁切）
@@ -3978,7 +3991,14 @@ export function ScreenshotOverlay() {
                     color,
                   }}
                   placeholder="输入文字…（Shift+Enter 换行）"
-                  onBlur={(e) => submitText(e.target.value)}
+                  onBlur={(e) => {
+                    // 已通过 Enter 提交 / Esc 取消的，卸载时补发的 blur 不再提交（防双落 / 防取消却落字）。
+                    if (textSubmittedRef.current) {
+                      textSubmittedRef.current = false;
+                      return;
+                    }
+                    submitText(e.target.value);
+                  }}
                   onKeyDown={(e) => {
                     // Enter（非 Shift、非输入法组合）提交；Shift+Enter 放行默认行为 = 换行。
                     // 阻断冒泡：否则 Enter 触发全局"完成标注"、Esc 关闭截图窗口（V3 bug）。
@@ -3989,6 +4009,8 @@ export function ScreenshotOverlay() {
                     }
                     if (e.key === "Escape") {
                       e.stopPropagation();
+                      // 取消：标记已处理，卸载时的 blur 不再把当前文字提交出去（否则"取消却落字"）。
+                      textSubmittedRef.current = true;
                       setTextDraft(null);
                     }
                   }}

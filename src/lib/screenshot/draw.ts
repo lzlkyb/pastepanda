@@ -107,6 +107,39 @@ export const LINE_WIDTH = 3;
  */
 export const TEXT_SIZE = 18;
 
+/** 行高系数（与 drawAnnot 文字渲染一致）：文字顶部对齐 a.y，整段高度 = 行数 × 字号 × 1.3。 */
+export const TEXT_LINE_HEIGHT = 1.3;
+/** 复用的离屏测量 ctx（只在浏览器里建一次）。 */
+let _measureCtx: CanvasRenderingContext2D | null = null;
+
+/**
+ * 文字标注的真实包围盒（物理像素）。多行按 \n 拆，取最宽行作宽度，行数 × 字号 × 行高作高度。
+ * 用于三处，保证"点文字任意位置都能选中/改字"：
+ *   ① pointHitAnnot 的 text 分支（命中检测，覆盖旧标注 x2===x 退化）；
+ *   ② 提交/编辑文字时把真实宽高写进 x2/y2（选中框、后续命中都准）；
+ *   ③ 无障碍兜底：非浏览器环境按字符数估算。
+ * 字体串必须与 drawAnnot 文字渲染完全一致，否则量出来的宽和画出来的对不齐。
+ */
+export function measureTextExtent(text: string, fontPx: number): { w: number; h: number } {
+  const fs = fontPx || TEXT_SIZE;
+  const lines = (text ?? "").split("\n");
+  const fallback = () => ({
+    w: Math.max(1, ...lines.map((l) => l.length * fs * 0.6)),
+    h: lines.length * fs * TEXT_LINE_HEIGHT,
+  });
+  if (typeof document === "undefined") return fallback();
+  if (!_measureCtx) {
+    const c = document.createElement("canvas");
+    _measureCtx = c.getContext("2d");
+  }
+  const ctx = _measureCtx;
+  if (!ctx) return fallback();
+  ctx.font = `${fs}px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif`;
+  let w = 0;
+  for (const ln of lines) w = Math.max(w, ctx.measureText(ln || " ").width);
+  return { w: w || fs, h: lines.length * fs * TEXT_LINE_HEIGHT };
+}
+
 /**
  * 取与给定颜色对比的“墨色”（纯函数，带单测）。
  *
@@ -417,9 +450,17 @@ export function drawAnnot(
       ctx.lineJoin = "round";
       ctx.miterLimit = 2;
       ctx.strokeStyle = contrastInk(a.color);
-      ctx.strokeText(a.text ?? "", a.x, a.y);
       ctx.fillStyle = a.color;
-      ctx.fillText(a.text ?? "", a.x, a.y);
+      // 多行：按 \n 拆，逐行叠 TEXT_LINE_HEIGHT（与 measureTextExtent 测量、输入框 line-height 一致）。
+      // 空行不画但占位，避免与测量尺寸 / 编辑预览错位（否则回车瞬间整段会跳动）。
+      const tlines = (a.text ?? "").split("\n");
+      const tlineH = fs * TEXT_LINE_HEIGHT;
+      tlines.forEach((ln, i) => {
+        if (!ln) return;
+        const ty = a.y + i * tlineH;
+        ctx.strokeText(ln, a.x, ty);
+        ctx.fillText(ln, a.x, ty);
+      });
       break;
     }
     case "number": {
