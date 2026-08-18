@@ -542,9 +542,8 @@ pub fn open_pinned_image(
     path: String,
 ) -> Result<(), String> {
     log::info!("[pinned-image] open_pinned_image 被调用, path: {}", path);
-    // 登记贴图：双击贴图可回到截图标注窗口重新编辑
-    crate::screenshot::register_pinned_edit(&app, &path);
-    crate::pinned_window::create_native_window(&path)
+    // (app, path) 直接随窗口创建线程带下去绑定，避免全局 slot 被连续双击覆盖（"双击A开B"）。
+    crate::pinned_window::create_native_window(app, &path)
 }
 
 /// 关闭置顶图片（通知前端隐藏遮罩层 + 主动关闭当前原生置顶窗口）

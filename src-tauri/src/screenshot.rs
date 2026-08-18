@@ -172,7 +172,11 @@ fn grab_rect_rgba(
         // 混合 DPI 多显示器下，BitBlt 跨屏拷贝可能出现原点偏移，导致跨显示器选区内容错位。
         // P2-B2 只保证「每片同比例」（前端 drawImage 拉伸归一），未根治跨屏坐标错位；
         // 根治需按显示器分块截取再拼合（属大改，本次未做）。见前端 P2-B2 段注释。
-        let _ = BitBlt(mem_dc, 0, 0, width, height, screen_dc, origin_x, origin_y, SRCCOPY);
+        // 检查返回值：BitBlt 失败（DC 失效 / 参数越界）若静默忽略，会拿未初始化的 DIB 当图，
+        // 表现为黑屏 / 错位且零报错。失败直接返回错误，清理由外层统一处理。
+        if BitBlt(mem_dc, 0, 0, width, height, screen_dc, origin_x, origin_y, SRCCOPY).is_err() {
+            return Err("BitBlt 拷贝屏幕像素失败".to_string());
+        }
 
         // BGRA 像素 → RGBA（image crate 用 RGBA）
         let len = (width as usize) * (height as usize) * 4;
@@ -289,7 +293,7 @@ pub fn save_screenshot_image(
     }
     if bytes.len() > MAX_IMAGE_BYTES {
         return Err(format!(
-            "图片过大 ({}MB)，超过 50MB 限制",
+            "图片过大 ({}MB)，超过 120MB 限制",
             bytes.len() / 1024 / 1024
         ));
     }
@@ -565,6 +569,19 @@ pub fn get_editor_target(state: tauri::State<'_, EditorTarget>) -> Option<String
 #[tauri::command]
 pub fn insert_into_editor(editor_path: String, image_path: String) -> Result<(), String> {
     use std::io::Write;
+    // ⚠️ 路径白名单：editor_path 来自前端（FullscreenEditor 的 .md 文档），但没归属校验
+    // 就等于开了「往任意文件 append 图片引用」的口子。本应用编辑器只处理 Markdown，
+    // 故只允许绝对路径且扩展名为 .md / .markdown，其余一律拒绝（防御性，不依赖前端诚实）。
+    let p = std::path::Path::new(&editor_path);
+    let ext_ok = matches!(
+        p.extension().and_then(|e| e.to_str()),
+        Some("md") | Some("markdown")
+    );
+    if !p.is_absolute() || !ext_ok {
+        return Err(format!(
+            "编辑器路径不合法（必须为绝对路径的 .md 文件）: {editor_path}"
+        ));
+    }
     // markdown 图片引用：相对路径更稳（图片在 app_data/screenshots/，编辑器可能指向任意位置），
     // 但文件移动会断；用绝对路径（Windows 盘符）最直接，且 useFileWatch 只监听本文件变化。
     let line = format!("\n\n![]({})\n", image_path.replace('\\', "/"));
@@ -1009,41 +1026,40 @@ pub fn take_pending_shot_edit(state: tauri::State<'_, PendingShotEdit>) -> Optio
 /// 贴图窗口 → 重新编辑的回调注册（open_pinned_image 命令在打开贴图时调用）。
 /// 多贴图并存（V5）：slot 存"最近一次贴图"，窗口创建后按 hwnd 绑定到 map，
 /// 双击哪个贴图就编辑哪张（不再只认最后一张）。
-static PINNED_EDIT_SLOT: std::sync::OnceLock<std::sync::Mutex<Option<(tauri::AppHandle, String)>>> =
-    std::sync::OnceLock::new();
 static PINNED_EDIT_MAP: std::sync::OnceLock<
-    std::sync::Mutex<std::collections::HashMap<isize, (tauri::AppHandle, String)>>,
+    std::sync::Mutex<std::collections::HashMap<isize, (u64, tauri::AppHandle, String)>>,
 > = std::sync::OnceLock::new();
 
-fn pinned_edit_slot() -> &'static std::sync::Mutex<Option<(tauri::AppHandle, String)>> {
-    PINNED_EDIT_SLOT.get_or_init(|| std::sync::Mutex::new(None))
-}
-
-fn pinned_edit_map() -> &'static std::sync::Mutex<std::collections::HashMap<isize, (tauri::AppHandle, String)>> {
+fn pinned_edit_map() -> &'static std::sync::Mutex<std::collections::HashMap<isize, (u64, tauri::AppHandle, String)>> {
     PINNED_EDIT_MAP.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
 }
 
-/// 登记当前贴图（open_pinned_image 调用；窗口创建后由 pinned_window 绑定 hwnd）
-pub fn register_pinned_edit(app: &tauri::AppHandle, path: &str) {
-    *pinned_edit_slot().lock().unwrap_or_else(|p| p.into_inner()) = Some((app.clone(), path.to_string()));
-}
-
-/// 窗口创建后绑定（pinned_window 的 run_window_loop 拿到 hwnd 后调用）
-pub fn bind_pinned_edit(hwnd: isize, app: &tauri::AppHandle, path: &str) {
+/// 窗口创建后绑定（pinned_window 的 run_window_loop 拿到 hwnd 后调用）。
+///
+/// ⚠️ 路径直接随窗口创建线程一路带下来（app + image_path），**不再经过全局 slot**：
+/// 旧实现用单槽全局变量，连续双击 A/B 时 B 会覆盖 A 的槽，导致 A 的窗口绑定到 B 的路径
+/// （"双击A开B"）。现在每个窗口线程各拿各的 (app, path)，互不串。
+pub fn bind_pinned_edit(hwnd: isize, generation: u64, app: &tauri::AppHandle, path: &str) {
     pinned_edit_map()
         .lock()
         .unwrap_or_else(|p| p.into_inner())
-        .insert(hwnd, (app.clone(), path.to_string()));
+        .insert(hwnd, (generation, app.clone(), path.to_string()));
 }
 
 /// 窗口销毁时解除绑定（pinned_window 的 WM_DESTROY 调用）。
-/// 原先叫 take_pinned_edit_by_hwnd，被双击处理当成「取值」用，结果双击一次就把绑定消耗掉了；
-/// 现在取值一律用 peek，本函数只用于销毁时清理（防 map 泄漏 + HWND 复用串号）。
-pub fn unbind_pinned_edit(hwnd: isize) -> Option<(tauri::AppHandle, String)> {
-    pinned_edit_map()
+///
+/// 带 generation 守卫：HWND 被 OS 复用（旧窗已销毁、新窗拿到同号）时，只删与自己代际匹配的条目，
+/// 不会被别的窗口的 unbind 误删、也不会因旧条目残留串号。
+pub fn unbind_pinned_edit(hwnd: isize, generation: u64) -> Option<(tauri::AppHandle, String)> {
+    let mut m = pinned_edit_map()
         .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .remove(&hwnd)
+        .unwrap_or_else(|p| p.into_inner());
+    if let Some(v) = m.get(&hwnd) {
+        if v.0 == generation {
+            return m.remove(&hwnd).map(|(_, app, path)| (app, path));
+        }
+    }
+    None
 }
 
 /// 查询贴图信息（右键菜单用，不取走）
@@ -1052,12 +1068,7 @@ pub fn peek_pinned_edit_by_hwnd(hwnd: isize) -> Option<(tauri::AppHandle, String
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .get(&hwnd)
-        .cloned()
-}
-
-/// 最近一次待绑定贴图（窗口线程内取用）
-pub fn take_pinned_edit_request() -> Option<(tauri::AppHandle, String)> {
-    pinned_edit_slot().lock().unwrap_or_else(|p| p.into_inner()).take()
+        .map(|(_, app, path)| (app.clone(), path.clone()))
 }
 
 /// 打开截图窗口进入"编辑模式"：窗口按图片 fit 尺寸 resize + 居中，前端 take pending 后载图标注。
@@ -1246,16 +1257,21 @@ fn area(r: (i32, i32, i32, i32)) -> i64 {
 /// 用 EnumWindows 从 Z 序最上层开始遍历，跳过截图窗口自身后取第一个包含该点的可见窗口——
 /// 因为截图窗口全屏透明覆盖，WindowFromPoint 只会命中它自己。
 #[tauri::command]
-pub fn snap_window_at(app: tauri::AppHandle, x: i32, y: i32) -> Result<Option<SnapTargets>, String> {
-    #[cfg(target_os = "windows")]
-    {
-        snap_window_impl(&app, x, y)
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = (app, x, y);
-        Ok(None)
-    }
+pub async fn snap_window_at(app: tauri::AppHandle, x: i32, y: i32) -> Result<Option<SnapTargets>, String> {
+    // EnumWindows + 命中测试是重活，放 blocking 线程，避免阻塞主线程 / WebView。
+    tokio::task::spawn_blocking(move || {
+        #[cfg(target_os = "windows")]
+        {
+            snap_window_impl(&app, x, y)
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = (&app, x, y);
+            Ok(None)
+        }
+    })
+    .await
+    .map_err(|e| format!("吸附窗口失败: {e}"))?
 }
 
 /// 枚举当前所有可见顶层窗口的视觉矩形（屏幕物理坐标），供拖选时「吸邻近窗口边缘」用。
@@ -1264,16 +1280,21 @@ pub fn snap_window_at(app: tauri::AppHandle, x: i32, y: i32) -> Result<Option<Sn
 /// DWM 隐身窗（cloaked：挂起 UWP / 其他虚拟桌面）、最小化窗。
 /// 窗口在截图会话内不会移动，前端进会话时取一次即可，不必每帧枚举。
 #[tauri::command]
-pub fn enum_window_rects(app: tauri::AppHandle) -> Result<Vec<SnapRect>, String> {
-    #[cfg(target_os = "windows")]
-    {
-        unsafe { enum_window_rects_impl(&app) }
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = app;
-        Ok(Vec::new())
-    }
+pub async fn enum_window_rects(app: tauri::AppHandle) -> Result<Vec<SnapRect>, String> {
+    // EnumWindows 遍历全部顶层窗是重活，放 blocking 线程，避免阻塞主线程。
+    tokio::task::spawn_blocking(move || {
+        #[cfg(target_os = "windows")]
+        {
+            unsafe { enum_window_rects_impl(&app) }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = &app;
+            Ok(Vec::new())
+        }
+    })
+    .await
+    .map_err(|e| format!("枚举窗口矩形失败: {e}"))?
 }
 
 #[cfg(target_os = "windows")]
@@ -1354,16 +1375,21 @@ unsafe extern "system" fn enum_rects_proc(
 ///
 /// 桌面空白（无顶层窗）或任务栏（无内部控件）返回 `None` / 空清单，前端据此退回 hover 吸附。
 #[tauri::command]
-pub fn enum_controls(app: tauri::AppHandle, x: i32, y: i32) -> Result<Option<ControlList>, String> {
-    #[cfg(target_os = "windows")]
-    {
-        unsafe { enum_controls_impl(&app, x, y) }
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = (app, x, y);
-        Ok(None)
-    }
+pub async fn enum_controls(app: tauri::AppHandle, x: i32, y: i32) -> Result<Option<ControlList>, String> {
+    // UIA 深度遍历控件树是重活（浏览器 DOM 可能几千节点），放 blocking 线程，避免阻塞主线程。
+    tokio::task::spawn_blocking(move || {
+        #[cfg(target_os = "windows")]
+        {
+            unsafe { enum_controls_impl(&app, x, y) }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = (&app, x, y);
+            Ok(None)
+        }
+    })
+    .await
+    .map_err(|e| format!("枚举控件失败: {e}"))?
 }
 
 #[cfg(target_os = "windows")]
@@ -1436,12 +1462,40 @@ unsafe fn enum_controls_impl(
 ///
 /// 防爆护栏：`MAX_VISIT` 限制遍历节点总数（浏览器 DOM 可能几千上万），`MAX_CTRL` 限制
 /// 最终返回控件数——宁可漏掉深层控件，也不能因为一次 Tab 把主线程卡死。
+
+/// COM 初始化 RAII 守卫：进入作用域 `CoInitializeEx`，离开（含所有 early return）自动
+/// `CoUninitialize`。
+///
+/// ⚠️ 旧实现每次 UIA 调用都 `CoInitializeEx` 却从不 `CoUninitialize`，COM 引用计数累加、
+/// 线程公寓永不卸载——在 MTA 线程上 UIA 还不稳定。这里只对「本次真正新初始化」(S_OK) 负责卸载，
+/// 已初始化 (S_FALSE) 或模式冲突 (RPC_E_CHANGED_MODE) 不接管，避免误卸别人的公寓。
+struct ComInit;
+impl ComInit {
+    fn new() -> Option<Self> {
+        use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
+        // S_OK(0) 才代表本调用新初始化了一个公寓；其余情况不该由我们卸载。
+        let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+        if hr.0 == 0 {
+            Some(ComInit)
+        } else {
+            None
+        }
+    }
+}
+impl Drop for ComInit {
+    fn drop(&mut self) {
+        unsafe {
+            windows::Win32::System::Com::CoUninitialize();
+        }
+    }
+}
+
 #[cfg(target_os = "windows")]
 unsafe fn uia_enumerate_controls(
     hwnd: windows::Win32::Foundation::HWND,
     top_rect: (i32, i32, i32, i32),
 ) -> Vec<SnapRect> {
-    use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance, CoInitializeEx, COINIT_APARTMENTTHREADED};
+    use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
     use windows::Win32::UI::Accessibility::{
         CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationTreeWalker,
     };
@@ -1451,7 +1505,7 @@ unsafe fn uia_enumerate_controls(
     const MIN_SIDE: i32 = 8;
     let top_area = area(top_rect).max(1);
 
-    let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+    let _com = ComInit::new();
     let automation: IUIAutomation = match CoCreateInstance(&CUIAutomation, None, CLSCTX_ALL) {
         Ok(a) => a,
         Err(_) => return Vec::new(),
@@ -1716,11 +1770,12 @@ unsafe fn uia_control_at(
     pt: windows::Win32::Foundation::POINT,
     top_rect: (i32, i32, i32, i32),
 ) -> Option<(i32, i32, i32, i32)> {
-    use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance, CoInitializeEx, COINIT_APARTMENTTHREADED};
+    use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
     use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, IUIAutomationElement};
 
     // UIA 在 STA 下最稳定；已初始化（含模式不同 RPC_E_CHANGED_MODE）一律忽略，仍尝试后续调用。
-    let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+    // ComInit 守卫确保无论哪条 early return 都自动 CoUninitialize（仅 S_OK 新初始化才卸载）。
+    let _com = ComInit::new();
 
     // 创建 UIA 客户端（进程内 COM 服务器）。这是取「逻辑控件」边界的关键——
     // legacy MSAA 在 Electron / Chrome / VS Code 上只会命中到顶层窗口，拿不到具体控件；

@@ -308,8 +308,8 @@ export function drawAnnot(
       const box = maskBox(a);
       if (box.w < 1 || box.h < 1) break;
       // 色块默认 8px（12px 在 2.5K 屏上太粗，实测反馈）；档位见 tools.tsx 的 MOSAIC_LEVELS。
-      // 下限 2：1px “马赛克”等于没马赛克，而滚轮能调到 1。
-      const cell = Math.max(2, Math.round(a.strength ?? 8));
+      // 下限 5：与 fine 档对齐，滚轮调到最低也是可见的马赛克——旧下限 2px 等于没打码。
+      const cell = Math.max(5, Math.round(a.strength ?? 8));
       if (!baseImg) {
         // 底图未就绪：画中性灰占位棋盘，不能用 a.color（否则就是一片用户选色的实心格子）
         drawPendingBlock(ctx, box.x, box.y, box.w, box.h, cell);

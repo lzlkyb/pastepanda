@@ -8,6 +8,7 @@
 
 import { maskBrushWidth } from "./maskGeom";
 import { measureTextExtent, TEXT_SIZE } from "./draw";
+export { measureTextExtent };
 import type { Annotation, Rect, ScreenInfo, SnapRect, SnapTargets } from "./types";
 
 /* ===== 坐标系换算（多显示器必需） =====
@@ -155,10 +156,12 @@ export function pointHitAnnot(px: number, py: number, a: Annotation): boolean {
       // 点到实际可见文字（右下方向）永远选不中、改不了（用户反馈）。
       const fs = a.size ?? TEXT_SIZE;
       const ext = measureTextExtent(a.text ?? "", fs);
-      const bw = Math.max(ext.w, a.x2 - a.x);
-      const bh = Math.max(ext.h, a.y2 - a.y);
+      // 用顶部已归一化的 x/w/h（已 abs 处理反向坐标），否则 x2<x 的反选矩形/文字
+      // 命中框会变成负宽 → 选不中（ellipse/arrow 已归一化，这里漏了）。
+      const bw = Math.max(ext.w, w);
+      const bh = Math.max(ext.h, h);
       const tpad = Math.max(8, fs / 6);
-      return px >= a.x - tpad && px <= a.x + bw + tpad && py >= a.y - tpad && py <= a.y + bh + tpad;
+      return px >= x - tpad && px <= x + bw + tpad && py >= y - tpad && py <= y + bh + tpad;
     }
     case "ellipse": {
       if (w <= 0 || h <= 0) return false;
@@ -169,7 +172,26 @@ export function pointHitAnnot(px: number, py: number, a: Annotation): boolean {
       return dx * dx + dy * dy <= 1;
     }
     case "arrow": {
-      return distToSegment(px, py, a.x, a.y, a.x2, a.y2) < Math.max(8, a.width * 2);
+      // 主线段命中（箭头杆）
+      if (distToSegment(px, py, a.x, a.y, a.x2, a.y2) < Math.max(8, a.width * 2)) return true;
+      // 箭头头部命中：箭头不只是杆，点尖端附近也应能选中/拖动（旧实现只测杆，头附近点不中）。
+      const headLen = Math.max(14, a.width * 4);
+      const dx = a.x2 - a.x;
+      const dy = a.y2 - a.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len;
+      const uy = dy / len;
+      const vx = px - a.x2;
+      const vy = py - a.y2;
+      const proj = vx * ux + vy * uy; // 沿箭头方向距尖端的距离（负 = 往杆方向）
+      const t = -proj; // 从尖端往后（进箭头头部）的深度，0=尖端，headLen=头底
+      if (t >= -a.width && t <= headLen) {
+        const perp = Math.abs(vx * -uy + vy * ux);
+        // 头部是三角形：越靠近尖端越窄，头底半宽 ≈ headLen/2
+        const maxPerp = (t <= 0 ? a.width : (t / headLen) * (headLen / 2)) + 2;
+        if (perp <= maxPerp) return true;
+      }
+      return false;
     }
     case "pen": {
       if (!a.points) return false;

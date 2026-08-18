@@ -567,6 +567,8 @@ export function ScreenshotOverlay() {
 
   /* 拖选状态（select 态，物理坐标，相对虚拟屏幕原点） */
   const dragRef = useRef<{ startX: number; startY: number; curX: number; curY: number } | null>(null);
+  // 给 window 级兜底监听用的“最新 finalize 实现”引用（避免 effect 反复重订）
+  const finalizeSelectDragRef = useRef<() => void>(() => {});
 
   /* V6.19：清空 OCR 状态（重选/重截时重置，防旧选区行框错位 + 提前识别不触发） */
   const clearOcrState = useCallback(() => {
@@ -2461,6 +2463,9 @@ export function ScreenshotOverlay() {
     setPhase("select");
     setSel(null);
     setSelDraft(null);
+    selFixedRef.current = false; // 解除固定 → hover 吸附恢复，可以重新挑窗口（规则 11.1）
+    lastSnapRef.current = null;
+    setSnapWin(null);
     setAnnotations([]);
     setUndoStack([]);
     setRedoStack([]);
@@ -2877,7 +2882,7 @@ export function ScreenshotOverlay() {
         });
     }
   };
-  const onSelectMouseUp = () => {
+  const finalizeSelectDrag = () => {
     if (longPreview) return;
     const wasFixed = fixedPreview;
     const d = dragRef.current;
@@ -2893,9 +2898,15 @@ export function ScreenshotOverlay() {
     const w = Math.abs(d.curX - d.startX);
     const h = Math.abs(d.curY - d.startY);
     if (w >= 4 && h >= 4) {
-      // 拖选有效 → 固定（移动不再吸附，微信同款）并自动进入标注
+      // 拖选有效 → 固定（移动不再吸附，微信同款）并自动进入标注。
+      // 提交也要走 applyMagnet，否则吸附预览（selDraft 已磁吸）与落点（未磁吸）瞬间跳变。
+      const raw = { x: Math.min(d.startX, d.curX), y: Math.min(d.startY, d.curY), w, h };
+      const sc = screen;
+      const magnet = sc
+        ? applyMagnet(raw, [...winRectsRef.current, ...(lastSnapRef.current ? [lastSnapRef.current.ctrl] : [])], sc.width, sc.height)
+        : raw;
       selFixedRef.current = true;
-      setSel({ x: Math.min(d.startX, d.curX), y: Math.min(d.startY, d.curY), w, h });
+      setSel(magnet);
       setPhase("annotate");
     } else {
       // 原地点击（单击）：提交当前吸附窗口进标注；无选区(桌面空白)则保持 hover 吸附
@@ -2914,6 +2925,31 @@ export function ScreenshotOverlay() {
     setSelDraft(null);
     hideMag();
   };
+  const onSelectMouseUp = () => finalizeSelectDrag();
+
+  // ⚠️ 拖选中途移出画布松手 → 元素级 onMouseUp 收不到 → dragRef/selDraft 永不清除 → 幽灵框。
+  // 挂 window 级兜底：无论在哪松手 / 失焦，都能清空拖拽态（与元素 handler 互斥，靠 dragRef 判空防重复）。
+  finalizeSelectDragRef.current = finalizeSelectDrag;
+  useEffect(() => {
+    const onWinUp = () => {
+      if (dragRef.current) finalizeSelectDragRef.current();
+    };
+    const onWinBlur = () => {
+      // 光标拖到别的窗口里松手：本窗失焦，mouseup 不会发到我们这，
+      // 直接丢弃这次拖拽，避免遗留幽灵框 / 下次移动续画。
+      if (dragRef.current) {
+        dragRef.current = null;
+        setSelDraft(null);
+        hideMag();
+      }
+    };
+    window.addEventListener("mouseup", onWinUp);
+    window.addEventListener("blur", onWinBlur);
+    return () => {
+      window.removeEventListener("mouseup", onWinUp);
+      window.removeEventListener("blur", onWinBlur);
+    };
+  }, []);
 
   /* 双击：有选区 → 进入标注；无选区 → 全选并进标注（Snipaste 双击全屏即编辑） */
   const onSelectDoubleClick = () => {
@@ -3954,14 +3990,15 @@ export function ScreenshotOverlay() {
             // 估算输入框高度（CSS px）：行数 × 字号 × 行高 + 上下留白；用于贴底翻转判断。
             const draftLines = (textDraft.value ?? "").split("\n").length || 1;
             const boxHCss = draftLines * fontCss * TEXT_LINE_HEIGHT + 4;
-            const TOOLBAR_H = 34;
-            // 输入框 + 迷你条整体接近选区/窗口底部时，把迷你条翻到输入框「上方」，
-            // 否则会被遮住看不见（微信同款：贴边自动上翻）。
-            const viewBottomCss = selRef.current
+            const TOOLBAR_H = 34; // 文字附着迷你条高度
+            const ANNOT_TOOLBAR_H = 56; // 底部主标注工具栏实际高度（含 padding/border），文字不能压在它上面
+            const screenBottom = typeof window !== "undefined" ? window.innerHeight : 1e9;
+            const selBottom = selRef.current
               ? (selRef.current.y + selRef.current.h) / dpr
-              : typeof window !== "undefined"
-                ? window.innerHeight
-                : 1e9;
+              : screenBottom;
+            // 可用底部 = min(选区底, 屏幕底) - 工具栏高：翻转判断要让出工具栏空间，
+            // 否则选区贴屏幕底时文字/迷你条仍会被主工具栏遮住（旧实现忽略工具栏高度）。
+            const viewBottomCss = Math.min(selBottom, screenBottom) - ANNOT_TOOLBAR_H;
             const flip = textDraft.y / dpr + boxHCss + 8 + TOOLBAR_H > viewBottomCss;
             return (
               <>

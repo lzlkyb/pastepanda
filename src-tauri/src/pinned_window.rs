@@ -1152,7 +1152,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 
             // 解除重编辑绑定：不清的话 PINNED_EDIT_MAP 只增不减，而且 Windows 会复用 HWND 数值，
             // 新窗口拿到旧 hwnd 时会串到上一张图的路径（右键「复制图片」复制错图）。
-            crate::screenshot::unbind_pinned_edit(hwnd.0 as isize);
+            // 带 generation 守卫：HWND 复用时不误删别的窗口的绑定。
+            if let Some(gen) = destroyed_generation {
+                crate::screenshot::unbind_pinned_edit(hwnd.0 as isize, gen);
+            }
 
             let _ = PostQuitMessage(0);
             LRESULT(0)
@@ -1184,7 +1187,7 @@ fn register_class(instance: HINSTANCE) -> Result<(), String> {
     Ok(())
 }
 
-pub fn create_native_window(image_path: &str) -> Result<(), String> {
+pub fn create_native_window(app: tauri::AppHandle, image_path: &str) -> Result<(), String> {
     // 多贴图并存（V5）：不再"关旧开新"——多次贴图各自创建独立置顶窗口。
     // 关闭由 close_current_window（关全部）或各窗口自身的 Esc/右键完成。
     // 修复 C18：先仅读头部校验尺寸上限，防解压炸弹
@@ -1204,8 +1207,10 @@ pub fn create_native_window(image_path: &str) -> Result<(), String> {
     let generation = NEXT_GENERATION.fetch_add(1, Ordering::SeqCst);
     let image_path_owned = image_path.to_string();
 
+    // app 随窗口线程带下去，供 run_window_loop 内部绑定 (hwnd → path) 使用，
+    // 不再依赖全局 slot（连续双击 A/B 时 slot 会被覆盖，导致 A 的窗口绑定到 B 的路径）。
     std::thread::spawn(move || {
-        if let Err(e) = run_window_loop(pixels, img_width, img_height, generation, image_path_owned) {
+        if let Err(e) = run_window_loop(pixels, img_width, img_height, generation, image_path_owned, app) {
             log::error!("[pinned-window] 窗口消息循环错误: {}", e);
         }
     });
@@ -1288,6 +1293,7 @@ fn run_window_loop(
     img_height: u32,
     generation: u64,
     image_path: String,
+    app: tauri::AppHandle,
 ) -> Result<(), String> {
     // GetModuleHandleW 返回 HMODULE，可转为 HINSTANCE
     let module = unsafe { windows::Win32::System::LibraryLoader::GetModuleHandleW(None) }
@@ -1459,26 +1465,9 @@ fn run_window_loop(
     // 换成具名 guard 后就丢掉了这个隐式释放点。
     drop(guard);
 
-    // 多贴图重编辑：把最近一次贴图绑定到本窗口 hwnd（双击哪张就编辑哪张）
-    if let Some((app, path)) = crate::screenshot::take_pinned_edit_request() {
-        crate::screenshot::bind_pinned_edit(hwnd.0 as isize, &app, &path);
-    }
-
-    // DWM 圆角
-    {
-        use windows::Win32::Graphics::Dwm::{
-            DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE,
-        };
-        let preference: i32 = 2;
-        unsafe {
-            let _ = DwmSetWindowAttribute(
-                hwnd,
-                DWMWA_WINDOW_CORNER_PREFERENCE,
-                &preference as *const i32 as *const _,
-                std::mem::size_of::<i32>() as u32,
-            );
-        }
-    }
+    // 多贴图重编辑：把本窗口的 (app, image_path) 绑定到 hwnd（双击哪张就编辑哪张）。
+    // 路径直接来自窗口创建线程，不再经全局 slot —— 杜绝"双击A开B"（B 覆盖 A 的槽）。
+    crate::screenshot::bind_pinned_edit(hwnd.0 as isize, generation, &app, &image_path);
 
     let state = Box::new(WindowState {
         pixels,

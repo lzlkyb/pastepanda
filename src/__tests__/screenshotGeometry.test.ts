@@ -13,6 +13,7 @@ import {
   applyMagnet,
   eraseHits,
   pointHitAnnot,
+  measureTextExtent,
   toLocalRect,
   toScreenPt,
   MAGNET_T,
@@ -154,7 +155,8 @@ describe("pointHitAnnot", () => {
     expect(pointHitAnnot(12, 12, { ...a, points: undefined })).toBe(false);
   });
 
-  it("文字：包围盒为零，只靠 padding——所以长文本只能点左上角（已知局限）", () => {
+  it("文字：命中框覆盖真实渲染宽度（修复：不再只点左上角）", () => {
+    const size = 20;
     const a: Annotation = {
       ...base,
       type: "text",
@@ -162,11 +164,23 @@ describe("pointHitAnnot", () => {
       y: 100,
       x2: 100,
       y2: 100,
+      size,
       text: "很长很长的一段标注文字",
     };
+    const ext = measureTextExtent(a.text ?? "", size);
+    // 起点附近（padding 内）命中
     expect(pointHitAnnot(103, 103, a)).toBe(true);
-    // 文字实际渲染到右侧很远，但命中框没跟上
-    expect(pointHitAnnot(200, 103, a)).toBe(false);
+    // 覆盖到文字真实右端（旧实现 x2===x 退化，右侧文字点不中）
+    expect(pointHitAnnot(100 + ext.w - 1, 103, a)).toBe(true);
+    expect(pointHitAnnot(100 + ext.w + 30, 103, a)).toBe(false); // 右越界
+    expect(pointHitAnnot(100 - 20, 103, a)).toBe(false); // 左越界
+  });
+
+  it("箭头：命中头部（尖端附近）而不只杆", () => {
+    const a: Annotation = { ...base, type: "arrow", x: 0, y: 0, x2: 100, y2: 0 };
+    expect(pointHitAnnot(98, 2, a)).toBe(true); // 尖端附近（头部）
+    expect(pointHitAnnot(50, 0, a)).toBe(true); // 杆中部
+    expect(pointHitAnnot(98, 40, a)).toBe(false); // 头部外、离轴线远
   });
 });
 
