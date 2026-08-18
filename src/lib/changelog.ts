@@ -4,6 +4,12 @@ export type ChangeCategoryType = "feat" | "fix" | "change" | "security" | "perf"
 
 export interface ChangeItem {
   text: string;
+  /** 有什么用：一句话价值说明（仅「新增」类需要，用于发版弹框功能卡片） */
+  why?: string;
+  /** 怎么用：操作步骤（1–3 步），用于发版弹框功能卡片 */
+  how?: string[];
+  /** 配图：构建后站点根下的图片路径（放 public/shots/ 下，如 /shots/ocr.jpg），弹框内渲染缩略图 */
+  media?: string;
 }
 
 export interface ChangeGroup {

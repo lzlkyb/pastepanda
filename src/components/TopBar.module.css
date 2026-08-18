@@ -888,3 +888,40 @@
   position: relative;
   display: inline-flex;
 }
+
+/* 「新功能」红点入口：有未读更新说明时显示，点击重开发版弹框 */
+.whatsNewBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--accent, #6366f1);
+  background: var(--accent-light, #eef0ff);
+  color: var(--accent, #6366f1);
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s, color 0.15s, border-color 0.3s;
+}
+
+.whatsNewBtn:hover {
+  filter: brightness(0.97);
+}
+
+.whatsNewDot {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--danger, #ef4444);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}

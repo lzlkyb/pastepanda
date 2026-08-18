@@ -107,24 +107,26 @@ describe("UpdateNotesDialog（方案 C 玻璃时间线）", () => {
 
     // 页脚
     expect(screen.getByText("下载并更新")).toBeTruthy();
-    expect(screen.getByText("跳过此版本")).toBeTruthy();
+    expect(screen.getByText("稍后看")).toBeTruthy();
   });
 
-  it("chip 筛选：点「修复」后仅修复条目可见，其余挂 tlHidden", () => {
+  it("chip 筛选：点「修复」后仅修复条目渲染，其余分类直接不渲染", () => {
     mockUpdate();
     render(<UpdateNotesDialog open onClose={() => {}} currentVersion="9.9.8" />);
 
     fireEvent.click(chipByLabel("修复"));
 
-    expect(screen.getByText("修复丙").closest("div")?.className).not.toContain("tlHidden");
-    expect(screen.getByText("改进乙").closest("div")?.className).toContain("tlHidden");
-    expect(screen.getByText("新功能甲").closest("div")?.className).toContain("tlHidden");
-    // 分组标签行随所属分类一起隐藏
-    expect(screen.getByText("体验优化").className).toContain("tlHidden");
+    // 修复条目可见
+    expect(screen.getByText("修复丙")).toBeTruthy();
+    // 非修复分类（新增 / 改进 / 其分组标签）直接不渲染
+    expect(screen.queryByText("新功能甲")).toBeNull();
+    expect(screen.queryByText("改进乙")).toBeNull();
+    expect(screen.queryByText("体验优化")).toBeNull();
 
     // 点「全部」恢复
     fireEvent.click(screen.getByText("全部"));
-    expect(screen.getByText("改进乙").closest("div")?.className).not.toContain("tlHidden");
+    expect(screen.getByText("改进乙")).toBeTruthy();
+    expect(screen.getByText("新功能甲")).toBeTruthy();
   });
 
   it("点「下载并更新」：触发下载并立即关闭弹框", () => {
@@ -151,13 +153,13 @@ describe("UpdateNotesDialog（方案 C 玻璃时间线）", () => {
     expect(btn?.disabled).toBe(false);
   });
 
-  it("跳过此版本：调用 skipThisVersion 并关闭弹框", () => {
+  it("稍后看：调用 skipThisVersion 并关闭弹框", () => {
     const skip = vi.fn();
     const close = vi.fn();
     mockUpdate({ skipThisVersion: skip });
     render(<UpdateNotesDialog open onClose={close} currentVersion="9.9.8" />);
 
-    fireEvent.click(screen.getByText("跳过此版本"));
+    fireEvent.click(screen.getByText("稍后看"));
     expect(skip).toHaveBeenCalledTimes(1);
     expect(close).toHaveBeenCalledTimes(1);
   });
@@ -206,5 +208,21 @@ describe("UpdateNotesDialog（方案 C 玻璃时间线）", () => {
     render(<UpdateNotesDialog open onClose={() => {}} currentVersion="0.0.0" />);
     expect(screen.getByText("暂无详细更新日志")).toBeTruthy();
     expect(screen.getByText("原始日志文本")).toBeTruthy();
+  });
+
+  it("红点手动打开（manual）：无更新时展示最新版说明，页脚为「关闭（已读）」", () => {
+    const close = vi.fn();
+    mockUpdate({ update: null, status: "idle" });
+    render(<UpdateNotesDialog open onClose={close} currentVersion="9.9.9" manual />);
+
+    // 展示包内最新版本（mock 的 9.9.9）
+    expect(screen.getByText("v9.9.9")).toBeTruthy();
+    expect(screen.getByText("测试版本摘要")).toBeTruthy();
+    // 页脚为「关闭（已读）」而非下载按钮
+    expect(screen.getByText("关闭（已读）")).toBeTruthy();
+    expect(screen.queryByText("下载并更新")).toBeNull();
+
+    fireEvent.click(screen.getByText("关闭（已读）"));
+    expect(close).toHaveBeenCalledTimes(1);
   });
 });

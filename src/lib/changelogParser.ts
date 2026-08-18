@@ -90,6 +90,7 @@ export function parseChangelogSection(markdown: string | null | undefined, versi
   let currentCat: CatAccum | null = null;
   let currentGroup: ChangeGroup | null = null;
   let date = "";
+  let lastItem: ChangeItem | null = null; // 最近一条 bullet，用于挂载缩进子项（用法/配图）
 
   /** 收口当前分类：剔除空数组后压入 categories */
   const finalizeCat = () => {
@@ -120,6 +121,7 @@ export function parseChangelogSection(markdown: string | null | undefined, versi
       const { type, name } = mapCategory(h3Match[1]);
       currentCat = { type, name, items: [], groups: [] };
       currentGroup = null;
+      lastItem = null;
       continue;
     }
 
@@ -132,6 +134,7 @@ export function parseChangelogSection(markdown: string | null | undefined, versi
       }
       currentGroup = { label: subMatch[1], items: [] };
       currentCat.groups.push(currentGroup);
+      lastItem = null;
       continue;
     }
 
@@ -148,6 +151,23 @@ export function parseChangelogSection(markdown: string | null | undefined, versi
         currentGroup.items.push(item);
       } else {
         currentCat.items.push(item);
+      }
+      lastItem = item;
+      continue;
+    }
+
+    // ── 缩进子项：用法 / 配图（挂载到上一条 bullet，与 gen-changelog.mjs 一致） ──
+    const subField = line.match(/^[ \t]{2,}(用法|配图)\s*[:：]\s*(.+)$/);
+    if (subField && lastItem) {
+      const key = subField[1];
+      const val = subField[2].trim();
+      if (key === "配图") {
+        lastItem.media = val;
+      } else {
+        lastItem.how = val
+          .split(/[；;→/]/)
+          .map((s) => s.trim())
+          .filter(Boolean);
       }
       continue;
     }

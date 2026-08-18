@@ -74,6 +74,7 @@ function parseChangelog(markdown) {
   const entries = [];
 
   let currentEntry = null;   // { version, date, categories: [], _currentCat, _currentGroup }
+  let lastItem = null;       // 最近一条 bullet 条目，用于挂载缩进子项（用法/配图）
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -94,6 +95,7 @@ function parseChangelog(markdown) {
         _currentCat: null,
         _currentGroup: null,
       };
+      lastItem = null;
       continue;
     }
 
@@ -113,6 +115,7 @@ function parseChangelog(markdown) {
         groups: [],
       };
       currentEntry._currentGroup = null;
+      lastItem = null;
       continue;
     }
 
@@ -128,6 +131,7 @@ function parseChangelog(markdown) {
         items: [],
       };
       currentEntry._currentCat.groups.push(currentEntry._currentGroup);
+      lastItem = null;
       continue;
     }
 
@@ -139,6 +143,24 @@ function parseChangelog(markdown) {
         currentEntry._currentGroup.items.push(item);
       } else {
         currentEntry._currentCat.items.push(item);
+      }
+      lastItem = item;
+      continue;
+    }
+
+    // ── 缩进子项：用法 / 配图（挂载到上一条 bullet 条目，用于发版弹框功能卡片） ──
+    const subField = line.match(/^[ \t]{2,}(用法|配图)\s*[:：]\s*(.+)$/);
+    if (subField && lastItem) {
+      const key = subField[1];
+      const val = subField[2].trim();
+      if (key === "配图") {
+        lastItem.media = val;
+      } else {
+        // 用法：按 ； ; → / 拆成步骤
+        lastItem.how = val
+          .split(/[；;→/]/)
+          .map((s) => s.trim())
+          .filter(Boolean);
       }
       continue;
     }
@@ -236,6 +258,18 @@ function escapeStr(str) {
   return JSON.stringify(str);
 }
 
+/** 序列化一条 ChangeItem 的全部字段（text 必填，why/how/media 可选） */
+function itemFields(item) {
+  const parts = [` text: ${escapeStr(item.text)}`];
+  if (item.why) parts.push(` why: ${escapeStr(item.why)}`);
+  if (item.how && item.how.length > 0) {
+    const arr = item.how.map((s) => escapeStr(s)).join(", ");
+    parts.push(` how: [${arr}]`);
+  }
+  if (item.media) parts.push(` media: ${escapeStr(item.media)}`);
+  return parts.join(",");
+}
+
 /** Indent helper */
 function indent(level) {
   return "  ".repeat(level);
@@ -264,7 +298,7 @@ function generateTS(entries) {
       if (cat.items && cat.items.length > 0) {
         lines.push(`${indent(4)}items: [`);
         for (const item of cat.items) {
-          lines.push(`${indent(5)}{ text: ${escapeStr(item.text)} },`);
+          lines.push(`${indent(5)}{${itemFields(item)}},`);
         }
         lines.push(`${indent(4)}],`);
       }
@@ -276,7 +310,7 @@ function generateTS(entries) {
           lines.push(`${indent(6)}label: ${escapeStr(group.label)},`);
           lines.push(`${indent(6)}items: [`);
           for (const item of group.items) {
-            lines.push(`${indent(7)}{ text: ${escapeStr(item.text)} },`);
+            lines.push(`${indent(7)}{${itemFields(item)}},`);
           }
           lines.push(`${indent(6)}],`);
           lines.push(`${indent(5)}},`);

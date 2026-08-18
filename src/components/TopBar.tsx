@@ -5,6 +5,8 @@ import { AiStatusCap } from "@/components/AiStatusCap";
 import { AiStatusDot } from "@/components/AiStatusDot";
 import { AiMark } from "@/components/ai/AiMark";
 import { getAppVersion, getAppName, fetchCounts, toggleStackMode } from "@/lib/api";
+import { CHANGELOG } from "@/lib/changelog.generated";
+import { getLastSeenVersion, getUnseenEntries } from "@/lib/changelog";
 import { cleanSourceName } from "@/lib/source-mappings";
 import { useSourceIcon } from "@/hooks/useSourceIcon";
 import SourceBadge from "@/components/SourceBadge";
@@ -13,7 +15,7 @@ import { TagBadge, AnimatedTagBadge } from "@/components/TagBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { SearchBox } from "@/components/SearchBox";
 import { logger } from "@/lib/logger";
-import { ChevronDown, Tag, X, EyeOff } from "lucide-react";
+import { ChevronDown, Tag, X, EyeOff, Sparkles } from "lucide-react";
 import styles from "./TopBar.module.css";
 
 const TABS: { key: FilterType; label: string; icon: string }[] = [
@@ -82,10 +84,10 @@ function getTabStyle(): TabStyle {
   try { return (localStorage.getItem("tabStyle") as TabStyle) || "segmented"; } catch { return "segmented"; }
 }
 
-export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEncoding, onBatchReplace, onConfigDiff, onNewDiagram, onToggleSidebar, sidebarOpen }: {
+export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEncoding, onBatchReplace, onConfigDiff, onNewDiagram, onToggleSidebar, sidebarOpen, onShowWhatsNew }: {
   onSettings?: () => void; onSequential?: () => void; onSnippets?: () => void; onExtract?: () => void;
   onEncoding?: () => void; onBatchReplace?: () => void; onConfigDiff?: () => void; onNewDiagram?: () => void;
-  onToggleSidebar?: () => void; sidebarOpen?: boolean;
+  onToggleSidebar?: () => void; sidebarOpen?: boolean; onShowWhatsNew?: () => void;
 }) {
   const filterType = useAppStore((s) => s.filterType);
   const setFilterType = useAppStore((s) => s.setFilterType);
@@ -156,6 +158,20 @@ export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEnco
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
   }, []);
+
+  // 「新功能」红点：用户有未读更新说明时提示，点击重开发版弹框。
+  // lastSeen 存 localStorage（pastepanda_last_seen_version），弹框关闭即写入；
+  // 监听 storage 事件，在弹框标记已读后实时清除红点。
+  const [lastSeen, setLastSeen] = useState<string | null>(() => getLastSeenVersion());
+  useEffect(() => {
+    const handler = (e: StorageEvent) => {
+      if (e.key === "pastepanda_last_seen_version") setLastSeen(getLastSeenVersion());
+    };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+  }, []);
+  const unseenCount = lastSeen ? getUnseenEntries(CHANGELOG, lastSeen).length : CHANGELOG.length;
+  const hasUnseen = unseenCount > 0;
 
   // 工具箱条目 → 回调映射（片段库 / 内容提取 / 依次粘贴迁入后与原有三项统一管理）
   const toolHandlers: Record<ToolKey, (() => void) | undefined> = {
@@ -242,6 +258,13 @@ export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEnco
           <AiStatusCap />
           {/* 审查方案 1：设置按钮带 AI 状态绿点 —— 已就绪时右上角一个 6px 绿点（hover 看详情），
               不占额外空间，能力入口在快捷区 */}
+          {hasUnseen && onShowWhatsNew && (
+            <button className={styles.whatsNewBtn} onClick={onShowWhatsNew} title="查看新功能说明">
+              <Sparkles size={14} strokeWidth={2.2} />
+              <span>新功能</span>
+              <span className={styles.whatsNewDot}>{unseenCount > 99 ? "99+" : unseenCount}</span>
+            </button>
+          )}
           <span className={styles.settingsWrap}>
             <IconBtn tip="设置 · 帮助 · 关于" hue="violet" onClick={onSettings}>
               <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>

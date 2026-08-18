@@ -1118,6 +1118,40 @@ body {
 @keyframes tbCoachIn {
   from { opacity: 0; transform: translate(-50%, 8px); }
   to   { opacity: 1; transform: translate(-50%, 0); }
+
+/* NEW 角标（路线 C）：本版本新增功能入口提示，标在按钮右上角 */
+.tool .new-badge {
+  position: absolute; top: -7px; right: -7px;
+  background: #ef4444; color: #fff; font-size: 9px; font-weight: 800;
+  padding: 1px 5px; border-radius: 7px; letter-spacing: 0.03em;
+  box-shadow: 0 0 0 2px #2b2f3a; pointer-events: none; line-height: 1.4;
+}
+
+/* 富教练卡（路线 C）：改为竖向卡片，承载 怎么用 / 有什么用 / 配图占位 */
+.tb-coach {
+  flex-direction: column; align-items: stretch; gap: 6px;
+  max-width: 320px; white-space: normal; text-align: left;
+  padding: 12px 14px;
+}
+.coach-head { display: flex; align-items: center; gap: 8px; }
+.coach-new {
+  background: #6366f1; color: #fff; font-size: 9px; font-weight: 800;
+  padding: 2px 6px; border-radius: 6px; flex: none; letter-spacing: 0.04em;
+}
+.coach-title { font-weight: 700; font-size: 13px; color: #eaf2ff; }
+.coach-x { margin-left: auto; cursor: pointer; color: #9DB2D0; padding: 0 2px; }
+.coach-x:hover { color: #fff; }
+.coach-why { font-size: 11.5px; color: #b9c6d8; line-height: 1.5; }
+.coach-how { margin: 0; padding-left: 16px; font-size: 11.5px; color: #d7dce6; line-height: 1.65; }
+.coach-how li { margin: 1px 0; }
+.coach-media {
+  margin-top: 4px; max-width: 100%; max-height: 130px;
+  border-radius: 6px; object-fit: cover; display: block;
+}
+.coach-media-ph {
+  margin-top: 4px; height: 38px; border-radius: 6px;
+  background: repeating-linear-gradient(45deg, #1c2433, #1c2433 6px, #222c3e 6px, #222c3e 12px);
+  display: grid; place-items: center; color: #8893a5; font-size: 10px;
 }
 
 /* —— C · 状态变化“看这里” —— */

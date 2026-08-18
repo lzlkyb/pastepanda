@@ -36,6 +36,48 @@ describe("parseChangelogSection（运行时更新日志解析）", () => {
     expect(fix.groups![0].items[1].text).toBe("修复丁");
   });
 
+  it("子项语法：用法→how 数组、配图→media（与 gen-changelog.mjs 一致）", () => {
+    const md = [
+      "### 新增",
+      "- 取文字：截图里识别文字",
+      "  用法：点「取文字」按钮；按 T 直接复制全文",
+      "  配图：docs/shots/ocr.jpg",
+      "- 普通条目：没有子项",
+    ].join("\n");
+
+    const entry = parseChangelogSection(md, "5.5.0");
+    expect(entry).not.toBeNull();
+    const feat = entry!.categories[0];
+    expect(feat.type).toBe("feat");
+
+    const [rich, plain] = feat.items!;
+    // 用法：按 ；;→/ 切分为步骤数组
+    expect(rich.how).toEqual(["点「取文字」按钮", "按 T 直接复制全文"]);
+    // 配图：原样路径
+    expect(rich.media).toBe("docs/shots/ocr.jpg");
+    // 无子项的条目不携带 how / media
+    expect(plain.how).toBeUndefined();
+    expect(plain.media).toBeUndefined();
+  });
+
+  it("子项只挂载到最近的 bullet；分类切换后不再误挂载", () => {
+    const md = [
+      "### 新增",
+      "- 甲功能",
+      "  用法：步骤一→步骤二",
+      "### 修复",
+      "- 乙修复",
+      "  配图：docs/shots/fix.png",
+    ].join("\n");
+
+    const entry = parseChangelogSection(md, "5.5.1");
+    const [feat, fix] = entry!.categories;
+    expect(feat.items![0].how).toEqual(["步骤一", "步骤二"]);
+    expect(feat.items![0].media).toBeUndefined();
+    expect(fix.items![0].media).toBe("docs/shots/fix.png");
+    expect(fix.items![0].how).toBeUndefined();
+  });
+
   it("分类映射与构建时一致：修复→fix、改进→other、UI/UX→uiux、括号后缀剥离", () => {
     const md = [
       "### 修复",

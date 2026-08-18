@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { createPortal } from "react-dom";
 import { useDialogAnim } from "@/lib/dialogMotion";
@@ -11,7 +11,9 @@ import { parseChangelogSection } from "@/lib/changelogParser";
 import {
   CATEGORY_COLORS,
   countCategoryItems,
+  setLastSeenVersion,
   type ChangeCategoryType,
+  type ChangeItem,
   type ChangelogEntry,
 } from "@/lib/changelog";
 import styles from "./UpdateNotesDialog.module.css";
@@ -22,6 +24,8 @@ interface UpdateNotesDialogProps {
   open: boolean;
   onClose: () => void;
   currentVersion: string;
+  /** 是否由「新功能」红点手动打开（无更新时）：展示最新版本说明，关闭即标记已读 */
+  manual?: boolean;
 }
 
 /** 分类筛选：全部 或 单个分类 */
@@ -35,28 +39,26 @@ interface ChipInfo {
   count: number;
 }
 
-/** 时间线展平行：分组标签行 或 条目行（条目携带分类信息用于筛选与着色） */
-type TimelineRow =
-  | { kind: "label"; catType: ChangeCategoryType; text: string }
-  | { kind: "item"; catType: ChangeCategoryType; catName: string; color: string; text: string };
-
 // ─── Component ──────────────────────────────────────────
 
-export function UpdateNotesDialog({ open, onClose, currentVersion }: UpdateNotesDialogProps) {
+export function UpdateNotesDialog({ open, onClose, currentVersion, manual = false }: UpdateNotesDialogProps) {
   const { update, downloadAndInstall, skipThisVersion } = useUpdate();
   const anim = useDialogAnim();
   const [filter, setFilter] = useState<Filter>("all");
 
   const entry = useMemo<ChangelogEntry | null>(() => {
-    if (!update?.version) return null;
-    // 包内日志优先（仅开发期/同版本场景命中）；真实更新时目标版本必然新于
-    // 当前二进制，构建时打包的 CHANGELOG 不含其条目，需实时解析更新清单
-    // body（CI 从同一份 CHANGELOG.md 提取，见 scripts/extract-release-notes.mjs）
-    return (
-      CHANGELOG.find((e: ChangelogEntry) => e.version === update.version) ??
-      parseChangelogSection(update.body, update.version)
-    );
-  }, [update?.version, update?.body]);
+    if (update?.version) {
+      // 包内日志优先（仅开发期/同版本场景命中）；真实更新时目标版本必然新于
+      // 当前二进制，构建时打包的 CHANGELOG 不含其条目，需实时解析更新清单
+      // body（CI 从同一份 CHANGELOG.md 提取，见 scripts/extract-release-notes.mjs）
+      return (
+        CHANGELOG.find((e: ChangelogEntry) => e.version === update.version) ??
+        parseChangelogSection(update.body, update.version)
+      );
+    }
+    // 无更新（红点手动打开）：展示最新版本说明
+    return manual ? CHANGELOG[0] ?? null : null;
+  }, [update?.version, update?.body, manual]);
 
   // 版本变化时重置筛选（组件常驻挂载，状态不随 open/close 重置）
   useEffect(() => {
@@ -77,33 +79,26 @@ export function UpdateNotesDialog({ open, onClose, currentVersion }: UpdateNotes
     return { chips, total: chips.reduce((s, c) => s + c.count, 0) };
   }, [entry]);
 
-  // 分类展平为时间线行（分组标签独立成行，与条目一起按分类筛选）
-  const rows = useMemo<TimelineRow[]>(() => {
-    if (!entry) return [];
-    const out: TimelineRow[] = [];
-    for (const cat of entry.categories) {
-      if (countCategoryItems(cat) === 0) continue;
-      const color = CATEGORY_COLORS[cat.type];
-      for (const item of cat.items ?? []) {
-        out.push({ kind: "item", catType: cat.type, catName: cat.name, color, text: item.text });
-      }
-      for (const group of cat.groups ?? []) {
-        if (group.label) out.push({ kind: "label", catType: cat.type, text: group.label });
-        for (const item of group.items) {
-          out.push({ kind: "item", catType: cat.type, catName: cat.name, color, text: item.text });
-        }
-      }
-    }
-    return out;
-  }, [entry]);
-
   const isVisible = (catType: ChangeCategoryType) => filter === "all" || filter === catType;
+
+  /** 标记某版本已读（清除红点） */
+  const markSeen = useCallback((version: string) => {
+    try { setLastSeenVersion(version); } catch { /* ignore */ }
+  }, []);
+
+  /** 关闭弹框：手动（红点）打开时，关闭即标记已读，清除红点 */
+  const closeDialog = useCallback(() => {
+    if (manual && entry) markSeen(entry.version);
+    onClose();
+  }, [manual, entry, markSeen, onClose]);
 
   const handleDownload = () => {
     // 点下载就关弹框：下载进度与“就绪后重启”由 TopBar 的 UpdateBadge 承担
     // （它已有圆环百分比 + 速率，ready 后变成「重启」按钮）。
     // 不关的旧行为会把主界面一直挡着，而且 status 进 ready 后弹框里那个按钮
     // 会退回成「下载并更新」且可再点，看起来像什么都没发生。
+    // 用户已主动下载更新 → 视为已读，清除红点。
+    if (update?.version) markSeen(update.version);
     downloadAndInstall();
     onClose();
   };
@@ -138,19 +133,19 @@ export function UpdateNotesDialog({ open, onClose, currentVersion }: UpdateNotes
                     <div className={styles.meta}>
                       <div className={styles.name}>PastePanda</div>
                       <div className={styles.vrow}>
-                        <span className={styles.vOld}>v{currentVersion}</span>
-                        <span className={styles.vArrow}>
-                          <ArrowRight size={11} strokeWidth={2.5} />
-                        </span>
-                        {update && (
+                        {update?.version && currentVersion && update.version !== currentVersion ? (
                           <>
-                            <span className={styles.vNew}>v{update.version}</span>
-                            <span className={styles.vNewPill}>NEW</span>
+                            <span className={styles.vOld}>v{currentVersion}</span>
+                            <span className={styles.vArrow}>
+                              <ArrowRight size={11} strokeWidth={2.5} />
+                            </span>
                           </>
-                        )}
+                        ) : null}
+                        <span className={styles.vNew}>v{update?.version ?? entry?.version ?? currentVersion}</span>
+                        <span className={styles.vNewPill}>NEW</span>
                       </div>
                     </div>
-                    <button onClick={onClose} className="dialog-close" title="关闭">
+                    <button onClick={closeDialog} className="dialog-close" title="关闭">
                       <X size={15} />
                     </button>
                   </div>
@@ -183,31 +178,65 @@ export function UpdateNotesDialog({ open, onClose, currentVersion }: UpdateNotes
                       ))}
                     </div>
 
-                    {/* 彩点时间线（内层 track 承载竖轴，保证滚动时贯穿全部内容） */}
+                    {/* 功能卡片（新增且带 怎么用/有什么用/配图）+ 紧凑时间线（其余分类） */}
                     <div className={styles.timeline}>
-                      <div className={styles.tlTrack}>
-                        {rows.map((row, i) =>
-                          row.kind === "label" ? (
-                            <div
-                              key={i}
-                              className={`${styles.tlGroup} ${isVisible(row.catType) ? "" : styles.tlHidden}`}
-                            >
-                              {row.text}
+                      {(() => {
+                        const cats = entry.categories.filter(
+                          (c) => isVisible(c.type) && countCategoryItems(c) > 0,
+                        );
+                        const featCats = cats.filter((c) => c.type === "feat");
+                        const otherCats = cats.filter((c) => c.type !== "feat");
+                        return (
+                          <>
+                            <div className={styles.featWrap}>
+                              {featCats.map((cat, ci) => (
+                                <div key={`feat-${ci}`}>
+                                  {(cat.items ?? []).map((item, ii) => (
+                                    <FeatCard key={ii} item={item} catName={cat.name} />
+                                  ))}
+                                  {(cat.groups ?? []).map((g, gi) => (
+                                    <div key={`fg-${gi}`}>
+                                      {g.label && <div className={styles.tlGroup}>{g.label}</div>}
+                                      {g.items.map((item, ii) => (
+                                        <FeatCard key={ii} item={item} catName={cat.name} />
+                                      ))}
+                                    </div>
+                                  ))}
+                                </div>
+                              ))}
                             </div>
-                          ) : (
-                            <div
-                              key={i}
-                              className={`${styles.tlItem} ${isVisible(row.catType) ? "" : styles.tlHidden}`}
-                            >
-                              <span className={styles.tlDot} style={{ background: row.color }} />
-                              <div className={styles.tlTag} style={{ color: row.color }}>
-                                {row.catName}
-                              </div>
-                              <p className={styles.tlText}>{renderItemText(row.text)}</p>
+                            <div className={styles.tlTrack}>
+                              {otherCats.map((cat, ci) => (
+                                <div key={`oth-${ci}`}>
+                                  {(cat.items ?? []).map((item, ii) => (
+                                    <div key={ii} className={styles.tlItem}>
+                                      <span className={styles.tlDot} style={{ background: CATEGORY_COLORS[cat.type] }} />
+                                      <div className={styles.tlTag} style={{ color: CATEGORY_COLORS[cat.type] }}>
+                                        {cat.name}
+                                      </div>
+                                      <p className={styles.tlText}>{renderItemText(item.text)}</p>
+                                    </div>
+                                  ))}
+                                  {(cat.groups ?? []).map((g, gi) => (
+                                    <div key={`og-${gi}`}>
+                                      {g.label && <div className={styles.tlGroup}>{g.label}</div>}
+                                      {g.items.map((item, ii) => (
+                                        <div key={ii} className={styles.tlItem}>
+                                          <span className={styles.tlDot} style={{ background: CATEGORY_COLORS[cat.type] }} />
+                                          <div className={styles.tlTag} style={{ color: CATEGORY_COLORS[cat.type] }}>
+                                            {cat.name}
+                                          </div>
+                                          <p className={styles.tlText}>{renderItemText(item.text)}</p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ))}
+                                </div>
+                              ))}
                             </div>
-                          ),
-                        )}
-                      </div>
+                          </>
+                        );
+                      })()}
                     </div>
                   </>
                 ) : (
@@ -215,24 +244,32 @@ export function UpdateNotesDialog({ open, onClose, currentVersion }: UpdateNotes
                 )}
               </div>
 
-              {/* 页脚：跳过 + 下载（进度填充一体化） */}
+              {/* 页脚：有更新=稍后看+下载；红点手动打开=关闭（已读） */}
               <div className={styles.footer}>
-                <button
-                  className={styles.btnSkip}
-                  onClick={handleSkip}
-                  title="点「跳过」此版本不再弹框；有新版本时仍会提醒"
-                >
-                  跳过此版本
-                </button>
-                {/* 按钮不再兼作进度条：点下载后弹框立即关闭，下载期间它不可见
-                    （open 只在 status === "available" 时置 true），原来那套
-                    dlFill / “下载中 N%” 分支已永远不会命中，索性删干净 */}
-                <button className={styles.btnDownload} onClick={handleDownload}>
-                  <span className={styles.dlLabel}>
-                    <Download size={14} />
-                    下载并更新
-                  </span>
-                </button>
+                {update ? (
+                  <>
+                    <button
+                      className={styles.btnSkip}
+                      onClick={handleSkip}
+                      title="点「稍后看」关闭；顶部「新功能」红点可随时回看"
+                    >
+                      稍后看
+                    </button>
+                    {/* 按钮不再兼作进度条：点下载后弹框立即关闭，下载期间它不可见
+                        （open 只在 status === "available" 时置 true），原来那套
+                        dlFill / “下载中 N%” 分支已永远不会命中，索性删干净 */}
+                    <button className={styles.btnDownload} onClick={handleDownload}>
+                      <span className={styles.dlLabel}>
+                        <Download size={14} />
+                        下载并更新
+                      </span>
+                    </button>
+                  </>
+                ) : (
+                  <button className={styles.btnDownload} onClick={closeDialog}>
+                    <span className={styles.dlLabel}>关闭（已读）</span>
+                  </button>
+                )}
               </div>
             </motion.div>
           </FocusTrap>
@@ -264,6 +301,64 @@ function FallbackContent({ updateBody }: { updateBody?: string | null }) {
     <div className={styles.fallback}>
       <div>暂无详细更新日志</div>
       {updateBody && <div className={styles.fallbackBody}>{updateBody}</div>}
+    </div>
+  );
+}
+
+// ─── 功能卡片（新增类带 怎么用/有什么用/配图） ───────────
+
+/** 单条新增条目：带富文本则渲染为功能卡片，否则退化为紧凑时间线条目 */
+function FeatCard({ item, catName }: { item: ChangeItem; catName: string }) {
+  const m = /^(.+?)(：| — )([\s\S]+)$/.exec(item.text);
+  const title = m ? m[1] : item.text;
+  const desc = m ? m[3] : "";
+  const rich = item.why || (item.how && item.how.length > 0) || item.media;
+  if (!rich) {
+    // 无富文本（如单纯一句新增说明）：退化为普通时间线条目，避免空白卡片
+    return (
+      <div className={styles.tlItem}>
+        <span className={styles.tlDot} style={{ background: CATEGORY_COLORS.feat }} />
+        <div className={styles.tlTag} style={{ color: CATEGORY_COLORS.feat }}>{catName}</div>
+        <p className={styles.tlText}>{renderItemText(item.text)}</p>
+      </div>
+    );
+  }
+  return (
+    <div className={styles.card}>
+      <div className={styles.cardHead}>
+        <span className={styles.cardBadge}>{catName}</span>
+        <span className={styles.cardTitle}>{title}</span>
+      </div>
+      {desc && <div className={styles.cardDesc}>{desc}</div>}
+      {item.why && <div className={styles.cardWhy}>{item.why}</div>}
+      {item.how && item.how.length > 0 && (
+        <>
+          <div className={styles.cardHowH}>怎么用</div>
+          <ol className={styles.cardHow}>
+            {item.how.map((s, hi) => (
+              <li key={hi}>{s}</li>
+            ))}
+          </ol>
+        </>
+      )}
+      {item.media && <MediaThumb src={item.media} />}
+    </div>
+  );
+}
+
+/** 配图缩略图：加载失败优雅降级为占位框（真实资源到位后自动显示） */
+function MediaThumb({ src }: { src: string }) {
+  const [err, setErr] = useState(false);
+  if (err) {
+    return (
+      <div className={styles.cardMedia}>
+        <span className={styles.cardMediaPh}>配图占位 · {src.split("/").pop()}</span>
+      </div>
+    );
+  }
+  return (
+    <div className={styles.cardMedia}>
+      <img src={src} alt="" className={styles.cardMediaImg} onError={() => setErr(true)} />
     </div>
   );
 }

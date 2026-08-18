@@ -20,6 +20,9 @@ import { isAiAvailable } from "@/lib/transforms/aiTransforms";
 import { useAiStatus } from "@/hooks/useAiStatus";
 import type { Chain, ChainRunResult } from "@/lib/chains/types";
 import { logger } from "@/lib/logger";
+import { CHANGELOG } from "@/lib/changelog.generated";
+import { compareVersions, getLastSeenVersion } from "@/lib/changelog";
+import type { NewHint } from "./AnnotToolbar";
 // 纯计算已抽到 lib/screenshot/（规则 7）——那里才能写回归测试：
 // 坐标换算与磁吸曾各藏过一个真 bug，长截图重叠匹配曾把 G/B 通道索引写错。
 import {
@@ -124,6 +127,50 @@ let probeCanvas: HTMLCanvasElement | null = null;
 
 let idSeq = 1;
 const nextId = () => idSeq++;
+
+/* ===== 路线 C · 新功能提示（截图工具栏 NEW 角标 + 富教练卡） =====
+ * 仅对「本版本新增且用户未用过 / 未看」的入口挂 NEW 角标并浮富教练卡。
+ * 版本门控：用户 lastSeen 存在且早于最新版本（即升级过来的用户）才提示，
+ * 老用户早已用过的功能不再唠叨。教练卡关闭即标记已看，下次不再出现。 */
+const NEW_HINT_CONTENT: Record<string, NewHint> = {
+  ocr: {
+    id: "ocr",
+    title: "取文字",
+    why: "截图里看到字，点一下直接识别，不用先保存再翻菜单",
+    how: ["点工具栏「取文字」按钮", "完成后自动展开文字，可逐行 / 逐字复制", "按 T 直接复制全文"],
+    media: "/shots/ocr.jpg",
+  },
+  mosaic: {
+    id: "mosaic",
+    title: "马赛克 / 模糊「涂」",
+    why: "像笔一样抹过去就打码，来回抹无缝拼接",
+    how: ["选马赛克 / 模糊工具，按住拖动涂抹", "滚轮调强度"],
+    media: "/shots/mosaic.jpg",
+  },
+  eraser: {
+    id: "eraser",
+    title: "真正的橡皮擦",
+    why: "擦到笔迹会切成多段，而不是整条曲线全没",
+    how: ["选橡皮擦工具，在要擦的笔迹上涂抹"],
+    media: "/shots/eraser.jpg",
+  },
+};
+
+const NH_SEEN_KEY = "pp_newhints_seen";
+function readNewHintSeen(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(NH_SEEN_KEY) || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+function writeNewHintSeen(s: Set<string>) {
+  try {
+    localStorage.setItem(NH_SEEN_KEY, JSON.stringify([...s]));
+  } catch {
+    /* ignore */
+  }
+}
 
 /* ===== 主组件 ===== */
 export function ScreenshotOverlay() {
@@ -354,14 +401,7 @@ export function ScreenshotOverlay() {
       return new Set<string>();
     }
   });
-  const [coachSeen, setCoachSeen] = useState(() => {
-    try {
-      return localStorage.getItem("pp_coach_seen") === "1";
-    } catch {
-      return false;
-    }
-  });
-  /** 标记某强力功能已用：写入持久化 + 顺手关掉教练卡（用过了就不需要再提示）。 */
+  /** 标记某强力功能已用：写入持久化（用过了就停脉冲，不再打扰）。 */
   const notePowerUsed = useCallback((id: string) => {
     setUsedFeatures((prev) => {
       if (prev.has(id)) return prev;
@@ -374,12 +414,6 @@ export function ScreenshotOverlay() {
       }
       return next;
     });
-    setCoachSeen(true);
-    try {
-      localStorage.setItem("pp_coach_seen", "1");
-    } catch {
-      /* ignore */
-    }
   }, []);
   // V6 诊断：截屏失败可见化（不再静默关窗，用户能看到原因）
   const [captureError, setCaptureError] = useState<string | null>(null);
@@ -3548,17 +3582,22 @@ export function ScreenshotOverlay() {
   );
   const showAttrBar = ATTR_TOOLS.has(tool) && !busy;
 
-  /* B 方案 · 引导计算：未用过的强力功能给一次性脉冲；教练卡只在第一未用项上浮现一次。 */
+  /* B 方案 · 引导计算：未用过的强力功能（自动打码 / 取文字 / 贴图）给一次性脉冲。 */
   const POWER_TOOLS = ["automask", "ocr", "pin"] as const;
   const discoverTools = POWER_TOOLS.filter((id) => !usedFeatures.has(id));
-  const coachFeature = !coachSeen ? discoverTools[0] : undefined;
-  const coachText = coachFeature
-    ? coachFeature === "automask"
-      ? "试试「自动打码」一键遮蔽隐私文字"
-      : coachFeature === "ocr"
-        ? "试试「取文字」一键识别图中文字"
-        : "试试「贴图」把截图钉在屏幕最上层"
-    : null;
+
+  /* 路线 C · 版本门控的新功能教练：
+   * 仅当用户 lastSeen 早于最新版本（升级用户）或全新用户（无 lastSeen）时，
+   * 才对新功能入口挂 NEW 角标 + 富教练卡；已看过的提示（pp_newhints_seen）不再浮现。
+   * 与 B 方案的脉冲并存：脉冲靠 discoverTools，富卡靠 coachHint。 */
+  const lastSeen = getLastSeenVersion();
+  const latestVer = CHANGELOG[0]?.version ?? "";
+  const showNewHints = !lastSeen || compareVersions(latestVer, lastSeen) > 0;
+  const seenHints = readNewHintSeen();
+  const newHints = showNewHints
+    ? Object.values(NEW_HINT_CONTENT).filter((h) => !seenHints.has(h.id))
+    : [];
+  const coachHint = newHints[0] ?? null;
   const tbLayout = layoutToolbar(
     sel
       ? { x: css(sel.x), y: css(sel.y), w: css(sel.w), h: css(sel.h) }
@@ -4115,13 +4154,13 @@ export function ScreenshotOverlay() {
           onDone={() => void copyImage()}
           onMore={() => void finish()}
           discover={discoverTools}
-          coachText={coachText}
+          newHints={newHints}
+          coachHint={coachHint}
           onCoachClose={() => {
-            setCoachSeen(true);
-            try {
-              localStorage.setItem("pp_coach_seen", "1");
-            } catch {
-              /* ignore */
+            if (coachHint) {
+              const s = readNewHintSeen();
+              s.add(coachHint.id);
+              writeNewHintSeen(s);
             }
           }}
         />

@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>路线C · 新功能可见/可学/可用 — 设计稿</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --ink: #1f2430;
+    --ink-2: #5b6472;
+    --ink-3: #8a93a3;
+    --line: #e6e9ef;
+    --feat: #6366f1;   /* 新增 */
+    --fix: #f59e0b;    /* 修复 */
+    --improve: #10b981;/* 改进 */
+    --red: #ef4444;
+    --radius: 14px;
+    --shadow: 0 8px 30px rgba(20,30,60,.12);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 32px 60px;
+    background: var(--bg); color: var(--ink);
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    line-height: 1.5;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--ink-3); font-size: 13px; margin-bottom: 26px; }
+  .wrap { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+  .col { display: flex; flex-direction: column; gap: 14px; }
+  .label {
+    font-size: 12px; font-weight: 700; letter-spacing: .04em;
+    color: var(--ink-3); text-transform: uppercase; margin-bottom: 2px;
+  }
+  .note { font-size: 12px; color: var(--ink-2); max-width: 300px; }
+
+  /* ===== 1. 富化发版弹框 ===== */
+  .dialog {
+    width: 460px; background: var(--panel); border-radius: var(--radius);
+    box-shadow: var(--shadow); overflow: hidden;
+  }
+  .d-top {
+    background: linear-gradient(135deg, #eef0ff, #f7f8ff);
+    padding: 16px 18px; display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .d-icon {
+    width: 38px; height: 38px; border-radius: 10px;
+    background: var(--feat); color: #fff; display: grid; place-items: center;
+    font-weight: 800; font-size: 18px;
+  }
+  .d-name { font-weight: 700; font-size: 15px; }
+  .d-ver { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
+  .d-ver .old { color: var(--ink-3); }
+  .d-ver .arr { color: var(--ink-3); }
+  .d-ver .nv { color: var(--feat); font-weight: 700; }
+  .pill-new {
+    background: var(--feat); color: #fff; font-size: 10px; font-weight: 800;
+    padding: 1px 6px; border-radius: 6px; letter-spacing: .05em;
+  }
+  .d-close { margin-left: auto; color: var(--ink-3); cursor: pointer; font-size: 16px; }
+  .d-body { padding: 14px 18px 4px; }
+  .d-lead { font-size: 13px; color: var(--ink-2); margin-bottom: 12px; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+    padding: 4px 10px; border-radius: 999px; background: #f1f3f8; color: var(--ink-2);
+    border: 1px solid var(--line);
+  }
+  .chip .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .chip .cnt { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .chip.on { background: #eef0ff; color: var(--feat); border-color: #d8dcff; font-weight: 700; }
+
+  .card {
+    border: 1px solid var(--line); border-radius: 12px; padding: 12px;
+    margin-bottom: 12px; background: #fcfcfe;
+  }
+  .card-h { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .badge-feat {
+    font-size: 10px; font-weight: 800; color: var(--feat);
+    background: #eef0ff; padding: 2px 7px; border-radius: 6px;
+  }
+  .card-title { font-weight: 700; font-size: 14px; }
+  .card-why { font-size: 12.5px; color: var(--ink-2); margin: 4px 0 8px; }
+  .card-how-h { font-size: 11px; font-weight: 700; color: var(--ink-3); margin-bottom: 3px; }
+  .card-how { font-size: 12.5px; color: var(--ink); margin: 0; padding-left: 16px; }
+  .card-how li { margin: 2px 0; }
+  .card-media {
+    margin-top: 8px; height: 64px; border-radius: 8px;
+    background: repeating-linear-gradient(45deg,#eef1f6,#eef1f6 8px,#e7ebf2 8px,#e7ebf2 16px);
+    display: grid; place-items: center; color: var(--ink-3); font-size: 11px;
+    border: 1px dashed #d6dbe6;
+  }
+  .fixline {
+    display: flex; gap: 8px; align-items: baseline; padding: 5px 0;
+    border-bottom: 1px dashed var(--line); font-size: 12.5px;
+  }
+  .fixline:last-child { border-bottom: none; }
+  .fix-tag { color: var(--fix); font-weight: 700; font-size: 11px; flex: none; }
+  .d-foot {
+    display: flex; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--line);
+    background: #fafbfd;
+  }
+  .btn {
+    flex: 1; padding: 9px 12px; border-radius: 10px; font-size: 13px; font-weight: 600;
+    border: 1px solid var(--line); cursor: pointer; text-align: center;
+  }
+  .btn.later { background: #fff; color: var(--ink-2); }
+  .btn.go { background: var(--feat); color: #fff; border-color: var(--feat); display:flex; gap:6px; justify-content:center; align-items:center;}
+
+  /* ===== 2. TopBar 红点 ===== */
+  .topbar {
+    width: 460px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 10px 14px; display: flex; align-items: center; gap: 14px;
+    box-shadow: var(--shadow);
+  }
+  .tb-item { font-size: 13px; color: var(--ink-2); position: relative; }
+  .tb-news {
+    display: inline-flex; align-items: center; gap: 6px; font-weight: 700; color: var(--feat);
+    cursor: pointer; padding: 4px 10px; border-radius: 8px; background: #eef0ff;
+  }
+  .tb-dot {
+    background: var(--red); color: #fff; font-size: 10px; font-weight: 800;
+    min-width: 16px; height: 16px; border-radius: 9px; padding: 0 4px;
+    display: inline-grid; place-items: center;
+  }
+
+  /* ===== 3. 截图工具栏 NEW + 教练卡 ===== */
+  .shot {
+    width: 460px; background: #2b2f3a; border-radius: 12px; padding: 16px;
+    box-shadow: var(--shadow); position: relative;
+  }
+  .shot-roof {
+    background: #1f232c; border-radius: 10px 10px 0 0; padding: 8px 10px;
+    color: #cfd5e0; font-size: 11px; display: flex; justify-content: space-between;
+  }
+  .coach {
+    position: absolute; top: -6px; left: 50%; transform: translate(-50%, -100%);
+    width: 300px; background: #fff; border-radius: 12px; box-shadow: var(--shadow);
+    padding: 12px 14px; z-index: 5;
+  }
+  .coach-h { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .coach-badge { background: var(--feat); color:#fff; font-size:10px; font-weight:800; padding:2px 6px; border-radius:6px;}
+  .coach-x { margin-left: auto; color: var(--ink-3); cursor: pointer; }
+  .coach-title { font-weight: 700; font-size: 13px; }
+  .coach-why { font-size: 11.5px; color: var(--ink-2); margin: 3px 0 6px; }
+  .coach-how { font-size: 11.5px; margin: 0; padding-left: 15px; }
+  .coach-how li { margin: 1px 0; }
+  .coach-media {
+    margin-top: 6px; height: 40px; border-radius: 6px;
+    background: repeating-linear-gradient(45deg,#eef1f6,#eef1f6 6px,#e7ebf2 6px,#e7ebf2 12px);
+    display:grid; place-items:center; color: var(--ink-3); font-size:10px; border:1px dashed #d6dbe6;
+  }
+  .toolbar {
+    background: #343a47; border-radius: 0 0 10px 10px; padding: 10px;
+    display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  }
+  .tool {
+    position: relative; width: 42px; height: 42px; border-radius: 9px;
+    background: #3f4654; color: #d7dce6; display: grid; place-items: center;
+    font-size: 17px; cursor: pointer;
+  }
+  .tool.on { background: var(--feat); color: #fff; }
+  .tool.discover::after {
+    content: "NEW"; position: absolute; top: -7px; right: -7px;
+    background: var(--red); color: #fff; font-size: 9px; font-weight: 800;
+    padding: 1px 5px; border-radius: 7px; letter-spacing: .03em;
+    box-shadow: 0 0 0 2px #2b2f3a;
+  }
+  .tool .tip { display:none; }
+  .sep { width: 1px; height: 26px; background: #4a5566; margin: 0 2px; }
+  .tool.exit { background: #2f6df0; color:#fff; width: auto; padding: 0 14px; font-size: 13px; font-weight:700; }
+  .legend { color:#aab2c0; font-size:11px; margin-top:10px; }
+</style>
+</head>
+<body>
+  <h1>路线 C · 新功能「看得见 / 学得会 / 用得上」设计稿</h1>
+  <div class="sub">基于现有 UpdateNotesDialog + AnnotToolbar「discover/coach」机制扩展，不另造轮子。蓝=新增 橙=修复 绿=改进。</div>
+
+  <div class="wrap">
+    <!-- 1. 富化发版弹框 -->
+    <div class="col">
+      <div class="label">① 富化发版弹框（UpdateNotesDialog）</div>
+      <div class="dialog">
+        <div class="d-top">
+          <div class="d-icon">P</div>
+          <div>
+            <div class="d-name">PastePanda</div>
+            <div class="d-ver"><span class="old">v6.17.2</span><span class="arr">→</span><span class="nv">v6.18.0</span><span class="pill-new">NEW</span></div>
+          </div>
+          <div class="d-close">✕</div>
+        </div>
+        <div class="d-body">
+          <div class="d-lead">截图标注大升级：取文字提到一级、马赛克能「涂」、真正的橡皮擦，还修了一批吸附/贴图问题。</div>
+          <div class="chips">
+            <span class="chip on">全部 <span class="cnt">12</span></span>
+            <span class="chip"><span class="dot" style="background:var(--feat)"></span>新增 <span class="cnt">6</span></span>
+            <span class="chip"><span class="dot" style="background:var(--fix)"></span>修复 <span class="cnt">6</span></span>
+          </div>
+
+          <!-- 功能卡片：新增 -->
+          <div class="card">
+            <div class="card-h"><span class="badge-feat">新增</span><span class="card-title">取文字按钮提到工具栏一级</span></div>
+            <div class="card-why">有什么用：截图里看到字，不用先完成截图再翻菜单，点一下直接识别。</div>
+            <div class="card-how-h">怎么用</div>
+            <ul class="card-how">
+              <li>截图进入标注后，点工具栏「取文字」</li>
+              <li>带「识别中 / 完成 / 失败」状态角标，完成自动展开文字抽屉</li>
+              <li>逐行 / 逐字可选中复制，表格也能识别</li>
+            </ul>
+            <div class="card-media">截图占位 · 取文字按钮 + 文字抽屉</div>
+          </div>
+
+          <div class="card">
+            <div class="card-h"><span class="badge-feat">新增</span><span class="card-title">马赛克 / 模糊 / 高亮可以「涂」了</span></div>
+            <div class="card-why">有什么用：像笔一样抹过去就打码，不用反复拖矩形，来回抹无缝拼接。</div>
+            <div class="card-how-h">怎么用</div>
+            <ul class="card-how">
+              <li>选马赛克 / 模糊 / 高亮工具，按住拖动涂抹</li>
+              <li>滚轮调强度（马赛克/模糊）</li>
+              <li>网格对齐到全图，多笔叠加无缝</li>
+            </ul>
+            <div class="card-media">截图占位 · 涂抹打码示意</div>
+          </div>
+
+          <!-- 修复：保持紧凑时间线 -->
+          <div class="label" style="margin-top:6px">修复（紧凑时间线，不展开配图）</div>
+          <div class="fixline"><span class="fix-tag">修复</span><span>拖选移出画布松手后残留的半透明选框（幽灵框）</span></div>
+          <div class="fixline"><span class="fix-tag">修复</span><span>反向拖出的选区点不中、无法编辑</span></div>
+          <div class="fixline"><span class="fix-tag">修复</span><span>箭头头部点不中，容易漏选</span></div>
+          <div class="fixline"><span class="fix-tag">修复</span><span>窗口吸附/控件识别部分机器卡顿（后端改异步）</span></div>
+        </div>
+        <div class="d-foot">
+          <div class="btn later">稍后看</div>
+          <div class="btn go">⬇ 下载并更新</div>
+        </div>
+      </div>
+      <div class="note">「跳过此版本」→ 改为「稍后看」：关掉后在 TopBar 留红点，随时重开同一富文本弹框；不再永久消失。</div>
+    </div>
+
+    <!-- 2. TopBar 红点 -->
+    <div class="col">
+      <div class="label">② 常驻「新功能」重看入口（TopBar）</div>
+      <div class="topbar">
+        <div class="tb-item">历史</div>
+        <div class="tb-item">截图</div>
+        <div class="tb-item">设置</div>
+        <div class="tb-news" style="margin-left:auto">✨ 新功能 <span class="tb-dot">1</span></div>
+      </div>
+      <div class="note">升级后若用户没细看弹框，这里一直亮红点（数量=未看版本数）。点开 = 同一个富文本弹框，可反复回看。红点随「已看最新」清除。</div>
+    </div>
+
+    <!-- 3. 截图工具栏 NEW + 教练卡 -->
+    <div class="col">
+      <div class="label">③ 关键入口 NEW 角标 + 富教练卡（扩 AnnotToolbar）</div>
+      <div class="shot">
+        <div class="coach">
+          <div class="coach-h">
+            <span class="coach-badge">NEW</span>
+            <span class="coach-title">取文字</span>
+            <span class="coach-x">✕</span>
+          </div>
+          <div class="coach-why">一键识别截图中文字，不用先保存再找菜单。</div>
+          <ul class="coach-how">
+            <li>点此按钮开始识别</li>
+            <li>完成后自动展开文字，可逐行复制</li>
+          </ul>
+          <div class="coach-media">配图 · 按钮位置示意</div>
+        </div>
+        <div class="shot-roof"><span>截图标注 · 标注态</span><span>Esc 取消</span></div>
+        <div class="toolbar">
+          <div class="tool discover">🅣</div>
+          <div class="tool discover">🟦</div>
+          <div class="tool discover">🧽</div>
+          <div class="tool">✏️</div>
+          <div class="tool">🔆</div>
+          <div class="tool">↗️</div>
+          <div class="sep"></div>
+          <div class="tool">📋</div>
+          <div class="tool">📌</div>
+          <div class="tool">✨</div>
+          <div class="sep"></div>
+          <div class="tool exit">完成</div>
+        </div>
+        <div class="legend">红角标「NEW」= 本版本新引入 + 你还没用过。关掉教练卡即标记已看（pp_newhints_seen），下次不再出现。</div>
+      </div>
+      <div class="note">版本门控：用 last_seen_version 判断「升级过来的用户才提示」，老用户早已用过的功能不再弹。仅给最关键的 1–2 个入口（取文字 / 涂马赛克 / 橡皮擦）加角标，不做全功能覆盖。</div>
+    </div>
+  </div>
+</body>
+</html>

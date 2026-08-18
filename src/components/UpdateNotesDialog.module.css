@@ -339,3 +339,110 @@
   max-height: 200px;
   overflow-y: auto;
 }
+
+/* ===== 新增功能卡片（怎么用 / 有什么用 / 配图） ===== */
+.featWrap {
+  padding: 4px 18px 2px 0;
+}
+
+.card {
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 12px 13px;
+  margin: 9px 0;
+  background: var(--card-bg, #fcfcfe);
+  transition: background 0.3s, border-color 0.3s;
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.cardBadge {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--accent);
+  background: var(--accent-light);
+  padding: 2px 7px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  transition: background 0.3s, color 0.3s;
+}
+
+.cardTitle {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-primary);
+  transition: color 0.3s;
+}
+
+.cardDesc {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  margin: 2px 0 6px;
+  transition: color 0.3s;
+}
+
+.cardWhy {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-primary);
+  padding: 5px 9px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 7px 7px 0;
+  background: var(--accent-light);
+  margin-bottom: 8px;
+  transition: background 0.3s, color 0.3s, border-color 0.3s;
+}
+
+.cardHowH {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
+  margin-bottom: 3px;
+  transition: color 0.3s;
+}
+
+.cardHow {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  transition: color 0.3s;
+}
+
+.cardHow li {
+  margin: 1px 0;
+}
+
+.cardMedia {
+  margin-top: 9px;
+  height: 92px;
+  border-radius: 9px;
+  overflow: hidden;
+  border: 1px dashed var(--border-color);
+  background:
+    repeating-linear-gradient(45deg, var(--section-bg), var(--section-bg) 8px, var(--hover) 8px, var(--hover) 16px);
+  display: grid;
+  place-items: center;
+  transition: background 0.3s, border-color 0.3s;
+}
+
+.cardMediaImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.cardMediaPh {
+  font-size: 11px;
+  color: var(--text-muted);
+  transition: color 0.3s;
+}

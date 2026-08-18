@@ -960,6 +960,7 @@ function App() {
           onNewDiagram={handleNewDiagram}
           onToggleSidebar={toggleSidebar}
           sidebarOpen={sidebarOpen}
+          onShowWhatsNew={() => window.dispatchEvent(new Event("pp:show-whatsnew"))}
         />
         {/* v6.2 主动建议：只在主窗口（用户已打开）inline 出现，绝不弹窗。
             v6.4 方案 B：AI 真能用且处于引导期（更新后 1 周）→ 用 AI 快捷区替代；过期后回归原建议条。
@@ -1087,10 +1088,12 @@ function App() {
   );
 }
 
-/** 自动弹出更新说明弹框：当检测到新版本时自动显示 */
+/** 自动弹出更新说明弹框：当检测到新版本时自动显示；
+ *  也监听「新功能」红点事件（pp:show-whatsnew）手动打开，展示最新版本说明 */
 function UpdateNotesAutoPop() {
   const { status, update } = useUpdate();
   const [open, setOpen] = useState(false);
+  const [manual, setManual] = useState(false);
   const [appVersion, setAppVersion] = useState("");
   const dismissedRef = useRef<string | null>(null);
 
@@ -1104,8 +1107,16 @@ function UpdateNotesAutoPop() {
     }
   }, [status, update]);
 
+  // 红点手动打开：展示最新版本说明（无更新时也能看）
+  useEffect(() => {
+    const onShow = () => { setManual(true); setOpen(true); };
+    window.addEventListener("pp:show-whatsnew", onShow);
+    return () => window.removeEventListener("pp:show-whatsnew", onShow);
+  }, []);
+
   const handleClose = useCallback(() => {
     setOpen(false);
+    setManual(false);
     if (update) dismissedRef.current = update.version;
   }, [update]);
 
@@ -1116,7 +1127,7 @@ function UpdateNotesAutoPop() {
       {open && (
         <Suspense key="update-notes-dialog" fallback={null}>
           <ErrorBoundary fallback={null} componentName="更新说明弹框">
-            <UpdateNotesDialog open={open} onClose={handleClose} currentVersion={appVersion} />
+            <UpdateNotesDialog open={open} onClose={handleClose} currentVersion={appVersion} manual={manual} />
           </ErrorBoundary>
         </Suspense>
       )}
