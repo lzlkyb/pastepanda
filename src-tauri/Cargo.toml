@@ -83,6 +83,9 @@ tiny_http = "0.12"
 windows = { version = "0.58", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
+    # 截图控件级吸附 Tier2：UI Automation / MSAA 取现代 App（Chrome/Edge/VS Code/Electron/WPF/UWP/Qt）的逻辑控件
+    "Win32_UI_Accessibility",
+    "Win32_System_Com",
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
     "Win32_Graphics_Dwm",

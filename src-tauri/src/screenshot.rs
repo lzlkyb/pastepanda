@@ -1413,6 +1413,59 @@ unsafe fn pick_best_control(
     select_best_rect(&rects, top_rect).unwrap_or(top_rect)
 }
 
+/// 通过 UI Automation / MSAA 取光标下的**逻辑控件**边界矩形（屏幕物理坐标）。
+///
+/// 为什么需要它：Chrome / Edge / VS Code / 飞书 / Electron / WPF / UWP / Qt 这些现代 App
+/// 的界面画在一个大渲染宿主 HWND 上，没有标准 Win32 子窗口——`control_chain_at` 只能
+/// 拿到占满全窗的宿主，于是「控件级吸附」实际退化成「窗口级」。这些框架都会暴露
+/// 无障碍对象（MSAA / UIA），`AccessibleObjectFromPoint` 直接命中光标下最深的那个
+/// 逻辑控件（按钮 / 输入框 / 列表项），比完整 IUIAutomation 树遍历更轻、同样有效。
+///
+/// 仅在 Win32 路径只拿到「整窗或接近整窗」时才调用（每 90ms 一次的路径里，
+/// Office / 资源管理器这类 Win32 标准程序根本不会走到这里，快路径不受影响）。
+///
+/// 安全网：COM 未初始化 / 控件不可达 / 矩形退化 → 返回 None，调用方退回 Win32 结果。
+#[cfg(target_os = "windows")]
+unsafe fn uia_control_at(
+    pt: windows::Win32::Foundation::POINT,
+    top_rect: (i32, i32, i32, i32),
+) -> Option<(i32, i32, i32, i32)> {
+    use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
+    use windows::Win32::UI::Accessibility::{AccessibleObjectFromPoint, IAccessible};
+    use windows::core::VARIANT;
+
+    // 尽力初始化 COM（STA）；已初始化（含模式不同 RPC_E_CHANGED_MODE）一律忽略，仍尝试后续调用。
+    let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+
+    let mut acc: Option<IAccessible> = None;
+    let mut child: VARIANT = VARIANT::default();
+    if AccessibleObjectFromPoint(pt, &mut acc, &mut child).is_err() {
+        return None;
+    }
+    let a = acc.as_ref()?;
+    let mut l = 0i32;
+    let mut t = 0i32;
+    let mut w = 0i32;
+    let mut h = 0i32;
+    if a.accLocation(&mut l, &mut t, &mut w, &mut h, &child).is_err() {
+        return None;
+    }
+    let rect = (l, t, l.wrapping_add(w), t.wrapping_add(h));
+    // 过滤：太碎（<20px）或几乎等于整窗（>95%）都没意义，退回 Win32。
+    const MIN_SIDE: i32 = 20;
+    if (rect.2 - rect.0) < MIN_SIDE || (rect.3 - rect.1) < MIN_SIDE {
+        return None;
+    }
+    let ta = area(top_rect);
+    if ta <= 0 {
+        return None;
+    }
+    if area(rect) * 100 > ta * 95 {
+        return None;
+    }
+    Some(rect)
+}
+
 /// 窗口是否被 DWM「隐身」。
 ///
 /// 两类窗口 `IsWindowVisible` 返回 true 但实际看不见，旧实现一个都没排：
@@ -1474,7 +1527,15 @@ fn snap_window_impl(app: &tauri::AppHandle, x: i32, y: i32) -> Result<Option<Sna
         // 是给**顶层窗**算阴影的，子窗口根本没有 DWM 阴影，对它调那个要么失败
         // 要么拿到奇怪值。
         let chain = control_chain_at(hwnd, pt);
-        let rect = pick_best_control(&chain, top_rect);
+        let mut rect = pick_best_control(&chain, top_rect);
+        // Tier2：当 Win32 只拿到「整窗 / 接近整窗」（现代 App 无标准子窗口，
+        // 只有占满全窗的渲染宿主）时，用 UI Automation 取光标下的逻辑控件，
+        // 补上真正的控件级吸附。Win32 已能框到面板/列表的标准程序不会走到这，快路径不受影响。
+        if area(rect) * 100 > area(top_rect).max(1) * 90 {
+            if let Some(uia) = uia_control_at(pt, top_rect) {
+                rect = uia;
+            }
+        }
 
         let (l, t, r, b) = rect;
         Ok(Some(SnapRect {
