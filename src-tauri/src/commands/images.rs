@@ -376,6 +376,20 @@ pub async fn ocr_image_cached(store: State<'_, DataStore>, path: String) -> Resu
 ///
 /// 引擎为 PP-OCRv6（纯 Rust + MNN，模型随安装包发布，零外部依赖），跨平台可用。
 /// 不做图像预处理——词框坐标必须与原始图片精确对应。
+/// 同步取一张图的 OCR 全文（不带坐标、不查缓存）。
+///
+/// 给非 async 调用方用（贴图窗口的 wndproc 是 Win32 同步回调，不能 .await）。
+/// 缓存读写由调用方负责——它才知道该用哪个 key（必须与 history.content 同源字符串）。
+///
+/// ❗ 会阻塞当前线程几百毫秒到几秒，调用方务必放到后台线程。
+pub fn ocr_full_text(path: &str) -> Result<String, String> {
+    let canonical = validate_image_file_path(path)?;
+    check_image_decode_limits(&canonical)?;
+    // with_coords = false：只要文字，省掉逐字符 bbox 的反投影
+    let res = ocr_recognize(&canonical, false)?;
+    Ok(res.full_text)
+}
+
 fn ocr_image_impl(path: &str) -> Result<OcrResult, String> {
     let canonical = validate_image_file_path(path)?;
     check_image_decode_limits(&canonical)?;
@@ -473,23 +487,42 @@ fn ocr_recognize(path: &std::path::Path, with_coords: bool) -> Result<OcrResult,
         });
     }
 
-    // 行级结果 → 逐行映射为 OcrLineInfo（含一个整行级词框）。
+    // 行级结果 → 逐行映射为 OcrLineInfo。
+    // 若后端提供了逐字符横坐标（char_xn），则展开成逐字符词框（真·字级），
+    // 让前端拖选可精确到单个字；否则回退为整行级词框（兜底，不破坏旧行为）。
     // PP-OCR 后处理已按阅读顺序（上→下、同高度左→右）返回，无需再排序。
     // 注意：imageproc::rect::Rect 的 x/y/width/height 字段为私有，必须用同名方法访问。
+    let (img_w, img_h) = (img.width(), img.height());
     let mut lines: Vec<OcrLineInfo> = Vec::with_capacity(results.len());
     for r in &results {
         let rect = &r.bbox.rect;
         let text = r.text.clone();
-        lines.push(OcrLineInfo {
-            text: text.clone(),
-            words: vec![OcrWordInfo {
-                text,
+        let chars: Vec<char> = text.chars().collect();
+        let words = if !r.char_xn.is_empty() && r.char_xn.len() == chars.len() {
+            // 真·字级：把归一化横坐标反投影回原图，逐字符成框。
+            let boxes = ocr_rs::char_boxes_from_rec(&r.char_xn, &r.bbox, img_w, img_h);
+            chars
+                .iter()
+                .zip(boxes.iter())
+                .map(|(ch, b)| OcrWordInfo {
+                    text: ch.to_string(),
+                    x: b.0,
+                    y: b.1,
+                    width: b.2,
+                    height: b.3,
+                })
+                .collect()
+        } else {
+            // 兜底：整行级词框。
+            vec![OcrWordInfo {
+                text: text.clone(),
                 x: rect.left() as f32,
                 y: rect.top() as f32,
                 width: rect.width() as f32,
                 height: rect.height() as f32,
-            }],
-        });
+            }]
+        };
+        lines.push(OcrLineInfo { text, words });
     }
     let full_text = lines
         .iter()

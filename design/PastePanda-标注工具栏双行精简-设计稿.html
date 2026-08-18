@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PastePanda 标注工具栏 · 方案A 双行分离 · 设计稿</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: #0b0f1c;
+    font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: #E0E8F0; display: flex; flex-direction: column; align-items: center;
+    padding: 32px 0 60px;
+  }
+  .scene {
+    position: relative; width: 920px; height: 540px; border-radius: 14px; overflow: hidden;
+    background:
+      radial-gradient(120% 120% at 20% 0%, #1b2547 0%, #0e1428 60%, #090d1a 100%);
+    box-shadow: 0 30px 80px rgba(0,0,0,.5);
+  }
+  /* 模拟被截的桌面内容（让遮罩与选区有上下文） */
+  .fakewin {
+    position: absolute; left: 60px; top: 70px; width: 560px; height: 320px;
+    border-radius: 10px; background: linear-gradient(160deg,#243056,#1a2240);
+    border: 1px solid rgba(148,168,255,.25);
+  }
+  .fakewin .bar { height: 34px; background: rgba(99,102,241,.18); border-radius: 10px 10px 0 0; }
+  .fakewin .line { height: 10px; margin: 16px 18px; border-radius: 6px; background: rgba(157,178,208,.18); }
+  .fakewin .line.s { width: 60%; }
+  /* 选区（微信/QQ 同款蓝框 + 半透明蒙版外的清晰区） */
+  .sel {
+    position: absolute; left: 150px; top: 110px; width: 420px; height: 250px;
+    border: 1.5px solid #3B9EFF; border-radius: 6px;
+    box-shadow: 0 0 0 100vmax rgba(8,12,24,.55); /* 选区外蒙版 */
+    background: rgba(120,160,255,.04);
+  }
+  .sel .hd { position:absolute; top:-22px; left:0; font-size:11px; color:#9DB2D0; }
+
+  /* ====== 复刻真实 .annot-toolbar 样式（screenshot.css 第87-222行） ====== */
+  .annot-toolbar {
+    position: absolute; display: flex; align-items: center; gap: 2px;
+    padding: 5px 7px; border-radius: 12px;
+    background: linear-gradient(180deg, rgba(34,41,76,0.94), rgba(16,21,40,0.96));
+    backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    border: 1px solid rgba(99,102,241,0.4);
+    box-shadow: 0 12px 36px rgba(0,0,0,0.45), inset 0 1px 0 rgba(148,168,255,0.28), inset 0 -1px 0 rgba(0,0,0,0.35);
+    white-space: nowrap; z-index: 30;
+  }
+  .tool {
+    min-width: 38px; height: 42px; border-radius: 8px; padding: 0 3px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    cursor: pointer; border: 1px solid transparent; color: #E0E8F0; font-size: 12px;
+    position: relative; transition: background 0.12s;
+  }
+  .tool .ic { display: flex; }
+  .tool .ic svg { width: 17px; height: 17px; display: block; }
+  .tool .lb { font-size: 9px; line-height: 1; letter-spacing: 0.2px; opacity: 0.72; }
+  .tool:hover { background: #0F1F35; }
+  .tool:hover .lb { opacity: 1; }
+  .tool.on { background: linear-gradient(135deg,#3B9EFF,#6D5CF0); border-color: rgba(255,255,255,0.4); color:#fff; box-shadow: 0 2px 12px rgba(59,158,255,0.5); }
+  .tool.on .lb { opacity: 1; }
+  .tool.dim { color: #9DB2D0; }
+  .tool.longshot { color: #8CC5FF; }
+  .tool.ocr-btn { color: #7DE0C4; }
+  .tool.exit-save { color: #A5C8FF; }
+  .tool.exit-pin { color: #F9A8D4; }
+  .tool.exit-ai { color: #A8DEFF; }
+  .tool.exit-ai .lb { opacity: 1; font-weight: 700; }
+  .tool.disabled { opacity: 0.3; cursor: not-allowed; }
+  .tool.done-btn, .tool.cancel-btn, .tool.more-btn { flex-direction: row; min-width: 0; height: 34px; padding: 0 12px; font-size: 12px; }
+  .tool.done-btn { font-weight: 600; color: #fff; background: linear-gradient(135deg,#6366F1,#3B9EFF); border: 1px solid rgba(255,255,255,0.25); box-shadow: 0 2px 10px rgba(99,102,241,0.4); }
+  .tool.cancel-btn { color: #9DB2D0; }
+  .tool.more-btn { color: #9DB2D0; line-height: 1; }
+  .tsep { width: 1px; height: 24px; margin: 0 5px; background: linear-gradient(180deg, transparent, rgba(125,140,255,0.5), transparent); }
+
+  /* 双行：两栏纵向堆叠，用一个小间隙分组（方案A核心改动） */
+  .toolbar-stack { position: absolute; display: flex; flex-direction: column; gap: 6px; }
+  .row2 { margin-top: 2px; }
+
+  .legend { margin-top: 26px; width: 920px; font-size: 13px; line-height: 1.7; color: #B9C6F0; }
+  .legend h2 { font-size: 15px; color: #E0E8F0; margin: 0 0 10px; font-weight: 500; }
+  .legend code { background: rgba(99,102,241,.15); padding: 1px 6px; border-radius: 5px; color: #C7D2FE; }
+  .legend .k { color: #8CC5FF; }
+  .note { color: #7E8BB0; font-size: 12px; margin-top: 8px; }
+</style>
+</head>
+<body>
+  <div class="scene">
+    <div class="fakewin"><div class="bar"></div><div class="line"></div><div class="line s"></div><div class="line"></div></div>
+    <div class="sel"><div class="hd">选区 420 × 250</div></div>
+
+    <!-- 方案A：双行工具栏，贴着选区下方居中 -->
+    <div class="toolbar-stack" style="left: 248px; top: 372px;">
+      <!-- 上行：绘制工具 + 撤销/重做 -->
+      <div class="annot-toolbar">
+        <div class="tool on"><span class="ic"><svg viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">矩形</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><ellipse cx="8" cy="8" rx="5.75" ry="4.25" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">椭圆</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3.2 12.8L11 5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12.9 3.1L12.4 7.9L8.1 3.6Z" fill="currentColor"/></svg></span><span class="lb">箭头</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M2.8 13.2l3.3-.8 6.7-6.7a1.3 1.3 0 0 0 0-1.9l-.6-.6a1.3 1.3 0 0 0-1.9 0L3.6 9.9l-.8 3.3z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.9 4.1l2 2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">画笔</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M5.2 10.4l4.9-4.9 2.4 2.4-4.9 4.9H5.2v-2.4z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.4 4.2l1.4-1.4 2.4 2.4-1.4 1.4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="2.8" y="13.4" width="10.4" height="1.6" rx="0.8" fill="currentColor" opacity="0.8"/></svg></span><span class="lb">高亮</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 2.5h3.7v3.7H2.5zM9.8 2.5h3.7v3.7H9.8zM6.2 6.2h3.6v3.6H6.2zM2.5 9.8h3.7v3.7H2.5zM9.8 9.8h3.7v3.7H9.8z" fill="currentColor" stroke="none" opacity="0.75"/></svg></span><span class="lb">马赛克</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3 3.8h10" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 3.8v8.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.8 12.2h4.4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">文字</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.9 6.6L8.4 5.6v5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.9 10.6h3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">序号</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M8 2.2C8 2.2 3.8 7 3.8 9.6a4.2 4.2 0 0 0 8.4 0C12.2 7 8 2.2 8 2.2z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 9.8a2 2 0 0 0 2 2" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.6"/></svg></span><span class="lb">模糊</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M9.1 2.9l4 4a1 1 0 0 1 0 1.4l-3.6 3.6H5.7L2.9 9.1a1 1 0 0 1 0-1.4l4.8-4.8a1 1 0 0 1 1.4 0z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.1 6.1l3.8 3.8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">橡皮擦</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><rect x="2.6" y="3.2" width="10.8" height="9.6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4.4" y="6.6" width="7.2" height="2.6" rx="0.6" fill="currentColor" stroke="none" opacity="0.85"/></svg></span><span class="lb">自动打码</span></div>
+        <div class="tsep"></div>
+        <div class="tool dim"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3 6.2h7a3.4 3.4 0 1 1 0 6.8H6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.4 3L3.2 6.2l3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">撤销</span></div>
+        <div class="tool dim"><span class="ic"><svg viewBox="0 0 16 16"><path d="M13 6.2H6a3.4 3.4 0 1 0 0 6.8h4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.6 3l3.2 3.2-3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">重做</span></div>
+      </div>
+      <!-- 下行：动作 / 出口 -->
+      <div class="annot-toolbar row2">
+        <div class="tool longshot"><span class="ic"><svg viewBox="0 0 16 16"><rect x="4" y="1.8" width="8" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 8v5.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.4 11l2.6 2.6L10.6 11" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">长截图</span></div>
+        <div class="tool ocr-btn"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3.4 2.4h6.1l3.1 3.1v8.1a1 1 0 0 1-1 1H3.4a1 1 0 0 1-1-1V3.4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.3 2.5v3.2h3.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 8.4h6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 11h4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">取文字</span></div>
+        <div class="tsep"></div>
+        <div class="tool cancel-btn">✕ 取消</div>
+        <div class="tsep"></div>
+        <div class="tool exit-save"><span class="ic"><svg viewBox="0 0 16 16"><path d="M8 2.4v6.7" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.3 6.5L8 9.2l2.7-2.7" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.6 10.6v1.9a1.1 1.1 0 0 0 1.1 1.1h8.6a1.1 1.1 0 0 0 1.1-1.1v-1.9" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">保存</span></div>
+        <div class="tool exit-pin"><span class="ic"><svg viewBox="0 0 16 16"><path d="M6.1 2.6h3.8" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 9.4v4.1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.6 2.6v3.1L4.9 7.5a.6.6 0 0 0 .43 1.02h5.34a.6.6 0 0 0 .43-1.02L9.4 5.7V2.6z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">贴图</span></div>
+        <div class="tool exit-ai"><span class="ic"><svg viewBox="0 0 16 16"><path d="M8 1.6l1.9 4 4.3.4-3.3 2.8 1 4.2L8 10.7 3.8 13l1-4.2L1.5 6l4.3-.4z" fill="currentColor"/></svg></span><span class="lb">AI</span></div>
+        <div class="tsep"></div>
+        <div class="tool done-btn">完成 ✓</div>
+        <div class="tool more-btn">更多 ⋯</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <h2>方案 A · 双行分离 · 设计稿说明</h2>
+    把一条 21 按钮的栏拆成 <span class="k">上行（绘制）</span> + <span class="k">下行（动作/出口）</span> 两条，功能、数字键、配色、图标全部沿用现有实现，零新增概念。
+    <div style="margin-top:10px">
+      · 上行：11 绘制工具（矩形/椭圆/箭头/画笔/高亮/马赛克/文字/序号/模糊/橡皮擦/<b>自动打码</b>）+ 撤销/重做。<br/>
+      · 下行：长截图/取文字 ｜ 取消 ｜ 保存/贴图/AI ｜ 完成✓/更多⋯。<br/>
+      · 两行用 <code>.toolbar-stack</code>（flex column，gap 6px）包裹，整体仍按 <code>layoutToolbar</code> 算好的左/下位置贴选区；<br/>
+      · 单行超宽时（2K 屏上 11 工具仍可能换行）——可让上行内部 <code>flex-wrap</code>，或把椭圆/序号再收进「绘图⋯」（即 A+）。
+    </div>
+    <div class="note">差异对照：当前是 1 行 21 按钮（找工具靠扫视、易误点）；方案 A 物理分隔「画」与「做」，扫视成本减半、误点率下降，且不丢任何功能、不改任何快捷键。</div>
+  </div>
+</body>
+</html>

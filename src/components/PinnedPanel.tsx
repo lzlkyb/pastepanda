@@ -48,6 +48,13 @@ export default function PinnedPanel({ open, onClose }: { open: boolean; onClose:
     }
   };
 
+  // 管理面板"旋转/翻转"：action 1=旋转90° 2=水平翻转（垂直翻转/恢复用贴图右键菜单或快捷键）
+  const transformOne = (path: string, action: number) => {
+    void invoke("transform_pinned_image_by_path", { path, action }).catch((e) =>
+      logger.warn("贴图变换失败", e),
+    );
+  };
+
   const editOne = (path: string) => {
     void invoke("open_pinned_edit", { path }).catch((e) => logger.warn("重编辑失败", e));
     onClose();
@@ -125,6 +132,20 @@ export default function PinnedPanel({ open, onClose }: { open: boolean; onClose:
               <span style={{ flex: 1, fontSize: 11, color: "#9DB2D0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p}>
                 {p.split(/[\\/]/).pop()}
               </span>
+              <button
+                onClick={() => transformOne(p, 1)}
+                title="旋转 90°"
+                style={{ padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(99,102,241,0.4)", background: "transparent", color: "#B9C6F0", fontSize: 13, cursor: "pointer" }}
+              >
+                ↻
+              </button>
+              <button
+                onClick={() => transformOne(p, 2)}
+                title="水平翻转"
+                style={{ padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(99,102,241,0.4)", background: "transparent", color: "#B9C6F0", fontSize: 13, cursor: "pointer" }}
+              >
+                ⇄
+              </button>
               <button onClick={() => void copyOne(p)} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid rgba(99,102,241,0.4)", background: "transparent", color: "#B9C6F0", fontSize: 10, cursor: "pointer" }}>
                 {copied === p ? "已复制 ✓" : "复制"}
               </button>

@@ -16,6 +16,7 @@ import {
   withExportExt,
   formatBytes,
 } from "@/lib/imageFormat";
+import { linesAsRowWords } from "@/lib/screenshot/ocrTable";
 
 // ===== 类型 =====
 
@@ -89,6 +90,8 @@ export interface UseImagePreviewReturn {
   cropOriginal: string | null;
   setCropMode: React.Dispatch<React.SetStateAction<boolean>>;
   setCropRect: React.Dispatch<React.SetStateAction<CropRect | null>>;
+  /** 裁剪模式开关（含互斥：进裁剪退出 OCR 选词并清选区，见实现处注释） */
+  toggleCropMode: () => void;
   handleCropMouseDown: (e: React.MouseEvent) => void;
   handleCropMouseMove: (e: React.MouseEvent) => void;
   handleCropMouseUp: () => void;
@@ -346,7 +349,9 @@ export function useImagePreview(): UseImagePreviewReturn {
     setOcrLoading(true);
     try {
       const result = await invoke<OcrResultData>("ocr_image", { path });
-      setOcrResult(result);
+      // 后端已逐字化（每行 N 个字符框）；图片预览保持「点一行选整行」的旧交互，
+      // 把逐字框聚合回行级单框（linesAsRowWords 对已是整行单框的行幂等）。
+      setOcrResult({ ...result, lines: linesAsRowWords(result.lines) });
       setOcrActive(true);
       setSelectedWordIndices(new Set());
     } catch (e) {
@@ -361,6 +366,10 @@ export function useImagePreview(): UseImagePreviewReturn {
       setOcrActive(false);
       setSelectedWordIndices(new Set());
     } else {
+      // 模式互斥：选词与裁剪共用视口鼠标手势，叠加会 mousedown 双触发、词框拦截裁剪点击。
+      // 进入选词前退出裁剪（Esc 的优先级链 cropMode→选区→OCR 也是同一语义）。
+      setCropMode(false);
+      setCropRect(null);
       if (!ocrResult) {
         handleOcrRecognize();
       } else {
@@ -663,6 +672,19 @@ export function useImagePreview(): UseImagePreviewReturn {
     });
   }, [previewImage, previewScale, previewRotation, getCleanImageSrc]);
 
+  /** 裁剪模式开关（含互斥）：进入裁剪前退出 OCR 选词并清空选区。
+   *  选词与裁剪共用视口鼠标手势，叠加时词框层（pointerEvents:auto、z-index 高于
+   *  cropBackdrop）会拦掉点在词框上的裁剪 mousedown，裁剪框画不出来——必须二选一。 */
+  const toggleCropMode = useCallback(() => {
+    const next = !cropMode;
+    if (next) {
+      setOcrActive(false);
+      setSelectedWordIndices(new Set());
+    }
+    setCropMode(next);
+    setCropRect(null);
+  }, [cropMode]);
+
   const handleCropMouseDown = useCallback((e: React.MouseEvent) => {
     if (!cropMode || !viewportRef.current) return;
     const vpRect = viewportRef.current.getBoundingClientRect();
@@ -801,7 +823,7 @@ export function useImagePreview(): UseImagePreviewReturn {
     cropMode, cropRect, cropOriginal,
     openImagePreview, closePreview,
     setExportFormat, setExportQuality, exportImage,
-    setCropMode, setCropRect,
+    setCropMode, setCropRect, toggleCropMode,
     handleCropMouseDown, handleCropMouseMove, handleCropMouseUp,
     confirmCrop, cancelCrop, restoreOriginal,
     setPreviewScale, setPreviewRotation, setPreviewOffset, setSelectedWordIndices,

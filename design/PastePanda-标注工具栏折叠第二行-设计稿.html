@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PastePanda 标注工具栏 · 行内展开第二行（折叠高亮/模糊）</title>
+<style>
+  :root{
+    --glass: rgba(34,41,76,.94);
+    --glass-2: rgba(28,34,62,.96);
+    --line: rgba(255,255,255,.10);
+    --txt: #e8ecf6;
+    --sub: #9aa6c4;
+    --indigo: #6366f1;
+    --cyan: #22d3ee;
+    --red: #ef4444;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    background:#0f1320; color:var(--txt); padding:28px;
+  }
+  h1{font-size:18px;margin:0 0 4px;}
+  .lead{color:var(--sub);font-size:13px;margin:0 0 22px;line-height:1.6;}
+  .state{
+    background:#161b2e;border:1px solid var(--line);border-radius:14px;
+    padding:18px;margin-bottom:22px;
+  }
+  .state h2{font-size:14px;margin:0 0 14px;color:#cdd6f0;}
+  .state h2 small{color:var(--sub);font-weight:400;margin-left:8px;}
+
+  /* 假截图背景 */
+  .stage{
+    position:relative;height:300px;border-radius:10px;overflow:hidden;
+    background:
+      radial-gradient(120% 80% at 20% 10%, #2a3358 0%, #161b2e 60%),
+      repeating-linear-gradient(135deg, rgba(255,255,255,.03) 0 14px, transparent 14px 28px);
+  }
+  .stage .sel{
+    position:absolute;left:60px;top:60px;width:360px;height:150px;
+    border:1.5px solid var(--cyan);border-radius:4px;
+    box-shadow:0 0 0 1px rgba(0,0,0,.35);
+  }
+  .stage .sel::after{
+    content:"选区";position:absolute;left:6px;top:-20px;font-size:11px;color:var(--cyan);
+  }
+
+  /* 工具栏卡片（深色玻璃，底部居中） */
+  .annot-toolbar{
+    position:absolute;left:50%;bottom:22px;transform:translateX(-50%);
+    display:flex;flex-direction:column;align-items:center;gap:6px;
+    background:var(--glass);backdrop-filter:blur(14px);
+    border:1px solid var(--line);border-radius:14px;
+    padding:8px;box-shadow:0 12px 40px rgba(0,0,0,.45);
+  }
+  .row{display:flex;align-items:center;gap:4px;}
+  .second-row{
+    display:flex;align-items:center;gap:4px;padding-bottom:2px;
+    border-bottom:1px dashed var(--line);margin-bottom:2px;
+  }
+  .tbtn{
+    display:flex;align-items:center;gap:6px;height:38px;padding:0 10px;
+    border:1px solid transparent;border-radius:9px;color:var(--txt);
+    background:transparent;cursor:pointer;font-size:12.5px;white-space:nowrap;
+    transition:.12s;
+  }
+  .tbtn:hover{background:rgba(255,255,255,.08);}
+  .tbtn.active{
+    background:linear-gradient(135deg, rgba(99,102,241,.30), rgba(34,211,238,.22));
+    border-color:rgba(99,102,241,.55);
+  }
+  .tbtn.fav{
+    border-color:rgba(239,68,68,.5);
+    background:linear-gradient(135deg, rgba(239,68,68,.16), rgba(99,102,241,.12));
+  }
+  .tbtn svg{width:16px;height:16px;flex:none;}
+  .tsep{width:1px;height:24px;background:var(--line);margin:0 4px;}
+  .fold-btn{
+    display:flex;align-items:center;gap:5px;height:38px;padding:0 10px;
+    border:1px solid rgba(99,102,241,.4);border-radius:9px;color:#cdd6f0;
+    background:rgba(99,102,241,.12);cursor:pointer;font-size:12.5px;
+  }
+  .fold-btn:hover{background:rgba(99,102,241,.22);}
+  .more-btn{
+    display:flex;align-items:center;gap:5px;height:38px;padding:0 10px;
+    border:1px solid transparent;border-radius:9px;color:var(--txt);
+    background:transparent;cursor:pointer;font-size:12.5px;
+  }
+  .more-btn:hover{background:rgba(255,255,255,.08);}
+  .done-btn{
+    display:flex;align-items:center;gap:5px;height:38px;padding:0 12px;
+    border-radius:9px;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;
+    background:linear-gradient(135deg,var(--indigo),#4f46e5);
+  }
+  .note{
+    background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.3);
+    border-radius:10px;padding:12px 14px;font-size:12.5px;line-height:1.7;color:#cdd6f0;
+  }
+  .note b{color:#fff;}
+  code{background:rgba(255,255,255,.08);padding:1px 6px;border-radius:5px;font-size:12px;}
+  .tag{display:inline-block;font-size:11px;color:var(--cyan);border:1px solid rgba(34,211,238,.35);
+    border-radius:6px;padding:1px 7px;margin-right:6px;}
+</style>
+</head>
+<body>
+  <h1>标注工具栏 · 行内展开第二行（折叠：高亮 / 模糊）</h1>
+  <p class="lead">
+    单列保持不动。主行只放高频工具；末尾「工具 ▾」在同张卡片内<b>向上长出第二行</b>显示低频工具——零浮层、不挡选框。
+    结果态出口「更多 ⋯」是另一个按钮，互不混淆。折叠集数据驱动，以后想多收一个工具改一行数组即可。
+  </p>
+
+  <!-- 状态一：折叠（默认） -->
+  <div class="state">
+    <h2>状态一 · 默认（折叠）<small>主行 19 个按钮，高亮/模糊 收起</small></h2>
+    <div class="stage">
+      <div class="sel"></div>
+      <div class="annot-toolbar">
+        <div class="row">
+          <button class="tbtn fav"><svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 2.5h3.7v3.7H2.5zM9.8 2.5h3.7v3.7H9.8zM6.2 6.2h3.6v3.6H6.2zM2.5 9.8h3.7v3.7H2.5zM9.8 9.8h3.7v3.7H9.8z" fill="currentColor" stroke="none" opacity=".7"/></svg>马赛克</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>矩形</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><ellipse cx="8" cy="8" rx="5.75" ry="4.25" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>椭圆</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M3.2 12.8L11 5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12.9 3.1L12.4 7.9L8.1 3.6Z" fill="currentColor"/></svg>箭头</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M2.8 13.2l3.3-.8 6.7-6.7a1.3 1.3 0 0 0 0-1.9l-.6-.6a1.3 1.3 0 0 0-1.9 0L3.6 9.9l-.8 3.3z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>画笔</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M3 3.8h10M8 3.8v8.4M5.8 12.2h4.4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>文字</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.9 6.6L8.4 5.6v5M6.9 10.6h3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>序号</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M9.1 2.9l4 4a1 1 0 0 1 0 1.4l-3.6 3.6H5.7L2.9 9.1a1 1 0 0 1 0-1.4l4.8-4.8a1 1 0 0 1 1.4 0z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.1 6.1l3.8 3.8M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>橡皮擦</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><rect x="2.6" y="3.2" width="10.8" height="9.6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4.4" y="6.6" width="7.2" height="2.6" rx=".6" fill="currentColor" opacity=".85"/></svg>自动打码</button>
+          <button class="fold-btn">工具 <span style="font-size:14px;">▾</span></button>
+          <span class="tsep"></span>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M4 8h8M8 4v8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>撤销</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M12 8H4M8 12V4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>重做</button>
+          <span class="tsep"></span>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M3 11V5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v6M3 11h10v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>长截图</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M3.4 2.4h6.1l3.1 3.1v8.1a1 1 0 0 1-1 1H3.4a1 1 0 0 1-1-1V3.4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.3 2.5v3.2h3.2M5 8.4h6M5 11h4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>取文字</button>
+          <span class="tsep"></span>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>取消</button>
+          <span class="tsep"></span>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M8 2.4v6.7M5.3 6.5L8 9.2l2.7-2.7M2.6 10.6v1.9a1.1 1.1 0 0 0 1.1 1.1h8.6a1.1 1.1 0 0 0 1.1-1.1v-1.9" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>保存</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M6.1 2.6h3.8M8 9.4v4.1M6.6 2.6v3.1L4.9 7.5a.6.6 0 0 0 .43 1.02h5.34a.6.6 0 0 0 .43-1.02L9.4 5.7V2.6z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>贴图</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M8 2.5l1.6 3.4 3.7.5-2.7 2.6.7 3.7L8 11l-3.3 1.7.7-3.7L2.7 6.4l3.7-.5z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>AI</button>
+          <span class="tsep"></span>
+          <button class="done-btn"><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-6.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>完成</button>
+          <button class="more-btn">更多 <span style="font-size:14px;">⋯</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 状态二：展开 -->
+  <div class="state">
+    <h2>状态二 · 展开（点「工具 ▾」）<small>同张卡片向上长出第二行：高亮 / 模糊；按钮变 ▴</small></h2>
+    <div class="stage">
+      <div class="sel"></div>
+      <div class="annot-toolbar">
+        <div class="second-row">
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M5.2 10.4l4.9-4.9 2.4 2.4-4.9 4.9H5.2v-2.4z" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="2.8" y="13.4" width="10.4" height="1.6" rx=".8" fill="currentColor" opacity=".8"/></svg>高亮</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M8 2.2C8 2.2 3.8 7 3.8 9.6a4.2 4.2 0 0 0 8.4 0C12.2 7 8 2.2 8 2.2z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 9.8a2 2 0 0 0 2 2" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".6"/></svg>模糊</button>
+        </div>
+        <div class="row">
+          <button class="tbtn fav"><svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 2.5h3.7v3.7H2.5zM9.8 2.5h3.7v3.7H9.8zM6.2 6.2h3.6v3.6H6.2zM2.5 9.8h3.7v3.7H2.5zM9.8 9.8h3.7v3.7H9.8z" fill="currentColor" stroke="none" opacity=".7"/></svg>马赛克</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>矩形</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><ellipse cx="8" cy="8" rx="5.75" ry="4.25" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>椭圆</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M3.2 12.8L11 5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12.9 3.1L12.4 7.9L8.1 3.6Z" fill="currentColor"/></svg>箭头</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M2.8 13.2l3.3-.8 6.7-6.7a1.3 1.3 0 0 0 0-1.9l-.6-.6a1.3 1.3 0 0 0-1.9 0L3.6 9.9l-.8 3.3z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>画笔</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M3 3.8h10M8 3.8v8.4M5.8 12.2h4.4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>文字</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.9 6.6L8.4 5.6v5M6.9 10.6h3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>序号</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M9.1 2.9l4 4a1 1 0 0 1 0 1.4l-3.6 3.6H5.7L2.9 9.1a1 1 0 0 1 0-1.4l4.8-4.8a1 1 0 0 1 1.4 0z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.1 6.1l3.8 3.8M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>橡皮擦</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><rect x="2.6" y="3.2" width="10.8" height="9.6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4.4" y="6.6" width="7.2" height="2.6" rx=".6" fill="currentColor" opacity=".85"/></svg>自动打码</button>
+          <button class="fold-btn">工具 <span style="font-size:14px;">▴</span></button>
+          <span class="tsep"></span>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M4 8h8M8 4v8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>撤销</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M12 8H4M8 12V4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>重做</button>
+          <span class="tsep"></span>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M3 11V5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v6M3 11h10v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>长截图</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M3.4 2.4h6.1l3.1 3.1v8.1a1 1 0 0 1-1 1H3.4a1 1 0 0 1-1-1V3.4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.3 2.5v3.2h3.2M5 8.4h6M5 11h4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>取文字</button>
+          <span class="tsep"></span>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>取消</button>
+          <span class="tsep"></span>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M8 2.4v6.7M5.3 6.5L8 9.2l2.7-2.7M2.6 10.6v1.9a1.1 1.1 0 0 0 1.1 1.1h8.6a1.1 1.1 0 0 0 1.1-1.1v-1.9" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>保存</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M6.1 2.6h3.8M8 9.4v4.1M6.6 2.6v3.1L4.9 7.5a.6.6 0 0 0 .43 1.02h5.34a.6.6 0 0 0 .43-1.02L9.4 5.7V2.6z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>贴图</button>
+          <button class="tbtn"><svg viewBox="0 0 16 16"><path d="M8 2.5l1.6 3.4 3.7.5-2.7 2.6.7 3.7L8 11l-3.3 1.7.7-3.7L2.7 6.4l3.7-.5z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>AI</button>
+          <span class="tsep"></span>
+          <button class="done-btn"><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-6.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>完成</button>
+          <button class="more-btn">更多 <span style="font-size:14px;">⋯</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <span class="tag">实现要点</span>
+    <b>① 数据驱动</b>：<code>tools.tsx</code> 把 <code>TOOLS</code> 拆成 <code>PRIMARY_TOOLS</code>（主行）与 <code>SECONDARY_TOOLS</code>（折叠行）。当前折叠集 = <code>[高亮, 模糊]</code>。
+    以后想多收（比如椭圆/序号），把对应项从 PRIMARY 移到 SECONDARY 即可，<b>一行改动</b>。<br>
+    <span class="tag">定位</span>
+    <b>② 同卡向上生长</b>：第二行是 <code>.annot-toolbar</code> 内的 <code>.second-row</code> 子段，卡片整体向上变高，<b>不是浮层</b>，不挡选框；<code>toolbarPos.ts</code> 只需让卡片底边锚定、高度随展开变化。<br>
+    <span class="tag">命名</span>
+    <b>③ 两个「更多」区分开</b>：折叠按钮叫「工具 ▾/▴」（只管标注工具），结果态出口仍是「更多 ⋯」（翻译/动作链/固定区域/插入文档），互不干扰。<br>
+    <span class="tag">快捷键</span>
+    <b>④ 折叠工具快捷键照常</b>：高亮=<code>5</code>、模糊=<code>9</code> 即便收起仍可按数字键直接选中，无需先展开。<br>
+    <span class="tag">属性条</span>
+    <b>⑤ 属性条不动</b>：选中高亮/模糊后，颜色/粗细/强度调节仍在独立属性条（原有行为），与本次折叠无关。
+  </div>
+</body>
+</html>

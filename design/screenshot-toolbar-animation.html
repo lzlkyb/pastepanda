@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>截图工具栏 · 动效提示设计稿</title>
+<style>
+  :root{
+    --accent:#3B9EFF; --accent2:#6D5CF0;
+    --text-primary:#E0E8F0; --text-muted:#9DB2D0;
+    --hover:#0F1F35; --green:#22c55e; --danger:#F87171;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:#0b0f1a; color:#dfe7f2;
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+    -webkit-user-select:none; user-select:none;
+  }
+  .wrap{max-width:980px;margin:0 auto;padding:28px 20px 60px;}
+  h1{font-size:20px;margin:0 0 4px;font-weight:700;}
+  .sub{color:#8fa3c4;font-size:13px;margin:0 0 22px;line-height:1.6;}
+  .plans{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:26px;}
+  .plan{
+    background:rgba(20,26,46,.7);border:1px solid rgba(99,102,241,.28);
+    border-radius:14px;padding:14px 15px;
+  }
+  .plan h3{margin:0 0 6px;font-size:14px;}
+  .plan .tag{font-size:11px;color:#8fa3c4;margin-bottom:8px;}
+  .plan p{font-size:12px;line-height:1.65;color:#c2cee0;margin:0 0 8px;}
+  .plan .pro,.plan .con{font-size:11.5px;line-height:1.6;margin:3px 0;padding-left:16px;position:relative;}
+  .plan .pro::before{content:"+";position:absolute;left:2px;color:var(--green);font-weight:700;}
+  .plan .con::before{content:"-";position:absolute;left:2px;color:var(--danger);font-weight:700;}
+  .plan.reco{border-color:rgba(59,158,255,.7);box-shadow:0 0 0 1px rgba(59,158,255,.3),0 8px 28px rgba(59,158,255,.12);}
+
+  /* ====== 舞台 ====== */
+  .stage{
+    position:relative;height:460px;border-radius:16px;overflow:hidden;
+    background:
+      radial-gradient(120% 90% at 20% 10%,#28324f 0%,transparent 55%),
+      radial-gradient(120% 90% at 85% 90%,#1b2238 0%,transparent 55%),
+      #11182b;
+    border:1px solid rgba(255,255,255,.07);
+  }
+  /* 假底图：几个色块模拟截图内容 */
+  .fake-shot{position:absolute;inset:0;opacity:.5;
+    background:
+      linear-gradient(115deg,#3a4a78 0 22%,transparent 22% 40%,#4a3a78 40% 70%,transparent 70%),
+      linear-gradient(0deg,rgba(255,255,255,.04),rgba(0,0,0,.25));
+  }
+  .sel{
+    position:absolute;left:120px;top:120px;width:520px;height:220px;
+    border:1px solid rgba(255,255,255,.95);outline:1.5px solid var(--accent);
+    box-shadow:0 0 0 1px rgba(0,0,0,.55),0 0 8px rgba(59,158,255,.4);
+  }
+
+  /* ====== 工具栏（忠实还原 .annot-toolbar） ====== */
+  .annot-toolbar{
+    position:absolute;display:flex;align-items:center;gap:2px;
+    padding:5px 7px;border-radius:12px;
+    background:linear-gradient(180deg,rgba(34,41,76,.94),rgba(16,21,40,.96));
+    backdrop-filter:blur(18px) saturate(1.4);
+    -webkit-backdrop-filter:blur(18px) saturate(1.4);
+    border:1px solid rgba(99,102,241,.4);
+    box-shadow:0 12px 36px rgba(0,0,0,.45),inset 0 1px 0 rgba(148,168,255,.28),inset 0 -1px 0 rgba(0,0,0,.35);
+    white-space:nowrap;z-index:30;
+    --brand-ai-from:#A8DEFF;--brand-ai-to:#D8CCFF;
+  }
+  /* 默认放在选区下方居中（贴近真实 layoutToolbar 行为） */
+  .annot-toolbar{left:50%;transform:translateX(-50%);}
+
+  .tool{
+    min-width:38px;height:42px;border-radius:8px;padding:0 3px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    cursor:pointer;border:1px solid transparent;color:var(--text-primary);font-size:12px;
+    position:relative;
+  }
+  .tool .ic{display:flex;}
+  .tool .ic svg{width:17px;height:17px;display:block;}
+  .tool .lb{font-size:9px;line-height:1;letter-spacing:.2px;opacity:.72;}
+  .tool:hover{background:var(--hover);}
+  .tool:hover .lb{opacity:1;}
+  .tool.on{
+    background:linear-gradient(135deg,#3B9EFF,#6D5CF0);border-color:rgba(255,255,255,.4);
+    color:#fff;box-shadow:0 2px 12px rgba(59,158,255,.5);
+  }
+  .tool.on .lb{opacity:1;}
+  .tool.dim{color:var(--text-muted);}
+  .tool.longshot{color:#8CC5FF;}
+  .tool.disabled{opacity:.3;cursor:not-allowed;}
+  .tool.disabled:hover{background:transparent;}
+  .tool.exit-save{color:#A5C8FF;}
+  .tool.exit-pin{color:#F9A8D4;}
+  .tool.exit-ai{color:var(--brand-ai-from);}
+  .tool.exit-ai .lb{opacity:1;font-weight:700;}
+  .tool.ocr-btn{color:#7DE0C4;}
+  .tool.ocr-btn.failed{color:#FCA5A5;}
+  .tool .badge{
+    position:absolute;top:2px;right:1px;min-width:15px;height:15px;padding:0 3.5px;
+    border-radius:8px;font-size:9px;line-height:15px;font-weight:700;text-align:center;
+    background:linear-gradient(135deg,#3B9EFF,#6D5CF0);color:#fff;
+    box-shadow:0 0 0 1.5px rgba(20,26,50,.98);pointer-events:none;
+  }
+  .tool .badge.warn{background:linear-gradient(135deg,#F87171,#EF4444);}
+  .tool .ocr-spin{width:17px;height:17px;border-radius:50%;border:2px solid rgba(157,178,208,.28);border-top-color:#7DE0C4;animation:ocrSpin .8s linear infinite;}
+  .tool.done-btn,.tool.cancel-btn,.tool.more-btn{flex-direction:row;min-width:0;height:34px;padding:0 12px;font-size:12px;}
+  .tool.done-btn{font-weight:600;color:#fff;background:linear-gradient(135deg,#6366F1,#3B9EFF);border:1px solid rgba(255,255,255,.25);box-shadow:0 2px 10px rgba(99,102,241,.4);}
+  .tool.done-btn:hover{filter:brightness(1.12);}
+  .tool.cancel-btn{color:var(--text-muted);}
+  .tool.cancel-btn:hover{background:rgba(248,113,113,.15);color:#FCA5A5;}
+  .tool.more-btn{color:#9DB2D0;line-height:1;}
+  .tool.more-btn:hover{background:rgba(99,102,241,.18);color:#B9C6F0;}
+  .tsep{width:1px;height:24px;margin:0 5px;background:linear-gradient(180deg,transparent,rgba(125,140,255,.5),transparent);}
+
+  /* 即时气泡提示（还原 ::after） */
+  .tool::after,.cwrap::after{
+    content:attr(data-tip);position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);
+    padding:3px 8px;border-radius:6px;font-size:10px;white-space:nowrap;
+    background:rgba(15,23,42,.96);color:#E6EDF7;border:1px solid rgba(255,255,255,.16);
+    box-shadow:0 4px 12px rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity .1s;z-index:80;
+  }
+  .tool:hover::after,.cwrap:hover::after{opacity:1;}
+
+  /* ====== 属性条（双层第二层） ====== */
+  .attr-bar{
+    position:absolute;left:50%;transform:translateX(-50%);
+    top:88px;display:flex;align-items:center;gap:1px;padding:4px 9px;border-radius:10px;
+    white-space:nowrap;z-index:31;background:rgba(15,23,42,.96);
+    border:1px solid rgba(148,168,255,.3);box-shadow:0 8px 24px rgba(0,0,0,.42);
+  }
+  .attr-bar .albl{font-size:10px;color:#6E82A4;margin:0 5px 0 2px;}
+  .cwrap{width:24px;height:24px;border-radius:6px;position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+  .cwrap:hover{background:rgba(148,168,255,.14);}
+  .cp{width:14px;height:14px;border-radius:50%;display:block;border:1.5px solid transparent;flex-shrink:0;}
+  .cp.on{border-color:#fff;box-shadow:0 0 0 2px rgba(59,158,255,.55);}
+  .wpick{width:24px;height:24px;border-radius:6px;position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#C9D6EA;font-size:10.5px;}
+  .wpick.on{background:rgba(59,158,255,.28);color:#fff;}
+  .asep{width:1px;height:16px;margin:0 7px;background:linear-gradient(180deg,transparent,rgba(125,140,255,.45),transparent);}
+
+  /* ====== 方案 A：微交互质感升级 ====== */
+  /* hover 抬升 + 图标轻微放大 */
+  body.schA .tool{transition:background .12s, transform .14s cubic-bezier(.34,1.56,.64,1), box-shadow .14s;}
+  body.schA .tool:hover{transform:translateY(-2px);}
+  body.schA .tool .ic svg{transition:transform .14s cubic-bezier(.34,1.56,.64,1);}
+  body.schA .tool:hover .ic svg{transform:scale(1.12);}
+  /* 选中态弹性高亮 */
+  body.schA .tool.on{animation:springPop .32s cubic-bezier(.34,1.56,.64,1);}
+  @keyframes springPop{0%{transform:scale(.9);}55%{transform:scale(1.06);}100%{transform:scale(1);}}
+  /* 点击波纹 */
+  body.schA .tool{overflow:hidden;}
+  .ripple{position:absolute;border-radius:50%;background:rgba(255,255,255,.35);transform:scale(0);animation:ripple .5s ease-out;pointer-events:none;}
+  @keyframes ripple{to{transform:scale(2.6);opacity:0;}}
+  /* 角标弹出 */
+  body.schA .tool .badge{animation:badgePop .3s cubic-bezier(.34,1.56,.64,1);}
+  @keyframes badgePop{0%{transform:scale(0);}70%{transform:scale(1.25);}100%{transform:scale(1);}}
+
+  /* ====== 方案 B：首用/低频功能引导（一次性脉冲） ====== */
+  body.schB .tool.discover{animation:discoverPulse 1s ease-in-out 3; }
+  @keyframes discoverPulse{
+    0%,100%{box-shadow:0 0 0 0 rgba(125,224,196,0);}
+    50%{box-shadow:0 0 0 3px rgba(125,224,196,.55),0 0 14px rgba(125,224,196,.45);}
+  }
+  /* 教练卡片 */
+  .coach{
+    position:absolute;left:50%;transform:translateX(-50%);top:-58px;
+    display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;
+    background:rgba(14,20,38,.97);border:1px solid rgba(125,224,196,.6);
+    box-shadow:0 10px 28px rgba(0,0,0,.5);font-size:12px;color:#cfe9e2;white-space:nowrap;
+    animation:coachIn .25s ease;
+  }
+  @keyframes coachIn{from{opacity:0;transform:translate(-50%,8px);}to{opacity:1;transform:translate(-50%,0);}}
+  .coach b{color:#7DE0C4;}
+  .coach .x{cursor:pointer;color:#9DB2D0;margin-left:4px;}
+
+  /* ====== 方案 C：状态变化"看这里"强调 ====== */
+  /* OCR 完成：角标弹 + 按钮一次性 pulse */
+  body.schC .tool.ocr-btn.justdone{animation:lookPulse .8s ease;}
+  @keyframes lookPulse{0%{transform:scale(1);}30%{transform:scale(1.14);box-shadow:0 0 0 4px rgba(125,224,196,.5);}100%{transform:scale(1);}}
+  /* 撤销可用：轻推 */
+  body.schC .tool.canundo-nudge{animation:nudge 1.4s ease 2;}
+  @keyframes nudge{0%,100%{transform:translateX(0);}25%{transform:translateX(-3px);}75%{transform:translateX(3px);}}
+  /* 属性条滑入 */
+  body.schC .attr-bar{animation:attrIn .26s cubic-bezier(.34,1.56,.64,1);}
+  @keyframes attrIn{from{opacity:0;transform:translate(-50%,-10px);}to{opacity:1;transform:translate(-50%,0);}}
+
+  /* 通用旋转 */
+  @keyframes ocrSpin{to{transform:rotate(360deg);}}
+
+  /* ====== 控制面板 ====== */
+  .controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:18px;}
+  .seg{display:inline-flex;background:rgba(20,26,46,.8);border:1px solid rgba(99,102,241,.3);border-radius:10px;overflow:hidden;}
+  .seg button{border:none;background:transparent;color:#b9c6e0;padding:8px 14px;font-size:13px;cursor:pointer;}
+  .seg button.on{background:linear-gradient(135deg,#3B9EFF,#6D5CF0);color:#fff;font-weight:600;}
+  .btn{border:1px solid rgba(99,102,241,.4);background:rgba(20,26,46,.8);color:#cfe0ff;padding:8px 14px;border-radius:10px;font-size:13px;cursor:pointer;}
+  .btn:hover{background:rgba(59,158,255,.18);}
+  .hintline{margin-top:12px;font-size:12px;color:#8fa3c4;line-height:1.6;}
+  .legend{margin-top:8px;font-size:11.5px;color:#6e82a4;line-height:1.7;}
+  .legend b{color:#9fb4d8;}
+</style>
+</head>
+<body class="schA">
+<div class="wrap">
+  <h1>截图工具栏 · 动画提示设计稿</h1>
+  <p class="sub">忠实还原现有深色玻璃栏（图标+常驻中文标签 / 选中态 / OCR 角标）。切换下方方案预览三类动效；所有动效均为<b>事件/状态驱动、瞬时结束</b>，不引入常驻循环（符合性能红线）。</p>
+
+  <div class="plans">
+    <div class="plan reco">
+      <h3>A · 微交互质感升级</h3>
+      <div class="tag">纯 CSS + 少量 JS · 零新增常驻动画</div>
+      <p>hover 抬升+图标缩放、选中态弹性高亮、点击波纹、角标弹出。</p>
+      <div class="pro">最贴合"反馈不靠猜/即时反馈"，体验润色稳</div>
+      <div class="pro">零性能负担，改动局限 CSS</div>
+      <div class="con">对"发现隐藏功能"帮助有限</div>
+    </div>
+    <div class="plan">
+      <h3>B · 低频功能引导</h3>
+      <div class="tag">一次性脉冲 + 教练卡片（可记忆）</div>
+      <p>首次进标注态时，对未用过的强力按钮（自动打码/取文字/贴图）做一次性呼吸脉冲 + 可关闭教练卡。</p>
+      <div class="pro">直接提升核心能力使用率</div>
+      <div class="pro">一次性、可关、已用不再打扰</div>
+      <div class="con">需接入"是否用过"状态</div>
+      <div class="con">引导过度可能扰人</div>
+    </div>
+    <div class="plan">
+      <h3>C · 状态变化强调</h3>
+      <div class="tag">上下文感知 · 瞬时"看这里"</div>
+      <p>OCR 完成角标弹+按钮 pulse、撤销可用轻推、属性条随选中工具滑入。</p>
+      <div class="pro">把静默状态变化变可见反馈</div>
+      <div class="pro">与现有 ocr-spin/角标体系天然衔接</div>
+      <div class="con">触发点多，需逐一定义</div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="fake-shot"></div>
+    <div class="sel"></div>
+
+    <!-- 属性条 -->
+    <div class="attr-bar" id="attrBar">
+      <span class="albl">颜色</span>
+      <div class="cwrap" data-tip="红"><span class="cp on" style="background:#ef4444"></span></div>
+      <div class="cwrap" data-tip="蓝"><span class="cp" style="background:#3b9eff"></span></div>
+      <div class="cwrap" data-tip="黄"><span class="cp" style="background:#facc15"></span></div>
+      <div class="cwrap" data-tip="绿"><span class="cp" style="background:#22c55e"></span></div>
+      <div class="cwrap" data-tip="近黑"><span class="cp" style="background:#1f2937"></span></div>
+      <span class="asep"></span>
+      <span class="albl">粗细</span>
+      <div class="wpick on" data-tip="细">细</div>
+      <div class="wpick" data-tip="中">中</div>
+      <div class="wpick" data-tip="粗">粗</div>
+    </div>
+
+    <!-- 工具栏 -->
+    <div class="annot-toolbar" id="tb">
+      <div class="tool on" data-id="rect" data-tip="矩形（按 1）">
+        <span class="ic"><svg viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="lb">矩形</span>
+      </div>
+      <div class="tool" data-id="ellipse" data-tip="椭圆（按 2）"><span class="ic"><svg viewBox="0 0 16 16"><ellipse cx="8" cy="8" rx="5.75" ry="4.25" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="lb">椭圆</span></div>
+      <div class="tool" data-id="arrow" data-tip="箭头（按 3）"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3.2 12.8L11 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.9 3.1L12.4 7.9L8.1 3.6Z" fill="currentColor" stroke="none"/></svg></span><span class="lb">箭头</span></div>
+      <div class="tool" data-id="pen" data-tip="画笔（按 4）"><span class="ic"><svg viewBox="0 0 16 16"><path d="M2.8 13.2l3.3-.8 6.7-6.7a1.3 1.3 0 0 0 0-1.9l-.6-.6a1.3 1.3 0 0 0-1.9 0L3.6 9.9l-.8 3.3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.9 4.1l2 2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="lb">画笔</span></div>
+      <div class="tool" data-id="highlight" data-tip="高亮（按 5）"><span class="ic"><svg viewBox="0 0 16 16"><path d="M5.2 10.4l4.9-4.9 2.4 2.4-4.9 4.9H5.2v-2.4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.4 4.2l1.4-1.4 2.4 2.4-1.4 1.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="2.8" y="13.4" width="10.4" height="1.6" rx="0.8" fill="currentColor" opacity="0.8"/></svg></span><span class="lb">高亮</span></div>
+      <div class="tool" data-id="mosaic" data-tip="马赛克（按 6）"><span class="ic"><svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 2.5h3.7v3.7H2.5zM9.8 2.5h3.7v3.7H9.8zM6.2 6.2h3.6v3.6H6.2zM2.5 9.8h3.7v3.7H2.5zM9.8 9.8h3.7v3.7H9.8z" fill="currentColor" stroke="none" opacity="0.75"/></svg></span><span class="lb">马赛克</span></div>
+      <div class="tool" data-id="blur" data-tip="模糊（按 7）"><span class="ic"><svg viewBox="0 0 16 16"><path d="M8 2.2C8 2.2 3.8 7 3.8 9.6a4.2 4.2 0 0 0 8.4 0C12.2 7 8 2.2 8 2.2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 9.8a2 2 0 0 0 2 2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/></svg></span><span class="lb">模糊</span></div>
+      <div class="tool discover" data-id="automask" data-tip="自动打码·一键遮蔽隐私（可撤销）"><span class="ic"><svg viewBox="0 0 16 16"><rect x="2.6" y="3.2" width="10.8" height="9.6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4.4" y="6.6" width="7.2" height="2.6" rx="0.6" fill="currentColor" stroke="none" opacity="0.85"/></svg></span><span class="lb">自动打码</span></div>
+      <div class="tool" data-id="text" data-tip="文字（按 8）"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3 3.8h10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8 3.8v8.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5.8 12.2h4.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="lb">文字</span></div>
+      <div class="tool" data-id="number" data-tip="序号（按 9）"><span class="ic"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.9 6.6L8.4 5.6v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M6.9 10.6h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="lb">序号</span></div>
+      <div class="tool" data-id="eraser" data-tip="橡皮擦·画笔/涂抹会被擦断"><span class="ic"><svg viewBox="0 0 16 16"><path d="M9.1 2.9l4 4a1 1 0 0 1 0 1.4l-3.6 3.6H5.7L2.9 9.1a1 1 0 0 1 0-1.4l4.8-4.8a1 1 0 0 1 1.4 0z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.1 6.1l3.8 3.8" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">橡皮擦</span></div>
+
+      <div class="tsep"></div>
+
+      <div class="tool dim" id="undo" data-tip="撤销（Ctrl+Z）"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3 6.2h7a3.4 3.4 0 1 1 0 6.8H6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.4 3L3.2 6.2l3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="lb">撤销</span></div>
+      <div class="tool dim disabled" id="redo" data-tip="没有可重做的操作"><span class="ic"><svg viewBox="0 0 16 16"><path d="M13 6.2H6a3.4 3.4 0 1 0 0 6.8h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.6 3l3.2 3.2-3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="lb">重做</span></div>
+      <div class="tool longshot" data-tip="滚动拼接成一张长图"><span class="ic"><svg viewBox="0 0 16 16"><rect x="4" y="1.8" width="8" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 8v5.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5.4 11l2.6 2.6L10.6 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="lb">长截图</span></div>
+      <div class="tool ocr-btn" id="ocr" data-tip="图中未识别到文字"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3.4 2.4h6.1l3.1 3.1v8.1a1 1 0 0 1-1 1H3.4a1 1 0 0 1-1-1V3.4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.3 2.5v3.2h3.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 8.4h6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 11h4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">取文字</span></div>
+
+      <div class="tsep"></div>
+
+      <div class="tool cancel-btn" data-tip="取消截图并关闭">✕ 取消</div>
+
+      <div class="tsep"></div>
+
+      <div class="tool exit-save" data-tip="保存为图片文件（Ctrl+S）"><span class="ic"><svg viewBox="0 0 16 16"><path d="M8 2.4v6.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5.3 6.5L8 9.2l2.7-2.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M2.6 10.6v1.9a1.1 1.1 0 0 0 1.1 1.1h8.6a1.1 1.1 0 0 0 1.1-1.1v-1.9" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">保存</span></div>
+      <div class="tool exit-pin" data-tip="钉在屏幕最上层"><span class="ic"><svg viewBox="0 0 16 16"><path d="M6.1 2.6h3.8" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 9.4v4.1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.6 2.6v3.1L4.9 7.5a.6.6 0 0 0 .43 1.02h5.34a.6.6 0 0 0 .43-1.02L9.4 5.7V2.6z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">贴图</span></div>
+      <div class="tool exit-ai" data-tip="AI 处理识别文字"><span class="ic"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L19 9l-4 3.4L16.2 17 12 14.3 7.8 17 9 12.4 5 9l5.1-1.4z"/></svg></span><span class="lb">AI</span></div>
+
+      <div class="tsep"></div>
+
+      <div class="tool more-btn" data-tip="更多出口：翻译 / 动作链 / 固定区域">更多 ⋯</div>
+      <div class="tool done-btn" data-tip="完成并复制（Enter）">完成 ✓</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="seg" id="schSeg">
+      <button data-sch="schA" class="on">A 微交互</button>
+      <button data-sch="schB">B 引导</button>
+      <button data-sch="schC">C 状态强调</button>
+    </div>
+    <button class="btn" id="btnTool">模拟：切换选中工具（看 A 弹性/波纹）</button>
+    <button class="btn" id="btnOcr">模拟：OCR 完成（看角标弹/B 触发/C pulse）</button>
+    <button class="btn" id="btnUndo">模拟：出现可撤销（看 C 轻推）</button>
+    <button class="btn" id="btnAttr">模拟：选中工具→属性条滑入（看 C）</button>
+  </div>
+
+  <div class="hintline">
+    操作说明：点工具栏里任意按钮也会触发对应动效。切换方案不会改动结构，只换动效层。
+  </div>
+  <div class="legend" id="legend">
+    <b>当前：A 微交互质感升级</b> — hover 抬升 + 图标缩放；选中态弹性高亮（springPop）；点击波纹（ripple）；角标弹出（badgePop）。全部事件驱动、瞬时结束。
+  </div>
+</div>
+
+<script>
+  const body=document.body;
+  const tb=document.getElementById('tb');
+  const ocr=document.getElementById('ocr');
+  const undo=document.getElementById('undo');
+  const attrBar=document.getElementById('attrBar');
+  const legend=document.getElementById('legend');
+  const legends={
+    schA:'<b>当前：A 微交互质感升级</b> — hover 抬升 + 图标缩放；选中态弹性高亮（springPop）；点击波纹（ripple）；角标弹出（badgePop）。全部事件驱动、瞬时结束。',
+    schB:'<b>当前：B 低频功能引导</b> — 「自动打码」按钮做 3 次一次性呼吸脉冲；上方浮可关闭教练卡「试试一键打码隐私」。用过即记，不再打扰。',
+    schC:'<b>当前：C 状态变化强调</b> — OCR 完成：角标弹 + 按钮一次性 pulse（lookPulse）；撤销可用：按钮轻推（nudge）；选中工具：属性条从上方滑入（attrIn）。全部状态驱动、瞬时结束。'
+  };
+
+  // 方案切换
+  document.getElementById('schSeg').addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b)return;
+    document.querySelectorAll('#schSeg button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    body.className=b.dataset.sch;
+    legend.innerHTML=legends[b.dataset.sch];
+    // B 方案下展示教练卡
+    document.querySelectorAll('.coach').forEach(c=>c.remove());
+    if(b.dataset.sch==='schB'){
+      const coach=document.createElement('div');
+      coach.className='coach';
+      coach.innerHTML='试试 <b>一键打码</b> 隐私文字 <span class="x">✕</span>';
+      tb.appendChild(coach);
+      coach.querySelector('.x').onclick=()=>coach.remove();
+    }
+  });
+
+  // 点击工具栏：选中态 + A 方案波纹
+  tb.addEventListener('click',e=>{
+    const t=e.target.closest('.tool'); if(!t||t.classList.contains('disabled'))return;
+    if(t.dataset.id){ // 工具类
+      tb.querySelectorAll('.tool').forEach(x=>x.classList.remove('on'));
+      t.classList.add('on');
+    }
+    if(body.classList.contains('schA')){
+      const r=t.getBoundingClientRect();
+      const rip=document.createElement('span');
+      rip.className='ripple';
+      const size=Math.max(r.width,r.height);
+      rip.style.width=rip.style.height=size+'px';
+      rip.style.left=(e.clientX-r.left-size/2)+'px';
+      rip.style.top=(e.clientY-r.top-size/2)+'px';
+      t.appendChild(rip);
+      setTimeout(()=>rip.remove(),500);
+      // 重新触发 spring 动画
+      t.style.animation='none'; void t.offsetWidth; t.style.animation='';
+    }
+  });
+
+  // OCR 完成模拟
+  let ocrDone=false;
+  document.getElementById('btnOcr').addEventListener('click',()=>{
+    if(!ocrDone){
+      const badge=document.createElement('span');
+      badge.className='badge'; badge.textContent='12';
+      ocr.appendChild(badge);
+      ocr.dataset.tip='查看 12 行文字（Ctrl+R）';
+      ocrDone=true;
+    }
+    if(body.classList.contains('schC')){
+      ocr.classList.remove('justdone'); void ocr.offsetWidth; ocr.classList.add('justdone');
+    }
+  });
+
+  // 撤销可用模拟
+  document.getElementById('btnUndo').addEventListener('click',()=>{
+    undo.classList.remove('disabled');
+    undo.dataset.tip='撤销（Ctrl+Z）';
+    if(body.classList.contains('schC')){
+      undo.classList.remove('canundo-nudge'); void undo.offsetWidth; undo.classList.add('canundo-nudge');
+    }
+  });
+
+  // 属性条滑入模拟
+  document.getElementById('btnAttr').addEventListener('click',()=>{
+    if(body.classList.contains('schC')){
+      attrBar.style.animation='none'; void attrBar.offsetWidth; attrBar.style.animation='';
+    }
+  });
+
+  // 模拟切换工具按钮（A 弹性/波纹可视化）
+  let cycle=0; const ids=['rect','ellipse','arrow','pen'];
+  document.getElementById('btnTool').addEventListener('click',()=>{
+    const t=tb.querySelector(`.tool[data-id="${ids[cycle%ids.length]}"]`);
+    cycle++;
+    tb.querySelectorAll('.tool').forEach(x=>x.classList.remove('on'));
+    t.classList.add('on');
+    if(body.classList.contains('schA')){
+      t.style.animation='none'; void t.offsetWidth; t.style.animation='';
+    }
+  });
+</script>
+</body>
+</html>

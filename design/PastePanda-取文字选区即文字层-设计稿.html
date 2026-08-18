@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>⑤ 取文字 OCR · 选区即文字层（微信式轻预览）</title>
+<style>
+  :root{
+    --bg:#0f172a; --card:rgba(34,41,76,.94); --line:rgba(148,163,184,.18);
+    --indigo:#6366f1; --cyan:#22d3ee; --green:#22c55e; --amber:#f59e0b;
+    --txt:#e2e8f0; --sub:#94a3b8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;padding:28px}
+  h1{font-size:22px;margin:0 0 4px}
+  h2{font-size:16px;margin:26px 0 10px;color:var(--cyan);border-left:3px solid var(--cyan);padding-left:10px}
+  .lead{color:var(--sub);font-size:13px;margin:0 0 18px;line-height:1.7}
+  .principle{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
+  .chip{background:var(--card);border:1px solid var(--line);border-radius:999px;
+    padding:6px 14px;font-size:12px}
+  .chip b{color:var(--indigo)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .panel h3{margin:0 0 10px;font-size:14px}
+  .panel.before{border-color:rgba(245,158,11,.4)}
+  .panel.after{border-color:rgba(34,197,94,.4)}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:6px;margin-bottom:8px}
+  .tag.b{background:rgba(245,158,11,.18);color:var(--amber)}
+  .tag.a{background:rgba(34,197,94,.18);color:var(--green)}
+  /* 模拟截图区 */
+  .shot{position:relative;height:200px;border-radius:10px;overflow:hidden;
+    background:linear-gradient(135deg,#1e293b,#334155);margin:8px 0}
+  .shot .body{position:absolute;inset:14px;background:rgba(15,23,42,.6);border-radius:6px;
+    font-size:11px;color:#cbd5e1;padding:10px;line-height:1.7}
+  .ocr-line-sim{position:absolute;height:14px;border-radius:3px;cursor:pointer;
+    display:flex;align-items:center;padding:0 6px;font-size:10px}
+  .ocr-line-sim.dim{background:rgba(99,102,241,.12);color:var(--sub);cursor:not-allowed}
+  .ocr-line-sim.on{background:rgba(34,197,94,.22);color:#bbf7d0;border:1px solid rgba(34,197,94,.5)}
+  .ocr-line-sim.on:hover{background:rgba(34,197,94,.4)}
+  code{background:rgba(99,102,241,.14);color:#c7d2fe;padding:1px 6px;border-radius:5px;font-size:12px}
+  .note{font-size:12px;color:var(--sub);line-height:1.7;margin-top:6px}
+  .risk{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);
+    border-radius:10px;padding:12px 14px;font-size:12px;line-height:1.7;margin-top:12px}
+  ul{margin:6px 0;padding-left:18px;font-size:13px;line-height:1.75}
+  li{margin:3px 0}
+</style>
+</head>
+<body>
+<h1>⑤ 取文字 OCR · 选区即文字层</h1>
+<p class="lead">微信思维映射：<b>P1 预览即默认</b>（图上有字就直接可见可点）+ <b>P3 非模态不挡视野</b>（文字层是图上的轻覆盖，不挡标注）。
+对标微信/QQ：截图后图上文字直接能选能复制，而不是先跳进一个文字面板再操作。</p>
+
+<div class="principle">
+  <span class="chip"><b>P1</b> 识别即预览：选区确定后后台 OCR 已就绪，文字层直接叠在图上</span>
+  <span class="chip"><b>P3</b> 非模态：点空白处仍画图形，文字层只在悬浮某行时出现</span>
+  <span class="chip"><b>P4</b> 两级取消：文字层常驻无需退出，Esc 仍回选区</span>
+</div>
+
+<h2>现状（已读真实代码）</h2>
+<ul>
+  <li>OCR 已 <b>提前到标注态</b> 后台识别（选区确定即跑，<code>ScreenshotOverlay.tsx:2779</code>）。</li>
+  <li>图上已有 <b>行级高亮框</b> <code>ocr-line</code>（<code>:3159-3184</code>），<code>copyRow</code> 点行复制已实现。</li>
+  <li>但标注态下行框被强制 <b><code>inert</code> 不可点</b>：<code>:3176</code> 的 <code>phase === "annotate" ? " inert" : ""</code>——<b>这正是差距</b>。</li>
+  <li>想点行复制文字，必须进结果态、或按 <code>Ctrl+R</code> 开抽屉（抽屉滑入会挡住部分图）。</li>
+  <li>被马赛克/模糊盖住的行已正确 <b>不渲染</b>（隐私保护，<code>isRowMasked</code> 过滤，<code>:3172</code>）。</li>
+</ul>
+
+<h2>改后交互（选区即文字层）</h2>
+<div class="grid">
+  <div class="panel before">
+    <span class="tag b">改前 · 标注态</span>
+    <h3>文字层在标注态"死了"</h3>
+    <div class="shot">
+      <div class="body">一段截图文字……<br>第二行文字……<br>第三行隐私手机号 138····</div>
+      <div class="ocr-line-sim dim" style="left:24px;top:30px;width:90px">第一行（灰·不可点）</div>
+      <div class="ocr-line-sim dim" style="left:24px;top:54px;width:90px">第二行（灰·不可点）</div>
+    </div>
+    <p class="note">行框 inert：要复制文字 → 进结果态 / 按 Ctrl+R 开抽屉（挡图）。</p>
+  </div>
+  <div class="panel after">
+    <span class="tag a">改后 · 标注态</span>
+    <h3>鼠标移到哪行，哪行就能点</h3>
+    <div class="shot">
+      <div class="body">一段截图文字……<br>第二行文字……<br>第三行隐私手机号 138····</div>
+      <div class="ocr-line-sim on" style="left:24px;top:30px;width:90px">点我=复制第一行 ✓</div>
+      <div class="ocr-line-sim on" style="left:24px;top:54px;width:90px">点我=复制第二行 ✓</div>
+    </div>
+    <p class="note">标注态直接可点；hover 提示「点击复制此行」；被遮隐私行仍不显示。</p>
+  </div>
+</div>
+
+<h2>实现要点（真实代码位置）</h2>
+<ul>
+  <li><code>ScreenshotOverlay.tsx:3176</code> 去掉 <code>phase === "annotate" ? " inert" : ""</code> 三元，标注态也渲染可点行框（保留 <code>isRowMasked</code> 过滤不变）。</li>
+  <li>行框已有 <code>onMouseDown={(e) =&gt; e.stopPropagation()}</code>（<code>:3178</code>）——点行不会触发画新图形；<code>onClick</code> 调 <code>copyRow</code>（<code>:3179</code>）已就绪。仅去掉 inert 即可。</li>
+  <li>CSS <code>.ocr-line</code> / <code>.ocr-line.inert</code>：标注态的"半透明灰、禁手型"样式移除，统一用结果态的可点样式（hover 绿色高亮）。</li>
+  <li><code>T</code> 键复制全文、Ctrl+R 抽屉、表格识别等既有出口<b>全部保留</b>，仅把"点行复制"从结果态前移到标注态。</li>
+</ul>
+
+<div class="risk">
+<b>风险与守门</b><br>
+• <b>误触画线 vs 点行复制</b>：已有 <code>onMouseDown stopPropagation</code> 兜底，行框上的按下不会画图形；但需手测确认"在行框上拖拽"不会意外画线（拖拽应仍归属行框，不进画布）。<br>
+• <b>与自动打码预览叠加</b>：隐私行已被 <code>isRowMasked</code> 过滤不渲染 OCR 框，和橙框预览不冲突。<br>
+• <b>P3 守门</b>：文字层是图上轻覆盖，点空白区仍正常画图形——不破坏标注主流程。
+</div>
+</body>
+</html>

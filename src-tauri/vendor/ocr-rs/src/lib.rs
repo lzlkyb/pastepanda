@@ -132,7 +132,7 @@ pub use error::{OcrError, OcrResult};
 pub use mnn::{Backend, InferenceConfig, InferenceEngine, PrecisionMode};
 pub use ori::{OriModel, OriOptions, OriPreprocessMode, OrientationResult};
 pub use postprocess::TextBox;
-pub use rec::{RecModel, RecOptions, RecognitionResult};
+pub use rec::{char_boxes_from_rec, RecModel, RecOptions, RecognitionResult};
 
 /// Get library version
 pub fn version() -> &'static str {

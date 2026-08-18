@@ -41,7 +41,14 @@ export type ToolId =
   | "text"
   | "number"
   | "eraser"
-  | "picker";
+  | "picker"
+  /** 一键自动打码（动作型，不是绘制工具）：点击即对图中隐私文本批量打码，不会进入绘制态 */
+  | "automask";
+
+/** OCR 选字模式（标注态：标注与文字识别共存，零步互不抢事件）。
+ *  - smart：落在文字上拖=选字；拖到文字区外自动转画标注（默认，最直觉）。
+ *  - modifier：Ctrl/⌘ + 落文字内拖=选字；裸拖一律画标注（手势更明确，不误触）。 */
+export type OcrSelectMode = "smart" | "modifier";
 
 export interface Annotation {
   id: number;

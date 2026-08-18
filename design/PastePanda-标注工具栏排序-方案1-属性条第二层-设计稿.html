@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda 标注工具栏 · 方案① 模式开关进属性条第二层 · 设计稿</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh; background: #0b0f1c;
+  font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #E0E8F0; display: flex; flex-direction: column; align-items: center;
+  padding: 30px 0 70px;
+}
+.wrap { width: 1300px; }
+h1 { font-size: 21px; margin: 0 0 8px; letter-spacing: .3px; }
+.sub { font-size: 13px; color: #9DB2D0; margin: 0 0 8px; line-height: 1.8; }
+.meta { font-size: 12px; color: #6E82A4; margin: 0 0 30px; }
+h2 { font-size: 15.5px; margin: 40px 0 12px; padding-left: 10px; border-left: 3px solid #6366F1; line-height: 1.4; }
+h2 .tag { font-size: 11px; color: #8A9BBB; font-weight: 400; margin-left: 8px; }
+.note { font-size: 12.5px; color: #9DB2D0; line-height: 1.85; margin: 10px 0 0; }
+.note b { color: #C9D6EA; font-weight: 600; }
+.note .bad { color: #FCA5A5; }
+.note .good { color: #7DE0C4; }
+code {
+  font-family: ui-monospace, Consolas, "Courier New", monospace; font-size: 11.5px;
+  background: rgba(99,102,241,.14); border: 1px solid rgba(99,102,241,.28);
+  padding: 1px 5px; border-radius: 4px; color: #C7CBFF;
+}
+.barbox {
+  background: radial-gradient(120% 140% at 15% 0%, #17203c 0%, #0e1428 65%, #0a0e1c 100%);
+  border: 1px solid rgba(148,168,255,.14); border-radius: 12px;
+  padding: 20px 18px; margin-top: 12px; overflow-x: auto;
+}
+.barbox .annot-toolbar, .barbox .attr-bar { position: relative; left: auto !important; top: auto !important; }
+.barbox .attr-bar { margin-top: 10px; }
+.barcap { font-size: 11.5px; color: #6E82A4; margin-top: 12px; line-height: 1.7; }
+.barcap b { color: #9DB2D0; }
+
+/* ===== screenshot.css 原样复刻 ===== */
+.annot-toolbar {
+  position: absolute; display: flex; align-items: center; gap: 2px;
+  padding: 5px 7px; border-radius: 12px;
+  background: linear-gradient(180deg, rgba(34,41,76,0.94), rgba(16,21,40,0.96));
+  backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid rgba(99,102,241,0.4);
+  box-shadow: 0 12px 36px rgba(0,0,0,0.45), inset 0 1px 0 rgba(148,168,255,0.28), inset 0 -1px 0 rgba(0,0,0,0.35);
+  white-space: nowrap; z-index: 30;
+  --brand-ai-from: #A8DEFF; --brand-ai-to: #D8CCFF;
+}
+.tool {
+  min-width: 38px; height: 42px; border-radius: 8px; padding: 0 3px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  cursor: pointer; border: 1px solid transparent;
+  color: #E0E8F0; font-size: 12px; position: relative; transition: background 0.12s;
+}
+.tool .ic { display: flex; }
+.tool .ic svg { width: 17px; height: 17px; display: block; }
+.tool .lb { font-size: 9px; line-height: 1; letter-spacing: 0.2px; opacity: 0.72; }
+.tool:hover { background: #0F1F35; }
+.tool:hover .lb { opacity: 1; }
+.tool.on {
+  background: linear-gradient(135deg, #3B9EFF, #6D5CF0); border-color: rgba(255,255,255,0.4);
+  color: #ffffff; box-shadow: 0 2px 12px rgba(59,158,255,0.5);
+}
+.tool.on .lb { opacity: 1; }
+.tool.dim { color: #9DB2D0; }
+.tool.longshot { color: #8CC5FF; }
+.tool.disabled { opacity: 0.3; cursor: not-allowed; }
+.tool.disabled:hover { background: transparent; }
+.tool.exit-save { color: #A5C8FF; }
+.tool.exit-pin { color: #F9A8D4; }
+.tool.exit-ai { color: var(--brand-ai-from); }
+.tool.exit-ai .lb { opacity: 1; font-weight: 700; }
+.tool.ocr-btn { color: #7DE0C4; }
+.tool .badge {
+  position: absolute; top: 2px; right: 1px; min-width: 15px; height: 15px; padding: 0 3.5px;
+  border-radius: 8px; font-size: 9px; line-height: 15px; font-weight: 700; text-align: center;
+  background: linear-gradient(135deg, #3B9EFF, #6D5CF0); color: #fff;
+  box-shadow: 0 0 0 1.5px rgba(20,26,50,0.98); pointer-events: none;
+}
+.tool::after, .cwrap::after, .wpick::after {
+  content: attr(data-tip);
+  position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+  padding: 3px 8px; border-radius: 6px; font-size: 10px; white-space: nowrap;
+  background: rgba(15,23,42,0.96); color: #E6EDF7;
+  border: 1px solid rgba(255,255,255,0.16); box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+  opacity: 0; pointer-events: none; transition: opacity 0.1s; z-index: 80;
+}
+.tool:hover::after, .cwrap:hover::after, .wpick:hover::after { opacity: 1; }
+.tool.done-btn, .tool.cancel-btn, .tool.more-btn { flex-direction: row; min-width: 0; height: 34px; padding: 0 12px; font-size: 12px; }
+.tool.done-btn { font-weight: 600; color: #fff;
+  background: linear-gradient(135deg, #6366F1, #3B9EFF); border: 1px solid rgba(255,255,255,0.25);
+  box-shadow: 0 2px 10px rgba(99,102,241,0.4); }
+.tool.done-btn:hover { filter: brightness(1.12); }
+.tool.cancel-btn { color: #9DB2D0; }
+.tool.cancel-btn:hover { background: rgba(248,113,113,0.15); color: #FCA5A5; }
+.tool.more-btn { color: #9DB2D0; line-height: 1; }
+.tool.more-btn:hover { background: rgba(99,102,241,0.18); color: #B9C6F0; }
+.tsep { width: 1px; height: 24px; margin: 0 5px;
+  background: linear-gradient(180deg, transparent, rgba(125,140,255,0.5), transparent); }
+
+.attr-bar {
+  position: absolute; display: flex; align-items: center; gap: 1px;
+  padding: 4px 9px; border-radius: 10px; white-space: nowrap; z-index: 31;
+  background: rgba(15,23,42,0.96); border: 1px solid rgba(148,168,255,0.3);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.42);
+}
+.attr-bar .albl { font-size: 10px; color: #6E82A4; margin: 0 5px 0 2px; }
+.attr-bar .asep { width: 1px; height: 16px; margin: 0 7px;
+  background: linear-gradient(180deg, transparent, rgba(125,140,255,0.45), transparent); }
+.cwrap { width: 24px; height: 24px; border-radius: 6px; position: relative;
+  display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.cwrap:hover { background: rgba(148,168,255,0.14); }
+.cwrap.picker { color: #9DB2D0; }
+.cwrap.picker svg { width: 15px; height: 15px; display: block; }
+.cp { width: 14px; height: 14px; border-radius: 50%; display: block;
+  border: 1.5px solid transparent; flex-shrink: 0; transition: transform 0.1s; }
+.cwrap:hover .cp { transform: scale(1.12); }
+.cp.on { border-color: #fff; box-shadow: 0 0 0 2px rgba(59,158,255,0.55); }
+.wpick { width: 24px; height: 24px; border-radius: 6px; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: #C9D6EA; font-size: 10.5px; }
+.wpick:hover { background: rgba(148,168,255,0.14); }
+.wpick.on { background: rgba(59,158,255,0.28); color: #fff; }
+.wpick svg { width: 15px; height: 15px; display: block; }
+.wdot { border-radius: 50%; background: currentColor; display: block; }
+/* ① 的唯一适配：模式组的两个文字钮复用 .wpick 视觉，但文字（智能意图/Ctrl）
+   塞不进 24px 方钮 —— 与设置页 .sSegOpt 的 32px 是同一个坑，必须 width:auto */
+.wpick.tx { width: auto; padding: 0 6px; }
+
+svg.s { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+svg.lu { fill: none; stroke: currentColor; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ===== 场景图 ===== */
+.scene {
+  position: relative; width: 1300px; height: 470px; border-radius: 14px; overflow: hidden;
+  background: radial-gradient(120% 120% at 20% 0%, #1b2547 0%, #0e1428 60%, #090d1a 100%);
+  box-shadow: 0 30px 80px rgba(0,0,0,.5); margin-top: 14px;
+}
+.fakewin { position: absolute; left: 430px; top: 52px; width: 700px; height: 290px;
+  border-radius: 10px; background: linear-gradient(160deg,#243056,#1a2240);
+  border: 1px solid rgba(148,168,255,.25); }
+.fakewin .bar { height: 34px; background: rgba(99,102,241,.18); border-radius: 10px 10px 0 0; }
+.fakewin .line { height: 10px; margin: 16px 18px; border-radius: 6px; background: rgba(157,178,208,.18); }
+.fakewin .line.s { width: 55%; }
+.shade-block { position: absolute; background: rgba(10,14,24,0.6); pointer-events: none; }
+.sel-rect { position: absolute;
+  border: 1px solid rgba(255,255,255,0.95); outline: 1.5px solid #3B9EFF;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.55), 0 0 8px rgba(59,158,255,0.4); pointer-events: none; }
+.zoombox {
+  background: radial-gradient(120% 140% at 15% 0%, #17203c 0%, #0e1428 65%, #0a0e1c 100%);
+  border: 1px solid rgba(148,168,255,.14); border-radius: 12px;
+  padding: 22px 18px; margin-top: 14px; display: flex; align-items: center; justify-content: center;
+}
+.zoombox .attr-bar { position: relative; left: auto !important; top: auto !important; }
+.zoomcap { font-size: 11px; color: #6E82A4; margin-top: 10px; text-align: center; line-height: 1.7; }
+
+/* ===== 表格 ===== */
+table { border-collapse: collapse; width: 100%; margin-top: 14px; font-size: 12.5px; }
+th, td { padding: 8px 11px; text-align: left; border-bottom: 1px solid rgba(148,168,255,.13); }
+th { color: #8A9BBB; font-weight: 600; font-size: 11.5px; background: rgba(99,102,241,.09); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>标注工具栏 · 方案 ①｜「模式」开关放进属性条第二层</h1>
+  <p class="sub">
+    = 方案 B 的主栏（减重 ≈120px、绘制工具同族相邻、完成/更多互换、快捷键解耦）
+    ＋ 把「智能意图｜Ctrl」从主栏挪到<b>第二层属性条</b>末尾，作为一组「模式」。
+    绘制工具顺序与快捷键同 <code>design/PastePanda-标注工具栏排序-方案B-设计稿.html</code> 第 3/4 节，这里不再重复。
+  </p>
+  <p class="meta">
+    对照源码：<code>src/components/screenshot/AttrBar.tsx</code> ·
+    <code>src/components/screenshot/ScreenshotOverlay.tsx:3192</code>（<code>showAttrBar</code>）·
+    <code>src/styles/screenshot.css:204-262</code>　｜　样式从上述文件原样复刻，唯一适配标了注释（规则 12）
+  </p>
+
+  <h2>1 · 场景图<span class="tag">主栏 980px 右对齐 left=100；属性条末尾多一组「模式」</span></h2>
+  <div class="scene">
+    <div class="fakewin">
+      <div class="bar"></div><div class="line"></div><div class="line s"></div>
+      <div class="line"></div><div class="line s"></div><div class="line"></div>
+    </div>
+    <div class="shade-block" style="left:0;top:0;width:1300px;height:96px"></div>
+    <div class="shade-block" style="left:0;top:96px;width:520px;height:210px"></div>
+    <div class="shade-block" style="left:1080px;top:96px;width:220px;height:210px"></div>
+    <div class="shade-block" style="left:0;top:306px;width:1300px;height:164px"></div>
+    <div class="sel-rect" style="left:520px;top:96px;width:560px;height:210px"></div>
+
+    <!-- 主栏：B 的 980px，无模式开关 -->
+    <div class="annot-toolbar" style="left:100px;top:314px">
+      <div class="tool on"><span class="ic"><svg class="s" viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="9" rx="1.5"/></svg></span><span class="lb">矩形</span></div>
+      <div class="tool"><span class="ic"><svg class="s" viewBox="0 0 16 16"><ellipse cx="8" cy="8" rx="5.75" ry="4.25"/></svg></span><span class="lb">椭圆</span></div>
+      <div class="tool"><span class="ic"><svg class="s" viewBox="0 0 16 16"><path d="M3.2 12.8L11 5"/><path d="M12.9 3.1L12.4 7.9L8.1 3.6Z" fill="currentColor" stroke="none"/></svg></span><span class="lb">箭头</span></div>
+      <div class="tool"><span class="ic"><svg class="s" viewBox="0 0 16 16"><path d="M2.8 13.2l3.3-.8 6.7-6.7a1.3 1.3 0 0 0 0-1.9l-.6-.6a1.3 1.3 0 0 0-1.9 0L3.6 9.9l-.8 3.3z"/><path d="M9.9 4.1l2 2"/></svg></span><span class="lb">画笔</span></div>
+      <div class="tool"><span class="ic"><svg class="s" viewBox="0 0 16 16"><path d="M5.2 10.4l4.9-4.9 2.4 2.4-4.9 4.9H5.2v-2.4z"/><path d="M9.4 4.2l1.4-1.4 2.4 2.4-1.4 1.4"/><rect x="2.8" y="13.4" width="10.4" height="1.6" rx="0.8" fill="currentColor" stroke="none" opacity="0.8"/></svg></span><span class="lb">高亮</span></div>
+      <div class="tool"><span class="ic"><svg class="s" viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="1.2"/><path d="M2.5 2.5h3.7v3.7H2.5zM9.8 2.5h3.7v3.7H9.8zM6.2 6.2h3.6v3.6H6.2zM2.5 9.8h3.7v3.7H2.5zM9.8 9.8h3.7v3.7H9.8z" fill="currentColor" stroke="none" opacity="0.75"/></svg></span><span class="lb">马赛克</span></div>
+      <div class="tool"><span class="ic"><svg class="s" viewBox="0 0 16 16"><path d="M8 2.2C8 2.2 3.8 7 3.8 9.6a4.2 4.2 0 0 0 8.4 0C12.2 7 8 2.2 8 2.2z"/><path d="M6 9.8a2 2 0 0 0 2 2" opacity="0.6"/></svg></span><span class="lb">模糊</span></div>
+      <div class="tool"><span class="ic"><svg class="s" viewBox="0 0 16 16"><rect x="2.6" y="3.2" width="10.8" height="9.6" rx="1.4"/><rect x="4.4" y="6.6" width="7.2" height="2.6" rx="0.6" fill="currentColor" stroke="none" opacity="0.85"/></svg></span><span class="lb">自动打码</span></div>
+      <div class="tool"><span class="ic"><svg class="s" viewBox="0 0 16 16"><path d="M3 3.8h10"/><path d="M8 3.8v8.4"/><path d="M5.8 12.2h4.4"/></svg></span><span class="lb">文字</span></div>
+      <div class="tool"><span class="ic"><svg class="s" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6"/><path d="M6.9 6.6L8.4 5.6v5"/><path d="M6.9 10.6h3"/></svg></span><span class="lb">序号</span></div>
+      <div class="tool"><span class="ic"><svg class="s" viewBox="0 0 16 16"><path d="M9.1 2.9l4 4a1 1 0 0 1 0 1.4l-3.6 3.6H5.7L2.9 9.1a1 1 0 0 1 0-1.4l4.8-4.8a1 1 0 0 1 1.4 0z"/><path d="M6.1 6.1l3.8 3.8"/><path d="M2.5 13.5h11"/></svg></span><span class="lb">橡皮擦</span></div>
+      <div class="tsep"></div>
+      <div class="tool dim"><span class="ic"><svg class="s" viewBox="0 0 16 16"><path d="M3 6.2h7a3.4 3.4 0 1 1 0 6.8H6"/><path d="M6.4 3L3.2 6.2l3.2 3.2"/></svg></span><span class="lb">撤销</span></div>
+      <div class="tool dim disabled"><span class="ic"><svg class="s" viewBox="0 0 16 16"><path d="M13 6.2H6a3.4 3.4 0 1 0 0 6.8h4"/><path d="M9.6 3l3.2 3.2-3.2 3.2"/></svg></span><span class="lb">重做</span></div>
+      <div class="tool longshot"><span class="ic"><svg class="s" viewBox="0 0 16 16"><rect x="4" y="1.8" width="8" height="5" rx="1"/><path d="M8 8v5.4"/><path d="M5.4 11l2.6 2.6L10.6 11"/></svg></span><span class="lb">长截图</span></div>
+      <div class="tool ocr-btn"><span class="badge">12</span><span class="ic"><svg class="s" viewBox="0 0 16 16"><path d="M3.4 2.4h6.1l3.1 3.1v8.1a1 1 0 0 1-1 1H3.4a1 1 0 0 1-1-1V3.4a1 1 0 0 1 1-1z"/><path d="M9.3 2.5v3.2h3.2"/><path d="M5 8.4h6"/><path d="M5 11h4"/></svg></span><span class="lb">取文字</span></div>
+      <div class="tsep"></div>
+      <div class="tool cancel-btn">✕ 取消</div>
+      <div class="tsep"></div>
+      <div class="tool exit-save"><span class="ic"><svg class="s" viewBox="0 0 16 16"><path d="M8 2.4v6.7"/><path d="M5.3 6.5L8 9.2l2.7-2.7"/><path d="M2.6 10.6v1.9a1.1 1.1 0 0 0 1.1 1.1h8.6a1.1 1.1 0 0 0 1.1-1.1v-1.9"/></svg></span><span class="lb">保存</span></div>
+      <div class="tool exit-pin"><span class="ic"><svg class="s" viewBox="0 0 16 16"><path d="M6.1 2.6h3.8"/><path d="M8 9.4v4.1"/><path d="M6.6 2.6v3.1L4.9 7.5a.6.6 0 0 0 .43 1.02h5.34a.6.6 0 0 0 .43-1.02L9.4 5.7V2.6z"/></svg></span><span class="lb">贴图</span></div>
+      <div class="tool exit-ai"><span class="ic"><svg class="lu" viewBox="0 0 24 24"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></svg></span><span class="lb" style="background:linear-gradient(92deg,var(--brand-ai-from) 0%,var(--brand-ai-to) 100%);-webkit-background-clip:text;background-clip:text;color:transparent;">AI</span></div>
+      <div class="tsep"></div>
+      <div class="tool more-btn">更多 ⋯</div>
+      <div class="tool done-btn">完成 ✓</div>
+    </div>
+
+    <!-- 属性条：颜色 + 粗细 +（末尾新增）模式组 -->
+    <div class="attr-bar" style="left:100px;top:366px">
+      <span class="albl">颜色</span>
+      <span class="cwrap" data-tip="#ef4444"><span class="cp on" style="background:#ef4444"></span></span>
+      <span class="cwrap" data-tip="#3b9eff"><span class="cp" style="background:#3b9eff"></span></span>
+      <span class="cwrap" data-tip="#facc15"><span class="cp" style="background:#facc15"></span></span>
+      <span class="cwrap" data-tip="#22c55e"><span class="cp" style="background:#22c55e"></span></span>
+      <span class="cwrap" data-tip="#1f2937"><span class="cp" style="background:#1f2937"></span></span>
+      <span class="cwrap picker" data-tip="吸管取色 · 点画布取色并复制色值">
+        <svg class="s" viewBox="0 0 16 16"><path d="M10.4 2.6a1.5 1.5 0 0 1 2.1 0l0.9 0.9a1.5 1.5 0 0 1 0 2.1L6.6 12.4l-3 0.9 0.9-3z"/><path d="M9.4 3.6l3 3"/></svg>
+      </span>
+      <span class="asep"></span>
+      <span class="albl">粗细</span>
+      <span class="wpick" data-tip="细（2px）"><span class="wdot" style="width:4px;height:4px"></span></span>
+      <span class="wpick on" data-tip="中（3px）"><span class="wdot" style="width:7px;height:7px"></span></span>
+      <span class="wpick" data-tip="粗（5px）"><span class="wdot" style="width:10px;height:10px"></span></span>
+      <span class="asep"></span>
+      <span class="albl">模式</span>
+      <span class="wpick on tx" data-tip="落在文字上拖=选字；光标离开文字带则冻结已选内容">智能意图</span>
+      <span class="wpick tx" data-tip="Ctrl/⌘ + 落在文字上拖=选字；裸拖一律画标注">Ctrl</span>
+    </div>
+  </div>
+  <p class="note">
+    矩形选中时属性条就是上图：颜色｜粗细｜<b>模式</b> 三组。模式的可见性与属性条绑定 ——
+    <code>showAttrBar = ATTR_TOOLS.has(tool) &amp;&amp; !busy</code>，标注态恒真，所以模式<b>全程可见</b>；
+    busy（合成/保存）那一下随属性条一起隐藏。
+  </p>
+
+  <h2>2 · 属性条放大<span class="tag">新增组放末尾，用 asep 与工具属性隔开</span></h2>
+  <div class="zoombox">
+    <div class="attr-bar">
+      <span class="albl">颜色</span>
+      <span class="cwrap"><span class="cp on" style="background:#ef4444"></span></span>
+      <span class="cwrap"><span class="cp" style="background:#3b9eff"></span></span>
+      <span class="cwrap"><span class="cp" style="background:#facc15"></span></span>
+      <span class="cwrap"><span class="cp" style="background:#22c55e"></span></span>
+      <span class="cwrap"><span class="cp" style="background:#1f2937"></span></span>
+      <span class="cwrap picker"><svg class="s" viewBox="0 0 16 16"><path d="M10.4 2.6a1.5 1.5 0 0 1 2.1 0l0.9 0.9a1.5 1.5 0 0 1 0 2.1L6.6 12.4l-3 0.9 0.9-3z"/><path d="M9.4 3.6l3 3"/></svg></span>
+      <span class="asep"></span>
+      <span class="albl">粗细</span>
+      <span class="wpick"><span class="wdot" style="width:4px;height:4px"></span></span>
+      <span class="wpick on"><span class="wdot" style="width:7px;height:7px"></span></span>
+      <span class="wpick"><span class="wdot" style="width:10px;height:10px"></span></span>
+      <span class="asep"></span>
+      <span class="albl" style="color:#7DE0C4">模式</span>
+      <span class="wpick on tx">智能意图</span>
+      <span class="wpick tx">Ctrl</span>
+    </div>
+  </div>
+  <p class="zoomcap">
+    悬停两组模式钮可看 tooltip。选中态复用现有 <code>.wpick.on</code>（蓝底白字），
+    不引入新的选中态视觉。
+  </p>
+  <p class="note">
+    <b>唯一样式适配（已注释）：</b>模式组两个文字钮加 <code>width:auto; padding:0 6px</code>。
+    属性条现有的「字号 小/中/大」「强度 细/中/粗」已经是 <code>.wpick</code> 里放文字的先例，
+    但那些是单字，「智能意图」四个字塞不进 24px —— 这是设置页 <code>.sSegOpt</code> 32px 同一个坑的变体，
+    实现时一并注意。另一个可选实现：直接把工具栏那份 <code>.seg</code> 分段控件搬进来（视觉不同、代码更省），二选一，设计稿先按 .wpick 语言画。
+  </p>
+
+  <h2>3 · 其它工具下的属性条<span class="tag">模式组不受影响，恒在末尾</span></h2>
+  <div class="barbox">
+    <div class="attr-bar">
+      <span class="albl">形状</span>
+      <span class="wpick on"><svg viewBox="0 0 16 16" style="width:15px;height:15px;display:block"><path d="M2.6 11.6c2.2-4.4 4.2-6.2 6-5.4 1.8.8.6 3.4 2 4 1.4.6 2.4-.8 2.8-2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></span>
+      <span class="wpick"><svg viewBox="0 0 16 16" style="width:15px;height:15px;display:block"><rect x="2.6" y="4" width="10.8" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span>
+      <span class="asep"></span>
+      <span class="albl">强度</span>
+      <span class="wpick">细</span>
+      <span class="wpick on">中</span>
+      <span class="wpick">粗</span>
+      <span class="aval" style="font-size:10px;color:#8FA3C4;margin-left:4px;font-variant-numeric:tabular-nums;min-width:30px">8px</span>
+      <span class="asep"></span>
+      <span class="albl" style="color:#7DE0C4">模式</span>
+      <span class="wpick on tx">智能意图</span>
+      <span class="wpick tx">Ctrl</span>
+    </div>
+  </div>
+  <p class="note">
+    马赛克/模糊（无颜色）时属性条换挡成 形状+强度，模式组不动、仍在末尾 —— 它跟具体工具无关，恒在。
+
+  </p>
+
+  <h2>4 · 改动清单</h2>
+  <table>
+    <tr><th>文件</th><th>改什么</th><th>量级</th></tr>
+    <tr>
+      <td><code>src/components/screenshot/AttrBar.tsx</code></td>
+      <td>Props 加 <code>ocrSelectMode</code> / <code>onOcrSelectModeChange</code>；末尾（所有工具条件组之后）加一组「模式」（asep + albl + 两个 wpick tx 文字钮）</td>
+      <td>约 20 行，纯展示</td>
+    </tr>
+    <tr>
+      <td><code>src/components/screenshot/AnnotToolbar.tsx</code></td>
+      <td>删除 <code>.ocr-mode-toggle</code> 块及其前 <code>tsep</code>；Props 删 <code>ocrSelectMode</code> / <code>onOcrSelectModeChange</code></td>
+      <td>删 1 块 + 删 2 入参</td>
+    </tr>
+    <tr>
+      <td><code>src/components/screenshot/ScreenshotOverlay.tsx</code></td>
+      <td>① 第 910–914 行快捷键改按 <code>key</code> 查表；② <code>ocrSelectMode</code> / <code>changeOcrSelectMode</code> 从 AnnotToolbar 改传给 AttrBar（state 与 get_config 读回保留）</td>
+      <td>约 6 行</td>
+    </tr>
+    <tr>
+      <td><code>src/styles/screenshot.css</code></td>
+      <td>删 <code>.ocr-mode-toggle</code> 与 <code>.seg</code>（主栏那份没了就是死代码）；若选 .wpick 实现则加 <code>.wpick.tx</code></td>
+      <td>删 4 行 + 加 1 行</td>
+    </tr>
+  </table>
+  <p class="note">
+    <b>不动的：</b><code>toolbarPos.ts</code> 与 12 个单测、<code>GeneralTab.tsx</code> 设置页行、<code>tools.tsx</code> 里的工具集合、
+    「取消」隔离位、长截图/取文字的置灰策略。注意此处<b>不需要</b>设置页那两行修复（那是方案 B 里为了让设置页成为唯一入口才必要；
+    ①里设置页仍然是常驻入口之一，修不修都行）。
+  </p>
+
+  <h2>5 · 与 ② / B 的差异</h2>
+  <table>
+    <tr><th></th><th>① 属性条</th><th>② 选区上方胶囊</th><th>B 彻底移出</th></tr>
+    <tr><td>标注态可见</td><td>✓（随属性条）</td><td>✓（独立常驻）</td><td>✗（只在设置页）</td></tr>
+    <tr><td>新增悬浮元素</td><td>无</td><td>有（胶囊 + 定位函数 + 单测）</td><td>无</td></tr>
+    <tr><td>代码量</td><td>中（约 30 行 + CSS 1 行）</td><td>大（新组件 + 定位 + 测试）</td><td>小</td></tr>
+    <tr><td>不搭的地方</td><td>会话级模式混在工具属性里</td><td>胶囊可能压住选区上缘正在画的内容</td><td>截图内无法切换</td></tr>
+  </table>
+  <p class="note">
+    一句话：<b>① 是"不加新东西的全程可见"，② 是"最显眼的全程可见"，B 是"最干净但不可见"</b>。
+    ② 的细节见另一份 <code>design/PastePanda-标注工具栏排序-方案2-选区上方胶囊-设计稿.html</code>。
+  </p>
+
+</div>
+</body>
+</html>

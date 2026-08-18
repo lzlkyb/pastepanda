@@ -41,7 +41,7 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
     cropMode, cropRect, cropOriginal,
     closePreview, setPreviewScale, setPreviewRotation, setPreviewOffset, setSelectedWordIndices,
     setExportFormat, setExportQuality, exportImage,
-    setCropMode, setCropRect,
+    toggleCropMode,
     handleCropMouseDown, handleCropMouseMove, handleCropMouseUp,
     confirmCrop, cancelCrop, restoreOriginal,
     handlePreviewWheel, handlePanStart, handlePanMove, handlePanEnd,
@@ -270,13 +270,12 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
                   <Pin size={14} />
                   <span style={{ marginLeft: 3, fontSize: 11 }}>置顶</span>
                 </button>
-                {/* 裁剪按钮 */}
+                {/* 裁剪按钮（与 OCR 选词互斥，见 toggleCropMode：进裁剪自动退出选词） */}
                 <button
                   className={`${styles.imageDetailToolBtn} ${styles.cropToolBtn} ${cropMode ? styles.imageDetailToolBtnActive : ''}`}
                   title="进入/退出裁剪模式"
                   onClick={() => {
-                    setCropMode(!cropMode);
-                    setCropRect(null);
+                    toggleCropMode();
                   }}
                 >
                   <Scissors size={14} />
@@ -331,8 +330,10 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
                       className={styles.imageDetailImg}
                       draggable={false}
                     />
-                    {/* OCR 文字叠加层：与 img 同容器，词框直接用图片像素坐标 */}
-                    {ocrActive && ocrResult && (
+                    {/* OCR 文字叠加层：与 img 同容器，词框直接用图片像素坐标。
+                        ⚠️ cropMode 时不渲染：词框 pointerEvents:auto 且 z-index 高于裁剪层，
+                        叠加会拦掉点在词框上的裁剪 mousedown（互斥逻辑见 toggleCropMode，这里双保险）。 */}
+                    {ocrActive && ocrResult && !cropMode && (
                       <div className={styles.ocrOverlayContainer} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
                         {ocrResult.lines.map((line, li) =>
                           line.words.map((word, wi) => {
@@ -555,7 +556,7 @@ export function ImagePreviewDialog({ preview }: ImagePreviewDialogProps) {
                   <span style={{ fontSize: 12 }}>🔍</span>
                   <span className={styles.ocrDrawerTitle}>全部识别文字</span>
                   <span className={styles.ocrDrawerCount}>
-                    {ocrResult.lines.length} 行 · {ocrResult.lines.reduce((n, l) => n + l.words.length, 0)} 词
+                    {ocrResult.lines.length} 行 · {ocrResult.lines.reduce((n, l) => n + l.text.length, 0)} 字
                   </span>
                   <div className={styles.ocrFullTextActions} onClick={(e) => e.stopPropagation()}>
                     <button

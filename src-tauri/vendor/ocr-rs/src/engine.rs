@@ -114,15 +114,19 @@ pub struct OcrResult_ {
     pub confidence: f32,
     /// Bounding box
     pub bbox: TextBox,
+    /// Normalized per-character horizontal centers (see [`crate::rec::RecognitionResult::char_xn`]).
+    /// Empty when char boxes are unavailable; consumers fall back to the whole-line bbox.
+    pub char_xn: Vec<f32>,
 }
 
 impl OcrResult_ {
     /// Create a new OCR result
-    pub fn new(text: String, confidence: f32, bbox: TextBox) -> Self {
+    pub fn new(text: String, confidence: f32, bbox: TextBox, char_xn: Vec<f32>) -> Self {
         Self {
             text,
             confidence,
             bbox,
+            char_xn,
         }
     }
 }
@@ -591,6 +595,7 @@ impl OcrEngine {
                         rec.text,
                         rec.confidence,
                         turn.map_box_to_original(&text_box, original_width, original_height),
+                        rec.char_xn,
                     )
                 });
 
@@ -629,7 +634,7 @@ impl OcrEngine {
             .filter(|(rec, _)| {
                 !rec.text.is_empty() && rec.confidence >= self.config.min_result_confidence
             })
-            .map(|(rec, bbox)| OcrResult_::new(rec.text, rec.confidence, bbox))
+            .map(|(rec, bbox)| OcrResult_::new(rec.text, rec.confidence, bbox, rec.char_xn))
             .collect()
     }
 
@@ -1076,7 +1081,7 @@ mod tests {
     #[test]
     fn test_ocr_result() {
         let bbox = TextBox::new(imageproc::rect::Rect::at(0, 0).of_size(100, 20), 0.9);
-        let result = OcrResult_::new("Hello".to_string(), 0.95, bbox);
+        let result = OcrResult_::new("Hello".to_string(), 0.95, bbox, vec![]);
 
         assert_eq!(result.text, "Hello");
         assert_eq!(result.confidence, 0.95);
@@ -1149,9 +1154,9 @@ mod tests {
     #[test]
     fn merge_spatial_result_keeps_only_the_highest_confidence() {
         let bbox = TextBox::new(Rect::at(10, 20).of_size(20, 80), 0.9);
-        let mut results = vec![OcrResult_::new("低".into(), 0.6, bbox.clone())];
+        let mut results = vec![OcrResult_::new("低".into(), 0.6, bbox.clone(), vec![])];
 
-        merge_spatial_result(&mut results, OcrResult_::new("高".into(), 0.9, bbox));
+        merge_spatial_result(&mut results, OcrResult_::new("高".into(), 0.9, bbox, vec![]));
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].text, "高");

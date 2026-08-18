@@ -80,6 +80,32 @@ body {
 }
 .ocr-line:hover .tip { opacity: 1; transform: translateY(0); }
 .ocr-line.copied .tip { opacity: 1; background: var(--green, #22c55e); transform: translateY(0); }
+/* ⑤ 字级：逐字可选中（拖选高亮） */
+.ocr-line.sel { background: rgba(99, 102, 241, 0.32); border-color: rgba(99, 102, 241, 0.9); }
+/* 橡皮筋拖选矩形 */
+.ocr-rubber {
+  position: absolute; pointer-events: none;
+  border: 1px dashed rgba(99, 102, 241, 0.9);
+  background: rgba(99, 102, 241, 0.12); border-radius: 2px;
+  z-index: 5;
+}
+/* 拖选后浮复制条 */
+.ocr-copy-bar {
+  position: absolute; z-index: 30; display: flex; gap: 6px;
+  padding: 5px 6px; border-radius: 8px;
+  background: rgba(20, 22, 28, 0.92); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  /* 固定尺寸（与 ocrBarPos.ts 的 OCR_BAR_W/OCR_BAR_H 常量一致）：
+     布局函数 layoutOcrCopyBar 按此精确判定四象限翻转，靠近屏幕边缘时自动翻到矩形内侧，
+     不再像旧实现 translate(6px,6px) 硬编码右下偏移（贴边时整条溢出屏外点不到）。 */
+  width: 168px; height: 34px; box-sizing: border-box;
+  justify-content: center; align-items: center;
+  transform: none;
+}
+.ocr-copy-bar button {
+  border: none; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+}
+.ocr-copy-bar button.primary { background: var(--accent-solid, #2D78C2); color: #fff; }
+.ocr-copy-bar button.ghost { background: rgba(255, 255, 255, 0.12); color: #fff; }
 
 /* ===== 标注主工具栏（V6.20 双层；位置全由 JS 的 layoutToolbar 给出） ===== */
 /* 旧实现写死 left: 50% —— 工具栏永远屏幕水平居中、只有 top 跟选区，
@@ -182,7 +208,7 @@ body {
 }
 
 /* 即时气泡提示（替代原生 title 的延迟提示）：悬停即显示名称 + 快捷键 */
-.tool::after, .cwrap::after, .wpick::after {
+.tool::after, .cwrap::after, .wpick::after, .mode-pill::after {
   content: attr(data-tip);
   position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%);
   padding: 3px 8px; border-radius: 6px; font-size: 10px; white-space: nowrap;
@@ -191,7 +217,7 @@ body {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
   opacity: 0; pointer-events: none; transition: opacity 0.1s; z-index: 80;
 }
-.tool:hover::after, .cwrap:hover::after, .wpick:hover::after { opacity: 1; }
+.tool:hover::after, .cwrap:hover::after, .wpick:hover::after, .mode-pill:hover::after { opacity: 1; }
 /* 工具栏翻到选区上方时气泡上浮。
    ⚠️ 旧版这条规则存在却从没生效过——JSX 里 className 恒为 "annot-toolbar"，
    .top-attached 从未被加上，于是工具栏在上方时 tooltip 仍向下弹，正好压在画布上。 */
@@ -220,6 +246,25 @@ body {
 /* 分组分隔线：indigo→cyan 渐变细线（对齐主 UI 的细分割线风格） */
 .tsep { width: 1px; height: 24px; margin: 0 5px;
   background: linear-gradient(180deg, transparent, rgba(125, 140, 255, 0.5), transparent); }
+
+/* OCR 选字模式胶囊（V6.22）：取代工具栏里的分段开关，锚定选区上缘右上角。
+   深色卡片语言对齐 .mask-bar（自动打码确认条）——它们都是"锚在选区附近的
+   一次性小条"；状态色点复用取文字绿（#7DE0C4）与 text-muted 灰。 */
+.mode-pill {
+  position: absolute; display: flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 10px; border-radius: 14px;
+  background: rgba(14, 20, 38, 0.97);
+  border: 1px solid rgba(124, 108, 255, 0.6);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
+  color: #C9D6EA; font-size: 12px; cursor: pointer; z-index: 32;
+  white-space: nowrap; user-select: none;
+  transition: border-color 0.12s, color 0.12s;
+}
+.mode-pill:hover { border-color: rgba(124, 108, 255, 0.95); color: #E6EDF7; }
+.mode-pill .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.mode-pill .dot.smart { background: #7DE0C4; box-shadow: 0 0 6px rgba(125, 224, 196, 0.8); }
+.mode-pill .dot.ctrl { background: #9DB2D0; }
+.mode-pill .sw { font-size: 10px; color: #6E82A4; }
 
 /* ===== 属性条（双层的第二层：颜色 / 粗细 / 箭头样式） ===== */
 .attr-bar {
@@ -542,22 +587,42 @@ body {
 }
 .qr-btn:hover { background: rgba(16, 185, 129, 0.15); }
 
-/* ===== 标注态选区调整把手（select 态在 sel-rect 内，需显式接收鼠标事件） ===== */
+/* ===== 标注态选中框 + 元素缩放把手（V5 编辑态，微信/QQ 同款） ===== */
+/* 选中框：DOM 层（在 canvas 之上）整圈虚线（用户指定）。
+   无填充——填充会蒙在元素上显得"多层"；
+   border-radius 用 min(3px, 25%)：矮/小元素（箭头高 10px、文字 10×10）上
+   固定 4px 会超过短边一半变成椭圆/胶囊，25% 上限保证永远只是轻微圆角。 */
+.annot-sel-box {
+  position: absolute;
+  pointer-events: none;
+  border: 1.5px dashed rgba(59, 158, 255, 0.95);
+  border-radius: min(3px, 25%);
+  z-index: 41;
+}
+/* 单选元素的把手定位盒：尺寸 = 元素包围盒，8 个把手相对它做 h-* 偏移。
+   ❌ 尺寸必须加在这个盒上，不能加在 .sel-handle 上——inline width/height 会盖掉
+   下面的 8px，配 border-radius:50% 就变成元素大小的空心椭圆（已修）。 */
+.annot-handle-box {
+  position: absolute;
+  pointer-events: none;
+  z-index: 42;
+}
+/* 把手：白圆点 + 蓝描边（QQ/微信截图同款可拖拽编辑点）。8px 比 10px 更精致。 */
 .sel-handle {
-  position: absolute; width: 10px; height: 10px;
-  background: #3B9EFF; border: 1.5px solid #fff;
-  border-radius: 2px; z-index: 42;
+  position: absolute; width: 8px; height: 8px;
+  background: #fff; border: 1.5px solid #3B9EFF;
+  border-radius: 50%; z-index: 42;
   box-shadow: 0 0 3px rgba(0, 0, 0, 0.4);
   pointer-events: auto;
 }
-.h-nw { left: -5px; top: -5px; cursor: nwse-resize; }
-.h-n  { left: 50%; top: -5px; margin-left: -5px; cursor: ns-resize; }
-.h-ne { right: -5px; top: -5px; cursor: nesw-resize; }
-.h-e  { right: -5px; top: 50%; margin-top: -5px; cursor: ew-resize; }
-.h-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
-.h-s  { left: 50%; bottom: -5px; margin-left: -5px; cursor: ns-resize; }
-.h-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
-.h-w  { left: -5px; top: 50%; margin-top: -5px; cursor: ew-resize; }
+.h-nw { left: -4px; top: -4px; cursor: nwse-resize; }
+.h-n  { left: 50%; top: -4px; margin-left: -4px; cursor: ns-resize; }
+.h-ne { right: -4px; top: -4px; cursor: nesw-resize; }
+.h-e  { right: -4px; top: 50%; margin-top: -4px; cursor: ew-resize; }
+.h-se { right: -4px; bottom: -4px; cursor: nwse-resize; }
+.h-s  { left: 50%; bottom: -4px; margin-left: -4px; cursor: ns-resize; }
+.h-sw { left: -4px; bottom: -4px; cursor: nesw-resize; }
+.h-w  { left: -4px; top: 50%; margin-top: -4px; cursor: ew-resize; }
 
 /* ===== 表格识别输出 ===== */
 .table-out {
@@ -616,6 +681,8 @@ body {
 .ocr-drawer.inside:hover { opacity: 1; }
 
 /* 位置同抽屉（同一锚点，点击原地展开），由 JS 给 left/top */
+/* 已弃用：识别中的浮动胶囊已删（与工具栏按钮上的 .ocr-spin 重复，同一件事两处转圈）。
+   保留样式只为了不动 .spinner 的定义链；如果以后确定没人用可以一并清。 */
 .ocr-pill {
   position: absolute; z-index: 55;
   display: flex; align-items: center; gap: 8px;
@@ -686,6 +753,54 @@ body {
 .ls-btn.abort:hover { background: rgba(248, 113, 113, 0.15); }
 .ls-btn.off { opacity: 0.4; cursor: not-allowed; }
 .ls-btn.off:hover { background: transparent; }
+.ls-mode { display: flex; gap: 2px; flex-shrink: 0; padding: 1px; border-radius: 6px; background: rgba(255, 255, 255, 0.06); }
+.ls-mbtn {
+  height: 22px; padding: 0 7px; border-radius: 5px; cursor: pointer; font-size: 10.5px;
+  background: transparent; color: #9FB0D0; border: none;
+}
+.ls-mbtn.on { background: rgba(99, 102, 241, 0.85); color: #fff; }
+.ls-mbtn:hover { color: #E6EDF7; }
+.ls-btn.next { border: 1px solid rgba(99, 102, 241, 0.6); color: #C7D2FE; font-weight: 600; }
+.ls-btn.next:hover { background: rgba(99, 102, 241, 0.2); }
+
+/* 长截图「预览即默认」淡预览层（窗口可见、不隐藏）：虚线框+斜纹延展+尺寸标签+终点青线 */
+.ls-preview {
+  position: absolute;
+  border: 2px dashed rgba(124, 108, 255, 0.9);
+  border-radius: 4px;
+  background: rgba(124, 108, 255, 0.08);
+  cursor: pointer;
+  box-sizing: border-box;
+  z-index: 20;
+}
+.ls-preview-more {
+  position: absolute; inset: 0;
+  border-radius: 2px;
+  background: repeating-linear-gradient(45deg,
+    rgba(124, 108, 255, 0.10) 0 8px, rgba(124, 108, 255, 0.03) 8px 16px);
+  pointer-events: none;
+}
+.ls-endline {
+  position: absolute; left: -6px; right: -6px; height: 3px;
+  background: #06b6d4; box-shadow: 0 0 6px rgba(6, 182, 212, 0.8);
+  pointer-events: none;
+}
+.ls-endknob {
+  position: absolute; right: -8px; top: -6px; width: 14px; height: 14px;
+  border-radius: 50%; background: #06b6d4; box-shadow: 0 0 4px rgba(6, 182, 212, 0.8);
+}
+.ls-preview-lbl {
+  position: absolute; left: 6px; top: -26px;
+  font-size: 11px; line-height: 1; white-space: nowrap;
+  background: rgba(124, 108, 255, 0.92); color: #fff;
+  padding: 3px 8px; border-radius: 6px; pointer-events: none;
+}
+.ls-preview-tip {
+  position: absolute; left: 6px; bottom: -22px;
+  font-size: 11px; color: rgba(230, 237, 247, 0.85);
+  white-space: nowrap; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
 
 /* 橡皮范围圈层：叠在标注画布之上，只显示一个跟随鼠标的圆。
    pointer-events: none 是关键 —— 它盖在画布上，吃了事件橡皮就没法用了。
@@ -694,4 +809,153 @@ body {
 .eraser-cursor {
   position: absolute; left: 0; top: 0;
   pointer-events: none; z-index: 34;
+}
+
+/* ===== 固定区域「预览即默认」：虚线紫框预览 + 右下角钉区域按钮 ===== */
+.sel-rect.fixed-preview {
+  border: 2px dashed #7c6cff;
+  border-radius: 4px;
+}
+.pin-preview-lbl {
+  position: absolute;
+  left: 0;
+  top: -26px;
+  font-size: 11px;
+  background: rgba(124, 108, 255, 0.92);
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  z-index: 21;
+}
+.pin-quick-btn {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 30;
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: rgba(124, 108, 255, 0.22);
+  border: 1px solid rgba(124, 108, 255, 0.5);
+  color: #cdbcff;
+}
+.pin-quick-btn:hover {
+  background: rgba(124, 108, 255, 0.34);
+}
+
+/* ===== 自动打码「预览式」：橙色虚框轻预览 + 底部确认条 ===== */
+.mask-preview {
+  position: absolute;
+  border: 2px dashed #ff9f43;
+  border-radius: 3px;
+  background: rgba(255, 159, 67, 0.18);
+  cursor: pointer;
+  z-index: 15;
+}
+.mask-preview.excluded {
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.06);
+}
+.mask-preview .mask-preview-tip {
+  position: absolute;
+  left: 50%;
+  top: -18px;
+  transform: translateX(-50%);
+  font-size: 10px;
+  background: rgba(255, 159, 67, 0.9);
+  color: #1a1205;
+  padding: 1px 6px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+/* ===== 自动打码「预览式」确认条 =====
+   锚定「自动打码」按钮正上方弹出（反馈与触发同可见性域：点完按钮视线零移动）。
+   竖排标题 + 按钮，不压工具栏；工具栏翻转时按钮位置随之移动，弹层天然跟随。
+   z-index 只在工具栏上下文内生效（工具栏 z-index:30 高于选区预览框 15），
+   且与底部 .shot-toast(70) 位置不重叠，无需再与全局条带打架。 */
+.mask-btn-anchor { position: relative; }
+.mask-bar {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 95;
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  padding: 9px 14px;
+  border-radius: 12px;
+  background: rgba(14, 20, 38, 0.97);
+  border: 1px solid rgba(124, 108, 255, 0.6);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(148, 168, 255, 0.25);
+  white-space: nowrap;
+  animation: maskIn 0.16s ease;
+}
+@keyframes maskIn {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+.mask-title {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.3px;
+  color: #ffb86b; /* 橙色强调：预览框同色系，一眼认出是自动打码的确认 */
+}
+.mask-actions { display: flex; gap: 8px; }
+.mask-bar button {
+  font-size: 13px; font-weight: 600;
+  padding: 8px 16px; border-radius: 9px;
+  cursor: pointer; border: 1px solid rgba(255, 255, 255, 0.16);
+  transition: filter 0.12s;
+}
+.mask-confirm {
+  background: linear-gradient(135deg, #3b9eff, #6d5cf0);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.35) !important;
+}
+.mask-confirm:hover { filter: brightness(1.12); }
+.mask-cancel {
+  background: rgba(255, 255, 255, 0.08);
+  color: #c9d6ea;
+}
+.mask-cancel:hover { background: rgba(255, 255, 255, 0.15); }
+
+/* ===== 贴图「预览即钉」：完成态半透明浮动预览 ===== */
+.pin-float {
+  position: fixed;
+  z-index: 45;
+  border: 2px solid #06b6d4;
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  background: rgba(20, 26, 40, 0.9);
+  cursor: move;
+}
+.pin-float-img {
+  display: block;
+  max-width: 240px;
+  max-height: 180px;
+  border-radius: 5px;
+  opacity: 0.92;
+  pointer-events: none;
+}
+.pin-float-bar {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+.pin-float-bar button {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: none;
+}
+.pin-float-bar button:first-child {
+  background: #06b6d4;
+  color: #04222a;
+}
+.pin-float-bar button:last-child {
+  background: rgba(255, 255, 255, 0.16);
+  color: #e6edf7;
 }

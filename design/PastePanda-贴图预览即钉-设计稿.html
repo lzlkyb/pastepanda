@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>贴图「预览即钉」设计稿</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #11151f; color: #e6edf7; font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; padding: 28px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #9fb0c8; font-size: 13px; margin-bottom: 22px; }
+  .row { display: flex; gap: 24px; flex-wrap: wrap; }
+  .card { background: rgba(34,41,76,.94); border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 18px; width: 360px; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; }
+  .card h2 .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; margin-left: 8px; vertical-align: middle; }
+  .tag.before { background: #3a2b2b; color: #f0a0a0; }
+  .tag.after { background: #1f3a2b; color: #8fe0b0; }
+  .stage { position: relative; height: 250px; border-radius: 10px; background:
+      linear-gradient(135deg, #1b2030, #232b40); overflow: hidden; border: 1px solid rgba(255,255,255,.06); }
+  .desk { position: absolute; inset: 0; background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,.03) 0 39px, transparent 39px 40px),
+      repeating-linear-gradient(90deg, rgba(255,255,255,.03) 0 39px, transparent 39px 40px); }
+  .result { position: absolute; left: 30px; top: 24px; width: 200px; background: rgba(34,41,76,.95);
+            border: 1px solid rgba(255,255,255,.12); border-radius: 10px; padding: 8px; font-size: 11px; color: #c7d2e6; }
+  .result .rrow { display: flex; gap: 6px; margin-top: 6px; }
+  .result .rb { padding: 3px 7px; border-radius: 6px; background: rgba(124,108,255,.2); border: 1px solid rgba(124,108,255,.4); }
+  .float { position: absolute; right: 40px; top: 40px; width: 96px; height: 64px; border-radius: 8px;
+           background: rgba(150,170,220,.85); border: 2px solid #06b6d4; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  .float .top { position: absolute; left: 0; right: 0; top: -22px; display: flex; gap: 6px; justify-content: center; }
+  .float .t1 { font-size: 10px; padding: 2px 7px; border-radius: 6px; background: #06b6d4; color: #04222a; }
+  .float .t2 { font-size: 10px; padding: 2px 7px; border-radius: 6px; background: rgba(255,255,255,.14); color: #e6edf7; }
+  .hint { margin-top: 12px; font-size: 12px; color: #9fb0c8; line-height: 1.7; }
+  .hint b { color: #cfe; }
+  .kbd { background: rgba(255,255,255,.12); border-radius: 4px; padding: 1px 6px; font-size: 11px; }
+  ul { margin: 8px 0 0; padding-left: 18px; font-size: 12px; color: #c7d2e6; line-height: 1.8; }
+  .note { margin-top: 22px; font-size: 12px; color: #8aa; background: rgba(34,41,76,.6); border-left: 3px solid #06b6d4; padding: 10px 14px; border-radius: 0 8px 8px 0; }
+  code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; font-size: 11px; color: #ffd9a0; }
+</style>
+</head>
+<body>
+<h1>贴图「预览即钉」— 微信思维落地</h1>
+<div class="sub">P1 预览即默认 · P2 拖拽自定义位置。截完图的高频路径「钉屏」零步可达。</div>
+
+<div class="row">
+  <div class="card">
+    <h2>改前 <span class="tag before">现状</span></h2>
+    <div class="stage">
+      <div class="desk"></div>
+      <div class="result">截图完成 · 选择出口
+        <div class="rrow"><span class="rb">复制</span><span class="rb">保存</span><span class="rb">贴图</span><span class="rb">AI</span></div>
+      </div>
+    </div>
+    <div class="hint">
+      截图优先落<b>剪贴板</b>；想钉屏必须手动点结果面板的「贴图置顶」。<br>
+      钉后直接常驻，位置在屏幕中心/上次位置，<b>不能先在目标处预览</b>。高频路径多了一步。
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>改后 <span class="tag after">预览即钉</span></h2>
+    <div class="stage">
+      <div class="desk"></div>
+      <div class="float"><div class="top"><span class="t1">📌 钉住</span><span class="t2">✕ 取消</span></div></div>
+    </div>
+    <div class="hint">
+      截图完成 → 图片以<b>半透明浮动预览</b>出现在光标处（P1）。<br>
+      • <b>拖动</b>到目标位置、松手/单击 = 钉住（P2）。<br>
+      • <span class="kbd">Esc</span> / 右键 / 「✕ 取消」 = 不钉，图仍在剪贴板。<br>
+      钉住后转常驻贴图（可缩放/旋转，沿用 <code>pinned_window.rs</code>）。
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <b>实现要点（基于真实代码）</b>
+  <ul>
+    <li>后端 <code>open_pinned_image</code>（<code>commands/images.rs:506</code>）→ <code>create_native_window</code>（<code>pinned_window.rs:665</code>）新增<b>preview 模式</b>参数：初始半透明 + 可拖动 + 顶部「钉住/取消」工具条，确认后转常驻。</li>
+    <li>前端 <code>pinImageAt</code>（<code>ScreenshotOverlay.tsx:1756</code>）拆分：先 open preview 窗口，监听「钉住」事件转正式 pinned；「取消」= 关闭窗口（图已在剪贴板，由 <code>copyImage</code> 保障）。</li>
+    <li>零回归：不钉时仍走原复制逻辑；贴图管理面板（<code>PinnedPanel</code>）、贴图双击编辑、T 键循环透明度等保持。</li>
+    <li>轻量可选：若预览窗口改动风险大，先做「结果面板贴图默认高亮 + 钉后预览可拖」过渡版，再上「截完即浮图」。</li>
+  </ul>
+</div>
+</body>
+</html>

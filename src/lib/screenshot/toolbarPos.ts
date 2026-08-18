@@ -101,3 +101,31 @@ export function layoutToolbar(
 
   return { left, top, attrTop, attach };
 }
+
+/**
+ * OCR 选字模式胶囊（取代工具栏里的分段开关）的位置。
+ *
+ * 锚定选区**上缘右上角**：右对齐选区右边缘、上缘上方 8px。
+ * 选区的上缘通常是大片遮罩死区，不压正在画的标注；但选区贴屏幕顶时
+ * 上方放不下，就翻到上缘**内侧**；左右贴缘向里钳，规则与 layoutToolbar 同款。
+ */
+export function modePillPos(
+  sel: TbRect,
+  pillW: number,
+  pillH: number,
+  vw: number,
+  vh: number,
+): { left: number; top: number } {
+  // ---- 水平：右对齐选区右边缘，越界向内钳 ----
+  let left = sel.x + sel.w - pillW;
+  if (left < TB_GAP) left = TB_GAP;
+  if (left + pillW > vw - TB_GAP) left = vw - TB_GAP - pillW;
+
+  // ---- 垂直：优先选区上方；放不下翻到上缘内侧 ----
+  let top = sel.y - TB_GAP - pillH;
+  if (top < TB_GAP) top = sel.y + TB_GAP;
+  // 兜底：贴顶又很矮的选区里，翻到内侧仍可能超出视口，钳回
+  if (top + pillH > vh - TB_GAP) top = vh - TB_GAP - pillH;
+
+  return { left, top };
+}

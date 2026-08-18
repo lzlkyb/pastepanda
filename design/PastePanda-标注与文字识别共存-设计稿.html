@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PastePanda · 标注与文字识别共存（选字模式可切换）</title>
+<style>
+  :root {
+    --bg: #0b0e16;
+    --panel: rgba(20, 24, 36, 0.72);
+    --panel-2: rgba(28, 33, 48, 0.6);
+    --line: rgba(255, 255, 255, 0.09);
+    --line-strong: rgba(255, 255, 255, 0.16);
+    --txt: #e7e9f0;
+    --txt-2: #9aa1b4;
+    --txt-3: #6b7280;
+    --indigo: #6366f1;
+    --indigo-soft: rgba(99, 102, 241, 0.16);
+    --indigo-line: rgba(99, 102, 241, 0.55);
+    --cyan: #22d3ee;
+    --amber: #f59e0b;
+    --green: #22c55e;
+    --red: #ef4444;
+    --radius: 14px;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 44px 28px 80px;
+    background:
+      radial-gradient(900px 500px at 12% -8%, rgba(99,102,241,0.18), transparent 60%),
+      radial-gradient(800px 460px at 100% 0%, rgba(34,211,238,0.12), transparent 55%),
+      var(--bg);
+    color: var(--txt); font-family: var(--sans); line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 27px; margin: 0 0 6px; letter-spacing: .3px; }
+  h2 { font-size: 19px; margin: 38px 0 14px; padding-left: 11px; border-left: 3px solid var(--indigo); }
+  h3 { font-size: 15px; margin: 20px 0 8px; color: var(--txt); }
+  .sub { color: var(--txt-2); font-size: 14px; margin: 0 0 8px; }
+  p { margin: 8px 0; font-size: 14px; color: var(--txt); }
+  .muted { color: var(--txt-2); }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 18px 20px; margin: 14px 0;
+    backdrop-filter: blur(8px);
+  }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .row > .card { flex: 1 1 300px; margin: 0; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+    padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line-strong);
+    color: var(--txt-2); margin: 2px 4px 2px 0;
+  }
+  .chip.indigo { color: #c7c9ff; border-color: var(--indigo-line); background: var(--indigo-soft); }
+  .chip.cyan { color: #b6f3fb; border-color: rgba(34,211,238,0.5); background: rgba(34,211,238,0.12); }
+  .chip.amber { color: #ffe2b0; border-color: rgba(245,158,11,0.5); background: rgba(245,158,11,0.12); }
+  .chip.green { color: #bdf5cf; border-color: rgba(34,197,94,0.5); background: rgba(34,197,94,0.12); }
+  code, .mono { font-family: var(--mono); font-size: 12.5px; }
+  .code {
+    background: rgba(0,0,0,0.32); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; margin: 10px 0; overflow-x: auto; color: #d6dbec; font-size: 12.5px;
+  }
+  .code .k { color: #c4b5fd; } .code .s { color: #7dd3fc; } .code .c { color: #64748b; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  th { color: var(--txt-2); font-weight: 600; background: rgba(255,255,255,0.03); }
+  td small { color: var(--txt-3); }
+  .flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 14px 0; }
+  .step {
+    flex: 1 1 150px; min-width: 140px; background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 12px; padding: 14px; position: relative;
+  }
+  .step .n {
+    position: absolute; top: -11px; left: 14px; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--indigo); color: #fff; font-size: 12px; display: grid; place-items: center; font-weight: 700;
+  }
+  .step.sel .n { background: var(--cyan); }
+  .step.flip .n { background: var(--amber); }
+  .step b { display: block; margin: 6px 0 4px; font-size: 13.5px; }
+  .step p { font-size: 12.5px; color: var(--txt-2); margin: 0; }
+  .arrow { align-self: center; color: var(--txt-3); padding: 0 6px; font-size: 18px; }
+  .mock { background: #070a12; border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin: 12px 0; }
+  .mock .shot {
+    position: relative; height: 200px; border-radius: 10px; overflow: hidden;
+    background: linear-gradient(135deg, #1b2030, #11151f);
+    border: 1px solid var(--line-strong);
+  }
+  .mock .word {
+    position: absolute; border: 1.5px solid var(--indigo-line); border-radius: 4px;
+    background: var(--indigo-soft); font-size: 12px; color: #c7c9ff; display: grid; place-items: center;
+    padding: 0 6px; user-select: none;
+  }
+  .mock .word.sel { background: rgba(34,211,238,0.22); border-color: var(--cyan); color: #b6f3fb; }
+  .mock .word.mask { border-color: rgba(245,158,11,0.6); background: rgba(245,158,11,0.14); color: #ffe2b0; }
+  .mock .annot { position: absolute; border: 2px solid var(--green); border-radius: 4px; }
+  .mock .rubber {
+    position: absolute; border: 1.5px dashed var(--cyan); background: rgba(34,211,238,0.12); border-radius: 3px;
+  }
+  .mock .bar {
+    position: absolute; background: rgba(20,22,28,0.94); border: 1px solid var(--line-strong);
+    border-radius: 8px; padding: 4px 10px; font-size: 12px; color: var(--txt);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+  }
+  .mock .ctrl {
+    position: absolute; font-size: 11px; padding: 2px 7px; border-radius: 6px;
+    background: rgba(99,102,241,0.2); border: 1px solid var(--indigo-line); color: #c7c9ff;
+  }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--txt-2); margin: 8px 0; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  .settings {
+    display: flex; gap: 14px; flex-wrap: wrap; margin: 12px 0;
+  }
+  .opt {
+    flex: 1 1 280px; background: var(--panel-2); border: 1px solid var(--line-strong);
+    border-radius: 12px; padding: 15px 16px; position: relative;
+  }
+  .opt.active { border-color: var(--indigo); background: var(--indigo-soft); }
+  .opt .radio {
+    position: absolute; top: 14px; right: 14px; width: 16px; height: 16px; border-radius: 50%;
+    border: 2px solid var(--txt-3);
+  }
+  .opt.active .radio { border-color: var(--indigo); background: radial-gradient(circle, var(--indigo) 42%, transparent 46%); }
+  .opt b { font-size: 14px; }
+  .opt p { font-size: 12.5px; color: var(--txt-2); margin: 6px 0 0; }
+  .warn { border-left: 3px solid var(--amber); background: rgba(245,158,11,0.08); padding: 10px 14px; border-radius: 0 10px 10px 0; margin: 12px 0; font-size: 13px; }
+  .ok { border-left: 3px solid var(--green); background: rgba(34,197,94,0.08); padding: 10px 14px; border-radius: 0 10px 10px 0; margin: 12px 0; font-size: 13px; }
+  .file { font-family: var(--mono); font-size: 12.5px; color: #c7c9ff; }
+  ul { margin: 8px 0; padding-left: 20px; } li { margin: 5px 0; font-size: 13.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>标注与文字识别共存 · 选字模式可切换</h1>
+  <p class="sub">方案 A 升级版：不切工具、零额外点击。把「智能意图(B3)」与「Ctrl 修饰键(B2)」做成设置项，<b>默认智能意图</b>。事件唯一入口收回标注画布，字层永不抢事件。</p>
+  <div>
+    <span class="chip indigo">零步共存</span>
+    <span class="chip cyan">智能意图（默认）</span>
+    <span class="chip amber">Ctrl 修饰键（可选）</span>
+    <span class="chip green">result 态不变</span>
+  </div>
+
+  <h2>一、冲突根因（为什么必须改）</h2>
+  <div class="card">
+    <p>标注画布 <span class="mono">.annot-canvas</span> 与逐字文字层 <span class="mono">.ocr-line</span> <b>同容器、都无 z-index</b>，按 DOM 顺序 <span class="mono">.ocr-line</span> 盖在画布之上。且 <span class="mono">.ocr-line</span> 默认 <span class="mono">pointer-events:auto</span>、<span class="mono">onOcrCharDown</span> <b>无条件 stopPropagation</b>。</p>
+    <p><span class="mono">tool</span> 默认是 <span class="mono">"rect"</span> —— 所以 <b>进标注态默认就在文字上画矩形时，mousedown 被字层吞掉，标注画不出来</b>。本质是系统里没有「绘制 vs 选字」的区分维度。</p>
+    <div class="legend">
+      <span><i class="dot" style="background:var(--indigo-line)"></i>文字 bbox（字层）</span>
+      <span><i class="dot" style="background:var(--green)"></i>标注图形</span>
+      <span><i class="dot" style="background:var(--cyan)"></i>选字橡皮筋 / 高亮</span>
+    </div>
+  </div>
+
+  <h2>二、方案总览：事件收口到画布</h2>
+  <div class="card">
+    <p>把字层改成 <span class="mono">pointer-events:none</span>（只显示「哪有字」+ 选中高亮，<b>永远不抢事件</b>）。所有 mousedown 先到 <span class="mono">onAnnotMouseDown</span>，再按 <span class="mono">ocrSelectMode</span> + 落点命中测试分流。标注与选字<strong>永不抢事件</strong>。</p>
+    <div class="code">
+<span class="c">// onAnnotMouseDown（唯一入口，annotate 态）</span>
+<span class="k">const</span> hit = wordAt(px, py);  <span class="c">// rectsOverlap / 点包含，排除隐私行</span>
+<span class="k">if</span> (hit && mode === <span class="s">"smart"</span>)        startSelect(hit);   <span class="c">// 落字内 → 起手选字</span>
+<span class="k">else if</span> (hit && mode === <span class="s">"modifier"</span> && e.ctrlKey) startSelect(hit); <span class="c">// Ctrl+字内 → 选字</span>
+<span class="k">else</span>                            startDraw(tool);    <span class="c">// 其余 → 画标注</span>
+    </div>
+  </div>
+
+  <h2>三、设置页切换（持久化）</h2>
+  <div class="card">
+    <p><span class="file">src/store/appStore.ts</span> 新增字段，沿用 <span class="mono">auto_frame_window</span> 同款持久化：</p>
+    <div class="code"><span class="k">ocrSelectMode</span>: <span class="s">"smart"</span> | <span class="s">"modifier"</span>  <span class="c">// 默认 "smart"</span></div>
+    <p>设置页新增一组单选，文案说明两种模式区别：</p>
+    <div class="settings">
+      <div class="opt active">
+        <div class="radio"></div>
+        <b>智能意图（默认）</b>
+        <p>落在文字上拖=选字；拖出文字框或移动超 4px 自动转画标注。最直觉，纯鼠标零步。</p>
+      </div>
+      <div class="opt">
+        <div class="radio"></div>
+        <b>修饰键 (Ctrl)</b>
+        <p>按住 Ctrl + 在文字上拖=选字；裸拖一律画标注。选字手势更明确，不误触。</p>
+      </div>
+    </div>
+  </div>
+
+  <h2>三·b、截图内快捷切换（工具栏末尾 toggle）</h2>
+  <div class="card">
+    <p>除设置页正式入口外，<b>annotate 态工具栏右侧</b>加一个紧凑双态 toggle，零步可达、显当前模式。状态<strong>写回 appStore，与设置页双向同步</strong>——截图内切了即全局持久化，设置页改了截图内默认即用。</p>
+    <div class="mock">
+      <div class="shot" style="height:auto;padding:14px;display:flex;align-items:center;gap:10px;">
+        <div style="display:flex;gap:8px;">
+          <div style="width:34px;height:34px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid var(--line-strong);"></div>
+          <div style="width:34px;height:34px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid var(--line-strong);"></div>
+          <div style="width:34px;height:34px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid var(--line-strong);"></div>
+          <div style="width:34px;height:34px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid var(--line-strong);"></div>
+          <div style="width:34px;height:34px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid var(--line-strong);"></div>
+        </div>
+        <div style="margin-left:auto;display:flex;border:1px solid var(--indigo-line);border-radius:8px;overflow:hidden;font-size:12px;">
+          <span style="padding:6px 12px;background:var(--indigo);color:#fff;">智能意图</span>
+          <span style="padding:6px 12px;color:var(--txt-2);">Ctrl</span>
+        </div>
+      </div>
+    </div>
+    <p class="muted">仅 annotate 态显示（选字共存逻辑只在标注态生效）。视觉上与绘制工具区分（分段控件而非工具图标），不污染工具语义。</p>
+  </div>
+
+  <h2>四、智能意图模式（默认）交互流</h2>
+  <div class="flow">
+    <div class="step sel"><div class="n">1</div><b>落字内按下</b><p>起手选字：记 selStartInWord、pendingSelect、moved=false</p></div>
+    <div class="arrow">→</div>
+    <div class="step sel"><div class="n">2</div><b>拖动中判定</b><p>拖出起始字框 或 位移≥4px → 转画标注；否则继续橡皮筋选字</p></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="n">3</div><b>松手</b><p>未拖=单击复制该字；拖选=弹「复制 N 字」浮条</p></div>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <h3>① 落字内拖 → 选字</h3>
+      <div class="mock"><div class="shot">
+        <div class="word" style="left:24px;top:40px;width:120px;height:26px">PastePanda 文字</div>
+        <div class="rubber" style="left:30px;top:44px;width:90px;height:18px"></div>
+      </div></div>
+      <p class="muted">落在字框内按下并拖动 → 橡皮筋选字，实时 indigo/cyan 高亮命中字符。</p>
+    </div>
+    <div class="card">
+      <h3>② 拖出字框 → 转画标注</h3>
+      <div class="mock"><div class="shot">
+        <div class="word" style="left:24px;top:40px;width:120px;height:26px">PastePanda</div>
+        <div class="annot" style="left:30px;top:90px;width:160px;height:60px"></div>
+      </div></div>
+      <p class="muted">拖拽超出起始字框范围 → 自动取消选字、转画矩形（绿色框）。画笔/箭头同理。</p>
+    </div>
+    <div class="card">
+      <h3>③ 单击 / 松手浮条</h3>
+      <div class="mock"><div class="shot">
+        <div class="word sel" style="left:24px;top:40px;width:64px;height:26px">复制</div>
+        <div class="bar" style="left:24px;top:74px">复制 3 字 ✓</div>
+      </div></div>
+      <p class="muted">未拖动松手=单击复制该字；拖选松手=浮「复制 N 字」条，点即入剪贴板。</p>
+    </div>
+  </div>
+  <div class="ok">压空白区域拖 → 直接画标注（矩形/箭头/画笔），与现状一致，零步。</div>
+
+  <h2>五、修饰键模式（Ctrl）交互流</h2>
+  <div class="flow">
+    <div class="step"><div class="n">1</div><b>落字内 + Ctrl 拖</b><p>起手选字（橡皮筋），逻辑同智能意图选字分支</p></div>
+    <div class="arrow">→</div>
+    <div class="step flip"><div class="n">2</div><b>落字内裸拖</b><p>无 Ctrl → 直接画标注，哪怕压着字也画</p></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="n">3</div><b>空白拖</b><p>画标注（同现状）</p></div>
+  </div>
+  <div class="row">
+    <div class="card">
+      <h3>Ctrl + 拖 → 选字</h3>
+      <div class="mock"><div class="shot">
+        <div class="word" style="left:24px;top:40px;width:120px;height:26px">PastePanda</div>
+        <div class="ctrl" style="left:24px;top:14px">Ctrl 按住</div>
+        <div class="rubber" style="left:30px;top:44px;width:100px;height:18px"></div>
+      </div></div>
+      <p class="muted">按住 Ctrl 在字上拖 → 选字，不抢标注默认手势。</p>
+    </div>
+    <div class="card">
+      <h3>裸拖 → 画标注</h3>
+      <div class="mock"><div class="shot">
+        <div class="word" style="left:24px;top:40px;width:120px;height:26px">PastePanda</div>
+        <div class="annot" style="left:34px;top:80px;width:150px;height:54px"></div>
+      </div></div>
+      <p class="muted">未按 Ctrl，压字拖也画标注（绿色框），选字不会误触发。</p>
+    </div>
+  </div>
+
+  <h2>六、两种模式对比</h2>
+  <table>
+    <thead><tr><th>维度</th><th>智能意图（默认）</th><th>修饰键 Ctrl</th></tr></thead>
+    <tbody>
+      <tr><td>选字手势</td><td>落字内拖（自动识别）</td><td>Ctrl + 落字内拖</td></tr>
+      <tr><td>画标注（压字拖）</td><td>拖出字框 / 超 4px 转标注</td><td>直接画标注</td></tr>
+      <tr><td>额外操作</td><td>无（纯鼠标）</td><td>按住 Ctrl</td></tr>
+      <tr><td>误触风险</td><td>低（有转标注兜底）</td><td>极低（手势明确）</td></tr>
+      <tr><td>保留拖选字级</td><td>✅</td><td>✅</td></tr>
+      <tr><td>标注自由度</td><td>✅ 零步</td><td>✅ 零步</td></tr>
+    </tbody>
+  </table>
+
+  <h2>七、边界与守门（必守）</h2>
+  <div class="card">
+    <ul>
+      <li><b>仅作用于 annotate 态</b>：result 态无标注画布抢事件，保持原 ⑤「点字复制」逻辑不变，不受 <span class="mono">ocrSelectMode</span> 影响。</li>
+      <li><b>默认 tool="rect" 不变</b>：smart 下压字拖=选字（不画矩形），符合「在文字上拖就选字」直觉；压空白拖=画矩形。</li>
+      <li><b>隐私行</b>：两种模式都跳过选字（<span class="mono">isRowMasked</span> 已有逻辑保留，命中测试排除）。</li>
+      <li><b>Esc 链不变</b>：选字中 Esc 先清 <span class="mono">ocrSel</span>，再 Esc 回选区态（两级取消）。</li>
+      <li><b>字层视觉保留</b>：<span class="mono">pointer-events:none</span> 不影响显示，hover/选中高亮由 <span class="mono">ocrSel</span> state 驱动（indigo/cyan）。</li>
+    </ul>
+  </div>
+
+  <h2>八、与微信一致性</h2>
+  <div class="ok">
+    微信截图标注时，文字识别是「独立模式 + 智能落点」。本方案把「智能意图」作为默认，且保留 Ctrl 修饰键给追求明确手势的用户——<b>既零步共存，又给用户切换权</b>，与微信「轻预览优先」思维（规则 18）一致：标注与选字互不影响、误触低成本（拖出即转标注 / 无 Ctrl 即画标注）、两级取消保底。
+  </div>
+
+  <h2>九、改动文件清单</h2>
+  <table>
+    <thead><tr><th>文件</th><th>改动</th></tr></thead>
+    <tbody>
+      <tr><td><span class="file">appStore.ts</span></td><td>加 <span class="mono">ocrSelectMode</span> 字段 + setter + 持久化（默认 smart）</td></tr>
+      <tr><td><span class="file">设置页组件</span></td><td>加「OCR 选字模式」单选（智能意图 / 修饰键）</td></tr>
+      <tr><td><span class="file">ScreenshotOverlay.tsx</span></td><td>① .ocr-line 去 stopPropagation、改 pointer-events:none；② onAnnotMouseDown 加命中测试+模式分流；③ onAnnotMouseMove 加 smart「转标注」判定；④ onAnnotMouseUp 加选字/标注分支；⑤ 新增 ref selStartInWord / pendingSelect；⑥ 标注工具栏末尾渲染 ocrSelectMode 双态 toggle（双向同步 appStore）</td></tr>
+      <tr><td><span class="file">screenshot.css</span></td><td>.ocr-line 改 pointer-events:none；保留 .sel / .rubber / .ocr-copy-bar 视觉</td></tr>
+      <tr><td><span class="file">types.ts（或常量）</span></td><td>加 <span class="mono">OcrSelectMode</span> 类型</td></tr>
+    </tbody>
+  </table>
+
+  <h2>十、验证计划</h2>
+  <div class="card">
+    <ul>
+      <li><span class="mono">tsc</span> 零错 + <span class="mono">vitest</span> 加 3 例分流单测（smart 落字拖=选字 / smart 拖出字框=转标注 / modifier 无 Ctrl 落字拖=画标注）</li>
+      <li><span class="mono">tauri dev</span> 实测：smart 默认压字拖选、压空白画矩形、拖到一半出字框转画标注；切 modifier 后 Ctrl+拖选字、裸拖画标注</li>
+      <li>result 态点字复制不受影响（回归）</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>

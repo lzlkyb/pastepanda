@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PastePanda 标注工具栏 · 单列分组 · 设计稿</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: #0b0f1c;
+    font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: #E0E8F0; display: flex; flex-direction: column; align-items: center;
+    padding: 32px 0 60px;
+  }
+  .scene {
+    position: relative; width: 1060px; height: 440px; border-radius: 14px; overflow: hidden;
+    background: radial-gradient(120% 120% at 20% 0%, #1b2547 0%, #0e1428 60%, #090d1a 100%);
+    box-shadow: 0 30px 80px rgba(0,0,0,.5); margin-bottom: 22px;
+  }
+  .fakewin {
+    position: absolute; left: 60px; top: 50px; width: 600px; height: 230px;
+    border-radius: 10px; background: linear-gradient(160deg,#243056,#1a2240);
+    border: 1px solid rgba(148,168,255,.25);
+  }
+  .fakewin .bar { height: 34px; background: rgba(99,102,241,.18); border-radius: 10px 10px 0 0; }
+  .fakewin .line { height: 10px; margin: 16px 18px; border-radius: 6px; background: rgba(157,178,208,.18); }
+  .fakewin .line.s { width: 60%; }
+  .sel {
+    position: absolute; left: 150px; top: 90px; width: 460px; height: 200px;
+    border: 1.5px solid #3B9EFF; border-radius: 6px;
+    box-shadow: 0 0 0 100vmax rgba(8,12,24,.55);
+    background: rgba(120,160,255,.04);
+  }
+  .sel .hd { position:absolute; top:-22px; left:0; font-size:11px; color:#9DB2D0; }
+
+  /* ====== 单列主栏（深色玻璃，一条横排，靠 tsep 分组） ====== */
+  .single-bar {
+    position: absolute; z-index: 30; display: flex; align-items: center; gap: 2px; padding: 5px;
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(34,41,76,0.94), rgba(16,21,40,0.96));
+    backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    border: 1px solid rgba(99,102,241,0.4);
+    box-shadow: 0 12px 36px rgba(0,0,0,0.45), inset 0 1px 0 rgba(148,168,255,0.28), inset 0 -1px 0 rgba(0,0,0,0.35);
+  }
+  .tool {
+    min-width: 40px; height: 44px; border-radius: 8px; padding: 0 4px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    cursor: pointer; border: 1px solid transparent; color: #E0E8F0; font-size: 12px;
+    position: relative; transition: background .12s;
+  }
+  .tool .ic { display: flex; }
+  .tool .ic svg { width: 18px; height: 18px; display: block; }
+  .tool .lb { font-size: 9.5px; line-height: 1; letter-spacing: .2px; opacity: .72; }
+  .tool:hover { background: #0F1F35; }
+  .tool:hover .lb { opacity: 1; }
+  .tool.on { background: linear-gradient(135deg,#3B9EFF,#6D5CF0); border-color: rgba(255,255,255,.4); color:#fff; box-shadow: 0 2px 12px rgba(59,158,255,.5); }
+  .tool.on .lb { opacity: 1; }
+  .tool.dim { color: #9DB2D0; }
+  .tool.longshot { color: #8CC5FF; }
+  .tool.ocr-btn { color: #7DE0C4; }
+  .tool.exit-save { color: #A5C8FF; }
+  .tool.exit-pin { color: #F9A8D4; }
+  .tool.exit-ai { color: #A8DEFF; }
+  .tool.exit-ai .lb { opacity: 1; font-weight: 700; }
+  .tool.disabled { opacity: .3; cursor: not-allowed; }
+  .tool.done-btn, .tool.cancel-btn, .tool.more-btn { flex-direction: row; min-width: 0; height: 34px; padding: 0 12px; font-size: 12px; }
+  .tool.done-btn { font-weight: 600; color: #fff; background: linear-gradient(135deg,#6366F1,#3B9EFF); border: 1px solid rgba(255,255,255,.25); box-shadow: 0 2px 10px rgba(99,102,241,.4); }
+  .tool.cancel-btn { color: #9DB2D0; }
+  .tool.more-btn { color: #C9D6EA; border: 1px solid rgba(148,168,255,.3); background: rgba(99,102,241,.12); }
+  .tool.more-btn:hover { background: rgba(99,102,241,.22); }
+  /* 马赛克：最常用，置顶 + 细微高亮描边，提示"第一顺位" */
+  .tool.fav { border-color: rgba(110,231,183,.5); }
+  .tool.fav .lb { opacity: 1; color: #6EE7B7; }
+  .tsep { width: 1px; height: 26px; margin: 0 5px; background: linear-gradient(180deg, transparent, rgba(125,140,255,.5), transparent); }
+  /* 分组小标签（贴在每组第一格上沿，仅作设计稿标注，实现可省略或做成极淡角标） */
+  .glabel { position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-size: 9px; color: #6E82A4; white-space: nowrap; }
+
+  /* 属性条：独立浮层（单列布局下本就合理，不塞进主栏） */
+  .attr-bar {
+    position: absolute; z-index: 30; display: flex; align-items: center; gap: 1px; padding: 6px 9px;
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(34,41,76,0.94), rgba(16,21,40,0.96));
+    backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    border: 1px solid rgba(99,102,241,0.4);
+    box-shadow: 0 12px 36px rgba(0,0,0,0.45), inset 0 1px 0 rgba(148,168,255,0.28);
+  }
+  .albl { font-size: 10px; color: #6E82A4; margin: 0 5px 0 2px; }
+  .asep { width: 1px; height: 16px; margin: 0 7px; background: linear-gradient(180deg, transparent, rgba(125,140,255,.45), transparent); }
+  .cwrap { width: 24px; height: 24px; border-radius: 6px; position: relative; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .cwrap:hover { background: rgba(148,168,255,.14); }
+  .cwrap.picker { color: #9DB2D0; }
+  .cwrap.picker svg { width: 15px; height: 15px; display: block; }
+  .cp { width: 14px; height: 14px; border-radius: 50%; display: block; border: 1.5px solid transparent; }
+  .cp.on { border-color: #fff; box-shadow: 0 0 0 2px rgba(59,158,255,.55); }
+  .wpick { width: 24px; height: 24px; border-radius: 6px; position: relative; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #C9D6EA; font-size: 10.5px; }
+  .wpick:hover { background: rgba(148,168,255,.14); }
+  .wpick.on { background: rgba(59,158,255,.28); color: #fff; }
+  .wpick svg { width: 15px; height: 15px; display: block; }
+  .wdot { border-radius: 50%; background: currentColor; display: block; }
+  .aval { font-size: 10px; color: #8FA3C4; margin-left: 4px; font-variant-numeric: tabular-nums; min-width: 30px; }
+
+  .legend { width: 1060px; font-size: 13px; line-height: 1.75; color: #B9C6F0; }
+  .legend h2 { font-size: 15px; color: #E0E8F0; margin: 0 0 10px; font-weight: 500; }
+  .legend code { background: rgba(99,102,241,.15); padding: 1px 6px; border-radius: 5px; color: #C7D2FE; }
+  .legend .k { color: #8CC5FF; }
+  .note { color: #7E8BB0; font-size: 12px; margin-top: 8px; }
+  .tag { display:inline-block; padding:1px 8px; border-radius: 6px; font-size:11px; font-weight:600; }
+  .tag.ok { background: rgba(110,231,183,.16); color:#6EE7B7; }
+  .cap { font-size: 11px; color:#7E8BB0; margin: 6px 0 2px; }
+  .ask { margin-top: 12px; padding: 12px 14px; border-radius: 10px; background: rgba(99,102,241,.1); border: 1px solid rgba(99,102,241,.3); color: #C9D6EA; }
+  .ask b { color: #E0E8F0; }
+</style>
+</head>
+<body>
+
+  <div class="scene">
+    <div class="fakewin"><div class="bar"></div><div class="line"></div><div class="line s"></div><div class="line"></div></div>
+    <div class="sel"><div class="hd">选区 460 × 200</div></div>
+
+    <!-- 单列主栏：分组从左到右 = 遮罩(马赛克置顶) | 形状 | 笔 | 操作 | 产出 | 退出 | 出口 | 完成 -->
+    <div class="single-bar" style="left: 14px; top: 308px;">
+      <!-- ① 遮罩/隐私：马赛克(最常用,置顶) · 高亮 · 模糊 · 自动打码 -->
+      <div class="tool fav"><span class="glabel">遮罩</span><span class="ic"><svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 2.5h3.7v3.7H2.5zM9.8 2.5h3.7v3.7H9.8zM6.2 6.2h3.6v3.6H6.2zM2.5 9.8h3.7v3.7H2.5zM9.8 9.8h3.7v3.7H9.8z" fill="currentColor" stroke="none" opacity="0.75"/></svg></span><span class="lb">马赛克</span></div>
+      <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M5.2 10.4l4.9-4.9 2.4 2.4-4.9 4.9H5.2v-2.4z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.4 4.2l1.4-1.4 2.4 2.4-1.4 1.4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="2.8" y="13.4" width="10.4" height="1.6" rx="0.8" fill="currentColor" opacity="0.8"/></svg></span><span class="lb">高亮</span></div>
+      <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M8 2.2C8 2.2 3.8 7 3.8 9.6a4.2 4.2 0 0 0 8.4 0C12.2 7 8 2.2 8 2.2z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 9.8a2 2 0 0 0 2 2" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.6"/></svg></span><span class="lb">模糊</span></div>
+      <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><rect x="2.6" y="3.2" width="10.8" height="9.6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4.4" y="6.6" width="7.2" height="2.6" rx="0.6" fill="currentColor" stroke="none" opacity="0.85"/></svg></span><span class="lb">自动打码</span></div>
+      <div class="tsep"></div>
+      <!-- ② 形状标注：矩形 · 椭圆 · 箭头 · 文字 · 序号 -->
+      <div class="tool"><span class="glabel">形状</span><span class="ic"><svg viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">矩形</span></div>
+      <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><ellipse cx="8" cy="8" rx="5.75" ry="4.25" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">椭圆</span></div>
+      <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3.2 12.8L11 5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12.9 3.1L12.4 7.9L8.1 3.6Z" fill="currentColor"/></svg></span><span class="lb">箭头</span></div>
+      <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3 3.8h10" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 3.8v8.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.8 12.2h4.4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">文字</span></div>
+      <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.9 6.6L8.4 5.6v5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.9 10.6h3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">序号</span></div>
+      <div class="tsep"></div>
+      <!-- ③ 笔：画笔 · 橡皮擦 -->
+      <div class="tool"><span class="glabel">笔</span><span class="ic"><svg viewBox="0 0 16 16"><path d="M2.8 13.2l3.3-.8 6.7-6.7a1.3 1.3 0 0 0 0-1.9l-.6-.6a1.3 1.3 0 0 0-1.9 0L3.6 9.9l-.8 3.3z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.9 4.1l2 2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">画笔</span></div>
+      <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M9.1 2.9l4 4a1 1 0 0 1 0 1.4l-3.6 3.6H5.7L2.9 9.1a1 1 0 0 1 0-1.4l4.8-4.8a1 1 0 0 1 1.4 0z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.1 6.1l3.8 3.8" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">橡皮擦</span></div>
+      <div class="tsep"></div>
+      <!-- ④ 操作：撤销 · 重做 -->
+      <div class="tool dim"><span class="glabel">操作</span><span class="ic"><svg viewBox="0 0 16 16"><path d="M3 6.2h7a3.4 3.4 0 1 1 0 6.8H6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.4 3L3.2 6.2l3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">撤销</span></div>
+      <div class="tool dim"><span class="ic"><svg viewBox="0 0 16 16"><path d="M13 6.2H6a3.4 3.4 0 1 0 0 6.8h4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.6 3l3.2 3.2-3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">重做</span></div>
+      <div class="tsep"></div>
+      <!-- ⑤ 产出：长截图 · 取文字 -->
+      <div class="tool longshot"><span class="glabel">产出</span><span class="ic"><svg viewBox="0 0 16 16"><rect x="4" y="1.8" width="8" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 8v5.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.4 11l2.6 2.6L10.6 11" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">长截图</span></div>
+      <div class="tool ocr-btn"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3.4 2.4h6.1l3.1 3.1v8.1a1 1 0 0 1-1 1H3.4a1 1 0 0 1-1-1V3.4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.3 2.5v3.2h3.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 8.4h6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 11h4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">取文字</span></div>
+      <div class="tsep"></div>
+      <!-- ⑥ 退出 -->
+      <div class="tool cancel-btn">✕ 取消</div>
+      <span class="tsep"></span>
+      <!-- ⑦ 出口：保存 · 贴图 · AI -->
+      <div class="tool exit-save"><span class="glabel">出口</span><span class="ic"><svg viewBox="0 0 16 16"><path d="M8 2.4v6.7" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.3 6.5L8 9.2l2.7-2.7" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.6 10.6v1.9a1.1 1.1 0 0 0 1.1 1.1h8.6a1.1 1.1 0 0 0 1.1-1.1v-1.9" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">保存</span></div>
+      <div class="tool exit-pin"><span class="ic"><svg viewBox="0 0 16 16"><path d="M6.1 2.6h3.8" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 9.4v4.1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.6 2.6v3.1L4.9 7.5a.6.6 0 0 0 .43 1.02h5.34a.6.6 0 0 0 .43-1.02L9.4 5.7V2.6z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">贴图</span></div>
+      <div class="tool exit-ai"><span class="ic"><svg viewBox="0 0 16 16"><path d="M8 1.6l1.9 4 4.3.4-3.3 2.8 1 4.2L8 10.7 3.8 13l1-4.2L1.5 6l4.3-.4z" fill="currentColor"/></svg></span><span class="lb">AI</span></div>
+      <div class="tsep"></div>
+      <!-- ⑧ 完成 -->
+      <div class="tool done-btn">完成 ✓</div>
+      <div class="tool more-btn">更多 ⋯</div>
+    </div>
+
+    <!-- 属性条：独立浮层（选中画图工具时才出现），单列布局下本就如此，不塞进主栏 -->
+    <div class="attr-bar" style="left: 14px; top: 364px;">
+      <span class="albl">颜色</span>
+      <span class="cwrap"><span class="cp" style="background:#FF4D4F"></span></span>
+      <span class="cwrap"><span class="cp" style="background:#3B9EFF"></span></span>
+      <span class="cwrap"><span class="cp" style="background:#FFD93D"></span></span>
+      <span class="cwrap"><span class="cp" style="background:#6BCB77"></span></span>
+      <span class="cwrap"><span class="cp on" style="background:#111111"></span></span>
+      <span class="cwrap picker"><svg viewBox="0 0 16 16"><path d="M10.4 2.6a1.5 1.5 0 0 1 2.1 0l0.9 0.9a1.5 1.5 0 0 1 0 2.1L6.6 12.4l-3 0.9 0.9-3z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.4 3.6l3 3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span>
+      <span class="asep"></span>
+      <span class="albl">粗细</span>
+      <span class="wpick"><span class="wdot" style="width:4px;height:4px"></span></span>
+      <span class="wpick on"><span class="wdot" style="width:7px;height:7px"></span></span>
+      <span class="wpick"><span class="wdot" style="width:10px;height:10px"></span></span>
+    </div>
+  </div>
+
+  <div class="legend">
+    <h2>方案 · 单列分组（保持单列，仅重排顺序 + 分组）· 设计稿</h2>
+    回到你认可的<b>单列</b>（双行 / 单卡整合都作废）。骨架沿用现状：主栏仍是一条横排、靠
+    <code>tsep</code> 分组；属性条仍是<b>独立浮层</b>（选中画图工具才出现），不塞进主栏——
+    单列布局下它单独一条本就合理，且零遮挡风险。
+
+    <div style="margin-top:10px">
+      <span class="tag ok">改动最小</span> 只动 <code>TOOLS</code> 数组的顺序与分组，<b>不动</b>双行/单卡结构，<code>toolbarPos.ts</code> 单列布局逻辑不变。<br/>
+      <span class="tag ok">马赛克置顶</span> 按你的真实使用：马赛克是最高频，提到全栏<b>第一位</b>（带细微高亮描边提示），遮罩类聚合到一组。<br/>
+      <span class="tag ok">分组聚合</span> 从左到右：<b>遮罩</b>(马赛克/高亮/模糊/自动打码) ｜ <b>形状</b>(矩形/椭圆/箭头/文字/序号) ｜ <b>笔</b>(画笔/橡皮擦) ｜ <b>操作</b>(撤销/重做) ｜ <b>产出</b>(长截图/取文字) ｜ 取消 ｜ <b>出口</b>(保存/贴图/AI) ｜ 完成/更多。<br/>
+      <span class="tag ok">更多保留</span> 「更多 ⋯」照旧（上轮共识），出口零丢失。
+    </div>
+
+    <div class="cap">上图：单列主栏（按组用 tsep 分隔，组名小标签仅为设计稿标注）；下方是独立属性条浮层（选中画图工具时才出现）。</div>
+
+    <div class="ask">
+      <b>待你确认 3 点：</b><br/>
+      ① <b>分组粒度</b>：上面 8 组是否合适？还是把「笔」并入「形状」、或把「产出/操作」再合并？<br/>
+      ② <b>快捷键重排</b>：重排后建议按新顺序映射 <code>1-9 / 0</code>——马赛克=1、高亮=2、模糊=3、矩形=4、椭圆=5、箭头=6、文字=7、序号=8、画笔=9、橡皮擦=0；自动打码无键。是否接受重排（还是保留现有键位记忆）？<br/>
+      ③ <b>马赛克高亮</b>：置顶 + 细描边即可，还是想要更强的"默认首选"视觉（如进标注态默认选中马赛克）？
+    </div>
+
+    <div class="note">
+      实现要点（基于真实源码）：<br/>
+      ① <code>tools.tsx</code> 的 <code>TOOLS</code> 数组按上序重排（马赛克提前到 index 0，遮罩类连续）；
+         数字键 <code>key</code> 字段按新顺序改 1-9/0（自动打码保持无 key）；<br/>
+      ② <code>AnnotToolbar.tsx</code> 仅给马赛克那格加 <code>fav</code> 类（细描边），其余渲染逻辑不变；
+         <code>onMore</code> / <code>more-btn</code> 保留；<br/>
+      ③ <code>toolbarPos.ts</code> 维持现状（单列：主栏返回 <code>top</code>，属性条返回 <code>attrTop</code>，两者独立绝对定位）——本次不合并；<br/>
+      ④ 成员数 21 不变，<code>tsc</code> 验证即可，无 Rust 改动、dev 热重编前端。
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda 贴图无边框 · 设计稿</title>
+<style>
+  :root{
+    --bg:#0f1218; --panel:#161b24; --line:#232b38; --txt:#e6edf7; --dim:#93a1b8;
+    --accent:#6366f1; --warn:#ff9f43;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:32px;background:var(--bg);color:var(--txt);
+       font:14px/1.7 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+  h1{font-size:20px;margin:0 0 4px}
+  h2{font-size:15px;margin:32px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  .sub{color:var(--dim);margin:0 0 8px}
+  .row{display:flex;gap:24px;flex-wrap:wrap;margin:16px 0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;flex:1 1 300px}
+  .card h3{font-size:13px;margin:0 0 10px;color:var(--dim);font-weight:600}
+  .card .note{font-size:12px;color:var(--dim);margin-top:10px}
+  .desk{position:relative;height:190px;border-radius:8px;overflow:hidden;
+        background:linear-gradient(90deg,#f4f5f7 0 50%,#1b1f27 50% 100%)}
+  .shot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+        width:210px;height:104px;background:#fff;color:#222;
+        font:12px/1.5 -apple-system,sans-serif;padding:10px;overflow:hidden}
+  .shot b{display:block;font-size:12px;margin-bottom:4px}
+  .shot .ln{height:6px;background:#dfe3ea;border-radius:2px;margin:5px 0}
+  .shot .ln.s{width:60%}
+  .st-idle{box-shadow:0 0 0 1px rgba(128,140,160,.45)}
+  .st-hover{box-shadow:0 0 0 1px var(--accent),0 10px 28px rgba(0,0,0,.45)}
+  .st-old{box-shadow:0 0 0 1px #6b7280}
+  .titlebar{position:absolute;left:0;right:0;top:-26px;height:26px;background:#e9edf3;
+            border:1px solid #b9c0cc;border-bottom:none;display:flex;align-items:center;
+            justify-content:space-between;padding:0 8px;font-size:11px;color:#333}
+  .frame{position:absolute;inset:-4px;border:4px solid #d5dae2;pointer-events:none}
+  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:5px;margin-left:6px}
+  .tag.bad{background:rgba(239,68,68,.18);color:#fca5a5}
+  .tag.good{background:rgba(34,197,94,.18);color:#86efac}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--dim);font-weight:600;font-size:12px}
+  code{background:#0b0e13;border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:12px}
+  .why{background:#12161e;border-left:3px solid var(--accent);padding:12px 14px;border-radius:0 8px 8px 0;margin:14px 0}
+  .why b{color:#c7cbff}
+  .cav{background:#1a1408;border-left:3px solid var(--warn);padding:12px 14px;border-radius:0 8px 8px 0;margin:14px 0}
+  .cav b{color:#ffc78a}
+</style>
+</head>
+<body>
+
+<h1>贴图窗：去掉系统边框</h1>
+<p class="sub">设计稿 · 2026-08-18 · 对应 <code>src-tauri/src/pinned_window.rs</code></p>
+
+<h2>现在 vs 目标</h2>
+<div class="row">
+  <div class="card">
+    <h3>现在 · WS_OVERLAPPEDWINDOW <span class="tag bad">系统标题栏 + 粗边框</span></h3>
+    <div class="desk">
+      <div class="shot st-old">
+        <div class="titlebar"><span>pastePanda</span><span>&#10005;</span></div>
+        <div class="frame"></div>
+        <b>示例截图内容</b><div class="ln"></div><div class="ln s"></div><div class="ln"></div>
+      </div>
+    </div>
+    <div class="note">标题栏占掉一条高度，"贴在桌面上的一块内容"变成"一个开着的窗口里装着一张图"。</div>
+  </div>
+
+  <div class="card">
+    <h3>目标 · 平时 <span class="tag good">极淡 1px</span></h3>
+    <div class="desk">
+      <div class="shot st-idle">
+        <b>示例截图内容</b><div class="ln"></div><div class="ln s"></div><div class="ln"></div>
+      </div>
+    </div>
+    <div class="note">描边与图内容做真实 alpha 混合（约 35%），浅底深底都能看出边界，又不抢注意力。</div>
+  </div>
+
+  <div class="card">
+    <h3>目标 · hover / 拖动中 <span class="tag good">描边变亮 + 阴影</span></h3>
+    <div class="desk">
+      <div class="shot st-hover">
+        <b>示例截图内容</b><div class="ln"></div><div class="ln s"></div><div class="ln"></div>
+      </div>
+    </div>
+    <div class="note">鼠标进入才升到 100% 强调色，明确"这块是可拖的对象"。</div>
+  </div>
+</div>
+
+<div class="why">
+  <b>为什么描边要画在 fill_buffer 里，而不是用画笔画一个框</b><br>
+  窗口是 <code>WS_EX_LAYERED</code> 且只设了 <code>LWA_ALPHA</code>，DIB 的 alpha 通道被系统忽略，
+  所以任何"半透明描边"用 GDI 画笔都画不出来 —— 只能画不透明像素。
+  而 <code>fill_buffer</code> 本来就是我们自己往 DIB 写像素的地方，
+  在那里把边缘一圈按 alpha 与底下的图混合，才能得到真正的"极淡"。
+</div>
+
+<h2>交互改动</h2>
+<table>
+  <tr><th style="width:22%">操作</th><th style="width:39%">现在</th><th>改为</th></tr>
+  <tr>
+    <td>裸拖</td>
+    <td>平移图片（<code>offset_x/y</code>）。但窗口尺寸恰好等于图，没有可平移的余量，
+        拖出去的部分露<b>纯黑</b>（alpha 被忽略）。</td>
+    <td><b>移动窗口</b>。移动超过 4px 才交给系统拖动循环
+        （<code>ReleaseCapture</code> + <code>WM_NCLBUTTONDOWN/HTCAPTION</code>），
+        顺带白拿贴边吸附。</td>
+  </tr>
+  <tr>
+    <td>Ctrl + 拖</td><td>—</td>
+    <td>平移图片。只有放大到超出屏幕、窗口被钳住时才用得上。</td>
+  </tr>
+  <tr>
+    <td>滚轮</td>
+    <td>只改图的缩放比，窗口不变 &rarr; 放大被裁、缩小露黑边。</td>
+    <td>缩放同时<b>同步 resize 窗口</b>（绕中心），图永远严丝合缝，黑边不可能出现。</td>
+  </tr>
+  <tr>
+    <td>鼠标移到顶部</td>
+    <td>—（关闭靠系统标题栏的 ✕）</td>
+    <td><b>右上角浮出关闭按钮</b>：圆底 + 白色 X，压上去变红。
+        只在顶部条带（≈ 41 逻辑 px）内出现——X 是盖在图上的，一直挂着会挡内容。
+        窗口太小（装不下按钮 + 两侧边距）时不出现，避免盖掉整张图。</td>
+  </tr>
+  <tr><td>双击</td><td>回截图窗重新编辑</td><td><b>不变</b>（纯击不进拖动循环，所以双击不受影响）</td></tr>
+  <tr><td>右键</td><td>菜单：复制图片 / 重新编辑 / 旋转 / 翻转 / 关闭 / 关闭全部</td>
+      <td>位置与行为不变，<b>新增「复制文字」</b>：对贴图跑 OCR、全文进剪贴板。
+      后台线程跑（否则占着消息循环会让贴图假死），结果用底部 HUD 报
+      「已复制 N 字」；同一张图第二次点命中库里的 OCR 缓存，瞬时返回。</td></tr>
+  <tr><td>Esc / T / R / F / V / 0</td><td>关闭 / 透明度 / 旋转 / 翻转 / 复原</td><td><b>不变</b></td></tr>
+</table>
+
+<div class="cav">
+  <b>要如实说明的两点</b><br>
+  1. <b>阴影靠 <code>CS_DROPSHADOW</code>（窗口类样式）</b>。它是给 <code>WS_POPUP</code> 这类窗口设计的，
+     但对分层窗口是否生效各版本行为不完全一致 —— 上图的阴影是<b>预期效果</b>，需要实测确认。
+     万一不生效，1px 描边仍然独立承担边界可见性，不会退化成"完全找不到边"。<br>
+  2. 去掉 <code>WS_THICKFRAME</code> 后<b>没有拖边缩放</b>了。缩放统一走滚轮（本来就有，
+     且滚轮改的是图的缩放比，比拖边框改窗口尺寸语义更对）。
+</div>
+
+<h2>顺带收敛的东西</h2>
+<p class="sub">
+  上一轮为了让"贴图 1:1"而加的那段 <code>GetClientRect</code>/<code>GetWindowRect</code> 差值修正
+  （<code>CreateWindowExW</code> 收的是外框、要减掉标题栏和边框），在 <code>WS_POPUP</code> 下差值恒为 0，
+  逻辑自动变成恒等式。代码保留（万一以后又加回边框，它仍然是对的），但不再有实际工作要做。
+</p>
+
+</body>
+</html>

@@ -65,16 +65,37 @@ pub async fn capture_screen() -> Result<ScreenCapture, String> {
 /// 它还是交互变友好的前提：只有不再截全屏，截图窗口才不必把自己藏起来（hide），
 /// 进度提示 / 手动停止才有地方放——现在长截图全程无反馈正是因为窗口被隐藏了。
 #[tauri::command]
-pub async fn capture_region(x: i32, y: i32, w: i32, h: i32) -> Result<ScreenCapture, String> {
+pub async fn capture_region(
+    app: tauri::AppHandle,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+) -> Result<ScreenCapture, String> {
     #[cfg(target_os = "windows")]
     {
-        tokio::task::spawn_blocking(move || capture_rect(x, y, w, h))
-            .await
-            .map_err(|e| format!("截图任务失败: {e}"))?
+        // 长截图期间临时隐藏状态窗，避免它被拼进长图（截图窗自身已 hide，
+        // 这是唯一还可见的浮层）。普通截图时该窗不存在，hide/show 均为 no-op，零开销。
+        let status = app.get_webview_window(LONGSHOT_LABEL);
+        if let Some(win) = &status {
+            let _ = win.hide();
+            // ❌ hide() 之后必须给 DWM 一点时间重合成：ShowWindow(SW_HIDE) 只是发起隐藏，
+            // 屏幕内容未必已经更新，而 BitBlt 是从屏幕 DC 拉像素的——不等就可能
+            // 把刚“隐藏”的状态窗拍进长图里。一帧的量级就够，对总时长无影响。
+            tokio::time::sleep(std::time::Duration::from_millis(16)).await;
+        }
+        let res = tokio::task::spawn_blocking(move || capture_rect(x, y, w, h)).await;
+        // ❌ 恢复必须在 `?` **之前**：旧写法把 `?` 放在 show() 前面，一旦 spawn_blocking
+        // 报 JoinError（capture_rect panic，比如超大矩形分配失败）就提前返回，
+        // 状态窗**永久隐藏**——用户就此失去唯一的「停止/放弃」入口。
+        if let Some(win) = &status {
+            let _ = win.show();
+        }
+        res.map_err(|e| format!("截图任务失败: {e}"))?
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (x, y, w, h);
+        let _ = (app, x, y, w, h);
         Err("截图功能目前仅支持 Windows".to_string())
     }
 }
@@ -147,6 +168,10 @@ fn grab_rect_rgba(
         hbmp = CreateDIBSection(mem_dc, &bmi, DIB_RGB_COLORS, &mut bits, None, 0)
             .map_err(|e| format!("创建 DIB 位图失败: {e}"))?;
         old = SelectObject(mem_dc, hbmp);
+        // 已知限制（跨屏错位）：origin_x/origin_y 是「虚拟屏幕」物理坐标（整屏 DC 原点）。
+        // 混合 DPI 多显示器下，BitBlt 跨屏拷贝可能出现原点偏移，导致跨显示器选区内容错位。
+        // P2-B2 只保证「每片同比例」（前端 drawImage 拉伸归一），未根治跨屏坐标错位；
+        // 根治需按显示器分块截取再拼合（属大改，本次未做）。见前端 P2-B2 段注释。
         let _ = BitBlt(mem_dc, 0, 0, width, height, screen_dc, origin_x, origin_y, SRCCOPY);
 
         // BGRA 像素 → RGBA（image crate 用 RGBA）
@@ -601,13 +626,38 @@ fn purge_ocr_temp(app: &AppHandle) {
     }
 }
 
+/// 两个路径是不是同一个文件（先 canonicalize，拿不到就退回字面比）。
+///
+/// 收口在这里：mark_ocr_temp 与 unmark_ocr_temp 都要做这个判定，
+/// 各写一遍就是同一个 bug 的两个版本（规则 11）。
+fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => a == b,
+    }
+}
+
 /// 登记本次的临时 OCR 图（前端提前识别存完后调用）。
 /// 登记新的会先删掉上一张，避免反复截图时累积（窗口常驻，不每次都走 close）。
+///
+/// ❌ 但「新的」和「上一张」可能是**同一个文件**，此时绝不能删：
+/// `save_screenshot_image` 是 md5 去重的，同一个选区裁出来的像素完全一致 → 同一个路径。
+/// 于是「进标注态 → Esc 退回 → 再进标注态」这条路径上：
+///   第二次预识别拿到同一个 P → mark_ocr_temp(P) 先 purge 把 P **自己**删了
+///   → 紧接着的 ocrImage(P) 报「路径无效或文件不存在 (os error 2)」。
+/// 这就是 unmark_ocr_temp 文档里提到的那个「对称的隐患」，当时只在 unmark 侧加了守卫。
 #[tauri::command]
 pub fn mark_ocr_temp(app: tauri::AppHandle, path: String) {
+    let incoming = std::path::PathBuf::from(&path);
+    {
+        let slot = ocr_temp_slot().lock().unwrap_or_else(|p| p.into_inner());
+        if slot.as_deref().is_some_and(|cur| same_file(cur, &incoming)) {
+            log::info!("[Screenshot] 临时 OCR 图与上一张同一个文件，保留不删: {path}");
+            return; // 已经登记的就是它，什么都不用做
+        }
+    } // ❌ 先释锁再 purge：purge_ocr_temp 自己还要拿同一把锁
     purge_ocr_temp(&app);
-    *ocr_temp_slot().lock().unwrap_or_else(|p| p.into_inner()) =
-        Some(std::path::PathBuf::from(path));
+    *ocr_temp_slot().lock().unwrap_or_else(|p| p.into_inner()) = Some(incoming);
 }
 
 /// 撤销临时登记：该文件已经“晋升”为正式结果图，不能再当临时文件删。
@@ -627,16 +677,11 @@ pub fn mark_ocr_temp(app: tauri::AppHandle, path: String) {
 #[tauri::command]
 pub fn unmark_ocr_temp(path: String) {
     let mut slot = ocr_temp_slot().lock().unwrap_or_else(|p| p.into_inner());
-    // 只比较归一化后的路径：两边都来自 `save_screenshot_image` 的返回值，
-    // 字面上应该相等；但前端绕一圈传回来时不保证，所以用 canonicalize 兼底。
-    let same = match (slot.as_deref(), std::path::Path::new(&path).canonicalize()) {
-        (Some(cur), Ok(incoming)) => cur
-            .canonicalize()
-            .map(|c| c == incoming)
-            .unwrap_or_else(|_| cur == std::path::Path::new(&path)),
-        (Some(cur), Err(_)) => cur == std::path::Path::new(&path),
-        (None, _) => false,
-    };
+    // 只比较归一化后的路径（见 same_file）：两边都来自 `save_screenshot_image` 的返回值，
+    // 字面上应该相等；但前端绕一圈传回来时不保证。
+    let same = slot
+        .as_deref()
+        .is_some_and(|cur| same_file(cur, std::path::Path::new(&path)));
     if same {
         log::info!("[Screenshot] 结果图与临时 OCR 图同一个文件，取消临时登记: {path}");
         slot.take();
@@ -715,6 +760,18 @@ fn pick_status_pos(
             x >= scx && y >= scy && x + win_w <= scx + scw && y + win_h <= scy + sch
                 // 与选区不相交
                 && (x + win_w <= sx || x >= sx + sw || y + win_h <= sy || y >= sy + sh)
+        })
+        // 兜底：选区几乎占满整屏、四角都放不下时，退到屏幕底部居中。
+        // 此时可能与选区底部轻微相交，但 capture_region 在截屏瞬间会临时隐藏本窗
+        // （见 capture_region），不会被拼进长图 —— 总比“完全没有退出入口”强。
+        .or_else(|| {
+            let bx = scx + ((scw - win_w) / 2);
+            let by = scy + sch - gap - win_h;
+            if bx >= scx && by >= scy && bx + win_w <= scx + scw && by + win_h <= scy + sch {
+                Some((bx, by))
+            } else {
+                None
+            }
         })
 }
 
@@ -805,14 +862,14 @@ fn longshot_esc_shortcut() -> Option<tauri_plugin_global_shortcut::Shortcut> {
 /// 而且在 WebviewWindowBuilder::build() 之后 —— 状态窗一旦创建失败就直接 return Err，
 /// 全局 Esc 根本没注册上。逃生舱不能依赖它要保护的东西。
 #[tauri::command]
-pub fn arm_longshot_escape(app: tauri::AppHandle) {
-    register_longshot_escape(&app);
+pub fn arm_longshot_escape(app: tauri::AppHandle) -> bool {
+    register_longshot_escape(&app)
 }
 
-fn register_longshot_escape(app: &AppHandle) {
+fn register_longshot_escape(app: &AppHandle) -> bool {
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
     let Some(sc) = longshot_esc_shortcut() else {
-        return;
+        return false;
     };
     let res = app.global_shortcut().on_shortcut(sc, move |app, _sc, event| {
         if event.state == ShortcutState::Pressed {
@@ -821,9 +878,15 @@ fn register_longshot_escape(app: &AppHandle) {
         }
     });
     match res {
-        Ok(()) => log::info!("[Screenshot] 长截图全局 Esc 已注册"),
+        Ok(()) => {
+            log::info!("[Screenshot] 长截图全局 Esc 已注册");
+            true
+        }
         // 注册失败不能阻断长截图（比如 Esc 被别的程序占了），还有状态窗兜底
-        Err(e) => log::warn!("[Screenshot] 长截图全局 Esc 注册失败（不阻断）: {}", e),
+        Err(e) => {
+            log::warn!("[Screenshot] 长截图全局 Esc 注册失败（不阻断）: {}", e);
+            false
+        }
     }
 }
 
@@ -1031,6 +1094,12 @@ pub fn list_pinned_images() -> Vec<String> {
 #[tauri::command]
 pub fn close_pinned_image_by_path(path: String) {
     crate::pinned_window::close_pinned_by_path(&path);
+}
+
+/// 管理面板"旋转/翻转"：按 path 向贴图窗口下发变换指令（action: 1=旋转90° 2=水平翻转 3=垂直翻转 4=恢复）
+#[tauri::command]
+pub fn transform_pinned_image_by_path(path: String, action: u8) {
+    crate::pinned_window::transform_pinned_image_by_path(&path, action);
 }
 
 /// 托盘"贴图管理"入口：显示主窗口并通知前端弹出贴图面板
@@ -1513,6 +1582,273 @@ fn send_wheel_via_input(x: i32, y: i32, delta: i32) -> Result<(), String> {
             return Err("发送滚轮事件失败".to_string());
         }
         Ok(())
+    }
+}
+
+// ===== 长截图：WM_VSCROLL 优先路径 + 统一滚动入口 =====
+
+/// 长截图滚动注入优先路径：向选区坐标下「真正可滚动的控件」发 `WM_VSCROLL / SB_PAGEDOWN`。
+///
+/// 为什么比 `WM_MOUSEWHEEL` 更好：经典 Win32 控件（记事本编辑框、资源管理器列表、
+/// WinForms/MFC/Delphi/Java-SWT 等）规范地响应 `WM_VSCROLL`，`SB_PAGEDOWN` 一次滚「一页」、
+/// 正确触发 `WM_PAINT` 重绘，比「把滚轮事件丢到坐标下的窗口」更准、对自绘/Java 控件兼容性更强。
+///
+/// 现代应用（浏览器、Electron、UWP、WPF、Swing）大多**不**响应 `WM_VSCROLL`（自绘滚动），
+/// 这种情况由 `scroll_longshot` 自动回退到 `WM_MOUSEWHEEL` 注入。
+///
+/// 返回 `Ok(())` 仅代表「成功投递了 WM_VSCROLL」，不代表控件真的滚了——
+/// 是否真滚由前端 `waitStable` + 重叠比对判断，没动会触发 `force_input` 兜底。
+#[cfg(target_os = "windows")]
+struct VScrollCandidate {
+    hwnd: windows::Win32::Foundation::HWND,
+    contains: bool,
+    dist2: i64,
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn vscroll_enum_cb(
+    hwnd: windows::Win32::Foundation::HWND,
+    lparam: windows::Win32::Foundation::LPARAM,
+) -> windows::Win32::Foundation::BOOL {
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowLongW, GetWindowRect, GWL_STYLE, WS_VSCROLL};
+    let ctx = &mut *(lparam.0 as *mut (&i32, &i32, &mut Vec<VScrollCandidate>));
+    let px = *ctx.0;
+    let py = *ctx.1;
+    let cands = &mut *ctx.2;
+    let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
+    if style & (WS_VSCROLL.0 as u32) != 0 {
+        let mut rect = windows::Win32::Foundation::RECT::default();
+        if GetWindowRect(hwnd, &mut rect).is_ok() {
+            let contains = px >= rect.left && px <= rect.right && py >= rect.top && py <= rect.bottom;
+            let cx = (rect.left + rect.right) / 2;
+            let cy = (rect.top + rect.bottom) / 2;
+            let dx = (cx - px) as i64;
+            let dy = (cy - py) as i64;
+            cands.push(VScrollCandidate {
+                hwnd,
+                contains,
+                dist2: dx * dx + dy * dy,
+            });
+        }
+    }
+    windows::Win32::Foundation::BOOL(1)
+}
+
+#[cfg(target_os = "windows")]
+fn find_vscroll_hwnd(x: i32, y: i32) -> Option<windows::Win32::Foundation::HWND> {
+    use windows::Win32::Foundation::{LPARAM, POINT};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumChildWindows, GetWindowLongW, GWL_STYLE, WindowFromPoint, WS_VSCROLL,
+    };
+    unsafe {
+        let root = WindowFromPoint(POINT { x, y });
+        if root.0.is_null() {
+            return None;
+        }
+        let mut cands: Vec<VScrollCandidate> = Vec::new();
+        // ❌ 要沿**祖先链往上找**，不能只看 WindowFromPoint 的结果及其子窗：
+        // WindowFromPoint 返回的往往是最深的那个叶子控件，而滚动条通常在它的**父容器**
+        // 上（列表/文档视图/滚动面板）——“点在子控件上、滚动条在父容器”恰好是最常见的
+        // 形形，旧实现在这种情况下直接找不到。
+        {
+            use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GA_PARENT};
+            let mut cur = root;
+            // 防循环：祖先链不可能很深，16 层结束
+            for _ in 0..16 {
+                if cur.0.is_null() {
+                    break;
+                }
+                let style = GetWindowLongW(cur, GWL_STYLE) as u32;
+                if style & (WS_VSCROLL.0 as u32) != 0 {
+                    cands.push(VScrollCandidate {
+                        hwnd: cur,
+                        contains: true,
+                        dist2: 0,
+                    });
+                }
+                let parent = GetAncestor(cur, GA_PARENT);
+                if parent.0.is_null() || parent == cur {
+                    break;
+                }
+                cur = parent;
+            }
+        }
+        let mut ctx: (&i32, &i32, &mut Vec<VScrollCandidate>) = (&x, &y, &mut cands);
+        let _ = EnumChildWindows(root, Some(vscroll_enum_cb), LPARAM(&mut ctx as *mut _ as isize));
+        if cands.is_empty() {
+            return None;
+        }
+        // 优先「包含选区中心」的控件，其次「几何中心最近」的
+        cands.sort_by(|a, b| b.contains.cmp(&a.contains).then(a.dist2.cmp(&b.dist2)));
+        Some(cands[0].hwnd)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn scroll_via_vscroll(x: i32, y: i32) -> Result<(), String> {
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_VSCROLL};
+    let target = find_vscroll_hwnd(x, y).ok_or_else(|| "未找到可滚动子控件".to_string())?;
+    unsafe {
+        // SB_PAGEDOWN = 3（Windows 规范值）：低位 wParam；lParam 必须为 0。
+        PostMessageW(target, WM_VSCROLL, WPARAM(3), LPARAM(0))
+            .map_err(|e| format!("WM_VSCROLL 投递失败: {e:?}"))
+    }
+}
+
+/// 长截图「已滚到底」的权威信号：向选区中心命中的可滚动控件取 `GetScrollInfo(SB_VERT)`，
+/// 若 `nPos + nPage >= nMax` 即到底。与图像重叠检测双保险——重叠检测在动态内容
+/// （懒加载 / SPA 还在填数据）下会一直"看着在变"而永不收敛，本函数能直接判定终点，
+/// 避免一路滚到屏数上限或误判提前停。无 WS_VSCROLL 子控件（浏览器等）→ 返回 false，
+/// 交给图像重叠兜底（不报错、不回归）。
+#[tauri::command]
+pub fn get_scroll_bottom(x: i32, y: i32) -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let hwnd = match find_vscroll_hwnd(x, y) {
+            Some(h) => h,
+            None => return Ok(false),
+        };
+        use windows::Win32::UI::WindowsAndMessaging::{GetScrollInfo, SB_VERT, SCROLLINFO, SIF_ALL};
+        unsafe {
+            let mut si = SCROLLINFO {
+                cbSize: std::mem::size_of::<SCROLLINFO>() as u32,
+                fMask: SIF_ALL,
+                ..Default::default()
+            };
+            if GetScrollInfo(hwnd, SB_VERT, &mut si).is_ok() && si.nMax > 0 {
+                let bottom = si.nPos as i64 + si.nPage as i64;
+                return Ok(bottom >= si.nMax as i64 - 1);
+            }
+        }
+        Ok(false)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (x, y);
+        Err("长截图功能目前仅支持 Windows".to_string())
+    }
+}
+
+/// 长截图「预览即默认」：进入长截图前先探测选区命中的可滚动控件，返回它的
+/// 窗体屏幕矩形 + 滚动范围（nMax/nPage/nPos），供前端画出「整页淡预览」并让用户
+/// 单击截整页 / 拖拽选纵向区间。无 Win32 滚动条（浏览器/SPA 等）→ 返回 None，
+/// 前端回退到「直接自动滚动」的旧行为，零回归。
+#[derive(serde::Serialize)]
+pub struct ScrollRangeOut {
+    /// 可滚动控件窗体的屏幕矩形（物理像素，绝对坐标）
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+    /// SB_VERT 滚动范围。
+    ///
+    /// ❌ 单位是**滚动单位**，不是像素：编辑框按**行**、列表按**项**、
+    /// 只有那些自己按像素设范围的应用才恰好是像素。拿它当像素算预览高度，
+    /// 在记事本/列表上会错得很远。所以另给 `extra_ratio`，前端只用比例。
+    pub n_max: i32,
+    /// 视口高度（滚动单位）
+    pub n_page: i32,
+    /// 当前滚动位置（滚动单位）
+    pub n_pos: i32,
+    /// 光标下方还有多少屏内容（**无单位比例**）= (nMax - nPage - nPos) / nPage。
+    ///
+    /// 比例在任何滚动单位下都成立（行/项/像素同时约掉），乘上选区高度就是
+    /// 预览要伸展的物理像素数。前端算预览几何与屏数一律用它。
+    pub extra_ratio: f32,
+}
+
+#[tauri::command]
+pub fn get_scroll_range(x: i32, y: i32) -> Result<Option<ScrollRangeOut>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let hwnd = match find_vscroll_hwnd(x, y) {
+            Some(h) => h,
+            None => return Ok(None),
+        };
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetScrollInfo, GetWindowRect, SB_VERT, SCROLLINFO, SIF_ALL,
+        };
+        use windows::Win32::Foundation::RECT;
+        unsafe {
+            let mut wr = RECT::default();
+            if GetWindowRect(hwnd, &mut wr).is_err() {
+                return Ok(None);
+            }
+            let mut si = SCROLLINFO {
+                cbSize: std::mem::size_of::<SCROLLINFO>() as u32,
+                fMask: SIF_ALL,
+                ..Default::default()
+            };
+            if GetScrollInfo(hwnd, SB_VERT, &mut si).is_ok() && si.nMax > 0 {
+                // 用比例而不是绝对值把「下面还有多少」传出去（见 extra_ratio 的注释）。
+                // nPage 为 0（控件不报 SIF_PAGE）时无法归一化，给 0 让前端走无预览的旧路径。
+                let page = si.nPage as i32;
+                let extra_ratio = if page > 0 {
+                    ((si.nMax as i32 - page - si.nPos as i32).max(0) as f32) / page as f32
+                } else {
+                    0.0
+                };
+                return Ok(Some(ScrollRangeOut {
+                    x: wr.left,
+                    y: wr.top,
+                    w: wr.right - wr.left,
+                    h: wr.bottom - wr.top,
+                    n_max: si.nMax as i32,
+                    n_page: page,
+                    n_pos: si.nPos as i32,
+                    extra_ratio,
+                }));
+            }
+        }
+        Ok(None)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (x, y);
+        Err("长截图功能目前仅支持 Windows".to_string())
+    }
+}
+
+/// 长截图滚动注入的统一入口（替代 `send_mouse_wheel` 在长截图中的使用）。
+///
+/// 优先级：`WM_VSCROLL`（经典可滚动控件，最规范）→ `WM_MOUSEWHEEL` PostMessage（现代应用）
+/// → `SendInput` 真实滚轮（只认真实输入的应用）。
+/// `force_input = true` 时跳过前两种，直接走 SendInput（前端发现画面没动时升级用）。
+#[tauri::command]
+pub fn scroll_longshot(
+    x: i32,
+    y: i32,
+    delta: i32,
+    force_input: Option<bool>,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        if force_input.unwrap_or(false) {
+            send_wheel_via_input(x, y, delta)
+        } else {
+            // ❌ 不能写成 `scroll_via_vscroll(..).or_else(|_| 滚轮)`：PostMessage 只要窗口句柄
+            // 有效就返回成功，**与控件是否真的滚了没关系**，于是 or_else 永不触发，
+            // “现代应用不响应 WM_VSCROLL 会自动回退滚轮”根本不成立。
+            // 改成**两种都发**：经典控件吃 WM_VSCROLL、现代应用吃 WM_MOUSEWHEEL，
+            // 两者互不干扰（不认的那条就是一个被忽略的消息），而且省掉一轮无效尝试。
+            // 两路都投不出去才降到 SendInput（真实输入，成本最高、会动真光标）。
+            //
+            // 注意：投递成功仍不代表画面真的动了。“到底了还是不认”由前端的
+            // waitStable + 重叠比对判定，没动会升级到 force_input 兑底。
+            let a = scroll_via_vscroll(x, y);
+            let b = send_wheel_via_post(x, y, delta);
+            if a.is_ok() || b.is_ok() {
+                Ok(())
+            } else {
+                send_wheel_via_input(x, y, delta)
+            }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (x, y, delta, force_input);
+        Err("长截图功能目前仅支持 Windows".to_string())
     }
 }
 

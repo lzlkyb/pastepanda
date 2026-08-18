@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PastePanda · 取文字 OCR「拖选字级」设计稿</title>
+<style>
+  :root{
+    --bg:#0e1220; --card:rgba(34,41,76,.94); --ink:#e8ecf6; --sub:#9aa6c4;
+    --line:rgba(255,255,255,.10); --indigo:#6366f1; --cyan:#22d3ee; --green:#22c55e;
+    --amber:#f59e0b; --red:#ef4444;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(160deg,#0b0f1c,#141a30);color:var(--ink);
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;padding:28px 22px 60px}
+  h1{font-size:22px;margin:0 0 4px}
+  h2{font-size:16px;margin:26px 0 10px;color:#cdd6f4;border-left:3px solid var(--indigo);padding-left:10px}
+  .lead{color:var(--sub);font-size:13px;line-height:1.7;max-width:880px}
+  .grid{display:grid;gap:14px;margin:14px 0}
+  .c2{grid-template-columns:1fr 1fr}
+  .c3{grid-template-columns:1fr 1fr 1fr}
+  @media(max-width:760px){.c2,.c3{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 16px}
+  .card h3{margin:0 0 8px;font-size:14px;color:#fff}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;margin:2px 4px 2px 0}
+  .t-ind{background:rgba(99,102,241,.18);color:#c7c9ff}
+  .t-cy{background:rgba(34,211,238,.16);color:#bdf3ff}
+  .t-am{background:rgba(245,158,11,.16);color:#ffe1a8}
+  .t-gr{background:rgba(34,197,94,.16);color:#bff5cf}
+  .t-rd{background:rgba(239,68,68,.16);color:#ffc9c9}
+  ul{margin:6px 0 0;padding-left:18px;font-size:12.5px;line-height:1.75;color:#d6def2}
+  li b{color:#fff}
+  code{background:rgba(255,255,255,.08);padding:1px 5px;border-radius:5px;font-size:11.5px;color:#bdf3ff}
+  .rowline{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0}
+  .kv{font-size:12px;color:var(--sub)}
+  .kv b{color:#fff}
+  .fig{background:#0b0f1c;border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
+  .figcap{font-size:11.5px;color:var(--sub);text-align:center;margin-top:8px}
+  .ph{font-size:12px;color:var(--sub);line-height:1.7;background:rgba(99,102,241,.08);
+    border:1px dashed rgba(99,102,241,.4);border-radius:10px;padding:10px 12px;margin:10px 0}
+  .ph b{color:#c7c9ff}
+  .ok{color:#bff5cf} .no{color:#ffc9c9}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+  td,th{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
+  th{background:rgba(255,255,255,.05);color:#cdd6f4}
+</style>
+</head>
+<body>
+<h1>取文字 OCR · 拖选「精确到字」</h1>
+<p class="lead">深化 ⑤「选区即文字层」：在标注态叠加<b>文字橡皮筋选择层</b>，用户拖鼠标框选即可命中文字，松开复制；通过<b>前端等距字级切分</b>实现"精确到字"，不需要改后端 OCR 引擎。贯彻 <code>claude.md</code> 第 18 条轻预览范式（P1 预览即默认 / P2 拖拽自定义 / P3 非模态 / P4 两级取消）。</p>
+
+<h2>一、真实现状（读了代码，非凭记忆）</h2>
+<div class="grid c3">
+  <div class="card"><h3>① 后端是<b>行级</b> OCR</h3>
+    <div class="rowline"><span class="tag t-rd">关键</span></div>
+    <ul><li><code>commands/images.rs:451-492</code>：PP-OCRv6 检测输出为<b>整行</b> bbox，每行映射为一个 <code>OcrWordInfo</code>。</li>
+    <li><code>line.words</code> 实际<b>每行仅 1 个元素</b>，<code>w.text</code> = 整行文本。</li>
+    <li>引擎<b>不返回字符级坐标</b>，要真·字级需改后端（风险高、离线引擎未必支持）。</li></ul>
+  </div>
+  <div class="card"><h3>② 框选算法已就绪</h3>
+    <div class="rowline"><span class="tag t-gr">可复用</span></div>
+    <ul><li><code>__tests__/cardlist-logic.test.ts:319-367</code>：<code>rectsOverlap</code> + 遍历 <code>line.words</code> 选相交 word —— 直接搬到拖选层。</li>
+      <li><code>copyRow(i)</code>（<code>ScreenshotOverlay.tsx:1908</code>）：现有「点行复制整行」逻辑。</li></ul>
+  </div>
+  <div class="card"><h3>③ 标注态文字层被锁</h3>
+    <div class="rowline"><span class="tag t-am">待解</span></div>
+    <ul><li><code>ScreenshotOverlay.tsx:3176</code>：<code>ocr-line</code> 在标注态被强制 <code>inert</code> 不可点。</li>
+      <li>想选字必须进结果态或开 <code>Ctrl+R</code> 抽屉（滑入挡图）。</li>
+      <li>OCR 已在标注态后台识别（<code>ensureRegionOcr :1053</code>），数据早就在。</li></ul>
+  </div>
+</div>
+
+<div class="ph" style="border-color:rgba(34,197,94,.45);background:rgba(34,197,94,.07)">
+<b>📐 与微信截图 OCR 拖选对比（已核对 PC 微信 3.8.0 官方更新说明 + 多来源）</b><br>
+微信：截图后工具栏「提取文字」按钮点击即识别图中文字，<b>"在图片中的文字处直接选取"</b>——图上直接拖拽选字，选中后可右键调出操作菜单（复制 / 翻译 / 转发）。其 OCR 引擎（腾讯优图）返回<b>字符级 box</b>，故字级精确。下面逐条对齐。
+</div>
+<div class="grid c2">
+  <div class="card"><h3>逐项对照（微信 vs 本设计）</h3>
+    <table>
+      <tr><th>维度</th><th>微信</th><th>本设计</th><th>一致</th></tr>
+      <tr><td>图上直接拖选字</td><td>文字处直接选取</td><td>标注态落字上拖=橡皮筋选字</td><td class="ok">✅</td></tr>
+      <tr><td>实时高亮+复制</td><td>选中后右键菜单</td><td>选中高亮+浮复制条（非模态）</td><td class="ok">✅更强</td></tr>
+      <tr><td>单击/整行复制</td><td>局部选中/全选</td><td>单击=复制整行</td><td class="ok">✅</td></tr>
+      <tr><td>取消/重选</td><td>重新选</td><td>Esc 取消选择（P4）</td><td class="ok">✅</td></tr>
+      <tr><td>触发方式</td><td>显式点「提取文字」</td><td>自动后台识别（P1 预览即默认）</td><td class="ok">更顺*</td></tr>
+      <tr><td>隐私行跳过</td><td>—</td><td>isRowMasked 自动跳过</td><td class="ok">额外有</td></tr>
+      <tr><td><b>字符级精度</b></td><td>后端字符级 box，真·字级</td><td>行级+前端等距近似</td><td class="no">⚠️ 差距</td></tr>
+    </table>
+    <p class="kv">* 自动识别是 P1 预览即默认的超集，但工具栏「取文字」按钮仍保留作可见入口。</p>
+  </div>
+  <div class="card"><h3>结论：拖选模型完全一致，唯一实质差距是「字级精度来源」</h3>
+    <ul>
+      <li class="ok"><b>一致</b>：拖拽选字、实时高亮、单击整行、Esc 取消、非模态——交互心智与微信相同。</li>
+      <li class="no"><b>差距</b>：微信字级来自<b>后端字符级 box</b>（腾讯优图）；我们后端 <code>images.rs:451</code> 仅行级，字级靠前端<b>等距切分近似</b>。</li>
+      <li>中英混排 / 比例字体下，等距切分的"边缘字"会误纳或漏纳——属体验级近似，与 QQ 同级、用户可接受。</li>
+      <li><b>要对齐微信真·字级</b>：后端 OCR 须输出字符级坐标（改 PP-OCRv6 离线封装或加 char detector，风险较高）。否则接受近似即可。</li>
+      <li class="ok">观感补强：鼠标落在文字上方变 <b>I 形光标</b>（微信同款），纳入 P1。</li>
+    </ul>
+  </div>
+</div>
+
+<h2>二、目标交互（微信式拖选）</h2>
+<div class="grid c2">
+  <div class="card"><h3>拖选橡皮筋（rubber-band）</h3>
+    <ul>
+      <li>标注态 OCR 就绪后，鼠标落在<b>文字区域</b>按下拖拽 → 起手画半透明青框（橡皮筋）。</li>
+      <li>实时高亮命中文字（indigo 填充），松手 → 选中文本 + 浮「复制 ✓」条（不挡底图）。</li>
+      <li><b>单击</b>某行（<4px 位移）→ 复制整行（保留现状 <code>copyRow</code>）。</li>
+      <li><b>双击</b> → 选中整行（同单击但视觉强提示）。</li>
+      <li><b>Esc</b> → 取消当前选择（两级取消，回到文字层）。</li>
+    </ul>
+  </div>
+  <div class="card"><h3>精确到字（前端切分）</h3>
+    <ul>
+      <li>对命中 word 的 box，按 <code>text.chars().count()</code> <b>等距切分宽度</b> → 生成"伪字级"命中单元。</li>
+      <li>第 k 字 box ≈ <code>(x + k·w/N, y, w/N, h)</code>；橡皮筋与字框重叠即纳入。</li>
+      <li>输出：按纳入字符 index 升序取 <code>word.text</code> <b>子串</b>（用 <code>char_indices</code> 防 emoji/组合字符截断）。</li>
+      <li>中英混排字宽不均 → 仅作"拖选体验"近似，与微信/QQ 同级，不追求像素级。</li>
+    </ul>
+  </div>
+</div>
+
+<div class="fig">
+<svg viewBox="0 0 640 220" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <!-- 底图行 -->
+  <rect x="20" y="30" width="600" height="60" rx="8" fill="#11162a" stroke="rgba(255,255,255,.12)"/>
+  <text x="40" y="68" fill="#e8ecf6" font-size="22" font-family="monospace">联 系 方 式：138-0000-1234</text>
+  <!-- word 等分刻度 -->
+  <g stroke="rgba(34,211,238,.35)" stroke-dasharray="3 3">
+    <line x1="158" y1="34" x2="158" y2="86"/>
+    <line x1="196" y1="34" x2="196" y2="86"/>
+    <line x1="234" y1="34" x2="234" y2="86"/>
+    <line x1="272" y1="34" x2="272" y2="86"/>
+    <line x1="310" y1="34" x2="310" y2="86"/>
+    <line x1="348" y1="34" x2="348" y2="86"/>
+    <line x1="386" y1="34" x2="386" y2="86"/>
+    <line x1="424" y1="34" x2="424" y2="86"/>
+    <line x1="462" y1="34" x2="462" y2="86"/>
+    <line x1="500" y1="34" x2="500" y2="86"/>
+    <line x1="538" y1="34" x2="538" y2="86"/>
+  </g>
+  <!-- 单字框高亮（选中 0000 四个字：x≈272..424） -->
+  <rect x="272" y="34" width="152" height="52" rx="4" fill="rgba(99,102,241,.35)" stroke="#6366f1"/>
+  <!-- 橡皮筋拖选矩形 -->
+  <rect x="266" y="26" width="170" height="72" rx="6" fill="rgba(34,211,238,.10)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="266" y="22" fill="#22d3ee" font-size="12">拖选橡皮筋</text>
+  <text x="272" y="108" fill="#c7c9ff" font-size="12">→ 选中子串「0000」已复制</text>
+</svg>
+<div class="figcap">示意图：word box 内按字符数等距切分，橡皮筋拖选命中中间 4 个字符 → 复制「0000」（sub-word 精度）</div>
+</div>
+
+<h2>三、Before / After（标注态）</h2>
+<div class="grid c2">
+  <div class="card"><h3>Before（当前）</h3>
+    <ul>
+      <li class="no">标注态 <code>ocr-line</code> 为 <code>inert</code>，图上文字点了没反应。</li>
+      <li class="no">要选字 → 进结果态面板 或 <code>Ctrl+R</code> 抽屉（滑入<b>挡图</b>）。</li>
+      <li class="no">只能整行复制，无法选其中几个字。</li>
+      <li class="no">拖拽 = 画标注/移动选区，文字"选不中"。</li>
+    </ul>
+  </div>
+  <div class="card"><h3>After（目标）</h3>
+    <ul>
+      <li class="ok">标注态文字层<b>已激活</b>：落字上拖拽 = 橡皮筋选字。</li>
+      <li class="ok">选中即高亮 + 浮「复制 ✓」条，<b>不挡底图</b>（P3）。</li>
+      <li class="ok">可精确到字：拖选命中 <b>sub-word 子串</b>。</li>
+      <li class="ok">单击=复制整行；Esc=取消选择（P4 两级）。</li>
+    </ul>
+  </div>
+</div>
+
+<h2>四、实现要点（纯前端，无 Rust 改动）</h2>
+<div class="card">
+<ul>
+  <li><b>1. 前置依赖（⑤ 基础）</b>：先去掉 <code>ScreenshotOverlay.tsx:3176</code> 的 <code>inert</code> 三元，让标注态 <code>ocr-line</code> 可交互（已在 ⑤ 稿规划，未改码）。</li>
+  <li><b>2. 新增状态</b>：<code>textSel</code>（选中的 <code>{li,wi,charStart,charEnd}[]</code> 或拼接文本）、<code>textDragRef</code>（橡皮筋进行中）。</li>
+  <li><b>3. 触发策略（不抢其它交互）</b>：仅在 <code>phase==="annotate" && ocr 就绪</code> 时，指针落在某 <code>ocr-line</code> 命中区内 <code>onMouseDown</code> 起手 → <code>stopPropagation</code>，不走标注绘制/选区拖移；空白区拖拽 = 现有行为不变。</li>
+  <li><b>4. 命中算法</b>：复用 <code>rectsOverlap</code> 选相交 word；再对每个命中 word 做<b>字级切分</b>，纳入橡皮筋 rect 内的字符（见第二节）。阅读顺序：<code>按行升序 → 同行 word 升序 → word 内 char 升序</code> 拼文本，行间补 <code>\n</code>。</li>
+  <li><b>5. 复制浮条</b>：松手若有选中 → <code>copyText(sel)</code>（复用 <code>copyRow</code> 的复制通道）+ 浮「已复制 N 字 ✓」条（2 秒淡出）；空选 → 视为单击（复制整行，保留现状）。</li>
+  <li><b>6. 坐标</b>：所有框用 <code>css()=v/dpr</code> 换算渲染（与现有标注/选区同坐标系）；OCR word box 已是屏幕物理像素，直接复用 <code>css(w.x)</code> 等（同 <code>ocr-line</code> 现有渲染）。</li>
+</ul>
+</div>
+
+<h2>五、分阶段</h2>
+<table>
+  <tr><th>阶段</th><th>内容</th><th>精度</th><th>风险</th></tr>
+  <tr><td><b>P1 基础拖选</b></td><td>橡皮筋框选 → 命中整 word 按阅读顺序拼接 → 浮复制条；单击=复制整行；鼠标落文字上方变 <b>I 形光标</b>（微信观感）</td><td>word 级</td><td>低（复用 rectsOverlap）</td></tr>
+  <tr><td><b>P2 字级精修</b></td><td>word 内按字等距切分 → 拖选命中 sub-word 子串；<code>char_indices</code> 防截断。<b>注</b>：此为近似；要对齐微信真·字级需后端 OCR 出字符级 box（见对比节，风险较高，可选）</td><td>字符级（近似）</td><td>低（纯前端切分）</td></tr>
+  <tr><td><b>P3 体验打磨</b></td><td>选中高亮随拖实时刷新、双击=整行、Shift 续选、Esc 取消、复制浮条样式与第 18 条视觉语言统一</td><td>—</td><td>低</td></tr>
+</table>
+
+<h2>六、风险与守门（claude.md 第 18 条）</h2>
+<div class="ph">
+<b>守门红线</b>：① 文字层是轻覆盖，复制浮条不得挡底图（P3）；② 一键可推翻——Esc/点击空白即取消（P4）；③ 选字不污染截图产出（只复制文本，不画标注）。<br>
+<b>已知风险</b>：中英混排字宽不均导致"边缘字"误纳/漏纳（近似可接受，必要时按字符视觉宽度加权切分）；性能上 OCR 行数多时需节流橡皮筋重算（<code>requestAnimationFrame</code> 限帧）；与自动打码预览（橙色框）同屏时需视觉区分（选中=indigo，打码=amber）。
+</div>
+
+<h2>七、与既有功能关系</h2>
+<ul>
+  <li>本文是 ⑤「选区即文字层」的<b>深化</b>：⑤ 去掉 <code>inert</code> 是基础，本稿在 ⑤ 之上加<b>拖选 + 字级</b>。</li>
+  <li>自动打码预览（③）遮住的行：<code>isRowMasked</code> 已不渲染其 <code>ocr-line</code>，故选字层天然跳过隐私行，不泄漏。</li>
+  <li>复制全文 / 表格 / 送 AI 仍走 <code>ocr.fullText</code>，不受选字层影响（既有取舍保留）。</li>
+</ul>
+</body>
+</html>

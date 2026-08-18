@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>长截图「预览即默认」设计稿</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #11151f; color: #e6edf7; font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; padding: 28px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #9fb0c8; font-size: 13px; margin-bottom: 22px; }
+  .row { display: flex; gap: 24px; flex-wrap: wrap; }
+  .card { background: rgba(34,41,76,.94); border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 18px; width: 360px; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; }
+  .card h2 .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; margin-left: 8px; vertical-align: middle; }
+  .tag.before { background: #3a2b2b; color: #f0a0a0; }
+  .tag.after { background: #1f3a2b; color: #8fe0b0; }
+  .stage { position: relative; height: 250px; border-radius: 10px; background:
+      linear-gradient(135deg, #1b2030, #232b40); overflow: hidden; border: 1px solid rgba(255,255,255,.06); }
+  .win { position: absolute; left: 24px; top: 30px; width: 230px; height: 120px; border-radius: 8px;
+         background: rgba(120,140,200,.18); border: 1px solid rgba(160,180,255,.4); }
+  .win .bar { position: absolute; left: 0; top: 0; right: 0; height: 18px; background: rgba(160,180,255,.25); border-radius: 8px 8px 0 0; }
+  .sel { position: absolute; left: 40px; top: 70px; width: 200px; height: 60px; border: 2px solid #4f9eff;
+         border-radius: 4px; box-shadow: 0 0 0 9999px rgba(8,10,16,.55); }
+  .sel .dim { position: absolute; inset: 0; }
+  .preview { position: absolute; left: 40px; top: 70px; width: 200px; border: 2px dashed #7c6cff; border-radius: 4px;
+             background: rgba(124,108,255,.10); }
+  .preview .more { position: absolute; left: 0; right: 0; top: 60px; bottom: 0;
+                   background: repeating-linear-gradient(45deg, rgba(124,108,255,.10) 0 8px, rgba(124,108,255,.04) 8px 16px); }
+  .handle { position: absolute; left: -6px; right: -6px; height: 3px; background: #06b6d4; box-shadow: 0 0 6px #06b6d4; }
+  .handle .knob { position: absolute; right: -10px; top: -6px; width: 14px; height: 14px; border-radius: 50%; background: #06b6d4; }
+  .lbl { position: absolute; left: 46px; top: 134px; font-size: 11px; background: rgba(124,108,255,.9); color: #fff;
+         padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
+  .hint { margin-top: 12px; font-size: 12px; color: #9fb0c8; line-height: 1.7; }
+  .hint b { color: #cfe; }
+  .kbd { background: rgba(255,255,255,.12); border-radius: 4px; padding: 1px 6px; font-size: 11px; }
+  ul { margin: 8px 0 0; padding-left: 18px; font-size: 12px; color: #c7d2e6; line-height: 1.8; }
+  .note { margin-top: 22px; font-size: 12px; color: #8aa; background: rgba(34,41,76,.6); border-left: 3px solid #4f46e5; padding: 10px 14px; border-radius: 0 8px 8px 0; }
+  code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; font-size: 11px; color: #ffd9a0; }
+</style>
+</head>
+<body>
+<h1>长截图「预览即默认」— 微信思维落地</h1>
+<div class="sub">P1 预览即默认 · P2 单击采纳 / 拖拽自定义 · P4 Esc 回预览。改前 vs 改后。</div>
+
+<div class="row">
+  <div class="card">
+    <h2>改前 <span class="tag before">现状</span></h2>
+    <div class="stage">
+      <div class="win"><div class="bar"></div></div>
+      <div class="sel"><div class="dim"></div></div>
+    </div>
+    <div class="hint">
+      点「长截图」→ <b>立即隐藏截图窗</b> + 自动向下滚动拼接。<br>
+      用户看不到「会截多长」，只能等跑完；想只截一段得进状态窗点「停止并出图」盲停。
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>改后 <span class="tag after">预览即默认</span></h2>
+    <div class="stage">
+      <div class="win"><div class="bar"></div></div>
+      <div class="preview">
+        <div class="more"></div>
+      </div>
+      <div class="handle" style="top: 170px;"><div class="knob"></div></div>
+      <div class="lbl">整页 ≈ 2400px · 约 4 屏</div>
+    </div>
+    <div class="hint">
+      点「长截图」→ 截图窗<b>不隐藏</b>，先显示整页淡预览（虚线框 + 斜纹延展 + 尺寸标签）。<br>
+      • <b>单击</b>预览区 = 截整页（原有自动滚到 get_scroll_bottom）。<br>
+      • <b>拖拽</b>青色终点手柄 = 只截到该处为止。<br>
+      • <span class="kbd">Esc</span> / 放弃 = 回选区，零成本。
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <b>实现要点（基于真实代码）</b>
+  <ul>
+    <li>后端新增 <code>get_scroll_range(x,y)</code>：复用 <code>find_vscroll_hwnd</code> + <code>GetWindowRect</code> + <code>GetScrollInfo</code>，返回 <code>{x,y,w,h,n_max,n_page,n_pos}</code>；无 Win32 滚动条返回 <code>None</code>。</li>
+    <li>前端点「长截图」先调用它：命中有滚动条且 <code>extraBelow = n_max-n_page-n_pos</code> 明显 &gt;0 → 进 <code>longPreview</code> 态（窗口不隐藏）显淡预览；否则直接走原有 <code>startLongShot()</code>（零回归，浏览器/SPA 无预览仍可用）。</li>
+    <li><code>startLongShot</code> 增加可选 <code>captureBottomPx</code>：循环里 <code>totalH</code> 达该值即裁末帧底部并 break（与 <code>get_scroll_bottom</code> 双保险）。</li>
+    <li>预览层用现有 <code>css()=v/dpr</code> 坐标系渲染，与选区高亮同源；pointer 事件 stopPropagation，不触发 select 态框选。</li>
+    <li>坐标：调用传绝对屏幕坐标（同 <code>get_scroll_bottom</code> 的 <code>toScreenPt</code> 写法）。</li>
+  </ul>
+</div>
+</body>
+</html>

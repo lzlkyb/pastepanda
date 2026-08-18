@@ -29,4 +29,14 @@ export interface LongShotProgress {
  * - abort：放弃，什么都不留
  * 旧实现只有 abort（而且还是个没人能触发的死功能），用户想"就拼到这里"时无路可走。
  */
-export type LongShotControl = "stop" | "abort";
+/**
+ * stop 与 abort 语义必须分开：
+ * - stop：停下来，用**已拼的内容**出图
+ * - abort：放弃，什么都不留
+ * 旧实现只有 abort（而且还是个没人能触发的死功能），用户想"就拼到这里"时无路可走。
+ *
+ * 长截图扩展（手动滚动模式）：
+ * - next：手动模式专用，用户「已向下滚动一屏」后点「下一张」，触发主窗截下一帧
+ * - mode_auto / mode_manual：切换自动滚动 / 手动滚动模式（可在长截图进行中动态切换）
+ */
+export type LongShotControl = "stop" | "abort" | "next" | "mode_auto" | "mode_manual";

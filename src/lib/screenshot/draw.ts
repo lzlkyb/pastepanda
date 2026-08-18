@@ -44,7 +44,9 @@ function strokeBrushPath(
  * 为什么不逐笔重算：马赛克的格子必须对齐同一套全局网格。若每笔各算一次，
  * 来回涂的重叠处两套网格会错位，看起来就是“格子在打架”。
  *
- * @param paint 在离屏 ctx 上画效果；坐标系已平移到包围盒左上角为原点
+ * @param paint 在离屏 ctx 上画效果。坐标系是**图层局部**（原点 = 包围盒左上角），
+ *              但本函数**不替你平移**；要用底图局部坐标画就自己 translate。
+ *              回调里的变换会被 save/restore 包住（见下），不会泄到合成步。
  */
 function paintThroughBrushMask(
   ctx: CanvasRenderingContext2D,
@@ -62,7 +64,14 @@ function paintThroughBrushMask(
   layer.height = h;
   const lctx = layer.getContext("2d");
   if (!lctx) return;
+  // ❌ 必须 save/restore 包住回调：回调里的 translate 会一直生效到下面那句
+  // `lctx.drawImage(mask, 0, 0)`——遮罩被跟着平移出图层之外，destination-in
+  // 于是把刚画好的效果**整块擦掉**。模糊涂抹用了看不到任何效果就是这个
+  // （模糊回调要 translate 回底图坐标取样，而马赛克的 paintMosaic 不 translate——
+  // 所以同一份代码里马赛克正常、模糊全没）。
+  lctx.save();
   paint(lctx, w, h);
+  lctx.restore();
 
   // 遮罩：同尺寸画布上描笔刷路径，再用 destination-in 只留笔刷覆盖到的像素。
   // 直接在 lctx 上用 clip 不行：canvas 没有“把描边转成路径”的 API，

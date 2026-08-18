@@ -20,6 +20,8 @@ import {
 export function LongShotStatus() {
   const [p, setP] = useState<LongShotProgress>({ frames: 0, height: 0, thumb: null });
   const [pending, setPending] = useState<LongShotControl | null>(null);
+  // 滚动模式：auto = 软件自动滚动；manual = 用户自己滚、点「下一张」截帧。
+  const [mode, setMode] = useState<"auto" | "manual">("auto");
 
   useEffect(() => {
     const un = listen<LongShotProgress>(LONGSHOT_PROGRESS, (e) => setP(e.payload));
@@ -29,8 +31,12 @@ export function LongShotStatus() {
   }, []);
 
   const send = (c: LongShotControl) => {
-    if (pending) return;
-    setPending(c);
+    // stop/abort 是终态指令，待执行期间禁用其它按钮（避免重复触发）
+    if ((c === "stop" || c === "abort") && pending) return;
+    if (c === "stop" || c === "abort") setPending(c);
+    if (c === "mode_auto") setMode("auto");
+    if (c === "mode_manual") setMode("manual");
+    // next / mode_* 不置 pending（频繁点击，不应禁用按钮）
     void emit(LONGSHOT_CONTROL, c);
   };
 
@@ -51,9 +57,40 @@ export function LongShotStatus() {
             ? "正在停止，等当前帧完成…"
             : pending === "abort"
               ? "正在放弃…"
-              : "滚动拼接中"}
+              : mode === "manual"
+                ? "手动模式：向下滚动后点「下一张」"
+                : "滚动拼接中"}
         </div>
       </div>
+
+      {/* 滚动模式切换：自动（软件滚动）/ 手动（自己滚、点下一张） */}
+      <div className="ls-mode">
+        <button
+          className={`ls-mbtn${mode === "auto" ? " on" : ""}`}
+          onClick={() => send("mode_auto")}
+          title="软件自动滚动并拼接"
+        >
+          自动
+        </button>
+        <button
+          className={`ls-mbtn${mode === "manual" ? " on" : ""}`}
+          onClick={() => send("mode_manual")}
+          title="自己滚动目标窗口，点「下一张」截帧（适合不响应自动滚动的页面）"
+        >
+          手动
+        </button>
+      </div>
+
+      {mode === "manual" && (
+        <button
+          className="ls-btn next"
+          onClick={() => send("next")}
+          title="我已向下滚动一屏，截这一帧拼上"
+        >
+          下一张
+        </button>
+      )}
+
       <button
         className={`ls-btn stop${pending ? " off" : ""}`}
         onClick={() => send("stop")}

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>⑥ 标注默认工具 · 零步可用（微信式轻预览）</title>
+<style>
+  :root{
+    --bg:#0f172a; --card:rgba(34,41,76,.94); --line:rgba(148,163,184,.18);
+    --indigo:#6366f1; --cyan:#22d3ee; --green:#22c55e; --amber:#f59e0b;
+    --txt:#e2e8f0; --sub:#94a3b8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;padding:28px}
+  h1{font-size:22px;margin:0 0 4px}
+  h2{font-size:16px;margin:26px 0 10px;color:var(--cyan);border-left:3px solid var(--cyan);padding-left:10px}
+  .lead{color:var(--sub);font-size:13px;margin:0 0 18px;line-height:1.7}
+  .principle{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
+  .chip{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:6px 14px;font-size:12px}
+  .chip b{color:var(--indigo)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .panel.before{border-color:rgba(245,158,11,.4)}
+  .panel.after{border-color:rgba(34,197,94,.4)}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:6px;margin-bottom:8px}
+  .tag.b{background:rgba(245,158,11,.18);color:var(--amber)}
+  .tag.a{background:rgba(34,197,94,.18);color:var(--green)}
+  .bar{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0;padding:10px;border-radius:8px;
+    background:rgba(15,23,42,.5)}
+  .t{font-size:11px;padding:5px 9px;border-radius:7px;background:rgba(99,102,241,.12);
+    color:#c7d2fe;border:1px solid transparent}
+  .t.on{background:rgba(99,102,241,.32);border-color:var(--indigo);color:#fff;box-shadow:0 0 0 2px rgba(99,102,241,.25)}
+  .t.fav{background:rgba(34,197,94,.16);border-color:rgba(34,197,94,.5);color:#bbf7d0}
+  .t.fav.on{background:rgba(34,197,94,.3)}
+  code{background:rgba(99,102,241,.14);color:#c7d2fe;padding:1px 6px;border-radius:5px;font-size:12px}
+  .note{font-size:12px;color:var(--sub);line-height:1.7;margin-top:6px}
+  .opt{background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.25);border-radius:10px;
+    padding:12px 14px;font-size:12px;line-height:1.7;margin-top:12px}
+  .opt b{color:var(--indigo)}
+  ul{margin:6px 0;padding-left:18px;font-size:13px;line-height:1.75}
+  li{margin:3px 0}
+</style>
+</head>
+<body>
+<h1>⑥ 标注默认工具 · 零步可用</h1>
+<p class="lead">微信思维映射：<b>P1 预览即默认</b>（进标注态工具已选好、样式先预览，零步可画）+ <b>P3 非模态</b>（属性条跟随，不弹新层）。
+对标微信/QQ：进标注态不用先想"点哪个工具"，最高频的已经待命。</p>
+
+<div class="principle">
+  <span class="chip"><b>P1</b> 工具先选好：进标注态默认工具已就绪，不用先点一下</span>
+  <span class="chip"><b>P3</b> 样式先预览：属性条（颜色/粗细）随工具即时可见，不挡图</span>
+  <span class="chip"><b>闭环</b> 与工具栏折叠方案联动：高频工具在主行 fav 高亮</span>
+</div>
+
+<h2>现状（已读真实代码）</h2>
+<ul>
+  <li><code>tool</code> 默认 <code>"rect"</code>（<code>ScreenshotOverlay.tsx:118</code>）——进标注态默认是矩形。</li>
+  <li>用户明确说过"<b>马赛克用得最多</b>"，但马赛克是覆盖性工具，进标注态需先点一下才选中。</li>
+  <li>工具栏选中态渲染已就绪（<code>AnnotToolbar.tsx:214</code> <code>tool === t.id ? " on"</code>），仅差"默认预选"。</li>
+</ul>
+
+<h2>两种落地（推荐 A）</h2>
+<div class="grid">
+  <div class="panel before">
+    <span class="tag b">改前</span>
+    <h3>进标注态 = 默认矩形，无高频提示</h3>
+    <div class="bar">
+      <span class="t on">矩形</span><span class="t">椭圆</span><span class="t">箭头</span>
+      <span class="t">画笔</span><span class="t">高亮</span><span class="t">马赛克</span>
+      <span class="t">文字</span><span class="t">序号</span><span class="t">模糊</span><span class="t">橡皮</span>
+    </div>
+    <p class="note">马赛克虽常用，却和别的无区别；想打码要先点一下。</p>
+  </div>
+  <div class="panel after">
+    <span class="tag a">改后（方案 A）</span>
+    <h3>默认矩形 + 高频工具 fav 预高亮（可配置）</h3>
+    <div class="bar">
+      <span class="t on">矩形</span><span class="t">椭圆</span><span class="t">箭头</span>
+      <span class="t">画笔</span><span class="t">高亮</span><span class="t fav">马赛克</span>
+      <span class="t">文字</span><span class="t">序号</span><span class="t">模糊</span><span class="t">橡皮</span>
+    </div>
+    <p class="note">默认工具预选（默认矩形，无损）；最高频的"马赛克"在主行 fav 绿描边提示；设置里可改默认工具 / 记忆上次。</p>
+  </div>
+</div>
+
+<div class="opt">
+<b>方案选择</b><br>
+• <b>方案 A（推荐）</b>：默认保持 <b>矩形</b>（无损、通用、微信/QQ 同款默认），把"马赛克"在主行做 <b>fav 亮绿描边</b> 作为高频提示；设置项 <code>default_annot_tool</code> 支持「矩形 / 马赛克 / 上次使用的工具」三选一。零步可画 + 误触成本低（默认不覆盖）。<br>
+• <b>方案 B</b>：默认直接选中马赛克。⚠️ 马赛克是覆盖性的——进标注态一点就盖住内容，误触成本高，<b>不推荐</b>。<br>
+• 两方案都复用现有 <code>" on"</code> 选中态与属性条，不新增浮层（守 P3）。
+</div>
+
+<h2>实现要点（真实代码位置）</h2>
+<ul>
+  <li><code>ScreenshotOverlay.tsx:118</code> <code>useState&lt;ToolId&gt;("rect")</code> → 改为读取设置 <code>default_annot_tool</code>（默认 <code>"rect"</code>，可选 <code>"last"</code> 记忆上次使用的工具）。</li>
+  <li>加 <code>appStore</code> 设置项 <code>default_annot_tool</code>（<code>GeneralTab.tsx</code> 加一行下拉），与 <code>auto_frame_window</code> 同层管理。</li>
+  <li>工具栏 <code>TOOLS</code> 给马赛克加 <code>fav</code> 标记（<code>tools.tsx</code>），<code>AnnotToolbar.tsx:211</code> 渲染时 <code>fav</code> 类加绿色描边样式（<code>screenshot.css</code>）。</li>
+  <li>「记忆上次」：在 <code>onSelectTool</code>（<code>:1124</code>）把当前 <code>tool</code> 写入设置（仅当选项为 <code>last</code> 时生效）。</li>
+</ul>
+
+<div class="note" style="margin-top:14px">
+<b>与之前工具栏方案联动</b>：⑥ 的 fav 高亮 + 可配置默认工具，正好和之前"单列分组 + 折叠第二行"设计稿闭环——折叠后主行放高频，fav 描边进一步降低"找工具"成本。两者改动互不冲突，可独立落地。
+</div>
+</body>
+</html>

@@ -15,6 +15,7 @@ import {
   framesAlike,
   globalDiff,
   overlapRowsFromData,
+  stickyTopFromData,
   GLOBAL_DIFF_T,
 } from "@/lib/screenshot/stitch";
 
@@ -24,6 +25,33 @@ const SH = 30;
 /** 第 row 行的颜色——三通道各不相同，专门用来暴露「拿错通道」 */
 function rowColor(row: number): [number, number, number] {
   return [row * 8, row * 8 + 3, row * 8 + 7];
+}
+
+/**
+ * 造一张**带横向纹理**的图（同一行内颜色随列变化）。
+ *
+ * 为什么吸顶带的用例必须用它：`stickyTopFromData` 要求带内有结构——
+ * 纯色带（空白 / 纯背景）在两帧里当然逐行一致，把它当吸顶带剔掉会让长图
+ * **静默丢内容**，所以判定会（正确地）拒绝横向纯色的带。
+ * 真实的吸顶导航栏里是有内容的，这里的条纹就是在模拟那个。
+ *
+ * ⚠️ 条纹周期取 4 而不是 2：判定按 `col += 2` 采样，周期 2 的条纹在偶数列上
+ * 取值恒定，varSum 会是 0 —— 等于又造了一条“纯色带”。
+ */
+function makeTextured(colorOf: (row: number) => [number, number, number]): Uint8ClampedArray {
+  const d = new Uint8ClampedArray(W * SH * 4);
+  for (let row = 0; row < SH; row++) {
+    const [r, g, b] = colorOf(row);
+    for (let col = 0; col < W; col++) {
+      const i = (row * W + col) * 4;
+      const t = col % 4 < 2 ? 0 : 120;
+      d[i] = Math.min(255, r + t);
+      d[i + 1] = Math.min(255, g + t);
+      d[i + 2] = Math.min(255, b + t);
+      d[i + 3] = 255;
+    }
+  }
+  return d;
 }
 
 /** 按「行 → 颜色」函数造一张 W×SH 的 RGBA 图 */
@@ -84,6 +112,57 @@ describe("overlapRowsFromData", () => {
     const got = overlapRowsFromData(prev, next, W, SH, 1);
     // 允许返回 0（未找到），但绝不能返回一个“看上去像对”的小值造成错位拼接
     expect(got === 0 || got >= 18).toBe(true);
+  });
+
+  it("topSkip=0 时吸顶无关，重叠计算不受参数影响（回归）", () => {
+    const prev = makeFrame(rowColor);
+    const next = scrolled(15);
+    expect(overlapRowsFromData(prev, next, W, SH, 1, 0)).toBe(15);
+  });
+
+  it("带吸顶带时：stickyTopFromData 识别带高，topSkip=带高 后重叠从带下算", () => {
+    const STICKY = 5;
+    const SCROLL = 15;
+    // 用带纹理的图：吸顶栏必须“有内容”才算吸顶（见 makeTextured 的注释）
+    const prev = makeTextured(rowColor);
+    // next：顶部 STICKY 行与 prev 相同（吸顶），其下内容相对 prev 偏移 SCROLL
+    const next = makeTextured((row) => {
+      if (row < STICKY) return rowColor(row);
+      const src = row - STICKY + SCROLL;
+      return src < SH ? rowColor(src) : [200 + row, 130 + row, 60 + row];
+    });
+    const sticky = stickyTopFromData(prev, next, W, SH, 1);
+    expect(sticky).toBe(STICKY);
+    // 吸顶带下内容相对 prev 偏移 SCROLL，topSkip=STICKY 后应得到 SCROLL（而非把吸顶带当重叠）
+    expect(overlapRowsFromData(prev, next, W, SH, 1, sticky)).toBe(SCROLL);
+  });
+
+  /**
+   * 回归：吸顶带判定必须逐行连续、且带内要有结构。
+   *
+   * 旧实现取「整带均值」并从最大 k 往下找首个命中，两点都偏向报大：
+   * 均值会让一两行差得很远的行被其余几十行摊薄，而纯色带（空白/纯背景）在两帧里
+   * 天然逐行一致。sticky 报大多少，长图就静默少拼多少内容（seam = sticky + overlap），
+   * 对拼接工具来说这是最糟的失败模式。
+   */
+  it("回归：横向纯色的顶部带不算吸顶（否则会静默丢内容）", () => {
+    const STICKY = 5;
+    const SCROLL = 15;
+    // makeFrame 每行横向纯色 —— 顶部 5 行两帧一致，但那是“空白”，不是吸顶导航
+    const prev = makeFrame(rowColor);
+    const next = makeFrame((row) => {
+      if (row < STICKY) return rowColor(row);
+      const src = row - STICKY + SCROLL;
+      return src < SH ? rowColor(src) : [200 + row, 130 + row, 60 + row];
+    });
+    expect(stickyTopFromData(prev, next, W, SH, 1)).toBe(0);
+  });
+
+  it("回归：第一行就对不上时吸顶带为 0（逐行连续，不靠整带均值）", () => {
+    const prev = makeTextured(rowColor);
+    // 顶部第 0 行就完全不同，后面若干行相同 —— 均值判定可能被摊薄成“命中”
+    const next = makeTextured((row) => (row === 0 ? [250, 5, 250] : rowColor(row)));
+    expect(stickyTopFromData(prev, next, W, SH, 1)).toBe(0);
   });
 });
 

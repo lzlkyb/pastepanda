@@ -26,7 +26,7 @@ const S = {
 export const TOOLS: {
   id: ToolId;
   label: string;
-  key: string;
+  key?: string;
   icon: React.ReactNode;
   /** 自定义悬停提示；不给就用 `label（按 key）`。
    *  行为比名字复杂的工具才需要它（目前只有橡皮擦）。 */
@@ -108,9 +108,45 @@ export const TOOLS: {
     ),
   },
   {
+    id: "blur",
+    label: "模糊",
+    key: "7",
+    // 水滴 = 模糊/柔化的行业通用符号（Photoshop 同款）；
+    // 旧实现是三个半透明圆点，与"模糊"没有任何认知关联
+    icon: (
+      <svg viewBox="0 0 16 16">
+        <path d="M8 2.2C8 2.2 3.8 7 3.8 9.6a4.2 4.2 0 0 0 8.4 0C12.2 7 8 2.2 8 2.2z" {...S} />
+        <path d="M6 9.8a2 2 0 0 0 2 2" {...S} opacity="0.6" />
+      </svg>
+    ),
+  },
+  {
+    id: "automask",
+    // 无数字快捷键（主栏已占满 1-9 / 0）；提示里只说标签。
+    label: "自动打码",
+    // 图标 = 一个区域框 + 中间一条实心红条（遮蔽/涂掉），直观表达“自动把隐私涂掉”。
+    icon: (
+      <svg viewBox="0 0 16 16">
+        <rect x="2.6" y="3.2" width="10.8" height="9.6" rx="1.4" {...S} />
+        <rect
+          x="4.4"
+          y="6.6"
+          width="7.2"
+          height="2.6"
+          rx="0.6"
+          fill="currentColor"
+          stroke="none"
+          opacity="0.85"
+        />
+      </svg>
+    ),
+    // tip 手写：它是动作型按钮，行为不同于其他绘制工具，必须说清“一键 / 可撤销 / OCR 驱动”。
+    tip: "自动打码·一键遮蔽图中手机/身份证/邮箱/银行卡等隐私文字（可撤销，支持 OCR 后）",
+  },
+  {
     id: "text",
     label: "文字",
-    key: "7",
+    key: "8",
     // 加上底部衬线，否则两笔的 T 在 16px 下像个十字
     icon: (
       <svg viewBox="0 0 16 16">
@@ -123,26 +159,13 @@ export const TOOLS: {
   {
     id: "number",
     label: "序号",
-    key: "8",
+    key: "9",
     // 数字 1 用 path 手画，不依赖系统字体（旧实现内嵌 <text>，不同 DPI 下对不齐）
     icon: (
       <svg viewBox="0 0 16 16">
         <circle cx="8" cy="8" r="5.6" {...S} />
         <path d="M6.9 6.6L8.4 5.6v5" {...S} />
         <path d="M6.9 10.6h3" {...S} />
-      </svg>
-    ),
-  },
-  {
-    id: "blur",
-    label: "模糊",
-    key: "9",
-    // 水滴 = 模糊/柔化的行业通用符号（Photoshop 同款）；
-    // 旧实现是三个半透明圆点，与"模糊"没有任何认知关联
-    icon: (
-      <svg viewBox="0 0 16 16">
-        <path d="M8 2.2C8 2.2 3.8 7 3.8 9.6a4.2 4.2 0 0 0 8.4 0C12.2 7 8 2.2 8 2.2z" {...S} />
-        <path d="M6 9.8a2 2 0 0 0 2 2" {...S} opacity="0.6" />
       </svg>
     ),
   },
@@ -170,6 +193,12 @@ export const TOOLS: {
   },
 ];
 
+/** key → 工具 id 查表（快捷键用）。按 key 查、不按数组下标 ——
+ *  重排工具时下标跟着动，按键却被用户记住，不能跟着错位
+ *  （旧实现 TOOLS[Number(e.key)-1] 一重排就静默按错工具）。 */
+export const TOOL_BY_KEY: Partial<Record<string, ToolId>> = Object.fromEntries(
+  TOOLS.filter((t) => t.key).map((t) => [t.key as string, t.id]),
+);
 /** 吸管取色。不在主栏，而是放在属性条的颜色组里 —— 它的作用就是选颜色。 */
 export const PICKER_ICON = (
   <svg viewBox="0 0 16 16">

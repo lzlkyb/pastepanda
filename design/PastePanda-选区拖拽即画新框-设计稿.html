@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PastePanda 选区拖拽即画新框 · P1.1 设计稿</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#ffffff; --line:#e3e6ea; --ink:#1f2430; --mut:#6b7280;
+    --blue:#185FA5; --bluebg:#E6F1FB; --teal:#0F6E56; --tealbg:#E1F5EE;
+    --red:#A32D2D; --redbg:#FCEBEB; --grn:#3B6D11; --grnbg:#EAF3DE;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);line-height:1.6;padding:32px 20px}
+  .wrap{max-width:920px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 4px}
+  .sub{color:var(--mut);font-size:13px;margin:0 0 24px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:0 0 18px}
+  h2{font-size:15px;margin:0 0 12px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .col{border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .col.before{border-color:#f0c4c4;background:var(--redbg)}
+  .col.after{border-color:#bfe2cf;background:var(--grnbg)}
+  .tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;margin-bottom:8px}
+  .tag.b{background:#f7c1c1;color:var(--red)}
+  .tag.a{background:#c0dd97;color:var(--grn)}
+  ul{margin:8px 0 0;padding-left:18px;font-size:13px}
+  li{margin:4px 0}
+  code{background:#eef1f4;padding:1px 6px;border-radius:5px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .loc{font-size:12px;color:var(--blue);background:var(--bluebg);border-radius:6px;padding:6px 10px;display:inline-block;margin:6px 0}
+  .flow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px}
+  .step{background:#eef1f4;border-radius:8px;padding:8px 12px}
+  .step.hi{background:var(--tealbg);border:1px solid #9fe1cb}
+  .arr{color:var(--mut)}
+  .note{font-size:12px;color:var(--mut);margin-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>P1.1 选区拖拽即画新框</h1>
+  <p class="sub">对标微信截图：默认吸附窗口已就绪，本步只修正"在吸附窗口内按下=平移选区"这一处偏差，使任意起点拖拽都画新矩形。</p>
+
+  <div class="card">
+    <h2>交互对比</h2>
+    <div class="grid">
+      <div class="col before">
+        <span class="tag b">改前（现状偏差）</span>
+        <ul>
+          <li>按下点在<strong>当前选区内</strong> → 进入「平移选区」，拖拽=移动整个窗口选区</li>
+          <li>只有按下点在选区<strong>外</strong> → 才画新矩形</li>
+          <li>后果：吸附窗口铺满大半屏时，想框一小块却变成移动窗口</li>
+        </ul>
+      </div>
+      <div class="col after">
+        <span class="tag a">改后（微信同款）</span>
+        <ul>
+          <li>select 态<strong>按下一律画新矩形</strong>（任意起点，含吸附窗口内）</li>
+          <li>位移 &lt; 4px（单击）→ 提交当前吸附窗口进标注</li>
+          <li>位移 ≥ 4px（拖拽）→ 提交新矩形进标注</li>
+          <li>平移改为：选区<strong>确认后</strong>用八向手柄拖移</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>期望交互流</h2>
+    <div class="flow">
+      <span class="step">进入·全暗</span><span class="arr">→</span>
+      <span class="step hi">hover 吸附窗口（蓝框）</span><span class="arr">→</span>
+      <span class="step">按住拖拽（任意起点画新框）</span><span class="arr">→</span>
+      <span class="step hi">松开·提交进标注</span>
+    </div>
+    <p class="note">落在吸附窗口内直接拖 = 画新框（不再平移）；单击窗口 = 采纳该窗口；Esc = 回吸附；双击空白 = 全屏。</p>
+  </div>
+
+  <div class="card">
+    <h2>改动位置（src/components/screenshot/ScreenshotOverlay.tsx）</h2>
+    <p class="loc">onSelectMouseDown · ~2094</p>
+    <ul>
+      <li>删除"按在选区内 → moveSelRef"分支；改为一律 <code>dragRef.current = {startX,startY,curX,curY}</code> + <code>setSelDraft</code></li>
+    </ul>
+    <p class="loc">onSelectMouseMove · ~2109</p>
+    <ul>
+      <li>删除 <code>if (moveSelRef.current)</code> 平移分支（死代码）</li>
+      <li>吸附守卫 <code>if (dragRef.current || moveSelRef.current)</code> → <code>if (dragRef.current)</code></li>
+    </ul>
+    <p class="loc">onSelectMouseUp · ~2181</p>
+    <ul>
+      <li>删除 moveSel 分支；新逻辑：w/h≥4 提交新矩形；否则若 <code>selRef.current</code> 存在则提交吸附窗口进标注，无选区则保持 hover</li>
+    </ul>
+    <p class="loc">ref 定义 · ~211</p>
+    <ul>
+      <li>移除已无引用的 <code>moveSelRef</code></li>
+    </ul>
+    <p class="note">无 Rust 改动；后端 snap_window_at / capture_region 不动。改完跑 <code>npx tsc --noEmit</code> 验证。</p>
+  </div>
+
+  <div class="card">
+    <h2>验收</h2>
+    <ul>
+      <li>在吸附窗口<strong>内部</strong>按下并拖拽 → 画出新矩形（非平移窗口）</li>
+      <li>在窗口内<strong>单击</strong> → 直接进标注（采纳该窗口）</li>
+      <li>从空白处拖拽 → 画新矩形（原行为不变）</li>
+      <li>Esc 回 select → 重新 hover 吸附</li>
+      <li>多选/标注后 Shift 多选、八向手柄拖移仍正常</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

@@ -23,15 +23,25 @@ pub struct RecognitionResult {
     pub confidence: f32,
     /// Confidence score for each character
     pub char_scores: Vec<(char, f32)>,
+    /// Normalized horizontal center of each character within the text-line image,
+    /// in `[0, 1]` (left→right). Derived from the CTC time-step `t` as
+    /// `(t + 0.5) / seq_len`. Used to recover per-character boxes without retraining.
+    pub char_xn: Vec<f32>,
 }
 
 impl RecognitionResult {
     /// Create a new recognition result
-    pub fn new(text: String, confidence: f32, char_scores: Vec<(char, f32)>) -> Self {
+    pub fn new(
+        text: String,
+        confidence: f32,
+        char_scores: Vec<(char, f32)>,
+        char_xn: Vec<f32>,
+    ) -> Self {
         Self {
             text,
             confidence,
             char_scores,
+            char_xn,
         }
     }
 
@@ -243,8 +253,8 @@ impl RecModel {
         // Inference (using dynamic shape)
         let output = self.engine.run_dynamic(input.view().into_dyn())?;
 
-        // Decode
-        self.decode_output_view(output.view())
+        // Decode（单图路径不填充，比例恒为 1.0）
+        self.decode_output_view(output.view(), 1.0)
     }
 
     /// Recognize a single image, return text only
@@ -328,7 +338,7 @@ impl RecModel {
         let batch_size = self.options.batch_size.max(1);
 
         for chunk in boxes.chunks(batch_size) {
-            let batch_input = self.preprocess_regions_batch(&source, chunk)?;
+            let (batch_input, valid_ratios) = self.preprocess_regions_batch(&source, chunk)?;
             let batch_output = self.engine.run_dynamic(batch_input.view().into_dyn())?;
 
             let shape = batch_output.shape();
@@ -341,7 +351,9 @@ impl RecModel {
 
             for i in 0..shape[0] {
                 let sample_output = batch_output.index_axis(Axis(0), i).into_dyn();
-                results.push(self.decode_output_view(sample_output)?);
+                // 批内每行自己的宽占批张量宽的比例（短行被右侧补零）。
+                let ratio = valid_ratios.get(i).copied().unwrap_or(1.0);
+                results.push(self.decode_output_view(sample_output, ratio)?);
             }
         }
 
@@ -361,26 +373,31 @@ impl RecModel {
         boxes
             .par_iter()
             .map(|text_box| {
-                let input =
+                // 每次只一行 → max_width 就是它自己的宽，无填充，但仍照实取比例（不写死 1.0）。
+                let (input, valid_ratios) =
                     self.preprocess_regions_batch(&source, std::slice::from_ref(text_box))?;
                 let output = self.engine.run_dynamic(input.view().into_dyn())?;
-                self.decode_output_view(output.view())
+                self.decode_output_view(output.view(), valid_ratios.first().copied().unwrap_or(1.0))
             })
             .collect()
     }
 
+    /// Render each text-line region into one batch tensor.
+    ///
+    /// Returns `(tensor, valid_ratios)` where `valid_ratios[i]` is line `i`'s own
+    /// rendered width divided by the batch tensor width. Shorter lines are right-padded
+    /// with zeros, so this ratio is what `decode_output_view` needs to map CTC time
+    /// steps back onto the line itself instead of onto the padded canvas.
     fn preprocess_regions_batch(
         &self,
         source: &RgbImage,
         boxes: &[TextBox],
-    ) -> OcrResult<Array4<f32>> {
+    ) -> OcrResult<(Array4<f32>, Vec<f32>)> {
         if boxes.is_empty() {
-            return Ok(Array4::<f32>::zeros((
-                0,
-                3,
-                self.options.target_height as usize,
-                0,
-            )));
+            return Ok((
+                Array4::<f32>::zeros((0, 3, self.options.target_height as usize, 0)),
+                Vec::new(),
+            ));
         }
 
         if self.options.target_height == 0 {
@@ -441,7 +458,13 @@ impl RecModel {
             );
         }
 
-        Ok(batch)
+        // 每行自己的宽 / 批张量宽：短行被右侧补零，解码时要拿它还原 x 比例。
+        let valid_ratios = target_widths
+            .iter()
+            .map(|&w| (w as f32 / max_width as f32).clamp(f32::EPSILON, 1.0))
+            .collect();
+
+        Ok((batch, valid_ratios))
     }
 
     /// Internal batch recognition
@@ -465,6 +488,23 @@ impl RecModel {
             &self.normalize_params,
         )?;
 
+        // 每张图自己的缩放后宽 / 批张量宽（与 preprocess_batch_for_rec 里同一套算法）。
+        // 短图被右侧补零，解码时要拿它把 char_xn 从“填充后画布”还原到“这张图自己”。
+        use image::GenericImageView as _; // dimensions() 在这个 trait 上
+        let widths: Vec<u32> = images
+            .iter()
+            .map(|img| {
+                let (w, h) = img.dimensions();
+                let scale = self.options.target_height as f64 / h.max(1) as f64;
+                ((w as f64 * scale).round() as u32).max(1)
+            })
+            .collect();
+        let max_w = widths.iter().copied().max().unwrap_or(1);
+        let valid_ratios: Vec<f32> = widths
+            .iter()
+            .map(|&w| (w as f32 / max_w as f32).clamp(f32::EPSILON, 1.0))
+            .collect();
+
         // Batch inference
         let batch_output = self.engine.run_dynamic(batch_input.view().into_dyn())?;
 
@@ -482,14 +522,28 @@ impl RecModel {
 
         for i in 0..batch_size {
             let sample_output = batch_output.index_axis(Axis(0), i).into_dyn();
-            let result = self.decode_output_view(sample_output)?;
+            let ratio = valid_ratios.get(i).copied().unwrap_or(1.0);
+            let result = self.decode_output_view(sample_output, ratio)?;
             results.push(result);
         }
 
         Ok(results)
     }
 
-    fn decode_output_view(&self, output: ArrayViewD<'_, f32>) -> OcrResult<RecognitionResult> {
+    /// Decode one sample's CTC output.
+    ///
+    /// `valid_ratio` = this line's own rendered width / the batch tensor width.
+    /// Batch preprocessing right-pads every shorter line with zeros up to the batch's
+    /// widest line, so the CTC time axis spans the **padded** width. Without dividing
+    /// by `valid_ratio`, char_xn of a shorter-than-widest line comes out compressed
+    /// toward the left of its own bbox (and, because the last char is extended to 1.0,
+    /// its box balloons to fill the rest of the line).
+    /// Pass `1.0` for un-padded single-image paths.
+    fn decode_output_view(
+        &self,
+        output: ArrayViewD<'_, f32>,
+        valid_ratio: f32,
+    ) -> OcrResult<RecognitionResult> {
         let shape = output.shape();
         let output_data = match output.as_slice_memory_order() {
             Some(slice) => Cow::Borrowed(slice),
@@ -516,6 +570,7 @@ impl RecModel {
 
         // CTC decoding
         let mut char_scores = Vec::with_capacity(seq_len.min(32));
+        let mut char_xn = Vec::with_capacity(seq_len.min(32));
         let mut text = String::new();
         let mut score_sum = 0.0f32;
         let mut prev_idx = 0usize;
@@ -554,6 +609,12 @@ impl RecModel {
                     text.push(ch);
                     score_sum += score;
                     char_scores.push((ch, score));
+                    // 记录该字符在文本行序列中的归一化横向位置（CTC 时间步 → 行内 x 比例）。
+                    // 除以 valid_ratio：把「填充后画布内的比例」还原为「这一行自己内的比例」，
+                    // 否则比同批最长行短的行，字框会整体左压、末字框膨胀（见本函数文档）。
+                    // 后续用 char_boxes_from_rec 反投影回原图即可得到逐字符 bbox。
+                    let xn = (t as f32 + 0.5) / seq_len as f32 / valid_ratio.max(f32::EPSILON);
+                    char_xn.push(xn.min(1.0));
                 }
             }
 
@@ -567,13 +628,69 @@ impl RecModel {
             score_sum / char_scores.len() as f32
         };
 
-        Ok(RecognitionResult::new(text, confidence, char_scores))
+        Ok(RecognitionResult::new(text, confidence, char_scores, char_xn))
     }
 
     /// Check if character is punctuation
     fn is_punctuation(ch: char) -> bool {
         PUNCTUATIONS.contains(&ch)
     }
+}
+
+/// Recover per-character axis-aligned boxes in the *source image* pixel space.
+///
+/// `char_xn[i]` ∈ `[0, 1]` is the normalized horizontal center of character `i` within
+/// the text-line image (see [`RecognitionResult::char_xn`]). The boundary between two
+/// adjacent characters is taken as the midpoint of their centers; the first/last
+/// character extends to `0.0`/`1.0` of the line. The line's 4 corners come from the
+/// detection `TextBox` (rect or quad), so curved/skewed text is handled by linear
+/// interpolation along the top and bottom edges. Vertical extent is the full line
+/// height (the rec model does not know glyph height — same convention as WeChat/QQ).
+///
+/// Returns `Vec<(x, y, width, height)>` in physical pixels, aligned with
+/// [`OcrResult_`]'s `bbox` coordinates (i.e. the same space the caller renders in).
+pub fn char_boxes_from_rec(
+    char_xn: &[f32],
+    bbox: &TextBox,
+    img_w: u32,
+    img_h: u32,
+) -> Vec<(f32, f32, f32, f32)> {
+    let Some(corners) = source_points_for_text_box(bbox, img_w, img_h) else {
+        return Vec::new();
+    };
+    let n = char_xn.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    // corners order: [top-left, top-right, bottom-right, bottom-left]
+    let (tl, tr, br, bl) = (corners[0], corners[1], corners[2], corners[3]);
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        let left = if i == 0 {
+            0.0
+        } else {
+            (char_xn[i - 1] + char_xn[i]) / 2.0
+        };
+        let right = if i == n - 1 {
+            1.0
+        } else {
+            (char_xn[i] + char_xn[i + 1]) / 2.0
+        };
+        let top_l = lerp_pt(tl, tr, left);
+        let top_r = lerp_pt(tl, tr, right);
+        let bot_l = lerp_pt(bl, br, left);
+        let bot_r = lerp_pt(bl, br, right);
+        let x = top_l.0.min(bot_l.0);
+        let y = top_l.1.min(top_r.1);
+        let w = top_r.0.max(bot_r.0) - x;
+        let h = bot_l.1.max(bot_r.1) - y;
+        out.push((x, y, w, h));
+    }
+    out
+}
+
+fn lerp_pt(a: (f32, f32), b: (f32, f32), t: f32) -> (f32, f32) {
+    (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t)
 }
 
 fn region_target_width(text_box: &TextBox, target_height: u32) -> u32 {
@@ -903,7 +1020,7 @@ mod tests {
             ('l', 0.95),
             ('o', 0.94),
         ];
-        let result = RecognitionResult::new("Hello".to_string(), 0.95, char_scores.clone());
+        let result = RecognitionResult::new("Hello".to_string(), 0.95, char_scores.clone(), vec![]);
 
         assert_eq!(result.text, "Hello");
         assert_eq!(result.confidence, 0.95);
@@ -924,6 +1041,7 @@ mod tests {
                 ('l', 0.95),
                 ('o', 0.94),
             ],
+            vec![],
         );
 
         assert!(result.is_valid(0.9));
@@ -934,7 +1052,7 @@ mod tests {
 
     #[test]
     fn test_recognition_result_empty() {
-        let result = RecognitionResult::new(String::new(), 0.0, vec![]);
+        let result = RecognitionResult::new(String::new(), 0.0, vec![], vec![]);
 
         assert!(result.text.is_empty());
         assert_eq!(result.confidence, 0.0);

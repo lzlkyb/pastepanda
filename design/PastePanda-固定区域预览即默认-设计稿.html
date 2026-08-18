@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>固定区域「预览即默认」设计稿</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #11151f; color: #e6edf7; font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; padding: 28px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #9fb0c8; font-size: 13px; margin-bottom: 22px; }
+  .row { display: flex; gap: 24px; flex-wrap: wrap; }
+  .card { background: rgba(34,41,76,.94); border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 18px; width: 360px; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; }
+  .card h2 .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; margin-left: 8px; vertical-align: middle; }
+  .tag.before { background: #3a2b2b; color: #f0a0a0; }
+  .tag.after { background: #1f3a2b; color: #8fe0b0; }
+  .stage { position: relative; height: 250px; border-radius: 10px; background:
+      linear-gradient(135deg, #1b2030, #232b40); overflow: hidden; border: 1px solid rgba(255,255,255,.06); }
+  .win { position: absolute; left: 24px; top: 30px; width: 230px; height: 120px; border-radius: 8px;
+         background: rgba(120,140,200,.18); border: 1px solid rgba(160,180,255,.4); }
+  .sel { position: absolute; left: 40px; top: 70px; width: 200px; height: 60px; border: 2px solid #4f9eff;
+         border-radius: 4px; box-shadow: 0 0 0 9999px rgba(8,10,16,.55); }
+  .pinbtn { position: absolute; right: 16px; bottom: 16px; font-size: 11px; padding: 5px 10px; border-radius: 8px;
+            background: rgba(124,108,255,.22); border: 1px solid rgba(124,108,255,.5); color: #cdbcff; }
+  .pinpreview { position: absolute; left: 40px; top: 70px; width: 200px; border: 2px dashed #7c6cff; border-radius: 4px;
+                background: rgba(124,108,255,.10); }
+  .pinpreview .more { position: absolute; left: 0; right: 0; top: 60px; bottom: 0;
+                      background: repeating-linear-gradient(45deg, rgba(124,108,255,.10) 0 8px, rgba(124,108,255,.04) 8px 16px); }
+  .lbl { position: absolute; left: 46px; top: 134px; font-size: 11px; background: rgba(124,108,255,.9); color: #fff;
+         padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
+  .hint { margin-top: 12px; font-size: 12px; color: #9fb0c8; line-height: 1.7; }
+  .hint b { color: #cfe; }
+  .kbd { background: rgba(255,255,255,.12); border-radius: 4px; padding: 1px 6px; font-size: 11px; }
+  ul { margin: 8px 0 0; padding-left: 18px; font-size: 12px; color: #c7d2e6; line-height: 1.8; }
+  .note { margin-top: 22px; font-size: 12px; color: #8aa; background: rgba(34,41,76,.6); border-left: 3px solid #4f46e5; padding: 10px 14px; border-radius: 0 8px 8px 0; }
+  code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; font-size: 11px; color: #ffd9a0; }
+</style>
+</head>
+<body>
+<h1>固定区域「预览即默认」— 微信思维落地</h1>
+<div class="sub">P1 默认恢复 · P2 拖拽重建 · P4 Esc 重置。微信/QQ「固定区域」同款心智。</div>
+
+<div class="row">
+  <div class="card">
+    <h2>改前 <span class="tag before">现状</span></h2>
+    <div class="stage">
+      <div class="win"></div>
+      <div class="sel"></div>
+    </div>
+    <div class="hint">
+      「记住为固定区域」只在<b>结果态面板</b>（截完图之后）才能点。<br>
+      下次进截图虽会自动恢复该区域（V5 已实现，<code>ScreenshotOverlay.tsx:364</code>），但<b>直接跳进标注态、无任何提示</b>，用户常误以为选区被锁死、不知道能改。
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>改后 <span class="tag after">预览即默认</span></h2>
+    <div class="stage">
+      <div class="win"></div>
+      <div class="pinpreview"><div class="more"></div></div>
+      <div class="lbl">固定区域 · 拖可改 · Esc 重置</div>
+      <div class="pinbtn">📌 钉为固定区域</div>
+    </div>
+    <div class="hint">
+      ① select 态右下角新增轻按钮：<b>📌 钉当前选区</b>（已有固定区域时变「✕ 清除」），<b>截图过程中即可记忆</b>，不必等结果面板。<br>
+      ② 恢复时改用<b>虚线紫框预览 + 标签</b>，不再静默进标注；<b>拖可改区域、<span class="kbd">Esc</span> 回吸附</b>。<br>
+      ③ 单击预览 = 采纳进标注（等同现 V5 行为）。
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <b>实现要点（基于真实代码）</b>
+  <ul>
+    <li>选区态加轻量浮层按钮（与长截图预览同源，截图窗不隐藏）：复用已有 <code>saveRegion()</code>（<code>:2028</code>）/ <code>clearRegion()</code>（<code>:2042</code>）与 <code>hasFixedRegion</code> 状态，仅把入口前移到 select 态。</li>
+    <li>恢复逻辑（<code>:364-382</code>）保留「直接进标注」，但渲染前插入紫框预览标签；视觉层用现有 <code>css()=v/dpr</code> 坐标系，新增 <code>.pin-preview</code> 样式。</li>
+    <li>存储不变：仍写 localStorage <code>pp_shot_region</code>，零数据迁移；「清除」即 <code>removeItem</code>。</li>
+    <li>结果态面板「记住为固定区域」按钮（<code>ResultActions.tsx:142</code>）保留作冗余出口，两处共享同一状态。</li>
+  </ul>
+</div>
+</body>
+</html>

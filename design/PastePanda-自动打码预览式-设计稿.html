@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>自动打码「预览式」设计稿</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #11151f; color: #e6edf7; font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; padding: 28px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #9fb0c8; font-size: 13px; margin-bottom: 22px; }
+  .row { display: flex; gap: 24px; flex-wrap: wrap; }
+  .card { background: rgba(34,41,76,.94); border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 18px; width: 360px; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; }
+  .card h2 .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; margin-left: 8px; vertical-align: middle; }
+  .tag.before { background: #3a2b2b; color: #f0a0a0; }
+  .tag.after { background: #1f3a2b; color: #8fe0b0; }
+  .stage { position: relative; height: 250px; border-radius: 10px; background:
+      linear-gradient(135deg, #1b2030, #232b40); overflow: hidden; border: 1px solid rgba(255,255,255,.06); }
+  .shot { position: absolute; left: 30px; top: 28px; width: 220px; height: 150px; border-radius: 6px;
+          background: rgba(150,170,220,.12); border: 1px solid rgba(160,180,255,.3); font-size: 11px; color: #b9c6e0; padding: 8px; line-height: 1.6; }
+  .mosaic { position: absolute; left: 40px; top: 70px; width: 90px; height: 22px; border: 2px solid #7c6cff;
+            border-radius: 3px; background: rgba(124,108,255,.55); }
+  .preview { position: absolute; left: 40px; top: 70px; width: 90px; height: 22px; border: 2px dashed #ff9f43;
+             border-radius: 3px; background: rgba(255,159,67,.18); }
+  .preview.b { left: 150px; top: 120px; width: 80px; height: 20px; }
+  .bar { position: absolute; left: 30px; right: 30px; bottom: 16px; display: flex; gap: 8px; justify-content: center; }
+  .bar .b1 { font-size: 11px; padding: 5px 10px; border-radius: 8px; background: rgba(124,108,255,.25); border: 1px solid rgba(124,108,255,.5); color: #d6ccff; }
+  .bar .b2 { font-size: 11px; padding: 5px 10px; border-radius: 8px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.15); color: #c7d2e6; }
+  .hint { margin-top: 12px; font-size: 12px; color: #9fb0c8; line-height: 1.7; }
+  .hint b { color: #cfe; }
+  .kbd { background: rgba(255,255,255,.12); border-radius: 4px; padding: 1px 6px; font-size: 11px; }
+  ul { margin: 8px 0 0; padding-left: 18px; font-size: 12px; color: #c7d2e6; line-height: 1.8; }
+  .note { margin-top: 22px; font-size: 12px; color: #8aa; background: rgba(34,41,76,.6); border-left: 3px solid #ff9f43; padding: 10px 14px; border-radius: 0 8px 8px 0; }
+  code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; font-size: 11px; color: #ffd9a0; }
+</style>
+</head>
+<body>
+<h1>自动打码「预览式」— 微信思维落地</h1>
+<div class="sub">P3 非模态轻预览 · P2 单击采纳 / 拖拽调范围。把「一键全打」改造成「先预览、再确认」。</div>
+
+<div class="row">
+  <div class="card">
+    <h2>改前 <span class="tag before">现状</span></h2>
+    <div class="stage">
+      <div class="shot">订单 #8821<br>手机号 13800138000<br>收货 北京市朝阳区…<br>金额 ¥199.00</div>
+      <div class="mosaic"></div>
+    </div>
+    <div class="hint">
+      点「自动打码」→ <code>runAutoMask()</code>（<code>ScreenshotOverlay.tsx:1036</code>）OCR 检测后<b>一次性把隐私框全打马赛克</b>。<br>
+      误伤普通文字只能整批 <span class="kbd">Ctrl+Z</span> 撤销，<b>无法逐框取舍</b>，心理负担大。
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>改后 <span class="tag after">预览式</span></h2>
+    <div class="stage">
+      <div class="shot">订单 #8821<br>手机号 13800138000<br>收货 北京市朝阳区…<br>金额 ¥199.00</div>
+      <div class="preview"></div>
+      <div class="preview b"></div>
+      <div class="bar"><div class="b1">✓ 全部确认 2 处</div><div class="b2">放弃</div></div>
+    </div>
+    <div class="hint">
+      检测后先显示<b>橙色虚框轻预览</b>（半透明，不挡底图）。<br>
+      • <b>单击</b>某框 = 确认打码（转马赛克）；再单击已确认框 = 取消。<br>
+      • <b>拖框边</b> = 调整遮蔽范围。<br>
+      • 底部「全部确认 N 处」一步等效原一键；「放弃」全清。
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <b>实现要点（基于真实代码）</b>
+  <ul>
+    <li><code>runAutoMask()</code> 改为：OCR（<code>ensureRegionOcr</code>）+ <code>detectPrivateText</code> 过滤后，不直接 push 马赛克，而是生成<b>预览框数组</b>（新增 annotations 的 <code>pending</code> 态，或独立 <code>maskPreview</code> state）。</li>
+    <li>渲染层：预览框用半透明橙虚框（<code>.mask-preview</code>），与现有标注画布同源坐标系（选区物理像素，<code>css()=v/dpr</code>）。</li>
+    <li>交互：单击预览框切换确认/取消；拖边调范围（复用八向手柄逻辑）；「全部确认」一次性把 pending 转正式 mosaic，<b>整批入一次 undo</b>（沿用现 <code>:1074-1078</code> 的快照逻辑）。</li>
+    <li>性能/零回归：OCR 结果 <code>res.lines[].words</code> 已是物理坐标，外扩 <code>pad=4</code> 逻辑保留；默认不自动打，避免误伤。</li>
+  </ul>
+</div>
+</body>
+</html>

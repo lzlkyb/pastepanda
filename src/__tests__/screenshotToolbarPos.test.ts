@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { layoutToolbar, TB_ATTR_GAP, TB_GAP } from "@/lib/screenshot/toolbarPos";
+import { layoutToolbar, modePillPos, TB_ATTR_GAP, TB_GAP } from "@/lib/screenshot/toolbarPos";
 
 /**
  * 工具栏定位。重点盯四个旧实现碎掉的场景：
@@ -136,5 +136,54 @@ describe("layoutToolbar · 属性条总在远离选区一侧", () => {
     const r = layoutToolbar(sel, WIDE, TB_H, ATTR_H, vw, VH);
     expect(r.left).toBeLessThan(TB_GAP); // 左边被推出视口
     expect(r.left + WIDE).toBe(vw - TB_GAP); // 右端仍然贴着可视区右边
+  });
+});
+
+/* ===== OCR 模式胶囊（V6.22）=====
+ * 锚定选区上缘右上角。选区的上缘通常是遮罩死区，不压正在画的标注；
+ * 但选区贴屏幕顶时上方放不下，翻到上缘内侧。 */
+
+const PILL_W = 88;
+const PILL_H = 28;
+
+describe("modePillPos · 水平对齐", () => {
+  it("右对齐选区右边缘", () => {
+    const sel = { x: 400, y: 200, w: 560, h: 210 };
+    const r = modePillPos(sel, PILL_W, PILL_H, VW, VH);
+    expect(r.left + PILL_W).toBe(sel.x + sel.w);
+  });
+
+  it("选区贴屏幕左边：不超出左边界", () => {
+    const sel = { x: 0, y: 200, w: 60, h: 100 };
+    const r = modePillPos(sel, PILL_W, PILL_H, VW, VH);
+    expect(r.left).toBe(TB_GAP);
+  });
+
+  it("选区贴屏幕右边：向内钳，不超出右边界", () => {
+    const sel = { x: 1900, y: 200, w: 20, h: 100 };
+    const r = modePillPos(sel, PILL_W, PILL_H, VW, VH);
+    expect(r.left + PILL_W).toBe(VW - TB_GAP);
+  });
+});
+
+describe("modePillPos · 垂直避让", () => {
+  it("常规：上缘上方 8px", () => {
+    const sel = { x: 400, y: 200, w: 560, h: 210 };
+    const r = modePillPos(sel, PILL_W, PILL_H, VW, VH);
+    expect(r.top).toBe(sel.y - TB_GAP - PILL_H);
+  });
+
+  it("选区贴屏幕顶：上方放不下，翻到上缘内侧", () => {
+    const sel = { x: 400, y: 10, w: 560, h: 210 };
+    const r = modePillPos(sel, PILL_W, PILL_H, VW, VH);
+    expect(r.top).toBe(sel.y + TB_GAP);
+  });
+
+  it("全屏选区：翻内侧后胶囊仍在视口内", () => {
+    const sel = { x: 0, y: 0, w: VW, h: VH };
+    const r = modePillPos(sel, PILL_W, PILL_H, VW, VH);
+    expect(r.top).toBeGreaterThanOrEqual(TB_GAP);
+    expect(r.left).toBeGreaterThanOrEqual(TB_GAP);
+    expect(r.left + PILL_W).toBeLessThanOrEqual(VW - TB_GAP);
   });
 });

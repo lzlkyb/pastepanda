@@ -1006,6 +1006,31 @@ export function GeneralTab({
         </button>
       </div>
       <div className={styles.sRow}>
+        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #6366F1, #8B5CF6)" }}>🔤</span>
+        <div className={`${styles.sRowBody}`}>
+          <div className={`${styles.sRowLabel}`}>OCR 选字模式</div>
+          <div className={`${styles.sRowDesc}`}>
+            标注时文字识别与画标注共存、互不抢事件。智能意图：默认矩形工具下，落在文字上拖即选字（光标离开文字带则冻结已选内容）；修饰键：按住 Ctrl/⌘ 拖才选字，裸拖一律画标注
+          </div>
+        </div>
+        <div className={styles.sSeg} style={{ width: "auto" }}>
+          <button
+            className={`${styles.sSegOpt}${config.ocr_select_mode === "smart" ? ` ${styles.sSegActive}` : ""}`}
+            onClick={() => void updateAndSave({ ocr_select_mode: "smart" })}
+            title="落在文字上拖=选字；光标离开文字带则冻结已选内容"
+          >
+            智能意图
+          </button>
+          <button
+            className={`${styles.sSegOpt}${config.ocr_select_mode === "modifier" ? ` ${styles.sSegActive}` : ""}`}
+            onClick={() => void updateAndSave({ ocr_select_mode: "modifier" })}
+            title="Ctrl/⌘ + 落在文字上拖=选字；裸拖一律画标注"
+          >
+            Ctrl 修饰键
+          </button>
+        </div>
+      </div>
+      <div className={styles.sRow}>
         <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #F59E0B, #D97706)" }}>⚡</span>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>完成后自动执行动作链</div>
