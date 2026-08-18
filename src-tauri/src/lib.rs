@@ -545,6 +545,7 @@ pub fn run() {
             screenshot::arm_longshot_escape,
             screenshot::snap_window_at,
             screenshot::enum_window_rects,
+            screenshot::enum_controls,
             screenshot::send_mouse_wheel,
             screenshot::scroll_longshot,
             screenshot::get_scroll_bottom,

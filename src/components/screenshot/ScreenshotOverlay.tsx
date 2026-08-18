@@ -25,12 +25,15 @@ import { logger } from "@/lib/logger";
 import {
   applyMagnet,
   eraseStrokes,
+  nearestInDirection,
   pointHitAnnot,
   resolveSnapTargets,
   toLocalRect,
   toScreenPt,
+  toScreenRect,
 } from "@/lib/screenshot/geometry";
-import { drawAnnot, inDrawOrder } from "@/lib/screenshot/draw";
+import type { Dir } from "@/lib/screenshot/geometry";
+import { drawAnnot, inDrawOrder, measureTextExtent } from "@/lib/screenshot/draw";
 import { isRowMasked } from "@/lib/screenshot/maskGeom";
 import {
   findOverlapRows,
@@ -85,6 +88,7 @@ interface MaskBox {
   excluded: boolean;
 }
 import { AnnotToolbar } from "./AnnotToolbar";
+import { TextToolbar } from "./TextToolbar";
 import { AttrBar, type MaskShape, type TextSizeId, type WidthId } from "./AttrBar";
 import { OcrDrawer } from "./OcrDrawer";
 import { OcrEditPopover, TablePopover } from "./TextPopovers";
@@ -98,6 +102,7 @@ import { csvEscape, ocrToTable } from "@/lib/screenshot/ocrTable";
 import { detectSensitiveText } from "@/lib/screenshot/sensitive";
 import type {
   Annotation,
+  ControlList,
   Rect,
   ScreenInfo,
   SnapRect,
@@ -178,7 +183,9 @@ export function ScreenshotOverlay() {
    *  UI 零反馈，用户看到的就是"点了没反应"。 */
   const [shotToast, setShotToast] = useState<{ text: string; ok: boolean } | null>(null);
   const shotToastTimerRef = useRef<number | null>(null);
-  const [textDraft, setTextDraft] = useState<{ x: number; y: number } | null>(null);
+  // 文字输入框状态。id 有值 = 正在编辑已有文字（微信：点/双击已有文字=改字）；
+  // value 是回填到输入框的初始文本。无 id = 新建文字。
+  const [textDraft, setTextDraft] = useState<{ x: number; y: number; id?: number; value?: string } | null>(null);
   /** 文字输入框 DOM 引用：用 rAF 聚焦代替 autoFocus（见下方 effect 注释）。 */
   const textInputRef = useRef<HTMLInputElement>(null);
   // 标注态点画面创建输入框是在 mousedown handler 里触发的；浏览器会在 mouseup 时执行
@@ -371,6 +378,74 @@ export function ScreenshotOverlay() {
   // Tier3 双层轮廓：外层淡蓝窗口边界（物理像素局部坐标）；与选区框（ctrl）同坐标系。
   // 仅当 ctrl 明显小于 win（<97%）时渲染，否则 solo 只显选区框。
   const [snapWin, setSnapWin] = useState<Rect | null>(null);
+  // Tier3 键盘遍历：snapWin 的镜像 ref（keydown 处理里取不到最新 state），以及控件清单缓存。
+  const snapWinRef = useRef<Rect | null>(null);
+  const kbCtrlsRef = useRef<Rect[]>([]); // 当前窗口内控件（局部坐标）
+  const kbWinRectRef = useRef<Rect | null>(null); // 缓存清单对应的窗口（局部坐标）
+  const kbIndexRef = useRef(0); // 当前遍历到的控件下标
+  const kbActiveRef = useRef(false); // 是否处于键盘遍历态（鼠标移动 / Esc 可退出）
+
+  // snapWin state → ref（keydown 处理拿不到最新 state）
+  useEffect(() => {
+    snapWinRef.current = snapWin;
+  }, [snapWin]);
+
+  // 枚举当前窗口控件清单（局部坐标），缓存到 refs；返回是否拿到非空清单
+  const loadControls = useCallback(
+    async (win: Rect): Promise<boolean> => {
+      if (!screen) return false;
+      const cx = win.x + win.w / 2;
+      const cy = win.y + win.h / 2;
+      const [sx, sy] = toScreenPt(screen, cx, cy);
+      try {
+        const res = await invoke<ControlList | null>("enum_controls", {
+          x: Math.round(sx),
+          y: Math.round(sy),
+        });
+        if (!res || res.ctrls.length === 0) {
+          kbCtrlsRef.current = [];
+          kbWinRectRef.current = null;
+          return false;
+        }
+        const localWin = toLocalRect(screen, res.win);
+        const localCtrls = res.ctrls.map((c) => toLocalRect(screen, c));
+        kbWinRectRef.current = localWin;
+        kbCtrlsRef.current = localCtrls;
+        // 初始下标：离当前选区 / 窗口中心最近的控件
+        const from = selRef.current ?? localWin;
+        let best = 0;
+        let bestD = Infinity;
+        localCtrls.forEach((c, i) => {
+          const d = Math.hypot(
+            c.x + c.w / 2 - (from.x + from.w / 2),
+            c.y + c.h / 2 - (from.y + from.h / 2),
+          );
+          if (d < bestD) {
+            bestD = d;
+            best = i;
+          }
+        });
+        kbIndexRef.current = best;
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [screen],
+  );
+
+  // 把当前 kb 下标对应的控件设为选区 + 外层窗口轮廓
+  const applyKbSelection = useCallback(() => {
+    const t = kbCtrlsRef.current[kbIndexRef.current];
+    if (!t || !screen) return;
+    const win = kbWinRectRef.current;
+    lastSnapRef.current = {
+      win: win ? toScreenRect(screen, win) : { x: 0, y: 0, w: screen.width, h: screen.height },
+      ctrl: toScreenRect(screen, t),
+    };
+    setSel(t);
+    if (win) setSnapWin(win);
+  }, [screen]);
   // 拖选磁吸参照：会话开始枚举一次的所有可见窗口矩形（底图局部坐标），用于吸邻窗边缘
   const winRectsRef = useRef<Rect[]>([]);
   const abortLongRef = useRef(false);
@@ -707,13 +782,16 @@ export function ScreenshotOverlay() {
     const oy = r ? r.y : 0;
     // 高亮必须先画（multiply 会和已画的标注相乘，见 inDrawOrder 的注释）。
     // 草稿一起参与排序：正在拖的那一笔本身可能就是高亮。
-    const toDraw = draftRef.current ? [...annotations, draftRef.current] : annotations;
+    // 正在编辑的文字（textDraft.id）从画布隐藏：避免原文透出输入框半透明底（微信同款）。
+    const editId = textDraft?.id ?? null;
+    const visible = editId != null ? annotations.filter((a) => a.id !== editId) : annotations;
+    const toDraw = draftRef.current ? [...visible, draftRef.current] : visible;
     for (const a of inDrawOrder(toDraw)) drawAnnot(ctx, a, base, ox, oy);
     // 选中框已移到 DOM 层（.annot-sel-box，见 JSX）：
     // canvas 里画会与元素重叠、看起来像"画布底色"（用户反馈），
     // 且 canvas 无法做半透明填充不遮元素的选中态。此处不再绘制。
     // → 所以依赖里也不再需要 selectedIds（选中态变化不影响画布内容）。
-  }, [annotations]);
+  }, [annotations, textDraft]);
   // 供底图加载完成后调用（见 baseImgRef 声明处注释）
   redrawRef.current = redraw;
 
@@ -857,6 +935,11 @@ export function ScreenshotOverlay() {
           }
           return;
         }
+        // Tier3 键盘遍历态：Esc 先退出遍历回到 hover 吸附（两级取消），再 Esc 才关窗
+        if (kbActiveRef.current) {
+          kbActiveRef.current = false;
+          return;
+        }
         if (p === "annotate") {
           // 编辑态 Esc = 放弃标注回到选区（两级取消：编辑 → 选区 → 关闭）
           cancelAnnot();
@@ -867,6 +950,55 @@ export function ScreenshotOverlay() {
       }
       if (p === "select" && longShotRef.current) return; // 长截图中忽略其余快捷键
       if (p === "select") {
+        // Tier3 键盘遍历：Tab / Shift+Tab 线性遍历、方向键定向遍历（仅未手动画选区时）。
+        // 与「方向键微调选区」互斥：遍历态优先把方向键当成「跳到下一个控件」。
+        const isTab = e.key === "Tab";
+        const isArrow = e.key.startsWith("Arrow");
+        if (isTab || isArrow) {
+          const win = snapWinRef.current;
+          if (!win) return; // 桌面空白：无控件可遍历，交给下方默认逻辑
+          // 进入 / 维持键盘遍历态；窗口变化（或首次）则重新枚举控件清单
+          const kw = kbWinRectRef.current;
+          const winChanged =
+            !kbActiveRef.current ||
+            !kw ||
+            Math.abs(kw.x - win.x) > 2 ||
+            Math.abs(kw.y - win.y) > 2 ||
+            Math.abs(kw.w - win.w) > 2 ||
+            Math.abs(kw.h - win.h) > 2;
+          if (winChanged) {
+            e.preventDefault();
+            kbActiveRef.current = false;
+            void (async () => {
+              const ok = await loadControls(win);
+              if (!ok) {
+                kbActiveRef.current = false;
+                return;
+              }
+              kbActiveRef.current = true;
+              applyKbSelection();
+            })();
+            return;
+          }
+          e.preventDefault();
+          if (isTab) {
+            const n = kbCtrlsRef.current.length;
+            if (n === 0) return;
+            let i = kbIndexRef.current + (e.shiftKey ? -1 : 1);
+            i = ((i % n) + n) % n;
+            kbIndexRef.current = i;
+          } else {
+            const from = selRef.current ?? win;
+            const dir = e.key.slice(5).toLowerCase() as Dir; // "ArrowRight" → "right"
+            const next = nearestInDirection(kbCtrlsRef.current, from, dir);
+            if (!next) return;
+            const idx = kbCtrlsRef.current.indexOf(next);
+            if (idx >= 0) kbIndexRef.current = idx;
+          }
+          kbActiveRef.current = true;
+          applyKbSelection();
+          return;
+        }
         // 方向键微调选区（Shift = 10px 快移），已确定选区时生效
         const s = selRef.current;
         if (e.key.startsWith("Arrow") && s) {
@@ -2622,6 +2754,7 @@ export function ScreenshotOverlay() {
   const onSelectMouseDown = (e: React.MouseEvent) => {
     if (phase !== "select") return;
     setSnapWin(null); // 点选即退出 hover 吸附态的窗口轮廓（拖选固定后不再显示双层）
+    kbActiveRef.current = false; // 拖选/点选退出键盘遍历态
     if (longPreview) return; // 预览态：预览层自行处理单击/拖拽，不触发框选
     const r = e.currentTarget.getBoundingClientRect();
     const px = (e.clientX - r.left) * dpr;
@@ -2667,6 +2800,7 @@ export function ScreenshotOverlay() {
     // hover 即选区（微信同款：移动鼠标选区跟随窗口；拖选有效后固定；手柄调整中不吸附）
     // 固定区域预览态：暂停 hover 吸附，让用户拖改区域而不被窗口抢走
     if (selFixedRef.current || resizing || fixedPreview) return;
+    kbActiveRef.current = false; // 鼠标一动即退出键盘遍历态，回到 hover 吸附
     const now = Date.now();
     if (now - snapTsRef.current >= 90) {
       snapTsRef.current = now;
@@ -2935,7 +3069,16 @@ export function ScreenshotOverlay() {
       // 阻止 mousedown 默认聚焦：否则 browser 在 mouseup 时把刚创建的输入框 blur 掉，
       // 触发 onBlur→submitText("")→setTextDraft(null)，输入框一闪即逝（见 textInputRef effect）。
       e.preventDefault();
-      setTextDraft({ x: px, y: py });
+      // 微信同款：文字工具下点「已有文字」= 进编辑改字，而不是又建一个空框。
+      // 命中检测现在覆盖整段文字（measureTextExtent），不再只有落点 8px 能选中。
+      const hitTxt = [...annotations].reverse().find(
+        (a) => a.type === "text" && pointHitAnnot(px, py, a),
+      );
+      if (hitTxt) {
+        setTextDraft({ x: hitTxt.x, y: hitTxt.y, id: hitTxt.id, value: hitTxt.text ?? "" });
+      } else {
+        setTextDraft({ x: px, y: py });
+      }
       return;
     }
     if (tool === "eraser") {
@@ -3058,6 +3201,12 @@ export function ScreenshotOverlay() {
     const px = (e.clientX - rect.left) * dpr;
     const py = (e.clientY - rect.top) * dpr;
     const hit = [...annotations].reverse().find((a) => pointHitAnnot(px, py, a));
+    // 微信同款：双击文字=进编辑改字（任意工具下都能改，不必先切文字工具）。
+    if (hit && hit.type === "text") {
+      setSelectedIds([]);
+      setTextDraft({ x: hit.x, y: hit.y, id: hit.id, value: hit.text ?? "" });
+      return;
+    }
     if (!hit) void copyImage();
   };
 
@@ -3105,19 +3254,27 @@ export function ScreenshotOverlay() {
   /* 文字输入提交 */
   const submitText = (value: string) => {
     if (textDraft && value.trim()) {
-      commitAnnot({
-        id: nextId(),
-        type: "text",
+      // 真实包围盒写进 x2/y2：选中框、后续命中检测都准（否则退化为落点 8px）。
+      const ext = measureTextExtent(value, fontPx);
+      const patch = {
+        text: value,
         color,
         width: lineW,
+        size: fontPx,
         x: textDraft.x,
         y: textDraft.y,
-        x2: textDraft.x,
-        y2: textDraft.y,
-        text: value,
-        // 物理像素（fontCss × dpr）；draw.ts 全程按物理像素画
-        size: fontPx,
-      });
+        x2: textDraft.x + ext.w,
+        y2: textDraft.y + ext.h,
+      };
+      if (textDraft.id != null) {
+        // 编辑已有文字：原地更新，并压 undo 快照（与 commitAnnot 一致）。
+        const prev = annotationsRef.current;
+        setUndoStack((u) => [...u, prev]);
+        setRedoStack([]);
+        setAnnotations((prev) => prev.map((a) => (a.id === textDraft.id ? { ...a, ...patch } : a)));
+      } else {
+        commitAnnot({ id: nextId(), type: "text", ...patch });
+      }
     }
     setTextDraft(null);
   };
@@ -3701,38 +3858,52 @@ export function ScreenshotOverlay() {
                 <span className="mask-preview-tip">{b.excluded ? "已排除" : "点击排除"}</span>
               </div>
             ))}
-          {/* 文字标注输入框 */}
+          {/* 文字标注输入框 + 附着迷你工具条（微信同款：输入框下方紧跟字号/色板） */}
           {textDraft && (
-            <input
-              ref={textInputRef}
-              className="text-draft"
-              // 在输入框内按下不冒泡到标注画布：避免点到输入框又触发 onAnnotMouseDown 重建/移位
-              onMouseDown={(e) => e.stopPropagation()}
-              // color 必须跟当前标注色：不给的话 CSS 里是固定白色，
-              // 而提交后 drawAnnot 用 a.color，会看到文字突然变色
-              style={{
-                left: css(textDraft.x),
-                top: css(textDraft.y),
-                // CSS 像素直接用 fontCss —— canvas 上是 fontCss × dpr 物理像素，
-                // 缩到 CSS 显示后正好等于 fontCss，两边视觉一致。
-                fontSize: fontCss,
-                color,
-              }}
-              placeholder="输入文字…"
-              onBlur={(e) => submitText(e.target.value)}
-              onKeyDown={(e) => {
-                // 必须阻断冒泡：否则 Enter 会触发全局"完成标注"、Esc 会关闭截图窗口（V3 bug）
-                // isComposing：中文输入法选词按 Enter 不应提交（V6 实测 bug）
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                  e.stopPropagation();
-                  submitText((e.target as HTMLInputElement).value);
-                }
-                if (e.key === "Escape") {
-                  e.stopPropagation();
-                  setTextDraft(null);
-                }
-              }}
-            />
+            <>
+              <input
+                ref={textInputRef}
+                // key：新建/编辑切换时强制重挂载，让 defaultValue 重新回填已有文字
+                key={textDraft.id ?? "new"}
+                className="text-draft"
+                // 编辑已有文字时回填初始文本（新建则为空）
+                defaultValue={textDraft.value ?? ""}
+                // 在输入框内按下不冒泡到标注画布：避免点到输入框又触发 onAnnotMouseDown 重建/移位
+                onMouseDown={(e) => e.stopPropagation()}
+                // color 必须跟当前标注色：不给的话 CSS 里是固定白色，
+                // 而提交后 drawAnnot 用 a.color，会看到文字突然变色
+                style={{
+                  left: css(textDraft.x),
+                  top: css(textDraft.y),
+                  // CSS 像素直接用 fontCss —— canvas 上是 fontCss × dpr 物理像素，
+                  // 缩到 CSS 显示后正好等于 fontCss，两边视觉一致。
+                  fontSize: fontCss,
+                  color,
+                }}
+                placeholder="输入文字…"
+                onBlur={(e) => submitText(e.target.value)}
+                onKeyDown={(e) => {
+                  // 必须阻断冒态：否则 Enter 会触发全局"完成标注"、Esc 会关闭截图窗口（V3 bug）
+                  // isComposing：中文输入法选词按 Enter 不应提交（V6 实测 bug）
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                    e.stopPropagation();
+                    submitText((e.target as HTMLInputElement).value);
+                  }
+                  if (e.key === "Escape") {
+                    e.stopPropagation();
+                    setTextDraft(null);
+                  }
+                }}
+              />
+              <TextToolbar
+                color={color}
+                onSelectColor={(c) => setColor(c)}
+                textSizeId={textSizeId}
+                onSelectTextSize={(id) => setTextSizeId(id)}
+                // 紧贴输入框下沿（CSS 像素）：输入框高≈fontCss，+6 留缝
+                style={{ left: textDraft.x / dpr, top: textDraft.y / dpr + fontCss + 6 }}
+              />
+            </>
           )}
         </div>
       )}

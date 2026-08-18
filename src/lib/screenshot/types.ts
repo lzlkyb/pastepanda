@@ -31,6 +31,15 @@ export interface SnapTargets {
   ctrl: SnapRect;
 }
 
+/** 后端 enum_controls 返回的窗口控件清单（屏幕坐标，物理像素）。
+ *  - `win`：窗口视觉边界；
+ *  - `ctrls`：窗口内各逻辑控件边界（已过滤掉包裹更小控件的容器）。
+ *  前端 `toLocalRect` 分别转成底图局部坐标（Rect）供键盘遍历。 */
+export interface ControlList {
+  win: SnapRect;
+  ctrls: SnapRect[];
+}
+
 /** 选区 / 标注包围盒（物理像素，**底图局部坐标**） */
 export interface Rect {
   x: number;

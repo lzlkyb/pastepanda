@@ -7,6 +7,7 @@
  */
 
 import { maskBrushWidth } from "./maskGeom";
+import { measureTextExtent, TEXT_SIZE } from "./draw";
 import type { Annotation, Rect, ScreenInfo, SnapRect, SnapTargets } from "./types";
 
 /* ===== 坐标系换算（多显示器必需） =====
@@ -149,7 +150,15 @@ export function pointHitAnnot(px: number, py: number, a: Annotation): boolean {
     case "mosaic":
     case "blur":
     case "text": {
-      return px >= x - pad && px <= x + w + pad && py >= y - pad && py <= y + h + pad;
+      // 文字标注提交时已把真实宽高写进 x2/y2；但旧标注（x2===x 退化）没有，
+      // 这时用 measureTextExtent 实时量出真实包围盒——否则只有落点 8px 内能选中，
+      // 点到实际可见文字（右下方向）永远选不中、改不了（用户反馈）。
+      const fs = a.size ?? TEXT_SIZE;
+      const ext = measureTextExtent(a.text ?? "", fs);
+      const bw = Math.max(ext.w, a.x2 - a.x);
+      const bh = Math.max(ext.h, a.y2 - a.y);
+      const tpad = Math.max(8, fs / 6);
+      return px >= a.x - tpad && px <= a.x + bw + tpad && py >= a.y - tpad && py <= a.y + bh + tpad;
     }
     case "ellipse": {
       if (w <= 0 || h <= 0) return false;
@@ -316,4 +325,60 @@ export function resolveSnapTargets(
   // win 没变 → ctrl 层单独迟滞（下钻 / 切兄弟控件 / 保持）
   const ctrlNext = resolveSnapTarget(cur.ctrl, next.ctrl, px, py, hyst);
   return { win: cur.win, ctrl: ctrlNext ?? cur.ctrl };
+}
+
+/** 键盘遍历方向 */
+export type Dir = "left" | "right" | "up" | "down";
+
+/**
+ * 在控件清单里挑「指定方向上离 `from` 最近」的控件（纯几何）。
+ *
+ * 用于方向键遍历：主方向距离加权、垂直/水平偏移惩罚（×2.5），避免斜向远处的控件
+ * 优先于正前方近处的控件。返回 null 表示那个方向没有候选（停在原地）。
+ */
+export function nearestInDirection(rects: Rect[], from: Rect, dir: Dir): Rect | null {
+  const fc = { x: from.x + from.w / 2, y: from.y + from.h / 2 };
+  let best: Rect | null = null;
+  let bestScore = Infinity;
+  for (const r of rects) {
+    if (r === from) continue;
+    const c = { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+    const dx = c.x - fc.x;
+    const dy = c.y - fc.y;
+    let primary: number;
+    let secondary: number;
+    switch (dir) {
+      case "right":
+        if (dx <= 0) continue;
+        primary = dx;
+        secondary = Math.abs(dy);
+        break;
+      case "left":
+        if (dx >= 0) continue;
+        primary = -dx;
+        secondary = Math.abs(dy);
+        break;
+      case "down":
+        if (dy <= 0) continue;
+        primary = dy;
+        secondary = Math.abs(dx);
+        break;
+      case "up":
+        if (dy >= 0) continue;
+        primary = -dy;
+        secondary = Math.abs(dx);
+        break;
+    }
+    const score = primary + secondary * 2.5;
+    if (score < bestScore) {
+      bestScore = score;
+      best = r;
+    }
+  }
+  return best;
+}
+
+/** 底图局部坐标矩形 → 屏幕坐标矩形（与 `toScreenPt` 同源，规则 11.1） */
+export function toScreenRect(s: ScreenInfo | null, r: Rect): SnapRect {
+  return { x: r.x + (s?.originX ?? 0), y: r.y + (s?.originY ?? 0), w: r.w, h: r.h };
 }

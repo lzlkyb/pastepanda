@@ -1146,6 +1146,24 @@ pub struct SnapTargets {
     pub ctrl: SnapRect,
 }
 
+/// 窗口内可遍历的控件清单（屏幕物理坐标）。供前端**键盘遍历**（Tab / 方向键）用：
+///
+/// 后端一次性用 UI Automation 枚举窗口控件树，前端据此做纯几何的线性 / 定向导航，
+/// 避免每按一次键都打一次 RPC（UIA 深遍历对浏览器 DOM 可能上千节点，慢）。
+///
+/// - `win`：窗口视觉边界（外层轮廓，与 `SnapTargets.win` 同源）；
+/// - `ctrls`：窗口内各逻辑控件边界矩形（已按「保留最深层控件、丢弃包裹它的容器」过滤）。
+///
+/// 过滤理由：UIA 树里一个按钮往往被多层容器（toolbar → group → button）包着，
+/// 全列出来会让 Tab 在空容器上反复跳。我们保留真正可点的叶子控件，把包住更小控件的
+/// 外层容器丢掉的——这正是 Snipaste / 微信「Tab 跳到下一个可截控件」的体感。
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ControlList {
+    pub win: SnapRect,
+    pub ctrls: Vec<SnapRect>,
+}
+
 /// 从 DWM 视觉边界与 GetWindowRect 两个候选里挑一个可用的（纯逻辑，带单测）。
 ///
 /// 矩形用 `(left, top, right, bottom)`，`None` = 该来源取值失败。
@@ -1330,6 +1348,208 @@ unsafe extern "system" fn enum_rects_proc(
         out.push(rect);
     }
     windows::Win32::Foundation::BOOL(1)
+}
+
+/// 枚举光标所在窗口内的逻辑控件矩形（屏幕物理坐标），供**键盘遍历**（Tab / 方向键）。
+///
+/// 桌面空白（无顶层窗）或任务栏（无内部控件）返回 `None` / 空清单，前端据此退回 hover 吸附。
+#[tauri::command]
+pub fn enum_controls(app: tauri::AppHandle, x: i32, y: i32) -> Result<Option<ControlList>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        unsafe { enum_controls_impl(&app, x, y) }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, x, y);
+        Ok(None)
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn enum_controls_impl(
+    app: &tauri::AppHandle,
+    x: i32,
+    y: i32,
+) -> Result<Option<ControlList>, String> {
+    use windows::Win32::Foundation::{HWND, LPARAM, POINT};
+    use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetDesktopWindow, WNDENUMPROC};
+
+    // 1) 命中测试最顶层可见窗口（与 snap_window_impl 同套逻辑：排除自身 / 桌面）
+    let self_hwnd = app
+        .get_webview_window(WINDOW_LABEL)
+        .and_then(|w| w.hwnd().ok())
+        .map(|h| HWND(h.0 as *mut _))
+        .unwrap_or_default();
+    let desktop = GetDesktopWindow();
+    let pt = POINT { x, y };
+    let mut ctx = (self_hwnd, pt, desktop, None::<HWND>);
+    let lparam = LPARAM(&mut ctx as *mut _ as isize);
+    let enum_fn: WNDENUMPROC = Some(enum_snap_proc);
+    let _ = EnumWindows(enum_fn, lparam);
+
+    let Some(hwnd) = ctx.3 else {
+        return Ok(None); // 桌面空白：无控件可遍历
+    };
+
+    // 任务栏（主 / 副屏）：只有一条，无内部控件可遍历
+    let cls = class_name_of(hwnd);
+    if is_tray_class(&cls) {
+        if let Some(r) = raw_window_rect(hwnd) {
+            let (l, t, rr, b) = r;
+            return Ok(Some(ControlList {
+                win: SnapRect {
+                    x: l,
+                    y: t,
+                    w: rr - l,
+                    h: b - t,
+                },
+                ctrls: vec![],
+            }));
+        }
+        return Ok(None);
+    }
+
+    let Some(top_rect) = window_visual_rect(hwnd) else {
+        return Ok(None);
+    };
+
+    // 2) UIA 枚举窗口控件树 → 过滤容器
+    let ctrls = uia_enumerate_controls(hwnd, top_rect);
+    let (wl, wt, wr, wb) = top_rect;
+    Ok(Some(ControlList {
+        win: SnapRect {
+            x: wl,
+            y: wt,
+            w: wr - wl,
+            h: wb - wt,
+        },
+        ctrls,
+    }))
+}
+
+/// 用 **UI Automation** 深度遍历窗口控件树，收集各逻辑控件边界（屏幕物理坐标）。
+///
+/// 为什么不用 legacy MSAA：与 `uia_control_at` 同理，MSAA 的 `AccessibleChildren` 在
+/// Electron / Chrome / VS Code 上拿不到 DOM 内控件；完整 UIA 的 `ElementFromHandle` 能
+/// 直接拿到窗口的 UIA 元素，再 `GetFirstChildElement` / `GetNextSiblingElement` 走完整棵树。
+///
+/// 防爆护栏：`MAX_VISIT` 限制遍历节点总数（浏览器 DOM 可能几千上万），`MAX_CTRL` 限制
+/// 最终返回控件数——宁可漏掉深层控件，也不能因为一次 Tab 把主线程卡死。
+#[cfg(target_os = "windows")]
+unsafe fn uia_enumerate_controls(
+    hwnd: windows::Win32::Foundation::HWND,
+    top_rect: (i32, i32, i32, i32),
+) -> Vec<SnapRect> {
+    use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance, CoInitializeEx, COINIT_APARTMENTTHREADED};
+    use windows::Win32::UI::Accessibility::{
+        CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationTreeWalker,
+    };
+
+    const MAX_VISIT: usize = 4000;
+    const MAX_CTRL: usize = 800;
+    const MIN_SIDE: i32 = 8;
+    let top_area = area(top_rect).max(1);
+
+    let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+    let automation: IUIAutomation = match CoCreateInstance(&CUIAutomation, None, CLSCTX_ALL) {
+        Ok(a) => a,
+        Err(_) => return Vec::new(),
+    };
+    // 窗口的 UIA 元素：从 HWND 直接取，能拿到整棵子树（而非仅光标下的叶子）
+    let root: IUIAutomationElement = match automation.ElementFromHandle(hwnd) {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+    // ControlViewWalker：跳过纯布局/无意义的不可见节点，只给「控件视图」树，
+    // 这正是键盘遍历要的——可交互控件，而非每个 div / 装饰节点。
+    let walker: IUIAutomationTreeWalker = match automation.ControlViewWalker() {
+        Ok(w) => w,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut stack: Vec<IUIAutomationElement> = vec![root];
+    let mut visited = 0usize;
+    let mut raw: Vec<(i32, i32, i32, i32)> = Vec::new();
+
+    while let Some(el) = stack.pop() {
+        if visited >= MAX_VISIT || raw.len() >= MAX_CTRL {
+            break;
+        }
+        visited += 1;
+
+        if let Ok(r) = el.CurrentBoundingRectangle() {
+            let rect = (r.left, r.top, r.right, r.bottom);
+            let (l, t, rr, b) = rect;
+            let w = rr - l;
+            let h = b - t;
+            let a = area(rect);
+            let off = el
+                .CurrentIsOffscreen()
+                .map(|v| v.as_bool())
+                .unwrap_or(false);
+            // 必须基本落在窗口内（±4px 容差，防 DWM/UIA 边界几像素偏差）
+            let inside = l >= top_rect.0 - 4
+                && t >= top_rect.1 - 4
+                && rr <= top_rect.2 + 4
+                && b <= top_rect.3 + 4;
+            if !off
+                && w >= MIN_SIDE
+                && h >= MIN_SIDE
+                && a <= top_area * 95 / 100
+                && inside
+            {
+                raw.push(rect);
+            }
+        }
+
+        // 深度优先展开：首个子 + 兄弟链（UIA 导航方法在 TreeWalker 上，参数是元素引用）
+        if let Ok(child) = walker.GetFirstChildElement(&el) {
+            let mut cur = Some(child);
+            while let Some(c) = cur {
+                // 先借 c 取兄弟（此时 c 还没被移动），再 push（移动 c）
+                cur = match walker.GetNextSiblingElement(&c) {
+                    Ok(n) => Some(n),
+                    Err(_) => None,
+                };
+                stack.push(c);
+            }
+        }
+    }
+
+    // 3) 过滤：保留最深层控件，丢弃「包裹着更小控件的容器」。
+    //    按面积升序处理——小的先入 kept；遇到「包住某个已保留小子」的大矩形即判为容器丢弃。
+    let mut rects = raw;
+    rects.sort_by_key(|r| area(*r));
+    let mut kept: Vec<(i32, i32, i32, i32)> = Vec::new();
+    for c in rects {
+        if kept.iter().any(|o| contains(c, *o)) {
+            continue;
+        }
+        kept.push(c);
+    }
+
+    kept.into_iter()
+        .map(|(l, t, rr, b)| SnapRect {
+            x: l,
+            y: t,
+            w: rr - l,
+            h: b - t,
+        })
+        .collect()
+}
+
+/// `outer` 是否基本完整包住 `inner`（±2px 容差）。用于容器过滤。
+#[cfg(target_os = "windows")]
+fn contains(
+    outer: (i32, i32, i32, i32),
+    inner: (i32, i32, i32, i32),
+) -> bool {
+    const M: i32 = 2;
+    outer.0 - M <= inner.0
+        && outer.1 - M <= inner.1
+        && outer.2 + M >= inner.2
+        && outer.3 + M >= inner.3
 }
 
 /// 取窗口的视觉边界（屏幕物理坐标，`(l, t, r, b)`）。**命中测试与返回值共用它。**
