@@ -1159,9 +1159,7 @@ fn pick_bounds(
 /// 而它们没显示时本来就是 cloaked（已被 is_cloaked 拦掉）；真正显示着的时候
 /// 用户是有可能想截它的，黑名单会把这条路堵死。
 const SHELL_CLASSES: &[&str] = &[
-    "Shell_TrayWnd",                // 主任务栏
-    "Shell_SecondaryTrayWnd",       // 副屏任务栏（多显示器必踩，旧实现漏了）
-    "Progman",                      // 桌面
+    "Progman",                      // 桌面（悬停 → 前端全屏吸附）
     "WorkerW",                      // 桌面壁纸层
     "XamlExplorerHostIslandWindow", // Win11 Alt+Tab / 贴靠布局浮层
     "ForegroundStaging",            // 窗口切换过渡层
@@ -1169,6 +1167,41 @@ const SHELL_CLASSES: &[&str] = &[
 
 fn is_shell_class(name: &str) -> bool {
     SHELL_CLASSES.contains(&name)
+}
+
+/// 任务栏（主 / 副屏）。它们**不再**进 `SHELL_CLASSES` 黑名单，可像普通窗口一样被吸附，
+/// 但 DWM 视觉边界（`EXTENDED_FRAME_BOUNDS`）对这类外壳窗口不可靠，常返回整块工作区，
+/// 所以命中测试与取矩形一律改用 `GetWindowRect`（见 `enum_snap_proc` / `enum_rects_proc` /
+/// `snap_window_impl` 的 tray 分支）。
+fn is_tray_class(name: &str) -> bool {
+    name == "Shell_TrayWnd" || name == "Shell_SecondaryTrayWnd"
+}
+
+/// 直接用 `GetWindowRect`（不做 DWM 视觉边界换算）。用于任务栏这类
+/// `DWMWA_EXTENDED_FRAME_BOUNDS` 会返回整块工作区 / 不准的外壳窗口。
+#[cfg(target_os = "windows")]
+unsafe fn raw_window_rect(
+    hwnd: windows::Win32::Foundation::HWND,
+) -> Option<(i32, i32, i32, i32)> {
+    use windows::Win32::Foundation::RECT;
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+    let mut r = RECT::default();
+    GetWindowRect(hwnd, &mut r)
+        .is_ok()
+        .then_some((r.left, r.top, r.right, r.bottom))
+}
+
+/// 取窗口类名（吸附命中后判断是否为任务栏用）。
+#[cfg(target_os = "windows")]
+unsafe fn class_name_of(hwnd: windows::Win32::Foundation::HWND) -> String {
+    use windows::Win32::UI::WindowsAndMessaging::GetClassNameW;
+    let mut cls: [u16; 256] = [0; 256];
+    let n = GetClassNameW(hwnd, &mut cls);
+    if n > 0 {
+        String::from_utf16_lossy(&cls[..n as usize])
+    } else {
+        String::new()
+    }
 }
 
 /// 面积辅助（`(l, t, r, b)` → 宽×高）。
@@ -1261,13 +1294,24 @@ unsafe extern "system" fn enum_rects_proc(
     // 缓冲区 256：类名上限就是 256（同 enum_snap_proc）
     let mut cls: [u16; 256] = [0; 256];
     let n = GetClassNameW(hwnd, &mut cls);
-    if n > 0 && is_shell_class(&String::from_utf16_lossy(&cls[..n as usize])) {
+    let cls_str = if n > 0 {
+        String::from_utf16_lossy(&cls[..n as usize])
+    } else {
+        String::new()
+    };
+    if is_shell_class(&cls_str) {
         return windows::Win32::Foundation::BOOL(1);
     }
     if is_cloaked(hwnd) {
         return windows::Win32::Foundation::BOOL(1);
     }
-    if let Some(rect) = window_visual_rect(hwnd) {
+    // 任务栏 DWM 视觉边界不可靠（常返回整块工作区），统一用 GetWindowRect
+    let rect = if is_tray_class(&cls_str) {
+        raw_window_rect(hwnd)
+    } else {
+        window_visual_rect(hwnd)
+    };
+    if let Some(rect) = rect {
         out.push(rect);
     }
     windows::Win32::Foundation::BOOL(1)
@@ -1522,8 +1566,26 @@ fn snap_window_impl(app: &tauri::AppHandle, x: i32, y: i32) -> Result<Option<Sna
         let _ = EnumWindows(enum_fn, lparam);
 
         let Some(hwnd) = ctx.3 else {
+            // 光标在桌面空白 / 无任何顶层窗口覆盖的区域：返回 None，
+            // 前端据此吸附整屏（QQ / Snipaste 同款全屏吸附），不再微信式全暗。
             return Ok(None);
         };
+
+        // 任务栏（主 / 副屏）：DWM 视觉边界对这类外壳窗口不可靠（常返回整块工作区），
+        // 直接用 GetWindowRect 取准确的任务栏小矩形。
+        let cls = class_name_of(hwnd);
+        if is_tray_class(&cls) {
+            if let Some(r) = raw_window_rect(hwnd) {
+                let (l, t, rr, b) = r;
+                return Ok(Some(SnapRect {
+                    x: l,
+                    y: t,
+                    w: rr - l,
+                    h: b - t,
+                }));
+            }
+            return Ok(None);
+        }
 
         // 与命中测试同一套边界（见 pick_bounds 的注释）
         let Some(top_rect) = window_visual_rect(hwnd) else {
@@ -1580,7 +1642,12 @@ unsafe extern "system" fn enum_snap_proc(
     // 比较随之失败（黑名单形同不存在）。
     let mut cls: [u16; 256] = [0; 256];
     let n = GetClassNameW(hwnd, &mut cls);
-    if n > 0 && is_shell_class(&String::from_utf16_lossy(&cls[..n as usize])) {
+    let cls_str = if n > 0 {
+        String::from_utf16_lossy(&cls[..n as usize])
+    } else {
+        String::new()
+    };
+    if is_shell_class(&cls_str) {
         return TRUE;
     }
 
@@ -1589,8 +1656,15 @@ unsafe extern "system" fn enum_snap_proc(
         return TRUE;
     }
 
-    // ⚠️ 命中测试必须用**视觉边界**，与返回值同源（见 pick_bounds 的注释）
-    if let Some((l, t, r, b)) = window_visual_rect(hwnd) {
+    // ⚠️ 命中测试必须用**视觉边界**，与返回值同源（见 pick_bounds 的注释）。
+    // 任务栏例外：DWM 视觉边界对它会返回整块工作区，必须用 GetWindowRect，
+    // 否则光标在屏幕上任何位置都会"命中任务栏"，吞掉所有普通窗口的吸附。
+    let rect = if is_tray_class(&cls_str) {
+        raw_window_rect(hwnd)
+    } else {
+        window_visual_rect(hwnd)
+    };
+    if let Some((l, t, r, b)) = rect {
         if pt.x >= l && pt.x < r && pt.y >= t && pt.y < b && (r - l) >= 20 && (b - t) >= 20 {
             *found = Some(hwnd);
             return windows::Win32::Foundation::FALSE; // 停止遍历
@@ -1634,9 +1708,12 @@ mod snap_tests {
 
     #[test]
     fn test_shell_class_blacklist() {
-        assert!(is_shell_class("Shell_TrayWnd"));
-        assert!(is_shell_class("Shell_SecondaryTrayWnd")); // 旧实现漏的副屏任务栏
+        assert!(is_shell_class("Progman")); // 桌面仍排除（前端全屏吸附）
+        assert!(is_shell_class("WorkerW")); // 桌面壁纸层仍排除
         assert!(is_shell_class("XamlExplorerHostIslandWindow"));
+        // 任务栏不再黑名单：现在可被吸附（用 GetWindowRect），is_shell_class 不应再命中
+        assert!(!is_shell_class("Shell_TrayWnd"));
+        assert!(!is_shell_class("Shell_SecondaryTrayWnd"));
         assert!(!is_shell_class("Chrome_WidgetWin_1")); // 普通应用窗不能被误排
         // 故意不排：开始菜单显示着的时候用户可能想截它
         assert!(!is_shell_class("Windows.UI.Core.CoreWindow"));

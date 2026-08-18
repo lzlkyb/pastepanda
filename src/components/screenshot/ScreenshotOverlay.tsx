@@ -2654,15 +2654,20 @@ export function ScreenshotOverlay() {
           if (dragRef.current) return; // 已进入拖选
           if (phaseRef.current !== "select") return;
           const cur = lastSnapRef.current;
-          const next = s && s.w >= 4 && s.h >= 4 ? toLocalRect(screen, s) : null;
-          // 迟滞防抖：光标在边界附近微抖时不让吸附框在「整窗↔子控件/邻窗」间反复跳
+          // 桌面空白（后端返回 null）时吸附整屏，而非微信式全暗无选区：
+          // 用户悬停桌面即框当前显示器整屏（QQ / Snipaste 同款全屏吸附）。
+          const full: Rect | null = screen
+            ? { x: 0, y: 0, w: screen.width, h: screen.height }
+            : null;
+          const next = s && s.w >= 4 && s.h >= 4 ? toLocalRect(screen, s) : full;
+          // 迟滞防抖：光标在边界附近微抖时不让吸附框在「整窗↔子控件/邻窗/全屏」间反复跳
           const target = resolveSnapTarget(cur, next, px, py);
           if (target) {
             lastSnapRef.current = target;
             setSel(target);
           } else {
             lastSnapRef.current = null;
-            setSel(null); // 桌面空白 → 无选区（微信同款全暗）
+            setSel(null);
           }
         })
         .catch(() => {
