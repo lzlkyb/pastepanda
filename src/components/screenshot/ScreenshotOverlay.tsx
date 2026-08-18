@@ -33,7 +33,7 @@ import {
   toScreenRect,
 } from "@/lib/screenshot/geometry";
 import type { Dir } from "@/lib/screenshot/geometry";
-import { drawAnnot, inDrawOrder, measureTextExtent } from "@/lib/screenshot/draw";
+import { drawAnnot, inDrawOrder, measureTextExtent, TEXT_LINE_HEIGHT } from "@/lib/screenshot/draw";
 import { isRowMasked } from "@/lib/screenshot/maskGeom";
 import {
   findOverlapRows,
@@ -187,7 +187,12 @@ export function ScreenshotOverlay() {
   // value 是回填到输入框的初始文本。无 id = 新建文字。
   const [textDraft, setTextDraft] = useState<{ x: number; y: number; id?: number; value?: string } | null>(null);
   /** 文字输入框 DOM 引用：用 rAF 聚焦代替 autoFocus（见下方 effect 注释）。 */
-  const textInputRef = useRef<HTMLInputElement>(null);
+  const textInputRef = useRef<HTMLTextAreaElement>(null);
+  // textarea 内容变化时按 scrollHeight 自适应高度，避免多行被裁切
+  const autoSizeText = (el: HTMLTextAreaElement) => {
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  };
   // 标注态点画面创建输入框是在 mousedown handler 里触发的；浏览器会在 mouseup 时执行
   // mousedown 的默认聚焦行为，把刚 autoFocus 的输入框 blur 掉，进而触发 onBlur →
   // submitText("") → setTextDraft(null)，输入框在渲染后不到一帧就被移除（Tauri/WebView 经典坑）。
@@ -196,7 +201,11 @@ export function ScreenshotOverlay() {
     if (!textDraft) return;
     const el = textInputRef.current;
     if (!el) return;
-    const id = requestAnimationFrame(() => el.focus());
+    const id = requestAnimationFrame(() => {
+      el.focus();
+      // 回填的已有文字可能多行，挂载后立即撑开高度（onChange 只覆盖用户编辑时）
+      autoSizeText(el);
+    });
     return () => cancelAnimationFrame(id);
   }, [textDraft]);
   const [copiedRow, setCopiedRow] = useState<number | null>(null);
@@ -3301,8 +3310,29 @@ export function ScreenshotOverlay() {
           hit.ctrl.w >= 4 &&
           hit.ctrl.h >= 4
         ) {
-          setSel(toLocalRect(screen, hit.ctrl));
-          setSnapWin(toLocalRect(screen, hit.win));
+          const localCtrl = toLocalRect(screen, hit.ctrl);
+          const localWin = toLocalRect(screen, hit.win);
+          setSel(localCtrl);
+          setSnapWin(localWin);
+          // Tier3：顺带枚举当前窗控件，键盘遍历（Tab / 方向键）可零延迟启动，
+          // 且首次遍历从「光标所在控件」开始，而非窗口中心——无需额外 RPC 或鼠标移动。
+          if (screen && !cancelled && phaseRef.current === "select") {
+            const ok = await loadControls(localWin);
+            if (ok && !cancelled && phaseRef.current === "select" && kbCtrlsRef.current.length > 0) {
+              const curX = cx - (screen?.originX ?? 0);
+              const curY = cy - (screen?.originY ?? 0);
+              let best = 0;
+              let bestD = Infinity;
+              kbCtrlsRef.current.forEach((c, i) => {
+                const d = Math.hypot(c.x + c.w / 2 - curX, c.y + c.h / 2 - curY);
+                if (d < bestD) {
+                  bestD = d;
+                  best = i;
+                }
+              });
+              kbIndexRef.current = best;
+            }
+          }
         }
       } catch (e) {
         logger.warn("自动框选当前窗口失败", e);
@@ -3311,7 +3341,7 @@ export function ScreenshotOverlay() {
     return () => {
       cancelled = true;
     };
-  }, [screen, phase, sel]);
+  }, [screen, phase, sel, loadControls]);
 
   /* V6.19 马赛克/模糊强度滚轮调节（原生 listener，passive:false 才能 preventDefault） */
   useEffect(() => {
@@ -3859,52 +3889,75 @@ export function ScreenshotOverlay() {
               </div>
             ))}
           {/* 文字标注输入框 + 附着迷你工具条（微信同款：输入框下方紧跟字号/色板） */}
-          {textDraft && (
-            <>
-              <input
-                ref={textInputRef}
-                // key：新建/编辑切换时强制重挂载，让 defaultValue 重新回填已有文字
-                key={textDraft.id ?? "new"}
-                className="text-draft"
-                // 编辑已有文字时回填初始文本（新建则为空）
-                defaultValue={textDraft.value ?? ""}
-                // 在输入框内按下不冒泡到标注画布：避免点到输入框又触发 onAnnotMouseDown 重建/移位
-                onMouseDown={(e) => e.stopPropagation()}
-                // color 必须跟当前标注色：不给的话 CSS 里是固定白色，
-                // 而提交后 drawAnnot 用 a.color，会看到文字突然变色
-                style={{
-                  left: css(textDraft.x),
-                  top: css(textDraft.y),
-                  // CSS 像素直接用 fontCss —— canvas 上是 fontCss × dpr 物理像素，
-                  // 缩到 CSS 显示后正好等于 fontCss，两边视觉一致。
-                  fontSize: fontCss,
-                  color,
-                }}
-                placeholder="输入文字…"
-                onBlur={(e) => submitText(e.target.value)}
-                onKeyDown={(e) => {
-                  // 必须阻断冒态：否则 Enter 会触发全局"完成标注"、Esc 会关闭截图窗口（V3 bug）
-                  // isComposing：中文输入法选词按 Enter 不应提交（V6 实测 bug）
-                  if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                    e.stopPropagation();
-                    submitText((e.target as HTMLInputElement).value);
-                  }
-                  if (e.key === "Escape") {
-                    e.stopPropagation();
-                    setTextDraft(null);
-                  }
-                }}
-              />
-              <TextToolbar
-                color={color}
-                onSelectColor={(c) => setColor(c)}
-                textSizeId={textSizeId}
-                onSelectTextSize={(id) => setTextSizeId(id)}
-                // 紧贴输入框下沿（CSS 像素）：输入框高≈fontCss，+6 留缝
-                style={{ left: textDraft.x / dpr, top: textDraft.y / dpr + fontCss + 6 }}
-              />
-            </>
-          )}
+          {textDraft && (() => {
+            // 估算输入框高度（CSS px）：行数 × 字号 × 行高 + 上下留白；用于贴底翻转判断。
+            const draftLines = (textDraft.value ?? "").split("\n").length || 1;
+            const boxHCss = draftLines * fontCss * TEXT_LINE_HEIGHT + 4;
+            const TOOLBAR_H = 34;
+            // 输入框 + 迷你条整体接近选区/窗口底部时，把迷你条翻到输入框「上方」，
+            // 否则会被遮住看不见（微信同款：贴边自动上翻）。
+            const viewBottomCss = selRef.current
+              ? (selRef.current.y + selRef.current.h) / dpr
+              : typeof window !== "undefined"
+                ? window.innerHeight
+                : 1e9;
+            const flip = textDraft.y / dpr + boxHCss + 8 + TOOLBAR_H > viewBottomCss;
+            return (
+              <>
+                <textarea
+                  ref={textInputRef}
+                  // key：新建/编辑切换时强制重挂载，让 defaultValue 重新回填已有文字
+                  key={textDraft.id ?? "new"}
+                  className="text-draft"
+                  // 编辑已有文字时回填初始文本（新建则为空）
+                  defaultValue={textDraft.value ?? ""}
+                  // 在输入框内按下不冒泡到标注画布：避免点到输入框又触发 onAnnotMouseDown 重建/移位
+                  onMouseDown={(e) => e.stopPropagation()}
+                  // 内容变化按 scrollHeight 撑高（多行不被裁切）
+                  onChange={(e) => autoSizeText(e.target)}
+                  // color 必须跟当前标注色：不给的话 CSS 里是固定白色，
+                  // 而提交后 drawAnnot 用 a.color，会看到文字突然变色
+                  style={{
+                    left: css(textDraft.x),
+                    top: css(textDraft.y),
+                    // CSS 像素直接用 fontCss —— canvas 上是 fontCss × dpr 物理像素，
+                    // 缩到 CSS 显示后正好等于 fontCss，两边视觉一致。
+                    fontSize: fontCss,
+                    lineHeight: TEXT_LINE_HEIGHT,
+                    color,
+                  }}
+                  placeholder="输入文字…（Shift+Enter 换行）"
+                  onBlur={(e) => submitText(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Enter（非 Shift、非输入法组合）提交；Shift+Enter 放行默认行为 = 换行。
+                    // 阻断冒泡：否则 Enter 触发全局"完成标注"、Esc 关闭截图窗口（V3 bug）。
+                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      submitText((e.target as HTMLTextAreaElement).value);
+                    }
+                    if (e.key === "Escape") {
+                      e.stopPropagation();
+                      setTextDraft(null);
+                    }
+                  }}
+                />
+                <TextToolbar
+                  color={color}
+                  onSelectColor={(c) => setColor(c)}
+                  textSizeId={textSizeId}
+                  onSelectTextSize={(id) => setTextSizeId(id)}
+                  // 紧贴输入框下沿；贴底时翻到输入框上方（top 取负数偏移）
+                  style={{
+                    left: textDraft.x / dpr,
+                    top: flip
+                      ? textDraft.y / dpr - TOOLBAR_H - 6
+                      : textDraft.y / dpr + boxHCss + 6,
+                  }}
+                />
+              </>
+            );
+          })()}
         </div>
       )}
 
