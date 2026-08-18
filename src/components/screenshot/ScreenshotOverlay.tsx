@@ -28,6 +28,7 @@ import {
   nearestInDirection,
   pointHitAnnot,
   resolveSnapTargets,
+  sortControlsVisual,
   toLocalRect,
   toScreenPt,
   toScreenRect,
@@ -419,7 +420,8 @@ export function ScreenshotOverlay() {
         const localWin = toLocalRect(screen, res.win);
         const localCtrls = res.ctrls.map((c) => toLocalRect(screen, c));
         kbWinRectRef.current = localWin;
-        kbCtrlsRef.current = localCtrls;
+        // 按视觉阅读顺序重排：Tab 不再按 UIA 树序乱跳，而是「从左到右、从上到下」
+        kbCtrlsRef.current = sortControlsVisual(localCtrls);
         // 初始下标：离当前选区 / 窗口中心最近的控件
         const from = selRef.current ?? localWin;
         let best = 0;

@@ -382,3 +382,31 @@ export function nearestInDirection(rects: Rect[], from: Rect, dir: Dir): Rect | 
 export function toScreenRect(s: ScreenInfo | null, r: Rect): SnapRect {
   return { x: r.x + (s?.originX ?? 0), y: r.y + (s?.originY ?? 0), w: r.w, h: r.h };
 }
+
+/**
+ * 把控件清单按「视觉阅读顺序」重排：先按行（中心 y 聚成行），行内按中心 x 升序。
+ *
+ * UIA 枚举返回的是控件树序——对 Chrome / Electron / VS Code 这类 App，树序和屏幕布局
+ * 往往不一致，直接用它做 Tab 遍历会「乱跳」。按视觉位置排序后，Tab 变成「从左到右、
+ * 从上到下」的可预测跳动，和方向键的「定向最近」互补。纯几何，零副作用。
+ */
+export function sortControlsVisual(rects: Rect[]): Rect[] {
+  if (rects.length < 2) return rects.slice();
+  const minH = rects.reduce((m, r) => Math.min(m, r.h), Infinity);
+  const band = Math.max(minH * 0.6, 6); // 同一行的中心 y 允许偏差
+  const byY = [...rects].sort((a, b) => a.y + a.h / 2 - (b.y + b.h / 2));
+  const rows: { rowY: number; items: Rect[] }[] = [];
+  for (const r of byY) {
+    const cy = r.y + r.h / 2;
+    const hit = rows.find((row) => Math.abs(cy - row.rowY) <= band);
+    if (hit) hit.items.push(r);
+    else rows.push({ rowY: cy, items: [r] });
+  }
+  rows.sort((a, b) => a.rowY - b.rowY);
+  const out: Rect[] = [];
+  for (const row of rows) {
+    row.items.sort((a, b) => a.x + a.w / 2 - (b.x + b.w / 2));
+    out.push(...row.items);
+  }
+  return out;
+}
