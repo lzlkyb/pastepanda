@@ -26,7 +26,7 @@ import {
   applyMagnet,
   eraseStrokes,
   pointHitAnnot,
-  resolveSnapTarget,
+  resolveSnapTargets,
   toLocalRect,
   toScreenPt,
 } from "@/lib/screenshot/geometry";
@@ -101,6 +101,7 @@ import type {
   Rect,
   ScreenInfo,
   SnapRect,
+  SnapTargets,
   ToolId,
 } from "@/lib/screenshot/types";
 
@@ -178,6 +179,19 @@ export function ScreenshotOverlay() {
   const [shotToast, setShotToast] = useState<{ text: string; ok: boolean } | null>(null);
   const shotToastTimerRef = useRef<number | null>(null);
   const [textDraft, setTextDraft] = useState<{ x: number; y: number } | null>(null);
+  /** 文字输入框 DOM 引用：用 rAF 聚焦代替 autoFocus（见下方 effect 注释）。 */
+  const textInputRef = useRef<HTMLInputElement>(null);
+  // 标注态点画面创建输入框是在 mousedown handler 里触发的；浏览器会在 mouseup 时执行
+  // mousedown 的默认聚焦行为，把刚 autoFocus 的输入框 blur 掉，进而触发 onBlur →
+  // submitText("") → setTextDraft(null)，输入框在渲染后不到一帧就被移除（Tauri/WebView 经典坑）。
+  // 因此这里不用 autoFocus，改为在手势结束后（rAF）聚焦，彻底避开竞态，比 autoFocus 更可靠。
+  useEffect(() => {
+    if (!textDraft) return;
+    const el = textInputRef.current;
+    if (!el) return;
+    const id = requestAnimationFrame(() => el.focus());
+    return () => cancelAnimationFrame(id);
+  }, [textDraft]);
   const [copiedRow, setCopiedRow] = useState<number | null>(null);
   const [copiedAll, setCopiedAll] = useState(false);
   // ⑤ 取文字 · 字级拖选：逐字符可选中（后端已返回逐字符 bbox）。
@@ -353,7 +367,10 @@ export function ScreenshotOverlay() {
   const selFixedRef = useRef(false);
   const snapTsRef = useRef(0);
   // V6.19 磁吸参照：最后一次 hover 命中的窗口（拖选/缩放时边缘对齐用）
-  const lastSnapRef = useRef<Rect | null>(null);
+  const lastSnapRef = useRef<SnapTargets | null>(null);
+  // Tier3 双层轮廓：外层淡蓝窗口边界（物理像素局部坐标）；与选区框（ctrl）同坐标系。
+  // 仅当 ctrl 明显小于 win（<97%）时渲染，否则 solo 只显选区框。
+  const [snapWin, setSnapWin] = useState<Rect | null>(null);
   // 拖选磁吸参照：会话开始枚举一次的所有可见窗口矩形（底图局部坐标），用于吸邻窗边缘
   const winRectsRef = useRef<Rect[]>([]);
   const abortLongRef = useRef(false);
@@ -734,7 +751,7 @@ export function ScreenshotOverlay() {
         h: Math.min(h, sc.height),
       };
       // V6.19 磁吸：缩放时边缘对齐 屏幕边/中心线/hover 窗口边缘
-      setSel(applyMagnet(clamped, [...winRectsRef.current, ...(lastSnapRef.current ? [lastSnapRef.current] : [])], sc.width, sc.height));
+      setSel(applyMagnet(clamped, [...winRectsRef.current, ...(lastSnapRef.current ? [lastSnapRef.current.ctrl] : [])], sc.width, sc.height));
     };
     const onUp = () => {
       setResizing(null);
@@ -2604,10 +2621,19 @@ export function ScreenshotOverlay() {
   /* ===== select 态：微信同款交互（hover 即选区 / 拖选 / 选区移动） ===== */
   const onSelectMouseDown = (e: React.MouseEvent) => {
     if (phase !== "select") return;
+    setSnapWin(null); // 点选即退出 hover 吸附态的窗口轮廓（拖选固定后不再显示双层）
     if (longPreview) return; // 预览态：预览层自行处理单击/拖拽，不触发框选
     const r = e.currentTarget.getBoundingClientRect();
     const px = (e.clientX - r.left) * dpr;
     const py = (e.clientY - r.top) * dpr;
+    // 选择态下若已切到文字工具并点画面：直接固定当前选区、进标注态、在该点弹输入框，
+    // 否则点击只会被当成画新选区，文字工具「点了不弹框」。无选区（桌面空白）时退回原逻辑。
+    if (selRef.current && tool === "text") {
+      selFixedRef.current = true;
+      setPhase("annotate");
+      setTextDraft({ x: px, y: py });
+      return;
+    }
     // 微信同款：select 态按下一律画新矩形（任意起点，含吸附窗口内），
     // 不再"按在选区内=平移"。平移改为选区确认后用八向手柄拖移（:2789）。
     dragRef.current = { startX: px, startY: py, curX: px, curY: py };
@@ -2632,7 +2658,7 @@ export function ScreenshotOverlay() {
         h: Math.abs(py - d.startY),
       };
       const draft = sc
-        ? applyMagnet(raw, [...winRectsRef.current, ...(lastSnapRef.current ? [lastSnapRef.current] : [])], sc.width, sc.height)
+        ? applyMagnet(raw, [...winRectsRef.current, ...(lastSnapRef.current ? [lastSnapRef.current.ctrl] : [])], sc.width, sc.height)
         : raw;
       setSelDraft(draft);
       updateMag(px, py);
@@ -2646,7 +2672,7 @@ export function ScreenshotOverlay() {
       snapTsRef.current = now;
       // px/py 是底图局部坐标，后端要的是屏幕坐标；返回的矩形反过来要换回局部。
       const [sx, sy] = toScreenPt(screen, px, py);
-      void invoke<SnapRect | null>("snap_window_at", {
+      void invoke<SnapTargets | null>("snap_window_at", {
         x: Math.round(sx),
         y: Math.round(sy),
       })
@@ -2656,18 +2682,23 @@ export function ScreenshotOverlay() {
           const cur = lastSnapRef.current;
           // 桌面空白（后端返回 null）时吸附整屏，而非微信式全暗无选区：
           // 用户悬停桌面即框当前显示器整屏（QQ / Snipaste 同款全屏吸附）。
-          const full: Rect | null = screen
-            ? { x: 0, y: 0, w: screen.width, h: screen.height }
+          const full: SnapTargets | null = screen
+            ? { win: { x: 0, y: 0, w: screen.width, h: screen.height }, ctrl: { x: 0, y: 0, w: screen.width, h: screen.height } }
             : null;
-          const next = s && s.w >= 4 && s.h >= 4 ? toLocalRect(screen, s) : full;
-          // 迟滞防抖：光标在边界附近微抖时不让吸附框在「整窗↔子控件/邻窗/全屏」间反复跳
-          const target = resolveSnapTarget(cur, next, px, py);
+          const next: SnapTargets | null =
+            s && s.ctrl.w >= 4 && s.ctrl.h >= 4
+              ? { win: toLocalRect(screen, s.win), ctrl: toLocalRect(screen, s.ctrl) }
+              : full;
+          // 双层迟滞防抖：决定「窗口层 / 控件层」是否切换，防光标边界微抖时框反复跳
+          const target = resolveSnapTargets(cur, next, px, py);
           if (target) {
             lastSnapRef.current = target;
-            setSel(target);
+            setSel(target.ctrl);
+            setSnapWin(target.win);
           } else {
             lastSnapRef.current = null;
             setSel(null);
+            setSnapWin(null);
           }
         })
         .catch(() => {
@@ -2901,6 +2932,9 @@ export function ScreenshotOverlay() {
       return;
     }
     if (tool === "text") {
+      // 阻止 mousedown 默认聚焦：否则 browser 在 mouseup 时把刚创建的输入框 blur 掉，
+      // 触发 onBlur→submitText("")→setTextDraft(null)，输入框一闪即逝（见 textInputRef effect）。
+      e.preventDefault();
       setTextDraft({ x: px, y: py });
       return;
     }
@@ -3101,16 +3135,17 @@ export function ScreenshotOverlay() {
         // get_cursor_pos 与 snap_window_at 都是屏幕坐标，入参直接传；
         // 但返回的矩形是屏幕坐标，而 sel 是底图局部坐标，必须换算。
         const [cx, cy] = await invoke<[number, number]>("get_cursor_pos");
-        const hit = await invoke<SnapRect | null>("snap_window_at", { x: cx, y: cy });
+        const hit = await invoke<SnapTargets | null>("snap_window_at", { x: cx, y: cy });
         if (
           hit &&
           !cancelled &&
           phaseRef.current === "select" &&
           !selRef.current &&
-          hit.w >= 4 &&
-          hit.h >= 4
+          hit.ctrl.w >= 4 &&
+          hit.ctrl.h >= 4
         ) {
-          setSel(toLocalRect(screen, hit));
+          setSel(toLocalRect(screen, hit.ctrl));
+          setSnapWin(toLocalRect(screen, hit.win));
         }
       } catch (e) {
         logger.warn("自动框选当前窗口失败", e);
@@ -3371,6 +3406,14 @@ export function ScreenshotOverlay() {
           <div className="shade-block" style={{ left: css(displaySel.x + displaySel.w), top: css(displaySel.y), right: 0, height: css(displaySel.h) }} />
           <div className="shade-block" style={{ left: 0, top: css(displaySel.y + displaySel.h), width: "100%", height: `calc(100% - ${css(displaySel.y + displaySel.h)}px)` }} />
         </>
+      )}
+
+      {/* Tier3 双层轮廓：外层淡蓝窗口边界（仅当控件明显小于窗口即 <97% 时显示，避免双框难看） */}
+      {phase === "select" && snapWin && displaySel && !(displaySel.w >= snapWin.w * 0.97 && displaySel.h >= snapWin.h * 0.97) && (
+        <div
+          className="win-outline"
+          style={{ left: css(snapWin.x), top: css(snapWin.y), width: css(snapWin.w), height: css(snapWin.h) }}
+        />
       )}
 
       {/* 选区框 + 尺寸角标 */}
@@ -3661,8 +3704,10 @@ export function ScreenshotOverlay() {
           {/* 文字标注输入框 */}
           {textDraft && (
             <input
-              autoFocus
+              ref={textInputRef}
               className="text-draft"
+              // 在输入框内按下不冒泡到标注画布：避免点到输入框又触发 onAnnotMouseDown 重建/移位
+              onMouseDown={(e) => e.stopPropagation()}
               // color 必须跟当前标注色：不给的话 CSS 里是固定白色，
               // 而提交后 drawAnnot 用 a.color，会看到文字突然变色
               style={{

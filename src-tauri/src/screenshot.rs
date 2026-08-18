@@ -1131,6 +1131,21 @@ pub struct SnapRect {
     pub h: i32,
 }
 
+/// 吸附双层目标：同时返回「窗口」与「控件」两个矩形（屏幕物理坐标）。
+///
+/// - `win`：光标下最顶层可见窗口的视觉边界；控件级吸附退化成窗口级时它等于 `ctrl`；
+/// - `ctrl`：命中到的具体控件（UIA / 子窗口 / 面板），即真正要框选的区域；
+///   当没有更细控件可用时回退到 `win` 本身（前端据此只画单层框，避免双框难看）。
+///
+/// 前端把 `ctrl` 当作实际选区（内层亮蓝框），`win` 用于画外层淡蓝窗口轮廓，
+/// 形成「淡蓝窗口边界 + 亮蓝选区」的双层轮廓（最像微信的观感收尾，Tier3）。
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapTargets {
+    pub win: SnapRect,
+    pub ctrl: SnapRect,
+}
+
 /// 从 DWM 视觉边界与 GetWindowRect 两个候选里挑一个可用的（纯逻辑，带单测）。
 ///
 /// 矩形用 `(left, top, right, bottom)`，`None` = 该来源取值失败。
@@ -1213,7 +1228,7 @@ fn area(r: (i32, i32, i32, i32)) -> i64 {
 /// 用 EnumWindows 从 Z 序最上层开始遍历，跳过截图窗口自身后取第一个包含该点的可见窗口——
 /// 因为截图窗口全屏透明覆盖，WindowFromPoint 只会命中它自己。
 #[tauri::command]
-pub fn snap_window_at(app: tauri::AppHandle, x: i32, y: i32) -> Result<Option<SnapRect>, String> {
+pub fn snap_window_at(app: tauri::AppHandle, x: i32, y: i32) -> Result<Option<SnapTargets>, String> {
     #[cfg(target_os = "windows")]
     {
         snap_window_impl(&app, x, y)
@@ -1545,7 +1560,7 @@ unsafe fn is_cloaked(hwnd: windows::Win32::Foundation::HWND) -> bool {
 }
 
 #[cfg(target_os = "windows")]
-fn snap_window_impl(app: &tauri::AppHandle, x: i32, y: i32) -> Result<Option<SnapRect>, String> {
+fn snap_window_impl(app: &tauri::AppHandle, x: i32, y: i32) -> Result<Option<SnapTargets>, String> {
     use windows::Win32::Foundation::{HWND, LPARAM, POINT};
     use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetDesktopWindow, WNDENUMPROC};
 
@@ -1577,11 +1592,19 @@ fn snap_window_impl(app: &tauri::AppHandle, x: i32, y: i32) -> Result<Option<Sna
         if is_tray_class(&cls) {
             if let Some(r) = raw_window_rect(hwnd) {
                 let (l, t, rr, b) = r;
-                return Ok(Some(SnapRect {
-                    x: l,
-                    y: t,
-                    w: rr - l,
-                    h: b - t,
+                return Ok(Some(SnapTargets {
+                    win: SnapRect {
+                        x: l,
+                        y: t,
+                        w: rr - l,
+                        h: b - t,
+                    },
+                    ctrl: SnapRect {
+                        x: l,
+                        y: t,
+                        w: rr - l,
+                        h: b - t,
+                    },
                 }));
             }
             return Ok(None);
@@ -1608,12 +1631,21 @@ fn snap_window_impl(app: &tauri::AppHandle, x: i32, y: i32) -> Result<Option<Sna
             }
         }
 
+        let (wl, wt, wr, wb) = top_rect;
         let (l, t, r, b) = rect;
-        Ok(Some(SnapRect {
-            x: l,
-            y: t,
-            w: r - l,
-            h: b - t,
+        Ok(Some(SnapTargets {
+            win: SnapRect {
+                x: wl,
+                y: wt,
+                w: wr - wl,
+                h: wb - wt,
+            },
+            ctrl: SnapRect {
+                x: l,
+                y: t,
+                w: r - l,
+                h: b - t,
+            },
         }))
     }
 }

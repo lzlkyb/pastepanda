@@ -7,7 +7,7 @@
  */
 
 import { maskBrushWidth } from "./maskGeom";
-import type { Annotation, Rect, ScreenInfo, SnapRect } from "./types";
+import type { Annotation, Rect, ScreenInfo, SnapRect, SnapTargets } from "./types";
 
 /* ===== 坐标系换算（多显示器必需） =====
  * 底图 / 选区 / Canvas 用的是「底图局部坐标」，原点在虚拟屏幕左上角；
@@ -282,4 +282,38 @@ export function eraseStrokes(
   }
 
   return { deleted, split };
+}
+
+/**
+ * 双层吸附迟滞：在「整窗 ↔ 子控件 / 邻窗」之间做防抖，返回 `{ win, ctrl }` 双层目标。
+ *
+ * 复用 `resolveSnapTarget`（单层迟滞）分别处理两层，但保证 ctrl 永远归属当前 win：
+ *   - `cur` 为空 → 直接采用 `next`（首次吸附）；
+ *   - `next` 为空（桌面空白）→ 仅当光标明显离开当前 `win` 才清除，防边角闪烁；
+ *   - `win` 层先决定切到哪个窗口：离开所有窗口返回 null；
+ *   - 切换了窗口 → `ctrl` 直接用新窗口内的控件（不能沿用旧窗口的 ctrl）；
+ *   - 同窗口内 → `ctrl` 层用迟滞决定是否下钻到更细控件 / 切到兄弟控件 / 保持。
+ */
+export function resolveSnapTargets(
+  cur: SnapTargets | null,
+  next: SnapTargets | null,
+  px: number,
+  py: number,
+  hyst = 6,
+): SnapTargets | null {
+  if (!cur) return next;
+  if (!next) {
+    // 桌面空白：光标明显离开当前窗口才清除当前吸附（含 ctrl），防边角微抖闪烁
+    return outsideRect(px, py, cur.win, hyst) ? null : cur;
+  }
+  // win 层：决定切换到哪个窗口
+  const winNext = resolveSnapTarget(cur.win, next.win, px, py, hyst);
+  if (!winNext) return null; // 已离开所有顶层窗口
+  if (winNext !== cur.win) {
+    // 切换了窗口 → ctrl 直接用新窗口内的控件，避免 ctrl 残留在旧窗口
+    return { win: winNext, ctrl: next.ctrl };
+  }
+  // win 没变 → ctrl 层单独迟滞（下钻 / 切兄弟控件 / 保持）
+  const ctrlNext = resolveSnapTarget(cur.ctrl, next.ctrl, px, py, hyst);
+  return { win: cur.win, ctrl: ctrlNext ?? cur.ctrl };
 }

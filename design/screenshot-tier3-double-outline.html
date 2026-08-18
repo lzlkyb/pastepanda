@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>截图吸附 Tier3 · 双层轮廓 + 键盘遍历 · 设计稿</title>
+<style>
+  /* ===== 严格沿用真实 screenshot.css 的视觉令牌 ===== */
+  :root {
+    --sel-blue: rgba(59, 158, 255, 0.95);   /* .annot-sel-box 内层亮蓝 */
+    --win-blue: rgba(59, 158, 255, 0.40);   /* 新增：外层窗口淡蓝 */
+    --shade: rgba(10, 14, 24, 0.6);         /* .shade-block 暗遮罩 */
+    --size-bg: rgba(10, 14, 24, 0.92);      /* .sel-size 尺寸标签 */
+    --tb-grad: linear-gradient(180deg, rgba(34, 41, 76, 0.94), rgba(16, 21, 40, 0.96));
+    --text: #E6EDF7;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif; }
+  body { background: #0b0f1a; color: var(--text); display: flex; flex-direction: column; align-items: center; }
+
+  .wrap { width: 940px; max-width: 96vw; margin: 18px auto; }
+  .hint-card {
+    background: rgba(20, 26, 48, 0.9); border: 1px solid rgba(99, 102, 241, 0.25);
+    border-radius: 12px; padding: 12px 16px; margin-bottom: 14px; font-size: 13px; line-height: 1.7;
+  }
+  .hint-card b { color: #7DE0C4; }
+  .kbd { display: inline-block; padding: 1px 7px; border-radius: 5px; background: #1c2440; border: 1px solid #3a4570;
+         color: #cdd6ff; font-size: 12px; margin: 0 2px; }
+
+  /* ===== 截图舞台（模拟桌面 + 应用窗口） ===== */
+  .stage {
+    position: relative; width: 940px; height: 560px; border-radius: 14px; overflow: hidden;
+    background:
+      radial-gradient(1200px 600px at 70% 10%, #1b2747 0%, #0e1424 60%, #0a0e1a 100%);
+    cursor: crosshair; user-select: none; box-shadow: 0 18px 50px rgba(0,0,0,.5);
+  }
+  /* 模拟应用窗口（深色 UI，贴近 VS Code / Chrome 观感） */
+  .app-win {
+    position: absolute; background: #11182b; border: 1px solid #2a3556; border-radius: 10px; overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  }
+  .app-title {
+    height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 10px;
+    background: #18223c; border-bottom: 1px solid #2a3556; font-size: 12px; color: #9fb0d8;
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .app-body { position: absolute; left: 0; right: 0; bottom: 0; top: 30px; display: flex; }
+  .ctrl {
+    position: absolute; border-radius: 4px; background: rgba(125, 140, 255, 0.06);
+    border: 1px dashed transparent; transition: background .1s; font-size: 11px; color: #6f80a8;
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+  }
+  .ctrl.side { background: #0f1626; }
+  .ctrl:hover { background: rgba(125, 140, 255, 0.14); }
+
+  /* ===== 双层轮廓 ===== */
+  /* 外层窗口轮廓（淡蓝，永远显示，代表"会框到这个窗口"） */
+  .win-outline {
+    position: absolute; pointer-events: none; border: 1px dashed var(--win-blue);
+    border-radius: 10px; transition: all .08s linear; z-index: 30;
+  }
+  /* 内层控件轮廓（亮蓝，= 现有 .annot-sel-box，代表"即将截取的区域"） */
+  .sel-box {
+    position: absolute; pointer-events: none; border: 1.5px dashed var(--sel-blue);
+    border-radius: 3px; transition: left .06s, top .06s, width .06s, height .06s; z-index: 41;
+  }
+  /* 当没有细分到控件（内层==外层）时，只渲染内层亮蓝，避免双框难看 */
+  .sel-box.solo { border-radius: 10px; }
+
+  /* 尺寸标签（.sel-size 同款） */
+  .sel-size {
+    position: absolute; z-index: 42; transform: translate(0, -100%);
+    background: var(--size-bg); color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 4px;
+    white-space: nowrap; pointer-events: none; margin-top: -4px;
+  }
+  .sel-size .kind { color: #7DE0C4; margin-left: 6px; }
+
+  /* 选区外暗遮罩（4 块 .shade-block） */
+  .shade-block { position: absolute; background: var(--shade); pointer-events: none; z-index: 25; }
+
+  /* ===== 底部工具栏（还原 .annot-toolbar 深色玻璃） ===== */
+  .tb {
+    position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 60;
+    display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-radius: 12px;
+    background: var(--tb-grad); border: 1px solid rgba(125, 140, 255, 0.25);
+    box-shadow: 0 8px 24px rgba(0,0,0,.4); backdrop-filter: blur(8px);
+  }
+  .tb .t { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
+    border-radius: 8px; color: var(--text); font-size: 11px; }
+  .tb .t.lab { width: auto; padding: 0 8px; gap: 4px; }
+  .tb .sep { width: 1px; height: 22px; background: rgba(255,255,255,.12); margin: 0 3px; }
+  .tb .t:hover { background: rgba(148, 168, 255, 0.14); }
+
+  /* 键盘遍历提示卡 */
+  .kb-card { position: absolute; right: 14px; top: 14px; z-index: 60; width: 196px;
+    background: rgba(16, 21, 40, 0.94); border: 1px solid rgba(99,102,241,.3); border-radius: 10px;
+    padding: 10px 12px; font-size: 12px; line-height: 1.8; }
+  .kb-card h4 { margin: 0 0 6px; font-size: 12px; color: #7DE0C4; }
+  .kb-card .row { display: flex; justify-content: space-between; }
+
+  .mode-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+  .mode-tabs button { background: #1a2240; color: #cdd6ff; border: 1px solid #2f3a60; border-radius: 8px;
+    padding: 6px 14px; cursor: pointer; font-size: 13px; }
+  .mode-tabs button.on { background: rgba(59,158,255,.3); border-color: var(--sel-blue); color: #fff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hint-card">
+    <b>截图吸附 Tier3 设计稿</b> · 双层轮廓预览 + 键盘遍历控件树（最像微信的观感收尾）。<br/>
+    鼠标在舞台内移动 = 悬停吸附：<b>淡蓝外框</b>是被命中的<b>窗口</b>，<b>亮蓝内框</b>是即将截取的<b>控件</b>。
+    移动鼠标到按钮/输入框/侧栏等控件上，内框会精确贴合它。
+  </div>
+
+  <div class="mode-tabs">
+    <button id="m-hover" class="on" onclick="setMode('hover')">悬停双层轮廓</button>
+    <button id="m-kb" onclick="setMode('kb')">键盘遍历（Tab / 方向键）</button>
+  </div>
+
+  <div class="stage" id="stage">
+    <!-- 模拟窗口：浏览器（左）与编辑器（右） -->
+    <div class="app-win" data-win="0" style="left:60px; top:60px; width:400px; height:420px;">
+      <div class="app-title"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span style="margin-left:8px">浏览器 — 网页</span></div>
+      <div class="app-body">
+        <div class="ctrl side" data-c="0-0" style="left:0; top:0; width:120px; height:100%;">侧边栏</div>
+        <div class="ctrl" data-c="0-1" style="left:128px; top:8px; width:260px; height:30px;">地址栏</div>
+        <div class="ctrl" data-c="0-2" style="left:128px; top:48px; width:120px; height:34px;">搜索框</div>
+        <div class="ctrl" data-c="0-3" style="left:256px; top:48px; width:132px; height:34px;">登录按钮</div>
+        <div class="ctrl" data-c="0-4" style="left:128px; top:92px; width:260px; height:300px;">内容区</div>
+      </div>
+    </div>
+
+    <div class="app-win" data-win="1" style="left:500px; top:120px; width:380px; height:360px;">
+      <div class="app-title"><span class="dot" style="background:#5b8cff"></span><span style="margin-left:8px">编辑器 — main.ts</span></div>
+      <div class="app-body">
+        <div class="ctrl side" data-c="1-0" style="left:0; top:0; width:90px; height:100%;">资源管理器</div>
+        <div class="ctrl" data-c="1-1" style="left:96px; top:8px; width:280px; height:28px;">标签栏</div>
+        <div class="ctrl" data-c="1-2" style="left:96px; top:44px; width:160px; height:26px;">函数名</div>
+        <div class="ctrl" data-c="1-3" style="left:262px; top:44px; width:114px; height:26px;">行号区</div>
+        <div class="ctrl" data-c="1-4" style="left:96px; top:78px; width:280px; height:260px;">代码区</div>
+      </div>
+    </div>
+
+    <!-- 双层轮廓（JS 定位） -->
+    <div class="win-outline" id="winOutline" style="display:none"></div>
+    <div class="sel-box" id="selBox" style="display:none"></div>
+    <div class="sel-size" id="selSize" style="display:none"></div>
+
+    <!-- 暗遮罩 4 块 -->
+    <div class="shade-block" id="sh0"></div><div class="shade-block" id="sh1"></div>
+    <div class="shade-block" id="sh2"></div><div class="shade-block" id="sh3"></div>
+
+    <!-- 键盘遍历提示 -->
+    <div class="kb-card" id="kbCard" style="display:none">
+      <h4>键盘遍历控件树</h4>
+      <div class="row"><span>切到下一个窗口</span><span><span class="kbd">Tab</span></span></div>
+      <div class="row"><span>窗口内下一控件</span><span><span class="kbd">→</span><span class="kbd">↓</span></span></div>
+      <div class="row"><span>窗口内上一控件</span><span><span class="kbd">←</span><span class="kbd">↑</span></span></div>
+      <div style="margin-top:6px;color:#9fb0d8">外层淡蓝跳窗口，内层亮蓝跳控件；点选截取内层。</div>
+    </div>
+
+    <!-- 工具栏还原 -->
+    <div class="tb">
+      <div class="t lab">↶</div><div class="t lab">↷</div><div class="sep"></div>
+      <div class="t lab">矩形</div><div class="t lab">箭头</div><div class="t lab">文字</div><div class="sep"></div>
+      <div class="t lab">取文字</div><div class="t lab">贴图</div><div class="t lab">完成 ✓</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const stage = document.getElementById('stage');
+  const winOutline = document.getElementById('winOutline');
+  const selBox = document.getElementById('selBox');
+  const selSize = document.getElementById('selSize');
+  const kbCard = document.getElementById('kbCard');
+
+  // 窗口元数据（舞台局部坐标，对应真实后端 top_rect）
+  const wins = [
+    { x: 60, y: 60, w: 400, h: 420, ctrls: [
+        { x: 60,  y: 90,  w: 120, h: 390, label: '侧边栏' },
+        { x: 188, y: 98,  w: 260, h: 30,  label: '地址栏' },
+        { x: 188, y: 138, w: 120, h: 34,  label: '搜索框' },
+        { x: 316, y: 138, w: 132, h: 34,  label: '登录按钮' },
+        { x: 188, y: 182, w: 260, h: 300, label: '内容区' },
+    ]},
+    { x: 500, y: 120, w: 380, h: 360, ctrls: [
+        { x: 500, y: 150, w: 90,  h: 330, label: '资源管理器' },
+        { x: 596, y: 158, w: 280, h: 28,  label: '标签栏' },
+        { x: 596, y: 194, w: 160, h: 26,  label: '函数名' },
+        { x: 762, y: 194, w: 114, h: 26,  label: '行号区' },
+        { x: 596, y: 228, w: 280, h: 260, label: '代码区' },
+    ]},
+  ];
+
+  let mode = 'hover';
+  let kbWin = 0, kbCtrl = 0;
+
+  function setMode(m) {
+    mode = m;
+    document.getElementById('m-hover').classList.toggle('on', m === 'hover');
+    document.getElementById('m-kb').classList.toggle('on', m === 'kb');
+    kbCard.style.display = m === 'kb' ? 'block' : 'none';
+    if (m === 'kb') { kbWin = 0; kbCtrl = 0; drawKB(); }
+  }
+
+  function inRect(p, r) { return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h; }
+
+  function render(winRect, ctrlRect, label) {
+    // 外层窗口框
+    winOutline.style.display = 'block';
+    winOutline.style.left = winRect.x + 'px';
+    winOutline.style.top = winRect.y + 'px';
+    winOutline.style.width = winRect.w + 'px';
+    winOutline.style.height = winRect.h + 'px';
+
+    // 内层控件框
+    selBox.style.display = 'block';
+    selBox.style.left = ctrlRect.x + 'px';
+    selBox.style.top = ctrlRect.y + 'px';
+    selBox.style.width = ctrlRect.w + 'px';
+    selBox.style.height = ctrlRect.h + 'px';
+    // 控件几乎占满整窗 → 只显示内层亮蓝（solo），避免双框
+    const fill = ctrlRect.w >= winRect.w * 0.97 && ctrlRect.h >= winRect.h * 0.97;
+    selBox.classList.toggle('solo', fill);
+
+    // 尺寸标签
+    selSize.style.display = 'block';
+    selSize.style.left = ctrlRect.x + 'px';
+    selSize.style.top = ctrlRect.y + 'px';
+    selSize.innerHTML = `${Math.round(ctrlRect.w)} × ${Math.round(ctrlRect.h)}` +
+      (label ? `<span class="kind">${label}</span>` : '');
+
+    // 暗遮罩（围绕内层框的 4 块）
+    const sh = [
+      [0, 0, stage.clientWidth, ctrlRect.y],                                    // 上
+      [0, ctrlRect.y + ctrlRect.h, stage.clientWidth, stage.clientHeight - ctrlRect.y - ctrlRect.h], // 下
+      [0, ctrlRect.y, ctrlRect.x, ctrlRect.h],                                  // 左
+      [ctrlRect.x + ctrlRect.w, ctrlRect.y, stage.clientWidth - ctrlRect.x - ctrlRect.w, ctrlRect.h], // 右
+    ];
+    ['sh0','sh1','sh2','sh3'].forEach((id, i) => {
+      const [x,y,w,h] = sh[i];
+      const el = document.getElementById(id);
+      el.style.left = x+'px'; el.style.top = y+'px'; el.style.width = w+'px'; el.style.height = h+'px';
+    });
+  }
+
+  function clearAll() {
+    winOutline.style.display = 'none';
+    selBox.style.display = 'none';
+    selSize.style.display = 'none';
+    ['sh0','sh1','sh2','sh3'].forEach(id => { const e = document.getElementById(id); e.style.width='0'; e.style.height='0'; });
+  }
+
+  stage.addEventListener('mousemove', (e) => {
+    if (mode !== 'hover') return;
+    const r = stage.getBoundingClientRect();
+    const p = { x: e.clientX - r.left, y: e.clientY - r.top };
+    // 从后往前（Z 序最上）找包含点的窗口
+    let win = null;
+    for (let i = wins.length - 1; i >= 0; i--) if (inRect(p, wins[i])) { win = wins[i]; break; }
+    if (!win) { clearAll(); return; }
+    // 找命中的控件（同窗口内）
+    let ctrl = null;
+    for (const c of win.ctrls) if (inRect(p, c)) { ctrl = c; break; }
+    if (!ctrl) ctrl = { x: win.x, y: win.y, w: win.w, h: win.h, label: '整窗' };
+    render(win, ctrl, ctrl.label);
+  });
+
+  function drawKB() {
+    const win = wins[kbWin];
+    const ctrl = win.ctrls[kbCtrl];
+    render(win, ctrl, ctrl.label);
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (mode !== 'kb') return;
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      kbWin = (kbWin + 1) % wins.length; kbCtrl = 0; drawKB();
+    } else if (e.key.startsWith('Arrow')) {
+      e.preventDefault();
+      const n = wins[kbWin].ctrls.length;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') kbCtrl = (kbCtrl + 1) % n;
+      else kbCtrl = (kbCtrl - 1 + n) % n;
+      drawKB();
+    }
+  });
+</script>
+</body>
+</html>

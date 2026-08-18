@@ -22,6 +22,15 @@ export interface SnapRect {
   h: number;
 }
 
+/** 后端 snap_window_at 返回的双层吸附目标（屏幕坐标，物理像素）。
+ *  - `win`：光标下最顶层窗口的视觉边界；
+ *  - `ctrl`：命中的具体控件（真正要框选的区域）；无更细控件时回退到 `win`。
+ *  前端 `toLocalRect` 把它俩各自转成底图局部坐标（Rect）。 */
+export interface SnapTargets {
+  win: SnapRect;
+  ctrl: SnapRect;
+}
+
 /** 选区 / 标注包围盒（物理像素，**底图局部坐标**） */
 export interface Rect {
   x: number;
