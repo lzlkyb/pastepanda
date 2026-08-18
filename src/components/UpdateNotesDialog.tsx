@@ -5,6 +5,7 @@ import { useDialogAnim } from "@/lib/dialogMotion";
 import { X, ArrowRight, Download } from "lucide-react";
 import { FocusTrap } from "@/components/FocusTrap";
 import { AppIcon } from "@/components/AppIcon";
+import { Illustration, isIllustrationKey } from "@/components/Illustration";
 import { useUpdate } from "@/contexts/UpdateContext";
 import { CHANGELOG } from "@/lib/changelog.generated";
 import { parseChangelogSection } from "@/lib/changelogParser";
@@ -349,16 +350,16 @@ function FeatCard({ item, catName }: { item: ChangeItem; catName: string }) {
 /** 配图缩略图：加载失败优雅降级为占位框（真实资源到位后自动显示） */
 function MediaThumb({ src }: { src: string }) {
   const [err, setErr] = useState(false);
-  if (err) {
-    return (
-      <div className={styles.cardMedia}>
-        <span className={styles.cardMediaPh}>配图占位 · {src.split("/").pop()}</span>
-      </div>
-    );
-  }
+  const kind = isIllustrationKey(src) ? src : null;
   return (
     <div className={styles.cardMedia}>
-      <img src={src} alt="" className={styles.cardMediaImg} onError={() => setErr(true)} />
+      {kind ? (
+        <Illustration kind={kind} className={styles.cardMediaImg} />
+      ) : err ? (
+        <Illustration kind="default" className={styles.cardMediaImg} />
+      ) : (
+        <img src={src} alt="" className={styles.cardMediaImg} onError={() => setErr(true)} />
+      )}
     </div>
   );
 }

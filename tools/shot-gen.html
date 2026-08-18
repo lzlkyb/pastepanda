@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>配图生成器 · PastePanda</title>
+    <style>
+      :root {
+        --accent: #4c8dff;
+        --bg: #0f141c;
+        --panel: #1a2230;
+        --text: #cdd6e4;
+        --muted: #8893a5;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+        padding: 28px;
+      }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      .sub { color: var(--muted); margin: 0 0 20px; }
+      .row { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+      .card {
+        background: var(--panel);
+        border: 1px solid #2a3445;
+        border-radius: 12px;
+        padding: 14px;
+        width: 280px;
+      }
+      canvas {
+        width: 252px;
+        height: 137px;
+        display: block;
+        border-radius: 8px;
+        background: #11161f;
+      }
+      .name { margin: 10px 0 8px; font-weight: 600; }
+      button {
+        background: var(--accent);
+        color: #fff;
+        border: 0;
+        border-radius: 8px;
+        padding: 7px 12px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      button.ghost { background: #2a3445; color: var(--text); }
+      .bar { margin: 18px 0; display: flex; gap: 10px; }
+      .hint { color: var(--muted); font-size: 12px; }
+      code { background: #11161f; padding: 1px 6px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <h1>配图生成器</h1>
+    <p class="sub">
+      用 Canvas 实时绘制三种标注效果（与 App 内发版说明同一套逻辑）。点「下载」把 PNG 存到
+      <code>public/shots/</code>，文件名对应 <code>ocr / mosaic / eraser</code>，App 会自动用它覆盖代码绘制版。
+    </p>
+
+    <div class="bar">
+      <button id="all">全部下载（252×137 @2x）</button>
+      <span class="hint">提示：不下载也完全没问题——App 默认就用 Canvas 实时绘制，这张页面只是「想要真实质感图时」用。</span>
+    </div>
+
+    <div class="row" id="cards"></div>
+
+    <script>
+      // ── 与 src/components/Illustration.tsx 同构的绘制逻辑 ──
+      const ACCENT = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#4c8dff";
+      const INK = "#9aa6b8";
+
+      function roundRect(ctx, x, y, w, h, r) {
+        const rr = Math.min(r, w / 2, h / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + rr, y);
+        ctx.arcTo(x + w, y, x + w, y + h, rr);
+        ctx.arcTo(x + w, y + h, x, y + h, rr);
+        ctx.arcTo(x, y + h, x, y, rr);
+        ctx.arcTo(x, y, x + w, y, rr);
+        ctx.closePath();
+      }
+      function withAlpha(ctx, a, fn) {
+        const p = ctx.globalAlpha;
+        ctx.globalAlpha = a;
+        fn();
+        ctx.globalAlpha = p;
+      }
+      function hexA(hex, a) {
+        const m = hex.replace("#", "");
+        if (m.length < 6) return hex;
+        const r = parseInt(m.slice(0, 2), 16), g = parseInt(m.slice(2, 4), 16), b = parseInt(m.slice(4, 6), 16);
+        return `rgba(${r},${g},${b},${a})`;
+      }
+      function drawOcr(ctx, accent) {
+        ctx.save();
+        ctx.strokeStyle = accent; ctx.lineWidth = 1.6; ctx.setLineDash([5, 4]);
+        roundRect(ctx, 24, 22, 120, 58, 6); ctx.fillStyle = hexA(accent, 0.16); ctx.fill(); ctx.stroke();
+        ctx.restore();
+        ctx.strokeStyle = "rgba(150,165,190,0.35)"; ctx.lineWidth = 1;
+        roundRect(ctx, 156, 22, 64, 86, 6); ctx.stroke();
+        ctx.fillStyle = accent; roundRect(ctx, 164, 30, 48, 6, 3); ctx.fill();
+        withAlpha(ctx, 0.6, () => { for (let i = 0; i < 5; i++) { roundRect(ctx, 164, 44 + i * 11, i === 4 ? 30 : 44, 5, 2.5); ctx.fill(); } });
+      }
+      function drawMosaic(ctx, accent) {
+        const x0 = 120, y0 = 28, bw = 92, bh = 80, cell = 11;
+        const g = ctx.createLinearGradient(x0, y0, x0 + bw, y0 + bh);
+        g.addColorStop(0, "#6f86c9"); g.addColorStop(0.5, "#9b7fd0"); g.addColorStop(1, "#e08aa6");
+        ctx.save(); roundRect(ctx, x0, y0, bw, bh, 6); ctx.clip();
+        ctx.fillStyle = g; ctx.fillRect(x0, y0, bw, bh);
+        for (let yy = y0; yy < y0 + bh; yy += cell) for (let xx = x0; xx < x0 + bw; xx += cell) {
+          const t = (xx - x0) / bw / 2 + (yy - y0) / bh / 2;
+          const s = Math.floor(120 + t * 90);
+          ctx.fillStyle = `rgba(${s},${s - 18},${s + 34},0.6)`; ctx.fillRect(xx, yy, cell - 1, cell - 1);
+        }
+        ctx.restore();
+        ctx.strokeStyle = hexA(accent, 0.6); ctx.lineWidth = 1.4; ctx.setLineDash([4, 4]);
+        roundRect(ctx, x0, y0, bw, bh, 6); ctx.stroke(); ctx.setLineDash([]);
+      }
+      function drawEraser(ctx, ink) {
+        const x0 = 120, y0 = 28, bw = 92, bh = 80;
+        withAlpha(ctx, 0.35, () => { for (let i = 0; i < 5; i++) { roundRect(ctx, x0 + 8, y0 + 8 + i * 14, bw - 16, 6, 3); ctx.fill(); } });
+        ctx.save(); ctx.globalCompositeOperation = "destination-out"; roundRect(ctx, x0, y0, bw, bh, 6); ctx.fill(); ctx.restore();
+        ctx.strokeStyle = hexA(ink, 0.55); ctx.lineWidth = 1.4; ctx.setLineDash([4, 4]);
+        roundRect(ctx, x0, y0, bw, bh, 6); ctx.stroke(); ctx.setLineDash([]);
+        withAlpha(ctx, 0.85, () => { ctx.beginPath(); ctx.arc(x0 + bw - 16, y0 + bh - 16, 5, 0, Math.PI * 2); ctx.fill(); });
+      }
+      function drawDefault(ctx, ink) {
+        withAlpha(ctx, 0.4, () => { ctx.beginPath(); ctx.arc(62, 50, 10, 0, Math.PI * 2); ctx.fill(); });
+        withAlpha(ctx, 0.25, () => { ctx.beginPath(); ctx.moveTo(28, 100); ctx.lineTo(78, 60); ctx.lineTo(106, 84); ctx.lineTo(138, 54); ctx.lineTo(196, 100); ctx.closePath(); ctx.fill(); });
+      }
+      function paint(ctx, kind, w, h) {
+        const accent = ACCENT, ink = INK;
+        roundRect(ctx, 10, 10, w - 20, h - 20, 10);
+        const g = ctx.createLinearGradient(10, 10, w - 10, h - 10);
+        g.addColorStop(0, "rgba(120,135,160,0.10)"); g.addColorStop(1, "rgba(120,135,160,0.04)");
+        ctx.fillStyle = g; ctx.fill(); ctx.strokeStyle = "rgba(150,165,190,0.35)"; ctx.lineWidth = 1; ctx.stroke();
+        withAlpha(ctx, 0.45, () => { for (let i = 0; i < 5; i++) { roundRect(ctx, 26, 26 + i * 15, i === 4 ? 92 : 150, 7, 3.5); ctx.fill(); } });
+        if (kind === "ocr") drawOcr(ctx, accent);
+        else if (kind === "mosaic") drawMosaic(ctx, accent);
+        else if (kind === "eraser") drawEraser(ctx, ink);
+        else drawDefault(ctx, ink);
+      }
+
+      const KINDS = [
+        { id: "ocr", label: "取文字" },
+        { id: "mosaic", label: "马赛克 / 模糊" },
+        { id: "eraser", label: "橡皮擦" },
+      ];
+      const W = 252, H = 137, SCALE = 2;
+
+      const cards = document.getElementById("cards");
+      KINDS.forEach(({ id, label }) => {
+        const card = document.createElement("div");
+        card.className = "card";
+        const cv = document.createElement("canvas");
+        cv.width = W * SCALE; cv.height = H * SCALE;
+        cv.style.width = W + "px"; cv.style.height = H + "px";
+        const ctx = cv.getContext("2d");
+        ctx.scale(SCALE, SCALE);
+        ctx.clearRect(0, 0, W, H);
+        paint(ctx, id, W, H);
+        const name = document.createElement("div");
+        name.className = "name"; name.textContent = label + " · " + id + ".png";
+        const btn = document.createElement("button");
+        btn.textContent = "下载 PNG";
+        btn.onclick = () => download(cv, id + ".png");
+        card.append(cv, name, btn);
+        cards.append(card);
+      });
+
+      function download(cv, filename) {
+        cv.toBlob((blob) => {
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = filename;
+          a.click();
+          URL.revokeObjectURL(a.href);
+        }, "image/png");
+      }
+      document.getElementById("all").onclick = () => {
+        document.querySelectorAll("#cards canvas").forEach((cv, i) => download(cv, KINDS[i].id + ".png"));
+      };
+    </script>
+  </body>
+</html>

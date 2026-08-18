@@ -17,6 +17,7 @@ import type { TbAttach } from "@/lib/screenshot/toolbarPos";
 import { type MouseEvent, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { AiMark } from "@/components/ai/AiMark";
+import { Illustration, isIllustrationKey } from "@/components/Illustration";
 import { OCR_ICON, PIN_ICON, SAVE_ICON, TOOLS } from "./tools";
 
 /** 取文字按钮的状态（与 ScreenshotOverlay 的 ocrStatus 同源） */
@@ -35,18 +36,21 @@ export interface NewHint {
   media?: string;
 }
 
-/** 教练卡配图：能加载就显示，加载失败（如截图资源尚未打包）降级为文件名占位。 */
+/** 教练卡配图：media 为插图 key 时用 Canvas 实时绘制；为真实图片路径则走 <img>，失败降级为 default 图。 */
 function CoachMedia({ src }: { src: string }) {
   const [ok, setOk] = useState(true);
-  const name = src.split("/").pop() ?? src;
+  const kind = isIllustrationKey(src) ? src : null;
+  if (kind) {
+    return <Illustration kind={kind} className="coach-media" />;
+  }
   if (!ok) {
-    return <div className="coach-media coach-media-ph">{name}</div>;
+    return <Illustration kind="default" className="coach-media" />;
   }
   return (
     <img
       className="coach-media"
       src={src}
-      alt={name}
+      alt={src}
       onError={() => setOk(false)}
     />
   );

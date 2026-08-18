@@ -8,7 +8,7 @@ export interface ChangeItem {
   why?: string;
   /** 怎么用：操作步骤（1–3 步），用于发版弹框功能卡片 */
   how?: string[];
-  /** 配图：构建后站点根下的图片路径（放 public/shots/ 下，如 /shots/ocr.jpg），弹框内渲染缩略图 */
+  /** 配图：插图 key（ocr / mosaic / eraser，由 Canvas 实时绘制，零图片文件）；也可写真实图片路径（如 shots/ocr.jpg），此时走 <img> 且失败降级 */
   media?: string;
 }
 

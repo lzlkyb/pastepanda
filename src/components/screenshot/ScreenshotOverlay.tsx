@@ -138,21 +138,21 @@ const NEW_HINT_CONTENT: Record<string, NewHint> = {
     title: "取文字",
     why: "截图里看到字，点一下直接识别，不用先保存再翻菜单",
     how: ["点工具栏「取文字」按钮", "完成后自动展开文字，可逐行 / 逐字复制", "按 T 直接复制全文"],
-    media: "/shots/ocr.jpg",
+    media: "ocr",
   },
   mosaic: {
     id: "mosaic",
     title: "马赛克 / 模糊「涂」",
     why: "像笔一样抹过去就打码，来回抹无缝拼接",
     how: ["选马赛克 / 模糊工具，按住拖动涂抹", "滚轮调强度"],
-    media: "/shots/mosaic.jpg",
+    media: "mosaic",
   },
   eraser: {
     id: "eraser",
     title: "真正的橡皮擦",
     why: "擦到笔迹会切成多段，而不是整条曲线全没",
     how: ["选橡皮擦工具，在要擦的笔迹上涂抹"],
-    media: "/shots/eraser.jpg",
+    media: "eraser",
   },
 };
 
