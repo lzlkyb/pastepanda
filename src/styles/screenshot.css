@@ -631,6 +631,11 @@ body {
   white-space: nowrap;
   pointer-events: none;
   box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
+  opacity: 1;
+  transition: opacity 0.45s ease;
+}
+.shot-hint.fade-out {
+  opacity: 0;
 }
 .shot-hint .hk {
   color: #59A6FF;

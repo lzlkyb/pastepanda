@@ -388,7 +388,25 @@ export function ScreenshotOverlay() {
   // Tier3 双层轮廓：外层淡蓝窗口边界（物理像素局部坐标）；与选区框（ctrl）同坐标系。
   // 仅当 ctrl 明显小于 win（<97%）时渲染，否则 solo 只显选区框。
   const [snapWin, setSnapWin] = useState<Rect | null>(null);
-  const [hideHint, setHideHint] = useState(false); // 常驻操作提示条是否关闭（仅当前会话）
+  // 常驻提示条：首次使用展示数次后自动淡出（持久化计数，手动 × 可提前关闭）
+  const HINT_MAX_SHOWS = 5;
+  const HINT_AUTO_FADE_MS = 9000;
+  const [hintVisible, setHintVisible] = useState(false);
+  const [hintFading, setHintFading] = useState(false);
+  useEffect(() => {
+    if (localStorage.getItem("pp_snap_hint_dismissed") === "1") return;
+    const n = Number(localStorage.getItem("pp_snap_hint_count") || "0");
+    if (n < HINT_MAX_SHOWS) {
+      setHintVisible(true);
+      localStorage.setItem("pp_snap_hint_count", String(n + 1));
+      const t = setTimeout(() => setHintFading(true), HINT_AUTO_FADE_MS);
+      return () => clearTimeout(t);
+    }
+  }, []);
+  const closeHint = () => {
+    setHintFading(true);
+    localStorage.setItem("pp_snap_hint_dismissed", "1");
+  };
   // Tier3 键盘遍历：snapWin 的镜像 ref（keydown 处理里取不到最新 state），以及控件清单缓存。
   const snapWinRef = useRef<Rect | null>(null);
   const kbCtrlsRef = useRef<Rect[]>([]); // 当前窗口内控件（局部坐标）
@@ -3598,11 +3616,13 @@ export function ScreenshotOverlay() {
         </>
       )}
 
-      {/* 常驻操作提示条：让原本「隐身」的吸附/键盘遍历能力对用户可见（仅当前会话可关） */}
-      {!hideHint && (phase === "select" || phase === "annotate") && (
-        <div className="shot-hint">
+      {/* 常驻操作提示条：让原本「隐身」的吸附/键盘遍历能力对用户可见；首次使用后数秒自动淡出、累计展示若干次后排期退休 */}
+      {hintVisible && (phase === "select" || phase === "annotate") && (
+        <div className={`shot-hint${hintFading ? " fade-out" : ""}`}>
           {phase === "select" ? (
             <>
+              <span><span className="hk">拖拽</span> 框选 · 松手自动标注</span>
+              <span className="sep" />
               <span><span className="hk">悬停</span> 自动吸附窗口/控件</span>
               <span className="sep" />
               <span><span className="hk">Tab / 方向键</span> 切换控件</span>
@@ -3622,7 +3642,7 @@ export function ScreenshotOverlay() {
               <span><span className="hk">Esc</span> 返回</span>
             </>
           )}
-          <span className="hk-close" title="关闭提示" onClick={() => setHideHint(true)}>×</span>
+          <span className="hk-close" title="关闭提示" onClick={closeHint}>×</span>
         </div>
       )}
 
@@ -3989,24 +4009,6 @@ export function ScreenshotOverlay() {
               </>
             );
           })()}
-        </div>
-      )}
-
-      {/* 顶部提示条：标注态隐藏（QQ/微信同款：标注时界面清爽，且避免遮挡工具栏） */}
-      {phase !== "annotate" && (
-        <div className="shot-hint">
-          {phase === "select" ? (
-            <>
-              <span>拖拽框选 · 松手自动标注 · 悬停窗口可吸附</span>
-              <span>双击 = 全选</span>
-              <kbd>Esc</kbd> 取消
-            </>
-          ) : (
-            <>
-              <span>截图完成 · 点击下方出口操作</span>
-              <kbd>Esc</kbd> 关闭
-            </>
-          )}
         </div>
       )}
 
