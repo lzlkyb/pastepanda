@@ -136,7 +136,8 @@ body {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   cursor: pointer; border: 1px solid transparent;
   color: var(--text-primary, #E0E8F0); font-size: 12px;
-  position: relative; transition: background 0.12s;
+  position: relative;
+  transition: background 0.12s, transform 0.14s cubic-bezier(.34,1.56,.64,1), box-shadow 0.14s;
 }
 .tool .ic { display: flex; }
 .tool .ic svg { width: 17px; height: 17px; display: block; }
@@ -959,3 +960,86 @@ body {
   background: rgba(255, 255, 255, 0.16);
   color: #e6edf7;
 }
+
+/* ===== 动效提示（A/B/C 方案，2026-08-18） =====
+   设计契约：全部事件 / 状态驱动、瞬时结束；除 OCR 识别中的 .ocr-spin（已有）外
+   不引入任何常驻循环动画（符合项目性能红线：动画不可见即停）。
+   —— A 微交互质感：hover 抬升 + 图标缩放 + 点选弹跳 + 角标弹出
+   —— B 低频功能引导：未用过强力按钮的一次性脉冲 + 可关教练卡
+   —— C 状态变化强调：OCR 完成 pulse + 撤销可用轻推 + 属性条滑入 */
+
+/* —— A · 微交互质感 —— */
+/* hover 抬升（图标单独缩放，需 .ic svg 独立 transition）。
+   注：不加 overflow:hidden，否则会裁掉向下弹出的 tooltip(::after)。 */
+.tool:hover { transform: translateY(-2px); }
+.tool:active { transform: scale(0.94); }
+.tool .ic svg { transition: transform 0.14s cubic-bezier(.34,1.56,.64,1); }
+.tool:hover .ic svg { transform: scale(1.12); }
+/* 选中态弹性高亮：仅在点选那一刻由组件加 .sel-pop 播放（不含挂载默认选中），
+   避免每次进标注态默认工具都弹一下。 */
+.tool.sel-pop { animation: tbSpring 0.32s cubic-bezier(.34,1.56,.64,1); }
+@keyframes tbSpring {
+  0% { transform: scale(0.9); }
+  55% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+/* 角标（OCR 行数 / 失败 !）出现时弹出 */
+.tool .badge { animation: tbBadgePop 0.3s cubic-bezier(.34,1.56,.64,1); }
+@keyframes tbBadgePop {
+  0% { transform: scale(0); }
+  70% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+
+/* —— B · 低频功能引导：一次性脉冲 —— */
+/* 只作用于动作型按钮（自动打码 / 取文字 / 贴图），它们永不进入 .on，故不与 tbSpring 冲突。
+   有限 3 次后静止，不常驻循环；组件挂载进标注态时播放一次，用过即停。 */
+.tool.discover { animation: tbDiscover 1.1s ease-in-out 3; }
+@keyframes tbDiscover {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(125, 224, 196, 0); }
+  50% { box-shadow: 0 0 0 3px rgba(125, 224, 196, 0.5), 0 0 14px rgba(125, 224, 196, 0.4); }
+}
+/* 教练卡片：锚定工具栏上方（翻转时落下方），一次性、可关、用过即不再出现 */
+.tb-coach {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: calc(100% + 10px);
+  z-index: 96; display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-radius: 10px; white-space: nowrap;
+  background: rgba(14, 20, 38, 0.97);
+  border: 1px solid rgba(125, 224, 196, 0.6);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+  font-size: 12px; color: #cfe9e2;
+  animation: tbCoachIn 0.25s ease;
+  pointer-events: auto;
+}
+.tb-coach b { color: #7DE0C4; }
+.tb-coach .x { cursor: pointer; color: #9DB2D0; margin-left: 2px; padding: 0 2px; }
+.tb-coach .x:hover { color: #fff; }
+.annot-toolbar.top-attached .tb-coach { bottom: auto; top: calc(100% + 10px); }
+@keyframes tbCoachIn {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* —— C · 状态变化“看这里” —— */
+/* OCR 完成：取文字按钮一次性 pulse（角标已由 tbBadgePop 弹出） */
+.tool.ocr-btn.done { animation: tbLook 0.8s ease; }
+@keyframes tbLook {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.14); box-shadow: 0 0 0 4px rgba(125, 224, 196, 0.5); }
+  100% { transform: scale(1); }
+}
+/* 撤销可用：按钮轻推（仅在从 disabled → 可用那一瞬触发，纯 CSS 靠 :not(.disabled) 匹配） */
+.tb-undo:not(.disabled) { animation: tbNudge 1.4s ease 2; }
+@keyframes tbNudge {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+/* 属性条随选中工具滑入（挂载即播，纯 CSS；保留 translateX(-50%) 居中） */
+.attr-bar { animation: tbAttrIn 0.26s cubic-bezier(.34,1.56,.64,1); }
+@keyframes tbAttrIn {
+  from { opacity: 0; transform: translate(-50%, -10px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+

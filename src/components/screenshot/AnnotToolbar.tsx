@@ -1,7 +1,9 @@
 /**
  * 标注态主工具栏（= 微信截图「已确认选区」后那条栏）。
  *
- * 纯展示组件：不持有任何状态、不碰 ref、不发 IPC。
+ * 纯展示组件：不持有领域状态、不发 IPC。
+ * 唯一的例外是「选中弹跳」动效（A 方案）：用 onClickCapture 在点击那一刻给按钮
+ * 加一个瞬时的 .sel-pop 类触发弹簧动画，纯视觉、不碰业务状态。
  *
  * V6.20 双层改版：颜色 / 粗细 / 箭头样式已移到 AttrBar（属性条）。
  * 旧实现把 21 个元素塞在一条 560px 的栏里，拥挤本身就是误点与"看不懂"的成因之一。
@@ -12,6 +14,7 @@
 
 import type { ToolId } from "@/lib/screenshot/types";
 import type { TbAttach } from "@/lib/screenshot/toolbarPos";
+import { type MouseEvent } from "react";
 import { Sparkles } from "lucide-react";
 import { AiMark } from "@/components/ai/AiMark";
 import { OCR_ICON, PIN_ICON, SAVE_ICON, TOOLS } from "./tools";
@@ -81,6 +84,14 @@ interface Props {
   onCancel: () => void;
   onDone: () => void;
   onMore: () => void;
+
+  /** B 方案 · 低频功能引导：仍未用过的「强力按钮」id 列表（自动打码 / 取文字 / 贴图）。
+   *  命中即在按钮上加一次性脉冲（3 次后静止），用过即不再出现。父组件持久化"是否用过"。 */
+  discover?: string[];
+  /** B 方案 · 教练卡片文案：非空时工具栏上方浮一张可关的引导卡；关掉或用了该功能即不再出现。 */
+  coachText?: string | null;
+  /** B 方案 · 关闭教练卡片（父组件负责持久化"已看过"，避免反复打扰）。 */
+  onCoachClose?: () => void;
 }
 
 /** 撤销图标（与 tools.tsx 同一套描边参数） */
@@ -182,6 +193,9 @@ export function AnnotToolbar({
   onCancel,
   onDone,
   onMore,
+  discover,
+  coachText,
+  onCoachClose,
   maskOn,
   maskActive,
   onApplyMasks,
@@ -213,16 +227,28 @@ export function AnnotToolbar({
       ? "已有标注，长截图会丢弃它们 · 先撤销或完成"
       : "滚动拼接成一张长图";
 
+  // A 方案 · 选中弹跳：仅在点选那一刻给被点按钮加瞬时 .sel-pop 触发弹簧动画，
+  // 不含挂载默认选中（默认工具 rect 不会在进标注态时弹一下）。直接操作 DOM class，
+  // 不触发 React 重渲染；动画结束前若再次点击会先移除再重加以重启动画。
+  const onToolCapture = (e: MouseEvent) => {
+    const el = (e.target as HTMLElement).closest(".tool") as HTMLElement | null;
+    if (!el || el.classList.contains("disabled")) return;
+    el.classList.remove("sel-pop");
+    void el.offsetWidth; // 强制回流以重启动画
+    el.classList.add("sel-pop");
+  };
+
   return (
     <div
       ref={innerRef}
       className={`annot-toolbar${attach !== "below" ? " top-attached" : ""}${busy ? " busy" : ""}`}
       style={{ left, top }}
+      onClickCapture={onToolCapture}
     >
       {TOOLS.map((t) => (
         <div key={t.id} className={t.id === "automask" ? "mask-btn-anchor" : undefined}>
           <div
-            className={`tool${tool === t.id ? " on" : ""}`}
+            className={`tool${tool === t.id ? " on" : ""}${discover?.includes(t.id) ? " discover" : ""}`}
             data-tip={`${t.tip ?? t.label}${t.key ? `（按 ${t.key}）` : ""}`}
             onClick={() => onSelectTool(t.id)}
           >
@@ -265,7 +291,7 @@ export function AnnotToolbar({
       <div className="tsep" />
 
       <div
-        className={`tool dim${canUndo ? "" : " disabled"}`}
+        className={`tool dim tb-undo${canUndo ? "" : " disabled"}`}
         data-tip={canUndo ? "撤销（Ctrl+Z）" : "没有可撤销的操作"}
         onClick={() => canUndo && onUndo()}
       >
@@ -273,7 +299,7 @@ export function AnnotToolbar({
         <span className="lb">撤销</span>
       </div>
       <div
-        className={`tool dim${canRedo ? "" : " disabled"}`}
+        className={`tool dim tb-redo${canRedo ? "" : " disabled"}`}
         data-tip={canRedo ? "重做（Ctrl+Y）" : "没有可重做的操作"}
         onClick={() => canRedo && onRedo()}
       >
@@ -302,7 +328,9 @@ export function AnnotToolbar({
       <div
         className={`tool ocr-btn${ocrStatus === "running" ? " busy" : ""}${
           ocrStatus === "failed" ? " failed" : ""
-        }${ocrStatus === "empty" || ocrStatus === "idle" ? " disabled" : ""}`}
+        }${ocrStatus === "done" ? " done" : ""}${
+          ocrStatus === "empty" || ocrStatus === "idle" ? " disabled" : ""
+        }${discover?.includes("ocr") ? " discover" : ""}`}
         data-tip={ocrTip}
         onClick={() => {
           if (!ocrClickable) return;
@@ -339,7 +367,7 @@ export function AnnotToolbar({
         <span className="ic">{SAVE_ICON}</span>
         <span className="lb">保存</span>
       </div>
-      <div className="tool exit-pin" data-tip="钉在屏幕最上层，可拖动可缩放" onClick={onPin}>
+      <div className={`tool exit-pin${discover?.includes("pin") ? " discover" : ""}`} data-tip="钉在屏幕最上层，可拖动可缩放" onClick={onPin}>
         <span className="ic">{PIN_ICON}</span>
         <span className="lb">贴图</span>
       </div>
@@ -377,6 +405,15 @@ export function AnnotToolbar({
       >
         {busy ? "处理中…" : "完成 ✓"}
       </div>
+
+      {/* B 方案 · 教练卡片：锚定工具栏上方（翻转时落下方），可关。
+          反馈与触发同可见性域：引导的正是上面这条栏里的按钮。 */}
+      {coachText && (
+        <div className="tb-coach">
+          {coachText}
+          <span className="x" onClick={onCoachClose}>✕</span>
+        </div>
+      )}
 
     </div>
   );

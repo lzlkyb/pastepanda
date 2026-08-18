@@ -303,6 +303,45 @@ export function ScreenshotOverlay() {
       return false;
     }
   });
+
+  /* ===== 动效引导（B 方案）持久化 =====
+   *  记录用户是否已用过「强力但低频」的功能（自动打码 / 取文字 / 贴图），
+   *  未用过的进标注态时给按钮一次性脉冲 + 教练卡引导；用过即不再打扰。
+   *  惰性初始化：只在挂载时读一次 localStorage，不在渲染里读（与 hasFixedRegion 同款）。 */
+  const [usedFeatures, setUsedFeatures] = useState<ReadonlySet<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem("pp_used_features") ?? "[]") as string[]);
+    } catch {
+      return new Set<string>();
+    }
+  });
+  const [coachSeen, setCoachSeen] = useState(() => {
+    try {
+      return localStorage.getItem("pp_coach_seen") === "1";
+    } catch {
+      return false;
+    }
+  });
+  /** 标记某强力功能已用：写入持久化 + 顺手关掉教练卡（用过了就不需要再提示）。 */
+  const notePowerUsed = useCallback((id: string) => {
+    setUsedFeatures((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      try {
+        localStorage.setItem("pp_used_features", JSON.stringify([...next]));
+      } catch {
+        /* 隐私模式 / 配额满：忽略，仅本次会话不再提示 */
+      }
+      return next;
+    });
+    setCoachSeen(true);
+    try {
+      localStorage.setItem("pp_coach_seen", "1");
+    } catch {
+      /* ignore */
+    }
+  }, []);
   // V6 诊断：截屏失败可见化（不再静默关窗，用户能看到原因）
   const [captureError, setCaptureError] = useState<string | null>(null);
   /** 选区是否已确定。true 时 hover 吸附不再改动选区。
@@ -1211,12 +1250,13 @@ export function ScreenshotOverlay() {
   const onSelectTool = useCallback(
     (id: ToolId) => {
       if (id === "automask") {
+        notePowerUsed("automask"); // B 方案：用过即停脉冲/教练卡
         void runAutoMask();
         return;
       }
       setTool(id);
     },
-    [runAutoMask],
+    [runAutoMask, notePowerUsed],
   );
 
   /* 自动打码「预览式」：点框切换排除 / 全部确认即打码（整批一次 undo） */
@@ -2024,11 +2064,12 @@ export function ScreenshotOverlay() {
    *  直接复制等于把这五个一起埋掉。一步到位那条路由 T 键负责。 */
   const onOcrButton = useCallback(() => {
     if (ocrStatus === "failed") {
+      notePowerUsed("ocr"); // B 方案：点过即视为已发现
       retryOcr();
       return;
     }
     if (ocrStatus === "done" && ocr) setOcrDrawerOpen((v) => !v);
-  }, [ocrStatus, ocr, retryOcr]);
+  }, [ocrStatus, ocr, retryOcr, notePowerUsed]);
 
   /** 工具栏「AI」点击。
    *
@@ -3195,6 +3236,18 @@ export function ScreenshotOverlay() {
     window.innerHeight,
   );
   const showAttrBar = ATTR_TOOLS.has(tool) && !busy;
+
+  /* B 方案 · 引导计算：未用过的强力功能给一次性脉冲；教练卡只在第一未用项上浮现一次。 */
+  const POWER_TOOLS = ["automask", "ocr", "pin"] as const;
+  const discoverTools = POWER_TOOLS.filter((id) => !usedFeatures.has(id));
+  const coachFeature = !coachSeen ? discoverTools[0] : undefined;
+  const coachText = coachFeature
+    ? coachFeature === "automask"
+      ? "试试「自动打码」一键遮蔽隐私文字"
+      : coachFeature === "ocr"
+        ? "试试「取文字」一键识别图中文字"
+        : "试试「贴图」把截图钉在屏幕最上层"
+    : null;
   const tbLayout = layoutToolbar(
     sel
       ? { x: css(sel.x), y: css(sel.y), w: css(sel.w), h: css(sel.h) }
@@ -3660,7 +3713,10 @@ export function ScreenshotOverlay() {
           onLongShot={() => void onLongShotPreview()}
           aiOk={aiOk}
           onSave={() => void runExit("保存", saveImageTo)}
-          onPin={() => void runExit("贴图", pinImageAt)}
+          onPin={() => {
+            notePowerUsed("pin"); // B 方案：用过即停脉冲/教练卡
+            void runExit("贴图", pinImageAt);
+          }}
           onAi={onAiButton}
           // 自动打码「预览式」确认条：由工具栏渲染并锚定「自动打码」按钮上方
           maskOn={maskPreview !== null}
@@ -3675,6 +3731,16 @@ export function ScreenshotOverlay() {
           onCancel={close}
           onDone={() => void copyImage()}
           onMore={() => void finish()}
+          discover={discoverTools}
+          coachText={coachText}
+          onCoachClose={() => {
+            setCoachSeen(true);
+            try {
+              localStorage.setItem("pp_coach_seen", "1");
+            } catch {
+              /* ignore */
+            }
+          }}
         />
       )}
 
