@@ -1413,44 +1413,53 @@ unsafe fn pick_best_control(
     select_best_rect(&rects, top_rect).unwrap_or(top_rect)
 }
 
-/// 通过 UI Automation / MSAA 取光标下的**逻辑控件**边界矩形（屏幕物理坐标）。
+/// 通过 **UI Automation（完整 IUIAutomation）** 取光标下的**逻辑控件**边界矩形（屏幕物理坐标）。
 ///
 /// 为什么需要它：Chrome / Edge / VS Code / 飞书 / Electron / WPF / UWP / Qt 这些现代 App
 /// 的界面画在一个大渲染宿主 HWND 上，没有标准 Win32 子窗口——`control_chain_at` 只能
-/// 拿到占满全窗的宿主，于是「控件级吸附」实际退化成「窗口级」。这些框架都会暴露
-/// 无障碍对象（MSAA / UIA），`AccessibleObjectFromPoint` 直接命中光标下最深的那个
-/// 逻辑控件（按钮 / 输入框 / 列表项），比完整 IUIAutomation 树遍历更轻、同样有效。
+/// 拿到占满全窗的宿主，于是「控件级吸附」实际退化成「窗口级」。
+///
+/// 必须用**完整 UIA 的 `ElementFromPoint`**，而不是 legacy MSAA（`AccessibleObjectFromPoint`
+/// 在 Electron / Chrome / VS Code 上命中测试只会落到顶层窗口，拿不到具体控件）。UIA 的
+/// `ElementFromPoint` 能穿透到光标下最深的真实控件（按钮 / 输入框 / 列表项 / 网页内可访问
+/// 元素），这正是 Snipaste / 微信截图控件级吸附的真正做法。
 ///
 /// 仅在 Win32 路径只拿到「整窗或接近整窗」时才调用（每 90ms 一次的路径里，
 /// Office / 资源管理器这类 Win32 标准程序根本不会走到这里，快路径不受影响）。
 ///
-/// 安全网：COM 未初始化 / 控件不可达 / 矩形退化 → 返回 None，调用方退回 Win32 结果。
+/// 坐标约定：UIA 在 DPI-aware 进程里返回**物理屏幕像素**，与本项目其余几何（DWM
+/// EXTENDED_FRAME_BOUNDS 也是物理像素）一致，无需 DPI 换算；若实测高 DPI 下偏移，
+/// 再按 GetDpiForWindow 修正。
+///
+/// 安全网：COM 未初始化 / UIA 创建失败 / 控件不可达 / 矩形退化 → 返回 None，调用方退回 Win32 结果。
 #[cfg(target_os = "windows")]
 unsafe fn uia_control_at(
     pt: windows::Win32::Foundation::POINT,
     top_rect: (i32, i32, i32, i32),
 ) -> Option<(i32, i32, i32, i32)> {
-    use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
-    use windows::Win32::UI::Accessibility::{AccessibleObjectFromPoint, IAccessible};
-    use windows::core::VARIANT;
+    use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance, CoInitializeEx, COINIT_APARTMENTTHREADED};
+    use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, IUIAutomationElement};
 
-    // 尽力初始化 COM（STA）；已初始化（含模式不同 RPC_E_CHANGED_MODE）一律忽略，仍尝试后续调用。
+    // UIA 在 STA 下最稳定；已初始化（含模式不同 RPC_E_CHANGED_MODE）一律忽略，仍尝试后续调用。
     let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
 
-    let mut acc: Option<IAccessible> = None;
-    let mut child: VARIANT = VARIANT::default();
-    if AccessibleObjectFromPoint(pt, &mut acc, &mut child).is_err() {
-        return None;
-    }
-    let a = acc.as_ref()?;
-    let mut l = 0i32;
-    let mut t = 0i32;
-    let mut w = 0i32;
-    let mut h = 0i32;
-    if a.accLocation(&mut l, &mut t, &mut w, &mut h, &child).is_err() {
-        return None;
-    }
-    let rect = (l, t, l.wrapping_add(w), t.wrapping_add(h));
+    // 创建 UIA 客户端（进程内 COM 服务器）。这是取「逻辑控件」边界的关键——
+    // legacy MSAA 在 Electron / Chrome / VS Code 上只会命中到顶层窗口，拿不到具体控件；
+    // UIA 的 ElementFromPoint 能穿透到光标下最深的真实控件。
+    let automation: IUIAutomation = match CoCreateInstance(&CUIAutomation, None, CLSCTX_ALL) {
+        Ok(a) => a,
+        Err(_) => return None,
+    };
+    let element: IUIAutomationElement = match automation.ElementFromPoint(pt) {
+        Ok(e) => e,
+        Err(_) => return None,
+    };
+    let r = match element.CurrentBoundingRectangle() {
+        Ok(r) => r,
+        Err(_) => return None,
+    };
+    let rect = (r.left, r.top, r.right, r.bottom);
+
     // 过滤：太碎（<20px）或几乎等于整窗（>95%）都没意义，退回 Win32。
     const MIN_SIDE: i32 = 20;
     if (rect.2 - rect.0) < MIN_SIDE || (rect.3 - rect.1) < MIN_SIDE {
