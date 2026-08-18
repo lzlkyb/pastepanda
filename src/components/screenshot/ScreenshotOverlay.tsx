@@ -388,6 +388,7 @@ export function ScreenshotOverlay() {
   // Tier3 双层轮廓：外层淡蓝窗口边界（物理像素局部坐标）；与选区框（ctrl）同坐标系。
   // 仅当 ctrl 明显小于 win（<97%）时渲染，否则 solo 只显选区框。
   const [snapWin, setSnapWin] = useState<Rect | null>(null);
+  const [hideHint, setHideHint] = useState(false); // 常驻操作提示条是否关闭（仅当前会话）
   // Tier3 键盘遍历：snapWin 的镜像 ref（keydown 处理里取不到最新 state），以及控件清单缓存。
   const snapWinRef = useRef<Rect | null>(null);
   const kbCtrlsRef = useRef<Rect[]>([]); // 当前窗口内控件（局部坐标）
@@ -3595,6 +3596,34 @@ export function ScreenshotOverlay() {
           <div className="shade-block" style={{ left: css(displaySel.x + displaySel.w), top: css(displaySel.y), right: 0, height: css(displaySel.h) }} />
           <div className="shade-block" style={{ left: 0, top: css(displaySel.y + displaySel.h), width: "100%", height: `calc(100% - ${css(displaySel.y + displaySel.h)}px)` }} />
         </>
+      )}
+
+      {/* 常驻操作提示条：让原本「隐身」的吸附/键盘遍历能力对用户可见（仅当前会话可关） */}
+      {!hideHint && (phase === "select" || phase === "annotate") && (
+        <div className="shot-hint">
+          {phase === "select" ? (
+            <>
+              <span><span className="hk">悬停</span> 自动吸附窗口/控件</span>
+              <span className="sep" />
+              <span><span className="hk">Tab / 方向键</span> 切换控件</span>
+              <span className="sep" />
+              <span><span className="hk">Enter</span> 进入标注</span>
+              <span className="sep" />
+              <span><span className="hk">Esc</span> 退出</span>
+            </>
+          ) : (
+            <>
+              <span><span className="hk">滚轮</span> 缩放</span>
+              <span className="sep" />
+              <span><span className="hk">方向键</span> 微调</span>
+              <span className="sep" />
+              <span><span className="hk">Enter</span> 复制</span>
+              <span className="sep" />
+              <span><span className="hk">Esc</span> 返回</span>
+            </>
+          )}
+          <span className="hk-close" title="关闭提示" onClick={() => setHideHint(true)}>×</span>
+        </div>
       )}
 
       {/* Tier3 双层轮廓：外层淡蓝窗口边界（仅当控件明显小于窗口即 <97% 时显示，避免双框难看） */}

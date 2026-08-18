@@ -358,12 +358,46 @@ body {
   outline: 1px dashed var(--accent, #3B9EFF);
   border: none;
   background: rgba(10, 16, 32, 0.55);
-  padding: 0; line-height: 1;
+  padding: 0;
+  /* 行高与 canvas 渲染一致（draw.ts 用 TEXT_LINE_HEIGHT=1.3）：否则编辑时行距和落字错位 */
+  line-height: 1.3;
+  /* 字体族与 measureTextExtent / canvas 渲染一致：否则编辑时换行点与落字宽度对不上 */
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   text-shadow: 0 0 3px rgba(0, 0, 0, 0.9), 0 0 1px rgba(0, 0, 0, 1);
   /* 提到工具栏(≤46)/浮层之上，避免点在工具栏附近时输入框被遮住而「看不见」 */
   z-index: 80;
+  /* textarea：不拖拽手柄、不出纵向滚动条（高度由 autoSizeText 撑开）；
+     white-space:pre + wrap=off 关闭软换行，所见即所得对齐 canvas（canvas 不软换行） */
+  resize: none;
+  overflow: hidden;
+  white-space: pre;
 }
 .text-draft::placeholder { color: rgba(220, 232, 248, 0.7); }
+
+/* 文字标注「附着迷你工具条」（微信同款）：输入框下方紧跟的浮条，
+   含 A-/A+ 字号与色板。位置由 JS 给定（紧贴输入框下沿），这里只管外观。
+   z-index 同输入框(80)，压过主工具栏与浮层。 */
+.text-toolbar {
+  position: absolute;
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 6px;
+  background: rgba(17, 24, 39, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  z-index: 80;
+  user-select: none;
+}
+.text-toolbar .ttbtn {
+  min-width: 26px; height: 24px; padding: 0 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: transparent; color: #E6EDF7;
+  border-radius: 6px; cursor: pointer; font-size: 13px; line-height: 1;
+}
+.text-toolbar .ttbtn:hover { background: rgba(255, 255, 255, 0.12); }
+.text-toolbar .tsep {
+  width: 1px; height: 16px; background: rgba(255, 255, 255, 0.18); margin: 0 2px;
+}
 
 /* ===== OCR 结果抽屉（右上） ===== */
 /* 位置与高度上限由 JS 的 layoutSidePanel 给出（跟随选区、避开工具栏）。
@@ -575,6 +609,55 @@ body {
   padding: 2px 10px; border-radius: 6px; font-size: 10px; white-space: nowrap;
   background: rgba(10, 14, 24, 0.9); color: #ffd75e;
   border: 1px solid rgba(255, 255, 255, 0.14); pointer-events: none;
+}
+
+/* 常驻操作提示条：让用户知道截图吸附 / 键盘遍历等能力（截图界面底部居中） */
+.shot-hint {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 12px 7px 14px;
+  border-radius: 10px;
+  background: rgba(10, 14, 24, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #E6EDF7;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
+}
+.shot-hint .hk {
+  color: #59A6FF;
+  font-weight: 600;
+}
+.shot-hint .sep {
+  width: 1px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.18);
+}
+.shot-hint .hk-close {
+  pointer-events: auto;
+  margin-left: 2px;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: rgba(230, 237, 247, 0.55);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+.shot-hint .hk-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #E6EDF7;
 }
 
 /* 注：原 .longshot-btn / .shot-actions 已删。那两个按钮原本挂在 select 态（未确认选区），
