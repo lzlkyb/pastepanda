@@ -2883,9 +2883,11 @@ export function ScreenshotOverlay() {
     }
   };
   const finalizeSelectDrag = () => {
+    // 先取引用并立刻清空，确保任何提前返回路径（含 longPreview 分支）都不会留下悬挂 dragRef。
+    const d = dragRef.current;
+    dragRef.current = null;
     if (longPreview) return;
     const wasFixed = fixedPreview;
-    const d = dragRef.current;
     if (!d) {
       // 固定区域预览态：点空白（未拖动）也退出预览，回到 hover 吸附
       if (wasFixed) {
@@ -2894,7 +2896,6 @@ export function ScreenshotOverlay() {
       }
       return;
     }
-    dragRef.current = null;
     const w = Math.abs(d.curX - d.startX);
     const h = Math.abs(d.curY - d.startY);
     if (w >= 4 && h >= 4) {
