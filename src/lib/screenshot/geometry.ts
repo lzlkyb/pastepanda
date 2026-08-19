@@ -29,6 +29,26 @@ export function toLocalRect(s: ScreenInfo | null, r: SnapRect): Rect {
   return { x: r.x - (s?.originX ?? 0), y: r.y - (s?.originY ?? 0), w: r.w, h: r.h };
 }
 
+/**
+ * 把矩形钳制到 [0, sw] × [0, sh] 内（底图局部坐标）。
+ *
+ * 用途：后端窗口/控件矩形（UIA CurrentBoundingRectangle / DWM EXTENDED_FRAME_BOUNDS）
+ * 在部分机器（高 DPI 偏移 / 全屏窗口阴影扩展）会返回出界矩形（负坐标或超界），
+ * 直接 setSel 会让标注态 shade-block 蒙版按出界矩形画 → 截图被视觉切成 4 段。
+ * 与 resizing 把手拖拽的 clamped 同款逻辑，抽成纯函数便于回归。
+ * 钳制规则：w/h 收到 ≤ 屏幕尺寸（保底 1px）；x/y 收进 [0, sw-w] / [0, sh-h]。
+ */
+export function clampRect(r: Rect, sw: number, sh: number): Rect {
+  const w = Math.max(1, Math.min(r.w, sw));
+  const h = Math.max(1, Math.min(r.h, sh));
+  return {
+    x: Math.max(0, Math.min(r.x, Math.max(0, sw - w))),
+    y: Math.max(0, Math.min(r.y, Math.max(0, sh - h))),
+    w,
+    h,
+  };
+}
+
 /** 磁吸阈值（物理像素） */
 export const MAGNET_T = 8;
 

@@ -11,6 +11,7 @@
 import { describe, it, expect } from "vitest";
 import {
   applyMagnet,
+  clampRect,
   eraseHits,
   isSelectableAnnot,
   pointHitAnnot,
@@ -244,5 +245,54 @@ describe("isSelectableAnnot", () => {
   it("橡皮擦不受影响：遮罩仍能被擦除（否则就没有删除路径了）", () => {
     const mosaic = at("mosaic");
     expect(eraseHits([[5, 5]], [mosaic])).toEqual([1]);
+  });
+});
+
+describe("clampRect（选区钳制到屏幕内）", () => {
+  it("合法矩形原样返回", () => {
+    expect(clampRect({ x: 100, y: 80, w: 300, h: 200 }, 1920, 1080)).toEqual({
+      x: 100,
+      y: 80,
+      w: 300,
+      h: 200,
+    });
+  });
+
+  it("负坐标钳到 0（高 DPI 偏移出界矩形）", () => {
+    expect(clampRect({ x: -7, y: -3, w: 300, h: 200 }, 1920, 1080)).toEqual({
+      x: 0,
+      y: 0,
+      w: 300,
+      h: 200,
+    });
+  });
+
+  it("右/下边缘越界时把 x/y 收进 [0, sw-w] / [0, sh-h]", () => {
+    // x=1900 而宽 300 → 右缘 2200 超 1920 → x 收到 1620
+    expect(clampRect({ x: 1900, y: 1000, w: 300, h: 200 }, 1920, 1080)).toEqual({
+      x: 1620,
+      y: 880,
+      w: 300,
+      h: 200,
+    });
+  });
+
+  it("宽/高超过屏幕时收缩到屏幕尺寸（x/y 随之收进合法范围）", () => {
+    // w 收满到 1920 → max(0, sw-w)=0 → x 被钳到 0；y 同理
+    expect(clampRect({ x: 10, y: 20, w: 3000, h: 2000 }, 1920, 1080)).toEqual({
+      x: 0,
+      y: 0,
+      w: 1920,
+      h: 1080,
+    });
+  });
+
+  it("空尺寸保底 1px 且不越界", () => {
+    expect(clampRect({ x: -5, y: -5, w: 0, h: 0 }, 1920, 1080)).toEqual({
+      x: 0,
+      y: 0,
+      w: 1,
+      h: 1,
+    });
   });
 });

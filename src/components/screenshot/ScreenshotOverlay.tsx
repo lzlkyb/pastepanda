@@ -28,6 +28,7 @@ import { TooltipLayer } from "./TooltipLayer";
 // 坐标换算与磁吸曾各藏过一个真 bug，长截图重叠匹配曾把 G/B 通道索引写错。
 import {
   applyMagnet,
+  clampRect,
   eraseStrokes,
   nearestInDirection,
   isSelectableAnnot,
@@ -2996,7 +2997,11 @@ export function ScreenshotOverlay() {
           const target = resolveSnapTargets(cur, next, px, py);
           if (target) {
             lastSnapRef.current = target;
-            setSel(target.ctrl);
+            // 钳制到屏幕内：后端 UIA/DWM 矩形在高 DPI 偏移 / 全屏窗口阴影扩展下可能出界
+            //（负坐标或超界），出界的 sel 会让标注态 shade-block 蒙版切成 4 段
+            //（拖拽把手钳制后恢复的正是这个）。桌面空白走 full 分支不受影响。
+            const sc = screen;
+            setSel(sc ? clampRect(target.ctrl, sc.width, sc.height) : target.ctrl);
             setSnapWin(target.win);
           } else {
             lastSnapRef.current = null;
@@ -3528,7 +3533,8 @@ export function ScreenshotOverlay() {
         ) {
           const localCtrl = toLocalRect(screen, hit.ctrl);
           const localWin = toLocalRect(screen, hit.win);
-          setSel(localCtrl);
+          // 钳制到屏幕内（同 hover 吸附，防高 DPI 偏移出界矩形切出 4 段蒙版）
+          setSel(clampRect(localCtrl, screen.width, screen.height));
           setSnapWin(localWin);
           // Tier3：顺带枚举当前窗控件，键盘遍历（Tab / 方向键）可零延迟启动，
           // 且首次遍历从「光标所在控件」开始，而非窗口中心——无需额外 RPC 或鼠标移动。
@@ -3686,7 +3692,10 @@ export function ScreenshotOverlay() {
 
   const css = (v: number) => v / dpr;
   const sensitiveKind = ocr ? detectSensitiveText(ocr.fullText) : null;
-  const displaySel = selDraft ?? sel;
+  // 显示选区：select 态取拖选草稿（橡皮筋）；标注/结果态**强制用真实选区 sel**——
+  // selDraft 有两条提前 return 路径不清空（finalizeSelectDrag 的 longPreview / !d 分支），
+  // 一旦残留，shade-block 蒙版 / 选区框 / 工具栏会按残留草稿切出 4 段蒙版（历史 bug）。
+  const displaySel = phase === "select" ? (selDraft ?? sel) : sel;
 
   // 工具栏位置：右对齐选区右边缘、优先选区下方（微信 / QQ / Snipaste 同款）。
   // 四种边界情况收在 layoutToolbar 里并配了单测（lib/screenshot/toolbarPos.ts）。

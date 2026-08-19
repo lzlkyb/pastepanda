@@ -36,12 +36,13 @@ describe("parseChangelogSection（运行时更新日志解析）", () => {
     expect(fix.groups![0].items[1].text).toBe("修复丁");
   });
 
-  it("子项语法：用法→how 数组、配图→media（与 gen-changelog.mjs 一致）", () => {
+  it("子项语法：用法→how 数组、配图→media、为什么→why（与 gen-changelog.mjs 一致）", () => {
     const md = [
       "### 新增",
       "- 取文字：截图里识别文字",
+      "  为什么：截图里看到字，点一下直接识别",
       "  用法：点「取文字」按钮；按 T 直接复制全文",
-      "  配图：docs/shots/ocr.jpg",
+      "  配图：ocr",
       "- 普通条目：没有子项",
     ].join("\n");
 
@@ -51,11 +52,14 @@ describe("parseChangelogSection（运行时更新日志解析）", () => {
     expect(feat.type).toBe("feat");
 
     const [rich, plain] = feat.items!;
+    // 为什么：一句话价值说明
+    expect(rich.why).toBe("截图里看到字，点一下直接识别");
     // 用法：按 ；;→/ 切分为步骤数组
     expect(rich.how).toEqual(["点「取文字」按钮", "按 T 直接复制全文"]);
-    // 配图：原样路径
-    expect(rich.media).toBe("docs/shots/ocr.jpg");
-    // 无子项的条目不携带 how / media
+    // 配图：插图 key 原样保留（Canvas 实时绘制，见 Illustration.tsx）
+    expect(rich.media).toBe("ocr");
+    // 无子项的条目不携带 why / how / media
+    expect(plain.why).toBeUndefined();
     expect(plain.how).toBeUndefined();
     expect(plain.media).toBeUndefined();
   });

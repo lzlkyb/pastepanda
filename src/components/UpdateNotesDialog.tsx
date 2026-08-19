@@ -156,7 +156,7 @@ export function UpdateNotesDialog({ open, onClose, currentVersion, manual = fals
                 {entry ? (
                   <>
                     {/* 摘要引语 */}
-                    <div className={styles.lead}>{entry.summary}</div>
+                    <div className={styles.lead}>{stripBold(entry.summary)}</div>
 
                     {/* 分类筛选 chips */}
                     <div className={styles.chips}>
@@ -284,12 +284,18 @@ export function UpdateNotesDialog({ open, onClose, currentVersion, manual = fals
 
 // ─── 条目文本：「标题：」前缀加粗，提升扫读效率 ───────────
 
+/** 剥离 markdown 加粗符号（**…**）：React 渲染纯文本不解析 markdown，
+ *  CHANGELOG 条目的 ** 原样显示成星号，这里统一剥掉。 */
+function stripBold(s: string): string {
+  return s.replace(/\*\*/g, "");
+}
+
 function renderItemText(text: string) {
   const m = /^(.+?)(：| — )([\s\S]+)$/.exec(text);
-  if (!m) return text;
+  if (!m) return stripBold(text);
   return (
     <>
-      <b>{m[1]}</b>
+      <b>{stripBold(m[1])}</b>
       {m[2]}
       {m[3]}
     </>
@@ -312,8 +318,8 @@ function FallbackContent({ updateBody }: { updateBody?: string | null }) {
 /** 单条新增条目：带富文本则渲染为功能卡片，否则退化为紧凑时间线条目 */
 function FeatCard({ item, catName }: { item: ChangeItem; catName: string }) {
   const m = /^(.+?)(：| — )([\s\S]+)$/.exec(item.text);
-  const title = m ? m[1] : item.text;
-  const desc = m ? m[3] : "";
+  const title = stripBold(m ? m[1] : item.text);
+  const desc = m ? stripBold(m[3]) : "";
   const rich = item.why || (item.how && item.how.length > 0) || item.media;
   if (!rich) {
     // 无富文本（如单纯一句新增说明）：退化为普通时间线条目，避免空白卡片

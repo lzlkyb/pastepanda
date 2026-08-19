@@ -148,19 +148,22 @@ function parseChangelog(markdown) {
       continue;
     }
 
-    // ── 缩进子项：用法 / 配图（挂载到上一条 bullet 条目，用于发版弹框功能卡片） ──
-    const subField = line.match(/^[ \t]{2,}(用法|配图)\s*[:：]\s*(.+)$/);
+    // ── 缩进子项：为什么 / 用法 / 配图（挂载到上一条 bullet 条目，用于发版弹框功能卡片） ──
+    const subField = line.match(/^[ \t]{2,}(为什么|有什么用|用法|配图)\s*[:：]\s*(.+)$/);
     if (subField && lastItem) {
       const key = subField[1];
       const val = subField[2].trim();
       if (key === "配图") {
         lastItem.media = val;
-      } else {
+      } else if (key === "用法") {
         // 用法：按 ； ; → / 拆成步骤
         lastItem.how = val
           .split(/[；;→/]/)
           .map((s) => s.trim())
           .filter(Boolean);
+      } else {
+        // 为什么 / 有什么用：一句话价值说明（卡片「有什么用」行）
+        lastItem.why = val;
       }
       continue;
     }
