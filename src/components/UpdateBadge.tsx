@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useUpdate, friendlyError } from "@/contexts/UpdateContext";
 import { ArrowDown, Loader2, CheckCircle, AlertCircle, RotateCcw } from "lucide-react";
 import { VersionBadge } from "@/components/VersionBadge";
+import { CHANGELOG } from "@/lib/changelog.generated";
+import { getLastSeenVersion, getUnseenEntries, LAST_SEEN_CHANGED_EVENT } from "@/lib/changelog";
 import styles from "./UpdateBanner.module.css";
 
 /** 下载速率格式化（如 "1.2 MB/s"） */
@@ -54,12 +56,37 @@ export function UpdateBadge({ currentVersion }: { currentVersion: string }) {
   // 防止用户快速重复点击（连点更新徽章）导致重复触发检查/下载/重启
   const [isStarting, setIsStarting] = useState(false);
 
+  // 未读新功能说明提示：融合进版本号徽章，不再单独占布局空间。
+  // lastSeen 存 localStorage（pastepanda_last_seen_version），弹框关闭即写入；
+  // 同窗口改 localStorage 不触发 storage 事件（且 Tauri 单 webview），故监听同源事件实时刷新红点。
+  const [lastSeen, setLastSeen] = useState<string | null>(() => getLastSeenVersion());
+  useEffect(() => {
+    const sync = () => setLastSeen(getLastSeenVersion());
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "pastepanda_last_seen_version") sync();
+    };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener(LAST_SEEN_CHANGED_EVENT, sync);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(LAST_SEEN_CHANGED_EVENT, sync);
+    };
+  }, []);
+  const hasUnseen = (lastSeen ? getUnseenEntries(CHANGELOG, lastSeen) : CHANGELOG).length > 0;
+
   const handleClick = async () => {
     if (isStarting) return;
     setIsStarting(true);
     try {
-      if (status === "idle" || status === "error") {
+      if (status === "error") {
         await checkForUpdate();
+      } else if (status === "idle") {
+        // 有未查看的新功能说明时，点击优先打开说明；看完关闭即标记已读，红点消失，下次点击才检查更新
+        if (hasUnseen) {
+          window.dispatchEvent(new Event("pp:show-whatsnew"));
+        } else {
+          await checkForUpdate();
+        }
       } else if (status === "available") {
         await downloadAndInstall();
       } else if (status === "ready" || status === "installed") {
@@ -175,24 +202,25 @@ export function UpdateBadge({ currentVersion }: { currentVersion: string }) {
         </motion.button>
       )}
 
-      {/* idle：默认版本号，可点击检查更新 */}
+      {/* idle：默认版本号；有未读新功能时右上角红点提示，点击优先查看说明 */}
       {status === "idle" && (
         <motion.span
           key="update-idle"
           initial={{ opacity: 0, y: -4 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 4 }}
-          className="version-badge-wrapper"
-          title={`v${currentVersion} — 点击检查更新`}
+          className={`version-badge-wrapper${hasUnseen ? " version-badge-wrapper--unseen" : ""}`}
+          title={hasUnseen ? `v${currentVersion} — 有未查看的新功能，点击查看` : `v${currentVersion} — 点击检查更新`}
         >
           <button
             className="version-badge-btn"
-            title={`v${currentVersion} — 点击检查更新`}
+            title={hasUnseen ? `v${currentVersion} — 有未查看的新功能，点击查看` : `v${currentVersion} — 点击检查更新`}
             onClick={handleClick}
             disabled={isStarting}
           >
             <VersionBadge version={currentVersion} className="version-badge-idle" />
           </button>
+          {hasUnseen && <span className="version-badge-unseen" aria-label="有未查看的新功能" />}
         </motion.span>
       )}
     </AnimatePresence>

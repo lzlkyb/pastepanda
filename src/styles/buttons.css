@@ -157,6 +157,21 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  position: relative;
+}
+
+/* 版本号徽章未读新功能红点：仅 idle 且有未读时由 JS 挂 .version-badge-wrapper--unseen 渲染 */
+.version-badge-unseen {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger, #ef4444);
+  border: 2px solid var(--card-bg, #ffffff);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
+  pointer-events: none;
 }
 
 .version-badge-btn {

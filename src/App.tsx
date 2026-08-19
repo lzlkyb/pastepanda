@@ -960,7 +960,6 @@ function App() {
           onNewDiagram={handleNewDiagram}
           onToggleSidebar={toggleSidebar}
           sidebarOpen={sidebarOpen}
-          onShowWhatsNew={() => window.dispatchEvent(new Event("pp:show-whatsnew"))}
         />
         {/* v6.2 主动建议：只在主窗口（用户已打开）inline 出现，绝不弹窗。
             v6.4 方案 B：AI 真能用且处于引导期（更新后 1 周）→ 用 AI 快捷区替代；过期后回归原建议条。
