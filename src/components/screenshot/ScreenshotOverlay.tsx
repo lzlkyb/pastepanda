@@ -23,6 +23,7 @@ import { logger } from "@/lib/logger";
 import { CHANGELOG } from "@/lib/changelog.generated";
 import { compareVersions, getLastSeenVersion } from "@/lib/changelog";
 import type { NewHint } from "./AnnotToolbar";
+import { TooltipLayer } from "./TooltipLayer";
 // 纯计算已抽到 lib/screenshot/（规则 7）——那里才能写回归测试：
 // 坐标换算与磁吸曾各藏过一个真 bug，长截图重叠匹配曾把 G/B 通道索引写错。
 import {
@@ -3798,6 +3799,9 @@ export function ScreenshotOverlay() {
         void invoke("close_screenshot_window");
       }}
     >
+      {/* 悬浮提示 portal 层：脱离工具栏层叠上下文，根治被属性条遮挡 + 上方翻转失效（见 TooltipLayer.tsx） */}
+      <TooltipLayer />
+
       {/* 截图底图 */}
       <div className="shot-bg" style={{ backgroundImage: `url(${screen.dataUrl})` }} />
 

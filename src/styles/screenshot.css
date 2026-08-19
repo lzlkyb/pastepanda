@@ -208,25 +208,19 @@ body {
   animation: ocrSpin 0.8s linear infinite;
 }
 
-/* 即时气泡提示（替代原生 title 的延迟提示）：悬停即显示名称 + 快捷键 */
-.tool::after, .cwrap::after, .wpick::after, .mode-pill::after {
-  content: attr(data-tip);
-  position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+/* 即时悬浮提示改为 React Portal 浮层（见 TooltipLayer.tsx）：
+   脱离 .annot-toolbar(z-index:30) 的层叠上下文，不再被 .attr-bar(z-index:31) 压住；
+   上弹/下弹由 tipPlacement 按元素位置智能决定，一并根治上方翻转失效。
+   各组件的 data-tip 属性保留不动，这里只管浮层外观。 */
+.shot-tip {
+  position: fixed; z-index: 950; pointer-events: none;
   padding: 3px 8px; border-radius: 6px; font-size: 10px; white-space: nowrap;
   background: rgba(15, 23, 42, 0.96); color: #E6EDF7;
   border: 1px solid rgba(255, 255, 255, 0.16);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-  opacity: 0; pointer-events: none; transition: opacity 0.1s; z-index: 80;
+  animation: shotTipIn 0.1s ease;
 }
-.tool:hover::after, .cwrap:hover::after, .wpick:hover::after, .mode-pill:hover::after { opacity: 1; }
-/* 工具栏翻到选区上方时气泡上浮。
-   ⚠️ 旧版这条规则存在却从没生效过——JSX 里 className 恒为 "annot-toolbar"，
-   .top-attached 从未被加上，于是工具栏在上方时 tooltip 仍向下弹，正好压在画布上。 */
-.annot-toolbar.top-attached .tool::after,
-.attr-bar.top-attached .cwrap::after,
-.attr-bar.top-attached .wpick::after {
-  top: auto; bottom: calc(100% + 8px);
-}
+@keyframes shotTipIn { from { opacity: 0; } to { opacity: 1; } }
 
 /* 文字类按钮（取消 / 完成 / ⋯）：横向单行，不走图标+标签的两行布局 */
 .tool.done-btn, .tool.cancel-btn, .tool.more-btn {
