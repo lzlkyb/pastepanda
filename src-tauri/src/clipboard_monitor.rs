@@ -748,6 +748,16 @@ fn stage1_capture(
     queue: &CaptureQueue,
     app_handle: &AppHandle,
 ) -> bool {
+    // 自粘贴抑制窗口内（写入方已 set_with_hash/set 3 秒）：完全跳过剪贴板读取。
+    // 写入方负责自己的入库（截图主动 insert_screenshot_to_history；历史复制已有条目不需要
+    // 重复采集），监听不需要读剪贴板判断"是不是自己"——读了再跳过是白抢一次全局互斥的
+    // OpenClipboard，与写入线程并发时一方报 os error 1418（截图完成复制失败的根源；
+    // 微信截图无监听线程所以没有此竞争）。
+    if paste_suppress.is_suppressed() {
+        log::debug!("[ClipboardMonitor] 自粘贴抑制窗口内，跳过剪贴板读取");
+        return true;
+    }
+
     // CF_HTML 只读一次，供 rich 分支与 doc 门控复用（避免竞态窗口与重复 I/O）
     let html_fragment_opt = get_clipboard_html();
 

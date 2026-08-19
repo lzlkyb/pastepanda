@@ -459,6 +459,46 @@ export function ScreenshotOverlay() {
    *   Rendered more hooks than during the previous render ——截图窗必崩。
    * 用 state 而非直读 localStorage：关掉教练卡要立即重渲染，否则卡片关不掉。 */
   const [seenHints, setSeenHints] = useState<Set<string>>(() => readNewHintSeen());
+  /* 降噪（方案 A）：教练卡「本次截图会话」只弹一张，显示后自动收起并标记已看。
+   * 截图窗每次打开都是新会话、组件重新挂载 → ref 归零，下一轮会话轮到下一张；
+   * 同一会话内 select/annotate 来回切换不重置（不会同一会话反复弹）。
+   * ❗ 以下推导 + effect 必须留在组件顶部无条件区：`if (!screen) return`（~3651 行）之后
+   *  不能放 hook，否则首渲染少注册 hook、截屏拿到后重渲染多出，React 抛 hook 顺序错乱。 */
+  const coachShownRef = useRef(false);
+  const COACH_AUTO_CLOSE_MS = 3000; // 教练卡自动收起时长：看完不点也自己消失，不再逼用户点 ✕
+  /* 引导计算（原在 `if (!screen) return` 之后，纯推导不依赖 screen，上移供 effect 引用） */
+  const POWER_TOOLS = ["automask", "ocr", "pin"] as const;
+  const lastSeen = getLastSeenVersion();
+  const latestVer = CHANGELOG[0]?.version ?? "";
+  const showNewHints = !lastSeen || compareVersions(latestVer, lastSeen) > 0;
+  const newHints = showNewHints
+    ? Object.values(NEW_HINT_CONTENT).filter((h) => !seenHints.has(h.id))
+    : [];
+  const coachHint = coachShownRef.current ? null : (newHints[0] ?? null);
+  /* 脉冲与 NEW 互斥（方案 A）：同一按钮已挂 NEW 角标（在 newHints 里）就不脉冲，去重降噪。 */
+  const discoverTools = POWER_TOOLS.filter(
+    (id) => !usedFeatures.has(id) && !newHints.some((h) => h.id === id),
+  );
+  /* 教练卡自动收起：仅在教练卡**实际显示**时（screen 已就绪且处于 annotate 态）才启动 3s 计时。
+   * 显示 3s 后标记已看 → re-render 时 newHints 少一张、coachHint 归 null
+   * （ref 已置位，本次会话不再弹；下次截图会话轮到下一张，最多 3 轮自然清完）。
+   * ❗ 必须有 screen/phase 守卫：首渲染 screen=null（提前 return、卡片根本没显示）时
+   *  若启动计时，用户还没看到第一张卡就被标记已看，引导直接跳过。 */
+  useEffect(() => {
+    if (!coachHint || !screen || phase !== "annotate") return;
+    if (coachShownRef.current) return;
+    coachShownRef.current = true;
+    const t = setTimeout(() => {
+      setSeenHints((prev) => {
+        if (prev.has(coachHint.id)) return prev;
+        const s = new Set(prev);
+        s.add(coachHint.id);
+        writeNewHintSeen(s);
+        return s;
+      });
+    }, COACH_AUTO_CLOSE_MS);
+    return () => clearTimeout(t);
+  }, [coachHint, screen, phase]);
   /* 向后端上报“本轮前端已起来”，撤销 Rust 侧的存活探针（见 screenshot.rs SHOT_READY_GEN）。
    * ❗ 必须无条件、且在任何提前 return 之前 —— 它是探针唯一的撤销信号，
    *   漏报的后果是 5 秒后一个健康的截图窗被后端误杀。上报失败补一次重试。 */
@@ -489,9 +529,10 @@ export function ScreenshotOverlay() {
   // Tier3 双层轮廓：外层淡蓝窗口边界（物理像素局部坐标）；与选区框（ctrl）同坐标系。
   // 仅当 ctrl 明显小于 win（<97%）时渲染，否则 solo 只显选区框。
   const [snapWin, setSnapWin] = useState<Rect | null>(null);
-  // 常驻提示条：首次使用展示数次后自动淡出（持久化计数，手动 × 可提前关闭）
-  const HINT_MAX_SHOWS = 5;
-  const HINT_AUTO_FADE_MS = 9000;
+  // 常驻提示条：仅框选前（select 态）展示，首次使用展示数次后自动淡出（持久化计数，手动 × 可提前关闭）。
+  // 降噪（方案 A）：次数 5→3、时长 9s→6s；annotate 态已有教练卡/NEW 引导，不再重复弹提示条。
+  const HINT_MAX_SHOWS = 3;
+  const HINT_AUTO_FADE_MS = 6000;
   const [hintVisible, setHintVisible] = useState(false);
   const [hintFading, setHintFading] = useState(false);
   useEffect(() => {
@@ -2281,22 +2322,38 @@ export function ScreenshotOverlay() {
         }
         close();
       } else {
-        // 无自动链：立即关窗，后台异步补 OCR + 主动入库
+        // 无自动链：立即关窗，后台异步 OCR + 主动入库。
+        // 两路（"先见卡、后补字"）：
+        //  情况1：OCR 已识别完成（标注态预取）→ 带摘要一步入库，列表即出带文字的卡片；
+        //  情况2：OCR 未完成 → 先以无摘要入库（列表立即出卡），后台 OCR 完成后
+        //         update_screenshot_ocr_summary 补摘要/自动标签并广播刷新卡片。
         void (async () => {
           try {
-            let text = ocr?.fullText?.trim() || null;
-            let lineCount = ocr?.lines.length ?? 0;
-            if (!text) {
-              const r = await ocrImage(path);
-              text = r.fullText?.trim() || null;
-              lineCount = r.lines.length;
-            }
-            void invoke("insert_screenshot_to_history", { imagePath: path, ocrText: text }).catch(
-              (e) => logger.warn("截图入库失败（不影响复制）", e),
-            );
-            // 截图窗口即将关闭，toast 走主窗口（emit_ocr_ready → 主窗口提示文字已就绪）
+            const text = ocr?.fullText?.trim() || null;
             if (text) {
-              void invoke("emit_ocr_ready", { text, lineCount }).catch(() => {});
+              void invoke("insert_screenshot_to_history", { imagePath: path, ocrText: text }).catch(
+                (e) => logger.warn("截图入库失败（不影响复制）", e),
+              );
+              void invoke("emit_ocr_ready", {
+                text,
+                lineCount: ocr?.lines.length ?? 0,
+              }).catch(() => {});
+            } else {
+              void invoke("insert_screenshot_to_history", { imagePath: path, ocrText: null }).catch(
+                (e) => logger.warn("截图入库失败（不影响复制）", e),
+              );
+              try {
+                const r = await ocrImage(path);
+                const t = r.fullText?.trim();
+                if (t) {
+                  void invoke("update_screenshot_ocr_summary", { imagePath: path, ocrText: t }).catch(
+                    (e) => logger.warn("截图补 OCR 摘要失败", e),
+                  );
+                  void invoke("emit_ocr_ready", { text: t, lineCount: r.lines.length }).catch(() => {});
+                }
+              } catch (e) {
+                logger.warn("复制后 OCR 失败", e);
+              }
             }
           } catch (e) {
             logger.warn("复制后 OCR 失败", e);
@@ -3709,23 +3766,6 @@ export function ScreenshotOverlay() {
   );
   const showAttrBar = ATTR_TOOLS.has(tool) && !busy;
 
-  /* B 方案 · 引导计算：未用过的强力功能（自动打码 / 取文字 / 贴图）给一次性脉冲。 */
-  const POWER_TOOLS = ["automask", "ocr", "pin"] as const;
-  const discoverTools = POWER_TOOLS.filter((id) => !usedFeatures.has(id));
-
-  /* 路线 C · 版本门控的新功能教练：
-   * 仅当用户 lastSeen 早于最新版本（升级用户）或全新用户（无 lastSeen）时，
-   * 才对新功能入口挂 NEW 角标 + 富教练卡；已看过的提示（pp_newhints_seen）不再浮现。
-   * 与 B 方案的脉冲并存：脉冲靠 discoverTools，富卡靠 coachHint。 */
-  const lastSeen = getLastSeenVersion();
-  const latestVer = CHANGELOG[0]?.version ?? "";
-  const showNewHints = !lastSeen || compareVersions(latestVer, lastSeen) > 0;
-  // seenHints 的 useState 在组件顶部声明（这里已在 `if (!screen) return` 之后，
-  // 放 hook 会直接拆掉 hook 顺序），此处只做纯推导。
-  const newHints = showNewHints
-    ? Object.values(NEW_HINT_CONTENT).filter((h) => !seenHints.has(h.id))
-    : [];
-  const coachHint = newHints[0] ?? null;
   const tbLayout = layoutToolbar(
     sel
       ? { x: css(sel.x), y: css(sel.y), w: css(sel.w), h: css(sel.h) }
@@ -3833,32 +3873,19 @@ export function ScreenshotOverlay() {
         </>
       )}
 
-      {/* 常驻操作提示条：让原本「隐身」的吸附/键盘遍历能力对用户可见；首次使用后数秒自动淡出、累计展示若干次后排期退休 */}
-      {hintVisible && (phase === "select" || phase === "annotate") && (
+      {/* 常驻操作提示条：让原本「隐身」的吸附/键盘遍历能力对用户可见；仅框选前（select 态）展示、
+          首次使用数秒后自动淡出、累计展示若干次后排期退休。annotate 态不再重复弹（已有教练卡/NEW 引导）。 */}
+      {hintVisible && phase === "select" && (
         <div className={`shot-hint${hintFading ? " fade-out" : ""}`}>
-          {phase === "select" ? (
-            <>
-              <span><span className="hk">拖拽</span> 框选 · 松手自动标注</span>
-              <span className="sep" />
-              <span><span className="hk">悬停</span> 自动吸附窗口/控件</span>
-              <span className="sep" />
-              <span><span className="hk">Tab / 方向键</span> 切换控件</span>
-              <span className="sep" />
-              <span><span className="hk">Enter</span> 进入标注</span>
-              <span className="sep" />
-              <span><span className="hk">Esc</span> 退出</span>
-            </>
-          ) : (
-            <>
-              <span><span className="hk">滚轮</span> 缩放</span>
-              <span className="sep" />
-              <span><span className="hk">方向键</span> 微调</span>
-              <span className="sep" />
-              <span><span className="hk">Enter</span> 复制</span>
-              <span className="sep" />
-              <span><span className="hk">Esc</span> 返回</span>
-            </>
-          )}
+          <span><span className="hk">拖拽</span> 框选 · 松手自动标注</span>
+          <span className="sep" />
+          <span><span className="hk">悬停</span> 自动吸附窗口/控件</span>
+          <span className="sep" />
+          <span><span className="hk">Tab / 方向键</span> 切换控件</span>
+          <span className="sep" />
+          <span><span className="hk">Enter</span> 进入标注</span>
+          <span className="sep" />
+          <span><span className="hk">Esc</span> 退出</span>
           <span className="hk-close" title="关闭提示" onClick={closeHint}>×</span>
         </div>
       )}

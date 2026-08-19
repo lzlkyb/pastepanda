@@ -1116,6 +1116,48 @@ pub fn insert_screenshot_to_history(
     Ok(())
 }
 
+/// 截图"先见卡、后补字"：OCR 识别完成后补写摘要 / 自动标签，并广播刷新卡片显示。
+///
+/// 与 insert_screenshot_to_history 的关系：先见卡时以 ocr_text=null 立即入库 + 广播
+///（列表马上出卡片），后台 OCR 完成后调本命令——按同一张图（md5）定位已入库条目，
+/// 更新 summary（前端读作 ocr_text，见 load_ocr_texts_into_items）+ 自动标签，
+/// 再 emit 同 id item（prependItem 按 id 去重更新，不会重复建卡）。
+#[tauri::command]
+pub fn update_screenshot_ocr_summary(
+    app: tauri::AppHandle,
+    image_path: String,
+    ocr_text: String,
+) -> Result<(), String> {
+    let text = ocr_text.trim();
+    if text.is_empty() {
+        return Ok(());
+    }
+    // 与 insert_screenshot_to_history 同口径重算 md5 定位条目
+    use md5::{Digest, Md5};
+    let img = image::open(&image_path).map_err(|e| format!("无法读取截图: {e}"))?;
+    let rgba = img.to_rgba8();
+    let img_hash = format!("{:x}", md5::Md5::new().chain_update(rgba.as_raw()).finalize());
+    let store = app.state::<crate::data_store::DataStore>();
+    let Ok(Some(item)) = store.find_latest_by_md5(&img_hash, "默认", "image") else {
+        return Ok(()); // 卡片可能已被删，静默
+    };
+    store.history_summary_ensure(&item.id, text)?;
+    // 自动标签（与 insert 的 V6.19 联动同款：OCR 全文走内容分类）
+    let labels = crate::content_classifier::ContentClassifier::new().classify(text);
+    crate::clipboard_monitor::enqueue_auto_tags(app.clone(), item.id.clone(), labels);
+    // 刷新卡片显示：item 副本带新 ocr_text，前端 prependItem 按 id 去重更新（不重复建卡）
+    let _ = app.emit(
+        "clipboard-changed",
+        crate::clipboard_monitor::ClipboardChanged {
+            item: crate::data_store::HistoryItem {
+                ocr_text: Some(text.to_string()),
+                ..item
+            },
+        },
+    );
+    Ok(())
+}
+
 // ===== 贴图双击重新编辑（截图标注窗口"编辑模式"） =====
 
 /// 截图标注窗口待取的编辑图片路径（贴图双击 → open_editor_window 存入，前端挂载/take 取走）。

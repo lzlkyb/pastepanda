@@ -336,12 +336,14 @@ impl PasteEngine {
         what: &str,
         mut op: impl FnMut(&mut Clipboard) -> Result<T, arboard::Error>,
     ) -> Result<T, String> {
-        const ATTEMPTS: u32 = 6;
+        // 6 次对"瞬时占用"够用，但对大图/富文本读取慢的占用方不够（监听或第三方可能
+        // 持有一秒级）；10 次 + 递增退避到 270ms，累计约 1.35s，覆盖率明显提高。
+        const ATTEMPTS: u32 = 10;
         let mut last = String::new();
         for i in 0..ATTEMPTS {
             if i > 0 {
-                // 20 / 40 / 60 / 80 / 100ms，累计约 300ms
-                std::thread::sleep(Duration::from_millis(20 * i as u64));
+                // 30 / 60 / 90 / 120 / 150 / 180 / 210 / 240 / 270ms，累计约 1.35s
+                std::thread::sleep(Duration::from_millis(30 * i as u64));
             }
             // Clipboard 实例也要重建：它内部持有的句柄在上一次失败后可能已不可用
             match Clipboard::new() {
@@ -384,7 +386,10 @@ impl PasteEngine {
                 // 没人持有却仍然写不进去 → 不是互斥问题，别让用户去关其他软件。
                 // 这种情况下 os error 1418 很可能只是 GetLastError 的陈旧残留值，
                 // 真正的失败原因在别处（如 GlobalAlloc / PNG 编码）。
-                return "当前没有任何进程持有剪贴板，因此**不是被占用**导致的。".to_string();
+                // 补充：也可能是被**本进程其它线程**以无窗口方式持有（OpenClipboard 传
+                // NULL 时无窗口所有者，GetOpenClipboardWindow 检测不到），与写剪贴板
+                // 的调用并发时同样报 1418——写入方已做抑制，正常不会走到这里。
+                return "当前没有任何进程持有剪贴板，因此**不是被占用**导致的（也可能是被本进程其它线程以无窗口方式持有，OpenClipboard 无窗口句柄时检测不到）。".to_string();
             };
             let mut pid: u32 = 0;
             GetWindowThreadProcessId(hwnd, Some(&mut pid));
