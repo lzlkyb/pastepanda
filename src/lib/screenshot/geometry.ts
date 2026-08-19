@@ -37,6 +37,10 @@ export function toLocalRect(s: ScreenInfo | null, r: SnapRect): Rect {
  * 直接 setSel 会让标注态 shade-block 蒙版按出界矩形画 → 截图被视觉切成 4 段。
  * 与 resizing 把手拖拽的 clamped 同款逻辑，抽成纯函数便于回归。
  * 钳制规则：w/h 收到 ≤ 屏幕尺寸（保底 1px）；x/y 收进 [0, sw-w] / [0, sh-h]。
+ *
+ * ⚠️ 后端 snap_window_at / enum_controls / enum_window_rects 已在返回前统一钳制
+ * （screenshot.rs clamp_rect_to_screen，与这里数学等价：后端钳 [origin, origin+size]，
+ * toLocalRect 减 origin 后即 [0, size]）。此函数保留为双保险兜底（护其它消费方）。
  */
 export function clampRect(r: Rect, sw: number, sh: number): Rect {
   const w = Math.max(1, Math.min(r.w, sw));

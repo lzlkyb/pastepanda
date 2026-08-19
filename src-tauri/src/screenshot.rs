@@ -572,6 +572,32 @@ fn virtual_screen_metrics() -> (i32, i32, i32, i32) {
     (1920, 1080, 0, 0)
 }
 
+/// 把屏幕坐标矩形钳制到虚拟屏内（防 DWM 阴影扩展 / UIA 超界控件返回出界矩形）。
+///
+/// 与前端 `clampRect`（局部坐标版，src/lib/screenshot/geometry.ts）等价：
+/// 这里钳 `[origin, origin+size]`，前端 `toLocalRect` 减 origin 后即 `[0, size]`；
+/// 两端都钳、双保险（前端还护着不走后端的路径）。
+///
+/// 钳制规则：w/h 收 ≤ 屏幕尺寸（保底 1px）；x/y 收进 `[origin, origin+size-w/h]`。
+/// `screen` 参数顺序与 `pick_status_pos` / `SCREEN` 测试常量一致：(origin_x, origin_y, width, height)。
+fn clamp_rect_to_screen(r: SnapRect, (scx, scy, sw, sh): (i32, i32, i32, i32)) -> SnapRect {
+    let w = r.w.clamp(1, sw);
+    let h = r.h.clamp(1, sh);
+    SnapRect {
+        // 上限 .max(scx)：w 收满到屏宽后上限退化为原点，避免 clamp 的 min > max panic
+        x: r.x.clamp(scx, (scx + sw - w).max(scx)),
+        y: r.y.clamp(scy, (scy + sh - h).max(scy)),
+        w,
+        h,
+    }
+}
+
+/// virtual_screen_metrics() 返回 (width, height, origin_x, origin_y)，
+/// 重排成 clamp_rect_to_screen 用的 (origin_x, origin_y, width, height)。
+fn clamp_screen_from_metrics(v: (i32, i32, i32, i32)) -> (i32, i32, i32, i32) {
+    (v.2, v.3, v.0, v.1)
+}
+
 /// 光标当前位置（物理像素，虚拟屏幕坐标——与 snap_window_at 同口径）
 #[tauri::command]
 pub fn get_cursor_pos() -> (i32, i32) {
@@ -1212,7 +1238,7 @@ pub fn open_pinned_edit(app: tauri::AppHandle, path: String) {
 
 /// 吸附矩形（物理像素，虚拟屏幕坐标）。
 /// 字段都是单词，目前不受命名影响；加上 rename_all 是为了以后添多词字段时不再踩同一个坑。
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Clone, Copy, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SnapRect {
     pub x: i32,
@@ -1393,14 +1419,20 @@ unsafe fn enum_window_rects_impl(app: &tauri::AppHandle) -> Result<Vec<SnapRect>
     let enum_fn: WNDENUMPROC = Some(enum_rects_proc);
     let _ = EnumWindows(enum_fn, lparam);
 
+    let screen = clamp_screen_from_metrics(virtual_screen_metrics());
     Ok(ctx
         .2
         .into_iter()
-        .map(|(l, t, r, b)| SnapRect {
-            x: l,
-            y: t,
-            w: r - l,
-            h: b - t,
+        .map(|(l, t, r, b)| {
+            clamp_rect_to_screen(
+                SnapRect {
+                    x: l,
+                    y: t,
+                    w: r - l,
+                    h: b - t,
+                },
+                screen,
+            )
         })
         .collect())
 }
@@ -1502,13 +1534,17 @@ unsafe fn enum_controls_impl(
     if is_tray_class(&cls) {
         if let Some(r) = raw_window_rect(hwnd) {
             let (l, t, rr, b) = r;
+            let screen = clamp_screen_from_metrics(virtual_screen_metrics());
             return Ok(Some(ControlList {
-                win: SnapRect {
-                    x: l,
-                    y: t,
-                    w: rr - l,
-                    h: b - t,
-                },
+                win: clamp_rect_to_screen(
+                    SnapRect {
+                        x: l,
+                        y: t,
+                        w: rr - l,
+                        h: b - t,
+                    },
+                    screen,
+                ),
                 ctrls: vec![],
             }));
         }
@@ -1522,14 +1558,22 @@ unsafe fn enum_controls_impl(
     // 2) UIA 枚举窗口控件树 → 过滤容器
     let ctrls = uia_enumerate_controls(hwnd, top_rect);
     let (wl, wt, wr, wb) = top_rect;
+    let screen = clamp_screen_from_metrics(virtual_screen_metrics());
     Ok(Some(ControlList {
-        win: SnapRect {
-            x: wl,
-            y: wt,
-            w: wr - wl,
-            h: wb - wt,
-        },
-        ctrls,
+        win: clamp_rect_to_screen(
+            SnapRect {
+                x: wl,
+                y: wt,
+                w: wr - wl,
+                h: wb - wt,
+            },
+            screen,
+        ),
+        // UIA 控件矩形最可能出界（网页元素 bounding 超出视口），逐个钳制护住键盘下钻选区
+        ctrls: ctrls
+            .into_iter()
+            .map(|c| clamp_rect_to_screen(c, screen))
+            .collect(),
     }))
 }
 
@@ -1946,19 +1990,19 @@ fn snap_window_impl(app: &tauri::AppHandle, x: i32, y: i32) -> Result<Option<Sna
         if is_tray_class(&cls) {
             if let Some(r) = raw_window_rect(hwnd) {
                 let (l, t, rr, b) = r;
+                let screen = clamp_screen_from_metrics(virtual_screen_metrics());
+                let win = clamp_rect_to_screen(
+                    SnapRect {
+                        x: l,
+                        y: t,
+                        w: rr - l,
+                        h: b - t,
+                    },
+                    screen,
+                );
                 return Ok(Some(SnapTargets {
-                    win: SnapRect {
-                        x: l,
-                        y: t,
-                        w: rr - l,
-                        h: b - t,
-                    },
-                    ctrl: SnapRect {
-                        x: l,
-                        y: t,
-                        w: rr - l,
-                        h: b - t,
-                    },
+                    win,
+                    ctrl: win,
                 }));
             }
             return Ok(None);
@@ -1987,19 +2031,26 @@ fn snap_window_impl(app: &tauri::AppHandle, x: i32, y: i32) -> Result<Option<Sna
 
         let (wl, wt, wr, wb) = top_rect;
         let (l, t, r, b) = rect;
+        let screen = clamp_screen_from_metrics(virtual_screen_metrics());
         Ok(Some(SnapTargets {
-            win: SnapRect {
-                x: wl,
-                y: wt,
-                w: wr - wl,
-                h: wb - wt,
-            },
-            ctrl: SnapRect {
-                x: l,
-                y: t,
-                w: r - l,
-                h: b - t,
-            },
+            win: clamp_rect_to_screen(
+                SnapRect {
+                    x: wl,
+                    y: wt,
+                    w: wr - wl,
+                    h: wb - wt,
+                },
+                screen,
+            ),
+            ctrl: clamp_rect_to_screen(
+                SnapRect {
+                    x: l,
+                    y: t,
+                    w: r - l,
+                    h: b - t,
+                },
+                screen,
+            ),
         }))
     }
 }
@@ -2507,7 +2558,7 @@ pub fn scroll_longshot(
 
 #[cfg(test)]
 mod tests {
-    use super::pick_status_pos;
+    use super::{clamp_rect_to_screen, pick_status_pos, SnapRect};
 
     // 1920x1080 主屏，状态窗 300x48，间距 16
     const SCREEN: (i32, i32, i32, i32) = (0, 0, 1920, 1080);
@@ -2591,6 +2642,67 @@ mod tests {
         let p = pick(sel).expect("右侧缝隙刚好放得下");
         assert_eq!(p.0, 1920 - GAP - W);
         assert!(!intersects(p, sel));
+    }
+
+    // ── clamp_rect_to_screen：防 DWM 阴影扩展 / UIA 超界控件返回出界矩形 ──
+
+    #[test]
+    fn clamp_rect_合法矩形原样返回() {
+        let r = SnapRect { x: 100, y: 80, w: 300, h: 200 };
+        assert_eq!(clamp_rect_to_screen(r, SCREEN), r);
+    }
+
+    #[test]
+    fn clamp_rect_负坐标钳到原点() {
+        // 最大化窗口 EXTENDED_FRAME_BOUNDS 的隐形边框扩展：左/上可能为负
+        let r = SnapRect { x: -7, y: -3, w: 300, h: 200 };
+        assert_eq!(
+            clamp_rect_to_screen(r, SCREEN),
+            SnapRect { x: 0, y: 0, w: 300, h: 200 }
+        );
+    }
+
+    #[test]
+    fn clamp_rect_右缘越界时把x收进合法范围() {
+        // x=1900 而宽 300 → 右缘 2200 超 1920 → x 收到 1620
+        let r = SnapRect { x: 1900, y: 1000, w: 300, h: 200 };
+        assert_eq!(
+            clamp_rect_to_screen(r, SCREEN),
+            SnapRect { x: 1620, y: 880, w: 300, h: 200 }
+        );
+    }
+
+    #[test]
+    fn clamp_rect_宽高超屏时收缩并收x_y() {
+        // w 收满到 1920 → 上限退化到原点 → x 钳到 0；y 同理
+        let r = SnapRect { x: 10, y: 20, w: 3000, h: 2000 };
+        assert_eq!(
+            clamp_rect_to_screen(r, SCREEN),
+            SnapRect { x: 0, y: 0, w: 1920, h: 1080 }
+        );
+    }
+
+    #[test]
+    fn clamp_rect_空尺寸保底1px() {
+        let r = SnapRect { x: -5, y: -5, w: 0, h: 0 };
+        assert_eq!(
+            clamp_rect_to_screen(r, SCREEN),
+            SnapRect { x: 0, y: 0, w: 1, h: 1 }
+        );
+    }
+
+    #[test]
+    fn clamp_rect_副屏负原点也能正确钳制() {
+        // 副屏在主屏左边：虚拟屏 (origin_x=-1920, origin_y=0, width=3840, height=1080)
+        let screen = (-1920, 0, 3840, 1080);
+        // 主屏（屏幕坐标 0~1920）上的窗口矩形，左/上越界到副屏区域
+        let r = SnapRect { x: -1950, y: -10, w: 1920, h: 1080 };
+        let c = clamp_rect_to_screen(r, screen);
+        // x 钳回 [-1920, 0]，右缘不超 1920
+        assert!(c.x >= -1920 && c.x + c.w <= 1920);
+        // y 钳回 [0, 0]（h 已收满 1080 → y 只能为 0）
+        assert!(c.y >= 0 && c.y + c.h <= 1080);
+        assert!(c.w >= 1 && c.w <= 3840);
     }
 }
 
