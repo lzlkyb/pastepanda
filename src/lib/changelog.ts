@@ -33,29 +33,49 @@ export interface ChangelogEntry {
 
 // ─── Utilities ─────────────────────────────────────────
 
-/** Compare two semver strings. Returns -1, 0, or 1. */
+/** Compare two semver strings. Returns -1, 0, or 1.
+ *  Non-semver input (e.g. "[Unreleased]") is treated as lowest (-1,-1,-1),
+ *  so it always sorts below any real version and equals itself. */
 export function compareVersions(a: string, b: string): number {
-  const pa = a.split(".").map(Number);
-  const pb = b.split(".").map(Number);
-  for (let i = 0; i < 3; i++) {
-    const na = pa[i] ?? 0;
-    const nb = pb[i] ?? 0;
-    if (na > nb) return 1;
-    if (na < nb) return -1;
-  }
+  const [a1, a2, a3] = parseVersion(a);
+  const [b1, b2, b3] = parseVersion(b);
+  if (a1 !== b1) return a1 > b1 ? 1 : -1;
+  if (a2 !== b2) return a2 > b2 ? 1 : -1;
+  if (a3 !== b3) return a3 > b3 ? 1 : -1;
   return 0;
 }
 
-const LAST_SEEN_KEY = "pastepanda_last_seen_version";
+function parseVersion(v: string): [number, number, number] {
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec((v ?? "").trim());
+  if (!m) return [-1, -1, -1];
+  return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+/** Whether a string is a real semver (x.y.z) — used to guard marking seen. */
+export function isVersioned(v: string | null | undefined): boolean {
+  return !!v && /^\d+\.\d+\.\d+$/.test(v);
+}
+
+export const LAST_SEEN_KEY = "pastepanda_last_seen_version";
+
+/** Custom event dispatched after setLastSeenVersion so same-window listeners
+ *  (e.g. TopBar red-dot) refresh. The native `storage` event does NOT fire in
+ *  the window that made the change, and Tauri is a single webview anyway. */
+export const LAST_SEEN_CHANGED_EVENT = "pp:last-seen-changed";
 
 /** Get the last version the user saw changelog for */
 export function getLastSeenVersion(): string | null {
   return localStorage.getItem(LAST_SEEN_KEY);
 }
 
-/** Mark a version as seen */
+/** Mark a version as seen (also notifies same-window listeners) */
 export function setLastSeenVersion(version: string): void {
   localStorage.setItem(LAST_SEEN_KEY, version);
+  try {
+    window.dispatchEvent(new Event(LAST_SEEN_CHANGED_EVENT));
+  } catch {
+    /* ignore */
+  }
 }
 
 /** Check if there are unseen changelog entries since the given version */

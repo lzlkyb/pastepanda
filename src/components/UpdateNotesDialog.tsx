@@ -13,6 +13,7 @@ import {
   CATEGORY_COLORS,
   countCategoryItems,
   setLastSeenVersion,
+  isVersioned,
   type ChangeCategoryType,
   type ChangeItem,
   type ChangelogEntry,
@@ -89,7 +90,7 @@ export function UpdateNotesDialog({ open, onClose, currentVersion, manual = fals
 
   /** 关闭弹框：手动（红点）打开时，关闭即标记已读，清除红点 */
   const closeDialog = useCallback(() => {
-    if (manual && entry) markSeen(entry.version);
+    if (manual && entry && isVersioned(entry.version)) markSeen(entry.version);
     onClose();
   }, [manual, entry, markSeen, onClose]);
 
@@ -99,7 +100,7 @@ export function UpdateNotesDialog({ open, onClose, currentVersion, manual = fals
     // 不关的旧行为会把主界面一直挡着，而且 status 进 ready 后弹框里那个按钮
     // 会退回成「下载并更新」且可再点，看起来像什么都没发生。
     // 用户已主动下载更新 → 视为已读，清除红点。
-    if (update?.version) markSeen(update.version);
+    if (update?.version && isVersioned(update.version)) markSeen(update.version);
     downloadAndInstall();
     onClose();
   };

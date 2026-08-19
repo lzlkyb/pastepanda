@@ -6,7 +6,7 @@ import { AiStatusDot } from "@/components/AiStatusDot";
 import { AiMark } from "@/components/ai/AiMark";
 import { getAppVersion, getAppName, fetchCounts, toggleStackMode } from "@/lib/api";
 import { CHANGELOG } from "@/lib/changelog.generated";
-import { getLastSeenVersion, getUnseenEntries } from "@/lib/changelog";
+import { getLastSeenVersion, getUnseenEntries, LAST_SEEN_KEY, LAST_SEEN_CHANGED_EVENT } from "@/lib/changelog";
 import { cleanSourceName } from "@/lib/source-mappings";
 import { useSourceIcon } from "@/hooks/useSourceIcon";
 import SourceBadge from "@/components/SourceBadge";
@@ -164,11 +164,18 @@ export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEnco
   // 监听 storage 事件，在弹框标记已读后实时清除红点。
   const [lastSeen, setLastSeen] = useState<string | null>(() => getLastSeenVersion());
   useEffect(() => {
-    const handler = (e: StorageEvent) => {
-      if (e.key === "pastepanda_last_seen_version") setLastSeen(getLastSeenVersion());
+    const sync = () => setLastSeen(getLastSeenVersion());
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === LAST_SEEN_KEY) sync();
     };
-    window.addEventListener("storage", handler);
-    return () => window.removeEventListener("storage", handler);
+    window.addEventListener("storage", onStorage);
+    // 同窗口内改 localStorage 不会触发 storage 事件（且 Tauri 单 webview），
+    // 故 setLastSeenVersion 另派发该自定义事件，这里一并监听以刷新红点。
+    window.addEventListener(LAST_SEEN_CHANGED_EVENT, sync);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(LAST_SEEN_CHANGED_EVENT, sync);
+    };
   }, []);
   const unseenCount = lastSeen ? getUnseenEntries(CHANGELOG, lastSeen).length : CHANGELOG.length;
   const hasUnseen = unseenCount > 0;

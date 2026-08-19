@@ -3593,7 +3593,9 @@ export function ScreenshotOverlay() {
   const lastSeen = getLastSeenVersion();
   const latestVer = CHANGELOG[0]?.version ?? "";
   const showNewHints = !lastSeen || compareVersions(latestVer, lastSeen) > 0;
-  const seenHints = readNewHintSeen();
+  // 已看集合用 state 持有：关掉教练卡时同步更新，卡片/角标立即消失（仅写
+  // localStorage 不触发重渲染，卡片会卡住不关，见 bug 修复）。
+  const [seenHints, setSeenHints] = useState<Set<string>>(() => readNewHintSeen());
   const newHints = showNewHints
     ? Object.values(NEW_HINT_CONTENT).filter((h) => !seenHints.has(h.id))
     : [];
@@ -4158,8 +4160,9 @@ export function ScreenshotOverlay() {
           coachHint={coachHint}
           onCoachClose={() => {
             if (coachHint) {
-              const s = readNewHintSeen();
+              const s = new Set(seenHints);
               s.add(coachHint.id);
+              setSeenHints(s);
               writeNewHintSeen(s);
             }
           }}
