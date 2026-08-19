@@ -1,0 +1,7 @@
+# 只 lint 暂存的前端文件。全量 eslint 在本机要 60-90s，挂在 pre-commit 上必然被
+# --no-verify 绕过，等于没有；lint-staged 只跑改动文件，几秒就完。
+#
+# 它要拦的是 rules-of-hooks 这类“编译全过但运行必崩”的错：2026-08-19 截图窗每次
+# 都崩，就是一个 useState 写在了 `if (!screen) return` 之后——eslint 本来就报 error，
+# 只是那次提交没跑 lint。tsc 太慢，不进这里。
+npx lint-staged

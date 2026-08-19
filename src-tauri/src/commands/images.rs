@@ -76,13 +76,13 @@ pub fn save_rich_image(
     let hash = format!("{:x}", Md5::new().chain_update(&bytes).finalize());
     let file_path = images_dir.join(format!("{}.{}", hash, ext));
     if !file_path.exists() {
-        // 先写临时文件再原子 rename，防止写一半崩溃留下残缺图片（同 process_image 的做法）
-        let tmp_path = file_path.with_extension(format!("{}.tmp", ext));
+        // 先写临时文件再原子 rename，防止写一半崩溃留下残缺图片。
+        // 临时名/收尾走 atomic_write：旧写法 `<hash>.<ext>.tmp` 把内容 md5 当成临时名，
+        // 同内容并发保存时会撞同一个 tmp，后一个 rename 拿到 os error 2。
+        let tmp_path = crate::atomic_write::unique_tmp_path(&file_path);
         std::fs::write(&tmp_path, &bytes).map_err(|e| format!("写入图片失败: {e}"))?;
-        if let Err(e) = std::fs::rename(&tmp_path, &file_path) {
-            let _ = std::fs::remove_file(&tmp_path);
-            return Err(format!("重命名临时图片失败: {e}"));
-        }
+        crate::atomic_write::finish_rename(&tmp_path, &file_path)
+            .map_err(|e| format!("重命名临时图片失败: {e}"))?;
     }
     Ok(file_path.to_string_lossy().to_string())
 }

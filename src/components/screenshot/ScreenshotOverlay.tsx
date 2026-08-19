@@ -29,6 +29,7 @@ import {
   applyMagnet,
   eraseStrokes,
   nearestInDirection,
+  isSelectableAnnot,
   pointHitAnnot,
   resolveSnapTargets,
   sortControlsVisual,
@@ -37,7 +38,14 @@ import {
   toScreenRect,
 } from "@/lib/screenshot/geometry";
 import type { Dir } from "@/lib/screenshot/geometry";
-import { drawAnnot, inDrawOrder, measureTextExtent, TEXT_LINE_HEIGHT } from "@/lib/screenshot/draw";
+import {
+  contrastInk,
+  drawAnnot,
+  inDrawOrder,
+  measureTextExtent,
+  TEXT_LINE_HEIGHT,
+  wrapLines,
+} from "@/lib/screenshot/draw";
 import { isRowMasked } from "@/lib/screenshot/maskGeom";
 import {
   findOverlapRows,
@@ -118,6 +126,12 @@ import type {
 
 type Phase = "select" | "annotate" | "result";
 
+/* 文字输入框的视觉内边距（CSS px）。
+ *
+ * ❗ 它必须同时出现在两个地方：padding: TEXT_PAD 与 left/top 各减 TEXT_PAD。
+ * 两者相消后，文字的屏幕位置与落字位置严格相等，而视觉上字不再顶着框线。
+ * 只改其中一处 = 预览与落字错位（这正是当初把 padding 写死为 0 的原因）。 */
+const TEXT_PAD = 4;
 /* 放大镜参数（物理像素）：采样半径 30px，4 倍放大 → 240×240 画布 */
 const MAG_R = 30;
 const MAG_ZOOM = 4;
@@ -236,16 +250,36 @@ export function ScreenshotOverlay() {
   const [textDraft, setTextDraft] = useState<{ x: number; y: number; id?: number; value?: string } | null>(null);
   /** 文字输入框 DOM 引用：用 rAF 聚焦代替 autoFocus（见下方 effect 注释）。 */
   const textInputRef = useRef<HTMLTextAreaElement>(null);
+  /** 文字输入框真实渲染高度（CSS px，含 padding/border；border-box 下即框整体高）。
+   *  由 autoSizeText 撑高后实测写入，工具条定位与翻转判断改用它——替代原先按"占满选区宽"
+   *  估算的 boxHCss。方案 A 让框宽从 120px 起、随输入增长，真实行数/框高随之变化，估算值
+   *  严重偏低会把工具条算到输入框上半截（重叠）；用 DOM 实测高度则框变高工具条实时下移，永不重叠。 */
+  const [textBoxHCss, setTextBoxHCss] = useState(0);
   /** 防止文字被重复提交：Enter 提交 / Esc 取消后，卸载时的 blur 不应再提交一次。
    *  Enter 提交后浏览器可能补发一次 blur（导致落两份相同文字）；
    *  Esc 取消本意是不提交，但 blur 也会触发 onBlur→submitText（变成"取消却落字"）。
    *  两者都用这个标记拦截。每次进入新编辑会话（textDraft 变化）由下方 effect 重置。 */
   const textSubmittedRef = useRef(false);
-  // textarea 内容变化时按 scrollHeight 自适应高度，避免多行被裁切
-  const autoSizeText = (el: HTMLTextAreaElement) => {
+  // 内容变化时自适应尺寸：
+  //  · 高度按 scrollHeight 撑开（避免多行被裁切）；
+  //  · 宽度随内容增长（方案 A）：临时解除 max-width + 不换行，读 scrollWidth 得到“不折行
+  //    自然宽”，把框宽设回它——上限由 JSX 的 max-width（选区剩余宽）封顶、下限由 CSS 的
+  //    min-width(120) 保底。这样字少时框是一般长度，越打越宽，到选区边界才原生换行、高度继续涨。
+  //  用 DOM 实测而非 measureTextExtent：避免引用组件内 fontPx/dpr（声明在函数之后，会 TDZ），
+  //  也无需把本函数塞进 effect 依赖（否则每次渲染重建聚焦 effect、反复抢焦点）。
+  const autoSizeText = useCallback((el: HTMLTextAreaElement) => {
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
-  };
+    setTextBoxHCss(el.offsetHeight); // 实测真实框高（含 padding/border），工具条据此定位
+    const prevWS = el.style.whiteSpace;
+    const prevMax = el.style.maxWidth;
+    el.style.whiteSpace = "nowrap";
+    el.style.maxWidth = "none";
+    const natWcss = el.scrollWidth; // 含 padding（border-box），即不折行时最宽行宽
+    el.style.whiteSpace = prevWS;
+    el.style.maxWidth = prevMax;
+    el.style.width = `${natWcss}px`;
+  }, []);
   // 标注态点画面创建输入框是在 mousedown handler 里触发的；浏览器会在 mouseup 时执行
   // mousedown 的默认聚焦行为，把刚 autoFocus 的输入框 blur 掉，进而触发 onBlur →
   // submitText("") → setTextDraft(null)，输入框在渲染后不到一帧就被移除（Tauri/WebView 经典坑）。
@@ -254,6 +288,7 @@ export function ScreenshotOverlay() {
     if (!textDraft) return;
     // 进入新编辑会话：清除上一次的"已提交/已取消"标记，避免误拦截本次提交。
     textSubmittedRef.current = false;
+    setTextBoxHCss(0); // 重置真实框高，避免上一个框的高度残留到本次（首帧用估算兜底）
     const el = textInputRef.current;
     if (!el) return;
     const id = requestAnimationFrame(() => {
@@ -262,7 +297,7 @@ export function ScreenshotOverlay() {
       autoSizeText(el);
     });
     return () => cancelAnimationFrame(id);
-  }, [textDraft]);
+  }, [textDraft, autoSizeText]);
   const [copiedRow, setCopiedRow] = useState<number | null>(null);
   const [copiedAll, setCopiedAll] = useState(false);
   // ⑤ 取文字 · 字级拖选：逐字符可选中（后端已返回逐字符 bbox）。
@@ -414,6 +449,29 @@ export function ScreenshotOverlay() {
       }
       return next;
     });
+  }, []);
+  /* 路线 C · 新功能教练卡「已看过」集合。
+   * ❗ 必须留在组件顶部——下面的 `if (!screen) return …` 是个提前 return，
+   *   hook 写到它后面会让首渲染（screen 为 null）少注册一个 hook，截屏拿到后
+   *   setScreen 重渲染就多出一个，React 直接抛
+   *   Rendered more hooks than during the previous render ——截图窗必崩。
+   * 用 state 而非直读 localStorage：关掉教练卡要立即重渲染，否则卡片关不掉。 */
+  const [seenHints, setSeenHints] = useState<Set<string>>(() => readNewHintSeen());
+  /* 向后端上报“本轮前端已起来”，撤销 Rust 侧的存活探针（见 screenshot.rs SHOT_READY_GEN）。
+   * ❗ 必须无条件、且在任何提前 return 之前 —— 它是探针唯一的撤销信号，
+   *   漏报的后果是 5 秒后一个健康的截图窗被后端误杀。上报失败补一次重试。 */
+  useEffect(() => {
+    let cancelled = false;
+    const report = (attempt: number) => {
+      invoke("screenshot_ready").catch((e) => {
+        logger.warn(`上报截图窗就绪失败（第 ${attempt} 次）`, e);
+        if (!cancelled && attempt < 2) setTimeout(() => report(attempt + 1), 300);
+      });
+    };
+    report(1);
+    return () => {
+      cancelled = true;
+    };
   }, []);
   // V6 诊断：截屏失败可见化（不再静默关窗，用户能看到原因）
   const [captureError, setCaptureError] = useState<string | null>(null);
@@ -1403,7 +1461,9 @@ export function ScreenshotOverlay() {
       const ctx = out.getContext("2d");
       if (!ctx) return null;
       ctx.drawImage(img, r.x, r.y, r.w, r.h, 0, 0, out.width, out.height);
-      const dataUrl = out.toDataURL("image/png");
+      // 必须走 canvasToDataUrl（toBlob）—— out.toDataURL 是**同步**全尺寸 PNG 编码，
+      // 2560×1440 的选区就是几百毫秒主线程冻结，用户此时点工具栏就是“点了不反应”。
+      const dataUrl = await canvasToDataUrl(out);
       const tmpPath = await invoke<string>("save_screenshot_image", { dataBase64: dataUrl });
       void invoke("mark_ocr_temp", { path: tmpPath }).catch(() => {});
       const res = await ocrImage(tmpPath);
@@ -1419,7 +1479,7 @@ export function ScreenshotOverlay() {
 
   /**
    * 一键自动打码：对图中命中的隐私词逐词生成矩形马赛克元素（单次撤销整体可退）。
-   * 仅文本正则（手机/身份证/邮箱/银行卡/QQ/微信ID 等），不含人脸/姓名（P0 范围）。
+   * 文本正则（手机/身份证/邮箱/银行卡/QQ/微信号/IP/车牌/姓名[带标签]/地址[带标签]）+ 二维码/条码，不含人脸（P0 范围）。
    */
   const runAutoMask = useCallback(async () => {
     if (busy) return; // 合成/保存中不做
@@ -1470,15 +1530,47 @@ export function ScreenshotOverlay() {
         boxes.push({ x, y, x2: xe, y2: ye, excluded: false });
       }
     }
+    // 二维码 / 条码：文本正则的盲区（DAMA/Snagit 都盖）。在选区位图上跑 jsQR，
+    // 取 location 四角算包围盒加入预览——失败不阻断文本打码。
+    try {
+      if (screen && r && r.w >= 8 && r.h >= 8) {
+        const img = await loadImage(screen.dataUrl);
+        const cv = document.createElement("canvas");
+        cv.width = Math.max(1, Math.round(r.w));
+        cv.height = Math.max(1, Math.round(r.h));
+        const cctx = cv.getContext("2d");
+        if (cctx) {
+          cctx.drawImage(img, r.x, r.y, r.w, r.h, 0, 0, cv.width, cv.height);
+          const id = cctx.getImageData(0, 0, cv.width, cv.height);
+          const jsQR = (await import("jsqr")).default;
+          const qr = jsQR(id.data, cv.width, cv.height, { inversionAttempts: "dontInvert" });
+          if (qr && qr.location) {
+            const loc = qr.location;
+            const xs = [loc.topLeftCorner.x, loc.topRightCorner.x, loc.bottomLeftCorner.x, loc.bottomRightCorner.x];
+            const ys = [loc.topLeftCorner.y, loc.topRightCorner.y, loc.bottomLeftCorner.y, loc.bottomRightCorner.y];
+            const qx = Math.max(0, Math.round(Math.min(...xs)) - pad);
+            const qy = Math.max(0, Math.round(Math.min(...ys)) - pad);
+            const qxe = Math.min(baseW, Math.round(Math.max(...xs)) + pad);
+            const qye = Math.min(baseH, Math.round(Math.max(...ys)) + pad);
+            if (qxe - qx >= 2 && qye - qy >= 2) {
+              boxes.push({ x: qx, y: qy, x2: qxe, y2: qye, excluded: false });
+            }
+          }
+        }
+      }
+    } catch (e) {
+      logger.warn("自动打码：二维码识别失败（不影响文本打码）", e);
+    }
+
     if (boxes.length === 0) {
-      showToast("未发现可打码的隐私信息（手机/身份证/邮箱/银行卡/座机等）", false);
+      showToast("未发现可打码的隐私信息（手机/身份证/邮箱/银行卡/座机/姓名/地址等）", false);
       return;
     }
     // 预览式（P3）：先显示橙色虚框轻预览，逐框可排除，确认才打马赛克，避免误伤普通文字
     maskPreviewRef.current = boxes;
     setMaskPreview(boxes);
     showToast(`识别到 ${boxes.length} 处隐私 · 点框可排除 · 全部确认即打码`, true);
-  }, [ensureRegionOcr, busy, showToast]);
+  }, [ensureRegionOcr, busy, showToast, screen]);
 
   /** 工具栏选工具：自动打码是动作型按钮，拦截后执行打码、不切换绘制工具。 */
   const onSelectTool = useCallback(
@@ -2984,7 +3076,8 @@ export function ScreenshotOverlay() {
       window.removeEventListener("mouseup", onWinUp);
       window.removeEventListener("blur", onWinBlur);
     };
-  }, []);
+    // hideMag 是 useCallback(…, []) 引用恒定，列进来不会导致重复订阅
+  }, [hideMag]);
 
   /* 双击：有选区 → 进入标注；无选区 → 全选并进标注（Snipaste 双击全屏即编辑） */
   const onSelectDoubleClick = () => {
@@ -3215,9 +3308,12 @@ export function ScreenshotOverlay() {
         return;
       }
     }
-    // 非绘制工具：先做命中检测 → 选中已有元素（V5；Shift 多选，V6.19）
+    // 先做命中检测 → 选中已有元素（V5；Shift 多选，V6.19）。
+    // 可否选中由 isSelectableAnnot 判定（遮罩类不参与），理由见那里的注释。
     if (tool !== "number") {
-      const hit = [...annotations].reverse().find((a) => pointHitAnnot(px, py, a));
+      const hit = [...annotations]
+        .reverse()
+        .find((a) => isSelectableAnnot(a) && pointHitAnnot(px, py, a));
       if (hit) {
         const multi = e.shiftKey;
         let ids: number[];
@@ -3308,6 +3404,10 @@ export function ScreenshotOverlay() {
     const rect = e.currentTarget.getBoundingClientRect();
     const px = (e.clientX - rect.left) * dpr;
     const py = (e.clientY - rect.top) * dpr;
+    // ❗ 这里故意**不**叠 isSelectableAnnot，与上面的选中路径不同，别“顺手统一”：
+    // 这个 hit 问的是“这里到底有没有东西”，而不是“能不能选中”。遮罩也是东西。
+    // 把遮罩排除掉的后果：拿马赛克笔快速点涂两下会凑成 dblclick → 落在“空白”上
+    // → 直接完成并关窗，截图就没了。现在遮罩能接住这一下，恰好是道保险。
     const hit = [...annotations].reverse().find((a) => pointHitAnnot(px, py, a));
     // 微信同款：双击文字=进编辑改字（任意工具下都能改，不必先切文字工具）。
     if (hit && hit.type === "text") {
@@ -3366,7 +3466,20 @@ export function ScreenshotOverlay() {
     textSubmittedRef.current = true;
     if (textDraft && value.trim()) {
       // 真实包围盒写进 x2/y2：选中框、后续命中检测都准（否则退化为落点 8px）。
-      const ext = measureTextExtent(value, fontPx);
+      // 必须带上折行宽度，与 drawAnnot 同口径（canvas.width - a.x）：
+      // 不带的话量出来是“不折行”的宽而矮的盒子，折行后的第二、第三行就选不中了。
+      // 画布折行宽度 = 输入框实际渲染宽度（WYSIWYG）：方案 A 下框默认一般长度 120px、
+      // 随内容增长、到选区边界才换行，落字必须按“框里真实换行点”来折，预览才不漂移。
+      // 没有输入框（极端兜底）时退回“选区剩余宽”。
+      const boxEl = textInputRef.current;
+      const boxContentCss = boxEl ? boxEl.clientWidth - TEXT_PAD * 2 : undefined;
+      const availPx =
+        boxContentCss != null
+          ? Math.max(1, boxContentCss * dpr)
+          : selRef.current
+            ? Math.max(1, selRef.current.w - textDraft.x)
+            : undefined;
+      const ext = measureTextExtent(value, fontPx, availPx);
       const patch = {
         text: value,
         color,
@@ -3495,7 +3608,11 @@ export function ScreenshotOverlay() {
         const ctx = out.getContext("2d");
         if (!ctx) return;
         ctx.drawImage(img, r.x, r.y, r.w, r.h, 0, 0, out.width, out.height);
-        const dataUrl = out.toDataURL("image/png");
+        // 必须走 canvasToDataUrl（toBlob）—— out.toDataURL 是**同步**全尺寸 PNG 编码。
+        // 这一段恰好跑在“刚进标注态”，也就是用户伸手去点“完成”的那一刻：
+        // 主线程被冻住几百毫秒，点击事件排在后面，表现就是“完成按钮要等一下才响应”。
+        // （canvasToDataUrl 的注释里已经警告过这件事，这两处当时漏了。）
+        const dataUrl = await canvasToDataUrl(out);
         const tmpPath = await invoke<string>("save_screenshot_image", { dataBase64: dataUrl });
         // 登记为临时图：它只是喂 OCR 的中间产物（无损 PNG），与最终结果图是两个文件；
         // 不登记的话每截一次图就在 screenshots/ 里永久多留一张全尺寸 PNG。后端关窗时删。
@@ -3593,9 +3710,8 @@ export function ScreenshotOverlay() {
   const lastSeen = getLastSeenVersion();
   const latestVer = CHANGELOG[0]?.version ?? "";
   const showNewHints = !lastSeen || compareVersions(latestVer, lastSeen) > 0;
-  // 已看集合用 state 持有：关掉教练卡时同步更新，卡片/角标立即消失（仅写
-  // localStorage 不触发重渲染，卡片会卡住不关，见 bug 修复）。
-  const [seenHints, setSeenHints] = useState<Set<string>>(() => readNewHintSeen());
+  // seenHints 的 useState 在组件顶部声明（这里已在 `if (!screen) return` 之后，
+  // 放 hook 会直接拆掉 hook 顺序），此处只做纯推导。
   const newHints = showNewHints
     ? Object.values(NEW_HINT_CONTENT).filter((h) => !seenHints.has(h.id))
     : [];
@@ -4029,9 +4145,15 @@ export function ScreenshotOverlay() {
             ))}
           {/* 文字标注输入框 + 附着迷你工具条（微信同款：输入框下方紧跟字号/色板） */}
           {textDraft && (() => {
-            // 估算输入框高度（CSS px）：行数 × 字号 × 行高 + 上下留白；用于贴底翻转判断。
-            const draftLines = (textDraft.value ?? "").split("\n").length || 1;
-            const boxHCss = draftLines * fontCss * TEXT_LINE_HEIGHT + 4;
+            // 折行宽度：从文字起点到**选区右边界**（物理像素）。
+            // 这与 drawAnnot 里的 ctx.canvas.width - a.x 是同一个量 —— 标注坐标就是选区局部坐标，
+            // 而合成画布宽 = 选区宽。两边必须同口径，否则预览与落字的行数对不上。
+            const availPx = selRef.current ? Math.max(1, selRef.current.w - textDraft.x) : 0;
+            const availCss = availPx ? availPx / dpr : undefined;
+            // 估算输入框高度（CSS px）：折行后行数 × 字号 × 行高 + 上下留白；用于贴底翻转判断。
+            const draftLines = wrapLines(textDraft.value ?? "", fontPx, availPx).length || 1;
+            const boxHCss = draftLines * fontCss * TEXT_LINE_HEIGHT + 4 + TEXT_PAD * 2;
+            const effBoxH = textBoxHCss || boxHCss; // 真实框高优先，首帧未测量时用估算兜底
             const TOOLBAR_H = 34; // 文字附着迷你条高度
             const ANNOT_TOOLBAR_H = 56; // 底部主标注工具栏实际高度（含 padding/border），文字不能压在它上面
             const screenBottom = typeof window !== "undefined" ? window.innerHeight : 1e9;
@@ -4041,7 +4163,7 @@ export function ScreenshotOverlay() {
             // 可用底部 = min(选区底, 屏幕底) - 工具栏高：翻转判断要让出工具栏空间，
             // 否则选区贴屏幕底时文字/迷你条仍会被主工具栏遮住（旧实现忽略工具栏高度）。
             const viewBottomCss = Math.min(selBottom, screenBottom) - ANNOT_TOOLBAR_H;
-            const flip = textDraft.y / dpr + boxHCss + 8 + TOOLBAR_H > viewBottomCss;
+            const flip = textDraft.y / dpr + effBoxH + 8 + TOOLBAR_H > viewBottomCss;
             return (
               <>
                 <textarea
@@ -4051,9 +4173,11 @@ export function ScreenshotOverlay() {
                   className="text-draft"
                   // 编辑已有文字时回填初始文本（新建则为空）
                   defaultValue={textDraft.value ?? ""}
-                  // wrap=off：关闭软换行，框内逻辑行数 = \n 行数 = canvas 渲染行数，
-                  // 所见即所得（否则框里折行、落字不折，预览与落字错位）。
-                  wrap="off"
+                  // wrap=soft：碰到选区右边界自动换行（微信截图同口径）。
+                  // 以前是 wrap="off" 不折行 —— 而合成画布就是选区大小，超出右边界的那段字
+                  // 落字后直接被裁掉，输入框里却是完整的（内容丢失）。
+                  // 现在两边都折：这里靠浏览器原生折行，画布靠 wrapLines，宽度同为 availPx。
+                  wrap="soft"
                   // 在输入框内按下不冒泡到标注画布：避免点到输入框又触发 onAnnotMouseDown 重建/移位
                   onMouseDown={(e) => e.stopPropagation()}
                   // 内容变化按 scrollHeight 撑高（多行不被裁切）
@@ -4061,15 +4185,38 @@ export function ScreenshotOverlay() {
                   // color 必须跟当前标注色：不给的话 CSS 里是固定白色，
                   // 而提交后 drawAnnot 用 a.color，会看到文字突然变色
                   style={{
-                    left: css(textDraft.x),
-                    top: css(textDraft.y),
+                    // 负偏移抵消 padding：视觉上有内边距（字不再顶着框线），
+                    // 而文字的屏幕位置与 css(textDraft.x/y) 严格相等 —— 跟落字对得上。
+                    left: css(textDraft.x) - TEXT_PAD,
+                    top: css(textDraft.y) - TEXT_PAD,
+                    padding: TEXT_PAD,
+                    // 越界处理用“限尺寸 + 内部滚动”而不是把框挪回来：
+                    // 框一旦被挪动，它就不在文字实际会落下的位置上了，恰恰把刚去掉底板
+                    // 换来的“所见即所得”又破掉。限尺寸则位置不变，长内容自己滚。
+                    // 宽度（方案 A）：默认一般长度 120px（min-width），随内容增长到选区右边界后
+                    // 原生换行（wrap=soft），max-width 即“文字起点→选区右边界”封顶。
+                    // 具体宽度在 autoSizeText 里按内容实测设置（不在 inline style 写死 width，
+                    // 否则 React 重渲染会把已增长的宽度重置回初值）。
+                    minWidth: availCss != null ? Math.min(120, availCss + TEXT_PAD * 2) : 120,
+                    maxWidth: availCss != null ? availCss + TEXT_PAD * 2 : undefined,
+                    maxHeight: Math.max(fontCss * TEXT_LINE_HEIGHT + TEXT_PAD * 2, screenBottom - css(textDraft.y) - 12),
                     // CSS 像素直接用 fontCss —— canvas 上是 fontCss × dpr 物理像素，
                     // 缩到 CSS 显示后正好等于 fontCss，两边视觉一致。
                     fontSize: fontCss,
                     lineHeight: TEXT_LINE_HEIGHT,
                     color,
+                    // 描边要与画布同口径（draw.ts 的 text 分支：contrastInk 对比色描边，宽度 fs/8）。
+                    // 旧实现只在 CSS 里写了一层黑色 text-shadow 去近似它 —— 选深色字（如黑）时
+                    // 输入框里是「黑字 + 黑阴影」压在深色底上，几乎看不见自己在打什么；
+                    // 而回车落字后画布给了浅色描边，又清晰了 —— 所见并非所得。
+                    WebkitTextStrokeWidth: `${Math.max(1, fontCss / 10)}px`,
+                    WebkitTextStrokeColor: contrastInk(color),
+                    // 先描边后填色，与 canvas 的 stroke→fill 顺序一致，否则描边会把字身吃细
+                    paintOrder: "stroke fill",
                   }}
-                  placeholder="输入文字…（Shift+Enter 换行）"
+                  // 快捷键说明移到下方工具条常驻（.tkeys）：放在 placeholder 里一打字就没了，
+                  // 而用户恰恰是打到一半才想起来“怎么换行”。
+                  placeholder="输入文字…"
                   onBlur={(e) => {
                     // 已通过 Enter 提交 / Esc 取消的，卸载时补发的 blur 不再提交（防双落 / 防取消却落字）。
                     if (textSubmittedRef.current) {
@@ -4099,12 +4246,14 @@ export function ScreenshotOverlay() {
                   onSelectColor={(c) => setColor(c)}
                   textSizeId={textSizeId}
                   onSelectTextSize={(id) => setTextSizeId(id)}
-                  // 紧贴输入框下沿；贴底时翻到输入框上方（top 取负数偏移）
+                  // 紧贴输入框下沿；贴底时翻到输入框上方（top 取负数偏移）。
+                  // 三处都减 TEXT_PAD：输入框已经整体向左上偏了 TEXT_PAD，
+                  // 工具条要跟的是框的**视觉边界**，不是文字的起点。
                   style={{
-                    left: textDraft.x / dpr,
+                    left: textDraft.x / dpr - TEXT_PAD,
                     top: flip
-                      ? textDraft.y / dpr - TOOLBAR_H - 6
-                      : textDraft.y / dpr + boxHCss + 6,
+                      ? textDraft.y / dpr - TEXT_PAD - TOOLBAR_H - 6
+                      : textDraft.y / dpr - TEXT_PAD + effBoxH + 6,
                   }}
                 />
               </>

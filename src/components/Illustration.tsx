@@ -211,7 +211,8 @@ function drawEraser(ctx: CanvasRenderingContext2D, ink: string): void {
   });
 }
 
-function drawDefault(ctx: CanvasRenderingContext2D, ink: string): void {
+// ink 不用（默认图只用 withAlpha 的灰阶），但要与其它 draw* 保持同一签名，故加 _ 前缀
+function drawDefault(ctx: CanvasRenderingContext2D, _ink: string): void {
   withAlpha(ctx, 0.4, () => {
     ctx.beginPath();
     ctx.arc(62, 50, 10, 0, Math.PI * 2);

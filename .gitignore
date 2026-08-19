@@ -10,6 +10,8 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+# 发版前核对产物的临时目录（每个 ~13MB），一次 git add -A 就会被误提
+dist-verify*/
 *.local
 
 # Editor directories and files

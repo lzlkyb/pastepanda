@@ -13,10 +13,14 @@
     "updater:generate": "node scripts/generate-updater-json.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src/",
+    "lint": "eslint src/ --max-warnings=0",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,json}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,css,json}\""
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css,json}\"",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "src/**/*.{ts,tsx}": ["eslint --max-warnings=0"]
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",
@@ -91,7 +95,9 @@
     "eslint": "^9.39.4",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^5.2.0",
+    "husky": "^9.1.7",
     "jsdom": "^29.1.1",
+    "lint-staged": "^17.3.0",
     "prettier": "^3.8.4",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.62.0",

@@ -17,6 +17,7 @@ fn fatal_startup_error(app: &tauri::AppHandle, title: &str, detail: impl std::fm
 }
 
 pub mod ai;
+mod atomic_write;
 mod auto_cleanup;
 mod clipboard_monitor;
 mod commands;
@@ -538,6 +539,7 @@ pub fn run() {
             screenshot::capture_region,
             screenshot::save_screenshot_image,
             screenshot::close_screenshot_window,
+            screenshot::screenshot_ready,
             screenshot::hide_screenshot_window,
             screenshot::show_screenshot_window,
             screenshot::open_longshot_status,

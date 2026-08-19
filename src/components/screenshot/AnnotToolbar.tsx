@@ -345,6 +345,8 @@ export function AnnotToolbar({
         <span className="lb">重做</span>
       </div>
 
+      <div className="tsep" />
+
       {/* 长截图（从 select 态移来）：输出类动作而非标注工具，靠 tsep 与标注工具分开。
           ⚠️ 已有标注时必须禁用：长截图走 finalizeCanvas，不合成 annotations，
           此时点它会把先画的标注静默丢掉。 */}
@@ -388,18 +390,6 @@ export function AnnotToolbar({
 
       <div className="tsep" />
 
-      {/* 取消单独成组：它是销毁动作，不能跟出口挤在一起。
-          旧布局里它紧贴着「完成」，现在中间隔了三个出口按钮，误点代价低很多。 */}
-      <div
-        className="tool cancel-btn"
-        data-tip="取消截图并关闭 · 只想重新框选按 Esc"
-        onClick={onCancel}
-      >
-        ✕ 取消
-      </div>
-
-      <div className="tsep" />
-
       {/* 三个主力出口。以前全藏在那个无标签的「⋯」后面，而贴图 / AI 是本产品的主力能力。
           行业里保存/贴图一律在主栏（QQ / 微信 / PixPin），不藏二级菜单。 */}
       <div className="tool exit-save" data-tip="保存为图片文件（Ctrl+S）" onClick={onSave}>
@@ -425,11 +415,8 @@ export function AnnotToolbar({
           </span>
         </div>
       )}
-
-      <div className="tsep" />
-
-      {/* 补上中文标签：它曾是工具栏里唯一一个只有符号没有文字的按钮，
-          而"⋯"本身零语义——用户不点就不知道后面是什么。 */}
+      {/* 更多出口并入出口组：低频出口收「更多」，符合交互通用原则；
+          让出口能力集中、确认动作独立成对。 */}
       <div
         className="tool more-btn"
         data-tip="更多出口：翻译 / 送动作链 / 固定区域 / 插入文档"
@@ -437,6 +424,20 @@ export function AnnotToolbar({
       >
         更多 ⋯
       </div>
+
+      <div className="tsep" />
+
+      {/* 取消与完成成对：反向操作（放弃 / 确认）放一起，靠视觉权重兜底误点——
+          完成实心蓝渐变是视线终点，取消灰描边低调，无需再物理分离到中央。
+          两级取消（Esc）仍独立生效，只是按钮挪位。 */}
+      <div
+        className="tool cancel-btn"
+        data-tip="取消截图并关闭 · 只想重新框选按 Esc"
+        onClick={onCancel}
+      >
+        ✕ 取消
+      </div>
+      <span className="pair-sep" />
       {/* 完成是最高频出口，放最右（规则 17.2：越靠右越省手） */}
       <div
         className="tool done-btn"

@@ -1292,9 +1292,11 @@ fn process_image(
             dyn_img
         };
         // B-05：先写临时文件再原子 rename，防止崩溃/双 timer 触发时留下半文件。
-        // 注意：临时文件扩展名为 .png.tmp，save() 按扩展名推断格式会因 .tmp 无法识别而
+        // 注意：临时文件扩展名以 .tmp 结尾，save() 按扩展名推断格式会因 .tmp 无法识别而
         // 必然失败（导致图片永不入库），故必须用 save_with_format 显式指定 PNG 编码。
-        let tmp_path = img_path.with_extension("png.tmp");
+        // 临时名/收尾走 atomic_write：旧写法 `<hash>.png.tmp` 把内容哈希当成临时名，
+        // 而上面这条注释自己就承认“双 timer 触发”会发生 —— 两个 timer 拿到同一张图就撞同一个 tmp。
+        let tmp_path = crate::atomic_write::unique_tmp_path(&img_path);
         if let Err(e) = dyn_img.save_with_format(&tmp_path, image::ImageFormat::Png) {
             // 修复 M4：保存失败即中止，不再插入指向不存在文件的历史记录
             log::error!(
@@ -1304,14 +1306,13 @@ fn process_image(
             );
             return;
         }
-        if let Err(e) = std::fs::rename(&tmp_path, &img_path) {
+        if let Err(e) = crate::atomic_write::finish_rename(&tmp_path, &img_path) {
             log::error!(
                 "[ClipboardMonitor] 重命名临时图片失败 ({} → {}): {}",
                 tmp_path.display(),
                 img_path.display(),
                 e
             );
-            let _ = std::fs::remove_file(&tmp_path);
             return;
         }
     }

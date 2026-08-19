@@ -12,6 +12,7 @@ import { describe, it, expect } from "vitest";
 import {
   applyMagnet,
   eraseHits,
+  isSelectableAnnot,
   pointHitAnnot,
   measureTextExtent,
   toLocalRect,
@@ -211,5 +212,37 @@ describe("eraseHits", () => {
 
   it("路径没碰到任何元素时返回空", () => {
     expect(eraseHits([[900, 900]], [mk(1, 0)])).toEqual([]);
+  });
+});
+
+/* 遮罩类不可选中拖动。
+ * 回归点：拿马赛克去涂第二块时碰到第一块，以前会变成把第一块拖走；
+ * 而拖走一块马赛克 = 重新暴露刚遮住的隐私内容。 */
+describe("isSelectableAnnot", () => {
+  const at = (type: Annotation["type"]): Annotation => ({
+    id: 1,
+    type,
+    color: "#f00",
+    width: 3,
+    x: 0,
+    y: 0,
+    x2: 20,
+    y2: 20,
+  });
+
+  it("马赛克 / 模糊 不可选中", () => {
+    expect(isSelectableAnnot(at("mosaic"))).toBe(false);
+    expect(isSelectableAnnot(at("blur"))).toBe(false);
+  });
+
+  it("其它标注仍可选中（包括高亮）", () => {
+    for (const t of ["rect", "ellipse", "arrow", "pen", "text", "number", "highlight"] as const) {
+      expect(isSelectableAnnot(at(t))).toBe(true);
+    }
+  });
+
+  it("橡皮擦不受影响：遮罩仍能被擦除（否则就没有删除路径了）", () => {
+    const mosaic = at("mosaic");
+    expect(eraseHits([[5, 5]], [mosaic])).toEqual([1]);
   });
 });

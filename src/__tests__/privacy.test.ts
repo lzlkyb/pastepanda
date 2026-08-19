@@ -62,6 +62,38 @@ describe("detectPrivateText", () => {
     expect(detectPrivateText("Claude-Code")).toBe(false);
     expect(detectPrivateText("font-size")).toBe(false);
   });
+
+  it("命中 IPv4 / 车牌", () => {
+    expect(detectPrivateText("192.168.1.1")).toBe(true);
+    expect(detectPrivateText("IP: 10.0.0.255")).toBe(true);
+    expect(detectPrivateText("京A12345")).toBe(true);
+    expect(detectPrivateText("粤B12345")).toBe(true);
+    expect(detectPrivateText("沪AD12345")).toBe(true); // 新能源 6 位
+  });
+
+  it("IPv4 会连同日期/版本号 1.2.3.4 一起盖（预览态可逐框排除，属已知 trade-off）", () => {
+    expect(detectPrivateText("版本 1.2.3.4")).toBe(true);
+  });
+
+  it("不误伤：车牌需省份简称，裸字母数字串 / 纯中文不中", () => {
+    expect(detectPrivateText("ABC12345")).toBe(false);
+    expect(detectPrivateText("北京")).toBe(false);
+    expect(detectPrivateText("windows")).toBe(false);
+  });
+
+  it("命中姓名 / 地址（须带标签）", () => {
+    expect(detectPrivateText("姓名：张三")).toBe(true);
+    expect(detectPrivateText("收件人：欧阳娜娜")).toBe(true);
+    expect(detectPrivateText("地址：北京市朝阳区幸福路 1 号")).toBe(true);
+    expect(detectPrivateText("收货地址：上海市浦东新区世纪大道 100 号")).toBe(true);
+  });
+
+  it("不误伤：姓名/地址需带标签，裸中文不中", () => {
+    expect(detectPrivateText("张三李四")).toBe(false);
+    expect(detectPrivateText("北京市朝阳区")).toBe(false);
+    expect(detectPrivateText("客户满意度很高")).toBe(false); // 无「客户：」
+    expect(detectPrivateText("用户名 admin")).toBe(false);
+  });
 });
 
 describe("findPrivateSpans", () => {
@@ -107,5 +139,23 @@ describe("findPrivateSpans", () => {
     const t = "13800138000";
     expect(findPrivateSpans(t)).toEqual(findPrivateSpans(t));
     expect(findPrivateSpans(t)).toHaveLength(1);
+  });
+
+  it("IPv4 / 车牌只圈命中的段（不吃掉整行）", () => {
+    expect(hits("车辆 京A12345 备注")).toEqual(["京A12345"]);
+    expect(hits("网关 192.168.1.1 端口 80")).toEqual(["192.168.1.1"]);
+  });
+
+  it("姓名只圈姓名值不盖标签；地址遇下一字段即截断", () => {
+    expect(hits("姓名：张三 工号 001")).toEqual(["张三"]);
+    // 一行多字段：地址值遇下一字段截断，收件人/电话也各自被识别（正确协同）
+    expect(
+      hits("地址：北京市朝阳区幸福路 1 号 收件人：李四 电话：13800138000"),
+    ).toEqual(["北京市朝阳区幸福路 1 号", "李四", "13800138000"]);
+  });
+
+  it("姓名/地址不认无标签裸值（宁可漏检也不滥报）", () => {
+    expect(hits("张三李四 王五")).toEqual([]);
+    expect(hits("北京市朝阳区幸福路 1 号")).toEqual([]);
   });
 });

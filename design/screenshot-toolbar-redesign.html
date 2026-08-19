@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>截图工具栏 · 取消/完成配对 + 分组重排 · 设计稿</title>
+<style>
+  :root{
+    --bar-bg: rgba(34,41,76,.94);
+    --hover: #0F1F35;
+    --muted: #9DB2D0;
+    --on-from: #3B9EFF; --on-to: #6D5CF0;
+    --done-from: #6366F1; --done-to: #3B9EFF;
+    --save: #A5C8FF; --pin: #F9A8D4; --ocr: #7DE0C4; --long: #8CC5FF;
+    --ai-from: #A8DEFF; --ai-to: #D8CCFF;
+    --sep: linear-gradient(180deg, transparent, rgba(125,140,255,.5), transparent);
+    --ink: #1f2433;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; background:#eef1f7; color:var(--ink);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased; line-height:1.6;
+  }
+  .wrap{ max-width:1080px; margin:0 auto; padding:32px 28px 64px; }
+  h1{ font-size:22px; margin:0 0 4px; }
+  h2{ font-size:16px; margin:36px 0 12px; display:flex; align-items:center; gap:8px; }
+  .sub{ color:#5b6478; font-size:13px; margin:0 0 8px; }
+  .tag{ font-size:11px; padding:2px 9px; border-radius:20px; font-weight:700; }
+  .tag.now{ background:#fff0f0; color:#d94848; }
+  .tag.pro{ background:#eaf3ff; color:#2b6fe0; }
+  .card{ background:#fff; border:1px solid #e3e8f2; border-radius:16px; padding:24px; margin-top:14px; box-shadow:0 6px 24px rgba(40,50,90,.06); }
+  .note{ font-size:12.5px; color:#5b6478; margin:10px 0 0; }
+  .note b{ color:var(--ink); }
+  .stage{ background:#dfe5f0; border-radius:12px; padding:40px 24px; margin-top:16px; position:relative; overflow:hidden; }
+  .stage .gridbg{ position:absolute; inset:0; background-image:linear-gradient(#cfd7e8 1px,transparent 1px),linear-gradient(90deg,#cfd7e8 1px,transparent 1px); background-size:24px 24px; opacity:.5; }
+
+  /* ---------- 工具栏真实复刻 ---------- */
+  .annot-toolbar{
+    position:relative; display:flex; align-items:center; gap:2px; flex-wrap:nowrap;
+    padding:5px 7px; border-radius:12px; background:var(--bar-bg);
+    backdrop-filter: blur(8px); width:max-content; margin:0 auto; z-index:2;
+    box-shadow:0 8px 30px rgba(20,26,55,.32);
+  }
+  .tool{
+    min-width:38px; height:42px; border-radius:8px; padding:0 3px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+    cursor:pointer; border:1px solid transparent; color:#dfe6f5; user-select:none;
+    position:relative; transition:background .12s, transform .08s;
+  }
+  .tool .ic{ display:flex; }
+  .tool .ic svg{ width:17px; height:17px; display:block; }
+  .tool .lb{ font-size:9px; line-height:1; letter-spacing:.2px; opacity:.72; }
+  .tool:hover{ background:var(--hover); }
+  .tool:hover .lb{ opacity:1; }
+  .tool.on{ background:linear-gradient(135deg,var(--on-from),var(--on-to)); border-color:rgba(255,255,255,.4); color:#fff; }
+  .tool.on .lb{ opacity:1; }
+  .tool.dim{ color:var(--muted); }
+  .tool.longshot{ color:var(--long); }
+  .tool.ocr-btn{ color:var(--ocr); }
+  .tool.exit-save{ color:var(--save); }
+  .tool.exit-pin{ color:var(--pin); }
+  .tool.exit-ai .lb{ background:linear-gradient(90deg,var(--ai-from),var(--ai-to)); -webkit-background-clip:text; background-clip:text; color:transparent; font-weight:800; opacity:1; }
+  .tool.disabled{ opacity:.3; cursor:not-allowed; }
+  .tool.disabled:hover{ background:transparent; }
+
+  .tool.done-btn, .tool.cancel-btn, .tool.more-btn{
+    flex-direction:row; min-width:0; height:34px; padding:0 12px; font-size:12px; font-weight:600; border-radius:9px;
+  }
+  .tool.done-btn{ color:#fff; background:linear-gradient(135deg,var(--done-from),var(--done-to)); border:1px solid rgba(255,255,255,.25); box-shadow:0 2px 10px rgba(99,102,241,.4); }
+  .tool.done-btn:hover{ filter:brightness(1.12); }
+  .tool.cancel-btn{ color:var(--muted); border:1px solid rgba(157,178,208,.35); }
+  .tool.cancel-btn:hover{ background:rgba(248,113,113,.15); color:#FCA5A5; border-color:rgba(248,113,113,.4); }
+  .tool.more-btn{ color:var(--muted); }
+  .tool.more-btn:hover{ background:rgba(99,102,241,.18); color:#B9C6F0; }
+  /* 建议：取消/完成成对，中间一根分隔线 */
+  .pair-sep{ width:1px; height:20px; background:rgba(157,178,208,.3); margin:0 2px; }
+
+  .tsep{ width:1px; height:24px; margin:0 5px; background:var(--sep); }
+
+  /* 标记 */
+  .marker-line{ position:relative; }
+  .flag{ position:absolute; top:-26px; left:50%; transform:translateX(-50%); white-space:nowrap;
+    font-size:11px; font-weight:700; padding:3px 8px; border-radius:7px; z-index:5; }
+  .flag.bad{ background:#d94848; color:#fff; }
+  .flag.good{ background:#2b6fe0; color:#fff; }
+  .arrow-down{ position:absolute; top:-12px; left:50%; transform:translateX(-50%); color:#d94848; font-size:14px; }
+
+  /* 近距特写 */
+  .closeup{ display:flex; gap:40px; align-items:flex-start; flex-wrap:wrap; margin-top:10px; }
+  .closeup .col{ flex:0 0 auto; }
+  .closeup .caption{ font-size:12px; color:#5b6478; text-align:center; margin-top:8px; max-width:200px; }
+  .pair{ display:flex; align-items:center; gap:6px; background:var(--bar-bg); border-radius:12px; padding:8px 9px; }
+
+  /* 决策表 */
+  table{ width:100%; border-collapse:collapse; font-size:13px; margin-top:10px; }
+  th,td{ text-align:left; padding:9px 10px; border-bottom:1px solid #eef1f7; vertical-align:top; }
+  th{ font-size:12px; color:#5b6478; font-weight:700; }
+  td code{ background:#f1f4fb; padding:1px 6px; border-radius:5px; font-size:12px; }
+
+  ul.legend{ font-size:13px; margin:6px 0 0; padding-left:18px; }
+  ul.legend li{ margin:5px 0; }
+  .pill{ display:inline-block; font-size:11px; padding:1px 7px; border-radius:6px; background:#eaf3ff; color:#2b6fe0; font-weight:700; margin-right:4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>截图工具栏 · 设计稿：取消/完成配对 + 分组重排</h1>
+  <p class="sub">基于真实组件 <code style="background:#f1f4fb;padding:1px 6px;border-radius:5px">AnnotToolbar.tsx</code> 与 <code style="background:#f1f4fb;padding:1px 6px;border-radius:5px">screenshot.css</code> 复刻，仅调整按钮顺序与归属组，视觉语言（深色玻璃栏、图标在上+中文标签、蓝渐变选中）保持一致。<b>取消 ✓ 与完成 ✓ 移到右下角成对</b>，其余按钮按“动作性质分组”。</p>
+
+  <!-- ============ 当前 ============ -->
+  <h2><span class="tag now">现状</span> 当前布局</h2>
+  <div class="card">
+    <div class="stage">
+      <div class="gridbg"></div>
+      <div class="annot-toolbar" id="bar-now">
+        <div class="tool on"><span class="ic"><svg viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">矩形</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><ellipse cx="8" cy="8" rx="5.75" ry="4.25" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">椭圆</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3.2 12.8L11 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.9 3.1L12.4 7.9L8.1 3.6Z" fill="currentColor" stroke="none"/></svg></span><span class="lb">箭头</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M2.8 13.2l3.3-.8 6.7-6.7a1.3 1.3 0 0 0 0-1.9l-.6-.6a1.3 1.3 0 0 0-1.9 0L3.6 9.9l-.8 3.3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.9 4.1l2 2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="lb">画笔</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M5.2 10.4l4.9-4.9 2.4 2.4-4.9 4.9H5.2v-2.4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.4 4.2l1.4-1.4 2.4 2.4-1.4 1.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><rect x="2.8" y="13.4" width="10.4" height="1.6" rx="0.8" fill="currentColor" opacity="0.8"/></svg></span><span class="lb">高亮</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 2.5h3.7v3.7H2.5zM9.8 2.5h3.7v3.7H9.8zM6.2 6.2h3.6v3.6H6.2zM2.5 9.8h3.7v3.7H2.5zM9.8 9.8h3.7v3.7H9.8z" fill="currentColor" stroke="none" opacity="0.75"/></svg></span><span class="lb">马赛克</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M8 2.2C8 2.2 3.8 7 3.8 9.6a4.2 4.2 0 0 0 8.4 0C12.2 7 8 2.2 8 2.2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M6 9.8a2 2 0 0 0 2 2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/></svg></span><span class="lb">模糊</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><rect x="2.6" y="3.2" width="10.8" height="9.6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4.4" y="6.6" width="7.2" height="2.6" rx="0.6" fill="currentColor" stroke="none" opacity="0.85"/></svg></span><span class="lb">自动打码</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3 3.8h10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8 3.8v8.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5.8 12.2h4.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="lb">文字</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.9 6.6L8.4 5.6v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.9 10.6h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="lb">序号</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M9.1 2.9l4 4a1 1 0 0 1 0 1.4l-3.6 3.6H5.7L2.9 9.1a1 1 0 0 1 0-1.4l4.8-4.8a1 1 0 0 1 1.4 0z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M6.1 6.1l3.8 3.8" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="lb">橡皮擦</span></div>
+        <div class="tsep"></div>
+        <div class="tool dim"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3 6.2h7a3.4 3.4 0 1 1 0 6.8H6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.4 3L3.2 6.2l3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="lb">撤销</span></div>
+        <div class="tool dim"><span class="ic"><svg viewBox="0 0 16 16"><path d="M13 6.2H6a3.4 3.4 0 1 0 0 6.8h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.6 3l3.2 3.2-3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="lb">重做</span></div>
+        <div class="tool longshot"><span class="ic"><svg viewBox="0 0 16 16"><rect x="4" y="1.8" width="8" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 8v5.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5.4 11l2.6 2.6L10.6 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="lb">长截图</span></div>
+        <div class="tool ocr-btn"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3.4 2.4h6.1l3.1 3.1v8.1a1 1 0 0 1-1 1H3.4a1 1 0 0 1-1-1V3.4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.3 2.5v3.2h3.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M5 8.4h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5 11h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="lb">取文字</span></div>
+        <div class="tsep"></div>
+        <div class="tool cancel-btn marker-line"><span class="flag bad">取消孤立在中间</span><span class="arrow-down">▼</span>✕ 取消</div>
+        <div class="tsep"></div>
+        <div class="tool exit-save"><span class="ic"><svg viewBox="0 0 16 16"><path d="M8 2.4v6.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5.3 6.5L8 9.2l2.7-2.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.6 10.6v1.9a1.1 1.1 0 0 0 1.1 1.1h8.6a1.1 1.1 0 0 0 1.1-1.1v-1.9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="lb">保存</span></div>
+        <div class="tool exit-pin"><span class="ic"><svg viewBox="0 0 16 16"><path d="M6.1 2.6h3.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8 9.4v4.1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M6.6 2.6v3.1L4.9 7.5a.6.6 0 0 0 .43 1.02h5.34a.6.6 0 0 0 .43-1.02L9.4 5.7V2.6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span><span class="lb">贴图</span></div>
+        <div class="tool exit-ai"><span class="ic"><svg viewBox="0 0 16 16"><path d="M8 2l1.4 4.6L14 8l-4.6 1.4L8 14l-1.4-4.6L2 8l4.6-1.4z" fill="currentColor" stroke="none"/></svg></span><span class="lb">AI</span></div>
+        <div class="tsep"></div>
+        <div class="tool more-btn">更多 ⋯</div>
+        <div class="tool done-btn">完成 ✓</div>
+      </div>
+    </div>
+    <p class="note"><b>问题：</b>「✕ 取消」孤零零夹在「取文字」和「保存」之间，而「完成 ✓」在最右端——两个反向操作（放弃 / 确认）隔着 <b>4 个按钮</b>，视线要在右下角来回跳。原注释理由是“怕紧贴完成时误点”，但视觉权重（完成实心蓝、取消灰描边）本就能化解，不必用物理分离到中央来兜底。</p>
+  </div>
+
+  <!-- ============ 建议 ============ -->
+  <h2><span class="tag pro">建议</span> 建议布局</h2>
+  <div class="card">
+    <div class="stage">
+      <div class="gridbg"></div>
+      <div class="annot-toolbar" id="bar-pro">
+        <div class="tool on"><span class="ic"><svg viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">矩形</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><ellipse cx="8" cy="8" rx="5.75" ry="4.25" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><span class="lb">椭圆</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3.2 12.8L11 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.9 3.1L12.4 7.9L8.1 3.6Z" fill="currentColor" stroke="none"/></svg></span><span class="lb">箭头</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M2.8 13.2l3.3-.8 6.7-6.7a1.3 1.3 0 0 0 0-1.9l-.6-.6a1.3 1.3 0 0 0-1.9 0L3.6 9.9l-.8 3.3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.9 4.1l2 2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="lb">画笔</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M5.2 10.4l4.9-4.9 2.4 2.4-4.9 4.9H5.2v-2.4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.4 4.2l1.4-1.4 2.4 2.4-1.4 1.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><rect x="2.8" y="13.4" width="10.4" height="1.6" rx="0.8" fill="currentColor" opacity="0.8"/></svg></span><span class="lb">高亮</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 2.5h3.7v3.7H2.5zM9.8 2.5h3.7v3.7H9.8zM6.2 6.2h3.6v3.6H6.2zM2.5 9.8h3.7v3.7H2.5zM9.8 9.8h3.7v3.7H9.8z" fill="currentColor" stroke="none" opacity="0.75"/></svg></span><span class="lb">马赛克</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M8 2.2C8 2.2 3.8 7 3.8 9.6a4.2 4.2 0 0 0 8.4 0C12.2 7 8 2.2 8 2.2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M6 9.8a2 2 0 0 0 2 2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/></svg></span><span class="lb">模糊</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><rect x="2.6" y="3.2" width="10.8" height="9.6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4.4" y="6.6" width="7.2" height="2.6" rx="0.6" fill="currentColor" stroke="none" opacity="0.85"/></svg></span><span class="lb">自动打码</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3 3.8h10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8 3.8v8.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5.8 12.2h4.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="lb">文字</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.9 6.6L8.4 5.6v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.9 10.6h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="lb">序号</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16"><path d="M9.1 2.9l4 4a1 1 0 0 1 0 1.4l-3.6 3.6H5.7L2.9 9.1a1 1 0 0 1 0-1.4l4.8-4.8a1 1 0 0 1 1.4 0z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M6.1 6.1l3.8 3.8" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="lb">橡皮擦</span></div>
+        <div class="tsep"></div>
+        <div class="tool dim"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3 6.2h7a3.4 3.4 0 1 1 0 6.8H6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.4 3L3.2 6.2l3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="lb">撤销</span></div>
+        <div class="tool dim"><span class="ic"><svg viewBox="0 0 16 16"><path d="M13 6.2H6a3.4 3.4 0 1 0 0 6.8h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.6 3l3.2 3.2-3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="lb">重做</span></div>
+        <div class="tsep"></div>
+        <div class="tool longshot"><span class="ic"><svg viewBox="0 0 16 16"><rect x="4" y="1.8" width="8" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 8v5.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5.4 11l2.6 2.6L10.6 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="lb">长截图</span></div>
+        <div class="tool ocr-btn"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3.4 2.4h6.1l3.1 3.1v8.1a1 1 0 0 1-1 1H3.4a1 1 0 0 1-1-1V3.4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.3 2.5v3.2h3.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M5 8.4h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5 11h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="lb">取文字</span></div>
+        <div class="tsep"></div>
+        <div class="tool exit-save"><span class="ic"><svg viewBox="0 0 16 16"><path d="M8 2.4v6.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5.3 6.5L8 9.2l2.7-2.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.6 10.6v1.9a1.1 1.1 0 0 0 1.1 1.1h8.6a1.1 1.1 0 0 0 1.1-1.1v-1.9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="lb">保存</span></div>
+        <div class="tool exit-pin"><span class="ic"><svg viewBox="0 0 16 16"><path d="M6.1 2.6h3.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8 9.4v4.1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M6.6 2.6v3.1L4.9 7.5a.6.6 0 0 0 .43 1.02h5.34a.6.6 0 0 0 .43-1.02L9.4 5.7V2.6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span><span class="lb">贴图</span></div>
+        <div class="tool exit-ai"><span class="ic"><svg viewBox="0 0 16 16"><path d="M8 2l1.4 4.6L14 8l-4.6 1.4L8 14l-1.4-4.6L2 8l4.6-1.4z" fill="currentColor" stroke="none"/></svg></span><span class="lb">AI</span></div>
+        <div class="tool more-btn">更多 ⋯</div>
+        <div class="tsep"></div>
+        <div class="tool cancel-btn marker-line"><span class="flag good">取消·完成成对</span>✕ 取消</div>
+        <div class="pair-sep"></div>
+        <div class="tool done-btn">完成 ✓</div>
+      </div>
+    </div>
+    <p class="note"><b>改动点：</b>①「✕ 取消」从中央移到最右出口组，与「完成 ✓」紧凑成对、中间留一根细分隔线；②「更多 ⋯」并入出口组（低频出口收“更多”，符合交互通用原则）；③ 其余分组不变（工具组 / 撤销重做 / 产出组长截图·取文字）。两级取消（Esc）逻辑不受影响，只是按钮挪位。</p>
+  </div>
+
+  <!-- ============ 近距特写：取消 vs 完成 权重 ============ -->
+  <h2>近距特写：取消（灰描边）× 完成（实心蓝）的视觉权重</h2>
+  <div class="card">
+    <div class="closeup">
+      <div class="col">
+        <div class="pair">
+          <div class="tool cancel-btn">✕ 取消</div>
+          <div class="pair-sep"></div>
+          <div class="tool done-btn">完成 ✓</div>
+        </div>
+        <div class="caption"><b>建议形态。</b>完成=实心蓝渐变+投影，是视线终点（用户主动点）；取消=灰描边低调，误点风险靠颜色差兜底，<b>不用再靠物理分开</b>。</div>
+      </div>
+      <div class="col">
+        <div class="pair">
+          <div class="tool cancel-btn" style="border-color:rgba(248,113,113,.55);color:#FCA5A5">✕ 取消</div>
+          <div class="pair-sep"></div>
+          <div class="tool done-btn">完成 ✓</div>
+        </div>
+        <div class="caption"><b>hover 取消时</b>才轻微泛红，进一步强化“这是销毁动作、要谨慎”，但不抢完成的主色。</div>
+      </div>
+    </div>
+    <p class="note">权重差异已经足够区分两个反向操作：用户绝不会把“实心蓝的确认”误读成“灰描边的取消”，所以把它俩放一起反而<b>更符合微信/QQ 截图</b>的直觉（放弃/确认都集中在右下角）。</p>
+  </div>
+
+  <!-- ============ 分组决策 ============ -->
+  <h2>分组重排决策表</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>组</th><th>成员</th><th>理由</th><th>是否改动</th></tr></thead>
+      <tbody>
+        <tr><td><span class="pill">工具</span>标注工具</td><td>矩形/椭圆/箭头/画笔/高亮/马赛克/模糊/自动打码/文字/序号/橡皮擦</td><td>都是“在选区上绘制”的同质动作，原序即合理，不动。</td><td>不变</td></tr>
+        <tr><td><span class="pill">编辑</span>撤销·重做</td><td>撤销 / 重做</td><td>紧邻工具组，“改完即撤”，保留。</td><td>不变</td></tr>
+        <tr><td><span class="pill">产出</span>整图产出</td><td>长截图 / 取文字</td><td>都是“对整张图产出别的东西”；取文字高频、长截图低频，取文字靠右更省手（鼠标常停选区右下角）。</td><td>不变</td></tr>
+        <tr><td><span class="pill">出口</span>主力出口</td><td>保存 / 贴图 / AI / 更多</td><td>把「更多 ⋯」并进出口组——它本是低频出口集合，收尾更契合“低频出口收更多”原则，也让出口能力集中、确认动作独立成对。</td><td><b>更多 ⋯ 并入</b></td></tr>
+        <tr><td><span class="pill">确认</span>放弃·确认</td><td>✕ 取消 | 完成 ✓</td><td>反向操作成对、紧凑放置，中间细分隔线；视觉权重（蓝实心 vs 灰描边）兜底误点。</td><td><b>取消移到此</b></td></tr>
+      </tbody>
+    </table>
+    <ul class="legend">
+      <li><b>吸管取色</b>不在主栏（真实代码里它在属性条颜色组），设计稿如实不画。</li>
+      <li><b>自动打码</b>本质是“工具型按钮”（点完出预览条），留在工具组正确。</li>
+      <li>若想加大两操作距离，可在 <code>cancel</code> 与 <code>done</code> 之间把 <code>.pair-sep</code> 的 margin 调到 8px，或给完成加更明显的投影——但建议先按上图试手感。</li>
+    </ul>
+  </div>
+
+  <p class="sub" style="margin-top:24px">交互提示：上方两张栏里的工具按钮可<b>悬停看高亮</b>，点击任意标注工具可切换“选中（蓝渐变）”态，体验与真实组件一致。</p>
+
+</div>
+
+<script>
+  // 简单交互：点击工具切换选中态
+  function bind(id){
+    const bar = document.getElementById(id);
+    bar.querySelectorAll('.tool').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        // 仅标注工具（含图标+中文标签列向）参与选中切换
+        if(b.classList.contains('done-btn')||b.classList.contains('cancel-btn')||b.classList.contains('more-btn')) return;
+        if(b.classList.contains('dim')||b.classList.contains('disabled')) return;
+        bar.querySelectorAll('.tool').forEach(x=>x.classList.remove('on'));
+        b.classList.add('on');
+      });
+    });
+  }
+  bind('bar-now'); bind('bar-pro');
+</script>
+</body>
+</html>

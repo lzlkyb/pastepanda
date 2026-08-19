@@ -212,6 +212,24 @@ export function pointHitAnnot(px: number, py: number, a: Annotation): boolean {
   }
 }
 
+/**
+ * 该元素能不能被「点一下选中并拖动」。
+ *
+ * 遮罩类（马赛克 / 模糊）**不可选中**。两个理由，后一个才是重点：
+ *   ① 笔刷型遮罩的命中容差是 `maskBrushWidth / 2`（笔宽 40 就是 20px），误命中面积很大 ——
+ *     拿马赛克去涂第二块，碰到第一块就变成把第一块拖走，根本画不下去；
+ *   ② **移动一块马赛克 = 把遮盖挪开 = 重新暴露刚遮住的隐私内容**。
+ *     这不是误拖一个箭头那种代价，所以宁可不给移动能力。
+ *
+ * 遮罩仍然可删：Ctrl+Z 撤销、橡皮擦擦除（eraseStrokes 不走本函数，故不受影响）。
+ *
+ * ❗ 用「白名单」而不是反向排除：旧代码写的是 `if (tool !== "number")`，
+ * 注释却声称“非绘制工具才命中”—— 两者对不上，而且每新增一个工具就自动落进可拖动集合。
+ */
+export function isSelectableAnnot(a: Annotation): boolean {
+  return a.type !== "mosaic" && a.type !== "blur";
+}
+
 /** 橡皮擦：擦除路径经过的所有标注元素 id。
  *
  *  保留给“整删”语义用；eraseStrokes 内部对非笔迹类就是这个行为。 */

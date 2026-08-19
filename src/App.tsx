@@ -499,6 +499,7 @@ function App() {
     let unlistenAi: (() => void) | null = null;
     let unlistenPin: (() => void) | null = null;
     let unlistenOcr: (() => void) | null = null;
+    let unlistenShotFail: (() => void) | null = null;
     async function setup() {
       try {
         const { listen } = await import("@tauri-apps/api/event");
@@ -526,17 +527,33 @@ function App() {
             }),
           );
         });
+        // 截图窗前端没能启动（import 期抛错 / webview 白屏），后端存活探针自动关窗。
+        // 不能静默：用户按了热键却什么都没发生，不说一声会以为软件坏了。
+        // 走 app-toast 事件而不直调 toast()：与上面的 screenshot-ocr-ready 同一写法，
+        // 也避开把 toast 拉进空依赖数组导致的反复重新订阅。
+        const fnShotFail = await listen("screenshot-startup-failed", () => {
+          window.dispatchEvent(
+            new CustomEvent("app-toast", {
+              detail: {
+                message: "截图窗未能启动，已自动关闭 · 请再按一次截图热键",
+                type: "error",
+              },
+            }),
+          );
+        });
         if (cancelled) {
           // effect 已在本次 setup 完成前被清理（StrictMode 重挂载 / HMR），立即取消订阅，避免监听器泄漏
           fn();
           fnAi();
           fnPin();
           fnOcr();
+          fnShotFail();
         } else {
           unlisten = fn;
           unlistenAi = fnAi;
           unlistenPin = fnPin;
           unlistenOcr = fnOcr;
+          unlistenShotFail = fnShotFail;
         }
       } catch (e) { logger.warn("注册托盘事件监听失败", e); }
     }
@@ -547,6 +564,7 @@ function App() {
       if (unlistenAi) unlistenAi();
       if (unlistenPin) unlistenPin();
       if (unlistenOcr) unlistenOcr();
+      if (unlistenShotFail) unlistenShotFail();
     };
   }, []);
 

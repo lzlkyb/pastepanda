@@ -10,7 +10,9 @@
 //! 坐标系约定：全程使用**物理像素**（窗口定位、底图、选区、Canvas 均同源），
 //! 唯一换算点是前端 WebView 内 CSS 显示尺寸 = 物理像素 / devicePixelRatio。
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -314,13 +316,13 @@ pub fn save_screenshot_image(
     let hash = format!("{:x}", Md5::new().chain_update(&bytes).finalize());
     let file_path = shots_dir.join(format!("{}.{}", hash, ext));
     if !file_path.exists() {
-        // 先写临时文件再原子 rename，防止写一半崩溃留下残缺图片（同 save_rich_image）
-        let tmp_path = file_path.with_extension(format!("{}.tmp", ext));
+        // 先写临时文件再原子 rename，防止写一半崩溃留下残缺图片。
+        // 临时名/收尾走 atomic_write（三处落盘共用）—— 不能拿内容 md5 当 tmp 名，
+        // 否则预 OCR 图与结果图像素一致时两次保存撞同一个 tmp，报 os error 2。
+        let tmp_path = crate::atomic_write::unique_tmp_path(&file_path);
         std::fs::write(&tmp_path, &bytes).map_err(|e| format!("写入截图失败: {e}"))?;
-        if let Err(e) = std::fs::rename(&tmp_path, &file_path) {
-            let _ = std::fs::remove_file(&tmp_path);
-            return Err(format!("重命名临时文件失败: {e}"));
-        }
+        crate::atomic_write::finish_rename(&tmp_path, &file_path)
+            .map_err(|e| format!("重命名临时文件失败: {e}"))?;
     }
     Ok(file_path.to_string_lossy().to_string())
 }
@@ -400,6 +402,51 @@ pub fn take_pending_shot_capture(
 /// 防止并发创建同名窗口（快速连按热键）
 static CREATING: AtomicBool = AtomicBool::new(false);
 
+/* ===== 前端存活探针 =====
+ *
+ * 截图窗是全屏 topmost 遮罩，退出通道（Esc / 工具栏 / 右键）全长在前端 React 树上。
+ * React 渲染期崩溃有 ErrorBoundary 兜底（见 screenshot-main.tsx 的 CrashPanel），但有两类
+ * 崩法它根本接不到：
+ *   ① import 期就抛错 —— 模块体一行不会执行，连那个全局 error 监听都没注册上；
+ *   ② webview 白屏 / 页面根本没加载 —— JS 压根不跑。
+ * 这两种情况下用户会被困在一块关不掉的全屏遮罩后面，只能开任务管理器。
+ *
+ * 所以后端在新建窗口后起一个一次性（不是心跳）定时任务：前端挂载后会 invoke
+ * `screenshot_ready`；超时未收到就判定前端没起来，自动关窗。
+ *
+ * 不用全局 Esc 快捷键：那要在截图期间全局劫持 Esc，注销漏一次就全局吃掉 Esc，
+ * 风险不对称；而且它要求用户“知道该按 Esc”，探针是自动的。 */
+
+/// 截图窗世代号：每次**新建**窗口 +1。探针靠它判断“我守的那个窗还在不在”，
+/// 避免上一轮的探针去关掉这一轮新开的窗（mark_ocr_temp 的 os error 2 就是同类的陈旧登记）。
+static SHOT_GEN: AtomicU64 = AtomicU64::new(0);
+/// 前端上报就绪时写入的世代号。等于当前世代 = 这一轮前端确实起来了。
+static SHOT_READY_GEN: AtomicU64 = AtomicU64::new(0);
+/// 本轮窗口创建时刻，用来把 ready 的真实耗时打进日志 —— 阈值别拍脑袋定。
+static SHOT_START: Mutex<Option<(u64, Instant)>> = Mutex::new(None);
+
+/// 前端未就绪的判定时限。取值偏保守：误杀一个健康窗口比多等两秒糟得多
+/// （冷启动 + WebView2 首次初始化在慢机器上可能好几秒）。
+const SHOT_READY_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// 前端 ScreenshotOverlay 挂载后调一次：告诉后端“这一轮前端起来了”，撤销存活探针。
+#[tauri::command]
+pub fn screenshot_ready() {
+    let generation = SHOT_GEN.load(Ordering::SeqCst);
+    SHOT_READY_GEN.store(generation, Ordering::SeqCst);
+    if let Ok(slot) = SHOT_START.lock() {
+        if let Some((g, t)) = *slot {
+            if g == generation {
+                log::info!(
+                    "[Screenshot] 前端就绪（世代 {}），耗时 {} ms",
+                    generation,
+                    t.elapsed().as_millis()
+                );
+            }
+        }
+    }
+}
+
 fn create_window(app: &AppHandle) {
     if CREATING.swap(true, Ordering::SeqCst) {
         log::info!("[Screenshot] 窗口创建中，忽略重复调用");
@@ -416,6 +463,13 @@ fn create_window(app: &AppHandle) {
         let _guard = ResetOnDrop;
 
         let (w, h, x, y) = virtual_screen_metrics();
+        // 世代号必须在 build() **之前**递增：build 一旦返回，webview 就开始加载，
+        // 前端随时可能 invoke screenshot_ready。先 build 后递增的话，那次上报会落在旧世代上，
+        // 探针看到“没人上报”就会把一个健康窗口误杀。
+        let generation = SHOT_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+        if let Ok(mut slot) = SHOT_START.lock() {
+            *slot = Some((generation, Instant::now()));
+        }
         match tauri::WebviewWindowBuilder::new(
             &app,
             WINDOW_LABEL,
@@ -466,6 +520,31 @@ fn create_window(app: &AppHandle) {
                     y,
                     window.scale_factor().unwrap_or(1.0)
                 );
+                // 武装存活探针。只在**新建**路径武装：open_screenshot_window 的复用分支
+                // 只做 show + focus + emit refresh，前端不会重新挂载、也就不会再上报 ready，
+                // 在那里武装反而会把一个活得好好的窗误杀。
+                let app_probe = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(SHOT_READY_TIMEOUT).await;
+                    // 已经开了新一轮窗口 → 本探针作废，绝不能去关新窗
+                    if SHOT_GEN.load(Ordering::SeqCst) != generation {
+                        return;
+                    }
+                    if SHOT_READY_GEN.load(Ordering::SeqCst) == generation {
+                        return;
+                    }
+                    if app_probe.get_webview_window(WINDOW_LABEL).is_none() {
+                        return;
+                    }
+                    log::warn!(
+                        "[Screenshot] 前端 {} ms 内未就绪（世代 {}），判定未能启动，自动关窗",
+                        SHOT_READY_TIMEOUT.as_millis(),
+                        generation
+                    );
+                    // 规则 15.3：不静默。万一是误杀，用户至少知道发生了什么，再按一次热键就行
+                    let _ = app_probe.emit("screenshot-startup-failed", ());
+                    close_screenshot_window(app_probe);
+                });
             }
             Err(e) => log::warn!("[Screenshot] 创建截图窗口失败: {}", e),
         }

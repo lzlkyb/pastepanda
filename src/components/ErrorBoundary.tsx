@@ -4,7 +4,10 @@ import melodyUrl from "@/assets/melody.png";
 
 interface Props {
   children: ReactNode;
-  fallback?: ReactNode;
+  /** 崩溃时的替代 UI。
+   *  传函数可拿到真实 error —— 独立窗口（截图窗等）必须把错误显示出来，否则
+   *  错误只落在 webview console 里（logger 不写文件），用户看不到、排查也无从下手。 */
+  fallback?: ReactNode | ((error: Error | null) => ReactNode);
   componentName?: string; // 用于错误提示的组件名称
 }
 
@@ -43,7 +46,13 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
-      if (this.props.fallback) return this.props.fallback;
+      const { fallback } = this.props;
+      // 函数式 fallback：把真实 error 交给调用方自行渲染
+      if (typeof fallback === "function") return fallback(this.state.error);
+      // 显式传 fallback={null} 的意图是「崩了就别渲染，只弹 toast」（见 componentDidCatch）。
+      // 旧写法 `if (fallback)` 对 null 为假，会掉进下面的默认错误界面 —— 跟 13 处
+      // 调用点的意图正好相反。用 in 把「没传」和「显式传 null」分开。
+      if ("fallback" in this.props) return fallback ?? null;
 
       // class 组件无法用 hook，直接读 documentElement 的 data-theme（applyTheme 维护）
       const isBlossom = document.documentElement.getAttribute("data-theme") === "blossom";

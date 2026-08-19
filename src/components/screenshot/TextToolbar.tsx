@@ -45,6 +45,9 @@ export function TextToolbar({ color, onSelectColor, textSizeId, onSelectTextSize
           <span className={`cp${color === c ? " on" : ""}`} style={{ background: c }} />
         </span>
       ))}
+      {/* 快捷键常驻：以前写在输入框的 placeholder 里，一打字就消失，
+          而“怎么换行”恰恰是打到一半才会问的问题。 */}
+      <span className="tkeys">Enter 确认 · Shift+Enter 换行</span>
     </div>
   );
 }

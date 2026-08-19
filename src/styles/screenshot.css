@@ -247,6 +247,9 @@ body {
 /* 分组分隔线：indigo→cyan 渐变细线（对齐主 UI 的细分割线风格） */
 .tsep { width: 1px; height: 24px; margin: 0 5px;
   background: linear-gradient(180deg, transparent, rgba(125, 140, 255, 0.5), transparent); }
+/* 取消 / 完成之间的配对分隔线：比 .tsep 短、留白更小，让两个反向操作读成一组 */
+.annot-toolbar .pair-sep { width: 1px; height: 20px; margin: 0 2px;
+  background: rgba(157, 178, 208, 0.3); }
 
 /* OCR 选字模式胶囊（V6.22）：取代工具栏里的分段开关，锚定选区上缘右上角。
    深色卡片语言对齐 .mask-bar（自动打码确认条）——它们都是"锚在选区附近的
@@ -350,30 +353,78 @@ body {
       不加的话提交那一瞬文字会“突然长出描边”。
    ③ placeholder 提亮：浏览器默认的灰在深色底图上等于不存在，
       于是连“这里能打字”这个信号都没有。
-   ④ padding 仍为 0 且用 outline 不用 border：两者都不占布局，
-      否则输入框里的文字会比 canvas 上的位置偏几像素。
+   ④ 用 outline 不用 border：不占布局，否则输入框里的文字会比 canvas 上的位置偏几像素。
+      padding 现在**不再是 0**：由 JSX 给 TEXT_PAD，并用等量负偏移（left/top 各减 TEXT_PAD）
+      抵消掉 —— 文字的屏幕位置严格不变，只是视觉上不再顶着框线。
+      改这里时两者必须同步，否则就是“预览与落字错位”。
    （color / font-size 由 JSX 的 inline style 给，跟随当前标注颜色与字号档位） */
 .text-draft {
   position: absolute; min-width: 120px;
-  outline: 1px dashed var(--accent, #3B9EFF);
+  /* 描边用 outline（不占布局）：实线 1.5px + 3px 半透光晕，焦点一眼可见。
+     旧的 1px dashed 既与全站玻璃风不搭，也看不出“正在输入的是哪个框”。 */
+  outline: 1.5px solid var(--accent, #3B9EFF);
+  box-shadow: 0 0 0 3px rgba(59, 158, 255, 0.18), 0 6px 18px rgba(0, 0, 0, 0.34);
   border: none;
-  background: rgba(10, 16, 32, 0.55);
-  padding: 0;
+  /* 圆角不改变内容盒尺寸，对文字度量无影响 */
+  border-radius: 6px;
+  /* 底板从 72% 降到 14%。
+     不透明底板是“所见非所得”的最后一块：文字标注的全部意义就是把字放在图上
+     合适的位置，而原来那块 72% 深色板把底下的截图内容盖住了 —— 用户只能提交后
+     才知道位置对不对、颜色跟背景冲不冲，不对再撤销重来。
+     可读性现在交给 -webkit-text-stroke 的对比色描边（与画布同一个 contrastInk）——
+     画布上没有底板照样看得清，输入框凭什么需要。
+     同理去掉 backdrop-filter：模糊底下的截图恰恰是在遮挡我们想让用户看到的东西。 */
+  background: rgba(10, 16, 32, 0.14);
+  /* 光标跟主题色，不再淹没在白字里 */
+  caret-color: var(--accent, #3B9EFF);
+  /* padding 由 JSX 给（TEXT_PAD）并用负偏移抵消，这里不能再写死 0 */
   /* 行高与 canvas 渲染一致（draw.ts 用 TEXT_LINE_HEIGHT=1.3）：否则编辑时行距和落字错位 */
   line-height: 1.3;
   /* 字体族与 measureTextExtent / canvas 渲染一致：否则编辑时换行点与落字宽度对不上 */
   font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-  text-shadow: 0 0 3px rgba(0, 0, 0, 0.9), 0 0 1px rgba(0, 0, 0, 1);
+  /* 不再用黑色 text-shadow 去“假装”描边：真描边现在由 JSX 的 -webkit-text-stroke
+     给出，颜色走与画布同一个 contrastInk。只留一层极淡的投影拉开字与底板的层次。 */
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
   /* 提到工具栏(≤46)/浮层之上，避免点在工具栏附近时输入框被遮住而「看不见」 */
   z-index: 80;
   /* textarea：不拖拽手柄；wrap=off + white-space:pre 关闭软换行（与 canvas 对齐）；
      overflow:auto：单行超长时允许横向滚动，否则 overflow:hidden 会把后半段裁掉、还看不到。
-     高度由 autoSizeText 撑开，故不会出现纵向滚动条。 */
+     高度由 autoSizeText 撑开；但 JSX 会给 maxHeight（不让框长到屏幕外），
+     内容很长时仍会出现纵向滚动条 —— 那比“框跑到屏幕外看不见”强。 */
   resize: none;
   overflow: auto;
-  white-space: pre;
+  /* pre-wrap：保留硬换行与空格，同时允许碰到宽度边界时软换行。
+     宽度由 JSX 钉在“文字起点 → 选区右边界”，与画布侧 wrapLines 同口径。
+     以前是 pre + wrap=off（不折行），代价是超出选区的字落字后被裁掉。 */
+  white-space: pre-wrap;
+  /* 不拆单词，与 wrapLines 的西文断行规则一致 */
+  overflow-wrap: normal;
+  word-break: normal;
+  /* 出现时淡入：只动 opacity 与光晕，不碰任何几何量（动了就会与落字位置对不上） */
+  animation: text-draft-in 0.12s ease-out;
 }
-.text-draft::placeholder { color: rgba(220, 232, 248, 0.7); }
+@keyframes text-draft-in {
+  from { opacity: 0; box-shadow: 0 0 0 0 rgba(59, 158, 255, 0); }
+  to   { opacity: 1; }
+}
+/* 选中高亮：默认的浅蓝底压在深色底板上会把字吞掉 */
+.text-draft::selection { background: rgba(59, 158, 255, 0.45); color: #fff; }
+/* 单行超长时会出现横向滚动条（overflow:auto）。系统默认滚动条在这个
+   小深色框里粗且发亮，比文字本身还抢眼。 */
+.text-draft::-webkit-scrollbar { height: 6px; width: 6px; }
+.text-draft::-webkit-scrollbar-track { background: transparent; }
+.text-draft::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 99px;
+}
+.text-draft::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.34); }
+/* placeholder 不跟描边（它不是会落到画布上的内容，描了反而发脏），
+   但底板降到 14% 后它得自己能在任意截图底上读出来，所以给一层投影。 */
+.text-draft::placeholder {
+  color: rgba(235, 242, 252, 0.8);
+  -webkit-text-stroke-width: 0;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
 
 /* 文字标注「附着迷你工具条」（微信同款）：输入框下方紧跟的浮条，
    含 A-/A+ 字号与色板。位置由 JS 给定（紧贴输入框下沿），这里只管外观。
@@ -384,10 +435,23 @@ body {
   padding: 4px 6px;
   background: rgba(17, 24, 39, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.14);
+  /* 设计稿里写的是“削平上圆角、紧贴框底连成一体”，实现时放弃了：
+     工具条的 top 由 boxHCss = 行数 × 字号 × 1.3 + 4 **估算**而来，不是真实测高（真高度
+     由 autoSizeText 按 scrollHeight 撑）。零间距拼接一旦估偏，要么露出断缝、要么盖住
+     最后一行的下伸部（因为 padding 是 0）。留 6px 间距 + 完整圆角才是稳的，
+     两者靠相同的描边/投影语言关联。 */
   border-radius: 8px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.34);
   z-index: 80;
   user-select: none;
+}
+/* 快捷键说明常驻在工具条右侧。旧实现把它塞在 placeholder 里 ——
+   一打字就没了，而用户恰恰是打到一半才想起来“怎么换行”。 */
+.text-toolbar .tkeys {
+  margin-left: 4px;
+  color: rgba(154, 167, 189, 0.95);
+  font-size: 11px;
+  white-space: nowrap;
 }
 .text-toolbar .ttbtn {
   min-width: 26px; height: 24px; padding: 0 6px;

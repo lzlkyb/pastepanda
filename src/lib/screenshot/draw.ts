@@ -120,24 +120,137 @@ let _measureCtx: CanvasRenderingContext2D | null = null;
  *   ③ 无障碍兜底：非浏览器环境按字符数估算。
  * 字体串必须与 drawAnnot 文字渲染完全一致，否则量出来的宽和画出来的对不齐。
  */
-export function measureTextExtent(text: string, fontPx: number): { w: number; h: number } {
+export function measureTextExtent(
+  text: string,
+  fontPx: number,
+  maxW?: number,
+): { w: number; h: number } {
   const fs = fontPx || TEXT_SIZE;
-  const lines = (text ?? "").split("\n");
+  const lines = wrapLines(text ?? "", fs, maxW);
   const fallback = () => ({
     w: Math.max(1, ...lines.map((l) => l.length * fs * 0.6)),
     h: lines.length * fs * TEXT_LINE_HEIGHT,
   });
-  if (typeof document === "undefined") return fallback();
+  const ctx = measureCtx();
+  if (!ctx) return fallback();
+  ctx.font = textFont(fs);
+  let w = 0;
+  for (const ln of lines) w = Math.max(w, ctx.measureText(ln || " ").width);
+  return { w: w || fs, h: lines.length * fs * TEXT_LINE_HEIGHT };
+}
+
+/** 文字渲染的字体串—— 测量、折行、绘制必须用同一个，否则量出来的和画出来的对不齐。 */
+function textFont(fs: number): string {
+  return `${fs}px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif`;
+}
+
+function measureCtx(): CanvasRenderingContext2D | null {
+  if (typeof document === "undefined") return null;
   if (!_measureCtx) {
     const c = document.createElement("canvas");
     _measureCtx = c.getContext("2d");
   }
-  const ctx = _measureCtx;
-  if (!ctx) return fallback();
-  ctx.font = `${fs}px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif`;
-  let w = 0;
-  for (const ln of lines) w = Math.max(w, ctx.measureText(ln || " ").width);
-  return { w: w || fs, h: lines.length * fs * TEXT_LINE_HEIGHT };
+  return _measureCtx;
+}
+
+/** 能在它前面断开的字符：CJK / 假名 / 全角标点 / 谚文都可以逐字断。
+ *  ⺀-鿿 已含 CJK 部首 / 假名 / 汉字，另加全角形式与谚文，三段就够了。
+ *  ❗ 字符类里不能写全角空格（U+3000）这类不可见字符：eslint 的
+ *  no-irregular-whitespace 会直接报错，而且看代码的人根本分辨不出那里是什么。
+ *  它本来就在 ⺀-鿿 区间内，单列也多余。 */
+const CJK_RE = /[⺀-鿿＀-￯가-힯]/;
+
+/**
+ * 按最大宽度折行（贪心）。硬换行 `\n` 先拆，再对每一段做软折行。
+ *
+ * 为什么需要它：文字标注以前不折行，而最终合成的画布就是选区大小 ——
+ * 超出选区右边界的那段字**落字后直接被裁掉**，而输入框里明明是完整的。
+ * 这是内容丢失，不是样式问题。微信截图的做法是“碰到截图边界就自动换行”，这里同口径。
+ *
+ * 断行规则（贪心近似浏览器）：
+ *   · CJK：任意两字之间可断——汉字等宽，与浏览器结果完全一致；
+ *   · 西文：只在空白处断（不拆单词）；
+ *   · 单个 token 本身就超宽：强制逐字断，否则会死循环。
+ *
+ * ❗ 它与输入框的浏览器原生折行是**两套实现**。纯中文完全一致；中英混排 /
+ * 超长英文单词极少数情况下可能差一个断点，表现为“框里两行、图上三行”。
+ * 这是行数差异而非内容丢失，比裁掉轻得多。
+ *
+ * @param maxW 最大宽度（与 fontPx 同单位）。不传 / 非正数 / 非有限 = 不折行。
+ * @param measure 可注入的宽度函数，**仅为单测**：jsdom 的 canvas.getContext("2d")
+ *                返回 null，不注入就只能测到“不折行”那条分支，贪心算法本身零覆盖。
+ */
+export function wrapLines(
+  text: string,
+  fontPx: number,
+  maxW?: number,
+  measure?: (s: string) => number,
+): string[] {
+  const fs = fontPx || TEXT_SIZE;
+  const hard = (text ?? "").split("\n");
+  if (!maxW || !Number.isFinite(maxW) || maxW <= 0) return hard;
+  let wOf = measure;
+  if (!wOf) {
+    const ctx = measureCtx();
+    if (!ctx) return hard; // 非浏览器环境：量不了就不折，不能拍脑袋断
+    ctx.font = textFont(fs);
+    wOf = (s: string) => ctx.measureText(s).width;
+  }
+
+  const out: string[] = [];
+  for (const para of hard) {
+    if (para === "") {
+      out.push(""); // 空行要保留占位，否则行数与输入框对不上
+      continue;
+    }
+    let cur = "";
+    // 先切成“可断单元”：CJK 单字成单元，西文连同尾随空格成一个单元
+    for (const unit of splitUnits(para)) {
+      if (cur === "") {
+        cur = unit;
+        // 单个单元就超宽（超长英文单词 / URL）：强制逐字拆
+        while (wOf(cur) > maxW && cur.length > 1) {
+          let cut = cur.length - 1;
+          while (cut > 1 && wOf(cur.slice(0, cut)) > maxW) cut--;
+          out.push(cur.slice(0, cut));
+          cur = cur.slice(cut);
+        }
+        continue;
+      }
+      if (wOf(cur + unit) <= maxW) {
+        cur += unit;
+      } else {
+        out.push(cur);
+        cur = unit;
+      }
+    }
+    out.push(cur);
+  }
+  return out;
+}
+
+/** 把一段文本切成可断单元：CJK 逐字，西文按空白成词（空格跟在词尾）。 */
+function splitUnits(s: string): string[] {
+  const units: string[] = [];
+  let buf = "";
+  for (const ch of s) {
+    if (CJK_RE.test(ch)) {
+      if (buf) {
+        units.push(buf);
+        buf = "";
+      }
+      units.push(ch);
+    } else if (ch === " " || ch === "\t") {
+      // 空格归到前一个词尾部：折行时行尾的空格不会被推到下一行行首
+      buf += ch;
+      units.push(buf);
+      buf = "";
+    } else {
+      buf += ch;
+    }
+  }
+  if (buf) units.push(buf);
+  return units;
 }
 
 /**
@@ -451,9 +564,14 @@ export function drawAnnot(
       ctx.miterLimit = 2;
       ctx.strokeStyle = contrastInk(a.color);
       ctx.fillStyle = a.color;
-      // 多行：按 \n 拆，逐行叠 TEXT_LINE_HEIGHT（与 measureTextExtent 测量、输入框 line-height 一致）。
+      // 多行：硬换行拆 + 碰到截图右边界自动换行（微信截图同口径），
+      // 逐行叠 TEXT_LINE_HEIGHT（与 measureTextExtent 测量、输入框 line-height 一致）。
       // 空行不画但占位，避免与测量尺寸 / 编辑预览错位（否则回车瞬间整段会跳动）。
-      const tlines = (a.text ?? "").split("\n");
+      //
+      // 折行宽度现算而不存进 Annotation：ctx.canvas.width 就是选区宽（合成画布与标注
+      // 画布都是选区尺寸），所以 canvas.width - a.x 就是“从文字起点到截图右边界”。
+      // 存字段的话，选区一改存量标注的折行宽就过期了。
+      const tlines = wrapLines(a.text ?? "", fs, ctx.canvas.width - a.x);
       const tlineH = fs * TEXT_LINE_HEIGHT;
       tlines.forEach((ln, i) => {
         if (!ln) return;
