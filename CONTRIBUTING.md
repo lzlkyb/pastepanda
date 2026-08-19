@@ -127,6 +127,38 @@ Commit 前缀影响 Release 自动分类，**必须遵守**：
 - CI 会跑 Rust 测试（windows-latest）+ 前端测试（ubuntu），**必须全绿**才可合并。
 - 合并前由维护者 review；合入 `master` 后 CI 自动出测试，**只有打 tag 才触发发版**（见第 6 节）。
 
+### 4.5 日常同步与冲突处理
+
+**同步他人提交（本地无未提交改动时）：**
+```bash
+git pull            # fetch + merge，最常用
+```
+
+**本地有正在改的代码时**（先暂存，避免 pull 失败）：
+```bash
+git stash           # 暂存未提交改动
+git pull            # 同步
+git stash pop       # 恢复改动（若此步报冲突，按下文处理）
+```
+
+**冲突只发生在两个人改了同一文件的同一段**——改不同文件或同文件不同区域，git 会自动合并。当 `git pull` 提示 `CONFLICT`：
+
+1. `git status` 查看冲突文件（both modified）；
+2. 打开文件，处理 `<<<<<<< HEAD` / `=======` / `>>>>>>>` 之间的内容：按语义取舍（留哪边或合并），**必须删掉这三行标记**；
+3. 全部解决后：
+```bash
+git add <冲突的文件>
+git commit          # 完成合并提交
+```
+4. 想放弃本次合并：`git merge --abort` 回到 pull 前状态。
+
+**本项目注意点：**
+- pre-push hook 自动跑完整测试（vitest + cargo test，约 3 分钟）——**冲突合并后先本地 `npm run lint` + `npx vitest run` 再 push**，避免把合并问题留给 CI。
+- 高冲突风险文件：`src/components/screenshot/ScreenshotOverlay.tsx`（3000+ 行）、`appStore.ts`、`hotkey_manager.rs`——动这些文件前先 `git pull`，尽量只改自己负责的区段。
+- 本地 dev 跑着时 pull 一般无影响（Vite HMR 热更新）；若 pull 改了 Rust 后端需重启 dev。
+
+**防冲突日常姿势：** 开工前先 `git pull`；小步提交、频繁 push；分支做自己的事，合入前再 pull 一次 master。
+
 ---
 
 ## 5. 项目硬性规则（摘要，完整版见 claude.md）
