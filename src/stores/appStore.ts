@@ -251,7 +251,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   stack_toggle_hotkey: "ctrl+alt+k",
   stack_paste_hotkey: "ctrl+alt+p",
   quick_paste_hotkey: "alt+v",
-  screenshot_hotkey: "ctrl+alt+a",
+  screenshot_hotkey: "ctrl+q", // 2 键默认（Ctrl+Q）：左手顺按；QQ Ctrl+Alt+A / 微信 Alt+A 都是大占用源
   auto_frame_window: true, // 默认开启：截图自动框选光标所在窗口
   ocr_select_mode: "smart", // 默认智能意图：落在文字上拖即选字（离开文字带则冻结选区）
   auto_chain_after_screenshot: "", // 默认不自动执行动作链

@@ -35,8 +35,8 @@ impl Default for HotkeyConfig {
             stack_paste: "Ctrl+Alt+P".to_string(),
             // Win+V 被系统保留，Alt+V 为最接近的替代；仅影响新安装用户
             quick_paste: "Alt+V".to_string(),
-            // 截图标注（区域截图直觉；Snipaste 为 F1，QQ 为 Ctrl+Alt+A）
-            screenshot: "Ctrl+Alt+A".to_string(),
+            // 截图标注（2 键默认 Ctrl+Q：左手顺按；QQ 的 Ctrl+Alt+A / 微信 Alt+A 都是大占用源）
+            screenshot: "Ctrl+Q".to_string(),
         }
     }
 }
@@ -160,7 +160,7 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
         }) {
             Ok(_) => log::info!("[HotkeyManager] 注册唤出热键: {}", config.show_window),
             Err(e) => {
-                let msg = format!("唤出热键注册失败 (可能被其他程序占用): {}", e);
+                let msg = format!("唤出热键 '{}' 注册失败: {}", config.show_window, e);
                 log::warn!("[HotkeyManager] {}", msg);
                 errors.push(msg);
             }
@@ -185,7 +185,7 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
         }) {
             Ok(_) => log::info!("[HotkeyManager] 注册依次粘贴热键: {}", config.seq_paste),
             Err(e) => {
-                let msg = format!("依次粘贴热键注册失败: {}", e);
+                let msg = format!("依次粘贴热键 '{}' 注册失败: {}", config.seq_paste, e);
                 log::warn!("[HotkeyManager] {}", msg);
                 errors.push(msg);
             }
@@ -210,7 +210,7 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
             }) {
                 Ok(_) => log::info!("[HotkeyManager] 注册索引粘贴: {}", hotkey_str),
                 Err(e) => {
-                    let msg = format!("索引热键注册失败 {}: {}", hotkey_str, e);
+                    let msg = format!("索引热键 '{}' 注册失败: {}", hotkey_str, e);
                     log::warn!("[HotkeyManager] {}", msg);
                     errors.push(msg);
                 }
@@ -233,7 +233,7 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
         }) {
             Ok(_) => log::info!("[HotkeyManager] 注册栈模式切换热键: {}", stack_toggle_str),
             Err(e) => {
-                let msg = format!("栈模式热键注册失败: {}", e);
+                let msg = format!("栈模式热键 '{}' 注册失败: {}", stack_toggle_str, e);
                 log::warn!("[HotkeyManager] {}", msg);
                 errors.push(msg);
             }
@@ -259,7 +259,7 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
         }) {
             Ok(_) => log::info!("[HotkeyManager] 注册栈粘贴热键: {}", stack_paste_str),
             Err(e) => {
-                let msg = format!("栈粘贴热键注册失败: {}", e);
+                let msg = format!("栈粘贴热键 '{}' 注册失败: {}", stack_paste_str, e);
                 log::warn!("[HotkeyManager] {}", msg);
                 errors.push(msg);
             }
@@ -284,7 +284,7 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
         }) {
             Ok(_) => log::info!("[HotkeyManager] 注册快捷粘贴热键: {}", config.quick_paste),
             Err(e) => {
-                let msg = format!("快捷粘贴热键注册失败: {}", e);
+                let msg = format!("快捷粘贴热键 '{}' 注册失败: {}", config.quick_paste, e);
                 log::warn!("[HotkeyManager] {}", msg);
                 errors.push(msg);
             }
@@ -305,7 +305,7 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
         }) {
             Ok(_) => log::info!("[HotkeyManager] 注册截图热键: {}", config.screenshot),
             Err(e) => {
-                let msg = format!("截图热键注册失败: {}", e);
+                let msg = format!("截图热键 '{}' 注册失败: {}", config.screenshot, e);
                 log::warn!("[HotkeyManager] {}", msg);
                 errors.push(msg);
             }

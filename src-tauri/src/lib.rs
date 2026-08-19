@@ -332,11 +332,11 @@ pub fn run() {
                     .and_then(|v| v.as_str())
                     .unwrap_or("Alt+V")
                     .to_string(),
-                // 截图标注热键（v6.18 新增）；默认 Ctrl+Alt+A（区域截图直觉）
+                // 截图标注热键（v6.18 新增）；默认 Ctrl+Q（2 键，避开 QQ/微信截图热键占用）
                 screenshot: saved_config
                     .get("screenshot_hotkey")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Alt+A")
+                    .unwrap_or("Ctrl+Q")
                     .to_string(),
             };
 

@@ -577,11 +577,19 @@ function App() {
       try {
         const { listen } = await import("@tauri-apps/api/event");
         const fn = await listen<string>("hotkey-register-failed", (event) => {
-          // 后端把所有失败绑定 join 成长串，这里只取数量做摘要，详情写日志
+          // 后端错误统一为 `标签 '组合' 注册失败: 原因` 的 "; " 长串，这里提取组合名做精确提示
           const detail = event.payload || "";
           logger.warn("热键注册失败详情", detail);
-          const count = detail ? detail.split(";").filter((s) => s.trim()).length : 0;
-          const summary = count > 0 ? `${count} 个快捷键注册失败，可能已被其他程序占用` : "部分快捷键注册失败，可能已被其他程序占用";
+          const combos = detail
+            ? detail
+                .split(";")
+                .map((s) => s.match(/'([^']+)'/)?.[1])
+                .filter((x): x is string => !!x)
+            : [];
+          const summary =
+            combos.length > 0
+              ? `快捷键 ${combos.join("、")} 已被其他程序占用`
+              : "部分快捷键注册失败，可能已被其他程序占用";
           toast(summary, "error", 6000, () => setShowSettings(true), "去设置");
         });
         if (cancelled) {
