@@ -28,14 +28,33 @@ body {
  * 0.6 深度：深色屏幕也压得住，浅色屏幕上更突出选区亮度对比 */
 .shade-block { position: absolute; background: rgba(10, 14, 24, 0.6); pointer-events: none; }
 
-/* 选区框：白边 + 蓝描边双圈，任何背景下都清晰（Snipaste 同款双色边界） */
+/* 选区框：白边 + 蓝描边双圈，任何背景下都清晰（Snipaste 同款双色边界）。
+ * 3px 全局统一（用户定：全部情况 3px）——全屏/普通选区同粗，不再区分；
+ * 全屏态靠 .sel-rect.full 的外发光与四边暗带（.edge-band）做额外辨识。 */
 .sel-rect {
   position: absolute;
-  border: 1px solid rgba(255, 255, 255, 0.95);
-  outline: 1.5px solid var(--accent, #3B9EFF);
+  border: 3px solid rgba(255, 255, 255, 0.95);
+  outline: 3px solid var(--accent, #3B9EFF);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 8px rgba(59, 158, 255, 0.4);
   pointer-events: none;
 }
+/* 全屏/近全屏选区：外发光增强 + 内侧微光，让贴屏幕边缘的框在无遮罩对比时仍醒目 */
+.sel-rect.full {
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 0 16px rgba(59, 158, 255, 0.6),
+    inset 0 0 12px rgba(59, 158, 255, 0.2);
+}
+/* 全屏选区四边暗带（5px，屏幕内缩）：替代 0 尺寸的 4 块蒙版，
+ * 屏幕四周一圈暗边 → 与普通桌面形成明确边界（方案 A） */
+.edge-band { position: absolute; background: rgba(10, 14, 24, 0.5); pointer-events: none; }
+/* 打开瞬间无选区暗层（0.5 + 淡入）：强化"按热键进入截图"的第一反馈 */
+.shade-enter {
+  position: absolute; inset: 0;
+  background: rgba(10, 14, 24, 0.5); pointer-events: none;
+  animation: shadeIn 0.15s ease-out;
+}
+@keyframes shadeIn { from { opacity: 0; } to { opacity: 1; } }
 /* 竖向位置由 JS 的 layoutSizeLabel 给（跟随选区，贴屏幕底部时翻到上方）。
    旧实现这里写死 `bottom: -30px`，选区贴屏幕底部时那 30px 落在屏幕外，
    标签连带里面“单击进标注 · 拖选区移动 · 拖边缘缩放”那句操作提示一起被裁掉。

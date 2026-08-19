@@ -271,7 +271,6 @@ pub fn save_screenshot_image(
     data_base64: String,
 ) -> Result<String, String> {
     use base64::{engine::general_purpose::STANDARD, Engine as _};
-    use md5::{Digest, Md5};
 
     // 上限从 50MB 抬到 120MB。
     //
@@ -306,21 +305,30 @@ pub fn save_screenshot_image(
         .copied()
         .unwrap_or("png");
 
-    let app_dir = app_handle
+    save_bytes_to_shots(&app_handle, &bytes, ext)
+}
+
+/// 把图片字节落盘到 shots 目录（md5 文件名 + 原子写 + 去重）。
+///
+/// 供 `save_screenshot_image`（前端 base64 路径）与 `finish_screenshot_rgba`
+/// （后台 RGBA 直传落盘）共用，保证两处文件名口径一致。
+fn save_bytes_to_shots(app: &tauri::AppHandle, bytes: &[u8], ext: &str) -> Result<String, String> {
+    use md5::{Digest, Md5};
+    let app_dir = app
         .path()
         .app_data_dir()
         .map_err(|e| format!("获取数据目录失败: {e}"))?;
     let shots_dir = app_dir.join("screenshots");
     std::fs::create_dir_all(&shots_dir).map_err(|e| format!("创建截图目录失败: {e}"))?;
 
-    let hash = format!("{:x}", Md5::new().chain_update(&bytes).finalize());
+    let hash = format!("{:x}", Md5::new().chain_update(bytes).finalize());
     let file_path = shots_dir.join(format!("{}.{}", hash, ext));
     if !file_path.exists() {
         // 先写临时文件再原子 rename，防止写一半崩溃留下残缺图片。
         // 临时名/收尾走 atomic_write（三处落盘共用）—— 不能拿内容 md5 当 tmp 名，
         // 否则预 OCR 图与结果图像素一致时两次保存撞同一个 tmp，报 os error 2。
         let tmp_path = crate::atomic_write::unique_tmp_path(&file_path);
-        std::fs::write(&tmp_path, &bytes).map_err(|e| format!("写入截图失败: {e}"))?;
+        std::fs::write(&tmp_path, bytes).map_err(|e| format!("写入截图失败: {e}"))?;
         crate::atomic_write::finish_rename(&tmp_path, &file_path)
             .map_err(|e| format!("重命名临时文件失败: {e}"))?;
     }
@@ -361,6 +369,11 @@ pub fn open_screenshot_window(app: &AppHandle) {
         });
     }
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+        // 常驻窗口可能跨越显示器/DPI 变化（隐藏期间虚拟屏参数可能变），
+        // show 前按当前虚拟屏重设尺寸与位置（物理像素），避免错位/残留尺寸。
+        let (w, h, x, y) = virtual_screen_metrics();
+        let _ = window.set_size(tauri::PhysicalSize::new(w.max(1) as u32, h.max(1) as u32));
+        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
         let _ = window.show();
         let _ = window.set_focus();
         let _ = app.emit("screenshot-refresh", ());
@@ -810,7 +823,7 @@ pub fn unmark_ocr_temp(path: String) {
     }
 }
 
-/// 关闭截图窗口（前端 Esc 取消 / 完成出口后调用；close 销毁窗口，资源干净释放）
+/// 关闭截图窗口（前端 Esc 取消 / 完成出口后调用）
 #[tauri::command]
 pub fn close_screenshot_window(app: tauri::AppHandle) {
     // 关窗即删临时 OCR 图。放在后端而不是前端 close()：截图窗口有多条关闭路径
@@ -819,7 +832,20 @@ pub fn close_screenshot_window(app: tauri::AppHandle) {
     purge_ocr_temp(&app);
     unregister_longshot_escape(&app); // 兜底：长截图中强关窗也要释放全局 Esc
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
-        let _ = window.close();
+        // 截图窗口常驻开关（screenshot_window_persist，默认关）：
+        //  开启 → 只隐藏不销毁，下次热键走 open_screenshot_window 复用分支秒开（微信同款），
+        //        前端已支持常驻（screenshot-refresh → resetShot + 重截），无损；
+        //  关闭 → 销毁，省内存，代价是每次冷启动（WebView2 + bundle 加载）慢几秒。
+        let persist = app
+            .try_state::<crate::data_store::DataStore>()
+            .and_then(|s| s.get_config().ok())
+            .and_then(|v| v.get("screenshot_window_persist").and_then(|x| x.as_bool()))
+            .unwrap_or(false);
+        if persist {
+            let _ = window.hide();
+        } else {
+            let _ = window.close();
+        }
     }
 }
 
@@ -1064,13 +1090,29 @@ pub fn insert_screenshot_to_history(
     image_path: String,
     ocr_text: Option<String>,
 ) -> Result<(), String> {
-    use md5::{Digest, Md5};
-    use uuid::Uuid;
-
     let img = image::open(&image_path).map_err(|e| format!("无法读取截图: {e}"))?;
     let (w, h) = image::GenericImageView::dimensions(&img);
     let rgba = img.to_rgba8();
-    let img_hash = format!("{:x}", Md5::new().chain_update(rgba.as_raw()).finalize());
+    insert_screenshot_with_rgba(&app, rgba.as_raw(), w, h, &image_path, ocr_text)
+}
+
+/// 截图入库核心（RGBA 直传版，供 `finish_screenshot_rgba` 后台任务用）。
+///
+/// 与 `insert_screenshot_to_history` 的关系：后者从文件解码拿 RGBA 再调本函数；
+/// 前者在前端直传路径下 RGBA 已经就绪（canvas getImageData），跳过 `image::open`
+/// 重复解码（4K PNG 解码 ~300ms）——入库卡片用像素 md5，与复制/监听口径一致。
+fn insert_screenshot_with_rgba(
+    app: &tauri::AppHandle,
+    rgba: &[u8],
+    w: u32,
+    h: u32,
+    image_path: &str,
+    ocr_text: Option<String>,
+) -> Result<(), String> {
+    use md5::{Digest, Md5};
+    use uuid::Uuid;
+
+    let img_hash = format!("{:x}", Md5::new().chain_update(rgba).finalize());
     let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     let store = app.state::<crate::data_store::DataStore>();
@@ -1088,7 +1130,7 @@ pub fn insert_screenshot_to_history(
         text: format!("[图片] {}x{}", w, h),
         time: now_str,
         item_type: "image".to_string(),
-        content: image_path,
+        content: image_path.to_string(),
         pinned: false,
         source: "PastePanda 截图".to_string(),
         workspace: "默认".to_string(),
@@ -1133,7 +1175,7 @@ pub fn update_screenshot_ocr_summary(
         return Ok(());
     }
     // 与 insert_screenshot_to_history 同口径重算 md5 定位条目
-    use md5::{Digest, Md5};
+    use md5::Digest;
     let img = image::open(&image_path).map_err(|e| format!("无法读取截图: {e}"))?;
     let rgba = img.to_rgba8();
     let img_hash = format!("{:x}", md5::Md5::new().chain_update(rgba.as_raw()).finalize());
@@ -1155,6 +1197,151 @@ pub fn update_screenshot_ocr_summary(
             },
         },
     );
+    Ok(())
+}
+
+// ===== 截图完成亚秒路径（复制 RGBA 直传，落盘/入库后端后台） =====
+
+/// 完成截图（复制出口的亚秒路径）：前端把标注合成后的 RGBA 像素直传，后端复制 + 落盘 + 入库一条龙。
+///
+/// 为什么绕过 PNG：复制（arboard set_image → Windows DIB）与入库都只需要 RGBA 像素，
+/// 旧流程先前端同步编码 PNG（4K 0.5~2s，阻塞主线程）再后端解码回来算 hash，
+/// 纯属两圈无谓编解码。本命令 raw body 直传 RGBA → 复制在 ~150ms 内完成 → 前端立即关窗；
+/// PNG 落盘与入库放后台（tauri::async_runtime::spawn），用户无感（卡片稍后出现，
+/// "先见卡后补字"同理）。关窗时截图窗口 webview 销毁，后台任务由**后端**持有，不受影响。
+///
+/// 前端 fire-and-forget 调用本命令（不 await）：`set_image` 在 Windows 上会被剪贴板
+/// 查看器链同步拖慢到秒级（实测 12MB 图 1.7s），await 它 = 完成按钮永远慢；
+/// 复制失败改 emit `screenshot-copy-failed` → 主窗口 toast（截图窗即将销毁，
+/// 内嵌 toast 不可见），这里返回 Ok 避免前端 unhandled rejection。
+///
+/// body 布局（小端）：`u32 width + u32 height + u32 text_len + text_utf8(可空) + rgba`
+#[tauri::command]
+pub async fn finish_screenshot_rgba(
+    app: tauri::AppHandle,
+    request: tauri::ipc::Request<'_>,
+) -> Result<(), String> {
+    let tauri::ipc::InvokeBody::Raw(body) = request.body() else {
+        return Err("finish_screenshot_rgba 需要二进制 body（前端直传 RGBA）".to_string());
+    };
+    let body = body.as_slice();
+    if body.len() < 12 {
+        return Err("截图数据不完整".to_string());
+    }
+    let w = u32::from_le_bytes(body[0..4].try_into().unwrap());
+    let h = u32::from_le_bytes(body[4..8].try_into().unwrap());
+    let text_len = u32::from_le_bytes(body[8..12].try_into().unwrap()) as usize;
+    let header = 12 + text_len;
+    if body.len() < header {
+        return Err("截图数据不完整（文本长度越界）".to_string());
+    }
+    let ocr_text = if text_len > 0 {
+        Some(String::from_utf8_lossy(&body[12..header]).into_owned())
+    } else {
+        None
+    };
+    let rgba = &body[header..];
+
+    // 尺寸校验（防解压炸弹，口径同 MAX_DECODE_PIXELS）
+    if (w as u64) * (h as u64) > crate::commands::MAX_DECODE_PIXELS {
+        return Err(format!("图片尺寸过大 ({}x{})，超过解码上限", w, h));
+    }
+    let expect = (w as usize) * (h as usize) * 4;
+    if rgba.len() != expect {
+        return Err(format!("RGBA 数据长度不匹配: 期望 {expect} 实际 {}", rgba.len()));
+    }
+
+    // ── 同步段：复制 + 临时图收口（返回前完成 → 前端立即关窗） ──
+    // 后台段也要用同一份像素（入库算 md5），先克隆一份（33MB 拷贝，后台无感）；
+    // 同步段 move 原值进 spawn_blocking（闭包必须 'static）。
+    let rgba_bg = rgba.to_vec();
+    let rgba_owned = rgba_bg.clone();
+    let app_copy = app.clone();
+    tokio::task::spawn_blocking(move || {
+        let engine = app_copy.state::<crate::paste_engine::PasteEngine>();
+        if let Err(e) = engine.copy_image_rgba(w, h, &rgba_owned) {
+            // 复制失败：前端已 fire-and-forget、不 await 本命令返回（截图窗即将销毁），
+            // 错误改走主窗口事件提示（screenshot-copy-failed → 主窗口 toast），
+            // 这里返回 Ok 避免前端 unhandled promise rejection。
+            log::warn!("[Screenshot] 复制图片失败: {e}");
+            let _ = app_copy.emit("screenshot-copy-failed", format!("复制图片失败：{e}"));
+            return Ok::<(), String>(());
+        }
+        // 完成即临时 OCR 图使命结束：主动 purge（等价旧流程 unmark 语义，
+        // 且保证 purge 先于后台落盘，消除"purge 删掉刚落盘卡片文件"的并发竞态）
+        purge_ocr_temp(&app_copy);
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| format!("复制任务失败: {e}"))?;
+
+    // ── 后台段：PNG 落盘 → 入库（rgba 直传跳过重复解码）→ 补 OCR 摘要 ──
+    let app_bg = app.clone();
+    tauri::async_runtime::spawn(async move {
+        // 编码闭包会 move rgba_bg；入库还要用同一份像素算 md5，先克隆（33MB 拷贝，后台无感）
+        let rgba_for_insert = rgba_bg.clone();
+        // PNG 编码（Fast/Up：与 capture_rect 同款，2560×1440 实测 25ms，远快于默认参数）
+        let encode = tokio::task::spawn_blocking(move || {
+            use image::codecs::png::{CompressionType, FilterType, PngEncoder};
+            use image::{ExtendedColorType, ImageEncoder};
+            let img = image::RgbaImage::from_raw(w, h, rgba_bg)
+                .ok_or_else(|| "像素数据构造失败".to_string())?;
+            // alpha 恒为 255，转 RGB8 编码：体积小 25% 且编码更快
+            let rgb = image::DynamicImage::ImageRgba8(img).to_rgb8();
+            let mut png_buf: Vec<u8> = Vec::new();
+            PngEncoder::new_with_quality(&mut png_buf, CompressionType::Fast, FilterType::Up)
+                .write_image(&rgb, w, h, ExtendedColorType::Rgb8)
+                .map_err(|e| format!("PNG 编码失败: {e}"))?;
+            Ok::<_, String>(png_buf)
+        })
+        .await;
+        let png = match encode {
+            Ok(Ok(p)) => p,
+            Ok(Err(e)) => {
+                log::warn!("[Screenshot] 截图后台 PNG 编码失败: {e}");
+                return;
+            }
+            Err(e) => {
+                log::warn!("[Screenshot] 截图后台 PNG 编码任务失败: {e}");
+                return;
+            }
+        };
+        let path = match save_bytes_to_shots(&app_bg, &png, "png") {
+            Ok(p) => p,
+            Err(e) => {
+                log::warn!("[Screenshot] 截图后台落盘失败: {e}");
+                return;
+            }
+        };
+        // 入库（带摘要一步到位；OCR 未就绪则先见卡，emit 刷新由 insert 内部完成）
+        if let Err(e) =
+            insert_screenshot_with_rgba(&app_bg, &rgba_for_insert, w, h, &path, ocr_text.clone())
+        {
+            log::warn!("[Screenshot] 截图后台入库失败: {e}");
+            return;
+        }
+        // "先见卡后补字"：OCR 未就绪时后台补识别 + 补摘要（复用 update_screenshot_ocr_summary）
+        let need_ocr = ocr_text
+            .as_deref()
+            .map(|t| t.trim().is_empty())
+            .unwrap_or(true);
+        if need_ocr {
+            match crate::commands::images::ocr_full_text(&path) {
+                Ok(t) if !t.trim().is_empty() => {
+                    if let Err(e) = update_screenshot_ocr_summary(app_bg.clone(), path.clone(), t.clone()) {
+                        log::warn!("[Screenshot] 截图补 OCR 摘要失败: {e}");
+                    } else {
+                        // 截图窗口已关，主窗口"文字已就绪"提示（原前端 emit_ocr_ready 等价）
+                        let count = t.lines().count();
+                        emit_ocr_ready(app_bg.clone(), t, count);
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => log::debug!("[Screenshot] 后台 OCR 失败（跳过补摘要）: {e}"),
+            }
+        }
+    });
+
     Ok(())
 }
 

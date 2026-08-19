@@ -500,6 +500,7 @@ function App() {
     let unlistenPin: (() => void) | null = null;
     let unlistenOcr: (() => void) | null = null;
     let unlistenShotFail: (() => void) | null = null;
+    let unlistenCopyFail: (() => void) | null = null;
     async function setup() {
       try {
         const { listen } = await import("@tauri-apps/api/event");
@@ -541,6 +542,14 @@ function App() {
             }),
           );
         });
+        // 截图"完成"复制失败：截图窗已 fire-and-forget 发出复制请求并即将销毁，
+        // 失败提示必须由主窗口承接（截图窗内 toast 用户看不见）。
+        const fnCopyFail = await listen<string>("screenshot-copy-failed", (ev) => {
+          const msg = typeof ev.payload === "string" ? ev.payload : "复制图片失败";
+          window.dispatchEvent(
+            new CustomEvent("app-toast", { detail: { message: msg, type: "error" } }),
+          );
+        });
         if (cancelled) {
           // effect 已在本次 setup 完成前被清理（StrictMode 重挂载 / HMR），立即取消订阅，避免监听器泄漏
           fn();
@@ -548,12 +557,14 @@ function App() {
           fnPin();
           fnOcr();
           fnShotFail();
+          fnCopyFail();
         } else {
           unlisten = fn;
           unlistenAi = fnAi;
           unlistenPin = fnPin;
           unlistenOcr = fnOcr;
           unlistenShotFail = fnShotFail;
+          unlistenCopyFail = fnCopyFail;
         }
       } catch (e) { logger.warn("注册托盘事件监听失败", e); }
     }
@@ -565,6 +576,7 @@ function App() {
       if (unlistenPin) unlistenPin();
       if (unlistenOcr) unlistenOcr();
       if (unlistenShotFail) unlistenShotFail();
+      if (unlistenCopyFail) unlistenCopyFail();
     };
   }, []);
 

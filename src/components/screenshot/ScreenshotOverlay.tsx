@@ -1793,14 +1793,20 @@ export function ScreenshotOverlay() {
     setResultPath(null);
   }, [annotations, sel]);
 
-  /** 合成标注结果并落盘（幂等：已有 resultPath 直接返回）。finish（进面板）与
-   *  copyImage（微信同款：完成=直接复制）共用，避免标注态复制时无图可拷。 */
-  const ensureResultPath = useCallback(async (): Promise<string> => {
-    if (resultPath) return resultPath;
+  /** 合成标注结果到新 canvas（不落盘）。finish / copyImage / ensureResultPath 共用。
+   *
+   *  底图复用 `baseImgRef`（底图预加载 effect 已把当前 dataUrl 解码好的 Image 存这里，
+   *  马赛克/合成/放大镜共用同一份，避免完成/保存/贴图每次重复解码 4K PNG ~200ms）。
+   *  返回的 canvas 像素 = 最终结果图，可直接 getImageData 直传后端复制。 */
+  const renderResultCanvas = useCallback(async (): Promise<HTMLCanvasElement> => {
     const s = screen;
     const r = selRef.current;
     if (!s || !r) throw new Error("缺少选区或底图");
-    const img = await loadImage(s.dataUrl);
+    if (!baseImgRef.current) {
+      // 预加载 effect 尚未就绪（重试中）的兜底：自己解码一次
+      baseImgRef.current = await loadImage(s.dataUrl);
+    }
+    const img = baseImgRef.current;
     const out = document.createElement("canvas");
     out.width = Math.max(1, Math.round(r.w));
     out.height = Math.max(1, Math.round(r.h));
@@ -1809,11 +1815,19 @@ export function ScreenshotOverlay() {
     ctx.drawImage(img, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
     // 与预览用同一个排序（否则会出现“预览看着对、导出的图不对”）
     for (const a of inDrawOrder(annotations)) drawAnnot(ctx, a, img, r.x, r.y);
+    return out;
+  }, [screen, annotations]);
+
+  /** 合成标注结果并落盘（幂等：已有 resultPath 直接返回）。finish（进面板）与
+   *  自动链完成路径共用，避免标注态复制时无图可拷。 */
+  const ensureResultPath = useCallback(async (): Promise<string> => {
+    if (resultPath) return resultPath;
+    const out = await renderResultCanvas();
     const { path } = await saveResultImage(out);
     resultCanvasRef.current = out;
     setResultPath(path);
     return path;
-  }, [screen, annotations, resultPath]);
+  }, [resultPath, renderResultCanvas]);
 
   const finish = useCallback(async () => {
     if (busy) return;
@@ -2267,11 +2281,8 @@ export function ScreenshotOverlay() {
     if (busy) return;
     setBusy(true);
     try {
-      // 标注态直接完成：先合成落盘，再复制（微信同款：完成=复制）
-      const path = await ensureResultPath();
-      await invoke("copy_image_only", { imagePath: path });
-      // 配置预查（同步区 await）：决定关窗时机——自动链是前端变换，窗口销毁即中断，
-      // 配置了链必须等它跑完再关窗
+      // 配置预查（同步区 await）：决定走哪条路径——自动链是前端变换，窗口销毁即中断，
+      // 配置了链必须等它跑完再关窗（此时必须落盘拿 path 供 OCR/入库）
       let autoChainId: string | null = null;
       try {
         autoChainId = await invoke<string | null>("get_auto_chain_after_screenshot");
@@ -2279,7 +2290,8 @@ export function ScreenshotOverlay() {
         /* 查询失败按无链处理 */
       }
       if (autoChainId) {
-        // 有自动链：等 OCR + 链完成再关窗（toast 展示结果后自动关）
+        // 有自动链：慢路径（需要文字，等链完成再关窗）——合成落盘 → OCR → 跑链 → 入库
+        const path = await ensureResultPath();
         try {
           let text = ocr?.fullText?.trim() || null;
           if (!text) {
@@ -2322,47 +2334,54 @@ export function ScreenshotOverlay() {
         }
         close();
       } else {
-        // 无自动链：立即关窗，后台异步 OCR + 主动入库。
-        // 两路（"先见卡、后补字"）：
-        //  情况1：OCR 已识别完成（标注态预取）→ 带摘要一步入库，列表即出带文字的卡片；
-        //  情况2：OCR 未完成 → 先以无摘要入库（列表立即出卡），后台 OCR 完成后
-        //         update_screenshot_ocr_summary 补摘要/自动标签并广播刷新卡片。
-        void (async () => {
-          try {
-            const text = ocr?.fullText?.trim() || null;
-            if (text) {
-              void invoke("insert_screenshot_to_history", { imagePath: path, ocrText: text }).catch(
-                (e) => logger.warn("截图入库失败（不影响复制）", e),
-              );
-              void invoke("emit_ocr_ready", {
-                text,
-                lineCount: ocr?.lines.length ?? 0,
-              }).catch(() => {});
-            } else {
-              void invoke("insert_screenshot_to_history", { imagePath: path, ocrText: null }).catch(
-                (e) => logger.warn("截图入库失败（不影响复制）", e),
-              );
-              try {
-                const r = await ocrImage(path);
-                const t = r.fullText?.trim();
-                if (t) {
-                  void invoke("update_screenshot_ocr_summary", { imagePath: path, ocrText: t }).catch(
-                    (e) => logger.warn("截图补 OCR 摘要失败", e),
-                  );
-                  void invoke("emit_ocr_ready", { text: t, lineCount: r.lines.length }).catch(() => {});
-                }
-              } catch (e) {
-                logger.warn("复制后 OCR 失败", e);
-              }
-            }
-          } catch (e) {
-            logger.warn("复制后 OCR 失败", e);
-          }
-        })();
+        // 无自动链：亚秒快路径——RGBA 直传后端（复制 + 落盘 + 入库 + 补 OCR 一条龙），立即关窗。
+        // 不再前端同步编码 PNG（4K toBlob 0.5~2s 阻塞主线程），复制 ~150ms 完成即关；
+        // 落盘/入库由后端后台任务执行（"先见卡后补字"逻辑迁到后端，见 finish_screenshot_rgba）。
+        //
+        // 防"完成时画面闪"的取舍：完成路径保持"先合成再关窗"（合成/取像素是主线程同步重活，
+        // 窗口仍显示时 WebView 合成器可能闪一帧）。"单击确定闪一下"的真正根因在 select 态
+        // displaySel（mousedown 0×0 草稿导致蒙版跳变），已在那里收口修复，勿在此处画蛇添足。
+        // 点击完成立即隐藏窗口（感知零延迟）：合成/取像素是主线程重活，窗口还显示时
+        // 用户会看到"点了完成画面还停 ~200ms"。隐藏后复制由后端后台执行，
+        // 失败走主窗口 toast（下方 catch 恢复显示 + 报错兜底）。
+        await invoke("hide_screenshot_window").catch(() => undefined);
+        const out = await renderResultCanvas();
+        const ctx = out.getContext("2d");
+        if (!ctx) throw new Error("canvas 2d 不可用");
+        const id = ctx.getImageData(0, 0, out.width, out.height);
+        // body 布局（小端）与后端 finish_screenshot_rgba 严格一致：
+        // u32 width + u32 height + u32 text_len + text_utf8(可空) + rgba
+        const text = ocr?.fullText?.trim() || null;
+        const textBytes = new TextEncoder().encode(text ?? "");
+        const body = new Uint8Array(12 + textBytes.length + id.data.length);
+        const dv = new DataView(body.buffer);
+        dv.setUint32(0, out.width, true);
+        dv.setUint32(4, out.height, true);
+        dv.setUint32(8, textBytes.length, true);
+        body.set(textBytes, 12);
+        body.set(id.data, 12 + textBytes.length);
+        // 不 await 复制：`set_image` 在 Windows 上会被剪贴板查看器链**同步**拖慢到秒级
+        // （实测 12MB 图单次写入 1.7s——第三方剪贴板历史工具在 SetClipboardData 时同步
+        // 读大图），await 它 = 完成按钮永远慢。fire-and-forget 发出请求，复制/落盘/入库
+        // 由后端后台执行；失败由后端 emit `screenshot-copy-failed` → 主窗口 toast
+        // （截图窗即将销毁，不在这里提示）。
+        void invoke("finish_screenshot_rgba", body).catch(() => {
+          /* 后端已 emit 失败提示，这里只为吞掉 unhandled rejection */
+        });
+        // fire-and-forget 的 IPC 在 webview 销毁时可能丢失：等 ~150ms 让 postMessage
+        // 送达后端（窗口此时仍显示但马上关，150ms 内用户无感）再销毁。
+        await sleep(150);
         close();
       }
     } catch (e) {
       logger.error("复制图片失败", e);
+      // 窗口已隐藏：恢复显示再报错，让用户看到错误（规则 15.3 不静默）
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        await getCurrentWindow().show();
+      } catch {
+        /* 恢复失败也无碍：toast 仍会报错 */
+      }
       showToast(`复制失败：${errText(e)}`);
     } finally {
       setBusy(false);
@@ -3752,7 +3771,45 @@ export function ScreenshotOverlay() {
   // 显示选区：select 态取拖选草稿（橡皮筋）；标注/结果态**强制用真实选区 sel**——
   // selDraft 有两条提前 return 路径不清空（finalizeSelectDrag 的 longPreview / !d 分支），
   // 一旦残留，shade-block 蒙版 / 选区框 / 工具栏会按残留草稿切出 4 段蒙版（历史 bug）。
-  const displaySel = phase === "select" ? (selDraft ?? sel) : sel;
+  // 追加：草稿只在**拖选真正有效**（≥4px，与 finalizeSelectDrag 同阈值）时才接管显示。
+  // mousedown 瞬间 setSelDraft 的是 0×0 起点，若直接用 selDraft，单击确认那一刻蒙版/选区框
+  // 会从"吸附的窗口"跳到"光标处小点"再跳回 —— 用户看到"单击确定闪一下"。
+  const displaySel =
+    phase === "select"
+      ? selDraft && selDraft.w >= 4 && selDraft.h >= 4
+        ? selDraft
+        : sel
+      : sel;
+
+  // 全屏/近全屏选区判定（物理像素，≥98% 容 DWM 阴影扩展 1-2px）：
+  // 全屏时 4 块 shade-block 蒙版尺寸为 0（零暗化）→ 改用四边暗带（.edge-band）+ 边框强化。
+  const isFullscreen =
+    displaySel != null &&
+    screen != null &&
+    displaySel.w >= screen.width * 0.98 &&
+    displaySel.h >= screen.height * 0.98;
+
+  // 选区框逐边内缩：贴屏幕边缘的边向内缩 2px（CSS 像素）——边框画在屏幕最外圈会被
+  // 显示器物理边缘/圆角裁切而不可见（全屏与贴边选区都反馈过）。只改**显示位置**，
+  // 截取范围（sel）不变；贴边判定用物理像素容差 4px。
+  // 2px 是折中：4px 缝隙太明显（用户反馈），1px 可能仍被边缘裁切；全屏时外圈暗带
+  // 覆盖边缘区域，边框落在暗带内无缝隙感。
+  const edgeInsetL =
+    displaySel != null && screen != null && displaySel.x <= 4 ? 2 : 0;
+  const edgeInsetT =
+    displaySel != null && screen != null && displaySel.y <= 4 ? 2 : 0;
+  const edgeInsetR =
+    displaySel != null &&
+    screen != null &&
+    displaySel.x + displaySel.w >= screen.width - 4
+      ? 2
+      : 0;
+  const edgeInsetB =
+    displaySel != null &&
+    screen != null &&
+    displaySel.y + displaySel.h >= screen.height - 4
+      ? 2
+      : 0;
 
   // 工具栏位置：右对齐选区右边缘、优先选区下方（微信 / QQ / Snipaste 同款）。
   // 四种边界情况收在 layoutToolbar 里并配了单测（lib/screenshot/toolbarPos.ts）。
@@ -3854,22 +3911,24 @@ export function ScreenshotOverlay() {
       {/* 截图底图 */}
       <div className="shot-bg" style={{ backgroundImage: `url(${screen.dataUrl})` }} />
 
-      {/* 选区外暗色遮罩：未选区时全屏微暗提示已进入截图模式（Snipaste 同款）；选区时 4 块压暗 */}
-      {phase === "select" && !displaySel && (
-        <div
-          className="shade-block"
-          style={{
-            left: 0, top: 0, width: "100%", height: "100%",
-            background: "rgba(10, 14, 24, 0.4)",
-          }}
-        />
-      )}
-      {displaySel && (
+      {/* 选区外暗色遮罩：未选区时全屏暗层（0.5 + 淡入）提示已进入截图模式（方案 A）；
+          选区时 4 块压暗；全屏/近全屏选区时 4 块尺寸为 0 → 改四边暗带（.edge-band） */}
+      {phase === "select" && !displaySel && <div className="shade-enter" />}
+      {displaySel && !isFullscreen && (
         <>
           <div className="shade-block" style={{ left: 0, top: 0, width: "100%", height: css(displaySel.y) }} />
           <div className="shade-block" style={{ left: 0, top: css(displaySel.y), width: css(displaySel.x), height: css(displaySel.h) }} />
           <div className="shade-block" style={{ left: css(displaySel.x + displaySel.w), top: css(displaySel.y), right: 0, height: css(displaySel.h) }} />
           <div className="shade-block" style={{ left: 0, top: css(displaySel.y + displaySel.h), width: "100%", height: `calc(100% - ${css(displaySel.y + displaySel.h)}px)` }} />
+        </>
+      )}
+      {displaySel && isFullscreen && (
+        <>
+          {/* 屏幕四边 5px 暗带（rgba(10,14,24,0.5)，见 .edge-band）：全屏选区无遮罩对比，靠边缘暗带 + 强边框辨识 */}
+          <div className="edge-band" style={{ left: 0, top: 0, width: "100%", height: 5 }} />
+          <div className="edge-band" style={{ left: 0, top: 5, width: 5, height: "calc(100% - 10px)" }} />
+          <div className="edge-band" style={{ right: 0, top: 5, width: 5, height: "calc(100% - 10px)" }} />
+          <div className="edge-band" style={{ left: 0, bottom: 0, width: "100%", height: 5 }} />
         </>
       )}
 
@@ -3901,8 +3960,13 @@ export function ScreenshotOverlay() {
       {/* 选区框 + 尺寸角标 */}
       {displaySel && (
         <div
-          className={`sel-rect${fixedPreview ? " fixed-preview" : ""}`}
-          style={{ left: css(displaySel.x), top: css(displaySel.y), width: css(displaySel.w), height: css(displaySel.h) }}
+          className={`sel-rect${fixedPreview ? " fixed-preview" : ""}${isFullscreen ? " full" : ""}`}
+          style={{
+            left: css(displaySel.x) + edgeInsetL,
+            top: css(displaySel.y) + edgeInsetT,
+            width: css(displaySel.w) - edgeInsetL - edgeInsetR,
+            height: css(displaySel.h) - edgeInsetT - edgeInsetB,
+          }}
         >
           {/* 尺寸标签：位置由 layoutSizeLabel 算（跟随选区、贴屏幕底部时翻到上方）。
               旧实现 CSS 写死 bottom:-30px，选区贴底时标签连带里面的操作提示一起被裁掉。 */}
@@ -3911,8 +3975,8 @@ export function ScreenshotOverlay() {
               className={`sel-size${sizeLabel.place === "inside" ? " inside" : ""}`}
               style={{ top: sizeLabel.top }}
             >
-              <span>{Math.round(displaySel.w)} × {Math.round(displaySel.h)}</span>
-              <span className="hint">单击进标注 · 拖选区移动 · 拖边缘缩放</span>
+              <span>{isFullscreen ? `全屏 ${Math.round(displaySel.w)} × ${Math.round(displaySel.h)}` : `${Math.round(displaySel.w)} × ${Math.round(displaySel.h)}`}</span>
+              <span className="hint">{isFullscreen ? "Enter 确认 · Esc 取消" : "单击进标注 · 拖选区移动 · 拖边缘缩放"}</span>
             </div>
           )}
           {/* 固定区域预览态：紫色虚框提示（替代尺寸标签），引导「拖可改 / Esc 重置」 */}

@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>截图全屏选区视觉增强 · 方案 A 设计稿</title>
+<style>
+  :root {
+    --shade: rgba(10, 14, 24, 0.6);        /* 选区外蒙版（现状 .shade-block） */
+    --shade-enter: rgba(10, 14, 24, 0.5);  /* 打开瞬间无选区暗层（0.4 → 0.5） */
+    --accent: #3B9EFF;
+    --sel-border: rgba(255, 255, 255, 0.95);
+    --sel-outline: rgba(59, 158, 255, 0.9);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: #0b0f1a; color: #E6EDF7; padding: 32px 24px 48px;
+    -webkit-user-select: none; user-select: none;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  .sub { color: #9DB2D0; font-size: 13px; margin-bottom: 20px; }
+  .sub code { background: rgba(125,140,255,.12); padding: 1px 6px; border-radius: 4px; font-size: 12px; color: #C9D6EA; }
+
+  /* ===== 态切换 ===== */
+  .switcher { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .switcher button {
+    padding: 7px 14px; border-radius: 8px; font-size: 12px; cursor: pointer;
+    background: rgba(34,41,76,.6); color: #C9D6EA; border: 1px solid rgba(125,140,255,.25);
+    transition: all .15s;
+  }
+  .switcher button:hover { background: rgba(59,158,255,.15); }
+  .switcher button.on { background: linear-gradient(135deg, #3B9EFF, #6C5CE7); color: #fff; border-color: transparent; }
+
+  /* ===== 屏幕模拟 ===== */
+  .stage {
+    position: relative; width: 100%; aspect-ratio: 16/9; max-width: 960px; margin: 0 auto;
+    border-radius: 10px; overflow: hidden; background: #1a2133;
+    box-shadow: 0 12px 40px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.06);
+  }
+  .screen-content { position: absolute; inset: 0; }
+  /* 模拟桌面内容：窗口块 + 文字 */
+  .win {
+    position: absolute; border-radius: 6px; border: 1px solid rgba(255,255,255,.14);
+    background: linear-gradient(160deg, #232c44, #1a2133);
+    box-shadow: 0 6px 18px rgba(0,0,0,.35);
+  }
+  .win .title { height: 22px; border-bottom: 1px solid rgba(255,255,255,.08); display: flex; align-items: center; gap: 5px; padding: 0 8px; }
+  .win .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .win .line { height: 6px; border-radius: 3px; background: rgba(255,255,255,.10); margin: 6px 8px 0; }
+  .win .line.w60 { width: 60%; } .win .line.w80 { width: 80%; } .win .line.w45 { width: 45%; }
+  .w1 { left: 4%; top: 8%; width: 34%; height: 44%; }
+  .w2 { left: 44%; top: 14%; width: 42%; height: 52%; }
+  .w3 { left: 12%; top: 60%; width: 24%; height: 30%; }
+  .w4 { left: 46%; top: 72%; width: 30%; height: 22%; }
+  .taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 26px;
+    background: rgba(15,20,34,.85); border-top: 1px solid rgba(255,255,255,.06); }
+
+  /* ===== 截图层（复刻 screenshot.css 真实样式） ===== */
+  .shade-block { position: absolute; background: var(--shade); pointer-events: none; }
+  /* 方案：打开瞬间无选区暗层（0.5 + 淡入） */
+  .shade-enter {
+    position: absolute; inset: 0; background: var(--shade-enter); pointer-events: none;
+    animation: shadeIn .15s ease-out;
+  }
+  @keyframes shadeIn { from { opacity: 0; } to { opacity: 1; } }
+  /* 选区框：白边 + 蓝描边双圈（现状 .sel-rect 真实值） */
+  .sel-rect {
+    position: absolute;
+    border: 1px solid var(--sel-border);
+    outline: 1.5px solid var(--accent);
+    box-shadow: 0 0 0 1px rgba(0,0,0,.55), 0 0 8px rgba(59,158,255,.4);
+    pointer-events: none;
+  }
+  /* 方案：全屏选区边框强化（加粗 + 外发光 + 内侧细线） */
+  .sel-rect.full {
+    border: 3px solid rgba(255,255,255,.98);
+    outline: 3px solid rgba(59,158,255,.95);
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,.6),
+      0 0 16px rgba(59,158,255,.6),
+      inset 0 0 12px rgba(59,158,255,.2);
+  }
+  /* 方案：全屏选区四边暗带（5px，屏幕内缩） */
+  .edge-band { position: absolute; background: rgba(10,14,24,.5); pointer-events: none; }
+  /* 尺寸标签（.sel-size 真实值） */
+  .sel-size {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 12px; border-radius: 7px;
+    background: rgba(10,14,24,.92); color: #fff;
+    border: 1px solid rgba(255,255,255,.16);
+    font-size: 12px; font-variant-numeric: tabular-nums;
+    white-space: nowrap; pointer-events: none;
+  }
+  .sel-size .hint { color: rgba(255,255,255,.6); font-size: 11px; }
+
+  /* ===== 标注层 ===== */
+  .annot { position: absolute; font-size: 12px; color: #34d399; background: rgba(16,25,45,.85);
+    border: 1px solid rgba(52,211,153,.35); padding: 2px 8px; border-radius: 4px; pointer-events: none; }
+  .annot.lt { left: 10px; top: 10px; }
+  .annot.rt { right: 10px; top: 10px; color: #C9D6EA; border-color: rgba(125,140,255,.4); }
+  .annot.ct { left: 50%; transform: translateX(-50%); top: 10px; color: #C9D6EA; border-color: rgba(125,140,255,.4); }
+
+  /* ===== 说明区 ===== */
+  .legend { display: flex; gap: 20px; max-width: 960px; margin: 16px auto 0; flex-wrap: wrap; }
+  .lg { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #9DB2D0; }
+  .lg .sw { width: 18px; height: 10px; border-radius: 2px; }
+  .lg .bd { width: 22px; height: 14px; border: 3px solid rgba(59,158,255,.9); border-radius: 2px; box-shadow: 0 0 8px rgba(59,158,255,.4); }
+
+  .specs {
+    max-width: 960px; margin: 20px auto 0;
+    background: rgba(34,41,76,.45); border: 1px solid rgba(125,140,255,.18);
+    border-radius: 10px; padding: 16px 20px;
+  }
+  .specs h3 { font-size: 13px; color: #fff; margin-bottom: 10px; }
+  .specs table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .specs td { padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,.06); color: #C9D6EA; }
+  .specs td:first-child { color: #fff; width: 130px; }
+  .specs code { background: rgba(125,140,255,.12); padding: 1px 5px; border-radius: 4px; font-size: 11px; color: #9DC6FF; }
+
+  .diff { max-width: 960px; margin: 20px auto 0; display: flex; gap: 12px; flex-wrap: wrap; }
+  .diff-card { flex: 1; min-width: 280px; background: rgba(34,41,76,.4); border-radius: 10px;
+    border: 1px solid rgba(255,255,255,.07); padding: 14px 16px; }
+  .diff-card.bad { border-color: rgba(248,113,113,.35); }
+  .diff-card.good { border-color: rgba(52,211,153,.35); }
+  .diff-card h4 { font-size: 13px; margin-bottom: 6px; }
+  .diff-card.bad h4 { color: #f87171; }
+  .diff-card.good h4 { color: #34d399; }
+  .diff-card p { font-size: 12px; color: #9DB2D0; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<h1>截图全屏选区视觉增强 · 方案 A 设计稿</h1>
+<div class="sub">复刻真实组件：`.shade-block` / `.sel-rect` / `.sel-size`（screenshot.css 原值），改动点：<code>无选区暗层 0.4→0.5 + 淡入</code>、<code>全屏选区四边暗带 + 边框强化</code></div>
+
+<div class="switcher">
+  <button data-st="now" class="on">① 现状：全屏选区（无反馈）</button>
+  <button data-st="full">② 方案：全屏选区（暗带 + 强边框）</button>
+  <button data-st="enter">③ 方案：刚打开（暗层 0.5 + 淡入）</button>
+</div>
+
+<div class="stage" id="stage">
+  <!-- 模拟屏幕内容 -->
+  <div class="screen-content">
+    <div class="win w1"><div class="title"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span></div><div class="line w80"></div><div class="line w60"></div><div class="line w80"></div></div>
+    <div class="win w2"><div class="title"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span></div><div class="line w80"></div><div class="line w45"></div><div class="line w80"></div><div class="line w60"></div></div>
+    <div class="win w3"><div class="title"></div><div class="line w60"></div><div class="line w80"></div></div>
+    <div class="win w4"><div class="title"></div><div class="line w45"></div></div>
+    <div class="taskbar"></div>
+  </div>
+
+  <!-- ① 现状：全屏选区 → 4 块蒙版尺寸为 0（无暗化）+ 贴边细边框（几乎不可见） -->
+  <div class="shade-block" data-l="now" style="left:0;top:0;width:100%;height:0;display:none"></div>
+  <div class="sel-rect" data-l="now" style="left:0;top:0;width:100%;height:100%;display:none">
+    <div class="sel-size" style="top:10px"><span>1920 × 1080</span><span class="hint">单击进标注 · 拖选区移动 · 拖边缘缩放</span></div>
+  </div>
+
+  <!-- ② 方案：全屏选区 → 四边 5px 暗带 + 边框强化 -->
+  <div class="edge-band" data-l="full" style="left:0;top:0;width:100%;height:5px;display:none"></div>
+  <div class="edge-band" data-l="full" style="left:0;top:5px;width:5px;height:calc(100% - 10px);display:none"></div>
+  <div class="edge-band" data-l="full" style="right:0;top:5px;width:5px;height:calc(100% - 10px);display:none"></div>
+  <div class="edge-band" data-l="full" style="left:0;bottom:0;width:100%;height:5px;display:none"></div>
+  <div class="sel-rect full" data-l="full" style="left:0;top:0;width:100%;height:100%;display:none">
+    <div class="sel-size" style="top:12px"><span>1920 × 1080 · 全屏</span><span class="hint">Enter 确认 · Esc 取消</span></div>
+  </div>
+
+  <!-- ③ 方案：刚打开（无选区）→ 全屏暗层 0.5 + 0.15s 淡入 -->
+  <div class="shade-enter" data-l="enter" style="display:none"></div>
+  <div class="annot ct" data-l="enter" style="display:none">悬停窗口自动吸附 · 拖拽自定义框选</div>
+
+  <!-- 状态标注 -->
+  <div class="annot lt" data-tag="label" style="display:none"></div>
+</div>
+
+<div class="legend">
+  <div class="lg"><span class="sw" style="background:rgba(10,14,24,.5)"></span>全屏选区四边暗带 5px（rgba(10,14,24,0.5)）</div>
+  <div class="lg"><span class="bd"></span>全屏选区强化边框（2px 白 + 2px 蓝 outline + 外发光）</div>
+  <div class="lg"><span class="sw" style="background:rgba(10,14,24,.5)"></span>打开瞬间暗层 0.5 + 0.15s 淡入</div>
+</div>
+
+<div class="diff">
+  <div class="diff-card bad">
+    <h4>现状：全屏选区几乎无反馈</h4>
+    <p>悬停桌面 → 选区=全屏 → 4 块蒙版尺寸全部为 0（零暗化）；选区框贴屏幕边缘（1px 白边几乎看不见）；底部提示条老用户已退休。屏幕上没有任何"截图模式"痕迹。</p>
+  </div>
+  <div class="diff-card good">
+    <h4>方案：四边暗带 + 强边框，一眼看出在截图</h4>
+    <p>全屏选区时屏幕四周出现一圈 5px 暗带（与选区外蒙版同色系），选区框加粗 + 蓝色外发光，尺寸标签带"全屏"字样。与普通桌面形成明确边界。</p>
+  </div>
+</div>
+
+<div class="specs">
+  <h3>改动明细（全部为纯前端 CSS/JSX，零后端）</h3>
+  <table>
+    <tr><td>打开瞬间暗层</td><td><code>rgba(10,14,24,0.4) → 0.5</code> + <code>animation: shadeIn .15s ease-out</code>（ScreenshotOverlay.tsx:3885 无选区分支）</td></tr>
+    <tr><td>全屏判定</td><td><code>w ≥ sw×0.98 && h ≥ sh×0.98</code>（物理像素，含 1-2px DWM 阴影扩展的容差）</td></tr>
+    <tr><td>四边暗带</td><td>全屏时渲染 4 个 <code>.edge-band</code>（各 5px，<code>rgba(10,14,24,0.5)</code>），替代 0 尺寸的 4 块蒙版</td></tr>
+    <tr><td>边框强化</td><td><code>.sel-rect.full</code>：3px 白边 + 3px 蓝 outline + <code>0 0 16px rgba(59,158,255,.6)</code> 外发光 + inset 微光</td></tr>
+    <tr><td>尺寸标签</td><td>全屏时文案「1920 × 1080 · 全屏」，提示改为「Enter 确认 · Esc 取消」</td></tr>
+  </table>
+</div>
+
+<script>
+  const stage = document.getElementById('stage');
+  const btns = document.querySelectorAll('.switcher button');
+  const layers = (l) => [...document.querySelectorAll(`[data-l="${l}"]`)];
+  const labels = [...document.querySelectorAll('[data-tag="label"]')];
+  const labelText = {
+    now: '现状：全屏选区 → 无暗化、无反馈',
+    full: '方案：四边 5px 暗带 + 强边框 + 全屏角标',
+    enter: '方案：刚打开 → 全屏暗层 0.5（0.15s 淡入）',
+  };
+  function show(st) {
+    btns.forEach(b => b.classList.toggle('on', b.dataset.st === st));
+    ['now', 'full', 'enter'].forEach(k => layers(k).forEach(el => { el.style.display = (k === st) ? '' : 'none'; }));
+    labels.forEach(el => { el.textContent = labelText[st]; el.style.display = ''; el.style.left = '10px'; el.style.top = '10px'; el.style.right = 'auto'; });
+  }
+  btns.forEach(b => b.addEventListener('click', () => show(b.dataset.st)));
+  show('now');
+</script>
+
+</body>
+</html>

@@ -171,7 +171,7 @@ mod encoding;
 mod export;
 mod groups;
 mod history;
-mod images;
+pub(crate) mod images;
 mod lan;
 mod paste;
 mod regex_rules;

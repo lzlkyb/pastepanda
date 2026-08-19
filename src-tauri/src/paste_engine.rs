@@ -434,6 +434,36 @@ impl PasteEngine {
         Ok(())
     }
 
+    /// 仅复制图片到剪贴板（RGBA 直传版，供截图"完成"亚秒路径）。
+    ///
+    /// 与 `copy_image_only` 的区别：输入直接是 RGBA 像素（前端 canvas getImageData），
+    /// 省掉"PNG 编码 → 写文件 → 重新解码"两圈无谓编解码——arboard 在 Windows
+    /// 写剪贴板走 DIB，只需要 RGBA。hash 口径与监听线程一致（RGBA 像素字节）。
+    pub fn copy_image_rgba(&self, width: u32, height: u32, rgba: &[u8]) -> Result<(), String> {
+        if rgba.len() != (width as usize) * (height as usize) * 4 {
+            return Err(format!(
+                "RGBA 数据长度不匹配: 期望 {} 实际 {}",
+                (width as usize) * (height as usize) * 4,
+                rgba.len()
+            ));
+        }
+        // hash 口径与监听线程一致：对 RGBA 像素字节计算
+        let content_hash = format!("{:x}", md5::Md5::new().chain_update(rgba).finalize());
+
+        // 设置粘贴抑制（hash），防止剪贴板监听器重复记录
+        self.paste_suppress
+            .set_with_hash(Duration::from_millis(3000), content_hash);
+
+        let img_data = ImageData {
+            width: width as usize,
+            height: height as usize,
+            bytes: std::borrow::Cow::Borrowed(rgba),
+        };
+        // 重试里每次都重建 ImageData：它持有对 rgba 的借用，只是开销极小的浅克隆
+        Self::with_clipboard_retry("复制图片", |cb| cb.set_image(img_data.clone()))?;
+        Ok(())
+    }
+
     /// 复制文件到剪贴板（CF_HDROP，等同于资源管理器 Ctrl+C）
     #[cfg(target_os = "windows")]
     pub fn copy_files(&self, paths: &[String]) -> Result<(), String> {

@@ -556,6 +556,7 @@ pub fn run() {
             screenshot::virtual_screen_size,
             screenshot::insert_screenshot_to_history,
             screenshot::update_screenshot_ocr_summary,
+            screenshot::finish_screenshot_rgba,
             screenshot::take_pending_shot_capture,
             screenshot::mark_ocr_temp,
             screenshot::unmark_ocr_temp,
