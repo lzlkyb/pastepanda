@@ -40,7 +40,7 @@ export interface DialogState {
   chainAdHoc: Chain | null;
   openChain: (text: string, chainId?: string, adHoc?: Chain | null) => void;
   closeChain: () => void;
-  /** 动作链编辑器（X1 B2）：非 null 时 ChainEditor 打开；传 null 表示新建 */
+  /** 动作链编辑器（X1 B2）：非 null 时 ChainEditor 打开；传 null 表示新建（见 openChainEditor 实现注释） */
   chainEdit: ChainDef | null;
   openChainEditor: (chain: ChainDef | null) => void;
   closeChainEditor: () => void;
@@ -131,7 +131,11 @@ export const useDialogStore = create<DialogState>((set) => ({
   // 关闭时必须清 chainAdHoc：不清的话下一次普通开链会把上次 AI 编的链带出来
   closeChain: () => set({ chainText: null, chainIdHint: null, chainAdHoc: null }),
   chainEdit: null,
-  openChainEditor: (chain) => set({ chainEdit: chain }),
+  // null = 新建。⚠️ 不能直接存 null：ChainEditor 用 `editing !== null` 判断显示，
+  // 直接存 null 会让编辑器打不开（历史 bug：ChainRunnerDialog「新建」/ 设置页「创建」
+  // 都点过没反应）。收口成空链对象（id 为空 → 编辑器标题走「新建动作链」分支）。
+  openChainEditor: (chain) =>
+    set({ chainEdit: chain ?? { id: "", name: "", description: "", steps: [] } }),
   closeChainEditor: () => set({ chainEdit: null }),
   learningsOpen: false,
   openLearnings: () => set({ learningsOpen: true }),

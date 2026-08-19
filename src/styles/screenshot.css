@@ -28,22 +28,22 @@ body {
  * 0.6 深度：深色屏幕也压得住，浅色屏幕上更突出选区亮度对比 */
 .shade-block { position: absolute; background: rgba(10, 14, 24, 0.6); pointer-events: none; }
 
-/* 选区框：白边 + 蓝描边双圈，任何背景下都清晰（Snipaste 同款双色边界）。
- * 3px 全局统一（用户定：全部情况 3px）——全屏/普通选区同粗，不再区分；
- * 全屏态靠 .sel-rect.full 的外发光与四边暗带（.edge-band）做额外辨识。 */
+/* 选区框：蓝色单边（用户定：去掉白边）。3px 全局统一——全屏/普通选区同粗；
+ * 全屏态靠 .sel-rect.full 的外发光与四边暗带（.edge-band）做额外辨识。
+ * 1px 黑阴影保留：分隔截图内容与选区边界，防蓝边在相近色内容上糊在一起。 */
 .sel-rect {
   position: absolute;
-  border: 3px solid rgba(255, 255, 255, 0.95);
+  border: none;
   outline: 3px solid var(--accent, #3B9EFF);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 8px rgba(59, 158, 255, 0.4);
   pointer-events: none;
 }
-/* 全屏/近全屏选区：外发光增强 + 内侧微光，让贴屏幕边缘的框在无遮罩对比时仍醒目 */
+/* 全屏/近全屏选区：仅外发光增强（去掉 inset 内侧微光——它在边框内侧形成一圈
+ * 向内晕染的"内阴影"，全屏贴边时看起来像多了一层内边框，用户反馈突兀）。 */
 .sel-rect.full {
   box-shadow:
     0 0 0 1px rgba(0, 0, 0, 0.6),
-    0 0 16px rgba(59, 158, 255, 0.6),
-    inset 0 0 12px rgba(59, 158, 255, 0.2);
+    0 0 16px rgba(59, 158, 255, 0.6);
 }
 /* 全屏选区四边暗带（5px，屏幕内缩）：替代 0 尺寸的 4 块蒙版，
  * 屏幕四周一圈暗边 → 与普通桌面形成明确边界（方案 A） */

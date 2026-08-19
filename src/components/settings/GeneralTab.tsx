@@ -1,6 +1,7 @@
 import React, { useState, useRef, useLayoutEffect, useCallback, useEffect, useMemo } from "react";
 import { AppConfig } from "@/stores/appStore";
 import { HelpTooltip } from "@/components/HelpTooltip";
+import { useDialogStore } from "@/stores/dialogStore";
 import { THEMES, applyTheme, ThemeKey } from "@/lib/theme";
 import { emit } from "@tauri-apps/api/event";
 import { useToast } from "@/components/Toast";
@@ -930,8 +931,8 @@ export function GeneralTab({
               <div className={`${styles.sRowDesc}`}>入栈后每条的文本样子</div>
             </div>
             <div className={styles.sSegGroup}>
-              <button className={`${styles.sSegOpt}${config.table_split_format === "raw" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ table_split_format: "raw" })}>原始行</button>
-              <button className={`${styles.sSegOpt}${config.table_split_format === "field-value" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ table_split_format: "field-value" })}>字段: 值</button>
+              <button className={`${styles.sSegText}${config.table_split_format === "raw" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ table_split_format: "raw" })}>原始行</button>
+              <button className={`${styles.sSegText}${config.table_split_format === "field-value" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ table_split_format: "field-value" })}>字段: 值</button>
             </div>
           </div>
           <div className={styles.sRow}>
@@ -941,8 +942,8 @@ export function GeneralTab({
               <div className={`${styles.sRowDesc}`}>拆分时是否保留第一行表头</div>
             </div>
             <div className={styles.sSegGroup}>
-              <button className={`${styles.sSegOpt}${!config.table_split_include_header ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ table_split_include_header: false })}>排除</button>
-              <button className={`${styles.sSegOpt}${config.table_split_include_header ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ table_split_include_header: true })}>包含</button>
+              <button className={`${styles.sSegText}${!config.table_split_include_header ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ table_split_include_header: false })}>排除</button>
+              <button className={`${styles.sSegText}${config.table_split_include_header ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ table_split_include_header: true })}>包含</button>
             </div>
           </div>
         </>
@@ -989,22 +990,25 @@ export function GeneralTab({
           }
         }} />
       </div>
-      <div className={styles.sRow}>
-        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #F59E0B, #D97706)" }}>🪟</span>
-        <div className={`${styles.sRowBody}`}>
-          <div className={`${styles.sRowLabel}`}>自动框选当前窗口</div>
-          <div className={`${styles.sRowDesc}`}>
-            按截图热键后自动选中光标所在窗口（微信同款），可直接完成或重新拖选
-          </div>
-        </div>
-        <button
-          className={`${styles.sVal}${config.auto_frame_window ? ` ${styles.sValActive}` : ""}`}
-          onClick={() => void updateAndSave({ auto_frame_window: !config.auto_frame_window })}
-          title={config.auto_frame_window ? "点击关闭" : "点击开启"}
-        >
-          {config.auto_frame_window ? "开" : "关"}
-        </button>
-      </div>
+      <ToggleRow icon="🪟" gradient="linear-gradient(135deg, #F59E0B, #D97706)" label="自动框选当前窗口"
+        desc="按截图热键后自动选中光标所在窗口（微信同款），可直接完成或重新拖选"
+        value={config.auto_frame_window}
+        onChange={(v) => updateAndSave({ auto_frame_window: v })}
+        detailTitle="自动框选当前窗口"
+        detail={<>
+          <p>按截图热键后，自动选中光标所在窗口作为选区（微信同款），可直接完成或重新拖选。</p>
+          <p>光标停在桌面空白时不自动框选，保持 hover 吸附全屏。</p>
+        </>} />
+      <ToggleRow icon="⚡" gradient="linear-gradient(135deg, #10B981, #059669)" label="截图窗口常驻"
+        desc="开启后截图窗关闭时仅隐藏不销毁，再次按热键秒开（微信同款）；关闭则每次冷启动，首次画面慢几秒。代价：常驻约几十~百 MB 内存"
+        value={config.screenshot_window_persist}
+        onChange={(v) => updateAndSave({ screenshot_window_persist: v })}
+        detailTitle="截图窗口常驻"
+        detail={<>
+          <p>开启后截图窗关闭时仅隐藏不销毁，再次按热键秒开（微信同款）。</p>
+          <p>关闭则每次冷启动，首次画面慢几秒。</p>
+          <p>代价：常驻约几十~百 MB 内存。</p>
+        </>} />
       <div className={styles.sRow}>
         <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #6366F1, #8B5CF6)" }}>🔤</span>
         <div className={`${styles.sRowBody}`}>
@@ -1013,16 +1017,16 @@ export function GeneralTab({
             标注时文字识别与画标注共存、互不抢事件。智能意图：默认矩形工具下，落在文字上拖即选字（光标离开文字带则冻结已选内容）；修饰键：按住 Ctrl/⌘ 拖才选字，裸拖一律画标注
           </div>
         </div>
-        <div className={styles.sSeg} style={{ width: "auto" }}>
+        <div className={styles.sSegGroup}>
           <button
-            className={`${styles.sSegOpt}${config.ocr_select_mode === "smart" ? ` ${styles.sSegActive}` : ""}`}
+            className={`${styles.sSegText}${config.ocr_select_mode === "smart" ? ` ${styles.sSegActive}` : ""}`}
             onClick={() => void updateAndSave({ ocr_select_mode: "smart" })}
             title="落在文字上拖=选字；光标离开文字带则冻结已选内容"
           >
             智能意图
           </button>
           <button
-            className={`${styles.sSegOpt}${config.ocr_select_mode === "modifier" ? ` ${styles.sSegActive}` : ""}`}
+            className={`${styles.sSegText}${config.ocr_select_mode === "modifier" ? ` ${styles.sSegActive}` : ""}`}
             onClick={() => void updateAndSave({ ocr_select_mode: "modifier" })}
             title="Ctrl/⌘ + 落在文字上拖=选字；裸拖一律画标注"
           >
@@ -1038,18 +1042,34 @@ export function GeneralTab({
             截图完成自动跑链（OCR 文字为输入）；自动执行仅限纯本地步骤，云端步骤会跳过
           </div>
         </div>
-        <select
-          className={styles.sVal}
-          style={{ width: 132 }}
-          value={config.auto_chain_after_screenshot ?? ""}
-          onChange={(e) => void updateAndSave({ auto_chain_after_screenshot: e.target.value })}
-          title="选择截图后自动执行的动作链"
-        >
-          <option value="">不自动执行</option>
-          {chains.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
+        {chains.length === 0 ? (
+          // 空态：还没建过动作链——下拉只有"不自动执行"会让用户困惑，直接给"创建"入口
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className={styles.sVal} style={{ width: 132, opacity: 0.55, cursor: "default", textAlign: "center" }}>
+              暂无动作链
+            </span>
+            <button
+              className={styles.sAction}
+              onClick={() => useDialogStore.getState().openChainEditor(null)}
+              title="打开动作链编辑器，创建第一个动作链"
+            >
+              创建
+            </button>
+          </div>
+        ) : (
+          <select
+            className={styles.sVal}
+            style={{ width: 132 }}
+            value={config.auto_chain_after_screenshot ?? ""}
+            onChange={(e) => void updateAndSave({ auto_chain_after_screenshot: e.target.value })}
+            title="选择截图后自动执行的动作链"
+          >
+            <option value="">不自动执行</option>
+            {chains.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        )}
       </div>
       <div className={styles.sRow}>
         <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #0EA5E9, #0284C7)" }}>🗂️</span>

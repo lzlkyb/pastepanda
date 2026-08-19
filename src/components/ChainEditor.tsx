@@ -79,7 +79,8 @@ export function ChainEditor() {
   const anim = useDialogAnim();
   const { toast } = useToast();
 
-  // 新建时 editing === null（openChainEditor(null)）→ 空草稿；编辑时拷贝草稿（不直接改 store 对象）
+  // 新建时 editing 是空链对象（dialogStore.openChainEditor 收口：null → 空对象，
+  // 直接存 null 会因 `editing !== null` 判断打不开——历史 bug）；编辑时拷贝草稿（不直接改 store 对象）
   const [draft, setDraft] = useState<ChainDef>({
     id: "",
     name: "",

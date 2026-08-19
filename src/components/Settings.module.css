@@ -1119,6 +1119,32 @@
 .sSegOpt:hover:not(.sSegActive) {
   color: var(--text-primary);
 }
+/* 文字分段按钮（拆行格式 / 表头 / OCR 选字模式等文字多选一）：
+ * .sSegOpt 是 32px 固定宽的图标按钮（配 .sSegEmoji），文字放不下会溢出；
+ * 本样式 auto 宽 + 左右 padding，hover/active 态与 .sSegOpt 完全一致，
+ * 容器仍是 .sSegGroup——同类"多选一"控件视觉统一。 */
+.sSegText {
+  min-width: 40px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  position: relative;
+}
+.sSegText:hover:not(.sSegActive) {
+  color: var(--text-primary);
+}
 .sSegActive {
   background: var(--seg-active-bg, var(--card-bg));
   color: var(--accent);

@@ -64,11 +64,11 @@
     animation: shadeIn .15s ease-out;
   }
   @keyframes shadeIn { from { opacity: 0; } to { opacity: 1; } }
-  /* 选区框：白边 + 蓝描边双圈（现状 .sel-rect 真实值） */
+  /* 选区框：蓝色单边（用户定：去掉白边）+ 1px 黑阴影分隔（现状 .sel-rect 真实值） */
   .sel-rect {
     position: absolute;
-    border: 1px solid var(--sel-border);
-    outline: 1.5px solid var(--accent);
+    border: none;
+    outline: 3px solid var(--accent);
     box-shadow: 0 0 0 1px rgba(0,0,0,.55), 0 0 8px rgba(59,158,255,.4);
     pointer-events: none;
   }
