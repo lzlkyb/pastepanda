@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Windows-10%2F11-0078D6?logo=windows&logoColor=white" alt="Windows" />
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License" />
-  <img src="https://img.shields.io/badge/version-5.4.0-green" alt="Version" />
+  <img src="https://img.shields.io/badge/version-6.18.1-green" alt="Version" />
 </p>
 
 ---
@@ -245,14 +245,18 @@
 ### 快速开始
 
 ```bash
-# 克隆仓库
-git clone https://github.com/lzlkyb/pastepanda.git
+# 克隆仓库（协作开发推荐 SSH，本机 HTTPS 访问 GitHub 常超时）
+git clone git@github.com:lzlkyb/pastepanda.git
 cd pastepanda
 
 # 安装依赖
 npm install
 
-# 开发模式
+# ⚠️ 硬性前置：设 LIBCLANG_PATH（ocr-rs bindgen 需要，项目自带 libclang.dll）
+# Git Bash: export LIBCLANG_PATH="$(pwd)/src-tauri/.libclang"
+# PowerShell: $env:LIBCLANG_PATH = "$(Get-Location)/src-tauri/.libclang"
+
+# 开发模式（必须 npm run tauri，不要裸 npx tauri dev）
 npm run tauri dev
 
 # 生产构建
@@ -287,13 +291,17 @@ npm run tauri build      # 前端 vite build → Rust 离线编译 → nsis 安�
 
 ## 🤝 贡献
 
-欢迎提交 Issue 和 Pull Request！
+欢迎提交 Issue 和 Pull Request！**参与开发前请先阅读 [`CONTRIBUTING.md`](CONTRIBUTING.md)**（环境搭建、项目硬性规则、PR 流程），并按 PR 模板逐项自检。
 
-1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
-3. 提交更改 (`git commit -m 'Add amazing feature'`)
-4. 推送到分支 (`git push origin feature/amazing-feature`)
-5. 创建 Pull Request
+快速流程：
+
+1. Fork 本仓库（或直接由维护者加为协作者）
+2. 创建特性分支（`git checkout -b feature/amazing-feature`，前缀限 `feature/`、`fix/`、`refactor/`、`docs/`）
+3. 提交更改（commit 前缀 `feat:` / `chg:` / `fix:` / `refactor:` / `docs:`，中文描述）
+4. 推送到分支（`git push origin feature/amazing-feature`）
+5. 创建 Pull Request，勾选模板自查清单，等 CI 全绿 + 维护者 review
+
+> 注意：本项目版本号由维护者统一管理，提交时**不要**修改 `tauri.conf.json` / `Cargo.toml` 中的版本号。
 
 ---
 
