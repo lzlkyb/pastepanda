@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { createPortal } from "react-dom";
 import { useDialogAnim } from "@/lib/dialogMotion";
-import { X, ArrowRight, Download } from "lucide-react";
+import { X, ArrowRight, Download, BookOpen } from "lucide-react";
 import { FocusTrap } from "@/components/FocusTrap";
 import { AppIcon } from "@/components/AppIcon";
 import { Illustration, isIllustrationKey } from "@/components/Illustration";
@@ -19,6 +19,13 @@ import {
   type ChangelogEntry,
 } from "@/lib/changelog";
 import styles from "./UpdateNotesDialog.module.css";
+import { logger } from "@/lib/logger";
+
+/** 完整功能手册（新功能 + 全部功能详解），用户点「新功能」弹框可跳转浏览器查看。
+ *  当前为仓库内高保真 HTML 文档站（含真实 UI 演示），GitHub 提供渲染预览。
+ *  想换成独立托管页：启用 GitHub Pages 后把这里改成 Pages 地址（如
+ *  https://lzlkyb.github.io/pastepanda/manual/index.html）即可，其余无需改动。 */
+const MANUAL_URL = "https://github.com/lzlkyb/pastepanda/blob/master/docs/manual/index.html";
 
 // ─── Props ──────────────────────────────────────────────
 
@@ -109,6 +116,16 @@ export function UpdateNotesDialog({ open, onClose, currentVersion, manual = fals
     skipThisVersion();
     onClose();
   };
+
+  /** 打开完整功能手册（浏览器） */
+  const openManual = useCallback(async () => {
+    try {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(MANUAL_URL);
+    } catch (e) {
+      logger.warn("打开功能手册失败", e);
+    }
+  }, []);
 
   return createPortal(
     <>
@@ -245,6 +262,13 @@ export function UpdateNotesDialog({ open, onClose, currentVersion, manual = fals
                   <FallbackContent updateBody={update?.body} />
                 )}
               </div>
+
+              {/* 完整功能手册跳转：本次更新亮点 + 全部功能详解，浏览器查看 */}
+              <button className={styles.manualCta} onClick={openManual} title="在新窗口查看完整功能手册">
+                <BookOpen size={14} />
+                <span className={styles.manualCtaText}>本次更新亮点 + 全部功能详解，查看完整手册</span>
+                <ArrowRight size={13} />
+              </button>
 
               {/* 页脚：有更新=稍后看+下载；红点手动打开=关闭（已读） */}
               <div className={styles.footer}>
