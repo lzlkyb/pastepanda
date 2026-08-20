@@ -1071,6 +1071,13 @@ export function ScreenshotOverlay() {
         if (longPreviewRef.current) {
           longPreviewRef.current = false;
           setLongPreview(false);
+          // ⚠️ 必须同时废掉正在进行的截止线拖拽：它挂的是 window 级 mouseup（onPreviewDown），
+          // Esc 只关预览层摘不掉那个监听。预览态窗口是可见的、Esc 收得到，于是
+          //「按住不放 → Esc 取消 → 松手」会让 onUp 照常走到 commitLongShot()，
+          // 用户明确取消之后长截图还是开跑了（窗口隐藏 + 给目标窗发滚轮）。
+          // onUp 里的 `if (!previewDragRef.current) return` 排在 removeEventListener 之后，
+          // 所以置 false 不会漏摘监听。
+          previewDragRef.current = false;
           return;
         }
         // 两级取消（P4）：预览态优先回退，再 Esc 才整体退出
@@ -1677,6 +1684,29 @@ export function ScreenshotOverlay() {
     setRedoStack([]);
   }, []);
 
+  /**
+   * 「拖拽型」操作收尾入 undo：状态没变就把快照丢掉，不占撤销栈。
+   *
+   * 为什么需要单独一个而不是直接在 snapshotUndo 里判：两类调用方的**时序不同**。
+   *   - 拖拽型（移动 / 把手缩放）：快照在 **mousedown** 就存了，那时还不知道用户会不会真拖。
+   *     中间的 mousemove 每次都 setAnnotations → 已经重渲染过 → 真动过时
+   *     annotationsRef.current 一定是个新数组，引用比较就够用。
+   *   - 立即型（橡皮擦 / Delete）：存快照、setAnnotations、snapshotUndo 在**同一个同步块**里，
+   *     此时 annotationsRef 还没跟着更新（它是在 render body 里赋值的），
+   *     引用必然仍等于快照 —— 在 snapshotUndo 里做等值判断会把这两条路径的撤销直接误杀。
+   *
+   * 不判的后果（原 bug）：点一下选中某个标注、或点一下把手就松手，都会压进一格
+   * 「撤销了但画面没变化」的空操作 → Ctrl+Z 按了没反应、要连按好几次；
+   * 而 snapshotUndo 里的 setRedoStack([]) 更糟 —— 仅仅点一下标注就把重做栈清空了。
+   */
+  const snapshotUndoIfChanged = useCallback(() => {
+    if (moveSnapshotRef.current === annotationsRef.current) {
+      moveSnapshotRef.current = null; // 没动过：丢弃快照
+      return;
+    }
+    snapshotUndo();
+  }, [snapshotUndo]);
+
   /* ===== 完成：合成 → 保存 → OCR ===== */
   /** 统一收尾：canvas 合成图 → 保存 → OCR → result 态（普通截图 / 长截图共用） */
   const finalizeCanvas = useCallback(async (out: HTMLCanvasElement) => {
@@ -2265,7 +2295,10 @@ export function ScreenshotOverlay() {
       showOcrToast(`已插入文档 ${editorTarget.split(/[\\/]/).pop()} · 编辑器已刷新`);
       close();
     } catch (e) {
-      logger.warn("插入编辑器失败", e);
+      // 规则 15.3：失败不静默。这里**不关窗** —— 窗关了 toast 就没地方显示，
+      // 用户只看到"点了一下什么都没发生"（与 runExit 的失败处理同款）。
+      logger.error("插入编辑器失败", e);
+      showToast(`插入文档失败：${errText(e)}`);
     }
   };
 
@@ -3276,7 +3309,8 @@ export function ScreenshotOverlay() {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       annotResizeRef.current = null;
-      snapshotUndo();
+      // 点一下把手就松手（没真缩放）不入栈，见 snapshotUndoIfChanged
+      snapshotUndoIfChanged();
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -3501,10 +3535,10 @@ export function ScreenshotOverlay() {
   };
 
   const onAnnotMouseUp = () => {
-    // 元素移动结束：入 undo
+    // 元素移动结束：入 undo（只点选没拖动的不入栈，见 snapshotUndoIfChanged）
     if (annotMoveRef.current) {
       annotMoveRef.current = null;
-      snapshotUndo();
+      snapshotUndoIfChanged();
       return;
     }
     const d = draftRef.current;
@@ -3527,6 +3561,11 @@ export function ScreenshotOverlay() {
         // 被删/被切分的元素若正处于选中态，选中 id 会变成悬空引用
         setSelectedIds((ids) => ids.filter((id) => !deleted.includes(id)));
         snapshotUndo();
+      } else {
+        // 一个都没擦到（在空白处擦、或没擦准）：draft 层已经把橡皮轨迹画在画布上了，
+        // 而 annotations 没变 → 不会触发重绘 → 那条轨迹会一直留在画面上。
+        // 与下方「零尺寸误点」同款处理（那处已修，这处是漏掉的另一半）。
+        redraw();
       }
       return;
     }

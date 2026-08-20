@@ -52,14 +52,26 @@ export function AiTab() {
   /** 互斥：点开一个自动收起其他；点已展开的那个则收起 */
   const toggle = (k: SectionKey) => setOpenKey((prev) => (prev === k ? null : k));
 
+  /**
+   * 展开「服务商与密钥」并把光标送进密钥框。
+   *
+   * 为什么不能只 `setOpenKey("setup")`：未配置时上面那个 effect **已经**把 openKey
+   * 设成了 "setup"，再写同一个值 React 直接 bail out —— 摘要卡上的「开始配置」
+   * 于是成了一个点下去毫无反应的死按钮（用户反馈）。补上 focus 后，
+   * 区块本来就开着也有明确反馈：光标落进要填的那个框。
+   */
+  const openSetupAndFocusKey = () => {
+    setOpenKey("setup");
+    // 密钥输入框只在区块展开后才挂载，所以不能立即 focus。
+    // setTimeout 0 会排到下一个宏任务，那时 React 已经提交完这次渲染。
+    setTimeout(() => s.keyRef.current?.focus(), 0);
+  };
+
   const hint = s.testMsg && !s.testMsg.ok ? hintForError(s.testMsg.text) : null;
 
   const runHintAction = (action: AiErrorAction) => {
     if (action === "focusKey") {
-      setOpenKey("setup");
-      // 密钥输入框只在区块展开后才挂载，所以不能立即 focus。
-      // setTimeout 0 会排到下一个宏任务，那时 React 已经提交完这次渲染。
-      setTimeout(() => s.keyRef.current?.focus(), 0);
+      openSetupAndFocusKey();
     } else if (action === "openAdvanced") {
       setOpenKey("advanced");
     } else if (action === "switchProvider") {
@@ -98,7 +110,7 @@ export function AiTab() {
         quota={s.quota}
         testing={s.testing}
         onTest={() => void s.saveAndTest()}
-        onOpenSetup={() => setOpenKey("setup")}
+        onOpenSetup={openSetupAndFocusKey}
         onOpenQuota={() => useDialogStore.getState().openQuota()}
       />
 
@@ -139,7 +151,7 @@ export function AiTab() {
             <span>
               你主动对某条内容执行 AI 动作时，该条内容会被发送到所选服务商。
               PastePanda 不会自动上传任何历史记录。看起来像密钥/凭证的内容会先拦下来请你确认。
-              {s.isLocal && "（当前选的是本地模型，内容不出这台电脑。）"}
+              {s.contentStaysLocal && "（当前选的是本地模型，内容不出这台电脑。）"}
             </span>
           </div>
 
@@ -170,7 +182,7 @@ export function AiTab() {
           open={openKey === "usage"}
           onToggle={() => toggle("usage")}
         >
-          <AiUsageCard usage={s.usage} isLocal={s.isLocal} />
+          <AiUsageCard usage={s.usage} isLocal={s.isLocal} contentStaysLocal={s.contentStaysLocal} />
           {/* AiSection 折叠时不渲染 children，所以“展开”就是“挂载”：
               它自己在 mount 时拉数据，不需要再传 open。
               好处仍在：没展开过就一次库都不查。 */}

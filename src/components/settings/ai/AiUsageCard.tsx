@@ -12,11 +12,15 @@ import styles from "../AiTab.module.css";
 
 interface Props {
   usage: AiUsage | null;
-  /** 本地厂商（Ollama）零费用，预算与金额都不适用 */
+  /** 免密钥厂商（Ollama / 内置免费）：不按金额计费，所以展示 token 而不是 ¥ */
   isLocal: boolean;
+  /** 内容确实不出本机（只有 Ollama）。内置免费同样免密钥、同样不按金额计费，
+   *  但它是远程服务、内容要出网——这两件事必须分开判，否则就会对着远程服务
+   *  承诺「内容不出这台电脑」。判据定义见 useAiSettings。 */
+  contentStaysLocal: boolean;
 }
 
-export function AiUsageCard({ usage, isLocal }: Props) {
+export function AiUsageCard({ usage, isLocal, contentStaysLocal }: Props) {
   if (!usage) return null;
 
   if (isLocal) {
@@ -32,7 +36,11 @@ export function AiUsageCard({ usage, isLocal }: Props) {
               {usage.promptTokens}+{usage.completionTokens}
             </span>
           </span>
-          <span className={styles.usageNote}>本地模型，零费用，内容不出这台电脑。</span>
+          <span className={styles.usageNote}>
+            {contentStaysLocal
+              ? "本地模型，零费用，内容不出这台电脑。"
+              : "内置免费额度，按 token 计量；内容会发送到该服务商。"}
+          </span>
         </div>
       </div>
     );

@@ -136,6 +136,46 @@ export async function refreshAiAvailability(): Promise<void> {
   return load();
 }
 
+/** ai-config-changed 的载荷。source 是写入方的自报身份，用来让写入方**跳过自己发的事件**
+ *  （自己刚写完，state 已经是最新的；再 reload 一次只会跟乐观更新抢，把开关闪回旧值）。 */
+export interface AiConfigChangedPayload {
+  source?: string;
+}
+
+/**
+ * 广播「AI 配置已变」。全仓唯一的 emit 出口（监听方见 {@link ensureAiConfigListener}）。
+ *
+ * 事件发不出去只影响「别的窗口/组件即时刷新」，配置本身已经落盘了，所以吞掉不打扰。
+ *
+ * @param source 写入方标识，可不填。填了的话该方可在自己的监听里过滤掉自己。
+ */
+export async function emitAiConfigChanged(source?: string): Promise<void> {
+  try {
+    const { emit } = await import("@tauri-apps/api/event");
+    await emit("ai-config-changed", source ? { source } : null);
+  } catch {
+    /* 事件失败不打扰 */
+  }
+}
+
+/**
+ * 写完 AI 配置后**必须**调这一个：重算可用性判据 + 广播给其它窗口/组件。
+ *
+ * 为什么要有这个组合出口而不是让调用方自己拼：判定结果有 30 秒缓存（{@link TTL_MS}），
+ * 只认 `refreshAiAvailability()` 和 `ai-config-changed` 这两条刷新路径。少调任何一条，
+ * 界面就还攥着旧结论 —— QuotaDialog 的「一键启用内置免费」两条都漏了，于是
+ * 配置**真的写进了库**、toast 也说「现在就能用了」，而胶囊 / 变换门控 / 设置页
+ * 全都照旧显示未启用，用户看到的就是「点了没有启用成功」。
+ *
+ * ⚠️ 任何新的 AI 配置写路径，写完只准调这一个函数，不要只调其中一条。
+ *
+ * @param source 见 {@link emitAiConfigChanged}
+ */
+export async function notifyAiConfigWritten(source?: string): Promise<void> {
+  await refreshAiAvailability();
+  await emitAiConfigChanged(source);
+}
+
 /** 仅供测试与初始化：直接写死状态，不碰后端 */
 export function setAiAvailabilityForTest(status: AiAvailability, patch?: Partial<AiAvailabilityState>): void {
   commit({ status, weekCalls: 0, model: status === "off" || status === "loading" ? "" : "已配置", ...patch });

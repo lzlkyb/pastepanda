@@ -63,13 +63,27 @@ export function AiAdvanced(p: Props) {
     if (p.open) void loadSem();
   }, [p.open, loadSem]);
 
-  // 折叠卸载前先把草稿落盘：输入框靠 onBlur 提交，但折叠是卸载而非失焦，
+  // 折叠/卸载前先把草稿落盘：输入框靠 onBlur 提交，但折叠是卸载而非失焦，
   // React 不会触发 blur，未失焦的值会静默丢失（P1 修复）。
+  //
+  // ⚠️ 依赖只能是 [p.open]，**绝不能是 [p]**（曾经就是，酿成下面这个 bug）：
+  // p 里有 AiTab 传的 inline 箭头（onToggle / onClearKey），每次 render 都是新对象，
+  // 于是「卸载前落盘」退化成「每次 render 都落盘一次」；更糟的是 cleanup 捕获的是
+  // **上一轮**的 onCommit，它闭包里是上一轮的 config。改任何一个开关都会被上一轮的
+  // 旧值写回去，新旧值逐帧互相覆盖 —— 界面疯狂闪动、每帧几次 IPC，配置最终停在哪个值
+  // 全看振荡被打断在哪一帧。面板刚打开、config 还是 DEFAULT_CONFIG 那一帧更直接把
+  // 「未启用 + deepseek」写进库，用户看到的就是「我配好的 AI 自己没了」。
+  //
+  // onCommit 走 ref 而不是进依赖：它每次 config 变都是新引用，进依赖等于又回到上面那个坑。
+  const commitRef = useRef(p.onCommit);
   useEffect(() => {
-    return () => {
-      p.onCommit();
-    };
-  }, [p]);
+    commitRef.current = p.onCommit;
+  }, [p.onCommit]);
+  useEffect(() => {
+    if (!p.open) return;
+    // 只在「展开 → 收起」和「展开着卸载」这两个时刻落盘，落的是 ref 里的最新草稿
+    return () => commitRef.current();
+  }, [p.open]);
 
   const toggleSem = useCallback(
     async (enabled: boolean) => {

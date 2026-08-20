@@ -16,7 +16,8 @@ import { useDialogAnim } from "@/lib/dialogMotion";
 import { FocusTrap } from "@/components/FocusTrap";
 import { useToast } from "@/components/Toast";
 import { rewardOf, fmtWan, ladderCells, notifyQuotaChanged, BUILTIN_AGNES_ID } from "@/lib/quota";
-import { aiGetConfig, aiSetConfig } from "@/lib/api/ai";
+import { aiGetConfig, aiGetProviderConfig, aiSetConfig } from "@/lib/api/ai";
+import { notifyAiConfigWritten } from "@/lib/aiAvailability";
 import {
   aiQuotaGet,
   aiQuotaSign,
@@ -66,7 +67,23 @@ export function QuotaDialog() {
     setEnabling(true);
     try {
       const cfg = await aiGetConfig();
-      await aiSetConfig({ ...cfg, provider: BUILTIN_AGNES_ID, enabled: true });
+      // 只改 provider/enabled 是不够的：cfg 里的 baseUrl/model/protocol 还是上一家的
+      // （比如 deepseek 的地址 + deepseek-chat），带着它们配 Agnes 的内置 key 去请求必然失败,
+      // 「点一下就能用」就成了空话。跟 changeProvider 走同一条回填：读这家已保存的值，
+      // 没存过就是空串，后端 effective_base_url/effective_model 会回退到 builtin-agnes 的默认。
+      const pc = await aiGetProviderConfig(BUILTIN_AGNES_ID);
+      await aiSetConfig({
+        ...cfg,
+        provider: BUILTIN_AGNES_ID,
+        enabled: true,
+        baseUrl: pc.baseUrl,
+        model: pc.model,
+        protocol: pc.protocol ?? "",
+      });
+      // 落盘之后还必须让判据和别的组件跟上——这一步以前漏了：库里已经是「启用」，
+      // 可判定结果有 30 秒缓存、别的窗口也没收到通知，于是设置页 / 胶囊 / 变换门控
+      // 全都照旧显示未启用。用户点完看到「现在就能用了」，却发现哪儿都没变。
+      await notifyAiConfigWritten();
       setNeedEnable(false);
       toast("已切换为内置免费 AI，现在就能用了", "success");
     } catch (e) {
