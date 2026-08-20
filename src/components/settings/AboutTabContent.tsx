@@ -90,6 +90,8 @@ export function AboutTabContent({ appName, appVersion }: { appName: string; appV
 
       <div className={aboutStyles.aboutDivider} />
 
+      <SponsorCard />
+
       <div className={aboutStyles.aboutSectionLabel}>技术栈</div>
       <div className={aboutStyles.aboutTechGrid}>
         {TECH_STACK.map((t) => (
@@ -104,8 +106,6 @@ export function AboutTabContent({ appName, appVersion }: { appName: string; appV
           </div>
         ))}
       </div>
-
-      <SponsorCard />
 
       <UpdateBanner />
 
