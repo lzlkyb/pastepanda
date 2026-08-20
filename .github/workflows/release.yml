@@ -365,15 +365,32 @@ jobs:
 
           Write-Host "✅ 已推送到 Gitee releases 分支：$tag"
 
-          # 推完立即验证客户端那个地址真的读得到——“推成功”不等于“能用”。
-          # 探针已验：raw 会 302 跳到 raw.giteeusercontent.com，所以必须跟随重定向。
+          # 推完验证客户端那个地址真的读得到——“推成功”不等于“能用”。
+          # 注意：releases 是镜像专用分支，每次发版覆盖 latest/；首次 push 时它是
+          # 全新分支，Gitee 的 raw CDN（raw.giteeusercontent.com）有传播延迟，push 完成
+          # 后立刻回源常会 404，过几十秒才生效。所以这里用重试退避而不是一棒打死——
+          # 真·文件缺失（路径错 / 仓库转私有）在多次重试后依然 404，那时才软失败。
+          # 探针已验：raw 会 302 跳到 raw.giteeusercontent.com，必须跟随重定向。
           $raw = "https://gitee.com/$($env:GITEE_REPOSITORY)/raw/releases/latest/updater-gitee.json"
           Write-Host "--- 验证 $raw ---"
-          try {
-            $resp = Invoke-WebRequest -Uri $raw -MaximumRedirection 5 -TimeoutSec 60 -UseBasicParsing
-            Write-Host ("raw 返回 {0}，长度 {1} 字节" -f $resp.StatusCode, $resp.RawContentLength)
-            if ($resp.StatusCode -ne 200) { Fail "raw URL 返回 $($resp.StatusCode)，客户端同样读不到" }
-          } catch {
-            Fail "raw URL 请求失败：$_（推上去了却读不到，客户端一样用不了）"
+          $ok = $false
+          for ($i = 1; $i -le 4; $i++) {
+            try {
+              $resp = Invoke-WebRequest -Uri $raw -MaximumRedirection 5 -TimeoutSec 60 -UseBasicParsing
+              if ($resp.StatusCode -eq 200) {
+                Write-Host ("raw 返回 200，长度 {0} 字节（第 {1} 次尝试）" -f $resp.RawContentLength, $i)
+                $ok = $true
+                break
+              }
+              Write-Host ("raw 返回 {0}（第 {1} 次尝试），准备重试" -f $resp.StatusCode, $i)
+            } catch {
+              Write-Host ("raw 请求失败（第 {1} 次尝试）：{0}" -f $_, $i)
+            }
+            if ($i -lt 4) {
+              $wait = $i * 20
+              Write-Host ("等待 {0} 秒后重试（Gitee 新建分支 raw CDN 传播延迟）..." -f $wait)
+              Start-Sleep -Seconds $wait
+            }
           }
+          if (-not $ok) { Fail "raw URL 多次重试后仍读不到（见上方最后几次尝试；推上去了但 CDN 尚未生效或文件确实缺失，客户端这次可能暂时用不了，稍后访问即可）" }
           Write-Host "✅ raw URL 可读，国内加速通道本次确实生效"
