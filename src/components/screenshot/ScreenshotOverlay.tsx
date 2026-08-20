@@ -20,9 +20,6 @@ import { isAiAvailable } from "@/lib/transforms/aiTransforms";
 import { useAiStatus } from "@/hooks/useAiStatus";
 import type { Chain, ChainRunResult } from "@/lib/chains/types";
 import { logger } from "@/lib/logger";
-import { CHANGELOG } from "@/lib/changelog.generated";
-import { compareVersions, getLastSeenVersion } from "@/lib/changelog";
-import type { NewHint } from "./AnnotToolbar";
 import { TooltipLayer } from "./TooltipLayer";
 // 纯计算已抽到 lib/screenshot/（规则 7）——那里才能写回归测试：
 // 坐标换算与磁吸曾各藏过一个真 bug，长截图重叠匹配曾把 G/B 通道索引写错。
@@ -143,50 +140,6 @@ let probeCanvas: HTMLCanvasElement | null = null;
 
 let idSeq = 1;
 const nextId = () => idSeq++;
-
-/* ===== 路线 C · 新功能提示（截图工具栏 NEW 角标 + 富教练卡） =====
- * 仅对「本版本新增且用户未用过 / 未看」的入口挂 NEW 角标并浮富教练卡。
- * 版本门控：用户 lastSeen 存在且早于最新版本（即升级过来的用户）才提示，
- * 老用户早已用过的功能不再唠叨。教练卡关闭即标记已看，下次不再出现。 */
-const NEW_HINT_CONTENT: Record<string, NewHint> = {
-  ocr: {
-    id: "ocr",
-    title: "取文字",
-    why: "截图里看到字，点一下直接识别，不用先保存再翻菜单",
-    how: ["点工具栏「取文字」按钮", "完成后自动展开文字，可逐行 / 逐字复制", "按 T 直接复制全文"],
-    media: "ocr",
-  },
-  mosaic: {
-    id: "mosaic",
-    title: "马赛克 / 模糊「涂」",
-    why: "像笔一样抹过去就打码，来回抹无缝拼接",
-    how: ["选马赛克 / 模糊工具，按住拖动涂抹", "滚轮调强度"],
-    media: "mosaic",
-  },
-  eraser: {
-    id: "eraser",
-    title: "真正的橡皮擦",
-    why: "擦到笔迹会切成多段，而不是整条曲线全没",
-    how: ["选橡皮擦工具，在要擦的笔迹上涂抹"],
-    media: "eraser",
-  },
-};
-
-const NH_SEEN_KEY = "pp_newhints_seen";
-function readNewHintSeen(): Set<string> {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(NH_SEEN_KEY) || "[]"));
-  } catch {
-    return new Set();
-  }
-}
-function writeNewHintSeen(s: Set<string>) {
-  try {
-    localStorage.setItem(NH_SEEN_KEY, JSON.stringify([...s]));
-  } catch {
-    /* ignore */
-  }
-}
 
 /* ===== 主组件 ===== */
 export function ScreenshotOverlay() {
@@ -452,53 +405,10 @@ export function ScreenshotOverlay() {
       return next;
     });
   }, []);
-  /* 路线 C · 新功能教练卡「已看过」集合。
-   * ❗ 必须留在组件顶部——下面的 `if (!screen) return …` 是个提前 return，
-   *   hook 写到它后面会让首渲染（screen 为 null）少注册一个 hook，截屏拿到后
-   *   setScreen 重渲染就多出一个，React 直接抛
-   *   Rendered more hooks than during the previous render ——截图窗必崩。
-   * 用 state 而非直读 localStorage：关掉教练卡要立即重渲染，否则卡片关不掉。 */
-  const [seenHints, setSeenHints] = useState<Set<string>>(() => readNewHintSeen());
-  /* 降噪（方案 A）：教练卡「本次截图会话」只弹一张，显示后自动收起并标记已看。
-   * 截图窗每次打开都是新会话、组件重新挂载 → ref 归零，下一轮会话轮到下一张；
-   * 同一会话内 select/annotate 来回切换不重置（不会同一会话反复弹）。
-   * ❗ 以下推导 + effect 必须留在组件顶部无条件区：`if (!screen) return`（~3651 行）之后
-   *  不能放 hook，否则首渲染少注册 hook、截屏拿到后重渲染多出，React 抛 hook 顺序错乱。 */
-  const coachShownRef = useRef(false);
-  const COACH_AUTO_CLOSE_MS = 3000; // 教练卡自动收起时长：看完不点也自己消失，不再逼用户点 ✕
-  /* 引导计算（原在 `if (!screen) return` 之后，纯推导不依赖 screen，上移供 effect 引用） */
+  /* 脉冲引导（B 方案）：仍未用过的「强力按钮」id 列表，用过即停。
+   * 门控独立于版本号、按"功能是否真用过"判定，老用户彻底不被打扰。 */
   const POWER_TOOLS = ["automask", "ocr", "pin"] as const;
-  const lastSeen = getLastSeenVersion();
-  const latestVer = CHANGELOG[0]?.version ?? "";
-  const showNewHints = !lastSeen || compareVersions(latestVer, lastSeen) > 0;
-  const newHints = showNewHints
-    ? Object.values(NEW_HINT_CONTENT).filter((h) => !seenHints.has(h.id))
-    : [];
-  const coachHint = coachShownRef.current ? null : (newHints[0] ?? null);
-  /* 脉冲与 NEW 互斥（方案 A）：同一按钮已挂 NEW 角标（在 newHints 里）就不脉冲，去重降噪。 */
-  const discoverTools = POWER_TOOLS.filter(
-    (id) => !usedFeatures.has(id) && !newHints.some((h) => h.id === id),
-  );
-  /* 教练卡自动收起：仅在教练卡**实际显示**时（screen 已就绪且处于 annotate 态）才启动 3s 计时。
-   * 显示 3s 后标记已看 → re-render 时 newHints 少一张、coachHint 归 null
-   * （ref 已置位，本次会话不再弹；下次截图会话轮到下一张，最多 3 轮自然清完）。
-   * ❗ 必须有 screen/phase 守卫：首渲染 screen=null（提前 return、卡片根本没显示）时
-   *  若启动计时，用户还没看到第一张卡就被标记已看，引导直接跳过。 */
-  useEffect(() => {
-    if (!coachHint || !screen || phase !== "annotate") return;
-    if (coachShownRef.current) return;
-    coachShownRef.current = true;
-    const t = setTimeout(() => {
-      setSeenHints((prev) => {
-        if (prev.has(coachHint.id)) return prev;
-        const s = new Set(prev);
-        s.add(coachHint.id);
-        writeNewHintSeen(s);
-        return s;
-      });
-    }, COACH_AUTO_CLOSE_MS);
-    return () => clearTimeout(t);
-  }, [coachHint, screen, phase]);
+  const discoverTools = POWER_TOOLS.filter((id) => !usedFeatures.has(id));
   /* 向后端上报“本轮前端已起来”，撤销 Rust 侧的存活探针（见 screenshot.rs SHOT_READY_GEN）。
    * ❗ 必须无条件、且在任何提前 return 之前 —— 它是探针唯一的撤销信号，
    *   漏报的后果是 5 秒后一个健康的截图窗被后端误杀。上报失败补一次重试。 */
@@ -4448,16 +4358,6 @@ export function ScreenshotOverlay() {
           onDone={() => void copyImage()}
           onMore={() => void finish()}
           discover={discoverTools}
-          newHints={newHints}
-          coachHint={coachHint}
-          onCoachClose={() => {
-            if (coachHint) {
-              const s = new Set(seenHints);
-              s.add(coachHint.id);
-              setSeenHints(s);
-              writeNewHintSeen(s);
-            }
-          }}
         />
       )}
 

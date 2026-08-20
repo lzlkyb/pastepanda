@@ -14,47 +14,13 @@
 
 import type { ToolId } from "@/lib/screenshot/types";
 import type { TbAttach } from "@/lib/screenshot/toolbarPos";
-import { type MouseEvent, useState } from "react";
+import type { MouseEvent } from "react";
 import { Sparkles } from "lucide-react";
 import { AiMark } from "@/components/ai/AiMark";
-import { Illustration, isIllustrationKey } from "@/components/Illustration";
 import { OCR_ICON, PIN_ICON, SAVE_ICON, TOOLS } from "./tools";
 
 /** 取文字按钮的状态（与 ScreenshotOverlay 的 ocrStatus 同源） */
 export type OcrBtnStatus = "idle" | "running" | "done" | "empty" | "failed";
-
-/** 新功能提示（路线 C）：本版本新增且用户未用过的入口 */
-export interface NewHint {
-  /** 对应按钮 id：TOOLS 的 t.id / "ocr" / "pin" 等 */
-  id: string;
-  title: string;
-  /** 有什么用：一句话价值 */
-  why: string;
-  /** 怎么用：操作步骤 */
-  how: string[];
-  /** 配图路径（可选） */
-  media?: string;
-}
-
-/** 教练卡配图：media 为插图 key 时用 Canvas 实时绘制；为真实图片路径则走 <img>，失败降级为 default 图。 */
-function CoachMedia({ src }: { src: string }) {
-  const [ok, setOk] = useState(true);
-  const kind = isIllustrationKey(src) ? src : null;
-  if (kind) {
-    return <Illustration kind={kind} className="coach-media" />;
-  }
-  if (!ok) {
-    return <Illustration kind="default" className="coach-media" />;
-  }
-  return (
-    <img
-      className="coach-media"
-      src={src}
-      alt={src}
-      onError={() => setOk(false)}
-    />
-  );
-}
 
 interface Props {
   /** 供父组件实测主栏宽高（右对齐需要真实宽度，它随按钮文案变） */
@@ -122,12 +88,6 @@ interface Props {
   /** B 方案 · 低频功能引导：仍未用过的「强力按钮」id 列表（自动打码 / 取文字 / 贴图）。
    *  命中即在按钮上加一次性脉冲（3 次后静止），用过即不再出现。父组件持久化"是否用过"。 */
   discover?: string[];
-  /** 路线 C · 新功能提示：本版本新增且用户未用过的入口，命中即在按钮上加 NEW 角标 */
-  newHints?: NewHint[];
-  /** 路线 C · 当前展示的富教练卡（首个未看的新功能），null 不展示 */
-  coachHint?: NewHint | null;
-  /** 路线 C · 关闭教练卡（父组件负责按 id 标记已看，避免反复打扰） */
-  onCoachClose?: () => void;
 }
 
 /** 撤销图标（与 tools.tsx 同一套描边参数） */
@@ -230,9 +190,6 @@ export function AnnotToolbar({
   onDone,
   onMore,
   discover,
-  newHints,
-  coachHint,
-  onCoachClose,
   maskOn,
   maskActive,
   onApplyMasks,
@@ -291,7 +248,6 @@ export function AnnotToolbar({
           >
             <span className="ic">{t.icon}</span>
             <span className="lb">{t.label}</span>
-            {newHints?.some((h) => h.id === t.id) && <span className="new-badge">NEW</span>}
           </div>
           {/* 自动打码「预览式」确认条：锚定「自动打码」按钮正上方弹出。
               点完按钮视线零移动（反馈与触发同可见性域）；竖排不压工具栏，
@@ -380,7 +336,6 @@ export function AnnotToolbar({
         {ocrStatus === "done" && ocrLines > 0 && (
           <span className="badge">{ocrLines > 99 ? "99+" : ocrLines}</span>
         )}
-        {newHints?.some((h) => h.id === "ocr") && <span className="new-badge">NEW</span>}
         {ocrStatus === "failed" && <span className="badge warn">!</span>}
         <span className="ic">
           {ocrStatus === "running" ? <span className="ocr-spin" /> : OCR_ICON}
@@ -399,7 +354,6 @@ export function AnnotToolbar({
       <div className={`tool exit-pin${discover?.includes("pin") ? " discover" : ""}`} data-tip="钉在屏幕最上层，可拖动可缩放" onClick={onPin}>
         <span className="ic">{PIN_ICON}</span>
         <span className="lb">贴图</span>
-        {newHints?.some((h) => h.id === "pin") && <span className="new-badge">NEW</span>}
       </div>
       {/* 图标与文字都走全站统一的 AI 标识（AiMark / lucide Sparkles），不在这里另写一份。
           strokeWidth 2.25 是算出来的：tools.tsx 的图标是 viewBox 16 / stroke 1.5，
@@ -446,25 +400,6 @@ export function AnnotToolbar({
       >
         {busy ? "处理中…" : "完成 ✓"}
       </div>
-
-      {/* 路线 C · 富教练卡：锚定工具栏上方（翻转时落下方），可关。
-          反馈与触发同可见性域：引导的正是上面这条栏里的新功能按钮。 */}
-      {coachHint && (
-        <div className="tb-coach">
-          <div className="coach-head">
-            <span className="coach-new">NEW</span>
-            <span className="coach-title">{coachHint.title}</span>
-            <span className="coach-x" onClick={onCoachClose}>✕</span>
-          </div>
-          <div className="coach-why">{coachHint.why}</div>
-          <ol className="coach-how">
-            {coachHint.how.map((s, i) => (
-              <li key={i}>{s}</li>
-            ))}
-          </ol>
-          {coachHint.media && <CoachMedia src={coachHint.media} />}
-        </div>
-      )}
 
     </div>
   );
