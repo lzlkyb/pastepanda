@@ -1,0 +1,189 @@
+/* 赞助开发者卡片（关于页 · AboutTabContent 内嵌） */
+
+.card {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--section-bg);
+  border: 1px solid transparent;
+  margin-bottom: 24px;
+  transition: all 0.2s, background 0.3s ease, border-color 0.3s ease;
+}
+.card:hover {
+  border-color: var(--border-color);
+  box-shadow: var(--shadow-md);
+}
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.cardIcon {
+  font-size: 15px;
+}
+.cardTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  transition: color 0.3s ease;
+}
+.cardDesc {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin: 0 0 10px;
+  transition: color 0.3s ease;
+}
+.cardBtns {
+  display: flex;
+  gap: 8px;
+}
+.cardBtn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 0;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s, color 0.3s ease;
+}
+.cardBtn:active {
+  transform: scale(0.98);
+}
+.btnIcon {
+  font-size: 14px;
+}
+/* 微信 / 支付宝品牌色（固定色，不随主题变；12% 透明底深浅主题都可读） */
+.wechat {
+  background: rgba(7, 193, 96, 0.12);
+  color: #07a551;
+  border-color: rgba(7, 193, 96, 0.28);
+}
+.wechat:hover {
+  background: rgba(7, 193, 96, 0.2);
+}
+.alipay {
+  background: rgba(22, 119, 255, 0.12);
+  color: #1268e0;
+  border-color: rgba(22, 119, 255, 0.3);
+}
+.alipay:hover {
+  background: rgba(22, 119, 255, 0.2);
+}
+
+/* 收款码弹窗 */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: var(--overlay-bg, rgba(0, 0, 0, 0.35));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: sponsorBackdropIn 0.2s ease;
+}
+@keyframes sponsorBackdropIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.dialog {
+  width: 320px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  box-shadow: var(--glass-popover-shadow, 0 12px 36px rgba(0, 0, 0, 0.2));
+  overflow: hidden;
+  animation: sponsorDialogIn 0.22s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+@keyframes sponsorDialogIn {
+  from { opacity: 0; transform: scale(0.94) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.dialogHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 16px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+  transition: color 0.3s ease, border-color 0.3s ease;
+}
+.closeBtn {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: all 0.15s;
+}
+.closeBtn:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+.dialogBody {
+  padding: 18px 20px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.qrWrap {
+  width: 240px;
+  height: 240px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--border-color);
+  display: grid;
+  place-items: center;
+}
+.qr {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.qrErr {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 0 14px;
+  line-height: 1.6;
+}
+.dialogTip {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  transition: color 0.3s ease;
+}
+.dialogFoot {
+  width: 100%;
+  margin-top: 14px;
+}
+.doneBtn {
+  width: 100%;
+  padding: 10px 0;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.2s, color 0.3s ease;
+}
+.doneBtn:hover {
+  filter: brightness(1.06);
+}

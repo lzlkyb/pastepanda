@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="ocean">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>赞助开发者 · 设计稿预览</title>
+<style>
+:root { --font: "SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif; }
+[data-theme="ocean"] { --app-bg:#F7F7F8;--card-bg:#fff;--text-primary:#0F172A;--text-secondary:#495565;--text-muted:#627083;--border-color:#E0E4EB;--accent:#0284C7;--accent-light:#E0F2FE;--accent-strong:#0273AD;--section-bg:#F0F4F8;--hover:#E8ECF2;--overlay-bg:rgba(0,0,0,.35);--shadow-md:0 4px 12px rgba(0,0,0,.08);--glass-popover-shadow:0 12px 36px rgba(0,0,0,.1); }
+[data-theme="midnight"] { --app-bg:#0B0B13;--card-bg:#18181B;--text-primary:#E4E4E7;--text-secondary:#AFAFB7;--text-muted:#8D8D95;--border-color:#27272A;--accent:#818CF8;--accent-light:#1E1B4B;--accent-strong:#818CF8;--section-bg:#0F0F11;--hover:#1F1F23;--overlay-bg:rgba(0,0,0,.35);--shadow-md:0 4px 12px rgba(0,0,0,.45);--glass-popover-shadow:0 12px 40px rgba(0,0,0,.45); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font); background: var(--app-bg); color: var(--text-primary); font-size: 14px; padding: 40px 24px 80px; transition: background .3s, color .3s; }
+.hdr { max-width: 640px; margin: 0 auto 26px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.hdr h1 { font-size: 20px; }
+.hdr .sub { font-size: 12px; color: var(--text-muted); font-weight: 400; }
+.hdr .sp { flex: 1; }
+select { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-secondary); font-size: 12px; font-family: var(--font); }
+.win { max-width: 640px; margin: 0 auto; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 16px; box-shadow: var(--shadow-md); overflow: hidden; }
+.win-bar { display: flex; gap: 7px; padding: 10px 14px; border-bottom: 1px solid var(--border-color); background: color-mix(in srgb, var(--section-bg) 60%, var(--card-bg)); }
+.dot { width: 11px; height: 11px; border-radius: 50%; }
+.dot.r { background:#FF5F57 } .dot.y { background:#FEBC2E } .dot.g { background:#28C840 }
+.win-title { font-size: 12px; color: var(--text-muted); margin-left: 8px; }
+.body { padding: 28px; }
+.sec-label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); letter-spacing: .8px; margin: 0 0 12px; }
+.tech-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 24px; }
+.tech { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; background: var(--section-bg); }
+.tech .ic { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; font-size: 15px; }
+.tech .n { font-size: 13px; font-weight: 700; } .tech .d { font-size: 10px; color: var(--text-muted); }
+/* ---- 赞助卡片 ---- */
+.sponsor { padding: 14px 16px; border-radius: 12px; background: var(--section-bg); border: 1px solid var(--border-color); margin-bottom: 24px; }
+.sponsor .sh { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.sponsor .sh .t { font-size: 13px; font-weight: 700; }
+.sponsor .desc { font-size: 11.5px; line-height: 1.6; color: var(--text-secondary); margin-bottom: 10px; }
+.btns { display: flex; gap: 8px; }
+.btn { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 0; border-radius: 9px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.btn.wx { background: rgba(7,193,96,.12); color: #07a551; border: 1px solid rgba(7,193,96,.28); }
+.btn.ap { background: rgba(22,119,255,.12); color: #1268e0; border: 1px solid rgba(22,119,255,.3); }
+.banner { border: 1px solid var(--border-color); border-radius: 12px; padding: 12px 14px; font-size: 12px; color: var(--text-muted); }
+/* ---- 弹窗态（演示：微信） ---- */
+.demo-dialog { margin-top: 30px; }
+.demo-cap { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600; }
+.dlg { width: 320px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 16px; box-shadow: var(--glass-popover-shadow); overflow: hidden; }
+.dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 13px 16px; font-size: 14px; font-weight: 700; border-bottom: 1px solid var(--border-color); }
+.dlg-head .x { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--text-muted); background: var(--hover); }
+.dlg-body { padding: 18px 20px 16px; display: flex; flex-direction: column; align-items: center; }
+.qr { width: 240px; height: 240px; border-radius: 12px; overflow: hidden; border: 1px solid var(--border-color); background:#fff; }
+.qr img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.tip { margin-top: 12px; font-size: 12px; color: var(--text-secondary); }
+.done { width: 100%; margin-top: 14px; padding: 10px 0; border: none; border-radius: 10px; background: var(--accent); color: #fff; font-size: 13px; font-weight: 600; text-align: center; }
+.note { max-width: 640px; margin: 18px auto 0; font-size: 12px; color: var(--text-muted); line-height: 1.7; }
+</style>
+</head>
+<body>
+<div class="hdr">
+  <h1>赞助开发者 · 设计稿 <span class="sub">关于页卡片 + 收款码弹窗</span></h1>
+  <span class="sp"></span>
+  <select id="theme" onchange="document.documentElement.setAttribute('data-theme', this.value)">
+    <option value="ocean">🎨 经典白</option>
+    <option value="midnight">🌙 午夜</option>
+    <option value="forest">🌿 森林</option>
+    <option value="blossom">🌸 美乐蒂</option>
+    <option value="dawn">🌅 晨曦</option>
+  </select>
+</div>
+
+<div class="win">
+  <div class="win-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="win-title">设置 · 关于 · PastePanda</span></div>
+  <div class="body">
+    <div class="sec-label">技术栈</div>
+    <div class="tech-grid">
+      <div class="tech"><div class="ic" style="background:rgba(255,193,49,.15)">⚙️</div><div><div class="n">Tauri 2</div><div class="d">桌面框架</div></div></div>
+      <div class="tech"><div class="ic" style="background:rgba(97,218,251,.15)">⚛️</div><div><div class="n">React 19</div><div class="d">UI 框架</div></div></div>
+    </div>
+    <div class="sponsor">
+      <div class="sh"><span>🧡</span><span class="t">赞助开发者</span></div>
+      <div class="desc">PastePanda 完全免费开源。如果你觉得它有用，请我喝杯咖啡 —— 你的支持是我持续维护、修 Bug、加新功能的动力。</div>
+      <div class="btns">
+        <button class="btn wx">💚 微信赞赏</button>
+        <button class="btn ap">💙 支付宝赞赏</button>
+      </div>
+    </div>
+    <div class="banner">⬤ 有新版本可用 · 下载并更新</div>
+  </div>
+</div>
+
+<div class="demo-dialog" style="max-width:640px;margin:30px auto 0;">
+  <div class="demo-cap">点击「微信赞赏」后的弹窗</div>
+  <div class="dlg">
+    <div class="dlg-head"><span>💚 微信赞赏</span><span class="x">✕</span></div>
+    <div class="dlg-body">
+      <div class="qr"><img src="../src/assets/sponsor/wechat.png" alt="微信赞赏码" /></div>
+      <div class="tip">微信扫一扫，支持一下开发者 🧡</div>
+      <div class="done">谢谢支持</div>
+    </div>
+  </div>
+</div>
+
+<p class="note">说明：当前为<b>占位收款码图</b>（程序生成，中心带红叉）。正式发布前请把微信 / 支付宝的赞赏码截图分别替换 <code>src/assets/sponsor/wechat.png</code> 与 <code>src/assets/sponsor/alipay.png</code>。行为：点按钮 → 弹出收款码 → 遮罩点击 / Esc / 「谢谢支持」关闭；图片缺失时弹窗内提示补图路径，不会白屏。</p>
+</body>
+</html>

@@ -7,6 +7,7 @@ import { UpdateBanner } from "@/components/UpdateBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { ChangelogView } from "@/components/ChangelogView";
 import aboutStyles from "../About.module.css";
+import { SponsorCard } from "@/components/SponsorCard";
 import melodyUrl from "@/assets/melody.png";
 
 const TECH_STACK = [
@@ -103,6 +104,8 @@ export function AboutTabContent({ appName, appVersion }: { appName: string; appV
           </div>
         ))}
       </div>
+
+      <SponsorCard />
 
       <UpdateBanner />
 
