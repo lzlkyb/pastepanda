@@ -223,9 +223,11 @@ jobs:
         env:
           GITHUB_RELEASE_TAG: ${{ github.ref_name }}
           UPDATER_NOTES: ${{ steps.changelog.outputs.updater_notes }}
-          # Gitee raw 文件直链格式与 GitHub Release 不同，用 UPDATER_URL_TEMPLATE 完全接管拼接
-          # 固定走 releases 分支下的 latest/ 目录（每次发版覆盖，不按 tag 累加）
-          UPDATER_URL_TEMPLATE: "https://gitee.com/${{ secrets.GITEE_REPOSITORY }}/raw/releases/latest/{filename}"
+          # Gitee raw 对大文件（安装包 ~20MB）要求登录才能下载（"large file require login"），
+          # app 没有 Gitee 登录态会被 403，所以二进制不能走 raw。改用 Gitee 发行版资源
+          # releases/download/{tag}/{filename}：发行版资源公开可下、不要求登录，正好绕过 raw 登录墙。
+          # manifest（JSON 小文件）仍走 raw/releases/latest/（无需登录）。
+          UPDATER_URL_TEMPLATE: "https://gitee.com/${{ secrets.GITEE_REPOSITORY }}/releases/download/{tag}/{filename}"
           UPDATER_OUTPUT_FILENAME: "updater-gitee.json"
 
       - name: 校验 updater-gitee.json（若已生成）
@@ -292,19 +294,17 @@ jobs:
           }
           if (-not (Test-Path $mirrorDir)) { Fail "镜像工作目录不存在：$mirrorDir" }
 
-          # 固定覆盖 latest/ 目录（不按 tag 累加）
+          # manifest（JSON 小文件）固定覆盖 latest/ 目录（raw 无需登录即可读）
           $destDir = Join-Path $mirrorDir "latest"
           if (Test-Path $destDir) { Remove-Item $destDir -Recurse -Force }
           New-Item -ItemType Directory -Path $destDir -Force | Out-Null
-          Copy-Item src-tauri/target/release/bundle/nsis/*.exe $destDir/ -ErrorAction SilentlyContinue
-          Copy-Item src-tauri/target/release/bundle/nsis/*.exe.sig $destDir/ -ErrorAction SilentlyContinue
           Copy-Item dist/updater-gitee.json $destDir/ -ErrorAction SilentlyContinue
 
           # 体积和文件数必须打印：push 被重置时这是判断"是不是太大传不动"的唯一依据。
           $files = @(Get-ChildItem $destDir -Recurse -File)
-          if ($files.Count -eq 0) { Fail "latest/ 里一个文件都没有（产物路径变了？上一步的 Copy-Item 全没匹配上）" }
+          if ($files.Count -eq 0) { Fail "latest/ 里一个文件都没有（updater-gitee.json 没生成？）" }
           $mb = ($files | Measure-Object -Property Length -Sum).Sum / 1MB
-          Write-Host ("待推送 latest/：{0} 个文件，合计 {1:N2} MB" -f $files.Count, $mb)
+          Write-Host ("待推送 latest/（manifest）：{0} 个文件，合计 {1:N2} MB" -f $files.Count, $mb)
           $files | ForEach-Object { Write-Host ("  - {0}  {1:N2} MB" -f $_.Name, ($_.Length / 1MB)) }
 
           Push-Location $mirrorDir
@@ -394,3 +394,57 @@ jobs:
           }
           if (-not $ok) { Fail "raw URL 多次重试后仍读不到（见上方最后几次尝试；推上去了但 CDN 尚未生效或文件确实缺失，客户端这次可能暂时用不了，稍后访问即可）" }
           Write-Host "✅ raw URL 可读，国内加速通道本次确实生效"
+
+          # ── 二进制改走 Gitee 发行版（releases/download/{tag}）───
+          # raw 对大文件要求登录（app 无登录态会被 403），发行版资源公开可下、无需登录，
+          # 正好绕过。流程：推 tag → 取/建发行版 → 上传 exe+.sig → 验证可下载。
+          Write-Host "--- 发布二进制到 Gitee 发行版（绕过 raw 登录墙）---"
+          $apiBase = "https://gitee.com/api/v5/repos/$($env:GITEE_REPOSITORY)"
+          $token = $env:GITEE_TOKEN
+
+          # 1) 推 tag 到 Gitee（发行版需 tag 存在；已存在则 git 报错但忽略）
+          git push "$giteeUrl" "$tag" 2>&1 | Write-Host
+          Write-Host ("tag {0} 推送完成（exit={1}，已存在则忽略）" -f $tag, $LASTEXITCODE)
+
+          # 2) 取已有发行版或新建
+          $rel = $null
+          try {
+            $rel = Invoke-RestMethod -Uri "$apiBase/releases/tags/$tag`?access_token=$token" -Method Get -TimeoutSec 30 -ErrorAction Stop
+          } catch { }
+          if ($rel -and $rel.id) {
+            Write-Host ("发行版已存在（id={0}），复用" -f $rel.id)
+          } else {
+            $relBody = @{ tag_name = $tag; name = "PastePanda $tag"; body = "PastePanda $tag 自动发布（国内加速通道）"; prerelease = $false } | ConvertTo-Json -Compress
+            try {
+              $rel = Invoke-RestMethod -Uri "$apiBase/releases`?access_token=$token" -Method Post -Body $relBody -ContentType "application/json" -TimeoutSec 30 -ErrorAction Stop
+            } catch {
+              Fail ("创建 Gitee 发行版失败：{0}" -f $_)
+            }
+            Write-Host ("已创建发行版（id={0}）" -f $rel.id)
+          }
+          $rid = $rel.id
+          if (-not $rid) { Fail "未取得发行版 id" }
+
+          # 3) 上传 exe + .sig 资源（multipart，字段名 file）
+          $nsisDir = Join-Path $env:GITHUB_WORKSPACE "src-tauri/target/release/bundle/nsis"
+          foreach ($pattern in @("*.exe", "*.exe.sig")) {
+            $af = Get-Item (Join-Path $nsisDir $pattern) -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $af) { Write-Host ("跳过（未找到）: {0}" -f $pattern); continue }
+            Write-Host ("上传资源: {0} ({1} MB)" -f $af.Name, ([int]($af.Length / 1MB)))
+            curl.exe -sS -X POST "$apiBase/releases/$rid/assets`?access_token=$token&name=$($af.Name)" -F "file=@$($af.FullName)" --max-time 300
+            if ($LASTEXITCODE -ne 0) { Fail ("上传资源 {0} 失败（curl exit {1}）" -f $af.Name, $LASTEXITCODE) }
+            Write-Host ("  ✅ 已上传 {0}" -f $af.Name)
+          }
+
+          # 4) 验证发行版 exe 公开可下载（无需登录 = app 国内通道真正生效）
+          $exeFile0 = Get-Item (Join-Path $nsisDir "*.exe") -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($exeFile0) {
+            $exeDl = "https://gitee.com/$($env:GITEE_REPOSITORY)/releases/download/$tag/$($exeFile0.Name)"
+            try {
+              $er = Invoke-WebRequest -Uri $exeDl -MaximumRedirection 5 -TimeoutSec 60 -UseBasicParsing
+              if ($er.StatusCode -ne 200) { Fail ("发行版 exe URL 返回 {0}，app 仍拿不到" -f $er.StatusCode) }
+              Write-Host ("✅ 发行版 exe 公开可下载：{0}（{1} MB），app 国内通道生效" -f $exeDl, ([int]($er.RawContentLength / 1MB)))
+            } catch {
+              Fail ("发行版 exe 下载验证失败：{0}（推上去了但公开读不到，app 这次可能用不了）" -f $_)
+            }
+          }
