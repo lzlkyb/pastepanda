@@ -39,7 +39,8 @@ jobs:
             if [ "$http" != "200" ]; then
               cat /tmp/gitee-commits.json 2>/dev/null | head -c 300; echo ""
             fi
-            sha=$(jq -r '.[0].sha // empty' /tmp/gitee-commits.json 2>/dev/null || true)
+            # Gitee /commits/{branch} 返回单个 commit 对象（非数组），取 .sha
+            sha=$(jq -r '.sha // empty' /tmp/gitee-commits.json 2>/dev/null || true)
             if [ -z "$sha" ]; then
               echo "  (commits 响应前 220 字符): $(head -c 220 /tmp/gitee-commits.json)"
             fi
