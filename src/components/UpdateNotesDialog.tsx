@@ -22,10 +22,9 @@ import styles from "./UpdateNotesDialog.module.css";
 import { logger } from "@/lib/logger";
 
 /** 完整功能手册（新功能 + 全部功能详解），用户点「新功能」弹框可跳转浏览器查看。
- *  当前为仓库内高保真 HTML 文档站（含真实 UI 演示），GitHub 提供渲染预览。
- *  想换成独立托管页：启用 GitHub Pages 后把这里改成 Pages 地址（如
- *  https://lzlkyb.github.io/pastepanda/manual/index.html）即可，其余无需改动。 */
-const MANUAL_URL = "https://github.com/lzlkyb/pastepanda/blob/master/docs/manual/index.html";
+ *  已启用 GitHub Pages（master 分支 /docs 目录），docs/manual/index.html 由 Pages
+ *  渲染为网页（GitHub blob 页面只显示源码、不渲染 HTML，勿改回 blob 链接）。 */
+const MANUAL_URL = "https://lzlkyb.github.io/pastepanda/manual/index.html";
 
 // ─── Props ──────────────────────────────────────────────
 
