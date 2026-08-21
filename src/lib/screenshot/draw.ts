@@ -8,6 +8,7 @@
 
 import { blurSampleRect } from "./blurRect";
 import { maskBox, maskBrushWidth } from "./maskGeom";
+import { removeTiledWatermarkRegion } from "./dewarp";
 import type { Annotation } from "./types";
 
 /** 在给定 ctx 上描笔刷路径（与 pen 同一套贝塞尔平滑，否则快速拖动会成折线）。 */
@@ -152,6 +153,18 @@ function measureCtx(): CanvasRenderingContext2D | null {
   }
   return _measureCtx;
 }
+
+/* 去水印结果缓存。
+ *
+ * 为什么必须有：`removeTiledWatermarkRegion` 是 2D FFT + IFFT（纯 JS），而 drawAnnot
+ * 在**每次 redraw** 都会被调 —— 去完水印后再画任何标注，每一次 mousemove 都要
+ * 对整块区域重做一遍。平铺模式的 annotation 盖住整个选区（2560×1440 级别），
+ * 那是秒级开销——表现就是“点了去水印之后整个界面卡住”。
+ *
+ * 上限只给 3：每份是 bw×bh×4 字节，全屏一份就 ~14MB。截图窗关闭时整个 webview
+ * 被销毁（close_screenshot_window 走 window.close），模块状态随之死亡，不会跨会话泄漏。 */
+const _dewarpCache = new Map<string, HTMLCanvasElement>();
+const DEWARP_CACHE_MAX = 3;
 
 /** 能在它前面断开的字符：CJK / 假名 / 全角标点 / 谚文都可以逐字断。
  *  ⺀-鿿 已含 CJK 部首 / 假名 / 汉字，另加全角形式与谚文，三段就够了。
@@ -395,26 +408,21 @@ export function drawAnnot(
       break;
     }
     case "highlight": {
-      // 乘法混合而不是半透明。
-      //
-      // 旧实现用 globalAlpha = 0.35 盖一层色膜，叠三层就接近不透明色块，
-      // 把底下的文字糊死——而用户用荧光笔就是为了让那些文字更醒目。
-      // multiply：白底×黄 = 黄，黑字×黄 = 黑字，**文字始终可读**，
-      // 且叠加趋于饱和而不是越叠越黑。MDN 对 multiply 的描述就是“模拟透明彩色滤镜”。
-      //
-      // ❗ 调用方必须保证高亮**先于其他标注**绘制（见 ScreenshotOverlay 的分两轮）：
-      // multiply 会和“已经在画布上的东西”相乘，高亮盖到红框上会把红框染成橙色。
-      ctx.globalCompositeOperation = "multiply";
+      // 高亮 = 半透明强调色（source-over + globalAlpha），不是 multiply。
+      // 主流截图工具（微信/QQ/Snipaste/PixPin）一致：半透明色膜，底下内容始终可读——
+      // 这是「高亮（强调）」与「打码/马赛克/模糊（遮蔽）」的本质区别。
+      // multiply 的坑：深色（含色板近黑 #1f2937）会把白底乘深、黑字乘黑，
+      // 文字与底色一起消失 → 完全看不见后面内容（用户反馈）。
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = 0.4;
       if (a.shape === "brush" && a.points && a.points.length > 0) {
-        // 涂抹：直接描粗线即可（不需遮罩合成——高亮是纯色，
-        // 没有马赛克那种“网格必须全局对齐”的约束）。
-        // 笔宽走 maskBrushWidth（原本这里自己写了个 ×4，而马赛克/模糊用的是裸 a.width
-        // —— 同是“涂抹”却三种宽度，用户切工具就发现笔变细了）。
+        // 随轨迹描线（跟手）；笔宽走 maskBrushWidth 与马赛克/模糊一致
         strokeBrushPath(ctx, a.points, maskBrushWidth(a));
       } else {
         const b = maskBox(a);
         ctx.fillRect(b.x, b.y, b.w, b.h);
       }
+      // globalAlpha 由函数级 ctx.restore() 兜底恢复
       break;
     }
     case "mosaic": {
@@ -542,6 +550,64 @@ export function drawAnnot(
         });
       } else {
         paintBlur(ctx, box.x, box.y, box.w, box.h);
+      }
+      break;
+    }
+    case "dewarp": {
+      // 去水印（路线 A 轻量盲去水印）：盲水印检测 = 局部平滑背景估计 vs 原图差异。
+      // 平铺/半透明低密度水印（企业微信/钉钉/飞书）文字占少数像素，文字周围即非水印背景，
+      // 可作 inpaint 已知锚点；故先估背景、算 mask（只覆盖水印像素）、再 inpaint 重建。
+      // 之前整块 mask.fill(1) 会让 inpaint 无锚点直接卡死（rgba 原样返回 → 看起来没效果）。
+      const box = maskBox(a);
+      if (box.w < 1 || box.h < 1) break;
+      // strength 复用为边缘羽化半径（细/中/粗档 = 6/10/18，见 tools.tsx 的 DEWARP_LEVELS）
+      const feather = Math.max(0, a.strength ?? 10);
+      if (!baseImg) break; // 底图未就绪（选区确定后必到，这里只是防御）
+
+      const paintDewarp = (c: CanvasRenderingContext2D) => {
+        const bw = Math.max(1, Math.ceil(box.w));
+        const bh = Math.max(1, Math.ceil(box.h));
+        // 结果缓存：同一块区域 + 同一组参数只算一次。
+        // key 必须带 offX/offY 与 box：同一个 id 被移动/缩放后取的是底图另一块像素。
+        const key = `${a.id}|${offX},${offY}|${box.x},${box.y},${bw},${bh}|${feather}|${a.tiled ? 1 : 0}`;
+        const hit = _dewarpCache.get(key);
+        if (hit) {
+          c.drawImage(hit, 0, 0);
+          return;
+        }
+        const tmp = document.createElement("canvas");
+        tmp.width = bw;
+        tmp.height = bh;
+        const tctx = tmp.getContext("2d");
+        if (!tctx) return;
+        // 取底图 box 区域（源用底图绝对坐标，不依赖 c 当前变换）
+        tctx.drawImage(baseImg, offX + box.x, offY + box.y, bw, bh, 0, 0, bw, bh);
+        const id = tctx.getImageData(0, 0, bw, bh);
+        // 去水印（路线 A' 频域减回）：平铺模式频域提取周期层并逐像素减回
+        // （天然处理斜排、不误伤背景、不猜像素）；手动模式频域优先，无周期峰退回框内 inpaint 兜底。
+        removeTiledWatermarkRegion(id.data, bw, bh, {
+          tiled: !!a.tiled,
+          feather,
+          radius: 8,
+        });
+        tctx.putImageData(id, 0, 0);
+        if (_dewarpCache.size >= DEWARP_CACHE_MAX) {
+          // 丢最早插入的一份（Map 保证插入序）
+          const oldest = _dewarpCache.keys().next().value;
+          if (oldest !== undefined) _dewarpCache.delete(oldest);
+        }
+        _dewarpCache.set(key, tmp);
+        c.drawImage(tmp, 0, 0);
+      };
+
+      if (a.shape === "brush") {
+        // 离屏层原点在 box 左上，paintDewarp 直接 (0,0) 落回去即可
+        paintThroughBrushMask(ctx, a, box, paintDewarp);
+      } else {
+        ctx.save();
+        ctx.translate(box.x, box.y);
+        paintDewarp(ctx);
+        ctx.restore();
       }
       break;
     }

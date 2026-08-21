@@ -37,6 +37,7 @@ import {
   toScreenRect,
 } from "@/lib/screenshot/geometry";
 import type { Dir } from "@/lib/screenshot/geometry";
+import { hasPeriodicWatermark } from "@/lib/screenshot/dewarp";
 import {
   contrastInk,
   drawAnnot,
@@ -108,7 +109,7 @@ import { ResultActions } from "./ResultActions";
 import { ModePill } from "./ModePill";
 // 组件自身仍需要：COLORS 定初始颜色，TOOL_BY_KEY 供数字键切工具（快捷键不经过工具栏），
 // WIDTHS 把粗细档位换算成像素
-import { BLUR_LEVELS, COLORS, MOSAIC_LEVELS, TEXT_SIZES, TOOL_BY_KEY, WIDTHS } from "./tools";
+import { BLUR_LEVELS, COLORS, DEWARP_LEVELS, MOSAIC_LEVELS, TEXT_SIZES, TOOL_BY_KEY, WIDTHS } from "./tools";
 import { csvEscape, ocrToTable } from "@/lib/screenshot/ocrTable";
 import { detectSensitiveText } from "@/lib/screenshot/sensitive";
 import type {
@@ -171,6 +172,7 @@ export function ScreenshotOverlay() {
     mosaic: "brush",
     blur: "brush",
     highlight: "brush",
+    dewarp: "brush",
   });
   // 主栏尺寸实测：宽度随工具数量与按钮文案（完成 ✓ / 处理中…）变化，
   // 写死会让"右对齐选区右边缘"算错。初值是估算，首帧后按真实值修正。
@@ -557,6 +559,10 @@ export function ScreenshotOverlay() {
   // 旧值 12 / 10 在 2.5K 屏上看着粗（实测反馈）。
   const [mosaicStrength, setMosaicStrength] = useState(8);
   const [blurStrength, setBlurStrength] = useState(6);
+  /** 去水印边缘羽化半径（物理像素），复用 strength 语义；默认中档 10。 */
+  const [dewarpStrength, setDewarpStrength] = useState(10);
+  /** 去水印模式：平铺·自动（点画布整屏检测）/ 手动（拖拽选区局部）。默认平铺（企业微信主场景）。 */
+  const [dewarpMode, setDewarpMode] = useState<"manual" | "tile">("tile");
   const [strengthHint, setStrengthHint] = useState<string | null>(null);
   const strengthHintTimerRef = useRef<number | null>(null);
   const annotMoveRef = useRef<{
@@ -1585,6 +1591,65 @@ export function ScreenshotOverlay() {
     showToast(`已自动打码 ${els.length} 处`, true);
   }, [mosaicStrength, showToast]);
 
+  /* 去水印·平铺模式：检测整屏平铺周期 → 批量生成 dewarp 单元格 annotation（整批一次 undo）。
+   * 与自动打码同思路：动作型，点画布即执行（onAnnotMouseDown 拦截），整批一次入撤销栈。 */
+  const runDewatermarkTile = useCallback(() => {
+    const base = baseImgRef.current;
+    const r = selRef.current;
+    if (!base || !r) {
+      showToast("底图未就绪，请稍候再试", false);
+      return;
+    }
+    const bw = Math.max(1, Math.round(r.w));
+    const bh = Math.max(1, Math.round(r.h));
+    try {
+      const cv = document.createElement("canvas");
+      cv.width = bw;
+      cv.height = bh;
+      const cctx = cv.getContext("2d");
+      if (!cctx) {
+        showToast("画布不可用，无法去水印", false);
+        return;
+      }
+      cctx.drawImage(base, r.x, r.y, r.w, r.h, 0, 0, bw, bh);
+      const id = cctx.getImageData(0, 0, bw, bh);
+      /* 要重新标定阈值时，在这里插一行把真实频谱扫进剪贴板，必须放在检测 **之前**：
+       *   void invoke("copy_only", { text: probeSpectrum(id.data, bw, bh) });
+       * 工具在 @/lib/screenshot/dewarpProbe，平时不接入主流程：它要跑四轮 FFT，
+       * 848×939 选区实测 ~600ms，不能挂在每次点击上。 */
+      // 频域检测是否存在显著周期水印（2D FFT 天然处理斜排，比旧投影自相关轴对齐 MVP 更可靠）。
+      // 无显著周期峰 → 提示切手动（手动模式在框内局部去，不会误伤全图）。
+      if (!hasPeriodicWatermark(id.data, bw, bh)) {
+        showToast("未检测到平铺水印，请改用手动模式", false);
+        return;
+      }
+      const feather = dewarpStrength;
+      // 整屏平铺去水印 = 单个整选区 annotation。频域提取在 draw.ts 内整块完成。
+      // 整批一次 undo、一次渲染。
+      const el: Annotation = {
+        id: nextId(),
+        type: "dewarp",
+        color: "",
+        width: 0,
+        x: 0,
+        y: 0,
+        x2: bw,
+        y2: bh,
+        strength: feather,
+        shape: "rect",
+        tiled: true,
+      };
+      const prev = annotationsRef.current;
+      setUndoStack((u) => [...u, prev]);
+      setRedoStack([]);
+      setAnnotations([...prev, el]);
+      showToast("已整屏去水印", true);
+    } catch (e) {
+      logger.warn("去水印平铺检测失败", e);
+      showToast("去水印失败，请改用手动模式", false);
+    }
+  }, [showToast, dewarpStrength]);
+
   /* V5：操作结束统一入 undo（移动/缩放/删除共用：先把操作前的快照压栈） */
   const snapshotUndo = useCallback(() => {
     const snap = moveSnapshotRef.current;
@@ -2586,7 +2651,7 @@ export function ScreenshotOverlay() {
       text: tool === "number" ? String(nextNumber()) : undefined,
       size: tool === "number" ? fontPx : undefined,
       arrowStyle: tool === "arrow" ? arrowStyle : undefined,
-      strength: tool === "mosaic" ? mosaicStrength : tool === "blur" ? blurStrength : undefined,
+      strength: tool === "mosaic" ? mosaicStrength : tool === "blur" ? blurStrength : tool === "dewarp" ? dewarpStrength : undefined,
       shape: SHAPE_TOOLS.has(tool) ? maskShape : undefined,
     };
     if (tool === "number") {
@@ -3317,6 +3382,12 @@ export function ScreenshotOverlay() {
       };
       return;
     }
+    // 去水印·平铺模式：点击画布即整屏自动检测去水印（动作型，类似自动打码点即执行）。
+    // 手动模式不在此拦截，走下方 startDrawDraft 进入绘制态。
+    if (tool === "dewarp" && dewarpMode === "tile") {
+      runDewatermarkTile();
+      return;
+    }
     // ⑤ 标注与文字识别共存：字层 pointer-events:none，mousedown 全收口到此处。
     // ⚠️ 分流只在「默认中性工具 rect」下启用：用户显式切到模糊/马赛克/高亮/文字等
     // 任何工具 = 明确绘制意图，落字也直接画标注——否则「模糊」涂抹在文字上会被
@@ -3413,6 +3484,9 @@ export function ScreenshotOverlay() {
     // 判断条件用 `d.points` 而不是 `d.type === "pen"`：涂抹形态的马赛克/模糊/高亮
     // 类型不是 pen，但同样需要采点——按 type 判断会让它们退化成只记起止点的拖框。
     if (d.points) {
+      // 高亮也是随轨迹采点（draw.ts 用 strokeBrushPath 描线）——不做“马克笔直条”，
+      // 直条把整行盖成色块、深色下看不见内容（用户反馈），描线才始终可读。
+      // 马赛克/模糊/高亮都是自由涂抹，跟手。
       d.points = [...d.points, [px, py]];
       // 包围盒跟着长：命中检测与选中框都用 x/y/x2/y2
       d.x = Math.min(d.x, px);
@@ -3615,6 +3689,14 @@ export function ScreenshotOverlay() {
         setBlurStrength((v) => {
           const nv = Math.max(1, Math.min(40, v + delta));
           showHint(`模糊半径：${nv}px`);
+          return nv;
+        });
+      } else if (tool === "dewarp") {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -1 : 1;
+        setDewarpStrength((v) => {
+          const nv = Math.max(2, Math.min(40, v + delta));
+          showHint(`去水印羽化：${nv}px`);
           return nv;
         });
       }
@@ -4344,14 +4426,6 @@ export function ScreenshotOverlay() {
             void runExit("贴图", pinImageAt);
           }}
           onAi={onAiButton}
-          // 自动打码「预览式」确认条：由工具栏渲染并锚定「自动打码」按钮上方
-          maskOn={maskPreview !== null}
-          maskActive={maskPreview?.filter((b) => !b.excluded).length ?? 0}
-          onApplyMasks={applyMasks}
-          onCancelMasks={() => {
-            setMaskPreview(null);
-            maskPreviewRef.current = null;
-          }}
           // 写着"取消"就该是取消这次截图（微信同款）。
           // "退回选区"留给 Esc / 右键 —— 那两个才是"后退一步"的通用心智。
           onCancel={close}
@@ -4404,26 +4478,62 @@ export function ScreenshotOverlay() {
           showArrow={tool === "arrow"}
           arrowStyle={arrowStyle}
           onSelectArrowStyle={setArrowStyle}
-          maskShape={SHAPE_TOOLS.has(tool) ? maskShape : undefined}
+          maskShape={tool === "dewarp" ? (dewarpMode === "manual" ? maskShape : undefined) : SHAPE_TOOLS.has(tool) ? maskShape : undefined}
           onSelectMaskShape={
             SHAPE_TOOLS.has(tool)
               ? (sp) => setMaskShapes((m) => ({ ...m, [tool]: sp }))
               : undefined
           }
+          dewarpMode={tool === "dewarp" ? dewarpMode : undefined}
+          onSelectDewarpMode={tool === "dewarp" ? setDewarpMode : undefined}
+          // 马赛克「模式」分段：马赛克 / 模糊 / 自动打码 收进同一工具。
+          //   - tool 为 mosaic / blur 时显示，高亮复用 tool 本身；
+          //   - 自动打码预览打开期间强制保持可见（确认条锚点不因切工具消失）。
+          // onSelectMaskMode 直接复用 onSelectTool：马赛克/模糊=setTool，自动打码=动作。
+          maskMode={
+            tool === "mosaic" || tool === "blur" || maskPreview !== null
+              ? tool === "mosaic" || tool === "blur"
+                ? tool
+                : "mosaic"
+              : undefined
+          }
+          onSelectMaskMode={onSelectTool}
+          discoverAutomask={discoverTools.includes("automask")}
+          maskOn={maskPreview !== null}
+          maskActive={maskPreview?.filter((b) => !b.excluded).length ?? 0}
+          onApplyMasks={applyMasks}
+          onCancelMasks={() => {
+            setMaskPreview(null);
+            maskPreviewRef.current = null;
+          }}
           textSizeId={TEXT_SIZE_TOOLS.has(tool) ? textSizeId : undefined}
           onSelectTextSize={TEXT_SIZE_TOOLS.has(tool) ? setTextSizeId : undefined}
           strengthLevels={
-            tool === "mosaic" ? MOSAIC_LEVELS : tool === "blur" ? BLUR_LEVELS : undefined
+            tool === "mosaic"
+              ? MOSAIC_LEVELS
+              : tool === "blur"
+                ? BLUR_LEVELS
+                : tool === "dewarp"
+                  ? DEWARP_LEVELS
+                  : undefined
           }
           strengthValue={
-            tool === "mosaic" ? mosaicStrength : tool === "blur" ? blurStrength : undefined
+            tool === "mosaic"
+              ? mosaicStrength
+              : tool === "blur"
+                ? blurStrength
+                : tool === "dewarp"
+                  ? dewarpStrength
+                  : undefined
           }
           onSelectStrength={
             tool === "mosaic"
               ? setMosaicStrength
               : tool === "blur"
                 ? setBlurStrength
-                : undefined
+                : tool === "dewarp"
+                  ? setDewarpStrength
+                  : undefined
           }
         />
       )}
@@ -4790,16 +4900,17 @@ const ATTR_TOOLS = new Set<ToolId>([
   // 橡皮擦（= 删除）也要属性条：真橡皮擦的半径就是它的粗细档位，
   // 不给调节路径就只能“要么擦不准、要么擦太多”。
   "eraser",
+  "dewarp",
 ]);
 /** 不用颜色的工具（属性条上隐藏整个颜色组） */
-const NO_COLOR_TOOLS = new Set<ToolId>(["mosaic", "blur", "eraser"]);
+const NO_COLOR_TOOLS = new Set<ToolId>(["mosaic", "blur", "eraser", "dewarp"]);
 /** 线宽对哪些工具有意义。
  *
  *  橡皮擦（= 删除）也加进来了：真橡皮擦靠半径判定要擦掉哪几个采样点，
  *  半径不可调就只能“要么擦不准、要么擦太多”。 */
 const WIDTH_TOOLS = new Set<ToolId>(["rect", "ellipse", "arrow", "pen", "eraser"]);
 /** 支持“矩形 / 涂抹”形状切换的遮罩类工具 */
-const SHAPE_TOOLS = new Set<ToolId>(["mosaic", "blur", "highlight"]);
+const SHAPE_TOOLS = new Set<ToolId>(["mosaic", "blur", "highlight", "dewarp"]);
 /** 用字号而不是线宽的工具 */
 const TEXT_SIZE_TOOLS = new Set<ToolId>(["text", "number"]);
 /** 橡皮半径：把线宽档位放大。

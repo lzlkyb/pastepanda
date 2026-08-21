@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>截图·去水印工具 设计稿（路线A + 平铺自动检测·零框选）</title>
+<style>
+  /* ===== 复刻 src/styles/screenshot.css 的真实样式变量与类 ===== */
+  :root{ --hover:#0F1F35; --text-muted:#9DB2D0; --accent-from:#3B9EFF; --accent-to:#6D5CF0; }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:#0b1020;color:#C9D6EA;}
+  .note{position:fixed;top:14px;left:50%;transform:translateX(-50%);max-width:1000px;width:calc(100% - 40px);
+    background:rgba(20,28,48,.9);border:1px solid rgba(125,140,255,.3);border-radius:10px;padding:10px 14px;
+    font-size:12px;line-height:1.6;color:#9DB2D0;z-index:50;}
+  .note b{color:#cfe;}
+  .stage{position:relative;width:100%;min-height:100vh;padding-top:128px;display:flex;flex-direction:column;align-items:center;gap:20px;}
+
+  /* 示例画布：模拟企业微信聊天截图（白底 + 全屏斜排半透明平铺水印） */
+  .shot-canvas{position:relative;width:780px;height:440px;border-radius:10px;overflow:hidden;
+    background:#f4f5f7;box-shadow:0 10px 40px rgba(0,0,0,.5);}
+  .shot-canvas .chat{position:absolute;inset:0;padding:18px 22px;}
+  .shot-canvas .chat .name{font-size:13px;font-weight:700;color:#1f2937;margin-bottom:10px;}
+  .bubble{display:inline-block;max-width:62%;padding:9px 12px;border-radius:10px;margin:7px 0;font-size:13px;line-height:1.5;}
+  .bubble.me{background:#95ec69;color:#1f2937;margin-left:auto;display:block;}
+  .bubble.them{background:#fff;color:#1f2937;border:1px solid #e5e7eb;}
+  /* 平铺水印层：多个半透明斜排 cell 覆盖全屏 */
+  .wm-grid{position:absolute;inset:0;pointer-events:none;transition:opacity .55s ease;}
+  .wm-cell{position:absolute;font-size:15px;font-weight:600;letter-spacing:1px;color:rgba(30,41,59,.10);
+    white-space:nowrap;transform:rotate(-24deg);transform-origin:left top;user-select:none;}
+  .shot-canvas.done .wm-grid{opacity:0;}
+
+  /* 自动检测到的平铺周期网格（淡蓝虚线，演示检测可视化） */
+  .detect-grid{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .25s ease;z-index:4;}
+  .shot-canvas.detecting .detect-grid{opacity:1;}
+  .detect-grid .dc{position:absolute;border:1px dashed rgba(59,158,255,.55);border-radius:4px;
+    background:rgba(59,158,255,.06);}
+  .scan-tag{position:absolute;top:8px;left:50%;transform:translateX(-50%);font-size:11px;color:#fff;
+    background:rgba(59,158,255,.92);padding:3px 10px;border-radius:6px;opacity:0;transition:opacity .2s;z-index:6;
+    white-space:nowrap;box-shadow:0 2px 8px rgba(59,158,255,.5);}
+  .shot-canvas.detecting .scan-tag{opacity:1;}
+
+  /* 选区框（复刻 .sel-rect：3px 蓝 outline，仅手动模式出现） */
+  .sel-rect{position:absolute;border:3px solid var(--accent-from);border-radius:4px;
+    box-shadow:0 0 0 1px rgba(0,0,0,.55),0 0 8px rgba(59,158,255,.4);outline:3px solid var(--accent-from);}
+  .sel-rect .tag{position:absolute;top:-22px;left:0;font-size:10px;background:var(--accent-from);color:#fff;
+    padding:1px 6px;border-radius:4px;white-space:nowrap;}
+
+  /* ===== 工具栏（复刻 .annot-toolbar） ===== */
+  .annot-toolbar{position:relative;display:flex;align-items:center;gap:2px;padding:5px 7px;border-radius:12px;
+    background:rgba(34,41,76,.94);backdrop-filter:blur(12px);box-shadow:0 6px 24px rgba(0,0,0,.45);
+    border:1px solid rgba(255,255,255,.06);}
+  .tool{min-width:38px;height:42px;border-radius:8px;padding:0 3px;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:2px;cursor:pointer;border:1px solid transparent;color:#C9D6EA;}
+  .tool .ic{display:flex;}
+  .tool .ic svg{width:17px;height:17px;display:block;}
+  .tool .lb{font-size:9px;line-height:1;letter-spacing:.2px;opacity:.72;}
+  .tool:hover{background:var(--hover);}
+  .tool:hover .lb{opacity:1;}
+  .tool.on{background:linear-gradient(135deg,#3B9EFF,#6D5CF0);border-color:rgba(255,255,255,.4);color:#fff;}
+  .tool.on .lb{opacity:1;}
+  .tool.dim{color:var(--text-muted);}
+  .tool.longshot{color:#8CC5FF;}
+  .tool.ocr-btn{color:#7DE0C4;}
+  .tool.exit-save{color:#A5C8FF;}
+  .tool.exit-pin{color:#F9A8D4;}
+  .tool.exit-ai{color:#A8DEFF;}
+  .tool.exit-ai .lb{opacity:1;font-weight:700;}
+  .tool.done-btn,.tool.cancel-btn,.tool.more-btn{flex-direction:row;min-width:0;height:34px;padding:0 12px;font-size:12px;}
+  .tool.done-btn{font-weight:600;color:#fff;background:linear-gradient(135deg,#6366F1,#3B9EFF);
+    border:1px solid rgba(255,255,255,.25);box-shadow:0 2px 10px rgba(99,102,241,.4);}
+  .tool.done-btn:hover{filter:brightness(1.12);}
+  .tool.cancel-btn{color:var(--text-muted);}
+  .tool.more-btn{color:#9DB2D0;}
+  .tsep{width:1px;height:24px;margin:0 5px;background:linear-gradient(180deg,transparent,rgba(125,140,255,.5),transparent);}
+  .pair-sep{width:1px;height:20px;margin:0 2px;background:rgba(157,178,208,.3);}
+
+  /* ===== 属性条（复刻 .attr-bar，去水印激活态 + 平铺自动检测模式） ===== */
+  .attr-bar{position:relative;display:flex;align-items:center;gap:1px;padding:4px 9px;border-radius:10px;
+    background:rgba(15,23,42,.96);border:1px solid rgba(255,255,255,.06);box-shadow:0 6px 20px rgba(0,0,0,.4);}
+  .attr-bar .albl{font-size:10px;color:#6E82A4;margin:0 5px 0 2px;}
+  .attr-bar .aval{font-size:10px;color:#8FA3C4;margin-left:4px;font-variant-numeric:tabular-nums;min-width:30px;}
+  .attr-bar .asep{width:1px;height:16px;margin:0 7px;background:linear-gradient(180deg,transparent,rgba(125,140,255,.45),transparent);}
+  .wpick{height:24px;padding:0 8px;border-radius:6px;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;color:#C9D6EA;font-size:10.5px;gap:3px;}
+  .wpick svg{width:15px;height:15px;display:block;}
+  .wpick:hover{background:rgba(148,168,255,.14);}
+  .wpick.on{background:rgba(59,158,255,.28);color:#fff;}
+  .attr-group.hide{display:none;}
+
+  /* 前后对比 */
+  .compare{display:flex;gap:18px;align-items:flex-end;}
+  .compare figure{margin:0;text-align:center;}
+  .compare .ph{width:240px;height:140px;border-radius:8px;position:relative;overflow:hidden;background:#f4f5f7;
+    box-shadow:0 6px 20px rgba(0,0,0,.4);}
+  .compare .ph .wm-grid{position:absolute;inset:0;}
+  .compare .ph .wm-cell{position:absolute;font-size:11px;font-weight:600;color:rgba(30,41,59,.12);
+    white-space:nowrap;transform:rotate(-24deg);transform-origin:left top;}
+  .compare .ph.after .wm-grid{opacity:0;}
+  .compare figcaption{font-size:11px;color:#9DB2D0;margin-top:6px;}
+
+  .hint{font-size:11px;color:#6E82A4;max-width:780px;text-align:center;line-height:1.7;}
+  .btn-row{display:flex;gap:10px;}
+  .btn{background:linear-gradient(135deg,#6366F1,#3B9EFF);color:#fff;border:none;border-radius:8px;
+    padding:8px 16px;font-size:12px;cursor:pointer;box-shadow:0 2px 10px rgba(99,102,241,.4);}
+  .btn:hover{filter:brightness(1.1);}
+  .btn.ghost{background:transparent;border:1px solid rgba(157,178,208,.4);color:#9DB2D0;box-shadow:none;}
+</style>
+</head>
+<body>
+<div class="note">
+  <b>设计稿 · 截图「去水印」工具（路线 A 前端轻量 inpaint · 平铺自动检测·零框选）</b><br/>
+  复刻真实组件：<b>AnnotToolbar.tsx</b> + <b>AttrBar.tsx</b> + <b>screenshot.css</b>。
+  企业微信这类<b>全屏平铺半透明水印</b> = 路线 A 最擅长类型。本次升级为<b>「平铺自动检测」</b>：
+  默认平铺模式，<b>零框选</b>——用户选「去水印」后直接点「自动检测整屏去水印」，算法用 2D FFT/自相关
+  自动估计平铺周期（横/纵间距 + 旋转角）→ 整屏批量 inpaint、进撤销栈。手动模式保留给单块 logo/不规则水印。点按钮看演示。
+</div>
+
+<div class="stage">
+  <!-- 示例画布：企业微信聊天 + 全屏平铺水印 -->
+  <div class="shot-canvas" id="canvas">
+    <div class="chat">
+      <div class="name">张伟（产品部）</div>
+      <div class="bubble them">下午的评审会改到 3 点，会议室 B-207</div>
+      <div class="bubble me">收到，我把原型链接发你</div>
+      <div class="bubble them">好的，顺便把上周的数据也带上</div>
+      <div class="bubble me">没问题，10 分钟整理完</div>
+      <div class="bubble them">👍 记得标注来源</div>
+    </div>
+    <!-- 平铺水印：姓名+手机+日期，斜排，全屏重复 -->
+    <div class="wm-grid" id="wmGrid"></div>
+    <!-- 自动检测到的平铺周期单元：演示算法检测结果可视化 -->
+    <div class="detect-grid" id="detectGrid"></div>
+    <div class="scan-tag" id="scanTag">检测平铺周期…</div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn" id="applyAuto">自动检测整屏去水印（演示）</button>
+    <button class="btn ghost" id="reset">重置</button>
+  </div>
+
+  <!-- 属性条：去水印激活态 -->
+  <div class="attr-bar">
+    <span class="albl">模式</span>
+    <span class="wpick" data-mode="manual">手动</span>
+    <span class="wpick on" data-mode="tile">平铺·自动</span>
+    <span class="asep" data-grp="shape"></span>
+    <span class="albl" data-grp="shape">形状</span>
+    <span class="wpick" data-shape="brush" data-grp="shape" title="涂抹·刷过水印">涂抹</span>
+    <span class="wpick" data-shape="rect" data-grp="shape" title="矩形·拖出一块区域">矩形</span>
+    <span class="asep"></span>
+    <span class="albl">强度</span>
+    <span class="wpick" data-str="5">细</span>
+    <span class="wpick on" data-str="10">中</span>
+    <span class="wpick" data-str="18">粗</span>
+    <span class="aval" id="aval">10px</span>
+  </div>
+
+  <!-- 工具栏：复刻真实主栏，去水印为新增高亮项 -->
+  <div class="annot-toolbar">
+    <div class="tool on"><span class="ic">▭</span><span class="lb">矩形</span></div>
+    <div class="tool"><span class="ic">◯</span><span class="lb">椭圆</span></div>
+    <div class="tool"><span class="ic">➤</span><span class="lb">箭头</span></div>
+    <div class="tool"><span class="ic">✎</span><span class="lb">画笔</span></div>
+    <div class="tool"><span class="ic">▰</span><span class="lb">高亮</span></div>
+    <div class="tool"><span class="ic">▦</span><span class="lb">马赛克</span></div>
+    <div class="tool"><span class="ic">💧</span><span class="lb">模糊</span></div>
+    <div class="tool on" style="background:linear-gradient(135deg,#3B9EFF,#6D5CF0);color:#fff;">
+      <span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3.2 12.8L9.6 6.4"/><path d="M11 2.6l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" fill="currentColor" stroke="none"/></svg></span>
+      <span class="lb">去水印</span>
+    </div>
+    <div class="tool"><span class="ic">🔒</span><span class="lb">自动打码</span></div>
+    <div class="tool"><span class="ic">T</span><span class="lb">文字</span></div>
+    <div class="tool"><span class="ic">①</span><span class="lb">序号</span></div>
+    <div class="tool"><span class="ic">⌫</span><span class="lb">橡皮擦</span></div>
+    <div class="tsep"></div>
+    <div class="tool dim"><span class="ic">↶</span><span class="lb">撤销</span></div>
+    <div class="tool dim"><span class="ic">↷</span><span class="lb">重做</span></div>
+    <div class="tsep"></div>
+    <div class="tool longshot"><span class="ic">⤓</span><span class="lb">长截图</span></div>
+    <div class="tool ocr-btn"><span class="ic">📄</span><span class="lb">取文字</span></div>
+    <div class="tsep"></div>
+    <div class="tool exit-save"><span class="ic">⤓</span><span class="lb">保存</span></div>
+    <div class="tool exit-pin"><span class="ic">📌</span><span class="lb">贴图</span></div>
+    <div class="tool exit-ai"><span class="ic">✦</span><span class="lb">AI</span></div>
+    <div class="tool more-btn">更多 ⋯</div>
+    <div class="tsep"></div>
+    <div class="tool cancel-btn">✕ 取消</div>
+    <span class="pair-sep"></span>
+    <div class="tool done-btn">完成 ✓</div>
+  </div>
+
+  <!-- 前后对比 -->
+  <div class="compare">
+    <figure><div class="ph before"><div class="wm-grid" id="cmpBefore"></div></div><figcaption>去水印前（平铺）</figcaption></figure>
+    <figure><div class="ph after"><div class="wm-grid" id="cmpAfter"></div></div><figcaption>去水印后（整屏重建）</figcaption></figure>
+  </div>
+
+  <div class="hint">
+    <b>流程</b>：选「去水印」→ 模式默认「平铺·自动」→ 点「自动检测整屏去水印」→ 算法用 FFT/自相关估计平铺周期（横/纵间距 + 旋转角）→ 整屏批量 inpaint、进撤销栈、可一键撤销。<br/>
+    <b>手动模式</b>：切换到「手动」后属性条出现「形状（涂抹/矩形）」，用于单块 logo / 不规则水印的局部涂抹去除。<br/>
+    企业微信/钉钉/飞书这类<b>半透明·规则·低密度</b>平铺水印 = 路线 A 最干净；压在深色小字上的极淡痕属已知上限（要完美需路线 C 的 LaMa）。
+  </div>
+</div>
+
+<script>
+  // 生成平铺水印 cell（模拟企业微信：姓名+手机+日期，斜排重复）
+  const TXT=['张伟 138****6621 08-20','李娜 139****0043 08-20','王芳 137****8890 08-20'];
+  function fillGrid(el){
+    if(!el || el.dataset.filled) return; el.dataset.filled='1';
+    const W=el.clientWidth||780, H=el.clientHeight||440;
+    const stepX=190, stepY=120;
+    let i=0;
+    for(let y=-40;y<H;y+=stepY){
+      for(let x=-20;x<W;x+=stepX){
+        const c=document.createElement('span');
+        c.className='wm-cell';
+        c.textContent=TXT[i%TXT.length]; i++;
+        c.style.left=x+'px'; c.style.top=y+'px';
+        el.appendChild(c);
+      }
+    }
+  }
+  fillGrid(document.getElementById('wmGrid'));
+  fillGrid(document.getElementById('cmpBefore'));
+  fillGrid(document.getElementById('cmpAfter'));
+
+  // 自动检测网格可视化（模拟 FFT 检测到的平铺周期单元）
+  function fillDetect(el){
+    if(!el || el.dataset.filled) return; el.dataset.filled='1';
+    const W=el.clientWidth||780, H=el.clientHeight||440;
+    const stepX=190, stepY=120;
+    for(let y=-40;y<H;y+=stepY){
+      for(let x=-20;x<W;x+=stepX){
+        const d=document.createElement('div');
+        d.className='dc';
+        d.style.left=(x-2)+'px'; d.style.top=(y-2)+'px';
+        d.style.width='170px'; d.style.height='60px';
+        el.appendChild(d);
+      }
+    }
+  }
+  fillDetect(document.getElementById('detectGrid'));
+
+  // 属性条交互
+  const grp=(sel)=>[...document.querySelectorAll(sel)];
+  // 模式联动：平铺模式隐藏形状组
+  function applyMode(mode){
+    const shapeEls=grp('[data-grp="shape"]');
+    if(mode==='tile'){ shapeEls.forEach(e=>e.classList.add('hide')); }
+    else { shapeEls.forEach(e=>e.classList.remove('hide')); }
+  }
+  grp('.attr-bar .wpick[data-mode]').forEach(el=>el.onclick=()=>{
+    grp('.attr-bar .wpick[data-mode]').forEach(x=>x.classList.remove('on'));el.classList.add('on');
+    applyMode(el.dataset.mode);
+  });
+  grp('.attr-bar .wpick[data-shape]').forEach(el=>el.onclick=()=>{grp('.attr-bar .wpick[data-shape]').forEach(x=>x.classList.remove('on'));el.classList.add('on');});
+  const strEls=grp('.attr-bar .wpick[data-str]'); const aval=document.getElementById('aval');
+  strEls.forEach(el=>el.onclick=()=>{strEls.forEach(x=>x.classList.remove('on'));el.classList.add('on');aval.textContent=el.dataset.str+'px';});
+
+  // 应用演示：先显示检测网格，再整屏水印淡出
+  const canvas=document.getElementById('canvas');
+  const apply=document.getElementById('applyAuto');
+  const reset=document.getElementById('reset');
+  let busy=false;
+  apply.onclick=()=>{
+    if(busy) return; busy=true;
+    canvas.classList.add('detecting');           // 显示检测到的平铺周期
+    apply.textContent='检测平铺周期…'; apply.disabled=true;
+    setTimeout(()=>{
+      canvas.classList.remove('detecting');
+      canvas.classList.add('done');               // 整屏水印淡出
+      apply.textContent='已整屏去除 · 可撤销（演示）';
+      setTimeout(()=>{apply.textContent='自动检测整屏去水印（演示）';apply.disabled=false;busy=false;},900);
+    },650);
+  };
+  reset.onclick=()=>{canvas.classList.remove('done','detecting');};
+</script>
+</body>
+</html>

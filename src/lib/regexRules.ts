@@ -45,6 +45,51 @@ let _initialized = false;
 export function _resetCache(): void {
   _cache = null;
   _initialized = false;
+  notifyRulesChanged();
+}
+
+// ===== 变更通知 =====
+
+/** 规则版本号：每次写入自增。
+ *
+ *  为什么需要它：_cache 是模块级可变数组、写入是原地改的，而读取方
+ *  （卡片右键菜单的「正则替换」子菜单）把 getEnabledRules() 的结果放进了 useMemo。
+ *  以前写入不通知任何人，于是在「管理正则规则…」里加/删/启停规则之后，
+ *  右键菜单还是旧的一份，要等别的原因触发卡片重渲染才刷新 —— 用户会以为没保存上。 */
+let _version = 0;
+const _subscribers = new Set<() => void>();
+
+/** 「已启用规则」的派生缓存。
+ *
+ *  必须返回**稳定引用**：调用方（卡片）用 useSyncExternalStore 订阅它，
+ *  每次调用都造新数组的话 React 会判定快照一直在变而无限重渲染
+ *  （"The result of getSnapshot should be cached"）。由 notifyRulesChanged 统一失效。 */
+let _enabledCache: RegexRule[] | null = null;
+
+/** 当前规则版本号。配合 subscribeRules 供 useSyncExternalStore 使用。 */
+export function getRulesVersion(): number {
+  return _version;
+}
+
+/** 订阅规则变更，返回退订函数。 */
+export function subscribeRules(fn: () => void): () => void {
+  _subscribers.add(fn);
+  return () => {
+    _subscribers.delete(fn);
+  };
+}
+
+/** 自增版本、失效派生缓存并通知订阅者。单个订阅者抛错不能拖垮其余订阅者。 */
+function notifyRulesChanged(): void {
+  _version++;
+  _enabledCache = null;
+  _subscribers.forEach((fn) => {
+    try {
+      fn();
+    } catch (e) {
+      logger.warn("正则规则变更通知失败", e);
+    }
+  });
 }
 
 /** 构建默认规则列表（预设 + 空自定义） */
@@ -52,12 +97,18 @@ function buildDefaults(): RegexRule[] {
   return PRESET_RULES.map((r, i) => ({ ...r, sort_order: i }));
 }
 
-/** 持久化当前缓存到 SQLite（fire-and-forget） */
-function persistAsync(): void {
+/**
+ * 改完 _cache 之后的统一提交：落盘 + 通知订阅者。
+ *
+ * ⚠️ 任何改动 _cache 的地方，改完只准调这一个函数。少调其中一步（比如只落盘不通知）
+ * 界面就会停在旧规则上，而这种不一致不会有任何报错 —— 上一次的缺陷正是这么来的。
+ */
+function commitRules(): void {
   if (!_cache) return;
   invoke("save_regex_rules", { rules: _cache }).catch((e) => {
     logger.warn("正则规则持久化失败", e);
   });
+  notifyRulesChanged();
 }
 
 /**
@@ -97,6 +148,9 @@ export async function initRegexRules(): Promise<void> {
   }
 
   _initialized = true;
+  // 加载完也要通知：在 init 完成之前渲染的界面拿到的是 buildDefaults() 的默认值
+  // （getAllRules 在 _cache 为空时会回退到它），不通知就会一直停在默认规则上。
+  notifyRulesChanged();
 }
 
 /** 从 localStorage 迁移旧数据 */
@@ -143,9 +197,11 @@ export function getAllRules(): RegexRule[] {
   return _cache ? [..._cache] : buildDefaults();
 }
 
-/** 获取已启用的规则（用于菜单展示） */
+/** 获取已启用的规则（用于菜单展示）。
+ *  返回的是共享只读快照（引用稳定，见 _enabledCache），调用方不要就地修改。 */
 export function getEnabledRules(): RegexRule[] {
-  return getAllRules().filter((r) => r.enabled);
+  if (!_enabledCache) _enabledCache = getAllRules().filter((r) => r.enabled);
+  return _enabledCache;
 }
 
 // ===== 写入 API（同步更新缓存 + 异步持久化） =====
@@ -156,7 +212,7 @@ export function togglePresetRule(id: string): void {
   const idx = _cache.findIndex((r) => r.id === id);
   if (idx >= 0) {
     _cache[idx] = { ..._cache[idx], enabled: !_cache[idx].enabled };
-    persistAsync();
+    commitRules();
   }
 }
 
@@ -171,7 +227,7 @@ export function addCustomRule(rule: Omit<RegexRule, "id" | "preset">): RegexRule
 
   if (_cache) {
     _cache.push(newRule);
-    persistAsync();
+    commitRules();
   }
   return newRule;
 }
@@ -182,7 +238,7 @@ export function updateCustomRule(id: string, patch: Partial<Omit<RegexRule, "id"
   const idx = _cache.findIndex((r) => r.id === id);
   if (idx >= 0) {
     _cache[idx] = { ..._cache[idx], ...patch };
-    persistAsync();
+    commitRules();
   }
 }
 
@@ -190,7 +246,7 @@ export function updateCustomRule(id: string, patch: Partial<Omit<RegexRule, "id"
 export function deleteCustomRule(id: string): void {
   if (!_cache) return;
   _cache = _cache.filter((r) => r.id !== id);
-  persistAsync();
+  commitRules();
 }
 
 /** 切换自定义规则启用状态 */
@@ -199,7 +255,7 @@ export function toggleCustomRule(id: string): void {
   const idx = _cache.findIndex((r) => r.id === id);
   if (idx >= 0) {
     _cache[idx] = { ..._cache[idx], enabled: !_cache[idx].enabled };
-    persistAsync();
+    commitRules();
   }
 }
 
@@ -342,5 +398,5 @@ export function saveCustomRules(rules: RegexRule[]): void {
   if (!_cache) return;
   const presets = _cache.filter((r) => r.preset);
   _cache = [...presets, ...rules.map((r, i) => ({ ...r, preset: false, sort_order: presets.length + i }))];
-  persistAsync();
+  commitRules();
 }

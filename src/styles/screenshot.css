@@ -329,6 +329,10 @@ body {
 .wpick:hover { background: rgba(148, 168, 255, 0.14); }
 .wpick.on { background: rgba(59, 158, 255, 0.28); color: #fff; }
 .wpick svg { width: 15px; height: 15px; display: block; }
+/* 文字型控件（模式：手动/平铺·自动；强度：细/中/粗；字号：大/中/小）：
+ * .wpick 基础宽度写死 24px 是给图标的方形热区，文字塞进去会溢出重叠。
+ * 文字型改用自适应宽度，保留 24px 最小热区、左右内边距让文案不贴边。 */
+.wpick.txt { width: auto; min-width: 24px; padding: 0 7px; }
 .wdot { border-radius: 50%; background: currentColor; display: block; }
 
 /* 已删：.toolbar-select / .toolbar-annot 两条死规则。JSX 里从来没有这两个类名，
@@ -1048,14 +1052,13 @@ body {
   white-space: nowrap;
 }
 /* ===== 自动打码「预览式」确认条 =====
-   锚定「自动打码」按钮正上方弹出（反馈与触发同可见性域：点完按钮视线零移动）。
-   竖排标题 + 按钮，不压工具栏；工具栏翻转时按钮位置随之移动，弹层天然跟随。
-   z-index 只在工具栏上下文内生效（工具栏 z-index:30 高于选区预览框 15），
-   且与底部 .shot-toast(70) 位置不重叠，无需再与全局条带打架。 */
-.mask-btn-anchor { position: relative; }
+   锚定属性条里「自动打码」分段下方弹出（反馈与触发同可见性域：点完分段视线零移动）。
+   竖排标题 + 按钮，不压工具栏；属性条翻转（top-attached）时弹层翻到分段上方，天然跟随。
+   z-index 95 高于属性条(31)与选区预览框(15)，且与底部 .shot-toast(70) 位置不重叠。 */
+.attr-anchor { position: relative; }
 .mask-bar {
   position: absolute;
-  bottom: calc(100% + 10px);
+  top: calc(100% + 10px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 95;
@@ -1096,6 +1099,8 @@ body {
   color: #c9d6ea;
 }
 .mask-cancel:hover { background: rgba(255, 255, 255, 0.15); }
+/* 属性条翻转（above / inside：选区贴底时整组翻到选区上方）→ 确认条翻到分段上方 */
+.attr-bar.top-attached .mask-bar { top: auto; bottom: calc(100% + 10px); }
 
 /* ===== 贴图「预览即钉」：完成态半透明浮动预览 ===== */
 .pin-float {
@@ -1175,6 +1180,9 @@ body {
   0%, 100% { box-shadow: 0 0 0 0 rgba(125, 224, 196, 0); }
   50% { box-shadow: 0 0 0 3px rgba(125, 224, 196, 0.5), 0 0 14px rgba(125, 224, 196, 0.4); }
 }
+/* 自动打码收进属性栏后，首用脉冲改打在「自动打码」分段（.wpick）上：
+   复用同一套薄荷绿脉冲，只在马赛克 / 模糊属性栏出现，用过即停、不常驻。 */
+.attr-bar .wpick.discover { animation: tbDiscover 1.1s ease-in-out 3; }
 
 /* —— C · 状态变化“看这里” —— */
 /* OCR 完成：取文字按钮一次性 pulse（角标已由 tbBadgePop 弹出） */

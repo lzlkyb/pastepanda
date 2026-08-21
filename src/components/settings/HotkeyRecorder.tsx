@@ -10,10 +10,22 @@ function normalizeCombo(combo: string): string {
   return [...mods, ...keys].join("+");
 }
 
+/** 允许作为「单键」注册的全局快捷键白名单：全部是不参与文字输入的功能键/系统键。
+ *  Snipaste/PixPin 截图默认 F1 就是这个模型。裸字母/数字会劫持所有应用里的打字输入，
+ *  Delete/Home/方向键等编辑导航键会劫持系统功能——都不在白名单里，必须加 Ctrl/Alt/Win。 */
+const SAFE_SINGLE_KEYS = new Set([
+  "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12",
+  "f13", "f14", "f15", "f16", "f17", "f18", "f19", "f20", "f21", "f22", "f23", "f24",
+  "printscreen", "scrolllock", "pause",
+]);
+
 /** 将组合键格式化为易读形式：ctrl+shift+k → Ctrl + Shift + K */
 export function formatHotkey(combo: string): string {
   if (!combo || !combo.trim()) return "未设置";
-  const modLabels: Record<string, string> = { ctrl: "Ctrl", alt: "Alt", shift: "Shift", meta: "Win" };
+  const modLabels: Record<string, string> = {
+    ctrl: "Ctrl", alt: "Alt", shift: "Shift", meta: "Win",
+    printscreen: "PrtSc", scrolllock: "ScrollLock", pause: "Pause",
+  };
   return combo
     .split("+")
     .filter(Boolean)
@@ -28,7 +40,9 @@ export function formatHotkey(combo: string): string {
 
 /**
  * 快捷键录制器
- * - 必须包含修饰键（Ctrl/Alt/Win），避免劫持全局普通按键
+ * - 组合键必须包含修饰键（Ctrl/Alt/Win）之一；**单键仅限功能键白名单**
+ *   （F1-F24 / PrtSc / ScrollLock / Pause，见 SAFE_SINGLE_KEYS）——裸字母/数字/编辑导航键
+ *   会劫持全局输入或系统功能，一律拒绝
  * - Esc 退出录制（而非录成 esc 热键）
  * - taken 列表做冲突校验，冲突时拒绝并提示
  * - 捕获阶段只 preventDefault 不 stopPropagation，保证 ctrl+space 等能录到
@@ -102,10 +116,15 @@ export function HotkeyRecorder({ value, onChange, taken = [], allowClear = false
         mappedKey = keyMap[rawKey] || rawKey.toLowerCase();
       }
 
-      // 必须带修饰键（Ctrl/Alt/Win），否则录成单键会劫持全局正常输入
+      // 单键限制（方案 A）：允许「非字符功能键」单键（F1-F24 / PrtSc / ScrollLock / Pause），
+      // 它们不参与文字输入，全局注册安全（Snipaste/PixPin 截图默认 F1 同款模型）。
+      // 裸字母/数字/符号会劫持所有应用里的打字输入，编辑/导航键（Delete/Home/方向键/CapsLock 等）
+      // 会劫持系统功能——一律拒绝，必须加 Ctrl/Alt/Win。
       if (!parts.some((p) => p === "ctrl" || p === "alt" || p === "meta")) {
-        showHint("需要修饰键 Ctrl/Alt/Win");
-        return;
+        if (!SAFE_SINGLE_KEYS.has(mappedKey)) {
+          showHint("字母/数字单键会劫持输入 · 请加 Ctrl/Alt/Win 或选 F1-F24 / PrtSc");
+          return;
+        }
       }
 
       parts.push(mappedKey);

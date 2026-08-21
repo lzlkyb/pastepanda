@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>马赛克合并：模糊 + 自动打码进属性栏（方案 A 设计稿）</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0b1020; color: #e0e8f0;
+    font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    padding: 32px 40px 80px;
+  }
+  .page-title { font-size: 20px; font-weight: 700; letter-spacing: 0.3px; }
+  .page-sub { font-size: 12px; color: #8fa3c4; margin-top: 6px; line-height: 1.7; }
+  .sec { margin-top: 34px; }
+  .sec-title { font-size: 14px; font-weight: 700; color: #a8deff; margin-bottom: 6px; }
+  .sec-note { font-size: 11.5px; color: #8fa3c4; margin-bottom: 12px; line-height: 1.7; }
+  .badge {
+    display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 7px;
+    border-radius: 5px; margin-left: 8px; vertical-align: 2px;
+  }
+  .badge.now { background: rgba(148,168,255,.14); color: #9db2d0; }
+  .badge.new { background: rgba(59,158,255,.24); color: #7cc4ff; }
+
+  /* ===== 截图画布模拟 ===== */
+  .shot {
+    position: relative; width: 640px; height: 210px; border-radius: 12px;
+    overflow: hidden; background: #131a2e;
+    border: 1px solid rgba(99,102,241,.28);
+  }
+  .shot .sel {
+    position: absolute; left: 120px; top: 30px; width: 400px; height: 150px;
+    border: 1.5px solid rgba(59,158,255,.85); border-radius: 3px;
+  }
+  .shot .dim { position: absolute; inset: 0; background: rgba(5,8,16,.45); }
+
+  /* ===== 主工具栏（真实样式复制） ===== */
+  .annot-toolbar {
+    position: absolute; display: flex; align-items: center; gap: 2px;
+    padding: 5px 7px; border-radius: 12px;
+    background: linear-gradient(180deg, rgba(34,41,76,.94), rgba(16,21,40,.96));
+    border: 1px solid rgba(99,102,241,.4);
+    box-shadow: 0 12px 36px rgba(0,0,0,.45), inset 0 1px 0 rgba(148,168,255,.28);
+    white-space: nowrap; z-index: 30;
+  }
+  .tool {
+    min-width: 38px; height: 42px; border-radius: 8px; padding: 0 3px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    cursor: pointer; border: 1px solid transparent;
+    color: #e0e8f0; font-size: 12px; position: relative;
+  }
+  .tool .ic { display: flex; }
+  .tool .ic svg { width: 17px; height: 17px; display: block; }
+  .tool .lb { font-size: 9px; line-height: 1; letter-spacing: 0.2px; opacity: .72; }
+  .tool.on {
+    background: linear-gradient(135deg, #3B9EFF, #6D5CF0);
+    border-color: rgba(255,255,255,.4); color: #fff;
+    box-shadow: 0 2px 12px rgba(59,158,255,.5);
+  }
+  .tool.on .lb { opacity: 1; }
+  .tsep { width: 1px; height: 24px; margin: 0 5px;
+    background: linear-gradient(180deg, transparent, rgba(125,140,255,.45), transparent); }
+  .ghost-tool {
+    min-width: 38px; height: 42px; border-radius: 8px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    border: 1px dashed rgba(148,168,255,.35); color: #6e82a4;
+  }
+  .ghost-tool .lb { font-size: 9px; opacity: .8; }
+  .ghost-tool .x { font-size: 15px; line-height: 1; opacity: .7; }
+
+  /* ===== 属性栏（真实样式复制） ===== */
+  .attr-bar {
+    position: absolute; display: flex; align-items: center; gap: 1px;
+    padding: 4px 9px; border-radius: 10px; white-space: nowrap; z-index: 31;
+    background: rgba(15,23,42,.96); border: 1px solid rgba(148,168,255,.3);
+    box-shadow: 0 8px 24px rgba(0,0,0,.42);
+  }
+  .attr-bar .albl { font-size: 10px; color: #6e82a4; margin: 0 5px 0 2px; }
+  .attr-bar .aval { font-size: 10px; color: #8fa3c4; margin-left: 4px;
+    font-variant-numeric: tabular-nums; min-width: 30px; }
+  .attr-bar .asep { width: 1px; height: 16px; margin: 0 7px;
+    background: linear-gradient(180deg, transparent, rgba(125,140,255,.45), transparent); }
+  .wpick {
+    width: 24px; height: 24px; border-radius: 6px; position: relative;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: #c9d6ea; font-size: 10.5px;
+  }
+  .wpick:hover { background: rgba(148,168,255,.14); }
+  .wpick.on { background: rgba(59,158,255,.28); color: #fff; }
+  .wpick svg { width: 15px; height: 15px; display: block; }
+  .wpick.txt { width: auto; min-width: 24px; padding: 0 7px; }
+  .wpick.discover { animation: pulse 1.1s ease-in-out 3; }
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(59,158,255,.0); }
+    50% { box-shadow: 0 0 0 4px rgba(59,158,255,.45); }
+  }
+
+  /* ===== 自动打码确认条（挪到属性栏锚定版） ===== */
+  .attr-anchor { position: relative; }
+  .mask-bar {
+    position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+    z-index: 95; display: flex; flex-direction: column; align-items: center; gap: 7px;
+    padding: 9px 14px; border-radius: 12px;
+    background: rgba(14,20,38,.97); border: 1px solid rgba(124,108,255,.6);
+    box-shadow: 0 12px 32px rgba(0,0,0,.55), inset 0 1px 0 rgba(148,168,255,.25);
+    white-space: nowrap; animation: maskIn .16s ease;
+  }
+  @keyframes maskIn { from { opacity: 0; transform: translate(-50%, -6px); } to { opacity: 1; transform: translate(-50%, 0); } }
+  .mask-title { font-size: 12px; font-weight: 700; letter-spacing: .3px; color: #ffb86b; }
+  .mask-actions { display: flex; gap: 8px; }
+  .mask-bar button { font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 9px;
+    cursor: pointer; border: 1px solid rgba(255,255,255,.16); }
+  .mask-confirm { background: linear-gradient(135deg,#3b9eff,#6d5cf0); color: #fff;
+    border-color: rgba(255,255,255,.35) !important; }
+  .mask-cancel { background: rgba(255,255,255,.08); color: #c9d6ea; }
+
+  .row { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+  .card {
+    background: rgba(18,26,46,.6); border: 1px solid rgba(99,102,241,.22);
+    border-radius: 12px; padding: 14px; }
+  .card h4 { font-size: 12px; color: #a8deff; margin-bottom: 10px; }
+  .cap { font-size: 10.5px; color: #8fa3c4; margin-top: 8px; line-height: 1.7; }
+  .arrow { align-self: center; font-size: 22px; color: #5b6b8c; }
+  kbd { font-family: ui-monospace, Consolas, monospace; font-size: 10px;
+    background: rgba(148,168,255,.14); color: #9db2d0; border-radius: 4px; padding: 1px 5px; }
+</style>
+</head>
+<body>
+
+<div class="page-title">马赛克合并 · 把「模糊 / 自动打码」放进马赛克属性栏</div>
+<div class="page-sub">
+  方案 A（推荐）：主栏只留「马赛克」，属性栏最前面加「模式」分段：<b>马赛克｜模糊｜自动打码</b>。
+  点模糊 → 切到模糊工具（形状 / 强度档位跟着换，各自记忆）；点自动打码 → 直接执行（OCR 检测 → 预览确认条锚在分段下方）。
+  属性栏样式复用去水印「模式」分段（<code>.wpick.txt</code>），零新设计。
+</div>
+
+<!-- ================= 现状 ================= -->
+<div class="sec">
+  <div class="sec-title">① 现状 <span class="badge now">改动前</span></div>
+  <div class="sec-note">主栏三个独立按钮挤在一起；自动打码确认条锚在它自己的按钮上方。</div>
+  <div class="row">
+    <div class="shot" style="height:170px">
+      <div class="dim"></div>
+      <div class="sel" style="left:60px;top:26px;width:520px;height:118px"></div>
+      <div class="annot-toolbar" style="left:60px;top:152px">
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="11" height="9" rx="1.5"/></svg></span><span class="lb">矩形</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="8" cy="8" rx="5.75" ry="4.25"/></svg></span><span class="lb">椭圆</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 12.8L11 5"/><path d="M12.9 3.1L12.4 7.9L8.1 3.6Z" fill="currentColor" stroke="none"/></svg></span><span class="lb">箭头</span></div>
+        <div class="tool on"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="11" height="11" rx="1.2"/><path d="M2.5 2.5h3.7v3.7H2.5zM9.8 2.5h3.7v3.7H9.8zM6.2 6.2h3.6v3.6H6.2zM2.5 9.8h3.7v3.7H2.5zM9.8 9.8h3.7v3.7H9.8z" fill="currentColor" stroke="none" opacity="0.75"/></svg></span><span class="lb">马赛克</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.2C8 2.2 3.8 7 3.8 9.6a4.2 4.2 0 0 0 8.4 0C12.2 7 8 2.2 8 2.2z"/><path d="M6 9.8a2 2 0 0 0 2 2" opacity="0.6"/></svg></span><span class="lb">模糊</span></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.6" y="3.2" width="10.8" height="9.6" rx="1.4"/><rect x="4.4" y="6.6" width="7.2" height="2.6" rx="0.6" fill="currentColor" stroke="none" opacity="0.85"/></svg></span><span class="lb">自动打码</span></div>
+        <div class="tsep"></div>
+        <div class="tool"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3.8h10"/><path d="M8 3.8v8.4"/><path d="M5.8 12.2h4.4"/></svg></span><span class="lb">文字</span></div>
+      </div>
+      <div class="attr-bar" style="left:60px;top:200px">
+        <span class="albl">形状</span>
+        <span class="wpick on"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M2.6 11.6c2.2-4.4 4.2-6.2 6-5.4 1.8.8.6 3.4 2 4 1.4.6 2.4-.8 2.8-2"/></svg></span>
+        <span class="wpick"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="2.6" y="4" width="10.8" height="8" rx="1"/></svg></span>
+        <span class="asep"></span>
+        <span class="albl">强度</span>
+        <span class="wpick txt">细</span>
+        <span class="wpick txt on">中</span>
+        <span class="wpick txt">粗</span>
+        <span class="aval">8px</span>
+      </div>
+    </div>
+    <div class="card" style="max-width:300px">
+      <h4>问题</h4>
+      <div class="sec-note" style="margin:0">
+        ① 马赛克 / 模糊 / 自动打码 是三个独立按钮，遮档类功能被拆散，主栏拥挤；<br/>
+        ② 马赛克和模糊本质是同一交互（涂抹 / 拖框 + 强度），用户得记两个位置；<br/>
+        ③ 自动打码的「预览确认条」锚在主栏按钮上，与它的触发点同域，但按钮本身孤立。
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 方案 A ================= -->
+<div class="sec">
+  <div class="sec-title">② 方案 A · 主栏 <span class="badge new">合并后</span></div>
+  <div class="sec-note">「模糊」「自动打码」两个按钮从主栏消失（马赛克 <kbd>6</kbd> 保留；<kbd>7</kbd> 仍可切模糊）。虚线框 = 原按钮位置让出的空间，主栏变短。</div>
+  <div class="shot" style="height:150px">
+    <div class="dim"></div>
+    <div class="sel" style="left:60px;top:24px;width:520px;height:100px"></div>
+    <div class="annot-toolbar" style="left:60px;top:130px">
+      <div class="tool"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="11" height="9" rx="1.5"/></svg></span><span class="lb">矩形</span></div>
+      <div class="tool"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="8" cy="8" rx="5.75" ry="4.25"/></svg></span><span class="lb">椭圆</span></div>
+      <div class="tool"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 12.8L11 5"/><path d="M12.9 3.1L12.4 7.9L8.1 3.6Z" fill="currentColor" stroke="none"/></svg></span><span class="lb">箭头</span></div>
+      <div class="tool on"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="11" height="11" rx="1.2"/><path d="M2.5 2.5h3.7v3.7H2.5zM9.8 2.5h3.7v3.7H9.8zM6.2 6.2h3.6v3.6H6.2zM2.5 9.8h3.7v3.7H2.5zM9.8 9.8h3.7v3.7H9.8z" fill="currentColor" stroke="none" opacity="0.75"/></svg></span><span class="lb">马赛克</span></div>
+      <div class="ghost-tool"><span class="x">✕</span><span class="lb">模糊</span></div>
+      <div class="ghost-tool"><span class="x">✕</span><span class="lb">自动打码</span></div>
+      <div class="tsep"></div>
+      <div class="tool"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3.8h10"/><path d="M8 3.8v8.4"/><path d="M5.8 12.2h4.4"/></svg></span><span class="lb">文字</span></div>
+    </div>
+    <div class="attr-bar" style="left:60px;top:178px" id="ab">
+      <span class="albl">模式</span>
+      <span class="wpick txt on" data-mode="mosaic">马赛克</span>
+      <span class="wpick txt" data-mode="blur">模糊</span>
+      <span class="attr-anchor">
+        <span class="wpick txt" data-mode="automask">自动打码</span>
+      </span>
+      <span class="asep"></span>
+      <span class="albl">形状</span>
+      <span class="wpick on"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M2.6 11.6c2.2-4.4 4.2-6.2 6-5.4 1.8.8.6 3.4 2 4 1.4.6 2.4-.8 2.8-2"/></svg></span>
+      <span class="wpick"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="2.6" y="4" width="10.8" height="8" rx="1"/></svg></span>
+      <span class="asep"></span>
+      <span class="albl">强度</span>
+      <span class="wpick txt">细</span>
+      <span class="wpick txt on">中</span>
+      <span class="wpick txt">粗</span>
+      <span class="aval">8px</span>
+    </div>
+  </div>
+  <div class="cap">🖱 设计稿可交互：点「马赛克 / 模糊 / 自动打码」切换下面三个状态。</div>
+</div>
+
+<!-- ================= 三态 ================= -->
+<div class="sec">
+  <div class="sec-title">③ 属性栏三种状态</div>
+  <div class="row">
+    <div class="card">
+      <h4>态 1 · 马赛克选中 <span class="badge now">模式分段在最前</span></h4>
+      <div class="attr-bar" style="position:static">
+        <span class="albl">模式</span>
+        <span class="wpick txt on">马赛克</span>
+        <span class="wpick txt">模糊</span>
+        <span class="wpick txt">自动打码</span>
+        <span class="asep"></span>
+        <span class="albl">形状</span>
+        <span class="wpick on"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M2.6 11.6c2.2-4.4 4.2-6.2 6-5.4 1.8.8.6 3.4 2 4 1.4.6 2.4-.8 2.8-2"/></svg></span>
+        <span class="wpick"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="2.6" y="4" width="10.8" height="8" rx="1"/></svg></span>
+        <span class="asep"></span>
+        <span class="albl">强度</span>
+        <span class="wpick txt">细</span><span class="wpick txt on">中</span><span class="wpick txt">粗</span>
+        <span class="aval">8px</span>
+      </div>
+      <div class="cap">强度档 = MOSAIC_LEVELS（5 / 8 / 14）。滚轮微调、档位记忆全部照旧。</div>
+    </div>
+    <div class="card">
+      <h4>态 2 · 模糊选中 <span class="badge now">同一分段</span></h4>
+      <div class="attr-bar" style="position:static">
+        <span class="albl">模式</span>
+        <span class="wpick txt">马赛克</span>
+        <span class="wpick txt on">模糊</span>
+        <span class="wpick txt">自动打码</span>
+        <span class="asep"></span>
+        <span class="albl">形状</span>
+        <span class="wpick on"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M2.6 11.6c2.2-4.4 4.2-6.2 6-5.4 1.8.8.6 3.4 2 4 1.4.6 2.4-.8 2.8-2"/></svg></span>
+        <span class="wpick"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="2.6" y="4" width="10.8" height="8" rx="1"/></svg></span>
+        <span class="asep"></span>
+        <span class="albl">强度</span>
+        <span class="wpick txt">细</span><span class="wpick txt on">中</span><span class="wpick txt">粗</span>
+        <span class="aval">8px</span>
+      </div>
+      <div class="cap">强度档切到 BLUR_LEVELS（4 / 8 / 16），模糊半径记忆独立。选中「模糊」时主栏马赛克按钮高亮保持不变。</div>
+    </div>
+    <div class="card" style="position:relative">
+      <h4>态 3 · 自动打码执行后 <span class="badge new">确认条新锚点</span></h4>
+      <div class="attr-bar" style="position:static">
+        <span class="albl">模式</span>
+        <span class="wpick txt on">马赛克</span>
+        <span class="wpick txt">模糊</span>
+        <span class="attr-anchor">
+          <span class="wpick txt">自动打码</span>
+          <div class="mask-bar">
+            <div class="mask-title">🔒 识别到 3 处隐私</div>
+            <div class="mask-actions">
+              <button class="mask-confirm">✓ 打码 3 处</button>
+              <button class="mask-cancel">放弃</button>
+            </div>
+          </div>
+        </span>
+      </div>
+      <div class="cap" style="margin-top:78px">确认条从「主栏按钮上方」挪到「自动打码分段下方」（同属性栏锚定，跟随翻转）。点完分段视线零移动。工具高亮仍停在马赛克 / 模糊（动作不切换工具）。</div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 备注 ================= -->
+<div class="sec">
+  <div class="sec-title">④ 行为细节（方案 A）</div>
+  <div class="sec-note" style="max-width:760px">
+    • 模式状态<b>复用现有 tool</b>（mosaic / blur / automask），不新增状态：点「模糊」= <code>setTool("blur")</code>，属性栏形状 / 强度 / 滚轮 / 撤销重做全部原样生效；<br/>
+    • 点「自动打码」= 现有动作（OCR 检测 → 橙框预览 → 确认条），不切换工具，打码产物仍是 mosaic 标注、整批一次撤销；<br/>
+    • 快捷键：<kbd>6</kbd> 马赛克、<kbd>7</kbd> 模糊 保留（TOOL_BY_KEY 仍含 blur），肌肉记忆不失效；<br/>
+    • 已画在画布上的 blur 标注不受影响（类型照旧，draw.ts 不用改）；<br/>
+    • 首用引导（discover 脉冲）：挪到「自动打码」分段上，用过即停（持久化逻辑不变）。
+  </div>
+</div>
+
+<script>
+  // 设计稿交互：点模式分段，切换属性栏高亮与强度档位（模拟）
+  const ab = document.getElementById("ab");
+  if (ab) {
+    const pills = ab.querySelectorAll("[data-mode]");
+    const strengthTxt = ab.querySelectorAll(".attr-bar .wpick.txt");
+    const setMode = (mode) => {
+      pills.forEach((p) => p.classList.toggle("on", p.dataset.mode === mode));
+      // 简化演示：模糊 → 强度数字 6px，其余 8px
+      const val = ab.querySelector(".aval");
+      if (val) val.textContent = mode === "blur" ? "8px" : "8px";
+    };
+    pills.forEach((p) => p.addEventListener("click", () => setMode(p.dataset.mode)));
+  }
+</script>
+</body>
+</html>

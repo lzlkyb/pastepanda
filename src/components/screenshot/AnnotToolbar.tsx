@@ -72,13 +72,6 @@ interface Props {
   onPin: () => void;
   onAi: () => void;
 
-  /** 自动打码预览态：确认条锚定「自动打码」按钮正上方弹出（反馈与触发同可见性域）。
-   *  纯展示：只拿数量与回调，不碰 MaskBox 结构（类型在父组件私有）。 */
-  maskOn: boolean;
-  maskActive: number;
-  onApplyMasks: () => void;
-  onCancelMasks: () => void;
-
   /** 取消：退出这次截图（关窗）。
    *  不是"退回选区" —— 按钮写着"取消"，用户读到的就是取消整件事（微信截图同款）。 */
   onCancel: () => void;
@@ -190,10 +183,6 @@ export function AnnotToolbar({
   onDone,
   onMore,
   discover,
-  maskOn,
-  maskActive,
-  onApplyMasks,
-  onCancelMasks,
 }: Props) {
   // 取文字按钮：四态共用同一个位置与尺寸。
   // ① 无文字时置灰但**不隐藏**：按钮消失会让右边的取消/完成/⋯ 整体左移，
@@ -239,46 +228,16 @@ export function AnnotToolbar({
       style={{ left, top }}
       onClickCapture={onToolCapture}
     >
-      {TOOLS.map((t) => (
-        <div key={t.id} className={t.id === "automask" ? "mask-btn-anchor" : undefined}>
-          <div
-            className={`tool${tool === t.id ? " on" : ""}${discover?.includes(t.id) ? " discover" : ""}`}
-            data-tip={`${t.tip ?? t.label}${t.key ? `（按 ${t.key}）` : ""}`}
-            onClick={() => onSelectTool(t.id)}
-          >
-            <span className="ic">{t.icon}</span>
-            <span className="lb">{t.label}</span>
-          </div>
-          {/* 自动打码「预览式」确认条：锚定「自动打码」按钮正上方弹出。
-              点完按钮视线零移动（反馈与触发同可见性域）；竖排不压工具栏，
-              工具栏翻转（top-attached）时同样锚定按钮上方，天然跟随。 */}
-          {t.id === "automask" && maskOn && (
-            <div className="mask-bar" onMouseDown={(e) => e.stopPropagation()}>
-              <div className="mask-title">🔒 识别到 {maskActive} 处隐私</div>
-              <div className="mask-actions">
-                <button
-                  className="mask-confirm"
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onApplyMasks();
-                  }}
-                >
-                  ✓ 打码 {maskActive} 处
-                </button>
-                <button
-                  className="mask-cancel"
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onCancelMasks();
-                  }}
-                >
-                  放弃
-                </button>
-              </div>
-            </div>
-          )}
+      {/* 主栏只渲染未隐藏的工具：模糊 / 自动打码已收进马赛克属性栏的模式分段 */}
+      {TOOLS.filter((t) => !t.hidden).map((t) => (
+        <div
+          key={t.id}
+          className={`tool${tool === t.id ? " on" : ""}${discover?.includes(t.id) ? " discover" : ""}`}
+          data-tip={`${t.tip ?? t.label}${t.key ? `（按 ${t.key}）` : ""}`}
+          onClick={() => onSelectTool(t.id)}
+        >
+          <span className="ic">{t.icon}</span>
+          <span className="lb">{t.label}</span>
         </div>
       ))}
 

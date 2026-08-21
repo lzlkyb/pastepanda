@@ -1,4 +1,4 @@
-import { memo, useState, useCallback, useContext, useRef, useEffect, useMemo, lazy, Suspense } from "react";
+import { memo, useState, useCallback, useContext, useRef, useEffect, useMemo, useSyncExternalStore, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
 import { relativeTime, parseFilePaths, resolveImageCardDisplay, getImageOcrFullText, copyToClipboard, type ImageOcrState } from "@/lib/utils";
@@ -13,6 +13,7 @@ import { useDialogStore } from "@/stores/dialogStore";
 import type { CSSProperties } from "react";
 import SourceBadge from "@/components/SourceBadge";
 import { createCardMenuItems, CtxMenuCtx, type MenuItem } from "@/components/ContextMenu";
+import { getEnabledRules, subscribeRules } from "@/lib/regexRules";
 import { confirmAutoTags, removeItemTags } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 import { TagRow } from "@/components/TagBadge";
@@ -949,10 +950,14 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     useDialogStore.getState().openHub(item);
   }, [item]);
 
+  // 正则规则存在模块级可变缓存里，右键菜单的「正则替换」子菜单就是从它来的。
+  // 订阅它而不是在菜单构建时偷偷读：规则一改就重算 menuItems —— 否则在
+  // 「管理正则规则…」加/删/启停的规则不会出现在菜单里，得等别的原因触发这张卡重渲染。
+  // getEnabledRules 返回的是引用稳定的共享快照，可以直接当 useSyncExternalStore 的快照用。
+  const enabledRules = useSyncExternalStore(subscribeRules, getEnabledRules);
+
   const menuItems = useMemo(() => createCardMenuItems({
     onEdit: (item.type === "text" || item.type === "diagram") && onEdit ? () => onEdit(item) : undefined,
-    onMarkdownPreview: item.type === "text" && subType === "markdown" && onEdit ? () => onEdit(item) : undefined,
-    isMarkdown: item.type === "text" && subType === "markdown",
     onEditTags: onEditTags ? () => onEditTags(item) : undefined,
     onMoveToGroup: onMoveToGroup ? () => onMoveToGroup(item) : undefined,
     onCopy: async () => {
@@ -1013,19 +1018,19 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     onDelete: () => { void deleteHistory([item.id]); },
     onAddSnippet: handleAddSnippet,
     onOpenUrl: hasUrl ? handleOpenUrl : undefined,
-    isFilePath,
     onOpenFile: fileTarget ? handleOpenFile : undefined,
     onRevealFile: fileTarget ? handleRevealFile : undefined,
     onQrCode: canQrCode && onQrCode ? () => onQrCode(item) : undefined,
     canQrCode,
     onRegexPreview: item.type === "text" && onRegexPreview ? (ruleId: string) => onRegexPreview(item, ruleId) : undefined,
+    regexRules: enabledRules,
     onManageRegexRules,
     onConfirmAutoTags: hasAutoTags ? handleConfirmAutoTags : undefined,
     onRemoveAutoTags: hasAutoTags ? handleRemoveAutoTags : undefined,
     hasUrl,
     hasAutoTags,
     pinned: item.pinned,
-  }), [item, subType, hasUrl, isFilePath, fileTarget, canQrCode, hasAutoTags, toast, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, handlePasteTransform, handleOpenHub, hubAvailable, handleAddSnippet, handleOpenUrl, handleOpenFile, handleRevealFile, handleConfirmAutoTags, handleRemoveAutoTags, ocrState]);
+  }), [item, subType, hasUrl, fileTarget, canQrCode, hasAutoTags, toast, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, handlePasteTransform, handleOpenHub, hubAvailable, handleAddSnippet, handleOpenUrl, handleOpenFile, handleRevealFile, handleConfirmAutoTags, handleRemoveAutoTags, ocrState, enabledRules]);
 
   return (
     <Card item={item} selected={selected} onClick={onClick} onDoubleClick={onDoubleClick} index={index} imageState={imageState} searchKeyword={searchKeyword} onRetryImage={onRetryImage} pasting={pasting} menuItems={menuItems} onEdit={onEdit} disablePreview={disablePreview} stackOrder={stackOrder} stackDone={stackDone} ocrState={ocrState} />

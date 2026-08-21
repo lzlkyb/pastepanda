@@ -62,6 +62,26 @@ interface Props {
   textSizeId?: TextSizeId;
   onSelectTextSize?: (id: TextSizeId) => void;
 
+  /** 去水印模式：平铺·自动（一键整屏）/ 手动（涂抹或矩形）。不传 = 不显示模式分段。 */
+  dewarpMode?: "manual" | "tile";
+  onSelectDewarpMode?: (m: "manual" | "tile") => void;
+
+  /** 遮罩类「模式」分段：马赛克 / 模糊 / 自动打码 收进同一把工具。
+   *   - 马赛克 / 模糊 共用形状 + 强度（各自记忆）；点选 = 切换 tool；
+   *   - 自动打码是动作型（点击执行、不切换工具），高亮永远不在它身上；
+   *   - 有值才渲染分段；预览确认条打开期间父组件会强制保持分段可见（锚点不消失）。
+   *  模式状态复用 tool 本身，不另设状态。 */
+  maskMode?: "mosaic" | "blur" | "automask";
+  onSelectMaskMode?: (m: "mosaic" | "blur" | "automask") => void;
+  /** 自动打码首用引导（B 方案 discover 脉冲）：未用过的用户在分段上看到脉冲 */
+  discoverAutomask?: boolean;
+  /** 自动打码「预览式」确认条：锚定「自动打码」分段下方（反馈与触发同可见性域）。
+   *  纯展示：只拿数量与回调，不碰 MaskBox 结构（类型在父组件私有）。 */
+  maskOn?: boolean;
+  maskActive?: number;
+  onApplyMasks?: () => void;
+  onCancelMasks?: () => void;
+
   /** 强度档位（马赛克色块 / 模糊半径）。
    *  旧实现只能滚轮调，而界面上没任何提示说可以滚，基本不可发现。 */
   strengthLevels?: { id: string; label: string; v: number }[];
@@ -106,6 +126,15 @@ export function AttrBar({
   strengthLevels,
   strengthValue,
   onSelectStrength,
+  dewarpMode,
+  onSelectDewarpMode,
+  maskMode,
+  onSelectMaskMode,
+  discoverAutomask,
+  maskOn,
+  maskActive,
+  onApplyMasks,
+  onCancelMasks,
 }: Props) {
   return (
     <div className={`attr-bar${attach !== "below" ? " top-attached" : ""}`} style={{ left, top }}>
@@ -146,6 +175,91 @@ export function AttrBar({
         </>
       )}
 
+      {/* 遮罩类「模式」分段：马赛克 / 模糊 / 自动打码。
+       *  马赛克与模糊共用一把刷子（形状 + 强度各自记忆），收进同一工具；
+       *  自动打码是动作型——点击直接执行（OCR 检测 → 预览确认），不切换工具，
+       *  所以它永远没有高亮。确认条锚定「自动打码」分段下方。 */}
+      {maskMode && onSelectMaskMode && (
+        <>
+          <span className="albl">模式</span>
+          <span
+            className={`wpick txt${maskMode === "mosaic" ? " on" : ""}`}
+            data-tip="马赛克·色块遮档"
+            onClick={() => onSelectMaskMode("mosaic")}
+          >
+            马赛克
+          </span>
+          <span
+            className={`wpick txt${maskMode === "blur" ? " on" : ""}`}
+            data-tip="模糊·柔化遮档（水滴）"
+            onClick={() => onSelectMaskMode("blur")}
+          >
+            模糊
+          </span>
+          <span className="attr-anchor">
+            <span
+              className={`wpick txt${discoverAutomask ? " discover" : ""}`}
+              data-tip="自动打码·一键遮蔽图中手机/身份证/邮箱等隐私文字（OCR 检测，可逐个排除）"
+              onClick={() => onSelectMaskMode("automask")}
+            >
+              自动打码
+            </span>
+            {maskOn && (
+              <div className="mask-bar" onMouseDown={(e) => e.stopPropagation()}>
+                <div className="mask-title">🔒 识别到 {maskActive} 处隐私</div>
+                <div className="mask-actions">
+                  <button
+                    className="mask-confirm"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onApplyMasks?.();
+                    }}
+                  >
+                    ✓ 打码 {maskActive} 处
+                  </button>
+                  <button
+                    className="mask-cancel"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCancelMasks?.();
+                    }}
+                  >
+                    放弃
+                  </button>
+                </div>
+              </div>
+            )}
+          </span>
+          <span className="asep" />
+        </>
+      )}
+
+      {/* 去水印模式：平铺·自动（一键整屏检测）/ 手动（涂抹或矩形选区）。
+       *  只有去水印工具下才出现（dewarpMode 有值时渲染）。平铺模式隐藏形状组，
+       *  因为全自动无需形状；手动模式才需要形状选涂抹/矩形。 */}
+      {dewarpMode && onSelectDewarpMode && (
+        <>
+          <span className="albl">模式</span>
+          <span
+            className={`wpick txt${dewarpMode === "manual" ? " on" : ""}`}
+            data-tip="手动·涂抹或矩形选区局部去水印"
+            onClick={() => onSelectDewarpMode("manual")}
+          >
+            手动
+          </span>
+          <span
+            className={`wpick txt${dewarpMode === "tile" ? " on" : ""}`}
+            data-tip="平铺·自动检测整屏平铺水印并批量去除"
+            onClick={() => onSelectDewarpMode("tile")}
+          >
+            平铺·自动
+          </span>
+          <span className="asep" />
+        </>
+      )}
+
       {/* 形状：排在强度**前面**——先选“怎么遮”再调“遮多粗”，与操作顺序一致。
           样式直接复用 .wpick（粗细/强度/箭头三组已经在用它），不新发明一套。 */}
       {maskShape && onSelectMaskShape && (
@@ -177,7 +291,7 @@ export function AttrBar({
           {TEXT_SIZES.map((t) => (
             <span
               key={t.id}
-              className={`wpick${textSizeId === t.id ? " on" : ""}`}
+              className={`wpick txt${textSizeId === t.id ? " on" : ""}`}
               data-tip={`${t.label}（${t.css}px）`}
               onClick={() => onSelectTextSize(t.id)}
             >
@@ -193,7 +307,7 @@ export function AttrBar({
           {strengthLevels.map((s) => (
             <span
               key={s.id}
-              className={`wpick${strengthValue === s.v ? " on" : ""}`}
+              className={`wpick txt${strengthValue === s.v ? " on" : ""}`}
               data-tip={`${s.label}（${s.v}px）`}
               onClick={() => onSelectStrength(s.v)}
             >

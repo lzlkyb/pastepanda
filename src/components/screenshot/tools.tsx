@@ -31,6 +31,9 @@ export const TOOLS: {
   /** 自定义悬停提示；不给就用 `label（按 key）`。
    *  行为比名字复杂的工具才需要它（目前只有橡皮擦）。 */
   tip?: string;
+  /** 主栏不渲染。模糊 / 自动打码已收进「马赛克」属性栏的模式分段，
+   *  但保留在 TOOLS 里：key 7 快捷键映射（TOOL_BY_KEY）不能断。 */
+  hidden?: boolean;
 }[] = [
   {
     id: "rect",
@@ -111,6 +114,7 @@ export const TOOLS: {
     id: "blur",
     label: "模糊",
     key: "7",
+    hidden: true, // 收进马赛克属性栏「模式」分段（key 7 快捷键保留）
     // 水滴 = 模糊/柔化的行业通用符号（Photoshop 同款）；
     // 旧实现是三个半透明圆点，与"模糊"没有任何认知关联
     icon: (
@@ -121,8 +125,23 @@ export const TOOLS: {
     ),
   },
   {
+    id: "dewarp",
+    // 无数字快捷键（主栏已占满 1-9 / 0）；提示里只说标签。
+    label: "去水印",
+    // 图标 = 魔棒尖端 + 实心星点（Photoshop 修复画笔同款语义）：表达“点一下把这块修复干净”。
+    icon: (
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3.2 12.8L9.6 6.4" />
+        <path d="M11 2.6l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" fill="currentColor" stroke="none" />
+      </svg>
+    ),
+    // tip 手写：它是混合行为（平铺一键 / 手动涂抹），必须说清两种用法与“可撤销 / 离线”。
+    tip: "去水印·平铺水印一键自动去除（企业微信/钉钉同款），或手动涂抹局部；纯前端处理、可撤销、不联网",
+  },
+  {
     id: "automask",
     // 无数字快捷键（主栏已占满 1-9 / 0）；提示里只说标签。
+    hidden: true, // 收进马赛克属性栏「模式」分段（动作型：点击执行不切换工具）
     label: "自动打码",
     // 图标 = 一个区域框 + 中间一条实心红条（遮蔽/涂掉），直观表达“自动把隐私涂掉”。
     icon: (
@@ -285,6 +304,16 @@ export const BLUR_LEVELS: { id: "fine" | "mid" | "coarse"; label: string; v: num
   { id: "fine", label: "细", v: 4 },
   { id: "mid", label: "中", v: 8 },
   { id: "coarse", label: "粗", v: 16 },
+];
+
+/**
+ * 去水印边缘羽化档位（物理像素）。语义 = 蒙版边缘柔化半径，不是色块/模糊那种"遮多少"。
+ * 默认中档 10：细档 6（硬边少、几乎无柔化）到粗档 18（明显羽化）。
+ */
+export const DEWARP_LEVELS: { id: "fine" | "mid" | "coarse"; label: string; v: number }[] = [
+  { id: "fine", label: "细", v: 6 },
+  { id: "mid", label: "中", v: 10 },
+  { id: "coarse", label: "粗", v: 18 },
 ];
 
 /**
