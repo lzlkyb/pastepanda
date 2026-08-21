@@ -1,0 +1,62 @@
+name: Sync Gitee & Rebuild Pages
+
+# 国内用户访问手册/源码走 Gitee：每次 push master 后
+#   ① 自动镜像代码到 Gitee 仓库（release.yml 同款 oauth2 token 方式）
+#   ② 调用 Gitee Pages 构建 API 自动重新部署（无需手动点「更新」）
+# 依赖 secrets：GITEE_TOKEN / GITEE_REPOSITORY（release.yml 已配置，缺失时自动跳过）
+# 前置条件（一次性）：Gitee 实名认证 + 仓库「服务 → Gitee Pages」手动点一次「启动」
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: # 手动触发：改完 Pages 配置后可手动重建
+
+jobs:
+  sync-pages:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: ① 同步代码到 Gitee
+        shell: bash
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPOSITORY: ${{ secrets.GITEE_REPOSITORY }}
+        run: |
+          if [ -z "$GITEE_TOKEN" ] || [ -z "$GITEE_REPOSITORY" ]; then
+            echo "⚠️ 未配置 GITEE_TOKEN/GITEE_REPOSITORY，跳过 Gitee 同步"
+            exit 0
+          fi
+          git config user.name "pastepanda-sync"
+          git config user.email "bot@pastepanda.local"
+          # --force：Gitee 是纯镜像仓库，强制与 GitHub master 保持一致
+          git push --force "https://oauth2:${GITEE_TOKEN}@gitee.com/${GITEE_REPOSITORY}.git" HEAD:master
+          echo "✅ 已同步到 gitee.com/${GITEE_REPOSITORY}（master）"
+
+      - name: ② 触发 Gitee Pages 重新部署
+        shell: bash
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPOSITORY: ${{ secrets.GITEE_REPOSITORY }}
+        run: |
+          if [ -z "$GITEE_TOKEN" ] || [ -z "$GITEE_REPOSITORY" ]; then
+            echo "⚠️ 未配置 Gitee secrets，跳过 Pages 更新（需手动在 Gitee 点「更新」）"
+            exit 0
+          fi
+          # Gitee Pages 构建 API（需先在 Gitee 手动「启动」过一次 Pages 服务）
+          code=$(curl -sS -o /tmp/gitee-pages-resp.txt -w "%{http_code}" -X POST \
+            "https://gitee.com/api/v5/repos/${GITEE_REPOSITORY}/pages/builds" \
+            -H "Content-Type: application/json;charset=UTF-8" \
+            -d "{\"access_token\":\"${GITEE_TOKEN}\"}")
+          echo "HTTP $code"
+          cat /tmp/gitee-pages-resp.txt
+          if [ "$code" != "201" ] && [ "$code" != "200" ]; then
+            echo "❌ Gitee Pages 构建触发失败（HTTP $code）。可能原因："
+            echo "   - 尚未在 Gitee 手动启动过 Pages 服务（仓库 → 服务 → Gitee Pages → 启动）"
+            echo "   - 触发过于频繁（Gitee 限制 1 分钟一次），可稍后手动点「更新」或重跑本任务"
+            exit 1
+          fi
+          echo "✅ Gitee Pages 已在后台重建（通常几分钟生效）"

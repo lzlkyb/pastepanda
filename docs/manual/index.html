@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>PastePanda 用户手册 · 完整功能指南</title>
+<title>PastePanda · 复制 · 截图 · 识别 · 变换 · 贴图，一站全包 | 完整功能手册</title>
 <style>
+
 /* ===================== 设计令牌（对齐真实软件 theme.css，6 套主题全量） ===================== */
 :root { --font: "SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui, -apple-system, sans-serif; --mono: "Fira Code", "SF Mono", "Consolas", ui-monospace, monospace; }
 /* 经典白 ocean（默认浅色） */
@@ -22,12 +23,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html { scroll-behavior: smooth; }
 body { font-family: var(--font); background: var(--app-bg); color: var(--text-primary); font-size: 14px; line-height: 1.7; -webkit-font-smoothing: antialiased; transition: background .3s, color .3s; }
-/* ===================== 文档站顶栏 ===================== */
-.topbar { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; gap: 12px; padding: 14px 28px; background: color-mix(in srgb, var(--card-bg) 80%, transparent); backdrop-filter: blur(14px) saturate(1.3); border-bottom: 1px solid var(--border-color); flex-wrap: wrap; }
-.logo { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: linear-gradient(135deg, var(--accent), #6D5CF0); color: #fff; font-size: 18px; box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 40%, transparent); }
-.topbar h1 { font-size: 17px; font-weight: 700; letter-spacing: .2px; }
-.topbar .sub { font-size: 12px; color: var(--text-muted); font-weight: 400; margin-left: 2px; }
-.topbar .spacer { flex: 1; }
+/* 新顶栏样式见下方宣传区 CSS（.top） */
 .themeToggle { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 9px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-secondary); cursor: pointer; font-size: 13px; font-weight: 500; transition: all .15s; font-family: var(--font); }
 .themeToggle:hover { border-color: var(--accent); color: var(--accent); }
 /* ===================== 布局 ===================== */
@@ -306,12 +302,514 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
 .nlcmd .nc-sug { font-size: 11px; color: var(--text-muted); }
 .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
 @media (max-width: 860px){ .twocol { grid-template-columns: 1fr; } nav.toc { display: none; } main { padding-left: 0; } .tboxpanel { right: auto; left: 0; } }
+
+/* ===================== 顶栏 ===================== */
+.top { position: sticky; top: 0; z-index: 200; display: flex; align-items: center; gap: 12px; padding: 12px 28px; background: color-mix(in srgb, var(--card-bg) 82%, transparent); backdrop-filter: blur(16px) saturate(1.3); border-bottom: 1px solid var(--border-color); }
+.logo { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: linear-gradient(135deg, var(--accent), #6D5CF0); color: #fff; font-size: 18px; box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 40%, transparent); flex-shrink:0; }
+.top .brand { font-size: 16px; font-weight: 800; letter-spacing: .2px; display:flex; align-items:center; gap:8px; }
+.top .ver { font-size: 10.5px; font-weight: 700; color: var(--accent-strong); background: var(--accent-light); padding: 2px 8px; border-radius: 99px; }
+.top nav { display: flex; gap: 4px; margin-left: 18px; }
+.top nav a { padding: 6px 12px; border-radius: 8px; color: var(--text-secondary); text-decoration: none; font-size: 13px; font-weight: 500; transition: all .15s; }
+.top nav a:hover { color: var(--text-primary); background: var(--hover); }
+.top .spacer { flex: 1; }
+.cta { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 16px; border: none; border-radius: 10px; background: linear-gradient(135deg, var(--accent), #6D5CF0); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 40%, transparent); text-decoration: none; }
+.cta:hover { transform: translateY(-1px); box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 50%, transparent); }
+.cta.ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border-color); box-shadow: none; }
+.cta.ghost:hover { color: var(--accent); border-color: var(--accent); }
+.themeToggle { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 9px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-secondary); cursor: pointer; font-size: 13px; font-weight: 500; transition: all .15s; font-family: var(--font); }
+.themeToggle:hover { border-color: var(--accent); color: var(--accent); }
+/* ===================== HERO ===================== */
+.hero { position: relative; overflow: hidden; background: radial-gradient(120% 140% at 85% -10%, #13294D 0%, #0B1C36 45%, #070F20 100%); color: #E6EDF7; padding: 64px 28px 76px; }
+.hero::before { content:""; position:absolute; inset:0; background: radial-gradient(640px 360px at 78% 24%, rgba(59,158,255,.18), transparent 60%), radial-gradient(560px 320px at 6% 92%, rgba(109,92,240,.16), transparent 60%), radial-gradient(420px 260px at 50% 110%, rgba(34,211,238,.08), transparent 60%); pointer-events:none; }
+.hero::after { content:""; position:absolute; inset:0; background-image: radial-gradient(rgba(255,255,255,.045) 1px, transparent 1px); background-size: 26px 26px; mask-image: radial-gradient(75% 65% at 50% 42%, #000 30%, transparent 78%); pointer-events:none; }
+.hero-in { position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; display: flex; align-items: center; gap: 52px; }
+.hero-left { flex: 1; min-width: 0; padding-bottom: 8px; }
+.hero-badge { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 99px; background: rgba(59,158,255,.12); border: 1px solid rgba(59,158,255,.35); color: #7DC4FF; font-size: 12px; font-weight: 600; }
+.hero-badge .dot { width: 7px; height: 7px; border-radius: 50%; background: #22C55E; box-shadow: 0 0 8px #22C55E; }
+.hero h1 { font-size: 44px; font-weight: 800; letter-spacing: -1.4px; line-height: 1.24; margin: 20px 0 0; }
+.hero h1 em { font-style: normal; background: linear-gradient(120deg, #59A6FF, #A78BFA); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 2px 18px rgba(89,166,255,.35)); }
+.hero .sub { font-size: 15px; color: #9FB4D0; margin-top: 16px; max-width: 480px; line-height: 1.85; }
+.hero .points { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
+.hpt { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 9px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); color: #C9D7EA; font-size: 12.5px; font-weight: 500; }
+.hpt b { color: #fff; font-weight: 700; }
+.hero-btns { display: flex; gap: 12px; margin-top: 28px; align-items: center; }
+.hero-btns .cta { height: 46px; padding: 0 26px; font-size: 14.5px; border-radius: 13px; }
+.hero-btns .cta.ghost { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.16); color: #E6EDF7; }
+.hero-btns .cta.ghost:hover { background: rgba(255,255,255,.12); color: #fff; }
+.hero-trust { margin-top: 26px; display: flex; gap: 18px; flex-wrap: wrap; }
+.ht-item { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: #8FA6C6; }
+.ht-item b { color: #C9D7EA; font-weight: 600; }
+.ht-item .hdot { width: 6px; height: 6px; border-radius: 50%; background: #22C55E; box-shadow: 0 0 6px rgba(34,197,94,.7); }
+/* Hero 右侧：放大主窗口 480×700 × .84 ≈ 403px 宽 + 浮动能力元素 */
+.hero-right { flex-shrink: 0; width: 404px; }
+.hero-window-wrap { position: relative; filter: drop-shadow(0 40px 90px rgba(0,0,0,.55)); }
+.hero-window-wrap::before { content:""; position: absolute; inset: -26px; background: radial-gradient(50% 42% at 50% 45%, rgba(59,158,255,.16), transparent 70%); pointer-events: none; }
+.hero-window { width: 480px; height: 700px; transform: scale(.84); transform-origin: top left; border-radius: 14px; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.09); background: var(--card-bg); }
+/* 浮动能力元素 */
+.hf { position: absolute; z-index: 15; animation: hfFloat 5.5s ease-in-out infinite; }
+.hf.hf-ocr { right: -58px; top: 118px; width: 176px; border-radius: 12px; background: rgba(10,22,40,.96); border: 1px solid rgba(59,158,255,.4); box-shadow: 0 18px 44px rgba(0,0,0,.5); backdrop-filter: blur(14px); overflow: hidden; animation-delay: .4s; }
+.hf-ocr .ho-h { display: flex; align-items: center; gap: 6px; padding: 7px 10px; font-size: 10.5px; font-weight: 700; color: #3B9EFF; background: #0A1E3A; border-bottom: 1px solid rgba(59,158,255,.3); }
+.hf-ocr .ho-h .off { margin-left: auto; font-size: 8.5px; font-weight: 600; color: #7DE0C4; }
+.hf-ocr .ho-row { padding: 5px 10px; font-size: 10px; color: #C9D7EA; display: flex; gap: 6px; }
+.hf-ocr .ho-row.hl { background: rgba(59,158,255,.22); outline: 1px solid rgba(59,158,255,.45); border-radius: 5px; }
+.hf.hf-pin { left: -64px; bottom: 96px; width: 172px; border-radius: 11px; background: rgba(20,30,52,.97); border: 1.5px solid rgba(59,158,255,.5); box-shadow: 0 16px 40px rgba(0,0,0,.5); overflow: hidden; animation-delay: 1.2s; }
+.hf-pin .hp-bar { display: flex; align-items: center; gap: 5px; padding: 5px 9px; font-size: 9px; color: #A2B6CD; border-bottom: 1px solid rgba(255,255,255,.07); }
+.hf-pin .hp-body { display: flex; align-items: center; gap: 8px; padding: 8px 10px; }
+.hf-pin .hp-ic { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; font-size: 12px; flex-shrink: 0; background: rgba(236,72,153,.14); border: 1px solid rgba(236,72,153,.3); }
+.hf-pin .hp-t { font-size: 10px; color: #E6EDF7; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hf-pin .hp-s { font-size: 8.5px; color: #7994B4; margin-top: 1px; }
+.hf-pin .hp-tag { position: absolute; right: 8px; top: 26px; font-size: 8.5px; color: #7DE0C4; background: rgba(16,120,90,.35); border: 1px solid rgba(125,224,196,.4); padding: 1px 6px; border-radius: 4px; }
+.hf.hf-tf { left: -46px; top: 56px; border-radius: 11px; background: rgba(10,22,40,.94); border: 1px solid rgba(139,92,246,.4); box-shadow: 0 14px 36px rgba(0,0,0,.45); backdrop-filter: blur(12px); padding: 5px; animation-delay: 2s; }
+.hf-tf .hfi { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: 7px; font-size: 10.5px; color: #E0E8F0; }
+.hf-tf .hfi.on { background: linear-gradient(135deg, #3B9EFF, #6D5CF0); color: #fff; font-weight: 600; }
+.hf-tf .hfi .ti { font-size: 12px; }
+.hf-tf .hfi .tg { margin-left: auto; font-size: 8.5px; opacity: .7; }
+@keyframes hfFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
+.hero-kbd { position: absolute; right: 34px; top: -18px; z-index: 16; display: flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 10px; background: rgba(10,20,36,.92); border: 1px solid rgba(255,255,255,.14); box-shadow: 0 8px 24px rgba(0,0,0,.4); color: #E6EDF7; font-size: 12px; }
+.hero-kbd kbd { font-family: var(--mono); background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); border-bottom-width: 2px; border-radius: 5px; padding: 1px 7px; font-size: 11px; color: #7DC4FF; }
+.hero-scrollhint { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #6E87A8; letter-spacing: .5px; }
+.hero-scrollhint::after { content:""; width: 14px; height: 14px; border-right: 1.5px solid #6E87A8; border-bottom: 1.5px solid #6E87A8; transform: rotate(45deg); animation: hsh 1.6s ease-in-out infinite; }
+@keyframes hsh { 0%,100% { transform: rotate(45deg) translate(0,0); opacity: .6; } 50% { transform: rotate(45deg) translate(3px,3px); opacity: 1; } }
+/* 顶栏（真实：padding 16px 16px 0 / 按钮 28×28 / 搜索框 38px） */
+.hw-tbr { display: flex; align-items: center; gap: 8px; padding: 16px 16px 0; }
+.hw-ticon { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, var(--accent), #6D5CF0); color: #fff; display: grid; place-items: center; font-size: 14px; flex-shrink: 0; }
+.hw-tbrand { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 3px; }
+.hw-tai { font-size: 9px; font-weight: 800; background: linear-gradient(135deg, var(--brand-from), var(--brand-to)); color: #fff; border-radius: 4px; padding: 1px 4px; line-height: 1; }
+.hw-tsearch { flex: 1; display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border-radius: 8px; background: var(--search-bg); border: 1px solid var(--border-color); margin-left: 10px; color: var(--text-muted); font-size: 13px; }
+.hw-tbtn { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--text-secondary); font-size: 15px; position: relative; }
+.hw-tbtn .gd { position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: #22C55E; border: 1px solid var(--card-bg); }
+.hw-sidebar { width: 180px; min-width: 180px; background: var(--sidebar-bg); border-right: 1px solid var(--border-color); padding: 12px 8px 8px; position: absolute; top: 62px; bottom: 0; left: 0; overflow: hidden; }
+.hw-sb-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 7px; font-size: 13px; color: var(--text-primary); margin-bottom: 1px; }
+.hw-sb-item.on { background: var(--accent-light); color: var(--accent-strong); font-weight: 600; }
+.hw-sb-ic { font-size: 15px; width: 16px; text-align: center; }
+.hw-sb-cnt { margin-left: auto; font-size: 10px; color: var(--text-muted); background: var(--section-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 1px 7px; font-weight: 600; }
+.hw-sb-sep { height: 1px; background: var(--border-color); margin: 8px 4px; }
+.hw-sb-grp { font-size: 10.5px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .4px; padding: 12px 10px 5px; }
+.hw-list { position: absolute; top: 62px; left: 180px; right: 0; bottom: 0; padding: 10px 16px 30px; overflow: hidden; }
+.hw-card { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 16px; background: var(--card-bg); border: 1px solid var(--border-color); box-shadow: 0 4px 12px rgba(0,0,0,.08); height: 72px; margin-bottom: 10px; }
+.hw-c-ic { width: 42px; height: 42px; min-width: 42px; border-radius: 12px; display: grid; place-items: center; font-size: 18px; }
+.hw-c-ic.blue { background: rgba(59,130,246,.12); border: 1px solid rgba(59,130,246,.22); }
+.hw-c-ic.pink { background: rgba(236,72,153,.12); border: 1px solid rgba(236,72,153,.22); }
+.hw-c-ic.green { background: rgba(16,185,129,.12); border: 1px solid rgba(16,185,129,.22); }
+.hw-c-title { font-size: 13px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hw-c-sub { font-size: 11px; color: var(--text-muted); margin-top: 3px; display: flex; align-items: center; gap: 6px; }
+.hw-c-pin { display: inline-flex; align-items: center; gap: 2px; height: 16px; padding: 0 6px; border-radius: 4px; font-size: 10px; font-weight: 600; background: var(--accent-light); color: var(--accent-strong); }
+.hw-c-time { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+/* Hero 动画元素 */
+.hw-new { position: absolute; left: 16px; right: 16px; top: 10px; z-index: 5; opacity: 0; transform: translateY(-90px); }
+.hw-new.show { animation: hwDrop .7s cubic-bezier(.2,.9,.25,1.2) forwards; }
+@keyframes hwDrop { 0% { opacity: 0; transform: translateY(-90px); } 100% { opacity: 1; transform: translateY(0); } }
+.hw-new .glow { position: absolute; inset: -3px; border-radius: 18px; border: 2px solid var(--accent); opacity: 0; animation: hwGlow 1.4s ease-in-out 1.5s infinite; }
+@keyframes hwGlow { 0%,100% { opacity: .0; box-shadow: 0 0 0 0 rgba(59,158,255,0); } 50% { opacity: 1; box-shadow: 0 0 22px rgba(59,158,255,.55); } }
+.hw-toast { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(20px); display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 10px; background: rgba(10,20,36,.92); border: 1px solid rgba(59,158,255,.4); color: #E6EDF7; font-size: 12.5px; font-weight: 600; opacity: 0; z-index: 9; white-space: nowrap; }
+.hw-toast.show { animation: hwToast 2.4s ease forwards; }
+@keyframes hwToast { 0% { opacity: 0; transform: translateX(-50%) translateY(20px); } 12% { opacity: 1; transform: translateX(-50%) translateY(0); } 82% { opacity: 1; } 100% { opacity: 0; transform: translateX(-50%) translateY(-8px); } }
+.cursor { position: absolute; width: 24px; height: 24px; z-index: 300; pointer-events: none; filter: drop-shadow(0 2px 4px rgba(0,0,0,.4)); transition: left .9s cubic-bezier(.55,.06,.25,1), top .9s cubic-bezier(.55,.06,.25,1); }
+.cursor svg { display: block; }
+.hero-kbd { position: absolute; right: -14px; top: -14px; z-index: 10; display: flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 10px; background: rgba(10,20,36,.9); border: 1px solid rgba(255,255,255,.14); box-shadow: 0 8px 24px rgba(0,0,0,.4); color: #E6EDF7; font-size: 12px; }
+.hero-kbd kbd { font-family: var(--mono); background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); border-bottom-width: 2px; border-radius: 5px; padding: 1px 7px; font-size: 11px; color: #7DC4FF; }
+/* ===================== 区块通用 ===================== */
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 28px; }
+.sec { padding: 76px 0; }
+.sec-head { max-width: 640px; margin-bottom: 44px; }
+.sec-head .kicker { font-size: 12px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent-strong); }
+.sec-head h2 { font-size: 30px; font-weight: 800; letter-spacing: -.6px; margin-top: 8px; }
+.sec-head p { font-size: 14px; color: var(--text-secondary); margin-top: 10px; }
+.sec.alt { background: color-mix(in srgb, var(--section-bg) 55%, var(--app-bg)); border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); }
+/* ===================== 特性演示区 ===================== */
+.featrow { display: flex; gap: 56px; align-items: center; margin-bottom: 72px; }
+.featrow:last-child { margin-bottom: 0; }
+.featrow.rev { flex-direction: row-reverse; }
+.feat-txt { flex: 1; min-width: 0; }
+.feat-num { font-family: var(--mono); font-size: 12px; font-weight: 800; color: var(--accent-strong); background: var(--accent-light); display: inline-flex; padding: 3px 10px; border-radius: 99px; }
+.feat-txt h3 { font-size: 23px; font-weight: 800; letter-spacing: -.3px; margin: 12px 0 8px; }
+.feat-txt p { color: var(--text-secondary); font-size: 14px; max-width: 440px; }
+.feat-tags { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.ftag { font-size: 11.5px; padding: 3px 10px; border-radius: 99px; background: var(--section-bg); border: 1px solid var(--border-color); color: var(--text-secondary); }
+.feat-demo { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; }
+/* 播放控制条 */
+.playbar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; width: 100%; max-width: 560px; }
+.pbtn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 13px; border-radius: 9px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-secondary); font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s; flex-shrink: 0; }
+.pbtn:hover { border-color: var(--accent); color: var(--accent); }
+.pbtn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.psteps { display: flex; gap: 4px; flex: 1; }
+.pstep { flex: 1; height: 30px; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 9px; border: 1px solid var(--border-color); background: var(--card-bg); font-size: 12px; font-weight: 600; color: var(--text-muted); cursor: pointer; transition: all .15s; white-space: nowrap; }
+.pstep .n { width: 16px; height: 16px; border-radius: 50%; background: var(--seg-bg); color: var(--text-muted); font-size: 10px; font-weight: 800; display: grid; place-items: center; }
+.pstep:hover { border-color: var(--accent); color: var(--accent); }
+.pstep.cur { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pstep.cur .n { background: rgba(255,255,255,.25); color: #fff; }
+.pstep.done { border-color: var(--accent); color: var(--accent-strong); }
+.pstep.done .n { background: var(--accent-light); color: var(--accent-strong); }
+.play-cap { width: 100%; max-width: 560px; min-height: 46px; display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 14px; border-radius: 12px; background: var(--section-bg); border: 1px solid var(--border-color); font-size: 12.5px; color: var(--text-secondary); transition: opacity .2s; }
+.play-cap .ic { font-size: 16px; flex-shrink: 0; }
+.play-cap b { color: var(--text-primary); }
+/* ===================== 截图演示舞台 ===================== */
+.shot-stage { position: relative; width: 600px; height: 380px; border-radius: 16px; overflow: hidden; background: linear-gradient(150deg, #232A3E, #161B2B 55%, #101423); box-shadow: var(--win-shadow); border: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent); user-select: none; }
+.shot-stage::before { content:""; position:absolute; inset:0; background: radial-gradient(circle at 25% 20%, rgba(99,102,241,.13), transparent 45%), radial-gradient(circle at 75% 80%, rgba(34,211,238,.09), transparent 45%); pointer-events:none; }
+/* 舞台内的假窗口（给选区一个目标） */
+.fw { position: absolute; border-radius: 10px; overflow: hidden; background: #1C2436; border: 1px solid rgba(255,255,255,.08); box-shadow: 0 14px 34px rgba(0,0,0,.35); }
+.fw .fb { display: flex; align-items: center; gap: 5px; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.07); }
+.fw .fd { width: 8px; height: 8px; border-radius: 50%; background: #3A4358; }
+.fw .ft { font-size: 10px; color: #7E8AA6; margin-left: 6px; }
+.fw.code { left: 26px; top: 26px; width: 250px; height: 150px; }
+.fw.code .lc { padding: 10px 12px; font-family: var(--mono); font-size: 8.5px; line-height: 1.9; color: #7E8AA6; }
+.fw.code .lc .k { color: #C792EA; } .fw.code .lc .s { color: #A5E075; } .fw.code .lc .f { color: #82AAFF; } .fw.code .lc .c { color: #3E4A63; }
+.fw.browser { right: 26px; top: 34px; width: 268px; height: 152px; }
+.fw.browser .ub { display: flex; align-items: center; gap: 4px; padding: 7px 9px; border-bottom: 1px solid rgba(255,255,255,.07); }
+.fw.browser .uad { flex: 1; height: 16px; border-radius: 4px; background: rgba(255,255,255,.06); font-size: 8px; color: #5E6A86; display: flex; align-items: center; padding: 0 8px; }
+.fw.browser .page { display: grid; grid-template-columns: repeat(3,1fr); gap: 7px; padding: 10px; }
+.fw.browser .blk { height: 40px; border-radius: 5px; background: rgba(255,255,255,.05); }
+.fw.browser .blk.tall { height: 54px; }
+.fw.panel { left: 120px; bottom: 22px; width: 150px; height: 96px; background: #1A2233; border-radius: 8px; }
+.fw.panel .rows { padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.fw.panel .rr { height: 8px; border-radius: 3px; background: rgba(255,255,255,.07); width: 80%; }
+.fw.panel .rr.w60 { width: 60%; } .fw.panel .rr.w45 { width: 45%; }
+/* 选区与遮罩（步骤1） */
+.shot-mask { position: absolute; inset: 0; opacity: 0; }
+.shot-mask .shade { position: absolute; background: rgba(6,10,20,.66); transition: all .45s ease; }
+.shot-sel { position: absolute; border: 2.5px solid #3B9EFF; box-shadow: 0 0 0 1px rgba(0,0,0,.55), 0 0 10px rgba(59,158,255,.5); opacity: 0; }
+.shot-size { position: absolute; display: flex; align-items: center; gap: 8px; padding: 3px 10px; border-radius: 7px; background: rgba(8,12,22,.94); color: #fff; border: 1px solid rgba(255,255,255,.16); font-size: 11px; font-variant-numeric: tabular-nums; opacity: 0; }
+.shot-size .hint { color: rgba(255,255,255,.6); font-size: 10px; }
+/* 标注工具栏（真实：tool 38×42，gap 6） */
+.annot-toolbar { position: absolute; display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 12px; background: linear-gradient(180deg, rgba(34,41,76,.94), rgba(16,21,40,.96)); border: 1px solid rgba(99,102,241,.4); box-shadow: 0 12px 36px rgba(0,0,0,.45), inset 0 1px 0 rgba(148,168,255,.28); white-space: nowrap; opacity: 0; transform: translateY(8px); transition: opacity .25s, transform .25s; z-index: 30; }
+.tool { min-width: 38px; height: 42px; border-radius: 8px; padding: 0 3px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 1px solid transparent; color: #E0E8F0; font-size: 12px; }
+.tool .ic { font-size: 16px; line-height: 1; }
+.tool .lb { font-size: 9px; line-height: 1; opacity: .72; }
+.tool.on { background: linear-gradient(135deg, #3B9EFF, #6D5CF0); border-color: rgba(255,255,255,.4); color: #fff; box-shadow: 0 2px 12px rgba(59,158,255,.5); }
+.tool.on .lb { opacity: 1; }
+.tsep { width: 1px; height: 24px; margin: 0 3px; background: linear-gradient(180deg, transparent, rgba(125,140,255,.5), transparent); }
+.tool.ocr { color: #7DE0C4; }
+.tool.done { background: linear-gradient(135deg,#6366F1,#3B9EFF); color:#fff; border:1px solid rgba(255,255,255,.25); font-weight:600; }
+/* 画在选区上的箭头（步骤2，SVG 描边动画） */
+.shot-arrow { position: absolute; opacity: 0; }
+.shot-arrow svg { display: block; filter: drop-shadow(0 2px 4px rgba(0,0,0,.5)); }
+.shot-arrow .line { stroke: #FF6B6B; stroke-width: 4; fill: none; stroke-linecap: round; stroke-dasharray: 400; stroke-dashoffset: 400; transition: stroke-dashoffset .5s ease .1s; }
+.shot-arrow .head { fill: #FF6B6B; opacity: 0; transition: opacity .15s ease .55s; }
+/* OCR 抽屉（步骤3） */
+.ocr-drawer { position: absolute; top: 0; right: 0; width: 208px; height: 100%; background: rgba(10,22,40,.94); backdrop-filter: blur(16px); border-left: 1px solid #162B45; transform: translateX(100%); transition: transform .35s cubic-bezier(.3,.9,.3,1); z-index: 40; color: #E0E8F0; }
+.ocr-head { display: flex; align-items: center; gap: 6px; padding: 9px 12px; font-size: 11.5px; font-weight: 600; background: #0A1E3A; border-bottom: 1px solid rgba(59,158,255,.35); color: #3B9EFF; }
+.ocr-head .copy-all { margin-left: auto; height: 24px; padding: 0 10px; border: none; border-radius: 6px; background: #2D78C2; color: #fff; font-size: 10.5px; }
+.ocr-body { padding: 8px 10px; font-size: 10.5px; line-height: 1.6; }
+.ocr-row { padding: 4px 8px; margin-bottom: 3px; border-radius: 6px; display: flex; gap: 6px; color: #C9D7EA; transition: background .2s; }
+.ocr-row .n { font-size: 9px; color: #7994B4; font-family: var(--mono); padding-top: 2px; min-width: 14px; }
+.ocr-row.hl { background: rgba(59,158,255,.22); outline: 1px solid rgba(59,158,255,.5); }
+.ocr-foot { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid #162B45; position: absolute; bottom: 0; left: 0; right: 0; }
+.ocr-foot .fbtn { flex: 1; height: 28px; border-radius: 8px; font-size: 10.5px; border: 1px solid #162B45; background: transparent; color: #E0E8F0; display: flex; align-items: center; justify-content: center; gap: 4px; }
+.ocr-foot .fbtn.ai { border-color: rgba(99,102,241,.45); color: #A5B4FC; }
+/* 完成：合成图飞向剪贴板（步骤4） */
+.shot-done { position: absolute; left: 30%; top: 24%; width: 210px; height: 140px; border-radius: 12px; background: #141A2B; border: 2px solid rgba(59,158,255,.7); box-shadow: 0 14px 40px rgba(0,0,0,.5); opacity: 0; transform: scale(.92); z-index: 45; }
+.shot-done .arrow-in { position: absolute; left: 30px; top: 22px; }
+.shot-done .arrow-in svg { width: 130px; }
+.shot-done .arrow-in .line { stroke: #FF6B6B; stroke-width: 4; fill: none; stroke-linecap: round; }
+.shot-done .arrow-in .head { fill: #FF6B6B; }
+.shot-done .note { position: absolute; left: 24px; bottom: 14px; font-size: 10px; color: #7E8AA6; display: flex; align-items: center; gap: 6px; }
+.shot-done .note b { color: #E6EDF7; }
+/* 步骤激活态 */
+.shot-stage[data-step="1"] .shot-mask { opacity: 1; }
+.shot-stage[data-step="1"] .shot-mask .shade.tl { inset: 0 auto auto 0; width: 96px; height: 70px; }
+.shot-stage[data-step="1"] .shot-mask .shade.tr { inset: 0 0 auto auto; width: 80px; height: 70px; }
+.shot-stage[data-step="1"] .shot-mask .shade.bl { inset: auto auto 0 0; width: 96px; height: calc(100% - 70px); }
+.shot-stage[data-step="1"] .shot-mask .shade.br { inset: auto 0 0 auto; width: 80px; height: calc(100% - 70px); }
+.shot-stage[data-step="1"] .shot-sel { opacity: 1; left: 96px; top: 70px; width: 408px; height: 236px; }
+.shot-stage[data-step="1"] .shot-size { opacity: 1; left: 96px; top: calc(70px + 236px + 10px); }
+.shot-stage[data-step="2"] .annot-toolbar { opacity: 1; transform: translateY(0); left: 50%; bottom: 12px; margin-left: -222px; }
+.shot-stage[data-step="2"] .shot-arrow { opacity: 1; left: 96px; top: 70px; }
+.shot-stage[data-step="2"] .shot-arrow .line { stroke-dashoffset: 0; }
+.shot-stage[data-step="2"] .shot-arrow .head { opacity: 1; }
+.shot-stage[data-step="3"] .ocr-drawer { transform: translateX(0); }
+.shot-stage[data-step="3"] .ocr-row:nth-child(3) { background: rgba(59,158,255,.22); outline: 1px solid rgba(59,158,255,.5); }
+.shot-stage[data-step="4"] .shot-done { opacity: 1; transform: scale(1); }
+.shot-stage[data-step="4"] .shot-done { animation: donePop .35s cubic-bezier(.2,.9,.3,1.4); }
+@keyframes donePop { 0% { opacity: 0; transform: scale(.88); } 100% { opacity: 1; transform: scale(1); } }
+/* ===================== 剪贴板管理演示（F2） ===================== */
+.clip-stage { position: relative; width: 600px; height: 380px; display: flex; align-items: center; justify-content: center; }
+.clip-win { width: 320px; height: 350px; border-radius: 14px; overflow: hidden; background: var(--card-bg); border: 1px solid var(--border-color); box-shadow: var(--win-shadow); position: relative; }
+.cw-tbr { display: flex; align-items: center; gap: 6px; padding: 12px 12px 0; }
+.cw-ticon { width: 24px; height: 24px; border-radius: 7px; background: linear-gradient(135deg, var(--accent), #6D5CF0); color: #fff; display: grid; place-items: center; font-size: 12px; }
+.cw-brand { font-size: 13px; font-weight: 700; }
+.cw-search { flex: 1; height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: 8px; background: var(--search-bg); border: 1px solid var(--border-color); color: var(--text-muted); font-size: 11.5px; margin-left: 8px; }
+.cw-list { padding: 10px 10px 0; }
+.cw-card { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--card-bg); border: 1px solid var(--border-color); box-shadow: 0 2px 8px rgba(0,0,0,.06); margin-bottom: 8px; height: 56px; transition: all .35s; }
+.cw-ic { width: 32px; height: 32px; min-width: 32px; border-radius: 9px; display: grid; place-items: center; font-size: 14px; }
+.cw-ic.blue { background: rgba(59,130,246,.12); border: 1px solid rgba(59,130,246,.22); }
+.cw-ic.green { background: rgba(16,185,129,.12); border: 1px solid rgba(16,185,129,.22); }
+.cw-ic.pink { background: rgba(236,72,153,.12); border: 1px solid rgba(236,72,153,.22); }
+.cw-title { font-size: 12px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cw-sub { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+.cw-time { font-size: 10px; color: var(--text-muted); margin-left: auto; flex-shrink: 0; }
+.cw-new { position: absolute; left: 10px; right: 10px; top: 46px; opacity: 0; transform: translateY(-70px); z-index: 5; }
+.cw-new.show { animation: cwDrop .6s cubic-bezier(.2,.9,.25,1.15) forwards; }
+@keyframes cwDrop { 0% { opacity: 0; transform: translateY(-70px); } 100% { opacity: 1; transform: translateY(0); } }
+.cw-new .glow { position: absolute; inset: -2px; border-radius: 14px; border: 2px solid var(--accent); animation: hwGlow 1.2s ease-in-out 1.2s infinite; }
+.cw-toast { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); padding: 7px 14px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 11.5px; font-weight: 700; opacity: 0; white-space: nowrap; box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 45%, transparent); }
+.cw-toast.show { animation: hwToast 2.2s ease forwards; }
+.clip-src { position: absolute; left: 20px; top: 24px; width: 190px; padding: 12px 14px; border-radius: 12px; background: var(--card-bg); border: 1px solid var(--border-color); box-shadow: var(--glass-popover-shadow); font-size: 11.5px; color: var(--text-secondary); opacity: 0; transition: opacity .3s; }
+.clip-src b { color: var(--text-primary); }
+.clip-src .srctag { display: inline-flex; font-size: 9.5px; font-weight: 700; color: var(--accent-strong); background: var(--accent-light); padding: 1px 7px; border-radius: 99px; margin-top: 6px; }
+.clip-stage .curs { position: absolute; left: 8px; top: 90px; width: 22px; height: 22px; opacity: 0; z-index: 20; }
+.clip-stage[data-step="1"] .clip-src { opacity: 1; }
+.clip-stage[data-step="1"] .clip-src .curs { opacity: 1; animation: cFly 1.5s cubic-bezier(.5,.05,.3,1) .5s forwards; }
+@keyframes cFly { 0% { opacity: 0; transform: translate(0,0); } 15% { opacity: 1; } 100% { opacity: 1; transform: translate(250px,-120px); } }
+.clip-stage[data-step="2"] .cw-new.show { }
+/* ===================== 高效粘贴演示（F3） ===================== */
+.paste-stage { position: relative; width: 600px; height: 380px; }
+.paste-editor { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 380px; height: 220px; border-radius: 12px; background: var(--card-bg); border: 1px solid var(--border-color); box-shadow: var(--win-shadow); padding: 14px 16px; }
+.paste-editor .pe-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.paste-editor .pe-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--seg-bg); }
+.paste-editor .pe-title { font-size: 11px; color: var(--text-muted); margin-left: 4px; }
+.paste-editor .pe-line { height: 9px; border-radius: 4px; background: var(--section-bg); margin-bottom: 8px; }
+.paste-editor .pe-line.w80 { width: 80%; } .paste-editor .pe-line.w60 { width: 60%; } .paste-editor .pe-line.w40 { width: 40%; }
+.paste-editor .pe-cursorline { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.paste-editor .pe-caret { width: 2px; height: 15px; background: var(--accent); animation: caretBlink 1s steps(1) infinite; }
+@keyframes caretBlink { 50% { opacity: 0; } }
+/* Alt+V 面板 */
+.paste-panel { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%) translateY(24px); width: 300px; background: var(--glass-popover-bg); border: 1px solid var(--glass-popover-border); border-radius: 14px; box-shadow: var(--glass-popover-shadow); backdrop-filter: blur(16px); padding: 6px; opacity: 0; z-index: 30; }
+.paste-panel .pp-head { display: flex; align-items: center; gap: 8px; padding: 7px 10px; font-size: 11px; font-weight: 700; color: var(--text-secondary); }
+.paste-panel .pp-head kbd { font-family: var(--mono); font-size: 10px; background: var(--section-bg); border: 1px solid var(--border-color); border-radius: 5px; padding: 1px 6px; color: var(--accent-strong); }
+.paste-panel .pp-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 9px; font-size: 12px; color: var(--text-primary); }
+.paste-panel .pp-item .pi { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; font-size: 13px; flex-shrink: 0; }
+.paste-panel .pp-item .pt { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.paste-panel .pp-item .ps { margin-left: auto; font-size: 10px; color: var(--text-muted); font-family: var(--mono); }
+.paste-panel .pp-item.on { background: var(--accent); color: #fff; }
+.paste-panel .pp-item.on .ps { color: rgba(255,255,255,.8); }
+.paste-panel .pp-foot { display: flex; gap: 4px; padding: 5px 8px; }
+.paste-panel .pp-foot span { font-size: 10px; color: var(--text-muted); padding: 3px 8px; border-radius: 6px; background: var(--section-bg); border: 1px solid var(--border-color); }
+.paste-stage[data-step="1"] .paste-panel { opacity: 1; transform: translateX(-50%) translateY(0); transition: all .35s cubic-bezier(.3,.9,.3,1.2); }
+.paste-stage[data-step="2"] .paste-panel .pp-item:nth-child(2) { background: var(--accent); color: #fff; }
+.paste-stage[data-step="2"] .paste-panel .pp-item:nth-child(2) .ps { color: rgba(255,255,255,.8); }
+.paste-stage[data-step="3"] .paste-editor .pe-line.pasted { background: var(--accent-light); box-shadow: inset 0 0 0 1px var(--accent); }
+.paste-stage[data-step="3"] .paste-editor .pe-line.s1 { background: var(--accent-light); box-shadow: inset 0 0 0 1px var(--accent); }
+.paste-stage[data-step="3"] .paste-panel { opacity: 0; transform: translateX(-50%) translateY(24px); transition: all .3s; }
+/* ===================== 本地 OCR 特写演示（F4） ===================== */
+.ocr-stage { position: relative; width: 600px; height: 380px; display: flex; align-items: center; justify-content: center; gap: 26px; }
+.ocr-img { width: 250px; height: 300px; border-radius: 14px; overflow: hidden; background: var(--card-bg); border: 1px solid var(--border-color); box-shadow: var(--win-shadow); position: relative; transition: all .35s; flex-shrink: 0; }
+.ocr-img .oi-bar { display: flex; align-items: center; gap: 6px; padding: 9px 11px; border-bottom: 1px solid var(--border-color); }
+.ocr-img .oi-bar .b { width: 8px; height: 8px; border-radius: 50%; background: var(--seg-bg); }
+.ocr-img .oi-bar .t { font-size: 10.5px; color: var(--text-muted); margin-left: 5px; }
+.ocr-img .oi-body { padding: 12px 13px; }
+.ocr-img .oi-title { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+.ocr-img .oi-sub { font-size: 10.5px; color: var(--text-muted); margin-top: 3px; }
+.ocr-img .oi-line { height: 8px; border-radius: 4px; background: var(--section-bg); margin-top: 9px; }
+.ocr-img .oi-line.w85 { width: 85%; } .ocr-img .oi-line.w65 { width: 65%; } .ocr-img .oi-line.w75 { width: 75%; }
+.ocr-img .oi-scan { position: absolute; left: 0; right: 0; top: -40px; height: 46px; background: linear-gradient(180deg, transparent, rgba(59,158,255,.22), transparent); border-bottom: 1px solid rgba(59,158,255,.35); opacity: 0; }
+.ocr-btn { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 16px; border-radius: 10px; background: linear-gradient(135deg, var(--accent), #6D5CF0); color: #fff; font-size: 12.5px; font-weight: 700; box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 40%, transparent); opacity: 0; transition: opacity .25s; }
+.ocr-res { width: 242px; background: var(--glass-popover-bg); border: 1px solid var(--glass-popover-border); border-radius: 14px; box-shadow: var(--glass-popover-shadow); backdrop-filter: blur(16px); overflow: hidden; opacity: 0; transform: translateX(24px); transition: all .35s cubic-bezier(.3,.9,.3,1); flex-shrink: 0; }
+.ocr-res .or-head { padding: 10px 12px; font-size: 12px; font-weight: 700; color: var(--accent-strong); background: var(--accent-light); display: flex; align-items: center; gap: 8px; border-bottom: 1px solid color-mix(in srgb, var(--accent) 20%, transparent); }
+.ocr-res .or-head .off { margin-left: auto; font-size: 10px; font-weight: 600; color: var(--text-muted); display: inline-flex; align-items: center; gap: 4px; }
+.ocr-res .or-row { padding: 8px 12px; font-size: 11.5px; color: var(--text-secondary); border-bottom: 1px solid var(--border-color); display: flex; gap: 8px; transition: background .2s; cursor: default; }
+.ocr-res .or-row .n { font-family: var(--mono); font-size: 10px; color: var(--text-muted); padding-top: 1px; }
+.ocr-res .or-foot { padding: 9px 12px; display: flex; gap: 6px; }
+.ocr-res .or-foot span { flex: 1; height: 28px; display: flex; align-items: center; justify-content: center; gap: 5px; border-radius: 8px; font-size: 11px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-secondary); }
+.ocr-toast { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); padding: 8px 16px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; opacity: 0; white-space: nowrap; box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 45%, transparent); z-index: 20; }
+.ocr-stage[data-step="1"] .ocr-img { transform: translateX(-46px) scale(1.02); border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent), var(--win-shadow); }
+.ocr-stage[data-step="1"] .ocr-btn { opacity: 1; }
+.ocr-stage[data-step="2"] .ocr-img { transform: translateX(-46px); }
+.ocr-stage[data-step="2"] .ocr-img .oi-scan { opacity: 1; animation: oiScan 1.1s linear infinite; }
+@keyframes oiScan { 0% { top: -46px; } 100% { top: 100%; } }
+.ocr-stage[data-step="2"] .ocr-res { opacity: 1; transform: translateX(0); }
+.ocr-stage[data-step="3"] .ocr-res .or-row:nth-child(3) { background: var(--accent-light); color: var(--text-primary); }
+.ocr-stage[data-step="3"] .ocr-res .or-row:nth-child(3) .n { color: var(--accent-strong); }
+.ocr-stage[data-step="3"] .ocr-toast { animation: hwToast 2.2s ease forwards; }
+/* ===================== 变换与正则演示（F5） ===================== */
+.tf-stage { position: relative; width: 600px; height: 380px; }
+.tf-window { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 470px; height: 290px; border-radius: 14px; background: var(--card-bg); border: 1px solid var(--border-color); box-shadow: var(--win-shadow); overflow: hidden; }
+.tf-tbr { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--border-color); }
+.tf-tbr .td { width: 9px; height: 9px; border-radius: 50%; background: var(--seg-bg); }
+.tf-tbr .t { font-size: 11px; color: var(--text-muted); margin-left: 5px; }
+.tf-tbr .tag { margin-left: auto; font-size: 10px; font-weight: 700; color: var(--accent-strong); background: var(--accent-light); padding: 2px 9px; border-radius: 99px; }
+.tf-body { padding: 14px 16px; font-family: var(--mono); font-size: 11.5px; line-height: 1.8; color: var(--text-muted); }
+.tf-body .k { color: #C792EA; } .tf-body .s { color: #A5E075; } .tf-body .n { color: #82AAFF; } .tf-body .p { color: var(--text-secondary); }
+.tf-body .raw .hl { background: var(--accent-light); color: var(--accent-strong); border-radius: 3px; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent); }
+.tf-out { display: none; white-space: pre; }
+.tf-panel { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%) translateY(24px); background: var(--glass-popover-bg); border: 1px solid var(--glass-popover-border); border-radius: 14px; box-shadow: var(--glass-popover-shadow); backdrop-filter: blur(16px); padding: 6px; opacity: 0; transition: all .32s; z-index: 20; width: 310px; }
+.tf-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; font-size: 12px; color: var(--text-primary); }
+.tf-item .ti { font-size: 14px; width: 18px; text-align: center; }
+.tf-item .tg { margin-left: auto; font-size: 10px; color: var(--text-muted); }
+.tf-sep { height: 1px; background: var(--border-color); margin: 4px 6px; }
+.tf-stage[data-step="1"] .tf-body .raw .hl { background: var(--accent-light); color: var(--accent-strong); }
+.tf-stage[data-step="2"] .tf-panel { opacity: 1; transform: translateX(-50%) translateY(0); }
+.tf-stage[data-step="2"] .tf-item:nth-child(1) { background: var(--accent); color: #fff; }
+.tf-stage[data-step="2"] .tf-item:nth-child(1) .tg { color: rgba(255,255,255,.8); }
+.tf-stage[data-step="3"] .tf-body .raw { display: none; }
+.tf-stage[data-step="3"] .tf-body .tf-out { display: block; animation: tfOut .4s ease; }
+@keyframes tfOut { 0% { opacity: 0; transform: translateY(6px); } 100% { opacity: 1; transform: translateY(0); } }
+.tf-stage[data-step="3"] .tf-panel { opacity: 0; transform: translateX(-50%) translateY(24px); }
+.tf-stage[data-step="3"] .tf-window { animation: tfWinPop .35s cubic-bezier(.2,.9,.3,1.2); }
+@keyframes tfWinPop { 0% { transform: translate(-50%,-50%) scale(.97); } 100% { transform: translate(-50%,-50%) scale(1); } }
+/* ===================== 贴图置顶演示（F6） ===================== */
+.pin-stage { position: relative; width: 600px; height: 380px; border-radius: 16px; overflow: hidden; background: linear-gradient(150deg, #232A3E, #161B2B 55%, #101423); box-shadow: var(--win-shadow); border: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent); }
+.pin-main { position: absolute; left: 34px; top: 26px; width: 330px; height: 216px; border-radius: 10px; background: #1C2436; border: 1px solid rgba(255,255,255,.08); overflow: hidden; }
+.pin-main .fb { display: flex; align-items: center; gap: 5px; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.07); }
+.pin-main .fd { width: 7px; height: 7px; border-radius: 50%; background: #3A4358; }
+.pin-main .ft { font-size: 9px; color: #7E8AA6; margin-left: 5px; }
+.pin-main .lc { padding: 10px 12px; font-family: var(--mono); font-size: 8px; line-height: 1.9; color: #7E8AA6; }
+.pin-main .lc .k { color: #C792EA; } .pin-main .lc .s { color: #A5E075; } .pin-main .lc .f { color: #82AAFF; } .pin-main .lc .c { color: #3E4A63; }
+.pin-w { position: absolute; border-radius: 10px; border: 2px solid rgba(59,158,255,.55); box-shadow: 0 12px 34px rgba(0,0,0,.5); overflow: hidden; opacity: 0; transform: scale(.82); transition: all .4s cubic-bezier(.3,.9,.3,1.2); z-index: 10; }
+.pin-w .pw-bar { display: flex; align-items: center; gap: 6px; padding: 5px 9px; background: rgba(16,24,40,.92); font-size: 9.5px; color: #A2B6CD; border-bottom: 1px solid rgba(255,255,255,.08); }
+.pin-w .pw-body { display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: rgba(22,32,52,.96); }
+.pin-w .pw-ic { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; font-size: 14px; flex-shrink: 0; }
+.pin-w .pw-t { font-size: 10.5px; color: #E6EDF7; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+.pin-w .pw-s { font-size: 9px; color: #7994B4; margin-top: 2px; }
+.pin-w.w1 { right: 18px; top: 16px; width: 208px; }
+.pin-w.w2 { right: 30px; top: 128px; width: 186px; }
+.pin-w .transp-tag { position: absolute; right: 8px; top: 28px; font-size: 9px; color: #7DE0C4; background: rgba(16,120,90,.35); border: 1px solid rgba(125,224,196,.4); padding: 2px 7px; border-radius: 5px; opacity: 0; transition: opacity .3s; }
+.pin-menu { position: absolute; right: 34px; top: 64px; width: 188px; background: rgba(10,22,40,.95); backdrop-filter: blur(16px); border: 1px solid rgba(59,158,255,.3); border-radius: 12px; box-shadow: 0 14px 40px rgba(0,0,0,.5); padding: 6px; opacity: 0; transform: scale(.94); transition: all .25s; z-index: 30; }
+.pin-menu .pm-item { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 8px; font-size: 11.5px; color: #E0E8F0; }
+.pin-menu .pm-item .mi-ic { width: 15px; text-align: center; font-size: 12px; color: #7994B4; }
+.pin-menu .pm-item.danger { color: #F87171; }
+.pin-menu .pm-item.danger .mi-ic { color: inherit; }
+.pin-menu .pm-sep { height: 1px; background: rgba(255,255,255,.08); margin: 4px 6px; }
+.pin-stage[data-step="1"] .pin-w.w1, .pin-stage[data-step="2"] .pin-w.w1, .pin-stage[data-step="3"] .pin-w.w1 { opacity: 1; transform: scale(1); }
+.pin-stage[data-step="2"] .pin-w.w2, .pin-stage[data-step="3"] .pin-w.w2 { opacity: 1; transform: scale(1); }
+.pin-stage[data-step="3"] .pin-w .transp-tag { opacity: 1; }
+.pin-stage[data-step="3"] .pin-w.w1 { animation: pinPulse 1.6s ease-in-out infinite; }
+@keyframes pinPulse { 0%,100% { box-shadow: 0 12px 34px rgba(0,0,0,.5); } 50% { box-shadow: 0 12px 34px rgba(0,0,0,.5), 0 0 0 3px rgba(59,158,255,.22); } }
+.pin-stage[data-step="3"] .pin-menu { opacity: 1; transform: scale(1); }
+/* ===================== 编辑器家族演示（F7） ===================== */
+.ed-stage { position: relative; width: 600px; height: 380px; display: flex; align-items: center; justify-content: center; }
+.ed-card { width: 300px; border-radius: 14px; background: var(--card-bg); border: 1px solid var(--border-color); box-shadow: var(--win-shadow); overflow: hidden; position: relative; transition: all .35s; }
+.ed-card .ec-bar { display: flex; align-items: center; gap: 6px; padding: 9px 11px; border-bottom: 1px solid var(--border-color); }
+.ed-card .ec-bar .b { width: 8px; height: 8px; border-radius: 50%; background: var(--seg-bg); }
+.ed-card .ec-bar .t { font-size: 10.5px; color: var(--text-muted); margin-left: 5px; }
+.ed-card .ec-body { padding: 12px 14px; }
+.ed-card .ec-title { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+.ed-card .ec-line { height: 8px; border-radius: 4px; background: var(--section-bg); margin-top: 8px; }
+.ed-card .ec-line.w80 { width: 80%; } .ed-card .ec-line.w55 { width: 55%; }
+.ed-card .ec-hint { position: absolute; right: 10px; bottom: 10px; font-size: 10px; font-weight: 600; color: var(--accent-strong); background: var(--accent-light); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); padding: 3px 10px; border-radius: 99px; opacity: 0; transition: opacity .25s; }
+.ed-window { position: absolute; left: 50%; top: 50%; width: 470px; height: 300px; transform: translate(-50%,-50%) scale(.86); border-radius: 14px; background: var(--card-bg); border: 1px solid var(--border-color); box-shadow: var(--win-shadow); overflow: hidden; opacity: 0; transition: all .4s cubic-bezier(.3,.9,.3,1.15); z-index: 20; }
+.ed-window .ew-bar { display: flex; align-items: center; gap: 6px; padding: 9px 12px; border-bottom: 1px solid var(--border-color); }
+.ed-window .ew-bar .d { width: 9px; height: 9px; border-radius: 50%; background: var(--seg-bg); }
+.ed-window .ew-bar .t { font-size: 11px; color: var(--text-muted); margin-left: 5px; }
+.ed-window .ew-bar .fmt { margin-left: auto; display: flex; gap: 3px; }
+.ed-window .ew-bar .fmt span { font-size: 10px; padding: 2px 8px; border-radius: 6px; background: var(--section-bg); border: 1px solid var(--border-color); color: var(--text-secondary); }
+.ed-window .ew-bar .fmt span.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+.ed-window .ew-cols { display: flex; height: calc(100% - 76px); }
+.ed-window .ew-src { flex: 1; padding: 12px 14px; font-family: var(--mono); font-size: 10.5px; line-height: 1.9; color: var(--text-muted); border-right: 1px solid var(--border-color); overflow: hidden; }
+.ed-window .ew-src .md-h { color: #C792EA; font-weight: 700; } .ed-window .ew-src .md-li { color: #A5E075; }
+.ed-window .ew-prev { flex: 1; padding: 12px 14px; background: var(--section-bg); overflow: hidden; }
+.ed-window .ew-prev .pv-t { font-size: 12.5px; font-weight: 800; color: var(--text-primary); }
+.ed-window .ew-prev .pv-li { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text-secondary); margin-top: 8px; }
+.ed-window .ew-prev .pv-li .chk { width: 12px; height: 12px; border-radius: 3px; background: var(--accent); display: grid; place-items: center; color: #fff; font-size: 8px; flex-shrink: 0; }
+.ed-window .ew-prev .pv-hr { height: 1px; background: var(--border-color); margin: 9px 0; }
+.ed-window .ew-prev .pv-p { font-size: 10px; color: var(--text-muted); }
+.ed-window .ew-chips { position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 5px; padding: 8px 12px; border-top: 1px solid var(--border-color); background: color-mix(in srgb, var(--card-bg) 92%, transparent); }
+.ed-window .ew-chips .chip { font-size: 10px; padding: 3px 9px; border-radius: 99px; background: var(--section-bg); border: 1px solid var(--border-color); color: var(--text-secondary); transition: all .2s; }
+.ed-window .ew-chips .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+.ed-toast { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 8px 16px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; opacity: 0; white-space: nowrap; box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 45%, transparent); z-index: 30; }
+.ed-stage[data-step="1"] .ed-card { transform: scale(1.03); border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent), var(--win-shadow); }
+.ed-stage[data-step="1"] .ed-card .ec-hint { opacity: 1; }
+.ed-stage[data-step="2"] .ed-card { transform: scale(.82); opacity: .35; }
+.ed-stage[data-step="2"] .ed-window { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+.ed-stage[data-step="3"] .ed-window .ew-chips .chip:nth-child(2) { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+.ed-stage[data-step="3"] .ed-window .ew-chips .chip:nth-child(4) { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+.ed-stage[data-step="4"] .ed-window { width: 540px; height: 330px; animation: edFull .4s cubic-bezier(.2,.9,.3,1.15); }
+.ed-stage[data-step="4"] .ed-toast { animation: hwToast 2.4s ease forwards; }
+@keyframes edFull { 0% { transform: translate(-50%,-50%) scale(1); } 100% { transform: translate(-50%,-50%) scale(1); } }
+/* ===================== 卡片右键菜单演示（F8） ===================== */
+.ctx-stage { position: relative; width: 600px; height: 380px; }
+.ctx-list { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 340px; display: flex; flex-direction: column; gap: 10px; }
+.ctx-card { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 14px; background: var(--card-bg); border: 1px solid var(--border-color); box-shadow: 0 4px 12px rgba(0,0,0,.07); height: 64px; transition: all .3s; position: relative; }
+.ctx-card .cc-ic { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; font-size: 16px; flex-shrink: 0; }
+.ctx-card .cc-t { font-size: 12.5px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ctx-card .cc-s { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
+.ctx-card.on { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent), 0 4px 12px rgba(0,0,0,.07); }
+.ctx-card.dim { opacity: .38; }
+.ctx-menu { position: absolute; left: 52%; top: 4%; width: 216px; background: var(--glass-popover-bg); border: 1px solid var(--glass-popover-border); border-radius: 12px; box-shadow: var(--glass-popover-shadow); backdrop-filter: blur(16px); padding: 6px; opacity: 0; transform: scale(.95); transition: all .22s; z-index: 30; }
+.ctx-menu .cm-item { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 8px; font-size: 12px; color: var(--text-primary); }
+.ctx-menu .cm-item .ic { width: 15px; text-align: center; font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
+.ctx-menu .cm-item.primary { color: var(--accent-strong); font-weight: 600; background: var(--accent-light); }
+.ctx-menu .cm-item.primary .ic { color: inherit; }
+.ctx-menu .cm-item.danger { color: #D82525; }
+.ctx-menu .cm-item.danger .ic { color: inherit; }
+.ctx-menu .cm-item .arr { margin-left: auto; color: var(--text-muted); font-size: 10px; }
+.ctx-menu .cm-item .t2 { display: none; }
+.ctx-menu .cm-sep { height: 1px; background: var(--border-color); margin: 4px 6px; }
+.ctx-sub { position: absolute; left: calc(52% + 208px); top: 40%; width: 178px; background: var(--glass-popover-bg); border: 1px solid var(--glass-popover-border); border-radius: 12px; box-shadow: var(--glass-popover-shadow); backdrop-filter: blur(16px); padding: 6px; opacity: 0; transform: scale(.95); transition: all .22s .1s; z-index: 31; }
+.ctx-sub .cs-item { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 8px; font-size: 12px; color: var(--text-primary); }
+.ctx-sub .cs-item .ic { width: 15px; text-align: center; font-size: 12px; color: var(--text-muted); }
+.ctx-stage[data-step="1"] .ctx-card.json { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent), 0 4px 12px rgba(0,0,0,.07); }
+.ctx-stage[data-step="1"] .ctx-menu { opacity: 1; transform: scale(1); }
+.ctx-stage[data-step="1"] .ctx-menu .cm-item.primary .t1 { display: inline; }
+.ctx-stage[data-step="2"] .ctx-card.json { opacity: .38; }
+.ctx-stage[data-step="2"] .ctx-card.link { opacity: 1; border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent), 0 4px 12px rgba(0,0,0,.07); }
+.ctx-stage[data-step="2"] .ctx-menu .cm-item.primary .t1 { display: none; }
+.ctx-stage[data-step="2"] .ctx-menu .cm-item.primary .t2 { display: inline; }
+.ctx-stage[data-step="3"] .ctx-card.link { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent), 0 4px 12px rgba(0,0,0,.07); }
+.ctx-stage[data-step="3"] .ctx-sub { opacity: 1; transform: scale(1); }
+.ctx-stage[data-step="3"] .ctx-menu .cm-item.more { background: var(--hover); font-weight: 600; }
+/* ===================== 亮点分组 ===================== */
+.hl-group { margin-bottom: 40px; }
+.hl-group:last-child { margin-bottom: 0; }
+.hlg-title { display: flex; align-items: center; gap: 8px; font-size: 14.5px; font-weight: 800; color: var(--text-primary); margin-bottom: 14px; }
+.hlg-title .cnt { font-size: 11px; font-weight: 600; color: var(--text-muted); background: var(--section-bg); border: 1px solid var(--border-color); padding: 1px 9px; border-radius: 99px; }
+/* ===================== 亮点速览网格 ===================== */
+.hl-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.hl { display: flex; gap: 13px; align-items: flex-start; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 16px; padding: 16px; transition: all .2s; }
+.hl:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(0,0,0,.08); border-color: color-mix(in srgb, var(--accent) 30%, var(--border-color)); }
+.hl .h-ic { width: 38px; height: 38px; min-width: 38px; border-radius: 11px; display: grid; place-items: center; font-size: 17px; }
+.hl h4 { font-size: 13.5px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+.hl h4 .new { font-size: 9px; font-weight: 800; color: #fff; background: linear-gradient(135deg, var(--accent), #6D5CF0); padding: 1px 6px; border-radius: 4px; letter-spacing: .4px; }
+.hl p { font-size: 11.5px; color: var(--text-secondary); margin-top: 4px; line-height: 1.65; }
+.h-ic.blue { background: rgba(59,130,246,.12); border: 1px solid rgba(59,130,246,.22); } .h-ic.pink { background: rgba(236,72,153,.12); border: 1px solid rgba(236,72,153,.22); } .h-ic.green { background: rgba(16,185,129,.12); border: 1px solid rgba(16,185,129,.22); } .h-ic.purple { background: rgba(139,92,246,.12); border: 1px solid rgba(139,92,246,.22); } .h-ic.amber { background: rgba(245,158,11,.14); border: 1px solid rgba(245,158,11,.24); } .h-ic.cyan { background: rgba(6,182,212,.12); border: 1px solid rgba(6,182,212,.22); }
+/* ===================== 场景区 ===================== */
+.scene-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.scene { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 18px; padding: 22px 20px; box-shadow: 0 4px 16px rgba(0,0,0,.05); transition: all .2s; }
+.scene:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(0,0,0,.09); border-color: color-mix(in srgb, var(--accent) 35%, var(--border-color)); }
+.scene .s-ic { width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; font-size: 20px; margin-bottom: 14px; }
+.scene h4 { font-size: 15.5px; font-weight: 700; }
+.scene p { font-size: 12.5px; color: var(--text-secondary); margin-top: 6px; line-height: 1.7; }
+.scene .s-tags { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+.scene .s-tag { font-size: 10.5px; padding: 2px 8px; border-radius: 99px; background: var(--accent-light); color: var(--accent-strong); font-weight: 600; }
+.s-ic.blue { background: rgba(59,130,246,.12); border: 1px solid rgba(59,130,246,.22); } .s-ic.pink { background: rgba(236,72,153,.12); border: 1px solid rgba(236,72,153,.22); } .s-ic.green { background: rgba(16,185,129,.12); border: 1px solid rgba(16,185,129,.22); } .s-ic.purple { background: rgba(139,92,246,.12); border: 1px solid rgba(139,92,246,.22); }
+/* ===================== 下载区 ===================== */
+.dl { position: relative; overflow: hidden; border-radius: 24px; padding: 56px 48px; text-align: center; background: linear-gradient(135deg, #122B4D, #0B1C36 60%, #171032); color: #E6EDF7; border: 1px solid rgba(255,255,255,.08); }
+.dl::before { content:""; position:absolute; inset:0; background: radial-gradient(500px 260px at 20% 0%, rgba(59,158,255,.15), transparent 60%), radial-gradient(460px 260px at 85% 100%, rgba(109,92,240,.16), transparent 60%); pointer-events:none; }
+.dl-in { position: relative; z-index: 1; }
+.dl h2 { font-size: 30px; font-weight: 800; letter-spacing: -.6px; }
+.dl p { font-size: 14px; color: #9FB4D0; margin-top: 10px; max-width: 520px; margin-left: auto; margin-right: auto; }
+.dl .dl-btns { display: flex; gap: 14px; justify-content: center; margin-top: 28px; align-items: center; flex-wrap: wrap; }
+.dl .cta { height: 48px; padding: 0 30px; font-size: 15px; border-radius: 13px; }
+.dl .cta.ghost { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.16); color: #E6EDF7; }
+.dl .dl-meta { margin-top: 18px; font-size: 12px; color: #6E87A8; display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; }
+.dl .dl-meta a { color: #A5BBD8; text-decoration: none; border-bottom: 1px dashed rgba(165,187,216,.4); }
+.dl .dl-meta a:hover { color: #fff; }
+/* ===================== 手册衔接 / 页脚 ===================== */
+.manual-bridge { text-align: center; padding: 56px 28px; }
+.manual-bridge h2 { font-size: 24px; font-weight: 800; }
+.manual-bridge p { color: var(--text-secondary); font-size: 13.5px; margin-top: 8px; }
+.manual-bridge .mb-tags { display: flex; gap: 8px; justify-content: center; margin-top: 20px; flex-wrap: wrap; }
+.mb-tag { padding: 7px 16px; border-radius: 99px; background: var(--card-bg); border: 1px solid var(--border-color); font-size: 12.5px; color: var(--text-secondary); text-decoration: none; transition: all .15s; }
+.mb-tag:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
+
+/* 响应式 */
+@media (max-width: 980px) {
+  .hero-in { flex-direction: column; gap: 48px; }
+  .hero-right { width: 100%; display: flex; justify-content: center; }
+  .hero-scrollhint { display: none; }
+  .hf { display: none; }
+  .featrow, .featrow.rev { flex-direction: column; gap: 36px; }
+  .scene-grid { grid-template-columns: repeat(2, 1fr); }
+  .hl-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 640px) {
+  .top nav { display: none; }
+  .scene-grid { grid-template-columns: 1fr; }
+  .hl-grid { grid-template-columns: 1fr; }
+  .hero h1 { font-size: 34px; }
+}
+
 </style>
 </head>
 <body>
-<div class="topbar">
+<header class="top">
   <div class="logo">🐼</div>
-  <div><h1>PastePanda 用户手册 <span class="sub">· 完整功能指南</span></h1></div>
+  <div class="brand">PastePanda <span class="ver">v6.19</span></div>
+  <nav>
+    <a href="#feat">核心功能</a>
+    <a href="#scenes">适用场景</a>
+    <a href="#download">下载</a>
+    <a href="#manual">使用手册</a>
+  </nav>
   <div class="spacer"></div>
   <select class="themeToggle" id="themeBtn" onchange="setTheme(this.value)">
     <option value="ocean">🎨 经典白</option>
@@ -321,9 +819,714 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
     <option value="blossom">🌸 美乐蒂</option>
     <option value="dawn">🌅 晨曦</option>
   </select>
-</div>
+  <a class="cta" href="#download">⬇ 免费下载</a>
+</header>
 
-<div class="layout">
+<!-- ============ HERO ============ -->
+<section class="hero">
+  <div class="hero-in">
+    <div class="hero-left">
+      <span class="hero-badge"><span class="dot"></span>Windows 免费 · 本地优先</span>
+      <h1>复制 · 截图 · 识别 · 变换 · 贴图<br><em>一站全包</em></h1>
+      <p class="sub">PastePanda 是常驻系统的内容管家：自动记住你复制的一切，再帮你截图标注、本地 OCR、变换加工、贴图置顶、AI 处理、跨设备同步——一次操作，处处可用。</p>
+      <div class="points">
+        <span class="hpt">🔒 <b>本地离线</b> OCR</span>
+        <span class="hpt">📷 截图标注<b>全家桶</b></span>
+        <span class="hpt">⚡ <b>双击即贴</b> 无感</span>
+        <span class="hpt">🧩 6 套主题</span>
+      </div>
+      <div class="hero-btns">
+        <a class="cta" href="#download">⬇ 立即下载</a>
+        <a class="cta ghost" href="#feat">▶ 看功能演示</a>
+      </div>
+      <div class="hero-trust">
+        <span class="ht-item"><span class="hdot"></span>本地优先 · 内容不出设备</span>
+        <span class="ht-item">🆓 <b>完全免费</b> · 无广告</span>
+        <span class="ht-item">🪟 <b>Windows 10 / 11</b></span>
+      </div>
+    </div>
+    <div class="hero-right">
+      <div class="hero-window-wrap">
+        <div class="hero-kbd"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd> 唤出主窗口</div>
+        <div class="hero-window" id="heroWindow">
+          <div class="hw-tbr">
+            <div class="hw-ticon">🐼</div>
+            <div class="hw-tbrand">PastePanda<span class="hw-tai">AI</span></div>
+            <div class="hw-tsearch">🔍 搜索剪贴板历史…</div>
+            <div class="hw-tbtn">🧰</div>
+            <div class="hw-tbtn">✨<span class="gd"></span></div>
+            <div class="hw-tbtn">⚙️</div>
+          </div>
+          <div class="hw-sidebar">
+            <div class="hw-sb-item on"><span class="hw-sb-ic">📋</span>全部<span class="hw-sb-cnt">312</span></div>
+            <div class="hw-sb-item"><span class="hw-sb-ic">🗂</span>未分组<span class="hw-sb-cnt">40</span></div>
+            <div class="hw-sb-item"><span class="hw-sb-ic">⭐</span>收藏<span class="hw-sb-cnt">12</span></div>
+            <div class="hw-sb-sep"></div>
+            <div class="hw-sb-grp">分组</div>
+            <div class="hw-sb-item"><span class="hw-sb-ic">📝</span>工作<span class="hw-sb-cnt">18</span></div>
+            <div class="hw-sb-item"><span class="hw-sb-ic">💻</span>代码<span class="hw-sb-cnt">22</span></div>
+          </div>
+          <div class="hw-list">
+            <div class="hw-card">
+              <div class="hw-c-ic blue">💻</div>
+              <div class="hw-c-body" style="flex:1;min-width:0">
+                <div class="hw-c-title">fetch('/api/orders', { method: 'POST', …</div>
+                <div class="hw-c-sub"><span class="hw-c-pin">📌 代码</span> · 12:31</div>
+              </div>
+            </div>
+            <div class="hw-card">
+              <div class="hw-c-ic green">📝</div>
+              <div class="hw-c-body" style="flex:1;min-width:0">
+                <div class="hw-c-title">产品需求：剪贴板支持跨设备同步…</div>
+                <div class="hw-c-sub">来自 Word · 11:58</div>
+              </div>
+            </div>
+            <div class="hw-card">
+              <div class="hw-c-ic pink">🖼</div>
+              <div class="hw-c-body" style="flex:1;min-width:0">
+                <div class="hw-c-title">设计稿-首页改版-v3.png</div>
+                <div class="hw-c-sub">图片 · 4.2 MB</div>
+              </div>
+            </div>
+          </div>
+          <!-- 动画：新卡片 + toast -->
+          <div class="hw-card hw-new">
+            <div class="glow"></div>
+            <div class="hw-c-ic blue">📋</div>
+            <div class="hw-c-body" style="flex:1;min-width:0">
+              <div class="hw-c-title">PastePanda 官网：复制 · 截图 · 识别 · 变换 · 贴图</div>
+              <div class="hw-c-sub"><span class="hw-c-pin">📌 剪贴板</span> · 刚刚</div>
+            </div>
+          </div>
+          <div class="hw-toast" id="heroToast">✓ 已复制到剪贴板，去 <kbd style="font-family:var(--mono);background:rgba(255,255,255,.14);border-radius:4px;padding:0 5px;font-size:11px">Ctrl+V</kbd> 粘贴</div>
+        </div>
+        <div class="cursor" id="heroCursor"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M4 2 L4 16 L8.5 12.5 L11 19 L14 17.5 L11.5 11 L17 11 Z" fill="#fff" stroke="#0B0F19" stroke-width="2" stroke-linejoin="round"/></svg></div>
+        <!-- 浮动能力元素：OCR / 贴图 / 变换 -->
+        <div class="hf hf-ocr">
+          <div class="ho-h">🔤 OCR 识别 <span class="off">🔒 本地</span></div>
+          <div class="ho-row"><span>1</span>订单列表 · 设计中</div>
+          <div class="ho-row hl"><span>2</span>合计 ¥12,480.00</div>
+          <div class="ho-row"><span>3</span>点击行即复制</div>
+        </div>
+        <div class="hf hf-pin">
+          <div class="hp-bar">📌 贴图 · 对照中</div>
+          <div class="hp-body"><div class="hp-ic">🎨</div><div><div class="hp-t">设计稿-首页-v3</div><div class="hp-s">置顶 · T 键透明度</div></div></div>
+          <div class="hp-tag">◐ 60%</div>
+        </div>
+        <div class="hf hf-tf">
+          <div class="hfi on"><span class="ti">📐</span>格式化 JSON<span class="tg">✓</span></div>
+          <div class="hfi"><span class="ti">🗄</span>转 SQL IN 列表</div>
+        </div>
+      </div>
+      <div class="hero-scrollhint">滚动查看全部功能</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 核心功能演示区 ============ -->
+<section class="sec" id="feat" style="padding-top:88px">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Core Features</div>
+      <h2>核心功能 · 每一步都看得见</h2>
+      <p>以下演示按真实界面尺寸制作（主窗口 480×700、工具栏按钮 38×42 等），自动循环播放关键操作流程；点步骤可单步回看。</p>
+    </div>
+
+    <!-- F1 截图标注全家桶 -->
+    <div class="featrow">
+      <div class="feat-txt">
+        <span class="feat-num">F1 · 核心</span>
+        <h3>截图标注全家桶</h3>
+        <p>截图 → 选区自动吸附窗口与控件 → 矩形/箭头/马赛克/序号等全套标注 → 本地 OCR 识别 → 双击直接复制。对标微信/QQ/Snipaste 的完整工作流，一个入口全搞定。</p>
+        <div class="feat-tags"><span class="ftag">自动吸附窗口</span><span class="ftag">马赛克 / 模糊</span><span class="ftag">本地离线 OCR</span><span class="ftag">贴图置顶</span><span class="ftag">长截图</span></div>
+      </div>
+      <div class="feat-demo">
+        <div class="playbar" data-demo="shot">
+          <button class="pbtn play">▶ 自动播放</button>
+          <div class="psteps">
+            <button class="pstep"><span class="n">1</span>拖选区</button>
+            <button class="pstep"><span class="n">2</span>标注</button>
+            <button class="pstep"><span class="n">3</span>OCR</button>
+            <button class="pstep"><span class="n">4</span>完成</button>
+          </div>
+          <button class="pbtn replay" title="重播">↻</button>
+        </div>
+        <div class="shot-stage" id="shotStage" data-step="0">
+          <div class="fw code">
+            <div class="fb"><span class="fd"></span><span class="fd"></span><span class="fd"></span><span class="ft">app.tsx</span></div>
+            <div class="lc">
+              <span class="c">// 渲染订单列表</span><br>
+              <span class="f">const</span> <span class="s">orders</span> = <span class="f">await</span> <span class="s">fetch</span>(<span class="s">'/api/orders'</span>);<br>
+              <span class="f">return</span> (<br>
+              &nbsp;&nbsp;&lt;<span class="k">OrderList</span> <span class="k">data</span>={orders} /&gt;<br>
+              );
+            </div>
+          </div>
+          <div class="fw browser">
+            <div class="ub"><span class="fd"></span><span class="fd"></span><span class="fd"></span><span class="uad">docs.example.com/orders</span></div>
+            <div class="page">
+              <div class="blk tall"></div><div class="blk"></div><div class="blk tall"></div>
+              <div class="blk"></div><div class="blk tall"></div><div class="blk"></div>
+            </div>
+          </div>
+          <div class="fw panel">
+            <div class="rows"><div class="rr"></div><div class="rr w60"></div><div class="rr w45"></div></div>
+          </div>
+          <!-- 遮罩 + 选区 -->
+          <div class="shot-mask"><div class="shade tl"></div><div class="shade tr"></div><div class="shade bl"></div><div class="shade br"></div></div>
+          <div class="shot-sel"></div>
+          <div class="shot-size">960 × 540 <span class="hint">按住拖拽 · 自动吸附窗口</span></div>
+          <!-- 标注工具栏 -->
+          <div class="annot-toolbar">
+            <div class="tool"><span class="ic">▭</span><span class="lb">矩形</span></div>
+            <div class="tool"><span class="ic">◯</span><span class="lb">椭圆</span></div>
+            <div class="tool on"><span class="ic">↗</span><span class="lb">箭头</span></div>
+            <div class="tool"><span class="ic">✎</span><span class="lb">画笔</span></div>
+            <div class="tool"><span class="ic">🖍</span><span class="lb">高亮</span></div>
+            <div class="tsep"></div>
+            <div class="tool"><span class="ic">▦</span><span class="lb">马赛克</span></div>
+            <div class="tool"><span class="ic">◌</span><span class="lb">模糊</span></div>
+            <div class="tool"><span class="ic">A</span><span class="lb">文字</span></div>
+            <div class="tool"><span class="ic">①</span><span class="lb">序号</span></div>
+            <div class="tsep"></div>
+            <div class="tool ocr"><span class="ic">🔤</span><span class="lb">OCR</span></div>
+            <div class="tool done">✓</div>
+          </div>
+          <!-- 箭头标注 -->
+          <div class="shot-arrow">
+            <svg width="210" height="110" viewBox="0 0 210 110">
+              <path class="line" d="M 15 95 C 60 85, 90 40, 150 18"/>
+              <path class="head" d="M 138 10 L 158 13 L 152 32 Z"/>
+            </svg>
+          </div>
+          <!-- OCR 抽屉 -->
+          <div class="ocr-drawer">
+            <div class="ocr-head">🔤 OCR 识别结果 <span class="copy-all">复制全部</span></div>
+            <div class="ocr-body">
+              <div class="ocr-row"><span class="n">1</span><span>订单列表 v2 · 设计中</span></div>
+              <div class="ocr-row"><span class="n">2</span><span>状态：已付款 · 待发货</span></div>
+              <div class="ocr-row"><span class="n">3</span><span>合计 ¥12,480.00</span></div>
+              <div class="ocr-row"><span class="n">4</span><span>点击行即可复制该行文字</span></div>
+            </div>
+            <div class="ocr-foot"><span class="fbtn ai">✨ AI 解释 / 总结</span><span class="fbtn">📋 全部复制</span></div>
+          </div>
+          <!-- 完成合成图 -->
+          <div class="shot-done">
+            <div class="arrow-in"><svg width="150" height="80" viewBox="0 0 150 80"><path class="line" d="M 10 68 C 55 60, 90 22, 140 12"/><path class="head" d="M 128 4 L 148 8 L 141 27 Z"/></svg></div>
+            <div class="note">✓ 标注完成，<b>双击即可复制</b> · 或点完成</div>
+          </div>
+          <div class="cursor shot-cur" style="opacity:0"></div>
+        </div>
+        <div class="play-cap" data-cap="shot">
+          <span class="ic">💡</span><span><b>拖选区：</b>自动吸附窗口 / 控件边界，松开即固定；可平移、八向缩放、方向键微调</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- F2 剪贴板管理 -->
+    <div class="featrow rev">
+      <div class="feat-txt">
+        <span class="feat-num">F2</span>
+        <h3>剪贴板历史 · 复制即记录</h3>
+        <p>文本、链接、图片、文件、代码……复制的每一条都被自动归档。搜索、筛选、收藏、置顶、分组，几千条历史也能秒速找回。</p>
+        <div class="feat-tags"><span class="ftag">实时归档</span><span class="ftag">全文搜索</span><span class="ftag">标签分组</span><span class="ftag">置顶收藏</span><span class="ftag">自动去重</span></div>
+      </div>
+      <div class="feat-demo">
+        <div class="playbar" data-demo="clip">
+          <button class="pbtn play">▶ 自动播放</button>
+          <div class="psteps">
+            <button class="pstep"><span class="n">1</span>复制</button>
+            <button class="pstep"><span class="n">2</span>归档</button>
+            <button class="pstep"><span class="n">3</span>点击</button>
+          </div>
+          <button class="pbtn replay" title="重播">↻</button>
+        </div>
+        <div class="clip-stage" id="clipStage" data-step="0">
+          <div class="clip-src">
+            <b>正在浏览：</b>订单详情页<br>「PastePanda 支持跨设备同步了」<span class="srctag">Ctrl+C 复制</span>
+            <svg class="curs" width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 2 L4 16 L8.5 12.5 L11 19 L14 17.5 L11.5 11 L17 11 Z" fill="#fff" stroke="#0B0F19" stroke-width="2" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="clip-win">
+            <div class="cw-tbr">
+              <div class="cw-ticon">🐼</div>
+              <div class="cw-brand">PastePanda</div>
+              <div class="cw-search">🔍 搜索…</div>
+            </div>
+            <div class="cw-list">
+              <div class="cw-card"><div class="cw-ic blue">💻</div><div><div class="cw-title">fetch('/api/orders')…</div><div class="cw-sub">代码 · 3 分钟前</div></div><div class="cw-time">12:31</div></div>
+              <div class="cw-card"><div class="cw-ic green">📝</div><div><div class="cw-title">周报：本周完成 5 项…</div><div class="cw-sub">文本 · 1 小时前</div></div><div class="cw-time">11:20</div></div>
+              <div class="cw-card"><div class="cw-ic pink">🖼</div><div><div class="cw-title">设计稿-v3.png</div><div class="cw-sub">图片 · 2 小时前</div></div><div class="cw-time">10:05</div></div>
+            </div>
+            <div class="cw-card cw-new"><div class="glow"></div><div class="cw-ic green">📝</div><div><div class="cw-title">PastePanda 支持跨设备同步了</div><div class="cw-sub">文本 · 刚刚</div></div><div class="cw-time">现在</div></div>
+            <div class="cw-toast">✓ 已复制回剪贴板</div>
+          </div>
+        </div>
+        <div class="play-cap" data-cap="clip">
+          <span class="ic">💡</span><span><b>归档：</b>无需手动保存，复制即入库；单击任意一条即复制回剪贴板</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- F3 高效粘贴 -->
+    <div class="featrow">
+      <div class="feat-txt">
+        <span class="feat-num">F3</span>
+        <h3>快捷粘贴面板 · Alt+V 一键唤起</h3>
+        <p>不用切窗口：在任意应用里按 <kbd>Alt</kbd>+<kbd>V</kbd> 唤起历史面板，方向键选择、回车即粘贴——「复制即执行」的双击粘贴之外，批量挑着贴也只需键盘。</p>
+        <div class="feat-tags"><span class="ftag">全局唤起</span><span class="ftag">键盘全流程</span><span class="ftag">粘贴即执行</span><span class="ftag">粘贴栈批量</span></div>
+      </div>
+      <div class="feat-demo">
+        <div class="playbar" data-demo="paste">
+          <button class="pbtn play">▶ 自动播放</button>
+          <div class="psteps">
+            <button class="pstep"><span class="n">1</span>唤起</button>
+            <button class="pstep"><span class="n">2</span>选择</button>
+            <button class="pstep"><span class="n">3</span>粘贴</button>
+          </div>
+          <button class="pbtn replay" title="重播">↻</button>
+        </div>
+        <div class="paste-stage" id="pasteStage" data-step="0">
+          <div class="paste-editor">
+            <div class="pe-bar"><span class="pe-dot"></span><span class="pe-dot"></span><span class="pe-dot"></span><span class="pe-title">项目周报.md — 正在编辑</span></div>
+            <div class="pe-line w80"></div>
+            <div class="pe-line w60"></div>
+            <div class="pe-line"></div>
+            <div class="pe-line w40 pe-line s1"></div>
+            <div class="pe-cursorline"><span class="pe-caret"></span></div>
+          </div>
+          <div class="paste-panel">
+            <div class="pp-head">📋 快捷粘贴 <kbd>Alt</kbd>+<kbd>V</kbd></div>
+            <div class="pp-item"><span class="pi" style="background:rgba(16,185,129,.13);border:1px solid rgba(16,185,129,.24)">📝</span><span class="pt">PastePanda 支持跨设备同步了</span><span class="ps">↵</span></div>
+            <div class="pp-item"><span class="pi" style="background:rgba(59,130,246,.13);border:1px solid rgba(59,130,246,.24)">💻</span><span class="pt">fetch('/api/orders', { method…</span><span class="ps">↓</span></div>
+            <div class="pp-item"><span class="pi" style="background:rgba(236,72,153,.13);border:1px solid rgba(236,72,153,.24)">🖼</span><span class="pt">设计稿-v3.png</span><span class="ps">↓</span></div>
+            <div class="pp-foot"><span>↑↓ 选择</span><span>↵ 粘贴</span><span>Esc 关闭</span></div>
+          </div>
+        </div>
+        <div class="play-cap" data-cap="paste">
+          <span class="ic">💡</span><span><b>粘贴：</b>回车即把选中项粘贴到光标处，无需离开当前应用</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- F4 本地 OCR 特写 -->
+    <div class="featrow rev">
+      <div class="feat-txt">
+        <span class="feat-num">F4 · 隐私卖点</span>
+        <h3>本地 OCR · 图片里的字，直接变成文本</h3>
+        <p>图片卡片一键「识别文字」：PP-OCRv6 引擎在本地离线识别，点击识别结果的任一行即可复制。文字识别、表格识别、二维码识别一应俱全——图片不出你的电脑。</p>
+        <div class="feat-tags"><span class="ftag">🔒 全程本地离线</span><span class="ftag">行级点击复制</span><span class="ftag">结果可编辑</span><span class="ftag">表格识别</span><span class="ftag">二维码</span></div>
+      </div>
+      <div class="feat-demo">
+        <div class="playbar" data-demo="ocr">
+          <button class="pbtn play">▶ 自动播放</button>
+          <div class="psteps">
+            <button class="pstep"><span class="n">1</span>选中</button>
+            <button class="pstep"><span class="n">2</span>识别</button>
+            <button class="pstep"><span class="n">3</span>复制</button>
+          </div>
+          <button class="pbtn replay" title="重播">↻</button>
+        </div>
+        <div class="ocr-stage" id="ocrStage" data-step="0">
+          <div class="ocr-img">
+            <div class="oi-bar"><span class="b"></span><span class="b"></span><span class="b"></span><span class="t">海报-秋季大促.png</span></div>
+            <div class="oi-body">
+              <div class="oi-title">秋季大促 · 全场 8 折起</div>
+              <div class="oi-sub">活动时间：9 月 1 日 – 9 月 15 日</div>
+              <div class="oi-line w85"></div>
+              <div class="oi-line w65"></div>
+              <div class="oi-line w75"></div>
+              <div class="oi-line w85"></div>
+              <div class="oi-line w65"></div>
+              <div class="oi-line w75"></div>
+              <div class="oi-line w85"></div>
+              <div class="oi-line w65"></div>
+            </div>
+            <div class="oi-scan"></div>
+            <div class="ocr-btn">🔤 识别文字</div>
+          </div>
+          <div class="ocr-res">
+            <div class="or-head">🔤 OCR 识别结果 <span class="off">🔒 本地识别</span></div>
+            <div class="or-row"><span class="n">1</span><span>秋季大促 · 全场 8 折起</span></div>
+            <div class="or-row"><span class="n">2</span><span>活动时间：9 月 1 日 – 9 月 15 日</span></div>
+            <div class="or-row"><span class="n">3</span><span>会员专享：满 299 减 50</span></div>
+            <div class="or-row"><span class="n">4</span><span>点击任一行即可复制</span></div>
+            <div class="or-foot"><span>📋 复制全部</span><span>✨ AI 总结</span></div>
+          </div>
+          <div class="ocr-toast">✓ 已复制：活动时间：9 月 1 日 – 9 月 15 日</div>
+        </div>
+        <div class="play-cap" data-cap="ocr">
+          <span class="ic">💡</span><span><b>隐私：</b>OCR 全程本地离线（PP-OCRv6），图片内容不离开设备；未开启 AI 前不会有任何外发</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- F5 变换与正则 -->
+    <div class="featrow">
+      <div class="feat-txt">
+        <span class="feat-num">F5 · 开发者向</span>
+        <h3>变换与正则 · 一段文本，花式重排</h3>
+        <p>选中任意文本一键变换：格式化 JSON、生成 SQL IN / INSERT 语句、正则批量替换、编码转换、内容提取、配置对比——高频开发操作不用再开在线工具。</p>
+        <div class="feat-tags"><span class="ftag">JSON 格式化</span><span class="ftag">SQL IN / INSERT</span><span class="ftag">正则规则库</span><span class="ftag">编码转换</span><span class="ftag">配置对比</span></div>
+      </div>
+      <div class="feat-demo">
+        <div class="playbar" data-demo="tf">
+          <button class="pbtn play">▶ 自动播放</button>
+          <div class="psteps">
+            <button class="pstep"><span class="n">1</span>选中</button>
+            <button class="pstep"><span class="n">2</span>变换</button>
+            <button class="pstep"><span class="n">3</span>结果</button>
+          </div>
+          <button class="pbtn replay" title="重播">↻</button>
+        </div>
+        <div class="tf-stage" id="tfStage" data-step="0">
+          <div class="tf-window">
+            <div class="tf-tbr"><span class="td"></span><span class="td"></span><span class="td"></span><span class="t">变换中心 · JSON 内容</span><span class="tag">匹配项置顶</span></div>
+            <div class="tf-body">
+              <div class="raw"><span class="p">{</span><span class="s">"name"</span><span class="p">:</span> <span class="s">"PastePanda"</span><span class="p">,</span> <span class="s">"ver"</span><span class="p">:</span> <span class="n">6.19</span><span class="p">,</span> <span class="s">"ai"</span><span class="p">:</span> <span class="s">"off"</span><span class="p">}</span> —— <span class="hl">已匹配：JSON 内容</span></div>
+              <div class="tf-out"><span class="p">{</span>
+  <span class="s">"name"</span>: <span class="s">"PastePanda"</span>,
+  <span class="s">"ver"</span>: <span class="n">6.19</span>,
+  <span class="s">"ai"</span>: <span class="s">"off"</span>
+<span class="p">}</span></div>
+            </div>
+          </div>
+          <div class="tf-panel">
+            <div class="tf-item"><span class="ti">📐</span>格式化 JSON<span class="tg">推荐</span></div>
+            <div class="tf-item"><span class="ti">🗄</span>转 SQL IN (...) 列表</div>
+            <div class="tf-item"><span class="ti">🪄</span>SQL INSERT 语句</div>
+            <div class="tf-sep"></div>
+            <div class="tf-item"><span class="ti">🔤</span>正则替换 · 规则库</div>
+            <div class="tf-item"><span class="ti">🔁</span>编码转换 / URL / Base64</div>
+          </div>
+        </div>
+        <div class="play-cap" data-cap="tf">
+          <span class="ic">💡</span><span><b>变换：</b>匹配内容自动高亮置顶；正则支持规则库保存复用，编码转换覆盖 Base64 / URL / 十六进制等</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- F6 贴图置顶 -->
+    <div class="featrow rev">
+      <div class="feat-txt">
+        <span class="feat-num">F6 · 独家体验</span>
+        <h3>贴图置顶 · 把截图「钉」在屏幕上</h3>
+        <p>截图或任意剪贴内容一键贴回屏幕，多张贴图并存、随时对照；<kbd>T</kbd> 键循环透明度、双击重编辑、右键复制 / 关闭 / 全部关闭，写代码、做设计时的随身参考板。</p>
+        <div class="feat-tags"><span class="ftag">多贴图并存</span><span class="ftag">T 键透明度</span><span class="ftag">双击重编辑</span><span class="ftag">右键菜单</span><span class="ftag">托盘面板管理</span></div>
+      </div>
+      <div class="feat-demo">
+        <div class="playbar" data-demo="pin">
+          <button class="pbtn play">▶ 自动播放</button>
+          <div class="psteps">
+            <button class="pstep"><span class="n">1</span>贴图</button>
+            <button class="pstep"><span class="n">2</span>对照</button>
+            <button class="pstep"><span class="n">3</span>管理</button>
+          </div>
+          <button class="pbtn replay" title="重播">↻</button>
+        </div>
+        <div class="pin-stage" id="pinStage" data-step="0">
+          <div class="pin-main">
+            <div class="fb"><span class="fd"></span><span class="fd"></span><span class="fd"></span><span class="ft">main.tsx</span></div>
+            <div class="lc">
+              <span class="c">// 正在对照设计稿写布局</span><br>
+              <span class="f">const</span> <span class="s">header</span> = <span class="f">await</span> <span class="s">fetch</span>(<span class="s">'/api/header'</span>);<br>
+              &lt;<span class="k">Header</span> <span class="k">data</span>={header} /&gt;<br>
+              &lt;<span class="k">Grid</span> <span class="k">cols</span>=<span class="s">3</span>&gt;…
+            </div>
+          </div>
+          <div class="pin-w w1">
+            <div class="pw-bar">📌 设计稿-首页-v3</div>
+            <div class="pw-body"><div class="pw-ic" style="background:rgba(236,72,153,.14);border:1px solid rgba(236,72,153,.3)">🎨</div><div><div class="pw-t">首页改版 · Hero 区参考</div><div class="pw-s">置顶 · 对照中</div></div></div>
+            <div class="transp-tag">◐ 透明度 60%</div>
+          </div>
+          <div class="pin-w w2">
+            <div class="pw-bar">📌 色值参考</div>
+            <div class="pw-body"><div class="pw-ic" style="background:rgba(59,130,246,.14);border:1px solid rgba(59,130,246,.3)">🖍</div><div><div class="pw-t">#3B9EFF → 主色</div><div class="pw-s">二次贴图</div></div></div>
+          </div>
+          <div class="pin-menu">
+            <div class="pm-item"><span class="mi-ic">📋</span>复制贴图内容</div>
+            <div class="pm-item"><span class="mi-ic">✏️</span>编辑贴图</div>
+            <div class="pm-item"><span class="mi-ic">◐</span>循环透明度 <span style="margin-left:auto;font-size:10px;color:#7994B4">T</span></div>
+            <div class="pm-sep"></div>
+            <div class="pm-item danger"><span class="mi-ic">✕</span>关闭贴图</div>
+            <div class="pm-item danger"><span class="mi-ic">🗑</span>关闭全部贴图</div>
+          </div>
+        </div>
+        <div class="play-cap" data-cap="pin">
+          <span class="ic">💡</span><span><b>贴图：</b>截图后按「贴图」即置顶到屏幕，多张可并存对照；T 键循环透明度、双击重编辑，右键一键管理</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- F7 编辑器家族 -->
+    <div class="featrow">
+      <div class="feat-txt">
+        <span class="feat-num">F7 · 编辑器生态</span>
+        <h3>编辑器家族 · 什么内容，配什么编辑器</h3>
+        <p>双击任意条目，自动按类型打开匹配的编辑器：Markdown 实时渲染、HTML 双栏预览、JSON 格式化校验、CSV 表格、代码高亮、富文本图文、流程图连线、图片编辑、密钥保护……内容多还能一键切换全屏编辑。</p>
+        <div class="feat-tags"><span class="ftag">按类型自动匹配</span><span class="ftag">Markdown 实时渲染</span><span class="ftag">HTML 双栏</span><span class="ftag">CSV 表格</span><span class="ftag">流程图</span><span class="ftag">代码高亮</span><span class="ftag">全屏编辑</span><span class="ftag">关联 .md 文件</span></div>
+      </div>
+      <div class="feat-demo">
+        <div class="playbar" data-demo="ed">
+          <button class="pbtn play">▶ 自动播放</button>
+          <div class="psteps">
+            <button class="pstep"><span class="n">1</span>双击</button>
+            <button class="pstep"><span class="n">2</span>编辑</button>
+            <button class="pstep"><span class="n">3</span>类型</button>
+            <button class="pstep"><span class="n">4</span>全屏</button>
+          </div>
+          <button class="pbtn replay" title="重播">↻</button>
+        </div>
+        <div class="ed-stage" id="edStage" data-step="0">
+          <div class="ed-card">
+            <div class="ec-bar"><span class="b"></span><span class="b"></span><span class="b"></span><span class="t">周报-0821.md</span></div>
+            <div class="ec-body">
+              <div class="ec-title"># 本周工作 · 周报</div>
+              <div class="ec-line w80"></div>
+              <div class="ec-line w55"></div>
+              <div class="ec-line w80"></div>
+              <div class="ec-line w55"></div>
+            </div>
+            <div class="ec-hint">双击进入编辑器</div>
+          </div>
+          <div class="ed-window">
+            <div class="ew-bar">
+              <span class="d"></span><span class="d"></span><span class="d"></span>
+              <span class="t">Markdown 编辑器 · 周报-0821.md</span>
+              <span class="fmt"><span class="on">B</span><span>I</span><span>H1</span><span>🔗</span></span>
+            </div>
+            <div class="ew-cols">
+              <div class="ew-src">
+                <span class="md-h"># 本周工作</span><br>
+                <span class="md-li">- [x]</span> 完成截图窗口吸附<br>
+                <span class="md-li">- [x]</span> 优化本地 OCR 速度<br>
+                <span class="md-li">- [ ]</span> 周报自动汇总<br>
+                ---<br>
+                <span class="md-h">## 下周计划</span><br>
+                粘贴栈增强
+              </div>
+              <div class="ew-prev">
+                <div class="pv-t">本周工作</div>
+                <div class="pv-li"><span class="chk">✓</span>完成截图窗口吸附</div>
+                <div class="pv-li"><span class="chk">✓</span>优化本地 OCR 速度</div>
+                <div class="pv-li"><span class="chk">□</span>周报自动汇总</div>
+                <div class="pv-hr"></div>
+                <div class="pv-t" style="font-size:11px">下周计划</div>
+                <div class="pv-p">粘贴栈增强 · 收藏置顶优化</div>
+              </div>
+            </div>
+            <div class="ew-chips">
+              <span class="chip on">Markdown</span><span class="chip">HTML</span><span class="chip">JSON</span><span class="chip">CSV</span><span class="chip">代码</span><span class="chip">流程图</span><span class="chip">富文本</span><span class="chip">图片</span>
+            </div>
+          </div>
+          <div class="ed-toast">✓ 已保存并写回历史 · Ctrl+S 保存 / Esc 关闭</div>
+        </div>
+        <div class="play-cap" data-cap="ed">
+          <span class="ic">💡</span><span><b>编辑：</b>按内容类型自动匹配 16 种编辑器；内容多时一键全屏，Ctrl+S 保存写回历史，可关联 .md 文件直接用 PastePanda 打开</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- F8 卡片右键菜单 -->
+    <div class="featrow rev">
+      <div class="feat-txt">
+        <span class="feat-num">F8 · 高频交互</span>
+        <h3>卡片右键菜单 · 主操作永远在最上面</h3>
+        <p>右键任意卡片弹出上下文菜单，<b>主操作按内容类型变化并置顶高亮</b>：JSON 卡是「变换为…」、链接卡是「在浏览器中打开」、文件卡是「在资源管理器中显示」；次级操作收进「更多操作」子菜单，删除带危险色提示。</p>
+        <div class="feat-tags"><span class="ftag">按类型组织</span><span class="ftag">主操作置顶</span><span class="ftag">子菜单收纳</span><span class="ftag">粘贴并变换</span><span class="ftag">正则替换</span><span class="ftag">危险操作标红</span></div>
+      </div>
+      <div class="feat-demo">
+        <div class="playbar" data-demo="ctx">
+          <button class="pbtn play">▶ 自动播放</button>
+          <div class="psteps">
+            <button class="pstep"><span class="n">1</span>右键</button>
+            <button class="pstep"><span class="n">2</span>类型感知</button>
+            <button class="pstep"><span class="n">3</span>更多操作</button>
+          </div>
+          <button class="pbtn replay" title="重播">↻</button>
+        </div>
+        <div class="ctx-stage" id="ctxStage" data-step="0">
+          <div class="ctx-list">
+            <div class="ctx-card json">
+              <div class="cc-ic" style="background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.22)">📦</div>
+              <div style="flex:1;min-width:0"><div class="cc-t">{"name": "PastePanda", "ver": 6.19, "ai": "off"}</div><div class="cc-s">JSON · 2 分钟前</div></div>
+            </div>
+            <div class="ctx-card link" style="opacity:0">
+              <div class="cc-ic" style="background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.22)">🔗</div>
+              <div style="flex:1;min-width:0"><div class="cc-t">https://gitee.com/lzul/pastepanda</div><div class="cc-s">链接 · 5 分钟前</div></div>
+            </div>
+            <div class="ctx-card dim">
+              <div class="cc-ic" style="background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.22)">📝</div>
+              <div style="flex:1;min-width:0"><div class="cc-t">周报：本周完成 5 项功能</div><div class="cc-s">文本 · 1 小时前</div></div>
+            </div>
+          </div>
+          <div class="ctx-menu">
+            <div class="cm-item primary"><span class="ic">✨</span><span class="t1">变换为…</span><span class="t2">在浏览器中打开</span></div>
+            <div class="cm-sep"></div>
+            <div class="cm-item"><span class="ic">📋</span>复制到剪贴板</div>
+            <div class="cm-item"><span class="ic">📤</span>粘贴到前台</div>
+            <div class="cm-item"><span class="ic">🔄</span>粘贴并变换<span class="arr">▸</span></div>
+            <div class="cm-item"><span class="ic">🔎</span>正则替换<span class="arr">▸</span></div>
+            <div class="cm-sep"></div>
+            <div class="cm-item more"><span class="ic">⋯</span>更多操作<span class="arr">▸</span></div>
+            <div class="cm-sep"></div>
+            <div class="cm-item danger"><span class="ic">🗑</span>删除</div>
+          </div>
+          <div class="ctx-sub">
+            <div class="cs-item"><span class="ic">🏷</span>编辑标签</div>
+            <div class="cs-item"><span class="ic">📁</span>移动到分组</div>
+            <div class="cs-item"><span class="ic">📌</span>置顶</div>
+            <div class="cs-item"><span class="ic">💾</span>添加到片段库</div>
+            <div class="cs-item"><span class="ic">📱</span>生成二维码</div>
+          </div>
+        </div>
+        <div class="play-cap" data-cap="ctx">
+          <span class="ic">💡</span><span><b>右键：</b>主操作按类型自动变化（链接=浏览器打开、文件=资源管理器、图片=粘贴为 Markdown 图片、颜色=复制 HEX）；低频操作收进「更多操作」</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 亮点分组（全部功能覆盖） -->
+    <div style="margin-top:84px">
+      <div class="sec-head" style="margin-bottom:30px">
+        <div class="kicker">Everything else</div>
+        <h2>全部功能，一网打尽</h2>
+        <p>下面是其余能力的完整速览——粘贴增强、编辑器生态、智能、管理与集成，逐项展开见下方手册。</p>
+      </div>
+      <div class="hl-group">
+        <div class="hlg-title">📋 剪贴板进阶 <span class="cnt">5 项</span></div>
+        <div class="hl-grid">
+          <div class="hl"><div class="h-ic purple">🗂</div><div><h4>多类型卡片</h4><p>文本 / 链接 / 邮箱电话 / 颜色 / 数字 / 代码 / JSON / 图文混排 / 文件 / 密钥脱敏 / 流程图，各配独立图标</p></div></div>
+          <div class="hl"><div class="h-ic cyan">🔍</div><div><h4>拼音首字母搜索</h4><p>搜 <kbd>th</kbd> 命中「腾讯」；关键词高亮，搜索历史记忆</p></div></div>
+          <div class="hl"><div class="h-ic blue">🛠</div><div><h4>多选批量工具栏</h4><p><kbd>Ctrl</kbd>+点击 多选、<kbd>Shift</kbd> 范围选；全选 / 合并 / 导出 / 对比 / 删除</p></div></div>
+          <div class="hl"><div class="h-ic green">🧹</div><div><h4>深度清理</h4><p>按时间 / 类型 / 来源组合筛选，预览后删，自动跳过置顶，<kbd>Ctrl</kbd>+<kbd>Z</kbd> 撤销</p></div></div>
+          <div class="hl"><div class="h-ic amber">⏰</div><div><h4>自动清理</h4><p>设置可开 7 / 15 / 30 / 60 天自动清除，历史库永不过载</p></div></div>
+        </div>
+      </div>
+      <div class="hl-group">
+        <div class="hlg-title">📥 粘贴增强 <span class="cnt">5 项</span></div>
+        <div class="hl-grid">
+          <div class="hl"><div class="h-ic cyan">📚</div><div><h4>粘贴栈</h4><p><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>K</kbd> 收集模式逐条入栈，<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd> 逐条 / 全部粘贴</p></div></div>
+          <div class="hl"><div class="h-ic blue">🔢</div><div><h4>依次粘贴</h4><p><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Q</kbd> 按顺序逐条粘贴多条文本</p></div></div>
+          <div class="hl"><div class="h-ic green">🛡</div><div><h4>粘贴守卫</h4><p>格式感知、敏感内容拦截确认，粘贴前把关</p></div></div>
+          <div class="hl"><div class="h-ic purple">⌨️</div><div><h4>键盘全流程</h4><p>索引粘贴 <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>1~9</kbd>、多选 / 范围选择、方向键导航、Space 快速预览</p></div></div>
+          <div class="hl"><div class="h-ic amber">⚡</div><div><h4>粘贴即执行</h4><p>双击条目直接粘贴到上次聚焦的应用，一步到位</p></div></div>
+        </div>
+      </div>
+      <div class="hl-group">
+        <div class="hlg-title">✏️ 编辑器生态 <span class="cnt">8 项</span></div>
+        <div class="hl-grid">
+          <div class="hl"><div class="h-ic blue">📝</div><div><h4>Markdown 编辑器</h4><p>格式条 + 实时渲染，改完即粘贴</p></div></div>
+          <div class="hl"><div class="h-ic cyan">🌐</div><div><h4>HTML 双栏</h4><p>代码 + 预览左右对照，所见即所得</p></div></div>
+          <div class="hl"><div class="h-ic green">🧮</div><div><h4>JSON / CSV</h4><p>JSON 格式化校验；CSV 表格单元格直接编辑</p></div></div>
+          <div class="hl"><div class="h-ic purple">🗺</div><div><h4>流程图</h4><p>可视化节点连线，画完即贴</p></div></div>
+          <div class="hl"><div class="h-ic amber">💻</div><div><h4>代码高亮</h4><p>语言自动检测，16 种语言语法着色</p></div></div>
+          <div class="hl"><div class="h-ic pink">🖼</div><div><h4>富文本 / 图片</h4><p>图文混排保留顺序；图片缩放裁剪</p></div></div>
+          <div class="hl"><div class="h-ic red" style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.22)">🔐</div><div><h4>密钥保护</h4><p>密钥 / 凭证类内容仅在编辑器内显示明文</p></div></div>
+          <div class="hl"><div class="h-ic cyan">⛶</div><div><h4>全屏编辑</h4><p>内容多切独立窗口，<kbd>Ctrl</kbd>+<kbd>S</kbd> 保存有未保存提醒</p></div></div>
+        </div>
+      </div>
+      <div class="hl-group">
+        <div class="hlg-title">🤖 智能与效率 <span class="cnt">5 项</span></div>
+        <div class="hl-grid">
+          <div class="hl"><div class="h-ic purple">🤖</div><div><h4>AI 能力 <span class="new">门控</span></h4><p>摘要 / 解释 / 自定义动作；默认关闭，未开启零请求零费用，密钥自动拦截</p></div></div>
+          <div class="hl"><div class="h-ic cyan">⌨️</div><div><h4>智能命令栏</h4><p><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> 自然语言直达功能</p></div></div>
+          <div class="hl"><div class="h-ic green">⚡</div><div><h4>动作链</h4><p>复制 → 变换 → AI → 粘贴多步编排；条件步骤自动跳过、失败保留中间结果、粘贴后自动执行</p></div></div>
+          <div class="hl"><div class="h-ic pink">📈</div><div><h4>周报 / 里程碑 / 成就</h4><p>自动汇总本周复制生成周报（可 AI 生成文字），第 1000 条复制里程碑回忆卡</p></div></div>
+          <div class="hl"><div class="h-ic amber">🧠</div><div><h4>学习者与自进化</h4><p>能力雷达、主导角色画像、学习日志可见可删；画像可导出 Markdown / JSON / SKILL 技能包</p></div></div>
+        </div>
+      </div>
+      <div class="hl-group">
+        <div class="hlg-title">🛠 管理与集成 <span class="cnt">8 项</span></div>
+        <div class="hl-grid">
+          <div class="hl"><div class="h-ic amber">📚</div><div><h4>片段库</h4><p>高频话术、代码模板分类沉淀；支持 <kbd>{{var}}</kbd> 变量模板、最近使用、批量管理、JSON 导出备份</p></div></div>
+          <div class="hl"><div class="h-ic blue">🧰</div><div><h4>开发者工具箱</h4><p>编码转换、内容提取、批量替换、配置对比、正则规则库；小工具含 JSON / Base64 / 时间戳 / 哈希 / UUID</p></div></div>
+          <div class="hl"><div class="h-ic green">🔗</div><div><h4>跨设备同步</h4><p>局域网 + WebDAV 双模式，同网段自动发现；同步内容端到端加密，服务端看不到明文</p></div></div>
+          <div class="hl"><div class="h-ic cyan">🖥</div><div><h4>托盘管理</h4><p>托盘弹窗看统计与最近记录，一键显示 / 暂停 / 设置 / 退出，贴图统一管理</p></div></div>
+          <div class="hl"><div class="h-ic pink">📱</div><div><h4>二维码生成</h4><p>右键任意内容一键生成二维码，尺寸 / 容错可调，扫码即取</p></div></div>
+          <div class="hl"><div class="h-ic purple">⭐</div><div><h4>收藏置顶 / 去重</h4><p>收藏分组、置顶常备、自动去重防冗余，重启不丢</p></div></div>
+          <div class="hl"><div class="h-ic amber">🎨</div><div><h4>6 套主题 + 深度设置</h4><p>经典白 / 深海 / 午夜 OLED / 森林 / 美乐蒂 / 晨曦；热键自定义、开机自启、数据导出备份</p></div></div>
+          <div class="hl"><div class="h-ic green">🔍</div><div><h4>全文搜索</h4><p>几千条历史秒搜，标签 / 类型 / 分组多维筛选，关键词高亮</p></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 使用场景 ============ -->
+<section class="sec alt" id="scenes">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Who is it for</div>
+      <h2>谁在用 PastePanda</h2>
+      <p>一个常驻托盘的助手，解决的是每天高频重复的「复制 — 粘贴 — 找东西」。</p>
+    </div>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="s-ic blue">💻</div>
+        <h4>程序员</h4>
+        <p>代码片段、报错信息、API 文档随手归档；截图标注 + 本地 OCR 让调试记录不再重敲；变换工具一键处理 JSON / 正则。</p>
+        <div class="s-tags"><span class="s-tag">代码片段</span><span class="s-tag">JSON 变换</span><span class="s-tag">贴图对照</span></div>
+      </div>
+      <div class="scene">
+        <div class="s-ic pink">🎨</div>
+        <h4>设计师 / 内容创作者</h4>
+        <p>多图对比贴图、色值拾取、标注批注、长截图保存灵感；文字识别直接把图片里的文案变成可编辑文本。</p>
+        <div class="s-tags"><span class="s-tag">贴图对比</span><span class="s-tag">取色</span><span class="s-tag">标注</span></div>
+      </div>
+      <div class="scene">
+        <div class="s-ic green">📋</div>
+        <h4>产品 / 运营</h4>
+        <p>客户反馈、需求文档、素材链接集中归档；片段库沉淀高频话术与模板；周报自动汇总本周剪贴内容。</p>
+        <div class="s-tags"><span class="s-tag">片段库</span><span class="s-tag">周报汇总</span><span class="s-tag">OCR 采集</span></div>
+      </div>
+      <div class="scene">
+        <div class="s-ic purple">🖥</div>
+        <h4>日常办公</h4>
+        <p>复制即记录，再也不会"刚复制的东西找不到了"；双击即贴、Alt+V 快速粘贴，习惯后基本离不开鼠标键盘双飞。</p>
+        <div class="s-tags"><span class="s-tag">找回历史</span><span class="s-tag">双击即贴</span><span class="s-tag">隐私本地</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 下载 ============ -->
+<section class="sec" id="download" style="padding-bottom:88px">
+  <div class="wrap">
+    <div class="dl">
+      <div class="dl-in">
+        <h2>现在就试试 PastePanda</h2>
+        <p>安装即用，不需要注册账号；所有内容默认只存在你的电脑上，AI 能力默认关闭。</p>
+        <div class="dl-btns">
+          <a class="cta" href="https://gitee.com/lzul/pastepanda/releases">⬇ 下载 Windows 版</a>
+          <a class="cta ghost" href="https://gitee.com/lzul/pastepanda">📦 Gitee · 源码</a>
+          <a class="cta ghost" href="https://github.com/lzlkyb/pastepanda" title="海外访问备份">🐙 GitHub · 备份</a>
+        </div>
+        <div class="dl-meta">
+          <span>最新版本 <b style="color:#E6EDF7">v6.19</b></span>
+          <a href="#manual">更新记录 →</a>
+          <a href="#">系统要求：Windows 10 / 11</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 手册衔接 ============ -->
+
+<section class="manual-bridge" id="manual">
+  <h2>完整使用手册</h2>
+  <p>这里是 19 个功能分区的逐条图文详解：快捷键、变换规则、贴图、同步、AI 等全部能力，配合上方宣传区的动态演示使用。</p>
+  <div class="mb-tags">
+    <a class="mb-tag" href="#hotkeys">⌨️ 快捷键一览</a>
+    <a class="mb-tag" href="#clipboard">📋 剪贴板管理</a>
+    <a class="mb-tag" href="#screenshot">📷 截图标注全家桶</a>
+    <a class="mb-tag" href="#transform">🔧 变换与正则</a>
+    <a class="mb-tag" href="#snippets">📚 片段库</a>
+    <a class="mb-tag" href="#ai">🤖 AI 能力</a>
+    <a class="mb-tag" href="#sync">🔗 系统同步</a>
+    <a class="mb-tag" href="#settings">⚙️ 设置与个性化</a>
+  </div>
+  <div class="layout" style="text-align:left">
 <nav class="toc" id="toc">
   <div class="grp">入门</div>
   <a href="#start">快速开始</a>
@@ -1113,6 +2316,8 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
   </div>
   <p style="margin-top:18px;">常用标签：<span class="tag-pill">截图</span><span class="tag-pill">OCR</span><span class="tag-pill">贴图</span><span class="tag-pill">粘贴栈</span><span class="tag-pill">变换</span><span class="tag-pill">片段库</span><span class="tag-pill">AI</span><span class="tag-pill">同步</span></p>
 </section>
+  </div>
+</section>
 
 <footer class="page">
   PastePanda 用户手册 · 本页为离线完整功能指南 · 界面演示基于真实软件源码高保真复刻（配色/控件/文案均取自 src 实际实现）· 右上角可切换全部 6 套真实主题
@@ -1120,7 +2325,9 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
 </main>
 </div>
 
+</footer>
 <script>
+// ===== 主题（6 套）+ 目录高亮（来自原手册） =====
 var THEME_NAMES = { ocean: "经典白", "ocean-dark": "深海", midnight: "午夜", forest: "森林", blossom: "美乐蒂", dawn: "晨曦" };
 function setTheme(key) {
   var html = document.documentElement;
@@ -1148,6 +2355,186 @@ var obs = new IntersectionObserver(function (entries) {
   });
 }, { rootMargin: "-20% 0px -70% 0px" });
 secs.forEach(function (s) { if (s) obs.observe(s); });
+
+// ===== 宣传区演示播放器 + Hero 动画 =====
+/* ===================== 通用演示播放器 ===================== */
+/* 每个 demo：{ stepCls, stages[], caps[], autoDur[] } 由 HTML 的 data-step 驱动 */
+var DEMOS = {
+  shot: {
+    stepNames: ["拖选区", "标注", "OCR", "完成"],
+    caps: [
+      '<b>拖选区：</b>自动吸附窗口 / 控件边界，松开即固定；可平移、八向缩放、方向键微调',
+      '<b>标注：</b>矩形、箭头、画笔、高亮、马赛克、模糊、文字、序号——全套工具，选中工具即画',
+      '<b>OCR：</b>本地 PP-OCRv6 离线识别，点击行即复制该行文字，可编辑改错',
+      '<b>完成：</b>双击 / 点完成直接复制到剪贴板，粘贴即用'
+    ]
+  },
+  clip: {
+    stepNames: ["复制", "归档", "点击"],
+    caps: [
+      '<b>复制：</b>在任何应用里 Ctrl+C，内容自动入库',
+      '<b>归档：</b>新卡片滑入列表顶部并高亮，无需手动保存',
+      '<b>点击：</b>单击任意一条，即复制回剪贴板，Ctrl+V 粘贴'
+    ]
+  },
+  paste: {
+    stepNames: ["唤起", "选择", "粘贴"],
+    caps: [
+      '<b>唤起：</b>任意应用中按 Alt+V，历史面板浮层弹出',
+      '<b>选择：</b>方向键上下浏览，实时预览选中项',
+      '<b>粘贴：</b>回车即粘贴到光标处，面板自动收起'
+    ]
+  },
+  ocr: {
+    stepNames: ["选中", "识别", "复制"],
+    caps: [
+      '<b>选中：</b>悬停图片卡片，点「识别文字」开始本地识别',
+      '<b>识别：</b>扫描动画示意——PP-OCRv6 全程本地离线，图片不出电脑',
+      '<b>复制：</b>点击任一行即复制该行文字，可直接粘贴使用'
+    ]
+  },
+  tf: {
+    stepNames: ["选中", "变换", "结果"],
+    caps: [
+      '<b>选中：</b>内容自动识别类型（JSON / SQL / 文本…），匹配项高亮置顶',
+      '<b>变换：</b>变换面板一键选择，支持格式化、转 SQL、正则替换等',
+      '<b>结果：</b>输出即时替换原文本，语法高亮，复制即用'
+    ]
+  },
+  pin: {
+    stepNames: ["贴图", "对照", "管理"],
+    caps: [
+      '<b>贴图：</b>截图或剪贴内容一键「钉」回屏幕，置顶显示',
+      '<b>对照：</b>多张贴图并存，写代码 / 做设计时随时对照参考',
+      '<b>管理：</b>T 键循环透明度、双击重编辑，右键菜单复制 / 关闭 / 全部关闭'
+    ]
+  },
+  ed: {
+    stepNames: ["双击", "编辑", "类型", "全屏"],
+    caps: [
+      '<b>双击：</b>双击任意可编辑条目，进入对应类型编辑器',
+      '<b>编辑：</b>Markdown 实时渲染 + 格式条，改完即用',
+      '<b>类型：</b>按内容自动匹配 16 种编辑器：HTML / JSON / CSV / 代码 / 流程图 / 富文本…',
+      '<b>全屏：</b>内容多一键全屏，Ctrl+S 保存写回历史，未保存先提醒'
+    ]
+  },
+  ctx: {
+    stepNames: ["右键", "类型感知", "更多操作"],
+    caps: [
+      '<b>右键：</b>任意卡片右键弹出上下文菜单，主操作置顶高亮',
+      '<b>类型感知：</b>主操作按类型变化——JSON 是「变换为…」，链接卡变成「在浏览器中打开」',
+      '<b>更多操作：</b>标签 / 分组 / 置顶 / 片段库 / 二维码收进子菜单，删除标红防误触'
+    ]
+  }
+};
+
+function setupDemo(key) {
+  var conf = DEMOS[key];
+  var stageId = { shot: "shotStage", clip: "clipStage", paste: "pasteStage", ocr: "ocrStage", tf: "tfStage", pin: "pinStage", ed: "edStage", ctx: "ctxStage" }[key];
+  var stage = document.getElementById(stageId);
+  var bar = document.querySelector('[data-demo="' + key + '"]');
+  var steps = [].slice.call(bar.querySelectorAll(".pstep"));
+  var capEl = document.querySelector('[data-cap="' + key + '"]');
+  var playBtn = bar.querySelector(".play");
+  var replayBtn = bar.querySelector(".replay");
+  var idx = 0, playing = false, timer = null;
+
+  function show(i) {
+    idx = i;
+    stage.setAttribute("data-step", i);
+    steps.forEach(function (s, j) {
+      s.className = "pstep" + (j < i ? " done" : "") + (j === i ? " cur" : "");
+    });
+    capEl.innerHTML = '<span class="ic">💡</span><span>' + conf.caps[i] + "</span>";
+    // 重新触发动画类元素的动画
+    if (i === 0) {
+      var drops = stage.querySelectorAll(".cw-new,.hw-new,.shot-done");
+      drops.forEach(function (el) { el.classList.remove("show"); void el.offsetWidth; el.classList.add("show"); });
+    }
+    if (i === 2 && key === "clip") {
+      var cw = stage.querySelector(".cw-new");
+      cw.classList.remove("show"); void cw.offsetWidth; cw.classList.add("show");
+      var toast = stage.querySelector(".cw-toast");
+      toast.classList.remove("show"); void toast.offsetWidth; toast.classList.add("show");
+    }
+  }
+  function play() {
+    if (playing) { stop(); return; }
+    playing = true;
+    playBtn.classList.add("on");
+    playBtn.textContent = "⏸ 暂停";
+    show(0);
+    var total = conf.stepNames.length;
+    timer = setInterval(function () {
+      var next = idx + 1;
+      if (next >= total) { stop(); setTimeout(function(){ play(); }, 800); return; }
+      show(next);
+    }, 2100);
+  }
+  function stop() {
+    playing = false;
+    clearInterval(timer);
+    playBtn.classList.remove("on");
+    playBtn.textContent = "▶ 自动播放";
+  }
+  function replay() {
+    stop();
+    show(0);
+    setTimeout(play, 350);
+  }
+  playBtn.addEventListener("click", play);
+  replayBtn.addEventListener("click", replay);
+  steps.forEach(function (s, j) { s.addEventListener("click", function () { stop(); show(j); }); });
+  show(0);
+}
+setupDemo("shot");
+setupDemo("clip");
+setupDemo("paste");
+setupDemo("ocr");
+setupDemo("tf");
+setupDemo("pin");
+setupDemo("ed");
+setupDemo("ctx");
+
+/* ===================== Hero 循环动画 ===================== */
+(function () {
+  var win = document.getElementById("heroWindow");
+  var toast = document.getElementById("heroToast");
+  var cursor = document.getElementById("heroCursor");
+  var newCard = win.querySelector(".hw-new");
+  var sf = 0.84; // 与 .hero-window scale 同步，光标坐标 = 窗口内坐标 × sf
+  var wrect = { width: win.offsetWidth * sf, height: win.offsetHeight * sf };
+  var t = 0;
+  function cycle() {
+    // 阶段 1：新卡片滑入
+    newCard.classList.remove("show"); void newCard.offsetWidth; newCard.classList.add("show");
+    // 阶段 2：光标移动到卡片
+    setTimeout(function () {
+      cursor.style.left = (wrect.width * 0.35) + "px";
+      cursor.style.top = (wrect.height * 0.28) + "px";
+    }, 900);
+    setTimeout(function () {
+      cursor.style.opacity = "1";
+    }, 600);
+    // 阶段 3：toast
+    setTimeout(function () {
+      toast.classList.remove("show"); void toast.offsetWidth; toast.classList.add("show");
+    }, 2800);
+    // 阶段 4：光标移开
+    setTimeout(function () {
+      cursor.style.left = "12px";
+      cursor.style.top = (wrect.height * 0.12) + "px";
+    }, 3800);
+    // 阶段 5：重置
+    setTimeout(function () {
+      cursor.style.opacity = "0";
+      t++;
+      setTimeout(cycle, 800);
+    }, 5200);
+  }
+  setTimeout(cycle, 500);
+})();
+
 </script>
 </body>
 </html>
