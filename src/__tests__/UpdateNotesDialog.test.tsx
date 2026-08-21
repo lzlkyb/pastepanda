@@ -60,45 +60,48 @@ function mockUpdate(overrides: Record<string, unknown> = {}) {
   });
 }
 
-/** chip 按钮与时间线 tag 文本重复，按标签名取 chip */
-function chipByLabel(label: string): HTMLElement {
+/** 分类分组卡片（grpBadge，span）：按标签名取分组徽章 */
+function groupBadge(label: string): HTMLElement {
   const el = screen
     .getAllByText(label)
-    .find((e) => e.tagName === "BUTTON");
-  if (!el) throw new Error(`未找到 chip「${label}」`);
+    .find((e) => e.tagName === "SPAN");
+  if (!el) throw new Error(`未找到分类分组「${label}」`);
   return el;
 }
 
 // ── 用例 ────────────────────────────────────────────────
 
-describe("UpdateNotesDialog（方案 C 玻璃时间线）", () => {
+describe("UpdateNotesDialog（方案 B 发行说明式）", () => {
   it("open=false 时不渲染内容", () => {
     mockUpdate();
     render(<UpdateNotesDialog open={false} onClose={() => {}} currentVersion="9.9.8" />);
     expect(screen.queryByText("PastePanda")).toBeNull();
   });
 
-  it("结构化日志：版本过渡、摘要引语、chips 与时间线全部条目", () => {
+  it("结构化日志：版本过渡、摘要引语、分组卡片与全部条目", () => {
     mockUpdate();
     render(<UpdateNotesDialog open onClose={() => {}} currentVersion="9.9.8" />);
 
-    // 顶部 header 行
+    // 顶部 header 行（Hero）
     expect(screen.getByText("PastePanda")).toBeTruthy();
     expect(screen.getByText("v9.9.8")).toBeTruthy();
     expect(screen.getByText("v9.9.9")).toBeTruthy();
     expect(screen.getByText("NEW")).toBeTruthy();
+    // Hero 主按钮（有更新时）
+    expect(screen.getByText("立即更新")).toBeTruthy();
 
-    // 摘要引语
+    // 摘要引语 → Hero 主题句
     expect(screen.getByText("测试版本摘要")).toBeTruthy();
 
-    // chips（全部 4 条）
-    const allChip = screen.getByText("全部").closest("button");
-    expect(allChip?.textContent).toBe("全部4");
-    expect(chipByLabel("新增")).toBeTruthy();
-    expect(chipByLabel("改进")).toBeTruthy();
-    expect(chipByLabel("修复")).toBeTruthy();
+    // 分类分组卡片（badge + 标题带条数）
+    expect(groupBadge("新增")).toBeTruthy();
+    expect(groupBadge("改进")).toBeTruthy();
+    expect(groupBadge("修复")).toBeTruthy();
+    expect(screen.getByText("新增 · 2")).toBeTruthy();
+    expect(screen.getByText("改进 · 1")).toBeTruthy();
+    expect(screen.getByText("修复 · 1")).toBeTruthy();
 
-    // 时间线：普通条目、「标题：」加粗拆分、分组标签
+    // 条目：普通条目、「标题：」加粗拆分、分组标签、富文本卡
     expect(screen.getByText("新功能甲")).toBeTruthy();
     expect(screen.getByText("事件驱动监听")).toBeTruthy(); // <b> 前缀
     expect(screen.getByText("体验优化")).toBeTruthy(); // 分组标签行
@@ -108,25 +111,6 @@ describe("UpdateNotesDialog（方案 C 玻璃时间线）", () => {
     // 页脚
     expect(screen.getByText("下载并更新")).toBeTruthy();
     expect(screen.getByText("稍后看")).toBeTruthy();
-  });
-
-  it("chip 筛选：点「修复」后仅修复条目渲染，其余分类直接不渲染", () => {
-    mockUpdate();
-    render(<UpdateNotesDialog open onClose={() => {}} currentVersion="9.9.8" />);
-
-    fireEvent.click(chipByLabel("修复"));
-
-    // 修复条目可见
-    expect(screen.getByText("修复丙")).toBeTruthy();
-    // 非修复分类（新增 / 改进 / 其分组标签）直接不渲染
-    expect(screen.queryByText("新功能甲")).toBeNull();
-    expect(screen.queryByText("改进乙")).toBeNull();
-    expect(screen.queryByText("体验优化")).toBeNull();
-
-    // 点「全部」恢复
-    fireEvent.click(screen.getByText("全部"));
-    expect(screen.getByText("改进乙")).toBeTruthy();
-    expect(screen.getByText("新功能甲")).toBeTruthy();
   });
 
   it("点「下载并更新」：触发下载并立即关闭弹框", () => {
@@ -176,12 +160,11 @@ describe("UpdateNotesDialog（方案 C 玻璃时间线）", () => {
     render(<UpdateNotesDialog open onClose={() => {}} currentVersion="0.0.0" />);
 
     expect(screen.queryByText("暂无详细更新日志")).toBeNull();
-    // 摘要引语取首条；「标题：」前缀在时间线内加粗
+    // 摘要引语取首条；「标题：」前缀在分组卡片内加粗
     expect(screen.getByText("全屏编辑器主题样式丢失")).toBeTruthy();
     expect(screen.getByText("托盘弹窗同类问题")).toBeTruthy();
-    // 平铺格式归入单个「更新内容」分类 chip
-    expect(chipByLabel("更新内容")).toBeTruthy();
-    expect(screen.getByText("全部").closest("button")?.textContent).toBe("全部2");
+    // 平铺格式归入单个「更新内容」分类分组
+    expect(groupBadge("更新内容")).toBeTruthy();
   });
 
   it("包内无条目时解析 update.body：结构化 notes 还原分类 chips 与时间线", () => {
@@ -195,12 +178,11 @@ describe("UpdateNotesDialog（方案 C 玻璃时间线）", () => {
     render(<UpdateNotesDialog open onClose={() => {}} currentVersion="0.0.1" />);
 
     expect(screen.queryByText("暂无详细更新日志")).toBeNull();
-    expect(chipByLabel("新增")).toBeTruthy();
-    expect(chipByLabel("修复")).toBeTruthy();
-    // 首条条目同时出现在摘要引语与时间线（summary 取首条）
+    expect(groupBadge("新增")).toBeTruthy();
+    expect(groupBadge("修复")).toBeTruthy();
+    // 首条条目同时出现在摘要引语与分组卡片（summary 取首条）
     expect(screen.getAllByText("新功能甲")).toHaveLength(2);
     expect(screen.getByText("修复乙")).toBeTruthy();
-    expect(screen.getByText("全部").closest("button")?.textContent).toBe("全部2");
   });
 
   it("无结构化日志条目时走 fallback", () => {

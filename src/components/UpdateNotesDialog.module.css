@@ -1,264 +1,308 @@
-/* UpdateNotesDialog.module.css — 方案 C · 玻璃时间线
-   紧凑 header + 渐变洗色顶部 / 摘要引语 / 分类 chip 筛选 /
-   彩点时间线 / 下载按钮进度填充一体化 */
+/* UpdateNotesDialog.module.css — 方案 B · 发行说明式
+   Hero（版本号渐变强调）+ 新增/改进/修复 分组卡片 + 手册 CTA + 页脚操作 */
 
-/* ===== 顶部：渐变洗色 + 紧凑 header 行 ===== */
-.top {
+/* ===== Hero ===== */
+.hero {
   position: relative;
-  padding: 22px 22px 16px;
+  padding: 24px 24px 16px;
   overflow: hidden;
 }
-
-.top::before {
+.hero::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, var(--accent-light) 0%, transparent 100%);
-  opacity: 0.55;
+  background: linear-gradient(180deg, var(--accent-light) 0%, transparent 88%);
+  opacity: 0.95;
   pointer-events: none;
 }
-
-.top::after {
+.hero::after {
   content: '';
   position: absolute;
   inset: 0;
   background: var(--hero-glow);
   pointer-events: none;
 }
-
-.topRow {
+.heroTop {
   position: relative;
   z-index: 1;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 13px;
 }
-
 .icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 13px;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--version-badge-gradient);
-  box-shadow: 0 4px 14px var(--accent-shadow);
-  transition: box-shadow 0.3s;
+  box-shadow: 0 6px 18px var(--accent-shadow);
 }
-
-.iconImg {
-  filter: brightness(10);
-}
-
-.meta {
+.htxt {
   flex: 1;
   min-width: 0;
+  padding-top: 1px;
 }
-
-.name {
-  font-size: 15px;
+.hname {
+  font-size: 11px;
   font-weight: 800;
-  color: var(--text-primary);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-muted);
   transition: color 0.3s;
 }
-
-.vrow {
+.htitle {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  line-height: 1.35;
+  color: var(--text-primary);
+  margin-top: 3px;
+  transition: color 0.3s;
+}
+.hverRow {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 4px;
-  font-family: "SF Mono", "Fira Code", Consolas, monospace;
-  font-size: 11px;
+  gap: 12px;
+  margin-top: 14px;
 }
-
+.hver {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: "SF Mono", "Fira Code", Consolas, monospace;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.8px;
+  color: var(--text-primary);
+  min-width: 0;
+  flex-wrap: wrap;
+}
 .vOld {
+  font-size: 13px;
   color: var(--text-muted);
   text-decoration: line-through;
   opacity: 0.6;
+  font-weight: 700;
   transition: color 0.3s;
 }
-
 .vArrow {
   color: var(--accent);
+  opacity: 0.7;
   display: inline-flex;
   transition: color 0.3s;
 }
-
 .vNew {
-  color: var(--accent);
-  font-weight: 800;
-  transition: color 0.3s;
+  background: linear-gradient(135deg, var(--accent) 20%, #6D5CF0 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 3px 10px var(--accent-shadow));
 }
-
-.vNewPill {
-  font-size: 8px;
+.hpill {
+  font-size: 9px;
   font-weight: 800;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.8px;
   color: #fff;
-  /* 白字压 --accent 对比度不足 4.5:1，NEW 徽章背景改用加深版 --accent-solid */
   background: var(--accent-solid);
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 14%, transparent), 0 3px 10px var(--accent-shadow);
+  align-self: center;
   transition: background 0.3s;
 }
-
-/* ===== 摘要引语 ===== */
-.lead {
-  margin: 2px 22px 0;
-  padding: 9px 13px;
-  border-left: 3px solid var(--accent);
-  border-radius: 0 9px 9px 0;
-  background: var(--accent-light);
-  font-size: 12px;
-  line-height: 1.7;
-  color: var(--text-primary);
-  transition: background 0.3s, color 0.3s, border-color 0.3s;
-}
-
-/* ===== 分类筛选 chips ===== */
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  padding: 14px 22px 4px;
-}
-
-.chip {
+/* Hero 主按钮：立即更新（高频路径前置） */
+.hdl {
+  margin-left: auto;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 13px;
-  border-radius: 20px;
-  border: 1px solid var(--border-color);
-  background: var(--section-bg);
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 650;
+  gap: 7px;
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  background: var(--version-badge-gradient);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
   font-family: inherit;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
-}
-
-.chip:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-/* 白字压 --accent 对比度不足 4.5:1，筛选 chip 激活态背景改用加深版 --accent-solid */
-.chipActive,
-.chipActive:hover {
-  background: var(--accent-solid);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-.chipDot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
   flex-shrink: 0;
+  box-shadow: 0 4px 14px var(--accent-shadow);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.hdl:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px var(--accent-shadow);
 }
 
-/* 选中态圆点转白（需压过内联 background） */
-.chipActive .chipDot {
-  background: #fff !important;
-}
-
-.chipCount {
-  font-family: "SF Mono", "Fira Code", Consolas, monospace;
-  font-size: 10px;
-  opacity: 0.7;
-}
-
-/* ===== 彩点时间线 ===== */
-.timeline {
-  max-height: min(46vh, 280px);
+/* ===== 分组卡片流 ===== */
+.body {
+  max-height: min(44vh, 300px);
   overflow-y: auto;
-  padding: 10px 18px 12px 0;
+  padding: 10px 20px 4px 24px;
   scrollbar-width: thin;
   scrollbar-color: var(--border-color) transparent;
 }
-
-.timeline::-webkit-scrollbar {
-  width: 5px;
+.body::-webkit-scrollbar { width: 5px; }
+.body::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+.grp {
+  border: 1px solid var(--border-color);
+  border-radius: 13px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  background: var(--card-bg, #fff);
+  transition: background 0.3s, border-color 0.3s;
 }
-
-.timeline::-webkit-scrollbar-thumb {
-  background: var(--border-color);
-  border-radius: 3px;
+.grpHead {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 5px;
 }
-
-/* 内层 track：竖轴挂在 track 上（高度 = 全部滚动内容），
-   避免挂在滚动容器时 ::before 只覆盖可视高度的问题 */
-.tlTrack {
-  position: relative;
-  padding-left: 44px;
-}
-
-/* 竖轴：与圆点中心对齐（圆点 26~34px，轴 29~31px，中心均 30px） */
-.tlTrack::before {
-  content: '';
-  position: absolute;
-  left: 29px;
-  top: 6px;
-  bottom: 6px;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--border-color);
-  transition: background 0.3s;
-}
-
-.tlItem {
-  position: relative;
-  padding: 7px 0;
-}
-
-.tlDot {
-  position: absolute;
-  left: -18px;
-  top: 13px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  /* 3px 对话框底色光晕"切断"圆点后方竖轴，形成节点感 */
-  box-shadow: 0 0 0 3px var(--dialog-bg);
-}
-
-.tlTag {
-  font-size: 9.5px;
+.grpBadge {
+  font-size: 10px;
   font-weight: 800;
-  letter-spacing: 0.4px;
-  margin-bottom: 2px;
+  letter-spacing: 0.5px;
+  padding: 2px 8px;
+  border-radius: 6px;
 }
-
-.tlText {
+.grpTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  transition: color 0.3s;
+}
+.grpSub {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 7px 0 2px;
+  transition: color 0.3s;
+}
+/* 普通条目 */
+.grpItem {
+  display: flex;
+  gap: 10px;
+  padding: 6px 0;
   font-size: 12px;
   line-height: 1.6;
   color: var(--text-secondary);
   transition: color 0.3s;
 }
-
-.tlText b {
+.grpItem::before {
+  content: '';
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--border-color);
+  margin-top: 7px;
+}
+.grpItem b {
   color: var(--text-primary);
   font-weight: 650;
   transition: color 0.3s;
 }
-
-/* 分组标签行（无圆点，与条目文本对齐） */
-.tlGroup {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-muted);
-  padding: 6px 0 2px;
+/* 富文本 feat 卡（嵌在分组内，无图不占位） */
+.feat {
+  margin: 7px 0 7px 15px;
+  border-radius: 10px;
+  background: var(--section-bg);
+  border: 1px solid transparent;
+  padding: 10px 12px;
+  transition: background 0.3s, border-color 0.3s;
+}
+.featTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
   transition: color 0.3s;
 }
-
-.tlHidden {
-  display: none;
+.featDesc {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  transition: color 0.3s;
+}
+.featWhy {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  padding: 5px 9px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 7px 7px 0;
+  background: var(--accent-light);
+  margin-top: 7px;
+  transition: background 0.3s, color 0.3s, border-color 0.3s;
+}
+.featHowH {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
+  margin: 7px 0 2px;
+  transition: color 0.3s;
+}
+.featHow {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  transition: color 0.3s;
+}
+.featHow li { margin: 1px 0; }
+.featMedia {
+  margin-top: 9px;
+  height: 92px;
+  border-radius: 9px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  background: var(--section-bg);
+}
+.featMediaImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
-/* ===== 页脚：跳过 + 下载（进度一体化） ===== */
+/* ===== 手册 CTA ===== */
+.manualCta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: calc(100% - 44px);
+  margin: 4px 22px 0;
+  padding: 11px 15px;
+  border-radius: 11px;
+  border: 1px solid var(--accent);
+  background: var(--accent-light);
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.manualCta:hover {
+  background: var(--accent);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px var(--accent-shadow);
+}
+.manualCtaText {
+  flex: 1;
+  text-align: left;
+}
+
+/* ===== 页脚 ===== */
 .footer {
   display: flex;
   align-items: center;
@@ -266,7 +310,6 @@
   padding: 12px 22px 18px;
   flex-shrink: 0;
 }
-
 .btnSkip {
   padding: 10px 16px;
   border-radius: 11px;
@@ -279,12 +322,10 @@
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.3s;
 }
-
 .btnSkip:hover {
   background: var(--hover);
   color: var(--text-primary);
 }
-
 .btnDownload {
   flex: 1;
   height: 42px;
@@ -304,12 +345,10 @@
   box-shadow: 0 4px 14px var(--accent-shadow);
   transition: transform 0.15s, box-shadow 0.15s;
 }
-
-.btnDownload:hover:not(:disabled) {
+.btnDownload:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 20px var(--accent-shadow);
 }
-
 .dlLabel {
   position: relative;
   z-index: 1;
@@ -318,38 +357,7 @@
   gap: 7px;
 }
 
-/* ===== 完整功能手册跳转 CTA ===== */
-.manualCta {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: calc(100% - 44px);
-  margin: 4px 22px 0;
-  padding: 11px 15px;
-  border-radius: 11px;
-  border: 1px solid var(--accent);
-  background: var(--accent-light);
-  color: var(--accent);
-  font-size: 12.5px;
-  font-weight: 700;
-  font-family: inherit;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, transform 0.15s, box-shadow 0.15s;
-}
-
-.manualCta:hover {
-  background: var(--accent);
-  color: #fff;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px var(--accent-shadow);
-}
-
-.manualCtaText {
-  flex: 1;
-  text-align: left;
-}
-
-/* ===== Fallback（未找到结构化日志条目） ===== */
+/* ===== Fallback ===== */
 .fallback {
   padding: 26px 22px;
   text-align: center;
@@ -357,7 +365,6 @@
   font-size: 12px;
   line-height: 1.6;
 }
-
 .fallbackBody {
   font-size: 11px;
   color: var(--text-secondary);
@@ -369,111 +376,4 @@
   padding: 12px;
   max-height: 200px;
   overflow-y: auto;
-}
-
-/* ===== 新增功能卡片（怎么用 / 有什么用 / 配图） ===== */
-.featWrap {
-  padding: 4px 18px 2px 0;
-}
-
-.card {
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 12px 13px;
-  margin: 9px 0;
-  background: var(--card-bg, #fcfcfe);
-  transition: background 0.3s, border-color 0.3s;
-}
-
-.cardHead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-
-.cardBadge {
-  font-size: 10px;
-  font-weight: 800;
-  color: var(--accent);
-  background: var(--accent-light);
-  padding: 2px 7px;
-  border-radius: 6px;
-  flex-shrink: 0;
-  transition: background 0.3s, color 0.3s;
-}
-
-.cardTitle {
-  font-weight: 700;
-  font-size: 14px;
-  color: var(--text-primary);
-  transition: color 0.3s;
-}
-
-.cardDesc {
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--text-secondary);
-  margin: 2px 0 6px;
-  transition: color 0.3s;
-}
-
-.cardWhy {
-  font-size: 12.5px;
-  line-height: 1.55;
-  color: var(--text-primary);
-  padding: 5px 9px;
-  border-left: 3px solid var(--accent);
-  border-radius: 0 7px 7px 0;
-  background: var(--accent-light);
-  margin-bottom: 8px;
-  transition: background 0.3s, color 0.3s, border-color 0.3s;
-}
-
-.cardHowH {
-  font-size: 10.5px;
-  font-weight: 700;
-  color: var(--text-muted);
-  letter-spacing: 0.3px;
-  margin-bottom: 3px;
-  transition: color 0.3s;
-}
-
-.cardHow {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 12.5px;
-  line-height: 1.7;
-  color: var(--text-secondary);
-  transition: color 0.3s;
-}
-
-.cardHow li {
-  margin: 1px 0;
-}
-
-.cardMedia {
-  margin-top: 9px;
-  height: 92px;
-  border-radius: 9px;
-  overflow: hidden;
-  border: 1px dashed var(--border-color);
-  background:
-    repeating-linear-gradient(45deg, var(--section-bg), var(--section-bg) 8px, var(--hover) 8px, var(--hover) 16px);
-  display: grid;
-  place-items: center;
-  transition: background 0.3s, border-color 0.3s;
-}
-
-.cardMediaImg {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.cardMediaPh {
-  font-size: 11px;
-  color: var(--text-muted);
-  transition: color 0.3s;
 }
