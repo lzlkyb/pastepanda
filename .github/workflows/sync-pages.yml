@@ -40,6 +40,9 @@ jobs:
               cat /tmp/gitee-commits.json 2>/dev/null | head -c 300; echo ""
             fi
             sha=$(jq -r '.[0].sha // empty' /tmp/gitee-commits.json 2>/dev/null || true)
+            if [ -z "$sha" ]; then
+              echo "  (commits 响应前 220 字符): $(head -c 220 /tmp/gitee-commits.json)"
+            fi
             if [ -n "$sha" ] && [ "$sha" = "$GITHUB_SHA" ]; then
               echo "✅ Gitee master 已同步到 $sha"
               exit 0
