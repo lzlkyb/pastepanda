@@ -2,8 +2,8 @@
  * SignFloat —— 左下角每日签到浮窗（v6.9，WorkBuddy 式）。
  *
  * 触发（每天一次，本地记录）：
- * - 今天未弹过 + 今天未签到 + AI 已启用 + 当前是内置免费服务商
- *   （AI 关闭/未启用 → 不弹，见下方 enabled 门控；配了自己的服务商 → 不打扰）
+ * - 今天未弹过 + 今天未签到 + AI 已启用
+ *   （AI 关闭/未启用 → 不弹；服务商不限——配自定义服务商同样提醒，用户诉求）
  * 交互：非 modal 不打断操作；点签到 → 成功态 1.8s 自动收起；✕ → 收起当天不再弹；
  * 「查看额度明细 →」打开完整签到弹窗。首日（初始额度未动）显示「送你 10 万 token」。
  */
@@ -39,8 +39,8 @@ export function SignFloat() {
         const cfg = await aiGetConfig();
         // AI 关闭 / 从未启用 → 不打扰（用户诉求：AI 关了就不要每天弹签到框）
         if (!cfg.enabled) return;
-        // 用户配了自己的服务商且不是内置免费 → 不打扰（§10.11 隔离规则）
-        if (cfg.provider !== "builtin-agnes") return;
+        // 服务商不限：配自定义服务商同样提醒（用户诉求）——签到领的内置免费额度，
+        // 切回内置 Agnes 或后续场景仍可用
         const q = await aiQuotaGet();
         if (!q.canSign) return; // 今天已签
         if (cancelled) return;
