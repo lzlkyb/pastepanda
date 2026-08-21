@@ -204,7 +204,7 @@ export function DeepCleanDialog({ open, onClose }: DeepCleanDialogProps) {
     setCleaning(true);
     try {
       const n = await clearHistoryConditions({ beforeDays: days, itemType, source });
-      toast(`已清理 ${n} 条记录（Ctrl+Z 撤销）`, "success");
+      toast(`已清理 ${n} 条记录`, "success", undefined, undefined, undefined, undefined, "undo");
       onClose();
     } catch (e) {
       logger.warn("深度清理失败", e);

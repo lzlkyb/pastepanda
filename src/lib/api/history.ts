@@ -75,20 +75,81 @@ export async function searchHistory(filters: SearchFilters, limit = 1000): Promi
 /** 删除记录 */
 export async function deleteHistory(ids: string[]) {
   try {
-    const count = await invoke<number>("delete_history", { ids });
     const store = useAppStore.getState();
-    store.removeItems(ids);
+    const idSet = new Set(ids);
+    // 在 await 后端删除之前快照待删项：后端 delete_history 会广播 history-items-deleted 事件，
+    // 主窗口监听器可能在 removeItems 执行前就把 history 里的待删项过滤掉（竞态），
+    // 导致 removeItems 找不到被删项 → 不压撤销栈 → 撤销失效（"没有可撤销的删除"）。
+    // 这里把待删项（history + searchResults 两源）提前抓取，removeItems 据此稳妥压栈。
+    const deletedSnapshot = [
+      ...store.history.filter((h) => idSet.has(h.id)),
+      ...(store.searchResults ?? []).filter((h) => idSet.has(h.id)),
+    ];
+    const count = await invoke<number>("delete_history", { ids });
+    store.removeItems(ids, deletedSnapshot);
     invalidateCountsCache(); // 删除后清除缓存
     if (count > 0) {
       // 删除动画：通知列表开启行 glide 过渡窗口（与 pin-anim 机制一致），
       // 剩余行平滑让位，被删行由 AnimatePresence 播放退场
       window.dispatchEvent(new CustomEvent("delete-anim", { detail: { ids } }));
-      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已删除 ${count} 条记录（Ctrl+Z 撤销）`, type: "info" } }));
+      // action:"undo" 让 Toast 渲染可点击的「撤销」按钮（纯鼠标用户也能撤销，
+      // 不再只依赖 Ctrl+Z）；键盘撤销与按钮撤销共用 restoreDeleted()
+      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已删除 ${count} 条记录`, type: "info", action: "undo" } }));
     }
     return count;
   } catch (e) {
     logger.error("删除失败", e);
     return 0;
+  }
+}
+
+/**
+ * 撤销删除：恢复最近一次删除栈顶的条目（本地列表 + 写回后端）。
+ * 由 Ctrl+Z 快捷键与删除 toast 的「撤销」按钮共用，避免恢复逻辑两处发散（项目红线）。
+ * 返回是否确有可恢复内容。
+ */
+export async function restoreDeleted(): Promise<boolean> {
+  try {
+    const store = useAppStore.getState();
+    const restored = store.undoDelete();
+    if (!restored || restored.length === 0) {
+      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "没有可撤销的删除", type: "info" } }));
+      return false;
+    }
+    logger.info(`restoreDeleted: 准备恢复 ${restored.length} 条`, restored.map((i) => i.id));
+    invalidateCountsCache();
+    const failedItems: HistoryItem[] = [];
+    for (const item of restored) {
+      try {
+        await invoke("insert_history", { item });
+      } catch (e) {
+        logger.warn("撤销恢复失败", e);
+        failedItems.push(item);
+      }
+    }
+    if (failedItems.length > 0) {
+      // 后端写入失败时回滚本地恢复的条目并放回撤销栈，用户可再次 Ctrl+Z 重试
+      const failedIds = new Set(failedItems.map((i) => i.id));
+      useAppStore.setState((s) => ({
+        history: s.history.filter((h) => !failedIds.has(h.id)),
+        searchResults:
+          s.searchResults === null
+            ? null
+            : s.searchResults.filter((h) => !failedIds.has(h.id)),
+        undoStack: [failedItems, ...s.undoStack].slice(0, 10),
+        _filterCache: null,
+      }));
+      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `${failedItems.length}/${restored.length} 条恢复失败，可再次 Ctrl+Z 重试`, type: "error" } }));
+    } else {
+      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已恢复 ${restored.length} 条记录`, type: "success" } }));
+    }
+    return true;
+  } catch (err) {
+    // 顶层兜底：任何未预期异常都显式暴露，避免被 void 吞掉后「按钮点了没反应」
+    logger.error("restoreDeleted 异常", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `撤销失败：${msg}`, type: "error" } }));
+    return false;
   }
 }
 

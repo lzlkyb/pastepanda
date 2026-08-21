@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PastePanda 交互优化全景 · 审计看板</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:rgba(22,27,34,.72); --panel2:rgba(30,38,48,.6);
+    --line:rgba(255,255,255,.08); --txt:#e6edf3; --mut:#8b949e;
+    --accent:#6366f1; --accent2:#22d3ee; --red:#f87171; --amber:#fbbf24; --green:#34d399;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:radial-gradient(1200px 600px at 70% -10%,rgba(99,102,241,.18),transparent),
+               radial-gradient(900px 500px at 10% 10%,rgba(34,211,238,.12),transparent),var(--bg);
+    color:var(--txt);line-height:1.5;padding:32px 20px 80px;min-height:100vh}
+  .wrap{max-width:1080px;margin:0 auto}
+  header{margin-bottom:28px}
+  .kick{color:var(--accent2);font-size:13px;letter-spacing:.12em;text-transform:uppercase;font-weight:600}
+  h1{font-size:30px;font-weight:800;margin:6px 0 8px;
+    background:linear-gradient(90deg,#fff,#c7d2fe);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:var(--mut);font-size:14px;max-width:720px}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:26px 0}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;backdrop-filter:blur(12px)}
+  .stat .n{font-size:28px;font-weight:800}
+  .stat .l{font-size:12px;color:var(--mut);margin-top:2px}
+  .stat.red .n{color:var(--red)} .stat.amber .n{color:var(--amber)} .stat.green .n{color:var(--green)}
+  .stat.ok .n{color:var(--green)}
+  .grid{display:grid;gap:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:20px 22px;backdrop-filter:blur(12px);position:relative;overflow:hidden}
+  .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px}
+  .card.red::before{background:linear-gradient(var(--red),#ef4444)}
+  .card.amber::before{background:linear-gradient(var(--amber),#f59e0b)}
+  .card .h{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+  .tag{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px}
+  .tag.rule{background:rgba(99,102,241,.16);color:#a5b4fc;border:1px solid rgba(99,102,241,.3)}
+  .tag.freq{background:rgba(52,211,153,.12);color:#6ee7b7;border:1px solid rgba(52,211,153,.25)}
+  .card h3{font-size:17px;font-weight:700;margin:2px 0 6px}
+  .card .desc{color:var(--mut);font-size:13.5px;margin-bottom:14px}
+  .ba{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .ba .col{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px}
+  .ba .col .t{font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--mut);margin-bottom:10px;display:flex;align-items:center;gap:6px}
+  .ba .col.after .t{color:var(--green)}
+  .ev{font-size:11.5px;color:var(--mut);margin-top:12px;border-top:1px dashed var(--line);padding-top:10px}
+  .ev code{color:#a5b4fc;background:rgba(99,102,241,.1);padding:1px 6px;border-radius:5px;font-size:11px}
+  .muted{opacity:.55}
+  /* ---- mock components ---- */
+  .mock{font-size:12px}
+  .toast{display:flex;align-items:center;gap:8px;background:#1b2230;border:1px solid var(--line);
+    border-radius:10px;padding:9px 11px;max-width:280px}
+  .toast .ic{width:18px;height:18px;border-radius:6px;background:rgba(99,102,241,.2);display:flex;align-items:center;justify-content:center;color:#a5b4fc;font-size:11px}
+  .toast .msg{color:var(--txt)}
+  .toast .act{margin-left:auto;background:linear-gradient(90deg,var(--accent),#818cf8);color:#fff;border:none;border-radius:7px;padding:5px 11px;font-weight:700;font-size:11px;cursor:pointer}
+  .toast .x{color:var(--mut);margin-left:4px}
+  .rpanel{background:#161b22;border:1px solid var(--line);border-radius:12px;width:230px;overflow:hidden}
+  .rpanel .ph{display:flex;align-items:center;gap:6px;padding:8px 12px;font-size:11px;color:var(--mut);border-bottom:1px solid var(--line)}
+  .rpanel .ph .d{width:6px;height:6px;border-radius:50%;background:var(--accent2)}
+  .rpanel .g{font-size:10px;color:var(--mut);padding:6px 12px 2px;letter-spacing:.08em}
+  .rpanel .row{display:flex;align-items:center;gap:8px;padding:7px 12px;font-size:12px;cursor:default}
+  .rpanel .row:hover{background:rgba(255,255,255,.04)}
+  .rpanel .row .ic{width:16px;text-align:center;color:var(--mut)}
+  .rpanel .row .k{margin-left:auto;color:var(--mut);font-size:10px}
+  .rpanel .row.pin{border-left:2px solid #f59e0b}
+  .main-btn{width:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));color:#06121a;
+    font-weight:800;font-size:13px;border:none;border-radius:9px;padding:11px;margin:10px 0 4px;cursor:pointer}
+  .more{display:inline-block;margin-top:8px;color:var(--accent2);font-size:11px;cursor:pointer}
+  .card-item{display:flex;align-items:center;gap:10px;background:#161b22;border:1px solid var(--line);
+    border-radius:9px;padding:8px 10px;width:230px;height:54px}
+  .card-item .thumb{width:38px;height:38px;border-radius:7px;background:repeating-linear-gradient(45deg,#223,#2a3340 6px,#223 12px);flex:0 0 auto}
+  .card-item .tt{font-size:12px;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card-item .ts{font-size:10px;color:var(--mut)}
+  .pop{position:relative;margin-top:8px;background:#1b2230;border:1px solid var(--line);border-radius:9px;padding:7px;display:flex;gap:6px}
+  .pop .b{background:rgba(255,255,255,.06);border-radius:6px;padding:5px 9px;font-size:11px;color:var(--txt)}
+  .pop .b.hot{background:linear-gradient(90deg,var(--accent),#818cf8);color:#fff;font-weight:700}
+  .switch{display:inline-flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:12px}
+  .switch .knob{width:34px;height:18px;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent2));position:relative}
+  .switch .knob::after{content:"";position:absolute;right:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff}
+  details{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 18px;margin-top:14px}
+  details summary{cursor:pointer;font-weight:700;color:var(--accent2);font-size:14px}
+  details ul{margin:12px 0 0 18px;color:var(--mut);font-size:13px}
+  details li{margin:6px 0}
+  details li b{color:var(--txt)}
+  .foot{margin-top:30px;color:var(--mut);font-size:12px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="kick">Interaction Audit · claude.md 规则 17 / 18</div>
+    <h1>PastePanda 交互优化全景</h1>
+    <p class="sub">对照「交互通用核心思想（7 条）」与「轻预览优先交互范式（4 原则 + 3 红线）」做的全项目扫描。结论：整体高度合规，下方为按「严重度 × 频率」排序的高 ROI 缺口。</p>
+  </header>
+
+  <div class="stats">
+    <div class="stat ok"><div class="n">✓</div><div class="l">轻预览范式已落地</div></div>
+    <div class="stat red"><div class="n">3</div><div class="l">高频高价值缺口</div></div>
+    <div class="stat amber"><div class="n">3</div><div class="l">中频缺口</div></div>
+    <div class="stat"><div class="n">7</div><div class="l">打磨 / 低频 / 疑点</div></div>
+  </div>
+
+  <div class="grid">
+    <!-- #1 -->
+    <div class="card red">
+      <div class="h"><span class="tag rule">违规 17.1 / 17.5</span><span class="tag freq">高频 · 高</span></div>
+      <h3>1. 删除撤销只能 Ctrl+Z（无鼠标入口）</h3>
+      <p class="desc">鼠标删除卡片后，toast 只提示「（Ctrl+Z 撤销）」——纯鼠标用户删错后无恢复路径。但 <code>Toast</code> 组件已内置 <code>actionLabel</code>+<code>onRetry</code> 撤销按钮能力，仅删除路径未传入。改动极小。</p>
+      <div class="ba">
+        <div class="col before"><div class="t">BEFORE</div>
+          <div class="mock"><div class="toast"><span class="ic">i</span><span class="msg">已删除 3 条记录（Ctrl+Z 撤销）</span><span class="x">✕</span></div>
+          <div class="mock muted" style="margin-top:8px">无撤销按钮，只能靠键盘</div></div>
+        </div>
+        <div class="col after"><div class="t">AFTER（建议）</div>
+          <div class="mock"><div class="toast"><span class="ic">i</span><span class="msg">已删除 3 条记录</span><button class="act">撤销</button><span class="x">✕</span></div>
+          <div class="mock muted" style="margin-top:8px">复用既有 Toast 能力，传入 undoDelete 回调</div></div>
+        </div>
+      </div>
+      <div class="ev">证据：<code>src/lib/api/history.ts:86</code>（文案无按钮） · <code>src/components/Toast.tsx:115</code>（已支持 actionLabel/onRetry）</div>
+    </div>
+
+    <!-- #2 -->
+    <div class="card red">
+      <div class="h"><span class="tag rule">违规 17.2</span><span class="tag freq">高频 · 高</span></div>
+      <h3>2. 截图"完成=复制"没有默认主按钮</h3>
+      <p class="desc">每次截图都进 <code>ResultActions</code> 平铺出口面板（三组 9 行），复制需手动选；Enter/Ctrl+C 才是键盘默认。组件自身注释也承认「9 行平铺时扫视没有落点」。应为微信式：高亮「完成并复制」=唯一默认动作，其余收「更多」。</p>
+      <div class="ba">
+        <div class="col before"><div class="t">BEFORE</div>
+          <div class="mock"><div class="rpanel">
+            <div class="ph"><span class="d"></span>截图完成 · 选择出口</div>
+            <div class="g">图片</div>
+            <div class="row"><span class="ic">⬡</span>复制图片<span class="k">Ctrl+C</span></div>
+            <div class="row"><span class="ic">⬇</span>保存到图库<span class="k">Ctrl+S</span></div>
+            <div class="row pin"><span class="ic">📌</span>贴图置顶</div>
+            <div class="g">文字</div>
+            <div class="row"><span class="ic">AI</span>AI 处理</div>
+            <div class="row"><span class="ic">⚡</span>送动作链</div>
+            <div class="g">其它</div>
+            <div class="row"><span class="ic">🔒</span>记住为固定区域</div>
+            <div class="row"><span class="ic">↺</span>重新截图</div>
+          </div></div>
+        </div>
+        <div class="col after"><div class="t">AFTER（建议）</div>
+          <div class="mock"><div class="rpanel">
+            <div class="ph"><span class="d"></span>截图完成</div>
+            <button class="main-btn">✓ 完成并复制</button>
+            <div class="row"><span class="ic">⬇</span>保存到图库<span class="k">Ctrl+S</span></div>
+            <div class="row pin"><span class="ic">📌</span>贴图置顶</div>
+            <div class="row"><span class="ic">AI</span>AI 处理</div>
+            <span class="more">更多 ⋯（记住区域 / 重新截图）</span>
+          </div></div>
+        </div>
+      </div>
+      <div class="ev">证据：<code>src/components/screenshot/ResultActions.tsx:83-173</code>（三组平铺，自身注释承认无落点）</div>
+    </div>
+
+    <!-- #3 -->
+    <div class="card red">
+      <div class="h"><span class="tag rule">违规 17.2</span><span class="tag freq">高频 · 高</span></div>
+      <h3>3. 复制卡片不是一步到位</h3>
+      <p class="desc">左键单击 = 选中，复制要 hover 弹 popover 点「复制」/ 右键 / Enter。核心高频动作对纯鼠标用户至少两步。建议加设置项「单击即复制」（多数剪贴板工具默认），或让 popover 的「复制」成为默认聚焦项。</p>
+      <div class="ba">
+        <div class="col before"><div class="t">BEFORE</div>
+          <div class="mock"><div class="card-item"><div class="thumb"></div><div style="flex:1"><div class="tt">这是一段剪贴板内容…</div><div class="ts">刚刚 · 文本</div></div></div>
+          <div class="pop"><span class="b">预览</span><span class="b">复制</span><span class="b">置顶</span><span class="b">编辑</span></div>
+          <div class="mock muted" style="margin-top:8px">单击=选中，复制需第二步</div></div>
+        </div>
+        <div class="col after"><div class="t">AFTER（建议）</div>
+          <div class="mock"><div class="switch"><span class="knob"></span>设置：单击卡片即复制</div>
+          <div class="card-item" style="margin-top:10px;border-color:var(--accent)"><div class="thumb"></div><div style="flex:1"><div class="tt">单击 = 直接复制走</div><div class="ts">刚复制 · 文本</div></div></div>
+          <div class="pop"><span class="b hot">复制 ✓</span><span class="b">预览</span><span class="b">置顶</span><span class="b">编辑</span></div></div>
+        </div>
+      </div>
+      <div class="ev">证据：<code>src/components/Card.tsx:284</code>（单击=选中）· <code>:625</code>（popover 复制按钮）</div>
+    </div>
+
+    <!-- #4 -->
+    <div class="card amber">
+      <div class="h"><span class="tag rule">违规 17.1</span><span class="tag freq">中频</span></div>
+      <h3>4. 贴图旋转 / 翻转 / 透明度仅键盘</h3>
+      <p class="desc">钉在屏幕上的图片，旋转(R)/翻转(F/V)/循环透明度(T) 全是键盘快捷键；右键菜单只有「复制 / 重编辑 / 关闭 / 关闭全部」，无鼠标入口调朝向与透明度。纯鼠标用户无法扶正已钉图片。建议在右键菜单增加这些子项或加常驻 HUD 工具条。</p>
+      <div class="ev">证据：<code>src-tauri/src/pinned_window.rs:867+</code>（VK_T/R/F/V 键处理）· 右键菜单注释确认无对应项</div>
+    </div>
+
+    <!-- #5 -->
+    <div class="card amber">
+      <div class="h"><span class="tag rule">违规 17.1 / 17.3 边界</span><span class="tag freq">中频</span></div>
+      <h3>5. 批量选中时 popover 被禁用，鼠标入口消失</h3>
+      <p class="desc"><code>CardList</code> 在 <code>selectedCount &gt; 0</code> 时把卡片 hover popover 整体禁用（<code>disablePreview</code>），于是复制/置顶/编辑等悬浮按钮消失，纯鼠标用户反而失去最快复制入口。建议批量模式下保留 popover 或切到内联按钮。</p>
+      <div class="ev">证据：<code>src/components/CardList.tsx:878</code>（<code>disablePreview={isScrolling || selectedCount &gt; 0}</code>）</div>
+    </div>
+
+    <!-- #6 -->
+    <div class="card amber">
+      <div class="h"><span class="tag rule">违规 17.2</span><span class="tag freq">高频 · 中</span></div>
+      <h3>6. 截图结果面板低频出口未收口</h3>
+      <p class="desc">「记住为固定区域」「重新截图」与高频的复制/保存/贴图同屏平铺，未收进「更多 ⋯」。</p>
+      <div class="ev">证据：<code>ResultActions.tsx:135-155</code>（其它组平铺，未折叠）</div>
+    </div>
+  </div>
+
+  <details>
+    <summary>展开：7 项打磨 / 低频 / 疑点（绿区）</summary>
+    <ul>
+      <li><b>7. 贴图预览即钉缺可见「不钉」按钮</b> — 违反 18 红线2（疑点）。浮动预览松手即钉，推翻依赖 Esc/点外部，鼠标出口不显著。<code>ScreenshotOverlay.tsx:1728</code></li>
+      <li><b>8. 关闭全部贴图 / 退出 无二次确认</b> — 违反 17.5。破坏性操作应套用项目既有 ConfirmDialog。<code>PinnedPanel.tsx:161</code> · <code>TrayPopup.tsx:325</code></li>
+      <li><b>9. 全选按钮仅选中后才出现</b> — 17.1 边界。首次进入批量态鼠标入口不直观，建议常驻「选择模式」开关。<code>CardList.tsx:789</code></li>
+      <li><b>10. 拖入文件 / 图片无落点预览</b> — 缺失能力（17.4）。资源管理器拖图进主窗口无轻预览落点，建议拖拽悬停虚线框 + 松手入历史。</li>
+      <li><b>11. 自动打码「确认」动作鼠标可达性</b> — 17.1 疑点。预览式打码已合规，但「应用打码」触发是否可见鼠标按钮需定位。<code>ScreenshotOverlay.tsx:1535</code></li>
+      <li><b>12. 标注工具 hover tip 是否含名称 + 快捷键</b> — 17.3 疑点。需逐工具补 <code>title="名称 (快捷键)"</code>。<code>tools.tsx</code> · <code>AnnotToolbar.tsx</code></li>
+      <li><b>13. 贴图 HUD 反馈仅 1.5s 自藏</b> — 17.3。透明度/角度 HUD 操作后即隐，且无鼠标微调入口。<code>pinned_window.rs:86</code></li>
+    </ul>
+  </details>
+
+  <div class="foot">本看板为设计稿（只读审计结论的可视化）。落地前按 claude.md 规则 1/4/12：先读真实源码、出方案、用户确认后再改代码。</div>
+</div>
+</body>
+</html>

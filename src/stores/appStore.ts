@@ -165,7 +165,9 @@ interface AppState {
   appendHistory: (items: HistoryItem[]) => void;
   prependItem: (item: HistoryItem) => void;
   moveToTop: (id: string, newTime: string) => void;
-  removeItems: (ids: string[]) => void;
+  // deletedSnapshot 可选：由 deleteHistory 在 await 后端删除前快照待删项传入，
+  // 规避 history-items-deleted 事件在 removeItems 执行前清空 history 的竞态（否则撤销栈压不进）。
+  removeItems: (ids: string[], deletedSnapshot?: HistoryItem[]) => void;
   undoDelete: () => HistoryItem[] | null;
   togglePin: (id: string) => void;
   setPinned: (id: string, pinned: boolean) => void;
@@ -353,7 +355,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const deduped = items.filter((it) => !existingIds.has(it.id));
       return { history: [...s.history, ...deduped], historyVersion: s.historyVersion + 1 };
     }),
-  prependItem: (item) =>
+  prependItem: (item) => {
     set((s) => {
       // 去重：如果已存在相同 id 的记录，保留旧数据的非空字段，更新时间和内容
       const dupIdx = s.history.findIndex(h => h.id === item.id);
@@ -384,7 +386,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       // 定位目标，不清的话用户上次留下的焦点会让它一直指着旧条目，
       // 刚复制的那条反而没人管——跟“复制即用”直接打架。
       return { history: [item, ...s.history], _filterCache: null, historyVersion: s.historyVersion + 1, focusId: null };
-    }),
+    });
+    // 新条目入顶动画事件：CardList 监听后触发 glide（下方行平滑让位）+ 落定高亮环，
+    // 与 pin-anim / delete-anim 同机制；初始加载走 setHistory/appendHistory 不触发此处。
+    window.dispatchEvent(new CustomEvent("new-anim", { detail: { id: item.id } }));
+  },
   // 智能合并：将已有记录移到顶部并更新时间
   moveToTop: (id: string, newTime: string) =>
     set((s) => {
@@ -397,10 +403,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       // 与复制一段全新内容无区别，漏了就会出现“逆向合并后 AI 栏没跟上”。
       return { history: newHistory, _filterCache: null, historyVersion: s.historyVersion + 1, focusId: null };
     }),
-  removeItems: (ids) =>
+  removeItems: (ids, deletedSnapshot) =>
     set((s) => {
       const idSet = new Set(ids);
-      const deleted = s.history.filter((h) => idSet.has(h.id));
+      // 修复撤销失效（搜索模式）：被删项可能只存在于 searchResults（搜索模式下列表渲染源），
+      // 不能只在 history 中查找——否则 deleted 为空、撤销栈不压栈，撤销时提示"没有可撤销的删除"。
+      const deletedFromHistory = s.history.filter((h) => idSet.has(h.id));
+      const deletedFromSearch = (s.searchResults ?? []).filter((h) => idSet.has(h.id));
+      // 调用方（deleteHistory）在 await 后端删除前快照的待删项：规避 history-items-deleted 事件
+      // 在 removeItems 前把 history 里待删项过滤掉的竞态——那时 history 已不含被删项，仅查 history 会漏。
+      const snapshotHits = deletedSnapshot
+        ? deletedSnapshot.filter((h) => idSet.has(h.id))
+        : [];
+      const byId = new Map<string, HistoryItem>();
+      for (const h of [...snapshotHits, ...deletedFromHistory, ...deletedFromSearch]) {
+        byId.set(h.id, h);
+      }
+      const deleted = [...byId.values()];
       // 修复 U13：被删的是当前焦点项时，焦点移到最近的存活邻居（优先后一项），
       // 避免焦点置空后键盘导航跳回列表顶部
       let nextFocus = s.focusId && idSet.has(s.focusId) ? null : s.focusId;
@@ -418,8 +437,14 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
         }
       }
+      // 搜索结果同样移除被删项，避免删除后残留（搜索模式下列表直接渲染 searchResults）
+      const searchResults =
+        s.searchResults === null
+          ? null
+          : s.searchResults.filter((h) => !idSet.has(h.id));
       return {
         history: s.history.filter((h) => !idSet.has(h.id)),
+        searchResults,
         selectedIds: new Set([...s.selectedIds].filter((id) => !idSet.has(id))),
         focusId: nextFocus,
         // 仅在确实删除了条目时才记录撤销批次，避免空批次消耗撤销额度
@@ -432,8 +457,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     const s = get();
     if (s.undoStack.length === 0) return null;
     const [restored, ...rest] = s.undoStack;
+    // 搜索模式下，恢复项也应回到 searchResults（按 id 去重合并到队首），
+    // 否则撤销后列表仍不可见；非搜索模式 searchResults 为 null，保持不变。
+    let searchResults: HistoryItem[] | null = null;
+    if (s.searchResults !== null) {
+      const sr = s.searchResults;
+      searchResults = [...restored.filter((r) => !sr.some((h) => h.id === r.id)), ...sr];
+    }
     set({
       history: [...restored, ...s.history],
+      searchResults,
       undoStack: rest,
       _filterCache: null,
       historyVersion: s.historyVersion + 1,

@@ -15,7 +15,7 @@ export { getImageDataUrl, getImageBase64, dataUrlToBlob, getImageThumbnail, getI
 export type { OcrResult, OcrLine, OcrWord } from "./images";
 
 // 历史记录
-export { loadMoreHistory, deleteHistory, togglePin, searchHistory } from "./history";
+export { loadMoreHistory, deleteHistory, togglePin, searchHistory, restoreDeleted } from "./history";
 export type { SearchFilters } from "./history";
 
 // 链接摘要（v6.4 A）

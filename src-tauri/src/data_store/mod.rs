@@ -807,8 +807,20 @@ impl DataStore {
         // synchronous=NORMAL：WAL 模式下足够安全，大幅提升写入性能
         // cache_size=-8000：8MB 缓存（负值表示 KB），减少磁盘 I/O
         // busy_timeout=5000：等待 5 秒而非立即返回 SQLITE_BUSY
+        //
+        // ❗ journal_size_limit：**必须设**，否则 -wal 文件大小是个只涨不落的高水位。
+        //   自动 checkpoint（wal_autocheckpoint 默认 1000 页）跑的是 **PASSIVE** 模式：
+        //   它把页合并回主库后会重用 WAL 空间，但**不会把文件截短**。
+        //   本项目单张图上限 50MB（clipboard_monitor.rs 的 MAX_IMAGE_BYTES），
+        //   复制几张大图就能把 WAL 顶到几百 MB 然后永久停在那里。
+        //   实测现场：主库 5MB 而 -wal 209MB（40 倍）。后果是磁盘白占、
+        //   启动要扫整个 WAL、崩溃恢复变慢。
+        //   设了之后，每次 checkpoint 完成会把 WAL 截回这个上限以内。
+        //   32MB 的取法：要能装下一张典型大图的写入，又不致于白占磁盘。
+        //   顺序重要：必须排在 journal_mode=WAL 之后。
         let pragmas = [
             "PRAGMA journal_mode=WAL;",
+            "PRAGMA journal_size_limit=33554432;",
             "PRAGMA synchronous=NORMAL;",
             "PRAGMA cache_size=-8000;",
             "PRAGMA busy_timeout=5000;",
@@ -817,6 +829,26 @@ impl DataStore {
         for pragma in &pragmas {
             if let Err(e) = conn.execute_batch(pragma) {
                 log::warn!("[DataStore] PRAGMA 设置失败 ({}): {}", pragma, e);
+            }
+        }
+
+        // 一次性回收：上面的 journal_size_limit 只在「下一次 checkpoint 完成」时生效，
+        // 而已经膨胀的存量文件可能要等很久才碰上那个时机。这里主动做一次
+        // TRUNCATE checkpoint 把存量降下去。
+        // 安全性：checkpoint 是把 WAL 合并回主库，**不丢数据**；此时还没有其他
+        // 读者（刚 open 完），不会因为旧快照被卡住。
+        // 失败不致命（比如真的有并发进程占着），下次自动 checkpoint 会接上。
+        {
+            let t0 = std::time::Instant::now();
+            match conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);") {
+                Ok(()) => log::info!(
+                    "[DataStore] WAL 已 checkpoint(TRUNCATE)，耗时 {:?}",
+                    t0.elapsed()
+                ),
+                Err(e) => log::warn!(
+                    "[DataStore] WAL checkpoint(TRUNCATE) 失败（不影响使用，下次自动 checkpoint 会接上）: {}",
+                    e
+                ),
             }
         }
 

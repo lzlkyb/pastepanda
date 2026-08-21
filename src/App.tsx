@@ -17,7 +17,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UpdateProvider, useUpdate } from "@/contexts/UpdateContext";
 import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
 import { logger } from "@/lib/logger";
-import { pasteTextGuarded, pasteImage, pasteRichGuarded, deleteHistory, togglePin, toggleWindow, saveForeground, invalidateCountsCache, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
+import { pasteTextGuarded, pasteImage, pasteRichGuarded, deleteHistory, togglePin, toggleWindow, saveForeground, restoreDeleted, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
 import { resolveSource, getAutoTagIcon, getAutoTagColor } from "@/lib/source-mappings";
 import { migrateLegacyStorageKeys } from "@/lib/storageMigration";
 import { initRegexRules } from "@/lib/regexRules";
@@ -163,7 +163,7 @@ function App() {
   useEffect(() => {
     const toastHandler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      if (detail?.message) toast(detail.message, detail.type || "info", undefined, undefined, undefined, detail.copyText);
+      if (detail?.message) toast(detail.message, detail.type || "info", undefined, undefined, undefined, detail.copyText, detail.action);
     };
     const moveToGroupHandler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
@@ -862,31 +862,7 @@ function App() {
       if (pinned !== null) toast(pinned ? "已置顶" : "已取消置顶", "success");
     } else if (e.ctrlKey && e.key === "z") {
       e.preventDefault();
-      const restored = store.undoDelete();
-      if (restored) {
-        invalidateCountsCache(); // 撤销恢复后清除计数缓存
-        const failedItems: HistoryItem[] = [];
-        for (const item of restored) {
-          try { await import("@tauri-apps/api/core").then(m => m.invoke("insert_history", { item })); } catch (e) {
-            logger.warn("撤销恢复失败", e);
-            failedItems.push(item);
-          }
-        }
-        if (failedItems.length > 0) {
-          // 修复 M9：后端写入失败时回滚本地恢复的条目并放回撤销栈，
-          // 用户可再次 Ctrl+Z 重试 — 此前失败后条目留在本地列表却不在 DB，
-          // 撤销栈已消耗无法重试，前后端永久不一致
-          const failedIds = new Set(failedItems.map((i) => i.id));
-          useAppStore.setState((s) => ({
-            history: s.history.filter((h) => !failedIds.has(h.id)),
-            undoStack: [failedItems, ...s.undoStack].slice(0, 10),
-            _filterCache: null,
-          }));
-          window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `${failedItems.length}/${restored.length} 条恢复失败，可再次 Ctrl+Z 重试`, type: "error" } }));
-        } else {
-          window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已恢复 ${restored.length} 条记录`, type: "success" } }));
-        }
-      }
+      void restoreDeleted();
     } else if (e.ctrlKey && e.key === "s") {
       e.preventDefault();
       setShowSettings(true);

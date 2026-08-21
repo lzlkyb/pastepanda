@@ -1,5 +1,7 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="ocean">
+<!-- 默认主题必须跟软件一致：theme.ts 的 DEFAULT_THEME 是 ocean-dark（深海）。
+     旧值写的是 ocean，于是官网首屏是白的、下载完打开是深色的。 -->
+<html lang="zh-CN" data-theme="ocean-dark">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -329,9 +331,6 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
 .hero h1 { font-size: 44px; font-weight: 800; letter-spacing: -1.4px; line-height: 1.24; margin: 20px 0 0; }
 .hero h1 em { font-style: normal; background: linear-gradient(120deg, #59A6FF, #A78BFA); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 2px 18px rgba(89,166,255,.35)); }
 .hero .sub { font-size: 15px; color: #9FB4D0; margin-top: 16px; max-width: 480px; line-height: 1.85; }
-.hero .points { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
-.hpt { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 9px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); color: #C9D7EA; font-size: 12.5px; font-weight: 500; }
-.hpt b { color: #fff; font-weight: 700; }
 .hero-btns { display: flex; gap: 12px; margin-top: 28px; align-items: center; }
 .hero-btns .cta { height: 46px; padding: 0 26px; font-size: 14.5px; border-radius: 13px; }
 .hero-btns .cta.ghost { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.16); color: #E6EDF7; }
@@ -370,22 +369,24 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
 .hero-scrollhint { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #6E87A8; letter-spacing: .5px; }
 .hero-scrollhint::after { content:""; width: 14px; height: 14px; border-right: 1.5px solid #6E87A8; border-bottom: 1.5px solid #6E87A8; transform: rotate(45deg); animation: hsh 1.6s ease-in-out infinite; }
 @keyframes hsh { 0%,100% { transform: rotate(45deg) translate(0,0); opacity: .6; } 50% { transform: rotate(45deg) translate(3px,3px); opacity: 1; } }
-/* 顶栏（真实：padding 16px 16px 0 / 按钮 28×28 / 搜索框 38px） */
-.hw-tbr { display: flex; align-items: center; gap: 8px; padding: 16px 16px 0; }
 .hw-ticon { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, var(--accent), #6D5CF0); color: #fff; display: grid; place-items: center; font-size: 14px; flex-shrink: 0; }
 .hw-tbrand { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 3px; }
 .hw-tai { font-size: 9px; font-weight: 800; background: linear-gradient(135deg, var(--brand-from), var(--brand-to)); color: #fff; border-radius: 4px; padding: 1px 4px; line-height: 1; }
 .hw-tsearch { flex: 1; display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border-radius: 8px; background: var(--search-bg); border: 1px solid var(--border-color); margin-left: 10px; color: var(--text-muted); font-size: 13px; }
 .hw-tbtn { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--text-secondary); font-size: 15px; position: relative; }
 .hw-tbtn .gd { position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: #22C55E; border: 1px solid var(--card-bg); }
-.hw-sidebar { width: 180px; min-width: 180px; background: var(--sidebar-bg); border-right: 1px solid var(--border-color); padding: 12px 8px 8px; position: absolute; top: 62px; bottom: 0; left: 0; overflow: hidden; }
-.hw-sb-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 7px; font-size: 13px; color: var(--text-primary); margin-bottom: 1px; }
-.hw-sb-item.on { background: var(--accent-light); color: var(--accent-strong); font-weight: 600; }
-.hw-sb-ic { font-size: 15px; width: 16px; text-align: center; }
-.hw-sb-cnt { margin-left: auto; font-size: 10px; color: var(--text-muted); background: var(--section-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 1px 7px; font-weight: 600; }
-.hw-sb-sep { height: 1px; background: var(--border-color); margin: 8px 4px; }
-.hw-sb-grp { font-size: 10.5px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .4px; padding: 12px 10px 5px; }
-.hw-list { position: absolute; top: 62px; left: 180px; right: 0; bottom: 0; padding: 10px 16px 30px; overflow: hidden; }
+/* 主动建议条（SuggestionBar）：💡 + 文案 + 「使用 →」+ ✕，与真组件一致。
+   靠 .show 入场，由 Hero 循环在第 3 帧触发。 */
+.hw-sugg { position: absolute; top: 66px; left: 16px; right: 16px; z-index: 6; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border-radius: 9px; background: var(--accent-light); border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent); opacity: 0; transform: translateY(-8px); }
+.hw-sugg.show { animation: hwSugg 5s cubic-bezier(.2,.9,.25,1.1) forwards; }
+@keyframes hwSugg { 0% { opacity: 0; transform: translateY(-8px); } 10% { opacity: 1; transform: translateY(0); } 84% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-6px); } }
+.hw-sugg .hs-ic { font-size: 12px; flex-shrink: 0; }
+.hw-sugg .hs-t { flex: 1; min-width: 0; font-size: 11.5px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hw-sugg .hs-use { flex-shrink: 0; font-size: 10.5px; font-weight: 700; color: #fff; background: var(--accent-solid); border-radius: 6px; padding: 2px 8px; }
+.hw-sugg .hs-x { flex-shrink: 0; font-size: 11px; color: var(--text-muted); }
+/* 侧边栏默认收起，所以列表从左边撑满（旧值 left:180px 是给常驻侧边栏留的）。
+   480px 宽的窗口里抽掉 180px 侧边栏，卡片也从“挤”变“舒开”了。 */
+.hw-list { position: absolute; top: 104px; left: 0; right: 0; bottom: 0; padding: 4px 16px 30px; overflow: hidden; }
 .hw-card { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 16px; background: var(--card-bg); border: 1px solid var(--border-color); box-shadow: 0 4px 12px rgba(0,0,0,.08); height: 72px; margin-bottom: 10px; }
 .hw-c-ic { width: 42px; height: 42px; min-width: 42px; border-radius: 12px; display: grid; place-items: center; font-size: 18px; }
 .hw-c-ic.blue { background: rgba(59,130,246,.12); border: 1px solid rgba(59,130,246,.22); }
@@ -396,7 +397,9 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
 .hw-c-pin { display: inline-flex; align-items: center; gap: 2px; height: 16px; padding: 0 6px; border-radius: 4px; font-size: 10px; font-weight: 600; background: var(--accent-light); color: var(--accent-strong); }
 .hw-c-time { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
 /* Hero 动画元素 */
-.hw-new { position: absolute; left: 16px; right: 16px; top: 10px; z-index: 5; opacity: 0; transform: translateY(-90px); }
+/* 新卡片落位要对齐列表顶部（.hw-list 的 top 104 + padding 4）。
+   旧值 top:10px 是绝对于窗口的，落完正好盖在顶栏上。 */
+.hw-new { position: absolute; left: 16px; right: 16px; top: 108px; z-index: 5; opacity: 0; transform: translateY(-90px); }
 .hw-new.show { animation: hwDrop .7s cubic-bezier(.2,.9,.25,1.2) forwards; }
 @keyframes hwDrop { 0% { opacity: 0; transform: translateY(-90px); } 100% { opacity: 1; transform: translateY(0); } }
 .hw-new .glow { position: absolute; inset: -3px; border-radius: 18px; border: 2px solid var(--accent); opacity: 0; animation: hwGlow 1.4s ease-in-out 1.5s infinite; }
@@ -406,8 +409,8 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
 @keyframes hwToast { 0% { opacity: 0; transform: translateX(-50%) translateY(20px); } 12% { opacity: 1; transform: translateX(-50%) translateY(0); } 82% { opacity: 1; } 100% { opacity: 0; transform: translateX(-50%) translateY(-8px); } }
 .cursor { position: absolute; width: 24px; height: 24px; z-index: 300; pointer-events: none; filter: drop-shadow(0 2px 4px rgba(0,0,0,.4)); transition: left .9s cubic-bezier(.55,.06,.25,1), top .9s cubic-bezier(.55,.06,.25,1); }
 .cursor svg { display: block; }
-.hero-kbd { position: absolute; right: -14px; top: -14px; z-index: 10; display: flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 10px; background: rgba(10,20,36,.9); border: 1px solid rgba(255,255,255,.14); box-shadow: 0 8px 24px rgba(0,0,0,.4); color: #E6EDF7; font-size: 12px; }
-.hero-kbd kbd { font-family: var(--mono); background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); border-bottom-width: 2px; border-radius: 5px; padding: 1px 7px; font-size: 11px; color: #7DC4FF; }
+/* ❗ 这里原有一份 .hero-kbd 重复定义（right:-14px/top:-14px），把上面那份
+   right:34px/top:-18px 整个盖掉了 —— 图标提示挂到了窗口外角。已删。 */
 /* ===================== 区块通用 ===================== */
 .wrap { max-width: 1180px; margin: 0 auto; padding: 0 28px; }
 .sec { padding: 76px 0; }
@@ -798,14 +801,799 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
   .hero h1 { font-size: 34px; }
 }
 
+/* ===================== 场景氛围层（对齐软件 SkinScene） =====================
+ * 软件里深海主题有一层「世界」：海面透光 + 光柱 + 气泡（SkinScene.tsx），
+ * 卡片是半透明玻璃衬在它前面。官网之前完全没有这一层，所以看起来像个
+ * 通用扁平 App 而不是 PastePanda。
+ *
+ * z-index: -1 而不是 0：这样它衬在 body 正文（静态流内容）之后、body 背景之前，
+ * 不用给每个 section 都加 position/z-index。
+ */
+.ambience { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; opacity: 0; transition: opacity .45s ease; }
+/* 只在深色主题下亮。浅色主题（经典白/森林/美乐蒂/晨曦）本身就是渐变底，
+   再叠光柱会脏。软件里也是按主题给不同场景，不是一套通刷。 */
+[data-theme="ocean-dark"] .ambience { opacity: 1; }
+.ambience .ray { position: absolute; top: -20%; width: 34vw; height: 150%; background: linear-gradient(to bottom, rgba(120,190,255,.13), rgba(120,190,255,.03) 55%, transparent 82%); filter: blur(22px); transform-origin: top center; animation: raySway 17s ease-in-out infinite; }
+.ambience .ray:nth-child(1) { left: 4%; animation-delay: 0s; }
+.ambience .ray:nth-child(2) { left: 38%; width: 26vw; opacity: .7; animation-delay: -6s; }
+.ambience .ray:nth-child(3) { left: 72%; width: 30vw; opacity: .55; animation-delay: -11s; }
+@keyframes raySway { 0%, 100% { transform: rotate(6deg) translateX(0); } 50% { transform: rotate(11deg) translateX(2vw); } }
+.ambience .bub { position: absolute; bottom: -8%; border-radius: 50%; background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.4), rgba(150,205,255,.1) 60%, transparent 72%); box-shadow: inset 0 0 6px rgba(255,255,255,.18); animation: bubRise linear infinite; }
+@keyframes bubRise { 0% { transform: translateY(0) translateX(0); opacity: 0; } 8% { opacity: .8; } 88% { opacity: .5; } 100% { transform: translateY(-112vh) translateX(3vw); opacity: 0; } }
+.ambience .bub:nth-child(4)  { left: 9%;  width: 9px;  height: 9px;  animation-duration: 21s; animation-delay: -2s; }
+.ambience .bub:nth-child(5)  { left: 21%; width: 5px;  height: 5px;  animation-duration: 17s; animation-delay: -9s; }
+.ambience .bub:nth-child(6)  { left: 33%; width: 13px; height: 13px; animation-duration: 26s; animation-delay: -14s; }
+.ambience .bub:nth-child(7)  { left: 47%; width: 6px;  height: 6px;  animation-duration: 19s; animation-delay: -5s; }
+.ambience .bub:nth-child(8)  { left: 58%; width: 10px; height: 10px; animation-duration: 23s; animation-delay: -17s; }
+.ambience .bub:nth-child(9)  { left: 71%; width: 4px;  height: 4px;  animation-duration: 15s; animation-delay: -11s; }
+.ambience .bub:nth-child(10) { left: 84%; width: 11px; height: 11px; animation-duration: 24s; animation-delay: -3s; }
+.ambience .bub:nth-child(11) { left: 93%; width: 7px;  height: 7px;  animation-duration: 18s; animation-delay: -20s; }
+
+/* ===================== 玻璃拟态（对齐软件 --glass-card-*） =====================
+ * 软件里深海主题的卡片是 22% 弱玻璃，且 **不开模糊**（--glass-card-filter: none）：
+ * 背景有动画时每帧都要重采样 × 几十张卡 = 乘法代价。官网同理：
+ * 只给不动的背景（顶栏、分区底）开 backdrop-filter，演示卡不开。
+ */
+[data-theme="ocean-dark"] .hw-card,
+[data-theme="ocean-dark"] .cw-card {
+  background: rgba(10,22,40,.55);
+  border-color: rgba(255,255,255,.09);
+  box-shadow: 0 6px 18px rgba(0,0,0,.35);
+}
+[data-theme="ocean-dark"] .sec.alt {
+  /* 半透明才能让背后的场景层透上来；原来是不透明的 color-mix，把场景盖死。 */
+  background: rgba(6,16,30,.45);
+  backdrop-filter: blur(2px);
+}
+[data-theme="ocean-dark"] .play-cap,
+[data-theme="ocean-dark"] .pstep,
+[data-theme="ocean-dark"] .pbtn {
+  background: rgba(10,22,40,.5);
+  border-color: rgba(255,255,255,.09);
+}
+[data-theme="ocean-dark"] .pstep.cur,
+[data-theme="ocean-dark"] .pbtn.on { background: var(--accent-solid); border-color: var(--accent); }
+
+/* ===================== 排版刻度 =====================
+ * 原来字号写死（h1 44px / h2 30px），小屏上溢出、大屏上又压不住场子。
+ * 改成 clamp 流体，同时把字距 / 行高按字号分档 —— “高级感”大半是这里来的。
+ */
+.hero h1 { font-size: clamp(30px, 5.2vw, 52px); letter-spacing: clamp(-1.6px, -.13vw, -.6px); line-height: 1.18; }
+.hero .sub { font-size: clamp(14px, 1.15vw, 16px); max-width: 52ch; }
+.sec-head h2 { font-size: clamp(23px, 2.6vw, 34px); letter-spacing: -.7px; line-height: 1.25; }
+.sec-head { max-width: 68ch; }
+.feat-txt h3 { font-size: clamp(19px, 1.8vw, 25px); }
+.feat-txt p { max-width: 46ch; }
+
+/* ===================== Hero 窗口缩放变量化 =====================
+ * ❗ 旧写法：.hero-window 是 480×700 固定尺寸 + transform: scale(.84)，而 transform
+ *   不改布局盒，所以 wrap 的布局高度仍是 700px —— 窗口下面白白多出 ~112px 死空间。
+ *   现在把缩放比提成变量，并用它算出 wrap 的真实尺寸。
+ */
+.hero-right { --hero-scale: .84; width: calc(480px * var(--hero-scale)); }
+.hero-window-wrap { height: calc(700px * var(--hero-scale)); }
+.hero-window { transform: scale(var(--hero-scale)); }
+
+/* ===================== 演示舞台缩放 =====================
+ * 八个舞台统一是 600×380（已核），所以能精确缩：
+ *   · transform 不改布局盒 → 用负 margin-bottom 吃掉剩下的 380px × (1 - scale)
+ *   · 容器 overflow: hidden + 居中，600px 的布局宽就不会把页面顶出横向滚动条
+ */
+.feat-demo { --demo-scale: 1; width: 100%; overflow: hidden; }
+.feat-demo > [id$="Stage"] {
+  flex: 0 0 auto;
+  transform: scale(var(--demo-scale));
+  transform-origin: top center;
+  margin-bottom: calc(380px * (var(--demo-scale) - 1));
+}
+
+/* ===================== 手机 / 平板适配 =====================
+ * 断点按内容定，不按机型：
+ *   1080 下面两列演示开始挤 → 先缩舞台
+ *   980  下面左右两栏挤不下 → 改单列
+ *   860  下面手册的侧边目录挤正文 → 目录横向滚动
+ *   560  手机竖屏
+ */
+@media (max-width: 1080px) {
+  .feat-demo { --demo-scale: .84; }
+  .featrow { gap: 36px; }
+}
+@media (max-width: 980px) {
+  /* 单列：.rev 的反向也要拉直，否则文字会跑到演示下面去 */
+  .hero-in { flex-direction: column; align-items: flex-start; gap: 40px; }
+  .hero-right { --hero-scale: .72; align-self: center; }
+  /* 浮动能力卡片靠负偏移挂在窗口外，窗口一居中它们就出视口了 */
+  .hf, .hero-scrollhint { display: none; }
+  .featrow, .featrow.rev { flex-direction: column; gap: 28px; }
+  .feat-txt p { max-width: none; }
+  .sec { padding: 56px 0; }
+  .sec-head { margin-bottom: 32px; }
+}
+@media (max-width: 860px) {
+  /* 手册部分：侧边目录改成顶部横向滚动的芯片条，不直接隐掉
+     —— 手册有二十多节，没目录就只能硬滚。 */
+  .layout { flex-direction: column; padding: 0 16px; }
+  nav.toc { position: static; width: auto; height: auto; padding: 12px 0 4px; display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; border-bottom: 1px solid var(--border-color); }
+  nav.toc a { flex: 0 0 auto; border-left: none; border-radius: 99px; padding: 6px 13px; white-space: nowrap; }
+  nav.toc a.active { border-left: none; }
+  nav.toc .grp { display: none; }
+  main { padding: 22px 0 80px; }
+  /* 表格在窄屏上必须自己滚，不能顶得整页横滚 */
+  .kbdtable { display: block; overflow-x: auto; white-space: nowrap; }
+  .wrap { padding: 0 16px; }
+  .top { padding: 10px 16px; gap: 8px; }
+  .top nav { display: none; }
+}
+@media (max-width: 560px) {
+  body { font-size: 13.5px; }
+  .hero { padding: 40px 16px 52px; }
+  .hero-right { --hero-scale: .56; }
+  .hero-kbd { display: none; }
+  .hero-btns { flex-direction: column; align-items: stretch; }
+  .hero-btns .cta { justify-content: center; }
+  .hero-trust { gap: 10px; }
+  .feat-demo { --demo-scale: .52; }
+  /* 播放条：四个步骤芯片在 360px 宽屏上挤不下，换行而不是压扁 */
+  .playbar { flex-wrap: wrap; }
+  .psteps { order: 2; width: 100%; flex: 1 0 100%; }
+  .pstep { font-size: 11px; }
+  .sec { padding: 44px 0; }
+  .top .brand { font-size: 14px; }
+  .themeToggle { padding: 6px 8px; font-size: 12px; }
+}
+@media (max-width: 400px) {
+  .feat-demo { --demo-scale: .44; }
+  .hero-right { --hero-scale: .48; }
+}
+
+/* 尊重系统的「减少动画」：JS 那边已经不自动播了，这里把纯 CSS 的循环动画也停掉
+   （光柱、气泡、浮动卡片、滚动提示箭头）。 */
+@media (prefers-reduced-motion: reduce) {
+  .ambience .ray, .ambience .bub, .hf, .hero-scrollhint::after, .hw-new .glow, .cw-new .glow {
+    animation: none !important;
+  }
+  html { scroll-behavior: auto; }
+}
+/* =====================================================================
+ * 视觉设计层（最后一层，故意放在 style 末尾赢优先级）
+ *
+ * 上一版的问题不在颜色也不在字号，在**节奏**：八个功能行长得一模一样
+ * （同宽、同高、同色、只是左右互换），滚到第四个就没信息量了。
+ * 所以这层干三件事：
+ *   1) 节奏：F1 / F4 改通栏大图，其余保持两列 → 1-2-1-4 的起伏
+ *   2) 色相：每行一个 --hue（沿用软件里卡片类型色），滚动时颜色在走
+ *   3) 层次：首屏从 7 个同等大小的碎片改成“一句话 + 三个键帽”
+ * ===================================================================== */
+
+/* ---------- 色相系统 ----------
+ * 用 R,G,B 三元组而不是完整颜色，这样同一个变量能派生出任意透明度。
+ * 取色沿用软件里卡片类型色（.hw-c-ic.blue/green/pink 等），不另起一套。 */
+.featrow { --hue: 59,158,255; }
+.featrow[data-hue="green"]  { --hue: 45,212,150; }
+.featrow[data-hue="cyan"]   { --hue: 34,211,238; }
+.featrow[data-hue="amber"]  { --hue: 251,176,60; }
+.featrow[data-hue="purple"] { --hue: 167,139,250; }
+.featrow[data-hue="pink"]   { --hue: 244,114,182; }
+
+.feat-num {
+  background: rgba(var(--hue), .13);
+  color: rgb(var(--hue));
+  border: 1px solid rgba(var(--hue), .3);
+  letter-spacing: .8px;
+}
+.featrow .ftag { transition: border-color .18s, color .18s; }
+.featrow:hover .ftag { border-color: rgba(var(--hue), .34); }
+.featrow .pstep.cur, .featrow .pbtn.on {
+  background: rgb(var(--hue));
+  border-color: rgb(var(--hue));
+  color: #06121F;
+}
+.featrow .pstep.done { border-color: rgba(var(--hue), .45); color: rgb(var(--hue)); }
+.featrow .pstep.done .n { background: rgba(var(--hue), .16); color: rgb(var(--hue)); }
+
+/* ---------- 舞台光晕：给 600×380 的盒子一点空间感 ----------
+ * 不用 box-shadow 而用背后一层 radial：阴影在深底上看不见，光晕看得见。 */
+.feat-demo { position: relative; }
+.feat-demo::before {
+  content: "";
+  position: absolute;
+  left: 50%; top: 34px;
+  width: min(760px, 116%); height: 300px;
+  transform: translateX(-50%);
+  background: radial-gradient(50% 50% at 50% 50%, rgba(var(--hue), .17), transparent 70%);
+  filter: blur(30px);
+  pointer-events: none;
+  z-index: 0;
+}
+.feat-demo > * { position: relative; z-index: 1; }
+
+/* ---------- 节奏：通栏行 ----------
+ * F1（截图）与 F4（OCR）是两个最有看头的功能，给它们整宽 + 放大；
+ * 其余六个保持两列互换。一页里有两个“停下来看”的点，比八个平铺强。 */
+.featrow.wide, .featrow.rev.wide {
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+  padding: 8px 0 4px;
+}
+.featrow.wide .feat-txt { flex: none; max-width: 60ch; text-align: center; }
+.featrow.wide .feat-txt p { max-width: none; margin-left: auto; margin-right: auto; }
+.featrow.wide .feat-tags { justify-content: center; }
+.featrow.wide .feat-demo { flex: none; }
+/* 放大只在桌面生效：写在 media 里才不会因为选择器更具体而盖掉小屏的缩放。 */
+@media (min-width: 1081px) {
+  .featrow.wide .feat-demo { --demo-scale: 1.26; }
+}
+/* 通栏行上下加分隔细线，把它从两列区里“抬”出来 */
+.featrow.wide::before, .featrow.wide::after {
+  content: "";
+  display: block;
+  width: min(560px, 70%);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(var(--hue), .35), transparent);
+}
+
+/* ---------- 首屏 ----------
+ * 原来是“4 个功能胶囊 + 3 个信任条”共 7 个同等大小的碎片，谁都不突出，
+ * 而且 “本地离线 OCR” 与 “本地优先·内容不出设备” 说的是同一件事。
+ * 现在：一句话 + 三个真实热键键帽 + 一行安静的元信息。 */
+.hero { padding-top: 76px; padding-bottom: 84px; }
+.hero::before {
+  /* 极光斑：比原来三层小 radial 更开阔，也更便宜 */
+  background:
+    radial-gradient(760px 420px at 74% 18%, rgba(59,158,255,.24), transparent 62%),
+    radial-gradient(620px 380px at 4% 88%, rgba(139,92,246,.2), transparent 62%),
+    radial-gradient(520px 300px at 46% 116%, rgba(34,211,238,.12), transparent 62%);
+}
+.hero h1 { font-weight: 850; margin-top: 22px; }
+.hero h1 em {
+  background: linear-gradient(104deg, #7FC1FF 0%, #A78BFA 52%, #F472B6 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 3px 26px rgba(120,150,255,.4));
+}
+.hero-badge { backdrop-filter: blur(8px); }
+
+/* 键帽条：热键是这个产品的核心交互，首屏就把它摆出来。
+   三组都是真实出厂默认值（hotkey_manager.rs），不是摆拍。 */
+.hero-keys { display: flex; gap: 10px; margin-top: 26px; flex-wrap: wrap; }
+.herokey {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 7px 12px 7px 9px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,.03));
+  border: 1px solid rgba(255,255,255,.13);
+  box-shadow: 0 6px 18px rgba(0,0,0,.28);
+}
+.herokey kbd {
+  font-family: var(--mono); font-size: 11.5px; font-weight: 700; color: #DCE9FF;
+  background: linear-gradient(180deg, #2A3B57, #1B283C);
+  border: 1px solid rgba(255,255,255,.16);
+  border-bottom: 2px solid rgba(0,0,0,.45);
+  border-radius: 6px; padding: 2px 7px; line-height: 1.5;
+}
+.herokey i { font-style: normal; font-size: 12.5px; color: #A8BEDC; margin-left: 4px; }
+
+.hero-trust { margin-top: 22px; gap: 14px; font-size: 12px; opacity: .82; }
+.hero-btns { margin-top: 30px; }
+.hero-btns .cta { height: 50px; padding: 0 30px; font-size: 15px; border-radius: 14px; font-weight: 800; }
+
+/* ---------- 数据条：首屏与功能区之间的“握手” ----------
+ * 全部是可核实的产品数字（主题数 / 编辑器数 / 标注工具数 / 手册分区数），
+ * 不放下载量、用户数这类我无法验证的东西。 */
+/* ❗ 默认用主题变量，不写死深色：主题切换器里有四套**浅色**主题
+   （经典白 / 森林 / 美乐蒂 / 晨曦），写死 rgba(6,16,30) 就是浅底上一条黑带。 */
+.statband { border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); background: color-mix(in srgb, var(--section-bg) 55%, transparent); }
+[data-theme="ocean-dark"] .statband, [data-theme="midnight"] .statband { background: rgba(6,16,30,.42); }
+.statband .wrap { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; }
+.stat { padding: 26px 18px; text-align: center; position: relative; }
+.stat + .stat::before { content: ""; position: absolute; left: 0; top: 24%; bottom: 24%; width: 1px; background: var(--border-color); }
+/* 渐变文字同理要分深浅：#EAF2FF→#8FB6E8 压在白底上是白字白底。 */
+.stat b { display: block; font-family: var(--mono); font-size: clamp(24px, 2.6vw, 34px); font-weight: 800; letter-spacing: -1px; background: linear-gradient(180deg, var(--text-primary), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+[data-theme="ocean-dark"] .stat b, [data-theme="midnight"] .stat b { background: linear-gradient(180deg, #EAF2FF, #8FB6E8); -webkit-background-clip: text; background-clip: text; }
+.stat span { display: block; margin-top: 5px; font-size: 12px; color: var(--text-muted); }
+
+/* ---------- 区块标题 ---------- */
+.sec-head .kicker { display: inline-flex; align-items: center; gap: 8px; }
+.sec-head .kicker::before { content: ""; width: 22px; height: 1px; background: currentColor; opacity: .6; }
+.sec-head h2 { font-weight: 850; }
+
+/* ---------- 使用场景卡 ----------
+ * ❗ 这里的 .scene 是这四张卡，与页面背景的 .ambience 氛围层不是同一个东西。
+ *   （上一版我把氛围层也叫 .scene，直接把这四张卡变成了 fixed 全屏隐形层。） */
+.scene-grid > .scene { position: relative; overflow: hidden; }
+.scene-grid > .scene::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(59,158,255,.5), transparent);
+}
+[data-theme="ocean-dark"] .scene-grid > .scene { background: rgba(10,22,40,.5); border-color: rgba(255,255,255,.08); }
+
+/* ---------- 亮点网格 ---------- */
+[data-theme="ocean-dark"] .hl { background: rgba(10,22,40,.42); border-color: rgba(255,255,255,.07); }
+.hl { position: relative; overflow: hidden; }
+.hl::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent);
+}
+
+/* ---------- 下载区：做成视觉高潮 ---------- */
+.dl { padding: 68px 48px; border-radius: 28px; }
+.dl h2 { font-size: clamp(26px, 3vw, 38px); font-weight: 850; }
+.dl::after {
+  /* 细网格，跟首屏同一套语言，把头尾拉成一个整体 */
+  content: ""; position: absolute; inset: 0;
+  background-image: radial-gradient(rgba(255,255,255,.05) 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: radial-gradient(70% 60% at 50% 40%, #000 25%, transparent 76%);
+  pointer-events: none;
+}
+
+/* ---------- 移动端补充（本层新增元素） ---------- */
+@media (max-width: 980px) {
+  .statband .wrap { grid-template-columns: repeat(3, 1fr); }
+  /* 三列时第 4 个开新行，行首不能再画竖线 */
+  .stat:nth-child(4)::before { display: none; }
+  .featrow.wide, .featrow.rev.wide { gap: 26px; }
+}
+@media (max-width: 560px) {
+  .statband .wrap { grid-template-columns: repeat(2, 1fr); }
+  .stat:nth-child(odd)::before { display: none; }
+  .stat { padding: 18px 10px; }
+  .hero-keys { gap: 8px; }
+  .herokey { padding: 6px 10px 6px 8px; }
+  .herokey i { display: none; } /* 窄屏上只留键帽，文字说明换行也挤 */
+  .dl { padding: 40px 20px; border-radius: 20px; }
+  .featrow.wide .feat-txt { text-align: left; }
+  .featrow.wide .feat-tags { justify-content: flex-start; }
+  .featrow.wide::before, .featrow.wide::after { display: none; }
+}
+/* =====================================================================
+ * bento 网格（第三轮：竞品对标后的节奏修正）
+ *
+ * 对标了 Paste / CleanShot X / Raycast / uTools 四家后的结论：
+ *   · Paste 功能区只用 **4 个**（不丢 / 搜索 / 置顶 / 同步）
+ *   · CleanShot 有 ~7 节，但每节排版都不一样，“交替行 + 全宽网格”交替出现
+ *   · Raycast 每一节换一种排版（Tab 网格 / 全宽 / 轮播 / 4 列）
+ *   · Snipaste 是反面例：纯静态截图 + 平铺，五个里最寒
+ * 没有一家连排八个同构的交替行。所以 F5~F8 降为 2×2 小卡。
+ *
+ * 小卡仍然是**真演示**（引擎照样驱动、自动循环），只是：
+ *   · 隐去播放条与字幕（小卡上摆不开，也不需要单步回看）
+ *   · 舞台缩到 0.8，文字在上、画面在下
+ * ===================================================================== */
+.bento {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px;
+  margin-top: 8px;
+}
+.bento-item {
+  /* 把 featrow 的两列 flex 拉直成单列卡片。
+     保留 .featrow 类名是故意的：--hue、步骤芯片、舞台光晕等现有规则
+     全挂在 .featrow 上，换类名就得全部重写一遍。 */
+  flex-direction: column !important;
+  align-items: stretch;
+  gap: 14px;
+  margin-bottom: 0;
+  padding: 22px 22px 18px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--card-bg) 70%, transparent);
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+  transition: border-color .2s, transform .2s;
+}
+[data-theme="ocean-dark"] .bento-item { background: rgba(10,22,40,.46); border-color: rgba(255,255,255,.08); }
+.bento-item:hover { border-color: rgba(var(--hue), .38); transform: translateY(-2px); }
+/* 顶部一道色相细线，四张卡的颜色差异一眼能看出 */
+.bento-item::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(var(--hue), .8), transparent);
+}
+.bento-item { position: relative; }
+
+.bento-item .feat-txt { flex: none; max-width: none; text-align: left; }
+.bento-item .feat-txt h3 { font-size: 18px; margin: 10px 0 6px; }
+.bento-item .feat-txt p { font-size: 13px; max-width: none; }
+/* 标签在小卡上是噪声：正文已经说完了，再摆五个胶囊只会把卡撑高 */
+.bento-item .feat-tags { display: none; }
+/* 播放条与字幕：小卡上不露。引擎仍然靠它们工作（querySelector 对
+   display:none 的元素照样生效），所以不能从 DOM 里删。 */
+.bento-item .playbar, .bento-item .play-cap { display: none; }
+.bento-item .feat-demo { flex: none; --demo-scale: .8; }
+/* 小卡里光晕要收一收，否则会溢到卡边外 */
+.bento-item .feat-demo::before { width: 108%; height: 220px; top: 10px; filter: blur(24px); }
+
+@media (max-width: 860px) {
+  .bento { grid-template-columns: 1fr; gap: 14px; }
+}
+@media (max-width: 560px) {
+  .bento-item { padding: 16px 14px 12px; border-radius: 16px; }
+  .bento-item .feat-txt h3 { font-size: 16px; }
+}
+
+/* =====================================================================
+ * Latin kicker 用衬线体
+ *
+ * Raycast 的高级感很大一部分来自「衬线标题 + 无衬线正文」。
+ * ❗ 但不能直接搬到中文标题上：Windows 上默认的 CJK 衬线体是宋体，
+ *   52px 这种显示尺寸下笔画极细、发灰，比黑体难看。Raycast 的标题全是英文。
+ *   所以只给纯英文的 kicker（Core Features 这类）上衬线，中文大标题继续用黑体。
+ * ===================================================================== */
+.sec-head .kicker {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: .6px;
+  text-transform: none;
+}
+/* =====================================================================
+ * 首屏主窗口：对齐真实 UI 的重建（第四轮）
+ *
+ * 尺寸全部取自源码，不自己拍：
+ *   TopBar.module.css  .header{padding:16px 16px 0} .headerTop{margin-bottom:12px}
+ *                      .headerTitle{gap:8px} .sidebarToggle{28×28,radius 8}
+ *                      .tabsArea{padding:10px 0 0} .filterDropdownBtn{height:28,radius 8,font 11}
+ *                      .headerControls{padding:0 0 4px}
+ *   CardList.module.css .cardIcon{42×42,radius 12,font 18} .cardSub{font 11,gap 6}
+ *                      .cardTime{font 11,color --text-muted}
+ * ===================================================================== */
+
+/* ---- 顶栏：两行 ---- */
+.hw-hdr { padding: 16px 16px 0; }
+.hw-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.hw-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.hw-icons { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+/* 功能按钮组（栈模式/工具箱/设置）与窗口控制组（最小化/隐藏）之间的分隔线
+   —— 真实顶栏有这条线（TopBar.tsx:252），旧 mock 连窗口控制按钮都没。 */
+.hw-hsep { width: 1px; height: 16px; background: var(--border-color); margin: 0 5px; flex-shrink: 0; }
+
+.hw-ctrls { padding: 0 0 4px; }
+.hw-srow { display: flex; align-items: center; gap: 6px; }
+.hw-srow .hw-tsearch { margin-left: 0; height: 34px; }
+/* 时间 / 来源筛选下拉：真实高 28、圆角 8、字号 11 */
+.hw-fdrop {
+  flex-shrink: 0; height: 28px; padding: 0 9px;
+  display: flex; align-items: center; gap: 4px;
+  border-radius: 8px; font-size: 11px;
+  background: var(--input-bg); border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+/* ---- 分段 Tab（旧 mock 完全没有这一排） ---- */
+.hw-tabs { display: flex; gap: 3px; padding: 10px 0 0; }
+.hw-tab {
+  flex: 1; height: 30px;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  border-radius: 8px; font-size: 11px;
+  background: var(--seg-bg); color: var(--text-secondary);
+  white-space: nowrap; overflow: hidden;
+}
+.hw-tab > span { font-size: 12px; }
+.hw-tab > b { font-size: 9.5px; font-weight: 600; opacity: .6; }
+.hw-tab.on {
+  background: var(--seg-active-bg); color: var(--text-primary); font-weight: 700;
+  box-shadow: 0 1px 3px rgba(0,0,0,.28);
+}
+.hw-tab.on > b { opacity: .8; }
+
+/* ---- 建议条与列表的垂直位置（顶栏变两行后重算） ----
+ * 16 + 28 + 12 + 34 + 10 + 30 + 4 = 134 → 建议条 138，列表 176。
+ * 真实 App 里建议条在普通流里（会把列表顶下去），这里用绘制层叠加 +
+ * 固定留白，避免每圈动画都抽一下布局。 */
+.hw-sugg { top: 138px; }
+.hw-list { top: 176px; padding: 0 16px 30px; }
+.hw-new { top: 176px; }
+
+/* ---- 卡片：图标 + 内容 + 右对齐时间 ---- */
+.hw-c-body { flex: 1; min-width: 0; }
+.hw-c-time { font-size: 11px; color: var(--text-muted); flex-shrink: 0; align-self: flex-start; margin-top: 2px; }
+/* 副行徽标：置顶 → 来源应用 → 内容类型 → 标签（Card.tsx:399） */
+.hw-c-sub > span { flex-shrink: 0; }
+.hw-c-src { color: var(--text-muted); }
+.hw-c-type {
+  height: 16px; padding: 0 6px; border-radius: 4px; font-size: 10px; font-weight: 600;
+  display: inline-flex; align-items: center;
+  background: var(--section-bg); border: 1px solid var(--border-color); color: var(--text-secondary);
+}
+.hw-c-tag {
+  height: 16px; padding: 0 6px; border-radius: 4px; font-size: 10px; font-weight: 600;
+  display: inline-flex; align-items: center;
+  background: rgba(139,92,246,.14); border: 1px solid rgba(139,92,246,.3); color: #C4B5FD;
+}
+.hw-c-size { font-size: 10px; color: var(--text-muted); font-family: var(--mono); }
+.hw-c-ocr {
+  height: 16px; padding: 0 6px; border-radius: 4px; font-size: 9.5px; font-weight: 700;
+  display: inline-flex; align-items: center; letter-spacing: .4px;
+  background: rgba(45,212,150,.14); border: 1px solid rgba(45,212,150,.32); color: #6EE7B7;
+}
+/* 图片卡缩略图：真实是 cardImgThumb 渲染真图，这里用渐变块示意，
+   总之比一个 🖼 emoji 接近。 */
+.hw-c-ic.thumb {
+  background: linear-gradient(135deg, #4C6FA5 0%, #8B5CF6 45%, #EC4899 100%);
+  border: 1px solid rgba(255,255,255,.16);
+  position: relative; overflow: hidden;
+}
+.hw-c-ic.thumb::after {
+  content: ""; position: absolute; inset: 0;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.22) 0 22%, transparent 22%),
+    linear-gradient(90deg, transparent 0 62%, rgba(0,0,0,.18) 62%);
+}
+.hw-c-ic.cyan { background: rgba(34,211,238,.12); border: 1px solid rgba(34,211,238,.24); }
+.hw-c-ic.purple { background: rgba(139,92,246,.12); border: 1px solid rgba(139,92,246,.24); }
+
+/* 悬停操作条（cardInlineActions）：真实卡片悬停才出现。
+   mock 里固定给第二张带 .hover，让首屏一眼就能看到“卡片可操作”。 */
+.hw-card.hover { border-color: rgba(59,158,255,.42); box-shadow: 0 0 0 2px rgba(59,158,255,.14), 0 6px 18px rgba(0,0,0,.35); }
+.hw-c-acts { display: flex; gap: 4px; flex-shrink: 0; }
+.hw-c-acts > span {
+  width: 26px; height: 26px; border-radius: 7px;
+  display: grid; place-items: center; font-size: 12px;
+  background: var(--section-bg); border: 1px solid var(--border-color);
+}
+.hw-c-acts > span:last-child { color: #FF6B8A; border-color: rgba(255,107,138,.32); }
+
+/* toast 里的 kbd：原来是写在 HTML 行内样式里的，改成类名 */
+.hw-toast kbd {
+  font-family: var(--mono); background: rgba(255,255,255,.14);
+  border-radius: 4px; padding: 0 5px; font-size: 11px; border: 0; color: inherit;
+}
+/* =====================================================================
+ * 粘贴栈演示舞台（600×380，与其余八个舞台同尺寸）
+ *
+ * 四步全部按 src/lib/api/stack.ts 的真实行为编排：
+ *   1 开栈   toggleStackMode 的 toast 原文：「栈模式已开启 · Ctrl+C 收集 · …粘贴」
+ *   2 收集   每次 Ctrl+C 入栈；角标是出栈顺序
+ *   3 一路贴 stackItems[0] —— 取第一个，所以是 **先收集的先贴**（FIFO）；
+ *            “粘贴+Tab” 开关开时每贴一条补发 Tab
+ *   4 自动退出 栈空 → exitStackMode，toast「栈已清空，自动退出栈模式」
+ *
+ * ❗ data-step 是 **1 起**，跟其余八个舞台一致（引擎写 idx+1）。
+ * ===================================================================== */
+.stack-stage {
+  position: relative; width: 600px; height: 380px;
+  border-radius: 16px; overflow: hidden;
+  background: linear-gradient(150deg, #232A3E, #161B2B 55%, #101423);
+  box-shadow: var(--win-shadow);
+  border: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent);
+  user-select: none;
+}
+/* 小窗口通用标题条 */
+.stack-stage .sk-bar {
+  display: flex; align-items: center; gap: 6px;
+  height: 26px; padding: 0 10px;
+  font-size: 10.5px; color: #9FB4D0;
+  background: rgba(255,255,255,.05);
+  border-bottom: 1px solid rgba(255,255,255,.07);
+}
+
+/* ---- 左上：源表格 ---- */
+.sk-src {
+  position: absolute; left: 22px; top: 30px; width: 224px;
+  border-radius: 11px; overflow: hidden;
+  background: rgba(10,22,40,.86); border: 1px solid rgba(255,255,255,.09);
+  box-shadow: 0 12px 30px rgba(0,0,0,.4);
+}
+.sk-row { display: flex; align-items: center; height: 28px; padding: 0 10px; gap: 8px; font-size: 11px; color: #D4E2F5; border-bottom: 1px solid rgba(255,255,255,.05); }
+.sk-row:last-of-type { border-bottom: 0; }
+.sk-cell { flex: 0 0 46px; }
+.sk-cell.m { flex: 1; font-family: var(--mono); font-size: 10px; color: #7E9BBE; }
+/* 选中框（Excel 里选一列的虚线）：第 2 步开始出现 */
+.sk-marq {
+  position: absolute; left: 8px; top: 30px; right: 8px; height: 84px;
+  border: 1.5px dashed rgba(34,211,238,.75); border-radius: 6px;
+  background: rgba(34,211,238,.08);
+  opacity: 0; transition: opacity .3s;
+}
+
+/* ---- 栈模式徽章 ---- */
+.sk-badge {
+  position: absolute; left: 22px; bottom: 96px;
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 26px; padding: 0 10px; border-radius: 99px;
+  font-size: 11px; font-weight: 700; color: #67E8F9;
+  background: rgba(34,211,238,.12); border: 1px solid rgba(34,211,238,.4);
+  opacity: 0; transform: translateY(6px); transition: all .35s cubic-bezier(.3,.9,.3,1.2);
+}
+.sk-badge .sk-cnt {
+  font-family: var(--mono); font-size: 10px;
+  background: rgba(34,211,238,.22); border-radius: 6px; padding: 0 5px;
+}
+
+/* ---- 当前热键提示 ---- */
+.sk-keys { position: absolute; left: 22px; bottom: 54px; height: 30px; }
+.sk-kg {
+  position: absolute; left: 0; top: 0;
+  display: inline-flex; align-items: center; gap: 4px;
+  opacity: 0; transform: translateY(4px); transition: all .3s;
+  white-space: nowrap;
+}
+.sk-kg kbd {
+  font-family: var(--mono); font-size: 11px; font-weight: 700; color: #DCE9FF;
+  background: linear-gradient(180deg, #2A3B57, #1B283C);
+  border: 1px solid rgba(255,255,255,.16); border-bottom: 2px solid rgba(0,0,0,.45);
+  border-radius: 6px; padding: 2px 8px;
+}
+.sk-kg em { font-style: normal; font-size: 11px; color: #8FA6C6; margin-left: 2px; }
+
+/* ---- 中部：栈里的条目 ---- */
+.sk-stack { position: absolute; left: 22px; bottom: 14px; display: flex; gap: 8px; }
+.sk-item {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 30px; padding: 0 12px 0 10px; border-radius: 9px;
+  font-size: 11.5px; color: #E0E8F0;
+  background: rgba(10,22,40,.9); border: 1px solid rgba(34,211,238,.34);
+  opacity: 0; transform: translateY(14px) scale(.94);
+  transition: all .34s cubic-bezier(.3,.9,.3,1.25);
+}
+/* 角标：就是 Card.tsx 里的“栈序号角标”，也是出栈顺序 */
+.sk-n {
+  width: 16px; height: 16px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-family: var(--mono); font-size: 9.5px; font-weight: 800;
+  background: #22D3EE; color: #06121F;
+}
+
+/* ---- 右侧：目标表单 ---- */
+.sk-form {
+  position: absolute; right: 22px; top: 46px; width: 268px;
+  border-radius: 11px; overflow: hidden;
+  background: rgba(10,22,40,.9); border: 1px solid rgba(255,255,255,.1);
+  box-shadow: 0 16px 38px rgba(0,0,0,.46);
+}
+.sk-field { padding: 9px 12px 10px; border-bottom: 1px solid rgba(255,255,255,.05); }
+.sk-field:last-of-type { border-bottom: 0; }
+.sk-field i { display: block; font-style: normal; font-size: 9.5px; color: #6E87A8; margin-bottom: 5px; }
+.sk-inp {
+  display: block; height: 26px; line-height: 26px; padding: 0 9px;
+  border-radius: 7px; font-size: 11.5px;
+  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1);
+  color: transparent;                  /* 未填时不显示文字 */
+  transition: all .3s;
+}
+/* 已填入 */
+.sk-field.done .sk-inp {
+  color: #E0E8F0;
+  background: rgba(34,211,238,.12);
+  border-color: rgba(34,211,238,.5);
+}
+/* 当前焦点格 */
+.sk-field.cur .sk-inp { border-color: rgba(34,211,238,.75); box-shadow: 0 0 0 3px rgba(34,211,238,.14); }
+.sk-tab {
+  position: absolute; right: 12px; bottom: 10px;
+  font-family: var(--mono); font-size: 9.5px; font-weight: 700; letter-spacing: .4px;
+  color: #6EE7B7; background: rgba(45,212,150,.14);
+  border: 1px solid rgba(45,212,150,.36); border-radius: 6px; padding: 2px 7px;
+  opacity: 0; transition: opacity .3s;
+}
+
+/* ---- 底部 toast：文案逐步变，取自 stack.ts 的真实 toast 原文 ---- */
+.sk-toast {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%) translateY(8px);
+  max-width: 74%; padding: 7px 14px; border-radius: 9px;
+  font-size: 11px; font-weight: 600; color: #E6EDF7; text-align: center;
+  background: rgba(6,16,30,.94); border: 1px solid rgba(34,211,238,.36);
+  opacity: 0; transition: all .3s; white-space: nowrap;
+}
+.stack-stage[data-step] .sk-toast { opacity: 1; transform: translateX(-50%) translateY(0); }
+.stack-stage[data-step="1"] .sk-toast::after { content: "栈模式已开启 · Ctrl+C 收集 · Ctrl+Alt+P 粘贴"; }
+.stack-stage[data-step="2"] .sk-toast::after { content: "已入栈 3 条 · 角标就是出栈顺序（先收集的先贴）"; }
+.stack-stage[data-step="3"] .sk-toast::after { content: "贴一条 → 自动 Tab → 再贴一条，不用碰鼠标"; }
+.stack-stage[data-step="4"] .sk-toast::after { content: "栈已清空，自动退出栈模式"; }
+
+/* =========== 四步状态（1 起） =========== */
+/* 1 开栈：徽章与热键亮，栈里还是空的 */
+.stack-stage[data-step="1"] .sk-badge { opacity: 1; transform: translateY(0); }
+.stack-stage[data-step="1"] .sk-kg.g1 { opacity: 1; transform: translateY(0); }
+
+/* 2 收集：选中源列，三条逐个滑入（错开延迟） */
+.stack-stage[data-step="2"] .sk-badge,
+.stack-stage[data-step="3"] .sk-badge { opacity: 1; transform: translateY(0); }
+.stack-stage[data-step="2"] .sk-marq,
+.stack-stage[data-step="3"] .sk-marq { opacity: 1; }
+.stack-stage[data-step="2"] .sk-kg.g2 { opacity: 1; transform: translateY(0); }
+.stack-stage[data-step="2"] .sk-item,
+.stack-stage[data-step="3"] .sk-item { opacity: 1; transform: translateY(0) scale(1); }
+.stack-stage[data-step="2"] .sk-item.n1 { transition-delay: .05s; }
+.stack-stage[data-step="2"] .sk-item.n2 { transition-delay: .30s; }
+.stack-stage[data-step="2"] .sk-item.n3 { transition-delay: .55s; }
+.stack-stage[data-step="2"] .sk-cnt::after { content: "3"; }
+.stack-stage[data-step="1"] .sk-cnt::after { content: "0"; }
+
+/* 3 一路贴：前两格已填、第三格聚焦；Tab 徽标出现；
+      已贴出的两条从栈里消失（先收集的先贴 → 消失的是 1 和 2） */
+.stack-stage[data-step="3"] .sk-kg.g3 { opacity: 1; transform: translateY(0); }
+.stack-stage[data-step="3"] .sk-field.f1,
+.stack-stage[data-step="3"] .sk-field.f2 { }
+.stack-stage[data-step="3"] .sk-tab { opacity: 1; }
+.stack-stage[data-step="3"] .sk-item.n1 { opacity: .18; transform: translateY(-6px) scale(.9); }
+.stack-stage[data-step="3"] .sk-item.n2 { opacity: .5; }
+.stack-stage[data-step="3"] .sk-cnt::after { content: "1"; }
+
+/* 4 自动退出：三格全填、栈清空、徽章淡出 */
+.stack-stage[data-step="4"] .sk-item { opacity: .14; transform: translateY(-8px) scale(.88); }
+.stack-stage[data-step="4"] .sk-badge { opacity: .25; }
+.stack-stage[data-step="4"] .sk-tab { opacity: .35; }
+.stack-stage[data-step="4"] .sk-cnt::after { content: "0"; }
+
+/* 表单填充进度：第 3 步填两格，第 4 步全满 */
+.stack-stage[data-step="3"] .sk-field.f1 .sk-inp,
+.stack-stage[data-step="3"] .sk-field.f2 .sk-inp,
+.stack-stage[data-step="4"] .sk-field .sk-inp {
+  color: #E0E8F0; background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.5);
+}
+.stack-stage[data-step="3"] .sk-field.f3 .sk-inp {
+  border-color: rgba(34,211,238,.75); box-shadow: 0 0 0 3px rgba(34,211,238,.14);
+}
+
+/* =====================================================================
+ * 粘贴增强区段的版式
+ * ===================================================================== */
+.pp-head-c { max-width: 68ch; margin-left: auto; margin-right: auto; text-align: center; }
+.pp-head-c kbd {
+  font-family: var(--mono); font-size: 11.5px; padding: 1px 7px; border-radius: 5px;
+  background: var(--section-bg); border: 1px solid var(--border-color); color: var(--text-primary);
+}
+/* 这一节只有演示、没有左右两栏，所以不需要 featrow.wide 的上下分隔线 */
+.pp-row::before, .pp-row::after { display: none; }
+.pp-row { padding-top: 0; margin-bottom: 34px; }
+
+.pp-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.pp-card {
+  --hue: 59,158,255;
+  position: relative; overflow: hidden;
+  padding: 20px 18px; border-radius: 18px;
+  background: color-mix(in srgb, var(--card-bg) 70%, transparent);
+  border: 1px solid var(--border-color);
+  transition: border-color .2s, transform .2s;
+}
+[data-theme="ocean-dark"] .pp-card { background: rgba(10,22,40,.46); border-color: rgba(255,255,255,.08); }
+.pp-card[data-hue="green"] { --hue: 45,212,150; }
+.pp-card[data-hue="cyan"]  { --hue: 34,211,238; }
+.pp-card[data-hue="pink"]  { --hue: 244,114,182; }
+.pp-card:hover { border-color: rgba(var(--hue), .4); transform: translateY(-2px); }
+.pp-card::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(var(--hue), .8), transparent);
+}
+.pp-ic {
+  width: 38px; height: 38px; border-radius: 11px;
+  display: grid; place-items: center; font-size: 17px; margin-bottom: 12px;
+  background: rgba(var(--hue), .13); border: 1px solid rgba(var(--hue), .3);
+}
+.pp-card h4 { font-size: 15px; font-weight: 700; }
+.pp-card p { font-size: 12.5px; color: var(--text-secondary); margin-top: 6px; line-height: 1.7; }
+.pp-card kbd {
+  font-family: var(--mono); font-size: 10.5px; padding: 1px 5px; border-radius: 4px;
+  background: var(--section-bg); border: 1px solid var(--border-color); color: var(--text-primary);
+}
+
+@media (max-width: 980px) {
+  .pp-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 560px) {
+  .pp-grid { grid-template-columns: 1fr; gap: 12px; }
+  .pp-head-c { text-align: left; }
+}
 </style>
 </head>
 <body>
+<!-- 场景氛围层（对齐软件 SkinScene）：3 道光柱 + 8 个气泡。
+     纯 CSS 动画，无 JS；z-index:-1 衬在正文之后。aria-hidden 是因为它只是氛围，
+     不应该被屏幕阅读器拿到。 -->
+<div class="ambience" aria-hidden="true">
+  <span class="ray"></span><span class="ray"></span><span class="ray"></span>
+  <span class="bub"></span><span class="bub"></span><span class="bub"></span><span class="bub"></span>
+  <span class="bub"></span><span class="bub"></span><span class="bub"></span><span class="bub"></span>
+</div>
+
 <header class="top">
   <div class="logo">🐼</div>
   <div class="brand">PastePanda <span class="ver">v6.19</span></div>
   <nav>
     <a href="#feat">核心功能</a>
+    <a href="#paste-power">粘贴栈</a>
     <a href="#scenes">适用场景</a>
     <a href="#download">下载</a>
     <a href="#manual">使用手册</a>
@@ -813,7 +1601,7 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
   <div class="spacer"></div>
   <select class="themeToggle" id="themeBtn" onchange="setTheme(this.value)">
     <option value="ocean">🎨 经典白</option>
-    <option value="ocean-dark">🌊 深海</option>
+    <option value="ocean-dark" selected>🌊 深海</option>
     <option value="midnight">🌙 午夜</option>
     <option value="forest">🌿 森林</option>
     <option value="blossom">🌸 美乐蒂</option>
@@ -827,78 +1615,162 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
   <div class="hero-in">
     <div class="hero-left">
       <span class="hero-badge"><span class="dot"></span>Windows 免费 · 本地优先</span>
-      <h1>复制 · 截图 · 识别 · 变换 · 贴图<br><em>一站全包</em></h1>
-      <p class="sub">PastePanda 是常驻系统的内容管家：自动记住你复制的一切，再帮你截图标注、本地 OCR、变换加工、贴图置顶、AI 处理、跨设备同步——一次操作，处处可用。</p>
-      <div class="points">
-        <span class="hpt">🔒 <b>本地离线</b> OCR</span>
-        <span class="hpt">📷 截图标注<b>全家桶</b></span>
-        <span class="hpt">⚡ <b>双击即贴</b> 无感</span>
-        <span class="hpt">🧩 6 套主题</span>
+      <h1>你复制过的一切，<br><em>都还在</em></h1>
+      <p class="sub">剪贴板不再只记得上一次。复制即归档，搜得到、能编辑、可置顶；顺手把截图标注、本地 OCR、格式变换、贴图对照也一并包了。</p>
+      <!-- 键帽条取代原来的四个功能胶囊。热键是这个产品的核心交互，
+           而且三个具体按键比四句形容词具体得多。
+           ❗ 这三组必须跟 src-tauri/src/hotkey_manager.rs 的默认值一致，别自己编。 -->
+      <div class="hero-keys">
+        <span class="herokey"><kbd>Ctrl</kbd><kbd>Q</kbd><i>截图标注</i></span>
+        <span class="herokey"><kbd>Alt</kbd><kbd>V</kbd><i>历史粘贴</i></span>
+        <span class="herokey"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>V</kbd><i>唤出主窗</i></span>
       </div>
       <div class="hero-btns">
         <a class="cta" href="#download">⬇ 立即下载</a>
         <a class="cta ghost" href="#feat">▶ 看功能演示</a>
       </div>
+      <!-- 原来这里第一条写的是“本地优先·内容不出设备”，跟上面胶囊里的
+           “本地离线 OCR” 是同一件事，重复了。合成一行安静的元信息。 -->
       <div class="hero-trust">
-        <span class="ht-item"><span class="hdot"></span>本地优先 · 内容不出设备</span>
-        <span class="ht-item">🆓 <b>完全免费</b> · 无广告</span>
-        <span class="ht-item">🪟 <b>Windows 10 / 11</b></span>
+        <span class="ht-item"><span class="hdot"></span>本地优先 · OCR 与历史均不出设备</span>
+        <span class="ht-item">完全免费 · 无广告</span>
+        <span class="ht-item">Windows 10 / 11</span>
+        <span class="ht-item">80 个版本持续迭代</span>
       </div>
     </div>
     <div class="hero-right">
       <div class="hero-window-wrap">
         <div class="hero-kbd"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd> 唤出主窗口</div>
         <div class="hero-window" id="heroWindow">
-          <div class="hw-tbr">
-            <div class="hw-ticon">🐼</div>
-            <div class="hw-tbrand">PastePanda<span class="hw-tai">AI</span></div>
-            <div class="hw-tsearch">🔍 搜索剪贴板历史…</div>
-            <div class="hw-tbtn">🧰</div>
-            <div class="hw-tbtn">✨<span class="gd"></span></div>
-            <div class="hw-tbtn">⚙️</div>
+          <!-- ❗ 真实 TopBar 是 **两行**（TopBar.tsx:172）：
+                 headerTop（标题行 + 右侧图标组）+ headerControls（搜索行 + 分段 Tab）。
+                 尺寸取自 TopBar.module.css：header padding 16/16/0、headerTop margin-bottom 12、
+                 tabsArea padding-top 10、筛选按钮 height 28。 -->
+          <div class="hw-hdr">
+            <div class="hw-top">
+              <div class="hw-title">
+                <div class="hw-tbtn">☰</div>
+                <div class="hw-ticon">🐼</div>
+                <div class="hw-tbrand">PastePanda<span class="hw-tai">AI</span></div>
+              </div>
+              <div class="hw-icons">
+                <div class="hw-tbtn">🗂</div>
+                <div class="hw-tbtn">🧰</div>
+                <!-- 绿点在**设置**按钮上（AI 就绪），不在 ✨ 上——见 TopBar.tsx:243 -->
+                <div class="hw-tbtn">⚙️<span class="gd"></span></div>
+                <span class="hw-hsep"></span>
+                <div class="hw-tbtn">─</div>
+                <div class="hw-tbtn">👁</div>
+              </div>
+            </div>
+            <div class="hw-ctrls">
+              <div class="hw-srow">
+                <div class="hw-tsearch">🔍 搜索剪贴板历史…</div>
+                <div class="hw-fdrop">时间 ▾</div>
+                <div class="hw-fdrop">来源 ▾</div>
+              </div>
+              <!-- 分段 Tab：五项与图标逐字取自 TopBar.tsx 的 TABS 常量。
+                   计数：文本 253 + 图片 48 + 文件 11 = 全部 312；收藏是跨类子集，不参与相加。 -->
+              <div class="hw-tabs">
+                <div class="hw-tab on"><span>📋</span>全部<b>312</b></div>
+                <div class="hw-tab"><span>📝</span>文本<b>253</b></div>
+                <div class="hw-tab"><span>📸</span>图片<b>48</b></div>
+                <div class="hw-tab"><span>📁</span>文件<b>11</b></div>
+                <div class="hw-tab"><span>⭐</span>收藏<b>12</b></div>
+              </div>
+            </div>
           </div>
-          <div class="hw-sidebar">
-            <div class="hw-sb-item on"><span class="hw-sb-ic">📋</span>全部<span class="hw-sb-cnt">312</span></div>
-            <div class="hw-sb-item"><span class="hw-sb-ic">🗂</span>未分组<span class="hw-sb-cnt">40</span></div>
-            <div class="hw-sb-item"><span class="hw-sb-ic">⭐</span>收藏<span class="hw-sb-cnt">12</span></div>
-            <div class="hw-sb-sep"></div>
-            <div class="hw-sb-grp">分组</div>
-            <div class="hw-sb-item"><span class="hw-sb-ic">📝</span>工作<span class="hw-sb-cnt">18</span></div>
-            <div class="hw-sb-item"><span class="hw-sb-ic">💻</span>代码<span class="hw-sb-cnt">22</span></div>
+          <!-- 主动建议条（SuggestionBar）。它**不是常驻**：新内容进库才算建议，
+               8 秒无操作自动收起（悬停暂停计时），所以当成动画中的一帧而不是固定条。 -->
+          <div class="hw-sugg">
+            <span class="hs-ic">💡</span>
+            <span class="hs-t">这段看着像报错，要不要让 AI 解释一下？</span>
+            <span class="hs-use">使用 →</span>
+            <span class="hs-x">✕</span>
           </div>
+          <!-- 卡片结构对齐 Card.tsx：[图标 42] [标题 / 副行徽标] [右对齐时间]。
+               副行徽标顺序按 Card.tsx:399 的注释：置顶 → 来源应用 → 内容类型 → 标签。 -->
           <div class="hw-list">
             <div class="hw-card">
               <div class="hw-c-ic blue">💻</div>
-              <div class="hw-c-body" style="flex:1;min-width:0">
+              <div class="hw-c-body">
                 <div class="hw-c-title">fetch('/api/orders', { method: 'POST', …</div>
-                <div class="hw-c-sub"><span class="hw-c-pin">📌 代码</span> · 12:31</div>
+                <div class="hw-c-sub">
+                  <span class="hw-c-pin">📌 置顶</span>
+                  <span class="hw-c-src">VS Code</span>
+                  <span class="hw-c-type">代码</span>
+                  <span class="hw-c-tag">#接口</span>
+                </div>
               </div>
+              <span class="hw-c-time">12:31</span>
             </div>
-            <div class="hw-card">
+            <!-- 这张展示悬停态：真实卡片悬停才出现 cardInlineActions（Card.tsx:699），
+                 旧 mock 完全没有这排按钮。 -->
+            <div class="hw-card hover">
               <div class="hw-c-ic green">📝</div>
-              <div class="hw-c-body" style="flex:1;min-width:0">
+              <div class="hw-c-body">
                 <div class="hw-c-title">产品需求：剪贴板支持跨设备同步…</div>
-                <div class="hw-c-sub">来自 Word · 11:58</div>
+                <div class="hw-c-sub">
+                  <span class="hw-c-src">Word</span>
+                  <span class="hw-c-type">文本</span>
+                </div>
+              </div>
+              <div class="hw-c-acts">
+                <span>📋</span><span>✏️</span><span>⭐</span><span>🗑</span>
               </div>
             </div>
             <div class="hw-card">
-              <div class="hw-c-ic pink">🖼</div>
-              <div class="hw-c-body" style="flex:1;min-width:0">
+              <!-- 图片卡是缩略图（cardImgThumb），不是 emoji -->
+              <div class="hw-c-ic thumb"></div>
+              <div class="hw-c-body">
                 <div class="hw-c-title">设计稿-首页改版-v3.png</div>
-                <div class="hw-c-sub">图片 · 4.2 MB</div>
+                <div class="hw-c-sub">
+                  <span class="hw-c-src">Chrome</span>
+                  <span class="hw-c-type">图片</span>
+                  <span class="hw-c-size">1920×1080</span>
+                  <span class="hw-c-ocr">OCR</span>
+                </div>
               </div>
+              <span class="hw-c-time">10:05</span>
+            </div>
+            <div class="hw-card">
+              <div class="hw-c-ic cyan">🔗</div>
+              <div class="hw-c-body">
+                <div class="hw-c-title">https://gitee.com/lzul/pastepanda/releases</div>
+                <div class="hw-c-sub">
+                  <span class="hw-c-src">Edge</span>
+                  <span class="hw-c-type">链接</span>
+                </div>
+              </div>
+              <span class="hw-c-time">09:47</span>
+            </div>
+            <div class="hw-card">
+              <div class="hw-c-ic purple">🧩</div>
+              <div class="hw-c-body">
+                <div class="hw-c-title">{"order_id": 90412, "status": "paid", …</div>
+                <div class="hw-c-sub">
+                  <span class="hw-c-src">Postman</span>
+                  <span class="hw-c-type">JSON</span>
+                  <span class="hw-c-tag">#订单</span>
+                </div>
+              </div>
+              <span class="hw-c-time">09:12</span>
             </div>
           </div>
           <!-- 动画：新卡片 + toast -->
           <div class="hw-card hw-new">
             <div class="glow"></div>
             <div class="hw-c-ic blue">📋</div>
-            <div class="hw-c-body" style="flex:1;min-width:0">
-              <div class="hw-c-title">PastePanda 官网：复制 · 截图 · 识别 · 变换 · 贴图</div>
-              <div class="hw-c-sub"><span class="hw-c-pin">📌 剪贴板</span> · 刚刚</div>
+            <div class="hw-c-body">
+              <div class="hw-c-title">你复制过的一切，都还在 —— PastePanda</div>
+              <div class="hw-c-sub">
+                <span class="hw-c-src">Chrome</span>
+                <span class="hw-c-type">文本</span>
+              </div>
             </div>
+            <span class="hw-c-time">刚刚</span>
           </div>
-          <div class="hw-toast" id="heroToast">✓ 已复制到剪贴板，去 <kbd style="font-family:var(--mono);background:rgba(255,255,255,.14);border-radius:4px;padding:0 5px;font-size:11px">Ctrl+V</kbd> 粘贴</div>
+          <div class="hw-toast" id="heroToast">✓ 已复制到剪贴板，去 <kbd>Ctrl+V</kbd> 粘贴</div>
         </div>
         <div class="cursor" id="heroCursor"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M4 2 L4 16 L8.5 12.5 L11 19 L14 17.5 L11.5 11 L17 11 Z" fill="#fff" stroke="#0B0F19" stroke-width="2" stroke-linejoin="round"/></svg></div>
         <!-- 浮动能力元素：OCR / 贴图 / 变换 -->
@@ -923,17 +1795,36 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
   </div>
 </section>
 
+<!-- ============ 数据条 ============
+     ❗ 这五个数字全部核过源码，改之前先去源头数：
+       9  = ToolId 里的绘制型工具（rect/ellipse/arrow/pen/highlight/mosaic/blur/text/number），
+            不算 eraser/picker/automask/dewarp 这四个动作型
+       16 = editorRegistry.ts：EDITOR_REGISTRY 10 + TYPE_EDITORS 5 + DEFAULT_EDITOR 1
+       19 = contentTypes.ts 的 ContentType 联合类型成员数
+       6  = theme.ts 的 THEME_LIST
+       0  = OCR 跑本地 PP-OCRv6，不联网
+     故意不放下载量 / 用户数这类无法核实的数字。 -->
+<section class="statband">
+  <div class="wrap">
+    <div class="stat"><b>9</b><span>种标注工具</span></div>
+    <div class="stat"><b>16</b><span>种专用编辑器</span></div>
+    <div class="stat"><b>19</b><span>种内容类型自动识别</span></div>
+    <div class="stat"><b>6</b><span>套完整主题</span></div>
+    <div class="stat"><b>0</b><span>次联网 · OCR 全本地</span></div>
+  </div>
+</section>
+
 <!-- ============ 核心功能演示区 ============ -->
 <section class="sec" id="feat" style="padding-top:88px">
   <div class="wrap">
     <div class="sec-head">
       <div class="kicker">Core Features</div>
       <h2>核心功能 · 每一步都看得见</h2>
-      <p>以下演示按真实界面尺寸制作（主窗口 480×700、工具栏按钮 38×42 等），自动循环播放关键操作流程；点步骤可单步回看。</p>
+      <p>以下演示按真实界面尺寸制作（主窗口 480×700）。<b>滚到哪个就自动播哪个</b>，一次只动一个；点步骤可单步回看，点 ⏸ 后就不再自动接管。</p>
     </div>
 
     <!-- F1 截图标注全家桶 -->
-    <div class="featrow">
+    <div class="featrow wide" data-hue="blue">
       <div class="feat-txt">
         <span class="feat-num">F1 · 核心</span>
         <h3>截图标注全家桶</h3>
@@ -1011,7 +1902,7 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
             <div class="ocr-foot"><span class="fbtn ai">✨ AI 解释 / 总结</span><span class="fbtn">📋 全部复制</span></div>
           </div>
           <!-- 完成合成图 -->
-          <div class="shot-done">
+          <div class="shot-done" data-anim="4">
             <div class="arrow-in"><svg width="150" height="80" viewBox="0 0 150 80"><path class="line" d="M 10 68 C 55 60, 90 22, 140 12"/><path class="head" d="M 128 4 L 148 8 L 141 27 Z"/></svg></div>
             <div class="note">✓ 标注完成，<b>双击即可复制</b> · 或点完成</div>
           </div>
@@ -1024,7 +1915,7 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
     </div>
 
     <!-- F2 剪贴板管理 -->
-    <div class="featrow rev">
+    <div class="featrow rev" data-hue="green">
       <div class="feat-txt">
         <span class="feat-num">F2</span>
         <h3>剪贴板历史 · 复制即记录</h3>
@@ -1057,8 +1948,8 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
               <div class="cw-card"><div class="cw-ic green">📝</div><div><div class="cw-title">周报：本周完成 5 项…</div><div class="cw-sub">文本 · 1 小时前</div></div><div class="cw-time">11:20</div></div>
               <div class="cw-card"><div class="cw-ic pink">🖼</div><div><div class="cw-title">设计稿-v3.png</div><div class="cw-sub">图片 · 2 小时前</div></div><div class="cw-time">10:05</div></div>
             </div>
-            <div class="cw-card cw-new"><div class="glow"></div><div class="cw-ic green">📝</div><div><div class="cw-title">PastePanda 支持跨设备同步了</div><div class="cw-sub">文本 · 刚刚</div></div><div class="cw-time">现在</div></div>
-            <div class="cw-toast">✓ 已复制回剪贴板</div>
+            <div class="cw-card cw-new" data-anim="2"><div class="glow"></div><div class="cw-ic green">📝</div><div><div class="cw-title">PastePanda 支持跨设备同步了</div><div class="cw-sub">文本 · 刚刚</div></div><div class="cw-time">现在</div></div>
+            <div class="cw-toast" data-anim="3">✓ 已复制回剪贴板</div>
           </div>
         </div>
         <div class="play-cap" data-cap="clip">
@@ -1068,7 +1959,7 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
     </div>
 
     <!-- F3 高效粘贴 -->
-    <div class="featrow">
+    <div class="featrow" data-hue="cyan">
       <div class="feat-txt">
         <span class="feat-num">F3</span>
         <h3>快捷粘贴面板 · Alt+V 一键唤起</h3>
@@ -1109,7 +2000,7 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
     </div>
 
     <!-- F4 本地 OCR 特写 -->
-    <div class="featrow rev">
+    <div class="featrow rev wide" data-hue="amber">
       <div class="feat-txt">
         <span class="feat-num">F4 · 隐私卖点</span>
         <h3>本地 OCR · 图片里的字，直接变成文本</h3>
@@ -1161,7 +2052,11 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
     </div>
 
     <!-- F5 变换与正则 -->
-    <div class="featrow">
+    <!-- 后四个功能折成 bento 2×2：八个同构的交替行连排，滚到第四个就没信息量了。
+         对标结果：Paste 功能区只用 4 个；CleanShot 是「交替行 + 全宽网格」交替出现，
+         从不连排八个。这四个仍是真演示（引擎照样驱动），只是降一级、不占整屏。 -->
+    <div class="bento">
+    <div class="featrow bento-item" data-hue="purple">
       <div class="feat-txt">
         <span class="feat-num">F5 · 开发者向</span>
         <h3>变换与正则 · 一段文本，花式重排</h3>
@@ -1206,7 +2101,7 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
     </div>
 
     <!-- F6 贴图置顶 -->
-    <div class="featrow rev">
+    <div class="featrow rev bento-item" data-hue="pink">
       <div class="feat-txt">
         <span class="feat-num">F6 · 独家体验</span>
         <h3>贴图置顶 · 把截图「钉」在屏幕上</h3>
@@ -1258,7 +2153,7 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
     </div>
 
     <!-- F7 编辑器家族 -->
-    <div class="featrow">
+    <div class="featrow bento-item" data-hue="blue">
       <div class="feat-txt">
         <span class="feat-num">F7 · 编辑器生态</span>
         <h3>编辑器家族 · 什么内容，配什么编辑器</h3>
@@ -1327,7 +2222,7 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
     </div>
 
     <!-- F8 卡片右键菜单 -->
-    <div class="featrow rev">
+    <div class="featrow rev bento-item" data-hue="green">
       <div class="feat-txt">
         <span class="feat-num">F8 · 高频交互</span>
         <h3>卡片右键菜单 · 主操作永远在最上面</h3>
@@ -1385,12 +2280,14 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
       </div>
     </div>
 
+    </div>
+
     <!-- 亮点分组（全部功能覆盖） -->
     <div style="margin-top:84px">
       <div class="sec-head" style="margin-bottom:30px">
         <div class="kicker">Everything else</div>
         <h2>全部功能，一网打尽</h2>
-        <p>下面是其余能力的完整速览——粘贴增强、编辑器生态、智能、管理与集成，逐项展开见下方手册。</p>
+        <p>下面是其余能力的完整速览——剪贴板进阶、编辑器生态、智能、管理与集成，逐项展开见下方手册。</p>
       </div>
       <div class="hl-group">
         <div class="hlg-title">📋 剪贴板进阶 <span class="cnt">5 项</span></div>
@@ -1402,16 +2299,8 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
           <div class="hl"><div class="h-ic amber">⏰</div><div><h4>自动清理</h4><p>设置可开 7 / 15 / 30 / 60 天自动清除，历史库永不过载</p></div></div>
         </div>
       </div>
-      <div class="hl-group">
-        <div class="hlg-title">📥 粘贴增强 <span class="cnt">5 项</span></div>
-        <div class="hl-grid">
-          <div class="hl"><div class="h-ic cyan">📚</div><div><h4>粘贴栈</h4><p><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>K</kbd> 收集模式逐条入栈，<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd> 逐条 / 全部粘贴</p></div></div>
-          <div class="hl"><div class="h-ic blue">🔢</div><div><h4>依次粘贴</h4><p><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Q</kbd> 按顺序逐条粘贴多条文本</p></div></div>
-          <div class="hl"><div class="h-ic green">🛡</div><div><h4>粘贴守卫</h4><p>格式感知、敏感内容拦截确认，粘贴前把关</p></div></div>
-          <div class="hl"><div class="h-ic purple">⌨️</div><div><h4>键盘全流程</h4><p>索引粘贴 <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>1~9</kbd>、多选 / 范围选择、方向键导航、Space 快速预览</p></div></div>
-          <div class="hl"><div class="h-ic amber">⚡</div><div><h4>粘贴即执行</h4><p>双击条目直接粘贴到上次聚焦的应用，一步到位</p></div></div>
-        </div>
-      </div>
+      <!-- 「粘贴增强」分组已提升为上方的 #paste-power 独立区段，
+           这里不再重复列一遍（只有未进核心区的「粘贴即执行」还在下方分组）。 -->
       <div class="hl-group">
         <div class="hlg-title">✏️ 编辑器生态 <span class="cnt">8 项</span></div>
         <div class="hl-grid">
@@ -1447,6 +2336,105 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
           <div class="hl"><div class="h-ic amber">🎨</div><div><h4>6 套主题 + 深度设置</h4><p>经典白 / 深海 / 午夜 OLED / 森林 / 美乐蒂 / 晨曦；热键自定义、开机自启、数据导出备份</p></div></div>
           <div class="hl"><div class="h-ic green">🔍</div><div><h4>全文搜索</h4><p>几千条历史秒搜，标签 / 类型 / 分组多维筛选，关键词高亮</p></div></div>
         </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 粘贴增强（粘贴栈为主角） ============
+     为什么单独开一节：粘贴栈是这个产品最硬的差异化能力，而它原本埋在
+     下面「亮点速览 · 粘贴增强」的一个小卡里，与其他二十多项平权。 -->
+<section class="sec alt" id="paste-power">
+  <div class="wrap">
+    <div class="sec-head pp-head-c">
+      <div class="kicker">Paste Stack</div>
+      <h2>复制一轮，粘贴一路</h2>
+      <p>填表单、录数据、搬配置——不用在两个窗口之间来回切了。
+      开栈后连续 <kbd>Ctrl</kbd>+<kbd>C</kbd> 把该复制的全收进来，再一路贴出去。</p>
+    </div>
+
+    <div class="featrow wide pp-row" data-hue="cyan">
+      <div class="feat-demo">
+        <div class="playbar" data-demo="stack">
+          <button class="pbtn play">▶ 自动播放</button>
+          <div class="psteps">
+            <button class="pstep"><span class="n">1</span>开栈</button>
+            <button class="pstep"><span class="n">2</span>收集</button>
+            <button class="pstep"><span class="n">3</span>一路贴</button>
+            <button class="pstep"><span class="n">4</span>自动退出</button>
+          </div>
+          <button class="pbtn replay" title="重播">↻</button>
+        </div>
+
+        <div class="stack-stage" id="stackStage" data-step="1">
+          <!-- 源：Excel 里的一列 -->
+          <div class="sk-src">
+            <div class="sk-bar">📊 客户名单.xlsx</div>
+            <div class="sk-row"><span class="sk-cell">张伟</span><span class="sk-cell m">138****8000</span></div>
+            <div class="sk-row"><span class="sk-cell">李娜</span><span class="sk-cell m">139****9000</span></div>
+            <div class="sk-row"><span class="sk-cell">王强</span><span class="sk-cell m">137****7000</span></div>
+            <div class="sk-marq"></div>
+          </div>
+
+          <!-- 栈模式徽章 + 当前热键 -->
+          <div class="sk-badge">🗂 栈模式 <b class="sk-cnt"></b></div>
+          <div class="sk-keys">
+            <span class="sk-kg g1"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>K</kbd></span>
+            <span class="sk-kg g2"><kbd>Ctrl</kbd><kbd>C</kbd><em>× 3</em></span>
+            <span class="sk-kg g3"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>P</kbd></span>
+          </div>
+
+          <!-- 栈里的条目：角标就是出栈顺序（先收集的先贴） -->
+          <div class="sk-stack">
+            <div class="sk-item n1"><span class="sk-n">1</span>张伟</div>
+            <div class="sk-item n2"><span class="sk-n">2</span>李娜</div>
+            <div class="sk-item n3"><span class="sk-n">3</span>王强</div>
+          </div>
+
+          <!-- 目标：三格表单 -->
+          <div class="sk-form">
+            <div class="sk-bar">🌐 客户录入</div>
+            <div class="sk-field f1"><i>联系人 A</i><span class="sk-inp">张伟</span></div>
+            <div class="sk-field f2"><i>联系人 B</i><span class="sk-inp">李娜</span></div>
+            <div class="sk-field f3"><i>联系人 C</i><span class="sk-inp">王强</span></div>
+            <div class="sk-tab">Tab ↹</div>
+          </div>
+
+          <div class="sk-toast"></div>
+        </div>
+
+        <div class="play-cap" data-cap="stack">
+          <span class="ic">💡</span><span><b>开栈：</b>Ctrl+Alt+K 开启栈模式，托盘图标同步变化</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 四项配套能力。前两项是栈的子能力，页面之前**一字未提**，
+         而它们恰好是“填表单”这个场景里最省事的两个。 -->
+    <div class="pp-grid">
+      <div class="pp-card" data-hue="cyan">
+        <div class="pp-ic">📐</div>
+        <h4>表格自动拆行</h4>
+        <p>栈没开也行：从 Excel 复制一列，直接按 <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd>，
+           认出是表格就自动开栈、按行拆开、先贴第一条。</p>
+      </div>
+      <div class="pp-card" data-hue="green">
+        <div class="pp-ic">↹</div>
+        <h4>粘贴 + Tab 推进</h4>
+        <p>开关打开后，每贴成一条自动补发一下 Tab —— 一个热键按到底，
+           三格表单不用碰鼠标。</p>
+      </div>
+      <div class="pp-card" data-hue="blue">
+        <div class="pp-ic">🔢</div>
+        <h4>依次粘贴 / 索引粘贴</h4>
+        <p><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Q</kbd> 按顺序逐条贴；
+           <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>1</kbd>~<kbd>9</kbd> 直接贴历史里的第 N 条。</p>
+      </div>
+      <div class="pp-card" data-hue="pink">
+        <div class="pp-ic">🛡</div>
+        <h4>粘贴守卫</h4>
+        <p>内容里认出密钥 / 手机号 / 身份证 / IP，粘贴前弹确认，
+           可选「脱敏后粘贴」。规则在本机跑，内容不上传。</p>
       </div>
     </div>
   </div>
@@ -1494,7 +2482,7 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
   <div class="wrap">
     <div class="dl">
       <div class="dl-in">
-        <h2>现在就试试 PastePanda</h2>
+        <h2>下一次 Ctrl+C，就不用再担心了</h2>
         <p>安装即用，不需要注册账号；所有内容默认只存在你的电脑上，AI 能力默认关闭。</p>
         <div class="dl-btns">
           <a class="cta" href="https://gitee.com/lzul/pastepanda/releases">⬇ 下载 Windows 版</a>
@@ -1579,7 +2567,7 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
 <!-- ============ 快捷键一览 ============ -->
 <section id="hotkeys">
   <h2>快捷键一览</h2>
-  <p class="lede">以下为出厂默认热键（源码 <code>src/stores/appStore.ts</code> 的 <code>DEFAULT_CONFIG</code> 是唯一真值来源），均可在「设置 → 通用 → 快捷键」中自定义。全局热键即使主窗口关闭也生效。</p>
+  <p class="lede">以下为出厂默认热键（唯一真值来源是 <code>src-tauri/src/hotkey_manager.rs</code> 的 <code>Default</code> 实现），均可在「设置 → 通用 → 快捷键」中自定义。全局热键即使主窗口关闭也生效。</p>
   <table class="kbdtable">
     <thead><tr><th>功能</th><th>默认热键</th><th>说明</th></tr></thead>
     <tbody>
@@ -2316,15 +3304,16 @@ footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); 
   </div>
   <p style="margin-top:18px;">常用标签：<span class="tag-pill">截图</span><span class="tag-pill">OCR</span><span class="tag-pill">贴图</span><span class="tag-pill">粘贴栈</span><span class="tag-pill">变换</span><span class="tag-pill">片段库</span><span class="tag-pill">AI</span><span class="tag-pill">同步</span></p>
 </section>
+<!-- ❗ 原尾部嵌套是坏的：.layout 的闭合标签排在 main 闭合之前、
+     page 页脚被套进了 main 里面、最后还多一个没有开标签的 footer 闭合。
+     浏览器会自己纠错所以看着没事，但纠出来的结构不可控。已按真实层级排好。
+     （注：这段里故意不写字面标签，否则会被标签平衡自检当成真标签数进去。） -->
+</main>
   </div>
 </section>
 
 <footer class="page">
-  PastePanda 用户手册 · 本页为离线完整功能指南 · 界面演示基于真实软件源码高保真复刻（配色/控件/文案均取自 src 实际实现）· 右上角可切换全部 6 套真实主题
-</footer>
-</main>
-</div>
-
+  PastePanda 用户手册 · 本页为离线完整功能指南 · 界面演示为手工复刻（配色/尺寸/文案取自 src 实际实现，但不是真实截图）· 右上角可切换全部 6 套真实主题
 </footer>
 <script>
 // ===== 主题（6 套）+ 目录高亮（来自原手册） =====
@@ -2357,11 +3346,28 @@ var obs = new IntersectionObserver(function (entries) {
 secs.forEach(function (s) { if (s) obs.observe(s); });
 
 // ===== 宣传区演示播放器 + Hero 动画 =====
-/* ===================== 通用演示播放器 ===================== */
-/* 每个 demo：{ stepCls, stages[], caps[], autoDur[] } 由 HTML 的 data-step 驱动 */
+/* ===================== 通用演示播放器 =====================
+ * 一个引擎管全部八个演示，靠约定驱动：
+ *   · 舞台 id = <key>Stage，播放条 [data-demo=<key>]，字幕 [data-cap=<key>]
+ *
+ * ❗ 舞台的 data-step 是 **1 起**。CSS 里写的全是 [data-step="1"]…[data-step="4"]，
+ *   而旧版 show(i) 直接把 0 起的 i 写进去，于是八个演示整体错位一格：
+ *   第一步（data-step="0"）匹配不到任何规则 → 空舞台；而每个演示的
+ *   最后一步（完成态）永远到不了 —— 字幕说“双击即复制”，画面上什么都没有。
+ *   改这里而不是改 CSS：那边有四十多条 [data-step] 规则。
+ *
+ *   · 每步时长由 DEMOS[key].durs 声明。旧版所有步一律 2100ms，与该步实际
+ *     CSS 动画时长无关，有的没演完就切走、有的干等。
+ *   · 需要重放 CSS 入场动画的元素在 HTML 上标 data-anim="<步号，1 起>"，
+ *     引擎进入该步时摘掉再加回 .show 触发重放。旧版是对特定 key 写 if
+ *     （if (i === 2 && key === "clip")），加第九个演示必须回来改它。
+ *   · 只播视口内可见度最高的那一个（IntersectionObserver），离开即暂停。
+ *     旧版八个各自 setInterval，滚到哪个都不会动（必须手点 ▶），但手动
+ *     点开多个后就有多个定时器同时跑，且离开视口仍在后台烧。
+ */
 var DEMOS = {
   shot: {
-    stepNames: ["拖选区", "标注", "OCR", "完成"],
+    durs: [2000, 2400, 2600, 3200],
     caps: [
       '<b>拖选区：</b>自动吸附窗口 / 控件边界，松开即固定；可平移、八向缩放、方向键微调',
       '<b>标注：</b>矩形、箭头、画笔、高亮、马赛克、模糊、文字、序号——全套工具，选中工具即画',
@@ -2369,8 +3375,17 @@ var DEMOS = {
       '<b>完成：</b>双击 / 点完成直接复制到剪贴板，粘贴即用'
     ]
   },
+  stack: {
+    durs: [2200, 2800, 3200, 2600],
+    caps: [
+      '<b>开栈：</b>Ctrl+Alt+K 开启栈模式，托盘图标同步变化',
+      '<b>收集：</b>栈模式下每次 Ctrl+C 逐条入栈，卡片角标就是出栈顺序（先收集的先贴）',
+      '<b>一路贴：</b>Ctrl+Alt+P 逐条贴出；开「粘贴+Tab」后自动跳下一格，表单一路到底',
+      '<b>自动退出：</b>栈空了自己退出栈模式，不用记得手动关'
+    ]
+  },
   clip: {
-    stepNames: ["复制", "归档", "点击"],
+    durs: [1800, 2200, 2800],
     caps: [
       '<b>复制：</b>在任何应用里 Ctrl+C，内容自动入库',
       '<b>归档：</b>新卡片滑入列表顶部并高亮，无需手动保存',
@@ -2378,7 +3393,7 @@ var DEMOS = {
     ]
   },
   paste: {
-    stepNames: ["唤起", "选择", "粘贴"],
+    durs: [1800, 2200, 2600],
     caps: [
       '<b>唤起：</b>任意应用中按 Alt+V，历史面板浮层弹出',
       '<b>选择：</b>方向键上下浏览，实时预览选中项',
@@ -2386,7 +3401,7 @@ var DEMOS = {
     ]
   },
   ocr: {
-    stepNames: ["选中", "识别", "复制"],
+    durs: [1800, 2800, 2800],
     caps: [
       '<b>选中：</b>悬停图片卡片，点「识别文字」开始本地识别',
       '<b>识别：</b>扫描动画示意——PP-OCRv6 全程本地离线，图片不出电脑',
@@ -2394,7 +3409,7 @@ var DEMOS = {
     ]
   },
   tf: {
-    stepNames: ["选中", "变换", "结果"],
+    durs: [1900, 2300, 2800],
     caps: [
       '<b>选中：</b>内容自动识别类型（JSON / SQL / 文本…），匹配项高亮置顶',
       '<b>变换：</b>变换面板一键选择，支持格式化、转 SQL、正则替换等',
@@ -2402,7 +3417,7 @@ var DEMOS = {
     ]
   },
   pin: {
-    stepNames: ["贴图", "对照", "管理"],
+    durs: [1900, 2300, 2800],
     caps: [
       '<b>贴图：</b>截图或剪贴内容一键「钉」回屏幕，置顶显示',
       '<b>对照：</b>多张贴图并存，写代码 / 做设计时随时对照参考',
@@ -2410,7 +3425,7 @@ var DEMOS = {
     ]
   },
   ed: {
-    stepNames: ["双击", "编辑", "类型", "全屏"],
+    durs: [1800, 2200, 2200, 2800],
     caps: [
       '<b>双击：</b>双击任意可编辑条目，进入对应类型编辑器',
       '<b>编辑：</b>Markdown 实时渲染 + 格式条，改完即用',
@@ -2419,7 +3434,7 @@ var DEMOS = {
     ]
   },
   ctx: {
-    stepNames: ["右键", "类型感知", "更多操作"],
+    durs: [2000, 2400, 2600],
     caps: [
       '<b>右键：</b>任意卡片右键弹出上下文菜单，主操作置顶高亮',
       '<b>类型感知：</b>主操作按类型变化——JSON 是「变换为…」，链接卡变成「在浏览器中打开」',
@@ -2428,113 +3443,244 @@ var DEMOS = {
   }
 };
 
-function setupDemo(key) {
+var DEMO_KEYS = ["shot", "stack", "clip", "paste", "ocr", "tf", "pin", "ed", "ctx"];
+/* 尊重系统的「减少动画」设置：不自动播，但手点步骤 / ▶ 仍然可用。 */
+var REDUCED = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+function createDemo(key) {
   var conf = DEMOS[key];
-  var stageId = { shot: "shotStage", clip: "clipStage", paste: "pasteStage", ocr: "ocrStage", tf: "tfStage", pin: "pinStage", ed: "edStage", ctx: "ctxStage" }[key];
-  var stage = document.getElementById(stageId);
+  var stage = document.getElementById(key + "Stage");
   var bar = document.querySelector('[data-demo="' + key + '"]');
+  if (!conf || !stage || !bar) return null; // 缺一个就整块跳过，不在控制台刷空指针
   var steps = [].slice.call(bar.querySelectorAll(".pstep"));
   var capEl = document.querySelector('[data-cap="' + key + '"]');
   var playBtn = bar.querySelector(".play");
   var replayBtn = bar.querySelector(".replay");
-  var idx = 0, playing = false, timer = null;
+  /* bento 小卡里的演示不参与「只播最可见那一个」：2×2 网格里四个可见度差不多，
+   * 只动一个、其余三个冻在首帧，看起来像坏了。 */
+  var inBento = !!(stage.closest && stage.closest(".bento"));
+  var total = conf.caps.length;
+  var idx = 0;
+  var playing = false;
+  var timer = null;
+  /* 用户手动介入过（按暂停 / 点具体步骤）。置位后视口观察器不再接管，
+   * 否则用户刚按暂停、一滚动就又自己跑起来了。 */
+  var manual = false;
+
+  function setBtn(on) {
+    if (!playBtn) return;
+    playBtn.classList.toggle("on", on);
+    playBtn.textContent = on ? "⏸ 暂停" : "▶ 自动播放";
+  }
+
+  /* 重放该步的 CSS 入场动画。元素靠 data-anim="<步号>" 自己声明，
+   * 引擎不认识任何具体类名。 */
+  function restartAnims(step1) {
+    var list = stage.querySelectorAll('[data-anim="' + step1 + '"]');
+    for (var i = 0; i < list.length; i++) {
+      var el = list[i];
+      el.classList.remove("show");
+      void el.offsetWidth; // 强制 reflow，否则同一帧内加回去不会重放
+      el.classList.add("show");
+    }
+  }
 
   function show(i) {
-    idx = i;
-    stage.setAttribute("data-step", i);
-    steps.forEach(function (s, j) {
-      s.className = "pstep" + (j < i ? " done" : "") + (j === i ? " cur" : "");
-    });
-    capEl.innerHTML = '<span class="ic">💡</span><span>' + conf.caps[i] + "</span>";
-    // 重新触发动画类元素的动画
-    if (i === 0) {
-      var drops = stage.querySelectorAll(".cw-new,.hw-new,.shot-done");
-      drops.forEach(function (el) { el.classList.remove("show"); void el.offsetWidth; el.classList.add("show"); });
+    idx = ((i % total) + total) % total;
+    // ❗ 1 起：CSS 用的是 [data-step="1"]…。写 0 起会整体错位一格。
+    stage.setAttribute("data-step", String(idx + 1));
+    for (var j = 0; j < steps.length; j++) {
+      steps[j].classList.toggle("done", j < idx);
+      steps[j].classList.toggle("cur", j === idx);
     }
-    if (i === 2 && key === "clip") {
-      var cw = stage.querySelector(".cw-new");
-      cw.classList.remove("show"); void cw.offsetWidth; cw.classList.add("show");
-      var toast = stage.querySelector(".cw-toast");
-      toast.classList.remove("show"); void toast.offsetWidth; toast.classList.add("show");
+    if (capEl) {
+      capEl.innerHTML = '<span class="ic">💡</span><span>' + conf.caps[idx] + "</span>";
     }
+    restartAnims(idx + 1);
   }
+
+  function schedule() {
+    clearTimeout(timer);
+    var dur = (conf.durs && conf.durs[idx]) || 2200;
+    timer = setTimeout(function () {
+      if (!playing) return;
+      show(idx + 1); // 循环由 show() 自己取模，不靠 stop()+setTimeout(play) 那套倒腾
+      schedule();
+    }, dur);
+  }
+
   function play() {
-    if (playing) { stop(); return; }
+    if (playing) return;
     playing = true;
-    playBtn.classList.add("on");
-    playBtn.textContent = "⏸ 暂停";
-    show(0);
-    var total = conf.stepNames.length;
-    timer = setInterval(function () {
-      var next = idx + 1;
-      if (next >= total) { stop(); setTimeout(function(){ play(); }, 800); return; }
-      show(next);
-    }, 2100);
+    setBtn(true);
+    schedule();
   }
-  function stop() {
+
+  function pause() {
+    if (!playing) return;
     playing = false;
-    clearInterval(timer);
-    playBtn.classList.remove("on");
-    playBtn.textContent = "▶ 自动播放";
+    clearTimeout(timer);
+    setBtn(false);
   }
-  function replay() {
-    stop();
-    show(0);
-    setTimeout(play, 350);
+
+  if (playBtn) {
+    playBtn.addEventListener("click", function () {
+      // 手动按下暂停 = 明确表态，以后不再自动接管；手动开始则交回自动。
+      if (playing) { manual = true; pause(); }
+      else { manual = false; play(); }
+    });
   }
-  playBtn.addEventListener("click", play);
-  replayBtn.addEventListener("click", replay);
-  steps.forEach(function (s, j) { s.addEventListener("click", function () { stop(); show(j); }); });
+  if (replayBtn) {
+    replayBtn.addEventListener("click", function () {
+      manual = false;
+      pause();
+      show(0);
+      play();
+    });
+  }
+  for (var k = 0; k < steps.length; k++) {
+    (function (j) {
+      steps[j].addEventListener("click", function () {
+        manual = true;
+        pause();
+        show(j);
+      });
+    })(k);
+  }
+
   show(0);
+
+  return {
+    el: stage,
+    inBento: inBento,
+    autoPlay: function () { if (!manual && !REDUCED) play(); },
+    autoPause: function () { if (!manual) pause(); },
+    hardPause: pause
+  };
 }
-setupDemo("shot");
-setupDemo("clip");
-setupDemo("paste");
-setupDemo("ocr");
-setupDemo("tf");
-setupDemo("pin");
-setupDemo("ed");
-setupDemo("ctx");
+
+var DEMOS_LIVE = [];
+for (var di = 0; di < DEMO_KEYS.length; di++) {
+  var dInst = createDemo(DEMO_KEYS[di]);
+  if (dInst) DEMOS_LIVE.push(dInst);
+}
+
+/* 自动播放：只让视口内可见度最高的那一个在跑。
+ * 一次只动一个：八个同时动不但耗 GPU，而且根本看不过来。 */
+var ioRatios = new WeakMap();
+function pickActiveDemo() {
+  var best = null, bestR = 0;
+  for (var i = 0; i < DEMOS_LIVE.length; i++) {
+    var r = ioRatios.get(DEMOS_LIVE[i].el) || 0;
+    if (r > bestR) { bestR = r; best = DEMOS_LIVE[i]; }
+  }
+  for (var j = 0; j < DEMOS_LIVE.length; j++) {
+    var d = DEMOS_LIVE[j];
+    if (d.inBento) {
+      // 小卡：只看自己可不可见
+      if ((ioRatios.get(d.el) || 0) >= 0.3) d.autoPlay();
+      else d.autoPause();
+    } else if (d === best && bestR >= 0.35) d.autoPlay();
+    else d.autoPause();
+  }
+}
+if (window.IntersectionObserver && DEMOS_LIVE.length) {
+  var demoIO = new IntersectionObserver(function (entries) {
+    for (var i = 0; i < entries.length; i++) {
+      ioRatios.set(entries[i].target, entries[i].isIntersecting ? entries[i].intersectionRatio : 0);
+    }
+    pickActiveDemo();
+  }, { threshold: [0, 0.2, 0.35, 0.6, 0.9] });
+  for (var oi = 0; oi < DEMOS_LIVE.length; oi++) demoIO.observe(DEMOS_LIVE[oi].el);
+}
+/* 标签页切到后台：全停。回来时重新按可见度挑一个。 */
+document.addEventListener("visibilitychange", function () {
+  if (document.hidden) {
+    for (var i = 0; i < DEMOS_LIVE.length; i++) DEMOS_LIVE[i].hardPause();
+  } else {
+    pickActiveDemo();
+  }
+});
 
 /* ===================== Hero 循环动画 ===================== */
 (function () {
   var win = document.getElementById("heroWindow");
   var toast = document.getElementById("heroToast");
   var cursor = document.getElementById("heroCursor");
+  if (!win || !toast || !cursor) return;
   var newCard = win.querySelector(".hw-new");
-  var sf = 0.84; // 与 .hero-window scale 同步，光标坐标 = 窗口内坐标 × sf
-  var wrect = { width: win.offsetWidth * sf, height: win.offsetHeight * sf };
-  var t = 0;
-  function cycle() {
-    // 阶段 1：新卡片滑入
-    newCard.classList.remove("show"); void newCard.offsetWidth; newCard.classList.add("show");
-    // 阶段 2：光标移动到卡片
-    setTimeout(function () {
-      cursor.style.left = (wrect.width * 0.35) + "px";
-      cursor.style.top = (wrect.height * 0.28) + "px";
-    }, 900);
-    setTimeout(function () {
-      cursor.style.opacity = "1";
-    }, 600);
-    // 阶段 3：toast
-    setTimeout(function () {
-      toast.classList.remove("show"); void toast.offsetWidth; toast.classList.add("show");
-    }, 2800);
-    // 阶段 4：光标移开
-    setTimeout(function () {
-      cursor.style.left = "12px";
-      cursor.style.top = (wrect.height * 0.12) + "px";
-    }, 3800);
-    // 阶段 5：重置
-    setTimeout(function () {
-      cursor.style.opacity = "0";
-      t++;
-      setTimeout(cycle, 800);
-    }, 5200);
-  }
-  setTimeout(cycle, 500);
-})();
+  var sugg = win.querySelector(".hw-sugg");
+  if (!newCard) return;
 
+  /* 光标坐标 = 窗口内坐标 × 缩放比。
+   * ❗ 旧版只在加载时量一次 offsetWidth，字体回流 / 窗口缩放后坐标全错。 */
+  var SCALE = 0.84;
+  var geo = { w: 0, h: 0 };
+  function measure() {
+    geo.w = win.offsetWidth * SCALE;
+    geo.h = win.offsetHeight * SCALE;
+  }
+  measure();
+  if (window.ResizeObserver) new ResizeObserver(measure).observe(win);
+  else window.addEventListener("resize", measure);
+
+  var timers = [];
+  function at(ms, fn) { timers.push(setTimeout(fn, ms)); }
+  function clearAll() { for (var i = 0; i < timers.length; i++) clearTimeout(timers[i]); timers = []; }
+  function replay(el) {
+    if (!el) return;
+    el.classList.remove("show");
+    void el.offsetWidth;
+    el.classList.add("show");
+  }
+
+  function cycle() {
+    clearAll();
+    /* ❗ 先定位再淡入。旧版 600ms 先把 opacity 抬到 1、900ms 才设位置，
+     *   第一圈会先在默认位置闪一下再滑过去。 */
+    cursor.style.transition = "none";
+    cursor.style.opacity = "0";
+    cursor.style.left = "14px";
+    cursor.style.top = (geo.h * 0.1) + "px";
+    void cursor.offsetWidth;
+    cursor.style.transition = "";
+
+    replay(newCard);                                   // 1 新卡片滑入
+    at(700, function () { cursor.style.opacity = "1"; });
+    at(900, function () {                              // 2 光标移向卡片
+      cursor.style.left = (geo.w * 0.35) + "px";
+      cursor.style.top = (geo.h * 0.24) + "px";
+    });
+    at(2000, function () { replay(sugg); });           // 3 建议条（真软件里 8s 自收）
+    at(3200, function () { replay(toast); });           // 4 复制成功 toast
+    at(4400, function () {                             // 5 光标退回
+      cursor.style.left = "14px";
+      cursor.style.top = (geo.h * 0.1) + "px";
+    });
+    at(5600, function () { cursor.style.opacity = "0"; });
+    at(6600, cycle);
+  }
+
+  if (REDUCED) {
+    // 减少动画：只把终态静态展示出来，不跑循环。
+    newCard.classList.add("show");
+    return;
+  }
+  /* 离开视口 / 切后台就停：Hero 在页面最顶上，用户滚到下面后它没必要再跑。 */
+  var heroOn = false;
+  function heroStart() { if (!heroOn) { heroOn = true; cycle(); } }
+  function heroStop() { if (heroOn) { heroOn = false; clearAll(); } }
+  if (window.IntersectionObserver) {
+    new IntersectionObserver(function (es) {
+      if (es[0].isIntersecting) heroStart(); else heroStop();
+    }, { threshold: 0.15 }).observe(win);
+  } else {
+    heroStart();
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) heroStop();
+  });
+})();
 </script>
 </body>
 </html>

@@ -315,6 +315,31 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
     };
   }, [triggerGlide]);
 
+  // ── 新条目插入动画：new-anim 事件（stores/appStore prependItem 派发）──
+  // 与置顶同款：先 glide 让下方行平滑让位，落定后给新条目加高亮环（rowLanding）。
+  useEffect(() => {
+    const onNewAnim = (e: Event) => {
+      const id = (e as CustomEvent).detail?.id as string | undefined;
+      triggerGlide();
+      if (landingShowTimerRef.current !== null) window.clearTimeout(landingShowTimerRef.current);
+      if (landingClearTimerRef.current !== null) window.clearTimeout(landingClearTimerRef.current);
+      landingShowTimerRef.current = window.setTimeout(() => {
+        landingShowTimerRef.current = null;
+        if (id) setLandingId(id);
+      }, 400);
+      landingClearTimerRef.current = window.setTimeout(() => {
+        landingClearTimerRef.current = null;
+        setLandingId(null);
+      }, 1450);
+    };
+    window.addEventListener("new-anim", onNewAnim);
+    return () => {
+      window.removeEventListener("new-anim", onNewAnim);
+      if (landingShowTimerRef.current !== null) window.clearTimeout(landingShowTimerRef.current);
+      if (landingClearTimerRef.current !== null) window.clearTimeout(landingClearTimerRef.current);
+    };
+  }, [triggerGlide]);
+
   // ── 删除动画：delete-anim 事件（lib/api deleteHistory 派发）──
   // 仅需 glide（剩余行让位），无高亮环；被删行退场由 AnimatePresence 播放。
   useEffect(() => {

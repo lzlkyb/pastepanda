@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, AlertCircle, AlertTriangle, Info, X, RotateCcw, Copy, Check } from "lucide-react";
 import styles from "./Toast.module.css";
 import { copyToClipboard } from "@/lib/utils";
+import { restoreDeleted } from "@/lib/api/history";
 
 type ToastType = "success" | "error" | "info" | "warning" | "loading";
 
@@ -14,10 +15,11 @@ interface ToastItem {
   onRetry?: () => void;
   actionLabel?: string;
   copyText?: string;
+  action?: string;
 }
 
 interface ToastContextType {
-  toast: (message: string, type?: ToastType, duration?: number, onRetry?: () => void, actionLabel?: string, copyText?: string) => void;
+  toast: (message: string, type?: ToastType, duration?: number, onRetry?: () => void, actionLabel?: string, copyText?: string, action?: string) => void;
 }
 
 const ToastContext = createContext<ToastContextType>({ toast: () => {} });
@@ -32,11 +34,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const MAX_TOASTS = 5; // 最多同时显示 5 个 toast
 
-  const toast = useCallback((message: string, type: ToastType = "info", duration?: number, onRetry?: () => void, actionLabel?: string, copyText?: string) => {
+  const toast = useCallback((message: string, type: ToastType = "info", duration?: number, onRetry?: () => void, actionLabel?: string, copyText?: string, action?: string) => {
     const d = duration ?? (type === "error" ? 5000 : 4000);
     const id = ++toastId;
     setToasts((prev) => {
-      const next = [...prev, { id, type, message, duration: d, onRetry, actionLabel, copyText }];
+      const next = [...prev, { id, type, message, duration: d, onRetry, actionLabel, copyText, action }];
       // 超出限制时移除最早的 toast
       if (next.length > MAX_TOASTS) {
         return next.slice(next.length - MAX_TOASTS);
@@ -112,6 +114,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                   )}
                 </span>
                 <span className={styles.toastMsg}>{t.message}</span>
+                {t.action === "undo" ? (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); void restoreDeleted(); dismiss(t.id); }}
+                    className={styles.toastAction}
+                  >
+                    撤销
+                  </button>
+                ) : null}
                 {t.onRetry && t.actionLabel ? (
                   <button onClick={(e) => { e.stopPropagation(); t.onRetry?.(); dismiss(t.id); }} className={styles.toastAction}>
                     {t.actionLabel}
