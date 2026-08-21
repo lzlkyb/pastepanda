@@ -74,8 +74,10 @@ jobs:
           cat /tmp/gitee-pages-resp.txt
           if [ "$code" != "201" ] && [ "$code" != "200" ]; then
             echo "❌ Gitee Pages 构建触发失败（HTTP $code）。可能原因："
-            echo "   - 尚未在 Gitee 手动启动过 Pages 服务（仓库 → 服务 → Gitee Pages → 启动）"
+            echo "   - HTTP 404 = Gitee Pages 服务尚未启动：仓库 → 服务 → Gitee Pages → 实名认证 → 选分支/目录 → 点「启动」（仅首次一次）"
+            echo "   - Gitee Pages 免费版要求仓库公开，私有仓库无法启用 Pages"
             echo "   - 触发过于频繁（Gitee 限制 1 分钟一次），可稍后手动点「更新」或重跑本任务"
+            echo "   - 启动后可在 GitHub Actions 手动重跑本任务（workflow_dispatch）立即验证"
             exit 1
           fi
           echo "✅ Gitee Pages 已在后台重建（通常几分钟生效）"
