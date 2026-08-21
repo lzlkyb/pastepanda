@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { ThemeKey, DEFAULT_THEME } from "@/lib/theme";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { pasteTextGuarded, pasteImage, pasteRichGuarded } from "@/lib/api";
 import { thumbnailSourcePath } from "@/lib/richContent";
 import { VersionBadge } from "@/components/VersionBadge";
@@ -461,6 +461,27 @@ export function TrayPopup() {
   useEffect(() => {
     setActiveIdx((i) => Math.min(i, allItems.length - 1));
   }, [allItems.length]);
+
+  // 窗口自适应高度：内容渲染完成后，把 popup 窗口高度撑到正好等于内容高度，
+  // 弹窗一屏显示全部、不再出现滚动条（用户诉求）。上限 = 屏幕可用高，
+  // 内容极端多时仍回退到 100vh + overflow-y:auto 兜底滚动。
+  useEffect(() => {
+    const root = menuRef.current;
+    if (!root) return;
+    const raf = requestAnimationFrame(() => {
+      try {
+        const contentH = root.scrollHeight;
+        const maxH = Math.max(200, Math.floor((window.screen.availHeight || 800) * 0.98));
+        const target = Math.min(contentH, maxH);
+        void getCurrentWindow().setSize(new LogicalSize(window.innerWidth, target)).catch(() => {
+          /* 窗口不可调整时忽略（如系统限制），维持原固定高度 */
+        });
+      } catch {
+        /* 非 Tauri 环境（浏览器 dev）忽略 */
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [dataLoaded, stats, recents, monitoring]);
 
   return (
     <>
