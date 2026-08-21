@@ -20,9 +20,13 @@ import styles from "./UpdateNotesDialog.module.css";
 import { logger } from "@/lib/logger";
 
 /** 完整功能手册（新功能 + 全部功能详解），用户点「新功能」弹框可跳转浏览器查看。
- *  MANUAL_URL：主指向 Gitee Pages（国内用户访问快）；打不开时自动回退 GITEE_BACKUP_URL（GitHub Pages）。
- *  注意：Gitee Pages 免费版需在 Gitee 手动开启服务并每次手动点「更新」；若 Gitee 用户名与 GitHub 不同，改这里。 */
-const MANUAL_URL = "https://lzul.gitee.io/pastepanda/manual/index.html";
+ *  MANUAL_URL：主指向 Cloudflare Pages（国内可达性最好、正确渲染 text/html、零成本、
+ *    接 GitHub 自动部署：去 Cloudflare 网页 Connect Git → 选 lzlkyb/pastepanda →
+ *    生产分支 master、输出目录 docs、构建留空 → 地址即 pastepanda.pages.dev）。
+ *  MANUAL_BACKUP_URL：GitHub Pages，海外兜底。
+ *  注意：Gitee Pages 已于 2025 官方下线；jsDelivr 对所有 HTML 返回 text/plain 永不渲染，
+ *    二者都不可用。Cloudflare 项目名须为 pastepanda 才得此域名，否则改此处。 */
+const MANUAL_URL = "https://pastepanda.pages.dev/manual/index.html";
 const MANUAL_BACKUP_URL = "https://lzlkyb.github.io/pastepanda/manual/index.html";
 
 // ─── Props ──────────────────────────────────────────────
