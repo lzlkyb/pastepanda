@@ -33,13 +33,18 @@ jobs:
           # Gitee master 是保护分支（禁止 force push），代码同步走用户已有的 GitHub→Gitee 同步；
           # 这里只轮询等待同步到位，再触发 Pages 重建，避免部署旧代码。
           for i in $(seq 1 30); do
-            sha=$(curl -sS "https://gitee.com/api/v5/repos/${GITEE_REPOSITORY}/commits/master?access_token=${GITEE_TOKEN}&per_page=1" \
-              | jq -r '.[0].sha // empty' 2>/dev/null)
+            http=$(curl -sS -o /tmp/gitee-commits.json -w "%{http_code}" \
+              "https://gitee.com/api/v5/repos/${GITEE_REPOSITORY}/commits/master?access_token=${GITEE_TOKEN}&per_page=1")
+            echo "  commit API HTTP $http ($i/30)"
+            if [ "$http" != "200" ]; then
+              cat /tmp/gitee-commits.json 2>/dev/null | head -c 300; echo ""
+            fi
+            sha=$(jq -r '.[0].sha // empty' /tmp/gitee-commits.json 2>/dev/null || true)
             if [ -n "$sha" ] && [ "$sha" = "$GITHUB_SHA" ]; then
               echo "✅ Gitee master 已同步到 $sha"
               exit 0
             fi
-            echo "  等待同步… ($i/30) gitee=${sha:0:8} github=${GITHUB_SHA:0:8}"
+            echo "  等待同步… gitee=${sha:0:8} github=${GITHUB_SHA:0:8}"
             sleep 10
           done
           echo "❌ 300 秒内 Gitee 未同步到本次提交，请检查 Gitee 平台的 GitHub 同步配置；"
