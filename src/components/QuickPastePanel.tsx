@@ -6,7 +6,6 @@ import { getImageThumbnail } from "@/lib/api";
 // 粘贴必须走守卫版（红线②）：这里原先直接 invoke("paste_text"/"paste_rich")，
 // 而 lib/api/paste.ts 的注释把“快捷区”列为已覆盖——实际此处绕过了整条敏感确认。
 // 本面板是热键直呼的高频粘贴入口，绕过的代价比其它入口更大。
-import { pasteTextGuarded, pasteRichGuarded, pasteImage } from "@/lib/api/paste";
 import { logger } from "@/lib/logger";
 import { SkinScene } from "./SkinScene";
 
@@ -175,21 +174,13 @@ export function QuickPastePanel() {
     // SetForegroundWindow，面板失焦后自动隐藏（Focused(false) 监听）。
     // 若先隐藏，前台归属出现竞态，反而可能丢失粘贴目标。
     try {
-      // 图片不做文本脱敏，继续直走；其余三条均过守卫。
+      // 按类型分派 + 粘贴信号回写统一走 pasteHistoryItem（此前这段分派是第 5 份拷贝，
+      // 且是唯一把 doc 当富文本却**不清洗** CF_HTML 的一份——mso 噪声会原样粘出去）。
       // 返回 false = 用户取消或粘贴失败（两者在 api 层无法区分），
       // 真失败 api 层已 logger.error 过，所以这里不重复报错，只是不隐藏面板。
-      const ok =
-        item.type === "image" && item.content
-          ? await pasteImage(item.content)
-          : (item.type === "rich" || item.type === "doc") && item.content
-            ? await pasteRichGuarded(item.content, item.text)
-            : item.type === "file" && item.content
-              ? await pasteTextGuarded(item.content)
-              : await pasteTextGuarded(item.text);
+      const { pasteHistoryItem } = await import("@/lib/pasteItem");
+      const { ok } = await pasteHistoryItem(item, -1); // 独立窗口，无列表位置
       if (!ok) return;
-      // 粘贴信号回写（此前漏记）。快捷面板是独立窗口、不经主列表，下标传 -1。
-      const { logItemPasted } = await import("@/lib/api/actionEvents");
-      logItemPasted(item, -1);
       // 成功后兜底隐藏（正常情况下失焦已自动隐藏）
       invoke("hide_quick_paste").catch(() => { /* 忽略 */ });
     } catch (e) {

@@ -5,7 +5,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/stores/appStore";
 import { logger } from "@/lib/logger";
 import { splitTableToRows } from "@/lib/tableSplit";
-import { pasteTextGuarded, pasteImage, pasteRichGuarded } from "./paste";
 
 /** 同步栈模式状态到后端（托盘图标） */
 function syncStackModeToBackend(active: boolean) {
@@ -56,24 +55,12 @@ export async function stackPasteNext(): Promise<boolean> {
       return false;
     }
 
-    let ok: boolean;
-    if (item.type === "image" && item.content) {
-      ok = await pasteImage(item.content);
-    } else if (item.type === "rich" && item.content) {
-      ok = await pasteRichGuarded(item.content, item.text);
-    } else if (item.type === "file") {
-      // 文件粘贴完整路径（content），与列表回车粘贴行为保持一致
-      ok = await pasteTextGuarded(item.content || item.text);
-    } else {
-      ok = await pasteTextGuarded(item.text);
-    }
+    // 按类型分派 + 粘贴信号回写统一走 pasteHistoryItem（此前这段分派是本文件的
+    // 第 3 份拷贝）。栈粘贴按栈序出栈、没有列表位置，故下标传 -1。
+    const { pasteHistoryItem } = await import("@/lib/pasteItem");
+    const { ok } = await pasteHistoryItem(item, -1);
 
     if (!ok) return false;
-
-    // 粘贴信号回写（此前漏记，同依次/索引粘贴）。栈粘贴按栈序出栈、没有列表位置，
-    // 故 pasteIndex 用 -1（既有约定：-1 = 不是从列表浏览选的）。
-    const { logItemPasted } = await import("@/lib/api/actionEvents");
-    logItemPasted(item, -1);
 
     store.stackMarkPasted();
 

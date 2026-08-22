@@ -17,7 +17,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UpdateProvider, useUpdate } from "@/contexts/UpdateContext";
 import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
 import { logger } from "@/lib/logger";
-import { pasteTextGuarded, pasteImage, pasteRichGuarded, deleteHistory, togglePin, toggleWindow, saveForeground, restoreDeleted, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
+import { deleteHistory, togglePin, toggleWindow, saveForeground, restoreDeleted, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
 import { resolveSource, getAutoTagIcon, getAutoTagColor } from "@/lib/source-mappings";
 import { migrateLegacyStorageKeys } from "@/lib/storageMigration";
 import { initRegexRules } from "@/lib/regexRules";
@@ -798,44 +798,20 @@ function App() {
       if (targetId) {
         const item = filtered.find((i) => i.id === targetId);
         if (item) {
-          // 粘贴信号回写统一走这个闭包。
-          //
-          // **修复（v6.15）**：以前只有下面的纯文本分支记了事件，
-          // image / rich / file 三个分支全漏了。后果不只是统计少几条：
-          // history 的「按价值豁免过期清理」靠 paste 信号判定一条内容有没有被用过，
-          // 图片粘贴不记事件 → 图片会被当成“没价值”清掉，哪怕天天在用。
-          const logPaste = async () => {
-            const { logPasteEvent } = await import("@/lib/api/actionEvents");
-            // 热键粘贴走的是当前可见列表，下标直接用 filtered 里的位置
-            const idx = filtered.findIndex((i) => i.id === item.id);
-            logPasteEvent(item.id, item.content_type || item.type, item.source, idx);
-          };
-          // U1：仅粘贴成功时弹成功提示（pasteText/pasteImage 失败时已自行弹错误 toast）
-          if (item.type === "image" && item.content) {
-            const ok = await pasteImage(item.content);
-            if (ok) {
-              window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴图片", type: "success" } }));
-              await logPaste();
-            }
-          } else if (item.type === "rich" && item.content) {
-            const ok = await pasteRichGuarded(item.content, item.text);
-            if (ok) {
-              window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴图文", type: "success" } }));
-              await logPaste();
-            }
-          } else if (item.type === "file" && item.content) {
-            // 文件粘贴：将文件路径写入剪贴板
-            const ok = await pasteTextGuarded(item.content);
-            if (ok) {
-              window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴文件路径", type: "success" } }));
-              await logPaste();
-            }
-          } else {
-            const ok = await pasteTextGuarded(item.text);
-            if (ok) {
-              window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴", type: "success" } }));
-              await logPaste();
-            }
+          // 按类型分派 + 粘贴信号回写统一走 pasteHistoryItem（此前这段分派是
+          // 5 份拷贝里的一份，每个分支各写一遍回写——v6.15 的「image/rich/file
+          // 三个分支全漏了信号」就是这么来的）。
+          // 各类型的 toast 文案本来就不同，用返回的 kind 选。
+          const { pasteHistoryItem } = await import("@/lib/pasteItem");
+          // 热键粘贴走的是当前可见列表，下标直接用 filtered 里的位置
+          const idx = filtered.findIndex((i) => i.id === item.id);
+          const { ok, kind } = await pasteHistoryItem(item, idx);
+          if (ok) {
+            const msg = kind === "image" ? "已粘贴图片"
+              : kind === "rich" ? "已粘贴图文"
+              : kind === "file" ? "已粘贴文件路径"
+              : "已粘贴";
+            window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: msg, type: "success" } }));
           }
         }
       }

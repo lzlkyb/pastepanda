@@ -18,10 +18,9 @@ import { confirmAutoTags, removeItemTags } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 import { TagRow } from "@/components/TagBadge";
 import { logger } from "@/lib/logger";
-import { pasteRichGuarded, togglePin, deleteHistory, copyItemToClipboard } from "@/lib/api";
+import { togglePin, deleteHistory, copyItemToClipboard } from "@/lib/api";
 import { pasteGuarded } from "@/lib/pasteGuard";
 import { useActionEventLog } from "@/hooks/useActionEventLog";
-import { sanitizeDocHtml } from "@/lib/docPipeline";
 import { CardActionBar } from "@/components/card/CardActionBar";
 import { Pin, ImageIcon, Images, Link2, AtSign, Code2, Phone, FileText, Terminal, Type, Check, Hash, Lock, Palette, Workflow } from "lucide-react";
 import styles from "./CardList.module.css";
@@ -396,8 +395,11 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
           <p className={styles.cardTitle}>
             <HighlightText text={title} highlight={item.type === "text" ? (searchKeyword ?? "") : ""} />
           </p>
-          {/* 徽标顺序：置顶（状态）→ 来源应用 → 内容类型 → 标签。
-              来源排在类型之前：用户看卡片时先关心“从哪来的”，再关心“是什么”。
+          {/* 徽标顺序：置顶（状态）→ 来源应用 → 图片尺寸 → OCR → 颜色格式 → 标签。
+              来源排在最前（除状态）：用户看卡片时先关心“从哪来的”。
+              ❗ 这里**没有**「内容类型」徽标（代码/文本/图片之类）。类型已由左侧图标表达，
+                再挂一枚文字徽标是重复信息。旧注释写过「→ 内容类型 →」，但代码里从来没有，
+                手册的界面复刻照那句注释臆造了一枚徽标出来，删注释连坐。
               注：图文混排不在这里画专用徽标——它走「图文」自动标签，由下方 TagRow
               渲染，这样才能点击筛选、也才会出现在筛选标签列表里。 */}
           <div className={styles.cardSub}>
@@ -972,34 +974,13 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
       ? () => void copyOcrTextToClipboard(item, ocrState, toast)
       : undefined,
     onPaste: async () => {
-      // P5：doc/rich 条目粘贴保留富格式（CF_HTML），其余纯文本；
-      // paste_format_default=plain 时全部退纯文本（Raycast 式全局开关）
-      // doc 条目的 content 是原始 CF_HTML（可能含 mso 噪声），粘贴前先清洗
-      const cfg = useAppStore.getState().config;
-      const asRich = cfg.paste_format_default !== "plain" &&
-        (item.type === "doc" || item.type === "rich") && !!item.content;
-      if (asRich) {
-        const html = item.type === "doc"
-          ? sanitizeDocHtml(item.content)
-          : item.content;
-        const ok = await pasteRichGuarded(html, item.text);
-        if (ok) {
-          toast("已粘贴", "success");
-          // 修复：富文本分支此前漏了价值信号回写，导致 doc/rich 条目被粘贴后
-          // 既不参与「按价值清理」也不进粘贴权重（下面纯文本分支一直有）
-          const { logPasteEvent } = await import("@/lib/api/actionEvents");
-          logPasteEvent(item.id, item.content_type || item.type, item.source, indexRef.current);
-        }
-      } else {
-        // v6.2 粘贴守卫：敏感内容先确认（脱敏后粘贴）
-        const ok = await pasteGuarded(item.text);
-        if (ok) {
-          toast("已粘贴", "success");
-          // v6.1 粘贴信号回写（fire-and-forget）
-          const { logPasteEvent } = await import("@/lib/api/actionEvents");
-          logPasteEvent(item.id, item.content_type || item.type, item.source, indexRef.current);
-        }
-      }
+      // 按类型分派 + 粘贴信号回写统一走 pasteHistoryItem。
+      // **这里此前没有 image / file 分支**：图片条目会粘出 "[图片] 1860x915" 占位文本、
+      // 文件条目粘出裸文件名而不是完整路径（右键菜单的「粘贴到前台」是无条件项，
+      // 图片/文件条目一样能点到）。托盘弹窗当年的 U33 修过同一个问题，只修了自己那份。
+      const { pasteHistoryItem } = await import("@/lib/pasteItem");
+      const { ok } = await pasteHistoryItem(item, indexRef.current);
+      if (ok) toast("已粘贴", "success");
     },
     onPasteTransform: handlePasteTransform,
     onOpenHub: hubAvailable ? handleOpenHub : undefined,
