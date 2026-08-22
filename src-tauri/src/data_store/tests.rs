@@ -3969,3 +3969,104 @@ fn test_search_history_backfills_ocr_text() {
     let hit = items.iter().find(|i| i.id == "img-1").unwrap();
     assert_eq!(hit.ocr_text.as_deref(), Some("报销单 2024-07"));
 }
+
+// ============================================================
+// 图片 OCR 文本接入全文检索（FTS）
+// ============================================================
+
+/// 识别晚于入库：图片先进历史，OCR 文本后到。
+/// 后到的文本必须回写 FTS，否则截图里的字永远搜不到。
+#[test]
+fn test_ocr_text_searchable_after_recognition() {
+    let store = make_store();
+    let mut img = make_item("img-1", "[图片] 800x600", "2024-01-01 10:00:00", "image");
+    // 真实路径是 md5 文件名，本身没有检索价值
+    img.content = "C:\\img\\0039a52c11e99d4c9faeba55f9d1d1a2.png".to_string();
+    store.insert_history(&img).unwrap();
+
+    store
+        .set_ocr_text(&img.content, "季度营收报表 2026 财务部")
+        .unwrap();
+
+    let hits = store
+        .search_history("默认", "季度营收", "all", "", "", "all", &[], 50)
+        .unwrap();
+    assert_eq!(hits.len(), 1, "OCR 文本里的词应能搜到这张图");
+    assert_eq!(hits[0].id, "img-1");
+}
+
+/// 重新识别后旧文本不能残留在索引里（否则搜旧词还能搜到已被更正的图）。
+#[test]
+fn test_ocr_reindex_replaces_old_text() {
+    let store = make_store();
+    let mut img = make_item("img-1", "[图片] 800x600", "2024-01-01 10:00:00", "image");
+    img.content = "C:\\img\\a.png".to_string();
+    store.insert_history(&img).unwrap();
+
+    store.set_ocr_text(&img.content, "错误识别的旧文字").unwrap();
+    store.set_ocr_text(&img.content, "更正后的新文字").unwrap();
+
+    let new_hits = store
+        .search_history("默认", "更正后", "all", "", "", "all", &[], 50)
+        .unwrap();
+    assert_eq!(new_hits.len(), 1, "新文本应可搜到");
+
+    let old_hits = store
+        .search_history("默认", "错误识别", "all", "", "", "all", &[], 50)
+        .unwrap();
+    assert!(old_hits.is_empty(), "旧 OCR 文本不应残留在索引里");
+}
+
+/// 非图片条目的 content（文件路径）仍要能搜到——只有 image 改喂 OCR 文本。
+#[test]
+fn test_file_path_still_searchable_for_non_image() {
+    let store = make_store();
+    let mut f = make_item("file-1", "receivablebill_his.xml", "2024-01-01 10:00:00", "file");
+    f.content = "D:\\work\\receivablebill_his.xml".to_string();
+    store.insert_history(&f).unwrap();
+
+    let hits = store
+        .search_history("默认", "receivablebill", "all", "", "", "all", &[], 50)
+        .unwrap();
+    assert_eq!(hits.len(), 1, "文件路径检索不受 OCR 改动影响");
+    assert_eq!(hits[0].id, "file-1");
+}
+
+/// 存量回填：升级前识别过的图片（文本已在 image_ocr_cache、但索引里没有）也要能搜到。
+#[test]
+fn test_backfill_indexes_existing_ocr_cache() {
+    let store = make_store();
+    let mut img = make_item("img-1", "[图片] 800x600", "2024-01-01 10:00:00", "image");
+    img.content = "C:\\img\\legacy.png".to_string();
+    store.insert_history(&img).unwrap();
+
+    // 直接写缓存表，**绕开 set_ocr_text** —— 模拟升级前就已经识别过的存量数据
+    {
+        let conn = store.lock_conn();
+        conn.execute(
+            "INSERT INTO image_ocr_cache (image_path, full_text, updated_at) VALUES (?1, ?2, 'x')",
+            rusqlite::params![&img.content, "存量识别文本"],
+        )
+        .unwrap();
+    }
+
+    assert!(
+        store
+            .search_history("默认", "存量识别", "all", "", "", "all", &[], 50)
+            .unwrap()
+            .is_empty(),
+        "回填前搜不到（缓存里有文本，但索引里没有）"
+    );
+
+    let n = {
+        let conn = store.lock_conn();
+        DataStore::backfill_ocr_fts_on(&conn).unwrap()
+    };
+    assert_eq!(n, 1, "应回填 1 条");
+
+    let hits = store
+        .search_history("默认", "存量识别", "all", "", "", "all", &[], 50)
+        .unwrap();
+    assert_eq!(hits.len(), 1, "回填后应可搜到");
+    assert_eq!(hits[0].id, "img-1");
+}

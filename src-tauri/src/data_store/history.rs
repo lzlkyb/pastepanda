@@ -242,10 +242,16 @@ impl DataStore {
         let mut sql = String::from(
             "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon, content_type
              FROM history WHERE workspace = ?1
-             AND history.rowid IN (SELECT rowid FROM history_fts WHERE history_fts MATCH ?2)",
+             AND (history.rowid IN (SELECT rowid FROM history_fts WHERE history_fts MATCH ?2)
+                  OR history.rowid IN (SELECT rowid FROM image_ocr_fts WHERE image_ocr_fts MATCH ?3))",
         );
-        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> =
-            vec![Box::new(workspace.to_string()), Box::new(to_ngram(search))];
+        // ?2 / ?3 是同一个查询词，但必须各绑一次：两张 FTS 表是各自独立的 MATCH 子查询。
+        // 第二个子查询让「截图里的字」可被搜到（image_ocr_fts，见 mod.rs 建表注释）。
+        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
+            Box::new(workspace.to_string()),
+            Box::new(to_ngram(search)),
+            Box::new(to_ngram(search)),
+        ];
 
         // 以下过滤子句与 search_history 的 LIKE 版保持一致
         if filter == "pinned" {
@@ -292,29 +298,37 @@ impl DataStore {
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
             params_vec.iter().map(|p| p.as_ref()).collect();
 
-        let mut stmt = conn.prepare(&sql).map_err(|_| ())?;
-        let rows = stmt
-            .query_map(param_refs.as_slice(), |row| {
-                Ok(HistoryItem {
-                    id: row.get(0)?,
-                    text: row.get(1)?,
-                    time: row.get(2)?,
-                    item_type: row.get(3)?,
-                    content: row.get(4)?,
-                    pinned: row.get::<_, i32>(5)? != 0,
-                    source: row.get(6)?,
-                    workspace: row.get(7)?,
-                    md5: row.get(8)?,
-                    pinyin_initials: row.get(9)?,
-                    group_id: row.get(10)?,
-                    source_icon: row.get(11)?,
-                    content_type: row.get(12)?,
-                    ocr_text: None,
-                    tags: Vec::new(),
+        let mut items = {
+            let mut stmt = conn.prepare(&sql).map_err(|_| ())?;
+            let rows = stmt
+                .query_map(param_refs.as_slice(), |row| {
+                    Ok(HistoryItem {
+                        id: row.get(0)?,
+                        text: row.get(1)?,
+                        time: row.get(2)?,
+                        item_type: row.get(3)?,
+                        content: row.get(4)?,
+                        pinned: row.get::<_, i32>(5)? != 0,
+                        source: row.get(6)?,
+                        workspace: row.get(7)?,
+                        md5: row.get(8)?,
+                        pinyin_initials: row.get(9)?,
+                        group_id: row.get(10)?,
+                        source_icon: row.get(11)?,
+                        content_type: row.get(12)?,
+                        ocr_text: None,
+                        tags: Vec::new(),
+                    })
                 })
-            })
-            .map_err(|_| ())?;
-        let mut items = rows.filter_map(|r| r.ok()).collect::<Vec<HistoryItem>>();
+                .map_err(|_| ())?;
+            rows.filter_map(|r| r.ok()).collect::<Vec<HistoryItem>>()
+        };
+        // ⚠️ 必须先放锁再回填 OCR：`load_ocr_texts_into_items` 内部走 `get_ocr_texts`，
+        //    而它自己会 `lock_conn()`——std::sync::Mutex 不可重入，持锁调用就是死锁。
+        //    这里以前是持锁调的，只是从来没触发过：命中要求 FTS 快路径返回**图片**条目，
+        //    而 sync_fts_upsert 的 UPSERT 在虚拟表上一直失败、新条目从未进过索引。
+        //    image_ocr_fts 一接进来，命中图片就成了常态，这个坑必然踩到。
+        drop(conn);
         self.load_ocr_texts_into_items(&mut items).map_err(|_| ())?;
         Ok(items)
     }
@@ -826,6 +840,13 @@ impl DataStore {
                 placeholders.join(",")
             );
             let _ = conn.execute(&fts_delete_sql, param_refs.as_slice());
+
+            // OCR 索引同理。不清的话 SQLite 复用 rowid 后，已删图片的文字会命中新条目。
+            let ocr_fts_delete_sql = format!(
+                "DELETE FROM image_ocr_fts WHERE rowid IN (SELECT rowid FROM history WHERE id IN ({}))",
+                placeholders.join(",")
+            );
+            let _ = conn.execute(&ocr_fts_delete_sql, param_refs.as_slice());
 
             // 审查 #9：内容记忆与历史生命周期级联 —— 摘要与派生向量随记录一起删，
             // 否则 semantic_vector_pending 会给已删条目的摘要补向量（白烧 embedding 预算）

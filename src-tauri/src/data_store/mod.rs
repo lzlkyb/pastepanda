@@ -751,6 +751,37 @@ impl DataStore {
             }
         }
 
+        // 图片 OCR 文本的全文索引。**独立于 history_fts，且刻意不是外部内容表**：
+        //
+        // 1. OCR 是异步的（图片先入库、文字后到），所以这张索引必须支持「事后更新」。
+        //    而 FTS5 虚拟表不支持 UPSERT，外部内容表连 DELETE 都要回读旧值——
+        //    history_fts 的列名（pinyin）与 history 的列名（pinyin_initials）对不上，
+        //    回读直接失败。常规 FTS5 自己存 token，DELETE + INSERT 才是可用的更新路径。
+        // 2. 图片的 history.content 是 md5 文件名（0039a52c….png），没有检索价值，
+        //    所以 OCR 文本不能塞进 history_fts 的 content 列去挤掉它——那是两回事。
+        //
+        // rowid 与 history.rowid 对齐，检索时直接 OR 进 try_search_fts 的子查询。
+        // 内容是本地 OCR 产物，与 image_ocr_cache 同级，不出本机。
+        conn.execute_batch(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS image_ocr_fts USING fts5(ocr);",
+        )?;
+
+        // 存量回填：v6.18 之前识别过的图片，文本已在 image_ocr_cache 里但从未进索引。
+        // 空索引才回填（同 history_fts 的 fts_count == 0 惯例），不必额外设迁移标记位。
+        // 实现在 image_ocr.rs 的 backfill_ocr_fts（可测；这里只负责启动时调一次）。
+        let ocr_fts_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM image_ocr_fts", [], |r| r.get(0))
+            .unwrap_or(0);
+        if ocr_fts_count == 0 {
+            match Self::backfill_ocr_fts_on(&conn) {
+                Ok(n) if n > 0 => {
+                    log::info!("[FTS] 已回填 {} 张图片的 OCR 文本到全文索引", n)
+                }
+                Ok(_) => {}
+                Err(e) => log::warn!("[FTS] OCR 存量回填失败: {}", e),
+            }
+        }
+
         // 数据库迁移：为旧 history_tags 表添加 source 列（如果不存在）
         let has_ht_source: bool = conn
             .query_row(
