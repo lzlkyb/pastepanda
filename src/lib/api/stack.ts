@@ -70,6 +70,11 @@ export async function stackPasteNext(): Promise<boolean> {
 
     if (!ok) return false;
 
+    // 粘贴信号回写（此前漏记，同依次/索引粘贴）。栈粘贴按栈序出栈、没有列表位置，
+    // 故 pasteIndex 用 -1（既有约定：-1 = 不是从列表浏览选的）。
+    const { logItemPasted } = await import("@/lib/api/actionEvents");
+    logItemPasted(item, -1);
+
     store.stackMarkPasted();
 
     // P3 粘贴+Tab 推进：开关开时，每次粘贴成功后略等目标应用处理完粘贴再补发 Tab。

@@ -889,7 +889,13 @@ function App() {
       if (targetId) {
         const item = filtered.find((i) => i.id === targetId);
         if (item && item.type === "text") {
-          window.dispatchEvent(new CustomEvent("app-quick-preview", { detail: { text: item.text } }));
+          // 带上条目身份：预览面板里粘贴时要回写粘贴信号（只传需要的四个字段，不整条塞）
+          window.dispatchEvent(new CustomEvent("app-quick-preview", {
+            detail: {
+              text: item.text,
+              item: { id: item.id, type: item.type, content_type: item.content_type, source: item.source },
+            },
+          }));
         } else if (item && (item.type === "image" || item.type === "file")) {
           // U44：图片/文件 → 打开对应详情窗（此前 Space 对它们无响应）
           window.dispatchEvent(new CustomEvent("app-open-item-detail", { detail: { id: item.id } }));

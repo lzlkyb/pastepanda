@@ -353,7 +353,16 @@ export function TrayPopup() {
         ok = await pasteTextGuarded(item.text);
       }
       // U1：仅粘贴成功时弹成功提示（pasteText/pasteImage 失败时已自行弹错误 toast）
-      if (ok) showToast("已粘贴", "success", 800);
+      if (ok) {
+        showToast("已粘贴", "success", 800);
+        // 粘贴信号回写（此前漏记）。托盘弹窗是独立窗口、不经主列表，
+        // 没有列表位置，故下标传 -1。RecentItem 用的是 contentType 驼峰，显式映射。
+        const { logItemPasted } = await import("@/lib/api/actionEvents");
+        logItemPasted(
+          { id: item.id, type: item.type, content_type: item.contentType, source: item.source ?? "" },
+          -1,
+        );
+      }
     } catch (e) {
       console.error("[TrayPopup] 粘贴失败:", e);
       showToast("粘贴失败", "error");

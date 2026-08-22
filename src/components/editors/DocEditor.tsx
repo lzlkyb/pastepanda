@@ -88,20 +88,27 @@ export function DocEditor({ item, registerActions }: EditorProps) {
   const paste = useCallback(async () => {
     const tab = tabRef.current;
     try {
+      // 三个页签粘的是同一条历史的不同呈现（富格式/纯文本/Markdown），
+      // 成功即视为这条被用上了 —— 回写一次粘贴信号（此前三个分支都漏记）。
+      let ok = false;
       if (tab === "render") {
-        const ok = await pasteRichGuarded(htmlRef.current, plainText);
+        ok = await pasteRichGuarded(htmlRef.current, plainText);
         if (ok) toast("已粘贴富格式", "success");
       } else if (tab === "plain") {
-        const ok = await pasteTextGuarded(plainText);
+        ok = await pasteTextGuarded(plainText);
         if (ok) toast("已粘贴纯文本", "success");
       } else {
-        const ok = await pasteTextGuarded(mdRef.current);
+        ok = await pasteTextGuarded(mdRef.current);
         if (ok) toast("已粘贴 Markdown", "success");
+      }
+      if (ok) {
+        const { logItemPasted } = await import("@/lib/api/actionEvents");
+        logItemPasted(item, -1);
       }
     } catch (e) {
       toast("粘贴失败: " + (e instanceof Error ? e.message : String(e)), "error");
     }
-  }, [plainText, toast]);
+  }, [item, plainText, toast]);
 
   useEffect(() => {
     registerActions({ save, copy, paste, isDirty });

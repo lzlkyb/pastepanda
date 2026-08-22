@@ -187,6 +187,9 @@ export function QuickPastePanel() {
               ? await pasteTextGuarded(item.content)
               : await pasteTextGuarded(item.text);
       if (!ok) return;
+      // 粘贴信号回写（此前漏记）。快捷面板是独立窗口、不经主列表，下标传 -1。
+      const { logItemPasted } = await import("@/lib/api/actionEvents");
+      logItemPasted(item, -1);
       // 成功后兜底隐藏（正常情况下失焦已自动隐藏）
       invoke("hide_quick_paste").catch(() => { /* 忽略 */ });
     } catch (e) {
