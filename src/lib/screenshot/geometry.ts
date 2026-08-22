@@ -57,6 +57,20 @@ export function clampRect(r: Rect, sw: number, sh: number): Rect {
 export const MAGNET_T = 8;
 
 /**
+ * 拖选被认定为「真的在拉框」的最小边长（物理像素）。
+ *
+ * ❗ 与下面 applyMagnet 返回值里的 `Math.max(4, …)` 是**两件事**，别混：
+ *  - 这里的 DRAG_MIN 是**语义判据**：拖了这么多才算画新选区，否则算单击；
+ *  - 那里的 4 是**防退化**：磁吸后不产出 0 宽高的矩形（手柄缩放也走 applyMagnet）。
+ *
+ * 曾经把两者混为一谈：显示门槛判 `selDraft.w >= 4` 而 selDraft 出自 applyMagnet，
+ * 于是鼠标一动门槛必然成立 → 选区框先塌成光标处 4×4 小点，松手时提交门槛按原始距离
+ * 判成单击又跳回吸附窗口，用户看到「单击确定闪一下」。
+ * 显示与提交必须引用这同一个常量、且都作用在**原始**拖动距离上。
+ */
+export const DRAG_MIN = 4;
+
+/**
  * 磁吸：选区边缘贴近 屏幕边 / 中心线 / 参照窗口边缘（≤ 8px）时吸附对齐。
  *
  * ⚠️ 水平候选只能用参照矩形的 x 边，垂直候选只能用 y 边。
@@ -97,6 +111,8 @@ export function applyMagnet(r: Rect, refs: Rect[], sw: number, sh: number): Rect
       y2 = c;
       break;
     }
+  // 宽高兜底 4：磁吸后不产出退化矩形（手柄缩放也走这里）。
+  // ⚠️ 这个 4 不是「拖选算不算有效」的判据 —— 那个是 DRAG_MIN，作用在原始拖动距离上。
   return { x, y, w: Math.max(4, x2 - x), h: Math.max(4, y2 - y) };
 }
 
