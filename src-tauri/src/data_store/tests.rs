@@ -4265,3 +4265,49 @@ fn test_fts_empty_index_is_refilled_on_next_open() {
     drop(store);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn test_fts_rebuild_leaves_migration_record() {
+    // 一次性迁移必须在库里留痕。原因是实测发现的：env_logger 在 RUST_LOG 未设时
+    // 默认只放行 error，全项目 170 个 warn / 128 个 info 从来没有输出到任何地方——
+    // 那三个 history_fts bug 唯一的报错渠道就是 log::warn!，所以能长期不被发现。
+    // 迁移跑过没跑过、跑了几次，只能靠这张表追溯。
+    //
+    // 同一 name 允许多行：**重复出现本身就是诊断信号**。旧版"每次启动都全量回填"
+    // 这个 bug，如果当时有这张表，会直接表现为几十行同名记录。
+    let dir = std::env::temp_dir().join(format!("pastepanda_fts_rec_{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db_path = dir.join("clipboard.db").to_string_lossy().to_string();
+
+    {
+        let store = DataStore::new(&db_path).unwrap();
+        store
+            .insert_history(&make_item("r1", "留痕测试内容", "2024-01-01 10:00:00", "text"))
+            .unwrap();
+        let conn = store.lock_conn();
+        conn.execute_batch(
+            "DROP TABLE IF EXISTS history_fts;
+             CREATE VIRTUAL TABLE history_fts USING fts5(
+                text, pinyin, content, content='history', content_rowid='rowid');",
+        )
+        .unwrap();
+    }
+
+    let store = DataStore::new(&db_path).unwrap();
+    let conn = store.lock_conn();
+    let (name, detail): (String, String) = conn
+        .query_row(
+            "SELECT name, detail FROM schema_migrations
+             WHERE name = 'history_fts_rebuild' ORDER BY id DESC LIMIT 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("重建后必须留下一条 history_fts_rebuild 记录");
+    assert_eq!(name, "history_fts_rebuild");
+    // detail 要能回答「回填了多少行」，否则记录了也诊断不了
+    assert!(detail.contains("rows=1"), "detail 应含回填行数，实际: {}", detail);
+
+    drop(conn);
+    drop(store);
+    let _ = std::fs::remove_dir_all(&dir);
+}

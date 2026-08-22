@@ -107,6 +107,23 @@ impl DataStore {
         }
     }
 
+    /// 一次性迁移留痕（写 `schema_migrations`）。**失败只 warn，绝不阻断启动**——
+    /// 留痕是诊断辅助，它自己挂掉不该让用户打不开应用。
+    ///
+    /// 不做去重：同名多行是有意的，重复出现本身就是「这段迁移在反复跑」的信号。
+    pub(crate) fn record_migration_on(conn: &rusqlite::Connection, name: &str, detail: &str) {
+        if let Err(e) = conn.execute(
+            "INSERT INTO schema_migrations (name, applied_at, detail) VALUES (?1, ?2, ?3)",
+            rusqlite::params![
+                name,
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                detail
+            ],
+        ) {
+            log::warn!("[Migration] 留痕写入失败 ({}): {}", name, e);
+        }
+    }
+
     /// 全量回填 history_fts（首次建表或旧结构重建后调用）。返回回填条数。
     ///
     /// **必须包在一个事务里**：逐条 autocommit 等于每行一次 fsync，实测 5 万条要

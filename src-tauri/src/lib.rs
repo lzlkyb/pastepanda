@@ -67,7 +67,17 @@ pub struct PendingEditor(pub std::sync::Mutex<Option<EditorInitData>>);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    env_logger::init();
+    // `env_logger::init()` 在 RUST_LOG 未设时默认只放行 **error**，于是全项目
+    // 170 个 log::warn! 与 128 个 log::info! 一直输出到虚无。实测确认：启动必然执行的
+    // `[HotkeyManager] 注册热键` 在 dev 控制台出现 0 次，只有 updater 的 error 冒出来。
+    //
+    // 这不是洁癖问题——history_fts 那三个索引 bug（UPSERT/DELETE/COUNT 全年失败）
+    // 唯一的报错渠道就是 log::warn!，报错渠道本身是断的，所以它们能长期不被发现。
+    //
+    // 默认提到 info；RUST_LOG 仍然覆盖一切（要更静就 RUST_LOG=error）。
+    // 热路径已核对：剪贴板监听是事件驱动，info 只在线程生命周期与每条新内容时打，
+    // 不存在按轮询频率刷日志的地方。
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {

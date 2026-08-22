@@ -239,6 +239,22 @@ impl DataStore {
                 value TEXT NOT NULL
             );
 
+            -- 一次性迁移的审计留痕。**不是迁移门闩**（本项目的迁移一贯靠探测真实结构
+            -- 来判断该不该跑，见 history_fts 的 fts_is_external 与各处 pragma_table_info），
+            -- 这张表只负责「跑过没跑过、什么时候、影响多少行」可事后追溯。
+            --
+            -- 为什么必须落库而不是只打日志：env_logger 在 RUST_LOG 未设时默认只放行
+            -- error，全项目 170 个 warn / 128 个 info 一直输出到虚无。
+            --
+            -- 同一 name 允许多行（不设 UNIQUE）：**重复出现本身就是诊断信号**。
+            -- 旧版「每次启动都全量回填」那个 bug，有这张表就会直接暴露成几十行同名记录。
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                applied_at TEXT NOT NULL,
+                detail TEXT NOT NULL DEFAULT ''
+            );
+
             CREATE TABLE IF NOT EXISTS snippets (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -735,9 +751,29 @@ impl DataStore {
             .unwrap_or(0);
         if fts_count == 0 {
             match Self::backfill_history_fts_on(&conn) {
-                Ok(n) if n > 0 => log::info!("[FTS] 已回填 {} 条历史记录到全文索引", n),
+                Ok(n) if n > 0 => {
+                    log::info!("[FTS] 已回填 {} 条历史记录到全文索引", n);
+                    // 留痕。重建（旧结构升级）与自愈（索引空了重填）用不同的 name，
+                    // 事后才分得清那次到底是升级还是异常恢复。
+                    Self::record_migration_on(
+                        &conn,
+                        if fts_is_external {
+                            "history_fts_rebuild"
+                        } else {
+                            "history_fts_backfill"
+                        },
+                        &format!("rows={}, was_external={}", n, fts_is_external),
+                    );
+                }
                 Ok(_) => {}
-                Err(e) => log::warn!("[FTS] 存量回填失败: {}", e),
+                Err(e) => {
+                    log::warn!("[FTS] 存量回填失败: {}", e);
+                    Self::record_migration_on(
+                        &conn,
+                        "history_fts_backfill_failed",
+                        &format!("error={}, was_external={}", e, fts_is_external),
+                    );
+                }
             }
         }
 
