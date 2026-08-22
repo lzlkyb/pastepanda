@@ -133,11 +133,13 @@ export function QuickPastePanel() {
       // 聚焦搜索框
       setTimeout(() => searchRef.current?.focus(), 50);
     } catch (e) {
-      // 统一走项目 logger（写持久日志）而不是 console：本面板是热键唤出的独立窗口，
-      // 出问题时用户不会去开 devtools，console 里的错误等于没记录
+      // 本面板是热键唤出的独立窗口，用户不会去开 devtools，而发布版没有控制台
+      // （main.rs 的 windows_subsystem = "windows"）——只写 logger 等于什么都没留下。
+      // 所以失败必须在面板上说出来（规则 15.3：静默失败比报错难查一个量级）。
       logger.error("[QuickPaste] 加载数据失败", e);
+      showToast("加载记录失败，请重新唤出面板", true);
     }
-  }, []);
+  }, [showToast]);
 
   useEffect(() => {
     loadData();
@@ -186,8 +188,9 @@ export function QuickPastePanel() {
     } catch (e) {
       // 注意：粘贴引擎会 SetForegroundWindow 到目标窗口，而本面板失焦即自动隐藏
       // （quick_paste.rs 的 WindowEvent::Focused(false)）。若失败发生在夺焦之后，
-      // 下面这个 toast 会渲染在一个正在消失的窗口上、用户看不到，
-      // 所以必须同时写持久日志，否则这类失败会完全无迹可查
+      // 下面这个 toast 会渲染在一个正在消失的窗口上、用户看不到。
+      // 注：logger 只写 console，发布版没有控制台，所以这种情况目前确实无迹可查——
+      // 原注释写的「同时写持久日志」并不成立，别再据此以为有兜底。
       logger.error("[QuickPaste] 粘贴失败", e);
       showToast("粘贴失败", true);
     }

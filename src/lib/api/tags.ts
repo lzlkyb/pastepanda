@@ -4,6 +4,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, Tag } from "@/stores/appStore";
 import { logger } from "@/lib/logger";
+import { toastActionFailed } from "@/lib/utils";
 
 /** 获取所有标签 */
 export async function fetchTags(): Promise<Tag[]> {
@@ -25,6 +26,7 @@ export async function createTag(name: string, color: string): Promise<Tag | null
     return tag;
   } catch (e) {
     logger.error("创建标签失败", e);
+    toastActionFailed("创建标签", e);
     return null;
   }
 }
@@ -38,6 +40,7 @@ export async function updateTag(id: string, name: string, color: string): Promis
     return true;
   } catch (e) {
     logger.error("更新标签失败", e);
+    toastActionFailed("更新标签", e);
     return false;
   }
 }
@@ -52,6 +55,7 @@ export async function deleteTag(id: string): Promise<boolean> {
     return true;
   } catch (e) {
     logger.error("删除标签失败", e);
+    toastActionFailed("删除标签", e);
     return false;
   }
 }
@@ -74,6 +78,7 @@ export async function setItemTags(historyId: string, tagIds: string[]): Promise<
     return true;
   } catch (e) {
     logger.error("设置标签失败", e);
+    toastActionFailed("设置标签", e);
     return false;
   }
 }
@@ -102,6 +107,7 @@ export async function addItemTags(historyIds: string[], tagIds: string[]): Promi
     return count;
   } catch (e) {
     logger.error("添加标签失败", e);
+    toastActionFailed("添加标签", e);
     return 0;
   }
 }
@@ -122,6 +128,7 @@ export async function removeItemTags(historyIds: string[], tagIds: string[]): Pr
     return count;
   } catch (e) {
     logger.error("移除标签失败", e);
+    toastActionFailed("移除标签", e);
     return 0;
   }
 }

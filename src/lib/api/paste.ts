@@ -3,6 +3,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "@/lib/logger";
+import { toastActionFailed } from "@/lib/utils";
 import { maskSensitiveText } from "@/lib/mask";
 import { useDialogStore } from "@/stores/dialogStore";
 
@@ -177,6 +178,7 @@ export async function copyOnly(text: string) {
     await invoke("copy_only", { text });
   } catch (e) {
     logger.error("复制失败", e);
+    toastActionFailed("复制", e);
   }
 }
 

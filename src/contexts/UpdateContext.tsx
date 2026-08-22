@@ -3,6 +3,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { logger } from "@/lib/logger";
+import { toastActionFailed } from "@/lib/utils";
 import { useToast } from "@/components/Toast";
 
 // ─── 类型定义 ───────────────────────────────────────────
@@ -398,6 +399,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       await relaunch();
     } catch (e) {
       logger.error("[Update] 重启失败:", e);
+      toastActionFailed("重启应用", e);
     }
   }, []);
 

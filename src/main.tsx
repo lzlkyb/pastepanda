@@ -52,7 +52,7 @@ function friendlyRejectionMessage(reason: unknown): string {
   if (low.includes("denied") || low.includes("permission")) {
     return "操作权限不足，请检查系统设置";
   }
-  return "有个后台操作未能完成，已记录日志";
+  return "有个后台操作未能完成，可重试一次";
 }
 
 window.addEventListener("unhandledrejection", (event) => {
