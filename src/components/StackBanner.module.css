@@ -80,7 +80,8 @@
   padding: 0 10px;
   border-radius: 8px;
   border: none;
-  background: var(--orange, #EA580C);
+  /* 实色填充配白字走 --orange-solid（见 theme.css 说明），别用 --orange */
+  background: var(--orange-solid, #C54A0A);
   color: #fff;
   font-size: 11px;
   font-weight: 700;
@@ -441,7 +442,7 @@
 }
 
 .chipNext .ord {
-  background: var(--orange);
+  background: var(--orange-solid, #C54A0A);
   color: #fff;
   animation: stackPulse 1.5s infinite;
 }
@@ -454,7 +455,7 @@
   font-weight: 700;
   color: #fff;
   letter-spacing: 0.3px;
-  background: var(--orange);
+  background: var(--orange-solid, #C54A0A);
   padding: 1px 5px;
   border-radius: 4px;
   box-shadow: 0 1px 4px rgba(234, 88, 12, 0.5);
