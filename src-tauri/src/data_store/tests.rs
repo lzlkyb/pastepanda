@@ -4181,3 +4181,41 @@ fn test_fts_external_content_table_is_rebuilt_on_open() {
     drop(store);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn test_fts_syncs_rows_with_null_pinyin() {
+    let store = make_store();
+    store
+        .insert_history(&make_item("p1", "拼音列为空的内容", "2024-01-01 10:00:00", "text"))
+        .unwrap();
+    {
+        let conn = store.lock_conn();
+        // 真实库里 1214 条有 195 条 pinyin_initials 是 NULL。旧实现用
+        // r.get::<_, String> 读它 → 取值报错 → 整条同步失败、只留一行 warn，
+        // 于是这 16% 的内容从来没进过索引。
+        conn.execute("UPDATE history SET pinyin_initials = NULL WHERE id = 'p1'", [])
+            .unwrap();
+        // 必须先清索引：insert_history 已经用非 NULL 的拼音同步过一次了，
+        // 不清的话那条旧记录还在，即使这次同步失败断言也照样通过（测不出问题）。
+        conn.execute_batch("DELETE FROM history_fts;").unwrap();
+        store.sync_fts_upsert(&conn, "p1");
+    }
+    assert_eq!(fts_match_count(&store, "拼音列为空"), 1);
+}
+
+#[test]
+fn test_fts_backfill_covers_null_pinyin_rows() {
+    let store = make_store();
+    store
+        .insert_history(&make_item("b1", "回填也要认空拼音", "2024-01-01 10:00:00", "text"))
+        .unwrap();
+    let n = {
+        let conn = store.lock_conn();
+        conn.execute("UPDATE history SET pinyin_initials = NULL WHERE id = 'b1'", [])
+            .unwrap();
+        conn.execute_batch("DELETE FROM history_fts;").unwrap();
+        DataStore::backfill_history_fts_on(&conn).unwrap()
+    };
+    assert_eq!(n, 1, "空拼音的行也要算进回填条数");
+    assert_eq!(fts_match_count(&store, "空拼音"), 1);
+}

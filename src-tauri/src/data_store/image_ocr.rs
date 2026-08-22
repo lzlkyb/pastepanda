@@ -141,19 +141,37 @@ impl crate::data_store::DataStore {
             rows.filter_map(|r| r.ok()).collect()
         };
 
+        if pending.is_empty() {
+            return Ok(0);
+        }
+
+        // 单事务：逐条 autocommit 等于每行一次 fsync，而这段在启动路径上是阻塞的
+        // （同 backfill_history_fts_on 的取舍）。
+        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
         let mut n = 0u32;
-        for (rowid, full_text) in pending {
-            // 单条失败不该让整批回填中断（同 history_fts 存量回填的容错取舍）
-            if conn
-                .execute(
-                    "INSERT INTO image_ocr_fts (rowid, ocr) VALUES (?1, ?2)",
-                    params![rowid, crate::data_store::history::to_ngram(&full_text)],
-                )
-                .is_ok()
+        {
+            let mut ins = match conn.prepare("INSERT INTO image_ocr_fts (rowid, ocr) VALUES (?1, ?2)")
             {
-                n += 1;
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = conn.execute_batch("ROLLBACK;");
+                    return Err(e.to_string());
+                }
+            };
+            for (rowid, full_text) in &pending {
+                // 单条失败不该让整批回填中断（同 history_fts 存量回填的容错取舍）
+                if ins
+                    .execute(params![
+                        rowid,
+                        crate::data_store::history::to_ngram(full_text)
+                    ])
+                    .is_ok()
+                {
+                    n += 1;
+                }
             }
         }
+        conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
         Ok(n)
     }
 }

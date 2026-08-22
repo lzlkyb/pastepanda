@@ -734,38 +734,10 @@ impl DataStore {
             .query_row("SELECT COUNT(*) FROM history_fts", [], |r| r.get(0))
             .unwrap_or(0);
         if fts_count == 0 {
-            match conn.prepare("SELECT rowid, text, pinyin_initials, content FROM history") {
-                Ok(mut stmt) => match stmt.query_map([], |r| {
-                    Ok((
-                        r.get::<_, i64>(0)?,
-                        r.get::<_, String>(1)?,
-                        r.get::<_, String>(2)?,
-                        r.get::<_, String>(3)?,
-                    ))
-                }) {
-                    Ok(rows) => {
-                        let mut backfilled = 0u32;
-                        for row in rows {
-                            if let Ok((rowid, text, pinyin, content)) = row {
-                                let _ = conn.execute(
-                                    "INSERT INTO history_fts (rowid, text, pinyin, content) VALUES (?1, ?2, ?3, ?4)",
-                                    rusqlite::params![
-                                        rowid,
-                                        crate::data_store::history::to_ngram(&text),
-                                        crate::data_store::history::to_ngram(&pinyin),
-                                        crate::data_store::history::to_ngram(&content),
-                                    ],
-                                );
-                                backfilled += 1;
-                            }
-                        }
-                        if backfilled > 0 {
-                            log::info!("[FTS] 已回填 {} 条历史记录到全文索引", backfilled);
-                        }
-                    }
-                    Err(e) => log::warn!("[FTS] 存量回填查询失败: {}", e),
-                },
-                Err(e) => log::warn!("[FTS] 存量回填准备失败: {}", e),
+            match Self::backfill_history_fts_on(&conn) {
+                Ok(n) if n > 0 => log::info!("[FTS] 已回填 {} 条历史记录到全文索引", n),
+                Ok(_) => {}
+                Err(e) => log::warn!("[FTS] 存量回填失败: {}", e),
             }
         }
 

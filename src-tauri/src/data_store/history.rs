@@ -77,7 +77,11 @@ impl DataStore {
     pub(crate) fn sync_fts_upsert(&self, conn: &rusqlite::Connection, id: &str) {
         let res = conn
             .query_row(
-                "SELECT rowid, text, pinyin_initials, content FROM history WHERE id = ?1",
+                // COALESCE 是必需的：pinyin_initials 可为 NULL（本机 1214 条里 195 条是）。
+                // 旧实现直接 r.get::<_, String> 读它 → 取值报错 → 整条同步失败、
+                // 只留一行 warn，于是那 16% 的内容从来没进过索引。
+                "SELECT rowid, COALESCE(text, ''), COALESCE(pinyin_initials, ''), COALESCE(content, '')
+                 FROM history WHERE id = ?1",
                 [id],
                 |r| {
                     Ok((
@@ -101,6 +105,61 @@ impl DataStore {
         if let Err(e) = res {
             log::warn!("[FTS] 索引同步失败 (id={}): {}", id, e);
         }
+    }
+
+    /// 全量回填 history_fts（首次建表或旧结构重建后调用）。返回回填条数。
+    ///
+    /// **必须包在一个事务里**：逐条 autocommit 等于每行一次 fsync，实测 5 万条要
+    /// 115 秒，而这段在启动路径上是阻塞的。单事务后是秒级。
+    ///
+    /// 先收集再写（同 `backfill_ocr_fts_on` / `backfill_content_types` 的写法）：
+    /// 代价是存量文本要一次性进内存，换来的是不必推敲「游标还活着时往同一连接写」。
+    pub(crate) fn backfill_history_fts_on(conn: &rusqlite::Connection) -> Result<u32, String> {
+        let pending: Vec<(i64, String, String, String)> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT rowid, COALESCE(text, ''), COALESCE(pinyin_initials, ''), COALESCE(content, '')
+                     FROM history",
+                )
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+                .map_err(|e| e.to_string())?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
+        if pending.is_empty() {
+            return Ok(0);
+        }
+
+        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        let mut n = 0u32;
+        {
+            let mut ins = match conn.prepare(
+                "INSERT INTO history_fts (rowid, text, pinyin, content) VALUES (?1, ?2, ?3, ?4)",
+            ) {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = conn.execute_batch("ROLLBACK;");
+                    return Err(e.to_string());
+                }
+            };
+            for (rowid, text, pinyin, content) in &pending {
+                // 单条失败不中断整批（同 backfill_ocr_fts_on 的容错取舍）
+                if ins
+                    .execute(rusqlite::params![
+                        rowid,
+                        to_ngram(text),
+                        to_ngram(pinyin),
+                        to_ngram(content)
+                    ])
+                    .is_ok()
+                {
+                    n += 1;
+                }
+            }
+        }
+        conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+        Ok(n)
     }
 
     // 曾有一个单条 `sync_fts_delete`；删除路径统一走 `delete_history(&[String])`，
