@@ -701,14 +701,32 @@ impl DataStore {
             }
         }
 
-        // v6.4 D 搜索：FTS5 全文索引（外部内容表，rowid 关联）。索引内容在 Rust 侧做
-        // 字符 bigram 预处理（to_ngram），中文才能被分词命中；增删改在 history.rs 同步。
+        // v6.4 D 搜索：FTS5 全文索引。索引内容在 Rust 侧做字符 bigram 预处理
+        // （to_ngram），中文才能被分词命中；增删改在 history.rs 同步。
+        //
+        // **常规 FTS5，刻意不是外部内容表**（v6.18 修）。旧实现写的是
+        // `content='history', content_rowid='rowid'`，与"手工塞 ngram 串"根本矛盾：
+        // 外部内容表意味着 FTS5 在 DELETE / rebuild 时要回读 history 的原始列，
+        // 而它既取不到 `pinyin`（history 里那列叫 `pinyin_initials`），
+        // 取到的也不是 ngram 串。加上 FTS5 虚拟表不支持 UPSERT，
+        // 结果是同步与删除两条路径全年报错、被 log::warn 吞掉（详见 history.rs）。
+        //
+        // 旧库建成了外部内容表 → 这里一次性 DROP 重建，随后走下面的全量回填。
+        let fts_is_external: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'table' AND name = 'history_fts' AND sql LIKE '%content=''history''%'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if fts_is_external {
+            log::info!("[FTS] 检测到旧的外部内容表结构，重建 history_fts 并全量回填");
+            conn.execute_batch("DROP TABLE IF EXISTS history_fts;")?;
+        }
         conn.execute_batch(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS history_fts USING fts5(
-                text, pinyin, content,
-                content='history',
-                content_rowid='rowid'
-            );",
+            "CREATE VIRTUAL TABLE IF NOT EXISTS history_fts USING fts5(text, pinyin, content);",
         )?;
 
         // 首次建表（或索引为空）时全量回填存量数据。回填失败只 warn，不阻断启动。

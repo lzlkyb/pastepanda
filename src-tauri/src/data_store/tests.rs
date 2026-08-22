@@ -4070,3 +4070,114 @@ fn test_backfill_indexes_existing_ocr_cache() {
     assert_eq!(hits.len(), 1, "回填后应可搜到");
     assert_eq!(hits[0].id, "img-1");
 }
+
+// ============================================================
+// history_fts 索引正确性（v6.18 修：三个一直被 warn 吞掉的 bug）
+// ============================================================
+
+/// 某个 MATCH 在 history_fts 里命中几行
+fn fts_match_count(store: &DataStore, kw: &str) -> i64 {
+    let conn = store.lock_conn();
+    conn.query_row(
+        "SELECT COUNT(*) FROM history_fts WHERE history_fts MATCH ?1",
+        [crate::data_store::history::to_ngram(kw)],
+        |r| r.get(0),
+    )
+    .unwrap_or(-1)
+}
+
+#[test]
+fn test_fts_index_receives_new_items() {
+    let store = make_store();
+    store
+        .insert_history(&make_item("n1", "季度营收报表", "2024-01-01 10:00:00", "text"))
+        .unwrap();
+
+    // 新条目必须进索引。此前 sync_fts_upsert 用的是 UPSERT，而 FTS5 虚拟表不支持
+    // ON CONFLICT —— 语句每次都报错、被 log::warn 吞掉，于是首次建表回填之后
+    // 新增的内容从来没进过索引，搜索一直静默退回 LIKE。
+    assert_eq!(fts_match_count(&store, "季度营收"), 1);
+}
+
+#[test]
+fn test_fts_index_cleared_on_delete() {
+    let store = make_store();
+    store
+        .insert_history(&make_item("d1", "待删除的机密备注", "2024-01-01 10:00:00", "text"))
+        .unwrap();
+    assert_eq!(fts_match_count(&store, "机密备注"), 1, "前置：先得进索引");
+
+    store.delete_history(&["d1".to_string()]).unwrap();
+
+    // 删了就必须从索引里消失。外部内容表时代这条 DELETE 要回读 history 的原始列，
+    // 必然失败且被 `let _ =` 吞掉 —— 残留的 token 会在 SQLite 复用 rowid 后
+    // 命中新条目（已删内容的文字出现在别人身上）。
+    assert_eq!(fts_match_count(&store, "机密备注"), 0);
+}
+
+#[test]
+fn test_fts_index_replaces_old_text_on_update() {
+    let store = make_store();
+    store
+        .insert_history(&make_item("u1", "原始内容甲", "2024-01-01 10:00:00", "text"))
+        .unwrap();
+    store.update_history("u1", "改写后内容乙").unwrap();
+
+    // 改写后旧文本不该还能被搜到（UPSERT 失败的年代这里两条都是 0，测不出问题；
+    // 改成 DELETE + INSERT 后才真正有「替换」语义）
+    assert_eq!(fts_match_count(&store, "原始内容"), 0, "旧文本必须从索引里消失");
+    assert_eq!(fts_match_count(&store, "改写后内容"), 1, "新文本必须进索引");
+}
+
+#[test]
+fn test_fts_external_content_table_is_rebuilt_on_open() {
+    let dir = std::env::temp_dir().join(format!("pastepanda_fts_mig_{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db = dir.join("clipboard.db");
+    let db_path = db.to_string_lossy().to_string();
+
+    // 造一个 v6.18 之前的库：history 有数据，history_fts 是外部内容表。
+    {
+        let store = DataStore::new(&db_path).unwrap();
+        store
+            .insert_history(&make_item("m1", "旧库里的季度报表", "2024-01-01 10:00:00", "text"))
+            .unwrap();
+        let conn = store.lock_conn();
+        conn.execute_batch(
+            "DROP TABLE IF EXISTS history_fts;
+             CREATE VIRTUAL TABLE history_fts USING fts5(
+                text, pinyin, content, content='history', content_rowid='rowid');",
+        )
+        .unwrap();
+        // 模拟旧代码「每次启动都全量回填」造成的重复累积：
+        // 外部内容表上同一 rowid 可以反复 INSERT 且**不报错**（常规表会 constraint failed），
+        // 所以旧库里同一条内容会有 N 份 token，N = 启动次数。
+        let rowid: i64 = conn
+            .query_row("SELECT rowid FROM history WHERE id = 'm1'", [], |r| r.get(0))
+            .unwrap();
+        for _ in 0..3 {
+            conn.execute(
+                "INSERT INTO history_fts (rowid, text, pinyin, content) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![rowid, crate::data_store::history::to_ngram("旧库里的季度报表"), "", ""],
+            )
+            .unwrap();
+        }
+    }
+
+    // 重新打开 → 应识别出旧结构、DROP 重建、并全量回填
+    let store = DataStore::new(&db_path).unwrap();
+    {
+        let conn = store.lock_conn();
+        // 重建后 COUNT(*) 必须可查（外部内容表上它会报 no such column: T.pinyin，
+        // 而旧代码 .unwrap_or(0) 把这个错误吞成 0 —— 于是回填判据恒真、每次启动都全量重跑）
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM history_fts", [], |r| r.get(0))
+            .expect("重建后 COUNT(*) 必须可查");
+        assert_eq!(n, 1, "回填后索引应恰好一行，不再有重复累积");
+    }
+    // 旧库存量内容重建后仍可搜到
+    assert_eq!(fts_match_count(&store, "季度报表"), 1);
+
+    drop(store);
+    let _ = std::fs::remove_dir_all(&dir);
+}

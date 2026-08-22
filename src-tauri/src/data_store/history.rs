@@ -89,10 +89,12 @@ impl DataStore {
                 },
             )
             .and_then(|(rowid, text, pinyin, content)| {
+                // FTS5 虚拟表不支持 UPSERT（旧实现用 ON CONFLICT，语句每次都报错、
+                // 被下面的 warn 吞掉，于是首次回填之后的新增内容从未进过索引）。
+                // 先按 rowid 删旧行再插，才是可用的「事后更新」路径。
+                conn.execute("DELETE FROM history_fts WHERE rowid = ?1", rusqlite::params![rowid])?;
                 conn.execute(
-                    "INSERT INTO history_fts (rowid, text, pinyin, content) VALUES (?1, ?2, ?3, ?4)
-                     ON CONFLICT(rowid) DO UPDATE SET
-                        text = excluded.text, pinyin = excluded.pinyin, content = excluded.content",
+                    "INSERT INTO history_fts (rowid, text, pinyin, content) VALUES (?1, ?2, ?3, ?4)",
                     rusqlite::params![rowid, to_ngram(&text), to_ngram(&pinyin), to_ngram(&content)],
                 )
             });
