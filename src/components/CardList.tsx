@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
+import { useFilteredItems } from "@/hooks/useFilteredItems";
 import { useDialogStore } from "@/stores/dialogStore";
 import { useToast } from "@/components/Toast";
 import { CardWithContext, ImgState } from "@/components/Card";
@@ -120,7 +121,6 @@ const VirtualCardRow = memo(function VirtualCardRow({
 });
 
 export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenisRef, showMoveToGroup = false }: { scrollRef?: React.RefObject<HTMLDivElement | null>; lenisRef?: React.RefObject<Lenis | null>; showMoveToGroup?: boolean }) {
-  const history = useAppStore((s) => s.history);
   const searchKeyword = useAppStore((s) => s.searchKeyword);
   const searchLoading = useAppStore((s) => s.searchLoading);
   const filterType = useAppStore((s) => s.filterType);
@@ -166,7 +166,6 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
     }).catch(() => { /* 命令不存在或无待打开文件时静默忽略 */ });
     return () => { unlisten.then(fn => fn()); };
   }, []);
-  const getFilteredItems = useAppStore((s) => s.getFilteredItems);
   const selectedIds = useAppStore((s) => s.selectedIds);
   const focusId = useAppStore((s) => s.focusId);
   const selectItem = useAppStore((s) => s.selectItem);
@@ -220,11 +219,10 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   }, [externalScrollRef]);
 
   // ── 统一使用 store 的过滤排序逻辑 ──
-  // 下面依赖数组里那堆值看着"多余"（函数体里确实没直接引用，exhaustive-deps
-  // 也就这么报），但它们是承重的：getFilteredItems() 是从 store 内部读状态的，
-  // 真按 lint 建议删掉，筛选条件变化时这个 memo 就永远不重算，列表不刷新。别删。
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const items = useMemo(() => getFilteredItems(), [history, searchKeyword, filterType, timeFilter, sourceFilter, groupFilter, selectedTagIds, getFilteredItems]);
+  // 依赖清单收在 useFilteredItems 里（它读 store 内部状态，漏一项就永远不重算）。
+  // 原先这里是本地 useMemo，依赖数组漏了 searchResults 且组件也没订阅它，
+  // 于是后端搜索结果到达后列表不刷新——「截图 OCR 文本可搜」把它暴露了出来。
+  const items = useFilteredItems();
 
   // ── 虚拟列表 ──
   // useFlushSync:false — 3.14.x 默认 true 会在滚动中 onChange 调 flushSync(rerender)，
