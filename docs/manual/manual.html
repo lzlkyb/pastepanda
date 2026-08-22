@@ -1,0 +1,1587 @@
+<!DOCTYPE html>
+<!-- 默认主题必须跟软件一致：theme.ts 的 DEFAULT_THEME 是 ocean（经典白）。
+     早先这里写 ocean-dark 是为了对齐当时深色的软件默认；软件默认已改白，这里同步跟上，
+     否则又会出现「官网首屏与装完打开不是一个颜色」的落差。 -->
+<html lang="zh-CN" data-theme="ocean">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PastePanda 完整使用手册 · 19 个功能分区图文详解</title>
+<link rel="stylesheet" href="shared.css" />
+<style>
+/* ===================== 布局 ===================== */
+.layout { display: flex; max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+nav.toc { position: sticky; top: 64px; align-self: flex-start; width: 232px; flex-shrink: 0; padding: 26px 14px 60px 0; height: calc(100vh - 64px); overflow-y: auto; }
+nav.toc a { display: block; padding: 7px 12px; border-radius: 8px; color: var(--text-secondary); text-decoration: none; font-size: 13px; font-weight: 500; transition: all .12s; border-left: 2px solid transparent; }
+nav.toc a:hover { background: var(--hover); color: var(--text-primary); }
+nav.toc a.active { color: var(--accent); background: var(--accent-light); border-left-color: var(--accent); font-weight: 600; }
+nav.toc .grp { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; padding: 16px 12px 4px; }
+section > .lede { color: var(--text-secondary); font-size: 14px; margin-bottom: 22px; max-width: 680px; }
+ul.feat { list-style: none; padding: 0; }
+ul.feat li { padding: 8px 0 8px 24px; position: relative; color: var(--text-secondary); }
+ul.feat li::before { content: "▹"; position: absolute; left: 4px; color: var(--accent); font-weight: 700; }
+.steps { counter-reset: s; list-style: none; padding: 0; margin: 14px 0; }
+.steps li { position: relative; padding: 10px 0 10px 42px; color: var(--text-secondary); border-left: 2px solid var(--border-color); margin-left: 14px; }
+.steps li::before { counter-increment: s; content: counter(s); position: absolute; left: -15px; top: 9px; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 700; box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 40%, transparent); }
+.callout { display: flex; gap: 12px; padding: 14px 16px; border-radius: 12px; margin: 16px 0; background: var(--accent-light); border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); }
+.callout .ic { font-size: 18px; flex-shrink: 0; }
+.callout .txt { font-size: 13px; color: var(--text-secondary); }
+.callout .txt b { color: var(--accent-strong); }
+.kbdtable { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+.kbdtable th, .kbdtable td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border-color); }
+.kbdtable th { color: var(--text-muted); font-weight: 600; font-size: 12px; }
+.kbdtable td { color: var(--text-secondary); }
+.kbdtable kbd { margin-right: 4px; }
+.demo { margin: 22px 0; }
+.demo-cap { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600; }
+.win { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 14px; box-shadow: var(--win-shadow); overflow: hidden; font-family: var(--font); }
+.win-bar { display: flex; align-items: center; gap: 7px; padding: 10px 14px; border-bottom: 1px solid var(--border-color); background: color-mix(in srgb, var(--section-bg) 60%, var(--card-bg)); }
+.win-dot { width: 11px; height: 11px; border-radius: 50%; }
+.win-dot.r { background: #FF5F57; } .win-dot.y { background: #FEBC2E; } .win-dot.g { background: #28C840; }
+.win-title { font-size: 12px; color: var(--text-muted); margin-left: 8px; font-weight: 500; }
+.timeline { border-left: 2px solid var(--border-color); margin-left: 8px; padding-left: 22px; }
+.tl-item { position: relative; padding: 6px 0 18px; }
+.tl-item::before { content:""; position: absolute; left: -29px; top: 11px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.tl-v { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.tl-d { font-size: 12px; color: var(--text-muted); }
+.tl-note { font-size: 13px; color: var(--text-secondary); margin-top: 3px; }
+.tag-pill { display: inline-block; font-size: 11px; padding: 2px 9px; border-radius: 99px; background: var(--accent-light); color: var(--accent-strong); font-weight: 600; margin: 2px 4px 2px 0; }
+/* ===================== 主窗口 · 顶栏 / 侧边栏 / 卡片 ===================== */
+.app { display: flex; min-height: 400px; }
+.sidebar { width: 168px; flex-shrink: 0; background: var(--sidebar-bg); border-right: 1px solid var(--border-color); padding: 12px 8px; overflow-y: auto; }
+.sb-grp { font-size: 10.5px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .4px; padding: 12px 10px 5px; }
+.sb-item { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 7px; font-size: 13px; color: var(--text-primary); cursor: default; position: relative; }
+.sb-item:hover { background: var(--hover); }
+.sb-item.on { background: var(--accent-light); color: var(--accent-strong); font-weight: 600; }
+.sb-item.on::before { content:""; position:absolute; left:2px; top:50%; transform:translateY(-50%); width:3px; height:16px; border-radius:2px; background: var(--accent); }
+.sb-ic { font-size: 15px; width: 16px; text-align: center; }
+.sb-cnt { margin-left: auto; font-size: 10px; color: var(--text-muted); background: var(--section-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 1px 7px; font-weight: 600; }
+.sb-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.sb-sep { height: 1px; background: var(--border-color); margin: 8px 4px; }
+.content { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--app-bg); }
+.tbr { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--border-color); flex-wrap: wrap; }
+.tbr .tleft { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.tbr .ticon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.tbr .tbrand { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 3px; }
+.tbr .tai { font-size: 9px; font-weight: 800; background: linear-gradient(135deg, var(--brand-from), var(--brand-to)); color: #fff; border-radius: 4px; padding: 1px 4px; line-height: 1; }
+.tbr .tupd { width: 8px; height: 8px; border-radius: 50%; background: #F59E0B; }
+.tbr .tright { display: flex; align-items: center; gap: 4px; }
+.tbtn { width: 30px; height: 30px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--text-secondary); display: grid; place-items: center; cursor: default; font-size: 14px; position: relative; }
+.tbtn:hover { background: var(--hover); color: var(--text-primary); }
+.tbtn.on { color: var(--accent); background: var(--accent-light); }
+.tbtn.violet { color: var(--accent-strong); }
+.tbtn .gd { position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: #22C55E; border: 1px solid var(--card-bg); }
+.tbr .tdiv { width: 1px; height: 18px; background: var(--border-color); margin: 0 2px; }
+.tboxpanel { position: absolute; right: 0; top: 36px; width: 232px; background: var(--glass-popover-bg); border: 1px solid var(--glass-popover-border); border-radius: 12px; box-shadow: var(--glass-popover-shadow); backdrop-filter: blur(12px); padding: 6px; z-index: 20; }
+.tboxsec { font-size: 10px; font-weight: 600; color: var(--text-muted); padding: 6px 10px 4px; }
+.tboxit { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border: none; border-radius: 8px; background: transparent; cursor: default; text-align: left; }
+.tboxit:hover { background: var(--hover); }
+.tboxtile { width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0; display: grid; place-items: center; font-size: 15px; }
+.tboxtile.cyan { background: rgba(6,182,212,.13); border: 1px solid rgba(6,182,212,.24); }
+.tboxtile.amber { background: rgba(245,158,11,.13); border: 1px solid rgba(245,158,11,.24); }
+.tboxtile.rose { background: rgba(244,63,94,.13); border: 1px solid rgba(244,63,94,.24); }
+.tboxtile.sky { background: rgba(14,165,233,.13); border: 1px solid rgba(14,165,233,.24); }
+.tboxtile.violet { background: rgba(139,92,246,.13); border: 1px solid rgba(139,92,246,.24); }
+.tboxtile.green { background: rgba(16,185,129,.13); border: 1px solid rgba(16,185,129,.24); }
+.tboxname { font-size: 12.5px; font-weight: 500; color: var(--text-primary); }
+.tboxdesc { font-size: 10.5px; color: var(--text-muted); margin-top: 1px; }
+.tboxdiv { height: 1px; background: var(--border-color); margin: 4px 0; }
+.tctrls { padding: 8px 12px 4px; display: flex; flex-direction: column; gap: 8px; }
+.tsearch { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-radius: 8px; background: var(--search-bg); border: 1px solid var(--search-border, var(--border-color)); box-shadow: 0 1px 4px rgba(0,0,0,.03); }
+.tsearch .st { flex: 1; font-size: 13px; color: var(--text-muted); }
+.tfiltrow { display: flex; align-items: center; gap: 6px; }
+.tfilt { display: flex; align-items: center; gap: 6px; padding: 0 10px; height: 30px; border-radius: 8px; background: var(--search-bg); border: 1px solid var(--search-border, var(--border-color)); font-size: 12px; color: var(--text-secondary); }
+.ttabs { display: flex; gap: 4px; padding: 8px 12px 0; flex-wrap: wrap; }
+.ttab { display: flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 9px; font-size: 12px; font-weight: 500; color: var(--text-secondary); background: var(--seg-bg); cursor: default; }
+.ttab.on { background: var(--seg-active-bg); color: var(--text-primary); font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+.ttab .tc { font-size: 10px; background: var(--section-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 0 6px; color: var(--text-muted); }
+.ttab.on .tc { background: var(--accent-light); color: var(--accent-strong); border-color: var(--accent); }
+.ttags { display: flex; align-items: center; gap: 6px; padding: 8px 12px 0; flex-wrap: wrap; }
+.ttag { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 3px 8px; border-radius: 99px; background: var(--section-bg); border: 1px solid var(--border-color); color: var(--text-secondary); }
+.ttag.add { border-style: dashed; color: var(--text-muted); }
+.cards { padding: 10px 12px 20px; display: flex; flex-direction: column; gap: 10px; }
+.card { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 16px; background: var(--card-bg); border: 1px solid var(--border-color); box-shadow: 0 4px 12px rgba(0,0,0,.08); height: 72px; }
+.card.on { background: var(--accent-light); border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent), 0 4px 16px color-mix(in srgb, var(--accent) 12%, transparent); }
+.c-ic { width: 42px; height: 42px; min-width: 42px; border-radius: 12px; display: grid; place-items: center; font-size: 18px; }
+.c-ic.blue { background: rgba(59,130,246,.12); border: 1px solid rgba(59,130,246,.22); }
+.c-ic.pink { background: rgba(236,72,153,.12); border: 1px solid rgba(236,72,153,.22); }
+.c-ic.green { background: rgba(16,185,129,.12); border: 1px solid rgba(16,185,129,.22); }
+.c-ic.purple { background: rgba(139,92,246,.12); border: 1px solid rgba(139,92,246,.22); }
+.c-ic.amber { background: rgba(245,158,11,.14); border: 1px solid rgba(245,158,11,.24); }
+.c-body { flex: 1; min-width: 0; }
+.c-title { font-size: 13px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.c-sub { font-size: 11px; color: var(--text-muted); margin-top: 3px; display: flex; align-items: center; gap: 6px; }
+.c-pin { display: inline-flex; align-items: center; gap: 2px; height: 16px; padding: 0 6px; border-radius: 4px; font-size: 10px; font-weight: 600; background: var(--accent-light); color: var(--accent-strong); }
+.c-time { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+/* ===================== 右键菜单 / 托盘 ===================== */
+.menu { width: 220px; background: var(--glass-popover-bg); border: 1px solid var(--glass-popover-border); border-radius: 12px; box-shadow: var(--glass-popover-shadow); backdrop-filter: blur(16px); padding: 6px; }
+.mi { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; font-size: 13px; color: var(--text-primary); cursor: default; }
+.mi:hover { background: var(--hover); }
+.mi.primary { color: var(--accent-strong); font-weight: 600; background: var(--accent-light); }
+.mi.danger { color: var(--danger, #D82525); }
+.mi .mi-ic { width: 16px; text-align: center; font-size: 14px; color: var(--text-muted); }
+.mi.primary .mi-ic, .mi.danger .mi-ic { color: inherit; }
+.mi .mi-arrow { margin-left: auto; color: var(--text-muted); font-size: 11px; }
+.msep { height: 1px; background: var(--border-color); margin: 4px 6px; }
+.msub { padding: 4px 10px 6px 32px; font-size: 12px; color: var(--text-secondary); cursor: default; border-radius: 8px; }
+.msub:hover { background: var(--hover); }
+.tray { width: 250px; background: var(--glass-popover-bg); border: 1px solid var(--glass-popover-border); border-radius: 14px; box-shadow: var(--glass-popover-shadow); backdrop-filter: blur(16px); overflow: hidden; }
+.tray-head { display: flex; align-items: center; gap: 10px; padding: 14px; border-bottom: 1px solid var(--border-color); }
+.tray-ic { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: linear-gradient(135deg, var(--accent), #6D5CF0); color: #fff; font-size: 18px; }
+.tray-stat { font-size: 11px; color: var(--text-muted); }
+.tray-item { display: flex; align-items: center; gap: 10px; padding: 9px 14px; font-size: 13px; color: var(--text-primary); cursor: default; }
+.tray-item:hover { background: var(--hover); }
+.tray-item .ti-hint { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+.tray-item.danger { color: var(--danger, #D82525); }
+/* ===================== 截图工具栏 ===================== */
+/* .shot 是「被截的那块屏幕」—— 用户自己的桌面，长什么样与 PastePanda 无关，
+   所以跟随主题。真正恒为深色的是浮在它上面的东西：.annot-toolbar（screenshot.css:132
+   写死 indigo 玻璃）、.ocr-drawer（宿主 screenshot.html，screenshot-main.tsx:28 写死
+   midnight）、.sel-size / .shot-hint（screenshot.css:62/342 的固定深色）—— 那几个不动。 */
+.shot { position: relative; background: var(--section-bg); padding: 0; min-height: 420px; overflow: hidden; }
+.shot::after { content:""; position:absolute; inset:0; background: radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 40%), radial-gradient(circle at 70% 70%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 40%); }
+.sel-rect { position: absolute; border: 3px solid #3B9EFF; box-shadow: 0 0 0 1px rgba(0,0,0,.55), 0 0 8px rgba(59,158,255,.4); }
+.sel-size { position: absolute; display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 7px; background: var(--glass-popover-bg); color: var(--text-primary); border: 1px solid var(--glass-popover-border); box-shadow: var(--glass-popover-shadow); font-size: 12px; font-variant-numeric: tabular-nums; }
+.sel-size .hint { color: var(--text-muted); font-size: 11px; }
+.tool.cancel { color: var(--text-muted); }
+.shot-hint { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 7px 14px; border-radius: 10px; background: var(--glass-popover-bg); border: 1px solid var(--glass-popover-border); box-shadow: var(--glass-popover-shadow); color: var(--text-primary); font-size: 12px; z-index: 60; white-space: nowrap; }
+.shot-hint .hk { color: var(--accent-strong); font-weight: 600; } .shot-hint .sep { width: 1px; height: 12px; background: var(--border-color); }
+/* ===================== 设置面板（真实：4 Tab） ===================== */
+.set-app { display: flex; min-height: 420px; }
+.set-side { width: 130px; flex-shrink: 0; background: var(--sidebar-bg); border-right: 1px solid var(--border-color); padding: 10px 6px; display: flex; flex-direction: column; gap: 2px; }
+.set-tab { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 8px; font-size: 13px; color: var(--text-primary); cursor: default; }
+.set-tab.on { background: var(--accent-light); color: var(--accent-strong); font-weight: 600; }
+.set-tab .dot { margin-left: auto; width: 7px; height: 7px; border-radius: 50%; background: #F59E0B; }
+.set-main { flex: 1; padding: 18px 22px; overflow-y: auto; background: var(--app-bg); }
+.set-sec { margin-bottom: 22px; }
+.set-sec > h4 { font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
+.set-row { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: 10px; background: var(--card-bg); border: 1px solid var(--border-color); margin-bottom: 8px; }
+.set-row .lbl { flex: 1; }
+.set-row .lbl .t { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.set-row .lbl .d { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+.toggle { width: 40px; height: 23px; border-radius: 99px; background: var(--border-color); position: relative; flex-shrink: 0; transition: background .2s; }
+.toggle.on { background: var(--accent); }
+.toggle::after { content:""; position: absolute; top: 2px; left: 2px; width: 19px; height: 19px; border-radius: 50%; background: #fff; transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.toggle.on::after { transform: translateX(17px); }
+.seg { display: flex; background: var(--seg-bg); border-radius: 9px; padding: 3px; gap: 2px; flex-wrap: wrap; }
+.seg button { border: none; background: transparent; padding: 5px 12px; border-radius: 7px; font-size: 12px; color: var(--text-secondary); cursor: default; font-family: var(--font); font-weight: 500; }
+.seg button.on { background: var(--seg-active-bg); color: var(--text-primary); font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+.field { flex: 1; height: 34px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--input-bg); color: var(--text-primary); font-size: 13px; font-family: var(--mono); display: flex; align-items: center; }
+.tgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.tchip { padding: 9px; border-radius: 10px; border: 1px solid var(--border-color); background: var(--card-bg); font-size: 13px; font-weight: 500; color: var(--text-primary); cursor: default; text-align: center; }
+.tchip.on { border-color: var(--accent); background: var(--accent-light); color: var(--accent-strong); font-weight: 600; }
+/* ===================== 片段库 ===================== */
+.snip { width: 360px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 14px; box-shadow: var(--win-shadow); overflow: hidden; }
+.snip-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border-color); }
+.snip-head .h { font-size: 15px; font-weight: 700; }
+.snip-head .c { font-size: 11px; color: var(--text-muted); background: var(--section-bg); border-radius: 8px; padding: 1px 7px; }
+.snip-head .sp { flex: 1; }
+.snip-btn { display: inline-flex; align-items: center; gap: 4px; padding: 5px 9px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--card-bg); font-size: 12px; color: var(--text-secondary); cursor: default; }
+.snip-btn.p { background: var(--accent); color: #fff; border-color: var(--accent); }
+.snip-search { margin: 8px 14px; height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--input-bg); color: var(--text-muted); font-size: 12px; display: flex; align-items: center; }
+.snip-tags { display: flex; gap: 6px; padding: 0 14px 8px; flex-wrap: wrap; }
+.snip-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 3px 9px; border-radius: 99px; background: var(--section-bg); border: 1px solid var(--border-color); color: var(--text-secondary); }
+.snip-tag.on { background: var(--accent-light); color: var(--accent-strong); border-color: var(--accent); font-weight: 600; }
+.snip-tag .sc { font-size: 10px; color: var(--text-muted); }
+.snip-list { padding: 0 14px 14px; display: flex; flex-direction: column; gap: 6px; }
+.snip-card { border: 1px solid var(--border-color); border-radius: 10px; padding: 9px 11px; background: var(--card-bg); }
+.snip-card .sh { display: flex; align-items: center; gap: 6px; }
+.snip-card .st { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.snip-card .tag { font-size: 10px; padding: 1px 6px; border-radius: 5px; font-weight: 600; }
+.tag.api { background: rgba(2,132,199,.12); color: var(--accent); }
+.tag.sql { background: rgba(16,185,129,.14); color: var(--green,#15803D); }
+.tag.tpl { background: rgba(168,85,247,.14); color: #A855F7; }
+.snip-card .sb { font-size: 11px; color: var(--text-muted); margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.snip-card .sf { display: flex; align-items: center; justify-content: space-between; margin-top: 7px; font-size: 10px; color: var(--text-muted); }
+.snip-card .sact { display: flex; gap: 6px; }
+.sact-b { width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); display: grid; place-items: center; color: var(--text-secondary); font-size: 12px; cursor: default; }
+.sact-b.c { color: var(--accent-strong); } .sact-b.d { color: var(--danger,#D82525); }
+/* ===================== 变换枢纽 / AI ===================== */
+.hub { width: 380px; background: var(--glass-popover-bg); border: 1px solid var(--glass-popover-border); border-radius: 14px; box-shadow: var(--glass-popover-shadow); backdrop-filter: blur(16px); padding: 12px; }
+.hub-head { font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.hub-grp { font-size: 11px; font-weight: 700; color: var(--text-muted); margin: 8px 0 4px; }
+.hub-it { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; cursor: default; }
+.hub-it:hover { background: var(--hover); }
+.hub-it .hi { width: 26px; height: 26px; border-radius: 7px; background: var(--section-bg); display: grid; place-items: center; font-size: 13px; color: var(--text-secondary); }
+.hub-it .hn { font-size: 13px; color: var(--text-primary); font-weight: 500; }
+.hub-it .hd { font-size: 10px; color: var(--text-muted); }
+.hub-it.match { background: var(--accent-light); }
+.hub-it.match .hn { color: var(--accent-strong); font-weight: 600; }
+.ai-hero { padding: 16px; background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent); border-bottom: 1px solid var(--border-color); }
+.ai-hero .ah-top { display: flex; align-items: center; gap: 8px; }
+.ai-hero .ah-ic { width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(135deg, var(--brand-from), var(--brand-to)); color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 13px; }
+.ai-hero .ah-t { font-size: 15px; font-weight: 700; }
+.ai-hero .ah-s { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.ai-hero .ah-actions { display: flex; gap: 8px; margin-top: 12px; }
+.ai-acc { border-top: 1px solid var(--border-color); }
+.ai-sec { padding: 12px 16px; }
+.ai-sec .as-h { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--text-primary); cursor: default; }
+.ai-sec .as-s { font-size: 11px; color: var(--text-muted); margin-left: 4px; }
+.ai-warn { display: flex; gap: 8px; font-size: 11px; color: var(--text-secondary); background: color-mix(in srgb, #F59E0B 12%, transparent); border: 1px solid color-mix(in srgb, #F59E0B 35%, transparent); border-radius: 8px; padding: 8px 10px; margin-top: 8px; }
+.ai-prov { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.ai-pchip { flex: 1; min-width: 90px; padding: 8px; border: 1px solid var(--border-color); border-radius: 9px; font-size: 12px; text-align: center; color: var(--text-primary); cursor: default; }
+.ai-pchip.on { border-color: var(--accent); background: var(--accent-light); color: var(--accent-strong); font-weight: 600; }
+/* ===================== 通用对话框小样 / 学习者 / 动作链 / 命令栏 ===================== */
+.dlg { width: 340px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 14px; box-shadow: var(--win-shadow); overflow: hidden; }
+.dlg-head { display: flex; align-items: center; gap: 8px; padding: 13px 16px; border-bottom: 1px solid var(--border-color); font-size: 14px; font-weight: 700; }
+.dlg-body { padding: 14px 16px; }
+.dlg-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; font-size: 13px; color: var(--text-secondary); border-bottom: 1px solid var(--border-color); }
+.dlg-row:last-child { border-bottom: none; }
+.dlg-foot { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border-color); }
+.btn { flex: 1; padding: 9px; border-radius: 9px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-primary); font-size: 13px; font-weight: 500; cursor: default; font-family: var(--font); }
+.btn.p { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn.d { color: var(--danger,#D82525); border-color: color-mix(in srgb, var(--danger,#D82525) 35%, transparent); }
+.qr { width: 120px; height: 120px; margin: 8px auto; background: repeating-linear-gradient(0deg,#0F172A 0 6px,transparent 6px 12px), repeating-linear-gradient(90deg,#0F172A 0 6px,transparent 6px 12px); background-size: 12px 12px; border-radius: 8px; position: relative; }
+.qr::after { content:""; position:absolute; inset: 18px; background: var(--card-bg); border-radius: 4px; }
+.qr::before { content:""; position:absolute; left: 30px; top: 30px; width: 60px; height: 60px; background: #0F172A; z-index: 1; border-radius: 3px; }
+.profile { width: 380px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 14px; box-shadow: var(--win-shadow); overflow: hidden; }
+.pro-head { padding: 14px 16px; border-bottom: 1px solid var(--border-color); }
+.pro-head .ph-t { font-size: 15px; font-weight: 700; }
+.pro-head .ph-s { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.pro-radar { width: 130px; height: 130px; margin: 8px auto; border-radius: 50%; border: 2px solid var(--accent); position: relative; background: radial-gradient(circle, var(--accent-light) 0%, transparent 70%); }
+.pro-radar .ra { position: absolute; font-size: 10px; color: var(--text-muted); }
+.pro-radar::before { content:""; position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; transform: translate(-50%,-50%); border-radius: 50%; background: var(--accent); }
+.ach { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 16px; }
+.ach-it { display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 5px 9px; border-radius: 8px; background: var(--section-bg); border: 1px solid var(--border-color); color: var(--text-secondary); }
+.ach-it.lock { opacity: .5; }
+.chain { width: 340px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 14px; box-shadow: var(--win-shadow); overflow: hidden; }
+.chain-step { display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-bottom: 1px solid var(--border-color); font-size: 13px; }
+.chain-step .cs-n { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+.chain-step .cs-r { margin-left: auto; font-size: 10px; padding: 1px 7px; border-radius: 6px; background: var(--section-bg); color: var(--text-muted); }
+.chain-step .cs-r.net { color: var(--accent-strong); background: var(--accent-light); }
+.nlcmd { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; box-shadow: var(--win-shadow); width: 440px; max-width: 100%; }
+.nlcmd .nc-ic { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(135deg, var(--brand-from), var(--brand-to)); color: #fff; display: grid; place-items: center; font-size: 12px; font-weight: 800; flex-shrink: 0; }
+.nlcmd .nc-in { flex: 1; font-size: 13px; color: var(--text-primary); }
+.nlcmd .nc-ph { color: var(--text-muted); }
+.nlcmd .nc-sug { font-size: 11px; color: var(--text-muted); }
+.twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
+@media (max-width: 860px) { .twocol { grid-template-columns: 1fr; } nav.toc { display: none; } .tboxpanel { right: auto; left: 0; }}
+@media (max-width: 860px) {
+  /* 手册部分：侧边目录改成顶部横向滚动的芯片条，不直接隐掉
+     —— 手册有二十多节，没目录就只能硬滚。 */
+  .layout { flex-direction: column; padding: 0 16px; }
+  nav.toc { position: static; width: auto; height: auto; padding: 12px 0 4px; display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; border-bottom: 1px solid var(--border-color); }
+  nav.toc a { flex: 0 0 auto; border-left: none; border-radius: 99px; padding: 6px 13px; white-space: nowrap; }
+  nav.toc a.active { border-left: none; }
+  nav.toc .grp { display: none; }
+  /* 表格在窄屏上必须自己滚，不能顶得整页横滚 */
+  .kbdtable { display: block; overflow-x: auto; white-space: nowrap; }}
+.tbtn .lc-ic { width: 15px; height: 15px; }
+.c-ic .lc-ic { width: 18px; height: 18px; }
+.c-pin .lc-ic { width: 7px; height: 7px; }
+
+/* ===================== 任务索引层（PHASE-B） ===================== */
+.taskix { margin-bottom: 44px; }
+.tk-filter { display: flex; gap: 7px; flex-wrap: wrap; margin: 4px 0 16px; }
+.tk-chip { font-family: inherit; font-size: 12.5px; font-weight: 600; padding: 6px 14px; border-radius: 99px;
+  border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-secondary);
+  cursor: pointer; transition: all .15s; }
+.tk-chip:hover { border-color: var(--accent); color: var(--accent); }
+.tk-chip.on { background: var(--accent-light); border-color: var(--accent); color: var(--accent-strong); }
+.tk-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.tk { display: flex; flex-direction: column; gap: 4px; padding: 13px 15px; border-radius: 12px;
+  background: var(--card-bg); border: 1px solid var(--border-color); text-decoration: none;
+  transition: all .15s; }
+.tk:hover { border-color: var(--accent); transform: translateY(-1px);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 14%, transparent); }
+.tk-t { font-size: 14px; font-weight: 650; color: var(--text-primary); line-height: 1.45; }
+/* 落点说明给的是功能名：用户点几次就学会「这事归在哪」，下次能直接用目录。 */
+.tk-w { font-size: 11.5px; color: var(--text-muted); }
+.tk[hidden] { display: none; }
+
+/* ===================== 吸顶搜索条（PHASE-B） =====================
+ * top 值是 .top 顶栏的**实测**高度 61px（padding 12+12 + 最高子元素 .cta 36 + 1px 下边框），
+ * 不是照 logo 34 算出来的 58 —— 差那 3px 会让搜索条顶部被压到顶栏底下。
+ * 改顶栏尺寸时这里、nav.toc 的 top(114=61+53)、section 的 scroll-margin-top 三处要一起改。 */
+.mansearch { position: sticky; top: 61px; z-index: 190; display: flex; align-items: center; gap: 10px;
+  padding: 9px 28px; background: color-mix(in srgb, var(--card-bg) 88%, transparent);
+  backdrop-filter: blur(14px) saturate(1.2); border-bottom: 1px solid var(--border-color); }
+.ms-in { position: relative; display: flex; align-items: center; flex: 0 1 420px; }
+.ms-ic { position: absolute; left: 11px; font-size: 12px; opacity: .7; pointer-events: none; }
+#mq { width: 100%; height: 34px; padding: 0 30px 0 32px; border-radius: 9px; font-family: inherit;
+  font-size: 13px; color: var(--text-primary); background: var(--input-bg);
+  border: 1px solid var(--border-color); }
+#mq:focus { outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+#mq::-webkit-search-cancel-button { display: none; }
+.ms-clear { position: absolute; right: 6px; width: 22px; height: 22px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--text-muted); cursor: pointer; font-size: 11px; font-family: inherit; }
+.ms-clear:hover { background: var(--hover); color: var(--text-primary); }
+.ms-count { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.ms-spacer { flex: 1; }
+.ms-btn { font-family: inherit; font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 8px;
+  border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-secondary); cursor: pointer; }
+.ms-btn:hover { border-color: var(--accent); color: var(--accent); }
+mark.hit { background: color-mix(in srgb, var(--accent) 30%, transparent); color: var(--text-primary);
+  border-radius: 3px; padding: 0 1px; }
+
+/* 吸顶多了一层，目录与锚点落点要一起下移，否则标题被压在搜索条底下 */
+nav.toc { top: 114px; height: calc(100vh - 114px); }
+section { scroll-margin-top: 124px; }
+main h3[id] { scroll-margin-top: 124px; }
+section[hidden] { display: none; }
+
+/* ===================== 分区折叠（PHASE-B） ===================== */
+details.secfold { margin-top: 14px; }
+details.secfold > summary { display: inline-flex; align-items: center; gap: 9px; cursor: pointer;
+  padding: 7px 14px 7px 12px; border-radius: 10px; background: var(--section-bg);
+  border: 1px solid var(--border-color); list-style: none; user-select: none;
+  font-size: 12.5px; transition: all .15s; }
+details.secfold > summary::-webkit-details-marker { display: none; }
+details.secfold > summary::before { content: "▸"; color: var(--accent); font-size: 11px;
+  transition: transform .15s; }
+details.secfold[open] > summary::before { transform: rotate(90deg); }
+details.secfold > summary:hover { border-color: var(--accent); }
+details.secfold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sf-a { font-weight: 650; color: var(--text-primary); }
+.sf-n { color: var(--text-muted); }
+details.secfold[open] > summary .sf-a::after { content: "（点此收起）"; font-weight: 500;
+  color: var(--text-muted); font-size: 11.5px; }
+.sf-body { padding-top: 4px; }
+/* 收起时 h2 与下一个分区离得太近，补一点呼吸 */
+details.secfold:not([open]) { margin-bottom: 4px; }
+
+@media (max-width: 980px) {
+  .tk-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 860px) {
+  /* 目录在这个断点变成横向条、不再吸顶，搜索条也就没必要给它让位 */
+  nav.toc { top: 0; height: auto; }
+  /* ❗ align-self: stretch 是修 bug，不是调样式（拆分前就有）：
+   *   基样式给了 nav.toc `align-self: flex-start`，到这个断点 .layout 变成纵向 flex，
+   *   flex-start 在纵向容器里管的是**横轴**，于是目录按 max-content 收缩 —— 二十个
+   *   胶囊排成一行接近 1900px 宽，`overflow-x: auto` 因为盒子从没被约束过而永不生效，
+   *   整个手册页在手机上出横向滚动条。stretch 让它先填满列宽，横向滚动才接得上。 */
+  nav.toc { align-self: stretch; min-width: 0; }
+  .mansearch { padding: 9px 16px; flex-wrap: wrap; }
+  .ms-in { flex: 1 1 100%; }
+  .ms-spacer { display: none; }
+}
+@media (max-width: 560px) {
+  .ms-count { display: none; }
+}
+</style>
+</head>
+<body>
+<!-- 场景氛围层（对齐软件 SkinScene）：3 道光柱 + 8 个气泡。
+     纯 CSS 动画，无 JS；z-index:-1 衬在正文之后。aria-hidden 是因为它只是氛围，
+     不应该被屏幕阅读器拿到。 -->
+<div class="ambience" aria-hidden="true">
+  <span class="ray"></span><span class="ray"></span><span class="ray"></span>
+  <span class="bub"></span><span class="bub"></span><span class="bub"></span><span class="bub"></span>
+  <span class="bub"></span><span class="bub"></span><span class="bub"></span><span class="bub"></span>
+</div>
+
+<header class="top">
+  <div class="logo">🐼</div>
+  <div class="brand">PastePanda <span class="ver">v6.18.3</span></div>
+  <nav>
+    <a href="index.html">← 产品主页</a>
+    <a href="#start">快速开始</a>
+    <a href="#hotkeys">快捷键</a>
+    <a href="#screenshot">截图标注</a>
+    <a href="#ai">AI 能力</a>
+    <a href="#changelog">更新记录</a>
+  </nav>
+  <div class="spacer"></div>
+  <select class="themeToggle" id="themeBtn" onchange="setTheme(this.value)" aria-label="切换主题">
+    <option value="ocean">🎨 经典白</option>
+    <option value="ocean-dark">🌊 深海</option>
+    <option value="midnight">🌙 午夜</option>
+    <option value="forest">🌿 森林</option>
+    <option value="blossom">🌸 美乐蒂</option>
+    <option value="dawn">🌅 晨曦</option>
+  </select>
+  <a class="cta" href="index.html#download">⬇ 免费下载</a>
+</header>
+
+<!-- 吸顶搜索条（PHASE-B 新增）：纯前端、零依赖。索引 = 分区标题 + lede
+     + 各小节标题 + 任务卡文案，输入即过滤，命中分区自动展开并高亮。 -->
+<div class="mansearch">
+  <div class="ms-in">
+    <span class="ms-ic" aria-hidden="true">🔍</span>
+    <input id="mq" type="search" autocomplete="off" spellcheck="false"
+           placeholder="搜功能或任务，如 OCR、粘贴栈、正则、打码…" aria-label="在手册内搜索" />
+    <button type="button" class="ms-clear" id="mqClear" hidden aria-label="清空搜索">✕</button>
+  </div>
+  <span class="ms-count" id="mqCount" aria-live="polite"></span>
+  <span class="ms-spacer"></span>
+  <button type="button" class="ms-btn" id="foldAll">全部收起</button>
+  <button type="button" class="ms-btn" id="unfoldAll">全部展开</button>
+</div>
+<div class="layout">
+<nav class="toc" id="toc">
+  <div class="grp">按任务查</div>
+  <a href="#tasks">我想做的事</a>
+  <div class="grp">入门</div>
+  <a href="#start">快速开始</a>
+  <a href="#hotkeys">快捷键一览</a>
+  <a href="#tour">主界面导览</a>
+  <div class="grp">核心功能</div>
+  <a href="#clipboard">剪贴板管理</a>
+  <a href="#paste">高效粘贴</a>
+  <a href="#transform">变换与正则</a>
+  <a href="#screenshot">截图标注全家桶</a>
+  <a href="#snippets">片段库</a>
+  <a href="#dev">开发者工具箱</a>
+  <a href="#editor">编辑与预览</a>
+  <div class="grp">进阶</div>
+  <a href="#ai">AI 能力</a>
+  <a href="#menu">右键菜单与托盘</a>
+  <a href="#sync">系统同步</a>
+  <a href="#settings">设置与个性化</a>
+  <div class="grp">智能</div>
+  <a href="#smart">学习者与自进化</a>
+  <a href="#chain">动作链</a>
+  <a href="#report">周报 / 里程碑 / 成就</a>
+  <a href="#nlcmd">智能命令栏</a>
+  <div class="grp">其他</div>
+  <a href="#changelog">更新记录</a>
+</nav>
+
+<main>
+<!-- ============ 任务索引（PHASE-B 新增） ============
+     替代原先「从宣传首屏滚 5 屏才够到正文」的落点。措辞用用户的话（「把截图里的
+     文字变成可编辑文本」），不用功能名（「OCR」）—— 用户带着任务来，不该先猜它
+     归在哪个功能名下。落点是小节级锚点，不是分区顶部。
+     人物角色退化成卡片上的筛选标签，不单独开轨：同一个功能在多个角色下重复列一遍
+     只会变长，而且程序员做设计类任务时会找不到路。 -->
+<section id="tasks" class="taskix">
+  <h2>我想做的事</h2>
+  <p class="lede">挑一条直接跳到对应说明。不确定某件事归在哪个功能名下，就从这里进。</p>
+  <div class="tk-filter" role="group" aria-label="按角色筛选任务">
+      <button type="button" class="tk-chip on" data-role="all">全部</button>
+      <button type="button" class="tk-chip" data-role="dev">程序员</button>
+      <button type="button" class="tk-chip" data-role="design">设计师</button>
+      <button type="button" class="tk-chip" data-role="ops">产品运营</button>
+      <button type="button" class="tk-chip" data-role="office">日常办公</button>
+  </div>
+  <div class="tk-grid" id="tkGrid">
+    <a class="tk" href="#shot-ocr" data-roles="dev design ops office">
+      <span class="tk-t">把截图里的文字变成可编辑文本</span>
+      <span class="tk-w">截图标注 · 本地 OCR</span>
+    </a>
+    <a class="tk" href="#clipboard" data-roles="dev design ops office">
+      <span class="tk-t">刚复制的东西找不到了</span>
+      <span class="tk-w">剪贴板管理 · 搜索与拼音首字母</span>
+    </a>
+    <a class="tk" href="#paste-stack" data-roles="ops office">
+      <span class="tk-t">连续填表，全程不碰鼠标</span>
+      <span class="tk-w">高效粘贴 · 粘贴栈</span>
+    </a>
+    <a class="tk" href="#paste-seq" data-roles="dev ops office">
+      <span class="tk-t">把 Excel 一列拆成多次粘贴</span>
+      <span class="tk-w">高效粘贴 · 依次粘贴与表格拆行</span>
+    </a>
+    <a class="tk" href="#transform" data-roles="dev">
+      <span class="tk-t">把 JSON 格式化后再贴出去</span>
+      <span class="tk-w">变换与正则 · 变换枢纽</span>
+    </a>
+    <a class="tk" href="#dev" data-roles="dev">
+      <span class="tk-t">两份配置对比差异</span>
+      <span class="tk-w">开发者工具箱 · 配置对比</span>
+    </a>
+    <a class="tk" href="#shot-pin" data-roles="design">
+      <span class="tk-t">把设计稿钉在屏幕上对照</span>
+      <span class="tk-w">截图标注 · 贴图置顶</span>
+    </a>
+    <a class="tk" href="#shot-annot" data-roles="design ops office">
+      <span class="tk-t">给截图打码再发出去</span>
+      <span class="tk-w">截图标注 · 马赛克与模糊</span>
+    </a>
+    <a class="tk" href="#ai" data-roles="dev">
+      <span class="tk-t">让 AI 解释这段报错</span>
+      <span class="tk-w">AI 能力 · 解释与改写</span>
+    </a>
+    <a class="tk" href="#snippets" data-roles="ops office">
+      <span class="tk-t">常用话术模板存起来</span>
+      <span class="tk-w">片段库</span>
+    </a>
+    <a class="tk" href="#dev" data-roles="dev ops">
+      <span class="tk-t">批量提取链接 / 邮箱 / 电话</span>
+      <span class="tk-w">开发者工具箱 · 内容提取</span>
+    </a>
+    <a class="tk" href="#clip-ops" data-roles="dev design ops office">
+      <span class="tk-t">不想让某条被自动清理掉</span>
+      <span class="tk-w">剪贴板管理 · 置顶（收藏）</span>
+    </a>
+  </div>
+  <p class="note" id="tkEmpty" hidden>这个角色下暂无任务卡，换一个看看，或直接用上方搜索。</p>
+</section>
+
+<!-- ============ 快速开始 ============ -->
+<section id="start">
+  <h2>快速开始</h2>
+  <p class="lede">PastePanda 是一个常驻系统的剪贴板增强工具：自动记录你复制过的所有内容，并叠加截图标注、OCR、开发者转换、AI、跨设备同步等能力。复制即记录，粘贴即执行。</p>
+  <h3>第一步 · 启动与常驻</h3>
+  <ul class="feat">
+    <li>安装后启动 <b>PastePanda</b>，它最小化到系统托盘（任务栏右下角），不占任务栏空间，可随系统开机自启（设置里可关）。</li>
+    <li>点击托盘图标或按 <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd> 打开主窗口；主窗口关闭后程序继续在后台记录剪贴板。</li>
+    <li>首次使用建议先确认「设置」里的<b>全局热键</b>（见快捷键一览），之后全程用键盘操作，几乎不用碰鼠标。</li>
+  </ul>
+  <div class="callout"><div class="ic">💡</div><div class="txt"><b>隐私优先：</b>所有内容默认只存在你这台电脑上。OCR 用本地 PP-OCRv6 引擎离线识别，<b>AI 默认关闭</b>——开启前不会把任何内容发往外部；只有你主动对某条内容执行 AI 动作时，那一条才会被发送到所选服务商，且密钥/凭证类内容会先拦下来请你确认。</div></div>
+  <h3>第二步 · 复制点什么</h3>
+  <p>像平常一样复制文本、链接、图片、文件、代码……PastePanda 会在后台自动归档。打开主窗口，刚复制的内容就在最上方。</p>
+  <h3>第三步 · 粘贴它</h3>
+  <ol class="steps">
+    <li>主窗口里 <b>单击</b> 任意一条即可复制回剪贴板，再 <kbd>Ctrl</kbd>+<kbd>V</kbd> 粘贴。</li>
+    <li>或 <b>双击</b> 条目，多数类型会直接粘贴到上一次聚焦的应用（复制即执行）。</li>
+    <li>挑着粘贴多条？用 <kbd>Alt</kbd>+<kbd>V</kbd> 唤起<b>快捷粘贴面板</b>，方向键浏览、回车粘贴。</li>
+  </ol>
+</section>
+
+<!-- ============ 快捷键一览 ============ -->
+<section id="hotkeys">
+  <h2>快捷键一览</h2>
+  <p class="lede">以下为出厂默认热键（唯一真值来源是 <code>src-tauri/src/hotkey_manager.rs</code> 的 <code>Default</code> 实现），均可在「设置 → 通用 → 快捷键」中自定义。全局热键即使主窗口关闭也生效。</p>
+    <details class="secfold">
+    <summary><span class="sf-a">展开详解</span><span class="sf-n">2 张表 · 1 小节</span></summary>
+    <div class="sf-body">
+<table class="kbdtable">
+    <thead><tr><th>功能</th><th>默认热键</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>唤出窗口</td><td><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>V</kbd></td><td>显示 / 聚焦主窗口</td></tr>
+      <tr><td>依次粘贴</td><td><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>Q</kbd></td><td>按顺序逐条粘贴多条文本（工具箱同名入口）</td></tr>
+      <tr><td>收集模式开关</td><td><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>K</kbd></td><td>开启 / 暂停栈模式，开启后 <kbd>Ctrl</kbd>+<kbd>C</kbd> 逐条收集</td></tr>
+      <tr><td>粘贴最近收集</td><td><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>P</kbd></td><td>逐条 / 全部粘贴收集到的内容</td></tr>
+      <tr><td>快捷粘贴面板</td><td><kbd>Alt</kbd><kbd>V</kbd></td><td>类 Win+V 的历史粘贴面板</td></tr>
+      <tr><td>截图标注</td><td><kbd>Ctrl</kbd><kbd>Q</kbd></td><td>进入截图（默认 2 键，避开 QQ/微信 占用；可改回 Ctrl+Alt+A）</td></tr>
+      <tr><td>全选</td><td><kbd>Ctrl</kbd><kbd>A</kbd></td><td>主窗口内全选记录</td></tr>
+    </tbody>
+  </table>
+  <h3>窗口内快捷键</h3>
+  <p class="note">主窗口打开时生效（「设置 → 帮助」速查表逐字）：</p>
+  <table class="kbdtable">
+    <thead><tr><th>操作</th><th>按键</th></tr></thead>
+    <tbody>
+      <tr><td>上下导航 / 跳到顶底</td><td><kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Home</kbd> <kbd>End</kbd></td></tr>
+      <tr><td>粘贴选中记录 / 快速预览 / 删除</td><td><kbd>Enter</kbd> / <kbd>Space</kbd> / <kbd>Delete</kbd></td></tr>
+      <tr><td>置顶/取消置顶 / 撤销删除</td><td><kbd>Ctrl</kbd>+<kbd>D</kbd> / <kbd>Ctrl</kbd>+<kbd>Z</kbd></td></tr>
+      <tr><td>多选 / 范围选择 / 打开设置</td><td><kbd>Ctrl</kbd>+点击 / <kbd>Shift</kbd>+点击 / <kbd>Ctrl</kbd>+<kbd>S</kbd></td></tr>
+      <tr><td>索引粘贴第 N 条</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>1</kbd>~<kbd>9</kbd></td></tr>
+      <tr><td>分层关闭 / 隐藏窗口</td><td><kbd>Esc</kbd></td></tr>
+    </tbody>
+  </table>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 主界面导览 ============ -->
+<section id="tour">
+  <h2>主界面导览</h2>
+  <p class="lede">主窗口 = 顶栏（搜索/筛选/标签/工具箱/AI）+ 侧边栏（分组）+ 卡片流（剪贴板历史）。以下为真实界面的高保真复刻。</p>
+    <details class="secfold">
+    <summary><span class="sf-a">展开详解</span><span class="sf-n">1 张演示图 · 2 小节 · 共 9 项</span></summary>
+    <div class="sf-body">
+<div class="demo">
+    <div class="demo-cap">主窗口 · 真实布局（顶栏 + 侧边栏 + 历史卡片）</div>
+    <div class="win">
+      <div class="app">
+        <div class="sidebar">
+          <div class="sb-item on"><span class="sb-ic">📋</span>全部<span class="sb-cnt">312</span></div>
+          <div class="sb-item"><span class="sb-ic">🗂</span>未分组<span class="sb-cnt">40</span></div>
+          <div class="sb-item"><span class="sb-ic">⭐</span>收藏<span class="sb-cnt">12</span></div>
+          <div class="sb-sep"></div>
+          <div class="sb-grp">分组</div>
+          <div class="sb-item"><span class="sb-dot" style="background:#3B82F6"></span>工作<span class="sb-cnt">86</span></div>
+          <div class="sb-item"><span class="sb-dot" style="background:#F97316"></span>学习<span class="sb-cnt">53</span></div>
+          <div class="sb-item"><span class="sb-ic">+</span>新建分组</div>
+          <div class="sb-sep"></div>
+          <div class="sb-grp">智能分类</div>
+          <div class="sb-item"><span class="sb-ic">🤖</span>代码<span class="sb-cnt">67</span></div>
+          <div class="sb-item"><span class="sb-ic">🤖</span>会议纪要<span class="sb-cnt">9</span></div>
+          <div class="sb-sep"></div>
+          <div class="sb-grp">来源</div>
+          <div class="sb-item"><span class="sb-ic">🌐</span>Chrome<span class="sb-cnt">90</span></div>
+          <div class="sb-item"><span class="sb-ic">💻</span>VS Code<span class="sb-cnt">74</span></div>
+        </div>
+        <div class="content">
+          <div class="tbr">
+            <div class="tleft">
+              <span class="tbtn">☰</span>
+              <span class="ticon"><img src="data:image/png;base64,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" alt="" width="20" height="20" /></span>
+              <span class="tbrand">PastePanda<span class="tai">AI</span></span>
+              <span class="tupd" title="有新版本"></span>
+            </div>
+            <!-- 图标与软件一致：栈模式 / 工具箱 / 设置 / 最小化是自绘 SVG，
+                 隐藏到托盘是 lucide EyeOff。旧 mock 用的 📚 🧰 ⚙ 🙈 都是替身。 -->
+            <div class="tright">
+              <span class="tbtn on" title="收集模式（栈模式）· ctrl+alt+k · 已开启">
+                <svg class="lc-ic" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2.6 2.9 7.66a.95.95 0 0 0 0 1.68L12 14.4l9.1-5.06a.95.95 0 0 0 0-1.68Z" fill="currentColor" fill-opacity=".88"/><path d="m3.2 12.4 8.8 4.9 8.8-4.9" stroke="currentColor" stroke-opacity=".5" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/><path d="m3.2 16.9 8.8 4.9 8.8-4.9" stroke="currentColor" stroke-opacity=".26" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+              <span class="tbtn" title="工具箱">
+                <svg class="lc-ic" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 7.6V6.1a2.6 2.6 0 0 1 2.6-2.6h.8A2.6 2.6 0 0 1 15 6.1v1.5" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/><rect x="2.9" y="7.6" width="18.2" height="12.6" rx="2.7" fill="currentColor" fill-opacity=".22" stroke="currentColor" stroke-width="2.1"/><path d="M2.9 12.4h18.2" stroke="currentColor" stroke-opacity=".55" stroke-width="2.1"/><rect x="10.35" y="10.75" width="3.3" height="3.3" rx="1.15" fill="currentColor"/></svg>
+              </span>
+              <span class="tbtn violet" title="设置 · 帮助 · 关于">
+                <svg class="lc-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                <span class="gd"></span>
+              </span>
+              <span class="tdiv"></span>
+              <span class="tbtn" title="最小化到任务栏">
+                <svg class="lc-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>
+              </span>
+              <span class="tbtn" title="隐藏到托盘（保持后台运行）">
+                <svg class="lc-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>
+              </span>
+            </div>
+          </div>
+          <div class="tctrls">
+            <div class="tfiltrow">
+              <div class="tsearch"><span>🔍</span><span class="st">搜索剪贴板内容…</span></div>
+              <div class="tfilt">全部时间 ▾</div>
+              <div class="tfilt">全部来源 ▾</div>
+            </div>
+            <div class="ttabs">
+              <div class="ttab on">📋 全部<span class="tc">312</span></div>
+              <div class="ttab">📝 文本<span class="tc">96</span></div>
+              <div class="ttab">📸 图片<span class="tc">23</span></div>
+              <div class="ttab">📁 文件<span class="tc">31</span></div>
+              <div class="ttab">⭐ 收藏<span class="tc">12</span></div>
+            </div>
+            <div class="ttags">
+              <span class="ttag">🤖 代码 ×</span>
+              <span class="ttag">🏷️ 工作 ×</span>
+              <button class="ttag add">+ 标签筛选</button>
+            </div>
+          </div>
+          <div class="cards">
+            <div class="card on">
+              <div class="c-ic blue"><svg class="lc-ic" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg></div>
+              <div class="c-body"><div class="c-title">https://tauri.app/zh-cn/</div><div class="c-sub"><span class="c-pin"><svg class="lc-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg> 置顶</span><span>🌐 Chrome</span></div></div>
+              <div class="c-time">刚刚</div>
+            </div>
+            <div class="card">
+              <div class="c-ic purple"><svg class="lc-ic" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19h8"/><path d="m4 17 6-6-6-6"/></svg></div>
+              <!-- 副行只有来源应用，没有「代码」这种类型徽标（真实 Card.tsx 不渲染它） -->
+              <div class="c-body"><div class="c-title">fn parse_changelog(raw: string) { … }</div><div class="c-sub"><span>💻 VS Code</span></div></div>
+              <div class="c-time">2 分钟前</div>
+            </div>
+            <div class="card">
+              <div class="c-ic pink"><svg class="lc-ic" viewBox="0 0 24 24" fill="none" stroke="#EC4899" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>
+              <div class="c-body"><div class="c-title">Screenshot_2026-08-20.png · 1920×1080</div><div class="c-sub"><span>已识别 12 行文字</span></div></div>
+              <div class="c-time">5 分钟前</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <h3>顶栏（自左向右）</h3>
+  <ul class="feat">
+    <li><b>☰ 侧边栏开关</b> + 应用名 + <b>AI 品牌上标</b> + 更新红点（有新版本时）。</li>
+    <li><b>📚 收集模式（栈模式）</b>：一键开关，开启时顶部出现收集横幅，<kbd>Ctrl</kbd>+<kbd>C</kbd> 逐条收进粘贴栈。</li>
+    <li><b>🧰 工具箱</b>：下拉分组面板（详见「开发者工具箱」），收纳依次粘贴 / 片段库 / 内容提取 / 新建流程图 / 编码转换 / 批量替换 / 配置对比。</li>
+    <li><b>AI 胶囊</b>（未配置时显示，点击进 AI 设置）+ <b>⚙ 设置</b>（已配置 AI 时带 6px 绿点）+ <b>最小化 / 隐藏到托盘</b>。</li>
+    <li><b>搜索 + 时间筛选 + 来源筛选</b> 同行；下方是<b>分类 Tab</b>（全部 / 文本 / 图片 / 文件 / 收藏，带计数，可在设置切换「分段控件 / 圆形图标」两种样式）与<b>标签筛选栏</b>（🤖 智能标签 / 🏷️ 我的标签 chips）。</li>
+  </ul>
+  <h3>侧边栏（分四区）</h3>
+  <ul class="feat">
+    <li><b>内置分组</b>：全部 / 未分组 / 收藏。</li>
+    <li><b>分组</b>：用户自建分组，可设颜色与图标；右键重命名 / 改色 / 删除。</li>
+    <li><b>智能分类</b>：AI 自动标签作为虚拟分组（本地标签引擎，未开启 AI 也工作）。</li>
+    <li><b>来源</b>：按复制来源应用自动分组，显示真实应用图标（可切换 Emoji 模式）。</li>
+  </ul>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 剪贴板管理 ============ -->
+<section id="clipboard">
+  <h2>剪贴板管理</h2>
+  <p class="lede">主窗口的卡片流就是你的剪贴板历史。每种内容有独立图标与配色，支持搜索（含拼音首字母）、置顶、分组、标签、批量操作与深度清理。</p>
+    <details class="secfold">
+    <summary><span class="sf-a">展开详解</span><span class="sf-n">3 小节 · 共 11 项</span></summary>
+    <div class="sf-body">
+<h3>先看类型：它决定了这条能做什么</h3>
+  <p>识别出的类型不只是换个图标——右键菜单的主操作是什么、有哪些变换可用、要不要自动 OCR，都由类型决定。所以遇到「这条怎么没有那个选项」，先看它被识别成了什么。</p>
+  <ul class="feat">
+    <li><b>文本 / 链接 / 邮箱 / 电话 / 颜色 / 数字</b>：纯文本及其子类型，链接可一键打开、邮箱电话可直拨、色值显示色块（HEX/RGB/HSL 互转）。</li>
+    <li><b>代码 / JSON / 配置 / 日志 / SQL</b>：紫底图标，悬停预览带语法高亮。</li>
+    <li><b>图片 / 图文混排</b>：显示缩略图；截图图片自动 OCR，徽标显示「已识别 N 行」。图文混排（Word/网页复制）完整保留图片与文字顺序，可编辑。</li>
+    <li><b>文件 / 文件路径</b>：绿色图标，可「用默认应用打开」或「在资源管理器中显示」。</li>
+    <li><b>密钥 / 密码</b>：自动脱敏遮罩，双击在编辑器内查看。</li>
+    <li><b>流程图</b>：粘贴 Mermaid 等 Diagram，卡片显示节点/连线数，可展开可视化编辑。</li>
+  </ul>
+  <h3 id="clip-ops">找回一条，或让它别被清掉</h3>
+  <p><b>什么时候用：</b>刚复制的东西被后面的复制顶下去了；或者要找上周贴过的那段；或者有几条常用内容希望永远在手边。</p>
+  <ol class="steps">
+    <li><b>还在最近几条</b>——<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd> 打开主窗口，最新的就在最上方。<b>单击</b>复制回剪贴板，<b>双击</b>直接粘贴到上一个应用（复制即执行）。</li>
+    <li><b>只记得几个字</b>——顶栏输入框实时过滤，命中处高亮。中文可以只打<b>拼音首字母</b>：搜 <code>th</code> 能命中「腾讯」。搜索历史会记忆，下次不用重打。</li>
+    <li><b>要一直留着</b>——悬停浮层 ☆ 或 <kbd>Ctrl</kbd>+<kbd>D</kbd> <b>置顶（收藏）</b>，钉在顶部，重启不丢。</li>
+  </ol>
+  <p class="note"><b>注意什么：</b>设置里的「自动清理」（关 / 7天 / 15天 / 30天 / 60天）会按时间清掉旧记录，但它<b>不动置顶项</b>；而且默认还开着「保护常用内容」——被打过标签、被粘贴过、或被你搜索找回过的内容，即使超期也不会被清。真怕丢就置顶，那是最硬的一道保险。</p>
+  <h3>一次处理多条</h3>
+  <p><b>什么时候用：</b>要把几条拼成一段贴出去、导出一批记录、或者比较两份文本的差异。</p>
+  <ol class="steps">
+    <li><kbd>Ctrl</kbd>+点击 逐条多选，<kbd>Shift</kbd>+点击 选中一整段范围。</li>
+    <li>底部出现批量工具栏：<b>全选 / 合并（合并粘贴）/ 导出（导出选中记录）/ 对比（对比差异，需恰好选中 2 条文本）/ 删除（<kbd>Ctrl</kbd>+<kbd>Z</kbd> 可撤销）</b>。</li>
+  </ol>
+  <p class="note"><b>要清得更彻底</b>：用「深度清理」——按时间 / 类型 / 来源组合条件批量删除，<b>先预览再删</b>，自动跳过置顶项，同样支持 <kbd>Ctrl</kbd>+<kbd>Z</kbd> 撤销。</p>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 高效粘贴 ============ -->
+<section id="paste">
+  <h2>高效粘贴</h2>
+  <p class="lede">不只是「存下来」，更要「贴得顺」：快捷粘贴面板、粘贴栈、依次粘贴、粘贴守卫与默认格式，把粘贴过程做成可编排的工作流。</p>
+    <details class="secfold">
+    <summary><span class="sf-a">展开详解</span><span class="sf-n">4 小节 · 共 7 项</span></summary>
+    <div class="sf-body">
+<h3>快捷粘贴面板（Alt+V）</h3>
+  <p>类 Win+V 的浮层：列出最近记录，方向键浏览、回车粘贴、Esc 关闭。适合「从一堆里挑一条贴」的场景，不用先开主窗口。</p>
+  <h3 id="paste-stack">粘贴栈（Ctrl+Alt+K）</h3>
+  <ol class="steps">
+    <li>按 <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>K</kbd>（或点顶栏 📚）开启栈模式，顶部出现收集横幅。</li>
+    <li>逐条 <kbd>Ctrl</kbd>+<kbd>C</kbd> 把要拼接的内容收进栈（可跨应用、跨多次复制）。</li>
+    <li>按 <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd> 逐条粘贴，或「全部粘贴」一次输出；横幅显示进度，可随时中止。</li>
+  </ol>
+  <h3 id="paste-seq">依次粘贴（Ctrl+Alt+Q）</h3>
+  <p>把多条文本<b>按顺序</b>逐条粘到目标（适合填表单、SQL 参数）。可先选好多条再触发；设置里可开「依次粘贴循环」与「表格自动拆行入栈」（拆行格式：原始行 / 字段: 值；表头：排除 / 包含）。</p>
+  <h3>粘贴格式与粘贴守卫</h3>
+  <ul class="feat">
+    <li><b>默认粘贴格式</b>：设置里选「保留格式粘贴」开/关——关闭时默认以纯文本输出，避免网页/Word 样式。</li>
+    <li><b>粘贴守卫</b>：粘贴内容包含密钥/凭证特征时，先弹出确认（脱敏展示），确认后才真正输出，防止敏感内容误贴。</li>
+    <li><b>粘贴脱敏变换</b>：右键「变换为 → 粘贴脱敏」，把内容中的敏感字段打码后再粘贴。</li>
+    <li><b>主粘贴热键 Ctrl+Shift+V 已不存在</b>：旧文档写法有误，真实对应为「唤出窗口 <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd>」，粘贴当前记录用 <kbd>Enter</kbd>。</li>
+  </ul>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 变换与正则 ============ -->
+<section id="transform">
+  <h2>变换与正则</h2>
+  <p class="lede">对任意文本/JSON/表格/日志，右键「粘贴并变换」或「变换为…」打开变换枢纽——按内容智能推荐可用变换并按匹配度排序，全部本地即时完成。</p>
+    <details class="secfold">
+    <summary><span class="sf-a">展开详解</span><span class="sf-n">1 张演示图 · 4 小节 · 共 18 项</span></summary>
+    <div class="sf-body">
+<h3>怎么用：记住两个入口就够</h3>
+  <p><b>什么时候用：</b>手里的内容格式不对，贴过去还要手动调——JSON 要格式化、一列 ID 要拼成 SQL 的 IN、时间戳要看成日期、Word 复制过来要洗掉格式。</p>
+  <ol class="steps">
+    <li><b>先变换、再贴</b>——右键「<b>粘贴并变换</b>」：选一个变换，结果直接输出到当前应用，剪贴板里那条原文不动。</li>
+    <li><b>只想拿到结果</b>——右键「<b>变换为…</b>」：打开变换枢纽，<b>推荐匹配</b>那一组是按你手里的内容类型排出来的，通常第一个就是你要的。</li>
+  </ol>
+  <p class="note"><b>注意什么：</b>能用哪些变换取决于内容被识别成什么类型，所以同一个菜单在不同卡片上长得不一样（见下方清单末尾那条说明）。全部变换都在本地算完，不出网。</p>
+  <div class="demo">
+    <div class="demo-cap">变换枢纽 · 对 JSON 内容（匹配项高亮置顶，含 SQL IN / INSERT）</div>
+    <div class="win">
+      <div class="win-bar"><span class="win-dot r"></span><span class="win-dot y"></span><span class="win-dot g"></span><span class="win-title">变换为… · PastePanda</span></div>
+      <div style="padding:16px;background:var(--app-bg);">
+        <div class="hub">
+          <div class="hub-head">✨ 可用变换 · 按匹配度排序</div>
+          <div class="hub-grp">推荐匹配</div>
+          <div class="hub-it match"><span class="hi">🗄</span><div><div class="hn">SQL IN</div><div class="hd">引号：单引号 · 包裹：IN</div></div></div>
+          <div class="hub-it match"><span class="hi">➕</span><div><div class="hn">INSERT 语句</div><div class="hd">把数组转成 INSERT 行</div></div></div>
+          <div class="hub-it match"><span class="hi">🧲</span><div><div class="hn">拆解 IN 列表</div><div class="hd">输出格式：每行一个</div></div></div>
+          <div class="hub-grp">格式化</div>
+          <div class="hub-it"><span class="hi">{} </span><div><div class="hn">JSON 格式化</div><div class="hd">压缩 / 美化 JSON</div></div></div>
+          <div class="hub-it"><span class="hi">⇄</span><div><div class="hn">转为 YAML / JSON / Properties</div><div class="hd">配置文件互转</div></div></div>
+          <div class="hub-grp">编解码</div>
+          <div class="hub-it"><span class="hi">🔤</span><div><div class="hn">Base64 / URL / Unicode 编码解码</div><div class="hd">双向</div></div></div>
+          <div class="hub-it"><span class="hi">⏱</span><div><div class="hn">时间戳 → 日期</div><div class="hd">秒 / 毫秒级</div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <h3 id="tf-list">变换清单（真实注册表，按组）</h3>
+  <p>按「我手里是什么」找：下面的分组名就是内容类型。这是完整注册表，不是节选。</p>
+  <div class="twocol">
+    <ul class="feat">
+      <li><b>文本</b>：大写 / 小写 / 去空白 / 去空行 / 剥离 HTML 标签 / Markdown 链接 / 代码块（```围栏）/ HEX / RGB / HSL / 反斜杠路径 / 正斜杠路径 / 文件名</li>
+      <li><b>JSON / 配置</b>：JSON 格式化 / INSERT 语句 / 转为 YAML / 转为 JSON / 转为 Properties / 表格 → INSERT（表名可选）</li>
+      <li><b>SQL</b>：SQL IN（引号：单/双/反引号，包裹：IN/括号/VALUES）/ SQL IN（按列）/ SQL IN（分隔值）/ 拆解 IN 列表（每行一个 / JSON 数组 / 逗号分隔）/ SQL 格式化 / SQL 压缩 / SQL 关键字大写</li>
+      <li><b>编解码</b>：Base64 编码/解码 / URL 编码/解码 / Unicode 编码/解码 / HTML 转义/反转义 / JWT 解析 / 时间戳 → 日期 / 日期 → 时间戳</li>
+    </ul>
+    <ul class="feat">
+      <li><b>数字</b>：进制转换 / 字节换算 / 千分位 / 时间戳解读</li>
+      <li><b>文档</b>：格式清洗 / 转 Markdown / 表格 → Markdown / PDF 断行修复</li>
+      <li><b>日志</b>：日志统计 / 提取错误行</li>
+      <li><b>安全</b>：粘贴脱敏</li>
+      <li><b>执行类动作</b>（不产出文本，直接产生副作用）：打开链接 / 在资源管理器打开 / 发送邮件 / 查询 IP 域名（whois）</li>
+    </ul>
+  </div>
+  <p class="note">同一内容可用的变换会随内容类型智能出现：链接卡片主操作是「在浏览器中打开」，JSON 卡片主操作是「变换为…」，图片是「粘贴为 Markdown 图片」，文件/路径是「在资源管理器中显示」。</p>
+  <h3>正则替换与规则库</h3>
+  <p><b>什么时候用：</b>同一种清洗要反复做——每次都从日志里挑出错误行、每次都把某个前缀去掉。存成规则，之后右键两下就完事。</p>
+  <ul class="feat">
+    <li>右键「正则替换」子菜单列出你的<b>已启用规则</b>，点击即对当前内容套用并预览（提取 / 替换）。</li>
+    <li>「管理正则规则…」打开规则库：自定义规则（名称 + 正则 + 替换模板），可启停；内置预置规则用 🔤 图标、自定义用 🏷 图标。</li>
+    <li>工具箱「批量替换」：正则查找替换，支持<b>多条规则</b>依次应用。</li>
+  </ul>
+  <p class="note"><b>注意什么：</b>子菜单里只出现<b>已启用</b>的规则。写好的规则不在菜单里，先去规则库看它是不是被停用了。</p>
+  <h3>编码转换 / 内容提取 / 配置对比</h3>
+  <p><b>什么时候用：</b>这四件事都在顶栏 🧰 工具箱里，不针对某一条记录，而是对一批内容或两份内容做处理。</p>
+  <ul class="feat">
+    <li><b>编码转换</b>（工具箱）：Base64 / URL / Unicode / HTML 实体等编解码，即时预览。</li>
+    <li><b>内容提取</b>（工具箱）：从记录中批量提取<b>链接 / 邮箱 / 电话</b>等结构化信息。</li>
+    <li><b>配置对比</b>（工具箱）：两份配置<b>语义级</b>差异高亮（不是粗暴按行 diff），对 JSON/YAML 排序差异也能识别。</li>
+    <li><b>文本对比</b>：选中恰好 2 条文本 → 「对比差异」，按行 / 按词，可忽略空白，上一处 / 下一处跳转。</li>
+  </ul>
+  <p class="note"><b>注意什么：</b>「文本对比」要求<b>恰好选中 2 条</b>文本记录，多选一条或少选一条，入口不会出现。</p>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 截图标注全家桶 ============ -->
+<section id="screenshot">
+  <h2>截图标注全家桶</h2>
+  <p class="lede">按 <kbd>Ctrl</kbd>+<kbd>Q</kbd> 进入截图。对标微信 / QQ / Snipaste：自动框选窗口、全套标注工具、本地 OCR、贴图置顶、长截图，全部离线可用。</p>
+    <details class="secfold">
+    <summary><span class="sf-a">展开详解</span><span class="sf-n">1 张演示图 · 4 小节 · 共 10 项</span></summary>
+    <div class="sf-body">
+<div class="demo">
+    <div class="demo-cap">截图标注态 · 工具栏（深色玻璃）+ 选区 + OCR 抽屉</div>
+    <div class="win">
+      <div class="win-bar"><span class="win-dot r"></span><span class="win-dot y"></span><span class="win-dot g"></span><span class="win-title">截图标注 · PastePanda</span></div>
+      <div class="shot">
+        <div class="sel-rect" style="left:60px;top:70px;width:440px;height:230px;"></div>
+        <div class="sel-size" style="left:270px;top:44px;">440 × 230 <span class="hint">· 单击进标注 · 拖选区移动 · 拖边缘缩放</span></div>
+        <div class="ocr-drawer" style="right:18px;top:56px;">
+          <div class="ocr-head">📝 识别文字 <button class="copy-all">复制全部</button></div>
+          <div class="ocr-body">
+            <div class="ocr-row"><span class="n">1</span><span>账号：user@example.com</span></div>
+            <div class="ocr-row"><span class="n">2</span><span>订单号：20260820-8842</span></div>
+            <div class="ocr-row"><span class="n">3</span><span>金额：¥1,299.00</span></div>
+            <div class="ocr-row"><span class="n">4</span><span>状态：已发货</span></div>
+          </div>
+          <div class="ocr-foot">
+            <div class="fbtn ai">✨ AI</div>
+            <div class="fbtn">📋 表格</div>
+            <div class="fbtn">🔗 二维码</div>
+          </div>
+        </div>
+        <div class="annot-toolbar" style="left:120px;top:316px;">
+          <div class="tool on"><span class="ic">▭</span><span class="lb">矩形</span></div>
+          <div class="tool"><span class="ic">◯</span><span class="lb">椭圆</span></div>
+          <div class="tool"><span class="ic">↗</span><span class="lb">箭头</span></div>
+          <div class="tool"><span class="ic">✎</span><span class="lb">画笔</span></div>
+          <div class="tool"><span class="ic">▱</span><span class="lb">高亮</span></div>
+          <div class="tool"><span class="ic">▦</span><span class="lb">马赛克</span></div>
+          <div class="tool"><span class="ic">🌫</span><span class="lb">模糊</span></div>
+          <div class="tool"><span class="ic">T</span><span class="lb">文字</span></div>
+          <div class="tool"><span class="ic">①</span><span class="lb">序号</span></div>
+          <div class="tool"><span class="ic">🧽</span><span class="lb">橡皮擦</span></div>
+          <div class="tool"><span class="ic">💉</span><span class="lb">取色</span></div>
+          <div class="tsep"></div>
+          <div class="tool ocr"><span class="ic">📝</span><span class="lb">取文字</span></div>
+          <div class="tool"><span class="ic">📐</span><span class="lb">长截图</span></div>
+          <div class="tsep"></div>
+          <div class="tool cancel"><span class="lb">取消</span></div>
+          <div class="tool done"><span class="lb">完成</span></div>
+        </div>
+        <div class="shot-hint"><span class="hk">Ctrl+Z</span> 撤销 <span class="sep"></span> <span class="hk">Enter</span> 完成 <span class="sep"></span> <span class="hk">Esc</span> 退出</div>
+      </div>
+    </div>
+  </div>
+  <h3>选区与窗口吸附</h3>
+  <ul class="feat">
+    <li>进入截图后，<b>自动框选光标所在窗口</b>（可在设置关闭）；移动鼠标即切换目标窗口。</li>
+    <li><b>hover 即选区</b>：停在窗口上高亮蓝框，单击进入标注，双击 / 完成直接输出。</li>
+    <li>拖选自定义区域；选中后可<b>平移</b>、<b>八向缩放</b>，边缘磁吸（8px）对齐窗口边界；方向键微调。</li>
+    <li>支持 <b>UI 控件级吸附</b>（完整 IUIAutomation），能精准框住按钮、输入框等子控件；设置里可开「截图窗口常驻」与「OCR 选字模式」（智能意图 / Ctrl 修饰键）。</li>
+  </ul>
+  <h3 id="shot-annot">标注工具（全套）</h3>
+  <p>矩形 / 椭圆 / 箭头（单双箭头）/ 画笔 / 高亮 / 马赛克 / 模糊 / 文字 / 序号 / 橡皮擦 / 吸管取色（点击即复制色值并回到原工具）。元素可点击选中、移动、缩放、<kbd>Delete</kbd> 删除；<kbd>Shift</kbd> 多选批量操作。马赛克 / 模糊滚轮调强度，橡皮擦真正擦除像素。低频出口（二维码 / 表格识别）收进「⋯」面板，主工具栏只放高频工具。</p>
+  <h3 id="shot-ocr">OCR 文字识别（本地离线）</h3>
+  <ul class="feat">
+    <li><b>PP-OCRv6 离线</b>：框选后点「取文字」，识别结果进右上抽屉，<b>点任意一行即复制</b>该行，全文可编辑改错字。</li>
+    <li><b>表格识别</b>：自动几何聚类还原表格结构，可导出 CSV。</li>
+    <li><b>二维码识别</b>：截到二维码自动解析，一键复制内容或打开。</li>
+    <li>识别文字自动存入剪贴板历史并做语义检索（截图记忆）。</li>
+  </ul>
+  <h3 id="shot-pin">贴图置顶 & 长截图</h3>
+  <ul class="feat">
+    <li><b>贴图</b>：截图后选「贴图」，图片以半透明悬浮窗钉在桌面最上层；可多张并存、<kbd>T</kbd> 循环透明度、双击重编辑、右键菜单管理（复制 / 编辑 / 关闭），托盘「贴图管理」面板统一管理。</li>
+    <li><b>长截图</b>：工具栏「长截图」后滚动页面自动拼接，预览即默认，Esc 取消可靠。</li>
+  </ul>
+  <div class="callout"><div class="ic">🪟</div><div class="txt"><b>交互模型对标微信：</b>自动框选 → hover 即选区 → 单击进标注 → 标注 → 双击 / 完成直接复制关闭。标注态 <kbd>Esc</kbd> 回选区态、选区态 <kbd>Esc</kbd> 关窗（两级取消）。</div></div>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 片段库 ============ -->
+<section id="snippets">
+  <h2>片段库</h2>
+  <p class="lede">常用文本收藏：模板、命令、SQL 片段等一键粘贴，支持变量、分类标签、批量管理与导出。入口：顶栏工具箱 → 片段库。</p>
+    <details class="secfold">
+    <summary><span class="sf-a">展开详解</span><span class="sf-n">1 张演示图 · 共 5 项</span></summary>
+    <div class="sf-body">
+<div class="demo">
+    <div class="demo-cap">片段库 · 真实界面（搜索 + 分类 chips + 卡片 + 操作）</div>
+    <div class="snip">
+      <div class="snip-head">
+        <span>📋</span><span class="h">片段库</span><span class="c">8</span>
+        <span class="sp"></span>
+        <span class="snip-btn">☑ 批量</span>
+        <span class="snip-btn">↓ 导出</span>
+        <span class="snip-btn p">+ 新建</span>
+      </div>
+      <div class="snip-search">🔍 搜索片段...</div>
+      <div class="snip-tags">
+        <span class="snip-tag on">全部<span class="sc">8</span></span>
+        <span class="snip-tag">API<span class="sc">2</span></span>
+        <span class="snip-tag">SQL<span class="sc">2</span></span>
+        <span class="snip-tag">配置<span class="sc">1</span></span>
+        <span class="snip-tag">模板<span class="sc">2</span></span>
+        <span class="snip-tag">命令<span class="sc">1</span></span>
+      </div>
+      <div class="snip-list">
+        <div class="snip-card">
+          <div class="sh"><span class="st">REST 分页模板</span><span class="tag tpl">模板</span></div>
+          <div class="sb">page={{page}}&amp;size={{size}}</div>
+          <div class="sf"><span>🕐 片段 · 📋 已复制 23 次</span>
+            <span class="sact"><span class="sact-b c">📋</span><span class="sact-b">✏️</span><span class="sact-b d">🗑</span></span></div>
+        </div>
+        <div class="snip-card">
+          <div class="sh"><span class="st">SELECT 用户表</span><span class="tag sql">SQL</span></div>
+          <div class="sb">SELECT id, name FROM users WHERE status = 1</div>
+          <div class="sf"><span>🕐 片段 · 📋 已复制 15 次</span>
+            <span class="sact"><span class="sact-b c">📋</span><span class="sact-b">✏️</span><span class="sact-b d">🗑</span></span></div>
+        </div>
+        <div class="snip-card">
+          <div class="sh"><span class="st">API Token 头</span><span class="tag api">API</span></div>
+          <div class="sb">Authorization: Bearer {{token}}</div>
+          <div class="sf"><span>🕐 片段 · 📋 已复制 41 次</span>
+            <span class="sact"><span class="sact-b c">📋</span><span class="sact-b">✏️</span><span class="sact-b d">🗑</span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <ul class="feat">
+    <li><b>变量</b>：内容里可写 <code>{{var}}</code>，复制时逐个填写（如 <code>{{page}}</code>、<code>{{token}}</code>），适合做成模板。</li>
+    <li><b>分类标签</b>：API / SQL / 配置 / 模板 / 命令 五种预设标签，chip 带色点，可筛选。</li>
+    <li><b>最近使用</b>：底部自动展示最近复制过的 5 条，快速再取。</li>
+    <li><b>批量管理</b>：「批量」模式勾选多条 → 清空选择 / 删除选中。</li>
+    <li><b>导出</b>：整库导出为 JSON 备份；右键卡片 → 「添加到片段库」可直接把历史条目存成片段。</li>
+  </ul>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 开发者工具箱 ============ -->
+<section id="dev">
+  <h2>开发者工具箱</h2>
+  <p class="lede">顶栏 🧰 工具箱下拉的真实分组：<b>内容</b>（依次粘贴 / 片段库 / 内容提取 / 新建流程图）与 <b>文本处理</b>（编码转换 / 批量替换 / 配置对比）。零出网、即时出结果。</p>
+    <details class="secfold">
+    <summary><span class="sf-a">展开详解</span><span class="sf-n">1 张演示图 · 共 5 项</span></summary>
+    <div class="sf-body">
+<div class="demo">
+    <div class="demo-cap">顶栏工具箱 · 真实分组面板（方案 A）</div>
+    <div style="background:var(--app-bg);padding:16px;">
+      <div style="position:relative;">
+        <div style="display:flex;gap:6px;align-items:center;padding:6px;border:1px solid var(--border-color);border-radius:10px;background:var(--card-bg);width:200px;">
+          <span class="tbtn on" style="color:var(--accent);background:var(--accent-light)">🧰</span>
+          <span style="font-size:13px;color:var(--text-primary);font-weight:600;">工具箱</span>
+          <span style="margin-left:auto;font-size:11px;color:var(--text-muted);">▾</span>
+        </div>
+        <div class="tboxpanel" style="position:static;margin-top:8px;width:240px;">
+          <div class="tboxsec">内容</div>
+          <div class="tboxit"><span class="tboxtile cyan">📋</span><div><div class="tboxname">依次粘贴</div><div class="tboxdesc">按顺序逐条粘贴文本 · Ctrl+Alt+Q</div></div></div>
+          <div class="tboxit"><span class="tboxtile amber">📝</span><div><div class="tboxname">片段库</div><div class="tboxdesc">常用文本收藏，一键粘贴</div></div></div>
+          <div class="tboxit"><span class="tboxtile rose">🧲</span><div><div class="tboxname">内容提取</div><div class="tboxdesc">从记录中批量提取链接 / 邮箱 / 电话</div></div></div>
+          <div class="tboxit"><span class="tboxtile cyan">📊</span><div><div class="tboxname">新建流程图</div><div class="tboxdesc">从零绘制，或让 AI 一键生成</div></div></div>
+          <div class="tboxdiv"></div>
+          <div class="tboxsec">文本处理</div>
+          <div class="tboxit"><span class="tboxtile sky">🔤</span><div><div class="tboxname">编码转换</div><div class="tboxdesc">Base64 / URL / Unicode 编解码</div></div></div>
+          <div class="tboxit"><span class="tboxtile violet">🔁</span><div><div class="tboxname">批量替换</div><div class="tboxdesc">正则查找替换，支持多条规则</div></div></div>
+          <div class="tboxit"><span class="tboxtile green">📊</span><div><div class="tboxname">配置对比</div><div class="tboxdesc">两份配置语义级差异高亮</div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <ul class="feat">
+    <li><b>编码转换</b>：Base64 / URL / Unicode / HTML 实体 编解码，即时预览。</li>
+    <li><b>批量替换</b>：正则查找替换，支持多条规则依次应用。</li>
+    <li><b>配置对比</b>：两份配置语义级差异高亮（JSON/YAML 顺序无关也能比）。</li>
+    <li><b>新建流程图</b>：从零绘制 Mermaid 流程图，或让 AI 一键生成。</li>
+    <li>工具箱右上角 ⚙ 齿轮里的<b>小工具</b>还有：JSON 格式化 / Base64 / 时间戳 / 哈希 / UUID / 正则测试（工具箱面板更小的"开发工具"区）。</li>
+  </ul>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 编辑与预览 ============ -->
+<section id="editor">
+  <h2>编辑与预览</h2>
+  <p class="lede">双击任意可编辑条目打开对应类型的编辑器，所见即所得。</p>
+    <details class="secfold">
+    <summary><span class="sf-a">展开详解</span><span class="sf-n">共 4 项</span></summary>
+    <div class="sf-body">
+<ul class="feat">
+    <li><b>按类型匹配编辑器</b>：文本/纯文本、Markdown（实时渲染 + 格式条）、HTML（代码 + 预览双栏）、JSON（格式化校验）、CSV 表格（单元格编辑）、代码（语言高亮 + 语言选择）、链接 / 颜色 / 数字 / 路径 / 密钥、图片（缩放裁剪）、图文混排（富文本，保留图片与文字顺序）、流程图（可视化节点连线）。</li>
+    <li><b>全屏编辑器</b>：内容多时切换独立窗口，<kbd>Ctrl</kbd>+<kbd>S</kbd> 保存、<kbd>Esc</kbd> 关闭，有未保存改动先提醒。</li>
+    <li><b>设置联动</b>：「编辑器保存写入历史」「编辑器自动保存」「关联 .md 文件」（双击 .md 用 PastePanda 打开）可在设置开关。</li>
+    <li>编辑后的内容可写回历史或复制，密钥类内容在编辑器内才可见明文。</li>
+  </ul>
+    </div>
+  </details>
+</section>
+
+<!-- ============ AI 能力 ============ -->
+<section id="ai">
+  <h2>AI 能力</h2>
+  <p class="lede"><b>默认关闭</b>，未配置时零请求零费用。配置入口：设置 → AI（或顶栏 AI 胶囊）。开启后，对任意卡片 / 截图 / 编辑器内容都可执行 AI 动作。</p>
+    <details class="secfold">
+    <summary><span class="sf-a">展开详解</span><span class="sf-n">1 张演示图 · 2 小节 · 共 10 项</span></summary>
+    <div class="sf-body">
+<div class="demo">
+    <div class="demo-cap">设置 → AI · 摘要卡 + 手风琴区块（真实结构）</div>
+    <div class="win">
+      <div class="set-app">
+        <div class="set-side">
+          <div class="set-tab">⚙ 通用</div>
+          <div class="set-tab on">✨ AI</div>
+          <div class="set-tab">📖 帮助</div>
+          <div class="set-tab">ℹ 关于<span class="dot"></span></div>
+        </div>
+        <div class="set-main">
+          <div class="ai" style="width:100%;border:none;box-shadow:none;">
+            <div class="ai-hero">
+              <div class="ah-top"><span class="ah-ic">AI</span><div><div class="ah-t">AI 能力</div><div class="ah-s">已配置 · DeepSeek-V3 · 本地模型</div></div></div>
+              <div class="ah-actions"><span class="btn p">开始配置</span><span class="btn">测试连接</span><span class="btn">查看用量</span></div>
+            </div>
+            <div class="ai-acc">
+              <div class="ai-sec"><div class="as-h">🖥 服务商与密钥 <span class="as-s">选厂商 · 粘密钥 · 测连接</span></div></div>
+              <div class="ai-sec" style="padding-top:0;">
+                <div class="ai-warn">⚠ 你主动对某条内容执行 AI 动作时，该条内容会被发送到所选服务商。PastePanda 不会自动上传任何历史记录。看起来像密钥/凭证的内容会先拦下来请你确认。</div>
+                <div class="ai-prov">
+                  <div class="ai-pchip on">内置模型</div>
+                  <div class="ai-pchip">Ollama 本地</div>
+                  <div class="ai-pchip">自定义 API</div>
+                </div>
+              </div>
+              <div class="ai-sec" style="border-top:1px solid var(--border-color);"><div class="as-h">⏱ 用量 <span class="as-s">今日 12 次 · ¥0.36</span></div></div>
+              <div class="ai-sec" style="border-top:1px solid var(--border-color);"><div class="as-h">🧠 自进化 <span class="as-s">数据仅存本机</span></div></div>
+              <div class="ai-sec" style="border-top:1px solid var(--border-color);"><div class="as-h">⚡ 自定义动作 <span class="as-s">已有 3 个</span></div></div>
+              <div class="ai-sec" style="border-top:1px solid var(--border-color);"><div class="as-h">🛠 高级 <span class="as-s">温度 / 超时 / 预算</span></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <h3 id="ai-what">能做什么</h3>
+  <ul class="feat">
+    <li><b>内容动作</b>：选中任意文本/代码/截图识别文字，一键<b>总结 / 翻译 / 改写润色 / 解释 / 提炼要点 / 找 Bug</b> 等（内置动作集）。</li>
+    <li><b>自定义动作</b>：在 AI 设置里编写自己的动作（名称 + 系统提示词），出现在右键「粘贴并变换」与 AI 快捷栏；可设本地 / 联网、可放进动作链。</li>
+    <li><b>AI 快捷栏</b>：卡片上 ✨ 唤起，结果可复制 / 粘贴到前台 / 追问（仅 AI）/ 还原原文；敏感内容先确认再发送。</li>
+    <li><b>截图 OCR 后 AI</b>：OCR 抽屉底部「✨ AI」直接对识别文字执行动作。</li>
+    <li><b>流程图 AI 生成</b>：一句话生成 Mermaid 流程图。</li>
+    <li><b>缓存命中</b>：相同输入+动作命中缓存显示「缓存命中 · 未计费」。</li>
+  </ul>
+  <h3>隐私与计费</h3>
+  <ul class="feat">
+    <li>AI 开关默认关闭；开启后也只在你主动执行动作时才发送<b>那一条</b>内容。</li>
+    <li>服务商：内置模型（云端，按量计费）/ <b>Ollama 本地模型</b>（内容不出本机）/ 自定义 API（OpenAI 兼容端点）。</li>
+    <li>密钥/凭证类内容先拦下来请确认；「用量」区可看今日调用次数与花费（本地模型不计费）；「高级」可调温度、超时、token 预算，回答被截断会明确提示。</li>
+    <li>AI 红线：所有 AI/云端能力受开关门控（前后端双重校验），未启用 = 零可见零请求零费用。</li>
+  </ul>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 右键菜单与托盘 ============ -->
+<section id="menu">
+  <h2>右键菜单与托盘</h2>
+  <p class="lede">两个右键，分工不同：<b>右键卡片</b>是对这一条内容做事（菜单按内容类型组织，最常用的那个操作置顶高亮）；<b>右键托盘图标</b>是对整个程序做事（显示/暂停/设置/退出）。以下两张都是真实结构。</p>
+    <details class="secfold">
+    <summary><span class="sf-a">展开详解</span><span class="sf-n">3 小节 · 共 5 项</span></summary>
+    <div class="sf-body">
+<h3>右键卡片：先看最上面那一项</h3>
+  <p><b>什么时候用：</b>你已经找到了那条内容，接下来要处理它。菜单第一项是 PastePanda 猜你最想干的事，多数时候直接点它就行；剩下的按「复制/粘贴 → 变换 → 管理 → 删除」从上到下排。</p>
+  <div class="twocol">
+    <div>
+      <div class="demo-cap">卡片右键菜单（以 JSON 卡片为例）</div>
+      <div class="menu">
+        <div class="mi primary"><span class="mi-ic">✨</span>变换为…</div>
+        <div class="msep"></div>
+        <div class="mi"><span class="mi-ic">📋</span>复制到剪贴板</div>
+        <div class="mi"><span class="mi-ic">📤</span>粘贴到前台</div>
+        <div class="mi"><span class="mi-ic">🔄</span>粘贴并变换<span class="mi-arrow">▸</span></div>
+        <div class="msub">✨ 更多变换…</div>
+        <div class="mi"><span class="mi-ic">🔎</span>正则替换<span class="mi-arrow">▸</span></div>
+        <div class="msub">🔤 提取数字 · 去空行（已启用规则）</div>
+        <div class="msub">⚙ 管理正则规则…</div>
+        <div class="msep"></div>
+        <div class="mi"><span class="mi-ic">⋯</span>更多操作<span class="mi-arrow">▸</span></div>
+        <div class="msub">🏷 编辑标签</div>
+        <div class="msub">📁 移动到分组</div>
+        <div class="msub">📌 置顶</div>
+        <div class="msub">💾 添加到片段库</div>
+        <div class="msep"></div>
+        <div class="mi danger"><span class="mi-ic">🗑</span>删除</div>
+      </div>
+  <p class="note"><b>注意什么：</b>主操作按类型变化：链接卡片 = 在浏览器中打开；文件/路径 = 在资源管理器中显示；图片 = 粘贴为 Markdown 图片；颜色 = 复制为 HEX。所以同一个位置在不同卡片上是不同命令，别照肌肉记忆点。次级工具含 用默认应用打开 / 生成二维码 / 复制识别文字（图片带 OCR 时）/ 编辑标签 / 确认/移除自动标签 等。</p>
+    </div>
+    <div>
+      <h3 style="margin-top:0">右键托盘：管程序，不管内容</h3>
+      <p><b>什么时候用：</b>不想开主窗口，只是要暂停记录（比如接下来要复制一批敏感内容）、或者改个设置、或者退出。</p>
+      <div class="demo-cap">托盘菜单（右键托盘图标）</div>
+      <div class="tray">
+        <div class="tray-head">
+          <span class="tray-ic">🐼</span>
+          <div><div style="font-weight:700;font-size:14px;">PastePanda</div><div class="tray-stat">监听中 · 今日 86 条 · 库 2.4 MB</div></div>
+        </div>
+        <div class="tray-item">🖥 显示主窗口 <span class="ti-hint">Ctrl+Alt+V</span></div>
+        <div class="tray-item">⏸ 暂停监听</div>
+        <div class="tray-item">⚙ 设置… <span class="ti-hint">Ctrl+S</span></div>
+        <div class="tray-item danger">⏻ 退出</div>
+      </div>
+      <p class="note"><b>真实项</b>：显示主窗口 / 暂停监听（或恢复监听）/ 设置… / 退出。另有「贴图管理」面板统一管理已贴图的悬浮窗（复制 / 编辑 / 关闭 / 全部关闭）。</p>
+      <h3 style="margin-top:18px">右键还能开出这些窗口</h3>
+      <p><b>什么时候用：</b>下面几个都是从右键进去的独立弹窗，各自解决一件具体的事。</p>
+      <ul class="feat">
+        <li><b>生成二维码</b>：把链接/文本变成二维码传到手机上——可选尺寸（240/360/480）与容错等级（L/M/Q/H），复制或保存图片。见下图。</li>
+        <li><b>深度清理</b>：库变大了想瘦身——按时间 / 类型 / 来源筛选，<b>预览后再删</b>，跳过置顶，<kbd>Ctrl</kbd>+<kbd>Z</kbd> 撤销。</li>
+        <li><b>内容提取</b>：从一堆记录里把链接 / 邮箱 / 电话批量捞出来。</li>
+        <li><b>编码转换</b>：Base64 / URL / Unicode / HTML 实体互转。</li>
+        <li><b>文本对比</b>：选中<b>恰好 2 条</b>文本 → 「对比差异」，按行 / 按词、可忽略空白、上一处 / 下一处跳转。</li>
+      </ul>
+      <p class="note">以上弹窗均为真实功能，入口在卡片右键菜单或顶栏 🧰 工具箱。</p>
+      <div class="demo-cap" style="margin-top:18px;">二维码生成（右键 → 生成二维码）</div>
+      <div class="dlg">
+        <div class="dlg-head">📱 生成二维码</div>
+        <div class="dlg-body">
+          <div class="qr"></div>
+          <div class="dlg-row"><span>尺寸</span><span class="seg"><button class="on">240</button><button>360</button><button>480</button></span></div>
+          <div class="dlg-row"><span>容错</span><span class="seg"><button>L</button><button class="on">M</button><button>Q</button><button>H</button></span></div>
+        </div>
+        <div class="dlg-foot"><span class="btn">复制</span><span class="btn p">保存图片</span></div>
+      </div>
+    </div>
+  </div>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 系统同步 ============ -->
+<section id="sync">
+  <h2>系统同步</h2>
+  <p class="lede">在多台设备间保持一致。支持局域网同步与 WebDAV 私有云同步，数据掌握在自己手里。</p>
+    <details class="secfold">
+    <summary><span class="sf-a">展开详解</span><span class="sf-n">共 4 项</span></summary>
+    <div class="sf-body">
+<ul class="feat">
+    <li><b>局域网同步</b>：设置 → 通用 → 局域网同步（LanSyncPanel），同网段设备自动发现、点对点同步。</li>
+    <li><b>WebDAV 同步</b>：填入你的 WebDAV 地址与账号，自动上传 / 拉取剪贴板库。</li>
+    <li><b>冲突处理</b>：同文件冲突时按时间戳合并，关键记录（置顶 / 标签）优先保留。</li>
+    <li><b>本地优先</b>：无网络时全部本地工作，恢复连接后自动续传。</li>
+  </ul>
+  <div class="callout"><div class="ic">🔒</div><div class="txt"><b>同步加密：</b>开启同步的内容在本机加密后再上传，服务端看不到明文，密钥不离开你的设备。</div></div>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 设置与个性化 ============ -->
+<section id="settings">
+  <h2>设置与个性化</h2>
+  <p class="lede">「设置」= 四个 Tab：<b>通用 / AI / 帮助 / 关于</b>（顶部 Tab 栏，非左侧树）。通用 Tab 内有 6 大区块：数据统计 / 外观 / 通用 / 局域网同步 / 快捷键 / 数据管理。所有设置修改后自动保存，底部「恢复默认设置」只重置行为/外观/热键，保留工作区数据。</p>
+    <details class="secfold">
+    <summary><span class="sf-a">展开详解</span><span class="sf-n">1 张演示图 · 1 小节 · 共 4 项</span></summary>
+    <div class="sf-body">
+<div class="demo">
+    <div class="demo-cap">设置 · 通用 Tab（真实区块）</div>
+    <div class="win">
+      <div class="set-app">
+        <div class="set-side">
+          <div class="set-tab on">⚙ 通用</div>
+          <div class="set-tab">✨ AI</div>
+          <div class="set-tab">📖 帮助</div>
+          <div class="set-tab">ℹ 关于<span class="dot"></span></div>
+        </div>
+        <div class="set-main">
+          <div class="set-sec">
+            <h4>📊 数据统计</h4>
+            <div class="set-row"><div class="lbl"><div class="t">剪贴板数据概览</div><div class="d">总记录 312 · ⭐ 收藏 12 · 今日新增 23 · 昨日 18 · 7日均 21</div></div><span class="btn" style="flex:0;padding:7px 14px;">打开周报</span></div>
+          </div>
+          <div class="set-sec">
+            <h4>🎨 外观</h4>
+            <div class="set-row"><div class="lbl"><div class="t">主题配色</div><div class="d">选择你喜欢的配色方案</div></div>
+              <div class="tgrid" style="min-width:200px;">
+                <div class="tchip on">经典白</div><div class="tchip">深海</div><div class="tchip">午夜</div>
+                <div class="tchip">森林</div><div class="tchip">美乐蒂</div><div class="tchip">晨曦</div>
+              </div>
+            </div>
+            <div class="set-row"><div class="lbl"><div class="t">标签样式</div><div class="d">顶部 Tab 控件外观</div></div>
+              <div class="seg"><button class="on">分段控件</button><button>圆形图标</button></div></div>
+          </div>
+          <div class="set-sec">
+            <h4>⚙ 通用</h4>
+            <div class="set-row"><div class="lbl"><div class="t">自动清理</div><div class="d">超出保留期自动删除旧记录</div></div>
+              <div class="seg"><button>关</button><button>7天</button><button>15天</button><button class="on">30天</button><button>60天</button></div></div>
+            <div class="set-row"><div class="lbl"><div class="t">敏感内容防护</div><div class="d">密钥等自动遮罩</div></div><div class="toggle on"></div></div>
+            <div class="set-row"><div class="lbl"><div class="t">保留格式粘贴</div><div class="d">复制后默认以原格式粘贴</div></div><div class="toggle"></div></div>
+            <div class="set-row"><div class="lbl"><div class="t">失焦自动隐藏</div><div class="d">⭐推荐 · 主窗口失焦自动隐藏到托盘</div></div><div class="toggle on"></div></div>
+            <div class="set-row"><div class="lbl"><div class="t">开机自启</div><div class="d">登录系统后自动运行</div></div><div class="toggle on"></div></div>
+            <div class="set-row"><div class="lbl"><div class="t">应用排除名单</div><div class="d">例如：KeePass, 1Password, Bitwarden</div></div><div class="field">KeePass, 1Password</div></div>
+          </div>
+          <div class="set-sec">
+            <h4>⌨️ 快捷键</h4>
+            <div class="set-row"><div class="lbl"><div class="t">唤出窗口</div><div class="d">全局热键</div></div><span class="field" style="flex:0;min-width:150px;justify-content:center;">Ctrl + Alt + V</span></div>
+            <div class="set-row"><div class="lbl"><div class="t">截图标注</div><div class="d">自动框选当前窗口可单独开关</div></div><span class="field" style="flex:0;min-width:150px;justify-content:center;">Ctrl + Q</span></div>
+          </div>
+          <div class="set-sec">
+            <h4>💾 数据管理</h4>
+            <div class="set-row"><div class="lbl"><div class="t">导出数据 / 导入数据</div><div class="d">Excel / CSV / JSON</div></div>
+              <span class="btn" style="flex:0;padding:7px 14px;">导出</span><span class="btn" style="flex:0;padding:7px 14px;">导入</span></div>
+            <div class="set-row"><div class="lbl"><div class="t">清理过期记录 / 深度清理</div><div class="d">清理 5 条过期 · 深度清理打开</div></div>
+              <span class="btn d" style="flex:0;padding:7px 14px;">清理过期</span><span class="btn" style="flex:0;padding:7px 14px;">深度清理</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <h3>重点说明</h3>
+  <ul class="feat">
+    <li><b>6 套主题真实名</b>：经典白（默认）/ 深海 / 午夜 / 森林 / 美乐蒂 / 晨曦。切换即整体换肤（含皮肤场景），本手册右上角选择器可实时体验全部 6 套。</li>
+    <li><b>帮助 Tab</b>：完整快捷键速查表 + 功能手册入口（「查看完整手册」跳转本页）。</li>
+    <li><b>关于 Tab</b>：版本号、更新日志（有新版本/未读更新时带红点）、「新功能」弹框入口。</li>
+    <li><b>数据管理</b>：导出（Excel/CSV/JSON）/ 导入（JSON）/ 清理过期记录 / 深度清理 / 保护常用内容。</li>
+  </ul>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 学习者与自进化 ============ -->
+<section id="smart">
+  <h2>学习者与自进化</h2>
+  <p class="lede">PastePanda 会从你的使用行为里学习（仅统计行为，不包含内容），让推荐排序越来越像「你的」PastePanda。全部数据只存本机，可随时查看与清空。</p>
+    <details class="secfold">
+    <summary><span class="sf-a">展开详解</span><span class="sf-n">1 张演示图 · 2 小节 · 共 8 项</span></summary>
+    <div class="sf-body">
+<div class="demo">
+    <div class="demo-cap">我的画像 · 能力雷达 + 主导角色 + 成就墙（真实结构）</div>
+    <div class="win">
+      <div style="padding:16px;background:var(--app-bg);display:flex;justify-content:center;">
+        <div class="profile">
+          <div class="pro-head"><div class="ph-t">我的画像</div><div class="ph-s">行为统计实时聚合 · 不含内容 · 画像来自最近 30 天 128 条行为</div></div>
+          <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;">
+            <div class="pro-radar">
+              <span class="ra" style="left:50%;top:-4px;transform:translateX(-50%);">开发</span>
+              <span class="ra" style="right:-4px;top:38%;">研究</span>
+              <span class="ra" style="right:8px;bottom:6px;">文案</span>
+              <span class="ra" style="left:8px;bottom:6px;">沟通</span>
+              <span class="ra" style="left:-4px;top:38%;">运营</span>
+              <span class="ra" style="left:50%;bottom:-4px;transform:translateX(-50%);">数据</span>
+            </div>
+            <div style="flex:1;">
+              <div style="font-size:15px;font-weight:700;">开发者</div>
+              <div style="font-size:11px;color:var(--text-muted);margin:2px 0 6px;">置信 87% · 自动推断</div>
+              <div style="height:8px;border-radius:99px;background:var(--section-bg);overflow:hidden;"><div style="width:87%;height:100%;border-radius:99px;background:var(--accent);"></div></div>
+            </div>
+          </div>
+          <div class="ach">
+            <span class="ach-it">🏆 连续活跃 6 周</span>
+            <span class="ach-it">⚡ 单日百条</span>
+            <span class="ach-it">🧩 代码达人</span>
+            <span class="ach-it lock">🎯 尚未解锁</span>
+          </div>
+          <div style="padding:10px 16px;border-top:1px solid var(--border-color);font-size:12px;color:var(--text-secondary);">
+            高频动作：<b>截图 ×86</b> · <b>JSON 格式化 ×34</b> · 转换为 Markdown ×21<br/>
+            <span style="color:var(--text-muted);">使用红线：中文输出 · 敏感信息不处理不外发 · 云端请求先确认</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <h3>我的画像（ProfileDialog）</h3>
+  <ul class="feat">
+    <li><b>能力雷达</b>：开发 / 研究 / 文案 / 沟通 / 运营 / 数据 六维归一化；主导角色自动推断（开发者 / 研究-学习 / 文案-写作 / 沟通-客服 / 运营-行政 / 数据-分析），置信度不足时提示「样本偏少」。</li>
+    <li><b>内容领域 / 活跃时段 / 高频动作 / 风格偏好</b>：统计卡片。「风格偏好」会建议把「常被修改」的内容设为偏好。</li>
+    <li><b>使用红线</b>：可添加对 AI 的要求（如「代码用中文注释」），默认红线：中文输出 · 敏感信息不处理不外发 · 云端请求先确认。</li>
+    <li><b>导出画像</b>：Markdown / JSON / <b>SKILL 技能包</b>（可装进 Claude Code 的 <code>~/.claude/skills/</code>）三选一，实时预览，产物仅含统计不含内容。</li>
+  </ul>
+  <h3>自进化（LearningsDialog）</h3>
+  <ul class="feat">
+    <li>KPI：近 30 天使用 / 复制结果 / 粘贴结果 / 优化信号；<b>推荐偏好</b>（TOP 标记）与 <b>已停用推荐</b>（可恢复）。</li>
+    <li><b>输出偏好调优</b>：填偏好指令（如「更简洁」）后 AI 输出自动贴合；<b>本地检索记忆</b>：语义摘要 / 向量，驱动「AI 快捷栏」的个性化排序。</li>
+    <li>「清空全部学习数据」随时可删，清空后推荐排序退回「对所有人一样」。</li>
+    <li><b>发现高频操作</b>：A → B → C 序列自动发现，一键「存成链」变成可复用的动作链。</li>
+  </ul>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 动作链 ============ -->
+<section id="chain">
+  <h2>动作链</h2>
+  <p class="lede">把多步粘贴流程串成一个按钮：上一步的输出自动喂给下一步，失败会明确到第几步并保留中间结果。入口：设置 → AI → 自进化 → 存成链，或工具箱「新建流程图」旁的链入口。</p>
+    <details class="secfold">
+    <summary><span class="sf-a">展开详解</span><span class="sf-n">1 张演示图 · 1 小节 · 共 4 项</span></summary>
+    <div class="sf-body">
+<div class="demo">
+    <div class="demo-cap">动作链运行器 · 运行中（真实结构）</div>
+    <div class="win">
+      <div style="padding:16px;background:var(--app-bg);display:flex;justify-content:center;">
+        <div class="chain">
+          <div style="padding:12px 14px;border-bottom:1px solid var(--border-color);">
+            <div style="font-size:15px;font-weight:700;">动作链 · 报错处理流水线</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">3 步 · 含 AI 步骤 · 输入（24 字）</div>
+          </div>
+          <div class="chain-step"><span class="cs-n">1</span>剥离 HTML 标签<span class="cs-r">本地</span></div>
+          <div class="chain-step"><span class="cs-n">2</span>提取错误行<span class="cs-r">本地</span></div>
+          <div class="chain-step"><span class="cs-n">3</span>AI 总结原因<span class="cs-r net">联网</span></div>
+          <div style="padding:10px 14px;border-top:1px solid var(--border-color);">
+            <div style="font-size:12px;color:var(--text-secondary);">最终结果：<b>数据库连接超时（Connection timed out）</b></div>
+            <div style="font-size:11px;color:var(--text-muted);margin:4px 0 8px;">结果已脱敏，可放心粘贴</div>
+            <div style="display:flex;gap:8px;"><span class="btn">复制</span><span class="btn p">粘贴到前台</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <h3>能力</h3>
+  <ul class="feat">
+    <li><b>编辑器</b>：名称（≤24 字）+ 描述；步骤最多 8 步，每步选一个<b>变换 / AI 动作</b>，可加条件（无条件 / 是 JSON 时 / 含敏感时 / 是代码时），条件不满足自动跳过。</li>
+    <li><b>风险提示</b>：每步标注 本地 / 联网；含 AI 步骤时运行前逐条确认「步骤 N 会把内容发送到云端（可能计费），继续？」。</li>
+    <li><b>失败处理</b>：失败显示「步骤 N/M 失败：…已保留失败前的中间结果，可复制」；执行类动作（有副作用）不能放进链。</li>
+    <li><b>自动执行</b>：设置里可配置「完成后自动执行动作链」（不自动执行 / 选择某条链），粘贴后自动跑。</li>
+  </ul>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 周报 / 里程碑 / 成就 ============ -->
+<section id="report">
+  <h2>周报 / 里程碑 / 成就</h2>
+  <p class="lede">你的使用数据会沉淀成有趣的回顾（全部仅统计行为，不含内容）。</p>
+    <details class="secfold">
+    <summary><span class="sf-a">展开详解</span><span class="sf-n">共 3 项</span></summary>
+    <div class="sf-body">
+<ul class="feat">
+    <li><b>剪贴板周报</b>（设置 → 通用 → 打开周报）：周概览 5 格（复制 / 已粘贴 / 转化率 / ≈N 分 AI 省时 / N 周连续活跃）+ 内容类型 + 活跃时段 + 常用动作 + 本周挑战；数据不足 50 条会提示「继续用几天，攒到 50 条周报才有意义」；可选 <b>AI 生成周报文字</b>。</li>
+    <li><b>里程碑</b>：达到使用节点（如第 1000 条复制）自动弹出回忆卡（图标 + 引语 + 统计），可「查看我的画像」。</li>
+    <li><b>成就墙</b>：我的画像内嵌，N / N 已解锁网格，进度条「X 个成就 · 已解锁 Y 个」。</li>
+  </ul>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 智能命令栏 ============ -->
+<section id="nlcmd">
+  <h2>智能命令栏</h2>
+  <p class="lede">用自然语言直接下达命令，无需记菜单路径——本地解析意图并执行（如「把这条变成 JSON 数组」）。</p>
+    <details class="secfold">
+    <summary><span class="sf-a">展开详解</span><span class="sf-n">1 张演示图 · 共 2 项</span></summary>
+    <div class="sf-body">
+<div class="demo">
+    <div class="demo-cap">智能命令栏（Ctrl+Shift+K 同款浮层入口之一）</div>
+    <div class="win">
+      <div style="padding:16px;background:var(--app-bg);display:flex;justify-content:center;">
+        <div class="nlcmd">
+          <span class="nc-ic">✦</span>
+          <span class="nc-in nc-ph">把选中的内容变成 SQL IN 列表…</span>
+          <span class="nc-sug">⌘ 建议：大小写 · JSON · 去重 · 翻译</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <ul class="feat">
+    <li>支持<b>自然语言 → 动作</b>解析（nlActionParser），识别「提取 / 转换 / 替换 / 总结」等意图并落到具体变换或 AI 动作。</li>
+    <li>不匹配时给出建议动作列表，点选执行。</li>
+  </ul>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 更新记录 ============ -->
+<section id="changelog">
+  <h2>更新记录</h2>
+  <p class="lede">每次版本更新的要点。更完整条目见应用内「新功能」弹框与仓库 CHANGELOG（弹框底部「查看完整手册」即本页）。</p>
+    <details class="secfold">
+    <summary><span class="sf-a">展开详解</span><span class="sf-n">4 个版本</span></summary>
+    <div class="sf-body">
+<div class="timeline">
+    <div class="tl-item"><div class="tl-v">v6.18.2</div><div class="tl-d">2026-08-20</div>
+      <div class="tl-note">发版说明弹框改为「查看完整手册」跳转浏览器；截图修复（橡皮擦、马赛克）；发版弹框分类筛选 chips。</div></div>
+    <div class="tl-item"><div class="tl-v">v6.18</div><div class="tl-d">2026-08</div>
+      <div class="tl-note">截图标注全家桶上线：本地 OCR、马赛克/模糊/橡皮擦、窗口自动吸附、贴图置顶、长截图。</div></div>
+    <div class="tl-item"><div class="tl-v">v6.17</div><div class="tl-d">2026-07</div>
+      <div class="tl-note">粘贴栈模式、文本对比、数据仪表盘、设置控件风格统一。</div></div>
+    <div class="tl-item"><div class="tl-v">v6.4</div><div class="tl-d">2026</div>
+      <div class="tl-note">AI 能力接入（默认关闭，隐私优先）、图文混排完整保留与编辑。</div></div>
+  </div>
+  <p style="margin-top:18px;">常用标签：<span class="tag-pill">截图</span><span class="tag-pill">OCR</span><span class="tag-pill">贴图</span><span class="tag-pill">粘贴栈</span><span class="tag-pill">变换</span><span class="tag-pill">片段库</span><span class="tag-pill">AI</span><span class="tag-pill">同步</span></p>
+    </div>
+  </details>
+</section>
+<!-- ❗ 原尾部嵌套是坏的：.layout 的闭合标签排在 main 闭合之前、
+     page 页脚被套进了 main 里面、最后还多一个没有开标签的 footer 闭合。
+     浏览器会自己纠错所以看着没事，但纠出来的结构不可控。已按真实层级排好。
+     （注：这段里故意不写字面标签，否则会被标签平衡自检当成真标签数进去。） -->
+</main>
+</div>
+
+<footer class="page">
+  PastePanda 用户手册 · 本页为完整功能指南 · 界面演示为手工复刻（配色/尺寸/文案取自 src 实际实现，但不是真实截图）· 右上角可切换全部 6 套真实主题 · <a href="index.html">返回产品主页</a>
+</footer>
+<script src="shared.js"></script>
+<script>
+/* ===== 手册页独占：搜索 / 折叠 / 锚点自动展开（PHASE-B） =====
+ * 纯前端零依赖。索引建在内存里，不发请求、不引库。
+ */
+(function () {
+  var main = document.querySelector("main");
+  if (!main) return;
+
+  var secs = [].slice.call(main.querySelectorAll("section[id]"));
+  var tocLinks = [].slice.call(document.querySelectorAll("nav.toc a[href^='#']"));
+
+  /* ---------- 索引：分区标题 + lede + 各小节标题 ---------- */
+  var index = secs.map(function (s) {
+    var h2 = s.querySelector("h2");
+    var lede = s.querySelector(".lede");
+    var h3s = [].slice.call(s.querySelectorAll("h3"));
+    var fields = [];
+    if (h2) fields.push(h2);
+    if (lede) fields.push(lede);
+    h3s.forEach(function (h) { fields.push(h); });
+    /* 原始 HTML 存一份：高亮是往里插 <mark>，不留底就没法还原 */
+    fields.forEach(function (f) { if (!f.dataset.raw) f.dataset.raw = f.innerHTML; });
+    return {
+      sec: s,
+      fields: fields,
+      hay: fields.map(function (f) { return f.textContent; }).join(" ").toLowerCase()
+    };
+  });
+
+  var cards = [].slice.call(document.querySelectorAll(".tk"));
+  cards.forEach(function (c) {
+    if (!c.dataset.raw) c.dataset.raw = c.querySelector(".tk-t").innerHTML;
+    c.dataset.hay = c.textContent.toLowerCase();
+  });
+
+  /* ---------- 高亮 ---------- */
+  function esc(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+
+  function paint(el, raw, q) {
+    if (!q) { el.innerHTML = raw; return; }
+    /* 只在纯文本节点上替换，避免把标签名也 mark 掉 */
+    var re = new RegExp("(" + esc(q) + ")", "gi");
+    var tmp = document.createElement("div");
+    tmp.innerHTML = raw;
+    (function walk(node) {
+      [].slice.call(node.childNodes).forEach(function (n) {
+        if (n.nodeType === 3) {
+          if (re.test(n.nodeValue)) {
+            var span = document.createElement("span");
+            span.innerHTML = n.nodeValue.replace(re, '<mark class="hit">$1</mark>');
+            node.replaceChild(span, n);
+          }
+        } else if (n.nodeType === 1 && n.tagName !== "MARK") {
+          walk(n);
+        }
+      });
+    })(tmp);
+    el.innerHTML = tmp.innerHTML;
+  }
+
+  /* ---------- 折叠 ---------- */
+  function setAll(open) {
+    [].slice.call(main.querySelectorAll("details.secfold")).forEach(function (d) { d.open = open; });
+  }
+
+  function revealTarget(hash) {
+    if (!hash || hash.length < 2) return;
+    var el;
+    try { el = main.querySelector(hash) || document.querySelector(hash); } catch (e) { return; }
+    if (!el) return;
+    var opened = false;
+    /* 小节级锚点（#shot-ocr 之类）埋在收起的 details 里，逐层往上打开 */
+    var p = el.parentElement;
+    while (p && p !== document.body) {
+      if (p.tagName === "DETAILS" && !p.open) { p.open = true; opened = true; }
+      p = p.parentElement;
+    }
+    /* ❗ 分区级锚点（#menu，以及左侧目录的**每一条**）的 details 是 section 的
+       **子元素**，上面那个往上走的循环够不到它。漏了这一步的话点目录会跳过去、
+       但正文仍然收着，等于目录整个失效。 */
+    if (el.tagName === "SECTION") {
+      var own = el.querySelector("details.secfold");
+      if (own && !own.open) { own.open = true; opened = true; }
+    }
+    /* 展开会改变布局高度，浏览器先前算的滚动位置就废了，得重新滚一次 */
+    if (opened) setTimeout(function () { el.scrollIntoView({ block: "start" }); }, 0);
+  }
+
+  /* ---------- 搜索 ---------- */
+  var input = document.getElementById("mq");
+  var count = document.getElementById("mqCount");
+  var clear = document.getElementById("mqClear");
+
+  function apply(q) {
+    q = (q || "").trim().toLowerCase();
+    clear.hidden = !q;
+    var hitSec = 0;
+    index.forEach(function (it) {
+      var hit = !q || it.hay.indexOf(q) >= 0;
+      it.sec.hidden = !hit;
+      if (hit) hitSec++;
+      it.fields.forEach(function (f) { paint(f, f.dataset.raw, hit ? q : ""); });
+      /* 命中时把分区展开，用户不该再点一下才看到自己搜的东西 */
+      var d = it.sec.querySelector("details.secfold");
+      if (d && q) d.open = hit;
+    });
+    var hitCard = 0;
+    cards.forEach(function (c) {
+      var hit = !q || c.dataset.hay.indexOf(q) >= 0;
+      c.hidden = !hit;
+      if (hit) hitCard++;
+      paint(c.querySelector(".tk-t"), c.dataset.raw, hit ? q : "");
+    });
+    /* 任务索引整块：搜索时若一张卡都不命中就整块藏起来，省得留一个空标题 */
+    var tasks = document.getElementById("tasks");
+    if (tasks) tasks.hidden = !!q && hitCard === 0;
+    tocLinks.forEach(function (a) {
+      var t = main.querySelector(a.getAttribute("href"));
+      a.style.opacity = (!q || (t && !t.hidden)) ? "" : ".35";
+    });
+    count.textContent = q ? (hitSec + " 个分区 · " + hitCard + " 条任务命中") : "";
+    if (!q) setAll(false);
+  }
+
+  input.addEventListener("input", function () { apply(input.value); });
+  input.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") { input.value = ""; apply(""); input.blur(); }
+  });
+  clear.addEventListener("click", function () { input.value = ""; apply(""); input.focus(); });
+  document.getElementById("foldAll").addEventListener("click", function () { setAll(false); });
+  document.getElementById("unfoldAll").addEventListener("click", function () { setAll(true); });
+
+  /* 全站 / 键盘：斜杠聚焦搜索，跟大多数文档站一致 */
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "/" && document.activeElement !== input &&
+        !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+      e.preventDefault();
+      input.focus();
+    }
+  });
+
+  /* ---------- 角色筛选 ---------- */
+  var chips = [].slice.call(document.querySelectorAll(".tk-chip"));
+  chips.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      chips.forEach(function (b) { b.classList.toggle("on", b === btn); });
+      var role = btn.dataset.role;
+      var shown = 0;
+      cards.forEach(function (c) {
+        var hit = role === "all" || (" " + c.dataset.roles + " ").indexOf(" " + role + " ") >= 0;
+        c.hidden = !hit;
+        if (hit) shown++;
+      });
+      document.getElementById("tkEmpty").hidden = shown > 0;
+      /* 角色筛选与文字搜索互斥：换角色时清掉搜索词，免得两套过滤叠加出空结果 */
+      if (input.value) { input.value = ""; apply(""); cards.forEach(function (c) {
+        var hit = role === "all" || (" " + c.dataset.roles + " ").indexOf(" " + role + " ") >= 0;
+        c.hidden = !hit; }); }
+    });
+  });
+
+  /* ---------- 锚点 ---------- */
+  window.addEventListener("hashchange", function () { revealTarget(location.hash); });
+  revealTarget(location.hash);
+})();
+</script>
+</body>
+</html>

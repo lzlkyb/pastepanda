@@ -1,0 +1,154 @@
+/* PastePanda 文档站 · 两页共享样式
+ *
+ * index.html（宣传页）与 manual.html（手册页）都 link 这一份。
+ * 内容边界：6 套主题令牌、reset/base、排版刻度、玻璃拟态、色片、
+ *          顶栏 .top / .cta / .themeToggle、氛围层、页脚，
+ *          以及截图标注簇（annot-toolbar / tool / tsep / ocr-*）——
+ *          那一簇是唯一在两页都出现的真组件，改它要同时看两页。
+ *
+ * ❗ 本文件由 index.html 机械拆分而来，规则顺序保持原文，别重排。
+ *   两页各自的独占样式在各自 <style> 里，加载顺序是 shared.css → 页内 style。
+ */
+
+
+/* ===================== 设计令牌（对齐真实软件 theme.css，6 套主题全量） ===================== */
+:root { --font: "SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui, -apple-system, sans-serif; --mono: "Fira Code", "SF Mono", "Consolas", ui-monospace, monospace;
+  /* 实色橙填充（白字压在上面）。不能用 --orange：那个是「深底上的文字色」，
+     深色主题里是偏亮的 #FB923C，白字上去只有 2.26:1。与 --accent/--accent-solid
+     同一套分工。取值与 src/styles/theme.css 的 --orange-solid 一致。 */
+  --orange-solid: #C54A0A; }
+/* 经典白 ocean（默认浅色） */
+[data-theme="ocean"] { --app-bg:#F7F7F8;--card-bg:#fff;--text-primary:#0F172A;--text-secondary:#495565;--text-muted:#627083;--border-color:#E0E4EB;--accent:#0284C7;--accent-light:#E0F2FE;--accent-strong:#0273AD;--accent-solid:#027CBB;--sidebar-bg:#EFF1F5;--seg-bg:#E8E8ED;--seg-active-bg:#fff;--search-bg:#fff;--input-bg:#F1F5F9;--section-bg:#F0F4F8;--hover:#E8ECF2;--glass-popover-bg:rgba(255,255,255,.97);--glass-popover-border:rgba(0,0,0,.06);--glass-popover-shadow:0 12px 36px rgba(0,0,0,.1);--win-shadow:0 24px 60px rgba(15,23,42,.18);--code-bg:#0f172a;--code-fg:#cdd6f4;--brand-from:#1D4ED8;--brand-to:#6D28D9; --orange:#C54A0A;--orange-bg:#FFF7ED;--orange-border:#FED7AA;--green:#11813A;--green-bg:#DCFCE7;--green-border:#BBF7D0;--danger:#D82525;--search-border:#E0E4EB; }
+/* 深海 ocean-dark（玻璃拟态深色） */
+[data-theme="ocean-dark"] { --app-bg:radial-gradient(130% 110% at 70% -5%, #1E5A82 0%, #0E3355 42%, #061A33 100%);--card-bg:#0A1628;--text-primary:#E0E8F0;--text-secondary:#A2B6CD;--text-muted:#7994B4;--border-color:#162B45;--accent:#3B9EFF;--accent-light:#0A1E3A;--accent-strong:#3B9EFF;--accent-solid:#2D78C2;--sidebar-bg:#060F1A;--seg-bg:#162B45;--seg-active-bg:#1E3D60;--search-bg:#162B45;--input-bg:#162B45;--section-bg:#081018;--hover:#0F1F35;--glass-popover-bg:rgba(10,22,40,.85);--glass-popover-border:rgba(255,255,255,.08);--glass-popover-shadow:0 12px 40px rgba(0,0,0,.5);--win-shadow:0 24px 60px rgba(0,0,0,.6);--code-bg:#0f172a;--code-fg:#cdd6f4;--brand-from:#A8DEFF;--brand-to:#D8CCFF; --orange:#FB923C;--orange-bg:#431407;--orange-border:#9A3412;--green:#4ADE80;--green-bg:#052E16;--green-border:#166534;--danger:#FF6B8A;--search-border:#1E3D60; }
+/* 午夜 midnight（纯深色 OLED） */
+[data-theme="midnight"] { --app-bg:#0B0B13;--card-bg:#18181B;--text-primary:#E4E4E7;--text-secondary:#AFAFB7;--text-muted:#8D8D95;--border-color:#27272A;--accent:#818CF8;--accent-light:#1E1B4B;--accent-strong:#818CF8;--accent-solid:#666FC4;--sidebar-bg:#131315;--seg-bg:#27272A;--seg-active-bg:#3F3F46;--search-bg:#27272A;--input-bg:#27272A;--section-bg:#0F0F11;--hover:#1F1F23;--glass-popover-bg:rgba(20,20,24,.85);--glass-popover-border:rgba(255,255,255,.07);--glass-popover-shadow:0 12px 40px rgba(0,0,0,.45);--win-shadow:0 24px 60px rgba(0,0,0,.6);--code-bg:#0f172a;--code-fg:#cdd6f4;--brand-from:#A8DEFF;--brand-to:#D8CCFF; --orange:#FB923C;--orange-bg:#431407;--orange-border:#9A3412;--green:#4ADE80;--green-bg:#052E16;--green-border:#166534;--danger:#F87171;--search-border:#3F3F46; }
+/* 森林 forest（浅色护眼绿） */
+[data-theme="forest"] { --app-bg:linear-gradient(180deg,#F5F1E3 0%,#EAE5D1 55%,#DCD6BD 100%);--card-bg:#fff;--text-primary:#171717;--text-secondary:#58524F;--text-muted:#726E6B;--border-color:#D1D9D3;--accent:#059669;--accent-light:#ECFDF5;--accent-strong:#04835B;--accent-solid:#05875F;--sidebar-bg:#E8EFEB;--seg-bg:#E4E8E5;--seg-active-bg:#fff;--search-bg:#fff;--input-bg:#F5F5F4;--section-bg:#ECFDF5;--hover:#E8EDE8;--glass-popover-bg:rgba(255,255,255,.85);--glass-popover-border:rgba(0,0,0,.06);--glass-popover-shadow:0 12px 36px rgba(0,0,0,.1);--win-shadow:0 24px 60px rgba(15,23,42,.18);--code-bg:#0f172a;--code-fg:#cdd6f4;--brand-from:#1D4ED8;--brand-to:#6D28D9; --orange:#C54A0A;--orange-bg:#FFF7ED;--orange-border:#FED7AA;--green:#11813A;--green-bg:#DCFCE7;--green-border:#BBF7D0;--danger:#D82525;--search-border:#D1D9D3; }
+/* 美乐蒂 blossom（浅色甜系粉） */
+[data-theme="blossom"] { --app-bg:linear-gradient(168deg,#FFE4EF 0%,#FFC9DD 42%,#FFAECF 78%,#FF9BC4 100%);--card-bg:#fff;--text-primary:#3D2231;--text-secondary:#5F4755;--text-muted:#86596D;--border-color:#F9D3E2;--accent:#F0568C;--accent-light:#FFDDEC;--accent-strong:#B02C5D;--accent-solid:#CE3B70;--sidebar-bg:#FFF0F6;--seg-bg:#F6DDE8;--seg-active-bg:#fff;--search-bg:#fff;--input-bg:#FFF0F6;--section-bg:#FFF0F6;--hover:#FBE7F0;--glass-popover-bg:rgba(255,255,255,.85);--glass-popover-border:rgba(0,0,0,.06);--glass-popover-shadow:0 12px 36px rgba(0,0,0,.1);--win-shadow:0 24px 60px rgba(15,23,42,.18);--code-bg:#0f172a;--code-fg:#cdd6f4;--brand-from:#1D4ED8;--brand-to:#6D28D9; --orange:#C54A0A;--orange-bg:#FFF7ED;--orange-border:#FED7AA;--green:#11813A;--green-bg:#DCFCE7;--green-border:#BBF7D0;--danger:#D82525;--search-border:#F9D3E2; }
+/* 晨曦 dawn（浅色暖阳） */
+[data-theme="dawn"] { --app-bg:linear-gradient(180deg,#FFF8EE 0%,#FFE9D2 42%,#FFD9AE 72%,#F9C78F 100%);--card-bg:#fff;--text-primary:#2B2016;--text-secondary:#5C4B38;--text-muted:#7D6B58;--border-color:#F0DDC8;--accent:#E8734A;--accent-light:#FFEDE2;--accent-strong:#B95432;--accent-solid:#C85A34;--sidebar-bg:#FBF0E1;--seg-bg:#F3E4D3;--seg-active-bg:#fff;--search-bg:#fff;--input-bg:#FFF4E6;--section-bg:#FFF4E6;--hover:#F7E9DA;--glass-popover-bg:rgba(255,255,255,.85);--glass-popover-border:rgba(0,0,0,.06);--glass-popover-shadow:0 12px 36px rgba(0,0,0,.1);--win-shadow:0 24px 60px rgba(15,23,42,.18);--code-bg:#0f172a;--code-fg:#cdd6f4;--brand-from:#1D4ED8;--brand-to:#6D28D9; --orange:#C54A0A;--orange-bg:#FFF7ED;--orange-border:#FED7AA;--green:#11813A;--green-bg:#DCFCE7;--green-border:#BBF7D0;--danger:#D82525;--search-border:#F0DDC8; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body { font-family: var(--font); background: var(--app-bg); color: var(--text-primary); font-size: 14px; line-height: 1.7; -webkit-font-smoothing: antialiased; transition: background .3s, color .3s; }
+/* 新顶栏样式见下方宣传区 CSS（.top） */
+.themeToggle { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 9px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-secondary); cursor: pointer; font-size: 13px; font-weight: 500; transition: all .15s; font-family: var(--font); }
+.themeToggle:hover { border-color: var(--accent); color: var(--accent); }
+main { flex: 1; min-width: 0; padding: 30px 0 120px 26px; }
+section { margin-bottom: 56px; scroll-margin-top: 72px; }
+section > h2 { font-size: 24px; font-weight: 700; margin-bottom: 6px; letter-spacing: -.2px; }
+h3 { font-size: 16px; font-weight: 700; margin: 26px 0 10px; }
+p { margin: 10px 0; color: var(--text-secondary); }
+p strong, li strong { color: var(--text-primary); }
+kbd { font-family: var(--mono); font-size: 11.5px; padding: 1px 7px; border-radius: 5px; background: var(--section-bg); border: 1px solid var(--border-color); color: var(--text-primary); font-weight: 600; }
+footer.page { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 12px; border-top: 1px solid var(--border-color); margin-top: 40px; }
+/* ❗ 页脚里的两页互链必须显式给色。拆分后才第一次在页脚出现 <a>，不给样式就吃浏览器
+ *   默认链接蓝 #0000EE —— 在午夜主题的 #0B0B13 底上对比度只有 2.09，基本看不见。 */
+footer.page a { color: var(--accent-strong); text-decoration: none; font-weight: 600; }
+footer.page a:hover { text-decoration: underline; }
+.note { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+.annot-toolbar { position: absolute; display: flex; align-items: center; gap: 2px; padding: 5px 7px; border-radius: 12px; background: var(--glass-popover-bg); border: 1px solid var(--glass-popover-border); box-shadow: var(--glass-popover-shadow); white-space: nowrap; z-index: 30; }
+.tool { min-width: 38px; height: 42px; border-radius: 8px; padding: 0 3px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: default; border: 1px solid transparent; color: var(--text-primary); font-size: 12px; }
+.tool .ic { font-size: 17px; line-height: 1; }
+.tool .lb { font-size: 9px; line-height: 1; opacity: .72; }
+.tool.on { background: linear-gradient(135deg, #3B9EFF, #6D5CF0); border-color: rgba(255,255,255,.4); color: #fff; box-shadow: 0 2px 12px rgba(59,158,255,.5); }
+.tool.on .lb { opacity: 1; }
+.tool.ocr { color: var(--green); }
+.tool.done { background: linear-gradient(135deg,#6366F1,#3B9EFF); color:#fff; border:1px solid rgba(255,255,255,.25); box-shadow:0 2px 10px rgba(99,102,241,.4); font-weight:600; }
+.tsep { width: 1px; height: 24px; margin: 0 5px; background: linear-gradient(180deg, transparent, var(--border-color), transparent); }
+.ocr-drawer { position: absolute; width: 232px; background: var(--glass-popover-bg); backdrop-filter: blur(18px) saturate(1.3); border: 1px solid var(--border-color); border-radius: 12px; box-shadow: var(--glass-popover-shadow); overflow: hidden; z-index: 50; color: var(--text-primary); }
+.ocr-head { display: flex; align-items: center; gap: 6px; padding: 9px 12px; font-size: 12px; font-weight: 600; background: var(--accent-light); border-bottom: 1px solid color-mix(in srgb, var(--accent) 32%, transparent); color: var(--accent-strong); }
+.ocr-head .copy-all { margin-left: auto; height: 24px; padding: 0 10px; border: none; border-radius: 6px; background: var(--accent-solid); color: #fff; font-size: 11px; }
+.ocr-body { padding: 8px 10px; font-size: 11px; line-height: 1.6; max-height: 160px; overflow: hidden; }
+.ocr-row { padding: 5px 8px; margin-bottom: 3px; border-radius: 6px; cursor: default; display: flex; gap: 6px; }
+.ocr-row:hover { background: var(--hover); }
+.ocr-row .n { font-size: 10px; color: var(--text-muted); font-family: var(--mono); padding-top: 2px; min-width: 15px; }
+.ocr-foot { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--border-color); }
+.ocr-foot .fbtn { flex: 1; height: 28px; border-radius: 8px; font-size: 11px; border: 1px solid var(--border-color); background: transparent; color: var(--text-primary); display: flex; align-items: center; justify-content: center; gap: 4px; }
+.ocr-foot .fbtn.ai { border-color: color-mix(in srgb, var(--brand-to) 45%, transparent); color: var(--brand-to); }
+.ai { width: 380px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 14px; box-shadow: var(--win-shadow); overflow: hidden; }
+@media (max-width: 860px) { main { padding-left: 0; }}
+
+/* ===================== 顶栏 ===================== */
+.top { position: sticky; top: 0; z-index: 200; display: flex; align-items: center; gap: 12px; padding: 12px 28px; background: color-mix(in srgb, var(--card-bg) 82%, transparent); backdrop-filter: blur(16px) saturate(1.3); border-bottom: 1px solid var(--border-color); }
+.logo { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: linear-gradient(135deg, var(--accent), #6D5CF0); color: #fff; font-size: 18px; box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 40%, transparent); flex-shrink:0; }
+.top .brand { font-size: 16px; font-weight: 800; letter-spacing: .2px; display:flex; align-items:center; gap:8px; }
+.top .ver { font-size: 10.5px; font-weight: 700; color: var(--accent-strong); background: var(--accent-light); padding: 2px 8px; border-radius: 99px; }
+.top nav { display: flex; gap: 4px; margin-left: 18px; }
+.top nav a { padding: 6px 12px; border-radius: 8px; color: var(--text-secondary); text-decoration: none; font-size: 13px; font-weight: 500; transition: all .15s; }
+.top nav a:hover { color: var(--text-primary); background: var(--hover); }
+.top .spacer { flex: 1; }
+.cta { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 16px; border: none; border-radius: 10px; background: linear-gradient(135deg, var(--accent), #6D5CF0); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 40%, transparent); text-decoration: none; }
+.cta:hover { transform: translateY(-1px); box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 50%, transparent); }
+.themeToggle { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 9px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-secondary); cursor: pointer; font-size: 13px; font-weight: 500; transition: all .15s; font-family: var(--font); }
+.themeToggle:hover { border-color: var(--accent); color: var(--accent); }
+/* 标注工具栏（真实：tool 38×42，gap 6） */
+.annot-toolbar { position: absolute; display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 12px; background: var(--glass-popover-bg); border: 1px solid var(--glass-popover-border); box-shadow: var(--glass-popover-shadow); white-space: nowrap; opacity: 0; transform: translateY(8px); transition: opacity .25s, transform .25s; z-index: 30; }
+.tool { min-width: 38px; height: 42px; border-radius: 8px; padding: 0 3px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 1px solid transparent; color: var(--text-primary); font-size: 12px; }
+.tool .ic { font-size: 16px; line-height: 1; }
+.tool .lb { font-size: 9px; line-height: 1; opacity: .72; }
+.tool.on { background: linear-gradient(135deg, #3B9EFF, #6D5CF0); border-color: rgba(255,255,255,.4); color: #fff; box-shadow: 0 2px 12px rgba(59,158,255,.5); }
+.tool.on .lb { opacity: 1; }
+.tsep { width: 1px; height: 24px; margin: 0 3px; background: linear-gradient(180deg, transparent, var(--border-color), transparent); }
+.tool.ocr { color: var(--green); }
+.tool.done { background: linear-gradient(135deg,#6366F1,#3B9EFF); color:#fff; border:1px solid rgba(255,255,255,.25); font-weight:600; }
+/* OCR 抽屉（步骤3） */
+.ocr-drawer { position: absolute; top: 0; right: 0; width: 208px; height: 100%; background: var(--glass-popover-bg); backdrop-filter: blur(16px); border-left: 1px solid var(--border-color); transform: translateX(100%); transition: transform .35s cubic-bezier(.3,.9,.3,1); z-index: 40; color: var(--text-primary); }
+.ocr-head { display: flex; align-items: center; gap: 6px; padding: 9px 12px; font-size: 11.5px; font-weight: 600; background: var(--accent-light); border-bottom: 1px solid color-mix(in srgb, var(--accent) 32%, transparent); color: var(--accent-strong); }
+.ocr-head .copy-all { margin-left: auto; height: 24px; padding: 0 10px; border: none; border-radius: 6px; background: var(--accent-solid); color: #fff; font-size: 10.5px; }
+.ocr-body { padding: 8px 10px; font-size: 10.5px; line-height: 1.6; }
+.ocr-row { padding: 4px 8px; margin-bottom: 3px; border-radius: 6px; display: flex; gap: 6px; color: var(--text-secondary); transition: background .2s; }
+.ocr-row .n { font-size: 9px; color: var(--text-muted); font-family: var(--mono); padding-top: 2px; min-width: 14px; }
+.ocr-foot { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--border-color); position: absolute; bottom: 0; left: 0; right: 0; }
+.ocr-foot .fbtn { flex: 1; height: 28px; border-radius: 8px; font-size: 10.5px; border: 1px solid var(--border-color); background: transparent; color: var(--text-primary); display: flex; align-items: center; justify-content: center; gap: 4px; }
+.ocr-foot .fbtn.ai { border-color: color-mix(in srgb, var(--brand-to) 45%, transparent); color: var(--brand-to); }
+@media (max-width: 640px) {
+  .top nav { display: none; }}
+
+/* ===================== 场景氛围层（对齐软件 SkinScene） =====================
+ * 软件里深海主题有一层「世界」：海面透光 + 光柱 + 气泡（SkinScene.tsx），
+ * 卡片是半透明玻璃衬在它前面。官网之前完全没有这一层，所以看起来像个
+ * 通用扁平 App 而不是 PastePanda。
+ *
+ * z-index: -1 而不是 0：这样它衬在 body 正文（静态流内容）之后、body 背景之前，
+ * 不用给每个 section 都加 position/z-index。
+ */
+.ambience { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; opacity: 0; transition: opacity .45s ease; }
+/* 只在深色主题下亮。浅色主题（经典白/森林/美乐蒂/晨曦）本身就是渐变底，
+   再叠光柱会脏。软件里也是按主题给不同场景，不是一套通刷。 */
+[data-theme="ocean-dark"] .ambience { opacity: 1; }
+.ambience .ray { position: absolute; top: -20%; width: 34vw; height: 150%; background: linear-gradient(to bottom, rgba(120,190,255,.13), rgba(120,190,255,.03) 55%, transparent 82%); filter: blur(22px); transform-origin: top center; animation: raySway 17s ease-in-out infinite; }
+.ambience .ray:nth-child(1) { left: 4%; animation-delay: 0s; }
+.ambience .ray:nth-child(2) { left: 38%; width: 26vw; opacity: .7; animation-delay: -6s; }
+.ambience .ray:nth-child(3) { left: 72%; width: 30vw; opacity: .55; animation-delay: -11s; }
+.ambience .bub { position: absolute; bottom: -8%; border-radius: 50%; background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.4), rgba(150,205,255,.1) 60%, transparent 72%); box-shadow: inset 0 0 6px rgba(255,255,255,.18); animation: bubRise linear infinite; }
+.ambience .bub:nth-child(4) { left: 9%;  width: 9px;  height: 9px;  animation-duration: 21s; animation-delay: -2s; }
+.ambience .bub:nth-child(5) { left: 21%; width: 5px;  height: 5px;  animation-duration: 17s; animation-delay: -9s; }
+.ambience .bub:nth-child(6) { left: 33%; width: 13px; height: 13px; animation-duration: 26s; animation-delay: -14s; }
+.ambience .bub:nth-child(7) { left: 47%; width: 6px;  height: 6px;  animation-duration: 19s; animation-delay: -5s; }
+.ambience .bub:nth-child(8) { left: 58%; width: 10px; height: 10px; animation-duration: 23s; animation-delay: -17s; }
+.ambience .bub:nth-child(9) { left: 71%; width: 4px;  height: 4px;  animation-duration: 15s; animation-delay: -11s; }
+.ambience .bub:nth-child(10) { left: 84%; width: 11px; height: 11px; animation-duration: 24s; animation-delay: -3s; }
+.ambience .bub:nth-child(11) { left: 93%; width: 7px;  height: 7px;  animation-duration: 18s; animation-delay: -20s; }
+@media (max-width: 860px) {
+  main { padding: 22px 0 80px; }
+  .top { padding: 10px 16px; gap: 8px; }
+  .top nav { display: none; }}
+@media (max-width: 560px) {
+  body { font-size: 13.5px; }
+  .top .brand { font-size: 14px; }
+  .themeToggle { padding: 6px 8px; font-size: 12px; }}
+
+/* 尊重系统的「减少动画」：JS 那边已经不自动播了，这里把纯 CSS 的循环动画也停掉
+   （光柱、气泡、浮动卡片、滚动提示箭头）。 */
+@media (prefers-reduced-motion: reduce) {
+  .ambience .ray, .ambience .bub, .hf, .hero-scrollhint::after, .hw-new .glow, .cw-new .glow {
+    animation: none !important;
+  }
+  html { scroll-behavior: auto; }}
+/* ---- 内联 lucide 图标（对齐软件：卡片图标是 lucide size18 strokeWidth2.2）---- */
+.lc-ic { width: 18px; height: 18px; display: block; flex-shrink: 0; }
+.hw-ticon img, .cw-ticon img, .ticon img { display: block; border-radius: 4px; }
+@keyframes raySway { 0%, 100% { transform: rotate(6deg) translateX(0); } 50% { transform: rotate(11deg) translateX(2vw); } }
+@keyframes bubRise { 0% { transform: translateY(0) translateX(0); opacity: 0; } 8% { opacity: .8; } 88% { opacity: .5; } 100% { transform: translateY(-112vh) translateX(3vw); opacity: 0; } }
