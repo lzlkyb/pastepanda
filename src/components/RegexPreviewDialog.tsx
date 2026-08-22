@@ -12,9 +12,17 @@ interface RegexPreviewDialogProps {
   text: string;
   rule: RegexRule;
   onClose: () => void;
+  /**
+   * 产物所源自的那条历史记录（粘贴信号回写用，可选）。
+   *
+   * 粘的是替换后的产物，但**源条目确实被用上了** ——「按价值豁免过期清理」
+   * 要的就是这个信号。不带的话，天天正则清洗后再粘的模板在清理逻辑看来
+   * 等于从未被用过。
+   */
+  srcItem?: { id: string; type: string; content_type?: string | null; source: string };
 }
 
-export function RegexPreviewDialog({ text, rule, onClose }: RegexPreviewDialogProps) {
+export function RegexPreviewDialog({ text, rule, onClose, srcItem }: RegexPreviewDialogProps) {
   const { toast } = useToast();
   const anim = useDialogAnim();
   const [pattern, setPattern] = useState(rule.pattern);
@@ -95,9 +103,14 @@ export function RegexPreviewDialog({ text, rule, onClose }: RegexPreviewDialogPr
     const ok = await pasteTextGuarded(preview.result);
     if (ok) {
       toast("已粘贴替换结果", "success");
+      // 粘贴信号回写（此前漏记）。产物没有列表位置，下标传 -1。
+      if (srcItem) {
+        const { logItemPasted } = await import("@/lib/api/actionEvents");
+        logItemPasted(srcItem, -1);
+      }
       onClose();
     }
-  }, [preview, toast, onClose, regexError, rule, pattern, replacement, flags]);
+  }, [preview, toast, onClose, regexError, rule, pattern, replacement, flags, srcItem]);
 
   return (
     <motion.div

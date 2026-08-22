@@ -101,7 +101,16 @@ export const MergeDialog = memo(function MergeDialog({
     const ok = await pasteTextGuarded(display);
     if (ok) {
       toast("已粘贴合并结果", "success");
-      onPasted?.(items.map((i) => i.id));
+      const ids = items.map((i) => i.id);
+      // 粘贴信号回写（此前漏记）：合并 N 条粘出去 = 这 N 条都被用上了，逐条记。
+      // contentType 传空串而不是猜一个——MergeItem 只有 {id, text}，这里确实不知道
+      // 原始类型；而 paste 事件的 content_type 不参与任何聚合（动作权重排除 paste
+      // 哨兵，价值豁免只看 history_id + outcome），传空不损失信息。
+      void (async () => {
+        const { logPasteEvent } = await import("@/lib/api/actionEvents");
+        for (const id of ids) logPasteEvent(id, "", "", -1);
+      })();
+      onPasted?.(ids);
       onClose();
     }
   };

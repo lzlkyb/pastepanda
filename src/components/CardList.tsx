@@ -49,7 +49,14 @@ const RegexRulesDialog = lazy(() => import("@/components/RegexRulesDialog").then
 function RegexPreviewDialogWrapper({ item, ruleId, onClose }: { item: HistoryItem; ruleId: string; onClose: () => void }) {
   const rule = getAllRules().find((r) => r.id === ruleId);
   if (!rule) return null;
-  return <RegexPreviewDialog text={item.text || ""} rule={rule} onClose={onClose} />;
+  return (
+    <RegexPreviewDialog
+      text={item.text || ""}
+      rule={rule}
+      onClose={onClose}
+      srcItem={{ id: item.id, type: item.type, content_type: item.content_type, source: item.source }}
+    />
+  );
 }
 
 /**

@@ -846,7 +846,7 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
 
   // 行为埋点：卡片右键的粘贴变换此前完全没记（只有变换中心记），
   // 于是“用户其实经常从右键用某个变换”这件事，推荐系统一无所知
-  const logEvent = useActionEventLog(item.content_type || item.type, item.source);
+  const logEvent = useActionEventLog(item.content_type || item.type, item.source, item.id);
 
   const handlePasteTransform = useCallback(async (transform: string) => {
     let text = item.text || "";

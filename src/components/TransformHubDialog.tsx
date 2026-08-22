@@ -219,7 +219,7 @@ export function TransformHubDialog() {
    * fire-and-forget：写不进去也只是少一条统计，绝不能拖慢复制/粘贴本身。
    * 只记「动作 + 内容类型 + 来源应用 + 时段 + 结果」，不含任何内容文本。
    */
-  const logEvent = useActionEventLog(ctx.contentType, item?.source);
+  const logEvent = useActionEventLog(ctx.contentType, item?.source, item?.id);
 
   /**
    * 复制卡片**已经算好的**产物。
