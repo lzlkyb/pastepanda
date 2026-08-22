@@ -4219,3 +4219,49 @@ fn test_fts_backfill_covers_null_pinyin_rows() {
     assert_eq!(n, 1, "空拼音的行也要算进回填条数");
     assert_eq!(fts_match_count(&store, "空拼音"), 1);
 }
+
+#[test]
+fn test_fts_delete_clears_backfilled_rows() {
+    // 与 test_fts_index_cleared_on_delete 的区别：那条的行是经 insert 时的单条同步
+    // 进索引的，本条的行是经**回填**进去的。两条路径都得守——万一将来只改坏回填、
+    // 没改坏同步，只有这条会红。（bug 2 当初就发生在「回填进得去、删除删不掉」这个组合上。）
+    let store = make_store();
+    store
+        .insert_history(&make_item("k1", "经回填进索引的内容", "2024-01-01 10:00:00", "text"))
+        .unwrap();
+    {
+        let conn = store.lock_conn();
+        conn.execute_batch("DELETE FROM history_fts;").unwrap();
+        DataStore::backfill_history_fts_on(&conn).unwrap();
+    }
+    assert_eq!(fts_match_count(&store, "经回填进"), 1, "前置：回填要能进索引");
+
+    store.delete_history(&["k1".to_string()]).unwrap();
+    assert_eq!(fts_match_count(&store, "经回填进"), 0);
+}
+
+#[test]
+fn test_fts_empty_index_is_refilled_on_next_open() {
+    // 迁移是 DROP → CREATE → 回填三步，**不在一个事务里**。若进程在回填完成前挂掉，
+    // 下次打开必须自愈（fts_count == 0 → 重新回填）；否则索引会长期空着，
+    // 搜索静默退回 LIKE 全表扫，而用户看不到任何异常。
+    let dir = std::env::temp_dir().join(format!("pastepanda_fts_heal_{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db_path = dir.join("clipboard.db").to_string_lossy().to_string();
+
+    {
+        let store = DataStore::new(&db_path).unwrap();
+        store
+            .insert_history(&make_item("h1", "中断后要能自愈", "2024-01-01 10:00:00", "text"))
+            .unwrap();
+        // 模拟「DROP/CREATE 完成但回填没跑完就退出」后的状态：表在、索引空
+        let conn = store.lock_conn();
+        conn.execute_batch("DELETE FROM history_fts;").unwrap();
+    }
+
+    let store = DataStore::new(&db_path).unwrap();
+    assert_eq!(fts_match_count(&store, "要能自愈"), 1);
+
+    drop(store);
+    let _ = std::fs::remove_dir_all(&dir);
+}
