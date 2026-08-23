@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="ocean">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>媒体预览编辑器（file 类型音视频内嵌）· 设计稿（对照 FileDetailDialog / convertFileSrc）</title>
+<style>
+  :root{
+    --app-bg:#F7F7F8; --card-bg:#fff; --dialog-bg:#fff; --section-bg:#F0F4F8;
+    --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+    --border-color:#E0E4EB; --accent:#0284C7; --accent-light:#E0F2FE; --accent-strong:#0273AD;
+    --hover:#E8ECF2;
+    --green:#11813A; --red:#D82525;
+    --glass-popover-shadow:0 12px 36px rgba(0,0,0,.1),0 2px 8px rgba(0,0,0,.05);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--app-bg);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--text-primary);display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;justify-content:center;min-height:100vh;padding:24px;}
+
+  .dialog-backdrop{position:relative;background:rgba(0,0,0,.35);border-radius:16px;display:flex;align-items:center;justify-content:center;padding:0;}
+  .dialog-box{background:var(--dialog-bg);border:1px solid var(--border-color);border-radius:16px;
+    display:flex;flex-direction:column;box-shadow:var(--glass-popover-shadow);}
+  .dialog-box.w420{width:420px;max-height:82vh;}
+  .dialog-header{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:48px;flex-shrink:0;border-bottom:1px solid var(--border-color);}
+  .dialog-title{font-size:15px;font-weight:600;}
+  .dialog-close{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;background:transparent;color:var(--text-secondary);font-size:16px;}
+  .dialog-footer{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:48px;flex-shrink:0;gap:8px;border-top:1px solid var(--border-color);font-size:10px;color:var(--text-muted);}
+  .btn-primary{margin-left:auto;padding:5px 14px;font-size:12px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer;}
+
+  .fd-body{display:flex;flex-direction:column;gap:10px;padding:12px 16px 0;}
+  .fd-strip{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;border:1px solid var(--border-color);cursor:pointer;background:var(--card-bg);}
+  .fd-strip-icon{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:18px;background:#6366F1;color:#fff;flex-shrink:0;}
+  .fd-strip-main{flex:1;min-width:0;}
+  .fd-strip-name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .fd-strip-sub{font-size:11px;color:var(--green);margin-top:1px;}
+
+  .file-preview-panel{flex:1;display:flex;flex-direction:column;gap:10px;padding:12px 16px;}
+  .file-preview-media{width:100%;border-radius:12px;background:#0B0B0F;display:block;}
+  .file-preview-media.audio{height:64px;}
+
+  .file-preview-toolbar{display:flex;gap:6px;flex-wrap:wrap;}
+  .fab{display:flex;align-items:center;gap:5px;padding:6px 11px;border-radius:8px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-secondary);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;}
+  .fab:hover{border-color:var(--accent);color:var(--accent);}
+
+  .note{font-size:10px;color:var(--text-muted);line-height:1.5;}
+  /* 模拟播放器占位 */
+  .player-mock{position:relative;width:100%;aspect-ratio:16/9;border-radius:12px;background:#0B0B0F;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+  .player-mock .tri{width:0;height:0;border-left:22px solid #fff;border-top:14px solid transparent;border-bottom:14px solid transparent;opacity:.9;}
+  .player-mock .bar{position:absolute;left:10px;right:10px;bottom:10px;height:4px;border-radius:2px;background:rgba(255,255,255,.25);}
+  .player-mock .bar i{position:absolute;left:0;top:0;bottom:0;width:38%;border-radius:2px;background:var(--accent);}
+  .audio-mock{width:100%;height:64px;border-radius:12px;background:#0B0B0F;display:flex;align-items:center;gap:12px;padding:0 16px;}
+  .audio-mock .tri{width:0;height:0;border-left:18px solid #fff;border-top:11px solid transparent;border-bottom:11px solid transparent;flex-shrink:0;}
+  .audio-mock .wave{flex:1;height:36px;display:flex;align-items:center;gap:3px;opacity:.55;}
+  .audio-mock .wave i{width:3px;border-radius:2px;background:#fff;}
+</style>
+</head>
+<body>
+
+  <!-- ============ 视频形态 ============ -->
+  <div class="dialog-backdrop">
+    <div class="dialog-box w420">
+      <div class="dialog-header">
+        <h2 class="dialog-title">📁 文件详情</h2>
+        <button class="dialog-close">✕</button>
+      </div>
+      <div class="fd-body">
+        <div class="fd-strip">
+          <div class="fd-strip-icon">🎬</div>
+          <div class="fd-strip-main">
+            <div class="fd-strip-name">demo.mp4</div>
+            <div class="fd-strip-sub">✓ 文件正常 · 12.4 MB</div>
+          </div>
+        </div>
+      </div>
+      <div class="file-preview-panel">
+        <!-- 真实实现：<video class="file-preview-media" controls src={assetUrl} /> -->
+        <div class="player-mock"><div class="tri"></div><div class="bar"><i></i></div></div>
+        <div class="file-preview-toolbar">
+          <button class="fab">📋 复制路径</button>
+          <button class="fab">🔗 用系统播放</button>
+          <button class="fab">📂 打开文件夹</button>
+        </div>
+        <div class="note">内嵌播放器支持 mp4 / webm / ogv / m4v；mov / mkv / avi 等浏览器不支持的格式自动降级为「用系统播放」。</div>
+      </div>
+      <div class="dialog-footer">
+        <span>粘贴于 1 分钟前</span>
+        <button class="btn-primary">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 音频形态 ============ -->
+  <div class="dialog-backdrop">
+    <div class="dialog-box w420">
+      <div class="dialog-header">
+        <h2 class="dialog-title">📁 文件详情</h2>
+        <button class="dialog-close">✕</button>
+      </div>
+      <div class="fd-body">
+        <div class="fd-strip">
+          <div class="fd-strip-icon">🎵</div>
+          <div class="fd-strip-main">
+            <div class="fd-strip-name">voice-memo.mp3</div>
+            <div class="fd-strip-sub">✓ 文件正常 · 1.8 MB</div>
+          </div>
+        </div>
+      </div>
+      <div class="file-preview-panel">
+        <!-- 真实实现：<audio class="file-preview-media audio" controls src={assetUrl} /> -->
+        <div class="audio-mock"><div class="tri"></div><div class="wave">
+          <i style="height:40%"></i><i style="height:70%"></i><i style="height:100%"></i><i style="height:55%"></i>
+          <i style="height:85%"></i><i style="height:35%"></i><i style="height:65%"></i><i style="height:90%"></i>
+          <i style="height:45%"></i><i style="height:75%"></i><i style="height:30%"></i><i style="height:60%"></i>
+        </div></div>
+        <div class="file-preview-toolbar">
+          <button class="fab">📋 复制路径</button>
+          <button class="fab">🔗 用系统播放</button>
+          <button class="fab">📂 打开文件夹</button>
+        </div>
+        <div class="note">内嵌播放器支持 mp3 / wav / ogg / m4a / flac / aac。</div>
+      </div>
+      <div class="dialog-footer">
+        <span>粘贴于 3 分钟前</span>
+        <button class="btn-primary">关闭</button>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

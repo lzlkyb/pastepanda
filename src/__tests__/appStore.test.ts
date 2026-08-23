@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "@/stores/appStore";
+import { DEFAULT_THEME } from "@/lib/theme";
 
 describe("appStore", () => {
   beforeEach(() => {
@@ -31,7 +32,7 @@ describe("appStore", () => {
 
   it("has correct default config", () => {
     const config = useAppStore.getState().config;
-    expect(config.theme).toBe("light");
+    expect(config.theme).toBe("ocean");
     expect(config.auto_cleanup_days).toBe(30);
     expect(config.hotkey).toBe("ctrl+alt+v");
     expect(config.current_workspace).toBe("默认");
@@ -58,10 +59,21 @@ describe("appStore", () => {
 
   it("can update config partially", () => {
     const store = useAppStore.getState();
-    store.updateConfig({ theme: "dark" });
-    expect(useAppStore.getState().config.theme).toBe("dark");
+    // 用真实存在的 ThemeKey：updateConfig 会把非法 theme 归一到默认值，
+    // 拿 "dark"（从来不在 ThemeKey 联合类型里）测「部分更新」会被归一化吃掉
+    store.updateConfig({ theme: "midnight" });
+    expect(useAppStore.getState().config.theme).toBe("midnight");
     // Other config values should remain unchanged
     expect(useAppStore.getState().config.auto_cleanup_days).toBe(30);
+  });
+
+  it("非法 theme 归一到 DEFAULT_THEME（老配置里的 \"light\" 匹配不到任何 [data-theme] 块）", () => {
+    const store = useAppStore.getState();
+    store.updateConfig({ theme: "light" });
+    expect(useAppStore.getState().config.theme).toBe(DEFAULT_THEME);
+    // 合法值不受影响
+    store.updateConfig({ theme: "ocean-dark" });
+    expect(useAppStore.getState().config.theme).toBe("ocean-dark");
   });
 
   it("can add and remove history items", () => {

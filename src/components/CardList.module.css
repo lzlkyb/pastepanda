@@ -245,7 +245,9 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--orange, #EA580C);
+  /* 实色填充配白字必须用 --orange-solid：--orange 在深海/午夜里是偏亮的 #FB923C，
+     白字压上去只有 2.26:1。见 theme.css 里 --orange-solid 的说明。 */
+  background: var(--orange-solid, #C54A0A);
   color: #fff;
   font-size: 10px;
   font-weight: 700;

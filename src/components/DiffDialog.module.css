@@ -87,6 +87,146 @@
   align-items: center;
   gap: 6px;
 }
+
+/* AI 下拉 */
+.aiWrap {
+  position: relative;
+}
+.aiBtn {
+  font-weight: 600;
+  color: var(--accent);
+}
+.aiBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.aiMenuBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+.aiMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  width: 200px;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.aiMenuTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 2px 4px;
+}
+.aiMenuSide {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 4px;
+}
+.aiMenuSideLabel {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.aiSideSeg {
+  display: flex;
+  background: var(--seg-bg, #E8E8ED);
+  border-radius: 6px;
+  padding: 2px;
+}
+.aiSideBtn {
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.aiSideActive {
+  background: var(--seg-active-bg, #fff);
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+.aiMenuList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.aiMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  border-radius: 7px;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+.aiMenuItem:hover:not(:disabled) {
+  background: var(--hover, rgba(0, 0, 0, 0.05));
+}
+.aiMenuItem:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.aiMenuItem svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.aiMenuBusy {
+  margin-left: auto;
+  color: var(--accent);
+}
+.aiMenuHint {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: center;
+  padding-top: 2px;
+  border-top: 1px solid var(--border-color);
+}
+
+/* 编辑模式双栏 */
+.editBody {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  flex: 1;
+  overflow: hidden;
+  min-height: 200px;
+}
+.editArea {
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 12px 14px;
+  font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--text-primary);
+  background: var(--card-bg, #fff);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.editArea:first-child {
+  border-right: 1px solid var(--border-color);
+}
 .navBtn {
   display: flex;
   align-items: center;

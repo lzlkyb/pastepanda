@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>文本 Diff 编辑器升级 — 方案 C（双轨）</title>
+<style>
+:root {
+  --app-bg: #F4F6F9;
+  --dialog-bg: #fff;
+  --border-color: #E0E4EB;
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #7888A0;
+  --accent: #0284C7;
+  --accent-light: #E0F2FE;
+  --accent-strong: #0369A1;
+  --hover: #E8ECF2;
+  --section-bg: #F0F4F8;
+  --danger: #DC2626;
+  --green: #16A34A;
+  --green-bg: #DCFCE7;
+  --red-bg: #FEF2F2;
+  --seg-bg: #E8E8ED;
+  --seg-active-bg: #fff;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, 'Segoe UI', sans-serif; background: var(--app-bg); color: var(--text-primary); padding: 24px 16px; }
+
+/* ===== Top tab switch ===== */
+.tabbar { display: flex; gap: 8px; justify-content: center; margin-bottom: 18px; }
+.tab {
+  padding: 8px 18px; border-radius: 999px; font-size: 13px; font-weight: 600;
+  border: 1px solid var(--border-color); background: #fff; color: var(--text-secondary);
+  cursor: pointer; transition: all .15s;
+}
+.tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.tab small { display:block; font-weight:400; font-size:10px; opacity:.8; margin-top:1px; }
+
+.stage { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+.hide { display: none !important; }
+
+/* ===== shared dialog ===== */
+.backdrop { position: relative; width: 900px; max-width: 96vw; }
+.dialog-box {
+  background: var(--dialog-bg); border-radius: 16px; display: flex; flex-direction: column;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04);
+  width: 100%; max-height: 86vh; overflow: hidden;
+}
+.dialog-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; height: 48px; flex-shrink: 0; border-bottom: 1px solid var(--border-color);
+}
+.dialog-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.dialog-title .icon { font-size: 16px; }
+.pill {
+  font-size: 10px; font-weight: 600; color: var(--accent-strong); background: var(--accent-light);
+  padding: 2px 8px; border-radius: 999px; margin-left: 4px;
+}
+.header-right { display: flex; align-items: center; gap: 8px; }
+.dialog-close {
+  width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; border: none; background: transparent; color: var(--text-secondary); font-size: 16px;
+}
+.dialog-close:hover { background: var(--hover); }
+.diff-stats { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; }
+.stat-add { color: var(--green); background: var(--green-bg); padding: 2px 6px; border-radius: 4px; }
+.stat-del { color: var(--danger); background: var(--red-bg); padding: 2px 6px; border-radius: 4px; }
+
+/* ===== Toolbar ===== */
+.diff-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 20px; border-bottom: 1px solid var(--border-color); background: var(--section-bg); flex-shrink: 0;
+}
+.toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 6px; }
+.mode-toggle { display: flex; background: var(--seg-bg); border-radius: 6px; padding: 2px; }
+.mode-btn {
+  padding: 4px 10px; font-size: 11px; font-weight: 500; border: none; background: transparent;
+  color: var(--text-secondary); border-radius: 4px; cursor: pointer; font-family: inherit;
+}
+.mode-btn.active { background: var(--seg-active-bg); color: var(--text-primary); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.ignore-ws { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-secondary); margin-left: 12px; cursor: pointer; }
+.ignore-ws input { width: 13px; height: 13px; accent-color: var(--accent); }
+
+/* AI dropdown button */
+.ai-btn {
+  display: flex; align-items: center; gap: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600;
+  border: 1px solid var(--border-color); background: #fff; color: var(--accent-strong); border-radius: 6px; cursor: pointer;
+}
+.ai-btn:hover { border-color: var(--accent); }
+.ai-btn .spark { color: var(--accent); }
+.ai-menu {
+  position: absolute; z-index: 50; margin-top: 4px; background: #fff; border: 1px solid var(--border-color);
+  border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); padding: 6px; min-width: 180px;
+}
+.ai-menu .item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 6px;
+  font-size: 12px; color: var(--text-primary); cursor: pointer;
+}
+.ai-menu .item:hover { background: var(--accent-light); }
+.ai-menu .item .net { font-size: 10px; color: var(--accent); font-weight: 600; }
+.ai-menu .sep { height:1px; background: var(--border-color); margin: 4px 2px; }
+.ai-menu .hint { font-size: 10px; color: var(--text-muted); padding: 4px 10px; }
+
+.nav-btn {
+  display: flex; align-items: center; gap: 4px; padding: 4px 10px; font-size: 11px; font-weight: 500;
+  border: 1px solid var(--border-color); background: #fff; color: var(--text-secondary); border-radius: 6px; cursor: pointer;
+}
+.nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+.nav-info { font-size: 11px; color: var(--text-muted); min-width: 44px; text-align: center; }
+
+/* ===== Column headers ===== */
+.diff-col-headers { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
+.col-header { padding: 6px 16px; font-size: 11px; font-weight: 600; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+.col-header:first-child { border-right: 1px solid var(--border-color); }
+.col-header .time { font-weight: 400; opacity: .7; }
+.col-dot { width: 6px; height: 6px; border-radius: 50%; }
+.col-dot.old { background: var(--danger); }
+.col-dot.new { background: var(--green); }
+.edit-toggle {
+  margin-left: auto; font-size: 10px; font-weight: 500; color: var(--text-secondary); border: 1px solid var(--border-color);
+  background: #fff; border-radius: 5px; padding: 2px 8px; cursor: pointer;
+}
+.edit-toggle.on { color: var(--accent-strong); border-color: var(--accent); background: var(--accent-light); }
+
+/* ===== Diff body ===== */
+.diff-body { display: grid; grid-template-columns: 1fr 1fr; flex: 1; overflow: hidden; min-height: 300px; max-height: 380px; }
+.diff-pane { overflow-y: auto; font-family: 'SF Mono','Cascadia Code',Consolas,monospace; font-size: 12px; line-height: 20px; }
+.diff-pane:first-child { border-right: 1px solid var(--border-color); }
+.diff-line { display: flex; min-height: 20px; }
+.line-no {
+  width: 36px; min-width: 36px; text-align: right; padding-right: 8px; color: var(--text-muted); opacity: .6;
+  font-size: 11px; user-select: none; border-right: 1px solid var(--border-color);
+  display: flex; align-items: center; justify-content: flex-end;
+}
+.line-content { flex: 1; padding: 0 12px; white-space: pre-wrap; word-break: break-all; }
+.diff-line.added { background: #DCFCE7; }
+.diff-line.added .line-no { background: #BBF7D0; color: #166534; opacity: 1; }
+.diff-line.removed { background: #FEE2E2; }
+.diff-line.removed .line-no { background: #FECACA; color: #991B1B; opacity: 1; }
+.diff-line.empty { background: #F8FAFC; }
+.diff-line.empty .line-content { opacity: .3; }
+.word-add { background: #86EFAC; border-radius: 2px; padding: 0 1px; }
+.word-del { background: #FCA5A5; border-radius: 2px; padding: 0 1px; text-decoration: line-through; }
+.diff-line.current-diff { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 2px; }
+
+/* editable textarea (dual-edit view) */
+.edit-pane { padding: 8px 12px; }
+.edit-pane textarea {
+  width: 100%; height: 100%; min-height: 280px; border: none; outline: none; resize: none;
+  font-family: 'SF Mono','Cascadia Code',Consolas,monospace; font-size: 12px; line-height: 20px;
+  color: var(--text-primary); background: transparent;
+}
+.edit-pane.left { border-right: 1px solid var(--border-color); }
+
+/* ===== Footer ===== */
+.diff-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px; border-top: 1px solid var(--border-color); flex-shrink: 0;
+}
+.footer-left { display: flex; gap: 8px; }
+.action-btn {
+  display: flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px;
+  border: 1px solid var(--border-color); background: #fff; color: var(--text-secondary);
+  font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit;
+}
+.action-btn:hover { border-color: var(--accent); color: var(--accent); }
+.action-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.action-btn.primary:hover { opacity: .9; color: #fff; }
+
+/* ===== Fullscreen window (B) ===== */
+.fs-window {
+  position: relative; width: 1000px; max-width: 96vw; height: 640px; border-radius: 14px; overflow: hidden;
+  background: #fff; box-shadow: 0 20px 60px rgba(0,0,0,0.25); display: flex; flex-direction: column;
+  border: 1px solid var(--border-color);
+}
+.fs-skin { position: absolute; inset: 0; background: linear-gradient(135deg,#0EA5E9 0%, #6366F1 100%); opacity: .12; }
+.fs-toolbar {
+  position: relative; z-index: 2; display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-bottom: 1px solid var(--border-color); background: rgba(255,255,255,.85); backdrop-filter: blur(8px);
+}
+.fs-left { display: flex; align-items: center; gap: 8px; }
+.fs-icon { font-size: 14px; }
+.fs-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.fs-dirty { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.fs-right { display: flex; align-items: center; gap: 6px; }
+.fs-btn {
+  display: flex; align-items: center; gap: 4px; padding: 5px 10px; font-size: 12px; font-weight: 500;
+  border: 1px solid var(--border-color); background: #fff; color: var(--text-secondary); border-radius: 7px; cursor: pointer;
+}
+.fs-btn:hover { border-color: var(--accent); color: var(--accent); }
+.fs-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.fs-btn.primary:hover { opacity:.9; color:#fff; }
+.fs-btn.icon { padding: 5px 8px; }
+
+.fs-main { position: relative; z-index: 2; flex: 1; display: grid; grid-template-columns: 1fr 1fr; overflow: hidden; }
+.fs-pane { display: flex; flex-direction: column; min-height: 0; }
+.fs-pane.left { border-right: 1px solid var(--border-color); }
+.fs-pane-head { padding: 5px 14px; font-size: 11px; font-weight: 600; color: var(--text-muted); display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--border-color); }
+.fs-code {
+  flex: 1; overflow: auto; padding: 10px 12px; font-family: 'SF Mono','Cascadia Code',Consolas,monospace;
+  font-size: 12px; line-height: 20px; color: var(--text-primary); white-space: pre-wrap; word-break: break-all;
+}
+.fs-code .ln { color: var(--text-muted); opacity:.6; }
+.fs-statusbar {
+  position: relative; z-index: 2; display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 14px; border-top: 1px solid var(--border-color); background: var(--section-bg);
+  font-size: 11px; color: var(--text-muted); flex-shrink: 0;
+}
+.fs-status-left, .fs-status-right { display: flex; gap: 14px; align-items: center; }
+.fs-saved { color: var(--green); }
+
+/* ===== description ===== */
+.desc-panel {
+  width: 1000px; max-width: 96vw; padding: 16px 20px; background: #fff; border-radius: 12px;
+  border: 1px solid var(--border-color); font-size: 13px; color: var(--text-secondary); line-height: 1.8;
+}
+.desc-panel h3 { font-size: 14px; color: var(--text-primary); margin-bottom: 8px; }
+.desc-panel ul { padding-left: 18px; }
+.desc-panel li { margin-bottom: 4px; }
+.tag { display:inline-block; font-size:10px; font-weight:600; padding:1px 6px; border-radius:4px; background:var(--accent-light); color:var(--accent-strong); margin-right:4px; }
+</style>
+</head>
+<body>
+
+<!-- Tab switch -->
+<div class="tabbar">
+  <div class="tab active" onclick="switchTab('A')">① 模态快比（升级）<small>DiffDialog 原地升级</small></div>
+  <div class="tab" onclick="switchTab('B')">② 全屏深编（新窗口）<small>编辑器家族成员</small></div>
+</div>
+
+<div class="stage">
+
+<!-- ============ TRACK A: Modal ============ -->
+<div id="trackA">
+  <div class="backdrop">
+    <div class="dialog-box">
+      <!-- Header -->
+      <div class="dialog-header">
+        <div class="dialog-title">
+          <span class="icon">🔀</span> 对比差异
+          <span class="pill">Ctrl+Shift+D 独立打开</span>
+          <span class="diff-stats">
+            <span class="stat-add">+3</span>
+            <span class="stat-del">-2</span>
+          </span>
+        </div>
+        <div class="header-right">
+          <button class="dialog-close" onclick="alert('close')">✕</button>
+        </div>
+      </div>
+
+      <!-- Toolbar: mode + view switch + AI + fullscreen -->
+      <div class="diff-toolbar">
+        <div class="toolbar-left">
+          <div class="mode-toggle">
+            <button class="mode-btn active" onclick="setMode(this,'line')">按行</button>
+            <button class="mode-btn" onclick="setMode(this,'word')">按词</button>
+          </div>
+          <label class="ignore-ws"><input type="checkbox" /> 忽略空白</label>
+          <div class="mode-toggle" style="margin-left:12px;">
+            <button class="mode-btn active" id="viewDiff" onclick="setView(this,'diff')">差异预览</button>
+            <button class="mode-btn" id="viewEdit" onclick="setView(this,'edit')">双栏编辑</button>
+          </div>
+        </div>
+        <div class="toolbar-right" style="position:relative;">
+          <button class="ai-btn" onclick="toggleAi(event)"><span class="spark">✦</span> AI <span style="font-size:9px;">▾</span></button>
+          <div class="ai-menu hide" id="aiMenu">
+            <div class="item" onclick="aiRun('translate')">翻译 <span class="net">✦出网</span></div>
+            <div class="item" onclick="aiRun('polish')">润色语气 <span class="net">✦出网</span></div>
+            <div class="item" onclick="aiRun('explain')">解释差异 <span class="net">✦出网</span></div>
+            <div class="item" onclick="aiRun('merge')">合并两侧 <span class="net">✦出网</span></div>
+            <div class="sep"></div>
+            <div class="item" onclick="aiRun('summarize')">总结 <span class="net">✦出网</span></div>
+            <div class="hint">对选中侧/选区执行，结果填入另一侧并实时重算差异</div>
+          </div>
+          <button class="nav-btn" onclick="alert('打开全屏深编窗口：open_fullscreen_editor({contentType:\"diff\"})')">⤢ 全屏对比</button>
+        </div>
+      </div>
+
+      <!-- Column headers -->
+      <div class="diff-col-headers">
+        <div class="col-header">
+          <span class="col-dot old"></span> 旧文本
+          <span class="time" id="oldMeta">· 可编辑</span>
+          <button class="edit-toggle" onclick="toggleEdit('left',this)">✎ 编辑</button>
+        </div>
+        <div class="col-header">
+          <span class="col-dot new"></span> 新文本
+          <span class="time">· 可编辑</span>
+          <button class="edit-toggle" onclick="toggleEdit('right',this)">✎ 编辑</button>
+        </div>
+      </div>
+
+      <!-- Diff body (default: diff preview) -->
+      <div class="diff-body" id="diffBody">
+        <div class="diff-pane">
+          <div class="diff-line"><span class="line-no">1</span><span class="line-content">function calculateTotal(items) {</span></div>
+          <div class="diff-line removed"><span class="line-no">2</span><span class="line-content">  let total = 0;</span></div>
+          <div class="diff-line removed"><span class="line-no">3</span><span class="line-content">  for (let i = 0; i &lt; items.length; i++) {</span></div>
+          <div class="diff-line empty"><span class="line-no"></span><span class="line-content"></span></div>
+          <div class="diff-line"><span class="line-no">4</span><span class="line-content">    total += items[i].price;</span></div>
+          <div class="diff-line"><span class="line-no">5</span><span class="line-content">  }</span></div>
+          <div class="diff-line removed current-diff"><span class="line-no">6</span><span class="line-content">  return total;</span></div>
+          <div class="diff-line"><span class="line-no">7</span><span class="line-content">}</span></div>
+        </div>
+        <div class="diff-pane">
+          <div class="diff-line"><span class="line-no">1</span><span class="line-content">function calculateTotal(items) {</span></div>
+          <div class="diff-line added"><span class="line-no">2</span><span class="line-content">  const total = items.reduce((s, it) =&gt; s + it.price, 0);</span></div>
+          <div class="diff-line added"><span class="line-no">3</span><span class="line-content">  return `$${total.toFixed(2)}`;</span></div>
+          <div class="diff-line"><span class="line-no">4</span><span class="line-content">    total += items[i].price;</span></div>
+          <div class="diff-line"><span class="line-no">5</span><span class="line-content">  }</span></div>
+          <div class="diff-line added current-diff"><span class="line-no">6</span><span class="line-content">  return `总金额 ${total}`;</span></div>
+          <div class="diff-line"><span class="line-no">7</span><span class="line-content">}</span></div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="diff-footer">
+        <div class="footer-left">
+          <button class="action-btn">📋 复制旧文本</button>
+          <button class="action-btn">📋 复制新文本</button>
+        </div>
+        <button class="action-btn primary">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="desc-panel">
+    <h3>① 模态快比（升级 DiffDialog）— 改动范围小、风险低</h3>
+    <ul>
+      <li><span class="tag">可编辑</span>工具栏新增「差异预览 | 双栏编辑」分段：双栏编辑态下左右各一个 <code>textarea</code>（等宽等行高），改动实时喂给 <code>useDiff</code> 重算差异，行号/增删高亮随输入刷新。</li>
+      <li><span class="tag">独立入口</span>除「选中 2 条历史 → 对比差异」外，新增主窗口工具栏「🔀 对比」按钮 + 全局快捷键 <b>Ctrl+Shift+D</b>，打开时左栏预填当前剪贴板文本、右栏空白，无需先选历史。</li>
+      <li><span class="tag">AI 闭环</span>工具栏「✦ AI」下拉：翻译 / 润色 / 解释差异 / 合并两侧 / 总结 —— 对选中侧（或选区）调用 <code>getTransform(id).run(text)</code>，结果填入另一侧并实时重算 diff，形成「改→看差→再 AI 改」循环。未启用 AI（<code>aiOk=false</code>）时整条不渲染，与变换面板门控一致。</li>
+      <li><span class="tag">复用</span>完全复用既有 <code>DiffDialog</code> / <code>DiffPane</code> / <code>useDiff</code> / CSS 令牌；列头「✎ 编辑」为单侧重编辑的快捷开关（与分段视图互补）。</li>
+      <li><span class="tag">文件</span>仅动 <code>DiffDialog.tsx</code>、<code>DiffDialog.module.css</code>、<code>CardList.tsx</code>（加入口）、<code>App.tsx</code>（注册 Ctrl+Shift+D）、新增 <code>useDiff</code> 调用点——集中在 3–4 个文件。</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============ TRACK B: Fullscreen ============ -->
+<div id="trackB" class="hide">
+  <div class="fs-window">
+    <div class="fs-skin"></div>
+    <!-- Toolbar -->
+    <div class="fs-toolbar">
+      <div class="fs-left">
+        <span class="fs-icon">🔀</span>
+        <span class="fs-name">文本对比.panda</span>
+        <span class="fs-dirty"></span>
+        <span style="font-size:11px;color:var(--text-muted);">未保存</span>
+      </div>
+      <div class="fs-right" style="position:relative;">
+        <button class="ai-btn" onclick="toggleAi(event)"><span class="spark">✦</span> AI <span style="font-size:9px;">▾</span></button>
+        <div class="ai-menu hide" id="aiMenuB">
+          <div class="item" onclick="aiRun('translate')">翻译 <span class="net">✦出网</span></div>
+          <div class="item" onclick="aiRun('polish')">润色语气 <span class="net">✦出网</span></div>
+          <div class="item" onclick="aiRun('explain')">解释差异 <span class="net">✦出网</span></div>
+          <div class="item" onclick="aiRun('merge')">合并两侧 <span class="net">✦出网</span></div>
+          <div class="sep"></div>
+          <div class="item" onclick="aiRun('summarize')">总结 <span class="net">✦出网</span></div>
+          <div class="hint">在独立 OS 窗口内重建 AI 接入（getTransform().run）</div>
+        </div>
+        <button class="fs-btn icon" title="放大到真全屏">⤢</button>
+        <button class="fs-btn icon" title="关闭 Esc">✕</button>
+      </div>
+    </div>
+
+    <!-- Main: two editable CodeMirror-style panes -->
+    <div class="fs-main">
+      <div class="fs-pane left">
+        <div class="fs-pane-head"><span class="col-dot old"></span> 旧文本（可编辑）</div>
+        <div class="fs-code" contenteditable="true">function calculateTotal(items) {
+  let total = 0;
+  for (let i = 0; i &lt; items.length; i++) {
+    total += items[i].price;
+  }
+  return total;
+}</div>
+      </div>
+      <div class="fs-pane">
+        <div class="fs-pane-head"><span class="col-dot new"></span> 新文本（可编辑）</div>
+        <div class="fs-code" contenteditable="true">function calculateTotal(items) {
+  const total = items.reduce((s, it) =&gt; s + it.price, 0);
+  return `总金额 ${total}`;
+}</div>
+      </div>
+    </div>
+
+    <!-- Status bar -->
+    <div class="fs-statusbar">
+      <div class="fs-status-left">
+        <span>文本对比.panda</span>
+        <span>旧 6 行 · 新 4 行</span>
+        <span>UTF-8</span>
+      </div>
+      <div class="fs-status-right">
+        <span class="fs-saved">● 已比对 +3 / -2</span>
+        <span>纯文本</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="desc-panel">
+    <h3>② 全屏深编（新窗口 · 编辑器家族正式成员）— 对标 SQL / 正则编辑器</h3>
+    <ul>
+      <li><span class="tag">注册</span>在 <code>registry.tsx</code> 新增 <code>diff</code> 类型（<code>FullscreenTypeSpec</code>），经 Rust <code>open_fullscreen_editor({contentType:"diff"})</code> 打开独立 OS 窗口，与 markdown/json/代码同级。</li>
+      <li><span class="tag">双编辑器</span>复用 <code>FullscreenEditor</code> 通用壳（SkinScene 皮肤层 + 拖拽工具栏 + 状态栏），主区为左右两个 CodeMirror 编辑实例，每个独立可编辑、语法高亮、行号；内容变化实时驱动差异计算。</li>
+      <li><span class="tag">AI 闭环</span>工具栏「✦ AI」下拉在独立窗口内重建接入（同样 <code>getTransform(id).run</code> + <code>ai_enabled</code> 门控），结果回填对侧并实时重算 diff。</li>
+      <li><span class="tag">能力</span>保存/另存为、自动保存、查找替换、缩放、Esc 关闭守卫 —— 全继承通用壳，无需重写；可把对比结果直接存成 <code>.panda</code> 文件或写回历史库。</li>
+      <li><span class="tag">与 Track A 的关系</span>Track A 负责「随手快比」，Track B 负责「重度深编/持久化」；两处 AI 机制同源（同一 <code>getTransform</code> 注册表），行为一致。</li>
+    </ul>
+  </div>
+</div>
+
+</div>
+
+<script>
+function switchTab(t){
+  document.getElementById('trackA').classList.toggle('hide', t!=='A');
+  document.getElementById('trackB').classList.toggle('hide', t!=='B');
+  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active', (i===0)===(t==='A')));
+}
+function setMode(btn,mode){
+  btn.parentElement.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+function setView(btn,v){
+  document.getElementById('viewDiff').classList.toggle('active', v==='diff');
+  document.getElementById('viewEdit').classList.toggle('active', v==='edit');
+  // 真实实现：切到双栏编辑时把 diffBody 替换为两个 textarea
+  alert(v==='edit' ? '真实实现：左右切换为可编辑 textarea，改动实时驱动 useDiff 重算' : '真实实现：恢复只读差异高亮视图');
+}
+function toggleEdit(side,btn){
+  btn.classList.toggle('on');
+  alert('真实实现：'+ (btn.classList.contains('on')?'该侧切换为可编辑 textarea':'该侧恢复差异只读视图'));
+}
+function toggleAi(e){
+  e.stopPropagation();
+  const menu = e.currentTarget.parentElement.querySelector('.ai-menu');
+  menu.classList.toggle('hide');
+}
+function aiRun(act){
+  document.querySelectorAll('.ai-menu').forEach(m=>m.classList.add('hide'));
+  alert('真实实现：getTransform("ai-'+act+'").run(选中文本) → 结果填入对侧并实时重算 diff');
+}
+document.addEventListener('click',()=>document.querySelectorAll('.ai-menu').forEach(m=>m.classList.add('hide')));
+</script>
+</body>
+</html>

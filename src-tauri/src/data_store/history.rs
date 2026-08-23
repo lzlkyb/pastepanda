@@ -77,7 +77,11 @@ impl DataStore {
     pub(crate) fn sync_fts_upsert(&self, conn: &rusqlite::Connection, id: &str) {
         let res = conn
             .query_row(
-                "SELECT rowid, text, pinyin_initials, content FROM history WHERE id = ?1",
+                // COALESCE 是必需的：pinyin_initials 可为 NULL（本机 1214 条里 195 条是）。
+                // 旧实现直接 r.get::<_, String> 读它 → 取值报错 → 整条同步失败、
+                // 只留一行 warn，于是那 16% 的内容从来没进过索引。
+                "SELECT rowid, COALESCE(text, ''), COALESCE(pinyin_initials, ''), COALESCE(content, '')
+                 FROM history WHERE id = ?1",
                 [id],
                 |r| {
                     Ok((
@@ -89,16 +93,90 @@ impl DataStore {
                 },
             )
             .and_then(|(rowid, text, pinyin, content)| {
+                // FTS5 虚拟表不支持 UPSERT（旧实现用 ON CONFLICT，语句每次都报错、
+                // 被下面的 warn 吞掉，于是首次回填之后的新增内容从未进过索引）。
+                // 先按 rowid 删旧行再插，才是可用的「事后更新」路径。
+                conn.execute("DELETE FROM history_fts WHERE rowid = ?1", rusqlite::params![rowid])?;
                 conn.execute(
-                    "INSERT INTO history_fts (rowid, text, pinyin, content) VALUES (?1, ?2, ?3, ?4)
-                     ON CONFLICT(rowid) DO UPDATE SET
-                        text = excluded.text, pinyin = excluded.pinyin, content = excluded.content",
+                    "INSERT INTO history_fts (rowid, text, pinyin, content) VALUES (?1, ?2, ?3, ?4)",
                     rusqlite::params![rowid, to_ngram(&text), to_ngram(&pinyin), to_ngram(&content)],
                 )
             });
         if let Err(e) = res {
             log::warn!("[FTS] 索引同步失败 (id={}): {}", id, e);
         }
+    }
+
+    /// 一次性迁移留痕（写 `schema_migrations`）。**失败只 warn，绝不阻断启动**——
+    /// 留痕是诊断辅助，它自己挂掉不该让用户打不开应用。
+    ///
+    /// 不做去重：同名多行是有意的，重复出现本身就是「这段迁移在反复跑」的信号。
+    pub(crate) fn record_migration_on(conn: &rusqlite::Connection, name: &str, detail: &str) {
+        if let Err(e) = conn.execute(
+            "INSERT INTO schema_migrations (name, applied_at, detail) VALUES (?1, ?2, ?3)",
+            rusqlite::params![
+                name,
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                detail
+            ],
+        ) {
+            log::warn!("[Migration] 留痕写入失败 ({}): {}", name, e);
+        }
+    }
+
+    /// 全量回填 history_fts（首次建表或旧结构重建后调用）。返回回填条数。
+    ///
+    /// **必须包在一个事务里**：逐条 autocommit 等于每行一次 fsync，实测 5 万条要
+    /// 115 秒，而这段在启动路径上是阻塞的。单事务后是秒级。
+    ///
+    /// 先收集再写（同 `backfill_ocr_fts_on` / `backfill_content_types` 的写法）：
+    /// 代价是存量文本要一次性进内存，换来的是不必推敲「游标还活着时往同一连接写」。
+    pub(crate) fn backfill_history_fts_on(conn: &rusqlite::Connection) -> Result<u32, String> {
+        let pending: Vec<(i64, String, String, String)> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT rowid, COALESCE(text, ''), COALESCE(pinyin_initials, ''), COALESCE(content, '')
+                     FROM history",
+                )
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+                .map_err(|e| e.to_string())?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
+        if pending.is_empty() {
+            return Ok(0);
+        }
+
+        conn.execute_batch("BEGIN;").map_err(|e| e.to_string())?;
+        let mut n = 0u32;
+        {
+            let mut ins = match conn.prepare(
+                "INSERT INTO history_fts (rowid, text, pinyin, content) VALUES (?1, ?2, ?3, ?4)",
+            ) {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = conn.execute_batch("ROLLBACK;");
+                    return Err(e.to_string());
+                }
+            };
+            for (rowid, text, pinyin, content) in &pending {
+                // 单条失败不中断整批（同 backfill_ocr_fts_on 的容错取舍）
+                if ins
+                    .execute(rusqlite::params![
+                        rowid,
+                        to_ngram(text),
+                        to_ngram(pinyin),
+                        to_ngram(content)
+                    ])
+                    .is_ok()
+                {
+                    n += 1;
+                }
+            }
+        }
+        conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
+        Ok(n)
     }
 
     // 曾有一个单条 `sync_fts_delete`；删除路径统一走 `delete_history(&[String])`，
@@ -242,10 +320,16 @@ impl DataStore {
         let mut sql = String::from(
             "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon, content_type
              FROM history WHERE workspace = ?1
-             AND history.rowid IN (SELECT rowid FROM history_fts WHERE history_fts MATCH ?2)",
+             AND (history.rowid IN (SELECT rowid FROM history_fts WHERE history_fts MATCH ?2)
+                  OR history.rowid IN (SELECT rowid FROM image_ocr_fts WHERE image_ocr_fts MATCH ?3))",
         );
-        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> =
-            vec![Box::new(workspace.to_string()), Box::new(to_ngram(search))];
+        // ?2 / ?3 是同一个查询词，但必须各绑一次：两张 FTS 表是各自独立的 MATCH 子查询。
+        // 第二个子查询让「截图里的字」可被搜到（image_ocr_fts，见 mod.rs 建表注释）。
+        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
+            Box::new(workspace.to_string()),
+            Box::new(to_ngram(search)),
+            Box::new(to_ngram(search)),
+        ];
 
         // 以下过滤子句与 search_history 的 LIKE 版保持一致
         if filter == "pinned" {
@@ -292,29 +376,37 @@ impl DataStore {
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
             params_vec.iter().map(|p| p.as_ref()).collect();
 
-        let mut stmt = conn.prepare(&sql).map_err(|_| ())?;
-        let rows = stmt
-            .query_map(param_refs.as_slice(), |row| {
-                Ok(HistoryItem {
-                    id: row.get(0)?,
-                    text: row.get(1)?,
-                    time: row.get(2)?,
-                    item_type: row.get(3)?,
-                    content: row.get(4)?,
-                    pinned: row.get::<_, i32>(5)? != 0,
-                    source: row.get(6)?,
-                    workspace: row.get(7)?,
-                    md5: row.get(8)?,
-                    pinyin_initials: row.get(9)?,
-                    group_id: row.get(10)?,
-                    source_icon: row.get(11)?,
-                    content_type: row.get(12)?,
-                    ocr_text: None,
-                    tags: Vec::new(),
+        let mut items = {
+            let mut stmt = conn.prepare(&sql).map_err(|_| ())?;
+            let rows = stmt
+                .query_map(param_refs.as_slice(), |row| {
+                    Ok(HistoryItem {
+                        id: row.get(0)?,
+                        text: row.get(1)?,
+                        time: row.get(2)?,
+                        item_type: row.get(3)?,
+                        content: row.get(4)?,
+                        pinned: row.get::<_, i32>(5)? != 0,
+                        source: row.get(6)?,
+                        workspace: row.get(7)?,
+                        md5: row.get(8)?,
+                        pinyin_initials: row.get(9)?,
+                        group_id: row.get(10)?,
+                        source_icon: row.get(11)?,
+                        content_type: row.get(12)?,
+                        ocr_text: None,
+                        tags: Vec::new(),
+                    })
                 })
-            })
-            .map_err(|_| ())?;
-        let mut items = rows.filter_map(|r| r.ok()).collect::<Vec<HistoryItem>>();
+                .map_err(|_| ())?;
+            rows.filter_map(|r| r.ok()).collect::<Vec<HistoryItem>>()
+        };
+        // ⚠️ 必须先放锁再回填 OCR：`load_ocr_texts_into_items` 内部走 `get_ocr_texts`，
+        //    而它自己会 `lock_conn()`——std::sync::Mutex 不可重入，持锁调用就是死锁。
+        //    这里以前是持锁调的，只是从来没触发过：命中要求 FTS 快路径返回**图片**条目，
+        //    而 sync_fts_upsert 的 UPSERT 在虚拟表上一直失败、新条目从未进过索引。
+        //    image_ocr_fts 一接进来，命中图片就成了常态，这个坑必然踩到。
+        drop(conn);
         self.load_ocr_texts_into_items(&mut items).map_err(|_| ())?;
         Ok(items)
     }
@@ -826,6 +918,13 @@ impl DataStore {
                 placeholders.join(",")
             );
             let _ = conn.execute(&fts_delete_sql, param_refs.as_slice());
+
+            // OCR 索引同理。不清的话 SQLite 复用 rowid 后，已删图片的文字会命中新条目。
+            let ocr_fts_delete_sql = format!(
+                "DELETE FROM image_ocr_fts WHERE rowid IN (SELECT rowid FROM history WHERE id IN ({}))",
+                placeholders.join(",")
+            );
+            let _ = conn.execute(&ocr_fts_delete_sql, param_refs.as_slice());
 
             // 审查 #9：内容记忆与历史生命周期级联 —— 摘要与派生向量随记录一起删，
             // 否则 semantic_vector_pending 会给已删条目的摘要补向量（白烧 embedding 预算）

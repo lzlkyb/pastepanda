@@ -140,17 +140,23 @@ export function ToolBtn({ icon, label, onClick, accent }: { icon: React.ReactNod
   );
 }
 
-export function ActionBtn({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+export function ActionBtn({ icon, label, onClick, disabled }: { icon: React.ReactNode; label: string; onClick: () => void; disabled?: boolean }) {
   return (
-    <button onClick={onClick} style={{
-      display: "flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 6,
-      border: "1px solid var(--border-color)", background: "var(--card-bg)",
-      color: "var(--text-secondary)", fontSize: 11, fontWeight: 600, cursor: "pointer",
-      fontFamily: "inherit", transition: "all 0.15s",
-    }}
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        display: "flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 6,
+        border: "1px solid var(--border-color)", background: "var(--card-bg)",
+        color: disabled ? "var(--text-muted)" : "var(--text-secondary)", fontSize: 11, fontWeight: 600,
+        cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1,
+        fontFamily: "inherit", transition: "all 0.15s",
+      }}
       // hover 态 accent 文字压在 accent-light 底上，浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong
-      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent-light)"; e.currentTarget.style.color = "var(--accent-strong)"; e.currentTarget.style.borderColor = "var(--accent)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = "var(--card-bg)"; e.currentTarget.style.color = "var(--text-secondary)"; e.currentTarget.style.borderColor = "var(--border-color)"; }}>
+      onMouseEnter={(e) => { if (disabled) return; e.currentTarget.style.background = "var(--accent-light)"; e.currentTarget.style.color = "var(--accent-strong)"; e.currentTarget.style.borderColor = "var(--accent)"; }}
+      // 离开时也要判 disabled：否则鼠标划过禁用按钮后会把文字色刷成 text-secondary，
+      // 比 disabled 该有的 text-muted 更亮，看着像又可点了
+      onMouseLeave={(e) => { if (disabled) return; e.currentTarget.style.background = "var(--card-bg)"; e.currentTarget.style.color = "var(--text-secondary)"; e.currentTarget.style.borderColor = "var(--border-color)"; }}>
       {icon}{label}
     </button>
   );

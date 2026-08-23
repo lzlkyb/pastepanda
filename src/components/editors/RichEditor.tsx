@@ -297,10 +297,13 @@ export function RichEditor({ item, registerActions }: EditorProps) {
       const ok = await pasteRichGuarded(htmlRef.current, richToPlainText(htmlRef.current));
       if (!ok) return; // 取消或失败（失败时 api 层已弹错）
       toast("已粘贴", "success");
+      // 粘贴信号回写（此前漏记）；编辑器内无列表位置，下标传 -1
+      const { logItemPasted } = await import("@/lib/api/actionEvents");
+      logItemPasted(item, -1);
     } catch (e) {
       toast("粘贴失败: " + (e instanceof Error ? e.message : String(e)), "error");
     }
-  }, [toast]);
+  }, [item, toast]);
 
   const isDirty = useCallback(() => htmlRef.current !== originalHtml, [originalHtml]);
 

@@ -627,7 +627,7 @@ describe("initBackend", () => {
     vi.mocked(invoke)
       // get_config（先加载配置）
       .mockResolvedValueOnce({
-        theme: "dark",
+        theme: "midnight",
         auto_cleanup_days: 7,
         hotkey: "ctrl+shift+v",
         current_workspace: "默认",
@@ -679,7 +679,8 @@ describe("initBackend", () => {
 
     const store = useAppStore.getState();
     expect(store.history).toHaveLength(1);
-    expect(store.config.theme).toBe("dark");
+    // theme 用真实的 ThemeKey：updateConfig 会把非法值归一到 DEFAULT_THEME
+    expect(store.config.theme).toBe("midnight");
     expect(store.config.auto_cleanup_days).toBe(7);
     expect(store.groups).toHaveLength(1);
     expect(store.tags).toHaveLength(1);
@@ -1129,5 +1130,75 @@ describe("invalidateCountsCache", () => {
     invalidateCountsCache();
 
     expect(eventSpy).toHaveBeenCalled();
+  });
+});
+
+// ============================================================
+// 静默失败补提示（规则 15.3：静默失败比报错难查一个量级）
+//
+// 这些都是用户在界面上主动点出来的操作，此前失败时只 logger.error 就返回，
+// 界面毫无反应——「点了没反应」在用户眼里和「坏了」没区别，而且无从判断。
+// 不覆盖后台读取（获取标签/统计/缩略图等，用户没主动要求，弹出来是噪音），
+// 也不覆盖已有 toast 的路径（如 pasteText，重复弹更糟）。
+// ============================================================
+describe("用户操作失败必须可见", () => {
+  /** 收集本次调用派发的 app-toast */
+  function catchToast() {
+    const spy = vi.fn();
+    window.addEventListener("app-toast", spy as any);
+    return {
+      spy,
+      cleanup: () => window.removeEventListener("app-toast", spy as any),
+      firstMessage: () => (spy.mock.calls[0]?.[0] as CustomEvent | undefined)?.detail?.message ?? "",
+    };
+  }
+
+  const CASES: Array<[string, string, (m: Record<string, any>) => Promise<unknown>]> = [
+    ["createTag",        "创建标签失败", (m) => m.createTag("x", "#fff")],
+    ["updateTag",        "更新标签失败", (m) => m.updateTag("t1", "x", "#fff")],
+    ["deleteTag",        "删除标签失败", (m) => m.deleteTag("t1")],
+    ["setItemTags",      "设置标签失败", (m) => m.setItemTags("h1", ["t1"])],
+    ["addItemTags",      "添加标签失败", (m) => m.addItemTags(["h1"], ["t1"])],
+    ["removeItemTags",   "移除标签失败", (m) => m.removeItemTags(["h1"], ["t1"])],
+    ["createGroup",      "创建分组失败", (m) => m.createGroup("g", "#fff", "📁")],
+    ["updateGroup",      "更新分组失败", (m) => m.updateGroup("g1", { name: "g" })],
+    ["deleteGroup",      "删除分组失败", (m) => m.deleteGroup("g1")],
+    ["reorderGroups",    "排序分组失败", (m) => m.reorderGroups(["g1", "g2"])],
+    ["moveToGroup",      "移动记录失败", (m) => m.moveToGroup(["h1"], "g1")],
+  ];
+
+  for (const [name, expected, call] of CASES) {
+    it(`${name} 失败时弹出「${expected}」`, async () => {
+      const mod = await import("@/lib/api");
+      vi.mocked(invoke).mockRejectedValue(new Error("boom"));
+      const t = catchToast();
+
+      await call(mod as unknown as Record<string, any>);
+
+      expect(t.firstMessage()).toContain(expected);
+      t.cleanup();
+    });
+  }
+
+  it("copyOnly 失败时弹出「复制失败」", async () => {
+    const { copyOnly } = await import("@/lib/api");
+    vi.mocked(invoke).mockRejectedValue(new Error("boom"));
+    const t = catchToast();
+
+    await copyOnly("hello");
+
+    expect(t.firstMessage()).toContain("复制失败");
+    t.cleanup();
+  });
+
+  it("togglePin 失败时弹出「切换置顶失败」", async () => {
+    const { togglePin } = await import("@/lib/api");
+    vi.mocked(invoke).mockRejectedValue(new Error("boom"));
+    const t = catchToast();
+
+    await togglePin("h1");
+
+    expect(t.firstMessage()).toContain("切换置顶失败");
+    t.cleanup();
   });
 });

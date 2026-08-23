@@ -10,7 +10,7 @@ import type { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 
 /** 支持全屏编辑的内容类型 */
-export type FullscreenType = "markdown" | "json" | "html" | "text" | "csv" | "code" | "log" | "diagram";
+export type FullscreenType = "markdown" | "json" | "html" | "text" | "csv" | "code" | "log" | "diagram" | "diff";
 
 /** 视图模式：仅编辑 / 分栏 / 仅预览（csv 的"预览"即表格视图） */
 export type ViewMode = "edit" | "split" | "preview";

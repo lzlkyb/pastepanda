@@ -239,6 +239,22 @@ impl DataStore {
                 value TEXT NOT NULL
             );
 
+            -- 一次性迁移的审计留痕。**不是迁移门闩**（本项目的迁移一贯靠探测真实结构
+            -- 来判断该不该跑，见 history_fts 的 fts_is_external 与各处 pragma_table_info），
+            -- 这张表只负责「跑过没跑过、什么时候、影响多少行」可事后追溯。
+            --
+            -- 为什么必须落库而不是只打日志：env_logger 在 RUST_LOG 未设时默认只放行
+            -- error，全项目 170 个 warn / 128 个 info 一直输出到虚无。
+            --
+            -- 同一 name 允许多行（不设 UNIQUE）：**重复出现本身就是诊断信号**。
+            -- 旧版「每次启动都全量回填」那个 bug，有这张表就会直接暴露成几十行同名记录。
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                applied_at TEXT NOT NULL,
+                detail TEXT NOT NULL DEFAULT ''
+            );
+
             CREATE TABLE IF NOT EXISTS snippets (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -701,14 +717,32 @@ impl DataStore {
             }
         }
 
-        // v6.4 D 搜索：FTS5 全文索引（外部内容表，rowid 关联）。索引内容在 Rust 侧做
-        // 字符 bigram 预处理（to_ngram），中文才能被分词命中；增删改在 history.rs 同步。
+        // v6.4 D 搜索：FTS5 全文索引。索引内容在 Rust 侧做字符 bigram 预处理
+        // （to_ngram），中文才能被分词命中；增删改在 history.rs 同步。
+        //
+        // **常规 FTS5，刻意不是外部内容表**（v6.18 修）。旧实现写的是
+        // `content='history', content_rowid='rowid'`，与"手工塞 ngram 串"根本矛盾：
+        // 外部内容表意味着 FTS5 在 DELETE / rebuild 时要回读 history 的原始列，
+        // 而它既取不到 `pinyin`（history 里那列叫 `pinyin_initials`），
+        // 取到的也不是 ngram 串。加上 FTS5 虚拟表不支持 UPSERT，
+        // 结果是同步与删除两条路径全年报错、被 log::warn 吞掉（详见 history.rs）。
+        //
+        // 旧库建成了外部内容表 → 这里一次性 DROP 重建，随后走下面的全量回填。
+        let fts_is_external: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'table' AND name = 'history_fts' AND sql LIKE '%content=''history''%'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if fts_is_external {
+            log::info!("[FTS] 检测到旧的外部内容表结构，重建 history_fts 并全量回填");
+            conn.execute_batch("DROP TABLE IF EXISTS history_fts;")?;
+        }
         conn.execute_batch(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS history_fts USING fts5(
-                text, pinyin, content,
-                content='history',
-                content_rowid='rowid'
-            );",
+            "CREATE VIRTUAL TABLE IF NOT EXISTS history_fts USING fts5(text, pinyin, content);",
         )?;
 
         // 首次建表（或索引为空）时全量回填存量数据。回填失败只 warn，不阻断启动。
@@ -716,38 +750,61 @@ impl DataStore {
             .query_row("SELECT COUNT(*) FROM history_fts", [], |r| r.get(0))
             .unwrap_or(0);
         if fts_count == 0 {
-            match conn.prepare("SELECT rowid, text, pinyin_initials, content FROM history") {
-                Ok(mut stmt) => match stmt.query_map([], |r| {
-                    Ok((
-                        r.get::<_, i64>(0)?,
-                        r.get::<_, String>(1)?,
-                        r.get::<_, String>(2)?,
-                        r.get::<_, String>(3)?,
-                    ))
-                }) {
-                    Ok(rows) => {
-                        let mut backfilled = 0u32;
-                        for row in rows {
-                            if let Ok((rowid, text, pinyin, content)) = row {
-                                let _ = conn.execute(
-                                    "INSERT INTO history_fts (rowid, text, pinyin, content) VALUES (?1, ?2, ?3, ?4)",
-                                    rusqlite::params![
-                                        rowid,
-                                        crate::data_store::history::to_ngram(&text),
-                                        crate::data_store::history::to_ngram(&pinyin),
-                                        crate::data_store::history::to_ngram(&content),
-                                    ],
-                                );
-                                backfilled += 1;
-                            }
-                        }
-                        if backfilled > 0 {
-                            log::info!("[FTS] 已回填 {} 条历史记录到全文索引", backfilled);
-                        }
-                    }
-                    Err(e) => log::warn!("[FTS] 存量回填查询失败: {}", e),
-                },
-                Err(e) => log::warn!("[FTS] 存量回填准备失败: {}", e),
+            match Self::backfill_history_fts_on(&conn) {
+                Ok(n) if n > 0 => {
+                    log::info!("[FTS] 已回填 {} 条历史记录到全文索引", n);
+                    // 留痕。重建（旧结构升级）与自愈（索引空了重填）用不同的 name，
+                    // 事后才分得清那次到底是升级还是异常恢复。
+                    Self::record_migration_on(
+                        &conn,
+                        if fts_is_external {
+                            "history_fts_rebuild"
+                        } else {
+                            "history_fts_backfill"
+                        },
+                        &format!("rows={}, was_external={}", n, fts_is_external),
+                    );
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    log::warn!("[FTS] 存量回填失败: {}", e);
+                    Self::record_migration_on(
+                        &conn,
+                        "history_fts_backfill_failed",
+                        &format!("error={}, was_external={}", e, fts_is_external),
+                    );
+                }
+            }
+        }
+
+        // 图片 OCR 文本的全文索引。**独立于 history_fts，且刻意不是外部内容表**：
+        //
+        // 1. OCR 是异步的（图片先入库、文字后到），所以这张索引必须支持「事后更新」。
+        //    而 FTS5 虚拟表不支持 UPSERT，外部内容表连 DELETE 都要回读旧值——
+        //    history_fts 的列名（pinyin）与 history 的列名（pinyin_initials）对不上，
+        //    回读直接失败。常规 FTS5 自己存 token，DELETE + INSERT 才是可用的更新路径。
+        // 2. 图片的 history.content 是 md5 文件名（0039a52c….png），没有检索价值，
+        //    所以 OCR 文本不能塞进 history_fts 的 content 列去挤掉它——那是两回事。
+        //
+        // rowid 与 history.rowid 对齐，检索时直接 OR 进 try_search_fts 的子查询。
+        // 内容是本地 OCR 产物，与 image_ocr_cache 同级，不出本机。
+        conn.execute_batch(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS image_ocr_fts USING fts5(ocr);",
+        )?;
+
+        // 存量回填：v6.18 之前识别过的图片，文本已在 image_ocr_cache 里但从未进索引。
+        // 空索引才回填（同 history_fts 的 fts_count == 0 惯例），不必额外设迁移标记位。
+        // 实现在 image_ocr.rs 的 backfill_ocr_fts（可测；这里只负责启动时调一次）。
+        let ocr_fts_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM image_ocr_fts", [], |r| r.get(0))
+            .unwrap_or(0);
+        if ocr_fts_count == 0 {
+            match Self::backfill_ocr_fts_on(&conn) {
+                Ok(n) if n > 0 => {
+                    log::info!("[FTS] 已回填 {} 张图片的 OCR 文本到全文索引", n)
+                }
+                Ok(_) => {}
+                Err(e) => log::warn!("[FTS] OCR 存量回填失败: {}", e),
             }
         }
 

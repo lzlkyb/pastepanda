@@ -539,7 +539,7 @@
   border-right: 1px solid rgba(255, 255, 255, 0.04);
 }
 
-/* ─── 亮色主题下的编辑区覆盖（默认暗色，data-theme-mode="light" 时生效）─── */
+/* ─── 亮色主题下的编辑区覆盖（基样式为暗色，data-theme-mode="light" 时生效）─── */
 .overlay[data-theme-mode="light"] .editorPane {
   background: var(--card-bg, #fff);
 }

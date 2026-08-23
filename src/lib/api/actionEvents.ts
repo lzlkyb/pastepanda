@@ -164,6 +164,23 @@ export function logPasteEvent(
   })();
 }
 
+/**
+ * 按历史条目回写粘贴信号 —— **所有「粘贴了一条历史记录」的入口都该走这个**。
+ *
+ * 存在的理由是防同一类 bug 复发：`contentType` 要 `content_type || type`、
+ * `sourceApp` 要传 `item.source`，这两条以前在每个调用点各写一遍，
+ * 于是漏一个分支就少一类信号（v6.15 修过一次「image/rich/file 三个分支全漏」，
+ * 而托盘弹窗 / 快捷面板 / 热键粘贴 / 编辑器四类入口当时并没被发现，一直没记）。
+ *
+ * @param listIndex 粘的是当前列表第几条（0-based）；无列表位置（栈序、编辑器内）传 -1
+ */
+export function logItemPasted(
+  item: { id: string; type: string; content_type?: string | null; source: string },
+  listIndex?: number,
+): void {
+  logPasteEvent(item.id, item.content_type || item.type, item.source, listIndex);
+}
+
 /** 最近 N 天的事件统计（默认 30 天） */
 export async function actionEventStats(days?: number): Promise<ActionEventStats> {
   return invoke("action_event_stats", { days });

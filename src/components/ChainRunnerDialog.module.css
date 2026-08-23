@@ -349,7 +349,8 @@
 .aiGo {
   font-size: 11px;
   font-weight: 700;
-  background: var(--orange);
+  /* 实色填充配白字走 --orange-solid（见 theme.css 说明），别用 --orange */
+  background: var(--orange-solid, #C54A0A);
   color: #fff;
   border: none;
   border-radius: 8px;

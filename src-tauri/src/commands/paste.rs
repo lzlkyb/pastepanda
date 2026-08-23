@@ -21,6 +21,7 @@ pub fn paste_text(engine: State<PasteEngine>, text: String) -> Result<PasteResul
 /// 敏感检测由前端做（maskSensitiveText 纯本地同步），这里只负责窗口信息
 /// （窗口信息只有 Rust 侧拿得到）。
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PastePrecheck {
     /// 目标应用名（如 "EXCEL" / "chrome"）；无则 None
     pub target_app: Option<String>,
@@ -205,4 +206,32 @@ pub fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn exit_app(app: tauri::AppHandle) {
     app.exit(0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 前端读的是 `targetApp` / `targetCategory`（驼峰），Rust 侧必须按驼峰序列化。
+    ///
+    /// 这里曾漏了 `#[serde(rename_all = "camelCase")]`，序列化出的是
+    /// `target_app` / `target_category`，于是前端 `.targetCategory` 恒为 undefined。
+    /// TypeScript 抓不到——`invoke<PastePrecheck>` 是无校验的类型断言。
+    ///
+    /// 两个用户可见后果：
+    /// - `action_events.target_cat` 永远 NULL，X3「往哪类应用粘」从未收到数据；
+    /// - 粘贴守卫确认条的「将粘贴到 XXX」永远不显示（targetAppLabel 两个入参都是
+    ///   undefined，直接返回 null）。
+    #[test]
+    fn test_paste_precheck_serializes_camel_case() {
+        let p = PastePrecheck {
+            target_app: Some("EXCEL.EXE".to_string()),
+            target_category: Some("excel".to_string()),
+        };
+        let j = serde_json::to_string(&p).unwrap();
+        assert!(j.contains("\"targetApp\""), "应含 targetApp，实际: {}", j);
+        assert!(j.contains("\"targetCategory\""), "应含 targetCategory，实际: {}", j);
+        assert!(!j.contains("target_app"), "不该出现蛇形 target_app，实际: {}", j);
+        assert!(!j.contains("target_category"), "不该出现蛇形 target_category，实际: {}", j);
+    }
 }

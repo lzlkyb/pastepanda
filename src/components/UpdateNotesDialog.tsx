@@ -24,10 +24,13 @@ import { logger } from "@/lib/logger";
  *    接 GitHub 自动部署：去 Cloudflare 网页 Connect Git → 选 lzlkyb/pastepanda →
  *    生产分支 master、输出目录 docs、构建留空 → 地址即 pastepanda.pages.dev）。
  *  MANUAL_BACKUP_URL：GitHub Pages，海外兜底。
+ *  ❗ 指向 manual.html 而不是 manual/index.html：index.html 是宣传落地页，
+ *    点进来的是**刚升级完的老用户**，他要的是功能说明，不是「立即下载」——
+ *    落在宣传首屏得滚过约 5 屏营销内容才够到正文。manual.html 顶部就是任务索引。
  *  注意：Gitee Pages 已于 2025 官方下线；jsDelivr 对所有 HTML 返回 text/plain 永不渲染，
  *    二者都不可用。Cloudflare 项目名须为 pastepanda 才得此域名，否则改此处。 */
-const MANUAL_URL = "https://pastepanda.pages.dev/manual/index.html";
-const MANUAL_BACKUP_URL = "https://lzlkyb.github.io/pastepanda/manual/index.html";
+const MANUAL_URL = "https://pastepanda.pages.dev/manual/manual.html";
+const MANUAL_BACKUP_URL = "https://lzlkyb.github.io/pastepanda/manual/manual.html";
 
 // ─── Props ──────────────────────────────────────────────
 

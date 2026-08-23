@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PDF 阅读预览 · 设计稿</title>
+<style>
+  :root {
+    --accent: #0284C7; --accent-strong: #0369A1; --accent-light: #E6F4FB;
+    --card-bg: #FFFFFF; --dialog-bg: #F4F6F9; --section-bg: #F0F4F8;
+    --text-primary: #1E293B; --text-secondary: #64748B; --text-muted: #94A3B8;
+    --border-color: rgba(2,132,199,0.14); --green: #16A34A; --danger: #DC2626;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--dialog-bg); font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--text-primary); padding: 28px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .note { font-size: 12px; color: var(--text-muted); margin: 0 0 16px; line-height: 1.7; }
+  .box { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 14px; box-shadow: 0 10px 30px rgba(2,132,199,0.10); overflow: hidden; display: flex; flex-direction: column; height: 520px; }
+  .toolbar { display: flex; align-items: center; gap: 6px; padding: 9px 12px; border-bottom: 1px solid var(--border-color); }
+  .tbtn { border: 1px solid var(--border-color); background: var(--card-bg); border-radius: 6px; padding: 4px 9px; font-size: 11px; cursor: pointer; color: var(--text-secondary); font-family: inherit; }
+  .tbtn:hover { border-color: var(--accent); color: var(--accent-strong); }
+  .tbtn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .page-info { font-size: 12px; color: var(--text-secondary); min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; }
+  .scale-info { font-size: 11px; color: var(--text-muted); min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
+  .sep { width: 1px; height: 16px; background: var(--border-color); margin: 0 4px; }
+  .page-wrap { flex: 1; overflow: auto; background: var(--section-bg); padding: 16px; display: flex; justify-content: center; }
+  .pdf-page { width: 430px; background: #fff; box-shadow: 0 2px 10px rgba(15,23,42,0.12); border-radius: 3px; padding: 24px 26px; font-size: 12px; line-height: 1.75; color: #1E293B; }
+  .pdf-page h3 { font-size: 13px; margin: 0 0 8px; color: #0F172A; }
+  .pdf-page p { margin: 0 0 6px; }
+  .pdf-page .dim { color: #94A3B8; }
+  .pdf-page .bar { height: 8px; border-radius: 4px; background: #E2E8F0; margin: 10px 0; }
+  .pdf-page .bar.fill { background: linear-gradient(90deg, #93C5FD 0 38%, #E2E8F0 38%); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <p class="note">新建 <b>PdfViewer</b>（file 类型的 pdf 分支，方案 B）。引入 <code>pdfjs-dist</code>（新依赖，动态 import + <code>?worker</code> worker），plugin-fs 读文件 → 渲染当前页到 canvas；工具栏：◀ ▶ 翻页 + 页码、缩放 − / +、<b>复制本页文本</b>（getTextContent）。出错显示「用系统打开」降级。棋盘格底容器便于白页辨识。</p>
+
+    <div class="box">
+      <div class="toolbar">
+        <button class="tbtn" disabled>◀ 上一页</button>
+        <span class="page-info">2 / 12</span>
+        <button class="tbtn">下一页 ▶</button>
+        <span class="sep"></span>
+        <button class="tbtn">−</button>
+        <span class="scale-info">120%</span>
+        <button class="tbtn">+</button>
+        <span class="sep"></span>
+        <button class="tbtn" style="margin-left:auto">📋 复制本页文本</button>
+      </div>
+      <div class="page-wrap">
+        <div class="pdf-page">
+          <h3>1. 概述</h3>
+          <p>PastePanda 是一款本地优先的剪贴板增强工具。</p>
+          <p>所有内容均在本机处理，原始内容绝不离设备。</p>
+          <div class="bar fill"></div>
+          <p>支持文本、图片、文件、链接、表格等 <b>19 种内容类型</b>，每个类型都有对应的专用编辑器。</p>
+          <p class="dim">……（第 2 页共 12 页，此处为示意图）</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

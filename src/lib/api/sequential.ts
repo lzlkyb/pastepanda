@@ -70,6 +70,12 @@ async function sequentialPasteInner() {
     return; // 粘贴失败不推进指针
   }
 
+  // 粘贴信号回写。**热键粘贴此前完全不记**（回写只挂在主窗 Enter 与卡片右键上），
+  // 而「按价值豁免过期清理」靠这个信号判定内容有没有被用过——不记就意味着
+  // 天天用热键粘的东西，在清理逻辑看来等于从未被用过。
+  const { logItemPasted } = await import("@/lib/api/actionEvents");
+  logItemPasted(item, idx);
+
   // Toast 反馈
   window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已粘贴第 ${idx + 1} 条`, type: "success" } }));
 
@@ -108,5 +114,9 @@ export async function indexPaste(n: number) {
   const ok = await pasteTextGuarded(item.text);
   if (ok) {
     window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已粘贴第 ${n} 条`, type: "success" } }));
+    // 粘贴信号回写（同 sequentialPasteInner，此前漏记）。索引粘贴的下标是用户
+    // 显式指定的位置，如实记录。
+    const { logItemPasted } = await import("@/lib/api/actionEvents");
+    logItemPasted(item, idx);
   }
 }

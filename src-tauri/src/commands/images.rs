@@ -24,6 +24,51 @@ pub fn read_file_as_base64(path: String) -> Result<String, String> {
     Ok(STANDARD.encode(&bytes))
 }
 
+/// 读取 PDF 并返回 base64（供 PdfViewer 内嵌阅读）。
+///
+/// 为什么不让前端用 plugin-fs 直接读：`fs:default` 只授予**应用自身目录**的读权限，
+/// 而 PDF 路径来自用户复制的原始文件（任意路径），必然被拒。要让前端读就得把
+/// `fs:scope` 开成 `**`，等于把整个文件系统交给 WebView。这里沿用项目既有做法
+/// （图片一律走 Rust 命令读），并保留同一套白名单 + 体积上限纪律。
+///
+/// 上限 50MB：PDF 比图片大得多（图片那条是 20MB），但仍要有上限——
+/// base64 会再放大 1/3，无上限时一个超大 PDF 能把 WebView 的内存吃穿。
+#[tauri::command]
+pub fn read_pdf_as_base64(path: String) -> Result<String, String> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    const MAX_PDF_SIZE: u64 = 50 * 1024 * 1024;
+    let canonical = super::validate_pdf_file_path(&path)?;
+    let metadata = std::fs::metadata(&canonical).map_err(|e| format!("无法读取文件信息: {e}"))?;
+    if metadata.len() > MAX_PDF_SIZE {
+        return Err(format!(
+            "PDF 过大 ({}MB)，超过 50MB 限制",
+            metadata.len() / 1024 / 1024
+        ));
+    }
+    let bytes = std::fs::read(&canonical).map_err(|e| format!("读取文件失败: {e}"))?;
+    Ok(STANDARD.encode(&bytes))
+}
+
+/// 把用户的音视频文件临时加入 asset 协议白名单，返回规范化路径供前端 `convertFileSrc`。
+///
+/// 为什么必须有这一步：`tauri.conf.json` 的 `assetProtocol.scope` 只有 `$APPDATA/**`
+/// （图片库在那儿，所以采集进来的图能直接 convertFileSrc）。而文件卡片里的音视频路径
+/// 来自用户复制的原始文件，在 scope 外 —— `asset://` 会被拦成 403、`<video>` 静默不播，
+/// 前端还拿不到可判断的错误（convertFileSrc 只是纯字符串拼接，永远"成功"）。
+///
+/// 不把 scope 直接开成 `**`：那等于把整个文件系统交给 WebView。改成按需授权，
+/// 走与图片/PDF 同一套 `validate_user_file_path`（canonicalize + 必须是文件 + 扩展名白名单），
+/// 只放行用户此刻确实要预览的那一个文件。
+#[tauri::command]
+pub fn allow_media_asset(app: tauri::AppHandle, path: String) -> Result<String, String> {
+    use tauri::Manager;
+    let canonical = super::validate_media_file_path(&path)?;
+    app.asset_protocol_scope()
+        .allow_file(&canonical)
+        .map_err(|e| format!("授权媒体文件访问失败: {e}"))?;
+    Ok(canonical.to_string_lossy().to_string())
+}
+
 /// 将富文本编辑器里新插入/粘贴的图片存入应用图片库，返回落盘路径。
 /// 命名与采集侧完全一致（按内容 md5 + 真实格式扩展名），这样同一张图无论是采集进来的
 /// 还是编辑时插入的，都落在同一个文件上，删除时的引用计数清理才能正确工作。

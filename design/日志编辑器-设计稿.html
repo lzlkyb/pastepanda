@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="ocean">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>日志编辑器 · 设计稿（对照 editorBits / dialog.css / logParser.ts）</title>
+<style>
+  /* ===== 设计令牌：直接复用 src/styles/theme.css 的 ocean(默认浅色) 值 ===== */
+  :root{
+    --app-bg:#F7F7F8; --card-bg:#fff; --dialog-bg:#fff; --section-bg:#F0F4F8;
+    --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+    --border-color:#E0E4EB; --accent:#0284C7; --accent-light:#E0F2FE; --accent-strong:#0273AD;
+    --hover:#E8ECF2;
+    --green:#11813A; --green-bg:#DCFCE7; --green-border:#BBF7D0;
+    --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA;
+    --red-bg:#FEF2F2; --danger:#D82525;
+    --glass-popover-shadow:0 12px 36px rgba(0,0,0,.1),0 2px 8px rgba(0,0,0,.05);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--app-bg);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--text-primary);display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;}
+
+  /* ===== dialog.css 原样移植（仅 ocean 实底分支） ===== */
+  .dialog-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;}
+  .dialog-box{background:var(--dialog-bg);border:1px solid var(--border-color);border-radius:16px;
+    display:flex;flex-direction:column;box-shadow:var(--glass-popover-shadow);max-width:calc(100vw - 32px);}
+  .dialog-box.dialog-solid{background:var(--dialog-bg);backdrop-filter:none;}
+  .dialog-box.w520{width:520px;max-height:82vh;}
+  .dialog-header{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:48px;flex-shrink:0;border-bottom:1px solid var(--border-color);}
+  .dialog-title{font-size:15px;font-weight:600;}
+  .dialog-close{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;background:transparent;color:var(--text-secondary);font-size:16px;}
+  .dialog-close:hover{background:var(--hover);}
+  .dialog-body{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:12px;}
+  .dialog-footer{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:48px;flex-shrink:0;gap:8px;border-top:1px solid var(--border-color);font-size:10px;color:var(--text-muted);}
+  .dialog-footer .right{display:flex;gap:4px;align-items:center;}
+  .btn-primary{margin-left:auto;padding:5px 14px;font-size:12px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer;}
+
+  /* ===== editorBits：code-meta-bar / code-type-badge / md-mode-btn ===== */
+  .code-meta-bar{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-radius:8px;background:var(--section-bg);border:1px solid var(--border-color);}
+  .code-meta-left{display:flex;gap:12px;align-items:center;}
+  .code-meta-item{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);}
+  .code-meta-label{font-weight:500;}
+  .code-meta-val{font-weight:700;color:var(--text-primary);}
+  .code-type-badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;background:var(--accent-light);color:var(--accent-strong);}
+  .md-mode-btn{padding:3px 10px;border-radius:6px;border:none;font-size:11px;font-weight:600;cursor:pointer;background:transparent;color:var(--text-muted);font-family:inherit;}
+  .md-mode-btn.active{background:var(--seg-active,#fff);color:var(--text-primary);box-shadow:0 1px 3px rgba(0,0,0,.08);}
+
+  /* ===== edit-toolbar（工具按钮） ===== */
+  .edit-toolbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  .tool-btn{display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:6px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-secondary);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;}
+  .tool-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+  /* ===== 本稿新增（日志专用，套用现有令牌，非新造色） ===== */
+  .level-chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+  .level-chip{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-muted);cursor:pointer;display:inline-flex;gap:4px;align-items:center;}
+  .level-chip .cnt{font-weight:600;opacity:.7;}
+  .level-chip.on{color:#fff;border-color:transparent;}
+  .level-chip.on.l-TRACE{background:#64748B;} .level-chip.on.l-DEBUG{background:#0284C7;}
+  .level-chip.on.l-INFO{background:var(--green);} .level-chip.on.l-WARN{background:var(--orange);}
+  .level-chip.on.l-ERROR{background:var(--danger);} .level-chip.on.l-FATAL{background:#7F1D1D;}
+  .kw-input{flex:1;min-width:120px;padding:5px 10px;border-radius:8px;border:1px solid var(--border-color);background:var(--card-bg);font-size:12px;font-family:inherit;color:var(--text-primary);}
+  .log-view{flex:1;border:1px solid var(--border-color);border-radius:10px;background:var(--card-bg);overflow:auto;max-height:300px;padding:8px 0;font-family:'SF Mono',Consolas,monospace;font-size:12.5px;line-height:1.7;}
+  .log-row{display:flex;gap:8px;padding:1px 12px;white-space:pre-wrap;word-break:break-all;}
+  .log-row .ts{color:var(--text-muted);flex-shrink:0;}
+  .log-row .lvl{font-weight:700;flex-shrink:0;width:44px;}
+  .log-row .lvl.TRACE{color:#64748B;} .log-row .lvl.DEBUG{color:var(--accent);}
+  .log-row .lvl.INFO{color:var(--green);} .log-row .lvl.WARN{color:var(--orange);}
+  .log-row .lvl.ERROR{color:var(--danger);} .log-row .lvl.FATAL{color:#7F1D1D;}
+  .log-row.er{background:var(--red-bg);}
+  .log-row.wn{background:var(--orange-bg);}
+  .log-row .cont{color:var(--text-muted);padding-left:52px;}
+  .log-row mark{background:#FEF08A;color:#000;border-radius:2px;}
+  .raw-edit{width:100%;min-height:160px;border:1px solid var(--border-color);border-radius:10px;background:var(--card-bg);padding:10px 12px;font-family:'SF Mono',Consolas,monospace;font-size:13px;line-height:1.7;color:var(--text-primary);resize:vertical;}
+  .mode-row{display:flex;gap:4px;}
+  .hint{font-size:10px;color:var(--text-muted);}
+</style>
+</head>
+<body>
+  <div class="dialog-backdrop">
+    <div class="dialog-box dialog-solid w520">
+      <!-- Header -->
+      <div class="dialog-header">
+        <h2 class="dialog-title">📜 编辑日志</h2>
+        <button class="dialog-close">✕</button>
+      </div>
+
+      <!-- Body -->
+      <div class="dialog-body">
+        <!-- 元信息条（复用 editorBits.MetaBar） -->
+        <div class="code-meta-bar">
+          <div class="code-meta-left">
+            <div class="code-meta-item"><span class="code-meta-label">行</span><span class="code-meta-val">142</span></div>
+            <div class="code-meta-item"><span class="code-meta-label">字符</span><span class="code-meta-val">8.4k</span></div>
+            <div class="code-meta-item" style="color:var(--danger)"><span class="code-meta-label">状态</span><span class="code-meta-val">已修改</span></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="code-type-badge">📜 日志</div>
+            <button class="md-mode-btn">⤢ 全屏</button>
+          </div>
+        </div>
+
+        <!-- 视图切换（复用 md-mode-btn，与 MarkdownEditor 同范式） -->
+        <div class="mode-row">
+          <button class="md-mode-btn active">分析</button>
+          <button class="md-mode-btn">编辑原文</button>
+        </div>
+
+        <!-- 过滤条：级别芯片 + 关键字（数据来自 logParser.LEVEL_ORDER / counts） -->
+        <div class="level-chips">
+          <span class="level-chip l-TRACE on">TRACE <span class="cnt">3</span></span>
+          <span class="level-chip l-DEBUG on">DEBUG <span class="cnt">21</span></span>
+          <span class="level-chip l-INFO on">INFO <span class="cnt">88</span></span>
+          <span class="level-chip l-WARN on">WARN <span class="cnt">12</span></span>
+          <span class="level-chip l-ERROR on">ERROR <span class="cnt">5</span></span>
+          <span class="level-chip l-FATAL on">FATAL <span class="cnt">1</span></span>
+          <input class="kw-input" placeholder="关键字过滤（匹配时间/消息/堆栈，回车即筛）" value="timeout" />
+        </div>
+
+        <!-- 分析视图：渲染 + 级别着色 + 关键字高亮（regex 命中 <mark>） -->
+        <div class="log-view">
+          <div class="log-row"><span class="ts">2026-08-22 09:12:01</span><span class="lvl INFO">INFO</span><span>server started on :8080</span></div>
+          <div class="log-row"><span class="ts">2026-08-22 09:12:47</span><span class="lvl WARN">WARN</span><span>db pool 80% used</span></div>
+          <div class="log-row er"><span class="ts">2026-08-22 09:13:02</span><span class="lvl ERROR">ERROR</span><span>request <mark>timeout</mark> after 30000ms</span></div>
+          <div class="log-row er cont">    at HttpClient.send (client.ts:142)</div>
+          <div class="log-row er cont">    at retry (client.ts:88)</div>
+          <div class="log-row"><span class="ts">2026-08-22 09:13:09</span><span class="lvl FATAL">FATAL</span><span>shutdown: unrecoverable <mark>timeout</mark></span></div>
+        </div>
+
+        <!-- 编辑原文视图（默认隐藏，切到「编辑原文」才显示；保持可保存） -->
+        <!--
+        <textarea class="raw-edit">…原始日志全文…</textarea>
+        <div class="edit-toolbar">
+          <button class="tool-btn">大写</button><button class="tool-btn">小写</button>
+          <button class="tool-btn">去空白</button><button class="tool-btn">去空行</button>
+          <button class="tool-btn">撤销</button><button class="tool-btn">重做</button>
+        </div>
+        -->
+      </div>
+
+      <!-- Footer -->
+      <div class="dialog-footer">
+        <span>Ctrl+Enter 保存 · Esc 取消</span>
+        <div class="right">
+          <button class="tool-btn">⧉ 复制</button>
+          <button class="tool-btn">⎘ 粘贴</button>
+          <button class="tool-btn">🔖 存片段</button>
+          <button class="btn-primary">💾 保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

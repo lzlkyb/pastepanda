@@ -4,6 +4,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, Group } from "@/stores/appStore";
 import { logger } from "@/lib/logger";
+import { toastActionFailed } from "@/lib/utils";
 import { invalidateCountsCache } from "./cache";
 
 /** 获取所有分组 */
@@ -27,6 +28,7 @@ export async function createGroup(name: string, color: string, icon: string): Pr
     return group;
   } catch (e) {
     logger.error("创建分组失败", e);
+    toastActionFailed("创建分组", e);
     return null;
   }
 }
@@ -40,6 +42,7 @@ export async function updateGroup(id: string, name: string, color: string, icon:
     return true;
   } catch (e) {
     logger.error("更新分组失败", e);
+    toastActionFailed("更新分组", e);
     return false;
   }
 }
@@ -63,6 +66,7 @@ export async function deleteGroup(id: string): Promise<boolean> {
     return true;
   } catch (e) {
     logger.error("删除分组失败", e);
+    toastActionFailed("删除分组", e);
     return false;
   }
 }
@@ -77,6 +81,7 @@ export async function reorderGroups(ids: string[]): Promise<boolean> {
     return true;
   } catch (e) {
     logger.error("排序分组失败", e);
+    toastActionFailed("排序分组", e);
     return false;
   }
 }
@@ -100,6 +105,7 @@ export async function moveToGroup(historyIds: string[], groupId: string | null):
     return count;
   } catch (e) {
     logger.error("移动记录失败", e);
+    toastActionFailed("移动记录", e);
     return 0;
   }
 }

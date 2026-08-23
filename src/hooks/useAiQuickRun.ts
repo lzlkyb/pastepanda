@@ -43,7 +43,7 @@ export function useAiQuickRun(opts: {
 
   // 行为埋点：本区是 AI 动作的**主入口**，之前一直没记事件，
   // 导致 AI 动作在推荐排序里的权重恒为缺失（除非用户绕路从变换中心用）
-  const logEvent = useActionEventLog(item?.content_type || item?.type || "text", item?.source);
+  const logEvent = useActionEventLog(item?.content_type || item?.type || "text", item?.source, item?.id);
 
   /** 代际计数：内容变化后，旧 promise 的 patch 直接丢弃（防在途结果污染新内容） */
   const genRef = useRef(0);

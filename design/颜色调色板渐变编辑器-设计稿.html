@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>颜色调色板 / 渐变编辑器 · 设计稿</title>
+<style>
+  :root {
+    --accent: #0284C7; --accent-strong: #0369A1; --accent-light: #E6F4FB;
+    --card-bg: #FFFFFF; --dialog-bg: #F4F6F9; --section-bg: #F0F4F8;
+    --text-primary: #1E293B; --text-secondary: #64748B; --text-muted: #94A3B8;
+    --border-color: rgba(2,132,199,0.14); --danger: #DC2626; --green: #16A34A;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--dialog-bg); font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--text-primary); padding: 28px; }
+  .wrap { max-width: 460px; margin: 0 auto; }
+  .note { font-size: 12px; color: var(--text-muted); margin: 0 0 16px; line-height: 1.7; }
+  .dialog-box { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 14px; box-shadow: 0 10px 30px rgba(2,132,199,0.10); overflow: hidden; }
+  .meta-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border-color); font-size: 12px; color: var(--text-secondary); }
+  .badge { padding: 2px 8px; border-radius: 99px; background: var(--accent-light); color: var(--accent-strong); font-weight: 600; font-size: 11px; }
+  .valid { color: var(--green); }
+  .body { padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; }
+  /* 原单色块（棋盘格底） */
+  .swatch-wrap { position: relative; height: 96px; border-radius: 10px; background: repeating-conic-gradient(var(--section-bg) 0% 25%, var(--card-bg) 0% 50%) 0 0 / 18px 18px; display: flex; align-items: center; justify-content: center; }
+  .swatch { position: absolute; inset: 0; border-radius: 10px; }
+  .swatch-label { position: relative; background: rgba(0,0,0,0.42); color: #fff; font-size: 13px; font-weight: 600; padding: 4px 10px; border-radius: 6px; letter-spacing: .5px; }
+  .color-input { border: 1px solid var(--border-color); border-radius: 8px; padding: 9px 11px; font-size: 13px; font-family: ui-monospace, monospace; outline: none; }
+  .color-input:focus { border-color: var(--accent); }
+  .fmt-rows { display: flex; flex-direction: column; gap: 6px; }
+  .fmt-row { display: flex; align-items: center; gap: 8px; background: var(--section-bg); border-radius: 7px; padding: 6px 10px; font-size: 12px; }
+  .fmt-tag { font-weight: 700; color: var(--accent-strong); width: 38px; }
+  .fmt-val { flex: 1; font-family: ui-monospace, monospace; color: var(--text-secondary); }
+  .copy-btn { border: 1px solid var(--border-color); background: var(--card-bg); border-radius: 6px; padding: 3px 10px; font-size: 11px; cursor: pointer; color: var(--text-secondary); }
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent-strong); }
+  /* 新：调色板 */
+  .sec-title { font-size: 12px; font-weight: 700; color: var(--text-secondary); margin: 2px 0 -4px; }
+  .palette { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+  .chip { aspect-ratio: 1; border-radius: 6px; cursor: pointer; border: 2px solid transparent; }
+  .chip:hover { border-color: var(--text-muted); }
+  .chip.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light); }
+  /* 新：渐变生成器 */
+  .grad-panel { background: var(--section-bg); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .grad-preview { height: 56px; border-radius: 8px; border: 1px solid var(--border-color); }
+  .grad-sub { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .grad-sub .chip { width: 26px; height: 26px; }
+  .grad-angle { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); }
+  .grad-angle input { flex: 1; }
+  .grad-copy { align-self: flex-start; border: none; background: var(--accent); color: #fff; border-radius: 7px; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <p class="note">扩展自 <b>ColorEditor</b>（color 类型）。顶部保留原单色编辑 + HEX/RGB/HSL 三格式复制；下方新增「调色板」与「渐变生成器」两块，复用 <code>src/lib/color.ts</code> 的 detectColor/toHex/toRgb/toHsl，无外部依赖。</p>
+
+    <div class="dialog-box">
+      <div class="meta-bar">
+        <span class="badge">🎨 颜色</span>
+        <span class="valid">✓ 有效</span>
+        <span style="margin-left:auto">1 行 · 7 字符</span>
+      </div>
+      <div class="body">
+        <!-- 原单色块 -->
+        <div class="swatch-wrap">
+          <div class="swatch" style="background:#0284C7"></div>
+          <span class="swatch-label">#0284C7</span>
+        </div>
+        <input class="color-input" value="#0284C7" />
+
+        <div class="fmt-rows">
+          <div class="fmt-row"><span class="fmt-tag">HEX</span><span class="fmt-val">#0284C7</span><button class="copy-btn">复制</button></div>
+          <div class="fmt-row"><span class="fmt-tag">RGB</span><span class="fmt-val">rgb(2, 132, 199)</span><button class="copy-btn">复制</button></div>
+          <div class="fmt-row"><span class="fmt-tag">HSL</span><span class="fmt-val">hsl(199, 98%, 39%)</span><button class="copy-btn">复制</button></div>
+        </div>
+
+        <!-- 新：调色板 -->
+        <div class="sec-title">调色板（点击设为当前颜色）</div>
+        <div class="palette">
+          <div class="chip sel" style="background:#EF4444"></div>
+          <div class="chip" style="background:#F97316"></div>
+          <div class="chip" style="background:#F59E0B"></div>
+          <div class="chip" style="background:#EAB308"></div>
+          <div class="chip" style="background:#22C55E"></div>
+          <div class="chip" style="background:#10B981"></div>
+          <div class="chip" style="background:#14B8A6"></div>
+          <div class="chip" style="background:#06B6D4"></div>
+          <div class="chip" style="background:#0284C7"></div>
+          <div class="chip" style="background:#3B82F6"></div>
+          <div class="chip" style="background:#6366F1"></div>
+          <div class="chip" style="background:#8B5CF6"></div>
+          <div class="chip" style="background:#A855F7"></div>
+          <div class="chip" style="background:#D946EF"></div>
+          <div class="chip" style="background:#EC4899"></div>
+          <div class="chip" style="background:#F43F5E"></div>
+          <div class="chip" style="background:#64748B"></div>
+        </div>
+
+        <!-- 新：渐变生成器 -->
+        <div class="sec-title">渐变生成器（主色取自上方，副色可选）</div>
+        <div class="grad-panel">
+          <div class="grad-preview" style="background:linear-gradient(135deg, #0284C7, #22D3EE)"></div>
+          <div class="grad-sub">
+            <span style="font-size:11px;color:var(--text-muted)">副色</span>
+            <div class="chip" style="background:#22D3EE"></div>
+            <div class="chip" style="background:#38BDF8"></div>
+            <div class="chip" style="background:#0EA5E9"></div>
+            <div class="chip" style="background:#0369A1"></div>
+            <div class="chip" style="background:#A855F7"></div>
+            <div class="chip" style="background:#14B8A6"></div>
+          </div>
+          <div class="grad-angle">角度 <input type="range" min="0" max="360" value="135" /> 135°</div>
+          <button class="grad-copy">复制 CSS：linear-gradient(135deg, #0284C7, #22D3EE)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

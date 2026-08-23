@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import Editor from "react-simple-code-editor";
-import { highlightCode } from "@/lib/utils";
+import { highlightCode, highlightCodeForced } from "@/lib/utils";
 
 // 高亮函数：接受代码字符串，返回 React 节点
 async function highlightFn(code: string): Promise<React.ReactNode> {
@@ -18,15 +18,21 @@ async function highlightFn(code: string): Promise<React.ReactNode> {
 }
 
 // 同步高亮包装器（用缓存避免闪烁）
-export function useHighlight(code: string) {
+// forceLang 非空时强制用该语言高亮（编辑器内手动锁定语言）
+export function useHighlight(code: string, forceLang?: string) {
   const [highlighted, setHighlighted] = useState<React.ReactNode>(code);
   useEffect(() => {
     let cancelled = false;
-    highlightFn(code).then((r) => {
+    const p = forceLang
+      ? highlightCodeForced(code, forceLang).then((r) =>
+          r.html ? <span className="shiki" dangerouslySetInnerHTML={{ __html: r.html }} /> : code
+        )
+      : highlightFn(code);
+    p.then((r) => {
       if (!cancelled) setHighlighted(r);
     });
     return () => { cancelled = true; };
-  }, [code]);
+  }, [code, forceLang]);
   return highlighted;
 }
 
@@ -34,15 +40,17 @@ export function useHighlight(code: string) {
  * 共享代码编辑区：行号 + react-simple-code-editor + shiki 语法高亮。
  * TextEditor / MarkdownEditor（编辑模式）复用，P2 的 code/json 编辑器同样基于此。
  */
-export function CodeTextArea({ value, onChange, textareaId, errorLine }: {
+export function CodeTextArea({ value, onChange, textareaId, errorLine, forceLang }: {
   value: string;
   onChange: (v: string) => void;
   /** 传给内部 textarea 的 id（外壳据此自动聚焦 edit-code-textarea） */
   textareaId?: string;
   /** 错误行号（1 起）：该行行号标红，供 JSON 校验定位 */
   errorLine?: number;
+  /** 强制语法高亮语言（小写 lang key，如 "python"/"sql"）；为空则自动检测 */
+  forceLang?: string;
 }) {
-  const highlighted = useHighlight(value);
+  const highlighted = useHighlight(value, forceLang);
   return (
     <div className="edit-code-area">
       <div className="code-lines">

@@ -22,8 +22,14 @@ import type { Transform } from "@/lib/transforms";
  *
  * @param contentType 当前内容的类型（与变换上下文一致，如 json / code / text）
  * @param sourceApp   原始来源应用名；内部会用 SOURCE_MAP 规范化，未知传空串
+ * @param historyId   产物所源自的那条历史记录 id。**必须带上**：
+ *   `VALUE_PRESERVE_SQL` 的判据是 `history_id IS NOT NULL AND outcome = 'pasted'`
+ *   （不要求 action_id='paste'），此前这里从不传，于是经本 hook 记的事件
+ *   history_id 全是 NULL——把一条内容做正则替换 / 提取要点后粘出去，
+ *   源条目在过期清理看来仍然「从未被用过」，到期会被当无价值内容清掉。
+ *   没有源条目时**省略而不是传空串**：空串不是 NULL，会被当成有效关联。
  */
-export function useActionEventLog(contentType: string, sourceApp?: string) {
+export function useActionEventLog(contentType: string, sourceApp?: string, historyId?: string) {
   return useCallback(
     (t: Transform | string, outcome: ActionOutcome) => {
       logActionEvent({
@@ -32,8 +38,9 @@ export function useActionEventLog(contentType: string, sourceApp?: string) {
         sourceApp: cleanSourceName(sourceApp ?? ""),
         hour: new Date().getHours(),
         outcome,
+        historyId,
       });
     },
-    [contentType, sourceApp],
+    [contentType, sourceApp, historyId],
   );
 }

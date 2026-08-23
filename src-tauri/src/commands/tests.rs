@@ -146,3 +146,108 @@ fn test_decode_limits_invalid_file() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ============================================================
+// read_pdf_as_base64 的路径校验（审查发现 #1）
+//
+// PdfViewer 原先走 plugin-fs 的 readFile(path)，而 capabilities 只有 fs:default——
+// 生成的 schema 写明它「enables read access to the application specific directories」，
+// 也就是只能读应用自己的目录。而 PDF 路径来自 parseFilePaths(item.content)，
+// 是用户的原始路径（D:\docs\x.pdf），必然被拒；失败还会显示成「无法解析 PDF」，
+// 把权限问题误报成文件损坏。
+//
+// 修法沿用项目既有做法（图片一律走 Rust 命令读，见 read_file_as_base64），
+// 而不是把 fs:scope 开成 ** —— 那等于把整个文件系统交给 WebView。
+// ============================================================
+
+#[test]
+fn test_validate_pdf_rejects_non_pdf() {
+    let dir = std::env::temp_dir().join(format!("pp_pdf_ext_{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let f = dir.join("payload.exe");
+    std::fs::write(&f, "MZ").unwrap();
+
+    let result = validate_pdf_file_path(f.to_str().unwrap());
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("不支持的文件类型"));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_validate_pdf_accepts_pdf_and_is_case_insensitive() {
+    let dir = std::env::temp_dir().join(format!("pp_pdf_ok_{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let f = dir.join("doc.PDF");
+    std::fs::write(&f, b"%PDF-1.7\n").unwrap();
+
+    assert!(validate_pdf_file_path(f.to_str().unwrap()).is_ok());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_validate_pdf_rejects_directory_and_missing() {
+    assert!(validate_pdf_file_path("/nonexistent/x.pdf").is_err());
+    let dir = std::env::temp_dir();
+    let e = validate_pdf_file_path(dir.to_str().unwrap()).unwrap_err();
+    assert!(e.contains("不是一个有效的文件"));
+}
+
+// ============================================================
+// allow_media_asset 的路径校验（审查发现 #6）
+//
+// FileDetailDialog 的音视频内嵌播放走 convertFileSrc，但 tauri.conf.json 的
+// assetProtocol.scope 只有 $APPDATA/**，用户复制进来的原始路径在 scope 外会被
+// 拦成 403 —— 而 convertFileSrc 只是字符串拼接，前端拿不到任何错误信号，
+// 表现为播放器静默不动。修法是按需 allow_file，而不是把 scope 开成 **。
+//
+// 这里测的是授权前的那道门：扩展名白名单必须只放行 WebView 原生能解的容器，
+// 否则 allow_media_asset 就成了「任意文件加进 asset 白名单」的入口。
+// ============================================================
+
+#[test]
+fn test_validate_media_rejects_non_media() {
+    let dir = std::env::temp_dir().join(format!("pp_media_ext_{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let f = dir.join("secrets.env");
+    std::fs::write(&f, "TOKEN=1").unwrap();
+
+    let result = validate_media_file_path(f.to_str().unwrap());
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("不支持的文件类型"));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_validate_media_rejects_non_native_containers() {
+    // mkv / avi / mov 一律降级为「用系统播放」，不进 asset 白名单：
+    // 放进来只会得到一个能生成、但 WebView 播不动的 asset:// URL。
+    let dir = std::env::temp_dir().join(format!("pp_media_nn_{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for name in ["a.mkv", "b.avi", "c.mov", "d.wmv", "e.flv"] {
+        let f = dir.join(name);
+        std::fs::write(&f, b"\0").unwrap();
+        assert!(
+            validate_media_file_path(f.to_str().unwrap()).is_err(),
+            "{name} 不应通过校验"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_validate_media_accepts_native_and_is_case_insensitive() {
+    let dir = std::env::temp_dir().join(format!("pp_media_ok_{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for name in ["clip.MP4", "song.mp3", "voice.M4A", "raw.wav"] {
+        let f = dir.join(name);
+        std::fs::write(&f, b"\0").unwrap();
+        assert!(
+            validate_media_file_path(f.to_str().unwrap()).is_ok(),
+            "{name} 应通过校验"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

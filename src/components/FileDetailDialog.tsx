@@ -12,6 +12,7 @@ import { parseFilePaths } from "@/lib/utils";
 import { getImageDataUrl } from "@/lib/api";
 import { FocusTrap } from "@/components/FocusTrap";
 import { useDialogStore } from "@/stores/dialogStore";
+import { PdfViewer } from "@/components/PdfViewer";
 
 type FileMeta = { size: number; exists: boolean };
 type TextPreviewData = {
@@ -29,6 +30,19 @@ const extOf = (p: string) => {
   return (m?.[1] || "").toLowerCase();
 };
 const isImageFile = (p: string) => IMAGE_EXT_SET.has(extOf(p));
+/** PDF：走 PdfViewer 内嵌阅读预览（pdfjs-dist），不请求后端文本预览 */
+const isPdfFile = (p: string) => extOf(p) === "pdf";
+
+/** 媒体预览（Tier2）：file 类型音视频内嵌播放，走 Tauri asset 协议。
+ *
+ *  只列 WebView 原生能解的容器 —— mov / mkv / avi / wmv / flv / wma 一律降级走
+ *  「用系统打开」。之前把它们也列进来但又被播放门槛挡在外面，是一份不起作用的死名单。
+ *  这两个集合与 Rust 侧 `ALLOWED_MEDIA_EXTENSIONS`（asset 授权白名单）一一对应，改一处要同步另一处。 */
+const VIDEO_EXT_SET = new Set(["mp4", "webm", "ogv", "m4v"]);
+const AUDIO_EXT_SET = new Set(["mp3", "wav", "ogg", "m4a", "flac", "aac"]);
+const isVideoFile = (p: string) => VIDEO_EXT_SET.has(extOf(p));
+const isAudioFile = (p: string) => AUDIO_EXT_SET.has(extOf(p));
+const isPlayableMedia = (p: string) => isVideoFile(p) || isAudioFile(p);
 
 /** 文本文件 → 全屏编辑器 contentType 映射（与 FullscreenEditor 注册表对齐） */
 const TEXT_CONTENT_TYPE: Record<string, string> = {
@@ -66,6 +80,7 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
   const [previewPath, setPreviewPath] = useState<string>(paths[0] || "");
   const [previewData, setPreviewData] = useState<TextPreviewData | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string>("");
+  const [mediaUrl, setMediaUrl] = useState<string>("");
   const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => {
@@ -76,14 +91,30 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
   useEffect(() => {
     setPreviewData(null);
     setImagePreviewUrl("");
+    setMediaUrl("");
     if (!previewPath) return;
     let cancelled = false;
+    // loading 必须在同步阶段就置起来：留在下面的 async IIFE 里的话，
+    // 本次 commit 会带着 loading=false + 空 url 先渲染一帧，
+    // 把「无法内嵌播放 / 无法加载图片预览」这类兜底态闪一下再被真数据顶掉。
+    setPreviewLoading(true);
     (async () => {
-      setPreviewLoading(true);
       try {
         if (isImageFile(previewPath)) {
           const url = await getImageDataUrl(previewPath);
           if (!cancelled) setImagePreviewUrl(url || "");
+        } else if (isPdfFile(previewPath)) {
+          // PDF 由 PdfViewer 自行加载（pdfjs-dist），不读后端文本预览
+        } else if (isPlayableMedia(previewPath)) {
+          // 音视频不读后端内容，走 asset 协议直接喂给 <video>/<audio>。
+          // 但 tauri.conf 的 assetProtocol.scope 只有 $APPDATA/**，用户复制进来的原始
+          // 路径在 scope 外会被拦成 403 —— 而 convertFileSrc 只是字符串拼接，永远"成功"，
+          // 表现就是播放器静默不动。所以先让 Rust 按需把这个文件加进白名单（同一套
+          // canonicalize + 扩展名校验），拿回规范化路径再转 asset://。
+          const allowed = await invoke<string>("allow_media_asset", { path: previewPath });
+          const { convertFileSrc } = await import("@tauri-apps/api/core");
+          const url = convertFileSrc(allowed);
+          if (!cancelled) setMediaUrl(url || "");
         } else {
           const data = await invoke<TextPreviewData>("read_text_file_preview", { path: previewPath });
           if (!cancelled) setPreviewData(data);
@@ -135,6 +166,7 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
             path={previewPath}
             data={previewData}
             imageUrl={imagePreviewUrl}
+            mediaUrl={mediaUrl}
             loading={previewLoading}
             item={item}
           />
@@ -150,13 +182,16 @@ export function FileDetailDialog({ item, onClose }: { item: HistoryItem; onClose
   );
 }
 
-/** ④ 快速预览面板（主区版）：图片 hero / 文本高亮+搜索+复制全文+编辑器打开 / 二进制·缺失引导 */
-function PreviewPanel({ path, data, imageUrl, loading, item }: {
-  path: string; data: TextPreviewData | null; imageUrl: string; loading: boolean; item: HistoryItem;
+/** ④ 快速预览面板（主区版）：图片 hero / 音视频内嵌播放 / 文本高亮+搜索+复制全文+编辑器打开 / 二进制·缺失引导 */
+function PreviewPanel({ path, data, imageUrl, mediaUrl, loading, item }: {
+  path: string; data: TextPreviewData | null; imageUrl: string; mediaUrl: string; loading: boolean; item: HistoryItem;
 }) {
   const { toast } = useToast();
   const openEditor = useDialogStore((s) => s.openEditor);
   const isImage = isImageFile(path);
+  const isPdf = isPdfFile(path);
+
+  // PDF 由 PdfViewer 自行加载（含自身 loading/error 态），无需外壳 loading 遮罩
 
   const enlargeImage = useCallback(() => {
     openEditor({ ...item, id: `${item.id}-img`, type: "image", content: path } as HistoryItem);
@@ -172,6 +207,11 @@ function PreviewPanel({ path, data, imageUrl, loading, item }: {
     catch (e) { toast(errText(e, "无法打开文件夹"), "error"); }
   }, [path, toast]);
 
+  const copyPath = useCallback(async () => {
+    try { await navigator.clipboard.writeText(path); toast("路径已复制", "success"); }
+    catch { toast("复制失败", "error"); }
+  }, [path, toast]);
+
   if (!path) return null;
 
   return (
@@ -182,12 +222,51 @@ function PreviewPanel({ path, data, imageUrl, loading, item }: {
         </div>
       )}
 
+      {/* Tier2：PDF 内嵌阅读预览（pdfjs-dist，自带 loading/error 态） */}
+      {isPdf && <PdfViewer path={path} />}
+
       {!loading && isImage && imageUrl && (
         <div className="file-preview-img-hero">
           <img src={imageUrl} alt={nameOf(path)} className="file-preview-img-big" onClick={enlargeImage} />
           <button className="file-preview-enlarge" onClick={enlargeImage} title="点击放大查看">
             <Maximize2 size={14} /> 放大查看
           </button>
+        </div>
+      )}
+
+      {/* Tier2：可原生播放的音视频 → 内嵌播放器 */}
+      {!loading && isVideoFile(path) && mediaUrl && (
+        <div className="file-preview-media-wrap">
+          <video className="file-preview-media" controls preload="metadata" src={mediaUrl}>
+            当前环境不支持内嵌播放，请点「用系统播放」。
+          </video>
+          <div className="file-preview-toolbar">
+            <FileActionBtn icon={<Copy size={14} />} label="复制路径" onClick={copyPath} />
+            <FileActionBtn icon={<ExternalLink size={14} />} label="用系统播放" onClick={openSys} primary />
+            <FileActionBtn icon={<FolderOpen size={14} />} label="打开文件夹" onClick={openLoc} />
+          </div>
+        </div>
+      )}
+
+      {!loading && isAudioFile(path) && mediaUrl && (
+        <div className="file-preview-media-wrap">
+          <audio className="file-preview-media audio" controls preload="metadata" src={mediaUrl}>
+            当前环境不支持内嵌播放，请点「用系统播放」。
+          </audio>
+          <div className="file-preview-toolbar">
+            <FileActionBtn icon={<Copy size={14} />} label="复制路径" onClick={copyPath} />
+            <FileActionBtn icon={<ExternalLink size={14} />} label="用系统播放" onClick={openSys} primary />
+            <FileActionBtn icon={<FolderOpen size={14} />} label="打开文件夹" onClick={openLoc} />
+          </div>
+        </div>
+      )}
+
+      {/* 音视频拿不到可播放源（asset 授权失败 / 文件已不在）时给出口，
+          否则这一路会什么都不渲染 —— 用户只看到一片空白，不知道该点哪儿。 */}
+      {!loading && isPlayableMedia(path) && !mediaUrl && (
+        <div className="file-preview-empty fd-empty">
+          <span>无法内嵌播放此文件</span>
+          <FileActionBtn icon={<ExternalLink size={14} />} label="用系统播放" onClick={openSys} />
         </div>
       )}
 

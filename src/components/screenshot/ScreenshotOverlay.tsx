@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { emit, listen } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import { ocrImage, type OcrResult } from "@/lib/api/images";
 import { aiListActions, aiRun, type AiActionMeta, type AiRunResponse } from "@/lib/api/ai";
@@ -20,12 +20,41 @@ import { isAiAvailable } from "@/lib/transforms/aiTransforms";
 import { useAiStatus } from "@/hooks/useAiStatus";
 import type { Chain, ChainRunResult } from "@/lib/chains/types";
 import { logger } from "@/lib/logger";
+// 模块级助手与常量已外迁（claude.md §7 行数上限）：imageIo 是与 React 无关的图片/异步 IO，
+// shotConstants 是不随渲染变化的常量表。纯搬运，行为未变。
+import {
+  canvasToDataUrl,
+  errText,
+  loadImage,
+  saveResultImage,
+  sleep,
+} from "@/lib/screenshot/imageIo";
+import {
+  ATTR_BAR_H,
+  ATTR_TOOLS,
+  ERASER_RADIUS_SCALE,
+  LONG_OCR_MAX_H,
+  NO_COLOR_TOOLS,
+  OCR_PANEL_W,
+  PENDING_POLL_MS,
+  PENDING_WAIT_MS,
+  PIN_FLOAT_H,
+  PIN_FLOAT_W,
+  SHAPE_TOOLS,
+  TEXT_SIZE_TOOLS,
+  WIDTH_TOOLS,
+} from "@/lib/screenshot/shotConstants";
 import { TooltipLayer } from "./TooltipLayer";
+import { MAG_SIZE, useMagnifier } from "./hooks/useMagnifier";
+import { useLongShot } from "./hooks/useLongShot";
+import { nextId } from "@/lib/screenshot/annotId";
+import { useAutoMask, type MaskBox } from "./hooks/useAutoMask";
 // 纯计算已抽到 lib/screenshot/（规则 7）——那里才能写回归测试：
 // 坐标换算与磁吸曾各藏过一个真 bug，长截图重叠匹配曾把 G/B 通道索引写错。
 import {
   applyMagnet,
   clampRect,
+  DRAG_MIN,
   eraseStrokes,
   nearestInDirection,
   isSelectableAnnot,
@@ -47,13 +76,6 @@ import {
   wrapLines,
 } from "@/lib/screenshot/draw";
 import { isRowMasked } from "@/lib/screenshot/maskGeom";
-import {
-  findOverlapRows,
-  findStickyTop,
-  framesAlike,
-  drawFeathered,
-  cropWhiteMargins,
-} from "@/lib/screenshot/stitch";
 import { layoutToolbar, modePillPos } from "@/lib/screenshot/toolbarPos";
 import { layoutOcrCopyBar } from "@/lib/screenshot/ocrBarPos";
 import {
@@ -63,42 +85,15 @@ import {
   selectLine,
 } from "@/lib/screenshot/ocrSelect";
 import { lineBox } from "@/lib/screenshot/ocrTable";
-import { findPrivateSpans } from "@/lib/screenshot/privacy";
 import { layoutSidePanel } from "@/lib/screenshot/panelPos";
 import { layoutSizeLabel } from "@/lib/screenshot/sizeLabelPos";
+import { samplePixelHex } from "@/lib/screenshot/pixelProbe";
 import type { OcrSelectMode } from "@/lib/screenshot/types";
 import {
   LONGSHOT_CONTROL,
-  LONGSHOT_PROGRESS,
   type LongShotControl,
-  type LongShotProgress,
 } from "@/lib/screenshot/longshotEvents";
 
-/**
- * 后端 get_scroll_range 返回的可滚动控件范围（见 screenshot.rs）。
- *
- * ❌ n_max / n_page / n_pos 是**滚动单位**，不是像素：编辑框按行、列表按项。
- * 算预览几何只能用无单位的 extra_ratio（下方还有几屏）。
- */
-interface ScrollRangeOut {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  n_max: number;
-  n_page: number;
-  n_pos: number;
-  /** 光标下方还有几屏内容（无单位）。乘选区高度 = 要伸展的物理像素 */
-  extra_ratio: number;
-}
-/** 自动打码「预览式」：OCR 命中的隐私框（相对选区局部坐标），excluded=用户点掉不参与打码 */
-interface MaskBox {
-  x: number;
-  y: number;
-  x2: number;
-  y2: number;
-  excluded: boolean;
-}
 import { AnnotToolbar } from "./AnnotToolbar";
 import { TextToolbar } from "./TextToolbar";
 import { AttrBar, type MaskShape, type TextSizeId, type WidthId } from "./AttrBar";
@@ -132,15 +127,7 @@ type Phase = "select" | "annotate" | "result";
  * 两者相消后，文字的屏幕位置与落字位置严格相等，而视觉上字不再顶着框线。
  * 只改其中一处 = 预览与落字错位（这正是当初把 padding 写死为 0 的原因）。 */
 const TEXT_PAD = 4;
-/* 放大镜参数（物理像素）：采样半径 30px，4 倍放大 → 240×240 画布 */
-const MAG_R = 30;
-const MAG_ZOOM = 4;
-const MAG_SIZE = MAG_R * 2 * MAG_ZOOM;
-/* 取色探针 canvas（模块级复用，避免拖选高频 GC） */
-let probeCanvas: HTMLCanvasElement | null = null;
 
-let idSeq = 1;
-const nextId = () => idSeq++;
 
 /* ===== 主组件 ===== */
 export function ScreenshotOverlay() {
@@ -609,12 +596,12 @@ export function ScreenshotOverlay() {
   /** 始终指向最新的 redraw。底图加载完要补一次重绘（把占位棋盘换成真马赛克），
    *  但那个 effect 不能把 redraw 写进依赖 —— redraw 随 annotations 变，会让它反复重跑。 */
   const redrawRef = useRef<() => void>(() => {});
-  // 放大镜（直接操作 DOM，避免拖选高频 setState 重渲染）
-  const magRef = useRef<HTMLDivElement | null>(null);
-  const magCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const magInfoRef = useRef<HTMLSpanElement | null>(null);
-  const magVisibleRef = useRef(false);
-  const magHexRef = useRef("#000000");
+  // 放大镜 / 取色：唯一一处直接操作 DOM 的交互（拖选高频，走 setState 会掉帧）。
+  // 已抽到 hooks/useMagnifier —— 它零 useState，只吃 dpr 与底图。
+  const { magRef, magCanvasRef, magInfoRef, updateMag, hideMag, copyHex } = useMagnifier({
+    dpr,
+    baseImgRef,
+  });
 
   /* 拖选状态（select 态，物理坐标，相对虚拟屏幕原点） */
   const dragRef = useRef<{ startX: number; startY: number; curX: number; curY: number } | null>(null);
@@ -1389,154 +1376,50 @@ export function ScreenshotOverlay() {
     setRedoStack(redoStack.slice(0, -1));
   }, [redoStack, annotations]);
 
-  /* ===== 提交一个标注元素（入栈） ===== */
-  const commitAnnot = useCallback((a: Annotation) => {
-    // ⚠️ 不能写成 setAnnotations(prev => { setUndoStack(...); return [...prev, a]; })：
-    // StrictMode 下 updater 会被调用两次，嵌套的 setUndoStack 跟着执行两次，
-    // 同一份快照被压进 undo 栈两份 → Ctrl+Z 要按两次才退一格。
-    // （undo/redo 那两个 useCallback 的注释早就写明要避开这个模式，这里是漏网的一处。）
+  /** 把「操作前的标注快照」压进撤销栈并清空重做栈，返回那份快照。
+   *
+   *  收口（规则 11.1）：commitAnnot / applyMasks / runDewatermarkTile / 文字编辑 四处
+   *  原本各写一遍同样的三行。commitAnnot 的注释自己都写着「这里是漏网的一处」——
+   *  改一处漏三处的后果就是某类操作 Ctrl+Z 退不回去。
+   *
+   *  ⚠️ 不能写成 setAnnotations(prev => { setUndoStack(...); return ...; })：
+   *  StrictMode 下 updater 会被调用两次，嵌套的 setUndoStack 跟着执行两次，
+   *  同一份快照被压进 undo 栈两份 → Ctrl+Z 要按两次才退一格。所以这里用 ref 取最新值。 */
+  const pushUndoSnapshot = useCallback((): Annotation[] => {
     const prev = annotationsRef.current;
     setUndoStack((u) => [...u, prev]);
     setRedoStack([]);
-    setAnnotations([...prev, a]);
+    return prev;
   }, []);
+
+  /* ===== 提交一个标注元素（入栈） ===== */
+  const commitAnnot = useCallback((a: Annotation) => {
+    const prev = pushUndoSnapshot();
+    setAnnotations([...prev, a]);
+  }, [pushUndoSnapshot]);
 
   /* V5：原地更新标注元素（移动/缩放用，不上 undo——由操作结束统一快照） */
   const updateAnnot = useCallback((id: number, patch: Partial<Annotation>) => {
     setAnnotations((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
   }, []);
 
-  /* ===== 自动打码（P0）：OCR 定位隐私文本 → 批量矩形马赛克 ===== */
-
-  /**
-   * 确保已拿到选区 OCR 结果（复用「取文字」同一套管线：裁选区 → 存临时 PNG → ocrImage）。
-   * - 已有结果直接返回（标注态进入时已提前 OCR，绝大多数情况走这里）；
-   * - 否则现场跑一次（首屏未识别完就被点的兜底）。
-   * 返回 null 表示识别不可用（图太小 / OCR 失败）。
-   */
-  const ensureRegionOcr = useCallback(async (): Promise<OcrResult | null> => {
-    if (ocr && ocr.lines.length > 0) return ocr;
-    const r = selRef.current;
-    if (!r || r.w < 4 || r.h < 4 || !screen) return null;
-    try {
-      setOcrStatus("running");
-      const img = await loadImage(screen.dataUrl);
-      const out = document.createElement("canvas");
-      out.width = Math.max(1, Math.round(r.w));
-      out.height = Math.max(1, Math.round(r.h));
-      const ctx = out.getContext("2d");
-      if (!ctx) return null;
-      ctx.drawImage(img, r.x, r.y, r.w, r.h, 0, 0, out.width, out.height);
-      // 必须走 canvasToDataUrl（toBlob）—— out.toDataURL 是**同步**全尺寸 PNG 编码，
-      // 2560×1440 的选区就是几百毫秒主线程冻结，用户此时点工具栏就是“点了不反应”。
-      const dataUrl = await canvasToDataUrl(out);
-      const tmpPath = await invoke<string>("save_screenshot_image", { dataBase64: dataUrl });
-      void invoke("mark_ocr_temp", { path: tmpPath }).catch(() => {});
-      const res = await ocrImage(tmpPath);
-      setOcr(res);
-      setOcrStatus(res.fullText?.trim() ? "done" : "empty");
-      return res;
-    } catch (e) {
-      logger.warn("自动打码：OCR 失败", e);
-      setOcrStatus("failed");
-      return null;
-    }
-  }, [ocr, screen]);
-
-  /**
-   * 一键自动打码：对图中命中的隐私词逐词生成矩形马赛克元素（单次撤销整体可退）。
-   * 文本正则（手机/身份证/邮箱/银行卡/QQ/微信号/IP/车牌/姓名[带标签]/地址[带标签]）+ 二维码/条码，不含人脸（P0 范围）。
-   */
-  const runAutoMask = useCallback(async () => {
-    if (busy) return; // 合成/保存中不做
-    const res = await ensureRegionOcr();
-    if (!res) {
-      showToast("自动打码失败：文字识别未就绪", false);
-      return;
-    }
-    const r = selRef.current;
-    const baseW = r ? Math.round(r.w) : 0;
-    const baseH = r ? Math.round(r.h) : 0;
-    const pad = 4; // 物理像素外扩，确保整词被盖住
-    const boxes: MaskBox[] = [];
-    for (const line of res.lines) {
-      // 隐私判定用**整行文本**：手机号/身份证/邮箱都是整串正则，拿单个字符去匹配
-      // 永远命中不了（若用 w.text 判，自动打码会 100%「未发现隐私」）。
-      // 但打码范围只取**命中的那几个字**：
-      // ❌ 旧实现命中就盖整行，「客服电话 13800138000 工作时间 9:00-18:00」
-      // 会被整条涂黑，用户想留的内容一起没了。
-      if (!line.text) continue;
-      const spans = findPrivateSpans(line.text);
-      if (spans.length === 0) continue;
-      // words 有两种形态：逐字符（后端给了 char_xn）与整行单框（兼容回退）。
-      // 只有逐字形态才能定位到子串；整行单框只能退回盖整行。
-      const perChar = line.words.length === Array.from(line.text).length;
-      const ranges = perChar
-        ? spans.map((s) => [s.start, s.end] as const)
-        : ([[0, line.words.length]] as const as readonly (readonly [number, number])[]);
-      for (const [from, to] of ranges) {
-        let x1 = Infinity;
-        let y1 = Infinity;
-        let x2 = -Infinity;
-        let y2 = -Infinity;
-        for (let k = from; k < to; k++) {
-          const w = line.words[k];
-          if (!w) continue;
-          x1 = Math.min(x1, w.x);
-          y1 = Math.min(y1, w.y);
-          x2 = Math.max(x2, w.x + w.width);
-          y2 = Math.max(y2, w.y + w.height);
-        }
-        if (!Number.isFinite(x1)) continue;
-        const x = Math.max(0, Math.round(x1) - pad);
-        const y = Math.max(0, Math.round(y1) - pad);
-        const xe = Math.min(baseW, Math.round(x2) + pad);
-        const ye = Math.min(baseH, Math.round(y2) + pad);
-        if (xe - x < 2 || ye - y < 2) continue;
-        boxes.push({ x, y, x2: xe, y2: ye, excluded: false });
-      }
-    }
-    // 二维码 / 条码：文本正则的盲区（DAMA/Snagit 都盖）。在选区位图上跑 jsQR，
-    // 取 location 四角算包围盒加入预览——失败不阻断文本打码。
-    try {
-      if (screen && r && r.w >= 8 && r.h >= 8) {
-        const img = await loadImage(screen.dataUrl);
-        const cv = document.createElement("canvas");
-        cv.width = Math.max(1, Math.round(r.w));
-        cv.height = Math.max(1, Math.round(r.h));
-        const cctx = cv.getContext("2d");
-        if (cctx) {
-          cctx.drawImage(img, r.x, r.y, r.w, r.h, 0, 0, cv.width, cv.height);
-          const id = cctx.getImageData(0, 0, cv.width, cv.height);
-          const jsQR = (await import("jsqr")).default;
-          const qr = jsQR(id.data, cv.width, cv.height, { inversionAttempts: "dontInvert" });
-          if (qr && qr.location) {
-            const loc = qr.location;
-            const xs = [loc.topLeftCorner.x, loc.topRightCorner.x, loc.bottomLeftCorner.x, loc.bottomRightCorner.x];
-            const ys = [loc.topLeftCorner.y, loc.topRightCorner.y, loc.bottomLeftCorner.y, loc.bottomRightCorner.y];
-            const qx = Math.max(0, Math.round(Math.min(...xs)) - pad);
-            const qy = Math.max(0, Math.round(Math.min(...ys)) - pad);
-            const qxe = Math.min(baseW, Math.round(Math.max(...xs)) + pad);
-            const qye = Math.min(baseH, Math.round(Math.max(...ys)) + pad);
-            if (qxe - qx >= 2 && qye - qy >= 2) {
-              boxes.push({ x: qx, y: qy, x2: qxe, y2: qye, excluded: false });
-            }
-          }
-        }
-      }
-    } catch (e) {
-      logger.warn("自动打码：二维码识别失败（不影响文本打码）", e);
-    }
-
-    if (boxes.length === 0) {
-      showToast("未发现可打码的隐私信息（手机/身份证/邮箱/银行卡/座机/姓名/地址等）", false);
-      return;
-    }
-    // 预览式（P3）：先显示橙色虚框轻预览，逐框可排除，确认才打马赛克，避免误伤普通文字
-    maskPreviewRef.current = boxes;
-    setMaskPreview(boxes);
-    showToast(`识别到 ${boxes.length} 处隐私 · 点框可排除 · 全部确认即打码`, true);
-  }, [ensureRegionOcr, busy, showToast, screen]);
+  /* ===== 自动打码（P0）：已抽到 hooks/useAutoMask ===== */
+  // 行为型 hook：maskPreview 状态留在本组件（JSX 渲染预览框、resetShot 要清它），
+  // 撤销栈由注入的 pushUndoSnapshot 统一处理。
+  const { runAutoMask, toggleMaskBox, applyMasks } = useAutoMask({
+    ocr,
+    setOcr,
+    screen,
+    selRef,
+    busy,
+    mosaicStrength,
+    setOcrStatus,
+    maskPreviewRef,
+    setMaskPreview,
+    setAnnotations,
+    showToast,
+    pushUndoSnapshot,
+  });
 
   /** 工具栏选工具：自动打码是动作型按钮，拦截后执行打码、不切换绘制工具。 */
   const onSelectTool = useCallback(
@@ -1551,45 +1434,6 @@ export function ScreenshotOverlay() {
     [runAutoMask, notePowerUsed],
   );
 
-  /* 自动打码「预览式」：点框切换排除 / 全部确认即打码（整批一次 undo） */
-  const toggleMaskBox = useCallback((i: number) => {
-    setMaskPreview((prev) => {
-      if (!prev) return prev;
-      const next = prev.map((b, idx) => (idx === i ? { ...b, excluded: !b.excluded } : b));
-      maskPreviewRef.current = next;
-      return next;
-    });
-  }, []);
-
-  const applyMasks = useCallback(() => {
-    const boxes = maskPreviewRef.current;
-    if (!boxes) return;
-    const active = boxes.filter((b) => !b.excluded);
-    setMaskPreview(null);
-    maskPreviewRef.current = null;
-    if (active.length === 0) {
-      showToast("已排除全部，未打码", false);
-      return;
-    }
-    const els: Annotation[] = active.map((b) => ({
-      id: nextId(),
-      type: "mosaic",
-      color: "",
-      width: 0,
-      x: b.x,
-      y: b.y,
-      x2: b.x2,
-      y2: b.y2,
-      strength: mosaicStrength,
-      shape: "rect",
-    }));
-    // 整批一次入 undo，Ctrl+Z 一次性退回所有自动打码（不逐个占撤销栈）
-    const prev = annotationsRef.current;
-    setUndoStack((u) => [...u, prev]);
-    setRedoStack([]);
-    setAnnotations([...prev, ...els]);
-    showToast(`已自动打码 ${els.length} 处`, true);
-  }, [mosaicStrength, showToast]);
 
   /* 去水印·平铺模式：检测整屏平铺周期 → 批量生成 dewarp 单元格 annotation（整批一次 undo）。
    * 与自动打码同思路：动作型，点画布即执行（onAnnotMouseDown 拦截），整批一次入撤销栈。 */
@@ -1639,16 +1483,14 @@ export function ScreenshotOverlay() {
         shape: "rect",
         tiled: true,
       };
-      const prev = annotationsRef.current;
-      setUndoStack((u) => [...u, prev]);
-      setRedoStack([]);
+      const prev = pushUndoSnapshot();
       setAnnotations([...prev, el]);
       showToast("已整屏去水印", true);
     } catch (e) {
       logger.warn("去水印平铺检测失败", e);
       showToast("去水印失败，请改用手动模式", false);
     }
-  }, [showToast, dewarpStrength]);
+  }, [showToast, dewarpStrength, pushUndoSnapshot]);
 
   /* V5：操作结束统一入 undo（移动/缩放/删除共用：先把操作前的快照压栈） */
   const snapshotUndo = useCallback(() => {
@@ -1870,392 +1712,29 @@ export function ScreenshotOverlay() {
    *
    *  三个动作绑在一起是故意的 —— 它们必须同时发生，漏一个就会留下
    *  "状态窗还在 / Esc 被占 / 截图窗不见了"这类半死不活的状态。 */
-  const restoreShotWindow = useCallback(async () => {
-    await withTimeout(invoke("close_longshot_status"), 2000, "关闭状态窗").catch(() => undefined);
-    const shown = await withTimeout(invoke("show_screenshot_window"), 2000, "恢复截图窗")
-      .then(() => true)
-      .catch(() => false);
-    if (!shown) {
-      // 恢复不了就干脆关掉。留一个看不见却挡鼠标的全屏透明窗，
-      // 比直接关闭糟糕得多 —— 后者至少用户能继续用电脑。
-      logger.error("恢复截图窗失败，改为关闭窗口以免留下隐形覆盖层");
-      void invoke("close_screenshot_window").catch(() => undefined);
-    }
-    setLongShot(false);
-  }, []);
-
-  /** V3：长截图（滚动拼接）。隐藏截图窗口 → 循环 截屏+匹配+滚轮 → 恢复窗口出结果 */
-  const startLongShot = useCallback(async (captureBottomPx?: number) => {
-    const r = selRef.current;
-    if (!r || longShot || busy) return;
-    abortLongRef.current = false;
-    stopLongRef.current = false;
-    escBurstRef.current = 0;
-    modeLongRef.current = "auto";
-    nextLongRef.current = false;
-    setLongShot(true);
-    let restored = false;
-    try {
-      // 逃生舱最先武装，而且独立于状态窗：状态窗创建失败时反而最需要它。
-      // （上一版把注册写在 open_longshot_status 里且在 build() 之后，
-      //   状态窗一失败就直接 return Err，全局 Esc 根本没注册上。）
-      // 全局 Esc 是逃生舱第二道保险。注册失败（多见于 Esc 被别的程序全局占用）不再静默吞掉：
-      // 状态窗已必现（pick_status_pos 兜底），用户仍能用“放弃”按钮退出，这里给出明确提示。
-      const escOk = await withTimeout(invoke<boolean>("arm_longshot_escape"), 2000, "注册全局 Esc").catch(
-        () => false,
-      );
-      if (!escOk) {
-        logger.warn("长截图全局 Esc 注册失败，退出请用状态窗“放弃”按钮");
-        showToast("全局 Esc 被占用，退出请用状态窗“放弃”按钮", true);
-      }
-      // 先开状态小窗再隐藏截图窗：小窗在选区外，不会被拼进长图；
-      // 先开也能避免中间出现"屏幕上什么都没有"的空窗。
-      // 返回 false = 选区占满屏幕、无处可放，本次无法中途停止（只能等跑完）。
-      const [srx, sry] = toScreenPt(screen, r.x, r.y);
-      const statusOk = await invoke<boolean>("open_longshot_status", {
-        x: Math.round(srx),
-        y: Math.round(sry),
-        w: Math.max(1, Math.round(r.w)),
-        h: Math.max(1, Math.round(r.h)),
-      }).catch((e) => {
-        logger.warn("长截图状态窗打开失败（不阻断长截图）", e);
-        return false;
-      });
-      if (!statusOk) {
-        logger.warn("未开长截图状态窗：选区无留白位置，本次不可中途停止");
-        // 窗口马上要隐藏，先给用户看一眼再走（规则 15.3：不静默）。
-        // 这是罕见路径（选区占满整块屏幕），多等 700ms 不影响正常使用。
-        showToast("选区占满屏幕，本次长截图无法中途停止", true);
-        await sleep(700);
-      }
-      await invoke("hide_screenshot_window");
-      const pieces: HTMLCanvasElement[] = [];
-      /** 与 pieces 同下标：该片顶部的羽化重叠行数（首片恒为 0）。
-       *  合成时第 i 片画在 yy - fades[i]，累加则只加 height - fades[i]。 */
-      const fades: number[] = [];
-      let prevCanvas: HTMLCanvasElement | null = null;
-      let totalH = 0;
-      const MAX_STEPS = 20;
-      const startedAt = Date.now();
-      const MAX_H = 12000; // 浏览器 canvas 高度上限附近，防爆
-
-      // 选区在屏幕坐标系的位置（循环里不变，算一次就行）
-      const [rx, ry] = toScreenPt(screen, r.x, r.y);
-      const rw = Math.max(1, Math.round(r.w));
-      const rh = Math.max(1, Math.round(r.h));
-      // 选区中心（滚动注入 + 查询滚动条到底都用屏幕坐标，算一次）
-      const cx = rx + rw / 2;
-      const cy = ry + rh / 2;
-
-      /** 抓一张缩小版选区，专用于判断画面是否已渲染稳定（只截选区后这一步很便宜） */
-      const probe = async (): Promise<ImageData | null> => {
-        try {
-          const s = await withTimeout(
-            invoke<ScreenInfo>("capture_region", { x: Math.round(rx), y: Math.round(ry), w: rw, h: rh }),
-            LONG_IPC_TIMEOUT_MS,
-            "采样截图",
-          );
-          const im = await loadImage(s.dataUrl);
-          const pw = STABLE_PROBE_W;
-          const ph = Math.max(4, Math.round((rh / rw) * pw));
-          const c = document.createElement("canvas");
-          c.width = pw;
-          c.height = ph;
-          const cx = c.getContext("2d", { willReadFrequently: true });
-          if (!cx) return null;
-          cx.drawImage(im, 0, 0, pw, ph);
-          return cx.getImageData(0, 0, pw, ph);
-        } catch {
-          return null;
-        }
-      };
-
-      /** 滚动后等到画面稳定（连续两次采样一致），最多 STABLE_MAX_MS。
-       *  等不到稳定点就按上限返回——宁可多等也不能截到半渲染的画面。 */
-      const waitStable = async () => {
-        let prevProbe: ImageData | null = null;
-        for (let t = 0; t < STABLE_MAX_MS; t += STABLE_STEP_MS) {
-          await sleep(STABLE_STEP_MS);
-          const cur = await probe();
-          if (!cur) return; // 采样失败：不阻塞主流程
-          if (prevProbe && framesAlike(prevProbe, cur)) return;
-          prevProbe = cur;
-        }
-      };
-
-      /** 手动滚动模式：阻塞直到用户点状态窗「下一张」(next) 或 中止/停止。
-       *  期间用户用鼠标自行向下滚动目标窗口，点「下一张」后主窗截当前画面拼上。
-       *  轮询而非阻塞等待，确保 abort/stop 能立即唤醒退出。 */
-      const waitUserScroll = () => new Promise<void>((resolve) => {
-        const check = () => {
-          if (nextLongRef.current) {
-            nextLongRef.current = false;
-            resolve();
-          } else if (abortLongRef.current || stopLongRef.current) {
-            resolve();
-          } else {
-            setTimeout(check, 120);
-          }
-        };
-        check();
-      });
-
-      // 部分应用不响应 PostMessage 滚轮，发现画面没动时切到 SendInput 重试一次
-      let wheelForceInput = false;
-
-      /** 向选区中心注入一次向下滚轮（坐标要屏幕坐标系） */
-      const scrollOnce = async () => {
-        await withTimeout(
-          invoke("scroll_longshot", {
-            x: Math.round(cx),
-            y: Math.round(cy),
-            delta: -120,
-            forceInput: wheelForceInput,
-          }),
-          LONG_IPC_TIMEOUT_MS,
-          "滚动注入",
-        );
-      };
-
-      /** P1：查询选区命中的可滚动控件是否已滚到底（权威终止信号）。
-       *  无 WS_VSCROLL 子控件（浏览器等）→ 返回 false，交给图像重叠兜底。 */
-      const getScrollBottom = () =>
-        withTimeout(invoke<boolean>("get_scroll_bottom", { x: Math.round(cx), y: Math.round(cy) }),
-          LONG_IPC_TIMEOUT_MS,
-          "查询滚动条到底",
-        ).catch(() => false);
-
-      // stopLongRef 也要进循环条件：它表示"停下来但要出图"，与 abort 走同一个出口但结果相反
-      for (let i = 0; i < MAX_STEPS && !abortLongRef.current && !stopLongRef.current; i++) {
-        // 只截选区，不再截全屏再裁。原实现每帧跑一遍
-        // 「全屏 BitBlt → BGRA→RGBA → RGB8 → JPEG 编码 → base64 → IPC → Image 解码 → drawImage 裁出选区」，
-        // 最后一步才把大部分像素丢掉——选区占屏 1/5 就有 80% 是白做的，而这要跑最多 40 遍。
-        // 总时长上限：超了就当作"停止并出图"，已拼的内容不浪费。
-        // 不能让用户对着一个隐藏的窗口干等几十秒。
-        // ❌ 总时长上限**只管自动模式**。它的立论是「窗口隐藏着、用户只能干等」，
-        // 而手动模式下用户正在亲自滑、亲自点「下一张」——一屏 3~8 秒，25 秒才四五屏
-        // 就会被静默 break，人还在滑，截图已经结束了。手动模式的终止权在用户
-        // （stop / abort）与 MAX_STEPS，不在墙钟。
-        if (
-          (modeLongRef.current as "auto" | "manual") === "auto" &&
-          Date.now() - startedAt > LONG_DEADLINE_MS
-        ) {
-          logger.warn(`长截图达到总时长上限 ${LONG_DEADLINE_MS}ms，按停止处理`);
-          break;
-        }
-        const shot = await withTimeout(
-          invoke<ScreenInfo>("capture_region", { x: Math.round(rx), y: Math.round(ry), w: rw, h: rh }),
-          LONG_IPC_TIMEOUT_MS,
-          "区域截图",
-        );
-        const img = await loadImage(shot.dataUrl);
-        const piece = document.createElement("canvas");
-        piece.width = Math.max(1, Math.round(r.w));
-        piece.height = Math.max(1, Math.round(r.h));
-        const pctx = piece.getContext("2d");
-        if (!pctx) break;
-        // 返回的已经就是选区尺寸，直接画，不再需要源矩形参数
-        pctx.drawImage(img, 0, 0);
-        // P2-B2 统一 DPI：每片按物理像素截（grab_rect_rgba 用屏幕 DC），画布锁死到选区标称尺寸，
-        // 任何 DPI 取整/缩放偏差都被 drawImage(0,0) 拉伸归一，保证所有 piece 同一比例。
-        // 若原生截图像素数与标称不符（混合 DPI 跨屏的典型征兆），记日志便于排查，不阻断拼接。
-        // ⚠️ 已知限制：本归一仅保证「每片同比例」，无法修正跨显示器选区因 BitBlt 跨屏原点偏移
-        // 造成的坐标错位（混合 DPI 多显示器）。根治需按显示器分块截取再拼合，本次未做。
-        if (img.naturalWidth !== piece.width || img.naturalHeight !== piece.height) {
-          logger.warn(
-            `[长截图] 截得 ${img.naturalWidth}x${img.naturalHeight} 与选区 ${piece.width}x${piece.height} 不符（疑混合 DPI），已归一`,
-          );
-        }
-
-        let append: HTMLCanvasElement;
-        let visible = piece.height;
-        /** 本片顶部留给羽化的重叠行数（首帧为 0）；合成时要往上叠回这么多。 */
-        let fade = 0;
-        if (prevCanvas) {
-          // P2-A1：检测吸顶带（固定导航/表头），拼接时跳过，避免重复带 + seam 错位
-          const sticky = findStickyTop(prevCanvas, piece, piece.width, piece.height);
-          const overlap = findOverlapRows(prevCanvas, piece, piece.width, piece.height, sticky);
-          if (overlap <= 2) {
-            // 手动模式：用户点「下一张」时画面没变化（没滚或滚得极少）→ 提示，不推进不退出，
-            // 等待用户真正滚动后再点「下一张」；不消耗终止逻辑（终止由用户 stop/abort 控制）。
-            if ((modeLongRef.current as "auto" | "manual") === "manual") {
-              showToast("画面没变化：请先向下滚动目标窗口，再点『下一张』", false);
-              // ❌ 必须先等用户再点一次「下一张」再回到循环顶部。
-              // 直接 continue 会跳过循环底部的 waitUserScroll，变成无等待自旋：
-              // 截图→还是没变→弹提示→再截……几秒内刷完 MAX_STEPS，长截图自己结束了。
-              await waitUserScroll();
-              await waitStable();
-              continue;
-            }
-            // 自动模式：画面没动 = 真到底 或 滚轮不被接受。
-            // 还没试过 SendInput 就先切过去重滚一次，别把「注入方式不被接受」误判成「已到底」。
-            if (!wheelForceInput) {
-              wheelForceInput = true;
-              logger.info("[长截图] PostMessage 滚轮似乎无效，回退 SendInput 重试");
-              await scrollOnce();
-              await waitStable();
-              continue; // 本帧不计入，重新截一帧再判
-            }
-            // 已用 SendInput 仍不动：区分「滚到底」与「根本不滚」。
-            // pieces 只拼了一屏（首屏）就不动 → 目标窗口不响应滚动，大概率不是长页面。
-            if (pieces.length <= 1) {
-              showToast("该区域不响应滚动，可能不是长页面", false);
-            }
-            break; // 真到底 / 不滚动，停止
-          }
-          // seam = 吸顶带 + 重叠行：append 从 seam 开始取，吸顶带被剔除（P2-A1）
-          const seam = sticky + overlap;
-          if (piece.height - seam <= 0) break;
-          // P2-B1 羽化：多往上取 fade 行。这 fade 行与上一片末尾是**同一内容**（它们本就在
-          // 重叠区里），合成时往上叠回去做 alpha 交叉淡化。不留这几行就没东西可淡化——
-          // 旧实现把斜坡贴在空白区上，反而每条接缝多出一条半透明带。
-          fade = Math.min(LONG_FEATHER, seam);
-          visible = piece.height - seam + fade;
-          append = document.createElement("canvas");
-          append.width = piece.width;
-          append.height = visible;
-          append
-            .getContext("2d")!
-            .drawImage(piece, 0, seam - fade, piece.width, visible, 0, 0, piece.width, visible);
-        } else {
-          append = piece;
-        }
-        // 新增高度不算那 fade 行（它们叠在上一片上，不占高）
-        const grow = visible - fade;
-        if (totalH + grow > MAX_H) break;
-        pieces.push(append);
-        fades.push(fade);
-        totalH += grow;
-        prevCanvas = piece;
-        // 上报进度给状态小窗（截图窗自己已经隐藏，这是唯一看得见的地方）
-        void emit(LONGSHOT_PROGRESS, {
-          frames: pieces.length,
-          height: totalH,
-          thumb: thumbOf(piece),
-        } satisfies LongShotProgress);
-
-        // 预览即默认：拖拽选终点 → 截到 captureBottomPx 为止（裁末帧底部，与 get_scroll_bottom 双保险）
-        if (captureBottomPx != null && totalH > captureBottomPx) {
-          const over = totalH - captureBottomPx;
-          const last = pieces[pieces.length - 1];
-          const c = document.createElement("canvas");
-          c.width = last.width;
-          c.height = Math.max(1, last.height - over);
-          c.getContext("2d")!.drawImage(last, 0, 0);
-          pieces[pieces.length - 1] = c;
-          totalH -= over;
-          break;
-        }
-
-        // 自动模式：先查滚动条是否到底（P1 权威信号）。已到底 → 当前帧已是最后一屏，直接停，
-        // 不浪费一次"滚了却没动"的无用帧。没到底 → 注入滚动（WM_VSCROLL 优先 → 滚轮回退）后等稳定。
-        // 手动模式：不自动滚动，等用户自己向下滚动并点状态窗「下一张」，再等稳定。
-        if ((modeLongRef.current as "auto" | "manual") === "manual") {
-          await waitUserScroll();
-          await waitStable();
-        } else {
-          const atBottom = await getScrollBottom();
-          if (atBottom) {
-            logger.info("[长截图] 滚动条已到底，停止（权威终止）");
-            break;
-          }
-          await scrollOnce();
-          await waitStable();
-        }
-      }
-      // 滚动阶段到此结束 —— 立刻把界面还给用户，不要让后面的合成/OCR 拖着窗口不放。
-      // 旧顺序是"拼接 + 合成 + OCR 全跑完 → finally 才 show"，
-      // 而长图 OCR 几十秒起步，用户看到的就是"点了长截图一直等，什么都没有"。
-      await restoreShotWindow();
-      restored = true;
-
-      // Esc 中止，或一帧都没成功 → 不出图。
-      // 原实现 abortLongRef 只跟出循环，后面照样拼接 + finalizeCanvas + 进 result 态，
-      // 用户按 Esc 想取消，却得到一张半截图（违反规则 17.6 两级取消）；
-      // pieces 为空时 totalH=0，还会存一张 1px 高的垃圾图。
-      if (abortLongRef.current || pieces.length === 0) {
-        logger.warn(
-          `长截图未出图（${abortLongRef.current ? "用户中止" : "未捕获到内容"}），保持当前状态`,
-        );
-        // 窗口隐藏了好几秒又原样回来，不说一声就是"点了长截图什么都没发生"（规则 15.3）
-        showToast(
-          abortLongRef.current ? "已放弃长截图" : "长截图未捕获到内容 · 该窗口可能不响应滚轮",
-          abortLongRef.current,
-        );
-        return; // finally 里会恢复窗口并清 longShot
-      }
-      // 拼接长图
-      const long = document.createElement("canvas");
-      long.width = Math.max(1, Math.round(r.w));
-      long.height = Math.max(1, totalH);
-      const lctx = long.getContext("2d");
-      if (lctx) {
-        // yy = 本片**新内容**的起始行。续接帧顶部那 fades[i] 行是与上一片末尾重复的
-        // 内容，所以要画在 yy - fade 处、且不计入高度——同一内容互相淡入才叫交叉淡化。
-        let yy = 0;
-        for (let i = 0; i < pieces.length; i++) {
-          const p = pieces[i];
-          const fade = fades[i] ?? 0;
-          if (i > 0 && fade > 0) drawFeathered(lctx, p, yy - fade, fade);
-          else lctx.drawImage(p, 0, yy);
-          yy += p.height - fade;
-        }
-        // P2-A2：去掉四周全白留白（选区比窗口略大带入的桌面白边），内容内白区不动
-        const out = cropWhiteMargins(long);
-        // 界面已经回来了，用 busy 态告诉用户还在处理（工具栏变淡 + "处理中…"）。
-        // busy 不拦 Esc，所以这段时间用户随时可以退出。
-        setBusy(true);
-        try {
-          await finalizeCanvas(out);
-        } finally {
-          setBusy(false);
-        }
-      }
-    } catch (err) {
-      logger.error("长截图失败", err);
-      showToast(`长截图失败：${errText(err)}`);
-    } finally {
-      // 正常路径已经在循环结束后恢复过了；这里只兜异常路径（循环中途抛错）。
-      if (!restored) await restoreShotWindow();
-    }
-    // screen 入依赖：滚轮注入要把选区中心换成屏幕坐标，依赖 screen.originX/Y
-  }, [longShot, busy, finalizeCanvas, screen, showToast, restoreShotWindow]);
-
-  /** 长截图入口（微信思维）：先探测选区命中的可滚动控件，命中有滚动条且页面明显更长
-   *  则显示整页淡预览（窗口不隐藏）；否则直接走原有自动滚动（浏览器/SPA 无 Win32 滚动条时零回归）。 */
-  const onLongShotPreview = useCallback(async () => {
-    const r = selRef.current;
-    if (!r || !screen || longShot || busy) return;
-    // 探测用绝对屏幕坐标（同 get_scroll_bottom 的写法）
-    const [cx, cy] = toScreenPt(screen, r.x + r.w / 2, r.y + r.h / 2);
-    const range = await invoke<ScrollRangeOut | null>("get_scroll_range", {
-      x: Math.round(cx),
-      y: Math.round(cy),
-    }).catch(() => null);
-    if (!range) {
-      void startLongShot();
-      return;
-    }
-    // ❌ 下方剩多少只能用比例算：旧实现直接拿 (n_max - n_page - n_pos) 当物理像素，
-    // 而记事本类控件按**行**计、列表按**项**计——一个 1000 行的文档会被当成 1000px，
-    // 于是预览框高度、“整页 ≈ Npx”、“约 N 屏”全错；而拖终点又是从这套错几何
-    // 算出 captureBottomPx，会导致提前截断。extra_ratio 是无单位的，乘选区高度就对了。
-    const extraBelow = Math.max(0, Math.round(range.extra_ratio * r.h));
-    // 页面没明显更长（不足半屏）就不做预览，直接截整页
-    if (range.extra_ratio < 0.5) {
-      void startLongShot();
-      return;
-    }
-    const top = r.y;
-    const maxH = screen.height - top;
-    const h = Math.min(maxH, r.h + extraBelow);
-    setPreviewRect({ x: r.x, y: top, w: r.w, h });
-    const screens = Math.max(2, Math.round(1 + range.extra_ratio));
-    setPreviewLabel(`整页约 ${screens} 屏`);
-    setPreviewEndY(top + h); // 默认拖到整页底部
-    longPreviewRef.current = true;
-    setLongPreview(true);
-  }, [longShot, busy, startLongShot, screen]);
+  // 长截图整条流程（386 行）已抽到 hooks/useLongShot。它是行为型 hook：
+  // 状态仍在本组件（上面那 12 个 state/ref），因为快捷键 / 预览层拖拽 / JSX 都要读写，
+  // 且它们的使用点比这里靠前 —— 搬进 hook 会 TDZ。
+  const { startLongShot, onLongShotPreview } = useLongShot({
+    screen,
+    selRef,
+    longShot,
+    setLongShot,
+    busy,
+    setBusy,
+    showToast,
+    finalizeCanvas,
+    abortLongRef,
+    stopLongRef,
+    escBurstRef,
+    modeLongRef,
+    nextLongRef,
+    longPreviewRef,
+    setLongPreview,
+    setPreviewRect,
+    setPreviewLabel,
+    setPreviewEndY,
+  });
 
   /* ===== 动作出口 ===== */
   // 关闭窗口（按需创建：不常驻占内存，启动提速靠后端并行预截屏）
@@ -2938,71 +2417,6 @@ export function ScreenshotOverlay() {
     await runAiAction(fakeAction, false);
   };
 
-  /* ===== 放大镜 + 取色（select 态拖选时跟随光标） ===== */
-  const updateMag = useCallback((px: number, py: number) => {
-    const base = baseImgRef.current;
-    const magEl = magRef.current;
-    const magCv = magCanvasRef.current;
-    if (!base || !magEl || !magCv) return;
-    const ctx = magCv.getContext("2d");
-    if (!ctx) return;
-    const sx = Math.max(0, Math.min(base.naturalWidth - MAG_R * 2, px - MAG_R));
-    const sy = Math.max(0, Math.min(base.naturalHeight - MAG_R * 2, py - MAG_R));
-    ctx.imageSmoothingEnabled = false;
-    ctx.clearRect(0, 0, magCv.width, magCv.height);
-    ctx.drawImage(base, sx, sy, MAG_R * 2, MAG_R * 2, 0, 0, MAG_SIZE, MAG_SIZE);
-    // 十字准星
-    ctx.strokeStyle = "rgba(255,255,255,0.75)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(MAG_SIZE / 2, 0);
-    ctx.lineTo(MAG_SIZE / 2, MAG_SIZE);
-    ctx.moveTo(0, MAG_SIZE / 2);
-    ctx.lineTo(MAG_SIZE, MAG_SIZE / 2);
-    ctx.stroke();
-    // 中心像素颜色（底图精确采样）；探针 canvas 复用，避免拖选高频 createElement 的 GC 压力
-    if (!probeCanvas) probeCanvas = document.createElement("canvas");
-    const pctx = probeCanvas.getContext("2d");
-    if (pctx) {
-      pctx.drawImage(base, Math.floor(px), Math.floor(py), 1, 1, 0, 0, 1, 1);
-      const d = pctx.getImageData(0, 0, 1, 1).data;
-      const hex =
-        "#" + [d[0], d[1], d[2]].map((v) => v.toString(16).padStart(2, "0")).join("");
-      magHexRef.current = hex;
-      if (magInfoRef.current) {
-        magInfoRef.current.innerHTML =
-          `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;` +
-          `background:${hex};vertical-align:-1px;margin-right:5px"></span>` +
-          `RGB(${d[0]}, ${d[1]}, ${d[2]}) · <span class="hex">${hex}</span> · 点击复制`;
-      }
-    }
-    // 定位（光标右上，越界翻转）
-    const cssSize = MAG_SIZE / dpr;
-    let left = px / dpr + 18;
-    let top = py / dpr - cssSize - 10;
-    if (left + cssSize + 10 > window.innerWidth) left = px / dpr - cssSize - 18;
-    if (top < 10) top = py / dpr + 18;
-    magEl.style.left = `${left}px`;
-    magEl.style.top = `${top}px`;
-    magEl.style.display = "flex";
-    magVisibleRef.current = true;
-  }, [dpr]);
-
-  const hideMag = useCallback(() => {
-    magVisibleRef.current = false;
-    if (magRef.current) magRef.current.style.display = "none";
-  }, []);
-
-  const copyHex = useCallback(async () => {
-    try {
-      await invoke("copy_only", { text: magHexRef.current });
-      if (magInfoRef.current) {
-        magInfoRef.current.innerHTML = `<span class="hex">已复制 ${magHexRef.current}</span>`;
-      }
-    } catch (e) {
-      logger.error("复制颜色失败", e);
-    }
-  }, []);
 
   /* ===== select 态：微信同款交互（hover 即选区 / 拖选 / 选区移动） ===== */
   const onSelectMouseDown = (e: React.MouseEvent) => {
@@ -3024,7 +2438,9 @@ export function ScreenshotOverlay() {
     // 微信同款：select 态按下一律画新矩形（任意起点，含吸附窗口内），
     // 不再"按在选区内=平移"。平移改为选区确认后用八向手柄拖移（:2789）。
     dragRef.current = { startX: px, startY: py, curX: px, curY: py };
-    setSelDraft({ x: px, y: py, w: 0, h: 0 });
+    // 只清掉可能残留的旧草稿，**不**设 0×0 起点：草稿一旦非空就会接管蒙版与选区框的显示，
+    // 而这一刻用户还没拖出任何东西（见 displaySel 处的注释）。
+    setSelDraft(null);
   };
   const onSelectMouseMove = (e: React.MouseEvent) => {
     if (longPreview) return;
@@ -3047,7 +2463,10 @@ export function ScreenshotOverlay() {
       const draft = sc
         ? applyMagnet(raw, [...winRectsRef.current, ...(lastSnapRef.current ? [lastSnapRef.current.ctrl] : [])], sc.width, sc.height)
         : raw;
-      setSelDraft(draft);
+      // 草稿只在**原始**拖动距离过了 DRAG_MIN 之后才发布 —— 与 finalizeSelectDrag 的提交
+      // 门槛同一个判据、同一个量。不能拿 draft 的宽高去判：applyMagnet 有 4px 防退化兜底，
+      // 那样门槛永远成立，抖一下就会看到选区框塌成光标处的小方块（见 geometry.DRAG_MIN）。
+      setSelDraft(raw.w >= DRAG_MIN && raw.h >= DRAG_MIN ? draft : null);
       updateMag(px, py);
       return;
     }
@@ -3114,7 +2533,7 @@ export function ScreenshotOverlay() {
     }
     const w = Math.abs(d.curX - d.startX);
     const h = Math.abs(d.curY - d.startY);
-    if (w >= 4 && h >= 4) {
+    if (w >= DRAG_MIN && h >= DRAG_MIN) {
       // 拖选有效 → 固定（移动不再吸附，微信同款）并自动进入标注。
       // 提交也要走 applyMagnet，否则吸附预览（selDraft 已磁吸）与落点（未磁吸）瞬间跳变。
       const raw = { x: Math.min(d.startX, d.curX), y: Math.min(d.startY, d.curY), w, h };
@@ -3321,22 +2740,15 @@ export function ScreenshotOverlay() {
   };
 
   /* ===== annotate 态：标注交互（annotCanvas，物理坐标 = offset × dpr） ===== */
-  /* V6.19 吸管：从底图采样光标处颜色（选区本地坐标 → 全屏偏移） */
+  /* V6.19 吸管：从底图采样光标处颜色（选区本地坐标 → 全屏偏移）。
+   * 采样本身走 lib/screenshot/pixelProbe —— 放大镜也用同一个实现，口径必须一致。 */
   const samplePixel = (px: number, py: number): string | null => {
     const base = baseImgRef.current;
     if (!base) return null;
-    if (!probeCanvas) probeCanvas = document.createElement("canvas");
-    const pctx = probeCanvas.getContext("2d");
-    if (!pctx) return null;
     const r = selRef.current;
     const ox = r ? r.x : 0;
     const oy = r ? r.y : 0;
-    pctx.clearRect(0, 0, 1, 1);
-    pctx.drawImage(base, ox + px, oy + py, 1, 1, 0, 0, 1, 1);
-    const d = pctx.getImageData(0, 0, 1, 1).data;
-    if (d[3] === 0) return null;
-    const hex = `#${[d[0], d[1], d[2]].map((v) => v.toString(16).padStart(2, "0")).join("")}`.toUpperCase();
-    return hex;
+    return samplePixelHex(base, ox + px, oy + py)?.hex ?? null;
   };
 
   const onAnnotMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -3596,10 +3008,8 @@ export function ScreenshotOverlay() {
         y2: textDraft.y + ext.h,
       };
       if (textDraft.id != null) {
-        // 编辑已有文字：原地更新，并压 undo 快照（与 commitAnnot 一致）。
-        const prev = annotationsRef.current;
-        setUndoStack((u) => [...u, prev]);
-        setRedoStack([]);
+        // 编辑已有文字：原地更新，并压 undo 快照（与 commitAnnot 走同一个收口）
+        pushUndoSnapshot();
         setAnnotations((prev) => prev.map((a) => (a.id === textDraft.id ? { ...a, ...patch } : a)));
       } else {
         commitAnnot({ id: nextId(), type: "text", ...patch });
@@ -3802,15 +3212,11 @@ export function ScreenshotOverlay() {
   // 显示选区：select 态取拖选草稿（橡皮筋）；标注/结果态**强制用真实选区 sel**——
   // selDraft 有两条提前 return 路径不清空（finalizeSelectDrag 的 longPreview / !d 分支），
   // 一旦残留，shade-block 蒙版 / 选区框 / 工具栏会按残留草稿切出 4 段蒙版（历史 bug）。
-  // 追加：草稿只在**拖选真正有效**（≥4px，与 finalizeSelectDrag 同阈值）时才接管显示。
-  // mousedown 瞬间 setSelDraft 的是 0×0 起点，若直接用 selDraft，单击确认那一刻蒙版/选区框
-  // 会从"吸附的窗口"跳到"光标处小点"再跳回 —— 用户看到"单击确定闪一下"。
-  const displaySel =
-    phase === "select"
-      ? selDraft && selDraft.w >= 4 && selDraft.h >= 4
-        ? selDraft
-        : sel
-      : sel;
+  //
+  // 「草稿够不够格接管显示」的判断已经收口到**发布草稿的那一处**（onSelectMouseMove 里按
+  // 原始拖动距离与 DRAG_MIN 比），所以这里不再重复判一遍尺寸 —— 之前在这里判 selDraft.w >= 4
+  // 是错的：selDraft 出自 applyMagnet，它有 4px 防退化兜底，门槛永远成立。
+  const displaySel = phase === "select" ? (selDraft ?? sel) : sel;
 
   // 全屏/近全屏选区判定（物理像素，≥98% 容 DWM 阴影扩展 1-2px）：
   // 全屏时 4 块 shade-block 蒙版尺寸为 0（零暗化）→ 改用四边暗带（.edge-band）+ 边框强化。
@@ -4755,206 +4161,3 @@ export function ScreenshotOverlay() {
     </div>
   );
 }
-
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("图片加载失败"));
-    img.src = src;
-  });
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-/**
- * 给 IPC 调用加超时。长截图循环里每个 invoke 都必须包。
- *
- * 不包的后果很重：裸 `await` 一旦挂起（目标窗口无响应、后端线程卡死），
- * `finally` 永远不会执行 → `show_screenshot_window` 不会被调用 →
- * 截图窗永久隐藏但进程还在，全屏透明覆盖层还挡着鼠标，只能杀进程。
- */
-function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = window.setTimeout(
-      () => reject(new Error(`${what} 超时（${ms}ms）`)),
-      ms,
-    );
-    p.then(
-      (v) => {
-        window.clearTimeout(timer);
-        resolve(v);
-      },
-      (e) => {
-        window.clearTimeout(timer);
-        reject(e);
-      },
-    );
-  });
-}
-
-/**
- * canvas → **PNG** dataURL。
- *
- * 用 `toBlob` 而不是 `toDataURL`：后者是**同步**的，一张上万像素高的长图
- * 能把主线程卡住好几秒 —— 期间界面完全无响应，看起来就是“卡死了”。
- *
- * ⚠️ 曾经是 JPEG 0.92，已改回无损。原因：用户反馈“截图没有实际图片清晰”，
- * 查出有损压缩叠了两代：后端底图已经是 JPEG q90（且 image 0.25 的 JpegEncoder
- * 写死 4:2:2 色度抽样，与 quality 无关），这里再编一次就是第二代。
- * 屏幕内容（大片纯色 + 大量硬边 + 细文字）恰好是 JPEG 最不擅长的题材，
- * 表现为文字边缘发虚、带彩色镶边。ShareX 默认 PNG 用的就是这个理由。
- *
- * 为什么这里改得起：本函数只在用户点了「完成 / 更多 / 保存 / 贴图」之后跑，
- * PNG 多花的百毫秒级耗时无感；而底图那条路是按下快捷键后的**即时路径**，
- * 不能照搬（用户已经抱怨过一次“截图速度有点慢”），得等 encode_bench 的数字。
- *
- * 落盘不用改：`save_screenshot_image` 走 `image::guess_format` 自动认格式，
- * 会自己存成 .png。
- */
-function canvasToDataUrl(c: HTMLCanvasElement): Promise<string> {
-  return new Promise((resolve, reject) => {
-    c.toBlob((blob) => {
-      if (!blob) {
-        reject(new Error("canvas 编码失败"));
-        return;
-      }
-      const fr = new FileReader();
-      fr.onload = () => resolve(fr.result as string);
-      fr.onerror = () => reject(fr.error ?? new Error("读取编码结果失败"));
-      fr.readAsDataURL(blob);
-    }, "image/png");
-  });
-}
-
-/**
- * 合成图落盘：编码 → 保存 → **撤销 OCR 临时登记**。
- *
- * 第三步不能漏。`save_screenshot_image` 是 md5 去重的，而提前 OCR 存的是选区原图；
- * 用户没画标注时结果图与选区原图像素一致 → md5 相同 → 拿到的是**同一个路径**。
- * 不撤销登记的话关窗时 `purge_ocr_temp` 会把它删掉，卡片就指向一个不存在的文件
- * （界面上表现为「图片加载失败」）。
- *
- * 收口在这里而不是在两个调用点各写一遍：finalizeCanvas（长截图/普通完成）与
- * ensureResultPath（完成/更多/保存/贴图）都要落盘，漏一处就是同一个 bug（规则 11.1）。
- */
-async function saveResultImage(
-  out: HTMLCanvasElement,
-): Promise<{ path: string; dataUrl: string }> {
-  const dataUrl = await canvasToDataUrl(out);
-  const path = await withTimeout(
-    invoke<string>("save_screenshot_image", { dataBase64: dataUrl }),
-    15000,
-    "保存截图",
-  );
-  // 失败不能影响主流程：撤销登记没成功最坏是多留一个临时文件，
-  // 而抛出去会让「完成」整个失败。
-  void invoke("unmark_ocr_temp", { path }).catch((e) =>
-    logger.warn("撤销 OCR 临时登记失败（图片可能被误清理）", e),
-  );
-  // 一并把已经编码好的 dataUrl 送出去：谁要是还需要一份图的 URL（贴图浮动预览），
-  // 直接用这份，不要再调 canvas.toDataURL()——那个是同步编码，长图能卡住主线程好几秒。
-  return { path, dataUrl };
-}
-
-/** 把一帧缩成 26×40 的小图给状态窗。每帧一次这个尺寸的 JPEG 编码，成本可忽略。 */
-function thumbOf(c: HTMLCanvasElement): string | null {
-  try {
-    const t = document.createElement("canvas");
-    t.width = 26;
-    t.height = 40;
-    const tx = t.getContext("2d");
-    if (!tx) return null;
-    tx.drawImage(c, 0, 0, 26, 40);
-    return t.toDataURL("image/jpeg", 0.6);
-  } catch {
-    return null; // 缩略图失败不能影响长截图本身
-  }
-}
-
-/** 把未知异常转成一句可读文本（Tauri invoke 抛的常常是字符串而不是 Error） */
-function errText(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (typeof e === "string") return e;
-  return String(e);
-}
-
-/** 属性条高度（padding 4×2 + 选项 24 + border 2）。它的内容高度固定，不必实测。 */
-const ATTR_BAR_H = 34;
-/** 会用到属性条的工具（橡皮擦 / 马赛克 / 模糊 不需要颜色与粗细，选中时属性条自动收起） */
-const ATTR_TOOLS = new Set<ToolId>([
-  "rect",
-  "ellipse",
-  "arrow",
-  "pen",
-  "highlight",
-  "text",
-  "number",
-  "picker",
-  // 马赛克 / 模糊也要属性条 —— 它们的强度档位要看得见，
-  // 不能只靠一个没任何提示的滚轮手势
-  "mosaic",
-  "blur",
-  // 橡皮擦（= 删除）也要属性条：真橡皮擦的半径就是它的粗细档位，
-  // 不给调节路径就只能“要么擦不准、要么擦太多”。
-  "eraser",
-  "dewarp",
-]);
-/** 不用颜色的工具（属性条上隐藏整个颜色组） */
-const NO_COLOR_TOOLS = new Set<ToolId>(["mosaic", "blur", "eraser", "dewarp"]);
-/** 线宽对哪些工具有意义。
- *
- *  橡皮擦（= 删除）也加进来了：真橡皮擦靠半径判定要擦掉哪几个采样点，
- *  半径不可调就只能“要么擦不准、要么擦太多”。 */
-const WIDTH_TOOLS = new Set<ToolId>(["rect", "ellipse", "arrow", "pen", "eraser"]);
-/** 支持“矩形 / 涂抹”形状切换的遮罩类工具 */
-const SHAPE_TOOLS = new Set<ToolId>(["mosaic", "blur", "highlight", "dewarp"]);
-/** 用字号而不是线宽的工具 */
-const TEXT_SIZE_TOOLS = new Set<ToolId>(["text", "number"]);
-/** 橡皮半径：把线宽档位放大。
- *  线宽是 2/3/5，直接当半径用太小——擦一条 3px 的线需要对准到 3px。 */
-const ERASER_RADIUS_SCALE = 6;
-
-/* 长截图：滚动后等画面稳定的参数（取代固定 sleep(280)）。
- * 固定 280ms × 40 帧 = 11.2 秒纯等待，快页面也得陪着等；
- * 改成轮询后快页面 60~120ms 就走，慢页面最多等 400ms（比原来还宽松，不会截糊）。 */
-const STABLE_STEP_MS = 60;
-const STABLE_MAX_MS = 400;
-const STABLE_PROBE_W = 240;
-
-/** 单个 IPC 调用的超时。截一块选区正常在百毫秒内，3s 还不回就是真挂住了。 */
-const LONG_IPC_TIMEOUT_MS = 3000;
-/**
- * 整轮长截图的总时长上限。超时按"停止并出图"处理，已拼的不浪费。
- * MAX_STEPS 从 40 降到 20：40 帧 × 单帧 0.5~1s = 20~40 秒，这段时间窗口是隐藏的，
- * 用户只能干等，很容易当成卡死。20 屏对绝大多数页面已经够长。
- */
-const LONG_DEADLINE_MS = 25_000;
-/** 接缝羽化的斜坡行数：续接帧顶部保留这么多重叠行，合成时往上叠回去做 0→1 交叉淡化。 */
-const LONG_FEATHER = 8;
-/**
- * 贴图浮动预览的钳位尺寸（CSS 像素）。
- * 与 screenshot.css 里 `.pin-float-img` 的 max-width/max-height 加上工具条高度对齐。
- * ❌ 初始定位与拖动钳位必须用**同一套**常量：旧实现一边写 140/130、一边写 120，
- * 于是弹出来的位置和拖得到的边界对不上。
- */
-const PIN_FLOAT_W = 240;
-const PIN_FLOAT_H = 210;
-/**
- * 超过这个高度的合成图跳过 OCR。
- * 长截图产物动辄上万像素高，OCR 要跑几十秒到几分钟，而用户要的是图不是文字。
- * 不跳的话这一步会把整个流程拖住 —— 而那正是"点了长截图一直等"的真凶之一。
- */
-const LONG_OCR_MAX_H = 4000;
-
-/** OCR 胶囊 / 抽屉的宽度，必须与 screenshot.css 里 `.ocr-drawer` 的 width 一致。 */
-const OCR_PANEL_W = 252;
-
-/** 等后端预截屏的上限。实测全屏截屏+编码约 300ms，留一倍余量。
- *  超时就自截 —— 宁可多等一下，也不能因为预截屏卡住就打不开截图。 */
-const PENDING_WAIT_MS = 700;
-/** 轮询间隔：够密才不浪费预截屏提前跑的那段时间 */
-const PENDING_POLL_MS = 25;
-

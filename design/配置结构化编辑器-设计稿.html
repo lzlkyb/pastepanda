@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="ocean">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>配置结构化编辑器（config 类型）· 设计稿（对照 CodeEditor / useEditorCore）</title>
+<style>
+  :root{
+    --app-bg:#F7F7F8; --card-bg:#fff; --dialog-bg:#fff; --section-bg:#F0F4F8;
+    --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+    --border-color:#E0E4EB; --accent:#0284C7; --accent-light:#E0F2FE; --accent-strong:#0273AD;
+    --hover:#E8ECF2;
+    --green:#11813A; --red:#D82525; --amber:#B45309;
+    --glass-popover-shadow:0 12px 36px rgba(0,0,0,.1),0 2px 8px rgba(0,0,0,.05);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--app-bg);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--text-primary);display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;justify-content:center;min-height:100vh;padding:24px;}
+
+  .dialog-backdrop{position:relative;background:rgba(0,0,0,.35);border-radius:16px;display:flex;align-items:center;justify-content:center;padding:0;}
+  .dialog-box{background:var(--dialog-bg);border:1px solid var(--border-color);border-radius:16px;
+    display:flex;flex-direction:column;box-shadow:var(--glass-popover-shadow);}
+  .dialog-box.w420{width:460px;max-height:84vh;}
+  .dialog-header{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:48px;flex-shrink:0;border-bottom:1px solid var(--border-color);}
+  .dialog-title{font-size:15px;font-weight:600;}
+  .dialog-close{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;background:transparent;color:var(--text-secondary);font-size:16px;}
+
+  .code-meta-bar{display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid var(--border-color);font-size:11px;color:var(--text-muted);}
+  .code-meta-bar .badge{font-size:11px;font-weight:700;color:var(--accent-strong);background:var(--accent-light);border:1px solid color-mix(in srgb,var(--accent) 25%,transparent);padding:2px 8px;border-radius:6px;}
+  .code-meta-bar .spacer{flex:1;}
+
+  /* 模式切换（复用 .md-mode-toggle 视觉） */
+  .md-mode-toggle{display:inline-flex;border:1px solid var(--border-color);border-radius:8px;overflow:hidden;background:var(--section-bg);}
+  .md-mode-toggle button{border:none;background:transparent;padding:4px 12px;font-size:11px;font-weight:600;color:var(--text-secondary);cursor:pointer;font-family:inherit;}
+  .md-mode-toggle button.active{background:var(--accent);color:#fff;}
+
+  .config-body{flex:1;overflow:auto;padding:10px 16px;display:flex;flex-direction:column;gap:6px;}
+  .cfg-section{font-size:11px;font-weight:700;color:var(--text-secondary);background:var(--section-bg);padding:4px 10px;border-radius:6px;margin-top:4px;}
+  .cfg-row{display:flex;align-items:center;gap:6px;}
+  .cfg-key{flex:0 0 38%;min-width:0;}
+  .cfg-key input,.cfg-val input{width:100%;border:1px solid var(--border-color);border-radius:6px;padding:5px 8px;font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--text-primary);background:var(--card-bg);}
+  .cfg-key input:focus,.cfg-val input:focus{outline:none;border-color:var(--accent);}
+  .cfg-val{flex:1;min-width:0;position:relative;}
+  .cfg-del{width:24px;height:24px;border-radius:6px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-muted);cursor:pointer;font-size:13px;flex-shrink:0;}
+  .cfg-del:hover{border-color:var(--red);color:var(--red);}
+  .cfg-add{margin:4px 0 2px;align-self:flex-start;display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:8px;border:1px dashed var(--border-color);background:var(--card-bg);color:var(--accent);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;}
+  .cfg-add:hover{border-color:var(--accent);background:var(--accent-light);}
+  .cfg-note{font-size:10px;color:var(--text-muted);line-height:1.5;padding:2px 2px 0;}
+
+  .edit-code-area{flex:1;min-height:200px;border:1px solid var(--border-color);border-radius:10px;margin:10px 16px;padding:8px 10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.6;color:var(--text-primary);background:var(--card-bg);resize:none;white-space:pre;overflow:auto;}
+
+  .edit-toolbar{display:flex;align-items:center;gap:4px;padding:8px 16px;border-top:1px solid var(--border-color);flex-wrap:wrap;font-size:11px;color:var(--text-muted);}
+  .edit-toolbar .spacer{flex:1;}
+  .tool-btn{display:inline-flex;align-items:center;gap:4px;padding:4px 9px;border-radius:7px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-secondary);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;}
+  .tool-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+  .dialog-footer{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:48px;flex-shrink:0;gap:8px;border-top:1px solid var(--border-color);font-size:10px;color:var(--text-muted);}
+  .btn-primary{margin-left:auto;padding:5px 14px;font-size:12px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer;}
+</style>
+</head>
+<body>
+
+  <!-- ============ 表格视图 ============ -->
+  <div class="dialog-backdrop">
+    <div class="dialog-box w420">
+      <div class="dialog-header">
+        <h2 class="dialog-title">⚙️ 编辑配置</h2>
+        <button class="dialog-close">✕</button>
+      </div>
+      <div class="code-meta-bar">
+        <span class="badge">⚙️ 配置</span>
+        <span>格式：.env</span>
+        <span>12 项</span>
+        <span class="spacer"></span>
+        <div class="md-mode-toggle">
+          <button class="active">表格</button>
+          <button>原文</button>
+        </div>
+      </div>
+      <div class="config-body">
+        <div class="cfg-note">行内编辑键/值即时保存；注释行与嵌套结构原样保留。</div>
+        <div class="cfg-section">[ 全局 ]</div>
+        <div class="cfg-row">
+          <div class="cfg-key"><input value="APP_ENV" /></div>
+          <div class="cfg-val"><input value="production" /></div>
+          <button class="cfg-del">🗑</button>
+        </div>
+        <div class="cfg-row">
+          <div class="cfg-key"><input value="PORT" /></div>
+          <div class="cfg-val"><input value="8080" /></div>
+          <button class="cfg-del">🗑</button>
+        </div>
+        <div class="cfg-section">[ database ]</div>
+        <div class="cfg-row">
+          <div class="cfg-key"><input value="host" /></div>
+          <div class="cfg-val"><input value="127.0.0.1" /></div>
+          <button class="cfg-del">🗑</button>
+        </div>
+        <div class="cfg-row">
+          <div class="cfg-key"><input value="user" /></div>
+          <div class="cfg-val"><input value="admin" /></div>
+          <button class="cfg-del">🗑</button>
+        </div>
+        <button class="cfg-add">＋ 新增配置项</button>
+      </div>
+      <div class="edit-toolbar">
+        <button class="tool-btn">↶ 撤销</button>
+        <button class="tool-btn">↷ 重做</button>
+        <span class="spacer"></span>
+        <button class="tool-btn">📋 复制</button>
+        <button class="tool-btn">📐 格式化</button>
+      </div>
+      <div class="dialog-footer">
+        <span>已修改 · 12 行</span>
+        <button class="btn-primary">完成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 原文视图 ============ -->
+  <div class="dialog-backdrop">
+    <div class="dialog-box w420">
+      <div class="dialog-header">
+        <h2 class="dialog-title">⚙️ 编辑配置</h2>
+        <button class="dialog-close">✕</button>
+      </div>
+      <div class="code-meta-bar">
+        <span class="badge">⚙️ 配置</span>
+        <span>INI</span>
+        <span class="spacer"></span>
+        <div class="md-mode-toggle">
+          <button>表格</button>
+          <button class="active">原文</button>
+        </div>
+      </div>
+      <textarea class="edit-code-area" spellcheck="false">APP_ENV=production
+PORT=8080
+
+[database]
+host=127.0.0.1
+user=admin
+# 注释保留
+password=secret</textarea>
+      <div class="edit-toolbar">
+        <button class="tool-btn">↶ 撤销</button>
+        <button class="tool-btn">↷ 重做</button>
+        <span class="spacer"></span>
+        <button class="tool-btn">📋 复制</button>
+        <button class="tool-btn">📐 格式化</button>
+      </div>
+      <div class="dialog-footer">
+        <span>已修改</span>
+        <button class="btn-primary">完成</button>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

@@ -179,6 +179,19 @@ export const FULLSCREEN_TYPES: Record<FullscreenType, FullscreenTypeSpec> = {
     modes: [{ key: "edit" as const, title: "仅编辑", Icon: PanelLeft }],
     defaultMode: "edit",
   },
+
+  // 文本对比：实际走独立全屏窗口（DiffEditorFullscreen，绕开 CodeMirror 单栏），
+  // 这里仅登记最小规格，避免 resolveFullscreenType 回退到 text。
+  diff: {
+    key: "diff",
+    icon: "🔀",
+    label: "文本对比",
+    defaultFileName: "文本对比",
+    fileFilter: { name: "所有文件", extensions: ["*"] },
+    language: () => [],
+    modes: [{ key: "edit" as const, title: "仅编辑", Icon: PanelLeft }],
+    defaultMode: "edit",
+  },
 };
 
 /** 走代码编辑器的内容类型（代码 / 配置文件 / 命令行） */

@@ -3,7 +3,6 @@ import { ThemeKey, DEFAULT_THEME } from "@/lib/theme";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
-import { pasteTextGuarded, pasteImage, pasteRichGuarded } from "@/lib/api";
 import { thumbnailSourcePath } from "@/lib/richContent";
 import { VersionBadge } from "@/components/VersionBadge";
 import { AppIcon } from "@/components/AppIcon";
@@ -342,18 +341,24 @@ export function TrayPopup() {
   const doPaste = useCallback(async (item: RecentItem) => {
     try {
       await invoke("save_foreground");
-      let ok: boolean;
-      if (item.type === "image" && item.content) {
-        ok = await pasteImage(item.content);
-      } else if (item.type === "rich" && item.content) {
-        ok = await pasteRichGuarded(item.content, item.text);
-      } else if (item.type === "file" && item.content) {
-        ok = await pasteTextGuarded(item.content);
-      } else {
-        ok = await pasteTextGuarded(item.text);
-      }
+      // 按类型分派 + 粘贴信号回写统一走 pasteHistoryItem（此前这段分派是第 4 份拷贝）。
+      // RecentItem 用 contentType 驼峰、source 可空，显式映射成分派器要的形状。
+      const { pasteHistoryItem } = await import("@/lib/pasteItem");
+      const { ok } = await pasteHistoryItem(
+        {
+          id: item.id,
+          type: item.type,
+          text: item.text,
+          content: item.content,
+          content_type: item.contentType,
+          source: item.source ?? "",
+        },
+        -1, // 托盘是独立窗口、不经主列表，没有列表位置
+      );
       // U1：仅粘贴成功时弹成功提示（pasteText/pasteImage 失败时已自行弹错误 toast）
-      if (ok) showToast("已粘贴", "success", 800);
+      if (ok) {
+        showToast("已粘贴", "success", 800);
+      }
     } catch (e) {
       console.error("[TrayPopup] 粘贴失败:", e);
       showToast("粘贴失败", "error");

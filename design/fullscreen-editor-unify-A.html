@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>全屏编辑器架构统一 · A 方案设计稿</title>
+<style>
+  :root{
+    --card-bg:#fff; --text-primary:#1a1a1a; --text-muted:#888780; --hover:rgba(0,0,0,0.04);
+    --accent:#534AB7; --accent-light:#E0F2FE; --border:rgba(0,0,0,0.12); --danger:#A32D2D;
+    --ok:#0F6E56; --warn:#854F0B; --code-bg:#f6f6f4; --diff-add:#EAF3DE; --diff-del:#FCEBEB;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:#f4f4f2;color:var(--text-primary);padding:28px;line-height:1.6;font-size:13px}
+  h1{font-size:20px;font-weight:600;margin:0 0 4px}
+  h2{font-size:15px;font-weight:600;margin:28px 0 10px;border-left:3px solid var(--accent);padding-left:10px}
+  h3{font-size:13px;font-weight:600;margin:18px 0 6px;color:var(--accent)}
+  .sub{color:var(--text-muted);font-size:12px;margin-bottom:18px}
+  .wrap{max-width:1080px;margin:0 auto}
+  .card{background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin:14px 0;
+    box-shadow:0 1px 3px rgba(0,0,0,0.04)}
+  .grid{display:grid;gap:14px}
+  .g2{grid-template-columns:1fr 1fr}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  @media(max-width:820px){.g2,.g3{grid-template-columns:1fr}}
+  code{background:var(--code-bg);padding:1px 6px;border-radius:5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  pre{background:#1e1e1e;color:#e6e6e6;padding:14px 16px;border-radius:10px;overflow:auto;font-size:12px;line-height:1.5}
+  pre .k{color:#c792ea}.pre .s{color:#c3e88d}.pre .c{color:#6b7280}
+  table{border-collapse:collapse;width:100%;font-size:12px;margin:6px 0}
+  th,td{border:1px solid var(--border);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:var(--hover);font-weight:600}
+  .tag{display:inline-block;font-size:11px;padding:1px 8px;border-radius:20px;background:var(--accent-light);color:var(--accent);font-weight:600}
+  .tag.warn{background:#fbeede;color:var(--warn)}
+  .tag.red{background:#fbe3e3;color:var(--danger)}
+  .tag.ok{background:var(--diff-add);color:var(--ok)}
+  /* mini mock */
+  .mock{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:#fafafa;font-size:12px}
+  .mock .bar{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:#fff;border-bottom:1px solid var(--border)}
+  .mock .bar .l{display:flex;align-items:center;gap:8px;color:var(--text-muted)}
+  .mock .bar .r{display:flex;gap:6px}
+  .mock .btn{width:24px;height:24px;border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-muted)}
+  .mock .icon{width:18px;height:18px;border-radius:5px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px}
+  .mock .save{background:var(--accent);color:#fff;border:none;width:auto;padding:0 10px;font-weight:600}
+  .mock .body{display:flex;height:150px}
+  .mock .pane{flex:1;padding:10px;overflow:auto}
+  .mock .pane+.pane{border-left:1px solid var(--border)}
+  .mock .ph{font-size:11px;color:var(--text-muted);margin-bottom:6px;border-bottom:1px dashed var(--border);padding-bottom:3px}
+  .mock .line{font-family:ui-monospace,monospace;font-size:11px;padding:1px 0;white-space:pre}
+  .mock .add{background:var(--diff-add)}
+  .mock .del{background:var(--diff-del)}
+  .mock .status{display:flex;justify-content:space-between;padding:5px 10px;background:#fff;border-top:1px solid var(--border);color:var(--text-muted);font-size:11px}
+  .mock .dot{width:7px;height:7px;border-radius:50%;background:var(--danger);display:inline-block;margin-right:4px}
+  .arrow{color:var(--accent);font-weight:700}
+  .note{background:#fff8ec;border:1px solid #f5d99a;border-radius:8px;padding:10px 14px;font-size:12px;margin:10px 0}
+  .ok-box{background:var(--diff-add);border:1px solid #97c459;border-radius:8px;padding:10px 14px;font-size:12px;margin:10px 0}
+  ul{margin:6px 0;padding-left:20px}
+  li{margin:3px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>全屏编辑器架构统一 · 方案 A 设计稿</h1>
+  <div class="sub">目标：把 <code>rich / diagram / diff</code> 三类「被 if-else 踢出去、各自平行实现外壳」的编辑框，收口进统一外壳 <code>FullscreenShell</code>，按 <code>FullscreenTypeSpec.variant</code> 分发。消除主题硬编码、CSS 双套、关闭守卫缺失等不一致。</div>
+
+  <div class="card">
+    <h3>当前问题（已用源码坐实）</h3>
+    <table>
+      <tr><th>维度</th><th>统一原理（single 类）</th><th>rich / diagram / diff 现状</th><th>证据</th></tr>
+      <tr><td>渲染分发</td><td><code>FullscreenInner</code> 消费 <code>resolveFullscreenType()</code> 查表</td><td>顶层 <code>if (contentType===) </code>硬分支踢出</td><td><code>FullscreenEditor.tsx:171-198</code></td></tr>
+      <tr><td>主题判定</td><td><code>THEMES.find(t=>t.key===theme).dark</code> 查表</td><td><code>theme==="midnight"||"ocean-dark"</code> 硬编码（三类全中招）</td><td><code>FullscreenEditor.tsx:584</code> vs <code>DiffEditorFullscreen.tsx:154</code> / <code>RichFullscreen.tsx:55</code> / <code>DiagramFullscreen.tsx:55</code></td></tr>
+      <tr><td>CSS 体系</td><td>单套 <code>styles</code></td><td>混用 <code>styles</code> + <code>diffStyles</code> / <code>richStyles</code> / <code>editorStyles</code></td><td><code>DiffEditorFullscreen.tsx:24-25</code></td></tr>
+      <tr><td>关闭守卫</td><td>脏则 ConfirmDialog</td><td>Esc 直接关（diff 无脏守卫）；rich/diagram 各自写一份</td><td><code>DiffEditorFullscreen.tsx:124</code></td></tr>
+      <tr><td>状态栏</td><td>统一 <code>styles.statusBar</code></td><td>diff 自绘 leftStats/rightStats；rich/diagram 部分无</td><td><code>DiffEditorFullscreen.tsx:173</code></td></tr>
+      <tr><td>Spec 注册表</td><td>被实际消费</td><td><code>FULLSCREEN_TYPES.diff/diagram/rich</code> 是死代码（仅回退保护）</td><td><code>registry.tsx:170-194</code></td></tr>
+    </table>
+  </div>
+
+  <h2>目标架构</h2>
+  <div class="card">
+    <p><strong>一句话：</strong>外壳（工具栏 / 主题 / 全屏 / 关闭守卫 / 状态栏）只写一次 → 按 <code>spec.variant</code> 把「中间内容区」交给类型主体。</p>
+    <pre><span class="c">// FullscreenTypeSpec 新增字段</span>
+variant: <span class="k">"single"</span> | <span class="k">"dual"</span> | <span class="k">"canvas"</span> | <span class="k">"rich"</span>;
+
+<span class="c">// FullscreenEditor 渲染层：删掉 if-else，改 variant 分发</span>
+&lt;FullscreenShell spec={spec} onClose={handleClose}&gt;
+  {spec.variant === <span class="k">"single"</span> &amp;&amp; &lt;FullscreenInner spec={spec} .../&gt;}
+  {spec.variant === <span class="k">"dual"</span>   &amp;&amp; &lt;DualPane spec={spec} .../&gt;}   <span class="c">// diff 挂这里</span>
+  {spec.variant === <span class="k">"canvas"</span> &amp;&amp; &lt;DiagramBody spec={spec} .../&gt;} <span class="c">// diagram 挂这里</span>
+  {spec.variant === <span class="k">"rich"</span>   &amp;&amp; &lt;RichBody spec={spec} .../&gt;}    <span class="c">// rich 挂这里</span>
+&lt;/FullscreenShell&gt;</pre>
+    <div class="grid g2" style="margin-top:12px">
+      <div>
+        <h3>FullscreenShell（新增，复用层）</h3>
+        <ul>
+          <li>Toolbar：<code>styles.toolbar</code> + <code>tbBtn/tbBtnPrimary/tbBtnIcon/tbSep</code></li>
+          <li>主题：<code>THEMES.find().dark</code> 查表（消除三类硬编码）</li>
+          <li>全屏切换 / 关闭守卫（脏 → ConfirmDialog，统一一处）</li>
+          <li>状态栏：<code>styles.statusBar</code>（类型注入 left/right 统计）</li>
+          <li>SkinScene 背景层</li>
+          <li>把 <code>onClose / isDirty / fileName / dark</code> 等经 props 下传</li>
+        </ul>
+      </div>
+      <div>
+        <h3>类型主体（保持原内核）</h3>
+        <ul>
+          <li><span class="tag">single</span> 现有 <code>FullscreenInner</code> 不变</li>
+          <li><span class="tag">dual</span> 复用 <code>useDiff</code>/<code>DiffPane</code>/<code>DiffAiMenu</code>，仅挂到壳</li>
+          <li><span class="tag">canvas</span> 复用 <code>DiagramCanvas</code> + AI 面板</li>
+          <li><span class="tag">rich</span> 复用 <code>RichContentEditor</code></li>
+          <li>三类不再各自写工具栏/主题/状态栏</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <h2>registry 变更（让死代码活起来）</h2>
+  <div class="card">
+    <pre><span class="c">// registry.tsx — 给三类补 variant，删掉「最小占位」注水的字段</span>
+markdown/json/html/text/csv/log/code → variant: <span class="k">"single"</span> (现有)
+diff    → variant: <span class="k">"dual"</span>    // 双栏对比
+diagram → variant: <span class="k">"canvas"</span>  // React Flow 画布
+rich    → variant: <span class="k">"rich"</span>    // Tiptap 图文</pre>
+    <div class="ok-box">注册表现在被 <strong>真正消费</strong>：<code>FullscreenEditor</code> 只按 <code>spec.variant</code> 分流，不再有 <code>if (contentType===)</code> 分支；新增类型只需加一个 Spec 项 + 一个主体组件。</div>
+  </div>
+
+  <h2>diff 双栏形态（variant:"dual"）落地后的外观</h2>
+  <div class="card">
+    <p class="sub">复用统一工具栏与状态栏（<code>styles</code> 一套），中间双栏挂 <code>DiffPane</code>。主题跟随 <code>THEMES</code> 查表。</p>
+    <div class="mock">
+      <div class="bar">
+        <div class="l"><div class="icon">🔀</div><span>文本对比</span><span style="color:var(--danger)"><span class="dot"></span></span><span style="font-size:11px">2 处差异</span></div>
+        <div class="r">
+          <div class="btn">↺</div>
+          <div class="btn">📂</div>
+          <div class="btn save">保存</div>
+          <div class="btn">⤢</div>
+          <div class="btn">✕</div>
+        </div>
+      </div>
+      <div class="body">
+        <div class="pane">
+          <div class="ph">原文本（左）</div>
+          <div class="line del">- const a = 1;</div>
+          <div class="line">  const b = 2;</div>
+          <div class="line del">- console.log(a);</div>
+        </div>
+        <div class="pane">
+          <div class="ph">新文本（右）</div>
+          <div class="line add">+ const a = 10;</div>
+          <div class="line">  const b = 2;</div>
+          <div class="line add">+ logger.info(a);</div>
+        </div>
+      </div>
+      <div class="status">
+        <span>左 3 行 · 右 3 行</span>
+        <span><span class="dot"></span>● 未保存 · 文本对比</span>
+      </div>
+    </div>
+    <div class="note"><strong>交互一致性：</strong>双栏各自可编辑（diff 内核不变）；Esc 走统一关闭守卫（脏 → 提示）；保存回写来源卡片（若 sourceId 存在）；AI 菜单（DiffAiMenu）保留在双栏上方工具区。</div>
+  </div>
+
+  <h2>改动清单</h2>
+  <div class="card">
+    <table>
+      <tr><th>文件</th><th>改动</th><th>风险</th></tr>
+      <tr><td><code>fullscreen/types.ts</code></td><td><code>FullscreenTypeSpec</code> 加 <code>variant</code> 字段</td><td><span class="tag">低</span></td></tr>
+      <tr><td><code>fullscreen/registry.tsx</code></td><td>三类补 <code>variant</code>，删占位字段注水</td><td><span class="tag">低</span></td></tr>
+      <tr><td><code>FullscreenEditor.tsx</code></td><td>删 if-else（:171-198）；抽 <code>FullscreenShell</code>；主题改查表</td><td><span class="tag warn">中</span></td></tr>
+      <tr><td>新增 <code>FullscreenShell.tsx</code></td><td>工具栏/主题/全屏/关闭守卫/状态栏复用层</td><td><span class="tag warn">中</span></td></tr>
+      <tr><td><code>DiffEditorFullscreen.tsx</code></td><td>删平行工具栏/状态栏/主题硬编码；改接 <code>FullscreenShell</code>；CSS 收 <code>styles</code>；保留 diff 内核</td><td><span class="tag warn">中</span></td></tr>
+      <tr><td><code>RichFullscreen.tsx</code></td><td>同 diff，挂 <code>variant:"rich"</code></td><td><span class="tag warn">中</span></td></tr>
+      <tr><td><code>DiagramFullscreen.tsx</code></td><td>同 diff，挂 <code>variant:"canvas"</code></td><td><span class="tag warn">中</span></td></tr>
+      <tr><td>Rust <code>system.rs</code></td><td><strong>零改动</strong>（<code>open_fullscreen_editor</code> 已传 contentType）</td><td><span class="tag ok">无</span></td></tr>
+    </table>
+    <div class="note"><strong>数据编码：</strong>diff 的 <code>PPDIFF::JSON</code> 旁路编码可保留（只在 diff 类型用），或后续统一成 <code>EditorInit</code> 加 <code>rightContent</code> 字段——本方案不强行动 Rust，二期再考虑。</div>
+  </div>
+
+  <h2>验收标准</h2>
+  <div class="card">
+    <ul>
+      <li><span class="tag ok">一致</span> 切任意主题，diff / rich / diagram 全屏明暗与 single 类同步（无漏判）</li>
+      <li><span class="tag ok">一致</span> 四类工具栏按钮、间距、状态栏样式视觉无差异</li>
+      <li><span class="tag ok">一致</span> diff 全屏 Esc 有关闭守卫（脏 → ConfirmDialog），与 single 同口径</li>
+      <li><span class="tag ok">无回归</span> diff 双栏对比、同步滚动、AI 菜单、全屏深编入口全部正常</li>
+      <li><span class="tag ok">架构</span> <code>FullscreenEditor.tsx</code> 无 <code>if (contentType===)</code> 分支；<code>FULLSCREEN_TYPES</code> 全部被消费</li>
+      <li><span class="tag ok">测试</span> 现有 <code>FullscreenEditor</code> 相关 vitest 通过；新增 <code>variant</code> 分发单测</li>
+    </ul>
+  </div>
+
+  <div class="ok-box">
+    <strong>范围边界（本方案不做）：</strong>
+    <ul style="margin:6px 0 0">
+      <li>不改 diff 算法/AI 能力（复用现有内核）</li>
+      <li>不动 Rust（open_fullscreen_editor 已支持 contentType）</li>
+      <li>不把单栏 CodeMirror 与双栏 diff 强行合并（语义不同，用 variant 区分而非塞进 Preview 槽）</li>
+      <li>PPDIFF 编码二期再统一（可选）</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

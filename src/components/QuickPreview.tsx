@@ -17,6 +17,10 @@ export function QuickPreview() {
   const [highlightedHtml, setHighlightedHtml] = useState("");
   const [langInfo, setLangInfo] = useState<{ name: string; label: string }>({ name: "plain", label: "文本" });
   const [highlighting, setHighlighting] = useState(false);
+  // 预览来源条目的身份（粘贴信号回写用）。事件只带 text 时为 null，此时不回写。
+  const [srcItem, setSrcItem] = useState<
+    { id: string; type: string; content_type?: string | null; source: string } | null
+  >(null);
   const { toast } = useToast();
   const anim = useDialogAnim();
 
@@ -25,6 +29,7 @@ export function QuickPreview() {
       const detail = (e as CustomEvent).detail;
       if (detail?.text) {
         setText(detail.text);
+        setSrcItem(detail.item ?? null);
         setVisible(true);
       }
     };
@@ -74,7 +79,14 @@ export function QuickPreview() {
   const handlePaste = async () => {
     // U1：仅粘贴成功时弹成功提示（pasteText 失败时已自行弹错误 toast）
     const ok = await pasteTextGuarded(text);
-    if (ok) toast("已粘贴", "success");
+    if (ok) {
+      toast("已粘贴", "success");
+      // 粘贴信号回写（此前漏记）。快速预览没有列表位置，下标传 -1。
+      if (srcItem) {
+        const { logItemPasted } = await import("@/lib/api/actionEvents");
+        logItemPasted(srcItem, -1);
+      }
+    }
   };
 
   const lineCount = text.split("\n").length;

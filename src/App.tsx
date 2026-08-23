@@ -17,7 +17,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UpdateProvider, useUpdate } from "@/contexts/UpdateContext";
 import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
 import { logger } from "@/lib/logger";
-import { pasteTextGuarded, pasteImage, pasteRichGuarded, deleteHistory, togglePin, toggleWindow, saveForeground, restoreDeleted, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
+import { deleteHistory, togglePin, toggleWindow, saveForeground, restoreDeleted, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
 import { resolveSource, getAutoTagIcon, getAutoTagColor } from "@/lib/source-mappings";
 import { migrateLegacyStorageKeys } from "@/lib/storageMigration";
 import { initRegexRules } from "@/lib/regexRules";
@@ -32,6 +32,7 @@ import { FocusTrap } from "@/components/FocusTrap";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ConfirmDialogHost } from "@/components/ConfirmDialogHost";
 import { useDialogAnim } from "@/lib/dialogMotion";
+import { DiffDialog } from "@/components/DiffDialog";
 
 // 修复 Low：应用更名后迁移历史版本遗留的 pasteship_* localStorage 键（幂等，仅执行一次）
 migrateLegacyStorageKeys();
@@ -129,6 +130,7 @@ function App() {
   const [showEncoding, setShowEncoding] = useState(false);
   const [showBatchReplace, setShowBatchReplace] = useState(false);
   const [showConfigDiff, setShowConfigDiff] = useState(false);
+  const [freeDiff, setFreeDiff] = useState<{ open: boolean; left: string; right: string }>({ open: false, left: "", right: "" });
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -191,8 +193,49 @@ function App() {
 
 
 
+  // 自由文本对比（方案 C 模态入口）：读剪贴板预填左侧，右侧留空待用户粘贴
+  const openFreeDiff = useCallback(async () => {
+    let left = "";
+    try {
+      left = await navigator.clipboard.readText();
+    } catch {
+      /* 剪贴板不可读时左侧留空，不阻断打开 */
+    }
+    setFreeDiff({ open: true, left, right: "" });
+  }, []);
+
+  // 全屏文本对比（方案 C 全屏深编入口）：读剪贴板预填左侧，独立大窗打开
+  const openFreeDiffFullscreen = useCallback(async () => {
+    let left = "";
+    try {
+      left = await navigator.clipboard.readText();
+    } catch {
+      /* 剪贴板不可读时左侧留空，不阻断打开 */
+    }
+    void invoke("open_fullscreen_editor", {
+      sourceId: null,
+      content: left,
+      contentType: "diff",
+      language: null,
+    }).catch(() => {});
+  }, []);
+
+  // 模态「全屏深编」：把当前左/右两侧文本经 PPDIFF:: JSON 编码跨窗口传入，
+  // 新窗口创建成功后关闭模态（失败则保留模态）。
+  const openFullscreenDiff = useCallback((left: string, right: string) => {
+    const content = `PPDIFF::${JSON.stringify({ left, right })}`;
+    void invoke("open_fullscreen_editor", {
+      sourceId: null,
+      content,
+      contentType: "diff",
+      language: null,
+    })
+      .then(() => setFreeDiff((f) => ({ ...f, open: false })))
+      .catch(() => {});
+  }, []);
+
   // 失焦自动隐藏（弹窗打开时跳过）—— 使用 useRef 避免闭包陷阱
-  const dialogOpen = showSettings || showSequential || showSnippets || showExtract || showEncoding || showBatchReplace || showConfigDiff;
+  const dialogOpen = showSettings || showSequential || showSnippets || showExtract || showEncoding || showBatchReplace || showConfigDiff || freeDiff.open;
   const dialogOpenRef = useRef(dialogOpen);
   dialogOpenRef.current = dialogOpen;
 
@@ -798,44 +841,20 @@ function App() {
       if (targetId) {
         const item = filtered.find((i) => i.id === targetId);
         if (item) {
-          // 粘贴信号回写统一走这个闭包。
-          //
-          // **修复（v6.15）**：以前只有下面的纯文本分支记了事件，
-          // image / rich / file 三个分支全漏了。后果不只是统计少几条：
-          // history 的「按价值豁免过期清理」靠 paste 信号判定一条内容有没有被用过，
-          // 图片粘贴不记事件 → 图片会被当成“没价值”清掉，哪怕天天在用。
-          const logPaste = async () => {
-            const { logPasteEvent } = await import("@/lib/api/actionEvents");
-            // 热键粘贴走的是当前可见列表，下标直接用 filtered 里的位置
-            const idx = filtered.findIndex((i) => i.id === item.id);
-            logPasteEvent(item.id, item.content_type || item.type, item.source, idx);
-          };
-          // U1：仅粘贴成功时弹成功提示（pasteText/pasteImage 失败时已自行弹错误 toast）
-          if (item.type === "image" && item.content) {
-            const ok = await pasteImage(item.content);
-            if (ok) {
-              window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴图片", type: "success" } }));
-              await logPaste();
-            }
-          } else if (item.type === "rich" && item.content) {
-            const ok = await pasteRichGuarded(item.content, item.text);
-            if (ok) {
-              window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴图文", type: "success" } }));
-              await logPaste();
-            }
-          } else if (item.type === "file" && item.content) {
-            // 文件粘贴：将文件路径写入剪贴板
-            const ok = await pasteTextGuarded(item.content);
-            if (ok) {
-              window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴文件路径", type: "success" } }));
-              await logPaste();
-            }
-          } else {
-            const ok = await pasteTextGuarded(item.text);
-            if (ok) {
-              window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "已粘贴", type: "success" } }));
-              await logPaste();
-            }
+          // 按类型分派 + 粘贴信号回写统一走 pasteHistoryItem（此前这段分派是
+          // 5 份拷贝里的一份，每个分支各写一遍回写——v6.15 的「image/rich/file
+          // 三个分支全漏了信号」就是这么来的）。
+          // 各类型的 toast 文案本来就不同，用返回的 kind 选。
+          const { pasteHistoryItem } = await import("@/lib/pasteItem");
+          // 热键粘贴走的是当前可见列表，下标直接用 filtered 里的位置
+          const idx = filtered.findIndex((i) => i.id === item.id);
+          const { ok, kind } = await pasteHistoryItem(item, idx);
+          if (ok) {
+            const msg = kind === "image" ? "已粘贴图片"
+              : kind === "rich" ? "已粘贴图文"
+              : kind === "file" ? "已粘贴文件路径"
+              : "已粘贴";
+            window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: msg, type: "success" } }));
           }
         }
       }
@@ -850,7 +869,7 @@ function App() {
     } else if (e.ctrlKey && e.key === "a") {
       e.preventDefault();
       store.selectAll();
-    } else if (e.ctrlKey && e.key === "d") {
+    } else if (e.ctrlKey && !e.shiftKey && e.key === "d") {
       e.preventDefault();
       const selectedArr = [...selectedIds];
       let pinned: boolean | null = null;
@@ -860,6 +879,9 @@ function App() {
         pinned = await togglePin(focusId);
       }
       if (pinned !== null) toast(pinned ? "已置顶" : "已取消置顶", "success");
+    } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "d") {
+      e.preventDefault();
+      void openFreeDiff();
     } else if (e.ctrlKey && e.key === "z") {
       e.preventDefault();
       void restoreDeleted();
@@ -889,7 +911,13 @@ function App() {
       if (targetId) {
         const item = filtered.find((i) => i.id === targetId);
         if (item && item.type === "text") {
-          window.dispatchEvent(new CustomEvent("app-quick-preview", { detail: { text: item.text } }));
+          // 带上条目身份：预览面板里粘贴时要回写粘贴信号（只传需要的四个字段，不整条塞）
+          window.dispatchEvent(new CustomEvent("app-quick-preview", {
+            detail: {
+              text: item.text,
+              item: { id: item.id, type: item.type, content_type: item.content_type, source: item.source },
+            },
+          }));
         } else if (item && (item.type === "image" || item.type === "file")) {
           // U44：图片/文件 → 打开对应详情窗（此前 Space 对它们无响应）
           window.dispatchEvent(new CustomEvent("app-open-item-detail", { detail: { id: item.id } }));
@@ -897,8 +925,8 @@ function App() {
       }
     }
     // 状态都走 ref 读，避免频繁重新注册键盘事件；
-    // toast 本身是 useCallback 恒引用，列进依赖不会引起重注册
-  }, [toast]);
+    // toast / openFreeDiff 本身都是恒引用的 useCallback，列进依赖不会引起重注册
+  }, [toast, openFreeDiff]);
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
@@ -971,6 +999,8 @@ function App() {
           onEncoding={() => setShowEncoding(true)}
           onBatchReplace={() => setShowBatchReplace(true)}
           onConfigDiff={() => setShowConfigDiff(true)}
+          onDiffEdit={openFreeDiff}
+          onDiffFullscreen={openFreeDiffFullscreen}
           onNewDiagram={handleNewDiagram}
           onToggleSidebar={toggleSidebar}
           sidebarOpen={sidebarOpen}
@@ -1069,6 +1099,17 @@ function App() {
           </ErrorBoundary>
           <ErrorBoundary fallback={null} componentName="配置对比">
             <ConfigDiffDialog open={showConfigDiff} onClose={() => setShowConfigDiff(false)} />
+          </ErrorBoundary>
+          <ErrorBoundary fallback={null} componentName="文本对比">
+            {freeDiff.open && (
+              <DiffDialog
+                freeMode
+                initialLeft={freeDiff.left}
+                initialRight={freeDiff.right}
+                onOpenFullscreen={openFullscreenDiff}
+                onClose={() => setFreeDiff((f) => ({ ...f, open: false }))}
+              />
+            )}
           </ErrorBoundary>
         </Suspense>
 

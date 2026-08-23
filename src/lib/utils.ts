@@ -273,6 +273,48 @@ export function highlightCodeSync(text: string, _language: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/**
+ * 强制用指定语言高亮（编辑器内手动锁定语法语言时用）。
+ * lang 必须是 LANG_NAMES 内的小写名（如 "python"/"sql"），否则退化为纯文本（仍可见）。
+ * 复用模块内 getHighlighter / THEME_MAP，不新增 Shiki 实例。
+ */
+export async function highlightCodeForced(text: string, lang: string): Promise<HighlightResult> {
+  if (!text) return { html: "", language: lang, relevance: 0 };
+  const normalized = (lang || "").toLowerCase();
+  if (!(LANG_NAMES as readonly string[]).includes(normalized)) {
+    return { html: "", language: "plain", relevance: 0 };
+  }
+  try {
+    const h = await getHighlighter();
+    const shikiLang = normalized === "xml" ? "html" : normalized;
+    const themeEntries = Object.entries(THEME_MAP) as [ThemeKey, string][];
+    const themes: Record<string, string> = {};
+    for (const [appTheme, shikiTheme] of themeEntries) themes[appTheme] = shikiTheme;
+    const result = h.codeToHtml(text, { lang: shikiLang, themes, defaultColor: false });
+    const inner = result.replace(/^<pre[^>]*><code[^>]*>/, "").replace(/<\/code><\/pre>$/, "");
+    return { html: inner, language: normalized, relevance: 999 };
+  } catch {
+    return { html: "", language: "plain", relevance: 0 };
+  }
+}
+
+/**
+ * 判断一段文本是否像 SQL（用于把分类为 code 的 SQL 片段路由到专用 SQL 编辑器）。
+ * 保守判据：出现 ≥2 个 SQL 关键字，或含主关键字且有分号/换行。
+ */
+export function isSqlLike(text: string): boolean {
+  const t = (text || "").trim();
+  if (t.length < 8) return false;
+  const SQL_KW = /\b(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|WITH|FROM|WHERE|JOIN|TABLE|INDEX|VALUES|INTO|SET)\b/gi;
+  const matches = (t.match(SQL_KW) || []).length;
+  return matches >= 2;
+}
+
+/** 判断文本是否为独立 SVG 文档（trim 后以 <svg 开头，词边界；用于路由到 SVG 编辑器） */
+export function isSvgLike(text: string): boolean {
+  return /^<svg[\s>]/i.test((text || "").trimStart());
+}
+
 // ==================== 来源名称清洗 ====================
 
 // 已迁移至 src/lib/source-mappings.ts，此处保留兼容重导出
@@ -523,3 +565,25 @@ export function getImageOcrFullText(
 }
 
 
+
+/**
+ * 派发一条失败提示（规则 #11 收口；规则 15.3「静默失败比报错难查一个量级」）。
+ *
+ * `lib/api/*` 不是组件、拿不到 `useToast()`，项目既有做法是直接派发
+ * `app-toast` 窗口事件（主窗 App.tsx 监听）。这里把那一行收成函数，
+ * 让新增的失败提示文案格式一致、以后要加节流也只改一处。
+ *
+ * **只用于用户主动触发的操作失败**。后台读取（获取标签 / 统计 / 缩略图等）
+ * 失败不要用它——用户没要求过的事情失败了还弹提示，只是噪音。
+ *
+ * 注：既有 45 处内联的 `app-toast` 派发未一并迁移（行为完全相同，
+ * 属于独立的整理工作，不在本次改动范围）。
+ *
+ * @param action 用户能看懂的动作描述，如「添加标签」；不要用内部函数名
+ * @param err    原始错误，仅取 message 追加在后面，便于用户复述给维护者
+ */
+export function toastActionFailed(action: string, err?: unknown): void {
+  const detail = err instanceof Error ? err.message : err != null ? String(err) : "";
+  const message = detail ? `${action}失败：${detail}` : `${action}失败`;
+  window.dispatchEvent(new CustomEvent("app-toast", { detail: { message, type: "error" } }));
+}

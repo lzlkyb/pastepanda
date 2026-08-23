@@ -89,8 +89,14 @@ export function useEditorCore(item: HistoryItem, registerActions: (a: EditorActi
   const paste = useCallback(async () => {
     // 仅粘贴成功时弹成功提示（pasteText 失败时已自行弹错误 toast）
     const ok = await pasteTextGuarded(textRef.current);
-    if (ok) toast("已粘贴", "success");
-  }, [toast]);
+    if (ok) {
+      toast("已粘贴", "success");
+      // 粘贴信号回写（此前漏记）。编辑器里粘的可能是改过的文本，但**这条历史确实被用上了**，
+      // 「按价值豁免过期清理」要的就是这个信号。编辑器内没有列表位置，下标传 -1。
+      const { logItemPasted } = await import("@/lib/api/actionEvents");
+      logItemPasted(item, -1);
+    }
+  }, [item, toast]);
 
   const addSnippet = useCallback(async () => {
     try {

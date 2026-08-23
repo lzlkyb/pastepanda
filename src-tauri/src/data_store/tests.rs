@@ -3969,3 +3969,345 @@ fn test_search_history_backfills_ocr_text() {
     let hit = items.iter().find(|i| i.id == "img-1").unwrap();
     assert_eq!(hit.ocr_text.as_deref(), Some("报销单 2024-07"));
 }
+
+// ============================================================
+// 图片 OCR 文本接入全文检索（FTS）
+// ============================================================
+
+/// 识别晚于入库：图片先进历史，OCR 文本后到。
+/// 后到的文本必须回写 FTS，否则截图里的字永远搜不到。
+#[test]
+fn test_ocr_text_searchable_after_recognition() {
+    let store = make_store();
+    let mut img = make_item("img-1", "[图片] 800x600", "2024-01-01 10:00:00", "image");
+    // 真实路径是 md5 文件名，本身没有检索价值
+    img.content = "C:\\img\\0039a52c11e99d4c9faeba55f9d1d1a2.png".to_string();
+    store.insert_history(&img).unwrap();
+
+    store
+        .set_ocr_text(&img.content, "季度营收报表 2026 财务部")
+        .unwrap();
+
+    let hits = store
+        .search_history("默认", "季度营收", "all", "", "", "all", &[], 50)
+        .unwrap();
+    assert_eq!(hits.len(), 1, "OCR 文本里的词应能搜到这张图");
+    assert_eq!(hits[0].id, "img-1");
+}
+
+/// 重新识别后旧文本不能残留在索引里（否则搜旧词还能搜到已被更正的图）。
+#[test]
+fn test_ocr_reindex_replaces_old_text() {
+    let store = make_store();
+    let mut img = make_item("img-1", "[图片] 800x600", "2024-01-01 10:00:00", "image");
+    img.content = "C:\\img\\a.png".to_string();
+    store.insert_history(&img).unwrap();
+
+    store.set_ocr_text(&img.content, "错误识别的旧文字").unwrap();
+    store.set_ocr_text(&img.content, "更正后的新文字").unwrap();
+
+    let new_hits = store
+        .search_history("默认", "更正后", "all", "", "", "all", &[], 50)
+        .unwrap();
+    assert_eq!(new_hits.len(), 1, "新文本应可搜到");
+
+    let old_hits = store
+        .search_history("默认", "错误识别", "all", "", "", "all", &[], 50)
+        .unwrap();
+    assert!(old_hits.is_empty(), "旧 OCR 文本不应残留在索引里");
+}
+
+/// 非图片条目的 content（文件路径）仍要能搜到——只有 image 改喂 OCR 文本。
+#[test]
+fn test_file_path_still_searchable_for_non_image() {
+    let store = make_store();
+    let mut f = make_item("file-1", "receivablebill_his.xml", "2024-01-01 10:00:00", "file");
+    f.content = "D:\\work\\receivablebill_his.xml".to_string();
+    store.insert_history(&f).unwrap();
+
+    let hits = store
+        .search_history("默认", "receivablebill", "all", "", "", "all", &[], 50)
+        .unwrap();
+    assert_eq!(hits.len(), 1, "文件路径检索不受 OCR 改动影响");
+    assert_eq!(hits[0].id, "file-1");
+}
+
+/// 存量回填：升级前识别过的图片（文本已在 image_ocr_cache、但索引里没有）也要能搜到。
+#[test]
+fn test_backfill_indexes_existing_ocr_cache() {
+    let store = make_store();
+    let mut img = make_item("img-1", "[图片] 800x600", "2024-01-01 10:00:00", "image");
+    img.content = "C:\\img\\legacy.png".to_string();
+    store.insert_history(&img).unwrap();
+
+    // 直接写缓存表，**绕开 set_ocr_text** —— 模拟升级前就已经识别过的存量数据
+    {
+        let conn = store.lock_conn();
+        conn.execute(
+            "INSERT INTO image_ocr_cache (image_path, full_text, updated_at) VALUES (?1, ?2, 'x')",
+            rusqlite::params![&img.content, "存量识别文本"],
+        )
+        .unwrap();
+    }
+
+    assert!(
+        store
+            .search_history("默认", "存量识别", "all", "", "", "all", &[], 50)
+            .unwrap()
+            .is_empty(),
+        "回填前搜不到（缓存里有文本，但索引里没有）"
+    );
+
+    let n = {
+        let conn = store.lock_conn();
+        DataStore::backfill_ocr_fts_on(&conn).unwrap()
+    };
+    assert_eq!(n, 1, "应回填 1 条");
+
+    let hits = store
+        .search_history("默认", "存量识别", "all", "", "", "all", &[], 50)
+        .unwrap();
+    assert_eq!(hits.len(), 1, "回填后应可搜到");
+    assert_eq!(hits[0].id, "img-1");
+}
+
+// ============================================================
+// history_fts 索引正确性（v6.18 修：三个一直被 warn 吞掉的 bug）
+// ============================================================
+
+/// 某个 MATCH 在 history_fts 里命中几行
+fn fts_match_count(store: &DataStore, kw: &str) -> i64 {
+    let conn = store.lock_conn();
+    conn.query_row(
+        "SELECT COUNT(*) FROM history_fts WHERE history_fts MATCH ?1",
+        [crate::data_store::history::to_ngram(kw)],
+        |r| r.get(0),
+    )
+    .unwrap_or(-1)
+}
+
+#[test]
+fn test_fts_index_receives_new_items() {
+    let store = make_store();
+    store
+        .insert_history(&make_item("n1", "季度营收报表", "2024-01-01 10:00:00", "text"))
+        .unwrap();
+
+    // 新条目必须进索引。此前 sync_fts_upsert 用的是 UPSERT，而 FTS5 虚拟表不支持
+    // ON CONFLICT —— 语句每次都报错、被 log::warn 吞掉，于是首次建表回填之后
+    // 新增的内容从来没进过索引，搜索一直静默退回 LIKE。
+    assert_eq!(fts_match_count(&store, "季度营收"), 1);
+}
+
+#[test]
+fn test_fts_index_cleared_on_delete() {
+    let store = make_store();
+    store
+        .insert_history(&make_item("d1", "待删除的机密备注", "2024-01-01 10:00:00", "text"))
+        .unwrap();
+    assert_eq!(fts_match_count(&store, "机密备注"), 1, "前置：先得进索引");
+
+    store.delete_history(&["d1".to_string()]).unwrap();
+
+    // 删了就必须从索引里消失。外部内容表时代这条 DELETE 要回读 history 的原始列，
+    // 必然失败且被 `let _ =` 吞掉 —— 残留的 token 会在 SQLite 复用 rowid 后
+    // 命中新条目（已删内容的文字出现在别人身上）。
+    assert_eq!(fts_match_count(&store, "机密备注"), 0);
+}
+
+#[test]
+fn test_fts_index_replaces_old_text_on_update() {
+    let store = make_store();
+    store
+        .insert_history(&make_item("u1", "原始内容甲", "2024-01-01 10:00:00", "text"))
+        .unwrap();
+    store.update_history("u1", "改写后内容乙").unwrap();
+
+    // 改写后旧文本不该还能被搜到（UPSERT 失败的年代这里两条都是 0，测不出问题；
+    // 改成 DELETE + INSERT 后才真正有「替换」语义）
+    assert_eq!(fts_match_count(&store, "原始内容"), 0, "旧文本必须从索引里消失");
+    assert_eq!(fts_match_count(&store, "改写后内容"), 1, "新文本必须进索引");
+}
+
+#[test]
+fn test_fts_external_content_table_is_rebuilt_on_open() {
+    let dir = std::env::temp_dir().join(format!("pastepanda_fts_mig_{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db = dir.join("clipboard.db");
+    let db_path = db.to_string_lossy().to_string();
+
+    // 造一个 v6.18 之前的库：history 有数据，history_fts 是外部内容表。
+    {
+        let store = DataStore::new(&db_path).unwrap();
+        store
+            .insert_history(&make_item("m1", "旧库里的季度报表", "2024-01-01 10:00:00", "text"))
+            .unwrap();
+        let conn = store.lock_conn();
+        conn.execute_batch(
+            "DROP TABLE IF EXISTS history_fts;
+             CREATE VIRTUAL TABLE history_fts USING fts5(
+                text, pinyin, content, content='history', content_rowid='rowid');",
+        )
+        .unwrap();
+        // 模拟旧代码「每次启动都全量回填」造成的重复累积：
+        // 外部内容表上同一 rowid 可以反复 INSERT 且**不报错**（常规表会 constraint failed），
+        // 所以旧库里同一条内容会有 N 份 token，N = 启动次数。
+        let rowid: i64 = conn
+            .query_row("SELECT rowid FROM history WHERE id = 'm1'", [], |r| r.get(0))
+            .unwrap();
+        for _ in 0..3 {
+            conn.execute(
+                "INSERT INTO history_fts (rowid, text, pinyin, content) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![rowid, crate::data_store::history::to_ngram("旧库里的季度报表"), "", ""],
+            )
+            .unwrap();
+        }
+    }
+
+    // 重新打开 → 应识别出旧结构、DROP 重建、并全量回填
+    let store = DataStore::new(&db_path).unwrap();
+    {
+        let conn = store.lock_conn();
+        // 重建后 COUNT(*) 必须可查（外部内容表上它会报 no such column: T.pinyin，
+        // 而旧代码 .unwrap_or(0) 把这个错误吞成 0 —— 于是回填判据恒真、每次启动都全量重跑）
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM history_fts", [], |r| r.get(0))
+            .expect("重建后 COUNT(*) 必须可查");
+        assert_eq!(n, 1, "回填后索引应恰好一行，不再有重复累积");
+    }
+    // 旧库存量内容重建后仍可搜到
+    assert_eq!(fts_match_count(&store, "季度报表"), 1);
+
+    drop(store);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_fts_syncs_rows_with_null_pinyin() {
+    let store = make_store();
+    store
+        .insert_history(&make_item("p1", "拼音列为空的内容", "2024-01-01 10:00:00", "text"))
+        .unwrap();
+    {
+        let conn = store.lock_conn();
+        // 真实库里 1214 条有 195 条 pinyin_initials 是 NULL。旧实现用
+        // r.get::<_, String> 读它 → 取值报错 → 整条同步失败、只留一行 warn，
+        // 于是这 16% 的内容从来没进过索引。
+        conn.execute("UPDATE history SET pinyin_initials = NULL WHERE id = 'p1'", [])
+            .unwrap();
+        // 必须先清索引：insert_history 已经用非 NULL 的拼音同步过一次了，
+        // 不清的话那条旧记录还在，即使这次同步失败断言也照样通过（测不出问题）。
+        conn.execute_batch("DELETE FROM history_fts;").unwrap();
+        store.sync_fts_upsert(&conn, "p1");
+    }
+    assert_eq!(fts_match_count(&store, "拼音列为空"), 1);
+}
+
+#[test]
+fn test_fts_backfill_covers_null_pinyin_rows() {
+    let store = make_store();
+    store
+        .insert_history(&make_item("b1", "回填也要认空拼音", "2024-01-01 10:00:00", "text"))
+        .unwrap();
+    let n = {
+        let conn = store.lock_conn();
+        conn.execute("UPDATE history SET pinyin_initials = NULL WHERE id = 'b1'", [])
+            .unwrap();
+        conn.execute_batch("DELETE FROM history_fts;").unwrap();
+        DataStore::backfill_history_fts_on(&conn).unwrap()
+    };
+    assert_eq!(n, 1, "空拼音的行也要算进回填条数");
+    assert_eq!(fts_match_count(&store, "空拼音"), 1);
+}
+
+#[test]
+fn test_fts_delete_clears_backfilled_rows() {
+    // 与 test_fts_index_cleared_on_delete 的区别：那条的行是经 insert 时的单条同步
+    // 进索引的，本条的行是经**回填**进去的。两条路径都得守——万一将来只改坏回填、
+    // 没改坏同步，只有这条会红。（bug 2 当初就发生在「回填进得去、删除删不掉」这个组合上。）
+    let store = make_store();
+    store
+        .insert_history(&make_item("k1", "经回填进索引的内容", "2024-01-01 10:00:00", "text"))
+        .unwrap();
+    {
+        let conn = store.lock_conn();
+        conn.execute_batch("DELETE FROM history_fts;").unwrap();
+        DataStore::backfill_history_fts_on(&conn).unwrap();
+    }
+    assert_eq!(fts_match_count(&store, "经回填进"), 1, "前置：回填要能进索引");
+
+    store.delete_history(&["k1".to_string()]).unwrap();
+    assert_eq!(fts_match_count(&store, "经回填进"), 0);
+}
+
+#[test]
+fn test_fts_empty_index_is_refilled_on_next_open() {
+    // 迁移是 DROP → CREATE → 回填三步，**不在一个事务里**。若进程在回填完成前挂掉，
+    // 下次打开必须自愈（fts_count == 0 → 重新回填）；否则索引会长期空着，
+    // 搜索静默退回 LIKE 全表扫，而用户看不到任何异常。
+    let dir = std::env::temp_dir().join(format!("pastepanda_fts_heal_{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db_path = dir.join("clipboard.db").to_string_lossy().to_string();
+
+    {
+        let store = DataStore::new(&db_path).unwrap();
+        store
+            .insert_history(&make_item("h1", "中断后要能自愈", "2024-01-01 10:00:00", "text"))
+            .unwrap();
+        // 模拟「DROP/CREATE 完成但回填没跑完就退出」后的状态：表在、索引空
+        let conn = store.lock_conn();
+        conn.execute_batch("DELETE FROM history_fts;").unwrap();
+    }
+
+    let store = DataStore::new(&db_path).unwrap();
+    assert_eq!(fts_match_count(&store, "要能自愈"), 1);
+
+    drop(store);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_fts_rebuild_leaves_migration_record() {
+    // 一次性迁移必须在库里留痕。原因是实测发现的：env_logger 在 RUST_LOG 未设时
+    // 默认只放行 error，全项目 170 个 warn / 128 个 info 从来没有输出到任何地方——
+    // 那三个 history_fts bug 唯一的报错渠道就是 log::warn!，所以能长期不被发现。
+    // 迁移跑过没跑过、跑了几次，只能靠这张表追溯。
+    //
+    // 同一 name 允许多行：**重复出现本身就是诊断信号**。旧版"每次启动都全量回填"
+    // 这个 bug，如果当时有这张表，会直接表现为几十行同名记录。
+    let dir = std::env::temp_dir().join(format!("pastepanda_fts_rec_{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db_path = dir.join("clipboard.db").to_string_lossy().to_string();
+
+    {
+        let store = DataStore::new(&db_path).unwrap();
+        store
+            .insert_history(&make_item("r1", "留痕测试内容", "2024-01-01 10:00:00", "text"))
+            .unwrap();
+        let conn = store.lock_conn();
+        conn.execute_batch(
+            "DROP TABLE IF EXISTS history_fts;
+             CREATE VIRTUAL TABLE history_fts USING fts5(
+                text, pinyin, content, content='history', content_rowid='rowid');",
+        )
+        .unwrap();
+    }
+
+    let store = DataStore::new(&db_path).unwrap();
+    let conn = store.lock_conn();
+    let (name, detail): (String, String) = conn
+        .query_row(
+            "SELECT name, detail FROM schema_migrations
+             WHERE name = 'history_fts_rebuild' ORDER BY id DESC LIMIT 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("重建后必须留下一条 history_fts_rebuild 记录");
+    assert_eq!(name, "history_fts_rebuild");
+    // detail 要能回答「回填了多少行」，否则记录了也诊断不了
+    assert!(detail.contains("rows=1"), "detail 应含回填行数，实际: {}", detail);
+
+    drop(conn);
+    drop(store);
+    let _ = std::fs::remove_dir_all(&dir);
+}

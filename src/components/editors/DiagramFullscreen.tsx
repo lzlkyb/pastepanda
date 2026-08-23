@@ -5,14 +5,10 @@
  * 内部完全绕开 CodeMirror 路径，对其它类型零影响。
  * 样式复用 FullscreenEditor.module.css，保证工具栏观感一致。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Save, X, Maximize2, Minimize2, Sparkles, FileCode } from "lucide-react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useCallback, useRef, useState } from "react";
+import { Sparkles, FileCode } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { useToast } from "@/components/Toast";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { SkinScene } from "@/components/SkinScene";
 import { useAiStatus } from "@/hooks/useAiStatus";
 import { generateDiagramFromPrompt } from "@/lib/diagram/aiGenerate";
 import { errText } from "@/lib/utils";
@@ -21,7 +17,7 @@ import { DiagramCanvas, type DiagramCanvasHandle } from "./DiagramCanvas";
 import { DiagramAiPanel } from "./diagram/DiagramAiPanel";
 import { useDiagramExport } from "./diagram/useDiagramExport";
 import { ExportMenu } from "./diagram/ExportMenu";
-import styles from "./FullscreenEditor.module.css";
+import { FullscreenShell } from "./FullscreenShell";
 import editorStyles from "./DiagramEditor.module.css";
 
 export function DiagramFullscreen({
@@ -36,9 +32,6 @@ export function DiagramFullscreen({
   const { toast } = useToast();
   const canvasRef = useRef<DiagramCanvasHandle>(null);
   const originalDoc = useRef(parseDiagram(initContent)).current;
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [showConfirmClose, setShowConfirmClose] = useState(false);
-  const [isDarkTheme, setIsDarkTheme] = useState(true);
   const [aiOpen, setAiOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
@@ -49,17 +42,6 @@ export function DiagramFullscreen({
   const [docTitle, setDocTitle] = useState(() => diagramTitle(originalDoc));
 
   const setDirty = useCallback((d: boolean) => { setIsDirty(d); }, []);
-
-  useEffect(() => {
-    const applyTheme = (theme: string) => {
-      setIsDarkTheme(theme === "midnight" || theme === "ocean-dark" || theme === "");
-    };
-    invoke<Record<string, unknown>>("get_config")
-      .then((cfg) => applyTheme(String(cfg?.theme ?? "")))
-      .catch(() => {});
-    const unsubPromise = listen<{ theme?: string }>("theme-changed", (e) => applyTheme(e.payload?.theme ?? ""));
-    return () => { void unsubPromise.then((u) => u()); };
-  }, []);
 
   const copyMermaid = useCallback(() => {
     const doc = canvasRef.current?.getDoc();
@@ -96,39 +78,6 @@ export function DiagramFullscreen({
     }
   }, [sourceId, toast]);
 
-  // isDirty 必须在依赖里：漏了它的话这个回调只会创建一次，永远读到首渲染的 false，
-  // 关窗按钮和 Esc 都会直接 onClose，未保存确认框永不弹出 → 编辑静默丢失。
-  const guardedClose = useCallback(() => {
-    if (isDirty) {
-      setShowConfirmClose(true);
-      return;
-    }
-    onClose();
-  }, [isDirty, onClose]);
-
-  const toggleFullscreen = useCallback(async () => {
-    try {
-      const win = getCurrentWindow();
-      const next = !(await win.isFullscreen());
-      await win.setFullscreen(next);
-      setIsFullscreen(next);
-    } catch { /* ignore */ }
-  }, []);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        handleSave();
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        guardedClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [handleSave, guardedClose]);
-
   const runAi = useCallback(async () => {
     if (!aiPrompt.trim()) return;
     setAiLoading(true);
@@ -149,12 +98,14 @@ export function DiagramFullscreen({
   const exportAs = useDiagramExport(canvasRef);
 
   return (
-    <div className={styles.overlay} data-theme-mode={isDarkTheme ? "dark" : "light"}>
-      <SkinScene />
-      <div className={styles.toolbar} data-tauri-drag-region="deep">
-        <div className={styles.toolbarLeft}>
-          <div className={styles.fileIcon}>📊</div>
-          <span className={`${styles.fileName} ${editorStyles.docTitle}`} title={docTitle}>{docTitle}</span>
+    <FullscreenShell
+      icon="📊"
+      title={docTitle}
+      dirty={isDirty}
+      onSave={handleSave}
+      onClose={onClose}
+      leftExtra={
+        <>
           <span
             style={{
               fontSize: 10,
@@ -168,7 +119,6 @@ export function DiagramFullscreen({
           >
             diagram
           </span>
-          {isDirty && <div className={styles.unsavedDot} />}
           {ai.status === "on" && (
             <button className={editorStyles.aiBtn} style={{ marginLeft: 10 }} onClick={() => setAiOpen((v) => !v)}>
               <Sparkles size={14} /> AI 生成
@@ -178,21 +128,9 @@ export function DiagramFullscreen({
             <FileCode size={14} /> Mermaid
           </button>
           <ExportMenu onExport={exportAs} />
-        </div>
-        <div className={styles.toolbarRight}>
-          <button className={`${styles.tbBtn} ${styles.tbBtnPrimary}`} onClick={handleSave} title="保存 Ctrl+S">
-            <Save size={14} /><span>保存</span>
-          </button>
-          <div className={styles.tbSep} />
-          <button className={styles.tbBtnIcon} onClick={toggleFullscreen} title={isFullscreen ? "缩回窗口" : "放大到真全屏"}>
-            {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-          </button>
-          <button className={`${styles.tbBtnIcon} ${styles.tbBtnClose}`} onClick={guardedClose} title="关闭 Esc">
-            <X size={15} />
-          </button>
-        </div>
-      </div>
-
+        </>
+      }
+    >
       {aiOpen && (
         <DiagramAiPanel
           prompt={aiPrompt}
@@ -214,17 +152,6 @@ export function DiagramFullscreen({
           }}
         />
       </div>
-
-      <ConfirmDialog
-        open={showConfirmClose}
-        title="有未保存的修改"
-        message="关闭后本次编辑将丢弃，确定关闭吗？"
-        confirmText="不保存关闭"
-        cancelText="继续编辑"
-        variant="danger"
-        onConfirm={() => { setShowConfirmClose(false); onClose(); }}
-        onCancel={() => setShowConfirmClose(false)}
-      />
-    </div>
+    </FullscreenShell>
   );
 }

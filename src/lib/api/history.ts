@@ -4,6 +4,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
 import { logger } from "@/lib/logger";
+import { toastActionFailed } from "@/lib/utils";
 import { invalidateCountsCache, fetchCounts } from "./cache";
 
 /** 分页在飞行中标志位：防止连续滑动触发两次 loadMoreHistory 并发请求同一页导致重复行 */
@@ -198,6 +199,7 @@ export async function togglePin(id: string): Promise<boolean | null> {
     return pinned;
   } catch (e) {
     logger.error("切换置顶失败", e);
+    toastActionFailed("切换置顶", e);
     return null; // U2：null 表示失败（区别于 false="取消置顶"成功），UI 层据此跳过 toast
   }
 }

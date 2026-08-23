@@ -4,6 +4,7 @@ import type { SemanticHit } from "@/lib/api/semantic";
 import type { OcrSelectMode } from "@/lib/screenshot/types";
 import { reorderAction } from "@/lib/quickOrder";
 import { splitTableToRows } from "@/lib/tableSplit";
+import { normalizeTheme } from "@/lib/theme";
 
 // ===== 数据类型 =====
 
@@ -234,7 +235,9 @@ interface AppState {
 
 export const DEFAULT_CONFIG: AppConfig = {
   hotkey: "ctrl+alt+v",
-  theme: "light",
+  // 必须是合法 ThemeKey（见 lib/theme.ts）。旧值 "light" 匹配不到任何 [data-theme] 块，
+  // 只能落到 :root 兜底才碰巧渲染成经典白，设置页色板也因此一个都不高亮。
+  theme: "ocean",
   auto_cleanup_days: 30,
   preserve_valued_content: true,
   auto_strip: false,
@@ -762,6 +765,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     if ("hover_preview_enabled" in clean) {
       clean.hover_mode = clean.hover_preview_enabled ? "popover" : "off";
       delete clean.hover_preview_enabled;
+    }
+    // 兼容旧配置：非法 theme（历史上的 "light"）归一到合法 ThemeKey。
+    // 只改 DEFAULT_CONFIG 救不了老用户——他们后端存的就是 "light"，非空所以一路透传，
+    // applyTheme 写出 data-theme="light" 匹配不到任何主题块，设置页色板也一个都不高亮。
+    if ("theme" in clean) {
+      clean.theme = normalizeTheme(clean.theme);
     }
     // 修复 Low（Zustand 反模式）：副作用（动态 import + 事件派发）移出 set updater，
     // updater 保持纯函数；先读旧工作区，set 之后再触发缓存失效
