@@ -402,8 +402,8 @@ jobs:
           $apiBase = "https://gitee.com/api/v5/repos/$($env:GITEE_REPOSITORY)"
           $token = $env:GITEE_TOKEN
 
-          # 1) 推 tag 到 Gitee（发行版需 tag 存在；已存在则 git 报错但忽略）
-          git push "$giteeUrl" "$tag" 2>&1 | Write-Host
+          # 1) 推 tag 到 Gitee（发行版需 tag 存在；已存在则强制覆盖，避免 already exists 被拒）
+          git push -f "$giteeUrl" "$tag" 2>&1 | Write-Host
           Write-Host ("tag {0} 推送完成（exit={1}，已存在则忽略）" -f $tag, $LASTEXITCODE)
 
           # 2) 取已有发行版或新建
@@ -414,7 +414,7 @@ jobs:
           if ($rel -and $rel.id) {
             Write-Host ("发行版已存在（id={0}），复用" -f $rel.id)
           } else {
-            $relBody = @{ tag_name = $tag; name = "PastePanda $tag"; body = "PastePanda $tag 自动发布（国内加速通道）"; prerelease = $false } | ConvertTo-Json -Compress
+            $relBody = @{ tag_name = $tag; name = "PastePanda $tag"; body = "PastePanda $tag 自动发布（国内加速通道）"; prerelease = $false; target_commitish = "${{ github.sha }}" } | ConvertTo-Json -Compress
             try {
               $rel = Invoke-RestMethod -Uri "$apiBase/releases`?access_token=$token" -Method Post -Body $relBody -ContentType "application/json" -TimeoutSec 30 -ErrorAction Stop
             } catch {
