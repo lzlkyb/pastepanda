@@ -32,6 +32,7 @@ import { FocusTrap } from "@/components/FocusTrap";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ConfirmDialogHost } from "@/components/ConfirmDialogHost";
 import { useDialogAnim } from "@/lib/dialogMotion";
+import { DiffDialog } from "@/components/DiffDialog";
 
 // 修复 Low：应用更名后迁移历史版本遗留的 pasteship_* localStorage 键（幂等，仅执行一次）
 migrateLegacyStorageKeys();
@@ -129,6 +130,7 @@ function App() {
   const [showEncoding, setShowEncoding] = useState(false);
   const [showBatchReplace, setShowBatchReplace] = useState(false);
   const [showConfigDiff, setShowConfigDiff] = useState(false);
+  const [freeDiff, setFreeDiff] = useState<{ open: boolean; left: string; right: string }>({ open: false, left: "", right: "" });
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -191,8 +193,49 @@ function App() {
 
 
 
+  // 自由文本对比（方案 C 模态入口）：读剪贴板预填左侧，右侧留空待用户粘贴
+  const openFreeDiff = useCallback(async () => {
+    let left = "";
+    try {
+      left = await navigator.clipboard.readText();
+    } catch {
+      /* 剪贴板不可读时左侧留空，不阻断打开 */
+    }
+    setFreeDiff({ open: true, left, right: "" });
+  }, []);
+
+  // 全屏文本对比（方案 C 全屏深编入口）：读剪贴板预填左侧，独立大窗打开
+  const openFreeDiffFullscreen = useCallback(async () => {
+    let left = "";
+    try {
+      left = await navigator.clipboard.readText();
+    } catch {
+      /* 剪贴板不可读时左侧留空，不阻断打开 */
+    }
+    void invoke("open_fullscreen_editor", {
+      sourceId: null,
+      content: left,
+      contentType: "diff",
+      language: null,
+    }).catch(() => {});
+  }, []);
+
+  // 模态「全屏深编」：把当前左/右两侧文本经 PPDIFF:: JSON 编码跨窗口传入，
+  // 新窗口创建成功后关闭模态（失败则保留模态）。
+  const openFullscreenDiff = useCallback((left: string, right: string) => {
+    const content = `PPDIFF::${JSON.stringify({ left, right })}`;
+    void invoke("open_fullscreen_editor", {
+      sourceId: null,
+      content,
+      contentType: "diff",
+      language: null,
+    })
+      .then(() => setFreeDiff((f) => ({ ...f, open: false })))
+      .catch(() => {});
+  }, []);
+
   // 失焦自动隐藏（弹窗打开时跳过）—— 使用 useRef 避免闭包陷阱
-  const dialogOpen = showSettings || showSequential || showSnippets || showExtract || showEncoding || showBatchReplace || showConfigDiff;
+  const dialogOpen = showSettings || showSequential || showSnippets || showExtract || showEncoding || showBatchReplace || showConfigDiff || freeDiff.open;
   const dialogOpenRef = useRef(dialogOpen);
   dialogOpenRef.current = dialogOpen;
 
@@ -826,7 +869,7 @@ function App() {
     } else if (e.ctrlKey && e.key === "a") {
       e.preventDefault();
       store.selectAll();
-    } else if (e.ctrlKey && e.key === "d") {
+    } else if (e.ctrlKey && !e.shiftKey && e.key === "d") {
       e.preventDefault();
       const selectedArr = [...selectedIds];
       let pinned: boolean | null = null;
@@ -836,6 +879,9 @@ function App() {
         pinned = await togglePin(focusId);
       }
       if (pinned !== null) toast(pinned ? "已置顶" : "已取消置顶", "success");
+    } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "d") {
+      e.preventDefault();
+      void openFreeDiff();
     } else if (e.ctrlKey && e.key === "z") {
       e.preventDefault();
       void restoreDeleted();
@@ -879,8 +925,8 @@ function App() {
       }
     }
     // 状态都走 ref 读，避免频繁重新注册键盘事件；
-    // toast 本身是 useCallback 恒引用，列进依赖不会引起重注册
-  }, [toast]);
+    // toast / openFreeDiff 本身都是恒引用的 useCallback，列进依赖不会引起重注册
+  }, [toast, openFreeDiff]);
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
@@ -953,6 +999,8 @@ function App() {
           onEncoding={() => setShowEncoding(true)}
           onBatchReplace={() => setShowBatchReplace(true)}
           onConfigDiff={() => setShowConfigDiff(true)}
+          onDiffEdit={openFreeDiff}
+          onDiffFullscreen={openFreeDiffFullscreen}
           onNewDiagram={handleNewDiagram}
           onToggleSidebar={toggleSidebar}
           sidebarOpen={sidebarOpen}
@@ -1051,6 +1099,17 @@ function App() {
           </ErrorBoundary>
           <ErrorBoundary fallback={null} componentName="配置对比">
             <ConfigDiffDialog open={showConfigDiff} onClose={() => setShowConfigDiff(false)} />
+          </ErrorBoundary>
+          <ErrorBoundary fallback={null} componentName="文本对比">
+            {freeDiff.open && (
+              <DiffDialog
+                freeMode
+                initialLeft={freeDiff.left}
+                initialRight={freeDiff.right}
+                onOpenFullscreen={openFullscreenDiff}
+                onClose={() => setFreeDiff((f) => ({ ...f, open: false }))}
+              />
+            )}
           </ErrorBoundary>
         </Suspense>
 

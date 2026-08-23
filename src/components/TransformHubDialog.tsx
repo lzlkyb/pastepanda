@@ -17,7 +17,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Sparkles, Loader2, RotateCw, Workflow } from "lucide-react";
+import { X, Sparkles, Loader2, RotateCw, Workflow, Lock, QrCode } from "lucide-react";
 import { AiMark } from "@/components/ai/AiMark";
 import { useDialogStore } from "@/stores/dialogStore";
 import { confirmDialog } from "@/lib/confirm";
@@ -35,6 +35,8 @@ import { useDialogAnim } from "@/lib/dialogMotion";
 import { FocusTrap } from "@/components/FocusTrap";
 import { MelodyEmpty } from "@/components/MelodyEmpty";
 import { TransformCard } from "@/components/transform/TransformCard";
+import { CodecEditor } from "@/components/editors/CodecEditor";
+import { QREditor } from "@/components/editors/QREditor";
 import { NlCommandBar } from "@/components/NlCommandBar";
 import { requestPlannedChain } from "@/lib/chains/planRequest";
 import { isAiAvailable } from "@/lib/transforms/aiTransforms";
@@ -56,8 +58,16 @@ export function TransformHubDialog() {
   const [opts, setOpts] = useState<Record<string, Record<string, string>>>({});
   // 刚完成复制的卡片（仅用于按钮"已复制"反馈，与选中无关）
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  // Tier1 编解码工作台开关（从枢纽打开独立工具弹窗）
+  const [showCodec, setShowCodec] = useState(false);
+  // Tier2 二维码双向工作台开关（生成 + 识图解码）
+  const [showQr, setShowQr] = useState(false);
 
-  const close = useCallback(() => useDialogStore.getState().closeHub(), []);
+  const close = useCallback(() => {
+    setShowCodec(false);
+    setShowQr(false);
+    useDialogStore.getState().closeHub();
+  }, []);
 
   // ===== 图片：先本地 OCR，再把识别出的文字交给整套变换 =====
   //
@@ -257,15 +267,17 @@ export function TransformHubDialog() {
     [toast, logEvent],
   );
 
-  // Esc 关闭（其余导航键交由卡片按钮 / Tab 处理）
+  // Esc 关闭（其余导航键交由卡片按钮 / Tab 处理）。
+  // 编解码 / 二维码工作台打开时不接 Esc：它们自己也在 window 上监听 Escape，
+  // preventDefault 不会阻止同级 listener，两边都跑的话按一下 Esc 会把工作台和枢纽一起关掉。
   useEffect(() => {
-    if (!open) return;
+    if (!open || showCodec || showQr) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") { e.preventDefault(); close(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, close]);
+  }, [open, close, showCodec, showQr]);
 
   // v6.3 自然语言动作定位：命中动作卡片滚动到可视区 + 短暂高亮
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
@@ -402,6 +414,7 @@ export function TransformHubDialog() {
 
   // 常挂载，open=false 时由 AnimatePresence 驱动退场后再卸载
   return (
+    <>
     <AnimatePresence>
       {open && item && (
         <motion.div {...anim.backdrop} className="dialog-backdrop" onClick={close}>
@@ -468,6 +481,38 @@ export function TransformHubDialog() {
                   </span>
                 </button>
               </div>
+
+              {/* Tier2 二维码双向工作台入口：生成 + 识图解码（qrcode + jsqr） */}
+              <button
+                onClick={() => setShowQr(true)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10,
+                  border: "1px solid var(--border-color)", background: "var(--card-bg)", cursor: "pointer",
+                  fontFamily: "inherit", textAlign: "left", width: "100%",
+                }}
+              >
+                <QrCode size={16} style={{ color: "var(--accent)" }} />
+                <span style={{ display: "flex", flexDirection: "column" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>📱 二维码工作台</span>
+                  <span style={{ fontSize: 10, color: "var(--text-muted)" }}>文本↔二维码 · 识图解码（全程本地）</span>
+                </span>
+              </button>
+
+              {/* Tier1 编解码工作台入口：复用 codecTransforms，双栏实时互转 */}
+              <button
+                onClick={() => setShowCodec(true)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10,
+                  border: "1px solid var(--border-color)", background: "var(--card-bg)", cursor: "pointer",
+                  fontFamily: "inherit", textAlign: "left", width: "100%",
+                }}
+              >
+                <Lock size={16} style={{ color: "var(--accent)" }} />
+                <span style={{ display: "flex", flexDirection: "column" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>🔐 编解码工作台</span>
+                  <span style={{ fontSize: 10, color: "var(--text-muted)" }}>Base64 / URL / JWT / 时间戳 实时互转</span>
+                </span>
+              </button>
 
               <div className={styles.cards}>
                 {/* 图片：把本地识别结果摆出来并允许修改。
@@ -536,5 +581,12 @@ export function TransformHubDialog() {
         </motion.div>
       )}
     </AnimatePresence>
+    {open && item && showCodec && (
+      <CodecEditor initialText={sourceText} onClose={() => setShowCodec(false)} />
+    )}
+    {open && item && showQr && (
+      <QREditor initialText={sourceText} onClose={() => setShowQr(false)} />
+    )}
+    </>
   );
 }

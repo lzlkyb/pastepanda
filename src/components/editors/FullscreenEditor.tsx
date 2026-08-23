@@ -46,6 +46,10 @@ const LazyRichFullscreen = lazy(() =>
 const LazyDiagramFullscreen = lazy(() =>
   import("./DiagramFullscreen").then((m) => ({ default: m.DiagramFullscreen }))
 );
+/** 文本对比全屏（双栏 diff）——惰加载：独立 OS 窗口，绕开 CodeMirror 单栏路径 */
+const LazyDiffFullscreen = lazy(() =>
+  import("./DiffEditorFullscreen").then((m) => ({ default: m.DiffEditorFullscreen }))
+);
 
 /** Rust 传递的编辑器初始数据（take_editor_init 返回值 / md-editor-load 事件载荷） */
 interface EditorInit {
@@ -182,6 +186,15 @@ export function FullscreenEditor() {
             onClose={handleClose}
           />
         </Suspense>
+      ) : init.contentType === "diff" ? (
+        <Suspense fallback={<div className={styles.overlay}><div className={styles.loading}>加载中…</div></div>}>
+          <LazyDiffFullscreen
+            key={init.nonce}
+            sourceId={init.sourceId}
+            initContent={init.content}
+            onClose={handleClose}
+          />
+        </Suspense>
       ) : (
         <FullscreenInner
           key={init.nonce}
@@ -238,8 +251,8 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
   // 预览行号开关（设置 markdown_preview_line_numbers，默认开启）
   const [previewLineNumbers, setPreviewLineNumbers] = useState(true);
-  // 编辑器明暗：默认暗（与 DEFAULT_THEME ocean-dark 一致），读到实际主题后再校正
-  const [isDarkTheme, setIsDarkTheme] = useState(true);
+  // 编辑器明暗：默认亮（与 DEFAULT_THEME ocean 一致），读到实际主题后再校正
+  const [isDarkTheme, setIsDarkTheme] = useState(false);
 
   // Split pane
   const [splitRatio, setSplitRatio] = useState(50);
@@ -570,9 +583,9 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
         setPreviewLineNumbers(cfg.markdown_preview_line_numbers !== false);
         const themeKey = (cfg.theme || DEFAULT_THEME) as ThemeKey;
         const themeDef = THEMES.find((t) => t.key === themeKey);
-        setIsDarkTheme(themeDef ? themeDef.dark : true);
+        setIsDarkTheme(themeDef ? themeDef.dark : false);
       })
-      .catch(() => { /* 读取失败时保持默认（自动保存开、行号开、暗色编辑器） */ });
+      .catch(() => { /* 读取失败时保持默认（自动保存开、行号开、亮色编辑器） */ });
   }, []);
 
   // 预览行号开关：翻转即时生效，并写回配置持久化（读全量 → 覆盖单键 → 写回）

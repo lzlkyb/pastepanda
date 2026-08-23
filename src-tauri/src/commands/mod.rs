@@ -39,6 +39,45 @@ pub(crate) const ALLOWED_IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gi
 /// 校验路径是否为合法的图片文件：规范化路径后确认其存在、是普通文件，且扩展名在允许列表内。
 /// 返回规范化后的路径，调用方应使用该路径进行后续文件操作。
 pub(crate) fn validate_image_file_path(path: &str) -> Result<std::path::PathBuf, String> {
+    validate_user_file_path(path, ALLOWED_IMAGE_EXTENSIONS, "图片文件")
+}
+
+/// 允许内嵌阅读的文档扩展名（目前只有 PDF，走 PdfViewer/pdfjs 渲染）
+pub(crate) const ALLOWED_DOC_EXTENSIONS: &[&str] = &["pdf"];
+
+/// 校验 PDF 路径（供 `read_pdf_as_base64`）。
+///
+/// 为什么 PDF 也走 Rust 读、而不是前端 plugin-fs：`fs:default` 只授予
+/// **应用自身目录**的读权限（见 gen/schemas 里该权限集的说明），而用户的 PDF
+/// 在任意路径。要让前端读就得把 `fs:scope` 开成 `**`，等于把整个文件系统交给
+/// WebView。项目既有做法是图片一律走 Rust 命令读，这里沿用同一条路。
+pub(crate) fn validate_pdf_file_path(path: &str) -> Result<std::path::PathBuf, String> {
+    validate_user_file_path(path, ALLOWED_DOC_EXTENSIONS, "PDF 文件")
+}
+
+/// 允许内嵌播放的音视频扩展名。
+///
+/// 只收 WebView 原生能解的容器 —— mkv / avi / mov / wmv / flv 交给「用系统播放」降级，
+/// 放进来只会让前端拿到一个能生成、但播不动的 asset:// URL。
+pub(crate) const ALLOWED_MEDIA_EXTENSIONS: &[&str] = &[
+    "mp4", "webm", "ogv", "m4v", "mp3", "wav", "ogg", "m4a", "flac", "aac",
+];
+
+/// 校验音视频路径（供 `allow_media_asset`）。
+pub(crate) fn validate_media_file_path(path: &str) -> Result<std::path::PathBuf, String> {
+    validate_user_file_path(path, ALLOWED_MEDIA_EXTENSIONS, "音视频文件")
+}
+
+/// 用户给的文件路径的统一校验（规则 #11 收口：图片 / PDF / 音视频共用同一套安全性质）。
+///
+/// 三道：`canonicalize`（解符号链接、挡目录穿越）→ 必须是文件（挡目录）→
+/// 扩展名白名单（大小写不敏感）。新增可读文件类型时**只加白名单**，
+/// 不要另写一份校验——三道里漏一道就是一个可利用的读文件入口。
+fn validate_user_file_path(
+    path: &str,
+    allowed: &[&str],
+    kind: &str,
+) -> Result<std::path::PathBuf, String> {
     let canonical =
         std::fs::canonicalize(path).map_err(|e| format!("路径无效或文件不存在: {e}"))?;
 
@@ -52,10 +91,10 @@ pub(crate) fn validate_image_file_path(path: &str) -> Result<std::path::PathBuf,
         .map(|s| s.to_lowercase())
         .unwrap_or_default();
 
-    if !ALLOWED_IMAGE_EXTENSIONS.contains(&ext.as_str()) {
+    if !allowed.contains(&ext.as_str()) {
         return Err(format!(
-            "不支持的文件类型: .{ext}，仅允许图片文件 ({})",
-            ALLOWED_IMAGE_EXTENSIONS.join(", ")
+            "不支持的文件类型: .{ext}，仅允许{kind} ({})",
+            allowed.join(", ")
         ));
     }
 

@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PastePanda · 反馈面板 P0 设计稿</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --border: #e4e6eb;
+    --text-primary: #1f2329;
+    --text-secondary: #57606a;
+    --text-muted: #8a919c;
+    --accent: #378add;
+    --accent-weak: #e6f1fb;
+    --green: #3b6d11;
+    --green-bg: #eaf3de;
+    --green-border: #c0dd97;
+    --warn: #854f0b;
+    --warn-bg: #faeeda;
+    --hover: #f0f2f5;
+    --radius: 10px;
+    --shadow: 0 8px 28px rgba(0,0,0,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", Roboto, sans-serif;
+    background: var(--bg); color: var(--text-primary);
+    padding: 32px 24px 64px; line-height: 1.6;
+  }
+  .page-head { max-width: 860px; margin: 0 auto 28px; }
+  .page-head h1 { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+  .page-head p { font-size: 13px; color: var(--text-secondary); }
+  .badge {
+    display: inline-block; font-size: 11px; font-weight: 600;
+    padding: 2px 8px; border-radius: 20px; margin-left: 8px;
+    vertical-align: 2px;
+  }
+  .badge.plan { background: var(--accent-weak); color: var(--accent); }
+  .badge.step { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+
+  .section {
+    max-width: 860px; margin: 0 auto 24px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 22px 24px;
+  }
+  .section-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .section-head .idx {
+    width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0;
+    background: var(--accent); color: #fff; font-size: 12px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .section-head h2 { font-size: 15px; font-weight: 700; }
+  .section-desc { font-size: 12px; color: var(--text-secondary); margin: 0 0 18px 32px; }
+
+  /* —— 关于页页脚（现状 / 改后） —— */
+  .about-demo {
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px 18px; max-width: 560px;
+  }
+  .about-demo .label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--text-muted); margin-bottom: 8px;
+  }
+  .about-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    border-top: 1px solid var(--border); padding-top: 12px;
+  }
+  .about-links { display: flex; align-items: center; gap: 4px; }
+  .link-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600; color: var(--text-secondary);
+    background: transparent; border: none; cursor: pointer;
+    padding: 8px 14px; border-radius: 8px; font-family: inherit;
+  }
+  .link-btn:hover { background: var(--hover); color: var(--text-primary); }
+  .link-btn.feedback { color: var(--accent); }
+  .link-btn.feedback:hover { background: var(--accent-weak); }
+  .copyright { font-size: 11px; color: var(--text-muted); }
+  .annotate {
+    display: inline-block; font-size: 10px; font-weight: 600; color: var(--green);
+    background: var(--green-bg); border: 1px solid var(--green-border);
+    border-radius: 4px; padding: 0 6px; margin-left: 6px; vertical-align: 1px;
+  }
+  .annotate.new { color: var(--accent); background: var(--accent-weak); border-color: #85b7eb; }
+
+  .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .compare-col .col-title { font-size: 12px; font-weight: 700; margin-bottom: 8px; color: var(--text-secondary); }
+  .arrow-mid {
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted); font-size: 18px;
+  }
+
+  /* —— 反馈对话框 mockup —— */
+  .dialog-stage {
+    background: rgba(31,35,41,0.45); border-radius: 14px;
+    padding: 34px 24px; display: flex; justify-content: center;
+  }
+  .dialog {
+    width: 480px; background: #fff; border-radius: 14px;
+    box-shadow: var(--shadow); overflow: hidden;
+  }
+  .dialog-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 22px 0;
+  }
+  .dialog-title { font-size: 15px; font-weight: 700; }
+  .dialog-x {
+    width: 26px; height: 26px; border-radius: 7px; border: none; cursor: pointer;
+    background: transparent; color: var(--text-muted); font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .dialog-x:hover { background: var(--hover); color: var(--text-primary); }
+  .dialog-body { padding: 16px 22px 22px; }
+  .seg { display: flex; gap: 4px; background: var(--bg); border-radius: 9px; padding: 3px; margin-bottom: 14px; }
+  .seg button {
+    flex: 1; border: none; background: transparent; cursor: pointer;
+    font-size: 12px; font-weight: 600; color: var(--text-secondary);
+    padding: 7px 0; border-radius: 7px; font-family: inherit;
+  }
+  .seg button.on { background: #fff; color: var(--accent); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  textarea.fb {
+    width: 100%; min-height: 120px; resize: vertical;
+    border: 1px solid var(--border); border-radius: 9px;
+    padding: 12px 14px; font-size: 13px; font-family: inherit; color: var(--text-primary);
+    background: #fff; outline: none; margin-bottom: 12px;
+  }
+  textarea.fb:focus { border-color: var(--accent); }
+  textarea.fb::placeholder { color: var(--text-muted); }
+  .privacy {
+    display: flex; align-items: flex-start; gap: 8px;
+    background: var(--green-bg); border: 1px solid var(--green-border);
+    border-radius: 9px; padding: 10px 12px; margin-bottom: 16px;
+  }
+  .privacy .shield {
+    width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px;
+    border-radius: 50%; background: var(--green); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700;
+  }
+  .privacy p { font-size: 11.5px; color: var(--green); line-height: 1.55; }
+  .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }
+  .btn {
+    border-radius: 9px; font-size: 12.5px; font-weight: 600;
+    padding: 9px 16px; border: 1px solid var(--border); cursor: pointer;
+    font-family: inherit; background: #fff; color: var(--text-secondary);
+  }
+  .btn:hover { background: var(--hover); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { filter: brightness(0.95); background: var(--accent); }
+  .toast {
+    margin-top: 14px; display: flex; align-items: center; gap: 8px;
+    background: var(--green-bg); border: 1px solid var(--green-border);
+    color: var(--green); font-size: 12px; font-weight: 600;
+    padding: 9px 14px; border-radius: 9px;
+  }
+
+  /* —— 诊断包 JSON 预览 —— */
+  pre.json {
+    background: #fafbfc; border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 18px; font-size: 12px; line-height: 1.7;
+    font-family: "SFMono-Regular", Consolas, "Courier New", monospace;
+    overflow-x: auto; white-space: pre;
+  }
+  pre.json .k { color: var(--accent); }
+  pre.json .s { color: var(--green); }
+  pre.json .n { color: var(--warn); }
+  pre.json .c { color: var(--text-muted); font-style: italic; }
+  .note {
+    display: flex; gap: 8px; align-items: flex-start;
+    background: var(--warn-bg); border: 1px solid #f5d9a8;
+    border-radius: 9px; padding: 10px 14px; font-size: 12px; color: var(--warn);
+    margin-top: 14px; line-height: 1.6;
+  }
+  .step-flow {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    font-size: 12px; color: var(--text-secondary); margin-top: 14px;
+  }
+  .step-flow b { color: var(--text-primary); }
+  .chip {
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 4px 10px; border-radius: 20px; font-size: 11.5px; font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>PastePanda · 反馈面板（P0）设计稿<span class="badge plan">方案 A</span></h1>
+  <p>目标：用户在「设置 › 关于」里写反馈，一键导出脱敏诊断包，作者手动收取。纯本地、零服务器、不碰隐私红线。</p>
+</div>
+
+<!-- ============ 1. 入口 ============ -->
+<div class="section">
+  <div class="section-head"><div class="idx">1</div><h2>入口：关于页页脚</h2></div>
+  <p class="section-desc">在「设置 › 关于」底部操作栏加一个「反馈与建议」按钮（沿用 <code>aboutFooterLink</code> 样式，accent 色以示可交互）。</p>
+  <div class="compare-grid">
+    <div class="compare-col">
+      <div class="col-title">现状</div>
+      <div class="about-demo">
+        <div class="label">关于</div>
+        <div style="font-size:13px;font-weight:700;margin-bottom:2px;">PastePanda</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">v6.18.2 · 已是最新</div>
+        <div class="about-footer">
+          <div class="about-links">
+            <button class="link-btn">↗ 项目主页</button>
+          </div>
+          <span class="copyright">© 2026 PastePanda</span>
+        </div>
+      </div>
+    </div>
+    <div class="arrow-mid">→</div>
+    <div class="compare-col">
+      <div class="col-title">改后</div>
+      <div class="about-demo">
+        <div class="label">关于</div>
+        <div style="font-size:13px;font-weight:700;margin-bottom:2px;">PastePanda</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">v6.18.2 · 已是最新</div>
+        <div class="about-footer">
+          <div class="about-links">
+            <button class="link-btn">↗ 项目主页</button>
+            <button class="link-btn feedback">✎ 反馈与建议<span class="annotate new">新增</span></button>
+          </div>
+          <span class="copyright">© 2026 PastePanda</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 2. 反馈对话框 ============ -->
+<div class="section">
+  <div class="section-head"><div class="idx">2</div><h2>反馈对话框（FeedbackDialog）</h2></div>
+  <p class="section-desc">点击入口弹出的独立对话框：分类 → 写反馈 → 隐私声明 → 导出诊断包 / 复制文本。复用全局 dialog 壳（遮罩 + 圆角面板）。</p>
+  <div class="dialog-stage">
+    <div class="dialog">
+      <div class="dialog-head">
+        <div class="dialog-title">反馈与建议</div>
+        <button class="dialog-x">✕</button>
+      </div>
+      <div class="dialog-body">
+        <div class="seg">
+          <button class="on">建议</button>
+          <button>问题反馈</button>
+          <button>其他</button>
+        </div>
+        <textarea class="fb" placeholder="描述你的想法或遇到的问题…（可选，不写也可以直接导出诊断包）"></textarea>
+        <div class="privacy">
+          <div class="shield">✓</div>
+          <p>导出的诊断包已脱敏：只含版本、系统、使用统计与近期日志摘要，<b>不含任何剪贴板内容</b>。保存前可预览。</p>
+        </div>
+        <div class="dialog-actions">
+          <button class="btn">仅复制文本</button>
+          <button class="btn primary">导出诊断包</button>
+        </div>
+        <div class="toast">已导出 pastepanda-diagnose-2026-08-22.json（可拖到 GitHub Issue / 微信发给作者）</div>
+      </div>
+    </div>
+  </div>
+  <div class="step-flow">
+    <b>交互流：</b>
+    <span class="chip">点「反馈与建议」</span>→
+    <span class="chip">写反馈 / 选分类</span>→
+    <span class="chip">点「导出诊断包」</span>→
+    <span class="chip">系统保存对话框选位置</span>→
+    <span class="chip">toast 提示成功</span>
+    <span style="color:var(--text-muted)">（「仅复制文本」生成 Markdown 模板贴到 Issue）</span>
+  </div>
+</div>
+
+<!-- ============ 3. 诊断包内容 ============ -->
+<div class="section">
+  <div class="section-head"><div class="idx">3</div><h2>诊断包内容（JSON）</h2></div>
+  <p class="section-desc">保存前弹一个预览确认（红线：让用户知道包里有什么、确认不含敏感内容再落盘）。</p>
+  <pre class="json"><span class="c">// pastepanda-diagnose-2026-08-22.json — 全部为脱敏信息，无剪贴板内容</span>
+{
+  <span class="k">"app"</span>: { <span class="k">"name"</span>: <span class="s">"PastePanda"</span>, <span class="k">"version"</span>: <span class="s">"6.18.2"</span>, <span class="k">"os"</span>: <span class="s">"Windows 11 23H2"</span>, <span class="k">"arch"</span>: <span class="s">"x64"</span> },
+  <span class="k">"feedback"</span>: { <span class="k">"category"</span>: <span class="s">"建议"</span>, <span class="k">"text"</span>: <span class="s">"希望截图取文字支持竖排"</span>, <span class="k">"time"</span>: <span class="s">"2026-08-22 18:00"</span> },
+  <span class="k">"settings"</span>: { <span class="k">"ai_enabled"</span>: <span class="n">false</span>, <span class="k">"theme"</span>: <span class="s">"ocean"</span>, <span class="k">"screenshot_hotkey"</span>: <span class="s">"Ctrl+Alt+A"</span>, <span class="k">"secrets"</span>: <span class="s">"excluded"</span> },
+  <span class="k">"usage_30d"</span>: { <span class="k">"total"</span>: <span class="n">1420</span>, <span class="k">"top_actions"</span>: [[<span class="s">"ocr"</span>,<span class="n">386</span>],[<span class="s">"mosaic"</span>,<span class="n">204</span>]], <span class="k">"ai_edit_rate"</span>: <span class="n">12</span> },
+  <span class="k">"recent_logs"</span>: [<span class="s">"[INFO] 截图窗打开"</span>, <span class="s">"[WARN] 取文字失败重试"</span>, <span class="s">"[ERROR] OCR 模型加载超时"</span>],
+  <span class="k">"screenshot_stats"</span>: { <span class="k">"ocr_runs"</span>: <span class="n">386</span>, <span class="k">"pin_count"</span>: <span class="n">42</span> }
+}</pre>
+  <div class="note">
+    <b>隐私红线：</b>诊断包字段全部白名单化 —— 只导版本 / OS / 开关状态 / 统计数字 / 日志摘要。API key、剪贴板内容、历史记录文本一律不导出；日志取前端内存环形缓冲（最近 200 条、单条截断 160 字符），不读任何业务数据文件。
+  </div>
+</div>
+
+</body>
+</html>

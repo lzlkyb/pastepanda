@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="ocean">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>编解码编辑器 · 设计稿（对照 editorBits / dialog.css / codecTransforms.ts）</title>
+<style>
+  /* ===== 设计令牌：复用 src/styles/theme.css 的 ocean(默认浅色) 值 ===== */
+  :root{
+    --app-bg:#F7F7F8; --card-bg:#fff; --dialog-bg:#fff; --section-bg:#F0F4F8;
+    --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+    --border-color:#E0E4EB; --accent:#0284C7; --accent-light:#E0F2FE; --accent-strong:#0273AD;
+    --hover:#E8ECF2;
+    --green:#11813A; --green-bg:#DCFCE7; --green-border:#BBF7D0;
+    --red-bg:#FEF2F2; --danger:#D82525;
+    --glass-popover-shadow:0 12px 36px rgba(0,0,0,.1),0 2px 8px rgba(0,0,0,.05);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--app-bg);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--text-primary);display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;}
+
+  /* ===== dialog.css 原样移植（ocean 实底分支） ===== */
+  .dialog-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;}
+  .dialog-box{background:var(--dialog-bg);border:1px solid var(--border-color);border-radius:16px;
+    display:flex;flex-direction:column;box-shadow:var(--glass-popover-shadow);max-width:calc(100vw - 32px);}
+  .dialog-box.dialog-solid{background:var(--dialog-bg);backdrop-filter:none;}
+  .dialog-box.w520{width:520px;max-height:82vh;}
+  .dialog-header{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:48px;flex-shrink:0;border-bottom:1px solid var(--border-color);}
+  .dialog-title{font-size:15px;font-weight:600;}
+  .dialog-close{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;background:transparent;color:var(--text-secondary);font-size:16px;}
+  .dialog-close:hover{background:var(--hover);}
+  .dialog-body{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:12px;}
+  .dialog-footer{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:48px;flex-shrink:0;gap:8px;border-top:1px solid var(--border-color);font-size:10px;color:var(--text-muted);}
+  .dialog-footer .right{display:flex;gap:4px;align-items:center;}
+  .btn-primary{margin-left:auto;padding:5px 14px;font-size:12px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer;}
+
+  /* ===== editorBits：code-meta-bar / code-type-badge / md-mode-btn / tool-btn ===== */
+  .code-meta-bar{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-radius:8px;background:var(--section-bg);border:1px solid var(--border-color);}
+  .code-meta-left{display:flex;gap:12px;align-items:center;}
+  .code-meta-item{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);}
+  .code-meta-val{font-weight:700;color:var(--text-primary);}
+  .code-type-badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;background:var(--accent-light);color:var(--accent-strong);}
+  .md-mode-btn{padding:3px 10px;border-radius:6px;border:1px solid var(--border-color);font-size:11px;font-weight:600;cursor:pointer;background:var(--card-bg);color:var(--text-secondary);font-family:inherit;}
+  .md-mode-btn.active{background:var(--accent-light);color:var(--accent-strong);border-color:var(--accent);}
+  .tool-btn{display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:6px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-secondary);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;}
+  .tool-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+  /* ===== 本稿新增（编解码专用，套用现有令牌） ===== */
+  .fmt-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+  .fmt-chip{font-size:11px;font-weight:600;padding:4px 10px;border-radius:6px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-secondary);cursor:pointer;}
+  .fmt-chip.active{background:var(--accent-light);color:var(--accent-strong);border-color:var(--accent);}
+  .dir-toggle{display:flex;border:1px solid var(--border-color);border-radius:6px;overflow:hidden;}
+  .dir-toggle button{border:none;background:var(--card-bg);padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;color:var(--text-secondary);font-family:inherit;}
+  .dir-toggle button.active{background:var(--accent);color:#fff;}
+  .pane{display:flex;flex-direction:column;gap:4px;}
+  .pane-label{font-size:11px;color:var(--text-muted);display:flex;justify-content:space-between;align-items:center;}
+  .pane-box{flex:1;border:1px solid var(--border-color);border-radius:10px;background:var(--card-bg);overflow:auto;max-height:200px;}
+  .pane-box textarea,.pane-box pre{width:100%;min-height:150px;margin:0;padding:10px 12px;border:none;outline:none;
+    font-family:'SF Mono',Consolas,monospace;font-size:13px;line-height:1.6;color:var(--text-primary);background:transparent;resize:vertical;white-space:pre-wrap;word-break:break-all;}
+  .pane-box pre{color:var(--text-secondary);}
+  .copy-out{font-size:11px;font-weight:600;color:var(--accent-strong);background:var(--accent-light);border:1px solid var(--accent);border-radius:5px;padding:2px 8px;cursor:pointer;}
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .status-ok{font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);}
+</style>
+</head>
+<body>
+  <div class="dialog-backdrop">
+    <div class="dialog-box dialog-solid w520">
+      <!-- Header -->
+      <div class="dialog-header">
+        <h2 class="dialog-title">🔐 编辑编解码</h2>
+        <button class="dialog-close">✕</button>
+      </div>
+
+      <!-- Body -->
+      <div class="dialog-body">
+        <!-- 元信息条 -->
+        <div class="code-meta-bar">
+          <div class="code-meta-left">
+            <div class="code-meta-item"><span class="code-meta-val">28</span>字符</div>
+            <span class="status-ok">✓ 有效 Base64</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="code-type-badge">🔐 编解码</div>
+            <button class="md-mode-btn">⤢ 全屏</button>
+          </div>
+        </div>
+
+        <!-- 格式选择（对应 codecTransforms 各组：Base64/URL/Unicode/HTML/JWT/时间戳） -->
+        <div class="fmt-row">
+          <span class="fmt-chip active">Base64</span>
+          <span class="fmt-chip">URL</span>
+          <span class="fmt-chip">Unicode</span>
+          <span class="fmt-chip">HTML 实体</span>
+          <span class="fmt-chip">JWT</span>
+          <span class="fmt-chip">时间戳</span>
+        </div>
+
+        <!-- 方向：编码 / 解码（一组互为反向） -->
+        <div class="dir-toggle">
+          <button class="active">编码 →</button>
+          <button>← 解码</button>
+        </div>
+
+        <!-- 双栏：原文（可编辑） / 结果（只读，一键复制） -->
+        <div class="two-col">
+          <div class="pane">
+            <div class="pane-label"><span>原文</span></div>
+            <div class="pane-box">
+              <textarea>Hello, PastePanda 你好</textarea>
+            </div>
+          </div>
+          <div class="pane">
+            <div class="pane-label"><span>结果</span><span class="copy-out">复制结果</span></div>
+            <div class="pane-box">
+              <pre>SGVsbG8sIFBhc3RlUGFuZGEg5L2g5aW9</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- JWT 特例预览（选中 JWT 时替换双栏为结构化三块） -->
+        <!--
+        <div class="pane-box"><pre>=== Header ===
+{"alg":"HS256","typ":"JWT"}
+=== Payload ===
+{"sub":"123","exp":1700000000,"exp_readable":"2023-11-14T22:13:20.000Z"}
+=== Signature === (存在)</pre></div>
+        -->
+
+        <!-- 时间戳特例预览 -->
+        <!--
+        <div class="pane-box"><pre>UTC:   2026-08-22T01:13:20.000Z
+本地:  2026-08-22 09:13:20
+秒:    1755825200
+毫秒:  1755825200000</pre></div>
+        -->
+      </div>
+
+      <!-- Footer：copy/paste 作用于「原文」，结果用独立「复制结果」按钮 -->
+      <div class="dialog-footer">
+        <span>⏎ 实时转换 · Esc 取消</span>
+        <div class="right">
+          <button class="tool-btn">⧉ 复制</button>
+          <button class="tool-btn">⎘ 粘贴</button>
+          <button class="tool-btn">🔖 存片段</button>
+          <button class="btn-primary">💾 保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

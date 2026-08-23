@@ -18,6 +18,7 @@
  */
 import { lazy, type ComponentType } from "react";
 import type { HistoryItem } from "@/stores/appStore";
+import { isSqlLike, isSvgLike } from "@/lib/utils";
 
 /** footer 可声明的动作按钮（save 恒显示，无需声明） */
 export type FooterAction = "copy" | "paste" | "snippet";
@@ -99,8 +100,14 @@ const PathEditor = lazy(() =>
 const NumberEditor = lazy(() =>
   import("@/components/editors/NumberEditor").then((m) => ({ default: m.NumberEditor }))
 );
+const CodeEditor = lazy(() =>
+  import("@/components/editors/CodeEditor").then((m) => ({ default: m.CodeEditor }))
+);
 const SqlEditor = lazy(() =>
   import("@/components/editors/SqlEditor").then((m) => ({ default: m.SqlEditor }))
+);
+const LogEditor = lazy(() =>
+  import("@/components/editors/LogEditor").then((m) => ({ default: m.LogEditor }))
 );
 const ImageEditor = lazy(() =>
   import("@/components/editors/ImageEditor").then((m) => ({ default: m.ImageEditor }))
@@ -117,6 +124,15 @@ const DiagramEditor = lazy(() =>
 const FileEditor = lazy(() =>
   import("@/components/FileDetailDialog").then((m) => ({ default: m.FileDetailDialog }))
 );
+const ContactEditor = lazy(() =>
+  import("@/components/editors/ContactEditor").then((m) => ({ default: m.ContactEditor }))
+);
+const ConfigEditor = lazy(() =>
+  import("@/components/editors/ConfigEditor").then((m) => ({ default: m.ConfigEditor }))
+);
+const SvgEditor = lazy(() =>
+  import("@/components/editors/SvgEditor").then((m) => ({ default: m.SvgEditor }))
+);
 
 /** content_type → 编辑器定义（未注册类型回退通用文本编辑器） */
 const EDITOR_REGISTRY: Partial<Record<string, EditorDefinition>> = {
@@ -131,6 +147,18 @@ const EDITOR_REGISTRY: Partial<Record<string, EditorDefinition>> = {
   number: { component: NumberEditor, width: "w420", title: "🔢 编辑数字", footer: ["copy", "paste", "snippet"] },
   // 编辑器增量 P1：SQL 编辑器（CodeMirror 高亮 + 本地只读语法校验）
   sql: { component: SqlEditor, width: "w420", title: "🗄 编辑 SQL", footer: ["copy", "paste", "snippet"] },
+  // Tier0：code/shell 专用编辑器（语言锁定 + 自动高亮 + 变换工具栏）
+  code: { component: CodeEditor, width: "w420", title: "💻 编辑代码", footer: ["copy", "paste", "snippet"] },
+  shell: { component: CodeEditor, width: "w420", title: "⌨️ 编辑命令", footer: ["copy", "paste", "snippet"] },
+  // Tier2：配置结构化编辑器（表格视图解析 .env/ini/通用 key:value + 原文高亮双视图）
+  config: { component: ConfigEditor, width: "w420", title: "⚙️ 编辑配置", footer: ["copy", "paste", "snippet"] },
+  // Tier1：日志编辑器（复用 logParser.ts：级别过滤 + 关键字高亮 + 续行归属）
+  log: { component: LogEditor, width: "w520", title: "📜 编辑日志", footer: ["copy", "paste", "snippet"] },
+  // Tier1：联系人编辑器（接管 email/phone：校验 + 唤起 mailto:/tel: + 复制为 URI）
+  email: { component: ContactEditor, width: "w420", title: "📧 编辑邮箱", footer: ["copy", "paste", "snippet"] },
+  phone: { component: ContactEditor, width: "w420", title: "📞 编辑电话", footer: ["copy", "paste", "snippet"] },
+  // Tier2：SVG 源码双向编辑器（分类器不产出 "svg"，由 resolveEditor 的 isSvgLike 特判路由）
+  svg: { component: SvgEditor, width: "w420", title: "🖼 编辑 SVG", footer: ["copy", "paste", "snippet"] },
 };
 
 const DEFAULT_EDITOR: EditorDefinition = {
@@ -153,5 +181,22 @@ const TYPE_EDITORS: Partial<Record<HistoryItem["type"], EditorDefinition>> = {
 
 /** 按 item 的 type + content_type 分派编辑器（type 优先，文本类按 content_type） */
 export function resolveEditor(item: HistoryItem): EditorDefinition {
-  return TYPE_EDITORS[item.type] || EDITOR_REGISTRY[item.content_type || ""] || DEFAULT_EDITOR;
+  // type 必须先判：SQL / SVG 两个特判只针对文本类内容，插到 type 之前会把
+  // doc（三态文档预览）/ rich（图文编辑）这类条目——只要 content_type 恰好是 code
+  // 且正文里有两个 SQL 关键字——错误路由到 SqlEditor，丢掉它们专属的编辑形态。
+  const byType = TYPE_EDITORS[item.type];
+  if (byType) return byType;
+
+  const ct = item.content_type || "";
+  // 分类器把 SQL 归到 code，但值得用专用 SQL 编辑器（只读语法校验）。
+  // 这样 SqlEditor 不再是从未可达的孤儿（分类器从不产出 "sql"）。
+  if (ct === "code" && isSqlLike(item.text || "")) {
+    return EDITOR_REGISTRY.sql!;
+  }
+  // 分类器不产出 "svg"：对 code/html/text 中以 <svg 开头的独立 SVG 文档特判路由（同 SQL 孤儿修复范式）。
+  // 普通 HTML 文档/纯文本不以 <svg 开头，不会误判。
+  if ((ct === "code" || ct === "html" || ct === "text") && isSvgLike(item.text || "")) {
+    return EDITOR_REGISTRY.svg!;
+  }
+  return EDITOR_REGISTRY[ct] || DEFAULT_EDITOR;
 }

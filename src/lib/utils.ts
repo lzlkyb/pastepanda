@@ -310,6 +310,11 @@ export function isSqlLike(text: string): boolean {
   return matches >= 2;
 }
 
+/** 判断文本是否为独立 SVG 文档（trim 后以 <svg 开头，词边界；用于路由到 SVG 编辑器） */
+export function isSvgLike(text: string): boolean {
+  return /^<svg[\s>]/i.test((text || "").trimStart());
+}
+
 // ==================== 来源名称清洗 ====================
 
 // 已迁移至 src/lib/source-mappings.ts，此处保留兼容重导出

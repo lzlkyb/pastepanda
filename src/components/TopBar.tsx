@@ -35,7 +35,7 @@ const TIME_OPTIONS: { key: TimeFilter; label: string }[] = [
 ];
 
 /** 工具箱分组面板（方案 A）：片段库 / 内容提取从顶栏独立按钮迁入此处；依次粘贴从主窗口常驻 FAB 迁入此处 */
-type ToolKey = "sequential" | "snippets" | "extract" | "encoding" | "replace" | "diff" | "newdiagram";
+type ToolKey = "sequential" | "snippets" | "extract" | "encoding" | "replace" | "diff" | "diffedit" | "difffull" | "newdiagram";
 const TOOLBOX_GROUPS: {
   label: string;
   items: { key: ToolKey; icon: string; name: string; desc: string; hue: string }[];
@@ -55,6 +55,8 @@ const TOOLBOX_GROUPS: {
       { key: "encoding", icon: "🔤", name: "编码转换", desc: "Base64 / URL / Unicode 编解码",   hue: "sky" },
       { key: "replace",  icon: "🔁", name: "批量替换", desc: "正则查找替换，支持多条规则",       hue: "violet" },
       { key: "diff",     icon: "📊", name: "配置对比", desc: "两份配置语义级差异高亮",           hue: "green" },
+      { key: "diffedit", icon: "🔀", name: "文本对比", desc: "自由对比两段文本 · Ctrl+Shift+D",  hue: "green" },
+      { key: "difffull", icon: "🪟", name: "全屏文本对比", desc: "独立大窗深编对比 · 读剪贴板预填", hue: "green" },
     ],
   },
 ];
@@ -82,9 +84,9 @@ function getTabStyle(): TabStyle {
   try { return (localStorage.getItem("tabStyle") as TabStyle) || "segmented"; } catch { return "segmented"; }
 }
 
-export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEncoding, onBatchReplace, onConfigDiff, onNewDiagram, onToggleSidebar, sidebarOpen }: {
+export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEncoding, onBatchReplace, onConfigDiff, onDiffEdit, onDiffFullscreen, onNewDiagram, onToggleSidebar, sidebarOpen }: {
   onSettings?: () => void; onSequential?: () => void; onSnippets?: () => void; onExtract?: () => void;
-  onEncoding?: () => void; onBatchReplace?: () => void; onConfigDiff?: () => void; onNewDiagram?: () => void;
+  onEncoding?: () => void; onBatchReplace?: () => void; onConfigDiff?: () => void; onDiffEdit?: () => void; onDiffFullscreen?: () => void; onNewDiagram?: () => void;
   onToggleSidebar?: () => void; sidebarOpen?: boolean;
 }) {
   const filterType = useAppStore((s) => s.filterType);
@@ -165,6 +167,8 @@ export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEnco
     encoding: onEncoding,
     replace: onBatchReplace,
     diff: onConfigDiff,
+    diffedit: onDiffEdit,
+    difffull: onDiffFullscreen,
     newdiagram: onNewDiagram,
   };
 

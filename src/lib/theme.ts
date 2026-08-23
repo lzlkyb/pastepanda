@@ -18,7 +18,19 @@ export const THEMES: Theme[] = [
   { key: "dawn",       displayName: "晨曦", dark: false },
 ];
 
-export const DEFAULT_THEME: ThemeKey = "ocean-dark";
+export const DEFAULT_THEME: ThemeKey = "ocean";
+
+/**
+ * 把任意配置值归一成合法 ThemeKey。
+ *
+ * 历史遗留：DEFAULT_CONFIG 里曾经写着 `theme: "light"`，这个值匹配不到任何
+ * `[data-theme]` 块，只能落到 `:root` 兜底才碰巧渲染成经典白，设置页色板也因此
+ * 一个都不高亮。改掉 DEFAULT_CONFIG 只救得了新装用户 —— 老用户后端存的仍是 "light"，
+ * 非空所以照样一路透传下去。所以配置进 store 时先在这里过一道。
+ */
+export function normalizeTheme(value: unknown): ThemeKey {
+  return THEMES.some((t) => t.key === value) ? (value as ThemeKey) : DEFAULT_THEME;
+}
 
 /** 清除主题过渡的定时器（模块级：快速连切时只保留最后一次） */
 let transitionTimer: ReturnType<typeof setTimeout> | null = null;

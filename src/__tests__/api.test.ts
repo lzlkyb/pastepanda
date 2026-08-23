@@ -627,7 +627,7 @@ describe("initBackend", () => {
     vi.mocked(invoke)
       // get_config（先加载配置）
       .mockResolvedValueOnce({
-        theme: "dark",
+        theme: "midnight",
         auto_cleanup_days: 7,
         hotkey: "ctrl+shift+v",
         current_workspace: "默认",
@@ -679,7 +679,8 @@ describe("initBackend", () => {
 
     const store = useAppStore.getState();
     expect(store.history).toHaveLength(1);
-    expect(store.config.theme).toBe("dark");
+    // theme 用真实的 ThemeKey：updateConfig 会把非法值归一到 DEFAULT_THEME
+    expect(store.config.theme).toBe("midnight");
     expect(store.config.auto_cleanup_days).toBe(7);
     expect(store.groups).toHaveLength(1);
     expect(store.tags).toHaveLength(1);

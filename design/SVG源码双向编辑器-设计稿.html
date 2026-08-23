@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SVG 源码双向编辑器 · 设计稿</title>
+<style>
+  :root {
+    --accent: #0284C7; --accent-strong: #0369A1; --accent-light: #E6F4FB;
+    --card-bg: #FFFFFF; --dialog-bg: #F4F6F9; --section-bg: #F0F4F8;
+    --text-primary: #1E293B; --text-secondary: #64748B; --text-muted: #94A3B8;
+    --border-color: rgba(2,132,199,0.14); --green: #16A34A; --danger: #DC2626;
+    --code-bg: #F8FAFC;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--dialog-bg); font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--text-primary); padding: 28px; }
+  .wrap { max-width: 940px; margin: 0 auto; }
+  .note { font-size: 12px; color: var(--text-muted); margin: 0 0 16px; line-height: 1.7; }
+  .dialog-box { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 14px; box-shadow: 0 10px 30px rgba(2,132,199,0.10); overflow: hidden; }
+  .meta-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border-color); font-size: 12px; color: var(--text-secondary); }
+  .badge { padding: 2px 8px; border-radius: 99px; background: var(--accent-light); color: var(--accent-strong); font-weight: 600; font-size: 11px; }
+  .valid { color: var(--green); }
+  .mode-toggle { display: flex; background: var(--section-bg); border-radius: 8px; padding: 2px; }
+  .mode-toggle button { border: none; background: transparent; padding: 4px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; color: var(--text-secondary); font-family: inherit; }
+  .mode-toggle button.active { background: var(--card-bg); color: var(--text-primary); box-shadow: 0 1px 3px rgba(0,0,0,0.08); font-weight: 600; }
+  .body { padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; }
+  .code-area { background: var(--code-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; line-height: 1.7; color: var(--text-primary); min-height: 260px; overflow: auto; white-space: pre; }
+  .code-area .tag { color: #C026D3; } .code-area .attr { color: #0369A1; } .code-area .str { color: #16A34A; }
+  .preview { height: 320px; border-radius: 10px; border: 1px solid var(--border-color); background: repeating-conic-gradient(#EEF2F6 0% 25%, #FFFFFF 0% 50%) 0 0 / 18px 18px; display: flex; align-items: center; justify-content: center; }
+  .preview svg { max-width: 90%; max-height: 88%; }
+  .actions { display: flex; gap: 8px; }
+  .btn { border: 1px solid var(--border-color); background: var(--card-bg); border-radius: 6px; padding: 6px 12px; font-size: 11px; cursor: pointer; color: var(--text-secondary); font-family: inherit; }
+  .btn:hover { border-color: var(--accent); color: var(--accent-strong); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <p class="note">新建 <b>SvgEditor</b>，镜像 HtmlEditor 的「编辑 / 预览」双模式。粘贴的 SVG（以 <code>&lt;svg</code> 开头，被判为 html/text/code）经 <code>isSvgLike</code> 特判路由进来（同 SQL 孤儿修复范式，零 schema 改动）。校验用 <code>DOMParser</code>（image/svg+xml）查 parsererror；预览在 <code>sandbox=""</code> iframe 中渲染，棋盘格底便于透明图查看。</p>
+
+    <div class="dialog-box">
+      <div class="meta-bar">
+        <span class="badge">🖼 SVG</span>
+        <span class="valid">✓ 有效 SVG</span>
+        <div class="mode-toggle" style="margin-left:auto">
+          <button>编辑</button>
+          <button class="active">预览</button>
+        </div>
+      </div>
+      <div class="body">
+        <!-- 编辑形态（CodeTextArea 高亮，示意） -->
+        <div class="code-area" style="display:none"><span class="tag">&lt;svg</span> <span class="attr">viewBox</span>=<span class="str">"0 0 100 100"</span> <span class="attr">xmlns</span>=<span class="str">"http://www.w3.org/2000/svg"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;circle</span> <span class="attr">cx</span>=<span class="str">"50"</span> <span class="attr">cy</span>=<span class="str">"50"</span> <span class="attr">r</span>=<span class="str">"40"</span> <span class="attr">fill</span>=<span class="str">"#0284C7"</span><span class="tag">/&gt;</span>
+  <span class="tag">&lt;path</span> <span class="attr">d</span>=<span class="str">"M30 55 L45 70 L72 40"</span> <span class="attr">stroke</span>=<span class="str">"#fff"</span> <span class="attr">stroke-width</span>=<span class="str">"6"</span> <span class="attr">fill</span>=<span class="str">"none"</span> <span class="attr">stroke-linecap</span>=<span class="str">"round"</span> <span class="attr">stroke-linejoin</span>=<span class="str">"round"</span><span class="tag">/&gt;</span>
+<span class="tag">&lt;/svg&gt;</span></div>
+
+        <!-- 预览形态：棋盘格底 + 居中 -->
+        <div class="preview">
+          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" width="180" height="180">
+            <circle cx="50" cy="50" r="40" fill="#0284C7" />
+            <path d="M30 55 L45 70 L72 40" stroke="#fff" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </div>
+
+        <div class="actions">
+          <button class="btn">📋 复制源码</button>
+          <button class="btn">↔ 切换编辑</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

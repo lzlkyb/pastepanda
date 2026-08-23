@@ -5,23 +5,37 @@ import { useToast } from "@/components/Toast";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { useDiff, type DiffMode } from "@/hooks/useDiff";
 import { DiffPane } from "@/components/DiffPane";
+import { DiffAiMenu } from "@/components/DiffAiMenu";
+import { useDiffAi, type DiffSide, DIFF_AI_ACTIONS } from "@/hooks/useDiffAi";
 import { relativeTime } from "@/lib/utils";
 import type { HistoryItem } from "@/stores/appStore";
 import styles from "./DiffDialog.module.css";
 import { FocusTrap } from "@/components/FocusTrap";
 
 interface DiffDialogProps {
-  oldItem: HistoryItem;
-  newItem: HistoryItem;
+  /** 历史对比模式：两条 HistoryItem */
+  oldItem?: HistoryItem;
+  newItem?: HistoryItem;
+  /** 自由编辑模式：预填的纯文本（独立入口用） */
+  initialLeft?: string;
+  initialRight?: string;
+  freeMode?: boolean;
+  /** 深编入口：把当前左/右两侧文本送入独立全屏窗口继续对比 */
+  onOpenFullscreen?: (left: string, right: string) => void;
   onClose: () => void;
 }
 
-export function DiffDialog({ oldItem, newItem, onClose }: DiffDialogProps) {
+export function DiffDialog({ oldItem, newItem, initialLeft, initialRight, freeMode, onClose, onOpenFullscreen }: DiffDialogProps) {
   const { toast } = useToast();
   const anim = useDialogAnim();
   const [mode, setMode] = useState<DiffMode>("line");
+  const [viewMode, setViewMode] = useState<"preview" | "edit">(freeMode ? "edit" : "preview");
   const [ignoreWs, setIgnoreWs] = useState(false);
   const [currentBlock, setCurrentBlock] = useState(0);
+  const [leftText, setLeftText] = useState(freeMode ? (initialLeft ?? "") : (oldItem?.text ?? ""));
+  const [rightText, setRightText] = useState(freeMode ? (initialRight ?? "") : (newItem?.text ?? ""));
+  const [aiMenuOpen, setAiMenuOpen] = useState(false);
+  const [aiTargetSide, setAiTargetSide] = useState<DiffSide>("left");
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
   const syncing = useRef(false);
@@ -29,10 +43,22 @@ export function DiffDialog({ oldItem, newItem, onClose }: DiffDialogProps) {
   const jumpingRef = useRef(false);
 
   const { left, right, added, removed, blockCount } = useDiff({
-    oldText: oldItem.text || "",
-    newText: newItem.text || "",
+    oldText: leftText,
+    newText: rightText,
     mode,
     ignoreWhitespace: ignoreWs,
+  });
+
+  const { aiOk, runningId, run } = useDiffAi({
+    leftText,
+    rightText,
+    onResult: (side, text) => {
+      if (side === "left") setLeftText(text);
+      else setRightText(text);
+      setViewMode("preview");
+      setCurrentBlock(0);
+    },
+    toast,
   });
 
   // 同步滚动
@@ -52,8 +78,6 @@ export function DiffDialog({ oldItem, newItem, onClose }: DiffDialogProps) {
   const jumpTo = useCallback((block: number) => {
     const clamped = Math.max(0, Math.min(block, blockCount - 1));
     setCurrentBlock(clamped);
-    // U46：用目标行的真实 DOM 位置定位（替代硬编码 20px 行高——按词模式下换行行高不固定），
-    // 并同时平滑滚动左右两面板（此前仅滚左侧，右侧靠滚动同步追赶、观感生硬）
     const idx = left.findIndex((l) => l.diffBlock === clamped && l.state !== "unchanged" && l.state !== "empty");
     if (idx < 0) return;
     const from = leftRef.current;
@@ -71,12 +95,13 @@ export function DiffDialog({ oldItem, newItem, onClose }: DiffDialogProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
+      if (viewMode !== "preview") return;
       if (e.key === "F7" || (e.key === "ArrowDown" && e.altKey)) { e.preventDefault(); jumpTo(currentBlock + 1); }
       if (e.key === "F7" && e.shiftKey || (e.key === "ArrowUp" && e.altKey)) { e.preventDefault(); jumpTo(currentBlock - 1); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, jumpTo, currentBlock]);
+  }, [onClose, jumpTo, currentBlock, viewMode]);
 
   const handleCopy = useCallback(async (text: string, label: string) => {
     try {
@@ -84,6 +109,16 @@ export function DiffDialog({ oldItem, newItem, onClose }: DiffDialogProps) {
       toast(`已复制${label}`, "success");
     } catch { toast("复制失败", "error"); }
   }, [toast]);
+
+  const pickAi = (actionId: string) => {
+    const action = DIFF_AI_ACTIONS.find((a) => a.id === actionId);
+    if (!action) return;
+    void run(action, aiTargetSide);
+    setAiMenuOpen(false);
+  };
+
+  const leftLabel = freeMode ? "左侧文本" : "旧文本";
+  const rightLabel = freeMode ? "右侧文本" : "新文本";
 
   return (
     <motion.div
@@ -98,7 +133,7 @@ export function DiffDialog({ oldItem, newItem, onClose }: DiffDialogProps) {
           {/* Header */}
           <div className="dialog-header">
             <h2 className="dialog-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              🔀 对比差异
+              🔀 {freeMode ? "文本对比" : "对比差异"}
               <span className={styles.stats}>
                 <span className={styles.statAdd}>+{added}</span>
                 <span className={styles.statDel}>-{removed}</span>
@@ -112,27 +147,54 @@ export function DiffDialog({ oldItem, newItem, onClose }: DiffDialogProps) {
             <div className={styles.toolbarLeft}>
               <div className={styles.modeToggle}>
                 <button
-                  className={`${styles.modeBtn}${mode === "line" ? ` ${styles.modeBtnActive}` : ""}`}
-                  onClick={() => setMode("line")}
-                >按行</button>
+                  className={`${styles.modeBtn}${viewMode === "preview" ? ` ${styles.modeBtnActive}` : ""}`}
+                  onClick={() => setViewMode("preview")}
+                >预览</button>
                 <button
-                  className={`${styles.modeBtn}${mode === "word" ? ` ${styles.modeBtnActive}` : ""}`}
-                  onClick={() => setMode("word")}
-                >按词</button>
+                  className={`${styles.modeBtn}${viewMode === "edit" ? ` ${styles.modeBtnActive}` : ""}`}
+                  onClick={() => setViewMode("edit")}
+                >编辑</button>
               </div>
-              <label className={styles.ignoreWs}>
-                <input type="checkbox" checked={ignoreWs} onChange={(e) => setIgnoreWs(e.target.checked)} />
-                忽略空白
-              </label>
+              {viewMode === "preview" && (
+                <>
+                  <div className={styles.modeToggle}>
+                    <button className={`${styles.modeBtn}${mode === "line" ? ` ${styles.modeBtnActive}` : ""}`} onClick={() => setMode("line")}>按行</button>
+                    <button className={`${styles.modeBtn}${mode === "word" ? ` ${styles.modeBtnActive}` : ""}`} onClick={() => setMode("word")}>按词</button>
+                  </div>
+                  <label className={styles.ignoreWs}>
+                    <input type="checkbox" checked={ignoreWs} onChange={(e) => setIgnoreWs(e.target.checked)} />
+                    忽略空白
+                  </label>
+                </>
+              )}
             </div>
             <div className={styles.toolbarRight}>
-              <button className={styles.navBtn} onClick={() => jumpTo(currentBlock - 1)}>
-                <ChevronUp size={12} /> 上一处
-              </button>
-              <span className={styles.navInfo}>{blockCount > 0 ? `${currentBlock + 1} / ${blockCount}` : "0 / 0"}</span>
-              <button className={styles.navBtn} onClick={() => jumpTo(currentBlock + 1)}>
-                <ChevronDown size={12} /> 下一处
-              </button>
+              {aiOk && (
+                <div className={styles.aiWrap}>
+                  <button className={`${styles.navBtn} ${styles.aiBtn}`} onClick={() => setAiMenuOpen((v) => !v)} disabled={runningId !== null}>
+                    ✦ AI
+                  </button>
+                  <DiffAiMenu
+                    open={aiMenuOpen}
+                    targetSide={aiTargetSide}
+                    setTargetSide={setAiTargetSide}
+                    onPick={pickAi}
+                    runningId={runningId}
+                    onClose={() => setAiMenuOpen(false)}
+                  />
+                </div>
+              )}
+              {viewMode === "preview" && (
+                <>
+                  <button className={styles.navBtn} onClick={() => jumpTo(currentBlock - 1)}>
+                    <ChevronUp size={12} /> 上一处
+                  </button>
+                  <span className={styles.navInfo}>{blockCount > 0 ? `${currentBlock + 1} / ${blockCount}` : "0 / 0"}</span>
+                  <button className={styles.navBtn} onClick={() => jumpTo(currentBlock + 1)}>
+                    <ChevronDown size={12} /> 下一处
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -140,32 +202,62 @@ export function DiffDialog({ oldItem, newItem, onClose }: DiffDialogProps) {
           <div className={styles.colHeaders}>
             <div className={styles.colHeader}>
               <span className={`${styles.colDot} ${styles.colDotOld}`} />
-              旧文本 <span className={styles.colTime}>· {relativeTime(oldItem.time)} · {oldItem.source || "未知"}</span>
+              {leftLabel}
+              {!freeMode && oldItem && (
+                <span className={styles.colTime}>· {relativeTime(oldItem.time)} · {oldItem.source || "未知"}</span>
+              )}
             </div>
             <div className={styles.colHeader}>
               <span className={`${styles.colDot} ${styles.colDotNew}`} />
-              新文本 <span className={styles.colTime}>· {relativeTime(newItem.time)} · {newItem.source || "未知"}</span>
+              {rightLabel}
+              {!freeMode && newItem && (
+                <span className={styles.colTime}>· {relativeTime(newItem.time)} · {newItem.source || "未知"}</span>
+              )}
             </div>
           </div>
 
-          {/* Diff body */}
-          <div className={styles.diffBody}>
-            <div ref={leftRef} style={{ overflow: "auto" }} onScroll={() => handleScroll("left")}>
-              <DiffPane lines={left} currentBlock={currentBlock} />
+          {/* Diff body / Edit body */}
+          {viewMode === "preview" ? (
+            <div className={styles.diffBody}>
+              <div ref={leftRef} style={{ overflow: "auto" }} onScroll={() => handleScroll("left")}>
+                <DiffPane lines={left} currentBlock={currentBlock} />
+              </div>
+              <div ref={rightRef} style={{ overflow: "auto" }} onScroll={() => handleScroll("right")}>
+                <DiffPane lines={right} currentBlock={currentBlock} />
+              </div>
             </div>
-            <div ref={rightRef} style={{ overflow: "auto" }} onScroll={() => handleScroll("right")}>
-              <DiffPane lines={right} currentBlock={currentBlock} />
+          ) : (
+            <div className={styles.editBody}>
+              <textarea
+                className={styles.editArea}
+                value={leftText}
+                onChange={(e) => setLeftText(e.target.value)}
+                placeholder="左侧文本（旧）"
+                spellCheck={false}
+              />
+              <textarea
+                className={styles.editArea}
+                value={rightText}
+                onChange={(e) => setRightText(e.target.value)}
+                placeholder="右侧文本（新）"
+                spellCheck={false}
+              />
             </div>
-          </div>
+          )}
 
           {/* Footer */}
           <div className={styles.footer}>
             <div className={styles.footerLeft}>
-              <button className={styles.actionBtn} onClick={() => handleCopy(oldItem.text || "", "旧文本")}>
-                <Copy size={13} /> 复制旧文本
+              {onOpenFullscreen && (
+                <button className={styles.actionBtn} onClick={() => onOpenFullscreen(leftText, rightText)} title="在新窗口深编对比">
+                  ⤢ 全屏深编
+                </button>
+              )}
+              <button className={styles.actionBtn} onClick={() => handleCopy(leftText, leftLabel)}>
+                <Copy size={13} /> 复制{leftLabel}
               </button>
-              <button className={styles.actionBtn} onClick={() => handleCopy(newItem.text || "", "新文本")}>
-                <Copy size={13} /> 复制新文本
+              <button className={styles.actionBtn} onClick={() => handleCopy(rightText, rightLabel)}>
+                <Copy size={13} /> 复制{rightLabel}
               </button>
             </div>
             <button className={`${styles.actionBtn} ${styles.actionBtnPrimary}`} onClick={onClose}>关闭</button>

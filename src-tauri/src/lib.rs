@@ -593,6 +593,8 @@ pub fn run() {
             commands::start_update,
             commands::check_update,
             commands::read_file_as_base64,
+            commands::read_pdf_as_base64,
+            commands::allow_media_asset,
             commands::get_groups,
             commands::create_group,
             commands::update_group,

@@ -60,8 +60,8 @@ describe("THEMES 常量", () => {
     expect(lightKeys).toEqual(["blossom", "dawn", "forest", "ocean"]);
   });
 
-  it("DEFAULT_THEME 为 ocean-dark", () => {
-    expect(DEFAULT_THEME).toBe("ocean-dark");
+  it("DEFAULT_THEME 为 ocean", () => {
+    expect(DEFAULT_THEME).toBe("ocean");
   });
 });
 
@@ -131,13 +131,13 @@ describe("getCurrentTheme", () => {
     expect(getCurrentTheme()).toBe("dawn");
   });
 
-  it("无 data-theme 属性时返回默认主题 ocean-dark", () => {
-    expect(getCurrentTheme()).toBe("ocean-dark");
+  it("无 data-theme 属性时返回默认主题 ocean", () => {
+    expect(getCurrentTheme()).toBe("ocean");
   });
 
   it("data-theme 为空字符串时返回默认主题", () => {
     document.documentElement.setAttribute("data-theme", "");
     // 空字符串不是有效的 ThemeKey，会走 fallback
-    expect(getCurrentTheme()).toBe("ocean-dark");
+    expect(getCurrentTheme()).toBe("ocean");
   });
 });
