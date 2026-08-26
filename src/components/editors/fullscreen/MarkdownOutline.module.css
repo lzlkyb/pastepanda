@@ -1,0 +1,64 @@
+.panel {
+  flex: 0 0 auto;
+  width: 216px;
+  min-width: 216px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  background: var(--panel-bg, rgba(0, 0, 0, 0.12));
+}
+
+.head {
+  flex: 0 0 auto;
+  padding: 8px 12px 6px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-muted, #8fa3c4);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 6px 10px;
+}
+
+.item {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary, #c4d0e4);
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-align: left;
+  padding: 4px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  /* 长标题不换行：大纲要的是“一眼扫完结构”，换行会把层级缩进冲掉 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.item:hover {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.07));
+  color: var(--text-primary, #e6edf7);
+}
+
+/* 层级缩进：h1 不缩，每深一级 +10px。h1/h2 加重，拉开主次 */
+.lv1 { padding-left: 8px; font-weight: 600; color: var(--text-primary, #e6edf7); }
+.lv2 { padding-left: 18px; font-weight: 500; }
+.lv3 { padding-left: 28px; }
+.lv4 { padding-left: 38px; opacity: 0.9; }
+.lv5 { padding-left: 48px; opacity: 0.8; }
+.lv6 { padding-left: 58px; opacity: 0.75; }
+
+.empty {
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted, #7b8fb0);
+}

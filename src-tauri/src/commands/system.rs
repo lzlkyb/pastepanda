@@ -593,6 +593,56 @@ pub fn read_text_file_full(path: String) -> Result<String, String> {
     Ok(content)
 }
 
+/// 写回文本文件完整内容（编辑器保存用）。
+///
+/// ❌ 为什么不用 `@tauri-apps/plugin-fs` 的 `writeFile`：它受 fs scope 管，而 scope 里
+/// 只有 `$APPDATA/**`。用户从外部打开的 md（路径由 `open_fullscreen_editor` 带进来，
+/// **没经过 dialog 插件**，也就没人把它加进 scope）一保存就报
+/// `forbidden path: ... allow-write-file`。而读取走的是 `read_text_file_full`（后端命令，
+/// 不受 scope 管）—— 于是出现「打得开、改得了、另存为也行，就是原地保存不了」。
+/// 读写走同一条路、同一套校验，行为才可预测。
+///
+/// ⚠️ 有意保持与旧实现一致的**直写**语义（不是写临时文件再 rename）：
+/// 原子写能防住「写一半崩溃 → 文件被截断」，但 rename 会替换文件本体，
+/// 连带换掉 ACL / 硬链接身份。这次只修权限问题，不隆重改写入语义。
+#[tauri::command]
+pub fn write_text_file_full(path: String, text: String) -> Result<(), String> {
+    if is_unsafe_network_path(&path) {
+        return Err("不支持的网络共享路径".to_string());
+    }
+    // 目录不存在时不静默创建：编辑器保存的前提是这个文件本来就在那里，
+    // 路径没了多半是盘符变了 / 文件夹被删，静默建目录只会把内容写到一个用户找不到的地方。
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        if !parent.as_os_str().is_empty() && !parent.is_dir() {
+            return Err(format!("目录不存在: {}", parent.display()));
+        }
+    }
+    std::fs::write(&path, text.as_bytes()).map_err(|e| format!("写入文件失败: {}", e))
+}
+
+/// 写二进制文件（编辑器粘贴图片用）。
+///
+/// 内容走 base64 而不是 `Vec<u8>`：后者在 IPC 上是 JSON 数组，
+/// 一张 2MB 的图会被撑成好几 MB 的数字文本。
+///
+/// 与 `write_text_file_full` 的一处有意差异：这里**会**建父目录。
+/// 粘贴图片时 `./assets/` 通常还不存在，建目录是正常前置；
+/// 而保存文档时路径不存在说明出了问题（盘符变了 / 文件夹被删），那里不能静默建。
+#[tauri::command]
+pub fn write_binary_file_base64(path: String, base64_data: String) -> Result<(), String> {
+    use base64::Engine;
+    if is_unsafe_network_path(&path) {
+        return Err("不支持的网络共享路径".to_string());
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(base64_data.as_bytes())
+        .map_err(|e| format!("base64 解码失败: {}", e))?;
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {}", e))?;
+    }
+    std::fs::write(&path, &bytes).map_err(|e| format!("写入文件失败: {}", e))
+}
+
 /// 获取剪贴板监听状态
 #[tauri::command]
 pub fn get_monitor_status(app: tauri::AppHandle) -> Result<bool, String> {
@@ -820,6 +870,24 @@ pub async fn open_fullscreen_editor(
     content_type: Option<String>,
     language: Option<String>,
 ) -> Result<(), String> {
+    // 外部打开的文档：把它所在目录加进 asset 协议白名单。
+    //
+    // ❌ 不加的后果：`assetProtocol.scope` 只有 `$APPDATA/**`，文档里写的
+    // `![](./assets/x.png)` 就算解成了绝对路径，也会被协议层拦掉 ——
+    // 用户看到的是一堆裂图，而且没任何提示。
+    //
+    // 这是一次真实的权限扩大，边界得说清楚：只放开**用户主动打开的这份文档
+    // 所在目录**（含子目录，因为图一般在 ./assets），且只是**读**（asset 协议本身只能读）。
+    // 不是整盘，也不涉及 fs 写入 scope。编辑器要显示文档里的图，而那些图本来就在文档旁边。
+    if let Some(fp) = file_path.as_deref() {
+        if let Some(dir) = std::path::Path::new(fp).parent() {
+            use tauri::Manager;
+            if let Err(e) = app.asset_protocol_scope().allow_directory(dir, true) {
+                // 不阻断开窗：图显示不出来总比文档根本打不开强。
+                log::warn!("[编辑器] 放开 asset 目录失败（预览里的本地图片可能显示不出来）: {e}");
+            }
+        }
+    }
     // 修复白屏（about:blank）：同步 command 里建 WebviewWindow 会死锁（tauri#13963），
     // 改为 async command 使其运行在主线程事件循环上。State 经 app.state() 获取。
     let pending = app.state::<crate::PendingEditor>();

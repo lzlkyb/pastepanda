@@ -14,14 +14,24 @@
  *   - 窗口已存在时 Rust 经 md-editor-load 事件推送新数据（key 变更整体重载）。
  */
 import { useRef, useState, useCallback, useEffect, useMemo, Suspense, lazy } from "react";
-import { FolderOpen, Save, X, Maximize2, Minimize2, RefreshCw } from "lucide-react";
+import { FolderOpen, Save, X, Maximize2, Minimize2, RefreshCw, ListTree } from "lucide-react";
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from "@codemirror/view";
 import { EditorState, Compartment, type Extension } from "@codemirror/state";
 import { oneDark } from "@codemirror/theme-one-dark";
-import { defaultKeymap, indentWithTab, toggleComment, indentMore, indentLess } from "@codemirror/commands";
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  indentWithTab,
+  toggleComment,
+  indentMore,
+  indentLess,
+} from "@codemirror/commands";
 import { syntaxHighlighting, defaultHighlightStyle, indentOnInput } from "@codemirror/language";
-import { search, highlightSelectionMatches } from "@codemirror/search";
+import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { THEMES, DEFAULT_THEME, type ThemeKey } from "@/lib/theme";
+import { planLinePrefix } from "@/lib/mdLinePrefix";
+import { MarkdownOutline } from "./fullscreen/MarkdownOutline";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SkinScene } from "@/components/SkinScene";
 import { invoke } from "@tauri-apps/api/core";
@@ -76,6 +86,20 @@ const lightEditorChrome = EditorView.theme({
   ".cm-activeLine": { backgroundColor: "var(--hover, rgba(0,0,0,0.04))" },
   ".cm-activeLineGutter": { backgroundColor: "transparent" },
 });
+
+/** 滚动同步的回声抑制窗口（ms）。
+ *  要大于一帧（回声 scroll 事件在下一帧才到），又要小到用户主动改滚另一侧时不卡手。 */
+const SCROLL_SYNC_ECHO_MS = 120;
+
+/** Uint8Array → base64。分块是必需的：一次 fromCharCode(...几十万个参数) 会爆栈。 */
+function bytesToBase64(bytes: Uint8Array): string {
+  let s = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    s += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(s);
+}
 
 /** 粘贴/拖入图片的 MIME → 扩展名映射（未知类型兜底 png） */
 const IMAGE_EXT: Record<string, string> = {
@@ -231,6 +255,14 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
   // 初始内容 / 文件路径（content 情况直接用 props 初始化 state，避免 effect 时序导致空文档）
   const [initialContent, setInitialContent] = useState(initFilePath ? "" : initContent || "");
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
+  /**
+   * 当前文档所在目录（剪贴板内容模式为 null）。
+   * 预览靠它解相对图片路径，粘贴图片靠它决定存哪里。
+   *
+   * ⚠️ 必须定在这里而不是渲染体里：insertPastedImages 要用它，而 loading 时
+   * 渲染函数会提前 return（只出一个“加载中”），定晚了就可能拿到未初始化的绑定。
+   */
+  const docDir = currentFilePath ? currentFilePath.replace(/[\\/][^\\/]+$/, "") : null;
   const [fileName, setFileName] = useState(() => {
     if (initFilePath) return initFilePath.split(/[\\/]/).pop() || spec.defaultFileName;
     return sourceId ? "剪贴板内容" : spec.defaultFileName;
@@ -256,6 +288,21 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
 
   // Split pane
   const [splitRatio, setSplitRatio] = useState(50);
+  // 大纲侧栏（仅 markdown）。默认收起：短文档开着只是白占地方。
+  const [showOutline, setShowOutline] = useState(false);
+  /**
+   * 给 CodeMirror 快捷键用的命令转接。
+   *
+   * ❌ 不能让 keymap 直接闭包捕获 handleSave 等：扩展数组只在初始化 effect
+   * （依赖 [loading]）里构建一次，而这些 useCallback 每次 text 变化都会重建。
+   * 捕获旧的 = 保存旧内容。每次渲染把最新实现写进 ref，按键时现取。
+   */
+  const cmdsRef = useRef({
+    save: () => {},
+    saveAs: () => {},
+    bold: () => {},
+    italic: () => {},
+  });
   const isDragging = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -273,7 +320,8 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
 
   // Preview scroll sync
   const previewScrollRef = useRef<HTMLDivElement>(null);
-  const scrollSyncSource = useRef<"editor" | "preview" | null>(null);
+  /** 滚动同步的“谁在驱动”时间窗（防回声，详见 syncScroll） */
+  const scrollSyncLock = useRef<{ side: "editor" | "preview"; until: number } | null>(null);
 
   // ─── Load initial file (仅文件入口) ──────────────────
   useEffect(() => {
@@ -386,11 +434,30 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
       editorThemeCompartment.current.of(isDarkTheme ? oneDark : lightEditorChrome),
       search(),
       highlightSelectionMatches(),
+      // ❌ history() 必须显式装：这里是手搭扩展数组、没用 basicSetup，
+      // 而 CodeMirror 6 的撤销栈是独立扩展。漏了它（以及 historyKeymap）
+      // 的后果是 **Ctrl+Z 完全不工作** —— 一个编辑器不能撤销，比缺任何功能都致命。
+      history(),
       keymap.of([
+        // ⬆ 自定义绑定排在最前：CodeMirror 的 keymap 按数组顺序定优先级，
+        // 放后面会被 defaultKeymap 里的同名绑定（如 macOS 的 emacs 风 Ctrl-B）抢掉。
+        //
+        // ❌ 全部走 cmdsRef 而不直接闭包捕获：本扩展数组只在初始化 effect（依赖 [loading]）
+        // 里构建一次，直接写 handleSave() 会把**那一刻**的闭包冻住，
+        // 而 handleSave 读的是闭包里的 text —— 于是 Ctrl+S 保存的是文件**刚加载时**的内容，
+        // 用户的编辑被静默丢弃。工具栏按钮每次渲染都是新的，所以只有快捷键这条路中招，更难发现。
+        { key: "Mod-s", run: () => { cmdsRef.current.save(); return true; } },
+        { key: "Mod-Shift-s", run: () => { cmdsRef.current.saveAs(); return true; } },
+        // 格式栏的 tooltip 一直写着「粗体 Ctrl+B」「斜体 Ctrl+I」，但从来没实现过。
+        // 提示词说谎比没有提示词更坏：用户按了没反应，只会以为是自己记错了。
+        { key: "Mod-b", run: () => { cmdsRef.current.bold(); return true; } },
+        { key: "Mod-i", run: () => { cmdsRef.current.italic(); return true; } },
+        ...historyKeymap,
+        // search() 早就装了，但搜索面板的快捷键在 searchKeymap 里 ——
+        // 没这一行的话 Ctrl+F 没有任何反应，整个搜索功能根本没入口。
+        ...searchKeymap,
         ...defaultKeymap,
         indentWithTab,
-        { key: "Mod-s", run: () => { handleSave(); return true; } },
-        { key: "Mod-Shift-s", run: () => { handleSaveAs(); return true; } },
       ]),
       updateListener,
       EditorView.lineWrapping,
@@ -507,8 +574,9 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
           return;
         }
       }
-      const encoder = new TextEncoder();
-      await writeFile(currentFilePath, encoder.encode(text));
+      // 走后端命令而不是 fs 插件：外部打开的文件不在 fs scope 里，插件会直接拒
+      // （forbidden path … allow-write-file）。读取本来就走 read_text_file_full，写跟上。
+      await invoke("write_text_file_full", { path: currentFilePath, text });
       setInitialContent(text);
       setIsDirty(false);
       // 刚写的就是磁盘最新版，不更新的话下一轮轮询会把自己的保存认成外部改动
@@ -541,8 +609,9 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
         filters: [spec.fileFilter],
       });
       if (!selectedPath) return;
-      const encoder = new TextEncoder();
-      await writeFile(selectedPath, encoder.encode(text));
+      // 与手动保存走同一条路：这里虽然 dialog 插件已把选中路径加进了 scope（用 writeFile
+      // 也能成），但两条写入路径共存只会让「为什么这个能存那个不能」更难查。
+      await invoke("write_text_file_full", { path: selectedPath, text });
       // 另存为换了路径，重建 mtime 基准（hook 里路径变会先把基准置 0）
       await fileWatch.markSynced(selectedPath);
       setCurrentFilePath(selectedPath);
@@ -619,8 +688,7 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
           // → 弹二选一）去处理。跟下面“自动保存失败静默处理，保留脏状态”同一个思路。
           if (await fileWatch.checkNow()) return;
           // 文件 → 写回磁盘（自动保存不写剪贴板历史，避免重复入历史）
-          const encoder = new TextEncoder();
-          await writeFile(currentFilePath, encoder.encode(snapshot));
+          await invoke("write_text_file_full", { path: currentFilePath, text: snapshot });
           // 必须更新：不更新的话下一轮轮询会把**自己刚写的**认成外部改动，
           // 2 秒后弹一句“文件已在外部更新”并重载。
           await fileWatch.markSynced(currentFilePath);
@@ -670,8 +738,7 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
         if (!overwrite) return; // 注意：不调 onClose，窗口留着
       }
       try {
-        const encoder = new TextEncoder();
-        await writeFile(currentFilePath, encoder.encode(text));
+        await invoke("write_text_file_full", { path: currentFilePath, text });
         await fileWatch.markSynced(currentFilePath);
       } catch { /* ignore */ }
     }
@@ -722,28 +789,125 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
   }, []);
 
   // ─── Format helpers（经 ShellBridge 提供给类型格式栏）───
+  /**
+   * 包裹类格式（粗体/斜体/行内代码……），带**切换**语义。
+   *
+   * ❌ 旧实现只会无条件叠：选中 `**粗体**` 再点一次粗体会变成 `****粗体****`。
+   * 所有编辑器（Typora / VSCode / Obsidian）都是切换。两种已加粗的形态都要认：
+   * 标记包在选区**里**（选了 `**x**`）和包在选区**外**（只双击选了 `x`）。
+   *
+   * ❌ 旧实现还把光标放到了整个标记的**末尾**：无选区时点粗体得到 `****`，
+   * 光标却在四个星号之后 —— 接着打字打在了格式外面。现在放进标记中间。
+   */
   const insertFormat = useCallback((before: string, after: string = "") => {
     const view = viewRef.current;
     if (!view) return;
-    const { from, to } = view.state.selection.main;
-    const selected = view.state.sliceDoc(from, to);
+    const { state } = view;
+    const { from, to } = state.selection.main;
+    const selected = state.sliceDoc(from, to);
+
+    if (after) {
+      // 切换 A：标记就在选区里
+      if (
+        selected.length >= before.length + after.length &&
+        selected.startsWith(before) &&
+        selected.endsWith(after)
+      ) {
+        const inner = selected.slice(before.length, selected.length - after.length);
+        view.dispatch({
+          changes: { from, to, insert: inner },
+          selection: { anchor: from, head: from + inner.length },
+        });
+        view.focus();
+        return;
+      }
+      // 切换 B：标记在选区两侧（双击选词时的典型情况）
+      const outFrom = from - before.length;
+      const outTo = to + after.length;
+      if (
+        outFrom >= 0 &&
+        outTo <= state.doc.length &&
+        state.sliceDoc(outFrom, from) === before &&
+        state.sliceDoc(to, outTo) === after
+      ) {
+        view.dispatch({
+          changes: { from: outFrom, to: outTo, insert: selected },
+          selection: { anchor: outFrom, head: outFrom + selected.length },
+        });
+        view.focus();
+        return;
+      }
+    }
+
     view.dispatch({
       changes: { from, to, insert: before + selected + after },
-      selection: { anchor: from + before.length + selected.length + after.length },
+      // 有选区：保持选中内容，方便继续叠别的格式、或再点一下取消；
+      // 无选区：光标落在标记**中间**，直接就能打字。
+      selection: selected
+        ? { anchor: from + before.length, head: from + before.length + selected.length }
+        : { anchor: from + before.length },
     });
     view.focus();
   }, []);
 
+  /**
+   * 行首块级前缀（标题/引用/列表/任务），支持**多行选区**与**切换**。
+   *
+   * ❌ 旧实现只拿 `selection.main.from` 那一行：选中五行点「无序列表」，
+   * 只有第一行变成 `- `。而“选一段文字转列表”是 md 编辑器最高频的操作之一。
+   * 同时旧实现无条件插入，重复点「引用」会叠成 `> > > `。
+   * 具体语义与边界情况见 planLinePrefix（那里带单测）。
+   */
   const insertLinePrefix = useCallback((prefix: string) => {
     const view = viewRef.current;
     if (!view) return;
-    const { from } = view.state.selection.main;
-    const line = view.state.doc.lineAt(from);
+    const { state } = view;
+    const sel = state.selection.main;
+    const firstNo = state.doc.lineAt(sel.from).number;
+    const lastNo = state.doc.lineAt(sel.to).number;
+
+    const lines = [];
+    for (let n = firstNo; n <= lastNo; n++) lines.push(state.doc.line(n));
+    const plan = planLinePrefix(
+      lines.map((l) => l.text),
+      prefix,
+    );
+
+    const changes = [];
+    for (let i = 0; i < lines.length; i++) {
+      const p = plan[i];
+      if (!p) continue;
+      changes.push({
+        from: lines[i].from,
+        to: lines[i].from + p.replaceLen,
+        insert: p.insert,
+      });
+    }
+    if (changes.length) view.dispatch({ changes });
+    view.focus();
+  }, []);
+
+  /** 大纲点击：把光标放到该行行首并滚到顶部。
+   *  行号要钳进文档范围 —— 大纲算的是 React state 里的 text，极端情况下可能
+   *  比 CodeMirror 当前文档新一拍，doc.line() 拿到越界行号会直接抛。 */
+  const jumpToLine = useCallback((line: number) => {
+    const view = viewRef.current;
+    if (!view) return;
+    const info = view.state.doc.line(Math.max(1, Math.min(line, view.state.doc.lines)));
     view.dispatch({
-      changes: { from: line.from, to: line.from, insert: prefix },
+      selection: { anchor: info.from },
+      effects: EditorView.scrollIntoView(info.from, { y: "start", yMargin: 24 }),
     });
     view.focus();
   }, []);
+
+  // 每次渲染把最新实现写进 ref，供 CodeMirror 快捷键现取（原因见 cmdsRef 声明处）。
+  cmdsRef.current = {
+    save: () => void handleSave(),
+    saveAs: () => void handleSaveAs(),
+    bold: () => insertFormat("**", "**"),
+    italic: () => insertFormat("*", "*"),
+  };
 
   /** 整体替换文档（JSON 格式化/压缩用），经 CodeMirror dispatch 自动触发脏标记 */
   const replaceDoc = useCallback((next: string) => {
@@ -793,23 +957,40 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
   );
 
   // ─── 图片粘贴 / 拖入（markdown 专属，经 spec.language 的 ctx 注入）───
-  // 保存到 $APPDATA/md-editor-images（asset 协议作用域内，预览可直接渲染），
-  // 并在光标处插入 Markdown 引用（路径转正斜杠，避免反斜杠被当作转义）。
+  /**
+   * 粘贴/拖入的图片存哪里：
+   * - 有文档路径 → 存到文档旁边的 `assets/`，插入**相对路径**
+   * - 无文档路径（剪贴板内容模式）→ 仍落 $APPDATA/md-editor-images
+   *
+   * ❌ 旧实现一律存 $APPDATA 并插**绝对路径**，两个真问题：
+   * ① 文档拷给别人 / 换台机器，图全裂（路径指向本机 APPDATA）；
+   * ② 用户删掉文档里的引用后，文件永远留在 APPDATA，**没任何清理入口**——
+   *   而且因为别的文档/卡片也可能引用它，没法安全地自动 GC。
+   * 存到文档旁边后，图跟着文档走：拷走目录就一起拷走，删目录就一起消失。
+   * （写文档旁边得走后端命令：fs 插件的 scope 只有 $APPDATA，跟保存同一个原因。）
+   */
   const insertPastedImages = useCallback(async (files: File[], view: EditorView) => {
     try {
-      const baseDir = await appDataDir();
-      const imgDir = await join(baseDir, "md-editor-images");
-      await mkdir(imgDir, { recursive: true });
-
       const refs: string[] = [];
       for (const file of files) {
         const ext = IMAGE_EXT[file.type] || "png";
         const name = `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-        const fullPath = await join(imgDir, name);
         const bytes = new Uint8Array(await file.arrayBuffer());
-        await writeFile(fullPath, bytes);
-        // 路径转正斜杠并用 < > 包裹（兼容含空格的路径）
-        refs.push(`![image](<${fullPath.replace(/\\/g, "/")}>)`);
+        if (docDir) {
+          const rel = `assets/${name}`;
+          await invoke("write_binary_file_base64", {
+            path: `${docDir}/${rel}`,
+            base64Data: bytesToBase64(bytes),
+          });
+          // 相对路径 + < > 包裹（兼容含空格的目录名）
+          refs.push(`![image](<./${rel}>)`);
+        } else {
+          const imgDir = await join(await appDataDir(), "md-editor-images");
+          await mkdir(imgDir, { recursive: true });
+          const fullPath = await join(imgDir, name);
+          await writeFile(fullPath, bytes);
+          refs.push(`![image](<${fullPath.replace(/\\/g, "/")}>)`);
+        }
       }
 
       const insertText = refs.join("\n");
@@ -821,32 +1002,39 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
       view.focus();
     } catch (e) {
       console.error("[图片粘贴] 保存失败:", e);
-      toast("图片保存失败", "error");
+      toast(`图片保存失败：${e instanceof Error ? e.message : String(e)}`, "error");
     }
-  }, [toast]);
+  }, [docDir, toast]);
 
   // ─── Scroll sync（仅 markdown 启用）─────────────────
-  const handleEditorScroll = useCallback(() => {
-    if (scrollSyncSource.current === "preview") return;
-    scrollSyncSource.current = "editor";
+  /**
+   * 双向滚动同步。两个旧 bug：
+   *
+   * ❌ 用 requestAnimationFrame 清除“正在同步”标记——拦不住回声。
+   * 浏览器的 scroll 事件在**下一帧开始**才派发，而 rAF 回调在**本帧结束前**就跑了；
+   * 标记先被清掉，程序化 scrollTop 触发的回声事件会被当成用户滚动反向同步回去。
+   * 两次比例换算各取整一点，来回几次就累积漂移——“越滚越对不上”。
+   * 改成时间窗：谁先滚谁在窗口内说话，另一侧的回声一律忽略。
+   *
+   * ❌ 旧实现还在 null 检查**之前**就置了标记：两个 ref 有一个为 null 时直接 return，
+   * 标记永远留着，此后所有滚动同步全部失效。现在先拿到元素、再上锁。
+   */
+  const syncScroll = useCallback((side: "editor" | "preview") => {
     const editorEl = editorRef.current?.querySelector(".cm-scroller");
     const previewEl = previewScrollRef.current;
     if (!editorEl || !previewEl) return;
-    const ratio = editorEl.scrollTop / (editorEl.scrollHeight - editorEl.clientHeight || 1);
-    previewEl.scrollTop = ratio * (previewEl.scrollHeight - previewEl.clientHeight);
-    requestAnimationFrame(() => { scrollSyncSource.current = null; });
+    const now = Date.now();
+    const lock = scrollSyncLock.current;
+    // 另一侧正在驱动同步 → 本次是它的回声，丢掉
+    if (lock && lock.side !== side && now < lock.until) return;
+    scrollSyncLock.current = { side, until: now + SCROLL_SYNC_ECHO_MS };
+    const [src, dst] = side === "editor" ? [editorEl, previewEl] : [previewEl, editorEl];
+    const ratio = src.scrollTop / (src.scrollHeight - src.clientHeight || 1);
+    dst.scrollTop = ratio * (dst.scrollHeight - dst.clientHeight);
   }, []);
 
-  const handlePreviewScroll = useCallback(() => {
-    if (scrollSyncSource.current === "editor") return;
-    scrollSyncSource.current = "preview";
-    const editorEl = editorRef.current?.querySelector(".cm-scroller");
-    const previewEl = previewScrollRef.current;
-    if (!editorEl || !previewEl) return;
-    const ratio = previewEl.scrollTop / (previewEl.scrollHeight - previewEl.clientHeight || 1);
-    editorEl.scrollTop = ratio * (editorEl.scrollHeight - editorEl.clientHeight);
-    requestAnimationFrame(() => { scrollSyncSource.current = null; });
-  }, []);
+  const handleEditorScroll = useCallback(() => syncScroll("editor"), [syncScroll]);
+  const handlePreviewScroll = useCallback(() => syncScroll("preview"), [syncScroll]);
 
   // Attach scroll listeners（spec.scrollSync 为 true 才挂载）。
   // 依赖数组必须带 loading：从外部文件打开时 loading 初始为 true，渲染函数会提前 return 只出
@@ -898,7 +1086,16 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
   const stats = useMemo(() => {
     const lines = text.split("\n").length;
     const chars = text.length;
-    return { lines, chars };
+    // 字数：中日韩按**字**计，拉丁文按**词**计。
+    // ❌ 不能只用 \b\w+\b：中文没有词边界，一整段中文会被数成 1 词；
+    // 也不能只看字符数：它把标点、空格、Markdown 标记全算进去了。
+    const cjk = (text.match(/[一-鿿぀-ヿ가-힯]/g) || []).length;
+    const latin = (text.match(/[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g) || []).length;
+    const words = cjk + latin;
+    // 阅读时长按 300 字/分（中文常用口径）；不足 1 分钟也显示 1，
+    // 显示「0 分钟」比不显示更无用。
+    const readMin = words === 0 ? 0 : Math.max(1, Math.round(words / 300));
+    return { lines, chars, words, readMin };
   }, [text]);
 
   // ─── Render ─────────────────────────────────────────
@@ -943,6 +1140,17 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
               title="从磁盘重新加载（文件在外部被修改过时用）"
             >
               <RefreshCw size={14} />
+            </button>
+          )}
+          {/* 大纲：只对 markdown 有意义（其它类型没有 # 标题结构）。
+              跟上面那个「重载」同一个思路：不适用就不出现，而不是摆个点了没反应的按钮。 */}
+          {spec.key === "markdown" && (
+            <button
+              className={`${styles.tbBtn} ${showOutline ? styles.tbBtnActive : ""}`}
+              onClick={() => setShowOutline((v) => !v)}
+              title="大纲（按标题跳转）"
+            >
+              <ListTree size={14} />
             </button>
           )}
           <button className={styles.tbBtn} onClick={handleOpen} title="打开文件">
@@ -990,6 +1198,9 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
 
       {/* Main Content */}
       <div className={styles.main} ref={containerRef}>
+        {spec.key === "markdown" && showOutline && (
+          <MarkdownOutline text={text} onJump={jumpToLine} />
+        )}
         {/* Editor Pane — 始终挂载，仅预览时用 display:none 隐藏而非卸载。
             若条件卸载，CodeMirror 视图会随 DOM 移除而脱离文档，切回分屏时
             新建的空 div 不会被重新填充（初始化 effect 仅依赖 loading），导致编辑区被清空。 */}
@@ -1040,7 +1251,12 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
               ref={previewScrollRef}
             >
               <Suspense fallback={<div className={styles.previewLoading}>预览加载中…</div>}>
-                <spec.Preview text={text} bridge={bridge} lineNumbers={previewLineNumbers} />
+                <spec.Preview
+                  text={text}
+                  bridge={bridge}
+                  lineNumbers={previewLineNumbers}
+                  baseDir={docDir}
+                />
               </Suspense>
             </div>
           </div>
@@ -1053,6 +1269,12 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
           <span className={styles.statusItem}>{fileName}</span>
           <span className={styles.statusItem}>{stats.lines} 行</span>
           <span className={styles.statusItem}>{stats.chars} 字符</span>
+          <span className={styles.statusItem}>{stats.words} 字</span>
+          {stats.readMin > 0 && (
+            <span className={styles.statusItem} title="按 300 字/分钟估算">
+              约 {stats.readMin} 分钟读完
+            </span>
+          )}
           <span className={styles.statusItem}>UTF-8</span>
         </div>
         <div className={styles.statusRight}>

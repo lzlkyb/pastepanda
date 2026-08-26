@@ -79,7 +79,13 @@ export interface FullscreenTypeSpec {
   FormatBar?: ComponentType<{ bridge: ShellBridge }>;
   /** 预览面板组件（不传 = 无预览，仅编辑模式；bridge 可选，供需要跳转编辑区的预览使用；
    *  lineNumbers 行号模式开关，仅 markdown 预览消费，其余类型忽略） */
-  Preview?: ComponentType<{ text: string; bridge?: ShellBridge; lineNumbers?: boolean }>;
+  Preview?: ComponentType<{
+    text: string;
+    bridge?: ShellBridge;
+    lineNumbers?: boolean;
+    /** 文档所在目录（仅 markdown 消费：解相对图片路径）；其它类型忽略 */
+    baseDir?: string | null;
+  }>;
   /** 预览面板副标签 */
   previewSubLabel?: string;
   /**

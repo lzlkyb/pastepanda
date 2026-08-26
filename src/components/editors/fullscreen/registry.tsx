@@ -24,8 +24,12 @@ import { LogPreview } from "./LogPreview";
 const MarkdownRenderer = lazy(() =>
   import("@/components/MarkdownRenderer").then((m) => ({ default: m.MarkdownRenderer }))
 );
-const MarkdownPreview: ComponentType<{ text: string; lineNumbers?: boolean }> = ({ text, lineNumbers }) => (
-  <MarkdownRenderer text={text} debounceMs={300} lineNumbers={lineNumbers} />
+const MarkdownPreview: ComponentType<{
+  text: string;
+  lineNumbers?: boolean;
+  baseDir?: string | null;
+}> = ({ text, lineNumbers, baseDir }) => (
+  <MarkdownRenderer text={text} debounceMs={300} lineNumbers={lineNumbers} baseDir={baseDir} />
 );
 
 /** Markdown 专属：拦截图片粘贴/拖入，交给外壳的 insertPastedImages 保存并插入引用 */

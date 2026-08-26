@@ -184,13 +184,49 @@ function wrapCodeLines(code: HTMLElement): void {
 
 // ─── 图片路径与消毒 ─────────────────────────────────────
 
-/** 将本地图片路径转为 asset 协议地址；已是网络 / 内联资源或非绝对路径时返回 null */
-function toAssetUrl(src: string): string | null {
+/**
+ * 把相对路径拼到文档目录上（自己算而不用 path.join：浏览器侧没有，
+ * 而 @tauri-apps/api/path 的 join 是 async，而这里在同步的字符串改写里）。
+ * 处理 `./` 与 `../`；分隔符跟着 baseDir 走。
+ */
+function resolveAgainst(baseDir: string, rel: string): string {
+  const sep = baseDir.includes("\\") ? "\\" : "/";
+  const parts = baseDir.split(/[/\\]/);
+  for (const seg of rel.split(/[/\\]/)) {
+    if (!seg || seg === ".") continue;
+    if (seg === "..") {
+      if (parts.length > 1) parts.pop();
+      continue;
+    }
+    parts.push(seg);
+  }
+  return parts.join(sep);
+}
+
+/**
+ * 将本地图片路径转为 asset 协议地址；已是网络 / 内联资源时返回 null。
+ *
+ * @param baseDir 文档所在目录。有它才能解相对路径 ——
+ *   ❌ 旧实现直接把非绝对路径当“不处理”返回 null，于是文档里最常见的
+ *   `![](./assets/x.png)` 在预览里永远是裂的（而且无任何提示）。
+ *   剪贴板内容模式没有文档目录，那时相对路径确实无法解，仍返回 null。
+ */
+function toAssetUrl(src: string, baseDir?: string | null): string | null {
   if (!src) return null;
   if (/^(https?:|data:|blob:|asset:)/i.test(src)) return null;
   if (src.includes("asset.localhost")) return null;
-  // 仅处理绝对路径（Windows 盘符 / UNC / Unix 根），相对路径保持原样
-  if (!/^([a-zA-Z]:[/\\]|\\\\|\/)/.test(src)) return null;
+  const isAbs = /^([a-zA-Z]:[/\\]|\\\\|\/)/.test(src);
+  if (!isAbs) {
+    if (!baseDir) return null;
+    // Markdown 里空格常写成 %20，拼路径前得先还原成真实文件名
+    let rel = src;
+    try {
+      rel = decodeURIComponent(src);
+    } catch {
+      /* 不是合法百分号转义（如文件名里就带 %），按原样拼 */
+    }
+    return convertFileSrc(resolveAgainst(baseDir, rel));
+  }
   return convertFileSrc(src);
 }
 
@@ -199,22 +235,22 @@ function toAssetUrl(src: string): string | null {
  * 必须在 DOMPurify 之前完成——否则 "C:/..." 这类驱动路径会被当作不安全协议剥掉 src。
  * 兼容 ![alt](src)、![alt](src "title")、![alt](<src with spaces>)。
  */
-function rewriteLocalImagePaths(md: string): string {
+function rewriteLocalImagePaths(md: string, baseDir?: string | null): string {
   return md.replace(
     /(!\[[^\]]*\]\(\s*)(<[^>]*>|[^)\s]+)((?:\s+"[^"]*")?\s*\))/g,
     (match, prefix: string, src: string, suffix: string) => {
       const wrapped = src.startsWith("<") && src.endsWith(">");
       const inner = wrapped ? src.slice(1, -1) : src;
-      const assetUrl = toAssetUrl(inner);
+      const assetUrl = toAssetUrl(inner, baseDir);
       return assetUrl ? `${prefix}${assetUrl}${suffix}` : match;
     }
   );
 }
 
 /** 将 Markdown 文本渲染为安全的 HTML 字符串 */
-function renderMarkdownHtml(text: string): string {
+function renderMarkdownHtml(text: string, baseDir?: string | null): string {
   try {
-    const raw = transformAlerts(marked.parse(rewriteLocalImagePaths(text)) as string);
+    const raw = transformAlerts(marked.parse(rewriteLocalImagePaths(text, baseDir)) as string);
     return DOMPurify.sanitize(raw, {
       ADD_TAGS: ["input"],
       ADD_ATTR: ["type", "checked", "disabled"],
@@ -240,6 +276,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   className,
   debounceMs = 0,
   lineNumbers = false,
+  baseDir = null,
 }: {
   text: string;
   compact?: boolean;
@@ -248,6 +285,9 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   debounceMs?: number;
   /** 行号模式：块级行号 + 代码块行号（compact 下强制关闭） */
   lineNumbers?: boolean;
+  /** 文档所在目录：用来解文档里的相对图片路径（`./assets/x.png`）。
+   *  剪贴板内容模式没有目录，传 null，相对路径就保持原样（确实无法解）。 */
+  baseDir?: string | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -260,7 +300,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   }, [text, debounceMs]);
 
   const source = debounceMs > 0 ? debouncedText : text;
-  const html = useMemo(() => renderMarkdownHtml(source), [source]);
+  const html = useMemo(() => renderMarkdownHtml(source, baseDir), [source, baseDir]);
 
   /** 行号模式实际生效值：compact（hover 弹窗）下强制关闭 */
   const showLineNumbers = lineNumbers && !compact;
