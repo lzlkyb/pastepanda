@@ -1,6 +1,6 @@
 [package]
 name = "pastepanda"
-version = "6.18.4"
+version = "6.18.5"
 description = "PastePanda - Smart Clipboard Manager"
 authors = ["you"]
 edition = "2021"
