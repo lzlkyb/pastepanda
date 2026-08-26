@@ -28,14 +28,14 @@ body {
  * 0.6 深度：深色屏幕也压得住，浅色屏幕上更突出选区亮度对比 */
 .shade-block { position: absolute; background: rgba(10, 14, 24, 0.6); pointer-events: none; }
 
-/* 选区框：蓝色单边（用户定：去掉白边）。3px 全局统一——全屏/普通选区同粗；
+/* 选区框：主题主色单边（用户定：去掉白边）。3px 全局统一——全屏/普通选区同粗；
  * 全屏态靠 .sel-rect.full 的外发光与四边暗带（.edge-band）做额外辨识。
- * 1px 黑阴影保留：分隔截图内容与选区边界，防蓝边在相近色内容上糊在一起。 */
+ * 1px 黑阴影保留：分隔截图内容与选区边界，防主题色边框在相近色内容上糊在一起。 */
 .sel-rect {
   position: absolute;
   border: none;
   outline: 3px solid var(--accent, #3B9EFF);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 8px rgba(59, 158, 255, 0.4);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 8px color-mix(in srgb, var(--accent, #3B9EFF) 40%, transparent);
   pointer-events: none;
 }
 /* 全屏/近全屏选区：仅外发光增强（去掉 inset 内侧微光——它在边框内侧形成一圈
@@ -43,7 +43,7 @@ body {
 .sel-rect.full {
   box-shadow:
     0 0 0 1px rgba(0, 0, 0, 0.6),
-    0 0 16px rgba(59, 158, 255, 0.6);
+    0 0 16px color-mix(in srgb, var(--accent, #3B9EFF) 60%, transparent);
 }
 /* 全屏选区四边暗带（5px，屏幕内缩）：替代 0 尺寸的 4 块蒙版，
  * 屏幕四周一圈暗边 → 与普通桌面形成明确边界（方案 A） */
@@ -63,14 +63,14 @@ body {
   position: absolute; left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 8px;
   padding: 4px 12px; border-radius: 7px;
-  background: rgba(10, 14, 24, 0.92); color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: var(--shot-bar-bg, rgba(10, 14, 24, 0.92)); color: var(--shot-bar-text, #fff);
+  border: 1px solid var(--shot-bar-border, rgba(255, 255, 255, 0.16));
   font-size: 12px; font-variant-numeric: tabular-nums;
   white-space: nowrap; pointer-events: none;
 }
 /* 选区占满整屏、只能盖在选区内部时：调淡一点，尽量不遮住底下的画面 */
 .sel-size.inside { opacity: 0.9; }
-.sel-size .hint { color: rgba(255, 255, 255, 0.6); font-size: 11px; }
+.sel-size .hint { color: var(--shot-bar-muted, rgba(255, 255, 255, 0.6)); font-size: 11px; }
 
 /* ===== 标注画布容器（覆盖选区，1:1） ===== */
 .annot-wrap {
@@ -112,7 +112,7 @@ body {
 .ocr-copy-bar {
   position: absolute; z-index: 30; display: flex; gap: 6px;
   padding: 5px 6px; border-radius: 8px;
-  background: rgba(20, 22, 28, 0.92); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  background: var(--shot-bar-bg, rgba(20, 22, 28, 0.92)); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
   /* 固定尺寸（与 ocrBarPos.ts 的 OCR_BAR_W/OCR_BAR_H 常量一致）：
      布局函数 layoutOcrCopyBar 按此精确判定四象限翻转，靠近屏幕边缘时自动翻到矩形内侧，
      不再像旧实现 translate(6px,6px) 硬编码右下偏移（贴边时整条溢出屏外点不到）。 */
@@ -124,7 +124,7 @@ body {
   border: none; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer;
 }
 .ocr-copy-bar button.primary { background: var(--accent-solid, #2D78C2); color: #fff; }
-.ocr-copy-bar button.ghost { background: rgba(255, 255, 255, 0.12); color: #fff; }
+.ocr-copy-bar button.ghost { background: color-mix(in srgb, var(--shot-bar-text, #fff) 12%, transparent); color: var(--shot-bar-text, #fff); }
 
 /* ===== 标注主工具栏（V6.20 双层；位置全由 JS 的 layoutToolbar 给出） ===== */
 /* 旧实现写死 left: 50% —— 工具栏永远屏幕水平居中、只有 top 跟选区，
@@ -133,14 +133,19 @@ body {
   position: absolute;
   display: flex; align-items: center; gap: 2px;
   padding: 5px 7px; border-radius: 12px;
-  /* indigo + cyan 玻璃渐变：对齐主 UI 设计语言（渐变徽章/细分割线/高光） */
-  background: linear-gradient(180deg, rgba(34, 41, 76, 0.94), rgba(16, 21, 40, 0.96));
+  /* 玻璃底走截图浮层令牌（浅色主题 = 浅玻璃，深色主题 = 深玻璃），
+     顶部融入一档主题主色渐变，替代旧写死的 indigo 渐变（方案 B 令牌化）。 */
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--shot-bar-bg, rgba(34, 41, 76, 0.94)) 94%, var(--accent, #3B9EFF)),
+    var(--shot-bar-bg, rgba(16, 21, 40, 0.96))
+  );
   backdrop-filter: blur(18px) saturate(1.4);
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
-  border: 1px solid rgba(99, 102, 241, 0.4);
+  border: 1px solid var(--shot-bar-border, rgba(99, 102, 241, 0.4));
   box-shadow:
     0 12px 36px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(148, 168, 255, 0.28),
+    inset 0 1px 0 color-mix(in srgb, var(--shot-bar-text, #E0E8F0) 14%, transparent),
     inset 0 -1px 0 rgba(0, 0, 0, 0.35);
   white-space: nowrap; z-index: 30;
 }
@@ -154,34 +159,35 @@ body {
   min-width: 38px; height: 42px; border-radius: 8px; padding: 0 3px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   cursor: pointer; border: 1px solid transparent;
-  color: var(--text-primary, #E0E8F0); font-size: 12px;
+  color: var(--shot-bar-text, #E0E8F0); font-size: 12px;
   position: relative;
   transition: background 0.12s, transform 0.14s cubic-bezier(.34,1.56,.64,1), box-shadow 0.14s;
 }
 .tool .ic { display: flex; }
 .tool .ic svg { width: 17px; height: 17px; display: block; }
 .tool .lb { font-size: 9px; line-height: 1; letter-spacing: 0.2px; opacity: 0.72; }
-.tool:hover { background: var(--hover, #0F1F35); }
+.tool:hover { background: var(--shot-hover, #0F1F35); }
 .tool:hover .lb { opacity: 1; }
-/* 选中工具：亮蓝渐变底 + 白图标，深色工具栏上也一眼可见（QQ/微信截图同款高亮） */
+/* 选中工具：主题主色实底 + 白图标（--accent-solid 六套主题均按白字 4.5:1 校验），
+   深色/浅色工具栏上一眼可见（QQ/微信截图同款高亮） */
 .tool.on {
-  background: linear-gradient(135deg, #3B9EFF, #6D5CF0);
+  background: var(--accent-solid, #2D78C2);
   border-color: rgba(255, 255, 255, 0.4);
   color: #ffffff;
-  box-shadow: 0 2px 12px rgba(59, 158, 255, 0.5);
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--accent, #3B9EFF) 50%, transparent);
 }
 .tool.on .lb { opacity: 1; }
 /* 次要按钮（撤销 / 重做）与长截图的色调区分 */
-.tool.dim { color: var(--text-muted, #9DB2D0); }
-.tool.longshot { color: #8CC5FF; }
+.tool.dim { color: var(--shot-bar-muted, #9DB2D0); }
+.tool.longshot { color: var(--shot-long, #8CC5FF); }
 .tool.disabled { opacity: 0.3; cursor: not-allowed; }
 .tool.disabled:hover { background: transparent; }
 
 /* 三个主力出口按钮（保存 / 贴图 / AI）。
    各给一个色调，与已有的长截图蓝、取文字薄荷绿分开——出口区三个按钮挤在一起，
    全白色会让用户要靠读字才能区分。 */
-.tool.exit-save { color: #A5C8FF; }
-.tool.exit-pin { color: #F9A8D4; }
+.tool.exit-save { color: var(--shot-save, #A5C8FF); }
+.tool.exit-pin { color: var(--shot-pin, #F9A8D4); }
 
 /* AI 按钮的图标色 = 品牌渐变起点（与 AiMark 的 .brand 一致）。 */
 .tool.exit-ai { color: var(--brand-ai-from); }
@@ -189,24 +195,17 @@ body {
    渐变字本身靠 color:transparent 露背景画出来，再叠一层半透就洗成一团糊了。 */
 .tool.exit-ai .lb { opacity: 1; font-weight: 700; }
 
-/* ❗ 重绑 AI 品牌渐变色：主栏的底色是写死的深色玻璃（rgba(34,41,76,.94)），
-   不跟主题变；而 theme.css 里的 --brand-ai-from/to 是按主题发的——
-   浅色主题下它们是 #1D4ED8 / #6D28D9（深蓝→深紫，为浅底调的），
-   压在这块深底上几乎看不见。所以在这个**无条件深色**的表面上固定用深色档的那对值。
-   只重绑变量、不动渐变公式：公式仍然只在 AiMark.module.css 里有一份。
-   （出口面板 .act-panel 走 --glass-dialog-bg，是跟主题的，所以不能一起重绑。） */
-.annot-toolbar {
-  --brand-ai-from: #A8DEFF;
-  --brand-ai-to: #D8CCFF;
-}
+/* AI 品牌渐变不再重绑（方案 B 令牌化）：主栏底色已跟随主题（浅色主题浅玻璃、
+   深色主题深玻璃），theme.css 里的 --brand-ai-from/to 本来就是按明暗两档发的，
+   各主题压在自己的玻璃底上都达标，原「无条件深色表面」的重绑 hack 删除。 */
 
 /* 取文字（OCR）按钮。
    色调用薄荷绿：工具栏里蓝色系已被长截图与完成占了，再加一个蓝的会糊成一片。
    无文字 / 未开始走通用的 .disabled（置灰但留在原位，不隐藏）。 */
-.tool.ocr-btn { color: #7DE0C4; }
-.tool.ocr-btn.busy { color: var(--text-muted, #9DB2D0); cursor: default; }
+.tool.ocr-btn { color: var(--shot-ocr, #7DE0C4); }
+.tool.ocr-btn.busy { color: var(--shot-bar-muted, #9DB2D0); cursor: default; }
 .tool.ocr-btn.busy:hover { background: transparent; }
-.tool.ocr-btn.failed { color: #FCA5A5; }
+.tool.ocr-btn.failed { color: var(--danger, #FCA5A5); }
 
 /* 角标：行数（或失败的 !）。
    外描边用工具栏底色而不是透明——角标压在图标线条上时还能读。 */
@@ -214,16 +213,17 @@ body {
   position: absolute; top: 2px; right: 1px;
   min-width: 15px; height: 15px; padding: 0 3.5px;
   border-radius: 8px; font-size: 9px; line-height: 15px; font-weight: 700; text-align: center;
-  background: linear-gradient(135deg, #3B9EFF, #6D5CF0); color: #fff;
-  box-shadow: 0 0 0 1.5px rgba(20, 26, 50, 0.98);
+  background: var(--accent-solid, #2D78C2); color: #fff;
+  box-shadow: 0 0 0 1.5px var(--shot-bar-bg, rgba(20, 26, 50, 0.98));
   pointer-events: none;
 }
-.tool .badge.warn { background: linear-gradient(135deg, #F87171, #EF4444); }
+.tool .badge.warn { background: linear-gradient(135deg, var(--danger, #F87171), var(--danger-hover, #EF4444)); }
 /* 识别中的转圈：尺寸必须与 .tool .ic svg 一致（17px），
    否则识别完成那一瞬整条工具栏宽度会跳（它是右对齐的，会整体平移）。 */
 .tool .ocr-spin {
   width: 17px; height: 17px; border-radius: 50%;
-  border: 2px solid rgba(157, 178, 208, 0.28); border-top-color: #7DE0C4;
+  border: 2px solid color-mix(in srgb, var(--shot-bar-muted, #9DB2D0) 28%, transparent);
+  border-top-color: var(--shot-ocr, #7DE0C4);
   animation: ocrSpin 0.8s linear infinite;
 }
 
@@ -234,8 +234,8 @@ body {
 .shot-tip {
   position: fixed; z-index: 950; pointer-events: none;
   padding: 3px 8px; border-radius: 6px; font-size: 10px; white-space: nowrap;
-  background: rgba(15, 23, 42, 0.96); color: #E6EDF7;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: var(--shot-bar-bg, rgba(15, 23, 42, 0.96)); color: var(--shot-bar-text, #E6EDF7);
+  border: 1px solid var(--shot-bar-border, rgba(255, 255, 255, 0.16));
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
   animation: shotTipIn 0.1s ease;
 }
@@ -245,24 +245,26 @@ body {
 .tool.done-btn, .tool.cancel-btn, .tool.more-btn {
   flex-direction: row; min-width: 0; height: 34px; padding: 0 12px; font-size: 12px;
 }
-.tool.done-btn { font-weight: 600; color: #fff;
-  background: linear-gradient(135deg, #6366F1, #3B9EFF);
+.tool.done-btn {
+  font-weight: 600; color: #fff;
+  background: var(--accent-solid, #2D78C2);
   border: 1px solid rgba(255, 255, 255, 0.25);
-  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent, #3B9EFF) 40%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 .tool.done-btn:hover { filter: brightness(1.12); }
-.tool.cancel-btn { color: var(--text-muted, #9DB2D0); }
-.tool.cancel-btn:hover { background: rgba(248, 113, 113, 0.15); color: #FCA5A5; }
+.tool.cancel-btn { color: var(--shot-bar-muted, #9DB2D0); }
+.tool.cancel-btn:hover { background: color-mix(in srgb, var(--danger, #F87171) 15%, transparent); color: var(--danger, #FCA5A5); }
 /* 字号从 15px/600 降到跟着组走：那两个值是为裸的「⋯」字符调的（它得够大才看得见），
    现在内容是「更多 ⋯」，再用 15px 会比旁边的「取消」大一号。 */
-.tool.more-btn { color: #9DB2D0; line-height: 1; }
-.tool.more-btn:hover { background: rgba(99, 102, 241, 0.18); color: #B9C6F0; }
-/* 分组分隔线：indigo→cyan 渐变细线（对齐主 UI 的细分割线风格） */
+.tool.more-btn { color: var(--shot-bar-muted, #9DB2D0); line-height: 1; }
+.tool.more-btn:hover { background: color-mix(in srgb, var(--accent, #3B9EFF) 18%, transparent); color: var(--shot-bar-text, #B9C6F0); }
+/* 分组分隔线：主题主色渐变细线（对齐主 UI 的细分割线风格） */
 .tsep { width: 1px; height: 24px; margin: 0 5px;
-  background: linear-gradient(180deg, transparent, rgba(125, 140, 255, 0.5), transparent); }
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent, #3B9EFF) 50%, transparent), transparent); }
 /* 取消 / 完成之间的配对分隔线：比 .tsep 短、留白更小，让两个反向操作读成一组 */
 .annot-toolbar .pair-sep { width: 1px; height: 20px; margin: 0 2px;
-  background: rgba(157, 178, 208, 0.3); }
+  background: color-mix(in srgb, var(--shot-bar-muted, #9DB2D0) 30%, transparent); }
 
 /* OCR 选字模式胶囊（V6.22）：取代工具栏里的分段开关，锚定选区上缘右上角。
    深色卡片语言对齐 .mask-bar（自动打码确认条）——它们都是"锚在选区附近的
@@ -270,37 +272,37 @@ body {
 .mode-pill {
   position: absolute; display: flex; align-items: center; gap: 6px;
   height: 28px; padding: 0 10px; border-radius: 14px;
-  background: rgba(14, 20, 38, 0.97);
-  border: 1px solid rgba(124, 108, 255, 0.6);
+  background: var(--shot-bar-bg, rgba(14, 20, 38, 0.97));
+  border: 1px solid color-mix(in srgb, var(--accent, #7C6CFF) 60%, transparent);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
-  color: #C9D6EA; font-size: 12px; cursor: pointer; z-index: 32;
+  color: var(--shot-bar-text, #C9D6EA); font-size: 12px; cursor: pointer; z-index: 32;
   white-space: nowrap; user-select: none;
   transition: border-color 0.12s, color 0.12s;
 }
-.mode-pill:hover { border-color: rgba(124, 108, 255, 0.95); color: #E6EDF7; }
+.mode-pill:hover { border-color: color-mix(in srgb, var(--accent, #7C6CFF) 95%, transparent); color: var(--shot-bar-text, #E6EDF7); }
 .mode-pill .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.mode-pill .dot.smart { background: #7DE0C4; box-shadow: 0 0 6px rgba(125, 224, 196, 0.8); }
-.mode-pill .dot.ctrl { background: #9DB2D0; }
-.mode-pill .sw { font-size: 10px; color: #6E82A4; }
+.mode-pill .dot.smart { background: var(--shot-ocr, #7DE0C4); box-shadow: 0 0 6px var(--shot-ocr, #7DE0C4); }
+.mode-pill .dot.ctrl { background: var(--shot-bar-muted, #9DB2D0); }
+.mode-pill .sw { font-size: 10px; color: var(--shot-bar-muted, #6E82A4); }
 
 /* ===== 属性条（双层的第二层：颜色 / 粗细 / 箭头样式） ===== */
 .attr-bar {
   position: absolute; display: flex; align-items: center; gap: 1px;
   padding: 4px 9px; border-radius: 10px; white-space: nowrap; z-index: 31;
-  background: rgba(15, 23, 42, 0.96);
-  border: 1px solid rgba(148, 168, 255, 0.3);
+  background: var(--shot-bar-bg, rgba(15, 23, 42, 0.96));
+  border: 1px solid var(--shot-bar-border, rgba(148, 168, 255, 0.3));
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
 }
-.attr-bar .albl { font-size: 10px; color: #6E82A4; margin: 0 5px 0 2px; }
+.attr-bar .albl { font-size: 10px; color: var(--shot-bar-muted, #6E82A4); margin: 0 5px 0 2px; }
 /* 强度当前值：滚轮微调到非整档位时，这里仍能看到具体数字 */
 .attr-bar .aval {
-  font-size: 10px; color: #8FA3C4; margin-left: 4px;
+  font-size: 10px; color: var(--shot-bar-muted, #8FA3C4); margin-left: 4px;
   font-variant-numeric: tabular-nums; min-width: 30px;
 }
 /* 强度档位是文字（细/中/粗），不是图标，需要自己的字号 */
 .wpick { font-size: 10.5px; }
 .attr-bar .asep { width: 1px; height: 16px; margin: 0 7px;
-  background: linear-gradient(180deg, transparent, rgba(125, 140, 255, 0.45), transparent); }
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent, #3B9EFF) 45%, transparent), transparent); }
 
 /* 颜色：外层 24px 方形热区，内层才是 14px 色点。
    旧实现把 onClick 直接挂在 14px 色点上，点偏一两像素就落到容器空白上，没任何反应。 */
@@ -308,26 +310,26 @@ body {
   width: 24px; height: 24px; border-radius: 6px; position: relative;
   display: flex; align-items: center; justify-content: center; cursor: pointer;
 }
-.cwrap:hover { background: rgba(148, 168, 255, 0.14); }
-.cwrap.picker { color: #9DB2D0; }
+.cwrap:hover { background: color-mix(in srgb, var(--accent, #3B9EFF) 14%, transparent); }
+.cwrap.picker { color: var(--shot-bar-muted, #9DB2D0); }
 .cwrap.picker svg { width: 15px; height: 15px; display: block; }
-.cwrap.picker.on { background: rgba(59, 158, 255, 0.3); color: #fff; }
+.cwrap.picker.on { background: color-mix(in srgb, var(--accent, #3B9EFF) 30%, transparent); color: var(--accent-strong, #fff); }
 .cp {
   width: 14px; height: 14px; border-radius: 50%; display: block;
   border: 1.5px solid transparent; flex-shrink: 0;
   transition: transform 0.1s;
 }
 .cwrap:hover .cp { transform: scale(1.12); }
-.cp.on { border-color: #fff; box-shadow: 0 0 0 2px rgba(59, 158, 255, 0.55); }
+.cp.on { border-color: var(--shot-bar-text, #fff); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #3B9EFF) 55%, transparent); }
 
 /* 粗细 / 箭头样式选项 */
 .wpick {
   width: 24px; height: 24px; border-radius: 6px; position: relative;
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; color: #C9D6EA;
+  cursor: pointer; color: var(--shot-bar-text, #C9D6EA);
 }
-.wpick:hover { background: rgba(148, 168, 255, 0.14); }
-.wpick.on { background: rgba(59, 158, 255, 0.28); color: #fff; }
+.wpick:hover { background: color-mix(in srgb, var(--accent, #3B9EFF) 14%, transparent); }
+.wpick.on { background: color-mix(in srgb, var(--accent, #3B9EFF) 20%, transparent); color: var(--accent-strong, #fff); }
 .wpick svg { width: 15px; height: 15px; display: block; }
 /* 文字型控件（模式：手动/平铺·自动；强度：细/中/粗；字号：大/中/小）：
  * .wpick 基础宽度写死 24px 是给图标的方形热区，文字塞进去会溢出重叠。
@@ -343,15 +345,15 @@ body {
   position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 10px;
   padding: 7px 16px; border-radius: 10px;
-  background: rgba(10, 14, 24, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: #E6EDF7; font-size: 12px; z-index: 40;
+  background: var(--shot-bar-bg, rgba(10, 14, 24, 0.88));
+  border: 1px solid var(--shot-bar-border, rgba(255, 255, 255, 0.14));
+  color: var(--shot-bar-text, #E6EDF7); font-size: 12px; z-index: 40;
   white-space: nowrap; pointer-events: none;
 }
 .shot-hint kbd {
   font-family: ui-monospace, Consolas, monospace;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: color-mix(in srgb, var(--shot-bar-text, #E6EDF7) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--shot-bar-text, #E6EDF7) 18%, transparent);
   border-radius: 4px; padding: 0 5px; font-size: 10px;
 }
 
@@ -450,8 +452,8 @@ body {
   position: absolute;
   display: flex; align-items: center; gap: 4px;
   padding: 4px 6px;
-  background: rgba(17, 24, 39, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--shot-bar-bg, rgba(17, 24, 39, 0.92));
+  border: 1px solid var(--shot-bar-border, rgba(255, 255, 255, 0.14));
   /* 设计稿里写的是“削平上圆角、紧贴框底连成一体”，实现时放弃了：
      工具条的 top 由 boxHCss = 行数 × 字号 × 1.3 + 4 **估算**而来，不是真实测高（真高度
      由 autoSizeText 按 scrollHeight 撑）。零间距拼接一旦估偏，要么露出断缝、要么盖住
@@ -466,19 +468,21 @@ body {
    一打字就没了，而用户恰恰是打到一半才想起来“怎么换行”。 */
 .text-toolbar .tkeys {
   margin-left: 4px;
-  color: rgba(154, 167, 189, 0.95);
+  color: var(--shot-bar-muted, rgba(154, 167, 189, 0.95));
   font-size: 11px;
   white-space: nowrap;
 }
 .text-toolbar .ttbtn {
   min-width: 26px; height: 24px; padding: 0 6px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: transparent; color: #E6EDF7;
+  border: 1px solid var(--shot-bar-border, rgba(255, 255, 255, 0.18));
+  background: transparent; color: var(--shot-bar-text, #E6EDF7);
   border-radius: 6px; cursor: pointer; font-size: 13px; line-height: 1;
 }
-.text-toolbar .ttbtn:hover { background: rgba(255, 255, 255, 0.12); }
+.text-toolbar .ttbtn:hover { background: color-mix(in srgb, var(--shot-bar-text, #E6EDF7) 12%, transparent); }
 .text-toolbar .tsep {
-  width: 1px; height: 16px; background: rgba(255, 255, 255, 0.18); margin: 0 2px;
+  width: 1px; height: 16px;
+  background: color-mix(in srgb, var(--shot-bar-text, #E6EDF7) 18%, transparent);
+  margin: 0 2px;
 }
 
 /* ===== OCR 结果抽屉（右上） ===== */
@@ -584,7 +588,7 @@ body {
    不删行——工具栏平铺三个只是多给一条路，不是把路搬走（用户可能从「更多」进来再选复制）。 */
 .act-group {
   padding: 7px 12px 3px; font-size: 10px; font-weight: 600; letter-spacing: 0.5px;
-  color: #6E86A8; border-top: 1px solid rgba(22, 43, 69, 0.8);
+  color: var(--text-muted, #7994B4); border-top: 1px solid var(--border-color, rgba(22, 43, 69, 0.8));
 }
 .act-group:first-of-type { border-top: 0; }
 
@@ -658,16 +662,16 @@ body {
 /* ===== 像素放大镜 + 取色 ===== */
 .mag-view {
   position: absolute; pointer-events: auto; z-index: 45;
-  background: rgba(10, 14, 24, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: var(--shot-bar-bg, rgba(10, 14, 24, 0.92));
+  border: 1px solid var(--shot-bar-border, rgba(255, 255, 255, 0.18));
   border-radius: 10px; padding: 6px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
   display: flex; flex-direction: column; align-items: center; gap: 4px;
   cursor: pointer;
 }
 .mag-canvas { border-radius: 6px; display: block; }
-.mag-info { font-size: 10px; color: #fff; font-variant-numeric: tabular-nums; font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
-.mag-info .hex { color: #8cc5ff; }
+.mag-info { font-size: 10px; color: var(--shot-bar-text, #fff); font-variant-numeric: tabular-nums; font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
+.mag-info .hex { color: var(--accent, #8cc5ff); }
 
 /* ===== 吸附窗口高亮框（悬停命中目标窗口） ===== */
 .snap-rect {
@@ -689,8 +693,8 @@ body {
 .snap-tip {
   position: absolute; left: 50%; bottom: -26px; transform: translateX(-50%);
   padding: 2px 10px; border-radius: 6px; font-size: 10px; white-space: nowrap;
-  background: rgba(10, 14, 24, 0.9); color: #ffd75e;
-  border: 1px solid rgba(255, 255, 255, 0.14); pointer-events: none;
+  background: var(--shot-bar-bg, rgba(10, 14, 24, 0.9)); color: #ffd75e;
+  border: 1px solid var(--shot-bar-border, rgba(255, 255, 255, 0.14)); pointer-events: none;
 }
 
 /* 常驻操作提示条：让用户知道截图吸附 / 键盘遍历等能力（截图界面底部居中） */
@@ -705,9 +709,9 @@ body {
   gap: 12px;
   padding: 7px 12px 7px 14px;
   border-radius: 10px;
-  background: rgba(10, 14, 24, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: #E6EDF7;
+  background: var(--shot-bar-bg, rgba(10, 14, 24, 0.82));
+  border: 1px solid var(--shot-bar-border, rgba(255, 255, 255, 0.14));
+  color: var(--shot-bar-text, #E6EDF7);
   font-size: 12px;
   line-height: 1;
   white-space: nowrap;
@@ -720,13 +724,13 @@ body {
   opacity: 0;
 }
 .shot-hint .hk {
-  color: #59A6FF;
+  color: var(--accent, #59A6FF);
   font-weight: 600;
 }
 .shot-hint .sep {
   width: 1px;
   height: 12px;
-  background: rgba(255, 255, 255, 0.18);
+  background: color-mix(in srgb, var(--shot-bar-text, #E6EDF7) 18%, transparent);
 }
 .shot-hint .hk-close {
   pointer-events: auto;
@@ -737,14 +741,14 @@ body {
   align-items: center;
   justify-content: center;
   border-radius: 4px;
-  color: rgba(230, 237, 247, 0.55);
+  color: color-mix(in srgb, var(--shot-bar-text, #E6EDF7) 55%, transparent);
   cursor: pointer;
   font-size: 12px;
   line-height: 1;
 }
 .shot-hint .hk-close:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #E6EDF7;
+  background: color-mix(in srgb, var(--shot-bar-text, #E6EDF7) 12%, transparent);
+  color: var(--shot-bar-text, #E6EDF7);
 }
 
 /* 注：原 .longshot-btn / .shot-actions 已删。那两个按钮原本挂在 select 态（未确认选区），
@@ -755,18 +759,18 @@ body {
 .qr-bar {
   display: flex; align-items: center; gap: 6px;
   padding: 7px 10px; font-size: 11px;
-  background: rgba(16, 185, 129, 0.12);
-  border-bottom: 1px solid rgba(16, 185, 129, 0.25);
+  background: color-mix(in srgb, var(--green, #22c55e) 12%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--green, #22c55e) 25%, transparent);
   color: var(--text-primary, #E0E8F0);
 }
-.qr-ic { font-size: 13px; color: #34d399; flex-shrink: 0; }
+.qr-ic { font-size: 13px; color: var(--green, #34d399); flex-shrink: 0; }
 .qr-tx { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; word-break: break-all; }
 .qr-btn {
   flex-shrink: 0; height: 22px; padding: 0 9px; border-radius: 6px;
-  border: 1px solid rgba(16, 185, 129, 0.4); background: transparent;
-  color: #34d399; font-size: 10px; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--green, #22c55e) 40%, transparent); background: transparent;
+  color: var(--green, #34d399); font-size: 10px; cursor: pointer;
 }
-.qr-btn:hover { background: rgba(16, 185, 129, 0.15); }
+.qr-btn:hover { background: color-mix(in srgb, var(--green, #22c55e) 15%, transparent); }
 
 /* ===== 标注态选中框 + 元素缩放把手（V5 编辑态，微信/QQ 同款） ===== */
 /* 选中框：DOM 层（在 canvas 之上）整圈虚线（用户指定）。
@@ -821,13 +825,14 @@ body {
   position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
   z-index: 70; display: flex; align-items: center; gap: 8px;
   padding: 7px 14px; border-radius: 10px;
-  background: rgba(15, 23, 42, 0.96);
-  border: 1px solid rgba(248, 113, 113, 0.45); color: #FCA5A5;
+  background: var(--shot-bar-bg, rgba(15, 23, 42, 0.96));
+  border: 1px solid color-mix(in srgb, var(--danger, #F87171) 45%, transparent);
+  color: var(--danger, #FCA5A5);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   font-size: 12px; white-space: nowrap;
   animation: shotToastIn 0.18s ease;
 }
-.shot-toast.ok { border-color: rgba(34, 197, 94, 0.45); color: #86EFAC; }
+.shot-toast.ok { border-color: color-mix(in srgb, var(--green, #22c55e) 45%, transparent); color: var(--green, #86EFAC); }
 .shot-toast .ic { font-size: 13px; }
 @keyframes shotToastIn {
   from { opacity: 0; transform: translate(-50%, 6px); }
@@ -839,14 +844,14 @@ body {
   position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
   z-index: 46; display: flex; align-items: center; gap: 8px;
   padding: 6px 14px; border-radius: 10px;
-  background: rgba(15, 23, 42, 0.94);
-  border: 1px solid rgba(148, 168, 255, 0.35);
+  background: var(--shot-bar-bg, rgba(15, 23, 42, 0.94));
+  border: 1px solid color-mix(in srgb, var(--accent, #3B9EFF) 35%, transparent);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  font-size: 12px; color: #E6EDF7;
+  font-size: 12px; color: var(--shot-bar-text, #E6EDF7);
 }
 .picker-bar .sw { width: 16px; height: 16px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.35); }
 .picker-bar .hex { font-family: ui-monospace, Consolas, monospace; font-weight: 600; letter-spacing: 0.5px; }
-.picker-bar .hint { color: rgba(230, 237, 247, 0.55); font-size: 10px; }
+.picker-bar .hint { color: color-mix(in srgb, var(--shot-bar-text, #E6EDF7) 55%, transparent); font-size: 10px; }
 
 /* ===== OCR 文本编辑 ===== */
 .ocr-edit-out {
@@ -868,11 +873,11 @@ body {
   position: absolute; z-index: 55;
   display: flex; align-items: center; gap: 8px;
   padding: 7px 14px; border-radius: 999px;
-  background: rgba(15, 23, 42, 0.94);
-  border: 1px solid rgba(99, 102, 241, 0.45);
+  background: var(--shot-bar-bg, rgba(15, 23, 42, 0.94));
+  border: 1px solid color-mix(in srgb, var(--accent, #6366F1) 45%, transparent);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   /* 只剩识别中一种形态，不可点，所以不能再给 pointer 光标（那是在骗点击） */
-  font-size: 12px; color: #E6EDF7; cursor: default;
+  font-size: 12px; color: var(--shot-bar-text, #E6EDF7); cursor: default;
   animation: ocrPillIn 0.25s ease;
   white-space: nowrap;
 }
@@ -881,7 +886,8 @@ body {
    胶囊会 6s 自动收起，收起后标注态就再无任何 OCR 入口。 */
 .ocr-pill .spinner {
   width: 12px; height: 12px; border-radius: 50%;
-  border: 2px solid rgba(99, 102, 241, 0.3); border-top-color: #6366F1;
+  border: 2px solid color-mix(in srgb, var(--accent, #6366F1) 30%, transparent);
+  border-top-color: var(--accent, #6366F1);
   animation: ocrSpin 0.8s linear infinite;
 }
 @keyframes ocrSpin { to { transform: rotate(360deg); } }
@@ -891,97 +897,88 @@ body {
 }
 
 /* ===== 长截图状态小窗（独立窗口 longshot-status） =====
-   它是一个 300×48 的独立 Tauri 窗口，放在**选区之外**的屏幕角落。
+   独立 Tauri 窗口，尺寸 = screenshot.rs 的 LONGSHOT_W × LONGSHOT_H，放在**选区之外**。
    必须在选区外：长截图每帧都对选区矩形做 BitBlt，压在选区上就会被拼进长图。
-   位置由后端 pick_status_pos 挑选（带单测），选区占满屏幕时干脆不开窗。 */
-.ls-bar {
+   位置由后端 pick_status_pos 挑选（带单测，优先贴着选区），实在无处可放才走兜底。
+   内容对齐微信 PC 版：只有实时长图预览 + 进度 + 「完成/取消」。
+
+   两行结构：上 = 实时长图预览画布，下 = 原来的控制条 .ls-bar。
+   窗口外观（圆角/边框/阴影/配色）从 .ls-bar 上移到 .ls-root —— .ls-bar 现在只是内部一行。 */
+.ls-root {
   position: fixed; inset: 0;
-  display: flex; align-items: center; gap: 8px;
-  padding: 0 10px; border-radius: 10px;
-  background: rgba(15, 23, 42, 0.97);
-  border: 1px solid rgba(99, 102, 241, 0.5);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-  color: #E6EDF7; font-size: 11.5px;
+  display: flex; flex-direction: column; gap: 6px;
+  /* padding 必须是 10：LONGSHOT_W(420) - 10*2 = 400 = LONGSHOT_STRIP_W，
+     画布才能 1:1 不缩放；同时控制条仍有 400px 内宽（详见 screenshot.rs 的宽度注释）。 */
+  padding: 10px; box-sizing: border-box;
+  border-radius: 10px;
+  background: var(--shot-bar-bg, rgba(15, 23, 42, 0.97));
+  border: 2px solid color-mix(in srgb, var(--accent, #6366F1) 70%, transparent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255,255,255,0.06) inset;
+  color: var(--shot-bar-text, #E6EDF7); font-size: 11.5px;
   /* 截图窗的 body 光标是 crosshair，这个窗口继承了同一份样式表，要改回来 */
   cursor: default;
   -webkit-user-select: none; user-select: none;
   overflow: hidden;
+  /* 登场动画：从顶部滑入 + 轻微放大，确保暗色桌面上第一帧就抓得住视线 */
+  animation: lsIn 0.18s ease-out;
+}
+/* 实时长图预览：只显示尾部，新一条从底部追加、旧内容往上走。
+   宽高写死成与画布内部像素一致，避免 CSS 缩放把接缝线糊成一片。 */
+.ls-preview-cv {
+  flex: 0 0 auto;
+  width: 100%; height: 176px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  display: block;
+}
+.ls-bar {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 6px;
+  min-width: 0; overflow: hidden;
+}
+@keyframes lsIn {
+  from { opacity: 0; transform: translateY(-6px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 .ls-thumb {
   width: 22px; height: 34px; object-fit: cover; border-radius: 3px;
-  border: 1px solid rgba(148, 168, 255, 0.35); flex-shrink: 0; background: #1B2542;
+  border: 1px solid var(--shot-bar-border, rgba(148, 168, 255, 0.35)); flex-shrink: 0; background: #1B2542;
 }
 .ls-spin {
   width: 14px; height: 14px; margin: 0 4px; border-radius: 50%; flex-shrink: 0;
-  border: 2px solid rgba(99, 102, 241, 0.3); border-top-color: #6366F1;
+  border: 2px solid color-mix(in srgb, var(--accent, #6366F1) 30%, transparent);
+  border-top-color: var(--accent, #6366F1);
   animation: ocrSpin 0.8s linear infinite;
 }
 .ls-txt { flex: 1; min-width: 0; }
 .ls-main { white-space: nowrap; }
-.ls-main b { font-variant-numeric: tabular-nums; color: #fff; }
-.ls-main .ls-h { margin-left: 6px; color: #8FA3C4; font-size: 10.5px; }
+/* 拼接质量三色点（学 ShareX 的绿/黄/红）。
+   带 title 属性给文字解释 —— 颜色自己说不清「黄到底意味着什么」。 */
+.ls-dot {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  margin-right: 5px; vertical-align: middle;
+}
+.ls-dot.ok { background: #22C55E; box-shadow: 0 0 5px rgba(34, 197, 94, 0.7); }
+.ls-dot.warn { background: #FCD34D; box-shadow: 0 0 5px rgba(252, 211, 77, 0.7); }
+.ls-dot.bad { background: #F87171; box-shadow: 0 0 5px rgba(248, 113, 113, 0.7); }
+.ls-main b { font-variant-numeric: tabular-nums; color: var(--shot-bar-text, #fff); }
+.ls-main .ls-h { margin-left: 6px; color: var(--shot-bar-muted, #8FA3C4); font-size: 10.5px; }
 .ls-sub {
-  font-size: 10px; color: #7B8FB0; white-space: nowrap;
+  font-size: 10px; color: var(--shot-bar-muted, #7B8FB0); white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
 }
 .ls-btn {
-  flex-shrink: 0; height: 24px; padding: 0 8px; border-radius: 6px;
+  flex-shrink: 0; height: 24px; padding: 0 7px; border-radius: 6px;
   background: transparent; cursor: pointer; font-size: 10.5px; white-space: nowrap;
 }
-.ls-btn.stop { border: 1px solid rgba(34, 197, 94, 0.5); color: #86EFAC; }
-.ls-btn.stop:hover { background: rgba(34, 197, 94, 0.15); }
-.ls-btn.abort { border: 1px solid rgba(248, 113, 113, 0.45); color: #FCA5A5; }
-.ls-btn.abort:hover { background: rgba(248, 113, 113, 0.15); }
+.ls-btn.stop { border: 1px solid color-mix(in srgb, var(--green, #22c55e) 50%, transparent); color: var(--green, #86EFAC); }
+.ls-btn.stop:hover { background: color-mix(in srgb, var(--green, #22c55e) 15%, transparent); }
+.ls-btn.abort { border: 1px solid color-mix(in srgb, var(--danger, #F87171) 45%, transparent); color: var(--danger, #FCA5A5); }
+.ls-btn.abort:hover { background: color-mix(in srgb, var(--danger, #F87171) 15%, transparent); }
 .ls-btn.off { opacity: 0.4; cursor: not-allowed; }
 .ls-btn.off:hover { background: transparent; }
-.ls-mode { display: flex; gap: 2px; flex-shrink: 0; padding: 1px; border-radius: 6px; background: rgba(255, 255, 255, 0.06); }
-.ls-mbtn {
-  height: 22px; padding: 0 7px; border-radius: 5px; cursor: pointer; font-size: 10.5px;
-  background: transparent; color: #9FB0D0; border: none;
-}
-.ls-mbtn.on { background: rgba(99, 102, 241, 0.85); color: #fff; }
-.ls-mbtn:hover { color: #E6EDF7; }
-.ls-btn.next { border: 1px solid rgba(99, 102, 241, 0.6); color: #C7D2FE; font-weight: 600; }
-.ls-btn.next:hover { background: rgba(99, 102, 241, 0.2); }
+ color-mix(in srgb, var(--accent, #6366F1) 20%, transparent); }
 
-/* 长截图「预览即默认」淡预览层（窗口可见、不隐藏）：虚线框+斜纹延展+尺寸标签+终点青线 */
-.ls-preview {
-  position: absolute;
-  border: 2px dashed rgba(124, 108, 255, 0.9);
-  border-radius: 4px;
-  background: rgba(124, 108, 255, 0.08);
-  cursor: pointer;
-  box-sizing: border-box;
-  z-index: 20;
-}
-.ls-preview-more {
-  position: absolute; inset: 0;
-  border-radius: 2px;
-  background: repeating-linear-gradient(45deg,
-    rgba(124, 108, 255, 0.10) 0 8px, rgba(124, 108, 255, 0.03) 8px 16px);
-  pointer-events: none;
-}
-.ls-endline {
-  position: absolute; left: -6px; right: -6px; height: 3px;
-  background: #06b6d4; box-shadow: 0 0 6px rgba(6, 182, 212, 0.8);
-  pointer-events: none;
-}
-.ls-endknob {
-  position: absolute; right: -8px; top: -6px; width: 14px; height: 14px;
-  border-radius: 50%; background: #06b6d4; box-shadow: 0 0 4px rgba(6, 182, 212, 0.8);
-}
-.ls-preview-lbl {
-  position: absolute; left: 6px; top: -26px;
-  font-size: 11px; line-height: 1; white-space: nowrap;
-  background: rgba(124, 108, 255, 0.92); color: #fff;
-  padding: 3px 8px; border-radius: 6px; pointer-events: none;
-}
-.ls-preview-tip {
-  position: absolute; left: 6px; bottom: -22px;
-  font-size: 11px; color: rgba(230, 237, 247, 0.85);
-  white-space: nowrap; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
-  pointer-events: none;
-}
 
 /* 橡皮范围圈层：叠在标注画布之上，只显示一个跟随鼠标的圆。
    pointer-events: none 是关键 —— 它盖在画布上，吃了事件橡皮就没法用了。
@@ -1065,11 +1062,11 @@ body {
   display: flex; flex-direction: column; align-items: center; gap: 7px;
   padding: 9px 14px;
   border-radius: 12px;
-  background: rgba(14, 20, 38, 0.97);
-  border: 1px solid rgba(124, 108, 255, 0.6);
+  background: var(--shot-bar-bg, rgba(14, 20, 38, 0.97));
+  border: 1px solid color-mix(in srgb, var(--accent, #7C6CFF) 60%, transparent);
   box-shadow:
     0 12px 32px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(148, 168, 255, 0.25);
+    inset 0 1px 0 color-mix(in srgb, var(--shot-bar-text, #E6EDF7) 14%, transparent);
   white-space: nowrap;
   animation: maskIn 0.16s ease;
 }
@@ -1079,7 +1076,7 @@ body {
 }
 .mask-title {
   font-size: 12px; font-weight: 700; letter-spacing: 0.3px;
-  color: #ffb86b; /* 橙色强调：预览框同色系，一眼认出是自动打码的确认 */
+  color: var(--orange, #ffb86b); /* 橙色强调：预览框同色系，一眼认出是自动打码的确认 */
 }
 .mask-actions { display: flex; gap: 8px; }
 .mask-bar button {
@@ -1089,16 +1086,16 @@ body {
   transition: filter 0.12s;
 }
 .mask-confirm {
-  background: linear-gradient(135deg, #3b9eff, #6d5cf0);
+  background: var(--accent-solid, #2D78C2);
   color: #fff;
   border-color: rgba(255, 255, 255, 0.35) !important;
 }
 .mask-confirm:hover { filter: brightness(1.12); }
 .mask-cancel {
-  background: rgba(255, 255, 255, 0.08);
-  color: #c9d6ea;
+  background: color-mix(in srgb, var(--shot-bar-text, #c9d6ea) 8%, transparent);
+  color: var(--shot-bar-text, #c9d6ea);
 }
-.mask-cancel:hover { background: rgba(255, 255, 255, 0.15); }
+.mask-cancel:hover { background: color-mix(in srgb, var(--shot-bar-text, #c9d6ea) 15%, transparent); }
 /* 属性条翻转（above / inside：选区贴底时整组翻到选区上方）→ 确认条翻到分段上方 */
 .attr-bar.top-attached .mask-bar { top: auto; bottom: calc(100% + 10px); }
 

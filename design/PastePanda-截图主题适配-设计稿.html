@@ -1,0 +1,800 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>截图功能主题适配 · 方案 B 令牌化设计稿</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0d1117; color: #e6edf7;
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    padding: 28px 32px 60px;
+  }
+  h1 { font-size: 21px; margin: 0 0 6px; }
+  .sub { color: #9fb0c8; font-size: 13px; margin-bottom: 8px; line-height: 1.7; }
+  .sub code, p code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; font-size: 11px; color: #ffd9a0; }
+  .note { margin-top: 26px; font-size: 12px; color: #b9c6e0; background: rgba(34,41,76,.6); border-left: 3px solid #ff9f43; padding: 12px 16px; border-radius: 0 10px 10px 0; line-height: 1.8; }
+  .note b { color: #ffd9a0; }
+  .note ul { margin: 6px 0 0; padding-left: 18px; }
+
+  /* ===== 主题切换 ===== */
+  .switcher { display: flex; gap: 8px; flex-wrap: wrap; margin: 18px 0 4px; }
+  .switcher button {
+    padding: 6px 14px; border-radius: 999px; cursor: pointer;
+    background: rgba(255,255,255,.06); color: #d5deec;
+    border: 1px solid rgba(255,255,255,.14); font-size: 12px; font-family: inherit;
+    transition: all .15s;
+  }
+  .switcher button:hover { background: rgba(255,255,255,.12); }
+  .switcher button.on { background: linear-gradient(135deg,#3b9eff,#6d5cf0); color: #fff; border-color: rgba(255,255,255,.35); font-weight: 600; }
+  .sw-label { font-size: 11px; color: #7d8ba3; margin: 2px 0 14px; }
+
+  /* ===== 对比卡片 ===== */
+  .row { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+  .card { width: 560px; border-radius: 16px; padding: 16px 16px 14px; border: 1px solid rgba(255,255,255,.09); background: #141a26; }
+  .card h2 { font-size: 15px; margin: 0 0 2px; display: flex; align-items: center; gap: 8px; }
+  .card h2 .tag { font-size: 11px; padding: 2px 9px; border-radius: 999px; }
+  .tag.before { background: #3a2b2b; color: #f0a0a0; }
+  .tag.after { background: #1f3a2b; color: #8fe0b0; }
+  .card .cap { font-size: 11px; color: #8fa0b8; margin-bottom: 12px; }
+
+  /* ===== 截图场景舞台 ===== */
+  .stage {
+    position: relative; height: 400px; border-radius: 12px; overflow: hidden;
+    border: 1px solid rgba(255,255,255,.07);
+    background: linear-gradient(160deg, #2b3245 0%, #1d2333 55%, #161b28 100%);
+    user-select: none;
+  }
+  /* 伪桌面内容（被截图的内容） */
+  .desk-win {
+    position: absolute; border-radius: 8px; overflow: hidden;
+    background: rgba(255,255,255,.09);
+    border: 1px solid rgba(255,255,255,.12);
+    font-size: 9.5px; color: rgba(255,255,255,.65);
+  }
+  .desk-win .tbar { height: 16px; display: flex; align-items: center; gap: 4px; padding: 0 7px; background: rgba(255,255,255,.08); }
+  .desk-win .tbar i { width: 5px; height: 5px; border-radius: 50%; display: inline-block; }
+  .desk-win .tbar i:nth-child(1){ background:#ff5f57 } .desk-win .tbar i:nth-child(2){ background:#febc2e } .desk-win .tbar i:nth-child(3){ background:#28c840 }
+  .desk-win .body { padding: 7px 9px; line-height: 1.7; }
+  .desk-win .line { height: 5px; border-radius: 3px; background: rgba(255,255,255,.14); margin-bottom: 5px; }
+  .desk-win .line.w40 { width: 40%; } .desk-win .line.w70 { width: 70%; } .desk-win .line.w90 { width: 90%; }
+
+  /* 遮罩（选区外压暗：保持深色，功能层不跟主题） */
+  .shade { position: absolute; background: rgba(10,14,24,.55); }
+  /* 选区框 */
+  .sel-rect {
+    position: absolute;
+    outline: 3px solid var(--accent);
+    box-shadow: 0 0 0 1px rgba(0,0,0,.55), 0 0 8px var(--accent-glow);
+  }
+  /* 尺寸标签 */
+  .sel-size {
+    position: absolute; left: 50%; transform: translateX(-50%); bottom: -30px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 12px; border-radius: 7px; white-space: nowrap;
+    background: var(--shot-bar-bg); color: var(--shot-bar-text);
+    border: 1px solid var(--shot-bar-border);
+    box-shadow: 0 6px 18px rgba(0,0,0,.3);
+    font-size: 11px; font-variant-numeric: tabular-nums;
+  }
+  .sel-size .hint { color: var(--shot-bar-muted); font-size: 10px; }
+
+  /* ===== 主工具栏（令牌化） ===== */
+  .annot-toolbar {
+    position: absolute;
+    display: flex; align-items: center; gap: 2px;
+    padding: 5px 7px; border-radius: 12px; white-space: nowrap;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--shot-bar-bg) 94%, var(--accent)), var(--shot-bar-bg));
+    backdrop-filter: blur(18px) saturate(1.4);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    border: 1px solid var(--shot-bar-border);
+    box-shadow:
+      0 12px 36px rgba(0,0,0,.4),
+      inset 0 1px 0 color-mix(in srgb, var(--shot-bar-text) 14%, transparent),
+      inset 0 -1px 0 rgba(0,0,0,.18);
+    z-index: 30;
+  }
+  .tool {
+    min-width: 36px; height: 42px; border-radius: 8px; padding: 0 3px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    cursor: pointer; border: 1px solid transparent;
+    color: var(--shot-bar-text); font-size: 11px; position: relative;
+  }
+  .tool .ic svg { width: 16px; height: 16px; display: block; }
+  .tool .lb { font-size: 8.5px; line-height: 1; letter-spacing: .2px; opacity: .72; }
+  .tool:hover { background: var(--shot-hover); }
+  .tool.on {
+    background: var(--accent-solid); border-color: rgba(255,255,255,.35); color: #fff;
+    box-shadow: 0 2px 12px var(--accent-glow);
+  }
+  .tool.on .lb { opacity: 1; }
+  .tool.dim { color: var(--shot-bar-muted); }
+  .tool.exit-save { color: var(--shot-save); }
+  .tool.exit-pin { color: var(--shot-pin); }
+  .tool.ocr-btn { color: var(--shot-ocr); }
+  .tool.longshot { color: var(--shot-long); }
+  .tool.exit-ai { color: var(--brand-ai-from); }
+  .tool.exit-ai .lb { opacity: 1; font-weight: 700; }
+  .tool .badge {
+    position: absolute; top: 2px; right: 1px;
+    min-width: 14px; height: 14px; padding: 0 3px;
+    border-radius: 8px; font-size: 8px; line-height: 14px; font-weight: 700; text-align: center;
+    background: var(--accent-solid); color: #fff;
+    box-shadow: 0 0 0 1.5px var(--shot-bar-bg);
+  }
+  .tool .badge.warn { background: linear-gradient(135deg, var(--danger), var(--danger-hover)); }
+  .tool.done-btn, .tool.cancel-btn, .tool.more-btn { flex-direction: row; min-width: 0; height: 32px; padding: 0 11px; font-size: 11px; }
+  .tool.done-btn {
+    font-weight: 600; color: #fff;
+    background: var(--accent-solid);
+    border: 1px solid rgba(255,255,255,.3);
+    box-shadow: 0 2px 10px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,.28);
+  }
+  .tool.cancel-btn { color: var(--shot-bar-muted); }
+  .tool.more-btn { color: var(--shot-bar-muted); }
+  .tsep {
+    width: 1px; height: 22px; margin: 0 5px;
+    background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent) 45%, transparent), transparent);
+  }
+  .annot-toolbar .pair-sep { width: 1px; height: 18px; margin: 0 2px; background: color-mix(in srgb, var(--shot-bar-muted) 30%, transparent); }
+
+  /* ===== 属性条 ===== */
+  .attr-bar {
+    position: absolute;
+    display: flex; align-items: center; gap: 1px;
+    padding: 4px 9px; border-radius: 10px; white-space: nowrap;
+    background: var(--shot-bar-bg);
+    border: 1px solid var(--shot-bar-border);
+    box-shadow: 0 8px 24px rgba(0,0,0,.35);
+  }
+  .attr-bar .albl { font-size: 9.5px; color: var(--shot-bar-muted); margin: 0 5px 0 2px; }
+  .cwrap { width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .cwrap:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .cwrap svg { width: 13px; height: 13px; display: block; }
+  .cp { width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid transparent; }
+  .cp.on { border-color: var(--shot-bar-text); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent); }
+  .wpick {
+    width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--shot-bar-text);
+  }
+  .wpick:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .wpick.on { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent-strong); }
+  .wpick.txt { width: auto; min-width: 22px; padding: 0 7px; font-size: 9.5px; }
+  .asep { width: 1px; height: 15px; margin: 0 7px; background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent) 45%, transparent), transparent); }
+  .wdot { border-radius: 50%; background: currentColor; display: block; }
+  .attr-bar .aval { font-size: 9.5px; color: var(--shot-bar-muted); margin-left: 4px; }
+
+  /* ===== 浮层巡礼 ===== */
+  .gallery { margin-top: 30px; }
+  .gallery h3 { font-size: 14px; margin-bottom: 12px; color: #cfe; }
+  .g-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+  .g-item {
+    background: #141a26; border: 1px solid rgba(255,255,255,.09); border-radius: 12px; padding: 12px;
+  }
+  .g-item .g-cap { font-size: 11px; color: #9fb0c8; margin-bottom: 10px; }
+  .g-item .g-cap code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; font-size: 10px; color: #ffd9a0; }
+
+  /* 各浮层表面（全部走令牌） */
+  .mini { position: relative; height: 96px; border-radius: 8px; overflow: hidden;
+          background: linear-gradient(135deg, rgba(120,140,180,.14), rgba(120,140,180,.06)); }
+  .shot-hint {
+    position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 9px;
+    padding: 6px 12px; border-radius: 10px; white-space: nowrap;
+    background: var(--shot-bar-bg); border: 1px solid var(--shot-bar-border);
+    color: var(--shot-bar-text); font-size: 10px;
+    box-shadow: 0 6px 22px rgba(0,0,0,.3);
+  }
+  .shot-hint .hk { color: var(--accent); font-weight: 600; }
+  .shot-hint .sep { width: 1px; height: 11px; background: color-mix(in srgb, var(--shot-bar-muted) 30%, transparent); }
+  .mode-pill {
+    position: absolute; left: 12px; top: 10px;
+    display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 14px;
+    background: var(--shot-bar-bg); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+    box-shadow: 0 8px 24px rgba(0,0,0,.35);
+    color: var(--shot-bar-text); font-size: 11px; white-space: nowrap;
+  }
+  .mode-pill .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .mode-pill .dot.smart { background: var(--shot-ocr); box-shadow: 0 0 6px var(--shot-ocr); }
+  .mode-pill .sw { font-size: 9px; color: var(--shot-bar-muted); }
+  .mask-bar {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 9px 14px; border-radius: 12px; white-space: nowrap;
+    background: var(--shot-bar-bg); border: 1px solid color-mix(in srgb, var(--orange) 60%, transparent);
+    box-shadow: 0 12px 32px rgba(0,0,0,.4);
+  }
+  .mask-title { font-size: 11px; font-weight: 700; color: var(--orange); }
+  .mask-actions { display: flex; gap: 8px; }
+  .mask-actions button { font-size: 11px; font-weight: 600; padding: 6px 12px; border-radius: 8px; cursor: pointer; border: 1px solid rgba(255,255,255,.16); }
+  .mask-confirm { background: var(--accent-solid); color: #fff; }
+  .mask-cancel { background: color-mix(in srgb, var(--shot-bar-text) 8%, transparent); color: var(--shot-bar-text); }
+  .shot-tip {
+    position: absolute; left: 12px; bottom: 8px;
+    padding: 3px 8px; border-radius: 6px; font-size: 9px; white-space: nowrap;
+    background: var(--shot-bar-bg); color: var(--shot-bar-text);
+    border: 1px solid var(--shot-bar-border);
+    box-shadow: 0 4px 12px rgba(0,0,0,.3);
+  }
+  .shot-toast {
+    position: absolute; left: 50%; top: 8px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: 10px; white-space: nowrap;
+    background: var(--shot-bar-bg); color: var(--danger);
+    border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+    font-size: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.3);
+  }
+  .shot-toast.ok { border-color: color-mix(in srgb, var(--green) 45%, transparent); color: var(--green); }
+  .picker-bar {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    display: flex; align-items: center; gap: 7px;
+    padding: 6px 13px; border-radius: 10px; white-space: nowrap;
+    background: var(--shot-bar-bg); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+    color: var(--shot-bar-text); font-size: 11px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.3);
+  }
+  .picker-bar .sw { width: 15px; height: 15px; border-radius: 4px; border: 1px solid rgba(255,255,255,.35); }
+  .picker-bar .hex { font-family: ui-monospace, Consolas, monospace; font-weight: 600; letter-spacing: .5px; }
+  .picker-bar .hint { color: var(--shot-bar-muted); font-size: 9px; }
+  .mag-view {
+    position: absolute; left: 12px; top: 10px;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 6px; border-radius: 10px;
+    background: var(--shot-bar-bg); border: 1px solid var(--shot-bar-border);
+    box-shadow: 0 10px 30px rgba(0,0,0,.3);
+  }
+  .mag-canvas { width: 56px; height: 40px; border-radius: 5px; background:
+      repeating-conic-gradient(rgba(128,128,128,.35) 0% 25%, rgba(128,128,128,.12) 0% 50%) 50% / 8px 8px; }
+  .mag-info { font-size: 8.5px; color: var(--shot-bar-text); font-family: ui-monospace, Consolas, monospace; }
+  .mag-info .hex { color: var(--accent); }
+  .text-draft {
+    position: absolute; left: 12px; top: 10px; min-width: 96px;
+    outline: 1.5px solid var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent), 0 6px 18px rgba(0,0,0,.3);
+    background: rgba(10,16,32,.16); border: none; border-radius: 6px;
+    color: #fff; font-size: 12px; line-height: 1.3; padding: 5px 7px;
+    -webkit-text-stroke: .6px rgba(0,0,0,.85);
+  }
+  .text-toolbar {
+    position: absolute; left: 12px; top: 42px;
+    display: flex; align-items: center; gap: 4px;
+    padding: 3px 6px; border-radius: 8px;
+    background: var(--shot-bar-bg); border: 1px solid var(--shot-bar-border);
+    box-shadow: 0 6px 18px rgba(0,0,0,.3);
+  }
+  .text-toolbar .ttbtn { min-width: 22px; height: 20px; padding: 0 5px; border: 1px solid var(--shot-bar-border); background: transparent; color: var(--shot-bar-text); border-radius: 6px; cursor: pointer; font-size: 11px; line-height: 1; }
+  .text-toolbar .tkeys { margin-left: 3px; color: var(--shot-bar-muted); font-size: 9px; white-space: nowrap; }
+  .text-toolbar .tsep { width: 1px; height: 13px; margin: 0 2px; background: var(--shot-bar-border); }
+  .ocr-copy-bar {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    display: flex; gap: 5px; padding: 4px 5px; border-radius: 8px;
+    background: var(--shot-bar-bg); border: 1px solid var(--shot-bar-border);
+    box-shadow: 0 4px 14px rgba(0,0,0,.3);
+  }
+  .ocr-copy-bar button { border: none; border-radius: 6px; padding: 3px 9px; font-size: 10px; cursor: pointer; }
+  .ocr-copy-bar button.primary { background: var(--accent-solid); color: #fff; }
+  .ocr-copy-bar button.ghost { background: color-mix(in srgb, var(--shot-bar-text) 12%, transparent); color: var(--shot-bar-text); }
+  .snap-tip {
+    position: absolute; left: 12px; bottom: 8px;
+    padding: 2px 9px; border-radius: 6px; font-size: 9px; white-space: nowrap;
+    background: var(--shot-bar-bg); color: #ffd75e;
+    border: 1px solid var(--shot-bar-border);
+  }
+  .ls-bar {
+    position: absolute; inset: 8px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 10px; border-radius: 10px;
+    background: var(--shot-bar-bg); border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+    box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    color: var(--shot-bar-text); font-size: 10.5px; cursor: default; overflow: hidden;
+  }
+  .ls-thumb { width: 20px; height: 30px; border-radius: 3px; border: 1px solid var(--shot-bar-border);
+              background: repeating-linear-gradient(135deg, rgba(128,128,128,.3) 0 4px, rgba(128,128,128,.1) 4px 8px); }
+  .ls-main b { color: var(--shot-bar-text); }
+  .ls-main .ls-h { margin-left: 6px; color: var(--shot-bar-muted); font-size: 9px; }
+  .ls-sub { font-size: 9px; color: var(--shot-bar-muted); white-space: nowrap; }
+  .ls-btn { flex-shrink: 0; height: 22px; padding: 0 7px; border-radius: 6px; background: transparent; cursor: pointer; font-size: 9.5px; }
+  .ls-btn.stop { border: 1px solid color-mix(in srgb, var(--green) 50%, transparent); color: var(--green); }
+  .ls-btn.abort { border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent); color: var(--danger); }
+  .ls-mbtn { height: 20px; padding: 0 6px; border-radius: 5px; cursor: pointer; font-size: 9.5px; background: transparent; color: var(--shot-bar-muted); border: none; }
+  .ls-mbtn.on { background: color-mix(in srgb, var(--accent) 80%, transparent); color: #fff; }
+
+  /* ===== 面板类（今日已走主题令牌，设计稿确认其跟随） ===== */
+  .panel-row { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 16px; }
+  .panel {
+    width: 224px; border-radius: 12px; overflow: hidden;
+    background: var(--glass-dialog-bg); backdrop-filter: blur(18px) saturate(1.3);
+    border: 1px solid var(--glass-dialog-border, var(--border-color));
+    box-shadow: 0 14px 40px rgba(0,0,0,.4);
+    font-size: 11px;
+  }
+  .panel .ph {
+    display: flex; align-items: center; gap: 6px; padding: 9px 12px; font-size: 11px; font-weight: 600;
+    background: var(--accent-light); border-bottom: 1px solid var(--accent-border);
+    color: var(--accent-strong);
+  }
+  .panel .ph .sp { flex: 1; }
+  .panel .ph .btn { height: 22px; padding: 0 9px; border: none; border-radius: 6px; background: var(--accent-solid); color: #fff; font-size: 10px; }
+  .panel .pr { display: flex; align-items: center; gap: 8px; padding: 7px 12px; color: var(--text-primary); }
+  .panel .pr:hover { background: var(--hover); }
+  .panel .pr .ic { width: 24px; height: 24px; border-radius: 7px; background: var(--input-bg); display: flex; align-items: center; justify-content: center; font-size: 12px; }
+  .panel .pr .sub { font-size: 9px; color: var(--text-muted); }
+  .panel .pr.primary { background: var(--accent-light); border-radius: 8px; margin: 5px 8px; padding: 7px 10px; }
+  .panel .pr.pin .ic { color: var(--shot-pin); }
+  .panel .pr.ai .ic { background: linear-gradient(135deg, var(--brand-ai-from), var(--brand-ai-to)); color: #fff; }
+  .panel .pr.chain .ic { background: linear-gradient(135deg, #0ea5e9, #06b6d4); color: #fff; }
+  .panel .pg { padding: 6px 12px 3px; font-size: 9px; font-weight: 600; letter-spacing: .5px; color: var(--text-muted); border-top: 1px solid var(--border-color); }
+  .panel .pg:first-of-type { border-top: 0; }
+
+  /* ===== 令牌表 ===== */
+  .tbl-wrap { margin-top: 30px; }
+  .tbl-wrap h3 { font-size: 14px; margin-bottom: 10px; color: #cfe; }
+  table { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+  th, td { border: 1px solid rgba(255,255,255,.1); padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: rgba(255,255,255,.05); color: #cfe; font-weight: 600; }
+  td code { background: rgba(255,255,255,.07); padding: 0 4px; border-radius: 4px; font-size: 10.5px; color: #ffd9a0; }
+  .del { color: #f0a0a0; text-decoration: line-through; opacity: .75; }
+  .sw-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; border: 1px solid rgba(255,255,255,.25); }
+  .cols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .cols.two { grid-template-columns: 1fr 1fr; }
+  .col-tok { background: #141a26; border: 1px solid rgba(255,255,255,.09); border-radius: 10px; padding: 10px 12px; font-size: 11px; line-height: 1.9; }
+  .col-tok b { color: #cfe; display: block; margin-bottom: 4px; }
+  .kbd { background: rgba(255,255,255,.12); border-radius: 4px; padding: 1px 6px; font-size: 10px; }
+  .foot { margin-top: 26px; font-size: 11.5px; color: #7d8ba3; line-height: 1.8; }
+</style>
+</head>
+<body>
+
+<h1>截图功能主题适配 · 方案 B 令牌化</h1>
+<div class="sub">
+  现状：<code>screenshot-main.tsx:28</code> / <code>longshot-main.tsx:27</code> 写死 <code>applyTheme("midnight")</code>，<code>screenshot.css</code> 大部分表面硬编码深色，与软件主题脱节。<br>
+  方案 B：截图窗 / 长截图状态窗改为跟随用户主题（<code>get_config</code> + <code>theme-changed</code>，同 popup 模式），并把 <code>screenshot.css</code> 全部浮层表面令牌化 —— 6 套主题各得其所。<br>
+  本稿可直接在浏览器里切换 6 套主题预览「改后」效果；「改前」钉死在午夜主题作对照。
+</div>
+
+<div class="switcher" id="switcher"></div>
+<div class="sw-label">↑ 点击切换「改后」预览主题（改前保持午夜不变）</div>
+
+<div class="row">
+  <!-- 改前 -->
+  <div class="card">
+    <h2>改前 <span class="tag before">现状 · 写死午夜</span></h2>
+    <div class="cap">无论用户选什么主题，截图 UI 永远是这一套深蓝玻璃 —— 浅色主题用户眼里是「不跟软件走」。<b style="color:#f0a0a0">主题切换对截图 UI 无效。</b></div>
+    <div class="stage" id="stage-before"></div>
+  </div>
+  <!-- 改后 -->
+  <div class="card">
+    <h2>改后 <span class="tag after">令牌化 · 跟随主题</span></h2>
+    <div class="cap">截图 UI 跟随当前主题：浅色主题 = 浅玻璃 + 深字（描边/阴影保底辨识），深色主题 = 深玻璃（与现状观感一致），
+        主色 / 悬浮 / 强调色全部走主题令牌。<b style="color:#8fe0b0">切主题实时生效。</b></div>
+    <div class="stage" id="stage-after"></div>
+  </div>
+</div>
+
+<!-- 浮层巡礼 -->
+<div class="gallery">
+  <h3>浮层巡礼（全部令牌化 · 跟随主题切换实时预览）</h3>
+  <div class="g-grid" id="gallery"></div>
+</div>
+
+<!-- 面板类 -->
+<div class="gallery">
+  <h3>面板类（今日已走主题令牌，令牌化后自动跟随；此处确认 6 主题下的观感）</h3>
+  <div class="panel-row" id="panels"></div>
+</div>
+
+<!-- 令牌表 -->
+<div class="tbl-wrap">
+  <h3>令牌映射：硬编码色 → 主题令牌</h3>
+  <table>
+    <thead>
+      <tr><th style="width:200px">现状硬编码（screenshot.css）</th><th>替换为</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>.annot-toolbar</code> 背景 <span class="del">linear-gradient(180deg, rgba(34,41,76,.94), rgba(16,21,40,.96))</span></td><td><code>linear-gradient(180deg, color-mix(in srgb, var(--shot-bar-bg) 94%, var(--accent)), var(--shot-bar-bg))</code></td><td>玻璃底走 <code>--shot-bar-bg</code>（浅色主题白玻璃 / 深色主题深玻璃），顶部融入一档 <code>--accent</code> 主题色渐变，替代「写死 indigo」</td></tr>
+      <tr><td><code>.annot-toolbar</code> 边框 <span class="del">rgba(99,102,241,.4)</span></td><td><code>var(--shot-bar-border)</code></td><td>每主题一档描边（浅色主题用深灰/主题色描边，深色主题用亮白描边）</td></tr>
+      <tr><td><code>.tool</code> 文字 <span class="del">#E0E8F0 / #9DB2D0</span></td><td><code>var(--shot-bar-text) / var(--shot-bar-muted)</code></td><td>浅色主题深字、深色主题亮字，对比度按主题红线走</td></tr>
+      <tr><td><code>.tool.on</code> <span class="del">linear-gradient(135deg,#3B9EFF,#6D5CF0)</span></td><td><code>var(--accent-solid)</code> + accent 光晕</td><td>每主题实色强调（accent-solid 全部按白字 4.5:1 校验过），选中的工具一眼认出是「本主题的主色」</td></tr>
+      <tr><td><code>.tool.done-btn</code> <span class="del">linear-gradient(135deg,#6366F1,#3B9EFF)</span></td><td><code>var(--accent-solid)</code> + 内高光</td><td>完成按钮用主题主色实底（白字达标），不再写死蓝紫</td></tr>
+      <tr><td><code>.tool .badge</code> <span class="del">linear-gradient(135deg,#3B9EFF,#6D5CF0)</span></td><td><code>var(--accent-solid)</code></td><td>角标同主色；失败角标 <code>var(--danger)</code></td></tr>
+      <tr><td><code>.tool.exit-save / .exit-pin / .ocr-btn / .longshot</code> <span class="del">#A5C8FF / #F9A8D4 / #7DE0C4 / #8CC5FF</span></td><td><code>--shot-save / --shot-pin / --shot-ocr / --shot-long</code></td><td>出口语义色：深色主题保留现色；浅色主题换深色档（如粉 #BE185D、薄荷 #0E8A6D）保证浅玻璃上 4.5:1</td></tr>
+      <tr><td><code>.tool.exit-ai</code> <span class="del">重绑 --brand-ai-from/to 为深色档</span></td><td>删除重绑，直接用主题自身 <code>var(--brand-ai-from/to)</code></td><td>主栏不再强制深底后，浅色主题用浅色档品牌渐变、深色主题用深色档 —— 原 hack 可以删了</td></tr>
+      <tr><td><code>.tool:hover / .cwrap:hover / .wpick:hover</code> <span class="del">#0F1F35 / rgba(148,168,255,.14)</span></td><td><code>var(--shot-hover)</code> / <code>color-mix(in srgb, var(--accent) 12%, transparent)</code></td><td>悬浮反馈跟主题</td></tr>
+      <tr><td><code>.wpick.on / .cwrap.picker.on</code> <span class="del">rgba(59,158,255,.28)+白字</span></td><td><code>color-mix(in srgb, var(--accent) 20%, transparent)</code> + <code>var(--accent-strong)</code></td><td>浅色主题下白字会糊在浅蓝底上，改为主题强调色文字</td></tr>
+      <tr><td><code>.attr-bar / .mode-pill / .mask-bar / .shot-hint / .shot-tip / .sel-size / .text-toolbar / .ocr-copy-bar / .ocr-pill / .shot-toast / .picker-bar / .mag-view / .snap-tip / .ls-bar</code> <span class="del">各类 rgba 深底</span></td><td><code>var(--shot-bar-bg) + var(--shot-bar-border) + var(--shot-bar-text/muted)</code></td><td>所有浮层表面统一走截图浮层令牌族，一套变量管全部</td></tr>
+      <tr><td><code>.tsep / .asep</code> <span class="del">indigo 渐变细线</span></td><td><code>color-mix(in srgb, var(--accent) 45%, transparent)</code></td><td>分隔线跟主题主色</td></tr>
+      <tr><td><code>.ocr-drawer / .act-panel / .pop-layer</code> <span class="del">fallback 深色</span></td><td>已用 <code>--glass-dialog-bg / --border-color / --accent-light</code> 等（现状）</td><td>今日已令牌化，改后直接跟随；抽屉头 / 分组头颜色变主题 accent-light</td></tr>
+      <tr><td>选区遮罩 <code>.shade-block / .edge-band</code> <span class="del">rgba(10,14,24,.5~.6)</span></td><td><b style="color:#ffd9a0">保持深色不变</b></td><td>遮罩是功能层不是 UI：任何主题下压暗选区外、让选区更亮（微信/QQ 同款），不跟随主题</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="cols two">
+  <div class="col-tok">
+    <b>新增令牌族（每主题在 theme.css 定义一档）</b>
+    <code>--shot-bar-bg</code> 浮层玻璃底 · <code>--shot-bar-border</code> 描边 · <code>--shot-bar-text</code> 主文字 · <code>--shot-bar-muted</code> 次文字 · <code>--shot-hover</code> hover 底<br>
+    <code>--shot-save / --shot-pin / --shot-ocr / --shot-long</code> 四个出口语义色
+  </div>
+  <div class="col-tok">
+    <b>取值对照（示意）</b>
+    浅色档（ocean / forest / blossom / dawn）：<code>--shot-bar-bg: rgba(255,255,255,.90~.92)</code>，<code>--shot-bar-text: var(--text-primary)</code>，<code>--shot-pin: #BE185D</code>，<code>--shot-ocr: #0E8A6D</code><br>
+    深色档（midnight / ocean-dark）：<code>--shot-bar-bg: rgba(20,20,24,.94) / rgba(10,22,40,.94)</code>，出口色沿用现 #F9A8D4 / #7DE0C4 / #A5C8FF / #8CC5FF
+  </div>
+</div>
+
+<div class="note">
+  <b>实现要点（基于真实代码）</b>
+  <ul>
+    <li>入口：<code>screenshot-main.tsx</code> 与 <code>longshot-main.tsx</code> 删除 <code>applyTheme("midnight")</code>，改照 <code>popup-main.tsx</code> 模式：<code>applyTheme(DEFAULT_THEME)</code> → <code>invoke("get_config")</code> 读主题 → <code>listen("theme-changed")</code> 实时跟随（截图窗与托盘弹窗共用 default capability，权限已具备，纯前端改动）。</li>
+    <li>令牌：6 套主题各补一组 <code>--shot-*</code> 变量（放 theme.css 各主题块内，单一数据源，规则 11）；screenshot.css 删除硬编码色、全部改为 <code>var(--shot-*)</code> / 现有主题令牌。</li>
+    <li>对比度红线：所有「白字实色底」走 <code>--accent-solid</code>（6 套主题全部 4.5:1 校验过）；浅色玻璃上的次要文字走 <code>--text-muted</code> 的浅色档；出口语义色（粉/薄荷/蓝）在浅色主题换深色档保证 4.5:1。</li>
+    <li>AI 渐变 hack：<code>.annot-toolbar { --brand-ai-from/to: … }</code> 重绑删除（原注释里「浅色主题下压深底看不见」的前提不再成立）。</li>
+    <li>遮罩 / 选区框 / 文字输入框底板保持功能语义：遮罩深色压暗、选区框 <code>var(--accent)</code>、输入框半透明底 + 对比描边 —— 这些是与「底图内容」交互的层，不跟主题（微信/QQ 同理）。</li>
+    <li>测试：新增 <code>theme-changed</code> 跟随与令牌映射的守卫测试；现有截图几何/布局测试不受影响（只动颜色不动坐标）。</li>
+  </ul>
+</div>
+
+<div class="foot">设计稿仅示意颜色与结构；实际尺寸 / 间距 / 圆角以 screenshot.css 为准。改后观感以 dev 实测为准。</div>
+
+<script>
+  const THEMES = [
+    { key: "ocean",      name: "经典白", dark: false },
+    { key: "midnight",   name: "午夜",   dark: true  },
+    { key: "ocean-dark", name: "深海",   dark: true  },
+    { key: "forest",     name: "森林",   dark: false },
+    { key: "blossom",    name: "美乐蒂", dark: false },
+    { key: "dawn",       name: "晨曦",   dark: false },
+  ];
+
+  /* ===== 每主题令牌（与 theme.css 取同一批值 + 新增 --shot-*） ===== */
+  const TOK = {
+    ocean: {
+      accent: "#0284C7", "accent-solid": "#027CBB", "accent-strong": "#0273AD", "accent-light": "#E0F2FE",
+      "text-primary": "#0F172A", "text-muted": "#627083", hover: "#E8ECF2", "border-color": "#E0E4EB",
+      "glass-dialog-bg": "rgba(255,255,255,.97)", "glass-dialog-border": "rgba(0,0,0,.06)",
+      "brand-ai-from": "#1D4ED8", "brand-ai-to": "#6D28D9",
+      green: "#11813A", danger: "#D82525", "danger-hover": "#B91C1C", orange: "#C54A0A",
+      "shot-bar-bg": "rgba(255,255,255,.92)", "shot-bar-border": "rgba(15,23,42,.16)", "shot-bar-text": "#0F172A",
+      "shot-bar-muted": "#627083", "shot-hover": "#E8ECF2",
+      "shot-save": "#0273AD", "shot-pin": "#BE185D", "shot-ocr": "#0E8A6D", "shot-long": "#0273AD",
+    },
+    midnight: {
+      accent: "#818CF8", "accent-solid": "#666FC4", "accent-strong": "#818CF8", "accent-light": "#1E1B4B",
+      "text-primary": "#E4E4E7", "text-muted": "#8D8D95", hover: "#1F1F23", "border-color": "#27272A",
+      "glass-dialog-bg": "rgba(20,20,24,.66)", "glass-dialog-border": "rgba(255,255,255,.07)",
+      "brand-ai-from": "#A8DEFF", "brand-ai-to": "#D8CCFF",
+      green: "#4ADE80", danger: "#F87171", "danger-hover": "#FCA5A5", orange: "#FB923C",
+      "shot-bar-bg": "rgba(20,20,24,.94)", "shot-bar-border": "rgba(255,255,255,.14)", "shot-bar-text": "#E4E4E7",
+      "shot-bar-muted": "#8D8D95", "shot-hover": "#1F1F23",
+      "shot-save": "#A5C8FF", "shot-pin": "#F9A8D4", "shot-ocr": "#7DE0C4", "shot-long": "#8CC5FF",
+    },
+    "ocean-dark": {
+      accent: "#3B9EFF", "accent-solid": "#2D78C2", "accent-strong": "#3B9EFF", "accent-light": "#0A1E3A",
+      "text-primary": "#E0E8F0", "text-muted": "#7994B4", hover: "#0F1F35", "border-color": "#162B45",
+      "glass-dialog-bg": "rgba(10,22,40,.66)", "glass-dialog-border": "rgba(255,255,255,.08)",
+      "brand-ai-from": "#A8DEFF", "brand-ai-to": "#D8CCFF",
+      green: "#4ADE80", danger: "#FF6B8A", "danger-hover": "#FF9DBD", orange: "#FB923C",
+      "shot-bar-bg": "rgba(10,22,40,.94)", "shot-bar-border": "rgba(148,168,255,.30)", "shot-bar-text": "#E0E8F0",
+      "shot-bar-muted": "#7994B4", "shot-hover": "#0F1F35",
+      "shot-save": "#A5C8FF", "shot-pin": "#F9A8D4", "shot-ocr": "#7DE0C4", "shot-long": "#8CC5FF",
+    },
+    forest: {
+      accent: "#059669", "accent-solid": "#05875F", "accent-strong": "#04835B", "accent-light": "#ECFDF5",
+      "text-primary": "#171717", "text-muted": "#726E6B", hover: "#E8EDE8", "border-color": "#D1D9D3",
+      "glass-dialog-bg": "rgba(255,255,255,.66)", "glass-dialog-border": "rgba(0,0,0,.06)",
+      "brand-ai-from": "#1D4ED8", "brand-ai-to": "#6D28D9",
+      green: "#11813A", danger: "#D82525", "danger-hover": "#B91C1C", orange: "#C54A0A",
+      "shot-bar-bg": "rgba(255,255,255,.90)", "shot-bar-border": "rgba(23,23,23,.16)", "shot-bar-text": "#171717",
+      "shot-bar-muted": "#726E6B", "shot-hover": "#E8EDE8",
+      "shot-save": "#04835B", "shot-pin": "#BE185D", "shot-ocr": "#0E8A6D", "shot-long": "#04835B",
+    },
+    blossom: {
+      accent: "#F0568C", "accent-solid": "#CE3B70", "accent-strong": "#B02C5D", "accent-light": "#FFDDEC",
+      "text-primary": "#3D2231", "text-muted": "#86596D", hover: "#FBE7F0", "border-color": "#F9D3E2",
+      "glass-dialog-bg": "rgba(255,255,255,.66)", "glass-dialog-border": "rgba(0,0,0,.06)",
+      "brand-ai-from": "#1D4ED8", "brand-ai-to": "#6D28D9",
+      green: "#11813A", danger: "#D82525", "danger-hover": "#B91C1C", orange: "#C54A0A",
+      "shot-bar-bg": "rgba(255,255,255,.90)", "shot-bar-border": "rgba(240,86,140,.35)", "shot-bar-text": "#3D2231",
+      "shot-bar-muted": "#86596D", "shot-hover": "#FBE7F0",
+      "shot-save": "#B02C5D", "shot-pin": "#BE185D", "shot-ocr": "#0E8A6D", "shot-long": "#B02C5D",
+    },
+    dawn: {
+      accent: "#E8734A", "accent-solid": "#C85A34", "accent-strong": "#B95432", "accent-light": "#FFEDE2",
+      "text-primary": "#2B2016", "text-muted": "#7D6B58", hover: "#F7E9DA", "border-color": "#F0DDC8",
+      "glass-dialog-bg": "rgba(255,255,255,.66)", "glass-dialog-border": "rgba(0,0,0,.06)",
+      "brand-ai-from": "#1D4ED8", "brand-ai-to": "#6D28D9",
+      green: "#11813A", danger: "#D82525", "danger-hover": "#B91C1C", orange: "#C54A0A",
+      "shot-bar-bg": "rgba(255,255,255,.90)", "shot-bar-border": "rgba(232,115,74,.30)", "shot-bar-text": "#2B2016",
+      "shot-bar-muted": "#7D6B58", "shot-hover": "#F7E9DA",
+      "shot-save": "#B95432", "shot-pin": "#BE185D", "shot-ocr": "#0E8A6D", "shot-long": "#B95432",
+    },
+  };
+
+  const SVG = {
+    rect: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="11" height="9" rx="1.5"/></svg>',
+    ellipse: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="8" cy="8" rx="5.75" ry="4.25"/></svg>',
+    arrow: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 12.8L11 5"/><path d="M12.9 3.1L12.4 7.9L8.1 3.6Z" fill="currentColor" stroke="none"/></svg>',
+    pen: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.8 13.2l3.3-.8 6.7-6.7a1.3 1.3 0 0 0 0-1.9l-.6-.6a1.3 1.3 0 0 0-1.9 0L3.6 9.9l-.8 3.3z"/><path d="M9.9 4.1l2 2"/></svg>',
+    highlight: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.2 10.4l4.9-4.9 2.4 2.4-4.9 4.9H5.2v-2.4z"/><path d="M9.4 4.2l1.4-1.4 2.4 2.4-1.4 1.4"/><rect x="2.8" y="13.4" width="10.4" height="1.6" rx="0.8" fill="currentColor" opacity="0.8" stroke="none"/></svg>',
+    mosaic: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="11" height="11" rx="1.2"/><path d="M2.5 2.5h3.7v3.7H2.5zM9.8 2.5h3.7v3.7H9.8zM6.2 6.2h3.6v3.6H6.2zM2.5 9.8h3.7v3.7H2.5zM9.8 9.8h3.7v3.7H9.8z" fill="currentColor" stroke="none" opacity="0.75"/></svg>',
+    dewarp: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 12.8L9.6 6.4"/><path d="M11 2.6l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" fill="currentColor" stroke="none"/></svg>',
+    text: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3.8h10"/><path d="M8 3.8v8.4"/><path d="M5.8 12.2h4.4"/></svg>',
+    number: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.6"/><path d="M6.9 6.6L8.4 5.6v5"/><path d="M6.9 10.6h3"/></svg>',
+    eraser: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.1 2.9l4 4a1 1 0 0 1 0 1.4l-3.6 3.6H5.7L2.9 9.1a1 1 0 0 1 0-1.4l4.8-4.8a1 1 0 0 1 1.4 0z"/><path d="M6.1 6.1l3.8 3.8"/><path d="M2.5 13.5h11"/></svg>',
+    undo: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.2h7a3.4 3.4 0 1 1 0 6.8H6"/><path d="M6.4 3L3.2 6.2l3.2 3.2"/></svg>',
+    redo: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 6.2H6a3.4 3.4 0 1 0 0 6.8h4"/><path d="M9.6 3l3.2 3.2-3.2 3.2"/></svg>',
+    longshot: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="1.8" width="8" height="5" rx="1"/><path d="M8 8v5.4"/><path d="M5.4 11l2.6 2.6L10.6 11"/></svg>',
+    ocr: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 2.4h6.1l3.1 3.1v8.1a1 1 0 0 1-1 1H3.4a1 1 0 0 1-1-1V3.4a1 1 0 0 1 1-1z"/><path d="M9.3 2.5v3.2h3.2"/><path d="M5 8.4h6"/><path d="M5 11h4"/></svg>',
+    save: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.4v6.7"/><path d="M5.3 6.5L8 9.2l2.7-2.7"/><path d="M2.6 10.6v1.9a1.1 1.1 0 0 0 1.1 1.1h8.6a1.1 1.1 0 0 0 1.1-1.1v-1.9"/></svg>',
+    pin: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.1 2.6h3.8"/><path d="M8 9.4v4.1"/><path d="M6.6 2.6v3.1L4.9 7.5a.6.6 0 0 0 .43 1.02h5.34a.6.6 0 0 0 .43-1.02L9.4 5.7V2.6z"/></svg>',
+    picker: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.4 2.6a1.5 1.5 0 0 1 2.1 0l0.9 0.9a1.5 1.5 0 0 1 0 2.1L6.6 12.4l-3 0.9 0.9-3z"/><path d="M9.4 3.6l3 3"/></svg>',
+    ai: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>',
+  };
+
+  function tool(label, icon, cls, badge) {
+    return `<div class="tool ${cls||''}">${badge?`<span class="badge${badge==='!'?' warn':''}">${badge}</span>`:''}<span class="ic">${SVG[icon]}</span><span class="lb">${label}</span></div>`;
+  }
+
+  /* 标注态场景（工具栏 + 属性条 + 选区 + 尺寸标签 + 底部提示条 + tip） */
+  function sceneHTML() {
+    return `
+      <div class="desk-win" style="left:24px;top:22px;width:210px;height:120px">
+        <div class="tbar"><i></i><i></i><i></i></div>
+        <div class="body">
+          <div class="line w90"></div><div class="line w70"></div><div class="line w40"></div>
+          <div class="line w90"></div><div class="line w70"></div>
+        </div>
+      </div>
+      <div class="desk-win" style="right:20px;top:34px;width:150px;height:96px">
+        <div class="tbar"><i></i><i></i><i></i></div>
+        <div class="body"><div class="line w70"></div><div class="line w40"></div><div class="line w90"></div></div>
+      </div>
+      <div class="desk-win" style="left:60px;bottom:66px;width:170px;height:110px">
+        <div class="tbar"><i></i><i></i><i></i></div>
+        <div class="body"><div class="line w90"></div><div class="line w70"></div><div class="line w40"></div></div>
+      </div>
+
+      <!-- 遮罩（保持深色，功能层） -->
+      <div class="shade" style="left:0;top:0;width:100%;height:78px"></div>
+      <div class="shade" style="left:0;top:78px;width:100%;height:10px"></div>
+      <div class="shade" style="left:0;top:88px;width:70px;height:190px"></div>
+      <div class="shade" style="right:0;top:88px;width:70px;height:190px"></div>
+      <div class="shade" style="left:0;bottom:0;width:100%;height:62px"></div>
+
+      <!-- 选区 -->
+      <div class="sel-rect" style="left:70px;top:78px;width:420px;height:190px"></div>
+
+      <!-- 主工具栏（标注态 · 位于选区下方） -->
+      <div class="annot-toolbar" style="left:50%;top:276px;transform:translateX(-50%)">
+        ${tool('矩形','rect')}${tool('椭圆','ellipse')}${tool('箭头','arrow')}${tool('画笔','pen')}${tool('高亮','highlight')}${tool('马赛克','mosaic')}${tool('去水印','dewarp')}${tool('文字','text')}${tool('序号','number')}${tool('橡皮擦','eraser')}
+        <div class="tsep"></div>
+        ${tool('撤销','undo','dim')}${tool('重做','redo','dim')}
+        <div class="tsep"></div>
+        ${tool('长截图','longshot','longshot')}${tool('取文字','ocr','ocr-btn','12')}
+        <div class="tsep"></div>
+        ${tool('保存','save','exit-save')}${tool('贴图','pin','exit-pin')}
+        <div class="tool exit-ai"><span class="ic">${SVG.ai}</span><span class="lb">AI</span></div>
+        <div class="tool more-btn">更多 ⋯</div>
+        <div class="tsep"></div>
+        <div class="tool cancel-btn">✕ 取消</div>
+        <div class="pair-sep"></div>
+        <div class="tool done-btn">完成 ✓</div>
+      </div>
+
+      <!-- 属性条（画笔工具态 · 工具栏下方） -->
+      <div class="attr-bar" style="left:50%;top:330px;transform:translateX(-50%)">
+        <span class="albl">颜色</span>
+        <span class="cwrap"><span class="cp" style="background:#ef4444"></span></span>
+        <span class="cwrap"><span class="cp on" style="background:#3b9eff"></span></span>
+        <span class="cwrap"><span class="cp" style="background:#facc15"></span></span>
+        <span class="cwrap"><span class="cp" style="background:#22c55e"></span></span>
+        <span class="cwrap"><span class="cp" style="background:#1f2937"></span></span>
+        <span class="cwrap" style="color:var(--shot-bar-muted)"><span class="ic">${SVG.picker}</span></span>
+        <span class="asep"></span>
+        <span class="albl">粗细</span>
+        <span class="wpick"><span class="wdot" style="width:4px;height:4px"></span></span>
+        <span class="wpick on"><span class="wdot" style="width:7px;height:7px"></span></span>
+        <span class="wpick"><span class="wdot" style="width:10px;height:10px"></span></span>
+      </div>
+
+      <!-- 悬浮提示 -->
+      <div class="shot-tip" style="right:12px;bottom:12px;left:auto">选中「马赛克」· 拖画遮档区域（按 6）</div>
+    `;
+  }
+
+  /* 浮层巡礼 */
+  const galleryItems = [
+    { cap: '常驻操作提示条 <code>.shot-hint</code>（底部）', html: `
+      <div class="mini" style="background:transparent;border:1px dashed rgba(255,255,255,.12)">
+        <div class="shot-hint">
+          <span><span class="hk">拖拽</span> 框选 · 松手自动标注</span>
+          <span class="sep"></span>
+          <span><span class="hk">悬停</span> 吸附窗口</span>
+          <span class="sep"></span>
+          <span><span class="hk">Enter</span> 进入标注</span>
+          <span class="sep"></span>
+          <span><span class="hk">Esc</span> 退出</span>
+        </div>
+      </div>` },
+    { cap: '选区尺寸标签 <code>.sel-size</code>', html: `
+      <div class="mini">
+        <div class="sel-size" style="top:50%;left:50%;bottom:auto;transform:translate(-50%,-50%)">
+          <span>1280 × 520</span><span class="hint">单击进标注 · 拖选区移动 · 拖边缘缩放</span>
+        </div>
+      </div>` },
+    { cap: 'OCR 选字模式胶囊 <code>.mode-pill</code>', html: `
+      <div class="mini">
+        <div class="mode-pill" style="left:50%;top:50%;transform:translate(-50%,-50%)">
+          <span class="dot smart"></span>智能选字<span class="sw">按 Ctrl 逐字</span>
+        </div>
+      </div>` },
+    { cap: '自动打码确认条 <code>.mask-bar</code>', html: `
+      <div class="mini">
+        <div class="mask-bar" style="left:50%;top:50%;transform:translate(-50%,-50%)">
+          <div class="mask-title">🔒 识别到 3 处隐私</div>
+          <div class="mask-actions">
+            <button class="mask-confirm">✓ 打码 3 处</button>
+            <button class="mask-cancel">放弃</button>
+          </div>
+        </div>
+      </div>` },
+    { cap: '悬浮提示 <code>.shot-tip</code>', html: `
+      <div class="mini">
+        <div class="shot-tip" style="left:50%;top:50%;bottom:auto;transform:translate(-50%,-50%)">选中「马赛克」· 拖画遮档区域（按 6）</div>
+      </div>` },
+    { cap: '出口反馈 <code>.shot-toast</code>（成功 / 失败）', html: `
+      <div class="mini">
+        <div class="shot-toast ok" style="top:24px;bottom:auto"><span>✓</span>已复制到剪贴板</div>
+        <div class="shot-toast" style="top:58px;bottom:auto"><span>⚠</span>保存失败：磁盘无写入权限</div>
+      </div>` },
+    { cap: '吸管色值条 <code>.picker-bar</code>', html: `
+      <div class="mini">
+        <div class="picker-bar" style="left:50%;top:50%;transform:translate(-50%,-50%)">
+          <span class="sw" style="background:#3b9eff"></span>
+          <span class="hex">#3B9EFF</span>
+          <span class="hint">点击画布复制该颜色</span>
+        </div>
+      </div>` },
+    { cap: '像素放大镜 <code>.mag-view</code>', html: `
+      <div class="mini">
+        <div class="mag-view" style="left:50%;top:50%;transform:translate(-50%,-50%)">
+          <div class="mag-canvas"></div>
+          <div class="mag-info"><span class="hex">#3B9EFF</span> · 320, 140</div>
+        </div>
+      </div>` },
+    { cap: '文字标注输入 + 迷你工具条 <code>.text-draft + .text-toolbar</code>', html: `
+      <div class="mini">
+        <div class="text-draft" style="left:50%;top:50%;transform:translate(-50%,-62%)">正在输入的文字…</div>
+        <div class="text-toolbar" style="left:50%;top:50%;transform:translate(-50%,22%)">
+          <button class="ttbtn">A−</button><button class="ttbtn">A+</button>
+          <span class="tsep"></span>
+          <span class="tkeys">Enter 提交 · Shift+Enter 换行 · Esc 取消</span>
+        </div>
+      </div>` },
+    { cap: 'OCR 拖选复制条 <code>.ocr-copy-bar</code>', html: `
+      <div class="mini">
+        <div class="ocr-copy-bar" style="left:50%;top:50%;transform:translate(-50%,-50%)">
+          <button class="primary">复制选中</button><button class="ghost">复制全文</button>
+        </div>
+      </div>` },
+    { cap: '吸附窗口提示 <code>.snap-tip</code>', html: `
+      <div class="mini">
+        <div class="snap-tip" style="left:50%;top:50%;bottom:auto;transform:translate(-50%,-50%)">已吸附：Chrome - 新标签页</div>
+      </div>` },
+    { cap: '长截图状态条 <code>.ls-bar</code>（独立小窗）', html: `
+      <div class="mini">
+        <div class="ls-bar" style="left:8px;right:8px;top:8px;bottom:8px">
+          <div class="ls-thumb"></div>
+          <div class="ls-txt">
+            <div class="ls-main"><b>3840</b> × 1080<b class="ls-h">滚动拼接中…</b></div>
+            <div class="ls-sub">Ctrl+滚轮 调整速度 · 已滚动 12 屏</div>
+          </div>
+          <div class="ls-mode"><span class="ls-mbtn on">跟随</span><span class="ls-mbtn">手动</span></div>
+          <button class="ls-btn stop">继续</button>
+          <button class="ls-btn abort">中止</button>
+        </div>
+      </div>` },
+  ];
+
+  /* 面板类 */
+  const panelHTML = `
+    <div class="panel">
+      <div class="ph">📄 识别到 12 行文字 <span class="sp"></span><button class="btn">复制全部</button></div>
+      <div class="pr"><span class="n" style="min-width:14px;color:var(--text-muted);font-size:9px">1</span><span class="tx" style="flex:1">手机号：138****8000 绑定验证码已发送</span></div>
+      <div class="pr" style="background:var(--hover)"><span class="n" style="min-width:14px;color:var(--text-muted);font-size:9px">2</span><span class="tx" style="flex:1">验证码 8821，5 分钟内有效</span></div>
+      <div class="pg">操作</div>
+      <div class="pr"><span class="ic">🔁</span><span>翻译为英文</span></div>
+      <div class="pr"><span class="ic">✨</span><span>总结要点</span></div>
+    </div>
+    <div class="panel">
+      <div class="ph" style="color:var(--text-primary);background:transparent">已完成 <span class="sp"></span></div>
+      <div class="pg">复制 / 导出</div>
+      <div class="pr primary"><span class="ic">📋</span><span class="lbl">复制图片 <span class="sub" style="display:block">Ctrl+C · 回填原目标</span></span></div>
+      <div class="pr pin"><span class="ic">📌</span><span>钉在屏幕最上层</span></div>
+      <div class="pr ai"><span class="ic">✨</span><span>AI 处理识别文字</span></div>
+      <div class="pr chain"><span class="ic">⚡</span><span>送动作链</span></div>
+      <div class="pg">工具</div>
+      <div class="pr"><span class="ic">🔧</span><span>固定区域</span></div>
+      <div class="pr"><span class="ic">🗂</span><span>插入文档</span></div>
+    </div>`;
+
+  /* 渲染 */
+  function applyTok(container, key) {
+    const t = TOK[key];
+    const el = container.querySelector('[data-tok]') || container;
+    const root = container === document.body ? document.documentElement : el;
+    root.style.setProperty('--accent', t.accent);
+    root.style.setProperty('--accent-solid', t['accent-solid']);
+    root.style.setProperty('--accent-strong', t['accent-strong']);
+    root.style.setProperty('--accent-light', t['accent-light']);
+    root.style.setProperty('--text-primary', t['text-primary']);
+    root.style.setProperty('--text-muted', t['text-muted']);
+    root.style.setProperty('--hover', t.hover);
+    root.style.setProperty('--border-color', t['border-color']);
+    root.style.setProperty('--glass-dialog-bg', t['glass-dialog-bg']);
+    root.style.setProperty('--glass-dialog-border', t['glass-dialog-border']);
+    root.style.setProperty('--brand-ai-from', t['brand-ai-from']);
+    root.style.setProperty('--brand-ai-to', t['brand-ai-to']);
+    root.style.setProperty('--green', t.green);
+    root.style.setProperty('--danger', t.danger);
+    root.style.setProperty('--danger-hover', t['danger-hover']);
+    root.style.setProperty('--orange', t.orange);
+    root.style.setProperty('--shot-bar-bg', t['shot-bar-bg']);
+    root.style.setProperty('--shot-bar-border', t['shot-bar-border']);
+    root.style.setProperty('--shot-bar-text', t['shot-bar-text']);
+    root.style.setProperty('--shot-bar-muted', t['shot-bar-muted']);
+    root.style.setProperty('--shot-hover', t['shot-hover']);
+    root.style.setProperty('--shot-save', t['shot-save']);
+    root.style.setProperty('--shot-pin', t['shot-pin']);
+    root.style.setProperty('--shot-ocr', t['shot-ocr']);
+    root.style.setProperty('--shot-long', t['shot-long']);
+    root.style.setProperty('--accent-glow', `rgba(${hexToRgb(t.accent)}, .45)`);
+    root.style.setProperty('--accent-border', `color-mix(in srgb, ${t.accent} 35%, transparent)`);
+  }
+  function hexToRgb(h){const n=parseInt(h.slice(1),16);return `${(n>>16)&255},${(n>>8)&255},${n&255}`;}
+
+  // 改前：钉死 midnight
+  const before = document.getElementById('stage-before');
+  before.dataset.tok = '1';
+  before.innerHTML = sceneHTML();
+  applyTok(before, 'midnight');
+
+  // 改后：跟随切换
+  const after = document.getElementById('stage-after');
+  after.dataset.tok = '1';
+  after.innerHTML = sceneHTML();
+
+  // 浮层巡礼 + 面板
+  const gallery = document.getElementById('gallery');
+  gallery.dataset.tok = '1';
+  gallery.innerHTML = galleryItems.map(it =>
+    `<div class="g-item"><div class="g-cap">${it.cap}</div>${it.html}</div>`).join('');
+  const panels = document.getElementById('panels');
+  panels.dataset.tok = '1';
+  panels.innerHTML = panelHTML;
+
+  // 切换器
+  const sw = document.getElementById('switcher');
+  let current = 'ocean';
+  THEMES.forEach((t) => {
+    const b = document.createElement('button');
+    b.textContent = t.name;
+    b.onclick = () => {
+      current = t.key;
+      sw.querySelectorAll('button').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      applyTok(after, t.key);
+      applyTok(gallery, t.key);
+      applyTok(panels, t.key);
+    };
+    sw.appendChild(b);
+  });
+  sw.querySelector('button').classList.add('on');
+  applyTok(after, current);
+  applyTok(gallery, current);
+  applyTok(panels, current);
+</script>
+</body>
+</html>

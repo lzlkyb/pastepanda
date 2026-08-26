@@ -70,9 +70,9 @@ export function ResultActions({
             padding: "6px 12px",
             fontSize: 11,
             lineHeight: 1.5,
-            color: "#F87171",
-            background: "rgba(248,113,113,0.12)",
-            borderBottom: "1px solid rgba(248,113,113,0.25)",
+            color: "var(--danger, #F87171)",
+            background: "color-mix(in srgb, var(--danger, #F87171) 12%, transparent)",
+            borderBottom: "1px solid color-mix(in srgb, var(--danger, #F87171) 25%, transparent)",
           }}
         >
           ⚠️ 检测到疑似敏感内容（{sensitiveKind}），AI / 云端出口已拦截，需确认后才发送

@@ -6,10 +6,11 @@
 import React, { useCallback, useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ScreenshotOverlay } from "./components/screenshot/ScreenshotOverlay";
 import { logger } from "./lib/logger";
-import { applyTheme } from "./lib/theme";
+import { applyTheme, DEFAULT_THEME, normalizeTheme } from "./lib/theme";
 import "./styles/globals.css";
 // 独立窗口必须加载主题样式表，否则 var(--dialog-bg)/var(--accent) 等全部无定义
 import "./styles/theme.css";
@@ -23,9 +24,19 @@ window.addEventListener("unhandledrejection", (event) => {
   event.preventDefault();
 });
 
-// 截图遮罩层固定深色玻璃 UI（不跟随用户主题）：截图是叠加在任意屏幕内容上的
-// 覆盖层，浅色工具栏在浅色截图背景上会失去对比度，深色玻璃在所有背景下都清晰。
-applyTheme("midnight");
+// 截图遮罩层跟随用户主题（方案 B 令牌化，design/PastePanda-截图主题适配-设计稿.html）。
+// 与 popup-main.tsx 同款模式：先应用默认主题避免无样式闪烁，再异步读取用户实际主题；
+// 并监听主窗口 theme-changed 广播，常驻截图窗跨主题切换实时跟随。
+// 浅色主题下工具栏等浮层走浅玻璃 + 深字，靠 --shot-bar-border 描边 + 阴影保底辨识
+// （浅色玻璃压在浅色截图内容上的对比度问题由令牌族统一补偿）。
+applyTheme(DEFAULT_THEME);
+invoke<{ theme?: string }>("get_config")
+  .then((cfg) => applyTheme(normalizeTheme(cfg?.theme)))
+  .catch(() => { /* 读取失败时保持默认主题 */ });
+
+listen<{ theme?: string }>("theme-changed", (e) => {
+  applyTheme(normalizeTheme(e.payload?.theme));
+}).catch(() => { /* 监听注册失败时退化为仅打开时读取一次 */ });
 
 /* 崩溃面板故意用 inline style 而不走 CSS 类 + 主题变量（与全站风格不一致是有意为之）：
  * 它是救命用的，要在“样式表没加载成 / 主题变量未应用”这种最坏情况下也能看清、能点。

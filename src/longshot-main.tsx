@@ -10,7 +10,9 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { LongShotStatus } from "./components/screenshot/LongShotStatus";
 import { logger } from "./lib/logger";
-import { applyTheme } from "./lib/theme";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { applyTheme, DEFAULT_THEME, normalizeTheme } from "./lib/theme";
 import "./styles/globals.css";
 import "./styles/theme.css";
 import "./styles/screenshot.css";
@@ -23,8 +25,16 @@ window.addEventListener("unhandledrejection", (event) => {
   event.preventDefault();
 });
 
-// 与截图窗一致的固定深色玻璃（不跟随用户主题）：它也是叠在任意屏幕内容上的浮层
-applyTheme("midnight");
+// 与截图窗一致的跟随主题（方案 B）：它也是叠在任意屏幕内容上的浮层，
+// 令牌化后浅色主题走浅玻璃 + 深字，深色主题保持深玻璃观感。
+applyTheme(DEFAULT_THEME);
+invoke<{ theme?: string }>("get_config")
+  .then((cfg) => applyTheme(normalizeTheme(cfg?.theme)))
+  .catch(() => { /* 读取失败时保持默认主题 */ });
+
+listen<{ theme?: string }>("theme-changed", (e) => {
+  applyTheme(normalizeTheme(e.payload?.theme));
+}).catch(() => { /* 监听注册失败时退化为仅打开时读取一次 */ });
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

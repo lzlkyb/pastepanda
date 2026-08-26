@@ -205,6 +205,19 @@
   /* 更新弹框 + 更新日志 */
   --accent-glow: rgba(2,132,199, 0.12);
   --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(2,132,199,0.10), transparent);
+  /* ===== 截图浮层令牌（方案 B：screenshot.css 全面令牌化；浅色档 = 浅玻璃 + 深字） =====
+     工具栏 / 属性条 / 胶囊 / 提示条 / toast / 放大镜 / 长截图状态条等全部浮层表面共用。
+     浅色玻璃压在任意截图内容上，辨识靠 --shot-bar-border 描边 + 阴影兜底。 */
+  --shot-bar-bg: rgba(255, 255, 255, 0.92);
+  --shot-bar-border: rgba(15, 23, 42, 0.16);
+  --shot-bar-text: var(--text-primary);
+  --shot-bar-muted: var(--text-muted);
+  --shot-hover: var(--hover);
+  /* 出口语义色：浅色档统一换深色档（accent-strong 浅底 4.5:1；粉/薄荷无主题令牌，手选深色档） */
+  --shot-save: var(--accent-strong);
+  --shot-long: var(--accent-strong);
+  --shot-pin: #BE185D;
+  --shot-ocr: #0E8A6D;
 }
 
 /* ── 2. midnight 午夜（默认深色·OLED）── */
@@ -284,6 +297,16 @@
   /* 更新弹框 + 更新日志 */
   --accent-glow: rgba(129,140,248, 0.12);
   --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(129,140,248,0.10), transparent);
+  /* 截图浮层令牌：深色档 = 深玻璃 + 亮字（与旧观感一致，出口语义色沿用历史值） */
+  --shot-bar-bg: rgba(20, 20, 24, 0.94);
+  --shot-bar-border: rgba(255, 255, 255, 0.14);
+  --shot-bar-text: var(--text-primary);
+  --shot-bar-muted: var(--text-muted);
+  --shot-hover: var(--hover);
+  --shot-save: #A5C8FF;
+  --shot-long: #8CC5FF;
+  --shot-pin: #F9A8D4;
+  --shot-ocr: #7DE0C4;
 }
 
 /* ── 3. forest 森林（浅色·护眼绿）── */
@@ -359,6 +382,16 @@
   /* 更新弹框 + 更新日志 */
   --accent-glow: rgba(5,150,105, 0.12);
   --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(5,150,105,0.10), transparent);
+  /* 截图浮层令牌：浅色档（森林 = 中性偏暖浅玻璃） */
+  --shot-bar-bg: rgba(255, 255, 255, 0.90);
+  --shot-bar-border: rgba(23, 23, 23, 0.16);
+  --shot-bar-text: var(--text-primary);
+  --shot-bar-muted: var(--text-muted);
+  --shot-hover: var(--hover);
+  --shot-save: var(--accent-strong);
+  --shot-long: var(--accent-strong);
+  --shot-pin: #BE185D;
+  --shot-ocr: #0E8A6D;
 }
 
 /* ── 4. blossom 美乐蒂（浅色·甜系卡通粉）── */
@@ -434,6 +467,16 @@
   /* 更新弹框 + 更新日志 */
   --accent-glow: rgba(240,86,140, 0.12);
   --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(240,86,140,0.10), transparent);
+  /* 截图浮层令牌：浅色档（美乐蒂 = 白玻璃 + 粉描边，主题色） */
+  --shot-bar-bg: rgba(255, 255, 255, 0.90);
+  --shot-bar-border: rgba(240, 86, 140, 0.35);
+  --shot-bar-text: var(--text-primary);
+  --shot-bar-muted: var(--text-muted);
+  --shot-hover: var(--hover);
+  --shot-save: var(--accent-strong);
+  --shot-long: var(--accent-strong);
+  --shot-pin: #BE185D;
+  --shot-ocr: #0E8A6D;
 }
 
 /* ── 5. dawn 晨曦（浅色·暖阳晨光）── */
@@ -509,6 +552,16 @@
   /* 更新弹框 + 更新日志 */
   --accent-glow: rgba(232,115,74, 0.12);
   --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(232,115,74,0.10), transparent);
+  /* 截图浮层令牌：浅色档（晨曦 = 白玻璃 + 橙描边，主题色） */
+  --shot-bar-bg: rgba(255, 255, 255, 0.90);
+  --shot-bar-border: rgba(232, 115, 74, 0.30);
+  --shot-bar-text: var(--text-primary);
+  --shot-bar-muted: var(--text-muted);
+  --shot-hover: var(--hover);
+  --shot-save: var(--accent-strong);
+  --shot-long: var(--accent-strong);
+  --shot-pin: #BE185D;
+  --shot-ocr: #0E8A6D;
 }
 
 /* ── 6. ocean-dark 海洋深色（玻璃拟态专用）── */
@@ -590,4 +643,14 @@
   /* 更新弹框 + 更新日志 */
   --accent-glow: rgba(56,189,248, 0.12);
   --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(56,189,248,0.10), transparent);
+  /* 截图浮层令牌：深色档（深海 = 深蓝玻璃，描边带 indigo 调，与旧观感一致） */
+  --shot-bar-bg: rgba(10, 22, 40, 0.94);
+  --shot-bar-border: rgba(148, 168, 255, 0.30);
+  --shot-bar-text: var(--text-primary);
+  --shot-bar-muted: var(--text-muted);
+  --shot-hover: var(--hover);
+  --shot-save: #A5C8FF;
+  --shot-long: #8CC5FF;
+  --shot-pin: #F9A8D4;
+  --shot-ocr: #7DE0C4;
 }
