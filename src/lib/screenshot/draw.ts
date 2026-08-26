@@ -8,8 +8,95 @@
 
 import { blurSampleRect } from "./blurRect";
 import { maskBox, maskBrushWidth } from "./maskGeom";
-import { removeTiledWatermarkRegion } from "./dewarp";
+import { removeTiledWatermarkRegion, inpaintRegion } from "./dewarp";
 import type { Annotation } from "./types";
+
+/**
+ * 魔棒遮罩：从笔刷路径覆盖的种子像素出发，泛洪生长「颜色相近」的连通区。
+ * 用于手动去水印的「magic」形状——水印是均匀半透明叠色，刷过一处即吸附整条水印文字，
+ * 不必沿斜向文字逐笔描。返回与图像同尺寸的 0/1 蒙版（1=待去水印）。
+ *
+ * @param img      底图 box 区域像素（RGBA）
+ * @param bw,bh    区域宽高
+ * @param seedMask 笔刷路径覆盖到的像素（1=种子），来自 strokeBrushPath 栅格化
+ * @param tol      颜色容差（0~255 每通道）
+ * @param maxGrow  最大生长像素数（防御：避免整图纯色背景被一次吸走）
+ */
+/** 魔棒颜色容差（每通道 0~255）。原先是调用点内联的 28，提出来供测试与调用方共用。 */
+export const MAGIC_WAND_TOL = 28;
+export function magicMaskFromSeeds(
+  img: Uint8ClampedArray,
+  bw: number,
+  bh: number,
+  seedMask: Uint8Array,
+  tol: number,
+  maxGrow: number,
+): Uint8Array {
+  const N = bw * bh;
+  const out = new Uint8Array(N);
+  // 先收集种子像素的代表色：对全部种子取 RGB 均值，靠种子数量摊平单点噪声。
+  // （注释曾写"亮度中位数"与实现不符；均值实现更简单，抗离群种子能力弱些，
+  //   若日后发现误吸附可再换真正的中位数。）
+  let sr = 0, sg = 0, sb = 0, sn = 0;
+  const seeds: number[] = [];
+  for (let i = 0; i < N; i++) {
+    if (seedMask[i]) {
+      const ii = i * 4;
+      sr += img[ii]; sg += img[ii + 1]; sb += img[ii + 2]; sn++;
+      seeds.push(i);
+    }
+  }
+  if (sn === 0) return out;
+  const tr = sr / sn, tg = sg / sn, tb = sb / sn;
+  const visited = new Uint8Array(N);
+  const stack = seeds.slice();
+  for (const s of seeds) visited[s] = 1;
+  let grown = 0;
+  while (stack.length && grown < maxGrow) {
+    const p = stack.pop()!;
+    if (out[p]) continue;
+    const ii = p * 4;
+    if (
+      Math.abs(img[ii] - tr) <= tol &&
+      Math.abs(img[ii + 1] - tg) <= tol &&
+      Math.abs(img[ii + 2] - tb) <= tol
+    ) {
+      out[p] = 1;
+      grown++;
+      const x = p % bw;
+      const y = (p / bw) | 0;
+      if (x > 0 && !visited[p - 1]) { visited[p - 1] = 1; stack.push(p - 1); }
+      if (x < bw - 1 && !visited[p + 1]) { visited[p + 1] = 1; stack.push(p + 1); }
+      if (y > 0 && !visited[p - bw]) { visited[p - bw] = 1; stack.push(p - bw); }
+      if (y < bh - 1 && !visited[p + bw]) { visited[p + bw] = 1; stack.push(p + bw); }
+    }
+  }
+  return out;
+}
+
+/** 把笔刷路径栅格化为 0/1 种子蒙版（复用 maskBrushWidth 的描边宽度）。 */
+function brushSeedMask(
+  a: Annotation,
+  bw: number,
+  bh: number,
+  boxX: number,
+  boxY: number,
+): Uint8Array {
+  const mask = new Uint8Array(bw * bh);
+  const cv = document.createElement("canvas");
+  cv.width = bw;
+  cv.height = bh;
+  const mctx = cv.getContext("2d");
+  if (!mctx) return mask;
+  mctx.translate(-boxX, -boxY);
+  mctx.strokeStyle = "#000";
+  strokeBrushPath(mctx, a.points ?? [], maskBrushWidth(a));
+  mctx.fillStyle = "#000";
+  mctx.lineWidth = 1;
+  const id = mctx.getImageData(0, 0, bw, bh);
+  for (let i = 0; i < bw * bh; i++) if (id.data[i * 4 + 3] > 8) mask[i] = 1;
+  return mask;
+}
 
 /** 在给定 ctx 上描笔刷路径（与 pen 同一套贝塞尔平滑，否则快速拖动会成折线）。 */
 function strokeBrushPath(
@@ -17,6 +104,9 @@ function strokeBrushPath(
   pts: [number, number][],
   width: number,
 ) {
+  // 空路径直接返回（paintThroughBrushMask 已挡过一次，这里是第二道防线：
+  // 任何调用方漏判都会在 pts[0][0] 上抛 TypeError，整个标注画布渲染崩掉）。
+  if (!pts || pts.length === 0) return;
   ctx.lineWidth = width;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -583,13 +673,34 @@ export function drawAnnot(
         // 取底图 box 区域（源用底图绝对坐标，不依赖 c 当前变换）
         tctx.drawImage(baseImg, offX + box.x, offY + box.y, bw, bh, 0, 0, bw, bh);
         const id = tctx.getImageData(0, 0, bw, bh);
-        // 去水印（路线 A' 频域减回）：平铺模式频域提取周期层并逐像素减回
-        // （天然处理斜排、不误伤背景、不猜像素）；手动模式频域优先，无周期峰退回框内 inpaint 兜底。
-        removeTiledWatermarkRegion(id.data, bw, bh, {
-          tiled: !!a.tiled,
-          feather,
-          radius: 8,
-        });
+        if (a.shape === "magic") {
+          // 魔棒：从笔刷种子泛洪吸附同色连通区（=整条水印文字），仅对蒙版内 inpaint，
+          // 背景零改动。适合斜向/稀疏水印——一笔刷过即选中，免去沿字描边。
+          const seeds = brushSeedMask(a, bw, bh, box.x, box.y);
+          const mask = magicMaskFromSeeds(
+            id.data,
+            bw,
+            bh,
+            seeds,
+            MAGIC_WAND_TOL,
+            // ❌ 防御上限必须给真实值（旧代码传 bw*bh = 形同虚设）：泛洪一旦把
+            // 大片纯色背景当同色吸走，蒙版会盖满整个选区、inpaint 把内容抹掉。
+            // 生长超过选区一半即判泄漏停手——水印文字远达不到这个量级，
+            // 下限 1024 保证极小选区里魔棒仍可用。
+            Math.max(1024, Math.floor((bw * bh) / 2)),
+          );
+          // 仅蒙版内做扩散 inpaint（周围非蒙版像素是干净背景，作为重建锚点）；
+          // 蒙版外像素零改动——半透明水印随蒙版一起被重建掉，无需预减步骤。
+          inpaintRegion(id.data, bw, bh, mask, feather);
+        } else {
+          // 去水印（路线 A' 频域减回）：平铺模式频域提取周期层并逐像素减回
+          // （天然处理斜排、不误伤背景、不猜像素）；手动模式频域优先，无周期峰退回框内 inpaint 兜底。
+          removeTiledWatermarkRegion(id.data, bw, bh, {
+            tiled: !!a.tiled,
+            feather,
+            radius: 8,
+          });
+        }
         tctx.putImageData(id, 0, 0);
         if (_dewarpCache.size >= DEWARP_CACHE_MAX) {
           // 丢最早插入的一份（Map 保证插入序）
@@ -604,6 +715,7 @@ export function drawAnnot(
         // 离屏层原点在 box 左上，paintDewarp 直接 (0,0) 落回去即可
         paintThroughBrushMask(ctx, a, box, paintDewarp);
       } else {
+        // rect / magic：整块 tmp 直接落回（magic 的选区由 inpaint 蒙版控制，不由笔刷裁切）
         ctx.save();
         ctx.translate(box.x, box.y);
         paintDewarp(ctx);

@@ -29,6 +29,8 @@ export const ATTR_TOOLS = new Set<ToolId>([
   // 不给调节路径就只能“要么擦不准、要么擦太多”。
   "eraser",
   "dewarp",
+  // 动作型：自动去水印（OCR 重复文字→inpaint），收进去水印属性栏「模式」分段
+  "autodewarp",
 ]);
 
 /** 不用颜色的工具（属性条上隐藏整个颜色组） */

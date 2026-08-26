@@ -17,13 +17,14 @@ import {
   PICKER_ICON,
   SHAPE_BRUSH_ICON,
   SHAPE_RECT_ICON,
+  SHAPE_MAGIC_ICON,
   TEXT_SIZES,
   WIDTHS,
 } from "./tools";
 
 export type WidthId = (typeof WIDTHS)[number]["id"];
 export type TextSizeId = (typeof TEXT_SIZES)[number]["id"];
-export type MaskShape = "rect" | "brush";
+export type MaskShape = "rect" | "brush" | "magic";
 
 interface Props {
   left: number;
@@ -55,6 +56,9 @@ interface Props {
    *  而且矩形必然连带遮住不该遮的内容。 */
   maskShape?: MaskShape;
   onSelectMaskShape?: (s: MaskShape) => void;
+  /** 是否显示「魔棒」形状选项：只有去水印工具支持（泛洪吸附是 dewarp 专属渲染路径）。
+   *  马赛克/模糊选了 magic 也只会退化成矩形（geometry 只认 brush），不如不给选。 */
+  magicSupported?: boolean;
 
   /** 字号三档（文字 / 序号）；不传 = 不显示。
    *
@@ -65,6 +69,8 @@ interface Props {
   /** 去水印模式：平铺·自动（一键整屏）/ 手动（涂抹或矩形）。不传 = 不显示模式分段。 */
   dewarpMode?: "manual" | "tile";
   onSelectDewarpMode?: (m: "manual" | "tile") => void;
+  /** 动作型：OCR 定位重复水印文字并预览，确认即批量去水印（不切换模式）。 */
+  onAutoDewarp?: () => void;
 
   /** 遮罩类「模式」分段：马赛克 / 模糊 / 自动打码 收进同一把工具。
    *   - 马赛克 / 模糊 共用形状 + 强度（各自记忆）；点选 = 切换 tool；
@@ -121,6 +127,7 @@ export function AttrBar({
   onSelectArrowStyle,
   maskShape,
   onSelectMaskShape,
+  magicSupported,
   textSizeId,
   onSelectTextSize,
   strengthLevels,
@@ -128,6 +135,7 @@ export function AttrBar({
   onSelectStrength,
   dewarpMode,
   onSelectDewarpMode,
+  onAutoDewarp,
   maskMode,
   onSelectMaskMode,
   discoverAutomask,
@@ -256,6 +264,15 @@ export function AttrBar({
           >
             平铺·自动
           </span>
+          {onAutoDewarp && (
+            <span
+              className="wpick txt"
+              data-tip="自动去水印·OCR 定位图中重复出现的水印文字，一键批量还原"
+              onClick={onAutoDewarp}
+            >
+              文字·自动
+            </span>
+          )}
           <span className="asep" />
         </>
       )}
@@ -279,6 +296,15 @@ export function AttrBar({
           >
             {SHAPE_RECT_ICON}
           </span>
+          {magicSupported && (
+            <span
+              className={`wpick${maskShape === "magic" ? " on" : ""}`}
+              data-tip="魔棒·刷过水印文字即自动吸附同色连通区，斜向文字一笔选全"
+              onClick={() => onSelectMaskShape("magic")}
+            >
+              {SHAPE_MAGIC_ICON}
+            </span>
+          )}
           <span className="asep" />
         </>
       )}

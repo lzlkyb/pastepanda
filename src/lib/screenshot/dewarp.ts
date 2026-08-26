@@ -20,6 +20,10 @@
  * 依赖：零新增（纯 JS + Canvas RenderingContext 仅前端调用方用）。离线、不触 ai_enabled。
  */
 
+// 中值叠瓦去水印（轴对齐 + 斜向）：平铺周期水印的还原式去法，探针验证优于本文件旧 FFT。
+import { estimateWatermarkPeriod, removeWatermarkByTiling } from "./watermarkMedian";
+import { estimateObliqueWatermark, removeDiagonalWatermarkByTiling } from "./watermarkMedianDiagonal";
+
 export interface GrayImage {
   gray: Float32Array;
   w: number;
@@ -759,12 +763,91 @@ function removeManualFallback(
 }
 
 /**
+ * 平铺算法结果质量门：判断处理后是否出现严重伪影（发花/黑块/内容被抹平）。
+ *
+ * 单一 clip 比例不够：真实稀疏文字水印经中值叠瓦后 clip 常在 0.06~0.10，但视觉上
+ * 只是水印变淡、内容并未发花；而强周期内容被误当水印处理时，虽然 clip 也可能超过
+ * 0.03，但会把整页结构抹平（对比度骤降）。
+ *
+ * 因此看「方向梯度保留度」：对处理前后的灰度图分别统计 x/y 方向梯度能量。正常
+ * 水印去除后两个方向的梯度能量同升同降、比例接近；若一个方向被抹平（ratio < 0.35）
+ * 而另一个方向暴增（ratio > 2.0），说明把某个方向的周期结构当成水印去掉了，并
+ * 引入了正交方向噪声。真实水印图不会出现这种极端不对称。
+ *
+ * ⚠️ 范围声明（别误读上面那句“把整页结构抹平”）：本门只抓**不对称**破坏。
+ * rx、ry 一起塌（比如都掉到 0.1）时 maxR = 0.1，不满足 > 2.0，会直接放行。
+ * 这是**有意为之**，不是漏洞：对称衰减分不出“内容被糊掉”与“水印被正确去掉”。
+ * 反例：一张大片空白的文档截图盖重平铺水印时，梯度能量本来就主要来自水印，
+ * 水印一去 rx、ry 很容易双双跌到 0.35 以下 —— 这是**成功**，不是伪影。加一条
+ * `maxR < 0.35` 会把这类最需要去水印的图成批误杀，代价远大于收益。
+ * “整页被抹平”要拦得靠 clip 比例 / contentCorr 那条线，不在这个函数里。
+ *
+ * 性能：不物化 w×h 灰度图 —— 2560×1440 下两个 Float64Array 就是 59MB，而本函数
+ * 每次去水印最多被调 3 次（轴对齐 / 斜向 / FFT 各一次），就是 177MB 瞬时分配。
+ * 改为逐行流式：灰度即算即用，只留一行 Float32 做上下差分（w 个 float），
+ * 同时把原来的 4 趟全图遍历合成 2 趟。结果与旧实现逐项等价。
+ */
+function hasSevereArtifact(
+  rgba: Uint8ClampedArray,
+  w: number,
+  h: number,
+  orig: Uint8ClampedArray,
+): boolean {
+  /** 方向梯度能量。逐行扫一遍 px，只保留上一行灰度用于纵向差分。 */
+  const gradEnergy = (px: Uint8ClampedArray): { gx: number; gy: number } => {
+    let gx = 0;
+    let gy = 0;
+    let prevRow = new Float32Array(w);
+    let curRow = new Float32Array(w);
+    for (let y = 0; y < h; y++) {
+      const base = y * w * 4;
+      for (let x = 0; x < w; x++) {
+        const ii = base + x * 4;
+        const g = (px[ii] + px[ii + 1] + px[ii + 2]) / 3;
+        curRow[x] = g;
+        if (x > 0) {
+          const d = g - curRow[x - 1];
+          gx += d * d;
+        }
+        if (y > 0) {
+          const d = g - prevRow[x];
+          gy += d * d;
+        }
+      }
+      // 两行缓冲互换，不重新分配
+      const t = prevRow;
+      prevRow = curRow;
+      curRow = t;
+    }
+    return { gx, gy };
+  };
+  const gb = gradEnergy(orig);
+  const ga = gradEnergy(rgba);
+  const rx = gb.gx > 0 ? ga.gx / gb.gx : 1;
+  const ry = gb.gy > 0 ? ga.gy / gb.gy : 1;
+  const minR = Math.min(rx, ry);
+  const maxR = Math.max(rx, ry);
+
+  // 真正发花/结构破坏：方向梯度严重不对称（一个方向内容被抹平、另一个方向
+  // 噪声暴增）。普通水印减弱后两个方向梯度能量同升同降，不会出现这种极端不对称。
+  // （只有这一条判据；为什么不加“对称抹平”见上方范围声明。）
+  if (minR < 0.35 && maxR > 2.0) return true;
+  return false;
+}
+
+/**
  * 去水印主入口（平铺 / 手动统一）。原地修改 rgba。
  *
- * @param opts.tiled 平铺模式（频域自适应提取整屏周期层减回）；false=手动（用户框选块）。
- * @param opts.feather 边缘羽化半径（物理像素）；仅 inpaint 兜底使用（频域减回逐像素精确无需羽化）。
+ * 两层平铺算法（轴对齐中值叠瓦 + 斜向中值叠瓦）专治「重复周期水印」
+ * （企业微信/钉钉/飞书式网格、斜排文字阵），已在 watermarkMedian / watermarkMedianDiagonal
+ * 探针验证完胜旧 FFT 频域减回（watermarkCorr 0.12 vs 0.27、内容保全 0.97 vs 0.92）。
+ * 旧 FFT 仍保留为**最后兜底**（仅当两套中值叠瓦都判为「非周期/不可信」时回退），
+ * 避免真实场景回归。手动模式（tiled:false）始终走 inpaint 兜底（框内，不误伤全图）。
+ *
+ * @param opts.tiled 平铺模式（自适应提取整屏周期层减回）；false=手动（用户框选块）。
+ * @param opts.feather 边缘羽化半径（物理像素）；仅 inpaint 兜底使用（周期减回逐像素精确无需羽化）。
  * @param opts.radius 手动 inpaint 兜底的背景估计平滑半径（物理像素）。
- * @returns 是否执行了去水印（false=频域无峰且平铺模式，调用方应提示切手动）。
+ * @returns 是否执行了去水印（false=平铺模式三套算法均无显著周期，调用方应提示切手动）。
  */
 export function removeTiledWatermarkRegion(
   rgba: Uint8ClampedArray,
@@ -773,12 +856,37 @@ export function removeTiledWatermarkRegion(
   opts: { tiled: boolean; feather: number; radius: number },
 ): boolean {
   if (opts.tiled) {
-    // 平铺模式（runDewatermarkTile 已前置 hasPeriodicWatermark 验证存在显著周期峰）：
-    // 频域提取周期层并逐像素减回（天然处理斜排、不误伤背景、不猜像素）。
-    return removeWatermarkByFFT(rgba, w, h);
+    const orig = rgba.slice();
+
+    // ① 轴对齐平铺水印：2D 自相关估周期 → 中值叠瓦减回（合成探针 watermarkCorr≈0.12）。
+    const period = estimateWatermarkPeriod(rgba, w, h);
+    if (period && removeWatermarkByTiling(rgba, w, h, period) && !hasSevereArtifact(rgba, w, h, orig)) {
+      return true;
+    }
+    rgba.set(orig); // 轴对齐失败或产生伪影：恢复原图再试斜向
+
+    // ② 斜向重复水印（文字阵等）：剪切扫描估水平周期 + 斜率 → 剪切后水平相位中值减回。
+    const oblique = estimateObliqueWatermark(rgba, w, h);
+    if (
+      oblique &&
+      removeDiagonalWatermarkByTiling(rgba, w, h, oblique.tx, oblique.shearK) &&
+      !hasSevereArtifact(rgba, w, h, orig)
+    ) {
+      return true;
+    }
+    rgba.set(orig); // 斜向失败或产生伪影：恢复原图再试 FFT 兜底
+
+    // ③ 最后兜底：旧 FFT 频域减回（仅当两套中值叠瓦都判「非周期/不可信」）。
+    if (removeWatermarkByFFT(rgba, w, h) && !hasSevereArtifact(rgba, w, h, orig)) {
+      return true;
+    }
+
+    // 三套算法都失败（或产生严重伪影）：恢复原图，让调用方提示用户切手动 / OCR 自动。
+    rgba.set(orig);
+    return false;
   }
   // 手动模式：用户已框选明确范围，直接 inpaint 兜底（框内，不误伤全图）。
-  // 不先走 FFT：非周期单块（logo）的频域重建会残留振铃，inpaint 逐像素重建更干净。
+  // 不先走周期减回：非周期单块（logo）的周期重建会残留振铃，inpaint 逐像素重建更干净。
   removeManualFallback(rgba, w, h, opts.radius, opts.feather);
   return true;
 }

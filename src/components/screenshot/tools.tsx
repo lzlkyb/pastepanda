@@ -163,6 +163,19 @@ export const TOOLS: {
     tip: "自动打码·一键遮蔽图中手机/身份证/邮箱/银行卡等隐私文字（可撤销，支持 OCR 后）",
   },
   {
+    id: "autodewarp",
+    // 同 automask：动作型、收进去水印属性栏「模式」分段，点击执行不切换工具。
+    hidden: true,
+    label: "自动去水印",
+    icon: (
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2.6" y="3.2" width="10.8" height="9.6" rx="1.4" {...S} />
+        <path d="M10.6 3.6l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" fill="currentColor" stroke="none" />
+      </svg>
+    ),
+    tip: "自动去水印·OCR 定位图中重复出现的水印文字，一键批量还原（可撤销，离线 OCR）",
+  },
+  {
     id: "text",
     label: "文字",
     key: "8",
@@ -357,5 +370,16 @@ export const SHAPE_BRUSH_ICON = (
 export const SHAPE_RECT_ICON = (
   <svg viewBox="0 0 16 16">
     <rect x="2.6" y="4" width="10.8" height="8" rx="1" {...S} />
+  </svg>
+);
+export const SHAPE_MAGIC_ICON = (
+  <svg viewBox="0 0 16 16">
+    <path
+      d="M8 2.2l1.5 3.4 3.6.3-2.7 2.4.8 3.5L8 10.4 4.8 11.8l.8-3.5L2.9 5.9l3.6-.3z"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.6}
+      strokeLinejoin="round"
+    />
   </svg>
 );

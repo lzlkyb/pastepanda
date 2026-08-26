@@ -28,6 +28,65 @@ export interface MaskBox {
   excluded: boolean;
 }
 
+/** 两串编辑距离（Levenshtein），上限截断以省开销：OCR 误差通常很小，距离 >2 即视为不同类。 */
+export function editDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  if (Math.abs(m - n) > 2) return 3; // 长度差已 >2，必不同类，直接返回 >2
+  let prev = new Array<number>(n + 1);
+  let cur = new Array<number>(n + 1);
+  for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    cur[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+    }
+    [prev, cur] = [cur, prev];
+  }
+  return prev[n];
+}
+
+/**
+ * 从 OCR 文本行里挑出「重复水印」行（纯函数、可单测）。
+ *
+ * 水印核心特征 = 同一内容反复出现。普通聊天/正文不会整段重复。
+ * 斜向/半透明水印 PP-OCRv6 也常有漏字、错字、少空格，不能要求整串相等，
+ * 故用模糊聚类：两串相等 / 互相包含 / 编辑距离 ≤2 视为同类，类内出现 ≥2 次即水印。
+ *
+ * @param lines OCR 原文行（含空白），内部归一化为去空白串再做聚类。
+ * @param minLen 单行最短长度阈值，<minLen 的串（标点/单价/单字）不计入，避免误伤。
+ * @returns 与 lines 等长的布尔数组，true 表示该行属于重复水印类。
+ */
+export function clusterWatermarkLines(lines: string[], minLen = 2): boolean[] {
+  const norm = lines.map((l) => l.replace(/\s+/g, "")).filter((t) => t.length >= minLen);
+  const clusterOf = (s: string): number => {
+    for (let i = 0; i < norm.length; i++) {
+      const o = norm[i];
+      if (o === s) return i;
+      if (o.includes(s) || s.includes(o)) return i;
+      if (editDistance(o, s) <= 2) return i;
+    }
+    return -1;
+  };
+  const counts = new Map<number, number>();
+  for (let i = 0; i < norm.length; i++) {
+    const c = clusterOf(norm[i]);
+    if (c < 0) continue;
+    counts.set(c, (counts.get(c) ?? 0) + 1);
+  }
+  const out: boolean[] = lines.map(() => false);
+  lines.forEach((l, idx) => {
+    const t = l.replace(/\s+/g, "");
+    if (t.length < minLen) return;
+    const c = clusterOf(t);
+    if (c >= 0 && (counts.get(c) ?? 0) >= 2) out[idx] = true;
+  });
+  return out;
+}
+
 export function useAutoMask(params: {
   ocr: OcrResult | null;
   setOcr: Dispatch<SetStateAction<OcrResult | null>>;
@@ -237,6 +296,86 @@ export function useAutoMask(params: {
     setAnnotations,
   ]);
 
+  /**
+   * 一键自动去水印（P3 增强）：OCR 定位「重复出现 ≥2 次的文本」→ 视为水印（企业微信/钉钉/
+   * 飞书截图的水印文字常整段重复出现在图内）→ 预览框逐框可排除 → 确认后批量生成 dewarp
+   * 手动标注（走 inpaint 兜底，框内去水印、不误伤背景）。整批一次 undo。
+   *
+   * 与 runAutoMask（自动打码）的差异：打码盖隐私（mosaic），去水印盖水印（inpaint 还原）。
+   * 二者复用同一套 OCR 预取与预览式交互，差异仅在「判定条件」与「落地标注类型」。
+   */
+  const runAutoDewarp = useCallback(async () => {
+    if (busy) return;
+    const res = await ensureRegionOcr();
+    if (!res) {
+      showToast("自动去水印失败：文字识别未就绪", false);
+      return;
+    }
+    const r = selRef.current;
+    const baseW = r ? Math.round(r.w) : 0;
+    const baseH = r ? Math.round(r.h) : 0;
+    // 模糊聚类挑出重复水印行：PP-OCRv6 对斜向/半透明水印常有漏字错字，故用编辑距离 +
+    // 包含判定近似簇，类内出现 ≥2 次即水印。详情见 clusterWatermarkLines。
+    const watermarkFlags = clusterWatermarkLines(res.lines.map((l) => l.text));
+    const pad = 6; // 物理像素外扩，确保整词被覆盖
+    const boxes: MaskBox[] = [];
+    for (let li = 0; li < res.lines.length; li++) {
+      const line = res.lines[li];
+      const t = line.text.replace(/\s+/g, "");
+      if (t.length < 2) continue;
+      if (!watermarkFlags[li]) continue; // 仅重复（或近似重复）文本
+      // 整行单框（兼容回退）：盖整行
+      let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+      for (const w of line.words) {
+        x1 = Math.min(x1, w.x); y1 = Math.min(y1, w.y);
+        x2 = Math.max(x2, w.x + w.width); y2 = Math.max(y2, w.y + w.height);
+      }
+      if (!Number.isFinite(x1)) continue;
+      const x = Math.max(0, Math.round(x1) - pad);
+      const y = Math.max(0, Math.round(y1) - pad);
+      const xe = Math.min(baseW, Math.round(x2) + pad);
+      const ye = Math.min(baseH, Math.round(y2) + pad);
+      if (xe - x < 2 || ye - y < 2) continue;
+      boxes.push({ x, y, x2: xe, y2: ye, excluded: false });
+    }
+    if (boxes.length === 0) {
+      showToast("未发现重复水印文字（可改手动魔棒/画笔）", false);
+      return;
+    }
+    maskPreviewRef.current = boxes;
+    setMaskPreview(boxes);
+    showToast(`识别到 ${boxes.length} 处重复水印文字 · 点框可排除 · 全部确认即去水印`, true);
+  }, [ensureRegionOcr, busy, showToast, selRef, maskPreviewRef, setMaskPreview]);
+
+  /** 自动去水印预览确认：把保留的框转为 dewarp 手动标注（inpaint 还原），整批一次 undo。 */
+  const applyDewarpMasks = useCallback(() => {
+    const boxes = maskPreviewRef.current;
+    if (!boxes) return;
+    const active = boxes.filter((b) => !b.excluded);
+    setMaskPreview(null);
+    maskPreviewRef.current = null;
+    if (active.length === 0) {
+      showToast("已排除全部，未去水印", false);
+      return;
+    }
+    const els: Annotation[] = active.map((b) => ({
+      id: nextId(),
+      type: "dewarp",
+      color: "",
+      width: 0,
+      x: b.x,
+      y: b.y,
+      x2: b.x2,
+      y2: b.y2,
+      strength: 10,
+      shape: "rect",
+      tiled: false, // 手动局部去（inpaint 兜底），框内不误伤全图
+    }));
+    const prev = pushUndoSnapshot();
+    setAnnotations([...prev, ...els]);
+    showToast(`已自动去水印 ${els.length} 处`, true);
+  }, [showToast, pushUndoSnapshot, maskPreviewRef, setMaskPreview, setAnnotations]);
+
   // onSelectTool 不在这里：它是工具栏接线（自动打码只是它特判的一个分支），留在组件。
-  return { ensureRegionOcr, runAutoMask, toggleMaskBox, applyMasks };
+  return { ensureRegionOcr, runAutoMask, toggleMaskBox, applyMasks, runAutoDewarp, applyDewarpMasks };
 }
