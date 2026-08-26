@@ -78,22 +78,63 @@ pub async fn capture_region(
     {
         // 长截图期间临时隐藏状态窗，避免它被拼进长图（截图窗自身已 hide，
         // 这是唯一还可见的浮层）。普通截图时该窗不存在，hide/show 均为 no-op，零开销。
+        //
+        // ✅ 只在状态窗**与截取区域相交**时才隐藏：`pick_status_pos` 已把状态窗
+        // 放在选区外（仅"选区占满屏幕"的兜底位置允许相交）。绝大多数情况不相交，
+        // 无条件 hide/show 会让状态窗**每帧闪烁**（用户实测反馈）——不相交时跳过。
         let status = app.get_webview_window(LONGSHOT_LABEL);
+        let mut hide_status = false;
         if let Some(win) = &status {
-            let _ = win.hide();
+            match (win.outer_position(), win.outer_size()) {
+                (Ok(pos), Ok(size)) => {
+                    let sx = pos.x as i32;
+                    let sy = pos.y as i32;
+                    let sw = size.width as i32;
+                    let sh = size.height as i32;
+                    hide_status = x < sx + sw && sx < x + w && y < sy + sh && sy < y + h;
+                }
+                // ❌ 查询失败必须 fail-closed：兜底位置（选区占满屏）本就允许与状态窗
+                // 相交，此时若按"不相交"处理，BitBlt 会把状态窗拍进长图、污染截图内容。
+                // 宁可多隐藏一次（极端情况下状态窗闪一下），也不能出脏图。
+                _ => {
+                    log::warn!("[Screenshot] 状态窗位置/尺寸查询失败，按相交处理（强制隐藏）");
+                    hide_status = true;
+                }
+            }
+        }
+        if hide_status {
+            if let Some(win) = &status {
+                let _ = win.hide();
+            }
             // ❌ hide() 之后必须给 DWM 一点时间重合成：ShowWindow(SW_HIDE) 只是发起隐藏，
             // 屏幕内容未必已经更新，而 BitBlt 是从屏幕 DC 拉像素的——不等就可能
-            // 把刚“隐藏”的状态窗拍进长图里。一帧的量级就够，对总时长无影响。
+            // 把刚"隐藏"的状态窗拍进长图里。一帧的量级就够，对总时长无影响。
             tokio::time::sleep(std::time::Duration::from_millis(16)).await;
         }
-        let res = tokio::task::spawn_blocking(move || capture_rect(x, y, w, h)).await;
-        // ❌ 恢复必须在 `?` **之前**：旧写法把 `?` 放在 show() 前面，一旦 spawn_blocking
-        // 报 JoinError（capture_rect panic，比如超大矩形分配失败）就提前返回，
-        // 状态窗**永久隐藏**——用户就此失去唯一的「停止/放弃」入口。
-        if let Some(win) = &status {
-            let _ = win.show();
+        // ❌ spawn_blocking 的 JoinHandle await 必须有超时：capture_rect 走 GDI BitBlt，
+        // 目标窗口无响应/系统繁忙时可能长时间挂起。没超时的话状态窗开头的 hide()
+        // 永远等不到结尾的 show()——状态窗永久隐藏，用户失去唯一可见的停止入口，
+        // 长截图循环也随之停摆（"看不到也退不出，只能重启电脑"）。
+        let res = tokio::time::timeout(
+            std::time::Duration::from_secs(8),
+            tokio::task::spawn_blocking(move || capture_rect(x, y, w, h)),
+        )
+        .await;
+        // ❌ 恢复必须在超时/失败分支**之前**无条件执行（旧写法在 spawn_blocking
+        // 挂起时 show 永远轮不到）。超时的底层线程无法取消，但状态窗恢复后
+        // 前端能拿到 Err → 走恢复主窗路径，线程卡住只影响后续同区域截屏。
+        if hide_status {
+            if let Some(win) = &status {
+                let _ = win.show();
+            }
         }
-        res.map_err(|e| format!("截图任务失败: {e}"))?
+        match res {
+            Ok(join) => join.map_err(|e| format!("截图任务失败: {e}"))?,
+            Err(_) => {
+                log::warn!("[Screenshot] 区域截图超时（目标窗口可能无响应），已恢复状态窗");
+                return Err("区域截图超时（目标窗口可能无响应）".to_string());
+            }
+        }
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -890,10 +931,22 @@ fn pick_status_pos(
     let left = scx + gap;
     let top = scy + gap;
     let mid_x = scx + (scw - win_w) / 2;
+    // 贴着选区放时的对齐坐标：水平跟选区居中对齐、垂直跟选区顶部对齐，
+    // 各自先钳进屏幕（钳不住的候选会被下面的谓词滤掉）。
+    let near_x = (sx + (sw - win_w) / 2).clamp(scx, (scx + scw - win_w).max(scx));
+    let near_y = sy.clamp(scy, (scy + sch - win_h).max(scy));
 
-    // 优先右下（系统通知区，用户天然会往那看），然后其余三个角，
-    // 最后试选区正下方/正上方居中（选区靠一侧时这两个位置比角落更靠近视线）。
+    // ❗ 顺序 = 用户**找得到**的顺序，不是几何上「最不碍事」的顺序。
+    // ❌ 旧实现优先四角（右下第一），理由是“系统通知区，用户天然会往那看”。
+    //    但长截图期间**所有**控制（停止 / 放弃 / 自动·手动 / 下一张）只存在于这个窗里，
+    //    用户在屏幕左上角截图、控制条却在对角线另一头 —— 实测就是“找不到、以为没反应”。
+    // 现在先贴着选区放（下 → 上 → 右 → 左），四角退为兜底。
+    // 优先“下”：长截图是向下滚的，选区下方是视线自然前进的方向。
     let candidates = [
+        (near_x, sy + sh + gap),    // 选区正下方
+        (near_x, sy - gap - win_h), // 选区正上方
+        (sx + sw + gap, near_y),    // 选区右侧
+        (sx - gap - win_w, near_y), // 选区左侧
         (right, bottom),
         (left, bottom),
         (right, top),
@@ -923,12 +976,16 @@ fn pick_status_pos(
         })
 }
 
+/// 状态窗开窗代际号：每次 `open_longshot_status` 递增。超时后遗留的迟到窗口回收任务
+/// 据此识别「自己已过期」——绝不能把用户紧接着重试开出的**新状态窗**误当泄漏回收。
+static LONGSHOT_OPEN_EPOCH: AtomicU64 = AtomicU64::new(0);
+
 /// 打开长截图状态小窗。参数是选区的虚拟屏幕物理矩形。
 ///
 /// 返回是否真的开了窗：选区占满屏幕时找不到不相交的位置，此时宁可不开，
 /// 也不能把状态窗拼进用户的长图里。前端据此决定要不要提示"本次无法中途停止"。
 #[tauri::command]
-pub fn open_longshot_status(
+pub async fn open_longshot_status(
     app: tauri::AppHandle,
     x: i32,
     y: i32,
@@ -939,25 +996,102 @@ pub fn open_longshot_status(
     if let Some(win) = app.get_webview_window(LONGSHOT_LABEL) {
         let _ = win.close();
     }
+    let my_epoch = LONGSHOT_OPEN_EPOCH.fetch_add(1, Ordering::SeqCst) + 1;
     let (scw, sch, scx, scy) = virtual_screen_metrics();
+    log::info!("[Screenshot] 开始创建长截图状态窗");
 
-    let window = tauri::WebviewWindowBuilder::new(
-        &app,
-        LONGSHOT_LABEL,
-        tauri::WebviewUrl::App("longshot.html".into()),
-    )
-    .title("")
-    .inner_size(LONGSHOT_W, LONGSHOT_H)
-    .resizable(false)
-    .decorations(false)
-    .always_on_top(true)
-    .skip_taskbar(true)
-    .shadow(false)
-    .transparent(true)
-    .focused(false) // 不抢焦点：抢了会把滚轮目标窗口激活态打乱
-    .visible(false)
-    .build()
-    .map_err(|e| format!("创建长截图状态窗失败: {e}"))?;
+    // ❌ 状态窗必须用**独立 user data folder**（= 独立 WebView2 浏览器进程）。
+    // 实测（2026-08-23 dev 复现）：`build()` 创建第二个 WebView2 窗口会**挂起**，
+    // 且默认与主窗共享同一浏览器进程 → 主窗 JS 一起停摆，用户"卡在截图里退不出，
+    // 点取消/完成全无效"。独立进程后 build 即使挂起也只卡状态窗自己，主窗毫发无损。
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map(|d| d.join("longshot-status"))
+        .ok();
+    // build() 放**独立线程**：builder 借用 app 无法满足 'static（spawn_blocking 不行），
+    // 且超时也无法中断已卡住的 build —— 卡住的线程泄漏是罕见故障路径，可接受；
+    // 前端拿到 Err → 取消本次长截图，主窗保持可见，用户随时能退——这是"卡死"的根治。
+    // ❗ 但**等待端**不能跟着用 std channel 的 recv_timeout：本函数是 async command、
+    //   跑在 tokio worker 上，同步 recv 会把 worker 堵死（最长一个超时周期）。
+    //   所以结果经 tokio oneshot 承接，等待用 tokio::time::timeout 异步完成。
+    // ❗ 后端超时 2500ms 必须**小于**前端 withTimeout（useLongShot.ts 里 3000ms）：
+    //   WebView2 真挂起时要让后端的 Err 先落地、前端据此取消，而不是前端先超时、
+    //   后端白等半截。2500 给 IPC 往返留了 500ms 余量。
+    let (tx, rx) = tokio::sync::oneshot::channel::<Result<tauri::WebviewWindow, String>>();
+    let app2 = app.clone();
+    let d = data_dir.clone();
+    std::thread::spawn(move || {
+        // build() 消耗 builder（收 ownership），重试必须能重建一个全新 builder
+        let mk = || {
+            let mut b = tauri::WebviewWindowBuilder::new(
+                &app2,
+                LONGSHOT_LABEL,
+                tauri::WebviewUrl::App("longshot.html".into()),
+            )
+            .title("")
+            .inner_size(LONGSHOT_W, LONGSHOT_H)
+            .resizable(false)
+            .decorations(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .shadow(false)
+            .transparent(true)
+            .focused(false) // 不抢焦点：抢了会把滚轮目标窗口激活态打乱
+            .visible(false);
+            if let Some(p) = &d {
+                b = b.data_directory(p.clone());
+            }
+            b
+        };
+        // ❌ 上一会话刚 close 时，其 WebView2 浏览器进程异步退出期间仍握着独立 UDF
+        // 的目录锁（EBWebView），紧跟着的用户重试会 build **快速失败**。锁通常几百 ms
+        // 内随进程退出释放：首次快速失败且仍在 2500ms 超时预算内时，小等 400ms 重试一次。
+        // （真挂起的 build 不会走到这里——它卡住不返回，谈不上"快速失败"。）
+        let started = std::time::Instant::now();
+        let mut res = mk().build().map_err(|e| format!("创建长截图状态窗失败: {e}"));
+        if res.is_err() && started.elapsed() < std::time::Duration::from_millis(1200) {
+            log::warn!("[Screenshot] 状态窗首次 build 失败（疑 UDF 目录锁未释放/旧窗关闭中），400ms 后重试一次");
+            std::thread::sleep(std::time::Duration::from_millis(400));
+            res = mk().build().map_err(|e| format!("创建长截图状态窗失败: {e}"));
+        }
+        let _ = tx.send(res);
+    });
+    let window = match tokio::time::timeout(std::time::Duration::from_millis(2500), rx).await {
+        Ok(Ok(Ok(win))) => win,
+        Ok(Ok(Err(e))) => return Err(e),
+        // 其余两种失败同归一条故障路径：
+        //   Err(_)      = 等待超时（builder 卡死；线程泄漏但窗口可能"迟到"）
+        //   Ok(Err(_))  = oneshot 关闭（builder 线程在 send 前 panic，不会再有窗口）
+        _ => {
+            log::error!("[Screenshot] 长截图状态窗 build 超时（WebView2 创建挂起），返回失败");
+            // ❌ 泄漏的 builder 线程若随后 build 成功，会留下一个带独立 user data
+            // folder 的隐形窗口（占进程句柄、磁盘目录），直到下一次 open/close 才清。
+            // 起延迟清理任务轮询回收；线程卡死在 build 里时窗口永远不出现，
+            // 轮询 30 次（15s）后放弃即可，不影响主流程。
+            let app3 = app.clone();
+            tauri::async_runtime::spawn(async move {
+                for _ in 0..30 {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    // ❌ 代际已变 = 用户已重新发起长截图：迟到的窗口要么被新一轮 open
+                    // 开头 close 掉、要么 label 冲突让迟到 build 自己失败。轮询必须立即
+                    // 停止——继续找 label 会把新会话的**合法状态窗**误当泄漏回收掉，
+                    // 用户再次失去唯一可见的停止入口。
+                    if LONGSHOT_OPEN_EPOCH.load(Ordering::SeqCst) != my_epoch {
+                        return;
+                    }
+                    if let Some(win) = app3.get_webview_window(LONGSHOT_LABEL) {
+                        log::warn!("[Screenshot] 回收超时后才建成的长截图状态窗");
+                        let _ = win.close();
+                        return;
+                    }
+                }
+                log::warn!("[Screenshot] 15s 内未见到迟到的状态窗，放弃回收");
+            });
+            return Err("创建长截图状态窗超时（WebView2 创建挂起）".to_string());
+        }
+    };
+    log::info!("[Screenshot] 长截图状态窗 build 完成（独立 WebView2 进程）");
 
     // 窗口建好后才能读 scale_factor，拿它把逻辑尺寸换算成物理尺寸，
     // 才能与选区（物理像素）做相交判断。
@@ -1049,9 +1183,113 @@ fn unregister_longshot_escape(app: &AppHandle) {
     }
 }
 
+// ===== 长截图心跳守卫（防"看不到也退不出，只能重启电脑"的死局） =====
+//
+// 前端长截图循环依赖隐藏 WebView 的 JS 继续执行；一旦目标窗口无响应导致
+// GDI 截屏挂起、或隐藏窗口的 timer 被节流/暂停，循环可能长时间停摆——
+// 此时状态窗、截图窗全不可见，停止按钮/全局 Esc 全部失效，用户无路可退。
+//
+// 守卫：前端每拼一帧发一次心跳（longshot_heartbeat，不 await 不阻塞）；
+// 超过 LONG_GUARD_IDLE_MS 没收到心跳 = 前端已停摆 → 后端强制恢复截图窗 +
+// 关状态窗 + 释放全局 Esc，把 UI 拉回来（宁可多等 60 秒，不能让人重启电脑）。
+// AtomicBool/AtomicU64::new 是 const，直接用静态量即可——OnceLock 惰性初始化在这里
+// 没有任何收益（不需要运行时构造），反而多一层间接。
+static LONG_GUARD_RUNNING: AtomicBool = AtomicBool::new(false);
+static LONG_GUARD_LAST_BEAT: AtomicU64 = AtomicU64::new(0);
+/// 守卫任务代际号：每次真正 spawn 出新守卫任务时递增。
+///
+/// ❌ 只靠 LONG_GUARD_RUNNING 会漏任务：disarm 只是把它置 false，若用户在下一个
+/// 5s tick 到来前又 arm（连续两次长截图 / 失败重试），swap 返回 false → 再 spawn
+/// 一个任务；而**旧任务**随后醒来时读到的 RUNNING 已被新 arm 置回 true，于是不
+/// break —— 两个任务一起跑，反复开关就一直叠。
+/// 让每个任务记住自己的代际，醒来发现全局代际已变 = 已有新任务接管 → 自己退场。
+/// 与状态窗的 LONGSHOT_OPEN_EPOCH 是同一套写法。
+static LONG_GUARD_EPOCH: AtomicU64 = AtomicU64::new(0);
+fn long_guard_now_ms() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// 长截图前端无心跳的容忍上限。正常长截图每帧（≤1s）就续期一次；
+/// 60s 内一帧心跳都没有 = 前端循环停摆（隐藏窗口 timer 暂停/GDI 挂起），强制恢复。
+const LONG_GUARD_IDLE_MS: u64 = 60_000;
+
+/// 武装长截图心跳守卫。幂等：已在运行则只续期心跳、不再 spawn。
+#[tauri::command]
+pub fn arm_longshot_guard(app: tauri::AppHandle) {
+    // 先续期：重复 arm 也要把计时拨回零，否则「已在运行则 no-op」会让新一轮长截图
+    // 继承上一轮的陈旧 LAST_BEAT。
+    LONG_GUARD_LAST_BEAT.store(long_guard_now_ms(), Ordering::SeqCst);
+    if LONG_GUARD_RUNNING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    // ⚠️ 代际必须在 swap 成功**之后**才递增：若先递增，遇到「已有任务在跑」的分支
+    // 会直接 return，而在岗任务下次醒来看到代际已变就自我了断 —— 没人接班，守卫静默失效。
+    let my_epoch = LONG_GUARD_EPOCH.fetch_add(1, Ordering::SeqCst) + 1;
+    let app2 = app.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            // 代际已变：期间发生过 disarm→arm，新任务已接管，本任务退场。
+            // （残留窗口最多一个 tick：arm 在 swap 与 fetch_add 之间时旧任务可能刚好
+            //   醒来看到旧代际，但两者共用 LAST_BEAT，不会误判夺屏，下一 tick 必退。）
+            if LONG_GUARD_EPOCH.load(Ordering::SeqCst) != my_epoch {
+                break;
+            }
+            if !LONG_GUARD_RUNNING.load(Ordering::SeqCst) {
+                break;
+            }
+            let idle =
+                long_guard_now_ms().saturating_sub(LONG_GUARD_LAST_BEAT.load(Ordering::SeqCst));
+            if idle > LONG_GUARD_IDLE_MS {
+                log::error!(
+                    "[Screenshot] 长截图前端 {}ms 无心跳，强制恢复 UI（防死局）",
+                    idle
+                );
+                show_screenshot_window(app2.clone());
+                close_longshot_status(app2.clone());
+                LONG_GUARD_RUNNING.store(false, Ordering::SeqCst);
+                break;
+            }
+        }
+    });
+}
+
+/// 解除长截图心跳守卫（长截图正常结束/失败都调，收口在 restoreShotWindow）。
+#[tauri::command]
+pub fn disarm_longshot_guard() {
+    LONG_GUARD_RUNNING.store(false, Ordering::SeqCst);
+}
+
+/// 长截图每帧心跳：续期守卫计时。前端不 await（void invoke），绝不阻塞循环。
+#[tauri::command]
+pub fn longshot_heartbeat() {
+    if LONG_GUARD_RUNNING.load(Ordering::SeqCst) {
+        LONG_GUARD_LAST_BEAT.store(long_guard_now_ms(), Ordering::SeqCst);
+    }
+}
+
 /// 状态窗逻辑尺寸。写成常量是因为几何判断与建窗必须用同一份值。
-const LONGSHOT_W: f64 = 300.0;
-const LONGSHOT_H: f64 = 48.0;
+///
+/// ⚠️ 宽度不能回到 300：`.ls-bar` 横向内容（缩略图+进度文字+自动/手动切换+
+/// 「下一张」+「停止并出图」+「放弃」）在手动模式下约 400px，300px 下
+/// `overflow:hidden` 会把最右侧的「放弃」/「停止并出图」裁出可视区——
+/// 用户就此失去唯一的停止入口（全局 Esc 被占用时是死局）。
+///
+/// 420 = 400(内容) + 10×2(.ls-root 的 padding)：控制条仍然有 400px 内宽，
+/// 同时内宽正好等于前端的 LONGSHOT_STRIP_W，预览画布 1:1 不重采样。
+/// 改它必须同步改 longshotEvents.ts 的 LONGSHOT_STRIP_W 与 screenshot.css 的 padding。
+const LONGSHOT_W: f64 = 420.0;
+/// 高度 = 10(padding) + 176(实时长图预览) + 6(gap) + 40(控制条) + 10(padding)。
+///
+/// ❌ 不能回到 48：那时状态窗只有一个 26×40 缩略图 + 「已拼 N 屏」，
+/// 用户根本看不出拼得对不对，只能等到结束才发现白拼一场（QQ 电脑版就是边拼边显示）。
+/// 代价：窗口变高 → pick_status_pos 的「选区正下方」更容易放不下而退到上方/侧边，
+/// 这是有意接受的权衡 —— 候选链能兜底，而「看不见拼成什么样」兜不了。
+const LONGSHOT_H: f64 = 242.0;
 
 /// 重新显示截图窗口（长截图完成后恢复，状态保留）
 #[tauri::command]
@@ -1257,20 +1495,24 @@ pub async fn finish_screenshot_rgba(
     let rgba_bg = rgba.to_vec();
     let rgba_owned = rgba_bg.clone();
     let app_copy = app.clone();
+    // 闭包返回 ()，不再包 Result：
+    // ❌ 原来返回 Result<(), String>，而 `.await.map_err(...)?` 只解掉 JoinError 那一层，
+    //    里层 Result 被原地丢弃 —— 编译器的 unused_must_use 警告指的就是它。
+    //    用 `let _ =` 压掉只会把「静默吞错」固化下来；事实是本闭包根本不会出错
+    //    （复制失败就地走事件提示，见下），所以去掉这层 Result，让类型说实话。
     tokio::task::spawn_blocking(move || {
         let engine = app_copy.state::<crate::paste_engine::PasteEngine>();
         if let Err(e) = engine.copy_image_rgba(w, h, &rgba_owned) {
             // 复制失败：前端已 fire-and-forget、不 await 本命令返回（截图窗即将销毁），
             // 错误改走主窗口事件提示（screenshot-copy-failed → 主窗口 toast），
-            // 这里返回 Ok 避免前端 unhandled promise rejection。
+            // 不向外抛 Err，避免前端 unhandled promise rejection。
             log::warn!("[Screenshot] 复制图片失败: {e}");
             let _ = app_copy.emit("screenshot-copy-failed", format!("复制图片失败：{e}"));
-            return Ok::<(), String>(());
+            return;
         }
         // 完成即临时 OCR 图使命结束：主动 purge（等价旧流程 unmark 语义，
         // 且保证 purge 先于后台落盘，消除"purge 删掉刚落盘卡片文件"的并发竞态）
         purge_ocr_temp(&app_copy);
-        Ok::<(), String>(())
     })
     .await
     .map_err(|e| format!("复制任务失败: {e}"))?;
@@ -2492,8 +2734,11 @@ fn send_wheel_via_input(x: i32, y: i32, delta: i32) -> Result<(), String> {
         // 保存当前光标位置
         let mut old = POINT::default();
         let _ = GetCursorPos(&mut old);
-        // 移到滚动区域中心
-        let _ = SetCursorPos(x, y);
+        // 移到滚动区域中心（诊断：失败 = 滚轮发给错误位置 → 长截图"画面不动"的元凶之一）
+        let moved = SetCursorPos(x, y).is_ok();
+        if !moved {
+            log::warn!("[长截图] SendInput 前置 SetCursorPos({x},{y}) 失败，滚轮可能发错位置");
+        }
         // 短暂等待光标生效（SendInput 的 wheel 事件发到光标所在窗口）
         std::thread::sleep(std::time::Duration::from_millis(30));
 
@@ -2509,6 +2754,9 @@ fn send_wheel_via_input(x: i32, y: i32, delta: i32) -> Result<(), String> {
             Anonymous: INPUT_0 { mi },
         };
         let sent = SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+        log::debug!(
+            "[长截图] SendInput 滚轮 @({x},{y}) delta={delta} moved={moved} sent={sent}"
+        );
         // 恢复光标
         let _ = SetCursorPos(old.x, old.y);
         if sent == 0 {
@@ -2617,16 +2865,32 @@ fn find_vscroll_hwnd(x: i32, y: i32) -> Option<windows::Win32::Foundation::HWND>
     }
 }
 
+/// 向可滚动子控件投 `lines` 条 SB_LINEDOWN。
+///
+/// ❌ 旧实现发的是 **SB_PAGEDOWN**（一整页），两个问题：
+/// ① 它跟并发投出去的一格滚轮（默认 3 行）量级差十几倍，两者叠加后
+///    「一次究竟滚了多少」完全不可预测，前端无从标定。
+/// ② 页高由**控件**决定，跟用户选区多大毫无关系 —— 选区比控件页小时必然
+///    跳过一整屏，两帧之间没有重叠，findOverlapRows 找不到接缝，拼接直接失败。
+/// 改成 SB_LINEDOWN：单位小而均匀，前端标定出「一步 = 多少像素」后按需重复，
+/// 想推多少就推多少。
 #[cfg(target_os = "windows")]
-fn scroll_via_vscroll(x: i32, y: i32) -> Result<(), String> {
+fn scroll_via_vscroll(x: i32, y: i32, lines: i32) -> Result<(), String> {
     use windows::Win32::Foundation::{LPARAM, WPARAM};
     use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_VSCROLL};
     let target = find_vscroll_hwnd(x, y).ok_or_else(|| "未找到可滚动子控件".to_string())?;
-    unsafe {
-        // SB_PAGEDOWN = 3（Windows 规范值）：低位 wParam；lParam 必须为 0。
-        PostMessageW(target, WM_VSCROLL, WPARAM(3), LPARAM(0))
-            .map_err(|e| format!("WM_VSCROLL 投递失败: {e:?}"))
+    let mut last = Ok(());
+    for _ in 0..lines.max(1) {
+        last = unsafe {
+            // SB_LINEDOWN = 1（Windows 规范值）：低位 wParam；lParam 必须为 0。
+            PostMessageW(target, WM_VSCROLL, WPARAM(1), LPARAM(0))
+                .map_err(|e| format!("WM_VSCROLL 投递失败: {e:?}"))
+        };
+        if last.is_err() {
+            break;
+        }
     }
+    last
 }
 
 /// 长截图「已滚到底」的权威信号：向选区中心命中的可滚动控件取 `GetScrollInfo(SB_VERT)`，
@@ -2748,17 +3012,39 @@ pub fn get_scroll_range(x: i32, y: i32) -> Result<Option<ScrollRangeOut>, String
 /// 优先级：`WM_VSCROLL`（经典可滚动控件，最规范）→ `WM_MOUSEWHEEL` PostMessage（现代应用）
 /// → `SendInput` 真实滚轮（只认真实输入的应用）。
 /// `force_input = true` 时跳过前两种，直接走 SendInput（前端发现画面没动时升级用）。
+///
+/// `repeat`：把整套注入重复几次（默认 1）。前端标定出「一步 = 多少像素」后，
+/// 用它一次性把画面推到目标位置。放在后端循环而不是前端调 N 次：
+/// 一是省 N-1 轮 IPC，二是两条注入路径（WM_VSCROLL / WM_MOUSEWHEEL）能成对地发，
+/// 不会因为前端分次调用而错开。
 #[tauri::command]
 pub fn scroll_longshot(
     x: i32,
     y: i32,
     delta: i32,
     force_input: Option<bool>,
+    repeat: Option<i32>,
 ) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
+        // 上限 60：再多也只是把页面扔到底，而一次 IPC 里卡太久会踩 LONG_IPC_TIMEOUT_MS。
+        let times = repeat.unwrap_or(1).clamp(1, 60);
+        // WM_VSCROLL 用行数对齐滚轮：Windows 默认一格滚轮 = 3 行。
+        // 两条注入路径量级一致，前端标定出来的步长才对得上（旧版 PAGEDOWN vs 3 行差十几倍）。
+        let lines_per_step = (delta.abs() / 120).max(1) * 3;
         if force_input.unwrap_or(false) {
-            send_wheel_via_input(x, y, delta)
+            log::debug!(
+                "[长截图] scroll_longshot 走 SendInput @({x},{y}) delta={delta} ×{times}"
+            );
+            for i in 0..times {
+                send_wheel_via_input(x, y, delta)?;
+                // SendInput 是真实输入，连发太快会被应用当成惯性滚动或直接丢包；
+                // PostMessage 走消息队列不存在这个问题，所以只在这条路径上隔一下。
+                if i + 1 < times {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+            }
+            Ok(())
         } else {
             // ❌ 不能写成 `scroll_via_vscroll(..).or_else(|_| 滚轮)`：PostMessage 只要窗口句柄
             // 有效就返回成功，**与控件是否真的滚了没关系**，于是 or_else 永不触发，
@@ -2769,27 +3055,45 @@ pub fn scroll_longshot(
             //
             // 注意：投递成功仍不代表画面真的动了。“到底了还是不认”由前端的
             // waitStable + 重叠比对判定，没动会升级到 force_input 兑底。
-            let a = scroll_via_vscroll(x, y);
-            let b = send_wheel_via_post(x, y, delta);
+            let mut a = Ok(());
+            let mut b = Ok(());
+            for _ in 0..times {
+                a = scroll_via_vscroll(x, y, lines_per_step);
+                b = send_wheel_via_post(x, y, delta);
+            }
+            log::debug!(
+                "[长截图] scroll_longshot 双路注入 @({x},{y}) ×{times} vscroll={} post={}",
+                a.is_ok(),
+                b.is_ok()
+            );
             if a.is_ok() || b.is_ok() {
                 Ok(())
             } else {
-                send_wheel_via_input(x, y, delta)
+                // 两路都投不出去才降到 SendInput，同样要重复 times 次，
+                // 否则降级后步长悄悄变成 1/times，前端刚标定好的值全废了。
+                for i in 0..times {
+                    send_wheel_via_input(x, y, delta)?;
+                    if i + 1 < times {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                }
+                Ok(())
             }
         }
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (x, y, delta, force_input);
+        let _ = (x, y, delta, force_input, repeat);
         Err("长截图功能目前仅支持 Windows".to_string())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{clamp_rect_to_screen, pick_status_pos, SnapRect};
+    use super::{clamp_rect_to_screen, pick_status_pos, SnapRect, LONGSHOT_H, LONGSHOT_W};
 
-    // 1920x1080 主屏，状态窗 300x48，间距 16
+    // 本地小窗常量（300x48，≠ 生产 LONGSHOT_W=400）：让各用例的期望值自洽推导、
+    // 一眼可验算。生产真实窗宽下的兜底几何另有一条专项用例锁住（见下）。
     const SCREEN: (i32, i32, i32, i32) = (0, 0, 1920, 1080);
     const W: i32 = 300;
     const H: i32 = 48;
@@ -2811,29 +3115,43 @@ mod tests {
     }
 
     #[test]
-    fn 选区在左上时状态窗放右下() {
+    fn 选区在左上时状态窗贴在选区正下方() {
+        // ❌ 旧行为是放屏幕右下角 (1604, 1016) —— 控制条在对角线另一头，用户找不到。
         let sel = (100, 100, 400, 300);
         let p = pick(sel).expect("左上小选区必然有位置");
-        assert_eq!(p, (1920 - GAP - W, 1080 - GAP - H));
+        // near_x = 100 + (400-300)/2 = 150；y = 100 + 300 + GAP = 416
+        assert_eq!(p, (150, 416));
         assert!(!intersects(p, sel));
     }
 
     #[test]
-    fn 选区盖住右下角时改放左下() {
-        // 选区覆盖右下角候选位，右下不可用
+    fn 选区靠屏幕底部时改贴选区正上方() {
+        // 下方放不下（900+180+16+48 = 1144 > 1080）→ 退到正上方，仍然贴着选区
         let sel = (1400, 900, 500, 180);
-        let p = pick(sel).expect("左下应该可用");
-        assert_eq!(p, (GAP, 1080 - GAP - H));
+        let p = pick(sel).expect("选区上方应该可用");
+        // near_x = 1400 + (500-300)/2 = 1500；y = 900 - GAP - H = 836
+        assert_eq!(p, (1500, 836));
         assert!(!intersects(p, sel));
     }
 
     #[test]
     fn 横贯屏幕底部的选区把状态窗挤到上方() {
-        // 底部整条被占：左下右下都不行，右上可用
+        // 底部整条被占：下方放不下，退到选区正上方（而不是跑到屏幕顶部角落）
         let sel = (0, 800, 1920, 280);
         let p = pick(sel).expect("上方应该可用");
-        assert_eq!(p.1, GAP);
+        // near_x = 0 + (1920-300)/2 = 810；y = 800 - GAP - H = 736
+        assert_eq!(p, (810, 736));
         assert!(!intersects(p, sel));
+    }
+
+    #[test]
+    fn 状态窗贴着选区放而不是跑到屏幕角落() {
+        // 回归护栏：长截图期间唯一的停止/放弃入口就在这个窗上。
+        // 只要选区旁边放得下，就不允许再跑回屏幕角落。
+        let sel = (60, 60, 300, 200);
+        let (px, py) = pick(sel).expect("有位置");
+        assert!(py >= sel.1 + sel.3, "应在选区下方，实得 y={py}");
+        assert!((px - sel.0).abs() < 200, "水平方向应贴近选区，实得 x={px}");
     }
 
     #[test]
@@ -2842,6 +3160,24 @@ mod tests {
         // 该位置与选区相交，但 capture_region 截屏瞬间会临时隐藏状态窗，
         // 不会被拼进长图；留窗是为了长截图期间保留可见的「停止/放弃」入口。
         assert_eq!(pick((0, 0, 1920, 1080)), Some((810, 1016)));
+    }
+
+    #[test]
+    fn 生产真实窗宽下的兜底几何() {
+        // 生产尺寸 LONGSHOT_W=420 / LONGSHOT_H=242：
+        //   兜底 x = (1920-420)/2 = 750；y = 1080-16-242 = 822。
+        // 其余用例都用本地小常量 W=300/H=48 自洽推导；这条用真实常量锁住兜底行为，
+        // 防止以后调窗口尺寸时兜底点悄悄漂移而无人发现。
+        assert_eq!(
+            pick_status_pos(
+                (0, 0, 1920, 1080),
+                SCREEN,
+                LONGSHOT_W as i32,
+                LONGSHOT_H as i32,
+                GAP
+            ),
+            Some((750, 822))
+        );
     }
 
     #[test]
@@ -2866,10 +3202,11 @@ mod tests {
 
     #[test]
     fn 紧贴选区边缘不算相交() {
-        // 选区右边缘正好等于状态窗左边缘：不相交，可以用
-        let sel = (0, 0, 1920 - GAP - W, 1080);
-        let p = pick(sel).expect("右侧缝隙刚好放得下");
-        assert_eq!(p.0, 1920 - GAP - W);
+        // gap=0：状态窗顶边正好等于选区底边 —— 边缘相接不算相交，必须可用。
+        // （这验的是相交谓词本身，跟候选位顺序无关；gap>0 时贴选区的候选天然隔着缝。）
+        let sel = (100, 100, 400, 300);
+        let p = pick_status_pos(sel, SCREEN, W, H, 0).expect("紧贴选区下沿应该可用");
+        assert_eq!(p, (150, 400)); // near_x = 100+(400-300)/2；y = 100+300+0
         assert!(!intersects(p, sel));
     }
 

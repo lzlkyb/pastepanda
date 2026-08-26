@@ -66,7 +66,7 @@ import {
   toScreenRect,
 } from "@/lib/screenshot/geometry";
 import type { Dir } from "@/lib/screenshot/geometry";
-import { hasPeriodicWatermark } from "@/lib/screenshot/dewarp";
+import { removeTiledWatermarkRegion } from "@/lib/screenshot/dewarp";
 import {
   contrastInk,
   drawAnnot,
@@ -300,20 +300,14 @@ export function ScreenshotOverlay() {
   const lastAiActionRef = useRef<AiActionMeta | null>(null);
   // V3：吸附窗口 + 长截图（V6.19 hover 即选区后 snap 预览退役，吸附直接写入 sel）
   const [longShot, setLongShot] = useState(false);
-  // 长截图「预览即默认」：进长截图前显示整页淡预览，单击截整页 / 拖拽选终点
-  const [longPreview, setLongPreview] = useState(false);
-  const longPreviewRef = useRef(false);
-  const [previewRect, setPreviewRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  const [previewLabel, setPreviewLabel] = useState("");
-  const [previewEndY, setPreviewEndY] = useState<number | null>(null); // 物理屏幕像素：终点手柄位置
-  const previewDragRef = useRef(false);
-  const previewMovedRef = useRef(false);
   // 固定区域「预览即默认」（P1）：恢复固定区域不再静默进标注，改用虚线紫框预览（单击采纳 / 拖改 / Esc 重置）
   const [fixedPreview, setFixedPreview] = useState(false);
   const fixedPreviewRef = useRef(false);
   // 自动打码「预览式」（P3）：检测后先橙色虚框轻预览，逐框可排除，确认才打马赛克
   const [maskPreview, setMaskPreview] = useState<MaskBox[] | null>(null);
   const maskPreviewRef = useRef<MaskBox[] | null>(null);
+  // 预览确认时的落地类型：mosaic=自动打码；dewarp=自动去水印（OCR 重复文字→inpaint）
+  const [maskApplyMode, setMaskApplyMode] = useState<"mosaic" | "dewarp">("mosaic");
   // 贴图「预览即钉」（P1）：完成态半透明浮动预览，拖动定位松手即钉
   const [pinPreview, setPinPreview] = useState<{ x: number; y: number } | null>(null);
   const [pinPreviewUrl, setPinPreviewUrl] = useState<string | null>(null);
@@ -525,11 +519,6 @@ export function ScreenshotOverlay() {
   const stopLongRef = useRef(false);
   /** 长截图期间 Esc 的连按次数（逃生舱用，每轮长截图开始时归零） */
   const escBurstRef = useRef(0);
-  // 长截图滚动模式：auto = 软件自动滚动；manual = 用户自己滚、点「下一张」截帧。
-  // 长截图进行中可由状态窗动态切换，主窗每轮滚动前读取本 ref。
-  const modeLongRef = useRef<"auto" | "manual">("auto");
-  // 手动模式：状态窗「下一张」置位，主循环 await waitUserScroll() 被唤醒截下一帧。
-  const nextLongRef = useRef(false);
   const longShotRef = useRef(false);
   longShotRef.current = longShot;
   // V4：标注态调整选区（把手）
@@ -971,18 +960,6 @@ export function ScreenshotOverlay() {
         // ⚠️ 长截图期间本窗已被 hide()，这条分支实际收不到事件。
         // 真正能中止的入口是状态小窗的"放弃"按钮（走 LONGSHOT_CONTROL 事件）。
         // 保留它只为覆盖"状态窗没开成、截图窗又提前恢复"这种异常路径。
-        if (longPreviewRef.current) {
-          longPreviewRef.current = false;
-          setLongPreview(false);
-          // ⚠️ 必须同时废掉正在进行的截止线拖拽：它挂的是 window 级 mouseup（onPreviewDown），
-          // Esc 只关预览层摘不掉那个监听。预览态窗口是可见的、Esc 收得到，于是
-          //「按住不放 → Esc 取消 → 松手」会让 onUp 照常走到 commitLongShot()，
-          // 用户明确取消之后长截图还是开跑了（窗口隐藏 + 给目标窗发滚轮）。
-          // onUp 里的 `if (!previewDragRef.current) return` 排在 removeEventListener 之后，
-          // 所以置 false 不会漏摘监听。
-          previewDragRef.current = false;
-          return;
-        }
         // 两级取消（P4）：预览态优先回退，再 Esc 才整体退出
         if (fixedPreviewRef.current) {
           setFixedPreview(false);
@@ -1320,9 +1297,6 @@ export function ScreenshotOverlay() {
       if (!longShotRef.current) return; // 不在长截图中的残留事件直接忽略
       if (e.payload === "abort") abortLongRef.current = true;
       else if (e.payload === "stop") stopLongRef.current = true;
-      else if (e.payload === "next") nextLongRef.current = true; // 手动模式：截下一帧
-      else if (e.payload === "mode_auto") modeLongRef.current = "auto";
-      else if (e.payload === "mode_manual") modeLongRef.current = "manual";
     });
     return () => {
       void un.then((f) => f());
@@ -1406,7 +1380,7 @@ export function ScreenshotOverlay() {
   /* ===== 自动打码（P0）：已抽到 hooks/useAutoMask ===== */
   // 行为型 hook：maskPreview 状态留在本组件（JSX 渲染预览框、resetShot 要清它），
   // 撤销栈由注入的 pushUndoSnapshot 统一处理。
-  const { runAutoMask, toggleMaskBox, applyMasks } = useAutoMask({
+  const { runAutoMask, toggleMaskBox, applyMasks, runAutoDewarp, applyDewarpMasks } = useAutoMask({
     ocr,
     setOcr,
     screen,
@@ -1426,18 +1400,28 @@ export function ScreenshotOverlay() {
     (id: ToolId) => {
       if (id === "automask") {
         notePowerUsed("automask"); // B 方案：用过即停脉冲/教练卡
+        // ❌ 必须复位：maskApplyMode 是与 maskPreview 平行的 state，且只有这里和
+        // autodewarp 两个入口会写。若用过一次「自动去水印」后直接用「自动打码」，
+        // 模式还停在 "dewarp"，确认条会把隐私框派发给 applyDewarpMasks——
+        // 对手机号/身份证做的是还原而不是遮蔽。两个入口都显式设模式才闭环。
+        setMaskApplyMode("mosaic");
         void runAutoMask();
+        return;
+      }
+      if (id === "autodewarp") {
+        setMaskApplyMode("dewarp");
+        void runAutoDewarp();
         return;
       }
       setTool(id);
     },
-    [runAutoMask, notePowerUsed],
+    [runAutoMask, runAutoDewarp, notePowerUsed],
   );
 
 
   /* 去水印·平铺模式：检测整屏平铺周期 → 批量生成 dewarp 单元格 annotation（整批一次 undo）。
    * 与自动打码同思路：动作型，点画布即执行（onAnnotMouseDown 拦截），整批一次入撤销栈。 */
-  const runDewatermarkTile = useCallback(() => {
+  const runDewatermarkTile = useCallback(async () => {
     const base = baseImgRef.current;
     const r = selRef.current;
     if (!base || !r) {
@@ -1446,7 +1430,12 @@ export function ScreenshotOverlay() {
     }
     const bw = Math.max(1, Math.round(r.w));
     const bh = Math.max(1, Math.round(r.h));
+    // ❌ 三段式检测（轴对齐估计 → 斜率扫描 → 全分辨率中值叠瓦，最多各一轮）全部同步
+    // 跑在 UI 线程，大选区实测可达数秒——必须先置忙碌态并让出一帧再算，
+    // 否则用户看到的就是「点了没反应」；finally 兜底复位，异常路径不卡忙碌。
+    setBusy(true);
     try {
+      await new Promise((resolve) => setTimeout(resolve, 50)); // 给忙碌态一次上屏机会
       const cv = document.createElement("canvas");
       cv.width = bw;
       cv.height = bh;
@@ -1461,10 +1450,17 @@ export function ScreenshotOverlay() {
        *   void invoke("copy_only", { text: probeSpectrum(id.data, bw, bh) });
        * 工具在 @/lib/screenshot/dewarpProbe，平时不接入主流程：它要跑四轮 FFT，
        * 848×939 选区实测 ~600ms，不能挂在每次点击上。 */
-      // 频域检测是否存在显著周期水印（2D FFT 天然处理斜排，比旧投影自相关轴对齐 MVP 更可靠）。
-      // 无显著周期峰 → 提示切手动（手动模式在框内局部去，不会误伤全图）。
-      if (!hasPeriodicWatermark(id.data, bw, bh)) {
-        showToast("未检测到平铺水印，请改用手动模式", false);
+      // 直接尝试整屏去水印（中值叠瓦 + FFT 兜底，自带 clip-guard：产生严重伪影会安全恢复原图）。
+      // 不再前置 hasPeriodicWatermark 硬拒——稀疏斜向文字水印频域峰弱、旧检测会漏，
+      // 导致「点了没反应」。交给真实算法跑一遍，用返回值决定反馈（结果会被 draw.ts 的
+      // _dewarpCache 复用，不重复计算）。
+      const ok = removeTiledWatermarkRegion(id.data, bw, bh, {
+        tiled: true,
+        feather: dewarpStrength,
+        radius: 8,
+      });
+      if (!ok) {
+        showToast("平铺水印已尝试但未明显减弱，建议用「文字·自动」或手动框选", false);
         return;
       }
       const feather = dewarpStrength;
@@ -1489,8 +1485,10 @@ export function ScreenshotOverlay() {
     } catch (e) {
       logger.warn("去水印平铺检测失败", e);
       showToast("去水印失败，请改用手动模式", false);
+    } finally {
+      setBusy(false);
     }
-  }, [showToast, dewarpStrength, pushUndoSnapshot]);
+  }, [showToast, dewarpStrength, pushUndoSnapshot, setBusy]);
 
   /* V5：操作结束统一入 undo（移动/缩放/删除共用：先把操作前的快照压栈） */
   const snapshotUndo = useCallback(() => {
@@ -1715,7 +1713,7 @@ export function ScreenshotOverlay() {
   // 长截图整条流程（386 行）已抽到 hooks/useLongShot。它是行为型 hook：
   // 状态仍在本组件（上面那 12 个 state/ref），因为快捷键 / 预览层拖拽 / JSX 都要读写，
   // 且它们的使用点比这里靠前 —— 搬进 hook 会 TDZ。
-  const { startLongShot, onLongShotPreview } = useLongShot({
+  const { startLongShot } = useLongShot({
     screen,
     selRef,
     longShot,
@@ -1727,13 +1725,6 @@ export function ScreenshotOverlay() {
     abortLongRef,
     stopLongRef,
     escBurstRef,
-    modeLongRef,
-    nextLongRef,
-    longPreviewRef,
-    setLongPreview,
-    setPreviewRect,
-    setPreviewLabel,
-    setPreviewEndY,
   });
 
   /* ===== 动作出口 ===== */
@@ -1832,6 +1823,24 @@ export function ScreenshotOverlay() {
         // 用户会看到"点了完成画面还停 ~200ms"。隐藏后复制由后端后台执行，
         // 失败走主窗口 toast（下方 catch 恢复显示 + 报错兜底）。
         await invoke("hide_screenshot_window").catch(() => undefined);
+        // 结果态（含长截图）：resultPath 已是落盘的最终图（长截图=拼接长图）。直接让后端
+        // 从文件路径复制 + 入库，**完全绕开 canvas**：① 物理路径 WebView2 拒绝直接加载；
+        // ② 转 asset URL 加载后又会污染 canvas（getImageData 报跨域）。后端
+        // `copy_image_only` 读文件复制、`insert_screenshot_to_history` 按文件入库（与
+        // saveImageTo 对称）。注意 copy_image_only 会设 paste_suppress 抑制剪贴板监听，
+        // 必须显式入库，否则复制了却又不进历史（即最初那个 bug）。
+        if (resultPath) {
+          await invoke("copy_image_only", { imagePath: resultPath });
+          void invoke("insert_screenshot_to_history", {
+            imagePath: resultPath,
+            ocrText: ocr?.fullText?.trim() || null,
+          }).catch((e) => logger.warn("截图复制后入库失败（不影响复制）", e));
+          await sleep(150);
+          close();
+          return;
+        }
+        // 标注态（resultPath 为 null）：按底图 + 选区 + 注解实时合成，RGBA 直传后端
+        // 复制 + 落盘 + 入库一条龙（沿用 finish_screenshot_rgba 亚秒路径）。
         const out = await renderResultCanvas();
         const ctx = out.getContext("2d");
         if (!ctx) throw new Error("canvas 2d 不可用");
@@ -1907,7 +1916,8 @@ export function ScreenshotOverlay() {
     [busy, ensureResultPath, showToast],
   );
 
-  /** 另存为图片文件。path 由 runExit 给，本函数不碰 resultPath。 */
+  /** 另存为图片文件。path 由 runExit 给（结果态已是最终图，长截图=拼接长图）。
+   *  保存后也进粘贴历史：复制已入库，保存不应例外（长截图/普通截图行为一致）。 */
   const saveImageTo = async (path: string) => {
     const dest = await save({
       defaultPath: `PastePanda-截图-${Date.now()}.png`,
@@ -1915,6 +1925,12 @@ export function ScreenshotOverlay() {
     });
     if (!dest) return; // 用户取消：不报错也不关窗
     await invoke("save_image_file", { source: path, dest });
+    // 入库：保存后也出现在粘贴历史（长截图修复的核心诉求）。fire-and-forget 不阻塞保存，
+    // 失败仅告警（不影响用户已拿到的文件）。
+    void invoke("insert_screenshot_to_history", {
+      imagePath: path,
+      ocrText: ocr?.fullText?.trim() || null,
+    }).catch((e) => logger.warn("截图保存后入库失败（不影响保存）", e));
     close();
   };
 
@@ -2116,7 +2132,11 @@ export function ScreenshotOverlay() {
   /** 起手画标注（从按下点 px,py 开始）。供 onAnnotMouseDown 正常路径与
    *  智能意图「拖出文字区转标注」复用——两者都是「空白处按下=画标注」。 */
   const startDrawDraft = (px: number, py: number) => {
-    const isBrush = SHAPE_TOOLS.has(tool) && maskShape === "brush";
+    // 遮罩的轨迹形态：brush 用笔刷路径裁切效果；magic 把同一条路径当泛洪种子
+    // （draw.ts brushSeedMask → magicMaskFromSeeds）。两者都必须初始化并采集 points——
+    // ❌ magic 漏初始化的后果（审查 C-1）：标注带着 shape:"magic" 却没有 points，
+    // 渲染时 strokeBrushPath 对空数组取 pts[0][0] 直接抛 TypeError，一拖就崩。
+    const isStrokeMask = SHAPE_TOOLS.has(tool) && (maskShape === "brush" || maskShape === "magic");
     const a: Annotation = {
       id: nextId(),
       type: tool,
@@ -2126,7 +2146,7 @@ export function ScreenshotOverlay() {
       y: py,
       x2: px,
       y2: py,
-      points: tool === "pen" || isBrush ? [[px, py]] : undefined,
+      points: tool === "pen" || isStrokeMask ? [[px, py]] : undefined,
       text: tool === "number" ? String(nextNumber()) : undefined,
       size: tool === "number" ? fontPx : undefined,
       arrowStyle: tool === "arrow" ? arrowStyle : undefined,
@@ -2423,7 +2443,6 @@ export function ScreenshotOverlay() {
     if (phase !== "select") return;
     setSnapWin(null); // 点选即退出 hover 吸附态的窗口轮廓（拖选固定后不再显示双层）
     kbActiveRef.current = false; // 拖选/点选退出键盘遍历态
-    if (longPreview) return; // 预览态：预览层自行处理单击/拖拽，不触发框选
     const r = e.currentTarget.getBoundingClientRect();
     const px = (e.clientX - r.left) * dpr;
     const py = (e.clientY - r.top) * dpr;
@@ -2443,7 +2462,6 @@ export function ScreenshotOverlay() {
     setSelDraft(null);
   };
   const onSelectMouseMove = (e: React.MouseEvent) => {
-    if (longPreview) return;
     const r = e.currentTarget.getBoundingClientRect();
     const px = (e.clientX - r.left) * dpr;
     const py = (e.clientY - r.top) * dpr;
@@ -2518,10 +2536,9 @@ export function ScreenshotOverlay() {
     }
   };
   const finalizeSelectDrag = () => {
-    // 先取引用并立刻清空，确保任何提前返回路径（含 longPreview 分支）都不会留下悬挂 dragRef。
+    // 先取引用并立刻清空，确保任何提前返回路径都不会留下悬挂 dragRef。
     const d = dragRef.current;
     dragRef.current = null;
-    if (longPreview) return;
     const wasFixed = fixedPreview;
     if (!d) {
       // 固定区域预览态：点空白（未拖动）也退出预览，回到 hover 吸附
@@ -2590,7 +2607,6 @@ export function ScreenshotOverlay() {
 
   /* 双击：有选区 → 进入标注；无选区 → 全选并进标注（Snipaste 双击全屏即编辑） */
   const onSelectDoubleClick = () => {
-    if (longPreview) return;
     if (!screen) return;
     selFixedRef.current = true;
     if (selRef.current) {
@@ -2601,52 +2617,6 @@ export function ScreenshotOverlay() {
     setPhase("annotate");
   };
 
-  /* 长截图「预览即默认」：预览层交互。窗口可见、不隐藏，单击=截整页 / 拖青线=截到该处 */
-  const commitLongShot = (captureBottomPx?: number) => {
-    longPreviewRef.current = false;
-    setLongPreview(false);
-    void startLongShot(captureBottomPx);
-  };
-  // ❌ 拖拽必须挂 window 监听，不能只用元素上的 React onMouseMove/onMouseUp：
-  // 用户往下拖选终点时很容易拖出预览框，一出框就收不到 move/up，
-  // 拖拽态卡住、这一次拖拽直接丢失。同文件里其它拖拽（把手缩放、贴图浮动
-  // 预览、OCR 拖选）都是 window 级，这里保持一致。
-  const onPreviewDown = (e: React.MouseEvent) => {
-    if (!longPreview || !previewRect) return;
-    e.stopPropagation();
-    previewDragRef.current = true;
-    previewMovedRef.current = false;
-    const startEnd = previewEndY;
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const toAbsY = (clientY: number) => (clientY - rect.top) * dpr + previewRect.y;
-    let latest = startEnd;
-
-    const onMove = (ev: MouseEvent) => {
-      const rb = selRef.current;
-      const minY = rb ? rb.y + rb.h : previewRect.y;
-      const maxY = previewRect.y + previewRect.h;
-      const clamped = Math.max(minY, Math.min(maxY, toAbsY(ev.clientY)));
-      if (startEnd != null && Math.abs(clamped - startEnd) > 4 * dpr) previewMovedRef.current = true;
-      latest = clamped;
-      setPreviewEndY(clamped);
-    };
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      if (!previewDragRef.current) return;
-      previewDragRef.current = false;
-      const rb = selRef.current;
-      if (previewMovedRef.current && rb && latest != null) {
-        // 拖拽选终点：只截到终点为止
-        commitLongShot(Math.max(rb.h, latest - rb.y));
-      } else {
-        // 单击 / 未拖动：截整页
-        commitLongShot(undefined);
-      }
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  };
 
   /* 贴图「预览即钉」：浮动预览拖动定位（window 级监听，松手即停在拖到的位置） */
   const onPinFloatDown = (e: React.MouseEvent) => {
@@ -2756,7 +2726,6 @@ export function ScreenshotOverlay() {
     // 预览是从标注态工具栏进的，phase 仍是 annotate，所以预览框**以外**的单击
     // 会落到这块画布上变成画标注，而提示写的是「单击=截整页」。
     // select 态四个 handler 都加了这道守卫，漏的就是这一个。
-    if (longPreview) return;
     const cv = e.currentTarget;
     const rect = cv.getBoundingClientRect();
     const px = (e.clientX - rect.left) * dpr;
@@ -3169,20 +3138,21 @@ export function ScreenshotOverlay() {
     return (
       <div
         className="shot-root"
-        style={{ display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}
+        style={{ display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-primary, #fff)" }}
       >
         {captureError ? (
           <div
             style={{
               maxWidth: 420, padding: "14px 18px", borderRadius: 12, fontSize: 12,
-              background: "rgba(248,113,113,0.15)", border: "1px solid rgba(248,113,113,0.4)",
-              color: "#FCA5A5", lineHeight: 1.7, textAlign: "center",
+              background: "color-mix(in srgb, var(--danger, #F87171) 15%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--danger, #F87171) 40%, transparent)",
+              color: "var(--danger, #FCA5A5)", lineHeight: 1.7, textAlign: "center",
             }}
           >
             <div>截图失败：{captureError}</div>
             <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "center" }}>
               <button
-                style={{ padding: "5px 14px", borderRadius: 8, border: "none", background: "#2D78C2", color: "#fff", cursor: "pointer", fontSize: 12 }}
+                style={{ padding: "5px 14px", borderRadius: 8, border: "none", background: "var(--accent-solid, #2D78C2)", color: "#fff", cursor: "pointer", fontSize: 12 }}
                 onClick={() => {
                   setCaptureError(null);
                   void invoke<ScreenInfo>("capture_screen")
@@ -3193,7 +3163,7 @@ export function ScreenshotOverlay() {
                 重试
               </button>
               <button
-                style={{ padding: "5px 14px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.3)", background: "transparent", color: "#E6EDF7", cursor: "pointer", fontSize: 12 }}
+                style={{ padding: "5px 14px", borderRadius: 8, border: "1px solid var(--shot-bar-border, rgba(255,255,255,0.3))", background: "transparent", color: "var(--shot-bar-text, #E6EDF7)", cursor: "pointer", fontSize: 12 }}
                 onClick={() => void invoke("close_screenshot_window")}
               >
                 关闭
@@ -3210,7 +3180,7 @@ export function ScreenshotOverlay() {
   const css = (v: number) => v / dpr;
   const sensitiveKind = ocr ? detectSensitiveText(ocr.fullText) : null;
   // 显示选区：select 态取拖选草稿（橡皮筋）；标注/结果态**强制用真实选区 sel**——
-  // selDraft 有两条提前 return 路径不清空（finalizeSelectDrag 的 longPreview / !d 分支），
+  // selDraft 有一条提前 return 路径不清空（finalizeSelectDrag 的 !d 分支），
   // 一旦残留，shade-block 蒙版 / 选区框 / 工具栏会按残留草稿切出 4 段蒙版（历史 bug）。
   //
   // 「草稿够不够格接管显示」的判断已经收口到**发布草稿的那一处**（onSelectMouseMove 里按
@@ -3436,23 +3406,6 @@ export function ScreenshotOverlay() {
         </div>
       )}
 
-      {/* 长截图「预览即默认」：整页淡预览层（窗口可见、不隐藏），单击截整页 / 拖青线选终点 */}
-      {longPreview && previewRect && (
-        <div
-          className="ls-preview"
-          style={{ left: css(previewRect.x), top: css(previewRect.y), width: css(previewRect.w), height: css(previewRect.h) }}
-          onMouseDown={onPreviewDown}
-        >
-          <div className="ls-preview-more" />
-          {previewEndY != null && (
-            <div className="ls-endline" style={{ top: css(previewEndY - previewRect.y) }}>
-              <div className="ls-endknob" />
-            </div>
-          )}
-          <div className="ls-preview-lbl">{previewLabel}</div>
-          <div className="ls-preview-tip">单击=截整页 · 拖青线=截到此处 · Esc退出</div>
-        </div>
-      )}
 
       {/* 固定区域快捷按钮（锚定屏幕右下角，不随选区跳动，所以点得到）。
 
@@ -3824,7 +3777,7 @@ export function ScreenshotOverlay() {
           onOcr={onOcrButton}
           hasAnnotations={annotations.length > 0}
           longShotting={longShot}
-          onLongShot={() => void onLongShotPreview()}
+          onLongShot={() => void startLongShot()}
           aiOk={aiOk}
           onSave={() => void runExit("保存", saveImageTo)}
           onPin={() => {
@@ -3885,6 +3838,8 @@ export function ScreenshotOverlay() {
           arrowStyle={arrowStyle}
           onSelectArrowStyle={setArrowStyle}
           maskShape={tool === "dewarp" ? (dewarpMode === "manual" ? maskShape : undefined) : SHAPE_TOOLS.has(tool) ? maskShape : undefined}
+          // 魔棒是去水印专属渲染路径（泛洪吸附 + inpaint）；马赛克/模糊选了也只会退化成矩形
+          magicSupported={tool === "dewarp"}
           onSelectMaskShape={
             SHAPE_TOOLS.has(tool)
               ? (sp) => setMaskShapes((m) => ({ ...m, [tool]: sp }))
@@ -3892,6 +3847,14 @@ export function ScreenshotOverlay() {
           }
           dewarpMode={tool === "dewarp" ? dewarpMode : undefined}
           onSelectDewarpMode={tool === "dewarp" ? setDewarpMode : undefined}
+          onAutoDewarp={
+            tool === "dewarp"
+              ? () => {
+                  setMaskApplyMode("dewarp");
+                  void runAutoDewarp();
+                }
+              : undefined
+          }
           // 马赛克「模式」分段：马赛克 / 模糊 / 自动打码 收进同一工具。
           //   - tool 为 mosaic / blur 时显示，高亮复用 tool 本身；
           //   - 自动打码预览打开期间强制保持可见（确认条锚点不因切工具消失）。
@@ -3907,10 +3870,12 @@ export function ScreenshotOverlay() {
           discoverAutomask={discoverTools.includes("automask")}
           maskOn={maskPreview !== null}
           maskActive={maskPreview?.filter((b) => !b.excluded).length ?? 0}
-          onApplyMasks={applyMasks}
+          onApplyMasks={maskApplyMode === "dewarp" ? applyDewarpMasks : applyMasks}
           onCancelMasks={() => {
             setMaskPreview(null);
             maskPreviewRef.current = null;
+            // 取消时回到默认遮蔽语义，避免残留的 "dewarp" 影响下一次预览确认
+            setMaskApplyMode("mosaic");
           }}
           textSizeId={TEXT_SIZE_TOOLS.has(tool) ? textSizeId : undefined}
           onSelectTextSize={TEXT_SIZE_TOOLS.has(tool) ? setTextSizeId : undefined}
@@ -3962,7 +3927,7 @@ export function ScreenshotOverlay() {
       )}
       {/* V6.19 马赛克/模糊强度提示（滚轮调节） */}
       {strengthHint && (
-        <div className="picker-bar" style={{ borderColor: "rgba(99,102,241,0.45)" }}>
+        <div className="picker-bar" style={{ borderColor: "color-mix(in srgb, var(--accent, #3B9EFF) 45%, transparent)" }}>
           <span>{strengthHint}</span>
         </div>
       )}
@@ -3970,7 +3935,7 @@ export function ScreenshotOverlay() {
       {ocrToast && (
         <div
           className="picker-bar"
-          style={{ cursor: "pointer", borderColor: "rgba(34,197,94,0.55)", bottom: 64 }}
+          style={{ cursor: "pointer", borderColor: "color-mix(in srgb, var(--green, #22c55e) 55%, transparent)", bottom: 64 }}
           onClick={async () => {
             const content = ocrToastCopyRef.current ?? (ocr ? ocr.fullText : "");
             if (content) {

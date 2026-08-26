@@ -130,6 +130,35 @@ export function thumbOf(c: HTMLCanvasElement): string | null {
   }
 }
 
+/**
+ * 把一张画布的 [srcY, srcY+srcH) 那段缩成固定宽度的窄条，给状态窗追加到实时长图预览上。
+ *
+ * 与 thumbOf 的分工：thumbOf 发的是「最新一帧长什么样」（小图标），
+ * 本函数发的是「本帧新拼上去的那一条」，用于在状态窗里逐步堆出整张长图。
+ *
+ * @param destW 目标宽度，统一传 LONGSHOT_STRIP_W，保证状态窗那边 1:1 贴上去不重采样。
+ */
+export function stripOf(
+  c: HTMLCanvasElement,
+  srcY: number,
+  srcH: number,
+  destW: number,
+): string | null {
+  try {
+    if (srcH <= 0 || c.width <= 0) return null;
+    const h = Math.max(1, Math.round((srcH / c.width) * destW));
+    const t = document.createElement("canvas");
+    t.width = destW;
+    t.height = h;
+    const tx = t.getContext("2d");
+    if (!tx) return null;
+    tx.drawImage(c, 0, srcY, c.width, srcH, 0, 0, destW, h);
+    return t.toDataURL("image/jpeg", 0.6);
+  } catch {
+    return null; // 预览是锦上添花，出错绝不能影响拼接主流程
+  }
+}
+
 /** 把未知异常转成一句可读文本（Tauri invoke 抛的常常是字符串而不是 Error） */
 export function errText(e: unknown): string {
   if (e instanceof Error) return e.message;
