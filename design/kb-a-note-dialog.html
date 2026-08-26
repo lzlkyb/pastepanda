@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>知识库 A 阶段 · 转为笔记 — 设计稿</title>
+<style>
+  :root {
+    --bg: #ebebf0;
+    --card-bg: #fff;
+    --card-border: #e8e8ed;
+    --text-primary: #1d1d1f;
+    --text-secondary: #86868b;
+    --text-muted: #aeaeb2;
+    --accent: #0078D4;
+    --accent-solid: #006CBE;
+    --accent-light: rgba(0, 120, 212, 0.08);
+    --warn-bg: #fef3c7;
+    --warn-text: #b45309;
+    --ok-bg: #dcfce7;
+    --ok-text: #15803d;
+    --radius-card: 16px;
+    --radius-ui: 8px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg);
+    color: var(--text-primary);
+    padding: 28px 20px 60px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 32px;
+  }
+
+  /* ===== 文档头 ===== */
+  .doc-head { max-width: 860px; width: 100%; }
+  .doc-head h1 { font-size: 21px; font-weight: 700; }
+  .doc-head p.meta {
+    margin-top: 6px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.7;
+  }
+  .doc-head p.meta b { color: var(--text-primary); font-weight: 600; }
+
+  /* ===== 分区 ===== */
+  .section {
+    background: var(--card-bg);
+    border-radius: var(--radius-card);
+    padding: 24px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    max-width: 860px; width: 100%;
+  }
+  .section > h2 {
+    font-size: 15px; font-weight: 700; margin-bottom: 4px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section > p.desc { font-size: 12.5px; color: var(--text-secondary); margin-bottom: 18px; line-height: 1.7; }
+  h2 .tag {
+    font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+    background: var(--accent-light); color: var(--accent-solid);
+  }
+  .tag.warn { background: var(--warn-bg); color: var(--warn-text); }
+
+  /* ===== 标注钉 + 图例 ===== */
+  .pin {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px;
+    background: #e11d48; color: #fff; font-size: 10.5px; font-weight: 700;
+    vertical-align: 2px; margin-left: 2px; box-shadow: 0 1px 3px rgba(225,29,72,.35);
+  }
+  .legend { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--card-border); }
+  .legend ol { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .legend li { font-size: 12.5px; color: var(--text-secondary); line-height: 1.65; display: flex; gap: 8px; }
+  .legend li b { color: var(--text-primary); font-weight: 600; }
+  .legend .pin { flex: none; margin-top: 2px; }
+  .ref { color: var(--accent-solid); font-weight: 600; font-size: 11.5px; }
+
+  .figure-wrap { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+  .figure-col { display: flex; flex-direction: column; gap: 8px; }
+  .fig-label { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: .04em; }
+
+  /* ===== 右键菜单 ===== */
+  .ctx-menu {
+    width: 208px; background: var(--card-bg); border-radius: 12px; overflow: hidden;
+    border: 1px solid var(--card-border);
+    box-shadow: 0 8px 28px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.08);
+    padding: 5px;
+  }
+  .ctx-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 10px; border-radius: 8px; font-size: 13px; color: var(--text-primary);
+  }
+  .ctx-item .ico { width: 18px; text-align: center; font-size: 13px; }
+  .ctx-item.danger { color: #dc2626; }
+  .ctx-sep { height: 1px; background: var(--card-border); margin: 4px 8px; }
+  .ctx-item.is-new { background: var(--accent-light); color: var(--accent-solid); font-weight: 600; }
+  .ctx-item.is-new .badge-new {
+    margin-left: auto; font-size: 10px; font-weight: 700; color: #fff;
+    background: var(--accent-solid); border-radius: 999px; padding: 1px 7px;
+  }
+  .menu-note { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+
+  /* ===== 卡片（示意） ===== */
+  .clip-card {
+    position: relative; width: 380px; background: var(--card-bg);
+    border: 1px solid var(--card-border); border-radius: var(--radius-card);
+    padding: 12px 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  }
+  .clip-card .row1 { display: flex; align-items: center; gap: 8px; }
+  .clip-card .src { font-size: 11px; color: var(--text-secondary); }
+  .clip-card .time { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+  .clip-card .body-txt {
+    margin-top: 6px; font-size: 12.5px; color: var(--text-primary); line-height: 1.55;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .note-corner {
+    position: absolute; top: -7px; right: -7px; font-size: 13px;
+    background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 999px; width: 24px; height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+  }
+  .hover-bar {
+    position: absolute; bottom: 8px; right: 8px; display: none;
+    gap: 2px; background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 999px; padding: 3px 5px; box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+  }
+  .hover-bar span {
+    width: 24px; height: 24px; border-radius: 999px; font-size: 12px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .hover-bar span.on { background: var(--accent-light); }
+  .clip-card:hover .hover-bar { display: flex; }
+
+  /* ===== 弹窗（核心稿）===== */
+  .dialog-stage { display: flex; flex-direction: column; gap: 26px; }
+  .dialog {
+    width: 520px; background: var(--card-bg); border-radius: var(--radius-card);
+    border: 1px solid var(--card-border);
+    box-shadow: 0 18px 50px rgba(0,0,0,0.18), 0 4px 14px rgba(0,0,0,0.08);
+    overflow: hidden;
+  }
+  .dlg-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; }
+  .dlg-title-input {
+    flex: 1; border: 1px solid transparent; border-radius: var(--radius-ui);
+    font-size: 15px; font-weight: 600; color: var(--text-primary);
+    padding: 6px 10px; background: transparent; outline: none;
+  }
+  .dlg-title-input:hover { background: var(--bg); }
+  .dlg-title-input:focus { border-color: var(--accent); background: var(--card-bg); }
+  .dlg-close { width: 26px; height: 26px; border-radius: 999px; font-size: 13px; color: var(--text-secondary);
+    display: flex; align-items: center; justify-content: center; background: transparent; }
+  .dlg-close:hover { background: var(--bg); }
+  .dlg-meta {
+    display: flex; align-items: center; gap: 8px; padding: 0 16px 10px;
+    font-size: 11.5px; color: var(--text-secondary);
+  }
+  .chip-src {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--bg); border: 1px solid var(--card-border);
+    border-radius: 999px; padding: 2px 9px; font-size: 11px; color: var(--text-secondary);
+  }
+  .chip-src b { color: var(--text-primary); font-weight: 500; }
+  .link-back { color: var(--accent-solid); font-size: 11.5px; margin-left: auto; }
+
+  .dlg-split { display: flex; border-top: 1px solid var(--card-border); border-bottom: 1px solid var(--card-border); }
+  .pane { width: 50%; min-height: 264px; }
+  .pane.edit { border-right: 1px solid var(--card-border); }
+  .pane-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 12px; font-size: 10.5px; font-weight: 600; letter-spacing: .05em;
+    color: var(--text-muted); background: #fafafa;
+  }
+  .pane-edit-area {
+    padding: 12px 14px; font-size: 12.5px; line-height: 1.75; color: var(--text-primary);
+    font-family: 'Cascadia Code', Consolas, 'Courier New', monospace; white-space: pre-wrap;
+  }
+  .pane-preview { padding: 12px 16px; font-size: 12.5px; line-height: 1.75; }
+  .pane-preview h3 { font-size: 13.5px; margin: 4px 0 6px; }
+  .pane-preview p { margin-bottom: 6px; color: var(--text-primary); }
+  .pane-preview ul { padding-left: 18px; margin-bottom: 6px; }
+  .pane-preview li { margin-bottom: 2px; }
+  .pane-preview code {
+    font-family: Consolas, monospace; font-size: 11.5px; background: var(--bg);
+    border: 1px solid var(--card-border); border-radius: 4px; padding: 0 4px;
+  }
+  .pane-preview blockquote {
+    border-left: 3px solid var(--accent); background: var(--accent-light);
+    border-radius: 0 8px 8px 0; padding: 6px 10px; margin: 6px 0; color: var(--text-secondary); font-size: 12px;
+  }
+  .caret { display: inline-block; width: 1px; height: 13px; background: var(--accent); vertical-align: -2px; }
+
+  .dlg-foot { display: flex; align-items: center; gap: 8px; padding: 12px 16px; }
+  .tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .tag-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: var(--accent-light); color: var(--accent-solid);
+    border-radius: 999px; padding: 3px 10px; font-size: 11.5px; font-weight: 500;
+  }
+  .tag-chip i { font-style: normal; opacity: .55; font-size: 10.5px; }
+  .tag-add {
+    border: 1px dashed var(--card-border); color: var(--text-muted);
+    border-radius: 999px; padding: 3px 10px; font-size: 11.5px; background: transparent;
+  }
+  .foot-actions { margin-left: auto; display: flex; gap: 8px; }
+  .btn {
+    border-radius: var(--radius-ui); font-size: 12.5px; font-weight: 600;
+    padding: 7px 16px; border: 1px solid transparent;
+  }
+  .btn.ghost { background: var(--card-bg); border-color: var(--card-border); color: var(--text-primary); }
+  .btn.primary { background: var(--accent-solid); color: #fff; box-shadow: 0 2px 8px rgba(0,108,190,.25); }
+  .kbd {
+    font-family: Consolas, monospace; font-size: 10px; border: 1px solid var(--card-border);
+    border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--text-secondary); background: #fafafa;
+  }
+
+  /* 图片来源态 */
+  .attach-strip { display: flex; gap: 8px; padding: 0 16px 12px; }
+  .attach-thumb {
+    width: 92px; height: 56px; border-radius: var(--radius-ui);
+    border: 1px solid var(--card-border);
+    background: linear-gradient(135deg, #dbeafe 0%, #ede9fe 60%, #fce7f3 100%);
+    display: flex; align-items: flex-end; justify-content: flex-start;
+    font-size: 9.5px; color: var(--text-secondary); padding: 4px 6px;
+  }
+
+  /* ===== TopBar 页签 ===== */
+  .topbar {
+    width: 480px; background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 14px; padding: 8px 10px; display: flex; align-items: center; gap: 8px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  }
+  .segs { display: flex; gap: 2px; background: var(--bg); border-radius: 999px; padding: 3px; flex: 1; }
+  .seg {
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: 3px;
+    font-size: 11.5px; color: var(--text-secondary); border-radius: 999px; padding: 5px 2px;
+    white-space: nowrap;
+  }
+  .seg.active { background: var(--card-bg); color: var(--text-primary); font-weight: 600;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.10); }
+  .seg.new-one { outline: 2px dashed #e11d48; outline-offset: -3px; border-radius: 999px; }
+  .seg .cnt { font-size: 9.5px; color: var(--text-muted); }
+  .seg.icon-only .lbl { display: none; }
+
+  .toolbox-pop {
+    width: 300px; background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 14px; box-shadow: 0 8px 28px rgba(0,0,0,0.14); padding: 10px;
+  }
+  .toolbox-pop .grp-label { font-size: 10.5px; color: var(--text-muted); font-weight: 600;
+    letter-spacing: .05em; margin: 4px 6px 6px; }
+  .tool-item {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px;
+  }
+  .tool-item .tico { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center;
+    justify-content: center; font-size: 14px; background: var(--bg); }
+  .tool-item .tname { font-size: 12.5px; font-weight: 600; }
+  .tool-item .tdesc { font-size: 10.5px; color: var(--text-secondary); margin-top: 1px; }
+  .tool-item.is-new { background: var(--accent-light); outline: 1.5px dashed var(--accent); }
+
+  .callout {
+    display: flex; gap: 10px; background: var(--warn-bg); border-radius: 10px;
+    padding: 10px 12px; font-size: 12px; color: var(--warn-text); line-height: 1.65; margin-top: 14px;
+  }
+  .callout.ok { background: var(--ok-bg); color: var(--ok-text); }
+
+  /* ===== 笔记页签结果 ===== */
+  .note-list { display: flex; flex-direction: column; gap: 8px; width: 480px; }
+  .note-row {
+    display: flex; align-items: center; gap: 10px; background: var(--card-bg);
+    border: 1px solid var(--card-border); border-radius: var(--radius-card); padding: 11px 14px;
+  }
+  .note-row .nico { font-size: 15px; }
+  .note-row .ntitle { font-size: 13px; font-weight: 600; }
+  .note-row .nsnip { font-size: 11.5px; color: var(--text-secondary); margin-top: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 250px; }
+  .note-row .nmeta { margin-left: auto; text-align: right; font-size: 10.5px; color: var(--text-muted); }
+  .mini-tags { display: flex; gap: 4px; justify-content: flex-end; margin-top: 3px; }
+  .mini-tag { font-size: 9.5px; color: var(--accent-solid); background: var(--accent-light);
+    border-radius: 999px; padding: 1px 7px; }
+  .src-mini { font-size: 11px; color: var(--text-muted); }
+
+  .empty-state { width: 480px; text-align: center; padding: 34px 20px;
+    border: 1.5px dashed var(--card-border); border-radius: var(--radius-card); background: #fafafa; }
+  .empty-state .eico { font-size: 30px; }
+  .empty-state .etitle { font-size: 13.5px; font-weight: 600; margin-top: 8px; }
+  .empty-state .esub { font-size: 12px; color: var(--text-secondary); margin-top: 4px; line-height: 1.6; }
+  .empty-state .esub .kbd { margin: 0 2px; }
+
+  /* ===== 待沉淀区（收件箱最小版，通路 #1 #2）===== */
+  .pending-banner { width: 480px; display: flex; align-items: center; gap: 8px;
+    background: linear-gradient(90deg, #f7fbff, #fff);
+    border: 1px dashed var(--accent); border-radius: 12px; padding: 10px 14px; font-size: 12.5px; }
+  .pending-banner b { color: var(--accent-solid); }
+  .pending-banner .go { margin-left: auto; font-size: 11.5px; color: var(--accent-solid); font-weight: 600; }
+  .pend-list { display: flex; flex-direction: column; gap: 8px; width: 480px; margin-top: 10px; }
+  .pend-row { display: flex; gap: 10px; background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 14px; padding: 11px 13px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+  .sig-badge { flex: none; align-self: flex-start; font-size: 10px; font-weight: 700;
+    border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+  .sig-badge.star { background: #fef3c7; color: #b45309; }
+  .sig-badge.research { background: var(--accent-light); color: var(--accent-solid); }
+  .sig-badge.repeat { background: #fce7f3; color: #be185d; }
+  .sig-badge.rule { background: #dcfce7; color: #15803d; }
+  .sig-badge.ai { background: #ede9fe; color: #6d28d9; }
+  .pend-main { min-width: 0; flex: 1; }
+  .pend-title { font-size: 12.5px; font-weight: 600; }
+  .pend-sub { font-size: 11px; color: var(--text-secondary); margin-top: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pend-acts { flex: none; display: flex; gap: 6px; align-items: center; }
+
+  table.spec { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.spec th, table.spec td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--card-border); vertical-align: top; line-height: 1.6; }
+  table.spec th { font-size: 11px; color: var(--text-muted); font-weight: 600; letter-spacing: .04em; }
+  table.spec td:first-child { white-space: nowrap; font-weight: 600; }
+  table.spec td { color: var(--text-secondary); }
+  table.spec td b { color: var(--text-primary); }
+</style>
+</head>
+<body>
+
+<div class="doc-head">
+  <h1>知识库 A 阶段 · 转为笔记 — 设计稿</h1>
+  <p class="meta">
+    对应规划：<b>《个人知识库与笔记-规划》v2.1 §8.1（M1）</b> ｜ 版本 v1.1 · 2026-08-24 ｜ 状态：<b>待确认</b><br>
+    范围：转笔记入口 · 编辑弹窗 · 笔记页签 · 角标与空态 · <b>待沉淀动线（⭐收藏 / 找回信号，规划 §1.4 通路 #1 #2）</b>。本阶段不含：知识库视图 / 语义检索 / 双链（B/C 阶段另出稿）。<br>
+    标注约定：<span class="pin">n</span> 设计说明 ／ <span class="ref">D*</span> 对应规划决策编号 ／ <span class="tag warn">待确认</span> 需要拍板的分叉点。
+  </p>
+</div>
+
+<!-- ============ 1 入口 ============ -->
+<div class="section">
+  <h2>1 · 入口：右键菜单 <span class="tag">推荐 · 先行</span></h2>
+  <p class="desc">规划 §9 已定「右键菜单先行」。下图为既有卡片右键菜单插入新项后的形态（其余菜单项为示意，以实际 <code>cardMenuItems.tsx</code> 为准）。</p>
+  <div class="figure-wrap">
+    <div class="figure-col">
+      <span class="fig-label">卡片右键菜单 · 新增「转为笔记」</span>
+      <div class="ctx-menu">
+        <div class="ctx-item"><span class="ico">📋</span>复制</div>
+        <div class="ctx-item"><span class="ico">⭐</span>收藏</div>
+        <div class="ctx-item"><span class="ico">⚡</span>送动作链 ▸</div>
+        <div class="ctx-item is-new"><span class="ico">🗒️</span>转为笔记<span class="badge-new">新增</span></div>
+        <div class="ctx-sep"></div>
+        <div class="ctx-item danger"><span class="ico">🗑</span>删除</div>
+      </div>
+      <p class="menu-note">位置放在「送动作链」之后、「删除」分隔线之前：它是<b>沉淀类操作</b>，与破坏性操作隔开。</p>
+    </div>
+    <div class="figure-col">
+      <span class="fig-label">备选入口 · 悬停操作区（视空间再加，非本期必做）</span>
+      <div class="clip-card">
+        <div class="row1"><span class="src">🌐 developer.mozilla.org</span><span class="time">14:32</span></div>
+        <div class="body-txt">Reciprocal Rank Fusion（RRF）将多路检索的排名倒数求和……<span class="pin">3</span></div>
+        <div class="hover-bar">
+          <span title="复制">📋</span><span title="收藏">⭐</span>
+          <span class="on" title="转为笔记">🗒️</span>
+          <span title="删除">🗑</span>
+        </div>
+      </div>
+      <p class="menu-note">悬停条已较密集，故仅作备选；发现性由 🗒️ 角标 + 笔记页签补足。</p>
+    </div>
+  </div>
+  <div class="legend">
+    <ol>
+      <li><span class="pin">1</span><span><b>菜单项文案「转为笔记」</b>：动宾结构，与「复制 / 收藏」一致；不叫「存入知识库」（那是 B 阶段升级后的说法，见规划 §8.2）。</span></li>
+      <li><span class="pin">2</span><span>点击后<b>直接弹出编辑弹窗</b>（下图），不经过二次确认 —— 沉淀动作本身已是明确意图。</span></li>
+      <li><span class="pin">3</span><span>悬停条版本若做，「转为笔记」用同一图标 🗒️ 保持词汇一致。</span></li>
+    </ol>
+  </div>
+</div>
+
+<!-- ============ 2 弹窗 ============ -->
+<div class="section">
+  <h2>2 · 转笔记弹窗（核心稿）<span class="tag">520px · 复用 dialog 规范</span></h2>
+  <p class="desc">文本来源卡片的标准形态。左编辑 / 右预览分屏，预览复用 <code>MarkdownRenderer</code>。</p>
+
+  <div class="dialog-stage">
+    <!-- 文本来源 -->
+    <div>
+      <span class="fig-label">状态一 · 文本卡片来源</span>
+      <div class="dialog" style="margin-top:8px;">
+        <div class="dlg-head">
+          <input class="dlg-title-input" value="RRF 融合检索要点" placeholder="未命名笔记">
+          <span class="dlg-close">✕</span>
+        </div>
+        <div class="dlg-meta">
+          <span class="chip-src">📋 剪贴板 · 文本 · <b>今天 14:32</b></span>
+          <span class="link-back">查看原卡片 ↗</span>
+        </div>
+        <div class="dlg-split">
+          <div class="pane edit">
+            <div class="pane-head"><span>MARKDOWN</span><span>编辑</span></div>
+            <div class="pane-edit-area">## 为什么混合检索
+
+纯向量会漏掉**精确词**
+匹配（型号、代号），BM25
+补上这一路：
+
+- 向量 top-20
+- FTS top-20
+- RRF(k=60) 融合<span class="caret"></span></div>
+          </div>
+          <div class="pane">
+            <div class="pane-head"><span>预览</span><span>MarkdownRenderer</span></div>
+            <div class="pane-preview">
+              <h3>为什么混合检索</h3>
+              <p>纯向量会漏掉<b>精确词</b>匹配（型号、代号），BM25 补上这一路：</p>
+              <ul>
+                <li>向量 top-20</li>
+                <li>FTS top-20</li>
+                <li><code>RRF(k=60)</code> 融合</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <div class="dlg-foot">
+          <div class="tags">
+            <span class="tag-chip">#检索 <i>✕</i></span>
+            <span class="tag-chip">#sqlite <i>✕</i></span>
+            <button class="tag-add">＋ 标签</button>
+          </div>
+          <div class="foot-actions">
+            <button class="btn ghost">取消</button>
+            <button class="btn primary">保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 图片来源 -->
+    <div>
+      <span class="fig-label">状态二 · 图片卡片来源（OCR 注入正文）<span class="ref">D9</span></span>
+      <div class="dialog" style="margin-top:8px;">
+        <div class="dlg-head">
+          <input class="dlg-title-input" value="" placeholder="未命名笔记（默认取 OCR 首行）">
+          <span class="dlg-close">✕</span>
+        </div>
+        <div class="dlg-meta">
+          <span class="chip-src">📸 剪贴板 · 截图 · <b>昨天 09:14</b></span>
+          <span class="link-back">查看原卡片 ↗</span>
+        </div>
+        <div class="dlg-split">
+          <div class="pane edit">
+            <div class="pane-head"><span>MARKDOWN</span><span>编辑</span></div>
+            <div class="pane-edit-area">&gt; 📷 截图附件 · OCR：
+&gt; 报销单据号
+&gt; FP-2026082400173
+&gt; 金额 ¥2,340.00
+
+（OCR 文本可直接编辑，
+原图在下方附件区）</div>
+          </div>
+          <div class="pane">
+            <div class="pane-head"><span>预览</span><span>MarkdownRenderer</span></div>
+            <div class="pane-preview">
+              <blockquote>📷 截图附件 · OCR：报销单据号 FP-2026082400173，金额 ¥2,340.00</blockquote>
+              <p style="color:var(--text-secondary)">OCR 文本随正文一起进全文索引，图上的单据号从此可以搜到。</p>
+            </div>
+          </div>
+        </div>
+        <div class="attach-strip">
+          <div class="attach-thumb">报销单.png</div>
+          <div class="attach-thumb" style="background:#f4f4f6"></div>
+        </div>
+        <div class="dlg-foot">
+          <div class="tags"><button class="tag-add">＋ 标签</button></div>
+          <div class="foot-actions">
+            <button class="btn ghost">取消</button>
+            <button class="btn primary">保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <ol>
+      <li><span class="pin">1</span><span><b>标题自动预填</b>：文本取正文首行（截 40 字）；图片取 OCR 首行。可清空，落库时空标题显示「未命名笔记」。</span></li>
+      <li><span class="pin">2</span><span><b>正文预填</b>：文本卡片带格式转入（保留代码块 / 列表的 Markdown）；图片卡片按 <span class="ref">D9</span> 注入 OCR 引用块 + 附件引用。</span></li>
+      <li><span class="pin">3</span><span><b>来源行不可删</b>：chip 展示类型与时间，「查看原卡片 ↗」凭 <code>history_id</code> 跳回并高亮该卡片（<code>history_id</code> 可空，独立新建时无此行）。</span></li>
+      <li><span class="pin">4</span><span><b>标签</b>复用 TagEditor，存储走 <code>note_tags</code> 关系表 <span class="ref">D2</span>；输入时给既有标签自动补全。</span></li>
+      <li><span class="pin">5</span><span><b>键盘</b>：<span class="kbd">Esc</span> 取消（有改动时先确认）、<span class="kbd">Ctrl</span>+<span class="kbd">Enter</span> 保存。窗口高度不足时分屏退化为「编辑 / 预览」Tab 切换。</span></li>
+    </ol>
+  </div>
+</div>
+
+<!-- ============ 3 页签 ============ -->
+<div class="section">
+  <h2>3 · 笔记怎么露出：页签的两个方案 <span class="tag warn">待确认</span></h2>
+  <p class="desc">规划原定「TopBar 新增『笔记』页签」，但查证代码发现两个事实：① <code>TopBar.tsx</code> 注释明言 <b>480px 默认窗宽下 6 个页签已经拥挤</b>；② 📝 图标已被「文本」页签和「片段库」占用。因此给出两个方案。</p>
+
+  <div class="figure-wrap">
+    <div class="figure-col">
+      <span class="fig-label">方案甲 · 第 6 个页签（窄窗自动图标化）</span>
+      <div class="topbar">
+        <div class="segs">
+          <div class="seg"><span>📋</span><span class="lbl">全部</span></div>
+          <div class="seg icon-only"><span>📝</span><span class="lbl">文本</span></div>
+          <div class="seg icon-only"><span>📸</span><span class="lbl">图片</span></div>
+          <div class="seg"><span>📁</span><span class="lbl">文件</span></div>
+          <div class="seg new-one active"><span>🗒️</span><span class="lbl">笔记</span><span class="cnt">12</span></div>
+          <div class="seg"><span>⭐</span><span class="lbl">收藏</span></div>
+        </div>
+      </div>
+      <p class="menu-note">≤520px 时其余页签收成纯图标（红框为新增项）；代价是「文本」等页签失去文字。</p>
+    </div>
+    <div class="figure-col">
+      <span class="fig-label">方案乙 · 工具箱「内容」组入口（不动页签区）</span>
+      <div class="toolbox-pop">
+        <div class="grp-label">内容</div>
+        <div class="tool-item"><div class="tico">📋</div><div><div class="tname">依次粘贴</div><div class="tdesc">按顺序逐条粘贴文本 · Ctrl+Alt+Q</div></div></div>
+        <div class="tool-item"><div class="tico">📝</div><div><div class="tname">片段库</div><div class="tdesc">常用文本收藏，一键粘贴</div></div></div>
+        <div class="tool-item is-new"><div class="tico">🗒️</div><div><div class="tname">笔记本</div><div class="tdesc">剪贴板沉淀的知识笔记 · 可搜索</div></div></div>
+        <div class="tool-item"><div class="tico">🧲</div><div><div class="tname">内容提取</div><div class="tdesc">从记录中批量提取链接 / 邮箱 / 电话</div></div></div>
+      </div>
+      <p class="menu-note">零拥挤代价；但「笔记」降格为工具，弱化了它作为<b>沉淀主路径</b>的地位。</p>
+    </div>
+  </div>
+
+  <div class="callout">
+    ⚠️ <span><b>推荐方案甲</b>：知识库是产品级主线（B 阶段要长成主体验），值得一个常驻位；拥挤问题用「窄窗图标化」缓解即可。<b>图标建议全站统一改用 🗒️</b>（📝 与「文本」页签、「片段库」双重撞车）。请拍板：甲 / 乙 ＋ 图标是否接受 🗒️。</span>
+  </div>
+</div>
+
+<!-- ============ 4 结果态 ============ -->
+<div class="section">
+  <h2>4 · 角标、笔记列表与空态</h2>
+  <div class="figure-wrap">
+    <div class="figure-col">
+      <span class="fig-label">卡片右上角 🗒️ 角标（已转笔记）</span>
+      <div class="clip-card" style="margin-top:8px;">
+        <span class="note-corner" title="已转为笔记 · 点击查看">🗒️</span>
+        <div class="row1"><span class="src">🌐 developer.mozilla.org</span><span class="time">14:32</span></div>
+        <div class="body-txt">Reciprocal Rank Fusion（RRF）将多路检索的排名倒数求和……</div>
+      </div>
+      <p class="menu-note">角标可点击：直接打开该笔记的编辑弹窗。视觉沿用 NEW/badge 描边体系。</p>
+    </div>
+    <div class="figure-col">
+      <span class="fig-label">「笔记」页签下的列表</span>
+      <div class="note-list" style="margin-top:8px;">
+        <div class="note-row">
+          <span class="nico">🗒️</span>
+          <div><div class="ntitle">RRF 融合检索要点</div><div class="nsnip">纯向量会漏掉精确词匹配，BM25 补上这一路……</div></div>
+          <div class="nmeta">今天 14:36<div class="mini-tags"><span class="mini-tag">#检索</span><span class="mini-tag">#sqlite</span></div></div>
+        </div>
+        <div class="note-row">
+          <span class="nico">🗒️</span>
+          <div><div class="ntitle">报销单 FP-2026082400173</div><div class="nsnip">📷 截图附件 · OCR：金额 ¥2,340.00</div></div>
+          <div class="nmeta">昨天 09:20<div class="mini-tags"></div></div>
+        </div>
+        <div class="note-row">
+          <span class="nico">🗒️</span>
+          <div><div class="ntitle">NC65 单据模板 SQL 备忘</div><div class="nsnip">maintain.insert 自动生成主键时注意……</div></div>
+          <div class="nmeta">08-22<div class="mini-tags"><span class="mini-tag">#nc65</span></div></div>
+        </div>
+      </div>
+      <p class="menu-note">A 阶段按更新时间倒序平铺，无文件夹；命中关键词时正文摘要高亮（复用历史卡片的 FTS 摘要逻辑）。</p>
+    </div>
+  </div>
+
+  <div class="figure-wrap" style="margin-top:20px;">
+    <div class="figure-col">
+      <span class="fig-label">空态（首次进入「笔记」页签）</span>
+      <div class="empty-state">
+        <div class="eico">🗒️</div>
+        <div class="etitle">还没有笔记</div>
+        <div class="esub">在任意卡片上<b>右键 → 转为笔记</b>，<br>或随手 <b>⭐ 收藏</b> —— 它们会先进入待沉淀区等你整理。</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 5 待沉淀动线 ============ -->
+<div class="section">
+  <h2>5 · 零摩擦沉淀：待沉淀区 <span class="tag">通路 #1 #2 · 默认开启</span></h2>
+  <p class="desc">只有右键手转，知识库必然空置。A 阶段加入两条被动信号：<b>⭐ 收藏即候选</b>、<b>搜索找回 ≥2 次即候选</b>（规划 §1.4）。待沉淀区是<b>虚拟视图</b>——「有强信号、还没有对应笔记」的卡片实时集合，零后台写入；「转为笔记」才落库，「忽略」记入 dismissed 不再打扰。</p>
+
+  <span class="fig-label">「笔记」页签顶部 · 待沉淀横幅 + 展开候选列表</span>
+  <div style="margin-top:8px">
+    <div class="pending-banner">
+      📥 <span>待沉淀 <b>2</b> 条 —— 你收藏过或反复找回的内容</span>
+      <span class="go">展开 ▾</span>
+    </div>
+    <div class="pend-list">
+      <div class="pend-row">
+        <span class="sig-badge star">⭐ 收藏</span>
+        <div class="pend-main">
+          <div class="pend-title">SQLite WAL checkpoint 原理要点</div>
+          <div class="pend-sub">昨天收藏 · 来自 docs.rs · 点「转为笔记」进入编辑弹窗</div>
+        </div>
+        <div class="pend-acts">
+          <button class="btn primary" style="padding:4px 10px;font-size:11px">转为笔记</button>
+          <button class="btn ghost" style="padding:4px 10px;font-size:11px;color:var(--text-secondary)">忽略</button>
+        </div>
+      </div>
+      <div class="pend-row">
+        <span class="sig-badge research">🔍 找回 ×2</span>
+        <div class="pend-main">
+          <div class="pend-title">RRF 融合检索要点</div>
+          <div class="pend-sub">这条内容你搜索找回来过 2 次 · 最近一次在今天 14:32</div>
+        </div>
+        <div class="pend-acts">
+          <button class="btn primary" style="padding:4px 10px;font-size:11px">转为笔记</button>
+          <button class="btn ghost" style="padding:4px 10px;font-size:11px;color:var(--text-secondary)">忽略</button>
+        </div>
+      </div>
+    </div>
+    <p class="menu-note">候选行直接复用卡片渲染能力（文本预览/来源/时间）；B 阶段此处升级为收件箱汇集站（🔁 复制×3、📏 规则命中、✦ AI 建议加入）。</p>
+  </div>
+
+  <div class="legend">
+    <ol>
+      <li><span class="pin">1</span><span><b>虚拟视图，零写入</b>：SQL 实时计算「pinned=1 或 search_hit_count≥2，且不存在同 history_id 的笔记」，再减去 dismissed 集合。没有任何后台任务、没有队列表——无写入就无噪音。</span></li>
+      <li><span class="pin">2</span><span><b>默认只开这两类强意图信号</b>：⭐ 是显式意图；找回 ≥2 次说明用户真的需要它（search_hit_count 字段现成，代码里已当价值信号用）。</span></li>
+      <li><span class="pin">3</span><span><b>忽略是整卡粒度</b>：「这条别烦我」比「这个信号别烦我」更符合直觉；reason 字段只记录最后一次来源供追溯。</span></li>
+      <li><span class="pin">4</span><span><b>永不弹 toast</b>：候选增减只在横幅计数上体现（闸门三），不打断任何粘贴主流程。</span></li>
+      <li><span class="pin">5</span><span>取消收藏 / 已转笔记 → 候选自然消失（视图特性），无需任何清理任务。</span></li>
+    </ol>
+  </div>
+
+  <div class="callout ok">
+    ✓ <span><b>验收口径升级（v2.1）</b>：A 阶段的成败指标不是「手转功能可用」，而是<b>水位</b>——上线一周后待沉淀区累计候选数与处理率（转笔记/忽略占比，走本地埋点）。水位不达标说明信号或阈值要调，而不是加更多功能。</span>
+  </div>
+</div>
+
+<!-- ============ 6 行为细则 ============ -->
+<div class="section">
+  <h2>6 · 行为细则（开发前需逐条确认）</h2>
+  <table class="spec">
+    <tr><th style="width:150px">场景</th><th>行为定义</th></tr>
+    <tr><td>重复「转为笔记」</td><td class=""><b>再次打开同一条笔记编辑</b>（凭 history_id 幂等），不产生第二份。<span class="tag warn">待确认</span>　备选：允许一卡多笔记。</td></tr>
+    <tr><td>保存后反馈</td><td>toast「已保存为笔记」，卡片即时出现 🗒️ 角标；「笔记」页签计数 +1。</td></tr>
+    <tr><td>FTS 同步</td><td>保存事务内同步写 <code>notes_fts</code>（title/content/pinyin，tokenizer 与 history_fts 一致）；中文与拼音均可命中。</td></tr>
+    <tr><td>原卡片被删除</td><td>笔记保留（history_id 悬空），来源行显示「原卡片已删除」灰字，不可跳转。不做级联删除 —— 沉淀物的生命周期独立于流水。</td></tr>
+    <tr><td>隐私红线</td><td>A 阶段无任何 AI 参与；正文只进本地 SQLite 与本地 FTS，不出设备。</td></tr>
+    <tr><td>数据出口</td><td>弹窗底部提供「复制为 Markdown」次级入口（标题 + 正文 + frontmatter 标签），完整目录导出留到 B 阶段。</td></tr>
+    <tr><td>取消收藏 ⭐</td><td>候选即刻退出待沉淀区（虚拟视图天然行为）；已转出的正式笔记不受影响。</td></tr>
+    <tr><td>候选去重</td><td>同一卡片同时命中多信号只展示最高优先级者（⭐ &gt; 🔁 &gt; 🔍 &gt; 📏）；A 阶段实际只有 ⭐/🔍 两类。转为笔记或忽略后永久退出推荐（已关联 + dismissed 双保险）。</td></tr>
+    <tr><td>埋点</td><td>候选产生 / 转笔记 / 忽略三个事件走既有本地埋点体系（action_events 模式），供水位验收读数，全部本机。</td></tr>
+  </table>
+</div>
+
+</body>
+</html>

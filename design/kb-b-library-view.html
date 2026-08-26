@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>知识库 B 阶段 · 知识库视图 — 设计稿</title>
+<style>
+  :root {
+    --bg: #ebebf0;
+    --card-bg: #fff;
+    --card-border: #e8e8ed;
+    --text-primary: #1d1d1f;
+    --text-secondary: #86868b;
+    --text-muted: #aeaeb2;
+    --accent: #0078D4;
+    --accent-solid: #006CBE;
+    --accent-light: rgba(0, 120, 212, 0.08);
+    --warn-bg: #fef3c7;
+    --warn-text: #b45309;
+    --ok-bg: #dcfce7;
+    --ok-text: #15803d;
+    --radius-card: 16px;
+    --radius-ui: 8px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg);
+    color: var(--text-primary);
+    padding: 28px 20px 60px;
+    display: flex; flex-direction: column; align-items: center; gap: 32px;
+  }
+  .doc-head { max-width: 980px; width: 100%; }
+  .doc-head h1 { font-size: 21px; font-weight: 700; }
+  .doc-head p.meta { margin-top: 6px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.7; }
+  .doc-head p.meta b { color: var(--text-primary); font-weight: 600; }
+
+  .section {
+    background: var(--card-bg); border-radius: var(--radius-card); padding: 24px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06); max-width: 980px; width: 100%;
+  }
+  .section > h2 { font-size: 15px; font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  .section > p.desc { font-size: 12.5px; color: var(--text-secondary); margin-bottom: 18px; line-height: 1.7; }
+  h2 .tag { font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+    background: var(--accent-light); color: var(--accent-solid); }
+  .tag.warn { background: var(--warn-bg); color: var(--warn-text); }
+
+  .pin { display: inline-flex; align-items: center; justify-content: center;
+    min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px;
+    background: #e11d48; color: #fff; font-size: 10.5px; font-weight: 700;
+    vertical-align: 2px; margin-left: 2px; box-shadow: 0 1px 3px rgba(225,29,72,.35); }
+  .legend { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--card-border); }
+  .legend ol { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .legend li { font-size: 12.5px; color: var(--text-secondary); line-height: 1.65; display: flex; gap: 8px; }
+  .legend li b { color: var(--text-primary); font-weight: 600; }
+  .legend .pin { flex: none; margin-top: 2px; }
+  .ref { color: var(--accent-solid); font-weight: 600; font-size: 11.5px; }
+  .fig-label { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: .04em; }
+
+  /* ===== 入口：顶栏切换 ===== */
+  .topbar { width: 720px; background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 14px; padding: 8px 10px; display: flex; align-items: center; gap: 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+  .segs { display: flex; gap: 2px; background: var(--bg); border-radius: 999px; padding: 3px; }
+  .seg { display: flex; align-items: center; gap: 3px; font-size: 11.5px; color: var(--text-secondary);
+    border-radius: 999px; padding: 5px 11px; white-space: nowrap; }
+  .view-switch { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .switch-pill { display: flex; gap: 2px; background: var(--bg); border-radius: 999px; padding: 3px; }
+  .switch-pill span { font-size: 11.5px; border-radius: 999px; padding: 5px 12px; color: var(--text-secondary); }
+  .switch-pill span.active { background: var(--accent-solid); color: #fff; font-weight: 600;
+    box-shadow: 0 1px 4px rgba(0,108,190,.3); }
+
+  /* ===== 知识库全景 ===== */
+  .kb { width: 100%; height: 520px; display: grid; grid-template-columns: 200px 264px 1fr;
+    background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 14px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.07); }
+  .kb-topbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px;
+    padding: 9px 14px; border-bottom: 1px solid var(--card-border); background: #fafafa; }
+  .kb-topbar .title { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+  .kb-search { margin-left: auto; display: flex; align-items: center; gap: 6px;
+    background: var(--bg); border: 1px solid transparent; border-radius: 999px;
+    padding: 5px 12px; width: 220px; font-size: 12px; color: var(--text-muted); }
+  .icon-btns { display: flex; gap: 6px; }
+  .icon-btn { width: 26px; height: 26px; border-radius: 8px; display: flex; align-items: center;
+    justify-content: center; font-size: 13px; color: var(--text-secondary); background: transparent; }
+  .icon-btn:hover { background: var(--bg); }
+
+  /* 左栏 */
+  .kb-left { border-right: 1px solid var(--card-border); padding: 12px 10px; overflow: auto; }
+  .tree-label { font-size: 10.5px; font-weight: 600; letter-spacing: .05em; color: var(--text-muted);
+    margin: 4px 8px 6px; display: flex; justify-content: space-between; }
+  .tree-item { display: flex; align-items: center; gap: 7px; font-size: 12.5px;
+    padding: 6px 8px; border-radius: var(--radius-ui); color: var(--text-primary); }
+  .tree-item .cnt { margin-left: auto; font-size: 10.5px; color: var(--text-muted); }
+  .tree-item.active { background: var(--accent-light); color: var(--accent-solid); font-weight: 600; }
+  .tree-item.sub { padding-left: 26px; }
+  .tagcloud { display: flex; flex-wrap: wrap; gap: 5px; padding: 2px 8px; }
+  .tcloud-chip { font-size: 11px; color: var(--accent-solid); background: var(--accent-light);
+    border-radius: 999px; padding: 2px 9px; }
+  .tcloud-chip.dim { opacity: .65; }
+
+  /* 中栏 */
+  .kb-mid { border-right: 1px solid var(--card-border); display: flex; flex-direction: column; overflow: hidden; }
+  .mid-head { padding: 10px 12px 8px; display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid var(--card-border); }
+  .mid-head .h { font-size: 12.5px; font-weight: 700; }
+  .mid-head .c { font-size: 10.5px; color: var(--text-muted); }
+  .sort { margin-left: auto; font-size: 10.5px; color: var(--text-secondary); }
+  .note-items { overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .nitem { border: 1px solid transparent; border-radius: 10px; padding: 9px 10px; }
+  .nitem:hover { background: var(--bg); }
+  .nitem.sel { background: var(--accent-light); border-color: rgba(0,120,212,.25); }
+  .nitem .t { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 5px; }
+  .nitem .s { font-size: 11px; color: var(--text-secondary); margin-top: 3px; line-height: 1.5;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nitem .m { font-size: 10px; color: var(--text-muted); margin-top: 4px; display: flex; align-items: center; gap: 6px; }
+  .ai-line { font-size: 10px; color: var(--accent-solid); background: var(--accent-light);
+    border-radius: 6px; padding: 1px 6px; display: inline-block; margin-top: 4px; }
+  .daily-card { border: 1px dashed var(--accent); background: linear-gradient(180deg,#f7fbff, #fff);
+    border-radius: 10px; padding: 9px 10px; margin-bottom: 2px; }
+  .daily-badge { font-size: 9.5px; font-weight: 700; color: var(--accent-solid);
+    background: var(--accent-light); border-radius: 999px; padding: 1px 8px; }
+
+  /* 右栏编辑器 */
+  .kb-right { display: flex; flex-direction: column; overflow: hidden; }
+  .ed-title-row { display: flex; align-items: center; gap: 8px; padding: 12px 16px 6px; }
+  .ed-title { font-size: 15px; font-weight: 700; flex: 1; }
+  .ed-meta { display: flex; align-items: center; gap: 8px; padding: 0 16px 8px; font-size: 10.5px; color: var(--text-secondary);
+    border-bottom: 1px solid var(--card-border); padding-bottom: 8px; }
+  .ed-split { display: flex; flex: 1; min-height: 0; }
+  .ed-pane { flex: 1; min-width: 0; }
+  .ed-pane:first-child { border-right: 1px solid var(--card-border); }
+  .ed-pane-head { padding: 5px 12px; font-size: 10px; font-weight: 600; letter-spacing: .05em;
+    color: var(--text-muted); background: #fafafa; border-bottom: 1px solid var(--card-border);
+    display: flex; justify-content: space-between; }
+  .ed-body { padding: 10px 14px; font-size: 12px; line-height: 1.75; }
+  .ed-body.mono { font-family: Consolas, 'Cascadia Code', monospace; white-space: pre-wrap; color: var(--text-primary); }
+  .ed-body h4 { font-size: 12.5px; margin-bottom: 4px; }
+  .ed-body p { margin-bottom: 5px; }
+  .ed-body ul { padding-left: 16px; }
+  .ed-foot { border-top: 1px solid var(--card-border); padding: 8px 14px; display: flex; align-items: center; gap: 8px; }
+  .mini-tag { font-size: 9.5px; color: var(--accent-solid); background: var(--accent-light);
+    border-radius: 999px; padding: 1px 7px; }
+  .foot-spacer { margin-left: auto; display: flex; gap: 10px; font-size: 10.5px; color: var(--text-secondary); }
+  .backlink-bar { background: #fafafa; border-top: 1px solid var(--card-border);
+    padding: 6px 14px; font-size: 10.5px; color: var(--text-secondary); }
+  .backlink-bar b { color: var(--accent-solid); }
+
+  /* ===== 特写通用 ===== */
+  .figure-wrap { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+  .figure-col { display: flex; flex-direction: column; gap: 8px; }
+  .menu-note { font-size: 11px; color: var(--text-muted); margin-top: 6px; line-height: 1.6; }
+  .callout { display: flex; gap: 10px; background: var(--warn-bg); border-radius: 10px;
+    padding: 10px 12px; font-size: 12px; color: var(--warn-text); line-height: 1.65; margin-top: 14px; }
+  .callout.ok { background: var(--ok-bg); color: var(--ok-text); }
+
+  /* 今日速记 */
+  .daily-full { width: 420px; background: var(--card-bg); border: 1px dashed var(--accent);
+    border-radius: 14px; padding: 14px 16px; }
+  .daily-full .dh { display: flex; align-items: baseline; gap: 8px; }
+  .daily-full .dh .t { font-size: 13.5px; font-weight: 700; }
+  .stamp { border-left: 2px solid var(--accent-light); margin-left: 4px; padding-left: 12px; }
+  .stamp .tm { font-size: 10px; color: var(--text-muted); font-family: Consolas, monospace; }
+  .stamp .tx { font-size: 12px; line-height: 1.6; margin: 1px 0 10px; }
+  .hotkey-tip { font-size: 10.5px; color: var(--text-secondary); margin-top: 8px; }
+  .kbd { font-family: Consolas, monospace; font-size: 10px; border: 1px solid var(--card-border);
+    border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--text-secondary); background: #fafafa; }
+
+  /* 版本快照弹层 */
+  .rev-pop { width: 340px; background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,0.14); padding: 8px; }
+  .rev-head { font-size: 11px; color: var(--text-muted); font-weight: 600; padding: 6px 8px;
+    display: flex; justify-content: space-between; }
+  .rev-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; font-size: 12px; }
+  .rev-item:hover { background: var(--bg); }
+  .rev-item.cur { background: var(--accent-light); }
+  .rev-item .when { font-family: Consolas, monospace; font-size: 11px; }
+  .rev-item .who { font-size: 10.5px; color: var(--text-secondary); }
+  .rev-item .act { margin-left: auto; font-size: 10.5px; color: var(--accent-solid); }
+
+  /* 导出菜单 + frontmatter */
+  .export-menu { width: 230px; background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,0.14); padding: 5px; }
+  .em-item { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 8px; font-size: 12.5px; }
+  .em-item.is-new { background: var(--accent-light); font-weight: 600; color: var(--accent-solid); }
+  code.block { display: block; width: 380px; background: #fafafa; border: 1px solid var(--card-border);
+    border-radius: 10px; padding: 12px 14px; font-family: Consolas, monospace; font-size: 11px;
+    line-height: 1.7; color: var(--text-primary); white-space: pre; }
+  code.block .cm { color: var(--text-muted); }
+
+  /* AI 门控双态 */
+  .gate-pair { display: flex; gap: 20px; flex-wrap: wrap; }
+  .gate-panel { flex: 1; min-width: 300px; border-radius: 12px; overflow: hidden;
+    border: 1px solid var(--card-border); }
+  .gate-panel .gp-head { padding: 8px 14px; font-size: 12px; font-weight: 700;
+    display: flex; align-items: center; gap: 8px; }
+  .gate-panel.off .gp-head { background: #f4f4f6; color: var(--text-secondary); }
+  .gate-panel.on .gp-head { background: var(--accent-light); color: var(--accent-solid); }
+  .gp-body { padding: 12px 14px; font-size: 12px; line-height: 1.7; }
+  .ghost-zone { border: 1.5px dashed var(--card-border); border-radius: 10px; padding: 14px;
+    text-align: center; color: var(--text-muted); font-size: 11.5px; background: #fcfcfd; }
+  .ai-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .ai-btn { font-size: 11px; color: var(--accent-solid); background: var(--accent-light);
+    border-radius: 999px; padding: 4px 11px; font-weight: 600; }
+
+  /* ===== 收件箱汇集站 ===== */
+  .btn { border-radius: var(--radius-ui); font-size: 12px; font-weight: 600;
+    padding: 5px 13px; border: 1px solid transparent; }
+  .btn.primary { background: var(--accent-solid); color: #fff; box-shadow: 0 2px 8px rgba(0,108,190,.22); }
+  .btn.ghost { background: var(--card-bg); border-color: var(--card-border); color: var(--text-secondary); }
+  .inb-panel { width: 520px; background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 14px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.07); }
+  .inb-toolbar { display: flex; gap: 6px; padding: 9px 10px; flex-wrap: wrap; align-items: center;
+    border-bottom: 1px solid var(--card-border); background: #fafafa; }
+  .chipx { font-size: 10.5px; border-radius: 999px; padding: 3px 10px;
+    background: var(--bg); color: var(--text-secondary); white-space: nowrap; }
+  .chipx.active { background: var(--accent-solid); color: #fff; font-weight: 600; }
+  .chipx.dim { opacity: .55; }
+  .sig-badge { flex: none; align-self: flex-start; font-size: 10px; font-weight: 700;
+    border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+  .sig-badge.star { background: #fef3c7; color: #b45309; }
+  .sig-badge.research { background: var(--accent-light); color: var(--accent-solid); }
+  .sig-badge.repeat { background: #fce7f3; color: #be185d; }
+  .sig-badge.rule { background: #dcfce7; color: #15803d; }
+  .sig-badge.ai { background: #ede9fe; color: #6d28d9; }
+  .inb-row { display: flex; gap: 10px; padding: 11px 13px; align-items: center;
+    border-bottom: 1px solid var(--card-border); }
+  .inb-row:last-child { border-bottom: none; }
+  .inb-row.dimmed { opacity: .55; }
+  .inb-main { min-width: 0; flex: 1; }
+  .inb-t { font-size: 12.5px; font-weight: 600; }
+  .inb-s { font-size: 11px; color: var(--text-secondary); margin-top: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* RAG 问答 */
+  .qa-box { width: 560px; background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 14px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
+  .qa-input { display: flex; align-items: center; gap: 8px; padding: 11px 14px;
+    border-bottom: 1px solid var(--card-border); font-size: 12.5px; }
+  .qa-q { color: var(--text-primary); }
+  .qa-send { margin-left: auto; font-size: 11px; color: #fff; background: var(--accent-solid);
+    border-radius: 999px; padding: 4px 12px; font-weight: 600; }
+  .qa-answer { padding: 12px 16px; font-size: 12.5px; line-height: 1.85; }
+  .qa-answer sup { color: var(--accent-solid); font-weight: 700; font-size: 10px; cursor: pointer; }
+  .qa-cites { border-top: 1px dashed var(--card-border); background: #fafafa; padding: 10px 16px; }
+  .cite { display: flex; gap: 8px; font-size: 11px; color: var(--text-secondary); margin-bottom: 6px; line-height: 1.6; }
+  .cite .no { color: var(--accent-solid); font-weight: 700; }
+  .cite b { color: var(--text-primary); }
+
+  table.spec { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.spec th, table.spec td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--card-border); vertical-align: top; line-height: 1.6; }
+  table.spec th { font-size: 11px; color: var(--text-muted); font-weight: 600; letter-spacing: .04em; }
+  table.spec td:first-child { white-space: nowrap; font-weight: 600; }
+  table.spec td { color: var(--text-secondary); }
+  table.spec td b { color: var(--text-primary); }
+</style>
+</head>
+<body>
+
+<div class="doc-head">
+  <h1>知识库 B 阶段 · 知识库视图 — 设计稿</h1>
+  <p class="meta">
+    对应规划：<b>《个人知识库与笔记-规划》v2.1 §8.2（M2）</b> ｜ 版本 v1.1 · 2026-08-24 ｜ 状态：<b>待确认</b><br>
+    范围：三栏主视图布局 · <b>📥 收件箱汇集站（§1.4 通路 #3~#5）</b> · 今日速记 <span class="ref">D11</span> · 版本快照 <span class="ref">D8</span> · 目录导出导入 <span class="ref">D1</span> · AI 门控双态 · 引用式问答雏形。<br>
+    标注约定：<span class="pin">n</span> 设计说明 ／ <span class="ref">D*</span> 规划决策编号 ／ <span class="tag warn">待确认</span> 分叉点。A 阶段弹窗稿见 <b>kb-a-note-dialog.html</b>。
+  </p>
+</div>
+
+<!-- ============ 1 入口 ============ -->
+<div class="section">
+  <h2>1 · 入口：顶栏视图切换（不占页签）</h2>
+  <p class="desc">知识库是<b>独立视图</b>而非内容筛选，放页签区会撞上「480px 下 6 页签已拥挤」的现实约束；改为在顶栏右侧放主页 / 知识库切换。</p>
+  <div style="display:flex; justify-content:center;">
+    <div class="topbar">
+      <div class="segs">
+        <div class="seg active"><span>📋</span>全部</div>
+        <div class="seg"><span>📝</span>文本</div>
+        <div class="seg"><span>📸</span>图片</div>
+        <div class="seg"><span>📁</span>文件</div>
+        <div class="seg"><span>⭐</span>收藏</div>
+      </div>
+      <div class="view-switch">
+        <div class="switch-pill">
+          <span class="active">主页</span>
+          <span>📖 知识库</span>
+        </div>
+        <span style="font-size:15px;color:var(--text-secondary)">⚙️</span>
+      </div>
+    </div>
+  </div>
+  <div class="legend">
+    <ol>
+      <li><span class="pin">1</span><span><b>切换器与设置齿轮同级</b>，页签区零改动 —— A 阶段的「笔记」筛选仍走页签方案，B 阶段起知识库整体接管为视图。<span class="tag warn">待确认</span>　备选：侧边栏分组区（信息架构改动更大）。</span></li>
+      <li><span class="pin">2</span><span>切到知识库后，时间筛选 / 来源筛选等主页专属控件隐藏；<span class="kbd">Ctrl</span>+<span class="kbd">K</span> 全局呼出知识库搜索框。</span></li>
+    </ol>
+  </div>
+</div>
+
+<!-- ============ 2 全景 ============ -->
+<div class="section">
+  <h2>2 · 主视图全景：三栏 master-detail</h2>
+  <p class="desc">左导航（文件夹树 + 标签）/ 中列表（含今日速记置顶）/ 右编辑器。窄窗时右栏编辑退化为弹窗复用 A 阶段的 NoteEditor。</p>
+
+  <div class="kb">
+    <div class="kb-topbar">
+      <span class="title">📖 知识库</span>
+      <span style="font-size:10.5px;color:var(--text-muted)">42 篇 · 本周 +6</span>
+      <div class="kb-search">🔍 搜索笔记…<span class="pin" style="margin-left:2px">2</span></div>
+      <div class="icon-btns">
+        <div class="icon-btn" title="新建笔记">＋</div>
+        <div class="icon-btn" title="导入 / 导出">⤓</div>
+      </div>
+    </div>
+
+    <!-- 左栏 -->
+    <div class="kb-left">
+      <div class="tree-label"><span>文件夹</span><span>＋</span></div>
+      <div class="tree-item active">🗂️ 全部笔记 <span class="cnt">42</span></div>
+      <div class="tree-item">📥 收件箱 <span class="cnt">7</span><span class="pin">4</span></div>
+      <div class="tree-item sub">📁 工作 <span class="cnt">18</span></div>
+      <div class="tree-item sub">📁 学习 <span class="cnt">12</span></div>
+      <div class="tree-item sub">📁 生活 <span class="cnt">5</span></div>
+      <div class="tree-label" style="margin-top:12px"><span>标签</span></div>
+      <div class="tagcloud">
+        <span class="tcloud-chip">#nc65</span>
+        <span class="tcloud-chip">#检索</span>
+        <span class="tcloud-chip dim">#sqlite</span>
+        <span class="tcloud-chip dim">#报销</span>
+        <span class="tcloud-chip dim">#翻译</span>
+      </div>
+    </div>
+
+    <!-- 中栏 -->
+    <div class="kb-mid">
+      <div class="mid-head"><span class="h">全部笔记</span><span class="c">42</span><span class="sort">按更新 ↓</span></div>
+      <div class="note-items">
+        <div class="daily-card">
+          <div style="display:flex;align-items:center;gap:6px"><span class="daily-badge">今日速记</span><span style="font-size:12px;font-weight:600">2026-08-24</span><span style="margin-left:auto;font-size:10px;color:var(--text-muted)">自动置顶</span></div>
+          <div style="font-size:11px;color:var(--text-secondary);margin-top:5px">今天已追加 3 条 · <span style="color:var(--accent-solid)">＋ 追加剪贴板</span></div>
+        </div>
+        <div class="nitem sel">
+          <div class="t">🗒️ RRF 融合检索要点</div>
+          <div class="s">纯向量会漏掉精确词匹配，BM25 补上这一路……</div>
+          <div class="m">📁 学习 · 今天 14:36 · <span class="mini-tag">#检索</span></div>
+          <span class="ai-line">✦ 摘要：混合检索的动机与融合公式</span>
+        </div>
+        <div class="nitem">
+          <div class="t">🗒️ NC65 单据模板 SQL 备忘</div>
+          <div class="s">maintain.insert 自动生成主键时注意……</div>
+          <div class="m">📁 工作 · 昨天 · <span class="mini-tag">#nc65</span> <span class="mini-tag">#sql</span></div>
+          <div class="m" style="color:#a16207">↳ 来自卡片：文本 · 08-21（点击跳回原卡片）</div>
+        </div>
+        <div class="nitem">
+          <div class="t">🗒️ 报销单 FP-2026082400173</div>
+          <div class="s">📷 截图附件 · OCR：金额 ¥2,340.00</div>
+          <div class="m">📥 收件箱 · 08-24 09:20 · <span class="mini-tag">#报销</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右栏 -->
+    <div class="kb-right">
+      <div class="ed-title-row">
+        <span class="ed-title">RRF 融合检索要点</span>
+        <span class="pin" style="vertical-align:middle">5</span>
+        <div class="icon-btn" title="版本历史">⏱</div>
+        <div class="icon-btn" title="导出本篇 .md">⤓</div>
+        <div class="icon-btn" title="删除">🗑</div>
+      </div>
+      <div class="ed-meta">
+        📁 学习 ｜ ✏️ 更新于 2 小时前 ｜ ↳ 来源：<b style="color:var(--accent-solid)">剪贴板卡片 ↗</b>
+      </div>
+      <div class="ed-split">
+        <div class="ed-pane">
+          <div class="ed-pane-head"><span>MARKDOWN</span><span>编辑</span></div>
+          <div class="ed-body mono">## 为什么混合检索
+
+纯向量会漏掉**精确词**
+匹配（型号、代号），BM25
+补上这一路：
+
+- 向量 top-20
+- FTS top-20
+- RRF(k=60) 融合</div>
+        </div>
+        <div class="ed-pane">
+          <div class="ed-pane-head"><span>预览</span><span>MarkdownRenderer</span></div>
+          <div class="ed-body">
+            <h4>为什么混合检索</h4>
+            <p>纯向量会漏掉<b>精确词</b>匹配（型号、代号），BM25 补上这一路：</p>
+            <ul><li>向量 top-20</li><li>FTS top-20</li><li><code>RRF(k=60)</code> 融合</li></ul>
+          </div>
+        </div>
+      </div>
+      <div class="backlink-bar">🔗 被引用：<b>长截图方案调研</b>、<b>语义检索降级策略</b>（C 阶段启用反链面板，此处先占位）<span class="pin">6</span></div>
+      <div class="ed-foot">
+        <span class="mini-tag">#检索</span><span class="mini-tag">#sqlite</span>
+        <div class="foot-spacer"><span>⌨ Ctrl+S 保存</span><span>已自动保存 ✓</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <ol>
+      <li><span class="pin">1</span><span><b>三栏宽度</b>：200 / 264 / 弹性；&lt;720px 时中栏并入左栏（树 + 列表上下叠），编辑改弹窗。</span></li>
+      <li><span class="pin">2</span><span><b>搜索框</b>即规划 §7 的统一入口：A 阶段只走 FTS；AI 开启后同框升级为混合检索（L2），UI 不变、结果变好。</span></li>
+      <li><span class="pin">3</span><span><b>AI 摘要一行预览</b>（列表内 ✦ 标记行）仅在 <code>ai_enabled</code> 时存在，产物可删（红线 §4.2）。</span></li>
+      <li><span class="pin">4</span><span><b>📥 收件箱</b>：多来源汇集站——⭐收藏 / 🔁重复复制 / 🔍找回 / 📏规则命中的待沉淀候选都汇到这里（虚拟视图，见 §4 特写）；转出的笔记拖拽到文件夹完成归类。</span></li>
+      <li><span class="pin">5</span><span><b>标题行右侧三动作</b>：版本历史 / 单篇导出 / 删除；保存自动触发快照 <span class="ref">D8</span>。</span></li>
+      <li><span class="pin">6</span><span><b>反链条 B 阶段只占位不实现</b>：<code>[[..]]</code> 已按 <span class="ref">D7</span> 原样入库，C 阶段点亮，避免老笔记迁移。</span></li>
+    </ol>
+  </div>
+</div>
+
+<!-- ============ 3 今日速记 ============ -->
+<div class="section">
+  <h2>3 · 今日速记 <span class="ref">D11</span></h2>
+  <p class="desc">碎片沉淀的日常动线：每天一篇自动置顶的速记，热键把当前选中卡片一键追加进去，带时间戳与来源。</p>
+  <div class="figure-wrap">
+    <div class="figure-col">
+      <span class="fig-label">当日速记内容形态（追加式时间线）</span>
+      <div class="daily-full">
+        <div class="dh"><span>🗒️</span><span class="t">2026-08-24</span><span class="daily-badge">今日速记</span></div>
+        <div style="margin-top:12px">
+          <div class="stamp"><div class="tm">09:41 · 来自截图 OCR</div><div class="tx">报销单 FP-2026082400173，¥2,340.00，走差旅科目</div></div>
+          <div class="stamp"><div class="tm">11:20 · 来自网页复制</div><div class="tx">sqlite-vec 仍是 pre-v1，个人规模暴力余弦就够</div></div>
+          <div class="stamp"><div class="tm">14:36 · 手动输入<span class="pin"></span></div><div class="tx">周五前把 M1 验收标准过一遍</div></div>
+        </div>
+        <div class="hotkey-tip">热键：<span class="kbd">Ctrl</span>+<span class="kbd">Alt</span>+<span class="kbd">N</span> 追加当前选中卡片 ｜ 光标落在新行直接输入</div>
+      </div>
+    </div>
+    <div class="figure-col" style="max-width:360px">
+      <span class="fig-label">规则</span>
+      <table class="spec">
+        <tr><th style="width:110px">场景</th><th>行为</th></tr>
+        <tr><td>首次触发</td><td>自动创建当天笔记，置顶于列表首位</td></tr>
+        <tr><td>追加来源</td><td>文本带原文；截图/文件带附件引用 + OCR 一行摘要（<span class="ref">D9</span> 同款）</td></tr>
+        <tr><td>次日</td><td>昨日速记自动移入「待整理」文件夹并置顶提醒回顾（速记本身已是笔记，按定义不会进收件箱虚拟视图）；可拖去任意文件夹</td></tr>
+        <tr><td>与转笔记关系</td><td>速记里的某条想深加工 → 选中该行「升格为笔记」，正文迁出、原处留一行链接占位</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 4 收件箱汇集站 ============ -->
+<div class="section">
+  <h2>4 · 📥 收件箱：多来源汇集站 <span class="tag">通路 #3 ~ #5 · B 阶段落地</span></h2>
+  <p class="desc">升级自 A 阶段的待沉淀横幅。收件箱仍是<b>虚拟视图</b>（有信号、无笔记的卡片集合，零后台写入），信号源扩展到五类；每条候选带来源徽章，一眼知道它为什么在这里。</p>
+
+  <div class="figure-wrap">
+    <div class="figure-col">
+      <span class="fig-label">收件箱视图 · 信号筛选 chips + 候选列表</span>
+      <div class="inb-panel" style="margin-top:8px">
+        <div class="inb-toolbar">
+          <span class="chipx active">全部 4</span>
+          <span class="chipx">⭐ 收藏 1</span>
+          <span class="chipx">🔁 复制×N 1</span>
+          <span class="chipx">🔍 找回 1</span>
+          <span class="chipx">📏 规则 1</span>
+          <span class="chipx dim">✦ AI 建议</span>
+        </div>
+        <div class="inb-row">
+          <span class="sig-badge star">⭐ 收藏</span>
+          <div class="inb-main"><div class="inb-t">SQLite WAL checkpoint 原理要点</div><div class="inb-s">昨天收藏 · 来自 docs.rs</div></div>
+          <div class="inb-acts"><button class="btn primary" style="padding:4px 10px;font-size:11px">转为笔记</button><button class="btn ghost" style="padding:4px 10px;font-size:11px">忽略</button></div>
+        </div>
+        <div class="inb-row">
+          <span class="sig-badge repeat">🔁 复制 ×3</span>
+          <div class="inb-main"><div class="inb-t">生产库连接串模板（脱敏）</div><div class="inb-s">同一内容今天反复复制了 3 次 —— 剪贴板管理器独有的信号</div></div>
+          <div class="inb-acts"><button class="btn primary" style="padding:4px 10px;font-size:11px">转为笔记</button><button class="btn ghost" style="padding:4px 10px;font-size:11px">忽略</button></div>
+        </div>
+        <div class="inb-row">
+          <span class="sig-badge research">🔍 找回 ×2</span>
+          <div class="inb-main"><div class="inb-t">RRF 融合检索要点</div><div class="inb-s">搜索找回来过 2 次 · 最近一次今天 14:32</div></div>
+          <div class="inb-acts"><button class="btn primary" style="padding:4px 10px;font-size:11px">转为笔记</button><button class="btn ghost" style="padding:4px 10px;font-size:11px">忽略</button></div>
+        </div>
+        <div class="inb-row">
+          <span class="sig-badge rule">📏 规则：单据号</span>
+          <div class="inb-main"><div class="inb-t">报销单 FP-2026082400173 · OCR</div><div class="inb-s">命中你建的正则 FP-\d{10} · 截图文字量触发同属此类</div></div>
+          <div class="inb-acts"><button class="btn primary" style="padding:4px 10px;font-size:11px">转为笔记</button><button class="btn ghost" style="padding:4px 10px;font-size:11px">忽略</button></div>
+        </div>
+      </div>
+      <p class="menu-note">「✦ AI 建议」chips 灰显占位：<code>ai_enabled</code> 且 C 阶段后才点亮（通路 #6）；点亮后摘要管线顺手标注「值得存？」，只建议不落库。</p>
+    </div>
+
+    <div class="figure-col" style="max-width:360px">
+      <span class="fig-label">规则与阈值（设置 → 知识库 → 自动收集）</span>
+      <table class="spec" style="margin-top:8px">
+        <tr><th style="width:96px">信号</th><th>默认阈值 / 状态</th></tr>
+        <tr><td>⭐ 收藏</td><td>收藏即候选，<b>默认开</b></td></tr>
+        <tr><td>🔍 找回</td><td>search_hit_count ≥ 2，<b>默认开</b></td></tr>
+        <tr><td>🔁 复制</td><td>copy_count ≥ 3（B 新增字段），默认关、用户可开</td></tr>
+        <tr><td>📏 规则</td><td>来源 App / 正则（regex_rules）/ 类型规则，默认关；支持「从这张卡片生成规则」预填</td></tr>
+        <tr><td>📷 截图 OCR</td><td>OCR 字数 ≥ 200 触发草稿建议，默认关</td></tr>
+        <tr><td>闸门</td><td>忽略记忆（整卡粒度）；永不 toast；水位验收不达标砍信号源而非加功能</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="legend">
+    <ol>
+      <li><span class="pin">1</span><span><b>仍是零写入虚拟视图</b>：SQL 实时算「有信号 ∧ 无同源笔记 ∧ 未 dismiss」，无后台任务。</span></li>
+      <li><span class="pin">2</span><span><b>优先级去重</b>：⭐ &gt; 🔁 &gt; 🔍 &gt; 📏 > ✦，一卡一徽章——用户不需要理解信号体系也能用。</span></li>
+      <li><span class="pin">3</span><span><b>🔁 是我们的独有武器</b>：Obsidian/Notion 拿不到「同一内容被复制了几次」这个数据；它几乎等于「用户此刻正需要」。</span></li>
+      <li><span class="pin">4</span><span><b>弱信号默认关</b>：📏/📷/🔁 全部用户自选开启——自动收集的信任一旦被噪音烧掉就回不来（风险册 v2.1 条目）。</span></li>
+    </ol>
+  </div>
+</div>
+
+<!-- ============ 5 版本快照 ============ -->
+<div class="section">
+  <h2>5 · 版本历史 <span class="ref">D8</span></h2>
+  <p class="desc">误删误改的兜底：保存且内容有变化才写快照，每篇保留最近 20 份。</p>
+  <div class="figure-wrap">
+    <div class="figure-col">
+      <span class="fig-label">⏱ 版本历史弹层</span>
+      <div class="rev-pop" style="margin-top:8px">
+        <div class="rev-head"><span>版本历史 · 最近 20 次</span><span>✕</span></div>
+        <div class="rev-item cur"><span>🕒</span><span class="when">08-24 14:36</span><span class="who">当前版本</span></div>
+        <div class="rev-item"><span class="when">08-24 14:02</span><span class="who">+86 字</span><span class="act">预览 · 恢复</span></div>
+        <div class="rev-item"><span class="when">08-23 18:40</span><span class="who">+210 字</span><span class="act">预览 · 恢复</span></div>
+        <div class="rev-item"><span class="when">08-22 10:15</span><span class="who">初版</span><span class="act">预览 · 恢复</span></div>
+      </div>
+    </div>
+    <div class="figure-col" style="max-width:400px;justify-content:center">
+      <table class="spec">
+        <tr><th style="width:110px">要点</th><th>定义</th></tr>
+        <tr><td>恢复方式</td><td><b>恢复 = 以旧版本另存新快照后覆盖</b>，可再撤销，不存在不可回头的操作</td></tr>
+        <tr><td>差异标注</td><td>列表只标 ± 字数量级；点「预览」进 diff 视图（复用现有配置对比能力）</td></tr>
+        <tr><td>存储上限</td><td>每篇 20 份滚动淘汰；快照存全文不做增量 diff（<span class="ref">D8</span> 权衡）</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 6 导出导入 ============ -->
+<div class="section">
+  <h2>6 · 数据主权：目录导出 / 导入 <span class="ref">D1</span></h2>
+  <p class="desc">SQLite 是权威存储但不是监狱：一键导出标准 Markdown 目录（Obsidian 可直接打开），也可从该格式导入回来。</p>
+  <div class="figure-wrap">
+    <div class="figure-col">
+      <span class="fig-label">⤓ 导出 / 导入菜单</span>
+      <div class="export-menu" style="margin-top:8px">
+        <div class="em-item is-new"><span>📦</span>导出全部笔记为 Markdown 目录</div>
+        <div class="em-item"><span>📄</span>导出当前文件夹</div>
+        <div class="em-item"><span>📥</span>从 Markdown 目录导入…</div>
+        <div class="em-item"><span>🧹</span>清理孤儿附件</div>
+      </div>
+    </div>
+    <div class="figure-col">
+      <span class="fig-label">导出物示例：单篇 .md（YAML frontmatter 保证可回导）</span>
+      <code class="block"><span class="cm">---</span>
+id: n_01J8ZKQ7M2
+title: RRF 融合检索要点
+tags: [检索, sqlite]
+folder: 学习
+created: 2026-08-24T14:32:00
+updated: 2026-08-24T14:36:00
+source_history_id: h_8821   <span class="cm"># 可追溯原卡片</span>
+<span class="cm">---</span>
+
+## 为什么混合检索
+……</code>
+    </div>
+  </div>
+  <div class="legend">
+    <ol>
+      <li><span class="pin">1</span><span>导出目录结构 = <code>文件夹名/标题.md</code> + <code>_attachments/</code>；重名标题自动加序号，id 冲突以 frontmatter 为准合并更新。</span></li>
+      <li><span class="pin">2</span><span>导入按 frontmatter 的 id 做<b>幂等 upsert</b>：同一篇反复导入不会产生副本 —— 这是双向通道而不是一次性搬家。</span></li>
+      <li><span class="pin">3</span><span>迁移安全（风险册）：notes 相关 migration 前设置页提示「建议先导出一次」。</span></li>
+    </ol>
+  </div>
+</div>
+
+<!-- ============ 7 AI 门控双态 ============ -->
+<div class="section">
+  <h2>7 · AI 门控双态对照（红线可视化）</h2>
+  <p class="desc">同一界面的两个状态：<b>未启用 = 零可见零请求零费用</b>，任何 AI 控件都不渲染；启用后才出现 AI 动作与摘要。</p>
+  <div class="gate-pair">
+    <div class="gate-panel off">
+      <div class="gp-head">🔒 ai_enabled = false（默认）</div>
+      <div class="gp-body">
+        <div class="ghost-zone">此处没有任何 AI 控件<br>列表无 ✦ 摘要行 ｜ 无自动标签按钮 ｜ 无问答入口</div>
+        <p style="margin-top:10px;color:var(--text-secondary)">用户看到的是纯本地知识库：搜索框走 FTS + 拼音，全部功能可用，零网络请求。</p>
+      </div>
+    </div>
+    <div class="gate-panel on">
+      <div class="gp-head">🔓 ai_enabled = true</div>
+      <div class="gp-body">
+        <div class="ai-actions">
+          <span class="ai-btn">✦ 生成本篇摘要</span>
+          <span class="ai-btn">🏷 自动打标签</span>
+          <span class="ai-btn">💬 问我的知识库</span>
+        </div>
+        <p style="color:var(--text-secondary)">摘要写入索引供混合检索使用；自动标签给出建议 chips 由用户逐个采纳；出网内容仅限摘要 / 分块文本（原文不出设备，红线 §4.1）。AI 产物均带 ✦ 标记、可单条删除。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 8 RAG 问答雏形 ============ -->
+<div class="section">
+  <h2>8 · 「问我的知识库」— 引用式问答雏形（AI 开启时）</h2>
+  <p class="desc">B 阶段验收项之一：命中笔记作为上下文作答并标注来源。完整 L3 增强（rerank / 查询改写）留 C 阶段。</p>
+  <div class="figure-wrap" style="justify-content:center">
+    <div class="qa-box">
+      <div class="qa-input"><span>💬</span><span class="qa-q">我们之前存过哪些关于检索排序的内容？</span><span class="qa-send">提问</span></div>
+      <div class="qa-answer">
+        知识库里有 2 篇相关笔记。<b>RRF 融合检索要点</b> 记录了核心做法：向量 top-20 与 FTS top-20 各取一路，用 <code>RRF(k=60)</code> 融合排序<sup>[1]</sup>；另一篇提到 FTS 需要 pinyin 列以支持拼音命中<sup>[2]</sup>。
+        <br><br>两者结合的结论：中文场景下 BM25 一路必须带拼音列，否则精确词与拼音查询都会漏。
+      </div>
+      <div class="qa-cites">
+        <div class="cite"><span class="no">[1]</span><span><b>RRF 融合检索要点</b> · 学习 · 08-24 —— “向量 top-20 / FTS top-20 / RRF(k=60) 融合”</span></div>
+        <div class="cite"><span class="no">[2]</span><span><b>notes_fts 设计备忘</b> · 工作 · 08-20 —— “tokenizer 与 history_fts 保持一致，pinyin 列必须有”</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="callout ok">
+    ✓ <span><b>硬规则（写进提示词并测试钉住）</b>：回答中的事实陈述必须带 <sup>[n]</sup> 脚注；检索无命中时固定回复「知识库中没有相关笔记」，禁止编造。脚注点击跳转对应笔记并高亮片段。</span>
+  </div>
+</div>
+
+<!-- ============ 9 细则 ============ -->
+<div class="section">
+  <h2>9 · 行为细则（开发前需逐条确认）</h2>
+  <table class="spec">
+    <tr><th style="width:150px">场景</th><th>行为定义</th></tr>
+    <tr><td>新建空白笔记</td><td>顶部「＋」→ 右栏进入空编辑器（history_id 为空，无来源行）；落入当前所选文件夹。</td></tr>
+    <tr><td>移动 / 归类</td><td>拖拽笔记到左栏文件夹；支持多选批量拖拽。收件箱常驻不可删除。</td></tr>
+    <tr><td>候选去重（收件箱）</td><td>同一卡片命中多信号只展示最高优先级者（⭐ &gt; 🔁 &gt; 🔍 &gt; 📏 &gt; ✦）；转笔记或忽略后退出视图且不再推荐。</td></tr>
+    <tr><td>自动收集规则管理</td><td>设置 → 知识库 → 自动收集：逐类信号独立开关与阈值；新建规则支持「从这张卡片生成」（预填 source 或正则样例）。全部本地判定，不出网。</td></tr>
+    <tr><td>删除笔记</td><td>二次确认 → 移入回收站保留 30 天（复用历史卡片的删除语义）；附件随笔记一起清理。</td></tr>
+    <tr><td>混合检索退化</td><td>embedding 失败 / 超时 → 自动退回 FTS 结果并在搜索框下给一行灰色提示「语义服务暂不可用」。</td></tr>
+    <tr><td>性能预算</td><td>万级笔记下列表滚动 60fps；chunk 重建后台节流，不在保存路径阻塞 UI（风险册）。</td></tr>
+    <tr><td>快捷键</td><td>Ctrl+K 搜索 ｜ Ctrl+N 新建 ｜ Ctrl+Alt+N 追加今日速记 ｜ Esc 返回主页视图。</td></tr>
+  </table>
+</div>
+
+</body>
+</html>
