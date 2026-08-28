@@ -4,27 +4,150 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>知识库 B 阶段 · 知识库视图 — 设计稿</title>
+
 <style>
-  :root {
-    --bg: #ebebf0;
+  /* 图标统一使用 lucide-react（真实代码 122 处引用）；设计稿以图标名标注占位 */
+  /* 真实 lucide 矢量图标（从 node_modules/lucide-react 提取 __iconNode 渲染，非文字占位） */
+  .lucide-ico{width:14px;height:14px;flex:none;vertical-align:-2.5px;margin:0 1px;overflow:visible;stroke:currentColor;color:var(--text-secondary)}
+</style>
+
+
+<style>
+  :root,
+[data-theme="ocean"] {
+    --app-bg: #F7F7F8;
+    --bg: var(--app-bg);            /* 设计稿原 --bg 别名 → 真实 --app-bg */
     --card-bg: #fff;
-    --card-border: #e8e8ed;
-    --text-primary: #1d1d1f;
-    --text-secondary: #86868b;
-    --text-muted: #aeaeb2;
-    --accent: #0078D4;
-    --accent-solid: #006CBE;
-    --accent-light: rgba(0, 120, 212, 0.08);
-    --warn-bg: #fef3c7;
-    --warn-text: #b45309;
-    --ok-bg: #dcfce7;
-    --ok-text: #15803d;
+    --card-border: #E0E4EB;
+    --border: var(--card-border);   /* 修 B 稿 var(--border) 未定义导致边框不渲染 */
+    --text-primary: #0F172A;
+    --text-secondary: #495565;
+    --text-muted: #627083;
+    --accent: #0284C7;
+    --accent-solid: #027CBB;
+    --accent-light: #E0F2FE;
+    --warn-bg: #FFF7ED;
+    --warn-text: #C54A0A;
+    --ok-bg: #DCFCE7;
+    --ok-text: #15803D;
     --radius-card: 16px;
     --radius-ui: 8px;
   }
+  [data-theme="midnight"] {
+    --app-bg: radial-gradient(100% 80% at 50% -10%, #1C1832 0%, #0B0B13 55%, #07070C 100%);
+    --bg: var(--app-bg);            /* 设计稿原 --bg 别名 → 真实 --app-bg */
+    --card-bg: #18181B;
+    --card-border: #27272A;
+    --border: var(--card-border);   /* 修 B 稿 var(--border) 未定义导致边框不渲染 */
+    --text-primary: #E4E4E7;
+    --text-secondary: #AFAFB7;
+    --text-muted: #8D8D95;
+    --accent: #818CF8;
+    --accent-solid: #666FC4;
+    --accent-light: #1E1B4B;
+    --warn-bg: #431407;
+    --warn-text: #FB923C;
+    --ok-bg: #14532D;
+    --ok-text: #4ADE80;
+    --radius-card: 16px;
+    --radius-ui: 8px;
+  }
+  [data-theme="forest"] {
+    --app-bg: linear-gradient(180deg, #F5F1E3 0%, #EAE5D1 55%, #DCD6BD 100%);
+    --bg: var(--app-bg);            /* 设计稿原 --bg 别名 → 真实 --app-bg */
+    --card-bg: #fff;
+    --card-border: #D1D9D3;
+    --border: var(--card-border);   /* 修 B 稿 var(--border) 未定义导致边框不渲染 */
+    --text-primary: #171717;
+    --text-secondary: #58524F;
+    --text-muted: #726E6B;
+    --accent: #059669;
+    --accent-solid: #05875F;
+    --accent-light: #ECFDF5;
+    --warn-bg: #FFF7ED;
+    --warn-text: #C54A0A;
+    --ok-bg: #DCFCE7;
+    --ok-text: #15803D;
+    --radius-card: 16px;
+    --radius-ui: 8px;
+  }
+  [data-theme="blossom"] {
+    --app-bg: linear-gradient(168deg, #FFE4EF 0%, #FFC9DD 42%, #FFAECF 78%, #FF9BC4 100%);
+    --bg: var(--app-bg);            /* 设计稿原 --bg 别名 → 真实 --app-bg */
+    --card-bg: #fff;
+    --card-border: #F9D3E2;
+    --border: var(--card-border);   /* 修 B 稿 var(--border) 未定义导致边框不渲染 */
+    --text-primary: #3D2231;
+    --text-secondary: #5F4755;
+    --text-muted: #86596D;
+    --accent: #F0568C;
+    --accent-solid: #CE3B70;
+    --accent-light: #FFDDEC;
+    --warn-bg: #FFF7ED;
+    --warn-text: #C54A0A;
+    --ok-bg: #DCFCE7;
+    --ok-text: #15803D;
+    --radius-card: 16px;
+    --radius-ui: 8px;
+  }
+  [data-theme="dawn"] {
+    --app-bg: linear-gradient(180deg, #FFF8EE 0%, #FFE9D2 42%, #FFD9AE 72%, #F9C78F 100%);
+    --bg: var(--app-bg);            /* 设计稿原 --bg 别名 → 真实 --app-bg */
+    --card-bg: #fff;
+    --card-border: #F0DDC8;
+    --border: var(--card-border);   /* 修 B 稿 var(--border) 未定义导致边框不渲染 */
+    --text-primary: #2B2016;
+    --text-secondary: #5C4B38;
+    --text-muted: #7D6B58;
+    --accent: #E8734A;
+    --accent-solid: #C85A34;
+    --accent-light: #FFEDE2;
+    --warn-bg: #FFF7ED;
+    --warn-text: #C54A0A;
+    --ok-bg: #DCFCE7;
+    --ok-text: #15803D;
+    --radius-card: 16px;
+    --radius-ui: 8px;
+  }
+  [data-theme="ocean-dark"] {
+    --app-bg: radial-gradient(130% 110% at 70% -5%, #1E5A82 0%, #0E3355 42%, #061A33 100%);
+    --bg: var(--app-bg);            /* 设计稿原 --bg 别名 → 真实 --app-bg */
+    --card-bg: #0A1628;
+    --card-border: #162B45;
+    --border: var(--card-border);   /* 修 B 稿 var(--border) 未定义导致边框不渲染 */
+    --text-primary: #E0E8F0;
+    --text-secondary: #A2B6CD;
+    --text-muted: #7994B4;
+    --accent: #3B9EFF;
+    --accent-solid: #2D78C2;
+    --accent-light: #0A1E3A;
+    --warn-bg: #431407;
+    --warn-text: #FB923C;
+    --ok-bg: #14532D;
+    --ok-text: #4ADE80;
+    --radius-card: 16px;
+    --radius-ui: 8px;
+  }
+  /* ===== 对齐版主题切换器（非原稿内容，仅预览用） ===== */
+  .theme-bar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+    display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+    padding: 8px 12px; background: var(--card-bg, #fff);
+    border-bottom: 1px solid var(--card-border, #e8e8ed);
+    font-family: "SF Pro Text","Microsoft YaHei","Segoe UI",system-ui,-apple-system,sans-serif;
+    font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  }
+  .theme-bar .tb-label { color: var(--text-secondary); font-weight: 600; }
+  .theme-bar button {
+    cursor: pointer; border: 1px solid var(--card-border); background: var(--card-bg, #fff);
+    color: var(--text-primary); border-radius: 999px; padding: 4px 12px; font-size: 11.5px;
+  }
+  .theme-bar button.active { background: var(--accent-solid); color: #fff; border-color: var(--accent-solid); }
+  body { padding-top: 56px; }  /* 给固定切换器让位 */
+
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    font-family: "SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui, -apple-system, sans-serif;
     background: var(--bg);
     color: var(--text-primary);
     padding: 28px 20px 60px;
@@ -254,37 +377,65 @@
   table.spec td { color: var(--text-secondary); }
   table.spec td b { color: var(--text-primary); }
 </style>
+
 </head>
 <body>
+
+<div class="theme-bar">
+  <span class="tb-label">对齐版·主题预览：</span>
+  <button data-t="ocean" class="active">ocean 默认浅</button>
+  <button data-t="midnight">midnight 暗</button>
+  <button data-t="forest">forest 护眼</button>
+  <button data-t="blossom">blossom 粉</button>
+  <button data-t="dawn">dawn 暖橙</button>
+  <button data-t="ocean-dark">ocean-dark 深蓝</button>
+</div>
+<script>
+  (function(){
+    var bar = document.querySelector('.theme-bar');
+    if(!bar) return;
+    bar.addEventListener('click', function(e){
+      var b = e.target.closest('button'); if(!b) return;
+      document.documentElement.setAttribute('data-theme', b.dataset.t);
+      bar.querySelectorAll('button').forEach(function(x){ x.classList.toggle('active', x===b); });
+    });
+  })();
+</script>
+
 
 <div class="doc-head">
   <h1>知识库 B 阶段 · 知识库视图 — 设计稿</h1>
   <p class="meta">
-    对应规划：<b>《个人知识库与笔记-规划》v2.1 §8.2（M2）</b> ｜ 版本 v1.1 · 2026-08-24 ｜ 状态：<b>待确认</b><br>
-    范围：三栏主视图布局 · <b>📥 收件箱汇集站（§1.4 通路 #3~#5）</b> · 今日速记 <span class="ref">D11</span> · 版本快照 <span class="ref">D8</span> · 目录导出导入 <span class="ref">D1</span> · AI 门控双态 · 引用式问答雏形。<br>
+    对应规划：<b>《个人知识库与笔记-规划》v3.5 §8.2</b> ｜ 版本 <b>v1.3 · 2026-08-27</b>（对齐 v3.5）｜ 状态：<b>规划已确认</b><br>
+    <b style="color:#b45309"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg> v1.2 → v1.3（规划 v3.5，查了真实数据库）</b>：① <b><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" /></svg> 收藏实测为 0</b>，信号 chips 已倒序、<svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" /></svg> 降到末位；② <b>信号表新增「<svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13v2" /><path d="M9 13v2" /></svg> 自动收录」档</b>（第 15 个入口，也是唯一直接落库的，开启需先过影子运行）；③ 知识图谱已在规划里改为不做（本稿未画过，无需改）。<br>
+    <b style="color:#b45309"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg> 最大变动：原 B 阶段（M2）已拆为两次发版</b>——拆前它堆了 9 个模块，已经是一个大版本：<br>
+    · <span class="tag" style="background:#dcfce7;color:#166534">B1 = M2a</span> <b>可信赖的容器</b>：知识库视图、版本快照、目录导出导入、卡片↔笔记双向融合、编辑器小项。<b>组织 / 保护 / 出口——缺任何一样都发不出去</b>。<br>
+    · <span class="tag" style="background:#dbeafe;color:#1e40af">B2 = M2b</span> <b>沉淀自动化与回流</b>：收件箱、<svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" /></svg> 重现层、今日速记、转笔记模板、Bases 式字段视图、AI 三件套。<b>验收全靠真实使用数据，本来就该等 B1 上线攒出数据再做</b>。<br>
+    · <b>搜索在 B1/B2 都只有 L1（关键词 + 拼音）</b>——L2 混合检索与本地 embedding 已由 v3.3 推到 <b>C 阶段</b>。<br>
+    范围：三栏主视图布局 · <b><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></svg> 收件箱汇集站（§1.4 通路 #3~#5）</b> · 今日速记 <span class="ref">D11</span> · 版本快照 <span class="ref">D8</span> · 目录导出导入 <span class="ref">D1</span> · AI 门控双态 · 引用式问答雏形。<br>
     标注约定：<span class="pin">n</span> 设计说明 ／ <span class="ref">D*</span> 规划决策编号 ／ <span class="tag warn">待确认</span> 分叉点。A 阶段弹窗稿见 <b>kb-a-note-dialog.html</b>。
   </p>
 </div>
 
 <!-- ============ 1 入口 ============ -->
 <div class="section">
-  <h2>1 · 入口：顶栏视图切换（不占页签）</h2>
+  <h2>1 · 入口：顶栏视图切换（不占页签） <span class="tag" style="background:#dcfce7;color:#166534">B1</span></h2>
   <p class="desc">知识库是<b>独立视图</b>而非内容筛选，放页签区会撞上「480px 下 6 页签已拥挤」的现实约束；改为在顶栏右侧放主页 / 知识库切换。</p>
   <div style="display:flex; justify-content:center;">
     <div class="topbar">
       <div class="segs">
-        <div class="seg active"><span>📋</span>全部</div>
-        <div class="seg"><span>📝</span>文本</div>
-        <div class="seg"><span>📸</span>图片</div>
-        <div class="seg"><span>📁</span>文件</div>
-        <div class="seg"><span>⭐</span>收藏</div>
+        <div class="seg active"><span><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 14h10" /><path d="M16 4h2a2 2 0 0 1 2 2v1.344" /><path d="m17 18 4-4-4-4" /><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113" /><rect x="8" y="2" width="8" height="4" rx="1" /></svg></span>全部</div>
+        <div class="seg"><span><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" /><path d="M14 2v5a1 1 0 0 0 1 1h5" /><path d="M10 9H8" /><path d="M16 13H8" /><path d="M16 17H8" /></svg></span>文本</div>
+        <div class="seg"><span><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></svg></span>图片</div>
+        <div class="seg"><span><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></svg></span>文件</div>
+        <div class="seg"><span><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" /></svg></span>收藏</div>
       </div>
       <div class="view-switch">
         <div class="switch-pill">
           <span class="active">主页</span>
-          <span>📖 知识库</span>
+          <span><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 6 4 14" /><path d="M12 6v14" /><path d="M8 8v12" /><path d="M4 4v16" /></svg> 知识库</span>
         </div>
-        <span style="font-size:15px;color:var(--text-secondary)">⚙️</span>
+        <span style="font-size:15px;color:var(--text-secondary)"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" /><circle cx="12" cy="12" r="3" /></svg></span>
       </div>
     </div>
   </div>
@@ -298,14 +449,14 @@
 
 <!-- ============ 2 全景 ============ -->
 <div class="section">
-  <h2>2 · 主视图全景：三栏 master-detail</h2>
+  <h2>2 · 主视图全景：三栏 master-detail <span class="tag" style="background:#dcfce7;color:#166534">B1</span></h2>
   <p class="desc">左导航（文件夹树 + 标签）/ 中列表（含今日速记置顶）/ 右编辑器。窄窗时右栏编辑退化为弹窗复用 A 阶段的 NoteEditor。</p>
 
   <div class="kb">
     <div class="kb-topbar">
-      <span class="title">📖 知识库</span>
+      <span class="title"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 6 4 14" /><path d="M12 6v14" /><path d="M8 8v12" /><path d="M4 4v16" /></svg> 知识库</span>
       <span style="font-size:10.5px;color:var(--text-muted)">42 篇 · 本周 +6</span>
-      <div class="kb-search">🔍 搜索笔记…<span class="pin" style="margin-left:2px">2</span></div>
+      <div class="kb-search"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.34-4.34" /><circle cx="11" cy="11" r="8" /></svg> 搜索笔记…<span class="pin" style="margin-left:2px">2</span></div>
       <div class="icon-btns">
         <div class="icon-btn" title="新建笔记">＋</div>
         <div class="icon-btn" title="导入 / 导出">⤓</div>
@@ -315,11 +466,11 @@
     <!-- 左栏 -->
     <div class="kb-left">
       <div class="tree-label"><span>文件夹</span><span>＋</span></div>
-      <div class="tree-item active">🗂️ 全部笔记 <span class="cnt">42</span></div>
-      <div class="tree-item">📥 收件箱 <span class="cnt">7</span><span class="pin">4</span></div>
-      <div class="tree-item sub">📁 工作 <span class="cnt">18</span></div>
-      <div class="tree-item sub">📁 学习 <span class="cnt">12</span></div>
-      <div class="tree-item sub">📁 生活 <span class="cnt">5</span></div>
+      <div class="tree-item active"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2h-4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8" /><path d="M16.706 2.706A2.4 2.4 0 0 0 15 2v5a1 1 0 0 0 1 1h5a2.4 2.4 0 0 0-.706-1.706z" /><path d="M5 7a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 1.732-1" /></svg> 全部笔记 <span class="cnt">42</span></div>
+      <div class="tree-item"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></svg> 收件箱 <span class="cnt">7</span><span class="pin">4</span></div>
+      <div class="tree-item sub"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></svg> 工作 <span class="cnt">18</span></div>
+      <div class="tree-item sub"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></svg> 学习 <span class="cnt">12</span></div>
+      <div class="tree-item sub"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></svg> 生活 <span class="cnt">5</span></div>
       <div class="tree-label" style="margin-top:12px"><span>标签</span></div>
       <div class="tagcloud">
         <span class="tcloud-chip">#nc65</span>
@@ -339,21 +490,21 @@
           <div style="font-size:11px;color:var(--text-secondary);margin-top:5px">今天已追加 3 条 · <span style="color:var(--accent-solid)">＋ 追加剪贴板</span></div>
         </div>
         <div class="nitem sel">
-          <div class="t">🗒️ RRF 融合检索要点</div>
+          <div class="t"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4" /><path d="M2 10h4" /><path d="M2 14h4" /><path d="M2 18h4" /><rect width="16" height="20" x="4" y="2" rx="2" /><path d="M9.5 8h5" /><path d="M9.5 12H16" /><path d="M9.5 16H14" /></svg> RRF 融合检索要点</div>
           <div class="s">纯向量会漏掉精确词匹配，BM25 补上这一路……</div>
-          <div class="m">📁 学习 · 今天 14:36 · <span class="mini-tag">#检索</span></div>
-          <span class="ai-line">✦ 摘要：混合检索的动机与融合公式</span>
+          <div class="m"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></svg> 学习 · 今天 14:36 · <span class="mini-tag">#检索</span></div>
+          <span class="ai-line"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> 摘要：混合检索的动机与融合公式</span>
         </div>
         <div class="nitem">
-          <div class="t">🗒️ NC65 单据模板 SQL 备忘</div>
+          <div class="t"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4" /><path d="M2 10h4" /><path d="M2 14h4" /><path d="M2 18h4" /><rect width="16" height="20" x="4" y="2" rx="2" /><path d="M9.5 8h5" /><path d="M9.5 12H16" /><path d="M9.5 16H14" /></svg> NC65 单据模板 SQL 备忘</div>
           <div class="s">maintain.insert 自动生成主键时注意……</div>
-          <div class="m">📁 工作 · 昨天 · <span class="mini-tag">#nc65</span> <span class="mini-tag">#sql</span></div>
+          <div class="m"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></svg> 工作 · 昨天 · <span class="mini-tag">#nc65</span> <span class="mini-tag">#sql</span></div>
           <div class="m" style="color:#a16207">↳ 来自卡片：文本 · 08-21（点击跳回原卡片）</div>
         </div>
         <div class="nitem">
-          <div class="t">🗒️ 报销单 FP-2026082400173</div>
-          <div class="s">📷 截图附件 · OCR：金额 ¥2,340.00</div>
-          <div class="m">📥 收件箱 · 08-24 09:20 · <span class="mini-tag">#报销</span></div>
+          <div class="t"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4" /><path d="M2 10h4" /><path d="M2 14h4" /><path d="M2 18h4" /><rect width="16" height="20" x="4" y="2" rx="2" /><path d="M9.5 8h5" /><path d="M9.5 12H16" /><path d="M9.5 16H14" /></svg> 报销单 FP-2026082400173</div>
+          <div class="s"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></svg> 截图附件 · OCR：金额 ¥2,340.00</div>
+          <div class="m"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></svg> 收件箱 · 08-24 09:20 · <span class="mini-tag">#报销</span></div>
         </div>
       </div>
     </div>
@@ -363,12 +514,12 @@
       <div class="ed-title-row">
         <span class="ed-title">RRF 融合检索要点</span>
         <span class="pin" style="vertical-align:middle">5</span>
-        <div class="icon-btn" title="版本历史">⏱</div>
+        <div class="icon-btn" title="版本历史"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l4 2" /></svg></div>
         <div class="icon-btn" title="导出本篇 .md">⤓</div>
-        <div class="icon-btn" title="删除">🗑</div>
+        <div class="icon-btn" title="删除"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 11v6" /><path d="M14 11v6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></div>
       </div>
       <div class="ed-meta">
-        📁 学习 ｜ ✏️ 更新于 2 小时前 ｜ ↳ 来源：<b style="color:var(--accent-solid)">剪贴板卡片 ↗</b>
+        <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></svg> 学习 ｜ <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg> 更新于 2 小时前 ｜ ↳ 来源：<b style="color:var(--accent-solid)">剪贴板卡片 ↗</b>
       </div>
       <div class="ed-split">
         <div class="ed-pane">
@@ -392,10 +543,10 @@
           </div>
         </div>
       </div>
-      <div class="backlink-bar">🔗 被引用：<b>长截图方案调研</b>、<b>语义检索降级策略</b>（C 阶段启用反链面板，此处先占位）<span class="pin">6</span></div>
+      <div class="backlink-bar"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2" /><path d="M15 7h2a5 5 0 1 1 0 10h-2" /><line x1="8" x2="16" y1="12" y2="12" /></svg> 被引用：<b>长截图方案调研</b>、<b>语义检索降级策略</b>（C 阶段启用反链面板，此处先占位）<span class="pin">6</span></div>
       <div class="ed-foot">
         <span class="mini-tag">#检索</span><span class="mini-tag">#sqlite</span>
-        <div class="foot-spacer"><span>⌨ Ctrl+S 保存</span><span>已自动保存 ✓</span></div>
+        <div class="foot-spacer"><span><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 8h.01" /><path d="M12 12h.01" /><path d="M14 8h.01" /><path d="M16 12h.01" /><path d="M18 8h.01" /><path d="M6 8h.01" /><path d="M7 16h10" /><path d="M8 12h.01" /><rect width="20" height="16" x="2" y="4" rx="2" /></svg> Ctrl+S 保存</span><span>已自动保存 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg></span></div>
       </div>
     </div>
   </div>
@@ -404,8 +555,8 @@
     <ol>
       <li><span class="pin">1</span><span><b>三栏宽度</b>：200 / 264 / 弹性；&lt;720px 时中栏并入左栏（树 + 列表上下叠），编辑改弹窗。</span></li>
       <li><span class="pin">2</span><span><b>搜索框</b>即规划 §7 的统一入口：A 阶段只走 FTS；AI 开启后同框升级为混合检索（L2），UI 不变、结果变好。</span></li>
-      <li><span class="pin">3</span><span><b>AI 摘要一行预览</b>（列表内 ✦ 标记行）仅在 <code>ai_enabled</code> 时存在，产物可删（红线 §4.2）。</span></li>
-      <li><span class="pin">4</span><span><b>📥 收件箱</b>：多来源汇集站——⭐收藏 / 🔁重复复制 / 🔍找回 / 📏规则命中的待沉淀候选都汇到这里（虚拟视图，见 §4 特写）；转出的笔记拖拽到文件夹完成归类。</span></li>
+      <li><span class="pin">3</span><span><b>AI 摘要一行预览</b>（列表内 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> 标记行）仅在 <code>ai_enabled</code> 时存在，产物可删（红线 §4.2）。</span></li>
+      <li><span class="pin">4</span><span><b><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></svg> 收件箱</b>：多来源汇集站——<svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" /></svg>收藏 / <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" /></svg>重复复制 / <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.34-4.34" /><circle cx="11" cy="11" r="8" /></svg>找回 / <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z" /><path d="m14.5 12.5 2-2" /><path d="m11.5 9.5 2-2" /><path d="m8.5 6.5 2-2" /><path d="m17.5 15.5 2-2" /></svg>规则命中的待沉淀候选都汇到这里（虚拟视图，见 §4 特写）；转出的笔记拖拽到文件夹完成归类。</span></li>
       <li><span class="pin">5</span><span><b>标题行右侧三动作</b>：版本历史 / 单篇导出 / 删除；保存自动触发快照 <span class="ref">D8</span>。</span></li>
       <li><span class="pin">6</span><span><b>反链条 B 阶段只占位不实现</b>：<code>[[..]]</code> 已按 <span class="ref">D7</span> 原样入库，C 阶段点亮，避免老笔记迁移。</span></li>
     </ol>
@@ -414,13 +565,13 @@
 
 <!-- ============ 3 今日速记 ============ -->
 <div class="section">
-  <h2>3 · 今日速记 <span class="ref">D11</span></h2>
+  <h2>3 · 今日速记 <span class="ref">D11</span> <span class="tag" style="background:#dbeafe;color:#1e40af">B2</span></h2>
   <p class="desc">碎片沉淀的日常动线：每天一篇自动置顶的速记，热键把当前选中卡片一键追加进去，带时间戳与来源。</p>
   <div class="figure-wrap">
     <div class="figure-col">
       <span class="fig-label">当日速记内容形态（追加式时间线）</span>
       <div class="daily-full">
-        <div class="dh"><span>🗒️</span><span class="t">2026-08-24</span><span class="daily-badge">今日速记</span></div>
+        <div class="dh"><span><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4" /><path d="M2 10h4" /><path d="M2 14h4" /><path d="M2 18h4" /><rect width="16" height="20" x="4" y="2" rx="2" /><path d="M9.5 8h5" /><path d="M9.5 12H16" /><path d="M9.5 16H14" /></svg></span><span class="t">2026-08-24</span><span class="daily-badge">今日速记</span></div>
         <div style="margin-top:12px">
           <div class="stamp"><div class="tm">09:41 · 来自截图 OCR</div><div class="tx">报销单 FP-2026082400173，¥2,340.00，走差旅科目</div></div>
           <div class="stamp"><div class="tm">11:20 · 来自网页复制</div><div class="tx">sqlite-vec 仍是 pre-v1，个人规模暴力余弦就够</div></div>
@@ -444,7 +595,7 @@
 
 <!-- ============ 4 收件箱汇集站 ============ -->
 <div class="section">
-  <h2>4 · 📥 收件箱：多来源汇集站 <span class="tag">通路 #3 ~ #5 · B 阶段落地</span></h2>
+  <h2>4 · <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></svg> 收件箱：多来源汇集站 <span class="tag">通路 #3 ~ #5</span> <span class="tag" style="background:#dbeafe;color:#1e40af">B2</span></h2>
   <p class="desc">升级自 A 阶段的待沉淀横幅。收件箱仍是<b>虚拟视图</b>（有信号、无笔记的卡片集合，零后台写入），信号源扩展到五类；每条候选带来源徽章，一眼知道它为什么在这里。</p>
 
   <div class="figure-wrap">
@@ -453,45 +604,46 @@
       <div class="inb-panel" style="margin-top:8px">
         <div class="inb-toolbar">
           <span class="chipx active">全部 4</span>
-          <span class="chipx">⭐ 收藏 1</span>
-          <span class="chipx">🔁 复制×N 1</span>
-          <span class="chipx">🔍 找回 1</span>
-          <span class="chipx">📏 规则 1</span>
-          <span class="chipx dim">✦ AI 建议</span>
+          <span class="chipx"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.34-4.34" /><circle cx="11" cy="11" r="8" /></svg> 找回 1</span>
+          <span class="chipx"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" /></svg> 复制×N 1</span>
+          <span class="chipx"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z" /><path d="m14.5 12.5 2-2" /><path d="m11.5 9.5 2-2" /><path d="m8.5 6.5 2-2" /><path d="m17.5 15.5 2-2" /></svg> 规则 1</span>
+          <span class="chipx dim"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> AI 建议</span>
+          <span class="chipx dim" title="实测 pinned = 0"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" /></svg> 收藏 0</span>
         </div>
         <div class="inb-row">
-          <span class="sig-badge star">⭐ 收藏</span>
+          <span class="sig-badge star"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" /></svg> 收藏</span>
           <div class="inb-main"><div class="inb-t">SQLite WAL checkpoint 原理要点</div><div class="inb-s">昨天收藏 · 来自 docs.rs</div></div>
           <div class="inb-acts"><button class="btn primary" style="padding:4px 10px;font-size:11px">转为笔记</button><button class="btn ghost" style="padding:4px 10px;font-size:11px">忽略</button></div>
         </div>
         <div class="inb-row">
-          <span class="sig-badge repeat">🔁 复制 ×3</span>
+          <span class="sig-badge repeat"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" /></svg> 复制 ×3</span>
           <div class="inb-main"><div class="inb-t">生产库连接串模板（脱敏）</div><div class="inb-s">同一内容今天反复复制了 3 次 —— 剪贴板管理器独有的信号</div></div>
           <div class="inb-acts"><button class="btn primary" style="padding:4px 10px;font-size:11px">转为笔记</button><button class="btn ghost" style="padding:4px 10px;font-size:11px">忽略</button></div>
         </div>
         <div class="inb-row">
-          <span class="sig-badge research">🔍 找回 ×2</span>
+          <span class="sig-badge research"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.34-4.34" /><circle cx="11" cy="11" r="8" /></svg> 找回 ×2</span>
           <div class="inb-main"><div class="inb-t">RRF 融合检索要点</div><div class="inb-s">搜索找回来过 2 次 · 最近一次今天 14:32</div></div>
           <div class="inb-acts"><button class="btn primary" style="padding:4px 10px;font-size:11px">转为笔记</button><button class="btn ghost" style="padding:4px 10px;font-size:11px">忽略</button></div>
         </div>
         <div class="inb-row">
-          <span class="sig-badge rule">📏 规则：单据号</span>
+          <span class="sig-badge rule"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z" /><path d="m14.5 12.5 2-2" /><path d="m11.5 9.5 2-2" /><path d="m8.5 6.5 2-2" /><path d="m17.5 15.5 2-2" /></svg> 规则：单据号</span>
           <div class="inb-main"><div class="inb-t">报销单 FP-2026082400173 · OCR</div><div class="inb-s">命中你建的正则 FP-\d{10} · 截图文字量触发同属此类</div></div>
           <div class="inb-acts"><button class="btn primary" style="padding:4px 10px;font-size:11px">转为笔记</button><button class="btn ghost" style="padding:4px 10px;font-size:11px">忽略</button></div>
         </div>
       </div>
-      <p class="menu-note">「✦ AI 建议」chips 灰显占位：<code>ai_enabled</code> 且 C 阶段后才点亮（通路 #6）；点亮后摘要管线顺手标注「值得存？」，只建议不落库。</p>
+      <p class="menu-note">「<svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> AI 建议」chips 灰显占位：<code>ai_enabled</code> 且 C 阶段后才点亮（通路 #6）；点亮后摘要管线顺手标注「值得存？」，只建议不落库。</p>
     </div>
 
     <div class="figure-col" style="max-width:360px">
       <span class="fig-label">规则与阈值（设置 → 知识库 → 自动收集）</span>
       <table class="spec" style="margin-top:8px">
         <tr><th style="width:96px">信号</th><th>默认阈值 / 状态</th></tr>
-        <tr><td>⭐ 收藏</td><td>收藏即候选，<b>默认开</b></td></tr>
-        <tr><td>🔍 找回</td><td>search_hit_count ≥ 2，<b>默认开</b></td></tr>
-        <tr><td>🔁 复制</td><td>copy_count ≥ 3（B 新增字段），默认关、用户可开</td></tr>
-        <tr><td>📏 规则</td><td>来源 App / 正则（regex_rules）/ 类型规则，默认关；支持「从这张卡片生成规则」预填</td></tr>
-        <tr><td>📷 截图 OCR</td><td>OCR 字数 ≥ 200 触发草稿建议，默认关</td></tr>
+        <tr><td><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" /></svg> 收藏</td><td>收藏即候选，<b>默认开</b>。<br><b style="color:#b45309"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg> v3.5：实测 <code>pinned = 0</code></b>——本机 24 天一条收藏都没有（规划 §3.1）。信号不删（零成本），但 chips 里已降到末位，且<b>不能再当主力信号估覆盖</b>。<br>更本质的原因：<b>收藏要求用户在「存的当下」预判未来价值，而这是人最不擅长的事</b>。§1.4 信号优先级已倒序：<svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.34-4.34" /><circle cx="11" cy="11" r="8" /></svg> > <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" /></svg> > <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z" /><path d="m14.5 12.5 2-2" /><path d="m11.5 9.5 2-2" /><path d="m8.5 6.5 2-2" /><path d="m17.5 15.5 2-2" /></svg> > <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> > <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" /></svg></td></tr>
+        <tr><td><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.34-4.34" /><circle cx="11" cy="11" r="8" /></svg> 找回</td><td>search_hit_count ≥ 2，<b>默认开</b></td></tr>
+        <tr><td><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" /></svg> 复制</td><td>copy_count ≥ 3（B 新增字段），默认关、用户可开</td></tr>
+        <tr><td><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z" /><path d="m14.5 12.5 2-2" /><path d="m11.5 9.5 2-2" /><path d="m8.5 6.5 2-2" /><path d="m17.5 15.5 2-2" /></svg> 规则</td><td>来源 App / 正则（regex_rules）/ 类型规则，默认关；支持「从这张卡片生成规则」预填</td></tr>
+        <tr><td><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></svg> 截图 OCR</td><td>OCR 字数 ≥ 200 触发草稿建议，默认关</td></tr>
+        <tr><td><b><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13v2" /><path d="M9 13v2" /></svg> 自动收录</b><br><span class="tag" style="background:#dbeafe;color:#1e40af">v3.5 新</span></td><td><b>唯一一个不停在候选、直接落库的档位</b>。规则 = <code>search_hit_count ≥ 5</code> × 形态门槛（文本 <code>len ≥ 200</code> / 图片看 OCR 字数）× 年龄 <code>≥ 7d</code>，再排除「已有笔记 / 已 dismiss / <code>is_secret</code> 命中」。量级约 <b>月均 12 条</b>。<br><b style="color:#b45309"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg> 开启有前置条件</b>：A 阶段<b>只影子运行</b>（只记录不落库），<b>准确率 ≥ 60% 才在 B2 真的开</b>；开后用<b>撤销率 &gt; 30% → 阈值太低</b>纠偏。详见 kb-a 稿第 6 节。<br>必须成立：可关、可见（独立筛选视图）、可一键撤销、首次启用告知一次</td></tr>
         <tr><td>闸门</td><td>忽略记忆（整卡粒度）；永不 toast；水位验收不达标砍信号源而非加功能</td></tr>
       </table>
     </div>
@@ -500,23 +652,23 @@
   <div class="legend">
     <ol>
       <li><span class="pin">1</span><span><b>仍是零写入虚拟视图</b>：SQL 实时算「有信号 ∧ 无同源笔记 ∧ 未 dismiss」，无后台任务。</span></li>
-      <li><span class="pin">2</span><span><b>优先级去重</b>：⭐ &gt; 🔁 &gt; 🔍 &gt; 📏 > ✦，一卡一徽章——用户不需要理解信号体系也能用。</span></li>
-      <li><span class="pin">3</span><span><b>🔁 是我们的独有武器</b>：Obsidian/Notion 拿不到「同一内容被复制了几次」这个数据；它几乎等于「用户此刻正需要」。</span></li>
-      <li><span class="pin">4</span><span><b>弱信号默认关</b>：📏/📷/🔁 全部用户自选开启——自动收集的信任一旦被噪音烧掉就回不来（风险册 v2.1 条目）。</span></li>
+      <li><span class="pin">2</span><span><b>优先级去重</b>：<svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" /></svg> &gt; <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" /></svg> &gt; <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.34-4.34" /><circle cx="11" cy="11" r="8" /></svg> &gt; <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z" /><path d="m14.5 12.5 2-2" /><path d="m11.5 9.5 2-2" /><path d="m8.5 6.5 2-2" /><path d="m17.5 15.5 2-2" /></svg> > <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg>，一卡一徽章——用户不需要理解信号体系也能用。</span></li>
+      <li><span class="pin">3</span><span><b><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" /></svg> 是我们的独有武器</b>：Obsidian/Notion 拿不到「同一内容被复制了几次」这个数据；它几乎等于「用户此刻正需要」。</span></li>
+      <li><span class="pin">4</span><span><b>弱信号默认关</b>：<svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z" /><path d="m14.5 12.5 2-2" /><path d="m11.5 9.5 2-2" /><path d="m8.5 6.5 2-2" /><path d="m17.5 15.5 2-2" /></svg>/<svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></svg>/<svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" /></svg> 全部用户自选开启——自动收集的信任一旦被噪音烧掉就回不来（风险册 v2.1 条目）。</span></li>
     </ol>
   </div>
 </div>
 
 <!-- ============ 5 版本快照 ============ -->
 <div class="section">
-  <h2>5 · 版本历史 <span class="ref">D8</span></h2>
+  <h2>5 · 版本历史 <span class="ref">D8</span> <span class="tag" style="background:#dcfce7;color:#166534">B1</span></h2>
   <p class="desc">误删误改的兜底：保存且内容有变化才写快照，每篇保留最近 20 份。</p>
   <div class="figure-wrap">
     <div class="figure-col">
-      <span class="fig-label">⏱ 版本历史弹层</span>
+      <span class="fig-label"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l4 2" /></svg> 版本历史弹层</span>
       <div class="rev-pop" style="margin-top:8px">
-        <div class="rev-head"><span>版本历史 · 最近 20 次</span><span>✕</span></div>
-        <div class="rev-item cur"><span>🕒</span><span class="when">08-24 14:36</span><span class="who">当前版本</span></div>
+        <div class="rev-head"><span>版本历史 · 最近 20 次</span><span><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></span></div>
+        <div class="rev-item cur"><span><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg></span><span class="when">08-24 14:36</span><span class="who">当前版本</span></div>
         <div class="rev-item"><span class="when">08-24 14:02</span><span class="who">+86 字</span><span class="act">预览 · 恢复</span></div>
         <div class="rev-item"><span class="when">08-23 18:40</span><span class="who">+210 字</span><span class="act">预览 · 恢复</span></div>
         <div class="rev-item"><span class="when">08-22 10:15</span><span class="who">初版</span><span class="act">预览 · 恢复</span></div>
@@ -535,16 +687,16 @@
 
 <!-- ============ 6 导出导入 ============ -->
 <div class="section">
-  <h2>6 · 数据主权：目录导出 / 导入 <span class="ref">D1</span></h2>
+  <h2>6 · 数据主权：目录导出 / 导入 <span class="ref">D1</span> <span class="tag" style="background:#dcfce7;color:#166534">B1</span></h2>
   <p class="desc">SQLite 是权威存储但不是监狱：一键导出标准 Markdown 目录（Obsidian 可直接打开），也可从该格式导入回来。</p>
   <div class="figure-wrap">
     <div class="figure-col">
       <span class="fig-label">⤓ 导出 / 导入菜单</span>
       <div class="export-menu" style="margin-top:8px">
-        <div class="em-item is-new"><span>📦</span>导出全部笔记为 Markdown 目录</div>
-        <div class="em-item"><span>📄</span>导出当前文件夹</div>
-        <div class="em-item"><span>📥</span>从 Markdown 目录导入…</div>
-        <div class="em-item"><span>🧹</span>清理孤儿附件</div>
+        <div class="em-item is-new"><span><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z" /><path d="M12 22V12" /><polyline points="3.29 7 12 12 20.71 7" /><path d="m7.5 4.27 9 5.15" /></svg></span>导出全部笔记为 Markdown 目录</div>
+        <div class="em-item"><span><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" /><path d="M14 2v5a1 1 0 0 0 1 1h5" /><path d="M12 18v-6" /><path d="m9 15 3 3 3-3" /></svg></span>导出当前文件夹</div>
+        <div class="em-item"><span><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></svg></span>从 Markdown 目录导入…</div>
+        <div class="em-item"><span><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 11v6" /><path d="M14 11v6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></span>清理孤儿附件</div>
       </div>
     </div>
     <div class="figure-col">
@@ -574,25 +726,25 @@ source_history_id: h_8821   <span class="cm"># 可追溯原卡片</span>
 
 <!-- ============ 7 AI 门控双态 ============ -->
 <div class="section">
-  <h2>7 · AI 门控双态对照（红线可视化）</h2>
+  <h2>7 · AI 门控双态对照（红线可视化） <span class="tag" style="background:#dbeafe;color:#1e40af">B2</span></h2>
   <p class="desc">同一界面的两个状态：<b>未启用 = 零可见零请求零费用</b>，任何 AI 控件都不渲染；启用后才出现 AI 动作与摘要。</p>
   <div class="gate-pair">
     <div class="gate-panel off">
-      <div class="gp-head">🔒 ai_enabled = false（默认）</div>
+      <div class="gp-head"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg> ai_enabled = false（默认）</div>
       <div class="gp-body">
-        <div class="ghost-zone">此处没有任何 AI 控件<br>列表无 ✦ 摘要行 ｜ 无自动标签按钮 ｜ 无问答入口</div>
+        <div class="ghost-zone">此处没有任何 AI 控件<br>列表无 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> 摘要行 ｜ 无自动标签按钮 ｜ 无问答入口</div>
         <p style="margin-top:10px;color:var(--text-secondary)">用户看到的是纯本地知识库：搜索框走 FTS + 拼音，全部功能可用，零网络请求。</p>
       </div>
     </div>
     <div class="gate-panel on">
-      <div class="gp-head">🔓 ai_enabled = true</div>
+      <div class="gp-head"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg> ai_enabled = true</div>
       <div class="gp-body">
         <div class="ai-actions">
-          <span class="ai-btn">✦ 生成本篇摘要</span>
-          <span class="ai-btn">🏷 自动打标签</span>
-          <span class="ai-btn">💬 问我的知识库</span>
+          <span class="ai-btn"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> 生成本篇摘要</span>
+          <span class="ai-btn"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z" /><circle cx="7.5" cy="7.5" r=".5" fill="currentColor" /></svg> 自动打标签</span>
+          <span class="ai-btn"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" /></svg> 问我的知识库</span>
         </div>
-        <p style="color:var(--text-secondary)">摘要写入索引供混合检索使用；自动标签给出建议 chips 由用户逐个采纳；出网内容仅限摘要 / 分块文本（原文不出设备，红线 §4.1）。AI 产物均带 ✦ 标记、可单条删除。</p>
+        <p style="color:var(--text-secondary)">摘要写入索引供混合检索使用；自动标签给出建议 chips 由用户逐个采纳；出网内容仅限摘要 / 分块文本（原文不出设备，红线 §4.1）。AI 产物均带 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> 标记、可单条删除。</p>
       </div>
     </div>
   </div>
@@ -600,11 +752,12 @@ source_history_id: h_8821   <span class="cm"># 可追溯原卡片</span>
 
 <!-- ============ 8 RAG 问答雏形 ============ -->
 <div class="section">
-  <h2>8 · 「问我的知识库」— 引用式问答雏形（AI 开启时）</h2>
+  <h2>8 · 「问我的知识库」— 引用式问答雏形（AI 开启时） <span class="tag" style="background:#dbeafe;color:#1e40af">B2 雏形</span> <span class="tag warn">完整 RAG 归 C</span></h2>
+  <p class="desc" style="color:#b45309"><b><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg> v1.2 边界澄清</b>：B2 这里只是<b>雏形</b>——检索走 <b>L1（关键词 + 拼音）</b>，在它找到的笔记上做问答。<b>真正的引用式 RAG（chunk 向量 + L2 混合检索 + L3 增强 + <code>[n]</code> 脚注规范）归 C 阶段</b>（v3.3 把 L2 与本地 embedding 推到了 C）。两者很容易看串，实现时别把 C 的能力承诺在 B2。</p>
   <p class="desc">B 阶段验收项之一：命中笔记作为上下文作答并标注来源。完整 L3 增强（rerank / 查询改写）留 C 阶段。</p>
   <div class="figure-wrap" style="justify-content:center">
     <div class="qa-box">
-      <div class="qa-input"><span>💬</span><span class="qa-q">我们之前存过哪些关于检索排序的内容？</span><span class="qa-send">提问</span></div>
+      <div class="qa-input"><span><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" /></svg></span><span class="qa-q">我们之前存过哪些关于检索排序的内容？</span><span class="qa-send">提问</span></div>
       <div class="qa-answer">
         知识库里有 2 篇相关笔记。<b>RRF 融合检索要点</b> 记录了核心做法：向量 top-20 与 FTS top-20 各取一路，用 <code>RRF(k=60)</code> 融合排序<sup>[1]</sup>；另一篇提到 FTS 需要 pinyin 列以支持拼音命中<sup>[2]</sup>。
         <br><br>两者结合的结论：中文场景下 BM25 一路必须带拼音列，否则精确词与拼音查询都会漏。
@@ -616,18 +769,94 @@ source_history_id: h_8821   <span class="cm"># 可追溯原卡片</span>
     </div>
   </div>
   <div class="callout ok">
-    ✓ <span><b>硬规则（写进提示词并测试钉住）</b>：回答中的事实陈述必须带 <sup>[n]</sup> 脚注；检索无命中时固定回复「知识库中没有相关笔记」，禁止编造。脚注点击跳转对应笔记并高亮片段。</span>
+    <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> <span><b>硬规则（写进提示词并测试钉住）</b>：回答中的事实陈述必须带 <sup>[n]</sup> 脚注；检索无命中时固定回复「知识库中没有相关笔记」，禁止编造。脚注点击跳转对应笔记并高亮片段。</span>
   </div>
 </div>
 
 <!-- ============ 9 细则 ============ -->
 <div class="section">
-  <h2>9 · 行为细则（开发前需逐条确认）</h2>
+  <h2>9 · B2 新增三项（原稿未画） <span class="tag" style="background:#dbeafe;color:#1e40af">B2</span></h2>
+  <p class="desc">这三项是规划 v3～v3.2 新增的，<b>v1.1 稿完全没有</b>。全部归 <b>B2</b>。</p>
+
+  <h3 style="margin:18px 0 8px">9.1 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" /></svg> 重现层 — 四级水位的第四层</h3>
+  <p class="desc">前三级只解决「怎么进来」。业界数据：多数 read-it-later 用户从不读自己保存的内容，<b>超过 90% 的保存链接六个月内失效</b>——「Collector's Fallacy」。只进不出的库不是知识库，是信息沼泽。业界跑通的解法<b>不是遗忘，是重现</b>（Readwise Daily Review，有用户连续近 1000 天）。</p>
+  <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+    <div style="border:1px solid var(--border);border-radius:10px;padding:12px;min-width:280px;background:var(--card-bg)">
+      <div style="font-size:12px;font-weight:600;margin-bottom:8px"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 6 4 14" /><path d="M12 6v14" /><path d="M8 8v12" /><path d="M4 4v16" /></svg> 知识库 <span style="display:inline-block;min-width:16px;padding:0 5px;border-radius:8px;background:#f59e0b;color:#fff;font-size:10px;text-align:center">3</span></div>
+      <div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">↑ 入口角标是重现的<b>唯一</b>呈现位置</div>
+      <div style="font-size:11.5px;font-weight:600;margin:10px 0 6px">今天回顾</div>
+      <div style="border-top:1px solid var(--border);padding:7px 0;font-size:11px"><b>RRF 融合检索要点</b><br><span style="color:var(--text-secondary)">3 个月前 · 当时信号 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" /></svg>收藏</span></div>
+      <div style="border-top:1px solid var(--border);padding:7px 0;font-size:11px"><b>报销单 FP-2026082400173</b><br><span style="color:var(--text-secondary)">5 个月前 · 当时信号 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.34-4.34" /><circle cx="11" cy="11" r="8" /></svg>找回×3</span></div>
+      <div style="border-top:1px solid var(--border);padding:7px 0;font-size:11px;color:var(--text-secondary)">不再推这条 · 降低频率</div>
+    </div>
+    <div style="flex:1;min-width:260px">
+      <table class="spec">
+        <tr><th style="width:110px">项</th><th>定义</th></tr>
+        <tr><td>频次</td><td>每天 <b>1~3 条</b>，<b>默认开</b>（§9 #10）。默认关就没人会去开，这层等于不存在；但强度必须最弱才敲得动默认开。</td></tr>
+        <tr><td>选取规则</td><td><b>久未访问 × 当初信号强度</b>。不上 SM-2/FSRS 调度器（那是 B 不做清单）。</td></tr>
+        <tr><td><b>硬约束</b></td><td style="color:#b45309"><b>不弹 toast、不发通知、只在入口角标呈现</b>。重现是唯一会主动找用户的机制，也因此是唯一能烧掉信任的机制。</td></tr>
+        <tr><td>失败处理</td><td>回访率 <b>&lt;20% 就降频</b>，而不是加强推送。</td></tr>
+        <tr><td>实现成本</td><td><b>几乎零新增</b>——notes / 信号 / 角标体系均已就位。</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h3 style="margin:22px 0 8px">9.2 转笔记模板 — 学 Obsidian Web Clipper</h3>
+  <p class="desc">Obsidian 官方 Web Clipper 靠<b>模板 + 变量</b>做提取。我们的变量<b>比它多且全自动</b>——它只有网页的 title/URL/Schema.org。</p>
+  <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+    <div style="border:1px solid var(--border);border-radius:10px;padding:12px;min-width:300px;background:var(--card-bg)">
+      <div style="font-size:11px;color:var(--text-secondary);margin-bottom:6px">转笔记弹窗 · 顶部新增一行</div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:6px 8px;border:1px solid var(--border);border-radius:7px">
+        <span>模板</span>
+        <select style="font-size:11px;padding:2px 4px"><option>默认（标题+正文+来源）</option><option>代码片段</option><option>会议记录</option></select>
+        <span style="color:var(--text-secondary)">可新建 / 编辑</span>
+      </div>
+      <div style="margin-top:10px;font-size:11px;font-family:monospace;background:var(--code-bg,#f6f8fa);padding:8px;border-radius:6px;line-height:1.7">
+        # {{title}}<br>
+        <br>
+        {{content}}<br>
+        <br>
+        &gt; 来自 {{source}} · {{time}}<br>
+        &gt; [原卡片]({{card_link}})
+      </div>
+    </div>
+    <div style="flex:1;min-width:250px">
+      <div class="callout ok" style="font-size:11.5px"><b>可用变量（全部自动产生，用户不需手填）</b><br>
+      <code>{{title}}</code> <code>{{content}}</code> <code>{{source}}</code>（来源应用）<code>{{source_icon}}</code> <code>{{content_type}}</code> <code>{{time}}</code> <code>{{ocr}}</code> <code>{{tags}}</code> <code>{{card_link}}</code></div>
+      <p class="desc" style="color:#b45309;margin-top:10px"><b>边界：只做变量替换，不做模板引擎</b>——不上条件 / 循环 / 函数。那是 Templater 的路，属于 Reor 式铺宽（风险登记册第一条）。</p>
+    </div>
+  </div>
+
+  <h3 style="margin:22px 0 8px">9.3 Bases 式字段视图 — 学 Obsidian Bases 的哲学</h3>
+  <p class="desc">Obsidian 2025 引入 <b>Bases</b>：把散在各文件 frontmatter 里的 properties 聚合成表格 / 卡片 / 列表，可筛选排序，且<b>不动本地存储模型</b>。我们学它的<b>做法</b>——不新建数据库，把<b>已有字段</b>聚合成视图。<b>而我们占便宜的地方是字段自动产生，用户不用像 Obsidian 那样手写 properties</b>。</p>
+  <div style="border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--card-bg);max-width:640px">
+    <div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px">知识库中列 / 收件箱顶部 · 新增一行控件</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px">
+      <span class="chipx active">全部</span>
+      <span class="chipx"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></svg> 截图</span>
+      <span class="chipx"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 8h.01" /><path d="M12 12h.01" /><path d="M14 8h.01" /><path d="M16 12h.01" /><path d="M18 8h.01" /><path d="M6 8h.01" /><path d="M7 16h10" /><path d="M8 12h.01" /><rect width="20" height="16" x="2" y="4" rx="2" /></svg> 代码</span>
+      <span class="chipx"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2" /><path d="M15 7h2a5 5 0 1 1 0 10h-2" /><line x1="8" x2="16" y1="12" y2="12" /></svg> 链接</span>
+      <span class="chipx dim">来源：VS Code</span>
+      <span class="chipx dim">标签：报销</span>
+      <span style="margin-left:auto;color:var(--text-secondary)">排序：最近使用 ▾　分组：按来源 ▾</span>
+    </div>
+  </div>
+  <table class="spec" style="margin-top:12px">
+    <tr><th style="width:130px">项</th><th>定义</th></tr>
+    <tr><td>可聚合的字段</td><td>全部<b>已存在且自动产生</b>：<code>tags</code> / <code>source</code>（来源应用）/ <code>content_type</code> / <code>copy_count</code> / <code>search_hit_count</code> / OCR 文本 / 时间。</td></tr>
+    <tr><td><b>存储代价</b></td><td><b style="color:#166534">零新增存储</b>——与「待沉淀区是虚拟视图」是同一条思想，只是从一个区推广到整个库。SQL 一查即得。</td></tr>
+    <tr><td>不做什么</td><td style="color:#b45309"><b>不做 Notion 式数据库视图 / 公式列</b>（§1.3「明确不做」保留）。只是筛选 + 排序 + 分组，不引入用户可定义字段。</td></tr>
+  </table>
+</div>
+
+<!-- ============ 10 行为细则 ============ -->
+<div class="section">
+  <h2>10 · 行为细则（开发前需逐条确认）</h2>
   <table class="spec">
     <tr><th style="width:150px">场景</th><th>行为定义</th></tr>
     <tr><td>新建空白笔记</td><td>顶部「＋」→ 右栏进入空编辑器（history_id 为空，无来源行）；落入当前所选文件夹。</td></tr>
     <tr><td>移动 / 归类</td><td>拖拽笔记到左栏文件夹；支持多选批量拖拽。收件箱常驻不可删除。</td></tr>
-    <tr><td>候选去重（收件箱）</td><td>同一卡片命中多信号只展示最高优先级者（⭐ &gt; 🔁 &gt; 🔍 &gt; 📏 &gt; ✦）；转笔记或忽略后退出视图且不再推荐。</td></tr>
+    <tr><td>候选去重（收件箱）</td><td>同一卡片命中多信号只展示最高优先级者（<svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" /></svg> &gt; <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" /></svg> &gt; <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.34-4.34" /><circle cx="11" cy="11" r="8" /></svg> &gt; <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z" /><path d="m14.5 12.5 2-2" /><path d="m11.5 9.5 2-2" /><path d="m8.5 6.5 2-2" /><path d="m17.5 15.5 2-2" /></svg> &gt; <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg>）；转笔记或忽略后退出视图且不再推荐。</td></tr>
     <tr><td>自动收集规则管理</td><td>设置 → 知识库 → 自动收集：逐类信号独立开关与阈值；新建规则支持「从这张卡片生成」（预填 source 或正则样例）。全部本地判定，不出网。</td></tr>
     <tr><td>删除笔记</td><td>二次确认 → 移入回收站保留 30 天（复用历史卡片的删除语义）；附件随笔记一起清理。</td></tr>
     <tr><td>混合检索退化</td><td>embedding 失败 / 超时 → 自动退回 FTS 结果并在搜索框下给一行灰色提示「语义服务暂不可用」。</td></tr>

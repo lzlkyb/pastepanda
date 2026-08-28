@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>知识库 · AI 自动标签 + 摘要 — 设计稿</title>
+
+<style>
+  /* 图标统一使用 lucide-react（真实代码 122 处引用）；设计稿以图标名标注占位 */
+  /* 真实 lucide 矢量图标（从 node_modules/lucide-react 提取 __iconNode 渲染，非文字占位） */
+  .lucide-ico{width:14px;height:14px;flex:none;vertical-align:-2.5px;margin:0 1px;overflow:visible;stroke:currentColor;color:var(--text-secondary)}
+</style>
+
+
+<style>
+  :root,
+[data-theme="ocean"] {
+    --app-bg: #F7F7F8;
+    --bg: var(--app-bg);
+    --card-bg: #fff;
+    --card-border: #E0E4EB;
+    --border: var(--card-border);
+    --text-primary: #0F172A;
+    --text-secondary: #495565;
+    --text-muted: #627083;
+    --accent: #0284C7;
+    --accent-solid: #027CBB;
+    --accent-light: #E0F2FE;
+    --warn-bg: #FFF7ED;
+    --warn-text: #C54A0A;
+    --ok-bg: #DCFCE7;
+    --ok-text: #15803D;
+    --radius-card: 16px;
+    --radius-ui: 8px;
+  }
+  [data-theme="midnight"] {
+    --app-bg: radial-gradient(100% 80% at 50% -10%, #1C1832 0%, #0B0B13 55%, #07070C 100%);
+    --bg: var(--app-bg);
+    --card-bg: #18181B;
+    --card-border: #27272A;
+    --border: var(--card-border);
+    --text-primary: #E4E4E7;
+    --text-secondary: #AFAFB7;
+    --text-muted: #8D8D95;
+    --accent: #818CF8;
+    --accent-solid: #666FC4;
+    --accent-light: #1E1B4B;
+    --warn-bg: #431407;
+    --warn-text: #FB923C;
+    --ok-bg: #14532D;
+    --ok-text: #4ADE80;
+    --radius-card: 16px;
+    --radius-ui: 8px;
+  }
+  [data-theme="forest"] {
+    --app-bg: linear-gradient(180deg, #F5F1E3 0%, #EAE5D1 55%, #DCD6BD 100%);
+    --bg: var(--app-bg);
+    --card-bg: #fff;
+    --card-border: #D1D9D3;
+    --border: var(--card-border);
+    --text-primary: #171717;
+    --text-secondary: #58524F;
+    --text-muted: #726E6B;
+    --accent: #059669;
+    --accent-solid: #05875F;
+    --accent-light: #ECFDF5;
+    --warn-bg: #FFF7ED;
+    --warn-text: #C54A0A;
+    --ok-bg: #DCFCE7;
+    --ok-text: #15803D;
+    --radius-card: 16px;
+    --radius-ui: 8px;
+  }
+  [data-theme="blossom"] {
+    --app-bg: linear-gradient(168deg, #FFE4EF 0%, #FFC9DD 42%, #FFAECF 78%, #FF9BC4 100%);
+    --bg: var(--app-bg);
+    --card-bg: #fff;
+    --card-border: #F9D3E2;
+    --border: var(--card-border);
+    --text-primary: #3D2231;
+    --text-secondary: #5F4755;
+    --text-muted: #86596D;
+    --accent: #F0568C;
+    --accent-solid: #CE3B70;
+    --accent-light: #FFDDEC;
+    --warn-bg: #FFF7ED;
+    --warn-text: #C54A0A;
+    --ok-bg: #DCFCE7;
+    --ok-text: #15803D;
+    --radius-card: 16px;
+    --radius-ui: 8px;
+  }
+  [data-theme="dawn"] {
+    --app-bg: linear-gradient(180deg, #FFF8EE 0%, #FFE9D2 42%, #FFD9AE 72%, #F9C78F 100%);
+    --bg: var(--app-bg);
+    --card-bg: #fff;
+    --card-border: #F0DDC8;
+    --border: var(--card-border);
+    --text-primary: #2B2016;
+    --text-secondary: #5C4B38;
+    --text-muted: #7D6B58;
+    --accent: #E8734A;
+    --accent-solid: #C85A34;
+    --accent-light: #FFEDE2;
+    --warn-bg: #FFF7ED;
+    --warn-text: #C54A0A;
+    --ok-bg: #DCFCE7;
+    --ok-text: #15803D;
+    --radius-card: 16px;
+    --radius-ui: 8px;
+  }
+  [data-theme="ocean-dark"] {
+    --app-bg: radial-gradient(130% 110% at 70% -5%, #1E5A82 0%, #0E3355 42%, #061A33 100%);
+    --bg: var(--app-bg);
+    --card-bg: #0A1628;
+    --card-border: #162B45;
+    --border: var(--card-border);
+    --text-primary: #E0E8F0;
+    --text-secondary: #A2B6CD;
+    --text-muted: #7994B4;
+    --accent: #3B9EFF;
+    --accent-solid: #2D78C2;
+    --accent-light: #0A1E3A;
+    --warn-bg: #431407;
+    --warn-text: #FB923C;
+    --ok-bg: #14532D;
+    --ok-text: #4ADE80;
+    --radius-card: 16px;
+    --radius-ui: 8px;
+  }
+  /* ===== 对齐版主题切换器（与 kb-a / kb-b 一致） ===== */
+  .theme-bar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+    display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+    padding: 8px 12px; background: var(--card-bg, #fff);
+    border-bottom: 1px solid var(--card-border, #e8e8ed);
+    font-family: "SF Pro Text","Microsoft YaHei","Segoe UI",system-ui,-apple-system,sans-serif;
+    font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  }
+  .theme-bar .tb-label { color: var(--text-secondary); font-weight: 600; }
+  .theme-bar button {
+    cursor: pointer; border: 1px solid var(--card-border); background: var(--card-bg, #fff);
+    color: var(--text-primary); border-radius: 999px; padding: 4px 12px; font-size: 11.5px;
+  }
+  .theme-bar button.active { background: var(--accent-solid); color: #fff; border-color: var(--accent-solid); }
+  body { padding-top: 56px; }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "SF Pro Text", "Microsoft YaHei", "Segoe UI", system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text-primary);
+    padding: 28px 20px 60px;
+    display: flex; flex-direction: column; align-items: center; gap: 32px;
+  }
+  .doc-head { max-width: 980px; width: 100%; }
+  .doc-head h1 { font-size: 21px; font-weight: 700; }
+  .doc-head p.meta { margin-top: 6px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.7; }
+  .doc-head p.meta b { color: var(--text-primary); font-weight: 600; }
+
+  .section {
+    background: var(--card-bg); border-radius: var(--radius-card); padding: 24px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06); max-width: 980px; width: 100%;
+  }
+  .section > h2 { font-size: 15px; font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  .section > p.desc { font-size: 12.5px; color: var(--text-secondary); margin-bottom: 18px; line-height: 1.7; }
+  h2 .tag { font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+    background: var(--accent-light); color: var(--accent-solid); }
+  .tag.warn { background: var(--warn-bg); color: var(--warn-text); }
+  .tag.b1 { background: #dcfce7; color: #166534; }
+
+  .pin { display: inline-flex; align-items: center; justify-content: center;
+    min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px;
+    background: #e11d48; color: #fff; font-size: 10.5px; font-weight: 700;
+    vertical-align: 2px; margin-left: 2px; box-shadow: 0 1px 3px rgba(225,29,72,.35); }
+  .legend { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--card-border); }
+  .legend ol { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .legend li { font-size: 12.5px; color: var(--text-secondary); line-height: 1.65; display: flex; gap: 8px; }
+  .legend li b { color: var(--text-primary); font-weight: 600; }
+  .legend .pin { flex: none; margin-top: 2px; }
+  .ref { color: var(--accent-solid); font-weight: 600; font-size: 11.5px; }
+  .fig-label { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: .04em; }
+
+  .figure-wrap { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+  .figure-col { display: flex; flex-direction: column; gap: 8px; }
+  .menu-note { font-size: 11px; color: var(--text-muted); margin-top: 6px; line-height: 1.6; }
+  .callout { display: flex; gap: 10px; background: var(--warn-bg); border-radius: 10px;
+    padding: 10px 12px; font-size: 12px; color: var(--warn-text); line-height: 1.65; margin-top: 14px; }
+  .callout.ok { background: var(--ok-bg); color: var(--ok-text); }
+
+  /* ===== 弹窗（复用 kb-a 规范，520px） ===== */
+  .dialog { width: 520px; background: var(--card-bg); border-radius: var(--radius-card);
+    border: 1px solid var(--card-border);
+    box-shadow: 0 18px 50px rgba(0,0,0,0.18), 0 4px 14px rgba(0,0,0,0.08); overflow: hidden; }
+  .dlg-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; }
+  .dlg-title-input { flex: 1; border: 1px solid transparent; border-radius: var(--radius-ui);
+    font-size: 15px; font-weight: 600; color: var(--text-primary);
+    padding: 6px 10px; background: transparent; outline: none; }
+  .dlg-title-input:hover { background: var(--bg); }
+  .dlg-title-input:focus { border-color: var(--accent); background: var(--card-bg); }
+  .dlg-close { width: 26px; height: 26px; border-radius: 999px; font-size: 13px; color: var(--text-secondary);
+    display: flex; align-items: center; justify-content: center; background: transparent; }
+  .dlg-close:hover { background: var(--bg); }
+  .dlg-meta { display: flex; align-items: center; gap: 8px; padding: 0 16px 10px; font-size: 11.5px; color: var(--text-secondary); }
+  .chip-src { display: inline-flex; align-items: center; gap: 5px; background: var(--bg); border: 1px solid var(--card-border);
+    border-radius: 999px; padding: 2px 9px; font-size: 11px; color: var(--text-secondary); }
+  .chip-src b { color: var(--text-primary); font-weight: 500; }
+  .link-back { color: var(--accent-solid); font-size: 11.5px; margin-left: auto; }
+
+  /* AI 辅助区（本稿核心新增） */
+  .ai-zone { margin: 4px 16px 0; border: 1px solid var(--card-border); border-radius: 10px;
+    background: var(--accent-light); overflow: hidden; }
+  .ai-zone .az-head { display: flex; align-items: center; gap: 6px; padding: 7px 12px;
+    font-size: 10.5px; font-weight: 700; letter-spacing: .05em; color: var(--accent-solid);
+    border-bottom: 1px solid var(--card-border); }
+  .ai-zone .az-actions { margin-left: auto; display: flex; gap: 12px; font-size: 10.5px; font-weight: 500; cursor: pointer; }
+  .ai-zone .az-body { padding: 9px 12px; font-size: 12px; line-height: 1.6; color: var(--text-secondary); }
+  .ai-zone .az-summary { color: var(--text-primary); }
+  .ai-loading { display: flex; align-items: center; gap: 8px; padding: 11px 12px; font-size: 11.5px; color: var(--text-muted); }
+  .ai-loading .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-solid);
+    animation: pulse 1s infinite ease-in-out; }
+  .ai-loading .dot:nth-child(2){ animation-delay:.15s } .ai-loading .dot:nth-child(3){ animation-delay:.3s }
+  @keyframes pulse { 0%,100%{ opacity:.25 } 50%{ opacity:1 } }
+
+  .dlg-split { display: flex; border-top: 1px solid var(--card-border); border-bottom: 1px solid var(--card-border); }
+  .pane { width: 50%; min-height: 240px; }
+  .pane.edit { border-right: 1px solid var(--card-border); }
+  .pane-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px;
+    font-size: 10.5px; font-weight: 600; letter-spacing: .05em; color: var(--text-muted); background: #fafafa; }
+  .pane-edit-area { padding: 12px 14px; font-size: 12.5px; line-height: 1.75; color: var(--text-primary);
+    font-family: 'Cascadia Code', Consolas, 'Courier New', monospace; white-space: pre-wrap; }
+  .pane-preview { padding: 12px 16px; font-size: 12.5px; line-height: 1.75; }
+  .pane-preview h3 { font-size: 13.5px; margin: 4px 0 6px; }
+  .pane-preview p { margin-bottom: 6px; }
+  .caret { display: inline-block; width: 1px; height: 13px; background: var(--accent); vertical-align: -2px; }
+
+  .dlg-foot { display: flex; align-items: center; gap: 8px; padding: 12px 16px; }
+  .tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .tag-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--accent-light);
+    color: var(--accent-solid); border-radius: 999px; padding: 3px 10px; font-size: 11.5px; font-weight: 500; }
+  .tag-chip i { font-style: normal; opacity: .55; font-size: 10.5px; }
+  /* 自动标签的建议态：虚线待采纳 */
+  .tag-suggest { display: inline-flex; align-items: center; gap: 5px; background: transparent;
+    color: var(--accent-solid); border: 1px dashed var(--accent-solid); border-radius: 999px;
+    padding: 3px 9px; font-size: 11.5px; font-weight: 500; }
+  .tag-suggest .adopt { font-weight: 700; cursor: pointer; border-left: 1px solid var(--accent-solid); padding-left: 5px; }
+  .tag-suggest .ai-mark { opacity: .8; }
+  .tag-add { border: 1px dashed var(--card-border); color: var(--text-muted);
+    border-radius: 999px; padding: 3px 10px; font-size: 11.5px; background: transparent; }
+  .foot-actions { margin-left: auto; display: flex; gap: 8px; }
+  .btn { border-radius: var(--radius-ui); font-size: 12.5px; font-weight: 600;
+    padding: 7px 16px; border: 1px solid transparent; }
+  .btn.ghost { background: var(--card-bg); border-color: var(--card-border); color: var(--text-primary); }
+  .btn.primary { background: var(--accent-solid); color: #fff; box-shadow: 0 2px 8px rgba(0,108,190,.25); }
+  .kbd { font-family: Consolas, monospace; font-size: 10px; border: 1px solid var(--card-border);
+    border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--text-secondary); background: #fafafa; }
+
+  /* 列表（复用 kb-b 中栏） */
+  .note-list { display: flex; flex-direction: column; gap: 8px; width: 520px; }
+  .note-row { display: flex; align-items: center; gap: 10px; background: var(--card-bg);
+    border: 1px solid var(--card-border); border-radius: var(--radius-card); padding: 11px 14px; }
+  .note-row .nico { font-size: 15px; }
+  .note-row .ntitle { font-size: 13px; font-weight: 600; }
+  .note-row .nsnip { font-size: 11.5px; color: var(--text-secondary); margin-top: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
+  .note-row .nmeta { margin-left: auto; text-align: right; font-size: 10.5px; color: var(--text-muted); }
+  .mini-tags { display: flex; gap: 4px; justify-content: flex-end; margin-top: 3px; }
+  .mini-tag { font-size: 9.5px; color: var(--accent-solid); background: var(--accent-light);
+    border-radius: 999px; padding: 1px 7px; }
+  .ai-line { display: block; font-size: 10px; color: var(--accent-solid); background: var(--accent-light);
+    border-radius: 6px; padding: 1px 6px; margin-top: 4px; max-width: 360px; }
+
+  /* AI 门控双态（复用 kb-b §7） */
+  .gate-pair { display: flex; gap: 20px; flex-wrap: wrap; }
+  .gate-panel { flex: 1; min-width: 320px; border-radius: 12px; overflow: hidden; border: 1px solid var(--card-border); }
+  .gate-panel .gp-head { padding: 8px 14px; font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .gate-panel.off .gp-head { background: #f4f4f6; color: var(--text-secondary); }
+  .gate-panel.on .gp-head { background: var(--accent-light); color: var(--accent-solid); }
+  .gp-body { padding: 12px 14px; font-size: 12px; line-height: 1.7; }
+  .ghost-zone { border: 1.5px dashed var(--card-border); border-radius: 10px; padding: 14px;
+    text-align: center; color: var(--text-muted); font-size: 11.5px; background: #fcfcfd; }
+  .ai-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .ai-btn { font-size: 11px; color: var(--accent-solid); background: var(--accent-light);
+    border-radius: 999px; padding: 4px 11px; font-weight: 600; }
+
+  table.spec { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.spec th, table.spec td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--card-border); vertical-align: top; line-height: 1.6; }
+  table.spec th { font-size: 11px; color: var(--text-muted); font-weight: 600; letter-spacing: .04em; }
+  table.spec td:first-child { white-space: nowrap; font-weight: 600; }
+  table.spec td { color: var(--text-secondary); }
+  table.spec td b { color: var(--text-primary); }
+  code.inl { font-family: Consolas, monospace; font-size: 11.5px; background: var(--bg);
+    border: 1px solid var(--card-border); border-radius: 4px; padding: 0 4px; color: var(--text-primary); }
+</style>
+
+</head>
+<body>
+
+<div class="theme-bar">
+  <span class="tb-label">对齐版·主题预览：</span>
+  <button data-t="ocean" class="active">ocean 默认浅</button>
+  <button data-t="midnight">midnight 暗</button>
+  <button data-t="forest">forest 护眼</button>
+  <button data-t="blossom">blossom 粉</button>
+  <button data-t="dawn">dawn 暖橙</button>
+  <button data-t="ocean-dark">ocean-dark 深蓝</button>
+</div>
+<script>
+  (function(){
+    var bar = document.querySelector('.theme-bar');
+    if(!bar) return;
+    bar.addEventListener('click', function(e){
+      var b = e.target.closest('button'); if(!b) return;
+      document.documentElement.setAttribute('data-theme', b.dataset.t);
+      bar.querySelectorAll('button').forEach(function(x){ x.classList.toggle('active', x===b); });
+    });
+  })();
+</script>
+
+
+<div class="doc-head">
+  <h1>知识库 · AI 自动标签 + 摘要 — 设计稿</h1>
+  <p class="meta">
+    对应规划：<b>《个人知识库与笔记-规划》v3.6 §8.1 / §8.2（M2a / B1）</b> ｜ 版本 <b>v1.0 · 2026-08-27</b>（对齐 v3.6）｜ 状态：<b>规划已确认 · 待开工</b><br>
+    <b style="color:#166534">ⓘ v3.6 归属调整</b>：本能力原在 B2（AI 三件套），经市场调研（<code>docs/kb-market-fit.md</code>）判定「AI 默认在场」是 2026 基准，<b>前移至 B1 / M2a</b>——知识库交付即带「自动标签 + 一行摘要」，体验不再像 2023 年的纯记录工具。问答雏形留 B2，C 升级为「对话式问知识库」。<br>
+    范围：转笔记弹窗的 AI 区 · 知识库编辑器的 AI 摘要块 + 标签建议 · 列表 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> 摘要行 · <b>AI 门控双态（仅标签 + 摘要，问答归 C）</b>。本稿不含：语义检索 L2（C）、对话式问答（C）、出网闸细节（见规划 §4）。<br>
+    标注约定：<span class="pin">n</span> 设计说明 ／ <span class="ref">D*</span> 规划决策编号 ／ <span class="tag warn">待确认</span> 分叉点。转笔记弹窗全貌见 <b>kb-a-note-dialog.html</b>，知识库视图见 <b>kb-b-library-view.html</b>。
+  </p>
+</div>
+
+<!-- ============ 1 呈现位置 ============ -->
+<div class="section">
+  <h2>1 · 能力在哪些界面呈现 <span class="tag b1">B1</span></h2>
+  <p class="desc">自动标签与摘要是<b>一对共生能力</b>，出现在所有「笔记被创建或编辑」的入口。它们共享同一个 AI 调用（一次生成、两段产物），受 <code>ai_enabled</code> 门控。</p>
+  <table class="spec">
+    <tr><th style="width:170px">界面</th><th>呈现形态</th></tr>
+    <tr><td><b>转笔记弹窗</b><br><span class="ref">D6</span></td><td>标题下方插入 AI 区：先一行摘要、再标签建议 chips；保存时与正文一起落库（见 §2）。</td></tr>
+    <tr><td><b>知识库编辑器</b><br><span class="ref">D7</span></td><td>正文上方固定「<svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> AI 摘要」块；标签栏内自动标签以<b>虚线建议态</b>混入，用户逐一点击采纳（见 §3）。</td></tr>
+    <tr><td><b>笔记列表 / 中栏</b></td><td>每条笔记下方一行 <code><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> 摘要</code> 预览（复用 kb-b §2 的 <code>.ai-line</code>），帮助用户在列表里快速判断要不要点开（见 §4）。</td></tr>
+  </table>
+  <div class="legend">
+    <ol>
+      <li><span class="pin">1</span><span><b>一次调用、两段产物</b>：AI 输出 <code>{ summary: 一行, tags: [...] }</code>，摘要进索引供混合检索，标签给用户采纳。不分别调两次模型。</span></li>
+      <li><span class="pin">2</span><span><b>标签永远「建议不强制」</b>：AI 给的标签是虚线建议态，用户点击 ⨁ 才变成正式 <code class="inl">#标签</code>；不采纳则什么都不写，绝不静默污染 <code class="inl">note_tags</code>。</span></li>
+      <li><span class="pin">3</span><span><b>摘要可删、可重生成</b>：两条 AI 产物均带 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> 标记，可单条删除（红线 §4.2：「AI 产物用户可随时撤销」）。删后该笔记退回「无 AI 辅助」状态，不影响原文。</span></li>
+    </ol>
+  </div>
+</div>
+
+<!-- ============ 2 转笔记弹窗 ============ -->
+<div class="section">
+  <h2>2 · 转笔记弹窗中的 AI 辅助 <span class="tag b1">B1</span> <span class="tag">复用 dialog 规范</span></h2>
+  <p class="desc"><code>ai_enabled = true</code> 时，弹窗标题与来源行之间插入 AI 区。三种子状态：生成中 / 完成 / 已删。</p>
+
+  <div class="figure-wrap">
+    <div class="figure-col">
+      <span class="fig-label">状态一 · 生成中（保存或打开后即时触发）</span>
+      <div class="dialog" style="margin-top:8px">
+        <div class="dlg-head">
+          <input class="dlg-title-input" value="RRF 融合检索要点" placeholder="未命名笔记">
+          <span class="dlg-close"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></span>
+        </div>
+        <div class="dlg-meta">
+          <span class="chip-src"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 14h10" /><path d="M16 4h2a2 2 0 0 1 2 2v1.344" /><path d="m17 18 4-4-4-4" /><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113" /><rect x="8" y="2" width="8" height="4" rx="1" /></svg> 剪贴板 · 文本 · <b>今天 14:32</b></span>
+          <span class="link-back">查看原卡片 ↗</span>
+        </div>
+        <div class="ai-zone">
+          <div class="az-head"><span><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> AI 辅助</span><span class="az-actions"><span>重生成</span><span>删除</span></span></div>
+          <div class="ai-loading"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span>正在生成摘要与标签…</span></div>
+        </div>
+        <div class="dlg-split">
+          <div class="pane edit">
+            <div class="pane-head"><span>MARKDOWN</span><span>编辑</span></div>
+            <div class="pane-edit-area">## 为什么混合检索
+
+纯向量会漏掉**精确词**
+匹配（型号、代号），BM25
+补上这一路：
+
+- 向量 top-20
+- FTS top-20
+- RRF(k=60) 融合<span class="caret"></span></div>
+          </div>
+          <div class="pane">
+            <div class="pane-head"><span>预览</span><span>MarkdownRenderer</span></div>
+            <div class="pane-preview"><h3>为什么混合检索</h3><p>纯向量会漏掉<b>精确词</b>匹配（型号、代号），BM25 补上这一路：</p><ul><li>向量 top-20</li><li>FTS top-20</li><li><code>RRF(k=60)</code> 融合</li></ul></div>
+          </div>
+        </div>
+        <div class="dlg-foot">
+          <div class="tags"><button class="tag-add">＋ 标签</button></div>
+          <div class="foot-actions"><button class="btn ghost">取消</button><button class="btn primary">保存</button></div>
+        </div>
+      </div>
+      <p class="menu-note">生成中状态不阻塞编辑：用户可继续打字，AI 区异步回填。超时（规划 §10 性能预算）则退化为本稿 §1 的「无 AI 辅助」。</p>
+    </div>
+
+    <div class="figure-col">
+      <span class="fig-label">状态二 · 完成（摘要 + 标签建议）</span>
+      <div class="dialog" style="margin-top:8px">
+        <div class="dlg-head">
+          <input class="dlg-title-input" value="RRF 融合检索要点" placeholder="未命名笔记">
+          <span class="dlg-close"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></span>
+        </div>
+        <div class="dlg-meta">
+          <span class="chip-src"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 14h10" /><path d="M16 4h2a2 2 0 0 1 2 2v1.344" /><path d="m17 18 4-4-4-4" /><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113" /><rect x="8" y="2" width="8" height="4" rx="1" /></svg> 剪贴板 · 文本 · <b>今天 14:32</b></span>
+          <span class="link-back">查看原卡片 ↗</span>
+        </div>
+        <div class="ai-zone">
+          <div class="az-head"><span><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> AI 辅助</span><span class="az-actions"><span>重生成</span><span>删除</span></span></div>
+          <div class="az-body"><span class="ai-summary">摘要：混合检索的动机与 RRF 融合公式——向量与 BM25 两路召回后用 RRF(k=60) 融合排序，中文场景 BM25 需带拼音列。</span></div>
+        </div>
+        <div class="dlg-split">
+          <div class="pane edit">
+            <div class="pane-head"><span>MARKDOWN</span><span>编辑</span></div>
+            <div class="pane-edit-area">## 为什么混合检索
+
+纯向量会漏掉**精确词**
+匹配（型号、代号），BM25
+补上这一路：
+
+- 向量 top-20
+- FTS top-20
+- RRF(k=60) 融合</div>
+          </div>
+          <div class="pane">
+            <div class="pane-head"><span>预览</span><span>MarkdownRenderer</span></div>
+            <div class="pane-preview"><h3>为什么混合检索</h3><p>纯向量会漏掉<b>精确词</b>匹配（型号、代号），BM25 补上这一路：</p><ul><li>向量 top-20</li><li>FTS top-20</li><li><code>RRF(k=60)</code> 融合</li></ul></div>
+          </div>
+        </div>
+        <div class="dlg-foot">
+          <div class="tags">
+            <span class="tag-suggest"><span class="ai-mark"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg></span>#检索 <span class="adopt">⨁</span></span>
+            <span class="tag-suggest"><span class="ai-mark"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg></span>#sqlite <span class="adopt">⨁</span></span>
+            <span class="tag-chip">#混合检索 <i><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></i></span>
+            <button class="tag-add">＋ 标签</button>
+          </div>
+          <div class="foot-actions"><button class="btn ghost">取消</button><button class="btn primary">保存</button></div>
+        </div>
+      </div>
+      <p class="menu-note">虚线 chip = 建议态，点击 ⨁ 采纳变正式标签（实线）；<code>#混合检索</code> 为用户手填示例。保存时只落正式标签 + 摘要。</p>
+    </div>
+  </div>
+
+  <div class="legend">
+    <ol>
+      <li><span class="pin">1</span><span><b>触发时机</b>：弹窗打开且 <code>ai_enabled</code> 时自动触发；若用户在生成完成前点保存，则带上「待生成」标记，落库后后台补生成并刷新（不阻塞保存）。</span></li>
+      <li><span class="pin">2</span><span><b>标签建议上限</b>：默认最多给 <b>5 个</b>建议（避免噪音）；用户可继续手填任意个。<span class="tag warn">待确认</span> 上限是否 3 / 5 / 不限制。</span></li>
+      <li><span class="pin">3</span><span><b>与「＋标签」共存</b>：AI 建议与手动新增是两条独立入口，手动标签不带 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg>、不受重生成影响。</span></li>
+      <li><span class="pin">4</span><span><b>重生成</b>：清空当前摘要 + 建议态、重新调用；原已采纳的正式标签保留，仅刷新「未采纳的建议」。</span></li>
+    </ol>
+  </div>
+</div>
+
+<!-- ============ 3 编辑器 ============ -->
+<div class="section">
+  <h2>3 · 知识库编辑器中的 AI 摘要块 <span class="tag b1">B1</span></h2>
+  <p class="desc">在知识库视图（kb-b §2）的右栏编辑器里，摘要块固定在标题下方、正文上方；标签栏复用 §2 的建议态。</p>
+  <div class="figure-wrap">
+    <div class="figure-col">
+      <span class="fig-label">编辑器右栏 · 顶部 AI 摘要块 + 标签建议</span>
+      <div style="width:420px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.07);margin-top:8px">
+        <div style="display:flex;align-items:center;gap:8px;padding:12px 16px 6px">
+          <span style="font-size:15px;font-weight:700;flex:1">RRF 融合检索要点</span>
+          <span style="font-size:13px;color:var(--text-secondary)"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l4 2" /></svg></span><span style="font-size:13px;color:var(--text-secondary)">⤓</span><span style="font-size:13px;color:var(--text-secondary)"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 11v6" /><path d="M14 11v6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></span>
+        </div>
+        <div class="ai-zone" style="margin:0 16px">
+          <div class="az-head"><span><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> AI 摘要</span><span class="az-actions"><span>重生成</span><span>删除</span></span></div>
+          <div class="az-body"><span class="ai-summary">混合检索的动机与 RRF 融合公式——向量与 BM25 两路召回后用 RRF(k=60) 融合排序，中文场景 BM25 需带拼音列。</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--card-border)">
+          <span style="font-size:10.5px;color:var(--text-muted)"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></svg> 学习 ｜ <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg> 更新于 2 小时前 ｜ ↳ 来源：剪贴板卡片 ↗</span>
+        </div>
+        <div style="padding:10px 16px;font-size:12px;line-height:1.75">
+          <div style="font-size:12.5px;font-weight:600">## 为什么混合检索</div>
+          <div style="color:var(--text-secondary);margin-top:4px">纯向量会漏掉精确词匹配（型号、代号），BM25 补上这一路……</div>
+        </div>
+        <div class="dlg-foot" style="border-top:1px solid var(--card-border)">
+          <div class="tags">
+            <span class="tag-chip">#检索 <i><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></i></span>
+            <span class="tag-suggest"><span class="ai-mark"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg></span>#sqlite <span class="adopt">⨁</span></span>
+            <span class="tag-suggest"><span class="ai-mark"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg></span>#混合检索 <span class="adopt">⨁</span></span>
+            <button class="tag-add">＋ 标签</button>
+          </div>
+          <div class="foot-spacer" style="margin-left:auto;display:flex;gap:10px;font-size:10.5px;color:var(--text-secondary)"><span><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 8h.01" /><path d="M12 12h.01" /><path d="M14 8h.01" /><path d="M16 12h.01" /><path d="M18 8h.01" /><path d="M6 8h.01" /><path d="M7 16h10" /><path d="M8 12h.01" /><rect width="20" height="16" x="2" y="4" rx="2" /></svg> Ctrl+S 保存</span><span>已自动保存 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="figure-col" style="max-width:340px;justify-content:center">
+      <table class="spec">
+        <tr><th style="width:120px">要点</th><th>定义</th></tr>
+        <tr><td>位置</td><td>恒在标题下、正文上，折叠后可收起为单行「<svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> 摘要：…」。</td></tr>
+        <tr><td>重生成</td><td>正文变更 ≥ 阈值（如 50 字）后提示「内容已变，是否重生成摘要？」，不自动覆盖旧摘要。</td></tr>
+        <tr><td>删除</td><td>删除后该笔记无摘要块，标签建议一并消失；不删除原文、不删除已采纳标签。</td></tr>
+        <tr><td>索引联动</td><td>摘要写入 <code class="inl">notes_fts</code>（规划 §7 L1 即可命中）；C 阶段 L2 混合检索直接复用此摘要字段，无需重算。</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 4 列表 ============ -->
+<div class="section">
+  <h2>4 · 列表中的 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> 摘要行 <span class="tag b1">B1</span></h2>
+  <p class="desc">笔记列表（kb-b §2 中栏 / 收件箱）每条下方展示一行 AI 摘要预览，帮助用户不点开就判断价值。<code>ai_enabled = false</code> 时整行不存在。</p>
+  <div class="note-list" style="margin-top:8px">
+    <div class="note-row">
+      <span class="nico"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4" /><path d="M2 10h4" /><path d="M2 14h4" /><path d="M2 18h4" /><rect width="16" height="20" x="4" y="2" rx="2" /><path d="M9.5 8h5" /><path d="M9.5 12H16" /><path d="M9.5 16H14" /></svg></span>
+      <div style="min-width:0;flex:1">
+        <div class="ntitle">RRF 融合检索要点</div>
+        <div class="nsnip">纯向量会漏掉精确词匹配，BM25 补上这一路……</div>
+        <span class="ai-line"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> 摘要：混合检索动机与 RRF 融合公式，中文 BM25 需带拼音列</span>
+      </div>
+      <div class="nmeta">今天 14:36<div class="mini-tags"><span class="mini-tag">#检索</span><span class="mini-tag">#sqlite</span></div></div>
+    </div>
+    <div class="note-row">
+      <span class="nico"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4" /><path d="M2 10h4" /><path d="M2 14h4" /><path d="M2 18h4" /><rect width="16" height="20" x="4" y="2" rx="2" /><path d="M9.5 8h5" /><path d="M9.5 12H16" /><path d="M9.5 16H14" /></svg></span>
+      <div style="min-width:0;flex:1">
+        <div class="ntitle">NC65 单据模板 SQL 备忘</div>
+        <div class="nsnip">maintain.insert 自动生成主键时注意……</div>
+        <span class="ai-line"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> 摘要：NC65 单据模板的 SQL 主键生成陷阱与避坑写法</span>
+      </div>
+      <div class="nmeta">昨天<div class="mini-tags"><span class="mini-tag">#nc65</span></div></div>
+    </div>
+  </div>
+  <p class="menu-note">摘要行截断到约 40 字；与正文摘要同源于同一次 AI 生成，保证弹窗 / 编辑器 / 列表三处一致。</p>
+</div>
+
+<!-- ============ 5 门控双态 ============ -->
+<div class="section">
+  <h2>5 · AI 门控双态（仅标签 + 摘要） <span class="tag b1">B1</span></h2>
+  <p class="desc">红线支柱 3：<code>ai_enabled = false</code> 时<b>零可见、零请求、零费用</b>，任何 AI 控件不渲染；启用后仅出现「摘要 + 自动标签」两项（问答归 C，不在本稿）。</p>
+  <div class="gate-pair">
+    <div class="gate-panel off">
+      <div class="gp-head"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg> ai_enabled = false（默认）</div>
+      <div class="gp-body">
+        <div class="ghost-zone">转笔记弹窗无 AI 区 ｜ 编辑器无摘要块 ｜ 列表无 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> 行 ｜ 无标签建议<br>纯本地知识库：搜索走 FTS + 拼音，全部功能可用，零网络请求。</div>
+        <p style="margin-top:10px;color:var(--text-secondary)">用户看到的就是 v3.5 前的纯记录工具——本稿只在前移AI，<b>绝不改变「关掉 AI 就完全离线」的承诺</b>。</p>
+      </div>
+    </div>
+    <div class="gate-panel on">
+      <div class="gp-head"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg> ai_enabled = true</div>
+      <div class="gp-body">
+        <div class="ai-actions">
+          <span class="ai-btn"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> 生成本篇摘要</span>
+          <span class="ai-btn"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z" /><circle cx="7.5" cy="7.5" r=".5" fill="currentColor" /></svg> 自动打标签</span>
+        </div>
+        <p style="color:var(--text-secondary)">两者在一次调用里完成。出网内容仅限<b>摘要文本与分块文本</b>（原文不出设备，红线 §4.1）；AI 产物均带 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg>、可单条删除。问答入口不在 B1，归 C 阶段。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 6 红线与验收 ============ -->
+<div class="section">
+  <h2>6 · 红线与验收口径</h2>
+  <div class="callout">
+    <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg> <span><b>不可越过的红线（规划 §4）</b>：① 出网内容仅限摘要/分块文本，<b>原文与完整正文永不出设备</b>（§4.1）；② AI 产物（摘要、标签建议）用户可单条删除、可一键关闭（§4.2）；③ <code>ai_enabled=false</code> 时<b>不发起任何请求</b>、控件不渲染；④ 自动标签<b>只建议不写入</b>，采纳动作必须由用户触发。</span>
+  </div>
+  <div class="callout ok">
+    <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> <span><b>验收口径（B1）</b>：① <code>ai_enabled</code> 切换时，弹窗/编辑器/列表三处 AI 呈现同步出现或消失，零残留 DOM；② 生成中态不阻塞保存，超时退化无报错；③ 标签建议被采纳才进 <code>note_tags</code>，未采纳零写入；④ 关闭 AI 后，已生成的摘要/标签仍在（本地数据主权），但不再有新生成、不再有出网。</span>
+  </div>
+</div>
+
+<!-- ============ 7 行为细则 ============ -->
+<div class="section">
+  <h2>7 · 行为细则（开发前需逐条确认）</h2>
+  <table class="spec">
+    <tr><th style="width:150px">场景</th><th>行为定义</th></tr>
+    <tr><td>调用模型</td><td>复用规划 §4 的本地/可配置模型通道（与 C 阶段问答同源）；标签与摘要<b>同一请求</b>返回，字段 <code>{summary, tags[]}</code>。模型失败时整体退化「无 AI 辅助」。</td></tr>
+    <tr><td>标签建议生成</td><td>从正文抽取 1–5 个高频实体/主题词；优先复用<b>既有标签</b>（与 TagEditor 自动补全同源），降低标签熵。</td></tr>
+    <tr><td>摘要长度</td><td>单行 ≤ 约 40 字（列表行）与 ≤ 约 80 字（详情块）两档同源截断；<span class="tag warn">待确认</span> 上限数值。</td></tr>
+    <tr><td>存储</td><td>摘要存 <code class="inl">notes.ai_summary</code> 字段；建议态<b>不落库</b>（仅会话态），采纳的标签落 <code class="inl">note_tags</code>。删除摘要即清空该字段。</td></tr>
+    <tr><td>重生成</td><td>用户手动触发；正文大改（≥阈值）后软提示，不静默覆盖。</td></tr>
+    <tr><td>与 A 阶段关系</td><td>本能力在 B1 才点亮；A 阶段（kb-a 稿）转笔记弹窗<b>仍无 AI 区</b>，列表无 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg> 行——保持 A 阶段「零 AI、纯本地」的验收基线不变。</td></tr>
+    <tr><td>埋点</td><td>摘要采纳率 / 标签采纳率 / 生成成功率走本地埋点（action_events），供 B1 验收读数，全部本机。</td></tr>
+  </table>
+</div>
+
+</body>
+</html>

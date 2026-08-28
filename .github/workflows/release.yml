@@ -97,6 +97,33 @@ jobs:
           rm -r node_modules -ErrorAction SilentlyContinue
           npm install
 
+      - name: 🔍 校验手册下载链接版本
+        shell: pwsh
+        run: |
+          $confVer = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
+            $tagVer = "${{ github.event.inputs.version }}"
+          } else {
+            $tagVer = $env:GITHUB_REF_NAME -replace '^v', ''
+          }
+
+          $html = Get-Content docs/manual/index.html -Raw
+          $expected = "releases/download/v${confVer}/PastePanda_v${confVer}_x64-setup.exe"
+          if ($html -notmatch [regex]::Escape($expected)) {
+            Write-Host "❌ 手册下载链接版本与 tauri.conf.json 不一致 (conf=$confVer)"
+            $m = [regex]::Match($html, "releases/download/v([0-9]+\.[0-9]+\.[0-9]+)/PastePanda_v")
+            if ($m.Success) { Write-Host "   手册链接实际版本 = $($m.Groups[1].Value)" }
+            elseif ($html.Contains("{{PP_VERSION}}")) { Write-Host "   手册仍为占位符 {{PP_VERSION}}，请先本地 npm run prebuild 注入版本再发版" }
+            exit 1
+          }
+
+          if ($confVer -ne $tagVer) {
+            Write-Host "❌ tauri.conf.json 版本 ($confVer) 与 tag ($tagVer) 不一致"
+            exit 1
+          }
+
+          Write-Host "✅ 版本校验通过: conf=tag=$confVer，手册下载链接一致"
+
       - name: 缓存 MNN 预编译（避免每次构建联网下载 180MB）
         uses: actions/cache@v4
         with:
@@ -268,8 +295,15 @@ jobs:
             exit 1
           }
 
-          if ([string]::IsNullOrWhiteSpace($env:GITEE_TOKEN) -or [string]::IsNullOrWhiteSpace($env:GITEE_REPOSITORY)) {
-            Write-Host "⚠️ 未配置 GITEE_TOKEN/GITEE_REPOSITORY secret，跳过 Gitee 镜像发布"
+          # 分别检测两个 secret，明确报出「哪个为空」，避免「条目在但值为空」这种看不见的坑
+          $missing = @()
+          if ([string]::IsNullOrWhiteSpace($env:GITEE_TOKEN)) { $missing += 'GITEE_TOKEN' }
+          if ([string]::IsNullOrWhiteSpace($env:GITEE_REPOSITORY)) { $missing += 'GITEE_REPOSITORY' }
+          if ($missing.Count -gt 0) {
+            Write-Host ("⚠️ 未配置 secret（值为空）：{0}，跳过 Gitee 镜像发布" -f ($missing -join ' / '))
+            Write-Host "   排查：GitHub 仓库 Settings → Secrets and variables → Actions 中，确认上述条目「存在且值非空」。"
+            Write-Host "   注意：secret 列表里有条目 ≠ 值非空；空字符串/纯空格会被 [string]::IsNullOrWhiteSpace 判为未配置。"
+            Write-Host "   GITEE_REPOSITORY 是非敏感值，可改放在 Repository variables 并以 fallback 读取，便于肉眼确认非空。"
             exit 0
           }
           $tag = "${{ github.ref_name }}"
@@ -431,7 +465,8 @@ jobs:
             $af = Get-Item (Join-Path $nsisDir $pattern) -ErrorAction SilentlyContinue | Select-Object -First 1
             if (-not $af) { Write-Host ("跳过（未找到）: {0}" -f $pattern); continue }
             Write-Host ("上传资源: {0} ({1} MB)" -f $af.Name, ([int]($af.Length / 1MB)))
-            curl.exe -sS -X POST "$apiBase/releases/$rid/assets`?access_token=$token&name=$($af.Name)" -F "file=@$($af.FullName)" --max-time 300
+            # 21MB 走 Gitee 国际线路常超 5 分钟；放宽到 30 分钟并加重试，避免 curl exit 28 超时把 exe 漏传
+            curl.exe -sS -X POST "$apiBase/releases/$rid/assets`?access_token=$token&name=$($af.Name)" -F "file=@$($af.FullName)" --max-time 1800 --retry 3 --retry-delay 10 --retry-all-errors
             if ($LASTEXITCODE -ne 0) { Fail ("上传资源 {0} 失败（curl exit {1}）" -f $af.Name, $LASTEXITCODE) }
             Write-Host ("  ✅ 已上传 {0}" -f $af.Name)
           }
