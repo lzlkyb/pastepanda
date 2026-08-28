@@ -25,7 +25,8 @@ echo ""
 
 # ── 前端测试 ──────────────────────────────────────
 echo "[2/3] 前端 Vitest..."
-npx vitest --run
+# 本沙箱默认 thread pool 会 worker 超时（Timeout waiting for worker），改用 forks 池。
+npx vitest --run --pool=forks
 echo "  ✅ 前端测试通过"
 echo ""
 
