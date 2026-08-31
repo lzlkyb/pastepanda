@@ -385,8 +385,12 @@
     padding: 10px 12px; font-size: 12px; color: var(--warn-text); line-height: 1.65; margin-top: 14px;
   }
   .callout.ok { background: var(--ok-bg); color: var(--ok-text); }
+  /* v3.7 作废标记：本节内容已被新方案取代，保留仅为留下当初的论证 */
+  .callout.dead { background: #FEF2F2; color: #B91C1C; border: 1px solid #FCA5A5; }
+  [data-theme="midnight"] .callout.dead { background: #450A0A; color: #FCA5A5; border-color: #7F1D1D; }
+  .voided { opacity: .5; filter: grayscale(.65); }
 
-  /* ===== 笔记页签结果 ===== */
+  /* =====「知识」模式列表结果 ===== */
   .note-list { display: flex; flex-direction: column; gap: 8px; width: 480px; }
   .note-row {
     display: flex; align-items: center; gap: 10px; background: var(--card-bg);
@@ -467,12 +471,12 @@
 <div class="doc-head">
   <h1>知识库 A 阶段 · 转为笔记 — 设计稿</h1>
   <p class="meta">
-    对应规划：<b>《个人知识库与笔记-规划》v3.5 §8.1（M1）</b> ｜ 版本 <b>v1.3 · 2026-08-27</b>（对齐 v3.5）｜ 状态：<b>规划已确认 · 可开工</b><br>
+    对应规划：<b>《个人知识库与笔记-规划》v3.7.1 §8.1（M1）</b> ｜ 版本 <b>v1.4 · 2026-08-31</b>（对齐 v3.7.1；<b style="color:#B91C1C">第 3 节已作废</b>，入口改走顶栏三模式）｜ 状态：<b>规划已确认 · 可开工</b><br>
     <b style="color:#b45309"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg> v1.2 → v1.3：查了真实数据库，本稿两个前提被推翻</b>（本机 1655 条 / 24 天，见规划 §3.1）：
     ① <b><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" /></svg> 收藏是死信号</b>（<code>pinned = 0</code>）——第 5 节的两个默认信号实际只有一个在工作；
     ② <b>候选不是 2 条而是 225 条</b>，新增<b>分批呈现</b>要求；
     ③ <b>新增第 6 节「自动收录档」</b>（第 15 个入口，A 阶段只影子运行）；④ 验收三个数字全部重定。<br>
-    范围：转笔记入口 · 编辑弹窗 · 笔记页签 · 角标与空态 · <b>待沉淀动线（<svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" /></svg>收藏 / 找回信号，规划 §1.4 通路 #1 #2）</b>。本阶段不含：知识库视图 / 语义检索 / 双链（B1/B2/C 另出稿）。<br>
+    范围：转笔记入口 · 编辑弹窗 · 「知识」模式列表 · 角标与空态 · <b>待沉淀动线（<svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" /></svg>收藏 / 找回信号，规划 §1.4 通路 #1 #2）</b>。本阶段不含：知识库视图 / 语义检索 / 双链（B1/B2/C 另出稿）。<br>
     <b style="color:#b45309"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg> v1.1 → v1.2 四处同步（规划 v2.1 → v3.4）</b>：① <b>编辑器改 CodeMirror 6</b>、且要先抽 <code>MarkdownEditorCore</code> 再写弹窗（D6 v3.2 推翻原 textarea 方案）；② <b>图片不进附件目录</b>——A 不建 <code>note_attachments</code>，改为引用原卡片（v3.1 钉死原三处矛盾）；③ <b>卡片类型从「四类」改为 7 种逐一定义</b>，其中 <code>file</code> 不给转笔记入口；④ <b>FTS 中文方案写实</b>——不是 tokenizer 参数，而是 <code>to_ngram</code> bigram 双侧预处理（原稿说法会误导实现）。<br>
     标注约定：<span class="pin">n</span> 设计说明 ／ <span class="ref">D*</span> 对应规划决策编号 ／ <span class="tag warn">待确认</span> 需要拍板的分叉点。
   </p>
@@ -506,7 +510,7 @@
           <span title="删除"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 11v6" /><path d="M14 11v6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></span>
         </div>
       </div>
-      <p class="menu-note">悬停条已较密集，故仅作备选；发现性由 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4" /><path d="M2 10h4" /><path d="M2 14h4" /><path d="M2 18h4" /><rect width="16" height="20" x="4" y="2" rx="2" /><path d="M9.5 8h5" /><path d="M9.5 12H16" /><path d="M9.5 16H14" /></svg> 角标 + 笔记页签补足。</p>
+      <p class="menu-note">悬停条已较密集，故仅作备选；发现性由 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4" /><path d="M2 10h4" /><path d="M2 14h4" /><path d="M2 18h4" /><rect width="16" height="20" x="4" y="2" rx="2" /><path d="M9.5 8h5" /><path d="M9.5 12H16" /><path d="M9.5 16H14" /></svg> 角标 +「知识」模式补足。</p>
     </div>
   </div>
   <div class="legend">
@@ -639,10 +643,21 @@
 
 <!-- ============ 3 页签 ============ -->
 <div class="section">
-  <h2>3 · 笔记怎么露出：页签的两个方案 <span class="tag warn">待确认</span></h2>
+  <h2>3 · 笔记怎么露出：页签的两个方案 <span class="tag warn">已作废</span></h2>
+
+  <div class="callout dead">
+    <span><b>⚠ 本节整节已作废（规划 v3.7 / D15）。</b>
+    下面两个方案（甲 = 第 6 页签窄窗图标化、乙 = 工具箱入口）<b>都不做了</b>，对应 §9 的 #3 / #5 / #7 三条决策已一并作废。<br>
+    <b>现方案：顶栏三模式「记录 ｜ 工具 ｜ 知识」</b>（纯文字无图标）——知识库<b>不再抢页签位</b>，5 个类型页签原样保留。
+    详见 <code>design/PastePanda-顶栏三模式-设计稿.html</code>。<br>
+    <b>为何保留本节：</b>它记录了当初的两个查证事实，而这两条<b>正是三模式方案的依据</b>：
+    ① 480px 下 6 页签已拥挤（三模式从根上取消了这个约束）；
+    ② 文档图标已被「文本」页签与「片段库」占用（三模式因此定为<b>纯文字不用图标</b>）。</span>
+  </div>
+
   <p class="desc">规划原定「TopBar 新增『笔记』页签」，但查证代码发现两个事实：① <code>TopBar.tsx</code> 注释明言 <b>480px 默认窗宽下 6 个页签已经拥挤</b>；② <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" /><path d="M14 2v5a1 1 0 0 0 1 1h5" /><path d="M10 9H8" /><path d="M16 13H8" /><path d="M16 17H8" /></svg> 图标已被「文本」页签和「片段库」占用。因此给出两个方案。</p>
 
-  <div class="figure-wrap">
+  <div class="figure-wrap voided">
     <div class="figure-col">
       <span class="fig-label">方案甲 · 第 6 个页签（窄窗自动图标化）</span>
       <div class="topbar">
@@ -670,8 +685,8 @@
     </div>
   </div>
 
-  <div class="callout">
-    <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg> <span><b>推荐方案甲</b>：知识库是产品级主线（B 阶段要长成主体验），值得一个常驻位；拥挤问题用「窄窗图标化」缓解即可。<b>图标建议全站统一改用 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4" /><path d="M2 10h4" /><path d="M2 14h4" /><path d="M2 18h4" /><rect width="16" height="20" x="4" y="2" rx="2" /><path d="M9.5 8h5" /><path d="M9.5 12H16" /><path d="M9.5 16H14" /></svg></b>（<svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" /><path d="M14 2v5a1 1 0 0 0 1 1h5" /><path d="M10 9H8" /><path d="M16 13H8" /><path d="M16 17H8" /></svg> 与「文本」页签、「片段库」双重撞车）。请拍板：甲 / 乙 ＋ 图标是否接受 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4" /><path d="M2 10h4" /><path d="M2 14h4" /><path d="M2 18h4" /><rect width="16" height="20" x="4" y="2" rx="2" /><path d="M9.5 8h5" /><path d="M9.5 12H16" /><path d="M9.5 16H14" /></svg>。</span>
+  <div class="callout dead">
+    <span><b>原推荐已作废。</b>本处原文推荐「方案甲（第 6 页签）+ 全站统一换笔记本图标」。<br>现在两者都不做：知识库走<b>顶栏第三个模式「知识」</b>，不占页签位；模式切换器<b>纯文字、不用任何图标</b>，因此原文那个「图标撞车」问题<b>自动消失</b>，也不需要全站换图标。<br>→ 当时提的「请拍板：甲/乙」已不适用。</span>
   </div>
 </div>
 
@@ -689,7 +704,7 @@
       <p class="menu-note">角标可点击：直接打开该笔记的编辑弹窗。视觉沿用 NEW/badge 描边体系。</p>
     </div>
     <div class="figure-col">
-      <span class="fig-label">「笔记」页签下的列表</span>
+      <span class="fig-label">「知识」模式下的笔记列表</span>
       <div class="note-list" style="margin-top:8px;">
         <div class="note-row">
           <span class="nico"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4" /><path d="M2 10h4" /><path d="M2 14h4" /><path d="M2 18h4" /><rect width="16" height="20" x="4" y="2" rx="2" /><path d="M9.5 8h5" /><path d="M9.5 12H16" /><path d="M9.5 16H14" /></svg></span>
@@ -713,7 +728,7 @@
 
   <div class="figure-wrap" style="margin-top:20px;">
     <div class="figure-col">
-      <span class="fig-label">空态（首次进入「笔记」页签）</span>
+      <span class="fig-label">空态（首次进入「知识」模式）</span>
       <div class="empty-state">
         <div class="eico"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4" /><path d="M2 10h4" /><path d="M2 14h4" /><path d="M2 18h4" /><rect width="16" height="20" x="4" y="2" rx="2" /><path d="M9.5 8h5" /><path d="M9.5 12H16" /><path d="M9.5 16H14" /></svg></div>
         <div class="etitle">还没有笔记</div>
@@ -735,7 +750,7 @@
     → 风险方向是反的：不是「候选太少没人用」，是 <b>225 条一次铺开导致收件箱破产</b>（用户一条都不处理）。本稿因此新增<b>分批呈现</b>要求。
   </div>
 
-  <span class="fig-label">「笔记」页签顶部 · 待沉淀横幅 + 展开候选列表</span>
+  <span class="fig-label">「知识」模式顶部 · 待沉淀横幅 + 展开候选列表</span>
   <div style="margin-top:8px">
     <div class="pending-banner">
       <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></svg> <span>待沉淀 <b>225</b> 条 —— 你反复找回过的内容，<b>先看最相关的 20 条</b></span>
@@ -826,7 +841,7 @@
     <tr><td><b>编辑器实现</b><br><span class="tag">v3.2 新</span></td><td>弹窗编辑区走 <b>CodeMirror 6</b>，不写 textarea（<span class="ref">D6</span> v3.2 推翻原「A 用 textarea」）——因为成本已付过：11 个 <code>@codemirror/*</code> 已装（含 <code>lang-markdown</code>），<code>FullscreenEditor</code> 手搭扩展数组已跑通。<br><b>实现顺序</b>：先从 <code>FullscreenEditor</code> 抽出 <code>MarkdownEditorCore</code>（窗口相关的 <code>getCurrentWindow</code> / <code>close_editor_window</code> 留在原处），<b>再</b>写本弹窗——反了等于把同一套配置写两遍。附带收益：<code>FullscreenEditor.tsx</code> 从 1304 行降回规则 #7 的 ≤300 行。<br><code>mdLinePrefix</code>（行级列表/引用/标题）、<code>MarkdownOutline</code>、<code>MarkdownRenderer(baseDir)</code> 直接 import，无需改造。</td></tr>
     <tr><td><b>卡片类型覆盖</b><br><span class="tag">v3.2 新</span></td><td>原稿笼统说「四类卡片」，但 grep 确认 <code>history.type</code> 实际有 <b>7 种</b>，逐一定义：<br>· <code>text</code> / <code>doc</code> / <code>diagram</code> / <code>table</code> → 直接取文本（table 保持 Markdown 表格形态）；<br>· <code>rich</code> → 取其文本形态；<br>· <code>image</code> → 注入 OCR + 引用原卡片（见上方弹窗稿）；<br>· <code>file</code> → <b style="color:#b45309">A 阶段不提供转笔记入口</b>。它只有路径，转出来就是一行字符串，既不可检索也不可读，路径还会因文件移动而失效；要支持就应该是「附件」形态，归 <b>B1</b>。<br><b>右键菜单在 <code>file</code> 卡片上不显示该项</b>（而不是显示后报错）。</td></tr>
     <tr><td>重复「转为笔记」</td><td class=""><b>再次打开同一条笔记编辑</b>（凭 history_id 幂等），不产生第二份。<span class="tag warn">待确认</span>　备选：允许一卡多笔记。</td></tr>
-    <tr><td>保存后反馈</td><td>toast「已保存为笔记」，卡片即时出现 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4" /><path d="M2 10h4" /><path d="M2 14h4" /><path d="M2 18h4" /><rect width="16" height="20" x="4" y="2" rx="2" /><path d="M9.5 8h5" /><path d="M9.5 12H16" /><path d="M9.5 16H14" /></svg> 角标；「笔记」页签计数 +1。</td></tr>
+    <tr><td>保存后反馈</td><td>toast「已保存为笔记」，卡片即时出现 <svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4" /><path d="M2 10h4" /><path d="M2 14h4" /><path d="M2 18h4" /><rect width="16" height="20" x="4" y="2" rx="2" /><path d="M9.5 8h5" /><path d="M9.5 12H16" /><path d="M9.5 16H14" /></svg> 角标；「知识」模式计数 +1。</td></tr>
     <tr><td>FTS 同步</td><td>保存事务内同步写 <code>notes_fts</code>（title/content/pinyin）。<br><b style="color:#b45309"><svg class="lucide-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg> v3.1 核实后修正：原文写「tokenizer 与 history_fts 一致」是错的，会误导实现</b>——<code>history_fts</code> 建表是裸的 <code>fts5(text, pinyin, content)</code>，<b>一个 tokenizer 参数也没有</b>（用默认 unicode61）。<br>中文能搜到全靠 <code>to_ngram()</code>（<code>history.rs:12</code>）的 <b>bigram 双侧预处理</b>：① 写入时切二元存进 FTS；② 查询词也过 <code>to_ngram</code> 再 MATCH。<b>漏掉任一侧中文就搜不到</b>。同时照抄 <code>try_search_fts</code> 的失败回退 LIKE 路径。</td></tr>
     <tr><td>原卡片被删除</td><td>笔记保留（history_id 悬空），来源行显示「原卡片已删除」灰字，不可跳转。不做级联删除 —— 沉淀物的生命周期独立于流水。</td></tr>
     <tr><td>隐私红线</td><td>A 阶段无任何 AI 参与；正文只进本地 SQLite 与本地 FTS，不出设备。</td></tr>

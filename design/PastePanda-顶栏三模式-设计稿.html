@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>顶栏三模式 + 名位复用 — 设计稿 v1.0</title>
+<style>
+  :root, [data-theme="ocean"]{
+    --app-bg:#F7F7F8; --card-bg:#fff; --card-border:#E0E4EB;
+    --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+    --accent:#0284C7; --accent-light:#E0F2FE;
+    --warn-bg:#FFF7ED; --warn-text:#C54A0A;
+    --ok-bg:#DCFCE7; --ok-text:#15803D;
+    --bad-bg:#FEF2F2; --bad-text:#B91C1C;
+    --hover:#EEF2F6;
+  }
+  [data-theme="midnight"]{
+    --app-bg:#0B0B13; --card-bg:#18181B; --card-border:#27272A;
+    --text-primary:#E4E4E7; --text-secondary:#AFAFB7; --text-muted:#8D8D95;
+    --accent:#818CF8; --accent-light:#1E1B4B;
+    --warn-bg:#431407; --warn-text:#FB923C;
+    --ok-bg:#14532D; --ok-text:#4ADE80;
+    --bad-bg:#450A0A; --bad-text:#FCA5A5;
+    --hover:#232329;
+  }
+  [data-theme="forest"]{
+    --app-bg:#F5F1E3; --card-bg:#fff; --card-border:#D1D9D3;
+    --text-primary:#171717; --text-secondary:#58524F; --text-muted:#726E6B;
+    --accent:#059669; --accent-light:#ECFDF5;
+    --warn-bg:#FFF7ED; --warn-text:#C54A0A;
+    --ok-bg:#DCFCE7; --ok-text:#15803D;
+    --bad-bg:#FEF2F2; --bad-text:#B91C1C;
+    --hover:#EDE9DB;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px 20px 80px;background:var(--app-bg);color:var(--text-primary);
+       font:14px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;transition:background .2s}
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-size:22px;margin:0 0 4px}
+  h2{font-size:17px;margin:38px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--card-border)}
+  h3{font-size:14px;margin:22px 0 8px;color:var(--text-secondary)}
+  .sub{color:var(--text-muted);font-size:13px;margin:0 0 18px}
+  .card{background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;padding:16px;margin:12px 0}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}
+  th,td{border:1px solid var(--card-border);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:var(--hover);font-weight:600}
+  code{background:var(--hover);padding:1px 5px;border-radius:4px;font-size:12px;
+       font-family:Consolas,"Courier New",monospace}
+  .note{border-left:3px solid var(--accent);background:var(--accent-light);
+        padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0;font-size:13px}
+  .warn{border-left:3px solid var(--warn-text);background:var(--warn-bg);color:var(--warn-text);
+        padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0;font-size:13px}
+  .bad{border-left:3px solid var(--bad-text);background:var(--bad-bg);color:var(--bad-text);
+       padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0;font-size:13px}
+  .ok{border-left:3px solid var(--ok-text);background:var(--ok-bg);color:var(--ok-text);
+      padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0;font-size:13px}
+  .themebar{position:fixed;top:12px;right:12px;display:flex;gap:6px;z-index:99}
+  .themebar button{padding:5px 11px;border:1px solid var(--card-border);background:var(--card-bg);
+    color:var(--text-secondary);border-radius:99px;cursor:pointer;font-size:12px}
+  .themebar button:hover{background:var(--hover)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+  .tag{display:inline-block;padding:1px 7px;border-radius:99px;font-size:11px;font-weight:600;
+       background:var(--accent-light);color:var(--accent);margin-left:6px;vertical-align:1px}
+  .tag.del{background:var(--bad-bg);color:var(--bad-text)}
+  .tag.new{background:var(--ok-bg);color:var(--ok-text)}
+
+  /* ===== 真实顶栏模拟（尺寸与 TopBar.module.css 对齐） ===== */
+  .win{width:480px;background:var(--app-bg);border:1px solid var(--card-border);
+       border-radius:10px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.10)}
+  .win.wide{width:100%}
+  .hdr{padding:16px 16px 0}
+  .hdrTop{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .hdrTitle{display:flex;align-items:center;gap:8px;min-width:0}
+  .sbToggle{width:24px;height:24px;border:none;background:none;color:var(--text-secondary);
+            cursor:pointer;font-size:14px;flex:none}
+  .panda{width:20px;height:20px;flex:none;display:flex;align-items:center;justify-content:center;font-size:17px}
+  /* 改前：15px/700 */
+  .nameOld{font-size:15px;font-weight:700;color:var(--text-primary);white-space:nowrap}
+  /* 改后：12px */
+  .nameNew{font-size:12px;font-weight:700;color:var(--text-primary);white-space:nowrap}
+  .aiSup{font-size:8px;font-weight:700;color:var(--accent);vertical-align:super;margin-left:1px}
+  .hdrIcons{display:flex;gap:2px;align-items:center;flex:none}
+  .ico{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;
+       font-size:13px;color:var(--text-secondary);cursor:pointer;flex:none}
+  .ico:hover{background:var(--hover)}
+  .ico.gone{opacity:.22;text-decoration:line-through;position:relative}
+  .divi{width:1px;height:15px;background:var(--card-border);margin:0 3px;flex:none}
+  .srchRow{display:flex;gap:6px;align-items:center;padding-bottom:4px}
+  .srch{flex:1;height:28px;border:1px solid var(--card-border);border-radius:7px;background:var(--card-bg);
+        display:flex;align-items:center;padding:0 9px;gap:5px;color:var(--text-muted);font-size:12px;min-width:0}
+  .drop{height:28px;border:1px solid var(--card-border);border-radius:7px;background:var(--card-bg);
+        display:flex;align-items:center;padding:0 8px;color:var(--text-secondary);font-size:11.5px;
+        white-space:nowrap;flex:none}
+  .tabs{display:flex;gap:2px;padding:10px 0 12px}
+  .tab{flex:1;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;
+       gap:3px;font-size:11.5px;color:var(--text-secondary);white-space:nowrap;min-width:0}
+  .tab.on{background:var(--card-bg);color:var(--accent);font-weight:600;
+          box-shadow:0 1px 3px rgba(0,0,0,.09)}
+  .body{background:var(--card-bg);border-top:1px solid var(--card-border);
+        min-height:112px;padding:12px 16px;font-size:12px;color:var(--text-muted)}
+
+  /* ===== 模式切换器（分段控件，沿用现有 segmented 语言） ===== */
+  .modes{display:flex;gap:1px;background:var(--hover);border-radius:8px;padding:2px;
+         flex:none;margin-left:2px}
+  .mode{min-width:40px;height:22px;border-radius:6px;display:flex;align-items:center;
+        justify-content:center;gap:3px;font-size:12px;color:var(--text-secondary);
+        cursor:pointer;padding:0 10px;white-space:nowrap;transition:.14s}
+  .mode:hover{color:var(--text-primary)}
+  .mode.on{background:var(--card-bg);color:var(--accent);font-weight:600;
+           box-shadow:0 1px 3px rgba(0,0,0,.10)}
+  .mode .dot{width:5px;height:5px;border-radius:50%;background:var(--accent);flex:none}
+
+  /* ===== 名位（应用名 ↔ 更新状态轮流占用） ===== */
+  .slot{display:inline-flex;align-items:center;white-space:nowrap;flex:none}
+  .vb{font-size:10px;padding:2px 7px;border-radius:99px;font-weight:600;
+      background:linear-gradient(135deg,#6366F1,#8B5CF6);color:#fff}
+  .vb.up{background:linear-gradient(135deg,#16A34A,#22C55E);cursor:pointer}
+  .vb.dl{background:linear-gradient(135deg,#0284C7,#38BDF8);display:inline-flex;align-items:center;gap:4px}
+  .vb.rd{background:linear-gradient(135deg,#16A34A,#15803D);cursor:pointer}
+  .ring{width:11px;height:11px;border-radius:50%;flex:none;
+        background:conic-gradient(#fff 0 45%,rgba(255,255,255,.32) 45% 100%)}
+  .stateRow{display:flex;align-items:center;gap:10px;padding:9px 0;
+            border-bottom:1px dashed var(--card-border)}
+  .stateRow:last-child{border-bottom:none}
+  .stateRow .who{width:150px;flex:none;font-size:12px;color:var(--text-secondary)}
+  .stateRow .demo{display:flex;align-items:center;gap:7px;width:210px;flex:none;
+                  background:var(--app-bg);border:1px solid var(--card-border);
+                  border-radius:8px;padding:6px 9px}
+  .stateRow .why{font-size:12px;color:var(--text-muted);flex:1;min-width:0}
+
+  /* ===== 工具箱主体区的工具卡 ===== */
+  .tcard{display:flex;align-items:center;gap:7px;border:1px solid var(--card-border);
+         border-radius:8px;padding:6px 8px;background:var(--app-bg);cursor:pointer;min-width:0}
+  .tcard:hover{border-color:var(--accent)}
+  .tico{width:22px;height:22px;border-radius:6px;background:var(--accent-light);flex:none;
+        display:flex;align-items:center;justify-content:center;font-size:12px}
+  .tcard b{display:block;font-size:11.5px;font-weight:600;color:var(--text-primary);
+           white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tcard i{display:block;font-size:10px;font-style:normal;color:var(--text-muted);
+           white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tcard>span:last-child{min-width:0}
+
+  /* ===== 宽度压力测试 ===== */
+  .stress{display:flex;flex-direction:column;gap:12px}
+  .ruler{font-size:11px;color:var(--text-muted);margin-bottom:4px}
+  .fitrow{display:flex;align-items:center;gap:8px;background:var(--card-bg);
+          border:1px solid var(--card-border);border-radius:9px;padding:8px 10px;overflow:hidden}
+  .fitrow.over{border-color:var(--bad-text);box-shadow:0 0 0 3px var(--bad-bg)}
+  .aicap{height:22px;border-radius:99px;background:var(--accent-light);color:var(--accent);
+         font-size:10.5px;font-weight:600;display:flex;align-items:center;padding:0 8px;
+         white-space:nowrap;flex:none;border:1px solid var(--accent)}
+</style>
+</head>
+<body data-theme="ocean">
+<div class="themebar">
+  <button onclick="document.body.dataset.theme='ocean'">Ocean</button>
+  <button onclick="document.body.dataset.theme='midnight'">Midnight</button>
+  <button onclick="document.body.dataset.theme='forest'">Forest</button>
+</div>
+<div class="wrap">
+<h1>顶栏三模式 + 名位复用</h1>
+<p class="sub">设计稿 v1.0 · 2026-08-31 · 对应规划 <b>v3.7 / D15 / §9 #13</b>（作废 §9 #3 #5 #7）｜
+尺寸与层级对齐真实代码：<code>TopBar.tsx</code> / <code>TopBar.module.css</code></p>
+
+<div class="note">
+<b>本稿只管顶栏。</b> 知识库内部的弹窗与视图在 <code>kb-a-note-dialog.html</code> / <code>kb-b-library-view.html</code>，
+那两张是「知识模式里面长什么样」，本稿是「怎么切到那个模式」——不是同一层，故另立一张。
+</div>
+
+<h2>1. 三处改动</h2>
+
+<table>
+<tr><th style="width:15%">改动</th><th style="width:38%">内容</th><th>为什么</th></tr>
+<tr>
+  <td><b>① 应用名缩小</b></td>
+  <td><code>.headerTitleText</code> 从 <code>15px / 700</code> 降到 <b>12px</b>（字重不变）</td>
+  <td>腾宽度给模式切换器。480px 窗宽下这一行本来就紧</td>
+</tr>
+<tr>
+  <td><b>② 三模式切换器</b></td>
+  <td><b>记录 ｜ 工具 ｜ 知识</b>（纯文字、无图标），放在应用名右侧</td>
+  <td>页签是「筛选同一批内容」，模式是「切换不同的东西」。
+      把知识库当筛选项从一开始就是语义错位</td>
+</tr>
+<tr>
+  <td><b>③ 版本徽章名位复用</b></td>
+  <td>平时显应用名；有新版 / 下载中 / 待重启时接管<b>同一个位置</b>；重启后名字回来</td>
+  <td>首页干净了，而且<b>省下的宽度正好给模式切换器</b>——一个位置两个占用者</td>
+</tr>
+</table>
+
+<div class="bad">
+<b>⚙ 为什么不能直接删掉版本号（这是本稿最重要的一条）</b><br>
+顶栏那个 <code>v6.18.5</code> 不是纯显示，它是 <code>UpdateBadge</code>（<code>TopBar.tsx:195</code>）——
+<b>更新链路的唯一主动入口</b>：有新版可点击下载、下载进度环、就绪后的重启按钮。<br>
+直接删 = 用户<b>再也收不到更新提醒</b>。而这与规划 §10 已登记的
+<b>Gitee 镜像跨境上行风险</b>（镜像失败会让国内用户静默看不到新版）叠起来，就是真的发不出去。
+</div>
+
+<h2>2. 改前 → 改后</h2>
+<p class="sub">下面两个都是 480px（默认窗宽）真实尺寸。</p>
+
+<div class="grid2">
+<div>
+<h3>改前</h3>
+<div class="win">
+  <div class="hdr">
+    <div class="hdrTop">
+      <div class="hdrTitle">
+        <button class="sbToggle">☰</button>
+        <span class="panda">🐼</span>
+        <span class="nameOld">PastePanda<span class="aiSup">AI</span></span>
+        <span style="font-size:10px;padding:2px 7px;border-radius:99px;
+          background:linear-gradient(135deg,#6366F1,#8B5CF6);color:#fff;font-weight:600;flex:none">v6.18.5</span>
+      </div>
+      <div class="hdrIcons">
+        <span class="ico">⬒</span><span class="ico">🧰</span><span class="ico">⚙</span>
+        <span class="divi"></span><span class="ico">─</span><span class="ico">👁</span>
+      </div>
+    </div>
+    <div class="srchRow">
+      <div class="srch">🔍 搜索</div>
+      <div class="drop">时间 ▾</div><div class="drop">来源 ▾</div>
+    </div>
+    <div class="tabs">
+      <div class="tab on">📋 全部</div><div class="tab">📝 文本</div><div class="tab">📸 图片</div>
+      <div class="tab">📁 文件</div><div class="tab">⭐ 收藏</div>
+    </div>
+  </div>
+  <div class="body">卡片列表…</div>
+</div>
+<p style="font-size:12px;color:var(--text-muted);margin-top:8px">
+版本徽章常驻占位；工具箱是右侧的一个下拉按钮；知识库<b>无处安放</b>。</p>
+</div>
+
+<div>
+<h3>改后</h3>
+<div class="win">
+  <div class="hdr">
+    <div class="hdrTop">
+      <div class="hdrTitle">
+        <button class="sbToggle">☰</button>
+        <span class="panda">🐼</span>
+        <span class="nameNew">PastePanda<span class="aiSup">AI</span></span>
+        <span class="modes">
+          <span class="mode on">记录</span><span class="mode">工具</span><span class="mode">知识</span>
+        </span>
+      </div>
+      <div class="hdrIcons">
+        <span class="ico">⬒</span><span class="ico gone" title="已撤销">🧰</span><span class="ico">⚙</span>
+        <span class="divi"></span><span class="ico">─</span><span class="ico">👁</span>
+      </div>
+    </div>
+    <div class="srchRow">
+      <div class="srch">🔍 搜索</div>
+      <div class="drop">时间 ▾</div><div class="drop">来源 ▾</div>
+    </div>
+    <div class="tabs">
+      <div class="tab on">📋 全部</div><div class="tab">📝 文本</div><div class="tab">📸 图片</div>
+      <div class="tab">📁 文件</div><div class="tab">⭐ 收藏</div>
+    </div>
+  </div>
+  <div class="body">卡片列表…（「记录」模式下完全不变）</div>
+</div>
+<p style="font-size:12px;color:var(--text-muted);margin-top:8px">
+高度<b>一像素未变</b>（仍三行）；5 个类型页签<b>原样保留</b>；右侧工具箱图标已撤。</p>
+</div>
+</div>
+
+<div class="ok">
+<b>为什么 5 个页签能原样保留（这是三模式真正的收益）</b><br>
+<code>TopBar.tsx:23</code> 的代码注释明言「480px 默认窗宽下 6 个标签已经拥挤」。
+规划原来的方案（§9 #5）是把笔记做成「第 6 页签窄窗图标化」——那是<b>绕过约束</b>。
+三模式是<b>取消约束</b>：知识库根本不在页签里。
+</div>
+<h2>3. 名位复用：五个状态</h2>
+<p class="sub">左边是真实渲染（🐼 图标 + 名位）。<b>🐼 始终在位，它是锚点，不参与轮流。</b></p>
+
+<div class="card">
+
+<div class="stateRow">
+  <div class="who"><b>常态</b><br><span style="font-size:11px">idle，占 99% 时间</span></div>
+  <div class="demo">
+    <span class="panda">🐼</span>
+    <span class="slot"><span class="nameNew">PastePanda<span class="aiSup">AI</span></span></span>
+  </div>
+  <div class="why">应用名 + AI 品牌上标。<b>看不到版本号</b>——这就是要的效果。</div>
+</div>
+
+<div class="stateRow">
+  <div class="who"><b>有新版</b><br><span style="font-size:11px">available</span></div>
+  <div class="demo">
+    <span class="panda">🐼</span>
+    <span class="slot"><span class="vb up">🔄 v6.18.6</span></span>
+  </div>
+  <div class="why">绿色、<b>可点击下载</b>。注意 <b>AI 上标跟着应用名一起让位</b>——
+      否则会出现 <code>v6.18.6ᴬᴵ</code> 这种无意义组合（它是品牌标识，不是状态）。</div>
+</div>
+
+<div class="stateRow">
+  <div class="who"><b>下载中</b><br><span style="font-size:11px">downloading</span></div>
+  <div class="demo">
+    <span class="panda">🐼</span>
+    <span class="slot"><span class="vb dl"><span class="ring"></span>45% · 1.2MB/s</span></span>
+  </div>
+  <div class="why">进度环 + 速率（<code>DownloadRing</code> 现成）。不确定态时整个环旋转。</div>
+</div>
+
+<div class="stateRow">
+  <div class="who"><b>就绪</b><br><span style="font-size:11px">ready</span></div>
+  <div class="demo">
+    <span class="panda">🐼</span>
+    <span class="slot"><span class="vb rd">✅ 重启</span></span>
+  </div>
+  <div class="why">点击重启装新版。</div>
+</div>
+
+<div class="stateRow">
+  <div class="who"><b>重启后</b><br><span style="font-size:11px">回到 idle</span></div>
+  <div class="demo">
+    <span class="panda">🐼</span>
+    <span class="slot"><span class="nameNew">PastePanda<span class="aiSup">AI</span></span></span>
+  </div>
+  <div class="why"><b>名字立刻回来</b>，不需要用户再点任何东西。</div>
+</div>
+
+</div>
+
+<h3>不接管名位的三种情况</h3>
+<table>
+<tr><th style="width:22%">状态</th><th style="width:20%">名位显示</th><th>为什么不接管</th></tr>
+<tr><td><code>checking</code> 检查中</td><td>应用名</td>
+    <td>用户没有发起这件事，也没有可做的动作——闪一下又消失只是噪音</td></tr>
+<tr><td><code>error</code> 检查失败</td><td>应用名</td>
+    <td>同上。失败信息归设置页，不占首页最显眼的位置</td></tr>
+<tr><td><code>uptodate</code> 已是最新</td><td>应用名</td>
+    <td>原实现会显示 4 秒后自动消失——名位不承担这种瞬时反馈，改由 toast 或设置页承担</td></tr>
+</table>
+
+<div class="warn">
+<b>「未读更新说明红点」不进名位（已定）</b><br>
+曾考虑让它也占名位（「看完说明名字才回来」），<b>否决</b>。理由不是口味，是它与现有入口重复：
+<ul style="margin:6px 0 0 18px;padding:0">
+<li>设置页「关于」tab 已经有独立的未读红点（<code>SettingsDialog.tsx:52-56</code> <code>hasUnseenEntries</code>，打开即自动标记已读）；</li>
+<li><code>UpdateNotesDialog</code> 在有新版时本来就会自动弹（<code>App.tsx:1159</code>）。</li>
+</ul>
+再占一个名位是<b>同一件事的第三个入口</b>。删掉后副作用正好是想要的：重启后名字立刻回来。
+</div>
+
+<h3>切换动画</h3>
+<div class="card" style="font-size:13px">
+两个占用者用<b>淡入淡出</b>交接，<b>不能硬跳</b>——否则应用名突然变成一个绿色胶囊会像界面出错。<br>
+<code>UpdateBadge</code> 已经在用 <code>AnimatePresence</code> + <code>key</code> 做状态切换，<b>直接把应用名也当成其中一个 key 即可</b>，不用新建机制。<br>
+<span style="color:var(--text-muted)">建议：<code>opacity</code> + 小幅 <code>y</code> 位移，150ms，与现有 tab 切换动画同参数。</span>
+</div>
+
+<div class="note">
+<b>宽度核对（480px 下真实需要关心的事）</b><br>
+“PastePanda” @12px 约 <b>70px</b>；“🔄 v6.18.6” 胶囊约 <b>78px</b>；“◔ 45% · 1.2MB/s” 约 <b>108px</b>（最宽）。
+名位按<b>最宽态</b>预留空间，避免下载开始时模式切换器被顶得跳一下。
+</div>
+<h2>4. 三个模式各自的主体区</h2>
+
+<table>
+<tr><th style="width:16%">模式</th><th style="width:42%">主体区</th><th>工作量</th></tr>
+<tr>
+  <td><b>记录</b></td>
+  <td>就是现在的主界面：☰ 侧边栏（分组/智能分类/来源）+ 搜索 + 5 页签 + 卡片列表。<b>默认模式</b></td>
+  <td><span class="tag new">零</span> 只是被包起来，一行布局不改</td>
+</tr>
+<tr>
+  <td><b>工具</b></td>
+  <td>现有 <code>TOOLBOX_GROUPS</code>（2 组 9 个工具）从<b>下拉面板</b>变成<b>主体区</b></td>
+  <td><span class="tag del">真实工作量</span> 不是挪位置，是重做布局</td>
+</tr>
+<tr>
+  <td><b>知识</b></td>
+  <td><b>A 阶段</b>：待沉淀区 + 笔记列表；<b>B1</b>：填入文件夹树 + 标签双维度</td>
+  <td>本规划主体（详见 kb-a / kb-b）</td>
+</tr>
+</table>
+
+<div class="grid2">
+<div>
+<h3>「工具」模式 · A 阶段最小搬运</h3>
+<div class="win">
+  <div class="hdr">
+    <div class="hdrTop">
+      <div class="hdrTitle">
+        <button class="sbToggle" style="opacity:.25">☰</button>
+        <span class="panda">🐼</span>
+        <span class="nameNew">PastePanda<span class="aiSup">AI</span></span>
+        <span class="modes">
+          <span class="mode">记录</span><span class="mode on">工具</span><span class="mode">知识</span>
+        </span>
+      </div>
+      <div class="hdrIcons">
+        <span class="ico">⬒</span><span class="ico">⚙</span>
+        <span class="divi"></span><span class="ico">─</span><span class="ico">👁</span>
+      </div>
+    </div>
+  </div>
+  <div class="body" style="padding:14px 16px 16px">
+    <div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:7px">内容</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:12px">
+      <div class="tcard"><span class="tico">📋</span><span><b>依次粘贴</b><i>Ctrl+Alt+Q</i></span></div>
+      <div class="tcard"><span class="tico">📝</span><span><b>片段库</b><i>常用文本收藏</i></span></div>
+      <div class="tcard"><span class="tico">🧲</span><span><b>内容提取</b><i>链接/邮箱/电话</i></span></div>
+      <div class="tcard"><span class="tico">📊</span><span><b>新建流程图</b><i>AI 一键生成</i></span></div>
+    </div>
+    <div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:7px">文本处理</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px">
+      <div class="tcard"><span class="tico">🔤</span><span><b>编码转换</b><i>Base64 / URL</i></span></div>
+      <div class="tcard"><span class="tico">🔁</span><span><b>批量替换</b><i>正则多规则</i></span></div>
+      <div class="tcard"><span class="tico">📊</span><span><b>配置对比</b><i>语义级差异</i></span></div>
+      <div class="tcard"><span class="tico">🔀</span><span><b>文本对比</b><i>Ctrl+Shift+D</i></span></div>
+      <div class="tcard"><span class="tico">🪟</span><span><b>全屏对比</b><i>独立大窗</i></span></div>
+    </div>
+  </div>
+</div>
+<div class="bad" style="margin-top:10px">
+<b>只做到这里就停。</b> 「工具」模式在 A 阶段<b>不加搜索、不加收藏、不加新工具、不重排分组</b>——
+现有 9 个工具原样上屏即可。<br>
+理由：它与知识库<b>完全无关</b>，却因 D15 被拉进了 M1。任何「顺手把工具箱做好看点」都会
+把 M1 拖在一个与本规划无关的模块上。（已入规划 §10 风险登记册）
+</div>
+<p style="font-size:12px;color:var(--text-muted)">☰ 侧边栏在本模式<b>置灰不可用</b>（它是「记录」模式内容的分组导航）；搜索行与页签行整行不渲染。</p>
+</div>
+
+<div>
+<h3>「知识」模式 · A 阶段</h3>
+<div class="win">
+  <div class="hdr">
+    <div class="hdrTop">
+      <div class="hdrTitle">
+        <button class="sbToggle" style="opacity:.25">☰</button>
+        <span class="panda">🐼</span>
+        <span class="nameNew">PastePanda<span class="aiSup">AI</span></span>
+        <span class="modes">
+          <span class="mode">记录</span><span class="mode">工具</span>
+          <span class="mode on">知识<span class="dot"></span></span>
+        </span>
+      </div>
+      <div class="hdrIcons">
+        <span class="ico">⬒</span><span class="ico">⚙</span>
+        <span class="divi"></span><span class="ico">─</span><span class="ico">👁</span>
+      </div>
+    </div>
+    <div class="srchRow">
+      <div class="srch">🔍 搜索笔记</div>
+      <div class="drop">＋ 新建</div>
+    </div>
+    <div style="height:12px"></div>
+  </div>
+  <div class="body" style="padding:0">
+    <div style="background:var(--accent-light);padding:9px 14px;font-size:11.5px;
+         color:var(--accent);border-bottom:1px solid var(--card-border)">
+      📥 <b>待沉淀 225 条</b> — 你反复找回过的内容，先看最相关的 20 条
+    </div>
+    <div style="padding:11px 14px;font-size:12px;color:var(--text-muted);line-height:2">
+      候选卡片 × 20（分批呈现）<br>
+      ────────────────────────<br>
+      笔记列表（已沉淀）
+    </div>
+  </div>
+</div>
+<div class="note" style="margin-top:10px">
+<b>顶栏在本模式下的变化：</b>搜索框 placeholder 改为「搜索笔记」；时间/来源筛选换成「＋ 新建」；
+<b>5 个类型页签整行不渲染</b>（它们是剪贴板的类型，与笔记无关）。
+</div>
+<p style="font-size:12px;color:var(--text-muted)">
+「知识」后面的<b>小圆点</b> = 待沉淀区有候选。沿用「永不打扰」闸门：<b>只做角标，不弹 toast、不报数字</b>
+（225 这个数字刷在图标上只会制造焦虑）。</p>
+</div>
+</div>
+<h2>5. 480px 宽度压力测试</h2>
+<p class="sub"><b>定稿形态：纯文字二字名，约 138px。</b>下载显示（含速率）完整保留。</p>
+
+<table>
+<tr><th style="width:34%">模式切换器形态</th><th style="width:20%">宽度</th><th>结果（含完整下载显示）</th></tr>
+<tr><td>图标 + 三字名</td><td>~200px</td><td>❌ 常态就溢出</td></tr>
+<tr><td>图标 + 二字名</td><td>~170px</td><td>❌ 下载态溢出</td></tr>
+<tr><td>纯文字三字名</td><td>~162px</td><td>❌ 下载态溢出（约 457px）</td></tr>
+<tr><td><b>纯文字二字名（定稿）</b></td><td><b>~138px</b></td><td>✅ <b>常态与下载态都装得下</b></td></tr>
+</table>
+
+<div class="ok">
+<b>二字名是这一轮的关键。</b> 它同时满足了两个硬约束：
+<b>三个名字全显</b>（不用下拉、不用 tooltip、不用首次引导）与
+<b>下载显示完整保留</b>（含 · 1.2MB/s）。三字名只能二选一。
+</div>
+
+<div class="note">
+<b>为什么第一个叫「记录」而不是「剪贴」或「主页」</b><br>
+· <b>剪贴</b>——中文里不单用（说「剪贴板」），单独成词生硬；<br>
+· <b>主页</b>——是<b>位置词</b>，而「工具」「知识」是<b>内容域</b>，三个标签不同维度，
+  会让人误以为「主页」是概览页、另两个是子功能；<br>
+· <b>历史</b>——自然但有归档/过去式暗示，而它其实是用户每天干活的地方；<br>
+· <b>全部</b>——❌ <b>硬冲突</b>：页签第一个就叫「全部」（<code>TopBar.tsx:20</code>）。<br>
+「<b>记录</b>」中性、自然、无归档感，且与「工具」「知识」同为二字名词域——三个念一遍很齐。
+</div>
+
+<div class="stress">
+
+<div>
+<div class="ruler">① <b>常态</b> — 应用名 + 三个模式，占约 <b>395 / 448px</b></div>
+<div class="fitrow" style="width:480px">
+  <button class="sbToggle">☰</button>
+  <span class="panda">🐼</span>
+  <span class="nameNew">PastePanda<span class="aiSup">AI</span></span>
+  <span class="modes"><span class="mode on">记录</span><span class="mode">工具</span><span class="mode">知识</span></span>
+  <span style="flex:1"></span>
+  <span class="ico">⬒</span><span class="ico">⚙</span><span class="divi"></span>
+  <span class="ico">─</span><span class="ico">👁</span>
+</div>
+<p style="font-size:12px;color:var(--text-muted);margin:6px 0 0">
+富余约 53px。<b>三个名字直接写出来，不需要 tooltip 也不需要首次引导</b>——这就是去掉图标换来的。</p>
+</div>
+
+<div>
+<div class="ruler">② <b>下载中（名位最宽态 108px）</b> — 占约 <b>433 / 448px</b></div>
+<div class="fitrow" style="width:480px">
+  <button class="sbToggle">☰</button>
+  <span class="panda">🐼</span>
+  <span class="slot"><span class="vb dl"><span class="ring"></span>45% · 1.2MB/s</span></span>
+  <span class="modes">
+    <span class="mode on">记录</span><span class="mode">工具</span><span class="mode">知识</span>
+  </span>
+  <span style="flex:1"></span>
+  <span class="ico">⬒</span><span class="ico">⚙</span><span class="divi"></span>
+  <span class="ico">─</span><span class="ico">👁</span>
+</div>
+<p style="font-size:12px;color:var(--text-muted);margin:6px 0 0">
+紧但装得下。<b>名位要按这个最宽态预留空间</b>，否则下载一开始模式切换器会被顶得跳一下。</p>
+</div>
+
+<div>
+<div class="ruler">③ <b>最坏情况：下载中 + 未配置 AI（AiStatusCap 在场）</b> — 约 <b>493 / 448px</b></div>
+<div class="fitrow over" style="width:480px">
+  <button class="sbToggle">☰</button>
+  <span class="panda">🐼</span>
+  <span class="slot"><span class="vb dl"><span class="ring"></span>45% · 1.2MB/s</span></span>
+  <span class="modes">
+    <span class="mode">记录</span><span class="mode on">工具</span><span class="mode">知识</span>
+  </span>
+  <span style="flex:1"></span>
+  <span class="aicap">✦ 配置 AI</span>
+  <span class="ico">⬒</span><span class="ico">⚙</span><span class="divi"></span>
+  <span class="ico">─</span><span class="ico">👁</span>
+</div>
+<p style="font-size:12px;color:var(--bad-text);margin:6px 0 0">
+<b>这一行溢出了</b>（看右边被截掉的窗口按钮）。未配置 AI 时 <code>AiStatusCap</code> 胶囊会占约 60px，
+叠上下载中的名位最宽态，480px 不够。<b>这是本方案剩下的唯一真风险。</b></p>
+</div>
+
+</div>
+
+<div class="warn">
+<b>③ 这个溢出的解法：下载中暂时隐藏 AiStatusCap</b><br>
+它是一个<b>引导型</b>元素（未配置 AI 时才出现，意在拉用户去配），而下载更新是一个<b>正在发生的、有时限的过程</b>。
+两者撞上时让引导让位是对的——用户此刻注意力在更新上，配 AI 可以等下载完。
+下载结束后胶囊自动回来，<b>用户什么都没少</b>。
+<br><br>
+⚠ 这是本稿建议的解法，但 <b>493px 这个数字是估算值</b>——开工时先拿真实组件量一遍这个组合，
+确认真的溢出再做；若实测不溢出，<b>这条就不用做</b>。
+</div>
+
+<div class="note">
+<b>为什么模式切换器不用图标（不只是省宽度）</b><br>
+核对真实代码后发现两个图标冲突：
+<ul style="margin:6px 0 0 18px;padding:0">
+<li><b>📋 已被「全部」页签占用</b>（<code>TopBar.tsx:20</code>）——记录模式也用 📋 的话，
+    同一屏会出现两个 📋（一个在模式行、一个在页签行）；</li>
+<li><b>📝 已被「文本」页签与「片段库」占用</b>（<code>TopBar.tsx:21,47</code>）——知识模式用不了。</li>
+</ul>
+纯文字<b>同时解掉了宽度和图标冲突两个问题</b>。
+</div>
+
+<h2>6. 行为细则</h2>
+<table>
+<tr><th style="width:20%">场景</th><th style="width:34%">行为</th><th>理由 / 注意</th></tr>
+<tr><td>默认模式</td><td><b>记录</b></td>
+    <td>它是产品本体；用户为了剪贴板每天打开几十次</td></tr>
+<tr><td>模式记忆</td><td><b>记住上次模式</b>（写 localStorage）</td>
+    <td>与现有 <code>tabStyle</code> 同一做法。<b>例外</b>：热键唤出弹窗<b>强制回剪贴板</b>——
+        那个场景用户要的一定是剪贴板</td></tr>
+<tr><td>切换热键</td><td><code>Ctrl+1 / 2 / 3</code></td>
+    <td>开工前先 grep 确认不与现有快捷键冲突</td></tr>
+<tr><td>搜索框</td><td>每个模式<b>独立搜索域</b>，切换时清空</td>
+    <td>对应规划 §7 L1「搜索按模式隔离」。「工具」模式 A 阶段<b>不给搜索框</b></td></tr>
+<tr><td>☰ 侧边栏</td><td>仅「记录」模式可用，其余两个<b>置灰</b></td>
+    <td>它是「记录」模式内容的分组导航，<b>不是全局导航</b>——这也是否决左侧竖栏方案的原因</td></tr>
+<tr><td>「知识」角标</td><td>待沉淀区有候选时显<b>小圆点</b></td>
+    <td>沿用「永不打扰」闸门：<b>不弹 toast、不报数字</b></td></tr>
+<tr><td>右侧工具箱图标</td><td><b>撤销</b></td>
+    <td>否则一个功能两个入口，而且两者形态不一样（下拉 vs 主体区）</td></tr>
+<tr><td>栈模式 / 设置 / 窗口按钮</td><td><b>三个模式下均常驻</b></td>
+    <td>它们是全局的，不属于任何一个模式</td></tr>
+<tr><td>AiStatusCap</td><td>仅未配置 AI 时出现（不变）</td>
+    <td>但它与模式切换器<b>可能同时在场</b>——480px 下要实测不溢出</td></tr>
+</table>
+
+<div class="bad">
+<b>开工前必验的一个真实风险（本稿画不出来）</b><br>
+未配置 AI 时，<code>AiStatusCap</code> 胶囊会出现在右侧图标区。
+这时候如果<b>同时</b>在下载更新（名位最宽态 108px）+ 模式切换器（96px），480px 可能不够。
+<b>实现时拿真实组件跑一遍这个组合，别信本稿的估算值。</b>
+</div>
+<h2>7. 实现清单</h2>
+<p class="sub">对应规划 §8.1 的 <b>0️⃣ 顶栏改造与三模式框架</b>。它与 1️⃣（抽 <code>MarkdownEditorCore</code>）<b>相互独立、可并行</b>——
+本项决定笔记 UI <b>挂在哪里</b>，1️⃣ 决定笔记<b>怎么编辑</b>。</p>
+
+<table>
+<tr><th style="width:6%">#</th><th style="width:30%">改什么</th><th style="width:26%">文件</th><th>要点</th></tr>
+<tr><td>1</td><td>应用名 15px → 12px</td><td><code>TopBar.module.css</code> <code>.headerTitleText</code></td>
+    <td>字重保持 700</td></tr>
+<tr><td>2</td><td>新增模式切换器组件</td><td><code>TopBar.tsx</code> <code>.hdrTitle</code> 内</td>
+    <td>沿用现有 segmented 视觉语言（与 <code>SegmentedTabs</code> 同一套圆角/阴影/激活色）</td></tr>
+<tr><td>3</td><td>模式状态入 store</td><td><code>stores/appStore.ts</code></td>
+    <td>新增 <code>appMode</code>；持久化照搬 <code>tabStyle</code> 的 localStorage 写法</td></tr>
+<tr><td>4</td><td><code>UpdateBadge</code> 改名位复用</td><td><code>UpdateBadge.tsx</code></td>
+    <td><b>把应用名也当成一个 <code>AnimatePresence</code> 分支</b>；
+        <code>idle</code> / <code>error</code> / <code>uptodate</code> 返回应用名而不是版本徽章；
+        <b>删掉 <code>hasUnseen</code> 红点分支</b></td></tr>
+<tr><td>5</td><td>工具箱下拉 → 主体区</td><td><code>TopBar.tsx</code> <code>TOOLBOX_GROUPS</code></td>
+    <td><b>数据结构不改</b>，只换渲染容器；同时删掉右侧 <code>toolboxWrap</code> 按钮</td></tr>
+<tr><td>6</td><td>模式条件渲染搜索行/页签行</td><td><code>TopBar.tsx</code> <code>.headerControls</code></td>
+    <td>工具箱：两行都不渲染；知识库：搜索行换文案、页签行不渲染</td></tr>
+<tr><td>7</td><td>侧边栏按模式置灰</td><td><code>TopBar.tsx</code> <code>.sidebarToggle</code></td>
+    <td>非「记录」模式下 <code>disabled</code></td></tr>
+<tr><td>8</td><td>主体区按模式分发</td><td><code>App.tsx</code></td>
+    <td>三个分支；知识库分支在 A 阶段只渲染待沉淀区 + 笔记列表</td></tr>
+</table>
+
+<div class="note">
+<b>一个现成便宜：</b><code>UpdateBadge</code> 已经在用 <code>AnimatePresence</code> + <code>key</code> 做多状态切换（idle / available / downloading / ready / uptodate）。
+名位复用<b>不需要新机制</b>，只是把「应用名」加成另一个分支，并把 idle 分支的内容从版本徽章换成应用名。
+</div>
+
+<h2>8. 不做清单</h2>
+<div class="card">
+<table style="margin:0">
+<tr><th style="width:32%">不做</th><th>为什么</th></tr>
+<tr><td>模式占独立一行（两层导航）</td>
+    <td>层级最清晰、能带文字标签，但顶栏从三行变四行，480px 下直接砍掉约 36px 列表可视高度——<b>「记录」模式的主体就是那个列表</b></td></tr>
+<tr><td>左侧竖排 Activity Bar</td>
+    <td>不占垂直空间，但会与现有 ☰ 侧边栏<b>并排成两条竖栏</b>，480px 下内容区只剩约 340px；
+        而且那条侧边栏是<b>「记录」模式内部</b>的导航，与全局模式并排会让两个层级看起来平级</td></tr>
+<tr><td>版本徽章整个移进设置页</td>
+    <td>最干净，但更新提醒失去主动性。与规划 §10 已登记的 <b>Gitee 镜像风险叠加</b>，两层叠起来就是真的发不出去</td></tr>
+<tr><td>未读说明红点占名位</td>
+    <td>与设置页「关于」tab 的红点 + 自动弹窗<b>重复</b>，是同一件事的第三个入口</td></tr>
+<tr><td>「工具」模式加搜索 / 收藏 / 新工具</td>
+    <td><b>A 阶段只做最小搬运</b>。它与知识库无关却被拉进 M1，再加治理就会拖住主线</td></tr>
+<tr><td>模式改下拉菜单</td>
+    <td>切换从一次点击变两次，而模式只有三个——得不偿失</td></tr>
+<tr><td>第四个模式</td>
+    <td>三个是上限。第四个就得重新评估布局（可能真得走竖栏）</td></tr>
+</table>
+</div>
+
+<h2>9. 验收口径</h2>
+<div class="card">
+<ul style="margin:0;padding-left:20px;font-size:13px;line-height:2">
+<li>三个模式可切换，切换后主体区、搜索行、页签行、侧边栏可用性均正确；</li>
+<li><b>480px 窗宽不溢出</b>（含本稿第 5 节那个最坏组合：下载中 + AiStatusCap 同时在场）；</li>
+<li><b>名位复用五个状态都对</b>，且 <code>checking</code>/<code>error</code>/<code>uptodate</code> 不接管；</li>
+<li>有新版时能从名位直接点击下载，下载完能重启，<b>重启后名字立刻回来</b>；</li>
+<li>切换为淡入淡出，<b>不硬跳</b>；</li>
+<li>三个主题（Ocean / Midnight / Forest）下均无对比度问题。</li>
+</ul>
+</div>
+
+<div class="warn" style="margin-top:24px">
+<b>本稿与其他两张的关系</b><br>
+<code>topbar-modes</code>（本稿）= 怎么切到「知识」模式 · 全局导航层<br>
+<code>kb-a-note-dialog</code> = 卡片转笔记的弹窗 · 知识库内部<br>
+<code>kb-b-library-view</code> = B1 知识库三栏视图 · 知识库内部<br>
+<span style="color:var(--text-muted)">后两张里出现的「笔记页签」字样已被本稿作废，它们下次更新时需跟着改成「知识」模式。</span>
+</div>
+
+<p style="text-align:center;color:var(--text-muted);font-size:12px;margin-top:34px">
+设计稿 v1.0 · 2026-08-31 · 对应规划 <code>docs/个人知识库与笔记-规划.md</code> v3.7 / D15 / §9 #13
+</p>
+
+</div>
+</body>
+</html>
