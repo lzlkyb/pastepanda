@@ -641,6 +641,10 @@ pub fn run() {
             commands::note_revision_list,
             commands::note_revision_get,
             commands::note_restore,
+            // Markdown 目录导出 / 导入（B1 #5 / D1）
+            commands::note_export_dir,
+            commands::note_import_dir,
+            commands::note_markdown,
             // 待沉淀区（知识库 A 阶段 · 规划 §8.1 4️⃣）
             commands::kb_inbox_list,
             commands::kb_inbox_count,

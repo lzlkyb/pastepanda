@@ -30,15 +30,31 @@ export function NoteDialog() {
         // key 带上 noteId/historyId：换一条笔记就重建内部。
         // 必需——CodeMirror 的初值只在挂载时读一次（见 NoteEditorPane 注释），
         // 不重建就会留着上一条的正文。
-        <NoteDialogInner key={draft.noteId ?? `new:${draft.historyId ?? "blank"}`} anim={anim} />
+        <NoteDialogInner
+          key={draft.noteId ?? `new:${draft.historyId ?? "blank"}`}
+          draft={draft}
+          anim={anim}
+        />
       )}
     </AnimatePresence>
   );
 }
 
-function NoteDialogInner({ anim }: { anim: ReturnType<typeof useDialogAnim> }) {
-  // 非空断言：外层已经判过 draft 存在才渲染本组件
-  const draft = useDialogStore((s) => s.noteDraft)!;
+/**
+ * ❗ `draft` 必须**从属性传进来**，不能在这里再读一次 store。
+ *
+ * 关窗时 `noteDraft` 先变 null，而 AnimatePresence 为了退场动画会**把本组件多留一拍**；
+ * 那一拍里再读 store 就是 null，原先的 `!` 断言直接变成
+ * `Cannot read properties of null (reading 'title')`。
+ * 从属性拿则没这个问题：AnimatePresence 缓存的是退场前那一次的元素，属性停在最后一个非空值上。
+ */
+function NoteDialogInner({
+  draft,
+  anim,
+}: {
+  draft: NonNullable<ReturnType<typeof useDialogStore.getState>["noteDraft"]>;
+  anim: ReturnType<typeof useDialogAnim>;
+}) {
   const closeNote = useDialogStore((s) => s.closeNote);
   // 主题 / 跳转原卡片 / toast 全已进 `useNoteEditorState`，本组件不再直接读 store。
 

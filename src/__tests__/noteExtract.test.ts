@@ -7,7 +7,7 @@
  * ② diagram / rich 取的是 `text` 而不是 `content`——后者是 JSON / HTML。
  */
 import { describe, it, expect } from "vitest";
-import { extractNoteDraft, titleFromContent, noteToMarkdown } from "@/lib/notes/extract";
+import { extractNoteDraft, titleFromContent } from "@/lib/notes/extract";
 import type { HistoryItem } from "@/stores/appStore";
 
 function mk(over: Partial<HistoryItem>): HistoryItem {
@@ -103,13 +103,5 @@ describe("extractNoteDraft · 按类型取正文", () => {
   });
 });
 
-describe("noteToMarkdown", () => {
-  it("带 frontmatter，无标签时不写空 tags 字段", () => {
-    expect(noteToMarkdown({ title: "T", content: "body" })).toBe("---\ntitle: T\n---\n\nbody");
-  });
-
-  it("有标签时写成数组", () => {
-    const md = noteToMarkdown({ title: "T", content: "b", tags: [{ name: "工作" }, { name: "SQL" }] });
-    expect(md).toContain("tags: [工作, SQL]");
-  });
-});
+// noteToMarkdown 的用例已随函数一起移走（B1 #5）：
+// 生成现在在后端 note_md.rs，用例在 data_store/tests.rs 里。

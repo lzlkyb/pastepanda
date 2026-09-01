@@ -10,6 +10,7 @@ import { StatsDetail } from "@/lib/api";
 import { resolveSource } from "@/lib/source-mappings";
 import { useSourceIcon } from "@/hooks/useSourceIcon";
 import { ToggleRow } from "./ToggleRow";
+import { NoteVaultRows } from "./NoteVaultRows";
 import { HotkeyRecorder } from "./HotkeyRecorder";
 import { chainList, type ChainDef } from "@/lib/api/chains";
 import { LanSyncPanel } from "./LanSyncPanel";
@@ -1111,6 +1112,8 @@ export function GeneralTab({
           {importing ? <span className={styles.sActionLoading}>导入中…</span> : "导入"}
         </button>
       </div>
+      {/* 笔记的 Markdown 目录导出/导入（B1 #5）。上面那两行是历史记录的 JSON，两回事 */}
+      <NoteVaultRows />
       <div className={styles.sRow}>
         <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #EF4444, #FF3B30)" }}>🧹</span>
         <div className={`${styles.sRowBody}`}>

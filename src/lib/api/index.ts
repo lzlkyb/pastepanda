@@ -112,6 +112,10 @@ export {
 } from "./noteFolders";
 export type { NoteFolder, FolderFilter, FolderNode } from "./noteFolders";
 
+// Markdown 目录导出 / 导入（B1 #5 / D1）
+export { noteExportDir, noteImportDir, noteMarkdown } from "./noteVault";
+export type { ExportReport, ImportReport } from "./noteVault";
+
 // 版本快照 + 恢复（B1 #4 / D8）
 export { noteRevisionList, noteRevisionGet, noteRestore } from "./noteRevisions";
 export type { NoteRevision, NoteRevisionMeta } from "./noteRevisions";

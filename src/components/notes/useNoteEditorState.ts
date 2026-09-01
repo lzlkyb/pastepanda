@@ -19,8 +19,7 @@ import { useToast } from "@/components/Toast";
 import { confirmDialog } from "@/lib/confirm";
 import { copyToClipboard } from "@/lib/utils";
 import { THEMES, DEFAULT_THEME } from "@/lib/theme";
-import { noteCreate, noteUpdate, noteSetFolder, fetchNoteHistoryIds } from "@/lib/api";
-import { noteToMarkdown } from "@/lib/notes/extract";
+import { noteCreate, noteUpdate, noteSetFolder, noteMarkdown, fetchNoteHistoryIds } from "@/lib/api";
 
 /** 正在编辑的对象。与 `dialogStore.noteDraft` 同形，第三栏从 `Note` 拼一个即可。 */
 export interface NoteEditTarget {
@@ -30,6 +29,8 @@ export interface NoteEditTarget {
   historyId: string | null;
   /** 新建后落入的文件夹（B1 #13）。**只在 `noteId === null` 时生效** */
   folderId?: string | null;
+  /** 已有标签。只给「复制为 Markdown」的 frontmatter 用；编辑标签是另一条路 */
+  tags?: { name: string }[];
   title: string;
   content: string;
 }
@@ -131,12 +132,21 @@ export function useNoteEditorState({
     void fetchNoteHistoryIds();
   }, []);
 
+  /**
+   * 复制为 Markdown。拼接走后端，与目录导出是**同一个生成函数**（规则 #11）。
+   * 两个出口各拼一遍的话，格式会慢慢漂成两种，而那时已经导出过很多次了。
+   * 传的是屏幕上的草稿，所以未保存的修改也能复制。
+   */
   const copyAsMarkdown = useCallback(async () => {
-    const ok = await copyToClipboard(
-      noteToMarkdown({ title: title.trim() || "无标题笔记", content }),
+    const md = await noteMarkdown(
+      title.trim() || "无标题笔记",
+      content,
+      (target.tags ?? []).map((t) => t.name),
     );
+    if (md === null) return; // api 层已弹错，不把 null 写进剪贴板
+    const ok = await copyToClipboard(md);
     toast(ok ? "已复制为 Markdown" : "复制失败", ok ? "success" : "error");
-  }, [title, content, toast]);
+  }, [title, content, target.tags, toast]);
 
   /**
    * 查看原卡片：切回记录模式并选中它，**不关编辑器**。

@@ -5147,3 +5147,245 @@ fn test_restore_missing_revision_errors() {
     assert!(store.note_restore(999_999).is_err());
     assert!(store.note_revision_get(999_999).unwrap().is_none());
 }
+
+// ============================================================
+// Markdown 目录导出 / 导入（B1 #5 / D1）
+// 逐条对应 design/PastePanda-MD导出导入-设计稿.html §7
+// ============================================================
+
+#[test]
+fn test_md_frontmatter_escapes_risky_titles() {
+    // 旧的 TS 版一处转义都没有，这类标题产出的是非法 YAML
+    let n = mk_note_for_md("会议纪要: 8/29 评审", "正文", &["工作", "NC, 二开"]);
+    let md = note_to_markdown(&n, true);
+
+    assert!(md.contains(r#"title: "会议纪要: 8/29 评审""#), "含冒号必须加引号：{md}");
+    // 块式列表：逗号在这里本来就安全（只有流式 `[a, b]` 会把它当分隔符），
+    // 所以不需要加引号——真正要钉的是它能原样读回来（见下）。
+    assert!(md.contains("tags:\n  - 工作\n  - NC, 二开"), "标签应是块式列表：{md}");
+    assert!(md.contains("pastepanda_id: "));
+
+    // 带逗号的标签读回来仍是**一个**标签——旧的 `tags: [a, b]` 写法在这里就碎成两个了
+    let back = markdown_to_note(&md, "x");
+    assert_eq!(back.tags, vec!["工作".to_string(), "NC, 二开".to_string()]);
+
+    // 复制到剪贴板那份不写 id
+    assert!(!note_to_markdown(&n, false).contains("pastepanda_id"));
+}
+
+#[test]
+fn test_md_roundtrip_keeps_title_tags_body() {
+    let n = mk_note_for_md("会议纪要: 8/29", "第一行\n\n[[某个链接]] 原样", &["工作"]);
+    let md = note_to_markdown(&n, true);
+    let back = markdown_to_note(&md, "文件名");
+
+    assert_eq!(back.title, "会议纪要: 8/29");
+    assert_eq!(back.tags, vec!["工作".to_string()]);
+    assert_eq!(back.content, "第一行\n\n[[某个链接]] 原样", "wiki-link 必须一字不改");
+    assert_eq!(back.id.as_deref(), Some(n.id.as_str()));
+}
+
+#[test]
+fn test_md_parse_degrades_instead_of_failing() {
+    // 没有 frontmatter：整文当正文，标题用文件名
+    let p = markdown_to_note("# 直接是正文\n没有头", "我的笔记");
+    assert_eq!(p.title, "我的笔记");
+    assert!(p.content.starts_with("# 直接是正文"));
+    assert!(p.id.is_none());
+
+    // frontmatter 不闭合 ⇒ 同样降级，而不是报错中断整次导入
+    let p2 = markdown_to_note("---\ntitle: 坏了\n正文没有结束标记", "兜底标题");
+    assert_eq!(p2.title, "兜底标题");
+    assert!(p2.content.contains("title: 坏了"), "整文都该当正文");
+
+    // 认不出的字段不能弄挂解析（外部编辑器常加自己的字段）
+    let p3 = markdown_to_note(
+        "---\ntitle: 正常\ncssclass: foo\nunknown-thing: [1,2]\n---\n\n正文",
+        "x",
+    );
+    assert_eq!(p3.title, "正常");
+    assert_eq!(p3.content, "正文");
+}
+
+#[test]
+fn test_md_parse_accepts_inline_tag_array() {
+    // Obsidian 自己常写行内数组，旧版 noteToMarkdown 也是
+    let p = markdown_to_note("---\ntitle: T\ntags: [工作, SQL]\n---\n\nbody", "x");
+    assert_eq!(p.tags, vec!["工作".to_string(), "SQL".to_string()]);
+}
+
+#[test]
+fn test_safe_file_stem_rules() {
+    // Windows 非法字符
+    assert_eq!(safe_file_stem("a/b:c*d", "id123456"), "a_b_c_d");
+    // 空标题 / 纯非法字符 → 用 id 兜底，不能产出空文件名
+    assert_eq!(safe_file_stem("", "id123456ff"), "无标题-id123456");
+    assert_eq!(safe_file_stem("   ", "id123456ff"), "无标题-id123456");
+    // 截长
+    let long: String = "标".repeat(200);
+    assert_eq!(safe_file_stem(&long, "x").chars().count(), 80);
+    // Windows 不允许以点结尾
+    assert_eq!(safe_file_stem("笔记...", "x"), "笔记");
+}
+
+/// 造一条带标签的笔记（只给 note_md 的纯函数用，不入库）。
+fn mk_note_for_md(title: &str, content: &str, tags: &[&str]) -> Note {
+    Note {
+        id: "7c1f0000-1111-2222-3333-444455556666".to_string(),
+        history_id: None,
+        title: title.to_string(),
+        content: content.to_string(),
+        created_at: "2026-08-29 14:32:07.000".to_string(),
+        updated_at: "2026-09-01 09:10:44.000".to_string(),
+        source_agent: String::new(),
+        folder_id: None,
+        tags: tags
+            .iter()
+            .map(|t| Tag {
+                id: format!("tag-{t}"),
+                name: t.to_string(),
+                color: "#6B7280".to_string(),
+                source: "manual".to_string(),
+                created_at: "2026-08-29 14:32:07".to_string(),
+            })
+            .collect(),
+    }
+}
+
+/// 造一个临时目录（项目没有 tempfile dev-dependency，用 uuid 自己拼一个）。
+fn tmp_vault_dir(tag: &str) -> std::path::PathBuf {
+    let p = std::env::temp_dir().join(format!(
+        "pp-vault-{tag}-{}",
+        uuid::Uuid::new_v4().to_string()
+    ));
+    std::fs::create_dir_all(&p).expect("建临时目录失败");
+    p
+}
+
+#[test]
+fn test_vault_export_then_import_roundtrip() {
+    let dir = tmp_vault_dir("roundtrip");
+
+    let src = make_store();
+    let work = src.folder_create("工作笔记", None).unwrap();
+    let sub = src.folder_create("NC 二开", Some(&work.id)).unwrap();
+
+    let a = src.note_create(None, "会议纪要: 8/29", "第一行\n\n[[某链接]]").unwrap();
+    src.note_set_folder(&a.id, Some(&sub.id)).unwrap();
+    src.note_create(None, "未分类的一条", "正文").unwrap();
+
+    let rep = src.note_export_dir(dir.to_str().unwrap()).unwrap();
+    assert_eq!(rep.notes, 2);
+    assert_eq!(rep.folders, 2);
+
+    // 目录形状：文件夹树原样铺开，未分类落根目录
+    assert!(dir.join("工作笔记").join("NC 二开").is_dir());
+    assert!(dir.join("未分类的一条.md").is_file());
+    // 标题里的 `:` 与 `/` 被换成 _，文件能建出来
+    assert!(dir.join("工作笔记").join("NC 二开").join("会议纪要_ 8_29.md").is_file());
+
+    // 导进一个全新的库
+    let dst = make_store();
+    let imp = dst.note_import_dir(dir.to_str().unwrap()).unwrap();
+    assert_eq!(imp.created, 2);
+    assert_eq!(imp.updated, 0);
+    assert!(imp.failed.is_empty());
+
+    // 标题、正文、文件夹层级都还原了（不靠文件名——文件名已被清洗）
+    let notes = dst.note_list("all", &[], 50, 0).unwrap();
+    let got = notes.iter().find(|n| n.title == "会议纪要: 8/29").expect("标题应从 frontmatter 还原");
+    assert_eq!(got.content, "第一行\n\n[[某链接]]");
+    let folders = dst.folder_list().unwrap();
+    assert!(folders.iter().any(|f| f.name == "NC 二开" && f.depth == 2));
+
+    // 说明页不当笔记导回来
+    assert!(!notes.iter().any(|n| n.title.contains("导出说明")));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn test_vault_import_is_idempotent_and_never_deletes() {
+    let dir = tmp_vault_dir("idem");
+    let store = make_store();
+    let n = store.note_create(None, "只有一条", "v1").unwrap();
+    store.note_export_dir(dir.to_str().unwrap()).unwrap();
+
+    // 导入前另外建一条：目录里没有它，导入后必须还在（合并 ≠ 同步）
+    let keep = store.note_create(None, "目录里没有的", "别删我").unwrap();
+
+    let first = store.note_import_dir(dir.to_str().unwrap()).unwrap();
+    assert_eq!(first.created, 0, "id 命中应走更新，而不是再建一条");
+    assert_eq!(first.updated, 1);
+
+    let second = store.note_import_dir(dir.to_str().unwrap()).unwrap();
+    assert_eq!(second.created, 0, "连导两次不该翻倍");
+
+    assert!(store.note_get(&keep.id).unwrap().is_some(), "导入永远不删库里的笔记");
+    assert_eq!(store.note_count(), 2);
+
+    // 内容没变 ⇒ note_update 是空操作 ⇒ 不该攒出快照
+    assert!(
+        store.note_revision_list(&n.id).unwrap().is_empty(),
+        "内容一样的导入不该多出快照"
+    );
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn test_vault_import_updates_and_leaves_a_revision() {
+    let dir = tmp_vault_dir("edit");
+    let store = make_store();
+    let n = store.note_create(None, "改我", "原正文").unwrap();
+    store.note_export_dir(dir.to_str().unwrap()).unwrap();
+
+    // 模拟用户在 Obsidian 里改了这个文件
+    let f = dir.join("改我.md");
+    let text = std::fs::read_to_string(&f).unwrap();
+    std::fs::write(&f, text.replace("原正文", "在 Obsidian 里改过")).unwrap();
+
+    let rep = store.note_import_dir(dir.to_str().unwrap()).unwrap();
+    assert_eq!(rep.updated, 1);
+    assert_eq!(store.note_get(&n.id).unwrap().unwrap().content, "在 Obsidian 里改过");
+
+    // #4 联动：更新走 note_update，所以自动留下了导入前的版本
+    let revs = store.note_revision_list(&n.id).unwrap();
+    assert_eq!(revs.len(), 1);
+    assert_eq!(store.note_revision_get(revs[0].id).unwrap().unwrap().content, "原正文");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn test_vault_import_skips_hidden_and_non_md() {
+    let dir = tmp_vault_dir("skip");
+    std::fs::create_dir_all(dir.join(".obsidian")).unwrap();
+    std::fs::write(dir.join(".obsidian").join("app.json"), "{}").unwrap();
+    std::fs::write(dir.join("图.png"), [0u8, 1, 2]).unwrap();
+    std::fs::write(dir.join("真笔记.md"), "---\ntitle: 真笔记\n---\n\n正文").unwrap();
+
+    let store = make_store();
+    let rep = store.note_import_dir(dir.to_str().unwrap()).unwrap();
+    assert_eq!(rep.created, 1);
+    assert!(rep.skipped >= 2, "隐藏目录与非 md 都该被跳过，实得 {}", rep.skipped);
+    assert!(rep.failed.is_empty());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn test_vault_export_dedupes_same_title() {
+    let dir = tmp_vault_dir("dup");
+    let store = make_store();
+    store.note_create(None, "同名", "第一条").unwrap();
+    store.note_create(None, "同名", "第二条").unwrap();
+
+    let rep = store.note_export_dir(dir.to_str().unwrap()).unwrap();
+    assert_eq!(rep.notes, 2);
+    // 不编号就互相覆盖、静默丢一条
+    assert!(dir.join("同名.md").is_file());
+    assert!(dir.join("同名 (2).md").is_file());
+
+    std::fs::remove_dir_all(&dir).ok();
+}

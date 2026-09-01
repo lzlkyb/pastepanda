@@ -5,7 +5,9 @@ mod kb_inbox;
 mod kb_shadow;
 mod note;
 mod note_folder;
+mod note_md;
 mod note_revision;
+mod note_vault;
 mod image_ocr;
 mod snippet;
 mod config;
@@ -55,7 +57,11 @@ pub use kb_inbox::InboxCandidate;
 pub use kb_shadow::ShadowStats;
 pub use note::Note;
 pub use note_folder::{NoteFolder, MAX_FOLDER_DEPTH};
+pub use note_md::{
+    markdown_to_note, note_to_markdown, safe_file_stem, to_markdown, MdOut, ParsedNote,
+};
 pub use note_revision::{NoteRevision, NoteRevisionMeta, MAX_REVISIONS};
+pub use note_vault::{ExportReport, ImportReport};
 pub use stack_templates::{
     StackTemplate, StackTemplateItem, MAX_STACK_TEMPLATE_ITEMS, MAX_STACK_TEMPLATE_NAME_CHARS,
 };

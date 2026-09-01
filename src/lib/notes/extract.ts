@@ -103,16 +103,7 @@ function draftFromText(text: string, contentType?: string): NoteDraft | null {
   return { title: titleFromContent(content), content };
 }
 
-/**
- * 笔记 → 剪贴板的 Markdown 全文（弹窗底部「复制为 Markdown」）。
- *
- * 带 frontmatter 而不是纯正文：这个按钮的用途就是把笔记搬去 Obsidian / 典型笔记应用，
- * 那边靠 frontmatter 读标签。无标签时不写空的 tags 字段，免得导入后多一个空属性。
- */
-export function noteToMarkdown(note: { title: string; content: string; tags?: { name: string }[] }): string {
-  const lines: string[] = ["---", `title: ${note.title}`];
-  const tagNames = (note.tags ?? []).map((t) => t.name);
-  if (tagNames.length > 0) lines.push(`tags: [${tagNames.join(", ")}]`);
-  lines.push("---", "", note.content);
-  return lines.join("\n");
-}
+// ⚠ 原先这里还有一个 `noteToMarkdown`，已在 B1 #5 删除：
+// frontmatter 的生成与解析已收口到后端 `data_store/note_md.rs`（规则 #11）。
+// 前端走 `noteMarkdown()` 命令，与目录导出是同一个函数体。
+// 旧的那个一处转义都没有：标题含 `: `、或标签名含逗号，产出的就是非法 YAML。

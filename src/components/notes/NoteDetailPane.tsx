@@ -43,6 +43,8 @@ export function NoteDetailPane({
       historyId: note.history_id,
       title: note.title,
       content: note.content,
+      // 给「复制为 Markdown」的 frontmatter 用（弹窗那边的 draft 没有标签，写出来就没 tags 行）
+      tags: note.tags,
     },
     onClose,
     onSaved,
