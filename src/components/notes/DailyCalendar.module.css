@@ -1,0 +1,117 @@
+/* DailyCalendar.module.css —— 侧栏月历（B2 #3，设计稿 §1）。
+   宽度就是侧栏的 180px 减去内边距，七列每列约 22px——
+   字号只能做到 10.5px，再大就换行了。 */
+
+.cal {
+  padding: 4px 9px 8px;
+  flex-shrink: 0;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 0 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.head b {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.nav:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+/* 翻到头不是隐掉而是置灰：按钮消失会让另一个按钮跳位置 */
+.nav:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+}
+
+.wd {
+  text-align: center;
+  font-size: 9.5px;
+  color: var(--text-muted);
+  padding: 2px 0;
+}
+
+.day {
+  position: relative;
+  padding: 3px 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 10.5px;
+  line-height: 1.3;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.day:hover {
+  background: var(--hover);
+}
+
+/* 上/下月的补位格。不隐掉：空白格子会让一周看不出是一行 */
+.dim {
+  color: var(--text-muted);
+  opacity: 0.45;
+}
+
+/* 那天有速记 */
+.has::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 1px;
+  width: 3px;
+  height: 3px;
+  margin-left: -1.5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* 今天：描边而不是填色——填色留给「当前查看的那天」 */
+.today {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.sel {
+  background: var(--accent-solid, var(--accent));
+  color: #fff;
+}
+
+.sel:hover {
+  background: var(--accent-solid, var(--accent));
+}
+
+/* 选中态下蓝点看不见了，换白点 */
+.sel.has::after {
+  background: #fff;
+}

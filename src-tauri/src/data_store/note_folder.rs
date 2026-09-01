@@ -95,11 +95,14 @@ impl DataStore {
         Ok(rows)
     }
 
-    /// 未分类笔记数（`folder_id IS NULL`）。侧栏内置项用。
+    /// 未分类笔记数。侧栏内置项用。
+    ///
+    /// 口径必须与 `push_note_filters` 的 `unfiled` 分支一致（同样排掉速记），
+    /// 否则侧栏显示 12 条、点进去只有 5 条。
     pub fn folder_unfiled_count(&self) -> Result<i64, String> {
         self.lock_conn()
             .query_row(
-                "SELECT COUNT(*) FROM notes WHERE folder_id IS NULL",
+                "SELECT COUNT(*) FROM notes WHERE folder_id IS NULL AND daily_date IS NULL",
                 [],
                 |r| r.get(0),
             )

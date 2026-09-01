@@ -53,15 +53,25 @@ pub struct Note {
     /// 只能由用户主动触发生成（受 `ai_enabled` 门控，规则 #16），永远不自动跑。
     #[serde(default)]
     pub summary: Option<String>,
+    /// 今日速记的日期（B2 #3 / D11），`YYYY-MM-DD`。`None` = 普通笔记。
+    ///
+    /// **这是速记的身份，不是标题**。标题默认也是日期，但用户随时能改；
+    /// 若靠标题认亲，改完第二天就会另建一条、今天这条变孤儿，而用户无从得知。
+    #[serde(default)]
+    pub daily_date: Option<String>,
     #[serde(default)]
     pub tags: Vec<Tag>,
 }
 
 /// 取列顺序写一次，所有查询共用——否则加字段时必定漏改某一处。
-const NOTE_COLS: &str =
-    "id, history_id, title, content, created_at, updated_at, source_agent, folder_id, summary";
+///
+/// `pub(super)`：速记（`note_daily`）追加后也要回读整条笔记，
+/// 它得用同一份列顺序，不能另写一份。
+pub(super) const NOTE_COLS: &str =
+    "id, history_id, title, content, created_at, updated_at, source_agent, \
+     folder_id, summary, daily_date";
 
-fn row_to_note(row: &rusqlite::Row) -> rusqlite::Result<Note> {
+pub(super) fn row_to_note(row: &rusqlite::Row) -> rusqlite::Result<Note> {
     Ok(Note {
         id: row.get(0)?,
         history_id: row.get(1)?,
@@ -72,6 +82,7 @@ fn row_to_note(row: &rusqlite::Row) -> rusqlite::Result<Note> {
         source_agent: row.get(6)?,
         folder_id: row.get(7)?,
         summary: row.get(8)?,
+        daily_date: row.get(9)?,
         tags: Vec::new(),
     })
 }
@@ -148,7 +159,14 @@ fn push_note_filters(
     tag_ids: &[String],
 ) {
     if folder_filter == "unfiled" {
-        sql.push_str(" AND folder_id IS NULL");
+        // 速记不算「未分类」：「未分类」的语义是「该归档还没归档」，
+        // 而速记本来就不需要归档。不排掉的话，一周后这个入口里全是速记，就废了。
+        sql.push_str(" AND folder_id IS NULL AND daily_date IS NULL");
+    } else if folder_filter == "daily" {
+        sql.push_str(" AND daily_date IS NOT NULL");
+    } else if let Some(day) = folder_filter.strip_prefix("daily:") {
+        sql.push_str(" AND daily_date = ?");
+        params.push(Box::new(day.to_string()));
     } else if folder_filter != "all" && !folder_filter.is_empty() {
         // SQLite 允许子查询自带 WITH 子句，所以递归 CTE 可以嵌在 IN 里。
         // 常量里的占位符是 `?1`，而这里走的是位置绑定，换成匿名 `?`。
@@ -232,6 +250,8 @@ impl DataStore {
             folder_id: None,
             // 新建笔记没有摘要：摘要只能用户主动生成，永远不自动跑
             summary: None,
+            // 普通新建不是速记。速记走 `note_append_daily`（那里才写 daily_date）
+            daily_date: None,
             tags: Vec::new(),
         })
     }
@@ -328,7 +348,13 @@ impl DataStore {
         let mut sql = format!("SELECT {} FROM notes WHERE 1=1", NOTE_COLS);
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         push_note_filters(&mut sql, &mut params, folder_filter, tag_ids);
-        sql.push_str(" ORDER BY updated_at DESC, rowid DESC LIMIT ? OFFSET ?");
+        // 速记按日期倒序（它是流水账，按“最近改过”排会让翻旧账时顺序乱跳），
+        // 其余按最近修改。
+        if folder_filter.starts_with("daily") {
+            sql.push_str(" ORDER BY daily_date DESC, rowid DESC LIMIT ? OFFSET ?");
+        } else {
+            sql.push_str(" ORDER BY updated_at DESC, rowid DESC LIMIT ? OFFSET ?");
+        }
         params.push(Box::new(limit));
         params.push(Box::new(offset));
 

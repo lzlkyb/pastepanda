@@ -16,6 +16,7 @@
  * 🔴 红线：无 AI。搜索、筛选、列表全走本机 SQLite。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAppStore } from "@/stores/appStore";
 import { useDialogStore } from "@/stores/dialogStore";
 import { useNoteDialogClosed } from "@/hooks/useNoteDialogClosed";
 import { useKbLayout } from "@/hooks/useKbLayout";
@@ -26,6 +27,7 @@ import { NoteList } from "@/components/notes/NoteList";
 import { KnowledgeToolbar } from "@/components/notes/KnowledgeToolbar";
 import { NoteListEmpty } from "@/components/notes/NoteListEmpty";
 import { NoteDetailPane, NoteDetailEmpty } from "@/components/notes/NoteDetailPane";
+import { dailyFilterDate, isDailyFilter } from "@/components/notes/DailySection";
 import { useToast } from "@/components/Toast";
 import { confirmDialog } from "@/lib/confirm";
 import {
@@ -46,8 +48,6 @@ import styles from "./KnowledgeView.module.css";
 /** 一页拉多少。与后端 `clamp_limit` 的缺省一致。 */
 const PAGE = 50;
 
-/** 侧栏开合的记忆。照 `pastepanda_app_mode` 的做法走 localStorage——纯 UI 偏好，不走后端。 */
-const SIDEBAR_KEY = "pastepanda_kb_sidebar";
 
 export function KnowledgeView() {
   const layout = useKbLayout();
@@ -64,27 +64,17 @@ export function KnowledgeView() {
   const [loading, setLoading] = useState(true);
   /** 第三栏里打开的那条。窄屏下永远为 null（那时走弹窗） */
   const [activeNote, setActiveNote] = useState<Note | null>(null);
+  /** 数据版本号。侧栏「今日速记」区自己拉数据，靠它知道什么时候该重拉（B2 #3） */
+  const [version, setVersion] = useState(0);
 
-  /** 手动开合。≥600px 时常驻，但用户仍可手动收。 */
-  const [manualOpen, setManualOpen] = useState(() => {
-    try {
-      return localStorage.getItem(SIDEBAR_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
-  const sidebarOpen = layout.sidebarPinned || manualOpen;
-  const toggleSidebar = useCallback(() => {
-    setManualOpen((v) => {
-      const next = !v;
-      try {
-        localStorage.setItem(SIDEBAR_KEY, next ? "1" : "0");
-      } catch {
-        /* 隐私模式/配额满，忽略 */
-      }
-      return next;
-    });
-  }, []);
+  /**
+   * 侧栏开合：**读 store，开关在顶栏 ☰**（与记录模式同一个按钮）。
+   *
+   * 原先是 `sidebarPinned || manualOpen`，宽屏强制常驻、**没任何办法收起**——
+   * 想腾点地方给笔记列表也做不到。现在宽屏只是**默认展开**（store 初值看断点），
+   * 之后用户说了算。
+   */
+  const sidebarOpen = useAppStore((s) => s.sidebarOpen.knowledge);
 
   /** 拉文件夹与计数。文件夹增删改、笔记归档/删除后都要重拉。 */
   const reloadFolders = useCallback(async () => {
@@ -129,6 +119,7 @@ export function KnowledgeView() {
   const refreshAll = useCallback(() => {
     void reloadNotes(keyword, folderFilter);
     void reloadFolders();
+    setVersion((v) => v + 1);
   }, [keyword, folderFilter, reloadNotes, reloadFolders]);
 
   // 弹窗关闭后重拉（逻辑收在 useNoteDialogClosed，待沉淀面板用的是同一个）
@@ -200,6 +191,10 @@ export function KnowledgeView() {
   const currentFolderName = useMemo(() => {
     if (folderFilter === "all") return "全部笔记";
     if (folderFilter === "unfiled") return "未分类";
+    if (folderFilter === "daily") return "今日速记";
+    // 面包屑直接写日期：“今日速记 · 2026-09-01” 太长，180px 那栏装不下
+    const day = dailyFilterDate(folderFilter);
+    if (day) return day;
     return folders.find((f) => f.id === folderFilter)?.name ?? "全部笔记";
   }, [folderFilter, folders]);
 
@@ -207,7 +202,11 @@ export function KnowledgeView() {
    * 新建的笔记落在哪里（#13）。
    * 「全部」与「未分类」都不是真文件夹 ⇒ null（即未分类）。
    */
-  const newFolderId = folderFilter === "all" || folderFilter === "unfiled" ? null : folderFilter;
+  // 速记筛选下新建也落未分类：`daily` 不是文件夹，拿它当 folder_id 会写出一个不存在的归属
+  const newFolderId =
+    folderFilter === "all" || folderFilter === "unfiled" || isDailyFilter(folderFilter)
+      ? null
+      : folderFilter;
   const newHint = newFolderId
     ? `新建空白笔记（落入「${currentFolderName}」）`
     : "新建空白笔记（落入未分类）";
@@ -237,6 +236,7 @@ export function KnowledgeView() {
             selected={folderFilter}
             onSelect={setFolderFilter}
             onChanged={refreshAll}
+            version={version}
           />
         )}
 
@@ -244,9 +244,6 @@ export function KnowledgeView() {
           <KnowledgeToolbar
             folderName={currentFolderName}
             total={total}
-            showBurger={!layout.sidebarPinned}
-            sidebarOpen={sidebarOpen}
-            onToggleSidebar={toggleSidebar}
             keyword={keyword}
             onKeyword={setKeyword}
             onNew={handleNew}

@@ -87,6 +87,7 @@ export interface AppConfig {
   stack_paste_hotkey: string; // 栈顶粘贴快捷键
   quick_paste_hotkey: string; // 快捷粘贴面板快捷键（类 Win+V）
   screenshot_hotkey: string; // 截图标注快捷键（v6.18 截图功能）
+  daily_note_hotkey: string; // 今日速记：把剪贴板当前内容追加到今天那条（B2 #3 / D11）
   auto_frame_window: boolean; // 截图自动框选光标所在窗口（微信同款，v6.19）
   screenshot_window_persist: boolean; // 截图窗口常驻（默认关）：开启后关窗仅隐藏，再次截图秒开；代价=常驻约几十~百MB
   // ❌ 键名用 snake_case：本接口整体直接序列化进后端 config 表（save_config 按键 upsert），
@@ -118,6 +119,48 @@ export interface AppConfig {
 export type AppMode = "record" | "tools" | "knowledge";
 
 const APP_MODE_KEY = "pastepanda_app_mode";
+
+/**
+ * 各模式的侧栏开合（D15 三模式）。
+ *
+ * **按模式各记各的**，不共享一个布尔：两个侧栏装的是不同东西
+ * （分组导航 vs 文件夹树），共享开关会出现「在记录模式收起了，
+ * 切到知识发现文件夹树也没了」。工具模式没侧栏，不参与。
+ */
+export type SidebarOpenMap = { record: boolean; knowledge: boolean };
+
+const SIDEBAR_KEY = "pastepanda_sidebar_open";
+
+/** 宽屏吗（≥600px）。jsdom 没有 matchMedia，报错就当宽屏算。 */
+function prefersWideSidebar(): boolean {
+  try {
+    return window.matchMedia("(min-width: 600px)").matches;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * 读持久化的侧栏开合。
+ *
+ * 首次的缺省两边不同，因为两个侧栏的地位不同：
+ * - 记录：收起（分组导航是辅助，卡片列表才是主体，也与原本的行为一致）
+ * - 知识：宽屏展开、窄屏收起（文件夹树是导航主干，没它无法组织）
+ */
+function readSidebarOpen(): SidebarOpenMap {
+  const fallback: SidebarOpenMap = { record: false, knowledge: prefersWideSidebar() };
+  try {
+    const raw = localStorage.getItem(SIDEBAR_KEY);
+    if (!raw) return fallback;
+    const v = JSON.parse(raw) as Partial<SidebarOpenMap>;
+    return {
+      record: typeof v.record === "boolean" ? v.record : fallback.record,
+      knowledge: typeof v.knowledge === "boolean" ? v.knowledge : fallback.knowledge,
+    };
+  } catch {
+    return fallback;
+  }
+}
 
 /** 读持久化的模式（写法照搬 TopBar 的 tabStyle）。脏值/读不到一律回「记录」 */
 function readAppMode(): AppMode {
@@ -180,6 +223,7 @@ interface AppState {
 
   // 应用模式（D15 三模式框架）
   appMode: AppMode; // 当前模式：记录 / 工具 / 知识
+  sidebarOpen: SidebarOpenMap; // 各模式的侧栏开合（顶栏 ☰ 统一控制）
 
   // 剪贴板栈
   stackMode: boolean; // 栈模式是否激活
@@ -238,6 +282,8 @@ interface AppState {
 
   // 应用模式动作
   setAppMode: (mode: AppMode) => void;
+  /** 切换**当前模式**的侧栏。工具模式没侧栏，调了也不动 */
+  toggleSidebar: () => void;
 
   // 剪贴板栈动作
   setStackMode: (active: boolean) => void;
@@ -299,6 +345,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   stack_paste_hotkey: "ctrl+alt+p",
   quick_paste_hotkey: "alt+v",
   screenshot_hotkey: "ctrl+q", // 2 键默认（Ctrl+Q）：左手顺按；QQ Ctrl+Alt+A / 微信 Alt+A 都是大占用源
+  daily_note_hotkey: "ctrl+alt+d", // D=Daily；与上面六个以及 Ctrl+Alt+1..9（索引粘贴）都不冲突
   auto_frame_window: true, // 默认开启：截图自动框选光标所在窗口
   screenshot_window_persist: false, // 默认关：截图窗用完即销毁（省内存）；开启后常驻隐藏、再次截图秒开（微信同款）
   ocr_select_mode: "smart", // 默认智能意图：落在文字上拖即选字（离开文字带则冻结选区）
@@ -366,6 +413,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   paused: false,
   undoStack: [],
   appMode: readAppMode(),
+  sidebarOpen: readSidebarOpen(),
   stackMode: false,
   stackItems: [],
   stackDoneIds: new Set(),
@@ -672,6 +720,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   setAppMode: (mode) => {
     try { localStorage.setItem(APP_MODE_KEY, mode); } catch { /* 隐私模式/配额满，忽略 */ }
     set({ appMode: mode });
+  },
+
+  // 侧栏开合（顶栏 ☰ 统一入口）。同样只写 localStorage，写不进只是下次启动回默认。
+  toggleSidebar: () => {
+    const mode = get().appMode;
+    if (mode === "tools") return; // 工具模式没侧栏：不造一个空状态出来
+    const next = { ...get().sidebarOpen, [mode]: !get().sidebarOpen[mode] };
+    try {
+      localStorage.setItem(SIDEBAR_KEY, JSON.stringify(next));
+    } catch {
+      /* 隐私模式/配额满，忽略 */
+    }
+    set({ sidebarOpen: next });
   },
 
   // 剪贴板栈

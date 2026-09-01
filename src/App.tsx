@@ -142,13 +142,17 @@ function App() {
   const [initError, setInitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [retrying, setRetrying] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // 侧栏开合收口到 store（顶栏 ☰ 统一控制三个模式）：
+  // 原本这里一份、KnowledgeView 一份，两个按钮在不同位置、只有一个记住状态。
+  const sidebarOpen = useAppStore((s) => s.sidebarOpen.record);
+  // 侧栏自己的关闭按钮走同一条（顶栏 ☰ 与它切的是同一个状态）
+  const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const [activeGroupId, setActiveGroupId] = useState("all");
   const [moveToGroupItem, setMoveToGroupItem] = useState<HistoryItem | null>(null);
   const retryCleanupRef = useRef<(() => void) | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lenisRef = useRef<Lenis | null>(null);
-  const sidebarOpenRef = useRef(false);
+
 
   useEffect(() => {
     try { applyTheme((config.theme as ThemeKey) || DEFAULT_THEME); } catch (e) { logger.warn("应用主题失败", e); }
@@ -535,12 +539,8 @@ function App() {
     setActiveGroupId("all");
   }, [sourceFilter, filterType, groupFilter]);
 
-  // 侧边栏切换 — 纯 CSS transition，窗口宽度不变
-  const toggleSidebar = useCallback(() => {
-    const nextOpen = !sidebarOpenRef.current;
-    sidebarOpenRef.current = nextOpen;
-    setSidebarOpen(nextOpen);
-  }, []);
+  // 侧边栏切换（纯 CSS transition，窗口宽度不变）现在走 store 的 toggleSidebar：
+  // 它自己按当前 appMode 决定切哪一个，并持久化。
 
   // 监听托盘菜单事件
   useEffect(() => {
@@ -1015,11 +1015,8 @@ function App() {
         <SkinScene />
         {/* 工具回调不再给 TopBar：D15 把工具箱从顶栏下拉改成了「工具」模式主体区，
             回调直接传给下方的 ToolboxView（见 toolHandlers） */}
-        <TopBar
-          onSettings={() => setShowSettings(true)}
-          onToggleSidebar={toggleSidebar}
-          sidebarOpen={sidebarOpen}
-        />
+        {/* 侧栏开关已收进 TopBar 自己（它直接读 store 的当前模式那一份） */}
+        <TopBar onSettings={() => setShowSettings(true)} />
         {/* v6.2 主动建议：只在主窗口（用户已打开）inline 出现，绝不弹窗。
             v6.4 方案 B：AI 真能用且处于引导期（更新后 1 周）→ 用 AI 快捷区替代；过期后回归原建议条。
             这里只认 "on"（唯一判定 @/lib/aiAvailability：开关开着 + 密钥配齐，本地厂商免密钥）——

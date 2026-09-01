@@ -28,6 +28,9 @@ export interface Note {
   folder_id: string | null;
   /** 一行 AI 摘要。null = 从未生成；空串 = 生成过但用户清掉了 */
   summary: string | null;
+  /** 今日速记的日期（`YYYY-MM-DD`）。null = 普通笔记。
+   *  这是速记的**身份**，不是标题——标题用户可以改成任意字 */
+  daily_date: string | null;
   tags: Tag[];
 }
 

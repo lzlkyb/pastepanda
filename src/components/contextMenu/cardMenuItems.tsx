@@ -10,7 +10,7 @@
  * 原处必须去掉 —— 类型工具靠 primaryKey 去重，粘贴并变换靠 primary.transform 去重。
  */
 
-import { Copy, ClipboardPaste, Pin, Trash2, ExternalLink, FileCode, Pencil, Tag, FolderInput, FolderOpen, FileText, Sparkles, Image as ImageIcon, Palette, MoreHorizontal, Regex, NotebookPen } from "lucide-react";
+import { Copy, ClipboardPaste, Pin, Trash2, ExternalLink, FileCode, Pencil, Tag, FolderInput, FolderOpen, FileText, Sparkles, Image as ImageIcon, Palette, MoreHorizontal, Regex, NotebookPen, CalendarPlus } from "lucide-react";
 import { isCodeLike } from "@/lib/contentTypes";
 import type { RegexRule } from "@/lib/regexRules";
 import type { MenuItem } from "./menuModel";
@@ -45,6 +45,13 @@ export function createCardMenuItems(opts: {
    * 转成笔记没意义。**先显示再报错是更差的做法**（设计稿 §7）。
    */
   onConvertToNote?: () => void;
+  /**
+   * 追加到今日速记（B2 #3 / D11）。不传 = 不出现这一项（同 `onConvertToNote` 的口径）。
+   *
+   * 与「转为笔记」相邻，因为它俩是同一类动作的两个力度：
+   * 转为笔记 = 这条值得单独立一篇；追加到速记 = 先丢进今天，回头再说。
+   */
+  onAppendDaily?: () => void;
   /** 这张卡片已经转过笔记——只影响文案（转为/编辑），幂等逻辑在调用方 */
   hasNote?: boolean;
   pinned?: boolean;
@@ -143,6 +150,16 @@ export function createCardMenuItems(opts: {
       label: opts.hasNote ? "编辑笔记" : "转为笔记",
       onClick: opts.onConvertToNote,
       separator: true,
+    });
+  }
+
+  // ④.6 追加到今日速记（B2 #3）。紧跟在转笔记后面，不带 separator——
+  //   两者是一组（都是「把这条收进知识库」），中间画线会把它们拆成两回事。
+  if (opts.onAppendDaily) {
+    items.push({
+      icon: <CalendarPlus size={14} />,
+      label: "追加到今日速记",
+      onClick: opts.onAppendDaily,
     });
   }
 

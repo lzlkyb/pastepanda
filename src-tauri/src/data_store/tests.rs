@@ -5240,6 +5240,7 @@ fn mk_note_for_md(title: &str, content: &str, tags: &[&str]) -> Note {
         source_agent: String::new(),
         folder_id: None,
         summary: None,
+        daily_date: None,
         tags: tags
             .iter()
             .map(|t| Tag {

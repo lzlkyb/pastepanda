@@ -16,6 +16,7 @@ import { ChevronRight, FolderPlus, Inbox, Library } from "lucide-react";
 import { CtxMenuCtx } from "@/components/ContextMenu";
 import { buildFolderTree, type FolderFilter, type FolderNode, type NoteFolder } from "@/lib/api";
 import { useFolderOps } from "./useFolderOps";
+import { DailySection } from "./DailySection";
 import styles from "./FolderTree.module.css";
 
 export function FolderTree({
@@ -26,6 +27,7 @@ export function FolderTree({
   selected,
   onSelect,
   onChanged,
+  version,
 }: {
   folders: NoteFolder[];
   unfiledCount: number;
@@ -35,6 +37,8 @@ export function FolderTree({
   onSelect: (f: FolderFilter) => void;
   /** 文件夹增删改后重拉（由 KnowledgeView 统一刷） */
   onChanged: () => void;
+  /** 数据版本号：递增就让「今日速记」区重拉它自己那几项（B2 #3） */
+  version: number;
 }) {
   /**
    * 右键菜单触发器。**复用项目现有的 ContextMenu 体系**（已处理边界翻转 /
@@ -150,6 +154,10 @@ export function FolderTree({
         <span className={styles.name}>未分类</span>
         <span className={styles.count}>{unfiledCount}</span>
       </div>
+
+      {/* 今日速记（B2 #3）。也是内置项——不能改名/删除/移动，
+          所以与上面两项同在分隔线上方。选中时它会就地展开月历 */}
+      <DailySection selected={selected} onSelect={onSelect} version={version} />
 
       <div className={styles.sep} />
 

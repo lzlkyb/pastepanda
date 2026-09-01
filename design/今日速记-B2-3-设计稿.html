@@ -1,0 +1,216 @@
+<title>PastePanda 今日速记（B2 #3 / D11）· 设计稿</title>
+<style>
+  :root {
+    --bg:#0f1419; --panel:#171d24; --panel2:#1d242c; --line:#2a333d;
+    --tx:#e6edf3; --tx2:#9fb0c0; --tx3:#6b7d8f;
+    --accent:#4a9eff; --warn:#f0a020; --danger:#e5534b; --ok:#3fb950;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f8fa; --panel:#fff; --panel2:#f0f3f6; --line:#d8dee4;
+            --tx:#1f2328; --tx2:#57606a; --tx3:#8c959f; --accent:#0969da; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:28px 20px 60px; background:var(--bg); color:var(--tx);
+         font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:1080px; margin:0 auto; }
+  h1 { font-size:21px; margin:0 0 4px; }
+  h2 { font-size:16px; margin:32px 0 10px; padding-bottom:7px; border-bottom:1px solid var(--line); }
+  h3 { font-size:13.5px; margin:18px 0 7px; }
+  p, li { color:var(--tx2); }
+  .lede { color:var(--tx2); font-size:13px; margin:0 0 6px; }
+  code { background:var(--panel2); padding:1px 5px; border-radius:4px;
+         font:12px ui-monospace,Consolas,monospace; color:var(--tx); }
+  pre { background:var(--panel); border:1px solid var(--line); border-radius:8px;
+        padding:11px 13px; overflow-x:auto; font:12px/1.6 ui-monospace,Consolas,monospace; color:var(--tx); }
+  .tag { display:inline-block; padding:1px 7px; border-radius:5px; font-size:11px; font-weight:600;
+         background:color-mix(in srgb,var(--accent) 20%,transparent); color:var(--accent); }
+  .tag.ok { background:color-mix(in srgb,var(--ok) 20%,transparent); color:var(--ok); }
+  .tag.bad { background:color-mix(in srgb,var(--danger) 20%,transparent); color:var(--danger); }
+  .note { border-left:3px solid var(--accent); background:var(--panel); padding:10px 13px;
+          border-radius:0 7px 7px 0; margin:12px 0; font-size:12.5px; }
+  .note.warn { border-left-color:var(--warn); }
+  .note.bad { border-left-color:var(--danger); }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:12.5px; }
+  th, td { border:1px solid var(--line); padding:7px 9px; text-align:left; vertical-align:top; }
+  th { background:var(--panel2); font-weight:600; color:var(--tx); }
+  td { color:var(--tx2); }
+
+  /* ==== 侧栏 mock ==== */
+  .mock { display:flex; gap:16px; flex-wrap:wrap; margin:14px 0; }
+  .side { width:180px; flex:0 0 180px; background:var(--panel); border:1px solid var(--line);
+          border-radius:9px; padding:7px 0; font-size:11.5px; }
+  .sHead { display:flex; align-items:center; justify-content:space-between;
+           padding:3px 11px 6px; color:var(--tx3); font-size:10.5px; }
+  .sRow { display:flex; align-items:center; gap:7px; padding:5px 11px; color:var(--tx2); cursor:default; }
+  .sRow.on { background:color-mix(in srgb,var(--accent) 16%,transparent); color:var(--tx); }
+  .sRow .ct { margin-left:auto; color:var(--tx3); font-size:10.5px; }
+  .sSep { height:1px; background:var(--line); margin:6px 11px; }
+  /* 月历 */
+  .cal { padding:4px 9px 8px; }
+  .calHead { display:flex; align-items:center; justify-content:space-between;
+             padding:2px 2px 6px; color:var(--tx2); font-size:11px; }
+  .calHead b { font-weight:600; color:var(--tx); }
+  .calNav { color:var(--tx3); cursor:pointer; padding:0 4px; }
+  .calGrid { display:grid; grid-template-columns:repeat(7,1fr); gap:1px; }
+  .calGrid span { text-align:center; color:var(--tx3); font-size:9.5px; padding:2px 0; }
+  .d { position:relative; text-align:center; font-size:10.5px; padding:3px 0; border-radius:4px;
+       color:var(--tx2); cursor:default; }
+  .d.dim { color:var(--tx3); opacity:.45; }
+  .d.has::after { content:""; position:absolute; left:50%; bottom:1px; width:3px; height:3px;
+                  margin-left:-1.5px; border-radius:50%; background:var(--accent); }
+  .d.today { outline:1px solid var(--accent); }
+  .d.sel { background:var(--accent); color:#fff; }
+  .d.sel::after { background:#fff; }
+  /* 右键菜单 */
+  .menu { width:190px; background:var(--panel); border:1px solid var(--line); border-radius:9px;
+          padding:4px; font-size:12px; height:fit-content; }
+  .mi { padding:5px 9px; border-radius:6px; color:var(--tx2); }
+  .mi.hi { background:var(--panel2); color:var(--tx); }
+  .mi.new { background:color-mix(in srgb,var(--accent) 16%,transparent); color:var(--accent); font-weight:600; }
+  .mSep { height:1px; background:var(--line); margin:4px 6px; }
+  .cap { font-size:11px; color:var(--tx3); margin-top:5px; }
+</style>
+
+<div class="wrap">
+<h1>今日速记 <span class="tag">B2 #3</span> <span class="tag">D11</span></h1>
+<p class="lede">Memos（62.5k★）验证的那条工作流：<b>捕捉要有一个低摩擦的聚合地</b>。一天一条笔记，随手往里丢，不用先想放哪个文件夹、不用起标题。</p>
+
+<div class="note warn">
+<b>规划原文有一处说不通，本稿按拆开后的理解设计。</b><br>
+D11 写的是「热键把<b>选中卡片</b>一键追加」。但全局热键按下时窗口可能根本没开，<b>没有「选中卡片」这回事</b>。
+所以拆成两个入口：<b>全局热键抓剪贴板当前内容</b>（不开窗口就能记，这才是 Memos 那条工作流的价值），
+<b>窗口内右键菜单对选中卡片操作</b>（在列表里挑一条丢进今天）。两者共用同一条后端命令。
+</div>
+
+<h2>1 · 侧栏：内置项 + 按需展开的月历</h2>
+<p>「今日速记」是<b>内置项</b>，与「全部笔记」「未分类」同级，画在同一段里——它不是文件夹，不能改名删除移动。</p>
+
+<div class="mock">
+  <div class="side">
+    <div class="sHead"><span>文件夹</span><span>＋</span></div>
+    <div class="sRow">📚 全部笔记 <span class="ct">42</span></div>
+    <div class="sRow">📥 未分类 <span class="ct">7</span></div>
+    <div class="sRow">📅 今日速记 <span class="ct">12</span></div>
+    <div class="sSep"></div>
+    <div class="sRow">▸ 工作 <span class="ct">18</span></div>
+    <div class="sRow">▸ 读书 <span class="ct">9</span></div>
+  </div>
+  <div class="side">
+    <div class="sHead"><span>文件夹</span><span>＋</span></div>
+    <div class="sRow">📚 全部笔记 <span class="ct">42</span></div>
+    <div class="sRow">📥 未分类 <span class="ct">7</span></div>
+    <div class="sRow on">📅 今日速记 <span class="ct">12</span></div>
+    <div class="cal">
+      <div class="calHead"><span class="calNav">‹</span><b>2026 年 9 月</b><span class="calNav">›</span></div>
+      <div class="calGrid">
+        <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+        <div class="d dim">31</div><div class="d sel today has">1</div><div class="d">2</div><div class="d">3</div>
+        <div class="d">4</div><div class="d">5</div><div class="d">6</div>
+        <div class="d">7</div><div class="d">8</div><div class="d">9</div><div class="d">10</div>
+        <div class="d">11</div><div class="d">12</div><div class="d">13</div>
+      </div>
+    </div>
+    <div class="sSep"></div>
+    <div class="sRow">▸ 工作 <span class="ct">18</span></div>
+  </div>
+</div>
+<p class="cap">左：未选中，日历收起。右：选中后就地展开当月，<span style="color:var(--accent)">蓝点</span>=那天有速记，方框=今天，实心=当前查看的那天。</p>
+
+<div class="note">
+<b>为什么日历不常驻？</b> 侧栏只有 180px（与记录模式 Sidebar 同宽，不能为它加宽）。
+一个月历要占掉约 120px 高，常驻就把文件夹树挤到屏幕下半截。
+<b>只在选中「今日速记」时展开</b>——那时用户的意图正是翻日期，文件夹树反而不重要。
+</div>
+
+<h3>点击行为</h3>
+<table>
+<tr><th>操作</th><th>结果</th></tr>
+<tr><td>点「今日速记」</td><td>中栏列出<b>全部</b>速记（按日期倒序），日历展开并高亮今天</td></tr>
+<tr><td>点日历上某一天</td><td>中栏只显示那一天；<b>没有速记的日期也能点</b>，进去是空态</td></tr>
+<tr><td>点今天（无速记时）</td><td>空态里写明「按 <code>Ctrl+Alt+D</code> 可以直接把剪贴板内容记进来」——把热键教给用户的地方</td></tr>
+<tr><td>‹ ›</td><td>翻月。<b>不做无限翻</b>：早于第一条速记的月份、晚于本月的月份，按钮置灰</td></tr>
+</table>
+
+<h2>2 · 一条速记长什么样</h2>
+<p>追加格式固定，<b>不做模板引擎</b>（D11 边界：只学 Obsidian Daily Notes 里最便宜的那一半，不上条件/循环/函数）。</p>
+<pre>标题：2026-09-01
+
+## 09:14 · 来自 Chrome
+Rust 的 Pin 到底解决什么问题——自引用结构体移动后指针失效
+
+## 14:32 · 来自 VS Code
+fn note_append_daily(text: &amp;str, source: Option&lt;&amp;str&gt;)
+
+## 21:07
+晚上想到：速记其实就是「还没想好放哪」的暂存区</pre>
+<ul>
+<li><b>时间戳</b>用二级标题：Markdown 预览里天然分块，也让「导出成 md 给 Obsidian」时结构还在</li>
+<li><b>来源应用</b>有就写、没有就省掉（手动新建、或来源不可知时）</li>
+<li>标题默认是日期，<b>用户可以改</b>（改成「9/1 会议日」也行）——身份不靠标题，见第 4 节</li>
+</ul>
+
+<h2>3 · 两个入口</h2>
+<div class="mock">
+  <div class="menu">
+    <div class="mi">复制</div>
+    <div class="mi">粘贴到活动窗口</div>
+    <div class="mSep"></div>
+    <div class="mi hi">转为笔记</div>
+    <div class="mi new">📅 追加到今日速记</div>
+    <div class="mSep"></div>
+    <div class="mi">置顶</div>
+    <div class="mi">删除</div>
+  </div>
+  <div style="flex:1; min-width:280px">
+    <h3 style="margin-top:0">① 卡片右键菜单</h3>
+    <p style="font-size:12.5px">紧挨「转为笔记」，因为它俩是同一类动作的两个力度：<b>转为笔记</b>=这条值得单独立一篇；<b>追加到今日速记</b>=先丢进今天，回头再说。</p>
+    <h3>② 全局热键 <code>Ctrl+Alt+D</code></h3>
+    <p style="font-size:12.5px">抓<b>剪贴板当前内容</b>追加，窗口不用打开、不用抢焦点。成功后走托盘轻提示，<b>不弹窗不抢焦点</b>——它的全部价值就在于不打断你手上的事。</p>
+    <p style="font-size:12.5px">默认值选 <code>Ctrl+Alt+D</code>（D=Daily）：现有 7 个热键占的是 <code>Ctrl+Alt+V/Q/K/P</code>、<code>Alt+V</code>、<code>Ctrl+Q</code>，<code>Ctrl+Alt</code>+数字 被索引粘贴占用，<b>D 不冲突</b>。可在设置里改。</p>
+  </div>
+</div>
+
+<div class="note bad">
+<b>剪贴板是空的 / 内容与上一条速记完全相同时</b>：不静默成功，给一句「剪贴板是空的」或「这条刚记过」（规则 #15.3）。
+热键类操作看不见界面，静默失败会让用户以为热键坏了，然后反复按。
+</div>
+
+<h2>4 · 数据模型：身份不能靠标题</h2>
+<p><code>notes</code> 加一列 <code>daily_date TEXT</code>（<code>YYYY-MM-DD</code>），建<b>唯一索引</b>。</p>
+<pre>ALTER TABLE notes ADD COLUMN daily_date TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_daily ON notes(daily_date)
+  WHERE daily_date IS NOT NULL;   -- 部分索引：普通笔记的 NULL 不参与唯一性</pre>
+<div class="note">
+<b>为什么不靠「标题等于今天的日期」去找？</b> 标题用户随时能改，也可能手动建一条同名的。
+一旦标题被改，明天开始就会另建一条，今天这条变成孤儿——而用户根本不知道发生了什么。
+这与 #5 导出时「文件名不可逆，所以身份靠 <code>pastepanda_id</code>」是同一个教训，那次已经踩过。
+</div>
+<p>速记笔记<b>就是普通笔记</b>：能编辑、能加标签、能导出、能被搜索、能生成 AI 摘要。<code>daily_date</code> 只是多一个身份标记。</p>
+
+<h3>一个要你拍板的口径</h3>
+<table>
+<tr><th>问题</th><th>方案</th></tr>
+<tr><td>速记算不算「未分类」？</td><td><b>建议排除。</b>「未分类」的语义是「该归档还没归档」，而速记本来就不需要归档——不排除的话，一周后未分类里全是速记，那个入口就废了。「全部笔记」里<b>保留</b>（它确实是笔记）。</td></tr>
+</table>
+
+<h2>5 · 边界（明确不做）</h2>
+<ul>
+<li><b>不做模板引擎</b>——D11 写死的边界，那是 Templater 的路</li>
+<li><b>不做「昨天的速记自动结转」</b>——那是待办清单的行为，速记是流水账</li>
+<li><b>不做一天多篇</b>——一天一条是这个功能的定义，多篇就退化成普通笔记</li>
+<li><b>不做提醒/打卡/连续天数</b>——正面清单之外，且与「永不打扰」冲突</li>
+<li><b>日历不做无限翻</b>——见第 1 节</li>
+</ul>
+
+<h2>6 · 验收</h2>
+<ul>
+<li>热键按一下 → 托盘轻提示 → 打开知识页面，今天那条里多出一段，带时间戳与来源</li>
+<li>同一天连按三次 → <b>还是一条笔记</b>，里面三段</li>
+<li>把标题改成别的字 → 再按热键 → <b>仍然追加到这条</b>，不新建</li>
+<li>跨零点再按 → 新建明天那条，昨天那条不动</li>
+<li>剪贴板为空时按 → 有明确提示，不是没反应</li>
+<li>日历上有速记的日期带蓝点；点空白日期进去是空态而不是报错</li>
+<li>速记不出现在「未分类」里（若第 4 节口径通过）</li>
+</ul>
+
+</div>

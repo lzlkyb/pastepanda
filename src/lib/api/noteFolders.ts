@@ -26,7 +26,9 @@ export interface NoteFolder {
 }
 
 /**
- * 文件夹筛选值。`"all"` | `"unfiled"` | `<folder_id>`。
+ * 文件夹筛选值。`"all"` | `"unfiled"` | `<folder_id>`，
+ * 另加两个速记专用值（B2 #3）：`"daily"`（全部速记）与 `"daily:YYYY-MM-DD"`（某一天）。
+ * 后两者靠 `| string` 就合法，不必扩类型；**判定写在后端 `push_note_filters` 一处**。
  *
  * 这个形状是照搬项目现有的 `GroupFilter`（`"all" | "ungrouped" | string`），
  * 不另发明一套——两个模式的筛选口径得一致。

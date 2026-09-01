@@ -687,6 +687,11 @@ pub fn reregister_hotkeys(app: tauri::AppHandle, store: State<DataStore>) -> Res
         .and_then(|v| v.as_str())
         .unwrap_or("Ctrl+Alt+A")
         .to_string();
+    let daily_note = config
+        .get("daily_note_hotkey")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Ctrl+Alt+D")
+        .to_string();
     let hotkey_config = crate::hotkey_manager::HotkeyConfig {
         show_window,
         seq_paste,
@@ -695,6 +700,7 @@ pub fn reregister_hotkeys(app: tauri::AppHandle, store: State<DataStore>) -> Res
         stack_paste,
         quick_paste,
         screenshot,
+        daily_note,
     };
     crate::hotkey_manager::reregister_global_hotkeys(&app, &hotkey_config)
 }

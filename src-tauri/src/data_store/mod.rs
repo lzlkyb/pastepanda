@@ -6,6 +6,7 @@ mod kb_shadow;
 mod note;
 mod note_folder;
 mod note_ai;
+mod note_daily;
 mod note_md;
 mod note_revision;
 mod note_vault;
@@ -59,6 +60,7 @@ pub use kb_shadow::ShadowStats;
 pub use note::Note;
 pub use note_folder::{NoteFolder, MAX_FOLDER_DEPTH};
 pub use note_ai::{parse_ai_tags, AI_TAG_SOURCE};
+pub use note_daily::DailyAppend;
 pub use note_md::{
     markdown_to_note, note_to_markdown, safe_file_stem, to_markdown, MdOut, ParsedNote,
 };
@@ -1041,6 +1043,43 @@ impl DataStore {
                     return Err(e);
                 }
             }
+        }
+
+        // notes.daily_date —— 今日速记（B2 #3 / D11）的**身份列**。
+        //
+        // 为何不靠「标题等于当天日期」去找那一条：标题用户随时能改，
+        // 也可能手动建一条同名的。一旦改了，第二天就会另建一条、今天这条变孤儿，
+        // 而用户完全不知道发生了什么——同 #5 导出「文件名不可逆所以身份靠
+        // pastepanda_id」的教训。
+        let has_note_daily: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('notes') WHERE name = 'daily_date'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_note_daily {
+            if let Err(e) = conn.execute_batch("ALTER TABLE notes ADD COLUMN daily_date TEXT;") {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] notes.daily_date 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 notes.daily_date 列失败: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
+        // 一天只能有一条速记——这条约束得落在库上。
+        // 只靠应用层「先查再插」的话，热键连按两下就可能撞出两条同日笔记。
+        // 部分索引：普通笔记的 NULL 不参与唯一性（SQLite 本就允许多个 NULL，
+        // 写上 WHERE 是为了让意图显式，也让索引只覆盖速记那几行）。
+        if let Err(e) = conn.execute_batch(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_daily
+             ON notes(daily_date) WHERE daily_date IS NOT NULL;",
+        ) {
+            log::error!("[DataStore] 建 idx_notes_daily 失败: {}", e);
+            return Err(e);
         }
 
         // 启用 WAL 模式 + 性能/可靠性优化

@@ -8,6 +8,9 @@ import { logger } from "@/lib/logger";
 import { invalidateCountsCache } from "./cache";
 import { sequentialPaste, indexPaste } from "./sequential";
 import { toggleStackMode, stackPasteNext, isStackPasteAllRunning, abortStackPasteAll, stackAutoSplitAndPasteFirst } from "./stack";
+// 今日速记热键（B2 #3）：用与右键菜单同一份抽取逻辑，不另写一套取正文
+import { extractNoteDraft } from "@/lib/notes/extract";
+import { noteAppendDaily } from "./noteDaily";
 
 /** 初始化 Tauri 后端连接 */
 export async function initBackend(): Promise<() => void> {
@@ -206,6 +209,35 @@ export async function initBackend(): Promise<() => void> {
     unlistens.push(await listen("hotkey-sequential-paste", async () => {
       console.log("[hotkey-sequential-paste] 事件收到，调用 sequentialPaste()");
       await sequentialPaste();
+    }));
+
+    // 监听今日速记热键（默认 Ctrl+Alt+D）——B2 #3 / D11
+    //
+    // 「当前剪贴板内容」取 history 的最新一条，**不另读一遍系统剪贴板**：
+    // 去重、类型判定、来源应用识别都在采集侧做过了，另起一份必定与它漂。
+    //
+    // ⚠ 已知局限：提示走的是窗口内 toast，**窗口隐藏时看不见**。
+    // 要真做到设计稿说的「托盘轻提示」需要引 notification 插件（改 Cargo + 权限），
+    // 先不为此扩依赖；落库本身不受影响。
+    unlistens.push(await listen("hotkey-daily-note", async () => {
+      const top = useAppStore.getState().history[0];
+      // 不传 ocrState：热键路径拿不到那个组件级状态，图片卡片就归于抽不出正文
+      const draft = top ? extractNoteDraft(top) : null;
+      if (!draft) {
+        window.dispatchEvent(new CustomEvent("app-toast", {
+          detail: { message: "剪贴板是空的，没有可记的内容", type: "info" },
+        }));
+        return;
+      }
+      const r = await noteAppendDaily(draft.content, top.source ?? null);
+      const message = !r
+        ? "追加到今日速记失败"
+        : r.status === "duplicate"
+          ? "这条刚记过"
+          : "已追加到今日速记";
+      window.dispatchEvent(new CustomEvent("app-toast", {
+        detail: { message, type: r ? "success" : "error" },
+      }));
     }));
 
     // 监听索引粘贴热键 (Ctrl+Alt+1~9)

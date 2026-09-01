@@ -7,15 +7,12 @@
  * 样式沿用 `KnowledgeView.module.css`：这几个类本来就是给它写的，
  * 再开一个 css module 只会让同一行的样式散在两个文件里。
  */
-import { Search, PanelLeft, Plus } from "lucide-react";
+import { Search, Plus } from "lucide-react";
 import styles from "../KnowledgeView.module.css";
 
 export function KnowledgeToolbar({
   folderName,
   total,
-  showBurger,
-  sidebarOpen,
-  onToggleSidebar,
   keyword,
   onKeyword,
   onNew,
@@ -23,10 +20,6 @@ export function KnowledgeToolbar({
 }: {
   folderName: string;
   total: number;
-  /** 侧栏常驻时不需要汉堡按钮 */
-  showBurger: boolean;
-  sidebarOpen: boolean;
-  onToggleSidebar: () => void;
   keyword: string;
   onKeyword: (v: string) => void;
   /** 新建空白笔记（#13）。落入哪个文件夹由调用方决定 */
@@ -36,19 +29,11 @@ export function KnowledgeToolbar({
 }) {
   return (
     <>
-      {/* 面包屑：**侧栏收起时也显示**，否则列表变成无上下文的子集 */}
+      {/* 面包屑：**侧栏收起时也显示**，否则列表变成无上下文的子集。
+
+          这里原本还有一个展开文件夹的汉堡按钮，已移除：
+          侧栏开关统一到顶栏的 ☰，不再按页面换位置。 */}
       <div className={styles.crumb}>
-        {showBurger && (
-          <button
-            type="button"
-            className={styles.burger}
-            onClick={onToggleSidebar}
-            title={sidebarOpen ? "收起文件夹" : "展开文件夹"}
-            aria-label="切换文件夹侧栏"
-          >
-            <PanelLeft size={12} />
-          </button>
-        )}
         <b>{folderName}</b>
         <span>· {total} 条</span>
 

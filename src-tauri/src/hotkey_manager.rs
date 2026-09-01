@@ -20,6 +20,8 @@ pub struct HotkeyConfig {
     pub stack_paste: String,
     pub quick_paste: String,
     pub screenshot: String,
+    /// 今日速记（B2 #3 / D11）：把剪贴板当前内容追加到今天那条。
+    pub daily_note: String,
 }
 
 impl Default for HotkeyConfig {
@@ -37,6 +39,9 @@ impl Default for HotkeyConfig {
             quick_paste: "Alt+V".to_string(),
             // 截图标注（2 键默认 Ctrl+Q：左手顺按；QQ 的 Ctrl+Alt+A / 微信 Alt+A 都是大占用源）
             screenshot: "Ctrl+Q".to_string(),
+            // 今日速记（D=Daily）。上面已占 Ctrl+Alt+V/Q/K/P、Alt+V、Ctrl+Q，
+            // 且 Ctrl+Alt+1..9 被索引粘贴占着，D 不冲突。
+            daily_note: "Ctrl+Alt+D".to_string(),
         }
     }
 }
@@ -192,6 +197,31 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
         }
     } else {
         errors.push(format!("无效的依次粘贴热键: {}", config.seq_paste));
+    }
+
+    // 今日速记（B2 #3 / D11）。留空 = 禁用。
+    //
+    // 这里**只 emit 不做事**：取“当前剪贴板内容”这件事在前端已经有一整套
+    // （去重、类型判定、来源应用识别都在 history 里做过了），
+    // 在热键回调里另起一份剪贴板读取，两边对“什么算当前内容”的理解必定会漂。
+    if config.daily_note.trim().is_empty() {
+        log::info!("[HotkeyManager] 今日速记热键已禁用（留空），跳过注册");
+    } else if let Ok(shortcut) = parse_shortcut(&config.daily_note) {
+        match gs.on_shortcut(shortcut, move |app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                log::info!("[HotkeyManager] 今日速记热键触发");
+                let _ = app.emit("hotkey-daily-note", ());
+            }
+        }) {
+            Ok(_) => log::info!("[HotkeyManager] 注册今日速记热键: {}", config.daily_note),
+            Err(e) => {
+                let msg = format!("今日速记热键 '{}' 注册失败: {}", config.daily_note, e);
+                log::warn!("[HotkeyManager] {}", msg);
+                errors.push(msg);
+            }
+        }
+    } else {
+        errors.push(format!("无效的今日速记热键: {}", config.daily_note));
     }
 
     // 索引粘贴 Ctrl+Alt+1..9

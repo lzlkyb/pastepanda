@@ -115,6 +115,15 @@ export type { NoteFolder, FolderFilter, FolderNode } from "./noteFolders";
 // 笔记轻量 AI（B1 ＋轻量 AI）——只是落库，模型调用在变换枢纽
 export { noteSetSummary, noteAddAiTags, noteConfirmAiTags } from "./noteAi";
 
+// 今日速记（B2 #3 / D11）
+export {
+  noteAppendDaily,
+  noteDailyDates,
+  noteDailyEarliest,
+  noteDailyToday,
+} from "./noteDaily";
+export type { DailyAppend } from "./noteDaily";
+
 // Markdown 目录导出 / 导入（B1 #5 / D1）
 export { noteExportDir, noteImportDir, noteMarkdown } from "./noteVault";
 export type { ExportReport, ImportReport } from "./noteVault";

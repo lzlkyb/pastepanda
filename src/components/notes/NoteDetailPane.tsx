@@ -91,7 +91,11 @@ export function NoteDetailPane({
             type="button"
             className={styles.summaryClear}
             onClick={() => {
-              void noteSetSummary(note.id, "").then((ok) => ok && setSummary(null));
+              void noteSetSummary(note.id, "").then((ok) => {
+                if (!ok) return;
+                setSummary(null);
+                onSaved(); // 列表那行要退回正文截断，只改本地 state 它不知道
+              });
             }}
             title="清掉摘要"
             aria-label="清掉摘要"
@@ -160,7 +164,13 @@ export function NoteDetailPane({
           title={ed.title}
           content={ed.content}
           btnClass={styles.ghostBtn}
-          onSummary={setSummary}
+          /* 两件都要做：本地 state 让✨行立刻出现（不等列表重拉），
+             onSaved 让左侧列表那行的副标题换成摘要——只做前者的话，
+             得切文件夹/搜索才看得到，看上去像没生效 */
+          onSummary={(s) => {
+            setSummary(s);
+            onSaved();
+          }}
           onTags={() => onSaved()}
         />
         <button

@@ -62,11 +62,14 @@ function getTabStyle(): TabStyle {
   try { return (localStorage.getItem("tabStyle") as TabStyle) || "segmented"; } catch { return "segmented"; }
 }
 
-export function TopBar({ onSettings, onToggleSidebar, sidebarOpen }: {
+export function TopBar({ onSettings }: {
   onSettings?: () => void;
-  onToggleSidebar?: () => void; sidebarOpen?: boolean;
 }) {
   const appMode = useAppStore((s) => s.appMode);
+  // 侧栏开合直接读 store，不走 props：按钮要反映的是**当前模式**那一份，
+  // 父层传一个固定的就会变成「在知识模式下显示的是记录模式的状态」。
+  const sidebarOpen = useAppStore((s) => (s.appMode === "tools" ? false : s.sidebarOpen[s.appMode]));
+  const onToggleSidebar = useAppStore((s) => s.toggleSidebar);
   const filterType = useAppStore((s) => s.filterType);
   const setFilterType = useAppStore((s) => s.setFilterType);
   const timeFilter = useAppStore((s) => s.timeFilter);
@@ -139,13 +142,29 @@ export function TopBar({ onSettings, onToggleSidebar, sidebarOpen }: {
       {/* 标题行 */}
       <div className={styles.headerTop} data-tauri-drag-region>
         <div className={styles.headerTitle}>
-          {/* 侧边栏是「记录」模式**内部**的分组导航，在工具/知识模式下无意义，所以禁用而不是隐藏
-              （隐藏会让标题行左侧宽度跳一下，三个模式来回切时很明显） */}
+          {/* 侧栏开关的**唯一入口**：点它切当前模式的侧栏
+              （记录 = 分组导航，知识 = 文件夹树）。
+
+              ❗ 原注释写的是「侧栏只属于记录模式，在工具/知识下无意义」——
+              那句话在知识模式长出文件夹树之后就不成立了，而当时的实际效果是：
+              这里置灰并提示「没有侧边栏」，而侧边栏就在下面、只是开关在别处。
+
+              工具模式确实没侧栏，仍然禁用而不隐藏（隐藏会让标题行左侧宽度跳一下）。 */}
           <button
             className={`${styles.sidebarToggle}${sidebarOpen ? ` ${styles.sidebarToggleActive}` : ""}`}
             onClick={onToggleSidebar}
-            disabled={appMode !== "record"}
-            title={appMode !== "record" ? "侧边栏只在「记录」模式下可用" : sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
+            disabled={appMode === "tools"}
+            title={
+              appMode === "tools"
+                ? "工具模式没有侧边栏"
+                : appMode === "knowledge"
+                  ? sidebarOpen
+                    ? "收起文件夹"
+                    : "展开文件夹"
+                  : sidebarOpen
+                    ? "收起侧边栏"
+                    : "展开侧边栏"
+            }
             aria-label="切换侧边栏"
           >
             ☰

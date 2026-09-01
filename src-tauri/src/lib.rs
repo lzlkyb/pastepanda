@@ -348,6 +348,12 @@ pub fn run() {
                     .and_then(|v| v.as_str())
                     .unwrap_or("Ctrl+Q")
                     .to_string(),
+                // 今日速记（B2 #3 / D11）
+                daily_note: saved_config
+                    .get("daily_note_hotkey")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Ctrl+Alt+D")
+                    .to_string(),
             };
 
             app.manage(store);
@@ -649,6 +655,11 @@ pub fn run() {
             commands::note_set_summary,
             commands::note_add_ai_tags,
             commands::note_confirm_ai_tags,
+            // 今日速记（B2 #3 / D11）——热键与右键菜单共用 append 这一条
+            commands::note_append_daily,
+            commands::note_daily_dates,
+            commands::note_daily_earliest,
+            commands::note_daily_today,
             // 待沉淀区（知识库 A 阶段 · 规划 §8.1 4️⃣）
             commands::kb_inbox_list,
             commands::kb_inbox_count,

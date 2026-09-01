@@ -6,6 +6,9 @@
  * 放一起才不会改了一处忘了另一处。
  */
 import type { FolderFilter } from "@/lib/api";
+import { useAppStore } from "@/stores/appStore";
+import { formatHotkey } from "@/components/settings/HotkeyRecorder";
+import { isDailyFilter } from "./DailySection";
 import styles from "../KnowledgeView.module.css";
 
 export function NoteListEmpty({
@@ -17,21 +20,32 @@ export function NoteListEmpty({
   keyword: string;
   folderFilter: FolderFilter;
 }) {
+  // 热键从配置读而不是写死：用户改过之后这里再教他按 Ctrl+Alt+D 就是在说谎
+  const dailyHotkey = useAppStore((s) => s.config?.daily_note_hotkey);
+
   if (loading) return <div className={styles.stateBox}>正在加载…</div>;
 
   const kw = keyword.trim();
+  const daily = isDailyFilter(folderFilter);
+
+  // 速记空态是**把热键教给用户的地方**（设计稿 §1）：
+  // 一个全局热键如果从来不在界面上出现，等于没做。
   const hint = kw
     ? "换个词试试。搜的是标题与正文，也支持拼音首字母。"
-    : folderFilter !== "all"
-      ? "这个文件夹还是空的。右键笔记可以把它移进来，或者点右上角的＋新建一条。"
-      : "在记录模式右键一张卡片、选「转为笔记」，它就会出现在这里。";
+    : daily
+      ? `复制一段内容后按 ${formatHotkey(dailyHotkey || "ctrl+alt+d")}，它就直接进今天这条；或者右键卡片选「追加到今日速记」。`
+      : folderFilter !== "all"
+        ? "这个文件夹还是空的。右键笔记可以把它移进来，或者点右上角的＋新建一条。"
+        : "在记录模式右键一张卡片、选「转为笔记」，它就会出现在这里。";
+
+  const title = kw ? "没找到匹配的笔记" : daily ? "这天还没记东西" : "还没有笔记";
 
   return (
     <div className={styles.stateBox}>
       <div className={styles.icon} aria-hidden="true">
-        📚
+        {daily ? "📅" : "📚"}
       </div>
-      <div className={styles.title}>{kw ? "没找到匹配的笔记" : "还没有笔记"}</div>
+      <div className={styles.title}>{title}</div>
       <div className={styles.hint}>{hint}</div>
     </div>
   );

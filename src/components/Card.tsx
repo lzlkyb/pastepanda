@@ -16,7 +16,7 @@ import type { CSSProperties } from "react";
 import SourceBadge from "@/components/SourceBadge";
 import { createCardMenuItems, CtxMenuCtx, type MenuItem } from "@/components/ContextMenu";
 import { getEnabledRules, subscribeRules } from "@/lib/regexRules";
-import { confirmAutoTags, removeItemTags } from "@/lib/api";
+import { confirmAutoTags, removeItemTags, noteAppendDaily } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 import { TagRow } from "@/components/TagBadge";
 import { logger } from "@/lib/logger";
@@ -989,6 +989,21 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
   // 这张卡片已转过没——只读 store 里那个全量集合，不逐张发 IPC
   const hasNote = useAppStore((s) => s.noteHistoryIds.has(item.id));
   // 幂等判断与弹窗打开全在 openNoteForCard 里（规则 #11）——角标点击走同一条路
+  /**
+   * 追加到今日速记（B2 #3）。用与转笔记**同一份** `noteDraft.content`：
+   * 它已经处理过图片 OCR、类型差异这些，另取一遍 `item.text` 会在图片卡片上追加出空段。
+   */
+  const handleAppendDaily = useCallback(async () => {
+    if (!noteDraft) return;
+    const r = await noteAppendDaily(noteDraft.content, item.source ?? null);
+    if (!r) {
+      toast("追加失败", "error");
+      return;
+    }
+    // duplicate 不是错误，但也不能装作成功——否则用户以为记了两条
+    toast(r.status === "duplicate" ? "这条刚记过" : "已追加到今日速记", "success");
+  }, [noteDraft, item.source, toast]);
+
   const handleConvertToNote = useCallback(() => {
     void openNoteForCard(item, ocrState);
   }, [item, ocrState]);
@@ -1045,11 +1060,13 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     onRemoveAutoTags: hasAutoTags ? handleRemoveAutoTags : undefined,
     // 转为笔记（知识库 A 阶段）。noteDraft 为 null 时**不注入回调** → 菜单里根本不出现这一项
     onConvertToNote: noteDraft ? handleConvertToNote : undefined,
+    // 同一道门：抽不出正文的卡片（如 file）也没什么可追加的
+    onAppendDaily: noteDraft ? () => void handleAppendDaily() : undefined,
     hasNote,
     hasUrl,
     hasAutoTags,
     pinned: item.pinned,
-  }), [item, subType, hasUrl, fileTarget, canQrCode, hasAutoTags, toast, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, handlePasteTransform, handleOpenHub, hubAvailable, handleAddSnippet, handleOpenUrl, handleOpenFile, handleRevealFile, handleConfirmAutoTags, handleRemoveAutoTags, ocrState, enabledRules, noteDraft, hasNote, handleConvertToNote]);
+  }), [item, subType, hasUrl, fileTarget, canQrCode, hasAutoTags, toast, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, handlePasteTransform, handleOpenHub, hubAvailable, handleAddSnippet, handleOpenUrl, handleOpenFile, handleRevealFile, handleConfirmAutoTags, handleRemoveAutoTags, ocrState, enabledRules, noteDraft, hasNote, handleConvertToNote, handleAppendDaily]);
 
   return (
     <Card item={item} selected={selected} onClick={onClick} onDoubleClick={onDoubleClick} index={index} imageState={imageState} searchKeyword={searchKeyword} onRetryImage={onRetryImage} pasting={pasting} menuItems={menuItems} onEdit={onEdit} disablePreview={disablePreview} stackOrder={stackOrder} stackDone={stackDone} ocrState={ocrState} />
