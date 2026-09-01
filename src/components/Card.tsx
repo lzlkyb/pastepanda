@@ -561,7 +561,8 @@ const CardHoverPopover = memo(function CardHoverPopover({
         {item.type === "text" && !isShortPlainText && (
           isMd ? (
             <Suspense fallback={<div className={styles.cardPopoverText}>{(item.text || "").slice(0, 200)}</div>}>
-              <LazyMdRenderer text={item.text} compact />
+              {/* clamp：hover 浮层只给一眼，限高 120px。笔记预览那边不传，要读全文 */}
+              <LazyMdRenderer text={item.text} compact clamp />
             </Suspense>
           ) : isCodeLike(subType) ? (
             <div className={styles.cardPopoverCode}>{item.text}</div>

@@ -426,11 +426,22 @@
 
 .md :global(.md-clc) { white-space: pre; }
 
-/* ===== compact 模式（hover 弹窗用：精简版）===== */
+/* ===== compact 模式（紧凑排版：小字号、间距收紧、隐藏代码块头部）=====
+   ❗ 只管排版，**不管高度**。「只给看一眼」是调用方的决定，见下面的 md-clamp。 */
 
 .compact {
   font-size: 12px;
   line-height: 1.6;
+}
+
+/* ===== 裁切（全局类 md-clamp，做法同 md-ln）=====
+   hover 弹窗专用：那是「瞄一眼」不是「读」，所以 hidden 而不是 auto——
+   给滚动条反而诱使用户去滚一个 0.18s 就会消失的浮层。
+
+   曾经这两行长在 .compact 里，于是笔记预览想要小字号就被迫连内容一起截掉，
+   正文过约 6 行即不可见且滚不动。两件事，两个开关。 */
+
+.md:global(.md-clamp) {
   max-height: 120px;
   overflow: hidden;
 }

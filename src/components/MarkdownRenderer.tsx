@@ -266,20 +266,26 @@ function renderMarkdownHtml(text: string, baseDir?: string | null): string {
  * - 代码块带窗口彩点 / 语言页签 / 复制按钮（事件委托）
  * - GFM 提示块（> [!NOTE] 等）渲染为图标 callout 卡片
  * - highlight.js 对代码块做语法高亮（异步加载后生效）
- * - compact 模式用于 hover 弹窗（限高、小字号、隐藏代码块头部）
+ * - compact 紧凑排版（小字号、隐藏代码块头部）；clamp 裁切到固定高度且不可滚。
+ *   两者独立：hover 弹窗两个都要，笔记预览只要 compact（否则正文会被截断）
  * - lineNumbers 行号模式（全屏编辑器预览）：顶层块注入可点击块编号
  *   （md-blknum，点击闪烁高亮整块）+ 代码块按行包裹行号（md-cl）
  */
 export const MarkdownRenderer = memo(function MarkdownRenderer({
   text,
   compact = false,
+  clamp = false,
   className,
   debounceMs = 0,
   lineNumbers = false,
   baseDir = null,
 }: {
   text: string;
+  /** 紧凑排版：小字号、间距收紧、隐藏代码块头部。**不影响能看到多少内容** */
   compact?: boolean;
+  /** 裁切到 120px 且不可滚（hover 弹窗那种「瞄一眼」的场景）。
+   *  与 compact 分开：想要小字号不等于愿意被截断——笔记预览就是要读全文的 */
+  clamp?: boolean;
   className?: string;
   /** 防抖毫秒数：>0 时延迟渲染，避免大文档每次击键都重解析（默认 0 立即渲染） */
   debounceMs?: number;
@@ -334,8 +340,9 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
     if (!el) return;
     const blocks = el.querySelectorAll<HTMLElement>(".md-codeblock-mermaid");
     if (blocks.length === 0) return;
-    // hover 弹窗空间有限：展示源码而非渲染 SVG
-    if (compact) {
+    // 裁切场景（hover 弹窗）空间有限：展示源码而非渲染 SVG。
+    // 看 clamp 而不是 compact——「字小」不是不渲染图的理由，「只有 120px」才是
+    if (clamp) {
       blocks.forEach((b) => {
         const raw = b.querySelector<HTMLElement>(".md-mermaid-raw");
         if (raw) raw.style.display = "";
@@ -386,7 +393,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
       cancelled = true;
       unsubPromise.then((u) => u());
     };
-  }, [html, compact]);
+  }, [html, clamp]);
 
   // 块级行号注入：每个非 hr 顶层块插入 md-blknum 编号（点击闪烁见委托事件）。
   // dangerouslySetInnerHTML 重渲染会整体替换子树，故 html 变化后需重新注入；
@@ -456,7 +463,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   return (
     <div
       ref={containerRef}
-      className={`${styles.md} ${compact ? styles.compact : ""} ${showLineNumbers ? "md-ln" : ""} ${className || ""}`}
+      className={`${styles.md} ${compact ? styles.compact : ""} ${clamp ? "md-clamp" : ""} ${showLineNumbers ? "md-ln" : ""} ${className || ""}`}
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
