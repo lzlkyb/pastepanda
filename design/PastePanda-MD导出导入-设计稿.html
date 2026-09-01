@@ -1,0 +1,208 @@
+<title>PastePanda Markdown 目录导出 / 导入（B1 #5 / D1）· 设计稿</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #171d24; --panel2: #1d242c; --line: #2a333d;
+    --tx: #e6edf3; --tx2: #9fb0c0; --tx3: #6b7d8f;
+    --accent: #4a9eff; --warn: #f0a020; --danger: #e5534b; --ok: #3fb950;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f8fa; --panel: #fff; --panel2: #f0f3f6; --line: #d8dee4;
+      --tx: #1f2328; --tx2: #57606a; --tx3: #8c959f; --accent: #0969da;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 20px 60px; background: var(--bg); color: var(--tx);
+    font: 14px/1.65 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 21px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 34px 0 10px; padding-bottom: 7px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 13.5px; margin: 20px 0 7px; }
+  p, li { color: var(--tx2); }
+  .lede { color: var(--tx2); font-size: 13px; margin: 0 0 6px; }
+  code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; font: 12px ui-monospace, Consolas, monospace; color: var(--tx); }
+  pre { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 11px 13px; overflow-x: auto; font: 12px/1.6 ui-monospace, Consolas, monospace; color: var(--tx); }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 5px; font-size: 11px; font-weight: 600; vertical-align: middle;
+         background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
+  .tag.ok { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
+  .tag.bad { background: color-mix(in srgb, var(--danger) 20%, transparent); color: var(--danger); }
+  .note { border-left: 3px solid var(--accent); background: var(--panel); padding: 10px 13px;
+          border-radius: 0 7px 7px 0; margin: 12px 0; font-size: 12.5px; }
+  .note.warn { border-left-color: var(--warn); }
+  .note.bad { border-left-color: var(--danger); }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 12.5px; }
+  th, td { border: 1px solid var(--line); padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { background: var(--panel2); font-weight: 600; color: var(--tx); }
+  td { color: var(--tx2); }
+</style>
+
+<div class="wrap">
+
+<h1>Markdown 目录导出 / 导入 <span class="tag">B1 #5 · D1</span></h1>
+<p class="lede">
+  规划验收原句：导出目录<b>当作 vault 直接用 Obsidian 打开</b>。
+  它是 §4 红线第 4 条的落地：<b>数据出不去，用户就不敢把重要知识放进来</b>。
+</p>
+
+<h2>0 · 开工前核实：规划里有一句是错的</h2>
+<div class="note bad">
+  <b>🔴 「附件那半已完成」不成立。</b>
+  <code>note_attachments</code> 在整个后端<b>一处都没有</b>（§6 本来就写了「A 阶段不建此表」）。
+  图片笔记当前的形态是「OCR 文本 + <code>history_id</code> 引用原卡片」，<b>正文里根本没有图片链接</b>。
+  所以验收里「图片不裂」这句现在<b>无法被验证</b>——导出的 vault 里一张图也不会有。
+  本稿把这句改成可验证的说法，真正的附件导出跟着 D9 / <code>note_attachments</code> 走。
+</div>
+<table>
+  <tr><th>规划说法</th><th>核实结果</th></tr>
+  <tr><td>「<code>[[wiki-link]]</code> 原样保留」</td>
+      <td>✅ <b>免费</b>。全项目零处解析 <code>[[</code>（D7 就是这么定的），写进去什么样导出就什么样</td></tr>
+  <tr><td>「项目零 frontmatter 能力」</td>
+      <td>属实，但比这句更糟：<code>noteToMarkdown</code> 已经有一个，但<b>一处转义都没有</b>。
+          标题里有 <code>: </code>、或以 <code>[</code> / <code>#</code> 开头，产出的就是非法 YAML</td></tr>
+  <tr><td>权限</td>
+      <td>✅ <code>dialog:default</code> + <code>fs:allow-write-file</code> / <code>write-text-file</code> 已在
+          <code>capabilities/default.json</code>。但按下面的方案，<b>一条新权限都不需要</b></td></tr>
+</table>
+
+<h2>1 · 写文件的活在哪边干</h2>
+<table>
+  <tr><th>方案</th><th>怎么做</th><th>代价</th></tr>
+  <tr><td>甲·前端 fs 插件</td>
+      <td>TS 拼 frontmatter，逐个 <code>writeTextFile</code></td>
+      <td>N 篇笔记 = N+ 次 IPC；建子目录还得补 <code>fs:allow-mkdir</code>；
+          <b>而且导入必然在 Rust，于是 frontmatter 会有两份实现</b></td></tr>
+  <tr><td><b>乙·后端 Rust 全包</b> <span class="tag ok">选它</span></td>
+      <td>前端只用 dialog 选目录，把路径交给一个命令；<code>std::fs</code> 写完全部</td>
+      <td>一次 IPC；不碰 fs 插件权限；<b>生成与解析天然坐在一起</b></td></tr>
+</table>
+<div class="note">
+  <b>选乙带出一个顺带改动（规则 #11）：</b>frontmatter 的生成收口到 Rust 后，
+  前端「复制为 Markdown」也改调同一个命令，而不是自己再拼一遍。
+  否则“复制出去的格式”与“导出的格式”会慢慢漂成两种。代价：复制多一次 IPC（无感）。
+</div>
+
+<h2>2 · 导出的目录形状</h2>
+<pre>你选的目录/
+  工作笔记/                 ← 文件夹树原样铺开（B1 #1 才有的东西）
+    NC 二开/
+      单据模板要点.md
+  未分类的笔记.md          ← folder_id 为空 ⇒ 直接放根目录
+  _PastePanda导出说明.md    ← 一页：这是什么 / 怎么导回去 / 哪些东西没导</pre>
+<table>
+  <tr><th>问题</th><th>怎么处理</th><th>为什么</th></tr>
+  <tr><td>标题里有 <code>\ / : * ? " &lt; &gt; |</code></td><td>换成 <code>_</code></td>
+      <td>Windows 直接拒绝这些字符；不换就是导一半报错</td></tr>
+  <tr><td>同一目录下标题重复</td><td>第二个起加 <code> (2)</code> <code> (3)</code></td>
+      <td>笔记标题本来就不唯一（库里没唯一约束），不编号就互相覆盖、静默丢笔记</td></tr>
+  <tr><td>标题空 / 全是非法字符</td><td>用 <code>无标题-&lt;id 前 8 位&gt;</code></td>
+      <td>空文件名写不下去</td></tr>
+  <tr><td>标题很长</td><td>截到 80 字符</td>
+      <td>Windows 路径总长 260，三层文件夹加长标题很容易碰到</td></tr>
+</table>
+<div class="note warn">
+  <b>文件名不可逆，所以导回来不靠文件名认人。</b>
+  清洗过的标题、加了 <code>(2)</code> 的重名、截断的长标题——都回不到原标题。
+  身份靠 frontmatter 里的 <code>pastepanda_id</code>（见 §3）。
+</div>
+
+<h2>3 · frontmatter 字段与 YAML 转义</h2>
+<pre>---
+title: "会议纪要: 8/29 发布评审"      # 含冒号 ⇒ 必须加引号
+tags:
+  - 工作
+  - NC 二开                              # 块式列表，不用 [a, b]
+created: 2026-08-29 14:32:07
+updated: 2026-09-01 09:10:44
+pastepanda_id: 7c1f…                     # 回写靠它，不靠文件名
+---
+
+正文原样，[[wiki-link]] 一字不改。</pre>
+<table>
+  <tr><th>决定</th><th>理由</th></tr>
+  <tr><td><code>tags</code> 用<b>块式列表</b>而不是 <code>[a, b]</code></td>
+      <td>现有 <code>noteToMarkdown</code> 写的是 <code>[a, b]</code>：标签名里有逗号或方括号就直接碎。
+          块式每行一个，只需处理行首特殊字符</td></tr>
+  <tr><td>字段名用 <code>tags</code> / <code>created</code></td>
+      <td>Obsidian 的约定就是这两个；叫 <code>note_tags</code> 它不认</td></tr>
+  <tr><td>多写一个 <code>pastepanda_id</code></td>
+      <td>Obsidian 对不认识的字段是<b>原样保留</b>的，所以它能安全地跨软件往返一趟</td></tr>
+  <tr><td><b>不写 <code>aliases</code></b></td>
+      <td>库里根本没有别名这个概念。写一个恒为空的字段是噪音</td></tr>
+</table>
+<h3>转义规则（就这三条，不引 YAML 库）</h3>
+<ol>
+  <li>值含 <code>: </code> <code>#</code> <code>"</code> <code>'</code>、首尾空白、或首字符是
+      <code>[ { - ? &amp; * ! | &gt; % @ `</code> 之一 ⇒ 加双引号，内部 <code>\</code> 与 <code>"</code> 转义</li>
+  <li>值含换行 ⇒ 也加双引号，换行写成 <code>\n</code>（标题里不该有，但不能假设没有）</li>
+  <li>空值字段直接<b>不输出这一行</b>，不写 <code>tags: []</code></li>
+</ol>
+<div class="note">
+  为什么不引 <code>serde_yaml</code>：写只需要这三条；<b>读也只需要认 5 个已知字段</b>（其余行直接忽略）。
+  引一个完整 YAML 解析器去读 5 个字段，换来的是它对错误缩进 / 错错缩进的整套语义——而那些情况我们反正都要降级处理。
+</div>
+
+<h2>4 · 导入：三级匹配</h2>
+<table>
+  <tr><th>顺序</th><th>条件</th><th>动作</th></tr>
+  <tr><td>①</td><td>有 <code>pastepanda_id</code> 且库里还在</td>
+      <td><b>更新那条</b>（走 <code>note_update</code>，因此<b>自动留下一份版本快照</b>，#4 白送的）</td></tr>
+  <tr><td>②</td><td>有 id 但库里已删 / 没有 id</td>
+      <td>按【目标文件夹 + 标题】找；找到就更新</td></tr>
+  <tr><td>③</td><td>都没找到</td><td>新建（按目录层次自动建文件夹，超过 3 层的就平接到第 3 层）</td></tr>
+</table>
+<div class="note bad">
+  <b>导入永远不删库里的任何东西。</b> 它是「合并」不是「同步」：
+  目录里没有、库里有的笔记<b>原封不动</b>。
+  双向同步要处理删除传播，而一次选错目录就能把整个知识库清空——不值。
+</div>
+<table>
+  <tr><th>边界</th><th>处理</th></tr>
+  <tr><td>没有 frontmatter 的纯 .md（Obsidian 里随手建的）</td>
+      <td>照收。标题 = 文件名（去 <code>.md</code>），标签空，正文全文</td></tr>
+  <tr><td>frontmatter 坏了 / 不闭合</td>
+      <td><b>当成没有 frontmatter</b>，整个文件当正文。不报错中断整次导入</td></tr>
+  <tr><td>非 <code>.md</code> 文件 / <code>.obsidian/</code> 等隐藏目录</td><td>跳过，计入「已跳过」</td></tr>
+  <tr><td>单个文件读失败 / 非 UTF-8</td><td>跳过并<b>记下文件名</b>，结果里列出来（规则 #15.3：不静默）</td></tr>
+</table>
+
+<h2>5 · 入口与反馈</h2>
+<p>
+  放<b>设置 → 数据管理</b>，紧跟在现有的「导出数据 / 导入数据」（那两条是<b>历史记录的 JSON</b>）之后，
+  新增两行：<b>导出笔记为 Markdown 目录</b> / <b>从 Markdown 目录导入</b>。
+</p>
+<div class="note warn">
+  两组文案必须能一眼分开。现有那两条只写「导出数据 / 将历史记录导出为 JSON 文件」，
+  新增的写清楚是<b>笔记</b>与<b>目录</b>——否则用户会以为导了一份就什么都备份了。
+</div>
+<p>完成后用 toast 报<b>真数字</b>，不报「完成」：</p>
+<pre>导出：已导出 46 篇笔记到 12 个文件夹
+导入：新增 8 篇、更新 3 篇、跳过 2 个文件</pre>
+
+<h2>6 · 不做清单</h2>
+<table>
+  <tr><th>不做</th><th>理由</th></tr>
+  <tr><td>附件 / 图片导出</td><td><b>根本没有附件通路</b>（§0）。归 D9 <code>note_attachments</code></td></tr>
+  <tr><td>双向同步 / 监听目录变化</td><td>那是 D10（云同步）的活，且是将来的付费项</td></tr>
+  <tr><td>导出时按文件夹 / 标签筛选</td><td>第一版就是全量。部分导出的 vault 打开后 wiki-link 会断，反而像坏了</td></tr>
+  <tr><td>导入时认 <code>[[wiki-link]]</code> 建关系</td><td>D7：解析归 C 阶段。现在只是字符串</td></tr>
+  <tr><td>冲突时逐条问用户</td><td>几十个弹框没人能认真回。规则固定（§4），而且<b>更新都有快照可回退</b></td></tr>
+</table>
+
+<h2>7 · 验收</h2>
+<ol>
+  <li>导出后把那个目录<b>当 vault 直接用 Obsidian 打开</b>：文件夹层次一致，
+      标签在右侧面板里<b>能被识别成标签</b>（不是一堆纯文本）</li>
+  <li>标题里带 <code>: </code> 与 <code>/</code> 的笔记：文件能建出来，且 Obsidian <b>不报 frontmatter 错误</b></li>
+  <li>同一文件夹两篇同名笔记：导出成两个文件，<b>一篇不丢</b></li>
+  <li><b>导出 → 在 Obsidian 里改一篇 → 导回来</b>：改动生效，且那篇笔记的
+      <b>历史里多了一份导入前的版本</b>（#4 联动）</li>
+  <li>同一个目录连导两次：第二次<b>新增 0 篇</b>（全部走到①更新），不会翻倍</li>
+  <li>拿一个<b>不是 PastePanda 导出的</b> Obsidian vault 直接导：能进来，
+      <code>.obsidian/</code> 被跳过，一个都不报错</li>
+  <li>导入一个有坏掉 frontmatter 的文件：它以「整文为正文」进来，<b>其余文件不受影响</b></li>
+  <li>导入<b>永远不删</b>：库里有但目录里没有的笔记，导完还在</li>
+</ol>
+
+</div>
