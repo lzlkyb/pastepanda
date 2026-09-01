@@ -11,6 +11,7 @@
     "sync:version": "node scripts/sync-version.mjs",
     "prebuild": "node scripts/sync-version.mjs && node scripts/gen-changelog.mjs && node scripts/sync-manual-version.mjs",
     "updater:generate": "node scripts/generate-updater-json.mjs",
+    "gen:installer-bitmaps": "node scripts/gen-nsis-bitmaps.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src/ --max-warnings=0",
