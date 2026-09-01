@@ -407,11 +407,104 @@ fn test_update_history_time() {
         .unwrap();
 
     store
-        .update_history_time("time-1", "2024-06-01 12:00:00")
+        .update_history_time("time-1", "2024-06-01 12:00:00", TimeBump::ResaveOnly)
         .unwrap();
 
     let result = store.get_history("默认", "all", "", 0, 10).unwrap();
     assert_eq!(result[0].time, "2024-06-01 12:00:00");
+}
+
+/// `TimeBump` 的两个分支必须真的不同（B2 前置）。
+///
+/// 钉这条的理由：`update_history_time` 有 10 个调用点，其中两个是编辑器 Ctrl+S。
+/// 若哪天有人把分支判断抹了、改成无条件 +1，「重复复制」信号会被按保存次数污染得彻底不可用，
+/// 而这种污染**不会报任何错**。
+#[test]
+fn test_update_history_time_recopy_count() {
+    let store = make_store();
+    store
+        .insert_history(&make_item("rc-1", "Content", "2024-01-01 10:00:00", "text"))
+        .unwrap();
+
+    let count = || -> i64 {
+        store
+            .lock_conn()
+            .query_row(
+                "SELECT recopy_count FROM history WHERE id = 'rc-1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+    };
+
+    assert_eq!(count(), 0, "刚入库应为 0");
+
+    // 编辑器重复保存两次：时间变了，但不算重复复制
+    store
+        .update_history_time("rc-1", "2024-01-02 10:00:00", TimeBump::ResaveOnly)
+        .unwrap();
+    store
+        .update_history_time("rc-1", "2024-01-03 10:00:00", TimeBump::ResaveOnly)
+        .unwrap();
+    assert_eq!(count(), 0, "ResaveOnly 不能计数");
+
+    // 真的被重复采集三次
+    for d in 4..7 {
+        store
+            .update_history_time("rc-1", &format!("2024-01-0{} 10:00:00", d), TimeBump::Recapture)
+            .unwrap();
+    }
+    assert_eq!(count(), 3, "Recapture 每次 +1");
+}
+
+/// 搜索命中要同时写 `search_hit_count` 与 `search_hit_at`（B2 前置）。
+///
+/// 钉这条是因为 `bump_search_hits` 里参数占位符从 `?2` 开始（`?1` 给时间）——
+/// 这种差一位的绑定错误不会报错，只会安静地一条都更新不到。
+#[test]
+fn test_search_hit_records_time() {
+    let store = make_store();
+    store
+        .insert_history(&make_item("sh-1", "Rust 的 Pin", "2024-01-01 10:00:00", "text"))
+        .unwrap();
+
+    let hits = store.get_history("默认", "all", "Pin", 0, 10).unwrap();
+    assert_eq!(hits.len(), 1, "该搜得到");
+
+    let (n, at): (i64, Option<String>) = store
+        .lock_conn()
+        .query_row(
+            "SELECT search_hit_count, search_hit_at FROM history WHERE id = 'sh-1'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(n, 1, "命中次数 +1");
+    assert!(at.is_some(), "命中时间必须写上");
+}
+
+/// `note_touch` 只能改 `last_access_at`，**不能碰 `updated_at`**（B2 前置）。
+///
+/// 钉这条的理由：笔记列表按 `updated_at` 降序。若 touch 沾上了 `updated_at`，
+/// 随便点开一条旧笔记就会把它顶到最前，看起来像「自己乱跳」而不像 bug。
+#[test]
+fn test_note_touch_does_not_bump_updated_at() {
+    let store = make_store();
+    let note = store.note_create(None, "旧笔记", "很久没看了").unwrap();
+
+    store.note_touch(&note.id);
+
+    let (updated, access): (String, Option<String>) = store
+        .lock_conn()
+        .query_row(
+            "SELECT updated_at, last_access_at FROM notes WHERE id = ?1",
+            [&note.id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+
+    assert_eq!(updated, note.updated_at, "updated_at 不能被改");
+    assert!(access.is_some(), "last_access_at 必须写上");
 }
 
 // ============================================================

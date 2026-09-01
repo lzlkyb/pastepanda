@@ -655,6 +655,8 @@ pub fn run() {
             commands::note_set_summary,
             commands::note_add_ai_tags,
             commands::note_confirm_ai_tags,
+            // 笔记访问时间（B2 前置，为 #7 重现的「久未访问」攒数据）
+            commands::note_touch,
             // 今日速记（B2 #3 / D11）——热键与右键菜单共用 append 这一条
             commands::note_append_daily,
             commands::note_daily_dates,

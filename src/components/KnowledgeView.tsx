@@ -39,6 +39,7 @@ import {
   folderList,
   folderUnfiledCount,
   folderMaxDepth,
+  noteTouch,
   type Note,
   type NoteFolder,
   type FolderFilter,
@@ -147,6 +148,9 @@ export function KnowledgeView() {
   /** 点一条笔记：宽屏进第三栏，窄屏走弹窗。 */
   const handleOpen = useCallback(
     (note: Note) => {
+      // 打开已有笔记 = 一次阅读（口径定义见 noteTouch 的注释）。
+      // 写在两分支之前：宽屏进第三栏、窄屏走弹窗，两边都是打开。
+      noteTouch(note.id);
       if (layout.hasDetailPane) {
         setActiveNote(note);
         return;

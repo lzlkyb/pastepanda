@@ -6,6 +6,7 @@ mod kb_shadow;
 mod note;
 mod note_folder;
 mod note_ai;
+mod note_access;
 mod note_daily;
 mod note_md;
 mod note_revision;
@@ -91,6 +92,19 @@ pub(crate) fn escape_like_pattern(s: &str) -> String {
 }
 
 // ===== 数据模型 =====
+
+/// `update_history_time` 的意图标记：这次把时间戳提前，算不算「内容又被采集了一次」。
+///
+/// 用枚举而不是 `bool`：调用点写 `TimeBump::Recapture` 能看出意图，写 `true` 看不出。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimeBump {
+    /// 同一内容**被重新采集**：剪贴板重复复制 / 局域网同步来的同一条 / 相同截图。
+    /// → `recopy_count` +1（§8.3 #2 的「🔁重复复制」信号）。
+    Recapture,
+    /// 只是同一条被**重新保存**（编辑器 Ctrl+S 但内容未变）。
+    /// → 不计数。用户按了三次保存不等于这段内容重要。
+    ResaveOnly,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryItem {
@@ -984,6 +998,86 @@ impl DataStore {
                     log::warn!("[DataStore] history.search_hit_count 列已存在，忽略: {}", e);
                 } else {
                     log::error!("[DataStore] 添加 history.search_hit_count 列失败: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
+        // 数据库迁移（B2 前置）：history.recopy_count ——同一内容被**重复采集**的次数。
+        //
+        // 这是 §8.3 #2 的「🔁重复复制」信号。之前去重只把时间戳提到最新，**次数没留下来**。
+        //
+        // ❗ 叫 `recopy_count` 而不是 `copy_count`：`snippets.copy_count` 已经存在且是另一个意思
+        //   （片段被使用的次数）。两个同名列不同语义是日后读错的源头。
+        //
+        // 它是计数器：**只有累加过一段时间才有值**，所以先落列开始写，读它的 UI 晚一步做。
+        let has_recopy: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('history') WHERE name = 'recopy_count'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_recopy {
+            if let Err(e) = conn
+                .execute_batch("ALTER TABLE history ADD COLUMN recopy_count INTEGER NOT NULL DEFAULT 0;")
+            {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] history.recopy_count 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 history.recopy_count 列失败: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
+        // 数据库迁移（B2 前置）：history.search_hit_at ——**最近一次**被搜索命中的时间。
+        //
+        // `search_hit_count` 只答「被找回过几次」，答不了「多久没找过」。
+        // A-32 那次待沉淀区设计稿里的「最近一次找回」就是因为这列不存在而停工、推到 B2。
+        let has_hit_at: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('history') WHERE name = 'search_hit_at'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_hit_at {
+            if let Err(e) =
+                conn.execute_batch("ALTER TABLE history ADD COLUMN search_hit_at TEXT;")
+            {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] history.search_hit_at 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 history.search_hit_at 列失败: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
+        // 数据库迁移（B2 前置）：notes.last_access_at ——笔记最后一次被**打开阅读**的时间。
+        //
+        // §8.3 #7 重现的选取口径是「久未访问 × 当初信号强度」，而「久未访问」目前无数据源：
+        // `updated_at` 是「最后一次被改」，不是「最后一次被看」——只读不改的笔记永远显得「很久没动」。
+        // ❗ 不在 `note_get` 里自动写：它被 note_ai / note_revision 内部调用，那不是用户在看。
+        //   写入走一个显式的 note_touch（参见 data_store/note_access.rs）。
+        let has_last_access: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('notes') WHERE name = 'last_access_at'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_last_access {
+            if let Err(e) = conn.execute_batch("ALTER TABLE notes ADD COLUMN last_access_at TEXT;")
+            {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] notes.last_access_at 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 notes.last_access_at 列失败: {}", e);
                     return Err(e);
                 }
             }

@@ -4,7 +4,7 @@
 //! （绕过 Tauri State 依赖，直接测试 data_store 层 + 纯函数）
 
 use md5::Digest;
-use pastepanda_lib::data_store::{DataStore, HistoryItem};
+use pastepanda_lib::data_store::{DataStore, HistoryItem, TimeBump};
 
 /// 创建内存数据库的 DataStore
 fn make_store() -> DataStore {
@@ -526,7 +526,9 @@ fn test_dedup_by_md5_workflow() {
     let now = chrono::Local::now()
         .format("%Y-%m-%d %H:%M:%S")
         .to_string();
-    store.update_history_time("dup-1", &now).unwrap();
+    store
+        .update_history_time("dup-1", &now, TimeBump::Recapture)
+        .unwrap();
 
     // 现在最新的是 dup-1
     let found = store

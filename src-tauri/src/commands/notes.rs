@@ -61,6 +61,15 @@ pub fn note_get(store: State<DataStore>, id: String) -> Result<Option<Note>, Str
     store.note_get(&id)
 }
 
+/// 记一笔「这条笔记被打开阅读了」（B2 前置，为 §8.3 #7 重现的「久未访问」攒数据）。
+///
+/// 无返回值、不报错——失败只在 Rust 侧记 warn，同 `action_event_log` 的口径。
+/// 不写在 `note_get` 里：它被 note_ai / note_revision 内部调用，那不是用户在看。
+#[tauri::command]
+pub fn note_touch(store: State<DataStore>, id: String) {
+    store.note_touch(&id);
+}
+
 /// 笔记列表，`updated_at` 降序。
 ///
 /// `folderFilter`：`"all"` | `"unfiled"` | `<folder_id>`（照搬记录模式 `group_filter` 的约定）。

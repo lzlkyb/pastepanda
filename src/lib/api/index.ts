@@ -87,6 +87,7 @@ export {
   noteUpdate,
   noteDelete,
   noteGet,
+  noteTouch,
   noteList,
   noteByHistory,
   fetchNoteHistoryIds,

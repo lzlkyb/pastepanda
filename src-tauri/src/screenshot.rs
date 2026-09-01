@@ -1356,7 +1356,12 @@ fn insert_screenshot_with_rgba(
     let store = app.state::<crate::data_store::DataStore>();
     // 查重：同一图片已入库只更新时间（与剪贴板监控的智能合并行为一致）
     if let Ok(Some(existing)) = store.find_latest_by_md5(&img_hash, "默认", "image") {
-        let _ = store.update_history_time(&existing.id, &now_str);
+        // 相同截图又拍了一次，算重复采集
+        let _ = store.update_history_time(
+            &existing.id,
+            &now_str,
+            crate::data_store::TimeBump::Recapture,
+        );
         if let Some(t) = ocr_text.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
             let _ = store.history_summary_ensure(&existing.id, t);
         }

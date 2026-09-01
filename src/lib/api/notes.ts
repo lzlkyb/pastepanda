@@ -86,6 +86,23 @@ export async function noteDelete(id: string, historyId?: string | null): Promise
   }
 }
 
+/**
+ * 记一笔「这条笔记被打开阅读了」（B2 前置，为 §8.3 #7 重现的「久未访问」攒数据）。
+ *
+ * **「什么算一次访问」的定义就在这里**（规则 #11）：用户**打开一条已存在的笔记**。
+ * 两个调用点：知识库里点开一条（KnowledgeView.handleOpen）、
+ * 点已转过的卡片跳到它的笔记（openNoteForCard 的 existing 分支）。
+ * **新建不算**（还没开始读），**今日速记追加不算**（那是写不是读）。
+ *
+ * fire-and-forget：失败不提示也不阻断打开，同 `logActionEvent` 的口径。
+ * 后端只改 `last_access_at`，**不碰 `updated_at`**（看一眼不是改一次）。
+ */
+export function noteTouch(id: string): void {
+  void invoke("note_touch", { id }).catch(() => {
+    /* 统计写不进去不该影响用户，后端已记 warn */
+  });
+}
+
 /** 按 id 取一条（带标签）。 */
 export async function noteGet(id: string): Promise<Note | null> {
   try {

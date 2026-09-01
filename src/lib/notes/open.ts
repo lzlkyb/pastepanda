@@ -8,7 +8,7 @@ import type { HistoryItem } from "@/stores/appStore";
 import type { ImageOcrState } from "@/lib/utils";
 import { useDialogStore } from "@/stores/dialogStore";
 import { useAppStore } from "@/stores/appStore";
-import { noteByHistory } from "@/lib/api";
+import { noteByHistory, noteTouch } from "@/lib/api";
 import { extractNoteDraft } from "./extract";
 import { applyTemplateToDraft, parseTemplateOverrides } from "./template";
 
@@ -25,6 +25,8 @@ import { applyTemplateToDraft, parseTemplateOverrides } from "./template";
 export async function openNoteForCard(item: HistoryItem, ocrState?: ImageOcrState): Promise<void> {
   const existing = await noteByHistory(item.id);
   if (existing) {
+    // 打开已有笔记 = 一次阅读（口径定义见 noteTouch 的注释）
+    noteTouch(existing.id);
     useDialogStore.getState().openNote({
       noteId: existing.id,
       historyId: item.id,

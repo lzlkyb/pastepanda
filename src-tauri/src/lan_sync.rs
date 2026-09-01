@@ -1,4 +1,4 @@
-use crate::data_store::{compute_pinyin_initials, DataStore, HistoryItem};
+use crate::data_store::{compute_pinyin_initials, DataStore, HistoryItem, TimeBump};
 // 内容 md5 走共享实现：原先本文件自己拄了一份 `md5_hex`，注释写着“与
 // clipboard_monitor::md5_hex 同口径”——但那只是注释承诺。智能合并完全依赖
 // 两边真的算出同一个值，不一致就会堆重复记录。
@@ -478,7 +478,7 @@ impl LanSync {
                                 // 旧时间，下次重载就跳回去。内容本身不会丢（那条记录本就存在），
                                 // 所以仍然 merged/continue，只是不拿不存在的时间去骗前端。
                                 let time_written =
-                                    match store.update_history_time(&existing.id, &now_str) {
+                                    match store.update_history_time(&existing.id, &now_str, TimeBump::Recapture) {
                                         Err(e) => {
                                             log::warn!(
                                                 "[LanSync] 更新重复同步记录时间失败: {}",

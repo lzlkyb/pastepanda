@@ -1,5 +1,5 @@
 use crate::content_classifier::ContentClassifier;
-use crate::data_store::{compute_pinyin_initials, DataStore, HistoryItem};
+use crate::data_store::{compute_pinyin_initials, DataStore, HistoryItem, TimeBump};
 use arboard::Clipboard;
 use regex::Regex;
 use serde::Serialize;
@@ -1166,7 +1166,7 @@ fn process_text(
         if let Ok(Some(existing)) = store.find_latest_by_md5(&hash, "默认", "text") {
             // 找到重复内容，只更新时间戳（不创建新记录）
             existing_id = Some(existing.id.clone());
-            if let Err(e) = store.update_history_time(&existing.id, &now_str) {
+            if let Err(e) = store.update_history_time(&existing.id, &now_str, TimeBump::Recapture) {
                 log::warn!("[ClipboardMonitor] 更新重复记录时间失败: {}", e);
             } else {
                 log::info!(
@@ -1334,7 +1334,7 @@ fn process_image(
     let store = app_handle.try_state::<DataStore>();
     if let Some(ref store) = store {
         if let Ok(Some(existing)) = store.find_latest_by_md5(&img_hash, "默认", "image") {
-            if let Err(e) = store.update_history_time(&existing.id, &now_str) {
+            if let Err(e) = store.update_history_time(&existing.id, &now_str, TimeBump::Recapture) {
                 log::warn!("[ClipboardMonitor] 更新重复图片时间失败: {}", e);
             } else {
                 log::info!(
@@ -1459,7 +1459,7 @@ fn process_rich(
     let store = app_handle.try_state::<DataStore>();
     if let Some(ref store) = store {
         if let Ok(Some(existing)) = store.find_latest_by_md5(&hash, "默认", "rich") {
-            if let Err(e) = store.update_history_time(&existing.id, &now_str) {
+            if let Err(e) = store.update_history_time(&existing.id, &now_str, TimeBump::Recapture) {
                 log::warn!("[ClipboardMonitor] 更新重复富文本时间失败: {}", e);
             } else {
                 log::info!(
@@ -1568,7 +1568,7 @@ fn process_doc(
     let store = app_handle.try_state::<DataStore>();
     if let Some(ref store) = store {
         if let Ok(Some(existing)) = store.find_latest_by_md5(&hash, "默认", "doc") {
-            if let Err(e) = store.update_history_time(&existing.id, &now_str) {
+            if let Err(e) = store.update_history_time(&existing.id, &now_str, TimeBump::Recapture) {
                 log::warn!("[ClipboardMonitor] 更新重复文档时间失败: {}", e);
             } else {
                 log::info!(
@@ -1661,7 +1661,7 @@ fn process_files(
         let store = app_handle.try_state::<DataStore>();
         if let Some(ref store) = store {
             if let Ok(Some(existing)) = store.find_latest_by_md5(&file_hash, "默认", "file") {
-                if let Err(e) = store.update_history_time(&existing.id, &now_str) {
+                if let Err(e) = store.update_history_time(&existing.id, &now_str, TimeBump::Recapture) {
                     log::warn!("[ClipboardMonitor] 更新重复文件时间失败: {}", e);
                 } else {
                     log::info!(
@@ -1855,7 +1855,7 @@ fn run_polling_listener(
                     if let Some(ref store) = store {
                         if let Ok(Some(existing)) = store.find_latest_by_md5(&hash, "默认", "text") {
                             existing_id = Some(existing.id.clone());
-                            if let Err(e) = store.update_history_time(&existing.id, &now_str) {
+                            if let Err(e) = store.update_history_time(&existing.id, &now_str, TimeBump::Recapture) {
                                 log::warn!(
                                     "[ClipboardMonitor] 更新重复记录时间失败: {}",
                                     e

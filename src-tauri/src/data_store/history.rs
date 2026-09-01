@@ -316,20 +316,10 @@ impl DataStore {
         self.load_tags_into_items(&mut items)?;
         self.load_ocr_texts_into_items(&mut items)?;
 
-        // v6.1 自我净化：简单搜索路径也记录命中（fire-and-forget）
+        // v6.1 自我净化：简单搜索路径也记录命中（收口在 bump_search_hits）
         if !search.is_empty() && !items.is_empty() {
             let ids: Vec<String> = items.iter().map(|i| i.id.clone()).collect();
-            let placeholders: Vec<String> =
-                ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
-            let sql = format!(
-                "UPDATE history SET search_hit_count = search_hit_count + 1 WHERE id IN ({})",
-                placeholders.join(","),
-            );
-            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-                ids.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
-            if let Err(e) = self.lock_conn().execute(&sql, param_refs.as_slice()) {
-                log::warn!("[History] 搜索命中计数更新失败: {}", e);
-            }
+            self.bump_search_hits(&ids);
         }
 
         Ok(items)
@@ -477,22 +467,9 @@ impl DataStore {
                 limit,
             ) {
                 if !fts_items.is_empty() {
-                    // 搜索命中计数（独立取锁）
+                    // 搜索命中计数（独立取锁，收口在 bump_search_hits）
                     let ids: Vec<String> = fts_items.iter().map(|i| i.id.clone()).collect();
-                    let placeholders: Vec<String> = ids
-                        .iter()
-                        .enumerate()
-                        .map(|(i, _)| format!("?{}", i + 1))
-                        .collect();
-                    let sql = format!(
-                        "UPDATE history SET search_hit_count = search_hit_count + 1 WHERE id IN ({})",
-                        placeholders.join(","),
-                    );
-                    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-                        ids.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
-                    if let Err(e) = self.lock_conn().execute(&sql, param_refs.as_slice()) {
-                        log::warn!("[History] 搜索命中计数更新失败: {}", e);
-                    }
+                    self.bump_search_hits(&ids);
                     return Ok(fts_items);
                 }
             }
@@ -609,20 +586,10 @@ impl DataStore {
         self.load_ocr_texts_into_items(&mut items)?;
 
         // v6.1 自我净化：搜索命中即高价值信号（豁免过期清理）。
-        // 对本次命中并返回的条目批量 +1，fire-and-forget（写失败不阻塞搜索本身）。
+        // 对本次命中并返回的条目批量 +1，fire-and-forget（收口在 bump_search_hits）。
         if !search.is_empty() && !items.is_empty() {
             let ids: Vec<String> = items.iter().map(|i| i.id.clone()).collect();
-            let placeholders: Vec<String> =
-                ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
-            let sql = format!(
-                "UPDATE history SET search_hit_count = search_hit_count + 1 WHERE id IN ({})",
-                placeholders.join(","),
-            );
-            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-                ids.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
-            if let Err(e) = self.lock_conn().execute(&sql, param_refs.as_slice()) {
-                log::warn!("[History] 搜索命中计数更新失败: {}", e);
-            }
+            self.bump_search_hits(&ids);
         }
 
         Ok(items)
@@ -892,15 +859,55 @@ impl DataStore {
         }
     }
 
-    /// 更新记录的 time 为当前时间（智能合并用：重复内容只更新时间戳）
-    pub fn update_history_time(&self, id: &str, new_time: &str) -> Result<(), String> {
+    /// 把一条已存在的记录提到最新（智能合并用：重复内容不新建）。
+    ///
+    /// `bump` 必需显式传，**不给默认值**：这个函数有 11 个调用点，其中两个是
+    /// 编辑器 Ctrl+S 的「内容未变重复保存」。若在本函数里无条件给 `recopy_count` +1，
+    /// 按一次保存就算一次「重复复制」，信号直接坏掉。
+    /// 做成必传参数后，**新增调用点不表态就编译不过**（规则 #11.1）。
+    pub fn update_history_time(
+        &self,
+        id: &str,
+        new_time: &str,
+        bump: TimeBump,
+    ) -> Result<(), String> {
         let conn = self.lock_conn();
-        conn.execute(
-            "UPDATE history SET time = ?1 WHERE id = ?2",
-            params![new_time, id],
-        )
-        .map_err(|e| e.to_string())?;
+        let sql = match bump {
+            TimeBump::Recapture => {
+                "UPDATE history SET time = ?1, recopy_count = recopy_count + 1 WHERE id = ?2"
+            }
+            TimeBump::ResaveOnly => "UPDATE history SET time = ?1 WHERE id = ?2",
+        };
+        conn.execute(sql, params![new_time, id])
+            .map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    /// 批量记一笔搜索命中：次数 +1，并刷新「最近一次命中时间」。
+    ///
+    /// 收口三个搜索路径（简单搜 / FTS / 多关键词）里三段几乎一模一样的代码（规则 #11）——
+    /// 之前只有 `search_hit_count` 时就已经是三份，再加一列就是三处各改一次、漏一处不报错。
+    ///
+    /// fire-and-forget：写失败只记 warn，不能让统计卡住搜索本身。
+    fn bump_search_hits(&self, ids: &[String]) {
+        if ids.is_empty() {
+            return;
+        }
+        let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        // ?1 给时间，id 从 ?2 开始
+        let placeholders: Vec<String> =
+            ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 2)).collect();
+        let sql = format!(
+            "UPDATE history SET search_hit_count = search_hit_count + 1, search_hit_at = ?1 \
+             WHERE id IN ({})",
+            placeholders.join(","),
+        );
+        let mut params: Vec<&dyn rusqlite::types::ToSql> = Vec::with_capacity(ids.len() + 1);
+        params.push(&now as &dyn rusqlite::types::ToSql);
+        params.extend(ids.iter().map(|s| s as &dyn rusqlite::types::ToSql));
+        if let Err(e) = self.lock_conn().execute(&sql, params.as_slice()) {
+            log::warn!("[History] 搜索命中计数更新失败: {}", e);
+        }
     }
 
     pub fn delete_history(&self, ids: &[String]) -> Result<u32, String> {
