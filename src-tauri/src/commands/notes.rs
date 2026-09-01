@@ -190,6 +190,31 @@ pub fn note_search(
     )
 }
 
+/// 问答检索（B2 #10）：把一句自然语言问题按**相关度**换成几篇笔记。
+///
+/// 与 [`note_search`] 分开是必须的：那边是 AND 语义，一整句问题丢进去零命中是必然的
+/// （理由见 `data_store::note::question_to_or_expr` 的注释）。
+///
+/// **不在这里拼 prompt、不调模型**：它只负责检索。出网那一步走现有 `ai_run`（内置动作
+/// `ai-kb-qa`），那条路上才有开关门控 / 出网闸 / 预算 / 缓存 / 用量日志。
+#[tauri::command]
+pub fn note_search_relevant(
+    store: State<DataStore>,
+    question: String,
+    folder_filter: Option<String>,
+    tag_ids: Option<Vec<String>>,
+    view: Option<NoteViewOpts>,
+    limit: Option<u32>,
+) -> Result<Vec<Note>, String> {
+    store.note_search_relevant(
+        &question,
+        folder_filter.as_deref().unwrap_or("all"),
+        &tag_ids.unwrap_or_default(),
+        &validated_view(view),
+        clamp_limit(limit),
+    )
+}
+
 /// 整组替换笔记标签（传空数组 = 清空）。标签本体仍归 `tags` 表管。
 #[tauri::command]
 pub fn note_set_tags(

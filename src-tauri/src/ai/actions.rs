@@ -440,13 +440,37 @@ pub const ACTIONS: &[AiAction] = &[
         options: &[],
         content_types: &[],
     },
+    // ===== 知识库问答雏形（B2 #10）=====
+    //
+    // 同样必须是内部动作：它的输入是拼好的「问题 + 从知识库检出的片段」格式。
+    // 摆进卡片的变换中心后，用户会对着一段普通文本点「问知识库」——
+    // 发出去的是卡片内容，回来的必然是胡话。
+    AiAction {
+        id: "ai-kb-qa",
+        label: "问知识库",
+        description: "只根据给定的笔记片段回答问题",
+        icon: "sparkles",
+        // 回答要短（几句话），但带思考的推理模型光思考就要几百 token，
+        // 所以与 ai-summarize 同取 1024（上限 ≠ 预分配，不抬成本）
+        max_tokens: 1024,
+        options: &[],
+        content_types: &[],
+    },
 ];
 
-/// 流程图画布内部专用的动作：`ai_run` 照常受理，但不出现在 `ai_list_actions` 的清单里。
+/// 不进通用动作面的内部动作：`ai_run` 照常受理，但不出现在 `ai_list_actions` 的清单里。
 ///
 /// 前端 `initAiTransforms` 会把清单里的**每一条**都注册成变换，不过滤的话
-/// 这三条会出现在卡片的变换中心里——而它们的输入输出都是画布专用格式，对普通内容无意义。
-pub const INTERNAL_ACTION_IDS: &[&str] = &["ai-diagram", "ai-diagram-expand", "ai-diagram-label"];
+/// 这几条会出现在卡片的变换中心里——而它们的输入输出都是专用格式
+/// （画布三条是 mermaid，问答那条是「问题 + 片段」），对普通内容无意义。
+pub const INTERNAL_ACTION_IDS: &[&str] = &[
+    "ai-diagram",
+    "ai-diagram-expand",
+    "ai-diagram-label",
+    // 知识库问答（B2 #10）：只能从知识模式的搜/问切换器进，
+    // 它的输入是拼好的「问题 + 片段」格式，对普通卡片内容无意义。
+    "ai-kb-qa",
+];
 
 pub fn is_internal_action(id: &str) -> bool {
     INTERNAL_ACTION_IDS.contains(&id)
@@ -673,6 +697,28 @@ pub fn build_prompt(
              只返回改写后的文字本身，不要解释、不要引号、不要 Markdown：\n\n原文：{}",
             trimmed
         ),
+        // 知识库问答雏形（B2 #10）。`trimmed` 是**前端拼好**的「问题 + 编号片段」，
+        // 格式约定住在 `src/lib/notes/kbQa.ts`，两边必须一致。
+        //
+        // 问题为何不走 `opts` 而拼进正文：`ai_run` 的出网闸只扫 `text`，
+        // 放 `opts` 里等于让用户在问题里打一个手机号就静默出网。
+        //
+        // 引用格式是与前端的**硬约定**（B2 #10b）：前端 `linkifyCitations` 把 `[n]`
+        // 预处理成 markdown 链接再渲染成可点 chip。所以这里要**鼓励**打 `[n]`——
+        // #10 初版写的是「不要输出编号」（当时不解析），已反过来。**两处成对，改一头就错。**
+        //
+        // 越界编号（如只送 5 篇却打 [9]）由前端当普通文本留着，不会渲染成点不动的 chip，
+        // 所以这里不必也不应把格式要求写得更重——模型违反格式是常态，兜底在前端。
+        "ai-kb-qa" => format!(
+            "下面是用户的问题，以及从他本人知识库里检索出的笔记片段（每段开头有 [编号] 与标题）。\
+             **只能依据这些片段回答**：片段里没有的信息，直接回答「知识库中没有相关笔记」，\
+             不要用常识补充、不要推测、不要把问题重复一遍。\
+             若开头给了「上一轮问答」，它**只用于看懂本次追问的指代**，不得当成依据。\
+             每一条事实陈述的句末要标出它来自哪一段，格式就是片段编号，如 [1]；\
+             同时来自多段就并列，如 [1][2]。不要自己另写参考文献列表。\
+             回答简洁，可以用 Markdown 的列表与粗体排版。用与问题相同的语言回答。\n\n{}",
+            trimmed
+        ),
         other => return Err(format!("动作 {} 尚未实现", other)),
     };
 
@@ -751,6 +797,38 @@ mod tests {
             build_prompt("ai-merge-polish", "段落一\n段落二", &HashMap::new(), PromptCtx::default()).unwrap();
         assert!(user.contains("重复"));
         assert!(user.contains("段落一"));
+    }
+
+    // B2 #10 问答雏形：三条硬规则缺任一条都是一种独特的失败方式
+    #[test]
+    fn test_kb_qa_prompt_has_hard_rules() {
+        let (_, user, max) = build_prompt(
+            "ai-kb-qa",
+            "问题：部署流程？\n\n[1] 部署手册\n先发预发布。",
+            &HashMap::new(),
+            PromptCtx::default(),
+        )
+        .unwrap();
+        // ① 只能依据片段——漏了模型就拿常识编，而那是知识库问答最致命的失败
+        assert!(user.contains("只能依据这些片段回答"));
+        // ② 无命中的固定说法——漏了每次回答说法不一
+        assert!(user.contains("知识库中没有相关笔记"));
+        // ③ **鼓励**标 [n]（B2 #10b 反转）——前端要把它渲染成可点 chip，
+        //   漏了就一个 chip 也出不来。与 `linkifyCitations` 成对
+        assert!(user.contains("句末要标出它来自哪一段"));
+        assert!(user.contains("[1]"));
+        // 上一轮只作指代上下文，不得当依据（多轮追问的关键约束）
+        assert!(user.contains("不得当成依据"));
+        // 载荷原样带上
+        assert!(user.contains("部署手册"));
+        assert_eq!(max, 1024);
+    }
+
+    // 问答动作**不能**出现在通用动作面里：否则用户会对着普通卡片点「问知识库」，
+    // 发出去的是卡片内容、回来的必然是胡话
+    #[test]
+    fn test_kb_qa_is_internal_action() {
+        assert!(is_internal_action("ai-kb-qa"));
     }
 
     // v6.1 S3：修复代码动作

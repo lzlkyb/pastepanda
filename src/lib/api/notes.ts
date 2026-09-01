@@ -249,6 +249,35 @@ export async function noteSearch(
   }
 }
 
+/**
+ * 问答检索（B2 #10）：一句自然语言问题 → 按**相关度**的几篇笔记。
+ *
+ * 与 {@link noteSearch} 分开是必须的：那边是 AND 语义，一整句问题丢进去
+ * 零命中是必然的（理由见后端 `question_to_or_expr` 的注释）。
+ *
+ * 🔴 **故意让异常抛出去**，不像 {@link noteSearch} 那样 catch 成 `[]`：
+ * 问答里的空数组会被展示成「知识库中没有相关笔记」——把检索失败
+ * 伪装成「你库里没这个」是个**看不出来的错答案**（规则 #15.3）。
+ */
+export async function noteSearchRelevant(
+  question: string,
+  opts: {
+    folderFilter?: FolderFilter;
+    tagIds?: string[];
+    view?: NoteViewOpts;
+    /** 默认 5 = `QA_TOP_K`（定义在 lib/notes/kbQa.ts，不从 api 层反向依赖它） */
+    limit?: number;
+  } = {},
+): Promise<Note[]> {
+  return await invoke<Note[]>("note_search_relevant", {
+    question,
+    folderFilter: opts.folderFilter ?? "all",
+    tagIds: opts.tagIds ?? [],
+    view: opts.view ?? null,
+    limit: opts.limit ?? 5,
+  });
+}
+
 /** 整组替换笔记标签（空数组 = 清空）。 */
 export async function noteSetTags(noteId: string, tagIds: string[]): Promise<boolean> {
   try {

@@ -73,8 +73,11 @@ pub fn to_ngram(s: &str) -> String {
     out.join(" ")
 }
 
-/// CJK 判定（含扩展区与全角符号近似处理）
-fn is_cjk(c: char) -> bool {
+/// CJK 判定（含扩展区与全角符号近似处理）。
+///
+/// 升成 `pub(super)` 是给 `note.rs` 的问答检索用的（B2 #10）：它要按同一套
+/// CJK 边界切 bigram，另写一份判定 = 两边切词迟早不一致（规则 #11）。
+pub(super) fn is_cjk(c: char) -> bool {
     matches!(c,
         '\u{4E00}'..='\u{9FFF}'   // 基本区
         | '\u{3400}'..='\u{4DBF}' // 扩展 A

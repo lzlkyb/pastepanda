@@ -1,0 +1,292 @@
+/* 知识库问答面板（B2 #10b）。颜色全走主题变量，不自己定色。 */
+
+/* 骨架照抄 NoteDetailPane 的 `.pane`：它已经是第三栏的正确形态
+   （flex 列 + min-height:0 + 左分割线）。不复用那个类是因为它在另一个
+   css module 里，跨模块引用会把两个组件的样式绑死。
+   弹窗宽屏两种宿主共用本类：高度全靠 flex，**不写任何固定高度** */
+.pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border-color);
+  padding: 8px 10px 10px;
+  gap: 6px;
+}
+
+/* 窄屏接管中栏时：没有左分割线（那是三栏布局的东西），
+   也不再自己加内边距——它住在 `.wrap` 里，那边已经给了 12px */
+.inline {
+  border-left: none;
+  padding: 0;
+}
+
+/* 「← 返回列表」。只在窄屏出：宽屏列表一直在旁边，不需要它 */
+.back {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 5px;
+  margin-right: 2px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.back:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+.hd {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent-strong);
+}
+
+.close {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+/* 会话区。**这里是唯一的滚动区**：头部（✕）与底部（范围 + 追问框）必须始终可见。
+   min-height:0 不能省：flex 子项默认 min-height:auto，不写就不收缩、也就不滚。 */
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.turn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 问题行。左侧竖线而不是气泡：300px 栏宽里气泡会把可用宽度再吃掉一层 */
+.qline {
+  border-left: 2px solid var(--border-color);
+  padding-left: 7px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  word-break: break-word;
+}
+
+.answer {
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.err {
+  color: var(--danger);
+}
+
+.state {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 引用 chip。选中的是 `MarkdownRenderer` 渲出来的 anchor，
+   所以必须用 :global——它不带 css module 的 hash 类名。
+   靠 href 前缀选中，与 `CITATION_HREF_PREFIX` 成对（改一头就失效）。 */
+.answer :global(a[href^="#kbqa-ref-"]) {
+  display: inline-block;
+  min-width: 14px;
+  padding: 0 4px;
+  margin: 0 1px;
+  border-radius: 3px;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
+  text-decoration: none;
+  vertical-align: 1px;
+}
+
+.answer :global(a[href^="#kbqa-ref-"]:hover) {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* 流式光标。不做闪烁动画：流式本身在不断变化，再闪只是噪声 */
+.caret {
+  display: inline-block;
+  width: 6px;
+  height: 13px;
+  margin-left: 1px;
+  background: var(--accent);
+  vertical-align: -2px;
+}
+
+.refs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 8px;
+  font-size: 11px;
+}
+
+.refsLabel {
+  color: var(--text-muted);
+}
+
+.ref {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent-strong);
+  font-family: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ref:hover {
+  text-decoration: underline;
+}
+
+.clip,
+.hint {
+  color: var(--text-muted);
+  font-size: 10.5px;
+}
+
+.badge {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  gap: 7px;
+  margin-top: 4px;
+}
+
+.btn,
+.btnPrimary {
+  padding: 4px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: var(--hover);
+}
+
+.btnPrimary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+/* 底部：范围 + 追问框。不随会话滚走 */
+.foot {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-color);
+}
+
+.scope {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.askRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.askInput {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 11.5px;
+  outline: none;
+}
+
+.askInput:focus {
+  border-color: var(--accent);
+}
+
+.askInput:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.askBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--card-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.askBtn:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+.askBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

@@ -31,6 +31,9 @@ mod tests;
 // 字段视图（B2 #9）的用例单独一个文件：tests.rs 已经 5000+ 行，再往里塞找不到东西。
 #[cfg(test)]
 mod tests_view;
+// 问答雏形（B2 #10）的检索用例。同样单独一个文件。
+#[cfg(test)]
+mod tests_qa;
 
 pub use ai_usage::{
     AiUsageByAction, AiUsageDaily, AiUsageEntry, AiUsageLogRow, AI_USAGE_RETAIN_DAYS,

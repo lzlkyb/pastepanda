@@ -24,7 +24,7 @@ use super::*;
 // `to_ngram` 住在 history.rs（它是那里先需要的），并未从 mod.rs 再导出，
 // 所以 `use super::*` 带不进来，得显式引。现在它有两个使用方了；
 // 若再出现第三个，就该把它上提到 mod.rs 当共用 FTS 工具（规则 #11）。
-use super::history::to_ngram;
+use super::history::{is_cjk, to_ngram};
 // 文件夹子树的递归 CTE 住在 note_folder.rs（那里是主要使用方）。
 // 复用而不重写：写两份递归定义，改树结构时必定漏改一份（规则 #11）。
 use super::note_folder::SUBTREE_CTE;
@@ -149,6 +149,76 @@ fn to_match_expr(kw: &str) -> String {
         }
     }
     to_ngram(kw)
+}
+
+/// 问答检索的停用字：**bigram 里含它就丢掉这个 bigram**。
+///
+/// 只做字级、只做这一张小表。作用是把「这个」「目的」「的部」这类从问句里
+/// **必然产生**的噪声 bigram 去掉，不是做中文分词（那要词典，不在本阶段范围）。
+const QA_STOP_CHARS: &[char] = &[
+    '的', '了', '是', '在', '这', '那', '个', '和', '与', '吗', '呢', '吧', '啊', '呀', '有', '我',
+    '你', '他', '她', '它', '们', '之', '于', '对', '把', '被', '就', '都', '也', '还', '很', '太',
+    '要', '会', '能', '怎', '么', '什', '如', '何', '请', '问',
+];
+
+/// 一次问答检索最多取多少个词。防一句超长问题拼出几百个 OR。
+const QA_MAX_TERMS: usize = 24;
+
+/// 把一句自然语言问题变成 FTS5 的 **OR** 表达式（B2 #10 问答雏形）。
+///
+/// 🔴 **不能直接把问题丢给 [`DataStore::note_search`]**：`to_ngram` 会把整句切成
+/// 「每个单字 + 每个相邻 bigram」再 `join(" ")`，而 **FTS5 的隐含运算符是 AND**。
+/// 一句 10 字的问题 = ~19 个词全部 AND，要求一篇笔记同时含问题里的**每个字与每对相邻字**——
+/// 零命中是必然的；句末的「？」还会被切成一个裸 term，可能直接让 MATCH 语法报错、
+/// 退到 `LIKE '%整句问题%'`，同样零命中。
+///
+/// 所以问答走 OR，靠 BM25 排相关度：命中词多的排前面。
+///
+/// 限定 `{title content}` 两列：`pinyin` 列存的是拼音首字母，
+/// 让问题里的英文词去撞它只会带进无关笔记。
+///
+/// 返 `None` = 问题里没有可检索的词（如纯标点、单字），调用方按零命中处理。
+pub fn question_to_or_expr(q: &str) -> Option<String> {
+    let chars: Vec<char> = q.chars().collect();
+    let n = chars.len();
+    let mut terms: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < n && terms.len() < QA_MAX_TERMS {
+        let c = chars[i];
+        if is_cjk(c) {
+            // 只取 bigram，不取单字：单字 OR 进去会把半个库都命中（中文单字太常见），
+            // BM25 也因此失去区分度。这与写入侧不对称是故意的：写入存单字是为了
+            // 让搜索能命中单字关键词，而问句里的单字几乎全是噪声。
+            if i + 1 < n && is_cjk(chars[i + 1]) {
+                let (a, b) = (c, chars[i + 1]);
+                if !QA_STOP_CHARS.contains(&a) && !QA_STOP_CHARS.contains(&b) {
+                    let t: String = [a, b].iter().collect();
+                    if !terms.contains(&t) {
+                        terms.push(t);
+                    }
+                }
+            }
+            i += 1;
+        } else if c.is_ascii_alphanumeric() {
+            let start = i;
+            while i < n && chars[i].is_ascii_alphanumeric() {
+                i += 1;
+            }
+            // 单字符的英文/数字（"a" "3"）不作检索词：噪声远大于信息
+            if i - start >= 2 {
+                let t = format!("{}*", chars[start..i].iter().collect::<String>());
+                if !terms.contains(&t) {
+                    terms.push(t);
+                }
+            }
+        } else {
+            i += 1;
+        }
+    }
+    if terms.is_empty() {
+        return None;
+    }
+    Some(format!("{{title content}} : ({})", terms.join(" OR ")))
 }
 
 /// 笔记视图选项（B2 #9）。**全部字段空串 = 默认态 = 与做这个功能之前一模一样**。
@@ -779,6 +849,62 @@ impl DataStore {
                 rows
             }
         };
+        for n in notes.iter_mut() {
+            n.tags = Self::load_note_tags_on(&conn, &n.id);
+        }
+        Ok(notes)
+    }
+
+    /// 问答检索（B2 #10）：按**相关度**取 top-N，不按时间。
+    ///
+    /// 与 [`Self::note_search_view`] 是两件事，不能合并：那边是 AND 语义 + 按时间/标题排序，
+    /// 为「找一篇笔记」而写；这边要的是「哪几篇最能回答这个问题」。
+    /// 排序用 `bm25(notes_fts, 10.0, 1.0, 0.0)`：标题权重 10 倍（标题命中通常就是主题命中），
+    /// `pinyin` 列权重 0（它是首字母索引，不该参与相关度）。**bm25 越小越相关**，故 ASC。
+    ///
+    /// **筛选照旧叠上**：文件夹 / 标签 / 三态筛选都生效——问答的范围就是用户眼前那个范围。
+    ///
+    /// 🔴 **故意不做 `note_search` 那样的 LIKE 回退。** 那边回退是对的（给不了结果不如给个模糊结果）；
+    /// 而问答里的空结果会被展示成「知识库中没有相关笔记」——那是个**错答案**。
+    /// 宁可报错让用户看见，也不能把检索挂了伪装成「你库里没这个」（规则 #15.3）。
+    pub fn note_search_relevant(
+        &self,
+        question: &str,
+        folder_filter: &str,
+        tag_ids: &[String],
+        opts: &NoteViewOpts,
+        limit: u32,
+    ) -> Result<Vec<Note>, String> {
+        let expr = match question_to_or_expr(question) {
+            Some(e) => e,
+            None => return Ok(Vec::new()),
+        };
+        let conn = self.lock_conn();
+
+        // JOIN 而不是 `rowid IN (SELECT …)`：bm25() 必须能在外层看见 notes_fts，
+        // 子查询里的排名出不来。rowid 对应关系成立：sync_notes_fts_on 插入时
+        // 显式写的就是 notes.rowid。
+        let mut sql = format!(
+            "SELECT {}, NULL AS grp FROM notes_fts
+             JOIN notes ON notes.rowid = notes_fts.rowid
+             WHERE notes_fts MATCH ?",
+            note_cols_q()
+        );
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(expr)];
+        push_note_filters(&mut sql, &mut params, folder_filter, tag_ids);
+        push_view_filters(&mut sql, opts);
+        // 不复用 order_clause：它排的是时间/标题，而这里要的是相关度。
+        // 分组也不参与（上面固定给 `NULL AS grp`）：问答取的是 5 篇片段，没有分组语义。
+        sql.push_str(" ORDER BY bm25(notes_fts, 10.0, 1.0, 0.0) LIMIT ?");
+        params.push(Box::new(limit));
+
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let mut notes: Vec<Note> = stmt
+            .query_map(refs.as_slice(), row_to_note_grouped)
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
         for n in notes.iter_mut() {
             n.tags = Self::load_note_tags_on(&conn, &n.id);
         }

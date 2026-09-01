@@ -1,0 +1,249 @@
+<title>PastePanda 知识库问答雏形（B2 #10）· 设计稿</title>
+<style>
+  :root {
+    --bg:#0f1419; --panel:#171d24; --panel2:#1d242c; --line:#2a333d;
+    --tx:#e6edf3; --tx2:#9fb0c0; --tx3:#6b7d8f;
+    --accent:#4a9eff; --warn:#f0a020; --danger:#e5534b; --ok:#3fb950;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f8fa; --panel:#fff; --panel2:#f0f3f6; --line:#d8dee4;
+            --tx:#1f2328; --tx2:#57606a; --tx3:#8c959f; --accent:#0969da; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:28px 20px 60px; background:var(--bg); color:var(--tx);
+         font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:1000px; margin:0 auto; }
+  h1 { font-size:21px; margin:0 0 4px; }
+  h2 { font-size:16px; margin:32px 0 10px; padding-bottom:7px; border-bottom:1px solid var(--line); }
+  h3 { font-size:13.5px; margin:18px 0 7px; }
+  p, li { color:var(--tx2); }
+  .lede { color:var(--tx2); font-size:13px; margin:0 0 6px; }
+  code { background:var(--panel2); padding:1px 5px; border-radius:4px;
+         font:12px ui-monospace,Consolas,monospace; color:var(--tx); }
+  pre { background:var(--panel); border:1px solid var(--line); border-radius:8px;
+        padding:11px 13px; overflow-x:auto; font:12px/1.6 ui-monospace,Consolas,monospace; color:var(--tx); }
+  .tag { display:inline-block; padding:1px 7px; border-radius:5px; font-size:11px; font-weight:600;
+         background:color-mix(in srgb,var(--accent) 20%,transparent); color:var(--accent); }
+  .note { border-left:3px solid var(--accent); background:var(--panel); padding:10px 13px;
+          border-radius:0 7px 7px 0; margin:12px 0; font-size:12.5px; }
+  .note.warn { border-left-color:var(--warn); }
+  .note.bad { border-left-color:var(--danger); }
+  .note.ok { border-left-color:var(--ok); }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:12.5px; }
+  th, td { border:1px solid var(--line); padding:7px 9px; text-align:left; vertical-align:top; }
+  th { background:var(--panel2); font-weight:600; color:var(--tx); }
+  td { color:var(--tx2); }
+  td code { white-space:nowrap; }
+
+  /* ===== 中栏 mock ===== */
+  .mid { width:352px; border:1px solid var(--line); border-radius:10px; overflow:hidden;
+         background:var(--panel); margin:14px 0; }
+  .midPad { padding:10px 12px; }
+  .crumb { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--tx2);
+           padding:8px 12px 6px; }
+  .crumb b { color:var(--tx); font-size:12.5px; }
+  .crumb .plus { margin-left:auto; width:20px; height:20px; border:1px solid var(--line);
+                 border-radius:5px; display:flex; align-items:center; justify-content:center;
+                 color:var(--tx2); font-size:12px; }
+  .srow { display:flex; align-items:center; gap:4px; padding:0 12px 8px; }
+  .seg { display:flex; border:1px solid var(--line); border-radius:7px; overflow:hidden;
+         flex-shrink:0; font-size:11px; }
+  .seg span { padding:4px 8px; color:var(--tx3); }
+  .seg span.on { background:color-mix(in srgb,var(--accent) 22%,transparent); color:var(--accent);
+                 font-weight:600; }
+  .inp { flex:1; height:30px; border:1px solid var(--line); border-radius:8px; background:var(--panel2);
+         display:flex; align-items:center; gap:6px; padding:0 9px; font-size:12px; color:var(--tx3); }
+  .inp.act { border-color:var(--accent); color:var(--tx); }
+  .vc { display:flex; gap:2px; flex-shrink:0; }
+  .vc i { width:22px; height:22px; border-radius:5px; display:flex; align-items:center;
+          justify-content:center; color:var(--tx3); font-style:normal; font-size:12px; }
+  .ans { margin:0 12px 10px; border:1px solid var(--line); border-radius:9px;
+         background:var(--panel2); padding:9px 11px; }
+  .ansHd { display:flex; align-items:center; gap:6px; font-size:11.5px; font-weight:600;
+           color:var(--accent); margin-bottom:5px; }
+  .ansHd .x { margin-left:auto; color:var(--tx3); font-weight:400; }
+  .ansBody { font-size:12.5px; color:var(--tx); line-height:1.7; }
+  .refs { margin-top:8px; padding-top:7px; border-top:1px solid var(--line); font-size:11.5px;
+          color:var(--tx2); }
+  .refs a { color:var(--accent); text-decoration:none; margin-right:9px; }
+  .li { padding:8px 12px; border-top:1px solid var(--line); font-size:12px; }
+  .li b { display:block; color:var(--tx); font-size:12.5px; font-weight:600; }
+  .li span { color:var(--tx3); font-size:11px; }
+  .muted { color:var(--tx3); font-size:11.5px; }
+  .cols { display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start; }
+  .cap { font-size:11.5px; color:var(--tx3); margin:0 0 2px; }
+</style>
+
+<div class="wrap">
+<h1>知识库问答雏形 · B2 #8.3 #10 <span class="tag">设计稿</span></h1>
+<p class="lede">拍板形态：<b>搜索框升格「搜 / 问」双模</b> ＋ <b>回答下方列「参考笔记」</b>（不解析 <code>[n]</code> 脚注）。
+受 <code>ai_enabled</code> 门控（规则 #16）；关掉 AI 时切换器整个不渲染，搜索行退回今天的样子。</p>
+
+<div class="note ok"><b>不新开 AI 通路。</b>注册成内置动作 <code>ai-kb-qa</code> 走现有 <code>ai_run</code>——
+那条路上已经有<b>开关门控 / 出网闸 / 预算 / 缓存 / 用量日志</b>五件套（与 B1 轻量 AI 同一条路，<code>↩A-39</code>）。
+本设计<b>不碰</b> <code>ai_run</code> 的既有顺序（出网闸 → 参数校验 → 缓存 → 预算 → 真实调用）。</div>
+
+<h2>§1 界面（长在真实结构上）</h2>
+<p>现有 <code>.searchRow</code> 是 <code>[绝对定位搜索图标][input width:100%][字段视图三图标]</code>（见
+<code>KnowledgeToolbar.tsx</code>）。切换器作为 <b>flex 首项</b>插进去，不动右侧三图标。</p>
+
+<div class="cols">
+  <div>
+    <p class="cap">① 搜模式（默认）——与今天行为一字不差</p>
+    <div class="mid">
+      <div class="crumb"><b>全部</b><span>· 128 条</span><span class="plus">＋</span></div>
+      <div class="srow">
+        <div class="seg"><span class="on">搜</span><span>问</span></div>
+        <div class="inp">🔍 搜笔记（中文 / 拼音首字母）</div>
+        <div class="vc"><i>↕</i><i>≡</i><i>⚙</i></div>
+      </div>
+      <div class="li"><b>部署手册</b><span>2026-08-28 · 运维</span></div>
+      <div class="li"><b>发版纪律</b><span>2026-08-26 · 流程</span></div>
+    </div>
+  </div>
+  <div>
+    <p class="cap">② 问模式 · 已回答</p>
+    <div class="mid">
+      <div class="crumb"><b>全部</b><span>· 128 条</span><span class="plus">＋</span></div>
+      <div class="srow">
+        <div class="seg"><span>搜</span><span class="on">问</span></div>
+        <div class="inp act">✦ 这个项目的部署流程？</div>
+        <div class="vc"><i>↕</i><i>≡</i><i>⚙</i></div>
+      </div>
+      <div class="ans">
+        <div class="ansHd">✦ 回答<span class="x">✕</span></div>
+        <div class="ansBody">先发预发布环境，跑完冒烟再切正式；tag 由人工触发，不自动递增。</div>
+        <div class="refs">参考：<a href="#">▸ 部署手册</a><a href="#">▸ 发版纪律</a></div>
+      </div>
+      <div class="li"><b>部署手册</b><span>2026-08-28 · 运维</span></div>
+    </div>
+  </div>
+  <div>
+    <p class="cap">③ 零命中——<b>不发请求、不花钱</b></p>
+    <div class="mid">
+      <div class="crumb"><b>运维</b><span>· 12 条</span><span class="plus">＋</span></div>
+      <div class="srow">
+        <div class="seg"><span>搜</span><span class="on">问</span></div>
+        <div class="inp act">✦ 六个月后的毛利率预测？</div>
+        <div class="vc"><i>↕</i><i>≡</i><i>⚙</i></div>
+      </div>
+      <div class="ans">
+        <div class="ansHd">✦ 回答<span class="x">✕</span></div>
+        <div class="ansBody">知识库中没有相关笔记。</div>
+        <div class="refs muted">未发送任何请求。当前范围：文件夹「运维」</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="note"><b>范围是白送的。</b>问答的检索直接走刚做完的 <code>note_search_view</code>（<code>↩A-45</code>），
+所以<b>当前文件夹 / 标签 / 筛选 chips 自动成为问答范围</b>——等于零成本拿到「只问这个文件夹」。
+回答卡底部必须把范围写出来：否则筛着一个文件夹去问，没命中时用户会以为全库都没有。</div>
+
+<h2>§2 数据流与出网边界</h2>
+<div class="note bad"><b>🔴 开工后修正：不能用 <code>note_search_view</code> 检索。</b>
+本稿初稿写的是「本地检索 = <code>note_search_view(问题文本, …)</code>」，<b>那样做出来的功能会永远回「没有相关笔记」</b>：
+<code>to_ngram</code> 把一句话切成每个单字＋每个相邻 bigram 后 <code>join(" ")</code>，而 **FTS5 的隐含运算符是 AND**——
+一句 10 字的问题 = ~19 个词全部 AND，要求一篇笔记同时含问题里的每个字与每对相邻字。
+句末的「？」还会被切成一个裸 term，可能直接让 MATCH 语法报错、退到 <code>LIKE '%整句问题%'</code>，同样零命中。
+→ 另写 <code>note_search_relevant</code>：<b>bigram OR + BM25 相关度</b>，标题权重 10 倍、<code>pinyin</code> 列权重 0，
+停用字 bigram（「这个」「目的」「的部」）丢掉。已由 <code>tests_qa.rs</code> 里一条对比用例钉住（旧路 0 条 / 新路命中）。</div>
+
+<pre>回车
+ ↓
+本地检索  note_search_relevant(问题, 当前范围, limit=TOP_K)   ← 不出网（FTS5 OR + BM25）
+ ↓
+零命中？ ── 是 → 直接展示「知识库中没有相关笔记」，**终止**
+ │
+否
+ ↓
+拼 payload（问题 + 编号片段）→ ai_run("ai-kb-qa", text=payload)
+                                    ↓
+                    出网闸 → 缓存 → 预算 → 调用（已有）
+ ↓
+回答卡（回答正文 + 参考笔记 = 本次送去的那 N 篇，不靠模型报）</pre>
+
+<div class="note bad"><b>🔴 问题必须拼进 <code>text</code>，不能走 <code>opts</code>。</b>
+<code>ai_run</code> 的出网闸只扫 <code>text</code>（加标签名）：
+<code>if !force &amp;&amp; !spec.is_local() &amp;&amp; classifier.is_sensitive_for_egress(&amp;egress_probe)</code>。
+把问题放 <code>opts</code> 里就<b>绕过了这道门</b>——用户在问题里打一个手机号或一把 Key 就直接出网了，
+而且<b>不报错、不提示</b>。拼进 <code>text</code> 后问题与片段一起过门，代价只是占长度额度。</div>
+
+<h3>8000 字符预算怎么分</h3>
+<p><code>ai::actions::MAX_INPUT_CHARS = 8000</code>，超了 <code>check_input</code> 直接
+<code>Err("内容过长（…），请先截取需要处理的部分"）</code>——在问答场景下这句报错<b>根本无法执行</b>（用户没有“内容”可截）。
+所以<b>拼之前就得卡住</b>，不能拉到报错才发现：</p>
+<table>
+<tr><th>项</th><th>预算</th><th>为何</th></tr>
+<tr><td><code>TOP_K</code></td><td><b>5</b> 篇</td><td>与模型能认真读完的量匹配；再多就是把噪声当依据</td></tr>
+<tr><td>每篇截断</td><td><b>1200</b> 字</td><td>5×1200 = 6000，留 2000 给问题 + 标题 + 编号模板</td></tr>
+<tr><td>问题上限</td><td><b>500</b> 字</td><td>超长当场拦，不到后端才报</td></tr>
+<tr><td>截断提示</td><td><b>必须可见</b></td><td>规则 #15.3：片段被截了就在参考行标「已截断」，不静默</td></tr>
+</table>
+
+<h2>§3 钉死的口径</h2>
+<table>
+<tr><th>项</th><th>定义</th><th>不这么定的后果</th></tr>
+<tr><td>语料边界</td><td><b>只检 <code>notes</code></b>，不含历史卡片</td><td>§8.5 已定：剪贴流水噪音大、敏感度高。卡片入语料是 C 阶段的显式开关且默认关</td></tr>
+<tr><td>轮数</td><td><b>单轮</b>，不存会话</td><td>多轮要管上下文窗口与会话表，那是 C 阶段；雏形存会话 = 白建一张表</td></tr>
+<tr><td>回答去向</td><td><b>不落库</b>，关卡/切回搜就没</td><td>「存为笔记」是通路 #6 第 9 行，明确标 C——现在做就是越前</td></tr>
+<tr><td>零命中</td><td><b>不发请求</b>，直说没有</td><td>发了 = 模型无依据可编、用户白花钱，两头都输</td></tr>
+<tr><td>禁止编造</td><td>system 硬规则：只能用给定片段，片段里没就说没有</td><td>§7 RAG 规范已定；雏形先把这条建起来，C 阶段直接继承</td></tr>
+<tr><td>参考来源</td><td><b>前端自己知道送了哪 5 篇</b></td><td>不解析模型输出 ⇒ 模型<b>编不出</b>不存在的引用</td></tr>
+<tr><td>AI 关闭</td><td>切换器<b>整个不渲染</b>，不是置灰</td><td>规则 #16：未启用 = 零可见零请求零费用</td></tr>
+</table>
+
+<h2>§4 四种返回全得接（漏一个就成静默失败）</h2>
+<p><code>ai_run</code> 返的是枚举而不是单一结果，它自己的注释写得很清楚：
+「需要确认」与「超预算」<b>不是错误，是需要前端分支处理的正常结果</b>。当成错误弹一个红 toast 就是把可恢复的事变成死路。</p>
+<table>
+<tr><th>status</th><th>回答卡里的表现</th></tr>
+<tr><td><code>ok</code></td><td>回答正文 + 参考笔记行</td></tr>
+<tr><td><code>needsConfirm</code></td><td>卡内展示原因与「仍要发送」按钮 → 带 <code>force=true</code> 重试。
+  <b>不能自动 force</b>：这道门存在的意义就是让人拍板</td></tr>
+<tr><td><code>budgetExceeded</code></td><td>卡内说清预算情况，不假装成网络错误</td></tr>
+<tr><td><code>Err</code></td><td>真错误（网络 / 鉴权 / 解析）——原文展在卡内，带重试</td></tr>
+</table>
+
+<div class="note ok"><b>已核完：缓存键含载荷，无需改动。</b>
+<code>cache_key = cache::make_key(&amp;cache_id, &amp;opts, text.trim())</code>——**<code>text</code> 本身就在键里**。
+而我们把问题与片段全拼进 <code>text</code>，所以笔记一改 payload 就变、缓存自动失效。
+（这正是不预先假设的理由：结论恰好是好的，但得核过才算。）</div>
+
+<h2>§5 不做（划界，免得重新争论）</h2>
+<ul>
+<li><b>不做多轮对话</b>与会话历史（C 阶段）；</li>
+<li><b>不做语义检索</b>——雏形就是 L1（FTS5 + 拼音）。<code>note_chunks</code> 与本地 embedding 是 C 阶段的事（§1.4 已定）；</li>
+<li><b>不解析 <code>[n]</code> 脚注</b>（本次拍板）；</li>
+<li><b>不做「存为笔记」</b>（通路 #6 第 9 行，属 C）；</li>
+<li><b>不把历史卡片入语料</b>；</li>
+<li><b>不动搜模式的任何行为</b>——切回搜就跟今天一字不差。</li>
+</ul>
+
+<h2>§6 验收清单</h2>
+<ol>
+<li><b>AI 关闭时搜索行与今天完全一致</b>（切换器不出现，不是置灰）；</li>
+<li>开着 AI 但停在搜模式：搜索结果、排序、分组、加载更多全与 #9 一致；</li>
+<li>切到问模式→回车：出回答卡，<b>参考笔记可点开</b>且点开的就是那篇；</li>
+<li><b>零命中不发请求</b>：问一个库里肯定没有的词，看用量页<b>次数不增</b>；</li>
+<li>筛一个文件夹再问：回答卡底部写着该文件夹名（范围可见）；</li>
+<li><b>问题里包含手机号 → 弹出网确认</b>（证明问题真的过了出网闸）；</li>
+<li>造一篇超 1200 字的笔记：参考行标「已截断」，而不是报「内容过长」；</li>
+<li>问一个片段里没答案的问题：回答应说「片段里没有」，<b>不能自己发挥</b>；</li>
+<li>关卡 / 切回搜：回答消失，库里没多出任何行；</li>
+<li>480px 窗宽：<code>[搜|问] + input + 三图标</code> 不换行、不溢出；</li>
+<li><b>长回答（人工验收转来的）</b>：卡片高度不超 <code>40vh</code>、<b>正文自己出滚动条</b>，
+  头部✕与底部参考链接<b>始终可见</b>，且下方笔记列表<b>不被挤没</b>；拉短窗口卡片跟着变短。</li>
+</ol>
+
+<div class="note bad"><b>🔴 首版就错在这里（已修）。</b>回答卡初版写的是 <code>flex-shrink: 0</code> 且<b>不限高</b>：
+回答一长就把下面 <code>.list</code>（<code>flex:1</code>）压到 0，而卡片自己又不滚——<b>后半截回答和整个笔记列表同时看不到</b>。
+另外 <code>margin: 0 20px</code> 也错：横向留白本来由 <code>.wrap</code> 的 12px 内边距给，再自己缩一层就比搜索框窄一圈。
+修法：<code>display:flex; flex-direction:column; max-height:40vh; min-height:0</code>，
+<b>只给 <code>.body</code> 加 <code>overflow-y:auto</code></b>（头/尾 <code>flex-shrink:0</code>）。
+<code>40vh</code> 而不是固定 px，才叫自适应；项目里 <code>QuotaDialog</code> 的 <code>.body</code> 就是 <code>66vh + overflow-y:auto</code> 同一写法。</div>
+
+<p class="muted">—— 拍板于 2026-09-01，已按实现与人工验收回写。
+本稿内的 <code>MAX_INPUT_CHARS</code>、<code>.searchRow</code> 结构、出网闸只扫 <code>text</code>、<code>cache_id</code> 构成
+四条均已读真实源码核实；§2 的检索方案与§6 的滚动验收是开工后修正的（均已就地标注原因）。</p>
+</div>

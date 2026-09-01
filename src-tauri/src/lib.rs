@@ -630,6 +630,7 @@ pub fn run() {
             commands::note_by_history,
             commands::note_history_ids,
             commands::note_search,
+            commands::note_search_relevant,
             commands::note_set_tags,
             commands::note_count,
             commands::note_count_filtered,

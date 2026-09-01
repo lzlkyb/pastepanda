@@ -92,6 +92,7 @@ export {
   noteByHistory,
   fetchNoteHistoryIds,
   noteSearch,
+  noteSearchRelevant,
   noteSetTags,
   noteCount,
   noteCountFiltered,

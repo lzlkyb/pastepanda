@@ -13,9 +13,12 @@
  *   而 CardList 只在记录模式渲染——不自带的话知识模式根本没右键菜单。
  *   （同 NoteDialog 当时必须挂到 App 顶层的同类问题。）
  *
- * 🔴 红线：无 AI。搜索、筛选、列表全走本机 SQLite。
+ * 🔴 红线：**搜索、筛选、列表全走本机 SQLite，不出网**。
+ *   唯一的 AI 路径是问答雏形（B2 #10）：受 `ai_enabled` 门控（规则 #16，关着时入口不渲染），
+ *   且**检索那一步仍在本机**（FTS5 + BM25）；出网的只有「问题 + 命中的笔记片段」那一段。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Sparkles, ChevronRight } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { useDialogStore } from "@/stores/dialogStore";
 import { useNoteDialogClosed } from "@/hooks/useNoteDialogClosed";
@@ -24,7 +27,10 @@ import { ContextMenu } from "@/components/ContextMenu";
 import { KbInboxPanel } from "@/components/notes/KbInboxPanel";
 import { FolderTree } from "@/components/notes/FolderTree";
 import { NoteList } from "@/components/notes/NoteList";
-import { KnowledgeToolbar } from "@/components/notes/KnowledgeToolbar";
+import { KnowledgeToolbar, type KnowledgeMode } from "@/components/notes/KnowledgeToolbar";
+import { KbQaPanel } from "@/components/notes/KbQaPanel";
+import { useKbQa } from "@/hooks/useKbQa";
+import { isAiAvailable } from "@/lib/transforms";
 import { NoteListEmpty } from "@/components/notes/NoteListEmpty";
 import { ViewControls, ViewChips, TriRow } from "@/components/notes/ViewControls";
 import {
@@ -41,6 +47,7 @@ import { confirmDialog } from "@/lib/confirm";
 import {
   noteList,
   noteSearch,
+  noteGet,
   noteDelete,
   noteCountFiltered,
   noteSetFolder,
@@ -57,6 +64,12 @@ import styles from "./KnowledgeView.module.css";
 
 /** 一页拉多少。与后端 `clamp_limit` 的缺省一致。 */
 const PAGE = 50;
+
+/**
+ * 问答检索不带标签。定成模块级常量而不是行内 `[]`：
+ * 行内数组每次渲染都是新引用，会把 `useKbQa` 里的 useCallback 依赖全部失效。
+ */
+const NO_TAGS: string[] = [];
 
 
 export function KnowledgeView() {
@@ -266,6 +279,101 @@ export function KnowledgeView() {
     return folders.find((f) => f.id === folderFilter)?.name ?? "全部笔记";
   }, [folderFilter, folders]);
 
+  // ===== 问答雏形（B2 #10）=====
+
+  const [mode, setMode] = useState<KnowledgeMode>("search");
+  // 问题与 `keyword` 分开存：共用一个值的话，切回搜模式会拿整句问题去搜（AND 语义、必然零结果）
+  const [question, setQuestion] = useState("");
+
+  /** 规则 #16：AI 关着时切换器整个不渲染（不是置灰） */
+  const qaEnabled = isAiAvailable();
+
+  // 不带标签：中栏目前没有按标签筛的入口（`reloadNotes` 同样不传 tagIds）。
+  // 写成模块级常量而不是行内 `[]`：行内数组每次渲染都是新引用，会把 hook 里的 useCallback 全部失效
+  const qaScope = useMemo(() => ({ folderFilter, tagIds: NO_TAGS, view }), [folderFilter, view]);
+  const qa = useKbQa(qaScope);
+  const { reset: qaReset, ask: qaAsk } = qa;
+
+  /**
+   * 窄屏（&lt;800px）下回答是否正接管着中栏。
+   *
+   * 不用弹窗：窄屏本来就只有一栏，「占一整栏」的正确形态就是接管它，
+   * 而且省掉 portal / FocusTrap / z-index / 滚动锁那一整套。
+   * 宽屏不用它：回答直接住第三栏，列表一直在旁边。
+   */
+  const [qaTakeover, setQaTakeover] = useState(false);
+
+  /** 窄屏档（没第三栏）。单拿出来命名，比满屏的 `!layout.hasDetailPane` 好读 */
+  const qaInline = !layout.hasDetailPane;
+
+  /** 会话里有东西（已答过 or 正在跑）。决定第三栏要不要给问答、状态条要不要出 */
+  const hasQa = qa.session.turns.length > 0 || qa.session.pending !== null;
+
+  /** 状态条文案。抽出来算：嵌在 JSX 里的三层三元没人读得懂 */
+  const qaBarText = useMemo(() => {
+    if (qa.busy) return "正在回答…";
+    const turns = qa.session.turns;
+    const last = turns.length > 0 ? turns[turns.length - 1] : undefined;
+    const refPart = last && last.refs.length > 0 ? ` · 参考 ${last.refs.length} 篇` : "";
+    return `已回答 ${turns.length} 轮${refPart}`;
+  }, [qa.busy, qa.session.turns]);
+
+  /** 回答卡底部的「当前范围」。不写它的话，筛着一个文件夹没命中时用户会以为全库都没有 */
+  const scopeLabel = useMemo(() => {
+    const filtered = !!(view.summary || view.fromCard || view.tagged);
+    return filtered ? `${currentFolderName} · 已筛选` : currentFolderName;
+  }, [currentFolderName, view.summary, view.fromCard, view.tagged]);
+
+  // 依赖取 `qa.reset` 而不是 `qa`：`useKbQa` 每次渲染都返新对象字面量，
+  // 写 `[qa]` 的 useCallback 等于没包；`reset` 本身是稳定的。
+  const handleMode = useCallback(
+    (m: KnowledgeMode) => {
+      setMode(m);
+      // 切回搜模式就丢掉整个会话：留着一堆答旧问题的轮次，比没有更让人困惑
+      if (m === "search") {
+        qaReset();
+        setQaTakeover(false);
+      }
+    },
+    [qaReset],
+  );
+
+  /**
+   * 发问 / 追问的统一入口。
+   *
+   * 宽屏要**先清掉选中笔记**：第三栏的优先级是「选中笔记 › 问答 › 空态」，
+   * 不清的话用户按了回车却什么也没看到（回答被笔记详情盖着）。
+   */
+  const handleAsk = useCallback(
+    (q: string) => {
+      if (layout.hasDetailPane) setActiveNote(null);
+      else setQaTakeover(true);
+      void qaAsk(q);
+    },
+    [layout.hasDetailPane, qaAsk],
+  );
+
+  /** 状态条 / 「回到回答」：把被盖住（宽屏）/ 退回列表（窄屏）的回答叫回来 */
+  const showQa = useCallback(() => {
+    if (layout.hasDetailPane) setActiveNote(null);
+    else setQaTakeover(true);
+  }, [layout.hasDetailPane]);
+
+  /**
+   * 点参考笔记：refs 只有 id/title，得先取回整条才能走 `handleOpen`（它需要 content）。
+   *
+   * 窄屏要先关掉问答弹窗：不关就是两层弹窗叠着。与宽屏「被盖但不销毁」
+   * 同一语义：会话还在，状态条也还在，点一下就回来。
+   */
+  const openRefNote = useCallback(
+    async (noteId: string) => {
+      if (!layout.hasDetailPane) setQaTakeover(false);
+      const n = await noteGet(noteId);
+      if (n) handleOpen(n);
+    },
+    [handleOpen, layout.hasDetailPane],
+  );
+
   /**
    * 新建的笔记落在哪里（#13）。
    * 「全部」与「未分类」都不是真文件夹 ⇒ null（即未分类）。
@@ -357,8 +465,46 @@ export function KnowledgeView() {
               />
             }
             chips={<ViewChips chips={chips} onClearAll={() => setView(DEFAULT_NOTE_VIEW)} />}
+            qaEnabled={qaEnabled}
+            mode={mode}
+            onMode={handleMode}
+            question={question}
+            onQuestion={setQuestion}
+            onAsk={() => handleAsk(question)}
           />
 
+          {/* 中栏那行极简状态条（B2 #10b）。
+
+              它**不是装饰**：回答会被盖（宽屏点了参考笔记）或退到后面（窄屏点了返回列表），
+              这条就是「回答还在」的唯一可见凭据与唯一入口。
+              窄屏接管中栏时不出：面板就在眼前，再摆一条「去看回答」是噪声。 */}
+          {mode === "ask" && hasQa && !(qaInline && qaTakeover) && (
+            <button type="button" className={styles.qaBar} onClick={showQa}>
+              <Sparkles size={11} />
+              {qaBarText}
+              <ChevronRight size={12} className={styles.qaBarArrow} />
+            </button>
+          )}
+
+          {/* 窄屏：回答**接管**中栏（取代待沉淀区与列表）。
+              宽屏不走这里——它住第三栏，列表不让位。 */}
+          {qaInline && qaTakeover ? (
+            <KbQaPanel
+              variant="inline"
+              session={qa.session}
+              scopeLabel={scopeLabel}
+              busy={qa.busy}
+              onAsk={handleAsk}
+              onConfirm={qa.confirmSend}
+              onBack={() => setQaTakeover(false)}
+              onClose={() => {
+                setQaTakeover(false);
+                qaReset();
+              }}
+              onOpenNote={(id) => void openRefNote(id)}
+            />
+          ) : (
+            <>
           {/* 待沉淀区（§8.1 4️⃣）。一条候选都没时它自己返回 null */}
           <KbInboxPanel />
 
@@ -379,6 +525,8 @@ export function KnowledgeView() {
               onSetFolder={handleSetFolder}
             />
           )}
+            </>
+          )}
         </div>
 
         {/* 第三栏（≥800px）。空态也渲染——隐掉会让列表宽度在选中前后跳一下。
@@ -390,6 +538,19 @@ export function KnowledgeView() {
               note={activeNote}
               onClose={() => setActiveNote(null)}
               onSaved={refreshAll}
+            />
+          ) : mode === "ask" && hasQa ? (
+            /* 优先级 **选中笔记 › 问答 › 空态**（B2 #10b）：没选笔记时这一栏
+               本来就是「从左侧选一条笔记」的浪费状态，正好给问答——回答因此拿到
+               **整栏高度**，不再需要限高。这就是「抢位置」问题的全部规则。 */
+            <KbQaPanel
+              session={qa.session}
+              scopeLabel={scopeLabel}
+              busy={qa.busy}
+              onAsk={handleAsk}
+              onConfirm={qa.confirmSend}
+              onClose={qaReset}
+              onOpenNote={(id) => void openRefNote(id)}
             />
           ) : (
             <NoteDetailEmpty />

@@ -100,11 +100,56 @@
   flex-shrink: 0;
 }
 
+/* 输入框包层（B2 #10）。存在的理由只有一个：`.searchIcon` 是绝对定位的，
+   基准得是输入框而不是整行——否则搜/问切换器一加进来，图标就盖在切换器上。
+   没有切换器时（AI 关着）它紧贴行左，渲染结果与做这个功能之前逐像素一致。 */
+.inputWrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
 .searchIcon {
   position: absolute;
   left: 9px;
   color: var(--text-muted);
   pointer-events: none;
+}
+
+/* 搜 / 问 分段切换器 */
+.modeSeg {
+  display: flex;
+  flex-shrink: 0;
+  margin-right: 4px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.modeBtn,
+.modeOn {
+  padding: 4px 8px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.modeBtn:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+.modeOn {
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  font-weight: 600;
 }
 
 .searchInput {
@@ -123,6 +168,35 @@
 
 .searchInput:focus {
   border-color: var(--accent);
+}
+
+/* 中栏的问答状态条（B2 #10b）。
+   它是「回答还在」的唯一可见凭据与唯一入口——宽屏下点了参考笔记，
+   第三栏会切成笔记详情、回答被盖，靠它叫回来。 */
+.qaBar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 4px 7px;
+  border: none;
+  border-radius: 7px;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.qaBar:hover {
+  filter: brightness(0.97);
+}
+
+.qaBarArrow {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 /* ===== 空态 / 加载态 ===== */

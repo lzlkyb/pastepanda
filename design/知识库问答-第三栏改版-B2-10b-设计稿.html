@@ -1,0 +1,267 @@
+<title>PastePanda 知识库问答 · 第三栏改版（B2 #10b）设计稿</title>
+<style>
+  :root {
+    --bg:#0f1419; --panel:#171d24; --panel2:#1d242c; --line:#2a333d;
+    --tx:#e6edf3; --tx2:#9fb0c0; --tx3:#6b7d8f;
+    --accent:#4a9eff; --warn:#f0a020; --danger:#e5534b; --ok:#3fb950;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f8fa; --panel:#fff; --panel2:#f0f3f6; --line:#d8dee4;
+            --tx:#1f2328; --tx2:#57606a; --tx3:#8c959f; --accent:#0969da; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:28px 20px 60px; background:var(--bg); color:var(--tx);
+         font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:1040px; margin:0 auto; }
+  h1 { font-size:21px; margin:0 0 4px; }
+  h2 { font-size:16px; margin:32px 0 10px; padding-bottom:7px; border-bottom:1px solid var(--line); }
+  h3 { font-size:13.5px; margin:18px 0 7px; }
+  p, li { color:var(--tx2); }
+  .lede { color:var(--tx2); font-size:13px; margin:0 0 6px; }
+  code { background:var(--panel2); padding:1px 5px; border-radius:4px;
+         font:12px ui-monospace,Consolas,monospace; color:var(--tx); }
+  pre { background:var(--panel); border:1px solid var(--line); border-radius:8px;
+        padding:11px 13px; overflow-x:auto; font:12px/1.6 ui-monospace,Consolas,monospace; color:var(--tx); }
+  .tag { display:inline-block; padding:1px 7px; border-radius:5px; font-size:11px; font-weight:600;
+         background:color-mix(in srgb,var(--accent) 20%,transparent); color:var(--accent); }
+  .note { border-left:3px solid var(--accent); background:var(--panel); padding:10px 13px;
+          border-radius:0 7px 7px 0; margin:12px 0; font-size:12.5px; }
+  .note.warn { border-left-color:var(--warn); }
+  .note.bad { border-left-color:var(--danger); }
+  .note.ok { border-left-color:var(--ok); }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:12.5px; }
+  th, td { border:1px solid var(--line); padding:7px 9px; text-align:left; vertical-align:top; }
+  th { background:var(--panel2); font-weight:600; color:var(--tx); }
+  td { color:var(--tx2); }
+  td code { white-space:nowrap; }
+  .cols { display:flex; gap:18px; flex-wrap:wrap; align-items:flex-start; }
+  .cap { font-size:11.5px; color:var(--tx3); margin:0 0 3px; }
+
+  /* ===== 三栏 mock ===== */
+  .kb { display:flex; border:1px solid var(--line); border-radius:10px; overflow:hidden;
+        background:var(--panel); margin:12px 0; width:100%; max-width:720px; height:290px; }
+  .side { width:104px; flex-shrink:0; border-right:1px solid var(--line); padding:8px 7px;
+          font-size:11px; color:var(--tx2); }
+  .side div { padding:3px 4px; border-radius:4px; }
+  .side .on { background:color-mix(in srgb,var(--accent) 18%,transparent); color:var(--accent); }
+  .mid2 { width:200px; flex-shrink:0; border-right:1px solid var(--line); padding:7px 8px;
+          display:flex; flex-direction:column; gap:5px; }
+  .srow { display:flex; align-items:center; gap:3px; }
+  .seg { display:flex; border:1px solid var(--line); border-radius:6px; overflow:hidden;
+         flex-shrink:0; font-size:10px; }
+  .seg span { padding:3px 6px; color:var(--tx3); }
+  .seg span.on { background:color-mix(in srgb,var(--accent) 22%,transparent); color:var(--accent); font-weight:600; }
+  .inp { flex:1; height:24px; border:1px solid var(--line); border-radius:6px; background:var(--panel2);
+         display:flex; align-items:center; padding:0 6px; font-size:10.5px; color:var(--tx3); }
+  .inp.act { border-color:var(--accent); color:var(--tx); }
+  /* 中栏那行极简状态条 */
+  .statebar { display:flex; align-items:center; gap:4px; padding:3px 6px; border-radius:6px;
+              background:color-mix(in srgb,var(--accent) 12%,transparent);
+              color:var(--accent); font-size:10.5px; font-weight:600; cursor:pointer; }
+  .li2 { padding:4px 5px; border-top:1px solid var(--line); font-size:10.5px; color:var(--tx2); }
+  .li2 b { display:block; color:var(--tx); font-size:11px; }
+  /* 第三栏 = 问答面板 */
+  .third { flex:1; min-width:0; padding:8px 10px; display:flex; flex-direction:column; gap:5px; }
+  .thd { display:flex; align-items:center; gap:5px; font-size:11px; font-weight:600; color:var(--accent); }
+  .thd .x { margin-left:auto; color:var(--tx3); font-weight:400; }
+  .qline { font-size:11px; color:var(--tx3); border-left:2px solid var(--line); padding-left:6px; }
+  .ans2 { flex:1; min-height:0; overflow:auto; font-size:11.5px; color:var(--tx); line-height:1.75; }
+  .ans2 b { color:var(--tx); }
+  .ans2 ul { margin:4px 0; padding-left:16px; }
+  .chip { display:inline-block; padding:0 4px; margin:0 1px; border-radius:3px; font-size:9.5px;
+          background:color-mix(in srgb,var(--accent) 22%,transparent); color:var(--accent);
+          font-weight:600; vertical-align:1px; }
+  .tfoot { border-top:1px solid var(--line); padding-top:5px; font-size:10.5px; color:var(--tx2); }
+  .tfoot a { color:var(--accent); text-decoration:none; margin-right:7px; }
+  .askmore { display:flex; align-items:center; gap:4px; height:24px; border:1px solid var(--line);
+             border-radius:6px; background:var(--panel2); padding:0 6px; font-size:10.5px; color:var(--tx3); }
+  .caret { display:inline-block; width:6px; height:12px; background:var(--accent);
+           vertical-align:-2px; }
+</style>
+
+<div class="wrap">
+<h1>知识库问答 · 第三栏改版 <span class="tag">B2 #10b 设计稿</span></h1>
+<p class="lede">拍板：<b>方案 A（回答占第三栏）</b> ＋ 四项改善全做（Markdown 渲染 / 流式逐字 / inline <code>[n]</code> chip / 多轮追问）。
+本稿是对 <code>知识库问答雏形-B2-10-设计稿.html</code> 的**形态返工**；那稿的出网边界、预算、口径全部继续有效。</p>
+
+<h2>§0 为何返工：「别扭」是三件事，不是一件</h2>
+<table>
+<tr><th>#</th><th>症状</th><th>真因</th></tr>
+<tr><td>1</td><td>长回答看不全、得在小框里滚</td>
+  <td><b>容器选错了</b>。一个 40vh 的盒子挤在列表上方——本质是「通知条」的形态在承载「一篇文章」。
+  上一轮加限高滚动只是让它<b>不崩</b>，没让它<b>对</b>。</td></tr>
+<tr><td>2</td><td>回答里一堆 <code>**</code> <code>-</code> <code>###</code></td>
+  <td>用的是 <code>white-space: pre-wrap</code> <b>纯文本</b>渲染，模型的 Markdown 原样显成符号。</td></tr>
+<tr><td>3</td><td>回车后几秒空白</td>
+  <td>只一句「正在问…」，而项目<b>已有流式能力</b>（<code>onAiChunk</code>）没接。</td></tr>
+</table>
+
+<h3>外部依据（为何是「整栏」而不是「大一点的卡」）</h3>
+<ul>
+<li><b>NotebookLM</b>：三栏，Chat 占<b>中间整栏</b>；引用做成 inline 编号 chip，点一下直跳原文段落。</li>
+<li><b>Obsidian Copilot</b>：<b>右侧全高 sidebar</b>，官方叙事明确是「contained within a sidebar
+  rather than scattered throughout the document interface」。</li>
+</ul>
+<p>共同点：<b>答案住在一整栏里，没人把它塞进列表上方的小盒子。</b></p>
+
+<div class="note ok"><b>抢位置的问题自动消解了。</b>第三栏现在的空态是 <code>NoteDetailEmpty</code>（「从左侧选一条笔记」）。
+优先级定成 <b>选中笔记 &gt; 问答 &gt; 空态</b>：没选笔记时那一栏本来就是浪费的，正好给问答。
+而 <code>.pane</code> 已经是 <code>flex column + min-height:0 + border-left</code>，面板照抄骨架即可，不新增布局概念。</div>
+
+<h2>§1 布局（≥800px 宽屏）</h2>
+<p class="cap">回答占第三栏整栏高度；中栏只留一行可点的状态条，笔记列表<b>一条不少</b></p>
+<div class="kb">
+  <div class="side">
+    <div>全部 128</div>
+    <div class="on">运维 12</div>
+    <div>流程 8</div>
+    <div>未分类 31</div>
+  </div>
+  <div class="mid2">
+    <div class="srow">
+      <div class="seg"><span>搜</span><span class="on">问</span></div>
+      <div class="inp act">部署流程？</div>
+    </div>
+    <div class="statebar">✦ 已回答 · 参考 2 篇 ›</div>
+    <div class="li2"><b>部署手册</b>2026-08-28 · 运维</div>
+    <div class="li2"><b>发版纪律</b>2026-08-26 · 流程</div>
+    <div class="li2"><b>会议记录 0826</b>2026-08-26</div>
+    <div class="li2"><b>回滚预案</b>2026-08-20 · 运维</div>
+  </div>
+  <div class="third">
+    <div class="thd">✦ 问知识库<span class="x">✕</span></div>
+    <div class="qline">部署流程？</div>
+    <div class="ans2">
+      部署分三步：
+      <ul>
+        <li>先发<b>预发布环境</b><span class="chip">1</span></li>
+        <li>跑完冒烟用例再切正式<span class="chip">1</span></li>
+        <li>tag 由人工触发，<b>不自动递增</b><span class="chip">2</span></li>
+      </ul>
+      回滚预案在片段里没提到。<span class="caret"></span>
+    </div>
+    <div class="tfoot">参考：<a href="#">1 部署手册</a><a href="#">2 发版纪律</a><br>当前范围：文件夹「运维」</div>
+    <div class="askmore">追问一句…（回车）</div>
+  </div>
+</div>
+
+<h3>三个断点的行为</h3>
+<table>
+<tr><th>窗宽</th><th>回答放哪</th><th>为何</th></tr>
+<tr><td><b>≥800px</b></td><td><b>第三栏</b></td><td>那一栏本来就是空的（「从左侧选一条笔记」）。整栏高度，不需限高</td></tr>
+<tr><td><b>&lt;800px</b></td><td><b>弹窗</b></td><td>与「点笔记 → 弹窗」同一心智；<code>.dialog-body</code> 自带 <code>overflow-y:auto</code>，不用自己造滚动</td></tr>
+</table>
+<p><b>断点用现成的 <code>layout.hasDetailPane</code></b>（<code>useKbLayout</code>），不再引一个新断点——
+两套断点早晚走岔，而走岔时不报错。这与 <code>handleOpen</code> 分宽窄屏的写法是同一个判据。</p>
+
+<div class="note warn"><b>一个必须定的动线：点参考笔记会盖住回答。</b>
+宽屏下点参考笔记 → <code>activeNote</code> 被设上 → 按优先级第三栏切成笔记详情，回答被遮住。
+这是 300px 三栏的物理限制，不是 bug。取舍：<b>回答不销毁，只是被盖</b>——
+关掉笔记（✕）自动回到回答；中栏那条 <code>✦ 已回答 · 参考 2 篇 ›</code> 点一下也回到回答。
+那条状态条<b>不是装饰</b>：它是「回答还在」的唯一可见凭据与唯一入口。</div>
+
+<h2>§2 四项改善的实现口径与坑</h2>
+
+<h3>① Markdown 渲染（复用 <code>MarkdownRenderer</code>）</h3>
+<p>现成组件，签名：<code>MarkdownRenderer({ text, compact, clamp, debounceMs, lineNumbers, baseDir })</code>。传参口径：</p>
+<table>
+<tr><th>参数</th><th>传什么</th><th>为何</th></tr>
+<tr><td><code>compact</code></td><td><b>true</b></td><td>300px 栏宽里默认字号太松。它自己的注释写了「<b>不影响能看到多少内容</b>」</td></tr>
+<tr><td><code>clamp</code></td><td><b>false</b></td><td>它是「裁到 120px 且不可滚」——正是本次要消灭的那个毛病。<b>一定不能传 true</b></td></tr>
+<tr><td><code>baseDir</code></td><td><b>null</b></td><td>回答是模型生成的文本，没有所属目录，相对图片路径本来就无法解</td></tr>
+<tr><td><code>debounceMs</code></td><td><b>&gt;0（建议 80）</b></td><td>见下面那条 🔴</td></tr>
+</table>
+
+<div class="note bad"><b>🔴 流式 + Markdown 合用时，<code>debounceMs</code> 不是可选项。</b>
+流式下每一个 chunk 都会改 <code>text</code>，而 <code>MarkdownRenderer</code> 每次改都要<b>重解析整篇 + 重建 DOM</b>。
+一次回答几百个 chunk = 几百次全量重渲染（规则 #8）。
+<code>debounceMs</code> 这个参数存在的理由就是这个（它自己的注释：「避免大文档每次击键都重解析」）。</div>
+
+<h3>② 流式逐字（接 <code>onAiChunk</code>）</h3>
+<p>后端 <code>ai_run</code> 对<b>所有非本地厂商</b>都装 <code>stream_cb</code>（<code>run.rs</code>：
+<code>if !spec.is_local()</code>）并 emit <code>ai-run-chunk {actionId, delta}</code>。
+流式是<b>动作无关的</b>，所以 <code>ai-kb-qa</code> 天然有流，不用动 Rust。三条限制全是
+<code>useAiStream.ts</code> 自己的注释里写明的：</p>
+<table>
+<tr><th>限制</th><th>应对</th></tr>
+<tr><td><code>listen()</code> 是异步的，紧接着 invoke 会<b>丢开头几块</b></td>
+  <td>发请求<b>之前</b> <code>await ensureAiChunkListener()</code>。它就是为这个导出的</td></tr>
+<tr><td>payload <b>没有 per-call id</b>，同一 actionId 并发会混流</td>
+  <td>问答同时只跑一个：追问期间<b>输入框禁用</b>，并用代际守卫（学 <code>useAiQuickRun</code> 的 <code>gen</code>）丢弃过期回调</td></tr>
+<tr><td><b>本地厂商（Ollama）不发流</b></td>
+  <td>流式只是锦上添花：没收到 chunk 就安静等最终结果，<b>不能卡在「正在问…」不动</b></td></tr>
+</table>
+<p><b>最终文本以 <code>ai_run</code> 的返回值为准</b>，拿到后直接覆盖流式累积的串——
+流式只管预览，不管正确性。这条与现有两个调用方的口径一致。</p>
+
+<h3>③ inline <code>[n]</code> 引用 chip（学 NotebookLM）</h3>
+<p><b>不是二选一。</b>之前拍板不做的理由是「模型违反格式是常态」——这个理由仍然成立，
+所以做法是<b>渐进增强</b>：</p>
+<pre>解析 回答里的 [n]（1 ≤ n ≤ refs.length）
+  命中 → 渲染成可点 chip，点一下打开第 n 篇笔记
+  越界（如 [7] 但只送了 5 篇）→ **当普通文本原样留着**，不渲染成 chip
+  一个都没解析到 → 什么也不发生，底部参考列表照旧在
+底部参考列表 **永远保留**（不因为有 chip 就去掉它）</pre>
+<p>两个关键口径：</p>
+<ul>
+<li><b>越界的编号不渲染成 chip</b>。否则点下去无反应或报错，而那比“没有 chip”更差；
+  参考列表本来就是“送了哪几篇”的权威源，模型编不出不存在的引用。</li>
+<li><b>后端 prompt 得反过来改</b>：现在写的是「<b>不要</b>输出「[1]」这类编号引用」（因为当时不解析）。
+  现在要改成<b>鼓励</b>在事实句末标 <code>[n]</code>。两处成对，改一头就错。</li>
+</ul>
+
+<h3>④ 多轮追问（提前做了 C 阶段的事）</h3>
+<div class="note warn"><b>这条规划里明确归 C 阶段</b>（§8.3 #10 只说「雏形」，多轮在 §8.5）。
+你拍板提前做，记在这里：以后看到雏形里竟然带多轮，不是范围失控，而是此处拍过板。
+<b>仍不做的</b>：会话持久化（不建表、不落库）、多会话标签页、历史回溯。关面板就没。</div>
+
+<p><b>真正的难处不是 UI，是 8000 字符预算。</b>历史、片段、新问题三个东西抢同一个额度。口径：</p>
+<table>
+<tr><th>项</th><th>预算</th><th>理由</th></tr>
+<tr><td>历史</td><td><b>只带上一轮</b>，且 Q 全文 + A <b>前 400 字</b></td>
+  <td>带全部历史 = 第三轮就把片段额度吃完，而片段才是依据。超过两轮的上下文属于 C 阶段</td></tr>
+<tr><td>片段</td><td>仍 5×1200</td><td>不动：片段是回答质量的地基</td></tr>
+<tr><td>新问题</td><td>仍 ≤500</td><td>不动</td></tr>
+<tr><td>总上限</td><td><code>QA_MAX_PAYLOAD_CHARS</code> 7000</td><td>不动。历史占的是<b>片段的名额</b>——放不下时<b>先砍片段数量</b>，不砍历史</td></tr>
+</table>
+
+<div class="note bad"><b>🔴 追问必须<b>重新检索</b>，不能沿用上一轮的 5 篇。</b>
+「部署流程？」→「那回滚呢？」：回滚预案那篇很可能不在上一轮的 5 篇里，
+沿用旧片段就会回「知识库中没有相关笔记」——<b>库里明明有</b>。
+检索词用「上一问 + 本次追问」拼起来过 <code>question_to_or_expr</code>：
+追问往往是代词句（「那回滚呢」），单独抽词几乎抽不出东西。</div>
+
+<h2>§3 不做（划界）</h2>
+<ul>
+<li><b>不做会话持久化</b>：不建表、不落库。关面板 / 切回搜就没（红线②：使用日志永不出本机且可见可删，不存就最干净）；</li>
+<li><b>不做多会话标签页</b>（Obsidian Copilot 那个 pinnable tabs）；</li>
+<li><b>不做语义检索</b>——仍是 L1（FTS5 OR + BM25）。<code>note_chunks</code> 与本地 embedding 是 C 阶段；</li>
+<li><b>不做「存为笔记」</b>（通路 #6 第 9 行，属 C）；</li>
+<li><b>不把历史卡片入语料</b>；</li>
+<li><b>不动搜模式</b>——切回搜与今天一字不差。</li>
+</ul>
+
+<h2>§4 验收清单</h2>
+<ol>
+<li><b>AI 关闭时一切与今天一模一样</b>：切换器不出现，第三栏仍是「从左侧选一条笔记」；</li>
+<li><b>宽屏（≥800px）</b>：回答出在第三栏、<b>占整栏高度</b>；中栏笔记列表<b>一条不少</b>；</li>
+<li><b>窄屏（&lt;800px）</b>：回答走弹窗，弹窗自己滚；</li>
+<li><b>长回答（上一轮的毛病）</b>：不再需要在小框里滚；就算超长，滚的也是整栏高度的区域；</li>
+<li><b>Markdown 真渲染</b>：回答里的粗体/列表/代码块是样式，<b>不是</b> <code>**</code> <code>-</code> 符号；</li>
+<li><b>流式</b>：回车后<b>一秒内开始出字</b>，不是几秒空白；完成后的文本与流式预览一致；</li>
+<li><b>流式回退</b>：把厂商换成本地 Ollama（不发流），仍能正常出回答，<b>不卡在「正在问…」</b>；</li>
+<li><b>chip</b>：回答里的 <code>[1]</code> 是可点 chip、点了打开第 1 篇；造一个 <code>[9]</code> 应<b>原样显成文本</b>而不是 chip；</li>
+<li><b>参考列表始终在</b>：即使回答一个 <code>[n]</code> 也没打，底部仍列出送了哪几篇；</li>
+<li><b>点参考笔记 → 关掉笔记</b>：回答<b>还在</b>（没被销毁）；中栏那条状态条也能把它叫回来；</li>
+<li><b>追问重新检索</b>：先问「部署流程？」再追「那回滚呢？」——参考里应出现<b>上一轮没有的</b>那篇回滚预案；</li>
+<li><b>追问期间输入框禁用</b>（防混流）；</li>
+<li><b>零命中仍不发请求</b>：用量页次数不增（上一轮已验收过，本次不能回退）；</li>
+<li><b>480px 窗宽</b>：搜索行不换行不溢出。</li>
+</ol>
+
+<p class="muted" style="color:var(--tx3);font-size:11.5px">—— 拍板于 2026-09-01。
+本稿引用的项目内部事实均已读真实源码核实：<code>.pane</code> 骨架、<code>NoteDetailEmpty</code>、
+<code>MarkdownRenderer</code> 的六个 props、<code>run.rs</code> 的 <code>stream_cb</code> 与 <code>ai-run-chunk</code>、
+<code>useAiStream.ts</code> 的三条自述限制。外部对标（NotebookLM / Obsidian Copilot）来自本次联网检索，
+不是凭印象写的。</p>
+</div>
