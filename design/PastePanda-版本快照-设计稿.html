@@ -1,0 +1,249 @@
+<title>PastePanda 版本快照 + 恢复（B1 #4 / D8）· 设计稿</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #171d24; --panel2: #1d242c; --line: #2a333d;
+    --tx: #e6edf3; --tx2: #9fb0c0; --tx3: #6b7d8f;
+    --accent: #4a9eff; --accent2: #2b7fd4;
+    --warn: #f0a020; --danger: #e5534b; --ok: #3fb950;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f8fa; --panel: #fff; --panel2: #f0f3f6; --line: #d8dee4;
+      --tx: #1f2328; --tx2: #57606a; --tx3: #8c959f;
+      --accent: #0969da; --accent2: #0550ae;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 20px 60px;
+    background: var(--bg); color: var(--tx);
+    font: 14px/1.65 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 21px; margin: 0 0 4px; }
+  h2 {
+    font-size: 16px; margin: 34px 0 10px; padding-bottom: 7px;
+    border-bottom: 1px solid var(--line);
+  }
+  h3 { font-size: 13.5px; margin: 20px 0 7px; color: var(--tx); }
+  p, li { color: var(--tx2); }
+  .lede { color: var(--tx2); font-size: 13px; margin: 0 0 6px; }
+  code {
+    background: var(--panel2); padding: 1px 5px; border-radius: 4px;
+    font: 12px ui-monospace, Consolas, monospace; color: var(--tx);
+  }
+  pre {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 11px 13px; overflow-x: auto;
+    font: 12px/1.6 ui-monospace, Consolas, monospace; color: var(--tx);
+  }
+  .tag {
+    display: inline-block; padding: 1px 7px; border-radius: 5px;
+    font-size: 11px; font-weight: 600; vertical-align: middle;
+    background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent);
+  }
+  .tag.warn { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
+  .tag.ok { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
+  .tag.bad { background: color-mix(in srgb, var(--danger) 20%, transparent); color: var(--danger); }
+  .note {
+    border-left: 3px solid var(--accent); background: var(--panel);
+    padding: 10px 13px; border-radius: 0 7px 7px 0; margin: 12px 0; font-size: 12.5px;
+  }
+  .note.warn { border-left-color: var(--warn); }
+  .note.bad { border-left-color: var(--danger); }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 12.5px; }
+  th, td { border: 1px solid var(--line); padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { background: var(--panel2); color: var(--tx); font-weight: 600; }
+  td { color: var(--tx2); }
+
+  /* 真尺寸模拟 */
+  .figrow { display: flex; gap: 22px; flex-wrap: wrap; margin: 14px 0 4px; }
+  .fig { flex: 0 0 auto; }
+  .figcap { font-size: 11.5px; color: var(--tx3); margin: 6px 0 0; text-align: center; }
+  .win {
+    width: 480px; border: 1px solid var(--line); border-radius: 9px;
+    background: var(--panel); overflow: hidden;
+    font: 12px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  .wbar {
+    display: flex; align-items: center; gap: 7px;
+    padding: 7px 10px; border-bottom: 1px solid var(--line); background: var(--panel2);
+    font-size: 12px; color: var(--tx); font-weight: 600;
+  }
+  .wbar .sp { margin-left: auto; font-weight: 400; color: var(--tx3); font-size: 11px; }
+  .wbody { padding: 9px 10px; }
+  .revrow {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 6px 8px; border-radius: 6px; cursor: default;
+  }
+  .revrow + .revrow { border-top: 1px solid var(--line); }
+  .revrow.sel { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .revrow .t { color: var(--tx); font-size: 12px; }
+  .revrow .m { color: var(--tx3); font-size: 11px; margin-left: auto; }
+  .revrow .cur { color: var(--ok); font-size: 11px; font-weight: 600; }
+  .prev {
+    margin-top: 8px; padding: 8px 9px; border: 1px solid var(--line);
+    border-radius: 7px; background: var(--bg); color: var(--tx2);
+    font: 11.5px/1.55 ui-monospace, Consolas, monospace;
+    max-height: 118px; overflow: hidden;
+  }
+  .btnrow { display: flex; gap: 7px; margin-top: 9px; }
+  .btn {
+    padding: 5px 11px; border-radius: 6px; font-size: 11.5px;
+    border: 1px solid var(--line); background: var(--panel2); color: var(--tx2);
+  }
+  .btn.pri { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .btn.sp { margin-left: auto; }
+</style>
+
+<div class="wrap">
+
+<h1>版本快照 + 恢复 <span class="tag">B1 #4 · D8</span></h1>
+<p class="lede">
+  规划原句：「保存时内容有实际变化才写一行（存全文不做 diff）；每笔记保留最近 20 份。
+  <b>误删误改是知识库最高频的真实事故</b>」。
+</p>
+
+<h2>0 · 开工前核实：规划的 DDL 有一个真缺口</h2>
+<div class="note bad">
+  <b>🔴 <code>note_revisions</code> 没有外键。</b> §6 的建表语只有 <code>note_id TEXT NOT NULL</code>，
+  <b>没有 <code>REFERENCES notes(id) ON DELETE CASCADE</code></b>。而 <code>PRAGMA foreign_keys=ON</code> 是真开着的
+  （<code>data_store/mod.rs:884</code>）——<code>note_tags</code> 就靠它自动清关联行。
+  不补的后果：<b>删一条笔记，它的 20 份历史全永久留在库里</b>，永远无人回收。
+  这与 A-29 那三处 DDL 纠正是同一类问题。本稿补上。
+</div>
+<div class="note warn">
+  <b>⚠ 项目里没有任何 diff 计算能力。</b> grep <code>diffLines</code> / <code>createTwoFilesPatch</code> 零命中；
+  卡片那个 <code>diff</code> 类型只是「认出这段文本长得像 diff 并给它上色」，<b>不会算两个版本的差异</b>。
+  所以本稿<b>只做全文预览</b>，不做对比视图——为一个使用频率极低的功能引一个 diff 库不值。
+</div>
+
+<h2>1 · 快照存「旧版本」，不存「新版本」</h2>
+<p>规划只写了「保存时写一行」，没说写的是哪一份。两种结果完全不同：</p>
+<table>
+  <tr><th>写法</th><th>revisions 里是什么</th><th>后果</th></tr>
+  <tr><td><b>甲：UPDATE 前先快照旧值</b> <span class="tag ok">选它</span></td>
+      <td>纯历史版本（当前版只在 <code>notes</code>）</td>
+      <td>「20 份历史 + 1 份当前」，无冗余；恢复就是把某份写回 notes</td></tr>
+  <tr><td>乙：UPDATE 后快照新值</td>
+      <td>含一份与当前完全重复的副本</td>
+      <td>列表顶部永远有一行「跟现在一模一样」的版本，用户会问它是干什么的</td></tr>
+</table>
+<div class="note">
+  <b>甲的一个好处：第一次编辑自动保留了「刚转笔记时的原始版」。</b>
+  这正好是最容易后悔的那一步：刚转过来就大改一通，改完发现删多了。
+</div>
+
+<h3>无变化时是真的什么都不做</h3>
+<p>
+  标题与正文都没变时：<b>不写快照，也不动 <code>updated_at</code></b>。
+  后者容易漏：列表默认按 <code>updated_at</code> 排，一次「打开→直接保存」就把一条没改过的笔记顶到最前，
+  看上去像数据乱了。
+</p>
+
+<h2>2 · 历史面板放哪：三个方案</h2>
+<table>
+  <tr><th>方案</th><th>形态</th><th>为什么不选 / 选</th></tr>
+  <tr><td>甲·侧滑栏</td><td>编辑器右侧展开一列版本</td>
+      <td>480px 的窗口里编辑区只剩不到 300px，两边都不能用</td></tr>
+  <tr><td>乙·叠一层弹窗</td><td>版本弹窗盖在笔记弹窗上</td>
+      <td>Esc 分层要再加一级（App.tsx 已经有一排）；两层 backdrop 在小窗里很浑</td></tr>
+  <tr><td><b>丙·编辑器内切视图</b> <span class="tag ok">选它</span></td>
+      <td>点「历史」把编辑区换成版本列表，左上角「← 返回」回来</td>
+      <td>不叠层、Esc 不用改、480px 与第三栏同一套代码；
+          <b>切过去不销毁编辑状态</b>，未保存的草稿还在</td></tr>
+</table>
+
+<h2>3 · 真尺寸（480px 宽）</h2>
+<div class="figrow">
+  <div class="fig">
+    <div class="win">
+      <div class="wbar">← 版本历史<span class="sp">会议纪要 · 8 份</span></div>
+      <div class="wbody">
+        <div class="revrow"><span class="t">当前版本</span><span class="cur">● 现在</span><span class="m">2 分钟前 · 1.2k 字</span></div>
+        <div class="revrow sel"><span class="t">今天 14:32</span><span class="m">1.4k 字</span></div>
+        <div class="revrow"><span class="t">今天 11:05</span><span class="m">860 字</span></div>
+        <div class="revrow"><span class="t">昨天 19:47</span><span class="m">840 字</span></div>
+        <div class="prev">## 会议纪要（8/29）\n\n- 发布定在下周三\n- 傅负责回归测试\n- …</div>
+        <div class="btnrow">
+          <button class="btn">← 返回编辑</button>
+          <button class="btn pri sp">恢复到这个版本</button>
+        </div>
+      </div>
+    </div>
+    <p class="figcap">选中一行才出预览与「恢复」；「当前版本」那行不可恢复</p>
+  </div>
+</div>
+
+<div class="note">
+  <b>为什么把「当前版本」也列出来（它不在 revisions 表里）：</b>
+  没它的话列表顶部是「今天 14:32」，而用户正在看的内容却不是它——很容易把最新一份历史当成当前。
+  列出来且<b>标「● 现在」</b>，它只能预览、不能恢复。
+</div>
+
+<h2>4 · 恢复的行为</h2>
+<table>
+  <tr><th>情形</th><th>行为</th><th>理由</th></tr>
+  <tr><td>点「恢复到这个版本」</td><td><b>弹确认</b> → 立即写库，并<b>先把当前版本存成一份快照</b></td>
+      <td>所以<b>恢复本身可撤销</b>：后悔了再从历史里恢复回刚才那份</td></tr>
+  <tr><td>当前有未保存的修改</td><td>确认框里<b>明写「未保存的修改会丢失」</b></td>
+      <td>恢复直接写库，草稿没地方去；不说就是静默丢数据</td></tr>
+  <tr><td>恢复完停在哪</td><td>回到编辑视图，内容已是旧版；toast「已恢复，原版本已存入历史」</td>
+      <td>停在列表里用户不知道生效了没</td></tr>
+  <tr><td>只填回编辑器不写库</td><td><b>不采用</b></td>
+      <td>用户以为「恢复」已经生效，直接关窗就白恢复了</td></tr>
+</table>
+
+<h2>5 · Schema 与后端</h2>
+<pre>-- §6 原文 + 本稿补的外键（粗体那行）
+CREATE TABLE IF NOT EXISTS note_revisions (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  note_id    TEXT NOT NULL,
+  title      TEXT NOT NULL,
+  content    TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE   -- ← 规划漏了
+);
+CREATE INDEX IF NOT EXISTS idx_note_rev ON note_revisions(note_id, created_at);</pre>
+
+<table>
+  <tr><th>函数</th><th>做什么</th></tr>
+  <tr><td><code>note_update</code>（改）</td>
+      <td>先读旧值；无变化 → 直接返回；有变化 → 快照旧值 → UPDATE → 裁到 20 条</td></tr>
+  <tr><td><code>note_revision_list</code></td>
+      <td>返回元信息（id / created_at / title / 字数），<b>不带全文</b></td></tr>
+  <tr><td><code>note_revision_get</code></td><td>取单份全文（预览时才拉）</td></tr>
+  <tr><td><code>note_restore</code></td><td>快照当前 → 把指定版本写回 notes → 同步 FTS → 返回新的 Note</td></tr>
+</table>
+<div class="note warn">
+  <b>列表不带全文是个真决定，不是洁癖。</b> 一篇长笔记几十 KB，× 20 份 = 一次 IPC 拖几个 MB，
+  而用户真正会看的只有选中的那一份。代价：点一行多发一次 IPC。
+</div>
+<div class="note">
+  <b>排序与裁剪都用 <code>id DESC</code>，不用 <code>created_at</code>。</b>
+  时间戳是字符串且只到毫秒，同一毫秒内保存两次就排不稳；
+  <code>AUTOINCREMENT</code> 的 id 天然单调。索引仍按规划保留（它服务的是 <code>note_id</code> 过滤）。
+</div>
+
+<h2>6 · 不做清单</h2>
+<table>
+  <tr><th>不做</th><th>理由</th></tr>
+  <tr><td>两个版本的 diff 对比视图</td><td>项目零 diff 计算能力，为此引库不值（见 §0）</td></tr>
+  <tr><td>手动打版本标签 / 命名</td><td>个人规模用不上；时间 + 字数已足够认出哪份</td></tr>
+  <tr><td>恢复到新笔记（另存为）</td><td>多一条路径、多一堆归属问题；真需要可以预览里复制走</td></tr>
+  <tr><td>保留份数可配</td><td>20 写在后端常量；多一个设置项不如多一条笔记</td></tr>
+  <tr><td>自动保存（定时快照）</td><td>那会把 20 份堆满无意义的中间态；快照只跟用户的「保存」走</td></tr>
+</table>
+
+<h2>7 · 验收</h2>
+<ol>
+  <li>改一条笔记保存三次 → 历史里<b>恰好 3 份</b>（不含当前），最上面那份是第三次保存<b>之前</b>的内容</li>
+  <li>打开笔记什么都不改直接保存 → <b>历史不增加</b>，列表里的位置也不变（<code>updated_at</code> 未动）</li>
+  <li>保存 25 次 → 历史<b>只剩最近 20 份</b>，最早那几份已删</li>
+  <li>恢复到一个旧版本 → 正文变旧版，且<b>历史里多了一份是刚才那个新版</b>（恢复可撤销）</li>
+  <li>删掉整条笔记 → <code>note_revisions</code> 里它的行<b>一条不剩</b>（外键级联）</li>
+  <li>弹窗与第三栏里的历史入口<b>行为完全一致</b>（同一个组件）</li>
+  <li>切到历史再返回：<b>未保存的草稿还在</b></li>
+</ol>
+
+</div>

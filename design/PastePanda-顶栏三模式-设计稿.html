@@ -626,7 +626,9 @@
 <tr><td>5</td><td>工具箱下拉 → 主体区</td><td><code>TopBar.tsx</code> <code>TOOLBOX_GROUPS</code></td>
     <td><b>数据结构不改</b>，只换渲染容器；同时删掉右侧 <code>toolboxWrap</code> 按钮</td></tr>
 <tr><td>6</td><td>模式条件渲染搜索行/页签行</td><td><code>TopBar.tsx</code> <code>.headerControls</code></td>
-    <td>工具箱：两行都不渲染；知识库：搜索行换文案、页签行不渲染</td></tr>
+    <td>工具箱：两行都不渲染。<br>
+        <b>知识库：实现时改为两行都不渲染</b>（原定「搜索行换文案」）——`notes` 表在 A 阶段
+        还没建（规划 §8.1 2️⃣），摆一个搜不到任何东西的搜索框是假 UI。建表后再加回来。</td></tr>
 <tr><td>7</td><td>侧边栏按模式置灰</td><td><code>TopBar.tsx</code> <code>.sidebarToggle</code></td>
     <td>非「记录」模式下 <code>disabled</code></td></tr>
 <tr><td>8</td><td>主体区按模式分发</td><td><code>App.tsx</code></td>

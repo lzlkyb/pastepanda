@@ -1,0 +1,638 @@
+<title>PastePanda 知识库视图（B1 #1）· 设计稿</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #171d24; --panel2: #1d242c; --line: #2a333d;
+    --tx: #e6edf3; --tx2: #9fb0c0; --tx3: #6b7d8f;
+    --accent: #4a9eff; --accent2: #2b7fd4;
+    --warn: #f0a020; --danger: #e5534b; --ok: #3fb950;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f8fa; --panel: #fff; --panel2: #f0f3f6; --line: #d8dee4;
+      --tx: #1f2328; --tx2: #57606a; --tx3: #8c959f;
+      --accent: #0969da; --accent2: #0550ae;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 20px 60px;
+    background: var(--bg); color: var(--tx);
+    font: 14px/1.65 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 21px; margin: 0 0 4px; }
+  h2 {
+    font-size: 16px; margin: 34px 0 10px; padding-bottom: 7px;
+    border-bottom: 1px solid var(--line);
+  }
+  h3 { font-size: 13.5px; margin: 20px 0 7px; color: var(--tx); }
+  p, li { color: var(--tx2); }
+  .lede { color: var(--tx2); font-size: 13px; margin: 0 0 6px; }
+  code {
+    background: var(--panel2); padding: 1px 5px; border-radius: 4px;
+    font: 12px ui-monospace, Consolas, monospace; color: var(--tx);
+  }
+  pre {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 11px 13px; overflow-x: auto;
+    font: 12px/1.6 ui-monospace, Consolas, monospace; color: var(--tx);
+  }
+  .tag {
+    display: inline-block; padding: 1px 7px; border-radius: 5px;
+    font-size: 11px; font-weight: 600; vertical-align: middle;
+    background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent);
+  }
+  .tag.warn { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
+  .tag.ok { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
+  .tag.bad { background: color-mix(in srgb, var(--danger) 20%, transparent); color: var(--danger); }
+  .note {
+    border-left: 3px solid var(--accent); background: var(--panel);
+    padding: 10px 13px; border-radius: 0 7px 7px 0; margin: 12px 0; font-size: 12.5px;
+  }
+  .note.warn { border-left-color: var(--warn); }
+  .note.bad { border-left-color: var(--danger); }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 12.5px; }
+  th, td { border: 1px solid var(--line); padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { background: var(--panel2); color: var(--tx); font-weight: 600; }
+  td { color: var(--tx2); }
+
+  /* ===== 真尺寸窗口模拟：480 × 700 ===== */
+  .figrow { display: flex; gap: 22px; flex-wrap: wrap; margin: 14px 0 4px; }
+  .fig { flex: 0 0 auto; }
+  .figcap {
+    font-size: 11.5px; color: var(--tx3); margin-top: 7px; text-align: center;
+    max-width: 480px;
+  }
+  .win {
+    width: 480px; height: 560px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    display: flex; flex-direction: column;
+    box-shadow: 0 8px 28px rgba(0,0,0,.35);
+  }
+  .win-top {
+    height: 34px; flex-shrink: 0; display: flex; align-items: center;
+    gap: 7px; padding: 0 10px; border-bottom: 1px solid var(--line);
+    background: var(--panel2);
+  }
+  .modeseg {
+    display: flex; gap: 2px; padding: 2px; border-radius: 8px;
+    background: color-mix(in srgb, var(--tx) 8%, transparent);
+  }
+  .modeseg span {
+    padding: 2px 8px; border-radius: 6px; font-size: 11px; color: var(--tx2);
+  }
+  .modeseg span.on { background: var(--accent); color: #fff; font-weight: 600; }
+  .win-body { flex: 1; display: flex; min-height: 0; }
+
+  /* 推挤式侧栏（与现有 Sidebar 同尺寸：180px） */
+  .ftree {
+    width: 180px; flex-shrink: 0; border-right: 1px solid var(--line);
+    background: var(--panel2); overflow-y: auto; padding: 7px 0;
+  }
+  .fhead {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
+    color: var(--tx3); padding: 4px 11px; display: flex;
+    align-items: center; justify-content: space-between;
+  }
+  .fplus {
+    width: 15px; height: 15px; border-radius: 4px; display: grid;
+    place-items: center; background: color-mix(in srgb, var(--tx) 10%, transparent);
+    color: var(--tx2); font-size: 12px; line-height: 1;
+  }
+  .frow {
+    display: flex; align-items: center; gap: 5px;
+    padding: 4px 11px; font-size: 12px; color: var(--tx2);
+    white-space: nowrap; overflow: hidden;
+  }
+  .frow .nm { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+  .frow .ct { font-size: 10px; color: var(--tx3); flex-shrink: 0; }
+  .frow.on {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    color: var(--tx); font-weight: 600;
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  .frow .car { width: 9px; font-size: 8px; color: var(--tx3); flex-shrink: 0; }
+  .d1 { padding-left: 24px; }
+  .d2 { padding-left: 37px; }
+  .fsep { height: 1px; background: var(--line); margin: 6px 9px; }
+
+  /* 右侧笔记区 */
+  .npanel { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .crumb {
+    display: flex; align-items: center; gap: 5px; padding: 6px 10px;
+    font-size: 11px; color: var(--tx3); border-bottom: 1px solid var(--line);
+    flex-shrink: 0;
+  }
+  .crumb b { color: var(--tx); font-weight: 600; }
+  .burger {
+    width: 18px; height: 18px; border-radius: 4px; display: grid;
+    place-items: center; background: color-mix(in srgb, var(--tx) 10%, transparent);
+    color: var(--tx2); font-size: 10px; flex-shrink: 0;
+  }
+  .chips { display: flex; gap: 4px; padding: 6px 10px 4px; flex-wrap: wrap; flex-shrink: 0; }
+  .chip {
+    padding: 1px 7px; border: 1px solid var(--line); border-radius: 11px;
+    font-size: 10.5px; color: var(--tx2); white-space: nowrap;
+  }
+  .chip.on {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border-color: var(--accent); color: var(--tx); font-weight: 600;
+  }
+  .srch {
+    margin: 4px 10px 6px; height: 26px; border: 1px solid var(--line);
+    border-radius: 7px; background: var(--panel); display: flex;
+    align-items: center; padding: 0 8px; font-size: 11px; color: var(--tx3);
+    flex-shrink: 0;
+  }
+  .nlist { flex: 1; overflow-y: auto; padding: 0 6px 8px; }
+  .nrow {
+    padding: 6px 8px; border-radius: 7px; border: 1px solid transparent;
+    margin-bottom: 2px;
+  }
+  .nrow:hover, .nrow.hl { background: var(--panel2); border-color: var(--line); }
+  .ntitle {
+    font-size: 12px; font-weight: 600; color: var(--tx);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .nexc {
+    font-size: 10.5px; color: var(--tx2);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .nmeta { font-size: 9.5px; color: var(--tx3); margin-top: 1px; display: flex; gap: 5px; }
+  .nmeta .tg {
+    padding: 0 4px; border: 1px solid var(--line); border-radius: 3px;
+  }
+  .inbox {
+    margin: 6px 10px; padding: 6px 9px; border-radius: 8px; font-size: 11px;
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    color: var(--tx2); display: flex; align-items: center; gap: 6px;
+    flex-shrink: 0;
+  }
+  .inbox b { color: var(--tx); }
+
+  /* 方案对比卡 */
+  .opts { display: flex; gap: 12px; flex-wrap: wrap; margin: 12px 0; }
+  .opt {
+    flex: 1 1 300px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 9px; padding: 12px 14px;
+  }
+  .opt.pick { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .opt h4 { margin: 0 0 6px; font-size: 13px; color: var(--tx); }
+  .opt ul { margin: 6px 0 0; padding-left: 18px; font-size: 12px; }
+  .kv { font-size: 12px; }
+  .kv b { color: var(--tx); }
+</style>
+
+<div class="wrap">
+
+<h1>PastePanda 知识库视图 · 设计稿</h1>
+<p class="lede">
+  B1 #1（规划 §8.2）· 2026-08-31 · <span class="tag">文件夹树 + 标签双维度</span>
+  <span class="tag ok">schema 已定：邻接表 parent_id</span>
+</p>
+<p class="lede">
+  范围：知识模式的文件夹树 · 标签筛选 · 新建/改名/移动/删除文件夹 · 笔记归档。
+  <b>不含</b>：版本快照（#4）/ MD 导出导入（#5）/ 新建空白笔记（#13，紧接在后）/ 轻量 AI。
+</p>
+
+<div class="note warn">
+  <b>规划的两处缺口（本稿补上）</b><br>
+  ① <b>§6 的 DDL 完全没有 folders 表</b>，notes 也没有 <code>folder_id</code>——全文 9 处提到文件夹，
+  没一处定义结构。本稿定下邻接表形态（已确认）。<br>
+  ② B1 #1 写「入口位置见 §9 #7」，但 <b>§9 #7 已被 v3.7 作废</b>（↩A-27）。入口现在由 D15 的
+  「知识」模式定，不需要再选位置。
+</div>
+
+<h2>1 · 布局：480px 宽的窗口里怎么放一棵树</h2>
+<p class="kv">
+  窗口默认 <b>480 × 700</b>（<code>tauri.conf.json</code>，minWidth 320）。这是本节唯一的硬约束。
+  <b>关键：项目里已经有一个答案。</b>记录模式的分组侧栏（<code>Sidebar.module.css</code>）就是
+  <b>180px 推挤式</b>（<code>width: 0 → 180px</code> 带 0.35s 过渡，不是覆盖层），默认收起。
+  再发明一种侧栏形态只会让两个模式的手感不一致。
+</p>
+
+<div class="opts">
+  <div class="opt pick">
+    <h4>甲 · 180px 推挤侧栏 <span class="tag ok">推荐</span></h4>
+    <p class="kv">照搬记录模式的 <code>Sidebar</code>：同宽度、同动画、同默认收起。</p>
+    <ul>
+      <li>展开后笔记区剩 <b>300px</b>——笔记行全是单行省略，够用</li>
+      <li>两个模式的侧栏手感一致，背景知识可迁移</li>
+      <li>代价：三层缩进后名字只剩 ~90px（见 §2 的深度上限）</li>
+    </ul>
+  </div>
+  <div class="opt">
+    <h4>乙 · 顶部面包屑下钻</h4>
+    <p class="kv">不给树，只给「当前文件夹 + 子文件夹行」，点进去下钻。</p>
+    <ul>
+      <li>优：零宽度成本，笔记区始终 480px</li>
+      <li>劣：<b>看不到全局结构</b>——而「能组织」恰好是 B1 的验收目标</li>
+      <li>劣：跳另一棵子树要逐层退回去</li>
+    </ul>
+  </div>
+  <div class="opt">
+    <h4>丙 · 覆盖式抽屉</h4>
+    <p class="kv">侧栏绝对定位盖在笔记区上，带遮罩。</p>
+    <ul>
+      <li>优：树可以做到 240px 宽，深层缩进不局促</li>
+      <li>劣：<b>选文件夹时看不见笔记列表</b>，失去「边选边看」的反馈</li>
+      <li>劣：与记录模式的推挤侧栏形成两套手感</li>
+    </ul>
+  </div>
+</div>
+</div>
+
+<h2>2 · 真尺寸渲染（甲方案，480 × 560 可视区）</h2>
+
+<div class="figrow">
+  <div class="fig">
+    <div class="win">
+      <div class="win-top">
+        <div class="modeseg"><span>记录</span><span>工具</span><span class="on">知识</span></div>
+      </div>
+      <div class="win-body">
+        <div class="ftree">
+          <div class="fhead"><span>文件夹</span><span class="fplus">+</span></div>
+          <div class="frow on"><span class="car"></span><span class="nm">全部笔记</span><span class="ct">128</span></div>
+          <div class="frow"><span class="car"></span><span class="nm">未分类</span><span class="ct">31</span></div>
+          <div class="fsep"></div>
+          <div class="frow"><span class="car">▾</span><span class="nm">工作</span><span class="ct">62</span></div>
+          <div class="frow d1"><span class="car">▾</span><span class="nm">NC 二开</span><span class="ct">28</span></div>
+          <div class="frow d2"><span class="car"></span><span class="nm">单据模板</span><span class="ct">9</span></div>
+          <div class="frow d2"><span class="car"></span><span class="nm">报表</span><span class="ct">6</span></div>
+          <div class="frow d1"><span class="car">▸</span><span class="nm">ASCP</span><span class="ct">19</span></div>
+          <div class="frow"><span class="car">▸</span><span class="nm">学习</span><span class="ct">24</span></div>
+          <div class="frow"><span class="car"></span><span class="nm">片段与命令</span><span class="ct">11</span></div>
+        </div>
+        <div class="npanel">
+          <div class="crumb"><span class="burger">≡</span><span>工作 ›</span><b>NC 二开</b></div>
+          <div class="chips">
+            <span class="chip on">SQL</span><span class="chip">待办</span><span class="chip">参考</span><span class="chip">…</span>
+          </div>
+          <div class="srch">搜笔记（中文 / 拼音首字母）</div>
+          <div class="nlist">
+            <div class="nrow hl">
+              <div class="ntitle">单据入口 pk_billtype 取值表</div>
+              <div class="nexc">销售订单 30，采购订单 21，转库单 4C…</div>
+              <div class="nmeta"><span>2 小时前</span><span class="tg">SQL</span></div>
+            </div>
+            <div class="nrow">
+              <div class="ntitle">BMF 转单据生成器的输出目录坑</div>
+              <div class="nexc">output 设成已有目录会把原文件全删，不进回收站…</div>
+              <div class="nmeta"><span>昨天</span><span class="tg">SQL</span></div>
+            </div>
+            <div class="nrow">
+              <div class="ntitle">GBK 源文件的读写回写流程</div>
+              <div class="nexc">read_files + gbk 探测，write_files + base64 写回…</div>
+              <div class="nmeta"><span>3 天前</span><span class="tg">SQL</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="figcap">侧栏展开：180 + 300。面包屑带折叠按钮（≡），标签 chips 与文件夹是<b>交集</b>关系。</div>
+  </div>
+
+  <div class="fig">
+    <div class="win">
+      <div class="win-top">
+        <div class="modeseg"><span>记录</span><span>工具</span><span class="on">知识</span></div>
+      </div>
+      <div class="win-body">
+        <div class="npanel">
+          <div class="crumb"><span class="burger">≡</span><b>全部笔记</b><span>· 128 条</span></div>
+          <div class="inbox">📥 <span>待沉淀 <b>225</b> 条 —— 你反复找回过的内容</span><span style="margin-left:auto">▾</span></div>
+          <div class="chips">
+            <span class="chip">SQL</span><span class="chip">待办</span><span class="chip">参考</span><span class="chip">图文</span><span class="chip">…</span>
+          </div>
+          <div class="srch">搜笔记（中文 / 拼音首字母）</div>
+          <div class="nlist">
+            <div class="nrow">
+              <div class="ntitle">单据入口 pk_billtype 取值表</div>
+              <div class="nexc">销售订单 30，采购订单 21，转库单 4C，入库单 45…</div>
+              <div class="nmeta"><span>2 小时前</span><span class="tg">SQL</span><span>工作/NC 二开</span></div>
+            </div>
+            <div class="nrow">
+              <div class="ntitle">Vite dev 模块图坏了返回空模块</div>
+              <div class="nexc">tsc/build 全过但运行时报未定义，必须重启 dev + 清 .vite…</div>
+              <div class="nmeta"><span>昨天</span><span class="tg">参考</span><span>学习</span></div>
+            </div>
+            <div class="nrow">
+              <div class="ntitle">GitHub 推送要走 ssh443</div>
+              <div class="nexc">22 端口被重置，用 -c url.insteadOf 改走 ssh.github.com:443…</div>
+              <div class="nmeta"><span>3 天前</span><span>未分类</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="figcap">侧栏收起（<b>默认态</b>）：笔记区得到全部 480px。此时每行末尾多一个所属文件夹。</div>
+  </div>
+</div>
+
+<div class="note">
+  <b>两个内置项不是文件夹</b>：「全部笔记」与「未分类」画在分隔线上方，不可改名/删除/拖动。
+  照搬记录模式 Sidebar 的现成做法（它的内置分组就是「全部 / 收藏 / 未分组 / 截图」）。
+</div>
+
+<h3>深度上限：3 层</h3>
+<p class="kv">
+  不是拍的，是量出来的。侧栏 180px，扇区 padding 11px，每层缩进 13px，计数占 ~22px：
+</p>
+<table>
+  <tr><th>层级</th><th>名字可用宽度</th><th>中文字数（12px）</th><th>结论</th></tr>
+  <tr><td>顶层</td><td>~136px</td><td>11 字</td><td>宽裕</td></tr>
+  <tr><td>第 2 层</td><td>~123px</td><td>10 字</td><td>够用</td></tr>
+  <tr><td>第 3 层</td><td>~110px</td><td>9 字</td><td>下限</td></tr>
+  <tr><td>第 4 层</td><td>~97px</td><td>8 字</td><td><span class="tag bad">禁止</span>名字普遍被截，树不再可读</td></tr>
+</table>
+<p class="kv">
+  ⇒ <b>新建/移动时，深度已达 3 的目标直接不出现在可选列表里</b>（而不是选了再报错）——
+  同 §3 防环的口径。后端也校一道，因为导入（#5）将来可能带进更深的目录。
+</p>
+
+<h2>3 · 邻接表的两个必须防的坑</h2>
+
+<h3>坑一：成环 → 孤岛子树</h3>
+<p class="kv">
+  把「工作」移动到它自己的子文件夹「NC 二开」下，两者就从根上断开了：
+  递归从顶层往下走永远到不了它们，而行还在表里——<b>笔记不会丢，但永久看不见</b>。
+  物化路径方案天然没这个问题，邻接表必须自己防。
+</p>
+<pre>移动前校验（后端，权威）：
+  1. target == self          → 拒
+  2. target ∈ descendants(self) → 拒（WITH RECURSIVE 一次查出）
+  3. depth(target) + height(self) &gt; 3 → 拒
+
+UI 侧：上述三类目标**直接不出现在「移动到…」列表**里。
+先显示再报错是更差的做法——与 A 阶段 file 卡片不显「转为笔记」同一条原则。</pre>
+
+<h3>坑二：删文件夹把笔记一起删了</h3>
+<p class="kv">
+  <code>note_folders.parent_id</code> 上的 <code>ON DELETE CASCADE</code> 只该级联删<b>子文件夹</b>；
+  <code>notes.folder_id</code> 必须是 <code>ON DELETE SET NULL</code>。否则删一个文件夹就把里面所有笔记
+  连坐了——而用户的意思只是「不想要这个分类了」。
+</p>
+<div class="note bad">
+  <b>删除确认必须把影响说清</b>：「删除文件夹「NC 二开」？它的 <b>2 个子文件夹也会删除</b>，
+  里面的 <b>28 条笔记会移到「未分类」（不会丢）</b>。」<br>
+  两个数字都要真查出来填进去，不能写泛泛的「相关内容可能受影响」。
+</div>
+
+<h2>4 · 文件夹 × 标签：交集，不是并集</h2>
+<p class="kv">
+  规划只写了「双维度」，没定关系。定为<b>交集</b>：选了「工作/NC 二开」+ 标签「SQL」，
+  就只看这个文件夹里带 SQL 标签的。理由：并集会让「选了更多条件反而结果更多」，
+  与用户对筛选器的直觉相反；且记录模式的标签筛选已经是交集语义，两边得一致。
+</p>
+<table>
+  <tr><th>选择</th><th>结果</th><th>子文件夹算不算</th></tr>
+  <tr><td>全部笔记</td><td>所有笔记</td><td>—</td></tr>
+  <tr><td>未分类</td><td><code>folder_id IS NULL</code></td><td>—</td></tr>
+  <tr><td>工作</td><td>工作 <b>及其所有后代</b>里的笔记</td><td><span class="tag ok">算</span></td></tr>
+  <tr><td>工作 + 标签 SQL</td><td>上述集合 ∩ 带 SQL 标签</td><td><span class="tag ok">算</span></td></tr>
+</table>
+<p class="kv">
+  <b>选父文件夹包含后代</b>（而不是只看直接子项）：不包含的话，点「工作」看到 15 条而
+  侧栏计数写 62，用户会以为丢了。侧栏计数与列表内容<b>必须同口径</b>——
+  同 A 阶段待沉淀区那个「横幅 225 / 列表 200」的教训（↩A-32）。
+</p>
+
+<h2>5 · Schema（已确认：邻接表）</h2>
+<pre>-- 新表（B1 #1）。§6 未预留，本稿补定。
+CREATE TABLE IF NOT EXISTS note_folders (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  parent_id  TEXT,                      -- NULL = 顶层
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,             -- 全库惯例：'%Y-%m-%d %H:%M:%S' 字符串
+  FOREIGN KEY (parent_id) REFERENCES note_folders(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_note_folders_parent ON note_folders(parent_id);
+
+-- notes 加一列。**这是迁移不是建表**：notes 在 A 阶段已建，真库里已有数据。
+-- 照 snippets.copy_count 的先例（mod.rs:621）：探测 pragma_table_info → ALTER → 重复列降级为 warn。
+ALTER TABLE notes ADD COLUMN folder_id TEXT
+  REFERENCES note_folders(id) ON DELETE SET NULL;   -- 默认 NULL，SQLite 允许带 REFERENCES 加列
+CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder_id);</pre>
+
+<div class="note warn">
+  <b>两个删除行为故意不同</b>：<code>parent_id</code> 是 <b>CASCADE</b>（删父文件夹连子文件夹一起删），
+  <code>notes.folder_id</code> 是 <b>SET NULL</b>（删文件夹不删笔记，只是变回未分类）。
+  <code>PRAGMA foreign_keys=ON</code> 已在 <code>data_store/mod.rs:884</code> 开着，两条都会真正生效。
+</div>
+
+<h3>为何不用关联表（notes ↔ folders 多对多）</h3>
+<p class="kv">
+  文件夹的意义就是「一份东西只在一处」，多对多就是标签了——而标签已经有了（<code>note_tags</code>）。
+  两个维度各干一件事才叫「双维度」；都做成多对多就是两套标签。
+</p>
+
+<h2>6 · 文件夹的四个操作</h2>
+<table>
+  <tr><th>操作</th><th>入口</th><th>行为与约束</th></tr>
+  <tr>
+    <td><b>新建</b></td>
+    <td>侧栏表头的 <code>+</code>；文件夹右键「新建子文件夹」</td>
+    <td>名字空 / 纯空白 → 拒；同一父下同名 → 拒（否则树里两行完全一样，用户无法区分）；
+        深度已达 3 的文件夹不提供「新建子文件夹」这一项</td>
+  </tr>
+  <tr>
+    <td><b>改名</b></td>
+    <td>双击 / 右键「重命名」</td>
+    <td>同上两条校验。邻接表的便宜处：<b>改名就是 UPDATE 一行</b>，后代不用动</td>
+  </tr>
+  <tr>
+    <td><b>移动</b></td>
+    <td>右键「移动到…」→ 可选文件夹列表</td>
+    <td>三类非法目标不出现在列表里（§3）。<b>不做拖拽</b>：480px 宽、行高 ~21px，
+        拖拽命中率太低，且误拖的代价是整棵子树换位置</td>
+  </tr>
+  <tr>
+    <td><b>删除</b></td>
+    <td>右键「删除」</td>
+    <td>确认框写真数字（几个子文件夹 / 几条笔记会变未分类）。
+        笔记<b>永不随文件夹删</b></td>
+  </tr>
+</table>
+
+<h3>笔记归档（把笔记放进文件夹）</h3>
+<p class="kv">
+  两个入口，不做拖拽（同上）：
+</p>
+<ul>
+  <li><b>笔记行右键 → 「移动到文件夹」</b>（与记录模式卡片的「移动到分组」同形）</li>
+  <li><b>笔记弹窗顶部加一个文件夹选择器</b>（编辑时顺手归档）</li>
+</ul>
+
+<h2>7 · 侧栏开合的默认与记忆</h2>
+<table>
+  <tr><th>项</th><th>取值</th><th>理由</th></tr>
+  <tr><td>默认状态</td><td><b>收起</b></td>
+      <td>与记录模式一致（<code>sidebarOpen</code> 初值 false）。没文件夹时开着只是白占 180px</td></tr>
+  <tr><td>开合记忆</td><td>localStorage</td>
+      <td>照 <code>appMode</code> 的做法（<code>pastepanda_app_mode</code>）。不写 config：这是纯 UI 偏好，
+          没必要走后端一轮</td></tr>
+  <tr><td>零文件夹时</td><td>侧栏仍可开，只有两个内置项 + 一个「新建文件夹」提示</td>
+      <td>比把按钮禁用好：用户需要一个地方开始建结构</td></tr>
+  <tr><td>面包屑</td><td>侧栏收起时也显示</td>
+      <td>收起后必须还能看出「现在筛的是哪个文件夹」，否则列表变成无上下文的子集</td></tr>
+</table>
+
+<h2>8 · 不做清单（本阶段）</h2>
+<table>
+  <tr><th>不做</th><th>归属</th><th>理由</th></tr>
+  <tr><td>拖拽移动（文件夹与笔记）</td><td>待真实需求</td>
+      <td>480px 宽 + 21px 行高，命中率太低；右键菜单已覆盖全部能力</td></tr>
+  <tr><td>文件夹颜色 / 图标</td><td>待真实需求</td>
+      <td>groups 有颜色是因为卡片上要画小圆点；文件夹树不需要辨识色</td></tr>
+  <tr><td>按文件夹导出 MD 目录</td><td><b>B1 #5</b></td>
+      <td>本稿只建结构；导出是独立工作项（项目零 frontmatter 能力）</td></tr>
+  <tr><td>文件夹级的字段筛选 chips</td><td><b>B2 #9</b></td>
+      <td>Bases 式字段视图本就在 B2</td></tr>
+  <tr><td>文件夹重命名同步磁盘目录</td><td>—</td>
+      <td>笔记存在 SQLite，不是磁盘文件。只有导出（#5）才产生真目录</td></tr>
+</table>
+
+<h2>9 · 验收口径</h2>
+<ol>
+  <li>建一棵三层树，每层名字都能读（不被截）；第四层无法创建</li>
+  <li>把父文件夹往自己子文件夹里移：目标<b>根本不在列表里</b></li>
+  <li>删一个带 2 子文件夹 / 28 笔记的文件夹：确认框写出这两个真数；
+      删后 28 条笔记全在「未分类」，一条不少</li>
+  <li>选父文件夹：列表条数 == 侧栏计数（含后代，同口径）</li>
+  <li>文件夹 + 标签同时选：结果是<b>交集</b>，且条数不大于任一单选</li>
+  <li>侧栏开合状态重启后保持</li>
+  <li>在知识模式删掉全部文件夹：笔记列表仍完整（降级为全部平铺）</li>
+</ol>
+
+<div class="note">
+  <b>下一步（本稿外）</b>：#13 新建空白笔记——顶部「＋」→ 空编辑器，<code>history_id</code> 为空、
+  无来源行、<b>落入当前所选文件夹</b>。它依赖本稿的 <code>folder_id</code>，所以排在后面。
+</div>
+
+<h2>10 · 宽屏：窗口拉大后的三栏 <span class="tag ok">本次一并做</span></h2>
+<p class="kv">
+  <code>tauri.conf.json</code> 里 <b><code>resizable: true</code> 且无 maxWidth</b>——用户能随意拉大。
+  而 480px 下那套布局到了 1200px 就只是一条铺得很宽的笔记列表，浪费掉的正是笔记应用最需要的东西：
+  <b>一块能长久放着正文的区域</b>。
+</p>
+
+<div class="note">
+  <b>断点沿用项目现有的，不发明新数字</b>：<code>src/styles/app.css</code> 已经在用
+  <b>600px / 800px</b> 两档（给 <code>.card-list</code> 的间距与最大宽）。再引入第三套断点
+  只会让以后改布局时没人知道该改哪一档。
+</div>
+
+<table>
+  <tr><th>宽度</th><th>侧栏</th><th>笔记区</th><th>点一条笔记</th></tr>
+  <tr>
+    <td><b>&lt; 600px</b><br><span style="font-size:11px">含 480 默认尺寸</span></td>
+    <td>可收起，<b>默认收</b></td>
+    <td>列表占全宽</td>
+    <td>弹窗（现状）</td>
+  </tr>
+  <tr>
+    <td><b>600 – 800px</b></td>
+    <td><b>常驻</b>（仍可手动收）</td>
+    <td>列表 ~420px</td>
+    <td>弹窗</td>
+  </tr>
+  <tr>
+    <td><b>≥ 800px</b></td>
+    <td>常驻 180px</td>
+    <td>列表固定 300px</td>
+    <td><b>第三栏直接打开</b>（无弹窗）</td>
+  </tr>
+</table>
+
+<h3>为何三栏值得做：弹窗做不到连续浏览</h3>
+<p class="kv">
+  弹窗的动作链是「点一条 → 读 → 关掉 → 点下一条」。而笔记应用里最高频的动作是<b>扫着读</b>：
+  上下箭头过一遍，看到目标停下来。每条都要开关一次弹窗，这个动作就不可能。
+  第三栏不是「把弹窗铺开」，它改变的是可能的动作集合。
+</p>
+
+<div class="note warn">
+  <b>转笔记入口仍然是弹窗，不论窗口多宽。</b><br>
+  它发生在<b>记录模式</b>（右键卡片「转为笔记」 / 点 📝 角标），而那边没有第三栏可用——
+  弹窗是它唯一的落点。第三栏只服务<b>知识模式里浏览/编辑已有笔记</b>。<br>
+  → 两条路径共用同一个编辑器与同一套保存逻辑，但壳不同。
+</div>
+
+<h3>实现前提：先把状态逻辑收口成 hook</h3>
+<p class="kv">
+  <b>一个已经存在的便宜</b>：<code>NoteEditorPane.tsx</code> 在 A 阶段就已从 <code>NoteDialog.tsx</code>
+  拆出来了（当时是为了规则 #7 的 300 行上限）。所以第三栏<b>直接复用现成的编辑器组件</b>，
+  不用重写 CodeMirror 装配。
+</p>
+<p class="kv">
+  但 <code>NoteDialog</code> 里还握着一整套状态：title / content / 脏数据判定 / 保存 / Esc 确认 /
+  来源行 / 复制为 Markdown。第三栏要一模一样的行为。<b>不抽 hook 就是两份保存逻辑</b>，
+  而两份中必有一份会忘了某个分支——同 A 阶段把幂等收进 <code>openNoteForCard</code> 的理由（↩A-31）。
+</p>
+<pre>useNoteEditorState(draft) → {
+  title, setTitle, content, setContent,
+  isDirty, saving, sourceItem,
+  save(), requestClose(), copyAsMarkdown(), viewSource()
+}
+
+NoteDialog        = backdrop + FocusTrap + dialog-box + hook + NoteEditorPane
+NoteDetailPane    = 栏容器              + hook + NoteEditorPane   ← 第三栏
+                    两边共用 hook，保存/脏数据行为天然一致</pre>
+
+<h3>第三栏的四条行为细则</h3>
+<table>
+  <tr><th>情形</th><th>行为</th><th>理由</th></tr>
+  <tr><td>未选任何笔记</td><td>第三栏显空态「从左侧选一条笔记」</td>
+      <td>比把栏隐掉好：隐掉会让列表宽度在选中前后跳一下</td></tr>
+  <tr><td>有未保存修改时点另一条</td><td>弹确认（同弹窗的脏数据守卫）</td>
+      <td>hook 共用，这条自然就有；不共用就会漏掉</td></tr>
+  <tr><td>窗口从 ≥800 缩到 &lt;800</td><td>第三栏消失，<b>当前笔记自动改为弹窗打开</b></td>
+      <td>不接的话用户正在写的东西会直接从屏上消失</td></tr>
+  <tr><td>删掉当前选中的笔记</td><td>第三栏回到空态</td>
+      <td>不自动跳下一条：自动跳转会让用户以为删错了</td></tr>
+</table>
+
+<h3>宽屏验收（补在 §9 之后）</h3>
+<ol start="8">
+  <li>拉到 900px：三栏出现，点笔记<b>不再弹窗</b>，右栏直接可编辑</li>
+  <li>右栏改一半不保存 → 点列表里另一条：弹「放弃修改」确认</li>
+  <li>在 900px 下写一半 → 拉回 700px：笔记<b>改用弹窗打开</b>（不会从屏上消失）。
+      ⚠ <b>未保存的修改不会带过去</b>——原稿这里写的是「无损」，实现时改了：
+      弹窗拿的是库里的版本，要带草稿得把它提到 store，那会让两个壳共享一份可变草稿（见 A-34）</li>
+  <li>从记录模式右键转笔记（窗口 1200px）：仍然是弹窗，不是第三栏</li>
+  <li>Ctrl+S 在弹窗与第三栏里行为一致</li>
+</ol>
+
+<h2>11 · #13 新建空白笔记 <span class="tag ok">接在本稿之后</span></h2>
+<p class="kv">
+  它是十五个入口里<b>唯一与剪贴板完全无关</b>的创建路径。位置：<b>面包屑行最右一个「＋」</b>
+  （<code>margin-left:auto</code>）——不另开工具栏，480px 宽的窗口里多一行就少两条笔记。
+</p>
+
+<table>
+  <tr><th>决定</th><th>怎么做</th><th>为什么不是另一种</th></tr>
+  <tr><td>点「＋」后出什么</td><td><b>统一走弹窗</b>（宽屏也是）</td>
+      <td>第三栏靠 <code>key={note.id}</code> 活着，而新草稿压根没 id；
+          为它在第三栏造一个「草稿态」得多一套状态，换不来什么</td></tr>
+  <tr><td>落入哪个文件夹</td><td>当前选中那个；选的是「全部」/「未分类」则为未分类</td>
+      <td>弹窗里再给个文件夹下拉：多一步，而且与“当前在哪”矛盾</td></tr>
+  <tr><td>归档怎么写</td><td>保存时 <code>note_create</code> 后再发一次 <code>note_set_folder</code></td>
+      <td>不往 <code>note_create</code> 堆 <code>folder_id</code> 参数——#1 实现时已在 note.rs 里定了这个口径</td></tr>
+  <tr><td>点了＋又取消</td><td><b>库里不留任何东西</b></td>
+      <td>先建一条「无标题笔记」再让用户填，取消就会留下空壳</td></tr>
+  <tr><td>归档失败了</td><td>笔记照存，停在「未分类」，api 层弹错</td>
+      <td>回滚删掉刚写的笔记 = 为了归档丢内容，本末倒置</td></tr>
+</table>
+
+<h3>#13 验收</h3>
+<ol start="13">
+  <li>选中「工作笔记」→ 点＋→ 写标题保存：新笔记<b>直接出现在当前列表里</b>，侧栏计数 +1</li>
+  <li>选「全部笔记」时新建：落在未分类</li>
+  <li>点＋后直接关闭：列表不变，<b>库里不多空笔记</b></li>
+  <li>新建的笔记<b>没有来源行</b>（<code>history_id</code> 为空），也不会给任何卡片上 📝 角标</li>
+</ol>
+
+</div>

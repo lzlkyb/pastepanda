@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>「工具」模式主体区布局 — 设计稿 v1.0</title>
+<style>
+  :root, [data-theme="ocean"]{
+    --app-bg:#F7F7F8; --card-bg:#fff; --card-border:#E0E4EB;
+    --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+    --accent:#0284C7; --accent-light:#E0F2FE;
+    --warn-bg:#FFF7ED; --warn-text:#C54A0A;
+    --ok-bg:#DCFCE7; --ok-text:#15803D;
+    --bad-bg:#FEF2F2; --bad-text:#B91C1C;
+    --hover:#EEF2F6;
+  }
+  [data-theme="midnight"]{
+    --app-bg:#0B0B13; --card-bg:#18181B; --card-border:#27272A;
+    --text-primary:#E4E4E7; --text-secondary:#AFAFB7; --text-muted:#8D8D95;
+    --accent:#818CF8; --accent-light:#1E1B4B;
+    --warn-bg:#431407; --warn-text:#FB923C;
+    --ok-bg:#14532D; --ok-text:#4ADE80;
+    --bad-bg:#450A0A; --bad-text:#FCA5A5;
+    --hover:#232329;
+  }
+  [data-theme="forest"]{
+    --app-bg:#F5F1E3; --card-bg:#fff; --card-border:#D1D9D3;
+    --text-primary:#171717; --text-secondary:#58524F; --text-muted:#726E6B;
+    --accent:#059669; --accent-light:#ECFDF5;
+    --warn-bg:#FFF7ED; --warn-text:#C54A0A;
+    --ok-bg:#DCFCE7; --ok-text:#15803D;
+    --bad-bg:#FEF2F2; --bad-text:#B91C1C;
+    --hover:#EDF2EE;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px;font-family:"Segoe UI","Microsoft YaHei",sans-serif;
+       background:var(--app-bg);color:var(--text-primary);line-height:1.6}
+  h1{font-size:22px;margin:0 0 4px}
+  h2{font-size:16px;margin:32px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--accent)}
+  h3{font-size:14px;margin:18px 0 8px}
+  p{margin:8px 0;font-size:13px;color:var(--text-secondary)}
+  .sub{color:var(--text-muted);font-size:12px}
+  code{background:var(--hover);padding:1px 5px;border-radius:4px;font-size:12px;
+       font-family:Consolas,monospace}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:12.5px}
+  th,td{border:1px solid var(--card-border);padding:7px 9px;text-align:left;vertical-align:top}
+  th{background:var(--hover);font-weight:600}
+  .card{background:var(--card-bg);border:1px solid var(--card-border);
+        border-radius:12px;padding:14px 16px;margin:12px 0}
+  .warn{background:var(--warn-bg);color:var(--warn-text);border-radius:10px;
+        padding:10px 14px;margin:12px 0;font-size:13px}
+  .ok{background:var(--ok-bg);color:var(--ok-text);border-radius:10px;
+      padding:10px 14px;margin:12px 0;font-size:13px}
+  .bad{background:var(--bad-bg);color:var(--bad-text);border-radius:10px;
+       padding:10px 14px;margin:12px 0;font-size:13px}
+  .themebar{position:fixed;top:10px;right:14px;display:flex;gap:6px;z-index:99}
+  .themebar button{font-family:inherit;font-size:11px;padding:4px 9px;cursor:pointer;
+       border:1px solid var(--card-border);background:var(--card-bg);
+       color:var(--text-primary);border-radius:7px}
+
+  /* ===== 480px 真尺寸模拟框 ===== */
+  .row{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+  .frame{width:480px;flex-shrink:0}
+  .frameCap{font-size:11px;color:var(--text-muted);margin-bottom:5px}
+  .win{width:480px;height:646px;border:1px solid var(--card-border);border-radius:10px;
+       overflow:hidden;background:var(--card-bg);display:flex;flex-direction:column}
+  .winHdr{flex-shrink:0;padding:16px 16px 0;background:var(--hover)}
+  .hdrTop{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .hdrL{display:flex;align-items:center;gap:8px}
+  .burger{width:26px;height:26px;display:grid;place-items:center;font-size:13px;
+          color:var(--text-muted);opacity:.35}
+  .brand{font-size:12px;font-weight:700}
+  .modes{display:flex;gap:2px;padding:2px;border-radius:9px;background:var(--card-bg);
+         border:1px solid var(--card-border)}
+  .m{height:22px;padding:0 9px;border-radius:7px;font-size:12px;letter-spacing:.5px;
+     display:grid;place-items:center;color:var(--text-secondary)}
+  .m.on{background:var(--card-bg);color:var(--text-primary);font-weight:600;
+        box-shadow:0 2px 6px rgba(0,0,0,.12)}
+  [data-theme="midnight"] .m.on{background:#2A2A31}
+  .hdrR{display:flex;gap:4px;color:var(--text-muted);font-size:12px}
+  .body{flex:1;overflow:hidden;padding:4px 16px 16px}
+
+  /* 分组标题 */
+  .grp{margin:14px 0 8px;font-size:11px;font-weight:600;letter-spacing:.6px;
+       color:var(--text-muted)}
+  .grp:first-child{margin-top:4px}
+
+  /* 瓷砖色 */
+  .t{border-radius:9px;display:grid;place-items:center;flex-shrink:0}
+  .t[data-h="cyan"]  {background:#06B6D422;border:1px solid #06B6D43d}
+  .t[data-h="amber"] {background:#F59E0B22;border:1px solid #F59E0B3d}
+  .t[data-h="rose"]  {background:#F43F5E22;border:1px solid #F43F5E3d}
+  .t[data-h="sky"]   {background:#0EA5E922;border:1px solid #0EA5E93d}
+  .t[data-h="violet"]{background:#8B5CF622;border:1px solid #8B5CF63d}
+  .t[data-h="green"] {background:#10B98122;border:1px solid #10B9813d}
+
+  kbd{font-family:Consolas,monospace;font-size:10px;padding:2px 5px;border-radius:5px;
+      background:var(--hover);border:1px solid var(--card-border);color:var(--text-muted);
+      white-space:nowrap;flex-shrink:0}
+
+  /* 方案甲：单列宽行 */
+  .aRow{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;
+        border:1px solid transparent}
+  .aRow+.aRow{border-top:1px solid var(--card-border);border-radius:0}
+  .aRow .t{width:32px;height:32px;font-size:16px}
+  .aTx{min-width:0;flex:1}
+  .aNm{font-size:13px;font-weight:600}
+  .aDs{font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;
+       text-overflow:ellipsis}
+
+  /* 方案乙：图标网格 */
+  .bGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .bCell{border:1px solid var(--card-border);border-radius:12px;padding:12px 6px;
+         display:flex;flex-direction:column;align-items:center;gap:7px}
+  .bCell .t{width:38px;height:38px;font-size:19px}
+  .bNm{font-size:11.5px;font-weight:600;text-align:center;line-height:1.25}
+
+  /* 方案丙：现状（两列截断）—— 用来对照 */
+  .cGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+  .cCell{display:flex;align-items:center;gap:10px;padding:10px;
+         border:1px solid var(--card-border);border-radius:12px}
+  .cCell .t{width:34px;height:34px;font-size:17px}
+  .cTx{min-width:0}
+  .cNm{font-size:13px;font-weight:600}
+  .cDs{font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;
+       text-overflow:ellipsis}
+  .empty{border:1px dashed var(--bad-text);border-radius:10px;color:var(--bad-text);
+         font-size:11px;text-align:center;padding:10px;margin-top:10px;opacity:.8}
+</style>
+</head>
+<body data-theme="ocean">
+<div class="themebar">
+  <button onclick="document.body.dataset.theme='ocean'">Ocean</button>
+  <button onclick="document.body.dataset.theme='midnight'">Midnight</button>
+  <button onclick="document.body.dataset.theme='forest'">Forest</button>
+</div>
+<style>
+  /* 切换器三个方案的额外样式 */
+  .scene{background:linear-gradient(135deg,#DCE9F5,#EDE4F3);padding:14px;border-radius:10px}
+  [data-theme="midnight"] .scene{background:linear-gradient(135deg,#1A1A2E,#252540)}
+  [data-theme="forest"] .scene{background:linear-gradient(135deg,#E4EFE4,#F3EEDC)}
+  .sceneCap{font-size:10.5px;color:var(--text-muted);margin-bottom:6px}
+  .demoRow{display:flex;align-items:center;gap:8px}
+
+  /* 现状（问题复现）：只有 inset，无 blur / 无外投影 */
+  .sw0{display:flex;gap:2px;padding:2px;border-radius:9px;
+       background:rgba(255,255,255,.32);border:1px solid rgba(255,255,255,.55);
+       box-shadow:inset 0 1px 0 rgba(255,255,255,.5)}
+  .sw0 .i{height:22px;padding:0 9px;border-radius:7px;font-size:12px;letter-spacing:.5px;
+          display:grid;place-items:center;color:#495565}
+  .sw0 .i.on{background:rgba(255,255,255,.88);font-weight:600;color:#0F172A}
+
+  /* 甲：补齐玻璃 + accent 实色滑块 */
+  .sw1{display:flex;gap:2px;padding:2px;border-radius:9px;
+       background:rgba(255,255,255,.55);border:1px solid rgba(255,255,255,.75);
+       backdrop-filter:blur(10px);
+       box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 2px 8px rgba(0,0,0,.1)}
+  [data-theme="midnight"] .sw1{background:rgba(63,63,70,.6);border-color:rgba(90,90,100,.8);
+       box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 2px 8px rgba(0,0,0,.35)}
+  .sw1 .i{height:22px;padding:0 10px;border-radius:7px;font-size:12px;letter-spacing:.5px;
+          display:grid;place-items:center;color:var(--text-secondary)}
+  .sw1 .i.on{background:var(--accent);color:#fff;font-weight:600;
+             box-shadow:0 1px 4px rgba(0,0,0,.2)}
+
+  /* 乙：只补齐玻璃（与页签完全同源） */
+  .sw2{display:flex;gap:2px;padding:2px;border-radius:9px;
+       background:rgba(255,255,255,.55);border:1px solid rgba(255,255,255,.75);
+       backdrop-filter:blur(10px);
+       box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 2px 8px rgba(0,0,0,.1)}
+  [data-theme="midnight"] .sw2{background:rgba(63,63,70,.6);border-color:rgba(90,90,100,.8)}
+  .sw2 .i{height:22px;padding:0 10px;border-radius:7px;font-size:12px;letter-spacing:.5px;
+          display:grid;place-items:center;color:var(--text-secondary)}
+  .sw2 .i.on{background:#fff;color:#0F172A;font-weight:600;box-shadow:0 2px 6px rgba(0,0,0,.14)}
+  [data-theme="midnight"] .sw2 .i.on{background:#2A2A31;color:#E4E4E7}
+
+  /* 丙：下划线式，无容器 */
+  .sw3{display:flex;gap:12px}
+  .sw3 .i{font-size:12.5px;letter-spacing:.5px;color:var(--text-muted);
+          padding-bottom:4px;border-bottom:2px solid transparent}
+  .sw3 .i.on{color:var(--text-primary);font-weight:600;border-bottom-color:var(--accent)}
+</style>
+
+<h1>「工具」模式主体区 + 模式切换器 — 设计稿 v1.0</h1>
+<p class="sub">2026-08-31 · 真机试用后的两条反馈 · 尺寸均按 480×700 默认窗口的**真实可用区 448×646px** 绘制</p>
+
+<div class="warn">
+<b>两条反馈（原话）</b><br>
+① 「工具箱里面的布局很丑」<br>
+② 「记录 工具 知识 UI 显示没有和主体背景没有多大差异，看不出这是切换点」
+</div>
+
+<h2>1. 两个问题的根因（都是可量化的，不是审美分歧）</h2>
+
+<h3>问题② · 切换器看不出是控件</h3>
+<table>
+<tr><th style="width:26%">事实</th><th>证据</th></tr>
+<tr><td>顶栏背景是<b>透明</b>的</td>
+    <td><code>--header-bg-start</code> / <code>--header-bg-end</code> 在**六个主题里全部是 <code>transparent</code>**（<code>theme.css:104/228/317/402/487/572</code>）——顶栏底下直接是皮肤场景层 <code>SkinScene</code></td></tr>
+<tr><td>而我给切换器的底色是<b>白色 32%</b></td>
+    <td><code>--seg-active-bg</code> 在亮色主题下就是 <code>#fff</code>（<code>theme.css:118</code>）。白色 32% 叠在本来就浅的场景上 → 几乎看不见</td></tr>
+<tr><td>🔴 <b>我漏了真页签有的两条属性</b></td>
+    <td><code>.segmented</code>（<code>TopBar.module.css:462</code>）带 <code>backdrop-filter: blur(10px)</code> 与外投影 <code>0 2px 8px rgba(0,0,0,.06)</code>；
+        我只抄了 <code>inset</code> 那一条。<b>没毛玻璃就跟场景糊在一起，没外投影就不“浮起来”</b></td></tr>
+<tr><td>只补回这两条还不够</td>
+    <td>真页签是 <b>36px 高 · 撑满整行</b>，它靠体量宣告自己是个控件；切换器只有 <b>22px 高 · 138px 宽</b>，贴在应用名右侧，靠不上体量</td></tr>
+</table>
+
+<div class="row">
+<div class="scene"><div class="sceneCap">现状（只有 inset，无 blur / 无外投影）</div>
+  <div class="demoRow"><span style="font-size:12px;font-weight:700">🐼 PastePanda</span>
+  <div class="sw0"><span class="i on">记录</span><span class="i">工具</span><span class="i">知识</span></div></div>
+</div>
+</div>
+
+<h3>问题① · 工具箱布局</h3>
+
+<div class="bad">
+<b>❗ 本节的第一版诊断是错的，已重写。</b><br>
+我最初把布局丑归因于「<code>minmax(200px,1fr)</code> 在 448px 下排成两列 → 文字只剩 156px → 描述截断」。
+那个推算的**前提就不成立**：容器宽度根本不是 448px。<br>
+发现过程：用户看了本稿后说「<b>丙这个布局很好，但显示不是这样的布局</b>」——
+而丙本就是按代码意图画的。稿子与实际不一致，说明代码没跑成它自己声称的样子。
+</div>
+
+<table>
+<tr><th style="width:26%">真正的根因</th><th>证据与后果链</th></tr>
+<tr><td>🔴 <code>.wrap</code> 漏了 <code>flex:1</code> 与 <code>min-width:0</code></td>
+    <td>父元素 <code>.contentArea</code>（<code>App.module.css</code>）是 <b><code>display:flex</code> 横向容器</b>；
+        记录模式的 <code>.cardPanel</code> 就明确写了 <code>flex:1; min-width:0</code>。
+        而 <code>ToolboxView</code> 的 <code>.wrap</code> 写的是 <code>height:100%</code>，两条都没。<br>
+        后果链：<code>flex-grow:0</code> → 宽度由内容撑而不是 448px →
+        又因 <code>.desc</code> 是 <code>white-space:nowrap</code>，max-content 极大 →
+        <code>min-width:auto</code> 使它收不到 min-content 以下 → <b>横向溢出</b> →
+        被 <code>.contentArea</code> 的 <code>overflow:hidden</code> <b>裁掉</b>。<br>
+        于是 <code>auto-fill</code> 是拿一个<b>从未被控制的宽度</b>在算列数。</td></tr>
+<tr><td>卡片底色多余</td>
+    <td>代码里每张卡都有 <code>background: var(--card-bg)</code> 实底；本稿里的格子是<b>透明的、只有一道边框</b>。
+        9 张实心块浮在透明皮肤场景上很碎——这是第二处稿子与代码的差异</td></tr>
+<tr><td>修完宽度后两者会重合</td>
+    <td>宽度回到 448px 后，<code>minmax(200px,1fr)</code> 算出来正好是 <b>2 列</b>，
+        与本稿丙里写死的 <code>repeat(2,1fr)</code> 一致。<b>所以不需要写死列数</b></td></tr>
+<tr><td>仍然存在、但用户接受的两件</td>
+    <td>① 描述尾巴仍会被“…”吃掉，<b>包括依次粘贴的 <code>Ctrl+Alt+Q</code> 与文本对比的 <code>Ctrl+Shift+D</code></b>；
+        ② 底部空约 300px。两者均已告知，用户选定丙。</td></tr>
+</table>
+<h2>2. 问题② 的三个方案（请在三个主题下各看一遍）</h2>
+<p class="sub">下面的底图是模拟的皮肤场景层（顶栏真的是透的），不是白底——这才是问题发生的实际环境。</p>
+
+<div class="row">
+
+<div class="scene" style="width:300px">
+  <div class="sceneCap"><b>甲</b> · 补齐毛玻璃 + accent 实色滑块</div>
+  <div class="demoRow"><span style="font-size:12px;font-weight:700">🐼 PastePanda</span>
+    <div class="sw1"><span class="i on">记录</span><span class="i">工具</span><span class="i">知识</span></div></div>
+  <div style="height:8px"></div>
+  <div class="demoRow"><span style="font-size:12px;font-weight:700">🐼 PastePanda</span>
+    <div class="sw1"><span class="i">记录</span><span class="i on">工具</span><span class="i">知识</span></div></div>
+</div>
+
+<div class="scene" style="width:300px">
+  <div class="sceneCap"><b>乙</b> · 只补齐毛玻璃（滑块仍是白玻璃，与页签同源）</div>
+  <div class="demoRow"><span style="font-size:12px;font-weight:700">🐼 PastePanda</span>
+    <div class="sw2"><span class="i on">记录</span><span class="i">工具</span><span class="i">知识</span></div></div>
+  <div style="height:8px"></div>
+  <div class="demoRow"><span style="font-size:12px;font-weight:700">🐼 PastePanda</span>
+    <div class="sw2"><span class="i">记录</span><span class="i on">工具</span><span class="i">知识</span></div></div>
+</div>
+
+<div class="scene" style="width:300px">
+  <div class="sceneCap"><b>丙</b> · 下划线式，没有容器</div>
+  <div class="demoRow"><span style="font-size:12px;font-weight:700">🐼 PastePanda</span>
+    <div class="sw3"><span class="i on">记录</span><span class="i">工具</span><span class="i">知识</span></div></div>
+  <div style="height:8px"></div>
+  <div class="demoRow"><span style="font-size:12px;font-weight:700">🐼 PastePanda</span>
+    <div class="sw3"><span class="i">记录</span><span class="i on">工具</span><span class="i">知识</span></div></div>
+</div>
+
+</div>
+
+<table>
+<tr><th style="width:8%"></th><th style="width:30%">好在哪</th><th>代价</th></tr>
+<tr><td><b>甲</b></td>
+    <td><b>“当前在哪个模式”一眼就能看到</b>。accent 实色块在任何皮肤场景上都突出来，
+        不依赖背景深浅；白字对比度已由 <code>--accent-solid</code> 保证到 ≥ 4.5:1（theme.css 注释里写了“白字压其上”）</td>
+    <td>顶栏多一块彩色。如果同屏又有 <code>AiStatusCap</code>（未配置 AI 时的胶囊），颜色会多一点</td></tr>
+<tr><td><b>乙</b></td>
+    <td>与现有页签<b>完全同一套视觉</b>，改动最小（就是把我漏的两条补回去）</td>
+    <td><b>可能仍然不够</b>。它靠“白玻璃滑块”区分激活项，而这个控件只有 22px 高。
+        页签能成立是因为它 36px 且撑满整行</td></tr>
+<tr><td><b>丙</b></td>
+    <td>最轻，不占宽度（省下容器的 <code>2px×2 内边距 + 2px 边框</code>）</td>
+    <td>🔴 <b>反而更像文字不像控件</b>——而这正是你报的那个问题。且下划线 tab 紧贴在应用名右侧，
+        会让人以为它是“副标题”。<b>不推荐</b></td></tr>
+</table>
+
+<div class="ok"><b>我推荐甲。</b>理由不是“好看”，是它是三个里<b>唯一不依赖背景亮度</b>的方案。
+你这台机子上看不见，本质就是“半透白 叠 浅色场景”；只要滑块还是半透白，换个浅皮肤就会再犯一次。
+<b>accent 实色把这个变量彻底抽掉了。</b></div>
+<h2>3. 问题① 的三个方案（480×646 真尺寸）</h2>
+
+<div class="row">
+
+<div class="frame">
+<div class="frameCap"><b>甲</b> · 单列宽行，热键右对齐成 <code>kbd</code> 徽章</div>
+<div class="win">
+  <div class="winHdr"><div class="hdrTop">
+    <div class="hdrL"><span class="burger">☰</span><span class="brand">🐼 PastePanda</span>
+      <div class="modes"><span class="m">记录</span><span class="m on">工具</span><span class="m">知识</span></div></div>
+    <div class="hdrR"><span>◈</span><span>⚙</span><span>—</span><span>○</span></div>
+  </div></div>
+  <div class="body">
+    <div class="grp">内容</div>
+    <div class="aRow"><span class="t" data-h="cyan">📋</span><span class="aTx"><div class="aNm">依次粘贴</div><div class="aDs">按顺序逐条粘贴文本</div></span><kbd>Ctrl+Alt+Q</kbd></div>
+    <div class="aRow"><span class="t" data-h="amber">📝</span><span class="aTx"><div class="aNm">片段库</div><div class="aDs">常用文本收藏，一键粘贴</div></span></div>
+    <div class="aRow"><span class="t" data-h="rose">🧲</span><span class="aTx"><div class="aNm">内容提取</div><div class="aDs">从记录中批量提取链接 / 邮箱 / 电话</div></span></div>
+    <div class="aRow"><span class="t" data-h="cyan">📊</span><span class="aTx"><div class="aNm">新建流程图</div><div class="aDs">从零绘制，或让 AI 一键生成</div></span></div>
+    <div class="grp">文本处理</div>
+    <div class="aRow"><span class="t" data-h="sky">🔤</span><span class="aTx"><div class="aNm">编码转换</div><div class="aDs">Base64 / URL / Unicode 编解码</div></span></div>
+    <div class="aRow"><span class="t" data-h="violet">🔁</span><span class="aTx"><div class="aNm">批量替换</div><div class="aDs">正则查找替换，支持多条规则</div></span></div>
+    <div class="aRow"><span class="t" data-h="green">📊</span><span class="aTx"><div class="aNm">配置对比</div><div class="aDs">两份配置语义级差异高亮</div></span></div>
+    <div class="aRow"><span class="t" data-h="green">🔀</span><span class="aTx"><div class="aNm">文本对比</div><div class="aDs">自由对比两段文本</div></span><kbd>Ctrl+Shift+D</kbd></div>
+    <div class="aRow"><span class="t" data-h="green">🪟</span><span class="aTx"><div class="aNm">全屏文本对比</div><div class="aDs">独立大窗深编对比 · 读剪贴板预填</div></span></div>
+  </div>
+</div>
+<p class="sub">高度：9 行 × 48px + 2 个分组标题 ≈ <b>530px</b> / 646px。描述全部不截断，热键变成徽章。</p>
+</div>
+
+<div class="frame">
+<div class="frameCap"><b>乙</b> · 三列图标网格（Launchpad 式），描述进 tooltip</div>
+<div class="win">
+  <div class="winHdr"><div class="hdrTop">
+    <div class="hdrL"><span class="burger">☰</span><span class="brand">🐼 PastePanda</span>
+      <div class="modes"><span class="m">记录</span><span class="m on">工具</span><span class="m">知识</span></div></div>
+    <div class="hdrR"><span>◈</span><span>⚙</span><span>—</span><span>○</span></div>
+  </div></div>
+  <div class="body">
+    <div class="grp">内容</div>
+    <div class="bGrid">
+      <div class="bCell"><span class="t" data-h="cyan">📋</span><span class="bNm">依次粘贴</span></div>
+      <div class="bCell"><span class="t" data-h="amber">📝</span><span class="bNm">片段库</span></div>
+      <div class="bCell"><span class="t" data-h="rose">🧲</span><span class="bNm">内容提取</span></div>
+      <div class="bCell"><span class="t" data-h="cyan">📊</span><span class="bNm">新建流程图</span></div>
+    </div>
+    <div class="grp">文本处理</div>
+    <div class="bGrid">
+      <div class="bCell"><span class="t" data-h="sky">🔤</span><span class="bNm">编码转换</span></div>
+      <div class="bCell"><span class="t" data-h="violet">🔁</span><span class="bNm">批量替换</span></div>
+      <div class="bCell"><span class="t" data-h="green">📊</span><span class="bNm">配置对比</span></div>
+      <div class="bCell"><span class="t" data-h="green">🔀</span><span class="bNm">文本对比</span></div>
+      <div class="bCell"><span class="t" data-h="green">🪟</span><span class="bNm">全屏文本对比</span></div>
+    </div>
+    <div class="empty">剩下约 380px 空白（比现状更空）</div>
+  </div>
+</div>
+<p class="sub">高度 ≈ <b>265px</b> / 646px。最紧凑，但描述与热键都隐起来了，不认识图标就得逐个悬停。</p>
+</div>
+
+<div class="frame">
+<div class="frameCap"><b>丙</b> · 两列卡片 —— ✅ <b>已选定（用户拍定）</b></div>
+<div class="win">
+  <div class="winHdr"><div class="hdrTop">
+    <div class="hdrL"><span class="burger">☰</span><span class="brand">🐼 PastePanda</span>
+      <div class="modes"><span class="m">记录</span><span class="m on">工具</span><span class="m">知识</span></div></div>
+    <div class="hdrR"><span>◈</span><span>⚙</span><span>—</span><span>○</span></div>
+  </div></div>
+  <div class="body">
+    <div class="grp">内容</div>
+    <div class="cGrid">
+      <div class="cCell"><span class="t" data-h="cyan">📋</span><span class="cTx"><div class="cNm">依次粘贴</div><div class="cDs">按顺序逐条粘贴文本 · Ctrl+Alt+Q</div></span></div>
+      <div class="cCell"><span class="t" data-h="amber">📝</span><span class="cTx"><div class="cNm">片段库</div><div class="cDs">常用文本收藏，一键粘贴</div></span></div>
+      <div class="cCell"><span class="t" data-h="rose">🧲</span><span class="cTx"><div class="cNm">内容提取</div><div class="cDs">从记录中批量提取链接 / 邮箱 / 电话</div></span></div>
+      <div class="cCell"><span class="t" data-h="cyan">📊</span><span class="cTx"><div class="cNm">新建流程图</div><div class="cDs">从零绘制，或让 AI 一键生成</div></span></div>
+    </div>
+    <div class="grp">文本处理</div>
+    <div class="cGrid">
+      <div class="cCell"><span class="t" data-h="sky">🔤</span><span class="cTx"><div class="cNm">编码转换</div><div class="cDs">Base64 / URL / Unicode 编解码</div></span></div>
+      <div class="cCell"><span class="t" data-h="violet">🔁</span><span class="cTx"><div class="cNm">批量替换</div><div class="cDs">正则查找替换，支持多条规则</div></span></div>
+      <div class="cCell"><span class="t" data-h="green">📊</span><span class="cTx"><div class="cNm">配置对比</div><div class="cDs">两份配置语义级差异高亮</div></span></div>
+      <div class="cCell"><span class="t" data-h="green">🔀</span><span class="cTx"><div class="cNm">文本对比</div><div class="cDs">自由对比两段文本 · Ctrl+Shift+D</div></span></div>
+      <div class="cCell"><span class="t" data-h="green">🪟</span><span class="cTx"><div class="cNm">全屏文本对比</div><div class="cDs">独立大窗深编对比 · 读剪贴板预填</div></span></div>
+    </div>
+    <div class="empty">剩下约 300px 空白；描述尾巴被“…”吃掉（包括两个热键）</div>
+  </div>
+</div>
+<p class="sub">✅ <b>用户选定这个布局。</b></p>
+</div>
+
+</div>
+<table>
+<tr><th style="width:8%"></th><th style="width:30%">好在哪</th><th>代价</th></tr>
+<tr><td><b>甲</b></td>
+    <td>描述全显，<b>两个热键看得见</b>；530/646px 把高度填得刚好；
+        行样式与设置页（<code>GeneralTab</code>）同源，<b>看上去像这个 app 自己的东西</b></td>
+    <td>窗口拉很宽时单列会显稀。应对：≥ 620px 自动变两列（一行 CSS）</td></tr>
+<tr><td><b>乙</b></td>
+    <td>最紧凑、最“好看”；工具很多时最能撑</td>
+    <td>🔴 <b>拿掉了真信息</b>。且 <code>📊</code> 同时是「新建流程图」与「配置对比」、<code>🔀</code> 与 <code>🪟</code> 也难分——
+        只靠图标辨识本来就立不住，<b>去掉描述会把这个问题放大</b>；空白还更多了</td></tr>
+<tr><td><b>丙</b></td><td>—</td><td>就是现状，两个毛病都在</td></tr>
+</table>
+
+<div class="ok"><b>我推荐甲。</b>关键一条：<code>📊</code> 被「新建流程图」与「配置对比」<b>共用</b>（这是现有数据里就有的，不是我编的），
+所以“图标 + 名字”两行式的乙会让两个工具长得极像。单列宽行有位置把描述放完，也就不靠图标区分。</div>
+
+<h2>4. 推荐组合与实现清单</h2>
+<p><b>切换器 甲（毛玻璃 + accent 实色滑块）＋ 工具箱 丙（两列卡片，修掉 flex bug）</b></p>
+<p class="sub">均为用户拍定。工具箱<b>不改布局</b>，只把丙变成它本来应该长的样子。</p>
+
+<table>
+<tr><th style="width:5%">#</th><th style="width:26%">改什么</th><th style="width:26%">文件</th><th>要点</th></tr>
+<tr><td>1</td><td>切换器容器补毛玻璃与外投影</td><td><code>ModeSwitcher.module.css</code> <code>.modes</code></td>
+    <td>加 <code>backdrop-filter: blur(10px)</code> 与 <code>-webkit-</code> 前缀；底色 32% → <b>55%</b>；边框 55% → <b>75%</b>；
+        外投影 <code>0 2px 8px rgba(0,0,0,.10)</code>（比页签的 .06 略重，因为它小）</td></tr>
+<tr><td>2</td><td>滑块改 accent 实色 + 白字</td><td><code>ModeSwitcher.module.css</code> <code>.indicator</code> / <code>.modeActive</code></td>
+    <td><b>用 <code>--accent-solid</code> 而不是 <code>--accent</code></b>——前者就是为“白字压其上”准备的，
+        六个主题的对比度都已调到 ≥ 4.5:1（见 <code>theme.css</code> 注释）；文字色写死 <code>#fff</code></td></tr>
+<tr><td>3</td><td>blossom 主题滑块重映射可以删了</td><td><code>ModeSwitcher.module.css</code></td>
+    <td>换成 accent 实色后，<code>--accent-solid</code> 本身已随主题变，那条 <code>:global([data-theme="blossom"])</code> 特例变多余</td></tr>
+<tr><td>4</td><td>🔴 <b>修宽度 bug</b></td><td><code>ToolboxView.module.css</code> <code>.wrap</code></td>
+    <td><code>height:100%</code> → <b><code>flex:1; min-width:0</code></b>。
+        照搬记录模式 <code>.cardPanel</code> 的写法——父元素是横向 flex，必须这么写。
+        <b>这一条就是「显示不是那个布局」的全部原因</b></td></tr>
+<tr><td>5</td><td>卡片底色改透明</td><td><code>ToolboxView.module.css</code> <code>.item</code></td>
+    <td><code>background: var(--card-bg)</code> → <code>transparent</code>，<b>hover 才填实</b>（与本稿丙一致）；
+        <code>transition</code> 里补上 <code>background</code></td></tr>
+<tr><td>6</td><td>去掉多余的 <code>width:100%</code></td><td><code>ToolboxView.module.css</code> <code>.item</code></td>
+    <td>它已经是 grid 单元格的唯一子元素，<code>width:100%</code> 无意义</td></tr>
+<tr><td>7</td><td>同样的 bug 在知识模式也有</td><td><code>KnowledgeView.module.css</code> <code>.wrap</code></td>
+    <td>一模一样的 <code>height:100%</code>。空状态下表现为<b>文字不居中</b>（因为容器宽度不是满宽），
+        比工具箱那边隐轻很多，但是同一个错</td></tr>
+<tr><td>8</td><td>单列宽行方案（甲）<b>已否决</b></td><td>—</td>
+    <td>用户选了丙。<code>lib/toolbox.ts</code> 拆 <code>hotkey</code> 字段、行内 <code>kbd</code> 徽章、
+        <code>minmax(300px)</code> 那一套<b>全部不做</b>。保留在本稿里只为了留下当初的论证</td></tr>
+</table>
+
+<h2>5. 不做清单</h2>
+<div class="card">
+<table style="margin:0">
+<tr><th style="width:32%">不做</th><th>为什么</th></tr>
+<tr><td>工具搜索框 / 收藏 / 最近使用</td>
+    <td>规划 §10 风险登记册已写死：<b>A 阶段只做最小搬运</b>。工具箱与知识库无关却被拉进 M1，再加治理就会拖住主线</td></tr>
+<tr><td>给剩下的 6 个工具也配热键</td>
+    <td>热键是全局资源，新增要避冲突、要进设置页可配。<b>这是一个独立功能，不是排版改动</b></td></tr>
+<tr><td>把分组改成可折叠</td>
+    <td>只有 2 个分组 / 9 个工具，折叠是给几十项准备的。现在加 = 多一次点击换一个不存在的问题</td></tr>
+<tr><td>给模式切换器加图标把它变明显</td>
+    <td>图标冲突仍在：📋 已被「全部」页签占、📝 已被「文本」页签与片段库占。
+        <b>对比度是用颜色解的，不是用图标解的</b></td></tr>
+<tr><td>把顶栏背景改成不透明来提对比度</td>
+    <td>六个主题的 <code>--header-bg-*</code> 都是 <code>transparent</code>，那是沉浸式皮肤的根基设计。
+        <b>为了一个 138px 的控件去改全局皮肤不划算</b></td></tr>
+</table>
+</div>
+
+<h2>6. 验收口径</h2>
+<div class="card">
+<ul style="margin:0;padding-left:20px;font-size:13px;line-height:2">
+<li><b>六个主题全过一遍</b>（ocean / midnight / forest / blossom / 第五个橙色 / 第六个蓝色），
+    切换器在每个主题 + 每个皮肤场景下都能一眼看出当前在哪个模式；</li>
+<li>工具箱 <b>9 条描述一条都不截断</b>，两个热键徽章可见；</li>
+<li>480px 下单列，窗口拉到 ≥ 620px 自动变两列，<b>两列时描述仍不截断</b>；</li>
+<li>窗口缩到 minWidth 320px 时顶栏不溢出；</li>
+<li>9 个工具点下去全部能正常开弹框（回调搬家后没接错）。</li>
+</ul>
+</div>
+
+<p class="sub" style="margin-top:26px">本稿与 <code>PastePanda-顶栏三模式-设计稿.html</code> 的关系：
+那张定的是<b>信息架构</b>（三个模式、名位复用、各模式显什么），仍然有效；
+本稿只改其中两处的<b>视觉与排版</b>，不推翻任何结构决策。</p>
+
+</body>
+</html>
