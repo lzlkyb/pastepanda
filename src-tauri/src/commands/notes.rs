@@ -8,7 +8,7 @@
 //! 不出网。要给笔记加 AI 能力（摘要 / 打标签）是 B 阶段的事，且必须受 AI 总开关控制
 //! （规则 #16），届时应新建独立文件，不要往这里塞。
 
-use crate::data_store::{DataStore, Note};
+use crate::data_store::{DataStore, Note, NoteGroupCount, NoteViewOpts};
 use tauri::State;
 
 /// 单次拉取上限。前端传多少都不能越过它——列表虚拟滚动一屏几十条，
@@ -79,15 +79,45 @@ pub fn note_list(
     store: State<DataStore>,
     folder_filter: Option<String>,
     tag_ids: Option<Vec<String>>,
+    view: Option<NoteViewOpts>,
     limit: Option<u32>,
     offset: Option<u32>,
 ) -> Result<Vec<Note>, String> {
-    store.note_list(
+    let view = validated_view(view);
+    store.note_list_view(
         folder_filter.as_deref().unwrap_or("all"),
         &tag_ids.unwrap_or_default(),
+        &view,
         clamp_limit(limit),
         offset.unwrap_or(0),
     )
+}
+
+/// 校视图选项，未知值记 warn 后退回默认（规则 #15.3：失败不静默）。
+///
+/// 退回而不报错：一个认不出的排序名不应该让整个笔记列表拉不出来。
+/// 但日志里得有痕，否则前后端枚举写不一致时现象只是「排序没生效」，无从下手。
+fn validated_view(view: Option<NoteViewOpts>) -> NoteViewOpts {
+    let v = view.unwrap_or_default();
+    const SORTS: [&str; 5] = ["", "updated", "created", "accessed", "title"];
+    const GROUPS: [&str; 4] = ["", "folder", "month", "tag"];
+    const TRI: [&str; 3] = ["", "yes", "no"];
+    if !SORTS.contains(&v.sort.as_str()) {
+        log::warn!("[Notes] 未知排序 `{}`，退回默认", v.sort);
+    }
+    if !GROUPS.contains(&v.group_by.as_str()) {
+        log::warn!("[Notes] 未知分组 `{}`，退回不分组", v.group_by);
+    }
+    for (name, val) in [
+        ("summary", &v.summary),
+        ("fromCard", &v.from_card),
+        ("tagged", &v.tagged),
+    ] {
+        if !TRI.contains(&val.as_str()) {
+            log::warn!("[Notes] 筛选 {} 的值 `{}` 不是三态之一，当作不筛", name, val);
+        }
+    }
+    v
 }
 
 /// 当前筛选下的笔记总数。与 `note_list` 共用筛选构造，保证同口径。
@@ -96,10 +126,29 @@ pub fn note_count_filtered(
     store: State<DataStore>,
     folder_filter: Option<String>,
     tag_ids: Option<Vec<String>>,
+    view: Option<NoteViewOpts>,
 ) -> Result<i64, String> {
-    store.note_count_filtered(
+    store.note_count_filtered_view(
         folder_filter.as_deref().unwrap_or("all"),
         &tag_ids.unwrap_or_default(),
+        &validated_view(view),
+    )
+}
+
+/// 每个分组的真实条数（B2 #9）。不分组时返回空数组。
+///
+/// 组头的数字走这里而不是数前端已加载的行——否则就是「组头写 12 而实际 20」。
+#[tauri::command]
+pub fn note_group_counts(
+    store: State<DataStore>,
+    folder_filter: Option<String>,
+    tag_ids: Option<Vec<String>>,
+    view: Option<NoteViewOpts>,
+) -> Result<Vec<NoteGroupCount>, String> {
+    store.note_group_counts(
+        folder_filter.as_deref().unwrap_or("all"),
+        &tag_ids.unwrap_or_default(),
+        &validated_view(view),
     )
 }
 
@@ -129,12 +178,14 @@ pub fn note_search(
     keyword: String,
     folder_filter: Option<String>,
     tag_ids: Option<Vec<String>>,
+    view: Option<NoteViewOpts>,
     limit: Option<u32>,
 ) -> Result<Vec<Note>, String> {
-    store.note_search(
+    store.note_search_view(
         &keyword,
         folder_filter.as_deref().unwrap_or("all"),
         &tag_ids.unwrap_or_default(),
+        &validated_view(view),
         clamp_limit(limit),
     )
 }

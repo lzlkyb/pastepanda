@@ -250,3 +250,70 @@
   white-space: nowrap;
   cursor: default;
 }
+
+/* ===== 字段视图（B2 #9）===== */
+
+/* 控件行。只在展开后出现，收起状态仍然只是一条横幅 */
+.viewBar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 4px 8px 0;
+}
+
+.filterLabel {
+  margin: 9px 0 3px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.typeGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.typeChip {
+  padding: 2px 7px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.typeChip:hover { color: var(--text-primary); }
+
+.typeOn {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.groupHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--section-bg);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* 条数走后端 GROUP BY；拿不到就整个不渲染，不显示数已加载行数的假数字 */
+.groupCount {
+  margin-left: auto;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.loadMore {
+  padding: 9px 0;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}

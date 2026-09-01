@@ -17,6 +17,8 @@ export function KnowledgeToolbar({
   onKeyword,
   onNew,
   newHint,
+  controls,
+  chips,
 }: {
   folderName: string;
   total: number;
@@ -26,6 +28,11 @@ export function KnowledgeToolbar({
   onNew: () => void;
   /** 新建按钮的悬停提示。由调用方给：选「全部」时落点并不是面包屑上那个名字 */
   newHint: string;
+  /** 字段视图的三个图标（B2 #9）。塞在**搜索行内**，不另开一行——
+   *  下面那句注释就是为这个写的：480px 宽的窗口里多一行就少两条笔记 */
+  controls?: React.ReactNode;
+  /** 已生效选项的 chips 行。**默认态它自己返回 null**，所以不占行高 */
+  chips?: React.ReactNode;
 }) {
   return (
     <>
@@ -59,7 +66,10 @@ export function KnowledgeToolbar({
           placeholder="搜笔记（中文 / 拼音首字母）"
           aria-label="搜笔记"
         />
+        {controls}
       </div>
+
+      {chips}
     </>
   );
 }

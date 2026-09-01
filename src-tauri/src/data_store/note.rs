@@ -61,6 +61,13 @@ pub struct Note {
     pub daily_date: Option<String>,
     #[serde(default)]
     pub tags: Vec<Tag>,
+    /// 当前分组下的**组名**（B2 #9）。`None` = 不分组。
+    ///
+    /// 不是表里的列，不在 `NOTE_COLS` 里——它是查询时算出来的。
+    /// 存的直接是可显示的字符串（文件夹名 / 标签名 / `2026-09`），
+    /// 前端只在相邻两行不同时插一个组头，不需要再去解析 id。
+    #[serde(default)]
+    pub group_key: Option<String>,
 }
 
 /// 取列顺序写一次，所有查询共用——否则加字段时必定漏改某一处。
@@ -84,6 +91,8 @@ pub(super) fn row_to_note(row: &rusqlite::Row) -> rusqlite::Result<Note> {
         summary: row.get(8)?,
         daily_date: row.get(9)?,
         tags: Vec::new(),
+        // 分组键不在 NOTE_COLS 里，由 note_list_view 在读完本函数后另行填
+        group_key: None,
     })
 }
 
@@ -142,6 +151,145 @@ fn to_match_expr(kw: &str) -> String {
     to_ngram(kw)
 }
 
+/// 笔记视图选项（B2 #9）。**全部字段空串 = 默认态 = 与做这个功能之前一模一样**。
+///
+/// 那个等式是结构上保证的，不靠自律：`note_list` / `note_search` / `note_count_filtered`
+/// 保留原签名并转调 `*_view`，传 `NoteViewOpts::default()`。所以旧调用点（导出、
+/// 今日速记、测试）一行都不用改，也不可能被新参数影响。
+///
+/// 筛选全是**三态字串**（`""` 不筛 / `"yes"` / `"no"`）而不是 `Option<bool>`：
+/// 与前端 chip 的三态一一对应，反序列化时不存在「`null` 还是 `false`」的歧义。
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct NoteViewOpts {
+    /// `""`|`"updated"` 最近修改 / `"created"` 最近创建 / `"accessed"` 最近打开 / `"title"` 标题
+    pub sort: String,
+    /// `""` 不分组 / `"folder"` / `"month"` / `"tag"`
+    pub group_by: String,
+    /// 有无摘要
+    pub summary: String,
+    /// 是否来自卡片
+    pub from_card: String,
+    /// 有无标签
+    pub tagged: String,
+}
+
+impl NoteViewOpts {
+    /// 排序片段。未知值退回默认（命令层会先记一条 warn）。
+    fn order_by(&self) -> &'static str {
+        match self.sort.as_str() {
+            "created" => "notes.created_at DESC, notes.rowid DESC",
+            // ❗ `IS NULL` 那一段是关键：从未打开过的笔记 last_access_at 是 NULL，
+            //   而 SQLite 里 NULL 在 DESC 下排最后、ASC 下排最前——都不是我们要的。
+            //   先按「是否为 NULL」升序（false<true），把没打开过的全部压到末尾。
+            "accessed" => {
+                "notes.last_access_at IS NULL, notes.last_access_at DESC, notes.rowid DESC"
+            }
+            // 中文按 UTF-8 码位序，**不是拼音序**——SQLite 没中文 collation，不假装有。
+            "title" => "notes.title COLLATE NOCASE ASC, notes.rowid DESC",
+            _ => "notes.updated_at DESC, notes.rowid DESC",
+        }
+    }
+
+    /// 分组键的 SELECT 表达式。**算出来的就是给人看的字符串**（文件夹名 / 标签名 / `2026-09`），
+    /// 不是 id——否则前端还要再查一遍名字，而那份映射早晚与后端对不上。
+    fn group_expr(&self) -> &'static str {
+        match self.group_by.as_str() {
+            "folder" => "COALESCE(f.name, '未分类')",
+            "month" => "substr(notes.created_at, 1, 7)",
+            "tag" => "COALESCE(t.name, '无标签')",
+            _ => "NULL",
+        }
+    }
+
+    /// 组之间的顺序。月份倒序（最近的月在前，同「最近修改」的直觉），名字类升序。
+    fn group_order(&self) -> Option<&'static str> {
+        match self.group_by.as_str() {
+            "month" => Some("grp DESC"),
+            "folder" | "tag" => Some("grp COLLATE NOCASE ASC"),
+            _ => None,
+        }
+    }
+
+    /// 按标签分组需要 JOIN，会把一条多标签的笔记展成多行。
+    fn joins(&self) -> &'static str {
+        match self.group_by.as_str() {
+            "folder" => " LEFT JOIN note_folders f ON f.id = notes.folder_id",
+            // LEFT 而不是 INNER：否则没标签的笔记会**整批从列表里消失**。
+            // 它们归到「无标签」组，而不是默默不见。
+            // ❗ 不用 `\` 续行：它会把换行**和行首空白一起吃掉**，
+            //   两个 JOIN 直接粘成 `notes.idLEFT JOIN`（已被用例抓到过一次）。
+            "tag" => {
+                " LEFT JOIN note_tags nt ON nt.note_id = notes.id \
+                 LEFT JOIN tags t ON t.id = nt.tag_id"
+            }
+            _ => "",
+        }
+    }
+}
+
+/// `NOTE_COLS` 加 `notes.` 前缀。分组要 JOIN，而 `tags` 也有 `id` / `name`，
+/// 不限定就是 `ambiguous column name`（同 kb_inbox.rs 给 history 加 `h.` 的做法）。
+fn note_cols_q() -> String {
+    NOTE_COLS
+        .split(", ")
+        .map(|c| format!("notes.{c}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// 三个三态筛选。全是字面 SQL、**不带参数**，所以可以随意拼在哪一步，
+/// 不会扰乱位置绑定的序号（那是 `bump_search_hits` 里刚钉过的一类坑）。
+fn push_view_filters(sql: &mut String, o: &NoteViewOpts) {
+    match o.summary.as_str() {
+        // ❗ 两个条件都要：`summary` 是迁移加的、可为 NULL，
+        //   而今日速记插入时写的是空串。只写一个会漏一半。
+        "yes" => sql.push_str(" AND notes.summary IS NOT NULL AND notes.summary != ''"),
+        "no" => sql.push_str(" AND (notes.summary IS NULL OR notes.summary = '')"),
+        _ => {}
+    }
+    match o.from_card.as_str() {
+        "yes" => sql.push_str(" AND notes.history_id IS NOT NULL"),
+        "no" => sql.push_str(" AND notes.history_id IS NULL"),
+        _ => {}
+    }
+    match o.tagged.as_str() {
+        "yes" => sql.push_str(" AND EXISTS (SELECT 1 FROM note_tags WHERE note_id = notes.id)"),
+        "no" => sql.push_str(" AND NOT EXISTS (SELECT 1 FROM note_tags WHERE note_id = notes.id)"),
+        _ => {}
+    }
+}
+
+/// ` ORDER BY [组序, ]排序 LIMIT ?`——搜索的 FTS 与 LIKE 两条路径共用（规则 #11）。
+/// 写两份的结果就是「FTS 正常时排序对、退到 LIKE 就不对」，而那条路径平时跑不到。
+fn order_clause(o: &NoteViewOpts) -> String {
+    let mut s = String::from(" ORDER BY ");
+    if let Some(g) = o.group_order() {
+        s.push_str(g);
+        s.push_str(", ");
+    }
+    s.push_str(o.order_by());
+    s.push_str(" LIMIT ?");
+    s
+}
+
+/// 读一行「笔记 + 分组键」。grp 固定接在 `NOTE_COLS` 的 10 列之后。
+///
+/// 收口三处（列表 / 搜索 FTS / 搜索 LIKE 回退）：列下标写死在三个地方，
+/// 以后 `NOTE_COLS` 加一列就会漏改，而那会读到错列而不报错。
+fn row_to_note_grouped(row: &rusqlite::Row) -> rusqlite::Result<Note> {
+    let mut n = row_to_note(row)?;
+    n.group_key = row.get::<_, Option<String>>(10)?;
+    Ok(n)
+}
+
+/// 一个分组的真实条数。
+#[derive(Debug, Clone, Serialize)]
+pub struct NoteGroupCount {
+    pub key: String,
+    pub count: i64,
+}
+
 /// 文件夹 + 标签的筛选片段（**交集**语义）。
 ///
 /// - `folder_filter`：`"all"` | `"unfiled"` | `<folder_id>`。
@@ -152,6 +300,9 @@ fn to_match_expr(kw: &str) -> String {
 ///   并集会让「选了更多条件反而结果更多」，与用户对筛选器的直觉相反。
 ///
 /// 调用方的 `sql` 必须已经以 `WHERE 1=1` 结尾（所以这里一律拼 `AND`）。
+/// ❗ 列名全部带 `notes.` 前缀：分组（B2 #9）会 JOIN `tags` / `note_folders`，
+/// 而 `tags` 也有 `id`——不限定就是 `ambiguous column name`。
+/// 不 JOIN 时加前缀无任何副作用，所以一律加，不分两种写法。
 fn push_note_filters(
     sql: &mut String,
     params: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
@@ -161,22 +312,22 @@ fn push_note_filters(
     if folder_filter == "unfiled" {
         // 速记不算「未分类」：「未分类」的语义是「该归档还没归档」，
         // 而速记本来就不需要归档。不排掉的话，一周后这个入口里全是速记，就废了。
-        sql.push_str(" AND folder_id IS NULL AND daily_date IS NULL");
+        sql.push_str(" AND notes.folder_id IS NULL AND notes.daily_date IS NULL");
     } else if folder_filter == "daily" {
-        sql.push_str(" AND daily_date IS NOT NULL");
+        sql.push_str(" AND notes.daily_date IS NOT NULL");
     } else if let Some(day) = folder_filter.strip_prefix("daily:") {
-        sql.push_str(" AND daily_date = ?");
+        sql.push_str(" AND notes.daily_date = ?");
         params.push(Box::new(day.to_string()));
     } else if folder_filter != "all" && !folder_filter.is_empty() {
         // SQLite 允许子查询自带 WITH 子句，所以递归 CTE 可以嵌在 IN 里。
         // 常量里的占位符是 `?1`，而这里走的是位置绑定，换成匿名 `?`。
-        sql.push_str(" AND folder_id IN (");
+        sql.push_str(" AND notes.folder_id IN (");
         sql.push_str(&SUBTREE_CTE.replace("?1", "?"));
         sql.push_str(" SELECT id FROM sub)");
         params.push(Box::new(folder_filter.to_string()));
     }
     for tag_id in tag_ids {
-        sql.push_str(" AND id IN (SELECT note_id FROM note_tags WHERE tag_id = ?)");
+        sql.push_str(" AND notes.id IN (SELECT note_id FROM note_tags WHERE tag_id = ?)");
         params.push(Box::new(tag_id.clone()));
     }
 }
@@ -252,6 +403,8 @@ impl DataStore {
             summary: None,
             // 普通新建不是速记。速记走 `note_append_daily`（那里才写 daily_date）
             daily_date: None,
+            // 新建返回的单条不属于任何列表视图，没有分组上下文
+            group_key: None,
             tags: Vec::new(),
         })
     }
@@ -344,24 +497,76 @@ impl DataStore {
         limit: u32,
         offset: u32,
     ) -> Result<Vec<Note>, String> {
-        let conn = self.lock_conn();
-        let mut sql = format!("SELECT {} FROM notes WHERE 1=1", NOTE_COLS);
+        self.note_list_view(
+            folder_filter,
+            tag_ids,
+            &NoteViewOpts::default(),
+            limit,
+            offset,
+        )
+    }
+
+    /// 列表 / 计数 / 组头计数共用的 `FROM … WHERE …` 与参数（B2 #9）。
+    ///
+    /// **三处必须共用这一份**：分开写早晚漂，而漂了就是「面包屑/组头写 12 条、
+    /// 列表里却有 20 条」——A-32 那个 bug 就是这么来的。
+    fn note_view_from_where(
+        folder_filter: &str,
+        tag_ids: &[String],
+        opts: &NoteViewOpts,
+    ) -> (String, Vec<Box<dyn rusqlite::types::ToSql>>) {
+        let mut sql = format!(" FROM notes{} WHERE 1=1", opts.joins());
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         push_note_filters(&mut sql, &mut params, folder_filter, tag_ids);
-        // 速记按日期倒序（它是流水账，按“最近改过”排会让翻旧账时顺序乱跳），
-        // 其余按最近修改。
-        if folder_filter.starts_with("daily") {
-            sql.push_str(" ORDER BY daily_date DESC, rowid DESC LIMIT ? OFFSET ?");
+        push_view_filters(&mut sql, opts);
+        (sql, params)
+    }
+
+    /// 带视图选项的笔记列表（B2 #9）。`opts` 全默认时与旧行为完全一致。
+    ///
+    /// ❗ **分组不在前端做，就是多一层 `ORDER BY`。**
+    /// 前端分组只能对已加载的那几页分，滚一次组就变一次；
+    /// 放进 SQL 后分页天然正确：新行要么接在当前组里，要么开一个新组。
+    pub fn note_list_view(
+        &self,
+        folder_filter: &str,
+        tag_ids: &[String],
+        opts: &NoteViewOpts,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<Note>, String> {
+        let conn = self.lock_conn();
+        let (from_where, mut params) =
+            Self::note_view_from_where(folder_filter, tag_ids, opts);
+        let mut sql = format!(
+            "SELECT {}, {} AS grp{}",
+            note_cols_q(),
+            opts.group_expr(),
+            from_where
+        );
+
+        // 速记按日期倒序（它是流水账，按“最近改过”排会让翻旧账时顺序乱跳）。
+        // 用户显式选了排序时以用户为准——他手动改过的东西不应该被默认规则盖掉。
+        let daily_default = folder_filter.starts_with("daily") && opts.sort.is_empty();
+        let order = if daily_default {
+            "notes.daily_date DESC, notes.rowid DESC"
         } else {
-            sql.push_str(" ORDER BY updated_at DESC, rowid DESC LIMIT ? OFFSET ?");
+            opts.order_by()
+        };
+        sql.push_str(" ORDER BY ");
+        if let Some(g) = opts.group_order() {
+            sql.push_str(g);
+            sql.push_str(", ");
         }
+        sql.push_str(order);
+        sql.push_str(" LIMIT ? OFFSET ?");
         params.push(Box::new(limit));
         params.push(Box::new(offset));
 
         let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
         let mut notes: Vec<Note> = stmt
-            .query_map(refs.as_slice(), row_to_note)
+            .query_map(refs.as_slice(), row_to_note_grouped)
             .map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
             .collect();
@@ -369,6 +574,42 @@ impl DataStore {
             n.tags = Self::load_note_tags_on(&conn, &n.id);
         }
         Ok(notes)
+    }
+
+    /// 每个分组的**真实**条数（B2 #9）。不分组时返回空。
+    ///
+    /// ❗ 组头的数字必须走这里，**不能数前端已加载的行**——否则就是
+    /// 「组头写 12 条而实际 20 条」，与本次要修的那个截断 bug 同一类。
+    pub fn note_group_counts(
+        &self,
+        folder_filter: &str,
+        tag_ids: &[String],
+        opts: &NoteViewOpts,
+    ) -> Result<Vec<NoteGroupCount>, String> {
+        if opts.group_order().is_none() {
+            return Ok(Vec::new());
+        }
+        let conn = self.lock_conn();
+        let (from_where, params) = Self::note_view_from_where(folder_filter, tag_ids, opts);
+        let sql = format!(
+            "SELECT {} AS grp, COUNT(*) AS c{} GROUP BY grp ORDER BY {}",
+            opts.group_expr(),
+            from_where,
+            opts.group_order().unwrap_or("grp"),
+        );
+        let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(refs.as_slice(), |r| {
+                Ok(NoteGroupCount {
+                    key: r.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                    count: r.get(1)?,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
     }
 
     /// 当前筛选下的笔记总数。列表分页靠它判「还有更多」。
@@ -380,10 +621,23 @@ impl DataStore {
         folder_filter: &str,
         tag_ids: &[String],
     ) -> Result<i64, String> {
+        self.note_count_filtered_view(folder_filter, tag_ids, &NoteViewOpts::default())
+    }
+
+    /// 带视图选项的总数（B2 #9）。
+    ///
+    /// ❗ `COUNT(DISTINCT notes.id)` 而不是 `COUNT(*)`：按标签分组时 JOIN 会把
+    /// 一条多标签的笔记展成多行，`COUNT(*)` 会把面包屑的「共 N 条」抬得比真实笔记数高。
+    /// 面包屑说的是「多少条笔记」，不是「多少行」。
+    pub fn note_count_filtered_view(
+        &self,
+        folder_filter: &str,
+        tag_ids: &[String],
+        opts: &NoteViewOpts,
+    ) -> Result<i64, String> {
         let conn = self.lock_conn();
-        let mut sql = String::from("SELECT COUNT(*) FROM notes WHERE 1=1");
-        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        push_note_filters(&mut sql, &mut params, folder_filter, tag_ids);
+        let (from_where, params) = Self::note_view_from_where(folder_filter, tag_ids, opts);
+        let sql = format!("SELECT COUNT(DISTINCT notes.id){}", from_where);
         let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
         conn.query_row(&sql, refs.as_slice(), |r| r.get(0))
             .map_err(|e| e.to_string())
@@ -443,9 +697,24 @@ impl DataStore {
         tag_ids: &[String],
         limit: u32,
     ) -> Result<Vec<Note>, String> {
+        self.note_search_view(keyword, folder_filter, tag_ids, &NoteViewOpts::default(), limit)
+    }
+
+    /// 带视图选项的搜索（B2 #9）。
+    ///
+    /// 筛选 / 排序 / 分组在搜索下**也要生效**：否则用户筛着「无标签」一搜索，
+    /// 筛选就静默失效了——而 chips 还亮在那里说自己生效着。
+    pub fn note_search_view(
+        &self,
+        keyword: &str,
+        folder_filter: &str,
+        tag_ids: &[String],
+        opts: &NoteViewOpts,
+        limit: u32,
+    ) -> Result<Vec<Note>, String> {
         let kw = keyword.trim();
         if kw.is_empty() {
-            return self.note_list(folder_filter, tag_ids, limit, 0);
+            return self.note_list_view(folder_filter, tag_ids, opts, limit, 0);
         }
         let conn = self.lock_conn();
 
@@ -454,14 +723,17 @@ impl DataStore {
         // 筛选条件也要叠上：选着文件夹搜索时，用户的预期是「在这个文件夹里搜」，
         // 而不是搜索结果突然跳出当前范围。
         let mut fts_sql = format!(
-            "SELECT {} FROM notes
-             WHERE rowid IN (SELECT rowid FROM notes_fts WHERE notes_fts MATCH ?)",
-            NOTE_COLS
+            "SELECT {}, {} AS grp FROM notes{}
+             WHERE notes.rowid IN (SELECT rowid FROM notes_fts WHERE notes_fts MATCH ?)",
+            note_cols_q(),
+            opts.group_expr(),
+            opts.joins()
         );
         let mut fts_params: Vec<Box<dyn rusqlite::types::ToSql>> =
             vec![Box::new(to_match_expr(kw))];
         push_note_filters(&mut fts_sql, &mut fts_params, folder_filter, tag_ids);
-        fts_sql.push_str(" ORDER BY updated_at DESC, rowid DESC LIMIT ?");
+        push_view_filters(&mut fts_sql, opts);
+        fts_sql.push_str(&order_clause(opts));
         fts_params.push(Box::new(limit));
 
         let fts_res: Result<Vec<Note>, rusqlite::Error> =
@@ -469,7 +741,7 @@ impl DataStore {
                 let refs: Vec<&dyn rusqlite::types::ToSql> =
                     fts_params.iter().map(|p| p.as_ref()).collect();
                 let rows = stmt
-                    .query_map(refs.as_slice(), row_to_note)?
+                    .query_map(refs.as_slice(), row_to_note_grouped)?
                     .filter_map(|r| r.ok())
                     .collect::<Vec<_>>();
                 Ok(rows)
@@ -481,14 +753,17 @@ impl DataStore {
                 // 不静默（规则 #15.3）：回退能给结果，但得知道 FTS 为什么挂了。
                 log::warn!("[Notes] FTS 检索失败，回退 LIKE: {}", e);
                 let mut like_sql = format!(
-                    "SELECT {} FROM notes WHERE (title LIKE ? OR content LIKE ?)",
-                    NOTE_COLS
+                    "SELECT {}, {} AS grp FROM notes{} WHERE (notes.title LIKE ? OR notes.content LIKE ?)",
+                    note_cols_q(),
+                    opts.group_expr(),
+                    opts.joins()
                 );
                 let pattern = format!("%{}%", kw);
                 let mut like_params: Vec<Box<dyn rusqlite::types::ToSql>> =
                     vec![Box::new(pattern.clone()), Box::new(pattern)];
                 push_note_filters(&mut like_sql, &mut like_params, folder_filter, tag_ids);
-                like_sql.push_str(" ORDER BY updated_at DESC, rowid DESC LIMIT ?");
+                push_view_filters(&mut like_sql, opts);
+                like_sql.push_str(&order_clause(opts));
                 like_params.push(Box::new(limit));
 
                 let mut stmt = conn.prepare(&like_sql).map_err(|e| e.to_string())?;
@@ -497,7 +772,7 @@ impl DataStore {
                 // 必须先绑到局部变量再作为尾表达式：直接把链式调用放在块尾会让
                 // MappedRows 的临时值比 `stmt` 活得久（E0597）。
                 let rows: Vec<Note> = stmt
-                    .query_map(refs.as_slice(), row_to_note)
+                    .query_map(refs.as_slice(), row_to_note_grouped)
                     .map_err(|e| e.to_string())?
                     .filter_map(|r| r.ok())
                     .collect();

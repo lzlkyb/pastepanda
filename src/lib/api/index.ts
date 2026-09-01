@@ -95,6 +95,7 @@ export {
   noteSetTags,
   noteCount,
   noteCountFiltered,
+  noteGroupCounts,
 } from "./notes";
 export type { Note } from "./notes";
 
@@ -134,7 +135,13 @@ export { noteRevisionList, noteRevisionGet, noteRestore } from "./noteRevisions"
 export type { NoteRevision, NoteRevisionMeta } from "./noteRevisions";
 
 // 待沉淀区（知识库 A 阶段）
-export { kbInboxList, kbInboxCount, kbInboxDismiss, kbInboxUndismiss } from "./kbInbox";
+export {
+  kbInboxList,
+  kbInboxCount,
+  kbInboxGroupCounts,
+  kbInboxDismiss,
+  kbInboxUndismiss,
+} from "./kbInbox";
 export type { InboxCandidate, InboxReason } from "./kbInbox";
 
 // 自动收录影子运行（只度量，不收录）

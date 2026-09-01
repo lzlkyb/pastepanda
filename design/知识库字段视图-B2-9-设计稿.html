@@ -1,0 +1,217 @@
+<title>PastePanda 知识库字段视图（B2 #9）· 设计稿</title>
+<style>
+  :root {
+    --bg:#0f1419; --panel:#171d24; --panel2:#1d242c; --line:#2a333d;
+    --tx:#e6edf3; --tx2:#9fb0c0; --tx3:#6b7d8f;
+    --accent:#4a9eff; --warn:#f0a020; --danger:#e5534b; --ok:#3fb950;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f8fa; --panel:#fff; --panel2:#f0f3f6; --line:#d8dee4;
+            --tx:#1f2328; --tx2:#57606a; --tx3:#8c959f; --accent:#0969da; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:28px 20px 60px; background:var(--bg); color:var(--tx);
+         font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:1000px; margin:0 auto; }
+  h1 { font-size:21px; margin:0 0 4px; }
+  h2 { font-size:16px; margin:32px 0 10px; padding-bottom:7px; border-bottom:1px solid var(--line); }
+  h3 { font-size:13.5px; margin:18px 0 7px; }
+  p, li { color:var(--tx2); }
+  .lede { color:var(--tx2); font-size:13px; margin:0 0 6px; }
+  code { background:var(--panel2); padding:1px 5px; border-radius:4px;
+         font:12px ui-monospace,Consolas,monospace; color:var(--tx); }
+  pre { background:var(--panel); border:1px solid var(--line); border-radius:8px;
+        padding:11px 13px; overflow-x:auto; font:12px/1.6 ui-monospace,Consolas,monospace; color:var(--tx); }
+  .tag { display:inline-block; padding:1px 7px; border-radius:5px; font-size:11px; font-weight:600;
+         background:color-mix(in srgb,var(--accent) 20%,transparent); color:var(--accent); }
+  .note { border-left:3px solid var(--accent); background:var(--panel); padding:10px 13px;
+          border-radius:0 7px 7px 0; margin:12px 0; font-size:12.5px; }
+  .note.warn { border-left-color:var(--warn); }
+  .note.bad { border-left-color:var(--danger); }
+  .note.ok { border-left-color:var(--ok); }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:12.5px; }
+  th, td { border:1px solid var(--line); padding:7px 9px; text-align:left; vertical-align:top; }
+  th { background:var(--panel2); font-weight:600; color:var(--tx); }
+  td { color:var(--tx2); }
+  td code { white-space:nowrap; }
+
+  /* 中栏 mock */
+  .mid { width:340px; border:1px solid var(--line); border-radius:10px; overflow:hidden;
+         background:var(--panel); margin:14px 0; }
+  .crumb { display:flex; align-items:center; gap:7px; padding:9px 12px; font-size:12px;
+           border-bottom:1px solid var(--line); }
+  .crumb b { color:var(--tx); font-size:12.5px; }
+  .crumb span { color:var(--tx3); }
+  .crumb .plus { margin-left:auto; color:var(--tx2); }
+  .srow { display:flex; align-items:center; gap:7px; padding:8px 12px;
+          border-bottom:1px solid var(--line); font-size:12px; color:var(--tx3); }
+  .srow .ico { margin-left:auto; display:flex; gap:9px; color:var(--tx2); font-size:13px; }
+  .srow .ico b { color:var(--accent); }
+  .chipRow { display:flex; align-items:center; gap:6px; padding:7px 12px; flex-wrap:wrap;
+             border-bottom:1px solid var(--line); }
+  .chip { padding:1px 7px; border-radius:10px; font-size:11px;
+          background:color-mix(in srgb,var(--accent) 16%,transparent); color:var(--accent); }
+  .clr { font-size:11px; color:var(--tx3); margin-left:auto; }
+  .grpHead { padding:6px 12px; font-size:11px; font-weight:600; color:var(--tx2);
+             background:var(--panel2); border-bottom:1px solid var(--line); }
+  .nrow { padding:8px 12px; border-bottom:1px solid var(--line); }
+  .nrow:last-child { border-bottom:none; }
+  .ntitle { font-size:12.5px; color:var(--tx); }
+  .nsub { font-size:11px; color:var(--tx3); margin-top:2px; }
+  .more { padding:9px 12px; text-align:center; font-size:11.5px; color:var(--tx3); }
+  .pop { width:150px; border:1px solid var(--line); border-radius:8px; background:var(--panel);
+         margin:10px 0 10px 180px; overflow:hidden; font-size:12px; }
+  .pop div { padding:6px 11px; color:var(--tx2); border-bottom:1px solid var(--line); }
+  .pop div:last-child { border-bottom:none; }
+  .pop div.on { color:var(--accent); }
+  .cap { font-size:11px; color:var(--tx3); margin-top:5px; }
+  .two { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+</style>
+
+<div class="wrap">
+<h1>知识库字段视图 <span class="tag">B2 #9</span></h1>
+<p class="lede">学 Obsidian Bases 的哲学——<b>不新建数据库，把已有字段聚合成视图</b>。
+而我们占便宜的地方是字段<b>自动产生</b>，用户不用像 Obsidian 那样手写 frontmatter properties。</p>
+
+<div class="note bad">
+<b>❗ 开工前核出一个必须先修的前置问题：笔记列表会静默截断。</b><br>
+<code>KnowledgeView.tsx:50</code> 写的是 <code>const PAGE = 50</code>，列表<b>只拉这一页</b>，
+既没翻页也没加载更多（grep 过 <code>loadMore</code> / <code>onScroll</code> /
+<code>IntersectionObserver</code>，零命中）。而面包屑上的「· N 条」走的是
+<code>noteCountFiltered</code> 的<b>真实总数</b>。<br>
+⇒ 笔记超过 50 条时：<b>面包屑说 60 条，列表只给 50 条，没任何提示</b>。
+这与 A-32 记的「横幅 225 / 列表 200」是同一类。<br>
+<b>必须先修</b>：否则 #9 会把它放大——排序与分组建立在一个被悄悄切掉的子集上，比没有更糟。
+<b>已拍板：做加载更多（滚到底自动拉下一页）</b>。<code>note_list</code> 本来就有 <code>offset</code> 参数，后端不用改。
+</div>
+
+<h2>1 · 控件放哪里</h2>
+<p>三个小图标摆在<b>搜索行右侧</b>，点开小浮层。<b>默认态零新增行高</b>——
+现有注释自己就写着「480px 宽的窗口里多一行就少两条笔记」。</p>
+
+<div class="two">
+<div>
+<div class="mid">
+  <div class="crumb"><b>工作</b><span>· 60 条</span><span class="plus">＋</span></div>
+  <div class="srow">🔍 搜笔记（中文 / 拼音首字母）<span class="ico">⇅ ▦ ⚗</span></div>
+  <div class="nrow"><div class="ntitle">会议记录</div><div class="nsub">今天讨论了 API 设计… · 2 小时前</div></div>
+  <div class="nrow"><div class="ntitle">Rust 的 Pin</div><div class="nsub">自引用结构体移动后… · 昨天</div></div>
+</div>
+<p class="cap">默认态：与现在一模一样高。三个图标 <code>⇅</code>排序 / <code>▦</code>分组 / <code>⚗</code>筛选。</p>
+</div>
+
+<div>
+<div class="pop" style="margin-left:0">
+  <div class="on">✓ 最近修改</div>
+  <div>最近创建</div>
+  <div>最近打开</div>
+  <div>标题 A→Z</div>
+</div>
+<p class="cap">点 <code>⇅</code> 弹出。浮层做法照 <code>DeepCleanDialog</code> 里的
+<code>srcPopup</code>（portal 到 body + fixed，避开容器的 overflow 裁切）。</p>
+</div>
+</div>
+
+<h3>选了非默认后：多一行 chips</h3>
+<div class="mid">
+  <div class="crumb"><b>工作</b><span>· 60 条</span><span class="plus">＋</span></div>
+  <div class="srow">🔍 搜笔记…<span class="ico"><b>⇅</b> <b>▦</b> ⚗</span></div>
+  <div class="chipRow">
+    <span class="chip">最近打开 ✕</span>
+    <span class="chip">按文件夹 ✕</span>
+    <span class="chip">有摘要 ✕</span>
+    <span class="clr">全部清除</span>
+  </div>
+  <div class="grpHead">工作 · 20 条</div>
+  <div class="nrow"><div class="ntitle">会议记录</div><div class="nsub">今天讨论了 API 设计…</div></div>
+  <div class="grpHead">未分类 · 12 条</div>
+  <div class="nrow"><div class="ntitle">Rust 的 Pin</div><div class="nsub">自引用结构体移动后…</div></div>
+  <div class="more">加载中…（滚到底自动）</div>
+</div>
+<p class="cap">chips 行<b>只在非默认时出现</b>：默认态不占高，一旦被筛着/排序着又能一眼看到。
+图标本身在非默认时高亮（上图蓝色的 <code>⇅</code> <code>▦</code>）。</p>
+
+<h2>2 · 三组维度（全部只用已有列）</h2>
+
+<h3>排序 <code>⇅</code></h3>
+<table>
+<tr><th>选项</th><th>SQL</th><th>备注</th></tr>
+<tr><td><b>最近修改</b>（默认）</td><td><code>updated_at DESC</code></td><td>现有行为，有 <code>idx_notes_updated</code></td></tr>
+<tr><td>最近创建</td><td><code>created_at DESC</code></td><td>无索引，几百条无感</td></tr>
+<tr><td>最近打开</td><td><code>last_access_at IS NULL, last_access_at DESC</code></td><td>今天刚落的列（A-44）。<b>前一个表达式是关键</b>：从未打开过的是 NULL，必须排最后而不是最前</td></tr>
+<tr><td>标题 A→Z</td><td><code>title COLLATE NOCASE ASC</code></td><td>中文按 UTF-8 码位序，<b>不是拼音序</b>——SQLite 没中文 collation，不假装有</td></tr>
+</table>
+
+<h3>筛选 <code>⚗</code>（多选，同组互斥）</h3>
+<table>
+<tr><th>chip</th><th>SQL</th><th>注意</th></tr>
+<tr><td>有摘要 / 无摘要</td><td><code>summary IS NOT NULL AND summary != ''</code> / 取反</td><td><b>两个条件都要</b>：<code>summary</code> 是迁移加的、<b>可为 NULL</b>，而今日速记插入时写的是空串 <code>''</code>。只写一个会漏一半</td></tr>
+<tr><td>来自卡片 / 手工新建</td><td><code>history_id IS NOT NULL</code> / <code>IS NULL</code></td><td>有 <code>idx_notes_history</code></td></tr>
+<tr><td>有标签 / 无标签</td><td><code>EXISTS (SELECT 1 FROM note_tags WHERE note_id = notes.id)</code> / <code>NOT EXISTS</code></td><td>侧栏那个是「指定标签的交集」，与这两个不冲突，可叠加</td></tr>
+</table>
+
+<h3>分组 <code>▦</code></h3>
+<table>
+<tr><th>选项</th><th>分组键</th><th>注意</th></tr>
+<tr><td><b>不分组</b>（默认）</td><td>—</td><td></td></tr>
+<tr><td>按文件夹</td><td><code>folder_id</code>（NULL = 未分类）</td><td>文件夹名要 JOIN <code>note_folders</code></td></tr>
+<tr><td>按月</td><td><code>substr(created_at, 1, 7)</code></td><td>采用创建月而不是修改月：「这东西是什么时候收的」比「最后动过它」更像一个归档维度</td></tr>
+<tr><td>按标签</td><td>标签</td><td>❗ <b>一条笔记可以有多个标签</b>，它会在多个组里重复出现。这是标签分组的固有语义（Obsidian 也如此），<b>组头旁会标一句说明</b>，不靠用户自己惊讶</td></tr>
+</table>
+
+<h2>3 · 分组与分页怎么共存（最关键的一个设计点）</h2>
+<p><b>分组不在前端做。</b>前端分组 = 只能对已加载的那几页分，滚一次组就变一次，组头数字还是假的。</p>
+<pre>ORDER BY &lt;分组键&gt;, &lt;用户选的排序&gt;   ← 分组只是多一层 ORDER BY
+前端只做一件事：相邻两行的分组键不同 → 插一个组头</pre>
+<p>这样<b>分页天然正确</b>：滚到底拉下一页，新行要么接在当前组里，要么开一个新组。</p>
+<div class="note warn">
+<b>组头的条数必须单独查，不能数已加载的行。</b>
+否则就是本稿开头批评的那个 bug 的翻版：组头写「12 条」而实际 20 条。
+⇒ 新增一个 <code>note_group_counts(分组键, 筛选条件)</code> 的 GROUP BY 查询，一次拿全部组的真实数。
+它与列表查询<b>共用同一份筛选拼接函数</b>（同 <code>push_note_filters</code> 的做法）——
+分开写早晚漂，而漂了就是计数与列表不一致。
+</div>
+
+<h2>4 · 后端要改什么</h2>
+<p><b>「零新增存储」成立，但不等于「零新增代码」。</b>不建表、不加列，但 SQL 拼接要扩：</p>
+<pre>note_list(folder_filter, tag_ids, limit, offset)
+  → note_list(folder_filter, tag_ids, <b>sort, filters, group_by</b>, limit, offset)
+
+push_note_filters(sql, params, folder_filter, tag_ids)
+  → 多接一个 filters（摘要/来源/标签 共 3 组三态）
+
+新增 note_group_counts(...)   ← 组头条数，与上两个共用 push_note_filters</pre>
+<p>排序与分组的映射表（枚举 → ORDER BY 片段）<b>写在后端一处</b>，前端只传枚举字串。
+前端传 SQL 片段是注入口，而两边各维一份映射早晚对不上。</p>
+<div class="note">
+<b>筛选 / 排序 / 分组要不要持久化？</b>
+推荐<b>只存 sessionStorage（关窗即忘）</b>，不进 config 表。
+筛选是一次性意图（「我现在找东西」），不是偏好；持久化的坑是下次打开看到一个被筛过的列表
+却想不起来自己筛过——看起来就像「笔记丢了」。侧栏的文件夹/标签选择现在也不持久化，口径一致。
+</div>
+
+<h2>5 · 边界（明确不做）</h2>
+<ul>
+<li><b>不做收件箱那一半</b>。规划 #9 写的是「知识库<b>与收件箱</b>」，但收件箱（待沉淀区）
+    正是 <b>#2 要整个重建成完整视图</b>的东西，而 #2 已挂待办等数据（A-44）。
+    现在给它加字段视图，一周后连面板一起重写。⇒ <b>并入 #2 一起做</b>。</li>
+<li><b>不做自定义视图保存</b>（Obsidian Bases 的 <code>.base</code> 文件）。那需要一张新表、
+    一套命名与管理 UI，而现在连「用户到底会不会改排序」的水位都没有。</li>
+<li><b>不做表格（多列）视图</b>。中栏在窄屏下只有 ~340px，多列表格在那个宽度里无法读。</li>
+<li><b>不做任意字段组合的表达式筛选</b>（Bases 有一个公式语言）。同 #8 的口径：
+    只做固定维度，不上表达式引擎。</li>
+</ul>
+
+<h2>6 · 验收</h2>
+<ul>
+<li><b>前置</b>：造 60+ 条笔记 → 滚到底能拉出第 51 条之后的，且面包屑总数与能滚到的条数<b>对得上</b></li>
+<li>不动任何控件时，列表顺序与现在<b>一模一样</b>（默认 = updated_at DESC），且 chips 行不出现</li>
+<li>选「最近打开」→ <b>从未打开过的笔记排在最后</b>（不是排在最前）</li>
+<li>选「无摘要」→ 今日速记（summary 为空串）与从未生成过摘要的（NULL）<b>两类都要在</b></li>
+<li>按文件夹分组 → 组头条数与侧栏文件夹上的数字<b>一致</b>（这条是在验「组头数单独查」真的做了）</li>
+<li>按标签分组 → 带两个标签的笔记<b>在两个组里都出现</b>，且组头旁有说明</li>
+<li>分组 + 滚到底加载 → 新拉的行<b>不会把已有组头重复插一遍</b></li>
+<li>筛选后面包屑的总数<b>跟着变</b>（不能还显示全库数）</li>
+<li>关窗再开 → <b>回到默认态</b>（不持久化）</li>
+</ul>
+</div>

@@ -1,12 +1,14 @@
 use super::*;
 
 /// 创建内存数据库的 DataStore（每个测试独立隔离）
-fn make_store() -> DataStore {
+// pub(super)：tests_view.rs（字段视图的用例）是兄弟模块，得用同一对辅助函数。
+// 另写一份的后果是两边造的测试数据不一致，而差异很难被发现（规则 #11）。
+pub(super) fn make_store() -> DataStore {
     DataStore::new(":memory:").expect("无法创建内存数据库")
 }
 
 /// 创建一条测试用的 HistoryItem
-fn make_item(id: &str, text: &str, time: &str, item_type: &str) -> HistoryItem {
+pub(super) fn make_item(id: &str, text: &str, time: &str, item_type: &str) -> HistoryItem {
     let md5_hash = format!("{:x}", Md5::new().chain_update(text.as_bytes()).finalize());
     let pinyin_initials = compute_pinyin_initials(text);
     HistoryItem {
@@ -5334,6 +5336,7 @@ fn mk_note_for_md(title: &str, content: &str, tags: &[&str]) -> Note {
         folder_id: None,
         summary: None,
         daily_date: None,
+        group_key: None,
         tags: tags
             .iter()
             .map(|t| Tag {

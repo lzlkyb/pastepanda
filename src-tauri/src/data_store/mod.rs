@@ -28,6 +28,9 @@ mod quota;
 mod stack_templates;
 #[cfg(test)]
 mod tests;
+// 字段视图（B2 #9）的用例单独一个文件：tests.rs 已经 5000+ 行，再往里塞找不到东西。
+#[cfg(test)]
+mod tests_view;
 
 pub use ai_usage::{
     AiUsageByAction, AiUsageDaily, AiUsageEntry, AiUsageLogRow, AI_USAGE_RETAIN_DAYS,
@@ -56,9 +59,9 @@ pub use quota::{
     QuotaBlock, QuotaInfo, RedeemResult, SignResult, generate_redeem_code, redeem_secret,
     verify_redeem_code, DAILY_SPEND_CAP, INITIAL_GRANT, SIGN_CAP,
 };
-pub use kb_inbox::InboxCandidate;
+pub use kb_inbox::{InboxCandidate, InboxGroupCount, InboxViewOpts};
 pub use kb_shadow::ShadowStats;
-pub use note::Note;
+pub use note::{Note, NoteGroupCount, NoteViewOpts};
 pub use note_folder::{NoteFolder, MAX_FOLDER_DEPTH};
 pub use note_ai::{parse_ai_tags, AI_TAG_SOURCE};
 pub use note_daily::DailyAppend;

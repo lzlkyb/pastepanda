@@ -7,11 +7,13 @@
  *
  * 🔴 红线：无 AI。
  */
-import { useCallback, useContext } from "react";
+import { Fragment, useCallback, useContext } from "react";
 import { Trash2, FolderInput, Library } from "lucide-react";
 import { CtxMenuCtx, type MenuItem } from "@/components/ContextMenu";
 import { relativeTime } from "@/lib/utils";
 import type { Note, NoteFolder } from "@/lib/api";
+import { groupHeaderFor } from "@/lib/notes/viewOpts";
+import { LoadMoreSentinel } from "./LoadMoreSentinel";
 import styles from "../KnowledgeView.module.css";
 
 /** 正文摘要：抖掉换行与 Markdown 行首标记，只留一行可读的文字。 */
@@ -29,6 +31,10 @@ export function NoteList({
   folders,
   activeId,
   showFolderColumn,
+  groupCounts,
+  hasMore,
+  loadingMore,
+  onLoadMore,
   onOpen,
   onDelete,
   onSetFolder,
@@ -40,6 +46,11 @@ export function NoteList({
   activeId: string | null;
   /** 侧栏收起时在每行末尾显示所属文件夹（否则列表没上下文） */
   showFolderColumn: boolean;
+  /** 组名 → **真实**条数（B2 #9）。走后端 GROUP BY，不是数已加载的行 */
+  groupCounts: Map<string, number>;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
   onOpen: (note: Note) => void;
   onDelete: (note: Note) => void;
   onSetFolder: (note: Note, folderId: string | null) => void;
@@ -94,48 +105,104 @@ export function NoteList({
 
   return (
     <ul className={styles.list}>
-      {notes.map((note) => (
-        <li
-          key={note.id}
-          className={`${styles.row} ${activeId === note.id ? styles.rowActive : ""}`}
-          onContextMenu={(e) => {
-            if (!ctxTrigger) return;
-            e.preventDefault();
-            ctxTrigger(e.clientX, e.clientY, buildMenu(note));
-          }}
-        >
-          <button type="button" className={styles.rowMain} onClick={() => onOpen(note)}>
-            <span className={styles.rowTitle}>{note.title}</span>
-            {/* 有 AI 摘要就用它，没有才回退到正文截断（B1 轻量 AI）。
-                扫列表时一行摘要比一段截断的正文有用得多。
-                注意用 `note.summary ||` 而不是 `??`：空串（用户清掉过）也该回退。 */}
-            <span className={styles.rowExcerpt}>
-              {note.summary || excerpt(note.content)}
-            </span>
-            <span className={styles.rowMeta}>
-              <span className={styles.rowTime}>{relativeTime(note.updated_at)}</span>
-              {note.tags.map((tag) => (
-                <span key={tag.id} className={styles.tagChip} style={{ borderColor: tag.color }}>
-                  {tag.name}
-                </span>
-              ))}
-              {/* 侧栏收起时才显所属文件夹：展开时树里已经高亮着了，重复信息 */}
-              {showFolderColumn && (
-                <span className={styles.rowFolder}>{folderName(note.folder_id)}</span>
-              )}
-            </span>
-          </button>
-          <button
-            type="button"
-            className={styles.rowDelete}
-            title="删除笔记"
-            aria-label={`删除笔记 ${note.title}`}
-            onClick={() => onDelete(note)}
-          >
-            <Trash2 size={12} />
-          </button>
-        </li>
-      ))}
+      {notes.map((note, i) => {
+        // 组头：相邻两行的组键不同时插一个（分组本身已在 SQL 的 ORDER BY 里做过）
+        const header = groupHeaderFor(notes, i);
+        return (
+          <Fragment key={note.id}>
+            {header !== null && (
+              <li className={styles.groupHead}>
+                <span>{header}</span>
+                {/* 条数走后端 GROUP BY。拿不到时不显数字，
+                    **不能**退化成数已加载的行——那就是拿假数冲真数 */}
+                {groupCounts.has(header) && (
+                  <span className={styles.groupCount}>{groupCounts.get(header)} 条</span>
+                )}
+              </li>
+            )}
+            <NoteRow
+              note={note}
+              active={activeId === note.id}
+              showFolderColumn={showFolderColumn}
+              folderName={folderName}
+              buildMenu={buildMenu}
+              ctxTrigger={ctxTrigger}
+              onOpen={onOpen}
+              onDelete={onDelete}
+            />
+          </Fragment>
+        );
+      })}
+      <li>
+        <LoadMoreSentinel
+          hasMore={hasMore}
+          loading={loadingMore}
+          onLoadMore={onLoadMore}
+          className={styles.loadMore}
+        />
+      </li>
     </ul>
+  );
+}
+
+/** 单行。从上面拆出来只为了让分组那层 map 还读得动（行为一字未改）。 */
+function NoteRow({
+  note,
+  active,
+  showFolderColumn,
+  folderName,
+  buildMenu,
+  ctxTrigger,
+  onOpen,
+  onDelete,
+}: {
+  note: Note;
+  active: boolean;
+  showFolderColumn: boolean;
+  folderName: (id: string | null) => string;
+  buildMenu: (note: Note) => MenuItem[];
+  /** 右键菜单触发器。null = Provider 不在作用域里（那时不弹菜单） */
+  ctxTrigger: ((x: number, y: number, items: MenuItem[]) => void) | null;
+  onOpen: (note: Note) => void;
+  onDelete: (note: Note) => void;
+}) {
+  return (
+    <li
+      className={`${styles.row} ${active ? styles.rowActive : ""}`}
+      onContextMenu={(e) => {
+        if (!ctxTrigger) return;
+        e.preventDefault();
+        ctxTrigger(e.clientX, e.clientY, buildMenu(note));
+      }}
+    >
+      <button type="button" className={styles.rowMain} onClick={() => onOpen(note)}>
+        <span className={styles.rowTitle}>{note.title}</span>
+        {/* 有 AI 摘要就用它，没有才回退到正文截断（B1 轻量 AI）。
+            扫列表时一行摘要比一段截断的正文有用得多。
+            注意用 `note.summary ||` 而不是 `??`：空串（用户清掉过）也该回退。 */}
+        <span className={styles.rowExcerpt}>{note.summary || excerpt(note.content)}</span>
+        <span className={styles.rowMeta}>
+          <span className={styles.rowTime}>{relativeTime(note.updated_at)}</span>
+          {note.tags.map((tag) => (
+            <span key={tag.id} className={styles.tagChip} style={{ borderColor: tag.color }}>
+              {tag.name}
+            </span>
+          ))}
+          {/* 侧栏收起时才显所属文件夹：展开时树里已经高亮着了，重复信息 */}
+          {showFolderColumn && (
+            <span className={styles.rowFolder}>{folderName(note.folder_id)}</span>
+          )}
+        </span>
+      </button>
+      <button
+        type="button"
+        className={styles.rowDelete}
+        title="删除笔记"
+        aria-label={`删除笔记 ${note.title}`}
+        onClick={() => onDelete(note)}
+      >
+        <Trash2 size={12} />
+      </button>
+    </li>
   );
 }

@@ -13,6 +13,7 @@ import type { HistoryItem } from "@/stores/appStore";
 import { useAppStore } from "@/stores/appStore";
 import { logger } from "@/lib/logger";
 import { toastActionFailed } from "@/lib/utils";
+import type { InboxViewOpts } from "@/lib/notes/viewOpts";
 
 /** 入选原因。后端算好传回，忽略时原样送回去写 dismissed.reason。 */
 export type InboxReason = "star" | "research";
@@ -24,6 +25,10 @@ export interface InboxCandidate {
   search_hit_count: number;
   /** 有过 pasted 信号。仅同分时影响排序（A-28），也用于展示一个“用过”微标 */
   recently_pasted: boolean;
+  /** 当前分组下的组键（B2 #9）。null = 不分组。
+   *  存的是**原始值**（`code` / `Chrome` / `star`），中文名由前端映射——
+   *  content_type → 中文的那份表就住在前端（CONTENT_TYPE_META），不在 Rust 里再写一份 */
+  group_key?: string | null;
 }
 
 /** 当前工作区。候选是 history 卡片，而 history 查询全库都按工作区隔离。 */
@@ -32,10 +37,15 @@ function currentWorkspace(): string {
 }
 
 /** 候选列表。首屏 20 条（后端缺省），处理完再拉下一批。 */
-export async function kbInboxList(limit?: number, offset = 0): Promise<InboxCandidate[]> {
+export async function kbInboxList(
+  limit?: number,
+  offset = 0,
+  view?: InboxViewOpts,
+): Promise<InboxCandidate[]> {
   try {
     return await invoke<InboxCandidate[]>("kb_inbox_list", {
       workspace: currentWorkspace(),
+      view: view ?? null,
       limit,
       offset,
     });
@@ -46,12 +56,33 @@ export async function kbInboxList(limit?: number, offset = 0): Promise<InboxCand
 }
 
 /** 候选总数。失败返回 0 → 横幅不出现，而不是显示一个错的数。 */
-export async function kbInboxCount(): Promise<number> {
+export async function kbInboxCount(view?: InboxViewOpts): Promise<number> {
   try {
-    return await invoke<number>("kb_inbox_count", { workspace: currentWorkspace() });
+    return await invoke<number>("kb_inbox_count", {
+      workspace: currentWorkspace(),
+      view: view ?? null,
+    });
   } catch (e) {
     logger.warn("统计待沉淀候选失败", e);
     return 0;
+  }
+}
+
+/**
+ * 每个分组的**真实**条数（B2 #9）。不分组时后端返回空数组。
+ *
+ * key 是原始值（content_type / source / reason），显示名由调用方映射。
+ */
+export async function kbInboxGroupCounts(view?: InboxViewOpts): Promise<Map<string, number>> {
+  try {
+    const rows = await invoke<{ key: string; count: number }[]>("kb_inbox_group_counts", {
+      workspace: currentWorkspace(),
+      view: view ?? null,
+    });
+    return new Map(rows.map((r) => [r.key, r.count]));
+  } catch (e) {
+    logger.warn("统计待沉淀分组条数失败", e);
+    return new Map();
   }
 }
 

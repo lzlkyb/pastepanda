@@ -11,6 +11,7 @@ import { useAppStore } from "@/stores/appStore";
 import { logger } from "@/lib/logger";
 import { toastActionFailed } from "@/lib/utils";
 import type { FolderFilter } from "./noteFolders";
+import type { NoteViewOpts } from "@/lib/notes/viewOpts";
 
 /** 一条笔记。字段名与 Rust 结构体一致（snake_case，未过 serde rename）。 */
 export interface Note {
@@ -32,6 +33,10 @@ export interface Note {
    *  这是速记的**身份**，不是标题——标题用户可以改成任意字 */
   daily_date: string | null;
   tags: Tag[];
+  /** 当前分组下的**组名**（B2 #9）。null = 不分组。
+   *  不是表里的列，是查询时算的；存的已经是可显示的字符串
+   *  （文件夹名 / 标签名 / `2026-09`），前端不需要再解析 id */
+  group_key?: string | null;
 }
 
 /** 新建笔记。`historyId` 为空 = 与剪贴板无关的独立笔记。 */
@@ -119,12 +124,20 @@ export async function noteGet(id: string): Promise<Note | null> {
  * `folderFilter` / `tagIds` 是**交集**关系（设计稿 §4）；文件夹取具体 id 时含全部后代。
  */
 export async function noteList(
-  opts: { folderFilter?: FolderFilter; tagIds?: string[]; limit?: number; offset?: number } = {},
+  opts: {
+    folderFilter?: FolderFilter;
+    tagIds?: string[];
+    /** 字段视图（B2 #9）。不传 = 默认态 = 与做这个功能之前一模一样 */
+    view?: NoteViewOpts;
+    limit?: number;
+    offset?: number;
+  } = {},
 ): Promise<Note[]> {
   try {
     return await invoke<Note[]>("note_list", {
       folderFilter: opts.folderFilter ?? "all",
       tagIds: opts.tagIds ?? [],
+      view: opts.view ?? null,
       limit: opts.limit ?? 50,
       offset: opts.offset ?? 0,
     });
@@ -140,16 +153,41 @@ export async function noteList(
  * 与 `noteList` 共用后端的同一个筛选构造，所以不会出现「计数说 225 而列表只有 200」。
  */
 export async function noteCountFiltered(
-  opts: { folderFilter?: FolderFilter; tagIds?: string[] } = {},
+  opts: { folderFilter?: FolderFilter; tagIds?: string[]; view?: NoteViewOpts } = {},
 ): Promise<number> {
   try {
     return await invoke<number>("note_count_filtered", {
       folderFilter: opts.folderFilter ?? "all",
       tagIds: opts.tagIds ?? [],
+      view: opts.view ?? null,
     });
   } catch (e) {
     logger.warn("统计笔记数失败", e);
     return 0;
+  }
+}
+
+/**
+ * 每个分组的**真实**条数（B2 #9）。不分组时后端返回空数组。
+ *
+ * ❗ 组头的数字必须走这里，**不能数已加载的行**：列表是分页拉的，
+ * 数已加载的行就会得到「组头写 12 条而实际 20 条」。
+ */
+export async function noteGroupCounts(
+  opts: { folderFilter?: FolderFilter; tagIds?: string[]; view?: NoteViewOpts } = {},
+): Promise<Map<string, number>> {
+  try {
+    const rows = await invoke<{ key: string; count: number }[]>("note_group_counts", {
+      folderFilter: opts.folderFilter ?? "all",
+      tagIds: opts.tagIds ?? [],
+      view: opts.view ?? null,
+    });
+    return new Map(rows.map((r) => [r.key, r.count]));
+  } catch (e) {
+    // 不阻断列表：拿不到数时组头不显数字，而不是整个分组视图挂掉。
+    // 也不能退化成「数已加载的行」——那是拿假数字冒充真数字。
+    logger.warn("统计分组条数失败", e);
+    return new Map();
   }
 }
 
@@ -190,13 +228,19 @@ export async function fetchNoteHistoryIds(): Promise<string[]> {
  */
 export async function noteSearch(
   keyword: string,
-  opts: { folderFilter?: FolderFilter; tagIds?: string[]; limit?: number } = {},
+  opts: {
+    folderFilter?: FolderFilter;
+    tagIds?: string[];
+    view?: NoteViewOpts;
+    limit?: number;
+  } = {},
 ): Promise<Note[]> {
   try {
     return await invoke<Note[]>("note_search", {
       keyword,
       folderFilter: opts.folderFilter ?? "all",
       tagIds: opts.tagIds ?? [],
+      view: opts.view ?? null,
       limit: opts.limit ?? 50,
     });
   } catch (e) {

@@ -26,6 +26,14 @@ import { FolderTree } from "@/components/notes/FolderTree";
 import { NoteList } from "@/components/notes/NoteList";
 import { KnowledgeToolbar } from "@/components/notes/KnowledgeToolbar";
 import { NoteListEmpty } from "@/components/notes/NoteListEmpty";
+import { ViewControls, ViewChips, TriRow } from "@/components/notes/ViewControls";
+import {
+  DEFAULT_NOTE_VIEW,
+  NOTE_GROUPS,
+  NOTE_SORTS,
+  noteViewChips,
+  type NoteViewOpts,
+} from "@/lib/notes/viewOpts";
 import { NoteDetailPane, NoteDetailEmpty } from "@/components/notes/NoteDetailPane";
 import { dailyFilterDate, isDailyFilter } from "@/components/notes/DailySection";
 import { useToast } from "@/components/Toast";
@@ -40,6 +48,7 @@ import {
   folderUnfiledCount,
   folderMaxDepth,
   noteTouch,
+  noteGroupCounts,
   type Note,
   type NoteFolder,
   type FolderFilter,
@@ -69,6 +78,23 @@ export function KnowledgeView() {
   const [version, setVersion] = useState(0);
 
   /**
+   * 字段视图（B2 #9）。**不持久化**：筛选是一次性意图（「我现在找东西」）而不是偏好。
+   * 持久化的坑是下次打开看到一个被筛过的列表却想不起来自己筛过——看起来像「笔记丢了」。
+   * 侧栏的文件夹/标签选择现在也不持久化，口径一致。
+   */
+  const [view, setView] = useState<NoteViewOpts>(DEFAULT_NOTE_VIEW);
+  /** 分组组头的**真实**条数（后端 GROUP BY，不是数已加载的行） */
+  const [groupCounts, setGroupCounts] = useState<Map<string, number>>(new Map());
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  /** 改一个维度。换成新对象而不是原地改：effect 靠引用比较决定要不要重拉。 */
+  const patchView = useCallback((patch: Partial<NoteViewOpts>) => {
+    setView((cur) => ({ ...cur, ...patch }));
+  }, []);
+  /** 已生效的选项 chips。**空数组 = 默认态**，chips 行自己不渲染（不占行高）。 */
+  const chips = noteViewChips(view, patchView);
+
+  /**
    * 侧栏开合：**读 store，开关在顶栏 ☰**（与记录模式同一个按钮）。
    *
    * 原先是 `sidebarPinned || manualOpen`，宽屏强制常驻、**没任何办法收起**——
@@ -89,39 +115,77 @@ export function KnowledgeView() {
     setMaxDepth(mx);
   }, []);
 
-  /** 拉笔记列表。搜索与筛选叠加（选着文件夹搜就只在那里搜）。 */
+  /** 拉笔记列表（第一页）。搜索与筛选叠加（选着文件夹搜就只在那里搜）。 */
   const reloadNotes = useCallback(
-    async (kw: string, ff: FolderFilter) => {
+    async (kw: string, ff: FolderFilter, v: NoteViewOpts) => {
       setLoading(true);
       const kwTrim = kw.trim();
-      const [rows, cnt] = await Promise.all([
+      const [rows, cnt, groups] = await Promise.all([
         kwTrim
-          ? noteSearch(kwTrim, { folderFilter: ff, limit: PAGE })
-          : noteList({ folderFilter: ff, limit: PAGE }),
-        noteCountFiltered({ folderFilter: ff }),
+          ? noteSearch(kwTrim, { folderFilter: ff, view: v, limit: PAGE })
+          : noteList({ folderFilter: ff, view: v, limit: PAGE }),
+        // 总数也要带 view：否则筛选后面包屑还显全库数，就是新的一个「数字对不上」
+        noteCountFiltered({ folderFilter: ff, view: v }),
+        noteGroupCounts({ folderFilter: ff, view: v }),
       ]);
       setNotes(rows);
       setTotal(cnt);
+      setGroupCounts(groups);
       setLoading(false);
     },
     [],
   );
 
-  // 首次 + 关键词/筛选变化（防抖 200ms：每个字一次 FTS 查询没必要）
+  /**
+   * 加载更多（前置修复）。
+   *
+   * 改之前列表只拉 `PAGE = 50` 一页、无翻页无加载更多，而面包屑用的是真实总数，
+   * 所以超过 50 条时面包屑说 60 、列表只给 50，**没任何提示**（同 A-32）。
+   *
+   * 用 `notes.length` 当 offset 而不另维一个计数：两个数一旦不同步就会跳页 / 重复。
+   * ❗ 按标签分组时一条多标签的笔记会占多行，而 `total` 是 `COUNT(DISTINCT id)`，
+   *   所以 `notes.length` 可能超过 total——这时 hasMore 为 false，正好停住。
+   */
+  const loadMore = useCallback(async () => {
+    if (loadingMore || loading) return;
+    setLoadingMore(true);
+    const kwTrim = keyword.trim();
+    const rows = kwTrim
+      ? // 搜索没有 offset 参数（后端 `note_search` 只收 limit），改成抬高 limit 重拉。
+        // 对搜索结果这么做可接受：它本来就有 MAX_PAGE 上限，且用户还在缩小范围。
+        await noteSearch(kwTrim, {
+          folderFilter,
+          view,
+          limit: notes.length + PAGE,
+        })
+      : await noteList({
+          folderFilter,
+          view,
+          limit: PAGE,
+          offset: notes.length,
+        });
+    setNotes((cur) => (kwTrim ? rows : [...cur, ...rows]));
+    setLoadingMore(false);
+  }, [folderFilter, keyword, loading, loadingMore, notes.length, view]);
+
+  // 首次 + 关键词/筛选/视图变化（防抖 200ms：每个字一次 FTS 查询没必要）
   useEffect(() => {
-    const t = window.setTimeout(() => void reloadNotes(keyword, folderFilter), keyword ? 200 : 0);
+    const t = window.setTimeout(
+      () => void reloadNotes(keyword, folderFilter, view),
+      keyword ? 200 : 0,
+    );
     return () => window.clearTimeout(t);
-  }, [keyword, folderFilter, reloadNotes]);
+  }, [keyword, folderFilter, view, reloadNotes]);
 
   useEffect(() => {
     void reloadFolders();
   }, [reloadFolders]);
 
   const refreshAll = useCallback(() => {
-    void reloadNotes(keyword, folderFilter);
+    void reloadNotes(keyword, folderFilter, view);
     void reloadFolders();
     setVersion((v) => v + 1);
-  }, [keyword, folderFilter, reloadNotes, reloadFolders]);
+  }, [keyword, folderFilter, view, reloadNotes, reloadFolders]);
 
   // 弹窗关闭后重拉（逻辑收在 useNoteDialogClosed，待沉淀面板用的是同一个）
   useNoteDialogClosed(refreshAll);
@@ -252,6 +316,47 @@ export function KnowledgeView() {
             onKeyword={setKeyword}
             onNew={handleNew}
             newHint={newHint}
+            controls={
+              <ViewControls
+                sort={{
+                  options: NOTE_SORTS,
+                  value: view.sort,
+                  onChange: (v) => patchView({ sort: v as NoteViewOpts["sort"] }),
+                }}
+                group={{
+                  options: NOTE_GROUPS,
+                  value: view.groupBy,
+                  onChange: (v) => patchView({ groupBy: v as NoteViewOpts["groupBy"] }),
+                }}
+                filterActive={!!(view.summary || view.fromCard || view.tagged)}
+                filterPanel={
+                  <>
+                    <TriRow
+                      label="摘要"
+                      value={view.summary}
+                      yesText="有摘要"
+                      noText="无摘要"
+                      onChange={(v) => patchView({ summary: v })}
+                    />
+                    <TriRow
+                      label="来源"
+                      value={view.fromCard}
+                      yesText="来自卡片"
+                      noText="手工新建"
+                      onChange={(v) => patchView({ fromCard: v })}
+                    />
+                    <TriRow
+                      label="标签"
+                      value={view.tagged}
+                      yesText="有标签"
+                      noText="无标签"
+                      onChange={(v) => patchView({ tagged: v })}
+                    />
+                  </>
+                }
+              />
+            }
+            chips={<ViewChips chips={chips} onClearAll={() => setView(DEFAULT_NOTE_VIEW)} />}
           />
 
           {/* 待沉淀区（§8.1 4️⃣）。一条候选都没时它自己返回 null */}
@@ -265,6 +370,10 @@ export function KnowledgeView() {
               folders={folders}
               activeId={activeNote?.id ?? null}
               showFolderColumn={!sidebarOpen}
+              groupCounts={groupCounts}
+              hasMore={notes.length < total}
+              loadingMore={loadingMore}
+              onLoadMore={() => void loadMore()}
               onOpen={handleOpen}
               onDelete={handleDelete}
               onSetFolder={handleSetFolder}
