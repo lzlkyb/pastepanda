@@ -194,3 +194,39 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/* ===== AI 摘要行（B1 ＋轻量 AI） =====
+   放在标题与来源行之间：它是对这篇笔记的概括，位置上就该紧跟标题。 */
+
+.summaryRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent-color, #4a9eff) 8%, transparent);
+}
+
+.summaryText {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.summaryClear {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 3px;
+  cursor: pointer;
+}
+
+.summaryClear:hover {
+  color: var(--danger-color, #e5534b);
+}

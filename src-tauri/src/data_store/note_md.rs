@@ -22,6 +22,8 @@ pub struct ParsedNote {
     pub tags: Vec<String>,
     /// 导出时写的 `pastepanda_id`。外部新建的文件没有它。
     pub id: Option<String>,
+    /// frontmatter 里的 `summary`（B1 轻量 AI）。没有这一行就是 None。
+    pub summary: Option<String>,
     pub content: String,
 }
 
@@ -102,6 +104,7 @@ pub fn note_to_markdown(note: &Note, with_id: bool) -> String {
         created: &note.created_at,
         updated: &note.updated_at,
         id: if with_id { Some(&note.id) } else { None },
+        summary: note.summary.as_deref().unwrap_or(""),
     })
 }
 
@@ -116,6 +119,8 @@ pub struct MdOut<'a> {
     pub created: &'a str,
     pub updated: &'a str,
     pub id: Option<&'a str>,
+    /// 一行摘要。空串 = 不输出这一行。Obsidian 不认 `summary`，但它会原样保留。
+    pub summary: &'a str,
 }
 
 pub fn to_markdown(v: MdOut) -> String {
@@ -135,6 +140,9 @@ pub fn to_markdown(v: MdOut) -> String {
     if !v.updated.is_empty() {
         s.push_str(&format!("updated: {}\n", yaml_scalar(v.updated)));
     }
+    if !v.summary.is_empty() {
+        s.push_str(&format!("summary: {}\n", yaml_scalar(v.summary)));
+    }
     if let Some(id) = v.id {
         s.push_str(&format!("pastepanda_id: {id}\n"));
     }
@@ -152,6 +160,7 @@ pub fn markdown_to_note(text: &str, fallback_title: &str) -> ParsedNote {
         title: fallback_title.to_string(),
         tags: Vec::new(),
         id: None,
+        summary: None,
         content: content.trim_start_matches('\n').to_string(),
     };
 
@@ -195,6 +204,10 @@ pub fn markdown_to_note(text: &str, fallback_title: &str) -> ParsedNote {
         };
         match k.trim() {
             "title" => out.title = yaml_unscalar(v),
+            "summary" => {
+                let sm = yaml_unscalar(v);
+                out.summary = if sm.is_empty() { None } else { Some(sm) };
+            }
             "pastepanda_id" => {
                 let id = yaml_unscalar(v);
                 out.id = if id.is_empty() { None } else { Some(id) };

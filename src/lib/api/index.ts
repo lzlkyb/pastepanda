@@ -112,6 +112,9 @@ export {
 } from "./noteFolders";
 export type { NoteFolder, FolderFilter, FolderNode } from "./noteFolders";
 
+// 笔记轻量 AI（B1 ＋轻量 AI）——只是落库，模型调用在变换枢纽
+export { noteSetSummary, noteAddAiTags, noteConfirmAiTags } from "./noteAi";
+
 // Markdown 目录导出 / 导入（B1 #5 / D1）
 export { noteExportDir, noteImportDir, noteMarkdown } from "./noteVault";
 export type { ExportReport, ImportReport } from "./noteVault";

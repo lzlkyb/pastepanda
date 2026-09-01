@@ -9,7 +9,21 @@
  * 按需引入对应 @codemirror/lang-* 包，不影响编辑器首屏。
  */
 import { languages } from "@codemirror/language-data";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import type { LanguageSupport } from "@codemirror/language";
+
+/**
+ * Markdown 语言支持，**带围栏代码块的语法高亮**（B1 #12）。
+ *
+ * `codeLanguages: languages` 就是全部开关：没它的话 ″```rust″ 里的代码在编辑器里是一片纯文本。
+ * 语言包是懒加载的（LanguageDescription.load），不影响首屏。
+ *
+ * 收在这里而不是两边各写一遍（规则 #11）：全屏编辑器与笔记编辑器用的必须是同一套配置，
+ * 否则同一段 Markdown 在两个编辑器里长得不一样。
+ */
+export function markdownWithCode() {
+  return markdown({ base: markdownLanguage, codeLanguages: languages });
+}
 
 /** 分类器可能产生的语言/格式子标签（与 ensure_auto_tags 种子名一致） */
 const CODE_LANG_TAGS = new Set([

@@ -26,6 +26,8 @@ export interface Note {
   source_agent: string;
   /** 所属文件夹（B1 #1）。null = 未分类。删文件夹时自动变 null，笔记不会被删 */
   folder_id: string | null;
+  /** 一行 AI 摘要。null = 从未生成；空串 = 生成过但用户清掉了 */
+  summary: string | null;
   tags: Tag[];
 }
 

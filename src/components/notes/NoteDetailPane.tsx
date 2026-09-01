@@ -14,9 +14,10 @@ import { useCallback, useState } from "react";
 import { ExternalLink, Copy, X, History } from "lucide-react";
 import { relativeTime } from "@/lib/utils";
 import { getContentTypeMeta } from "@/lib/contentTypes";
-import type { Note } from "@/lib/api";
+import { noteSetSummary, type Note } from "@/lib/api";
 import { NoteEditorPane } from "./NoteEditorPane";
 import { NoteHistoryView } from "./NoteHistoryView";
+import { NoteAiActions } from "./NoteAiActions";
 import { useNoteEditorState } from "./useNoteEditorState";
 import styles from "./NoteDetailPane.module.css";
 
@@ -55,6 +56,9 @@ export function NoteDetailPane({
   /** 历史视图（B1 #4）。切过去只是换掉编辑区，`ed` 不重建，所以草稿还在。 */
   const [showHistory, setShowHistory] = useState(false);
 
+  /** 当前摘要（B1 轻量 AI）。本地先行显示，不等列表重拉。 */
+  const [summary, setSummary] = useState<string | null>(note.summary);
+
   return (
     <div className={styles.pane}>
       <div className={styles.head}>
@@ -77,6 +81,25 @@ export function NoteDetailPane({
           <X size={13} />
         </button>
       </div>
+
+      {/* AI 摘要（B1 轻量 AI）。只在真有时占位；点✕ 清掉，清成空串而不是 NULL——
+          「从未生成」与「生成过又不要了」是两回事 */}
+      {summary && (
+        <div className={styles.summaryRow}>
+          <span className={styles.summaryText}>✨ {summary}</span>
+          <button
+            type="button"
+            className={styles.summaryClear}
+            onClick={() => {
+              void noteSetSummary(note.id, "").then((ok) => ok && setSummary(null));
+            }}
+            title="清掉摘要"
+            aria-label="清掉摘要"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* 来源行。与弹窗同口径：原卡片被删 → 置灰删除线，但笔记照旧存在 */}
       {note.history_id && (
@@ -131,6 +154,15 @@ export function NoteDetailPane({
         >
           <History size={12} /> 历史
         </button>
+        {/* AI 两个按钮。ai_enabled 关着时它自己返回 null，这里不用再判一次（规则 #16） */}
+        <NoteAiActions
+          noteId={note.id}
+          title={ed.title}
+          content={ed.content}
+          btnClass={styles.ghostBtn}
+          onSummary={setSummary}
+          onTags={() => onSaved()}
+        />
         <button
           type="button"
           className={styles.ghostBtn}

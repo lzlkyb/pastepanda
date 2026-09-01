@@ -264,6 +264,16 @@ pub const ACTIONS: &[AiAction] = &[
         content_types: &[],
     },
     AiAction {
+        id: "ai-note-tags",
+        label: "建议标签",
+        description: "给这篇笔记提几个检索用的标签",
+        icon: "tags",
+        // 只要几个词，但带思考的推理模型需要空间（同 ai-summarize 的取舍）
+        max_tokens: 512,
+        options: &[],
+        content_types: &[],
+    },
+    AiAction {
         id: "ai-explain-code",
         label: "解释代码",
         description: "说清楚这段代码做了什么",
@@ -539,6 +549,14 @@ pub fn build_prompt(
             )
         }
         "ai-summarize" => format!("用一句话概括下面的内容：\n\n{}", trimmed),
+        // 输出格式说得死一点，因为它要被机器解析（parse_ai_tags）。
+        // 但解析侧仍得容错：模型违反格式是常态，不能指望 prompt 兜底。
+        "ai-note-tags" => format!(
+            "给下面这篇笔记提 3~5 个标签，用于以后检索。要求：每个标签不超过 6 个字；\
+             优先用中文（技术专有名词保留原文）；只提内容里真实存在的主题，不要自己发挥。\
+             **只输出标签本身，用逗号分隔，不要编号、不要解释、不要加引号**：\n\n{}",
+            trimmed
+        ),
         "ai-explain-code" => format!(
             "用中文简明扼要地说明下面这段 {}代码做了什么，不要逐行翻译：\n\n{}",
             lang_prefix(ctx.language),

@@ -192,6 +192,12 @@ impl DataStore {
                 }
             };
 
+            // 摘要只在文件里真有时写回去。缺这一行不能把库里已有的摘要抹了——
+            // 用户可能是拿一个外部 vault 导进来的，那边压根没有 summary 字段。
+            if let Some(sm) = parsed.summary.as_deref() {
+                self.note_set_summary(&note_id, Some(sm))?;
+            }
+
             if !parsed.tags.is_empty() {
                 let ids = self.ensure_tag_ids(&parsed.tags)?;
                 self.note_set_tags(&note_id, &ids)?;
@@ -246,8 +252,11 @@ impl DataStore {
         }
     }
 
-    /// 标签名 → id，不存在就建。外部文件里只有名字。
-    fn ensure_tag_ids(&self, names: &[String]) -> Result<Vec<String>, String> {
+    /// 标签名 → id，不存在就建。
+    ///
+    /// 两个调用方：MD 导入（文件里只有名字）与 AI 建议标签（模型只给名字）。
+    /// 写两遍就会漂——比如一边做了 trim 另一边没做，结果是库里出现两个看上去一样的标签。
+    pub(super) fn ensure_tag_ids(&self, names: &[String]) -> Result<Vec<String>, String> {
         let existing = self.get_tags()?;
         let mut out = Vec::with_capacity(names.len());
         for name in names {

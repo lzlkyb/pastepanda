@@ -48,13 +48,18 @@ pub struct Note {
     /// 删文件夹时由 `ON DELETE SET NULL` 自动变回 None——**笔记不随文件夹删**。
     #[serde(default)]
     pub folder_id: Option<String>,
+    /// 一行 AI 摘要（B1 轻量 AI）。`None` = 从未生成过，列表里回退到正文截断。
+    ///
+    /// 只能由用户主动触发生成（受 `ai_enabled` 门控，规则 #16），永远不自动跑。
+    #[serde(default)]
+    pub summary: Option<String>,
     #[serde(default)]
     pub tags: Vec<Tag>,
 }
 
 /// 取列顺序写一次，所有查询共用——否则加字段时必定漏改某一处。
 const NOTE_COLS: &str =
-    "id, history_id, title, content, created_at, updated_at, source_agent, folder_id";
+    "id, history_id, title, content, created_at, updated_at, source_agent, folder_id, summary";
 
 fn row_to_note(row: &rusqlite::Row) -> rusqlite::Result<Note> {
     Ok(Note {
@@ -66,6 +71,7 @@ fn row_to_note(row: &rusqlite::Row) -> rusqlite::Result<Note> {
         updated_at: row.get(5)?,
         source_agent: row.get(6)?,
         folder_id: row.get(7)?,
+        summary: row.get(8)?,
         tags: Vec::new(),
     })
 }
@@ -224,6 +230,8 @@ impl DataStore {
             // 新建笔记一律落入「未分类」。归档走 `note_set_folder`（右键「移动到文件夹」
             // 与 #13 新建空白笔记的「落入当前文件夹」都用它），不往 create 里堆参数。
             folder_id: None,
+            // 新建笔记没有摘要：摘要只能用户主动生成，永远不自动跑
+            summary: None,
             tags: Vec::new(),
         })
     }

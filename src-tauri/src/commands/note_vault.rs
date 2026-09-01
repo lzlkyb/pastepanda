@@ -35,5 +35,7 @@ pub fn note_markdown(title: String, content: String, tags: Vec<String>) -> Strin
         created: "",
         updated: "",
         id: None,
+        // 剪贴板那份不带摘要：它是本地列表的展示字段，搬去别处没意义
+        summary: "",
     })
 }

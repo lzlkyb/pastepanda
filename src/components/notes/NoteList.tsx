@@ -106,7 +106,12 @@ export function NoteList({
         >
           <button type="button" className={styles.rowMain} onClick={() => onOpen(note)}>
             <span className={styles.rowTitle}>{note.title}</span>
-            <span className={styles.rowExcerpt}>{excerpt(note.content)}</span>
+            {/* 有 AI 摘要就用它，没有才回退到正文截断（B1 轻量 AI）。
+                扫列表时一行摘要比一段截断的正文有用得多。
+                注意用 `note.summary ||` 而不是 `??`：空串（用户清掉过）也该回退。 */}
+            <span className={styles.rowExcerpt}>
+              {note.summary || excerpt(note.content)}
+            </span>
             <span className={styles.rowMeta}>
               <span className={styles.rowTime}>{relativeTime(note.updated_at)}</span>
               {note.tags.map((tag) => (

@@ -6,8 +6,7 @@ import { lazy, type ComponentType } from "react";
 import { PanelLeft, Columns2, Eye, Table, List } from "lucide-react";
 import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
-import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { languages } from "@codemirror/language-data";
+import { markdownWithCode } from "./languages";
 import { json } from "@codemirror/lang-json";
 import { html } from "@codemirror/lang-html";
 import { lintGutter } from "@codemirror/lint";
@@ -71,7 +70,7 @@ export const FULLSCREEN_TYPES: Record<FullscreenType, FullscreenTypeSpec> = {
     defaultFileName: "未命名.md",
     fileFilter: { name: "Markdown", extensions: ["md", "markdown"] },
     language: (ctx) => [
-      markdown({ base: markdownLanguage, codeLanguages: languages }),
+      markdownWithCode(),
       imagePasteExt(ctx.insertPastedImages),
     ],
     modes: TRI_MODES,

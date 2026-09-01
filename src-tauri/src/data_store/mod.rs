@@ -5,6 +5,7 @@ mod kb_inbox;
 mod kb_shadow;
 mod note;
 mod note_folder;
+mod note_ai;
 mod note_md;
 mod note_revision;
 mod note_vault;
@@ -57,6 +58,7 @@ pub use kb_inbox::InboxCandidate;
 pub use kb_shadow::ShadowStats;
 pub use note::Note;
 pub use note_folder::{NoteFolder, MAX_FOLDER_DEPTH};
+pub use note_ai::{parse_ai_tags, AI_TAG_SOURCE};
 pub use note_md::{
     markdown_to_note, note_to_markdown, safe_file_stem, to_markdown, MdOut, ParsedNote,
 };
@@ -1012,6 +1014,30 @@ impl DataStore {
                     log::warn!("[DataStore] notes.folder_id 列已存在，忽略: {}", e);
                 } else {
                     log::error!("[DataStore] 添加 notes.folder_id 列失败: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
+        // 数据库迁移：为 notes 添加 summary 列（B1 轻量 AI 的一行摘要）。
+        //
+        // 同 folder_id，走迁移而不是建表（老库的 notes 已存在）。
+        // 允许为 NULL：**没生成过摘要与摘要为空串是两回事**——
+        // 前者该在列表里回退到正文截断，后者是用户手动清空的。
+        let has_note_summary: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('notes') WHERE name = 'summary'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_note_summary {
+            if let Err(e) = conn.execute_batch("ALTER TABLE notes ADD COLUMN summary TEXT;") {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] notes.summary 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 notes.summary 列失败: {}", e);
                     return Err(e);
                 }
             }

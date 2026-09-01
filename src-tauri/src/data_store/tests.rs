@@ -5239,6 +5239,7 @@ fn mk_note_for_md(title: &str, content: &str, tags: &[&str]) -> Note {
         updated_at: "2026-09-01 09:10:44.000".to_string(),
         source_agent: String::new(),
         folder_id: None,
+        summary: None,
         tags: tags
             .iter()
             .map(|t| Tag {
@@ -5388,4 +5389,82 @@ fn test_vault_export_dedupes_same_title() {
     assert!(dir.join("同名 (2).md").is_file());
 
     std::fs::remove_dir_all(&dir).ok();
+}
+
+// ============================================================
+// 笔记轻量 AI（B1 ＋轻量 AI）
+// ============================================================
+
+#[test]
+fn test_parse_ai_tags_tolerates_model_chatter() {
+    // 理想输出
+    assert_eq!(parse_ai_tags("会议纪要, 发布计划, 回归测试"), vec!["会议纪要", "发布计划", "回归测试"]);
+    // 中文逗号 / 顿号 / 分号
+    assert_eq!(parse_ai_tags("前端、React；性能"), vec!["前端", "React", "性能"]);
+    // 编号 + 换行 + # + 引号
+    assert_eq!(
+        parse_ai_tags("1. #前端\n2. \"React\"\n3. 性能优化"),
+        vec!["前端", "React", "性能优化"]
+    );
+    // 开场白那行含冒号 ⇒ 丢掉，不能当标签写进去
+    let r = parse_ai_tags("好的，标签如下：\n前端, React");
+    assert_eq!(r, vec!["前端", "React"], "带冒号的开场白必须被丢掉，实得 {r:?}");
+}
+
+#[test]
+fn test_parse_ai_tags_drops_junk_and_caps() {
+    // 一句话当标签 → 超长丢掉
+    let long = "这是一个非常长的句子模型把它当成了标签";
+    assert!(parse_ai_tags(long).is_empty());
+    // 去重（大小写不敏感）
+    assert_eq!(parse_ai_tags("React, react, REACT"), vec!["React"]);
+    // 最多 5 个
+    assert_eq!(parse_ai_tags("a,b,c,d,e,f,g").len(), 5);
+    // 完全解析不出就返回空，而不是塞垃圾
+    assert!(parse_ai_tags("").is_empty());
+}
+
+#[test]
+fn test_ai_tags_are_appended_and_marked() {
+    let store = make_store();
+    let n = store.note_create(None, "标题", "正文").unwrap();
+
+    // 用户先手打一个标签
+    let manual = store.create_tag("我打的", "#000000").unwrap();
+    store.note_set_tags(&n.id, &[manual.id.clone()]).unwrap();
+
+    let added = store.note_add_ai_tags(&n.id, "前端, 我打的, React").unwrap();
+    // 「我打的」已存在 ⇒ 不算新增，也不能被降级成 ai
+    assert_eq!(added, vec!["前端".to_string(), "React".to_string()]);
+
+    let tags = store.note_get(&n.id).unwrap().unwrap().tags;
+    assert_eq!(tags.len(), 3, "AI 标签是追加，不能把用户手打的抹掉");
+
+    // 来源标记：AI 的标 ai，用户的仍是 manual
+    let conn_check = store.note_get(&n.id).unwrap().unwrap();
+    assert!(conn_check.tags.iter().any(|t| t.name == "我打的"));
+}
+
+#[test]
+fn test_summary_write_clear_and_roundtrip() {
+    let store = make_store();
+    let n = store.note_create(None, "标题", "正文").unwrap();
+    assert!(store.note_get(&n.id).unwrap().unwrap().summary.is_none(), "新建笔记不该有摘要");
+
+    let before = store.note_get(&n.id).unwrap().unwrap().updated_at;
+    store.note_set_summary(&n.id, Some("一句话摘要")).unwrap();
+    let got = store.note_get(&n.id).unwrap().unwrap();
+    assert_eq!(got.summary.as_deref(), Some("一句话摘要"));
+    assert_eq!(got.updated_at, before, "写摘要不该把笔记顶到列表最前");
+
+    // 清空存空串，与「从未生成」的 NULL 区分
+    store.note_set_summary(&n.id, Some("")).unwrap();
+    assert_eq!(store.note_get(&n.id).unwrap().unwrap().summary.as_deref(), Some(""));
+
+    // 导出 → 导入往返带上 summary
+    store.note_set_summary(&n.id, Some("会议要点")).unwrap();
+    let note = store.note_get(&n.id).unwrap().unwrap();
+    let md = note_to_markdown(&note, true);
+    assert!(md.contains("summary: 会议要点"), "frontmatter 应带 summary：{md}");
+    assert_eq!(markdown_to_note(&md, "x").summary.as_deref(), Some("会议要点"));
 }

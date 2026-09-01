@@ -645,6 +645,10 @@ pub fn run() {
             commands::note_export_dir,
             commands::note_import_dir,
             commands::note_markdown,
+            // 笔记轻量 AI（B1 ＋轻量 AI）——模型调用走 ai_run，这里只落库
+            commands::note_set_summary,
+            commands::note_add_ai_tags,
+            commands::note_confirm_ai_tags,
             // 待沉淀区（知识库 A 阶段 · 规划 §8.1 4️⃣）
             commands::kb_inbox_list,
             commands::kb_inbox_count,
