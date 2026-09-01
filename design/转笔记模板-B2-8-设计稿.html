@@ -1,0 +1,287 @@
+<title>PastePanda 转笔记模板（B2 #8）· 设计稿</title>
+<style>
+  :root {
+    --bg:#0f1419; --panel:#171d24; --panel2:#1d242c; --line:#2a333d;
+    --tx:#e6edf3; --tx2:#9fb0c0; --tx3:#6b7d8f;
+    --accent:#4a9eff; --warn:#f0a020; --danger:#e5534b; --ok:#3fb950;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f8fa; --panel:#fff; --panel2:#f0f3f6; --line:#d8dee4;
+            --tx:#1f2328; --tx2:#57606a; --tx3:#8c959f; --accent:#0969da; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:28px 20px 60px; background:var(--bg); color:var(--tx);
+         font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:1000px; margin:0 auto; }
+  h1 { font-size:21px; margin:0 0 4px; }
+  h2 { font-size:16px; margin:32px 0 10px; padding-bottom:7px; border-bottom:1px solid var(--line); }
+  h3 { font-size:13.5px; margin:18px 0 7px; }
+  p, li { color:var(--tx2); }
+  .lede { color:var(--tx2); font-size:13px; margin:0 0 6px; }
+  code { background:var(--panel2); padding:1px 5px; border-radius:4px;
+         font:12px ui-monospace,Consolas,monospace; color:var(--tx); }
+  pre { background:var(--panel); border:1px solid var(--line); border-radius:8px;
+        padding:11px 13px; overflow-x:auto; font:12px/1.6 ui-monospace,Consolas,monospace; color:var(--tx); }
+  .tag { display:inline-block; padding:1px 7px; border-radius:5px; font-size:11px; font-weight:600;
+         background:color-mix(in srgb,var(--accent) 20%,transparent); color:var(--accent); }
+  .note { border-left:3px solid var(--accent); background:var(--panel); padding:10px 13px;
+          border-radius:0 7px 7px 0; margin:12px 0; font-size:12.5px; }
+  .note.warn { border-left-color:var(--warn); }
+  .note.bad { border-left-color:var(--danger); }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:12.5px; }
+  th, td { border:1px solid var(--line); padding:7px 9px; text-align:left; vertical-align:top; }
+  th { background:var(--panel2); font-weight:600; color:var(--tx); }
+  td { color:var(--tx2); }
+  td code { white-space:nowrap; }
+
+  /* ==== 设置面板 mock ==== */
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+          padding:14px 16px; margin:14px 0; }
+  .sTitle { font-size:12.5px; font-weight:600; color:var(--tx); margin-bottom:3px; }
+  .sDesc { font-size:11.5px; color:var(--tx3); margin-bottom:10px; }
+  .ta { background:var(--panel2); border:1px solid var(--line); border-radius:7px;
+        padding:9px 11px; font:12px/1.7 ui-monospace,Consolas,monospace; color:var(--tx);
+        white-space:pre; overflow-x:auto; }
+  .ta.small { min-height:auto; }
+  .row { display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap; }
+  .btn { padding:3px 10px; border:1px solid var(--line); border-radius:6px;
+         background:transparent; color:var(--tx2); font-size:11.5px; cursor:default; }
+  .btn.pri { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .vars { font-size:11px; color:var(--tx3); }
+  .vars code { font-size:11px; cursor:default; }
+  .prevLabel { font-size:11px; color:var(--tx3); margin:12px 0 5px; }
+  .prev { background:color-mix(in srgb,var(--ok) 7%,transparent);
+          border:1px solid color-mix(in srgb,var(--ok) 30%,transparent);
+          border-radius:7px; padding:9px 11px; font-size:12px; line-height:1.7; white-space:pre-wrap; }
+  .fold { margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
+  .foldHead { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--tx2); }
+  .ovRow { display:flex; align-items:flex-start; gap:8px; margin-top:9px; }
+  .ovType { flex:0 0 74px; font-size:11.5px; color:var(--tx); padding-top:8px; }
+  .ovBody { flex:1; min-width:0; }
+  .x { color:var(--tx3); font-size:12px; padding-top:8px; }
+  .cap { font-size:11px; color:var(--tx3); margin-top:5px; }
+
+  /* ==== 设置页真实行的 mock（照 Settings.module.css 的 sSection / sRow 尺寸）==== */
+  .mock { border:1px solid var(--line); border-radius:10px; overflow:hidden; margin:14px 0; }
+  .msec { padding:14px 20px 6px; font-size:11px; font-weight:700; color:var(--tx2);
+          letter-spacing:.5px; background:var(--panel2); border-bottom:1px solid var(--line); }
+  .mrow { display:flex; align-items:center; gap:12px; padding:12px 20px;
+          border-bottom:1px solid var(--line); background:var(--panel); }
+  .mrow:last-child { border-bottom:none; }
+  .micon { width:36px; height:36px; border-radius:10px; flex-shrink:0; display:flex;
+           align-items:center; justify-content:center; font-size:16px; }
+  .mbody { flex:1; min-width:0; }
+  .mlab { font-size:13px; font-weight:600; color:var(--tx); }
+  .mdesc { font-size:11px; color:var(--tx3); margin-top:2px; }
+  .mact { padding:5px 13px; border-radius:7px; font-size:12px; font-weight:600;
+          background:color-mix(in srgb,var(--accent) 16%,transparent); color:var(--accent);
+          white-space:nowrap; }
+
+  /* ==== 弹窗 mock ==== */
+  .dlg { border:1px solid var(--line); border-radius:12px; overflow:hidden;
+         background:var(--panel); margin:14px 0; max-width:560px; }
+  .dlgHead { display:flex; align-items:center; justify-content:space-between;
+             padding:13px 16px; border-bottom:1px solid var(--line); font-size:14px; font-weight:600; }
+  .dlgBody { padding:14px 16px; }
+  .dlgFoot { display:flex; justify-content:flex-end; gap:8px;
+             padding:11px 16px; border-top:1px solid var(--line); background:var(--panel2); }
+</style>
+
+<div class="wrap">
+<h1>转笔记模板 <span class="tag">B2 #8</span></h1>
+<p class="lede">把卡片转成笔记时套用的格式。学 Obsidian Web Clipper，<b>只做变量替换</b>——
+不上条件/循环/函数（那是 Templater 的路，规划边界写死的）。</p>
+
+<div class="note warn">
+<b>规划里列的一个变量不存在。</b><br>
+原文列了 <code>source</code> / <code>source_icon</code> / <code>content_type</code> / <code>time</code> / OCR / <code>tags</code> / <b>原卡片链</b>。
+前六个 <code>HistoryItem</code> 上都有，但<b>「原卡片链」在当前架构里没有可用形态</b>——
+笔记靠 <code>history_id</code> 关联卡片，没有任何 URL 能写进 Markdown。<code>extract.ts</code> 里已有的注释就是这个结论：
+「用一句人话而不是链接：卡片 id 对用户没意义」。<br>
+⇒ 改成 <code>{{origin}}</code>：一行人读的出处标注（<code>来自 Chrome · 2026-09-01 14:32</code>）。
+用户真正想要的是「这段东西哪来的」，而不是一个点不动的 id。
+</div>
+
+<h2>1 · 设置页长什么样</h2>
+<p><b>独占一个小节</b>（设置 → 通用，紧挨「数据管理」之前），下面两行都是<b>标准 sRow</b>——
+36px 渐变图标 + 13px 标题 + 11px 说明 + 右侧动作按钮，与其它设置行像素级一致。编辑器与预览搬进弹窗。</p>
+
+<div class="note bad">
+<b>上一版为什么不行。</b>自己另开了一套常显卡片：<code>margin: 8px 0</code>
+（左右零边距，直接顶到对话框边缘，而所有 sRow 都有 20px 内缩）、<code>--card-bg</code> + radius 10、
+标题 12.5px、<b>没有图标</b>，还常显一个等宽大 textarea 插在一列 60px 高的行中间。<br>
+参照物本来就有：这个页面唯一的面板先例是 <code>.lanPanel</code>
+（<code>margin: 8px 20px</code> / radius 14 / accent-light）。
+</div>
+
+<div class="mock">
+  <div class="msec">转笔记模板</div>
+  <div class="mrow">
+    <span class="micon" style="background:linear-gradient(135deg,#6366F1,#4338CA)">📝</span>
+    <div class="mbody">
+      <div class="mlab">默认模板</div>
+      <div class="mdesc">&gt; {{origin}}</div>
+    </div>
+    <span class="mact">编辑</span>
+  </div>
+  <div class="mrow">
+    <span class="micon" style="background:linear-gradient(135deg,#14B8A6,#0D9488)">🏷️</span>
+    <div class="mbody">
+      <div class="mlab">按类型定制</div>
+      <div class="mdesc">代码、链接</div>
+    </div>
+    <span class="mact">管理 2 个</span>
+  </div>
+</div>
+<p class="cap">未配时两行的说明位分别是「未配 · 转笔记保持现在的行为（今日速记不走模板）」与
+「未配 · 全部类型用默认模板」；右侧按钮未配时作「添加」。默认模板行的说明位只取<b>模板第一行非空内容</b>，超 42 字截断。</p>
+
+<h3>点「编辑」→ 默认模板弹窗</h3>
+<div class="dlg">
+  <div class="dlgHead"><span>编辑默认模板</span><span style="color:var(--tx3)">✕</span></div>
+  <div class="dlgBody">
+    <div class="ta">&gt; {{origin}}
+
+{{content}}</div>
+    <div class="row">
+      <span class="btn">填入示例</span>
+      <span class="btn">清空</span>
+    </div>
+    <div class="row">
+      <span class="vars">可用变量（点一下插到<b>光标处</b>）：
+        <code>{{content}}</code> <code>{{title}}</code> <code>{{origin}}</code>
+        <code>{{source}}</code> <code>{{time}}</code> <code>{{date}}</code>
+        <code>{{content_type}}</code> <code>{{tags}}</code> <code>{{ocr}}</code>
+      </span>
+    </div>
+    <div class="prevLabel">预览（拿你<b>最近一条真实卡片</b>套，没卡片时用内置示例）</div>
+    <div class="prev">&gt; 来自 Chrome · 2026-09-01 14:32
+
+Rust 的 Pin 到底解决什么问题——自引用结构体移动后指针失效</div>
+  </div>
+  <div class="dlgFoot"><span class="btn">取消</span><span class="btn pri">保存</span></div>
+</div>
+<p class="cap">外壳走已有的全局弹窗体系（<code>dialog-backdrop</code> / <code>dialog-box w520</code> /
+<code>dialog-header</code> / <code>dialog-body</code> / <code>dialog-footer</code>）+ <code>FocusTrap</code> + <code>useDialogAnim</code>，
+做法照 <code>DeepCleanDialog</code>（同样从设置页打开的弹窗）。</p>
+
+<h3>点「管理」→ 按类型定制弹窗</h3>
+<div class="dlg">
+  <div class="dlgHead"><span>按类型定制模板</span><span style="color:var(--tx3)">✕</span></div>
+  <div class="dlgBody">
+  <div class="sDesc">没配的类型用默认模板。<b>按卡片类型自动匹配，不会弹选择器</b>。<br>
+  可用变量：{{content}} {{title}} {{source}} {{time}} {{date}} {{content_type}} {{tags}} {{ocr}} {{origin}}</div>
+
+  <div class="ovRow">
+    <div class="ovType">代码</div>
+    <div class="ovBody"><div class="ta small">「{{source}}」里的一段代码
+
+```
+{{content}}
+```</div></div>
+    <div class="x">✕</div>
+  </div>
+
+  <div class="ovRow">
+    <div class="ovType">链接</div>
+    <div class="ovBody"><div class="ta small">- [ ] 读：{{content}}   · {{date}}</div></div>
+    <div class="x">✕</div>
+  </div>
+
+  <div class="row">
+    <span class="btn">＋ 添加类型</span>
+    <span class="vars">选一个类型后出现输入框</span>
+  </div>
+  </div>
+  <div class="dlgFoot"><span class="btn">取消</span><span class="btn pri">保存</span></div>
+</div>
+<p class="cap">变量在这个弹窗里<b>只给文字清单、不做点击插入</b>：屏上同时有 N 个输入框，
+「插到光标处」得先回答「哪个框」，而那个问题不值得为它加一层焦点跟踪。</p>
+
+<div class="note">
+<b>为什么不直接列出全部类型？</b> <code>CONTENT_TYPE_META</code> 里有 <b>19 个</b>类型
+（文本/链接/邮箱/电话/颜色/路径/代码/JSON/Markdown/HTML/配置/表格/命令/日志/密钥/数字/图片/文件/流程图…）。
+摆 19 个多行输入框会把设置页淹没，而其中大多数人一辈子不会去配。<br>
+<b>只列已配的 + 一个「＋ 添加类型」</b>。下拉里<b>列全部 19 个而不筛选</b>——
+我不猜「哪些类型值得定制」，那一猜就又是一个「我以为不能其实能」的限制。
+</div>
+
+<h2>2 · 变量表</h2>
+<table>
+<tr><th>占位符</th><th>值</th><th>备注</th></tr>
+<tr><td><code>{{content}}</code></td><td>按类型抽出的正文</td><td>就是不套模板时的那个正文（CSV 已转成 Markdown 表格）</td></tr>
+<tr><td><code>{{title}}</code></td><td>按首行抽出的标题</td><td>只能读，<b>模板改不了标题本身</b>（见 §3）</td></tr>
+<tr><td><code>{{origin}}</code></td><td><code>来自 Chrome · 2026-09-01 14:32</code></td><td>没来源时只写时间，<b>不留「来自 」尾巴</b></td></tr>
+<tr><td><code>{{source}}</code></td><td>来源应用名</td><td>可能为空</td></tr>
+<tr><td><code>{{time}}</code> / <code>{{date}}</code></td><td>完整时间 / 仅日期</td><td>采集时间，不是转笔记的时间</td></tr>
+<tr><td><code>{{content_type}}</code></td><td><b>中文标签</b>（「代码」而不是 <code>code</code>）</td><td>它是写给人看的，内部值在正文里没意义</td></tr>
+<tr><td><code>{{tags}}</code></td><td>标签名，逗号分隔</td><td>无标签为空串</td></tr>
+<tr><td><code>{{ocr}}</code></td><td>图片的 OCR 文本</td><td>非图片为空串。图片卡片的 <code>{{content}}</code> 本来就是 OCR，这个是给「既要原文又要引用 OCR」用的</td></tr>
+</table>
+
+<h2>3 · 交互细则（都已写进实现并钉了用例）</h2>
+<ul>
+<li><b>留空 = 不套</b>，而不是套出一篇空笔记。这是默认值，也是向后兼容的保证——
+    <b>加了这个功能不能改变没配过模板的人的转笔记结果</b>。示例模板只能靠「填入示例」按钮进去，不能当默认值。</li>
+<li><b>未知占位符原样保留</b>。正文里真出现 <code>{{foo}}</code>（从别的模板系统拷来的一段）不会被吃掉，
+    也因此<b>不需要转义语法</b>。代价：拼错变量名（<code>{{sorce}}</code>）不报错、会原文出现在笔记里——
+    这比静默删掉一段文字好，而且<b>实时预览里一眼就能看到</b>。</li>
+<li><b>占位符容忍空白与大小写</b>：<code>{{ source }}</code>、<code>{{SOURCE}}</code> 都行。</li>
+<li><b>只套正文，不套标题</b>。标题行就那么宽，往里塞 <code>来自 Chrome · 2026-09-01</code>
+    只会把真正的标题挤成省略号。想把来源写进标题的需求可以后补，但不是默认。</li>
+<li><b>类型覆盖清空 = 没配</b>，不是「配了个空模板」。用户把输入框清空的意图是
+    「不特殊对待这个类型」，而不是「把正文清空」。</li>
+<li><b>配置存脏也不阻断转笔记</b>：覆盖表存的是 JSON 字符串，解析失败就退回默认模板，
+    而不是「因为模板配置坏了所以转不了笔记」。</li>
+<li><b>预览样本跳过密钥类卡片</b>（走已有的 <code>isSecret</code>）。预览会把全文摄到设置页上，
+    而密钥卡片在卡片列表里本来是<b>遮罩显示</b>的——不能在这里绕过那个遮罩。
+    扫前 30 条找第一条能转笔记的，一条都没就用内置示例。</li>
+<li><b>保存时机：弹窗里敲的是草稿，不点保存就不落库</b>。
+    弹窗本身就是一个明确的「我要改这个」手势，它理当有取消；
+    也因此不再需要上一版的失焦即存 + 卸载补写那套机制。
+    <b>每次打开重新从配置取草稿</b>：上次取消掉的内容不能留到下一次。</li>
+<li><b>有未保存改动时，ESC / 遮罩 / ✕ / 取消 四条关闭路径都先问一句</b>。
+    四条走同一份弹窗壳（规则 #11）——写两份必定漏一条。
+    嵌套确认框是支持的：<code>ConfirmDialog</code> 用 <code>.z-confirm</code>（z=600），就是为「从弹窗里再弹」准备的。</li>
+<li><b>样本卡片的类型刚好配了覆盖时，预览上方会明说</b>：预览框属于默认模板（否则改默认模板看不到变化），
+    但那条卡片实际转笔记走的是类型覆盖——不说就是一个预览与真实结果不符的坑。</li>
+</ul>
+
+<h2>4 · 模板在哪一步生效</h2>
+<pre>右键「转为笔记」/ 卡片角标 ┐
+待沉淀区「转为笔记」   ┴─→ openNoteForCard ─→ extractNoteDraft ─→ [套模板] ─→ 弹窗
+
+今日速记（热键 / 右键追加） ─→ note_append_daily ─→ 固定格式（不过模板）</pre>
+<p><b>只在 <code>openNoteForCard</code> 一处套</b>。两个转笔记入口都走它；
+<code>extractNoteDraft</code> 在别处（卡片菜单、待沉淀区按钮）<b>只用来判「能不能转」</b>，不套。</p>
+<div class="note bad">
+<b>今日速记不走模板。</b> D11 写死了「不做模板引擎」，而且它的
+<code>## HH:MM · 来自 X</code> 是固定格式，套模板会打乱那个流水账结构。
+</div>
+
+<h2>5 · 边界（明确不做）</h2>
+<ul>
+<li><b>不做模板引擎</b>——无条件、无循环、无函数。规划写死的边界，那是 Templater 的路。</li>
+<li><b>不做按来源应用匹配</b>（Clipper 是按 URL 匹配的）——<code>content_type</code> 是更稳的信号：
+    同一个浏览器里拷出来的可能是代码也可能是文章。</li>
+<li><b>不做多模板选择器</b>（方案 C）——转笔记是高频动作，每次多一步点击就是给「低摩擦捕捉」让路。
+    而且现在连水位数据都没有，不知道用户一天转几条、有没有多种笔记类型。</li>
+<li><b>不做模板导入/导出/分享</b>——就几百字节，需要时直接拷文本。</li>
+</ul>
+
+<h2>6 · 验收</h2>
+<ul>
+<li>不配模板（默认态）转笔记 → <b>结果与以前一字不差</b></li>
+<li>填入示例模板 → 转一条 → 正文首行是 <code>&gt; 来自 XXX · 时间</code></li>
+<li>模板里写 <code>{{sorce}}</code>（拼错）→ 预览里<b>原样显示</b> <code>{{sorce}}</code>，不是空白</li>
+<li>给「代码」配一个覆盖 → 转一条代码卡片走覆盖、转一条普通文本走默认</li>
+<li>把「代码」的覆盖清空 → 转代码卡片<b>回到默认模板</b>，而不是得到空正文</li>
+<li>改完模板<b>不重启</b>直接转笔记 → 新模板已生效（配置现读不缓存）</li>
+<li>今日速记追加 → <b>仍是</b> <code>## HH:MM · 来自 X</code>，模板没介入</li>
+<li>两行与上下其它设置行<b>同高、同内缩、图标同尺寸</b>；设置页搜「模板」能命中这一节（包括小节标题）</li>
+<li>弹窗里改完<b>点取消</b> → 行上摘要不变，转笔记也不变（草稿没落库）</li>
+<li>弹窗里改完直接敲 <b>ESC</b> → 先问「放弃未保存的模板改动？」，选「继续编辑」回到弹窗且内容还在</li>
+<li>没改任何东西时，<b>保存按钮是置灰的</b>，ESC / 遮罩直接关、不多问一句</li>
+</ul>
+
+</div>

@@ -88,6 +88,11 @@ export interface AppConfig {
   quick_paste_hotkey: string; // 快捷粘贴面板快捷键（类 Win+V）
   screenshot_hotkey: string; // 截图标注快捷键（v6.18 截图功能）
   daily_note_hotkey: string; // 今日速记：把剪贴板当前内容追加到今天那条（B2 #3 / D11）
+  // 转笔记模板（B2 #8）。**空 = 不套模板**（向后兼容：加这个功能不能改变旧用户的结果）
+  note_template: string;
+  // 按 content_type 的模板覆盖，JSON 字符串如 `{"code":"..."}`。
+  // 存 JSON 而不建表：就几个字符串、不需增删改查列表 UI，为几百字节建一张表不划算
+  note_template_overrides: string;
   auto_frame_window: boolean; // 截图自动框选光标所在窗口（微信同款，v6.19）
   screenshot_window_persist: boolean; // 截图窗口常驻（默认关）：开启后关窗仅隐藏，再次截图秒开；代价=常驻约几十~百MB
   // ❌ 键名用 snake_case：本接口整体直接序列化进后端 config 表（save_config 按键 upsert），
@@ -346,6 +351,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   quick_paste_hotkey: "alt+v",
   screenshot_hotkey: "ctrl+q", // 2 键默认（Ctrl+Q）：左手顺按；QQ Ctrl+Alt+A / 微信 Alt+A 都是大占用源
   daily_note_hotkey: "ctrl+alt+d", // D=Daily；与上面六个以及 Ctrl+Alt+1..9（索引粘贴）都不冲突
+  note_template: "", // 空 = 不套模板（不能默认给一份，否则升级后所有人的转笔记结果都变了）
+  note_template_overrides: "",
   auto_frame_window: true, // 默认开启：截图自动框选光标所在窗口
   screenshot_window_persist: false, // 默认关：截图窗用完即销毁（省内存）；开启后常驻隐藏、再次截图秒开（微信同款）
   ocr_select_mode: "smart", // 默认智能意图：落在文字上拖即选字（离开文字带则冻结选区）

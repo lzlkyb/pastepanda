@@ -11,6 +11,7 @@ import { resolveSource } from "@/lib/source-mappings";
 import { useSourceIcon } from "@/hooks/useSourceIcon";
 import { ToggleRow } from "./ToggleRow";
 import { NoteVaultRows } from "./NoteVaultRows";
+import { NoteTemplateRows } from "./NoteTemplateRows";
 import { HotkeyRecorder } from "./HotkeyRecorder";
 import { chainList, type ChainDef } from "@/lib/api/chains";
 import { LanSyncPanel } from "./LanSyncPanel";
@@ -1110,6 +1111,10 @@ export function GeneralTab({
           </button>
         </div>
       </div>
+
+      {/* ── 转笔记模板（B2 #8）──
+          自己一节而不是塞进「数据管理」：塞进去就得在那节中间插一个小节标题，把那节从中间切断 */}
+      <NoteTemplateRows config={config} updateAndSave={updateAndSave} />
 
       {/* ── 数据管理 ── */}
       <div className={styles.sSection}>数据管理</div>

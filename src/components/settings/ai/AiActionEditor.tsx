@@ -18,6 +18,7 @@ import {
 } from "@/lib/api";
 import { ACTION_TEMPLATES, type ActionTemplate } from "./actionTemplates";
 import { budgetExceededMessage } from "@/lib/aiBudgetMsg";
+import { insertAtCursor } from "@/lib/insertAtCursor";
 import settings from "../../Settings.module.css";
 import styles from "../AiTab.module.css";
 
@@ -91,20 +92,10 @@ export function AiActionEditor({ action, contentTypes, onSaved, onCancel, onDele
     setOutput(null);
   };
 
-  /** 把占位符插到光标处——比让用户背语法强 */
+  /** 把占位符插到光标处——比让用户背语法强。
+   *  光标计算收口到 @/lib/insertAtCursor（转笔记模板的变量按钮是第二个调用点） */
   const insertPlaceholder = () => {
-    const el = templateRef.current;
-    if (!el) {
-      patch({ template: `${draft.template}\n${PLACEHOLDER}` });
-      return;
-    }
-    const { selectionStart: s, selectionEnd: e } = el;
-    const next = draft.template.slice(0, s) + PLACEHOLDER + draft.template.slice(e);
-    patch({ template: next });
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(s + PLACEHOLDER.length, s + PLACEHOLDER.length);
-    });
+    patch({ template: insertAtCursor(templateRef.current, draft.template, PLACEHOLDER) });
   };
 
   const toggleType = (id: string) => {
