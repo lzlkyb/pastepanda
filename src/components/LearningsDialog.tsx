@@ -32,6 +32,7 @@ import {
 } from "@/lib/api/aiFeedback";
 import { historySummariesCount, historySummariesClear } from "@/lib/api/contentMemory";
 import { semanticStatus } from "@/lib/api/semantic";
+import { kbShadowStats, kbShadowClear, type ShadowStats } from "@/lib/api/kbShadow";
 import { useToast } from "@/components/Toast";
 import { actionLabel, contentTypeLabel } from "@/lib/actionLabels";
 import styles from "./Learnings.module.css";
@@ -55,19 +56,23 @@ export function LearningsDialog() {
   const [prefs, setPrefs] = useState<Record<string, string>>({});
   const [memCount, setMemCount] = useState<number | null>(null);
   const [semVectorCount, setSemVectorCount] = useState<number | null>(null);
+  /** 知识库影子运行（规划 §8.1 5️⃣）。null = 未拉到，整张卡不出现 */
+  const [shadow, setShadow] = useState<ShadowStats | null>(null);
   const [busy, setBusy] = useState(false);
   const [savedPref, setSavedPref] = useState<string | null>(null);
 
   /** 拉取统计 + 负反馈 + AI 结果反馈 + 内容记忆 */
   const load = useCallback(async () => {
     try {
-      const [s, d, fb, p, mem, sem] = await Promise.all([
+      const [s, d, fb, p, mem, sem, sh] = await Promise.all([
         actionEventStats(30),
         actionDismissals(),
         aiFeedbackStats(30),
         actionPrefsAll(),
         historySummariesCount(),
         semanticStatus().catch(() => null),
+        // 影子运行（§8.1 5️⃣）。api 层已吐日志并返回 null，它拉不到不影响本弹窗
+        kbShadowStats(),
       ]);
       setStats(s);
       setDismissals(d);
@@ -75,6 +80,7 @@ export function LearningsDialog() {
       setPrefs(Object.fromEntries(p.map((r: ActionPrefRow) => [r.actionId, r.preference])));
       setMemCount(mem);
       setSemVectorCount(sem?.enabled ? sem.vectorCount : null);
+      setShadow(sh);
     } catch (e) {
       toast(`读取学习记录失败：${e instanceof Error ? e.message : String(e)}`, "error");
     }
@@ -90,6 +96,7 @@ export function LearningsDialog() {
       setPrefs({});
       setMemCount(null);
       setSemVectorCount(null);
+      setShadow(null);
       setSavedPref(null);
     }
   }, [open, load]);
@@ -186,6 +193,23 @@ export function LearningsDialog() {
     } catch (e) {
       toast(`清空失败：${e instanceof Error ? e.message : String(e)}`, "error");
     }
+  }, [load, toast]);
+
+  /**
+   * 清空知识库影子运行记录（红线②：可删）。
+   *
+   * 确认文案要说清代价：清了就拿不到准确率，而那个数是「要不要开自动收录」的唯一依据。
+   */
+  const clearShadow = useCallback(async () => {
+    const ok = await confirmDialog({
+      title: "清空沉淀观察",
+      message: "清空后将重新开始统计，已积累的命中准确率会丢失。确定清空吗？",
+      confirmText: "清空",
+    });
+    if (!ok) return;
+    if (!(await kbShadowClear())) return;
+    toast("已清空沉淀观察记录", "success");
+    void load();
   }, [load, toast]);
 
   // Esc 关闭
@@ -410,6 +434,42 @@ export function LearningsDialog() {
                         </div>
                       )}
                     </div>
+
+                    {/* 知识库沉淀观察（规划 §8.1 5️⃣ 影子运行）。
+                        接在这里而不是另建面板：本弹窗就是红线②（使用日志可见可删）的承载处，
+                        而影子记录存的是 history_id，同样属于使用日志。
+                        候选**本体**仍不展示（设计稿：不对用户可见），这里只给聚合数。 */}
+                    {shadow && (
+                      <div className={styles.card}>
+                        <div className={styles.cardHead}>
+                          <span className={styles.cardIcon}>🧪</span>
+                          <span className={styles.cardTitle}>知识库沉淀观察</span>
+                          {shadow.hits > 0 && (
+                            <button className={styles.cardSmallBtn} onClick={() => void clearShadow()}>
+                              <Trash2 size={11} /> 清空
+                            </button>
+                          )}
+                        </div>
+                        <div className={styles.cardDesc}>
+                          在试算「若自动收录开着会收哪些」。<b>当前不收录任何内容</b>，
+                          只用于对比你实际的选择。只存 id 与时间，不存内容。
+                        </div>
+                        {shadow.hits === 0 ? (
+                          <div className={styles.empty}>还没有命中——规则要求找回 ≥ 5 次、正文 ≥ 200 字且超过 7 天。</div>
+                        ) : (
+                          <div className={styles.memGrid}>
+                            <div className={styles.memItem}><b>{shadow.hits}</b><span>条会被收录</span></div>
+                            <div className={styles.memItem}><b>{shadow.hits_converted}</b><span>条你也真转了</span></div>
+                            <div className={styles.memItem}><b>{shadow.missed}</b><span>条你转了但规则漏了</span></div>
+                            <div className={styles.memItem}>
+                              {/* precision 为 null = 没数据，不能显示 0%（两者对 B2 的结论相反） */}
+                              <b>{shadow.precision === null ? "—" : `${Math.round(shadow.precision * 100)}%`}</b>
+                              <span>命中准确率</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </>
                 )}
               </div>

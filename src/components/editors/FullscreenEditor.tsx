@@ -15,22 +15,12 @@
  */
 import { useRef, useState, useCallback, useEffect, useMemo, Suspense, lazy } from "react";
 import { FolderOpen, Save, X, Maximize2, Minimize2, RefreshCw, ListTree } from "lucide-react";
-import { EditorView, keymap, lineNumbers, highlightActiveLine } from "@codemirror/view";
-import { EditorState, Compartment, type Extension } from "@codemirror/state";
-import { oneDark } from "@codemirror/theme-one-dark";
-import {
-  defaultKeymap,
-  history,
-  historyKeymap,
-  indentWithTab,
-  toggleComment,
-  indentMore,
-  indentLess,
-} from "@codemirror/commands";
-import { syntaxHighlighting, defaultHighlightStyle, indentOnInput } from "@codemirror/language";
-import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search";
+import type { EditorView } from "@codemirror/view";
 import { THEMES, DEFAULT_THEME, type ThemeKey } from "@/lib/theme";
-import { planLinePrefix } from "@/lib/mdLinePrefix";
+// CM6 装配与全套编辑命令已抽到 useCodeMirrorEditor（规划 §8.1 1️⃣），
+// 笔记编辑器将复用同一个 hook。本文件只剩「窗口 + 文件 + 布局」。
+import { useCodeMirrorEditor } from "./useCodeMirrorEditor";
+import { insertPastedImages as savePastedImages } from "./mdImagePaste";
 import { MarkdownOutline } from "./fullscreen/MarkdownOutline";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SkinScene } from "@/components/SkinScene";
@@ -39,13 +29,11 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { save, open, ask } from "@tauri-apps/plugin-dialog";
 import { useFileWatch } from "./useFileWatch";
-import { writeFile, mkdir } from "@tauri-apps/plugin-fs";
-import { appDataDir, join } from "@tauri-apps/api/path";
 import { useToast } from "@/components/Toast";
 import { resolveFullscreenType } from "./fullscreen/registry";
 import { LanguagePicker } from "./fullscreen/LanguagePicker";
 import { loadLanguageSupport, languageFileExtension } from "./fullscreen/languages";
-import type { ViewMode, ShellBridge } from "./fullscreen/types";
+import type { ViewMode } from "./fullscreen/types";
 import styles from "./FullscreenEditor.module.css";
 
 /** 图文混排全屏（Tiptap）——惰加载：其它类型全屏不应为此多拉一份富文本库 */
@@ -71,46 +59,9 @@ interface EditorInit {
   language: string | null;
 }
 
-/**
- * 亮色编辑器外观（CodeMirror chrome）。
- * 使用应用主题 CSS 变量，随 data-theme 自动取色；
- * 语法高亮由 defaultHighlightStyle（亮色）提供。
- */
-const lightEditorChrome = EditorView.theme({
-  "&": { backgroundColor: "var(--card-bg, #fff)", color: "var(--text-primary, #1a1a1a)" },
-  ".cm-content": { caretColor: "var(--text-primary, #1a1a1a)" },
-  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--text-primary, #1a1a1a)" },
-  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
-    { backgroundColor: "var(--accent-light, #E0F2FE)" },
-  ".cm-gutters": { backgroundColor: "transparent", color: "var(--text-muted, #999)", border: "none" },
-  ".cm-activeLine": { backgroundColor: "var(--hover, rgba(0,0,0,0.04))" },
-  ".cm-activeLineGutter": { backgroundColor: "transparent" },
-});
-
 /** 滚动同步的回声抑制窗口（ms）。
  *  要大于一帧（回声 scroll 事件在下一帧才到），又要小到用户主动改滚另一侧时不卡手。 */
 const SCROLL_SYNC_ECHO_MS = 120;
-
-/** Uint8Array → base64。分块是必需的：一次 fromCharCode(...几十万个参数) 会爆栈。 */
-function bytesToBase64(bytes: Uint8Array): string {
-  let s = "";
-  const CHUNK = 0x8000;
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    s += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-  }
-  return btoa(s);
-}
-
-/** 粘贴/拖入图片的 MIME → 扩展名映射（未知类型兜底 png） */
-const IMAGE_EXT: Record<string, string> = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/jpg": "jpg",
-  "image/gif": "gif",
-  "image/webp": "webp",
-  "image/bmp": "bmp",
-  "image/svg+xml": "svg",
-};
 
 // ─── Root Component (独立窗口入口) ───────────────────────
 
@@ -291,32 +242,46 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
   // 大纲侧栏（仅 markdown）。默认收起：短文档开着只是白占地方。
   const [showOutline, setShowOutline] = useState(false);
   /**
-   * 给 CodeMirror 快捷键用的命令转接。
-   *
-   * ❌ 不能让 keymap 直接闭包捕获 handleSave 等：扩展数组只在初始化 effect
-   * （依赖 [loading]）里构建一次，而这些 useCallback 每次 text 变化都会重建。
-   * 捕获旧的 = 保存旧内容。每次渲染把最新实现写进 ref，按键时现取。
+   * 保存命令的「现取」口。handleSave / handleSaveAs 定义在下方（它们依赖
+   * currentFilePath 等状态），而 hook 要在这里就拿到快捷键回调，故用 ref 中转。
+   * 实现在下方每次渲染写回这个 ref——原因同 useCodeMirrorEditor 内部的 hostRef。
    */
-  const cmdsRef = useRef({
-    save: () => {},
-    saveAs: () => {},
-    bold: () => {},
-    italic: () => {},
-  });
+  const saveCmdsRef = useRef({ save: () => {}, saveAs: () => {} });
   const isDragging = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // CodeMirror
-  const editorRef = useRef<HTMLDivElement>(null);
-  const viewRef = useRef<EditorView | null>(null);
-  // 编辑器主题舱：运行时在 oneDark（暗）与 lightEditorChrome（亮）间切换
-  const editorThemeCompartment = useRef(new Compartment());
-  // 代码语言舱：code 类型按 languageName 从 language-data 懒加载语言模式后重配置
-  const languageCompartment = useRef(new Compartment());
   // 当前代码语言（null = 纯文本）：初始来自自动标签派生，工具栏选择器可手动更改
   const [languageName, setLanguageName] = useState<string | null>(
     spec.dynamicLanguage ? initLanguage : null
   );
+
+  /** 文档变化：同步 text 与脏标记。脏标记的基准是 initialContent，留在宿主算。 */
+  const handleDocChange = useCallback((next: string) => {
+    setText(next);
+    setIsDirty(next !== initialContent);
+  }, [initialContent]);
+
+  /** 图片粘贴：逻辑在 mdImagePaste，这里只注入宿主特有的 docDir 与提示通道。 */
+  const handlePastedImages = useCallback((files: File[], view: EditorView) => {
+    void savePastedImages(files, view, {
+      docDir,
+      onError: (msg) => toast(msg, "error"),
+    });
+  }, [docDir, toast]);
+
+  // ─── CodeMirror 内核（装配 + 主题/语言舱 + 全套编辑命令）───
+  const { editorRef, viewRef, bridge, jumpToLine, reconfigureLanguage } = useCodeMirrorEditor({
+    initialText: initialContent,
+    ready: !loading,
+    isDark: isDarkTheme,
+    text,
+    language: spec.language,
+    dynamicLanguage: spec.dynamicLanguage,
+    insertPastedImages: handlePastedImages,
+    onDocChange: handleDocChange,
+    onSave: () => saveCmdsRef.current.save(),
+    onSaveAs: () => saveCmdsRef.current.saveAs(),
+  });
 
   // Preview scroll sync
   const previewScrollRef = useRef<HTMLDivElement>(null);
@@ -409,112 +374,25 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
     }
   };
 
-  // ─── CodeMirror Setup ───────────────────────────────
-  useEffect(() => {
-    if (!editorRef.current || loading) return;
-
-    const updateListener = EditorView.updateListener.of((update) => {
-      if (update.docChanged) {
-        const newText = update.state.doc.toString();
-        setText(newText);
-        setIsDirty(newText !== initialContent);
-      }
-    });
-
-    const extensions: Extension[] = [
-      lineNumbers(),
-      highlightActiveLine(),
-      indentOnInput(),
-      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-      // 类型专属语言模式 + 扩展（markdown 额外带图片粘贴拦截）；
-      // code 类型为动态语言：挂空舱，由语言加载 effect 按 languageName 重配置
-      spec.dynamicLanguage
-        ? languageCompartment.current.of([])
-        : spec.language({ insertPastedImages }),
-      editorThemeCompartment.current.of(isDarkTheme ? oneDark : lightEditorChrome),
-      search(),
-      highlightSelectionMatches(),
-      // ❌ history() 必须显式装：这里是手搭扩展数组、没用 basicSetup，
-      // 而 CodeMirror 6 的撤销栈是独立扩展。漏了它（以及 historyKeymap）
-      // 的后果是 **Ctrl+Z 完全不工作** —— 一个编辑器不能撤销，比缺任何功能都致命。
-      history(),
-      keymap.of([
-        // ⬆ 自定义绑定排在最前：CodeMirror 的 keymap 按数组顺序定优先级，
-        // 放后面会被 defaultKeymap 里的同名绑定（如 macOS 的 emacs 风 Ctrl-B）抢掉。
-        //
-        // ❌ 全部走 cmdsRef 而不直接闭包捕获：本扩展数组只在初始化 effect（依赖 [loading]）
-        // 里构建一次，直接写 handleSave() 会把**那一刻**的闭包冻住，
-        // 而 handleSave 读的是闭包里的 text —— 于是 Ctrl+S 保存的是文件**刚加载时**的内容，
-        // 用户的编辑被静默丢弃。工具栏按钮每次渲染都是新的，所以只有快捷键这条路中招，更难发现。
-        { key: "Mod-s", run: () => { cmdsRef.current.save(); return true; } },
-        { key: "Mod-Shift-s", run: () => { cmdsRef.current.saveAs(); return true; } },
-        // 格式栏的 tooltip 一直写着「粗体 Ctrl+B」「斜体 Ctrl+I」，但从来没实现过。
-        // 提示词说谎比没有提示词更坏：用户按了没反应，只会以为是自己记错了。
-        { key: "Mod-b", run: () => { cmdsRef.current.bold(); return true; } },
-        { key: "Mod-i", run: () => { cmdsRef.current.italic(); return true; } },
-        ...historyKeymap,
-        // search() 早就装了，但搜索面板的快捷键在 searchKeymap 里 ——
-        // 没这一行的话 Ctrl+F 没有任何反应，整个搜索功能根本没入口。
-        ...searchKeymap,
-        ...defaultKeymap,
-        indentWithTab,
-      ]),
-      updateListener,
-      EditorView.lineWrapping,
-    ];
-
-    const state = EditorState.create({
-      doc: initialContent,
-      extensions,
-    });
-
-    const view = new EditorView({
-      state,
-      parent: editorRef.current,
-    });
-
-    viewRef.current = view;
-    view.focus();
-
-    return () => {
-      view.destroy();
-      viewRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading]);
-
-  // 主题明暗变化时重配置 CodeMirror 外观（编辑器已创建后才生效）
-  useEffect(() => {
-    const view = viewRef.current;
-    if (!view) return;
-    view.dispatch({
-      effects: editorThemeCompartment.current.reconfigure(
-        isDarkTheme ? oneDark : lightEditorChrome
-      ),
-    });
-  }, [isDarkTheme]);
+  // CM6 装配与主题重配置已进 useCodeMirrorEditor（本文件顶部那次调用）。
 
   // code 类型：按 languageName 从 language-data 懒加载语言模式（带缓存），
-  // 加载完成后重配置 languageCompartment；null = 纯文本（空扩展）
+  // 拿到后交给 hook 的 reconfigureLanguage 换上语言舱；null = 纯文本。
   useEffect(() => {
     if (!spec.dynamicLanguage || loading) return;
-    const view = viewRef.current;
-    if (!view) return;
     if (!languageName) {
-      view.dispatch({ effects: languageCompartment.current.reconfigure([]) });
+      reconfigureLanguage(null);
       return;
     }
     let cancelled = false;
     loadLanguageSupport(languageName)
       .then((support) => {
-        if (cancelled || !viewRef.current) return;
-        viewRef.current.dispatch({
-          effects: languageCompartment.current.reconfigure(support ?? []),
-        });
+        if (cancelled) return;
+        reconfigureLanguage(support ?? null);
       })
       .catch(() => { /* 加载失败保持纯文本模式 */ });
     return () => { cancelled = true; };
-  }, [languageName, loading, spec.dynamicLanguage]);
+  }, [languageName, loading, spec.dynamicLanguage, reconfigureLanguage]);
 
   // 语言切换后联动默认文件名扩展名（如 剪贴板内容 → 剪贴板内容.rs）；
   // 已打开真实文件时不覆盖文件原名
@@ -534,7 +412,8 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
     if (viewMode !== "preview") {
       viewRef.current?.requestMeasure();
     }
-  }, [viewMode]);
+    // viewRef 来自 useCodeMirrorEditor，eslint 认不出它是稳定 ref，故显式列入（身份恒定，不会多跑）
+  }, [viewMode, viewRef]);
 
   // ─── File Operations ────────────────────────────────
   const handleSave = useCallback(async () => {
@@ -788,223 +667,12 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
     }
   }, []);
 
-  // ─── Format helpers（经 ShellBridge 提供给类型格式栏）───
-  /**
-   * 包裹类格式（粗体/斜体/行内代码……），带**切换**语义。
-   *
-   * ❌ 旧实现只会无条件叠：选中 `**粗体**` 再点一次粗体会变成 `****粗体****`。
-   * 所有编辑器（Typora / VSCode / Obsidian）都是切换。两种已加粗的形态都要认：
-   * 标记包在选区**里**（选了 `**x**`）和包在选区**外**（只双击选了 `x`）。
-   *
-   * ❌ 旧实现还把光标放到了整个标记的**末尾**：无选区时点粗体得到 `****`，
-   * 光标却在四个星号之后 —— 接着打字打在了格式外面。现在放进标记中间。
-   */
-  const insertFormat = useCallback((before: string, after: string = "") => {
-    const view = viewRef.current;
-    if (!view) return;
-    const { state } = view;
-    const { from, to } = state.selection.main;
-    const selected = state.sliceDoc(from, to);
-
-    if (after) {
-      // 切换 A：标记就在选区里
-      if (
-        selected.length >= before.length + after.length &&
-        selected.startsWith(before) &&
-        selected.endsWith(after)
-      ) {
-        const inner = selected.slice(before.length, selected.length - after.length);
-        view.dispatch({
-          changes: { from, to, insert: inner },
-          selection: { anchor: from, head: from + inner.length },
-        });
-        view.focus();
-        return;
-      }
-      // 切换 B：标记在选区两侧（双击选词时的典型情况）
-      const outFrom = from - before.length;
-      const outTo = to + after.length;
-      if (
-        outFrom >= 0 &&
-        outTo <= state.doc.length &&
-        state.sliceDoc(outFrom, from) === before &&
-        state.sliceDoc(to, outTo) === after
-      ) {
-        view.dispatch({
-          changes: { from: outFrom, to: outTo, insert: selected },
-          selection: { anchor: outFrom, head: outFrom + selected.length },
-        });
-        view.focus();
-        return;
-      }
-    }
-
-    view.dispatch({
-      changes: { from, to, insert: before + selected + after },
-      // 有选区：保持选中内容，方便继续叠别的格式、或再点一下取消；
-      // 无选区：光标落在标记**中间**，直接就能打字。
-      selection: selected
-        ? { anchor: from + before.length, head: from + before.length + selected.length }
-        : { anchor: from + before.length },
-    });
-    view.focus();
-  }, []);
-
-  /**
-   * 行首块级前缀（标题/引用/列表/任务），支持**多行选区**与**切换**。
-   *
-   * ❌ 旧实现只拿 `selection.main.from` 那一行：选中五行点「无序列表」，
-   * 只有第一行变成 `- `。而“选一段文字转列表”是 md 编辑器最高频的操作之一。
-   * 同时旧实现无条件插入，重复点「引用」会叠成 `> > > `。
-   * 具体语义与边界情况见 planLinePrefix（那里带单测）。
-   */
-  const insertLinePrefix = useCallback((prefix: string) => {
-    const view = viewRef.current;
-    if (!view) return;
-    const { state } = view;
-    const sel = state.selection.main;
-    const firstNo = state.doc.lineAt(sel.from).number;
-    const lastNo = state.doc.lineAt(sel.to).number;
-
-    const lines = [];
-    for (let n = firstNo; n <= lastNo; n++) lines.push(state.doc.line(n));
-    const plan = planLinePrefix(
-      lines.map((l) => l.text),
-      prefix,
-    );
-
-    const changes = [];
-    for (let i = 0; i < lines.length; i++) {
-      const p = plan[i];
-      if (!p) continue;
-      changes.push({
-        from: lines[i].from,
-        to: lines[i].from + p.replaceLen,
-        insert: p.insert,
-      });
-    }
-    if (changes.length) view.dispatch({ changes });
-    view.focus();
-  }, []);
-
-  /** 大纲点击：把光标放到该行行首并滚到顶部。
-   *  行号要钳进文档范围 —— 大纲算的是 React state 里的 text，极端情况下可能
-   *  比 CodeMirror 当前文档新一拍，doc.line() 拿到越界行号会直接抛。 */
-  const jumpToLine = useCallback((line: number) => {
-    const view = viewRef.current;
-    if (!view) return;
-    const info = view.state.doc.line(Math.max(1, Math.min(line, view.state.doc.lines)));
-    view.dispatch({
-      selection: { anchor: info.from },
-      effects: EditorView.scrollIntoView(info.from, { y: "start", yMargin: 24 }),
-    });
-    view.focus();
-  }, []);
-
-  // 每次渲染把最新实现写进 ref，供 CodeMirror 快捷键现取（原因见 cmdsRef 声明处）。
-  cmdsRef.current = {
+  // 每次渲染把最新实现写进 ref，供 CodeMirror 快捷键现取（原因见 saveCmdsRef 声明处）。
+  // 粗体/斜体已在 hook 内部直接接 insertFormat，不必再经这里转一手。
+  saveCmdsRef.current = {
     save: () => void handleSave(),
     saveAs: () => void handleSaveAs(),
-    bold: () => insertFormat("**", "**"),
-    italic: () => insertFormat("*", "*"),
   };
-
-  /** 整体替换文档（JSON 格式化/压缩用），经 CodeMirror dispatch 自动触发脏标记 */
-  const replaceDoc = useCallback((next: string) => {
-    const view = viewRef.current;
-    if (!view) return;
-    view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: next },
-    });
-    view.focus();
-  }, []);
-
-  /** 跳转到指定行（1 起）并居中显示 — JSON 错误徽章点击定位用 */
-  const gotoLine = useCallback((line: number) => {
-    const view = viewRef.current;
-    if (!view) return;
-    const doc = view.state.doc;
-    const ln = doc.line(Math.max(1, Math.min(line, doc.lines)));
-    view.dispatch({
-      selection: { anchor: ln.from },
-      effects: EditorView.scrollIntoView(ln.from, { y: "center" }),
-    });
-    view.focus();
-  }, []);
-
-  // ─── 代码命令（注释/缩进，经 CodeMirror 命令实现，跟随语言语法）───
-  const bridgeToggleComment = useCallback(() => {
-    const view = viewRef.current;
-    if (view) { toggleComment(view); view.focus(); }
-  }, []);
-  const bridgeIndentMore = useCallback(() => {
-    const view = viewRef.current;
-    if (view) { indentMore(view); view.focus(); }
-  }, []);
-  const bridgeIndentLess = useCallback(() => {
-    const view = viewRef.current;
-    if (view) { indentLess(view); view.focus(); }
-  }, []);
-
-  const bridge: ShellBridge = useMemo(
-    () => ({
-      text, replaceDoc, gotoLine, insertFormat, insertLinePrefix,
-      toggleComment: bridgeToggleComment,
-      indentMore: bridgeIndentMore,
-      indentLess: bridgeIndentLess,
-    }),
-    [text, replaceDoc, gotoLine, insertFormat, insertLinePrefix, bridgeToggleComment, bridgeIndentMore, bridgeIndentLess]
-  );
-
-  // ─── 图片粘贴 / 拖入（markdown 专属，经 spec.language 的 ctx 注入）───
-  /**
-   * 粘贴/拖入的图片存哪里：
-   * - 有文档路径 → 存到文档旁边的 `assets/`，插入**相对路径**
-   * - 无文档路径（剪贴板内容模式）→ 仍落 $APPDATA/md-editor-images
-   *
-   * ❌ 旧实现一律存 $APPDATA 并插**绝对路径**，两个真问题：
-   * ① 文档拷给别人 / 换台机器，图全裂（路径指向本机 APPDATA）；
-   * ② 用户删掉文档里的引用后，文件永远留在 APPDATA，**没任何清理入口**——
-   *   而且因为别的文档/卡片也可能引用它，没法安全地自动 GC。
-   * 存到文档旁边后，图跟着文档走：拷走目录就一起拷走，删目录就一起消失。
-   * （写文档旁边得走后端命令：fs 插件的 scope 只有 $APPDATA，跟保存同一个原因。）
-   */
-  const insertPastedImages = useCallback(async (files: File[], view: EditorView) => {
-    try {
-      const refs: string[] = [];
-      for (const file of files) {
-        const ext = IMAGE_EXT[file.type] || "png";
-        const name = `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        if (docDir) {
-          const rel = `assets/${name}`;
-          await invoke("write_binary_file_base64", {
-            path: `${docDir}/${rel}`,
-            base64Data: bytesToBase64(bytes),
-          });
-          // 相对路径 + < > 包裹（兼容含空格的目录名）
-          refs.push(`![image](<./${rel}>)`);
-        } else {
-          const imgDir = await join(await appDataDir(), "md-editor-images");
-          await mkdir(imgDir, { recursive: true });
-          const fullPath = await join(imgDir, name);
-          await writeFile(fullPath, bytes);
-          refs.push(`![image](<${fullPath.replace(/\\/g, "/")}>)`);
-        }
-      }
-
-      const insertText = refs.join("\n");
-      const { from, to } = view.state.selection.main;
-      view.dispatch({
-        changes: { from, to, insert: insertText + "\n" },
-        selection: { anchor: from + insertText.length + 1 },
-      });
-      view.focus();
-    } catch (e) {
-      console.error("[图片粘贴] 保存失败:", e);
-      toast(`图片保存失败：${e instanceof Error ? e.message : String(e)}`, "error");
-    }
-  }, [docDir, toast]);
 
   // ─── Scroll sync（仅 markdown 启用）─────────────────
   /**
@@ -1031,7 +699,8 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
     const [src, dst] = side === "editor" ? [editorEl, previewEl] : [previewEl, editorEl];
     const ratio = src.scrollTop / (src.scrollHeight - src.clientHeight || 1);
     dst.scrollTop = ratio * (dst.scrollHeight - dst.clientHeight);
-  }, []);
+    // editorRef 来自 useCodeMirrorEditor，eslint 认不出它是稳定 ref，故显式列入
+  }, [editorRef]);
 
   const handleEditorScroll = useCallback(() => syncScroll("editor"), [syncScroll]);
   const handlePreviewScroll = useCallback(() => syncScroll("preview"), [syncScroll]);
@@ -1054,7 +723,8 @@ function FullscreenInner({ sourceId, initContent, initFilePath, contentType, ini
       if (editorScroller) editorScroller.removeEventListener("scroll", handleEditorScroll);
       if (previewEl) previewEl.removeEventListener("scroll", handlePreviewScroll);
     };
-  }, [handleEditorScroll, handlePreviewScroll, viewMode, spec.scrollSync, loading]);
+    // editorRef 同上：来自 hook，eslint 要求列入（稳定 ref，不影响重跑时机）
+  }, [handleEditorScroll, handlePreviewScroll, viewMode, spec.scrollSync, loading, editorRef]);
 
   // ─── Resize drag ────────────────────────────────────
   const handleResizeStart = useCallback((e: React.MouseEvent) => {

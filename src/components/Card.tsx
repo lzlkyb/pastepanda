@@ -9,6 +9,8 @@ import { URL_SCHEME_RE, urlHost, urlPathname, fileUrlToLocalPath } from "@/lib/u
 import { thumbnailSourcePath } from "@/lib/richContent";
 import { parseDiagram, diagramTitle } from "@/lib/diagram/types";
 import { applicableTransforms, getTransform } from "@/lib/transforms";
+import { extractNoteDraft } from "@/lib/notes/extract";
+import { openNoteForCard } from "@/lib/notes/open";
 import { useDialogStore } from "@/stores/dialogStore";
 import type { CSSProperties } from "react";
 import SourceBadge from "@/components/SourceBadge";
@@ -134,6 +136,8 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
   /** popover 估计高度（预览+动作条+按钮）；卡片距顶小于它 → 翻转到下方，避免被裁切 */
   const POPOVER_EST_HEIGHT = 360;
   const config = useAppStore((s) => s.config);
+  // 已转笔记？只读 store 里那个全量 Set（一屏几十张卡片，逐张发 IPC 不可接受）
+  const hasNote = useAppStore((s) => s.noteHistoryIds.has(item.id));
   const clickTimerRef = useRef<number | null>(null);
   const closeTimerRef = useRef<number | null>(null);
   const feedbackTimerRef = useRef<number | null>(null);
@@ -428,6 +432,25 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
       {/* 栈序号角标（渲染在 cardWrap 层，避免被卡片 overflow:hidden 裁剪） */}
       {stackOrder ? <span className={`${styles.stackBadge}${stackOrder === 1 ? ` ${styles.stackBadgeNext}` : ""}`}>{stackOrder}</span> : null}
       {stackDone ? <span className={`${styles.stackBadge} ${styles.stackBadgeDone}`}>✓</span> : null}
+
+      {/* 已转笔记角标（知识库 A 阶段）。同样画在 cardWrap 层，否则被卡片 overflow:hidden 裁掉。
+          可点：直接打开那条笔记编辑。stopPropagation 是必需的——不阻止就会同时触发
+          卡片的 onClick（选中/复制），变成“点角标顺手把卡片内容复制了”。 */}
+      {hasNote ? (
+        <button
+          type="button"
+          className={styles.noteBadge}
+          title="已转为笔记 · 点击编辑"
+          aria-label="编辑笔记"
+          onClick={(e) => {
+            e.stopPropagation();
+            void openNoteForCard(item, ocrState);
+          }}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          📝
+        </button>
+      ) : null}
 
       {/* ★ 悬停 Popover 气泡弹窗（移到卡片外部，避免被 card overflow:hidden 裁剪） */}
       <AnimatePresence>
@@ -958,6 +981,17 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
   // getEnabledRules 返回的是引用稳定的共享快照，可以直接当 useSyncExternalStore 的快照用。
   const enabledRules = useSyncExternalStore(subscribeRules, getEnabledRules);
 
+  // 转为笔记（知识库 A 阶段 · 规划 §8.1 3️⃣）。
+  //
+  // 初稿在这里算而不是点菜单时再算：算不出来（null）就要拿它决定菜单项要不要出现。
+  const noteDraft = useMemo(() => extractNoteDraft(item, ocrState), [item, ocrState]);
+  // 这张卡片已转过没——只读 store 里那个全量集合，不逐张发 IPC
+  const hasNote = useAppStore((s) => s.noteHistoryIds.has(item.id));
+  // 幂等判断与弹窗打开全在 openNoteForCard 里（规则 #11）——角标点击走同一条路
+  const handleConvertToNote = useCallback(() => {
+    void openNoteForCard(item, ocrState);
+  }, [item, ocrState]);
+
   const menuItems = useMemo(() => createCardMenuItems({
     onEdit: (item.type === "text" || item.type === "diagram") && onEdit ? () => onEdit(item) : undefined,
     onEditTags: onEditTags ? () => onEditTags(item) : undefined,
@@ -1008,10 +1042,13 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     onManageRegexRules,
     onConfirmAutoTags: hasAutoTags ? handleConfirmAutoTags : undefined,
     onRemoveAutoTags: hasAutoTags ? handleRemoveAutoTags : undefined,
+    // 转为笔记（知识库 A 阶段）。noteDraft 为 null 时**不注入回调** → 菜单里根本不出现这一项
+    onConvertToNote: noteDraft ? handleConvertToNote : undefined,
+    hasNote,
     hasUrl,
     hasAutoTags,
     pinned: item.pinned,
-  }), [item, subType, hasUrl, fileTarget, canQrCode, hasAutoTags, toast, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, handlePasteTransform, handleOpenHub, hubAvailable, handleAddSnippet, handleOpenUrl, handleOpenFile, handleRevealFile, handleConfirmAutoTags, handleRemoveAutoTags, ocrState, enabledRules]);
+  }), [item, subType, hasUrl, fileTarget, canQrCode, hasAutoTags, toast, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, handlePasteTransform, handleOpenHub, hubAvailable, handleAddSnippet, handleOpenUrl, handleOpenFile, handleRevealFile, handleConfirmAutoTags, handleRemoveAutoTags, ocrState, enabledRules, noteDraft, hasNote, handleConvertToNote]);
 
   return (
     <Card item={item} selected={selected} onClick={onClick} onDoubleClick={onDoubleClick} index={index} imageState={imageState} searchKeyword={searchKeyword} onRetryImage={onRetryImage} pasting={pasting} menuItems={menuItems} onEdit={onEdit} disablePreview={disablePreview} stackOrder={stackOrder} stackDone={stackDone} ocrState={ocrState} />

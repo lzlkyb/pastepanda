@@ -51,6 +51,24 @@ export async function initBackend(): Promise<() => void> {
     logger.warn("加载标签失败", e);
   }
 
+  // 加载「已转过笔记的卡片」集合（知识库 A 阶段）。
+  // 必须在首屏就拉：卡片右上角的 📝 角标靠它。不拉的话已转过的卡片会看起来像没转过，
+  // 用户就会去点「转为笔记」（虽然幂等护着，但文案会误导）。
+  try {
+    const { fetchNoteHistoryIds } = await import("./notes");
+    await fetchNoteHistoryIds();
+  } catch (e) {
+    logger.warn("加载笔记角标集失败，卡片上的 📝 会暂时不显示", e);
+  }
+
+  // 自动收录的影子运行（规划 §8.1 5️⃣）。**不收录任何东西**，只记「如果开着会收哪几条」。
+  //
+  // 不 await：它对用户不可见，不应拖慢首屏。失败也不影响任何功能（api 层已吐日志）。
+  void (async () => {
+    const { kbShadowRun } = await import("./kbShadow");
+    await kbShadowRun();
+  })();
+
   // 注册云端 AI 动作（定义以后端为单一数据源，故在运行时拉取）。
   // 失败不影响其他功能——最多就是变换中心里没有 AI 那一组。
   try {

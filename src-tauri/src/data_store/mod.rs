@@ -1,6 +1,11 @@
 mod history;
 mod group;
 mod tag;
+mod kb_inbox;
+mod kb_shadow;
+mod note;
+mod note_folder;
+mod note_revision;
 mod image_ocr;
 mod snippet;
 mod config;
@@ -46,6 +51,11 @@ pub use quota::{
     QuotaBlock, QuotaInfo, RedeemResult, SignResult, generate_redeem_code, redeem_secret,
     verify_redeem_code, DAILY_SPEND_CAP, INITIAL_GRANT, SIGN_CAP,
 };
+pub use kb_inbox::InboxCandidate;
+pub use kb_shadow::ShadowStats;
+pub use note::Note;
+pub use note_folder::{NoteFolder, MAX_FOLDER_DEPTH};
+pub use note_revision::{NoteRevision, NoteRevisionMeta, MAX_REVISIONS};
 pub use stack_templates::{
     StackTemplate, StackTemplateItem, MAX_STACK_TEMPLATE_ITEMS, MAX_STACK_TEMPLATE_NAME_CHARS,
 };
@@ -491,7 +501,117 @@ impl DataStore {
                 items       TEXT NOT NULL DEFAULT '[]',
                 created_at  TEXT NOT NULL,
                 used_at     TEXT
-            );",
+            );
+
+            -- ===== 知识库 A 阶段（D15 三模式里的「知识」模式）=====
+            -- 源：docs/个人知识库与笔记-规划.md §6。
+            -- 与规划原 DDL 有三处**有意偏离**，都是照真实代码纠正的（规划已同步）：
+            --   ① note_tags.tag_id 用 TEXT 而不是规划写的 INTEGER——tags.id 是
+            --      TEXT PRIMARY KEY，INTEGER 没法外键到它；
+            --   ② created_at / updated_at 用 TEXT 而不是 INTEGER——全库时间戳惯例是
+            --      '%Y-%m-%d %H:%M:%S' 字符串，用 epoch 会让 notes 成为唯一例外，
+            --      跟 history.time 的排序口径分裂；
+            --   ③ note_tags 补了 source 列（history_tags 有）——B1 要加 AI 自动标签，
+            --      现在不带将来还得迁一次（同规划给 source_agent 的理由）。
+            CREATE TABLE IF NOT EXISTS notes (
+                id           TEXT PRIMARY KEY,
+                history_id   TEXT,                     -- 来源卡片，可空（独立新建的笔记没有来源）
+                title        TEXT NOT NULL DEFAULT '',
+                content      TEXT NOT NULL DEFAULT '', -- Markdown 正文；[[..]] 原样保存，A 阶段不解析（D7）
+                created_at   TEXT NOT NULL,
+                updated_at   TEXT NOT NULL,
+                -- D13：将来由外部 agent 写入的笔记记来源（agent:claude-code / agent:cursor…）。
+                -- M4 才启用，但 A 阶段建表就带上，免二次迁移。
+                source_agent TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_notes_history ON notes(history_id);
+            -- 规划只列了 idx_notes_history；这条是额外加的：笔记列表默认按
+            -- updated_at DESC 排（同 history 有 idx_history_time）。
+            CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at);
+
+            -- 笔记标签：复用既有 tags 主表，模式同 history_tags（D2）。
+            -- FK 是真生效的（下方 PRAGMA foreign_keys=ON），所以删笔记会自动清关联行。
+            CREATE TABLE IF NOT EXISTS note_tags (
+                note_id TEXT NOT NULL,
+                tag_id  TEXT NOT NULL,
+                source  TEXT NOT NULL DEFAULT 'manual',
+                PRIMARY KEY (note_id, tag_id),
+                FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
+                FOREIGN KEY (tag_id)  REFERENCES tags(id)  ON DELETE CASCADE
+            );
+
+            -- 待沉淀区的「忽略」记忆（§1.6 闸门二，A 阶段即需建表）。
+            -- 粒度是**整卡忽略**（按 history_id 主键）——用户说「这条别烦我」更符合直觉。
+            -- **故意不建到 history 的外键**：卡片被清理后这里留孤儿行，量小不清，
+            -- 查询时自然过滤掉（规划 §6 生命周期 ② 已定此口径）。
+            CREATE TABLE IF NOT EXISTS kb_inbox_dismissed (
+                history_id TEXT PRIMARY KEY,
+                reason     TEXT NOT NULL,   -- star / research / repeat / rule / ocr / ai
+                created_at TEXT NOT NULL
+            );
+
+            -- 自动收录的**影子运行**记录（§1.6 自动收录档，A 阶段）。
+            -- 它只回答一个问题：「如果自动收录开着，会收哪几条？」——**不落库、不影响任何界面**。
+            -- 一周后拿它与用户实际手动转的集合对比算准确率，≥ 60% 才在 B2 真开。
+            --
+            -- 为何不另存「用户手动转了哪些」：`notes.history_id` 已经就是那个集合
+            -- （A 阶段没有任何自动写入路径，有笔记就是人手动转的）。再记一份就是两份真相。
+            --
+            -- `rule_ver` 必须有：阈值（5 / 200 / 7 天）全是拍的，调了之后旧命中不能
+            -- 跟新命中混算准确率，否则这个度量本身就废了。
+            CREATE TABLE IF NOT EXISTS kb_autofile_shadow (
+                history_id   TEXT NOT NULL,
+                rule_ver     TEXT NOT NULL,   -- 阈值组合的指纹，见 kb_shadow.rs 的 RULE_VER
+                first_hit_at TEXT NOT NULL,   -- 首次命中（算「一周后」的基准）
+                last_hit_at  TEXT NOT NULL,
+                hit_rounds   INTEGER NOT NULL DEFAULT 1,  -- 命中过几轮，规则稳定性的旁证
+                PRIMARY KEY (history_id, rule_ver)
+            );
+
+            -- 笔记文件夹（B1 #1）。**规划 §6 未预留此表**，形态由设计稿补定：
+            -- design/PastePanda-知识库视图-设计稿.html §5。
+            --
+            -- 邻接表而不是物化路径：改名/移动是文件夹最高频的操作，邻接表只改一行；
+            -- 物化路径要批量改所有后代，漏一行就是孤儿路径。代价是**必须自己防环**
+            -- （详见 note_folder.rs 的 folder_move）。
+            --
+            -- ❗ `ON DELETE CASCADE` 在这里只级联删**子文件夹**。笔记绝不随文件夹删——
+            --   那一条靠 notes.folder_id 的 ON DELETE SET NULL（见下方迁移）。
+            CREATE TABLE IF NOT EXISTS note_folders (
+                id         TEXT PRIMARY KEY,
+                name       TEXT NOT NULL,
+                parent_id  TEXT,                       -- NULL = 顶层
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (parent_id) REFERENCES note_folders(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_note_folders_parent ON note_folders(parent_id);
+
+            -- 版本快照（D8 / B1 #4）。design/PastePanda-版本快照-设计稿.html §5。
+            --
+            -- 存的是**旧版本**：每次 note_update 在 UPDATE 之前把当时的 notes 行拍一张。
+            -- 所以这张表里永远不含「当前版」（当前版只在 notes），不会多一份冗余副本。
+            --
+            -- 🔴 `FOREIGN KEY` 是**规划 §6 漏写的**（只写了 note_id TEXT NOT NULL）。
+            --   PRAGMA foreign_keys 真开着，不补就是：删一条笔记，它的 20 份历史
+            --   永远留在库里无人回收。与 note_tags 同口径。
+            CREATE TABLE IF NOT EXISTS note_revisions (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                note_id    TEXT NOT NULL,
+                title      TEXT NOT NULL,
+                content    TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_note_rev ON note_revisions(note_id, created_at);",
+        )?;
+
+        // 笔记全文索引。**常规 FTS5，不是外部内容表**——同 history_fts 的取舍
+        // （见下方 history_fts 那段长注释：外部内容表与「手工塞 ngram 串」根本矛盾）。
+        // 列序 (title, content, pinyin) 照规划 §6。
+        // 新表，没有存量要回填（不像 history_fts / image_ocr_fts 那样需要）。
+        conn.execute_batch(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(title, content, pinyin);",
         )?;
 
         // 数据库迁移：为旧数据库添加 pinyin_initials 列（如果不存在）
@@ -854,6 +974,38 @@ impl DataStore {
                     log::warn!("[DataStore] history.search_hit_count 列已存在，忽略: {}", e);
                 } else {
                     log::error!("[DataStore] 添加 history.search_hit_count 列失败: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
+        // 数据库迁移：为 notes 添加 folder_id 列（B1 #1 文件夹）。
+        //
+        // **这是迁移而不是建表的一部分**：notes 在 A 阶段就已建好并有了真实数据，
+        // 往 CREATE TABLE 里加列对已存在的表无效（IF NOT EXISTS 直接跳过）。
+        //
+        // ❗ `REFERENCES ... ON DELETE SET NULL` 是本条的全部意义：
+        //   删文件夹**绝不能删笔记**，只是把它们变回「未分类」。
+        //   （note_folders.parent_id 那边是 CASCADE，只级联子文件夹——两个行为故意不同。）
+        //   SQLite 允许 ALTER TABLE ADD COLUMN 带 REFERENCES，前提是默认值为 NULL——此处正是。
+        let has_note_folder: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('notes') WHERE name = 'folder_id'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_note_folder {
+            if let Err(e) = conn.execute_batch(
+                "ALTER TABLE notes ADD COLUMN folder_id TEXT
+                     REFERENCES note_folders(id) ON DELETE SET NULL;
+                 CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder_id);",
+            ) {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] notes.folder_id 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 notes.folder_id 列失败: {}", e);
                     return Err(e);
                 }
             }

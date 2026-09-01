@@ -1,0 +1,89 @@
+/* ModeSwitcher.module.css — 顶栏三模式切换器（D15）
+
+   改这个文件前先读这段——第一版在真机上「看不出是个切换点」，原因有三层：
+
+   ① **顶栏背景是透明的**：`--header-bg-start/end` 在**六个主题里全部是 transparent**
+      （`theme.css`），顶栏底下直接是皮肤场景层 `SkinScene`。所以不能按「白底上的控件」去调色。
+   ② **漏了真页签有的两条**：`.segmented`（`TopBar.module.css`）带 `backdrop-filter: blur(10px)`
+      与外投影，第一版只抄了 inset。没毛玻璃就跟场景糊在一起，没外投影就不浮起来。
+   ③ **补回那两条还不够**：真页签是 36px 高、撑满整行，靠体量宣告自己是控件；
+      这个只有 22px 高 / 138px 宽，靠不上体量。
+
+   所以滑块用 **`--accent-solid` 实色 + 白字**，而不是页签那种半透白玻璃：
+   半透白叠浅色场景必然看不见，**实色把“背景亮度”这个变量整个抽掉了**。
+   用 `--accent-solid` 而不是 `--accent`：前者就是为「白字压其上」准备的，
+   六个主题的对比度都已调到 ≥ 4.5:1（见 theme.css 里那排注释）。 */
+
+.modes {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9px;
+  /* 55% 而不是 32%：要在透明顶栏 + 浅色皮肤场景上立得住 */
+  background: color-mix(in srgb, var(--seg-active-bg) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--seg-active-bg) 75%, transparent);
+  /* 毛玻璃 + 外投影：与 `.segmented` 同源，投影比它的 .06 重一点（因为这个控件小） */
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--seg-active-bg) 60%, transparent),
+    0 2px 8px rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
+}
+
+.mode {
+  position: relative;
+  height: 22px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  transition: color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+
+/* hover 得比容器的 55% 更实才看得出变化 */
+.mode:hover:not(.modeActive) {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--seg-active-bg) 80%, transparent);
+}
+
+.modeActive {
+  /* 白字写死：滑块是 --accent-solid 实底，而该令牌就是为「白字压其上」调的
+     （theme.css 里六个主题都注了对比度 ≥ 4.5:1）。
+     这里不能用 --text-primary：深色主题下它是亮色，亮色字压亮色底就看不见了 */
+  color: #fff;
+  font-weight: 600;
+  /* 滑块单独一层（.indicator），按钮自身保持透明——照搬 .segItemActive 的做法 */
+  background: transparent;
+}
+
+.indicator {
+  position: absolute;
+  inset: 0;
+  border-radius: 7px;
+  /* 实色而不是页签那种半透白玻璃：顶栏是透的，半透白叠浅色皮肤场景
+     必然看不见（真机已验证）。实色把「背景亮度」这个变量整个抽掉了。 */
+  background: var(--accent-solid);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  z-index: 0;
+}
+
+/* 文字压在滑块之上 */
+.label {
+  position: relative;
+  z-index: 1;
+}
+
+/* 注意：这里**故意没有** blossom 主题的特例。
+   页签那边需要特例（把白玻璃滑块染粉），是因为它用的是 --seg-active-bg（=#fff），
+   跟主题无关；而这里用的 --accent-solid 本身就随主题变（blossom 下是 #CE3B70），
+   再写特例是多余的。 */

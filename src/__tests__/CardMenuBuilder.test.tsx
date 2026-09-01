@@ -266,3 +266,39 @@ describe("类型工具", () => {
     expect(labels(build({ onQrCode: () => {} }))).not.toContain("生成二维码");
   });
 });
+
+describe("转为笔记（知识库 A 阶段）", () => {
+  it("不传 onConvertToNote 就根本没这一项（file 卡片走这条，而不是先显示再报错）", () => {
+    const l = labels(build({}));
+    expect(l).not.toContain("转为笔记");
+    expect(l).not.toContain("编辑笔记");
+  });
+
+  it("未转过时文案是「转为笔记」", () => {
+    expect(labels(build({ onConvertToNote: () => {} }))).toContain("转为笔记");
+  });
+
+  it("已转过时文案改成「编辑笔记」——幂等路径下点它是去编辑旧那条，不是又存一份", () => {
+    const l = labels(build({ onConvertToNote: () => {}, hasNote: true }));
+    expect(l).toContain("编辑笔记");
+    expect(l).not.toContain("转为笔记");
+  });
+
+  it("放在顶层而不是「更多操作」子菜单里（知识库主入口，藏二级就没人发现）", () => {
+    const items = build({ onConvertToNote: () => {}, onEditTags: () => {} });
+    expect(labels(items)).toContain("转为笔记");
+    expect(subLabels(items, "更多操作")).not.toContain("转为笔记");
+  });
+
+  it("排在「删除」之前（删除始终是最后一项）", () => {
+    const l = labels(build({ onConvertToNote: () => {} }));
+    expect(l.indexOf("转为笔记")).toBeLessThan(l.indexOf("删除"));
+    expect(l[l.length - 1]).toBe("删除");
+  });
+
+  it("点它调的就是传进来的回调", () => {
+    const spy = vi.fn();
+    build({ onConvertToNote: spy }).find((i) => i.label === "转为笔记")?.onClick?.();
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+});

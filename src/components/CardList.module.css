@@ -268,6 +268,43 @@
   animation: none;
 }
 
+/* 已转笔记角标（知识库 A 阶段）。右上角，与左上角的栈序号错开。
+   不用实色圆底：它不是一个需要抢注意力的状态（栈序号是），只是个“这条已沉淀过”的小标记。
+   默认半透，hover 才变清楚——它可点，得让人看得出来。 */
+.noteBadge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--card-border);
+  border-radius: 50%;
+  background: var(--card-bg);
+  color: inherit;
+  font-size: 9px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 0.15s, transform 0.15s, box-shadow 0.15s;
+  z-index: 2;
+}
+
+.noteBadge:hover {
+  opacity: 1;
+  transform: scale(1.12);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.noteBadge:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  opacity: 1;
+}
+
 @keyframes stackBadgePulse {
   0%, 100% { box-shadow: 0 2px 6px rgba(234, 88, 12, 0.4), 0 0 0 0 rgba(234, 88, 12, 0.35); }
   50% { box-shadow: 0 2px 6px rgba(234, 88, 12, 0.4), 0 0 0 5px rgba(234, 88, 12, 0); }

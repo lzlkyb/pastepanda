@@ -1,0 +1,317 @@
+/* NoteDialog.module.css — 转为笔记 / 编辑笔记弹窗（知识库 A 阶段）。
+   宽度走全局 .dialog-box.w520（已存在，正好是设计稿要的 520px），这里只管内部。 */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  min-height: 0; /* 不写就不收缩，下面的 split 会把弹窗顶出 max-height */
+  flex: 1;
+}
+
+.titleInput {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--input-bg, var(--card-bg));
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.titleInput:focus {
+  border-color: var(--accent);
+}
+
+/* ===== 来源行 ===== */
+
+.sourceRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+
+.sourceChip {
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--hover);
+  color: var(--text-secondary);
+}
+
+.sourceLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sourceLink:hover {
+  background: var(--hover);
+}
+
+/* 原卡片已删：置灰不可点。不隐藏整行——用户需要知道这条笔记曾有来源 */
+.sourceGone {
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--hover);
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+/* ===== 左编辑 / 右预览 ===== */
+
+.split {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  min-height: 240px;
+  /* 不给 max-height：弹窗自己的 .w520 max-height:82vh 已经制住了总高，
+     这里再制一道只会在小屏上双重限高 */
+  min-width: 0;
+}
+
+.editPane,
+.previewPane {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: auto;
+  background: var(--card-bg);
+}
+
+.previewPane {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+/* CodeMirror 的滚动容器得填满左栏，否则短文本时编辑区只有一行高、
+   点空白处不能聚焦 */
+.editPane :global(.cm-editor) {
+  height: 100%;
+}
+
+/* ===== 底部按钮条 ===== */
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.footerRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ghostBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.ghostBtn:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+.primaryBtn {
+  height: 28px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 7px;
+  /* 实色配白字必须用 --accent-solid：--accent 在部分主题下是偏亮的色，
+     白字压上去对比度不够（同 stackBadge 那里的结论） */
+  background: var(--accent-solid, var(--accent));
+  color: #fff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.primaryBtn:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.primaryBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ===== 版本历史视图（B1 #4 / D8） =====
+   设计稿 §2·丙：占据编辑区的位置，不叠弹窗、不开侧栏。
+   与 .split 同一套盒模型（flex:1 + min-height），所以两个宿主都能直接换上。 */
+
+.histWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  flex: 1;
+  min-height: 240px;
+  min-width: 0;
+}
+
+.histBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.histBack {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.histBack:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+.histCount {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* 列表限高：预览区必须留得下，否则 20 份历史会把预览挤没 */
+.histList {
+  flex: 0 1 auto;
+  max-height: 148px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg);
+}
+
+.histRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 9px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.histRow + .histRow {
+  border-top: 1px solid var(--border-color);
+}
+
+.histRow:hover {
+  background: var(--hover);
+}
+
+.histRowActive,
+.histRowActive:hover {
+  background: color-mix(in srgb, var(--accent-color, #4a9eff) 15%, transparent);
+}
+
+.histWhen {
+  flex-shrink: 0;
+}
+
+.histNow {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--success-color, #3fb950);
+}
+
+.histMeta {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.histEmpty {
+  padding: 12px 10px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+/* 预览：等宽 + 保留换行。**只读全文**，不做 diff（项目零 diff 能力，见设计稿 §0） */
+.histPreview {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font: 11.5px/1.6 var(--font-mono, ui-monospace, Consolas, monospace);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.histFooter {
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.histRestore {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent-color, #4a9eff);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.histRestore:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

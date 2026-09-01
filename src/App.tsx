@@ -33,6 +33,12 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ConfirmDialogHost } from "@/components/ConfirmDialogHost";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { DiffDialog } from "@/components/DiffDialog";
+import { ToolboxView } from "@/components/ToolboxView";
+import { KnowledgeView } from "@/components/KnowledgeView";
+import type { ToolHandlers } from "@/lib/toolbox";
+
+// 惰加载：它拉进 CodeMirror + Markdown 渲染，而大多数会话根本不会打开笔记
+const NoteDialog = lazy(() => import("@/components/notes/NoteDialog").then((m) => ({ default: m.NoteDialog })));
 
 // 修复 Low：应用更名后迁移历史版本遗留的 pasteship_* localStorage 键（幂等，仅执行一次）
 migrateLegacyStorageKeys();
@@ -49,6 +55,7 @@ const SequentialPasteDialog = lazy(() => import("@/components/SequentialPasteDia
 const UpdateNotesDialog = lazy(() => import("@/components/UpdateNotesDialog").then(m => ({ default: m.UpdateNotesDialog })));
 
 function App() {
+  const appMode = useAppStore((s) => s.appMode);
   const config = useAppStore((s) => s.config);
   const history = useAppStore((s) => s.history);
   const groups = useAppStore((s) => s.groups);
@@ -803,6 +810,7 @@ function App() {
       if (d.profileOpen) { d.closeProfile(); return; }
       if (d.learningsOpen) { d.closeLearnings(); return; }
       if (d.editorItem) { return; } // 编辑器自带 Esc（含未保存确认），全局不抢；也不隐藏窗口
+      if (d.noteDraft) { return; }   // 同上：NoteDialog 自己接 Esc（脏数据要弹确认）。代关就会跳过确认
       if (showSettings) { setShowSettings(false); return; }
       if (showSequential) { setShowSequential(false); return; }
       if (showSnippets) { setShowSnippets(false); return; }
@@ -983,6 +991,20 @@ function App() {
     );
   }
 
+  // 工具箱回调表（D15）：以前这九个是 TopBar 的 props，现在直接给主体区的 ToolboxView。
+  // 不用 useMemo：工具模式下才渲染，且 ToolboxView 没做 memo，缓存了也不少一次渲染。
+  const toolHandlers: ToolHandlers = {
+    sequential: () => setShowSequential(true),
+    snippets: () => setShowSnippets(true),
+    extract: () => setShowExtract(true),
+    encoding: () => setShowEncoding(true),
+    replace: () => setShowBatchReplace(true),
+    diff: () => setShowConfigDiff(true),
+    diffedit: openFreeDiff,
+    difffull: openFreeDiffFullscreen,
+    newdiagram: handleNewDiagram,
+  };
+
   return (
       <UpdateProvider>
       <UpdateNotesAutoPop />
@@ -991,17 +1013,10 @@ function App() {
       <div className={appStyles.appShell}>
         {/* 皮肤场景层：fixed + z-index:0，衬在玻璃卡片（cardWrap z-index:1）之后 */}
         <SkinScene />
+        {/* 工具回调不再给 TopBar：D15 把工具箱从顶栏下拉改成了「工具」模式主体区，
+            回调直接传给下方的 ToolboxView（见 toolHandlers） */}
         <TopBar
           onSettings={() => setShowSettings(true)}
-          onSequential={() => setShowSequential(true)}
-          onSnippets={() => setShowSnippets(true)}
-          onExtract={() => setShowExtract(true)}
-          onEncoding={() => setShowEncoding(true)}
-          onBatchReplace={() => setShowBatchReplace(true)}
-          onConfigDiff={() => setShowConfigDiff(true)}
-          onDiffEdit={openFreeDiff}
-          onDiffFullscreen={openFreeDiffFullscreen}
-          onNewDiagram={handleNewDiagram}
           onToggleSidebar={toggleSidebar}
           sidebarOpen={sidebarOpen}
         />
@@ -1009,27 +1024,51 @@ function App() {
             v6.4 方案 B：AI 真能用且处于引导期（更新后 1 周）→ 用 AI 快捷区替代；过期后回归原建议条。
             这里只认 "on"（唯一判定 @/lib/aiAvailability：开关开着 + 密钥配齐，本地厂商免密钥）——
             "nokey"（已启用但缺密钥）必须走回建议条，否则会渲染出一排点下去必然失败的 AI 按钮 */}
-        {aiStatus === "on" && aiAwareActive ? <AiQuickBar /> : <SuggestionBar />}
-        <div className={appStyles.contentArea}>
-          <Sidebar
-            open={sidebarOpen}
-            activeGroupId={activeGroupId}
-            groups={sidebarGroups}
-            onSelectGroup={handleSelectGroup}
-            onClose={toggleSidebar}
-            onCreateGroup={handleCreateGroup}
-            onRenameGroup={handleRenameGroup}
-            onDeleteGroup={handleDeleteGroup}
-            onChangeGroupColor={handleChangeGroupColor}
-          />
-          <div className={appStyles.cardPanel}>
-            <ScrollProvider scrollRef={scrollRef} lenisRef={lenisRef}>
-              <CardList scrollRef={scrollRef} lenisRef={lenisRef} showMoveToGroup />
-              <BackToTop />
-            </ScrollProvider>
+        {/* 建议条 / AI 快捷区只属于「记录」模式（D15）：两者都是对**当前剪贴板内容**的建议，
+            在工具/知识模式下无指向，还白占一行高度 */}
+        {appMode === "record" && (aiStatus === "on" && aiAwareActive ? <AiQuickBar /> : <SuggestionBar />)}
+        {/* 主体区按模式分发（D15 三模式框架）。
+            三个分支里只有「记录」是零成本的——它就是原来的主体，只是被包起来了。 */}
+        {appMode === "record" && (
+          <div className={appStyles.contentArea}>
+            <Sidebar
+              open={sidebarOpen}
+              activeGroupId={activeGroupId}
+              groups={sidebarGroups}
+              onSelectGroup={handleSelectGroup}
+              onClose={toggleSidebar}
+              onCreateGroup={handleCreateGroup}
+              onRenameGroup={handleRenameGroup}
+              onDeleteGroup={handleDeleteGroup}
+              onChangeGroupColor={handleChangeGroupColor}
+            />
+            <div className={appStyles.cardPanel}>
+              <ScrollProvider scrollRef={scrollRef} lenisRef={lenisRef}>
+                <CardList scrollRef={scrollRef} lenisRef={lenisRef} showMoveToGroup />
+                <BackToTop />
+              </ScrollProvider>
+            </div>
           </div>
-        </div>
+        )}
+        {appMode === "tools" && (
+          <div className={appStyles.contentArea}>
+            <ToolboxView handlers={toolHandlers} />
+          </div>
+        )}
+        {appMode === "knowledge" && (
+          <div className={appStyles.contentArea}>
+            <KnowledgeView />
+          </div>
+        )}
         <QuickPreview />
+
+        {/* 笔记弹窗（知识库 A 阶段）。挂在这里而不是 CardList 的 portal 里：
+            CardList 只在记录模式渲染，而知识模式的笔记列表也要能打开它。 */}
+        <Suspense fallback={null}>
+          <ErrorBoundary fallback={null} componentName="笔记弹窗">
+            <NoteDialog />
+          </ErrorBoundary>
+        </Suspense>
 
         {/* 移动到分组选择弹窗 */}
         <AnimatePresence>

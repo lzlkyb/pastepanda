@@ -74,6 +74,35 @@ export interface DialogState {
   quotaOpen: boolean;
   openQuota: () => void;
   closeQuota: () => void;
+  /**
+   * 转为笔记 / 编辑笔记（知识库 A 阶段 · 规划 §8.1 3️⃣）：非 null 时 NoteDialog 打开。
+   *
+   * 一个字段带两种意图，靠 `noteId` 区分：
+   * - `noteId` 为 null = 新转（title/content 是从卡片抽出的初值）
+   * - `noteId` 非 null = 编辑已有那条（重复转笔记的幂等路径，以及点 📝 角标、点笔记列表）
+   *
+   * 不拆成两个字段：同一时刻只能开一个，拆了就得额外保证两者不同时非空。
+   */
+  noteDraft: {
+    noteId: string | null;
+    /** 来源卡片 id。独立笔记（B1 #13 新建空白笔记）为 null */
+    historyId: string | null;
+    /**
+     * 新建后落入哪个文件夹（B1 #13）。**只在新建时生效**：
+     * 编辑已有笔记不会因为开着某个文件夹就被改归属。
+     */
+    folderId: string | null;
+    title: string;
+    content: string;
+  } | null;
+  openNote: (draft: {
+    noteId?: string | null;
+    historyId?: string | null;
+    folderId?: string | null;
+    title: string;
+    content: string;
+  }) => void;
+  closeNote: () => void;
 }
 
 /**
@@ -96,7 +125,8 @@ export function anyDialogOpen(s: DialogState): boolean {
       s.profileOpen ||
       s.pasteGuard ||
       s.milestone ||
-      s.quotaOpen,
+      s.quotaOpen ||
+      s.noteDraft,
   );
 }
 
@@ -152,4 +182,16 @@ export const useDialogStore = create<DialogState>((set) => ({
   quotaOpen: false,
   openQuota: () => set({ quotaOpen: true }),
   closeQuota: () => set({ quotaOpen: false }),
+  noteDraft: null,
+  openNote: (draft) =>
+    set({
+      noteDraft: {
+        noteId: draft.noteId ?? null,
+        historyId: draft.historyId ?? null,
+        folderId: draft.folderId ?? null,
+        title: draft.title,
+        content: draft.content,
+      },
+    }),
+  closeNote: () => set({ noteDraft: null }),
 }));

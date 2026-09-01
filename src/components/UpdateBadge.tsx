@@ -1,10 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useUpdate, friendlyError } from "@/contexts/UpdateContext";
 import { ArrowDown, Loader2, CheckCircle, AlertCircle, RotateCcw } from "lucide-react";
-import { VersionBadge } from "@/components/VersionBadge";
-import { CHANGELOG } from "@/lib/changelog.generated";
-import { getLastSeenVersion, getUnseenEntries, LAST_SEEN_CHANGED_EVENT } from "@/lib/changelog";
 import styles from "./UpdateBanner.module.css";
 
 /** 下载速率格式化（如 "1.2 MB/s"） */
@@ -41,53 +38,46 @@ function DownloadRing({ progress, indeterminate }: { progress: number; indetermi
 }
 
 /**
- * TopBar 版本号融合徽章
- * 方案 D：更新状态融入 header-badge 本身，不再单独占用布局空间
+ * TopBar 名位复用徽章（D15）。
  *
- * - idle/checking/error：普通灰色标签 [v5.0.70]
+ * **它不是一个被动的版本号展示，是更新链路的唯一主动入口**。删它 = 用户再也
+ * 收不到更新提醒（叠上已知的 Gitee 镜像风险，就是真的发不出去）。
+ *
+ * 名位复用：应用名与更新状态**共用标题行同一个位置**，只有带可执行动作的状态
+ * 才接管，接管结束名字立刻回来。省下的宽度正好给了模式切换器（ModeSwitcher）。
+ *
+ * 为何 checking/error/uptodate 不接管：它们没有用户马上能做的事，而名位反复闪比不
+ * 显示更吵。这不算静默失败：版本号 / 手动检查 / 失败详情均在**设置 → 关于**
+ * （`AboutTabContent` 已有 VersionBadge + 检查按钮 + UpdateBanner），名位不是唯一入口。
+ *
+ * 未读说明红点已删（不要加回来）：与设置页「关于」tab 的红点 + `UpdateNotesDialog`
+ * 自动弹窗重复，是同一件事的第三个入口；删后副作用正好是想要的——**重启后名字立刻回来**。
+ *
+ * @param nameSlot 不接管时渲染的应用名节点。由 TopBar 传入而不是在这里拼，因为它的
+ *   样式（.brandTitle / .headerTitleText / AiMark）属于 TopBar 的 CSS module。
+ *
+ * 名位各状态：
+ * - idle / checking / error / uptodate：**应用名（nameSlot）**
  * - available：绿色可点击 [🔄 v5.0.71] 点击下载
  * - downloading：[⏳ 45%]
  * - ready/installed：[✅ 重启]
  *
  * 使用 AnimatePresence + key 实现状态切换进出动画。
  */
-export function UpdateBadge({ currentVersion }: { currentVersion: string }) {
-  const { status, update, progress, progressIndeterminate, downloadedBytes, bytesPerSec, checkForUpdate, downloadAndInstall, restart } = useUpdate();
+export function UpdateBadge({ nameSlot }: { nameSlot: React.ReactNode }) {
+  // 不再需要 currentVersion：唯一显版本号的状态是 available，而它显的是**新**版本
+  // （`update?.version`）；当前版本号已整体移到设置 → 关于。
+  const { status, update, progress, progressIndeterminate, downloadedBytes, bytesPerSec, downloadAndInstall, restart } = useUpdate();
   // 防止用户快速重复点击（连点更新徽章）导致重复触发检查/下载/重启
   const [isStarting, setIsStarting] = useState(false);
 
-  // 未读新功能说明提示：融合进版本号徽章，不再单独占布局空间。
-  // lastSeen 存 localStorage（pastepanda_last_seen_version），弹框关闭即写入；
-  // 同窗口改 localStorage 不触发 storage 事件（且 Tauri 单 webview），故监听同源事件实时刷新红点。
-  const [lastSeen, setLastSeen] = useState<string | null>(() => getLastSeenVersion());
-  useEffect(() => {
-    const sync = () => setLastSeen(getLastSeenVersion());
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "pastepanda_last_seen_version") sync();
-    };
-    window.addEventListener("storage", onStorage);
-    window.addEventListener(LAST_SEEN_CHANGED_EVENT, sync);
-    return () => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener(LAST_SEEN_CHANGED_EVENT, sync);
-    };
-  }, []);
-  const hasUnseen = (lastSeen ? getUnseenEntries(CHANGELOG, lastSeen) : CHANGELOG).length > 0;
-
+  // 名位只在 available / downloading / ready 三类状态下可点，所以这里不再处理
+  // idle（手动检查）与 error（重试）——那两个入口已全部收到设置 → 关于。
   const handleClick = async () => {
     if (isStarting) return;
     setIsStarting(true);
     try {
-      if (status === "error") {
-        await checkForUpdate();
-      } else if (status === "idle") {
-        // 有未查看的新功能说明时，点击优先打开说明；看完关闭即标记已读，红点消失，下次点击才检查更新
-        if (hasUnseen) {
-          window.dispatchEvent(new Event("pp:show-whatsnew"));
-        } else {
-          await checkForUpdate();
-        }
-      } else if (status === "available") {
+      if (status === "available") {
         await downloadAndInstall();
       } else if (status === "ready" || status === "installed") {
         await restart();
@@ -155,72 +145,17 @@ export function UpdateBadge({ currentVersion }: { currentVersion: string }) {
         </motion.button>
       )}
 
-      {/* 已是最新版本（4 秒后自动消失回到 idle） */}
-      {status === "uptodate" && (
+      {/* 不接管的四个状态（idle / checking / error / uptodate）→ 名位还给应用名。
+          四者合一个分支共用同一个 key，才能在它们之间切换时**不触发动画**
+          （名字不会因为后台检查一轮就闪一下）；与接管态之间才淡入淡出。 */}
+      {status !== "available" && status !== "downloading" && status !== "ready" && status !== "installed" && (
         <motion.span
-          key="update-uptodate"
+          key="app-name"
           initial={{ opacity: 0, y: -4 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 4 }}
-          className="header-badge header-badge-uptodate"
-          title="已是最新版本"
         >
-          <CheckCircle size={10} />
-          <span>已是最新</span>
-        </motion.span>
-      )}
-
-      {/* 检查中：独立徽章，带旋转图标 */}
-      {status === "checking" && (
-        <motion.span
-          key="update-checking"
-          initial={{ opacity: 0, y: -4 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 4 }}
-          className="header-badge header-badge-checking"
-          title="检查更新中…"
-        >
-          <Loader2 size={10} className="spin-icon" />
-          <span>{currentVersion}</span>
-        </motion.span>
-      )}
-
-      {/* 错误：独立徽章，红色，可点击重试 */}
-      {status === "error" && (
-        <motion.button
-          key="update-error"
-          initial={{ opacity: 0, y: -4 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 4 }}
-          className="header-badge header-badge-error"
-          title="更新检查失败，点击重试"
-          onClick={handleClick}
-          disabled={isStarting}
-        >
-          <AlertCircle size={10} />
-          <span>{currentVersion}</span>
-        </motion.button>
-      )}
-
-      {/* idle：默认版本号；有未读新功能时右上角红点提示，点击优先查看说明 */}
-      {status === "idle" && (
-        <motion.span
-          key="update-idle"
-          initial={{ opacity: 0, y: -4 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 4 }}
-          className={`version-badge-wrapper${hasUnseen ? " version-badge-wrapper--unseen" : ""}`}
-          title={hasUnseen ? `v${currentVersion} — 有未查看的新功能，点击查看` : `v${currentVersion} — 点击检查更新`}
-        >
-          <button
-            className="version-badge-btn"
-            title={hasUnseen ? `v${currentVersion} — 有未查看的新功能，点击查看` : `v${currentVersion} — 点击检查更新`}
-            onClick={handleClick}
-            disabled={isStarting}
-          >
-            <VersionBadge version={currentVersion} className="version-badge-idle" />
-          </button>
-          {hasUnseen && <span className="version-badge-unseen" aria-label="有未查看的新功能" />}
+          {nameSlot}
         </motion.span>
       )}
     </AnimatePresence>

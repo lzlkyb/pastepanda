@@ -107,6 +107,28 @@ export interface AppConfig {
   table_split_include_header: boolean; // 拆行时是否保留表头行，默认排除
 }
 
+// ===== 应用模式（三模式框架，D15）=====
+
+/**
+ * 顶栏三个模式。界面标签是「记录 ｜ 工具 ｜ 知识」，代码里用英文 key。
+ *
+ * 术语分层（规划 A-27）：界面叫「知识」是为了宽度与整齐，领域名仍是「知识库」
+ * ——`notes` 表、`kb_*` 命令都不改名，所以这里的 key 用 `knowledge` 而不是 `note`。
+ */
+export type AppMode = "record" | "tools" | "knowledge";
+
+const APP_MODE_KEY = "pastepanda_app_mode";
+
+/** 读持久化的模式（写法照搬 TopBar 的 tabStyle）。脏值/读不到一律回「记录」 */
+function readAppMode(): AppMode {
+  try {
+    const v = localStorage.getItem(APP_MODE_KEY);
+    return v === "tools" || v === "knowledge" ? v : "record";
+  } catch {
+    return "record";
+  }
+}
+
 // ===== Store 接口 =====
 
 interface AppState {
@@ -115,6 +137,13 @@ interface AppState {
   config: AppConfig;
   groups: Group[];
   tags: Tag[];
+  /**
+   * 已转过笔记的卡片 id 集合（知识库 A 阶段 · 规划 §8.1 3️⃣）。
+   *
+   * 只为了卡片右上角那个 📝 角标。用 Set 而不是数组：一屏几十张卡片逐张判断，
+   * 数组的 includes 是 O(n)，卡片多了就是 O(n²)。整体替换，不原地改（zustand 靠引用比较）。
+   */
+  noteHistoryIds: Set<string>;
 
   /** history 变更版本号：任何修改 history 的 action 都 +1。
    *  作为 getFilteredItems 缓存键的一部分，替代脆弱的 history.length——
@@ -148,6 +177,9 @@ interface AppState {
   searchResults: HistoryItem[] | null; // null = 非搜索模式 / 尚未加载
   searchResultsKey: string; // 产生 searchResults 的查询签名（buildSearchKey）
   searchLoading: boolean; // 搜索查询进行中
+
+  // 应用模式（D15 三模式框架）
+  appMode: AppMode; // 当前模式：记录 / 工具 / 知识
 
   // 剪贴板栈
   stackMode: boolean; // 栈模式是否激活
@@ -187,6 +219,12 @@ interface AppState {
   clearTagFilters: () => void;
   setGroups: (groups: Group[]) => void;
   setTags: (tags: Tag[]) => void;
+  /** 全量设置角标集（由 fetchNoteHistoryIds 调） */
+  setNoteHistoryIds: (ids: string[]) => void;
+  /** 新转一条笔记后增量补上，免得等全量刷新 */
+  addNoteHistoryId: (historyId: string) => void;
+  /** 某张卡片的最后一条笔记被删后抹掉角标 */
+  removeNoteHistoryId: (historyId: string) => void;
   addSearchHistory: (kw: string) => void;
   removeSearchHistory: (kw: string) => void;
   clearSearchHistory: () => void;
@@ -197,6 +235,9 @@ interface AppState {
   setSeqPointer: (p: number) => void;
   resetSeqPointer: () => void;
   setPaused: (p: boolean) => void;
+
+  // 应用模式动作
+  setAppMode: (mode: AppMode) => void;
 
   // 剪贴板栈动作
   setStackMode: (active: boolean) => void;
@@ -305,6 +346,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   config: DEFAULT_CONFIG,
   groups: [],
   tags: [],
+  noteHistoryIds: new Set(),
   historyVersion: 0,
   historyResetSeq: 0,
 
@@ -323,6 +365,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   seqTotal: 0,
   paused: false,
   undoStack: [],
+  appMode: readAppMode(),
   stackMode: false,
   stackItems: [],
   stackDoneIds: new Set(),
@@ -543,6 +586,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearTagFilters: () => set({ selectedTagIds: [], selectedIds: new Set(), focusId: null, lastClickedId: null }),
   setGroups: (groups) => set({ groups }),
   setTags: (tags) => set({ tags }),
+  setNoteHistoryIds: (ids) => set({ noteHistoryIds: new Set(ids) }),
+  addNoteHistoryId: (historyId) =>
+    set((s) => {
+      if (s.noteHistoryIds.has(historyId)) return s; // 已在集内：不新建 Set，避开无意义重渲染
+      const next = new Set(s.noteHistoryIds);
+      next.add(historyId);
+      return { noteHistoryIds: next };
+    }),
+  removeNoteHistoryId: (historyId) =>
+    set((s) => {
+      if (!s.noteHistoryIds.has(historyId)) return s;
+      const next = new Set(s.noteHistoryIds);
+      next.delete(historyId);
+      return { noteHistoryIds: next };
+    }),
 
   // 搜索历史
   addSearchHistory: (kw) => {
@@ -608,6 +666,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSeqPointer: (p) => set({ seqPointer: p }),
   resetSeqPointer: () => set({ seqPointer: 0 }),
   setPaused: (p) => set({ paused: p }),
+
+  // 应用模式（D15）
+  // 持久化写 localStorage。写不进只是下次启动回「记录」，不能因此阻止切模式。
+  setAppMode: (mode) => {
+    try { localStorage.setItem(APP_MODE_KEY, mode); } catch { /* 隐私模式/配额满，忽略 */ }
+    set({ appMode: mode });
+  },
 
   // 剪贴板栈
   setStackMode: (active) =>

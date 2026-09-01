@@ -1,0 +1,159 @@
+/* FolderTree.module.css — 文件夹树侧栏（B1 #1，设计稿 §2）。
+
+   宽度 180px 与行高、缩进 13px 都是量过的值：深度上限 3 层就是从这三个数
+   算出来的（第 4 层名字只剩 ~97px ≈ 8 个中文字）。改它们前先回去看设计稿 §2 的表。 */
+
+.tree {
+  width: 180px;
+  min-width: 180px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-color);
+  background: var(--card-bg);
+  overflow-y: auto;
+  padding: 6px 0 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 9px 5px;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.addBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.addBtn:hover {
+  background: var(--hover);
+  color: var(--accent);
+}
+
+/* ===== 行 ===== */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  /* 顶层行的 padding-left 写在这里；子级靠行内联 style 覆盖（缩进跟 depth 算） */
+  padding: 4px 9px 4px 11px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  border-radius: 0 6px 6px 0;
+  transition: background 0.12s, color 0.12s;
+}
+
+.row:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.rowOn {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--text-primary);
+  font-weight: 600;
+  /* 左侧细竖条而不是整行实色：同记录模式 Sidebar 的选中态语言 */
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.rowOn:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* 展开/折叠三角。无子项时用 visibility 而不是 display:none：
+   保住占位，否则同层的有子/无子行名字会差 9px 不对齐。 */
+.caret {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 11px;
+  height: 14px;
+  flex-shrink: 0;
+  border: none;
+  padding: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.caretHidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.caretOpen {
+  transform: rotate(90deg);
+  transition: transform 0.15s;
+}
+
+.builtinIcon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  margin-left: 1px;
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.count {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.sep {
+  height: 1px;
+  background: var(--border-color);
+  margin: 5px 9px;
+  flex-shrink: 0;
+}
+
+/* 零文件夹时的入口。给按钮而不是禁用态：用户需要一个地方开始建结构 */
+.emptyHint {
+  margin: 4px 9px;
+  padding: 7px 8px;
+  border: 1px dashed var(--border-color);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.emptyHint:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

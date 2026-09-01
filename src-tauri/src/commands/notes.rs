@@ -1,0 +1,147 @@
+//! 笔记命令层（知识库 A 阶段 · 规划 §8.1 3️⃣）。
+//!
+//! 这一层**只做转发**，业务逻辑全在 `data_store::note`。之所以还是薄薄一层而不是
+//! 让前端直接 invoke store：Tauri 命令是唯一的 IPC 边界，参数在这里从 `Option<String>`
+//! 落成 `Option<&str>`，分页上限也在这里兜住。
+//!
+//! 🔴 红线（规划 §0）：本文件不含任何 AI 调用。笔记正文只进本机 SQLite 与本机 FTS，
+//! 不出网。要给笔记加 AI 能力（摘要 / 打标签）是 B 阶段的事，且必须受 AI 总开关控制
+//! （规则 #16），届时应新建独立文件，不要往这里塞。
+
+use crate::data_store::{DataStore, Note};
+use tauri::State;
+
+/// 单次拉取上限。前端传多少都不能越过它——列表虚拟滚动一屏几十条，
+/// 一次要上万条只可能是调用方写错了，静默照做会把整库读进内存。
+const MAX_PAGE: u32 = 500;
+
+/// 把前端传来的 limit 规范化：缺省 50，0 视为缺省，上限 `MAX_PAGE`。
+fn clamp_limit(limit: Option<u32>) -> u32 {
+    match limit {
+        Some(n) if n > 0 => n.min(MAX_PAGE),
+        _ => 50,
+    }
+}
+
+/// 新建笔记。`history_id` 为空 = 与剪贴板无关的独立笔记。
+///
+/// 注意：**幂等不在这里**。「同一张卡片重复转笔记 → 打开已有那条」是入口的语义，
+/// 由前端先调 `note_by_history` 判断（拿到的就是要编辑的那条，多一次 IPC 但少一次
+/// 猜测）。若哪天需要后端保证唯一，那是加 UNIQUE 约束的事，不是在命令里查一遍。
+#[tauri::command]
+pub fn note_create(
+    store: State<DataStore>,
+    history_id: Option<String>,
+    title: String,
+    content: String,
+) -> Result<Note, String> {
+    store.note_create(history_id.as_deref(), &title, &content)
+}
+
+/// 改标题与正文。id 不存在会报错而非静默成功（规则 #15.3）。
+#[tauri::command]
+pub fn note_update(
+    store: State<DataStore>,
+    id: String,
+    title: String,
+    content: String,
+) -> Result<(), String> {
+    store.note_update(&id, &title, &content)
+}
+
+/// 删笔记。只删笔记，**不动来源卡片**（规划 §6 生命周期：两者互不牵连）。
+#[tauri::command]
+pub fn note_delete(store: State<DataStore>, id: String) -> Result<(), String> {
+    store.note_delete(&id)
+}
+
+/// 按 id 取一条（带标签）。不存在返回 `null`。
+#[tauri::command]
+pub fn note_get(store: State<DataStore>, id: String) -> Result<Option<Note>, String> {
+    store.note_get(&id)
+}
+
+/// 笔记列表，`updated_at` 降序。
+///
+/// `folderFilter`：`"all"` | `"unfiled"` | `<folder_id>`（照搬记录模式 `group_filter` 的约定）。
+/// 缺省 `"all"`。`tagIds` 多个是 AND；与文件夹也是交集。
+#[tauri::command]
+pub fn note_list(
+    store: State<DataStore>,
+    folder_filter: Option<String>,
+    tag_ids: Option<Vec<String>>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<Vec<Note>, String> {
+    store.note_list(
+        folder_filter.as_deref().unwrap_or("all"),
+        &tag_ids.unwrap_or_default(),
+        clamp_limit(limit),
+        offset.unwrap_or(0),
+    )
+}
+
+/// 当前筛选下的笔记总数。与 `note_list` 共用筛选构造，保证同口径。
+#[tauri::command]
+pub fn note_count_filtered(
+    store: State<DataStore>,
+    folder_filter: Option<String>,
+    tag_ids: Option<Vec<String>>,
+) -> Result<i64, String> {
+    store.note_count_filtered(
+        folder_filter.as_deref().unwrap_or("all"),
+        &tag_ids.unwrap_or_default(),
+    )
+}
+
+/// 某张卡片对应的笔记（最新一条）。没转过返回 `null`。
+///
+/// 单卡片场景用它；**一屏卡片批量判断角标请用 `note_history_ids`**，
+/// 别在列表里逐张调这个（几十次 IPC）。
+#[tauri::command]
+pub fn note_by_history(
+    store: State<DataStore>,
+    history_id: String,
+) -> Result<Option<Note>, String> {
+    store.note_by_history(&history_id)
+}
+
+/// 所有已转过笔记的 `history_id`，供卡片列表一次性算出哪些要显示 📝 角标。
+#[tauri::command]
+pub fn note_history_ids(store: State<DataStore>) -> Result<Vec<String>, String> {
+    store.note_history_ids()
+}
+
+/// 搜笔记。中文走 bigram、英文走前缀匹配，FTS 失败自动降级 LIKE（见 note.rs）。
+/// 关键词为空时返回列表首页，与 history 搜索框的行为一致。
+#[tauri::command]
+pub fn note_search(
+    store: State<DataStore>,
+    keyword: String,
+    folder_filter: Option<String>,
+    tag_ids: Option<Vec<String>>,
+    limit: Option<u32>,
+) -> Result<Vec<Note>, String> {
+    store.note_search(
+        &keyword,
+        folder_filter.as_deref().unwrap_or("all"),
+        &tag_ids.unwrap_or_default(),
+        clamp_limit(limit),
+    )
+}
+
+/// 整组替换笔记标签（传空数组 = 清空）。标签本体仍归 `tags` 表管。
+#[tauri::command]
+pub fn note_set_tags(
+    store: State<DataStore>,
+    note_id: String,
+    tag_ids: Vec<String>,
+) -> Result<(), String> {
+    store.note_set_tags(&note_id, &tag_ids)
+}
+
+/// 笔记总数。供知识模式空态判断与分页「还有更多」。
+#[tauri::command]
+pub fn note_count(store: State<DataStore>) -> i64 {
+    store.note_count()
+}

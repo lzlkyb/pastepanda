@@ -1,14 +1,15 @@
-import { useState, useMemo, useEffect, useRef, useCallback, Fragment } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, FilterType, TimeFilter, SourceFilter } from "@/stores/appStore";
 import { AiStatusCap } from "@/components/AiStatusCap";
 import { AiStatusDot } from "@/components/AiStatusDot";
 import { AiMark } from "@/components/ai/AiMark";
-import { getAppVersion, getAppName, fetchCounts, toggleStackMode } from "@/lib/api";
+import { getAppName, fetchCounts, toggleStackMode } from "@/lib/api";
 import { cleanSourceName } from "@/lib/source-mappings";
 import { useSourceIcon } from "@/hooks/useSourceIcon";
 import SourceBadge from "@/components/SourceBadge";
 import { UpdateBadge } from "@/components/UpdateBadge";
+import { ModeSwitcher } from "@/components/ModeSwitcher";
 import { TagBadge, AnimatedTagBadge } from "@/components/TagBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { SearchBox } from "@/components/SearchBox";
@@ -34,32 +35,9 @@ const TIME_OPTIONS: { key: TimeFilter; label: string }[] = [
   { key: "month", label: "本月" },
 ];
 
-/** 工具箱分组面板（方案 A）：片段库 / 内容提取从顶栏独立按钮迁入此处；依次粘贴从主窗口常驻 FAB 迁入此处 */
-type ToolKey = "sequential" | "snippets" | "extract" | "encoding" | "replace" | "diff" | "diffedit" | "difffull" | "newdiagram";
-const TOOLBOX_GROUPS: {
-  label: string;
-  items: { key: ToolKey; icon: string; name: string; desc: string; hue: string }[];
-}[] = [
-  {
-    label: "内容",
-    items: [
-      { key: "sequential", icon: "📋", name: "依次粘贴", desc: "按顺序逐条粘贴文本 · Ctrl+Alt+Q", hue: "cyan" },
-      { key: "snippets", icon: "📝", name: "片段库",   desc: "常用文本收藏，一键粘贴",             hue: "amber" },
-      { key: "extract",  icon: "🧲", name: "内容提取", desc: "从记录中批量提取链接 / 邮箱 / 电话", hue: "rose" },
-      { key: "newdiagram", icon: "📊", name: "新建流程图", desc: "从零绘制，或让 AI 一键生成", hue: "cyan" },
-    ],
-  },
-  {
-    label: "文本处理",
-    items: [
-      { key: "encoding", icon: "🔤", name: "编码转换", desc: "Base64 / URL / Unicode 编解码",   hue: "sky" },
-      { key: "replace",  icon: "🔁", name: "批量替换", desc: "正则查找替换，支持多条规则",       hue: "violet" },
-      { key: "diff",     icon: "📊", name: "配置对比", desc: "两份配置语义级差异高亮",           hue: "green" },
-      { key: "diffedit", icon: "🔀", name: "文本对比", desc: "自由对比两段文本 · Ctrl+Shift+D",  hue: "green" },
-      { key: "difffull", icon: "🪟", name: "全屏文本对比", desc: "独立大窗深编对比 · 读剪贴板预填", hue: "green" },
-    ],
-  },
-];
+/* 工具箱已整体离开顶栏：D15 把它从下拉面板改成了「工具」模式的主体区。
+   条目数据在 `@/lib/toolbox`（一模一样搬过去的），渲染在 `ToolboxView`，
+   回调由 App.tsx 直接传给它——所以顶栏不再需要 onSequential / onSnippets / … 那一排 props。 */
 
 async function minimizeWin() {
   try { (await import("@tauri-apps/api/window")).getCurrentWindow().minimize(); } catch { logger.warn("窗口最小化失败"); }
@@ -84,11 +62,11 @@ function getTabStyle(): TabStyle {
   try { return (localStorage.getItem("tabStyle") as TabStyle) || "segmented"; } catch { return "segmented"; }
 }
 
-export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEncoding, onBatchReplace, onConfigDiff, onDiffEdit, onDiffFullscreen, onNewDiagram, onToggleSidebar, sidebarOpen }: {
-  onSettings?: () => void; onSequential?: () => void; onSnippets?: () => void; onExtract?: () => void;
-  onEncoding?: () => void; onBatchReplace?: () => void; onConfigDiff?: () => void; onDiffEdit?: () => void; onDiffFullscreen?: () => void; onNewDiagram?: () => void;
+export function TopBar({ onSettings, onToggleSidebar, sidebarOpen }: {
+  onSettings?: () => void;
   onToggleSidebar?: () => void; sidebarOpen?: boolean;
 }) {
+  const appMode = useAppStore((s) => s.appMode);
   const filterType = useAppStore((s) => s.filterType);
   const setFilterType = useAppStore((s) => s.setFilterType);
   const timeFilter = useAppStore((s) => s.timeFilter);
@@ -103,15 +81,12 @@ export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEnco
   const stackMode = useAppStore((s) => s.stackMode);
   const stackToggleHotkey = useAppStore((s) => s.config.stack_toggle_hotkey);
   const [tabStyle, setTabStyle] = useState<TabStyle>(getTabStyle);
-  const [appVersion, setAppVersion] = useState("...");
   const [appName, setAppName] = useState("PastePanda");
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [countsError, setCountsError] = useState(false);
   const [tagPickerOpen, setTagPickerOpen] = useState(false);
-  const [toolboxOpen, setToolboxOpen] = useState(false);
 
   useEffect(() => {
-    getAppVersion().then(setAppVersion).catch(() => setAppVersion("?.?.?"));
     getAppName().then((name) => {
       setAppName(name);
       document.title = name;
@@ -159,40 +134,40 @@ export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEnco
     return () => window.removeEventListener("storage", handler);
   }, []);
 
-  // 工具箱条目 → 回调映射（片段库 / 内容提取 / 依次粘贴迁入后与原有三项统一管理）
-  const toolHandlers: Record<ToolKey, (() => void) | undefined> = {
-    sequential: onSequential,
-    snippets: onSnippets,
-    extract: onExtract,
-    encoding: onEncoding,
-    replace: onBatchReplace,
-    diff: onConfigDiff,
-    diffedit: onDiffEdit,
-    difffull: onDiffFullscreen,
-    newdiagram: onNewDiagram,
-  };
-
   return (
     <div className={styles.header} data-tauri-drag-region role="banner">
       {/* 标题行 */}
       <div className={styles.headerTop} data-tauri-drag-region>
         <div className={styles.headerTitle}>
+          {/* 侧边栏是「记录」模式**内部**的分组导航，在工具/知识模式下无意义，所以禁用而不是隐藏
+              （隐藏会让标题行左侧宽度跳一下，三个模式来回切时很明显） */}
           <button
             className={`${styles.sidebarToggle}${sidebarOpen ? ` ${styles.sidebarToggleActive}` : ""}`}
             onClick={onToggleSidebar}
-            title={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
+            disabled={appMode !== "record"}
+            title={appMode !== "record" ? "侧边栏只在「记录」模式下可用" : sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
             aria-label="切换侧边栏"
           >
             ☰
           </button>
           <span className={styles.headerTitleIcon}><AppIcon size={20} /></span>
-          <span className={styles.brandTitle}>
-            <span className={styles.headerTitleText}>{appName}</span>
-            {/* 品牌标识：这个产品是 AI 的。不可点、不随 AI 配置状态变化——
-                「配好了没」由右侧 AiStatusCap / AiStatusDot 承担，两者不重叠。 */}
-            <AiMark shape="sup" text="AI" title="PastePanda 的能力由 AI 驱动" />
-          </span>
-          <UpdateBadge currentVersion={appVersion} />
+          {/* 名位复用（D15）：应用名与更新状态共用这一个位置。
+              为何把名字作为 prop 交给 UpdateBadge 而不是并列两个节点：
+              只有它知道当前更新状态，只有它能在同一个 AnimatePresence 里做淡入淡出；
+              而名字的样式属于本文件的 CSS module，所以节点在这里拼。 */}
+          <UpdateBadge
+            nameSlot={
+              <span className={styles.brandTitle}>
+                <span className={styles.headerTitleText}>{appName}</span>
+                {/* 品牌标识：这个产品是 AI 的。不可点、不随 AI 配置状态变化——
+                    「配好了没」由右侧 AiStatusCap / AiStatusDot 承担，两者不重叠。
+                    上标随名字一起让位，不能留在外面——否则下载态会渲染成 `v6.18.6ᴬᴵ`。 */}
+                <AiMark shape="sup" text="AI" title="PastePanda 的能力由 AI 驱动" />
+              </span>
+            }
+          />
+          {/* 三模式切换器（D15）：站在应用名右侧，宽度正好是名位复用省下的那一块 */}
+          <ModeSwitcher />
         </div>
         <div className={styles.headerIcons} data-tauri-drag-region="false">
           <IconBtn tip={`收集模式（栈模式）· ${stackToggleHotkey || "ctrl+alt+k"}${stackMode ? " · 已开启" : ""}`} active={stackMode} hue="amber" onClick={() => toggleStackMode()}>
@@ -203,45 +178,7 @@ export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEnco
               <path d="m3.2 16.9 8.8 4.9 8.8-4.9" stroke="currentColor" strokeOpacity=".26" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </IconBtn>
-          {/* 工具箱下拉（方案 A 分组面板）：片段库 / 内容提取已从顶栏独立按钮迁入此处 */}
-          <div className={styles.toolboxWrap}>
-            <IconBtn tip="工具箱" active={toolboxOpen} hue="sky" onClick={() => setToolboxOpen((v) => !v)}>
-              {/* 定制双色调图标（方案 B）：轻填充箱体 + 提手 + 实心中扣，箱体语义比扳手更贴「工具箱」 */}
-              <svg className={styles.iconSvg} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M9 7.6V6.1a2.6 2.6 0 0 1 2.6-2.6h.8A2.6 2.6 0 0 1 15 6.1v1.5" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" />
-                <rect x="2.9" y="7.6" width="18.2" height="12.6" rx="2.7" fill="currentColor" fillOpacity=".22" stroke="currentColor" strokeWidth="2.1" />
-                <path d="M2.9 12.4h18.2" stroke="currentColor" strokeOpacity=".55" strokeWidth="2.1" />
-                <rect x="10.35" y="10.75" width="3.3" height="3.3" rx="1.15" fill="currentColor" />
-              </svg>
-            </IconBtn>
-            {toolboxOpen && (
-              <>
-                <div className={styles.toolboxBackdrop} onClick={() => setToolboxOpen(false)} />
-                <div className={styles.toolboxPanel} role="menu" aria-label="工具箱">
-                  {TOOLBOX_GROUPS.map((group, gi) => (
-                    <Fragment key={group.label}>
-                      {gi > 0 && <div className={styles.tbDivider} aria-hidden="true" />}
-                      <div className={styles.tbSection}>{group.label}</div>
-                      {group.items.map((tool) => (
-                        <button
-                          key={tool.key}
-                          className={styles.tbItem}
-                          role="menuitem"
-                          onClick={() => { setToolboxOpen(false); toolHandlers[tool.key]?.(); }}
-                        >
-                          <span className={styles.tbTile} data-hue={tool.hue} aria-hidden="true">{tool.icon}</span>
-                          <span className={styles.tbText}>
-                            <span className={styles.tbName}>{tool.name}</span>
-                            <span className={styles.tbDesc}>{tool.desc}</span>
-                          </span>
-                        </button>
-                      ))}
-                    </Fragment>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+          {/* 工具箱按钮已撤掉：它现在是「工具」模式，从标题行的模式切换器进（D15） */}
           {/* v6.4 主窗口 AI 感知（方案 A）：胶囊 —— 未配置=引流入口；已配置=不渲染（状态收进设置按钮绿点） */}
           <AiStatusCap />
           {/* 审查方案 1：设置按钮带 AI 状态绿点 —— 已就绪时右上角一个 6px 绿点（hover 看详情），
@@ -264,6 +201,11 @@ export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEnco
       </div>
 
       {/* 搜索框 + Tab 在同一个容器内，保证宽度完全一致 */}
+      {/* 搜索行与页签行只属于「记录」模式（D15）。
+          工具模式：两行都不渲染——工具既不需要按内容类型筛，也没有可搜的东西；
+          知识模式：A 阶段也不渲染。设计稿原本写「搜索行换文案」，但 notes 表还没建，
+          摆一个搜不到任何东西的搜索框是假 UI。等 §8.1 2️⃣ 建表后再加。 */}
+      {appMode === "record" && (
       <div className={styles.headerControls}>
         {/* 搜索 + 时间/来源筛选同行（方案 A：筛选并入搜索行，省一行垂直空间） */}
         <div className={styles.searchFilterRow} data-tauri-drag-region="false">
@@ -347,6 +289,7 @@ export function TopBar({ onSettings, onSequential, onSnippets, onExtract, onEnco
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

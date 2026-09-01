@@ -81,6 +81,49 @@ export { fetchGroups, createGroup, updateGroup, deleteGroup, reorderGroups, move
 // 标签
 export { fetchTags, createTag, updateTag, deleteTag, setItemTags, addItemTags, removeItemTags, getItemsWithTags, confirmAutoTags } from "./tags";
 
+// 笔记（知识库 A 阶段）
+export {
+  noteCreate,
+  noteUpdate,
+  noteDelete,
+  noteGet,
+  noteList,
+  noteByHistory,
+  fetchNoteHistoryIds,
+  noteSearch,
+  noteSetTags,
+  noteCount,
+  noteCountFiltered,
+} from "./notes";
+export type { Note } from "./notes";
+
+// 笔记文件夹（B1 #1）
+export {
+  folderList,
+  folderUnfiledCount,
+  folderMaxDepth,
+  folderDeleteImpact,
+  folderCreate,
+  folderRename,
+  folderMove,
+  folderDelete,
+  noteSetFolder,
+  buildFolderTree,
+} from "./noteFolders";
+export type { NoteFolder, FolderFilter, FolderNode } from "./noteFolders";
+
+// 版本快照 + 恢复（B1 #4 / D8）
+export { noteRevisionList, noteRevisionGet, noteRestore } from "./noteRevisions";
+export type { NoteRevision, NoteRevisionMeta } from "./noteRevisions";
+
+// 待沉淀区（知识库 A 阶段）
+export { kbInboxList, kbInboxCount, kbInboxDismiss, kbInboxUndismiss } from "./kbInbox";
+export type { InboxCandidate, InboxReason } from "./kbInbox";
+
+// 自动收录影子运行（只度量，不收录）
+export { kbShadowRun, kbShadowStats, kbShadowClear } from "./kbShadow";
+export type { ShadowStats } from "./kbShadow";
+
 // 应用信息
 export { getAppVersion, getAppName } from "./app";
 

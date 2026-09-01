@@ -10,7 +10,7 @@
  * 原处必须去掉 —— 类型工具靠 primaryKey 去重，粘贴并变换靠 primary.transform 去重。
  */
 
-import { Copy, ClipboardPaste, Pin, Trash2, ExternalLink, FileCode, Pencil, Tag, FolderInput, FolderOpen, FileText, Sparkles, Image as ImageIcon, Palette, MoreHorizontal, Regex } from "lucide-react";
+import { Copy, ClipboardPaste, Pin, Trash2, ExternalLink, FileCode, Pencil, Tag, FolderInput, FolderOpen, FileText, Sparkles, Image as ImageIcon, Palette, MoreHorizontal, Regex, NotebookPen } from "lucide-react";
 import { isCodeLike } from "@/lib/contentTypes";
 import type { RegexRule } from "@/lib/regexRules";
 import type { MenuItem } from "./menuModel";
@@ -38,6 +38,15 @@ export function createCardMenuItems(opts: {
   onConfirmAutoTags?: () => void;
   onRemoveAutoTags?: () => void;
   onQrCode?: () => void;
+  /**
+   * 转为笔记 / 编辑已有笔记（知识库 A 阶段 · 规划 §8.1 3️⃣）。
+   *
+   * 不传 = 菜单里根本不出现这一项。file 卡片就走这条：它的正文只是一个路径，
+   * 转成笔记没意义。**先显示再报错是更差的做法**（设计稿 §7）。
+   */
+  onConvertToNote?: () => void;
+  /** 这张卡片已经转过笔记——只影响文案（转为/编辑），幂等逻辑在调用方 */
+  hasNote?: boolean;
   pinned?: boolean;
   hasUrl?: boolean;
   hasAutoTags?: boolean;
@@ -123,6 +132,18 @@ export function createCardMenuItems(opts: {
   const moreChildren = getMoreChildren(opts);
   if (moreChildren.length > 0) {
     items.push({ icon: <MoreHorizontal size={14} />, label: "更多操作", children: moreChildren, separator: true });
+  }
+
+  // ④.5 转为笔记（知识库 A 阶段）——放顶层而不塞进「更多操作」：
+  //   它是知识库的主入口，藏进二级子菜单就没人会发现。
+  //   文案随已否转过变：幂等路径下点它是去编辑旧那条，写「转为笔记」会让人以为又存了一份。
+  if (opts.onConvertToNote) {
+    items.push({
+      icon: <NotebookPen size={14} />,
+      label: opts.hasNote ? "编辑笔记" : "转为笔记",
+      onClick: opts.onConvertToNote,
+      separator: true,
+    });
   }
 
   // ⑤ 删除

@@ -1,5 +1,38 @@
 use super::*;
 
+/// history 的标准取列清单，与 `row_to_history_item` 一一对应。
+///
+/// ❗ **本文件内还有 5 处把这串列名与映射闭包内联写死了**（219 / 321 / 471 / 604 / 827 行附近）。
+/// 本常量是给**新增**调用方用的（kb_inbox.rs 是第一个），因为再添一份内联副本只会把
+/// 问题放大。那 5 处的迁移是一个**单独任务**：它们在应用最热的查询路径上，
+/// 不应与知识库功能捆在同一次改动里。加列时请**两边都改**。
+pub(super) const HISTORY_COLS: &str =
+    "id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon, content_type";
+
+/// `HISTORY_COLS` 选出的行 → `HistoryItem`。
+///
+/// `ocr_text` / `tags` 不在这 13 列里（分别住 `image_ocr_cache` 与 `history_tags`），
+/// 照既有内联副本的做法给空值，由调用方按需回填。
+pub(super) fn row_to_history_item(row: &rusqlite::Row) -> rusqlite::Result<HistoryItem> {
+    Ok(HistoryItem {
+        id: row.get(0)?,
+        text: row.get(1)?,
+        time: row.get(2)?,
+        item_type: row.get(3)?,
+        content: row.get(4)?,
+        pinned: row.get::<_, i32>(5)? != 0,
+        source: row.get(6)?,
+        workspace: row.get(7)?,
+        md5: row.get(8)?,
+        pinyin_initials: row.get(9)?,
+        group_id: row.get(10)?,
+        source_icon: row.get(11)?,
+        content_type: row.get(12)?,
+        ocr_text: None,
+        tags: Vec::new(),
+    })
+}
+
 /// v6.4 D 搜索：中文/混合文本 → 字符 bigram token 串（FTS5 预处理）。
 ///
 /// FTS5 默认 unicode61 分词把 CJK 当成单个 token（整句一个词），中文搜索会完全失效。

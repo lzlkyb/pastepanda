@@ -1,0 +1,117 @@
+/* ToolboxView.module.css — 「工具」模式主体区（D15）。
+
+   色相变量（--tile-hue）与原顶栏下拉面板完全一致，包含 blossom 主题的重映射，
+   这样从下拉搬到主体区后颜色不会变。布局从「竖向菜单行」改为「自适应网格」——
+   480px 下一列，窗口拉宽自动变两列，不写硬阀值。 */
+
+/* 必须是 `flex:1 + min-width:0`，不能写 `height:100%`。
+   父元素 `.contentArea`（App.module.css）是 **横向 flex 容器**，记录模式的
+   `.cardPanel` 就是这么写的。第一版漏了这两条，后果是一条链：
+   flex-grow:0 → 宽度由内容撑而不是 448px；min-width:auto → 收不到 min-content
+   以下 → 横向溢出 → 被 `.contentArea` 的 overflow:hidden 裁掉。
+   于是 `.grid` 的 auto-fill 是拿一个没人控制的宽度在算列数。 */
+.wrap {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 4px 16px 16px;
+}
+
+.section {
+  margin-top: 14px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+}
+
+.section:first-child {
+  margin-top: 4px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  /* 底色透明，只留一道边框——hover 才填实。
+     第一版每张卡都上 `--card-bg` 实底，9 张实心块浮在透明皮肤场景上很碎。 */
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+
+.item:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--card-bg);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.07);
+  transform: translateY(-1px);
+}
+
+.item:active {
+  transform: translateY(0);
+}
+
+.tile {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  font-size: 17px;
+  background: color-mix(in srgb, var(--tile-hue) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tile-hue) 24%, transparent);
+  transition: transform 0.15s;
+}
+
+.item:hover .tile {
+  transform: scale(1.08);
+}
+
+.tile[data-hue="amber"]  { --tile-hue: #F59E0B; }
+.tile[data-hue="rose"]   { --tile-hue: #F43F5E; }
+.tile[data-hue="sky"]    { --tile-hue: #0EA5E9; }
+.tile[data-hue="violet"] { --tile-hue: #8B5CF6; }
+.tile[data-hue="green"]  { --tile-hue: #10B981; }
+.tile[data-hue="cyan"]   { --tile-hue: #06B6D4; }
+
+/* blossom 主题：与原下拉面板同一套粉/蓝糖果双色重映射 */
+:global([data-theme="blossom"]) .tile[data-hue="amber"],
+:global([data-theme="blossom"]) .tile[data-hue="rose"],
+:global([data-theme="blossom"]) .tile[data-hue="violet"] { --tile-hue: #F0568C; }
+:global([data-theme="blossom"]) .tile[data-hue="sky"],
+:global([data-theme="blossom"]) .tile[data-hue="green"],
+:global([data-theme="blossom"]) .tile[data-hue="cyan"] { --tile-hue: #7EC8E3; }
+
+.text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

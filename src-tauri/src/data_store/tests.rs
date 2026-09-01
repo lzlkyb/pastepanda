@@ -4311,3 +4311,839 @@ fn test_fts_rebuild_leaves_migration_record() {
     drop(store);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ============================================================
+// 知识库笔记（notes / note_tags / notes_fts）测试
+// 规划 §8.1 2️⃣ 建表 + §7 L1 第三路检索
+// ============================================================
+
+#[test]
+fn test_note_crud_roundtrip() {
+    let store = make_store();
+    let n = store
+        .note_create(Some("h1"), "会议记录", "今天讨论了 API 设计")
+        .unwrap();
+    assert!(!n.id.is_empty());
+    // 新建时 created_at 与 updated_at 必须相同（同一个 ?5 绑两次）
+    assert_eq!(n.created_at, n.updated_at);
+
+    let got = store.note_get(&n.id).unwrap().expect("刚建的笔记应该取得到");
+    assert_eq!(got.title, "会议记录");
+    assert_eq!(got.history_id.as_deref(), Some("h1"));
+    assert_eq!(got.source_agent, "", "手动笔记的 source_agent 是空串（D13）");
+
+    store.note_update(&n.id, "会议记录 v2", "改了正文").unwrap();
+    let got = store.note_get(&n.id).unwrap().unwrap();
+    assert_eq!(got.title, "会议记录 v2");
+    assert_eq!(got.created_at, n.created_at, "created_at 不该被 update 改动");
+
+    store.note_delete(&n.id).unwrap();
+    assert!(store.note_get(&n.id).unwrap().is_none());
+}
+
+#[test]
+fn test_note_history_id_can_be_null() {
+    // 规划 §1.6 入口 #2：唯一与剪贴板无关的创建路径，history_id 必须可空
+    let store = make_store();
+    let n = store.note_create(None, "独立笔记", "跟剪贴板没关系").unwrap();
+    let got = store.note_get(&n.id).unwrap().unwrap();
+    assert!(got.history_id.is_none());
+    // 且它不该出现在「已转过笔记的卡片」集合里
+    assert!(store.note_history_ids().unwrap().is_empty());
+}
+
+#[test]
+fn test_note_search_chinese_hits_fts() {
+    // A 阶段验收原文：「中文与拼音关键词都能命中 notes_fts」。
+    // 这条钉的是 to_ngram 的**双侧**预处理——漏掉任一侧中文就搜不到。
+    let store = make_store();
+    store.note_create(Some("h1"), "会议记录", "今天讨论了接口设计与灰度发布").unwrap();
+    store.note_create(Some("h2"), "购物清单", "牛奶 面包").unwrap();
+
+    // 二字词 = bigram 本身精确命中
+    let hits = store.note_search("会议", "all", &[], 20).unwrap();
+    assert_eq!(hits.len(), 1, "「会议」应只命中一条");
+    assert_eq!(hits[0].title, "会议记录");
+
+    // 正文里的词也要能命中（content 列也过了 to_ngram）
+    let hits = store.note_search("灰度发布", "all", &[], 20).unwrap();
+    assert_eq!(hits.len(), 1);
+
+    // 不存在的词返回空，而不是全量
+    assert!(store.note_search("量子隧穿", "all", &[], 20).unwrap().is_empty());
+}
+
+#[test]
+fn test_note_search_pinyin_initials_hits_fts() {
+    // 拼音首字母走 notes_fts 的第三列。compute_pinyin_initials 会大写，
+    // 而 unicode61 分词两侧都折叠大小写，所以查小写也应命中。
+    let store = make_store();
+    store.note_create(Some("h1"), "会议记录", "正文").unwrap();
+
+    assert_eq!(store.note_search("HYJL", "all", &[], 20).unwrap().len(), 1, "大写应命中");
+    assert_eq!(store.note_search("hyjl", "all", &[], 20).unwrap().len(), 1, "小写也应命中");
+}
+
+#[test]
+fn test_note_fts_syncs_on_update_and_delete() {
+    // FTS5 不支持 UPSERT，同步走「先删后插」。这条钉住那条路径真的生效——
+    // history_fts 曾因为用 ON CONFLICT 而首次回填之后再也没进过新内容。
+    let store = make_store();
+    let n = store.note_create(Some("h1"), "旧标题", "旧正文").unwrap();
+    assert_eq!(store.note_search("旧标题", "all", &[], 20).unwrap().len(), 1);
+
+    store.note_update(&n.id, "新标题", "新正文").unwrap();
+    assert!(
+        store.note_search("旧标题", "all", &[], 20).unwrap().is_empty(),
+        "改标题后旧词不该还能搜到（说明只插没删）"
+    );
+    assert_eq!(store.note_search("新标题", "all", &[], 20).unwrap().len(), 1);
+
+    store.note_delete(&n.id).unwrap();
+    assert!(
+        store.note_search("新标题", "all", &[], 20).unwrap().is_empty(),
+        "删笔记后 FTS 行也要清掉（虚拟表没有外键，必须手动删）"
+    );
+}
+
+#[test]
+fn test_note_search_empty_keyword_returns_list() {
+    let store = make_store();
+    store.note_create(Some("h1"), "甲", "x").unwrap();
+    store.note_create(Some("h2"), "乙", "y").unwrap();
+    // 空关键词 = 列表，不是空结果（知识模式首屏就是这个语义）
+    assert_eq!(store.note_search("   ", "all", &[], 20).unwrap().len(), 2);
+}
+
+#[test]
+fn test_note_search_special_chars_do_not_panic() {
+    // 带引号 / 星号 / NEAR 的查询词是 FTS5 MATCH 的语法雷区。
+    // 这里只要求「不 panic、不返回 Err」——真炸了有 LIKE 回退兜着。
+    let store = make_store();
+    store.note_create(Some("h1"), "他说\"你好\"", "正文 *").unwrap();
+    for kw in ["\"", "*", "NEAR(", "a OR", "^"] {
+        assert!(store.note_search(kw, "all", &[], 20).is_ok(), "关键词 {:?} 不该报错", kw);
+    }
+}
+
+#[test]
+fn test_note_by_history_takes_latest() {
+    let store = make_store();
+    store.note_create(Some("h1"), "第一条", "a").unwrap();
+    let second = store.note_create(Some("h1"), "第二条", "b").unwrap();
+    // 一张卡可以转多条；角标只需知道「有没有」，取最新那条
+    let got = store.note_by_history("h1").unwrap().unwrap();
+    assert!(got.id == second.id || got.title == "第二条");
+    assert!(store.note_by_history("不存在").unwrap().is_none());
+
+    let ids = store.note_history_ids().unwrap();
+    assert_eq!(ids, vec!["h1".to_string()], "DISTINCT 后应只有一个");
+}
+
+#[test]
+fn test_note_list_orders_by_updated_desc_and_paginates() {
+    let store = make_store();
+    let a = store.note_create(Some("h1"), "A", "x").unwrap();
+    store.note_create(Some("h2"), "B", "y").unwrap();
+    store.note_create(Some("h3"), "C", "z").unwrap();
+
+    // 这个 sleep 不是在遮掩不稳定，是在跨过**时钟分辨率**：
+    // 内存 SQLite 快到能把上面 3 次插入跟下面那次 update 全跑在同一毫秒里，
+    // 那样 updated_at 字符串完全相等，并列后按 rowid DESC 排 → C 在前。
+    // 真实场景里人手编辑必然跨毫秒，所以这是测试环境的伪影、不是产品 bug。
+    std::thread::sleep(std::time::Duration::from_millis(5));
+
+    // 改 A → 它应该排到最前（按 updated_at DESC）
+    store.note_update(&a.id, "A2", "x2").unwrap();
+
+    let all = store.note_list("all", &[], 10, 0).unwrap();
+    assert_eq!(all.len(), 3);
+    assert_eq!(all[0].title, "A2", "最近改的排最前");
+
+    // 分页：规划 §3.2 估算笔记年化约 670 条，不能一次铺开
+    let page = store.note_list("all", &[], 2, 0).unwrap();
+    assert_eq!(page.len(), 2);
+    let page2 = store.note_list("all", &[], 2, 2).unwrap();
+    assert_eq!(page2.len(), 1);
+    assert_eq!(store.note_count(), 3);
+}
+
+#[test]
+fn test_note_tags_replace_semantics_and_cascade() {
+    let store = make_store();
+    let t1 = store.create_tag("架构", "#111").unwrap();
+    let t2 = store.create_tag("待办", "#222").unwrap();
+    let t3 = store.create_tag("归档", "#333").unwrap();
+    let n = store.note_create(Some("h1"), "标题", "正文").unwrap();
+
+    store.note_set_tags(&n.id, &[t1.id.clone(), t2.id.clone()]).unwrap();
+    let got = store.note_get(&n.id).unwrap().unwrap();
+    assert_eq!(got.tags.len(), 2);
+
+    // 整体替换语义：再传一个新集合应覆盖而不是追加
+    store.note_set_tags(&n.id, &[t3.id.clone()]).unwrap();
+    let got = store.note_get(&n.id).unwrap().unwrap();
+    assert_eq!(got.tags.len(), 1);
+    assert_eq!(got.tags[0].name, "归档");
+
+    // 删笔记 → note_tags 靠外键 CASCADE 自动清（PRAGMA foreign_keys=ON）
+    store.note_delete(&n.id).unwrap();
+    let left: i64 = store
+        .lock_conn()
+        .query_row("SELECT COUNT(*) FROM note_tags WHERE note_id = ?1", [&n.id], |r| r.get(0))
+        .unwrap();
+    assert_eq!(left, 0, "删笔记后 note_tags 关联行应被级联清掉");
+}
+
+#[test]
+fn test_note_update_missing_id_is_not_silent() {
+    // 规则 #15.3：改不存在的笔记是调用方 bug，必须报错而不是静默成功
+    let store = make_store();
+    assert!(store.note_update("不存在的id", "t", "c").is_err());
+}
+
+// ============================================================
+// 待沉淀区（知识库 A 阶段 · 规划 §8.1 4️⃣）
+// ============================================================
+
+/// 插一张带指定信号的卡片。`hit` = search_hit_count，`pinned` = 是否收藏。
+fn seed_candidate(store: &DataStore, id: &str, text: &str, time: &str, hit: i64, pinned: bool) {
+    let mut item = make_item(id, text, time, "text");
+    item.pinned = pinned;
+    store.insert_history(&item).unwrap();
+    // search_hit_count 是迁移加的列，insert_history 不管它，直接改
+    store
+        .lock_conn()
+        .execute(
+            "UPDATE history SET search_hit_count = ?1 WHERE id = ?2",
+            rusqlite::params![hit, id],
+        )
+        .unwrap();
+}
+
+#[test]
+fn test_kb_inbox_two_signals_and_threshold() {
+    let store = make_store();
+    // 找回 1 次：不够门槛（通路#2 要 >= 2）
+    seed_candidate(&store, "h-hit1", "只找回一次", "2026-08-01 10:00:00", 1, false);
+    // 找回 3 次：入选
+    seed_candidate(&store, "h-hit3", "找回三次", "2026-08-02 10:00:00", 3, false);
+    // 收藏但零找回：入选（通路#1，两个信号是 OR）
+    seed_candidate(&store, "h-star", "只收藏", "2026-08-03 10:00:00", 0, true);
+
+    let rows = store.kb_inbox_list("默认", 50, 0).unwrap();
+    let ids: Vec<&str> = rows.iter().map(|r| r.item.id.as_str()).collect();
+    assert!(ids.contains(&"h-hit3"));
+    assert!(ids.contains(&"h-star"));
+    assert!(!ids.contains(&"h-hit1"), "找回 1 次不该入选（门槛是 2）");
+    assert_eq!(store.kb_inbox_count("默认").unwrap(), 2);
+
+    // reason 在后端算好：收藏的是 star，其余是 research
+    let star = rows.iter().find(|r| r.item.id == "h-star").unwrap();
+    assert_eq!(star.reason, "star");
+    let hit = rows.iter().find(|r| r.item.id == "h-hit3").unwrap();
+    assert_eq!(hit.reason, "research");
+    assert_eq!(hit.search_hit_count, 3);
+}
+
+#[test]
+fn test_kb_inbox_excludes_items_with_notes() {
+    // 排除 1：已有笔记的卡片退出候选。**这是虚拟视图的关键性质**——
+    // 转完笔记候选自然消失，不需要任何清理任务。
+    let store = make_store();
+    seed_candidate(&store, "h1", "反复找回的内容", "2026-08-01 10:00:00", 5, false);
+    assert_eq!(store.kb_inbox_count("默认").unwrap(), 1);
+
+    let n = store.note_create(Some("h1"), "标题", "正文").unwrap();
+    assert_eq!(store.kb_inbox_count("默认").unwrap(), 0, "已转笔记就不再是候选");
+
+    // 删掉笔记又回到候选（同样是视图特性，无需额外逻辑）
+    store.note_delete(&n.id).unwrap();
+    assert_eq!(store.kb_inbox_count("默认").unwrap(), 1);
+}
+
+#[test]
+fn test_kb_inbox_dismiss_and_undismiss() {
+    // 排除 2：用户说过「别烦我」的不再出现；撤销后回来。
+    let store = make_store();
+    seed_candidate(&store, "h1", "内容", "2026-08-01 10:00:00", 4, false);
+
+    store.kb_inbox_dismiss("h1", "research").unwrap();
+    assert_eq!(store.kb_inbox_count("默认").unwrap(), 0);
+
+    // 重复忽略同一条不能报错（INSERT OR REPLACE，不是 INSERT）
+    store.kb_inbox_dismiss("h1", "star").unwrap();
+    let reason: String = store
+        .lock_conn()
+        .query_row(
+            "SELECT reason FROM kb_inbox_dismissed WHERE history_id = 'h1'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(reason, "star", "reason 取最后一次");
+
+    store.kb_inbox_undismiss("h1").unwrap();
+    assert_eq!(store.kb_inbox_count("默认").unwrap(), 1, "撤销忽略后候选应回来");
+}
+
+#[test]
+fn test_kb_inbox_order_by_hit_then_pasted() {
+    // 排序：hit 降序 → 同分时有 pasted 的往前（A-28）。
+    let store = make_store();
+    seed_candidate(&store, "h-low", "弱信号", "2026-08-01 10:00:00", 2, false);
+    seed_candidate(&store, "h-tie-a", "同分无pasted", "2026-08-02 10:00:00", 5, false);
+    seed_candidate(&store, "h-tie-b", "同分有pasted", "2026-08-03 10:00:00", 5, false);
+    seed_candidate(&store, "h-high", "强信号", "2026-08-04 10:00:00", 9, false);
+
+    store
+        .lock_conn()
+        .execute(
+            "INSERT INTO action_events (created_at, action_id, outcome, history_id)
+             VALUES ('2026-08-05 10:00:00', 'paste', 'pasted', 'h-tie-b')",
+            [],
+        )
+        .unwrap();
+
+    let rows = store.kb_inbox_list("默认", 50, 0).unwrap();
+    let ids: Vec<&str> = rows.iter().map(|r| r.item.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        vec!["h-high", "h-tie-b", "h-tie-a", "h-low"],
+        "应按 hit 降序，同分时 pasted 优先"
+    );
+    assert!(rows[1].recently_pasted, "h-tie-b 有 pasted 信号");
+    assert!(!rows[2].recently_pasted);
+}
+
+#[test]
+fn test_kb_inbox_pagination_is_stable() {
+    // 分批拉取：全部同分时仍须有确定顺序，否则第二页会重复/跌页。
+    let store = make_store();
+    for i in 0..5 {
+        seed_candidate(
+            &store,
+            &format!("h{i}"),
+            "内容",
+            &format!("2026-08-0{} 10:00:00", i + 1),
+            3,
+            false,
+        );
+    }
+    let page1 = store.kb_inbox_list("默认", 2, 0).unwrap();
+    let page2 = store.kb_inbox_list("默认", 2, 2).unwrap();
+    let page3 = store.kb_inbox_list("默认", 2, 4).unwrap();
+    let mut all: Vec<String> = Vec::new();
+    for p in [&page1, &page2, &page3] {
+        all.extend(p.iter().map(|r| r.item.id.clone()));
+    }
+    assert_eq!(all.len(), 5);
+    let uniq: std::collections::HashSet<&String> = all.iter().collect();
+    assert_eq!(uniq.len(), 5, "分页不得重复或漏条");
+    // 同分时按时间倒序（最新在前）
+    assert_eq!(all[0], "h4");
+}
+
+#[test]
+fn test_kb_inbox_is_workspace_scoped() {
+    // 候选是 history 卡片，而 history 全库按工作区隔离。
+    // 不隔的话，别的工作区的候选会涌进来，而「查看原卡片」在记录模式里又找不到它。
+    let store = make_store();
+    seed_candidate(&store, "h-def", "默认区", "2026-08-01 10:00:00", 3, false);
+    let mut other = make_item("h-other", "其他区", "2026-08-02 10:00:00", "text");
+    other.workspace = "工作".to_string();
+    store.insert_history(&other).unwrap();
+    store
+        .lock_conn()
+        .execute(
+            "UPDATE history SET search_hit_count = 9 WHERE id = 'h-other'",
+            [],
+        )
+        .unwrap();
+
+    assert_eq!(store.kb_inbox_count("默认").unwrap(), 1);
+    assert_eq!(store.kb_inbox_count("工作").unwrap(), 1);
+    let rows = store.kb_inbox_list("默认", 50, 0).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].item.id, "h-def");
+}
+
+// ============================================================
+// 笔记文件夹（B1 #1）
+// ============================================================
+
+#[test]
+fn test_folder_create_and_list_with_depth() {
+    let store = make_store();
+    let a = store.folder_create("工作", None).unwrap();
+    let b = store.folder_create("NC 二开", Some(&a.id)).unwrap();
+    let c = store.folder_create("单据模板", Some(&b.id)).unwrap();
+
+    assert_eq!((a.depth, b.depth, c.depth), (1, 2, 3));
+
+    // 第四层建不了：侧栏 180px 下名字只剩 ~8 个字，树不再可读（设计稿 §2）
+    let err = store.folder_create("太深了", Some(&c.id)).unwrap_err();
+    assert!(err.contains("3 层"), "错误该说清深度上限，实得：{err}");
+
+    let list = store.folder_list().unwrap();
+    assert_eq!(list.len(), 3);
+}
+
+#[test]
+fn test_folder_name_rules() {
+    let store = make_store();
+    // 空名 / 纯空白名拒掉
+    assert!(store.folder_create("", None).is_err());
+    assert!(store.folder_create("   ", None).is_err());
+
+    let a = store.folder_create("工作", None).unwrap();
+    // 同父下重名拒掉：否则树里两行完全一样，用户无法区分
+    assert!(store.folder_create("工作", None).is_err());
+    // 不同父下同名是合法的
+    let b = store.folder_create("学习", None).unwrap();
+    store.folder_create("工作", Some(&b.id)).unwrap();
+
+    // 改名也走同一套校验，但不能把自己算成重名
+    store.folder_rename(&a.id, "工作").unwrap();
+    store.folder_rename(&a.id, "工作A").unwrap();
+    assert!(store.folder_rename(&a.id, "学习").is_err(), "与兄弟同名应拒");
+    assert!(store.folder_rename("不存在", "x").is_err());
+}
+
+#[test]
+fn test_folder_move_rejects_cycle() {
+    // 邻接表方案的头号风险：把父文件夹移进自己的后代，两边从根上断开，
+    // 递归永远走不到 → 笔记不丢但永久看不见。
+    let store = make_store();
+    let a = store.folder_create("工作", None).unwrap();
+    let b = store.folder_create("NC 二开", Some(&a.id)).unwrap();
+
+    assert!(store.folder_move(&a.id, Some(&a.id)).is_err(), "移到自己应拒");
+    assert!(
+        store.folder_move(&a.id, Some(&b.id)).is_err(),
+        "移到自己的子文件夹应拒（否则成孤岛子树）"
+    );
+
+    // 反方向是合法的：把子提到顶层
+    store.folder_move(&b.id, None).unwrap();
+    let list = store.folder_list().unwrap();
+    let moved = list.iter().find(|f| f.id == b.id).unwrap();
+    assert_eq!(moved.parent_id, None);
+    assert_eq!(moved.depth, 1);
+}
+
+#[test]
+fn test_folder_move_rejects_over_depth() {
+    // 目标深度 + 自身子树高度 ≤ 3。单看目标深度不够——
+    // 把一个两层高的子树移到第 2 层，结果就是 4 层。
+    let store = make_store();
+    let deep1 = store.folder_create("A", None).unwrap();
+    let deep2 = store.folder_create("B", Some(&deep1.id)).unwrap();
+
+    let sub1 = store.folder_create("X", None).unwrap();
+    store.folder_create("Y", Some(&sub1.id)).unwrap(); // sub1 子树高 2
+
+    // sub1 移到 deep2（第 2 层）→ 2 + 2 = 4 > 3，拒
+    let err = store.folder_move(&sub1.id, Some(&deep2.id)).unwrap_err();
+    assert!(err.contains("层"), "错误该说清层数，实得：{err}");
+
+    // 移到 deep1（第 1 层）→ 1 + 2 = 3，合法
+    store.folder_move(&sub1.id, Some(&deep1.id)).unwrap();
+}
+
+#[test]
+fn test_folder_delete_keeps_notes_but_cascades_subfolders() {
+    // 两个删除行为故意不同：子文件夹 CASCADE，笔记 SET NULL。
+    // 删一个文件夹把里面笔记连坐是本功能最严重的可能故障。
+    let store = make_store();
+    let a = store.folder_create("工作", None).unwrap();
+    let b = store.folder_create("NC 二开", Some(&a.id)).unwrap();
+    let c = store.folder_create("单据模板", Some(&b.id)).unwrap();
+
+    let n1 = store.note_create(None, "笔记1", "正文1").unwrap();
+    let n2 = store.note_create(None, "笔记2", "正文2").unwrap();
+    let n3 = store.note_create(None, "笔记3", "正文3").unwrap();
+    store.note_set_folder(&n1.id, Some(&a.id)).unwrap();
+    store.note_set_folder(&n2.id, Some(&b.id)).unwrap();
+    store.note_set_folder(&n3.id, Some(&c.id)).unwrap();
+
+    // 删除前的影响预览：2 个子文件夹、3 条笔记
+    let (subs, notes) = store.folder_delete_impact(&a.id).unwrap();
+    assert_eq!((subs, notes), (2, 3), "确认框要拿真数字去填");
+
+    store.folder_delete(&a.id).unwrap();
+
+    // 子文件夹全没了
+    assert!(store.folder_list().unwrap().is_empty(), "子文件夹应级联删除");
+    // 但三条笔记一条不少，全变未分类
+    assert_eq!(store.note_count(), 3, "笔记绝不能随文件夹删");
+    assert_eq!(store.folder_unfiled_count().unwrap(), 3);
+    for id in [&n1.id, &n2.id, &n3.id] {
+        assert_eq!(store.note_get(id).unwrap().unwrap().folder_id, None);
+    }
+}
+
+#[test]
+fn test_folder_note_count_includes_descendants() {
+    // 侧栏计数必须含后代：不含的话点「工作」看到 1 条而侧栏写 3，
+    // 用户会以为丢了（同待沉淀区「横幅 225 / 列表 200」的教训）。
+    let store = make_store();
+    let a = store.folder_create("工作", None).unwrap();
+    let b = store.folder_create("NC", Some(&a.id)).unwrap();
+
+    for (i, f) in [(&a.id, &a.id), (&b.id, &b.id), (&b.id, &b.id)]
+        .iter()
+        .enumerate()
+    {
+        let n = store
+            .note_create(None, &format!("笔记{i}"), "正文")
+            .unwrap();
+        store.note_set_folder(&n.id, Some(f.0)).unwrap();
+    }
+
+    let list = store.folder_list().unwrap();
+    let fa = list.iter().find(|f| f.id == a.id).unwrap();
+    let fb = list.iter().find(|f| f.id == b.id).unwrap();
+    assert_eq!(fa.note_count, 3, "父文件夹计数应含后代");
+    assert_eq!(fb.note_count, 2);
+
+    // 列表与计数同口径：选父文件夹拿到的条数 == 侧栏计数
+    let rows = store.note_list(&a.id, &[], 50, 0).unwrap();
+    assert_eq!(rows.len() as i64, fa.note_count);
+    assert_eq!(store.note_count_filtered(&a.id, &[]).unwrap(), 3);
+}
+
+#[test]
+fn test_note_list_folder_and_tag_is_intersection() {
+    // 文件夹 × 标签 = 交集，不是并集。并集会让「选了更多条件反而结果更多」。
+    let store = make_store();
+    let f = store.folder_create("工作", None).unwrap();
+    let t = store.create_tag("SQL", "#111").unwrap();
+
+    let in_both = store.note_create(None, "两者都满足", "x").unwrap();
+    let only_folder = store.note_create(None, "只在文件夹", "x").unwrap();
+    let only_tag = store.note_create(None, "只有标签", "x").unwrap();
+
+    store.note_set_folder(&in_both.id, Some(&f.id)).unwrap();
+    store.note_set_folder(&only_folder.id, Some(&f.id)).unwrap();
+    store.note_set_tags(&in_both.id, &[t.id.clone()]).unwrap();
+    store.note_set_tags(&only_tag.id, &[t.id.clone()]).unwrap();
+
+    let both = store.note_list(&f.id, &[t.id.clone()], 50, 0).unwrap();
+    assert_eq!(both.len(), 1, "交集应只剩一条");
+    assert_eq!(both[0].id, in_both.id);
+
+    // 交集结果不得大于任一单选
+    let by_folder = store.note_list(&f.id, &[], 50, 0).unwrap();
+    let by_tag = store.note_list("all", &[t.id.clone()], 50, 0).unwrap();
+    assert!(both.len() <= by_folder.len() && both.len() <= by_tag.len());
+
+    // 未分类筛选
+    let unfiled = store.note_list("unfiled", &[], 50, 0).unwrap();
+    assert_eq!(unfiled.len(), 1);
+    assert_eq!(unfiled[0].id, only_tag.id);
+}
+
+#[test]
+fn test_note_search_respects_folder_filter() {
+    // 选着文件夹搜索时，结果不得跳出当前范围。
+    let store = make_store();
+    let f = store.folder_create("工作", None).unwrap();
+    let inside = store.note_create(None, "灵活部署笔记", "正文").unwrap();
+    store.note_create(None, "灵活部署另一条", "正文").unwrap();
+    store.note_set_folder(&inside.id, Some(&f.id)).unwrap();
+
+    let all_hits = store.note_search("部署", "all", &[], 20).unwrap();
+    assert_eq!(all_hits.len(), 2);
+
+    let in_folder = store.note_search("部署", &f.id, &[], 20).unwrap();
+    assert_eq!(in_folder.len(), 1, "搜索应受文件夹筛选限制");
+    assert_eq!(in_folder[0].id, inside.id);
+}
+
+#[test]
+fn test_note_set_folder_missing_target_errors() {
+    // 规则 #15.3：归档不存在的笔记是调用方 bug，不能静默成功
+    let store = make_store();
+    assert!(store.note_set_folder("不存在", None).is_err());
+    assert!(store.folder_delete("不存在").is_err());
+}
+
+// ============================================================
+// 自动收录影子运行（知识库 A 阶段 · 规划 §8.1 5️⃣）
+// ============================================================
+
+/// 一段肯定超 200 字符的正文（形态门槛要求）。
+fn long_text() -> String {
+    "这是一段足够长的技术笔记内容。".repeat(20)
+}
+
+/// 插一张满足/不满足影子规则的卡片。`days_ago` 控制年龄门槛。
+fn seed_shadow_item(store: &DataStore, id: &str, text: &str, hit: i64, days_ago: i64) {
+    let time = (chrono::Local::now() - chrono::Duration::days(days_ago))
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
+    let item = make_item(id, text, &time, "text");
+    store.insert_history(&item).unwrap();
+    store
+        .lock_conn()
+        .execute(
+            "UPDATE history SET search_hit_count = ?1 WHERE id = ?2",
+            rusqlite::params![hit, id],
+        )
+        .unwrap();
+}
+
+#[test]
+fn test_kb_shadow_four_thresholds() {
+    let store = make_store();
+    let long = long_text();
+
+    // 全部满足：命中
+    seed_shadow_item(&store, "ok", &long, 5, 30);
+    // 强度不够（hit=4 < 5）
+    seed_shadow_item(&store, "weak", &long, 4, 30);
+    // 形态不够（正文太短）——挡掉那 64% 碎片
+    seed_shadow_item(&store, "short", "很短的一句", 9, 30);
+    // 太新（今天刚存）——挡掉「当下正在反复找」
+    seed_shadow_item(&store, "fresh", &long, 9, 0);
+
+    let ids: Vec<String> = store
+        .kb_shadow_candidates("默认")
+        .unwrap()
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(ids, vec!["ok"], "四个门槛应全部生效，只有 ok 通过");
+}
+
+#[test]
+fn test_kb_shadow_excludes_noted_and_dismissed() {
+    let store = make_store();
+    let long = long_text();
+    seed_shadow_item(&store, "h-note", &long, 9, 30);
+    seed_shadow_item(&store, "h-dismiss", &long, 9, 30);
+    seed_shadow_item(&store, "h-keep", &long, 9, 30);
+
+    store.note_create(Some("h-note"), "已有笔记", "正文").unwrap();
+    store.kb_inbox_dismiss("h-dismiss", "research").unwrap();
+
+    let ids: Vec<String> = store
+        .kb_shadow_candidates("默认")
+        .unwrap()
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(ids, vec!["h-keep"], "已有笔记与已忽略的都该排除");
+}
+
+#[test]
+fn test_kb_shadow_images_never_hit() {
+    // 形态门槛只管文本类（规划那句「图片类看 OCR 字数」与它自己的结论句相矛，
+    // 且声称要复用的通路#5 从未实现）。图片一律不命中，留在待沉淀区。
+    let store = make_store();
+    let time = (chrono::Local::now() - chrono::Duration::days(30))
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
+    let img = make_item("img", &long_text(), &time, "image");
+    store.insert_history(&img).unwrap();
+    store
+        .lock_conn()
+        .execute("UPDATE history SET search_hit_count = 99 WHERE id = 'img'", [])
+        .unwrap();
+
+    assert!(
+        store.kb_shadow_candidates("默认").unwrap().is_empty(),
+        "图片卡片不应进自动收录候选（图片分支归 B2）"
+    );
+}
+
+#[test]
+fn test_kb_shadow_record_keeps_first_hit_at() {
+    // first_hit_at 是「一周后看结果」的基准，每轮刷新就永远等不到一周。
+    let store = make_store();
+    let ids = vec!["h1".to_string()];
+
+    store.kb_shadow_record(&ids).unwrap();
+    let (first1, rounds1): (String, i64) = store
+        .lock_conn()
+        .query_row(
+            "SELECT first_hit_at, hit_rounds FROM kb_autofile_shadow WHERE history_id = 'h1'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(rounds1, 1);
+
+    // 再跑一轮：轮数 +1，first_hit_at 不变
+    store.kb_shadow_record(&ids).unwrap();
+    let (first2, rounds2): (String, i64) = store
+        .lock_conn()
+        .query_row(
+            "SELECT first_hit_at, hit_rounds FROM kb_autofile_shadow WHERE history_id = 'h1'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(rounds2, 2, "重复命中应累加轮数而不是报错");
+    assert_eq!(first1, first2, "first_hit_at 不得被后续轮次刷新");
+}
+
+#[test]
+fn test_kb_shadow_precision_none_when_no_data() {
+    // 「没数据」不能算成「准确率 0%」——后者会直接得出「B2 不开」的错结论。
+    let store = make_store();
+    let s = store.kb_shadow_stats().unwrap();
+    assert_eq!(s.hits, 0);
+    assert!(s.precision.is_none(), "无命中时 precision 必须是 None，不是 0.0");
+    assert!(s.since.is_none());
+}
+
+#[test]
+fn test_kb_shadow_precision_and_missed() {
+    let store = make_store();
+    let long = long_text();
+    // 三条命中：其中两条用户后来真转了 → 准确率 2/3
+    for id in ["a", "b", "c"] {
+        seed_shadow_item(&store, id, &long, 9, 30);
+    }
+    let hit_ids: Vec<String> = ["a", "b", "c"].iter().map(|s| s.to_string()).collect();
+    store.kb_shadow_record(&hit_ids).unwrap();
+
+    store.note_create(Some("a"), "笔记A", "正文").unwrap();
+    store.note_create(Some("b"), "笔记B", "正文").unwrap();
+    // 用户还转了一条规则根本没命中的 → 漏报 1
+    seed_shadow_item(&store, "d", "短内容", 1, 0);
+    store.note_create(Some("d"), "笔记D", "正文").unwrap();
+
+    let s = store.kb_shadow_stats().unwrap();
+    assert_eq!(s.hits, 3);
+    assert_eq!(s.hits_converted, 2);
+    assert_eq!(s.manual_total, 3, "用户一共手动转了 3 条");
+    assert_eq!(s.missed, 1, "d 是用户转了但规则漏掉的");
+    let p = s.precision.expect("有命中就应该有准确率");
+    assert!((p - 2.0 / 3.0).abs() < 1e-9, "准确率应为 2/3，实得 {p}");
+
+    // 红线②：可删
+    let n = store.kb_shadow_clear().unwrap();
+    assert_eq!(n, 3);
+    assert_eq!(store.kb_shadow_stats().unwrap().hits, 0);
+}
+
+// ============================================================
+// 版本快照 + 恢复（B1 #4 / D8）
+// 逐条对应 design/PastePanda-版本快照-设计稿.html §7
+// ============================================================
+
+#[test]
+fn test_revision_snapshots_old_version_on_each_change() {
+    let store = make_store();
+    let n = store.note_create(None, "标题", "第一版").unwrap();
+
+    store.note_update(&n.id, "标题", "第二版").unwrap();
+    store.note_update(&n.id, "标题", "第三版").unwrap();
+
+    let revs = store.note_revision_list(&n.id).unwrap();
+    assert_eq!(revs.len(), 2, "两次改动应留两份历史（当前版不在表里）");
+
+    // 存的是**旧版本**：最新那份历史是第二次保存之前的内容
+    let newest = store.note_revision_get(revs[0].id).unwrap().unwrap();
+    assert_eq!(newest.content, "第二版");
+    let oldest = store.note_revision_get(revs[1].id).unwrap().unwrap();
+    assert_eq!(oldest.content, "第一版", "第一次编辑应保住刚建时的原始版");
+
+    // 当前版只在 notes
+    assert_eq!(store.note_get(&n.id).unwrap().unwrap().content, "第三版");
+}
+
+#[test]
+fn test_revision_not_written_when_nothing_changed() {
+    let store = make_store();
+    let n = store.note_create(None, "标题", "正文").unwrap();
+    let before = store.note_get(&n.id).unwrap().unwrap().updated_at;
+
+    // 打开→直接保存：不写快照，**也不动 updated_at**
+    store.note_update(&n.id, "标题", "正文").unwrap();
+
+    assert!(store.note_revision_list(&n.id).unwrap().is_empty());
+    assert_eq!(
+        store.note_get(&n.id).unwrap().unwrap().updated_at,
+        before,
+        "没改却刷新 updated_at，会把这条笔记顶到列表最前"
+    );
+}
+
+#[test]
+fn test_revision_pruned_to_max() {
+    let store = make_store();
+    let n = store.note_create(None, "标题", "v0").unwrap();
+    for i in 1..=25 {
+        store.note_update(&n.id, "标题", &format!("v{i}")).unwrap();
+    }
+
+    let revs = store.note_revision_list(&n.id).unwrap();
+    assert_eq!(revs.len(), MAX_REVISIONS as usize);
+
+    // 留下的是最近 20 份：最新一份是 v24（第 25 次保存前的内容）
+    let newest = store.note_revision_get(revs[0].id).unwrap().unwrap();
+    assert_eq!(newest.content, "v24");
+    let oldest = store.note_revision_get(revs[19].id).unwrap().unwrap();
+    assert_eq!(oldest.content, "v5", "更早的应该已被裁掉");
+}
+
+#[test]
+fn test_restore_is_itself_undoable() {
+    let store = make_store();
+    let n = store.note_create(None, "标题", "第一版").unwrap();
+    store.note_update(&n.id, "标题", "第二版").unwrap();
+
+    let revs = store.note_revision_list(&n.id).unwrap();
+    let restored = store.note_restore(revs[0].id).unwrap();
+    assert_eq!(restored.content, "第一版");
+
+    // 恢复前的内容进了历史 ⇒ 恢复可撤销
+    let after = store.note_revision_list(&n.id).unwrap();
+    assert_eq!(after.len(), 2);
+    let top = store.note_revision_get(after[0].id).unwrap().unwrap();
+    assert_eq!(top.content, "第二版", "恢复应先把当前版存成快照");
+
+    // 撤销恢复：把刚才那份再恢复回来
+    let back = store.note_restore(after[0].id).unwrap();
+    assert_eq!(back.content, "第二版");
+}
+
+#[test]
+fn test_restore_also_restores_title() {
+    let store = make_store();
+    let n = store.note_create(None, "原标题", "正文").unwrap();
+    store.note_update(&n.id, "新标题", "新正文").unwrap();
+
+    let revs = store.note_revision_list(&n.id).unwrap();
+    let restored = store.note_restore(revs[0].id).unwrap();
+    assert_eq!(restored.title, "原标题");
+    assert_eq!(restored.content, "正文");
+}
+
+#[test]
+fn test_deleting_note_cascades_revisions() {
+    let store = make_store();
+    let n = store.note_create(None, "标题", "v0").unwrap();
+    store.note_update(&n.id, "标题", "v1").unwrap();
+    assert_eq!(store.note_revision_list(&n.id).unwrap().len(), 1);
+
+    store.note_delete(&n.id).unwrap();
+
+    // 规划 §6 的 DDL 漏了这个外键；不补的话历史会永久留在库里（设计稿 §0）
+    assert!(
+        store.note_revision_list(&n.id).unwrap().is_empty(),
+        "删笔记必须级联清掉它的历史"
+    );
+}
+
+#[test]
+fn test_restore_missing_revision_errors() {
+    let store = make_store();
+    // 不静默（规则 #15.3）
+    assert!(store.note_restore(999_999).is_err());
+    assert!(store.note_revision_get(999_999).unwrap().is_none());
+}

@@ -1,0 +1,528 @@
+//! data_store/note.rs — 知识库笔记（A 阶段）。
+//!
+//! 对应 docs/个人知识库与笔记-规划.md 的 §8.1 2️⃣（建表）与 §7 L1（检索第三路）。
+//! 建表 DDL 在 `mod.rs`（跟其它表放一起），这里只管读写。
+//!
+//! # 中文检索的两侧预处理（改这里前必读）
+//!
+//! `notes_fts` 是**裸的** `fts5(title, content, pinyin)`，一个 tokenizer 参数也没有
+//! （同 `history_fts`）。中文能搜到全靠 [`to_ngram`] 的 **bigram 双侧预处理**：
+//!
+//! 1. 写入时切二元存进 FTS（[`Self::sync_notes_fts_on`]）；
+//! 2. 查询词也要过 `to_ngram` 再 MATCH（[`Self::note_search`]）。
+//!
+//! **漏掉任一侧，中文就搜不到**——A 阶段验收里「中文与拼音关键词都能命中
+//! notes_fts」会直接踩空。
+//!
+//! # FTS5 不支持 UPSERT
+//!
+//! 同步必须是「按 rowid 删旧行 → 再插」。history_fts 曾因为用 `ON CONFLICT`
+//! 而整年报错并被 `log::warn` 吞掉，首次回填之后新增内容从未进过索引。不要重蹈。
+
+use super::*;
+
+// `to_ngram` 住在 history.rs（它是那里先需要的），并未从 mod.rs 再导出，
+// 所以 `use super::*` 带不进来，得显式引。现在它有两个使用方了；
+// 若再出现第三个，就该把它上提到 mod.rs 当共用 FTS 工具（规则 #11）。
+use super::history::to_ngram;
+// 文件夹子树的递归 CTE 住在 note_folder.rs（那里是主要使用方）。
+// 复用而不重写：写两份递归定义，改树结构时必定漏改一份（规则 #11）。
+use super::note_folder::SUBTREE_CTE;
+
+/// 一条笔记。字段与 `notes` 表一一对应，`tags` 不在表里（走 `note_tags` 关联表）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Note {
+    pub id: String,
+    /// 来源卡片 id。为 `None` = 独立新建的笔记（规划 §1.6 入口 #2，B1 才做 UI）。
+    pub history_id: Option<String>,
+    pub title: String,
+    /// Markdown 正文。`[[..]]` 是合法字符，**原样保存不解析**（D7，解析归 C 阶段）。
+    pub content: String,
+    pub created_at: String,
+    pub updated_at: String,
+    /// D13：外部 agent 写入的来源标记。M4 才启用，手动笔记是空串。
+    #[serde(default)]
+    pub source_agent: String,
+    /// 所属文件夹（B1 #1）。`None` = 未分类。
+    ///
+    /// 删文件夹时由 `ON DELETE SET NULL` 自动变回 None——**笔记不随文件夹删**。
+    #[serde(default)]
+    pub folder_id: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<Tag>,
+}
+
+/// 取列顺序写一次，所有查询共用——否则加字段时必定漏改某一处。
+const NOTE_COLS: &str =
+    "id, history_id, title, content, created_at, updated_at, source_agent, folder_id";
+
+fn row_to_note(row: &rusqlite::Row) -> rusqlite::Result<Note> {
+    Ok(Note {
+        id: row.get(0)?,
+        history_id: row.get(1)?,
+        title: row.get(2)?,
+        content: row.get(3)?,
+        created_at: row.get(4)?,
+        updated_at: row.get(5)?,
+        source_agent: row.get(6)?,
+        folder_id: row.get(7)?,
+        tags: Vec::new(),
+    })
+}
+
+/// 拼音首字母的输入：标题 + 正文头部。
+///
+/// 为何要先截：[`compute_pinyin_initials`] 内部只取前 50 个拼音，但 `lazy_pinyin`
+/// 会先把**整串**转完再丢掉——一篇万字笔记全转一遍纯浪费。
+/// 200 字已远超 50 个拼音的阀值，结果不变。
+fn pinyin_source(title: &str, content: &str) -> String {
+    let head: String = content.chars().take(200).collect();
+    format!("{} {}", title, head)
+}
+
+/// 笔记时间戳。**比全库惯例多了毫秒**，这是有意的：
+///
+/// 其它表用 `'%Y-%m-%d %H:%M:%S'`（秒粒度）。history 是追加型、并列时按 rowid
+/// 天然有序，所以秒粒度够用。但**笔记会被编辑**，而列表按 `updated_at DESC`
+/// 排——秒粒度下「同一秒内改了一条旧笔记」会并列，它跳不到最前，
+/// 而「改完跳最前」正是笔记列表的核心交互。
+///
+/// 仍是 TEXT、仍是字典序可排，所以没破坏「全库时间戳用字符串」这个惯例，
+/// 只是精度更高。notes 的时间戳不与任何其它表做比较或 join。
+pub(super) fn note_now() -> String {
+    chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string()
+}
+
+/// 把用户关键词转成 FTS5 的 MATCH 表达式。
+///
+/// 两条路径，分岔的理由很具体：
+///
+/// - **纯 ASCII 字母数字 → 前缀查询 `kw*`**。拼音首字母列存的是整篇笔记的
+///   首字母串（如「会议记录 正文」→ `HYJLZW`），它是**一个长 token**；
+///   而用户只会输开头几个字母（`hyjl`）。FTS5 默认整词匹配，不加 `*`
+///   **拼音检索永远不可能命中**——规划 A 阶段验收的「拼音关键词能命中
+///   notes_fts」就是卡在这里。附带好处：英文词（`API`）也变成前缀检索。
+/// - **含中文 → 走 [`to_ngram`]**。bigram 本身就是精确匹配单元，加 `*` 只会扩大误命中。
+///
+/// 两路都先把非字母数字字符剔干净，否则引号 / `*` / `NEAR` 会撞上 MATCH 语法。
+fn to_match_expr(kw: &str) -> String {
+    let is_ascii_word = kw
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == ' ' || c == '_' || c == '-');
+    if is_ascii_word {
+        let cleaned: String = kw
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { ' ' })
+            .collect();
+        let terms: Vec<String> = cleaned
+            .split_whitespace()
+            .map(|t| format!("{}*", t))
+            .collect();
+        if !terms.is_empty() {
+            return terms.join(" ");
+        }
+    }
+    to_ngram(kw)
+}
+
+/// 文件夹 + 标签的筛选片段（**交集**语义）。
+///
+/// - `folder_filter`：`"all"` | `"unfiled"` | `<folder_id>`。
+///   这个魔法字符串形式是**照搬项目现有的 `group_filter`**（history.rs:396，
+///   前端类型 `GroupFilter = "all" | "ungrouped" | string`），不另发明一套。
+///   具体 id 时**含全部后代**——与侧栏计数同口径（设计稿 §4）。
+/// - `tag_ids`：多个标签是 **AND**（必须全部命中），同记录模式的卡片筛选（history.rs:402）。
+///   并集会让「选了更多条件反而结果更多」，与用户对筛选器的直觉相反。
+///
+/// 调用方的 `sql` 必须已经以 `WHERE 1=1` 结尾（所以这里一律拼 `AND`）。
+fn push_note_filters(
+    sql: &mut String,
+    params: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
+    folder_filter: &str,
+    tag_ids: &[String],
+) {
+    if folder_filter == "unfiled" {
+        sql.push_str(" AND folder_id IS NULL");
+    } else if folder_filter != "all" && !folder_filter.is_empty() {
+        // SQLite 允许子查询自带 WITH 子句，所以递归 CTE 可以嵌在 IN 里。
+        // 常量里的占位符是 `?1`，而这里走的是位置绑定，换成匿名 `?`。
+        sql.push_str(" AND folder_id IN (");
+        sql.push_str(&SUBTREE_CTE.replace("?1", "?"));
+        sql.push_str(" SELECT id FROM sub)");
+        params.push(Box::new(folder_filter.to_string()));
+    }
+    for tag_id in tag_ids {
+        sql.push_str(" AND id IN (SELECT note_id FROM note_tags WHERE tag_id = ?)");
+        params.push(Box::new(tag_id.clone()));
+    }
+}
+
+impl DataStore {
+    // ===== FTS 同步 =====
+
+    /// 把一条笔记同步进 `notes_fts`。失败只 `warn`，不阻断主流程
+    /// （同 `sync_history_fts_on` 的取舍：索引是加速器，不能因它存不下笔记）。
+    pub(super) fn sync_notes_fts_on(conn: &rusqlite::Connection, id: &str) {
+        let res = conn
+            .query_row(
+                "SELECT rowid, title, content FROM notes WHERE id = ?1",
+                [id],
+                |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                    ))
+                },
+            )
+            .and_then(|(rowid, title, content)| {
+                let pinyin = compute_pinyin_initials(&pinyin_source(&title, &content));
+                // FTS5 不支持 UPSERT：必须先删后插（见本文件头部注释）。
+                conn.execute("DELETE FROM notes_fts WHERE rowid = ?1", rusqlite::params![rowid])?;
+                conn.execute(
+                    "INSERT INTO notes_fts (rowid, title, content, pinyin) VALUES (?1, ?2, ?3, ?4)",
+                    rusqlite::params![
+                        rowid,
+                        to_ngram(&title),
+                        to_ngram(&content),
+                        to_ngram(&pinyin)
+                    ],
+                )
+            });
+        if let Err(e) = res {
+            log::warn!("[Notes] FTS 索引同步失败 (id={}): {}", id, e);
+        }
+    }
+
+    // ===== CRUD =====
+
+    /// 新建笔记。`history_id` 为 `None` = 与剪贴板无关的独立笔记。
+    pub fn note_create(
+        &self,
+        history_id: Option<&str>,
+        title: &str,
+        content: &str,
+    ) -> Result<Note, String> {
+        let conn = self.lock_conn();
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = note_now();
+        conn.execute(
+            "INSERT INTO notes (id, history_id, title, content, created_at, updated_at, source_agent)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?5, '')",
+            rusqlite::params![id, history_id, title, content, now],
+        )
+        .map_err(|e| e.to_string())?;
+        Self::sync_notes_fts_on(&conn, &id);
+        Ok(Note {
+            id,
+            history_id: history_id.map(|s| s.to_string()),
+            title: title.to_string(),
+            content: content.to_string(),
+            created_at: now.clone(),
+            updated_at: now,
+            source_agent: String::new(),
+            // 新建笔记一律落入「未分类」。归档走 `note_set_folder`（右键「移动到文件夹」
+            // 与 #13 新建空白笔记的「落入当前文件夹」都用它），不往 create 里堆参数。
+            folder_id: None,
+            tags: Vec::new(),
+        })
+    }
+
+    /// 改标题与正文。`created_at` 不动，`updated_at` 刷新。
+    pub fn note_update(&self, id: &str, title: &str, content: &str) -> Result<(), String> {
+        let conn = self.lock_conn();
+
+        // 先读旧值：既用来判「真的改了吗」，也顺便代替了原来靠 UPDATE 影响行数
+        // 判笔记是否存在（无变化时 UPDATE 本就不会发，那个判法失效）。
+        let (old_title, old_content): (String, String) = conn
+            .query_row("SELECT title, content FROM notes WHERE id = ?1", [id], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .map_err(|e| match e {
+                // 不静默（规则 #15.3）：改不存在的笔记是调用方的 bug，不是正常情况。
+                rusqlite::Error::QueryReturnedNoRows => format!("笔记不存在: {}", id),
+                other => other.to_string(),
+            })?;
+
+        // 标题与正文都没变 ⇒ **什么都不做**：不写快照，也不动 updated_at。
+        // 后一半容易漏：列表默认按 updated_at 排，一次「打开→直接保存」就把一条
+        // 没改过的笔记顶到最前，看上去像数据乱了（设计稿 §1）。
+        if old_title == title && old_content == content {
+            return Ok(());
+        }
+
+        // 快照存的是**旧版本**，所以必须在 UPDATE 之前拍（D8 / note_revision.rs）。
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        Self::snapshot_note_on(&tx, id).map_err(|e| e.to_string())?;
+        tx.execute(
+            "UPDATE notes SET title = ?2, content = ?3, updated_at = ?4 WHERE id = ?1",
+            rusqlite::params![id, title, content, note_now()],
+        )
+        .map_err(|e| e.to_string())?;
+        Self::prune_revisions_on(&tx, id).map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
+
+        Self::sync_notes_fts_on(&conn, id);
+        Ok(())
+    }
+
+    /// 删笔记。`note_tags` 靠外键 ON DELETE CASCADE 自动清（PRAGMA foreign_keys=ON）；
+    /// `notes_fts` 是虚拟表、没有外键，必须手动删。
+    pub fn note_delete(&self, id: &str) -> Result<(), String> {
+        let conn = self.lock_conn();
+        // 先取 rowid：删完 notes 行就查不到了。
+        let rowid: Option<i64> = conn
+            .query_row("SELECT rowid FROM notes WHERE id = ?1", [id], |r| r.get(0))
+            .ok();
+        conn.execute("DELETE FROM notes WHERE id = ?1", [id])
+            .map_err(|e| e.to_string())?;
+        if let Some(rid) = rowid {
+            if let Err(e) =
+                conn.execute("DELETE FROM notes_fts WHERE rowid = ?1", rusqlite::params![rid])
+            {
+                log::warn!("[Notes] FTS 删除失败 (id={}): {}", id, e);
+            }
+        }
+        Ok(())
+    }
+}
+
+impl DataStore {
+    // ===== 查询 =====
+
+    /// 按 id 取一条（带标签）。不存在返回 `Ok(None)`。
+    pub fn note_get(&self, id: &str) -> Result<Option<Note>, String> {
+        let conn = self.lock_conn();
+        let sql = format!("SELECT {} FROM notes WHERE id = ?1", NOTE_COLS);
+        let mut note = match conn.query_row(&sql, [id], row_to_note) {
+            Ok(n) => n,
+            Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
+            Err(e) => return Err(e.to_string()),
+        };
+        note.tags = Self::load_note_tags_on(&conn, &note.id);
+        Ok(Some(note))
+    }
+
+    /// 笔记列表，按 `updated_at` 降序（最近改的在前）。
+    ///
+    /// 分页而不是一次铺开：规划 §3.2 按真实数据估算笔记年化约 670 条，
+    /// 两三年后上千，不分页早晚会撞上渲染成本。
+    ///
+    /// `folder_filter` / `tag_ids` 见 `push_note_filters`。
+    pub fn note_list(
+        &self,
+        folder_filter: &str,
+        tag_ids: &[String],
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<Note>, String> {
+        let conn = self.lock_conn();
+        let mut sql = format!("SELECT {} FROM notes WHERE 1=1", NOTE_COLS);
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        push_note_filters(&mut sql, &mut params, folder_filter, tag_ids);
+        sql.push_str(" ORDER BY updated_at DESC, rowid DESC LIMIT ? OFFSET ?");
+        params.push(Box::new(limit));
+        params.push(Box::new(offset));
+
+        let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let mut notes: Vec<Note> = stmt
+            .query_map(refs.as_slice(), row_to_note)
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        for n in notes.iter_mut() {
+            n.tags = Self::load_note_tags_on(&conn, &n.id);
+        }
+        Ok(notes)
+    }
+
+    /// 当前筛选下的笔记总数。列表分页靠它判「还有更多」。
+    ///
+    /// 与 `note_list` 共用 `push_note_filters`：分开写早晚漂，结果就是计数与列表不一致
+    /// （待沉淀区那个「横幅 225 / 列表 200」就是这么来的，`↩A-32`）。
+    pub fn note_count_filtered(
+        &self,
+        folder_filter: &str,
+        tag_ids: &[String],
+    ) -> Result<i64, String> {
+        let conn = self.lock_conn();
+        let mut sql = String::from("SELECT COUNT(*) FROM notes WHERE 1=1");
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        push_note_filters(&mut sql, &mut params, folder_filter, tag_ids);
+        let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        conn.query_row(&sql, refs.as_slice(), |r| r.get(0))
+            .map_err(|e| e.to_string())
+    }
+
+    /// 某张卡片是否已转过笔记。一张卡片可能转过多条，这里只取最新一条
+    /// （卡片上的 📝 角标只需要知道「有没有」）。
+    pub fn note_by_history(&self, history_id: &str) -> Result<Option<Note>, String> {
+        let conn = self.lock_conn();
+        let sql = format!(
+            "SELECT {} FROM notes WHERE history_id = ?1 ORDER BY updated_at DESC, rowid DESC LIMIT 1",
+            NOTE_COLS
+        );
+        match conn.query_row(&sql, [history_id], row_to_note) {
+            Ok(mut n) => {
+                n.tags = Self::load_note_tags_on(&conn, &n.id);
+                Ok(Some(n))
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// 所有已转过笔记的 `history_id` 集合。
+    ///
+    /// 两个地方要用，且都是**批量**场景，所以不能逐张卡片调 `note_by_history`：
+    /// ① 卡片列表的 📝 角标（一屏几十张）；
+    /// ② 待沉淀区的「无对应笔记」排除条件（规划 §1.6，存量 225 条候选）。
+    pub fn note_history_ids(&self) -> Result<Vec<String>, String> {
+        let conn = self.lock_conn();
+        let mut stmt = conn
+            .prepare("SELECT DISTINCT history_id FROM notes WHERE history_id IS NOT NULL")
+            .map_err(|e| e.to_string())?;
+        let ids = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(ids)
+    }
+
+    pub fn note_count(&self) -> i64 {
+        self.lock_conn()
+            .query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))
+            .unwrap_or(0)
+    }
+
+    /// 笔记全文检索（规划 §7 L1 的第三路）。
+    ///
+    /// FTS 快速路径＋**失败回退 LIKE**——同 `try_search_fts` 的先例。
+    /// 回退不是多余的：查询词里的特殊字符（引号 / `*` / `NEAR`）会让 FTS5 的
+    /// MATCH 语法报错，而用户只是在搜一个带引号的词。
+    pub fn note_search(
+        &self,
+        keyword: &str,
+        folder_filter: &str,
+        tag_ids: &[String],
+        limit: u32,
+    ) -> Result<Vec<Note>, String> {
+        let kw = keyword.trim();
+        if kw.is_empty() {
+            return self.note_list(folder_filter, tag_ids, limit, 0);
+        }
+        let conn = self.lock_conn();
+
+        // 快速路径：MATCH。查询词必须过 to_ngram，否则中文命中不了（见文件头部）。
+        //
+        // 筛选条件也要叠上：选着文件夹搜索时，用户的预期是「在这个文件夹里搜」，
+        // 而不是搜索结果突然跳出当前范围。
+        let mut fts_sql = format!(
+            "SELECT {} FROM notes
+             WHERE rowid IN (SELECT rowid FROM notes_fts WHERE notes_fts MATCH ?)",
+            NOTE_COLS
+        );
+        let mut fts_params: Vec<Box<dyn rusqlite::types::ToSql>> =
+            vec![Box::new(to_match_expr(kw))];
+        push_note_filters(&mut fts_sql, &mut fts_params, folder_filter, tag_ids);
+        fts_sql.push_str(" ORDER BY updated_at DESC, rowid DESC LIMIT ?");
+        fts_params.push(Box::new(limit));
+
+        let fts_res: Result<Vec<Note>, rusqlite::Error> =
+            conn.prepare(&fts_sql).and_then(|mut stmt| {
+                let refs: Vec<&dyn rusqlite::types::ToSql> =
+                    fts_params.iter().map(|p| p.as_ref()).collect();
+                let rows = stmt
+                    .query_map(refs.as_slice(), row_to_note)?
+                    .filter_map(|r| r.ok())
+                    .collect::<Vec<_>>();
+                Ok(rows)
+            });
+
+        let mut notes = match fts_res {
+            Ok(v) => v,
+            Err(e) => {
+                // 不静默（规则 #15.3）：回退能给结果，但得知道 FTS 为什么挂了。
+                log::warn!("[Notes] FTS 检索失败，回退 LIKE: {}", e);
+                let mut like_sql = format!(
+                    "SELECT {} FROM notes WHERE (title LIKE ? OR content LIKE ?)",
+                    NOTE_COLS
+                );
+                let pattern = format!("%{}%", kw);
+                let mut like_params: Vec<Box<dyn rusqlite::types::ToSql>> =
+                    vec![Box::new(pattern.clone()), Box::new(pattern)];
+                push_note_filters(&mut like_sql, &mut like_params, folder_filter, tag_ids);
+                like_sql.push_str(" ORDER BY updated_at DESC, rowid DESC LIMIT ?");
+                like_params.push(Box::new(limit));
+
+                let mut stmt = conn.prepare(&like_sql).map_err(|e| e.to_string())?;
+                let refs: Vec<&dyn rusqlite::types::ToSql> =
+                    like_params.iter().map(|p| p.as_ref()).collect();
+                // 必须先绑到局部变量再作为尾表达式：直接把链式调用放在块尾会让
+                // MappedRows 的临时值比 `stmt` 活得久（E0597）。
+                let rows: Vec<Note> = stmt
+                    .query_map(refs.as_slice(), row_to_note)
+                    .map_err(|e| e.to_string())?
+                    .filter_map(|r| r.ok())
+                    .collect();
+                rows
+            }
+        };
+        for n in notes.iter_mut() {
+            n.tags = Self::load_note_tags_on(&conn, &n.id);
+        }
+        Ok(notes)
+    }
+
+    // ===== 标签（复用 tags 主表，D2）=====
+
+    /// 读一条笔记的标签。失败返回空 Vec 而不是报错：
+    /// 标签读不到不应该让整条笔记取不出来（同 HistoryItem.tags 的取舍）。
+    fn load_note_tags_on(conn: &rusqlite::Connection, note_id: &str) -> Vec<Tag> {
+        let sql = "SELECT t.id, t.name, t.color, COALESCE(t.source, 'manual'), t.created_at
+                   FROM note_tags nt JOIN tags t ON t.id = nt.tag_id
+                   WHERE nt.note_id = ?1 ORDER BY t.name ASC";
+        let mut stmt = match conn.prepare(sql) {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!("[Notes] 标签查询准备失败: {}", e);
+                return Vec::new();
+            }
+        };
+        stmt.query_map([note_id], |row| {
+            Ok(Tag {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                color: row.get(2)?,
+                source: row.get::<_, String>(3).unwrap_or_else(|_| "manual".to_string()),
+                created_at: row.get(4)?,
+            })
+        })
+        .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        .unwrap_or_default()
+    }
+
+    /// 整体替换一条笔记的标签（先删后插，包在事务里）。
+    ///
+    /// 选「替换」而不是「增/删单条」：TagEditor 组件交的本来就是一整张标签集，
+    /// 接口对齐它能免掉前端算 diff。`source` 固定 `manual`；
+    /// B1 的 AI 自动标签会另走一个写 `'ai'` 的路径，**不要把这个方法改成带参数的**
+    /// ——否则一次手动保存会把 AI 打的标签整批抹成 manual。
+    pub fn note_set_tags(&self, note_id: &str, tag_ids: &[String]) -> Result<(), String> {
+        let mut conn = self.lock_conn();
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM note_tags WHERE note_id = ?1", [note_id])
+            .map_err(|e| e.to_string())?;
+        for tid in tag_ids {
+            tx.execute(
+                "INSERT OR IGNORE INTO note_tags (note_id, tag_id, source) VALUES (?1, ?2, 'manual')",
+                rusqlite::params![note_id, tid],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(())
+    }
+}
