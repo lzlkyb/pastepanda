@@ -70,84 +70,17 @@ pub fn key_path(app_dir: &Path, provider: &str) -> PathBuf {
     app_dir.join(format!("ai_key_{}.bin", sanitize(provider)))
 }
 
-#[cfg(windows)]
+/// DPAPI 的 unsafe FFI 已收口到 [`crate::dpapi`]（MCP 访问令牌也用同一份），
+/// 这里只负责把本模块的 `ENTROPY` 绑上去，因此调用点写法不变。
 mod dpapi {
     use super::ENTROPY;
-    use windows::core::PCWSTR;
-    use windows::Win32::Foundation::{HLOCAL, LocalFree};
-    use windows::Win32::Security::Cryptography::{
-        CryptProtectData, CryptUnprotectData, CRYPT_INTEGER_BLOB,
-    };
-
-    /// 把切片包成 DPAPI 的 BLOB。注意：pbData 是借用，调用期间原切片必须存活。
-    fn blob(data: &[u8]) -> CRYPT_INTEGER_BLOB {
-        CRYPT_INTEGER_BLOB {
-            cbData: data.len() as u32,
-            pbData: data.as_ptr() as *mut u8,
-        }
-    }
-
-    /// 把 DPAPI 输出拷贝成 Vec 并释放它分配的内存。
-    ///
-    /// # Safety
-    /// 仅允许对 CryptProtectData / CryptUnprotectData 成功返回的 out 调用一次。
-    unsafe fn take_blob(out: CRYPT_INTEGER_BLOB) -> Vec<u8> {
-        if out.pbData.is_null() || out.cbData == 0 {
-            return Vec::new();
-        }
-        let v = std::slice::from_raw_parts(out.pbData, out.cbData as usize).to_vec();
-        // windows 0.58 的 LocalFree 接 `impl Param<HLOCAL>`，不是 Option
-        let _ = LocalFree(HLOCAL(out.pbData as *mut core::ffi::c_void));
-        v
-    }
 
     pub fn protect(plain: &[u8]) -> Result<Vec<u8>, String> {
-        unsafe {
-            let input = blob(plain);
-            let entropy = blob(ENTROPY);
-            let mut out = CRYPT_INTEGER_BLOB::default();
-            CryptProtectData(
-                &input,
-                PCWSTR::null(),
-                Some(&entropy),
-                None,
-                None,
-                0,
-                &mut out,
-            )
-            .map_err(|e| format!("DPAPI 加密失败：{}", e))?;
-            Ok(take_blob(out))
-        }
+        crate::dpapi::protect(plain, ENTROPY)
     }
 
     pub fn unprotect(cipher: &[u8]) -> Result<Vec<u8>, String> {
-        unsafe {
-            let input = blob(cipher);
-            let entropy = blob(ENTROPY);
-            let mut out = CRYPT_INTEGER_BLOB::default();
-            CryptUnprotectData(
-                &input,
-                None,
-                Some(&entropy),
-                None,
-                None,
-                0,
-                &mut out,
-            )
-            .map_err(|e| format!("DPAPI 解密失败（密钥可能来自其他用户或其他机器）：{}", e))?;
-            Ok(take_blob(out))
-        }
-    }
-}
-
-#[cfg(not(windows))]
-mod dpapi {
-    // 非 Windows 平台不提供回退的“明文存盘”实现——宁可不能用，不能默默地把密钥落成明文。
-    pub fn protect(_plain: &[u8]) -> Result<Vec<u8>, String> {
-        Err("当前平台不支持密钥加密存储".to_string())
-    }
-    pub fn unprotect(_cipher: &[u8]) -> Result<Vec<u8>, String> {
-        Err("当前平台不支持密钥加密存储".to_string())
+        crate::dpapi::unprotect(cipher, ENTROPY)
     }
 }
 

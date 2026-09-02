@@ -21,6 +21,8 @@ mod atomic_write;
 mod auto_cleanup;
 mod clipboard_monitor;
 mod commands;
+// DPAPI 加解密的公共收口（AI 密钥与 MCP 令牌共用同一份 unsafe FFI）
+pub mod dpapi;
 pub mod content_classifier;
 pub mod data_store;
 pub mod error;
@@ -30,6 +32,7 @@ mod icon_extractor;
 mod lan_sync;
 mod lang_arbiter;
 mod mask;
+pub mod mcp;
 mod paste_engine;
 mod pinned_window;
 mod quick_paste;
@@ -250,6 +253,21 @@ pub fn run() {
                 .and_then(|c| c.get("lan_sync_enabled").and_then(|v| v.as_bool()))
                 .unwrap_or(false);
 
+            // 读知识库 MCP 服务配置（同样在 store 被 manage 之前）。
+            // 默认 false（决策 D7）：开一个本机监听端口不能因为升级就默默发生。
+            let mcp_enabled = store
+                .get_config()
+                .ok()
+                .and_then(|c| c.get(mcp::CFG_ENABLED).and_then(|v| v.as_bool()))
+                .unwrap_or(false);
+            let mcp_port = store
+                .get_config()
+                .ok()
+                .and_then(|c| c.get(mcp::CFG_PORT).and_then(|v| v.as_u64()))
+                .and_then(|p| u16::try_from(p).ok())
+                .filter(|p| *p >= 1024)
+                .unwrap_or(mcp::DEFAULT_PORT);
+
             // 读取保存的热键配置（在 store 被 manage 之前）
             let saved_config = store.get_config().unwrap_or_default();
 
@@ -432,6 +450,27 @@ pub fn run() {
             }
             app.manage(lan_sync);
 
+            // 知识库 MCP Server（M4）。只有配置里明确开过才启。
+            let mcp_server = mcp::McpServer::new();
+            if mcp_enabled {
+                let started = mcp::token::load_or_create(&app_dir)
+                    .and_then(|token| mcp_server.start(token, mcp_port));
+                match started {
+                    Ok(port) => {
+                        log::info!("[MCP] 知识库服务已启用：http://127.0.0.1:{}/mcp", port)
+                    }
+                    // 不静默（规则 #15.3）：release 版无控制台，光写 log 用户无法感知，
+                    // 会只看到一个「已开启」的开关而客户端永远连不上（端口被占是常见原因）。
+                    Err(e) => {
+                        log::warn!("[MCP] 服务启动失败: {}", e);
+                        if let Err(emit_err) = handle.emit("mcp-start-failed", e) {
+                            log::warn!("[MCP] 发送启动失败事件失败: {}", emit_err);
+                        }
+                    }
+                }
+            }
+            app.manage(mcp_server);
+
             // 显示窗口
             // U5：开机自启带 /silent 标志时静默驻留托盘，不弹窗抢焦点
             // （与设置面板"开机后自动在后台运行，托盘图标常驻"的承诺一致）
@@ -547,6 +586,10 @@ pub fn run() {
             commands::get_lan_pairing_key,
             commands::set_lan_pairing_key,
             commands::regenerate_lan_pairing_key,
+            commands::mcp_get_status,
+            commands::mcp_get_token,
+            commands::mcp_regenerate_token,
+            commands::mcp_set_enabled,
             commands::get_app_version,
             commands::get_app_name,
             commands::ocr_image,

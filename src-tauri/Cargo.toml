@@ -61,6 +61,15 @@ chardetng = "0.1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 # v6.10 流式输出：SSE 逐块解析（reqwest bytes_stream 的 StreamExt）
 futures-util = "0.3"
+# 知识库 MCP Server（M4）的 HTTP 传输层。MCP 协议本身是手写的（src/mcp/protocol.rs），
+# 不引任何 MCP SDK；axum 只管 HTTP。
+# 体积：hyper / tower / http 已由 reqwest 带进 Cargo.lock，实测 axum 只增 ~160 KB、
+# 零新重复依赖（参照实现 cc-bridge 安装包 4.5MB 就含 axum）。
+axum = "0.8"
+tower = { version = "0.5", features = ["limit"] }   # ConcurrencyLimitLayer
+# 只要 limit：不启 `compression-gzip`，本服务绑回环，压缩收益近零
+# 却要拖一整梯 async-compression（理由同不抄 per-IP 限流，见 src/mcp/auth.rs）。
+tower-http = { version = "0.6", features = ["limit"] }
 # tree-sitter 语言仲裁层（方案 B）：规则引擎存疑时用真实语法解析投票定语言
 tree-sitter = "0.26"
 tree-sitter-javascript = "0.25"
@@ -78,6 +87,11 @@ tree-sitter-sequel = "0.3"
 [dev-dependencies]
 # v6.10 测试基建：本地 mock OpenAI 服务（tiny_http 轻量、仅测试用，不进发布包）
 tiny_http = "0.12"
+# ⚠ 不要为了测试加 `tauri = { features = ["test"] }`。实测：开启它会让
+# getrandom 0.3 的 Windows 后端变成可达代码，test exe 于是静态导入
+# `bcryptprimitives.dll!ProcessPrng`——本机 Windows 11 build 22000 没有这个导出，
+# 整个 lib test 二进制启动即挂（0xc0000139 STATUS_ENTRYPOINT_NOT_FOUND，
+# 一条测试都跑不了）。MCP 过线测试因此不用 mock_app，见 src/mcp/tests.rs。
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
