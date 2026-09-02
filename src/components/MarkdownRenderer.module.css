@@ -355,6 +355,62 @@
   margin: 6px 0;
 }
 
+/* ===== 图没跟过来的占位（全局类 md-imgmiss*）=====
+   语气上不是报错，所以样式也不报错：只用虚线边框 + muted 文字，
+   不给任何警示色，不抢正文注意力。颜色全走主题变量（项目 7 套主题）。
+   inline-flex：占位可能长在段落中间，它本体就是 <span>（见 imageMissingHtml）。 */
+
+.md :global(.md-imgmiss) {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 100%;
+  margin: 6px 0;
+  padding: 8px 12px;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  background: var(--section-bg);
+  vertical-align: middle;
+}
+
+.md :global(.md-imgmiss-ic) {
+  flex-shrink: 0;
+  display: flex;
+  margin-top: 1px;
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+.md :global(.md-imgmiss-bd) {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.md :global(.md-imgmiss-t) {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+/* alt 文本：往往是唯一能说明这张图是什么的信息，所以比路径重 */
+.md :global(.md-imgmiss-alt) {
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+/* 路径必须看得见，否则用户没法自己去找；
+   过长时省略号截断，完整路径留在 title 里悬停可看 */
+.md :global(.md-imgmiss-p) {
+  font-family: 'Cascadia Code', 'SF Mono', Consolas, 'Courier New', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  max-width: 42ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .md mark {
   background: color-mix(in srgb, var(--accent) 28%, transparent);
   color: var(--text-primary);
@@ -467,6 +523,13 @@
 .compact :global(.md-alert-ic svg) { width: 11px; height: 11px; }
 .compact :global(.md-alert-t) { font-size: 11px; margin-bottom: 1px; }
 .compact :global(.md-alert p:not(.md-alert-t)) { font-size: 11.5px; }
+/* 占位在紧凑模式下进一步收窄：卡片 hover 弹窗只有 120px（md-clamp），
+   占位自己就得小，否则一张丢图就把整个预览占满 */
+.compact :global(.md-imgmiss) { padding: 5px 8px; gap: 6px; margin: 4px 0; border-radius: 6px; }
+.compact :global(.md-imgmiss-ic svg) { width: 12px; height: 12px; }
+.compact :global(.md-imgmiss-t) { font-size: 11px; }
+.compact :global(.md-imgmiss-alt) { font-size: 11px; }
+.compact :global(.md-imgmiss-p) { font-size: 10px; max-width: 30ch; }
 
 /* ===== mermaid 渲染块（P0 渲染 · 闭环入口）===== */
 

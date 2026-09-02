@@ -7,6 +7,8 @@ import { ToastProvider } from "./components/Toast";
 import { logger } from "./lib/logger";
 import "./styles/globals.css";
 import "./styles/theme.css";
+// 两个模式共用的表面动画。必须在全局层（CSS Modules 会把 keyframes 名字哈希掉）
+import "./styles/surface.css";
 import "./styles/buttons.css";
 import "./styles/dialog.css";
 import "./styles/code-theme.css";

@@ -58,6 +58,38 @@ fn persist_enabled(store: &DataStore, enabled: bool) -> Result<(), String> {
     store.save_config(&cfg)
 }
 
+/// 七个写开关的当前状态（M5）。
+#[tauri::command]
+pub fn mcp_get_write_switches(store: State<DataStore>) -> Vec<mcp::gate::WriteSwitchRow> {
+    let cfg = store.get_config().unwrap_or_default();
+    mcp::gate::WriteSwitches::from_config(&cfg).rows()
+}
+
+/// 改一个写开关。**无需重启服务**：每个请求现读一次配置。
+///
+/// 改完下一个 `tools/call` 就拦得住；但已连的客户端手里的**工具表是缓存的**，
+/// 要重连才看得到新表（本服务发不了 `listChanged` 通知，原因见 `mcp::gate`）。
+/// 界面上得把这一句说清楚。
+///
+/// 不认识的 key 直接报错，不默默写一个没人读的配置项（规则 #15.3）。
+#[tauri::command]
+pub fn mcp_set_write_switch(
+    store: State<DataStore>,
+    key: String,
+    enabled: bool,
+) -> Result<Vec<mcp::gate::WriteSwitchRow>, String> {
+    if mcp::gate::kind_of_key(&key).is_none() {
+        return Err(format!("未知的写权限开关：{}", key));
+    }
+    let mut cfg = store.get_config().unwrap_or_default();
+    let Some(obj) = cfg.as_object_mut() else {
+        return Err("配置格式异常，无法保存写权限开关".to_string());
+    };
+    obj.insert(key, serde_json::Value::Bool(enabled));
+    store.save_config(&cfg)?;
+    Ok(mcp::gate::WriteSwitches::from_config(&cfg).rows())
+}
+
 /// 最近的调用记录（W3）。红线②的「可见」就靠它。
 #[tauri::command]
 pub fn mcp_audit_list(

@@ -1,13 +1,30 @@
-//! 三个只读工具的定义与分发。
+//! 工具的定义与分发（四个只读 + 七个写）。
 //!
 //! 工具描述就是给模型看的 API 文档，写得准不准直接决定它会不会用错。
 //! 尤其是 `kb_search` 的取词口径（见下）—— 那是个真存在的限制，
 //! 不写进描述模型就会拿单字关键词去搜，拿到零命中后以为「库里没这个」。
+//!
+//! # 分层
+//!
+//! | 位置 | 内容 |
+//! |---|---|
+//! | 本模块 | 注册表 + 分发 + 公用辅助 + 四个只读工具 |
+//! | [`write`] | 七个写工具（M5）|
+//!
+//! # 为何上了注册表
+//!
+//! 原注释写着「3 个工具时手写三件套完全可控，加到 6 个以上再上注册表」。
+//! 现在是 11 个，而且多了一个新约束：每个写工具要知道**自己归哪个开关**。
+//! 没有表的话，工具名要在「定义 / 分发 / 门控」三处各写一份。
+//! 不上 derive 宏（cc-bridge 那套是为 17 个工具的重复维护痛点做的）。
+
+pub mod write;
 
 use std::sync::Arc;
 
 use serde_json::{json, Value};
 
+use super::gate::{WriteKind, WriteSwitches};
 use super::source::{KbSource, ListOutcome, SearchOutcome};
 use crate::data_store::Note;
 
@@ -65,12 +82,18 @@ const SEARCH_QUERY_CAVEAT: &str =
      或改用 kb_list 按文件夹/标签浏览。\n\
      零命中不等于「库里没这个」—— 先换个问法重试，或用 kb_list 看看库里到底有什么。";
 
-/// `tools/list` 的内容。
-///
-/// 手写三件套（`definitions()` 里一块 json! + `call()` 里一个 match 臂）。
-/// 3 个工具时这完全可控；加到 6 个以上再上注册表 + derive 宏（参 cc-bridge 的 RFC）。
-pub fn definitions() -> Vec<Value> {
+/// 四个只读工具的定义。只读工具**不受写开关约束**，永远在表里。
+fn read_definitions() -> Vec<Value> {
     vec![
+        json!({
+            "name": "kb_folders",
+            "description": "列出全部文件夹与全部标签。\
+                            要给 kb_list 传 folder / tag，或要用 kb_move / kb_tag / kb_create 时，\
+                            先调这个看清楚现有的名字。\n\
+                            🔴 写入类工具**不会自动新建文件夹或标签**，名字对不上就会直接失败，\
+                            所以不要自己编一个名字。",
+            "inputSchema": { "type": "object", "properties": {} }
+        }),
         json!({
             "name": "kb_search",
             "description": format!(
@@ -120,12 +143,12 @@ pub fn definitions() -> Vec<Value> {
                 "properties": {
                     "folder": {
                         "type": "string",
-                        "description": "文件夹名。省略 = 不按文件夹筛。"
+                        "description": "文件夹名（用 kb_folders 查）。省略 = 不按文件夹筛。"
                     },
                     "tag": {
                         "type": "string",
-                        "description": "标签名。省略 = 不按标签筛。标签不存在时会明确告知，\
-                                          **不会**退化成「返回全库第一页」。"
+                        "description": "标签名（用 kb_folders 查）。省略 = 不按标签筛。\
+                                          标签不存在时会明确告知，**不会**退化成「返回全库第一页」。"
                     },
                     "limit": {
                         "type": "integer",
@@ -144,8 +167,114 @@ pub fn definitions() -> Vec<Value> {
     ]
 }
 
-/// 已注册的工具名。`call` 与 `definitions` 各写一份，靠测试钉住两边一致。
-const TOOL_NAMES: &[&str] = &["kb_search", "kb_read", "kb_list"];
+/// 一次调用的上下文。
+///
+/// `source` 不在本模块推导：它源于 HTTP 的 User-Agent，而本模块故意不知道
+/// HTTP 的存在（同 `AuditDraft.client` 的取舍）。由 server 层填。
+#[derive(Clone)]
+pub struct CallCtx {
+    pub kb: Arc<dyn KbSource>,
+    /// 七个写开关的快照。**每个请求现读一次**，所以设置页一改即时生效。
+    pub switches: WriteSwitches,
+    /// 写入要落到 `source_agent` 的值，形如 `agent:claude-code`。
+    ///
+    /// 🔴 **永不得为空**：空串在 W2 里的语义是「人亲自改的」，
+    /// 传空等于让锚定快照静默失效。看 [`super::source_agent_from_ua`]。
+    pub source: String,
+}
+
+/// 注册表的一行。
+type Fut = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<ToolOutput, ToolError>> + Send>,
+>;
+type Runner = fn(CallCtx, Option<Value>) -> Fut;
+
+struct ToolSpec {
+    name: &'static str,
+    /// `None` = 只读工具，不受开关约束。
+    write: Option<WriteKind>,
+    run: Runner,
+}
+
+/// 🔴 **分发与门控的唯一真相**。定义（`read_definitions` / `write::definitions`）
+/// 与它的一致性由测试钉住。
+const TOOLS: &[ToolSpec] = &[
+    ToolSpec {
+        name: "kb_folders",
+        write: None,
+        run: |c, a| Box::pin(async move { call_folders(&c.kb, a.as_ref()).await }),
+    },
+    ToolSpec {
+        name: "kb_search",
+        write: None,
+        run: |c, a| Box::pin(async move { call_search(&c.kb, a.as_ref()).await }),
+    },
+    ToolSpec {
+        name: "kb_read",
+        write: None,
+        run: |c, a| Box::pin(async move { call_read(&c.kb, a.as_ref()).await }),
+    },
+    ToolSpec {
+        name: "kb_list",
+        write: None,
+        run: |c, a| Box::pin(async move { call_list(&c.kb, a.as_ref()).await }),
+    },
+    ToolSpec {
+        name: "kb_create",
+        write: Some(WriteKind::Create),
+        run: |c, a| Box::pin(async move { write::call_create(c, a).await }),
+    },
+    ToolSpec {
+        name: "kb_append",
+        write: Some(WriteKind::Append),
+        run: |c, a| Box::pin(async move { write::call_append(c, a).await }),
+    },
+    ToolSpec {
+        name: "kb_update",
+        write: Some(WriteKind::Update),
+        run: |c, a| Box::pin(async move { write::call_update(c, a).await }),
+    },
+    ToolSpec {
+        name: "kb_move",
+        write: Some(WriteKind::Move),
+        run: |c, a| Box::pin(async move { write::call_move(c, a).await }),
+    },
+    ToolSpec {
+        name: "kb_tag",
+        write: Some(WriteKind::Tag),
+        run: |c, a| Box::pin(async move { write::call_tag(c, a).await }),
+    },
+    ToolSpec {
+        name: "kb_delete",
+        write: Some(WriteKind::Delete),
+        run: |c, a| Box::pin(async move { write::call_delete(c, a).await }),
+    },
+    ToolSpec {
+        name: "kb_restore",
+        write: Some(WriteKind::Restore),
+        run: |c, a| Box::pin(async move { write::call_restore(c, a).await }),
+    },
+];
+
+fn spec_of(name: &str) -> Option<&'static ToolSpec> {
+    TOOLS.iter().find(|t| t.name == name)
+}
+
+/// `tools/list` 的内容。**按开关过滤**。
+///
+/// 这只是两层门的外层（让模型不知道）。内层在 [`call`]——
+/// 客户端会缓存工具表，只靠这里过滤治不了旧会话。详见 `gate.rs` 头部。
+pub fn definitions(switches: &WriteSwitches) -> Vec<Value> {
+    let mut all = read_definitions();
+    all.extend(write::definitions());
+    all.retain(|d| {
+        let name = d["name"].as_str().unwrap_or("");
+        // 表里没有的名字一律不上表（fail-closed）：声明了却没接的工具
+        // 让模型看得到、调不通，比它根本不知道更糟。
+        spec_of(name).is_some_and(|s| s.write.map_or(true, |k| switches.allowed(k)))
+    });
+    all
+}
 
 /// 工具调用的结果 + 审计要用的元信息（W3）。
 ///
@@ -169,7 +298,10 @@ impl From<Value> for ToolOutput {
 }
 
 /// 分发 `tools/call`。
-pub async fn call(kb: &Arc<dyn KbSource>, params: Option<&Value>) -> Result<ToolOutput, ToolError> {
+///
+/// 🔴 这里是两层门的**内层**，也是真正的那一道：客户端会缓存工具表，
+/// 用户关掉开关后，一个早就 `tools/list` 过的会话手里还握着旧表，照样能调过来。
+pub async fn call(ctx: &CallCtx, params: Option<&Value>) -> Result<ToolOutput, ToolError> {
     let Some(params) = params else {
         return Err(ToolError::invalid_params("tools/call 缺少 params"));
     };
@@ -177,26 +309,44 @@ pub async fn call(kb: &Arc<dyn KbSource>, params: Option<&Value>) -> Result<Tool
         return Err(ToolError::invalid_params("tools/call 缺少 name"));
     };
 
-    if !TOOL_NAMES.contains(&name) {
+    let Some(spec) = spec_of(name) else {
         return Err(ToolError::invalid_params(format!(
-            "未知工具：{}（可用：{}）",
+            "未知工具：{}（当前可用：{}）",
             name,
-            TOOL_NAMES.join(", ")
+            available_names(&ctx.switches).join(", ")
         )));
+    };
+
+    // 🔴 被关掉的写工具：**明说被关，叫它不要重试**。
+    //
+    // 不装作「工具不存在」（-32601）：令牌已经把门守住了，没必要向自己人隐瞒；
+    // 而模型以为自己记错了工具名就会换名字反复试——浪费 token 还得不到结果。
+    if let Some(kind) = spec.write {
+        if !ctx.switches.allowed(kind) {
+            return Ok(error_result(format!(
+                "用户已在 PastePanda 的设置里关闭「{}」权限，{} 不可用。\
+                 **请勿重试**，也不要换其它工具绕过——请直接告诉用户：\
+                 这一项需要他去「设置 → 知识库 MCP 服务」里打开对应开关。",
+                kind.label(),
+                name
+            ))
+            .into());
+        }
     }
 
-    let args = params.get("arguments");
-    match name {
-        "kb_read" => call_read(kb, args).await,
-        "kb_list" => call_list(kb, args).await,
-        "kb_search" => call_search(kb, args).await,
-        // TOOL_NAMES 已在上面拦过，这里不可达；不写 `unreachable!()` 是因为
-        // `panic = "abort"` 下一次误判就是整个应用死掉（R3）。
-        other => Err(ToolError::invalid_params(format!(
-            "未接入的工具：{}",
-            other
-        ))),
-    }
+    let args = params.get("arguments").cloned();
+    (spec.run)(ctx.clone(), args).await
+}
+
+/// 当前开关下真正可用的工具名（报错文案用）。
+///
+/// 报全部 11 个会把模型往一个它调不通的工具上引，那只会多一轮往返。
+fn available_names(switches: &WriteSwitches) -> Vec<&'static str> {
+    TOOLS
+        .iter()
+        .filter(|t| t.write.map_or(true, |k| switches.allowed(k)))
+        .map(|t| t.name)
+        .collect()
 }
 
 // ===== 工具实现 =====
@@ -215,7 +365,10 @@ async fn call_read(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<ToolO
     let Some(note) = found else {
         // 不假装成空内容：模型需要知道是「id 不存在」而不是「这篇是空的」。
         return Ok(error_result(format!(
-            "没有 id 为 {} 的笔记。id 要从 kb_search / kb_list 的结果里拿，不要自己造。",
+            // 必须带上「或它已在回收站里」：kb_delete 刚把这个 id 交给模型，紧接着
+            // 读一下就被告知「不要自己造」的话，模型会以为自己在幻觉。
+            // source.rs:300/393/405 三处已经是这个口径，只有这里漏了。
+            "没有 id 为 {} 的笔记（或它已在回收站里）。id 要从 kb_search / kb_list 的结果里拿。",
             id
         ))
         .into());
@@ -246,12 +399,12 @@ async fn call_list(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<ToolO
         // 那种退化对模型是隐形的：它拿到一堆看似合理的结果，完全不知道自己的
         // 条件被静默丢掉了，然后把无关的笔记当成证据给用户。
         ListOutcome::UnknownFolder(name) => Ok(error_result(format!(
-            "没有叫「{}」的文件夹。未按文件夹筛选的结果并未返回——请先不带 folder 参数调一次看看有哪些文件夹。",
+            "没有叫「{}」的文件夹。未按文件夹筛选的结果并未返回——用 kb_folders 看清楚有哪些文件夹。",
             name
         ))
         .into()),
         ListOutcome::UnknownTag(name) => Ok(error_result(format!(
-            "没有叫「{}」的标签。未按标签筛选的结果并未返回——请先不带 tag 参数调一次看看有哪些标签。",
+            "没有叫「{}」的标签。未按标签筛选的结果并未返回——用 kb_folders 看清楚有哪些标签。",
             name
         ))
         .into()),
@@ -320,6 +473,62 @@ async fn call_search(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Too
     }
 }
 
+async fn call_folders(
+    kb: &Arc<dyn KbSource>,
+    _args: Option<&Value>,
+) -> Result<ToolOutput, ToolError> {
+    let kb2 = kb.clone();
+    let folders = match blocking(move || kb2.folders()).await {
+        Ok(v) => v,
+        Err(e) => return Ok(error_result(format!("读文件夹失败：{}", e)).into()),
+    };
+    let kb2 = kb.clone();
+    let tags = match blocking(move || kb2.tags()).await {
+        Ok(v) => v,
+        Err(e) => return Ok(error_result(format!("读标签失败：{}", e)).into()),
+    };
+
+    let mut out = String::new();
+    if folders.is_empty() {
+        out.push_str("文件夹：一个都没有（所有笔记都在未分类）。\n");
+    } else {
+        out.push_str(&format!("文件夹（{} 个，缩进表示层级）：\n", folders.len()));
+        for f in &folders {
+            let indent = "  ".repeat((f.depth.max(1) - 1) as usize);
+            out.push_str(&format!(
+                "{}- {}（{} 篇，含子文件夹）\n",
+                indent, f.name, f.note_count
+            ));
+        }
+        // 同名必须摆出来：写入侧按名字解文件夹，同名时取**第一个匹配**。
+        // 不告知的话，kb_move 会把笔记移进一个模型没想着的同名文件夹里。
+        let mut names: Vec<&str> = folders.iter().map(|f| f.name.as_str()).collect();
+        names.sort_unstable();
+        let dups: Vec<&str> = names.windows(2).filter(|w| w[0] == w[1]).map(|w| w[0]).collect();
+        if !dups.is_empty() {
+            out.push_str(&format!(
+                "⚠ 有同名文件夹（{}）。按名字指定时只会命中其中一个，\
+                 涉及它们时请让用户确认。\n",
+                dups.join("、")
+            ));
+        }
+    }
+
+    out.push('\n');
+    if tags.is_empty() {
+        out.push_str("标签：一个都没有。\n");
+    } else {
+        let names: Vec<&str> = tags.iter().map(|t| t.name.as_str()).collect();
+        out.push_str(&format!(
+            "标签（{} 个）：{}\n",
+            names.len(),
+            names.join("、")
+        ));
+    }
+    out.push_str("\n🔴 写入类工具不会自动新建文件夹或标签：上面没列出的名字传过去会直接失败。");
+    Ok(text_result(out).into())
+}
+
 // ===== 辅助 =====
 
 /// R2：**所有 DB 调用都必须走这里。**
@@ -345,6 +554,26 @@ fn arg_str<'a>(args: Option<&'a Value>, key: &str) -> Option<&'a str> {
         .as_str()
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
+}
+
+/// 取字符串数组参数（`kb_tag` 的 add / remove）。
+///
+/// 宽容两件事：模型常把单个值直接传成字符串而不是单元素数组；
+/// 数组里偶尔混空串。两者都不值得让整次调用失败。
+fn arg_str_list(args: Option<&Value>, key: &str) -> Vec<String> {
+    let Some(v) = args.and_then(|a| a.get(key)) else {
+        return Vec::new();
+    };
+    let raw: Vec<&str> = match v {
+        Value::String(s) => vec![s.as_str()],
+        Value::Array(items) => items.iter().filter_map(|i| i.as_str()).collect(),
+        _ => Vec::new(),
+    };
+    raw.into_iter()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 /// 取整数参数并**夹**到 `[min, max]`。
@@ -432,29 +661,93 @@ fn format_full(n: &Note, folder: Option<&str>) -> String {
 mod tests {
     use super::*;
 
+    /// 全开时的全部工具定义（测试便利）。
+    fn all() -> Vec<Value> {
+        definitions(&WriteSwitches::ALL_ON)
+    }
+
+    #[test]
+    fn test_every_write_kind_has_exactly_one_tool() {
+        // 一档开关对一个工具（1:1）。多了意味着用户关一个开关关掉两个能力；
+        // 少了意味着面板上有个开关点了没任何效果。
+        for kind in WriteKind::ALL {
+            let n = TOOLS.iter().filter(|t| t.write == Some(kind)).count();
+            assert_eq!(n, 1, "{} 对应了 {} 个工具", kind.cfg_key(), n);
+        }
+        assert_eq!(TOOLS.iter().filter(|t| t.write.is_some()).count(), 7);
+    }
+
+    #[test]
+    fn test_write_kind_tool_names_match_registry() {
+        // `WriteKind::tool_name()` 与本表里的名字是两份写法（前者给设置页用）。
+        // 对不上的后果：面板上写着关的是 kb_delete，实际关掉的是另一个。
+        for kind in WriteKind::ALL {
+            let spec = TOOLS
+                .iter()
+                .find(|t| t.write == Some(kind))
+                .expect("每档必有工具");
+            assert_eq!(spec.name, kind.tool_name(), "{} 的工具名不一致", kind.cfg_key());
+        }
+    }
+
+    #[test]
+    fn test_switch_off_hides_only_that_tool() {
+        // 外层门：关掉一档，`tools/list` 里只能少掉对应的那一个。
+        for kind in WriteKind::ALL {
+            let sw = WriteSwitches::from_config(&json!({ kind.cfg_key(): false }));
+            let names: Vec<String> = definitions(&sw)
+                .iter()
+                .filter_map(|t| t["name"].as_str().map(|s| s.to_string()))
+                .collect();
+            assert_eq!(names.len(), 10, "关 {} 后工具数不对", kind.cfg_key());
+            let hidden = TOOLS
+                .iter()
+                .find(|t| t.write == Some(kind))
+                .expect("每档必有工具")
+                .name;
+            assert!(
+                !names.contains(&hidden.to_string()),
+                "{} 没被藏起来",
+                hidden
+            );
+        }
+    }
+
+    #[test]
+    fn test_read_tools_survive_all_switches_off() {
+        // 写开关全关时服务退回只读，四个只读工具一个不能少。
+        let names: Vec<String> = definitions(&WriteSwitches::ALL_OFF)
+            .iter()
+            .filter_map(|t| t["name"].as_str().map(|s| s.to_string()))
+            .collect();
+        assert_eq!(names.len(), 4);
+        for expect in ["kb_folders", "kb_search", "kb_read", "kb_list"] {
+            assert!(names.contains(&expect.to_string()), "丢了 {}", expect);
+        }
+    }
+
     #[test]
     fn test_definitions_and_dispatch_agree() {
         // 手写三件套的唯一真风险：声明了却没接（模型调了报未知工具），
         // 或接了却没声明（模型永远不知道它存在）。这条测试就是护栏。
-        let declared: Vec<String> = definitions()
+        let mut declared: Vec<String> = all()
             .iter()
             .filter_map(|t| t["name"].as_str().map(|s| s.to_string()))
             .collect();
-        let mut dispatched: Vec<String> = TOOL_NAMES.iter().map(|s| s.to_string()).collect();
-        let mut declared_sorted = declared.clone();
-        declared_sorted.sort();
+        let mut dispatched: Vec<String> = TOOLS.iter().map(|t| t.name.to_string()).collect();
+        declared.sort();
         dispatched.sort();
-        assert_eq!(declared_sorted, dispatched);
+        assert_eq!(declared, dispatched);
         assert_eq!(
             declared.len(),
-            3,
+            11,
             "工具数量变了就要重读一遍本模块头部的取舍说明"
         );
     }
 
     #[test]
     fn test_every_tool_has_a_usable_schema() {
-        for t in definitions() {
+        for t in all() {
             let name = t["name"].as_str().unwrap_or("");
             assert!(
                 t["description"].as_str().is_some_and(|d| d.len() > 20),
@@ -478,7 +771,7 @@ mod tests {
     fn test_search_description_carries_the_tokenizer_caveat() {
         // 🔴 口径差必须写进工具描述。不写的后果：模型搜单字得零命中，
         // 然后告诉用户「你库里没记过」—— 一个比报错更坏的错答案。
-        let search = definitions()
+        let search = all()
             .into_iter()
             .find(|t| t["name"] == "kb_search")
             .expect("kb_search 必须存在");

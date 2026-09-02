@@ -366,3 +366,90 @@ macOS / Windows / Gmail 全都显示它。
 剩余天数 = <code>days - (今天 - deleted_at)</code>，在 <code>TrashPanel</code> 里算就行。
 </div>
 </div>
+
+  <h2>W1b · 回收站：样式补正 + 恢复前看得出是什么</h2>
+  <div class="card">
+    <div class="bad"><b>🔴 先认一个回归：回收站现在难看是我弄坏的。</b>
+      知识库 UI 那轮我把 <code>.rowMain</code> 改成了 <code>flex-direction: row</code>
+      （为了装「图标底 + 文字列」），而 <code>TrashPanel</code> 把
+      <code>.rowTitle</code> / <code>.rowExcerpt</code> / <code>.rowMeta</code>
+      <b>直接塞在 <code>.rowMain</code> 里</b>、没有 <code>.rowBody</code> 包层——
+      于是标题/摘要/时间被<b>横着排成一行</b>。
+      这是没找全同类调用点（规则 #11.1）。
+      修法：回收站行<b>不再蹭笔记行的类</b>，给它自己的 <code>.trashMain</code>（竖向）。</div>
+
+    <div class="note"><code>.trashRow</code> 静态时是完全平的（<code>border: 1px solid transparent</code>、无底色），
+      只有 hover 才出卡片底。旁边笔记行已经是玻璃卡片，对比下更显得没做完。
+      改成卡片，但<b>比笔记行暗一档</b>——CSS 里原有的那条原则（「这里的东西是已经删掉的，
+      不该和活笔记抢注意力」）继续成立。</div>
+  </div>
+
+  <div class="card">
+    <h3>「类型」到底显什么：三态，不是两态</h3>
+    <div class="note"><b>前提：笔记本身没有类型</b>，它们全是 Markdown。
+      能叫「类型」的只有**原剪贴板卡片**的 <code>content_type</code>，
+      而笔记是<b>独立于卡片存在</b>的，所以必须分三种情况：</div>
+    <table>
+      <tr><th>情况</th><th>判据</th><th>行上显示</th></tr>
+      <tr><td>不是从卡片来的</td><td><code>history_id IS NULL</code></td>
+          <td><b>不显类型徽标</b>（手工/速记/AI 新建的笔记永远落在这里，摆个空徽标是噪声）</td></tr>
+      <tr><td>从卡片来、卡片还在</td><td>join 命中</td>
+          <td><code>getContentTypeMeta(content_type)</code> 的中文标签：📝文本 / 🖼图片 / 🔗链接 / 💻代码……</td></tr>
+      <tr><td>从卡片来、卡片已删</td><td><code>history_id</code> 非空但 join 未命中</td>
+          <td>「来自卡片（已删）」置灰——同 <code>NoteDetailPane</code> 已有的口径（原卡片被删→置灰删除线，但笔记照旧存在）</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>行上要补的信息（按影响恢复决策的程度排）</h3>
+    <table>
+      <tr><th>信息</th><th>答的问题</th><th>数据来源</th><th>现在</th></tr>
+      <tr><td><b>原文件夹</b> 📁</td><td><b>恢复到哪去</b>——恢复这个动作的直接后果</td>
+          <td><code>folder_id</code>（软删不清它）+ folders 列表</td><td>❌ 完全看不见</td></tr>
+      <tr><td><b>来路图标</b></td><td>这条从哪来（🤖AI / 📅速记 / 📋卡片 / 📝手工）</td>
+          <td><b>复用已写好的 <code>provenanceOf()</code></b>（现在是 NoteList 的私有函数，要导出）</td>
+          <td>只有个裸灰字「速记」</td></tr>
+      <tr><td><b>原卡片类型</b></td><td>原来那张卡片是什么</td><td>新增（见下方后端改动）</td><td>❌</td></tr>
+      <tr><td>标签</td><td>归过什么类</td><td><code>TagBadge</code>（全应用唯一渲染点）</td><td>❌ 查询就不带标签</td></tr>
+      <tr><td>字数</td><td>有多少内容值不值得恢复</td><td><code>countChars</code> + <code>fmtCount</code></td><td>❌</td></tr>
+      <tr><td>到期倒计时</td><td>还有几天</td><td>已有 <code>daysLeft()</code></td><td>✓ 但是句灰字，改成徽标</td></tr>
+    </table>
+    <div class="good"><b>四项全部复用现有公共代码（规则 #11），不新写映射。</b>
+      尤其 <code>provenanceOf()</code>：它上一轮就是为「这条从哪来」这个维度写的，
+      回收站需要的正是同一个维度——再写一份就是两份会分歧的 emoji 表。</div>
+  </div>
+
+  <div class="card">
+    <h3>后端改动（三处）</h3>
+    <table>
+      <tr><th>改什么</th><th>怎么改</th><th>为何这么改</th></tr>
+      <tr><td><code>Note</code> 加一个 <code>source_kind: Option&lt;String&gt;</code></td>
+          <td><code>#[serde(default)]</code>，只由 <code>note_list_deleted</code> 填</td>
+          <td><b>现成先例</b>：<code>deleted_at</code> 的注释就写着「只有
+              <code>note_list_deleted</code> 会给出非 <code>None</code> 的值」。
+              另立一个 DTO 反而让前端多一个类型</td></tr>
+      <tr><td><code>note_list_deleted</code> 的查询</td>
+          <td><code>LEFT JOIN history h ON h.id = n.history_id</code>，
+              选 <code>h.content_type</code>，<b>接在 <code>NOTE_COLS</code> 之后</b></td>
+          <td>❗ <b>下标陷阱</b>：<code>row_to_note</code> 是按下标 0..10 取列的，
+              note.rs 自己的注释就警告「以后 NOTE_COLS 加一列就会漏改，
+              而那会读到错列<b>而不报错</b>」。新列必须接在后面，且按列名取</td></tr>
+      <tr><td>回收站列表<b>带上标签</b></td>
+          <td>读完行后补一次 <code>load_note_tags_on</code></td>
+          <td>❗ 现有注释「不带标签（回收站只需要认出是哪条）」<b>已作废</b>，
+              要连注释一起改——留着一句与代码相反的注释比没注释更坏</td></tr>
+    </table>
+
+    <div class="note"><b>为何不把类型存进 <code>notes</code> 表：</b>
+      那就把一份会变的数据（卡片可能被删、分类可能被重算）拍成了快照，
+      两边一不一致就得加同步逻辑。现场 join 取得到的永远是当下事实，
+      而这个查询本来就只在打开回收站时跑一次（低频）。</div>
+
+    <div class="note"><b>不动的：</b>
+      ① <b>仍不提供进编辑器的路径</b>——编辑器会自动保存，而 <code>note_update</code>
+      带 <code>AND deleted_at IS NULL</code>，已删的笔记一改就报「笔记不存在」。
+      ② <b>恢复仍不弹确认</b>——它是可逆的（再删一次就回来了）。
+      ③ <b>彻底删除的确认文案仍带具体份数</b>（「与它的 N 份历史版本」）。
+      这三条都是 W1 已经想清楚的，本次只动信息层与样式。</div>
+  </div>
+

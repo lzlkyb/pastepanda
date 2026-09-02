@@ -40,6 +40,15 @@ export interface Note {
   /** W1 软删除时刻。正常列表拿到的永远是 null（已删的根本不会返回），
    *  只有 `noteListDeleted`（回收站）会给出非 null 的值 */
   deleted_at?: string | null;
+  /**
+   * 原剪贴板卡片的内容类型（W1b）。与 `deleted_at` 同一个模式：
+   * **只有 `noteListDeleted` 会给出非空值**。
+   *
+   * ❗ 它与 `history_id` 要**一起**看，因为两种不同情况都是空：
+   * - `history_id` 为空 ⇒ 这条不是从卡片来的（手工/速记/AI 新建），**不该显类型**；
+   * - `history_id` 非空但本字段为空 ⇒ 原卡片**已被删**，应显「来自卡片（已删）」。
+   */
+  source_kind?: string | null;
 }
 
 /** 新建笔记。`historyId` 为空 = 与剪贴板无关的独立笔记。 */

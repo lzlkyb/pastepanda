@@ -8,9 +8,17 @@ import styles from "./BackToTop.module.css";
 interface BackToTopProps {
   /** 滚动超过多少 px 时显示，默认 150 */
   threshold?: number;
+  /**
+   * 额外类名，用来覆盖默认的 `right/bottom` 定位。
+   *
+   * 为何需要它：本组件默认是 `fixed; right:16; bottom:16`，在记录模式里恰好
+   * 落在卡片列表右下。但知识模式宽屏下右边是**笔记阅读栏**，不改位置的话
+   * 这个胶囊会直接压在正文上——而那一栏正是用户目光停留最久的地方。
+   */
+  className?: string;
 }
 
-export function BackToTop({ threshold = 150 }: BackToTopProps) {
+export function BackToTop({ threshold = 150, className }: BackToTopProps) {
   const lenisRef = useLenisRef();
   const theme = useAppStore((s) => s.config.theme);
   const [visible, setVisible] = useState(false);
@@ -74,7 +82,7 @@ export function BackToTop({ threshold = 150 }: BackToTopProps) {
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.8, y: 10 }}
           transition={{ type: "spring", stiffness: 400, damping: 30 }}
-          className={styles.btn}
+          className={`${styles.btn}${className ? ` ${className}` : ""}`}
           onClick={scrollToTop}
           title="回到顶部"
           aria-label="回到顶部"

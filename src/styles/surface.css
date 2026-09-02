@@ -1,0 +1,45 @@
+/* surface.css —— 两个模式共用的「表面」动画。
+ *
+ * 为何必须是**全局** CSS 而不是 .module.css：
+ * CSS Modules 会把 `@keyframes` 名字哈希掉，写在哪个模块里就只能那个模块用。
+ * 要让记录模式与知识模式用**同一份**动画，它就得在全局层。
+ *
+ * 🔴 只放 `@keyframes`，不放类。
+ * 玻璃参数（`--glass-card-bg` 一整套）本来就已经在 `theme.css` 里按主题定义了，
+ * 不需要再搬一次；而具体的卡片/行样式各自留在自己的 module 里，
+ * 因为它们的尺寸与内容结构本来就不一样（详见
+ * design/知识库模式-视觉统一-设计稿.html §2 为何不选方案 c）。
+ *
+ * ❗ 不用在这里写 `prefers-reduced-motion` 降级：`globals.css` 已经有全局兜底
+ * （把所有 animation / transition 压到 0.01ms）。
+ */
+
+/* 悬停光泽扫过。
+ *
+ * ❗ 调用方必须写成 `animation: var(--card-shimmer-anim, pp-shimmer-sweep 1.6s ...)`，
+ * 而不是直接用这个名字：有些主题（经典白 / ocean）把卡片做成了不透明，
+ * 光泽根本看不见，它们把 `--card-shimmer-anim` 设成 `none` 来省掉整个合成层。
+ * 绕过那个变量 = 在那些主题下白付 GPU 开销，而且会出现「笔记行有光泽、
+ * 卡片没有」这种新的不一致——正是本轮要消除的那类问题。 */
+@keyframes pp-shimmer-sweep {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* 骨架屏扫光。与上面那条的关键帧完全一样，但**不合并**：
+ * 一个可被主题关掉（装饰），一个永远要跑（“在加载”是信息，不是装饰）。
+ * 合成一条的话，哪天谁把光泽关了，骨架屏会跟着变成一块不动的灰板。 */
+@keyframes pp-skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* 落定高亮环：一次操作完成后的回执（置顶、移动到文件夹、从回收站恢复……）。
+ *
+ * 18% 处才到全不透明而不是 0%：瞬间出现会像闪一下的 bug，
+ * 有个短渐入才读得出是「刚刚那一下是我做的」。 */
+@keyframes pp-ring-fade {
+  0% { opacity: 0; }
+  18% { opacity: 1; }
+  100% { opacity: 0; }
+}

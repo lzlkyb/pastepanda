@@ -11,6 +11,7 @@
  * 🔴 红线：无 AI。
  */
 import { useCallback, useState } from "react";
+import { motion } from "framer-motion";
 import { ExternalLink, Copy, X, History } from "lucide-react";
 import { relativeTime } from "@/lib/utils";
 import { getContentTypeMeta } from "@/lib/contentTypes";
@@ -59,8 +60,23 @@ export function NoteDetailPane({
   /** 当前摘要（B1 轻量 AI）。本地先行显示，不等列表重拉。 */
   const [summary, setSummary] = useState<string | null>(note.summary);
 
+  /** 第三栏进场：**只淡入、不做位移**。
+   *
+   * 本组件带 `key={note.id}`，每换一条笔记都整个重挂载，而 CodeMirror 在挂载时
+   * 用 getBoundingClientRect 量坐标（见 NoteEditorPane）——祖先上正在跑 transform
+   * 会让它量到错的位置，表现为光标/选区偏移。opacity 不改几何，所以安全。
+   *
+   * 也**不接 AnimatePresence**：那会让「扫着读」时每换一条都先等上一条退场完，
+   * 而第三栏存在的全部理由就是扫读要快（见文件头注释）。位移留给空态与问答面板，
+   * 那两个里面没有编辑器。
+   */
   return (
-    <div className={styles.pane}>
+    <motion.div
+      className={styles.pane}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.18, ease: "easeOut" }}
+    >
       <div className={styles.head}>
         <input
           className={styles.titleInput}
@@ -194,7 +210,7 @@ export function NoteDetailPane({
           </button>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -202,12 +218,19 @@ export function NoteDetailPane({
  *
  * **不把栏隐掉**：隐掉会让笔记列表宽度在选中前后跳一下。 */
 export function NoteDetailEmpty() {
+  /* 这里可以放心做位移：空态里没有编辑器，没人在挂载时量坐标。
+     x 从 8 起是「从右侧滑进来」的方向，与它所在的第三栏同侧。 */
   return (
-    <div className={`${styles.pane} ${styles.empty}`}>
+    <motion.div
+      className={`${styles.pane} ${styles.empty}`}
+      initial={{ opacity: 0, x: 8 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+    >
       <div className={styles.emptyIcon} aria-hidden="true">
         📝
       </div>
       <div className={styles.emptyText}>从左侧选一条笔记</div>
-    </div>
+    </motion.div>
   );
 }

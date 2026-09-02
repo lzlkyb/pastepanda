@@ -635,12 +635,18 @@ impl DataStore {
             -- 🔴 `FOREIGN KEY` 是**规划 §6 漏写的**（只写了 note_id TEXT NOT NULL）。
             --   PRAGMA foreign_keys 真开着，不补就是：删一条笔记，它的 20 份历史
             --   永远留在库里无人回收。与 note_tags 同口径。
+            --
+            -- pinned / source_agent 是 W2 加的（旧库靠下方迁移补上）：
+            --   pinned = 1 的快照**永不被 prune 裁掉**。没这一列，模型连续改 21 次
+            --   就把你的真实历史全挤没了，而那只需「修改」一个权限。
             CREATE TABLE IF NOT EXISTS note_revisions (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                note_id    TEXT NOT NULL,
-                title      TEXT NOT NULL,
-                content    TEXT NOT NULL,
-                created_at TEXT NOT NULL,
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                note_id      TEXT NOT NULL,
+                title        TEXT NOT NULL,
+                content      TEXT NOT NULL,
+                created_at   TEXT NOT NULL,
+                pinned       INTEGER NOT NULL DEFAULT 0,
+                source_agent TEXT NOT NULL DEFAULT '',
                 FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_note_rev ON note_revisions(note_id, created_at);
@@ -1233,6 +1239,43 @@ impl DataStore {
         ) {
             log::error!("[DataStore] 建 idx_notes_deleted 失败: {}", e);
             return Err(e);
+        }
+
+        // W2 锚定快照：note_revisions 补两列，**同一次迁移**。
+        // 只加 pinned 的话，将来要在历史列表里分辨「模型改的」还是「你自己改的」
+        // 还得再迁一次库（A-52 ④）。
+        //
+        // pinned       —— 1 = 锚定，prune 时豁免（见 note_revision.rs）。
+        // source_agent —— '' = 人工编辑；非空 = 外部写入，形如 `agent:claude-code`。
+        for (col, ddl) in [
+            (
+                "pinned",
+                "ALTER TABLE note_revisions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;",
+            ),
+            (
+                "source_agent",
+                "ALTER TABLE note_revisions ADD COLUMN source_agent TEXT NOT NULL DEFAULT '';",
+            ),
+        ] {
+            let has: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('note_revisions') WHERE name = ?1",
+                    [col],
+                    |row| row.get::<_, i32>(0),
+                )
+                .unwrap_or(0)
+                > 0;
+            if has {
+                continue;
+            }
+            if let Err(e) = conn.execute_batch(ddl) {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] note_revisions.{} 列已存在，忽略: {}", col, e);
+                } else {
+                    log::error!("[DataStore] 添加 note_revisions.{} 列失败: {}", col, e);
+                    return Err(e);
+                }
+            }
         }
 
         // 一天只能有一条速记——这条约束得落在库上。

@@ -95,9 +95,26 @@
   background: var(--card-bg);
 }
 
+/* ── 阅读排版（设计稿 §8 发现二）──
+   原来是 12px，那是个 **UI 字号**。卡片是拿来扫的，小字号正确；
+   而笔记是拿来**读**的，这里是用户目光停留最久的地方。
+   这一条是知识模式应该**比记录模式更讲究**的地方，不是跟着它就行。 */
+.editPane,
+.previewPane {
+  font-size: 13.5px;
+  line-height: 1.75;
+}
+
 .previewPane {
   padding: 8px 10px;
-  font-size: 12px;
+}
+
+/* 行长限制。窗口拉宽后一行上百个字，眼睛回行时会找不到位置。
+   34em 在 13.5px 下约 460px：窄屏（480 的弹窗）里它根本不生效，
+   只在宽屏的第三栏里才起作用——恰好是想要的行为。 */
+.editPane :global(.cm-content),
+.previewPane > * {
+  max-width: 34em;
 }
 
 /* CodeMirror 的滚动容器得填满左栏，否则短文本时编辑区只有一行高、
@@ -294,6 +311,7 @@
 .histFooter {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
   flex-shrink: 0;
 }
 
@@ -312,6 +330,54 @@
 }
 
 .histRestore:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* W2 锚定徽标。用警示黄而不是强调色：它标的是「这份受保护」，
+   不是「这份被选中」——后者已经由整行高亮表达了。 */
+.histPin {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border: 1px solid var(--warning-color, #d29922);
+  border-radius: 4px;
+  color: var(--warning-color, #d29922);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* 改动来源（只有非人工才有）。480px 里要防客户端名过长把字数挤出去。 */
+.histSrc {
+  flex-shrink: 0;
+  max-width: 96px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--accent-color, #4a9eff);
+}
+
+/* 锚定 / 解除按钮：描边而不是实心——实心会跟「恢复」抢主按钮的位置，
+   而这一屏里用户最常做的事仍旧是恢复。 */
+.histPinBtn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.histPinBtn:hover:not(:disabled) {
+  border-color: var(--warning-color, #d29922);
+  color: var(--warning-color, #d29922);
+}
+
+.histPinBtn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }

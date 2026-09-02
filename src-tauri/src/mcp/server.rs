@@ -267,17 +267,22 @@ async fn mcp_handler(State(ctx): State<Ctx>, headers: HeaderMap, body: Bytes) ->
         return (reject.status(), Json(json!({ "error": reject.message() }))).into_response();
     }
 
-    let out = super::protocol::dispatch(&ctx.kb, &body).await;
-
-    // W3 审计。client 取 User-Agent：实测 Claude Code 每个请求都带
+    // client 取 User-Agent：实测 Claude Code 每个请求都带
     // `claude-code/2.1.233 (sdk-cli)`，而 `clientInfo` 只在 initialize 里有一次
     // （MCP over HTTP 无状态）。
+    //
+    // 它现在有**两个**用处，所以得在 dispatch 之前取：
+    // ① W3 审计的 `client`；② M5 写入落的 `source_agent`。
+    // 两边同源是有意的：版本历史里的名字要与调用记录对得上。
+    let client = headers
+        .get(axum::http::header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+
+    let out = super::protocol::dispatch(&ctx.kb, &client, &body).await;
+
     if let Some(draft) = out.audit {
-        let client = headers
-            .get(axum::http::header::USER_AGENT)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string();
         ctx.audit
             .record(&client, &draft.tool, &draft.args, draft.ok, &draft.note_ids);
     }

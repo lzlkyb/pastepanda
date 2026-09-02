@@ -12,6 +12,7 @@ import { copyToClipboard } from "@/lib/utils";
 import { confirmDialog } from "@/lib/confirm";
 import { mcpGetToken, mcpRegenerateToken, type McpStatus } from "@/lib/api/mcp";
 import { McpClientGuide } from "./McpClientGuide";
+import { McpWritePanel } from "./McpWritePanel";
 import { McpAuditPanel } from "./McpAuditPanel";
 import styles from "../Settings.module.css";
 
@@ -115,6 +116,10 @@ export function McpServerPanel({
         onRegenerate={handleRegenerate}
         toast={toast}
       />
+
+      {/* 写权限放在最上面：它回答的是「这东西到底能对我的笔记做什么」，
+          比「它做过什么」（调用记录）与「怎么接」（指引）都更该先看到。 */}
+      <McpWritePanel toast={toast} />
 
       {/* 调用记录放在接入指引**之上**：指引是配一次就不看了的，
           而「谁读过我什么」是需要反复回来看的。 */}

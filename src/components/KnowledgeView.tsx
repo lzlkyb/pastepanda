@@ -17,8 +17,11 @@
  *   唯一的 AI 路径是问答雏形（B2 #10）：受 `ai_enabled` 门控（规则 #16，关着时入口不渲染），
  *   且**检索那一步仍在本机**（FTS5 + BM25）；出网的只有「问题 + 命中的笔记片段」那一段。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sparkles, ChevronRight } from "lucide-react";
+import { ScrollProvider } from "@/contexts/ScrollContext";
+import { useSmoothScroll } from "@/hooks/useSmoothScroll";
+import { BackToTop } from "@/components/BackToTop";
 import { useAppStore } from "@/stores/appStore";
 import { useDialogStore } from "@/stores/dialogStore";
 import { useNoteDialogClosed } from "@/hooks/useNoteDialogClosed";
@@ -79,13 +82,26 @@ export function KnowledgeView() {
   const { toast } = useToast();
   const openNote = useDialogStore((s) => s.openNote);
 
+  /**
+   * 列表的平滑滚动（与记录模式同一套物理惯性）。
+   *
+   * 两个 ref 都在这里而不在 NoteList 里：包层 div **总是渲染**（里面装列表或空态），
+   * 这样 DOM 节点在本组件整个生命周期内稳定，不用给 hook 再搞一套
+   * 「列表出现了吗」的依赖判断。
+   */
+  const scrollWrapRef = useRef<HTMLDivElement | null>(null);
+  const scrollContentRef = useRef<HTMLDivElement | null>(null);
+  const lenisRef = useSmoothScroll(scrollWrapRef, scrollContentRef);
+
   const [notes, setNotes] = useState<Note[]>([]);
   const [folders, setFolders] = useState<NoteFolder[]>([]);
   const [unfiled, setUnfiled] = useState(0);
   /** 回收站条数（W1）。跟着 `reloadFolders` 一起刷。 */
   const [trashCount, setTrashCount] = useState(0);
   const [total, setTotal] = useState(0);
-  const [maxDepth, setMaxDepth] = useState(3);
+  // 初值只是拿到后端值之前的占位（权威是 `MAX_FOLDER_DEPTH`）。
+  // 写对一点能避免第一帧用错的上限算可移动目标。
+  const [maxDepth, setMaxDepth] = useState(4);
   const [keyword, setKeyword] = useState("");
   const [folderFilter, setFolderFilter] = useState<FolderFilter>("all");
   const [loading, setLoading] = useState(true);
@@ -282,12 +298,33 @@ export function KnowledgeView() {
     [activeNote, refreshAll, toast],
   );
 
+  /**
+   * 刚刚有东西落进去的文件夹（操作回执）。`null` = 没有。
+   *
+   * 为何需要它：把一篇笔记移走后，它就从当前列表里**消失**了（如果正在按文件夹筛）。
+   * 在这之前用户完全不知道到底成没成、移到哪了——在目标文件夹上闪一下就是回执。
+   */
+  const [landedFolder, setLandedFolder] = useState<string | null>(null);
+  const landTimerRef = useRef(0);
+
+  /** 环的动画是 0.95s（1.1s 后再清，给它跑完）。 */
+  const flashFolder = useCallback((key: string) => {
+    window.clearTimeout(landTimerRef.current);
+    setLandedFolder(key);
+    landTimerRef.current = window.setTimeout(() => setLandedFolder(null), 1100);
+  }, []);
+
+  // 卸载时清定时器：不清就是对已卸载组件 setState（React 会警告，且是真泄漏）。
+  useEffect(() => () => window.clearTimeout(landTimerRef.current), []);
+
   const handleSetFolder = useCallback(
     async (note: Note, folderId: string | null) => {
       if (!(await noteSetFolder(note.id, folderId))) return;
       refreshAll();
+      // 侧栏里「未分类」的 key 是字符串 "unfiled"，不是 null（同 FolderFilter 的口径）。
+      flashFolder(folderId ?? "unfiled");
     },
-    [refreshAll],
+    [refreshAll, flashFolder],
   );
 
   const currentFolderName = useMemo(() => {
@@ -424,29 +461,36 @@ export function KnowledgeView() {
   }, [openNote, newFolderId]);
 
   return (
-    // 自带 Provider：详见文件头部说明
+    // ScrollProvider 包在最外层（而不是只包回顶按钮）：
+    // 弹窗的 `useModalScrollLock` 靠它拿到当前 Lenis 去暂停。
+    // 不包的后果：开着笔记弹窗滚轮会穿透到后面的列表（Lenis 全局接管 wheel 的已知副作用）。
+    <ScrollProvider scrollRef={scrollWrapRef} lenisRef={lenisRef}>
+    {/* 自带 Provider：详见文件头部说明 */}
     <ContextMenu>
       <div className={styles.shell}>
-        {sidebarOpen && (
-          <FolderTree
-            folders={folders}
-            unfiledCount={unfiled}
-            totalCount={total}
-            trashCount={trashCount}
-            maxDepth={maxDepth}
-            selected={folderFilter}
-            onSelect={setFolderFilter}
-            onChanged={refreshAll}
-            version={version}
-          />
-        )}
+        {/* ❗ **常挂载**，不写 `{sidebarOpen && ...}`：后者是硬挂硬消，做不了开合的
+            宽度动画（记录模式的 Sidebar 就是 `width: 0 → 180px`）。
+            开合交给 `open` prop + CSS。 */}
+        <FolderTree
+          open={sidebarOpen}
+          folders={folders}
+          unfiledCount={unfiled}
+          totalCount={total}
+          trashCount={trashCount}
+          maxDepth={maxDepth}
+          selected={folderFilter}
+          onSelect={setFolderFilter}
+          onChanged={refreshAll}
+          landed={landedFolder}
+          version={version}
+        />
 
         <div className={styles.wrap}>
           {/* 回收站把中栏整个换掉（W1）：它没有搜索 / 分组 / 筛选 / 新建，
               把工具栏留在上面会给人一堆在这里无意义（甚至会报空）的控件。
               候选条目已从 `notes_fts` 移除，搜也真的搜不到。 */}
           {folderFilter === "trash" ? (
-            <TrashPanel onChanged={refreshAll} />
+            <TrashPanel onChanged={refreshAll} folders={folders} />
           ) : (
           <>
           <KnowledgeToolbar
@@ -540,23 +584,35 @@ export function KnowledgeView() {
           {/* 待沉淀区（§8.1 4️⃣）。一条候选都没时它自己返回 null */}
           <KbInboxPanel />
 
-          {notes.length === 0 ? (
-            <NoteListEmpty loading={loading} keyword={keyword} folderFilter={folderFilter} />
-          ) : (
-            <NoteList
-              notes={notes}
-              folders={folders}
-              activeId={activeNote?.id ?? null}
-              showFolderColumn={!sidebarOpen}
-              groupCounts={groupCounts}
-              hasMore={notes.length < total}
-              loadingMore={loadingMore}
-              onLoadMore={() => void loadMore()}
-              onOpen={handleOpen}
-              onDelete={handleDelete}
-              onSetFolder={handleSetFolder}
-            />
-          )}
+          {/* 滚动包层总是渲染（里面装列表或空态）：Lenis 要的两个节点得稳定存在。 */}
+          <div className={styles.listWrap} ref={scrollWrapRef}>
+            <div className={styles.listContent} ref={scrollContentRef}>
+              {notes.length === 0 ? (
+                <NoteListEmpty loading={loading} keyword={keyword} folderFilter={folderFilter} />
+              ) : (
+                <NoteList
+                  notes={notes}
+                  folders={folders}
+                  activeId={activeNote?.id ?? null}
+                  showFolderColumn={!sidebarOpen}
+                  groupCounts={groupCounts}
+                  hasMore={notes.length < total}
+                  loadingMore={loadingMore}
+                  onLoadMore={() => void loadMore()}
+                  onOpen={handleOpen}
+                  onDelete={handleDelete}
+                  onSetFolder={handleSetFolder}
+                />
+              )}
+            </div>
+          </div>
+
+          {/* 🔴 回顶胶囊必须放在滚动容器**外面**。
+              它是 `position: absolute`，而绝对定位元素虽然按包含块定位，却仍然属于
+              那个容器的**可滚动内容**——放在 `.listWrap` 里的后果是一滚就跟着列表划走了。
+              现在挂在 `.wrap`（不滚的中栏）上，位置不变但不再随滚。
+              它不需要是滚动容器的 DOM 后代：Lenis 实例是从 ScrollProvider 拿的。 */}
+          <BackToTop className={styles.backTop} />
             </>
           )}
           </>
@@ -591,5 +647,6 @@ export function KnowledgeView() {
           ))}
       </div>
     </ContextMenu>
+    </ScrollProvider>
   );
 }

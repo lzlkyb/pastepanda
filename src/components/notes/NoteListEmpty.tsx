@@ -23,7 +23,23 @@ export function NoteListEmpty({
   // 热键从配置读而不是写死：用户改过之后这里再教他按 Ctrl+Alt+D 就是在说谎
   const dailyHotkey = useAppStore((s) => s.config?.daily_note_hotkey);
 
-  if (loading) return <div className={styles.stateBox}>正在加载…</div>;
+  // 骨架屏而不是一行「正在加载…」。两个理由：
+  // ① 文字只有一行高，数据一到列表突然撑满，高度会跳一下；
+  // ② 骨架把「一会儿会出现几条、每条长什么样」提前告诉你了。
+  // 扫光关键帧与卡片列表共用（styles/surface.css 的 pp-skeleton-shimmer）。
+  if (loading) {
+    return (
+      <div className={styles.skelList} aria-busy="true" aria-label="正在加载笔记">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} className={styles.skelRow}>
+            <div className={`${styles.skelBar} ${styles.skelTitle}`} />
+            <div className={`${styles.skelBar} ${styles.skelText}`} />
+            <div className={`${styles.skelBar} ${styles.skelMeta}`} />
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   const kw = keyword.trim();
   const daily = isDailyFilter(folderFilter);

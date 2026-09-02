@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>版本锚定 W2 设计稿 · PastePanda</title>
+<style>
+  body { margin:0; padding:32px; background:#f6f7f9; color:#1f2328;
+         font:14px/1.75 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:900px; margin:0 auto; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:#656d76; margin:0 0 28px; }
+  h2 { font-size:16px; margin:36px 0 10px; padding-bottom:6px; border-bottom:1px solid #d8dee4; }
+  .card { background:#fff; border:1px solid #d8dee4; border-radius:8px; padding:16px; }
+  .note { background:#fff8c5; border:1px solid #eac54f; border-radius:6px; padding:10px 12px; margin:12px 0; }
+  .bad { background:#ffebe9; border:1px solid #ff8182; border-radius:6px; padding:10px 12px; margin:12px 0; }
+  code { background:#eff1f3; border-radius:4px; padding:1px 5px; font-size:12px; }
+  table { width:100%; border-collapse:collapse; margin:10px 0; font-size:13px; }
+  th,td { border:1px solid #d8dee4; padding:7px 9px; text-align:left; vertical-align:top; }
+  th { background:#f6f8fa; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>版本锚定（W2）设计稿</h1>
+  <p class="sub">2026-09-02 · 改动范围：<code>NoteHistoryView.tsx</code> 与 <code>NoteDialog.module.css</code>。
+     后端已落地（689 条测试全绿），本稿只定界面。</p>
+  <h2>1 · 要治的是什么</h2>
+  <div class="card">
+    <p><code>MAX_REVISIONS = 20</code>，而每次 <code>note_update</code> 都会裁一次。
+       模型完全可能在一轮对话里改十几次——<b>连续 21 次就把你的真实历史全挤没了</b>，
+       而这只需「修改」一个权限。</p>
+    <div class="bad">不先做 W2 就开写工具，等于把唯一的后悔药交给模型销毁。</div>
+    <p>后端口径：<b>每篇笔记被外部首次写入前的那一张快照自动锚住，每篇最多一份</b>。
+       快照拍的是 UPDATE <b>之前</b>的内容，所以锚住的恰好是「模型动手之前的原样」。</p>
+    <p>不变式：<b>最近 20 份普通历史 + 所有锚定份</b>。锚定不占配额——否则
+       「保护历史」反而先吃掉一份历史。</p>
+  </div>
+
+  <h2>2 · 历史列表的四种行形态</h2>
+  <style>
+    .mock { width:320px; border:1px solid #d8dee4; border-radius:6px; overflow:hidden; background:#fff; }
+    .row { display:flex; align-items:center; gap:8px; padding:8px 10px; border-bottom:1px solid #eef1f4; font-size:13px; }
+    .row:last-child { border-bottom:none; }
+    .row.on { background:#ddf4ff; }
+    .when { flex:1; }
+    .meta { color:#656d76; font-size:12px; }
+    .pin { color:#9a6700; background:#fff8c5; border:1px solid #eac54f;
+           border-radius:4px; padding:0 5px; font-size:11px; }
+    .src { color:#0969da; font-size:12px; }
+    .now { color:#1a7f37; font-size:12px; }
+  </style>
+  <div class="card">
+    <div class="mock">
+      <div class="row on"><span class="when">当前版本</span><span class="now">● 现在</span><span class="meta">3 分钟前</span></div>
+      <div class="row"><span class="when">10 分钟前</span><span class="src">claude-code 改</span><span class="meta">412 字</span></div>
+      <div class="row"><span class="when">1 小时前</span><span class="pin">锚定</span><span class="meta">380 字</span></div>
+      <div class="row"><span class="when">昨天 21:04</span><span class="meta">356 字</span></div>
+    </div>
+    <table>
+      <tr><th>行</th><th>条件</th><th>读法</th></tr>
+      <tr><td>当前版本</td><td>固定置顶（已有）</td><td>它不在 <code>note_revisions</code> 里，但必须列出来</td></tr>
+      <tr><td>带蓝字来源</td><td><code>source_agent</code> 非空</td><td>去掉 <code>agent:</code> 前缀后直接显示客户端名</td></tr>
+      <tr><td>带黄徽标</td><td><code>pinned</code></td><td>不会被 20 份上限挤掉的那一份</td></tr>
+      <tr><td>素行</td><td>你自己改的普通历史</td><td>人工编辑不标来源（空就是「你改的」）</td></tr>
+    </table>
+    <div class="note"><b>保持时间倒序，不把锚定份置顶</b>。历史就是按时间读的；
+      切成「锚定区 + 时间线」两段反而难定位，480px 里还多一个分组头。</div>
+    <p><b>来源显示客户端名而不是统一写「模型改」</b>：以后接了多个客户端时分得出是哪个，
+       且与 W3 调用记录里的名字对得上（那边记的是 User-Agent）。</p>
+  </div>
+
+  <h2>3 · 底部操作区</h2>
+  <div class="card">
+    <p>底部从一个按钮变两个，都作用于当前选中行：</p>
+    <div class="mock" style="display:flex;gap:8px;padding:10px;width:300px">
+      <button style="flex:1;padding:6px;font-size:12px">↺ 恢复到这个版本</button>
+      <button style="padding:6px 10px;font-size:12px">锚定</button>
+    </div>
+    <div class="note"><b>为何不做成行内悬停按钮</b>：历史行本身就是 <code>&lt;button&gt;</code>（整行可点），
+      里面再嵌一个按钮是非法 HTML。改成 div + role 又要自己补键盘支持——不值得。</div>
+    <table>
+      <tr><th>选中</th><th>恢复按钮</th><th>锚定按钮</th></tr>
+      <tr><td>当前版本</td><td>禁用（已有）</td><td><b>不显示</b>——当前版不在快照表里，无物可锚</td></tr>
+      <tr><td>未锚定的历史</td><td>可用</td><td>「锚定」</td></tr>
+      <tr><td>已锚定的历史</td><td>可用</td><td>「解除锚定」 + 确认框</td></tr>
+    </table>
+  </div>
+
+  <h2>4 · 解除锚定的确认框</h2>
+  <div class="card">
+    <p>标题：<b>解除锚定</b>　确认：<b>解除</b></p>
+    <p>正文：“解除后这一份不会立即消失，但会重新参与 20 份上限排队，
+       后继编辑够多时会被挤掉。”</p>
+    <div class="note"><b>后果是延迟的，所以必须写进文案</b>。不写的话用户看到的就是
+      「点了没反应，过一阵它自己不见了」。确认框是纯文本渲染（<code>confirmDialog</code>
+      只收 string），不要写 Markdown 星号。</div>
+    <p>锚定（加锚）<b>不弹确认</b>：它只会多保留一份，没有任何可后悔的后果。</p>
+  </div>
+
+  <h2>5 · 现有文案得改的两处</h2>
+  <div class="card">
+    <table>
+      <tr><th>位置</th><th>现在</th><th>改成</th></tr>
+      <tr><td>空列表提示</td><td>“…最多留 20 份。”</td>
+          <td>“…最多留 20 份；锚定的那一份不占这 20 份。”</td></tr>
+      <tr><td>顶部计数</td><td>“N 份历史”</td>
+          <td>有锚定时追加：“N 份历史 · 1 份锚定”</td></tr>
+    </table>
+    <div class="bad"><b>不改就是说谎</b>：“最多留 20 份”在 W2 之后已经不对了（实际上限是
+      20 + 锚定份），而用户恰好会用这句话去推断「我的旧版本还在不在」。</div>
+  </div>
+
+  <h2>6 · 这一轮不做什么</h2>
+  <div class="card">
+    <ul>
+      <li><b>不做锚定份的自动过期</b>（W2b 已拍板）。存储代价有界且很小，而
+          <b>任何自动释放都会重新开一个窗口</b>——而这个机制要防的恰好就是「慢慢搞破」。
+          与回收站的 30 天清理不同口径，是有意的。</li>
+      <li><b>不做 diff</b>。项目一直靠「时间 + 字数」让用户认版本，本轮不改这个前提。</li>
+      <li><b>不做锚定数上限</b>。自动锚定本就每篇最多一份；其余均来自你手动锚，
+          拒绝用户保留自己的版本只会显得莫名其妙。</li>
+      <li><b>设置页不加开关</b>。锚定是安全网，不是偏好；能关的安全网等于没有。</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

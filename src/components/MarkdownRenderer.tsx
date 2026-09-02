@@ -1,9 +1,14 @@
 import { memo, useMemo, useRef, useEffect, useState } from "react";
 import { marked, type Tokens } from "marked";
 import DOMPurify from "dompurify";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { mermaidBlockHtml, mapMermaidTheme } from "@/lib/mermaidBlock";
+import { escapeHtml } from "@/lib/markdown/html";
+import {
+  classifyImageSrc,
+  imageMissingHtml,
+  toAssetUrl,
+} from "@/lib/markdown/imageSrc";
 import styles from "./MarkdownRenderer.module.css";
 
 // marked 全局配置（只执行一次）
@@ -16,9 +21,6 @@ marked.setOptions({
 // marked 输出的是原始 HTML 字符串，无法引用 CSS Modules 哈希类名，
 // 故代码块外壳使用全局类名 md-code*（样式见 module.css 的 :global 段）。
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
 
 const COPY_ICON =
   '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
@@ -184,51 +186,29 @@ function wrapCodeLines(code: HTMLElement): void {
 
 // ─── 图片路径与消毒 ─────────────────────────────────────
 
-/**
- * 把相对路径拼到文档目录上（自己算而不用 path.join：浏览器侧没有，
- * 而 @tauri-apps/api/path 的 join 是 async，而这里在同步的字符串改写里）。
- * 处理 `./` 与 `../`；分隔符跟着 baseDir 走。
- */
-function resolveAgainst(baseDir: string, rel: string): string {
-  const sep = baseDir.includes("\\") ? "\\" : "/";
-  const parts = baseDir.split(/[/\\]/);
-  for (const seg of rel.split(/[/\\]/)) {
-    if (!seg || seg === ".") continue;
-    if (seg === "..") {
-      if (parts.length > 1) parts.pop();
-      continue;
-    }
-    parts.push(seg);
-  }
-  return parts.join(sep);
-}
 
 /**
- * 将本地图片路径转为 asset 协议地址；已是网络 / 内联资源时返回 null。
- *
- * @param baseDir 文档所在目录。有它才能解相对路径 ——
- *   ❌ 旧实现直接把非绝对路径当“不处理”返回 null，于是文档里最常见的
- *   `![](./assets/x.png)` 在预览里永远是裂的（而且无任何提示）。
- *   剪贴板内容模式没有文档目录，那时相对路径确实无法解，仍返回 null。
+ * 正在渲染的文档目录。marked 的 renderer 是全局一次性注册的，拿不到 props，
+ * 而判定能不能解相对路径必须用 baseDir，所以用模块变量中转。
+ * 安全前提：marked.parse 在本项目是**同步**的（没开 async），
+ * 赋值到解析结束中间不会插入另一次渲染。
  */
-function toAssetUrl(src: string, baseDir?: string | null): string | null {
-  if (!src) return null;
-  if (/^(https?:|data:|blob:|asset:)/i.test(src)) return null;
-  if (src.includes("asset.localhost")) return null;
-  const isAbs = /^([a-zA-Z]:[/\\]|\\\\|\/)/.test(src);
-  if (!isAbs) {
-    if (!baseDir) return null;
-    // Markdown 里空格常写成 %20，拼路径前得先还原成真实文件名
-    let rel = src;
-    try {
-      rel = decodeURIComponent(src);
-    } catch {
-      /* 不是合法百分号转义（如文件名里就带 %），按原样拼 */
-    }
-    return convertFileSrc(resolveAgainst(baseDir, rel));
-  }
-  return convertFileSrc(src);
-}
+let activeBaseDir: string | null = null;
+
+marked.use({
+  renderer: {
+    /**
+     * 只接一种情形：指向本地文件但解不出来的图，换成看得见的占位。
+     * 其余一律 `return false`——marked 的 use() 在 renderer 返回 false 时
+     * 回落到默认渲染器（已核对 marked 18 源码），
+     * 也就是能正常显示的图输出一个字节都不变。
+     */
+    image({ href, text }: Tokens.Image): string | false {
+      if (classifyImageSrc(href, activeBaseDir).kind !== "unresolvable") return false;
+      return imageMissingHtml(href, text);
+    },
+  },
+});
 
 /**
  * 解析前把 Markdown 中的本地图片路径改写为 asset 协议地址。
@@ -249,6 +229,9 @@ function rewriteLocalImagePaths(md: string, baseDir?: string | null): string {
 
 /** 将 Markdown 文本渲染为安全的 HTML 字符串 */
 function renderMarkdownHtml(text: string, baseDir?: string | null): string {
+  // image 渲染器靠这个模块变量拿 baseDir（见 activeBaseDir 注释），
+  // finally 里必须清掉：不清的话下一个不传 baseDir 的调用方会接手上一次的目录
+  activeBaseDir = baseDir ?? null;
   try {
     const raw = transformAlerts(marked.parse(rewriteLocalImagePaths(text, baseDir)) as string);
     return DOMPurify.sanitize(raw, {
@@ -257,6 +240,8 @@ function renderMarkdownHtml(text: string, baseDir?: string | null): string {
     });
   } catch {
     return "";
+  } finally {
+    activeBaseDir = null;
   }
 }
 
@@ -292,7 +277,9 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   /** 行号模式：块级行号 + 代码块行号（compact 下强制关闭） */
   lineNumbers?: boolean;
   /** 文档所在目录：用来解文档里的相对图片路径（`./assets/x.png`）。
-   *  剪贴板内容模式没有目录，传 null，相对路径就保持原样（确实无法解）。 */
+   *  剪贴板内容模式没有目录，传 null；此时相对路径确实无法解，
+   *  但**不再静默渲染一个加不出来的 <img>**（那等于一片空白），
+   *  而是换成 md-imgmiss 占位，写明原路径，见 imageMissingHtml。 */
   baseDir?: string | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);

@@ -22,10 +22,13 @@ import {
   notePurgeAll,
   type Note,
 } from "@/lib/api/notes";
+import type { NoteFolder } from "@/lib/api";
 import { confirmDialog } from "@/lib/confirm";
-import { relativeTime } from "@/lib/utils";
+import { relativeTime, countChars, fmtCount } from "@/lib/utils";
+import { getContentTypeMeta } from "@/lib/contentTypes";
+import { TagBadge, TagBadgeMore } from "@/components/TagBadge";
 import { useAppStore } from "@/stores/appStore";
-import { excerpt } from "./NoteList";
+import { excerpt, provenanceOf } from "./NoteList";
 import styles from "../KnowledgeView.module.css";
 /** 只读预览最多渲染多少行。回收站只需要「认出是哪条」，不是阅读器。 */
 const PREVIEW_LINES = 30;
@@ -51,17 +54,62 @@ function daysLeft(deletedAt: string | null | undefined, days: number): number | 
   return Math.max(0, Math.ceil(days - elapsed));
 }
 
+/** 行内最多摆几个标签（同 `NoteList` 的口径）。 */
+const MAX_ROW_TAGS = 3;
+
+/**
+ * 原卡片类型徽标的文案。**三态**，不是两态（详见 `Note.source_kind` 的注释）：
+ *
+ * - 不是从卡片来的 ⇒ `null`，**不渲染徽标**。手工/速记/AI 新建的笔记永远落在这里，
+ *   给它们摆个空徽标只是噪声（而且它们的来路已经由图标底说了）；
+ * - 卡片还在 ⇒ 走公共的 `getContentTypeMeta`（规则 #11）；
+ * - 卡片已删 ⇒ 「来自卡片（已删）」置灰。同 `NoteDetailPane` 已有的口径：
+ *   原卡片被删不影响笔记本身，但要说清楚——否则用户会以为恢复后能跳回原卡片。
+ *
+ * ❗ 用**色点 + 中文标签**而不是 emoji：`ContentTypeMeta` 只有
+ *   `{ label, color, monospace }`、**没有 icon 字段**。项目里内容类型本来就是用
+ *   颜色表达的（`TagBadge` 的 picker 圆点同理），自己再编一张 emoji 表
+ *   就是又一份会与它分歧的映射。
+ */
+function sourceKindTag(n: Note): { text: string; color?: string; gone: boolean } | null {
+  if (!n.history_id) return null;
+  if (!n.source_kind) return { text: "来自卡片（已删）", gone: true };
+  const meta = getContentTypeMeta(n.source_kind);
+  return { text: meta.label, color: meta.color, gone: false };
+}
+
 /** 剩余 ≤ 3 天就不能只给个数字，得把后果说出来。 */
 function expiryText(left: number | null): { text: string; urgent: boolean } | null {
   if (left === null) return null;
   if (left <= 3) return { text: `还有 ${left} 天就自动删除`, urgent: true };
   return { text: `还有 ${left} 天`, urgent: false };
 }
-export function TrashPanel({ onChanged }: { onChanged?: () => void }) {
+export function TrashPanel({
+  onChanged,
+  folders,
+}: {
+  onChanged?: () => void;
+  /**
+   * 文件夹列表，用来把 `folder_id` 翻成名字。
+   *
+   * 由 `KnowledgeView` 传进来而不是本组件自己拉：它已经为了右键「移动到文件夹」
+   * 拉过一份了，再拉一次就是同一份数据两个来源，而它们会在重命名后不一致。
+   */
+  folders: NoteFolder[];
+}) {
   const [rows, setRows] = useState<Note[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const days = useAppStore((s) => s.config.note_trash_days);
+
+  /** `folder_id` → 文件夹名。没匹上就是未分类（同 `NoteList` 的口径）。
+   *
+   * ❗ 文件夹被删时 `folder_id` 会自动变 null（笔记不跟着删），
+   *   所以这里不会出现「指向一个不存在的文件夹」的情况。 */
+  const folderName = useCallback(
+    (id: string | null) => folders.find((f) => f.id === id)?.name ?? "未分类",
+    [folders],
+  );
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -146,28 +194,68 @@ export function TrashPanel({ onChanged }: { onChanged?: () => void }) {
       {rows.map((n) => {
         const open = expanded === n.id;
         const exp = expiryText(daysLeft(n.deleted_at, days));
+        const prov = provenanceOf(n);
+        const kind = sourceKindTag(n);
+        const chars = countChars(n.content.trim());
         return (
           <li key={n.id} className={styles.trashRow}>
-            {/* 整行只负责展开/收起，**不进编辑器**（见文件头部） */}
+            {/* 整行只负责展开/收起，**不进编辑器**（见文件头部）
+
+                ❗ 用自己的 `.trashMain` 而不是蹭 `.rowMain`：后者已经改成了
+                `flex-direction: row`（笔记行要装「图标底 + 文字列」），
+                而回收站行是标题/摘要/元信息**竖着堆**——蹭过去会被横排成一行。 */}
             <button
               type="button"
-              className={styles.rowMain}
+              className={styles.trashMain}
               aria-expanded={open}
               onClick={() => setExpanded(open ? null : n.id)}
             >
-              <span className={styles.rowTitle}>
-                {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-                {n.title.trim() || "无标题"}
+              {/* 图标底：来路走公共的 `provenanceOf`（与笔记行同一份）。
+                  展开箭头搭在图标底上角，不再占标题行开头那个位置。 */}
+              <span className={styles.trashIcon} title={prov.label} aria-hidden="true">
+                {prov.icon}
+                <span className={styles.trashCaret}>
+                  {open ? <ChevronDown size={9} /> : <ChevronRight size={9} />}
+                </span>
               </span>
-              <span className={styles.rowExcerpt}>
-                {n.content.trim() ? excerpt(n.content) : "（空笔记）"}
-              </span>
-              <span className={styles.rowMeta}>
-                <span className={styles.rowTime}>删于 {relativeTime(n.deleted_at ?? "")}</span>
-                {n.daily_date && <span className={styles.rowFolder}>速记</span>}
-                {exp && (
-                  <span className={exp.urgent ? styles.trashExpiryUrgent : styles.trashExpiry}>
-                    {exp.text}
+
+              <span className={styles.trashBody}>
+                <span className={styles.rowTitle}>{n.title.trim() || "无标题"}</span>
+                <span className={styles.rowExcerpt}>
+                  {n.content.trim() ? excerpt(n.content) : "（空笔记）"}
+                </span>
+                <span className={styles.rowMeta}>
+                  <span className={styles.rowTime}>删于 {relativeTime(n.deleted_at ?? "")}</span>
+                  {/* 原卡片类型。三态：不是卡片来的就不渲染（见 sourceKindTag） */}
+                  {kind && (
+                    <span className={kind.gone ? styles.trashKindGone : styles.trashKind}>
+                      {kind.color && (
+                        <span
+                          className={styles.trashKindDot}
+                          style={{ background: kind.color }}
+                        />
+                      )}
+                      {kind.text}
+                    </span>
+                  )}
+                  {/* 📁 原文件夹 = 「恢复到哪去」。软删不清 `folder_id`，所以这个值是准的。
+                      它比「类型」更影响恢复决策——那是恢复这个动作的直接后果。 */}
+                  <span className={styles.trashFolder}>📁 {folderName(n.folder_id)}</span>
+                  {chars > 0 && <span className={styles.rowSize}>{fmtCount(chars)} 字</span>}
+                  {exp && (
+                    <span className={exp.urgent ? styles.trashExpiryUrgent : styles.trashExpiry}>
+                      {exp.text}
+                    </span>
+                  )}
+                </span>
+                {n.tags.length > 0 && (
+                  <span className={styles.rowMeta}>
+                    {n.tags.slice(0, MAX_ROW_TAGS).map((t) => (
+                      <TagBadge key={t.id} tag={t} />
+                    ))}
+                    {n.tags.length > MAX_ROW_TAGS && (
+                      <TagBadgeMore count={n.tags.length - MAX_ROW_TAGS} />
+                    )}
                   </span>
                 )}
               </span>

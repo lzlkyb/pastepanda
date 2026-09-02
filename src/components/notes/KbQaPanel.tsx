@@ -10,6 +10,7 @@
  * 纯展示层：拿 `useKbQa` 的会话画出来，不自己发请求。
  */
 import { useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { Sparkles, X, Loader2, CornerDownLeft, ArrowLeft } from "lucide-react";
 import type { KbQaSession } from "@/hooks/useKbQa";
 import { QA_MAX_QUESTION_CHARS } from "@/lib/notes/kbQa";
@@ -64,8 +65,17 @@ export function KbQaPanel({
     onAsk(q);
   };
 
+  /* 进场动画分 variant：
+     - `pane`（宽屏第三栏）：从右滑进，方向与它所在的那侧一致；
+     - `inline`（窄屏接管中栏）：**只淡入**。它是原地把列表换成问答，
+       再加水平位移会读成「又开了一层」，而它并没有层级——回去靠的是「← 返回列表」。 */
   return (
-    <div className={variant === "inline" ? `${styles.pane} ${styles.inline}` : styles.pane}>
+    <motion.div
+      className={variant === "inline" ? `${styles.pane} ${styles.inline}` : styles.pane}
+      initial={{ opacity: 0, x: variant === "pane" ? 8 : 0 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+    >
       <div className={styles.hd}>
         {/* 窄屏：回答接管了唯一那栏，必须有路回列表——否则就是个回不去的页面 */}
         {onBack && (
@@ -173,6 +183,6 @@ export function KbQaPanel({
           </button>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

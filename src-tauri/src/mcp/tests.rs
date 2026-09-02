@@ -15,17 +15,40 @@ const TOKEN: &str = "test-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 /// （参数解析、R6 不退化、输出形状），查询本身已由 `data_store::tests_qa` 盖住。
 struct FakeKb {
     notes: Vec<crate::data_store::Note>,
+    /// 七个写开关。测试靠它钉双层门。
+    switches: super::gate::WriteSwitches,
+    /// 真落到数据层的写调用：(方法, 目标, source)。
+    ///
+    /// 不真改 `notes`：本模块要钉的是 **MCP 层**（参数解析、门控、输出形状），
+    /// 真写入行为由 `data_store::tests` 盖。而“到没到达数据层”恰好是门控的断言点。
+    writes: std::sync::Mutex<Vec<(String, String, String)>>,
 }
 
 impl FakeKb {
     fn new() -> Self {
+        Self::with_switches(super::gate::WriteSwitches::ALL_ON)
+    }
+
+    fn with_switches(switches: super::gate::WriteSwitches) -> Self {
         Self {
             notes: vec![fake_note(
                 "n1",
                 "Rust 并发笔记",
                 "记了 tokio 与 spawn_blocking 的取舍。",
             )],
+            switches,
+            writes: std::sync::Mutex::new(Vec::new()),
         }
+    }
+
+    fn note_write(&self, method: &str, target: &str, source: &str) {
+        if let Ok(mut g) = self.writes.lock() {
+            g.push((method.into(), target.into(), source.into()));
+        }
+    }
+
+    fn writes(&self) -> Vec<(String, String, String)> {
+        self.writes.lock().map(|g| g.clone()).unwrap_or_default()
     }
 }
 
@@ -84,6 +107,84 @@ impl super::source::KbSource for FakeKb {
     fn folder_name(&self, _folder_id: &str) -> Option<String> {
         None
     }
+
+    fn folders(&self) -> Result<Vec<crate::data_store::NoteFolder>, String> {
+        Ok(vec![serde_json::from_value(json!({
+            "id": "f1", "name": "技术", "parent_id": null,
+            "sort_order": 0, "created_at": "2026-09-01 10:00:00",
+            "note_count": 1, "depth": 1,
+        }))
+        .expect("造假文件夹失败")])
+    }
+
+    fn tags(&self) -> Result<Vec<crate::data_store::Tag>, String> {
+        Ok(vec![serde_json::from_value(json!({
+            "id": "t1", "name": "rust", "color": "#000",
+            "source": "manual", "created_at": "2026-09-01 10:00:00",
+        }))
+        .expect("造假标签失败")])
+    }
+
+    fn create(
+        &self,
+        title: &str,
+        content: &str,
+        _folder: Option<&str>,
+        source: &str,
+    ) -> Result<crate::data_store::Note, String> {
+        self.note_write("create", title, source);
+        Ok(fake_note("new-1", title, content))
+    }
+
+    fn update(
+        &self,
+        id: &str,
+        title: Option<&str>,
+        _content: Option<&str>,
+        source: &str,
+    ) -> Result<crate::data_store::Note, String> {
+        self.note_write("update", id, source);
+        Ok(fake_note(id, title.unwrap_or("Rust 并发笔记"), "正文"))
+    }
+
+    fn append(
+        &self,
+        id: &str,
+        _text: &str,
+        source: &str,
+    ) -> Result<crate::data_store::Note, String> {
+        self.note_write("append", id, source);
+        Ok(fake_note(id, "Rust 并发笔记", "正文"))
+    }
+
+    fn delete(&self, id: &str) -> Result<String, String> {
+        self.note_write("delete", id, "");
+        Ok("Rust 并发笔记".to_string())
+    }
+
+    fn restore(&self, id: &str) -> Result<String, String> {
+        self.note_write("restore", id, "");
+        Ok("Rust 并发笔记".to_string())
+    }
+
+    fn move_to(&self, id: &str, folder: Option<&str>) -> Result<String, String> {
+        self.note_write("move", id, "");
+        Ok(folder.unwrap_or("未分类").to_string())
+    }
+
+    fn tag(
+        &self,
+        id: &str,
+        add: &[String],
+        remove: &[String],
+    ) -> Result<(usize, usize), String> {
+        self.note_write("tag", id, "");
+        Ok((add.len(), remove.len()))
+    }
+
+    fn write_switches(&self) -> super::gate::WriteSwitches {
+        self.switches
+    }
 }
 
 /// 起一个监听随机端口的真 server，返回 base URL。
@@ -115,6 +216,27 @@ impl super::audit::AuditSink for RecordingAudit {
 
 async fn spawn_server() -> String {
     spawn_server_with_audit().await.0
+}
+
+/// 带指定开关起服务，并把假数据源一并递出来——
+/// 测双层门靠的就是“写调用到没到达数据层”。
+async fn spawn_server_with_switches(
+    switches: super::gate::WriteSwitches,
+) -> (String, std::sync::Arc<FakeKb>) {
+    let token = std::sync::Arc::new(std::sync::Mutex::new(TOKEN.to_string()));
+    let fake = std::sync::Arc::new(FakeKb::with_switches(switches));
+    let kb: std::sync::Arc<dyn super::source::KbSource> = fake.clone();
+    let audit: std::sync::Arc<dyn super::audit::AuditSink> =
+        std::sync::Arc::new(RecordingAudit::default());
+    let router = super::server::build_router(audit, kb, token);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("绑定随机端口失败");
+    let port = listener.local_addr().expect("取本地地址失败").port();
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, router).await;
+    });
+    (format!("http://127.0.0.1:{}", port), fake)
 }
 
 async fn spawn_server_with_audit() -> (String, std::sync::Arc<RecordingAudit>) {
@@ -184,6 +306,21 @@ async fn test_audit_also_records_failed_tool_calls() {
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].0, "kb_nonexistent");
     assert!(!calls[0].2, "未知工具应该记成 ok=false");
+}
+
+/// 带指定 User-Agent 发。M5 靠它钉 `source_agent` 的来源（UA 而不是 clientInfo）。
+async fn rpc_as(base: &str, ua: &str, body: Value) -> (u16, Value) {
+    let resp = reqwest::Client::new()
+        .post(format!("{}/mcp", base))
+        .header("authorization", format!("Bearer {}", TOKEN))
+        .header("user-agent", ua)
+        .json(&body)
+        .send()
+        .await
+        .expect("请求发送失败");
+    let status = resp.status().as_u16();
+    let v: Value = resp.json().await.unwrap_or(Value::Null);
+    (status, v)
 }
 
 /// 发一个带正确令牌的 JSON-RPC 请求，返回（状态码，应答体）。
@@ -495,4 +632,163 @@ async fn test_normal_sized_body_is_not_blocked_by_the_limit() {
     .await;
     assert_eq!(status, 200, "4 KB 的正常请求不得被体上限拦住");
     assert!(v["result"].is_object());
+}
+
+// ===== M5 写入能力 =====
+
+/// 从 `tools/list` 应答里拿工具名。
+fn tool_names(v: &Value) -> Vec<String> {
+    v["result"]["tools"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|t| t["name"].as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[tokio::test]
+async fn test_all_eleven_tools_listed_when_switches_on() {
+    let (base, _) = spawn_server_with_switches(super::gate::WriteSwitches::ALL_ON).await;
+    let (_, v) = rpc(&base, json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})).await;
+    let names = tool_names(&v);
+    assert_eq!(names.len(), 11, "全开时应有 11 个工具，实际：{:?}", names);
+    for expect in ["kb_folders", "kb_create", "kb_append", "kb_delete", "kb_restore"] {
+        assert!(names.contains(&expect.to_string()), "丢了 {}", expect);
+    }
+}
+
+#[tokio::test]
+async fn test_switch_off_hides_tool_from_list() {
+    let (base, _) = spawn_server_with_switches(super::gate::WriteSwitches::ALL_OFF).await;
+    let (_, v) = rpc(&base, json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})).await;
+    let names = tool_names(&v);
+    // 外层门：没开放的工具模型根本看不到。
+    assert_eq!(names.len(), 4, "全关时只应剩四个只读工具，实际：{:?}", names);
+    assert!(!names.iter().any(|n| n == "kb_delete"));
+}
+
+#[tokio::test]
+async fn test_stale_client_still_cannot_write_after_switch_off() {
+    // 🔴 这是 M5 最重要的一条。
+    //
+    // 规划里说「没开放的工具模型根本不知道它存在」——但客户端会**缓存工具表**，
+    // 早就 list 过的会话手里还握着旧表。所以本用例**根本不调 tools/list**，
+    // 直接发 tools/call，模拟那个旧会话。
+    let (base, fake) = spawn_server_with_switches(super::gate::WriteSwitches::ALL_OFF).await;
+    let (status, v) = rpc(
+        &base,
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
+               "params":{"name":"kb_delete","arguments":{"id":"n1"}}}),
+    )
+    .await;
+
+    assert_eq!(status, 200);
+    assert_eq!(v["result"]["isError"], true, "被关的工具必须报失败");
+    let text = v["result"]["content"][0]["text"].as_str().unwrap_or("");
+    assert!(text.contains("关闭"), "未明说是被用户关掉了：{}", text);
+    assert!(text.contains("请勿重试"), "未叫它不要重试：{}", text);
+    // 真正的断言：写调用**根本没到达数据层**。
+    assert!(
+        fake.writes().is_empty(),
+        "开关关着却真的删到了数据层：{:?}",
+        fake.writes()
+    );
+}
+
+#[tokio::test]
+async fn test_only_the_closed_switch_is_blocked() {
+    // 关「删除」不能误伤「新建」——一档开关只管一个工具。
+    let sw = super::gate::WriteSwitches::from_config(&json!({ "mcp_write_delete": false }));
+    let (base, fake) = spawn_server_with_switches(sw).await;
+
+    let (_, v) = rpc(
+        &base,
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
+               "params":{"name":"kb_delete","arguments":{"id":"n1"}}}),
+    )
+    .await;
+    assert_eq!(v["result"]["isError"], true);
+
+    let (_, v) = rpc(
+        &base,
+        json!({"jsonrpc":"2.0","id":2,"method":"tools/call",
+               "params":{"name":"kb_create","arguments":{"title":"新篇","content":"正文"}}}),
+    )
+    .await;
+    assert!(v["result"].get("isError").is_none(), "新建被误伤了：{:?}", v);
+    let writes = fake.writes();
+    assert_eq!(writes.len(), 1, "只应有新建那一条到达数据层：{:?}", writes);
+    assert_eq!(writes[0].0, "create");
+}
+
+#[tokio::test]
+async fn test_write_stamps_source_from_user_agent() {
+    // 🔴 来源取 User-Agent 而不是 clientInfo（A-53），并且只取名字不取版本：
+    // 带版本号的话，客户端一升级，历史列表里就多出一个看似不同的来源。
+    let (base, fake) = spawn_server_with_switches(super::gate::WriteSwitches::ALL_ON).await;
+    rpc_as(
+        &base,
+        "claude-code/2.1.233 (sdk-cli)",
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
+               "params":{"name":"kb_append","arguments":{"id":"n1","text":"补一段"}}}),
+    )
+    .await;
+    let writes = fake.writes();
+    assert_eq!(writes.len(), 1);
+    assert_eq!(writes[0].2, "agent:claude-code");
+}
+
+#[tokio::test]
+async fn test_write_source_never_empty_without_user_agent() {
+    // 🔴 空串在 W2 里的语义是「人亲自改的」——传空就把锚定快照静默关掉了。
+    // 没 UA 的客户端也得落一个非空来源，宁可不精确。
+    let (base, fake) = spawn_server_with_switches(super::gate::WriteSwitches::ALL_ON).await;
+    rpc(
+        &base,
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
+               "params":{"name":"kb_update","arguments":{"id":"n1","title":"改个名"}}}),
+    )
+    .await;
+    let writes = fake.writes();
+    assert_eq!(writes.len(), 1);
+    assert!(!writes[0].2.is_empty(), "没 UA 也不能落空来源");
+    assert!(writes[0].2.starts_with("agent:"));
+}
+
+#[tokio::test]
+async fn test_kb_folders_lists_names_and_warns_no_autocreate() {
+    // kb_folders 是选 c（全量工具集）拍板后的必需品：
+    // 没它的话 kb_move / kb_tag 无从下手（模型看不到有哪些文件夹与标签）。
+    let (base, _) = spawn_server_with_switches(super::gate::WriteSwitches::ALL_ON).await;
+    let (_, v) = rpc(
+        &base,
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
+               "params":{"name":"kb_folders","arguments":{}}}),
+    )
+    .await;
+    let text = v["result"]["content"][0]["text"].as_str().unwrap_or("");
+    assert!(text.contains("技术"), "未列出文件夹：{}", text);
+    assert!(text.contains("rust"), "未列出标签：{}", text);
+    // 不告知的后果：模型自己编个名字传进 kb_move，每次都失败而不知道为何。
+    assert!(
+        text.contains("不会自动新建"),
+        "未告知不自动新建文件夹/标签：{}",
+        text
+    );
+}
+
+#[tokio::test]
+async fn test_kb_folders_is_available_even_with_all_writes_off() {
+    // 它是**只读**工具，不占写开关。写全关时也得能用：
+    // kb_list 的 folder / tag 参数本身就靠它才能填对。
+    let (base, _) = spawn_server_with_switches(super::gate::WriteSwitches::ALL_OFF).await;
+    let (_, v) = rpc(
+        &base,
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
+               "params":{"name":"kb_folders","arguments":{}}}),
+    )
+    .await;
+    assert!(v["result"].get("isError").is_none(), "只读工具被写开关误伤：{:?}", v);
 }

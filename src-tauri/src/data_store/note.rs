@@ -65,6 +65,20 @@ pub struct Note {
     pub deleted_at: Option<String>,
     #[serde(default)]
     pub tags: Vec<Tag>,
+    /// 原剪贴板卡片的内容类型（W1b，回收站用）。不是表里的列，现场 join 算的。
+    ///
+    /// **三态语义，不是两态**——笔记是独立于卡片存在的：
+    /// - `history_id` 为空（手工/速记/AI 新建）⇒ `None`，前端**不显类型徽标**；
+    /// - `history_id` 非空且卡片还在 ⇒ `Some(content_type)`；
+    /// - `history_id` 非空但卡片已删 ⇒ `None`。
+    ///
+    /// ❗ 第一种与第三种都是 `None`，前端靠 `history_id` 自己分开两者
+    ///   （它本来就在 DTO 里）。不在这里编一个哨兵值，因为那就得约定一个
+    ///   永远不会与真实 `content_type` 撞名的字符串，而 `content_type` 取值是会演进的。
+    ///
+    /// 与 `deleted_at` 同一个模式：只有 [`DataStore::note_list_deleted`] 会填它。
+    #[serde(default)]
+    pub source_kind: Option<String>,
     /// 当前分组下的**组名**（B2 #9）。`None` = 不分组。
     ///
     /// 不是表里的列，不在 `NOTE_COLS` 里——它是查询时算出来的。
@@ -96,6 +110,8 @@ pub(super) fn row_to_note(row: &rusqlite::Row) -> rusqlite::Result<Note> {
         daily_date: row.get(9)?,
         deleted_at: row.get(10)?,
         tags: Vec::new(),
+        // 同 `tags`：不在 NOTE_COLS 里，由 note_list_deleted 读完本函数后另行填
+        source_kind: None,
         // 分组键不在 NOTE_COLS 里，由 note_list_view 在读完本函数后另行填
         group_key: None,
     })
@@ -482,19 +498,35 @@ impl DataStore {
     // ===== CRUD =====
 
     /// 新建笔记。`history_id` 为 `None` = 与剪贴板无关的独立笔记。
+    ///
+    /// 人工新建走这里；外部（MCP 写工具）走 [`Self::note_create_from`]。
     pub fn note_create(
         &self,
         history_id: Option<&str>,
         title: &str,
         content: &str,
     ) -> Result<Note, String> {
+        self.note_create_from(history_id, title, content, "")
+    }
+
+    /// 带来源的新建（M5）。`source` 空 = 人工；非空形如 `agent:claude-code`。
+    ///
+    /// `notes.source_agent` 这一列 A 阶段建表就留了（注释写着「M4 才启用」），
+    /// 但它躺了整个 A/B 阶段**从未被写过非空值**——现在正是启用它的时候。
+    pub fn note_create_from(
+        &self,
+        history_id: Option<&str>,
+        title: &str,
+        content: &str,
+        source: &str,
+    ) -> Result<Note, String> {
         let conn = self.lock_conn();
         let id = uuid::Uuid::new_v4().to_string();
         let now = note_now();
         conn.execute(
             "INSERT INTO notes (id, history_id, title, content, created_at, updated_at, source_agent)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?5, '')",
-            rusqlite::params![id, history_id, title, content, now],
+             VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6)",
+            rusqlite::params![id, history_id, title, content, now, source],
         )
         .map_err(|e| e.to_string())?;
         Self::sync_notes_fts_on(&conn, &id);
@@ -505,7 +537,9 @@ impl DataStore {
             content: content.to_string(),
             created_at: now.clone(),
             updated_at: now,
-            source_agent: String::new(),
+            // 新建的笔记不走回收站查询，永远是 None（同 `deleted_at`）
+            source_kind: None,
+            source_agent: source.to_string(),
             // 新建笔记一律落入「未分类」。归档走 `note_set_folder`（右键「移动到文件夹」
             // 与 #13 新建空白笔记的「落入当前文件夹」都用它），不往 create 里堆参数。
             folder_id: None,
@@ -522,7 +556,23 @@ impl DataStore {
     }
 
     /// 改标题与正文。`created_at` 不动，`updated_at` 刷新。
+    ///
+    /// 人工编辑走这里；外部（MCP 写工具）走 [`Self::note_update_from`]。
     pub fn note_update(&self, id: &str, title: &str, content: &str) -> Result<(), String> {
+        self.note_update_from(id, title, content, "")
+    }
+
+    /// 带来源的修改（W2）。`source` 空 = 人工；非空形如 `agent:claude-code`。
+    ///
+    /// 来源不只是展示用的标签，它直接决定要不要锚定快照（见
+    /// `should_anchor_on`）——所以外部写入必须实填，填空等于主动放弃保护。
+    pub fn note_update_from(
+        &self,
+        id: &str,
+        title: &str,
+        content: &str,
+        source: &str,
+    ) -> Result<(), String> {
         let conn = self.lock_conn();
 
         // 先读旧值：既用来判「真的改了吗」，也顺便代替了原来靠 UPDATE 影响行数
@@ -550,7 +600,7 @@ impl DataStore {
 
         // 快照存的是**旧版本**，所以必须在 UPDATE 之前拍（D8 / note_revision.rs）。
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-        Self::snapshot_note_on(&tx, id).map_err(|e| e.to_string())?;
+        Self::snapshot_note_on(&tx, id, source).map_err(|e| e.to_string())?;
         tx.execute(
             "UPDATE notes SET title = ?2, content = ?3, updated_at = ?4 WHERE id = ?1",
             rusqlite::params![id, title, content, note_now()],
@@ -610,20 +660,44 @@ impl DataStore {
             .unwrap_or(0)
     }
 
-    /// 回收站列表，按删除时间倒序。不带标签（回收站只需要认出是哪条）。
+    /// 回收站列表，按删除时间倒序。**带标签与原卡片类型**（W1b）。
+    ///
+    /// ❗ 原注释写的是「不带标签（回收站只需要认出是哪条）」——那句已作废。
+    ///   用户在恢复前要判的是「这是什么、恢复到哪去」，而标签与类型正是判据。
+    ///   本查询只在打开回收站时跑一次（低频），多这两样不心痛。
+    ///
+    /// ❗ **下标陷阱**：`row_to_note` 按下标 0..10 取列，所以 `content_type` 必须
+    ///   **接在 `NOTE_COLS` 之后**，且这里按**列名**取而不写死下标——以后
+    ///   `NOTE_COLS` 加列时写死的下标会指到别人身上，**而且不报错**
+    ///   （同 `note_list_view` 那条注释的口径）。
+    ///
+    /// LEFT JOIN 而不是 INNER：大部分笔记没有 `history_id`，INNER 会把它们全滤掉。
     pub fn note_list_deleted(&self, limit: u32) -> Result<Vec<Note>, String> {
         let conn = self.lock_conn();
         let sql = format!(
-            "SELECT {} FROM notes WHERE deleted_at IS NOT NULL \
-             ORDER BY deleted_at DESC, rowid DESC LIMIT ?1",
-            NOTE_COLS
+            "SELECT {}, h.content_type AS src_kind \
+             FROM notes LEFT JOIN history h ON h.id = notes.history_id \
+             WHERE notes.deleted_at IS NOT NULL \
+             ORDER BY notes.deleted_at DESC, notes.rowid DESC LIMIT ?1",
+            // 用带 `notes.` 前缀的列名（而不是给表起别名 `n`）：`note_cols_q()`
+            // 拼的就是 `notes.xxx`，起了别名就对不上。join 进来的 `history` 也有
+            // `id` / `title` / `content`，不限定就是 ambiguous column name。
+            note_cols_q()
         );
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-        let rows = stmt
-            .query_map([limit], row_to_note)
+        let mut rows: Vec<Note> = stmt
+            .query_map([limit], |row| {
+                let mut n = row_to_note(row)?;
+                n.source_kind = row.get::<_, Option<String>>("src_kind")?;
+                Ok(n)
+            })
             .map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
             .collect();
+        // 标签另跑一次：跟主查询 join 会把行乘出来，而这里最多 `limit` 条。
+        for n in rows.iter_mut() {
+            n.tags = Self::load_note_tags_on(&conn, &n.id);
+        }
         Ok(rows)
     }
 
@@ -1192,5 +1266,43 @@ impl DataStore {
         }
         tx.commit().map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    /// 只动点名的那几个标签（M5 `kb_tag` 用）。返回（新增数, 移除数）。
+    ///
+    /// **为何不复用 [`Self::note_set_tags`]**：那个是整体替换且把 source 写死
+    /// `'manual'`。模型只想加一个标签时走替换，会把这条笔记上已有的 AI 标签
+    /// 整批抹成 manual——那个方法自己的注释就在警告这件事。
+    ///
+    /// 写 `source = 'ai'` 而不新增一个 `'agent'` 取值：现有词汇只有 manual / ai，
+    /// 而“不是用户亲手打的”这层区分 `'ai'` 已经能表达；多一个没人读的取值没意义。
+    pub fn note_tags_edit(
+        &self,
+        note_id: &str,
+        add: &[String],
+        remove: &[String],
+    ) -> Result<(usize, usize), String> {
+        let mut conn = self.lock_conn();
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        let mut added = 0;
+        for tid in add {
+            added += tx
+                .execute(
+                    "INSERT OR IGNORE INTO note_tags (note_id, tag_id, source) VALUES (?1, ?2, 'ai')",
+                    rusqlite::params![note_id, tid],
+                )
+                .map_err(|e| e.to_string())?;
+        }
+        let mut removed = 0;
+        for tid in remove {
+            removed += tx
+                .execute(
+                    "DELETE FROM note_tags WHERE note_id = ?1 AND tag_id = ?2",
+                    rusqlite::params![note_id, tid],
+                )
+                .map_err(|e| e.to_string())?;
+        }
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok((added, removed))
     }
 }

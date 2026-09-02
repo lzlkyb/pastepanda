@@ -590,6 +590,8 @@ pub fn run() {
             commands::set_lan_pairing_key,
             commands::regenerate_lan_pairing_key,
             commands::mcp_get_status,
+            commands::mcp_get_write_switches,
+            commands::mcp_set_write_switch,
             commands::mcp_audit_list,
             commands::mcp_audit_clients,
             commands::mcp_audit_clear,
@@ -703,6 +705,7 @@ pub fn run() {
             // 版本快照 + 恢复（B1 #4 / D8）
             commands::note_revision_list,
             commands::note_revision_get,
+            commands::note_revision_pin,
             commands::note_restore,
             // Markdown 目录导出 / 导入（B1 #5 / D1）
             commands::note_export_dir,

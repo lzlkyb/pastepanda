@@ -10,13 +10,14 @@
  * 🔴 红线：无 AI。快照只在本机 SQLite 与本组件之间走。
  */
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, RotateCcw } from "lucide-react";
+import { ArrowLeft, RotateCcw, Pin, PinOff } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { confirmDialog } from "@/lib/confirm";
 import { relativeTime } from "@/lib/utils";
 import {
   noteRevisionList,
   noteRevisionGet,
+  noteRevisionPin,
   noteRestore,
   type Note,
   type NoteRevisionMeta,
@@ -25,6 +26,16 @@ import styles from "./NoteDialog.module.css";
 
 /** 选中的是哪一行。`"current"` = 当前版（它不在 note_revisions 表里） */
 type Selected = "current" | number;
+
+/**
+ * `agent:claude-code` → `claude-code`。空串 = 人工编辑，调用方不渲染。
+ *
+ * 显示具体客户端名而不统一写「模型改」：接了多个客户端时还分得出是哪个，
+ * 且与 W3 调用记录里的名字对得上。
+ */
+function agentLabel(source: string): string {
+  return source.startsWith("agent:") ? source.slice(6) : source;
+}
 
 export function NoteHistoryView({
   noteId,
@@ -50,13 +61,18 @@ export function NoteHistoryView({
   const [selected, setSelected] = useState<Selected>("current");
   const [preview, setPreview] = useState("");
   const [restoring, setRestoring] = useState(false);
+  const [pinning, setPinning] = useState(false);
+
+  const reload = useCallback(async () => {
+    setRevs(await noteRevisionList(noteId));
+  }, [noteId]);
 
   useEffect(() => {
     void (async () => {
-      setRevs(await noteRevisionList(noteId));
+      await reload();
       setLoading(false);
     })();
-  }, [noteId]);
+  }, [reload]);
 
   // 选中变化 → 拉那一份的全文。列表不带全文是故意的（见 api 注释），
   // 代价就是这里每点一行多一次 IPC。
@@ -95,6 +111,35 @@ export function NoteHistoryView({
     onRestored(note);
   }, [selected, isDirty, toast, onRestored]);
 
+  // 选中的那一行。当前版不在快照表里，所以它没有对应行也就无物可锚。
+  const selectedRev =
+    selected === "current" ? null : (revs.find((r) => r.id === selected) ?? null);
+  const pinnedCount = revs.filter((r) => r.pinned).length;
+
+  const handleTogglePin = useCallback(async () => {
+    if (!selectedRev) return;
+    const next = !selectedRev.pinned;
+    // 只有「解除」才确认：加锚只会多保留一份，没有可后悔的后果。
+    // 解除的后果是**延迟**的，不写清楚的话用户看到的就是
+    // 「点了没反应，过一阵它自己不见了」。（确认框是纯文本，不写 Markdown 星号）
+    if (!next) {
+      const ok = await confirmDialog({
+        title: "解除锚定",
+        message:
+          "解除后这一份不会立即消失，但会重新参与 20 份上限排队，后继编辑够多时会被挤掉。",
+        confirmText: "解除",
+      });
+      if (!ok) return;
+    }
+    setPinning(true);
+    const done = await noteRevisionPin(selectedRev.id, next);
+    setPinning(false);
+    // 失败时不动 UI（api 层已弹错，规则 #15.3）：否则显示在保护，实际没有。
+    if (!done) return;
+    await reload();
+    toast(next ? "已锚定，这一份不会被挤掉" : "已解除锚定", "success");
+  }, [selectedRev, reload, toast]);
+
   return (
     <div className={styles.histWrap}>
       <div className={styles.histBar}>
@@ -102,7 +147,11 @@ export function NoteHistoryView({
           <ArrowLeft size={13} /> 返回编辑
         </button>
         <span className={styles.histCount}>
-          {loading ? "读取中…" : `${revs.length} 份历史`}
+          {loading
+            ? "读取中…"
+            : pinnedCount > 0
+              ? `${revs.length} 份历史 · ${pinnedCount} 份锚定`
+              : `${revs.length} 份历史`}
         </span>
       </div>
 
@@ -133,13 +182,20 @@ export function NoteHistoryView({
             onClick={() => setSelected(r.id)}
           >
             <span className={styles.histWhen}>{relativeTime(r.created_at)}</span>
+            {/* 保持时间倒序、不把锚定份置顶：历史就是按时间读的，
+                切成两段反而难定位。只给一个徽标。 */}
+            {r.pinned && <span className={styles.histPin}>锚定</span>}
+            {r.source_agent && (
+              <span className={styles.histSrc}>{agentLabel(r.source_agent)} 改</span>
+            )}
             <span className={styles.histMeta}>{r.char_count} 字</span>
           </button>
         ))}
 
         {!loading && revs.length === 0 && (
           <div className={styles.histEmpty}>
-            还没有历史版本。每次保存（且内容真的改了）会自动存一份，最多留 20 份。
+            还没有历史版本。每次保存（且内容真的改了）会自动存一份，最多留 20
+            份；锚定的那一份不占这 20 份。
           </div>
         )}
       </div>
@@ -156,6 +212,25 @@ export function NoteHistoryView({
         >
           <RotateCcw size={12} /> {restoring ? "恢复中…" : "恢复到这个版本"}
         </button>
+
+        {/* 当前版不显示锚定按钮（它不在快照表里）。也不做成行内悬停按钮——
+            历史行本身就是 <button>，里面再嵌按钮是非法 HTML。 */}
+        {selectedRev && (
+          <button
+            type="button"
+            className={styles.histPinBtn}
+            onClick={() => void handleTogglePin()}
+            disabled={pinning}
+            title={
+              selectedRev.pinned
+                ? "解除锚定：这一份将重新参与 20 份上限排队"
+                : "锚定：这一份永不被 20 份上限挤掉"
+            }
+          >
+            {selectedRev.pinned ? <PinOff size={12} /> : <Pin size={12} />}
+            {selectedRev.pinned ? "解除锚定" : "锚定"}
+          </button>
+        )}
       </div>
     </div>
   );

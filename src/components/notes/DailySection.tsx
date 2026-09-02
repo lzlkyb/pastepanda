@@ -76,7 +76,7 @@ export function DailySection({
         tabIndex={0}
         onKeyDown={(e) => e.key === "Enter" && pickAll()}
       >
-        <CalendarDays size={10} className={styles.builtinIcon} />
+        <CalendarDays size={12} className={styles.builtinIcon} />
         <span className={styles.name}>今日速记</span>
         <span className={styles.count}>{count}</span>
       </div>

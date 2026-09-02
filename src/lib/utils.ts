@@ -352,6 +352,15 @@ export function countChars(text: string): number {
   return text ? [...text].length : 0;
 }
 
+/** 紧凑计数：上万不写全，1234 → `1.2k`。
+ *
+ * 收口缘由（规则 #11）：原本只存在于 `DocEditor.tsx` 里的一个局部箭头函数，
+ * 笔记行的字数条要的是同一个格式。两份数字格式化必定会分岔（一边改阀值、
+ * 一边改小数位），而分岐后双方看上去都「没错」，根本不会有人发现。 */
+export function fmtCount(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+}
+
 /**
  * 把 catch 到的未知错误转成可展示文案。
  *

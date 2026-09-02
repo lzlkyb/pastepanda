@@ -15,7 +15,7 @@ import { useAppStore } from "@/stores/appStore";
 import type { EditorProps } from "@/lib/editorRegistry";
 import { sanitizeDocHtml, htmlToMarkdown } from "@/lib/docPipeline";
 import { copyRichOnly, pasteRichGuarded, copyOnly, pasteTextGuarded } from "@/lib/api";
-import { relativeTime } from "@/lib/utils";
+import { relativeTime, fmtCount } from "@/lib/utils";
 import styles from "./DocEditor.module.css";
 
 type Tab = "render" | "plain" | "md";
@@ -115,9 +115,6 @@ export function DocEditor({ item, registerActions }: EditorProps) {
   });
 
   const hasTable = /<table/i.test(originalHtml);
-
-  // tab 字数计数（清洗/Markdown 显示，1.2k 格式；原文是渲染视图无字数）
-  const fmtCount = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n));
 
   // 空态：原文/清洗都没有可显示的内容（md 态是可编辑入口，不归空态）
   const isEmpty = !sanitizedHtml.trim() && !plainText.trim();

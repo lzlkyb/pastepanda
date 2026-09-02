@@ -1,30 +1,93 @@
 /* FolderTree.module.css — 文件夹树侧栏（B1 #1，设计稿 §2）。
 
-   宽度 180px 与行高、缩进 13px 都是量过的值：深度上限 3 层就是从这三个数
-   算出来的（第 4 层名字只剩 ~97px ≈ 8 个中文字）。改它们前先回去看设计稿 §2 的表。 */
+   栏宽 180px。深度上限（`MAX_FOLDER_DEPTH`）**就是从这个宽度里算出来的**：
+   180 减去容器内边距、行内边距、缩进、折叠三角、计数胶囊，剩下的给名字。
 
+   当前（对齐记录模式 Sidebar 之后：内缩胶囊 / 13px 字号 / 行高 ~32px /
+   计数胶囊 / 缩进 10px）名字可用宽度：
+     第 1 层 ~92px（约 7.1 个中文字）
+     第 3 层 ~72px（约 5.5 个）
+     第 4 层 ~62px（约 4.7 个）← 上限已从 3 抬到 4，这一层**基本必截断**
+
+   抬到 4 能成立靠两件事：缩进从 13px 降到了 10px，且名字现在有 `title` 悬停可看全。
+   ⚠ 再往上加就不行了：第 5 层只剩 ~52px（约 4 个字），得先把栏加宽或改成横向可滚。
+   详细宽度账见 design/知识库模式-视觉统一-设计稿.html §4d。 */
+
+/* ── 外层：只管开合的宽度动画 ──
+   与记录模式 `.sidebar` 一字不差：`width: 0 → 180px` 0.35s。
+
+   为何必须拆成两层（原先 `.tree` 自己既是容器又是滚动区）：
+   宽度动画要求元素一直在 DOM 里，而栏宽收到 0 时 180px 的内容必须被裁掉
+   ——所以外层得是 `overflow: hidden`。但滚动又需要 `overflow-y: auto`，
+   一个元素不能同时是两者。记录模式就是这么分的（`.sidebar` + `.list`）。 */
 .tree {
+  width: 0;
+  min-width: 0;
+  flex-shrink: 0;
+  /* 边框也要参与动画：栏宽 0 时留一条 1px 竖线在那里是个可见的毛刺。 */
+  border-right: 1px solid transparent;
+  /* 与记录模式的 Sidebar 同一个 token（原来是 `--card-bg`）。
+     两个侧栏各用一个背景变量是真存在的不一致，且主题切换时会各自飘。 */
+  background: var(--sidebar-bg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              min-width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.35s ease;
+}
+
+.treeOpen {
   width: 180px;
   min-width: 180px;
-  flex-shrink: 0;
-  border-right: 1px solid var(--border-color);
-  background: var(--card-bg);
+  border-right-color: var(--border-color);
+}
+
+/* ── 内层：滚动 + 延迟淡入 ──
+   `opacity 0.2s ease 0.2s` 的**延迟 0.2s** 是记录模式的原值：先让栏拉开一半，
+   内容再浮上来，否则文字会跟着栏宽一起被挤着扭。
+   内边距与 gap 也与 `.list` 逐项一致；成本从缩进里省（见 `.row` 与文件头）。 */
+.list {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 6px 0 10px;
+  padding: 12px 8px 8px;
   display: flex;
   flex-direction: column;
   gap: 1px;
+  opacity: 0;
+  transition: opacity 0.2s ease 0.2s;
+  /* 滚动条也照记录模式：两边一宽一细是照镜子时最先看到的东西。 */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+}
+
+.treeOpen .list {
+  opacity: 1;
+}
+
+.list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.list::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 2px;
 }
 
 .head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 3px 9px 5px;
-  font-size: 10px;
+  /* 字号/字重/颜色/内边距全照记录模式的 `.sectionLabel`。
+     颜色用专用 token `--sidebar-section-label` 而不是 `--text-muted`：
+     那个 token 就是为了把分区标题的对比度抬到 4.5:1 才加的（见 theme.css 注释）。 */
+  padding: 10px 10px 6px;
+  font-size: 11px;
+  font-weight: 700;
   letter-spacing: 0.5px;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--sidebar-section-label);
   flex-shrink: 0;
 }
 
@@ -52,21 +115,38 @@
 .row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  /* gap 6px 而不是记录模式的 10px，行右内边距 8px 而不是 10px：
+     计数换成带底带描边的胶囊后比裸数字宽约 14px，而那是一项对齐项不能不要。
+     两边都要的话只能从 gap 与右内边距里抠，否则就得从文件夹名字里抠。 */
+  gap: 6px;
   /* 顶层行的 padding-left 写在这里；子级靠行内联 style 覆盖（缩进跟 depth 算） */
-  padding: 4px 9px 4px 11px;
-  font-size: 12px;
-  color: var(--text-secondary);
+  padding: 7px 8px 7px 10px;
+  font-size: 13px;
+  /* 与记录模式 `.item` 同一档：侧栏是主导航，不是副文本。 */
+  color: var(--text-primary);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
-  border-radius: 0 6px 6px 0;
-  transition: background 0.12s, color 0.12s;
+  /* 与上一行的 `overflow: hidden` 配对。先于本轮存在，但是同一个坑：
+     `.tree` 也是 flex column + `overflow-y: auto`，而 `overflow: hidden`
+     会把 flex 项的自动最小高度打成 0——文件夹够多时行会自己塌成细缝
+     而不是让侧栏滚动。（知识列表那边已经真撞上了一次。） */
+  flex-shrink: 0;
+  /* 四角圆角（原本是 `0 6px 6px 0`：贴左边、只圆右侧）。
+     记录模式 `.item` 是 `border-radius: 7px` 的内缩胶囊，设计稿 §4 的小样画的也是胶囊。
+     这是两边看上去「不像同一个软件」的主要原因，而不是那五个 token。 */
+  border-radius: 7px;
+  /* `all 0.15s`：与记录模式 `.item` 同一句。原先是 0.12s 且只列三个属性，
+     结果是两边 hover 的手感快一拍，而新加的计数胶囊换色也不在那三个属性里。 */
+  transition: all 0.15s;
 }
 
 .row:hover {
   background: var(--hover);
   color: var(--text-primary);
+  /* 微位移：同记录模式 Sidebar 的 `.item:hover`。
+     2px 就够了——它要表达的只是「这一行活着」。 */
+  transform: translateX(2px);
 }
 
 .row:focus-visible {
@@ -74,16 +154,61 @@
   outline-offset: -2px;
 }
 
+/* 选中态。原本就已经是「底色 + 左侧竖条」的语言了，这里只是把三处细节
+   对回记录模式 Sidebar 的现成做法：
+     ① 底色用 `--accent-light`，不自己拼 color-mix；
+     ② 文字用 `--accent-strong`——🔴 Sidebar 那边的注释写得很清楚：
+        accent 压在 accent-light 上在浅色主题下对比度不足 4.5:1，所以得用加深版。
+        这一条是早就踩过的坑，不要重新发明；
+     ③ 竖条改成带圆角与光晕的 `::before`（原来是方的 inset 阴影）。 */
 .rowOn {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--text-primary);
+  position: relative;
+  background: var(--accent-light);
+  color: var(--accent-strong);
   font-weight: 600;
-  /* 左侧细竖条而不是整行实色：同记录模式 Sidebar 的选中态语言 */
-  box-shadow: inset 2px 0 0 var(--accent);
 }
 
+.rowOn::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent-shadow);
+}
+
+/* ── 落定高亮环：一次移动完成后的回执 ──
+   关键帧与记录模式的置顶落定共用同一份（styles/surface.css 的 pp-ring-fade）。
+
+   ❗ 用 `::after` 而不是直接给 `.row` 加 border：
+   行本身是 `overflow: hidden`（名字要截断），环得画在行内侧而不是 inset 负值上，
+   不然就被裁掉了——记录模式那边把环挂在**行容器**上就是为了绕过同一件事。 */
+.rowLanded::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: 6px;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  box-shadow: 0 0 10px var(--accent-glow, var(--accent-shadow));
+  pointer-events: none;
+  animation: pp-ring-fade 0.95s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* 环要 `position: absolute` 的基准。选中态自己已经是 relative，
+   但未选中的行也会闪（移到一个没选中的文件夹才是常见情况）。 */
+.rowLanded {
+  position: relative;
+}
+
+/* 选中行不跟着 hover 平移：它已经是「当前位置」，再动一下反而像没选中。 */
 .rowOn:hover {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  transform: none;
 }
 
 /* 展开/折叠三角。无子项时用 visibility 而不是 display:none：
@@ -93,7 +218,9 @@
   align-items: center;
   justify-content: center;
   width: 11px;
-  height: 14px;
+  /* 16px 而不是 14px：行字号从 12 抬到 13px 后行高变了，三角要跟着居中。
+     宽度仍为 11px（没抬到记录模式的 16px 图标槽）：那 5px 要给文件夹名字。 */
+  height: 16px;
   flex-shrink: 0;
   border: none;
   padding: 0;
@@ -125,23 +252,45 @@
   text-overflow: ellipsis;
 }
 
+/* 计数胶囊。照记录模式 `.count`（原先这边是句裸灰字）。
+   唯一不同：内边距 `1px 5px` 而不是 `1px 7px`——胶囊比裸数字宽，
+   而这个侧栏还要装缩进与折叠三角，收紧 4px 是为了守住文件夹名字的宽度。
+   `tabular-nums`：不加的话 1 比 8 窄，一列数字的右边沿会参差不齐。 */
 .count {
   flex-shrink: 0;
+  padding: 1px 5px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--section-bg);
   font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
   color: var(--text-muted);
-  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  transition: all 0.15s;
+}
+
+/* 选中行的计数跟着换色（同记录模式 `.item.active .count`）。
+   用 `--accent-strong` 而不是 `--accent`：这是同一个已踩过的坑
+   ——accent 压 accent-light 在浅色主题下不足 4.5:1。 */
+.rowOn .count {
+  color: var(--accent-strong);
+  background: var(--accent-light);
+  border-color: transparent;
 }
 
 .sep {
   height: 1px;
   background: var(--border-color);
-  margin: 5px 9px;
+  /* 左右 0：容器已经给了 8px，这样分隔线正好与胶囊外缘齐平。 */
+  margin: 6px 0;
   flex-shrink: 0;
 }
 
 /* 零文件夹时的入口。给按钮而不是禁用态：用户需要一个地方开始建结构 */
 .emptyHint {
-  margin: 4px 9px;
+  /* 左右 0：对齐胶囊外缘（容器已经有 5px）。 */
+  margin: 4px 0;
   padding: 7px 8px;
   border: 1px dashed var(--border-color);
   border-radius: 7px;

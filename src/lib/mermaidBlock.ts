@@ -2,6 +2,7 @@
  * 纯函数：mermaid 代码块外壳 HTML 生成 + 主题映射。
  * 独立成模块以避免被 MarkdownRenderer 的 DOMPurify/marked 依赖牵连进单测环境。
  */
+import { escapeHtml } from "./markdown/html";
 
 const COPY_ICON =
   '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
@@ -10,10 +11,6 @@ const COPY_ICON =
 const MERMAID_EDIT_ICON =
   '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
   '<path d="M3 3h7v7H3V3zm11 0h7v7h-7V3zM3 14h7v7H3v-7zm11 3h7M14 21h7M17 14v7"/></svg>';
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
 
 /**
  * mermaid 代码块外壳 HTML（字符串，因 marked renderer 只能返回 HTML 字符串）。

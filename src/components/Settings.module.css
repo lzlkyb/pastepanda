@@ -1657,6 +1657,67 @@
   color: var(--accent);
 }
 
+/* ── M5 写权限开关 ── */
+
+/* 分组小标题。带上“为何分在这组”的短语，比光写「新增/修改/删除」有用得多 */
+.mcpSwGroup {
+  margin: 10px 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.mcpSwGroup:first-child { margin-top: 0; }
+
+.mcpSwRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+}
+
+.mcpSwLabel {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+}
+
+/* 工具名：用户在调用记录里看到的就是它，两边对得上才能关对开关 */
+.mcpSwTool {
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono, ui-monospace, Consolas, monospace);
+}
+
+.mcpSw {
+  position: relative;
+  flex-shrink: 0;
+  width: 32px;
+  height: 18px;
+  border: none;
+  border-radius: 9px;
+  background: var(--success-color, #3fb950);
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+
+.mcpSw::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 16px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.18s ease;
+}
+
+.mcpSwOff { background: var(--border-color); }
+.mcpSwOff::after { left: 2px; }
+
+.mcpSw:disabled { opacity: 0.5; cursor: not-allowed; }
+
 .mcpAuditList {
   margin: 8px 0 0;
   padding: 0;

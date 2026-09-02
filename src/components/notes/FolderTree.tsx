@@ -29,7 +29,9 @@ export function FolderTree({
   selected,
   onSelect,
   onChanged,
+  landed,
   version,
+  open,
 }: {
   folders: NoteFolder[];
   unfiledCount: number;
@@ -41,8 +43,25 @@ export function FolderTree({
   onSelect: (f: FolderFilter) => void;
   /** 文件夹增删改后重拉（由 KnowledgeView 统一刷） */
   onChanged: () => void;
+  /**
+   * 刚刚有笔记落进去的节点键（文件夹 id 或 `"unfiled"`）。`null` = 不闪。
+   *
+   * 移完一篇笔记后它就从当前列表消失了，这个高亮环就是「到哪去了」的回答。
+   */
+  landed: string | null;
   /** 数据版本号：递增就让「今日速记」区重拉它自己那几项（B2 #3） */
   version: number;
+  /**
+   * 侧栏是否展开。
+   *
+   * ❗ 本组件**常挂载**，关闭时靠 CSS 把栏宽收到 0，而不是在外层写
+   *   `{sidebarOpen && <FolderTree/>}`——后者是硬挂硬消，做不了宽度动画。
+   *   记录模式的 `Sidebar` 也是常挂载的。
+   *
+   * 常挂载的代价只有一个 COUNT：`DailySection` 已经把贵的查询
+   * （打点日期 / 最早日期）门控在展开态，只有总数那一个 COUNT 常拉。
+   */
+  open: boolean;
 }) {
   /**
    * 右键菜单触发器。**复用项目现有的 ContextMenu 体系**（已处理边界翻转 /
@@ -82,8 +101,10 @@ export function FolderTree({
     return (
       <div key={node.id}>
         <div
-          className={`${styles.row} ${selected === node.id ? styles.rowOn : ""}`}
-          style={{ paddingLeft: 11 + (node.depth - 1) * 13 }}
+          className={`${styles.row} ${selected === node.id ? styles.rowOn : ""}${
+            landed === node.id ? ` ${styles.rowLanded}` : ""
+          }`}
+          style={{ paddingLeft: 10 + (node.depth - 1) * 10 }}
           onClick={() => onSelect(node.id)}
           onDoubleClick={() => void rename(node)}
           onContextMenu={(e) => {
@@ -112,7 +133,14 @@ export function FolderTree({
           >
             <ChevronRight size={9} className={isCollapsed ? "" : styles.caretOpen} />
           </button>
-          <span className={styles.name}>{node.name}</span>
+          {/* ❗ `title` 是必需而不是锥上添花：`.name` 只有 `text-overflow: ellipsis`，
+              名字一截断就**根本读不到**。行高字号对齐记录模式后名字区又窄了
+              （第 3 层约 5.5 个中文字，第 4 层约 4.7 个），这从「不够好」变成了「必需」。
+              ❗ 深度上限抬到 4 就是以它为前提的（见 `MAX_FOLDER_DEPTH` 的注释），
+                所以这个 `title` 不能再去掉。 */}
+          <span className={styles.name} title={node.name}>
+            {node.name}
+          </span>
           <span className={styles.count}>{node.note_count}</span>
         </div>
         {hasKids && !isCollapsed && node.children.map(renderNode)}
@@ -121,7 +149,9 @@ export function FolderTree({
   };
 
   return (
-    <div className={styles.tree}>
+    <div className={`${styles.tree} ${open ? styles.treeOpen : ""}`}>
+      {/* 内层滚动层。外层只管宽度动画与裁切（见 CSS 里为何必须分两层）。 */}
+      <div className={styles.list}>
       <div className={styles.head}>
         <span>文件夹</span>
         <button
@@ -143,18 +173,20 @@ export function FolderTree({
         tabIndex={0}
         onKeyDown={(e) => e.key === "Enter" && onSelect("all")}
       >
-        <Library size={10} className={styles.builtinIcon} />
+        <Library size={12} className={styles.builtinIcon} />
         <span className={styles.name}>全部笔记</span>
         <span className={styles.count}>{totalCount}</span>
       </div>
       <div
-        className={`${styles.row} ${selected === "unfiled" ? styles.rowOn : ""}`}
+        className={`${styles.row} ${selected === "unfiled" ? styles.rowOn : ""}${
+          landed === "unfiled" ? ` ${styles.rowLanded}` : ""
+        }`}
         onClick={() => onSelect("unfiled")}
         role="button"
         tabIndex={0}
         onKeyDown={(e) => e.key === "Enter" && onSelect("unfiled")}
       >
-        <Inbox size={10} className={styles.builtinIcon} />
+        <Inbox size={12} className={styles.builtinIcon} />
         <span className={styles.name}>未分类</span>
         <span className={styles.count}>{unfiledCount}</span>
       </div>
@@ -188,9 +220,10 @@ export function FolderTree({
         tabIndex={0}
         onKeyDown={(e) => e.key === "Enter" && onSelect("trash")}
       >
-        <Trash2 size={10} className={styles.builtinIcon} />
+        <Trash2 size={12} className={styles.builtinIcon} />
         <span className={styles.name}>回收站</span>
         {trashCount > 0 && <span className={styles.count}>{trashCount}</span>}
+      </div>
       </div>
     </div>
   );

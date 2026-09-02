@@ -9,16 +9,18 @@
   margin-left: 4px;
 }
 
+/* 28×28（原 22×22）：搜索框长到 38px 后，22px 的图标在同一行里显得像没对齐。
+   同样没抬到记录模式的 34px：三个图标×12px 就是从输入框里抢 36px。 */
 .icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   background: none;
   border: none;
-  border-radius: 5px;
+  border-radius: 7px;
   color: var(--text-muted);
   cursor: pointer;
   transition: all 0.15s;

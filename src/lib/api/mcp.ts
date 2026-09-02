@@ -99,6 +99,46 @@ export async function mcpRegenerateToken(): Promise<string | null> {
   }
 }
 
+/** 设置页上的一行写权限开关（M5）。 */
+export interface McpWriteSwitch {
+  /** 配置键，形如 `mcp_write_delete`。回写时原样传回去。 */
+  key: string;
+  /** 工具名。界面上要显示——它就是用户在调用记录里看到的那个名字。 */
+  tool: string;
+  label: string;
+  enabled: boolean;
+}
+
+/** 七个写开关的当前状态。失败返回空数组（面板自己显示读不到）。 */
+export async function mcpGetWriteSwitches(): Promise<McpWriteSwitch[]> {
+  try {
+    return await invoke<McpWriteSwitch[]>("mcp_get_write_switches");
+  } catch (e) {
+    logger.error("读写权限开关失败", e);
+    toastActionFailed("读写权限开关", e);
+    return [];
+  }
+}
+
+/**
+ * 改一个写开关，返回改完后的全部七行（`null` = 失败）。
+ *
+ * 返回全量而不是单行：前端就不用自己拼一份新状态，
+ * 少一份「界面以为关了、后端其实没关」的可能。
+ */
+export async function mcpSetWriteSwitch(
+  key: string,
+  enabled: boolean,
+): Promise<McpWriteSwitch[] | null> {
+  try {
+    return await invoke<McpWriteSwitch[]>("mcp_set_write_switch", { key, enabled });
+  } catch (e) {
+    logger.error("保存写权限开关失败", e);
+    toastActionFailed("保存写权限开关", e);
+    return null;
+  }
+}
+
 /** 最近的调用记录。红线②的「可见」就靠它。 */
 export async function mcpAuditList(limit = 100): Promise<McpAuditRow[]> {
   try {

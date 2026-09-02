@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>MCP 写权限 M5 设计稿 · PastePanda</title>
+<style>
+  body { margin:0; padding:32px; background:#f6f7f9; color:#1f2328;
+         font:14px/1.75 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:920px; margin:0 auto; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:#656d76; margin:0 0 28px; }
+  h2 { font-size:16px; margin:36px 0 10px; padding-bottom:6px; border-bottom:1px solid #d8dee4; }
+  .card { background:#fff; border:1px solid #d8dee4; border-radius:8px; padding:16px; }
+  .note { background:#fff8c5; border:1px solid #eac54f; border-radius:6px; padding:10px 12px; margin:12px 0; }
+  .bad { background:#ffebe9; border:1px solid #ff8182; border-radius:6px; padding:10px 12px; margin:12px 0; }
+  .ok { background:#dafbe1; border:1px solid #4ac26b; border-radius:6px; padding:10px 12px; margin:12px 0; }
+  code { background:#eff1f3; border-radius:4px; padding:1px 5px; font-size:12px; }
+  table { width:100%; border-collapse:collapse; margin:10px 0; font-size:13px; }
+  th,td { border:1px solid #d8dee4; padding:7px 9px; text-align:left; vertical-align:top; }
+  th { background:#f6f8fa; }
+  .panel { width:420px; border:1px solid #d8dee4; border-radius:8px; background:#fff; padding:12px; }
+  .grp { font-size:12px; color:#656d76; margin:12px 0 4px; font-weight:600; }
+  .grp:first-child { margin-top:0; }
+  .row { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid #f0f2f4; }
+  .row:last-child { border-bottom:none; }
+  .row .t { flex:1; }
+  .row .tool { color:#656d76; font-size:11.5px; font-family:ui-monospace,Consolas,monospace; }
+  .sw { width:34px; height:19px; border-radius:10px; background:#2da44e; position:relative; flex-shrink:0; }
+  .sw.off { background:#c9d1d9; }
+  .sw::after { content:""; position:absolute; top:2px; left:17px; width:15px; height:15px;
+               border-radius:50%; background:#fff; }
+  .sw.off::after { left:2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>MCP 写权限（M5）设计稿</h1>
+  <p class="sub">2026-09-02 · 后端已落地（十一个工具 + 双层门，706 条测试全绿）。
+     本稿只定设置页那部分：<code>McpServerPanel.tsx</code> 与两个弹窗文案。</p>
+  <h2>1 · 七个开关，按风险分三组</h2>
+  <div class="card">
+    <div class="panel">
+      <div class="grp">新增——只增不改，弄不丢已有内容</div>
+      <div class="row"><span class="t">新建笔记 <span class="tool">kb_create</span></span><span class="sw"></span></div>
+      <div class="row"><span class="t">追加内容 <span class="tool">kb_append</span></span><span class="sw"></span></div>
+      <div class="grp">修改——会改变已有笔记与你的组织结构</div>
+      <div class="row"><span class="t">修改笔记 <span class="tool">kb_update</span></span><span class="sw"></span></div>
+      <div class="row"><span class="t">移动文件夹 <span class="tool">kb_move</span></span><span class="sw"></span></div>
+      <div class="row"><span class="t">改标签 <span class="tool">kb_tag</span></span><span class="sw"></span></div>
+      <div class="grp">删除与恢复——都只动回收站，互为逆操作</div>
+      <div class="row"><span class="t">删除到回收站 <span class="tool">kb_delete</span></span><span class="sw"></span></div>
+      <div class="row"><span class="t">从回收站恢复 <span class="tool">kb_restore</span></span><span class="sw"></span></div>
+    </div>
+    <p><b>默认全开</b>（已拍板）。缺失的配置键读成 <code>true</code>——这与项目里其它
+       开关的默认**相反**，已在 <code>gate.rs</code> 写了注释并用用例钉住。</p>
+    <p><b>工具名要显示出来</b>（等宽灰字）：它就是用户在「调用记录」里看到的名字。
+       两边对得上，才能从一条记录直接找到要关的那一行。</p>
+    <div class="note"><code>kb_restore</code> 实际上是七个里**最安全的**：它只能把东西从
+      回收站拿回来，而且让模型能**自己纠错**（删错了能改回来）。
+      把它与 <code>kb_delete</code> 同组是因为两者互为逆操作，不是因为危险。</div>
+  </div>
+
+  <h2>2 · 开启确认弹窗的文案必须改</h2>
+  <div class="card">
+    <div class="bad"><b>现文案已经是谎话了</b>：「目前<b>只能读，不能写</b>：
+      它不会新建、修改或删除任何笔记」——写工具默认全开后，这句话直接成了假的。</div>
+    <table>
+      <tr><th>位置</th><th>改成</th></tr>
+      <tr><td>弹窗正文</td>
+          <td>“开启后，Claude Code 这类客户端能**读、能写、能删**你的笔记。
+              删除只进回收站，随时可恢复；每次写入都会计入调用记录。
+              开启后可以在下面逐项关掉写权限。”</td></tr>
+      <tr><td>ToggleRow 的 desc</td>
+          <td>去掉「目前只能读不能写」，改成「只绑 127.0.0.1，需令牌；可读可写，写权限逐项可关」</td></tr>
+      <tr><td>帮助/指引文案</td><td>同上，搜一遍「只能读」全部改完</td></tr>
+    </table>
+    <p>后端的 <code>instructions</code> 已经**随开关变**了（全关时才自称只读），
+       并有一条回归用例钉住“开了写权限就不得自称只读”。界面文案不能落在后面。</p>
+  </div>
+
+  <h2>3 · 老用户一次性告知：<s>原计划</s> 不做了</h2>
+  <div class="card">
+    <div class="ok"><b>2026-09-02 拍板：取消。</b>本功能上线前项目尚未发版，
+      不存在「当初基于只读承诺开过服务」的老用户。
+      无人可告的告知只会误发，后端那两个命令与 <code>mcp_write_notice_shown</code>
+      配置项已一并删除。</div>
+    <p>保留这一节只为记下一件事：<b>若将来发布后再扩大权限，这一条必须加回来</b>。
+       静默地扩大权限，比静默地删数据只差一步——与 W1 那次的教训同构。</p>
+  </div>
+
+  <h2>4 · 「改完开关要重连」的提示放哪</h2>
+  <div class="card">
+    <p>在七行开关下面放一行细字：</p>
+    <div class="note">改完立即生效；但已连接的客户端手里的工具表是缓存的，
+      重连后才不会再看到已关的工具。</div>
+    <p><b>为何这么措辞而不是「需重连才生效」</b>：后者会让用户以为
+       没重连就还能删——而事实相反。<b><code>tools/call</code> 那一层拦截是即时的</b>，
+       没重连只会让模型白试一次、拿到一句「用户已关闭该权限」。安全上不差一点。</p>
+    <div class="ok"><b>为何不发 <code>listChanged</code> 通知</b>（规划里写的是“改成 true 并发通知”）：
+      本服务的传输层只有 <code>POST /mcp</code> 与 <code>GET /health</code>，
+      **没有任何 server→client 通道**（无 SSE、无 streamable-HTTP 的 GET 端点），
+      通知根本发不出去。声明 <code>true</code> 却永远不发，是另一种形式的说谎，
+      所以保持 <code>false</code> + 面板上把话说清。</div>
+  </div>
+
+  <h2>5 · 双层门（已在后端落地，记在这里以免误改）</h2>
+  <div class="card">
+    <table>
+      <tr><th>层</th><th>作用</th><th>为何不够</th></tr>
+      <tr><td><code>tools/list</code> 过滤</td><td>让模型**不知道**它存在</td>
+          <td>客户端会**缓存工具表**，早就 list 过的会话手里还握着旧表</td></tr>
+      <tr><td><code>tools/call</code> 拦截</td><td>让它**做不到**</td>
+          <td>—— <b>这才是真正的那道门</b></td></tr>
+    </table>
+    <p>拦截时回的是工具执行失败（<code>isError</code>），文本明说「用户已在设置里
+       关闭「X」权限……请勿重试」。不装作工具不存在（-32601）：
+       令牌已把门守住了，没必要向自己人隐瞒；而模型以为自己记错了工具名就会换名字反复试。</p>
+  </div>
+
+  <h2>6 · 这一轮不做什么</h2>
+  <div class="card">
+    <ul>
+      <li><b>不做每次写入弹窗确认</b>。它会破坏全部自动化价值，而且在 handler 里
+          阻塞等 UI 确认是个很糟的形态（超时 / 并发 / 窗口无焦点）。</li>
+      <li><b>不自动新建文件夹与标签</b>。名字对不上就失败，并在报错里指向
+          <code>kb_folders</code>。组织结构是用户的心智模型，让模型随手添会让他自己的库变陌生。
+          （这一条是我定的保守默认，如果实际用起来碍事，可以改）</li>
+      <li><b>不开彻底删除</b>。<code>note_purge</code> / <code>note_purge_all</code>
+          永不开放给模型（硬规则 ②）。</li>
+      <li><b>不开速记写入</b>。根本不提供 <code>daily_date</code> 参数——
+          靠「没有这个参数」而不是靠参数校验（硬规则 ③）。</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

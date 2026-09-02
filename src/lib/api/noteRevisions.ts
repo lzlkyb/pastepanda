@@ -21,6 +21,10 @@ export interface NoteRevisionMeta {
   created_at: string;
   /** 正文字数。给用户认出哪份用（项目无 diff 能力，只能靠时间+字数） */
   char_count: number;
+  /** 锚定中：永不被 20 份上限挤掉（W2） */
+  pinned: boolean;
+  /** 这一版是谁改的。`""` = 你自己；非空形如 `agent:claude-code` */
+  source_agent: string;
 }
 
 /** 一份完整快照。 */
@@ -30,6 +34,8 @@ export interface NoteRevision {
   title: string;
   content: string;
   created_at: string;
+  pinned: boolean;
+  source_agent: string;
 }
 
 /**
@@ -54,6 +60,25 @@ export async function noteRevisionGet(revId: number): Promise<NoteRevision | nul
     logger.error("读取版本内容失败", e);
     toastActionFailed("读取版本内容", e);
     return null;
+  }
+}
+
+/**
+ * 锚定 / 解除锚定一份快照（W2b）。
+ *
+ * 解除后那一份**不会立即消失**，而是重新变成普通历史、在后继编辑中被挤出。
+ * 这一句必须在界面上说清楚，否则用户看到的是「点了没反应，过一阵它自己不见了」。
+ *
+ * 返回是否成功：失败时调用方不要把 UI 改成已锚定的样子（否则显示在保护，实际没有）。
+ */
+export async function noteRevisionPin(revId: number, pinned: boolean): Promise<boolean> {
+  try {
+    await invoke("note_revision_pin", { revId, pinned });
+    return true;
+  } catch (e) {
+    logger.error("锚定版本失败", e);
+    toastActionFailed(pinned ? "锚定版本" : "解除锚定", e);
+    return false;
   }
 }
 

@@ -82,35 +82,44 @@ export function KnowledgeToolbar({
       </div>
 
       <div className={styles.searchRow}>
-        {/* 搜/问 切换（B2 #10）。AI 关着就不渲染，这一行退回原样 */}
-        {qaEnabled && (
-          <div className={styles.modeSeg} role="group" aria-label="搜索或提问">
-            <button
-              type="button"
-              className={mode === "search" ? styles.modeOn : styles.modeBtn}
-              onClick={() => onMode("search")}
-              title="搜笔记"
-            >
-              搜
-            </button>
-            <button
-              type="button"
-              className={mode === "ask" ? styles.modeOn : styles.modeBtn}
-              onClick={() => onMode("ask")}
-              title="问知识库（问题与命中的笔记片段会发到云端）"
-            >
-              问
-            </button>
-          </div>
-        )}
+        {/* 搜索盒子。结构照记录模式 `TopBar .searchBox`：**盒子提供边框与底色，
+            里面装的是裸 input**。原先是反的（带样式的 input + 绝对定位盖上去的图标），
+            那是两边看上去不一样的结构原因。
 
-        {/* 图标的绝对定位基准得是输入框而不是整行，否则加了切换器之后它会盖在切换器上 */}
-        <div className={styles.inputWrap}>
-          {mode === "ask" ? (
-            <Sparkles size={13} className={styles.searchIcon} />
+            聚焦光环靠 CSS 的 `:focus-within`，不像记录模式那样拉一个 React state
+            推 `.focused` 类——裸 input 的 `:focus` 给不了父盒子上样式。 */}
+        <div className={styles.searchBox}>
+          {/* 搜/问 切换（B2 #10）。现在在**框内**，它同时当「这是个搜索/提问框」的标识，
+              所以框里不再同时摆一个放大镜（信息重复，而它占的是 34px 左内边距）。 */}
+          {qaEnabled ? (
+            <div className={styles.modeSeg} role="group" aria-label="搜索或提问">
+              <button
+                type="button"
+                className={mode === "search" ? styles.modeOn : styles.modeBtn}
+                onClick={() => onMode("search")}
+                title="搜笔记"
+              >
+                搜
+              </button>
+              <button
+                type="button"
+                className={mode === "ask" ? styles.modeOn : styles.modeBtn}
+                onClick={() => onMode("ask")}
+                title="问知识库（问题与命中的笔记片段会发到云端）"
+              >
+                问
+              </button>
+            </div>
+          ) : mode === "ask" ? (
+            /* AI 关着时没有切换器，图标必须补回来——不然这个框就没任何
+               「这是搜索」的提示了。14px 同记录模式顶栏。
+               仍然分 ask / search 两个图标：mode 是持久的，用户在 ask 下去关了 AI 开关
+               就会落到这条分支，占着问答的占位文字却配个放大镜是对不上的。 */
+            <Sparkles size={14} className={styles.searchIcon} />
           ) : (
-            <Search size={13} className={styles.searchIcon} />
+            <Search size={14} className={styles.searchIcon} />
           )}
+
           {mode === "ask" ? (
             <input
               className={styles.searchInput}

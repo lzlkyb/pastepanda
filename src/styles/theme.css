@@ -174,7 +174,10 @@
      其余主题不定义这两个变量，走 CardList 里的 fallback，行为不变。 */
   /* 顶部静态光泽层：白色半透明渐变盖在纯白上 = 看不见，但多一个渲染层 */
   --card-shimmer-display: none;
-  /* hover 扫光：shimmer-sweep 是 infinite 动画，扫的也是半透明白，看不见却真在跑 */
+  /* hover 扫光：pp-shimmer-sweep（定义在 styles/surface.css）是 infinite 动画，
+     扫的也是半透明白，看不见却真在跑。
+     ❗ 这一行现在**同时管着卡片与知识模式的笔记行** ——两边读同一个变量，
+     为的就是不出现「笔记行有光泽、卡片没有」这种新的不一致。 */
   --card-shimmer-anim: none;  /* 卡片已不透明，模糊完全看不见；而非 none 的值仍会创建合成层并采样背景，属白付开销 */
   --glass-card-border: rgba(0,0,0,0.08);
   --glass-card-hover-border: rgba(0,0,0,0.14);

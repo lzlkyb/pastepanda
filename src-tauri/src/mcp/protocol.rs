@@ -19,6 +19,8 @@
 
 use serde_json::{json, Value};
 
+use super::gate::WriteSwitches;
+
 /// 客户端没告知协议版本时的回退值。
 ///
 /// 🔴 **不要把它当成“服务端固定版本”写进应答。** cc-bridge 在这里真撞过坑：
@@ -38,11 +40,31 @@ pub const ERR_INTERNAL: i32 = -32603;
 ///
 /// 写得具体一点是有回报的：模型靠它判「该不该查知识库」。特别要说清
 /// **只读、只涵盖笔记**，否则模型会拿它当剪贴板历史的入口去试。
-fn server_instructions() -> &'static str {
-    "PastePanda 个人知识库。提供对本机笔记的**只读**检索与读取。\n\n\
-     适用时机：用户问到他自己记过的东西（方案、踩过的坑、配置、摘录），\
-     或者需要他个人积累的上下文而不是通用知识时。\n\n\
-     边界：仅覆盖**笔记**，不包含剪贴板历史。全部工具都不会写入或修改任何数据。"
+fn server_instructions(switches: &WriteSwitches) -> String {
+    let mut s = String::from(if switches.any_on() {
+        "PastePanda 个人知识库。提供对本机笔记的检索、读取与**写入**。\n\n"
+    } else {
+        "PastePanda 个人知识库。提供对本机笔记的**只读**检索与读取。\n\n"
+    });
+    s.push_str(
+        "适用时机：用户问到他自己记过的东西（方案、踩过的坑、配置、摘录），\
+         或者需要他个人积累的上下文而不是通用知识时。\n\n\
+         边界：仅覆盖**笔记**，不包含剪贴板历史。\n\n",
+    );
+    if switches.any_on() {
+        s.push_str(
+            "写入约定：\n\
+             ・每次写入都会计入用户可见的调用记录，并在笔记上标注改动来源；\n\
+             ・删除只能删到**回收站**（可恢复），没有彻底删除的工具；\n\
+             ・文件夹与标签是用户自己的组织方式，**不要主动帮他重排**，也不会自动新建；\n\
+             ・写权限可以被用户逐项关掉。被关时工具会明确告知，\
+             那时**不要重试、不要绕路**，直接告诉用户去设置里打开。\n\
+             ・“今日速记”不开放写入，那是用户热键专用的。",
+        );
+    } else {
+        s.push_str("全部工具都不会写入或修改任何数据。");
+    }
+    s
 }
 
 /// 从请求体里把 `id` 拿出来。
@@ -96,8 +118,28 @@ impl From<Value> for Dispatched {
     }
 }
 
+/// 读一次写开关快照。
+///
+/// 读配置要拿 SQLite 锁，所以必须进 `spawn_blocking`（R2）。
+///
+/// join 失败（panic / 被取消）时**全关**，而不是全开：
+/// 「默认全开」适用的是「配置里没这个键」，而这里是**读不到、不知道用户意愿**。
+/// 权限门在不知道时得往保守那边倒。不静默（规则 #15.3）。
+async fn load_switches(kb: &std::sync::Arc<dyn super::source::KbSource>) -> WriteSwitches {
+    let kb2 = kb.clone();
+    match tokio::task::spawn_blocking(move || kb2.write_switches()).await {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("[MCP] 读写开关失败，本次按全关处理：{}", e);
+            WriteSwitches::ALL_OFF
+        }
+    }
+}
+
+/// 处理一整个请求体。`client` 是请求的 User-Agent（由 server 层传入）。
 pub async fn dispatch(
     kb: &std::sync::Arc<dyn super::source::KbSource>,
+    client: &str,
     raw: &[u8],
 ) -> Dispatched {
     let req: Value = match serde_json::from_slice(raw) {
@@ -122,14 +164,22 @@ pub async fn dispatch(
     let params = req.get("params");
 
     match method {
-        "initialize" => ok(id, initialize_result(params)).into(),
+        "initialize" => {
+            let switches = load_switches(kb).await;
+            ok(id, initialize_result(params, &switches)).into()
+        }
 
         // 握手完成通知。按规范它是 notification（无 id，不需应答），
         // 但 HTTP 传输下必须回一个响应体，否则客户端会一直等。
         // 回 `id: null` 的空结果（同 cc-bridge）。
         "notifications/initialized" => ok(Value::Null, json!({})).into(),
 
-        "tools/list" => ok(id, json!({ "tools": super::tools::definitions() })).into(),
+        // 开关每次现读：所以客户端重连后看到的就是当前的工具表。
+        // （我们发不了 listChanged 通知，原因见 `gate.rs`。）
+        "tools/list" => {
+            let switches = load_switches(kb).await;
+            ok(id, json!({ "tools": super::tools::definitions(&switches) })).into()
+        }
 
         // 唯一会产生审计的分支。工具名与参数从 `params` 里取，
         // 即使调用失败也要记（`ok: false`）——「试图读但没读成」也是信息。
@@ -143,7 +193,12 @@ pub async fn dispatch(
                 .and_then(|p| p.get("arguments"))
                 .map(|v| v.to_string())
                 .unwrap_or_default();
-            match super::tools::call(kb, params).await {
+            let ctx = super::tools::CallCtx {
+                kb: kb.clone(),
+                switches: load_switches(kb).await,
+                source: super::source_agent_from_ua(client),
+            };
+            match super::tools::call(&ctx, params).await {
                 Ok(out) => Dispatched {
                     response: ok(id, out.value),
                     audit: Some(AuditDraft {
@@ -170,7 +225,7 @@ pub async fn dispatch(
 }
 
 /// 拼 `initialize` 的应答。
-fn initialize_result(params: Option<&Value>) -> Value {
+fn initialize_result(params: Option<&Value>, switches: &WriteSwitches) -> Value {
     // 🔴 回显客户端请求的版本。写死一个版本号是 cc-bridge 撞过的真 bug，
     // 详见 FALLBACK_PROTOCOL_VERSION 的注释。
     let version = params
@@ -182,15 +237,21 @@ fn initialize_result(params: Option<&Value>) -> Value {
     json!({
         "protocolVersion": version,
         "capabilities": {
-            // listChanged: false —— 工具表是编译期写死的，运行中不会变，
-            // 声明 true 就是让客户端白白监听一个永不发生的通知。
+            // listChanged: false。
+            //
+            // ⚠ M5 后工具表**不再是编译期写死的**（七个写开关一改它就变），
+            // 但仍然声明 false，因为本服务的传输层只有 `POST /mcp` 与
+            // `GET /health`，**没有任何 server→client 通道**，通知根本发不出去。
+            // 声明 true 却永远不发，是另一种形式的说谎。
+            //
+            // 没重连不会变成安全洞：`tools/call` 那一层拦截是即时生效的（见 gate.rs）。
             "tools": { "listChanged": false }
         },
         "serverInfo": {
             "name": "pastepanda-knowledge",
             "version": env!("CARGO_PKG_VERSION")
         },
-        "instructions": server_instructions()
+        "instructions": server_instructions(switches)
     })
 }
 
@@ -202,7 +263,10 @@ mod tests {
     fn test_initialize_echoes_client_protocol_version() {
         // 🔴 回归护栏：cc-bridge 曾把这里写死成一个不存在的版本号，
         // 客户端一升级就协商失败。这条测试就是钉住「回显而不是写死」。
-        let r = initialize_result(Some(&json!({ "protocolVersion": "2099-01-01" })));
+        let r = initialize_result(
+            Some(&json!({ "protocolVersion": "2099-01-01" })),
+            &WriteSwitches::ALL_ON,
+        );
         assert_eq!(r["protocolVersion"], "2099-01-01");
     }
 
@@ -215,22 +279,53 @@ mod tests {
             Some(json!({ "protocolVersion": "   " })),
             Some(json!({ "protocolVersion": 123 })),
         ] {
-            let r = initialize_result(p.as_ref());
+            let r = initialize_result(p.as_ref(), &WriteSwitches::ALL_ON);
             assert_eq!(r["protocolVersion"], FALLBACK_PROTOCOL_VERSION);
         }
     }
 
     #[test]
     fn test_initialize_shape() {
-        let r = initialize_result(None);
+        let r = initialize_result(None, &WriteSwitches::ALL_OFF);
         assert_eq!(r["capabilities"]["tools"]["listChanged"], false);
         assert_eq!(r["serverInfo"]["name"], "pastepanda-knowledge");
         assert!(r["serverInfo"]["version"].is_string());
         let ins = r["instructions"].as_str().unwrap_or("");
-        // 只读与「不含剪贴板历史」必须写在 instructions 里，
-        // 否则模型会拿这个服务去试剪贴板、或以为能写入。
-        assert!(ins.contains("只读"));
+        // 「不含剪贴板历史」不论开关都得写：不写模型会拿这个服务去试剪贴板。
         assert!(ins.contains("剪贴板历史"));
+        // 全关时才能自称只读
+        assert!(ins.contains("只读"));
+        assert!(ins.contains("不会写入或修改"));
+    }
+
+    #[test]
+    fn test_instructions_stop_claiming_read_only_once_writes_are_on() {
+        // 🔴 回归护栏：M5 之后这段话再写「只读」就是谎话，
+        // 而模型会照着它拒给用户写（“这个服务只能读”）——用户明明开了权限。
+        let ins = initialize_result(None, &WriteSwitches::ALL_ON)["instructions"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        assert!(!ins.contains("只读"), "开了写权限还自称只读");
+        assert!(ins.contains("写入"), "未告知模型可以写");
+        assert!(ins.contains("回收站"), "未告知删除只进回收站");
+        assert!(ins.contains("调用记录"), "未告知写入会留痕");
+        assert!(ins.contains("不要重试"), "未告知被关时不要重试");
+    }
+
+    #[test]
+    fn test_source_agent_never_empty() {
+        // 🔴 空串在 W2 里的语义是「人亲自改的」，会让锚定快照静默失效。
+        for ua in ["", "   ", "claude-code/2.1.233 (sdk-cli)", "/1.0"] {
+            let s = super::super::source_agent_from_ua(ua);
+            assert!(!s.is_empty(), "UA={:?} 算出空来源", ua);
+            assert!(s.starts_with("agent:"), "UA={:?} 没带 agent: 前缀", ua);
+        }
+        assert_eq!(
+            super::super::source_agent_from_ua("claude-code/2.1.233 (sdk-cli)"),
+            "agent:claude-code",
+            "应只取名字不取版本——否则客户端一升级就多出一个看似不同的来源"
+        );
     }
 
     #[test]

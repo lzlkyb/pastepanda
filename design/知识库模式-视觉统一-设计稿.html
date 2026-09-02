@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>知识库模式·视觉统一 设计稿 · PastePanda</title>
+<style>
+  body { margin:0; padding:32px; background:#f6f7f9; color:#1f2328;
+         font:14px/1.75 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:960px; margin:0 auto; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:#656d76; margin:0 0 28px; }
+  h2 { font-size:16px; margin:38px 0 10px; padding-bottom:6px; border-bottom:1px solid #d8dee4; }
+  h3 { font-size:13.5px; margin:20px 0 6px; }
+  .card { background:#fff; border:1px solid #d8dee4; border-radius:8px; padding:16px; }
+  .note { background:#fff8c5; border:1px solid #eac54f; border-radius:6px; padding:10px 12px; margin:12px 0; }
+  .bad { background:#ffebe9; border:1px solid #ff8182; border-radius:6px; padding:10px 12px; margin:12px 0; }
+  .ok { background:#dafbe1; border:1px solid #4ac26b; border-radius:6px; padding:10px 12px; margin:12px 0; }
+  code { background:#eff1f3; border-radius:4px; padding:1px 5px; font-size:12px; }
+  table { width:100%; border-collapse:collapse; margin:10px 0; font-size:13px; }
+  th,td { border:1px solid #d8dee4; padding:7px 9px; text-align:left; vertical-align:top; }
+  th { background:#f6f8fa; }
+  .big { font-size:26px; font-weight:700; color:#cf222e; }
+  .num { display:flex; gap:24px; flex-wrap:wrap; margin:8px 0; }
+  .num > div { min-width:150px; }
+  .num small { display:block; color:#656d76; font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>知识库模式 · 视觉与动效统一方案</h1>
+  <p class="sub">2026-09-02 · 对着真实代码核过（规则 #12），不是拍脑袋。
+     涉及 <code>KnowledgeView</code> / <code>NoteList</code> / <code>FolderTree</code> / <code>NoteDetailPane</code>。</p>
+  <h2>0 · 现状核查：三个可量化的数字</h2>
+  <div class="card">
+    <div class="num">
+      <div><span class="big">0</span><small>知识模式 8 个 CSS 文件里提到 <code>glass</code> 的次数</small></div>
+      <div><span class="big">0</span><small><code>@keyframes</code> 数量（四个主 CSS 文件）</small></div>
+      <div><span class="big">0</span><small>知识模式组件里用 framer-motion 的个数</small></div>
+    </div>
+    <p>对比记录模式：<code>CardList.module.css</code> <b>2117 行</b>、<b>13 个
+       <code>@keyframes</code></b>；全项目有 12+ 个组件在用 framer-motion。</p>
+    <div class="bad"><b>所以「简陋」不是感觉问题。</b>两个模式用的是两套完全不相干的
+      视觉语言：记录模式是玻璃拟态卡片（16px 圆角 + 微光 + 悬停光泽扫过），
+      知识模式是素平面列表（无背景、无阴影、只有 0.15s 的 background 过渡）。</div>
+    <div class="ok"><b>一个现成的便利：</b><code>styles/globals.css</code> 已有全局
+      <code>prefers-reduced-motion</code> 兜底（把所有动画与过渡压到 0.01ms），
+      所以新动效**不用各自写降级分支**。</div>
+  </div>
+
+  <h2>1 · 差在三层，不是一层</h2>
+  <div class="card">
+    <table>
+      <tr><th>层</th><th>记录模式有什么</th><th>知识模式现状</th></tr>
+      <tr><td><b>材质</b></td>
+          <td>半透玻璃底 <code>--glass-card-bg</code>、描边、阴影、顶部静态微光</td>
+          <td>无背景、无描边、无阴影——文字直接贴在背景上</td></tr>
+      <tr><td><b>层次</b></td>
+          <td>16px 圆角卡片、固定 72px 行高、10px 行间距，每条是一个「物体」</td>
+          <td>紧密列表行，靠分割线区分，看上去是「表格」而不是「卡片」</td></tr>
+      <tr><td><b>动效</b></td>
+          <td>悬停光泽扫过、抬升/按压、置顶滑行 + 落定高亮环、★ 弹跳、骨架 shimmer</td>
+          <td>只有按钮 hover 的 background 变色</td></tr>
+    </table>
+    <div class="note"><b>先补哪层最划算：材质 › 层次 › 动效。</b>
+      材质与层次是“静默下就能看到的不一致”，而动效只在交互那一瞬出现。
+      先加一堆动画却没改卡片材质，结果是“一个会动的素表格”，反而更奇怪。</div>
+  </div>
+
+  <h2>2 · 三个方案</h2>
+  <div class="card">
+    <table>
+      <tr><th></th><th>做什么</th><th>代价 / 风险</th></tr>
+      <tr><td><b>a 只对齐 token</b></td>
+          <td>给笔记行、侧栅项、第三栅换上 <code>--glass-card-*</code> 一整套变量，
+              行高与圆角向记录模式靠；<b>不动结构、不动动效</b></td>
+          <td>工作量最小（只改 CSS），但交互手感仍旧是两回事</td></tr>
+      <tr><td><b>b 推荐：token + 卡片化 + 关键动效</b></td>
+          <td>a 的全部，加上：中栅笔记列表卡片化（固定行高 + 行间距）、
+              悬停光泽扫过 + 抬升/按压、侧栅选中竖条、列表⬌空态交叉渐变、
+              骨架 shimmer、操作回执（移动/删除后的落定高亮环）</td>
+          <td>工作量中等；引入 framer-motion 到知识模式（已在依赖里，不增体积）</td></tr>
+      <tr><td><b>c 完全照搬</b></td>
+          <td>笔记列表直接复用 <code>Card.tsx</code> 那一整套（含虚拟滚动、批量选择、
+              置顶动画、堆叠徽标）</td>
+          <td><b>不推荐</b>——见下</td></tr>
+    </table>
+    <div class="bad"><b>为何不选 c：两边的一行要说的事不一样。</b>
+      记录模式一张卡片 = 一条剪贴板内容，重点是「内容预览 + 类型 + 时间」；
+      知识模式一行 = 一篇笔记，重点是「标题 + 摘要 + 文件夹/标签/字数」，
+      而且它还有**分组组头**（按文件夹/标签/日期）、多选排序、三态筛选。
+      硬着头皮复用 <code>Card.tsx</code> 得把它改成两套分支共存的组件，
+      那是把两个本来各自清楚的东西绑死。<b>要统一的是语言，不是组件。</b></div>
+    <p><b>选 b。</b>具体做法：把记录模式的**变量与 keyframes 抽成共用层**（新建
+       <code>styles/surface.css</code>），两边各自引用。这样以后改一次玻璃参数
+       两个模式一起变，而不是又分叉一次。</p>
+  </div>
+
+  <h2>3 · 中间那列：笔记行卡片化</h2>
+  <style>
+    .mk { width:330px; background:linear-gradient(160deg,#e8ecf5,#dfe6f2);
+          padding:12px; border-radius:10px; }
+    .nrow { position:relative; overflow:hidden; display:flex; flex-direction:column; gap:3px;
+            height:70px; box-sizing:border-box; padding:10px 12px; margin-bottom:10px;
+            border-radius:16px; background:rgba(255,255,255,.62);
+            border:1px solid rgba(255,255,255,.75);
+            box-shadow:0 2px 8px rgba(31,35,40,.07); }
+    .nrow::before { content:""; position:absolute; inset:0; border-radius:16px;
+            background:linear-gradient(180deg,rgba(255,255,255,.5),transparent 50%); }
+    .nrow.on { border-color:#6366f1; box-shadow:0 4px 16px rgba(99,102,241,.25); }
+    .nt { font-size:13px; font-weight:600; }
+    .ne { font-size:11.5px; color:#57606a; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .nm { display:flex; gap:6px; align-items:center; font-size:10.5px; color:#8b949e; }
+    .chip { border:1px solid #6366f1; color:#6366f1; border-radius:8px; padding:0 5px; }
+    .gh { display:flex; justify-content:space-between; font-size:10.5px; color:#8b949e;
+          padding:2px 4px 4px; }
+  </style>
+  <div class="card">
+    <div class="mk">
+      <div class="gh"><span>技术</span><span>12 条</span></div>
+      <div class="nrow on">
+        <span class="nt">Rust 并发笔记</span>
+        <span class="ne">记了 tokio 与 spawn_blocking 的取舍，以及为何不能在 async 里拿 std 锁</span>
+        <span class="nm">3 分钟前 <span class="chip">rust</span> <span class="chip">踩坑</span></span>
+      </div>
+      <div class="nrow">
+        <span class="nt">SQLite 部分索引的坑</span>
+        <span class="ne">CREATE UNIQUE INDEX IF NOT EXISTS 对已存在的索引是空操作…</span>
+        <span class="nm">昨天 21:04 <span class="chip">sqlite</span></span>
+      </div>
+    </div>
+    <table>
+      <tr><th>参数</th><th>取值</th><th>为何</th></tr>
+      <tr><td>行高</td><td><b>70px 固定</b></td>
+          <td>记录模式是 72px。笔记行要装三行（标题/摘要/元信息），70 刚好；
+              固定而不自适应是为了以后上虚拟滚动时不用量高</td></tr>
+      <tr><td>圆角</td><td>16px</td><td>与卡片一致。小于它会让两个模式看着像两个软件</td></tr>
+      <tr><td>行间距</td><td>10px</td><td>同 <code>--card-gap</code>。目前是紧密列表，没有间距</td></tr>
+      <tr><td>底色 / 描边 / 阴影</td><td>全走 <code>--glass-card-*</code></td>
+          <td>不重新调一套颜色：一重调就意味着两套参数得同时维护</td></tr>
+      <tr><td>顶部静态微光</td><td><code>::before</code> 同卡片</td><td>它是玻璃感的主要来源，成本是零（纯渐变）</td></tr>
+      <tr><td><b>不</b>做背景模糊</td><td><code>backdrop-filter</code> 不加</td>
+          <td>🔴 记录模式已经为此付过代价并删掉了（v5.5.2 GPU 优化，
+              卡片 CSS 里那段长注释写得很清楚）。新列表不要重蹈同一个坑</td></tr>
+    </table>
+    <div class="note"><b>分组组头不卡片化</b>，保持现在的素行 + <code>position:sticky</code>。
+      组头要是也变成卡片，就分不出「这是一篇笔记」还是「这是一组」了。</div>
+  </div>
+
+  <h2>4 · 左侧文件夹树</h2>
+  <style>
+    .sb { width:190px; background:rgba(255,255,255,.5); border-radius:10px; padding:8px 6px;
+          border:1px solid rgba(255,255,255,.7); }
+    .fi { position:relative; display:flex; align-items:center; gap:6px; font-size:12px;
+          padding:5px 8px; border-radius:8px; }
+    .fi.on { background:rgba(99,102,241,.12); color:#4338ca; font-weight:600; }
+    .fi.on::before { content:""; position:absolute; left:0; top:6px; bottom:6px; width:2px;
+          border-radius:2px; background:#6366f1; }
+    .fc { margin-left:auto; font-size:10.5px; color:#8b949e; }
+  </style>
+  <div class="card">
+    <div class="sb">
+      <div class="fi">📄 全部笔记<span class="fc">128</span></div>
+      <div class="fi on">📁 技术<span class="fc">62</span></div>
+      <div class="fi" style="padding-left:22px">📁 Rust<span class="fc">18</span></div>
+      <div class="fi" style="padding-left:22px">📁 前端<span class="fc">21</span></div>
+      <div class="fi">🗒 未分类<span class="fc">7</span></div>
+      <div class="fi">🗑 回收站<span class="fc">3</span></div>
+    </div>
+    <table>
+      <tr><th>改动</th><th>为何</th></tr>
+      <tr><td colspan="2"><div class="bad"><b>🔴 本节初版错了两处，已纠正。</b>
+          初版写的是「给侧栏加一层半透玻璃底」与「选中态加左侧竖条（现在没有）」。
+          去读 <code>FolderTree.module.css</code> 与 <code>Sidebar.module.css</code> 后发现：
+          ① 记录模式的侧栏<b>本来就不是玻璃</b>（是 <code>--sidebar-bg</code> 不透明底）；
+          ② FolderTree <b>本来就已经有左侧竖条</b>（<code>inset 2px 0 0 var(--accent)</code>），
+          它自己的注释还写着「同记录模式 Sidebar 的选中态语言」。
+          <b>真实差距比我初估的小得多，只是五处 token/细节没对齐。</b></div></td></tr>
+      <tr><td>背景：<code>--card-bg</code> → <code>--sidebar-bg</code></td>
+          <td>两个侧栏各用一个背景变量，主题切换时会各自飘</td></tr>
+      <tr><td>选中底色：<code>color-mix(accent 16%)</code> → <code>--accent-light</code></td>
+          <td>手拼的百分比与主题变量两套口径</td></tr>
+      <tr><td>选中文字：<code>--text-primary</code> → <code>--accent-strong</code></td>
+          <td>🔴 Sidebar 那边的注释写得很清楚：accent 压在 accent-light 上
+              在浅色主题下<b>对比度不足 4.5:1</b>，所以得用加深版。
+              这是早就踩过的坑，直接用结论</td></tr>
+      <tr><td>竖条：方的 inset 阴影 → 带圆角与光晕的 <code>::before</code></td>
+          <td>记录模式是 3px×16px 圆角 + <code>0 0 6px var(--accent-shadow)</code></td></tr>
+      <tr><td>hover 微位移 <code>translateX(2px)</code></td>
+          <td>记录模式 <code>.item:hover</code> 有，FolderTree 没有</td></tr>
+      <tr><td>计数右对齐、统一灰字号</td><td>目前字号与位置不统一，扫一眼拿不到「哪个文件夹东西多」</td></tr>
+      <tr><td>回收站固定在最下，与上方隔一条分割线</td><td>它不是一个“文件夹”，摆在树里会被当成平级项</td></tr>
+    </table>
+  </div>
+
+  <h2>4b · 补正（本轮实现后发现）</h2>
+  <div class="card">
+    <div class="bad"><b>🔴 §4 的改动表与它自己的小样自相矛盾，我照表做了。</b>
+      表里只列了五个 token（背景 / 选中底色 / 选中文字 / 竖条 / hover 位移），
+      <b>漏掉了行的几何</b>；而同一节的小样画的是 <code>border-radius:8px</code> 的
+      <b>两边内缩胶囊</b>。实现按表做 = 贴左边、只圆右侧的行，所以看上去跟小样不是一回事。
+      已按记录模式 <code>Sidebar</code> 补齐。</div>
+    <table>
+      <tr><th>项</th><th>补正前</th><th>补正后</th><th>依据</th></tr>
+      <tr><td>容器左右内边距</td><td>0</td><td>5px</td>
+          <td>记录模式 <code>.list</code> 是 8px；取 5 是给三层缩进留宽度</td></tr>
+      <tr><td>行圆角</td><td><code>0 6px 6px 0</code></td><td><code>7px</code></td>
+          <td>记录模式 <code>.item</code> 是 7px 四角</td></tr>
+      <tr><td>行内边距</td><td><code>4px 9px 4px 11px</code></td><td><code>5px 8px</code></td>
+          <td>小样标的就是 <code>5px 8px</code></td></tr>
+      <tr><td>行文字色</td><td><code>--text-secondary</code></td><td><code>--text-primary</code></td>
+          <td>侧栏是主导航，不是副文本</td></tr>
+      <tr><td>计数字号</td><td>10px</td><td>10.5px</td><td>小样标的 10.5px</td></tr>
+    </table>
+    <div class="note"><b>代价（不是弄丢的）：</b>行改成内缩胶囊后，深层文件夹名字的可用宽度
+      每层少约 10px，3 层上限的余量比 <code>FolderTree.module.css</code> 文件头那笔账算的要紧。
+      已写进那条注释。</div>
+  </div>
+
+  <h2>4c · 搜索框：尺寸对齐 + 「搜/问」进框内</h2>
+  <div class="card">
+    <table>
+      <tr><th>问题</th><th>事实</th></tr>
+      <tr><td>为何宽度差这么多</td>
+          <td>记录模式的搜索框在 <code>TopBar</code>（<code>appMode === "record"</code> 才渲染），
+              <b>跨整个窗口</b>；知识模式的在中栏 <code>KnowledgeToolbar</code> 里，宽屏下中栏固定 300px。</td></tr>
+      <tr><td>拍板</td><td><b>只统一尺寸与配色，不改位置。</b>
+              高 30→38px、字号 12→13px、底色/描边换成专用的
+              <code>--search-bg</code> / <code>--search-border</code>、聚焦补上
+              <code>0 0 0 3px</code> 光环——全部与 <code>TopBar .searchBox</code> 一致。</td></tr>
+    </table>
+
+    <div class="good"><b>「搜/问」从框外移到框内。</b>
+      不只是好看：记录模式的 <code>.searchBox</code> 本来就是「盒子里装图标 + 裸 input」，
+      而知识模式原先是「带样式的 input + 绝对定位盖上去的图标」——<b>两种不同的结构</b>。
+      改完两边结构也一样了。</div>
+
+    <table>
+      <tr><th></th><th>输入框外框</th><th>能打字的宽度</th></tr>
+      <tr><td>切换器在框外 + 绝对定位放大镜</td><td>~118px</td><td>~72px</td></tr>
+      <tr><td><b>切换器进框内（去掉放大镜）</b></td><td>~184px</td><td><b>~108px</b></td></tr>
+    </table>
+    <div class="note"><b>放大镜去掉的理由：</b>它与「搜/问」信息重复，而它占的是 34px 左内边距。
+      但 AI 关着时（<code>qaEnabled === false</code>）切换器不渲染，那时<b>图标要补回来</b>，
+      不然这个框就没任何「这是搜索」的提示了。</div>
+    <div class="note"><b>聚焦态用 <code>:focus-within</code></b>，不像记录模式那样用 React state
+      推一个 <code>.focused</code> 类：裸 input 的 <code>:focus</code> 没办法给父盒子上样式，
+      而 <code>:focus-within</code> 零状态。Chromium 92 支持（自 60 起）。</div>
+    <div class="note"><b>同行控件只长到 32/28，不是记录模式的 34：</b>中栏可用宽只有 276px。
+      抬到 34px 后三个图标会把输入框挤得<b>比改之前更窄</b>，而拍板时接受的是「宽度不变」。</div>
+  </div>
+
+  <h2>4d · 侧栏尺寸与动画对齐（拍板：对齐节奏，缩进让路）</h2>
+  <div class="card">
+    <div class="note"><b>栏宽本来就已经一样（都是 180px）</b>，差的是内部尺寸与开合动画。
+      文件夹树比记录侧栏多两样东西：<b>三层缩进 + 折叠三角</b>，而栏宽相同——
+      所以放大行高字号会从文件夹名字里抢宽度。</div>
+
+    <table>
+      <tr><th>项</th><th>知识（改前）</th><th>记录 Sidebar</th><th>知识（改后）</th></tr>
+      <tr><td>栏宽</td><td>180px</td><td>180px</td><td>180px ✓ 本来就同</td></tr>
+      <tr><td>列表内边距</td><td><code>6px 5px 10px</code></td><td><code>12px 8px 8px</code></td><td><code>12px 8px 8px</code></td></tr>
+      <tr><td>行内边距</td><td><code>5px 8px</code></td><td><code>7px 10px</code></td><td><code>7px 8px 7px 10px</code></td></tr>
+      <tr><td>行字号</td><td>12px</td><td>13px</td><td>13px</td></tr>
+      <tr><td>行高（估）</td><td>~27px</td><td>~32px</td><td><b>~32px</b></td></tr>
+      <tr><td>行内 gap</td><td>4px</td><td>10px</td><td><b>6px</b>（见下方宽度账）</td></tr>
+      <tr><td>分区标题</td><td>10px / <code>--text-muted</code></td>
+          <td>11px / 700 / <code>--sidebar-section-label</code></td>
+          <td>照记录模式</td></tr>
+      <tr><td>计数</td><td>10.5px 裸灰字</td>
+          <td>10px/600 胶囊：<code>--section-bg</code> 底 + 描边 + 8px 圆角，选中换 <code>--accent-light</code></td>
+          <td>照记录模式，但内边距 <code>1px 5px</code>（原 <code>1px 7px</code>）</td></tr>
+      <tr><td>缩进/层</td><td>13px</td><td>—（无嵌套）</td><td><b>10px</b></td></tr>
+    </table>
+
+    <div class="bad"><b>🔴 我给用户看的宽度数字算少了。</b>
+      拍板时展示的 <b>92 / 72px</b> 是按「裸灰字计数 + 11px 三角」算的，
+      但同一个方案里计数要换成<b>带底带描边的胶囊</b>，它比裸数字宽约 14px。
+      按原计划（gap 8px + 胶囊 <code>1px 7px</code>）实际只剩 <b>顶层 77px / 第3层 57px</b>，
+      比我报的数差很多。<b>不能默默发一个比用户批准的更差的东西。</b>
+      改法：gap 落 6px（不是 8）、胶囊内边距收到 <code>1px 5px</code>、行右内边距 8px、
+      三角仍为 11px（不抬到记录模式的 16px 图标槽）。这样正好回到 <b>92 / 72px</b>。</div>
+
+    <table>
+      <tr><th>文件夹名字可用宽度</th><th>顶层</th><th>第 3 层</th></tr>
+      <tr><td>改前</td><td>~114px（9.5 字）</td><td>~88px（7.3 字）</td></tr>
+      <tr><td>按原计划（gap 8 + 胶囊 1px 7px）</td><td>~77px</td><td>~57px ⚠</td></tr>
+      <tr><td><b>实际落地（gap 6 + 胶囊 1px 5px）</b></td><td><b>~92px（7.1 字）</b></td><td><b>~72px（5.5 字）</b></td></tr>
+    </table>
+
+    <div class="note"><b>名字要补 <code>title</code>。</b>现在 <code>.name</code> 只有
+      <code>text-overflow: ellipsis</code>，没有 <code>title</code>——名字一截断就<b>根本读不到</b>。
+      宽度变窄之后这从「不够好」变成「必需」。</div>
+  </div>
+
+  <h2>4e · 动画对齐</h2>
+  <div class="card">
+    <table>
+      <tr><th>项</th><th>记录 Sidebar</th><th>知识（改前）</th><th>做法</th></tr>
+      <tr><td><b>侧栏开合</b></td>
+          <td><code>width 0→180px</code> 0.35s <code>cubic-bezier(.4,0,.2,1)</code>，
+              内容 <code>opacity</code> 0.2s <b>延迟 0.2s</b> 淡入</td>
+          <td><b>完全没有</b>——<code>{sidebarOpen &amp;&amp; &lt;FolderTree/&gt;}</code> 是条件渲染，硬挂硬消</td>
+          <td>改成<b>常挂载</b> + <code>.treeOpen</code> 类，与 <code>Sidebar</code> 一字不差</td></tr>
+      <tr><td>行过渡</td><td><code>all 0.15s</code></td>
+          <td><code>background/color/transform 0.12s</code></td><td><code>all 0.15s</code></td></tr>
+      <tr><td>hover 位移</td><td><code>translateX(2px)</code></td><td>同</td><td>✓ 已一致</td></tr>
+      <tr><td>计数徒标</td><td><code>all 0.15s</code> + 选中换色</td><td>无过渡、无选中态</td><td>照记录模式</td></tr>
+    </table>
+
+    <div class="bad"><b>开合动画需要一个结构改动，不是加一行 CSS。</b>
+      宽度动画要求元素一直在 DOM 里，而且得分两层：
+      <b>外层管宽度动画且 <code>overflow: hidden</code></b>（不然 180px 的内容会在栏宽 0 时溢出来），
+      <b>内层管滚动与延迟淡入</b>。记录模式就是这么分的（<code>.sidebar</code> + <code>.list</code>），
+      现在 <code>.tree</code> 把两件事干了（自己既是容器又是滚动区）。</div>
+
+    <div class="note"><b>常挂载的代价：一个 COUNT。</b>
+      <code>DailySection</code> 已经把贵的查询（打点日期 / 最早日期）门控在展开态，
+      它自己的注释就写着「没展开就拉等于每次进知识页面都白发一次查询」。
+      常挂载只多一个 <code>noteCountFiltered</code>（一个 COUNT），而记录模式的侧栏本来也是常挂载的。</div>
+
+    <div class="note"><b>子树展开/折叠动画：不做。</b>
+      记录模式没有可对标的东西（它没有树），所以这条不属于「对齐」。
+      而高度动画要么得测子树高度（子项可变），要么交给 framer 的 layout 动画，
+      而后者在可折叠树里就是 §4 里已经放弃过的那类问题（源节点卸载时位置乱跳）。
+      宁可不做。</div>
+  </div>
+
+  <h2>5 · 微动画清单（每条都得说出为何值得）</h2>
+  <div class="card">
+    <table>
+      <tr><th>动效</th><th>触发</th><th>参数</th><th>为何值得做</th></tr>
+      <tr><td>光泽扫过</td><td>笔记行 hover</td><td>直接复用 <code>shimmer-sweep</code> 1.6s</td>
+          <td>它是记录模式最认得出的一个手感，且零新代码</td></tr>
+      <tr><td>抬升 / 按压</td><td>hover / 点击</td><td>framer-motion <code>whileHover</code> / <code>whileTap</code></td>
+          <td>「能点」的唯一可感知反馈。现在笔记行点下去没任何反应</td></tr>
+      <tr><td>选中竖条滑动</td><td>换文件夹</td><td><code>layoutId</code> 共一个竖条，0.22s</td>
+          <td>告诉用户「你从哪跳到了哪」，比两处同时闪一下好读</td></tr>
+      <tr><td>列表 ⬌ 空态 ⬌ 回收站</td><td>切换</td><td><code>AnimatePresence mode="wait"</code>，同 <code>stateSwap</code></td>
+          <td>现在是硬切，内容一下子换掉，容易以为自己点错了</td></tr>
+      <tr><td>骨架 shimmer</td><td>首屏 / 换文件夹加载</td><td>复用 <code>shimmer</code> 1.5s</td>
+          <td>现在是一行「加载中」文字，列表高度会跳一下</td></tr>
+      <tr><td>落定高亮环</td><td>移动到文件夹 / 从回收站恢复后</td><td>复用 <code>rowRingFade</code> 0.95s</td>
+          <td><b>这条最有实用价值</b>：移完一篇笔记后它就从当前列表消失了，
+              现在用户完全不知道到底成不成。在目标文件夹项上闪一下就是回执</td></tr>
+      <tr><td>计数数字变化</td><td>笔记增减</td><td>0.3s 渐变（<b>不</b>做数字滚动）</td>
+          <td>滚动数字很炫但让人看不清终值，而这里终值才是信息</td></tr>
+      <tr><td>第三列进出</td><td>选中 / 关闭笔记</td><td>右侧滑入 + 渐变 0.2s</td>
+          <td>它现在是瞬现的，而且空态与内容态宽度一样，看不出发生了什么</td></tr>
+    </table>
+    <div class="ok">全部时长与曲线**直接用记录模式的现成值**
+      （<code>cubic-bezier(.4,0,.2,1)</code> 为主，弹跳类用 <code>(.34,1.45,.4,1)</code>），
+      不另定一套——两套曲线是「风格不统一」的另一种形式。</div>
+  </div>
+
+  <h2>6 · 不做什么</h2>
+  <div class="card">
+    <ul>
+      <li><b>不做背景模糊</b>（<code>backdrop-filter</code>）。记录模式为此付过 GPU 代价
+          并在 v5.5.2 删掉了，卡片 CSS 里那段长注释就是尸骸报告。</li>
+      <li><b>不上虚拟滚动</b>。现在是「每页 50 条 + 见底加载」，已够用；
+          卡片化把行高固定下来，就是为了将来真要上的时候不用重构一次。</li>
+      <li><b>不做批量选择与置顶</b>。这两个是剪贴板列表的刚需（一屏几十条、高频清理），
+          笔记量级与使用方式都不同，现在加就是为了像而像。</li>
+      <li><b>不改结构与交互逻辑</b>。三档断点、侧栏开合、第三列取代弹窗、回收站接管中栏——
+          这些都是想清楚了才这么做的，本轮只换皮与加动效。</li>
+      <li><b>不动 <code>Card.tsx</code></b>。共用的是 CSS 变量与 keyframes，不是组件。</li>
+    </ul>
+  </div>
+
+  <h2>7 · 落地顺序（每步都能单独验收）</h2>
+  <div class="card">
+    <table>
+      <tr><th>步</th><th>内容</th><th>改动面</th></tr>
+      <tr><td>①</td><td>抽共用层 <code>styles/surface.css</code>：把玻璃变量与
+              <code>shimmer-sweep</code> / <code>shimmer</code> / <code>rowRingFade</code>
+              从 <code>CardList.module.css</code> 里提出来</td>
+          <td>新增 1 个文件，记录模式改为引用（行为零变化）</td></tr>
+      <tr><td>②</td><td>笔记行卡片化 + 光泽扫过 + 抬升/按压</td>
+          <td><code>NoteList.tsx</code> 与它的 CSS</td></tr>
+      <tr><td>③</td><td>侧栏：半透底 + 选中竖条 + 竖条滑动</td>
+          <td><code>FolderTree.tsx</code> 与它的 CSS</td></tr>
+      <tr><td>④</td><td>状态切换：列表⬌空态⬌回收站交叉渐变、骨架 shimmer</td>
+          <td><code>KnowledgeView.tsx</code>、<code>NoteListEmpty.tsx</code></td></tr>
+      <tr><td>⑤</td><td>操作回执：移动/恢复后的落定高亮环；第三列进出</td>
+          <td><code>FolderTree.tsx</code>、<code>NoteDetailPane.tsx</code></td></tr>
+    </table>
+    <div class="note">① 单独提一次：它对记录模式是纯重构（行为不变），
+      如果改完卡片看起来不对，回滚一步就行，不会连带把新功能一起回滚。</div>
+  </div>
+
+  <h2>8 · “能不能更好”：两个比动效重要得多的发现</h2>
+  <div class="card">
+    <h3>发现一：知识模式没有平滑滚动，也没有回顶</h3>
+    <p>grep <code>ScrollProvider</code> / <code>BackToTop</code> 的结果只有两个文件：
+       <code>CardList.tsx</code> 与 <code>BackToTop.tsx</code>。也就是说：</p>
+    <table>
+      <tr><th></th><th>记录模式</th><th>知识模式</th></tr>
+      <tr><td>滚动</td><td>Lenis 惯性平滑滚动</td><td>原生 <code>overflow-y: auto</code></td></tr>
+      <tr><td>回顶</td><td><code>&lt;BackToTop /&gt;</code></td><td>无</td></tr>
+    </table>
+    <div class="bad"><b>这不是装饰，是交互质量。</b>两个模式滚动手感不一样，
+      切一下模式就能感觉到——而且知识库的列表往往比剪贴板历史**更长**（累积型数据），
+      偏偏它没回顶。这两个都是现成组件，接进来就行。</div>
+
+    <h3>发现二：笔记正文是 12px，行高跟着默认</h3>
+    <div class="note"><b>更正：</b>我上一版写的「11.5px / 行高 1.55」看错了对象——
+      那是 <code>.summaryText</code>（AI 摘要那一小块）。真正的笔记正文在
+      <code>NoteDialog.module.css</code> 的 <code>.editPane</code>，是 <b>12px</b>，
+      行高没写。结论没变，数字改对了。</div>
+    <p>12px 是一个 **UI 字号**，不是**阅读字号**。卡片是拿来扫的，小字号正确；
+       而笔记是拿来**读**的，这里是整个知识模式里用户目光停留最久的地方。</p>
+    <table>
+      <tr><th></th><th>现在</th><th>改成</th></tr>
+      <tr><td>正文字号</td><td>12px</td><td><b>13.5px</b></td></tr>
+      <tr><td>行高</td><td>未设（跟默认）</td><td><b>1.75</b></td></tr>
+      <tr><td>每行字数</td><td>无限制（跟着栏宽拉满）</td><td><code>max-width: 34em</code></td></tr>
+    </table>
+    <p>行长限制选 34em 而不是固定 px 是有意的：13.5px 下约 460px，
+       在 480 宽的弹窗里根本不生效，只在宽屏的第三栏里才起作用。</p>
+    <div class="ok"><b>这是知识模式应该比记录模式更讲究的地方，不是跟着它就行。</b>
+      “全面美化”里回报最高的一项就是它，而且改动只有三行 CSS。
+      行长限制尤其重要：窗口拉宽后一行上百个字，眼睛回行时会找不到位置。</div>
+
+    <h3>发现三（好消息）：场景层已经衬在下面了</h3>
+    <p><code>SkinScene</code> 在 <code>App.tsx:1015</code>，<code>fixed + z-index:0</code>，
+       在 <code>contentArea</code> **之外**——三个模式共用一层。所以知识模式**本来就坐在场景上**，
+       只是内容没有任何 surface，文字直接压在场景上。</p>
+    <div class="note">这同时解释了为何卡片化是对的：它不只是好看，
+      而是给文字一个底——照片类皮肤下，现在的素列表可读性是真的有问题的。</div>
+  </div>
+</div>
+</body>
+</html>

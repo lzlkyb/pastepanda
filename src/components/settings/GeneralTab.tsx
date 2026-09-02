@@ -155,7 +155,7 @@ export function GeneralTab({
       const ok = await confirmDialog({
         title: "开启知识库 MCP 服务？",
         message:
-          "开启后，本机任何能拿到访问令牌的程序都可以读取你的全部笔记。服务只监听 127.0.0.1，局域网内其它机器连不上；目前只能读，不会新建、修改或删除笔记。",
+          "开启后，本机任何能拿到访问令牌的程序都可以读取、修改和删除你的笔记。服务只监听 127.0.0.1，局域网内其它机器连不上。删除只进回收站，随时可恢复；每次写入都会计入调用记录。开启后可以在面板里逐项关掉写权限。",
         confirmText: "开启服务",
         variant: "warning",
       });
@@ -923,16 +923,17 @@ export function GeneralTab({
       <div className={styles.sSection}>知识库 MCP 服务</div>
       <ToggleRow icon="🧩" gradient="linear-gradient(135deg, #8B5CF6, #6366F1)"
         label="知识库 MCP 服务"
-        desc="让 Claude Code 等 AI 工具读你的笔记（仅本机，需令牌）"
+        desc="让 Claude Code 等 AI 工具读写你的笔记（仅本机，需令牌，写权限逐项可关）"
         value={mcp.status.running}
-        tooltip="在本机开一个只监听回环地址的 MCP 服务，AI 工具凭令牌搜索与读取笔记"
+        tooltip="在本机开一个只监听回环地址的 MCP 服务，AI 工具凭令牌搜索、读取与修改笔记"
         detailTitle="知识库 MCP 服务"
         detail={<>
-          <p>开启后，Claude Code 这类支持 MCP 的工具可以<b>搜索、列举、读取你的笔记</b>。</p>
+          <p>开启后，Claude Code 这类支持 MCP 的工具可以<b>搜索、读取、新建、修改你的笔记</b>。</p>
           <p>📌 只监听 <b>127.0.0.1 回环地址</b>，局域网内其它机器连不上</p>
           <p>📌 每个请求都要带<b>访问令牌</b>，令牌加密存在本机</p>
-          <p>⚠️ 目前<b>只能读，不能写</b>：它不会新建、修改或删除任何笔记</p>
-          <p>⚠️ 开着时，<b>能拿到令牌的程序就能读你全部的笔记</b></p>
+          <p>📌 删除<b>只进回收站</b>（可恢复）；修改会自动留版本快照；写入都计入调用记录</p>
+          <p>📌 七项写权限<b>默认全开，可逐项关掉</b>（开启后在下方面板里）</p>
+          <p>⚠️ 开着时，<b>能拿到令牌的程序就能读写你全部的笔记</b></p>
         </>}
         onChange={(v) => void handleToggleMcp(v)}
       />

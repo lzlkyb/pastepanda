@@ -104,12 +104,9 @@
 /* hover: 动态光泽扫过动画 */
 .card:hover::after {
   opacity: 1;
-  animation: var(--card-shimmer-anim, shimmer-sweep 1.6s ease-in-out infinite);
-}
-
-@keyframes shimmer-sweep {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  /* 关键帧已移到 styles/surface.css（知识模式的笔记行用同一份）。
+     仍然走 `--card-shimmer-anim`：有些主题把它设成 none 来省合成层。 */
+  animation: var(--card-shimmer-anim, pp-shimmer-sweep 1.6s ease-in-out infinite);
 }
 
 /* hover: 边框亮起 + 阴影加深（抬升位移由 Card.tsx whileHover 驱动——
@@ -153,12 +150,8 @@
   box-shadow: 0 8px 24px var(--accent-glow), inset 0 0 14px color-mix(in srgb, var(--accent) 10%, transparent);
   pointer-events: none;
   z-index: 2;
-  animation: rowRingFade 0.95s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
-@keyframes rowRingFade {
-  0% { opacity: 0; }
-  18% { opacity: 1; }
-  100% { opacity: 0; }
+  /* 关键帧在 styles/surface.css（知识模式的「移动/恢复回执」用同一份）。 */
+  animation: pp-ring-fade 0.95s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
 /* ★ 弹跳微交互（收藏按钮，置顶/取消置顶瞬间由 pinFlash 挂上） */
@@ -404,11 +397,9 @@
   inset: 0;
   background: linear-gradient(90deg, transparent 25%, rgba(255,255,255,0.5) 50%, transparent 75%);
   background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-}
-@keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  /* 关键帧在 styles/surface.css。它与光泽扫过刻意是两条：
+     “在加载”是信息，不能跟着装饰类动画一起被主题关掉。 */
+  animation: pp-skeleton-shimmer 1.5s infinite;
 }
 
 /* 图片加载失败 */

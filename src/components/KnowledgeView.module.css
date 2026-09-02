@@ -19,6 +19,9 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* 回顶胶囊的定位基准。必须是**不滚的**这一层，不能是 `.listWrap`：
+     绝对定位元素仍属于滚动容器的可滚动内容，挂在那上面一滚就跟着划走。 */
+  position: relative;
   padding: 4px 12px 12px;
   min-height: 0; /* 不写列表就不滚而是把父容器顶高 */
 }
@@ -100,74 +103,103 @@
   flex-shrink: 0;
 }
 
-/* 输入框包层（B2 #10）。存在的理由只有一个：`.searchIcon` 是绝对定位的，
-   基准得是输入框而不是整行——否则搜/问切换器一加进来，图标就盖在切换器上。
-   没有切换器时（AI 关着）它紧贴行左，渲染结果与做这个功能之前逐像素一致。 */
-.inputWrap {
-  position: relative;
+/* 搜索盒子。结构与记录模式 `TopBar .searchBox` 一致：**边框与底色在盒子上，
+   里面装的是裸 input**。原先是反的（带样式的 input + 绝对定位盖上去的图标），
+   而那正是两边看上去不像同一个软件的结构原因。
+
+   换成盒子后「搜/问」能搭进来，于是能打字的宽度反而从 ~72px 涨到 ~108px：
+   切换器不再占行里单独一格，而放大镜那 34px 左内边距也省了。 */
+.searchBox {
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
-  min-width: 0;
+  gap: 6px;
+  height: 38px;
+  padding: 0 8px;
+  border: 1px solid var(--search-border);
+  border-radius: 8px;
+  background: var(--search-bg);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+  transition: all 0.2s;
+}
+
+/* 聚焦光环。用 `:focus-within` 而不是像记录模式那样拉 React state 推一个
+   `.focused` 类：裸 input 的 `:focus` 给不了父盒子上样式，而这个选择器零状态。
+   （Chromium 92 没问题，它自 60 就有。） */
+.searchBox:focus-within {
+  border-color: var(--accent);
+  background: var(--card-bg);
+  box-shadow: 0 0 0 3px var(--accent-shadow), 0 2px 8px var(--accent-shadow);
 }
 
 .searchIcon {
-  position: absolute;
-  left: 9px;
+  flex-shrink: 0;
+  margin-left: 4px;
   color: var(--text-muted);
   pointer-events: none;
 }
 
-/* 搜 / 问 分段切换器 */
+/* 搜 / 问 分段切换器。
+
+   高度跟着搜索框从 ~24px 长到 32px：38px 的输入框旁边挂一排 24px 的按钮比改之前更丑。
+   但**没**抬到记录模式筛选下拉的 34px：中栏只有 276px 可用，再宽下去
+   输入框会比改之前还窄——而拍板时接受的是「宽度不变」，不是变窄。 */
 .modeSeg {
   display: flex;
   flex-shrink: 0;
-  margin-right: 4px;
-  border: 1px solid var(--border-color);
-  border-radius: 7px;
-  overflow: hidden;
+  gap: 2px;
+  /* 在带边框的盒子里再套一层边框太重，改成「凹槽 + 浮起的当前项」
+     这种标准的内嵌分段控件形态。 */
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--hover);
 }
 
 .modeBtn,
 .modeOn {
-  padding: 4px 8px;
+  height: 22px;
+  padding: 0 8px;
   border: none;
+  border-radius: 5px;
   background: none;
   color: var(--text-muted);
   font-family: inherit;
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 11.5px;
+  line-height: 1;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .modeBtn:hover {
-  background: var(--hover);
   color: var(--text-primary);
 }
 
 .modeOn {
-  background: var(--accent-light);
+  /* 当前项用卡片底 + 一道轻影浮在凹槽上，而不是 `--accent-light`：
+     它已经在搜索框里了，再上一层强色会把焦点从输入内容上抢走。 */
+  background: var(--card-bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   color: var(--accent-strong);
   font-weight: 600;
 }
 
+/* 裸 input：边框/底色/聚焦光环全在父盒子 `.searchBox` 上（同记录模式）。
+   13px 也是那边的字号。 */
 .searchInput {
-  width: 100%;
-  height: 30px;
-  padding: 0 10px 0 28px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--card-bg);
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  background: transparent;
   color: var(--text-primary);
   font-family: inherit;
-  font-size: 12px;
+  font-size: 13px;
   outline: none;
-  transition: border-color 0.15s;
 }
 
-.searchInput:focus {
-  border-color: var(--accent);
+.searchInput::placeholder {
+  color: var(--text-muted);
 }
 
 /* 中栏的问答状态条（B2 #10b）。
@@ -233,40 +265,163 @@
 
 /* ===== 笔记列表 ===== */
 
-.list {
+/* ── 滚动层：Lenis 要 wrapper + content **两个嵌套元素** ──
+   content 是给它量内容高度用的（内部是 `contentResizeObserver`，算滚动上限），
+   不是用来做位移的——Lenis 1.3.25 的 dist 里 `transform` 零出现，它走原生 `scrollTop`。
+   （这也是吸顶组头与 IntersectionObserver 接上它仍然能用的原因。） */
+.listWrap {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+.listContent {
+  /* 左右 2px：hover 时 scale(1.01) 会向外长约 1.5px，不给就会被滚动容器剪掉。 */
+  padding: 0 2px;
+}
+
+/* 回顶胶囊：默认的 `fixed; right:16; bottom:16` 在宽屏下会压在阅读栏上，
+   改成相对**中栏**（`.wrap`）定位——回顶面向的就是这一栏的列表。
+   基准不能选 `.listWrap`：它就是滚动容器，挂上去会跟着内容滚走。 */
+.backTop {
+  position: absolute;
+  right: 12px;
+  bottom: 20px;
+}
+
+/* ── 骨架屏（加载态）──
+   尺寸刻意与真的笔记行一致（同 70px 行高、同 16px 圆角、同 10px 行间距）：
+   骨架要是比真内容矮，数据一到还是会跳，那就白做了。 */
+.skelList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skelRow {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  height: 70px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: var(--glass-card-bg);
+  border: 1px solid var(--glass-card-border);
+}
+
+.skelBar {
+  height: 9px;
+  border-radius: 5px;
+  background: linear-gradient(
+    90deg,
+    var(--hover) 25%,
+    var(--border-color) 50%,
+    var(--hover) 75%
+  );
+  background-size: 200% 100%;
+  /* 与卡片列表共用同一份关键帧（styles/surface.css）。
+     它故意不走 `--card-shimmer-anim`：那个变量是给**装饰性**光泽的开关，
+     而「正在加载」是信息，不能跟着主题把它关掉。 */
+  animation: pp-skeleton-shimmer 1.5s infinite;
+}
+
+.skelTitle { width: 62%; }
+.skelText  { width: 88%; height: 8px; }
+.skelMeta  { width: 34%; height: 7px; }
+
+.list {
   margin: 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  /* 同记录模式的 `--card-gap`。原来是 4px（紧密列表），
+     卡片化后必须拉开——挨在一起的卡片看上去反而像表格。 */
+  gap: 10px;
 }
 
+/* ── 笔记行：与记录模式的卡片同一套玻璃材质（设计稿 §3）──
+   变量全部来自 theme.css，**不另调一套颜色**：
+   一重调就意味着两套参数得同时维护，而这正是本轮要消除的东西。 */
 .row {
+  position: relative;
+  /* 光泽扫过的 `::after` 要被圆角裁住，所以得 hidden。
+
+     🔴 但它带了个坑：`.list` 是 `flex-direction: column` + `overflow-y: auto`，
+     而 CSS 规定 flex 项的自动最小尺寸（`min-height: auto`）**只在
+     `overflow` 为 visible 时才等于内容高**。一加 hidden，那个下限就变成 0，
+     于是条数一多、容器装不下时，**行不是让容器滚动，而是自己塌成一条细缝**，
+     内容全被裁掉——看起来就像笔记都没了。
+
+     所以 `flex-shrink: 0` 与它是**一对**，不能只写一个。
+     行永远不该被压缩：装不下就该滚动。 */
+  overflow: hidden;
+  flex-shrink: 0;
   display: flex;
   align-items: stretch;
   gap: 4px;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  transition: background 0.15s, border-color 0.15s;
+  border-radius: 16px;
+  background: var(--glass-card-bg);
+  border: 1px solid var(--glass-card-border);
+  box-shadow: var(--glass-card-shadow);
+  /* 🔴 故意不写 backdrop-filter。记录模式为它付过 GPU 代价并在 v5.5.2 删掉了
+     （CardList.module.css 里那段长注释就是尸检报告）。不重蹈同一个坑。 */
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* 顶部静态微光——玻璃感的主要来源，成本是零（纯渐变）。
+   走 `--card-shimmer-display`：有些主题（经典白）卡片不透明，微光看不见却多一层，
+   它们把这个变量设成了 none。不走的后果是「笔记行有微光、卡片没有」。 */
+.row::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  display: var(--card-shimmer-display, block);
+  background: linear-gradient(180deg, var(--glass-shimmer-static) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 悬停光泽扫过。关键帧在 styles/surface.css，与卡片共用同一份。 */
+.row::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    120deg,
+    transparent 20%,
+    var(--glass-shimmer) 35%,
+    var(--glass-shimmer) 45%,
+    transparent 60%
+  );
+  background-size: 200% 100%;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.row:hover::after {
+  opacity: 1;
+  animation: var(--card-shimmer-anim, pp-shimmer-sweep 1.6s ease-in-out infinite);
+}
+
+/* hover：边框亮起 + 阴影加深。
+   抬升位移由 NoteList 的 motion.li `whileHover` 驱动——
+   内联 transform 会覆盖样式表里的 transform，此处不可再写（同卡片）。 */
 .row:hover {
-  background: var(--card-bg);
-  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  border-color: var(--glass-card-hover-border);
+  box-shadow: var(--glass-card-hover-shadow);
 }
 
-/* 第三栏里正在看的那条。只在 ≥800px 会出现（窄屏下 activeId 永远为 null） */
+/* 第三栏里正在看的那条。只在 ≥800px 会出现（窄屏下 activeId 永远为 null）。
+   用卡片选中态的同一批 token，不自己拼 color-mix。 */
 .rowActive {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-}
-
-.rowActive:hover {
-  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  background: var(--card-selected-bg);
+  border-color: var(--card-selected-border);
+  box-shadow: var(--card-selected-shadow), 0 4px 16px var(--accent-shadow);
 }
 
 /* 所属文件夹（仅侧栏收起时显示） */
@@ -282,16 +437,22 @@
   max-width: 96px;
 }
 
-/* 整行可点：用 button 而不是给 li 绑 onClick——前者自带键盘可达与焦点环 */
+/* 整行可点：用 button 而不是给 li 绑 onClick——前者自带键盘可达与焦点环。
+   ❗ `position: relative; z-index: 1` 必需：`.row::before/::after` 是定位元素，
+   不抬高层级的话文字会被那层光泽盖着，看着像蒙了层灰。 */
 .rowMain {
+  position: relative;
+  z-index: 1;
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 10px;
+  /* 行向：图标底 + 文字列。与卡片的 `cardIcon + cardContent` 同一个形状。 */
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
   border: none;
-  border-radius: 8px;
+  border-radius: 15px;
   background: transparent;
   color: inherit;
   font-family: inherit;
@@ -299,8 +460,38 @@
   cursor: pointer;
 }
 
+/* 图标底。直接用卡片的 `--glass-icon-*` 三个 token（theme.css 里每个主题都有），
+   不自己调颜色——卡片与笔记行的图标底应该是同一个东西。
+
+   34px 而不是卡片的 42px：中栏宽只有 300px，而笔记行要装三行文字（卡片只两行），
+   42 会把标题挤得只剩不到一半宽。 */
+.rowIcon {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  background: var(--glass-icon-bg);
+  border: 1px solid var(--glass-icon-border);
+  box-shadow: var(--glass-icon-shadow);
+  transition: all 0.3s ease;
+}
+
+.rowBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ── 三级排版层次（设计稿 §1 「层次」那一行）──
+   原来三行是 12.5 / 11 / 10px，每级只差 1～1.5px，扫列表时分不出主次。 */
 .rowTitle {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
@@ -309,7 +500,8 @@
 }
 
 .rowExcerpt {
-  font-size: 11px;
+  font-size: 11.5px;
+  line-height: 1.45;
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -325,30 +517,48 @@
 }
 
 .rowTime {
-  font-size: 10px;
+  font-size: 10.5px;
   color: var(--text-muted);
 }
 
-.tagChip {
+.rowSize {
+  display: inline-flex;
+  align-items: center;
   padding: 0 5px;
   border: 1px solid var(--border-color);
   border-radius: 4px;
-  font-size: 10px;
-  line-height: 15px;
-  color: var(--text-secondary);
+  background: var(--section-bg);
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--text-muted);
 }
+
+/* （原有的 `.tagChip` 已删：标签渲染收回到公共组件 TagBadge，见 NoteList.tsx。
+   它本来就不应该存在——TagBadge 的文件头写的是「标签颜色唯一来源」。） */
 
 /* 删除按钮：默认隐，hover 行才出。不用 display:none 而用 opacity：
    前者会让它从 Tab 顺序里消失，键盘用户就删不了笔记了。 */
 .rowDelete {
+  /* 同 `.rowMain`：不抬层级会被 `.row::after` 那层光泽盖住。 */
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
+  /* ── 抄卡片的悬停操作片（`.cardInlineBtn`）──
+     原来是个透明底、无描边的裸图标，悬停时看不出它是个可点的东西。
+     卡片那边是 28×28 圆角 + 底色 + 轻阴影，“能点”一眼就看得出来。 */
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
+  align-self: center;
+  margin-right: 6px;
   border: none;
   border-radius: 8px;
-  background: transparent;
+  background: var(--card-bg);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
   color: var(--text-muted);
   cursor: pointer;
   opacity: 0;
@@ -367,17 +577,19 @@
 
 /* ===== 字段视图（B2 #9）：分组组头 + 加载更多 ===== */
 
-/* 组头。sticky 让长组滚动时还知道自己在哪一组 */
+/* 组头。sticky 让长组滚动时还知道自己在哪一组。
+   z-index 必须 ≥2：`.rowMain` / `.rowDelete` 为了压住 `.row::after` 的光泽带了
+   z-index:1，而 `.row` 自身没建层叠上下文，所以它们和组头在同一个上下文里比；
+   组头原来也是 1，DOM 里排在后面的行就赢了——滚动时行的文字会盖住组头。 */
 .groupHead {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
+  padding: 5px 8px;
   background: var(--section-bg);
-  border-bottom: 1px solid var(--border-color);
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
@@ -386,8 +598,27 @@
 /* 条数走后端 GROUP BY。拿不到就整个 span 不渲染，绝不显示一个数已加载行数的假数字 */
 .groupCount {
   margin-left: auto;
-  font-weight: 400;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--hover);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
   color: var(--text-muted);
+}
+
+/* 组头下沿的渐隐。原来是一条发丝线，改成内容淡入组头底色 —— 读起来像组头浮在列表上。
+   特意不用 backdrop-filter 做玻璃条：模糊层跟着滚动每帧重绘，而有几套主题把卡片
+   设成不透明（--card-shimmer-display: none）本来就是为了省合成层。 */
+.groupHead::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 8px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, var(--section-bg), transparent);
 }
 
 .loadMore {
@@ -421,18 +652,145 @@
   color: var(--danger, #e5534b);
 }
 
-/* 普通列表的 .row 是横向 flex；回收站行要竖着堆（标题行 / 展开预览 / 动作条） */
+/* 回收站行。竖着堆（标题行 / 展开预览 / 动作条）。
+
+   卡片化但**比笔记行暗一档**：用 `--section-bg` 而不是 `--glass-card-bg`、
+   不带光泽与微光。这里的东西是已经删掉的，不该和活笔记抢注意力——
+   但也不能像之前那样静态时完全是平的（`border: 1px solid transparent` + 无底色），
+   旁边笔记行已经是玻璃卡片，对比下那看上去像没做完。 */
 .trashRow {
   display: flex;
   flex-direction: column;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  transition: background 0.15s, border-color 0.15s;
+  /* 同 `.row`：与 `overflow: hidden` 配对。`.list` 是 flex column + 滚动容器，
+     不写它的话行会被压扁而容器不滚（笔记行那边已经真撞上过一次）。 */
+  flex-shrink: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--section-bg);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .trashRow:hover {
   background: var(--card-bg);
   border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  box-shadow: var(--shadow-md);
+}
+
+/* 行主体。**不蹭 `.rowMain`** ——那个已经是 `flex-direction: row`（笔记行要装
+   「图标底 + 文字列」），而回收站需要的是「图标底 + 竖着堆的文字列」。
+   上一轮我改 `.rowMain` 时没找全调用点（规则 #11.1），把这里横排成了一行。 */
+.trashMain {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* 图标底。同笔记行的 `.rowIcon`，但 `position: relative` 是给展开箭头当基准。 */
+.trashIcon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  background: var(--glass-icon-bg);
+  border: 1px solid var(--glass-icon-border);
+  box-shadow: var(--glass-icon-shadow);
+  font-size: 15px;
+  /* 回收站比笔记行暗一档：图标也跟着降一点不透明度。 */
+  opacity: 0.75;
+}
+
+/* 展开箭头搭在图标底右下角。原先它占着标题行开头，把标题顶得很窄；
+   而展开与「这是什么」是同一个动作的两面，搭在一起比分开摆好。 */
+.trashCaret {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+}
+
+.trashBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* 原卡片类型徽标。尺寸对齐 `.rowSize`（字数条），两者并排在同一行。 */
+.trashKind,
+.trashKindGone {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.trashKind {
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+}
+
+/* 内容类型的色点。颜色来自 `CONTENT_TYPE_META[x].color`，不在这里再定一套
+   ——那就是两处颜色定义，而且只有回收站这一处会过时。 */
+.trashKindDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* 原卡片已删：置灰 + 删除线。同 `NoteDetailPane` 来源行的现成口径——
+   原卡片没了不影响笔记本身，但得让用户知道恢复后跳不回去。 */
+.trashKindGone {
+  border: 1px dashed var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+/* 原文件夹 =「恢复到哪去」。用 accent 淡底而不是灰字：它是这一行里
+   最影响恢复决策的信息，不应该和时间/字数一个量级。 */
+.trashFolder {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .trashExpiry {

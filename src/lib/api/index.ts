@@ -138,7 +138,12 @@ export { noteExportDir, noteImportDir, noteMarkdown } from "./noteVault";
 export type { ExportReport, ImportReport } from "./noteVault";
 
 // 版本快照 + 恢复（B1 #4 / D8）
-export { noteRevisionList, noteRevisionGet, noteRestore } from "./noteRevisions";
+export {
+  noteRevisionList,
+  noteRevisionGet,
+  noteRevisionPin,
+  noteRestore,
+} from "./noteRevisions";
 export type { NoteRevision, NoteRevisionMeta } from "./noteRevisions";
 
 // 待沉淀区（知识库 A 阶段）

@@ -5088,12 +5088,25 @@ fn test_folder_create_and_list_with_depth() {
 
     assert_eq!((a.depth, b.depth, c.depth), (1, 2, 3));
 
-    // 第四层建不了：侧栏 180px 下名字只剩 ~8 个字，树不再可读（设计稿 §2）
-    let err = store.folder_create("太深了", Some(&c.id)).unwrap_err();
-    assert!(err.contains("3 层"), "错误该说清深度上限，实得：{err}");
+    // 逐层建到上限，再多一层就该报错。
+    //
+    // ❗ 不写死层数：原先这里断言 `err.contains("3 层")`，上限从 3 改到 4 时
+    //   这一行就碎了——而它想验的是「错误文案说清了上限」，不是「上限恰好是 3」。
+    let mut parent = c.id.clone();
+    for i in 3..MAX_FOLDER_DEPTH {
+        parent = store
+            .folder_create(&format!("第{}层", i + 1), Some(&parent))
+            .unwrap()
+            .id;
+    }
+    let err = store.folder_create("太深了", Some(&parent)).unwrap_err();
+    assert!(
+        err.contains(&format!("{MAX_FOLDER_DEPTH} 层")),
+        "错误该说清深度上限，实得：{err}"
+    );
 
     let list = store.folder_list().unwrap();
-    assert_eq!(list.len(), 3);
+    assert_eq!(list.len(), MAX_FOLDER_DEPTH as usize);
 }
 
 #[test]
@@ -5141,21 +5154,36 @@ fn test_folder_move_rejects_cycle() {
 
 #[test]
 fn test_folder_move_rejects_over_depth() {
-    // 目标深度 + 自身子树高度 ≤ 3。单看目标深度不够——
-    // 把一个两层高的子树移到第 2 层，结果就是 4 层。
+    // 目标深度 + 自身子树高度 ≤ 上限。单看目标深度不够——
+    // 把一个两层高的子树移到倒数第二层，结果就超了。
+    //
+    // ❗ 层数**跟着常量算**而不写死。原先这里写的是「2 + 2 = 4 > 3，拒」，
+    //   上限从 3 抬到 4 的那一刻这条断言就从「该拒」变成了「该放」，测试直接红。
+    //   （它想验的是「高度也算进去了」这个不变式，不是具体的 3。）
     let store = make_store();
-    let deep1 = store.folder_create("A", None).unwrap();
-    let deep2 = store.folder_create("B", Some(&deep1.id)).unwrap();
+
+    // 一条深到 `MAX-1` 的链（depth = 1..MAX-1）
+    let mut chain: Vec<String> = Vec::new();
+    let mut parent: Option<String> = None;
+    for i in 0..(MAX_FOLDER_DEPTH - 1) {
+        let f = store
+            .folder_create(&format!("A{}", i + 1), parent.as_deref())
+            .unwrap();
+        parent = Some(f.id.clone());
+        chain.push(f.id);
+    }
 
     let sub1 = store.folder_create("X", None).unwrap();
     store.folder_create("Y", Some(&sub1.id)).unwrap(); // sub1 子树高 2
 
-    // sub1 移到 deep2（第 2 层）→ 2 + 2 = 4 > 3，拒
-    let err = store.folder_move(&sub1.id, Some(&deep2.id)).unwrap_err();
+    // 移到最深那层（第 MAX-1 层）→ (MAX-1) + 2 = MAX+1，拒
+    let too_deep = chain.last().unwrap().clone();
+    let err = store.folder_move(&sub1.id, Some(&too_deep)).unwrap_err();
     assert!(err.contains("层"), "错误该说清层数，实得：{err}");
 
-    // 移到 deep1（第 1 层）→ 1 + 2 = 3，合法
-    store.folder_move(&sub1.id, Some(&deep1.id)).unwrap();
+    // 移到第 MAX-2 层 → (MAX-2) + 2 = MAX，正好卡在上限上，合法
+    let just_fits = chain[chain.len() - 2].clone();
+    store.folder_move(&sub1.id, Some(&just_fits)).unwrap();
 }
 
 #[test]
@@ -5498,6 +5526,90 @@ fn test_revision_pruned_to_max() {
     assert_eq!(oldest.content, "v5", "更早的应该已被裁掉");
 }
 
+/// W2 的核心保证：**模型连改 25 次，也挤不掉「它动手之前」那一份**。
+///
+/// 这条挂了就意味着写工具不能开——等于把唯一的后悔药交给模型销毁。
+#[test]
+fn test_anchor_survives_many_external_writes() {
+    let store = make_store();
+    let n = store.note_create(None, "标题", "人写的原始正文").unwrap();
+
+    for i in 1..=25 {
+        store
+            .note_update_from(&n.id, "标题", &format!("模型第{i}版"), "agent:test")
+            .unwrap();
+    }
+
+    let revs = store.note_revision_list(&n.id).unwrap();
+    let anchors: Vec<_> = revs.iter().filter(|r| r.pinned).collect();
+    assert_eq!(anchors.len(), 1, "每篇最多一份锚定");
+    assert_eq!(
+        store
+            .note_revision_get(anchors[0].id)
+            .unwrap()
+            .unwrap()
+            .content,
+        "人写的原始正文",
+        "锚定的必须是模型动手之前的原样"
+    );
+
+    // 锚定份不占 20 份配额：否则「保护历史」反而先吃掉一份历史
+    assert_eq!(revs.len(), MAX_REVISIONS as usize + 1);
+    assert!(
+        revs.iter().filter(|r| !r.pinned).all(|r| r.source_agent == "agent:test"),
+        "外部写入的每一版都该留下来源"
+    );
+}
+
+/// 人工编辑**不**锚定：你自己改坏了本来就能自己改回来。
+/// 它同时守着旧不变式：加了 pinned 列后，普通历史仍旧是「最近 20 份」。
+#[test]
+fn test_human_edits_never_anchor() {
+    let store = make_store();
+    let n = store.note_create(None, "标题", "v0").unwrap();
+    for i in 1..=25 {
+        store.note_update(&n.id, "标题", &format!("v{i}")).unwrap();
+    }
+
+    let revs = store.note_revision_list(&n.id).unwrap();
+    assert_eq!(revs.len(), MAX_REVISIONS as usize);
+    assert!(revs.iter().all(|r| !r.pinned), "人改的不该自动锚定");
+    assert!(
+        revs.iter().all(|r| r.source_agent.is_empty()),
+        "人工编辑的来源必须是空串——界面靠它分辨谁改的"
+    );
+}
+
+/// 手动锚定与解除（W2b）。解除后那一份**重新变成普通历史**，会正常被挤出。
+#[test]
+fn test_manual_pin_then_unpin() {
+    let store = make_store();
+    let n = store.note_create(None, "标题", "要保住的那一版").unwrap();
+    store.note_update(&n.id, "标题", "下一版").unwrap();
+
+    let target = store.note_revision_list(&n.id).unwrap()[0].id;
+    store.note_revision_pin(target, true).unwrap();
+
+    for i in 1..=25 {
+        store.note_update(&n.id, "标题", &format!("v{i}")).unwrap();
+    }
+    let rev = store.note_revision_get(target).unwrap();
+    assert!(rev.is_some(), "手动锚定的也不能被挤掉");
+    assert!(rev.unwrap().pinned);
+
+    store.note_revision_pin(target, false).unwrap();
+    for i in 26..=50 {
+        store.note_update(&n.id, "标题", &format!("v{i}")).unwrap();
+    }
+    assert!(
+        store.note_revision_get(target).unwrap().is_none(),
+        "解除锚定后应重新参与排队，否则「清除锚点」就只是个摆设"
+    );
+
+    // 不静默（规则 #15.3）
+    assert!(store.note_revision_pin(999_999, true).is_err());
+}
+
 #[test]
 fn test_restore_is_itself_undoable() {
     let store = make_store();
@@ -5659,6 +5771,7 @@ fn mk_note_for_md(title: &str, content: &str, tags: &[&str]) -> Note {
         summary: None,
         daily_date: None,
         deleted_at: None,
+        source_kind: None,
         group_key: None,
         tags: tags
             .iter()
@@ -5807,6 +5920,187 @@ fn test_vault_export_dedupes_same_title() {
     // 不编号就互相覆盖、静默丢一条
     assert!(dir.join("同名.md").is_file());
     assert!(dir.join("同名 (2).md").is_file());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// 导出侧必须清理**已删笔记留下的陈旧 `.md`**，否则下次导入会把它复活。
+///
+/// 这是一个真丢数据的回归用例，而且**不需要第二台机器**：导出侧以前从不删
+/// 文件，于是「导出 → 删除 → 再导入」之后，删掉的笔记以一个新 id 回到列表里，
+/// 而回收站里那条还在——用户看到两条一模一样的笔记。
+#[test]
+fn test_vault_export_prunes_stale_md_of_deleted_note() {
+    let dir = tmp_vault_dir("prune");
+    let store = make_store();
+    let gone = store.note_create(None, "会被删掉", "正文一").unwrap();
+    store.note_create(None, "留下来", "正文二").unwrap();
+
+    let first = store.note_export_dir(dir.to_str().unwrap()).unwrap();
+    assert_eq!(first.notes, 2);
+    assert!(first.removed.is_empty(), "第一次导出没有陈旧文件可清");
+    assert!(dir.join("会被删掉.md").is_file());
+
+    store.note_delete(&gone.id).unwrap();
+
+    let second = store.note_export_dir(dir.to_str().unwrap()).unwrap();
+    assert_eq!(second.notes, 1);
+    assert_eq!(second.removed.len(), 1, "已删笔记的旧文件必须被清掉");
+    assert!(second.removed[0].contains("会被删掉"));
+    assert!(!dir.join("会被删掉.md").exists());
+    assert!(dir.join("留下来.md").is_file(), "活着的笔记不能被误删");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// 清理只针对**带 `pastepanda_id`** 的文件。
+///
+/// 用户自己在 vault 里写的 `.md` 一律不动——导出说明页明确请他「把本目录当
+/// vault 打开」，而删文件不可逆。漏删一个陈旧文件只是它下次被当墓碑跳过，
+/// 误删一个用户的文件则拿不回来；两边代价不对等。
+#[test]
+fn test_vault_export_keeps_user_authored_md() {
+    let dir = tmp_vault_dir("keep");
+    let store = make_store();
+    store.note_create(None, "库里的", "正文").unwrap();
+
+    // 没有 frontmatter，也就没有 pastepanda_id
+    std::fs::write(dir.join("我自己写的.md"), "# 随手记\n\n不是 PastePanda 导出的").unwrap();
+    // frontmatter 有、但没有 id（比如从别处拿来的 Obsidian 笔记）
+    std::fs::write(dir.join("别人的.md"), "---\ntitle: 别人的\n---\n\n正文").unwrap();
+
+    let rep = store.note_export_dir(dir.to_str().unwrap()).unwrap();
+    assert!(
+        rep.removed.is_empty(),
+        "没有 pastepanda_id 的文件一个都不能删，实得 {:?}",
+        rep.removed
+    );
+    assert!(dir.join("我自己写的.md").is_file());
+    assert!(dir.join("别人的.md").is_file());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// 导入必须认出「这个 id 已经在回收站里」并**跳过**，而不是当新笔记建一条。
+///
+/// `note_get` 与 `find_note_by_title` 都带 `deleted_at IS NULL`，所以两级匹配都
+/// 认不出软删的笔记——以前于是落到 `note_create`，把用户刚删的笔记复活成
+/// 一条**新 id** 的笔记（而回收站里那条还在）。注意本例删完**没有重新导出**：
+/// 手上那个 vault 就是陈旧的，导出侧的清理帮不上忙，必须导入侧自己兜住。
+#[test]
+fn test_vault_import_skips_note_in_trash() {
+    let dir = tmp_vault_dir("trash");
+    let store = make_store();
+    let n = store.note_create(None, "删了又导回来", "正文").unwrap();
+    store.note_export_dir(dir.to_str().unwrap()).unwrap();
+
+    store.note_delete(&n.id).unwrap();
+    assert_eq!(store.note_count(), 0);
+
+    let rep = store.note_import_dir(dir.to_str().unwrap()).unwrap();
+    assert_eq!(rep.created, 0, "不能把回收站里的笔记复活成一条新笔记");
+    assert_eq!(rep.updated, 0, "也不能把正文写进一条还在回收站里的笔记");
+    assert_eq!(rep.in_trash.len(), 1, "跳过了就必须报出来（规则 #15.3）");
+    assert!(rep.in_trash[0].contains("删了又导回来"));
+    assert_eq!(store.note_count(), 0, "库里不该多出任何笔记");
+
+    // 原来那条还安安静静躺在回收站里，用户可以自己恢复
+    let trashed = store.note_list_deleted(10).unwrap();
+    assert_eq!(trashed.len(), 1);
+    assert_eq!(trashed[0].id, n.id);
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// 深目录（超过 [`MAX_FOLDER_DEPTH`]）被平接，**且平接后的同名文件不能互相覆盖**。
+///
+/// 这是一个真丢数据的回归用例：以前 `A/B/C/D/x.md` 与 `A/B/C/E/x.md` 平接后
+/// 都变成【文件夹 C + 标题 x】，第二个文件会命中第一个刚建出的笔记并
+/// `note_update` **覆盖掉它的正文**——两篇不同的笔记导完只剩一篇，
+/// 而报告显示「新增 1、更新 1」，数字看上去完全正常。
+#[test]
+fn test_vault_import_deep_dirs_flatten_without_overwriting() {
+    let dir = tmp_vault_dir("deep");
+    // 目录比上限深一层，最后两个兄弟目录平接后会落进同一个文件夹。
+    //
+    // ❗ 层数**跟着常量算**而不写死：上限从 3 改到 4 的那一刻，原先写死的
+    //   `A/B/C/D` 就变成合法深度了——用例仍然绿，但它已经不再测平接（默默失效）。
+    let mut base = dir.clone();
+    for i in 0..MAX_FOLDER_DEPTH {
+        base = base.join(format!("L{}", i + 1));
+    }
+    let d = base.join("D");
+    let e = base.join("E");
+    std::fs::create_dir_all(&d).unwrap();
+    std::fs::create_dir_all(&e).unwrap();
+    // 两个文件同名同标题，但正文不同。外部 vault 没有 pastepanda_id，
+    // 所以必然走【文件夹 + 标题】那一级匹配——也就是出事的那条路。
+    std::fs::write(d.join("x.md"), "---\ntitle: x\n---\n\nD 里的内容").unwrap();
+    std::fs::write(e.join("x.md"), "---\ntitle: x\n---\n\nE 里的内容").unwrap();
+
+    let store = make_store();
+    let rep = store.note_import_dir(dir.to_str().unwrap()).unwrap();
+
+    // 核心断言：两篇都得进来。修之前这里是 created=1 / updated=1。
+    assert_eq!(rep.created, 2, "两个不同源文件必须各建一条，不能互相覆盖");
+    assert_eq!(rep.updated, 0);
+    // 平接要有痕迹（以前这个降级完全不告知）
+    assert_eq!(rep.flattened, 2, "两篇的目录都超了上限");
+    // 上限要跟着报告发出去，否则前端只能写死数字
+    assert_eq!(rep.max_depth, MAX_FOLDER_DEPTH);
+    // 撞车的那一篇要报出相对路径（光报 `x.md` 用户分不出是哪个）
+    assert_eq!(rep.collided.len(), 1, "第二个文件才算撞车，实得 {:?}", rep.collided);
+    assert!(
+        rep.collided[0].contains('/'),
+        "撞车报告要带相对路径，实得 {:?}",
+        rep.collided[0]
+    );
+    assert!(rep.failed.is_empty(), "平接不是失败，不该进 failed：{:?}", rep.failed);
+
+    // 两份正文都在库里（这才是「没丢数据」的真正断言）
+    let notes = store.note_list("all", &[], 50, 0).unwrap();
+    assert!(notes.iter().any(|n| n.content.contains("D 里的内容")));
+    assert!(notes.iter().any(|n| n.content.contains("E 里的内容")));
+
+    // 深度封顶：只建到上限那一层，最深那对兄弟目录不会变成文件夹
+    let folders = store.folder_list().unwrap();
+    assert!(folders.iter().all(|f| f.depth <= MAX_FOLDER_DEPTH));
+    assert!(!folders.iter().any(|f| f.name == "D" || f.name == "E"));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// 单篇失败（这里用超大文件触发）**只让那一篇失败**，整次报告照旧返回。
+///
+/// 修两件事：
+/// ① 以前这条路上**一个大小限制都没有**（裸 `read_to_string`）；
+/// ② 以前中途任何一步出错都是 `?` 直接抛出，已累计的 created/updated 随之丢弃
+///   ——用户只看到「导入失败」，但库里已经进了一批。
+#[test]
+fn test_vault_import_oversize_file_does_not_sink_the_whole_run() {
+    let dir = tmp_vault_dir("oversize");
+    std::fs::create_dir_all(&dir).unwrap();
+    // 刚刚超过 10MB 上限
+    let big = "a".repeat(10 * 1024 * 1024 + 64);
+    std::fs::write(dir.join("大家伙.md"), &big).unwrap();
+    std::fs::write(dir.join("正常的.md"), "---\ntitle: 正常的\n---\n\n正文").unwrap();
+
+    let store = make_store();
+    let rep = store.note_import_dir(dir.to_str().unwrap()).unwrap();
+
+    // 正常的那篇照导，整次不被拖垮
+    assert_eq!(rep.created, 1, "大文件不该拖垮其它文件");
+    assert_eq!(rep.failed.len(), 1, "大文件要进 failed，实得 {:?}", rep.failed);
+    // 失败条目要**带原因**，不能只给个文件名（规则 #15.3）
+    assert!(
+        rep.failed[0].contains("过大"),
+        "失败原因要说得出是太大，实得 {:?}",
+        rep.failed[0]
+    );
+    // 大文件没进库
+    let notes = store.note_list("all", &[], 50, 0).unwrap();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].title, "正常的");
 
     std::fs::remove_dir_all(&dir).ok();
 }

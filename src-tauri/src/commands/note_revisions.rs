@@ -26,6 +26,16 @@ pub fn note_revision_get(
     store.note_revision_get(rev_id)
 }
 
+/// 锚定 / 解除锚定一份快照（W2b）。锚定的那一份永不被 20 份上限挤掉。
+#[tauri::command]
+pub fn note_revision_pin(
+    store: State<DataStore>,
+    rev_id: i64,
+    pinned: bool,
+) -> Result<(), String> {
+    store.note_revision_pin(rev_id, pinned)
+}
+
 /// 恢复到指定快照，返回恢复后的笔记。
 ///
 /// 内部会**先把当前版存成一份快照**，所以恢复可撤销。
