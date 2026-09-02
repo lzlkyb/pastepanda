@@ -15,6 +15,11 @@ import { NoteTemplateRows } from "./NoteTemplateRows";
 import { HotkeyRecorder } from "./HotkeyRecorder";
 import { chainList, type ChainDef } from "@/lib/api/chains";
 import { LanSyncPanel } from "./LanSyncPanel";
+import { McpServerPanel } from "./McpServerPanel";
+import { useMcpServer } from "@/hooks/useMcpServer";
+// promise 形式的确认框。本文件里那两个 pending 状态 + <ConfirmDialog> 是旧写法；
+// 开关类动作用 await 一行就完了，不值得再活一个状态。
+import { confirmDialog } from "@/lib/confirm";
 import { DeepCleanDialog } from "@/components/DeepCleanDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { WeekReportDialog } from "@/components/WeekReportDialog";
@@ -106,6 +111,58 @@ export function GeneralTab({
       setPendingCleanup({ days: next, count: null });
     }
   }, [cleanupDays, config.current_workspace, updateAndSave]);
+
+  // 回收站保留天数（W1 / R3）。**与上面那个是两回事**：那个管「没沉淀过的
+  // 剪贴板流水」，这个管「用户亲手删的笔记」——把历史设成 7 天的人不是在说
+  // 删的笔记也只给 7 天，所以不能共用一个配置项。
+  const trashDays = config.note_trash_days;
+  const [pendingTrash, setPendingTrash] = useState<{ days: number; count: number | null } | null>(null);
+
+  // 同上面的口径：变宽松（关掉 / 改大）不会产生新的删除，直接生效；
+  // 变严格先拿真数字弹二次确认。不这么做就是重犯剪贴板那边修过的同一个 bug
+  // （「点即生效，下一小时静默删一批」）——而这边删的是笔记，更痛。
+  const handlePickTrashDays = useCallback(async (next: number) => {
+    if (next === trashDays) return;
+    if (next <= 0 || (trashDays > 0 && next > trashDays)) {
+      await updateAndSave({ note_trash_days: next });
+      return;
+    }
+    const { noteCountExpired } = await import("@/lib/api/notes");
+    const n = await noteCountExpired(next);
+    // n === null 是统计失败：照弹确认，只是不报具体条数。
+    // 不能因为统计失败就静默改——那正好把安全网拆了。
+    if (n === 0) {
+      await updateAndSave({ note_trash_days: next });
+      return;
+    }
+    setPendingTrash({ days: next, count: n });
+  }, [trashDays, updateAndSave]);
+
+  // 知识库 MCP 服务（M4）。轮询 / 可见性门控 / 启动失败事件都在 hook 里。
+  const mcp = useMcpServer(toast);
+
+  /**
+   * 开启前先弹确认，关闭不弹。
+   *
+   * **每次开启都弹，不只首次**：记「首次」要新增一个持久化标志，
+   * 而那个标志一旦写错或被重置，后果是「静默地把全部笔记开放出去」。
+   * 开启本来就是个低频动作，多确认一次的代价远小于那个风险。
+   *
+   * confirmDialog 只吃纯字符串（无富文本），所以后果只能靠句子本身说清楚。
+   */
+  const handleToggleMcp = useCallback(async (next: boolean) => {
+    if (next) {
+      const ok = await confirmDialog({
+        title: "开启知识库 MCP 服务？",
+        message:
+          "开启后，本机任何能拿到访问令牌的程序都可以读取你的全部笔记。服务只监听 127.0.0.1，局域网内其它机器连不上；目前只能读，不会新建、修改或删除笔记。",
+        confirmText: "开启服务",
+        variant: "warning",
+      });
+      if (!ok) return;
+    }
+    await mcp.setEnabled(next);
+  }, [mcp]);
 
   // 深度清理弹窗开关（数据管理 → 深度清理）
   const [showDeepClean, setShowDeepClean] = useState(false);
@@ -542,6 +599,37 @@ export function GeneralTab({
           ))}
         </div>
       </div>
+      {/* 回收站保留天数（W1 / R3）。紧跟在自动清理后面，但文案必须把
+          「这是笔记、那是剪贴板」说清楚——两行长得一样，误认了就是删错东西。 */}
+      <div className={styles.sRow}>
+        <span className={`${styles.sRowIcon}`} style={{ background: "linear-gradient(135deg, #6366F1, #8B5CF6)" }}>♻</span>
+        <div className={`${styles.sRowBody}`}>
+          <div className={`${styles.sRowLabel}`}>
+            笔记回收站
+            <HelpTooltip
+              tooltip="删掉的笔记在回收站保留多久，到期自动销毁"
+              detailTitle="笔记回收站"
+              detail={<>
+                <p>删掉的笔记不会立即消失，而是进入<b>知识库侧栏底部的回收站</b>，随时可以恢复。</p>
+                <p>📌 连它的<b>历史版本与标签一起保留</b>，恢复后原样回来</p>
+                <p>📌 回收站里的笔记<b>不参与搜索</b>，也不算进笔记总数</p>
+                <p>⚠️ 这与上面的「自动清理」<b>是两回事</b>：那个管剪贴板历史，这个管笔记</p>
+                <p>⚠️ 设为「关」则永久保留，只能在回收站里手动清</p>
+              </>}
+            />
+          </div>
+          <div className={`${styles.sRowDesc}`}>删掉的笔记先进回收站，超过该天数后自动销毁（不可恢复）</div>
+        </div>
+        <div className={styles.sCleanup}>
+          {CLEANUP_OPTIONS.map((opt, idx) => (
+            <button key={`trash-${opt.value ?? idx}`}
+              className={`${styles.sCleanupOpt}${trashDays === opt.value ? ` ${styles.active}` : ""}`}
+              onClick={() => { void handlePickTrashDays(opt.value); }}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <ToggleRow icon={<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M8.6 8.6 18 18M15.4 8.6 6 18"/></svg>} gradient="linear-gradient(135deg, #10B981, #34C759)" label="自动去除空白" desc="复制时去除首尾空白字符" value={config.auto_strip} onChange={(v) => updateAndSave({ auto_strip: v })}
         tooltip="粘贴代码时尤其有用，避免多余缩进"
         detailTitle="自动去除空白"
@@ -827,6 +915,36 @@ export function GeneralTab({
         }} />
       {config.lan_sync_enabled && (
         <LanSyncPanel toast={toast} />
+      )}
+
+      {/* ── 知识库 MCP 服务（M4）──
+          放在局域网同步后面：两者都是「开一个本地服务让别人连」，心智模型一致。
+          关态只有这一行开关；开了才展开面板（同 LanSyncPanel 的做法）。 */}
+      <div className={styles.sSection}>知识库 MCP 服务</div>
+      <ToggleRow icon="🧩" gradient="linear-gradient(135deg, #8B5CF6, #6366F1)"
+        label="知识库 MCP 服务"
+        desc="让 Claude Code 等 AI 工具读你的笔记（仅本机，需令牌）"
+        value={mcp.status.running}
+        tooltip="在本机开一个只监听回环地址的 MCP 服务，AI 工具凭令牌搜索与读取笔记"
+        detailTitle="知识库 MCP 服务"
+        detail={<>
+          <p>开启后，Claude Code 这类支持 MCP 的工具可以<b>搜索、列举、读取你的笔记</b>。</p>
+          <p>📌 只监听 <b>127.0.0.1 回环地址</b>，局域网内其它机器连不上</p>
+          <p>📌 每个请求都要带<b>访问令牌</b>，令牌加密存在本机</p>
+          <p>⚠️ 目前<b>只能读，不能写</b>：它不会新建、修改或删除任何笔记</p>
+          <p>⚠️ 开着时，<b>能拿到令牌的程序就能读你全部的笔记</b></p>
+        </>}
+        onChange={(v) => void handleToggleMcp(v)}
+      />
+      {mcp.status.running && (
+        <McpServerPanel
+          status={mcp.status}
+          busy={mcp.busy}
+          startError={mcp.startError}
+          onSetPort={mcp.setPort}
+          onDismissError={mcp.dismissError}
+          toast={toast}
+        />
       )}
 
       {/* ── 快捷键 ── */}
@@ -1214,6 +1332,25 @@ export function GeneralTab({
           if (days !== undefined) void updateAndSave({ auto_cleanup_days: days });
         }}
         onCancel={() => setPendingCleanup(null)}
+      />
+      {/* 回收站保留天数改短的二次确认（W1 / R3）。同上面那个的理由，
+          但这边销毁的是笔记连历史版本，必须说清楚。 */}
+      <ConfirmDialog key="trash-days-confirm"
+        open={!!pendingTrash}
+        title="确认缩短回收站保留天数"
+        message={pendingTrash
+          ? (pendingTrash.count === null
+              ? `改为保留 ${pendingTrash.days} 天后，回收站里超期的笔记与它们的历史版本将在下次自动清理时被永久删除，无法撤销（本次未能统计出具体条数）。确认？`
+              : `改为保留 ${pendingTrash.days} 天后，回收站里将有 ${pendingTrash.count} 条笔记与它们的历史版本在下次自动清理时被永久删除，无法撤销。确认？`)
+          : ""}
+        confirmText="确认修改"
+        variant="danger"
+        onConfirm={() => {
+          const days = pendingTrash?.days;
+          setPendingTrash(null);
+          if (days !== undefined) void updateAndSave({ note_trash_days: days });
+        }}
+        onCancel={() => setPendingTrash(null)}
       />
     </>
   );
