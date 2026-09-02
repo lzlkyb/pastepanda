@@ -38,14 +38,14 @@ const MAX_CONCURRENCY: usize = 64;
 
 /// 交给 handler 的共享上下文。
 ///
-/// 协议壳阶段里没有 `AppHandle`：handler 不碰任何数据，接上一个也只是摆设。
-/// 步骤 3 接真实查询时会注入一个数据源（`Arc<dyn KbSource>`）而**不是** `AppHandle`，
-/// 因为那样过线测试可以直接塞一个临时库的 `DataStore`，
-/// 不必去造 Tauri App——而 `tauri::test::mock_app()` 那条路已经验过是不通的
-/// （它要的 `test` feature 会把 lib test 二进制链到本机不存在的 `ProcessPrng`，
-/// 详见 Cargo.toml 里那段警告）。
+/// 数据源注入的是 `Arc<dyn KbSource>` 而**不是** `AppHandle`：
+/// 这样过线测试能直接塞一个可控的假实现，不必去造 Tauri App
+/// —— `tauri::test::mock_app()` 那条路已验过在本机不通（它要的 `test` feature
+/// 会把 lib test 二进制链到本机不存在的 `ProcessPrng`，详见 Cargo.toml 的警告）。
 #[derive(Clone)]
 struct Ctx {
+    /// 三个只读工具背后的数据访问。
+    kb: Arc<dyn super::source::KbSource>,
     /// 当前明文令牌。只在内存，不经任何命令层外送（除了用户主动要看的那一个）。
     ///
     /// 用 `Arc<Mutex<String>>` 而不是 `Arc<String>`：与 [`McpServer`] 共享同一把，
@@ -137,7 +137,12 @@ impl McpServer {
     /// 🔴 **端口被占时报错，不自动漂到下一个端口**（决策 D5）。
     /// 端口漂了，用户已经填进 Claude Code 配置的地址就失效了，
     /// 而失效方式是「服务在跑但客户端连不上」—— 比直接启不了难查得多。
-    pub fn start(&self, token: String, port: u16) -> Result<u16, String> {
+    pub fn start(
+        &self,
+        kb: Arc<dyn super::source::KbSource>,
+        token: String,
+        port: u16,
+    ) -> Result<u16, String> {
         let mut guard = self
             .running
             .lock()
@@ -160,7 +165,7 @@ impl McpServer {
             .map_err(|e| format!("监听套接字设为非阻塞失败：{}", e))?;
 
         self.set_token(token)?;
-        let router = build_router(self.token.clone());
+        let router = build_router(kb, self.token.clone());
         let (tx, rx) = oneshot::channel::<()>();
 
         tauri::async_runtime::spawn(async move {
@@ -203,8 +208,11 @@ impl McpServer {
 }
 
 /// 组装路由与中间件。抽成函数是为了测试能直接拿到真 Router。
-pub(super) fn build_router(token: Arc<Mutex<String>>) -> Router {
-    let ctx = Ctx { token };
+pub(super) fn build_router(
+    kb: Arc<dyn super::source::KbSource>,
+    token: Arc<Mutex<String>>,
+) -> Router {
+    let ctx = Ctx { kb, token };
     Router::new()
         .route("/health", get(health_handler))
         .route("/mcp", post(mcp_handler))
@@ -254,6 +262,6 @@ async fn mcp_handler(State(ctx): State<Ctx>, headers: HeaderMap, body: Bytes) ->
         return (reject.status(), Json(json!({ "error": reject.message() }))).into_response();
     }
 
-    let resp = super::protocol::dispatch(&body).await;
+    let resp = super::protocol::dispatch(&ctx.kb, &body).await;
     (StatusCode::OK, Json(resp)).into_response()
 }

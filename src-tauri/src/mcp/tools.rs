@@ -4,7 +4,18 @@
 //! 尤其是 `kb_search` 的取词口径（见下）—— 那是个真存在的限制，
 //! 不写进描述模型就会拿单字关键词去搜，拿到零命中后以为「库里没这个」。
 
+use std::sync::Arc;
+
 use serde_json::{json, Value};
+
+use super::source::{KbSource, ListOutcome, SearchOutcome};
+use crate::data_store::Note;
+
+/// 搜索/列表结果里每篇给多长的摘要。
+///
+/// 不返全文是故意的：一次 `kb_search` 可能拉 20 篇，全文丢进上下文窗口
+/// 既浪费又淡化重点。模型看完摘要再用 `kb_read` 取它真需要的那一篇。
+const BRIEF_CHARS: usize = 200;
 
 /// 工具层报错。`code` 用 JSON-RPC 错误码（见 [`super::protocol`]）。
 ///
@@ -137,7 +148,7 @@ pub fn definitions() -> Vec<Value> {
 const TOOL_NAMES: &[&str] = &["kb_search", "kb_read", "kb_list"];
 
 /// 分发 `tools/call`。
-pub async fn call(params: Option<&Value>) -> Result<Value, ToolError> {
+pub async fn call(kb: &Arc<dyn KbSource>, params: Option<&Value>) -> Result<Value, ToolError> {
     let Some(params) = params else {
         return Err(ToolError::invalid_params("tools/call 缺少 params"));
     };
@@ -153,14 +164,232 @@ pub async fn call(params: Option<&Value>) -> Result<Value, ToolError> {
         )));
     }
 
-    // ===== M4 步骤 2：协议壳 =====
-    // 工具实现在步骤 3 接入。现在返一个**能看出是占位**的执行失败：
-    // 这样冒烟测试能把「协议通了」与「查询通了」分开验——客户端能列出工具并
-    // 拿到这句话，就说明握手/鉴权/分发全部正常，剩下的只是查询。
-    Ok(error_result(format!(
-        "{} 尚未实现（MCP 服务当前只到协议壳阶段）。协议握手与鉴权已走通。",
-        name
-    )))
+    let args = params.get("arguments");
+    match name {
+        "kb_read" => call_read(kb, args).await,
+        "kb_list" => call_list(kb, args).await,
+        "kb_search" => call_search(kb, args).await,
+        // TOOL_NAMES 已在上面拦过，这里不可达；不写 `unreachable!()` 是因为
+        // `panic = "abort"` 下一次误判就是整个应用死掉（R3）。
+        other => Err(ToolError::invalid_params(format!(
+            "未接入的工具：{}",
+            other
+        ))),
+    }
+}
+
+// ===== 工具实现 =====
+
+async fn call_read(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Value, ToolError> {
+    let Some(id) = arg_str(args, "id") else {
+        return Err(ToolError::invalid_params("kb_read 需要参数 id"));
+    };
+    let id = id.to_string();
+    let kb2 = kb.clone();
+    let id2 = id.clone();
+    let found = match blocking(move || kb2.read(&id2)).await {
+        Ok(v) => v,
+        Err(e) => return Ok(error_result(format!("读取失败：{}", e))),
+    };
+    let Some(note) = found else {
+        // 不假装成空内容：模型需要知道是「id 不存在」而不是「这篇是空的」。
+        return Ok(error_result(format!(
+            "没有 id 为 {} 的笔记。id 要从 kb_search / kb_list 的结果里拿，不要自己造。",
+            id
+        )));
+    };
+    let folder = folder_label(kb, &note).await;
+    Ok(text_result(format_full(&note, folder.as_deref())))
+}
+
+async fn call_list(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Value, ToolError> {
+    let folder = arg_str(args, "folder").map(|s| s.to_string());
+    let tag = arg_str(args, "tag").map(|s| s.to_string());
+    let limit = arg_u32(args, "limit", 20, 1, 50);
+    let offset = arg_u32(args, "offset", 0, 0, u32::MAX);
+
+    let kb2 = kb.clone();
+    let (f, t) = (folder.clone(), tag.clone());
+    let outcome = match blocking(move || kb2.list(f.as_deref(), t.as_deref(), limit, offset)).await
+    {
+        Ok(v) => v,
+        Err(e) => return Ok(error_result(format!("列表查询失败：{}", e))),
+    };
+
+    match outcome {
+        // 🔴 R6：未知筛选条件必须明说，**不能**当成「不筛」返回全库第一页。
+        // 那种退化对模型是隐形的：它拿到一堆看似合理的结果，完全不知道自己的
+        // 条件被静默丢掉了，然后把无关的笔记当成证据给用户。
+        ListOutcome::UnknownFolder(name) => Ok(error_result(format!(
+            "没有叫「{}」的文件夹。未按文件夹筛选的结果并未返回——请先不带 folder 参数调一次看看有哪些文件夹。",
+            name
+        ))),
+        ListOutcome::UnknownTag(name) => Ok(error_result(format!(
+            "没有叫「{}」的标签。未按标签筛选的结果并未返回——请先不带 tag 参数调一次看看有哪些标签。",
+            name
+        ))),
+        ListOutcome::Ok(notes) if notes.is_empty() => {
+            Ok(text_result("这个范围内没有笔记。若带了 offset，可能是已经翻过最后一页。"))
+        }
+        ListOutcome::Ok(notes) => {
+            let mut out = format!("共 {} 篇（按最近修改倒序）：\n", notes.len());
+            for n in &notes {
+                let folder = folder_label(kb, n).await;
+                out.push('\n');
+                out.push_str(&format_brief(n, folder.as_deref()));
+            }
+            out.push_str("\n用 kb_read(id) 取其中一篇的全文。");
+            Ok(text_result(out))
+        }
+    }
+}
+
+async fn call_search(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Value, ToolError> {
+    let Some(query) = arg_str(args, "query") else {
+        return Err(ToolError::invalid_params("kb_search 需要参数 query"));
+    };
+    let query = query.to_string();
+    let limit = arg_u32(args, "limit", 5, 1, 20);
+
+    let kb2 = kb.clone();
+    let q = query.clone();
+    let outcome = match blocking(move || kb2.search(&q, limit)).await {
+        Ok(v) => v,
+        // 🔴 检索挂了要报错，不能假装成「没找到」（规则 #15.3）——
+        // 后者会被模型转述成「你库里没记过」，那是个看不出来的错答案。
+        Err(e) => return Ok(error_result(format!("检索失败：{}", e))),
+    };
+
+    match outcome {
+        SearchOutcome::NoSearchableTerms => Ok(error_result(format!(
+            "「{}」里没有可检索的词（单个汉字、单个字母/数字、以及全是高频虚词的组合都会被丢弃）。\n\
+             **这不代表库里没有。** 把目标词放进一个更长的短语里重试，或改用 kb_list 浏览。",
+            query
+        ))),
+        SearchOutcome::NoMatch => Ok(text_result(format!(
+            "没有匹配到「{}」的笔记。\n\
+             **零命中不等于库里没有** —— 先换个关键词重试，或用 kb_list 看看库里到底有什么。",
+            query
+        ))),
+        SearchOutcome::Hits(notes) => {
+            let mut out = format!("找到 {} 篇相关笔记（按相关度排序）：\n", notes.len());
+            for n in &notes {
+                let folder = folder_label(kb, n).await;
+                out.push('\n');
+                out.push_str(&format_brief(n, folder.as_deref()));
+            }
+            out.push_str("\n看完摘要觉得哪篇有用，用 kb_read(id) 取它的全文。");
+            Ok(text_result(out))
+        }
+    }
+}
+
+// ===== 辅助 =====
+
+/// R2：**所有 DB 调用都必须走这里。**
+///
+/// `DataStore` 用的是 `std::sync::Mutex`，它的 guard 不是 `Send`；
+/// 直接在 async 上下文里锁，轻则堵住 executor 线程（查询期间整个服务停响应），
+/// 重则跨 await 持有 guard 直接编译不过。
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    match tokio::task::spawn_blocking(f).await {
+        Ok(r) => r,
+        // 不静默（规则 #15.3）：任务 panic 或被取消时要让调用方看得见。
+        Err(e) => Err(format!("查询任务异常终止：{}", e)),
+    }
+}
+
+/// 从 `arguments` 里取非空字符串参数。空串与缺失同一处理——
+/// 模型经常传 `""` 表示「不筛」，拿空串去查会变成「找不到叫空的标签」。
+fn arg_str<'a>(args: Option<&'a Value>, key: &str) -> Option<&'a str> {
+    args?
+        .get(key)?
+        .as_str()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+}
+
+/// 取整数参数并**夹**到 `[min, max]`。
+///
+/// 夹而不报错：schema 里已声明了范围，模型偶尔越界时给它一个可用结果
+/// 比让整次调用失败更有用。负数 / 非数字走 `as_u64()` 自然落回默认值。
+fn arg_u32(args: Option<&Value>, key: &str, default: u32, min: u32, max: u32) -> u32 {
+    args.and_then(|a| a.get(key))
+        .and_then(|v| v.as_u64())
+        .map(|v| v.clamp(min as u64, max as u64) as u32)
+        .unwrap_or(default)
+}
+
+/// 按**字符**（不是字节）截断。
+///
+/// 🔴 必须用 `chars()`：直接切字节遇中文会在非字符边界上 panic，
+/// 而 `panic = "abort"` 下一次 panic 就是整个应用死掉（R3）。
+fn truncate_chars(s: &str, n: usize) -> String {
+    let mut out: String = s.chars().take(n).collect();
+    if s.chars().nth(n).is_some() {
+        out.push('…');
+    }
+    out
+}
+
+/// 笔记所在文件夹的显示名。拿不到就不显示（不报错）。
+async fn folder_label(kb: &Arc<dyn KbSource>, note: &Note) -> Option<String> {
+    let id = note.folder_id.clone()?;
+    let kb2 = kb.clone();
+    blocking(move || Ok(kb2.folder_name(&id))).await.ok()?
+}
+
+/// 列表/搜索里的一条。**id 放在最前面**：模型接下来就要拿它去调 kb_read。
+fn format_brief(n: &Note, folder: Option<&str>) -> String {
+    let title = if n.title.trim().is_empty() {
+        "（无标题）"
+    } else {
+        n.title.trim()
+    };
+    // 有 AI 摘要就用摘要，否则截正文——与界面列表同口径。
+    let brief = match n
+        .summary
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(s) => truncate_chars(s, BRIEF_CHARS),
+        None => truncate_chars(n.content.trim(), BRIEF_CHARS),
+    };
+    let mut meta = format!("更新于 {}", n.updated_at);
+    if let Some(f) = folder {
+        meta.push_str(&format!(" ｜ 文件夹：{}", f));
+    }
+    if !n.tags.is_empty() {
+        let names: Vec<&str> = n.tags.iter().map(|t| t.name.as_str()).collect();
+        meta.push_str(&format!(" ｜ 标签：{}", names.join("、")));
+    }
+    format!("id={}\n【{}】\n{}\n{}\n", n.id, title, meta, brief)
+}
+
+/// `kb_read` 的全文输出。
+fn format_full(n: &Note, folder: Option<&str>) -> String {
+    let title = if n.title.trim().is_empty() {
+        "（无标题）"
+    } else {
+        n.title.trim()
+    };
+    let mut out = format!(
+        "【{}】\nid={}\n创建于 {} ｜ 更新于 {}",
+        title, n.id, n.created_at, n.updated_at
+    );
+    if let Some(f) = folder {
+        out.push_str(&format!(" ｜ 文件夹：{}", f));
+    }
+    if !n.tags.is_empty() {
+        let names: Vec<&str> = n.tags.iter().map(|t| t.name.as_str()).collect();
+        out.push_str(&format!(" ｜ 标签：{}", names.join("、")));
+    }
+    out.push_str("\n\n---\n\n");
+    out.push_str(n.content.trim());
+    out
 }
 
 #[cfg(test)]

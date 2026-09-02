@@ -455,8 +455,9 @@ pub fn run() {
             // 知识库 MCP Server（M4）。只有配置里明确开过才启。
             let mcp_server = mcp::McpServer::new();
             if mcp_enabled {
+                let kb = std::sync::Arc::new(mcp::source::AppKbSource::new(handle.clone()));
                 let started = mcp::token::load_or_create(&app_dir)
-                    .and_then(|token| mcp_server.start(token, mcp_port));
+                    .and_then(|token| mcp_server.start(kb, token, mcp_port));
                 match started {
                     Ok(port) => {
                         log::info!("[MCP] 知识库服务已启用：http://127.0.0.1:{}/mcp", port)

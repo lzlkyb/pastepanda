@@ -17,6 +17,7 @@
 pub mod auth;
 pub mod protocol;
 pub mod server;
+pub mod source;
 pub mod token;
 pub mod tools;
 

@@ -93,7 +93,8 @@ pub fn mcp_set_port(
     if server.is_running() {
         server.stop();
         let token = mcp::token::load_or_create(&app_dir(&app)?)?;
-        server.start(token, port)?;
+        let kb = std::sync::Arc::new(mcp::source::AppKbSource::new(app.clone()));
+        server.start(kb, token, port)?;
     }
     persist_port(&store, port)?;
     Ok(server.status(port))
@@ -140,7 +141,8 @@ pub fn mcp_set_enabled(
     if enabled {
         let token = mcp::token::load_or_create(&app_dir(&app)?)?;
         let port = configured_port(&store);
-        server.start(token, port)?;
+        let kb = std::sync::Arc::new(mcp::source::AppKbSource::new(app.clone()));
+        server.start(kb, token, port)?;
         if let Err(e) = persist_enabled(&store, true) {
             server.stop();
             return Err(format!("服务已启动但配置保存失败，已回滚到关闭：{}", e));

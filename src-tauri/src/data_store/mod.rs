@@ -64,7 +64,9 @@ pub use quota::{
 };
 pub use kb_inbox::{InboxCandidate, InboxGroupCount, InboxViewOpts};
 pub use kb_shadow::ShadowStats;
-pub use note::{Note, NoteGroupCount, NoteViewOpts};
+// `question_to_or_expr` 对外暴露：MCP 的 kb_search 要用它分开「问题里没拆出词」
+// 与「搜了但没命中」——对模型而言这两种的下一步完全不同。
+pub use note::{question_to_or_expr, Note, NoteGroupCount, NoteViewOpts};
 pub use note_folder::{NoteFolder, MAX_FOLDER_DEPTH};
 pub use note_ai::{parse_ai_tags, AI_TAG_SOURCE};
 pub use note_daily::DailyAppend;

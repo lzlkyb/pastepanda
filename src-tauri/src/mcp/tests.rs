@@ -8,6 +8,84 @@ use serde_json::{json, Value};
 
 const TOKEN: &str = "test-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
+/// 可控的假数据源。
+///
+/// 这正是把 `KbSource` 抽成 trait 的收益：不用造 Tauri App（那条路在本机不通，
+/// 见 `source.rs` 头部），也不用建临时库——**本模块要测的是 MCP 层**
+/// （参数解析、R6 不退化、输出形状），查询本身已由 `data_store::tests_qa` 盖住。
+struct FakeKb {
+    notes: Vec<crate::data_store::Note>,
+}
+
+impl FakeKb {
+    fn new() -> Self {
+        Self {
+            notes: vec![fake_note(
+                "n1",
+                "Rust 并发笔记",
+                "记了 tokio 与 spawn_blocking 的取舍。",
+            )],
+        }
+    }
+}
+
+fn fake_note(id: &str, title: &str, content: &str) -> crate::data_store::Note {
+    // 用 JSON 反序列化造：`Note` 字段很多且会增，手写构造会频繁被新字段撞坏。
+    // `#[serde(default)]` 的字段自动补齐。
+    serde_json::from_value(serde_json::json!({
+        "id": id,
+        "title": title,
+        "content": content,
+        "created_at": "2026-09-01 10:00:00",
+        "updated_at": "2026-09-02 11:00:00",
+        "tags": [],
+    }))
+    .expect("造假笔记失败（Note 的必填字段变了？）")
+}
+
+impl super::source::KbSource for FakeKb {
+    fn read(&self, id: &str) -> Result<Option<crate::data_store::Note>, String> {
+        Ok(self.notes.iter().find(|n| n.id == id).cloned())
+    }
+
+    fn list(
+        &self,
+        folder: Option<&str>,
+        tag: Option<&str>,
+        _limit: u32,
+        _offset: u32,
+    ) -> Result<super::source::ListOutcome, String> {
+        // 假实现里只认一个文件夹与一个标签，其余一律当未知——正好用来钉 R6。
+        if let Some(f) = folder {
+            if f != "技术" {
+                return Ok(super::source::ListOutcome::UnknownFolder(f.to_string()));
+            }
+        }
+        if let Some(t) = tag {
+            if t != "rust" {
+                return Ok(super::source::ListOutcome::UnknownTag(t.to_string()));
+            }
+        }
+        Ok(super::source::ListOutcome::Ok(self.notes.clone()))
+    }
+
+    fn search(&self, query: &str, _limit: u32) -> Result<super::source::SearchOutcome, String> {
+        // 照真实取词口径的形状做：单字 = 拆不出词
+        if query.chars().count() < 2 {
+            return Ok(super::source::SearchOutcome::NoSearchableTerms);
+        }
+        if query.contains("并发") {
+            Ok(super::source::SearchOutcome::Hits(self.notes.clone()))
+        } else {
+            Ok(super::source::SearchOutcome::NoMatch)
+        }
+    }
+
+    fn folder_name(&self, _folder_id: &str) -> Option<String> {
+        None
+    }
+}
+
 /// 起一个监听随机端口的真 server，返回 base URL。
 ///
 /// 端口用 0 而不是 17650：测试不能与用户真在跑的服务抢端口。
@@ -20,7 +98,8 @@ const TOKEN: &str = "test-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 /// 好在协议层本来也不需要 App：去掉它反而把 Ctx 简化了。
 async fn spawn_server() -> String {
     let token = std::sync::Arc::new(std::sync::Mutex::new(TOKEN.to_string()));
-    let router = super::server::build_router(token);
+    let kb: std::sync::Arc<dyn super::source::KbSource> = std::sync::Arc::new(FakeKb::new());
+    let router = super::server::build_router(kb, token);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("绑定随机端口失败");
@@ -201,16 +280,95 @@ async fn test_tools_call_unknown_vs_placeholder() {
     .await;
     assert_eq!(v["error"]["code"], super::protocol::ERR_INVALID_PARAMS);
 
-    // 已知工具但尚未实现 = 工具层失败（result + isError）。
-    // 这两者必须形状不同，否则冒烟测试分不清「协议挂了」还是「工具没接」。
+    // 已知工具缺必填参数 = 仍然是协议层错误（参数不合法，不是执行失败）
     let (_, v) = rpc(
         &base,
         json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/call",
-                "params": { "name": "kb_search", "arguments": { "query": "测试" } } }),
+                "params": { "name": "kb_search", "arguments": {} } }),
     )
     .await;
-    assert!(v.get("error").is_none(), "已知工具不应返 JSON-RPC error");
-    assert_eq!(v["result"]["isError"], true);
+    assert_eq!(v["error"]["code"], super::protocol::ERR_INVALID_PARAMS);
+}
+
+/// 取一次 tools/call 的纯文本结果（方便断言）。
+async fn call_text(base: &str, name: &str, args: Value) -> (String, bool) {
+    let (_, v) = rpc(
+        base,
+        json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": { "name": name, "arguments": args } }),
+    )
+    .await;
+    let text = v["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    let is_error = v["result"]["isError"].as_bool().unwrap_or(false);
+    (text, is_error)
+}
+
+#[tokio::test]
+async fn test_kb_read_hit_and_miss() {
+    let base = spawn_server().await;
+
+    let (text, is_err) = call_text(&base, "kb_read", json!({ "id": "n1" })).await;
+    assert!(!is_err);
+    assert!(text.contains("Rust 并发笔记"), "全文里应有标题：{}", text);
+    assert!(text.contains("spawn_blocking"), "全文里应有正文：{}", text);
+
+    // 不存在的 id 要明说，不能假装成空内容
+    let (text, is_err) = call_text(&base, "kb_read", json!({ "id": "不存在" })).await;
+    assert!(is_err);
+    assert!(text.contains("没有 id"), "{}", text);
+}
+
+#[tokio::test]
+async fn test_kb_list_unknown_filter_does_not_degrade() {
+    // 🔴 R6 的护栏：未知标签/文件夹必须明说，绝不能静默退化成
+    // 「不筛，返回全库第一页」——那种退化对模型是隐形的，
+    // 它会把无关的笔记当成符合条件的证据给用户。
+    let base = spawn_server().await;
+
+    let (text, is_err) = call_text(&base, "kb_list", json!({ "tag": "不存在的标签" })).await;
+    assert!(is_err, "未知标签必须报错而不是返全库");
+    assert!(text.contains("并未返回"), "要明说结果未返回：{}", text);
+    assert!(
+        !text.contains("Rust 并发笔记"),
+        "不得顺手把笔记列出来：{}",
+        text
+    );
+
+    let (text, is_err) = call_text(&base, "kb_list", json!({ "folder": "没这文件夹" })).await;
+    assert!(is_err);
+    assert!(!text.contains("Rust 并发笔记"), "{}", text);
+
+    // 已知标签正常返回，且带 id（模型接下来要拿它调 kb_read）
+    let (text, is_err) = call_text(&base, "kb_list", json!({ "tag": "rust" })).await;
+    assert!(!is_err);
+    assert!(text.contains("id=n1"), "列表里必须带 id：{}", text);
+}
+
+#[tokio::test]
+async fn test_kb_search_distinguishes_two_kinds_of_empty() {
+    // 🔴 两种「没结果」对模型的下一步完全不同，合并成空数组就只能让它猜，
+    // 而它猜错的后果是告诉用户「你库里没记过」。
+    let base = spawn_server().await;
+
+    let (hit, is_err) = call_text(&base, "kb_search", json!({ "query": "并发" })).await;
+    assert!(!is_err);
+    assert!(hit.contains("id=n1"), "{}", hit);
+
+    // 搜了但没命中
+    let (miss, _) = call_text(&base, "kb_search", json!({ "query": "烤鱼" })).await;
+    assert!(
+        miss.contains("零命中不等于"),
+        "要提醒模型别当成「库里没有」：{}",
+        miss
+    );
+
+    // 问题里压根没拆出词（单字）——文案必须与上面不同，否则白分了
+    let (no_terms, _) = call_text(&base, "kb_search", json!({ "query": "钱" })).await;
+    assert!(no_terms.contains("没有可检索的词"), "{}", no_terms);
+    assert_ne!(no_terms, miss, "两种空结果的文案不得相同");
 }
 
 #[tokio::test]

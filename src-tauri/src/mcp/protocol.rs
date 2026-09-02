@@ -68,7 +68,7 @@ pub fn err(id: Value, code: i32, message: impl Into<String>) -> Value {
 /// **总是返 HTTP 200 + JSON-RPC 体**（鉴权失败除外，那在 `server.rs` 拦）：
 /// JSON-RPC 的错误要走 `error` 字段，用 HTTP 状态码代替会让客户端拿不到
 /// `code` 与 `message`。
-pub async fn dispatch(raw: &[u8]) -> Value {
+pub async fn dispatch(kb: &std::sync::Arc<dyn super::source::KbSource>, raw: &[u8]) -> Value {
     let req: Value = match serde_json::from_slice(raw) {
         Ok(v) => v,
         Err(e) => return err(Value::Null, ERR_PARSE, format!("JSON 解析失败：{}", e)),
@@ -99,7 +99,7 @@ pub async fn dispatch(raw: &[u8]) -> Value {
 
         "tools/list" => ok(id, json!({ "tools": super::tools::definitions() })),
 
-        "tools/call" => match super::tools::call(params).await {
+        "tools/call" => match super::tools::call(kb, params).await {
             Ok(result) => ok(id, result),
             Err(e) => err(id, e.code, e.message),
         },
