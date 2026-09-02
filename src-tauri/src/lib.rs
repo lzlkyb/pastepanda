@@ -37,6 +37,8 @@ mod paste_engine;
 mod pinned_window;
 mod quick_paste;
 mod screenshot;
+// 本机自有凭证的哈希登记处（让剪贴板监听不把我们自己的令牌/密钥记进历史）
+pub mod secret_registry;
 mod tray_manager;
 mod win_foreground;
 

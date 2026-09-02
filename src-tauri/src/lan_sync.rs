@@ -175,6 +175,11 @@ pub struct LanSync {
 
 impl LanSync {
     pub fn new(device_id: String, pairing_key: String) -> Self {
+        // 登记哈希：配对密钥在设置页是个 readOnly 输入框，用户选中后按 Ctrl+C
+        // 是**系统级复制**，剪贴板监听会把它明文记进历史（开了局域网同步
+        // 还会同步到其他设备）。登记放在 `new` 与 `set_pairing_key` 两处而不是
+        // 命令层：命令层有三个入口，漏一个就是静默泄露。
+        crate::secret_registry::register(crate::secret_registry::SLOT_LAN_PAIRING, &pairing_key);
         Self {
             running: Arc::new(AtomicBool::new(false)),
             device_id,
@@ -199,6 +204,8 @@ impl LanSync {
 
     /// 更新运行时使用的配对密钥（持久化由调用方负责）
     pub fn set_pairing_key(&self, key: String) {
+        // 覆盖登记（旧密钥的哈希同时失效）——理由同 `new`。
+        crate::secret_registry::register(crate::secret_registry::SLOT_LAN_PAIRING, &key);
         if let Ok(mut guard) = self.pairing_key.lock() {
             *guard = key;
         }

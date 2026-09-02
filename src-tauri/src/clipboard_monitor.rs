@@ -315,6 +315,17 @@ fn read_bool_cache(cache: &std::sync::RwLock<bool>) -> bool {
 
 /// 修复 U36：判断文本是否应按敏感内容跳过记录（两条监听路径共用）
 fn should_skip_sensitive_with(skip_cache: &std::sync::RwLock<bool>, text: &str) -> bool {
+    // 🔴 自有凭证无条件跳过，**不看用户开关**，且必须在开关判断之前。
+    //
+    // 把我们自己发给用户的 MCP 令牌 / 局域网配对密钥记进历史，从来不是用户
+    // 「选择」要记的东西——而 `is_secret` 根本认不出它们（详见 `secret_registry`
+    // 头部：43 字符令牌过不了那个 `len % 4 == 0` 的卡）。
+    //
+    // 放在这个共用函数里 = 五条记录路径（text / rich / doc / doc-html / 轮询）
+    // 自动全覆盖，以后加新路径也不会漏。
+    if crate::secret_registry::is_own_secret(text) {
+        return true;
+    }
     if !read_bool_cache(skip_cache) {
         return false;
     }
@@ -2555,6 +2566,35 @@ mod tests {
         assert!(!is_excluded_app_with(&cache, ""));
         let empty = std::sync::RwLock::new(Vec::new());
         assert!(!is_excluded_app_with(&empty, "anything"));
+    }
+
+    #[test]
+    fn test_own_secret_skipped_even_when_switch_is_off() {
+        // 🔴 这条钉的是「自有凭证不看用户开关」。
+        //
+        // 背景：MCP 令牌是 43 字符 base64url，`is_secret` 的通用 base64 分支要求
+        // `len % 4 == 0`，43 % 4 == 3 永远不命中；它也没有任何已知前缀。
+        // 所以旧路径会把用户拷走的令牌明文记进 history——而那个令牌正是
+        // 用 DPAPI 加密落盘、专门避开明文存储的东西。
+        //
+        // 注意：登记处是**进程全局**的，而 cargo 默认并行跑测试。
+        // 这个串必须与 `secret_registry` 自己的用例不同，否则那边一登记，
+        // 这边的「未登记时不应跳过」就会随机红。
+        let token = "mNtKzQrVwXyBcDfGhJkLpQsTvWzAbCdEfGhIjKlMnOp";
+        let off = std::sync::RwLock::new(false);
+        assert!(
+            !should_skip_sensitive_with(&off, token),
+            "未登记时不应跳过（否则证明不了是登记起的作用）"
+        );
+
+        crate::secret_registry::register(crate::secret_registry::SLOT_MCP_TOKEN, token);
+        assert!(
+            should_skip_sensitive_with(&off, token),
+            "已登记的自有凭证必须跳过，即使「跳过敏感内容」开关是关的"
+        );
+        // 不相干的文本不受影响
+        assert!(!should_skip_sensitive_with(&off, "今天天气不错适合出门"));
+        crate::secret_registry::register(crate::secret_registry::SLOT_MCP_TOKEN, "");
     }
 
     #[test]

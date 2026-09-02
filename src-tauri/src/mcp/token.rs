@@ -65,7 +65,16 @@ pub fn load_or_create(app_dir: &Path) -> Result<String, String> {
         match std::fs::read(&path) {
             Ok(cipher) => match crate::dpapi::unprotect(&cipher, ENTROPY) {
                 Ok(plain) => match String::from_utf8(plain) {
-                    Ok(s) if !s.trim().is_empty() => return Ok(s.trim().to_string()),
+                    Ok(s) if !s.trim().is_empty() => {
+                        let token = s.trim().to_string();
+                        // 登记哈希，使用户拷走令牌时不会被剪贴板监听记成明文历史。
+                        // 放在这里（读出即登记）而不是命令层：漏一条路径就是静默泄露。
+                        crate::secret_registry::register(
+                            crate::secret_registry::SLOT_MCP_TOKEN,
+                            &token,
+                        );
+                        return Ok(token);
+                    }
                     Ok(_) => log::warn!("[MCP] 令牌文件为空，将重新生成"),
                     Err(_) => log::warn!("[MCP] 令牌内容不是合法文本，将重新生成"),
                 },
@@ -79,6 +88,7 @@ pub fn load_or_create(app_dir: &Path) -> Result<String, String> {
     }
     let token = generate()?;
     save(app_dir, &token)?;
+    crate::secret_registry::register(crate::secret_registry::SLOT_MCP_TOKEN, &token);
     log::info!("[MCP] 已生成新的访问令牌");
     Ok(token)
 }
@@ -87,6 +97,9 @@ pub fn load_or_create(app_dir: &Path) -> Result<String, String> {
 pub fn regenerate(app_dir: &Path) -> Result<String, String> {
     let token = generate()?;
     save(app_dir, &token)?;
+    // 覆盖登记：旧令牌的哈希要同时失效，否则用户日后复制一段恰好等于
+    // 旧令牌的文本会被莫名吞掉。
+    crate::secret_registry::register(crate::secret_registry::SLOT_MCP_TOKEN, &token);
     log::info!("[MCP] 访问令牌已重置，旧令牌作废");
     Ok(token)
 }
