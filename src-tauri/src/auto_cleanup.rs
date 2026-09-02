@@ -29,7 +29,12 @@ pub fn start(handle: AppHandle) {
     });
 }
 
-/// 读取最新配置并执行一次清理；有记录被清理时 emit 事件通知前端。
+/// 读取最新配置并执行一次清理。
+///
+/// ❗ **两项清理必须各自独立地判自己的开关。**原实现在
+/// `auto_cleanup_days == 0` 时直接 `return`；把回收站清理接在那之后的话，
+/// 「关掉了剪贴板自动清理」的用户会连回收站清理也永远不跑——
+/// 两个开关静默联动，而用户无从得知。
 fn run_once(handle: &AppHandle) {
     let store = match handle.try_state::<crate::data_store::DataStore>() {
         Some(s) => s,
@@ -42,6 +47,35 @@ fn run_once(handle: &AppHandle) {
             return;
         }
     };
+    cleanup_history(handle, &store, &config);
+    cleanup_note_trash(&store, &config);
+}
+
+/// 回收站超期清理（W1 / R3）。
+///
+/// 默认 30 天；`0` = 用户关掉了（`note_purge_expired` 自己会拦）。
+/// **缺省值取 30 而不是 0**：键不存在意味着「从没配过」，不是「要求关闭」。
+///
+/// 不发事件通知前端：回收站不是常驻视图，用户下次点进去自然拉到新数据；
+/// 为此推一个没人看的事件只会多一条前端监听路径。
+fn cleanup_note_trash(store: &crate::data_store::DataStore, config: &serde_json::Value) {
+    let days = config
+        .get("note_trash_days")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(30);
+    match store.note_purge_expired(days) {
+        Ok(n) if n > 0 => log::info!("[AutoCleanup] 回收站销毁 {} 条超期笔记", n),
+        Ok(_) => {}
+        Err(e) => log::warn!("[AutoCleanup] 回收站清理失败: {}", e),
+    }
+}
+
+/// 剪贴板历史的过期清理（原有行为，只是从 `run_once` 里拆出来了）。
+fn cleanup_history(
+    handle: &AppHandle,
+    store: &crate::data_store::DataStore,
+    config: &serde_json::Value,
+) {
     let days = config
         .get("auto_cleanup_days")
         .and_then(|v| v.as_u64())

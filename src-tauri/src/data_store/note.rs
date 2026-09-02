@@ -111,6 +111,11 @@ fn pinyin_source(title: &str, content: &str) -> String {
     format!("{} {}", title, head)
 }
 
+/// notes 时间戳的格式。抽成常量是因为回收站超期清理要拿一个截止时间去
+/// **字符串比较** `deleted_at`；两边格式一旦不一致（比如一边带毫秒一边不带），
+/// 比较结果就会在边界上错，而那是「提前一点销毁用户数据」——得只有一份。
+pub(super) const NOTE_TIME_FMT: &str = "%Y-%m-%d %H:%M:%S%.3f";
+
 /// 笔记时间戳。**比全库惯例多了毫秒**，这是有意的：
 ///
 /// 其它表用 `'%Y-%m-%d %H:%M:%S'`（秒粒度）。history 是追加型、并列时按 rowid
@@ -121,7 +126,28 @@ fn pinyin_source(title: &str, content: &str) -> String {
 /// 仍是 TEXT、仍是字典序可排，所以没破坏「全库时间戳用字符串」这个惯例，
 /// 只是精度更高。notes 的时间戳不与任何其它表做比较或 join。
 pub(super) fn note_now() -> String {
-    chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string()
+    chrono::Local::now().format(NOTE_TIME_FMT).to_string()
+}
+
+/// 回收站超期条目的筛选条件。`?1` = [`expired_cutoff`] 算出的截止时间。
+pub(super) const EXPIRED_WHERE: &str = "deleted_at IS NOT NULL AND deleted_at < ?1";
+
+/// 超期判定的截止时间。`None` = 用户关掉了自动清理（`days <= 0`）。
+///
+/// 抽出来是因为「算出会删多少条」与「真的删」必须同一个口径——
+/// 二次确认里报的数字如果与实际删的对不上，比不报更糟。
+///
+/// 上限夹一下是防 `Duration::days` 溢出 panic（天数来自配置文件，
+/// 不能假定它一定合理；本项目 `panic = "abort"`）。
+fn expired_cutoff(days: i64) -> Option<String> {
+    if days <= 0 {
+        return None;
+    }
+    Some(
+        (chrono::Local::now() - chrono::Duration::days(days.min(36_500)))
+            .format(NOTE_TIME_FMT)
+            .to_string(),
+    )
 }
 
 /// 把用户关键词转成 FTS5 的 MATCH 表达式。
@@ -573,6 +599,17 @@ impl DataStore {
         Ok(())
     }
 
+    /// 回收站条数。侧栏计数专用——不能为了一个数字去拉 200 条笔记正文回来数。
+    pub fn note_count_deleted(&self) -> i64 {
+        self.lock_conn()
+            .query_row(
+                "SELECT COUNT(*) FROM notes WHERE deleted_at IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+    }
+
     /// 回收站列表，按删除时间倒序。不带标签（回收站只需要认出是哪条）。
     pub fn note_list_deleted(&self, limit: u32) -> Result<Vec<Note>, String> {
         let conn = self.lock_conn();
@@ -656,6 +693,71 @@ impl DataStore {
             let _ = conn.execute("DELETE FROM notes_fts WHERE rowid = ?1", rusqlite::params![rid]);
         }
         Ok(())
+    }
+
+    /// 批量销毁的共用实现。`where_sql` 只能是本文件里的字面量，不接外部输入。
+    ///
+    /// ❗ **先清 FTS 再删 notes，顺序不能反**：清 FTS 那句要靠 `notes` 里的行去定位
+    /// rowid，先删了 `notes` 就再也找不到该清哪些索引行了。
+    ///
+    /// 为什么还要清：软删时已经从 FTS 拿掉过一次，正常情况下这里无活可干；
+    /// 但 W1 之前 FTS 删除失败只 `warn` 不阻断，**旧库可能有残留行**，
+    /// 而残留的 rowid 将来会被新笔记复用 → 搜到一条已不存在的旧内容。
+    fn purge_batch_on(
+        conn: &rusqlite::Connection,
+        where_sql: &str,
+        params: &[&dyn rusqlite::types::ToSql],
+    ) -> Result<usize, String> {
+        let fts_sql = format!(
+            "DELETE FROM notes_fts WHERE rowid IN (SELECT rowid FROM notes WHERE {where_sql})"
+        );
+        if let Err(e) = conn.execute(&fts_sql, params) {
+            // 不静默（规则 #15.3），但也不阻断：索引清不掉不该让用户删不掉东西。
+            log::warn!("[Notes] 批量清 FTS 失败: {}", e);
+        }
+        let del_sql = format!("DELETE FROM notes WHERE {where_sql}");
+        conn.execute(&del_sql, params).map_err(|e| e.to_string())
+    }
+
+    /// 清空回收站：把已软删的全部彻底销毁（连历史快照，不可恢复）。返回条数。
+    pub fn note_purge_all(&self) -> Result<usize, String> {
+        let conn = self.lock_conn();
+        Self::purge_batch_on(&conn, "deleted_at IS NOT NULL", &[])
+    }
+
+    /// 清理超期的回收站条目（R3：默认 30 天）。返回销毁条数。
+    ///
+    /// `days <= 0` 直接返回 0 —— 这是用户的**逃生口**（设置里关掉自动清理），
+    /// 不是异常情况，所以不报错（见 [`expired_cutoff`]）。
+    ///
+    /// 基准是 `deleted_at` 而不是 `updated_at`：一条两年前写、昨天删的笔记
+    /// 应该还有完整的 30 天可以后悔。
+    pub fn note_purge_expired(&self, days: i64) -> Result<usize, String> {
+        let cutoff = match expired_cutoff(days) {
+            Some(c) => c,
+            None => return Ok(0),
+        };
+        let conn = self.lock_conn();
+        Self::purge_batch_on(&conn, EXPIRED_WHERE, &[&cutoff])
+    }
+
+    /// 按给定天数算「会被销毁多少条」，**不删任何东西**。
+    ///
+    /// 给设置页的二次确认用：把保留天数改短是一个不可撤销的动作，
+    /// 得先告诉用户代价。同剪贴板侧 `count_expired_history` 的口径
+    /// （那边当初就是因为「改完下一小时静默删一批」才补的）。
+    pub fn note_count_expired(&self, days: i64) -> Result<i64, String> {
+        let cutoff = match expired_cutoff(days) {
+            Some(c) => c,
+            None => return Ok(0),
+        };
+        self.lock_conn()
+            .query_row(
+                &format!("SELECT COUNT(*) FROM notes WHERE {EXPIRED_WHERE}"),
+                [&cutoff],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())
     }
 }
 

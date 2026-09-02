@@ -55,6 +55,12 @@ pub fn note_delete(store: State<DataStore>, id: String) -> Result<(), String> {
     store.note_delete(&id)
 }
 
+/// 回收站条数（侧栏计数用）。
+#[tauri::command]
+pub fn note_count_deleted(store: State<DataStore>) -> i64 {
+    store.note_count_deleted()
+}
+
 /// 回收站列表，按删除时间倒序（W1）。
 #[tauri::command]
 pub fn note_list_deleted(store: State<DataStore>, limit: u32) -> Result<Vec<Note>, String> {
@@ -72,6 +78,20 @@ pub fn note_restore_deleted(store: State<DataStore>, id: String) -> Result<(), S
 #[tauri::command]
 pub fn note_purge(store: State<DataStore>, id: String) -> Result<(), String> {
     store.note_purge(&id)
+}
+
+/// 清空回收站（R4）。返回销毁条数，供前端提示用。
+/// 同样不可恢复，前端必须先弹确认。
+#[tauri::command]
+pub fn note_purge_all(store: State<DataStore>) -> Result<usize, String> {
+    store.note_purge_all()
+}
+
+/// 按给定天数算「回收站会被销毁多少条」，**不删任何东西**。
+/// 设置页把保留天数改短时先调它，拿真数字去填二次确认。
+#[tauri::command]
+pub fn note_count_expired(store: State<DataStore>, days: i64) -> Result<i64, String> {
+    store.note_count_expired(days)
 }
 
 /// 按 id 取一条（带标签）。不存在返回 `null`。

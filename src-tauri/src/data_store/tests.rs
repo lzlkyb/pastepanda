@@ -4571,6 +4571,95 @@ fn test_note_purge_is_the_only_hard_delete() {
     assert!(store.note_restore_deleted(&n.id).is_err(), "销毁后无从恢复");
 }
 
+/// 把一条已软删的笔记的 `deleted_at` 往前拨。直写 SQL 是故意的：
+/// 没有任何合法接口能造出「30 天前删的」，而超期清理必须被测到。
+fn backdate_deleted_at(store: &DataStore, id: &str, stamp: &str) {
+    store
+        .lock_conn()
+        .execute(
+            "UPDATE notes SET deleted_at = ?2 WHERE id = ?1",
+            rusqlite::params![id, stamp],
+        )
+        .unwrap();
+}
+
+#[test]
+fn test_note_purge_all_empties_the_trash_and_spares_live_notes() {
+    let store = make_store();
+    let a = store.note_create(None, "删 A", "灰度发布").unwrap();
+    let b = store.note_create(None, "删 B", "另一条").unwrap();
+    let live = store.note_create(None, "活的", "别动我").unwrap();
+    store.note_update(&a.id, "删 A", "灰度发布 v2").unwrap(); // 造一份快照
+    store.note_delete(&a.id).unwrap();
+    store.note_delete(&b.id).unwrap();
+
+    assert_eq!(store.note_purge_all().unwrap(), 2, "返回销毁条数");
+    assert!(store.note_list_deleted(50).unwrap().is_empty());
+    assert!(
+        store.note_revision_list(&a.id).unwrap().is_empty(),
+        "清空也要级联掉历史"
+    );
+    // 活的那条一根汗毛都不能碰
+    assert_eq!(store.note_count(), 1);
+    assert!(store.note_get(&live.id).unwrap().is_some());
+    assert_eq!(store.note_search("别动我", "all", &[], 20).unwrap().len(), 1);
+}
+
+#[test]
+fn test_note_purge_expired_counts_from_deleted_at_not_updated_at() {
+    // 这条钓的是 R3 的基准：一条很久以前写的、今天才删的笔记，
+    // 应该还有完整的 30 天可以后悔。拿 `updated_at` 当基准的话它会被立即销毁。
+    let store = make_store();
+    let old = store.note_create(None, "早就删了", "x").unwrap();
+    let fresh = store.note_create(None, "刚删的", "y").unwrap();
+    store.note_delete(&old.id).unwrap();
+    store.note_delete(&fresh.id).unwrap();
+    backdate_deleted_at(&store, &old.id, "2020-01-01 00:00:00.000");
+
+    assert_eq!(store.note_purge_expired(30).unwrap(), 1, "只该清掉超期的那条");
+    let left = store.note_list_deleted(50).unwrap();
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].id, fresh.id, "刚删的必须还在");
+}
+
+#[test]
+fn test_note_purge_expired_zero_days_is_the_escape_hatch() {
+    // days = 0 是用户在设置里关掉自动清理。它是正常取值，
+    // 不能报错，更不能被当成「0 天后到期」把回收站一次清光。
+    let store = make_store();
+    let n = store.note_create(None, "别动我", "x").unwrap();
+    store.note_delete(&n.id).unwrap();
+    backdate_deleted_at(&store, &n.id, "2020-01-01 00:00:00.000");
+
+    assert_eq!(store.note_purge_expired(0).unwrap(), 0);
+    assert_eq!(store.note_purge_expired(-1).unwrap(), 0);
+    assert_eq!(store.note_list_deleted(50).unwrap().len(), 1, "一条都不能少");
+}
+
+#[test]
+fn test_batch_purge_also_clears_the_fts_row() {
+    // 批量路径不能照搬单条的「取 rowid 再删」写法，所以单钓一条：
+    // 残留的索引行将来会被新笔记复用 rowid → 搜到一条已不存在的旧内容。
+    let store = make_store();
+    let n = store.note_create(None, "会议记录", "灰度发布").unwrap();
+    let rowid: i64 = store
+        .lock_conn()
+        .query_row("SELECT rowid FROM notes WHERE id = ?1", [&n.id], |r| r.get(0))
+        .unwrap();
+    store.note_delete(&n.id).unwrap();
+    store.note_purge_all().unwrap();
+
+    let left: i64 = store
+        .lock_conn()
+        .query_row(
+            "SELECT COUNT(*) FROM notes_fts WHERE rowid = ?1",
+            [rowid],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(left, 0, "批量销毁后 notes_fts 不得残留行");
+}
+
 #[test]
 fn test_note_history_id_can_be_null() {
     // 规划 §1.6 入口 #2：唯一与剪贴板无关的创建路径，history_id 必须可空

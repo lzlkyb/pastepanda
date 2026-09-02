@@ -95,6 +95,17 @@ export async function noteDelete(id: string, historyId?: string | null): Promise
   }
 }
 
+/** 回收站条数（侧栏计数用）。不能拿 `noteListDeleted().length` 代替：
+ *  那会为了一个数字把 200 条笔记正文都拉回来。 */
+export async function noteCountDeleted(): Promise<number> {
+  try {
+    return await invoke<number>("note_count_deleted");
+  } catch (e) {
+    logger.warn("读取回收站条数失败", e);
+    return 0;
+  }
+}
+
 /** 回收站列表，按删除时间倒序（W1）。 */
 export async function noteListDeleted(limit = 200): Promise<Note[]> {
   try {
@@ -112,9 +123,12 @@ export async function noteListDeleted(limit = 200): Promise<Note[]> {
  * 速记有个真实的失败情形：当天已经有另一条速记时后端会报错（唯一索引）。
  * 那句错误是人话，直接给用户看，不要吞。
  */
-export async function noteRestoreDeleted(id: string): Promise<boolean> {
+export async function noteRestoreDeleted(id: string, historyId?: string | null): Promise<boolean> {
   try {
     await invoke("note_restore_deleted", { id });
+    // 与 `noteDelete` 对称：删的时候抹掉了卡片角标，恢复就得把它加回去。
+    // 不需要像删除那样回问后端：恢复成功就意味着这张卡片确实又有笔记了。
+    if (historyId) useAppStore.getState().addNoteHistoryId(historyId);
     return true;
   } catch (e) {
     logger.error("恢复笔记失败", e);
@@ -137,6 +151,36 @@ export async function notePurge(id: string): Promise<boolean> {
     logger.error("销毁笔记失败", e);
     toastActionFailed("销毁笔记", e);
     return false;
+  }
+}
+
+/**
+ * 清空回收站（R4）。返回销毁条数，失败返回 `null`。
+ *
+ * ❗ 同样不可恢复，调用方必须先弹确认，而且确认文案要带具体条数。
+ */
+export async function notePurgeAll(): Promise<number | null> {
+  try {
+    return await invoke<number>("note_purge_all");
+  } catch (e) {
+    logger.error("清空回收站失败", e);
+    toastActionFailed("清空回收站", e);
+    return null;
+  }
+}
+
+/**
+ * 按给定天数算「回收站会被销毁多少条」，**不删任何东西**。
+ *
+ * 设置页把保留天数改短时用它填二次确认。统计失败返回 `null`——
+ * 调用方应该**照弹确认**，只是不显示具体数字（不能因为统计失败就静默改）。
+ */
+export async function noteCountExpired(days: number): Promise<number | null> {
+  try {
+    return await invoke<number>("note_count_expired", { days });
+  } catch (e) {
+    logger.warn("统计回收站超期条数失败", e);
+    return null;
   }
 }
 

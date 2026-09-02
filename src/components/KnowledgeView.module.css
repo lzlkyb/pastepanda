@@ -396,3 +396,116 @@
   font-size: 11.5px;
   color: var(--text-muted);
 }
+
+/* ===== 回收站（W1）=====
+   设计稿：design/知识库回收站-W1-设计稿.html
+   整体比普通列表暗一档：这里的东西是「已经删掉的」，不该和活笔记抢注意力。 */
+.trashHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 11px;
+}
+
+.trashHint {
+  color: var(--text-muted);
+}
+
+.trashClear {
+  margin-left: auto;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--danger, #e5534b);
+}
+
+/* 普通列表的 .row 是横向 flex；回收站行要竖着堆（标题行 / 展开预览 / 动作条） */
+.trashRow {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.trashRow:hover {
+  background: var(--card-bg);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.trashExpiry {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* 剩余 ≤3 天。用告警色而不只是变个数字——这是最后的提醒机会 */
+.trashExpiryUrgent {
+  font-size: 10px;
+  color: var(--warning, #f0a020);
+}
+
+/* 只读预览。不可编辑、不可聚焦，纯粹为了「认出这是哪条」 */
+.trashPreview {
+  margin: 0 10px 6px;
+  padding: 7px 9px;
+  max-height: 220px;
+  overflow: auto;
+  border-radius: 7px;
+  background: var(--card-bg);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.trashActions {
+  display: flex;
+  gap: 6px;
+  padding: 0 10px 7px;
+}
+
+.trashRestore,
+.trashPurge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 5px;
+}
+
+.trashRestore {
+  color: var(--accent);
+}
+
+.trashPurge {
+  color: var(--danger, #e5534b);
+}
+
+.trashRestore:hover,
+.trashPurge:hover {
+  background: var(--card-bg);
+}
+
+.trashEmpty {
+  padding: 40px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.trashEmptyHint {
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.trashTitle {
+  font-size: 12.5px;
+  color: var(--text);
+}

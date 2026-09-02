@@ -67,6 +67,10 @@ export interface AppConfig {
   hotkey: string;
   theme: string;
   auto_cleanup_days: number;
+  /** W1 回收站保留天数。`0` = 不自动清理。
+   *  **与 `auto_cleanup_days` 是两回事**：那个管「没沉淀过的剪贴板流水」，
+   *  这个管「用户亲手删的笔记」——把历史设成 7 天的人不是在说删的笔记也只给 7 天 */
+  note_trash_days: number;
   /** v6.1 自我净化开关：保护常用内容（打标签/粘贴过/搜索找回过）不过期。默认开 */
   preserve_valued_content: boolean;
   auto_strip: boolean;
@@ -331,6 +335,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   // 只能落到 :root 兜底才碰巧渲染成经典白，设置页色板也因此一个都不高亮。
   theme: "ocean",
   auto_cleanup_days: 30,
+  note_trash_days: 30,
   preserve_valued_content: true,
   auto_strip: false,
   sequential_loop: false,

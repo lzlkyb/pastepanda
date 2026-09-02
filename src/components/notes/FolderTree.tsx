@@ -17,12 +17,14 @@ import { CtxMenuCtx } from "@/components/ContextMenu";
 import { buildFolderTree, type FolderFilter, type FolderNode, type NoteFolder } from "@/lib/api";
 import { useFolderOps } from "./useFolderOps";
 import { DailySection } from "./DailySection";
+import { Trash2 } from "lucide-react";
 import styles from "./FolderTree.module.css";
 
 export function FolderTree({
   folders,
   unfiledCount,
   totalCount,
+  trashCount,
   maxDepth,
   selected,
   onSelect,
@@ -32,6 +34,8 @@ export function FolderTree({
   folders: NoteFolder[];
   unfiledCount: number;
   totalCount: number;
+  /** 回收站条数（W1）。0 时不显示数字，但**入口照旧在** */
+  trashCount: number;
   maxDepth: number;
   selected: FolderFilter;
   onSelect: (f: FolderFilter) => void;
@@ -169,6 +173,25 @@ export function FolderTree({
       ) : (
         tree.map(renderNode)
       )}
+
+      {/* 回收站（W1）。**放在最底部、与文件夹树再隔一条线**，不跟上面三个
+          内置项平列：它里面的东西不参与搜索、不算进总数、不能编辑，
+          根本不是一个「看笔记的视图」。用位置把这件事说清楚，不需要额外文案。
+
+          ❗ 空的时候也照显（只是不写数字）。隐藏会让用户在真需要它的那一刻
+          （刚删错）找不到——而那正是它唯一被需要的时刻。 */}
+      <div className={styles.sep} />
+      <div
+        className={`${styles.row} ${styles.rowTrash} ${selected === "trash" ? styles.rowOn : ""}`}
+        onClick={() => onSelect("trash")}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => e.key === "Enter" && onSelect("trash")}
+      >
+        <Trash2 size={10} className={styles.builtinIcon} />
+        <span className={styles.name}>回收站</span>
+        {trashCount > 0 && <span className={styles.count}>{trashCount}</span>}
+      </div>
     </div>
   );
 }

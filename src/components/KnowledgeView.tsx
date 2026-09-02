@@ -27,6 +27,7 @@ import { ContextMenu } from "@/components/ContextMenu";
 import { KbInboxPanel } from "@/components/notes/KbInboxPanel";
 import { FolderTree } from "@/components/notes/FolderTree";
 import { NoteList } from "@/components/notes/NoteList";
+import { TrashPanel } from "@/components/notes/TrashPanel";
 import { KnowledgeToolbar, type KnowledgeMode } from "@/components/notes/KnowledgeToolbar";
 import { KbQaPanel } from "@/components/notes/KbQaPanel";
 import { useKbQa } from "@/hooks/useKbQa";
@@ -56,6 +57,7 @@ import {
   folderMaxDepth,
   noteTouch,
   noteGroupCounts,
+  noteCountDeleted,
   type Note,
   type NoteFolder,
   type FolderFilter,
@@ -80,6 +82,8 @@ export function KnowledgeView() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [folders, setFolders] = useState<NoteFolder[]>([]);
   const [unfiled, setUnfiled] = useState(0);
+  /** 回收站条数（W1）。跟着 `reloadFolders` 一起刷。 */
+  const [trashCount, setTrashCount] = useState(0);
   const [total, setTotal] = useState(0);
   const [maxDepth, setMaxDepth] = useState(3);
   const [keyword, setKeyword] = useState("");
@@ -126,11 +130,26 @@ export function KnowledgeView() {
     setFolders(fs);
     setUnfiled(uf);
     setMaxDepth(mx);
+    // 回收站计数跟着侧栏一起刷（W1）。单开一次查而不是拿
+    // `noteListDeleted().length`：后者会为一个数字把 200 条笔记正文拉回来。
+    setTrashCount(await noteCountDeleted());
   }, []);
 
   /** 拉笔记列表（第一页）。搜索与筛选叠加（选着文件夹搜就只在那里搜）。 */
   const reloadNotes = useCallback(
     async (kw: string, ff: FolderFilter, v: NoteViewOpts) => {
+      // ❗ 回收站不走笔记列表那套查询，必须在这里截住。
+      //   `FolderFilter` 是 `"all" | "unfiled" | string`，末尾那个 `string`
+      //   让整个类型坍缩成 `string`——**tsc 不会拦住 `"trash"` 流到后端**。
+      //   不截的话后端会把它当成文件夹 id 去跑递归 CTE，查不到就
+      //   **静默返回空列表**，不报错。本函数是四个消费点
+      //   （noteList / noteSearch / noteCountFiltered / noteGroupCounts）的共同入口。
+      if (ff === "trash") {
+        setNotes([]);
+        setGroupCounts(new Map());
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       const kwTrim = kw.trim();
       const [rows, cnt, groups] = await Promise.all([
@@ -160,7 +179,9 @@ export function KnowledgeView() {
    *   所以 `notes.length` 可能超过 total——这时 hasMore 为 false，正好停住。
    */
   const loadMore = useCallback(async () => {
-    if (loadingMore || loading) return;
+    // 同上：回收站没有分页。正常路径下 LoadMoreSentinel 根本不会渲染（中栏换成了
+    // TrashPanel），这句是规则 #11.1 的兑底：folderFilter 的每个消费点都要拦。
+    if (folderFilter === "trash" || loadingMore || loading) return;
     setLoadingMore(true);
     const kwTrim = keyword.trim();
     const rows = kwTrim
@@ -273,6 +294,9 @@ export function KnowledgeView() {
     if (folderFilter === "all") return "全部笔记";
     if (folderFilter === "unfiled") return "未分类";
     if (folderFilter === "daily") return "今日速记";
+    // 回收站实际不走工具栏（中栏整个换成了 TrashPanel），这一行是为了
+    // 不让它静默落到下面那个「全部笔记」兑底上——那种错很难查。
+    if (folderFilter === "trash") return "回收站";
     // 面包屑直接写日期：“今日速记 · 2026-09-01” 太长，180px 那栏装不下
     const day = dailyFilterDate(folderFilter);
     if (day) return day;
@@ -408,6 +432,7 @@ export function KnowledgeView() {
             folders={folders}
             unfiledCount={unfiled}
             totalCount={total}
+            trashCount={trashCount}
             maxDepth={maxDepth}
             selected={folderFilter}
             onSelect={setFolderFilter}
@@ -417,6 +442,13 @@ export function KnowledgeView() {
         )}
 
         <div className={styles.wrap}>
+          {/* 回收站把中栏整个换掉（W1）：它没有搜索 / 分组 / 筛选 / 新建，
+              把工具栏留在上面会给人一堆在这里无意义（甚至会报空）的控件。
+              候选条目已从 `notes_fts` 移除，搜也真的搜不到。 */}
+          {folderFilter === "trash" ? (
+            <TrashPanel onChanged={refreshAll} />
+          ) : (
+          <>
           <KnowledgeToolbar
             folderName={currentFolderName}
             total={total}
@@ -526,6 +558,8 @@ export function KnowledgeView() {
             />
           )}
             </>
+          )}
+          </>
           )}
         </div>
 

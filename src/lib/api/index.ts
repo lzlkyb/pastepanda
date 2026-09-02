@@ -97,6 +97,12 @@ export {
   noteCount,
   noteCountFiltered,
   noteGroupCounts,
+  noteCountDeleted,
+  noteListDeleted,
+  noteRestoreDeleted,
+  notePurge,
+  notePurgeAll,
+  noteCountExpired,
 } from "./notes";
 export type { Note } from "./notes";
 

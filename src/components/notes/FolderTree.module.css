@@ -157,3 +157,9 @@
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* 回收站行（W1）。比内置项再暗一档：它不是一个「看笔记的视图」，
+   平时不该抢注意力，但入口必须一直在（刚删错的那一刻要找得到）。 */
+.rowTrash {
+  color: var(--text-muted);
+}

@@ -1,0 +1,368 @@
+<title>PastePanda 知识库回收站（W1）· 设计稿</title>
+<style>
+  :root {
+    --bg:#0f1419; --panel:#171d24; --panel2:#1d242c; --line:#2a333d;
+    --tx:#e6edf3; --tx2:#9fb0c0; --tx3:#6b7d8f;
+    --accent:#4a9eff; --warn:#f0a020; --danger:#e5534b; --ok:#3fb950;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f8fa; --panel:#fff; --panel2:#f0f3f6; --line:#d8dee4;
+            --tx:#1f2328; --tx2:#57606a; --tx3:#8c959f; --accent:#0969da; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:28px 20px 60px; background:var(--bg); color:var(--tx);
+         font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:1000px; margin:0 auto; }
+  h1 { font-size:21px; margin:0 0 4px; }
+  h2 { font-size:16px; margin:32px 0 10px; padding-bottom:7px; border-bottom:1px solid var(--line); }
+  h3 { font-size:13.5px; margin:18px 0 7px; }
+  p, li { color:var(--tx2); }
+  .lede { color:var(--tx2); font-size:13px; margin:0 0 6px; }
+  code { background:var(--panel2); padding:1px 5px; border-radius:4px;
+         font:12px ui-monospace,Consolas,monospace; color:var(--tx); }
+  pre { background:var(--panel); border:1px solid var(--line); border-radius:8px;
+        padding:11px 13px; overflow-x:auto; font:12px/1.6 ui-monospace,Consolas,monospace; color:var(--tx); }
+  .note { border-left:3px solid var(--accent); background:var(--panel); padding:10px 13px;
+          border-radius:0 7px 7px 0; margin:12px 0; font-size:12.5px; }
+  .note.warn { border-left-color:var(--warn); }
+  .note.bad { border-left-color:var(--danger); }
+  .note.ok { border-left-color:var(--ok); }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:12.5px; }
+  th, td { border:1px solid var(--line); padding:7px 9px; text-align:left; vertical-align:top; }
+  th { background:var(--panel2); font-weight:600; color:var(--tx); }
+  td { color:var(--tx2); }
+  .pick { display:inline-block; padding:1px 7px; border-radius:5px; font-size:11px; font-weight:600;
+          background:color-mix(in srgb,var(--ok) 20%,transparent); color:var(--ok); }
+  .cols { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start; }
+
+  /* 侧栏 mock */
+  .side { width:196px; border:1px solid var(--line); border-radius:10px; overflow:hidden;
+          background:var(--panel); font-size:12px; }
+  .side .hd { display:flex; align-items:center; padding:8px 11px; border-bottom:1px solid var(--line);
+              color:var(--tx3); font-size:11px; font-weight:600; }
+  .side .hd .plus { margin-left:auto; }
+  .row { display:flex; align-items:center; gap:7px; padding:6px 11px; color:var(--tx2); }
+  .row .ic { width:13px; text-align:center; color:var(--tx3); font-size:11px; }
+  .row .ct { margin-left:auto; color:var(--tx3); font-size:11px; }
+  .row.on { background:color-mix(in srgb,var(--accent) 16%,transparent); color:var(--tx); }
+  .row.on .ic { color:var(--accent); }
+  .row.tr { color:var(--tx3); }
+  .sep { height:1px; background:var(--line); margin:5px 0; }
+  .cap { font-size:11px; color:var(--tx3); margin:6px 0 0; }
+</style>
+
+<div class="wrap">
+<h1>知识库回收站（W1）</h1>
+<p class="lede">2026-09-02。后端已落地（提交 <code>8d8edca</code>），这稿只定 UI。</p>
+
+<div class="note bad">
+<b>为什么这稿不能拖。</b> <code>note_delete</code> 现在是软删除，删掉的笔记连同它的
+历史快照、标签都完好地存在库里——<b>但用户在界面上看不到、恢复不了。</b>
+对用户而言，现在的行为与硬删一模一样，只是多占了磁盘。
+<b>这一步不做，W1 对用户等于没发生。</b>
+</div>
+
+<h2>0. 已拍板（2026-09-02）</h2>
+<table>
+<tr><th>编号</th><th>问题</th><th>定案</th></tr>
+<tr><td><b>R1</b></td><td>入口放哪</td><td>✅ 侧栏最底部独立一条</td></tr>
+<tr><td><b>R2</b></td><td>能不能点开</td><td>✅ 不能；行内展开只读预览</td></tr>
+<tr><td><b>R3</b></td><td>自动清理</td><td>✅ <b>30 天后自动销毁</b>（与初稿推荐相反）</td></tr>
+<tr><td><b>R4</b></td><td>清空按钮</td><td>✅ 要，后端新增 <code>note_purge_all</code></td></tr>
+</table>
+<div class="note">
+<b>初稿的一处越界已纠正。</b> 我曾写「不自动清理就是 W2b 已拍板的口径」——
+这是错的。W2b 说的是<b>锚定快照</b>不自动过期，跟回收站是两件事，
+不构成对本项的约束。R3 选 30 天与任何已有决策都不冲突。
+</div>
+<h2>R1 · 入口放哪</h2>
+<p>侧栏现在的真实结构（<code>FolderTree.tsx</code>）：内置项「全部笔记 / 未分类 / 今日速记」
+在上，一条分隔线，下面是用户自建的文件夹树。</p>
+
+<div class="cols">
+  <div>
+    <div class="side">
+      <div class="hd">文件夹<span class="plus">+</span></div>
+      <div class="row"><span class="ic">▤</span>全部笔记<span class="ct">128</span></div>
+      <div class="row"><span class="ic">◫</span>未分类<span class="ct">12</span></div>
+      <div class="row"><span class="ic">◷</span>今日速记<span class="ct">31</span></div>
+      <div class="sep"></div>
+      <div class="row"><span class="ic">▸</span>工作<span class="ct">62</span></div>
+      <div class="row"><span class="ic">▸</span>阅读<span class="ct">23</span></div>
+      <div class="sep"></div>
+      <div class="row tr on"><span class="ic">⌧</span>回收站<span class="ct">4</span></div>
+    </div>
+    <p class="cap">A（推荐）：底部独立一条，与文件夹树再隔一条线</p>
+  </div>
+  <div>
+    <div class="side">
+      <div class="hd">文件夹<span class="plus">+</span></div>
+      <div class="row"><span class="ic">▤</span>全部笔记<span class="ct">128</span></div>
+      <div class="row"><span class="ic">◫</span>未分类<span class="ct">12</span></div>
+      <div class="row"><span class="ic">◷</span>今日速记<span class="ct">31</span></div>
+      <div class="row tr"><span class="ic">⌧</span>回收站<span class="ct">4</span></div>
+      <div class="sep"></div>
+      <div class="row"><span class="ic">▸</span>工作<span class="ct">62</span></div>
+      <div class="row"><span class="ic">▸</span>阅读<span class="ct">23</span></div>
+    </div>
+    <p class="cap">B：当成第四个内置项</p>
+  </div>
+</div>
+
+<table>
+<tr><th>方案</th><th>代价</th></tr>
+<tr><td><b>A 底部独立</b> <span class="pick">推荐</span></td>
+<td>与资源管理器 / 邮件客户端 / Obsidian 同口径。<b>回收站不是一个“看笔记的视图”</b>，
+它里面的东西不参与搜索、不算进总数、不能编辑——跟上面三个内置项不是一类东西。
+放底部用位置把这件事说清楚了，不需要额外文案。</td></tr>
+<tr><td>B 第四个内置项</td>
+<td>改动最小（照抄现有三行），但把“删掉的东西”与“活的视图”平列，
+让人以为它也是个普通筛选。且它平时是空的，占着黄金位置不划算。</td></tr>
+<tr><td>C 收进工具栏溢出菜单</td>
+<td>最不占地，但<b>找不到等于没有</b>。用户删错一条笔记时的第一反应是去侧栏找回收站，
+不是去翻菜单。这个入口的全部价值就在“慌的时候找得到”。</td></tr>
+</table>
+
+<div class="note">
+<b>计数为 0 时怎么办：照显，不隐藏。</b>
+隐藏会让用户在真需要它的那一刻（刚删错）找不到——而那正是它唯一被需要的时刻。
+空的时候不显示数字（不是显示 <code>0</code>），整行用 <code>--tx3</code> 调暗。
+</div>
+<h2>R2 · 中栏列表的形态</h2>
+<style>
+  .mid { width:380px; border:1px solid var(--line); border-radius:10px; overflow:hidden;
+         background:var(--panel); margin:12px 0; }
+  .crumb { display:flex; align-items:center; gap:8px; padding:9px 12px; font-size:12px;
+           border-bottom:1px solid var(--line); color:var(--tx); }
+  .crumb .clr { margin-left:auto; font-size:11px; color:var(--danger); }
+  .tip { padding:7px 12px; font-size:11px; color:var(--tx3); background:var(--panel2);
+         border-bottom:1px solid var(--line); }
+  .nrow { padding:9px 12px; border-bottom:1px solid var(--line); }
+  .nrow .t { font-size:12.5px; color:var(--tx2); }
+  .nrow .e { font-size:11.5px; color:var(--tx3); margin-top:2px;
+             overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .nrow .m { display:flex; align-items:center; gap:8px; margin-top:5px; font-size:11px; color:var(--tx3); }
+  .nrow .m .act { margin-left:auto; display:flex; gap:8px; }
+  .nrow .m .act b { color:var(--accent); font-weight:500; cursor:pointer; }
+  .nrow .m .act i { color:var(--danger); font-style:normal; cursor:pointer; }
+  .empty { padding:34px 16px; text-align:center; font-size:12px; color:var(--tx3); }
+</style>
+
+<div class="cols">
+<div class="mid">
+  <div class="crumb"><b>回收站</b> <span style="color:var(--tx3);font-size:11px">4 条</span>
+    <span class="clr">清空回收站</span></div>
+  <div class="tip">删除的笔记一直保留在这里，不会自动清理</div>
+  <div class="nrow">
+    <div class="t">会议记录 · 灰度发布方案</div>
+    <div class="e">今天讨论了接口设计与灰度发布的回滚策略…</div>
+    <div class="m"><span>删于 10 分钟前</span><span>工作</span>
+      <span class="act"><b>恢复</b><i>彻底删除</i></span></div>
+  </div>
+  <div class="nrow">
+    <div class="t">2026-08-30</div>
+    <div class="e">09:12 从微信复制的一段…</div>
+    <div class="m"><span>删于 2 小时前</span><span>速记</span>
+      <span class="act"><b>恢复</b><i>彻底删除</i></span></div>
+  </div>
+  <div class="nrow">
+    <div class="t">无标题</div>
+    <div class="e" style="font-style:italic">（空笔记）</div>
+    <div class="m"><span>删于 3 天前</span>
+      <span class="act"><b>恢复</b><i>彻底删除</i></span></div>
+  </div>
+</div>
+
+<div class="mid" style="width:300px">
+  <div class="crumb"><b>回收站</b></div>
+  <div class="empty">回收站是空的<br>
+    <span style="font-size:11px">删掉的笔记会先放到这里</span></div>
+</div>
+</div>
+
+<h3>与普通笔记行的差异</h3>
+<table>
+<tr><th>项</th><th>普通列表</th><th>回收站</th></tr>
+<tr><td>点整行</td><td>进编辑器</td><td><b>不能点</b>（下方展开）</td></tr>
+<tr><td>时间列</td><td><code>updated_at</code> 相对时间</td><td><code>deleted_at</code>，文案写「删于…」</td></tr>
+<tr><td>行尾按钮</td><td>删除</td><td><b>恢复</b> + <b>彻底删除</b></td></tr>
+<tr><td>搜索 / 分组 / 筛选</td><td>有</td><td><b>全部没有</b></td></tr>
+<tr><td>字体颜色</td><td><code>--tx</code></td><td><code>--tx2</code>（整体调暗）</td></tr>
+</table>
+
+<div class="note warn">
+<b>为什么不能点开编辑器。</b> 编辑器是会自动保存的。一条已删的笔记被打开并修改，
+会落到 <code>note_update</code> 的「笔记不存在」分支——后端已经拦住了（写入带
+<code>AND deleted_at IS NULL</code>），但用户看到的是「我刚改的东西报错了」。
+<b>UI 不该把人引到一个后端必然拒绝的地方。</b>
+想看内容就展开行（只读渲染前 30 行），想改先恢复。
+</div>
+
+<div class="note">
+<b>为什么没有搜索与分组。</b> 回收站里的条目已从 <code>notes_fts</code> 移除，
+根本搜不到；而数量上也不需要——按 §3.2 的真实基线，笔记年化约 670 条，
+删除是低频动作，回收站常态就是个位数。<code>note_list_deleted</code> 默认 <code>limit=200</code>，
+不分页。
+</div>
+<h2>两个动作与确认框</h2>
+<style>
+  .dlg { width:340px; border:1px solid var(--line); border-radius:10px; background:var(--panel);
+         padding:14px 16px; margin:12px 0; font-size:12.5px; }
+  .dlg .dt { font-size:13.5px; font-weight:600; color:var(--tx); margin-bottom:6px; }
+  .dlg .dm { color:var(--tx2); white-space:pre-line; }
+  .dlg .db { display:flex; gap:8px; justify-content:flex-end; margin-top:14px; }
+  .dlg .db span { padding:4px 12px; border-radius:6px; font-size:12px; border:1px solid var(--line); }
+  .dlg .db .go { background:var(--danger); border-color:var(--danger); color:#fff; }
+</style>
+
+<p><b>恢复</b>：不弹确认。它是可逆的（再删一次就回来了），加确认只是噪音。</p>
+<p><b>彻底删除</b>：必须弹确认。这是笔记侧<b>唯一一个真正不可逆的操作</b>。</p>
+
+<div class="cols">
+<div class="dlg">
+  <div class="dt">彻底删除这条笔记？</div>
+  <div class="dm">「会议记录 · 灰度发布方案」与它的 12 份历史版本将被永久删除，无法撤销。</div>
+  <div class="db"><span>取消</span><span class="go">彻底删除</span></div>
+</div>
+<div class="dlg">
+  <div class="dt">清空回收站？</div>
+  <div class="dm">4 条笔记与它们的全部历史版本将被永久删除，无法撤销。</div>
+  <div class="db"><span>取消</span><span class="go">清空</span></div>
+</div>
+</div>
+
+<div class="note bad">
+<b>约束：<code>confirmDialog</code> 只吃纯字符串。</b>
+看 <code>src/lib/confirm.ts</code>：<code>{ title, message, confirmText, variant }</code> 全是
+<code>string</code>，没有 ReactNode。所以后果只能靠<b>句子本身</b>说清楚，
+不能靠加粗、图标或红字。因此文案里<b>必须带上具体数字</b>（“12 份历史版本”、
+“4 条笔记”）——泛泛的“相关内容将被删除”用户无法据以决策，这是
+<code>folder_delete_impact</code> 当初定下的口径，沿用。<code>variant: "danger"</code>。
+</div>
+
+<div class="note warn">
+<b>历史份数要多一次查询。</b> <code>note_list_deleted</code> 不带快照数。
+不要为了这个在列表接口上加字段（列表不需要），<b>在点「彻底删除」那一刻再取</b>
+一次 <code>note_revision_list</code> 拿长度。低频操作，一次额外查询无所谓。
+</div>
+<h2>速记恢复冲突（必须在 UI 里有归宿）</h2>
+<p>这不是假想的边界条件，是一条<b>后端会真的报错的路径</b>：</p>
+<pre>删掉今天的速记  →  又按热键新建了一条  →  回收站里点「恢复」旧的
+→  idx_notes_daily 是唯一索引，一天只能有一条活速记  →  报错</pre>
+<p>后端已经先查再报人话错误（不是裸 SQLite 报错）：</p>
+<pre>2026-09-02 已经有一条速记了，恢复会撞上。先把现有的速记处理掉再试。</pre>
+<div class="note ok">
+<b>前端只需把这句原样弹出来，不要吞成“恢复失败”。</b>
+<code>noteRestoreDeleted</code> 已经走 <code>toastActionFailed</code>，默认就会带上后端文案。
+这里只需确保<b>不要</b>额外写一个笼统的失败提示盖掉它——用户要知道的是
+“哪天撞了、该去处理什么”，而不是“恢复失败”。
+</div>
+
+<h2>R3 · 30 天自动销毁（已拍板）</h2>
+<div class="note bad">
+<b>选了自动清理，就必须配套一件事：把倒计时显示出来。</b>
+不显示的话，用户在第 31 天想起来要找回某条时，看到的是一个空回收站、
+没有任何痕迹说明发生过什么 —— 那就从「安全网」变成了「背着人销毁数据」。
+<b>倒计时不是锦上添花，它是 30 天方案成立的前提。</b>
+macOS / Windows / Gmail 全都显示它。
+</div>
+
+<div class="mid">
+  <div class="crumb"><b>回收站</b> <span style="color:var(--tx3);font-size:11px">3 条</span>
+    <span class="clr">清空回收站</span></div>
+  <div class="tip">删除的笔记在这里保留 30 天，到期自动销毁</div>
+  <div class="nrow">
+    <div class="t">会议记录 · 灰度发布方案</div>
+    <div class="m"><span>删于 10 分钟前</span><span>还有 30 天</span>
+      <span class="act"><b>恢复</b><i>彻底删除</i></span></div>
+  </div>
+  <div class="nrow">
+    <div class="t">2026-08-30</div>
+    <div class="m"><span>删于 27 天前</span>
+      <span style="color:var(--warn)">还有 3 天就自动删除</span>
+      <span class="act"><b>恢复</b><i>彻底删除</i></span></div>
+  </div>
+</div>
+<p class="cap">剩余 ≤ 3 天时换 <code>--warn</code> 色并改成完整句子，不只是个数字</p>
+
+<h3>挂在现成的调度器上，不新建</h3>
+<p><code>src-tauri/src/auto_cleanup.rs</code> 已经是想要的形态：启动后延迟 10s 首跑
++ 每小时循环，<b>且每次跑前重读配置</b>（设置页改天数即时生效、无需重启）。
+它当初从前端 <code>setInterval</code> 挪到后端，就是因为「关窗只留托盘时定时器会停」——
+回收站清理同样不能依赖窗口开着。在 <code>run_once</code> 里多调一句即可。</p>
+<table>
+<tr><th>子决策</th><th>取值</th><th>理由</th></tr>
+<tr><td>天数可配置吗</td><td>可，默认 30</td>
+<td><code>auto_cleanup</code> 本就每次重读配置，成本几乎为零</td></tr>
+<tr><td>能否关掉</td><td><b>能</b>，设为 0 = 不自动清理</td>
+<td>自动删数据必须留逃生口；不幸被清掉过一次的人需要能关它</td></tr>
+<tr><td>时间基准</td><td><code>deleted_at</code></td>
+<td>不是 <code>updated_at</code>——一条两年前写、昨天删的笔记应该还有 30 天</td></tr>
+<tr><td>后端新增</td><td><code>note_purge_expired(days)</code></td>
+<td>与 <code>note_purge</code> 同口径：只动 <code>deleted_at IS NOT NULL</code> 的行</td></tr>
+</table>
+<div class="note warn">
+<b>这条清理不能复用剪贴板历史的保留天数。</b>
+两者语义完全不同：那个管的是「没沉淀过的流水」，这个管的是「用户亲手删的笔记」。
+把历史保留设成 7 天的人，绝不是在说「我删的笔记也只给我 7 天」。单开一个配置项。
+</div>
+
+<h2>不做的东西（YAGNI）</h2>
+<table>
+<tr><th>不做</th><th>理由</th></tr>
+<tr><td>批量多选</td>
+<td>常态几条，逐条点就够了。真想一次清完有「清空回收站」。</td></tr>
+<tr><td>回收站内搜索</td><td>条目已从 FTS 移除，且数量不需要。</td></tr>
+<tr><td>删除时 toast 带「撤销」</td>
+<td>很想做，但它要改 <code>NoteList</code> 与详情页的删除路径，超出本稿范围。
+<b>单开一轮</b>（接口已就绪，<code>noteRestoreDeleted</code> 就是那个撤销）。</td></tr>
+</table>
+
+<h2>改动面</h2>
+<table>
+<tr><th>文件</th><th>改什么</th></tr>
+<tr><td><code>FolderTree.tsx</code></td><td>底部加一条 <code>trash</code>（含计数）</td></tr>
+<tr><td><code>KnowledgeView.tsx</code></td><td>① <code>reloadNotes</code> 的 effect 先拦 <code>trash</code>；
+② 中栏渲染 <code>TrashPanel</code>；③ 面包屑标题加一例（现有 <code>all/unfiled/daily</code> 那串）</td></tr>
+<tr><td><b>新</b> <code>notes/TrashPanel.tsx</code></td><td>列表 + 两个动作 + 空态（预计 &lt; 150 行）</td></tr>
+</table>
+<div class="note bad">
+<b>❗ 最大的坑：<code>FolderFilter</code> 根本不是联合类型。</b>
+<pre>export type FolderFilter = "all" | "unfiled" | string;</pre>
+因为末尾那个 <code>string</code>，整个类型<b>坍缩成 <code>string</code></b>——前两个字面量只起文档作用。
+所以：<b>把 <code>"trash"</code> 加进类型没任何意义，tsc 也不会帮你拦住它流到后端。</b>
+而 <code>reloadNotes</code> 是挂在 <code>[folderFilter, keyword, view]</code> 的 effect 上自动跑的，
+不显式拦就会把 <code>"trash"</code> 当成文件夹 id 发给 <code>note_list</code>，
+后端拿它去跑递归 CTE，查不到 → <b>静默返回空列表</b>，不报错。
+拦截必须是 <code>KnowledgeView</code> 里一句显式 <code>if (ff === "trash") return;</code>，
+并且要按规则 #11.1 把 <code>folderFilter</code> 的<b>每一个</b>消费点扫一遍
+（<code>noteList</code> / <code>noteSearch</code> / <code>noteCountFiltered</code> / <code>noteGroupCounts</code> 至少四处）。
+</div>
+
+<h2>施工顺序</h2>
+<p>拍板后后端又多了三件事（R3 带来两件、R4 带来一件），所以先后端再前端：</p>
+<table>
+<tr><th>#</th><th>做什么</th><th>位置</th></tr>
+<tr><td>1</td><td><code>note_purge_all</code> / <code>note_purge_expired(days)</code> + 用例</td>
+<td><code>data_store/note.rs</code></td></tr>
+<tr><td>2</td><td>回收站保留天数配置项（默认 30，0 = 不清理）</td>
+<td>config + 设置页</td></tr>
+<tr><td>3</td><td><code>run_once</code> 里多调一句回收站清理</td>
+<td><code>auto_cleanup.rs</code></td></tr>
+<tr><td>4</td><td><code>TrashPanel.tsx</code> + 侧栏入口 + <code>KnowledgeView</code> 分叉</td>
+<td>前端</td></tr>
+</table>
+
+<div class="note warn">
+<b>第 1 步里有个容易漏的点：批量销毁也要清 <code>notes_fts</code>。</b>
+<code>note_purge</code> 是单条取 rowid 再删索引行的；批量版不能照搬这个写法。
+软删时已经从 FTS 拿掉了，正常情况下无活可干，但<b>旧库可能有残留行</b>
+（W1 之前删失败只是 <code>warn</code> 不阻断）——批量路径要带上同样的兑底。
+</div>
+
+<div class="note">
+<b>倒计时在前端算，不要为它动接口。</b>
+<code>Note.deleted_at</code> 已经返回了，天数配置前端也读得到，
+剩余天数 = <code>days - (今天 - deleted_at)</code>，在 <code>TrashPanel</code> 里算就行。
+</div>
+</div>
