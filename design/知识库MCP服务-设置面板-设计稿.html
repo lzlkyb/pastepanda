@@ -1,0 +1,784 @@
+<!--
+=========================================================================================
+  PastePanda · 知识库 MCP 服务 · 设置面板设计稿
+  日期：2026-09-02
+
+  【一、动笔前读过的真实源码（项目规则 #12）】
+    src/components/settings/LanSyncPanel.tsx      主参照：开关 + 密钥显示/重生成 + 状态行，与本面板同构
+    src/components/settings/GeneralTab.tsx        L808-830 局域网同步整节（sSection + ToggleRow + 条件展开面板）
+                                                  另抽了全部 sSection 分节名与顺序（数据统计/外观/通用/局域网同步/快捷键/数据管理）
+    src/components/settings/ToggleRow.tsx         行结构：sRowIcon + sRowBody(label/desc) + sToggle
+    src/components/settings/NoteVaultRows.tsx     笔记域现有两行（导出/导入）的图标色与「先 confirmDialog 说清后果」写法
+    src/components/Settings.module.css            .sSection/.sRow/.sRowIcon/.sRowLabel/.sRowDesc/.sToggle/.sAction/
+                                                  .sActionLoading/.lanPanel/.lanDot/.lanRefreshBtn/.lanTestBtn 的真实数值
+    src/styles/theme.css                          ocean(浅) 与 midnight(深) 两套令牌的真实取值，本稿的浅/深演示直接照抄
+    src/styles/dialog.css                         .dialog-box.w400 / .dialog-header(48px) / .dialog-body / .dialog-footer
+    src/styles/buttons.css                        .btn-secondary / .btn-danger
+    src/components/ConfirmDialog.tsx              确认弹窗结构（⚠图标 + 标题 + pre-line 正文 + 右下双按钮）
+    src/lib/confirm.ts                            confirmDialog() 的参数形态：message 只能是纯字符串（支持 \n）
+    src/lib/api/noteVault.ts                      api 层约定：invoke 包一层、失败 logger+toastActionFailed、返回 null
+    src/lib/api/ 目录                             按领域一文件 + index.ts 汇出
+    src/lib/utils.ts                              copyToClipboard() 是全项目唯一的复制出口
+    src/stores/appStore.ts                        config 字段命名风格；skip_sensitive / excluded_apps 的存在
+
+  【二、设计取舍与理由】
+    1. 结构完全照抄「局域网同步」：sSection 标题 → ToggleRow（关态只有这一行）→ 开态才展开 lanPanel 同款卡片。
+       不自创第二种设置区样式；用户已经在这个页面学会一次的东西不该在下一节重学。
+    2. 面板位置放在「局域网同步」之后、「快捷键」之前。理由：这两节是设置页仅有的两个
+       「把本机数据开给本机之外/进程之外」的功能，放一起用户才建立得起「这一片是对外暴露」的心智。
+    3. 开关的真值取后端 mcp_get_status().running，不新增 config 字段做第二份真相。
+       局域网那节是 config.lan_sync_enabled + toggle_lan_sync 两处状态，已经埋了不一致的坑（切换失败时
+       config 已存、服务没起，UI 显示为开）。本面板不重复这个错：UI 一律渲染后端回来的 McpStatus。
+       => 由此必然出现第三态「已开启但没跑起来」，这正好就是需求 #4 要的「启动失败必须可见」。
+    4. 令牌默认遮蔽用固定 42 个圆点，不按真实长度渲染圆点——真实长度本身也是信息。
+       「显示」是瞬时切换不做倒计时自动隐藏：设置页本来就是用户主动打开的，加倒计时只会让人复制到一半失效。
+    5. 「复制接入配置」给的是整段 JSON（含令牌），而不是只给令牌。用户的真实任务是把它贴进
+       Claude Code 的配置，给零件让他自己拼是把我们的活推给他。同时保留单独的「复制令牌」。
+    6. 端口输入即时校验、失焦才提交，且改端口必然重启服务 —— 所以按钮文案写「保存并重启服务」，
+       不写「保存」。改完要重连的客户端不会因为 URL 变了而静默失联。
+    7. 「怎么接进 Claude Code」默认折叠。开态面板已经有状态/令牌/端口三块，引导默认展开会把
+       真正要看的状态行挤到折叠线以下。首次开启后自动展开一次（onboarding），之后记住折叠态。
+    8. 范围声明（只覆盖笔记 / 全部只读 / 不含剪贴板历史）出现两次且都不可关：
+       确认弹窗里一次（决策前），面板底部常驻一次（决策后回来查）。这条是这个功能的信任基础，
+       只说一次等于没说。
+    9. 浅色/深色演示不是两套设计，是同一套 DOM 套两组真实令牌（ocean / midnight），
+       与项目实际的主题机制一致，避免出现「设计稿好看但换主题就垮」。
+
+  【三、本稿没有做的事】
+    - 不含任何 .tsx/.ts/.css 实现代码，只有设计稿。
+    - 未改动 src-tauri/ 下任何文件。
+    - 文末「待拍板」一节列出了 6 个我无法自己决定、且会影响实现的问题。
+=========================================================================================
+-->
+<title>PastePanda 知识库 MCP 服务 · 设置面板设计稿</title>
+<style>
+  /* ── 文档外壳（跟随系统浅/深） ── */
+  :root {
+    --bg:#0f1419; --panel:#171d24; --panel2:#1d242c; --line:#2a333d;
+    --tx:#e6edf3; --tx2:#9fb0c0; --tx3:#6b7d8f;
+    --accent:#4a9eff; --warn:#f0a020; --danger:#e5534b; --ok:#3fb950;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f8fa; --panel:#fff; --panel2:#f0f3f6; --line:#d8dee4;
+            --tx:#1f2328; --tx2:#57606a; --tx3:#8c959f; --accent:#0969da; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:28px 20px 80px; background:var(--bg); color:var(--tx);
+         font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:1040px; margin:0 auto; }
+  h1 { font-size:21px; margin:0 0 6px; }
+  h2 { font-size:16px; margin:34px 0 10px; padding-bottom:7px; border-bottom:1px solid var(--line); }
+  h3 { font-size:13.5px; margin:20px 0 7px; }
+  p, li { color:var(--tx2); }
+  .lede { color:var(--tx2); font-size:13px; margin:0 0 6px; }
+  code { background:var(--panel2); padding:1px 5px; border-radius:4px;
+         font:12px ui-monospace,Consolas,monospace; color:var(--tx); }
+  pre { background:var(--panel); border:1px solid var(--line); border-radius:8px;
+        padding:11px 13px; overflow-x:auto; font:12px/1.6 ui-monospace,Consolas,monospace; color:var(--tx); }
+  .tag { display:inline-block; padding:1px 7px; border-radius:5px; font-size:11px; font-weight:600;
+         background:color-mix(in srgb,var(--accent) 20%,transparent); color:var(--accent); }
+  .note { border-left:3px solid var(--accent); background:var(--panel); padding:10px 13px;
+          border-radius:0 7px 7px 0; margin:12px 0; font-size:12.5px; }
+  .note.warn { border-left-color:var(--warn); }
+  .note.bad  { border-left-color:var(--danger); }
+  .note.ok   { border-left-color:var(--ok); }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:12.5px; }
+  th, td { border:1px solid var(--line); padding:7px 9px; text-align:left; vertical-align:top; }
+  th { background:var(--panel2); font-weight:600; color:var(--tx); }
+  td { color:var(--tx2); }
+  td code { white-space:nowrap; }
+  .cap { font-size:11px; color:var(--tx3); margin:6px 0 0; }
+  .two { display:flex; gap:26px; flex-wrap:wrap; align-items:flex-start; }
+  .colhead { font-size:11px; font-weight:700; letter-spacing:.6px; text-transform:uppercase;
+             color:var(--tx3); margin:0 0 8px; }
+
+  /* ══════════════════════════════════════════════════════════════════
+     真实组件令牌（照抄 src/styles/theme.css）
+     .mockLight = ocean（默认浅色）  .mockDark = midnight（默认深色）
+     ══════════════════════════════════════════════════════════════════ */
+  .mock {
+    width:480px; border-radius:12px; overflow:hidden;
+    border:1px solid var(--line);
+    font:13px/1.5 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    background:var(--m-appbg);
+  }
+  .mockLight {
+    --m-appbg:#F7F7F8; --m-card:#fff; --m-border:#E0E4EB;
+    --m-tx:#0F172A; --m-tx2:#495565; --m-muted:#627083;
+    --m-accent:#0284C7; --m-accent-light:#E0F2FE; --m-accent-strong:#0273AD;
+    --m-section:#F0F4F8; --m-input:#F1F5F9; --m-hover:#E8ECF2; --m-dialog:#fff;
+    --m-toggle-off:#E2E8F0; --m-toggle-off-label:#94A3B8;
+    --m-green:#11813A; --m-green-bg:#DCFCE7;
+    --m-orange:#C54A0A; --m-orange-bg:#FFF7ED; --m-orange-border:#FED7AA;
+    --m-danger:#D82525; --m-red-bg:#FEF2F2;
+  }
+  .mockDark {
+    --m-appbg:#0B0B13; --m-card:#18181B; --m-border:#27272A;
+    --m-tx:#E4E4E7; --m-tx2:#AFAFB7; --m-muted:#8D8D95;
+    --m-accent:#818CF8; --m-accent-light:#1E1B4B; --m-accent-strong:#818CF8;
+    --m-section:#0F0F11; --m-input:#27272A; --m-hover:#1F1F23; --m-dialog:#18181B;
+    --m-toggle-off:#3F3F46; --m-toggle-off-label:#71717A;
+    --m-green:#4ADE80; --m-green-bg:#052E16;
+    --m-orange:#FB923C; --m-orange-bg:#431407; --m-orange-border:#9A3412;
+    --m-danger:#F87171; --m-red-bg:#450A0A;
+  }
+
+  /* Settings.module.css 复刻 */
+  .sSection { padding:14px 20px 6px; font-size:11px; font-weight:700; color:var(--m-tx2);
+              text-transform:uppercase; letter-spacing:.5px;
+              background:var(--m-section); border-bottom:1px solid var(--m-border); }
+  .sRow { display:flex; align-items:center; padding:12px 20px; gap:12px;
+          border-bottom:1px solid var(--m-border); background:var(--m-appbg); }
+  .sRow:last-child { border-bottom:none; }
+  .sRowIcon { width:36px; height:36px; border-radius:10px; display:flex; align-items:center;
+              justify-content:center; font-size:16px; flex-shrink:0; }
+  .sRowBody { flex:1; min-width:0; }
+  .sRowLabel { font-size:13px; font-weight:600; color:var(--m-tx); }
+  .sRowDesc { font-size:11px; color:var(--m-muted); margin-top:2px; }
+  .sToggle { width:44px; height:26px; border-radius:13px; position:relative; flex-shrink:0;
+             border:none; display:inline-block; }
+  .sToggle.off { background:var(--m-toggle-off); }
+  .sToggle.on  { background:var(--m-green); }
+  .sToggleThumb { position:absolute; left:0; top:2px; width:22px; height:22px; border-radius:50%;
+                  background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.15); }
+  .sToggle.off .sToggleThumb { transform:translateX(2px); }
+  .sToggle.on  .sToggleThumb { transform:translateX(20px); }
+  .sToggleLabel { position:absolute; top:50%; transform:translateY(-50%);
+                  font-size:9px; font-weight:700; }
+  .sToggle.on  .sToggleLabel { left:7px; color:#fff; }
+  .sToggle.off .sToggleLabel { right:6px; color:var(--m-toggle-off-label); }
+  .sAction { padding:5px 12px; border-radius:6px; border:1px solid var(--m-border);
+             background:var(--m-card); font-size:11px; font-weight:600; color:var(--m-tx2);
+             white-space:nowrap; font-family:inherit; }
+  .sAction.danger { color:var(--m-danger);
+                    border-color:color-mix(in srgb,var(--m-danger) 30%,transparent); }
+
+  /* .lanPanel 同款展开卡片 → 本功能沿用为 .mcpPanel */
+  .mcpPanel { margin:8px 20px; border-radius:14px; padding:16px 18px;
+              background:var(--m-accent-light); border:1px solid var(--m-border); }
+  .mcpHead { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .mcpStatus { display:flex; align-items:center; gap:8px; }
+  .dot { width:10px; height:10px; border-radius:50%; background:var(--m-green);
+         box-shadow:0 0 6px color-mix(in srgb,var(--m-green) 40%,transparent); }
+  .dot.off { background:var(--m-muted); box-shadow:none; }
+  .dot.err { background:var(--m-orange); box-shadow:0 0 6px color-mix(in srgb,var(--m-orange) 45%,transparent); }
+  .mcpStatusText { font-size:13px; font-weight:600; color:var(--m-tx); }
+  .miniBtn { background:none; border:1px solid var(--m-border); border-radius:6px;
+             padding:2px 8px; font-size:11px; color:var(--m-tx2); font-family:inherit; }
+  .fieldLabel { font-size:12px; color:var(--m-tx2); margin:0 0 6px; }
+  .inputRow { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+  .mInput { flex:1; font:12px/1.5 ui-monospace,Consolas,monospace; padding:5px 8px; border-radius:4px;
+            border:1px solid var(--m-border); background:var(--m-card); color:var(--m-tx);
+            min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mInput.short { flex:0 0 96px; }
+  .mInput.bad { border-color:var(--m-danger); }
+  .hint { font-size:11px; color:var(--m-muted); }
+  .hint.err { color:var(--m-danger); }
+  .mcpNote { font-size:11px; color:var(--m-muted); line-height:1.6; }
+  .mcpFoot { margin-top:12px; padding-top:10px; border-top:1px solid var(--m-border); }
+  .errBanner { display:flex; gap:8px; align-items:flex-start; padding:9px 11px; border-radius:10px;
+               background:var(--m-orange-bg); border:1px solid var(--m-orange-border);
+               margin-bottom:12px; }
+  .errBanner .etx { font-size:11.5px; color:var(--m-tx); line-height:1.55; }
+  .errBanner b { color:var(--m-orange); }
+  .disclose { border:1px solid var(--m-border); border-radius:10px; background:var(--m-card);
+              overflow:hidden; }
+  .discloseHead { display:flex; align-items:center; gap:6px; padding:8px 11px;
+                  font-size:12px; font-weight:600; color:var(--m-tx); }
+  .discloseHead .chev { margin-left:auto; color:var(--m-muted); font-size:11px; }
+  .discloseBody { padding:0 11px 11px; border-top:1px solid var(--m-border); }
+  .step { font-size:11.5px; color:var(--m-tx2); margin:9px 0 4px; }
+  .step b { color:var(--m-tx); }
+  .codeblk { background:var(--m-input); border:1px solid var(--m-border); border-radius:6px;
+             padding:7px 9px; font:11px/1.55 ui-monospace,Consolas,monospace; color:var(--m-tx);
+             overflow-x:auto; white-space:pre; }
+
+  /* 确认弹窗复刻（.dialog-box.w400） */
+  .dlg { width:400px; border-radius:16px; overflow:hidden; border:1px solid var(--m-border);
+         background:var(--m-dialog); }
+  .dlgHead { display:flex; align-items:center; justify-content:space-between; padding:0 20px;
+             height:48px; border-bottom:1px solid var(--m-border); }
+  .dlgTitle { font-size:15px; font-weight:600; color:var(--m-tx); display:flex; align-items:center; gap:8px; }
+  .dlgX { color:var(--m-muted); font-size:14px; }
+  .dlgBody { padding:16px 20px; font-size:13px; line-height:1.6; color:var(--m-tx2); white-space:pre-line; }
+  .dlgBody b { color:var(--m-tx); }
+  .dlgFoot { display:flex; justify-content:flex-end; gap:8px; align-items:center; padding:0 20px;
+             height:48px; border-top:1px solid var(--m-border); }
+  .btnSec { padding:6px 14px; border-radius:7px; border:1px solid var(--m-border);
+            background:var(--m-card); color:var(--m-tx2); font-size:12px; font-weight:600; }
+  .btnDanger { padding:6px 14px; border-radius:7px; border:none; background:var(--m-danger);
+               color:#fff; font-size:12px; font-weight:600; }
+</style>
+
+<div class="wrap">
+
+<h1>知识库 MCP 服务 · 设置面板 <span class="tag">设计稿</span></h1>
+<p class="lede">把用户的<b>笔记</b>以 MCP 工具的形式<b>只读</b>开放给 Claude Code 这类客户端。
+默认关闭，只绑 <code>127.0.0.1</code>，默认端口 <code>17650</code>。</p>
+
+<div class="note">
+<b>本稿的骨架不是新发明的。</b>它和设置页里的「局域网同步」是同一套：
+<code>sSection</code> 标题 → 一行 <code>ToggleRow</code> → 开了才展开一张 <code>lanPanel</code> 同款卡片。
+用户已经在上一节学会的东西，这一节不该让他再学一遍。
+</div>
+
+<h2>1 · 放在哪里</h2>
+<p>插在<b>「局域网同步」之后、「快捷键」之前</b>。设置页现有分节顺序是：
+数据统计 → 外观 → 通用 → 局域网同步 → 快捷键 → 数据管理。</p>
+<p>理由：局域网同步和 MCP 是这个页面上仅有的两个「把本机数据交出去」的功能。
+挨在一起，用户才建立得起「这一片是对外暴露，要小心」的心智；
+塞进「数据管理」会和导入导出混成一堆本地操作，风险感被稀释。</p>
+
+<h2>2 · 关态（默认）—— 只有一行</h2>
+<p>没开的时候<b>不展开任何东西</b>，和局域网同步一致。这一行的 <code>desc</code>
+必须同时说清「什么」和「边界」，因为大多数用户不会点开就再也见不到别的文案。</p>
+
+<div class="two">
+<div>
+  <p class="colhead">浅色 · ocean</p>
+  <div class="mock mockLight">
+    <div class="sSection">局域网同步</div>
+    <div class="sRow">
+      <span class="sRowIcon" style="background:linear-gradient(135deg,#06B6D4,#3B82F6)">🌐</span>
+      <div class="sRowBody">
+        <div class="sRowLabel">局域网同步</div>
+        <div class="sRowDesc">同一局域网内自动同步剪贴板内容</div>
+      </div>
+      <span class="sToggle off"><span class="sToggleThumb"></span><span class="sToggleLabel">关</span></span>
+    </div>
+    <div class="sSection">知识库 MCP 服务</div>
+    <div class="sRow">
+      <span class="sRowIcon" style="background:linear-gradient(135deg,#8B5CF6,#6D28D9)">🔌</span>
+      <div class="sRowBody">
+        <div class="sRowLabel">向 AI 客户端开放笔记 <span style="font-size:10px;color:var(--m-muted);font-weight:600">ⓘ</span></div>
+        <div class="sRowDesc">让 Claude Code 等 MCP 客户端只读检索你的笔记 · 仅本机 · 不含剪贴板历史</div>
+      </div>
+      <span class="sToggle off"><span class="sToggleThumb"></span><span class="sToggleLabel">关</span></span>
+    </div>
+  </div>
+</div>
+<div>
+  <p class="colhead">深色 · midnight</p>
+  <div class="mock mockDark">
+    <div class="sSection">局域网同步</div>
+    <div class="sRow">
+      <span class="sRowIcon" style="background:linear-gradient(135deg,#06B6D4,#3B82F6)">🌐</span>
+      <div class="sRowBody">
+        <div class="sRowLabel">局域网同步</div>
+        <div class="sRowDesc">同一局域网内自动同步剪贴板内容</div>
+      </div>
+      <span class="sToggle off"><span class="sToggleThumb"></span><span class="sToggleLabel">关</span></span>
+    </div>
+    <div class="sSection">知识库 MCP 服务</div>
+    <div class="sRow">
+      <span class="sRowIcon" style="background:linear-gradient(135deg,#8B5CF6,#6D28D9)">🔌</span>
+      <div class="sRowBody">
+        <div class="sRowLabel">向 AI 客户端开放笔记 <span style="font-size:10px;color:var(--m-muted);font-weight:600">ⓘ</span></div>
+        <div class="sRowDesc">让 Claude Code 等 MCP 客户端只读检索你的笔记 · 仅本机 · 不含剪贴板历史</div>
+      </div>
+      <span class="sToggle off"><span class="sToggleThumb"></span><span class="sToggleLabel">关</span></span>
+    </div>
+  </div>
+</div>
+</div>
+<p class="cap">图标沿用笔记域的紫色（<code>#8B5CF6 → #6D28D9</code>，与「导出笔记为 Markdown 目录」同色），
+和局域网同步的青蓝拉开——颜色本身就在说「这一节动的是笔记」。
+ⓘ 走现成的 <code>HelpTooltip</code>（<code>ToggleRow</code> 已支持 <code>tooltip</code> / <code>detail</code>）。</p>
+
+<h2>3 · 首次开启：一个说清后果的确认弹窗</h2>
+<p>需求写得很直白：<b>不是光秃秃的开关</b>。开关按下去先弹确认，用户点「取消」则开关<b>弹回关</b>（不留中间态）。</p>
+
+<div class="two">
+<div>
+  <p class="colhead">浅色</p>
+  <div class="mock mockLight" style="width:auto;border:none;background:transparent">
+    <div class="dlg">
+      <div class="dlgHead">
+        <div class="dlgTitle"><span style="color:var(--m-danger)">⚠</span> 开放笔记给本机的 AI 客户端？</div>
+        <span class="dlgX">✕</span>
+      </div>
+      <div class="dlgBody">开启后，PastePanda 会在本机 <b>127.0.0.1:17650</b> 起一个只读服务。
+
+<b>本机上任何持有令牌的程序，都能检索并读取你的全部笔记原文。</b>令牌就在下面的面板里，明文可复制——谁拿到它，谁就等于拿到了你的笔记。
+
+开放范围：<b>只有笔记</b>。不含剪贴板历史、不含截图、不含任何 AI 记录。全部操作<b>只读</b>，外部无法新增、修改或删除。
+
+服务只监听本机回环地址，局域网内的其他设备连不上。</div>
+      <div class="dlgFoot">
+        <span class="btnSec">取消</span>
+        <span class="btnDanger">我了解，开启</span>
+      </div>
+    </div>
+  </div>
+</div>
+<div>
+  <p class="colhead">深色</p>
+  <div class="mock mockDark" style="width:auto;border:none;background:transparent">
+    <div class="dlg">
+      <div class="dlgHead">
+        <div class="dlgTitle"><span style="color:var(--m-danger)">⚠</span> 开放笔记给本机的 AI 客户端？</div>
+        <span class="dlgX">✕</span>
+      </div>
+      <div class="dlgBody">开启后，PastePanda 会在本机 <b>127.0.0.1:17650</b> 起一个只读服务。
+
+<b>本机上任何持有令牌的程序，都能检索并读取你的全部笔记原文。</b>令牌就在下面的面板里，明文可复制——谁拿到它，谁就等于拿到了你的笔记。
+
+开放范围：<b>只有笔记</b>。不含剪贴板历史、不含截图、不含任何 AI 记录。全部操作<b>只读</b>，外部无法新增、修改或删除。
+
+服务只监听本机回环地址，局域网内的其他设备连不上。</div>
+      <div class="dlgFoot">
+        <span class="btnSec">取消</span>
+        <span class="btnDanger">我了解，开启</span>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="note ok">
+<b>这个弹窗不需要新组件。</b><code>lib/confirm.ts</code> 的 <code>confirmDialog()</code> 只吃纯字符串 <code>message</code>，
+但 <code>ConfirmDialog.tsx</code> 的正文样式是 <code>whiteSpace: "pre-line"</code>，所以用 <code>\n\n</code> 分段是<b>现成能用</b>的。
+上图里加粗的部分是设计意图；真做出来是<b>无粗体的纯文本</b>。
+<br><br>
+如果你认为「本机上任何持有令牌的程序都能读你的全部笔记」这句必须视觉加重（我倾向于必须），
+那就得为它单开一个组件——这是本稿的<b>待拍板 ①</b>，见文末。
+</div>
+
+<p><b>只在首次开启时弹。</b>之后关了再开不再弹（已经知情了，反复弹会训练用户闭眼点确认）。
+判据用一个 config 布尔位，如 <code>mcp_consent_ack</code>。</p>
+
+<h2>4 · 开态：展开面板</h2>
+<p>卡片规格照抄 <code>.lanPanel</code>：<code>margin 8px 20px / radius 14 / padding 16px 18px /
+background: var(--accent-light) / border 1px</code>。自上而下四块：<b>状态行 → 令牌 → 端口 → 接入引导</b>，
+底部一条常驻的范围声明。</p>
+
+<div class="two">
+<div>
+  <p class="colhead">浅色 · 运行中</p>
+  <div class="mock mockLight">
+    <div class="sSection">知识库 MCP 服务</div>
+    <div class="sRow">
+      <span class="sRowIcon" style="background:linear-gradient(135deg,#8B5CF6,#6D28D9)">🔌</span>
+      <div class="sRowBody">
+        <div class="sRowLabel">向 AI 客户端开放笔记 <span style="font-size:10px;color:var(--m-muted);font-weight:600">ⓘ</span></div>
+        <div class="sRowDesc">让 Claude Code 等 MCP 客户端只读检索你的笔记 · 仅本机 · 不含剪贴板历史</div>
+      </div>
+      <span class="sToggle on"><span class="sToggleThumb"></span><span class="sToggleLabel">开</span></span>
+    </div>
+
+    <div class="mcpPanel">
+      <div class="mcpHead">
+        <div class="mcpStatus">
+          <div class="dot"></div>
+          <span class="mcpStatusText">运行中 · 端口 17650</span>
+        </div>
+        <button class="miniBtn">🔄 刷新</button>
+      </div>
+
+      <p class="fieldLabel">服务地址（只有本机能连）</p>
+      <div class="inputRow">
+        <span class="mInput">http://127.0.0.1:17650/mcp</span>
+        <button class="sAction">复制</button>
+      </div>
+
+      <p class="fieldLabel">访问令牌（客户端凭它连上来，等同于你笔记的钥匙）</p>
+      <div class="inputRow">
+        <span class="mInput">••••••••••••••••••••••••••••••••••••••••••</span>
+        <button class="sAction">显示</button>
+        <button class="sAction">复制</button>
+        <button class="sAction danger">重置</button>
+      </div>
+
+      <p class="fieldLabel">端口</p>
+      <div class="inputRow">
+        <span class="mInput short">17650</span>
+        <button class="sAction">保存并重启服务</button>
+        <span class="hint">1024–65535</span>
+      </div>
+
+      <div class="disclose" style="margin-top:4px">
+        <div class="discloseHead">📘 怎么接进 Claude Code<span class="chev">展开 ▾</span></div>
+      </div>
+
+      <div class="mcpFoot">
+        <div class="mcpNote">🔒 开放范围：<b style="color:var(--m-tx2)">只有笔记</b>，不含剪贴板历史 ·
+        全部操作<b style="color:var(--m-tx2)">只读</b>，外部无法新增/修改/删除 · 只监听 127.0.0.1</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <p class="colhead">深色 · 令牌已显示</p>
+  <div class="mock mockDark">
+    <div class="sSection">知识库 MCP 服务</div>
+    <div class="sRow">
+      <span class="sRowIcon" style="background:linear-gradient(135deg,#8B5CF6,#6D28D9)">🔌</span>
+      <div class="sRowBody">
+        <div class="sRowLabel">向 AI 客户端开放笔记 <span style="font-size:10px;color:var(--m-muted);font-weight:600">ⓘ</span></div>
+        <div class="sRowDesc">让 Claude Code 等 MCP 客户端只读检索你的笔记 · 仅本机 · 不含剪贴板历史</div>
+      </div>
+      <span class="sToggle on"><span class="sToggleThumb"></span><span class="sToggleLabel">开</span></span>
+    </div>
+
+    <div class="mcpPanel">
+      <div class="mcpHead">
+        <div class="mcpStatus">
+          <div class="dot"></div>
+          <span class="mcpStatusText">运行中 · 端口 17650</span>
+        </div>
+        <button class="miniBtn">🔄 刷新</button>
+      </div>
+
+      <p class="fieldLabel">服务地址（只有本机能连）</p>
+      <div class="inputRow">
+        <span class="mInput">http://127.0.0.1:17650/mcp</span>
+        <button class="sAction">复制</button>
+      </div>
+
+      <p class="fieldLabel">访问令牌（客户端凭它连上来，等同于你笔记的钥匙）</p>
+      <div class="inputRow">
+        <span class="mInput">kRz7Qm2xW9tBvC4nH6yLpD8sF1gJ3aE5uN0iO7cX2vT</span>
+        <button class="sAction">隐藏</button>
+        <button class="sAction">复制</button>
+        <button class="sAction danger">重置</button>
+      </div>
+
+      <p class="fieldLabel">端口</p>
+      <div class="inputRow">
+        <span class="mInput short">17650</span>
+        <button class="sAction">保存并重启服务</button>
+        <span class="hint">1024–65535</span>
+      </div>
+
+      <div class="disclose" style="margin-top:4px">
+        <div class="discloseHead">📘 怎么接进 Claude Code<span class="chev">展开 ▾</span></div>
+      </div>
+
+      <div class="mcpFoot">
+        <div class="mcpNote">🔒 开放范围：<b style="color:var(--m-tx2)">只有笔记</b>，不含剪贴板历史 ·
+        全部操作<b style="color:var(--m-tx2)">只读</b>，外部无法新增/修改/删除 · 只监听 127.0.0.1</div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<h3>4.1 状态行</h3>
+<p>圆点跟随<b>真实</b>状态，绝不恒亮——这是 <code>LanSyncPanel</code> 已经修过一次的坑
+（原来无设备时也亮绿，注释里写着「不再恒亮假绿」）。三态：</p>
+<table>
+<tr><th>状态</th><th>圆点</th><th>文案</th><th>由什么决定</th></tr>
+<tr><td>运行中</td><td>绿 + 呼吸</td><td><code>运行中 · 端口 17650</code></td><td><code>status.running === true</code></td></tr>
+<tr><td>已停止</td><td>灰 · 不动</td><td><code>已停止</code></td><td>开关关（面板此时根本不渲染，仅在切换瞬间可见）</td></tr>
+<tr><td>启动失败</td><td>橙 + 呼吸</td><td><code>未能启动 · 端口 17650 可能被占用</code></td><td>开关为开但 <code>running === false</code>，或收到 <code>mcp-start-failed</code></td></tr>
+</table>
+<p>「刷新」按钮用 <code>.lanRefreshBtn</code> 同款。轮询频率照局域网那节的 5s，
+<b>且必须照抄它的 <code>useWindowVisible</code> 门控</b>——窗口 hide() 后 WebView 还活着，不停轮询就是白烧 CPU
+（LanSyncPanel 里那段注释直接引用了规则 8）。</p>
+
+<h3>4.2 令牌</h3>
+<ul>
+<li>默认遮蔽，固定 42 个 <code>•</code>。<b>不按真实长度渲染圆点</b>——长度本身也是信息。</li>
+<li>「显示 / 隐藏」是瞬时切换，<b>不做倒计时自动隐藏</b>：设置页是用户主动打开的，倒计时只会让人复制到一半失效。</li>
+<li>令牌<b>不进 <code>mcp_get_status</code></b>（后端已经这么设计了，很好）。前端也别缓存：点「显示」或「复制」时才现调 <code>mcp_get_token</code>。</li>
+<li>「复制」用全项目唯一出口 <code>copyToClipboard()</code>（<code>lib/utils.ts</code>）。<b>见下方红框，这里有个真问题。</b></li>
+</ul>
+
+<div class="note bad">
+<b>❗ 复制令牌会被 PastePanda 自己记进剪贴板历史。</b><br>
+本产品是剪贴板管理器，监听器不区分「谁复制的」。用户点一下「复制令牌」，那 43 个字符就会
+<b>变成一条剪贴板历史</b>，出现在主界面的时间线里、参与搜索、并且——如果他开了局域网同步——
+<b>被同步到局域网内的其他设备</b>。
+<br><br>
+<code>appStore.ts</code> 里确实有 <code>skip_sensitive</code>（「不记录匹配密钥/凭证模式的内容」），
+但我没有验证过 43 字符的 base64 串会不会命中那套模式，<b>而且它是一个用户可关的开关</b>——
+把令牌的安全性挂在一个用户可能关掉的偏好上，不成立。
+<br><br>
+<b>需要一个「复制但不记录」的路径</b>（后端复制前打一个抑制标记，或把这一次的哈希加进忽略集）。
+这是<b>待拍板 ②</b>，且它<b>不只影响这个面板</b>——AI 页的 API Key、局域网配对密钥大概率是同一个洞。
+</div>
+
+<h3>4.3 重置令牌</h3>
+<p>危险操作，走 <code>confirmDialog({ variant: "danger" })</code>：</p>
+<div class="two">
+<div><p class="colhead">浅色</p>
+<div class="mock mockLight" style="width:auto;border:none;background:transparent">
+  <div class="dlg">
+    <div class="dlgHead"><div class="dlgTitle"><span style="color:var(--m-danger)">⚠</span> 重置访问令牌？</div><span class="dlgX">✕</span></div>
+    <div class="dlgBody">旧令牌<b>立即失效</b>，服务不会重启。
+
+已经配好的客户端（Claude Code 等）会当场断开，需要把新令牌重新填一遍才能再连上。
+
+如果你怀疑令牌泄露了，这就是该点的按钮。</div>
+    <div class="dlgFoot"><span class="btnSec">取消</span><span class="btnDanger">重置</span></div>
+  </div>
+</div></div>
+<div><p class="colhead">深色</p>
+<div class="mock mockDark" style="width:auto;border:none;background:transparent">
+  <div class="dlg">
+    <div class="dlgHead"><div class="dlgTitle"><span style="color:var(--m-danger)">⚠</span> 重置访问令牌？</div><span class="dlgX">✕</span></div>
+    <div class="dlgBody">旧令牌<b>立即失效</b>，服务不会重启。
+
+已经配好的客户端（Claude Code 等）会当场断开，需要把新令牌重新填一遍才能再连上。
+
+如果你怀疑令牌泄露了，这就是该点的按钮。</div>
+    <div class="dlgFoot"><span class="btnSec">取消</span><span class="btnDanger">重置</span></div>
+  </div>
+</div></div>
+</div>
+<p>重置成功后：令牌区<b>自动切到显示态</b>并 toast「新令牌已生成，记得更新客户端配置」。
+理由——用户刚重置完，下一步 100% 是去复制新令牌，还让他多点一次「显示」是纯粹的摩擦。
+（这是本稿唯一一处令牌默认可见，代价可接受。）</p>
+
+<h3>4.4 端口</h3>
+<table>
+<tr><th>输入</th><th>表现</th></tr>
+<tr><td>合法（1024–65535 整数）</td><td>「保存并重启服务」可点；右侧灰字提示 <code>1024–65535</code></td></tr>
+<tr><td>非法 / 空 / 越界</td><td>输入框边框转红，提示变红字：<code>端口需在 1024–65535 之间</code>，按钮置灰</td></tr>
+<tr><td>= 当前端口</td><td>按钮置灰（没有变化就不该重启服务）</td></tr>
+</table>
+<div class="two">
+<div><p class="colhead">浅色 · 非法输入</p>
+<div class="mock mockLight" style="width:420px"><div class="mcpPanel" style="margin:12px">
+  <p class="fieldLabel">端口</p>
+  <div class="inputRow">
+    <span class="mInput short bad">80</span>
+    <button class="sAction" style="opacity:.6">保存并重启服务</button>
+    <span class="hint err">端口需在 1024–65535 之间</span>
+  </div>
+</div></div></div>
+<div><p class="colhead">深色 · 非法输入</p>
+<div class="mock mockDark" style="width:420px"><div class="mcpPanel" style="margin:12px">
+  <p class="fieldLabel">端口</p>
+  <div class="inputRow">
+    <span class="mInput short bad">80</span>
+    <button class="sAction" style="opacity:.6">保存并重启服务</button>
+    <span class="hint err">端口需在 1024–65535 之间</span>
+  </div>
+</div></div></div>
+</div>
+<p class="cap">按钮写「保存并重启服务」而不是「保存」：改端口必然断掉现有连接、且 URL 变了，
+已配好的客户端要改配置。写成「保存」会让用户以为是无痛的。</p>
+<div class="note warn">
+<b>你给的命令清单里没有端口 setter。</b>现有的四个命令（<code>mcp_get_status</code> /
+<code>mcp_get_token</code> / <code>mcp_regenerate_token</code> / <code>mcp_set_enabled</code>）都改不了端口。
+需求 #5 要「端口可配置」，就得再加一个（<code>mcp_set_port(port: u16) -> McpStatus</code>）。
+<b>待拍板 ③</b>：这个命令由你在并行改的 src-tauri 里加，还是留到下一轮？本稿按「会有」来画。
+</div>
+
+<h2>5 · 启动失败必须看得见</h2>
+<p>端口被占是最常见的失败，而且<b>服务不会自动换端口</b>——所以失败绝不能只是一个转瞬即逝的 toast。
+设计上做<b>两层</b>：</p>
+<ol>
+<li><b>瞬时</b>：收到 <code>mcp-start-failed</code> 事件时弹一次 error toast（payload 原样带上）。</li>
+<li><b>常驻</b>：面板顶部挂一条橙色横幅，<b>只要还没成功启动就一直在</b>。用户切走再回来照样看得见。</li>
+</ol>
+<p>并且开关<b>停在「开」</b>不弹回——用户的意图确实是「我要开」，弹回去会让他以为自己没点上，
+然后再点一次，再失败一次。开关表达意图，横幅表达现实。</p>
+
+<div class="two">
+<div>
+  <p class="colhead">浅色 · 启动失败</p>
+  <div class="mock mockLight">
+    <div class="sRow">
+      <span class="sRowIcon" style="background:linear-gradient(135deg,#8B5CF6,#6D28D9)">🔌</span>
+      <div class="sRowBody">
+        <div class="sRowLabel">向 AI 客户端开放笔记</div>
+        <div class="sRowDesc">让 Claude Code 等 MCP 客户端只读检索你的笔记 · 仅本机 · 不含剪贴板历史</div>
+      </div>
+      <span class="sToggle on"><span class="sToggleThumb"></span><span class="sToggleLabel">开</span></span>
+    </div>
+    <div class="mcpPanel">
+      <div class="mcpHead">
+        <div class="mcpStatus"><div class="dot err"></div>
+          <span class="mcpStatusText">未能启动</span></div>
+        <button class="miniBtn">↻ 重试</button>
+      </div>
+      <div class="errBanner">
+        <span style="font-size:14px">⚠</span>
+        <div class="etx"><b>端口 17650 被占用，服务没有启动。</b><br>
+        服务不会自己换端口。换一个端口再重试，或先关掉占用它的程序。<br>
+        <span style="color:var(--m-muted)">后端原文：Address already in use (os error 10048)</span></div>
+      </div>
+      <p class="fieldLabel">端口</p>
+      <div class="inputRow">
+        <span class="mInput short">17651</span>
+        <button class="sAction">保存并重试</button>
+        <span class="hint">1024–65535</span>
+      </div>
+      <div class="mcpFoot">
+        <div class="mcpNote">服务未运行时，地址与令牌暂不可用。</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div>
+  <p class="colhead">深色 · 启动失败</p>
+  <div class="mock mockDark">
+    <div class="sRow">
+      <span class="sRowIcon" style="background:linear-gradient(135deg,#8B5CF6,#6D28D9)">🔌</span>
+      <div class="sRowBody">
+        <div class="sRowLabel">向 AI 客户端开放笔记</div>
+        <div class="sRowDesc">让 Claude Code 等 MCP 客户端只读检索你的笔记 · 仅本机 · 不含剪贴板历史</div>
+      </div>
+      <span class="sToggle on"><span class="sToggleThumb"></span><span class="sToggleLabel">开</span></span>
+    </div>
+    <div class="mcpPanel">
+      <div class="mcpHead">
+        <div class="mcpStatus"><div class="dot err"></div>
+          <span class="mcpStatusText">未能启动</span></div>
+        <button class="miniBtn">↻ 重试</button>
+      </div>
+      <div class="errBanner">
+        <span style="font-size:14px">⚠</span>
+        <div class="etx"><b>端口 17650 被占用，服务没有启动。</b><br>
+        服务不会自己换端口。换一个端口再重试，或先关掉占用它的程序。<br>
+        <span style="color:var(--m-muted)">后端原文：Address already in use (os error 10048)</span></div>
+      </div>
+      <p class="fieldLabel">端口</p>
+      <div class="inputRow">
+        <span class="mInput short">17651</span>
+        <button class="sAction">保存并重试</button>
+        <span class="hint">1024–65535</span>
+      </div>
+      <div class="mcpFoot">
+        <div class="mcpNote">服务未运行时，地址与令牌暂不可用。</div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+<p class="cap">失败态下<b>藏起地址和令牌行</b>：一个连不上的 URL 和一个用不了的令牌只会诱导用户去排查错方向。
+只留下能解决问题的那一个控件——端口。后端错误原文放在第三行灰字里：
+用户看不懂也没关系，他能把它截图发给你，这就是它的价值。</p>
+
+<h2>6 · 怎么接进 Claude Code（默认折叠）</h2>
+<p>首次开启成功后<b>自动展开一次</b>，之后记住用户的折叠态。展开长这样：</p>
+
+<div class="two">
+<div><p class="colhead">浅色 · 展开</p>
+<div class="mock mockLight" style="width:500px"><div class="mcpPanel" style="margin:12px">
+  <div class="disclose">
+    <div class="discloseHead">📘 怎么接进 Claude Code<span class="chev">收起 ▴</span></div>
+    <div class="discloseBody">
+      <div class="step"><b>方式一 · 一条命令</b>（推荐）。点下面的按钮复制，粘到终端回车即可：</div>
+      <div class="codeblk">claude mcp add --transport http pastepanda \
+  http://127.0.0.1:17650/mcp \
+  --header "Authorization: Bearer &lt;你的令牌&gt;"</div>
+      <div class="inputRow" style="margin-top:8px">
+        <button class="sAction">复制命令（含令牌）</button>
+        <button class="sAction">复制 JSON 配置</button>
+      </div>
+      <div class="step"><b>方式二 · 写配置文件</b>。填进项目的 <code style="font-size:10.5px">.mcp.json</code>：</div>
+      <div class="codeblk">{
+  "mcpServers": {
+    "pastepanda": {
+      "type": "http",
+      "url": "http://127.0.0.1:17650/mcp",
+      "headers": { "Authorization": "Bearer &lt;你的令牌&gt;" }
+    }
+  }
+}</div>
+      <div class="step" style="margin-top:10px">接好之后，直接问它「<b>我笔记里关于 xxx 记了什么</b>」就行。</div>
+      <div class="mcpNote" style="margin-top:8px">⚠ 复制出来的内容<b style="color:var(--m-tx2)">含明文令牌</b>，不要贴进聊天群、issue 或截图。</div>
+    </div>
+  </div>
+</div></div></div>
+
+<div><p class="colhead">深色 · 展开</p>
+<div class="mock mockDark" style="width:500px"><div class="mcpPanel" style="margin:12px">
+  <div class="disclose">
+    <div class="discloseHead">📘 怎么接进 Claude Code<span class="chev">收起 ▴</span></div>
+    <div class="discloseBody">
+      <div class="step"><b>方式一 · 一条命令</b>（推荐）。点下面的按钮复制，粘到终端回车即可：</div>
+      <div class="codeblk">claude mcp add --transport http pastepanda \
+  http://127.0.0.1:17650/mcp \
+  --header "Authorization: Bearer &lt;你的令牌&gt;"</div>
+      <div class="inputRow" style="margin-top:8px">
+        <button class="sAction">复制命令（含令牌）</button>
+        <button class="sAction">复制 JSON 配置</button>
+      </div>
+      <div class="step"><b>方式二 · 写配置文件</b>。填进项目的 <code style="font-size:10.5px">.mcp.json</code>：</div>
+      <div class="codeblk">{
+  "mcpServers": {
+    "pastepanda": {
+      "type": "http",
+      "url": "http://127.0.0.1:17650/mcp",
+      "headers": { "Authorization": "Bearer &lt;你的令牌&gt;" }
+    }
+  }
+}</div>
+      <div class="step" style="margin-top:10px">接好之后，直接问它「<b>我笔记里关于 xxx 记了什么</b>」就行。</div>
+      <div class="mcpNote" style="margin-top:8px">⚠ 复制出来的内容<b style="color:var(--m-tx2)">含明文令牌</b>，不要贴进聊天群、issue 或截图。</div>
+    </div>
+  </div>
+</div></div></div>
+</div>
+
+<div class="note warn">
+<b>上面两段代码是占位，实现前必须核对两件事：</b>
+<br>① 令牌以什么方式送——<code>Authorization: Bearer</code> 头？<code>?token=</code> 查询参数？这是<b>后端已经定死</b>的事实，
+我从你给的命令清单里看不出来（<code>mcp_get_status</code> 返回的 <code>url</code> 里不含令牌，说明<b>不</b>是查询参数，但仅此而已）。
+<br>② <code>claude mcp add</code> 的确切参数形态，实现时用 <code>claude mcp add --help</code> 现场核一遍再写死进 UI。
+<br>写错了比不写更糟——用户会照着抄，然后连不上，然后以为是我们的服务坏了。这是<b>待拍板 ④</b>。
+</div>
+
+<h2>7 · 全状态一览</h2>
+<table>
+<tr><th>#</th><th>状态</th><th>面板</th><th>圆点 / 文案</th><th>说明</th></tr>
+<tr><td>1</td><td>关（默认）</td><td>不渲染</td><td>—</td><td>只有 ToggleRow 一行</td></tr>
+<tr><td>2</td><td>开启中</td><td>渲染，控件禁用</td><td>灰 · <code>正在启动…</code></td><td><code>mcp_set_enabled</code> 未返回期间</td></tr>
+<tr><td>3</td><td>运行中</td><td>全量</td><td>绿呼吸 · <code>运行中 · 端口 N</code></td><td>常态</td></tr>
+<tr><td>4</td><td>启动失败</td><td>横幅 + 端口，<b>隐藏地址/令牌</b></td><td>橙呼吸 · <code>未能启动</code></td><td>开关停在「开」</td></tr>
+<tr><td>5</td><td>正在重启（改端口）</td><td>渲染，控件禁用</td><td>灰 · <code>正在重启…</code></td><td>成功回 3，失败回 4</td></tr>
+<tr><td>6</td><td>令牌重置中</td><td>令牌行按钮转圈</td><td>不变</td><td>用 <code>.sActionLoading</code>（现成的）</td></tr>
+<tr><td>7</td><td>状态查询失败</td><td>保持上次 + 横幅</td><td>灰 · <code>状态未知</code></td><td>照抄 LanSyncPanel 的 <code>wasOkRef</code>：只在「成功→失败」的那一次弹 toast，5s 轮询下不刷屏</td></tr>
+</table>
+
+<h2>8 · 代码怎么落（规则 #7：单个 .tsx ≤ 300 行）</h2>
+<div class="note bad">
+<b>绝对不能往 <code>GeneralTab.tsx</code> 里堆。</b>它现在 <b>72 KB / 1400+ 行</b>，早就是全项目最超标的文件。
+规则 #7 明写「新增功能时，若目标文件接近 300 行，默认新建文件而非追加」。
+</div>
+<table>
+<tr><th>文件</th><th>职责</th><th>预估</th></tr>
+<tr><td><code>src/lib/api/mcp.ts</code></td><td>4~5 个 invoke 包装 + <code>McpStatus</code> 类型。照 <code>noteVault.ts</code> 的模子：
+try/catch → <code>logger.error</code> + <code>toastActionFailed</code> → 返回 <code>null</code>，<b>失败不静默</b>（规则 #15.3）</td><td>~90 行</td></tr>
+<tr><td><code>src/hooks/useMcpServer.ts</code></td><td>状态、5s 轮询（<b>套 <code>useWindowVisible</code></b>）、<code>mcp-start-failed</code> 监听、
+<code>wasOkRef</code> 防刷屏、启停/重置/改端口的动作。UI 一行不写</td><td>~150 行</td></tr>
+<tr><td><code>src/components/settings/McpServerPanel.tsx</code></td><td>展开面板：状态行 + 失败横幅 + 地址 + 令牌 + 端口 + 底部声明</td><td>~180 行</td></tr>
+<tr><td><code>src/components/settings/McpClientGuide.tsx</code></td><td>折叠的接入引导（含两个复制按钮）。单独成件就是为了让上面那个不破 300</td><td>~90 行</td></tr>
+<tr><td><code>Settings.module.css</code></td><td>追加 <code>.mcpPanel</code> 等类。<b>能复用 <code>.lanPanel</code> 系列的就直接复用</b>，别抄一份</td><td>~60 行</td></tr>
+<tr><td><code>GeneralTab.tsx</code></td><td><b>只加 ~16 行</b>：<code>sSection</code> 标题 + <code>ToggleRow</code> + <code>{running && &lt;McpServerPanel/&gt;}</code>，
+和局域网同步那段一模一样</td><td>+16 行</td></tr>
+</table>
+<p>另外：设置页有吸顶搜索框（<code>settingsSearch</code>，按文案过滤分区），
+新分区的 label / desc 要能被「MCP」「笔记」「Claude」「AI」这几个词搜到。</p>
+
+<h2>9 · 待拍板（需要你或用户定）</h2>
+<table>
+<tr><th>#</th><th>问题</th><th>我的倾向</th></tr>
+<tr><td>①</td><td>首次开启的确认弹窗，「本机上任何持有令牌的程序都能读你的全部笔记」这句要不要视觉加重？
+加重就得<b>新写一个弹窗组件</b>（<code>confirmDialog</code> 只吃纯字符串）。</td><td><b>要</b>。这是整个功能唯一的风险点，纯文本会被划过去。新组件成本不到 80 行。</td></tr>
+<tr><td>②</td><td><b>复制令牌会被自己记进剪贴板历史</b>（甚至经局域网同步到别的设备）。要不要这一轮就做「复制但不记录」？</td><td><b>要，而且它比这个面板更重要。</b>同一个洞大概率也在 AI 页的 API Key 和局域网配对密钥上。
+如果这轮不做，面板里至少要加一句明写的警告。</td></tr>
+<tr><td>③</td><td>端口 setter 命令（<code>mcp_set_port</code>）谁来加？现有 4 个命令改不了端口，而需求 #5 要求端口可配置。</td><td>你正在改 src-tauri，顺手加最省事。本稿按「会有」画。</td></tr>
+<tr><td>④</td><td>令牌以什么方式送给服务端——<code>Authorization: Bearer</code> 头，还是别的？引导里的命令行/JSON 必须与后端实际实现一致。</td><td>需要你给准信。我按 Bearer 头画的，但那是猜的，<b>没有验证</b>。</td></tr>
+<tr><td>⑤</td><td>开关状态<b>要不要持久化</b>？重启 PastePanda 后 MCP 服务是自动起来，还是回到关？</td><td>倾向<b>持久化（重启后自动起）</b>——不然用户每次开机都要来点一次，接入配置形同虚设。
+但这意味着「开一次 = 长期开着」，确认弹窗的文案就得说清这一点（现在的版本没说）。</td></tr>
+<tr><td>⑥</td><td>要不要显示<b>「当前有 N 个客户端连着」/ 最近一次访问时间</b>？</td><td><b>很想要，但这轮不做。</b>后端 <code>McpStatus</code> 现在没有这个字段。
+它是「本机上任何程序都能连」这句话的唯一事后验证手段——用户要能看出「除了我配的那个，还有别的东西在读我笔记」。
+建议记进下一轮。</td></tr>
+</table>
+
+<h2>10 · 明确不做</h2>
+<ul>
+<li><b>不做局域网暴露开关。</b>只绑 127.0.0.1，不给「允许局域网访问」的选项——那是完全另一个量级的风险，
+真要做得单独设计，不能当一个复选框塞进来。</li>
+<li><b>不做写入能力的开关。</b>全部只读是这个功能的承诺，不给它留一个「高级」入口。</li>
+<li><b>不做剪贴板历史的开放。</b>范围就是笔记，声明里写死。</li>
+<li><b>不做二维码 / 配对码。</b>局域网同步那套是给多设备用的，这里只有本机，复制粘贴就够了。</li>
+</ul>
+
+</div>
