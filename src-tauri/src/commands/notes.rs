@@ -55,6 +55,25 @@ pub fn note_delete(store: State<DataStore>, id: String) -> Result<(), String> {
     store.note_delete(&id)
 }
 
+/// 回收站列表，按删除时间倒序（W1）。
+#[tauri::command]
+pub fn note_list_deleted(store: State<DataStore>, limit: u32) -> Result<Vec<Note>, String> {
+    store.note_list_deleted(limit)
+}
+
+/// 从回收站恢复。速记日期已被占时会报错（而非静默失败）。
+#[tauri::command]
+pub fn note_restore_deleted(store: State<DataStore>, id: String) -> Result<(), String> {
+    store.note_restore_deleted(&id)
+}
+
+/// 从回收站彻底销毁（连历史快照一起，**不可恢复**）。
+/// 前端必须先弹确认：这是笔记侧唯一一个真正不可逆的操作。
+#[tauri::command]
+pub fn note_purge(store: State<DataStore>, id: String) -> Result<(), String> {
+    store.note_purge(&id)
+}
+
 /// 按 id 取一条（带标签）。不存在返回 `null`。
 #[tauri::command]
 pub fn note_get(store: State<DataStore>, id: String) -> Result<Option<Note>, String> {

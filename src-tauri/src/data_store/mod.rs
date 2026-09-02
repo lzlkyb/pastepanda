@@ -554,7 +554,13 @@ impl DataStore {
                 updated_at   TEXT NOT NULL,
                 -- D13：将来由外部 agent 写入的笔记记来源（agent:claude-code / agent:cursor…）。
                 -- M4 才启用，但 A 阶段建表就带上，免二次迁移。
-                source_agent TEXT NOT NULL DEFAULT ''
+                source_agent TEXT NOT NULL DEFAULT '',
+                -- W1 软删除：非 NULL = 已删，值是删除时刻。**不是**多余的谨慎——
+                --   ① MCP 要放开写入给外部模型，硬删加上 note_revisions 的
+                --      ON DELETE CASCADE，一次误删就是笔记 + 20 份历史一起没，不可恢复；
+                --   ② M6 多机同步需要墓碑：没有它，A 机的删除会被 B 机的旧副本同步回来。
+                -- 两条互不相干的需求指向同一个列，所以它该在这里。
+                deleted_at   TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_notes_history ON notes(history_id);
             -- 规划只列了 idx_notes_history；这条是额外加的：笔记列表默认按
@@ -1172,13 +1178,68 @@ impl DataStore {
             }
         }
 
+        // W1 软删除列（语义见建表处注释）。**必须排在 idx_notes_daily 之前**：
+        // 下面那条唯一索引的谓词要引用 deleted_at，列不在就建不出来。
+        let has_note_deleted: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('notes') WHERE name = 'deleted_at'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_note_deleted {
+            if let Err(e) = conn.execute_batch("ALTER TABLE notes ADD COLUMN deleted_at TEXT;") {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] notes.deleted_at 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 notes.deleted_at 列失败: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
+        // 回收站列表的索引。部分索引：只收已删那几行。
+        // 建在全表上没意义——`deleted_at IS NULL` 命中的是绝大多数行，走索引反而更慢。
+        if let Err(e) = conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_notes_deleted
+             ON notes(deleted_at) WHERE deleted_at IS NOT NULL;",
+        ) {
+            log::error!("[DataStore] 建 idx_notes_deleted 失败: {}", e);
+            return Err(e);
+        }
+
         // 一天只能有一条速记——这条约束得落在库上。
         // 只靠应用层「先查再插」的话，热键连按两下就可能撞出两条同日笔记。
         // 部分索引：普通笔记的 NULL 不参与唯一性（SQLite 本就允许多个 NULL，
         // 写上 WHERE 是为了让意图显式，也让索引只覆盖速记那几行）。
+        //
+        // ❗ W1 后谓词多了 `AND deleted_at IS NULL`，这是必须的：
+        //   软删的速记行还占着它的 daily_date，不排掉的话「删掉今天的速记后
+        //   再按一次速记热键」会直接撞 UNIQUE 约束——用户看到的是速记彻底坑了。
+        //
+        // `IF NOT EXISTS` 对已存在的旧索引是空操作，改不了谓词，所以存量库必须先 DROP。
+        // 只在旧定义上 DROP（查 sqlite_master 的原文），不是每次启动都重建。
+        let daily_idx_sql: Option<String> = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_notes_daily'",
+                [],
+                |r| r.get(0),
+            )
+            .ok();
+        if daily_idx_sql
+            .as_deref()
+            .is_some_and(|s| !s.contains("deleted_at"))
+        {
+            if let Err(e) = conn.execute_batch("DROP INDEX IF EXISTS idx_notes_daily;") {
+                log::error!("[DataStore] 重建 idx_notes_daily 前的 DROP 失败: {}", e);
+                return Err(e);
+            }
+            log::info!("[DataStore] idx_notes_daily 已按 W1 软删除语义重建");
+        }
         if let Err(e) = conn.execute_batch(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_daily
-             ON notes(daily_date) WHERE daily_date IS NOT NULL;",
+             ON notes(daily_date) WHERE daily_date IS NOT NULL AND deleted_at IS NULL;",
         ) {
             log::error!("[DataStore] 建 idx_notes_daily 失败: {}", e);
             return Err(e);

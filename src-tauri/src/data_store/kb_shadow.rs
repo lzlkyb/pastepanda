@@ -69,7 +69,9 @@ impl DataStore {
                    -- 必须带 'localtime'：h.time 存的是本地时间字符串，而 datetime('now') 是 UTC。
                    -- 不带的话在东八区会把阈值静默变成 7 天差 8 小时。
                    AND h.time <= datetime('now', 'localtime', ?4)
-                   AND NOT EXISTS (SELECT 1 FROM notes n WHERE n.history_id = h.id)
+                   AND NOT EXISTS (
+                       SELECT 1 FROM notes n WHERE n.history_id = h.id AND n.deleted_at IS NULL
+                   )
                    AND NOT EXISTS (SELECT 1 FROM kb_inbox_dismissed d WHERE d.history_id = h.id)",
             )
             .map_err(|e| e.to_string())?;
@@ -131,7 +133,10 @@ impl DataStore {
             .query_row(
                 "SELECT COUNT(*) FROM kb_autofile_shadow s
                  WHERE s.rule_ver = ?1
-                   AND EXISTS (SELECT 1 FROM notes n WHERE n.history_id = s.history_id)",
+                   AND EXISTS (
+                       SELECT 1 FROM notes n
+                       WHERE n.history_id = s.history_id AND n.deleted_at IS NULL
+                   )",
                 [RULE_VER],
                 |r| r.get(0),
             )
@@ -139,7 +144,9 @@ impl DataStore {
 
         let manual_total: i64 = conn
             .query_row(
-                "SELECT COUNT(DISTINCT history_id) FROM notes WHERE history_id IS NOT NULL",
+                // 带 deleted_at：准确率的分母是「用户真的留下了的」，删掉的不算。
+                "SELECT COUNT(DISTINCT history_id) FROM notes \
+                 WHERE history_id IS NOT NULL AND deleted_at IS NULL",
                 [],
                 |r| r.get(0),
             )
@@ -150,6 +157,7 @@ impl DataStore {
             .query_row(
                 "SELECT COUNT(DISTINCT n.history_id) FROM notes n
                  WHERE n.history_id IS NOT NULL
+                   AND n.deleted_at IS NULL
                    AND NOT EXISTS (
                        SELECT 1 FROM kb_autofile_shadow s
                        WHERE s.history_id = n.history_id AND s.rule_ver = ?1)",

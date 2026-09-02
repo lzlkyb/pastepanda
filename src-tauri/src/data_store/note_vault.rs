@@ -233,13 +233,16 @@ impl DataStore {
         let conn = self.lock_conn();
         let sql = match folder_id {
             Some(_) => {
-                "SELECT id FROM notes WHERE title = ?1 AND folder_id = ?2
+                // 带 deleted_at：否则导入会认到一条已删的笔记头上，内容写进去了
+                // 却因为它还在回收站而永远不显示——静默丢数据。
+                "SELECT id FROM notes WHERE title = ?1 AND folder_id = ?2 AND deleted_at IS NULL
                  ORDER BY updated_at DESC LIMIT 1"
             }
             None => {
                 // 排掉速记：外部拿来一个名为 2026-09-01.md 的文件时，宁可新建一条，
                 // 也不能静默盖掉那天的速记（真正的速记往返靠 pastepanda_id 匹配，走不到这里）
-                "SELECT id FROM notes WHERE title = ?1 AND folder_id IS NULL AND daily_date IS NULL
+                "SELECT id FROM notes WHERE title = ?1 AND folder_id IS NULL \
+                 AND daily_date IS NULL AND deleted_at IS NULL
                  ORDER BY updated_at DESC LIMIT 1"
             }
         };

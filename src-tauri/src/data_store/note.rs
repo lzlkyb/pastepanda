@@ -59,6 +59,10 @@ pub struct Note {
     /// 若靠标题认亲，改完第二天就会另建一条、今天这条变孤儿，而用户无从得知。
     #[serde(default)]
     pub daily_date: Option<String>,
+    /// W1 软删除时刻。正常查询拿到的永远是 `None`（已删的根本不会返回），
+    /// 只有 [`DataStore::note_list_deleted`] 会给出非 `None` 的值。
+    #[serde(default)]
+    pub deleted_at: Option<String>,
     #[serde(default)]
     pub tags: Vec<Tag>,
     /// 当前分组下的**组名**（B2 #9）。`None` = 不分组。
@@ -76,7 +80,7 @@ pub struct Note {
 /// 它得用同一份列顺序，不能另写一份。
 pub(super) const NOTE_COLS: &str =
     "id, history_id, title, content, created_at, updated_at, source_agent, \
-     folder_id, summary, daily_date";
+     folder_id, summary, daily_date, deleted_at";
 
 pub(super) fn row_to_note(row: &rusqlite::Row) -> rusqlite::Result<Note> {
     Ok(Note {
@@ -90,6 +94,7 @@ pub(super) fn row_to_note(row: &rusqlite::Row) -> rusqlite::Result<Note> {
         folder_id: row.get(7)?,
         summary: row.get(8)?,
         daily_date: row.get(9)?,
+        deleted_at: row.get(10)?,
         tags: Vec::new(),
         // 分组键不在 NOTE_COLS 里，由 note_list_view 在读完本函数后另行填
         group_key: None,
@@ -349,7 +354,10 @@ fn order_clause(o: &NoteViewOpts) -> String {
 /// 以后 `NOTE_COLS` 加一列就会漏改，而那会读到错列而不报错。
 fn row_to_note_grouped(row: &rusqlite::Row) -> rusqlite::Result<Note> {
     let mut n = row_to_note(row)?;
-    n.group_key = row.get::<_, Option<String>>(10)?;
+    // ❗ 按**列名**取，不能写死下标。三条查询都是 `SELECT {NOTE_COLS}, … AS grp`，
+    //   一旦 `NOTE_COLS` 加列，写死的下标就指到别人身上——而且不报错，
+    //   只是分组头静默全没了（W1 加 deleted_at 时实际撞过一次）。
+    n.group_key = row.get::<_, Option<String>>("grp")?;
     Ok(n)
 }
 
@@ -379,6 +387,12 @@ fn push_note_filters(
     folder_filter: &str,
     tag_ids: &[String],
 ) {
+    // ❗ W1 软删除的**唯一收口点**。本函数被六条路径调用：列表 / 计数 / 组头
+    //   （走 note_view_from_where）、FTS 检索、LIKE 回退、问答相关度。
+    //   写在这里而不是各自拼，是因为漏掉任一条的表现是「已删的笔记只从某一个
+    //   入口漏出来」——不报错、不崩，靠看代码发现不了。
+    //   新增任何笔记查询必须走这里，或自行带上同样的条件（规则 #11.1）。
+    sql.push_str(" AND notes.deleted_at IS NULL");
     if folder_filter == "unfiled" {
         // 速记不算「未分类」：「未分类」的语义是「该归档还没归档」，
         // 而速记本来就不需要归档。不排掉的话，一周后这个入口里全是速记，就废了。
@@ -473,6 +487,8 @@ impl DataStore {
             summary: None,
             // 普通新建不是速记。速记走 `note_append_daily`（那里才写 daily_date）
             daily_date: None,
+            // 刚建的笔记当然没被删
+            deleted_at: None,
             // 新建返回的单条不属于任何列表视图，没有分组上下文
             group_key: None,
             tags: Vec::new(),
@@ -486,9 +502,13 @@ impl DataStore {
         // 先读旧值：既用来判「真的改了吗」，也顺便代替了原来靠 UPDATE 影响行数
         // 判笔记是否存在（无变化时 UPDATE 本就不会发，那个判法失效）。
         let (old_title, old_content): (String, String) = conn
-            .query_row("SELECT title, content FROM notes WHERE id = ?1", [id], |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            })
+            .query_row(
+                // 带 deleted_at 条件：改一条已删的笔记会落到下面那个「笔记不存在」分支。
+                // 不加的话写入会静默成功但永远看不到——对 MCP 写入尤其危险。
+                "SELECT title, content FROM notes WHERE id = ?1 AND deleted_at IS NULL",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .map_err(|e| match e {
                 // 不静默（规则 #15.3）：改不存在的笔记是调用方的 bug，不是正常情况。
                 rusqlite::Error::QueryReturnedNoRows => format!("笔记不存在: {}", id),
@@ -517,22 +537,123 @@ impl DataStore {
         Ok(())
     }
 
-    /// 删笔记。`note_tags` 靠外键 ON DELETE CASCADE 自动清（PRAGMA foreign_keys=ON）；
-    /// `notes_fts` 是虚拟表、没有外键，必须手动删。
+    /// 删笔记——**软删除**（W1）。只置 `deleted_at`，行还在。
+    ///
+    /// 为什么不再硬删：`note_revisions` 带 `ON DELETE CASCADE`（A-36 有意加的），
+    /// 硬删一条笔记 = 连它的 20 份历史快照一起没，**完全不可恢复**。
+    /// M4 要把写入能力放给外部模型，这个代价不能接受。
+    ///
+    /// `note_tags` **不再**被 CASCADE 清掉，这正是想要的：恢复时标签跟着回来。
+    /// 真正的 CASCADE 清理推迟到 [`Self::note_purge`]。
+    ///
+    /// `notes_fts` 则必须当场删：软删后笔记不应再被搜到。
+    /// （检索路径同时还有 `push_note_filters` 的条件兼着，两道都拦。不是冗余：
+    /// 前者管 FTS 命中集，后者还管 LIKE 回退那条完全不过 FTS 的路径。）
     pub fn note_delete(&self, id: &str) -> Result<(), String> {
         let conn = self.lock_conn();
-        // 先取 rowid：删完 notes 行就查不到了。
         let rowid: Option<i64> = conn
-            .query_row("SELECT rowid FROM notes WHERE id = ?1", [id], |r| r.get(0))
+            .query_row(
+                "SELECT rowid FROM notes WHERE id = ?1 AND deleted_at IS NULL",
+                [id],
+                |r| r.get(0),
+            )
             .ok();
-        conn.execute("DELETE FROM notes WHERE id = ?1", [id])
-            .map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE notes SET deleted_at = ?2 WHERE id = ?1 AND deleted_at IS NULL",
+            rusqlite::params![id, note_now()],
+        )
+        .map_err(|e| e.to_string())?;
         if let Some(rid) = rowid {
             if let Err(e) =
                 conn.execute("DELETE FROM notes_fts WHERE rowid = ?1", rusqlite::params![rid])
             {
                 log::warn!("[Notes] FTS 删除失败 (id={}): {}", id, e);
             }
+        }
+        Ok(())
+    }
+
+    /// 回收站列表，按删除时间倒序。不带标签（回收站只需要认出是哪条）。
+    pub fn note_list_deleted(&self, limit: u32) -> Result<Vec<Note>, String> {
+        let conn = self.lock_conn();
+        let sql = format!(
+            "SELECT {} FROM notes WHERE deleted_at IS NOT NULL \
+             ORDER BY deleted_at DESC, rowid DESC LIMIT ?1",
+            NOTE_COLS
+        );
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([limit], row_to_note)
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// 从回收站恢复一条。
+    ///
+    /// ❗ 速记有个真实的冲突：`idx_notes_daily` 是 `(daily_date) WHERE … deleted_at IS NULL`
+    /// 的唯一索引。删掉今天的速记、又新建了一条，再恢复旧的就会撞约束。
+    /// 先查再报人话错误，不把裸 SQLite 报错扇给用户（规则 #15.3）。
+    /// 名字带 `_deleted` 后缀是必须的：`note_revision.rs` 里已有一个 `note_restore`，
+    /// 那个是「回滚到某个历史版本」，两件事没关系。
+    pub fn note_restore_deleted(&self, id: &str) -> Result<(), String> {
+        let conn = self.lock_conn();
+        let daily: Option<String> = conn
+            .query_row(
+                "SELECT daily_date FROM notes WHERE id = ?1 AND deleted_at IS NOT NULL",
+                [id],
+                |r| r.get(0),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    format!("回收站里没有这条笔记: {}", id)
+                }
+                other => other.to_string(),
+            })?;
+        if let Some(day) = daily.as_deref() {
+            let taken: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM notes WHERE daily_date = ?1 AND deleted_at IS NULL",
+                    [day],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            if taken > 0 {
+                return Err(format!(
+                    "{} 已经有一条速记了，恢复会撞上。先把现有的速记处理掉再试。",
+                    day
+                ));
+            }
+        }
+        conn.execute("UPDATE notes SET deleted_at = NULL WHERE id = ?1", [id])
+            .map_err(|e| e.to_string())?;
+        // 删的时候从 FTS 拿掉了，恢复必须重建——否则笔记回来了却搜不到。
+        Self::sync_notes_fts_on(&conn, id);
+        Ok(())
+    }
+
+    /// 彻底销毁一条已软删的笔记（含它的全部历史快照，不可恢复）。
+    ///
+    /// 只能动已在回收站的：`AND deleted_at IS NOT NULL` 是故意的保险，
+    /// 万一哪天有人把它接到外部写入上，也不至于一步平掉一条活笔记。
+    pub fn note_purge(&self, id: &str) -> Result<(), String> {
+        let conn = self.lock_conn();
+        let rowid: Option<i64> = conn
+            .query_row("SELECT rowid FROM notes WHERE id = ?1", [id], |r| r.get(0))
+            .ok();
+        let n = conn
+            .execute(
+                "DELETE FROM notes WHERE id = ?1 AND deleted_at IS NOT NULL",
+                [id],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err(format!("回收站里没有这条笔记: {}", id));
+        }
+        // 软删时已经从 FTS 拿掉了，这里再删一次是兼容性兼底（旧库可能有残留行）。
+        if let Some(rid) = rowid {
+            let _ = conn.execute("DELETE FROM notes_fts WHERE rowid = ?1", rusqlite::params![rid]);
         }
         Ok(())
     }
@@ -544,7 +665,10 @@ impl DataStore {
     /// 按 id 取一条（带标签）。不存在返回 `Ok(None)`。
     pub fn note_get(&self, id: &str) -> Result<Option<Note>, String> {
         let conn = self.lock_conn();
-        let sql = format!("SELECT {} FROM notes WHERE id = ?1", NOTE_COLS);
+        let sql = format!(
+            "SELECT {} FROM notes WHERE id = ?1 AND deleted_at IS NULL",
+            NOTE_COLS
+        );
         let mut note = match conn.query_row(&sql, [id], row_to_note) {
             Ok(n) => n,
             Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
@@ -718,7 +842,8 @@ impl DataStore {
     pub fn note_by_history(&self, history_id: &str) -> Result<Option<Note>, String> {
         let conn = self.lock_conn();
         let sql = format!(
-            "SELECT {} FROM notes WHERE history_id = ?1 ORDER BY updated_at DESC, rowid DESC LIMIT 1",
+            "SELECT {} FROM notes WHERE history_id = ?1 AND deleted_at IS NULL \
+             ORDER BY updated_at DESC, rowid DESC LIMIT 1",
             NOTE_COLS
         );
         match conn.query_row(&sql, [history_id], row_to_note) {
@@ -739,7 +864,11 @@ impl DataStore {
     pub fn note_history_ids(&self) -> Result<Vec<String>, String> {
         let conn = self.lock_conn();
         let mut stmt = conn
-            .prepare("SELECT DISTINCT history_id FROM notes WHERE history_id IS NOT NULL")
+            .prepare(
+                // 带 deleted_at：删掉笔记后，那张卡片就不再是「已转笔记」了。
+                "SELECT DISTINCT history_id FROM notes \
+                 WHERE history_id IS NOT NULL AND deleted_at IS NULL",
+            )
             .map_err(|e| e.to_string())?;
         let ids = stmt
             .query_map([], |r| r.get::<_, String>(0))
@@ -751,7 +880,9 @@ impl DataStore {
 
     pub fn note_count(&self) -> i64 {
         self.lock_conn()
-            .query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))
+            .query_row("SELECT COUNT(*) FROM notes WHERE deleted_at IS NULL", [], |r| {
+                r.get(0)
+            })
             .unwrap_or(0)
     }
 

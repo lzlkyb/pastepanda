@@ -78,7 +78,9 @@ impl DataStore {
 
         let existing: Option<(String, String)> = conn
             .query_row(
-                "SELECT id, content FROM notes WHERE daily_date = ?1",
+                // 带 deleted_at：删掉今天的速记后再按速记热键，应该新建一条，
+                // 而不是往那条已删的里面追加（写了但永远看不到）。
+                "SELECT id, content FROM notes WHERE daily_date = ?1 AND deleted_at IS NULL",
                 [date],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
@@ -123,7 +125,10 @@ impl DataStore {
     pub fn note_daily_dates(&self, month: &str) -> Result<Vec<String>, String> {
         let conn = self.lock_conn();
         let mut stmt = conn
-            .prepare("SELECT daily_date FROM notes WHERE daily_date LIKE ?1 ORDER BY daily_date")
+            .prepare(
+                "SELECT daily_date FROM notes \
+                 WHERE daily_date LIKE ?1 AND deleted_at IS NULL ORDER BY daily_date",
+            )
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map([format!("{}-%", month)], |r| r.get::<_, String>(0))
@@ -137,7 +142,8 @@ impl DataStore {
     pub fn note_daily_earliest(&self) -> Result<Option<String>, String> {
         self.lock_conn()
             .query_row(
-                "SELECT MIN(daily_date) FROM notes WHERE daily_date IS NOT NULL",
+                "SELECT MIN(daily_date) FROM notes \
+                 WHERE daily_date IS NOT NULL AND deleted_at IS NULL",
                 [],
                 |r| r.get::<_, Option<String>>(0),
             )

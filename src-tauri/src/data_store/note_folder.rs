@@ -67,7 +67,7 @@ impl DataStore {
                    FROM note_folders f JOIN tree t ON f.parent_id = t.id
              )
              SELECT t.id, t.name, t.parent_id, t.sort_order, t.created_at, t.depth,
-                    (SELECT COUNT(*) FROM notes n WHERE n.folder_id IN (
+                    (SELECT COUNT(*) FROM notes n WHERE n.deleted_at IS NULL AND n.folder_id IN (
                         {subtree} SELECT id FROM sub
                     )) AS cnt
              FROM tree t
@@ -102,7 +102,8 @@ impl DataStore {
     pub fn folder_unfiled_count(&self) -> Result<i64, String> {
         self.lock_conn()
             .query_row(
-                "SELECT COUNT(*) FROM notes WHERE folder_id IS NULL AND daily_date IS NULL",
+                "SELECT COUNT(*) FROM notes \
+                 WHERE folder_id IS NULL AND daily_date IS NULL AND deleted_at IS NULL",
                 [],
                 |r| r.get(0),
             )
@@ -135,7 +136,9 @@ impl DataStore {
             .map_err(|e| e.to_string())?;
 
         let note_sql = format!(
-            "{SUBTREE_CTE} SELECT COUNT(*) FROM notes WHERE folder_id IN (SELECT id FROM sub)"
+            // 带 deleted_at：否则删完里面的笔记，文件夹还会报「里面还有 N 条」不让删。
+            "{SUBTREE_CTE} SELECT COUNT(*) FROM notes \
+             WHERE deleted_at IS NULL AND folder_id IN (SELECT id FROM sub)"
         );
         let notes: i64 = conn
             .query_row(&note_sql, [folder_id], |r| r.get(0))

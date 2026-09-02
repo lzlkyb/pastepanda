@@ -4437,6 +4437,141 @@ fn test_note_crud_roundtrip() {
 }
 
 #[test]
+fn test_soft_deleted_note_is_gone_from_every_entry_point() {
+    // 这条用例就是 W1 选「`notes` 加 `deleted_at` 列」而不是另建 `notes_trash` 表的
+    // **全部理由**。软删除的失败模式是静默的：漏掉任何一个查询入口，
+    // 已删的笔记就只从那一个地方漏出来——不报错、不崩、看代码发现不了。
+    // 新增笔记查询时，**这里也要添一行**（规则 #11.1）。
+    let store = make_store();
+    let f = store.folder_create("工作", None).unwrap();
+    seed_candidate(&store, "h-del", "反复找回的内容", "2026-08-01 10:00:00", 5, false);
+    let n = store
+        .note_create(Some("h-del"), "会议记录", "灰度发布的注意事项")
+        .unwrap();
+    store.note_set_folder(&n.id, Some(&f.id)).unwrap();
+    let opts = crate::data_store::NoteViewOpts::default();
+
+    // 先钓住「删之前确实看得见」——否则下面那堆 assert 可能只是因为根本没建对。
+    assert!(store.note_get(&n.id).unwrap().is_some());
+    assert_eq!(store.note_count(), 1);
+    assert_eq!(store.note_search("会议", "all", &[], 20).unwrap().len(), 1);
+    assert_eq!(store.kb_inbox_count("默认").unwrap(), 0);
+
+    store.note_delete(&n.id).unwrap();
+
+    // ① 单条读
+    assert!(store.note_get(&n.id).unwrap().is_none(), "note_get");
+    // ② 列表 / 计数 / 组头（都走 note_view_from_where）
+    assert!(store.note_list("all", &[], 50, 0).unwrap().is_empty(), "note_list all");
+    assert!(
+        store.note_list(&f.id, &[], 50, 0).unwrap().is_empty(),
+        "note_list 按文件夹"
+    );
+    assert!(
+        store.note_list_view("all", &[], &opts, 50, 0).unwrap().is_empty(),
+        "note_list_view"
+    );
+    assert_eq!(store.note_count(), 0, "note_count");
+    // ③ FTS 检索
+    assert!(store.note_search("会议", "all", &[], 20).unwrap().is_empty(), "note_search");
+    // ④ 问答相关度（MCP 的 kb_search 走这条）
+    assert!(
+        store
+            .note_search_relevant("灰度发布怎么做", "all", &[], &opts, 5)
+            .unwrap()
+            .is_empty(),
+        "note_search_relevant"
+    );
+    // ⑤ 来源卡片反查
+    assert!(store.note_by_history("h-del").unwrap().is_none(), "note_by_history");
+    assert!(store.note_history_ids().unwrap().is_empty(), "note_history_ids");
+    // ⑥ 文件夹侧栏计数与删除影响预览
+    let tree = store.folder_list().unwrap();
+    assert_eq!(tree[0].note_count, 0, "folder_list 的 note_count");
+    assert_eq!(store.folder_delete_impact(&f.id).unwrap().1, 0, "folder_delete_impact");
+    assert_eq!(store.folder_unfiled_count().unwrap(), 0, "folder_unfiled_count");
+    // ⑦ 待沉淀区：笔记没了，卡片该变回候选
+    assert_eq!(store.kb_inbox_count("默认").unwrap(), 1, "kb_inbox 该把卡片收回去");
+
+    // —— 但它必须还在回收站里，否则这一整套就只是把硬删换个写法
+    let trash = store.note_list_deleted(50).unwrap();
+    assert_eq!(trash.len(), 1);
+    assert_eq!(trash[0].id, n.id);
+    assert!(trash[0].deleted_at.is_some(), "回收站里的条目必须带删除时间");
+}
+
+#[test]
+fn test_note_restore_deleted_brings_it_back_including_search() {
+    // 恢复必须重建 FTS。漏了的话笔记列表里回来了、搜却搜不到——
+    // 比“没恢复”更难发现。
+    let store = make_store();
+    let n = store.note_create(None, "会议记录", "灰度发布").unwrap();
+    store.note_delete(&n.id).unwrap();
+    store.note_restore_deleted(&n.id).unwrap();
+
+    assert!(store.note_get(&n.id).unwrap().is_some());
+    assert_eq!(store.note_count(), 1);
+    assert_eq!(
+        store.note_search("灰度", "all", &[], 20).unwrap().len(),
+        1,
+        "恢复后必须能搜到"
+    );
+    assert!(store.note_list_deleted(50).unwrap().is_empty());
+}
+
+#[test]
+fn test_soft_deleted_daily_note_does_not_block_a_new_one() {
+    // W1 最尖的一根刺：`idx_notes_daily` 是 `(daily_date)` 上的**唯一**索引。
+    // 软删的速记行还占着它的 daily_date，谓词不加 `AND deleted_at IS NULL` 的话，
+    // 「删掉今天的速记 → 再按一次速记热键」会直接撞约束，速记彻底坑掉。
+    let store = make_store();
+    store
+        .note_append_daily("2026-09-02", "10:00", None, "第一条")
+        .unwrap();
+    let old_id = store.note_list("daily", &[], 10, 0).unwrap()[0].id.clone();
+
+    store.note_delete(&old_id).unwrap();
+    assert!(
+        store.note_daily_dates("2026-09").unwrap().is_empty(),
+        "日历上不该再标这天有速记"
+    );
+    assert!(store.note_daily_earliest().unwrap().is_none());
+
+    // 这一行就是全部重点：不改索引谓词时它会 UNIQUE constraint failed。
+    store
+        .note_append_daily("2026-09-02", "11:00", None, "第二条")
+        .expect("删掉当天速记后，必须能重新建一条");
+
+    let live = store.note_list("daily", &[], 10, 0).unwrap();
+    assert_eq!(live.len(), 1, "当天只应有一条活的速记");
+    assert_ne!(live[0].id, old_id, "该是新建的那条");
+    assert!(
+        live[0].content.contains("第二条") && !live[0].content.contains("第一条"),
+        "不得往已删的速记里追加（那会写进去但永远看不到）"
+    );
+
+    // 日期被占了，恢复旧的必须报人话错误，而不是把裸 SQLite 报错扇出去。
+    let err = store.note_restore_deleted(&old_id).unwrap_err();
+    assert!(err.contains("2026-09-02"), "错误里要带上是哪天，实际为: {}", err);
+}
+
+#[test]
+fn test_note_purge_is_the_only_hard_delete() {
+    let store = make_store();
+    let n = store.note_create(None, "临时", "随手记的").unwrap();
+    store.note_delete(&n.id).unwrap();
+
+    // 没进回收站的不得销毁（防的是将来把它接到外部写入上时一步平掉活笔记）
+    let live = store.note_create(None, "活的", "别动我").unwrap();
+    assert!(store.note_purge(&live.id).is_err(), "不在回收站就不能 purge");
+    assert!(store.note_get(&live.id).unwrap().is_some());
+
+    store.note_purge(&n.id).unwrap();
+    assert!(store.note_list_deleted(50).unwrap().is_empty());
+    assert!(store.note_restore_deleted(&n.id).is_err(), "销毁后无从恢复");
+}
+
+#[test]
 fn test_note_history_id_can_be_null() {
     // 规划 §1.6 入口 #2：唯一与剪贴板无关的创建路径，history_id 必须可空
     let store = make_store();
@@ -4581,13 +4716,21 @@ fn test_note_tags_replace_semantics_and_cascade() {
     assert_eq!(got.tags.len(), 1);
     assert_eq!(got.tags[0].name, "归档");
 
-    // 删笔记 → note_tags 靠外键 CASCADE 自动清（PRAGMA foreign_keys=ON）
+    let count_links = |id: &str| -> i64 {
+        store
+            .lock_conn()
+            .query_row("SELECT COUNT(*) FROM note_tags WHERE note_id = ?1", [id], |r| r.get(0))
+            .unwrap()
+    };
+
+    // W1：软删不触发 CASCADE，标签必须留着——否则从回收站恢复回来的笔记
+    // 标签全掉了，而用户根本不会意识到是删那一下弄没的。
     store.note_delete(&n.id).unwrap();
-    let left: i64 = store
-        .lock_conn()
-        .query_row("SELECT COUNT(*) FROM note_tags WHERE note_id = ?1", [&n.id], |r| r.get(0))
-        .unwrap();
-    assert_eq!(left, 0, "删笔记后 note_tags 关联行应被级联清掉");
+    assert_eq!(count_links(&n.id), 1, "软删不得清标签关联");
+
+    // 彻底销毁时才级联（PRAGMA foreign_keys=ON 必须真的生效）
+    store.note_purge(&n.id).unwrap();
+    assert_eq!(count_links(&n.id), 0, "销毁后 note_tags 关联行应被级联清掉");
 }
 
 #[test]
@@ -5226,12 +5369,22 @@ fn test_deleting_note_cascades_revisions() {
     store.note_update(&n.id, "标题", "v1").unwrap();
     assert_eq!(store.note_revision_list(&n.id).unwrap().len(), 1);
 
+    // W1 后 `note_delete` 是**软删除**：历史快照必须原封不动地留着。
+    // 这正是软删除的全部意义——硬删 + `ON DELETE CASCADE` 意味着
+    // 一次误删就是笔记连 20 份历史一起没，而 M4 要把删除放给外部模型。
     store.note_delete(&n.id).unwrap();
+    assert_eq!(
+        store.note_revision_list(&n.id).unwrap().len(),
+        1,
+        "软删不得碰历史快照（否则回收站恢复出来的是个没有过去的壳）"
+    );
 
-    // 规划 §6 的 DDL 漏了这个外键；不补的话历史会永久留在库里（设计稿 §0）
+    // 但外键本身必须真的生效（规划 §6 的 DDL 原本漏了它，设计稿 §0）：
+    // 彻底销毁时历史要跟着没，否则它们会永久留在库里变孤儿行。
+    store.note_purge(&n.id).unwrap();
     assert!(
         store.note_revision_list(&n.id).unwrap().is_empty(),
-        "删笔记必须级联清掉它的历史"
+        "彻底销毁必须级联清掉历史"
     );
 }
 
@@ -5336,6 +5489,7 @@ fn mk_note_for_md(title: &str, content: &str, tags: &[&str]) -> Note {
         folder_id: None,
         summary: None,
         daily_date: None,
+        deleted_at: None,
         group_key: None,
         tags: tags
             .iter()

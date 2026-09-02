@@ -46,7 +46,8 @@ pub struct InboxCandidate {
 const CANDIDATE_WHERE: &str = "
     WHERE h.workspace = ?
       AND (h.pinned = 1 OR COALESCE(h.search_hit_count, 0) >= 2)
-      AND NOT EXISTS (SELECT 1 FROM notes n WHERE n.history_id = h.id)
+      -- 带 deleted_at：笔记被删了，那张卡片就又变回「没沉淀过」，该回到收件箱。
+      AND NOT EXISTS (SELECT 1 FROM notes n WHERE n.history_id = h.id AND n.deleted_at IS NULL)
       AND NOT EXISTS (SELECT 1 FROM kb_inbox_dismissed d WHERE d.history_id = h.id)";
 
 /// 待沉淀区的视图选项（B2 #9）。**全默认 = 与做这个功能之前一模一样**。

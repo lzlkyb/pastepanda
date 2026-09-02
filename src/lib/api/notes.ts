@@ -37,6 +37,9 @@ export interface Note {
    *  不是表里的列，是查询时算的；存的已经是可显示的字符串
    *  （文件夹名 / 标签名 / `2026-09`），前端不需要再解析 id */
   group_key?: string | null;
+  /** W1 软删除时刻。正常列表拿到的永远是 null（已删的根本不会返回），
+   *  只有 `noteListDeleted`（回收站）会给出非 null 的值 */
+  deleted_at?: string | null;
 }
 
 /** 新建笔记。`historyId` 为空 = 与剪贴板无关的独立笔记。 */
@@ -71,7 +74,8 @@ export async function noteUpdate(id: string, title: string, content: string): Pr
 }
 
 /**
- * 删笔记。来源卡片不受影响。
+ * 删笔记——**软删除**（W1），进回收站，可用 `noteRestoreDeleted` 找回。
+ * 来源卡片不受影响。
  *
  * `historyId` 是可选的优化参：传了就能立即抹掉卡片角标。但它**不能直接信**——
  * 同一张卡片可能转过多条笔记，删一条不等于角标该消失，所以还得回问一次后端。
@@ -87,6 +91,51 @@ export async function noteDelete(id: string, historyId?: string | null): Promise
   } catch (e) {
     logger.error("删除笔记失败", e);
     toastActionFailed("删除笔记", e);
+    return false;
+  }
+}
+
+/** 回收站列表，按删除时间倒序（W1）。 */
+export async function noteListDeleted(limit = 200): Promise<Note[]> {
+  try {
+    return await invoke<Note[]>("note_list_deleted", { limit });
+  } catch (e) {
+    logger.error("读取回收站失败", e);
+    toastActionFailed("读取回收站", e);
+    return [];
+  }
+}
+
+/**
+ * 从回收站恢复。
+ *
+ * 速记有个真实的失败情形：当天已经有另一条速记时后端会报错（唯一索引）。
+ * 那句错误是人话，直接给用户看，不要吞。
+ */
+export async function noteRestoreDeleted(id: string): Promise<boolean> {
+  try {
+    await invoke("note_restore_deleted", { id });
+    return true;
+  } catch (e) {
+    logger.error("恢复笔记失败", e);
+    toastActionFailed("恢复笔记", e);
+    return false;
+  }
+}
+
+/**
+ * 从回收站彻底销毁（连历史快照一起，**不可恢复**）。
+ *
+ * ❗ 调用方必须先弹确认。这是笔记侧唯一一个真正不可逆的操作——
+ *   普通删除只是进回收站，这个不是。
+ */
+export async function notePurge(id: string): Promise<boolean> {
+  try {
+    await invoke("note_purge", { id });
+    return true;
+  } catch (e) {
+    logger.error("销毁笔记失败", e);
+    toastActionFailed("销毁笔记", e);
     return false;
   }
 }
