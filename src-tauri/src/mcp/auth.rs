@@ -21,6 +21,8 @@ use axum::http::HeaderMap;
 pub enum Reject {
     /// `Origin` 存在但不属于本机——基本就是网页在扫本地端口，403。
     Origin(String),
+    /// 无 `Origin` 但 `Host` 不是本机——DNS rebinding 的另一半，403。
+    Host(String),
     /// 缺 `Authorization` 头，401。
     MissingToken,
     /// 令牌不对，401。**不告知“错在哪里”**，避免变成猜令牌的反馈信道。
@@ -30,7 +32,7 @@ pub enum Reject {
 impl Reject {
     pub fn status(&self) -> axum::http::StatusCode {
         match self {
-            Reject::Origin(_) => axum::http::StatusCode::FORBIDDEN,
+            Reject::Origin(_) | Reject::Host(_) => axum::http::StatusCode::FORBIDDEN,
             Reject::MissingToken | Reject::BadToken => axum::http::StatusCode::UNAUTHORIZED,
         }
     }
@@ -39,6 +41,7 @@ impl Reject {
     pub fn message(&self) -> &'static str {
         match self {
             Reject::Origin(_) => "拒绝：请求来自非本机页面",
+            Reject::Host(_) => "拒绝：请求的 Host 不是本机地址",
             Reject::MissingToken | Reject::BadToken => "未授权：请求需提供正确的 Bearer 令牌",
         }
     }
@@ -60,6 +63,19 @@ fn is_local_origin(origin: &str) -> bool {
     };
     // 只取 authority 部分（Origin 按规范不带路径，但不能依赖对方守规范）
     let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    is_local_authority(authority)
+}
+
+/// 判一个 `Host` 头的值是不是本机。
+///
+/// `Host` 没有 scheme，本身就是个 authority，所以直接复用同一套判据。
+fn is_local_host(host_header: &str) -> bool {
+    is_local_authority(host_header.trim())
+}
+
+/// `host[:port]` 是不是本机。**Origin 与 Host 共用这一份判据**（规则 #11）：
+/// 两处各写一份早晚会漂，而漂了就是一道门比另一道松。
+fn is_local_authority(authority: &str) -> bool {
     // IPv6 写法：[::1]:port
     if let Some(after) = authority.strip_prefix('[') {
         let Some((host, tail)) = after.split_once(']') else {
@@ -127,6 +143,17 @@ pub fn check(headers: &HeaderMap, expected_token: &str) -> Result<(), Reject> {
         let origin = origin.to_str().unwrap_or("");
         if !is_local_origin(origin) {
             return Err(Reject::Origin(origin.to_string()));
+        }
+    } else if let Some(host) = headers.get(axum::http::header::HOST) {
+        // 没有 `Origin` 才查 `Host`——与 MCP 参考实现同口径。
+        //
+        // 为什么两道都要：DNS rebinding 把 `evil.com` 解到 `127.0.0.1` 后，
+        // 浏览器发的是 `Host: evil.com`。浏览器发起的跨源 POST 通常会带 `Origin`
+        // （上面那道就拦住了），但 **Host 这道不依赖 `Origin` 是否存在**，
+        // 是它漏时的兵。MCP SDK 在 0.25 之前就是因为不查这一层而中招（CVE-2026-11624）。
+        let host = host.to_str().unwrap_or("");
+        if !is_local_host(host) {
+            return Err(Reject::Host(host.to_string()));
         }
     }
 
@@ -198,6 +225,43 @@ mod tests {
         // 反过来：Origin 是本机但没令牌也要拦
         let h = headers(&[("origin", "http://localhost:5173")]);
         assert_eq!(check(&h, TOKEN), Err(Reject::MissingToken));
+    }
+
+    #[test]
+    fn test_host_gate_catches_rebinding_when_origin_absent() {
+        // 🔴 DNS rebinding：`evil.com` 解到 127.0.0.1，请求真的到了我们这里。
+        // 带 Origin 时上一道门拦；不带 Origin 时就只剩 Host 这一道。
+        let h = headers(&[
+            ("authorization", &format!("Bearer {}", TOKEN)),
+            ("host", "evil.com"),
+        ]);
+        assert!(matches!(check(&h, TOKEN), Err(Reject::Host(_))));
+
+        // 本机 Host 正常放行（带不带端口都行）
+        for host in [
+            "127.0.0.1:17650",
+            "localhost:17650",
+            "127.0.0.1",
+            "[::1]:17650",
+        ] {
+            let h = headers(&[
+                ("authorization", &format!("Bearer {}", TOKEN)),
+                ("host", host),
+            ]);
+            assert_eq!(check(&h, TOKEN), Ok(()), "本机 Host 不应被误伤：{}", host);
+        }
+    }
+
+    #[test]
+    fn test_local_origin_wins_over_odd_host() {
+        // 口径与参考实现一致：**有 Origin 就只看 Origin**。
+        // 钉住这一点，以免以后有人“顺手收紧”成两道都查而拦掉合法客户端。
+        let h = headers(&[
+            ("authorization", &format!("Bearer {}", TOKEN)),
+            ("origin", "http://localhost:1420"),
+            ("host", "some-proxy.internal"),
+        ]);
+        assert_eq!(check(&h, TOKEN), Ok(()));
     }
 
     #[test]

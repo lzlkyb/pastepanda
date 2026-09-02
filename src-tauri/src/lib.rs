@@ -592,6 +592,7 @@ pub fn run() {
             commands::mcp_get_token,
             commands::mcp_regenerate_token,
             commands::mcp_set_enabled,
+            commands::mcp_set_port,
             commands::get_app_version,
             commands::get_app_name,
             commands::ocr_image,

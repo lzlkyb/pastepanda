@@ -32,6 +32,19 @@ fn configured_port(store: &DataStore) -> u16 {
         .unwrap_or(mcp::DEFAULT_PORT)
 }
 
+/// 把端口写回 `config` 表。
+fn persist_port(store: &DataStore, port: u16) -> Result<(), String> {
+    let mut cfg = store.get_config().unwrap_or_default();
+    let Some(obj) = cfg.as_object_mut() else {
+        return Err("配置格式异常，无法保存 MCP 端口".to_string());
+    };
+    obj.insert(
+        mcp::CFG_PORT.to_string(),
+        serde_json::Value::Number(port.into()),
+    );
+    store.save_config(&cfg)
+}
+
 /// 把开关写回 `config` 表。开关不是秘密，可以进那张明文 KV。
 fn persist_enabled(store: &DataStore, enabled: bool) -> Result<(), String> {
     let mut cfg = store.get_config().unwrap_or_default();
@@ -49,6 +62,41 @@ fn persist_enabled(store: &DataStore, enabled: bool) -> Result<(), String> {
 #[tauri::command]
 pub fn mcp_get_status(store: State<DataStore>, server: State<McpServer>) -> McpStatus {
     server.status(configured_port(&store))
+}
+
+/// 改监听端口。服务在跑就当场换到新端口，停着就只存配置。
+///
+/// 下限 1024：以下是特权/保留端口。上限靠 `u16` 天然卡住。
+///
+/// 换端口不会撞上「旧监听未释放」的竞态——因为新端口与旧端口不同，
+/// 不存在重绑同一个地址的问题（这也是重置令牌故意不走重启的原因）。
+///
+/// 🔴 **新端口启失败就不写配置**：此时服务已停，配置里仍是旧端口，
+/// 状态仍然自洽（下次开机还是试旧端口）。写了才是把用户锁在一个启不了的端口上。
+#[tauri::command]
+pub fn mcp_set_port(
+    app: AppHandle,
+    store: State<DataStore>,
+    server: State<McpServer>,
+    port: u16,
+) -> Result<McpStatus, String> {
+    if port < 1024 {
+        return Err(format!("端口 {} 不可用：1024 以下是特权/保留端口", port));
+    }
+    // 已经就是这个端口（配置与运行中都是）就什么都不做。
+    // 停机时 `status(port).port` 就是传入值，所以这个条件在停机下退化成只比配置。
+    let status = server.status(port);
+    if port == configured_port(&store) && status.port == port {
+        return Ok(status);
+    }
+
+    if server.is_running() {
+        server.stop();
+        let token = mcp::token::load_or_create(&app_dir(&app)?)?;
+        server.start(token, port)?;
+    }
+    persist_port(&store, port)?;
+    Ok(server.status(port))
 }
 
 /// 取当前令牌（用户点「显示令牌」/「复制」时才调）。
