@@ -457,7 +457,7 @@ pub fn run() {
             if mcp_enabled {
                 let kb = std::sync::Arc::new(mcp::source::AppKbSource::new(handle.clone()));
                 let started = mcp::token::load_or_create(&app_dir)
-                    .and_then(|token| mcp_server.start(kb, token, mcp_port));
+                    .and_then(|token| mcp_server.start(handle.clone(), kb, token, mcp_port));
                 match started {
                     Ok(port) => {
                         log::info!("[MCP] 知识库服务已启用：http://127.0.0.1:{}/mcp", port)
@@ -590,6 +590,9 @@ pub fn run() {
             commands::set_lan_pairing_key,
             commands::regenerate_lan_pairing_key,
             commands::mcp_get_status,
+            commands::mcp_audit_list,
+            commands::mcp_audit_clients,
+            commands::mcp_audit_clear,
             commands::mcp_get_token,
             commands::mcp_regenerate_token,
             commands::mcp_set_enabled,

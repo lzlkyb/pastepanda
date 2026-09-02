@@ -147,8 +147,29 @@ pub fn definitions() -> Vec<Value> {
 /// 已注册的工具名。`call` 与 `definitions` 各写一份，靠测试钉住两边一致。
 const TOOL_NAMES: &[&str] = &["kb_search", "kb_read", "kb_list"];
 
+/// 工具调用的结果 + 审计要用的元信息（W3）。
+///
+/// 为什么不给 `call` 注入一个审计 sink：`call` 与 `dispatch` 现在只依赖
+/// `KbSource`，是纯的、好测的。把副作用**抬到调用方**（server 层）
+/// 比往下注入一个依赖干净得多。
+pub struct ToolOutput {
+    pub value: Value,
+    /// 本次返回给模型的笔记 id。🔴 审计**只记 id 不记正文**。
+    pub note_ids: Vec<String>,
+}
+
+impl From<Value> for ToolOutput {
+    /// 错误与空结果路径没有命中的笔记，直接 `.into()` 即可。
+    fn from(value: Value) -> Self {
+        Self {
+            value,
+            note_ids: Vec::new(),
+        }
+    }
+}
+
 /// 分发 `tools/call`。
-pub async fn call(kb: &Arc<dyn KbSource>, params: Option<&Value>) -> Result<Value, ToolError> {
+pub async fn call(kb: &Arc<dyn KbSource>, params: Option<&Value>) -> Result<ToolOutput, ToolError> {
     let Some(params) = params else {
         return Err(ToolError::invalid_params("tools/call 缺少 params"));
     };
@@ -180,7 +201,7 @@ pub async fn call(kb: &Arc<dyn KbSource>, params: Option<&Value>) -> Result<Valu
 
 // ===== 工具实现 =====
 
-async fn call_read(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Value, ToolError> {
+async fn call_read(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<ToolOutput, ToolError> {
     let Some(id) = arg_str(args, "id") else {
         return Err(ToolError::invalid_params("kb_read 需要参数 id"));
     };
@@ -189,20 +210,24 @@ async fn call_read(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Value
     let id2 = id.clone();
     let found = match blocking(move || kb2.read(&id2)).await {
         Ok(v) => v,
-        Err(e) => return Ok(error_result(format!("读取失败：{}", e))),
+        Err(e) => return Ok(error_result(format!("读取失败：{}", e)).into()),
     };
     let Some(note) = found else {
         // 不假装成空内容：模型需要知道是「id 不存在」而不是「这篇是空的」。
         return Ok(error_result(format!(
             "没有 id 为 {} 的笔记。id 要从 kb_search / kb_list 的结果里拿，不要自己造。",
             id
-        )));
+        ))
+        .into());
     };
     let folder = folder_label(kb, &note).await;
-    Ok(text_result(format_full(&note, folder.as_deref())))
+    Ok(ToolOutput {
+        value: text_result(format_full(&note, folder.as_deref())),
+        note_ids: vec![note.id.clone()],
+    })
 }
 
-async fn call_list(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Value, ToolError> {
+async fn call_list(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<ToolOutput, ToolError> {
     let folder = arg_str(args, "folder").map(|s| s.to_string());
     let tag = arg_str(args, "tag").map(|s| s.to_string());
     let limit = arg_u32(args, "limit", 20, 1, 50);
@@ -213,7 +238,7 @@ async fn call_list(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Value
     let outcome = match blocking(move || kb2.list(f.as_deref(), t.as_deref(), limit, offset)).await
     {
         Ok(v) => v,
-        Err(e) => return Ok(error_result(format!("列表查询失败：{}", e))),
+        Err(e) => return Ok(error_result(format!("列表查询失败：{}", e)).into()),
     };
 
     match outcome {
@@ -223,14 +248,17 @@ async fn call_list(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Value
         ListOutcome::UnknownFolder(name) => Ok(error_result(format!(
             "没有叫「{}」的文件夹。未按文件夹筛选的结果并未返回——请先不带 folder 参数调一次看看有哪些文件夹。",
             name
-        ))),
+        ))
+        .into()),
         ListOutcome::UnknownTag(name) => Ok(error_result(format!(
             "没有叫「{}」的标签。未按标签筛选的结果并未返回——请先不带 tag 参数调一次看看有哪些标签。",
             name
-        ))),
-        ListOutcome::Ok(notes) if notes.is_empty() => {
-            Ok(text_result("这个范围内没有笔记。若带了 offset，可能是已经翻过最后一页。"))
-        }
+        ))
+        .into()),
+        ListOutcome::Ok(notes) if notes.is_empty() => Ok(text_result(
+            "这个范围内没有笔记。若带了 offset，可能是已经翻过最后一页。",
+        )
+        .into()),
         ListOutcome::Ok(notes) => {
             let mut out = format!("共 {} 篇（按最近修改倒序）：\n", notes.len());
             for n in &notes {
@@ -239,12 +267,15 @@ async fn call_list(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Value
                 out.push_str(&format_brief(n, folder.as_deref()));
             }
             out.push_str("\n用 kb_read(id) 取其中一篇的全文。");
-            Ok(text_result(out))
+            Ok(ToolOutput {
+                value: text_result(out),
+                note_ids: notes.iter().map(|n| n.id.clone()).collect(),
+            })
         }
     }
 }
 
-async fn call_search(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Value, ToolError> {
+async fn call_search(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<ToolOutput, ToolError> {
     let Some(query) = arg_str(args, "query") else {
         return Err(ToolError::invalid_params("kb_search 需要参数 query"));
     };
@@ -257,7 +288,7 @@ async fn call_search(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Val
         Ok(v) => v,
         // 🔴 检索挂了要报错，不能假装成「没找到」（规则 #15.3）——
         // 后者会被模型转述成「你库里没记过」，那是个看不出来的错答案。
-        Err(e) => return Ok(error_result(format!("检索失败：{}", e))),
+        Err(e) => return Ok(error_result(format!("检索失败：{}", e)).into()),
     };
 
     match outcome {
@@ -265,12 +296,14 @@ async fn call_search(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Val
             "「{}」里没有可检索的词（单个汉字、单个字母/数字、以及全是高频虚词的组合都会被丢弃）。\n\
              **这不代表库里没有。** 把目标词放进一个更长的短语里重试，或改用 kb_list 浏览。",
             query
-        ))),
+        ))
+        .into()),
         SearchOutcome::NoMatch => Ok(text_result(format!(
             "没有匹配到「{}」的笔记。\n\
              **零命中不等于库里没有** —— 先换个关键词重试，或用 kb_list 看看库里到底有什么。",
             query
-        ))),
+        ))
+        .into()),
         SearchOutcome::Hits(notes) => {
             let mut out = format!("找到 {} 篇相关笔记（按相关度排序）：\n", notes.len());
             for n in &notes {
@@ -279,7 +312,10 @@ async fn call_search(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Val
                 out.push_str(&format_brief(n, folder.as_deref()));
             }
             out.push_str("\n看完摘要觉得哪篇有用，用 kb_read(id) 取它的全文。");
-            Ok(text_result(out))
+            Ok(ToolOutput {
+                value: text_result(out),
+                note_ids: notes.iter().map(|n| n.id.clone()).collect(),
+            })
         }
     }
 }

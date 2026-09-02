@@ -12,6 +12,7 @@ import { copyToClipboard } from "@/lib/utils";
 import { confirmDialog } from "@/lib/confirm";
 import { mcpGetToken, mcpRegenerateToken, type McpStatus } from "@/lib/api/mcp";
 import { McpClientGuide } from "./McpClientGuide";
+import { McpAuditPanel } from "./McpAuditPanel";
 import styles from "../Settings.module.css";
 
 /** 令牌是 43 个字符的 base64url。遮码时只留头尾，够用户认出是哪一把。 */
@@ -24,15 +25,19 @@ export function McpServerPanel({
   status,
   busy,
   startError,
+  auditError,
   onSetPort,
   onDismissError,
+  onDismissAuditError,
   toast,
 }: {
   status: McpStatus;
   busy: boolean;
   startError: string;
+  auditError: string;
   onSetPort: (port: number) => Promise<boolean>;
   onDismissError: () => void;
+  onDismissAuditError: () => void;
   toast: (msg: string, type?: "success" | "error" | "info", duration?: number) => void;
 }) {
   const [token, setToken] = useState("");
@@ -108,6 +113,14 @@ export function McpServerPanel({
         }}
         onCopyToken={handleCopyToken}
         onRegenerate={handleRegenerate}
+        toast={toast}
+      />
+
+      {/* 调用记录放在接入指引**之上**：指引是配一次就不看了的，
+          而「谁读过我什么」是需要反复回来看的。 */}
+      <McpAuditPanel
+        auditError={auditError}
+        onDismissError={onDismissAuditError}
         toast={toast}
       />
 

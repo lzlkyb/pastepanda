@@ -139,7 +139,7 @@ pub(super) const EXPIRED_WHERE: &str = "deleted_at IS NOT NULL AND deleted_at < 
 ///
 /// 上限夹一下是防 `Duration::days` 溢出 panic（天数来自配置文件，
 /// 不能假定它一定合理；本项目 `panic = "abort"`）。
-fn expired_cutoff(days: i64) -> Option<String> {
+pub(super) fn expired_cutoff(days: i64) -> Option<String> {
     if days <= 0 {
         return None;
     }

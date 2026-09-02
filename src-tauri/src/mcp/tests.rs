@@ -96,10 +96,33 @@ impl super::source::KbSource for FakeKb {
 /// 本机 Windows 11 build 22000 没这个导出（已用 dumpbin 核实），
 /// 结果是**整个测试二进制启动即挂、一条测试都跑不了**（0xc0000139）。
 /// 好在协议层本来也不需要 App：去掉它反而把 Ctx 简化了。
+/// 假审计出口。W3 把审计接进 `build_router` 时，正是为了不破掉这批过线测试
+/// 才把它做成 trait（直接持 `AppHandle` 的话，这里就构造不出 Router 了）。
+/// 记下每一次 `record`，供断言「谁被记了、记了什么」。
+#[derive(Default)]
+struct RecordingAudit {
+    /// (tool, args, ok, note_ids)
+    calls: std::sync::Mutex<Vec<(String, String, bool, Vec<String>)>>,
+}
+
+impl super::audit::AuditSink for RecordingAudit {
+    fn record(&self, _client: &str, tool: &str, args: &str, ok: bool, ids: &[String]) {
+        if let Ok(mut g) = self.calls.lock() {
+            g.push((tool.into(), args.into(), ok, ids.to_vec()));
+        }
+    }
+}
+
 async fn spawn_server() -> String {
+    spawn_server_with_audit().await.0
+}
+
+async fn spawn_server_with_audit() -> (String, std::sync::Arc<RecordingAudit>) {
     let token = std::sync::Arc::new(std::sync::Mutex::new(TOKEN.to_string()));
     let kb: std::sync::Arc<dyn super::source::KbSource> = std::sync::Arc::new(FakeKb::new());
-    let router = super::server::build_router(kb, token);
+    let recorder = std::sync::Arc::new(RecordingAudit::default());
+    let audit: std::sync::Arc<dyn super::audit::AuditSink> = recorder.clone();
+    let router = super::server::build_router(audit, kb, token);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("绑定随机端口失败");
@@ -107,7 +130,60 @@ async fn spawn_server() -> String {
     tokio::spawn(async move {
         let _ = axum::serve(listener, router).await;
     });
-    format!("http://127.0.0.1:{}", port)
+    (format!("http://127.0.0.1:{}", port), recorder)
+}
+
+// ===== W3 审计 =====
+
+#[tokio::test]
+async fn test_audit_records_tool_calls_but_not_handshake() {
+    let (base, rec) = spawn_server_with_audit().await;
+
+    // 握手与工具表不碰笔记数据，记了只会把真正重要的那几条淡化在噪声里。
+    rpc(&base, json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})).await;
+    rpc(&base, json!({"jsonrpc":"2.0","id":2,"method":"tools/list"})).await;
+    assert!(
+        rec.calls.lock().unwrap().is_empty(),
+        "initialize / tools/list 不该进审计"
+    );
+
+    rpc(
+        &base,
+        json!({"jsonrpc":"2.0","id":3,"method":"tools/call",
+               "params":{"name":"kb_read","arguments":{"id":"n1"}}}),
+    )
+    .await;
+
+    let calls = rec.calls.lock().unwrap();
+    assert_eq!(calls.len(), 1, "只有 tools/call 产生审计");
+    let (tool, args, ok, ids) = &calls[0];
+    assert_eq!(tool, "kb_read");
+    assert!(*ok);
+    assert_eq!(ids, &vec!["n1".to_string()], "要记下读走的是哪一篇");
+    // 🔴 W3 的根本约束：参数里只有参数，**永远不包含返回的笔记正文**。
+    assert!(
+        !args.contains("spawn_blocking"),
+        "审计的 args 里不得出现笔记正文，实际: {}",
+        args
+    );
+    assert!(args.contains("n1"), "但要保留参数本身");
+}
+
+#[tokio::test]
+async fn test_audit_also_records_failed_tool_calls() {
+    // 「试图读但没读成」也是信息——只记成功的等于把探测行为隐掉了。
+    let (base, rec) = spawn_server_with_audit().await;
+    rpc(
+        &base,
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
+               "params":{"name":"kb_nonexistent","arguments":{}}}),
+    )
+    .await;
+
+    let calls = rec.calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].0, "kb_nonexistent");
+    assert!(!calls[0].2, "未知工具应该记成 ok=false");
 }
 
 /// 发一个带正确令牌的 JSON-RPC 请求，返回（状态码，应答体）。

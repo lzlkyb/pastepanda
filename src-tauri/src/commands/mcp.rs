@@ -58,6 +58,32 @@ fn persist_enabled(store: &DataStore, enabled: bool) -> Result<(), String> {
     store.save_config(&cfg)
 }
 
+/// 最近的调用记录（W3）。红线②的「可见」就靠它。
+#[tauri::command]
+pub fn mcp_audit_list(
+    store: State<DataStore>,
+    limit: u32,
+) -> Result<Vec<crate::data_store::McpAuditRow>, String> {
+    store.mcp_audit_list(limit)
+}
+
+/// 客户端花名册。从审计表聚合，不单存一份。
+///
+/// ❗ 它回答不了「当前连着几个」——MCP over HTTP 无状态，根本没有「连着」
+/// 这回事。界面文案必须是「最近活动过的客户端」，不能写成连接数。
+#[tauri::command]
+pub fn mcp_audit_clients(
+    store: State<DataStore>,
+) -> Result<Vec<crate::data_store::McpClientRow>, String> {
+    store.mcp_audit_clients()
+}
+
+/// 清空调用记录。红线②的「可删」就靠它，前端得把这个入口给出来。
+#[tauri::command]
+pub fn mcp_audit_clear(store: State<DataStore>) -> Result<usize, String> {
+    store.mcp_audit_clear()
+}
+
 /// 当前状态（R7：界面上要有一条看得见的状态）。**不包含令牌**。
 #[tauri::command]
 pub fn mcp_get_status(store: State<DataStore>, server: State<McpServer>) -> McpStatus {
@@ -94,7 +120,7 @@ pub fn mcp_set_port(
         server.stop();
         let token = mcp::token::load_or_create(&app_dir(&app)?)?;
         let kb = std::sync::Arc::new(mcp::source::AppKbSource::new(app.clone()));
-        server.start(kb, token, port)?;
+        server.start(app.clone(), kb, token, port)?;
     }
     persist_port(&store, port)?;
     Ok(server.status(port))
@@ -142,7 +168,7 @@ pub fn mcp_set_enabled(
         let token = mcp::token::load_or_create(&app_dir(&app)?)?;
         let port = configured_port(&store);
         let kb = std::sync::Arc::new(mcp::source::AppKbSource::new(app.clone()));
-        server.start(kb, token, port)?;
+        server.start(app.clone(), kb, token, port)?;
         if let Err(e) = persist_enabled(&store, true) {
             server.stop();
             return Err(format!("服务已启动但配置保存失败，已回滚到关闭：{}", e));

@@ -4660,6 +4660,86 @@ fn test_batch_purge_also_clears_the_fts_row() {
     assert_eq!(left, 0, "批量销毁后 notes_fts 不得残留行");
 }
 
+// ============================================================
+// MCP 调用审计（W3）
+// ============================================================
+
+#[test]
+fn test_mcp_audit_roundtrip_and_client_roster() {
+    let store = make_store();
+    store
+        .mcp_audit_log("claude-code/2.1", "kb_search", r#"{"query":"x"}"#, true, 2, &[
+            "id-a".into(),
+            "id-b".into(),
+        ])
+        .unwrap();
+    store
+        .mcp_audit_log("claude-code/2.1", "kb_read", r#"{"id":"id-a"}"#, true, 1, &["id-a".into()])
+        .unwrap();
+    store
+        .mcp_audit_log("other-client/1.0", "kb_list", "{}", false, 0, &[])
+        .unwrap();
+
+    let rows = store.mcp_audit_list(10).unwrap();
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0].tool, "kb_list", "时间倒序，最新的在前");
+    assert!(!rows[0].ok, "失败的调用也要记——「试图读但没读成」也是信息");
+    assert_eq!(rows[1].note_ids, "id-a");
+    assert_eq!(rows[2].note_ids, "id-a,id-b", "多条命中逗号分隔");
+
+    // 花名册不单存一份，就是对审计表 GROUP BY
+    let clients = store.mcp_audit_clients().unwrap();
+    assert_eq!(clients.len(), 2);
+    let cc = clients.iter().find(|c| c.client == "claude-code/2.1").unwrap();
+    assert_eq!(cc.calls, 2);
+    assert!(cc.first_seen <= cc.last_seen);
+}
+
+#[test]
+fn test_mcp_audit_never_stores_note_content() {
+    // 🔴 这条钓的是 W3 的根本约束：审计只记 id，**不记正文**。
+    // 记了就等于把知识库再抄一份到审计表里——体积与泄露面都翻倍，
+    // 而且回收站清了、笔记删了，副本还留在这里。
+    let store = make_store();
+    let secret = "这是笔记正文里的敏感内容不该进审计表";
+    let n = store.note_create(None, "会议记录", secret).unwrap();
+    store
+        .mcp_audit_log("c", "kb_read", &format!(r#"{{"id":"{}"}}"#, n.id), true, 1, &[n.id.clone()])
+        .unwrap();
+
+    let dump: String = store
+        .lock_conn()
+        .query_row(
+            "SELECT group_concat(at || client || tool || args || note_ids, '|') FROM mcp_audit",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(
+        !dump.contains(secret),
+        "审计表里不得出现笔记正文，实际内容: {}",
+        dump
+    );
+    assert!(dump.contains(&n.id), "但必须记下 id，否则追溯不了读走的是哪几篇");
+}
+
+#[test]
+fn test_mcp_audit_clear_and_purge() {
+    let store = make_store();
+    store.mcp_audit_log("c", "kb_list", "{}", true, 0, &[]).unwrap();
+    store.mcp_audit_log("c", "kb_list", "{}", true, 0, &[]).unwrap();
+    assert_eq!(store.mcp_audit_count(), 2);
+
+    // days = 0 是用户关了自动清理的逃生口，不能被当成「0 天后到期」一次清光
+    assert_eq!(store.mcp_audit_purge_expired(0).unwrap(), 0);
+    assert_eq!(store.mcp_audit_count(), 2, "一条都不能少");
+
+    // 红线②的「可删」
+    assert_eq!(store.mcp_audit_clear().unwrap(), 2);
+    assert_eq!(store.mcp_audit_count(), 0);
+    assert!(store.mcp_audit_clients().unwrap().is_empty());
+}
+
 #[test]
 fn test_note_history_id_can_be_null() {
     // 规划 §1.6 入口 #2：唯一与剪贴板无关的创建路径，history_id 必须可空

@@ -44,6 +44,8 @@ const MAX_CONCURRENCY: usize = 64;
 /// 会把 lib test 二进制链到本机不存在的 `ProcessPrng`，详见 Cargo.toml 的警告）。
 #[derive(Clone)]
 struct Ctx {
+    /// 写审计（W3）。用 trait 而不是 `AppHandle`，理由见 `audit.rs` 头部。
+    audit: Arc<dyn super::audit::AuditSink>,
     /// 三个只读工具背后的数据访问。
     kb: Arc<dyn super::source::KbSource>,
     /// 当前明文令牌。只在内存，不经任何命令层外送（除了用户主动要看的那一个）。
@@ -139,6 +141,7 @@ impl McpServer {
     /// 而失效方式是「服务在跑但客户端连不上」—— 比直接启不了难查得多。
     pub fn start(
         &self,
+        app: tauri::AppHandle,
         kb: Arc<dyn super::source::KbSource>,
         token: String,
         port: u16,
@@ -165,7 +168,8 @@ impl McpServer {
             .map_err(|e| format!("监听套接字设为非阻塞失败：{}", e))?;
 
         self.set_token(token)?;
-        let router = build_router(kb, self.token.clone());
+        let audit = Arc::new(super::audit::AppAuditSink::new(app));
+        let router = build_router(audit, kb, self.token.clone());
         let (tx, rx) = oneshot::channel::<()>();
 
         tauri::async_runtime::spawn(async move {
@@ -209,10 +213,11 @@ impl McpServer {
 
 /// 组装路由与中间件。抽成函数是为了测试能直接拿到真 Router。
 pub(super) fn build_router(
+    audit: Arc<dyn super::audit::AuditSink>,
     kb: Arc<dyn super::source::KbSource>,
     token: Arc<Mutex<String>>,
 ) -> Router {
-    let ctx = Ctx { kb, token };
+    let ctx = Ctx { audit, kb, token };
     Router::new()
         .route("/health", get(health_handler))
         .route("/mcp", post(mcp_handler))
@@ -262,6 +267,20 @@ async fn mcp_handler(State(ctx): State<Ctx>, headers: HeaderMap, body: Bytes) ->
         return (reject.status(), Json(json!({ "error": reject.message() }))).into_response();
     }
 
-    let resp = super::protocol::dispatch(&ctx.kb, &body).await;
-    (StatusCode::OK, Json(resp)).into_response()
+    let out = super::protocol::dispatch(&ctx.kb, &body).await;
+
+    // W3 审计。client 取 User-Agent：实测 Claude Code 每个请求都带
+    // `claude-code/2.1.233 (sdk-cli)`，而 `clientInfo` 只在 initialize 里有一次
+    // （MCP over HTTP 无状态）。
+    if let Some(draft) = out.audit {
+        let client = headers
+            .get(axum::http::header::USER_AGENT)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        ctx.audit
+            .record(&client, &draft.tool, &draft.args, draft.ok, &draft.note_ids);
+    }
+
+    (StatusCode::OK, Json(out.response)).into_response()
 }

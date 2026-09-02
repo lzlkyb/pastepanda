@@ -1644,3 +1644,84 @@
   color: var(--green, #3fb950);
   background: color-mix(in srgb, var(--green, #3fb950) 16%, transparent);
 }
+
+/* ── MCP 调用记录（W3）──
+   红线②：使用日志可见可删。上面的列表是「可见」，清空按钮是「可删」。 */
+.mcpClientChip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-size: 10.5px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+
+.mcpAuditList {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.mcpAuditRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 9px;
+  font-size: 11px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.mcpAuditRow:last-child { border-bottom: none; }
+
+.mcpAuditTime {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.mcpAuditTool {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+/* 参数可能很长（比如一整句提问），截断但 title 里给全 */
+.mcpAuditArgs {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.mcpAuditHit { flex-shrink: 0; color: var(--text-secondary); }
+.mcpAuditFail { flex-shrink: 0; color: var(--red, #e5534b); }
+
+.mcpAuditClear {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 3px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mcpAuditClear:hover {
+  background: var(--hover);
+  border-color: var(--red, #e5534b);
+  color: var(--red, #e5534b);
+}

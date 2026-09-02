@@ -3,6 +3,7 @@ mod group;
 mod tag;
 mod kb_inbox;
 mod kb_shadow;
+mod mcp_audit;
 mod note;
 mod note_folder;
 mod note_ai;
@@ -64,6 +65,7 @@ pub use quota::{
 };
 pub use kb_inbox::{InboxCandidate, InboxGroupCount, InboxViewOpts};
 pub use kb_shadow::ShadowStats;
+pub use mcp_audit::{McpAuditRow, McpClientRow};
 // `question_to_or_expr` 对外暴露：MCP 的 kb_search 要用它分开「问题里没拆出词」
 // 与「搜了但没命中」——对模型而言这两种的下一步完全不同。
 pub use note::{question_to_or_expr, Note, NoteGroupCount, NoteViewOpts};
@@ -641,7 +643,31 @@ impl DataStore {
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
             );
-            CREATE INDEX IF NOT EXISTS idx_note_rev ON note_revisions(note_id, created_at);",
+            CREATE INDEX IF NOT EXISTS idx_note_rev ON note_revisions(note_id, created_at);
+
+            -- MCP 调用审计（W3）。红线②：使用日志永不出本机，且用户可见可删。
+            --
+            -- 🔴 **绝不记返回正文**。记了等于把整个知识库再抄一份到审计表里，
+            -- 体积与泄露面都翻倍，而且回收站清了这里还留着副本。
+            -- 记 note_ids 不记内容：既能回答「谁、何时、读走了哪几篇」，又不重复存储。
+            --
+            -- client 填的是请求的 User-Agent（实测 Claude Code 发的是
+            -- `claude-code/2.1.233 (sdk-cli)`）。**不用 clientInfo**——MCP over HTTP
+            -- 是无状态的，clientInfo 只在 initialize 里出现一次，后续的 tools/call
+            -- 根本不带；而 UA **每个请求都有**。
+            --
+            -- 客户端花名册不单开表：`GROUP BY client` 就是花名册。
+            CREATE TABLE IF NOT EXISTS mcp_audit (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                at         TEXT NOT NULL,
+                client     TEXT NOT NULL DEFAULT '',
+                tool       TEXT NOT NULL,
+                args       TEXT NOT NULL DEFAULT '',
+                ok         INTEGER NOT NULL DEFAULT 1,
+                hit_count  INTEGER NOT NULL DEFAULT 0,
+                note_ids   TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mcp_audit_at ON mcp_audit(at);",
         )?;
 
         // 笔记全文索引。**常规 FTS5，不是外部内容表**——同 history_fts 的取舍

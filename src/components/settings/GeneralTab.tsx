@@ -941,8 +941,10 @@ export function GeneralTab({
           status={mcp.status}
           busy={mcp.busy}
           startError={mcp.startError}
+          auditError={mcp.auditError}
           onSetPort={mcp.setPort}
           onDismissError={mcp.dismissError}
+          onDismissAuditError={mcp.dismissAuditError}
           toast={toast}
         />
       )}

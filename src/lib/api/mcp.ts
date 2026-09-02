@@ -11,6 +11,28 @@ import { invoke } from "@tauri-apps/api/core";
 import { logger } from "@/lib/logger";
 import { toastActionFailed } from "@/lib/utils";
 
+/** 一条调用记录（W3）。🔴 `args` 只有参数，**不包含笔记正文**。 */
+export interface McpAuditRow {
+  id: number;
+  at: string;
+  /** 请求的 User-Agent，如 `claude-code/2.1.233 (sdk-cli)` */
+  client: string;
+  tool: string;
+  args: string;
+  ok: boolean;
+  hit_count: number;
+  /** 逗号分隔的笔记 id */
+  note_ids: string;
+}
+
+/** 客户端花名册的一行。从审计表聚合而来。 */
+export interface McpClientRow {
+  client: string;
+  first_seen: string;
+  last_seen: string;
+  calls: number;
+}
+
 /** 服务状态。字段名与 Rust 的 `McpStatus` 一致。 */
 export interface McpStatus {
   running: boolean;
@@ -73,6 +95,42 @@ export async function mcpRegenerateToken(): Promise<string | null> {
   } catch (e) {
     logger.error("重置 MCP 令牌失败", e);
     toastActionFailed("重置访问令牌", e);
+    return null;
+  }
+}
+
+/** 最近的调用记录。红线②的「可见」就靠它。 */
+export async function mcpAuditList(limit = 100): Promise<McpAuditRow[]> {
+  try {
+    return await invoke<McpAuditRow[]>("mcp_audit_list", { limit });
+  } catch (e) {
+    logger.warn("读取 MCP 调用记录失败", e);
+    return [];
+  }
+}
+
+/**
+ * 客户端花名册。
+ *
+ * ❗ 它回答不了「当前连着几个」——MCP over HTTP 无状态，根本没有「连着」
+ *   这回事。界面文案必须是「最近活动过的客户端」，写成连接数就是假的。
+ */
+export async function mcpAuditClients(): Promise<McpClientRow[]> {
+  try {
+    return await invoke<McpClientRow[]>("mcp_audit_clients");
+  } catch (e) {
+    logger.warn("读取 MCP 客户端名单失败", e);
+    return [];
+  }
+}
+
+/** 清空调用记录。红线②的「可删」，调用方要先弹确认。 */
+export async function mcpAuditClear(): Promise<number | null> {
+  try {
+    return await invoke<number>("mcp_audit_clear");
+  } catch (e) {
+    logger.error("清空 MCP 调用记录失败", e);
+    toastActionFailed("清空调用记录", e);
     return null;
   }
 }

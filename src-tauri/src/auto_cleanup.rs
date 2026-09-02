@@ -49,6 +49,22 @@ fn run_once(handle: &AppHandle) {
     };
     cleanup_history(handle, &store, &config);
     cleanup_note_trash(&store, &config);
+    cleanup_mcp_audit(&store, &config);
+}
+
+/// MCP 调用审计的超期清理（W3）。口径同回收站：默认 30 天，`0` = 不清理。
+///
+/// 同样单开一个配置项——审计日志与剪贴板流水、与笔记回收站都不是一回事。
+fn cleanup_mcp_audit(store: &crate::data_store::DataStore, config: &serde_json::Value) {
+    let days = config
+        .get("mcp_audit_days")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(30);
+    match store.mcp_audit_purge_expired(days) {
+        Ok(n) if n > 0 => log::info!("[AutoCleanup] MCP 审计清理 {} 条超期记录", n),
+        Ok(_) => {}
+        Err(e) => log::warn!("[AutoCleanup] MCP 审计清理失败: {}", e),
+    }
 }
 
 /// 回收站超期清理（W1 / R3）。

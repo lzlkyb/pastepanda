@@ -71,6 +71,9 @@ export interface AppConfig {
    *  **与 `auto_cleanup_days` 是两回事**：那个管「没沉淀过的剪贴板流水」，
    *  这个管「用户亲手删的笔记」——把历史设成 7 天的人不是在说删的笔记也只给 7 天 */
   note_trash_days: number;
+  /** W3 MCP 调用记录保留天数。`0` = 不自动清理（仍可手动清空）。
+   *  又是单独一个：审计日志、剪贴板流水、笔记回收站是三件事 */
+  mcp_audit_days: number;
   /** v6.1 自我净化开关：保护常用内容（打标签/粘贴过/搜索找回过）不过期。默认开 */
   preserve_valued_content: boolean;
   auto_strip: boolean;
@@ -336,6 +339,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   theme: "ocean",
   auto_cleanup_days: 30,
   note_trash_days: 30,
+  mcp_audit_days: 30,
   preserve_valued_content: true,
   auto_strip: false,
   sequential_loop: false,

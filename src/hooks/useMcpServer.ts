@@ -29,6 +29,12 @@ export function useMcpServer(
   const [busy, setBusy] = useState(false);
   /** 启动失败的原因。非空就在面板里挂一条横幅，不靠 toast——toast 会飘走。 */
   const [startError, setStartError] = useState("");
+  /**
+   * 审计写入失败（W3）。fail-open 下服务照常跑，所以这是用户知道
+   * 「这段时间的访问没被记下」的**唯一途径**。不用 toast：它会飘走，
+   * 而用户可能根本没开着设置页。
+   */
+  const [auditError, setAuditError] = useState("");
 
   const wasOkRef = useRef(true);
 
@@ -67,6 +73,19 @@ export function useMcpServer(
     return () => un?.();
   }, []);
 
+  // 审计写不下（W3）。同样必须靠事件：它发生在请求处理中，轮询看不到。
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    void (async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+      un = await listen<string>("mcp-audit-failed", (e) => {
+        logger.warn("MCP 审计写入失败", e.payload);
+        setAuditError(String(e.payload));
+      });
+    })();
+    return () => un?.();
+  }, []);
+
   const setEnabled = useCallback(
     async (next: boolean) => {
       setBusy(true);
@@ -100,5 +119,15 @@ export function useMcpServer(
     [refresh, toast],
   );
 
-  return { status, busy, startError, setEnabled, setPort, refresh, dismissError: () => setStartError("") };
+  return {
+    status,
+    busy,
+    startError,
+    auditError,
+    setEnabled,
+    setPort,
+    refresh,
+    dismissError: () => setStartError(""),
+    dismissAuditError: () => setAuditError(""),
+  };
 }

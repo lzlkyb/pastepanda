@@ -68,10 +68,41 @@ pub fn err(id: Value, code: i32, message: impl Into<String>) -> Value {
 /// **总是返 HTTP 200 + JSON-RPC 体**（鉴权失败除外，那在 `server.rs` 拦）：
 /// JSON-RPC 的错误要走 `error` 字段，用 HTTP 状态码代替会让客户端拿不到
 /// `code` 与 `message`。
-pub async fn dispatch(kb: &std::sync::Arc<dyn super::source::KbSource>, raw: &[u8]) -> Value {
+/// 一次调用的审计草稿（W3）。`client` 不在这里填——它来自 HTTP 头，
+/// 而本模块故意不知道 HTTP 的存在。由 server 层补上。
+pub struct AuditDraft {
+    pub tool: String,
+    /// 参数 JSON。🔴 只有参数，**永远不包含返回的笔记正文**。
+    pub args: String,
+    pub ok: bool,
+    pub note_ids: Vec<String>,
+}
+
+/// `dispatch` 的返回：应答 + （若需要）审计草稿。
+///
+/// 只有 `tools/call` 会产生审计。`initialize` / `tools/list` 不记：
+/// 它们不碰笔记数据，记了只会把真正重要的那几条淡化在握手噪声里。
+pub struct Dispatched {
+    pub response: Value,
+    pub audit: Option<AuditDraft>,
+}
+
+impl From<Value> for Dispatched {
+    fn from(response: Value) -> Self {
+        Self {
+            response,
+            audit: None,
+        }
+    }
+}
+
+pub async fn dispatch(
+    kb: &std::sync::Arc<dyn super::source::KbSource>,
+    raw: &[u8],
+) -> Dispatched {
     let req: Value = match serde_json::from_slice(raw) {
         Ok(v) => v,
-        Err(e) => return err(Value::Null, ERR_PARSE, format!("JSON 解析失败：{}", e)),
+        Err(e) => return err(Value::Null, ERR_PARSE, format!("JSON 解析失败：{}", e)).into(),
     };
 
     // 批量请求（数组）不支持。明确拒掉而不是默默当成单个请求处理。
@@ -80,31 +111,61 @@ pub async fn dispatch(kb: &std::sync::Arc<dyn super::source::KbSource>, raw: &[u
             Value::Null,
             ERR_INVALID_REQUEST,
             "不支持批量请求（JSON-RPC batch）",
-        );
+        )
+        .into();
     }
 
     let id = id_of(&req);
     let Some(method) = req.get("method").and_then(|m| m.as_str()) else {
-        return err(id, ERR_INVALID_REQUEST, "请求缺少 method 字段");
+        return err(id, ERR_INVALID_REQUEST, "请求缺少 method 字段").into();
     };
     let params = req.get("params");
 
     match method {
-        "initialize" => ok(id, initialize_result(params)),
+        "initialize" => ok(id, initialize_result(params)).into(),
 
         // 握手完成通知。按规范它是 notification（无 id，不需应答），
         // 但 HTTP 传输下必须回一个响应体，否则客户端会一直等。
         // 回 `id: null` 的空结果（同 cc-bridge）。
-        "notifications/initialized" => ok(Value::Null, json!({})),
+        "notifications/initialized" => ok(Value::Null, json!({})).into(),
 
-        "tools/list" => ok(id, json!({ "tools": super::tools::definitions() })),
+        "tools/list" => ok(id, json!({ "tools": super::tools::definitions() })).into(),
 
-        "tools/call" => match super::tools::call(kb, params).await {
-            Ok(result) => ok(id, result),
-            Err(e) => err(id, e.code, e.message),
-        },
+        // 唯一会产生审计的分支。工具名与参数从 `params` 里取，
+        // 即使调用失败也要记（`ok: false`）——「试图读但没读成」也是信息。
+        "tools/call" => {
+            let tool = params
+                .and_then(|p| p.get("name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let args = params
+                .and_then(|p| p.get("arguments"))
+                .map(|v| v.to_string())
+                .unwrap_or_default();
+            match super::tools::call(kb, params).await {
+                Ok(out) => Dispatched {
+                    response: ok(id, out.value),
+                    audit: Some(AuditDraft {
+                        tool,
+                        args,
+                        ok: true,
+                        note_ids: out.note_ids,
+                    }),
+                },
+                Err(e) => Dispatched {
+                    response: err(id, e.code, e.message),
+                    audit: Some(AuditDraft {
+                        tool,
+                        args,
+                        ok: false,
+                        note_ids: Vec::new(),
+                    }),
+                },
+            }
+        }
 
-        other => err(id, ERR_METHOD_NOT_FOUND, format!("不支持的方法：{}", other)),
+        other => err(id, ERR_METHOD_NOT_FOUND, format!("不支持的方法：{}", other)).into(),
     }
 }
 
