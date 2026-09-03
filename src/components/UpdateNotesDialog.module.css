@@ -4,13 +4,18 @@
 /* ===== Hero ===== */
 .hero {
   position: relative;
-  padding: 24px 24px 16px;
-  overflow: hidden;
+  padding: 24px 24px 20px;
+  /* 修复：去掉 overflow:hidden，否则「立即更新」按钮下缘/投影被裁；
+     装饰渐变改由 ::before/::after 自身的圆角裁切 */
+  overflow: visible;
+  border-radius: 16px 16px 0 0;
+  flex-shrink: 0;
 }
 .hero::before {
   content: '';
   position: absolute;
   inset: 0;
+  border-radius: 16px 16px 0 0;
   background: linear-gradient(180deg, var(--accent-light) 0%, transparent 88%);
   opacity: 0.95;
   pointer-events: none;
@@ -19,6 +24,7 @@
   content: '';
   position: absolute;
   inset: 0;
+  border-radius: 16px 16px 0 0;
   background: var(--hero-glow);
   pointer-events: none;
 }
@@ -142,14 +148,9 @@
 
 /* ===== 分组卡片流 ===== */
 .body {
-  max-height: min(44vh, 300px);
-  overflow-y: auto;
+  /* 滚动交由外层 .dialog-body 统一处理（单一滚动源），此处不再自设上限/滚动 */
   padding: 10px 20px 4px 24px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-color) transparent;
 }
-.body::-webkit-scrollbar { width: 5px; }
-.body::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
 .grp {
   border: 1px solid var(--border-color);
   border-radius: 13px;
@@ -280,6 +281,7 @@
   gap: 9px;
   width: calc(100% - 44px);
   margin: 4px 22px 0;
+  flex-shrink: 0;
   padding: 11px 15px;
   border-radius: 11px;
   border: 1px solid var(--accent);
@@ -309,6 +311,7 @@
   gap: 10px;
   padding: 12px 22px 18px;
   flex-shrink: 0;
+  border-top: 1px solid var(--border-color);
 }
 .btnSkip {
   padding: 10px 16px;

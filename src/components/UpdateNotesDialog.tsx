@@ -120,9 +120,8 @@ export function UpdateNotesDialog({ open, onClose, currentVersion, manual = fals
               className="dialog-box w460"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="dialog-body" style={{ padding: 0, gap: 0 }}>
-                {/* Hero：图标 + 主题句 + 版本号（渐变强调）+ 立即更新 */}
-                <div className={styles.hero}>
+              {/* Hero：图标 + 主题句 + 版本号（渐变强调）+ 立即更新 —— 钉在顶部，不随日志滚动，按钮下缘不再被裁 */}
+              <div className={styles.hero}>
                   <div className={styles.heroTop}>
                     <div className={styles.icon}>
                       <AppIcon size={24} />
@@ -157,6 +156,8 @@ export function UpdateNotesDialog({ open, onClose, currentVersion, manual = fals
                   </div>
                 </div>
 
+              {/* 可滚动内容区：更新日志分组卡片 —— 单一滚动源，避免 Hero/页脚被嵌套滚动裁切 */}
+              <div className="dialog-body" style={{ padding: 0, gap: 0 }}>
                 {/* 内容：新增 / 改进 / 修复 分组卡片（发行说明式） */}
                 {entry ? (
                   <div className={styles.body}>
@@ -201,9 +202,10 @@ export function UpdateNotesDialog({ open, onClose, currentVersion, manual = fals
                 ) : (
                   <FallbackContent updateBody={update?.body} />
                 )}
+              </div>
 
-                {/* 完整功能手册跳转：本次更新亮点 + 全部功能详解，浏览器查看 */}
-                <button className={styles.manualCta} onClick={openManual} title="在新窗口查看完整功能手册">
+              {/* 完整功能手册跳转：本次更新亮点 + 全部功能详解，浏览器查看 —— 钉在底部，常驻可见 */}
+              <button className={styles.manualCta} onClick={openManual} title="在新窗口查看完整功能手册">
                   <BookOpen size={14} />
                   <span className={styles.manualCtaText}>本次更新亮点 + 全部功能详解，查看完整手册</span>
                   <ArrowRight size={13} />
@@ -233,7 +235,6 @@ export function UpdateNotesDialog({ open, onClose, currentVersion, manual = fals
                     </button>
                   )}
                 </div>
-              </div>
             </motion.div>
           </FocusTrap>
         </motion.div>

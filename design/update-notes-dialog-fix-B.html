@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>更新弹框修复 · 方案 B 设计稿</title>
+<style>
+  :root {
+    --accent: #0284C7;
+    --accent-light: #E0F2FE;
+    --accent-shadow: rgba(2, 132, 199, 0.15);
+    --version-badge-gradient: linear-gradient(135deg, #0284C7, #0369A1);
+    --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(2,132,199,0.10), transparent);
+    --text-primary: #0F172A;
+    --text-secondary: #475569;
+    --text-muted: #94A3B8;
+    --border-color: #E2E8F0;
+    --card-bg: #FFFFFF;
+    --section-bg: #F8FAFC;
+    --glass-dialog-bg: rgba(255,255,255,0.82);
+    --glass-popover-border: rgba(15,23,42,0.08);
+    --glass-popover-shadow: 0 24px 60px rgba(15,23,42,0.18);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #EEF2F7, #E2E8F0);
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .dialog-backdrop {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(15,23,42,0.32);
+  }
+  .dialog-box {
+    width: 460px; max-height: 78vh;
+    background: var(--glass-dialog-bg);
+    backdrop-filter: blur(18px) saturate(1.4);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    border: 1px solid var(--glass-popover-border);
+    border-radius: 16px;
+    display: flex; flex-direction: column;
+    box-shadow: var(--glass-popover-shadow);
+    overflow: hidden;
+  }
+
+  /* ===== Hero（钉顶，不随日志滚动） ===== */
+  .hero {
+    position: relative;
+    padding: 24px 24px 20px;
+    overflow: visible;            /* 修复：不再裁切按钮下缘/投影 */
+    border-radius: 16px 16px 0 0; /* 装饰层按圆角裁切 */
+    flex-shrink: 0;
+  }
+  .hero::before {
+    content: ''; position: absolute; inset: 0;
+    border-radius: 16px 16px 0 0;
+    background: linear-gradient(180deg, var(--accent-light) 0%, transparent 88%);
+    opacity: 0.95; pointer-events: none;
+  }
+  .hero::after {
+    content: ''; position: absolute; inset: 0;
+    border-radius: 16px 16px 0 0;
+    background: var(--hero-glow); pointer-events: none;
+  }
+  .heroTop { position: relative; z-index: 1; display: flex; align-items: flex-start; gap: 13px; }
+  .icon {
+    width: 46px; height: 46px; border-radius: 14px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--version-badge-gradient);
+    box-shadow: 0 6px 18px var(--accent-shadow); color: #fff; font-size: 22px;
+  }
+  .htxt { flex: 1; min-width: 0; padding-top: 1px; }
+  .hname { font-size: 11px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text-muted); }
+  .htitle { font-size: 17px; font-weight: 800; line-height: 1.35; color: var(--text-primary); margin-top: 3px; }
+  .dialog-close {
+    width: 28px; height: 28px; border-radius: 8px; border: none; background: transparent;
+    color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center;
+  }
+  .hverRow { position: relative; z-index: 1; display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+  .hver { display: flex; align-items: baseline; gap: 8px; font-family: "SF Mono", Consolas, monospace; font-size: 19px; font-weight: 800; color: var(--text-primary); min-width: 0; flex-wrap: wrap; }
+  .vOld { font-size: 13px; color: var(--text-muted); text-decoration: line-through; opacity: 0.6; }
+  .vNew { background: linear-gradient(135deg, var(--accent) 20%, #6D5CF0 90%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hpill { font-size: 9px; font-weight: 800; letter-spacing: 0.8px; color: #fff; background: var(--accent); padding: 3px 8px; border-radius: 5px; align-self: center; }
+  /* 立即更新按钮：现在下缘/投影不再被裁 */
+  .hdl {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 7px;
+    height: 36px; padding: 0 16px; border: none; border-radius: 10px;
+    background: var(--version-badge-gradient); color: #fff; font-size: 12.5px; font-weight: 700;
+    cursor: pointer; flex-shrink: 0; box-shadow: 0 4px 14px var(--accent-shadow);
+  }
+  .hdl:hover { box-shadow: 0 8px 20px var(--accent-shadow); }
+
+  /* ===== 滚动内容区（单一滚动源） ===== */
+  .dialog-body { flex: 1; overflow-y: auto; padding: 0; display: flex; flex-direction: column; gap: 0; }
+  .body { padding: 10px 20px 4px 24px; }
+  .grp { border: 1px solid var(--border-color); border-radius: 13px; padding: 12px 14px; margin-bottom: 10px; background: var(--card-bg); }
+  .grpHead { display: flex; align-items: center; gap: 9px; margin-bottom: 5px; }
+  .grpBadge { font-size: 10px; font-weight: 800; letter-spacing: 0.5px; padding: 2px 8px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+  .grpTitle { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+  .grpItem { display: flex; gap: 10px; padding: 6px 0; font-size: 12px; line-height: 1.6; color: var(--text-secondary); }
+  .grpItem::before { content: ''; flex-shrink: 0; width: 5px; height: 5px; border-radius: 50%; background: var(--border-color); margin-top: 7px; }
+
+  /* ===== 钉底：手册 CTA + 页脚 ===== */
+  .manualCta {
+    display: flex; align-items: center; gap: 9px;
+    width: calc(100% - 44px); margin: 4px 22px 0; flex-shrink: 0;
+    padding: 11px 15px; border-radius: 11px; border: 1px solid var(--accent);
+    background: var(--accent-light); color: var(--accent); font-size: 12.5px; font-weight: 700; cursor: pointer;
+  }
+  .manualCtaText { flex: 1; text-align: left; }
+  .footer {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 22px 18px; flex-shrink: 0; border-top: 1px solid var(--border-color);
+  }
+  .btnSkip {
+    padding: 10px 16px; border-radius: 11px; border: 1px solid var(--border-color);
+    background: transparent; color: var(--text-secondary); font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .btnDownload {
+    flex: 1; height: 42px; border: none; border-radius: 11px;
+    background: var(--version-badge-gradient); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px var(--accent-shadow);
+  }
+</style>
+</head>
+<body>
+  <div class="dialog-backdrop">
+    <div class="dialog-box">
+      <!-- Hero：钉顶 -->
+      <div class="hero">
+        <div class="heroTop">
+          <div class="icon">P</div>
+          <div class="htxt">
+            <div class="hname">PastePanda</div>
+            <div class="htitle">知识库上线，剪贴内容从此有家</div>
+          </div>
+          <button class="dialog-close">✕</button>
+        </div>
+        <div class="hverRow">
+          <div class="hver">
+            <span class="vOld">v6.18.5</span>
+            <span>→</span>
+            <span class="vNew">v7.0.0</span>
+            <span class="hpill">NEW</span>
+          </div>
+          <button class="hdl">⬇ 立即更新</button>
+        </div>
+      </div>
+
+      <!-- 滚动内容区（刻意放长，演示单一滚动） -->
+      <div class="dialog-body">
+        <div class="body">
+          <div class="grp"><div class="grpHead"><span class="grpBadge">新增</span><span class="grpTitle">新增 · 8</span></div>
+            <div class="grpItem">知识库（全新模块）：顶栏入口，零散剪贴与长期笔记统一收纳</div>
+            <div class="grpItem">今日速记：随手记下闪过脑海的想法</div>
+            <div class="grpItem">问答：对知识库内容直接提问，流式回答 + 引用来源</div>
+            <div class="grpItem">字段视图：结构化呈现，长列表不再被静默截断</div>
+            <div class="grpItem">Markdown 导入 / 导出：整库目录一键备份还原</div>
+            <div class="grpItem">转笔记模板：已有内容一键固化为模板</div>
+            <div class="grpItem">笔记编辑器增强 + 轻量 AI：自动摘要、建议标签</div>
+            <div class="grpItem">回收站：误删 30 天可恢复</div>
+          </div>
+          <div class="grp"><div class="grpHead"><span class="grpBadge">改进</span><span class="grpTitle">改进 · 3</span></div>
+            <div class="grpItem">安装包品牌化：NSIS 向导使用 PastePanda 图标与品牌位图</div>
+            <div class="grpItem">国内下载链路：Gitee 下载与手册版本号自动注入</div>
+            <div class="grpItem">笔记预览不再被截断到 120px</div>
+          </div>
+          <div class="grp"><div class="grpHead"><span class="grpBadge">修复</span><span class="grpTitle">修复 · 2</span></div>
+            <div class="grpItem">安全：自有凭证不再被剪贴板监听记录为明文历史</div>
+            <div class="grpItem">构建：husky 测试门禁在沙箱改用更稳的 worker 池</div>
+          </div>
+          <div class="grp"><div class="grpHead"><span class="grpBadge">新增</span><span class="grpTitle">更多 · 演示滚动</span></div>
+            <div class="grpItem">知识库 MCP Server：接入外部 AI 工具，只读查询 + 调用审计</div>
+            <div class="grpItem">客户端管理与 Host 头校验，保证本地服务不被越权访问</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 钉底：手册 CTA -->
+      <button class="manualCta">📖 <span class="manualCtaText">本次更新亮点 + 全部功能详解，查看完整手册</span> →</button>
+
+      <!-- 钉底：页脚 -->
+      <div class="footer">
+        <button class="btnSkip">稍后看</button>
+        <button class="btnDownload">⬇ 下载并更新</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
