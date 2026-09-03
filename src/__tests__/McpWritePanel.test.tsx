@@ -12,14 +12,20 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { McpWritePanel } from "@/components/settings/McpWritePanel";
 
+// 与后端 `WriteKind::tool_names()` 同形：**一档可能管多个工具**。
 const ROWS = [
-  { key: "mcp_write_create", tool: "kb_create", label: "新建笔记", enabled: true },
-  { key: "mcp_write_append", tool: "kb_append", label: "追加内容", enabled: true },
-  { key: "mcp_write_update", tool: "kb_update", label: "修改笔记", enabled: true },
-  { key: "mcp_write_move", tool: "kb_move", label: "移动文件夹", enabled: true },
-  { key: "mcp_write_tag", tool: "kb_tag", label: "改标签", enabled: true },
-  { key: "mcp_write_delete", tool: "kb_delete", label: "删除到回收站", enabled: true },
-  { key: "mcp_write_restore", tool: "kb_restore", label: "从回收站恢复", enabled: true },
+  { key: "mcp_write_create", tools: ["kb_create"], label: "新建笔记", enabled: true },
+  { key: "mcp_write_append", tools: ["kb_append", "kb_prepend"], label: "追加内容", enabled: true },
+  {
+    key: "mcp_write_update",
+    tools: ["kb_update", "kb_update_section", "kb_insert_at_section", "kb_replace_in_note"],
+    label: "修改笔记",
+    enabled: true,
+  },
+  { key: "mcp_write_move", tools: ["kb_move"], label: "移动文件夹", enabled: true },
+  { key: "mcp_write_tag", tools: ["kb_tag"], label: "改标签", enabled: true },
+  { key: "mcp_write_delete", tools: ["kb_delete"], label: "删除到回收站", enabled: true },
+  { key: "mcp_write_restore", tools: ["kb_restore"], label: "从回收站恢复", enabled: true },
 ];
 
 const setSwitch = vi.fn();
@@ -49,6 +55,11 @@ describe("MCP 写权限面板", () => {
     expect(screen.getAllByRole("switch")).toHaveLength(7);
     // 工具名必须显示：它是用户在调用记录里看到的名字
     expect(screen.getByText("kb_delete")).toBeTruthy();
+    // 🔴 一档管多个工具时必须**全列出**：否则用户在调用记录里看到
+    // kb_update_section，却在面板上找不到该关哪一行。
+    for (const t of ["kb_update_section", "kb_insert_at_section", "kb_replace_in_note", "kb_prepend"]) {
+      expect(screen.getByText(t)).toBeTruthy();
+    }
   });
 
   it("关掉一项后标题改报「已关 1 项」", async () => {

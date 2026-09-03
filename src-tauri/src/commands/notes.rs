@@ -8,7 +8,7 @@
 //! 不出网。要给笔记加 AI 能力（摘要 / 打标签）是 B 阶段的事，且必须受 AI 总开关控制
 //! （规则 #16），届时应新建独立文件，不要往这里塞。
 
-use crate::data_store::{DataStore, Note, NoteGroupCount, NoteViewOpts};
+use crate::data_store::{DataStore, Note, NoteGroupCount, NoteUpdateReport, NoteViewOpts};
 use tauri::State;
 
 /// 单次拉取上限。前端传多少都不能越过它——列表虚拟滚动一屏几十条，
@@ -39,13 +39,17 @@ pub fn note_create(
 }
 
 /// 改标题与正文。id 不存在会报错而非静默成功（规则 #15.3）。
+///
+/// 返回 [`NoteUpdateReport`]：改标题时会顺带重写其它笔记里的 `[[旧标题]]`（O-9），
+/// 前端拿 `relinked` 提示用户。**静默改别人的正文不告知是不行的**——
+/// 用户只是改了一个标题，却有几篇笔记被动了。
 #[tauri::command]
 pub fn note_update(
     store: State<DataStore>,
     id: String,
     title: String,
     content: String,
-) -> Result<(), String> {
+) -> Result<NoteUpdateReport, String> {
     store.note_update(&id, &title, &content)
 }
 

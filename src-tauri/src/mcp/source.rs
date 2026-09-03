@@ -10,7 +10,8 @@
 //! 抽成 trait 后，生产走 [`AppKbSource`]，测试塞一个手搭的假实现。
 
 use super::gate::WriteSwitches;
-use crate::data_store::{DataStore, Note, NoteFolder, NoteViewOpts, Tag};
+use crate::data_store::{DataStore, Note, NoteFolder, NoteUpdateReport, NoteViewOpts, Tag};
+use crate::markdown::{apply, ContentEdit, EditReport};
 
 /// `kb_list` 的结果。
 ///
@@ -89,7 +90,7 @@ pub trait KbSource: Send + Sync + 'static {
         title: Option<&str>,
         content: Option<&str>,
         source: &str,
-    ) -> Result<Note, String>;
+    ) -> Result<(Note, NoteUpdateReport), String>;
 
     /// 往末尾追一段。
     fn append(&self, id: &str, text: &str, source: &str) -> Result<Note, String>;
@@ -105,6 +106,23 @@ pub trait KbSource: Send + Sync + 'static {
 
     /// 加/减标签（按**名字**）。返回（实际新增数, 实际移除数）。
     fn tag(&self, id: &str, add: &[String], remove: &[String]) -> Result<(usize, usize), String>;
+
+    /// 一次正文级精准编辑（O-8）。
+    ///
+    /// **为何是一个方法带一个操作枚举，而不是四个方法**：四个写工具的形状
+    /// 完全相同（读正文 → 纯变换 → 写回），各加一个方法要改 trait、
+    /// [`AppKbSource`] 实现、以及测试里那份假实现，共 4×3 处。
+    ///
+    /// 🔴 它**不是原子的**（`DataStore` 每个方法各自拿锁）。
+    /// 但它的价值不在锁，而在「写入依据的是多新的内容」：
+    /// `kb_update` 是 AI 拿着几十秒前读到的全文覆盖回来，
+    /// 而这里是服务端写之前微秒刚读的。
+    fn edit_content(
+        &self,
+        id: &str,
+        op: &ContentEdit,
+        source: &str,
+    ) -> Result<(Note, EditReport), String>;
 
     /// 七个写开关的当前快照。
     ///
@@ -193,7 +211,7 @@ impl KbSource for AppKbSource {
         title: Option<&str>,
         content: Option<&str>,
         source: &str,
-    ) -> Result<Note, String> {
+    ) -> Result<(Note, NoteUpdateReport), String> {
         self.with_store(|s| update_on(s, id, title, content, source))?
     }
 
@@ -223,6 +241,15 @@ impl KbSource for AppKbSource {
 
     fn tag(&self, id: &str, add: &[String], remove: &[String]) -> Result<(usize, usize), String> {
         self.with_store(|s| tag_on(s, id, add, remove))?
+    }
+
+    fn edit_content(
+        &self,
+        id: &str,
+        op: &ContentEdit,
+        source: &str,
+    ) -> Result<(Note, EditReport), String> {
+        self.with_store(|s| edit_on(s, id, op, source))?
     }
 
     fn write_switches(&self) -> WriteSwitches {
@@ -383,7 +410,7 @@ fn update_on(
     title: Option<&str>,
     content: Option<&str>,
     source: &str,
-) -> Result<Note, String> {
+) -> Result<(Note, NoteUpdateReport), String> {
     // 两个都没传不当成功：否则模型会以为自己改成了（规则 #15.3）。
     if title.is_none() && content.is_none() {
         return Err("kb_update 至少要给 title 或 content 之一。".to_string());
@@ -393,10 +420,53 @@ fn update_on(
         .ok_or_else(|| format!("没有 id 为 {} 的笔记（或它已在回收站里）。", id))?;
     let new_title = title.unwrap_or(&old.title);
     let new_content = content.unwrap_or(&old.content);
-    store.note_update_from(id, new_title, new_content, source)?;
-    store
+    // O-9：改标题会顺带重写其它笔记里的 `[[旧标题]]`。
+    // 那个数字必须一路传回给模型：它改了一个标题，实际动了 N+1 篇笔记，
+    // 不告知的话它向用户交代的就是一个不完整的事实。
+    let report = store.note_update_from(id, new_title, new_content, source)?;
+    let fresh = store
         .note_get(id)?
-        .ok_or_else(|| "修改后读不到这条笔记".to_string())
+        .ok_or_else(|| "修改后读不到这条笔记".to_string())?;
+    Ok((fresh, report))
+}
+
+/// 精准编辑：读正文 → 纯变换 → 写回。
+///
+/// 变换里任何失败（定位不到、命中多处）都在**写之前**返回，
+/// 所以失败就是一个字都没改。这一点必须成立：
+/// 否则「改坏了一半」与「没改」对模型是不可分的两种结果。
+fn edit_on(
+    store: &DataStore,
+    id: &str,
+    op: &ContentEdit,
+    source: &str,
+) -> Result<(Note, EditReport), String> {
+    let old = store
+        .note_get(id)?
+        .ok_or_else(|| format!("没有 id 为 {} 的笔记（或它已在回收站里）。", id))?;
+    let (content, report) = apply(&old.content, op)?;
+
+    if content == old.content {
+        // 不写：一次写入会产生版本快照并刷新 updated_at，
+        // 让一次无效编辑在历史里留痕是误导。
+        //
+        // 但这**不是失败**：AI 想要的状态已经达成了。报错会让它去重试，
+        // 或者向用户报一个并不存在的故障。
+        let summary = format!("{}（内容与原文完全相同，未写入、未产生新版本）", report.summary);
+        return Ok((
+            old,
+            EditReport {
+                summary,
+                untouched_children: report.untouched_children,
+            },
+        ));
+    }
+
+    store.note_update_from(id, &old.title, &content, source)?;
+    let fresh = store
+        .note_get(id)?
+        .ok_or_else(|| "修改后读不到这条笔记".to_string())?;
+    Ok((fresh, report))
 }
 
 fn append_on(store: &DataStore, id: &str, text: &str, source: &str) -> Result<Note, String> {

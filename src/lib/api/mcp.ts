@@ -103,8 +103,13 @@ export async function mcpRegenerateToken(): Promise<string | null> {
 export interface McpWriteSwitch {
   /** 配置键，形如 `mcp_write_delete`。回写时原样传回去。 */
   key: string;
-  /** 工具名。界面上要显示——它就是用户在调用记录里看到的那个名字。 */
-  tool: string;
+  /**
+   * 这一档管着的全部工具名。界面上要**逐个**显示。
+   *
+   * 一档可能对多个工具（如「修改笔记」同时管 kb_update 与三个精准编辑工具）。
+   * 少列一个就会有人在调用记录里看到它、却在面板上找不到该关哪一行。
+   */
+  tools: string[];
   label: string;
   enabled: boolean;
 }

@@ -72,15 +72,29 @@ export async function noteCreate(
   }
 }
 
-/** 改标题与正文。 */
-export async function noteUpdate(id: string, title: string, content: string): Promise<boolean> {
+/** 一次改笔记的附带结果（O-9）。 */
+export interface NoteUpdateReport {
+  /**
+   * 因**标题变化**而被重写了 `[[旧标题]]` 的其它笔记数。
+   *
+   * wiki 链按标题存，不重写就全断了。重写了就必须告知：
+   * 用户只改了一个标题，却有几篇别的笔记的正文被动了。
+   */
+  relinked: number;
+}
+
+/** 改标题与正文。返 `null` = 失败（错已弹过）。 */
+export async function noteUpdate(
+  id: string,
+  title: string,
+  content: string,
+): Promise<NoteUpdateReport | null> {
   try {
-    await invoke("note_update", { id, title, content });
-    return true;
+    return await invoke<NoteUpdateReport>("note_update", { id, title, content });
   } catch (e) {
     logger.error("保存笔记失败", e);
     toastActionFailed("保存笔记", e);
-    return false;
+    return null;
   }
 }
 

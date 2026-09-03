@@ -126,8 +126,13 @@ export function useNoteEditorState({
     // 失败时**不弹回调**（规则 #15.3）：api 层已经弹过错了，
     // 宿主若据此关窗就等于把用户刚写的正文丢掉。
     let ok: boolean;
+    // O-9：改标题会让其它笔记里的 [[旧标题]] 全部失效，后端会自动重写。
+    // 重写了就必须告知：用户只改了一个标题，却有几篇别的笔记正文被动了。
+    let relinked = 0;
     if (target.noteId) {
-      ok = await noteUpdate(target.noteId, t, content);
+      const rep = await noteUpdate(target.noteId, t, content);
+      ok = rep !== null;
+      relinked = rep?.relinked ?? 0;
     } else {
       const created = await noteCreate(target.historyId, t, content);
       ok = created !== null;
@@ -141,7 +146,13 @@ export function useNoteEditorState({
     // 基线对齐到刚存下去的内容：第三栏保存后不关闭，不对齐就一直显示「未保存」。
     setBaseTitle(t);
     setBaseContent(content);
-    toast(target.noteId ? "已保存" : target.historyId ? "已转为笔记" : "已创建笔记", "success");
+    // 并进同一条 toast 而不另弹一个：两条叠在一起反而让人漏看后一条。
+    const saved = target.noteId ? "已保存" : target.historyId ? "已转为笔记" : "已创建笔记";
+    toast(
+      relinked > 0 ? `${saved}，并更新了 ${relinked} 篇笔记里的 [[引用]]` : saved,
+      "success",
+      relinked > 0 ? 5000 : undefined,
+    );
     onSaved?.();
     return true;
   }, [title, content, target.noteId, target.historyId, target.folderId, toast, onSaved]);

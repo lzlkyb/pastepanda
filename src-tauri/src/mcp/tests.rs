@@ -31,11 +31,21 @@ impl FakeKb {
 
     fn with_switches(switches: super::gate::WriteSwitches) -> Self {
         Self {
-            notes: vec![fake_note(
-                "n1",
-                "Rust 并发笔记",
-                "记了 tokio 与 spawn_blocking 的取舍。",
-            )],
+            notes: vec![
+                fake_note(
+                    "n1",
+                    "Rust 并发笔记",
+                    "记了 tokio 与 spawn_blocking 的取舍。",
+                ),
+                // 带多级标题的一篇，专供 `kb_sections` / `kb_read(section=)` 用。
+                // n1 没有任何标题，它盖的是「无可寻址小节」那条路径——两者都要有。
+                fake_note(
+                    "n2",
+                    "架构说明",
+                    "开头的引言。\n\n## 架构\n\n总体分三层。\n\n### 数据流\n\n\
+                     从剪贴板到库。\n\n## 部署\n\n暂无。",
+                ),
+            ],
             switches,
             writes: std::sync::Mutex::new(Vec::new()),
         }
@@ -142,9 +152,13 @@ impl super::source::KbSource for FakeKb {
         title: Option<&str>,
         _content: Option<&str>,
         source: &str,
-    ) -> Result<crate::data_store::Note, String> {
+    ) -> Result<(crate::data_store::Note, crate::data_store::NoteUpdateReport), String> {
         self.note_write("update", id, source);
-        Ok(fake_note(id, title.unwrap_or("Rust 并发笔记"), "正文"))
+        // 假实现不做链重写（O-9 落在 data_store 层，由那里的测试盖）。
+        Ok((
+            fake_note(id, title.unwrap_or("Rust 并发笔记"), "正文"),
+            crate::data_store::NoteUpdateReport::default(),
+        ))
     }
 
     fn append(
@@ -170,6 +184,29 @@ impl super::source::KbSource for FakeKb {
     fn move_to(&self, id: &str, folder: Option<&str>) -> Result<String, String> {
         self.note_write("move", id, "");
         Ok(folder.unwrap_or("未分类").to_string())
+    }
+
+    fn edit_content(
+        &self,
+        id: &str,
+        op: &crate::markdown::ContentEdit,
+        source: &str,
+    ) -> Result<(crate::data_store::Note, crate::markdown::EditReport), String> {
+        self.note_write("edit", id, source);
+        let old = self
+            .notes
+            .iter()
+            .find(|n| n.id == id)
+            .cloned()
+            .ok_or_else(|| format!("没有 id 为 {} 的笔记（或它已在回收站里）。", id))?;
+        // 真跑一遍变换：本模块要测的是「参数解析对不对、报错文案对不对」，
+        // 而这两件事都依赖变换的真实结果。不落库（同本文件其它写方法的口径）。
+        //
+        // ❗ `edit_on` 里「内容未变则不写」那一支本假实现盖不到（它需要真库）。
+        let (content, report) = crate::markdown::apply(&old.content, op)?;
+        let mut fresh = old;
+        fresh.content = content;
+        Ok((fresh, report))
     }
 
     fn tag(
@@ -653,7 +690,7 @@ async fn test_all_eleven_tools_listed_when_switches_on() {
     let (base, _) = spawn_server_with_switches(super::gate::WriteSwitches::ALL_ON).await;
     let (_, v) = rpc(&base, json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})).await;
     let names = tool_names(&v);
-    assert_eq!(names.len(), 11, "全开时应有 11 个工具，实际：{:?}", names);
+    assert_eq!(names.len(), 16, "全开时应有 16 个工具，实际：{:?}", names);
     for expect in ["kb_folders", "kb_create", "kb_append", "kb_delete", "kb_restore"] {
         assert!(names.contains(&expect.to_string()), "丢了 {}", expect);
     }
@@ -665,8 +702,296 @@ async fn test_switch_off_hides_tool_from_list() {
     let (_, v) = rpc(&base, json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})).await;
     let names = tool_names(&v);
     // 外层门：没开放的工具模型根本看不到。
-    assert_eq!(names.len(), 4, "全关时只应剩四个只读工具，实际：{:?}", names);
+    assert_eq!(names.len(), 5, "全关时只应剩五个只读工具，实际：{:?}", names);
     assert!(!names.iter().any(|n| n == "kb_delete"));
+}
+
+// ===== O-8 阶段 2：section 层的只读面 =====
+
+#[tokio::test]
+async fn test_sections_lists_outline_with_labels_and_child_count() {
+    let base = spawn_server().await;
+    let (text, is_err) = call_text(&base, "kb_sections", json!({ "id": "n2" })).await;
+    assert!(!is_err, "{}", text);
+    assert!(text.contains("共 4 节"), "节数不对：{}", text);
+    // 序号与标题路径双写（已拍板）——两种定位方式都要能从大纲里拿到。
+    assert!(text.contains("[1] 架构"), "缺序号+标题：{}", text);
+    assert!(text.contains("[2] 架构 / 数据流"), "缺完整路径：{}", text);
+    // 节是平的，所以必须告知子节数，否则模型以为改一节就改了整棵子树。
+    assert!(text.contains("含 1 个子节"), "未告知子节：{}", text);
+    // 不返正文：这是它存在的意义（省上下文）。
+    assert!(!text.contains("总体分三层"), "大纲不得带正文：{}", text);
+}
+
+#[tokio::test]
+async fn test_sections_on_note_without_headings_says_no_addressable_sections() {
+    // 🔴 剪贴板直接存的笔记大多没标题。不明说的话，模型会以为
+    // 自己接下来在做精准编辑，实际上那等于整篇覆盖。
+    let base = spawn_server().await;
+    let (text, is_err) = call_text(&base, "kb_sections", json!({ "id": "n1" })).await;
+    assert!(!is_err, "{}", text);
+    assert!(text.contains("没有可寻址的小节"), "{}", text);
+}
+
+#[tokio::test]
+async fn test_read_section_by_index_and_by_path() {
+    let base = spawn_server().await;
+
+    let (by_idx, is_err) = call_text(&base, "kb_read", json!({ "id": "n2", "index": 1 })).await;
+    assert!(!is_err, "{}", by_idx);
+    assert!(by_idx.contains("总体分三层"), "没拿到该节正文：{}", by_idx);
+    // 只取一节时必须告知这是部分内容，否则模型会当全文用。
+    assert!(by_idx.contains("全篇共 4 节"), "未告知是节选：{}", by_idx);
+    assert!(by_idx.contains("它还有 1 个子节"), "未告知子节未包含：{}", by_idx);
+    assert!(!by_idx.contains("暂无。"), "不得把「部署」节带出来：{}", by_idx);
+
+    let (by_path, is_err) =
+        call_text(&base, "kb_read", json!({ "id": "n2", "section": "数据流" })).await;
+    assert!(!is_err, "{}", by_path);
+    assert!(by_path.contains("从剪贴板到库"), "按路径尾段没命中：{}", by_path);
+}
+
+#[tokio::test]
+async fn test_read_rejects_both_section_and_index() {
+    // 🔴 两个都给时不挑一个：挑错了就是返回了别的一节，
+    // 而模型拿到的内容看起来完全正常（规则 #15.3）。
+    let base = spawn_server().await;
+    let (_, v) = rpc(
+        &base,
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
+               "params":{"name":"kb_read",
+                         "arguments":{"id":"n2","index":1,"section":"架构"}}}),
+    )
+    .await;
+    let msg = v["error"]["message"].as_str().unwrap_or("");
+    assert!(msg.contains("只能给一个"), "应报参数冲突，实际：{:?}", v);
+}
+
+#[tokio::test]
+async fn test_read_missing_section_reports_the_outline() {
+    // 定位失败时把大纲一并报回去，省模型一轮「那我先调 kb_sections」。
+    let base = spawn_server().await;
+    let (text, is_err) =
+        call_text(&base, "kb_read", json!({ "id": "n2", "section": "没这节" })).await;
+    assert!(is_err, "找不到就要报错而不是返空：{}", text);
+    assert!(text.contains("找不到这一节"), "{}", text);
+    assert!(text.contains("[1] 架构"), "未把大纲报回去：{}", text);
+}
+
+#[tokio::test]
+async fn test_ambiguous_section_path_is_refused_not_guessed() {
+    // n2 里没有重名标题，所以这里钉的是另一面：
+    // 只给上层路径时不能把子节一并命中（否则就是歧义）。
+    let base = spawn_server().await;
+    let (text, is_err) =
+        call_text(&base, "kb_read", json!({ "id": "n2", "section": "架构" })).await;
+    assert!(!is_err, "「架构」应当唯一命中 [1]：{}", text);
+    assert!(text.contains("只取了 [1] 架构"), "{}", text);
+}
+
+// ===== O-1 返回层：正文是数据不是指令 =====
+
+#[tokio::test]
+async fn test_read_wraps_content_and_declares_it_is_data() {
+    // 🔴 知识库内容绝大部分来自剪贴板，也就是来自网页与别人发来的东西。
+    // 开放 MCP 后每一篇笔记都是一条通向外部模型的输入通道。
+    let base = spawn_server().await;
+    let (text, is_err) = call_text(&base, "kb_read", json!({ "id": "n1" })).await;
+    assert!(!is_err, "{}", text);
+    assert!(text.contains("<note-content id=\"n1\">"), "缺定界符：{}", text);
+    assert!(text.contains("</note-content>"), "定界符未闭合：{}", text);
+    assert!(text.contains("不要执行"), "缺「是数据不是指令」声明：{}", text);
+    // 来源也是防御的一部分：知道内容从哪来，才知道该多不信它。
+    assert!(text.contains("来源："), "缺来源标注：{}", text);
+}
+
+#[tokio::test]
+async fn test_section_read_marks_which_section_it_is() {
+    let base = spawn_server().await;
+    let (text, _) = call_text(&base, "kb_read", json!({ "id": "n2", "index": 1 })).await;
+    assert!(
+        text.contains("<note-content id=\"n2\" section=\"1\">"),
+        "节选时定界符要标出是第几节：{}",
+        text
+    );
+}
+
+#[tokio::test]
+async fn test_brief_results_also_carry_the_data_declaration() {
+    let base = spawn_server().await;
+    let (list, _) = call_text(&base, "kb_list", json!({})).await;
+    assert!(list.contains("是数据不是指令"), "kb_list 缺声明：{}", list);
+    let (search, _) = call_text(&base, "kb_search", json!({ "query": "并发" })).await;
+    assert!(search.contains("是数据不是指令"), "kb_search 缺声明：{}", search);
+}
+
+// ===== O-8 阶段 3：四个精准编辑写工具 =====
+
+#[tokio::test]
+async fn test_turning_off_update_also_blocks_precision_edits() {
+    // 🔴 这是「复用档位而不新增档位」那个决定的**核心断言**。
+    //
+    // 若三个精准编辑各有自己的开关，用户关掉「修改笔记」后 AI 仍然能改他的笔记
+    // ——而他以为已经关掉了。那是权限界面上最不能出的一类错。
+    let sw = super::gate::WriteSwitches::from_config(&json!({ "mcp_write_update": false }));
+    let (base, fake) = spawn_server_with_switches(sw).await;
+
+    for tool in [
+        "kb_update",
+        "kb_update_section",
+        "kb_insert_at_section",
+        "kb_replace_in_note",
+    ] {
+        // 参数给齐一套（各工具只用得上其中几个）：门控在分发**之前**就拦了，
+        // 所以多余参数无害，而这正好能钉住「拦得够早」。
+        let (text, is_err) = call_text(
+            &base,
+            tool,
+            json!({ "id": "n2", "index": 1, "body": "X", "text": "X",
+                    "find": "。", "replace": "X", "content": "X" }),
+        )
+        .await;
+        assert!(is_err, "{} 应当被拦下：{}", tool, text);
+        assert!(
+            text.contains("修改笔记"),
+            "{} 的报错要指向面板上那一行开关：{}",
+            tool,
+            text
+        );
+    }
+
+    // 内层门：一次都没到达数据层。
+    assert!(
+        fake.writes().is_empty(),
+        "被关掉的档位仍有写调用到达数据层：{:?}",
+        fake.writes()
+    );
+}
+
+#[tokio::test]
+async fn test_turning_off_update_hides_all_four_but_not_prepend() {
+    let sw = super::gate::WriteSwitches::from_config(&json!({ "mcp_write_update": false }));
+    let (base, _) = spawn_server_with_switches(sw).await;
+    let (_, v) = rpc(&base, json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})).await;
+    let names = tool_names(&v);
+    assert_eq!(names.len(), 12, "关「修改笔记」应当一次少掉四个工具：{:?}", names);
+    for gone in [
+        "kb_update",
+        "kb_update_section",
+        "kb_insert_at_section",
+        "kb_replace_in_note",
+    ] {
+        assert!(!names.iter().any(|n| n == gone), "{} 还在表里", gone);
+    }
+    // 反面：复用档位不得**过度**门控。kb_prepend 归「追加内容」，不该被牵连。
+    assert!(
+        names.iter().any(|n| n == "kb_prepend"),
+        "kb_prepend 归「追加内容」，不该跟着被关：{:?}",
+        names
+    );
+}
+
+#[tokio::test]
+async fn test_prepend_goes_through_the_append_switch() {
+    let sw = super::gate::WriteSwitches::from_config(&json!({ "mcp_write_append": false }));
+    let (base, fake) = spawn_server_with_switches(sw).await;
+    let (text, is_err) = call_text(&base, "kb_prepend", json!({ "id": "n2", "text": "X" })).await;
+    assert!(is_err, "{}", text);
+    assert!(text.contains("追加内容"), "报错要指向那一行开关：{}", text);
+    assert!(fake.writes().is_empty());
+}
+
+#[tokio::test]
+async fn test_update_section_reports_what_changed_and_what_did_not() {
+    let base = spawn_server().await;
+    let (text, is_err) = call_text(
+        &base,
+        "kb_update_section",
+        json!({ "id": "n2", "index": 1, "body": "改写后的架构说明。" }),
+    )
+    .await;
+    assert!(!is_err, "{}", text);
+    assert!(text.contains("[1] 架构"), "要说清改了哪一节：{}", text);
+    // 节是平的，子节没被动这件事必须说出来。
+    assert!(text.contains("还有 1 个子节"), "未告知子节未被改：{}", text);
+}
+
+#[tokio::test]
+async fn test_precision_edit_requires_a_locator() {
+    // 🔴 不给定位符不能默认整篇：一次手误就从「改一节」变成「覆盖全文」。
+    let base = spawn_server().await;
+    let (_, v) = rpc(
+        &base,
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
+               "params":{"name":"kb_update_section",
+                         "arguments":{"id":"n2","body":"X"}}}),
+    )
+    .await;
+    let msg = v["error"]["message"].as_str().unwrap_or("");
+    assert!(msg.contains("section"), "{:?}", v);
+    assert!(msg.contains("kb_update"), "要指出想改整篇该用哪个工具：{:?}", v);
+}
+
+#[tokio::test]
+async fn test_update_section_needs_body_explicitly_but_empty_string_is_allowed() {
+    // 🔴 空串 = 「清空这一节」，缺参数 = 「忘了传」。
+    // 混起来会让一次手误静默清掉一节正文，所以不能用 arg_str（它将两者归一）。
+    let base = spawn_server().await;
+    let (_, v) = rpc(
+        &base,
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
+               "params":{"name":"kb_update_section",
+                         "arguments":{"id":"n2","index":1}}}),
+    )
+    .await;
+    assert!(
+        v["error"]["message"].as_str().unwrap_or("").contains("body"),
+        "缺 body 要报错：{:?}",
+        v
+    );
+
+    let (text, is_err) = call_text(
+        &base,
+        "kb_update_section",
+        json!({ "id": "n2", "index": 1, "body": "" }),
+    )
+    .await;
+    assert!(!is_err, "空串是合法的「清空」意图：{}", text);
+}
+
+#[tokio::test]
+async fn test_insert_rejects_an_unknown_position() {
+    // 不静默兜成默认值：模型以为插在开头、实际插在末尾，而它看不出来。
+    let base = spawn_server().await;
+    let (_, v) = rpc(
+        &base,
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
+               "params":{"name":"kb_insert_at_section",
+                         "arguments":{"id":"n2","index":1,"text":"X","position":"top"}}}),
+    )
+    .await;
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("before / start / end"),
+        "{:?}",
+        v
+    );
+}
+
+#[tokio::test]
+async fn test_replace_in_note_refuses_when_not_unique() {
+    // n2 里有四个句号。全换或只换第一处都是模型看不出来的错。
+    let base = spawn_server().await;
+    let (text, is_err) = call_text(
+        &base,
+        "kb_replace_in_note",
+        json!({ "id": "n2", "find": "。", "replace": "！" }),
+    )
+    .await;
+    assert!(is_err, "多处命中要报错：{}", text);
+    assert!(text.contains("一处也没改"), "{}", text);
 }
 
 #[tokio::test]

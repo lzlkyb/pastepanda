@@ -57,20 +57,38 @@ impl WriteKind {
         }
     }
 
-    /// 对应的工具名。
+    /// 这一档管着的工具名。**一档可以对多个工具**。
     ///
     /// 与 `tools::TOOLS` 表里的名字的一致性由测试钉住
-    /// （`test_write_kind_tool_names_match_registry`）。界面上要把它显示出来：
-    /// 用户在调用记录里看到的就是这个名字，两边对得上才能关对开关。
-    pub fn tool_name(self) -> &'static str {
+    /// （`test_write_kind_tool_names_match_registry`）。界面上要把它们**全部**显示出来：
+    /// 用户在调用记录里看到的就是这些名字，两边对得上才能关对开关。
+    ///
+    /// # 🔴 为何一档多工具，而不是一工具一档
+    ///
+    /// O-8 新加的精准编辑工具与 `kb_update` 是**同一种能力**的不同粒度。
+    /// 若各给一个开关，「关掉修改笔记」就不再等于「AI 不能改我的笔记」。
+    ///
+    /// 而更硬的一条理由在 [`WriteSwitches::from_config`]：缺失的键读成 **`true`**。
+    /// 所以**新增档位会在升级时静默给已经关掉修改权限的用户重新开一条修改通道**
+    /// ——那是个真正的权限提升，且用户无从得知。复用现有档位则直接继承
+    /// 他当前的选择，不存在这个问题。
+    ///
+    /// 代价：失去「只许精准改、不许整篇覆盖」这种更安全的配置。
+    /// 那是一个**模式**而不是「更多开关」，留待后续。
+    pub fn tool_names(self) -> &'static [&'static str] {
         match self {
-            WriteKind::Create => "kb_create",
-            WriteKind::Append => "kb_append",
-            WriteKind::Update => "kb_update",
-            WriteKind::Move => "kb_move",
-            WriteKind::Tag => "kb_tag",
-            WriteKind::Delete => "kb_delete",
-            WriteKind::Restore => "kb_restore",
+            WriteKind::Create => &["kb_create"],
+            WriteKind::Append => &["kb_append", "kb_prepend"],
+            WriteKind::Update => &[
+                "kb_update",
+                "kb_update_section",
+                "kb_insert_at_section",
+                "kb_replace_in_note",
+            ],
+            WriteKind::Move => &["kb_move"],
+            WriteKind::Tag => &["kb_tag"],
+            WriteKind::Delete => &["kb_delete"],
+            WriteKind::Restore => &["kb_restore"],
         }
     }
 
@@ -136,7 +154,7 @@ impl WriteSwitches {
             .iter()
             .map(|k| WriteSwitchRow {
                 key: k.cfg_key(),
-                tool: k.tool_name(),
+                tools: k.tool_names(),
                 label: k.label(),
                 enabled: self.allowed(*k),
             })
@@ -149,8 +167,9 @@ impl WriteSwitches {
 #[serde(rename_all = "camelCase")]
 pub struct WriteSwitchRow {
     pub key: &'static str,
-    /// 工具名。界面上要显示——它就是用户在调用记录里看到的那个名字。
-    pub tool: &'static str,
+    /// 这一档管着的全部工具名。界面上要**逐个**显示——
+    /// 它们就是用户在调用记录里看到的名字，少列一个就会有人找不到该关哪行。
+    pub tools: &'static [&'static str],
     pub label: &'static str,
     pub enabled: bool,
 }

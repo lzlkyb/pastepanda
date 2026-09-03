@@ -4909,6 +4909,146 @@ fn test_note_update_missing_id_is_not_silent() {
     assert!(store.note_update("不存在的id", "t", "c").is_err());
 }
 
+// ===== O-9：改标题时重写 wiki 引用 =====
+
+#[test]
+fn test_rename_rewrites_wiki_links_in_other_notes() {
+    // 🔴 wiki 链按**标题**存（不含 id / 路径），所以改标题会让所有
+    // [[旧标题]] 静默失效。这个缺陷与 MCP 无关：在界面上手工改标题就有。
+    let store = make_store();
+    let target = store.note_create(None, "架构说明", "正文").unwrap();
+    let a = store
+        .note_create(None, "引用甲", "见 [[架构说明]] 那一篇。")
+        .unwrap();
+    let b = store
+        .note_create(None, "引用乙", "开头\n\n[[架构说明]]\n\n结尾")
+        .unwrap();
+    let unrelated = store.note_create(None, "无关", "不提任何链接").unwrap();
+
+    let rep = store.note_update(&target.id, "系统架构", "正文").unwrap();
+    assert_eq!(rep.relinked, 2, "两篇引用都该被重写");
+
+    let ga = store.note_get(&a.id).unwrap().unwrap();
+    let gb = store.note_get(&b.id).unwrap().unwrap();
+    assert_eq!(ga.content, "见 [[系统架构]] 那一篇。");
+    assert!(gb.content.contains("[[系统架构]]"));
+    assert!(!gb.content.contains("[[架构说明]]"));
+
+    let gu = store.note_get(&unrelated.id).unwrap().unwrap();
+    assert_eq!(gu.content, "不提任何链接", "无关的笔记不得被动");
+}
+
+#[test]
+fn test_rename_does_not_corrupt_longer_titles() {
+    // 🔴 本功能最容易写坏的地方：若按**裸标题**做子串替换，
+    // 把「会议」改名会把 [[会议纪要]] 改成 [[周会纪要]]
+    // ——一个凭空造出来的坏链。带上方括号就自然没这个问题。
+    let store = make_store();
+    let short = store.note_create(None, "会议", "短的").unwrap();
+    let _long = store.note_create(None, "会议纪要", "长的").unwrap();
+    let refs = store
+        .note_create(None, "引用", "[[会议]] 与 [[会议纪要]]")
+        .unwrap();
+
+    let rep = store.note_update(&short.id, "周会", "短的").unwrap();
+    assert_eq!(rep.relinked, 1);
+
+    let g = store.note_get(&refs.id).unwrap().unwrap();
+    assert_eq!(
+        g.content, "[[周会]] 与 [[会议纪要]]",
+        "长标题的引用不得被改坏"
+    );
+}
+
+#[test]
+fn test_rename_leaves_a_snapshot_on_every_touched_note() {
+    // 🔴 自动改别人的正文而不留快照 = 用户撤不回来。那是 W2 的整个前提。
+    let store = make_store();
+    let target = store.note_create(None, "旧名", "正文").unwrap();
+    let refs = store.note_create(None, "引用", "[[旧名]]").unwrap();
+    assert!(store.note_revision_list(&refs.id).unwrap().is_empty());
+
+    store.note_update(&target.id, "新名", "正文").unwrap();
+
+    let revs = store.note_revision_list(&refs.id).unwrap();
+    assert_eq!(revs.len(), 1, "被动过的笔记必须留下一份可恢复的旧版本");
+}
+
+#[test]
+fn test_content_only_change_does_not_touch_links() {
+    let store = make_store();
+    let target = store.note_create(None, "标题", "第一版").unwrap();
+    let refs = store.note_create(None, "引用", "[[标题]]").unwrap();
+
+    let rep = store.note_update(&target.id, "标题", "第二版").unwrap();
+    assert_eq!(rep.relinked, 0, "标题没变就不该动任何引用");
+    assert!(store.note_revision_list(&refs.id).unwrap().is_empty());
+}
+
+#[test]
+fn test_rename_skips_deleted_notes() {
+    // 回收站里的笔记用户看不见，静默改它的正文无法被审阅。
+    let store = make_store();
+    let target = store.note_create(None, "旧名", "正文").unwrap();
+    let trashed = store.note_create(None, "已删", "[[旧名]]").unwrap();
+    store.note_delete(&trashed.id).unwrap();
+
+    let rep = store.note_update(&target.id, "新名", "正文").unwrap();
+    assert_eq!(rep.relinked, 0);
+}
+
+#[test]
+fn test_rename_to_empty_title_does_not_rewrite() {
+    // 重写成 [[]] 比断链更坏：那是个永远指不到任何东西的死链。
+    let store = make_store();
+    let target = store.note_create(None, "旧名", "正文").unwrap();
+    let refs = store.note_create(None, "引用", "[[旧名]]").unwrap();
+
+    let rep = store.note_update(&target.id, "", "正文").unwrap();
+    assert_eq!(rep.relinked, 0);
+    let g = store.note_get(&refs.id).unwrap().unwrap();
+    assert_eq!(g.content, "[[旧名]]", "宁可留一个断链，也不造 [[]]");
+}
+
+#[test]
+fn test_rename_keeps_fts_in_sync_for_rewritten_notes() {
+    // 正文改了 FTS 不同步 ⇒ 搜旧标题还能搜到那些笔记，
+    // 而它们已经不含旧标题了——一个从结果里看不出来的错。
+    let store = make_store();
+    let target = store.note_create(None, "灰度发布", "正文").unwrap();
+    store
+        .note_create(None, "引用", "参考 [[灰度发布]] 的做法")
+        .unwrap();
+    assert!(!store
+        .note_search("灰度发布", "all", &[], 20)
+        .unwrap()
+        .is_empty());
+
+    store.note_update(&target.id, "分批上线", "正文").unwrap();
+
+    let hits = store.note_search("灰度发布", "all", &[], 20).unwrap();
+    assert!(
+        hits.is_empty(),
+        "旧标题应当再也搜不到：{:?}",
+        hits.iter().map(|n| &n.title).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn test_rename_does_not_rewrite_the_renamed_note_itself() {
+    // 它的正文由调用方给定，再改一次是意外行为。
+    let store = make_store();
+    let n = store
+        .note_create(None, "自指", "我提到 [[自指]] 自己")
+        .unwrap();
+    let rep = store
+        .note_update(&n.id, "改名后", "我提到 [[自指]] 自己")
+        .unwrap();
+    assert_eq!(rep.relinked, 0);
+    let g = store.note_get(&n.id).unwrap().unwrap();
+    assert_eq!(g.content, "我提到 [[自指]] 自己", "调用方给的正文原样落库");
+}
+
 // ============================================================
 // 待沉淀区（知识库 A 阶段 · 规划 §8.1 4️⃣）
 // ============================================================

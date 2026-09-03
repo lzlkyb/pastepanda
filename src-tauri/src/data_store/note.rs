@@ -29,6 +29,20 @@ use super::history::{is_cjk, to_ngram};
 // 复用而不重写：写两份递归定义，改树结构时必定漏改一份（规则 #11）。
 use super::note_folder::SUBTREE_CTE;
 
+/// 一次改笔记的**附带结果**（O-9）。
+///
+/// 不用裸 `usize` 返回：从 `note_update` 里拿到一个数字，
+/// 后人第一反应会是「影响行数」——那正是会出 bug 的歧义。
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteUpdateReport {
+    /// 因**标题变化**而被重写了 `[[旧标题]]` 的**其它**笔记数。
+    ///
+    /// `0` 有两种含义（没人引用它 / 标题根本没变），
+    /// 对调用方来说都一样：不用提示。
+    pub relinked: usize,
+}
+
 /// 一条笔记。字段与 `notes` 表一一对应，`tags` 不在表里（走 `note_tags` 关联表）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Note {
@@ -613,7 +627,12 @@ impl DataStore {
     /// 改标题与正文。`created_at` 不动，`updated_at` 刷新。
     ///
     /// 人工编辑走这里；外部（MCP 写工具）走 [`Self::note_update_from`]。
-    pub fn note_update(&self, id: &str, title: &str, content: &str) -> Result<(), String> {
+    pub fn note_update(
+        &self,
+        id: &str,
+        title: &str,
+        content: &str,
+    ) -> Result<NoteUpdateReport, String> {
         self.note_update_from(id, title, content, "")
     }
 
@@ -627,7 +646,7 @@ impl DataStore {
         title: &str,
         content: &str,
         source: &str,
-    ) -> Result<(), String> {
+    ) -> Result<NoteUpdateReport, String> {
         let conn = self.lock_conn();
 
         // 先读旧值：既用来判「真的改了吗」，也顺便代替了原来靠 UPDATE 影响行数
@@ -650,7 +669,7 @@ impl DataStore {
         // 后一半容易漏：列表默认按 updated_at 排，一次「打开→直接保存」就把一条
         // 没改过的笔记顶到最前，看上去像数据乱了（设计稿 §1）。
         if old_title == title && old_content == content {
-            return Ok(());
+            return Ok(NoteUpdateReport::default());
         }
 
         // 快照存的是**旧版本**，所以必须在 UPDATE 之前拍（D8 / note_revision.rs）。
@@ -662,10 +681,96 @@ impl DataStore {
         )
         .map_err(|e| e.to_string())?;
         Self::prune_revisions_on(&tx, id).map_err(|e| e.to_string())?;
+
+        // O-9：标题真的变了才重写引用。放在**同一个事务里**——
+        // 否则「标题已改、引用未改」会成为一个可观测的中间状态。
+        //
+        // 两头都非空才做：旧标题为空时 `[[]]` 本来就不是链；
+        // 新标题为空时重写会把引用变成 `[[]]`，那比断链更坏。
+        let relinked = if old_title != title
+            && !old_title.trim().is_empty()
+            && !title.trim().is_empty()
+        {
+            Self::rewrite_wiki_links_on(&tx, id, &old_title, title, source)
+                .map_err(|e| e.to_string())?
+        } else {
+            Vec::new()
+        };
+
         tx.commit().map_err(|e| e.to_string())?;
 
         Self::sync_notes_fts_on(&conn, id);
-        Ok(())
+        // 被重写的笔记正文变了，FTS 也要跟着更新——
+        // 否则搜旧标题还能把它们搜出来。
+        for rid in &relinked {
+            Self::sync_notes_fts_on(&conn, rid);
+        }
+
+        Ok(NoteUpdateReport {
+            relinked: relinked.len(),
+        })
+    }
+
+    /// O-9：把全库的 `[[旧标题]]` 重写成 `[[新标题]]`，返回被改的笔记 id。
+    ///
+    /// # 为什么必须做这件事
+    ///
+    /// wiki 链按**标题**存（`[[标题]]`，不含 id、不含路径）。所以换文件夹不断链，
+    /// 但**改标题会让所有引用静默失效**——既不重写也不提示。
+    /// 这个缺陷与 MCP 无关，在界面上手工改标题就有；
+    /// 开放 MCP 后 AI 能批量改名，影响面被放大。
+    ///
+    /// # 三个必须留意的点
+    ///
+    /// 1. 用 `REPLACE(content, '[[旧]]', '[[新]]')` 而不是替换裸标题：
+    ///    带上方括号后 `[[会议]]` 不会命中 `[[会议纪要]]`——裸子串替换会改坏后者。
+    /// 2. **每篇受影响的笔记都要拍快照**：这是一次内容修改，
+    ///    不留快照用户就撤不回来（W2 的整个前提）。
+    /// 3. 跳过被改名的那篇自己：它的正文由调用方给定，再改一次是意外行为。
+    ///
+    /// # 为何要刷 `updated_at`
+    ///
+    /// 这些笔记的正文**真的变了**。与 `note_toggle_pin` 不碰 `updated_at`
+    /// 恰好是同一条原则的两面：那个字段该反映真实的内容修改。
+    /// 改名后列表里冒出几篇看似无关的笔记确实有点吵，
+    /// 但把一次真实的正文修改从「最近改过什么」里藏起来更坏。
+    ///
+    /// # 已知不覆盖
+    ///
+    /// `[[标题|别名]]` 与 `[[标题#小节]]` 这类扩展语法**不会**被重写——
+    /// 库里本来就不解析它们（`notes.content` 的注释：`[[..]]` 原样保存）。
+    fn rewrite_wiki_links_on(
+        tx: &rusqlite::Connection,
+        self_id: &str,
+        old_title: &str,
+        new_title: &str,
+        source: &str,
+    ) -> Result<Vec<String>, rusqlite::Error> {
+        let from = format!("[[{}]]", old_title);
+        let to = format!("[[{}]]", new_title);
+
+        let ids: Vec<String> = {
+            let mut st = tx.prepare(
+                "SELECT id FROM notes \
+                 WHERE deleted_at IS NULL AND id != ?1 AND instr(content, ?2) > 0",
+            )?;
+            let rows =
+                st.query_map(rusqlite::params![self_id, &from], |r| r.get::<_, String>(0))?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        };
+
+        for id in &ids {
+            // 先拍快照再改（同 note_update_from 的口径：快照存的是旧版本）。
+            Self::snapshot_note_on(tx, id, source)?;
+            tx.execute(
+                "UPDATE notes SET content = REPLACE(content, ?2, ?3), updated_at = ?4 \
+                 WHERE id = ?1",
+                rusqlite::params![id, &from, &to, note_now()],
+            )?;
+            Self::prune_revisions_on(tx, id)?;
+        }
+
+        Ok(ids)
     }
 
     /// 切换置顶（B1）。返回切完之后的状态。

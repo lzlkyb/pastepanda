@@ -31,6 +31,7 @@ mod hotkey_manager;
 mod icon_extractor;
 mod lan_sync;
 mod lang_arbiter;
+pub mod markdown;
 mod mask;
 pub mod mcp;
 mod paste_engine;

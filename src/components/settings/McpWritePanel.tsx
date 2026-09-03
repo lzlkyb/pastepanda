@@ -67,7 +67,15 @@ export function McpWritePanel({
                   {GROUP_AT[r.key] && <div className={styles.mcpSwGroup}>{GROUP_AT[r.key]}</div>}
                   <div className={styles.mcpSwRow}>
                     <span className={styles.mcpSwLabel}>
-                      {r.label} <code className={styles.mcpSwTool}>{r.tool}</code>
+                      {r.label}{" "}
+                      {/* 一档可能管多个工具（如「修改笔记」管 kb_update 与三个精准编辑）。
+                          必须全列出：用户在调用记录里看到的就是这些名字，
+                          少列一个就会有人找不到该关哪一行。 */}
+                      {r.tools.map((t) => (
+                        <code key={t} className={styles.mcpSwTool}>
+                          {t}
+                        </code>
+                      ))}
                     </span>
                     <button
                       type="button"
