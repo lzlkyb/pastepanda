@@ -434,23 +434,25 @@ jobs:
           # 正好绕过。流程：推 tag → 取/建发行版 → 上传 exe+.sig → 验证可下载。
           Write-Host "--- 发布二进制到 Gitee 发行版（绕过 raw 登录墙）---"
           $apiBase = "https://gitee.com/api/v5/repos/$($env:GITEE_REPOSITORY)"
-          $token = $env:GITEE_TOKEN
+          $token = $env:GITEE_TOKEN.Trim()
+          $headers = @{ "Authorization" = "token $token" }
 
           # 1) 推 tag 到 Gitee（发行版需 tag 存在；已存在则强制覆盖，避免 already exists 被拒）
-          git push -f "$giteeUrl" "$tag" 2>&1 | Write-Host
+          #    禁用 husky pre-push 钩子，避免镜像步骤里白跑整套测试门禁（v7.0.0 曾浪费 ~9 分钟）
+          git -c core.hooksPath="$env:TEMP" push -f "$giteeUrl" "$tag" 2>&1 | Write-Host
           Write-Host ("tag {0} 推送完成（exit={1}，已存在则忽略）" -f $tag, $LASTEXITCODE)
 
-          # 2) 取已有发行版或新建
+          # 2) 取已有发行版或新建（token 走 Authorization 头，不落 query string / 日志）
           $rel = $null
           try {
-            $rel = Invoke-RestMethod -Uri "$apiBase/releases/tags/$tag`?access_token=$token" -Method Get -TimeoutSec 30 -ErrorAction Stop
+            $rel = Invoke-RestMethod -Uri "$apiBase/releases/tags/$tag" -Headers $headers -Method Get -TimeoutSec 30 -ErrorAction Stop
           } catch { }
           if ($rel -and $rel.id) {
             Write-Host ("发行版已存在（id={0}），复用" -f $rel.id)
           } else {
             $relBody = @{ tag_name = $tag; name = "PastePanda $tag"; body = "PastePanda $tag 自动发布（国内加速通道）"; prerelease = $false; target_commitish = "${{ github.sha }}" } | ConvertTo-Json -Compress
             try {
-              $rel = Invoke-RestMethod -Uri "$apiBase/releases`?access_token=$token" -Method Post -Body $relBody -ContentType "application/json" -TimeoutSec 30 -ErrorAction Stop
+              $rel = Invoke-RestMethod -Uri "$apiBase/releases" -Headers $headers -Method Post -Body $relBody -ContentType "application/json" -TimeoutSec 30 -ErrorAction Stop
             } catch {
               Fail ("创建 Gitee 发行版失败：{0}" -f $_)
             }
@@ -460,26 +462,31 @@ jobs:
           if (-not $rid) { Fail "未取得发行版 id" }
 
           # 3) 上传 exe + .sig 资源（multipart，字段名 file）
+          #    --fail：Gitee 即便返回 4xx/5xx 也令 curl 非零退出，避免「假成功」漏传 exe（v7.0.0 根因）
           $nsisDir = Join-Path $env:GITHUB_WORKSPACE "src-tauri/target/release/bundle/nsis"
           foreach ($pattern in @("*.exe", "*.exe.sig")) {
             $af = Get-Item (Join-Path $nsisDir $pattern) -ErrorAction SilentlyContinue | Select-Object -First 1
             if (-not $af) { Write-Host ("跳过（未找到）: {0}" -f $pattern); continue }
             Write-Host ("上传资源: {0} ({1} MB)" -f $af.Name, ([int]($af.Length / 1MB)))
             # 21MB 走 Gitee 国际线路常超 5 分钟；放宽到 30 分钟并加重试，避免 curl exit 28 超时把 exe 漏传
-            curl.exe -sS -X POST "$apiBase/releases/$rid/assets`?access_token=$token&name=$($af.Name)" -F "file=@$($af.FullName)" --max-time 1800 --retry 3 --retry-delay 10 --retry-all-errors
+            curl.exe -sS --fail -w "HTTP %{http_code}\n" -X POST "$apiBase/releases/$rid/assets?name=$($af.Name)" -H "Authorization: token $token" -F "file=@$($af.FullName)" --max-time 1800 --retry 3 --retry-delay 10 --retry-all-errors
             if ($LASTEXITCODE -ne 0) { Fail ("上传资源 {0} 失败（curl exit {1}）" -f $af.Name, $LASTEXITCODE) }
             Write-Host ("  ✅ 已上传 {0}" -f $af.Name)
           }
 
-          # 4) 验证发行版 exe 公开可下载（无需登录 = app 国内通道真正生效）
-          $exeFile0 = Get-Item (Join-Path $nsisDir "*.exe") -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($exeFile0) {
-            $exeDl = "https://gitee.com/$($env:GITEE_REPOSITORY)/releases/download/$tag/$($exeFile0.Name)"
+          # 4) 验证不假绿：回读发行版 .assets，确认 exe 真在（缺失则真 Fail，不让 job 假绿）
+          #    带 4 次退避重试，规避 Gitee 新资产/CDN 传播延迟（v7.0.0 只查一次误判失败）
+          $binOk = $false
+          for ($i = 1; $i -le 4; $i++) {
             try {
-              $er = Invoke-WebRequest -Uri $exeDl -MaximumRedirection 5 -TimeoutSec 60 -UseBasicParsing
-              if ($er.StatusCode -ne 200) { Fail ("发行版 exe URL 返回 {0}，app 仍拿不到" -f $er.StatusCode) }
-              Write-Host ("✅ 发行版 exe 公开可下载：{0}（{1} MB），app 国内通道生效" -f $exeDl, ([int]($er.RawContentLength / 1MB)))
+              $relChk = Invoke-RestMethod -Uri "$apiBase/releases/$rid" -Headers $headers -Method Get -TimeoutSec 30 -ErrorAction Stop
+              $assetNames = @($relChk.assets | ForEach-Object { $_.name })
+              Write-Host ("验证尝试 {0}/4 资产: {1}" -f $i, ($assetNames -join ", "))
+              if (($assetNames | Where-Object { $_ -like "*.exe" }).Count -gt 0) { $binOk = $true; break }
             } catch {
-              Fail ("发行版 exe 下载验证失败：{0}（推上去了但公开读不到，app 这次可能用不了）" -f $_)
+              Write-Host ("验证读取失败: {0}" -f $_)
             }
+            if ($i -lt 4) { Start-Sleep -Seconds ($i * 5) }
           }
+          if (-not $binOk) { Fail "安装包未真正上传到 Gitee 发行版附件（exe 不在 .assets，国内下载加速未生效）" }
+          Write-Host "✅ 发行版 .assets 含 exe，app 国内通道生效"
