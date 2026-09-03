@@ -39,6 +39,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
+        "https://gitee.com/lzul/pastepanda/raw/releases/latest/updater-gitee.json",
         "https://ghproxy.net/https://github.com/lzlkyb/pastepanda/releases/latest/download/updater.json",
         "https://github.com/lzlkyb/pastepanda/releases/latest/download/updater.json"
       ],

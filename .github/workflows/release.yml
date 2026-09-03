@@ -194,7 +194,7 @@ jobs:
         env:
           GITHUB_RELEASE_TAG: ${{ github.ref_name }}
           UPDATER_NOTES: ${{ steps.changelog.outputs.updater_notes }}
-          UPDATER_DOWNLOAD_BASE: "https://ghproxy.net/https://github.com/${{ github.repository }}/releases/download"
+          UPDATER_DOWNLOAD_BASE: "https://github.com/${{ github.repository }}/releases/download"
 
       - name: 校验 updater.json（发布前冒烟，防止坏产物静默发布）
         run: node scripts/verify-updater-json.mjs dist/updater.json
