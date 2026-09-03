@@ -17,12 +17,21 @@ export type Tri = "" | "yes" | "no";
 export type NoteSort = "" | "updated" | "created" | "accessed" | "title";
 export type NoteGroupBy = "" | "folder" | "month" | "tag";
 
+/**
+ * 时间范围筛选（B4）。`""` = 不筛。
+ *
+ * 枚举而不是任意天数：后端靠这份白名单才能安全地把截止日期**内联成字面量**
+ * （保住 `push_view_filters` 不带参数的不变式）。改成自定义日期就得同时改后端。
+ */
+export type NoteWithin = "" | "7d" | "30d" | "90d";
+
 export interface NoteViewOpts {
   sort: NoteSort;
   groupBy: NoteGroupBy;
   summary: Tri;
   fromCard: Tri;
   tagged: Tri;
+  updatedWithin: NoteWithin;
 }
 
 export type InboxSort = "" | "signal" | "recent" | "recopy";
@@ -44,7 +53,16 @@ export const DEFAULT_NOTE_VIEW: NoteViewOpts = {
   summary: "",
   fromCard: "",
   tagged: "",
+  updatedWithin: "",
 };
+
+/** 时间范围的选项（B4）。与后端 `within_days()` 的白名单一一对应。 */
+export const NOTE_WITHINS: ViewOption[] = [
+  { value: "", label: "不筛" },
+  { value: "7d", label: "7 天内" },
+  { value: "30d", label: "30 天内" },
+  { value: "90d", label: "90 天内" },
+];
 
 export const DEFAULT_INBOX_VIEW: InboxViewOpts = {
   sort: "",
@@ -136,6 +154,21 @@ function triChip(
 }
 
 /**
+ * 视图里是否有任何「筛选」生效。
+ *
+ * **排序与分组不算**：它们只换顺序，不改变结果集。
+ *
+ * ❗ 两个消费点必须共用它：工具栏筛选按钮要不要高亮，与问答回答卡底部的「已筛选」。
+ *   上面 `noteViewChips` 那句「写两份必定漏一个维度」已经应验了：两处各自写了一串
+ *   布尔或，加标签筛选（A1）与修改时间（B4）时只改了工具栏那份。
+ *   后果：筛着标签 / 「7 天内改过」提问时，回答卡声称范围是整个文件夹，
+ *   而实际检索已被筛过——没命中时用户会以为「这个文件夹里真没有」。
+ */
+export function isNoteViewFiltered(v: NoteViewOpts, tagIds: readonly string[] = []): boolean {
+  return !!(v.summary || v.fromCard || v.tagged || v.updatedWithin) || tagIds.length > 0;
+}
+
+/**
  * 把当前选项算成 chips。**返回空数组 = 默认态**，调用方靠它判要不要渲染 chips 行。
  *
  * 写在这里而不是组件里：「什么算非默认」这个判断两个面板都要用，
@@ -158,6 +191,14 @@ export function noteViewChips(
   for (const [k, val, clear] of tris) {
     const c = triChip(k, val, clear);
     if (c) out.push(c);
+  }
+  // B4：摆「7 天内改过」而不是光的「7 天内」——chips 行里各种条件混在一起，
+  // 不写「改过」的话看不出它筛的是修改时间还是创建时间。
+  if (v.updatedWithin) {
+    out.push({
+      label: `${labelOf(NOTE_WITHINS, v.updatedWithin)}改过`,
+      onClear: () => set({ updatedWithin: "" }),
+    });
   }
   return out;
 }

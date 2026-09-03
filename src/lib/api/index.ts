@@ -100,6 +100,7 @@ export {
   noteCountDeleted,
   noteListDeleted,
   noteRestoreDeleted,
+  noteTogglePin,
   notePurge,
   notePurgeAll,
   noteCountExpired,

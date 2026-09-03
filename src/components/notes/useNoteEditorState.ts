@@ -21,6 +21,38 @@ import { copyToClipboard } from "@/lib/utils";
 import { THEMES, DEFAULT_THEME } from "@/lib/theme";
 import { noteCreate, noteUpdate, noteSetFolder, noteMarkdown, fetchNoteHistoryIds } from "@/lib/api";
 
+/**
+ * 换笔记时才拦的阈值：正文改动少于这么多字就**不拦**，直接丢。
+ *
+ * 为何不全量拦：第三栏存在的全部理由是「扫着读」（见 `NoteDetailPane` 文件头），
+ * 换笔记是这个界面里最高频的动作。每换一条都弹一次确认会直接毁掉这个场景，
+ * 而误碰键盘、多敲一两个字本来也不是用户想保的东西。
+ *
+ * ❗ 代价写清楚：**最多会静默丢掉 9 个字的正文改动**。标题不适用这个阈值
+ *   （标题就那么短，改它都是有意的）。
+ */
+const SWITCH_GUARD_CHARS = 10;
+
+/**
+ * 两串之间的「改动量」：去掉公共前缀与公共后缀后，剩下两段的长度之和。
+ *
+ * 不用编辑距离：那是 O(nm)，而这个函数会在每次换笔记时对整篇正文跑一遍。
+ * 不用长度差：把一段话改成等长的另一段话，长度差是 0，但那是真改动。
+ *
+ * 例：「今天开会记录」→「今天的会议记录」，公共前缀「今天」、公共后缀「记录」，
+ * 改动量 = 2 + 3 = 5。
+ */
+function changedChars(a: string, b: string): number {
+  if (a === b) return 0;
+  const min = Math.min(a.length, b.length);
+  let head = 0;
+  while (head < min && a[head] === b[head]) head++;
+  // 尾部不能跨过已匹配的头部，否则同一段字符会被两边重复数、算出负数。
+  let tail = 0;
+  while (tail < min - head && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail++;
+  return a.length - head - tail + (b.length - head - tail);
+}
+
 /** 正在编辑的对象。与 `dialogStore.noteDraft` 同形，第三栏从 `Note` 拼一个即可。 */
 export interface NoteEditTarget {
   /** null = 新建；非 null = 编辑已有那条 */
@@ -114,7 +146,31 @@ export function useNoteEditorState({
     return true;
   }, [title, content, target.noteId, target.historyId, target.folderId, toast, onSaved]);
 
-  /** 带脏数据守卫的关闭。第三栏切换到另一条笔记时也走它。 */
+  /**
+   * 切换到另一条笔记（或让出第三栏）前的守卫。返回 `true` = 可以继续。
+   *
+   * ❗ 为何不直接用 `requestClose`：那个只要**一个字符**不同就拦，而换笔记是
+   *   扫读时最高频的动作——那会变成每点一条弹一次。这里只拦两种情况：
+   *   标题被改过，或正文改动 ≥ [`SWITCH_GUARD_CHARS`]。
+   *
+   * ❗ 这个函数存在的原因：改之前只有点✕ 那一个入口有守卫，而实际上有**五个**
+   *   入口会把第三栏换掉（点另一条 / 删当前这条 / 点「问」/ 点参考笔记 / 窗口缩小），
+   *   它们全部直接改 `activeNote`，而本组件带 `key={note.id}`——一换就重挂载，
+   *   草稿随组件一起没了。
+   */
+  const guardSwitch = useCallback(async (): Promise<boolean> => {
+    const titleChanged = title !== baseTitle;
+    if (!titleChanged && changedChars(content, baseContent) < SWITCH_GUARD_CHARS) return true;
+    return await confirmDialog({
+      title: "有未保存的修改",
+      message: "离开这条笔记后，这些修改会被丢弃。",
+      confirmText: "丢弃并继续",
+      cancelText: "留在这条",
+    });
+  }, [title, baseTitle, content, baseContent]);
+
+  /** 带脏数据守卫的关闭（点✕）。这里是**只要有一点不同就问**：
+   *  关闭是一个明确的「我完事了」动作，不像换笔记那样会连着做很多次。 */
   const requestClose = useCallback(async () => {
     if (isDirty) {
       const ok = await confirmDialog({
@@ -180,6 +236,7 @@ export function useNoteEditorState({
     isDark,
     sourceItem,
     save,
+    guardSwitch,
     requestClose,
     copyAsMarkdown,
     viewSource,

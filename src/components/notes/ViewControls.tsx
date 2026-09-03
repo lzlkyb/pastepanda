@@ -17,6 +17,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUpDown, Rows3, SlidersHorizontal, X } from "lucide-react";
 import type { Tri, ViewChip, ViewOption } from "@/lib/notes/viewOpts";
+import { TagBadge } from "@/components/TagBadge";
+import type { Tag } from "@/stores/appStore";
 import styles from "./ViewControls.module.css";
 
 /** 一个单选菜单的规格。 */
@@ -160,6 +162,88 @@ export function ViewChips({
       <button type="button" className={styles.clearAll} onClick={onClearAll}>
         全部清除
       </button>
+    </div>
+  );
+}
+
+/**
+ * 标签多选行（A1）。放在**现有的筛选浮层里**，不另开一个工具栏图标：
+ * 标签本来就是一个筛选维度，而那一排图标已经有三个了。
+ *
+ * ❗ 多标签是 **AND**（必须全部命中）——后端 `push_note_filters` 就是这个口径，
+ *   与记录模式的卡片筛选一致。并集会让「选了更多条件反而结果更多」。
+ *
+ * 用 `TagBadge` 的 `picker` 变体而不自己画：它是全应用唯一的标签渲染点（规则 #11），
+ * 自己画一份就会丢掉颜色派生与 `source='auto'` 的🤖标识。
+ */
+export function TagPickRow({
+  allTags,
+  selected,
+  onToggle,
+}: {
+  allTags: Tag[];
+  selected: string[];
+  onToggle: (id: string) => void;
+}) {
+  if (allTags.length === 0) {
+    return (
+      <div className={styles.triRow}>
+        <span className={styles.triLabel}>标签</span>
+        <span className={styles.tagEmpty}>还没有标签</span>
+      </div>
+    );
+  }
+  return (
+    <div className={styles.tagRow}>
+      <span className={styles.triLabel}>标签</span>
+      {/* 限高 + 自己滚：标签多了会把整个筛选浮层顶到屏幕外 */}
+      <div className={styles.tagList}>
+        {allTags.map((t) => (
+          <TagBadge
+            key={t.id}
+            tag={t}
+            variant="picker"
+            active={selected.includes(t.id)}
+            onClick={() => onToggle(t.id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 单选一行（N 个互斥选项）。给时间范围这种“不只三态”的筛选用（B4）。
+ *
+ * 不把 `TriRow` 改成通用的：那个名字与 `Tri` 类型强绑（它的 `yesText`/`noText`
+ * 就是三态语义），改成泛型反而让调用处多一层拼选项的噪声。两个小组件更直白。
+ */
+export function PickRow({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: ViewOption[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className={styles.triRow}>
+      <span className={styles.triLabel}>{label}</span>
+      <div className={styles.triBtns}>
+        {options.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            className={`${styles.triBtn}${value === o.value ? ` ${styles.triOn}` : ""}`}
+            onClick={() => onChange(o.value)}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

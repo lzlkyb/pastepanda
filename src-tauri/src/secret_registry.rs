@@ -99,8 +99,31 @@ mod tests {
     const SLOT_A: &str = "__test_a";
     const SLOT_B: &str = "__test_b";
 
+    /// 🔴 这组测试必须**串行**。
+    ///
+    /// 上面那句「用专用 slot 避免互相干扰」实际没兼顾到：
+    /// **`SLOT_A` 被三个测试共用**（register_and_match / short_values_are_refused /
+    /// real_mcp_token_shape），而 Rust 测试默认并行——一个测试结尾的
+    /// `register(SLOT_A, "")` 会把另一个刚登记的值清掉。
+    /// 实测：`--test-threads=1` 全过，默认并行下
+    /// `test_real_mcp_token_shape_is_matched` **稳定失败**（不是偶发）。
+    ///
+    /// 不靠「每个测试一个 slot」解决：`is_own_secret` 查的是**整个**登记表，
+    /// 所以即使 slot 不同，一个测试登记的值仍会被另一个的 `assert!(!is_own_secret(..))`
+    /// 看到。串行锁一次治两个隐患，且以后加测试不用再想这事。
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    /// 拿串行锁。
+    ///
+    /// ❗ 用 `into_inner` 忽略毒化：panic 会毒化 `Mutex`，不处理的话
+    ///   一个测试失败会让其余全部连带失败，把真实原因埋掉。
+    fn serial() -> std::sync::MutexGuard<'static, ()> {
+        TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     #[test]
     fn test_register_and_match() {
+        let _g = serial();
         let secret = "aaaabbbbccccddddeeee";
         register(SLOT_A, secret);
         assert!(is_own_secret(secret));
@@ -112,6 +135,7 @@ mod tests {
 
     #[test]
     fn test_rotation_invalidates_old() {
+        let _g = serial();
         // 🔴 轮换后旧哈希必须失效：否则用户后来真想复制一段恰好等于旧密钥的
         // 文本时会被莫名吞掉，而且没任何提示。
         register(SLOT_B, "old-secret-0000000000");
@@ -124,6 +148,7 @@ mod tests {
 
     #[test]
     fn test_short_values_are_refused() {
+        let _g = serial();
         // 退化保护：密钥因 bug 变成 "1" 时不能把用户真实复制的 "1" 也吞掉
         register(SLOT_A, "short");
         assert!(!is_own_secret("short"));
@@ -132,6 +157,7 @@ mod tests {
 
     #[test]
     fn test_real_mcp_token_shape_is_matched() {
+        let _g = serial();
         // 🔴 回归护栏：这正是 `is_secret` 漏掉的那种形状
         // （43 字符 base64url 无填充，43 % 4 == 3，无前缀）。
         let token = "aaaabbbbccccddddeeeeffffgggghhhhiiiijjjjkkk";

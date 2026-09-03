@@ -1,0 +1,88 @@
+/* KbThirdPane.module.css — 第三栏容器（A-61 ①）。 */
+
+/* ❗ 左分割线在这里，不在里面两个面板上（它们原先各自带一条）：
+   分栏后两个面板上下叠着，各画一条就是两条。 */
+.third {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border-color);
+}
+
+/* 装面板的格子。面板自己是 `flex: 1` 的列，所以这里用 row 让它横向吃满。
+   `min-height: 0` 必需：没它的话里面的滚动区会把格子撑高，分栏比例就失控了。 */
+.slot {
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+/* 拖手柄。高度与 `KbThirdPane.tsx` 里的 `GRIP_PX` 保持一致。 */
+.grip {
+  flex: 0 0 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: row-resize;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--hover);
+  /* 拖的时候不要选中两边的文字 */
+  user-select: none;
+}
+
+/* 中间那根短线：告诉用户这里能拖。不做成完整一条线（那看起来只是个分割线）。 */
+.grip::after {
+  content: "";
+  width: 26px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--border-color);
+  transition: background 0.15s;
+}
+
+.grip:hover::after {
+  background: var(--accent);
+}
+
+/* 问答胶囊。样式照中栏那条 `.qaBar`（KnowledgeView.module.css），
+   但不复用那个类：跟它在两个 css module 里，跳模块引用会把两处绑死。
+   两边的宿主不同（中栏竖向堆叠 / 本栏顶部常驻），内边距也不一样。 */
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin: 8px 10px 0;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 7px;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  font-family: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.bar:hover {
+  background: var(--accent-soft, var(--accent-light));
+}
+
+/* 文案吃满剩下宽度，把箭头顶到右边。轮数多了也不换行。 */
+.barText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barArrow {
+  flex-shrink: 0;
+  opacity: 0.7;
+}

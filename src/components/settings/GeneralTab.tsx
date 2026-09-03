@@ -15,11 +15,9 @@ import { NoteTemplateRows } from "./NoteTemplateRows";
 import { HotkeyRecorder } from "./HotkeyRecorder";
 import { chainList, type ChainDef } from "@/lib/api/chains";
 import { LanSyncPanel } from "./LanSyncPanel";
-import { McpServerPanel } from "./McpServerPanel";
-import { useMcpServer } from "@/hooks/useMcpServer";
-// promise 形式的确认框。本文件里那两个 pending 状态 + <ConfirmDialog> 是旧写法；
-// 开关类动作用 await 一行就完了，不值得再活一个状态。
-import { confirmDialog } from "@/lib/confirm";
+// ❗ 原先这里引了 `confirmDialog`，唯一的用处是 MCP 开关的确认框；
+// MCP 搬走后（A-61 ③）它就没消费点了。本文件里剩下的确认框仍是
+// 「pending 状态 + <ConfirmDialog>」的旧写法（两处），没跟着改。
 import { DeepCleanDialog } from "@/components/DeepCleanDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { WeekReportDialog } from "@/components/WeekReportDialog";
@@ -137,32 +135,6 @@ export function GeneralTab({
     }
     setPendingTrash({ days: next, count: n });
   }, [trashDays, updateAndSave]);
-
-  // 知识库 MCP 服务（M4）。轮询 / 可见性门控 / 启动失败事件都在 hook 里。
-  const mcp = useMcpServer(toast);
-
-  /**
-   * 开启前先弹确认，关闭不弹。
-   *
-   * **每次开启都弹，不只首次**：记「首次」要新增一个持久化标志，
-   * 而那个标志一旦写错或被重置，后果是「静默地把全部笔记开放出去」。
-   * 开启本来就是个低频动作，多确认一次的代价远小于那个风险。
-   *
-   * confirmDialog 只吃纯字符串（无富文本），所以后果只能靠句子本身说清楚。
-   */
-  const handleToggleMcp = useCallback(async (next: boolean) => {
-    if (next) {
-      const ok = await confirmDialog({
-        title: "开启知识库 MCP 服务？",
-        message:
-          "开启后，本机任何能拿到访问令牌的程序都可以读取、修改和删除你的笔记。服务只监听 127.0.0.1，局域网内其它机器连不上。删除只进回收站，随时可恢复；每次写入都会计入调用记录。开启后可以在面板里逐项关掉写权限。",
-        confirmText: "开启服务",
-        variant: "warning",
-      });
-      if (!ok) return;
-    }
-    await mcp.setEnabled(next);
-  }, [mcp]);
 
   // 深度清理弹窗开关（数据管理 → 深度清理）
   const [showDeepClean, setShowDeepClean] = useState(false);
@@ -917,38 +889,9 @@ export function GeneralTab({
         <LanSyncPanel toast={toast} />
       )}
 
-      {/* ── 知识库 MCP 服务（M4）──
-          放在局域网同步后面：两者都是「开一个本地服务让别人连」，心智模型一致。
-          关态只有这一行开关；开了才展开面板（同 LanSyncPanel 的做法）。 */}
-      <div className={styles.sSection}>知识库 MCP 服务</div>
-      <ToggleRow icon="🧩" gradient="linear-gradient(135deg, #8B5CF6, #6366F1)"
-        label="知识库 MCP 服务"
-        desc="让 Claude Code 等 AI 工具读写你的笔记（仅本机，需令牌，写权限逐项可关）"
-        value={mcp.status.running}
-        tooltip="在本机开一个只监听回环地址的 MCP 服务，AI 工具凭令牌搜索、读取与修改笔记"
-        detailTitle="知识库 MCP 服务"
-        detail={<>
-          <p>开启后，Claude Code 这类支持 MCP 的工具可以<b>搜索、读取、新建、修改你的笔记</b>。</p>
-          <p>📌 只监听 <b>127.0.0.1 回环地址</b>，局域网内其它机器连不上</p>
-          <p>📌 每个请求都要带<b>访问令牌</b>，令牌加密存在本机</p>
-          <p>📌 删除<b>只进回收站</b>（可恢复）；修改会自动留版本快照；写入都计入调用记录</p>
-          <p>📌 七项写权限<b>默认全开，可逐项关掉</b>（开启后在下方面板里）</p>
-          <p>⚠️ 开着时，<b>能拿到令牌的程序就能读写你全部的笔记</b></p>
-        </>}
-        onChange={(v) => void handleToggleMcp(v)}
-      />
-      {mcp.status.running && (
-        <McpServerPanel
-          status={mcp.status}
-          busy={mcp.busy}
-          startError={mcp.startError}
-          auditError={mcp.auditError}
-          onSetPort={mcp.setPort}
-          onDismissError={mcp.dismissError}
-          onDismissAuditError={mcp.dismissAuditError}
-          toast={toast}
-        />
-      )}
+      {/* ❗ 知识库 MCP 服务已搬到**独立的 MCP tab**（A-61 ③，见 `McpTab.tsx`）。
+          两个理由：它原先在本文件第 920 行（用知识库的人要一直往下翻）；
+          而且 tab 是条件渲染的——放在这里等于一打开设置页就开始 5s 轮询。 */}
 
       {/* ── 快捷键 ── */}
       <div className={styles.sSection}>快捷键</div>

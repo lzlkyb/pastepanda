@@ -20,6 +20,11 @@ import { logger } from "@/lib/logger";
 import { deleteHistory, togglePin, toggleWindow, saveForeground, restoreDeleted, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
 import { resolveSource, getAutoTagIcon, getAutoTagColor } from "@/lib/source-mappings";
 import { migrateLegacyStorageKeys } from "@/lib/storageMigration";
+import {
+  OPEN_SETTINGS_EVENT,
+  type OpenSettingsDetail,
+  type SettingsTabName,
+} from "@/lib/openSettings";
 import { initRegexRules } from "@/lib/regexRules";
 import { parseDiagram, diagramTitle } from "@/lib/diagram/types";
 import { Loader2, X, Heart } from "lucide-react";
@@ -92,8 +97,27 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   /** v6.19 贴图管理面板（托盘"贴图管理"→ show-pinned-panel 事件打开） */
   const [showPinnedPanel, setShowPinnedPanel] = useState(false);
-  /** v6.4 审查：#10 从变换中心跳转时指定初始 tab（"ai"） */
-  const [showSettingsTab, setShowSettingsTab] = useState<"general" | "ai" | "help" | "about" | undefined>(undefined);
+  /** v6.4 审查：#10 从变换中心跳转时指定初始 tab（"ai"）。
+   *  类型走 `SettingsTabName`（与 SettingsDialog 共用一份，加 tab 时不会漏）。 */
+  const [showSettingsTab, setShowSettingsTab] = useState<SettingsTabName | undefined>(undefined);
+
+  /**
+   * A-61 ③：知识模式中栏的「⋯」菜单 → 直接跳到设置页指定 tab（如 MCP）。
+   *
+   * 用 DOM 事件而不是把 `showSettings` 提到 store：那个开关还参与
+   * `dialogOpen` 聚合、ESC 优先级链与 `dialogStatesRef` 快照，提上去要动很多处；
+   * 也不用 Tauri emit（那是跳窗口广播，而这是同窗口内的组件通信）。
+   * 与下面那个 `open-ai-settings`（真从 Rust 发来）是两回事。
+   */
+  useEffect(() => {
+    const onOpenSettings = (e: Event) => {
+      const detail = (e as CustomEvent<OpenSettingsDetail>).detail;
+      setShowSettingsTab(detail?.tab);
+      setShowSettings(true);
+    };
+    window.addEventListener(OPEN_SETTINGS_EVENT, onOpenSettings);
+    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, onOpenSettings);
+  }, []);
   /** v6.4 方案 B：AI 快捷区开关（AI **真能用**时才替代建议条；三态见 @/lib/aiAvailability） */
   const { status: aiStatus } = useAiStatus();
   /** v6.4 引导期：AI 感知 UI 只在「本版本更新后 1 周」显示，之后自动隐藏（不长期占顶部空间） */

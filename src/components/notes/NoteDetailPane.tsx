@@ -10,7 +10,7 @@
  *
  * 🔴 红线：无 AI。
  */
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { ExternalLink, Copy, X, History } from "lucide-react";
 import { relativeTime } from "@/lib/utils";
@@ -20,12 +20,24 @@ import { NoteEditorPane } from "./NoteEditorPane";
 import { NoteHistoryView } from "./NoteHistoryView";
 import { NoteAiActions } from "./NoteAiActions";
 import { useNoteEditorState } from "./useNoteEditorState";
+import { NoteViewModeSwitch, useNoteViewMode } from "./NoteViewModeSwitch";
 import styles from "./NoteDetailPane.module.css";
+
+/**
+ * 分屏可用的最小栏宽。
+ *
+ * 第三栏宽 = 窗口宽 − 侧栏 180 − 中栏 300，所以 800px 断点上它只有 ~315px，
+ * 分屏后每边 ~150px——放不下一行中文。460 是 `.editPane` 自己那条
+ * 行长限制注释里的数（「34em 在 13.5px 下约 460px」）乘以两边。
+ */
+const SPLIT_MIN_WIDTH = 620;
 
 export function NoteDetailPane({
   note,
   onClose,
   onSaved,
+  notInList,
+  onRegister,
 }: {
   /**
    * 当前选中的笔记。
@@ -38,6 +50,22 @@ export function NoteDetailPane({
   onClose: () => void;
   /** 保存成功后。**不关栏**——用户还在这条笔记上，只需刷列表 */
   onSaved: () => void;
+  /**
+   * 这条笔记不在旁边列表的当前结果里（搜了个词 / 切了文件夹）。
+   *
+   * 此时**故意不清空选中**：那是用户正在写的东西，清掉就是又一条静默丢失。
+   * 只把「它和旁边列表对不上」这件事说出来。
+   */
+  notInList?: boolean;
+  /**
+   * 把守卫与当前草稿交给宿主。`null` = 本栏要卸载了。
+   *
+   * ❗ 必须往上交：草稿住在本组件里，而「要不要换掉这一栏」是 `KnowledgeView`
+   *   在决定——不交的话它无从得知这里有没有未保存的东西。
+   */
+  onRegister?: (
+    v: { guard: () => Promise<boolean>; dirty: boolean; title: string; content: string } | null,
+  ) => void;
 }) {
   const ed = useNoteEditorState({
     target: {
@@ -53,6 +81,46 @@ export function NoteDetailPane({
   });
 
   const handleSave = useCallback(() => void ed.save(), [ed]);
+
+  /**
+   * 形态（仅编辑 / 分屏 / 仅预览）。第三栏打开的都是**已有笔记**，
+   * 所以 `isNew` 恒为 false——新建走的是弹窗那条路（设计稿 §11）。
+   */
+  const [viewMode, setViewMode] = useNoteViewMode(false);
+
+  /**
+   * 本栏实际宽度，用来判分屏能不能用。
+   *
+   * ❗ 量**本栏**而不是 `window.innerWidth`：侧栏可以收起，收起后同一个窗口宽度下
+   *   第三栏会宽 180px——拿窗口宽猜会在那个区间里猜错。
+   */
+  const paneRef = useRef<HTMLDivElement>(null);
+  const [paneWidth, setPaneWidth] = useState(0);
+  useEffect(() => {
+    const el = paneRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (typeof w === "number") setPaneWidth(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // 宽度还没量到（首帧）时不置灰：宁可晚一帧变灰，也不要闪一下。
+  const splitDisabled = paneWidth > 0 && paneWidth < SPLIT_MIN_WIDTH;
+  // 分屏下把窗口收窄了 ⇒ 自动退到预览，而不是留一个每边 150px 的碎屏。
+  const effectiveMode = splitDisabled && viewMode === "split" ? "preview" : viewMode;
+
+  /**
+   * 把守卫与当前草稿同步给宿主。
+   *
+   * 依赖里带 `title` / `content` 是有意的（每敲一下都重跑，代价只是一次赋值）：
+   * 窗口缩到 &lt;800px 时宿主要拿**当前**草稿转交给弹窗，拿到旧的等于没修。
+   */
+  useEffect(() => {
+    onRegister?.({ guard: ed.guardSwitch, dirty: ed.isDirty, title: ed.title, content: ed.content });
+    return () => onRegister?.(null);
+  }, [onRegister, ed.guardSwitch, ed.isDirty, ed.title, ed.content]);
 
   /** 历史视图（B1 #4）。切过去只是换掉编辑区，`ed` 不重建，所以草稿还在。 */
   const [showHistory, setShowHistory] = useState(false);
@@ -72,6 +140,7 @@ export function NoteDetailPane({
    */
   return (
     <motion.div
+      ref={paneRef}
       className={styles.pane}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -84,6 +153,20 @@ export function NoteDetailPane({
           onChange={(e) => ed.setTitle(e.target.value)}
           placeholder="笔记标题"
           aria-label="笔记标题"
+        />
+        {/* 搜索 / 切文件夹后这条可能已不在旁边列表里，而列表里也就没有对应的
+            高亮行了。不清选中（那会丢草稿），只把这件事说出来。 */}
+        {notInList && (
+          <span className={styles.notInList} title="搜索或筛选变了，左侧列表里现在没有这一条">
+            不在当前列表
+          </span>
+        )}
+        {/* 形态切换器。**放头部**，与全屏 Markdown 编辑器的工具栏位置一致；
+            按钮本身走同一份 `TRI_MODES`。 */}
+        <NoteViewModeSwitch
+          value={effectiveMode}
+          onChange={setViewMode}
+          splitDisabled={splitDisabled}
         />
         {/* 关闭按钮：第三栏不是弹窗，但仍需要一个「我看完了」的出口，
             否则必须选另一条才能离开当前这条 */}
@@ -160,6 +243,7 @@ export function NoteDetailPane({
           initialContent={ed.content}
           content={ed.content}
           isDark={ed.isDark}
+          viewMode={effectiveMode}
           onChange={ed.setContent}
           onSave={handleSave}
         />

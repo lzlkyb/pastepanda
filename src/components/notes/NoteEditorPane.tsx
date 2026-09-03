@@ -16,12 +16,14 @@ import { wikiLinkCompletion } from "./wikiLinkComplete";
 import { mdTableKeymap } from "./mdTableKeymap";
 import { noteList } from "@/lib/api";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import type { ViewMode } from "@/components/editors/fullscreen/types";
 import styles from "./NoteDialog.module.css";
 
 export function NoteEditorPane({
   initialContent,
   content,
   isDark,
+  viewMode,
   onChange,
   onSave,
 }: {
@@ -31,6 +33,11 @@ export function NoteEditorPane({
   /** 当前文本（受控值），给预览用 */
   content: string;
   isDark: boolean;
+  /**
+   * 形态（仅编辑 / 分屏 / 仅预览）。与全屏编辑器**同一个 `ViewMode` 类型**，
+   * 按钮也走同一份 `TRI_MODES`——两处的操作习惯因此是结构上一致的，不靠盯。
+   */
+  viewMode: ViewMode;
   onChange: (next: string) => void;
   /** Ctrl+S：与底部「保存」同一条路 */
   onSave: () => void;
@@ -71,8 +78,20 @@ export function NoteEditorPane({
 
   return (
     <div className={styles.split}>
-      <div className={styles.editPane} ref={editorRef} />
-      <div className={styles.previewPane}>
+      {/* ❗ 编辑区**始终挂着**，仅预览时靠 CSS 隐而不是不渲染。
+          CodeMirror 的初值只在挂载时读一次（见下面的 hook 注释），
+          卸掉再挂会把用户在编辑态敲的、还没提交给 state 的那一小段丢掉，
+          而且每次切形态都重建编辑器会丢掉光标与滚动位置。
+          全屏编辑器那边用的也是 `display: none`（FullscreenEditor.tsx:881）。 */}
+      <div
+        className={styles.editPane}
+        ref={editorRef}
+        style={{ display: viewMode === "preview" ? "none" : undefined }}
+      />
+      <div
+        className={styles.previewPane}
+        style={{ display: viewMode === "edit" ? "none" : undefined }}
+      >
         {/* debounce：边敲边重解 Markdown 在长笔记上会卡。120ms 跟 FullscreenEditor 同口径。
 
             ❗ **不要加 clamp**。compact 只是排版紧凑，clamp 才是限高 120px 且不可滚。

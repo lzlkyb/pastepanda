@@ -74,7 +74,17 @@ export function DailySection({
         onClick={pickAll}
         role="button"
         tabIndex={0}
-        onKeyDown={(e) => e.key === "Enter" && pickAll()}
+        /* Enter + Space 两个都要接：`role="button"` 的原生语义就是两个，
+           而旁边的文件夹节点一直是两个都认。只认 Enter 的话，用户在这一行按空格
+           没反应、在下一行按空格又有，只会以为自己按错了。
+           （本行不需 `tabIndex={open ? 0 : -1}`：侧栏收起时父层 `.tree` 的
+             `visibility: hidden` 已经把整棵子树移出焦点序了。） */
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            pickAll();
+          }
+        }}
       >
         <CalendarDays size={12} className={styles.builtinIcon} />
         <span className={styles.name}>今日速记</span>

@@ -3,13 +3,16 @@
  * 外壳（FullscreenEditor）按 init 数据里的 contentType 在此查表。
  */
 import { lazy, type ComponentType } from "react";
-import { PanelLeft, Columns2, Eye, Table, List } from "lucide-react";
+// Eye 已不在本文件用（它只属于 TRI_MODES，而那一份已移到 ./types）。
+// PanelLeft / Columns2 还在：下面几个类型自己拼的 modes 用到它们。
+import { PanelLeft, Columns2, Table, List } from "lucide-react";
 import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 import { markdownWithCode } from "./languages";
 import { json } from "@codemirror/lang-json";
 import { html } from "@codemirror/lang-html";
 import { lintGutter } from "@codemirror/lint";
+import { TRI_MODES } from "./types";
 import type { FullscreenType, FullscreenTypeSpec, ExtensionCtx } from "./types";
 import { MarkdownFormatBar } from "./MarkdownFormatBar";
 import { CodeFormatBar } from "./CodeFormatBar";
@@ -55,12 +58,8 @@ function imagePasteExt(insertPastedImages: ExtensionCtx["insertPastedImages"]): 
   });
 }
 
-/** 三态（编辑/分栏/预览）视图模式定义，markdown/html/json 共用 */
-const TRI_MODES = [
-  { key: "edit" as const, title: "仅编辑", Icon: PanelLeft },
-  { key: "split" as const, title: "分屏", Icon: Columns2 },
-  { key: "preview" as const, title: "仅预览", Icon: Eye },
-];
+// TRI_MODES 已移到 `./types`：知识库的笔记编辑器也要用同一份定义（规则 #11），
+// 而它不能为了三个按钮把整个全屏注册表拉进去。
 
 export const FULLSCREEN_TYPES: Record<FullscreenType, FullscreenTypeSpec> = {
   markdown: {

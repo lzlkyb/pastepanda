@@ -677,6 +677,7 @@ pub fn run() {
             commands::note_create,
             commands::note_update,
             commands::note_delete,
+            commands::note_toggle_pin,
             commands::note_list_deleted,
             commands::note_count_deleted,
             commands::note_restore_deleted,

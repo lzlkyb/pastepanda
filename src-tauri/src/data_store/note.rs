@@ -63,6 +63,12 @@ pub struct Note {
     /// 只有 [`DataStore::note_list_deleted`] 会给出非 `None` 的值。
     #[serde(default)]
     pub deleted_at: Option<String>,
+    /// 置顶（B1）。**在它所处的分组里排最前**，不分组时就是全局最前。
+    ///
+    /// ❗ 与 `note_revisions.pinned`（W2 版本锚定）**同名但无关**：
+    ///   那个保护的是某一份快照不被 prune，这个是列表里置顶。
+    #[serde(default)]
+    pub pinned: bool,
     #[serde(default)]
     pub tags: Vec<Tag>,
     /// 原剪贴板卡片的内容类型（W1b，回收站用）。不是表里的列，现场 join 算的。
@@ -94,7 +100,7 @@ pub struct Note {
 /// 它得用同一份列顺序，不能另写一份。
 pub(super) const NOTE_COLS: &str =
     "id, history_id, title, content, created_at, updated_at, source_agent, \
-     folder_id, summary, daily_date, deleted_at";
+     folder_id, summary, daily_date, deleted_at, pinned";
 
 pub(super) fn row_to_note(row: &rusqlite::Row) -> rusqlite::Result<Note> {
     Ok(Note {
@@ -109,6 +115,10 @@ pub(super) fn row_to_note(row: &rusqlite::Row) -> rusqlite::Result<Note> {
         summary: row.get(8)?,
         daily_date: row.get(9)?,
         deleted_at: row.get(10)?,
+        // ❗ 下标 11 = `NOTE_COLS` 末尾新追的 `pinned`。**只能追在末尾**：
+        //   插在中间会把后面所有下标推一位，而那不报错、只是静默读错列。
+        //   SQLite 没有 bool，存的是 INTEGER。
+        pinned: row.get::<_, i64>(11)? != 0,
         tags: Vec::new(),
         // 同 `tags`：不在 NOTE_COLS 里，由 note_list_deleted 读完本函数后另行填
         source_kind: None,
@@ -289,9 +299,31 @@ pub struct NoteViewOpts {
     pub from_card: String,
     /// 有无标签
     pub tagged: String,
+    /// 最近多久改过（B4）。`""` 不筛 / `"7d"` / `"30d"` / `"90d"`。
+    ///
+    /// 用枚举字符串而不是天数：天数是个开放数值，会把「白名单」变成「需要校验的输入」，
+    /// 而下面 [`NoteViewOpts::within_days`] 正是靠枚举才能安全地内联字面量。
+    ///
+    /// （不需要字段级 `#[serde(default)]`：结构体上那个 `default` 已经盖住了，
+    /// 所以旧前端不传这个字段也能反序列化。）
+    pub updated_within: String,
 }
 
 impl NoteViewOpts {
+    /// 时间范围筛选的天数。**白名单枚举**，认不出就不筛。
+    ///
+    /// ❗ 这个白名单是 [`push_view_filters`] 能安全内联字面量的**前提**：
+    ///   返回的天数完全由本函数决定，日期字符串由 `expired_cutoff` 格式化生成，
+    ///   全程不碰用户输入，所以没有注入面。改成收任意天数就不成立了。
+    fn within_days(&self) -> Option<i64> {
+        match self.updated_within.as_str() {
+            "7d" => Some(7),
+            "30d" => Some(30),
+            "90d" => Some(90),
+            _ => None,
+        }
+    }
+
     /// 排序片段。未知值退回默认（命令层会先记一条 warn）。
     fn order_by(&self) -> &'static str {
         match self.sort.as_str() {
@@ -355,8 +387,12 @@ fn note_cols_q() -> String {
         .join(", ")
 }
 
-/// 三个三态筛选。全是字面 SQL、**不带参数**，所以可以随意拼在哪一步，
+/// 三个三态筛选 + 时间范围。全是字面 SQL、**不带参数**，所以可以随意拼在哪一步，
 /// 不会扰乱位置绑定的序号（那是 `bump_search_hits` 里刚钉过的一类坑）。
+///
+/// ❗ 时间范围那一条会内联一个**日期字面量**。它仍然符合「不带参数」，
+///   而且值的来源是白名单枚举 + 内部格式化（详见那里的注释）。
+///   **以后往这里加条件时，要么继续不带参数，要么就得把本函数改成收 params。**
 fn push_view_filters(sql: &mut String, o: &NoteViewOpts) {
     match o.summary.as_str() {
         // ❗ 两个条件都要：`summary` 是迁移加的、可为 NULL，
@@ -375,6 +411,17 @@ fn push_view_filters(sql: &mut String, o: &NoteViewOpts) {
         "no" => sql.push_str(" AND NOT EXISTS (SELECT 1 FROM note_tags WHERE note_id = notes.id)"),
         _ => {}
     }
+    // 时间范围（B4）。❗ 内联成字面量而不是加一个绑定参数，是为了保住
+    // 本函数「不带参数」的不变式（见上面的函数注释）——项目里刚因为位置绑定
+    // 错位踩过坑（`bump_search_hits`）。
+    //
+    // 安全性不靠转义而靠**值的来源**：天数来自 `within_days()` 的白名单枚举，
+    // 日期串由 `expired_cutoff` 用 `NOTE_TIME_FMT` 格式化出来，全程不碰用户输入。
+    if let Some(days) = o.within_days() {
+        if let Some(cutoff) = expired_cutoff(days) {
+            sql.push_str(&format!(" AND notes.updated_at >= '{cutoff}'"));
+        }
+    }
 }
 
 /// ` ORDER BY [组序, ]排序 LIMIT ?`——搜索的 FTS 与 LIKE 两条路径共用（规则 #11）。
@@ -385,6 +432,13 @@ fn order_clause(o: &NoteViewOpts) -> String {
         s.push_str(g);
         s.push_str(", ");
     }
+    // 置顶（B1）插在**组序之后、排序之前**。
+    //
+    // ❗ 放在组序之前的话会把分组打碎：置顶的笔记会跨到所有组前面去，
+    //   而前端的组头是靠「相邻两行组键不同就插一个」算的，
+    //   结果就是同一个组名在列表里出现两次。
+    // 所以规则是：**置顶 = 在它所处的分组里排最前**，不分组时即全局最前。
+    s.push_str("notes.pinned DESC, ");
     s.push_str(o.order_by());
     s.push_str(" LIMIT ?");
     s
@@ -549,6 +603,7 @@ impl DataStore {
             daily_date: None,
             // 刚建的笔记当然没被删
             deleted_at: None,
+            pinned: false,
             // 新建返回的单条不属于任何列表视图，没有分组上下文
             group_key: None,
             tags: Vec::new(),
@@ -611,6 +666,32 @@ impl DataStore {
 
         Self::sync_notes_fts_on(&conn, id);
         Ok(())
+    }
+
+    /// 切换置顶（B1）。返回切完之后的状态。
+    ///
+    /// ❗ **不动 `updated_at`**：置顶不是内容修改。碰了的话，默认排序（最近修改）
+    ///   会把它推到最前，而用户只是想给它插个旗——那会让「最近改过什么」变成假的。
+    ///   同理也不同步 FTS（标题与正文都没变）。
+    ///
+    /// ❗ 带 `deleted_at IS NULL`：回收站里的笔记不该有置顶这个概念，
+    ///   而且 `TrashPanel` 本来就不提供任何编辑入口。
+    pub fn note_toggle_pin(&self, id: &str) -> Result<bool, String> {
+        let conn = self.lock_conn();
+        let n = conn
+            .execute(
+                "UPDATE notes SET pinned = 1 - pinned WHERE id = ?1 AND deleted_at IS NULL",
+                [id],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("笔记不存在或已在回收站里".to_string());
+        }
+        conn.query_row("SELECT pinned FROM notes WHERE id = ?1", [id], |r| {
+            r.get::<_, i64>(0)
+        })
+        .map(|v| v != 0)
+        .map_err(|e| e.to_string())
     }
 
     /// 删笔记——**软删除**（W1）。只置 `deleted_at`，行还在。

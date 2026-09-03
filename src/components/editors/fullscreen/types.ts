@@ -6,6 +6,7 @@
  * 各类型仅差异：语言模式 / 视图形态 / 格式栏 / 预览面板。
  */
 import type { ComponentType } from "react";
+import { PanelLeft, Columns2, Eye } from "lucide-react";
 import type { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 
@@ -51,6 +52,21 @@ export interface SpecMode {
   /** lucide 图标组件 */
   Icon: ComponentType<{ size?: number }>;
 }
+
+/**
+ * 三态（仅编辑 / 分屏 / 仅预览）的**全应用唯一定义**。
+ *
+ * markdown / html / json 的全屏 spec 用它，**知识库的笔记编辑器也用它**（规则 #11）。
+ *
+ * ❗ 从 `registry.tsx` 移到这里的理由：知识库那边只要这三个按钮的定义，
+ *   而 `registry.tsx` 会把整个全屏注册表（各类型的预览组件、语言包…）都拉进来。
+ *   写两份则会在图标或文案改动时静默分歧，而那正是「操作习惯统一」要防的东西。
+ */
+export const TRI_MODES: SpecMode[] = [
+  { key: "edit", title: "仅编辑", Icon: PanelLeft },
+  { key: "split", title: "分屏", Icon: Columns2 },
+  { key: "preview", title: "仅预览", Icon: Eye },
+];
 
 /** 类型规格：描述一个内容类型在全屏外壳中的全部差异点 */
 export interface FullscreenTypeSpec {

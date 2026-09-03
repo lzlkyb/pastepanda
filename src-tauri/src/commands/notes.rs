@@ -55,6 +55,12 @@ pub fn note_delete(store: State<DataStore>, id: String) -> Result<(), String> {
     store.note_delete(&id)
 }
 
+/// 切换置顶（B1）。返回切完之后的状态。
+#[tauri::command]
+pub fn note_toggle_pin(store: State<DataStore>, id: String) -> Result<bool, String> {
+    store.note_toggle_pin(&id)
+}
+
 /// 回收站条数（侧栏计数用）。
 #[tauri::command]
 pub fn note_count_deleted(store: State<DataStore>) -> i64 {
@@ -155,6 +161,16 @@ fn validated_view(view: Option<NoteViewOpts>) -> NoteViewOpts {
         if !TRI.contains(&val.as_str()) {
             log::warn!("[Notes] 筛选 {} 的值 `{}` 不是三态之一，当作不筛", name, val);
         }
+    }
+    // B4 时间范围。后端 `within_days()` 本身就是白名单（认不出就不筛），
+    // 这里只负责把「前后端枚举写不一致」变成日志里的一条痕迹，
+    // 否则现象只是「筛选没生效」，无从下手（同上面几条）。
+    const WITHIN: [&str; 4] = ["", "7d", "30d", "90d"];
+    if !WITHIN.contains(&v.updated_within.as_str()) {
+        log::warn!(
+            "[Notes] 时间范围 `{}` 不在白名单里，当作不筛",
+            v.updated_within
+        );
     }
     v
 }

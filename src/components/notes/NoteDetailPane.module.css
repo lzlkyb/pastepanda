@@ -1,13 +1,15 @@
 /* NoteDetailPane.module.css — 宽屏第三栏（B1 #1，设计稿 §10）。
    只在 ≥800px 时渲染，断点在 KnowledgeView 那边控。 */
 
+/* ❗ 左分割线已移到 `KbThirdPane`（A-61 ①）。
+   本面板现在可能只占第三栏的**下半**（上半是问答），
+   边框留在这里会与容器那条叠成双线。 */
 .pane {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-left: 1px solid var(--border-color);
   padding: 8px 10px 10px;
   gap: 6px;
 }
@@ -57,6 +59,22 @@
 
 .titleInput:focus {
   border-color: var(--accent);
+}
+
+/* 「不在当前列表」提示。用警告色而不是强调色：它不是一个错误，
+   只是「你看到的两栏现在对不上」这个事实。`flex-shrink: 0` 是必需的：
+   旁边是一个 `flex: 1` 的标题输入框，不锁的话它会被压成一列字。 */
+.notInList {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border: 1px solid var(--amber-border, rgba(245, 158, 11, 0.35));
+  border-radius: 6px;
+  background: var(--amber-light, rgba(245, 158, 11, 0.12));
+  color: var(--amber-strong, #B45309);
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: default;
 }
 
 .closeBtn {

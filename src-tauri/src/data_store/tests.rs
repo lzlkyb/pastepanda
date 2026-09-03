@@ -5771,6 +5771,7 @@ fn mk_note_for_md(title: &str, content: &str, tags: &[&str]) -> Note {
         summary: None,
         daily_date: None,
         deleted_at: None,
+        pinned: false,
         source_kind: None,
         group_key: None,
         tags: tags

@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>知识库交互优化 A-61 设计稿</title>
+<style>
+  :root {
+    --bg: #16181d; --panel: #1d2027; --panel2: #23262e;
+    --border: #2e323b; --text: #e6e8ec; --muted: #8b919c;
+    --accent: #6aa9ff; --accent-strong: #8fc0ff;
+    --warn: #e0a33e; --danger: #e06c6c; --ok: #5fbf8f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 24px 60px; background: var(--bg); color: var(--text);
+    font: 13.5px/1.7 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  .doc { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 21px; margin: 0 0 4px; }
+  h1 + .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 26px; }
+  h2 {
+    font-size: 16px; margin: 38px 0 12px; padding-bottom: 7px;
+    border-bottom: 1px solid var(--border);
+  }
+  h3 { font-size: 13.5px; margin: 20px 0 8px; color: var(--accent-strong); }
+  p { margin: 8px 0; }
+  code {
+    font-family: "Cascadia Code", Consolas, monospace; font-size: 12px;
+    background: var(--panel2); padding: 1px 5px; border-radius: 4px;
+  }
+  b { color: #fff; }
+  .note, .warn, .fix {
+    border-left: 3px solid var(--accent); background: rgba(106,169,255,.07);
+    padding: 10px 14px; margin: 14px 0; border-radius: 0 6px 6px 0; font-size: 12.5px;
+  }
+  .warn { border-color: var(--warn); background: rgba(224,163,62,.08); }
+  .fix  { border-color: var(--ok);   background: rgba(95,191,143,.08); }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 12.5px; }
+  th, td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--panel2); font-weight: 600; }
+
+  /* ---- 线框模拟器 ---- */
+  .mock {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0; margin: 14px 0; overflow: hidden;
+  }
+  .mock-cap {
+    background: var(--panel2); padding: 5px 11px; font-size: 11.5px; color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .cols { display: flex; min-height: 260px; }
+  .col-side { flex: 0 0 150px; border-right: 1px solid var(--border); padding: 9px 8px; }
+  .col-mid  { flex: 0 0 250px; border-right: 1px solid var(--border); padding: 9px 8px; min-width: 0; }
+  .col-third{ flex: 1; padding: 0; min-width: 0; display: flex; flex-direction: column; }
+  .lbl { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 7px; }
+
+  .row {
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 5px;
+    padding: 5px 8px; margin-bottom: 5px; font-size: 11.5px;
+  }
+  .row.on { border-color: var(--accent); background: rgba(106,169,255,.12); }
+  .row.dim { opacity: .5; }
+
+  .bar {
+    display: flex; align-items: center; gap: 6px; padding: 5px 8px;
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 6px;
+    margin-bottom: 7px; font-size: 11.5px;
+  }
+  .seg { display: flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; flex: 0 0 auto; }
+  .seg span { padding: 1px 7px; font-size: 11px; color: var(--muted); }
+  .seg span.on { background: var(--accent); color: #10131a; font-weight: 600; }
+  .grow { flex: 1; min-width: 0; color: var(--muted); }
+  .btn {
+    border: 1px solid var(--border); border-radius: 4px; background: var(--panel);
+    padding: 1px 7px; font-size: 11px; color: var(--muted); flex: 0 0 auto;
+  }
+  .btn.pri { background: var(--accent); color: #10131a; border-color: var(--accent); font-weight: 600; }
+  .btn.hl  { border-color: var(--accent); color: var(--accent-strong); }
+
+  /* 上下分栏 */
+  .split-top {
+    flex: 0 0 44%; border-bottom: 1px solid var(--border);
+    padding: 8px 10px; display: flex; flex-direction: column; min-height: 0;
+  }
+  .split-grip {
+    height: 7px; background: var(--panel2); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center; cursor: row-resize;
+  }
+  .split-grip::after { content: ""; width: 26px; height: 2px; background: var(--border); border-radius: 2px; }
+  .split-bot { flex: 1; padding: 8px 10px; min-height: 0; }
+
+  .ta {
+    background: var(--panel); border: 1px solid var(--accent); border-radius: 5px;
+    padding: 5px 8px; font-size: 11.5px; color: var(--text); min-height: 52px;
+  }
+  .menu {
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px; width: 210px; box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  }
+  .menu div { padding: 4px 8px; font-size: 11.5px; border-radius: 4px; }
+  .menu div:hover { background: rgba(106,169,255,.14); }
+  .menu hr { border: none; border-top: 1px solid var(--border); margin: 4px 2px; }
+  .kbd {
+    border: 1px solid var(--border); border-radius: 3px; padding: 0 4px;
+    font-size: 10.5px; color: var(--muted); font-family: monospace;
+  }
+</style>
+</head>
+<body>
+<div class="doc">
+
+<h1>知识库交互优化 · A-61 设计稿</h1>
+<div class="sub">2026-09-03 · 四项已拍板改动：第三栏上下分栏 / 多行输入框 / 中栏溢出菜单 / 宽屏布局按钮</div>
+
+<div class="warn">
+  <b>先纠一个错：「宽屏布局」按钮必须改窗口尺寸。</b><br>
+  拍板时选项写的是「不改窗口尺寸」——那样这个按钮就<b>无事可做</b>。
+  第三栏的门槛是 <code>useKbLayout</code> 里的 <code>matchMedia("(min-width: 800px)")</code>，
+  是个硬条件；不加宽窗口，展开侧栏也变不出第三栏。<br>
+  所以 A（自动）与 B（按钮）的区别不是「改不改尺寸」，而是<b>谁触发</b>。
+  B 仍然更好（不惊吓、用户主动、天然可逆），本稿按 B 画。
+</div>
+
+<!-- ============================================================ -->
+<h2>① 第三栏上下分栏：解开「问答 vs 笔记」的零和</h2>
+
+<p><b>问题不是遮挡，是抢位置。</b>
+当前第三栏是三元互斥：<code>activeNote ? 笔记 : (问答中 ? 问答 : 空态)</code>。
+两者是同一位置的排斥分支，CSS 上都是 <code>flex:1</code> 的普通 flex 子项、无 position/z-index——
+<b>DOM 上不存在能叠加遮挡的路径</b>。真正的毛病是：读到回答想点参考笔记核对 → 回答消失；
+想回到回答 → 笔记消失。「边看回答边核对来源」在当前布局里<b>做不到</b>。</p>
+
+<div class="note">
+  中栏那条状态条（<code>已回答 N 轮 ›</code>）就是这个零和设计的<b>补丁</b>。
+  它的存在本身就是证据：一个功能需要专门的「它还在」提示条，说明它本不该消失。
+</div>
+
+<div class="fix">
+  <b>实现时纠正了本稿的门槛判据。</b><br>
+  下面原写的是「≥ 1100px 分栏」，理由是「第三栏只有 ~315px，上下分之后每块不足 130px」——
+  <b>那句话是错的</b>：315px 是<b>宽度</b>，而上下分栏真正的约束是<b>高度</b>。<br>
+  实际做法：照项目已有范式（<code>NoteDetailPane</code> 就是用 <code>ResizeObserver</code>
+  量<b>本栏</b>而不看 <code>window.innerWidth</code>，因为侧栏收起后同一窗口宽下第三栏会宽 180px），
+  <b>宽高都量</b>，双门槛 420×420。下面的线框图仍然成立，只是标题里的像素数当作“够宽够高”读。
+</div>
+
+<h3>容器够宽够高（≥420×420）：上下分栏（汇合态）</h3>
+<div class="mock">
+  <div class="mock-cap">第三栏 ≥420px 宽且 ≥420px 高 · 侧栏 150 + 中栏 250 + 第三栏（内部上下分）</div>
+  <div class="cols">
+    <div class="col-side">
+      <div class="lbl">文件夹</div>
+      <div class="row">全部笔记 · 128</div>
+      <div class="row on">SQLite · 12</div>
+      <div class="row">未分类 · 7</div>
+      <div class="row dim">回收站 · 3</div>
+    </div>
+    <div class="col-mid">
+      <div class="bar">
+        <b style="font-size:11.5px">SQLite</b><span class="grow">· 12 条</span>
+        <span class="btn">＋</span><span class="btn">⋯</span>
+      </div>
+      <div class="bar">
+        <div class="seg"><span>搜</span><span class="on">问</span></div>
+        <span class="grow">FTS5 分词方案…</span><span class="btn pri">问</span>
+      </div>
+      <div class="row">FTS5 与 ngram 分词</div>
+      <div class="row on">to_ngram 的代价</div>
+      <div class="row">BM25 权重调参</div>
+      <div class="row">拼音首字母检索</div>
+    </div>
+    <div class="col-third">
+      <div class="split-top">
+        <div class="bar" style="margin:0 0 6px">
+          <span style="color:var(--accent-strong);font-weight:600">✨ 问知识库</span>
+          <span class="grow"></span>
+          <span class="btn">–</span><span class="btn">✕</span>
+        </div>
+        <div style="font-size:11.5px;color:var(--muted)">你问：FTS5 分词方案…</div>
+        <div style="font-size:11.5px;margin-top:4px">
+          笔记里用的是 <code>to_ngram()</code>，把 CJK 拆成单字 + bigram…
+        </div>
+        <div style="margin-top:6px;font-size:11px;color:var(--accent-strong)">
+          参考：<u>to_ngram 的代价</u> · <u>FTS5 与 ngram 分词</u>
+        </div>
+        <div style="margin-top:auto;font-size:10.5px;color:var(--muted)">当前范围：SQLite · 已筛选</div>
+      </div>
+      <div class="split-grip"></div>
+      <div class="split-bot">
+        <div class="bar" style="margin:0 0 6px">
+          <b style="font-size:11.5px">to_ngram 的代价</b>
+          <span class="grow"></span>
+          <div class="seg"><span>编</span><span>分</span><span class="on">预</span></div>
+          <span class="btn">✕</span>
+        </div>
+        <div style="font-size:11.5px;color:var(--muted)">
+          因为 <code>notes_fts</code> 存的不是原文，所以 <code>snippet()</code> 用不了…
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p><b>回答在上、笔记在下。</b>不是反过来：回答高度基本固定（一段话 + 几条参考），
+而笔记可能很长且要滚——把可滚的那个放下面，拖动手柄的手感才对。</p>
+
+<table>
+  <tr><th>决定</th><th>理由</th></tr>
+  <tr>
+    <td>分栏比例默认 44% / 56%，可拖，<b>持久化到 localStorage</b></td>
+    <td>与三形态切换器同口径（布局偏好持久化，筛选意图不持久化）</td>
+  </tr>
+  <tr>
+    <td>回答区最小 120px、笔记区最小 160px</td>
+    <td>拖到完全压扁等于把一边弄没，而那正是本次要治的毛病</td>
+  </tr>
+  <tr>
+    <td>回答区标题行加一个「–」（折叠）</td>
+    <td>只想全屏读笔记时一键收成一行，<b>不丢会话</b>（区别于✕）</td>
+  </tr>
+  <tr>
+    <td><b>笔记区不能卸载</b>，折叠回答区只能改高度</td>
+    <td>🔴 <code>NoteDetailPane</code> 带 <code>key={note.id}</code>，卸载就重建 CodeMirror，<b>未保存草稿会静默消失</b></td>
+  </tr>
+</table>
+
+<h3>容器不够：胶囊态（退回当前行为 + 顶部常驻一行）</h3>
+<div class="mock">
+  <div class="mock-cap">两个下限（120+160）加手柄就 287px，再加两边标题行与内边距——低于 420 时分不如不分</div>
+  <div class="cols" style="min-height:150px">
+    <div class="col-mid" style="flex:0 0 250px">
+      <div class="row dim">…列表…</div>
+      <div class="row on">to_ngram 的代价</div>
+    </div>
+    <div class="col-third">
+      <div style="padding:8px 10px">
+        <div class="bar" style="border-color:var(--accent);background:rgba(106,169,255,.12)">
+          <span>✨</span><span class="grow" style="color:var(--accent-strong)">已回答 2 轮 · 参考 3 篇</span><span>›</span>
+        </div>
+        <div class="bar" style="margin-top:0">
+          <b style="font-size:11.5px">to_ngram 的代价</b><span class="grow"></span>
+          <div class="seg"><span>编</span><span class="on">预</span></div>
+        </div>
+        <div style="font-size:11.5px;color:var(--muted);padding:0 2px">笔记正文…</div>
+      </div>
+    </div>
+  </div>
+</div>
+<p>胶囊从中栏<b>搬到第三栏顶部</b>：它指向的东西在第三栏，放在中栏是指错了地方。
+点它 → 回答展开盖住笔记（当前行为），但笔记<b>不卸载</b>，所以草稿安全。</p>
+
+<div class="fix">
+  <b>附带修一个我能确定的真 bug：</b><code>takeover</code> 跳断点不重置。<br>
+  窄屏用过问答接管中栏 → 拉宽 → 再缩窄，中栏会<b>突然</b>被问答接管，
+  而用户早就不在问答里了。修法：<code>hasDetailPane</code> 变 true 时 <code>setTakeover(false)</code>。
+</div>
+
+<!-- ============================================================ -->
+<h2>② 多行自增高输入框（两处）</h2>
+
+<p>当前搜索框里塞了五样东西：<b>搜/问切换段 + 图标 + input + 清空✕ + 「问」按钮</b>，
+右边还并排着 <code>ViewControls</code> 的三个图标。input 拿到的是剩下的。
+而问题天然比搜索词长得多。</p>
+
+<div class="mock">
+  <div class="mock-cap">问模式：随内容长高，最多 4 行；搜模式仍单行（不变）</div>
+  <div style="padding:12px">
+    <div style="display:flex;gap:6px;align-items:flex-start">
+      <div class="seg" style="margin-top:4px"><span>搜</span><span class="on">问</span></div>
+      <div class="ta" style="flex:1">我上个月记的那个关于 SQLite 全文检索的笔记里，提到的分词方案具体是怎么做的？为什么不用 jieba？<span style="color:var(--accent)">|</span></div>
+      <div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">
+        <span class="btn">✕</span><span class="btn pri">问</span>
+      </div>
+    </div>
+    <div style="margin-top:7px;font-size:11px;color:var(--muted)">
+      <span class="kbd">Enter</span> 提问 · <span class="kbd">Shift+Enter</span> 换行 · <span class="kbd">Esc</span> 清空
+    </div>
+  </div>
+</div>
+
+<table>
+  <tr><th>决定</th><th>理由</th></tr>
+  <tr>
+    <td><code>textarea</code> + <code>rows=1</code>，高度跟 <code>scrollHeight</code>，上限 4 行后内部滚</td>
+    <td>超过 4 行就开始挤列表了；而四行（~120 字）远超典型问题长度</td>
+  </tr>
+  <tr>
+    <td>搜模式<b>不改</b>，仍是单行 <code>input</code></td>
+    <td>边打边搜的关键词不会长；换成 textarea 只会让它在两种高度间跳</td>
+  </tr>
+  <tr>
+    <td>❗ <code>KbQaPanel</code> 底部的<b>追问框一起改</b></td>
+    <td>规则 #11：同一个问题的两个位置。追问同样会写长，只改一边就是新的不一致</td>
+  </tr>
+  <tr>
+    <td>❗ <code>isComposing</code> 必须继续守</td>
+    <td>中文输入法选字的 Enter 不能当提交（现有代码已正确处理，改 textarea 时别丢）</td>
+  </tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>③ 中栏「⋯」溢出菜单</h2>
+
+<p>导入/导出在 <code>settings/NoteVaultRows.tsx</code>；MCP 在 <code>GeneralTab.tsx</code> <b>第 920 行</b>
+——一个 1000+ 行文件的第 920 行。这三个功能都是<b>对知识库做的事</b>，却要离开知识库去找。</p>
+
+<div class="mock">
+  <div class="mock-cap">面包屑行：「＋」旁边加「⋯」</div>
+  <div style="padding:12px;display:flex;gap:16px;align-items:flex-start">
+    <div style="flex:0 0 250px">
+      <div class="bar">
+        <b style="font-size:11.5px">SQLite</b><span class="grow">· 12 条</span>
+        <span class="btn">＋</span><span class="btn hl">⋯</span>
+      </div>
+    </div>
+    <div class="menu">
+      <div>⬆ 导入 Markdown 目录…</div>
+      <div>⬇ 导出到目录…</div>
+      <hr>
+      <div>🔌 连接 AI 工具（MCP）…</div>
+      <hr>
+      <div>🗑 回收站 <span style="color:var(--muted)">3</span></div>
+      <div>⚙ 笔记模板…</div>
+    </div>
+  </div>
+</div>
+
+<table>
+  <tr><th>决定</th><th>理由</th></tr>
+  <tr>
+    <td>菜单项点开后<b>复用现有设置面板组件</b>（<code>NoteVaultRows</code> / <code>McpServerPanel</code>），装进一个轻量弹窗</td>
+    <td>不重做 UI；也不能重做——那两个面板各自带着很多边界情况（白名单、令牌、写权限）</td>
+  </tr>
+  <tr>
+    <td>回收站<b>两个入口并存</b>（侧栏 + 本菜单）</td>
+    <td>侧栏收起时回收站就没入口了。两个入口指向同一个 <code>folderFilter="trash"</code>，不是两套逻辑</td>
+  </tr>
+  <tr>
+    <td>同时把 MCP 三个面板从 <code>GeneralTab</code> 搬到独立 tab</td>
+    <td>GeneralTab 现在 1000+ 行，本身远超规则 #7。搬出去同时治两个问题</td>
+  </tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>④ 「宽屏布局」按钮 + 侧栏默认</h2>
+
+<div class="note">
+  <b>侧栏默认打开已经是现状了。</b>
+  <code>readSidebarOpen()</code> 的 fallback 是 <code>knowledge: prefersWideSidebar()</code>（≥600px 就展开）。
+  但它被 <code>localStorage</code> 持久化了——<b>你手动收起过一次，就永久记住</b>。
+  这才是「感觉默认没开」的原因。
+</div>
+
+<p><b>不取消持久化</b>（那是有意的：用户收起就是想腾地方），而是让「宽屏布局」按钮<b>一键把两件事一起做了</b>：
+加宽窗口到屏幕 2/3 · 展开侧栏。这正好就是「宽屏布局」这个名字应该意味的东西。</p>
+
+<div class="mock">
+  <div class="mock-cap">窗口 &lt; 800px 时才渲染（已经是三栏就不需要它）</div>
+  <div style="padding:12px">
+    <div class="bar" style="max-width:340px">
+      <b style="font-size:11.5px">SQLite</b><span class="grow">· 12 条</span>
+      <span class="btn hl">⧉ 宽屏</span><span class="btn">＋</span><span class="btn">⋯</span>
+    </div>
+    <div style="margin-top:10px;font-size:11.5px;color:var(--muted);max-width:340px">
+      悬停提示：<b style="color:var(--text)">加宽窗口并展开侧栏，可并排查看笔记（不改你的数据）</b>
+    </div>
+  </div>
+</div>
+
+<table>
+  <tr><th>决定</th><th>理由</th></tr>
+  <tr>
+    <td>只在 <code>&lt;800px</code> 时渲染</td>
+    <td>≥800px 已经是三栏，按钮无事可做。也因此<b>不与三栏共存</b>，不挤面包屑行</td>
+  </tr>
+  <tr>
+    <td>宽度取 <code>屏幕可用工作区 × 2/3</code>，但<b>不小于 900px</b>，且不超过屏幕宽</td>
+    <td>2/3 在 1366 屏上是 911px（刚好够）；但小屏上 2/3 可能不足 800，那就没意义了</td>
+  </tr>
+  <tr>
+    <td><b>可撤销</b>：toast 带「恢复原尺寸」，存下改之前的 size/position</td>
+    <td>改用户窗口是侵入行为，必须能一键退回去</td>
+  </tr>
+  <tr>
+    <td>❗ 不自动最大化</td>
+    <td>最大化会改窗口状态（而不只是尺寸），退不回原样；且用户要的是 2/3 不是全屏</td>
+  </tr>
+</table>
+
+<h2>影响面</h2>
+<table>
+  <tr><th>文件</th><th>改什么</th></tr>
+  <tr><td><code>useKbQaPane.ts</code></td><td>新增折叠态；takeover 跳断点重置（bug）</td></tr>
+  <tr><td><code>KnowledgeView.tsx</code></td><td>第三栏换成分栏容器；面包屑多两个按钮。<b>刚拆到 349 行，这次要看紧</b></td></tr>
+  <tr><td><code>KbThirdPane.tsx</code>（新）</td><td>上下分栏 + 拖手柄 + 断点降级，把第三栏的归属规则从编排层拿走</td></tr>
+  <tr><td><code>KnowledgeToolbar.tsx</code></td><td>input → textarea；「⋯」与「宽屏」按钮</td></tr>
+  <tr><td><code>KbQaPanel.tsx</code></td><td>追问框 → textarea；标题行加「–」</td></tr>
+  <tr><td><code>KbMoreMenu.tsx</code>（新）</td><td>溢出菜单 + 那个轻量弹窗外壳</td></tr>
+  <tr><td><code>GeneralTab.tsx</code></td><td>MCP 三个面板搬出到独立 tab</td></tr>
+</table>
+
+<div class="warn">
+  <b>建议拆成两批。</b>
+  ②（输入框）与 ③（溢出菜单）相互独立且风险低；
+  ①（分栏）要碰 <code>NoteDetailPane</code> 的挂载生命周期，而那里后面就是 CodeMirror 与未保存草稿——
+  应该单独一批、单独验。
+</div>
+
+</div>
+</body>
+</html>

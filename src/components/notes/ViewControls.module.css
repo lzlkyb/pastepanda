@@ -133,6 +133,33 @@
   color: var(--text-primary);
 }
 
+/* ===== 标签多选行（A1） ===== */
+/* 竖排而不是像三态那样横排：
+   标签名字长短不一、数量不定，横排会把浮层宽度撑得失控。 */
+.tagRow {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 4px 2px;
+}
+
+/* 限高自滚：标签多了会把整个筛选浮层顶到屏幕外（而浮层是绝对定位的，
+   顶出去就真的点不到了）。190px 约五行。 */
+.tagList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 190px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+}
+
+.tagEmpty {
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
 /* ===== 三态筛选行 ===== */
 .triRow {
   display: flex;

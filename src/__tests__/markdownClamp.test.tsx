@@ -58,6 +58,9 @@ describe("笔记预览", () => {
         initialContent={LONG}
         content={LONG}
         isDark={false}
+        /* 本用例管的是预览区不能被裁切，用 split 保持与改形态之前完全一致。
+           （换成 preview 也能跑，但那就顺手改了用例的前提。） */
+        viewMode="split"
         onChange={() => {}}
         onSave={() => {}}
       />,

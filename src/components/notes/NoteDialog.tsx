@@ -16,6 +16,7 @@ import { FocusTrap } from "@/components/FocusTrap";
 import { relativeTime } from "@/lib/utils";
 import { getContentTypeMeta } from "@/lib/contentTypes";
 import { NoteEditorPane } from "./NoteEditorPane";
+import { NoteViewModeSwitch, useNoteViewMode } from "./NoteViewModeSwitch";
 import { NoteHistoryView } from "./NoteHistoryView";
 import { useNoteEditorState } from "./useNoteEditorState";
 import styles from "./NoteDialog.module.css";
@@ -60,6 +61,16 @@ function NoteDialogInner({
 
   // 状态与保存逻辑全在 hook 里，与宽屏第三栏（NoteDetailPane）共用。
   // 不共用就是两份保存逻辑，而两份中必有一份会漏个分支。
+  /**
+   * 形态（仅编辑 / 分屏 / 仅预览）。
+   *
+   * ❗ `draft.noteId === null` = **新建空白或从卡片转** ⇒ 直接进编辑态。
+   *   那时正文是空的或刚粘进来的，预览一片空白没意义；
+   *   而「转笔记 → 立刻改」是高频路径，不能让它多点一下。
+   *   打开**已有**笔记则跟第三栏一样默认预览。
+   */
+  const [viewMode, setViewMode] = useNoteViewMode(draft.noteId === null);
+
   const ed = useNoteEditorState({
     target: draft,
     onClose: closeNote,
@@ -99,6 +110,10 @@ function NoteDialogInner({
             <h2 className="dialog-title">
               📝 {draft.noteId ? "编辑笔记" : draft.historyId ? "转为笔记" : "新建笔记"}
             </h2>
+            {/* 形态切换器。与第三栏、全屏编辑器**同一个组件、同一份定义**，
+                而且都在头部——三个入口的手感一致。
+                弹窗宽 520px，分屏后每边 ~250px，跟改之前一样，所以不置灰。 */}
+            <NoteViewModeSwitch value={viewMode} onChange={setViewMode} />
             <button className="dialog-close" onClick={() => void handleClose()} aria-label="关闭">
               <X size={14} />
             </button>
@@ -148,6 +163,7 @@ function NoteDialogInner({
               />
             ) : (
               <NoteEditorPane
+                viewMode={viewMode}
                 /* 初值给当前草稿而不是 `draft.content`：从历史视图返回时本组件会重新挂载，
                    给 draft.content 就把用户未保存的修改换成了打开时的旧文。 */
                 initialContent={ed.content}

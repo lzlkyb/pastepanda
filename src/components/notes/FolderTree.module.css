@@ -32,15 +32,34 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* 🔴 `visibility` 是这里唯一能把整棵子树移出 Tab 序的东西。
+     `width: 0` / `overflow: hidden` / `opacity: 0` 三个都**不能**——收起后
+     行、按钮、月历全部还能被 Tab 聚焦，而焦点进一个宽 0 的栏里就像消失了：
+     屏幕上毫无反应，要连按十几次 Tab 才出得来。
+
+     放在 CSS 而不是给每个后代穿 `tabIndex`：这一栏里除了文件夹行，还有
+     `DailySection` 与它展开后的 `DailyCalendar`（三个按钮）——逐个穿迟早漏一个，
+     而漏了也不会有任何东西报错。组件里那几处 `tabIndex={open ? 0 : -1}` 是
+     双保险，并与记录模式 `Sidebar` 的写法保持一致。
+
+     延迟切换：关闭时等宽度动画跑完（0.35s）再隐，否则内容在第一帧就消失；
+     打开时 0s 立即可见，不能等。 */
+  visibility: hidden;
   transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
               min-width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-              border-color 0.35s ease;
+              border-color 0.35s ease,
+              visibility 0s linear 0.35s;
 }
 
 .treeOpen {
   width: 180px;
   min-width: 180px;
   border-right-color: var(--border-color);
+  visibility: visible;
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              min-width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.35s ease,
+              visibility 0s linear 0s;
 }
 
 /* ── 内层：滚动 + 延迟淡入 ──
@@ -151,6 +170,14 @@
 
 .row:focus-visible {
   outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* 拖拽悬停中的放置目标（A3）。用描边而不是换底色：
+   底色已经被 `.rowOn`（当前选中）与 `.rowLanded`（落定回执）占着了，
+   三个都抢底色的话，拖到当前选中的那一行上就看不出任何变化。 */
+.rowDrop {
+  outline: 2px dashed var(--accent);
   outline-offset: -2px;
 }
 

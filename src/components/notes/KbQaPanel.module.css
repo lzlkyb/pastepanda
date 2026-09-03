@@ -4,21 +4,21 @@
    （flex 列 + min-height:0 + 左分割线）。不复用那个类是因为它在另一个
    css module 里，跨模块引用会把两个组件的样式绑死。
    弹窗宽屏两种宿主共用本类：高度全靠 flex，**不写任何固定高度** */
+/* ❗ 左分割线已移到 `KbThirdPane`（A-61 ①）：本面板现在可能只占
+   第三栏的**上半**（下半是笔记），边框留在这里会与容器那条叠成双线。 */
 .pane {
   flex: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--border-color);
   padding: 8px 10px 10px;
   gap: 6px;
 }
 
-/* 窄屏接管中栏时：没有左分割线（那是三栏布局的东西），
-   也不再自己加内边距——它住在 `.wrap` 里，那边已经给了 12px */
+/* 窄屏接管中栏时：不再自己加内边距——它住在 `.wrap` 里，那边已经给了 12px。
+   （原先还要 `border-left: none`，现在 `.pane` 本身就没边框了。） */
 .inline {
-  border-left: none;
   padding: 0;
 }
 
@@ -71,6 +71,34 @@
 .close:hover {
   background: var(--hover);
   color: var(--text-primary);
+}
+
+/* 折叠「–」（A-61 ①）。尺寸与 `.close` 一致，两个按钮并排在右上角。 */
+.collapse {
+  /* 靠右的那个 auto 现在在本按钮上（它排在 `.close` 前面） */
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.collapse:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+/* ❗ 有折叠按钮时把 `.close` 的 auto 去掉：两个 auto margin 会**平分**
+   剩余空间，于是两个按钮之间裂出一大块空白。 */
+.collapse ~ .close {
+  margin-left: 0;
 }
 
 /* 会话区。**这里是唯一的滚动区**：头部（✕）与底部（范围 + 追问框）必须始终可见。
@@ -238,23 +266,31 @@
 }
 
 .askRow {
+  /* ❗ `flex-end` 而不是 `center`（A-61 ②）：追问框能长到四行，
+     居中的话发送按钮会飘到文字中间；贴底才跟“写完了点这里”对得上。 */
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 4px;
 }
 
 .askInput {
   flex: 1;
   min-width: 0;
-  height: 26px;
-  padding: 0 8px;
+  /* 高度由 `useAutoGrow` 写成 inline style；这里只给一行时的基准。 */
+  min-height: 26px;
+  padding: 5px 8px;
   border: 1px solid var(--border-color);
   border-radius: 7px;
   background: var(--card-bg);
   color: var(--text-primary);
   font-family: inherit;
   font-size: 11.5px;
+  line-height: 1.45;
   outline: none;
+  /* 拖手柄与自动高度互相打架 */
+  resize: none;
+  /* 到上限（4 行）之后内部滚 */
+  overflow-y: auto;
 }
 
 .askInput:focus {

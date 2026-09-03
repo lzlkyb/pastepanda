@@ -26,6 +26,82 @@
   min-height: 0; /* 不写列表就不滚而是把父容器顶高 */
 }
 
+/* 查询进行中的 2px 进度线。
+
+   和回顶胶囊同理：挂在**不滚的** `.wrap` 上，而不是 `.listWrap`——
+   后者是滚动容器，绝对定位元素仍属于它的可滚动内容，一滚就跑了（A-56 ⑩）。
+
+   用一段往复扫的渐变而不是百分比进度：后端三个并发查询没有可报的进度，
+   编一个百分比就是假进度条。 */
+.loadingBar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 0 0 2px 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: pp-kb-loading 1.1s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 3;
+}
+
+@keyframes pp-kb-loading {
+  0% {
+    background-position: -40% 0;
+  }
+  100% {
+    background-position: 140% 0;
+  }
+}
+
+/* 搜索框里的清空✕。**只在有内容时渲染**（见 tsx）：
+   空的时候摆一个永远点不动的按钮只是噪声。 */
+.searchClear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 5px;
+  background: var(--hover);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.searchClear:hover {
+  background: var(--border-color);
+  color: var(--text-primary);
+}
+
+/* 「问」的提交按钮。只在 ask 模式出：搜索是边打边搜的，没有「提交」这个动作。
+   高 24px（比框内切换器的 22px 略大），不顶满 38px：它是框内控件不是框外按钮。 */
+.askBtn {
+  flex-shrink: 0;
+  height: 24px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s;
+}
+.askBtn:hover:not(:disabled) {
+  background: var(--accent-strong, var(--accent));
+}
+.askBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 @media (min-width: 800px) {
   .wrap {
     flex: 0 0 300px;
@@ -79,7 +155,6 @@
   justify-content: center;
   width: 20px;
   height: 20px;
-  margin-left: auto;
   flex-shrink: 0;
   border: none;
   border-radius: 5px;
@@ -90,6 +165,46 @@
 }
 
 .newBtn:hover {
+  background: var(--accent-soft, var(--hover));
+  color: var(--accent, var(--text-primary));
+}
+
+/* 面包屑右侧的动作组（A-61）。
+
+   `margin-left: auto` 在本容器上而不在 `.newBtn` 上（原先在那里）：
+   按钮个数会变——「宽屏」只在 <800px 出、「⋯」不传 items 就不出——
+   放单个按钮上就得跟着改哪个是第一个。 */
+.crumbActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* 「宽屏」按钮（A-61 ④）。
+
+   带文字而不是纯图标：它会改用户的窗口尺寸，一个看不出后果的图标
+   不该干这种事。只在窄屏渲染，所以不会与三栏时的空间竞争。 */
+.wideBtn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 6px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.wideBtn:hover {
+  border-color: var(--accent);
   background: var(--accent-soft, var(--hover));
   color: var(--accent, var(--text-primary));
 }
@@ -200,6 +315,33 @@
 
 .searchInput::placeholder {
   color: var(--text-muted);
+}
+
+/* 问模式的高盒子（A-61 ②）。
+
+   输入框会随内容长高（最多 4 行），所以盒子得从固定 38px 改成自适应。
+   ❗ `align-items` 必须从 center 改成 flex-start：不改的话搜/问切换器与
+     「问」按钮会跟着四行高的框居中，飘到文字中间去。 */
+.searchBoxTall {
+  height: auto;
+  min-height: 38px;
+  align-items: flex-start;
+  padding: 5px 8px;
+}
+
+/* 问题输入框本体。具体高度由 JS 按 scrollHeight 写成 inline style，
+   这里只负责把 `.searchInput` 的 `height: 100%` 盖掉（否则第一帧会撑满）。
+   本规则必须写在 `.searchInput` **之后**：同特异性下后定义的胜。 */
+.askArea {
+  height: auto;
+  /* 与 `.modeSeg` 同高，一行时两边看起来是齐的 */
+  min-height: 26px;
+  padding: 3px 0 0;
+  line-height: 1.45;
+  /* 拖手柄与框内控件会撞，而高度本来就是自动的 */
+  resize: none;
+  /* 到上限（4 行）之后内部滚，不再往外长 */
+  overflow-y: auto;
 }
 
 /* 中栏的问答状态条（B2 #10b）。
@@ -458,6 +600,163 @@
   font-family: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+/* 键盘焦点环（配合 roving tabindex）。
+   用 `:focus-visible` 而不是 `:focus`：鼠标点一下也会聚焦，而那时候
+   用户不需要看到焦点环（`.rowActive` 已经在表达选中了）。
+   内阴影而不是 outline：行圆角 15px，outline 在部分引擎下不跟圆角。 */
+.rowMain:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* 置顶徽标（B1）。`vertical-align` 微调是因为 lucide 图标默认按基线对齐，
+   摆在一行中文旁边会偏低。 */
+.rowPin {
+  flex-shrink: 0;
+  margin-right: 4px;
+  vertical-align: -1px;
+  color: var(--amber, #F59E0B);
+}
+
+/* ===== 多选与批量（A2） ===== */
+
+/* 选中行。用强调色淡底，而不是把 `.rowActive`（第三栏打开的那条）拿来复用：
+   「正在读这一条」与「它在批量选中里」是两件事，可以同时成立。 */
+.rowSelected {
+  background: var(--accent-light, color-mix(in srgb, var(--accent) 12%, transparent));
+  border-color: var(--accent-shadow, color-mix(in srgb, var(--accent) 28%, transparent));
+}
+
+/* 选中框。只在已进入多选时渲染（见 tsx），所以不需要为未选中态留位。 */
+.rowCheck {
+  flex-shrink: 0;
+  align-self: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 8px;
+  border: 1.5px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--card-bg);
+  transition: background 0.15s, border-color 0.15s;
+}
+.rowCheckOn {
+  border-color: var(--accent);
+  background: var(--accent);
+  /* ✓ 用背景图而不是字符：字符会跟着行高跑，而这个框是固定 14px 的。 */
+  background-image: linear-gradient(45deg, transparent 45%, #fff 45%, #fff 55%, transparent 55%),
+                    linear-gradient(-45deg, transparent 45%, #fff 45%, #fff 55%, transparent 55%);
+  background-size: 8px 2px, 8px 2px;
+  background-position: 2px 7px, 4px 7px;
+  background-repeat: no-repeat;
+}
+
+/* 批量动作条。`flex-shrink: 0` 是必需的：它在一个竖向 flex 容器里，
+   不锁就会在长列表下被压扁（同 A-56 那个 `overflow: hidden` 的坑）。 */
+.batchBar {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12.5px;
+  box-shadow: 0 2px 10px var(--accent-shadow, rgba(99, 102, 241, 0.3));
+}
+.batchCount {
+  font-weight: 600;
+}
+.batchBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-family: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.batchBtn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+.batchClear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.batchClear:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.batchMoveWrap {
+  position: relative;
+}
+/* 文件夹下拉。向下开而不是向上：动作条在列表**上方**，上面是工具栏。 */
+.batchPop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  min-width: 160px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: var(--card-bg);
+  box-shadow: var(--shadow-md, 0 6px 20px rgba(0, 0, 0, 0.14));
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+}
+.batchPopItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.batchPopItem:hover {
+  background: var(--hover);
+}
+
+/* 搜索命中高亮（B3）。写成后代选择器而不是给 `<mark>` 单独开一个类：
+   高亮是 `highlight()` 直接吐 `<mark>` 出来的，不经过 CSS Module 的类名哈希。
+   不用浏览器默认的黄底黑字：那在深色主题下刺眼得多。用强调色的淡底，
+   文字颜色 `inherit`，所以标题与摘要各自保持原来的字重与深浅。 */
+.rowTitle mark,
+.rowExcerpt mark {
+  background: var(--accent-light, color-mix(in srgb, var(--accent) 22%, transparent));
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
 }
 
 /* 图标底。直接用卡片的 `--glass-icon-*` 三个 token（theme.css 里每个主题都有），

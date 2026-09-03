@@ -14,6 +14,8 @@ import { GeneralTab } from "@/components/settings/GeneralTab";
 import { HelpTabContent } from "@/components/settings/HelpTabContent";
 import { AboutTabContent } from "@/components/settings/AboutTabContent";
 import { AiTab } from "@/components/settings/AiTab";
+import { McpTab } from "@/components/settings/McpTab";
+import type { SettingsTabName } from "@/lib/openSettings";
 import styles from "./Settings.module.css";
 import { FocusTrap } from "@/components/FocusTrap";
 import { useDialogAnim } from "@/lib/dialogMotion";
@@ -25,7 +27,15 @@ const tabPanelVariants = {
 };
 const tabPanelTransition = { duration: 0.22, ease: [0.4, 0, 0.2, 1] as const };
 
-type SettingsTab = "general" | "ai" | "help" | "about";
+/**
+ * tab 类型从 `@/lib/openSettings` 引（与 `App.tsx` 共用一份）。
+ *
+ * ❗ `"mcp"` 是 A-61 ③ 新增的：知识库 MCP 服务原先在 `GeneralTab` 第 920 行，
+ *   现在知识模式中栏的「⋯」菜单能通过 `initialTab` 直接跳到这一页。
+ *   顺带一个好处：下面的 tab 面板是**条件渲染**的，所以 `useMcpServer`
+ *   的 5s 轮询只在真的看这一页时才跑（以前打开设置页就跑）。
+ */
+type SettingsTab = SettingsTabName;
 
 export function SettingsDialog({ open, onClose, initialTab }: { open: boolean; onClose: () => void; initialTab?: SettingsTab }) {
   const config = useAppStore((s) => s.config);
@@ -276,6 +286,9 @@ export function SettingsDialog({ open, onClose, initialTab }: { open: boolean; o
   const tabs: { key: SettingsTab; label: string; icon: string }[] = [
     { key: "general", label: "通用", icon: isBlossom ? "🎀" : "⚙" },
     { key: "ai", label: "AI", icon: isBlossom ? "🌸" : "✨" },
+    // 摆在 AI 后面：两者都是「跟 AI 有关」，但 AI tab 管模型/密钥，
+    // 本 tab 管的是「让外部 AI 工具读写我的笔记」，方向相反。
+    { key: "mcp", label: "MCP", icon: isBlossom ? "🩷" : "🧩" },
     { key: "help", label: "帮助", icon: isBlossom ? "💌" : "📖" },
     { key: "about", label: "关于", icon: isBlossom ? "💗" : "ℹ" },
   ];
@@ -337,6 +350,12 @@ export function SettingsDialog({ open, onClose, initialTab }: { open: boolean; o
                 {activeTab === "ai" && (
                   <motion.div key="tab-ai" variants={tabPanelVariants} initial="initial" animate="animate" exit="exit" transition={tabPanelTransition}>
                     <AiTab />
+                  </motion.div>
+                )}
+
+                {activeTab === "mcp" && (
+                  <motion.div key="tab-mcp" variants={tabPanelVariants} initial="initial" animate="animate" exit="exit" transition={tabPanelTransition}>
+                    <McpTab />
                   </motion.div>
                 )}
 

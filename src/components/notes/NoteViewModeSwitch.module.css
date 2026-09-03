@@ -1,0 +1,46 @@
+/* 形态切换器。单独一个 css module：它同时被第三栏（NoteDetailPane）与
+   弹窗（NoteDialog）用，而那两个的样式在不同文件里——放任一边都会让
+   另一边跨文件引类名。
+
+   形态上向搜索框里那个「搜/问」分段控件对齐（凹槽 + 浮起的当前项），
+   那是本项目已有的分段控件形态，不另发明一种。 */
+.wrap {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--hover);
+}
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.on {
+  background: var(--card-bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  color: var(--accent-strong, var(--accent));
+}
+
+/* 置灰而不是隐藏（见 tsx 里 `splitDisabled` 的注释）。
+   `pointer-events: none` 不要加：那会连 tooltip 一起屏掉，
+   而那句 tooltip 正是告诉用户「为什么点不了」的唯一地方。 */
+.btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}

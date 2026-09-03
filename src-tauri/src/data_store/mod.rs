@@ -1129,6 +1129,35 @@ impl DataStore {
             }
         }
 
+        // 数据库迁移（B1 置顶）：notes.pinned。
+        //
+        // ❗ 不要与 `note_revisions.pinned` 搞混：后者是 **W2 的版本锚定**
+        //   （保护某一份快照不被 prune 掉），跟「把这条笔记置顶」是两回事。
+        //   两个列同名但不同表、不同语义，改任一个都不影响另一个。
+        //
+        // 不建索引：置顶只出现在 ORDER BY 里（不做 WHERE 筛选），
+        // 而个人规模下笔记总量千条量级，一个布尔列的索引选择性极差、负收益。
+        let has_note_pinned: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('notes') WHERE name = 'pinned'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_note_pinned {
+            if let Err(e) =
+                conn.execute_batch("ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;")
+            {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] notes.pinned 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 notes.pinned 列失败: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
         // 数据库迁移：为 notes 添加 folder_id 列（B1 #1 文件夹）。
         //
         // **这是迁移而不是建表的一部分**：notes 在 A 阶段就已建好并有了真实数据，

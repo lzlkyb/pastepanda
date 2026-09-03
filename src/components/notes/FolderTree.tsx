@@ -11,14 +11,18 @@
  *
  * 🔴 红线：无 AI。
  */
-import { useCallback, useContext, useMemo, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { ChevronRight, FolderPlus, Inbox, Library } from "lucide-react";
 import { CtxMenuCtx } from "@/components/ContextMenu";
+import { NOTE_DRAG_MIME } from "./NoteList";
 import { buildFolderTree, type FolderFilter, type FolderNode, type NoteFolder } from "@/lib/api";
 import { useFolderOps } from "./useFolderOps";
 import { DailySection } from "./DailySection";
 import { Trash2 } from "lucide-react";
 import styles from "./FolderTree.module.css";
+
+/** 折叠状态的 localStorage 键。前缀跟项目其他键一致。 */
+const COLLAPSE_KEY = "pastepanda_kb_folder_collapsed";
 
 export function FolderTree({
   folders,
@@ -32,6 +36,7 @@ export function FolderTree({
   landed,
   version,
   open,
+  onDropNotes,
 }: {
   folders: NoteFolder[];
   unfiledCount: number;
@@ -51,6 +56,12 @@ export function FolderTree({
   landed: string | null;
   /** 数据版本号：递增就让「今日速记」区重拉它自己那几项（B2 #3） */
   version: number;
+  /**
+   * 拖拽落定（A3）。`folderId` 为 `null` = 未分类。
+   *
+   * ❗ 回收站**不接放**：删除得走确认框，一拖就删太危险。
+   */
+  onDropNotes?: (folderId: string | null, noteIds: string[]) => void;
   /**
    * 侧栏是否展开。
    *
@@ -72,9 +83,69 @@ export function FolderTree({
    *   （双击改名仍可用），而不是报错。
    */
   const ctxTrigger = useContext(CtxMenuCtx);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  /**
+   * 折叠状态**持久化**。不持久化的话，每次切回知识模式都是全展开，
+   * 而折叠本身就是为了把暂时用不上的子树收起来——一刷新就回来等于没做。
+   *
+   * 落 localStorage 而不是后端配置：它是纯展示层的临时状态，不值得为它动 schema。
+   * 项目里 `AiQuickActions` 的拖拽顺序用的是同一套做法。
+   */
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(COLLAPSE_KEY);
+      return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+    } catch {
+      // 解不出来就当全展开。一个坏掉的展示层偏好不能让侧栏渲染不出来。
+      return new Set<string>();
+    }
+  });
+
+  // ❗ 写入放在 effect 里而不是 `setCollapsed` 的 updater 里：updater 可能在
+  //   render 阶段被调（StrictMode 会双调），而 localStorage 写入是副作用。
+  //   这个坑项目里踩过一次（App.tsx 里 `aiAwarenessActive` 那条注释）。
+  useEffect(() => {
+    try {
+      localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsed]));
+    } catch {
+      // 写不进去（隐私模式 / 配额满）不影响功能，下次打开全展开而已。
+    }
+  }, [collapsed]);
 
   const tree = useMemo(() => buildFolderTree(folders), [folders]);
+
+  /** 当前悬停在哪个放置目标上（A3）。`"unfiled"` 或文件夹 id。 */
+  const [dropOn, setDropOn] = useState<string | null>(null);
+
+  /**
+   * 把一行变成放置目标。返回要展开到 `<div>` 上的一组 props。
+   *
+   * ❗ `onDragOver` 里必须 `preventDefault()`，否则浏览器根本不会触发 `drop`
+   *   ——这是 HTML 拖放 API 最常见的一个坑（默认行为是「不允许放」）。
+   * ❗ 只认自定义 MIME：不然从桌面拖一个文件进来也会高亮，而我们处理不了它。
+   */
+  const dropProps = (key: string, folderId: string | null) => ({
+    onDragOver: (e: React.DragEvent) => {
+      if (!onDropNotes || !e.dataTransfer.types.includes(NOTE_DRAG_MIME)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move" as const;
+      setDropOn(key);
+    },
+    onDragLeave: () => setDropOn((cur) => (cur === key ? null : cur)),
+    onDrop: (e: React.DragEvent) => {
+      setDropOn(null);
+      if (!onDropNotes) return;
+      const raw = e.dataTransfer.getData(NOTE_DRAG_MIME);
+      if (!raw) return;
+      e.preventDefault();
+      try {
+        const ids = JSON.parse(raw) as string[];
+        if (Array.isArray(ids) && ids.length > 0) onDropNotes(folderId, ids);
+      } catch {
+        // 载荷坏了就当没拖。它只可能来自本应用，坏了也无从补救。
+      }
+    },
+  });
 
   const toggle = useCallback((id: string) => {
     setCollapsed((prev) => {
@@ -94,6 +165,23 @@ export function FolderTree({
     onChanged,
   });
 
+  /**
+   * 内置项（全部 / 未分类 / 回收站）的键盘响应。
+   *
+   * ❗ 原先只认 Enter，而同一棵树里的文件夹节点认的是 Enter + Space。
+   *   `role="button"` 的原生语义本来就是两个都响应，而「同一类控件两种口径」
+   *   是最难被发现的那类不一致：用户按空格没反应，只会以为自己按错了。
+   */
+  const builtinKey = useCallback(
+    (f: FolderFilter) => (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onSelect(f);
+      }
+    },
+    [onSelect],
+  );
+
   const renderNode = (node: FolderNode): React.ReactNode => {
     const hasKids = node.children.length > 0;
     const isCollapsed = collapsed.has(node.id);
@@ -103,8 +191,9 @@ export function FolderTree({
         <div
           className={`${styles.row} ${selected === node.id ? styles.rowOn : ""}${
             landed === node.id ? ` ${styles.rowLanded}` : ""
-          }`}
+          }${dropOn === node.id ? ` ${styles.rowDrop}` : ""}`}
           style={{ paddingLeft: 10 + (node.depth - 1) * 10 }}
+          {...dropProps(node.id, node.id)}
           onClick={() => onSelect(node.id)}
           onDoubleClick={() => void rename(node)}
           onContextMenu={(e) => {
@@ -113,13 +202,33 @@ export function FolderTree({
             ctxTrigger(e.clientX, e.clientY, buildMenu(node));
           }}
           role="button"
-          tabIndex={0}
+          /* ❗ 收起时必须退出 Tab 序。本组件是**常挂载**的（为了做宽度动画），
+             而 CSS 只把栏宽收到 0 + `opacity: 0`——两者都**不**把元素移出焦点序。
+             不处理的后果：用户按 Tab，焦点进了一个宽 0 的栏，屏幕上毫无反应，
+             要连按十几次才出得来。记录模式的 `Sidebar` 早就是这么写的（七处），
+             这里是把它抄齐（规则 #11.1）。 */
+          tabIndex={open ? 0 : -1}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
               onSelect(node.id);
+              return;
+            }
+            // ←/→ 折叠展开。标准 tree 的键位，而且比把三角做成可聚焦元素好：
+            // 后者会让 Tab 在每个文件夹上多停一次。
+            if (!hasKids) return;
+            if (e.key === "ArrowRight" && isCollapsed) {
+              e.preventDefault();
+              toggle(node.id);
+            } else if (e.key === "ArrowLeft" && !isCollapsed) {
+              e.preventDefault();
+              toggle(node.id);
             }
           }}
+          /* 双击改名原先没任何可发现性——不看源码根本不知道它存在。
+             挂在行上而不是 `.name` 上：`.name` 那个 `title` 是名字全文（截断时必需），
+             两个合一个的话名字长的时候反而读不到全文了。 */
+          title="双击改名，右键更多操作"
         >
           <button
             type="button"
@@ -128,6 +237,7 @@ export function FolderTree({
               e.stopPropagation();
               toggle(node.id);
             }}
+            /* 故意不进 Tab 序：键盘用 ←/→ 折叠（见上面行的 onKeyDown）。 */
             aria-label={isCollapsed ? "展开" : "折叠"}
             tabIndex={-1}
           >
@@ -160,6 +270,7 @@ export function FolderTree({
           onClick={() => void create(null)}
           title="新建文件夹"
           aria-label="新建文件夹"
+          tabIndex={open ? 0 : -1}
         >
           <FolderPlus size={12} />
         </button>
@@ -170,8 +281,8 @@ export function FolderTree({
         className={`${styles.row} ${selected === "all" ? styles.rowOn : ""}`}
         onClick={() => onSelect("all")}
         role="button"
-        tabIndex={0}
-        onKeyDown={(e) => e.key === "Enter" && onSelect("all")}
+        tabIndex={open ? 0 : -1}
+        onKeyDown={builtinKey("all")}
       >
         <Library size={12} className={styles.builtinIcon} />
         <span className={styles.name}>全部笔记</span>
@@ -180,11 +291,12 @@ export function FolderTree({
       <div
         className={`${styles.row} ${selected === "unfiled" ? styles.rowOn : ""}${
           landed === "unfiled" ? ` ${styles.rowLanded}` : ""
-        }`}
+        }${dropOn === "unfiled" ? ` ${styles.rowDrop}` : ""}`}
+        {...dropProps("unfiled", null)}
         onClick={() => onSelect("unfiled")}
         role="button"
-        tabIndex={0}
-        onKeyDown={(e) => e.key === "Enter" && onSelect("unfiled")}
+        tabIndex={open ? 0 : -1}
+        onKeyDown={builtinKey("unfiled")}
       >
         <Inbox size={12} className={styles.builtinIcon} />
         <span className={styles.name}>未分类</span>
@@ -199,7 +311,12 @@ export function FolderTree({
 
       {tree.length === 0 ? (
         // 零文件夹时给入口而不是禁用按钮：用户需要一个地方开始建结构
-        <button type="button" className={styles.emptyHint} onClick={() => void create(null)}>
+        <button
+          type="button"
+          className={styles.emptyHint}
+          onClick={() => void create(null)}
+          tabIndex={open ? 0 : -1}
+        >
           还没有文件夹，点这里新建
         </button>
       ) : (
@@ -217,8 +334,8 @@ export function FolderTree({
         className={`${styles.row} ${styles.rowTrash} ${selected === "trash" ? styles.rowOn : ""}`}
         onClick={() => onSelect("trash")}
         role="button"
-        tabIndex={0}
-        onKeyDown={(e) => e.key === "Enter" && onSelect("trash")}
+        tabIndex={open ? 0 : -1}
+        onKeyDown={builtinKey("trash")}
       >
         <Trash2 size={12} className={styles.builtinIcon} />
         <span className={styles.name}>回收站</span>

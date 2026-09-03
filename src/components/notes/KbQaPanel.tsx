@@ -11,7 +11,8 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Sparkles, X, Loader2, CornerDownLeft, ArrowLeft } from "lucide-react";
+import { Sparkles, X, Loader2, CornerDownLeft, ArrowLeft, Minus } from "lucide-react";
+import { useAutoGrow } from "@/hooks/useAutoGrow";
 import type { KbQaSession } from "@/hooks/useKbQa";
 import { QA_MAX_QUESTION_CHARS } from "@/lib/notes/kbQa";
 import { KbQaTurn } from "./KbQaTurn";
@@ -26,6 +27,7 @@ export function KbQaPanel({
   onClose,
   onOpenNote,
   onBack,
+  onCollapse,
   variant = "pane",
 }: {
   session: KbQaSession;
@@ -38,6 +40,13 @@ export function KbQaPanel({
   variant?: "pane" | "inline";
   /** 窄屏下的「← 返回列表」。不传就不渲染（宽屏不需要：列表一直在旁边） */
   onBack?: () => void;
+  /**
+   * 折叠回答区（A-61 ①）。不传就不渲染那个「–」。
+   *
+   * ❗ 与✕ 的区别必须看得出来：**折叠不丢会话**（收成一行胶囊，点一下回来），
+   *   而✕ 是清掉整段问答。两个按钮紧挨着，图标得分得开（– vs ✕）。
+   */
+  onCollapse?: () => void;
   /** 人读的范围说明。筛着一个文件夹没命中时，不写它用户会以为全库都没有 */
   scopeLabel: string;
   busy: boolean;
@@ -47,6 +56,8 @@ export function KbQaPanel({
   onOpenNote: (noteId: string) => void;
 }) {
   const [followup, setFollowup] = useState("");
+  /** 追问框随内容长高（A-61 ②）。与工具栏提问框同一份逻辑（规则 #11）。 */
+  const askRef = useAutoGrow(followup);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { turns, pending } = session;
 
@@ -85,6 +96,19 @@ export function KbQaPanel({
         )}
         <Sparkles size={12} />
         <span>问知识库</span>
+        {/* 折叠在✕ 左边：它是「轻」的那个，而且用户要的往往是它而不是✕。
+            `marginLeft: auto` 在✕ 上，所以这一个不用自己靠右。 */}
+        {onCollapse && (
+          <button
+            type="button"
+            className={styles.collapse}
+            onClick={onCollapse}
+            title="收起回答（不丢弃问答）"
+            aria-label="收起回答"
+          >
+            <Minus size={13} />
+          </button>
+        )}
         <button type="button" className={styles.close} onClick={onClose} aria-label="关闭问答">
           <X size={13} />
         </button>
@@ -158,18 +182,28 @@ export function KbQaPanel({
       <div className={styles.foot}>
         <div className={styles.scope}>当前范围：{scopeLabel}</div>
         <div className={styles.askRow}>
-          <input
+          {/* ❗ `textarea` 而不是 `input`（A-61 ②）：追问同样会写长。
+              只改上面工具栏那个、这里留单行，就是新的不一致（规则 #11）。 */}
+          <textarea
+            ref={askRef}
             className={styles.askInput}
             value={followup}
+            rows={1}
             maxLength={QA_MAX_QUESTION_CHARS}
             /* 追问期间禁用：`ai-run-chunk` 的 payload 没有 per-call id，
                同时跑两轮会两路 delta 混在一起（useAiStream 自述限制 2） */
             disabled={busy}
             onChange={(e) => setFollowup(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.nativeEvent.isComposing) submit();
+              // ❗ `isComposing` 必须守：中文输入法选字的 Enter 不能当提交。
+              //   Shift+Enter 留给换行，所以只在不带 Shift 时 preventDefault。
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                // 不拦的话发送同时还会往框里插一个换行。
+                e.preventDefault();
+                submit();
+              }
             }}
-            placeholder={busy ? "正在回答…" : "追问一句…（回车）"}
+            placeholder={busy ? "正在回答…" : "追问一句…（回车发送，Shift+回车换行）"}
             aria-label="追问"
           />
           <button

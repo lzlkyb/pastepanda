@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>知识库能力扩展 · 设计稿</title>
+<style>
+  :root{--bg:#F7F8FA;--card:#fff;--line:#E5E7EB;--text:#1F2937;--muted:#6B7280;--accent:#6366F1;
+        --soft:#EEF2FF;--red:#EF4444;--amber:#F59E0B;--green:#10B981;--code:#F3F4F6;}
+  *{box-sizing:border-box}
+  body{margin:0;padding:32px;background:var(--bg);color:var(--text);
+       font:14px/1.75 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;}
+  .wrap{max-width:1000px;margin:0 auto}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:26px}
+  h2{font-size:16px;margin:34px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  h3{font-size:14px;margin:20px 0 8px}
+  code{background:var(--code);padding:1px 5px;border-radius:4px;font-family:Consolas,monospace;font-size:12.5px}
+  pre{background:var(--code);padding:12px 14px;border-radius:8px;overflow-x:auto;font-size:12.5px;line-height:1.6}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:#F9FAFB;font-weight:600}
+  .bad{color:var(--red);font-weight:600}.good{color:var(--green);font-weight:600}
+  .note{border-left:3px solid var(--accent);background:var(--soft);padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0;font-size:13px}
+  .warn{border-left:3px solid var(--amber);background:#FFFBEB;padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0;font-size:13px}
+  .stop{border-left:3px solid var(--red);background:#FEF2F2;padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0;font-size:13px}
+  .demo{display:flex;gap:16px;flex-wrap:wrap;margin:14px 0}
+  .box{border:1px solid var(--line);border-radius:10px;background:#fff;padding:12px;min-width:300px}
+  .boxlab{font-size:11px;color:var(--muted);margin-bottom:8px;font-weight:600}
+  .chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 8px;border-radius:6px;
+        background:var(--soft);color:#4338CA;border:1px solid #C7D2FE;margin:0 4px 4px 0}
+  .chip b{font-weight:600}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+  .row{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;margin-bottom:4px;border:1px solid transparent}
+  .row.sel{background:var(--soft);border-color:#C7D2FE}
+  .row .ck{width:14px;height:14px;border-radius:4px;border:1.5px solid var(--line);flex-shrink:0}
+  .row.sel .ck{background:var(--accent);border-color:var(--accent)}
+  .row .tt{font-size:13px;font-weight:600}
+  .bar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:9px;
+       background:var(--accent);color:#fff;font-size:12.5px;margin-top:6px}
+  .bar button{background:rgba(255,255,255,.18);border:none;color:#fff;font-size:11.5px;
+              padding:3px 9px;border-radius:6px;cursor:pointer;font-family:inherit}
+  mark{background:#FEF08A;color:inherit;border-radius:2px;padding:0 1px}
+  .pin{font-size:10px;color:var(--amber)}
+  kbd{background:#fff;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;
+      padding:1px 6px;font-size:11.5px;font-family:Consolas,monospace}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>知识库能力扩展</h1>
+<div class="sub">2026-09-03 · 七项 · A1 → A2+A3 → B3 → B4 → B1 → B5</div>
+
+<div class="stop">
+<b>先纠正我自己提议时的两处错误。</b> 读完源码才发现：
+<ol style="margin:6px 0 0;padding-left:20px">
+<li><b>B3 不能用 FTS5 的 <code>snippet()</code> / <code>highlight()</code></b>（详见 §B3）——
+    这一项因此变成**零后端改动**。</li>
+<li><b>B5 不应该复用 <code>FullscreenEditor</code> 那个壳</b>（详见 §B5）——
+    成本比我提议时估的高得多，改成应用内全屏。</li>
+</ol>
+</div>
+
+<h2>A1 · 标签筛选入口</h2>
+
+<p><b>后端与 API 层已经全好了，只差 UI。</b></p>
+<pre>note.rs:426  push_note_filters(sql, params, folder_filter, tag_ids)   多标签 AND
+notes.ts     noteList / noteSearch / noteCountFiltered / noteGroupCounts 全收 tagIds
+KnowledgeView.reloadNotes()   ← 一个都没传</pre>
+
+<h3>入口放哪里：三个方案</h3>
+<table>
+<tr><th>方案</th><th>好处</th><th>代价</th></tr>
+<tr><td>侧栏加「标签」区</td><td>与文件夹平行，发现性最好</td><td class="bad">180px 里已经有文件夹树 + 速记 + 回收站，再叠一层就满了</td></tr>
+<tr><td><b>放进现有的筛选浮层（实际采用）</b></td><td>标签本来就是一个筛选维度，复用 chips 行做「已生效 + 取消」，而且**不多一个图标**</td><td>无</td></tr>
+<tr><td><b>点行内 TagBadge（同时采用）</b></td><td>最快路径：看到一个标签想看同类，点一下就行</td><td>需要把点击接到知识库自己的筛选器上</td></tr>
+</table>
+
+<div class="note">
+<b>实现时改了一下：标签选择器没另开工具栏图标，而是放进了现有的「筛选」浮层。</b>
+<code>ViewControls</code> 的 <code>filterPanel</code> 本来就是一个 `ReactNode` 插槽，
+而那一排图标已经有三个了——标签本来就是筛选，没理由单独占一个入口。
+“可发现性”靠 <code>filterActive</code> 高亮与 chips 行兼顾。
+</div>
+
+<div class="warn">
+❗ 行内 <code>TagBadge</code> 现在是**不可点**的，A-56 时故意没接 <code>onClick</code>：
+<code>TagRow</code> 的点击接的是 <code>toggleTagFilter</code>，那是**记录模式**的筛选器，
+在知识库里点下去会去筛剪贴板卡片。这次接的是知识库自己的 <code>tagIds</code> state，
+<b>仍然不碰 <code>toggleTagFilter</code></b>。
+</div>
+
+<div class="demo">
+  <div class="box">
+    <div class="boxlab">chips 行（复用现有 ViewChips）</div>
+    <span class="chip"><span class="dot" style="background:#8B5CF6"></span><b>NC 二开</b> ×</span>
+    <span class="chip"><span class="dot" style="background:#10B981"></span><b>会议</b> ×</span>
+    <span class="chip"><b>有摘要</b> ×</span>
+    <div style="font-size:11px;color:#6B7280;margin-top:6px">多标签是 **AND**（同后端），与记录模式卡片筛选同口径</div>
+  </div>
+</div>
+
+<h2>A2 · 多选与批量操作</h2>
+
+<p><code>grep -rn "selectedIds|multiSelect|shiftKey" src/components/notes/</code> → <b>零命中</b>。</p>
+
+<div class="demo">
+  <div class="box" style="min-width:420px">
+    <div class="boxlab">选中两条时</div>
+    <div class="row sel"><span class="ck"></span><span class="tt">会议纪要 8/29</span></div>
+    <div class="row"><span class="ck"></span><span class="tt">从卡片转来的一条</span></div>
+    <div class="row sel"><span class="ck"></span><span class="tt">今日速记</span></div>
+    <div class="bar">已选 2 条
+      <button>移动到…</button><button>删除</button>
+      <span style="margin-left:auto;opacity:.8">Esc 取消</span></div>
+  </div>
+</div>
+
+<h3>交互模型</h3>
+<table>
+<tr><th>操作</th><th>行为</th></tr>
+<tr><td>普通点击</td><td>打开（不变）</td></tr>
+<tr><td><kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + 点击</td><td>切换这一条的选中</td></tr>
+<tr><td><kbd>Shift</kbd> + 点击</td><td>从锚点到这一条范围选</td></tr>
+<tr><td><kbd>Shift</kbd> + <kbd>↑</kbd>/<kbd>↓</kbd></td><td>键盘扩选（A-58 的 roving 的自然延伸）</td></tr>
+<tr><td><kbd>Esc</kbd></td><td>清空选中</td></tr>
+<tr><td>选中后右键</td><td>菜单作用于**整批**（而不是右键的那一条）</td></tr>
+</table>
+
+<div class="note">
+<b>不加常驻复选框。</b> 列表日常是「扫着读」，每行挂一个永久的方框是对主场景收税。
+选中态用**行底色 + 左侧方框**表达，未选中时方框不渲染。
+</div>
+
+<div class="warn">
+❗ <b>批量删除走同一个确认框，但文案必须报数量。</b>
+「删除 12 条笔记？会先移到回收站，N 天内可以恢复。」
+循环调 <code>note_delete</code>（不新增批量 IPC）：个人规模下几十次 IPC 无感，
+而新增一个批量命令就多一条需要单独守软删语义的路径。
+<b>失败不静默</b>：部分失败时报「成功 10 条，2 条失败」。
+</div>
+
+<h2>A3 · 拖拽笔记到文件夹</h2>
+<ul>
+<li>行 <code>draggable</code>；<b>拖的是选中集</b>——拖一条未选中的行就只拖它，
+    拖一条已选中的行就拖整批（与系统文件管理器同口径）。</li>
+<li>文件夹行与「未分类」接 <code>dragover</code> / <code>drop</code>，悬停时加一圈高亮。</li>
+<li><b>落定后复用现有的 <code>landedFolder</code> 高亮环回执</b>（A-56 建的）——
+    不另做一套拖拽反馈。</li>
+<li>回收站**不接放**：删除得走确认框，一拖就删太危险。</li>
+</ul>
+
+<h2>B3 · 搜索结果高亮</h2>
+
+<div class="stop">
+<b>🔴 我提议时说「FTS5 自带 <code>snippet()</code>/<code>highlight()</code>，能直接用」——错了。</b><br>
+<code>notes_fts</code> 里存的**不是原文**，而是 <code>to_ngram()</code> 变形后的文本：
+中文被拆成「单字 + bigram」并用空格连接（history.rs:45）。
+<code>snippet()</code> 返回的会是被空格切碎的 ngram 串，根本不能给人看。
+<br><br>
+所以高亮必须在**前端对原文**做。这反而让这一项变成**零后端改动**。
+</div>
+
+<div class="demo">
+  <div class="box" style="min-width:420px">
+    <div class="boxlab">搜「会议」</div>
+    <div class="row"><span class="tt">周一<mark>会议</mark>纪要</span></div>
+    <div style="font-size:11.5px;color:#6B7280;padding:0 9px">…上周的<mark>会议</mark>结论是先做 MVP…</div>
+  </div>
+</div>
+
+<ul>
+<li>只高亮**标题与列表摘要**两处，不碰第三栏正文（那里是 CodeMirror，改它是另一件事）。</li>
+<li>摘要优先**截到命中处附近**而不是固定取前 120 字——否则命中在第 300 字时什么也看不到。</li>
+<li>❗ 模糊匹配的那部分（拼音首字母、bigram 部分命中）**高亮不了**。
+    只高亮原文里的字面命中，匹配不上就不高亮——不编。</li>
+</ul>
+
+<h2>B4 · 时间范围筛选</h2>
+
+<p><code>NoteViewOpts</code> 加一个 <code>updatedWithin</code>，与现有三态筛选同一个面板。</p>
+<pre>""     不筛
+"7d"   最近 7 天改过
+"30d"  最近 30 天
+"90d"  最近 90 天</pre>
+
+<div class="warn">
+❗ <b>必须保住 <code>push_view_filters</code> 「不带参数」的不变式。</b>
+那个函数的注释写着「全是字面 SQL、不带参数，所以可以随意拼在哪一步，
+不会扰乱位置绑定的序号」，而项目里刚因为位置绑定错位踩过坑（<code>bump_search_hits</code>）。
+<br>做法：在 Rust 里把白名单枚举算成一个日期字符串，**内联成字面量**。
+值完全由我们自己生成（枚举 → 天数 → 格式化），不碰用户输入，无注入面。
+</div>
+
+<h2>B1 · 笔记置顶</h2>
+
+<p>核实过：<code>pinned</code> 在 <b><code>note_revisions</code></b>（W2 版本锚定），
+<b><code>notes</code> 表没有</b>。需要加列 + 迁移。</p>
+
+<h3>排序口径：两个方案</h3>
+<table>
+<tr><th>方案</th><th>语义</th><th>问题</th></tr>
+<tr><td>置顶排全局最前</td><td><code>ORDER BY pinned DESC, grp, sort</code></td><td class="bad">**把分组打碎了**：置顶的会跨到所有组前面，组头就不对了</td></tr>
+<tr><td><b>组内置顶（采用）</b></td><td><code>ORDER BY grp, pinned DESC, sort</code></td><td>不分组时就是全局最前，符合直觉</td></tr>
+</table>
+
+<p><b>规则一句话</b>：置顶 = 在它所处的分组里排最前。入口：右键菜单 + 行内小图标
+<span class="pin">◆</span>。</p>
+
+<h2>B5 · 专注写作（全屏）</h2>
+
+<div class="stop">
+<b>🔴 我提议时说「壳是现成的」——估少了。</b>
+<code>FullscreenEditor</code> 是一个**独立 OS 窗口**，它的整个模型是「剪贴板内容」：
+<code>open_fullscreen_editor({ sourceId, content, contentType, language })</code> 里的
+<code>sourceId</code> 是 **history id**，窗口内都写着 <code>sourceId ? "剪贴板内容" : …</code>。
+接笔记进去需要：新 contentType + 传标题 + 一条 <code>note_update</code> 回写路径 +
+跨窗口保存事件——而那个文件已经 974 行、本身就超规则 #7。
+</div>
+
+<p><b>改成应用内全屏</b>：第三栏临时铺满整个知识库区（侧栏与列表让位）。</p>
+<table>
+<tr><th></th><th>独立 OS 窗口</th><th><b>应用内全屏（采用）</b></th></tr>
+<tr><td>后端改动</td><td class="bad">新 contentType + 回写路径</td><td class="good">零</td></tr>
+<tr><td>保存/历史/AI/脏数据守卫</td><td class="bad">得在新壳里重接一遍</td><td class="good">直接复用 <code>NoteDetailPane</code>，全部现成</td></tr>
+<tr><td>双屏摊开</td><td class="good">能</td><td class="bad">不能</td></tr>
+</table>
+<p>实现：<code>KnowledgeView</code> 加一个 <code>zenMode</code> state，为真时不渲染侧栏与中栏。
+入口：第三栏顶部一个图标 + <kbd>Esc</kbd> 退出。
+❗ <b>第三栏的 <code>key={note.id}</code> 不能因为切全屏而变</b>，否则 CodeMirror 重建、
+未保存的草稿会没——全屏只能改外层布局，不能重挂载面板。</p>
+
+<h2>补：查看笔记默认预览 + 三形态统一</h2>
+
+<p>需求：知识库里看笔记应该**默认预览**，并与全屏 Markdown 编辑器的三形态统一。</p>
+
+<h3>要对齐的那套（真实定义）</h3>
+<pre>fullscreen/types.ts:16   type ViewMode = "edit" | "split" | "preview"
+TRI_MODES = [
+  { key: "edit",    title: "仅编辑", Icon: PanelLeft },
+  { key: "split",   title: "分屏",   Icon: Columns2 },
+  { key: "preview", title: "仅预览", Icon: Eye },
+]</pre>
+
+<p>知识库原来**根本没有「形态」这个概念**：<code>NoteEditorPane</code> 直接渲染一个写死的
+<code>.split</code>，没有切换器、没有仅预览。</p>
+
+<table>
+<tr><th>决策</th><th>做法</th></tr>
+<tr><td>定义来源</td><td><b>把 <code>TRI_MODES</code> 从 <code>registry.tsx</code> 移到 <code>types.ts</code></b>，两边 import 同一份（规则 #11）。不能为三个按钮把整个全屏注册表拉进知识库</td></tr>
+<tr><td>切换器位置</td><td><b>顶部</b>（第三栏标题行 / 弹窗标题行），对齐全屏编辑器的工具栏</td></tr>
+<tr><td>默认形态</td><td>打开**已有**笔记 → <code>preview</code></td></tr>
+<tr><td>新建 / 转卡片</td><td>→ <code>edit</code>。那时正文是空的或刚粘进来的，预览一片空白没意义；且这一次的 edit **不写进偏好**</td></tr>
+<tr><td>记忆</td><td>localStorage（形态是稳定偏好，与筛选那种一次性意图相反）</td></tr>
+</table>
+
+<div class="warn">
+❗ <b>编辑区在仅预览时靠 <code>display:none</code> 隐，不能不渲染。</b>
+CodeMirror 的初值只在挂载时读一次，卸掉再挂会丢掉刚敲还没提交给 state 的那一小段，
+而且每次切形态都会丢光标与滚动位置。全屏编辑器用的也是 <code>display:none</code>。
+</div>
+
+<div class="warn">
+❗ <b>分屏在窄的第三栏里不可用，所以会置灰。</b>
+阀值 620px，用 <code>ResizeObserver</code> 量**本栏**而不是 <code>window.innerWidth</code>——
+侧栏可以收起，收起后同一窗口宽度下第三栏会宽 180px，拿窗口宽猜会在那个区间里猜错。
+分屏下把窗口收窄会**自动退到预览**，而不是留一个每边 150px 的碎屏。
+</div>
+
+<h2>红线与不做</h2>
+<ul>
+<li>七项**全部无 AI**，不受 <code>ai_enabled</code> 门控，也不等 C（M3）的 embedding 选型。</li>
+<li>全部走本机 SQLite，不出网。</li>
+<li>不动搜索框位置（A-56 已拍板）；不加自动保存（A-58 已拍板）。</li>
+<li>A4（回收站搜索）与 A5（单篇另存）**不在本轮**——它们不在推荐顺序里。</li>
+</ul>
+
+</div>
+</body>
+</html>

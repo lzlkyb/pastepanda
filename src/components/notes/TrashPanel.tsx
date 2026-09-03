@@ -24,11 +24,13 @@ import {
 } from "@/lib/api/notes";
 import type { NoteFolder } from "@/lib/api";
 import { confirmDialog } from "@/lib/confirm";
+import { useToast } from "@/components/Toast";
 import { relativeTime, countChars, fmtCount } from "@/lib/utils";
 import { getContentTypeMeta } from "@/lib/contentTypes";
 import { TagBadge, TagBadgeMore } from "@/components/TagBadge";
 import { useAppStore } from "@/stores/appStore";
-import { excerpt, provenanceOf } from "./NoteList";
+import { provenanceOf } from "./NoteList";
+import { excerpt } from "@/lib/notes/excerpt";
 import styles from "../KnowledgeView.module.css";
 /** 只读预览最多渲染多少行。回收站只需要「认出是哪条」，不是阅读器。 */
 const PREVIEW_LINES = 30;
@@ -101,6 +103,7 @@ export function TrashPanel({
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const days = useAppStore((s) => s.config.note_trash_days);
+  const { toast } = useToast();
 
   /** `folder_id` → 文件夹名。没匹上就是未分类（同 `NoteList` 的口径）。
    *
@@ -127,10 +130,14 @@ export function TrashPanel({
       // 失败时 noteRestoreDeleted 已经把后端的人话错误 toast 出去了
       // （速记撞日期那条），这里千万不要再盖一个笼统的「恢复失败」。
       if (!(await noteRestoreDeleted(n.id, n.history_id))) return;
+      // ❗ 回执必须带**目标文件夹**。只说「已恢复」的话，用户看到的只是这一行
+      //   从回收站消失了，下一步得自己到处翻它去哪了——同移动笔记那个
+      //   `landedFolder` 高亮环的理由（东西一旦离开当前列表就必须告知去向）。
+      toast(`已恢复「${n.title.trim() || "无标题"}」到「${folderName(n.folder_id)}」`, "success");
       await reload();
       onChanged?.();
     },
-    [reload, onChanged],
+    [reload, onChanged, toast, folderName],
   );
 
   const handlePurge = useCallback(
@@ -165,7 +172,22 @@ export function TrashPanel({
     await reload();
   }, [rows.length, reload]);
 
-  if (loading) return null;
+  // ❗ 不能 `return null`：那是把整个中栏变成白屏，切进回收站时闪一下。
+  // 复用笔记列表那套骨架屏（`NoteListEmpty`）：同一个位置的加载态应该长得一样，
+  // 而且它把「一会儿会出现几条、每条长什么样」提前告诉了用户。
+  if (loading) {
+    return (
+      <div className={styles.skelList} aria-busy="true" aria-label="正在加载回收站">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className={styles.skelRow}>
+            <div className={`${styles.skelBar} ${styles.skelTitle}`} />
+            <div className={`${styles.skelBar} ${styles.skelText}`} />
+            <div className={`${styles.skelBar} ${styles.skelMeta}`} />
+          </div>
+        ))}
+      </div>
+    );
+  }
   if (rows.length === 0) {
     return (
       <div className={styles.trashEmpty}>
