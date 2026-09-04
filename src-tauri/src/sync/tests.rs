@@ -1041,3 +1041,213 @@ mod presence_tests {
         );
     }
 }
+
+// ===== 一次完整的同步会话 =====
+
+use super::session::{accept_session, dial_session};
+
+/// 把两台机器配成对，返回 (甲的 node_id, 乙的 node_id)。
+///
+/// `offline_ep` 用的是 `[seed; 32]` 而不是那个临时身份，所以对端 id
+/// 要从端点自己取（`ep.id()`），不能从 `NodeIdentity` 取。
+fn pair_up(
+    a: &DataStore,
+    b: &DataStore,
+    ep_a: &iroh::Endpoint,
+    ep_b: &iroh::Endpoint,
+) -> (String, String) {
+    let (ia, ib) = (ep_a.id().to_string(), ep_b.id().to_string());
+    a.device_pair(&ib, "乙机", "").unwrap();
+    b.device_pair(&ia, "甲机", "").unwrap();
+    (ia, ib)
+}
+
+#[tokio::test]
+async fn test_会话一次往返两边都拿到对方的东西() {
+    let (a, b) = (store(), store());
+    let na = a.note_create(None, "甲这边写的", "甲的正文").unwrap();
+    let nb = b.note_create(None, "乙这边写的", "乙的正文").unwrap();
+
+    let ep_a = offline_ep(31).await;
+    let ep_b = offline_ep(32).await;
+    let (ia, ib) = pair_up(&a, &b, &ep_a, &ep_b);
+    let to = dialable(&ep_b);
+
+    // 拨号方与接受方在同一个任务里并行推进（tokio::join! 不需要 Send）
+    let known = |id: &str| id == ia;
+    let (ra, rb) = tokio::join!(
+        dial_session(&a, &ep_a, &ib, to),
+        accept_session(&b, &ep_b, &known)
+    );
+    let ra = ra.expect("拨号方会话失败");
+    let rb = rb.expect("接受方会话失败");
+
+    // 双向都搬到了
+    assert_eq!(ra.applied.created, 1, "甲应收到乙那一篇：{:?}", ra.applied);
+    assert_eq!(rb.applied.created, 1, "乙应收到甲那一篇：{:?}", rb.applied);
+    assert_eq!(a.note_get(&nb.id).unwrap().unwrap().content, "乙的正文");
+    assert_eq!(b.note_get(&na.id).unwrap().unwrap().content, "甲的正文");
+    // 版本戳跟着内容走，两边必须一致，否则后写胜没法比
+    assert_eq!(a.note_updated_ms(&nb.id), b.note_updated_ms(&nb.id));
+    assert_eq!(a.note_updated_ms(&na.id), b.note_updated_ms(&na.id));
+
+    // 两边算出同一个高水位，游标都推到它
+    assert_eq!(ra.high_water_ms, rb.high_water_ms, "两边高水位应一致");
+    assert_eq!(a.device_cursor(&ib), ra.high_water_ms);
+    assert_eq!(b.device_cursor(&ia), rb.high_water_ms);
+    assert_eq!(ra.applied.conflicts, 0);
+    assert_eq!(rb.applied.conflicts, 0);
+}
+
+#[tokio::test]
+async fn test_第二轮什么都不搬也不生冲突副本() {
+    // 🔴 这是回归测试。第一版把游标推成「本机这一批的最大戳」，
+    //    于是对端那一批落在游标之外，第二轮被当成本机的新东西发回去，
+    //    而接收侧的 `both_changed` 两个条件都满足 → **每篇都生一份冲突副本**，
+    //    每轮再生一次。第一轮完全看不出来。
+    let (a, b) = (store(), store());
+    a.note_create(None, "甲这边写的", "甲的正文").unwrap();
+    b.note_create(None, "乙这边写的", "乙的正文").unwrap();
+
+    let ep_a = offline_ep(33).await;
+    let ep_b = offline_ep(34).await;
+    let (ia, ib) = pair_up(&a, &b, &ep_a, &ep_b);
+
+    let known = |id: &str| id == ia;
+    let (r1a, r1b) = tokio::join!(
+        dial_session(&a, &ep_a, &ib, dialable(&ep_b)),
+        accept_session(&b, &ep_b, &known)
+    );
+    let r1a = r1a.expect("第一轮拨号失败");
+    r1b.expect("第一轮接受失败");
+    let after_first = a.note_changed_since(0).unwrap().len();
+    assert_eq!(after_first, 2, "第一轮之后两边各有两篇");
+
+    // 第二轮：两边都没改过任何东西
+    let (r2a, r2b) = tokio::join!(
+        dial_session(&a, &ep_a, &ib, dialable(&ep_b)),
+        accept_session(&b, &ep_b, &known)
+    );
+    let r2a = r2a.expect("第二轮拨号失败");
+    let r2b = r2b.expect("第二轮接受失败");
+
+    assert_eq!(
+        r2a.since_ms, r1a.high_water_ms,
+        "第二轮的起点应就是上一轮的高水位"
+    );
+    // ❗ 不能断言 `since == high_water`：导入本身会走 `note_update`/`note_create`，
+    //   而那两个会叫 `hlc_now()` → `issue()` 把本机下界抬高（就算随后又把
+    //   `updated_ms` 盖回对端的值，下界也不会降回去）。所以第二轮的高水位
+    //   比第一轮高。无害：游标只要 ≥ 已发过的最大戳就行。
+    for (tag, r) in [("甲", &r2a), ("乙", &r2b)] {
+        assert_eq!(r.applied.created, 0, "{}第二轮不该新建：{:?}", tag, r.applied);
+        assert_eq!(r.applied.updated, 0, "{}第二轮不该更新：{:?}", tag, r.applied);
+        assert_eq!(
+            r.applied.conflicts, 0,
+            "{}第二轮生成了冲突副本，游标没推对：{:?}",
+            tag, r.applied
+        );
+        assert_eq!(r.sent_bytes, 0, "{}第二轮不该搬任何字节", tag);
+    }
+    assert_eq!(
+        a.note_changed_since(0).unwrap().len(),
+        after_first,
+        "第二轮之后笔记数不该变（多出来的就是冲突副本）"
+    );
+    assert_eq!(b.note_changed_since(0).unwrap().len(), after_first);
+}
+
+#[tokio::test]
+async fn test_没配对的对端连进来会被拒() {
+    let (a, b) = (store(), store());
+    let ep_a = offline_ep(35).await;
+    let ep_b = offline_ep(36).await;
+    let ib = ep_b.id().to_string();
+    // 只有甲认得乙，乙不认得甲
+    a.device_pair(&ib, "乙机", "").unwrap();
+
+    let nobody = |_: &str| false;
+    let (ra, rb) = tokio::join!(
+        dial_session(&a, &ep_a, &ib, dialable(&ep_b)),
+        accept_session(&b, &ep_b, &nobody)
+    );
+    let err = rb.expect_err("没配对却把会话走完了");
+    assert!(err.contains("还没配对"), "{}", err);
+    // 拨号方那边也必须失败，而不是挂住等一个永不到来的 hello
+    assert!(ra.is_err(), "对端拒绝之后拨号方应报错，实际：{:?}", ra);
+}
+
+#[test]
+fn test_同一份增量应用两次不生冲突副本() {
+    // 🔴 会话游标推对了就不该有回声；但会话中途失败、或一边推了游标另一边没推，
+    //    下一轮 `since = min(两边游标)` 会退回去，回声照样出现。
+    //    `apply_delta` 里那条「内容一模一样直接跳过」就是兜这个。
+    //    没有它的话：本地戳 == 对端戳，而两者都 > 游标 0 → 每篇一份冲突副本。
+    let (a, b) = (store(), store());
+    let n = a.note_create(None, "会议纪要", "正文内容").unwrap();
+
+    let dir = tmp_dir("echo");
+    let delta = compute_delta(&a, 0).unwrap();
+    write_delta(&a, &delta, &dir).unwrap();
+
+    let first = apply_delta(&b, &dir, 0).expect("第一次应用失败");
+    assert_eq!(first.created, 1, "{:?}", first);
+
+    // 原样再来一遍，游标仍是 0（模拟游标没推上去）
+    let dir2 = tmp_dir("echo2");
+    write_delta(&a, &delta, &dir2).unwrap();
+    let second = apply_delta(&b, &dir2, 0).expect("第二次应用失败");
+    assert_eq!(second.identical, 1, "内容相同应被识别出来：{:?}", second);
+    assert_eq!(second.conflicts, 0, "回声不该算冲突：{:?}", second);
+    assert_eq!(second.created, 0);
+    assert_eq!(second.updated, 0);
+    assert_eq!(
+        b.note_changed_since(0).unwrap().len(),
+        1,
+        "库里应仍只有一篇（多出来的就是冲突副本）"
+    );
+    assert_eq!(b.note_updated_ms(&n.id), a.note_updated_ms(&n.id));
+
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&dir2);
+}
+
+#[test]
+fn test_戳相同但内容不同仍按平手处理() {
+    // 上面那条只比内容、不比戳，就是为了不把**真平手**吞掉：
+    // 两台机器吸收同一个下界之后可能发出同一个值，那时内容是不同的。
+    let (a, b) = (store(), store());
+    let n = a.note_create(None, "会议纪要", "甲的版本").unwrap();
+    let dir = tmp_dir("tie");
+    let delta = compute_delta(&a, 0).unwrap();
+    write_delta(&a, &delta, &dir).unwrap();
+
+    // 在乙这边造一篇同 id、同戳、但内容不同的
+    let stamp = a.note_updated_ms(&n.id).unwrap();
+    apply_delta(&b, &dir, 0).unwrap();
+    b.note_update(&n.id, "会议纪要", "乙的版本").unwrap();
+    {
+        let conn = b.lock_conn();
+        conn.execute(
+            "UPDATE notes SET updated_ms = ?2 WHERE id = ?1",
+            rusqlite::params![&n.id, stamp],
+        )
+        .unwrap();
+    }
+
+    let dir2 = tmp_dir("tie2");
+    write_delta(&a, &delta, &dir2).unwrap();
+    let rep = apply_delta(&b, &dir2, 0).expect("应用失败");
+    assert_eq!(rep.identical, 0, "内容不同不该走「一模一样」那条：{:?}", rep);
+    // 平手时本地赢，且因为两边都在游标之后改过，对端那份留了副本
+    assert_eq!(rep.skipped_older, 1, "{:?}", rep);
+    assert_eq!(rep.conflicts, 1, "真平手应留冲突副本：{:?}", rep);
+    assert_eq!(
+        b.note_get(&n.id).unwrap().unwrap().content,
+        "乙的版本",
+        "平手时本地赢"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&dir2);
+}

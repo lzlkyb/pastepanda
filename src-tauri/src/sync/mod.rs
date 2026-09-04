@@ -11,6 +11,7 @@
 //! | 混合逻辑时钟（跨机可比的版本号）| [`hlc`] |
 //! | 只搬字节的 QUIC 传输 | [`transport`] |
 //! | 局域网地址宣告（`kb_presence`）| [`presence`] |
+//! | 一次完整的同步往返 | [`session`] |
 //!
 //! ❗ **还没有界面，也还没有把这些串起来的同步编排。**
 //! 配对界面按规则 #4 要先出设计稿；所以这一层现在**不接任何 Tauri 命令**——
@@ -21,6 +22,7 @@ pub mod hlc;
 pub mod identity;
 pub mod invite;
 pub mod presence;
+pub mod session;
 pub mod transport;
 
 #[cfg(test)]

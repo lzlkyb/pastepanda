@@ -74,6 +74,27 @@ pub fn compute_delta(store: &DataStore, since_ms: i64) -> Result<Delta, String> 
     })
 }
 
+/// 两边是不是**同一个内容版本**。比标题、正文、标签。
+///
+/// 🔴 **不能直接比整份文件的字节。** 前置字段里的 `created` / `updated`
+/// 是**本机时间字串**，同一篇笔记在两台机器上必然不同——
+/// 第一版就是按字节比的，测试直接 red，靠的就是这一条。
+///
+/// 也不比 `summary`：它是 AI 生成的，按设计**不抬 `updated_ms`**
+/// （见 `note.rs` 里列的四个故意不抬的地方），
+/// 所以只有摘要不同的笔记根本不会进增量。
+fn same_version(local: &Note, incoming_md: &str) -> bool {
+    let p = crate::data_store::markdown_to_note(incoming_md, &local.title);
+    if p.title != local.title || p.content != local.content {
+        return false;
+    }
+    let mut theirs: Vec<&str> = p.tags.iter().map(|s| s.as_str()).collect();
+    let mut mine: Vec<&str> = local.tags.iter().map(|t| t.name.as_str()).collect();
+    theirs.sort_unstable();
+    mine.sort_unstable();
+    theirs == mine
+}
+
 /// 把增量写成一个目录。目录必须已存在。
 pub fn write_delta(store: &DataStore, delta: &Delta, out: &Path) -> Result<(), String> {
     if !out.is_dir() {
@@ -133,6 +154,8 @@ pub struct ApplyReport {
     pub skipped_older: usize,
     /// 清单里提到、但文件不在的条数。**不静默**（规则 #15.3）。
     pub missing_files: usize,
+    /// 内容与本地一模一样、直接跳过的条数（回声）。见下面那条拦截。
+    pub identical: usize,
     /// 检测到的真冲突数（两边都在上次同步之后改过）。每个都留了一份冲突副本。
     pub conflicts: usize,
     /// 🔴 对端时钟超前太多，本机拒绝吸收时的超前毫秒数。
@@ -210,6 +233,26 @@ pub fn apply_delta(
             continue;
         };
 
+        // 🔴 内容一模一样 ⇒ 没什么可合的：不导入、不算冲突、也不算「输」。
+        //
+        // 这条挡的是**回声**：会话中途失败、或两端游标不一致时，
+        // 对端会把我们已经有的那一批原样送回来。少了这条，那一批的每一篇都满足
+        // 「本地 > 游标 且 对端 > 游标」（导入时戳是跟着内容走的，见 ④），
+        // 于是**每篇都生一份冲突副本**，而且每轮再生一次。
+        //
+        // 只比内容、不比时间戳：戳相同而内容不同是**真的平手**
+        // （两台机器可能吸收同一个下界之后发出同一个值），那种情况仍走下面的判定。
+        let incoming_text = std::fs::read_to_string(&path).unwrap_or_default();
+        let identical = store
+            .note_get(id)?
+            .map(|n| same_version(&n, &incoming_text))
+            .unwrap_or(false);
+        if identical {
+            let _ = std::fs::remove_file(&path);
+            rep.identical += 1;
+            continue;
+        }
+
         // 🔴 真冲突的判据：**两边都在上次同步之后改过**。
         //
         //   §7.4 原本把真冲突定义成「同毫秒两端不同改（概率极低）」，
@@ -223,8 +266,7 @@ pub fn apply_delta(
         if local >= incoming {
             // 本地赢。冲突时把**对端那份**留成副本，否则它就没了。
             if both_changed {
-                let text = std::fs::read_to_string(&path).unwrap_or_default();
-                save_conflict_copy(store, id, &text, incoming, "对端")?;
+                save_conflict_copy(store, id, &incoming_text, incoming, "对端")?;
                 rep.conflicts += 1;
             }
             let _ = std::fs::remove_file(&path);

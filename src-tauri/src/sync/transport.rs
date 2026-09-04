@@ -23,7 +23,7 @@
 //! **全都走 n0 的 DNS、都要联网**。所以「关掉 relay」≠「不用联网」。
 //!
 //! 离线局域网下对端地址只能我们自己给——第一次靠邀请码里的 `addrs`，
-//! 之后靠 `kb_presence` 签名组播（还没做，见设计稿）。
+//! 之后靠 `kb_presence` 签名组播（见 [`super::presence`]）。
 //! 本模块只管「给了地址就能连」，不负责找地址。
 
 use crate::sync::identity::NodeIdentity;
@@ -69,53 +69,98 @@ pub async fn bind(me: &NodeIdentity, seed: [u8; 32], relay: bool) -> Result<Endp
         .map_err(|e| format!("绑定 iroh 端点失败：{}", e))
 }
 
-/// 把一个目录打成流发给对端，返回发出的字节数。
+/// 一次会话手里的东西：连接 + 一对流。
+///
+/// 分成 `dial`/`accept` 两头拿，是因为**会话是双向的**：
+/// 一次往返里两边都要发自己的增量、也都要收对端的。
+/// 老的 [`send_dir`]/[`recv_dir`] 是单向一次性的，喂不了游标交换。
+pub struct Wire {
+    pub conn: iroh::endpoint::Connection,
+    pub send: iroh::endpoint::SendStream,
+    pub recv: iroh::endpoint::RecvStream,
+}
+
+/// 单个控制帧的长度上限。会话开场那个 hello 只有几十字节，
+/// 64 KiB 是给未来加字段留的余量，不是给数据用的。
+pub const MAX_FRAME_LEN: usize = 64 * 1024;
+
+/// 主动连一个对端，拿到一对流。
+pub async fn dial(ep: &Endpoint, to: EndpointAddr) -> Result<Wire, String> {
+    let conn = ep
+        .connect(to, ALPN)
+        .await
+        .map_err(|e| format!("连接对端失败：{}", e))?;
+    let (send, recv) = conn
+        .open_bi()
+        .await
+        .map_err(|e| format!("开流失败：{}", e))?;
+    Ok(Wire { conn, send, recv })
+}
+
+/// 等一个对端连进来，拿到一对流。
+pub async fn accept(ep: &Endpoint) -> Result<Wire, String> {
+    let incoming = ep.accept().await.ok_or("没有连接进来")?;
+    let conn = incoming.await.map_err(|e| format!("握手失败：{}", e))?;
+    let (send, recv) = conn
+        .accept_bi()
+        .await
+        .map_err(|e| format!("开流失败：{}", e))?;
+    Ok(Wire { conn, send, recv })
+}
+
+/// 发一个控制帧：`u32 长度 | 内容`。
+pub async fn write_frame(s: &mut iroh::endpoint::SendStream, bytes: &[u8]) -> Result<(), String> {
+    if bytes.is_empty() || bytes.len() > MAX_FRAME_LEN {
+        return Err(format!("控制帧长度不合法（{} 字节）", bytes.len()));
+    }
+    wr(s, &(bytes.len() as u32).to_be_bytes()).await?;
+    wr(s, bytes).await
+}
+
+/// 收一个控制帧。
+pub async fn read_frame(r: &mut iroh::endpoint::RecvStream) -> Result<Vec<u8>, String> {
+    let mut n = [0u8; 4];
+    r.read_exact(&mut n)
+        .await
+        .map_err(|e| format!("读帧长度失败：{}", e))?;
+    let n = u32::from_be_bytes(n) as usize;
+    if n == 0 || n > MAX_FRAME_LEN {
+        return Err(format!("对端报的帧长度不合法（{} 字节）", n));
+    }
+    let mut buf = vec![0u8; n];
+    r.read_exact(&mut buf)
+        .await
+        .map_err(|e| format!("读帧内容失败：{}", e))?;
+    Ok(buf)
+}
+
+/// 把一个目录写进流，返回写出的字节数。**不 finish**——调用方可能还要接着写。
 ///
 /// 线格式极简：`u32 名字长度 | 名字 | u64 内容长度 | 内容` 重复，末尾 `u32 0`。
 ///
 /// 🔴 **不用 tar/zip**：那会引入一个解压器，而解压器是路径穿越
 /// （`../../windows/system32`）的经典入口。这里的名字自己校验（[`safe_rel`]），
 /// 校验规则只有一处，读得完。
-pub async fn send_dir(ep: &Endpoint, to: EndpointAddr, dir: &Path) -> Result<u64, String> {
-    let conn = ep
-        .connect(to, ALPN)
-        .await
-        .map_err(|e| format!("连接对端失败：{}", e))?;
-    let (mut send, _recv) = conn
-        .open_bi()
-        .await
-        .map_err(|e| format!("开流失败：{}", e))?;
-
+pub async fn write_dir(s: &mut iroh::endpoint::SendStream, dir: &Path) -> Result<u64, String> {
     let mut total = 0u64;
     for (rel, bytes) in collect(dir)? {
         let name = rel.as_bytes();
-        wr(&mut send, &(name.len() as u32).to_be_bytes()).await?;
-        wr(&mut send, name).await?;
-        wr(&mut send, &(bytes.len() as u64).to_be_bytes()).await?;
-        wr(&mut send, &bytes).await?;
+        wr(s, &(name.len() as u32).to_be_bytes()).await?;
+        wr(s, name).await?;
+        wr(s, &(bytes.len() as u64).to_be_bytes()).await?;
+        wr(s, &bytes).await?;
         total += bytes.len() as u64;
     }
-    wr(&mut send, &0u32.to_be_bytes()).await?;
-    send.finish().map_err(|e| format!("收尾失败：{}", e))?;
-    // 等对端收完再放手：`finish()` 只标记流结束，**不等数据真正送到**
-    // （探针里栽过这一条，见 probe/iroh 的 README ③）。
-    conn.closed().await;
+    wr(s, &0u32.to_be_bytes()).await?;
     Ok(total)
 }
 
-/// 收一个目录，返回收到的字节数。`dir` 必须已存在。
-pub async fn recv_dir(ep: &Endpoint, dir: &Path) -> Result<u64, String> {
-    let incoming = ep.accept().await.ok_or("没有连接进来")?;
-    let conn = incoming.await.map_err(|e| format!("握手失败：{}", e))?;
-    let (mut send, mut recv) = conn
-        .accept_bi()
-        .await
-        .map_err(|e| format!("开流失败：{}", e))?;
-
+/// 从流里读一个目录出来，返回收到的字节数。`dir` 必须已存在。
+pub async fn read_dir(r: &mut iroh::endpoint::RecvStream, dir: &Path) -> Result<u64, String> {
     let mut total = 0u64;
     loop {
         let mut n = [0u8; 4];
-        recv.read_exact(&mut n)
+        r.read_exact(&mut n)
             .await
             .map_err(|e| format!("读名字长度失败：{}", e))?;
         let n = u32::from_be_bytes(n) as usize;
@@ -126,14 +171,14 @@ pub async fn recv_dir(ep: &Endpoint, dir: &Path) -> Result<u64, String> {
             return Err(format!("文件名过长（{} 字节）", n));
         }
         let mut name = vec![0u8; n];
-        recv.read_exact(&mut name)
+        r.read_exact(&mut name)
             .await
             .map_err(|e| format!("读名字失败：{}", e))?;
         let rel = String::from_utf8(name).map_err(|_| "文件名不是 UTF-8".to_string())?;
         let path = safe_rel(dir, &rel)?;
 
         let mut l = [0u8; 8];
-        recv.read_exact(&mut l)
+        r.read_exact(&mut l)
             .await
             .map_err(|e| format!("读内容长度失败：{}", e))?;
         let l = u64::from_be_bytes(l);
@@ -142,7 +187,7 @@ pub async fn recv_dir(ep: &Endpoint, dir: &Path) -> Result<u64, String> {
             return Err(format!("这次传输超过上限（{} 字节）", MAX_TRANSFER_BYTES));
         }
         let mut buf = vec![0u8; l as usize];
-        recv.read_exact(&mut buf)
+        r.read_exact(&mut buf)
             .await
             .map_err(|e| format!("读内容失败：{}", e))?;
 
@@ -152,8 +197,29 @@ pub async fn recv_dir(ep: &Endpoint, dir: &Path) -> Result<u64, String> {
         std::fs::write(&path, &buf)
             .map_err(|e| format!("写文件失败 {}：{}", path.display(), e))?;
     }
-    send.finish().ok();
-    conn.close(0u32.into(), b"done");
+    Ok(total)
+}
+
+/// 单向：连上去、把一个目录发过去、等对端收完。
+///
+/// 会话用的是 [`dial`] + [`write_dir`]；这个薄封装留着，
+/// 因为它是「一个目录能原样到对面」这件事最小的可测单位。
+pub async fn send_dir(ep: &Endpoint, to: EndpointAddr, dir: &Path) -> Result<u64, String> {
+    let mut w = dial(ep, to).await?;
+    let total = write_dir(&mut w.send, dir).await?;
+    w.send.finish().map_err(|e| format!("收尾失败：{}", e))?;
+    // 等对端收完再放手：`finish()` 只标记流结束，**不等数据真正送到**
+    // （探针里栽过这一条，见 probe/iroh 的 README ③）。
+    w.conn.closed().await;
+    Ok(total)
+}
+
+/// 单向：等一个连接进来、把目录收下来。`dir` 必须已存在。
+pub async fn recv_dir(ep: &Endpoint, dir: &Path) -> Result<u64, String> {
+    let mut w = accept(ep).await?;
+    let total = read_dir(&mut w.recv, dir).await?;
+    w.send.finish().ok();
+    w.conn.close(0u32.into(), b"done");
     Ok(total)
 }
 
