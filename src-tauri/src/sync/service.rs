@@ -35,9 +35,42 @@ use super::session;
 use crate::data_store::DataStore;
 use iroh::{Endpoint, EndpointAddr};
 use std::str::FromStr;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+
+/// 最近一次会话的结果摘要（每个对端一份）。
+///
+/// 🔴 这些数字**后端本来就在算**（`ApplyReport`），之前只进日志。
+/// 不给界面看的话，`skipped_older` / `conflicts` /
+/// `clock_too_far_ahead_ms` 就是**纯粹的静默数据损失**（规则 #15.3）。
+///
+/// 不用 Tauri 事件推而是放在内存里等前端拉：面板本来就在 5 秒轮询，
+/// 而一旦 `sync/` 里出现 `AppHandle`，lib test 二进制就启动即挂
+/// （见 `DataStore` 的文档：`ProcessPrng` 那个坑）。
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct LastSync {
+    pub peer: String,
+    /// 本机记录这一次结果的时刻（epoch 毫秒）。
+    pub at_ms: i64,
+    pub created: i64,
+    pub updated: i64,
+    pub deleted: usize,
+    /// 后写胜里输掉的那一边的条数。它是那个静默丢弃的**唯一痕迹**。
+    pub skipped_older: usize,
+    pub conflicts: usize,
+    pub missing_files: usize,
+    /// 对端时钟超前太多。非 `None` 意味着本机之后赢不过那台机器。
+    pub clock_too_far_ahead_ms: Option<i64>,
+    /// 连续失败次数；0 = 上一次是成功的。
+    pub fails: u32,
+    /// 失败原因（`fails > 0` 时有）。
+    pub error: Option<String>,
+    /// 大约多久之后再试 / 再同步（秒）。界面上该显示这个而不是写死 30：
+    /// 它含拖动（[`jittered_secs`]），写死了盯着表的人会觉得程序坏了。
+    pub next_in_secs: u64,
+}
 
 /// 循环们共用的一份东西。
 pub struct SyncCtx {
@@ -50,6 +83,8 @@ pub struct SyncCtx {
     pub stop: Arc<tokio::sync::Notify>,
     /// 当前有循环的对端。拦重复起用（两条循环会白拨）。
     peers: std::sync::Mutex<std::collections::HashSet<String>>,
+    /// 每个对端最近一次的结果。给界面看，见 [`LastSync`]。
+    last: std::sync::Mutex<HashMap<String, LastSync>>,
 }
 
 fn now_ms() -> i64 {
@@ -76,8 +111,9 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
     let short = &peer[..8.min(peer.len())];
     let mut fails: u32 = 0;
     while ctx.running.load(Ordering::SeqCst) && has_peer(&ctx, &peer) {
-        let wait = match dial_once(&ctx, &peer).await {
-            Outcome::Synced => {
+        let outcome = dial_once(&ctx, &peer).await;
+        let wait = match &outcome {
+            Outcome::Synced(_) => {
                 fails = 0;
                 jittered_secs(PERIOD_SECS, JITTER_SECS, now_ms() as u64)
             }
@@ -100,11 +136,57 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
                 w
             }
         };
+        record(&ctx, &peer, outcome, fails, wait);
         if !sleep_or_stop(&ctx.stop, wait).await {
             break;
         }
     }
     log::info!("[Sync] {} 的同步循环已停止", short);
+}
+
+/// 把一次会话的结果记下来给界面看。
+///
+/// ❗「对端在忙」**不覆盖**上一次的结果：那既不是成功也不是失败，
+/// 覆盖掉的话界面上刚才那次成功的统计会被一条「在忙」冲没。
+fn record(ctx: &SyncCtx, peer: &str, outcome: Outcome, fails: u32, next_in_secs: u64) {
+    let mut m = match ctx.last.lock() {
+        Ok(m) => m,
+        Err(p) => p.into_inner(),
+    };
+    match outcome {
+        Outcome::Busy(_) => {
+            if let Some(e) = m.get_mut(peer) {
+                e.next_in_secs = next_in_secs;
+            }
+        }
+        Outcome::Synced(r) => {
+            m.insert(
+                peer.to_string(),
+                LastSync {
+                    peer: peer.to_string(),
+                    at_ms: now_ms(),
+                    created: r.applied.created,
+                    updated: r.applied.updated,
+                    deleted: r.applied.deleted,
+                    skipped_older: r.applied.skipped_older,
+                    conflicts: r.applied.conflicts,
+                    missing_files: r.applied.missing_files,
+                    clock_too_far_ahead_ms: r.applied.clock_too_far_ahead_ms,
+                    fails: 0,
+                    error: None,
+                    next_in_secs,
+                },
+            );
+        }
+        Outcome::Failed(why) => {
+            let e = m.entry(peer.to_string()).or_default();
+            e.peer = peer.to_string();
+            e.at_ms = now_ms();
+            e.fails = fails;
+            e.error = Some(why);
+            e.next_in_secs = next_in_secs;
+        }
+    }
 }
 
 /// 这个对端还应该有循环吗（「忘记此设备」之后就不应该了）。
@@ -113,7 +195,7 @@ fn has_peer(ctx: &SyncCtx, peer: &str) -> bool {
 }
 
 enum Outcome {
-    Synced,
+    Synced(Box<session::SessionReport>),
     /// 对端拒了（在忙 / 保留了它自己那个会话）。
     Busy(String),
     Failed(String),
@@ -146,7 +228,7 @@ async fn dial_once(ctx: &SyncCtx, peer: &str) -> Outcome {
                 r.applied.conflicts,
                 r.recv_bytes
             );
-            Outcome::Synced
+            Outcome::Synced(Box::new(r))
         }
         // 对端按 §6.8 保留了它自己那个会话 —— 它会把两边的东西都搬完，
         // 所以这里什么都不用做，短延迟之后再看一眼就行。
@@ -303,6 +385,7 @@ impl SyncService {
             running: Arc::new(AtomicBool::new(true)),
             stop: Arc::new(tokio::sync::Notify::new()),
             peers: std::sync::Mutex::new(std::collections::HashSet::new()),
+            last: std::sync::Mutex::new(HashMap::new()),
         });
 
         let paired_store = store.clone();
@@ -382,6 +465,21 @@ impl SyncService {
         }
     }
 
+    /// 每个对端最近一次的结果。没在跑就是空。
+    pub async fn last_syncs(&self) -> Vec<LastSync> {
+        let guard = self.inner.lock().await;
+        let Some(c) = guard.as_ref() else {
+            return Vec::new();
+        };
+        let mut v: Vec<LastSync> = match c.last.lock() {
+            Ok(m) => m.values().cloned().collect(),
+            Err(p) => p.into_inner().values().cloned().collect(),
+        };
+        // 取负值而不是 `sort_by(b.cmp(a))`：同效，且 clippy 不反对
+        v.sort_by_key(|x| -x.at_ms);
+        v
+    }
+
     /// 当前有几条对端循环。给测试与界面用。
     pub async fn peer_count(&self) -> usize {
         let guard = self.inner.lock().await;
@@ -399,7 +497,7 @@ impl SyncService {
         };
         match dial_once(&ctx, node_id).await {
             // 「对端在忙」不是失败：它那边正在把两边的东西都搬完
-            Outcome::Synced | Outcome::Busy(_) => Ok(()),
+            Outcome::Synced(_) | Outcome::Busy(_) => Ok(()),
             Outcome::Failed(why) => Err(why),
         }
     }

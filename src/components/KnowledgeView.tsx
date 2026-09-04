@@ -34,6 +34,7 @@ import { useDialogStore } from "@/stores/dialogStore";
 import { useKbLayout } from "@/hooks/useKbLayout";
 import { ContextMenu } from "@/components/ContextMenu";
 import { KbInboxPanel } from "@/components/notes/KbInboxPanel";
+import { KbSyncStatusBar } from "@/components/notes/KbSyncStatusBar";
 import { FolderTree } from "@/components/notes/FolderTree";
 import { NoteList } from "@/components/notes/NoteList";
 import { TrashPanel } from "@/components/notes/TrashPanel";
@@ -86,6 +87,7 @@ export function KnowledgeView() {
 
   /** 回收站保留天数。删除确认框要拿它说人话，**不能写死 30**（用户能改）。 */
   const trashDays = useAppStore((s) => s.config.note_trash_days);
+  const kbSyncOn = useAppStore((s) => s.config.kb_sync_enabled);
 
   /** ① 数据层。 */
   const q = useNoteQuery();
@@ -227,6 +229,13 @@ export function KnowledgeView() {
             <TrashPanel onChanged={q.refreshAll} folders={q.folders} />
           ) : (
           <>
+          {/* 同步状态与异常提示。放在工具条**之上**：它是全库级别的事实，
+              与当前文件夹 / 筛选无关；放下面会让人以为它在描述这一屏的列表。
+              开关关着或一台未配对时组件自己返回 null，不占位。 */}
+          <KbSyncStatusBar
+            enabled={!!kbSyncOn}
+            onSearchConflicts={() => q.setKeyword("冲突副本")}
+          />
           <KnowledgeToolbar
             folderName={q.currentFolderName}
             total={q.total}

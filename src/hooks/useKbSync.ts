@@ -17,6 +17,26 @@ export interface KbDevice {
   sync_cursor_ms: number;
 }
 
+/** 后端 `sync::service::LastSync`。 */
+export interface KbLastSync {
+  peer: string;
+  at_ms: number;
+  created: number;
+  updated: number;
+  deleted: number;
+  /** 后写胜里输掉的那一边的条数——那个静默丢弃的**唯一痕迹**。 */
+  skipped_older: number;
+  conflicts: number;
+  missing_files: number;
+  /** 非 null = 本机之后赢不过那台机器。 */
+  clock_too_far_ahead_ms: number | null;
+  /** 连续失败次数；0 = 上一次成功。 */
+  fails: number;
+  error: string | null;
+  /** 大约多久后再试 / 再同步（秒）。**含拖动，界面上别写死。** */
+  next_in_secs: number;
+}
+
 export interface KbIdentity {
   node_id: string;
   /** 给人肉眼核对的 16 个字符，4-4-4-4 */
@@ -45,6 +65,8 @@ export function useKbSync(enabled: boolean, toast: (m: string, t?: "success" | "
   const [identity, setIdentity] = useState<KbIdentity | null>(null);
   const [devices, setDevices] = useState<KbDevice[]>([]);
   const [live, setLive] = useState<string[]>([]);
+  const [last, setLast] = useState<KbLastSync[]>([]);
+  const [backlog, setBacklog] = useState(0);
   const [busy, setBusy] = useState(false);
   const wasOkRef = useRef(true);
 
@@ -65,9 +87,13 @@ export function useKbSync(enabled: boolean, toast: (m: string, t?: "success" | "
 
   const refreshDevices = useCallback(async () => {
     try {
-      const r = await call<{ devices: KbDevice[]; live: string[] }>("kb_sync_devices");
+      const r = await call<{
+        devices: KbDevice[]; live: string[]; last: KbLastSync[]; conflict_backlog: number;
+      }>("kb_sync_devices");
       setDevices(r.devices);
       setLive(r.live);
+      setLast(r.last);
+      setBacklog(r.conflict_backlog);
       wasOkRef.current = true;
     } catch (e) {
       logger.warn("读取已配对设备失败", e);
@@ -133,7 +159,7 @@ export function useKbSync(enabled: boolean, toast: (m: string, t?: "success" | "
   }, [call, refreshDevices, toast]);
 
   return {
-    identity, devices, live, busy,
+    identity, devices, live, last, backlog, busy,
     refreshIdentity, refreshDevices,
     createInvite, previewInvite, pair, forget, syncNow,
   };

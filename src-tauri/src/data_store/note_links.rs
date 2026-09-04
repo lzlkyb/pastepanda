@@ -192,3 +192,23 @@ impl DataStore {
         Ok(rows)
     }
 }
+
+impl DataStore {
+    /// 库里现存多少份**冲突副本**。
+    ///
+    /// 🔴 按内容里的 `- [conflict]` 行数，不按标题后缀。
+    /// 标题后缀（`（冲突副本 …）`）用户会改，而那一行观察标记是
+    /// `kb_search(kind="conflict")` 认的东西——两者用同一个判据才不会打架。
+    ///
+    /// ❗ 与「最近一次同步产生了几处」是两个不同的数：那个是刚发生的事，
+    /// 这个是**还没处理完的积压**。界面上别混。
+    pub fn note_conflict_count(&self) -> Result<i64, String> {
+        self.lock_conn()
+            .query_row(
+                "SELECT COUNT(*) FROM notes                  WHERE deleted_at IS NULL AND content LIKE '%- [conflict]%'",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())
+    }
+}

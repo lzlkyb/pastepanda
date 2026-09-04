@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda 设置改为页面 · 二级下钻设计稿</title>
+<style>
+:root{
+  --app-bg:#F7F7F8; --card-bg:#fff; --section-bg:#F0F4F8; --input-bg:#F1F5F9;
+  --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+  --border-color:#E0E4EB;
+  --accent:#0284C7; --accent-light:#E0F2FE; --accent-solid:#027CBB; --accent-strong:#0273AD;
+  --green:#11813A; --green-bg:#DCFCE7; --orange:#C54A0A; --orange-bg:#FFF7ED;
+  --orange-border:#FED7AA; --danger:#D82525; --red-bg:#FEF2F2;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-t="light"]){
+    --app-bg:#0B0B13; --card-bg:#18181B; --section-bg:#0F0F11; --input-bg:#27272A;
+    --text-primary:#E4E4E7; --text-secondary:#AFAFB7; --text-muted:#8D8D95;
+    --border-color:#27272A;
+    --accent:#818CF8; --accent-light:#1E1B4B; --accent-solid:#666FC4; --accent-strong:#818CF8;
+    --green:#4ADE80; --green-bg:#052E16; --orange:#FB923C; --orange-bg:#431407;
+    --orange-border:#9A3412; --danger:#F87171; --red-bg:#2A1215;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--app-bg);color:var(--text-primary);
+  font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;padding:28px}
+h1{font-size:20px;margin:0 0 4px}
+.lead{color:var(--text-muted);font-size:13px;margin:0 0 22px}
+h2{font-size:15px;margin:30px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--accent)}
+h3{font-size:13px;margin:18px 0 8px;color:var(--text-secondary)}
+.note{background:var(--accent-light);border-left:3px solid var(--accent);
+  padding:10px 14px;border-radius:0 8px 8px 0;font-size:12.5px;margin:10px 0}
+.warn{background:var(--orange-bg);border-left:3px solid var(--orange);
+  padding:10px 14px;border-radius:0 8px 8px 0;font-size:12.5px;margin:10px 0}
+.bad{background:var(--red-bg);border-left:3px solid var(--danger);
+  padding:10px 14px;border-radius:0 8px 8px 0;font-size:12.5px;margin:10px 0}
+code{background:var(--input-bg);padding:1px 5px;border-radius:4px;
+  font:12px ui-monospace,Consolas,monospace}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin:10px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--border-color);vertical-align:top}
+th{color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+.side{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:18px;align-items:start}
+.win{width:300px;height:350px;background:var(--card-bg);border:1px solid var(--border-color);
+  border-radius:10px;overflow:hidden;display:flex;flex-direction:column;
+  box-shadow:0 6px 20px rgba(0,0,0,.10);font-size:11px}
+.win .cap{padding:7px 10px;background:var(--section-bg);
+  border-bottom:1px solid var(--border-color);display:flex;align-items:center;gap:7px;
+  font-weight:700;font-size:11px;flex-shrink:0}
+.win .body{flex:1;overflow:auto}
+.scale{transform:scale(2);transform-origin:top left;width:300px;height:350px}
+.holder{width:600px;height:700px;overflow:hidden}
+.srch{margin:8px;padding:5px 8px;border-radius:7px;background:var(--input-bg);
+  border:1px solid var(--border-color);color:var(--text-muted);font-size:10px}
+.item{display:flex;align-items:center;gap:8px;padding:8px 11px;
+  border-bottom:1px solid var(--border-color)}
+.ico{width:24px;height:24px;border-radius:7px;display:flex;align-items:center;
+  justify-content:center;font-size:11px;color:#fff;flex-shrink:0}
+.itxt{flex:1;min-width:0}
+.iname{font-size:11px;font-weight:600;display:block}
+.idesc{font-size:9.5px;color:var(--text-muted);display:block}
+.chev{color:var(--text-muted);font-size:11px}
+.grp{padding:9px 11px 4px;font-size:9px;font-weight:700;color:var(--text-secondary);
+  text-transform:uppercase;letter-spacing:.5px;background:var(--section-bg);
+  border-bottom:1px solid var(--border-color)}
+.back{display:flex;align-items:center;gap:6px;padding:7px 10px;
+  border-bottom:1px solid var(--border-color);font-weight:700;font-size:11px;
+  background:var(--section-bg)}
+.tg{width:32px;height:18px;border-radius:20px;background:var(--accent-solid);
+  position:relative;flex-shrink:0}
+.tg.off{background:var(--border-color)}
+.tg i{position:absolute;top:2px;left:16px;width:14px;height:14px;border-radius:50%;background:#fff}
+.tg.off i{left:2px}
+.hit b{background:color-mix(in srgb,var(--accent) 28%,transparent);border-radius:2px}
+</style>
+</head>
+<body>
+<h1>设置改为页面 · 二级下钻</h1>
+<p class="lead">
+  已定方案 <b>B</b>。真实约束：主窗口 <b>600×700</b>（<code>tauri.conf.json</code>），
+  现在设置是 <b>420px 宽的弹框</b>，而「通用」一个 tab 就装了 <b>7 个分组、约 44 行</b>
+  （<code>GeneralTab.tsx</code> <b>1303 行</b>，已破规则 #7）。
+  下面的窗口示意按 <b>1:2 缩放</b>画的，比例是真的。
+</p>
+
+<h2>一、诊断：不是「弹框」的问题，是三件事叠在一起</h2>
+<table>
+<tr><th>事实</th><th>后果</th></tr>
+<tr><td>主窗口 600×700</td><td>横向空间极窄，左右分栏放不下</td></tr>
+<tr><td>设置是 420px 宽弹框</td><td>44 项挤成一根长条</td></tr>
+<tr><td>「通用」一个 tab 塞 7 个分组</td><td>数据统计/外观/通用/局域网同步/知识库同步/快捷键/数据管理 共用一根滚动条</td></tr>
+</table>
+<div class="bad">
+  🔴 <b>光把弹框换成页面并不解决「找不到」。</b> 44 项分成 11 组之后，
+  用户仍然得知道「密钥屏蔽」归在哪一组。<b>真正解决它的是搜索</b>——
+  而搜索与容器改造互相独立，可以先做、单独验证。
+</div>
+
+<h2>二、两屏</h2>
+<div class="side">
+  <div>
+    <h3>一级：分类列表（占满主窗口）</h3>
+    <div class="holder"><div class="scale"><div class="win">
+      <div class="cap"><span>←</span><span>设置</span></div>
+      <div class="body">
+        <div class="srch">🔍 搜索设置项…</div>
+        <div class="grp">常用</div>
+        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#3B82F6,#0078D4)">⚙</span>
+          <span class="itxt"><span class="iname">通用</span><span class="idesc">启动、监听、粘贴行为</span></span><span class="chev">›</span></div>
+        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#8B5CF6,#5856D6)">🎨</span>
+          <span class="itxt"><span class="iname">外观</span><span class="idesc">主题、标签页样式</span></span><span class="chev">›</span></div>
+        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#F97316,#EA580C)">⌨</span>
+          <span class="itxt"><span class="iname">快捷键</span><span class="idesc">7 个全局快捷键</span></span><span class="chev">›</span></div>
+        <div class="grp">同步与外部</div>
+        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#06B6D4,#3B82F6)">🌐</span>
+          <span class="itxt"><span class="iname">局域网同步</span><span class="idesc">剪贴板 · 已开启</span></span><span class="chev">›</span></div>
+        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#8B5CF6,#6366F1)">📚</span>
+          <span class="itxt"><span class="iname">知识库同步</span><span class="idesc">笔记 · 2 台已配对</span></span><span class="chev">›</span></div>
+        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#22C55E,#16A34A)">🧩</span>
+          <span class="itxt"><span class="iname">MCP</span><span class="idesc">让外部 AI 读写笔记</span></span><span class="chev">›</span></div>
+        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#EC4899,#DB2777)">✨</span>
+          <span class="itxt"><span class="iname">AI</span><span class="idesc">模型与密钥</span></span><span class="chev">›</span></div>
+        <div class="grp">数据</div>
+        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#64748B,#475569)">📊</span>
+          <span class="itxt"><span class="iname">数据统计</span><span class="idesc">1,284 条 · 42 MB</span></span><span class="chev">›</span></div>
+        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#0EA5E9,#0284C7)">💾</span>
+          <span class="itxt"><span class="iname">数据管理</span><span class="idesc">导入导出、清理、工作区</span></span><span class="chev">›</span></div>
+        <div class="grp">其它</div>
+        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#A855F7,#9333EA)">📖</span>
+          <span class="itxt"><span class="iname">帮助</span></span><span class="chev">›</span></div>
+        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#6366F1,#4F46E5)">ℹ</span>
+          <span class="itxt"><span class="iname">关于</span><span class="idesc">v7.0.0 · 有新版本</span></span><span class="chev">›</span></div>
+      </div>
+    </div></div></div>
+    <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px">
+      11 条一屏放得下，<b>一级页不用滚</b>。副标题给的是「当前值」而不是解释——
+      用户扫一眼就知道要不要点进去。
+    </div>
+  </div>
+
+  <div>
+    <h3>二级：只看这一组</h3>
+    <div class="holder"><div class="scale"><div class="win">
+      <div class="back"><span>←</span><span>快捷键</span></div>
+      <div class="body">
+        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#3B82F6,#0078D4)">⌨</span>
+          <span class="itxt"><span class="iname">唤出窗口</span><span class="idesc">在任何位置唤出</span></span>
+          <code style="font-size:9px">Ctrl+`</code></div>
+        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#8B5CF6,#5856D6)">📋</span>
+          <span class="itxt"><span class="iname">依次粘贴</span><span class="idesc">按顺序逐条粘贴</span></span>
+          <code style="font-size:9px">Ctrl+Alt+Q</code></div>
+        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#F97316,#EA580C)">📚</span>
+          <span class="itxt"><span class="iname">收集模式开关</span><span class="idesc">进入/退出栈模式</span></span>
+          <code style="font-size:9px">未设置</code></div>
+        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#22C55E,#16A34A)">⚡</span>
+          <span class="itxt"><span class="iname">快速粘贴</span></span>
+          <code style="font-size:9px">Ctrl+Shift+V</code></div>
+        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#EF4444,#DC2626)">📷</span>
+          <span class="itxt"><span class="iname">截图</span></span>
+          <code style="font-size:9px">Ctrl+Q</code></div>
+        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#14B8A6,#0D9488)">📝</span>
+          <span class="itxt"><span class="iname">今日速记</span></span>
+          <code style="font-size:9px">Ctrl+Alt+D</code></div>
+      </div>
+    </div></div></div>
+    <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px">
+      每屏一个分组，<b>基本不用滚</b>。左上角「←」回一级。
+    </div>
+  </div>
+</div>
+
+<h2>三、搜索：收益最大的那一件</h2>
+<div class="side">
+  <div>
+    <div class="holder" style="height:300px"><div class="scale" style="height:150px"><div class="win" style="height:150px">
+      <div class="back"><span>←</span><span>设置</span></div>
+      <div class="body">
+        <div class="srch" style="color:var(--text-primary)">🔍 密钥</div>
+        <div class="item" style="padding:6px 11px">
+          <span class="itxt"><span class="iname hit">屏蔽<b>密钥</b>类内容</span>
+          <span class="idesc">通用 › 隐私</span></span><span class="tg"><i></i></span></div>
+        <div class="item" style="padding:6px 11px">
+          <span class="itxt"><span class="iname">AI 服务<b class="hit">密钥</b></span>
+          <span class="idesc">AI › 模型</span></span><span class="chev">›</span></div>
+        <div class="item" style="padding:6px 11px">
+          <span class="itxt"><span class="iname">局域网配对<b class="hit">密钥</b></span>
+          <span class="idesc">局域网同步</span></span><span class="chev">›</span></div>
+      </div>
+    </div></div></div>
+  </div>
+  <div>
+    <h3>搜索要满足的几条</h3>
+    <table>
+      <tr><th>要求</th><th>为什么</th></tr>
+      <tr><td>命中项显示<b>面包屑</b>（「通用 › 隐私」）</td><td>让用户下次知道去哪找，而不是永远依赖搜索</td></tr>
+      <tr><td>开关类命中<b>直接在结果里可拨</b></td><td>找到就是为了改它，再点进去是多一步</td></tr>
+      <tr><td>非开关类点进去要<b>滚到并高亮</b>那一行</td><td>点进一个 20 行的分组还得自己找，等于没搜</td></tr>
+      <tr><td>索引里带<b>同义词</b></td><td>用户搜「开机」要能命中「自启动」；搜「暗色」要命中「主题」</td></tr>
+    </table>
+    <div class="warn">
+      索引<b>手写一份常量表</b>，不要去扫 JSX。扫 JSX 得不到同义词与面包屑，
+      而且任何一次改版都会静默漏项——漏了的表现是「搜不到」，
+      而「搜不到」与「本来就没这项」在界面上长得一样，没人会发现。
+    </div>
+  </div>
+</div>
+
+<h2>四、入口与返回</h2>
+<table>
+<tr><th>动作</th><th>行为</th></tr>
+<tr><td>顶栏齿轮 / <code>Ctrl+,</code></td><td>切到设置视图（一级）</td></tr>
+<tr><td>某处「去设置改 X」</td><td>直接进二级并高亮那一行（沿用现在 <code>initialTab</code> 的能力，扩成 <code>initialSection</code>）</td></tr>
+<tr><td>二级页「←」</td><td>回一级</td></tr>
+<tr><td>一级页「←」</td><td>回上一个视图（记录 / 知识库）</td></tr>
+<tr><td><code>Esc</code></td><td>二级 → 一级 → 退出。<b>逐级退</b>，不要一下退到底</td></tr>
+</table>
+<div class="note">
+  ❗ <b>不做面包屑式的深层路由</b>：设置只有两级，加 URL 路由是为一个不存在的
+  需求付复杂度。用一个 <code>section: string | null</code> 就够。
+</div>
+
+<h2>五、拆文件（规则 #7：单 .tsx ≤ 300 行）</h2>
+<p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 6px">
+  <code>GeneralTab.tsx</code> 现在 1303 行、7 个分组。按分组拆：
+</p>
+<table>
+<tr><th>新文件</th><th>来自 GeneralTab 的行</th><th>预估</th></tr>
+<tr><td><code>settings/SettingsView.tsx</code></td><td>新写：一级列表 + 二级路由 + 搜索框</td><td>~160</td></tr>
+<tr><td><code>settings/SettingsSearch.tsx</code></td><td>新写：搜索结果列表</td><td>~110</td></tr>
+<tr><td><code>settings/settingsIndex.ts</code></td><td>新写：手写索引（标题 / 同义词 / 面包屑 / 定位 id）</td><td>~140</td></tr>
+<tr><td><code>settings/sections/StatsSection.tsx</code></td><td>292–468</td><td>~175</td></tr>
+<tr><td><code>settings/sections/AppearanceSection.tsx</code></td><td>469–545</td><td>~75</td></tr>
+<tr><td><code>settings/sections/GeneralSection.tsx</code></td><td>546–868</td><td>~320 ⚠ 还要再拆</td></tr>
+<tr><td><code>settings/sections/LanSection.tsx</code></td><td>869–896</td><td>~30</td></tr>
+<tr><td><code>settings/sections/KbSyncSection.tsx</code></td><td>897–928</td><td>~35</td></tr>
+<tr><td><code>settings/sections/HotkeysSection.tsx</code></td><td>929–1215</td><td>~290</td></tr>
+<tr><td><code>settings/sections/DataSection.tsx</code></td><td>1216–1303</td><td>~90</td></tr>
+</table>
+<div class="warn">
+  ⚠ <b>「通用」拆出来还是 ~320 行，仍破规则 #7</b>，得再分成两块
+  （比如「启动与监听」+「粘贴行为」）。这个数字是量出来的，不是估的——
+  别到时候拆一半发现放不下。
+</div>
+<div class="bad">
+  🔴 <b>1–291 行是共享的 state 与 handler</b>（<code>pendingCleanup</code> /
+  <code>handlePickCleanupDays</code> / <code>pendingTrash</code> …），
+  被「数据统计」「通用」「数据管理」三块同时用。
+  <b>拆分的真正难点在这里，不在 JSX。</b>
+  做法：抽成 <code>hooks/useSettingsData.ts</code>，由 <code>SettingsView</code> 调一次、往下传——
+  <b>不要</b>让三个 section 各自调一遍，那会变成三份互不知情的确认框状态。
+</div>
+
+<h2>六、分三步做，每步能独立验证</h2>
+<table>
+<tr><th>步</th><th>内容</th><th>能独立验什么</th></tr>
+<tr><td><b>1</b></td><td>抽 <code>useSettingsData</code> + 按分组拆成 section 文件，
+  <b>容器仍是现在的弹框</b></td><td>行为应当**完全不变**——这一步是纯搬家，
+  界面上看不出差别就是对的。也是规则 #7 本来就欠的账</td></tr>
+<tr><td><b>2</b></td><td>加搜索（索引 + 结果列表 + 跳转高亮）</td><td>「找不到」这件事本身。
+  仍在弹框里，风险最小、收益最大</td></tr>
+<tr><td><b>3</b></td><td>换容器：弹框 → 主窗口视图 + 二级下钻</td><td>只剩布局与导航，
+  前两步已经把内容和检索都理顺了</td></tr>
+</table>
+<div class="note">
+  <b>为什么不一次做完</b>：这三步各自都可能出问题，混在一个提交里出了问题
+  分不清是哪一步带的。而第 1 步「纯搬家」的验证标准是「看不出差别」，
+  一旦同时改了容器，这个标准就没了。
+</div>
+
+<h2>七、明确不做的</h2>
+<table>
+<tr><th>不做</th><th>为什么</th></tr>
+<tr><td>独立设置窗口（原方案 A）</td><td>两个 WebView 各持一份 <code>config</code>，
+  一边改了另一边不刷新 → 「改了设置不生效」。为一个设置页引入一整类同步 bug 不值</td></tr>
+<tr><td>左侧竖排导航 + 右侧内容</td><td>600px 宽下导航只能挤到 ~140px，
+  和二级下钻比没有优势</td></tr>
+<tr><td>把 5 个 tab 直接搬成 5 条一级项</td><td>问题恰恰是「通用」那一个 tab 里有 7 个分组。
+  搬 tab = 什么都没解决</td></tr>
+<tr><td>设置项拖拽排序 / 收藏常用项</td><td>44 项的规模用不上；有搜索就够了</td></tr>
+<tr><td>改窗口默认尺寸</td><td>600×700 是给主列表定的，为设置页放大会影响日常使用的手感</td></tr>
+</table>
+
+<p style="margin-top:26px;font-size:11.5px;color:var(--text-muted);border-top:1px solid var(--border-color);padding-top:12px">
+  设计稿 · 2026-09-04 ·
+  样式变量取自 <code>src/styles/theme.css</code>（ocean 浅色 / dark 深色）。
+  行数与分组边界量自 <code>src/components/settings/GeneralTab.tsx</code> 与
+  <code>src/components/SettingsDialog.tsx</code> 真实源码；窗口尺寸取自
+  <code>src-tauri/tauri.conf.json</code>（600×700）。
+</p>
+</body>
+</html>

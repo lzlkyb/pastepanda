@@ -97,12 +97,20 @@ pub async fn kb_sync_pair(
     Ok(inv)
 }
 
-/// 已配对设备 + 当前在线的那几台。
+/// 已配对设备 + 在线情况 + 最近一次的结果。
+///
+/// ❗ 三个东西合成一个命令返回：面板本来就在 5 秒轮询，
+/// 拆成三个命令就是三倍往返，而且三者的快照可能对不上。
 #[derive(serde::Serialize)]
 pub struct SyncDevices {
     pub devices: Vec<crate::data_store::device::Device>,
     /// 当前组播里听得见的 `node_id`。
     pub live: Vec<String>,
+    /// 每个对端最近一次会话的结果。
+    pub last: Vec<crate::sync::service::LastSync>,
+    /// 库里**还没处理完**的冲突副本总数。
+    /// 与 `last[].conflicts`（刚刚产生了几处）是两个数，界面上别混。
+    pub conflict_backlog: i64,
 }
 
 #[tauri::command]
@@ -113,6 +121,8 @@ pub async fn kb_sync_devices(
     Ok(SyncDevices {
         devices: store.device_list()?,
         live: svc.live_peers().await,
+        last: svc.last_syncs().await,
+        conflict_backlog: store.note_conflict_count()?,
     })
 }
 
