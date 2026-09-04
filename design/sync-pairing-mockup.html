@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>知识库同步 · 配对设置 (M6 mockup)</title>
+<style>
+  :root{
+    --accent:#5B6AF0; --accent-strong:#3C3489; --accent-light:#EEEDFE;
+    --border-color:#e3e3ec; --text-primary:#1f2330; --text-secondary:#5b6072;
+    --text-muted:#9499a8; --green:#1d9e75; --green-bg:rgba(29,158,117,.12);
+    --card-bg:#fff; --hover:rgba(91,106,240,.06); --toggle-off-bg:#cbd0db;
+    --toggle-off-label:#6b7180; --bg:#f5f6fa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text-primary)}
+  .app{display:flex;min-height:100vh}
+  .side{width:188px;background:#fff;border-right:1px solid var(--border-color);padding:16px 8px;flex-shrink:0}
+  .brand{display:flex;align-items:center;gap:8px;padding:4px 10px 14px;font-weight:700;font-size:14px}
+  .brand .logo{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,#5B6AF0,#7C5CF0);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px}
+  .tab{padding:8px 12px;border-radius:8px;font-size:13px;color:var(--text-secondary);margin-bottom:2px;cursor:pointer}
+  .tab:hover{background:var(--hover)}
+  .tab.active{background:var(--accent-light);color:var(--accent-strong);font-weight:600}
+  .main{flex:1;max-width:460px;display:flex;flex-direction:column}
+  .head{padding:16px 20px;font-size:16px;font-weight:700;border-bottom:1px solid var(--border-color);background:#fff}
+  .content{padding:10px 0}
+  /* sRow (from Settings.module.css) */
+  .sRow{display:flex;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border-color);gap:12px}
+  .sRowIcon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff;flex-shrink:0}
+  .sRowBody{flex:1;min-width:0}
+  .sRowLabel{font-size:13px;font-weight:600;color:var(--text-primary)}
+  .sRowDesc{font-size:11px;color:var(--text-muted);margin-top:2px}
+  .sToggle{display:inline-block;width:44px;height:26px;border-radius:13px;border:none;cursor:pointer;position:relative;flex-shrink:0}
+  .sToggle.off{background:var(--toggle-off-bg)}
+  .sToggle.on{background:var(--green)}
+  .sToggleThumb{position:absolute;left:0;top:2px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+  .sToggle.off .sToggleThumb{transform:translateX(2px)}
+  .sToggle.on .sToggleThumb{transform:translateX(20px)}
+  .sToggleLabel{position:absolute;top:50%;transform:translateY(-50%);font-size:9px;font-weight:700;pointer-events:none}
+  .sToggle.on .sToggleLabel{left:7px;color:#fff}
+  .sToggle.off .sToggleLabel{right:6px;color:var(--toggle-off-label)}
+  /* 提示条 */
+  .hint{margin:10px 20px;padding:9px 12px;border-radius:9px;background:var(--accent-light);border:1px solid color-mix(in srgb,var(--accent) 22%,transparent);font-size:11.5px;color:var(--accent-strong);line-height:1.5}
+  /* lanPanel (from Settings.module.css) */
+  .lanPanel{margin:8px 20px;border-radius:14px;padding:16px 18px;background:var(--accent-light);border:1px solid var(--border-color)}
+  .lanPanelHeader{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .lanStatus{display:flex;align-items:center;gap:8px}
+  .lanDot{width:10px;height:10px;border-radius:50%;background:var(--green);box-shadow:0 0 6px color-mix(in srgb,var(--green) 40%,transparent);animation:lan-pulse 2s infinite}
+  @keyframes lan-pulse{0%,100%{opacity:1}50%{opacity:.5}}
+  .lanDot.off{background:var(--text-muted);box-shadow:none;animation:none}
+  .lanStatusText{font-size:13px;font-weight:600;color:var(--text-primary)}
+  .lanRefreshBtn{padding:4px 10px;border-radius:8px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--accent);font-size:12px;cursor:pointer;font-family:inherit}
+  .lanRefreshBtn:hover{background:var(--hover)}
+  .sub{font-size:12px;color:var(--text-secondary);margin-bottom:6px;line-height:1.5}
+  .codeBox{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .codeInput{flex:1;font-family:"SFMono-Regular",Consolas,monospace;font-size:12px;padding:6px 8px;border-radius:6px;border:1px solid var(--border-color);background:#fff;color:var(--text-primary)}
+  .ghostBtn{padding:6px 12px;border-radius:8px;border:1px solid var(--border-color);background:#fff;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap}
+  .ghostBtn:hover{background:var(--hover);border-color:var(--accent)}
+  .qr{width:46px;height:46px;border-radius:8px;border:1px dashed var(--accent);display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--accent);text-align:center;flex-shrink:0;line-height:1.2}
+  .divider{height:1px;background:var(--border-color);margin:14px 0}
+  .plainInput{flex:1;font-family:inherit;font-size:12px;padding:6px 8px;border-radius:6px;border:1px solid var(--border-color);background:#fff;color:var(--text-primary)}
+  .tags{display:flex;gap:8px;margin-top:12px}
+  .tag{font-size:10.5px;padding:3px 9px;border-radius:7px;font-weight:600;background:var(--card-bg);border:1px solid var(--border-color);color:var(--text-secondary)}
+  .tag b{color:var(--accent-strong)}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><span class="logo">P</span>PastePanda</div>
+    <div class="tab">通用</div>
+    <div class="tab">知识库</div>
+    <div class="tab active">同步</div>
+    <div class="tab">AI</div>
+    <div class="tab">关于</div>
+  </aside>
+  <main class="main">
+    <div class="head">同步设置</div>
+    <div class="content">
+      <!-- 同步总开关 (ToggleRow 真实结构) -->
+      <div class="sRow">
+        <span class="sRowIcon" style="background:linear-gradient(135deg,#5B6AF0,#7C5CF0)">🔗</span>
+        <div class="sRowBody">
+          <div class="sRowLabel">知识库同步</div>
+          <div class="sRowDesc">局域网 + 外网 P2P，本地优先、端到端加密</div>
+        </div>
+        <button class="sToggle on"><span class="sToggleThumb"></span><span class="sToggleLabel">开</span></button>
+      </div>
+
+      <div class="hint">免费支持 2 台设备 · 第 3 台起为付费项（常驻中继 / 更大配额 / 多设备）</div>
+
+      <!-- 配对区 (lanPanel 视觉，交互升级为邀请码) -->
+      <div class="lanPanel">
+        <div class="lanPanelHeader">
+          <div class="lanStatus"><span class="lanDot off"></span><span class="lanStatusText">等待配对其他设备</span></div>
+        </div>
+        <div class="sub">把本机邀请码发给其他设备，对方粘贴并批准即完成配对。邀请码含本机公钥与当前地址，<b>无需账号、无需服务器</b>。</div>
+        <div class="codeBox">
+          <input class="codeInput" readonly value="pp·8F3A2B9C…C91E·办公室PC" />
+          <div class="qr">扫码<br>配对</div>
+        </div>
+        <div class="codeBox">
+          <button class="ghostBtn">复制邀请码</button>
+          <button class="ghostBtn">重新生成</button>
+        </div>
+        <div class="divider"></div>
+        <div class="sub">粘贴对方发来的邀请码</div>
+        <div class="codeBox">
+          <input class="plainInput" placeholder="粘贴对方邀请码…" />
+          <button class="ghostBtn" style="background:var(--accent);color:#fff;border-color:var(--accent)">批准配对</button>
+        </div>
+        <div class="tags">
+          <span class="tag"><b>LAN</b> · 局域网自动发现</span>
+          <span class="tag"><b>WAN</b> · 外网 P2P 无服务器</span>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

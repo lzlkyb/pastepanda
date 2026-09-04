@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>知识库同步 · 已配对设备 (M6 mockup)</title>
+<style>
+  :root{
+    --accent:#5B6AF0; --accent-strong:#3C3489; --accent-light:#EEEDFE;
+    --border-color:#e3e3ec; --text-primary:#1f2330; --text-secondary:#5b6072;
+    --text-muted:#9499a8; --green:#1d9e75; --green-bg:rgba(29,158,117,.12);
+    --card-bg:#fff; --hover:rgba(91,106,240,.06); --bg:#f5f6fa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text-primary)}
+  .app{display:flex;min-height:100vh}
+  .side{width:188px;background:#fff;border-right:1px solid var(--border-color);padding:16px 8px;flex-shrink:0}
+  .brand{display:flex;align-items:center;gap:8px;padding:4px 10px 14px;font-weight:700;font-size:14px}
+  .brand .logo{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,#5B6AF0,#7C5CF0);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px}
+  .tab{padding:8px 12px;border-radius:8px;font-size:13px;color:var(--text-secondary);margin-bottom:2px;cursor:pointer}
+  .tab:hover{background:var(--hover)}
+  .tab.active{background:var(--accent-light);color:var(--accent-strong);font-weight:600}
+  .main{flex:1;max-width:460px;display:flex;flex-direction:column}
+  .head{padding:16px 20px;font-size:16px;font-weight:700;border-bottom:1px solid var(--border-color);background:#fff}
+  .content{padding:10px 0}
+  .lanPanel{margin:8px 20px;border-radius:14px;padding:16px 18px;background:var(--accent-light);border:1px solid var(--border-color)}
+  .lanPanelHeader{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .lanStatus{display:flex;align-items:center;gap:8px}
+  .lanDot{width:10px;height:10px;border-radius:50%;background:var(--green);box-shadow:0 0 6px color-mix(in srgb,var(--green) 40%,transparent);animation:lan-pulse 2s infinite}
+  @keyframes lan-pulse{0%,100%{opacity:1}50%{opacity:.5}}
+  .lanDot.off{background:var(--text-muted);box-shadow:none;animation:none}
+  .lanStatusText{font-size:13px;font-weight:600;color:var(--text-primary)}
+  .lanRefreshBtn{padding:4px 10px;border-radius:8px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--accent);font-size:12px;cursor:pointer;font-family:inherit}
+  .lanRefreshBtn:hover{background:var(--hover)}
+  .lanDeviceList{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+  .lanDeviceItem{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:var(--card-bg);border:1px solid var(--border-color)}
+  .lanDeviceAvatar{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700;flex-shrink:0}
+  .lanDeviceInfo{flex:1;min-width:0}
+  .lanDeviceName{font-size:12.5px;font-weight:600;color:var(--text-primary);display:flex;align-items:center;gap:6px}
+  .devTag{font-size:9.5px;font-weight:600;padding:1px 6px;border-radius:5px;background:var(--accent-light);color:var(--accent-strong)}
+  .devTag.wan{background:var(--green-bg);color:var(--green)}
+  .devTag.relay{background:rgba(185,117,23,.14);color:#854f0b}
+  .lanDeviceTime{font-size:10.5px;color:var(--text-muted);margin-top:2px}
+  .lanDeviceOnline{flex-shrink:0;width:9px;height:9px;border-radius:50%;background:var(--green)}
+  .lanDeviceOnline.off{background:var(--text-muted)}
+  .forgetBtn{font-size:11px;color:var(--text-muted);background:none;border:none;cursor:pointer;padding:4px 6px;border-radius:6px;font-family:inherit}
+  .forgetBtn:hover{color:#a32d2d;background:rgba(163,45,45,.08)}
+  .hint{margin:10px 20px;padding:9px 12px;border-radius:9px;background:var(--accent-light);border:1px solid color-mix(in srgb,var(--accent) 22%,transparent);font-size:11.5px;color:var(--accent-strong);line-height:1.5}
+  .lanTestBtn{margin-top:6px;width:100%;padding:7px 0;border-radius:8px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+  .lanTestBtn:hover{background:var(--hover);border-color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><span class="logo">P</span>PastePanda</div>
+    <div class="tab">通用</div>
+    <div class="tab">知识库</div>
+    <div class="tab active">同步</div>
+    <div class="tab">AI</div>
+    <div class="tab">关于</div>
+  </aside>
+  <main class="main">
+    <div class="head">已配对设备</div>
+    <div class="content">
+      <div class="lanPanel">
+        <div class="lanPanelHeader">
+          <div class="lanStatus"><span class="lanDot"></span><span class="lanStatusText">已连接 3 台设备</span></div>
+          <button class="lanRefreshBtn">🔄 刷新</button>
+        </div>
+        <div class="lanDeviceList">
+          <!-- 设备1：局域网在线 -->
+          <div class="lanDeviceItem">
+            <div class="lanDeviceAvatar" style="background:hsl(218,60%,55%)">办</div>
+            <div class="lanDeviceInfo">
+              <div class="lanDeviceName">办公室-PC <span class="devTag">LAN</span></div>
+              <div class="lanDeviceTime">最后同步 刚刚</div>
+            </div>
+            <span class="lanDeviceOnline" title="在线"></span>
+            <button class="forgetBtn">忘记</button>
+          </div>
+          <!-- 设备2：外网在线 -->
+          <div class="lanDeviceItem">
+            <div class="lanDeviceAvatar" style="background:hsl(160,55%,45%)">家</div>
+            <div class="lanDeviceInfo">
+              <div class="lanDeviceName">家里-笔记本 <span class="devTag wan">WAN</span></div>
+              <div class="lanDeviceTime">最后同步 2 分钟前</div>
+            </div>
+            <span class="lanDeviceOnline" title="在线"></span>
+            <button class="forgetBtn">忘记</button>
+          </div>
+          <!-- 设备3：外网·常驻中继，离线 -->
+          <div class="lanDeviceItem">
+            <div class="lanDeviceAvatar" style="background:hsl(280,45%,55%)">N</div>
+            <div class="lanDeviceInfo">
+              <div class="lanDeviceName">NAS-常驻节点 <span class="devTag relay">WAN·中继</span></div>
+              <div class="lanDeviceTime">最后同步 1 小时前</div>
+            </div>
+            <span class="lanDeviceOnline off" title="离线"></span>
+            <button class="forgetBtn">忘记</button>
+          </div>
+        </div>
+        <div class="hint">断线后自动重连，配对记录持久化，<b>无需重新配对</b>。免费档支持 2 台，第 3 台起为付费项（常驻中继 / 更大配额）。</div>
+        <button class="lanTestBtn">+ 添加设备（配对）</button>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

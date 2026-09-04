@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>知识库同步 · 冲突列表 (M6 mockup)</title>
+<style>
+  :root{
+    --accent:#5B6AF0; --accent-strong:#3C3489; --accent-light:#EEEDFE;
+    --border-color:#e3e3ec; --text-primary:#1f2330; --text-secondary:#5b6072;
+    --text-muted:#9499a8; --green:#1d9e75; --green-bg:rgba(29,158,117,.12);
+    --card-bg:#fff; --hover:rgba(91,106,240,.06); --bg:#f5f6fa; --amber:#ba7517;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text-primary)}
+  .app{display:flex;min-height:100vh}
+  .side{width:188px;background:#fff;border-right:1px solid var(--border-color);padding:16px 8px;flex-shrink:0}
+  .brand{display:flex;align-items:center;gap:8px;padding:4px 10px 14px;font-weight:700;font-size:14px}
+  .brand .logo{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,#5B6AF0,#7C5CF0);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px}
+  .tab{padding:8px 12px;border-radius:8px;font-size:13px;color:var(--text-secondary);margin-bottom:2px;cursor:pointer}
+  .tab:hover{background:var(--hover)}
+  .tab.active{background:var(--accent-light);color:var(--accent-strong);font-weight:600}
+  .main{flex:1;max-width:520px;display:flex;flex-direction:column}
+  .head{padding:16px 20px;font-size:16px;font-weight:700;border-bottom:1px solid var(--border-color);background:#fff}
+  .content{padding:10px 0}
+  .lanPanel{margin:8px 20px;border-radius:14px;padding:16px 18px;background:var(--accent-light);border:1px solid var(--border-color)}
+  .lanPanelHeader{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .lanStatus{display:flex;align-items:center;gap:8px}
+  .lanDot{width:10px;height:10px;border-radius:50%;background:var(--amber);box-shadow:0 0 6px color-mix(in srgb,var(--amber) 40%,transparent)}
+  .lanStatusText{font-size:13px;font-weight:600;color:var(--text-primary)}
+  .sub{font-size:12px;color:var(--text-secondary);margin-bottom:10px;line-height:1.5}
+  .conflictList{display:flex;flex-direction:column;gap:6px}
+  .conflictRow{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;background:var(--card-bg);border:1px solid var(--border-color)}
+  .conflictIcon{width:30px;height:30px;border-radius:8px;background:rgba(185,117,23,.12);color:var(--amber);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+  .conflictBody{flex:1;min-width:0}
+  .conflictName{font-size:12.5px;font-weight:600;color:var(--text-primary)}
+  .conflictMeta{font-size:10.5px;color:var(--text-muted);margin-top:2px;display:flex;align-items:center;gap:8px}
+  .srcTag{font-size:9.5px;font-weight:600;padding:1px 6px;border-radius:5px;background:var(--accent-light);color:var(--accent-strong)}
+  .conflictActions{display:flex;gap:6px;flex-shrink:0}
+  .btnSm{padding:5px 10px;border-radius:7px;border:1px solid var(--border-color);background:#fff;color:var(--text-secondary);font-size:11px;cursor:pointer;font-family:inherit}
+  .btnSm:hover{background:var(--hover)}
+  .btnSm.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .btnSm.primary:hover{filter:brightness(1.05)}
+  .note{margin-top:12px;font-size:11px;color:var(--text-muted);line-height:1.6}
+  .empty{text-align:center;padding:24px 0;color:var(--text-muted);font-size:12px}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><span class="logo">P</span>PastePanda</div>
+    <div class="tab">通用</div>
+    <div class="tab">知识库</div>
+    <div class="tab active">同步</div>
+    <div class="tab">AI</div>
+    <div class="tab">关于</div>
+  </aside>
+  <main class="main">
+    <div class="head">同步冲突</div>
+    <div class="content">
+      <div class="lanPanel">
+        <div class="lanPanelHeader">
+          <div class="lanStatus"><span class="lanDot"></span><span class="lanStatusText">共 2 个待处理冲突</span></div>
+        </div>
+        <div class="sub">同一毫秒两端改了同一篇笔记，已按规则保留双版本，请手动对比合并。</div>
+        <div class="conflictList">
+          <!-- 冲突1 -->
+          <div class="conflictRow">
+            <div class="conflictIcon">📄</div>
+            <div class="conflictBody">
+              <div class="conflictName">周报-2026W36.md</div>
+              <div class="conflictMeta"><span class="srcTag">家里-笔记本</span><span>今天 14:02</span></div>
+            </div>
+            <div class="conflictActions">
+              <button class="btnSm">打开</button>
+              <button class="btnSm primary">合并</button>
+            </div>
+          </div>
+          <!-- 冲突2 -->
+          <div class="conflictRow">
+            <div class="conflictIcon">📄</div>
+            <div class="conflictBody">
+              <div class="conflictName">读书笔记.md</div>
+              <div class="conflictMeta"><span class="srcTag">办公室-PC</span><span>昨天 21:30</span></div>
+            </div>
+            <div class="conflictActions">
+              <button class="btnSm">打开</button>
+              <button class="btnSm primary">合并</button>
+            </div>
+          </div>
+        </div>
+        <div class="note">
+          冲突文件命名为 <code>.sync-conflict.&lt;NodeId短码&gt;.&lt;毫秒&gt;.md</code>，合并后删除冲突副本即可；
+          正常情况按 <code>updated_ms</code> 后写胜，不会进此列表。
+        </div>
+        <!-- 空态：全部处理完时显示
+        <div class="empty">暂无冲突 ✓</div>
+        -->
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>
