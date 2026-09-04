@@ -2,6 +2,11 @@
 
 PastePanda 版本更新日志。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [Unreleased]
+
+### 修复
+- **自动标签的创建时间差 8 小时**：内置格式标签（JSON/YAML/…）写入时用了 UTC，而手动标签用本地时间，同一列混了两个时区
+
 ## [7.0.0] - 2026-09-02
 
 ### 新增

@@ -1,5 +1,16 @@
 use super::*;
 
+/// 标签表的时间戳。
+///
+/// 🔴 **不用 `note::note_now()`**：那个带毫秒（`%.3f`），而 `tags.created_at`
+/// 从建表起就是无毫秒格式。同一列里混两种格式，字符串比大小会在秒相同时
+/// 让带毫秒的那条永远赢——LWW 就此偏向「后来才写的那种格式」，而不是后写的那次改动。
+///
+/// 收口成一处（规则 #11）：本文件原先三处各写一遍同样的 format 字面量。
+pub(super) fn tag_now() -> String {
+    chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
 impl DataStore {
     // ===== 标签 CRUD =====
 
@@ -35,9 +46,11 @@ impl DataStore {
         }
         let conn = self.lock_conn();
         let id = uuid::Uuid::new_v4().to_string();
-        let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let now = tag_now();
         conn.execute(
-            "INSERT INTO tags (id, name, color, source, created_at) VALUES (?1, ?2, ?3, 'manual', ?4)",
+            // M6-P3：updated_at 与 created_at 同值。
+            "INSERT INTO tags (id, name, color, source, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, 'manual', ?4, ?4)",
             params![id, name, color, now],
         )
         .map_err(|e| e.to_string())?;
@@ -62,8 +75,9 @@ impl DataStore {
         let conn = self.lock_conn();
         let affected = conn
             .execute(
-                "UPDATE tags SET name = ?1, color = ?2 WHERE id = ?3",
-                params![name, color, id],
+                // M6-P3：标签改名/改色都要留时间戳，否则同步时无从判断谁更新。
+                "UPDATE tags SET name = ?1, color = ?2, updated_at = ?4 WHERE id = ?3",
+                params![name, color, id, tag_now()],
             )
             .map_err(|e| e.to_string())?;
         if affected == 0 {
@@ -288,8 +302,12 @@ impl DataStore {
         ];
         for (id, name, color) in &auto_tags {
             conn.execute(
-                "INSERT OR IGNORE INTO tags (id, name, color, source, created_at) VALUES (?1, ?2, ?3, 'auto', datetime('now'))",
-                params![id, name, color],
+                // M6-P3：补 updated_at。
+                // 🔴 顺带修一个既有 bug：原来用 `datetime('now')`，那是 **UTC**，
+                //    而本文件其它写入点用本地时间——同一列里混了两个时区，
+                //    自动标签的 created_at 比手动标签整整早 8 小时。
+                "INSERT OR IGNORE INTO tags (id, name, color, source, created_at, updated_at)                  VALUES (?1, ?2, ?3, 'auto', ?4, ?4)",
+                params![id, name, color, tag_now()],
             )
             .map_err(|e| e.to_string())?;
         }

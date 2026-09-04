@@ -93,8 +93,10 @@ impl DataStore {
                 }
                 let merged = format!("{}\n\n{}", old.trim_end(), entry);
                 conn.execute(
-                    "UPDATE notes SET content = ?2, updated_at = ?3 WHERE id = ?1",
-                    rusqlite::params![id, merged, now],
+                    // M6-P2：今日速记追写也要刷 updated_ms（漏一处，这条在同步里就「没发生过」）。
+                    "UPDATE notes SET content = ?2, updated_at = ?3, \
+                     updated_ms = MAX(?4, updated_ms + 1) WHERE id = ?1",
+                    rusqlite::params![id, merged, now, super::note::now_ms()],
                 )
                 .map_err(|e| e.to_string())?;
                 id
@@ -104,10 +106,12 @@ impl DataStore {
                 // 标题与 daily_date 初值都是日期（同一个 ?2），
                 // 但之后标题可改、daily_date 不可——前者是展示，后者是身份。
                 conn.execute(
+                    // M6-P2：新建也得给 updated_ms。不给就落回列默认值 0，
+                    // 而 0 在 LWW 里**永远是输的那一方**——今日速记开篇那一条会被对端静默盖掉。
                     "INSERT INTO notes (id, history_id, title, content, created_at, updated_at,
-                                        source_agent, daily_date)
-                     VALUES (?1, NULL, ?2, ?3, ?4, ?4, '', ?2)",
-                    rusqlite::params![id, date, entry, now],
+                                        source_agent, daily_date, updated_ms)
+                     VALUES (?1, NULL, ?2, ?3, ?4, ?4, '', ?2, ?5)",
+                    rusqlite::params![id, date, entry, now, super::note::now_ms()],
                 )
                 .map_err(|e| e.to_string())?;
                 id

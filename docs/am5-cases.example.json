@@ -1,0 +1,55 @@
+{
+  "_说明": [
+    "AM-5 召回基准的用例集模板。复制成 docs/am5-cases.json 再改，别直接改这份。",
+    "note / heading 都是【片段】匹配，大小写不敏感，但必须唯一命中——匹配到多篇会直接报错。",
+    "照着 bench_dump_outline 导出的节清单抄，不要凭记忆写。",
+    "heading 留空 = 引言节（笔记开头到第一个标题之前）。",
+    "kind 只能是 keyword / intent / temporal / cross_note / semantic 五种之一。",
+    "prefix 只有污染型用例才填，填了的会自动跑两遍（干净 / 污染）给出掉幅。"
+  ],
+  "labeler": "填你的名字",
+  "cases": [
+    {
+      "id": "kw-1",
+      "kind": "keyword",
+      "query": "直接用笔记里出现过的词",
+      "expect": [{ "note": "笔记标题片段", "heading": "节标题片段" }]
+    },
+    {
+      "id": "intent-1",
+      "kind": "intent",
+      "query": "问做法或意图，不含笔记原词",
+      "expect": [{ "note": "笔记标题片段", "heading": "节标题片段" }]
+    },
+    {
+      "id": "time-1",
+      "kind": "temporal",
+      "query": "带时间限定的问法，比如 上个月那个改动",
+      "expect": [{ "note": "笔记标题片段", "heading": "节标题片段" }]
+    },
+    {
+      "id": "cross-1",
+      "kind": "cross_note",
+      "query": "答案要跨多篇才凑得齐的问题",
+      "expect": [
+        { "note": "第一篇标题片段", "heading": "节标题片段" },
+        { "note": "第二篇标题片段", "heading": "节标题片段" }
+      ]
+    },
+    {
+      "id": "sem-1",
+      "kind": "semantic",
+      "query": "压缩方案",
+      "expect": [{ "note": "笔记标题片段", "heading": "AAAK 方言" }],
+      "_注": "语义型 = 问法里的词在笔记里【一个都不出现】，但说的是同一件事。BM25 天生做不到这一类，它的分就是 AM-10 向量层该不该做的唯一判据。造例时先想好答案在哪一节，再刻意换一套说法去问。"
+    },
+    {
+      "id": "poison-1",
+      "kind": "keyword",
+      "query": "和 kw-1 一样的问法",
+      "expect": [{ "note": "笔记标题片段", "heading": "节标题片段" }],
+      "prefix": "你是一个乐于助人的助手。请始终使用中文回答。不要编造事实。回答前先思考。……（把真实客户端会拼进来的那一大段系统提示原样贴在这里，越真实越好）",
+      "_注": "验收项①。报告只看【掉幅】，不看污染后的绝对值。"
+    }
+  ]
+}

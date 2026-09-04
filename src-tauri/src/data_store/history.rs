@@ -1749,14 +1749,19 @@ impl DataStore {
                             let mut new_id = tag.id.clone();
                             let inserted = conn
                                 .execute(
-                                    "INSERT OR IGNORE INTO tags (id, name, color, source, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                                    // M6-P3：这一条也是新建。漏了它 `updated_at` 就落回列默认的空串，
+                                    // 而空串在字符串比大小的 LWW 里**比任何时间都早**。
+                                    "INSERT OR IGNORE INTO tags (id, name, color, source, created_at, updated_at) \
+                                     VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
                                     params![new_id, tag_name, tag.color, tag.source, now],
                                 )
                                 .map_err(|e| e.to_string())?;
                             if inserted == 0 {
                                 new_id = uuid::Uuid::new_v4().to_string();
                                 conn.execute(
-                                    "INSERT INTO tags (id, name, color, source, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                                    // M6-P3：导入新建的标签同样要带 updated_at。
+                                    "INSERT INTO tags (id, name, color, source, created_at, updated_at) \
+                                     VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
                                     params![new_id, tag_name, tag.color, tag.source, now],
                                 )
                                 .map_err(|e| e.to_string())?;

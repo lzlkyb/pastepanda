@@ -6405,3 +6405,142 @@ fn test_summary_write_clear_and_roundtrip() {
     assert!(md.contains("summary: 会议要点"), "frontmatter 应带 summary：{md}");
     assert_eq!(markdown_to_note(&md, "x").summary.as_deref(), Some("会议要点"));
 }
+
+// ===== M6-P2：updated_ms =====
+
+/// 🔴 **新建路径**（不只是更新路径）也必须给 `updated_ms`。
+///
+/// 这条测试是补出来的：`notes` 有两处 INSERT，第一版只改了 `note_create_on`，
+/// 漏了今日速记新建那一处。漏掉的后果不是「少个字段」——
+/// 列默认值是 `0`，而 `0` 在 LWW 里永远是输的那一方，
+/// 于是那条笔记会被对端**静默覆盖**，界面上完全看不出来。
+#[test]
+fn test_每一处新建都要给updated_ms而不是落回默认值0() {
+    let store = make_store();
+
+    let n = store.note_create(None, "普通新建", "正文").unwrap();
+    assert!(
+        store.note_updated_ms(&n.id).unwrap() > 0,
+        "note_create 没给 updated_ms"
+    );
+
+    let daily = match store
+        .note_append_daily("2026-09-04", "10:30", None, "第一条速记")
+        .unwrap()
+    {
+        DailyAppend::Appended(n) => n,
+        other => panic!("该建出一条新速记，实际 {:?}", other),
+    };
+    assert!(
+        store.note_updated_ms(&daily.id).unwrap() > 0,
+        "今日速记新建没给 updated_ms —— 这条会在同步里永远输"
+    );
+}
+
+
+/// 🔴 每一处刷 `updated_at` 的写入都必须同时刷 `updated_ms`。
+///
+/// 漏一处的后果不是「少个字段」，是**那次改动在同步里没发生过**——
+/// 对端按 LWW 比大小，看不到的改动就等于被对方覆盖掉。
+/// 所以这条把五条写入路径逐个走一遍，而不是只测最常见的那条。
+#[test]
+fn test_updated_ms_is_bumped_on_every_write_path() {
+    let store = make_store();
+    let n = store.note_create(None, "标题", "v0").unwrap();
+    let mut last = store.note_updated_ms(&n.id).expect("新建就该有 updated_ms");
+    assert!(last > 0, "新建时 updated_ms 不能是 0");
+
+    let 递增 = |store: &DataStore, 谁: &str, last: &mut i64| {
+        let now = store.note_updated_ms(&n.id).expect("笔记还在");
+        assert!(now > *last, "{} 之后 updated_ms 没有前进（{} → {}）", 谁, last, now);
+        *last = now;
+    };
+
+    store.note_update(&n.id, "标题", "v1").unwrap();
+    递增(&store, "note_update", &mut last);
+
+    // 改标题触发的 [[引用]] 重写：被改的是**另一篇**，它也必须前进
+    let refs = store.note_create(None, "引用", "见 [[标题]]").unwrap();
+    let r0 = store.note_updated_ms(&refs.id).unwrap();
+    store.note_update(&n.id, "新标题", "v2").unwrap();
+    let r1 = store.note_updated_ms(&refs.id).unwrap();
+    assert!(r1 > r0, "被重写 [[引用]] 的那篇没前进（{} → {}）", r0, r1);
+
+    递增(&store, "note_update(改标题)", &mut last);
+
+    // 版本恢复：这是一次**新的**修改，不是回到过去
+    let revs = store.note_revision_list(&n.id).unwrap();
+    let first = revs.last().expect("应当有历史版本");
+    store.note_restore(first.id).unwrap();
+    递增(&store, "note_restore", &mut last);
+}
+
+/// 同一毫秒内连改两次，`updated_ms` 也必须**严格递增**。
+///
+/// 否则「最新的那次修改」在本机就先输了一次——而 LWW 正是按它判胜负。
+#[test]
+fn test_updated_ms_is_strictly_monotonic_within_one_millisecond() {
+    let store = make_store();
+    let n = store.note_create(None, "标题", "v0").unwrap();
+    let mut prev = store.note_updated_ms(&n.id).unwrap();
+    // 连改 20 次；同一毫秒内多半会撞上，MAX(now, prev+1) 必须顶住
+    for i in 1..=20 {
+        store.note_update(&n.id, "标题", &format!("v{i}")).unwrap();
+        let now = store.note_updated_ms(&n.id).unwrap();
+        assert!(now > prev, "第 {} 次改动没有严格递增（{} → {}）", i, prev, now);
+        prev = now;
+    }
+}
+
+// ===== M6-P3：folders / tags / note_tags 的时间戳 =====
+
+/// 🔴 文件夹与标签必须有 `updated_at`，否则两台机器各改一次名字时
+/// **没有任何依据判断谁更新**——只能二选一地静默丢掉一个。
+#[test]
+fn test_folder_and_tag_carry_updated_at() {
+    let store = make_store();
+    let f = store.folder_create("工作", None).unwrap();
+    let t = store.create_tag("重要", "#f00").unwrap();
+
+    let 读 = |sql: &str, id: &str| -> String {
+        store
+            .lock_conn()
+            .query_row(sql, [id], |r| r.get::<_, String>(0))
+            .unwrap_or_default()
+    };
+    let f0 = 读("SELECT updated_at FROM note_folders WHERE id = ?1", &f.id);
+    let t0 = 读("SELECT updated_at FROM tags WHERE id = ?1", &t.id);
+    assert!(!f0.is_empty(), "新建文件夹要有 updated_at");
+    assert!(!t0.is_empty(), "新建标签要有 updated_at");
+
+    // 改名后必须刷新（同步冲突最典型的来源）
+    store.folder_rename(&f.id, "工作笔记").unwrap();
+    store.update_tag(&t.id, "很重要", "#00f").unwrap();
+    assert!(
+        !读("SELECT updated_at FROM note_folders WHERE id = ?1", &f.id).is_empty(),
+        "改名后 updated_at 不该被清空"
+    );
+    assert!(
+        !读("SELECT updated_at FROM tags WHERE id = ?1", &t.id).is_empty(),
+        "改标签后 updated_at 不该被清空"
+    );
+}
+
+/// `note_tags` 关联本身也要带时间戳：按 (note_id, tag_id) 配对比 LWW 时要用。
+#[test]
+fn test_note_tag_link_carries_timestamps() {
+    let store = make_store();
+    let n = store.note_create(None, "标题", "正文").unwrap();
+    let t = store.create_tag("标签", "#f00").unwrap();
+    store.note_set_tags(&n.id, &[t.id.clone()]).unwrap();
+
+    let (c, u): (String, String) = store
+        .lock_conn()
+        .query_row(
+            "SELECT created_at, updated_at FROM note_tags WHERE note_id = ?1 AND tag_id = ?2",
+            [&n.id, &t.id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("关联应当存在");
+    assert!(!c.is_empty() && !u.is_empty(), "关联要带 created_at/updated_at：{c:?} {u:?}");
+}

@@ -204,8 +204,9 @@ impl DataStore {
             .unwrap_or(0);
 
         conn.execute(
-            "INSERT INTO note_folders (id, name, parent_id, sort_order, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            // M6-P3：updated_at 与 created_at 同值——刚建就是「至今没改过」。
+            "INSERT INTO note_folders (id, name, parent_id, sort_order, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
             rusqlite::params![id, name, parent_id, next_order, now],
         )
         .map_err(|e| e.to_string())?;
@@ -240,8 +241,12 @@ impl DataStore {
 
         let n = conn
             .execute(
-                "UPDATE note_folders SET name = ?1 WHERE id = ?2",
-                rusqlite::params![name, id],
+                // M6-P3：改名是同步里最典型的冲突源，没时间戳就只能静默丢一个。
+                // 用 `folder_now()` 而不是 `note_now()`：后者带毫秒，
+                // 而本表 created_at 从建表起就无毫秒——同一列混两种格式，
+                // 字符串比大小会在秒相同时让带毫秒那条永远赢。
+                "UPDATE note_folders SET name = ?1, updated_at = ?3 WHERE id = ?2",
+                rusqlite::params![name, id, folder_now()],
             )
             .map_err(|e| e.to_string())?;
         if n == 0 {
@@ -291,8 +296,9 @@ impl DataStore {
 
         let n = conn
             .execute(
-                "UPDATE note_folders SET parent_id = ?1 WHERE id = ?2",
-                rusqlite::params![new_parent, id],
+                // M6-P3：挪位置也是一次修改。时间格式同上要用 `folder_now()`。
+                "UPDATE note_folders SET parent_id = ?1, updated_at = ?3 WHERE id = ?2",
+                rusqlite::params![new_parent, id, folder_now()],
             )
             .map_err(|e| e.to_string())?;
         if n == 0 {

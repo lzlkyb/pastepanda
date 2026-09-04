@@ -110,8 +110,10 @@ impl DataStore {
         for (name, tag_id) in names.iter().zip(ids.iter()) {
             let n = conn
                 .execute(
-                    "INSERT OR IGNORE INTO note_tags (note_id, tag_id, source) VALUES (?1, ?2, ?3)",
-                    rusqlite::params![note_id, tag_id, AI_TAG_SOURCE],
+                    // M6-P3：同上。
+                    "INSERT OR IGNORE INTO note_tags (note_id, tag_id, source, created_at, updated_at) \
+                     VALUES (?1, ?2, ?3, ?4, ?4)",
+                    rusqlite::params![note_id, tag_id, AI_TAG_SOURCE, super::note::note_now()],
                 )
                 .map_err(|e| e.to_string())?;
             if n > 0 {
@@ -125,8 +127,11 @@ impl DataStore {
     pub fn note_confirm_ai_tags(&self, note_id: &str) -> Result<(), String> {
         let conn = self.lock_conn();
         conn.execute(
-            "UPDATE note_tags SET source = 'manual' WHERE note_id = ?1 AND source = ?2",
-            rusqlite::params![note_id, AI_TAG_SOURCE],
+            // M6-P3：用户认可一个 AI 标签是一次真实修改（source 变了），
+            // 不刷时间戳的话，对端那份还标着 'ai' 的旧行会把这次认可盖回去。
+            "UPDATE note_tags SET source = 'manual', updated_at = ?3 \
+             WHERE note_id = ?1 AND source = ?2",
+            rusqlite::params![note_id, AI_TAG_SOURCE, super::note::note_now()],
         )
         .map_err(|e| e.to_string())?;
         Ok(())

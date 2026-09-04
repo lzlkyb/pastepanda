@@ -907,15 +907,35 @@ fn scope_label(folder: Option<&str>, tag: Option<&str>) -> String {
     }
 }
 
-/// AM-2：把「最相关的几节」拼成一段。命中不到就返空串（不占位、不制造噪声）。
+/// 正文短到不值得再做节级定位吗？
 ///
 /// ❗ **短笔记直接跳过**：正文没比摘要长多少时，那 200 字摘要已经就是全文，
 /// 再列一遍节是纯重复。阈值取 `BRIEF_CHARS * 2`：低于它时“再定位一次”没有信息增量。
-fn format_section_hits(content: &str, terms: &[String]) -> String {
-    if content.chars().count() <= BRIEF_CHARS * 2 {
-        return String::new();
+///
+/// 🔴 **这个判定必须只有一处**（规则 #11）：AM-5 召回基准要按出货时的真实
+/// 返回内容记账，它和 [`format_section_hits`] 各写一套的话，量出来的数
+/// 就不是线上那套检索的数——而这种偏差从报告上完全看不出来。
+pub(crate) fn skips_section_hits(content: &str) -> bool {
+    content.chars().count() <= BRIEF_CHARS * 2
+}
+
+/// 挑出一篇正文里最相关的几节。短笔记返回空。
+///
+/// 与 [`format_section_hits`] 的分工：这里决定**挑哪几节**，那边只负责排版。
+/// AM-5 基准复用本函数，因此基准与出货永远不会漂。
+pub(crate) fn section_hits_for(
+    content: &str,
+    terms: &[String],
+) -> Vec<crate::markdown::SectionHit> {
+    if skips_section_hits(content) {
+        return Vec::new();
     }
-    let hits = crate::markdown::rank_sections(content, terms, SECTION_HITS);
+    crate::markdown::rank_sections(content, terms, SECTION_HITS)
+}
+
+/// AM-2：把「最相关的几节」拼成一段。命中不到就返空串（不占位、不制造噪声）。
+fn format_section_hits(content: &str, terms: &[String]) -> String {
+    let hits = section_hits_for(content, terms);
     if hits.is_empty() {
         return String::new();
     }

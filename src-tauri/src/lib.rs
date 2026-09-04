@@ -19,6 +19,10 @@ fn fatal_startup_error(app: &tauri::AppHandle, title: &str, detail: impl std::fm
 pub mod ai;
 mod atomic_write;
 mod auto_cleanup;
+/// AM-5 召回基准。`#[cfg(test)]`：只在 `cargo test` 下编译，**不进安装包**。
+/// 真库跑法见模块文档。
+#[cfg(test)]
+mod bench;
 mod clipboard_monitor;
 mod commands;
 // DPAPI 加解密的公共收口（AI 密钥与 MCP 令牌共用同一份 unsafe FFI）

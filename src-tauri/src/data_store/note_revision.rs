@@ -230,8 +230,12 @@ impl DataStore {
                 return Err(format!("笔记不存在: {}", note_id));
             }
             tx.execute(
-                "UPDATE notes SET title = ?2, content = ?3, updated_at = ?4 WHERE id = ?1",
-                rusqlite::params![note_id, title, content, note_now()],
+                // M6-P2：恢复旧版本是一次新的修改（不是回到过去），
+                // 所以 updated_ms 取**现在**而不是那个快照的时间——
+                // 否则对端会认为它旧于自己手里的版本，把用户刚做的恢复覆盖掉。
+                "UPDATE notes SET title = ?2, content = ?3, updated_at = ?4, \
+                 updated_ms = MAX(?5, updated_ms + 1) WHERE id = ?1",
+                rusqlite::params![note_id, title, content, note_now(), super::note::now_ms()],
             )
             .map_err(|e| e.to_string())?;
             Self::prune_revisions_on(&tx, &note_id).map_err(|e| e.to_string())?;

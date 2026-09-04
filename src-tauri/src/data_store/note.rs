@@ -169,6 +169,46 @@ pub(super) fn note_now() -> String {
     chrono::Local::now().format(NOTE_TIME_FMT).to_string()
 }
 
+/// 现在的 epoch 毫秒。M6-P2 的 `notes.updated_ms` 用它。
+///
+/// 🔴 **为什么另存一列而不是解析 `updated_at`**：
+/// `updated_at` 是本地时间字串（`note_now`），跨机不可比；
+/// 而 epoch 毫秒**本身就无时区**，同步时直接比大小就行。
+/// 且不动 `updated_at`：今日速记/用量/预算的「本地哪一天」语义靠它，
+/// 改成 UTC 会把日界限平移 8 小时。
+///
+/// ❗ **每一处刷 `updated_at` 的 SQL 都必须同时写** `updated_ms`，目前共六处
+/// （规则 #11.1；漏一处 = 那次改动在同步里「没发生过」）：
+///
+/// | 位置 | 写法 |
+/// |---|---|
+/// | `note_create_on` | INSERT，直接给 `now_ms()` |
+/// | `note_daily` 新建 | INSERT，直接给 `now_ms()` |
+/// | `note_update_from` | `MAX(?, updated_ms + 1)` |
+/// | `rewrite_wiki_links_on` | 同上 |
+/// | `note_daily` 追写 | 同上 |
+/// | `note_revision` 恢复 | 同上（取**现在**，不取快照时间）|
+///
+/// 🔴 INSERT 漏给 = 落回列默认值 `0`，而 `0` 在 LWW 里**永远是输的那一方**——
+/// 那条笔记会被对端静默盖掉，且从界面上完全看不出来。
+///
+/// # 另有四处**故意不刷**（M6 要单独拍板，不是遗漏）
+///
+/// `pinned` 切换 / `summary` 写入 / `folder_id` 移动 / `deleted_at` 软删。
+/// 它们现在连 `updated_at` 都不刷——**这是既有语义**：`updated_at` 表示「正文改过」，
+/// 界面「最近修改」按它排，把置顶算成一次修改会让列表乱跳。
+/// 但同步要的是「这一行变过没有」，两者口径不同。
+/// 现在跟着 `updated_at` 走是为了不顺手改用户可见的行为；
+/// 删除归 M6-P4 墓碑，其余三处等 M6 主体决定是否拆出独立的行版本号。
+///
+/// 🔴 `MAX(…, updated_ms + 1)` 是**单调保证**：
+/// 本机时钟回拨、或同一毫秒内改两次时，它保证这一条**严格递增**——
+/// 否则「最新的那次修改」在本机就先输了一次，而 LWW 按它判胜负。
+/// （跨机的时钟偏斜要等 HLC，见 M6 设计稿 §7.5）
+pub(super) fn now_ms() -> i64 {
+    chrono::Local::now().timestamp_millis()
+}
+
 /// 回收站超期条目的筛选条件。`?1` = [`expired_cutoff`] 算出的截止时间。
 pub(super) const EXPIRED_WHERE: &str = "deleted_at IS NOT NULL AND deleted_at < ?1";
 
@@ -600,6 +640,18 @@ impl DataStore {
         self.note_create_from(history_id, title, content, "")
     }
 
+    /// 读一条笔记的 `updated_ms`（M6-P2）。不存在返 `None`。
+    ///
+    /// 同步层算增量靠它；当下先给测试用——
+    /// 「每一处写入都刷了 updated_ms」这件事必须可断言，否则漏一处没人知道。
+    pub fn note_updated_ms(&self, id: &str) -> Option<i64> {
+        self.lock_conn()
+            .query_row("SELECT updated_ms FROM notes WHERE id = ?1", [id], |r| {
+                r.get::<_, i64>(0)
+            })
+            .ok()
+    }
+
     /// 带来源的新建（M5）。`source` 空 = 人工；非空形如 `agent:claude-code`。
     ///
     /// `notes.source_agent` 这一列 A 阶段建表就留了（注释写着「M4 才启用」），
@@ -652,9 +704,9 @@ impl DataStore {
         };
         let now = note_now();
         conn.execute(
-            "INSERT INTO notes (id, history_id, title, content, created_at, updated_at, source_agent)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6)",
-            rusqlite::params![id, history_id, title, content, now, source],
+            "INSERT INTO notes (id, history_id, title, content, created_at, updated_at, source_agent, updated_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, ?7)",
+            rusqlite::params![id, history_id, title, content, now, source, now_ms()],
         )
         .map_err(|e| e.to_string())?;
         Self::sync_notes_fts_on(&conn, &id);
@@ -736,8 +788,11 @@ impl DataStore {
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         Self::snapshot_note_on(&tx, id, source).map_err(|e| e.to_string())?;
         tx.execute(
-            "UPDATE notes SET title = ?2, content = ?3, updated_at = ?4 WHERE id = ?1",
-            rusqlite::params![id, title, content, note_now()],
+            // M6-P2：每一处刷 `updated_at` 的地方都必须同时刷 `updated_ms`——
+            // 漏一处 = 那次改动在同步里「没发生过」。MAX(...) 是单调保证，见 [`now_ms`]。
+            "UPDATE notes SET title = ?2, content = ?3, updated_at = ?4, \
+             updated_ms = MAX(?5, updated_ms + 1) WHERE id = ?1",
+            rusqlite::params![id, title, content, note_now(), now_ms()],
         )
         .map_err(|e| e.to_string())?;
         Self::prune_revisions_on(&tx, id).map_err(|e| e.to_string())?;
@@ -823,9 +878,10 @@ impl DataStore {
             // 先拍快照再改（同 note_update_from 的口径：快照存的是旧版本）。
             Self::snapshot_note_on(tx, id, source)?;
             tx.execute(
-                "UPDATE notes SET content = REPLACE(content, ?2, ?3), updated_at = ?4 \
-                 WHERE id = ?1",
-                rusqlite::params![id, &from, &to, note_now()],
+                // M6-P2：改链也是一次真实修改，同步时必须能看到它。
+                "UPDATE notes SET content = REPLACE(content, ?2, ?3), updated_at = ?4, \
+                 updated_ms = MAX(?5, updated_ms + 1) WHERE id = ?1",
+                rusqlite::params![id, &from, &to, note_now(), now_ms()],
             )?;
             Self::prune_revisions_on(tx, id)?;
         }
@@ -1505,8 +1561,10 @@ impl DataStore {
             .map_err(|e| e.to_string())?;
         for tid in tag_ids {
             tx.execute(
-                "INSERT OR IGNORE INTO note_tags (note_id, tag_id, source) VALUES (?1, ?2, 'manual')",
-                rusqlite::params![note_id, tid],
+                // M6-P3：关联的增删也要带时间戳（按 (note_id, tag_id) 配对比 LWW）。
+                "INSERT OR IGNORE INTO note_tags (note_id, tag_id, source, created_at, updated_at) \
+                 VALUES (?1, ?2, 'manual', ?3, ?3)",
+                rusqlite::params![note_id, tid, note_now()],
             )
             .map_err(|e| e.to_string())?;
         }
@@ -1534,8 +1592,10 @@ impl DataStore {
         for tid in add {
             added += tx
                 .execute(
-                    "INSERT OR IGNORE INTO note_tags (note_id, tag_id, source) VALUES (?1, ?2, 'ai')",
-                    rusqlite::params![note_id, tid],
+                    // M6-P3：同上。
+                    "INSERT OR IGNORE INTO note_tags (note_id, tag_id, source, created_at, updated_at) \
+                     VALUES (?1, ?2, 'ai', ?3, ?3)",
+                    rusqlite::params![note_id, tid, note_now()],
                 )
                 .map_err(|e| e.to_string())?;
         }

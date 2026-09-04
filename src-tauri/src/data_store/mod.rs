@@ -1133,6 +1133,95 @@ impl DataStore {
             }
         }
 
+        // 数据库迁移（M6-P3）：folders / tags / note_tags 补时间戳。
+        //
+        // 🔴 没有它们，文件夹与标签**无法做后写胜**：两台机器各改一次名字时，
+        //   没有任何依据判断谁的改动更新——只能二选一地静默丢一个。
+        //   `notes` 有 updated_at 而这三张表没有，是 A 阶段建表时的遗漏（§12.3 C）。
+        //
+        // 回填口径：
+        //   · folders / tags → updated_at = created_at（“至今没改过”是对的）
+        //   · note_tags 连 created_at 都没有 → 取所属笔记的 created_at，
+        //     因为「笔记上的标签」不可能早于笔记本身，这是个诚实的下界。
+        for (table, cols) in [
+            ("note_folders", &["updated_at"][..]),
+            ("tags", &["updated_at"][..]),
+            ("note_tags", &["created_at", "updated_at"][..]),
+        ] {
+            for col in cols {
+                let has: bool = conn
+                    .query_row(
+                        &format!(
+                            "SELECT COUNT(*) FROM pragma_table_info('{}') WHERE name = '{}'",
+                            table, col
+                        ),
+                        [],
+                        |row| row.get::<_, i32>(0),
+                    )
+                    .unwrap_or(0)
+                    > 0;
+                if has {
+                    continue;
+                }
+                let backfill = if table == "note_tags" {
+                    format!(
+                        "UPDATE {t} SET {c} = COALESCE(                           (SELECT created_at FROM notes WHERE notes.id = {t}.note_id), '');",
+                        t = table,
+                        c = col
+                    )
+                } else {
+                    format!("UPDATE {t} SET {c} = created_at;", t = table, c = col)
+                };
+                let sql = format!(
+                    "ALTER TABLE {t} ADD COLUMN {c} TEXT NOT NULL DEFAULT ''; {b}",
+                    t = table,
+                    c = col,
+                    b = backfill
+                );
+                if let Err(e) = conn.execute_batch(&sql) {
+                    if is_duplicate_column_error(&e) {
+                        log::warn!("[DataStore] {}.{} 列已存在，忽略: {}", table, col, e);
+                    } else {
+                        log::error!("[DataStore] 添加 {}.{} 列失败: {}", table, col, e);
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
+        // 数据库迁移（M6-P2）：notes.updated_ms —— 同步专用的 epoch 毫秒。
+        //
+        // 🔴 为何另存一列而不是把 `updated_at` 改成 UTC：
+        //   `updated_at` 是本地时间字串，今日速记/用量/预算的「本地哪一天」靠它，
+        //   改 UTC 会把日界限平移 8 小时，还要抓全每一处展示调用点（漏一处就是错时间）。
+        //   epoch 毫秒**本身就无时区**，跨机直接比大小——同步要的就是这个。
+        //
+        // 回填：`strftime('%s', updated_at, 'utc')` 把本地时间字串转成 epoch
+        //   （已实测核过语义，不是凭印象用）。
+        //   ❗ 它用的是**当前**时区偏移，不是历史时刻的偏移；中国无夏令时，对排序无影响。
+        let has_updated_ms: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('notes') WHERE name = 'updated_ms'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_updated_ms {
+            if let Err(e) = conn.execute_batch(
+                "ALTER TABLE notes ADD COLUMN updated_ms INTEGER NOT NULL DEFAULT 0;
+                 UPDATE notes SET updated_ms =
+                     COALESCE(CAST(strftime('%s', updated_at, 'utc') AS INTEGER), 0) * 1000;",
+            ) {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] notes.updated_ms 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 notes.updated_ms 列失败: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
         // 数据库迁移（B1 置顶）：notes.pinned。
         //
         // ❗ 不要与 `note_revisions.pinned` 搞混：后者是 **W2 的版本锚定**
