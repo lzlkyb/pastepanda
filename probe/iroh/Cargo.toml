@@ -1,0 +1,19 @@
+# M6 传输层探针。**独立工程，不进主仓库的构建**——
+# 探针没过之前不能让 iroh 污染 pastePanda 的依赖树。
+[package]
+name = "iroh-probe"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+iroh = "1.1.0"
+
+# 与 pastePanda 的 [profile.release] 完全一致，否则量出来的数不可比。
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = "z"
+strip = "symbols"
+panic = "abort"

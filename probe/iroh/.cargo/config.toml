@@ -1,0 +1,9 @@
+# 只作用于本探针工程，**不动全局 cargo 配置**。
+#
+# 直连 static.crates.io 拉 iroh 的依赖树（~150 个 crate，含 windows v0.62 这种大件）
+# 实测反复 30s 超时；rsproxy.cn 0.67s 可达。
+[source.crates-io]
+replace-with = "rsproxy-sparse"
+
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"
