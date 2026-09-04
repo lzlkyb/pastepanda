@@ -1523,7 +1523,23 @@ impl DataStore {
         push_view_filters(&mut sql, opts);
         // 不复用 order_clause：它排的是时间/标题，而这里要的是相关度。
         // 分组也不参与（上面固定给 `NULL AS grp`）：问答取的是 5 篇片段，没有分组语义。
-        sql.push_str(" ORDER BY bm25(notes_fts, 10.0, 1.0, 0.0) LIMIT ?");
+        //
+        // AM-9 破同分：bm25 完全相等时取**最近改过的**。
+        //
+        // 🔴 `bm25()` 是**负数、越小越相关、所以是 ASC**（无 `DESC`）。
+        //   写成 `DESC` 会把最不相关的排到最前，而且那个错从返回结果的
+        //   「看起来像在工作」上完全看不出来。已配守卫单测。
+        //
+        // 破同分用 `updated_ms` 而不是 `updated_at`：
+        //   前者是整数，后者是字串且历史上存在带/不带毫秒两种格式——
+        //   字串比大小会在秒相同时让带毫秒那条永远赢，
+        //   那就不是「最近改过的赢」而是「写入格式新的赢」。
+        //   `updated_ms` 由 M6-P2a 保证六处写入点全刷且严格递增。
+        //
+        // ❗ 这只是 AM-9 的**破同分**那一半：它只在 score 完全相等时生效，
+        //   不改变任何当前能分出高下的结果，所以不需要 AM-5 基准。
+        //   真正的多信号加权（连同「排序收口到 Rust」那次重构）仍卡在 AM-5 之后。
+        sql.push_str(" ORDER BY bm25(notes_fts, 10.0, 1.0, 0.0), notes.updated_ms DESC LIMIT ?");
         params.push(Box::new(limit));
 
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;

@@ -6544,3 +6544,79 @@ fn test_note_tag_link_carries_timestamps() {
         .expect("关联应当存在");
     assert!(!c.is_empty() && !u.is_empty(), "关联要带 created_at/updated_at：{c:?} {u:?}");
 }
+
+// ===== AM-9 破同分 =====
+
+/// 直接改 `updated_ms`，用来构造破同分的两种方向。
+///
+/// ❗ **不能用 `note_update` 来构造**：它在标题与正文都没变时**故意什么都不做**
+/// （见 `note_update_from` 的注释——那是为了「打开→直接保存」不把笔记顶到列表最前）。
+/// 而只要真改了内容，bm25 就不再相同，同分场景也就不存在了。
+fn set_updated_ms(store: &DataStore, id: &str, ms: i64) {
+    store
+        .lock_conn()
+        .execute("UPDATE notes SET updated_ms = ?2 WHERE id = ?1", rusqlite::params![id, ms])
+        .expect("改 updated_ms 失败");
+}
+
+/// 相关度完全相同时，取**最近改过的**那一篇。
+///
+/// 🔴 **两个方向都要测**。只断言一次的话，按 `rowid` 排也能过——
+/// 而 `rowid` 恰好与创建顺序一致，于是一个根本没生效的破同分看起来是对的。
+/// （第一版就是这么写的，它过了，但翻过来就露馅。）
+#[test]
+fn test_相关度相同时最近改过的排在前面() {
+    let store = make_store();
+    // 标题与正文完全一致 → bm25 必然相同（实测两条都是 -0.0000019836），
+    // 于是只剩破同分能分高下。
+    let a = store.note_create(None, "并发", "并发处理笔记").unwrap();
+    let b = store.note_create(None, "并发", "并发处理笔记").unwrap();
+    let opts = NoteViewOpts::default();
+
+    let first = |store: &DataStore| {
+        store
+            .note_search_relevant("并发", "", &[], &opts, 5)
+            .unwrap()[0]
+            .id
+            .clone()
+    };
+
+    set_updated_ms(&store, &a.id, 1_000);
+    set_updated_ms(&store, &b.id, 2_000);
+    assert_eq!(first(&store), b.id, "b 更新 → b 在前");
+
+    // 翻过来：与 rowid 顺序相反，这一半才真正证明接的是时间
+    set_updated_ms(&store, &a.id, 3_000);
+    assert_eq!(first(&store), a.id, "a 更新 → a 在前（此时与 rowid 顺序相反）");
+}
+
+/// 🔴 方向守卫：`bm25()` 是**负数、越小越相关**，所以 `ORDER BY` 必须是 ASC。
+///
+/// 把它写成 `DESC` 会把最不相关的排到最前——而返回结果仍然是「几篇相关笔记」，
+/// 从输出上完全看不出排反了。这条测试就是为了让那次改动**响一下**。
+#[test]
+fn test_bm25是升序_更相关的必须排在前面() {
+    let store = make_store();
+    // 标题命中（列权重 10 倍）+ 正文密集命中
+    let strong = store
+        .note_create(None, "并发", "并发 并发 并发 并发")
+        .unwrap();
+    // 只在一篇长文里出现一次
+    let weak = store
+        .note_create(
+            None,
+            "杂记",
+            &format!("{}并发{}", "无关内容。".repeat(80), "其它补充。".repeat(80)),
+        )
+        .unwrap();
+
+    let hits = store
+        .note_search_relevant("并发", "", &[], &NoteViewOpts::default(), 5)
+        .unwrap();
+    assert_eq!(hits.len(), 2);
+    assert_eq!(
+        hits[0].id, strong.id,
+        "更相关的必须在前。排反了说明 ORDER BY 被写成了 DESC（bm25 是负数）"
+    );
+    assert_eq!(hits[1].id, weak.id);
+}
