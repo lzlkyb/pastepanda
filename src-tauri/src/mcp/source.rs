@@ -42,6 +42,16 @@ pub enum SearchOutcome {
     NoMatch,
     UnknownFolder(String),
     UnknownTag(String),
+    /// AM-7：`kind` 参数本身不是个合法类别名（含空格、太长、是 `x` 等）。
+    ///
+    /// 与「没匹配到」分开报：前者是**参数写错了**，后者是**库里确实没有**。
+    /// 混成一个，模型会把自己的笔误读成结论。
+    BadKind(String),
+    /// AM-7：查询本身有命中，但没有一篇记过这个类别。
+    ///
+    /// 带上 `matched`（筛掉前有几篇）——只说「没找到」会让模型以为
+    /// 连关键词都不匹配，从而换一个完全不同的词重试，白跑一轮。
+    NoKindMatch { kind: String, matched: usize },
 }
 
 /// 范围参数（名字）解析后的结果。
@@ -109,6 +119,7 @@ pub trait KbSource: Send + Sync + 'static {
         query: &str,
         folder: Option<&str>,
         tag: Option<&str>,
+        kind: Option<&str>,
         limit: u32,
     ) -> Result<SearchOutcome, String>;
 
@@ -235,9 +246,10 @@ impl KbSource for AppKbSource {
         query: &str,
         folder: Option<&str>,
         tag: Option<&str>,
+        kind: Option<&str>,
         limit: u32,
     ) -> Result<SearchOutcome, String> {
-        self.with_store(|s| search_on(s, query, folder, tag, limit))?
+        self.with_store(|s| search_on(s, query, folder, tag, kind, limit))?
     }
 
     fn folder_name(&self, folder_id: &str) -> Option<String> {
@@ -355,11 +367,23 @@ fn list_on(
     Ok(ListOutcome::Ok(notes))
 }
 
+/// AM-7 `kind` 筛选的过取倍数。
+///
+/// `kind` 是**内容里的约定行**，SQL 层筛不了，只能取回来再过滤。
+/// 不过取的话，「前 5 篇里恰好没有带 decision 的」就会被报成「库里没有决定」——
+/// 那是个看不出来的错答案。
+///
+/// 取 6 不是拍脑袋：库里 25 篇，`limit` 默认 5，6 倍即 30 > 全库，
+/// 也就是**当前规模下等价于全库扫**；库长大后它退化成一个合理的过取窗口。
+/// 🔴 真正的窗口大小要等 AM-5（它扫 `limit ∈ {5,10,20}` 就是在量这个 k）。
+const KIND_OVER_FETCH: u32 = 6;
+
 fn search_on(
     store: &DataStore,
     query: &str,
     folder: Option<&str>,
     tag: Option<&str>,
+    kind: Option<&str>,
     limit: u32,
 ) -> Result<SearchOutcome, String> {
     // 先单独跑一次拆词，就是为了分开那两种「没结果」。
@@ -374,12 +398,43 @@ fn search_on(
         Scope::UnknownFolder(n) => return Ok(SearchOutcome::UnknownFolder(n)),
         Scope::UnknownTag(n) => return Ok(SearchOutcome::UnknownTag(n)),
     };
+    // AM-7：kind 写错要当场报错，不能等它筛空了再说「没找到」——
+    // 后者会被模型读成「库里确实没有」，然后带着错结论走下去。
+    let kind = kind.map(str::trim).filter(|k| !k.is_empty());
+    if let Some(k) = kind {
+        if !crate::markdown::annotate::is_kind_label(k) {
+            return Ok(SearchOutcome::BadKind(k.to_string()));
+        }
+    }
+
     let opts = NoteViewOpts::default();
-    let notes = store.note_search_relevant(query, &folder_filter, &tag_ids, &opts, limit)?;
+    // 带 kind 时多取一些再筛（见 KIND_OVER_FETCH）。
+    let fetch = match kind {
+        Some(_) => limit.saturating_mul(KIND_OVER_FETCH),
+        None => limit,
+    };
+    let notes = store.note_search_relevant(query, &folder_filter, &tag_ids, &opts, fetch)?;
     if notes.is_empty() {
-        Ok(SearchOutcome::NoMatch)
+        return Ok(SearchOutcome::NoMatch);
+    }
+    let Some(k) = kind else {
+        return Ok(SearchOutcome::Hits(notes));
+    };
+
+    let matched = notes.len();
+    let want = k.to_lowercase();
+    let kept: Vec<Note> = notes
+        .into_iter()
+        .filter(|n| crate::markdown::kinds_of(&n.content).iter().any(|x| *x == want))
+        .take(limit as usize)
+        .collect();
+    if kept.is_empty() {
+        Ok(SearchOutcome::NoKindMatch {
+            kind: k.to_string(),
+            matched,
+        })
     } else {
-        Ok(SearchOutcome::Hits(notes))
+        Ok(SearchOutcome::Hits(kept))
     }
 }
 

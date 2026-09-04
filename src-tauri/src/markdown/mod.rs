@@ -18,6 +18,7 @@
 //!
 //! 三者**全部是纯函数**。落库的原子性在 `mcp/source.rs`，不在这里。
 
+pub mod annotate;
 pub mod edit;
 pub mod rank;
 pub mod sections;
@@ -25,6 +26,7 @@ pub mod sections;
 #[cfg(test)]
 mod tests;
 
+pub use annotate::{kinds_of, parse_observations, Observation};
 pub use edit::{apply, ContentEdit, EditReport, InsertAt};
 pub use rank::{rank_sections, SectionHit};
 pub use sections::{locate, outline, slice, LocateError, Section, SectionRef};

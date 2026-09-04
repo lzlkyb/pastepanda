@@ -621,3 +621,104 @@ fn test_英文大小写不敏感() {
     let hits = rank_sections(doc, &词(&["docker"]), 3);
     assert!(!hits.is_empty(), "查询词小写应能命中正文里的 Docker");
 }
+
+// ===== AM-7 行内类别 =====
+
+use super::annotate::{is_kind_label, kinds_of, parse_observations};
+
+/// 🔴 设计文档点名要的守卫用例：任务复选框与类别混在同一篇里，只能解出类别。
+///
+/// 这不是假想——本机库实测形如 `- [X] 文字` 的命中 **3/3 全是复选框**，
+/// 剔除后真类别命中 0。少了这条排除，每一篇 checklist 都会被当成
+/// 「记了一堆 todo 类别」，而那从搜索结果上看**完全像是正常命中**。
+#[test]
+fn test_任务复选框不能被当成类别() {
+    let md = "\
+# 发版前
+
+- [ ] 轮换密钥
+- [x] 跑通门禁
+- [X] 核对版本号
+- [decision] 新工具复用现有开关档位
+";
+    let obs = parse_observations(md);
+    assert_eq!(obs.len(), 1, "只该解出 decision 一条，实际 {:?}", obs);
+    assert_eq!(obs[0].kind, "decision");
+    assert_eq!(obs[0].text, "新工具复用现有开关档位");
+}
+
+#[test]
+fn test_类别名归一化为小写且支持中文() {
+    let obs = parse_observations("- [Decision] A\n- [技术选型] B\n");
+    assert_eq!(obs[0].kind, "decision", "类别名要归一化，否则 kind 筛选得靠运气");
+    assert_eq!(obs[1].kind, "技术选型");
+}
+
+#[test]
+fn test_三种列表符号都认() {
+    assert_eq!(parse_observations("- [fact] a\n* [fact] b\n+ [fact] c\n").len(), 3);
+}
+
+#[test]
+fn test_代码块里的类别行不算数() {
+    let md = "\
+- [fact] 真的
+
+```markdown
+- [fact] 这是在教别人怎么写，不是一条观察
+```
+
+~~~
+- [todo] 同上
+~~~
+";
+    let obs = parse_observations(md);
+    assert_eq!(obs.len(), 1, "代码块里的示例被当真了：{:?}", obs);
+    assert_eq!(obs[0].text, "真的");
+}
+
+#[test]
+fn test_不像类别的方括号一律不算() {
+    for line in [
+        "- [ ] 空复选框",
+        "- [x] 已完成",
+        "- [my note] 含空格的多半是链接标题",
+        "- [^1] 脚注",
+        "- [见 §3](../a.md) 链接",
+        "- [这个类别名实在是太长了超过十二个字] 正文",
+        "-[fact] 列表符号后没空格",
+        "- [fact]",           // 只有类别没内容
+        "- 普通列表项",
+        "  普通正文 [fact] 不在行首",
+    ] {
+        assert!(
+            parse_observations(line).is_empty(),
+            "这一行不该解析出类别：{}",
+            line
+        );
+    }
+}
+
+#[test]
+fn test_缩进的列表项也认() {
+    // 嵌套列表里的观察一样有效；`fence_at` 的 4 空格规则管的是围栏，不是列表。
+    let obs = parse_observations("- 上级\n  - [fact] 缩进的也算\n");
+    assert_eq!(obs.len(), 1);
+    assert_eq!(obs[0].line, 1, "行号要指向真实那一行，kb_read 靠它定位");
+}
+
+#[test]
+fn test_kinds_of_去重且保持首次出现顺序() {
+    let md = "- [todo] a\n- [fact] b\n- [todo] c\n";
+    assert_eq!(kinds_of(md), vec!["todo", "fact"]);
+}
+
+#[test]
+fn test_is_kind_label_的边界() {
+    for ok in ["decision", "fact", "todo", "question", "技术选型", "a", "P0-1", "a_b"] {
+        assert!(is_kind_label(ok), "{} 该算类别", ok);
+    }
+    for bad in ["", " ", "x", "X", "my note", "^1", "见 §3", "一二三四五六七八九十十一十二十三"] {
+        assert!(!is_kind_label(bad), "{:?} 不该算类别", bad);
+    }
+}

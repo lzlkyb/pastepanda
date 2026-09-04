@@ -145,6 +145,11 @@ fn read_definitions() -> Vec<Value> {
                         "description": "只在带这个标签的笔记里搜（填**标签名**，用 kb_folders 查）。\
                                           省略 = 不按标签筛。同样，名字不存在会报错而不是静默放宽。"
                     },
+                    "kind": {
+                        "type": "string",
+                        "description": "只要正文里记过这个**类别**的笔记。类别是正文里形如                                           `- [decision] 某个决定` 的行内标记，常见有 decision / fact / todo / question，                                          也可以是中文。省略 = 不按类别筛。
+                                          用它区分「我们当时**决定**了什么」和「当时**事实**是什么」——                                          这两种问题现在混在一起。类别名写得不合法会报错，不会静默放宽。"
+                    },
                     "limit": {
                         "type": "integer",
                         "description": "最多返回几篇。默认 5。",
@@ -588,11 +593,17 @@ async fn call_search(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Too
     // 别发明第三种写法（一会儿 id 一会儿名字是模型最容易传错的一类参数）。
     let folder = arg_str(args, "folder").map(str::to_string);
     let tag = arg_str(args, "tag").map(str::to_string);
+    // AM-7：正文里的行内类别。与 folder/tag 同口径——收名字、写错报错、不静默放宽。
+    let kind = arg_str(args, "kind").map(str::to_string);
 
     let kb2 = kb.clone();
     let q = query.clone();
-    let (f, t) = (folder.clone(), tag.clone());
-    let outcome = match blocking(move || kb2.search(&q, f.as_deref(), t.as_deref(), limit)).await {
+    let (f, t, k) = (folder.clone(), tag.clone(), kind.clone());
+    let outcome = match blocking(move || {
+        kb2.search(&q, f.as_deref(), t.as_deref(), k.as_deref(), limit)
+    })
+    .await
+    {
         Ok(v) => v,
         // 🔴 检索挂了要报错，不能假装成「没找到」（规则 #15.3）——
         // 后者会被模型转述成「你库里没记过」，那是个看不出来的错答案。
@@ -620,6 +631,25 @@ async fn call_search(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Too
             name
         ))
         .into()),
+        // AM-7：类别名不合法 = 参数写错，与「库里没有」是两回事。
+        SearchOutcome::BadKind(k) => Ok(error_result(format!(
+            "「{}」不是一个合法的类别名。类别是正文里 `- [decision] …` 方括号里的那个词：
+             只能用字母数字下划线连字符或中文、不含空格、不超过 12 个字，
+             且 `x` 被排除（它和 Markdown 任务复选框 `- [x]` 撞了）。",
+            k
+        ))
+        .into()),
+        // 🔴 「有命中但没一篇记过这个类别」必须与「一篇都没命中」分开说。
+        //    合成一句的话，模型会以为关键词都不匹配，换个词白跑一轮。
+        SearchOutcome::NoKindMatch { kind, matched } => Ok(text_result(format!(
+            "「{}」匹配到 {} 篇，但**没有一篇**在正文里记过 `[{}]` 类别{}。
+             去掉 kind 参数可以看这 {} 篇本身；
+             也可能是这个类别在库里根本没被用过——类别是人/AI 写进正文的行内标记，不是自动打的。",
+            query, matched, kind,
+            scope_label(folder.as_deref(), tag.as_deref()),
+            matched
+        ))
+        .into()),
         SearchOutcome::UnknownTag(name) => Ok(error_result(format!(
             "没有叫「{}」的标签。用 kb_folders 看看真实的标签名，或去掉 tag 参数全库搜。",
             name
@@ -634,6 +664,7 @@ async fn call_search(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Too
                 let folder = folder_label(kb, n).await;
                 out.push('\n');
                 out.push_str(&format_brief(n, folder.as_deref()));
+                out.push_str(&format_kinds(&n.content));
                 out.push_str(&format_section_hits(&n.content, &terms));
             }
             out.push_str(&format!(
@@ -933,6 +964,20 @@ pub(crate) fn section_hits_for(
     crate::markdown::rank_sections(content, terms, SECTION_HITS)
 }
 
+/// AM-7：把这篇记过的行内类别列出来。一个都没有就返空串。
+///
+/// 为什么值得占一行：**「当时决定了什么」和「当时事实是什么」是两种查询**，
+/// 而它们现在混在一起。先让模型看见这篇里有哪些类别，
+/// 它才知道下一轮该不该加 `kind` 参数——否则这个参数没人会用。
+fn format_kinds(content: &str) -> String {
+    let kinds = crate::markdown::kinds_of(content);
+    if kinds.is_empty() {
+        return String::new();
+    }
+    format!("  记有类别：{}
+", kinds.join(" / "))
+}
+
 /// AM-2：把「最相关的几节」拼成一段。命中不到就返空串（不占位、不制造噪声）。
 fn format_section_hits(content: &str, terms: &[String]) -> String {
     let hits = section_hits_for(content, terms);
@@ -1091,7 +1136,10 @@ mod tests {
         let bytes = json.len();
         println!("tools/list 序列化后 {} 字节（{} 个工具）", bytes, TOOLS.len());
         // 基线（2026-09-03，A-62 后）：13622 字节 / 16 个工具。
-        // （2026-09-04，AM-1a 给 kb_search 加了 folder/tag 两个参数）：**14034 字节 / 16 个**。
+        // （2026-09-04，AM-1a 给 kb_search 加了 folder/tag 两个参数）：14034 字节 / 16 个。
+        // （2026-09-04，AM-7 再加 kind 参数）：**14642 字节 / 16 个**。
+        // 三个参数共花了 ~1000 字节，全在描述上——因为每个都要说清
+        // 「写错会报错、不会静默退化成全库搜」，那句话省不得。
         //   +412 字节买到的是「模型知道可以收窄范围」，而范围收窄直接减少返回量——
         //   这笔交易是划算的；但下一次加参数前要重新算一遍，别默认划算。
         // 中文 UTF-8 三字节一字，约 4500 汉字，粗估 3500~5000 token。

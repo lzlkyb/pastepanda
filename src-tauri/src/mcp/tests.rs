@@ -35,7 +35,12 @@ impl FakeKb {
                 fake_note(
                     "n1",
                     "Rust 并发笔记",
-                    "记了 tokio 与 spawn_blocking 的取舍。",
+                    // AM-7：同时放一条真类别和两个任务复选框——
+                    // 这正是真库里实测到的形状（3/3 命中全是复选框）。
+                    "记了 tokio 与 spawn_blocking 的取舍。\n\n\
+                     - [decision] 阻塞活儿一律丢给 spawn_blocking\n\
+                     - [ ] 补一个压测\n\
+                     - [x] 量过连接池上限\n",
                 ),
                 // 带多级标题的一篇，专供 `kb_sections` / `kb_read(section=)` 用。
                 // n1 没有任何标题，它盖的是「无可寻址小节」那条路径——两者都要有。
@@ -118,6 +123,7 @@ impl super::source::KbSource for FakeKb {
         query: &str,
         folder: Option<&str>,
         tag: Option<&str>,
+        kind: Option<&str>,
         _limit: u32,
     ) -> Result<super::source::SearchOutcome, String> {
         // 照真实取词口径的形状做：单字 = 拆不出词
@@ -134,6 +140,19 @@ impl super::source::KbSource for FakeKb {
         if let Some(t) = tag {
             if t != "重要" {
                 return Ok(super::source::SearchOutcome::UnknownTag(t.to_string()));
+            }
+        }
+        // AM-7：同 folder/tag 的口径——参数写错报错、筛空了要说清是「筛空的」
+        // 而不是「没命中」。假源只认 decision 一个类别。
+        if let Some(k) = kind {
+            if !crate::markdown::annotate::is_kind_label(k) {
+                return Ok(super::source::SearchOutcome::BadKind(k.to_string()));
+            }
+            if k != "decision" {
+                return Ok(super::source::SearchOutcome::NoKindMatch {
+                    kind: k.to_string(),
+                    matched: self.notes.len(),
+                });
             }
         }
         if query.contains("并发") {
@@ -1224,6 +1243,77 @@ async fn test_kb_search_zero_hit_says_which_scope() {
     assert!(
         text.contains("工作"),
         "零命中必须说明是在哪个范围内没找到：{}",
+        text
+    );
+}
+
+// ===== AM-7 行内类别 =====
+
+/// `kind` 的三种结果必须**互相分得开**：写错了 / 筛空了 / 有结果。
+///
+/// 🔴 这三者混成一句「没找到」是最坏的失败模式：模型会把自己的笔误
+/// 读成「库里确实没有」，然后带着错结论继续往下走，而那个错从输出上看不出来。
+#[tokio::test]
+async fn test_kb_search_kind_三种结果互不混淆() {
+    let base = spawn_server().await;
+
+    // ① 合法且假源认识 → 正常出结果
+    let (ok, is_err) = call_text(
+        &base,
+        "kb_search",
+        json!({ "query": "并发问题", "kind": "decision" }),
+    )
+    .await;
+    assert!(!is_err, "{}", ok);
+    assert!(ok.contains("找到"), "该有结果：{}", ok);
+
+    // ② 类别名不合法 → 报错，且不能顺手把全库结果端上来
+    let (bad, is_err) = call_text(
+        &base,
+        "kb_search",
+        json!({ "query": "并发问题", "kind": "my note" }),
+    )
+    .await;
+    assert!(is_err, "不合法的类别名必须报错，实得：{}", bad);
+    assert!(!bad.contains("找到"), "报错时不能同时给结果：{}", bad);
+
+    // ③ 合法但没一篇记过 → 不是报错，但要说清「是被筛掉的」
+    let (none, is_err) = call_text(
+        &base,
+        "kb_search",
+        json!({ "query": "并发问题", "kind": "todo" }),
+    )
+    .await;
+    assert!(!is_err, "筛空不是错误：{}", none);
+    assert!(
+        none.contains("匹配到") && none.contains("没有一篇"),
+        "必须说清是「有命中但被类别筛掉」而不是「没命中」：{}",
+        none
+    );
+}
+
+/// 任务复选框不能让 `kind` 报错——`x` 被排除是**设计**，错误信息要讲明白。
+#[tokio::test]
+async fn test_kb_search_kind_排除任务复选框且说明原因() {
+    let base = spawn_server().await;
+    let (text, is_err) =
+        call_text(&base, "kb_search", json!({ "query": "并发问题", "kind": "x" })).await;
+    assert!(is_err, "x 必须被拒：{}", text);
+    assert!(
+        text.contains("复选框"),
+        "得说清为什么拒，否则模型只会换个写法再试一次：{}",
+        text
+    );
+}
+
+/// 命中结果里要带上这篇记过哪些类别——否则 `kind` 参数没人会用。
+#[tokio::test]
+async fn test_kb_search_命中里列出类别() {
+    let base = spawn_server().await;
+    let (text, _) = call_text(&base, "kb_search", json!({ "query": "并发问题" })).await;
+    assert!(
+        text.contains("记有类别：") && text.contains("decision"),
+        "假源里那篇写了 - [decision]，结果里应当列出来：{}",
         text
     );
 }
