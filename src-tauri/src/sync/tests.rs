@@ -324,7 +324,7 @@ fn test_标签跟着同步() {
     let (a, b) = (store(), store());
     let n = a.note_create(None, "甲", "正文").unwrap();
     let t = a.create_tag("重要", "#f00").unwrap();
-    a.note_set_tags(&n.id, &[t.id.clone()]).unwrap();
+    a.note_set_tags(&n.id, std::slice::from_ref(&t.id)).unwrap();
 
     sync(&a, &b, 0, "e2e8");
     let got = b.note_get(&n.id).unwrap().unwrap();
@@ -1250,4 +1250,187 @@ fn test_戳相同但内容不同仍按平手处理() {
 
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&dir2);
+}
+
+// ===== 编排决策（coordinate） =====
+
+mod coordinate_tests {
+    use crate::sync::coordinate::*;
+
+    #[test]
+    fn test_碰撞规则是反对称的() {
+        // 🔴 这是「恰好活一个会话」的**全部**依据：任意一对 id，
+        //    两边各自调用必须得到相反的结论。
+        //    只测「a 比 b 大就 KeepMine」是空的——那只是把实现抄一遍。
+        let (long_a, long_b) = ("a".repeat(64), "b".repeat(64));
+        let ids: Vec<&str> = vec!["00", "01", "ff", &long_a, &long_b, "0f3c9a", "f03c9a"];
+        for a in &ids {
+            for b in &ids {
+                if a == b {
+                    continue;
+                }
+                let x = resolve_collision(a, b);
+                let y = resolve_collision(b, a);
+                assert_ne!(
+                    x, y,
+                    "({}, {}) 两边得到同一个结论 → 会话要么都活要么都死",
+                    a, b
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_连到自己身上不会让位给自己() {
+        // 让位给自己 = 永远等不到那个「对端发起的会话」。
+        assert_eq!(resolve_collision("abc", "abc"), Collision::KeepMine);
+    }
+
+    #[test]
+    fn test_退避走阶梯且到顶不再涨() {
+        assert_eq!(backoff_secs(1), 5);
+        assert_eq!(backoff_secs(2), 10);
+        assert_eq!(backoff_secs(3), 30);
+        assert_eq!(backoff_secs(4), 60);
+        // 到顶就一直是最后一档，不会越界 panic 也不会无限涨
+        assert_eq!(backoff_secs(5), 60);
+        assert_eq!(backoff_secs(9999), 60);
+        // fails 从 1 起算，传 0 也不能 panic
+        assert_eq!(backoff_secs(0), 5);
+    }
+
+    #[test]
+    fn test_抖动不越界且真的会变() {
+        let mut seen = std::collections::HashSet::new();
+        for seed in 0..500u64 {
+            let v = jittered_secs(PERIOD_SECS, JITTER_SECS, seed);
+            assert!(
+                (PERIOD_SECS - JITTER_SECS..=PERIOD_SECS + JITTER_SECS).contains(&v),
+                "seed={} 抖出了 {}，越界",
+                seed,
+                v
+            );
+            seen.insert(v);
+        }
+        // 抖动的意义就是让碰撞少见；只要它其实是个常数，那意义就没了
+        assert!(seen.len() > 5, "抖动几乎不变（只有 {} 种取值）", seen.len());
+    }
+
+    #[test]
+    fn test_抖动幅度为零就是固定间隔() {
+        for seed in 0..20u64 {
+            assert_eq!(jittered_secs(30, 0, seed), 30);
+        }
+    }
+
+    #[test]
+    fn test_抖动不会因为下界减到负数而崩() {
+        // base 比 jitter 小是配置写错，但不能 panic（本项目 panic = abort）
+        for seed in 0..50u64 {
+            let v = jittered_secs(3, 10, seed);
+            assert!(v <= 13, "seed={} 得到 {}", seed, v);
+        }
+    }
+}
+
+// ===== 会话槽与让位（coordinate 的有状态那半） =====
+
+mod slot_tests {
+    use crate::sync::coordinate::{Admit, Coordinator, YIELD_WAIT};
+
+    /// 比 `hi` 小、比 `lo` 大的一组 id。用真实长度（64 字符 hex）免得
+    /// 将来加了长度校验测试才炸。
+    fn lo() -> String {
+        "1".repeat(64)
+    }
+    fn hi() -> String {
+        "9".repeat(64)
+    }
+
+    #[test]
+    fn test_槽被占时同一对端拿不到第二个() {
+        let c = Coordinator::new(lo());
+        let peer = hi();
+        let h = c.try_hold(&peer).expect("第一次应拿到");
+        assert_eq!(h.peer(), peer);
+        assert!(c.try_hold(&peer).is_none(), "同一对端不该拿到第二把");
+        // 不同对端互不影响 —— 多设备要能并行
+        assert!(c.try_hold("0".repeat(64).as_str()).is_some());
+    }
+
+    #[test]
+    fn test_槽随作用域自动释放() {
+        // 会话怎么退出（返回 / ? / panic）都不该漏槽，所以用 Drop 而不是显式 release
+        let c = Coordinator::new(lo());
+        let peer = hi();
+        {
+            let _h = c.try_hold(&peer).unwrap();
+        }
+        assert!(c.try_hold(&peer).is_some(), "出了作用域应已释放");
+    }
+
+    #[tokio::test]
+    async fn test_没配对的入连接直接判未配对() {
+        let c = Coordinator::new(lo());
+        assert!(matches!(c.admit(&hi(), false).await, Admit::NotPaired));
+    }
+
+    #[tokio::test]
+    async fn test_没撞上就直接收下() {
+        let c = Coordinator::new(lo());
+        assert!(matches!(c.admit(&hi(), true).await, Admit::Ok(_)));
+    }
+
+    #[tokio::test]
+    async fn test_本机id更大时保留自己那个会话并拒掉入连接() {
+        // 本机 hi、对端 lo ⇒ 按 RFC 4271 §6.8 保留本机发起的那个
+        let c = Coordinator::new(hi());
+        let peer = lo();
+        let _mine = c.try_hold(&peer).expect("先占住，模拟本机正在拨它");
+        match c.admit(&peer, true).await {
+            Admit::Reject(why) => assert!(why.contains("node_id 更大"), "{}", why),
+            other => panic!("id 更大却没保留自己的会话：{:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_本机id更小时让位并在槽腾出后收下() {
+        // 本机 lo、对端 hi ⇒ 让位。让位方**不取消**自己的出会话，
+        // 而是等它因为对端拒绝而自行退出（见 coordinate 模块文档）。
+        let c = std::sync::Arc::new(Coordinator::new(lo()));
+        let peer = hi();
+        let mine = c.try_hold(&peer).expect("先占住，模拟本机正在拨它");
+
+        // 模拟「本机那个出会话被对端拒了，于是很快退出」
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+            drop(mine);
+        });
+
+        match c.admit(&peer, true).await {
+            Admit::Ok(h) => assert_eq!(h.peer(), peer),
+            other => panic!("让位之后应能收下入连接：{:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_让位等不到就拒而不是无限等() {
+        // 丢包 / 对端崩了的时候，本机那个出会话可能一直不退。
+        // 那时必须超时放弃，两边各自重试（有抖动，活锁有界）——
+        // 这是明知的取舍，但**绝不能挂死**。
+        let c = Coordinator::new(lo());
+        let peer = hi();
+        let _stuck = c.try_hold(&peer).expect("占住且永不释放");
+
+        let t0 = tokio::time::Instant::now();
+        match c.admit(&peer, true).await {
+            Admit::Reject(why) => assert!(why.contains("没退出"), "{}", why),
+            other => panic!("等不到却收下了：{:?}", other),
+        }
+        assert!(
+            t0.elapsed() >= YIELD_WAIT,
+            "应该真的等满 {:?} 才放弃",
+            YIELD_WAIT
+        );
+    }
 }

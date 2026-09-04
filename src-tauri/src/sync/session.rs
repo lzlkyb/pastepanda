@@ -118,13 +118,30 @@ pub async fn accept_session(
     let peer = w.conn.remote_id().to_string();
     if !is_paired(&peer) {
         // 只是没配对，不是攻击：ALPN 对得上说明对方也是 PastePanda。
-        w.conn.close(1u32.into(), b"not paired");
+        reject(&w, "not paired");
         return Err(format!(
             "{} 还没配对，已拒绝这次连接",
             &peer[..8.min(peer.len())]
         ));
     }
     run(store, w, &peer, false).await
+}
+
+/// 把一个**已经接下来**的连接跑成一次会话。
+///
+/// [`accept_session`] 把「accept + 判配对 + 跑」包成一体，而编排层需要在
+/// accept 之后、跑之前插一下（拿会话槽、碰撞让位），所以拆出这一半。
+pub async fn run_accepted(
+    store: &DataStore,
+    w: Wire,
+    peer: &str,
+) -> Result<SessionReport, String> {
+    run(store, w, peer, false).await
+}
+
+/// 拒一个入连接。理由写进关闭原因里，对端日志里看得到（规则 #15.3）。
+pub fn reject(w: &Wire, why: &str) {
+    w.conn.close(1u32.into(), why.as_bytes());
 }
 
 /// 会话主体。两端**只差发收顺序**：谁先发由 `send_first` 决定。

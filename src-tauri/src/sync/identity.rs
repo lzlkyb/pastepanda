@@ -175,7 +175,7 @@ fn to_hex(b: &[u8]) -> String {
 
 fn from_hex(s: &str) -> Option<Vec<u8>> {
     let s = s.trim();
-    if s.len() % 2 != 0 || s.is_empty() {
+    if s.is_empty() || !s.len().is_multiple_of(2) {
         return None;
     }
     (0..s.len())
