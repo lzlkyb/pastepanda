@@ -593,3 +593,136 @@ fn test_对端没动过的副本不会压过本机的新编辑() {
     assert_eq!(rep.conflicts, 0, "{:?}", rep);
     assert_eq!(b.note_get(&n.id).unwrap().unwrap().content, "A 的新编辑");
 }
+
+// ===== 传输层（两个端点在同一进程内，不出网卡）=====
+
+/// 造一个「假装没网」的端点：relay 与地址发现都关掉。
+async fn offline_ep(seed: u8) -> iroh::Endpoint {
+    let dir = tmp_dir(&format!("ep{}", seed));
+    let me = NodeIdentity::load_or_create(&dir).unwrap();
+    let ep = super::transport::bind(&me, [seed; 32], false)
+        .await
+        .expect("绑定端点失败");
+    let _ = std::fs::remove_dir_all(&dir);
+    ep
+}
+
+/// `bound_sockets()` 返回的是**通配地址**（`0.0.0.0`），往它拨号必然超时。
+/// 同进程测试要换成回环——探针里栽过这一条。
+fn dialable(ep: &iroh::Endpoint) -> iroh::EndpointAddr {
+    let mut addr = iroh::EndpointAddr::new(ep.id());
+    for s in ep.bound_sockets() {
+        let ip = match s.ip() {
+            std::net::IpAddr::V4(v) if v.is_unspecified() => {
+                std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+            }
+            std::net::IpAddr::V6(v) if v.is_unspecified() => {
+                std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST)
+            }
+            other => other,
+        };
+        addr = addr.with_ip_addr(std::net::SocketAddr::new(ip, s.port()));
+    }
+    addr
+}
+
+/// 🔴 一次真正的跨「网络」同步：A 的增量经 iroh 到 B，B 应用。
+///
+/// 两个端点在同一进程内，但走的是**真的 QUIC 连接**（relay 与地址发现都关掉了），
+/// 与两台机器之间唯一的差别是网卡。
+#[tokio::test]
+async fn test_传输层把增量搬到对端并应用() {
+    let (a, b) = (store(), store());
+    let n = a.note_create(None, "会议纪要", "正文内容").unwrap();
+
+    let out = tmp_dir("tx_out");
+    let inbox = tmp_dir("tx_in");
+    let delta = compute_delta(&a, 0).unwrap();
+    write_delta(&a, &delta, &out).unwrap();
+
+    let listener = offline_ep(21).await;
+    let dialer = offline_ep(22).await;
+    let to = dialable(&listener);
+
+    let inbox2 = inbox.clone();
+    let recv = tokio::spawn(async move { super::transport::recv_dir(&listener, &inbox2).await });
+    let sent = super::transport::send_dir(&dialer, to, &out)
+        .await
+        .expect("发送失败");
+    let got = recv.await.unwrap().expect("接收失败");
+    assert_eq!(sent, got, "收发字节数不一致");
+    assert!(sent > 0);
+
+    // 收到的目录原样交给 engine
+    let rep = apply_delta(&b, &inbox, 0).expect("应用失败");
+    assert_eq!(rep.created, 1, "{:?}", rep);
+    assert_eq!(
+        b.note_get(&n.id).unwrap().unwrap().content,
+        "正文内容",
+        "经 iroh 搬过来的内容不一致"
+    );
+    assert_eq!(
+        b.note_updated_ms(&n.id),
+        a.note_updated_ms(&n.id),
+        "版本戳要一致"
+    );
+
+    let _ = std::fs::remove_dir_all(&out);
+    let _ = std::fs::remove_dir_all(&inbox);
+}
+
+/// 子目录（文件夹结构）要跟着过去。
+#[tokio::test]
+async fn test_传输层保留子目录结构() {
+    let a = store();
+    let f = a.folder_create("工作", None).unwrap();
+    let n = a.note_create(None, "甲", "正文").unwrap();
+    a.note_set_folder(&n.id, Some(&f.id)).unwrap();
+
+    let out = tmp_dir("tx2_out");
+    let inbox = tmp_dir("tx2_in");
+    let delta = compute_delta(&a, 0).unwrap();
+    write_delta(&a, &delta, &out).unwrap();
+
+    let listener = offline_ep(23).await;
+    let dialer = offline_ep(24).await;
+    let to = dialable(&listener);
+    let inbox2 = inbox.clone();
+    let recv = tokio::spawn(async move { super::transport::recv_dir(&listener, &inbox2).await });
+    super::transport::send_dir(&dialer, to, &out).await.unwrap();
+    recv.await.unwrap().unwrap();
+
+    let b = store();
+    let rep = apply_delta(&b, &inbox, 0).unwrap();
+    assert_eq!(rep.created, 1, "{:?}", rep);
+    assert!(
+        b.note_get(&n.id).unwrap().unwrap().folder_id.is_some(),
+        "文件夹结构没过来"
+    );
+    let _ = std::fs::remove_dir_all(&out);
+    let _ = std::fs::remove_dir_all(&inbox);
+}
+
+/// 🔴 路径穿越必须被拒。名字来自网络，这是本模块唯一的安全边界。
+#[test]
+fn test_拒绝路径穿越的文件名() {
+    let root = std::path::Path::new("C:/tmp/inbox");
+    for bad in [
+        "../evil.md",
+        "a/../../evil.md",
+        "/etc/passwd",
+        "C:/windows/system32/evil.dll",
+        "a//b.md",
+        "",
+        "./x.md",
+    ] {
+        assert!(
+            super::transport::safe_rel_for_test(root, bad).is_err(),
+            "这个名字该被拒：{:?}",
+            bad
+        );
+    }
+    // 正常的相对路径要放过，两种分隔符都认
+    assert!(super::transport::safe_rel_for_test(root, "工作/甲.md").is_ok());
+    assert!(super::transport::safe_rel_for_test(root, "工作\\甲.md").is_ok());
+}

@@ -9,14 +9,15 @@
 //! | 已配对设备表 | `data_store::device` |
 //! | 增量算/写/应用（本地就能端到端测）| [`engine`] |
 //!
-//! ❗ **还没有传输层，也没有界面。** 传输选型（LAN 组播扩展 / iroh / relay 兜底）
-//! 需要单独一轮方案对比，配对界面按规则 #4 要先出设计稿。
-//! 所以这一层现在**不接任何 Tauri 命令**——接了就是没人调的死代码。
+//! ❗ **还没有界面，也还没有地址发现（`kb_presence`）。**
+//! 配对界面按规则 #4 要先出设计稿；所以这一层现在**不接任何 Tauri 命令**——
+//! 接了就是没人调的死代码。
 
 pub mod engine;
 pub mod hlc;
 pub mod identity;
 pub mod invite;
+pub mod transport;
 
 #[cfg(test)]
 mod tests;

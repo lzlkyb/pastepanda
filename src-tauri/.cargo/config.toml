@@ -1,0 +1,17 @@
+# crates.io 镜像。
+#
+# 为什么需要：M6 的传输层引入 iroh，它拖 ~270 个 crate（含 windows v0.62 这种大件）。
+# 实测直连 static.crates.io 反复 30 秒超时、卡在 145 个不动十几分钟；
+# rsproxy.cn 0.67s 可达，一次拉完。
+#
+# 放在工程级而不是全局：跟着仓库走，不改开发机的全局配置。
+#
+# ⚠ 如果你在境外开发，这个镜像可能反而更慢——那就在自己的
+#    ~/.cargo/config.toml 里用 `[source.crates-io] replace-with = "crates-io"`
+#    盖掉它（全局配置优先级低于工程级，所以实际做法是临时注释掉本文件）。
+#    镜像是 crates.io 的完整镜像，校验和一致，不影响 Cargo.lock。
+[source.crates-io]
+replace-with = "rsproxy-sparse"
+
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"

@@ -42,6 +42,21 @@ ocr-rs = "2.4.1"
 md-5 = "0.10"
 base64 = "0.22"
 ring = "0.17"
+
+# M6 传输层。LAN 直连与跨网打洞/relay 用同一套栈——不做「LAN 一套 + WAN 一套」，
+# 那样同一对设备在不同网络下走不同代码路径，bug 与所在地点相关最难查。
+#
+# 探针结论（probe/iroh，2026-09-04 真跑）：离线局域网直连成立、净增体积 3.94MB。
+#
+# feature 取舍：
+#   · tls-ring   必须——预设要 crypto provider，且项目本来就用 ring（不引第二套）
+#   · portmapper 保留——UPnP/PCP 提高 NAT 打洞成功率，而跨网是硬需求
+#   · metrics    去掉——我们不采集
+#   · fast-apple-datapath 去掉——macOS only
+iroh = { version = "1.1", default-features = false, features = [
+    "tls-ring",
+    "portmapper",
+] }
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 hostname = "0.4"
