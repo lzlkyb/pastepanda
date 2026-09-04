@@ -726,3 +726,318 @@ fn test_拒绝路径穿越的文件名() {
     assert!(super::transport::safe_rel_for_test(root, "工作/甲.md").is_ok());
     assert!(super::transport::safe_rel_for_test(root, "工作\\甲.md").is_ok());
 }
+
+// ===== kb_presence 地址宣告 =====
+
+mod presence_tests {
+    use super::tmp_dir;
+    use crate::sync::identity::NodeIdentity;
+    use crate::sync::presence::{build, Heard, PresenceTable, STALE_MS};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+    /// 固定时刻。测试**不取当前时间**：presence 有 ±120 秒的时间窗，
+    /// 用真实时钟的话测试就依赖执行时刻了。
+    const T0: i64 = 1_757_000_000_000;
+
+    fn ip(last: u8) -> IpAddr {
+        IpAddr::V4(Ipv4Addr::new(192, 168, 1, last))
+    }
+
+    /// 「这些 node_id 是已配对的」。
+    fn paired(ids: Vec<String>) -> impl Fn(&str) -> bool {
+        move |id| ids.iter().any(|x| x == id)
+    }
+
+    /// 谁都不认。
+    fn nobody(_: &str) -> bool {
+        false
+    }
+
+    #[test]
+    fn test_已配对对端的公告被收下并用源ip当地址() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("pres_a")).unwrap();
+        let b = NodeIdentity::load_or_create(&tmp_dir("pres_b")).unwrap();
+        let packet = build(&a, 41234, T0).unwrap();
+
+        let table = PresenceTable::new();
+        let known = paired(vec![a.node_id()]);
+        let heard = table.hear(&packet, ip(20), &b.node_id(), &known, T0 + 100);
+
+        // 🔴 地址 = 源 IP + 公告里的端口。公告本身**不含 IP**。
+        assert_eq!(
+            heard,
+            Heard::Fresh {
+                node_id: a.node_id(),
+                addr: SocketAddr::new(ip(20), 41234),
+            }
+        );
+        assert_eq!(
+            table.addrs_of(&a.node_id(), T0 + 100),
+            vec![SocketAddr::new(ip(20), 41234)]
+        );
+        assert_eq!(table.live(T0 + 100), vec![a.node_id()]);
+    }
+
+    #[test]
+    fn test_公告里没有设备名字段() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("pres_noname")).unwrap();
+        let packet = build(&a, 1234, T0).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&packet).unwrap();
+        let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(|k| k.as_str()).collect();
+        keys.sort();
+        // 钉住线上格式：多一个字段就是多一个能进界面的对端可控字符串。
+        // 设备名在配对时已入 devices 表，公告不该再带一份。
+        assert_eq!(keys, vec!["node_id", "port", "sig", "ts", "v"]);
+    }
+
+    #[test]
+    fn test_未配对的节点公告直接丢掉() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("pres_unp_a")).unwrap();
+        let b = NodeIdentity::load_or_create(&tmp_dir("pres_unp_b")).unwrap();
+        let packet = build(&a, 1234, T0).unwrap();
+
+        let table = PresenceTable::new();
+        let heard = table.hear(&packet, ip(30), &b.node_id(), &nobody, T0);
+
+        assert_eq!(
+            heard,
+            Heard::Unpaired {
+                node_id: a.node_id()
+            }
+        );
+        // 🔴 关键：连表项都不许建。否则同网段任何人都能把地址表灌满。
+        assert!(table.addrs_of(&a.node_id(), T0).is_empty());
+        assert!(table.live(T0).is_empty());
+    }
+
+    #[test]
+    fn test_自己的公告回环时忽略() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("pres_self")).unwrap();
+        let packet = build(&a, 1234, T0).unwrap();
+        let table = PresenceTable::new();
+        // 组播会把自己发的包回环给自己
+        let known = paired(vec![a.node_id()]);
+        assert_eq!(
+            table.hear(&packet, ip(2), &a.node_id(), &known, T0),
+            Heard::Mine
+        );
+        assert!(table.live(T0).is_empty());
+    }
+
+    #[test]
+    fn test_改过端口的公告签名不通过() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("pres_tamper_a")).unwrap();
+        let b = NodeIdentity::load_or_create(&tmp_dir("pres_tamper_b")).unwrap();
+        let packet = build(&a, 41234, T0).unwrap();
+        let mut v: serde_json::Value = serde_json::from_slice(&packet).unwrap();
+        // 把端口改成攻击者自己的，签名不动
+        v["port"] = serde_json::json!(9999);
+        let tampered = serde_json::to_vec(&v).unwrap();
+
+        let table = PresenceTable::new();
+        let known = paired(vec![a.node_id()]);
+        let heard = table.hear(&tampered, ip(40), &b.node_id(), &known, T0);
+        assert!(
+            matches!(&heard, Heard::Bad(why) if why.contains("签名")),
+            "改过端口却收下了：{:?}",
+            heard
+        );
+        assert!(table.addrs_of(&a.node_id(), T0).is_empty());
+    }
+
+    #[test]
+    fn test_原样重放同一份公告会被拒() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("pres_replay_a")).unwrap();
+        let b = NodeIdentity::load_or_create(&tmp_dir("pres_replay_b")).unwrap();
+        let packet = build(&a, 41234, T0).unwrap();
+        let table = PresenceTable::new();
+        let known = paired(vec![a.node_id()]);
+
+        assert!(matches!(
+            table.hear(&packet, ip(50), &b.node_id(), &known, T0),
+            Heard::Fresh { .. }
+        ));
+        // 同一份包从别的 IP 重发：ts 没前进 → 重放
+        let again = table.hear(&packet, ip(51), &b.node_id(), &known, T0 + 1000);
+        assert_eq!(
+            again,
+            Heard::Replay {
+                node_id: a.node_id()
+            }
+        );
+        // 攻击者那个 IP 没被记进去
+        assert_eq!(
+            table.addrs_of(&a.node_id(), T0 + 1000),
+            vec![SocketAddr::new(ip(50), 41234)]
+        );
+    }
+
+    #[test]
+    fn test_时钟差太多的公告不收且说清是时钟问题() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("pres_skew_a")).unwrap();
+        let b = NodeIdentity::load_or_create(&tmp_dir("pres_skew_b")).unwrap();
+        // 对端时钟慢 10 分钟，远超 ±120 秒窗口
+        let packet = build(&a, 41234, T0 - 600_000).unwrap();
+        let table = PresenceTable::new();
+        let known = paired(vec![a.node_id()]);
+        let heard = table.hear(&packet, ip(60), &b.node_id(), &known, T0);
+        assert!(
+            matches!(&heard, Heard::OutOfWindow { skew_ms, .. } if *skew_ms == 600_000),
+            "{:?}",
+            heard
+        );
+        assert!(table.addrs_of(&a.node_id(), T0).is_empty());
+    }
+
+    #[test]
+    fn test_地址过期后不再返回() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("pres_stale_a")).unwrap();
+        let b = NodeIdentity::load_or_create(&tmp_dir("pres_stale_b")).unwrap();
+        let packet = build(&a, 41234, T0).unwrap();
+        let table = PresenceTable::new();
+        let known = paired(vec![a.node_id()]);
+        table.hear(&packet, ip(70), &b.node_id(), &known, T0);
+
+        // 界限当天还在
+        assert_eq!(table.addrs_of(&a.node_id(), T0 + STALE_MS).len(), 1);
+        // 过了就不给 —— 拨一个 60 秒没刷新的地址只会白等超时
+        assert!(table.addrs_of(&a.node_id(), T0 + STALE_MS + 1).is_empty());
+        assert!(table.live(T0 + STALE_MS + 1).is_empty());
+    }
+
+    #[test]
+    fn test_多网卡的地址都记着且最近的排前面() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("pres_multi_a")).unwrap();
+        let b = NodeIdentity::load_or_create(&tmp_dir("pres_multi_b")).unwrap();
+        let table = PresenceTable::new();
+        let known = paired(vec![a.node_id()]);
+        // 同一台机器两张网卡各发一份（ts 递增，所以都不是重放）
+        let p1 = build(&a, 41234, T0).unwrap();
+        let p2 = build(&a, 41234, T0 + 1).unwrap();
+        table.hear(&p1, ip(80), &b.node_id(), &known, T0);
+        table.hear(&p2, ip(81), &b.node_id(), &known, T0 + 1);
+
+        assert_eq!(
+            table.addrs_of(&a.node_id(), T0 + 2),
+            vec![
+                SocketAddr::new(ip(81), 41234),
+                SocketAddr::new(ip(80), 41234)
+            ],
+            "最近刷新的应排前面（先拨最可能通的那个）"
+        );
+    }
+
+    #[test]
+    fn test_地址条数有上限且淘汰最久没刷新的() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("pres_cap_a")).unwrap();
+        let b = NodeIdentity::load_or_create(&tmp_dir("pres_cap_b")).unwrap();
+        let table = PresenceTable::new();
+        let known = paired(vec![a.node_id()]);
+        // 6 个不同源 IP（换过几次网络后的残留），上限是 4
+        for (i, last) in [10u8, 11, 12, 13, 14, 15].iter().enumerate() {
+            let p = build(&a, 41234, T0 + i as i64).unwrap();
+            table.hear(&p, ip(*last), &b.node_id(), &known, T0 + i as i64);
+        }
+        let addrs = table.addrs_of(&a.node_id(), T0 + 10);
+        assert_eq!(addrs.len(), 4, "地址条数应封顶：{:?}", addrs);
+        // 留下的是最后 4 个，最早的 .10 / .11 被挤掉
+        assert_eq!(addrs[0], SocketAddr::new(ip(15), 41234));
+        assert!(!addrs.contains(&SocketAddr::new(ip(10), 41234)));
+        assert!(!addrs.contains(&SocketAddr::new(ip(11), 41234)));
+    }
+
+    #[test]
+    fn test_忘记设备时地址一起清掉() {
+        let a = NodeIdentity::load_or_create(&tmp_dir("pres_forget_a")).unwrap();
+        let b = NodeIdentity::load_or_create(&tmp_dir("pres_forget_b")).unwrap();
+        let packet = build(&a, 41234, T0).unwrap();
+        let table = PresenceTable::new();
+        let known = paired(vec![a.node_id()]);
+        table.hear(&packet, ip(90), &b.node_id(), &known, T0);
+        assert_eq!(table.addrs_of(&a.node_id(), T0).len(), 1);
+
+        table.forget(&a.node_id());
+        // 不清的话会留一条永不刷新也永不被覆盖的僵尸地址（is_paired 已经在拒新公告了）
+        assert!(table.addrs_of(&a.node_id(), T0).is_empty());
+    }
+
+    #[test]
+    fn test_畸形包各给不同的说法() {
+        let b = NodeIdentity::load_or_create(&tmp_dir("pres_bad_b")).unwrap();
+        let table = PresenceTable::new();
+        let me = b.node_id();
+
+        // 不是 JSON
+        assert!(matches!(
+            table.hear(b"not json at all", ip(1), &me, &nobody, T0),
+            Heard::Bad(_)
+        ));
+        // 版本不认识
+        let wrong_v = serde_json::json!({
+            "v": 99, "node_id": "0".repeat(64), "port": 1, "ts": T0, "sig": ""
+        });
+        let heard = table.hear(
+            &serde_json::to_vec(&wrong_v).unwrap(),
+            ip(1),
+            &me,
+            &nobody,
+            T0,
+        );
+        assert!(
+            matches!(&heard, Heard::Bad(w) if w.contains("版本")),
+            "{:?}",
+            heard
+        );
+        // node_id 长度不对
+        let short = serde_json::json!({
+            "v": 1, "node_id": "abcd", "port": 1, "ts": T0, "sig": ""
+        });
+        let heard = table.hear(&serde_json::to_vec(&short).unwrap(), ip(1), &me, &nobody, T0);
+        assert!(
+            matches!(&heard, Heard::Bad(w) if w.contains("长度")),
+            "{:?}",
+            heard
+        );
+        // 超长包在解析前就丢
+        let huge = vec![b'x'; 4096];
+        let heard = table.hear(&huge, ip(1), &me, &nobody, T0);
+        assert!(
+            matches!(&heard, Heard::Bad(w) if w.contains("超长")),
+            "{:?}",
+            heard
+        );
+    }
+
+    #[test]
+    fn test_邀请码的签名不能当公告用() {
+        // 🔴 跨协议签名复用：两个模块的签名前缀必须不同。
+        // 这个测试盯的是「有人把 invite 的签名搬到 presence 的字段里」这条路。
+        use base64::Engine as _;
+        let a = NodeIdentity::load_or_create(&tmp_dir("pres_cross_a")).unwrap();
+        let b = NodeIdentity::load_or_create(&tmp_dir("pres_cross_b")).unwrap();
+        let code = crate::sync::invite::encode(&a, "甲机", vec![], T0).unwrap();
+        let raw = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(code)
+            .unwrap();
+        let invite_wire: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+        let stolen_sig = invite_wire["sig"].as_str().unwrap().to_string();
+
+        let forged = serde_json::json!({
+            "v": 1, "node_id": a.node_id(), "port": 41234, "ts": T0, "sig": stolen_sig
+        });
+        let table = PresenceTable::new();
+        let known = paired(vec![a.node_id()]);
+        let heard = table.hear(
+            &serde_json::to_vec(&forged).unwrap(),
+            ip(99),
+            &b.node_id(),
+            &known,
+            T0,
+        );
+        assert!(
+            matches!(&heard, Heard::Bad(w) if w.contains("签名")),
+            "邀请码签名被当成地址公告收下了：{:?}",
+            heard
+        );
+    }
+}
