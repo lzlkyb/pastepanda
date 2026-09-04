@@ -4,6 +4,7 @@ mod tag;
 mod kb_inbox;
 mod kb_shadow;
 mod mcp_audit;
+mod device;
 mod note;
 mod note_folder;
 mod note_ai;
@@ -1188,6 +1189,25 @@ impl DataStore {
                     }
                 }
             }
+        }
+
+        // 建表（M6-P1）：devices —— 已配对的设备。
+        //
+        // 配对是一次性的**信任建立**，在线与否是连接层事件，两者解耦：
+        // 重连只按已存的 node_id 重新发现地址，不重新配对（设计稿 §6.4）。
+        if let Err(e) = conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS devices (
+                 node_id    TEXT PRIMARY KEY,          -- 对端 ed25519 公钥 hex
+                 name       TEXT NOT NULL,
+                 paired_at  TEXT NOT NULL,
+                 transport  TEXT NOT NULL DEFAULT '',  -- lan / wan / ''（还没连上过）
+                 conn_state TEXT NOT NULL DEFAULT 'offline',
+                 last_seen  INTEGER NOT NULL DEFAULT 0, -- 最后一次在线的 epoch 毫秒
+                 relay_addr TEXT NOT NULL DEFAULT ''
+             );",
+        ) {
+            log::error!("[DataStore] 建 devices 表失败: {}", e);
+            return Err(e);
         }
 
         // 建表（O-2 / M3-④）：note_links —— 正文里 `[[标题]]` 的链关系。

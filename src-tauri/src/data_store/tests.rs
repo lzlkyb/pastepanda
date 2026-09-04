@@ -6872,3 +6872,55 @@ fn test_物理删之后链也没了() {
     assert!(store.note_links_out(&a.id).unwrap().is_empty());
     assert!(store.note_broken_links().unwrap().is_empty());
 }
+
+// ===== M6-P1 devices =====
+
+#[test]
+fn test_配对与忘记设备() {
+    let store = make_store();
+    assert!(store.device_list().unwrap().is_empty());
+
+    store.device_pair("aa", "书房台式机", "").unwrap();
+    let list = store.device_list().unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].name, "书房台式机");
+    assert_eq!(list[0].conn_state, "offline", "刚配对时还没连上，不能是 online");
+    assert_eq!(list[0].last_seen, 0);
+
+    assert!(store.device_forget("aa").unwrap());
+    assert!(store.device_list().unwrap().is_empty());
+    assert!(!store.device_forget("aa").unwrap(), "重复忘记该返回 false");
+}
+
+/// 重复配对同一台机器**只更新名字与 relay**，不抹掉连接层的事实。
+#[test]
+fn test_重复配对不重置在线状态() {
+    let store = make_store();
+    store.device_pair("aa", "旧名字", "").unwrap();
+    store.device_mark_online("aa", "lan", 12_345).unwrap();
+
+    store.device_pair("aa", "新名字", "relay.example:443").unwrap();
+    let d = store.device_get("aa").unwrap().unwrap();
+    assert_eq!(d.name, "新名字");
+    assert_eq!(d.relay_addr, "relay.example:443");
+    assert_eq!(d.last_seen, 12_345, "配对不该抹掉「最后一次在线」这个事实");
+    assert_eq!(d.conn_state, "online");
+    assert_eq!(d.transport, "lan");
+}
+
+/// 🔴 标离线**不动 `last_seen`**。
+///
+/// 它的语义是「最后一次在线是什么时候」，界面靠它显示「上次在线：3 小时前」。
+/// 离线时把它刷成现在，那句话就永远是「刚刚」——一个看起来正常的错显示。
+#[test]
+fn test_标离线不动最后在线时间() {
+    let store = make_store();
+    store.device_pair("aa", "机器", "").unwrap();
+    store.device_mark_online("aa", "lan", 12_345).unwrap();
+    store.device_mark_offline("aa").unwrap();
+
+    let d = store.device_get("aa").unwrap().unwrap();
+    assert_eq!(d.conn_state, "offline");
+    assert_eq!(d.last_seen, 12_345, "离线不该刷新「最后一次在线」");
+    assert_eq!(d.transport, "lan", "也不该抹掉上次是从哪条通道连上的");
+}
