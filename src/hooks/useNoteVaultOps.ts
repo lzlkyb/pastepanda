@@ -104,7 +104,7 @@ export function useNoteVaultOps(onImported?: () => void) {
     // 而且会去找一个不存在的失败原因——它实际上是被有意跳过的。
     if (rep.in_trash.length > 0) {
       toast(
-        `${rep.in_trash.length} 个文件对应的笔记在回收站里，已跳过（要找回请去回收站恢复）：${rep.in_trash
+        `${rep.in_trash.length} 个文件对应的笔记已被删除，已跳过（还在回收站的可以去恢复；已彻底清理的找不回来）：${rep.in_trash
           .slice(0, 3)
           .join("；")}`,
         "warning",

@@ -1189,6 +1189,26 @@ impl DataStore {
             }
         }
 
+        // 建表（M6-P4）：note_tombstones —— 删除的墓碑。
+        //
+        // 🔴 **为什么 `notes.deleted_at` 不够当墓碑**：`note_purge` 与 30 天自动清理
+        //   都是 `DELETE FROM notes`（物理删）——行没了，`deleted_at` 也就没了。
+        //   于是「A 删了 → 30 天后 A 物理清 → B 一直没上线 → B 上线后同步」
+        //   会把那条笔记**送回给 A**，删除等于没发生过。
+        //
+        // 所以墓碑必须是**独立的行**，且**永不物理删**：删除事件少，个人库规模保留全量无碍。
+        if let Err(e) = conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS note_tombstones (
+                 note_id      TEXT PRIMARY KEY,   -- 对应 notes.id（UUID，跨机不碰撞）
+                 tombstone_ms INTEGER NOT NULL,   -- 删除意图发生的时刻，见 record_tombstones_on
+                 source_node  TEXT,               -- 谁删的（NodeId）。M6 主体才有，现在一律 NULL
+                 purged       INTEGER NOT NULL DEFAULT 0
+             );",
+        ) {
+            log::error!("[DataStore] 建 note_tombstones 表失败: {}", e);
+            return Err(e);
+        }
+
         // 数据库迁移（M6-P2）：notes.updated_ms —— 同步专用的 epoch 毫秒。
         //
         // 🔴 为何另存一列而不是把 `updated_at` 改成 UTC：

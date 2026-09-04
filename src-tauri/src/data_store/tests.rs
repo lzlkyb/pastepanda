@@ -6620,3 +6620,146 @@ fn test_bm25是升序_更相关的必须排在前面() {
     );
     assert_eq!(hits[1].id, weak.id);
 }
+
+// ===== M6-P4 墓碑 =====
+
+/// 三条物理删路径都必须落墓碑。
+///
+/// 🔴 漏掉任何一条的后果是**删除会被同步回来**：
+/// 物理删之后本地已经没有任何证据说「这条被删过」，
+/// 对端那份旧副本一同步就把它送回来，而用户看不出发生了什么。
+#[test]
+fn test_三条物理删路径都落墓碑() {
+    // ① 单条 purge
+    let store = make_store();
+    let n = store.note_create(None, "甲", "正文").unwrap();
+    store.note_delete(&n.id).unwrap();
+    store.note_purge(&n.id).unwrap();
+    assert!(store.note_is_tombstoned(&n.id), "note_purge 没落墓碑");
+
+    // ② 清空回收站
+    let store = make_store();
+    let n = store.note_create(None, "乙", "正文").unwrap();
+    store.note_delete(&n.id).unwrap();
+    store.note_purge_all().unwrap();
+    assert!(store.note_is_tombstoned(&n.id), "note_purge_all 没落墓碑");
+
+    // ③ 30 天自动清理
+    let store = make_store();
+    let n = store.note_create(None, "丙", "正文").unwrap();
+    store.note_delete(&n.id).unwrap();
+    backdate_deleted_at(&store, &n.id, "2020-01-01 00:00:00.000");
+    assert_eq!(store.note_purge_expired(30).unwrap(), 1);
+    assert!(store.note_is_tombstoned(&n.id), "note_purge_expired 没落墓碑");
+}
+
+/// 墓碑**永不随 notes 行消失**——这正是它存在的全部理由。
+#[test]
+fn test_墓碑在笔记行物理删之后依然在() {
+    let store = make_store();
+    let n = store.note_create(None, "甲", "正文").unwrap();
+    store.note_delete(&n.id).unwrap();
+    store.note_purge(&n.id).unwrap();
+
+    assert!(store.note_get(&n.id).unwrap().is_none(), "笔记行该没了");
+    assert!(
+        store.note_is_tombstoned(&n.id),
+        "笔记行没了但墓碑必须还在，否则删除会被对端同步回来"
+    );
+}
+
+/// 🔴 `tombstone_ms` 取**软删那一刻**，不是清理那一刻。
+///
+/// 场景：A 在 T0 删，B 在 T0+5 天改，A 在 T0+30 天自动清理。
+/// 取清理时刻的话墓碑比 B 的编辑新 → B 那次编辑被删掉，而用户什么都没做错。
+#[test]
+fn test_墓碑时间取软删那一刻而不是清理那一刻() {
+    let store = make_store();
+    let n = store.note_create(None, "甲", "正文").unwrap();
+    store.note_delete(&n.id).unwrap();
+    backdate_deleted_at(&store, &n.id, "2020-01-01 00:00:00.000");
+    store.note_purge_expired(30).unwrap();
+
+    let rows = store.note_tombstones_since(0).unwrap();
+    assert_eq!(rows.len(), 1);
+    let (_, ms) = &rows[0];
+    // 2020-01-01 落在 2020~2021 之间；若取的是「现在」会是 2026 年的值。
+    assert!(
+        (1_577_000_000_000..1_610_000_000_000).contains(ms),
+        "墓碑时间该是软删那一刻（2020），实得 {}——取成清理时刻会误删对端的合法编辑",
+        ms
+    );
+}
+
+#[test]
+fn test_墓碑按时间筛且升序() {
+    let store = make_store();
+    for (title, when) in [("早", "2020-01-01 00:00:00.000"), ("晚", "2021-01-01 00:00:00.000")] {
+        let n = store.note_create(None, title, "正文").unwrap();
+        store.note_delete(&n.id).unwrap();
+        backdate_deleted_at(&store, &n.id, when);
+    }
+    store.note_purge_expired(30).unwrap();
+
+    let all = store.note_tombstones_since(0).unwrap();
+    assert_eq!(all.len(), 2);
+    assert!(all[0].1 < all[1].1, "要按时间升序，对端才能顺序应用");
+
+    // 只要 2020-07 之后的 → 只剩晚的那条
+    let recent = store.note_tombstones_since(1_593_561_600_000).unwrap();
+    assert_eq!(recent.len(), 1, "since 没起筛选作用：{:?}", recent);
+}
+
+/// 落不下墓碑不能让用户删不掉东西（同 FTS 清理失败的先例）。
+#[test]
+fn test_墓碑表出问题时删除仍然成功() {
+    let store = make_store();
+    let n = store.note_create(None, "甲", "正文").unwrap();
+    store.note_delete(&n.id).unwrap();
+    // 把墓碑表弄坏：删掉它，INSERT 必然失败。
+    store
+        .lock_conn()
+        .execute_batch("DROP TABLE note_tombstones;")
+        .unwrap();
+
+    assert!(
+        store.note_purge(&n.id).is_ok(),
+        "墓碑落不下时删除仍必须成功——删不掉是不可绕过的，删除不传播是可恢复的"
+    );
+    assert!(store.note_get(&n.id).unwrap().is_none());
+}
+
+/// 🔴 P4 真正要堵的那条链路：**物理清之后，旧 vault 文件不能把笔记请回来。**
+///
+/// 这条链路在 P0 修好之后更隐蔽：现在会用**原来那个 id** 建回去，
+/// 从库里看就像它从来没被删过——没有新 id、没有报告、没有任何痕迹。
+#[test]
+fn test_物理清之后旧vault文件不会把笔记复活() {
+    // 与本文件其它 vault 测试同惯例：temp_dir + uuid，避免并行跑时互相踩。
+    // 导出不自建根目录（会报「目录不存在」），所以得先 create_dir_all。
+    let dir = std::env::temp_dir().join(format!("pastepanda_tomb_{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let store = make_store();
+
+    let n = store.note_create(None, "会议纪要", "正文内容").unwrap();
+    let id = n.id.clone();
+
+    // 导出一份 .md（模拟另一台机器上那份旧副本）
+    store.note_export_dir(dir.to_str().unwrap()).unwrap();
+
+    // 本地删掉并**彻底清理**
+    store.note_delete(&id).unwrap();
+    store.note_purge(&id).unwrap();
+    assert!(store.note_get(&id).unwrap().is_none());
+
+    // 拿那份旧副本再导入一次
+    let rep = store.note_import_dir(dir.to_str().unwrap()).unwrap();
+
+    assert!(
+        store.note_get(&id).unwrap().is_none(),
+        "已彻底清理的笔记被旧 vault 文件复活了——墓碑没起作用"
+    );
+    assert_eq!(rep.created, 0, "不该新建任何笔记：{:?}", rep);
+    assert_eq!(rep.in_trash.len(), 1, "该报告成「已删除，跳过」：{:?}", rep);
+    let _ = std::fs::remove_dir_all(&dir);
+}

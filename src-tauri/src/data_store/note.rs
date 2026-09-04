@@ -1074,6 +1074,8 @@ impl DataStore {
         let rowid: Option<i64> = conn
             .query_row("SELECT rowid FROM notes WHERE id = ?1", [id], |r| r.get(0))
             .ok();
+        // M6-P4：物理删之前先落墓碑。顺序不能反——行没了就读不到 deleted_at 了。
+        Self::record_tombstones_on(&conn, "id = ?1 AND deleted_at IS NOT NULL", &[&id]);
         let n = conn
             .execute(
                 "DELETE FROM notes WHERE id = ?1 AND deleted_at IS NOT NULL",
@@ -1090,6 +1092,74 @@ impl DataStore {
         Ok(())
     }
 
+    /// M6-P4：给即将被物理删的笔记落墓碑。`where_sql` 与调用方的 DELETE 用同一份条件。
+    ///
+    /// # `tombstone_ms` 取的是**软删那一刻**，不是清理那一刻
+    ///
+    /// 这不是细节。设 A 在 T0 把一篇笔记丢进回收站，B 在 T0+5 天改了同一篇，
+    /// A 在 T0+30 天自动清理：
+    ///
+    /// - 取清理时刻 → 墓碑比 B 的编辑新 → **B 那次编辑被删掉**，而用户什么都没做错
+    /// - 取软删时刻 → B 的编辑更新 → 笔记留下
+    ///
+    /// 删除意图发生在 T0，30 天后的物理清只是本地的空间回收，**不是一次新的删除**。
+    ///
+    /// # 失败不阻断
+    ///
+    /// 落不下墓碑时只 `warn`：同 FTS 清理的先例——**不能让用户删不掉东西**。
+    /// 代价是那一条删除将来可能不传播，而那是可恢复的；删不掉是不可绕过的。
+    fn record_tombstones_on(
+        conn: &rusqlite::Connection,
+        where_sql: &str,
+        params: &[&dyn rusqlite::types::ToSql],
+    ) {
+        // `OR IGNORE`：同一条笔记不会有第二次删除意图，先落的那次才是真的。
+        // `deleted_at` 是本地时间字串，`'utc'` 修饰符把它折算成 epoch 秒（语义已实测核过）。
+        // 解析不出来时回退到 `updated_ms`——那至少是这一行确实存在过的时刻，
+        // 比 0 强得多（0 在 LWW 里永远是输的那一方，等于这条删除白落了）。
+        let sql = format!(
+            "INSERT OR IGNORE INTO note_tombstones (note_id, tombstone_ms, source_node, purged)
+             SELECT id,
+                    COALESCE(CAST(strftime('%s', deleted_at, 'utc') AS INTEGER) * 1000, updated_ms),
+                    NULL,
+                    1
+             FROM notes WHERE {where_sql}"
+        );
+        if let Err(e) = conn.execute(&sql, params) {
+            log::warn!("[Notes] 落墓碑失败（删除仍会继续，但这条删除可能不传播）: {}", e);
+        }
+    }
+
+    /// 读墓碑：`since_ms` 之后（含）发生的删除。同步导出用。
+    ///
+    /// 返回 `(note_id, tombstone_ms)`。按时间升序，便于对端按顺序应用。
+    pub fn note_tombstones_since(&self, since_ms: i64) -> Result<Vec<(String, i64)>, String> {
+        let conn = self.lock_conn();
+        let mut st = conn
+            .prepare(
+                "SELECT note_id, tombstone_ms FROM note_tombstones
+                 WHERE tombstone_ms >= ?1 ORDER BY tombstone_ms",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = st
+            .query_map([since_ms], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(|e| e.to_string())?
+            .filter_map(Result::ok)
+            .collect();
+        Ok(rows)
+    }
+
+    /// 这条笔记 id 是不是已经有墓碑了？导入侧靠它避免「删除被同步回来」。
+    pub fn note_is_tombstoned(&self, id: &str) -> bool {
+        self.lock_conn()
+            .query_row(
+                "SELECT 1 FROM note_tombstones WHERE note_id = ?1",
+                [id],
+                |_| Ok(()),
+            )
+            .is_ok()
+    }
+
     /// 批量销毁的共用实现。`where_sql` 只能是本文件里的字面量，不接外部输入。
     ///
     /// ❗ **先清 FTS 再删 notes，顺序不能反**：清 FTS 那句要靠 `notes` 里的行去定位
@@ -1103,6 +1173,9 @@ impl DataStore {
         where_sql: &str,
         params: &[&dyn rusqlite::types::ToSql],
     ) -> Result<usize, String> {
+        // M6-P4：先落墓碑，再动任何删除。与下面清 FTS 的理由同源——
+        // 都要靠 `notes` 里还在的行去取信息，删了就取不到了。
+        Self::record_tombstones_on(conn, where_sql, params);
         let fts_sql = format!(
             "DELETE FROM notes_fts WHERE rowid IN (SELECT rowid FROM notes WHERE {where_sql})"
         );
