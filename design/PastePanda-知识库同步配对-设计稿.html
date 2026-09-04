@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda 知识库同步 · 配对界面设计稿</title>
+<style>
+/* 变量取自 src/styles/theme.css 的真实值（ocean 浅色 + dark 深色），不是另编一套 */
+:root{
+  --app-bg:#F7F7F8; --card-bg:#fff; --section-bg:#F0F4F8; --input-bg:#F1F5F9;
+  --text-primary:#0F172A; --text-secondary:#495565; --text-muted:#627083;
+  --border-color:#E0E4EB;
+  --accent:#0284C7; --accent-light:#E0F2FE; --accent-solid:#027CBB; --accent-strong:#0273AD;
+  --green:#11813A; --green-bg:#DCFCE7; --green-border:#BBF7D0;
+  --orange:#C54A0A; --orange-bg:#FFF7ED; --orange-border:#FED7AA;
+  --danger:#D82525; --red-bg:#FEF2F2;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-t="light"]){
+    --app-bg:#0B0B13; --card-bg:#18181B; --section-bg:#0F0F11; --input-bg:#27272A;
+    --text-primary:#E4E4E7; --text-secondary:#AFAFB7; --text-muted:#8D8D95;
+    --border-color:#27272A;
+    --accent:#818CF8; --accent-light:#1E1B4B; --accent-solid:#666FC4; --accent-strong:#818CF8;
+    --green:#4ADE80; --green-bg:#052E16; --green-border:#166534;
+    --orange:#FB923C; --orange-bg:#431407; --orange-border:#9A3412;
+    --danger:#F87171; --red-bg:#2A1215;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--app-bg);color:var(--text-primary);
+  font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;padding:28px}
+h1{font-size:20px;margin:0 0 4px}
+.lead{color:var(--text-muted);font-size:13px;margin:0 0 22px}
+h2{font-size:15px;margin:30px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--accent)}
+h3{font-size:13px;margin:18px 0 8px;color:var(--text-secondary)}
+.note{background:var(--accent-light);border-left:3px solid var(--accent);
+  padding:10px 14px;border-radius:0 8px 8px 0;font-size:12.5px;margin:10px 0}
+.warn{background:var(--orange-bg);border-left:3px solid var(--orange);
+  padding:10px 14px;border-radius:0 8px 8px 0;font-size:12.5px;margin:10px 0}
+.bad{background:var(--red-bg);border-left:3px solid var(--danger);
+  padding:10px 14px;border-radius:0 8px 8px 0;font-size:12.5px;margin:10px 0}
+code{background:var(--input-bg);padding:1px 5px;border-radius:4px;
+  font:12px ui-monospace,Consolas,monospace}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin:10px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--border-color);vertical-align:top}
+th{color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin:12px 0}
+.opt{background:var(--card-bg);border:1px solid var(--border-color);border-radius:12px;padding:14px}
+.opt.pick{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 14%,transparent)}
+.opt h4{margin:0 0 8px;font-size:13px}
+.tag{display:inline-block;font-size:10px;padding:2px 7px;border-radius:20px;
+  background:var(--accent-light);color:var(--accent-strong);margin-left:6px;vertical-align:middle}
+.tag.ok{background:var(--green-bg);color:var(--green)}
+.tag.new{background:var(--orange-bg);color:var(--orange)}
+.opt ul{margin:6px 0 0;padding-left:18px;font-size:12px;color:var(--text-secondary)}
+
+/* ── 真实设置页的骨架，类名对齐 Settings.module.css ── */
+.frame{background:var(--card-bg);border:1px solid var(--border-color);border-radius:14px;
+  overflow:hidden;max-width:660px;margin:12px 0}
+.sSection{padding:14px 20px 6px;font-size:11px;font-weight:700;color:var(--text-secondary);
+  text-transform:uppercase;letter-spacing:.5px;background:var(--section-bg);
+  border-bottom:1px solid var(--border-color)}
+.sRow{display:flex;align-items:center;padding:12px 20px;gap:12px;
+  border-bottom:1px solid var(--border-color)}
+.sRowIcon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;
+  justify-content:center;font-size:16px;flex-shrink:0;color:#fff}
+.sRowBody{flex:1;min-width:0}
+.sRowLabel{font-size:13.5px;font-weight:600}
+.sRowDesc{font-size:11.5px;color:var(--text-muted);margin-top:2px}
+.tg{width:44px;height:24px;border-radius:20px;background:var(--accent-solid);
+  position:relative;flex-shrink:0;border:none;cursor:pointer}
+.tg.off{background:var(--border-color)}
+.tg i{position:absolute;top:3px;left:23px;width:18px;height:18px;border-radius:50%;
+  background:#fff;transition:.2s}
+.tg.off i{left:3px}
+
+.panel{margin:8px 20px 16px;border-radius:14px;padding:16px 18px;
+  background:var(--accent-light);border:1px solid var(--border-color)}
+.pHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--green);display:inline-block;
+  margin-right:8px;vertical-align:middle}
+.dot.off{background:var(--text-muted)}
+.dot.warn{background:var(--orange)}
+.pTitle{font-size:13px;font-weight:600}
+.btn{font-size:12px;padding:5px 11px;border-radius:8px;cursor:pointer;
+  border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-primary)}
+.btn.pri{background:var(--accent-solid);color:#fff;border-color:transparent}
+.btn.dgr{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 35%,transparent)}
+.fp{font:15px/1.5 ui-monospace,Consolas,monospace;letter-spacing:2px;font-weight:700}
+.inp{width:100%;font:12px ui-monospace,Consolas,monospace;padding:7px 9px;border-radius:6px;
+  border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-primary)}
+.dev{display:flex;align-items:center;gap:10px;padding:9px 0;
+  border-top:1px solid color-mix(in srgb,var(--border-color) 70%,transparent)}
+.dev:first-of-type{border-top:none}
+.av{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;
+  justify-content:center;color:#fff;font-weight:700;font-size:14px;flex-shrink:0}
+.devMain{flex:1;min-width:0}
+.devName{font-size:13px;font-weight:600}
+.devSub{font-size:11px;color:var(--text-muted);font-family:ui-monospace,Consolas,monospace}
+.pill{font-size:10px;padding:2px 7px;border-radius:20px;background:var(--card-bg);
+  color:var(--text-secondary);border:1px solid var(--border-color)}
+.pill.on{background:var(--green-bg);color:var(--green);border-color:var(--green-border)}
+
+/* 弹窗 */
+.modal{max-width:480px;background:var(--card-bg);border:1px solid var(--border-color);
+  border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.18);overflow:hidden;margin:12px 0}
+.mHead{padding:14px 18px;border-bottom:1px solid var(--border-color);font-weight:700;font-size:14px}
+.mBody{padding:16px 18px}
+.mFoot{padding:12px 18px;border-top:1px solid var(--border-color);display:flex;
+  justify-content:flex-end;gap:8px;background:var(--section-bg)}
+.steps{display:flex;gap:6px;margin-bottom:14px}
+.step{flex:1;height:3px;border-radius:2px;background:var(--border-color)}
+.step.on{background:var(--accent)}
+.chk{display:flex;gap:9px;align-items:flex-start;padding:11px 12px;border-radius:9px;
+  background:var(--orange-bg);border:1px solid var(--orange-border);font-size:12px;margin-top:12px}
+.side{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;align-items:start}
+</style>
+</head>
+<body>
+<h1>知识库同步 · 配对界面设计稿</h1>
+<p class="lead">
+  规则 #4 先出稿。后端已完整（身份 / 邀请码 / 墓碑 / HLC / 冲突保全 / QUIC 传输 / 地址宣告 / 会话 / 编排，
+  941 测试通过），<b>唯一缺口就是没有界面能让用户配对</b>，所以 <code>sync/</code> 至今一个 Tauri 命令都不接。
+  样式变量与类名取自 <code>src/styles/theme.css</code> 与 <code>Settings.module.css</code> 真实值。
+</p>
+
+<h2>一、三个要你拍板的决策点</h2>
+
+<h3>决策 1 · 配对界面放哪儿</h3>
+<div class="opts">
+  <div class="opt pick">
+    <h4>A. 拆开放<span class="tag">推荐</span></h4>
+    <p style="font-size:12px;margin:0;color:var(--text-secondary)">
+      <b>配对与开关</b>放设置页（与「局域网同步」并列）；<br>
+      <b>同步状态与冲突入口</b>放知识库里。
+    </p>
+    <ul>
+      <li>配对是<b>一次性设置</b>，用户找同步开关就在设置页</li>
+      <li>状态与冲突是<b>日常要看的</b>，属于知识库</li>
+      <li>正是 AM-6 那条教训的正确用法：输出去它被用的地方，设置留在设置页</li>
+    </ul>
+  </div>
+  <div class="opt">
+    <h4>B. 全放设置页</h4>
+    <ul>
+      <li>实现最省，与 <code>LanSyncPanel</code> 完全同构</li>
+      <li>但「有 3 处冲突副本」这种事埋在设置页里没人看见——AM-6 踩过</li>
+    </ul>
+  </div>
+  <div class="opt">
+    <h4>C. 全放知识库</h4>
+    <ul>
+      <li>状态好找</li>
+      <li>但用户会先去设置页找「同步」，找不到；且与「局域网同步」割裂成两处</li>
+    </ul>
+  </div>
+</div>
+
+<h3>决策 2 · 指纹核对要不要强制</h3>
+<div class="opts">
+  <div class="opt pick">
+    <h4>A. 必须勾选才能完成<span class="tag">推荐</span></h4>
+    <ul>
+      <li>这是<b>唯一真正的安全边界</b>（见下方红框），不勾就等于没有</li>
+      <li>同 SSH 首次连接要你敲 <code>yes</code>——一次点击的摩擦，换掉一整类中间人</li>
+      <li>只在<b>首次配对该设备</b>时要求，重连不再问</li>
+    </ul>
+  </div>
+  <div class="opt">
+    <h4>B. 只展示不强制</h4>
+    <ul>
+      <li>顺畅</li>
+      <li>但绝大多数人不会核对 → 邀请码被替换就中招，而我们<b>明明知道</b>签名挡不住这个</li>
+    </ul>
+  </div>
+  <div class="opt">
+    <h4>C. 展示 + 事后提醒</h4>
+    <ul>
+      <li>折中</li>
+      <li>但「已经配上了再提醒去核对」，用户不会回头拆——实际等于 B</li>
+    </ul>
+  </div>
+</div>
+
+<h3>决策 3 · 开关文案怎么和「局域网同步」区分</h3>
+<div class="opts">
+  <div class="opt pick">
+    <h4>A. 两个开关各自说清同步的是什么<span class="tag">推荐</span></h4>
+    <ul>
+      <li>局域网同步 → 「同步<b>剪贴板</b>内容」（已有文案就是这个，不用改）</li>
+      <li>知识库同步 → 「同步<b>笔记</b>，含跨网」</li>
+      <li>两个开关<b>互不影响</b>，在说明里明写一句</li>
+    </ul>
+  </div>
+  <div class="opt">
+    <h4>B. 合成一个「多设备同步」总开关</h4>
+    <ul>
+      <li>看着干净</li>
+      <li>但会逼用户做一个他不想做的选择：「我只想同步笔记，不想让剪贴板到处飞」。后端<b>已经</b>按两个开关实现</li>
+    </ul>
+  </div>
+</div>
+
+<div class="bad">
+  🔴 <b>这条必须进 UI，不能只写在代码注释里。</b>
+  邀请码是<b>自签</b>的：签名只能证明「做码的人持有那把私钥」，
+  <b>不能证明这个码在传给你的路上没被换掉</b>——攻击者换成自己那一份，同样自签有效、校验一样通过。
+  真正挡住替换的是<b>两端各自看自己的短指纹、口头核对一致</b>（同 SSH host key 指纹 / Signal 安全码）。
+  界面不把这句说清楚，等于把安全性归零。
+</div>
+
+<h2>二、设置页 · 未配对（首次看到的样子）</h2>
+<div class="frame">
+  <div class="sSection">局域网同步</div>
+  <div class="sRow">
+    <span class="sRowIcon" style="background:linear-gradient(135deg,#06B6D4,#3B82F6)">🌐</span>
+    <div class="sRowBody">
+      <div class="sRowLabel">局域网同步</div>
+      <div class="sRowDesc">同一局域网内自动同步<b>剪贴板</b>内容</div>
+    </div>
+    <button class="tg off"><i></i></button>
+  </div>
+
+  <div class="sSection">知识库同步</div>
+  <div class="sRow">
+    <span class="sRowIcon" style="background:linear-gradient(135deg,#8B5CF6,#6366F1)">📚</span>
+    <div class="sRowBody">
+      <div class="sRowLabel">知识库同步</div>
+      <div class="sRowDesc">在你自己的设备之间同步<b>笔记</b>，局域网与跨网都走同一条通道 · 与上面的剪贴板同步<b>互不影响</b></div>
+    </div>
+    <button class="tg"><i></i></button>
+  </div>
+
+  <div class="panel">
+    <div class="pHead">
+      <span class="pTitle"><span class="dot off"></span>还没有配对任何设备</span>
+    </div>
+    <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">
+      笔记<b>只在你的设备之间直连传输</b>，不经过任何服务器。
+    </div>
+
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:5px">本机指纹（用来让对方确认是你）</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <span class="fp">7f3a-91c8-2be4-0d56</span>
+      <button class="btn">📋 复制</button>
+    </div>
+
+    <div style="display:flex;gap:8px">
+      <button class="btn pri" style="flex:1">➕ 生成邀请码</button>
+      <button class="btn" style="flex:1">📥 粘贴对方的邀请码</button>
+    </div>
+  </div>
+</div>
+<div class="note">
+  <b>为什么开关下面直接就是面板</b>：与 <code>LanSyncPanel</code> 同构（<code>config.lan_sync_enabled &amp;&amp; &lt;LanSyncPanel/&gt;</code>），
+  关掉就整块不渲染。既省得用户找，也免了「开关关着却还在轮询」——那正是 <code>McpTab</code> 当初被搬走的原因。
+</div>
+
+<h2>三、配对弹窗（两条路各两步）</h2>
+<div class="side">
+  <div>
+    <h3>路线 1 · 我生成，对方粘贴</h3>
+    <div class="modal">
+      <div class="mHead">邀请另一台设备</div>
+      <div class="mBody">
+        <div class="steps"><span class="step on"></span><span class="step"></span></div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">
+          把这串码发给你的另一台设备（微信 / 备忘录都行，<b>它本身不是秘密</b>）。
+        </div>
+        <textarea class="inp" rows="4" readonly
+          style="resize:none">eyJub2RlX2lkIjoiN2YzYTkxYzgyYmU0MGQ1NmZmMWEyYzNkNGU1ZjY3ODg5OWFhYmJjY2RkZWVmZjAwMTEyMjMzNDQ1NTY2Nzc4OCIsIm5hbWUi...</textarea>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn pri">📋 复制邀请码</button>
+          <span style="font-size:11px;color:var(--text-muted);align-self:center">7 天内有效</span>
+        </div>
+        <div class="chk">
+          <span>🔐</span>
+          <div>
+            <b>下一步在对方那台机器上做</b>：它会显示一串指纹，
+            确认与这里的 <span class="fp" style="font-size:12px">7f3a-91c8-2be4-0d56</span> 一字不差。
+          </div>
+        </div>
+      </div>
+      <div class="mFoot"><button class="btn">关闭</button></div>
+    </div>
+  </div>
+
+  <div>
+    <h3>路线 2 · 对方生成，我粘贴</h3>
+    <div class="modal">
+      <div class="mHead">添加设备 · 核对指纹</div>
+      <div class="mBody">
+        <div class="steps"><span class="step on"></span><span class="step on"></span></div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">这个邀请码来自：</div>
+        <div style="background:var(--input-bg);border-radius:10px;padding:12px;margin-bottom:12px">
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">💻 书房台式机</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">它的指纹</div>
+          <div class="fp" style="color:var(--accent-strong)">a91c-4d0e-88b2-3f7a</div>
+        </div>
+        <div class="chk">
+          <span>⚠️</span>
+          <div>
+            请<b>当面或打电话</b>让对方念一遍它屏幕上的指纹。
+            <div style="margin-top:6px;color:var(--text-muted)">
+              邀请码是自签的——它能证明「做码的人有那把私钥」，
+              <b>但证明不了这个码在路上没被人换掉</b>。核对指纹是唯一能挡住这件事的办法。
+            </div>
+            <label style="display:flex;gap:7px;margin-top:10px;font-weight:600;cursor:pointer">
+              <input type="checkbox"> 我已与对方核对，指纹一致
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="mFoot">
+        <button class="btn">取消</button>
+        <button class="btn pri" style="opacity:.45">完成配对</button>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:-4px">
+      「完成配对」在勾选前是禁用的（决策 2 选 A 时）。
+    </div>
+  </div>
+</div>
+
+<h2>四、设置页 · 已配对</h2>
+<div class="frame">
+  <div class="sSection">知识库同步</div>
+  <div class="sRow">
+    <span class="sRowIcon" style="background:linear-gradient(135deg,#8B5CF6,#6366F1)">📚</span>
+    <div class="sRowBody">
+      <div class="sRowLabel">知识库同步</div>
+      <div class="sRowDesc">在你自己的设备之间同步<b>笔记</b> · 与剪贴板同步互不影响</div>
+    </div>
+    <button class="tg"><i></i></button>
+  </div>
+  <div class="panel">
+    <div class="pHead">
+      <span class="pTitle"><span class="dot"></span>2 台设备已配对，1 台在线</span>
+      <button class="btn">🔄 立即同步</button>
+    </div>
+
+    <div class="dev">
+      <span class="av" style="background:hsl(212,60%,55%)">书</span>
+      <div class="devMain">
+        <div class="devName">书房台式机</div>
+        <div class="devSub">a91c-4d0e-88b2-3f7a · 12 秒前同步</div>
+      </div>
+      <span class="pill on">局域网</span>
+      <button class="btn dgr">忘记</button>
+    </div>
+
+    <div class="dev">
+      <span class="av" style="background:hsl(28,60%,55%)">出</span>
+      <div class="devMain">
+        <div class="devName">出差笔记本</div>
+        <div class="devSub">3e77-c012-5a9b-6f41 · 昨天 21:04 同步</div>
+      </div>
+      <span class="pill">离线</span>
+      <button class="btn dgr">忘记</button>
+    </div>
+
+    <div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--border-color);
+      display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:11px;color:var(--text-muted)">本机指纹 7f3a-91c8-2be4-0d56</span>
+      <button class="btn">➕ 添加设备</button>
+    </div>
+  </div>
+</div>
+<div class="note">
+  「忘记」要二次确认，且文案要说清后果：<b>对方那台机器上还留着这台的记录</b>，
+  它会继续尝试连接并被拒（<code>Admit::NotPaired</code>）。想彻底断开，两边都要忘记一次。
+  同时后端要顺带调 <code>PresenceTable::forget</code>——不清的话会留一条永不刷新也永不被覆盖的僵尸地址。
+</div>
+
+<h2>五、知识库里的状态条（决策 1 选 A 时）</h2>
+<div class="frame" style="max-width:560px">
+  <div style="padding:11px 16px;display:flex;align-items:center;gap:10px;font-size:12.5px">
+    <span class="dot"></span>
+    <span style="flex:1">已与 <b>书房台式机</b> 同步 · 12 秒前</span>
+    <span style="color:var(--text-muted);font-size:11px">下次约 34 秒后</span>
+  </div>
+</div>
+<div class="note">
+  「下次约 34 秒后」用的是真实的抖动值（<code>jittered_secs(30, 10, …)</code> → 20~40 秒），
+  <b>不要写死「30 秒」</b>——写死了就与实际行为不符，用户盯着表会觉得程序坏了。
+</div>
+
+<h2>六、四个必须露出来的异常态（规则 #15.3）</h2>
+<p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 10px">
+  这四个后端<b>已经在算</b>并放进了 <code>ApplyReport</code> / <code>SessionReport</code>。
+  不显示的话它们就是纯粹的静默数据损失。
+</p>
+
+<div class="frame" style="max-width:600px">
+  <div style="padding:13px 16px;border-bottom:1px solid var(--border-color)">
+    <div style="font-size:12.5px;font-weight:600;color:var(--danger);margin-bottom:4px">
+      ⚠ 出差笔记本的系统时间比本机快 6 分 12 秒
+    </div>
+    <div style="font-size:11.5px;color:var(--text-secondary)">
+      <b>你在这台机器上改的笔记会一直判输</b>——它的时间戳永远更大。
+      请去校准两台机器的系统时间；改完会自动恢复。
+      <span style="color:var(--text-muted)">（后端字段 <code>clock_too_far_ahead_ms</code>）</span>
+    </div>
+  </div>
+  <div style="padding:13px 16px;border-bottom:1px solid var(--border-color)">
+    <div style="font-size:12.5px;font-weight:600;color:var(--orange);margin-bottom:4px">
+      ⚠ 有 3 处冲突副本
+    </div>
+    <div style="font-size:11.5px;color:var(--text-secondary)">
+      两台设备在同一段时间里各改了同一篇。<b>两个版本都留着了</b>，没有丢。
+      <a href="#" style="color:var(--accent-strong)">查看这 3 处 →</a>
+      <span style="color:var(--text-muted)">（跳 <code>kb_search(kind="conflict")</code>，冲突副本本身就是笔记）</span>
+    </div>
+  </div>
+  <div style="padding:13px 16px;border-bottom:1px solid var(--border-color)">
+    <div style="font-size:12.5px;font-weight:600;margin-bottom:4px">
+      ℹ 本次有 2 篇以本机版本为准
+    </div>
+    <div style="font-size:11.5px;color:var(--text-secondary)">
+      对端那两篇更旧，已跳过。
+      <span style="color:var(--text-muted)">（<code>skipped_older</code>——后写胜会静默丢掉输的那边，这个数是它唯一的痕迹）</span>
+    </div>
+  </div>
+  <div style="padding:13px 16px">
+    <div style="font-size:12.5px;font-weight:600;color:var(--orange);margin-bottom:4px">
+      <span class="dot warn"></span>连不上出差笔记本 · 30 秒后重试（第 3 次）
+    </div>
+    <div style="font-size:11.5px;color:var(--text-secondary)">
+      对方可能没开机、不在同一网络，或没开这个开关。
+      <span style="color:var(--text-muted)">（退避阶梯 5→10→30→60 秒；「对端在忙」<b>不</b>走退避，也<b>不</b>显示为失败）</span>
+    </div>
+  </div>
+</div>
+<div class="warn">
+  <b>清单里说有、文件却不在</b>（<code>missing_files</code>，传输被截断）也要有一条，
+  但它属于「重试一次就好了」那一类，建议只在连续多轮都出现时才提示，免得一次丢包就惊动用户。
+</div>
+
+<h2>七、这一稿需要新增的 Tauri 命令</h2>
+<p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 6px">
+  <code>sync/</code> 现在<b>一个命令都不接</b>（接了就是没人调的死代码）。要撑起上面的界面，需要这些：
+</p>
+<table>
+<tr><th>命令</th><th>后端已有的东西</th><th>状态</th></tr>
+<tr><td><code>kb_sync_identity</code></td><td><code>NodeIdentity::fingerprint()</code> / <code>node_id()</code></td><td><span class="tag ok">直接包一层</span></td></tr>
+<tr><td><code>kb_sync_invite_create</code></td><td><code>invite::encode</code></td><td><span class="tag ok">直接包一层</span></td></tr>
+<tr><td><code>kb_sync_invite_preview</code></td><td><code>invite::decode</code></td><td><span class="tag ok">直接包一层</span></td></tr>
+<tr><td><code>kb_sync_pair</code></td><td><code>invite::decode</code> + <code>device_pair</code></td><td><span class="tag ok">直接包一层</span></td></tr>
+<tr><td><code>kb_sync_devices</code></td><td><code>device_list</code> + <code>PresenceTable::live</code></td><td><span class="tag ok">直接包一层</span></td></tr>
+<tr><td><code>kb_sync_forget</code></td><td><code>device_forget</code> + <code>PresenceTable::forget</code></td><td><span class="tag new">要记得清地址</span></td></tr>
+<tr><td><code>kb_sync_now</code></td><td><code>service::dial_once</code> 目前是私有的</td><td><span class="tag new">要开一个口</span></td></tr>
+<tr><td><code>toggle_kb_sync</code></td><td><code>service::spawn</code> / <code>presence::spawn</code></td><td><span class="tag new">还需要「停」</span></td></tr>
+<tr><td>最近一次同步结果（事件）</td><td><code>SessionReport</code> 现在只进日志</td><td><span class="tag new">要 emit 给前端</span></td></tr>
+</table>
+
+<div class="warn">
+  <b>两处后端还差东西，不是包一层就行的：</b>
+  <ol style="margin:6px 0 0;padding-left:20px;font-size:12px">
+    <li><b>「停」没实现。</b><code>spawn</code> 里那个 <code>running: AtomicBool</code> 置 false 就能让循环退出，
+        但目前没有任何地方持有它——开关关掉时得能拿到。要给 <code>SyncCtx</code> 找个存放处
+        （<code>tauri::State</code>），这一步顺带就把「命令能调到同步」解决了。</li>
+    <li><b>新配对的设备不会被现有循环带上。</b><code>service::spawn</code> 是启动时读一次
+        <code>device_list</code> 然后每台起一条循环。<b>配对之后那台不会有循环</b>，
+        要重启应用才生效——这在配对界面上是致命的（配完什么都不动）。
+        修法：<code>kb_sync_pair</code> 成功后立刻为这台 <code>tokio::spawn(peer_loop)</code>。</li>
+  </ol>
+</div>
+
+<h2>八、组件划分（规则 #7：单个 .tsx ≤ 300 行）</h2>
+<table>
+<tr><th>文件</th><th>职责</th><th>预估</th></tr>
+<tr><td><code>settings/KbSyncPanel.tsx</code></td><td>开关下面那块面板：状态行 + 设备列表 + 两个入口</td><td>~150 行</td></tr>
+<tr><td><code>settings/KbPairDialog.tsx</code></td><td>配对弹窗（生成 / 粘贴两条路 + 指纹核对门）</td><td>~180 行</td></tr>
+<tr><td><code>hooks/useKbSync.ts</code></td><td>命令调用与轮询收口一处（规则 #11）</td><td>~120 行</td></tr>
+<tr><td><code>knowledge/KbSyncStatusBar.tsx</code></td><td>知识库里那一条状态 + 异常提示</td><td>~90 行</td></tr>
+</table>
+<div class="note">
+  轮询照 <code>LanSyncPanel</code> 的先例用 <code>useWindowVisible()</code> 门住：
+  窗口 <code>hide()</code> 之后 WebView 还活着，空转会烧 CPU（规则 #8）。
+  失败提示也照它那个 <code>wasOkRef</code> 的写法——5 秒轮询下持续失败会刷屏 toast。
+</div>
+
+<h2>九、明确不做的</h2>
+<table>
+<tr><th>不做</th><th>为什么</th></tr>
+<tr><td>自动配对 / 自动信任同网段设备</td><td>那就等于没有指纹核对。红线①：学习只影响排序，永不自动执行——信任建立更不能自动</td></tr>
+<tr><td>把同步日志发到任何地方</td><td>红线②：使用日志永不出本机</td></tr>
+<tr><td>二维码扫码配对</td><td>本机是 Windows 桌面对 Windows 桌面，没有摄像头这一环；等真有手机端再说</td></tr>
+<tr><td>「解决冲突」的三路合并界面</td><td>冲突副本已经是<b>笔记</b>，用户拿现成的编辑器 + 对比功能处理就行。专门做一个合并 UI 是重复造轮子</td></tr>
+<tr><td>手填对端 IP</td><td><code>kb_presence</code> 就是为了免掉这件事。地址会漂，手填的第二天就失效</td></tr>
+</table>
+
+<p style="margin-top:26px;font-size:11.5px;color:var(--text-muted);border-top:1px solid var(--border-color);padding-top:12px">
+  设计稿 · 2026-09-04 ·
+  样式变量取自 <code>src/styles/theme.css</code>（ocean 浅色 / dark 深色），
+  类名与结构对齐 <code>Settings.module.css</code> 与 <code>LanSyncPanel.tsx</code> 真实实现。
+  后端对应 <code>src-tauri/src/sync/</code>（<code>identity</code> / <code>invite</code> / <code>presence</code> /
+  <code>session</code> / <code>coordinate</code> / <code>service</code>）。
+</p>
+</body>
+</html>
