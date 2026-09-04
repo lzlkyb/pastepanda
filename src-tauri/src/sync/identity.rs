@@ -114,6 +114,19 @@ impl NodeIdentity {
         let kp = keypair(&self.seed)?;
         Ok(kp.sign(msg).as_ref().to_vec())
     }
+
+    /// 给 iroh 绑端点用的密钥。这就是本模块开头说的「身份不用换」那个口。
+    ///
+    /// 🔴 **不对外露裸种子。** `pub(crate)` 加上返回 `SecretKey` 而不是
+    /// `[u8; 32]`，是为了让私钥没有一个能被随手打印 / 序列化的形态。
+    ///
+    /// ❗ 上一版 `transport::bind` 是另收一个 `seed: [u8; 32]` 参数的，
+    /// 而 `me` 那个参数完全没用（`let _ = me;`）。后果是**生产环境
+    /// 没法用真身份绑端点**：随便造个种子的话，端点 id 就不等于
+    /// 大家配对时认的 `node_id`，配对直接失效。现在两者**同源，且类型上就不可能分开**。
+    pub(crate) fn iroh_secret(&self) -> iroh::SecretKey {
+        iroh::SecretKey::from_bytes(&self.seed)
+    }
 }
 
 /// 🔴 **手写而不是 `#[derive(Debug)]`**：派生实现会把 `seed`（私钥）

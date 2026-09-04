@@ -29,7 +29,7 @@
 use crate::sync::identity::NodeIdentity;
 use iroh::{
     endpoint::{presets, RelayMode},
-    Endpoint, EndpointAddr, SecretKey,
+    Endpoint, EndpointAddr,
 };
 use std::path::{Path, PathBuf};
 
@@ -51,10 +51,11 @@ const BACKSLASH: char = '\u{5C}';
 ///
 /// `relay` 为 `false` 时**同时关掉 relay 与地址发现**——那才是真的「只走局域网」。
 /// 只关 relay 的话地址发现仍会打 n0 的 DNS（见模块文档）。
-pub async fn bind(me: &NodeIdentity, seed: [u8; 32], relay: bool) -> Result<Endpoint, String> {
-    // `me` 现在只用来表明「身份是调用方的事」；种子必须与它同源。
-    let _ = me;
-    let key = SecretKey::from_bytes(&seed);
+pub async fn bind(me: &NodeIdentity, relay: bool) -> Result<Endpoint, String> {
+    // 🔴 密钥只能从身份里取（[`NodeIdentity::iroh_secret`]）。
+    // 上一版还另收一个 `seed` 参数、而 `me` 完全没用，
+    // 那意味着端点 id 可以与大家配对时认的 `node_id` 不一致——配对直接失效。
+    let key = me.iroh_secret();
     let b = if relay {
         Endpoint::builder(presets::N0).secret_key(key)
     } else {

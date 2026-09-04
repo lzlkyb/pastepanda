@@ -596,11 +596,16 @@ fn test_对端没动过的副本不会压过本机的新编辑() {
 
 // ===== 传输层（两个端点在同一进程内，不出网卡）=====
 
-/// 造一个「假装没网」的端点：relay 与地址发现都关掉。
-async fn offline_ep(seed: u8) -> iroh::Endpoint {
-    let dir = tmp_dir(&format!("ep{}", seed));
+/// 一个「假装没网」的端点：relay 与地址发现都关掉。
+///
+/// ❗ 端点密钥**从身份里来**，不是 `[seed; 32]` 那种造的——
+/// 旧写法下端点 id 与 `NodeIdentity::node_id()` 是两回事，
+/// 而生产环境里那就是「配对认的 id 跟实际拨得通的 id 不同」。
+/// 现在测试走的路径与生产一致。
+async fn offline_ep(tag: u8) -> iroh::Endpoint {
+    let dir = tmp_dir(&format!("ep{}", tag));
     let me = NodeIdentity::load_or_create(&dir).unwrap();
-    let ep = super::transport::bind(&me, [seed; 32], false)
+    let ep = super::transport::bind(&me, false)
         .await
         .expect("绑定端点失败");
     let _ = std::fs::remove_dir_all(&dir);
@@ -1432,5 +1437,133 @@ mod slot_tests {
             "应该真的等满 {:?} 才放弃",
             YIELD_WAIT
         );
+    }
+}
+
+// ===== 服务把手（画界面时才发现的两个洞） =====
+
+mod service_tests {
+    use super::{store, tmp_dir};
+    use crate::sync::identity::NodeIdentity;
+    use crate::sync::service::{sleep_or_stop, SyncService};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    /// 造一个合法的对端 node_id（真实曲线点，不是随手编的 hex）。
+    fn a_peer_id(tag: &str) -> String {
+        let d = tmp_dir(&format!("peer_{}", tag));
+        let id = NodeIdentity::load_or_create(&d).unwrap().node_id();
+        let _ = std::fs::remove_dir_all(&d);
+        id
+    }
+
+    #[tokio::test]
+    async fn test_关开关时不用等满退避() {
+        // 🔴 退避到顶是 60 秒。要是直接 sleep，用户关掉开关得等最多一分钟
+        //    才真的停——界面上就是「明明关了还在同步」。
+        let stop = Arc::new(tokio::sync::Notify::new());
+        let s2 = stop.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(60)).await;
+            s2.notify_waiters();
+        });
+        let t0 = tokio::time::Instant::now();
+        let finished = sleep_or_stop(&stop, 60).await;
+        assert!(!finished, "被叫醒时应返回 false（= 该退出了）");
+        assert!(
+            t0.elapsed() < Duration::from_secs(5),
+            "应当立刻醒，实际等了 {:?}",
+            t0.elapsed()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_没被叫醒时正常睡完() {
+        let stop = tokio::sync::Notify::new();
+        assert!(sleep_or_stop(&stop, 0).await, "睡完应返回 true");
+    }
+
+    #[tokio::test]
+    async fn test_开关关着时不启动() {
+        let svc = SyncService::new();
+        let dir = tmp_dir("svc_off");
+        svc.start(Arc::new(store()), &dir, false, false)
+            .await
+            .expect("关着时 start 不该报错");
+        assert!(!svc.is_running().await, "开关关着却起来了");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_配对之后立刻就有循环不用重启() {
+        // 🔴 这是画配对界面时发现的洞：旧版 `spawn` 是启动时读一次 device_list，
+        //    配对之后那台**不会有循环**，要重启应用才生效。
+        //    用户配完正盯着界面看，什么都不动 —— 看起来就是坏的。
+        let s = Arc::new(store());
+        let svc = SyncService::new();
+        let dir = tmp_dir("svc_pair");
+        svc.start(s.clone(), &dir, true, false)
+            .await
+            .expect("启动失败");
+        assert!(svc.is_running().await);
+        assert_eq!(svc.peer_count().await, 0, "一开始没有已配对设备");
+
+        let peer = a_peer_id("new");
+        s.device_pair(&peer, "新设备", "").unwrap();
+        svc.add_peer(&peer).await.unwrap();
+        assert_eq!(svc.peer_count().await, 1, "配对之后应立刻有一条循环");
+
+        // 幂等：重复配同一台不该起两条（两条会白拨，虽然会话槽挡得住）
+        svc.add_peer(&peer).await.unwrap();
+        assert_eq!(svc.peer_count().await, 1, "重复配对起了两条循环");
+
+        // 忘记之后循环不该再留着
+        svc.drop_peer(&peer).await;
+        assert_eq!(svc.peer_count().await, 0);
+
+        svc.stop().await;
+        assert!(!svc.is_running().await, "stop 之后不该还在跑");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_重复start是幂等的() {
+        let s = Arc::new(store());
+        let svc = SyncService::new();
+        let dir = tmp_dir("svc_twice");
+        svc.start(s.clone(), &dir, true, false).await.unwrap();
+        // 前端可能重复调（比如设置页重挂载），第二次不该再绑一个端点
+        svc.start(s.clone(), &dir, true, false).await.unwrap();
+        assert!(svc.is_running().await);
+        svc.stop().await;
+        // 停了之后还能再起
+        svc.start(s, &dir, true, false).await.unwrap();
+        assert!(svc.is_running().await);
+        svc.stop().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_没在跑的时候立即同步给得出所以然的错() {
+        let svc = SyncService::new();
+        let err = svc.sync_now(&a_peer_id("nosvc")).await.expect_err("应报错");
+        assert!(err.contains("没有在运行"), "{}", err);
+    }
+
+    #[tokio::test]
+    async fn test_端点身份就是配对时那个身份() {
+        // 🔴 第三个洞：旧版 `transport::bind(me, seed, relay)` 里 `me` 完全没用
+        //    （`let _ = me;`），种子是另给的。生产环境只能随手造个种子，
+        //    于是端点 id ≠ 大家配对时认的 node_id —— 配对直接失效。
+        let dir = tmp_dir("ident_eq");
+        let me = NodeIdentity::load_or_create(&dir).unwrap();
+        let ep = crate::sync::transport::bind(&me, false).await.unwrap();
+        assert_eq!(
+            ep.id().to_string(),
+            me.node_id(),
+            "端点 id 必须等于身份的 node_id"
+        );
+        ep.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

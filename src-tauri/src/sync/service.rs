@@ -9,6 +9,8 @@
 //! | [`peer_loop`] | 每个已配对设备 1 条 | 周期性主动拨那一台 |
 //! | [`super::presence::spawn`] | 1 | 喊自己的地址、听别人的 |
 //!
+//! 这三条都由 [`SyncService`] 起与停 —— 它是前端唯一的入口。
+//!
 //! 多设备就是每对端一条独立状态机 —— 天然全网状，不需要额外的拓扑概念。
 //!
 //! # 🔴 accept 之后必须立刻交出去
@@ -44,6 +46,10 @@ pub struct SyncCtx {
     pub presence: Arc<PresenceTable>,
     pub coord: Arc<Coordinator>,
     pub running: Arc<AtomicBool>,
+    /// 关开关时把正在 sleep 的循环叫醒。见 [`sleep_or_stop`]。
+    pub stop: Arc<tokio::sync::Notify>,
+    /// 当前有循环的对端。拦重复起用（两条循环会白拨）。
+    peers: std::sync::Mutex<std::collections::HashSet<String>>,
 }
 
 fn now_ms() -> i64 {
@@ -69,7 +75,7 @@ fn target(ctx: &SyncCtx, peer: &str) -> Result<EndpointAddr, String> {
 pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
     let short = &peer[..8.min(peer.len())];
     let mut fails: u32 = 0;
-    while ctx.running.load(Ordering::SeqCst) {
+    while ctx.running.load(Ordering::SeqCst) && has_peer(&ctx, &peer) {
         let wait = match dial_once(&ctx, &peer).await {
             Outcome::Synced => {
                 fails = 0;
@@ -94,9 +100,16 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
                 w
             }
         };
-        tokio::time::sleep(Duration::from_secs(wait)).await;
+        if !sleep_or_stop(&ctx.stop, wait).await {
+            break;
+        }
     }
     log::info!("[Sync] {} 的同步循环已停止", short);
+}
+
+/// 这个对端还应该有循环吗（「忘记此设备」之后就不应该了）。
+fn has_peer(ctx: &SyncCtx, peer: &str) -> bool {
+    ctx.peers.lock().map(|p| p.contains(peer)).unwrap_or(false)
 }
 
 enum Outcome {
@@ -154,12 +167,17 @@ fn is_busy_reject(err: &str) -> bool {
 /// 收入连接的循环。只接、然后立刻交给独立任务。
 pub async fn accept_loop(ctx: Arc<SyncCtx>) {
     while ctx.running.load(Ordering::SeqCst) {
-        let w = match super::transport::accept(&ctx.endpoint).await {
-            Ok(w) => w,
-            Err(e) => {
-                log::warn!("[Sync] 接入连接失败：{}", e);
-                continue;
-            }
+        // 🔴 必须与停止信号一起 select：`accept` 是一直等着的，
+        // 光看 `running` 的话开关关掉之后这个循环会永远卡在这儿。
+        let w = tokio::select! {
+            r = super::transport::accept(&ctx.endpoint) => match r {
+                Ok(w) => w,
+                Err(e) => {
+                    log::warn!("[Sync] 接入连接失败：{}", e);
+                    continue;
+                }
+            },
+            _ = ctx.stop.notified() => break,
         };
         let ctx2 = ctx.clone();
         tokio::spawn(async move { serve(ctx2, w).await });
@@ -203,36 +221,189 @@ async fn serve(ctx: Arc<SyncCtx>, w: super::transport::Wire) {
     }
 }
 
-/// 起全套循环。
+/// 睡一会儿，但**开关一关就立刻醒**。返回 `false` = 该退出了。
 ///
-/// 🔴 开关判断在**函数里面**，和 [`super::presence::spawn`] 一样：
-/// 调用方拿不到「绕过开关」的写法。关着时留一行日志说明原因（规则 #15.3）。
-pub fn spawn(enabled: bool, ctx: Arc<SyncCtx>) {
-    if !enabled {
-        log::info!(
-            "[Sync] 知识库同步开关（{}）是关的，不启动同步循环",
-            super::presence::ENABLE_KEY
-        );
-        return;
+/// 🔴 不能直接 `sleep(secs)`：退避到顶是 60 秒，用户关掉开关却要等最多一分钟
+/// 才真的停下来——界面上就是「明明关了还在同步」。
+///
+/// 参数收的是 `&Notify` 而不是 `&SyncCtx`，纯粹为了能单测：
+/// 不然测这一条就得先绑一个 iroh 端点。
+pub async fn sleep_or_stop(stop: &tokio::sync::Notify, secs: u64) -> bool {
+    tokio::select! {
+        _ = tokio::time::sleep(Duration::from_secs(secs)) => true,
+        _ = stop.notified() => false,
     }
-    if ctx
-        .running
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
-    {
-        return;
+}
+
+/// 前端拿到的那个把手。放进 `tauri::State`。
+///
+/// # 为什么需要它
+///
+/// 上一版只有一个 `spawn(enabled, ctx)` 自由函数，于是有两个洞：
+///
+/// 🔴 **① 开关关不掉。** `running` 那个 `AtomicBool` 建在调用处，
+/// 之后**没有任何地方持有它**——用户把开关拨回去，循环照跑。
+///
+/// 🔴 **② 新配对的设备要重启才生效。** `spawn` 是启动时读一次 `device_list`、
+/// 每台起一条循环。配对之后那台**不会有循环**。
+/// 这在配对界面上是致命的：用户配完，界面上什么都不动，看起来就是坏的。
+///
+/// 两个洞都是「画界面时才发现」的——后端自测跑得通，是因为测试里从来没有
+/// 「先起服务、再配对」这个顺序。
+#[derive(Default)]
+pub struct SyncService {
+    inner: tokio::sync::Mutex<Option<Arc<SyncCtx>>>,
+}
+
+impl SyncService {
+    pub fn new() -> Self {
+        Self::default()
     }
-    let peers = match ctx.store.device_list() {
-        Ok(d) => d,
-        Err(e) => {
-            log::warn!("[Sync] 读已配对设备失败，同步没起来：{}", e);
-            ctx.running.store(false, Ordering::SeqCst);
-            return;
+
+    /// 起。已经在跑就什么都不做（幂等，前端可以放心重复调）。
+    ///
+    /// 🔴 开关判断在**函数里面**，同 [`super::presence::spawn`]：
+    /// 调用方拿不到「绕过开关」的写法。关着时留一行日志说明原因（规则 #15.3）。
+    pub async fn start(
+        &self,
+        store: Arc<DataStore>,
+        app_dir: &std::path::Path,
+        enabled: bool,
+        relay: bool,
+    ) -> Result<(), String> {
+        if !enabled {
+            log::info!(
+                "[Sync] 知识库同步开关（{}）是关的，不启动同步",
+                super::presence::ENABLE_KEY
+            );
+            return Ok(());
         }
-    };
-    log::info!("[Sync] 同步循环启动，已配对设备 {} 台", peers.len());
-    tokio::spawn(accept_loop(ctx.clone()));
-    for d in peers {
-        tokio::spawn(peer_loop(ctx.clone(), d.node_id));
+        let mut guard = self.inner.lock().await;
+        if guard.is_some() {
+            return Ok(());
+        }
+
+        let me = Arc::new(super::identity::NodeIdentity::load_or_create(app_dir)?);
+        let endpoint = super::transport::bind(&me, relay).await?;
+
+        // ❗ 只取端口，**不取 IP**：`bound_sockets()` 给的是通配 `0.0.0.0`，
+        //   拨它必然超时（探针阶段栽过）。IP 由对端从我们的源地址取，
+        //   见 `presence` 模块说明②。
+        let port = endpoint
+            .bound_sockets()
+            .first()
+            .map(|s| s.port())
+            .ok_or("端点没有绑到任何端口")?;
+
+        let ctx = Arc::new(SyncCtx {
+            store: store.clone(),
+            endpoint,
+            presence: Arc::new(PresenceTable::new()),
+            coord: Arc::new(Coordinator::new(me.node_id())),
+            running: Arc::new(AtomicBool::new(true)),
+            stop: Arc::new(tokio::sync::Notify::new()),
+            peers: std::sync::Mutex::new(std::collections::HashSet::new()),
+        });
+
+        let paired_store = store.clone();
+        super::presence::spawn(
+            true,
+            ctx.presence.clone(),
+            me.clone(),
+            port,
+            Arc::new(move |id: &str| matches!(paired_store.device_get(id), Ok(Some(_)))),
+            Arc::new(AtomicBool::new(false)),
+        );
+
+        tokio::spawn(accept_loop(ctx.clone()));
+        let known = store.device_list()?;
+        for d in &known {
+            start_peer(&ctx, &d.node_id);
+        }
+        log::info!(
+            "[Sync] 同步已启动，端点端口 {}，已配对设备 {} 台",
+            port,
+            known.len()
+        );
+        *guard = Some(ctx);
+        Ok(())
     }
+
+    /// 停。循环会**立刻**醒（不等满退避），端点随之关闭。
+    pub async fn stop(&self) {
+        let mut guard = self.inner.lock().await;
+        if let Some(ctx) = guard.take() {
+            ctx.running.store(false, Ordering::SeqCst);
+            ctx.stop.notify_waiters();
+            ctx.endpoint.close().await;
+            log::info!("[Sync] 同步已停止");
+        }
+    }
+
+    pub async fn is_running(&self) -> bool {
+        self.inner.lock().await.is_some()
+    }
+
+    /// 为一台**刚配对**的设备补一条循环。
+    ///
+    /// 🔴 配对成功之后必须调这个，否则那台设备要等下次启动才会被同步——
+    /// 而用户刚配完正盯着界面看。
+    ///
+    /// 幂等：重复配同一台不会起两条循环（两条循环会白拨，虽然会话槽挡得住）。
+    pub async fn add_peer(&self, node_id: &str) -> Result<(), String> {
+        let guard = self.inner.lock().await;
+        let Some(ctx) = guard.as_ref() else {
+            // 开关关着时配对是允许的，只是现在不起循环；开开关时会从 device_list 读到
+            return Ok(());
+        };
+        start_peer(ctx, node_id);
+        Ok(())
+    }
+
+    /// 不再为某台设备跑循环（「忘记此设备」时调）。
+    pub async fn drop_peer(&self, node_id: &str) {
+        let guard = self.inner.lock().await;
+        if let Some(ctx) = guard.as_ref() {
+            if let Ok(mut p) = ctx.peers.lock() {
+                p.remove(node_id);
+            }
+            // ❗ 地址也要清：不清会留一条永不刷新也永不被覆盖的僵尸地址
+            ctx.presence.forget(node_id);
+        }
+    }
+
+    /// 当前有几条对端循环。给测试与界面用。
+    pub async fn peer_count(&self) -> usize {
+        let guard = self.inner.lock().await;
+        guard
+            .as_ref()
+            .and_then(|c| c.peers.lock().ok().map(|p| p.len()))
+            .unwrap_or(0)
+    }
+
+    /// 立刻跟某台同步一次（界面上那个「立即同步」）。
+    pub async fn sync_now(&self, node_id: &str) -> Result<(), String> {
+        let ctx = {
+            let guard = self.inner.lock().await;
+            guard.as_ref().cloned().ok_or("知识库同步没有在运行")?
+        };
+        match dial_once(&ctx, node_id).await {
+            // 「对端在忙」不是失败：它那边正在把两边的东西都搬完
+            Outcome::Synced | Outcome::Busy(_) => Ok(()),
+            Outcome::Failed(why) => Err(why),
+        }
+    }
+}
+
+/// 起一条对端循环，已有就不重复起。
+fn start_peer(ctx: &Arc<SyncCtx>, node_id: &str) {
+    match ctx.peers.lock() {
+        Ok(mut p) => {
+            if !p.insert(node_id.to_string()) {
+                return;
+            }
+        }
+        Err(_) => return,
+    }
+    tokio::spawn(peer_loop(ctx.clone(), node_id.to_string()));
 }
