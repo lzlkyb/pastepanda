@@ -640,6 +640,25 @@ impl DataStore {
         self.note_create_from(history_id, title, content, "")
     }
 
+    /// AM-8：库里疑似重复的笔记标题。
+    ///
+    /// 只读标题列，不读正文——判定只需要名字，而全库拉正文在大库上是灾难。
+    ///
+    /// 🔴 **为什么这件事对 AI 比对人更要紧**：`[[标题]]` 是按名字解析的。
+    /// 标题分叉时链接会指到另一篇，或者谁都指不到，而**没有任何人会收到通知**。
+    pub fn note_title_dups(&self) -> Result<Vec<crate::similar::DupGroup>, String> {
+        let conn = self.lock_conn();
+        let mut st = conn
+            .prepare("SELECT title FROM notes WHERE deleted_at IS NULL AND title <> ''")
+            .map_err(|e| e.to_string())?;
+        let titles: Vec<String> = st
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(Result::ok)
+            .collect();
+        Ok(crate::similar::find_dups(&titles))
+    }
+
     /// 读一条笔记的 `updated_ms`（M6-P2）。不存在返 `None`。
     ///
     /// 同步层算增量靠它；当下先给测试用——

@@ -126,6 +126,12 @@ pub trait KbSource: Send + Sync + 'static {
     /// 文件夹 id → 名字（展示用）。拿不到就不显示，不报错。
     fn folder_name(&self, folder_id: &str) -> Option<String>;
 
+    /// AM-8：库里疑似重复的笔记标题。
+    ///
+    /// 与 [`Self::folder_name`] 同口径——这是一条**附加提示**，
+    /// 拿不到就不显示，不能让整个 `kb_folders` 失败。
+    fn title_dups(&self) -> Vec<crate::similar::DupGroup>;
+
     /// 全部文件夹（`kb_folders` 用）。
     fn folders(&self) -> Result<Vec<NoteFolder>, String>;
 
@@ -250,6 +256,15 @@ impl KbSource for AppKbSource {
         limit: u32,
     ) -> Result<SearchOutcome, String> {
         self.with_store(|s| search_on(s, query, folder, tag, kind, limit))?
+    }
+
+    fn title_dups(&self) -> Vec<crate::similar::DupGroup> {
+        // 两层 Result：外层是「拿不到 store」，内层是「查询失败」。
+        // 两者都只影响这一条**附加提示**，不能让整个 kb_folders 挂掉。
+        self.with_store(|s| s.note_title_dups())
+            .ok()
+            .and_then(|r| r.ok())
+            .unwrap_or_default()
     }
 
     fn folder_name(&self, folder_id: &str) -> Option<String> {

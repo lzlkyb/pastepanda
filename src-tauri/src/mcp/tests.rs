@@ -166,6 +166,11 @@ impl super::source::KbSource for FakeKb {
         None
     }
 
+    // AM-8：假源里放一组真的标题近重复，钉住 kb_folders 会把它说出来。
+    fn title_dups(&self) -> Vec<crate::similar::DupGroup> {
+        crate::similar::find_dups(&["会议纪要模板".into(), "会议记要模板".into()])
+    }
+
     // AM-6：假源不推库简介——那正是**默认行为**。
     // 拼接与标注的用例在 `protocol.rs` 的单测里（那里能直接喂一段文本）。
     fn library_blurb(&self) -> String {
@@ -182,11 +187,15 @@ impl super::source::KbSource for FakeKb {
     }
 
     fn tags(&self) -> Result<Vec<crate::data_store::Tag>, String> {
-        Ok(vec![serde_json::from_value(json!({
-            "id": "t1", "name": "rust", "color": "#000",
-            "source": "manual", "created_at": "2026-09-01 10:00:00",
-        }))
-        .expect("造假标签失败")])
+        // AM-8：Java / java 是真库里实测到的那一组（2026-09-04，38 个标签里的唯一一组）。
+        let mk = |id: &str, name: &str| {
+            serde_json::from_value::<crate::data_store::Tag>(json!({
+                "id": id, "name": name, "color": "#000",
+                "source": "manual", "created_at": "2026-09-01 10:00:00",
+            }))
+            .expect("造假标签失败")
+        };
+        Ok(vec![mk("t1", "rust"), mk("t2", "Java"), mk("t3", "java")])
     }
 
     fn create(
@@ -1314,6 +1323,41 @@ async fn test_kb_search_命中里列出类别() {
     assert!(
         text.contains("记有类别：") && text.contains("decision"),
         "假源里那篇写了 - [decision]，结果里应当列出来：{}",
+        text
+    );
+}
+
+// ===== AM-8 近重复 =====
+
+/// `kb_folders` 要把「按名字寻址会撞车」的两类都说出来：标签与标题。
+///
+/// 🔴 为什么放在这里而不是另开工具（AM-6 的教训）：
+/// 需要人主动去点的检查最后没人点。这条只在**真有重复时**才占字，
+/// 而它出现的时机正好是模型准备按名字选标签/建链的那一刻。
+#[tokio::test]
+async fn test_kb_folders_报告近重复的标签与标题() {
+    let base = spawn_server().await;
+    let (text, is_err) = call_text(&base, "kb_folders", json!({})).await;
+    assert!(!is_err, "{}", text);
+
+    assert!(
+        text.contains("疑似重复的标签") && text.contains("Java / java"),
+        "大小写不同的同一个标签必须报出来：{}",
+        text
+    );
+    assert!(
+        text.contains("几乎一定是同一个"),
+        "强候选要说得比弱候选肯定：{}",
+        text
+    );
+    assert!(
+        text.contains("疑似重复的笔记标题") && text.contains("会议纪要模板"),
+        "标题近重复也要报——[[链接]] 断了不会有任何报错：{}",
+        text
+    );
+    assert!(
+        text.contains("不要自己选一个"),
+        "必须明确要求交给用户确认，否则模型会自己挑一个然后往下走：{}",
         text
     );
 }

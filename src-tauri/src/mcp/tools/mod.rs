@@ -732,7 +732,32 @@ async fn call_folders(
             names.len(),
             names.join("、")
         ));
+        // AM-8：标签近重复。与上面「同名文件夹」是同一类危险——**按名字寻址会撞车**，
+        // 只是文件夹撞的是完全同名，标签撞的是大小写/全半角/写岔一个字。
+        // 真库实测就有一组（Java / java，2026-09-04）。
+        let tag_names: Vec<String> = tags.iter().map(|t| t.name.clone()).collect();
+        out.push_str(&format_dups(
+            &crate::similar::find_dups(&tag_names),
+            "标签",
+            "按标签筛时只会命中你写的那一个，另一个下面的笔记会被漏掉",
+        ));
     }
+
+    // AM-8：标题近重复。放在这里而不是另开一个工具，理由同 AM-6 的教训——
+    // 需要人主动去点的检查，最后不会有人点；而这条只在**真有重复时**才占字。
+    let kb2 = kb.clone();
+    // `blocking` 收的是返 `Result` 的闭包，而 `title_dups` 本身不报错
+    // （它是附加提示，失败就不显示），所以这里包一层。
+    let title_dups: Vec<crate::similar::DupGroup> =
+        blocking(move || Ok::<_, String>(kb2.title_dups()))
+            .await
+            .unwrap_or_default();
+    out.push_str(&format_dups(
+        &title_dups,
+        "笔记标题",
+        "`[[标题]]` 是按名字解析的，标题分叉时链接会指错或谁都指不到，而**不会有任何报错**",
+    ));
+
     out.push_str("\n🔴 写入类工具不会自动新建文件夹或标签：上面没列出的名字传过去会直接失败。");
     Ok(text_result(out).into())
 }
@@ -962,6 +987,27 @@ pub(crate) fn section_hits_for(
         return Vec::new();
     }
     crate::markdown::rank_sections(content, terms, SECTION_HITS)
+}
+
+/// AM-8：把一批疑似重复拼成一段。没有就返空串（**不占位**）。
+///
+/// 强候选与弱候选分开说：前者几乎一定是同一个，后者只是像。
+/// 混成一句会让模型对两者一样紧张，而弱候选本来就是「交给人看一眼」的量级。
+fn format_dups(dups: &[crate::similar::DupGroup], what: &str, why: &str) -> String {
+    if dups.is_empty() {
+        return String::new();
+    }
+    let mut s = format!("\n⚠ 有疑似重复的{}（{}）：\n", what, why);
+    for d in dups {
+        let joined = d.names.join(" / ");
+        if d.strong {
+            s.push_str(&format!("  · {}（**几乎一定是同一个**，只差大小写或全半角）\n", joined));
+        } else {
+            s.push_str(&format!("  · {}（只差 {} 个字，可能是写岔了）\n", joined, d.distance));
+        }
+    }
+    s.push_str("  涉及它们时请让用户确认，**不要自己选一个**。\n");
+    s
 }
 
 /// AM-7：把这篇记过的行内类别列出来。一个都没有就返空串。

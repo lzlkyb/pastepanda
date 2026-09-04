@@ -44,6 +44,8 @@ mod quick_paste;
 mod screenshot;
 // 本机自有凭证的哈希登记处（让剪贴板监听不把我们自己的令牌/密钥记进历史）
 pub mod secret_registry;
+/// AM-8 近重复判定（纯函数）。
+pub mod similar;
 mod tray_manager;
 mod win_foreground;
 
