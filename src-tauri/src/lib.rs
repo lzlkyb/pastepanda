@@ -483,6 +483,13 @@ pub fn run() {
             }
             app.manage(mcp_server);
 
+            // 知识库同步（M6）。开关是 `kb_sync_enabled`，**与上面那个局域网同步
+            // （同步剪贴板）无关**——用户可能只想要其中一个。
+            //
+            // ❗ 必须先 manage 再 boot：`boot` 里要 `try_state::<SyncService>()`。
+            app.manage(sync::service::SyncService::new());
+            commands::boot(&handle);
+
             // 显示窗口
             // U5：开机自启带 /silent 标志时静默驻留托盘，不弹窗抢焦点
             // （与设置面板"开机后自动在后台运行，托盘图标常驻"的承诺一致）
@@ -598,6 +605,16 @@ pub fn run() {
             commands::get_lan_pairing_key,
             commands::set_lan_pairing_key,
             commands::regenerate_lan_pairing_key,
+            // 知识库同步（M6）
+            commands::kb_sync_identity,
+            commands::kb_sync_invite_create,
+            commands::kb_sync_invite_preview,
+            commands::kb_sync_pair,
+            commands::kb_sync_devices,
+            commands::kb_sync_forget,
+            commands::kb_sync_now,
+            commands::get_kb_sync_status,
+            commands::toggle_kb_sync,
             commands::mcp_get_status,
             commands::mcp_get_write_switches,
             commands::mcp_get_library_blurb,

@@ -80,6 +80,8 @@ export interface AppConfig {
   sequential_loop: boolean;
   hide_on_focus_out: boolean;
   lan_sync_enabled: boolean;
+  /** 知识库（笔记）同步。**与 `lan_sync_enabled`（剪贴板）无关**，两个开关互不影响。 */
+  kb_sync_enabled: boolean;
   always_on_top: boolean;
   auto_startup: boolean;
   sequential_hotkey: string;
@@ -345,6 +347,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   sequential_loop: false,
   hide_on_focus_out: false,
   lan_sync_enabled: false,
+  kb_sync_enabled: false,
   always_on_top: false,
   auto_startup: false,
   sequential_hotkey: "ctrl+alt+q",

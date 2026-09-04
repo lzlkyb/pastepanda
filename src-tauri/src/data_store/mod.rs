@@ -4,7 +4,7 @@ mod tag;
 mod kb_inbox;
 mod kb_shadow;
 mod mcp_audit;
-mod device;
+pub mod device;
 mod note;
 mod note_folder;
 mod note_ai;

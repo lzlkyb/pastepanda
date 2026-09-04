@@ -372,6 +372,16 @@ impl SyncService {
         }
     }
 
+    /// 当前组播里听得见的对端。没在跑就是空——而不是报错：
+    /// 界面上「开关关着」与「一台都不在线」本来就该长得一样。
+    pub async fn live_peers(&self) -> Vec<String> {
+        let guard = self.inner.lock().await;
+        match guard.as_ref() {
+            Some(c) => c.presence.live(now_ms()),
+            None => Vec::new(),
+        }
+    }
+
     /// 当前有几条对端循环。给测试与界面用。
     pub async fn peer_count(&self) -> usize {
         let guard = self.inner.lock().await;
