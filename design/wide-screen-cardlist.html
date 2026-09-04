@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>宽屏适配方案对比 · CardList</title>
+<style>
+  :root{
+    --bg:#f4f6f9; --panel:#fff; --line:#e3e8ef; --text:#1f2937; --muted:#6b7280;
+    --card:#fff; --card-line:#e8edf3; --accent:#3b82f6; --tl:#dbe3ec;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.6 "Microsoft YaHei",system-ui,sans-serif;background:var(--bg);color:var(--text)}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 80px}
+  h1{font-size:22px;margin:0 0 6px}
+  .sub{color:var(--muted);margin:0 0 22px;font-size:13px}
+  .note{background:#fff8e6;border:1px solid #f0dfae;border-radius:8px;padding:12px 14px;margin:0 0 22px;font-size:13px}
+  .note b{color:#8a6100}
+  .ctl{position:sticky;top:0;z-index:5;background:var(--panel);border:1px solid var(--line);
+       border-radius:10px;padding:14px 16px;margin-bottom:16px;box-shadow:0 2px 10px rgba(0,0,0,.05)}
+  .row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .row+.row{margin-top:10px}
+  label{font-size:13px;display:inline-flex;align-items:center;gap:5px;cursor:pointer}
+  input[type=range]{flex:1;min-width:240px}
+  .val{font-variant-numeric:tabular-nums;font-weight:600;min-width:78px}
+  .seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg label{padding:6px 12px;font-size:12.5px;border-right:1px solid var(--line)}
+  .seg label:last-child{border-right:0}
+  .seg input{display:none}
+  .seg label:has(input:checked){background:var(--accent);color:#fff}
+  .stage{overflow-x:auto;padding:14px;border:1px dashed var(--line);border-radius:10px;background:#eef1f5}
+  .win{margin:0 auto;background:var(--bg);border:1px solid var(--line);border-radius:10px;
+       height:330px;position:relative;overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,.08)}
+  .titlebar{height:34px;border-bottom:1px solid var(--line);display:flex;align-items:center;
+            padding:0 12px;font-size:12px;color:var(--muted);background:#fbfcfe}
+  .scrollArea{position:absolute;inset:34px 0 0 0;overflow:hidden}
+  .timeline{position:absolute;left:0;top:0;bottom:0;width:70px;background:var(--tl);
+            display:none;align-items:flex-start;justify-content:center;padding-top:14px;
+            font-size:11px;color:#5b6a7d}
+  .tlOn .timeline{display:flex}
+  .cardList{padding:10px 16px 80px;display:flex;flex-direction:column;gap:10px}
+  .tlOn .cardList{padding-left:86px}
+  .card{height:64px;background:var(--card);border:1px solid var(--card-line);border-radius:10px;
+        display:flex;align-items:center;gap:12px;padding:0 14px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .ic{width:28px;height:28px;border-radius:7px;background:#eef4ff;flex:none}
+  .txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+  .meta{font-size:11px;color:var(--muted);flex:none}
+  .ruler{height:22px;margin:8px auto 0;border-top:1px dashed #9aa7b6;position:relative}
+  .ruler span{position:absolute;top:2px;left:50%;transform:translateX(-50%);
+              font-size:11px;color:#7a8798;background:#eef1f5;padding:0 6px}
+  .desc{margin:16px 0 0;font-size:13px}
+  .desc h3{font-size:15px;margin:0 0 6px}
+  table{border-collapse:collapse;width:100%;font-size:13px;margin-top:8px}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:#f7f9fc}
+  code{background:#eef1f5;padding:1px 5px;border-radius:4px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div style="background:#fde8e8;border:1px solid #f5b5b5;border-radius:8px;padding:12px 14px;margin:0 0 18px;font-size:13px"><b style="color:#a11">已否决（2026-09-04）</b>：评估后决定<b>保持现状、不做宽屏适配</b>。卡片是单行预览，铺满整宽本来就能多显示内容；「一行太长」是推测出来的问题，不是用出来的。<br>本文件<b>仅作决策留档</b>——保留是为了让以后想动这块的人先看见下面那条时间轴冲突，不必从头再推一遍。</div>
+<h1>宽屏适配方案对比 · 剪贴板卡片列表<span style="font-size:14px;color:#a11">（已否决）</span></h1>
+<p class="sub">拖滑块改窗口宽度，切换方案与时间轴，直接看差别。默认宽度已改为 600（原 480）。</p>
+
+<div class="note">
+  <b>先说必须解决的冲突：</b>时间轴是 <code>position:absolute; left:0</code>，钉在滚动区左边缘；
+  而「居中」会把卡片推到窗口中间。两者同时开启时，卡片会离时间轴很远、中间一大片空白——
+  所以任何居中方案都必须回答「时间轴打开时怎么办」。
+</div>
+
+<div class="ctl">
+  <div class="row">
+    <span class="val" id="wv">1200 px</span>
+    <input type="range" id="w" min="600" max="2200" step="20" value="1200">
+  </div>
+  <div class="row">
+    <div class="seg" id="opt">
+      <label><input type="radio" name="o" value="now" checked>现状（无适配）</label>
+      <label><input type="radio" name="o" value="a">A 居中封顶</label>
+      <label><input type="radio" name="o" value="b">B 只封顶不居中</label>
+      <label><input type="radio" name="o" value="c">C 渐进留白</label>
+    </div>
+    <label><input type="checkbox" id="tl"> 打开时间轴</label>
+    <label>封顶值 <input type="number" id="cap" value="860" min="600" max="1400" step="20" style="width:78px"></label>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="win" id="win">
+    <div class="titlebar">PastePanda — 剪贴板</div>
+    <div class="scrollArea">
+      <div class="timeline">时间轴</div>
+      <div class="cardList" id="cl">
+        <div class="card"><div class="ic"></div><div class="txt">git commit -m "fix(kb): 跨机导入沿用 pastepanda_id，不再铸新 uuid"</div><div class="meta">2 分钟前 · 代码</div></div>
+        <div class="card"><div class="ic"></div><div class="txt">https://github.com/mempalace/mempalace —— 58.8k star / MIT / Python 3.9+</div><div class="meta">14:20 · 链接</div></div>
+        <div class="card"><div class="ic"></div><div class="txt">会议纪要：本周确认 AM-2 节级命中先做，它是三份文档的共同地基</div><div class="meta">昨天 · 文本</div></div>
+        <div class="card"><div class="ic"></div><div class="txt">ORDER BY bm25(notes_fts, 10.0, 1.0, 0.0) LIMIT ?</div><div class="meta">昨天 · 代码</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="ruler" id="ruler"><span id="rt"></span></div>
+</div>
+
+<div class="desc">
+<h3>四个方案在做什么</h3>
+<table>
+<tr><th style="width:88px">方案</th><th>规则</th><th>时间轴打开时</th><th>代价</th></tr>
+<tr><td><b>现状</b></td><td>卡片永远占满整宽</td><td>左侧让出 86px</td><td>2560px 屏上一行文字横跨全屏，眼睛要横扫；右侧「时间/类型」离正文极远</td></tr>
+<tr><td><b>A 居中封顶</b></td><td>超过封顶值就居中，两侧留白</td><td><b>改为左对齐</b>（否则卡片飘到中间、离时间轴很远）</td><td>开/关时间轴时卡片会横向跳一下</td></tr>
+<tr><td><b>B 只封顶</b></td><td>超过封顶值就停止变宽，<b>始终左对齐</b></td><td>照旧让出 86px，无冲突</td><td>宽屏下右侧一大片空白，看着像没铺满</td></tr>
+<tr><td><b>C 渐进留白</b></td><td>不封顶，左右内边距随宽度增长</td><td>照旧让出 86px，无冲突</td><td>超宽屏仍然很长，只是没那么贴边</td></tr>
+</table>
+
+<h3>我的建议：A，封顶 860</h3>
+<p>
+理由：卡片是<b>单行预览</b>，一行超过约 80 个汉字之后，右端的「时间 · 类型」离正文太远，
+视线要横扫整屏才能把一条记录看完整——这是长度问题，不是留白问题，所以 C 解决不了。
+B 能解决长度，但宽屏下右半屏彻底空着，不如居中自然。
+</p>
+<p>
+A 唯一的代价是「开关时间轴时卡片横向跳一下」。这个可以接受：时间轴本来就是个显式开关，
+而且已有 <code>transition: padding-left .3s</code>，加上 margin 过渡就是同一条动画。
+</p>
+
+<h3>落地位置（不再放全局 CSS）</h3>
+<p>
+规则写进 <code>CardList.module.css</code>，不放 <code>app.css</code>——
+原来那两条断点写的是 <code>.card-list</code>，而实际渲染的是 CSS Module 的 <code>.cardList</code>，
+<b>从未生效</b>（与 <code>.app-shell</code> 同一个坑，已删）。
+</p>
+<p>
+另外<b>不照搬旧值</b>：旧规则里的 <code>padding: 14px 16px 24px</code> 会把底部留白从 80px 压到 24px，
+而那 80px 是滑到底时给最后一张卡片的空间——BackToTop 是 <code>fixed; bottom:16px</code>（高 38px），
+压小了就会盖住卡片。新规则<b>只动左右与最大宽度，不碰 padding-bottom</b>。
+</p>
+</div>
+</div>
+
+<script>
+  const w=document.getElementById('w'), wv=document.getElementById('wv'),
+        win=document.getElementById('win'), cl=document.getElementById('cl'),
+        tl=document.getElementById('tl'), cap=document.getElementById('cap'),
+        rt=document.getElementById('rt'), ruler=document.getElementById('ruler');
+  function opt(){return document.querySelector('input[name=o]:checked').value}
+  function apply(){
+    const W=+w.value, C=+cap.value, on=tl.checked;
+    wv.textContent=W+' px';
+    win.style.width=W+'px';
+    win.classList.toggle('tlOn',on);
+    // 先复位
+    cl.style.maxWidth='none'; cl.style.marginLeft='0'; cl.style.marginRight='0';
+    cl.style.paddingLeft=on?'86px':'16px'; cl.style.paddingRight='16px';
+    const o=opt();
+    if(o==='a'){
+      cl.style.maxWidth=C+'px';
+      if(!on){cl.style.marginLeft='auto';cl.style.marginRight='auto';}
+    }else if(o==='b'){
+      cl.style.maxWidth=C+'px';
+    }else if(o==='c'){
+      const pad=Math.min(120,Math.max(16,Math.round((W-600)/8)+16));
+      cl.style.paddingLeft=on?(86+pad-16)+'px':pad+'px';
+      cl.style.paddingRight=pad+'px';
+    }
+    const inner=cl.getBoundingClientRect().width
+              - parseFloat(getComputedStyle(cl).paddingLeft)
+              - parseFloat(getComputedStyle(cl).paddingRight);
+    ruler.style.width=Math.round(inner)+'px';
+    rt.textContent='卡片实际宽 '+Math.round(inner)+' px';
+  }
+  [w,tl,cap].forEach(e=>e.addEventListener('input',apply));
+  document.getElementById('opt').addEventListener('change',apply);
+  apply();
+</script>
+</body>
+</html>

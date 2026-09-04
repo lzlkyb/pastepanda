@@ -19,19 +19,25 @@
  * 窗口本身不透明，根元素的 border-radius 对窗口外观无实际视觉效果；min-width: 280px
  * 也低于 tauri.conf.json 里已配置的 minWidth: 320，同样是冗余值。因此不补回。 */
 
-/* 宽屏适配：卡片列表可使用更大间距 */
-@media (min-width: 600px) {
-  .card-list {
-    padding: 14px 16px 24px;
-  }
-}
-
-@media (min-width: 800px) {
-  .card-list {
-    max-width: 900px;
-    margin: 0 auto;
-  }
-}
+/* 死代码已删除：原有两条「宽屏适配」断点（min-width 600 / 800）选中的是
+ * `.card-list`，而实际渲染的是 CSS Module 的 `.cardList`（`CardList.tsx:630`，
+ * 编译后形如 `_cardList_哈希`）——全局选择器永远匹配不上，**两条规则从未生效**。
+ * 与上方 `.app-shell` 是同一个坑（全局 CSS 写 CSS Module 的类名）。
+ *
+ * 为何不直接搬进 `CardList.module.css` 让它生效：旧值已经过期了。
+ *   ① `padding: 14px 16px 24px` 会把底部留白从现在的 **80px 压到 24px**，
+ *      而那 80px 是滑到底时给最后一张卡片的空间——BackToTop 是
+ *      `position: fixed; bottom: 16px`（高 38px），压小了就会盖住卡片；
+ *   ② `max-width: 900px; margin: 0 auto` 会改变虚拟列表容器的宽度，
+ *      而行是绝对定位 + `measureElement` 量出来的（见 `.cardWrap` 的「间隙烘焙」）。
+ * 两条都是真实的 UI 变更，该先出设计稿（规则 #4），不能当「修一个选择器」顺手做。
+ *
+ * 🔴 **已拍板（2026-09-04）：宽屏适配不做，不是待办项。**
+ * 出过四方案对比设计稿（`design/wide-screen-cardlist.html`，带滑块实时预览），
+ * 结论是**保持现状**：卡片是单行预览，铺满整宽本来就能多显示内容；
+ * 「一行太长」是推测出来的问题，不是用出来的。
+ * 以后再有人想动这块，先去看那份设计稿与它里记的时间轴冲突，别从头推一遍。
+ */
 
 .scroll-area {
   flex: 1;
