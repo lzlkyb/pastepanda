@@ -1487,7 +1487,7 @@ mod service_tests {
     async fn test_开关关着时不启动() {
         let svc = SyncService::new();
         let dir = tmp_dir("svc_off");
-        svc.start(Arc::new(store()), &dir, false, false)
+        svc.start(store(), &dir, false, false)
             .await
             .expect("关着时 start 不该报错");
         assert!(!svc.is_running().await, "开关关着却起来了");
@@ -1499,7 +1499,7 @@ mod service_tests {
         // 🔴 这是画配对界面时发现的洞：旧版 `spawn` 是启动时读一次 device_list，
         //    配对之后那台**不会有循环**，要重启应用才生效。
         //    用户配完正盯着界面看，什么都不动 —— 看起来就是坏的。
-        let s = Arc::new(store());
+        let s = store();
         let svc = SyncService::new();
         let dir = tmp_dir("svc_pair");
         svc.start(s.clone(), &dir, true, false)
@@ -1528,7 +1528,7 @@ mod service_tests {
 
     #[tokio::test]
     async fn test_重复start是幂等的() {
-        let s = Arc::new(store());
+        let s = store();
         let svc = SyncService::new();
         let dir = tmp_dir("svc_twice");
         svc.start(s.clone(), &dir, true, false).await.unwrap();
@@ -1537,7 +1537,7 @@ mod service_tests {
         assert!(svc.is_running().await);
         svc.stop().await;
         // 停了之后还能再起
-        svc.start(s, &dir, true, false).await.unwrap();
+        svc.start(s.clone(), &dir, true, false).await.unwrap();
         assert!(svc.is_running().await);
         svc.stop().await;
         let _ = std::fs::remove_dir_all(&dir);

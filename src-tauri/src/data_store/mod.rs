@@ -257,7 +257,33 @@ pub struct Snippet {
 
 // ===== 数据存储 =====
 
+/// 库句柄。**克隆得到的是同一个库**（同一条连接、同一个 HLC 时钟）。
+///
+/// # 🔴 为什么是 `Arc` 句柄而不是直接持有字段
+///
+/// M6 同步的后台循环需要一个 `'static` 的库句柄（`tokio::spawn` 要求）。
+/// 而库是**按值** `manage` 给 Tauri 的，全工程 220 处 `State<DataStore>`，
+/// 从 `State` 里拿不到 `Arc`。
+///
+/// 试过的两条路都不行：
+/// - **另开一个 `DataStore`**：那是两条 SQLite 连接 + 两个 HLC 时钟，
+///   两个时钟各自发时间戳会撞，后写胜的比较就没意义了。
+/// - **让 `sync/` 持一个 `tauri::AppHandle` 去 `try_state`**：编译能过，
+///   但会把 tauri 运行时变成**测试二进制里的可达代码**，
+///   于是 `getrandom 0.3` 的 Windows 后端跟着可达、静态导入
+///   `bcryptprimitives.dll!ProcessPrng`——本机 Windows 没这个导出，
+///   整个 lib test 二进制**启动即挂**（0xc0000139），一条测试都跑不了。
+///   （同根因也写在 `Cargo.toml` 的 `[dev-dependencies]` 里：不要开 tauri 的 `test` feature。）
+///
+/// 所以把字段收进 `Arc<StoreInner>`，`DataStore` 变成一个能 `clone` 的句柄。
+/// 带上 `Deref` 之后，`self.conn` / `self.hlc` / `self.path` 那十六七处写法
+/// **一行都不用改**，220 处 `State<DataStore>` 也一行不用改。
+#[derive(Clone)]
 pub struct DataStore {
+    inner: std::sync::Arc<StoreInner>,
+}
+
+pub struct StoreInner {
     pub(crate) conn: Mutex<Connection>,
     pub(crate) path: String,
     /// M6 HLC（设计稿 §7.5 档②）。见 [`crate::sync::hlc`]。
@@ -265,6 +291,14 @@ pub struct DataStore {
     /// 放在这里而不是全局 static：测试里会同时开好几个内存库，
     /// 共用一个全局时钟会让不相干的测试互相影响时间戳。
     pub(crate) hlc: crate::sync::hlc::HlcClock,
+}
+
+/// 让 `self.conn` / `self.hlc` / `self.path` 继续能写——字段访问会自动 deref。
+impl std::ops::Deref for DataStore {
+    type Target = StoreInner;
+    fn deref(&self) -> &StoreInner {
+        &self.inner
+    }
 }
 
 impl DataStore {
@@ -1605,9 +1639,11 @@ impl DataStore {
         };
 
         Ok(Self {
-            conn: Mutex::new(conn),
-            path: db_path,
-            hlc: crate::sync::hlc::HlcClock::with_floor(floor),
+            inner: std::sync::Arc::new(StoreInner {
+                conn: Mutex::new(conn),
+                path: db_path,
+                hlc: crate::sync::hlc::HlcClock::with_floor(floor),
+            }),
         })
     }
 

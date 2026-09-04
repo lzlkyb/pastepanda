@@ -41,7 +41,7 @@ use std::time::Duration;
 
 /// 循环们共用的一份东西。
 pub struct SyncCtx {
-    pub store: Arc<DataStore>,
+    pub store: DataStore,
     pub endpoint: Endpoint,
     pub presence: Arc<PresenceTable>,
     pub coord: Arc<Coordinator>,
@@ -266,7 +266,7 @@ impl SyncService {
     /// 调用方拿不到「绕过开关」的写法。关着时留一行日志说明原因（规则 #15.3）。
     pub async fn start(
         &self,
-        store: Arc<DataStore>,
+        store: DataStore,
         app_dir: &std::path::Path,
         enabled: bool,
         relay: bool,
