@@ -448,27 +448,40 @@ impl Report {
         }
 
         // —— 验收项①：系统提示污染。只有差值有意义，所以成对报。
-        if let Some((limit, rs)) = self.by_limit.first() {
-            let dirty: Vec<&CaseResult> = rs.iter().filter(|r| r.r_contaminated.is_some()).collect();
-            if !dirty.is_empty() {
-                s.push_str(&format!(
-                    "## 验收项① 系统提示污染（limit = {}）\n\n\
-                     | 用例 | 干净 | 污染后 | 掉幅 |\n|---|---:|---:|---:|\n",
-                    limit
-                ));
-                for r in &dirty {
+        //
+        // 🔴 **每一档 limit 都报**：只报默认档看不出「加大 limit 能不能救回来」，
+        //    而那正是拿到掉幅之后第一个要问的问题（改一个参数，还是写一套消毒逻辑）。
+        let has_dirty = self
+            .by_limit
+            .iter()
+            .any(|(_, rs)| rs.iter().any(|r| r.r_contaminated.is_some()));
+        if has_dirty {
+            s.push_str("## 验收项① 系统提示污染\n\n");
+            s.push_str("| 用例 | limit | 干净 | 污染后 | 掉幅 |\n|---|---:|---:|---:|---:|\n");
+            for (limit, rs) in &self.by_limit {
+                for r in rs.iter().filter(|r| r.r_contaminated.is_some()) {
                     let c = r.r_contaminated.unwrap();
                     s.push_str(&format!(
-                        "| {} | {:.0}% | {:.0}% | {:+.0}pp |\n",
+                        "| {} | {} | {:.0}% | {:.0}% | {:+.0}pp |\n",
                         r.id,
+                        limit,
                         r.r_note_major * 100.0,
                         c * 100.0,
                         (c - r.r_note_major) * 100.0
                     ));
                 }
-                let d = mean(dirty.iter().map(|r| r.r_contaminated.unwrap() - r.r_note_major));
-                s.push_str(&format!("\n**平均掉幅 {:+.0}pp。**\n\n", d * 100.0));
             }
+            s.push('\n');
+            for (limit, rs) in &self.by_limit {
+                let dirty: Vec<&CaseResult> =
+                    rs.iter().filter(|r| r.r_contaminated.is_some()).collect();
+                if dirty.is_empty() {
+                    continue;
+                }
+                let d = mean(dirty.iter().map(|r| r.r_contaminated.unwrap() - r.r_note_major));
+                s.push_str(&format!("- limit = {}：平均掉幅 **{:+.0}pp**\n", limit, d * 100.0));
+            }
+            s.push('\n');
         }
 
         // —— 验收项③：AM-10 的判据。单独拎出来，不埋在分组表里。
