@@ -241,7 +241,7 @@ impl DataStore {
             Self::prune_revisions_on(&tx, &note_id).map_err(|e| e.to_string())?;
             tx.commit().map_err(|e| e.to_string())?;
 
-            Self::sync_notes_fts_on(&conn, &note_id);
+            Self::sync_note_indexes_on(&conn, &note_id);
             note_id
         }; // 先释锁：note_get 会再锁一次，不放就死锁
 

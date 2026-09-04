@@ -722,3 +722,80 @@ fn test_is_kind_label_的边界() {
         assert!(!is_kind_label(bad), "{:?} 不该算类别", bad);
     }
 }
+
+// ===== O-2 / M3-④ wiki 链 =====
+
+use super::links::parse_links;
+
+#[test]
+fn test_解析出链并保持顺序() {
+    let md = "开头 [[甲]] 中间 [[乙]]\n第二行 [[丙]]\n";
+    let ls = parse_links(md);
+    assert_eq!(
+        ls.iter().map(|l| l.target.as_str()).collect::<Vec<_>>(),
+        vec!["甲", "乙", "丙"]
+    );
+    assert_eq!(ls[2].line, 1, "行号要准，反链面板要靠它跳过去");
+}
+
+#[test]
+fn test_同一篇里重复引用只算一条() {
+    // 反链面板要的是「谁引用了我」，不是「引用了几次」。
+    let ls = parse_links("[[甲]] 又 [[甲]]\n再来 [[甲]]\n");
+    assert_eq!(ls.len(), 1);
+}
+
+#[test]
+fn test_代码块里的链不算数() {
+    let md = "\
+真的 [[甲]]
+
+```markdown
+这是在教人怎么写 [[乙]]
+```
+
+~~~
+[[丙]]
+~~~
+";
+    let ls = parse_links(md);
+    assert_eq!(ls.len(), 1, "代码示例被当真了：{:?}", ls);
+    assert_eq!(ls[0].target, "甲");
+}
+
+/// 🔴 `[[A|别名]]` 不认。
+///
+/// 认了它就会出现「链表说链在、正文里其实已经断了」——
+/// 因为 O-9 改名时的重写是字面 `[[旧]]` → `[[新]]`，匹配不上带别名的写法，
+/// 而两边都不会报错。
+#[test]
+fn test_带别名的写法不认() {
+    assert!(parse_links("[[甲|别名]]").is_empty());
+}
+
+#[test]
+fn test_井号是标题的一部分不是节锚() {
+    // `[[C# 笔记]]` 里那个 # 是标题的字，不是 Obsidian 的节语义。
+    let ls = parse_links("[[C# 笔记]]");
+    assert_eq!(ls.len(), 1);
+    assert_eq!(ls[0].target, "C# 笔记");
+}
+
+#[test]
+fn test_不像链的方括号一律不算() {
+    for s in [
+        "[[]]",
+        "[[   ]]",
+        "单个 [方括号]",
+        "[普通链接](../a.md)",
+        "[[嵌套[[的]]]]",
+    ] {
+        assert!(parse_links(s).is_empty(), "不该解析出链：{}", s);
+    }
+}
+
+#[test]
+fn test_目标标题去首尾空白() {
+    let ls = parse_links("[[  甲乙  ]]");
+    assert_eq!(ls[0].target, "甲乙");
+}

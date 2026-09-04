@@ -441,3 +441,37 @@ fn bench_seed_fixture() {
 
     println!("合成库已写入 {}", db);
 }
+
+/// 往**真库**里建一组互相链接的测试笔记，好在界面上看反链/断链的效果。
+///
+/// ```text
+/// PP_LIVE_DB="C:/Users/19145/AppData/Roaming/com.pastepanda.app/clipboard.db" \
+///   cargo test --lib bench::tests::seed_link_demo -- --ignored --nocapture
+/// ```
+///
+/// ❗ 与 `bench_real_library` 相反：这一个**故意**要写活库，
+/// 所以它不拦 AppData 路径，而是用另一个环境变量名，免得手滑。
+#[test]
+#[ignore = "工具：往真库写链接演示数据"]
+fn seed_link_demo() {
+    let db = std::env::var("PP_LIVE_DB").expect("要设 PP_LIVE_DB");
+    let store = DataStore::new(&db).expect("打不开库");
+
+    // 甲 ⇄ 乙 互链；甲还指向一个不存在的标题 → 断链
+    let a = store
+        .note_create(
+            None,
+            "链接演示·甲",
+            "这篇指向 [[链接演示·乙]]，还指向一个不存在的 [[链接演示·丢了的那篇]]。\n",
+        )
+        .expect("建甲失败");
+    let b = store
+        .note_create(None, "链接演示·乙", "这篇回指 [[链接演示·甲]]。\n")
+        .expect("建乙失败");
+
+    println!("甲 = {}", a.id);
+    println!("乙 = {}", b.id);
+    println!("甲的出链: {:?}", store.note_links_out(&a.id).unwrap());
+    println!("乙的反链: {:?}", store.note_backlinks(&b.id).unwrap());
+    println!("全库断链: {:?}", store.note_broken_links().unwrap());
+}

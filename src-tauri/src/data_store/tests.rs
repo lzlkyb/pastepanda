@@ -6763,3 +6763,112 @@ fn test_物理清之后旧vault文件不会把笔记复活() {
     assert_eq!(rep.in_trash.len(), 1, "该报告成「已删除，跳过」：{:?}", rep);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ===== O-2 / M3-④ note_links =====
+
+#[test]
+fn test_出链与反链两边都看得到() {
+    let store = make_store();
+    let a = store.note_create(None, "甲", "看这个 [[乙]]").unwrap();
+    let b = store.note_create(None, "乙", "回看 [[甲]]").unwrap();
+
+    let out_a = store.note_links_out(&a.id).unwrap();
+    assert_eq!(out_a.len(), 1);
+    assert_eq!(out_a[0].target, "乙");
+    assert_eq!(out_a[0].to_id.as_deref(), Some(b.id.as_str()), "该解析到乙");
+
+    let back_b = store.note_backlinks(&b.id).unwrap();
+    assert_eq!(back_b.len(), 1);
+    assert_eq!(back_b[0].from_id, a.id);
+    assert_eq!(back_b[0].from_title, "甲");
+}
+
+/// 链表跟着保存自动重建——**不需要任何调用方记得去刷它**。
+#[test]
+fn test_改正文时链表跟着变() {
+    let store = make_store();
+    store.note_create(None, "乙", "正文").unwrap();
+    store.note_create(None, "丙", "正文").unwrap();
+    let a = store.note_create(None, "甲", "指向 [[乙]]").unwrap();
+
+    assert_eq!(store.note_links_out(&a.id).unwrap()[0].target, "乙");
+
+    store.note_update(&a.id, "甲", "改成指向 [[丙]]").unwrap();
+    let out = store.note_links_out(&a.id).unwrap();
+    assert_eq!(out.len(), 1, "旧链没清掉：{:?}", out);
+    assert_eq!(out[0].target, "丙");
+}
+
+/// 目标不存在 = 断链。指向回收站里那篇**也算断**——用户看不到它。
+#[test]
+fn test_断链包括指向回收站的() {
+    let store = make_store();
+    let b = store.note_create(None, "乙", "正文").unwrap();
+    let a = store.note_create(None, "甲", "指向 [[乙]] 和 [[根本没这篇]]").unwrap();
+
+    let broken = store.note_broken_links().unwrap();
+    assert_eq!(broken.len(), 1, "{:?}", broken);
+    assert_eq!(broken[0].2, "根本没这篇");
+
+    // 把乙丢进回收站 → 指向它的链也算断
+    store.note_delete(&b.id).unwrap();
+    let broken = store.note_broken_links().unwrap();
+    assert_eq!(broken.len(), 2, "指向回收站的也该算断链：{:?}", broken);
+    assert!(store.note_links_out(&a.id).unwrap().iter().all(|l| l.to_id.is_none()));
+}
+
+/// 🔴 改标题时反链要跟着走（M3-④ 的验收项）。
+///
+/// 机制不是「按 id 解析」，而是 O-9 把别人正文里的 `[[旧]]` 重写成 `[[新]]`，
+/// 重写走 note_update → sync_note_indexes_on，链表随之更新。
+#[test]
+fn test_改标题时反链跟着走() {
+    let store = make_store();
+    let b = store.note_create(None, "乙", "正文").unwrap();
+    let a = store.note_create(None, "甲", "指向 [[乙]]").unwrap();
+
+    store.note_update(&b.id, "乙改名了", "正文").unwrap();
+
+    assert_eq!(
+        store.note_backlinks(&b.id).unwrap().len(),
+        1,
+        "改名后反链断了——O-9 的重写没让链表跟上"
+    );
+    assert_eq!(store.note_links_out(&a.id).unwrap()[0].target, "乙改名了");
+}
+
+#[test]
+fn test_孤立笔记是两边都没有链的() {
+    let store = make_store();
+    let lonely = store.note_create(None, "独", "谁也不认识").unwrap();
+    store.note_create(None, "乙", "正文").unwrap();
+    store.note_create(None, "甲", "指向 [[乙]]").unwrap();
+
+    let orphans = store.note_orphans().unwrap();
+    let ids: Vec<&str> = orphans.iter().map(|(i, _)| i.as_str()).collect();
+    assert!(ids.contains(&lonely.id.as_str()), "独该是孤立的");
+    assert_eq!(orphans.len(), 1, "甲有出链、乙有入链，都不算孤立：{:?}", orphans);
+}
+
+/// 自引用不算反链——`[[自己]]` 在反链面板里列出自己毫无意义。
+#[test]
+fn test_自引用不算反链() {
+    let store = make_store();
+    let a = store.note_create(None, "甲", "我引用 [[甲]] 我自己").unwrap();
+    assert!(store.note_backlinks(&a.id).unwrap().is_empty());
+    // 但出链仍然记着（它确实解析得到）
+    assert_eq!(store.note_links_out(&a.id).unwrap().len(), 1);
+}
+
+/// 物理删源笔记后，它的链不该留在表里当幽灵。
+#[test]
+fn test_物理删之后链也没了() {
+    let store = make_store();
+    store.note_create(None, "乙", "正文").unwrap();
+    let a = store.note_create(None, "甲", "指向 [[乙]]").unwrap();
+    store.note_delete(&a.id).unwrap();
+    store.note_purge(&a.id).unwrap();
+
+    assert!(store.note_links_out(&a.id).unwrap().is_empty());
+    assert!(store.note_broken_links().unwrap().is_empty());
+}

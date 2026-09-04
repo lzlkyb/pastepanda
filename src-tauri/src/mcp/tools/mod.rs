@@ -463,8 +463,24 @@ async fn call_read(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<ToolO
     };
     let folder = folder_label(kb, &note).await;
 
+    // O-2：反链与断链。只在读**整篇**时附上——
+    // 读单节时模型要的是那一节的内容，篇级的链关系是噪声。
+    let links = match &locator {
+        None => {
+            let (kb2, nid) = (kb.clone(), note.id.clone());
+            blocking(move || Ok::<_, String>(kb2.links_of(&nid)))
+                .await
+                .unwrap_or_default()
+        }
+        Some(_) => (Vec::new(), Vec::new()),
+    };
+
     let value = match &locator {
-        None => text_result(format_full(&note, folder.as_deref())),
+        None => text_result(format!(
+            "{}{}",
+            format_full(&note, folder.as_deref()),
+            format_links(&links.0, &links.1)
+        )),
         Some(r) => {
             let total = markdown::outline(&note.content).len();
             match markdown::locate(&note.content, r) {
@@ -987,6 +1003,35 @@ pub(crate) fn section_hits_for(
         return Vec::new();
     }
     crate::markdown::rank_sections(content, terms, SECTION_HITS)
+}
+
+/// O-2：把反链与断链拼成一段。两者都没有就返空串（**不占位**）。
+///
+/// 这是「反链面板」的 AI 侧等价物——**不需要任何界面**。
+/// 反链回答的是「这篇被谁引用」，那在判断一篇笔记有多重要时是直接证据；
+/// 断链回答的是「它指向的东西还在不在」，那决定要不要顺着链继续读下去。
+///
+/// 🔴 断链必须说清「不是库里没有，是这个标题找不到」：
+/// wiki 链按标题解析，改过名或指向回收站都会断，而**正文里看起来完全正常**。
+fn format_links(backlinks: &[String], broken: &[String]) -> String {
+    let mut s = String::new();
+    if !backlinks.is_empty() {
+        s.push_str(&format!(
+            "\n被 {} 篇引用：{}\n",
+            backlinks.len(),
+            backlinks.join("、")
+        ));
+    }
+    if !broken.is_empty() {
+        s.push_str(&format!(
+            "\n⚠ 这篇里有 {} 条断链：{}\n\
+             这些 `[[标题]]` 在库里找不到对应的活笔记——可能是改过名、或已被删。\n\
+             **不代表相关内容不存在**，换个词用 kb_search 找找。\n",
+            broken.len(),
+            broken.join("、")
+        ));
+    }
+    s
 }
 
 /// AM-8：把一批疑似重复拼成一段。没有就返空串（**不占位**）。

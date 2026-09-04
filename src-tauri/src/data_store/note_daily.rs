@@ -118,7 +118,7 @@ impl DataStore {
             }
         };
 
-        Self::sync_notes_fts_on(&conn, &id);
+        Self::sync_note_indexes_on(&conn, &id);
         let sql = format!("SELECT {} FROM notes WHERE id = ?1", NOTE_COLS);
         conn.query_row(&sql, [&id], row_to_note)
             .map(DailyAppend::Appended)

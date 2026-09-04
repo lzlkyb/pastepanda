@@ -166,6 +166,15 @@ impl super::source::KbSource for FakeKb {
         None
     }
 
+    // O-2：n2 有一条反链和一条断链，钉住 kb_read 会把两者都说出来。
+    fn links_of(&self, id: &str) -> (Vec<String>, Vec<String>) {
+        if id == "n2" {
+            (vec!["Rust 并发笔记".into()], vec!["某个不存在的标题".into()])
+        } else {
+            (Vec::new(), Vec::new())
+        }
+    }
+
     // AM-8：假源里放一组真的标题近重复，钉住 kb_folders 会把它说出来。
     fn title_dups(&self) -> Vec<crate::similar::DupGroup> {
         crate::similar::find_dups(&["会议纪要模板".into(), "会议记要模板".into()])
@@ -1360,4 +1369,50 @@ async fn test_kb_folders_报告近重复的标签与标题() {
         "必须明确要求交给用户确认，否则模型会自己挑一个然后往下走：{}",
         text
     );
+}
+
+// ===== O-2 反链与断链 =====
+
+/// `kb_read` 读整篇时要带上反链与断链——这是「反链面板」的 AI 侧等价物，不需要界面。
+#[tokio::test]
+async fn test_kb_read_带上反链与断链() {
+    let base = spawn_server().await;
+    let (text, is_err) = call_text(&base, "kb_read", json!({ "id": "n2" })).await;
+    assert!(!is_err, "{}", text);
+
+    assert!(
+        text.contains("被 1 篇引用") && text.contains("Rust 并发笔记"),
+        "反链没带上：{}",
+        text
+    );
+    assert!(
+        text.contains("断链") && text.contains("某个不存在的标题"),
+        "断链没带上：{}",
+        text
+    );
+    assert!(
+        text.contains("不代表相关内容不存在"),
+        "断链必须说清「不是库里没有，是这个标题找不到」，否则模型会当成结论：{}",
+        text
+    );
+}
+
+/// 读**单节**时不带链关系：那时模型要的是那一节的内容，篇级的链是噪声。
+#[tokio::test]
+async fn test_kb_read_读单节时不带链关系() {
+    let base = spawn_server().await;
+    // ❗ 数字序号那个参数叫 `index`；`section` 收的是**标题路径字串**。
+    //   传错了不会报错，只是退回整篇——第一版就这么写的，当时这条断言红了。
+    let (text, is_err) = call_text(&base, "kb_read", json!({ "id": "n2", "index": 1 })).await;
+    assert!(!is_err, "{}", text);
+    assert!(!text.contains("被 1 篇引用"), "读单节不该带反链：{}", text);
+}
+
+/// 没有链的笔记**一个字都不该多**。
+#[tokio::test]
+async fn test_kb_read_没有链时不占位() {
+    let base = spawn_server().await;
+    let (text, _) = call_text(&base, "kb_read", json!({ "id": "n1" })).await;
+    assert!(!text.contains("引用"), "n1 没有链，不该出现相关字样：{}", text);
+    assert!(!text.contains("断链"), "{}", text);
 }

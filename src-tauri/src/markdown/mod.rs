@@ -20,6 +20,7 @@
 
 pub mod annotate;
 pub mod edit;
+pub mod links;
 pub mod rank;
 pub mod sections;
 
@@ -28,5 +29,6 @@ mod tests;
 
 pub use annotate::{kinds_of, parse_observations, Observation};
 pub use edit::{apply, ContentEdit, EditReport, InsertAt};
+pub use links::{parse_links, WikiLink};
 pub use rank::{rank_sections, SectionHit};
 pub use sections::{locate, outline, slice, LocateError, Section, SectionRef};

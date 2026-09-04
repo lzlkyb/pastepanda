@@ -10,6 +10,7 @@ mod note_ai;
 mod note_access;
 mod note_daily;
 mod note_md;
+mod note_links;
 mod note_revision;
 mod note_vault;
 mod image_ocr;
@@ -1187,6 +1188,42 @@ impl DataStore {
                     }
                 }
             }
+        }
+
+        // 建表（O-2 / M3-④）：note_links —— 正文里 `[[标题]]` 的链关系。
+        //
+        // 存**目标标题**而不是目标 id：与 O-9 改名时那句字面
+        // `REPLACE(content, '[[旧]]', '[[新]]')` 保持同一套语义。
+        // 两份文档原本各自规划了这张表且规格相反，裁决见总排期 §2。
+        //
+        // 一次建表，四家共用：反链面板 / `[[` 补全的已存在提示 /
+        // AM-9 的引用次数信号 / O-9 的断链检查。
+        let links_existed: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'note_links'",
+                [],
+                |r| r.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if let Err(e) = conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS note_links (
+                 from_id  TEXT    NOT NULL,
+                 to_title TEXT    NOT NULL,   -- 目标**标题**，不是 id。见上
+                 line     INTEGER NOT NULL,   -- 链所在行（0 起），面板跳转用
+                 PRIMARY KEY (from_id, to_title),
+                 FOREIGN KEY (from_id) REFERENCES notes(id) ON DELETE CASCADE
+             );
+             CREATE INDEX IF NOT EXISTS idx_note_links_to ON note_links(to_title);",
+        ) {
+            log::error!("[DataStore] 建 note_links 表失败: {}", e);
+            return Err(e);
+        }
+        // 🔴 只在**表刚建出来那一次**回填。
+        //   不能判「表空就回填」：本机库现在一条 `[[ ]]` 都没有（实测 0/25），
+        //   那样每次启动都要全库扫一遍正文，而结果永远是空。
+        if !links_existed {
+            Self::backfill_note_links_on(&conn)?;
         }
 
         // 建表（M6-P4）：note_tombstones —— 删除的墓碑。

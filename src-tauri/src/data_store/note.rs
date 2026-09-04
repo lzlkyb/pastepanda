@@ -8,7 +8,7 @@
 //! `notes_fts` 是**裸的** `fts5(title, content, pinyin)`，一个 tokenizer 参数也没有
 //! （同 `history_fts`）。中文能搜到全靠 [`to_ngram`] 的 **bigram 双侧预处理**：
 //!
-//! 1. 写入时切二元存进 FTS（[`Self::sync_notes_fts_on`]）；
+//! 1. 写入时切二元存进 FTS（[`Self::sync_note_indexes_on`]）；
 //! 2. 查询词也要过 `to_ngram` 再 MATCH（[`Self::note_search`]）。
 //!
 //! **漏掉任一侧，中文就搜不到**——A 阶段验收里「中文与拼音关键词都能命中
@@ -594,7 +594,16 @@ impl DataStore {
 
     /// 把一条笔记同步进 `notes_fts`。失败只 `warn`，不阻断主流程
     /// （同 `sync_history_fts_on` 的取舍：索引是加速器，不能因它存不下笔记）。
-    pub(super) fn sync_notes_fts_on(conn: &rusqlite::Connection, id: &str) {
+    /// 重建这一篇的**全部派生索引**：FTS 二元索引 + wiki 链表。
+    ///
+    /// 🔴 **名字从 `sync_notes_fts_on` 改过来，是为了不撒谎**：
+    /// 它现在维护两样东西。叫 `_fts_` 的函数顺带维护链表，
+    /// 下一个人加第三样派生数据时就会另找地方写——那才是真正的坑。
+    ///
+    /// 链表的维护时机就该在这里（O-2：「与 FTS 同步同一个时机」）：
+    /// 全库 8 个调用点一次覆盖，漏一处的后果是**反链静默不准**。
+    pub(super) fn sync_note_indexes_on(conn: &rusqlite::Connection, id: &str) {
+        Self::sync_note_links_on(conn, id);
         let res = conn
             .query_row(
                 "SELECT rowid, title, content FROM notes WHERE id = ?1",
@@ -728,7 +737,7 @@ impl DataStore {
             rusqlite::params![id, history_id, title, content, now, source, now_ms()],
         )
         .map_err(|e| e.to_string())?;
-        Self::sync_notes_fts_on(&conn, &id);
+        Self::sync_note_indexes_on(&conn, &id);
         Ok(Note {
             id,
             history_id: history_id.map(|s| s.to_string()),
@@ -833,11 +842,11 @@ impl DataStore {
 
         tx.commit().map_err(|e| e.to_string())?;
 
-        Self::sync_notes_fts_on(&conn, id);
+        Self::sync_note_indexes_on(&conn, id);
         // 被重写的笔记正文变了，FTS 也要跟着更新——
         // 否则搜旧标题还能把它们搜出来。
         for rid in &relinked {
-            Self::sync_notes_fts_on(&conn, rid);
+            Self::sync_note_indexes_on(&conn, rid);
         }
 
         Ok(NoteUpdateReport {
@@ -1061,7 +1070,7 @@ impl DataStore {
         conn.execute("UPDATE notes SET deleted_at = NULL WHERE id = ?1", [id])
             .map_err(|e| e.to_string())?;
         // 删的时候从 FTS 拿掉了，恢复必须重建——否则笔记回来了却搜不到。
-        Self::sync_notes_fts_on(&conn, id);
+        Self::sync_note_indexes_on(&conn, id);
         Ok(())
     }
 
@@ -1583,7 +1592,7 @@ impl DataStore {
         let conn = self.lock_conn();
 
         // JOIN 而不是 `rowid IN (SELECT …)`：bm25() 必须能在外层看见 notes_fts，
-        // 子查询里的排名出不来。rowid 对应关系成立：sync_notes_fts_on 插入时
+        // 子查询里的排名出不来。rowid 对应关系成立：sync_note_indexes_on 插入时
         // 显式写的就是 notes.rowid。
         let mut sql = format!(
             "SELECT {}, NULL AS grp FROM notes_fts

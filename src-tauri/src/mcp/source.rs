@@ -126,6 +126,12 @@ pub trait KbSource: Send + Sync + 'static {
     /// 文件夹 id → 名字（展示用）。拿不到就不显示，不报错。
     fn folder_name(&self, folder_id: &str) -> Option<String>;
 
+    /// O-2：这一篇的反链与断链。
+    ///
+    /// 返回 `(反链的源标题, 断掉的目标标题)`。与 [`Self::title_dups`] 同口径——
+    /// 这是**附加信息**，拿不到就不显示，不能让 `kb_read` 失败。
+    fn links_of(&self, id: &str) -> (Vec<String>, Vec<String>);
+
     /// AM-8：库里疑似重复的笔记标题。
     ///
     /// 与 [`Self::folder_name`] 同口径——这是一条**附加提示**，
@@ -256,6 +262,21 @@ impl KbSource for AppKbSource {
         limit: u32,
     ) -> Result<SearchOutcome, String> {
         self.with_store(|s| search_on(s, query, folder, tag, kind, limit))?
+    }
+
+    fn links_of(&self, id: &str) -> (Vec<String>, Vec<String>) {
+        let got = self.with_store(|s| {
+            let back = s.note_backlinks(id).unwrap_or_default();
+            let out = s.note_links_out(id).unwrap_or_default();
+            (
+                back.into_iter().map(|b| b.from_title).collect::<Vec<_>>(),
+                out.into_iter()
+                    .filter(|l| l.to_id.is_none())
+                    .map(|l| l.target)
+                    .collect::<Vec<_>>(),
+            )
+        });
+        got.unwrap_or_default()
     }
 
     fn title_dups(&self) -> Vec<crate::similar::DupGroup> {
