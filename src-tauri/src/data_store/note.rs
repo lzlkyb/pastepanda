@@ -250,6 +250,32 @@ const QA_MAX_TERMS: usize = 24;
 ///
 /// 返 `None` = 问题里没有可检索的词（如纯标点、单字），调用方按零命中处理。
 pub fn question_to_or_expr(q: &str) -> Option<String> {
+    let terms = question_terms(q);
+    if terms.is_empty() {
+        return None;
+    }
+    // ASCII 词补 `*` 做前缀匹配；CJK bigram 不补（它本身就是完整 token）。
+    let joined: Vec<String> = terms
+        .iter()
+        .map(|t| {
+            if t.chars().all(|c| c.is_ascii_alphanumeric()) {
+                format!("{t}*")
+            } else {
+                t.clone()
+            }
+        })
+        .collect();
+    Some(format!("{{title content}} : ({})", joined.join(" OR ")))
+}
+
+/// 拆出查询词本身（AM-2 要拿它给节级打分）。
+///
+/// 🔴 **收口（规则 #11）**：篇级检索与节级打分必须用**同一份切词**。
+/// 各写一套的后果是「篇级命中了、节级一节都不命中」变成常态——
+/// 而那看起来就像个 bug，实际上是两个分词器对不上。
+///
+/// 返回**裸词**（ASCII 不带 `*`）：`*` 是 FTS5 的语法，不该泄漏到打分侧。
+pub fn question_terms(q: &str) -> Vec<String> {
     let chars: Vec<char> = q.chars().collect();
     let n = chars.len();
     let mut terms: Vec<String> = Vec::new();
@@ -277,7 +303,7 @@ pub fn question_to_or_expr(q: &str) -> Option<String> {
             }
             // 单字符的英文/数字（"a" "3"）不作检索词：噪声远大于信息
             if i - start >= 2 {
-                let t = format!("{}*", chars[start..i].iter().collect::<String>());
+                let t: String = chars[start..i].iter().collect();
                 if !terms.contains(&t) {
                     terms.push(t);
                 }
@@ -286,10 +312,7 @@ pub fn question_to_or_expr(q: &str) -> Option<String> {
             i += 1;
         }
     }
-    if terms.is_empty() {
-        return None;
-    }
-    Some(format!("{{title content}} : ({})", terms.join(" OR ")))
+    terms
 }
 
 /// 笔记视图选项（B2 #9）。**全部字段空串 = 默认态 = 与做这个功能之前一模一样**。
@@ -588,8 +611,45 @@ impl DataStore {
         content: &str,
         source: &str,
     ) -> Result<Note, String> {
+        self.note_create_on(None, history_id, title, content, source)
+    }
+
+    /// 用**指定 id** 新建——vault 导入专用（M6 P0）。
+    ///
+    /// 🔴 导出时 frontmatter 里写着 `pastepanda_id`（`note_md.rs:147`），
+    /// 而导入的新建分支以前一律铸新 uuid——同一篇笔记到了第二台机器就换了身份。
+    /// 后果不是「不好看」：删除传播按 id 找不到人；用户一改标题或挪文件夹，
+    /// 「文件夹+标题」兜底也断，**同一篇分裂成两条**。
+    /// 不只影响将来的同步——今天手动「导出到 A、在 B 导入」就已经在分裂。
+    ///
+    /// 调用方必须先确认该 id **库里没有**，否则撞主键。
+    /// 单开一个入口而不是给 `note_create_from` 加参数：后者会让调用点出现
+    /// 两个相邻的 `None`（id 与 history_id），传反了编译器不会拦。
+    pub fn note_create_keeping_id(
+        &self,
+        id: &str,
+        title: &str,
+        content: &str,
+    ) -> Result<Note, String> {
+        self.note_create_on(Some(id), None, title, content, "")
+    }
+
+    /// 新建的唯一实现（规则 #11 收口）。`want_id` 为 `None` = 自己铸一个。
+    fn note_create_on(
+        &self,
+        want_id: Option<&str>,
+        history_id: Option<&str>,
+        title: &str,
+        content: &str,
+        source: &str,
+    ) -> Result<Note, String> {
         let conn = self.lock_conn();
-        let id = uuid::Uuid::new_v4().to_string();
+        // ❗ 只接受**形状合法的 UUID**：这一列是主键，不能让外部 `.md` 往里塞任意字符串。
+        //   别的工具写的 vault 里 `pastepanda_id` 可能是任何东西，形状不对就当没给。
+        let id = match want_id {
+            Some(s) if uuid::Uuid::parse_str(s).is_ok() => s.to_string(),
+            _ => uuid::Uuid::new_v4().to_string(),
+        };
         let now = note_now();
         conn.execute(
             "INSERT INTO notes (id, history_id, title, content, created_at, updated_at, source_agent)

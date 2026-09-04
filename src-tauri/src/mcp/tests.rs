@@ -45,6 +45,17 @@ impl FakeKb {
                     "开头的引言。\n\n## 架构\n\n总体分三层。\n\n### 数据流\n\n\
                      从剪贴板到库。\n\n## 部署\n\n暂无。",
                 ),
+                // n3 是**长篇**（> BRIEF_CHARS×2），专门盖 AM-2 的节级定位：
+                // n1/n2 都太短，短篇会被阈值跳过，永远走不到那条路径。
+                fake_note(
+                    "n3",
+                    "服务端问题汇总",
+                    &format!(
+                        "# 背景\n\n{}\n\n# 并发\n\n高并发下连接池会被打满，表现为请求排队。\n\
+                         处理办法是限制单实例并发数并加超时。\n\n# 其它\n\n一些与本次无关的补充说明。",
+                        "这一节只是填长度，不含查询词。".repeat(40)
+                    ),
+                ),
             ],
             switches,
             writes: std::sync::Mutex::new(Vec::new()),
@@ -102,10 +113,28 @@ impl super::source::KbSource for FakeKb {
         Ok(super::source::ListOutcome::Ok(self.notes.clone()))
     }
 
-    fn search(&self, query: &str, _limit: u32) -> Result<super::source::SearchOutcome, String> {
+    fn search(
+        &self,
+        query: &str,
+        folder: Option<&str>,
+        tag: Option<&str>,
+        _limit: u32,
+    ) -> Result<super::source::SearchOutcome, String> {
         // 照真实取词口径的形状做：单字 = 拆不出词
         if query.chars().count() < 2 {
             return Ok(super::source::SearchOutcome::NoSearchableTerms);
+        }
+        // AM-1a：只认这一个文件夹 / 一个标签，其余一律报未知——
+        // 目的是钉住「名字写错不得静默退化成全库搜」这条契约。
+        if let Some(f) = folder {
+            if f != "工作" {
+                return Ok(super::source::SearchOutcome::UnknownFolder(f.to_string()));
+            }
+        }
+        if let Some(t) = tag {
+            if t != "重要" {
+                return Ok(super::source::SearchOutcome::UnknownTag(t.to_string()));
+            }
         }
         if query.contains("并发") {
             Ok(super::source::SearchOutcome::Hits(self.notes.clone()))
@@ -116,6 +145,12 @@ impl super::source::KbSource for FakeKb {
 
     fn folder_name(&self, _folder_id: &str) -> Option<String> {
         None
+    }
+
+    // AM-6：假源不推库简介——那正是**默认行为**。
+    // 拼接与标注的用例在 `protocol.rs` 的单测里（那里能直接喂一段文本）。
+    fn library_blurb(&self) -> String {
+        String::new()
     }
 
     fn folders(&self) -> Result<Vec<crate::data_store::NoteFolder>, String> {
@@ -1116,4 +1151,79 @@ async fn test_kb_folders_is_available_even_with_all_writes_off() {
     )
     .await;
     assert!(v["result"].get("isError").is_none(), "只读工具被写开关误伤：{:?}", v);
+}
+
+// ===== AM-2 节级命中 =====
+
+/// 命中一篇长笔记时，要指出**最相关的那一节**，而不是只丢 200 字摘要。
+///
+/// 🔴 这条盯的是实测里最痛的一点：本机库平均一篇 9,043 字、中位 5,425 字，
+/// 只回 200 字摘要 ≈ 什么都没给——模型要么据此瞎猜，要么再花一轮把全文拉回来。
+#[tokio::test]
+async fn test_kb_search_points_at_the_most_relevant_section() {
+    let base = spawn_server().await;
+    let (text, is_err) = call_text(&base, "kb_search", json!({ "query": "并发问题" })).await;
+    assert!(!is_err, "{}", text);
+    // ❗ 必须带冒号：末尾的引导语里也写了「最相关的节」，
+    //   不带冒号的断言会**恒为真**——第一版就是这么写的，把真失败盖住了。
+    assert!(text.contains("最相关的节："), "长笔记应给出节级定位：{}", text);
+    // 序号要能直接喂给 kb_read(section=)；指错节比不指更坏，模型会拿无关正文去回答
+    assert!(text.contains("· [2] 并发"), "该指到「并发」那一节（序号 2）：{}", text);
+}
+
+/// 短笔记**不该**再多给一段节级定位：它的 200 字摘要已经就是全文，再列一遍是纯噪声。
+///
+/// 假数据源里三篇只有 n3 是长篇，所以整段输出里「最相关的节」只该出现一次。
+#[tokio::test]
+async fn test_kb_search_skips_section_hits_for_short_notes() {
+    let base = spawn_server().await;
+    let (text, _) = call_text(&base, "kb_search", json!({ "query": "并发问题" })).await;
+    assert_eq!(
+        text.matches("最相关的节：").count(),
+        1,
+        "短笔记也被塞了节级定位：{}",
+        text
+    );
+}
+
+// ===== AM-1a 检索范围参数 =====
+
+/// `folder` / `tag` 要真的传到底层，而不是像以前那样在 MCP 层被硬编码成空。
+///
+/// 🔴 名字写错时必须**明确报错**，绝不能静默退化成全库搜——
+/// 后者会让模型把「文件夹名写错了」读成「这个文件夹里确实没有」，
+/// 然后带着错结论往下走，而那个错从输出上完全看不出来（R6）。
+#[tokio::test]
+async fn test_kb_search_scope_is_not_silently_widened() {
+    let base = spawn_server().await;
+
+    // 认识的文件夹：正常出结果
+    let (ok, is_err) =
+        call_text(&base, "kb_search", json!({ "query": "并发问题", "folder": "工作" })).await;
+    assert!(!is_err, "{}", ok);
+    assert!(ok.contains("找到"), "范围内应当有结果：{}", ok);
+
+    // 不认识的文件夹：报错，而不是把全库结果端上来
+    let (bad, is_err) =
+        call_text(&base, "kb_search", json!({ "query": "并发问题", "folder": "不存在的夹子" })).await;
+    assert!(is_err, "未知文件夹必须报错，实得：{}", bad);
+    assert!(!bad.contains("找到"), "报错时不能同时给出全库结果：{}", bad);
+
+    let (badtag, is_err) =
+        call_text(&base, "kb_search", json!({ "query": "并发问题", "tag": "没这个标签" })).await;
+    assert!(is_err, "未知标签必须报错，实得：{}", badtag);
+}
+
+/// 零命中时要**把范围说出来**，否则模型会当成全库都没有。
+#[tokio::test]
+async fn test_kb_search_zero_hit_says_which_scope() {
+    let base = spawn_server().await;
+    // 「工作」是认识的文件夹，但查询词不含「并发」→ 假源返回 NoMatch
+    let (text, _) =
+        call_text(&base, "kb_search", json!({ "query": "毫不相干", "folder": "工作" })).await;
+    assert!(
+        text.contains("工作"),
+        "零命中必须说明是在哪个范围内没找到：{}",
+        text
+    );
 }

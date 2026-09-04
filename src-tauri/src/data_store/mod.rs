@@ -68,7 +68,11 @@ pub use kb_shadow::ShadowStats;
 pub use mcp_audit::{McpAuditRow, McpClientRow};
 // `question_to_or_expr` 对外暴露：MCP 的 kb_search 要用它分开「问题里没拆出词」
 // 与「搜了但没命中」——对模型而言这两种的下一步完全不同。
-pub use note::{question_to_or_expr, Note, NoteGroupCount, NoteUpdateReport, NoteViewOpts};
+// `question_terms` 同理暴露（AM-2）：节级打分必须用与 FTS **同一份**切词，
+// 否则会出现「篇级命中了、节级一节都不命中」这种看上去像 bug 的行为。
+pub use note::{
+    question_terms, question_to_or_expr, Note, NoteGroupCount, NoteUpdateReport, NoteViewOpts,
+};
 pub use note_folder::{NoteFolder, MAX_FOLDER_DEPTH};
 pub use note_ai::{parse_ai_tags, AI_TAG_SOURCE};
 pub use note_daily::DailyAppend;

@@ -18,6 +18,7 @@
 //! 不能因为升级就无声无息地多了一个服务。
 
 pub mod auth;
+pub mod blurb;
 pub mod gate;
 pub mod protocol;
 pub mod audit;

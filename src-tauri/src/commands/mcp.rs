@@ -211,3 +211,34 @@ pub fn mcp_set_enabled(
     }
     Ok(server.status(configured_port(&store)))
 }
+
+/// 读用户手写的库简介（AM-6）。空串 = 没填 = 不推。
+#[tauri::command]
+pub fn mcp_get_library_blurb(store: State<DataStore>) -> String {
+    let cfg = store.get_config().unwrap_or_default();
+    mcp::blurb::from_config(&cfg)
+}
+
+/// 写库简介。**无需重启服务**：每次 `initialize` 现读一次配置。
+///
+/// 🔴 这一段是**推**给模型的：不经任何工具调用就到它手里，每次连接都付一遍，
+/// 因此也**不进调用记录**。所以只接受用户手打的内容，界面上绝不能提供
+/// 「一键采用自动生成的建议」——文件夹名本身就可能是敏感信息
+/// （「离职计划」「体检报告」这种名字，名字本身就是信息）。
+///
+/// 超长按字符截断而不是报错：用户粘贴一大段时，
+/// 报错让他自己数字数是把麻烦丢回去；截断 + 界面显示实时字数才是能用的做法。
+#[tauri::command]
+pub fn mcp_set_library_blurb(store: State<DataStore>, text: String) -> Result<String, String> {
+    let normalized = mcp::blurb::normalize(&text);
+    let mut cfg = store.get_config().unwrap_or_default();
+    let Some(obj) = cfg.as_object_mut() else {
+        return Err("配置格式异常，无法保存库简介".to_string());
+    };
+    obj.insert(
+        mcp::blurb::CFG_KEY.to_string(),
+        serde_json::Value::String(normalized.clone()),
+    );
+    store.save_config(&cfg)?;
+    Ok(normalized)
+}

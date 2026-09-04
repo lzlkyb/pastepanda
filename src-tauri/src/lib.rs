@@ -592,6 +592,8 @@ pub fn run() {
             commands::regenerate_lan_pairing_key,
             commands::mcp_get_status,
             commands::mcp_get_write_switches,
+            commands::mcp_get_library_blurb,
+            commands::mcp_set_library_blurb,
             commands::mcp_set_write_switch,
             commands::mcp_audit_list,
             commands::mcp_audit_clients,

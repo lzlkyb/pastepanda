@@ -5,6 +5,7 @@
 //! 所以这里的用例以**脏输入**为主，而不是干净的教科书 Markdown。
 
 use super::edit::{apply, ContentEdit, InsertAt};
+use super::rank::rank_sections;
 use super::sections::{locate, outline, slice, LocateError, SectionRef};
 
 // ===== 大纲解析 =====
@@ -520,4 +521,103 @@ fn test_editing_a_crlf_note_keeps_crlf_elsewhere() {
     )
     .unwrap();
     assert!(out.contains("# B\r\nB正文\r\n"), "B 节的 CRLF 丢了：{:?}", out);
+}
+
+// ===== 节级打分（AM-2）=====
+//
+// 这一层的错法很隐蔽：它不改「哪些篇被命中」，只改「每篇多给哪一节」。
+// 指错了节，模型会拿着一段无关正文去回答，而 kb_search 的结果看上去仍然是对的。
+// 所以下面每条都钉死一个**可解释的排序理由**，不只断言"有结果"。
+
+fn 三节样例() -> &'static str {
+    "前言部分，讲的是背景与目标。\n\
+     \n\
+     # 部署流程\n\
+     \n\
+     先发预发布环境，跑完冒烟测试再切正式。\n\
+     \n\
+     # 灰度发布\n\
+     \n\
+     灰度按 5% / 20% / 100% 三档推进，每档观察 30 分钟。\n\
+     出问题立即回滚到上一版本。\n\
+     \n\
+     # 附录\n\
+     \n\
+     一些无关的链接与参考资料。\n"
+}
+
+fn 词(v: &[&str]) -> Vec<String> {
+    v.iter().map(|s| s.to_string()).collect()
+}
+
+#[test]
+fn test_节级命中落在人工标注的那一节() {
+    let hits = rank_sections(三节样例(), &词(&["灰度"]), 3);
+    assert!(!hits.is_empty(), "「灰度」应当命中");
+    assert_eq!(hits[0].heading, "灰度发布", "命中的应是灰度那一节：{:?}", hits);
+    // index 可直接喂给 kb_read(section=)，错了整条链就废了
+    assert_eq!(hits[0].index, 2, "节序号要能直接用于 kb_read");
+}
+
+#[test]
+fn test_标题命中压过纯正文命中() {
+    let doc = "# 灰度发布\n\n灰度分三档推进。\n\n# 其它\n\n这里也提到灰度一次。\n";
+    let hits = rank_sections(doc, &词(&["灰度"]), 3);
+    assert_eq!(hits.len(), 2);
+    assert_eq!(hits[0].heading, "灰度发布", "标题命中该排前面：{:?}", hits);
+}
+
+#[test]
+fn test_只有标题命中正文不含的节不返回() {
+    // 标题写着「灰度发布」但正文讲别的——把它给出去等于让模型去读一段无关内容。
+    let doc = "# 灰度发布\n\n本节讲的是完全另一件事。\n";
+    assert!(rank_sections(doc, &词(&["灰度"]), 3).is_empty());
+}
+
+#[test]
+fn test_堆词不能压过标题命中() {
+    // 对数压缩的意义：长节里同一个词刷二十遍，不该盖过标题就点题的那一节。
+    let mut 堆 = String::from("# 无关标题\n\n");
+    for _ in 0..20 {
+        堆.push_str("灰度 ");
+    }
+    let doc = format!("# 灰度发布\n\n灰度分三档推进。\n\n{}\n", 堆);
+    let hits = rank_sections(&doc, &词(&["灰度"]), 3);
+    assert_eq!(hits[0].heading, "灰度发布", "堆词把标题命中压下去了：{:?}", hits);
+}
+
+#[test]
+fn test_整篇无标题时引言节也能命中() {
+    let doc = "这是一篇没有任何标题的笔记，里面提到了灰度这个词。";
+    let hits = rank_sections(doc, &词(&["灰度"]), 3);
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].index, 0, "引言节序号是 0");
+    assert!(hits[0].path.is_empty(), "引言节没有标题路径");
+}
+
+#[test]
+fn test_摘录窗口带省略号且不切坏中文() {
+    let 长 = "无关内容。".repeat(60); // 300 字
+    let doc = format!("# 标题\n\n{}灰度出现在很后面。\n", 长);
+    let hits = rank_sections(&doc, &词(&["灰度"]), 3);
+    let e = &hits[0].excerpt;
+    assert!(e.contains("灰度"), "摘录必须包含命中词：{}", e);
+    assert!(e.starts_with('…'), "前面被截断就该有省略号：{}", e);
+    // 不 panic 即证明没切在 UTF-8 边界中间；再确认长度受控
+    assert!(e.chars().count() <= 162, "摘录过长：{}", e.chars().count());
+}
+
+#[test]
+fn test_top_限制与空词表() {
+    let hits = rank_sections(三节样例(), &词(&["的"]), 2);
+    assert!(hits.len() <= 2, "top 必须封顶");
+    assert!(rank_sections(三节样例(), &[], 3).is_empty(), "没有词就不该有命中");
+    assert!(rank_sections(三节样例(), &词(&["灰度"]), 0).is_empty(), "top=0 不该返回");
+}
+
+#[test]
+fn test_英文大小写不敏感() {
+    let doc = "# Deploy\n\n用 Docker Compose 起服务，再跑 smoke test。\n";
+    let hits = rank_sections(doc, &词(&["docker"]), 3);
+    assert!(!hits.is_empty(), "查询词小写应能命中正文里的 Docker");
 }

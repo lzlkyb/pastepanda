@@ -14,14 +14,17 @@
 //! |---|---|
 //! | [`sections`] | 解析大纲、按定位符找节、取一节的原文 |
 //! | [`edit`] | 应用一次编辑，返新正文 + 报告 |
+//! | [`rank`] | 给各节打相关性分，找出「最相关的那几节」（AM-2）|
 //!
-//! 两者**全部是纯函数**。落库的原子性在 `mcp/source.rs`，不在这里。
+//! 三者**全部是纯函数**。落库的原子性在 `mcp/source.rs`，不在这里。
 
 pub mod edit;
+pub mod rank;
 pub mod sections;
 
 #[cfg(test)]
 mod tests;
 
 pub use edit::{apply, ContentEdit, EditReport, InsertAt};
+pub use rank::{rank_sections, SectionHit};
 pub use sections::{locate, outline, slice, LocateError, Section, SectionRef};

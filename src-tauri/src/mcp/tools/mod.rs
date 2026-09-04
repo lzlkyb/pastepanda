@@ -35,6 +35,12 @@ use crate::markdown::{self, SectionRef};
 /// 既浪费又淡化重点。模型看完摘要再用 `kb_read` 取它真需要的那一篇。
 const BRIEF_CHARS: usize = 200;
 
+/// AM-2：每篇最多再给几节。
+///
+/// 3 是个取舍：多了就把 `kb_search` 的输出撞回「一次拉回一堆正文」，
+/// 那正是 BRIEF_CHARS 当初要避开的；少了（只给 1 节）则在“该篇多处命中”时会漏掉真正有用的那一节。
+const SECTION_HITS: usize = 3;
+
 /// 工具层报错。`code` 用 JSON-RPC 错误码（见 [`super::protocol`]）。
 ///
 /// **区分两类失败**：
@@ -128,6 +134,16 @@ fn read_definitions() -> Vec<Value> {
                     "query": {
                         "type": "string",
                         "description": "检索词或一句自然语言问题。整句也可以，会自动拆词。"
+                    },
+                    "folder": {
+                        "type": "string",
+                        "description": "只在这个文件夹里搜（填**文件夹名**，用 kb_folders 查）。\
+                                          省略 = 全库搜。名字不存在会明确报错，**不会**退化成全库搜。"
+                    },
+                    "tag": {
+                        "type": "string",
+                        "description": "只在带这个标签的笔记里搜（填**标签名**，用 kb_folders 查）。\
+                                          省略 = 不按标签筛。同样，名字不存在会报错而不是静默放宽。"
                     },
                     "limit": {
                         "type": "integer",
@@ -568,9 +584,15 @@ async fn call_search(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Too
     let query = query.to_string();
     let limit = arg_u32(args, "limit", 5, 1, 20);
 
+    // AM-1a：范围参数。收的是**名字**，与 `kb_list` 同口径——
+    // 别发明第三种写法（一会儿 id 一会儿名字是模型最容易传错的一类参数）。
+    let folder = arg_str(args, "folder").map(str::to_string);
+    let tag = arg_str(args, "tag").map(str::to_string);
+
     let kb2 = kb.clone();
     let q = query.clone();
-    let outcome = match blocking(move || kb2.search(&q, limit)).await {
+    let (f, t) = (folder.clone(), tag.clone());
+    let outcome = match blocking(move || kb2.search(&q, f.as_deref(), t.as_deref(), limit)).await {
         Ok(v) => v,
         // 🔴 检索挂了要报错，不能假装成「没找到」（规则 #15.3）——
         // 后者会被模型转述成「你库里没记过」，那是个看不出来的错答案。
@@ -585,21 +607,39 @@ async fn call_search(kb: &Arc<dyn KbSource>, args: Option<&Value>) -> Result<Too
         ))
         .into()),
         SearchOutcome::NoMatch => Ok(text_result(format!(
-            "没有匹配到「{}」的笔记。\n\
+            "没有匹配到「{}」的笔记{}。\n\
              **零命中不等于库里没有** —— 先换个关键词重试，或用 kb_list 看看库里到底有什么。",
-            query
+            query,
+            scope_label(folder.as_deref(), tag.as_deref())
+        ))
+        .into()),
+        // 🔴 范围参数写错不能报成「没找到」：模型会把它读成「这个范围里确实没有」，
+        //   然后带着错结论走下去——而那个错从输出上看不出来。
+        SearchOutcome::UnknownFolder(name) => Ok(error_result(format!(
+            "没有叫「{}」的文件夹。用 kb_folders 看看真实的文件夹名，或去掉 folder 参数全库搜。",
+            name
+        ))
+        .into()),
+        SearchOutcome::UnknownTag(name) => Ok(error_result(format!(
+            "没有叫「{}」的标签。用 kb_folders 看看真实的标签名，或去掉 tag 参数全库搜。",
+            name
         ))
         .into()),
         SearchOutcome::Hits(notes) => {
+            // AM-2：篇级命中之后，在篇内再定位到最相关的几节。
+            // 切词用与 FTS **同一份**（规则 #11），否则会出现「篇命中了、节一个不命中」。
+            let terms = crate::data_store::question_terms(&query);
             let mut out = format!("找到 {} 篇相关笔记（按相关度排序）：\n", notes.len());
             for n in &notes {
                 let folder = folder_label(kb, n).await;
                 out.push('\n');
                 out.push_str(&format_brief(n, folder.as_deref()));
+                out.push_str(&format_section_hits(&n.content, &terms));
             }
             out.push_str(&format!(
                 "\n看完摘要觉得哪篇有用，用 kb_read(id) 取它的全文；\
-                 若那篇很长，先用 kb_sections(id) 看大纲再只取需要的一节。\n{}",
+                 若列出了「最相关的节」，直接 kb_read(id, section=序号) 只取那一节更省；\
+                 大纲看不清就用 kb_sections(id)。\n{}",
                 DATA_NOT_INSTRUCTIONS_BRIEF
             ));
             Ok(ToolOutput {
@@ -854,6 +894,44 @@ async fn folder_label(kb: &Arc<dyn KbSource>, note: &Note) -> Option<String> {
     blocking(move || Ok(kb2.folder_name(&id))).await.ok()?
 }
 
+/// AM-1a：把生效的范围拼成一句话，给零命中的提示用。
+///
+/// ❗ 零命中时**必须把范围说出来**：否则「没有匹配到「X」的笔记」
+/// 会被模型当成**全库**没有，而实际上只是那个文件夹里没有。
+fn scope_label(folder: Option<&str>, tag: Option<&str>) -> String {
+    match (folder, tag) {
+        (None, None) => String::new(),
+        (Some(f), None) => format!("（仅在文件夹「{}」内）", f),
+        (None, Some(t)) => format!("（仅带标签「{}」的）", t),
+        (Some(f), Some(t)) => format!("（仅文件夹「{}」中带标签「{}」的）", f, t),
+    }
+}
+
+/// AM-2：把「最相关的几节」拼成一段。命中不到就返空串（不占位、不制造噪声）。
+///
+/// ❗ **短笔记直接跳过**：正文没比摘要长多少时，那 200 字摘要已经就是全文，
+/// 再列一遍节是纯重复。阈值取 `BRIEF_CHARS * 2`：低于它时“再定位一次”没有信息增量。
+fn format_section_hits(content: &str, terms: &[String]) -> String {
+    if content.chars().count() <= BRIEF_CHARS * 2 {
+        return String::new();
+    }
+    let hits = crate::markdown::rank_sections(content, terms, SECTION_HITS);
+    if hits.is_empty() {
+        return String::new();
+    }
+    let mut s = String::from("  最相关的节：\n");
+    for h in &hits {
+        // 引言节没有标题，不能拼出一个空方括号让模型去猜。
+        let label = if h.path.is_empty() {
+            "（引言）".to_string()
+        } else {
+            h.path.join(" / ")
+        };
+        s.push_str(&format!("  · [{}] {}\n    {}\n", h.index, label, h.excerpt));
+    }
+    s
+}
+
 /// 列表/搜索里的一条。**id 放在最前面**：模型接下来就要拿它去调 kb_read。
 fn format_brief(n: &Note, folder: Option<&str>) -> String {
     let title = title_of(n);
@@ -992,7 +1070,10 @@ mod tests {
         let json = serde_json::to_string(&definitions(&WriteSwitches::ALL_ON)).unwrap();
         let bytes = json.len();
         println!("tools/list 序列化后 {} 字节（{} 个工具）", bytes, TOOLS.len());
-        // 基线（2026-09-03，A-62 后）：**13622 字节 / 16 个工具**。
+        // 基线（2026-09-03，A-62 后）：13622 字节 / 16 个工具。
+        // （2026-09-04，AM-1a 给 kb_search 加了 folder/tag 两个参数）：**14034 字节 / 16 个**。
+        //   +412 字节买到的是「模型知道可以收窄范围」，而范围收窄直接减少返回量——
+        //   这笔交易是划算的；但下一次加参数前要重新算一遍，别默认划算。
         // 中文 UTF-8 三字节一字，约 4500 汉字，粗估 3500~5000 token。
         // 参照：MemPalace 的唤醒常驻（L0+L1）**实测 600~900 token**
         // （README 那个 170 是目标值，不是当前实现）。

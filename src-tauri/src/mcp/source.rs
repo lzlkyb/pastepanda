@@ -33,10 +33,60 @@ pub enum ListOutcome {
 /// - [`NoMatch`](Self::NoMatch)：真搜了但没命中 → 换关键词或改用 `kb_list` 浏览。
 ///
 /// 把两者合并成空数组，模型就只能猜，而它猜错的后果是告诉用户「你库里没记过」。
+/// —— AM-1a 又加了两种：范围参数本身就是错的。
+/// 这两种不能归入 [`NoMatch`](Self::NoMatch)：模型会把“文件夹名写错了”
+/// 读成“这个文件夹里没有相关笔记”，然后带着错结论走下去。
 pub enum SearchOutcome {
     Hits(Vec<Note>),
     NoSearchableTerms,
     NoMatch,
+    UnknownFolder(String),
+    UnknownTag(String),
+}
+
+/// 范围参数（名字）解析后的结果。
+///
+/// 🔴 **收口（规则 #11）**：`kb_list` 与 `kb_search` 必须用同一套解析。
+/// 各写一套的后果是两个工具对同一个文件夹名给出不同结果，
+/// 而那种不一致在日志里看不出来。
+enum Scope {
+    Ok { folder_id: String, tag_ids: Vec<String> },
+    UnknownFolder(String),
+    UnknownTag(String),
+}
+
+/// 把工具参数里的**名字**解成底层要的 **id**。
+///
+/// 同名文件夹可能存在于不同父级下，取第一个匹配——个人规模下不值得
+/// 为此引入路径语法，但这个取舍已写在工具描述里。
+///
+/// 🔴 R6：名字找不到**绝不能落回空筛选**——那就是无声无息地把全库返回去。
+fn resolve_scope(
+    store: &DataStore,
+    folder: Option<&str>,
+    tag: Option<&str>,
+) -> Result<Scope, String> {
+    let folder_id = match folder {
+        None => String::new(),
+        Some(name) => {
+            let folders = store.folder_list()?;
+            match folders.iter().find(|f| f.name == name) {
+                Some(f) => f.id.clone(),
+                None => return Ok(Scope::UnknownFolder(name.to_string())),
+            }
+        }
+    };
+    let tag_ids: Vec<String> = match tag {
+        None => Vec::new(),
+        Some(name) => {
+            let tags = store.get_tags()?;
+            match tags.iter().find(|t| t.name == name) {
+                Some(t) => vec![t.id.clone()],
+                None => return Ok(Scope::UnknownTag(name.to_string())),
+            }
+        }
+    };
+    Ok(Scope::Ok { folder_id, tag_ids })
 }
 
 /// 三个只读工具背后的数据访问。
@@ -54,7 +104,13 @@ pub trait KbSource: Send + Sync + 'static {
         offset: u32,
     ) -> Result<ListOutcome, String>;
 
-    fn search(&self, query: &str, limit: u32) -> Result<SearchOutcome, String>;
+    fn search(
+        &self,
+        query: &str,
+        folder: Option<&str>,
+        tag: Option<&str>,
+        limit: u32,
+    ) -> Result<SearchOutcome, String>;
 
     /// 文件夹 id → 名字（展示用）。拿不到就不显示，不报错。
     fn folder_name(&self, folder_id: &str) -> Option<String>;
@@ -130,6 +186,9 @@ pub trait KbSource: Send + Sync + 'static {
     /// （同步、里面拿 SQLite 锁、调用方包 `spawn_blocking`），而多一个 trait
     /// 就多一份要在测试里搭的假实现。
     fn write_switches(&self) -> WriteSwitches;
+
+    /// 用户手写的库简介（AM-6）。空串 = 不推（默认）。
+    fn library_blurb(&self) -> String;
 }
 
 /// 生产实现：从 Tauri 管理状态里取 `DataStore`。
@@ -171,8 +230,14 @@ impl KbSource for AppKbSource {
         self.with_store(|s| list_on(s, folder, tag, limit, offset))?
     }
 
-    fn search(&self, query: &str, limit: u32) -> Result<SearchOutcome, String> {
-        self.with_store(|s| search_on(s, query, limit))?
+    fn search(
+        &self,
+        query: &str,
+        folder: Option<&str>,
+        tag: Option<&str>,
+        limit: u32,
+    ) -> Result<SearchOutcome, String> {
+        self.with_store(|s| search_on(s, query, folder, tag, limit))?
     }
 
     fn folder_name(&self, folder_id: &str) -> Option<String> {
@@ -259,6 +324,15 @@ impl KbSource for AppKbSource {
             .map(|cfg| WriteSwitches::from_config(&cfg))
             .unwrap_or(WriteSwitches::ALL_ON)
     }
+
+    fn library_blurb(&self) -> String {
+        // 读不到配置就不推——这一项的安全默认与写开关相反：
+        // 开关默认全开是因为用户已经表达了「让 AI 用我的库」；
+        // 而这一段是**主动推给每个客户端的内容**，没明确填就什么都不推。
+        self.with_store(|s| s.get_config().unwrap_or_default())
+            .map(|cfg| super::blurb::from_config(&cfg))
+            .unwrap_or_default()
+    }
 }
 
 /// 名字 → id 的解析在这里，不在 trait 实现里：以后再添一个实现也能直接复用。
@@ -269,30 +343,11 @@ fn list_on(
     limit: u32,
     offset: u32,
 ) -> Result<ListOutcome, String> {
-    // 文件夹：工具参数收的是**名字**，而 `note_list_view` 要的是 **id**。
-    // 同名文件夹可能存在于不同父级下，取第一个匹配——个人规模下不值得
-    // 为此引入路径语法，但这个取舍要写在工具描述里。
-    let folder_filter = match folder {
-        None => String::new(),
-        Some(name) => {
-            let folders = store.folder_list()?;
-            match folders.iter().find(|f| f.name == name) {
-                Some(f) => f.id.clone(),
-                None => return Ok(ListOutcome::UnknownFolder(name.to_string())),
-            }
-        }
-    };
-
-    let tag_ids: Vec<String> = match tag {
-        None => Vec::new(),
-        Some(name) => {
-            let tags = store.get_tags()?;
-            match tags.iter().find(|t| t.name == name) {
-                Some(t) => vec![t.id.clone()],
-                // 🔴 R6：不能落回空 `tag_ids`——那就是「无声无息地返回全库第一页」。
-                None => return Ok(ListOutcome::UnknownTag(name.to_string())),
-            }
-        }
+    // 名字 → id 的解析收口在 `resolve_scope`（与 kb_search 共用）。
+    let (folder_filter, tag_ids) = match resolve_scope(store, folder, tag)? {
+        Scope::Ok { folder_id, tag_ids } => (folder_id, tag_ids),
+        Scope::UnknownFolder(n) => return Ok(ListOutcome::UnknownFolder(n)),
+        Scope::UnknownTag(n) => return Ok(ListOutcome::UnknownTag(n)),
     };
 
     let opts = NoteViewOpts::default();
@@ -300,14 +355,27 @@ fn list_on(
     Ok(ListOutcome::Ok(notes))
 }
 
-fn search_on(store: &DataStore, query: &str, limit: u32) -> Result<SearchOutcome, String> {
+fn search_on(
+    store: &DataStore,
+    query: &str,
+    folder: Option<&str>,
+    tag: Option<&str>,
+    limit: u32,
+) -> Result<SearchOutcome, String> {
     // 先单独跑一次拆词，就是为了分开那两种「没结果」。
     // 多一次纯字符串处理的开销，换模型一句可执行的提示，很划算。
     if crate::data_store::question_to_or_expr(query).is_none() {
         return Ok(SearchOutcome::NoSearchableTerms);
     }
+    // AM-1a：范围参数。底层 `note_search_relevant` 本来就收这两个，
+    // 之前 MCP 层硬编码传空——**是遗漏，不是取舍**。
+    let (folder_filter, tag_ids) = match resolve_scope(store, folder, tag)? {
+        Scope::Ok { folder_id, tag_ids } => (folder_id, tag_ids),
+        Scope::UnknownFolder(n) => return Ok(SearchOutcome::UnknownFolder(n)),
+        Scope::UnknownTag(n) => return Ok(SearchOutcome::UnknownTag(n)),
+    };
     let opts = NoteViewOpts::default();
-    let notes = store.note_search_relevant(query, "", &[], &opts, limit)?;
+    let notes = store.note_search_relevant(query, &folder_filter, &tag_ids, &opts, limit)?;
     if notes.is_empty() {
         Ok(SearchOutcome::NoMatch)
     } else {

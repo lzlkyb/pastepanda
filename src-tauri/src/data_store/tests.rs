@@ -5979,6 +5979,88 @@ fn test_vault_export_then_import_roundtrip() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// 🔴 P0 回归：跨机导入必须**沿用 `pastepanda_id`**，不能铸新 id。
+///
+/// 这条不是为将来的同步写的——今天「导出到 A、在 B 导入」就已经在分裂身份：
+/// B 那边铸了个新 uuid，于是 A 删掉这篇时，删除事件按 id 在 B 找不到人；
+/// 用户再在 B 改个标题，「文件夹+标题」兜底也断，同一篇变成两条。
+#[test]
+fn test_vault_import_keeps_pastepanda_id() {
+    let dir = tmp_vault_dir("keepid");
+
+    let src = make_store();
+    let a = src.note_create(None, "跨机的一篇", "正文").unwrap();
+    src.note_export_dir(dir.to_str().unwrap()).unwrap();
+
+    let dst = make_store();
+    let imp = dst.note_import_dir(dir.to_str().unwrap()).unwrap();
+    assert_eq!(imp.created, 1);
+
+    let got = dst.note_get(&a.id).unwrap();
+    assert!(
+        got.is_some(),
+        "导入后两边 id 必须相同；铸新 id 会让删除传播与双链全部失准"
+    );
+    assert_eq!(got.unwrap().title, "跨机的一篇");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// 两个文件带同一个 `pastepanda_id` 时，第二个必须**另铸 id 而不是撞主键**。
+///
+/// 这是「沿用 id」带来的**新失败面**：以前一律新建所以不可能撞，现在得自己挡住。
+#[test]
+fn test_vault_import_mints_new_id_when_the_one_in_file_is_taken() {
+    let dir = tmp_vault_dir("dupid");
+    let same = uuid::Uuid::new_v4().to_string();
+    for (f, t) in [("甲.md", "甲"), ("乙.md", "乙")] {
+        std::fs::write(
+            dir.join(f),
+            format!("---\ntitle: {t}\npastepanda_id: {same}\n---\n\n正文{t}"),
+        )
+        .unwrap();
+    }
+
+    let store = make_store();
+    let rep = store.note_import_dir(dir.to_str().unwrap()).unwrap();
+    assert!(
+        rep.failed.is_empty(),
+        "撞主键不该让导入失败：{:?}",
+        rep.failed
+    );
+    let notes = store.note_list("all", &[], 50, 0).unwrap();
+    assert_eq!(notes.len(), 2, "两个文件应各成一条，不能少一条");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// 外部工具写的 `pastepanda_id` 可能是任意字符串——**不能让它成为主键**。
+#[test]
+fn test_vault_import_ignores_malformed_pastepanda_id() {
+    let dir = tmp_vault_dir("badid");
+    std::fs::write(
+        dir.join("外来的.md"),
+        "---\ntitle: 外来的\npastepanda_id: 不是-uuid\n---\n\n正文",
+    )
+    .unwrap();
+
+    let store = make_store();
+    store.note_import_dir(dir.to_str().unwrap()).unwrap();
+
+    assert!(
+        store.note_get("不是-uuid").unwrap().is_none(),
+        "形状不合法的 id 不能进主键"
+    );
+    let notes = store.note_list("all", &[], 50, 0).unwrap();
+    assert_eq!(notes.len(), 1);
+    assert!(
+        uuid::Uuid::parse_str(&notes[0].id).is_ok(),
+        "应铸一个合法 uuid"
+    );
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 #[test]
 fn test_vault_import_is_idempotent_and_never_deletes() {
     let dir = tmp_vault_dir("idem");

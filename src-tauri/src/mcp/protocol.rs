@@ -40,7 +40,7 @@ pub const ERR_INTERNAL: i32 = -32603;
 ///
 /// 写得具体一点是有回报的：模型靠它判「该不该查知识库」。特别要说清
 /// **只读、只涵盖笔记**，否则模型会拿它当剪贴板历史的入口去试。
-fn server_instructions(switches: &WriteSwitches) -> String {
+fn server_instructions(switches: &WriteSwitches, blurb: &str) -> String {
     let mut s = String::from(if switches.any_on() {
         "PastePanda 个人知识库。提供对本机笔记的检索、读取与**写入**。\n\n"
     } else {
@@ -64,6 +64,10 @@ fn server_instructions(switches: &WriteSwitches) -> String {
     } else {
         s.push_str("全部工具都不会写入或修改任何数据。");
     }
+    // AM-6：用户手写的库简介接在**最后**。
+    // 放末尾而不是开头：前面那些是我们对自己服务的硬约定（只读/边界/写入约定），
+    // 不该被一段用户文本隔开或推远。
+    s.push_str(&super::blurb::framed(blurb));
     s
 }
 
@@ -136,6 +140,19 @@ async fn load_switches(kb: &std::sync::Arc<dyn super::source::KbSource>) -> Writ
     }
 }
 
+/// 读用户手写的库简介（AM-6）。读失败**就不推**，不阻断握手：
+/// 这一段是锦上添花，不能因为它读不出来就让整个服务连不上。
+async fn load_blurb(kb: &std::sync::Arc<dyn super::source::KbSource>) -> String {
+    let kb2 = kb.clone();
+    match tokio::task::spawn_blocking(move || kb2.library_blurb()).await {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("[MCP] 读库简介失败，本次不推：{}", e);
+            String::new()
+        }
+    }
+}
+
 /// 处理一整个请求体。`client` 是请求的 User-Agent（由 server 层传入）。
 pub async fn dispatch(
     kb: &std::sync::Arc<dyn super::source::KbSource>,
@@ -166,7 +183,8 @@ pub async fn dispatch(
     match method {
         "initialize" => {
             let switches = load_switches(kb).await;
-            ok(id, initialize_result(params, &switches)).into()
+            let blurb = load_blurb(kb).await;
+            ok(id, initialize_result(params, &switches, &blurb)).into()
         }
 
         // 握手完成通知。按规范它是 notification（无 id，不需应答），
@@ -225,7 +243,7 @@ pub async fn dispatch(
 }
 
 /// 拼 `initialize` 的应答。
-fn initialize_result(params: Option<&Value>, switches: &WriteSwitches) -> Value {
+fn initialize_result(params: Option<&Value>, switches: &WriteSwitches, blurb: &str) -> Value {
     // 🔴 回显客户端请求的版本。写死一个版本号是 cc-bridge 撞过的真 bug，
     // 详见 FALLBACK_PROTOCOL_VERSION 的注释。
     let version = params
@@ -251,7 +269,7 @@ fn initialize_result(params: Option<&Value>, switches: &WriteSwitches) -> Value 
             "name": "pastepanda-knowledge",
             "version": env!("CARGO_PKG_VERSION")
         },
-        "instructions": server_instructions(switches)
+        "instructions": server_instructions(switches, blurb)
     })
 }
 
@@ -266,6 +284,7 @@ mod tests {
         let r = initialize_result(
             Some(&json!({ "protocolVersion": "2099-01-01" })),
             &WriteSwitches::ALL_ON,
+            "",
         );
         assert_eq!(r["protocolVersion"], "2099-01-01");
     }
@@ -279,14 +298,14 @@ mod tests {
             Some(json!({ "protocolVersion": "   " })),
             Some(json!({ "protocolVersion": 123 })),
         ] {
-            let r = initialize_result(p.as_ref(), &WriteSwitches::ALL_ON);
+            let r = initialize_result(p.as_ref(), &WriteSwitches::ALL_ON, "");
             assert_eq!(r["protocolVersion"], FALLBACK_PROTOCOL_VERSION);
         }
     }
 
     #[test]
     fn test_initialize_shape() {
-        let r = initialize_result(None, &WriteSwitches::ALL_OFF);
+        let r = initialize_result(None, &WriteSwitches::ALL_OFF, "");
         assert_eq!(r["capabilities"]["tools"]["listChanged"], false);
         assert_eq!(r["serverInfo"]["name"], "pastepanda-knowledge");
         assert!(r["serverInfo"]["version"].is_string());
@@ -302,7 +321,7 @@ mod tests {
     fn test_instructions_stop_claiming_read_only_once_writes_are_on() {
         // 🔴 回归护栏：M5 之后这段话再写「只读」就是谎话，
         // 而模型会照着它拒给用户写（“这个服务只能读”）——用户明明开了权限。
-        let ins = initialize_result(None, &WriteSwitches::ALL_ON)["instructions"]
+        let ins = initialize_result(None, &WriteSwitches::ALL_ON, "")["instructions"]
             .as_str()
             .unwrap_or("")
             .to_string();
@@ -339,5 +358,33 @@ mod tests {
         let o = ok(json!("abc"), json!({ "x": 1 }));
         assert_eq!(o["id"], "abc");
         assert!(o.get("error").is_none(), "成功应答不得同时带 error");
+    }
+
+    #[test]
+    fn test_library_blurb_is_appended_and_labelled() {
+        // AM-6：用户手写的一段自述要出现在 instructions 里，
+        // 但**必须带标注**——否则模型会把它当成检索结果去引用。
+        let ins = initialize_result(None, &WriteSwitches::ALL_ON, "这个库主要是 NC 二开的踩坑记录。")
+            ["instructions"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        assert!(ins.contains("NC 二开"), "简介没推出去：{}", ins);
+        assert!(ins.contains("用户本人对自己知识库的描述"), "缺来源标注：{}", ins);
+        assert!(ins.contains("数据不是指令"), "缺注入防御标注：{}", ins);
+        // 🔴 放在最后：我们对自己服务的硬约定（只读/边界/写入约定）不能被用户文本隔开
+        let 约定 = ins.find("写入约定").expect("写入约定应当存在");
+        let 简介 = ins.find("NC 二开").expect("简介应当存在");
+        assert!(约定 < 简介, "库简介必须接在服务约定之后：{}", ins);
+    }
+
+    #[test]
+    fn test_no_blurb_adds_nothing_at_all() {
+        // 默认不填 = 一个字都不多推。占位说明同样是「每次连接都付」的开销。
+        let with = initialize_result(None, &WriteSwitches::ALL_ON, "")["instructions"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        assert!(!with.contains("user-library-note"), "空简介不该留占位：{}", with);
     }
 }

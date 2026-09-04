@@ -346,6 +346,19 @@ impl DataStore {
         let collided = matched.as_deref().is_some_and(|id| claimed.contains(id));
         let existing = if collided { None } else { matched };
 
+        // 🔴 P0：新建时优先**沿用文件里的 `pastepanda_id`**，别铸新的。
+        //   以前一律铸新 uuid，于是同一篇笔记到了第二台机器就换了身份——
+        //   删除传播按 id 找不到人，改个标题连「文件夹+标题」兜底都断。
+        //   ❗ 两道门卡缺一不可，否则撞主键：
+        //     ① 库里确实没有（有的话上面已经匹配到、走 update 了）；
+        //     ② 本次导入还没被别的源文件认领（两个文件带同一个 id 的情形）。
+        let keep_id: Option<String> = match parsed.id.as_deref() {
+            Some(pid) if !claimed.contains(pid) && self.note_get(pid)?.is_none() => {
+                Some(pid.to_string())
+            }
+            _ => None,
+        };
+
         let (note_id, created) = match existing {
             Some(id) => {
                 // 走 note_update ⇒ **自动留下一份导入前的快照**（#4 白送的）
@@ -353,7 +366,10 @@ impl DataStore {
                 (id, false)
             }
             None => {
-                let n = self.note_create(None, &parsed.title, &parsed.content)?;
+                let n = match keep_id.as_deref() {
+                    Some(pid) => self.note_create_keeping_id(pid, &parsed.title, &parsed.content)?,
+                    None => self.note_create(None, &parsed.title, &parsed.content)?,
+                };
                 if folder_id.is_some() {
                     self.note_set_folder(&n.id, folder_id.as_deref())?;
                 }
