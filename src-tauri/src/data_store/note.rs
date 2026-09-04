@@ -649,6 +649,33 @@ impl DataStore {
         self.note_create_from(history_id, title, content, "")
     }
 
+    /// M6：`updated_ms` 严格大于 `since_ms` 的活笔记。同步算增量用。
+    ///
+    /// **严格大于**而不是大于等于：游标存的是「上次已经同步到这里」，
+    /// 用 `>=` 会把边界那一篇每次都重发一遍。
+    ///
+    /// ❗ 只返回**活**笔记。已删的那些由 `note_tombstones_since` 负责——
+    /// 两条路各管一半，混在一起会让「删除」被对端当成「一次内容更新」。
+    pub fn note_changed_since(&self, since_ms: i64) -> Result<Vec<Note>, String> {
+        let conn = self.lock_conn();
+        let sql = format!(
+            "SELECT {} FROM notes WHERE deleted_at IS NULL AND updated_ms > ?1 \
+             ORDER BY updated_ms",
+            NOTE_COLS
+        );
+        let mut st = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let mut notes: Vec<Note> = st
+            .query_map([since_ms], row_to_note)
+            .map_err(|e| e.to_string())?
+            .filter_map(Result::ok)
+            .collect();
+        // 标签要带上：导出的 markdown 里有 tags 一行，不带的话对端会把标签清空。
+        for n in notes.iter_mut() {
+            n.tags = Self::load_note_tags_on(&conn, &n.id);
+        }
+        Ok(notes)
+    }
+
     /// AM-8：库里疑似重复的笔记标题。
     ///
     /// 只读标题列，不读正文——判定只需要名字，而全库拉正文在大库上是灾难。

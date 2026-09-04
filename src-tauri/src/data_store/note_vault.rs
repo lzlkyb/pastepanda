@@ -155,19 +155,23 @@ fn readme_text(notes: i64, folders: i64) -> String {
 
 impl DataStore {
     /// 把全部笔记导出成一个可直接当 vault 打开的目录。
-    pub fn note_export_dir(&self, root: &str) -> Result<ExportReport, String> {
-        let root = PathBuf::from(root);
-        if !root.is_dir() {
-            return Err(format!("目录不存在: {}", root.display()));
-        }
+    /// 文件夹 id → 导出目录的绝对路径。
+    ///
+    /// 🔴 **抽出来是为了不让两条导出路径各算一遍**（规则 #11）：
+    /// 全量导出与 M6 的增量导出必须把同一篇笔记放进同一个目录，
+    /// 否则对端会看成「两个文件夹里各有一篇」——而那从报告上看不出来。
+    ///
+    /// 深度已由后端封死在 3 层，往上走不会失控。
+    pub(super) fn folder_dir_map(folders: &[NoteFolder], root: &Path) -> HashMap<String, PathBuf> {
+        Self::sync_folder_dir_map(folders, root)
+    }
 
-        let folders = self.folder_list()?;
+    /// 同上，给 `crate::sync::engine` 用（它在 `data_store` 之外，`pub(super)` 到不了）。
+    pub fn sync_folder_dir_map(folders: &[NoteFolder], root: &Path) -> HashMap<String, PathBuf> {
         let by_id: HashMap<&str, &NoteFolder> =
             folders.iter().map(|f| (f.id.as_str(), f)).collect();
-
-        // 文件夹 id → 相对路径。深度已由后端封死在 3 层，往上走不会失控。
-        let mut dir_of: HashMap<&str, PathBuf> = HashMap::new();
-        for f in &folders {
+        let mut dir_of: HashMap<String, PathBuf> = HashMap::new();
+        for f in folders {
             let mut parts: Vec<&str> = vec![f.name.as_str()];
             let mut cur = f.parent_id.as_deref();
             while let Some(pid) = cur {
@@ -180,12 +184,23 @@ impl DataStore {
                 }
             }
             parts.reverse();
-            let mut p = root.clone();
+            let mut p = root.to_path_buf();
             for seg in parts {
                 p.push(safe_file_stem(seg, &f.id));
             }
-            dir_of.insert(f.id.as_str(), p);
+            dir_of.insert(f.id.clone(), p);
         }
+        dir_of
+    }
+
+    pub fn note_export_dir(&self, root: &str) -> Result<ExportReport, String> {
+        let root = PathBuf::from(root);
+        if !root.is_dir() {
+            return Err(format!("目录不存在: {}", root.display()));
+        }
+
+        let folders = self.folder_list()?;
+        let dir_of = Self::folder_dir_map(&folders, &root);
 
         let notes = self.note_list("all", &[], EXPORT_CAP, 0)?;
 

@@ -164,3 +164,180 @@ fn test_debug输出里没有私钥() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ===== 同步引擎（本地端到端，不联网）=====
+
+use super::engine::{apply_delta, compute_delta, write_delta};
+use crate::data_store::DataStore;
+
+fn store() -> DataStore {
+    DataStore::new(":memory:").expect("建内存库失败")
+}
+
+/// 跑一次 A → B 的同步。返回 (新游标, 应用报告)。
+fn sync(a: &DataStore, b: &DataStore, since: i64, tag: &str) -> (i64, super::engine::ApplyReport) {
+    let dir = tmp_dir(tag);
+    let delta = compute_delta(a, since).expect("算增量失败");
+    write_delta(a, &delta, &dir).expect("写增量失败");
+    let rep = apply_delta(b, &dir).expect("应用增量失败");
+    let _ = std::fs::remove_dir_all(&dir);
+    (delta.cursor_ms, rep)
+}
+
+#[test]
+fn test_新笔记同步到对端() {
+    let (a, b) = (store(), store());
+    let n = a.note_create(None, "会议纪要", "正文内容").unwrap();
+
+    let (_, rep) = sync(&a, &b, 0, "e2e1");
+    assert_eq!(rep.created, 1, "{:?}", rep);
+
+    let got = b.note_get(&n.id).unwrap().expect("对端该有这一篇");
+    assert_eq!(got.title, "会议纪要");
+    assert_eq!(got.content, "正文内容");
+    assert_eq!(got.id, n.id, "id 必须一致，否则删除传播找不到人");
+}
+
+/// 游标要起作用：同一批不能反复重发。
+#[test]
+fn test_游标之后没有新东西就是空增量() {
+    let (a, b) = (store(), store());
+    a.note_create(None, "甲", "正文").unwrap();
+
+    let (cursor, _) = sync(&a, &b, 0, "e2e2");
+    assert!(cursor > 0);
+
+    let d = compute_delta(&a, cursor).unwrap();
+    assert!(d.is_empty(), "游标之后不该再有东西：{:?}", d);
+}
+
+/// 🔴 后写胜：本地更新时，对端那份旧版本**不能**覆盖它。
+///
+/// 这条正是「完全复用 import_vault_dir」会踩的坑——那条路无条件 note_update。
+#[test]
+fn test_本地更新时对端旧版本不会覆盖() {
+    let (a, b) = (store(), store());
+    let n = a.note_create(None, "甲", "A 的初版").unwrap();
+    sync(&a, &b, 0, "e2e3a");
+
+    // B 后改：它的 updated_ms 更大
+    b.note_update(&n.id, "甲", "B 改过的，更新").unwrap();
+
+    // A 再把**同一个旧版本**推过来（since=0，所以会重发）
+    let (_, rep) = sync(&a, &b, 0, "e2e3b");
+
+    assert_eq!(rep.skipped_older, 1, "该跳过 A 的旧版本：{:?}", rep);
+    assert_eq!(
+        b.note_get(&n.id).unwrap().unwrap().content,
+        "B 改过的，更新",
+        "本地新版本被对端旧版本覆盖了 —— 后写胜没生效"
+    );
+}
+
+/// 反过来：对端更新时应当覆盖本地旧版本。
+#[test]
+fn test_对端更新时会覆盖本地旧版本() {
+    let (a, b) = (store(), store());
+    let n = a.note_create(None, "甲", "初版").unwrap();
+    sync(&a, &b, 0, "e2e4a");
+
+    a.note_update(&n.id, "甲", "A 后改的").unwrap();
+    let (_, rep) = sync(&a, &b, 0, "e2e4b");
+
+    assert_eq!(rep.skipped_older, 0, "{:?}", rep);
+    assert_eq!(b.note_get(&n.id).unwrap().unwrap().content, "A 后改的");
+}
+
+/// 🔴 删除要传播：A 删掉并彻底清理之后，B 上那一篇也该进回收站。
+#[test]
+fn test_删除会传播到对端() {
+    let (a, b) = (store(), store());
+    let n = a.note_create(None, "甲", "正文").unwrap();
+    sync(&a, &b, 0, "e2e5a");
+    assert!(b.note_get(&n.id).unwrap().is_some());
+
+    a.note_delete(&n.id).unwrap();
+    a.note_purge(&n.id).unwrap();
+
+    let (_, rep) = sync(&a, &b, 0, "e2e5b");
+    assert_eq!(rep.deleted, 1, "{:?}", rep);
+    assert!(
+        b.note_get(&n.id).unwrap().is_none(),
+        "对端那篇该进回收站（note_get 只看活的）"
+    );
+}
+
+/// 🔴 同一批里既有那篇的文件、又有它的墓碑时，**删除必须赢**。
+///
+/// 这一条钉的是顺序：先删后导的话，刚导入的文件会把它建回来，
+/// 于是「删除等于没发生」——而报告里会显示 created 1 / deleted 1，看起来两件都做了。
+#[test]
+fn test_同一批里删除压过内容() {
+    let (a, b) = (store(), store());
+    let n = a.note_create(None, "甲", "正文").unwrap();
+    // 不先同步：让 B 从零开始，同一批里同时收到「这篇的内容」与「它的墓碑」
+    a.note_delete(&n.id).unwrap();
+    a.note_purge(&n.id).unwrap();
+
+    // A 已经物理删了，所以 note_changed_since 里没有它，只有墓碑。
+    let d = compute_delta(&a, 0).unwrap();
+    assert!(d.notes.is_empty(), "物理删之后不该再出现在变更集里");
+    assert_eq!(d.tombstones.len(), 1);
+
+    let (_, rep) = sync(&a, &b, 0, "e2e6");
+    assert_eq!(rep.created, 0);
+    assert!(b.note_get(&n.id).unwrap().is_none());
+    let _ = rep;
+}
+
+/// 文件夹结构要跟着走。
+#[test]
+fn test_文件夹路径跟着同步() {
+    let (a, b) = (store(), store());
+    let f = a.folder_create("工作", None).unwrap();
+    let sub = a.folder_create("NC 二开", Some(&f.id)).unwrap();
+    let n = a.note_create(None, "甲", "正文").unwrap();
+    a.note_set_folder(&n.id, Some(&sub.id)).unwrap();
+
+    sync(&a, &b, 0, "e2e7");
+    let got = b.note_get(&n.id).unwrap().unwrap();
+    assert!(got.folder_id.is_some(), "对端该按路径重建出文件夹");
+}
+
+/// 标签要跟着走——不带的话对端会把标签清空。
+#[test]
+fn test_标签跟着同步() {
+    let (a, b) = (store(), store());
+    let n = a.note_create(None, "甲", "正文").unwrap();
+    let t = a.create_tag("重要", "#f00").unwrap();
+    a.note_set_tags(&n.id, &[t.id.clone()]).unwrap();
+
+    sync(&a, &b, 0, "e2e8");
+    let got = b.note_get(&n.id).unwrap().unwrap();
+    assert!(
+        got.tags.iter().any(|x| x.name == "重要"),
+        "标签没同步过来：{:?}",
+        got.tags
+    );
+}
+
+/// 清单说有、文件却不在（传输被截断）**不能静默**。
+#[test]
+fn test_传输截断要报出来而不是当成没变() {
+    let (a, b) = (store(), store());
+    a.note_create(None, "甲", "正文").unwrap();
+
+    let dir = tmp_dir("e2e9");
+    let delta = compute_delta(&a, 0).unwrap();
+    write_delta(&a, &delta, &dir).unwrap();
+    // 删掉那个 .md，只留清单 —— 模拟传了一半
+    for e in std::fs::read_dir(&dir).unwrap().flatten() {
+        if e.path().extension().is_some_and(|x| x == "md") {
+            std::fs::remove_file(e.path()).unwrap();
+        }
+    }
+    let rep = apply_delta(&b, &dir).unwrap();
+    assert_eq!(rep.missing_files, 1, "{:?}", rep);
+    assert_eq!(rep.created, 0);
+    let _ = std::fs::remove_dir_all(&dir);
+}
