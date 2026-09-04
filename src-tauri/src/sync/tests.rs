@@ -176,10 +176,24 @@ fn store() -> DataStore {
 
 /// 跑一次 A → B 的同步。返回 (新游标, 应用报告)。
 fn sync(a: &DataStore, b: &DataStore, since: i64, tag: &str) -> (i64, super::engine::ApplyReport) {
+    sync_from(a, b, since, since, tag)
+}
+
+/// 同上，但发送游标与接收侧的「上次同步点」可以分开给。
+///
+/// 分开是因为**冲突检测只看接收侧那个游标**：拿旧游标重发一批
+/// （`send_since` 小）不该被判成冲突，只有「上次同步之后两边都改过」才算。
+fn sync_from(
+    a: &DataStore,
+    b: &DataStore,
+    send_since: i64,
+    recv_cursor: i64,
+    tag: &str,
+) -> (i64, super::engine::ApplyReport) {
     let dir = tmp_dir(tag);
-    let delta = compute_delta(a, since).expect("算增量失败");
+    let delta = compute_delta(a, send_since).expect("算增量失败");
     write_delta(a, &delta, &dir).expect("写增量失败");
-    let rep = apply_delta(b, &dir).expect("应用增量失败");
+    let rep = apply_delta(b, &dir, recv_cursor).expect("应用增量失败");
     let _ = std::fs::remove_dir_all(&dir);
     (delta.cursor_ms, rep)
 }
@@ -336,7 +350,7 @@ fn test_传输截断要报出来而不是当成没变() {
             std::fs::remove_file(e.path()).unwrap();
         }
     }
-    let rep = apply_delta(&b, &dir).unwrap();
+    let rep = apply_delta(&b, &dir, 0).unwrap();
     assert_eq!(rep.missing_files, 1, "{:?}", rep);
     assert_eq!(rep.created, 0);
     let _ = std::fs::remove_dir_all(&dir);
@@ -449,4 +463,133 @@ fn set_updated_ms(store: &DataStore, id: &str, ms: i64) {
             rusqlite::params![id, ms],
         )
         .expect("改 updated_ms 失败");
+}
+
+// ===== 真冲突（§7.4，判据已按 §7.5 重定义）=====
+
+/// 🔴 两边都在上次同步之后改过 = 真冲突：输的那一份必须留下副本。
+///
+/// 这一条修的是 §7.4 的判据。原文说真冲突是「同毫秒两端不同改（概率极低）」，
+/// 而 §7.5 已推翻它——**并发 + 时钟偏斜一点都不罕见**。
+/// HLC 给了全序，但全序不告诉你并发：「B 看到 A 那版之后改的」和
+/// 「B 独立改的」在时间戳上长得一样。游标是我们手里唯一的共同祖先标记。
+#[test]
+fn test_两边都改过时留下冲突副本() {
+    let (a, b) = (store(), store());
+    let n = a.note_create(None, "甲", "共同起点").unwrap();
+    let (cursor, _) = sync(&a, &b, 0, "cf1");
+
+    // 上次同步之后，两边各改一次
+    b.note_update(&n.id, "甲", "B 改的").unwrap();
+    a.note_update(&n.id, "甲", "A 改的").unwrap();
+
+    let (_, rep) = sync_from(&a, &b, cursor, cursor, "cf2");
+    assert_eq!(rep.conflicts, 1, "两边都改过该判冲突：{:?}", rep);
+
+    // 冲突副本要能被 AM-7 的类别筛出来
+    let copies = b
+        .note_search("冲突副本", "all", &[], 10)
+        .unwrap();
+    assert_eq!(copies.len(), 1, "该留下一份冲突副本：{:?}", copies.len());
+    assert!(
+        crate::markdown::kinds_of(&copies[0].content).contains(&"conflict".to_string()),
+        "副本里要有 - [conflict] 行，否则 kb_search(kind=conflict) 找不到它"
+    );
+}
+
+/// 只有一边改过 ⇒ **不是**冲突，不该留副本。
+///
+/// 这条守的是「别凭空造冲突」：真实使用里绝大多数同步都是单边改动，
+/// 每次都留副本的话知识库会被垃圾淹掉。
+#[test]
+fn test_只有一边改过不算冲突() {
+    let (a, b) = (store(), store());
+    let n = a.note_create(None, "甲", "共同起点").unwrap();
+    let (cursor, _) = sync(&a, &b, 0, "cf3");
+
+    a.note_update(&n.id, "甲", "只有 A 改了").unwrap();
+    let (_, rep) = sync_from(&a, &b, cursor, cursor, "cf4");
+
+    assert_eq!(rep.conflicts, 0, "{:?}", rep);
+    assert_eq!(b.note_get(&n.id).unwrap().unwrap().content, "只有 A 改了");
+    assert!(b.note_search("冲突副本", "all", &[], 10).unwrap().is_empty());
+}
+
+/// 拿**旧游标**重发一批（比如重试）不该被判成冲突。
+#[test]
+fn test_旧游标重发不判冲突() {
+    let (a, b) = (store(), store());
+    let n = a.note_create(None, "甲", "正文").unwrap();
+    let (cursor, _) = sync(&a, &b, 0, "cf5");
+
+    // 发送侧用 since=0 重发全部，但接收侧的同步点仍是 cursor
+    let (_, rep) = sync_from(&a, &b, 0, cursor, "cf6");
+    assert_eq!(rep.conflicts, 0, "重发不是冲突：{:?}", rep);
+    let _ = n;
+}
+
+/// 首次同步（游标 0）时一切都算「对端的新东西」，不判冲突。
+#[test]
+fn test_首次同步不判冲突() {
+    let (a, b) = (store(), store());
+    a.note_create(None, "甲", "A 的").unwrap();
+    b.note_create(None, "乙", "B 的").unwrap();
+
+    let (_, rep) = sync(&a, &b, 0, "cf7");
+    assert_eq!(rep.conflicts, 0, "首次同步不该判冲突：{:?}", rep);
+}
+
+/// 游标**不能退**：退了会把已同步过的东西当成「两边都改过」，凭空造一批副本。
+#[test]
+fn test_游标只前进不后退() {
+    let store = store();
+    store.device_pair("aa", "机器", "").unwrap();
+    store.device_advance_cursor("aa", 500).unwrap();
+    store.device_advance_cursor("aa", 100).unwrap();
+    assert_eq!(store.device_cursor("aa"), 500, "游标退回去了");
+    store.device_advance_cursor("aa", 900).unwrap();
+    assert_eq!(store.device_cursor("aa"), 900);
+}
+
+/// 🔴 同步之后，两边同一篇的**版本戳必须一样**。
+///
+/// 这条是上面「只有一边改过被误判成冲突」那个 bug 的根因守卫。
+///
+/// `note_import_dir` 会用**本机** HLC 发一个新戳，于是同一份内容在两台机器上
+/// 戳不同——而 LWW 是靠比这个戳判胜负的，戳不同比较就没意义：
+/// B 刚导入那份（没改过）可能带着更大的戳，**A 之后的真实编辑反而判输**。
+///
+/// 所以 `updated_ms` 必须当成**内容版本的戳**，跟着内容走，而不是
+/// 「本地这行何时被碰过」。
+#[test]
+fn test_同步后两边版本戳一致() {
+    let (a, b) = (store(), store());
+    let n = a.note_create(None, "甲", "正文").unwrap();
+    sync(&a, &b, 0, "st1");
+    assert_eq!(
+        b.note_updated_ms(&n.id),
+        a.note_updated_ms(&n.id),
+        "戳不一致 ⇒ 后续所有 LWW 比较都失去意义"
+    );
+
+    // 更新一次之后仍要一致
+    a.note_update(&n.id, "甲", "改过").unwrap();
+    sync(&a, &b, 0, "st2");
+    assert_eq!(b.note_updated_ms(&n.id), a.note_updated_ms(&n.id));
+}
+
+/// 承上：戳对齐之后，A 的后续编辑不会输给 B 那份没动过的副本。
+#[test]
+fn test_对端没动过的副本不会压过本机的新编辑() {
+    let (a, b) = (store(), store());
+    let n = a.note_create(None, "甲", "初版").unwrap();
+    let (cursor, _) = sync(&a, &b, 0, "st3");
+
+    // 只有 A 改；B 一直没动
+    a.note_update(&n.id, "甲", "A 的新编辑").unwrap();
+    let (_, rep) = sync_from(&a, &b, cursor, cursor, "st4");
+
+    assert_eq!(rep.skipped_older, 0, "A 的新编辑被跳过了：{:?}", rep);
+    assert_eq!(rep.conflicts, 0, "{:?}", rep);
+    assert_eq!(b.note_get(&n.id).unwrap().unwrap().content, "A 的新编辑");
 }

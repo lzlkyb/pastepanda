@@ -133,6 +133,8 @@ pub struct ApplyReport {
     pub skipped_older: usize,
     /// 清单里提到、但文件不在的条数。**不静默**（规则 #15.3）。
     pub missing_files: usize,
+    /// 检测到的真冲突数（两边都在上次同步之后改过）。每个都留了一份冲突副本。
+    pub conflicts: usize,
     /// 🔴 对端时钟超前太多，本机拒绝吸收时的超前毫秒数。
     ///
     /// 非 `None` 意味着一个**必须让人知道**的后果：
@@ -145,11 +147,20 @@ pub struct ApplyReport {
 ///
 /// ❗ 会**就地删除**暂存目录里那些「本地更新所以不该导入」的文件。
 /// 传进来的目录应当是传输层刚落下的暂存目录，不是用户的 vault。
-pub fn apply_delta(store: &DataStore, dir: &Path) -> Result<ApplyReport, String> {
+/// `since_cursor` = 与这台对端上次同步到哪儿（[`DataStore::device_cursor`]）。
+/// **冲突检测靠它**：HLC 只给全序，不告诉你两边是不是各改了一次。
+/// 传 `0` = 从头同步，那时一切都算「对端的新东西」，不判冲突。
+pub fn apply_delta(
+    store: &DataStore,
+    dir: &Path,
+    since_cursor: i64,
+) -> Result<ApplyReport, String> {
     if !dir.is_dir() {
         return Err(format!("增量目录不存在: {}", dir.display()));
     }
     let mut rep = ApplyReport::default();
+    // 会被导入的条目的「对端版本戳」。导入完之后要把它们盖回去，见 ③ 之后。
+    let mut keep_stamp: Vec<(String, i64)> = Vec::new();
 
     // ① 先吸收对端时钟（HLC，§7.5 档②），**在任何本地写入之前**。
     //
@@ -193,12 +204,42 @@ pub fn apply_delta(store: &DataStore, dir: &Path) -> Result<ApplyReport, String>
             rep.missing_files += 1;
             continue;
         }
-        // 本地没有这篇 ⇒ 一定要导入（新建）。
-        // 本地有且**不更旧** ⇒ 跳过，本地赢。
-        if let Some(local) = store.note_updated_ms(id) {
-            if local >= incoming {
-                let _ = std::fs::remove_file(&path);
-                rep.skipped_older += 1;
+        // 本地没有这篇 ⇒ 一定要导入（新建），不可能有冲突。
+        let Some(local) = store.note_updated_ms(id) else {
+            keep_stamp.push((id.to_string(), incoming));
+            continue;
+        };
+
+        // 🔴 真冲突的判据：**两边都在上次同步之后改过**。
+        //
+        //   §7.4 原本把真冲突定义成「同毫秒两端不同改（概率极低）」，
+        //   而 §7.5 已经推翻了那个定义。HLC 给了全序，但全序**不告诉你并发**——
+        //   「B 在看到 A 那版之后改的」和「B 独立改的」在时间戳上长得一样。
+        //
+        //   游标是我们手里唯一的「共同祖先」标记：上次同步时两边是一致的，
+        //   所以「本地 > 游标」且「对端 > 游标」就是各改了一次。
+        let both_changed = local > since_cursor && incoming > since_cursor;
+
+        if local >= incoming {
+            // 本地赢。冲突时把**对端那份**留成副本，否则它就没了。
+            if both_changed {
+                let text = std::fs::read_to_string(&path).unwrap_or_default();
+                save_conflict_copy(store, id, &text, incoming, "对端")?;
+                rep.conflicts += 1;
+            }
+            let _ = std::fs::remove_file(&path);
+            rep.skipped_older += 1;
+        } else {
+            // 对端赢 ⇒ 导入之后要把对端的戳盖回来（见下面的说明）。
+            keep_stamp.push((id.to_string(), incoming));
+        }
+        if local < incoming && both_changed {
+            // 对端赢，但本地那份也是真改动 ⇒ 先把**本地这份**留成副本，再让导入覆盖它。
+            let local_note = store.note_get(id)?;
+            if let Some(n) = local_note {
+                let text = crate::data_store::note_to_markdown(&n, false);
+                save_conflict_copy(store, id, &text, local, "本机")?;
+                rep.conflicts += 1;
             }
         }
     }
@@ -208,7 +249,35 @@ pub fn apply_delta(store: &DataStore, dir: &Path) -> Result<ApplyReport, String>
     rep.created = imported.created;
     rep.updated = imported.updated;
 
-    // ④ 墓碑传播：把对端删掉的也在本地软删。
+    // ④ 🔴 **把对端的版本戳盖回去。** 这一步不是优化，是 LWW 的前提。
+    //
+    // `note_import_dir` 走 `note_update` / `note_create`，两者都会用**本机** HLC
+    // 发一个新的 `updated_ms`。于是同一份内容在两台机器上戳不一样——
+    // 而 LWW 是靠比这个戳判胜负的，戳一不一样，比较就没有意义：
+    //
+    // - B 刚导入的那份（没改过）会带着一个可能更大的戳，
+    //   于是 **A 之后的真实编辑反而判输**；
+    // - 「本地 > 游标」也不再表示「本地改过」，冲突检测跟着误判。
+    //
+    // 正解是把 `updated_ms` 当成**内容版本的戳**，不是「本地这行何时被碰过」。
+    // 复制一份内容不产生新版本，所以戳要跟着内容走。
+    //
+    // ❗ 这里是**故意把戳往下调**（可能低于刚才 `MAX(?, updated_ms+1)` 抬上去的值）。
+    //   本机单调性不受影响：下一次真的本地编辑会走 HLC，而 HLC 的下界
+    //   在 ① 已经吸收过对端最大值了。
+    {
+        let conn = store.lock_conn();
+        for (id, ms) in &keep_stamp {
+            if let Err(e) = conn.execute(
+                "UPDATE notes SET updated_ms = ?2 WHERE id = ?1",
+                rusqlite::params![id, ms],
+            ) {
+                log::warn!("[Sync] 盖回版本戳失败 {}: {}", id, e);
+            }
+        }
+    }
+
+    // ⑤ 墓碑传播：把对端删掉的也在本地软删。
     //
     // 🔴 顺序必须在导入**之后**：先删后导的话，同一批里那篇笔记会被
     //    刚导入的文件又建回来——删除等于没发生。
@@ -224,4 +293,50 @@ pub fn apply_delta(store: &DataStore, dir: &Path) -> Result<ApplyReport, String>
         }
     }
     Ok(rep)
+}
+
+/// 把冲突里**输的那一份**存成一篇新笔记。
+///
+/// # 🔴 为什么不按 §7.4 写成 `.sync-conflict.<NodeId>.<ms>.md` 文件
+///
+/// 设计稿那个形式来自「vault 目录 + Syncthing 式冲突文件」的思路。但我们的
+/// **合并目标是数据库**，写文件会引出两个问题：放在哪个目录（同步目录还没定），
+/// 以及**用户可能永远不去看**。
+///
+/// 存成一篇笔记则是：立刻在知识库里看得见、能用现成的编辑器对比合并、
+/// 能被搜索到、还自动进版本历史。**同一个目的（双版本保留 + 人工合并），
+/// 更少的活动部件，而且不需要新界面。**
+///
+/// 带一行 `- [conflict]`（AM-7 的行内类别）——于是
+/// `kb_search(kind="conflict")` 就是那个「冲突列表」，不用另做设置页。
+fn save_conflict_copy(
+    store: &DataStore,
+    origin_id: &str,
+    losing_markdown: &str,
+    losing_ms: i64,
+    losing_side: &str,
+) -> Result<(), String> {
+    let title = store
+        .note_get(origin_id)
+        .ok()
+        .flatten()
+        .map(|n| n.title)
+        .unwrap_or_else(|| "（无标题）".to_string());
+
+    let body = format!(
+        "- [conflict] 这是一份**冲突副本**，来自**{}**那一份（时间戳 {}）。\n\
+         \n\
+         两台机器在上次同步之后都改过《{}》，后写胜保留了另一份。\n\
+         这一份没有丢，但**也没有被自动合并**——请自己比对后处理，处理完删掉本篇。\n\
+         \n\
+         原笔记 id：`{}`\n\
+         \n\
+         ---\n\
+         \n\
+         {}\n",
+        losing_side, losing_ms, title, origin_id, losing_markdown
+    );
+    store
+        .note_create(None, &format!("{}（冲突副本 {}）", title, losing_ms), &body)
+        .map(|_| ())
 }

@@ -26,6 +26,8 @@ pub struct Device {
     pub last_seen: i64,
     /// WAN 的 relay 地址，LAN-only 时为空。
     pub relay_addr: String,
+    /// 与这台对端上次同步到哪儿。见建表注释。
+    pub sync_cursor_ms: i64,
 }
 
 /// 在线状态的两个取值。用常量而不是散在各处的字面量（规则 #11）。
@@ -41,10 +43,12 @@ fn row_to_device(r: &rusqlite::Row) -> rusqlite::Result<Device> {
         conn_state: r.get(4)?,
         last_seen: r.get(5)?,
         relay_addr: r.get(6)?,
+        sync_cursor_ms: r.get(7)?,
     })
 }
 
-const COLS: &str = "node_id, name, paired_at, transport, conn_state, last_seen, relay_addr";
+const COLS: &str =
+    "node_id, name, paired_at, transport, conn_state, last_seen, relay_addr, sync_cursor_ms";
 
 impl DataStore {
     /// 配对（或重新配对同一个 `node_id`）。
@@ -117,6 +121,32 @@ impl DataStore {
         )
         .map(|_| ())
         .map_err(|e| e.to_string())
+    }
+
+    /// 读与这台对端的同步游标。没配对过就是 0（= 从头同步）。
+    pub fn device_cursor(&self, node_id: &str) -> i64 {
+        self.lock_conn()
+            .query_row(
+                "SELECT sync_cursor_ms FROM devices WHERE node_id = ?1",
+                [node_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+    }
+
+    /// 推进同步游标。
+    ///
+    /// ❗ 用 `MAX` 而不是直接赋值：一次同步失败重试时可能传进一个更小的值，
+    /// 而游标**退回去**意味着下一轮把已经同步过的东西当成「两边都改过」——
+    /// 于是凭空造出一批冲突副本。
+    pub fn device_advance_cursor(&self, node_id: &str, ms: i64) -> Result<(), String> {
+        self.lock_conn()
+            .execute(
+                "UPDATE devices SET sync_cursor_ms = MAX(sync_cursor_ms, ?2) WHERE node_id = ?1",
+                rusqlite::params![node_id, ms],
+            )
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
 
     /// 标记离线。

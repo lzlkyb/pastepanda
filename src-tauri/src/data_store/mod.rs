@@ -1210,7 +1210,11 @@ impl DataStore {
                  transport  TEXT NOT NULL DEFAULT '',  -- lan / wan / ''（还没连上过）
                  conn_state TEXT NOT NULL DEFAULT 'offline',
                  last_seen  INTEGER NOT NULL DEFAULT 0, -- 最后一次在线的 epoch 毫秒
-                 relay_addr TEXT NOT NULL DEFAULT ''
+                 relay_addr TEXT NOT NULL DEFAULT '',
+                 -- 与这台对端上次同步到哪儿（我们时钟下的 updated_ms）。
+                 -- 🔴 它不只是「省流量」：冲突检测拿它当**共同祖先的替代**——
+                 --    HLC 只给全序，不告诉你两边是不是各改了一次（见 sync::engine）。
+                 sync_cursor_ms INTEGER NOT NULL DEFAULT 0
              );",
         ) {
             log::error!("[DataStore] 建 devices 表失败: {}", e);
