@@ -72,6 +72,8 @@ pub use mcp_audit::{McpAuditRow, McpClientRow};
 // 与「搜了但没命中」——对模型而言这两种的下一步完全不同。
 // `question_terms` 同理暴露（AM-2）：节级打分必须用与 FTS **同一份**切词，
 // 否则会出现「篇级命中了、节级一节都不命中」这种看上去像 bug 的行为。
+#[cfg(test)]
+pub use note::wall_ms_for_test;
 pub use note::{
     question_terms, question_to_or_expr, Note, NoteGroupCount, NoteUpdateReport, NoteViewOpts,
 };
@@ -258,6 +260,11 @@ pub struct Snippet {
 pub struct DataStore {
     pub(crate) conn: Mutex<Connection>,
     pub(crate) path: String,
+    /// M6 HLC（设计稿 §7.5 档②）。见 [`crate::sync::hlc`]。
+    ///
+    /// 放在这里而不是全局 static：测试里会同时开好几个内存库，
+    /// 共用一个全局时钟会让不相干的测试互相影响时间戳。
+    pub(crate) hlc: crate::sync::hlc::HlcClock,
 }
 
 impl DataStore {
@@ -1563,9 +1570,40 @@ impl DataStore {
             }
         }
 
+        // HLC 的下界（M6，§7.5 档②）。
+        //
+        // 取三者最大：持久化的下界、笔记里最大的 updated_ms、墓碑里最大的 tombstone_ms。
+        // 🔴 后两项让下界**从数据里自愈**——我们发过的任何时间戳都落在某一行里，
+        //    所以就算配置项丢了，重启后也不会退回到一个已经用过的值。
+        // 持久化那一项管的是另一种情况：吸收了远端时钟但本机还没写过东西，
+        // 那个抬升只存在于内存里，不落盘就会在重启后丢掉。
+        let floor = {
+            let cfg: i64 = conn
+                .query_row(
+                    "SELECT CAST(value AS INTEGER) FROM config WHERE key = 'sync_hlc_floor'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            let notes: i64 = conn
+                .query_row("SELECT COALESCE(MAX(updated_ms), 0) FROM notes", [], |r| {
+                    r.get(0)
+                })
+                .unwrap_or(0);
+            let tomb: i64 = conn
+                .query_row(
+                    "SELECT COALESCE(MAX(tombstone_ms), 0) FROM note_tombstones",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            cfg.max(notes).max(tomb)
+        };
+
         Ok(Self {
             conn: Mutex::new(conn),
             path: db_path,
+            hlc: crate::sync::hlc::HlcClock::with_floor(floor),
         })
     }
 

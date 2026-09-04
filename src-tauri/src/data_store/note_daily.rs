@@ -96,7 +96,7 @@ impl DataStore {
                     // M6-P2：今日速记追写也要刷 updated_ms（漏一处，这条在同步里就「没发生过」）。
                     "UPDATE notes SET content = ?2, updated_at = ?3, \
                      updated_ms = MAX(?4, updated_ms + 1) WHERE id = ?1",
-                    rusqlite::params![id, merged, now, super::note::now_ms()],
+                    rusqlite::params![id, merged, now, self.hlc_now()],
                 )
                 .map_err(|e| e.to_string())?;
                 id
@@ -111,7 +111,7 @@ impl DataStore {
                     "INSERT INTO notes (id, history_id, title, content, created_at, updated_at,
                                         source_agent, daily_date, updated_ms)
                      VALUES (?1, NULL, ?2, ?3, ?4, ?4, '', ?2, ?5)",
-                    rusqlite::params![id, date, entry, now, super::note::now_ms()],
+                    rusqlite::params![id, date, entry, now, self.hlc_now()],
                 )
                 .map_err(|e| e.to_string())?;
                 id

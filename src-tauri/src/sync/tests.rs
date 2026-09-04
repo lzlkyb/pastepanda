@@ -341,3 +341,112 @@ fn test_传输截断要报出来而不是当成没变() {
     assert_eq!(rep.created, 0);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ===== HLC 端到端（§7.5 档②）=====
+
+/// 🔴 HLC 存在的全部理由，端到端验一遍。
+///
+/// 场景（设计稿 §7.5 描述的那个静默丢数据）：
+/// 1. A 改了一篇，同步给 B
+/// 2. **B 的钟比 A 慢**，B 在看到 A 那版之后又改了一次
+/// 3. A 再同步过来
+///
+/// 没有 HLC 时：B 那次编辑的 `updated_ms` 因为钟慢而比 A 的小 → 判输 →
+/// **B 的改动被静默丢掉，还不进冲突列表**（不是同一毫秒）。
+///
+/// 有 HLC 时：B 应用 A 那批时先吸收了 A 的时钟，
+/// 于是 B 之后发出的时间戳必定大于 A 那批 → B 赢。
+#[test]
+fn test_hlc_钟慢的一方在看到对端版本之后改的不会判输() {
+    let (a, b) = (store(), store());
+    let n = a.note_create(None, "甲", "A 的版本").unwrap();
+
+    // 把 A 的时间戳人为推到「未来」，模拟 A 的钟比 B 快 2 分钟。
+    //
+    // ❗ 必须在 `MAX_FUTURE_SKEW_MS`（5 分钟）**之内**：超了就该被拒吸收，
+    //   那是另一条用例要测的东西。第一版写了 1 小时，被下面那句守卫断言逮住。
+    let a_future = crate::data_store::wall_ms_for_test() + 120_000;
+    set_updated_ms(&a, &n.id, a_future);
+
+    // B 应用 A 那批 —— 这一步会吸收 A 的时钟
+    let (_, rep) = sync(&a, &b, 0, "hlc1");
+    assert_eq!(rep.created, 1, "{:?}", rep);
+    assert!(
+        rep.clock_too_far_ahead_ms.is_none(),
+        "1 小时在 5 分钟上限之外，本该被拒——这条用例要的是被吸收，改用例设计"
+    );
+
+    // B 在看到 A 那版之后改
+    b.note_update(&n.id, "甲", "B 后改的").unwrap();
+    let b_ms = b.note_updated_ms(&n.id).unwrap();
+    assert!(
+        b_ms > a_future,
+        "B 钟慢，但它是后改的，时间戳必须更大：B={} A={}",
+        b_ms,
+        a_future
+    );
+
+    // A 再把自己那版推过来 —— 必须输
+    let (_, rep) = sync(&a, &b, 0, "hlc2");
+    assert_eq!(rep.skipped_older, 1, "A 的旧版本该被跳过：{:?}", rep);
+    assert_eq!(
+        b.note_get(&n.id).unwrap().unwrap().content,
+        "B 后改的",
+        "🔴 B 的编辑被 A 的旧版本覆盖了 —— 这正是 HLC 要修的那个静默丢数据"
+    );
+}
+
+/// 对端时钟超前太多时**拒绝吸收，并把后果报出来**。
+#[test]
+fn test_hlc_对端时钟超前太多要报出来() {
+    let (a, b) = (store(), store());
+    let n = a.note_create(None, "甲", "正文").unwrap();
+    // A 声称自己在 10 年后
+    set_updated_ms(&a, &n.id, crate::data_store::wall_ms_for_test() + 10 * 365 * 86_400_000);
+
+    let (_, rep) = sync(&a, &b, 0, "hlc3");
+    let ahead = rep
+        .clock_too_far_ahead_ms
+        .expect("超前 10 年必须报出来，不能静默吸收");
+    assert!(ahead > 0, "{:?}", rep);
+}
+
+/// HLC 下界要落盘：**吸收了远端但本机还没写东西**时，重启不能退回去。
+#[test]
+fn test_hlc_下界落盘后重启不回退() {
+    let dir = tmp_dir("hlcfile");
+    let db = dir.join("t.db").to_string_lossy().to_string();
+
+    let future = crate::data_store::wall_ms_for_test() + 60_000; // 未来 1 分钟，在上限内
+    {
+        let s = DataStore::new(&db).unwrap();
+        assert_eq!(
+            s.absorb_remote_clock(future),
+            crate::sync::hlc::Absorb::Ok
+        );
+        // 故意**不写任何笔记** —— 那个抬升只存在于内存里
+    }
+    {
+        let s = DataStore::new(&db).unwrap();
+        let n = s.note_create(None, "甲", "正文").unwrap();
+        let ms = s.note_updated_ms(&n.id).unwrap();
+        assert!(
+            ms > future,
+            "重启后下界退回去了：新笔记 {} 应大于已吸收的 {}",
+            ms,
+            future
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 直接改 `updated_ms`，构造跨机时钟偏斜。
+fn set_updated_ms(store: &DataStore, id: &str, ms: i64) {
+    store
+        .lock_conn()
+        .execute(
+            "UPDATE notes SET updated_ms = ?2 WHERE id = ?1",
+            rusqlite::params![id, ms],
+        )
+        .expect("改 updated_ms 失败");
+}

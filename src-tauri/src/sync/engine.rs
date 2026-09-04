@@ -133,6 +133,12 @@ pub struct ApplyReport {
     pub skipped_older: usize,
     /// 清单里提到、但文件不在的条数。**不静默**（规则 #15.3）。
     pub missing_files: usize,
+    /// 🔴 对端时钟超前太多，本机拒绝吸收时的超前毫秒数。
+    ///
+    /// 非 `None` 意味着一个**必须让人知道**的后果：
+    /// 本机之后赢不过那台机器的笔记（它的时间戳永远更大），
+    /// 用户会看到「自己改的东西总是不生效」而不知道为什么。真正的修法是去修钟。
+    pub clock_too_far_ahead_ms: Option<i64>,
 }
 
 /// 从一个增量目录应用到本地库。
@@ -145,8 +151,34 @@ pub fn apply_delta(store: &DataStore, dir: &Path) -> Result<ApplyReport, String>
     }
     let mut rep = ApplyReport::default();
 
-    // ① 按清单剔掉会输的那些文件，**在导入之前**。
+    // ① 先吸收对端时钟（HLC，§7.5 档②），**在任何本地写入之前**。
+    //
+    // 🔴 顺序很要紧：下面的导入会调 `note_update` → `hlc_now()`。
+    //    先吸收，本机接下来发的时间戳才会高于对端那一批；
+    //    反过来的话，导入产生的时间戳可能还低于刚收到的那些，
+    //    于是本机在自己刚应用的东西之上做的修改，反而判输。
     let manifest = std::fs::read_to_string(dir.join(MANIFEST)).unwrap_or_default();
+    let tomb_raw = std::fs::read_to_string(dir.join(TOMBSTONES)).unwrap_or_default();
+    let remote_max = manifest
+        .lines()
+        .chain(tomb_raw.lines())
+        .filter_map(|l| l.split('\t').nth(1))
+        .filter_map(|v| v.parse::<i64>().ok())
+        .max();
+    if let Some(rm) = remote_max {
+        match store.absorb_remote_clock(rm) {
+            crate::sync::hlc::Absorb::Ok => {}
+            crate::sync::hlc::Absorb::TooFarAhead { ahead_ms } => {
+                log::warn!(
+                    "[Sync] 对端时钟比本机快 {} 毫秒，拒绝吸收。                     本机之后无法覆盖那台机器的笔记——请检查两台机器的系统时间。",
+                    ahead_ms
+                );
+                rep.clock_too_far_ahead_ms = Some(ahead_ms);
+            }
+        }
+    }
+
+    // ② 按清单剔掉会输的那些文件，**在导入之前**。
     for line in manifest.lines().filter(|l| !l.trim().is_empty()) {
         let mut it = line.split('\t');
         let (Some(id), Some(ms), Some(rel)) = (it.next(), it.next(), it.next()) else {
@@ -171,17 +203,16 @@ pub fn apply_delta(store: &DataStore, dir: &Path) -> Result<ApplyReport, String>
         }
     }
 
-    // ② 剩下的交给现成的导入。导入侧代码一行不改。
+    // ③ 剩下的交给现成的导入。导入侧代码一行不改。
     let imported = store.note_import_dir(&dir.to_string_lossy())?;
     rep.created = imported.created;
     rep.updated = imported.updated;
 
-    // ③ 墓碑传播：把对端删掉的也在本地软删。
+    // ④ 墓碑传播：把对端删掉的也在本地软删。
     //
     // 🔴 顺序必须在导入**之后**：先删后导的话，同一批里那篇笔记会被
     //    刚导入的文件又建回来——删除等于没发生。
-    let tomb = std::fs::read_to_string(dir.join(TOMBSTONES)).unwrap_or_default();
-    for line in tomb.lines().filter(|l| !l.trim().is_empty()) {
+    for line in tomb_raw.lines().filter(|l| !l.trim().is_empty()) {
         let mut it = line.split('\t');
         let (Some(id), Some(_ms)) = (it.next(), it.next()) else {
             return Err(format!("墓碑行格式不对：{}", line));

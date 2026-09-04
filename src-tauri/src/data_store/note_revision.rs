@@ -235,7 +235,7 @@ impl DataStore {
                 // 否则对端会认为它旧于自己手里的版本，把用户刚做的恢复覆盖掉。
                 "UPDATE notes SET title = ?2, content = ?3, updated_at = ?4, \
                  updated_ms = MAX(?5, updated_ms + 1) WHERE id = ?1",
-                rusqlite::params![note_id, title, content, note_now(), super::note::now_ms()],
+                rusqlite::params![note_id, title, content, note_now(), self.hlc_now()],
             )
             .map_err(|e| e.to_string())?;
             Self::prune_revisions_on(&tx, &note_id).map_err(|e| e.to_string())?;

@@ -182,8 +182,8 @@ pub(super) fn note_now() -> String {
 ///
 /// | 位置 | 写法 |
 /// |---|---|
-/// | `note_create_on` | INSERT，直接给 `now_ms()` |
-/// | `note_daily` 新建 | INSERT，直接给 `now_ms()` |
+/// | `note_create_on` | INSERT，直接给 `hlc_now()` |
+/// | `note_daily` 新建 | INSERT，直接给 `hlc_now()` |
 /// | `note_update_from` | `MAX(?, updated_ms + 1)` |
 /// | `rewrite_wiki_links_on` | 同上 |
 /// | `note_daily` 追写 | 同上 |
@@ -205,8 +205,55 @@ pub(super) fn note_now() -> String {
 /// 本机时钟回拨、或同一毫秒内改两次时，它保证这一条**严格递增**——
 /// 否则「最新的那次修改」在本机就先输了一次，而 LWW 按它判胜负。
 /// （跨机的时钟偏斜要等 HLC，见 M6 设计稿 §7.5）
-pub(super) fn now_ms() -> i64 {
+/// 给测试用的墙钟。`wall_ms` 是 `pub(super)`，跨模块的同步测试拿不到。
+#[cfg(test)]
+pub fn wall_ms_for_test() -> i64 {
+    wall_ms()
+}
+
+pub(super) fn wall_ms() -> i64 {
     chrono::Local::now().timestamp_millis()
+}
+
+impl DataStore {
+    /// 发一个新的 `updated_ms`。**所有刷 `updated_ms` 的地方都走这里。**
+    ///
+    /// 它不是墙钟：见 [`crate::sync::hlc`]。墙钟回拨、或对端时钟比本机快时，
+    /// 这里给出的值会高于 `wall_ms()`——那是有意的，也是跨机后写胜能判对的前提。
+    pub(super) fn hlc_now(&self) -> i64 {
+        self.hlc.issue(wall_ms())
+    }
+
+    /// 吸收对端见过的最大时间戳，并把新下界落盘。
+    ///
+    /// 吸收成功才落盘：被拒的那次不该留下任何痕迹（见 [`crate::sync::hlc`]）。
+    pub fn absorb_remote_clock(&self, remote_max: i64) -> crate::sync::hlc::Absorb {
+        let r = self.hlc.absorb(remote_max, wall_ms());
+        if r == crate::sync::hlc::Absorb::Ok {
+            if let Err(e) = self.persist_hlc_floor() {
+                // 落不下只影响「重启后下界回退」这一种窄情况，不该让同步失败。
+                log::warn!("[Sync] HLC 下界落盘失败（重启后可能回退）: {}", e);
+            }
+        }
+        r
+    }
+
+    /// 把 HLC 下界落盘。**只在吸收远端时钟之后调**，不在每次写笔记时调。
+    ///
+    /// 每次写都落盘是白花一次 UPDATE：本机自己发的时间戳已经存在笔记行里了，
+    /// 重启时能从数据里自愈（见 `DataStore::new`）。
+    /// 需要落盘的只有「吸收了远端、但本机还没写过东西」那一种。
+    pub(super) fn persist_hlc_floor(&self) -> Result<(), String> {
+        let v = self.hlc.floor().to_string();
+        self.lock_conn()
+            .execute(
+                "INSERT INTO config (key, value) VALUES ('sync_hlc_floor', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = ?1",
+                [&v],
+            )
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
 }
 
 /// 回收站超期条目的筛选条件。`?1` = [`expired_cutoff`] 算出的截止时间。
@@ -761,7 +808,7 @@ impl DataStore {
         conn.execute(
             "INSERT INTO notes (id, history_id, title, content, created_at, updated_at, source_agent, updated_ms)
              VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, ?7)",
-            rusqlite::params![id, history_id, title, content, now, source, now_ms()],
+            rusqlite::params![id, history_id, title, content, now, source, self.hlc_now()],
         )
         .map_err(|e| e.to_string())?;
         Self::sync_note_indexes_on(&conn, &id);
@@ -847,7 +894,7 @@ impl DataStore {
             // 漏一处 = 那次改动在同步里「没发生过」。MAX(...) 是单调保证，见 [`now_ms`]。
             "UPDATE notes SET title = ?2, content = ?3, updated_at = ?4, \
              updated_ms = MAX(?5, updated_ms + 1) WHERE id = ?1",
-            rusqlite::params![id, title, content, note_now(), now_ms()],
+            rusqlite::params![id, title, content, note_now(), self.hlc_now()],
         )
         .map_err(|e| e.to_string())?;
         Self::prune_revisions_on(&tx, id).map_err(|e| e.to_string())?;
@@ -861,7 +908,7 @@ impl DataStore {
             && !old_title.trim().is_empty()
             && !title.trim().is_empty()
         {
-            Self::rewrite_wiki_links_on(&tx, id, &old_title, title, source)
+            Self::rewrite_wiki_links_on(&tx, id, &old_title, title, source, self.hlc_now())
                 .map_err(|e| e.to_string())?
         } else {
             Vec::new()
@@ -915,6 +962,10 @@ impl DataStore {
         old_title: &str,
         new_title: &str,
         source: &str,
+        // 🔴 时间戳由调用方传：本函数没有 `&self`，拿不到 HLC。
+        //    一次改名可能重写多篇，它们共用同一个时间戳——
+        //    每一行仍靠 `MAX(?, updated_ms + 1)` 保证自身严格递增。
+        link_ms: i64,
     ) -> Result<Vec<String>, rusqlite::Error> {
         let from = format!("[[{}]]", old_title);
         let to = format!("[[{}]]", new_title);
@@ -936,7 +987,7 @@ impl DataStore {
                 // M6-P2：改链也是一次真实修改，同步时必须能看到它。
                 "UPDATE notes SET content = REPLACE(content, ?2, ?3), updated_at = ?4, \
                  updated_ms = MAX(?5, updated_ms + 1) WHERE id = ?1",
-                rusqlite::params![id, &from, &to, note_now(), now_ms()],
+                rusqlite::params![id, &from, &to, note_now(), link_ms],
             )?;
             Self::prune_revisions_on(tx, id)?;
         }

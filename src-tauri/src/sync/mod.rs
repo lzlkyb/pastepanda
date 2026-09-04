@@ -14,6 +14,7 @@
 //! 所以这一层现在**不接任何 Tauri 命令**——接了就是没人调的死代码。
 
 pub mod engine;
+pub mod hlc;
 pub mod identity;
 pub mod invite;
 
