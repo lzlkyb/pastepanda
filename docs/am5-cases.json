@@ -1,0 +1,97 @@
+{
+  "_怎么填": [
+    "照着节清单填：src-tauri/target/bench/outline.md（27 篇 / 352 节，2026-09-05 导）",
+    "note / heading 都是【片段】匹配，大小写不敏感，但必须唯一命中——匹配到多篇会直接报错。",
+    "heading 留空 = 引言节（笔记开头到第一个标题之前）。",
+    "expect 可以写多条（一道题允许多个正确节），cross_note 型本来就该写多条。",
+    "填不满 30 题也能跑；把用不上的空壳删掉即可，query 为空的条目会被当成错误。"
+  ],
+
+  "_五种类型怎么出": {
+    "keyword": "直接用笔记里出现过的词。这是基线——BM25 在这一类上就该接近满分，不满说明篇级就漏了。",
+    "intent": "问做法或意图，别照抄原词。例：「实盘通道最后选了哪家，为什么」。",
+    "temporal": "带时间限定的问法。例：「上个月改的那个发版流程」。目前没有时效信号（AM-3 未做），这一类大概率会差——正是要量的那个基线。",
+    "cross_note": "答案跨多篇。例：「安全相关的约束都写在哪些地方」——expect 写多条。",
+    "semantic": "🔴 最关键的一类，也是唯一能证伪 AM-10 向量层的一类。要求：你心里知道答案在哪一节，但【刻意避开那一节里用过的词】。比如笔记里写的是「租户隔离」，你就问「不同客户的数据会不会串」。如果你发现自己写不出来，那正好说明这一类真的难——宁可少几题，也不要写成变相的 keyword。"
+  },
+
+  "_污染型": [
+    "填了 prefix 的用例会自动跑两遍（干净 / 污染），给出掉幅——验收项①。",
+    "下面预填的 prefix 模拟的是「模型把整段系统提示连同问题一起丢进检索」这个真实场景。",
+    "🔴 2026-09-04 合成库冒烟已经量到：节级召回 100% → 0%，且加大 limit 救不回。真库能不能复现，就看这几条。"
+  ],
+
+  "_填完怎么跑": [
+    "cd 项目根，然后（一行）：",
+    "LIBCLANG_PATH=D:/AItool/winapp/pastePanda/src-tauri/.libclang PP_BENCH_DB=D:/AItool/winapp/pastePanda/src-tauri/target/bench/pp-copy.db PP_BENCH_CASES=docs/am5-cases.json PP_BENCH_DATE=2026-09-05 PP_BENCH_OUT=docs/AM-5-召回基准-2026-09-05.md cargo test --manifest-path src-tauri/Cargo.toml --lib bench::tests::bench_real_library -- --ignored --nocapture",
+    "⚠ 库只有 27 篇（<100），报告会自动打警告：只归档、不作决策依据。这是故意的安全阀。"
+  ],
+
+  "labeler": "",
+
+  "cases": [
+    { "id": "kw-1", "kind": "keyword", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "kw-2", "kind": "keyword", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "kw-3", "kind": "keyword", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "kw-4", "kind": "keyword", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "kw-5", "kind": "keyword", "query": "", "expect": [{ "note": "", "heading": "" }] },
+
+    { "id": "int-1", "kind": "intent", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "int-2", "kind": "intent", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "int-3", "kind": "intent", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "int-4", "kind": "intent", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "int-5", "kind": "intent", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "int-6", "kind": "intent", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "int-7", "kind": "intent", "query": "", "expect": [{ "note": "", "heading": "" }] },
+
+    { "id": "time-1", "kind": "temporal", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "time-2", "kind": "temporal", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "time-3", "kind": "temporal", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "time-4", "kind": "temporal", "query": "", "expect": [{ "note": "", "heading": "" }] },
+
+    { "id": "cross-1", "kind": "cross_note", "query": "", "expect": [{ "note": "", "heading": "" }, { "note": "", "heading": "" }] },
+    { "id": "cross-2", "kind": "cross_note", "query": "", "expect": [{ "note": "", "heading": "" }, { "note": "", "heading": "" }] },
+    { "id": "cross-3", "kind": "cross_note", "query": "", "expect": [{ "note": "", "heading": "" }, { "note": "", "heading": "" }] },
+    { "id": "cross-4", "kind": "cross_note", "query": "", "expect": [{ "note": "", "heading": "" }, { "note": "", "heading": "" }] },
+
+    { "id": "sem-1", "kind": "semantic", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "sem-2", "kind": "semantic", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "sem-3", "kind": "semantic", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "sem-4", "kind": "semantic", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "sem-5", "kind": "semantic", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "sem-6", "kind": "semantic", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "sem-7", "kind": "semantic", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "sem-8", "kind": "semantic", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "sem-9", "kind": "semantic", "query": "", "expect": [{ "note": "", "heading": "" }] },
+    { "id": "sem-10", "kind": "semantic", "query": "", "expect": [{ "note": "", "heading": "" }] },
+
+    {
+      "id": "poison-kw",
+      "kind": "keyword",
+      "query": "",
+      "prefix": "你是一个严谨、客观、乐于助人的 AI 助手。请始终使用中文回答。回答时请遵守以下规则：一、不要编造事实，不确定时明确说明不确定；二、引用资料时要标明出处与行号；三、代码示例要可直接运行，不要留占位符；四、回答尽量简洁，不要重复用户的问题；五、涉及安全、隐私、合规的内容要格外谨慎，必要时拒绝回答；六、不要输出任何密钥、令牌或个人信息；七、如果问题超出你的知识范围，请直接说明而不要猜测。现在，请基于用户的知识库回答下面这个问题：",
+      "expect": [{ "note": "", "heading": "" }]
+    },
+    {
+      "id": "poison-int",
+      "kind": "intent",
+      "query": "",
+      "prefix": "你是一个严谨、客观、乐于助人的 AI 助手。请始终使用中文回答。回答时请遵守以下规则：一、不要编造事实，不确定时明确说明不确定；二、引用资料时要标明出处与行号；三、代码示例要可直接运行，不要留占位符；四、回答尽量简洁，不要重复用户的问题；五、涉及安全、隐私、合规的内容要格外谨慎，必要时拒绝回答；六、不要输出任何密钥、令牌或个人信息；七、如果问题超出你的知识范围，请直接说明而不要猜测。现在，请基于用户的知识库回答下面这个问题：",
+      "expect": [{ "note": "", "heading": "" }]
+    },
+    {
+      "id": "poison-sem-1",
+      "kind": "semantic",
+      "query": "",
+      "prefix": "你是一个严谨、客观、乐于助人的 AI 助手。请始终使用中文回答。回答时请遵守以下规则：一、不要编造事实，不确定时明确说明不确定；二、引用资料时要标明出处与行号；三、代码示例要可直接运行，不要留占位符；四、回答尽量简洁，不要重复用户的问题；五、涉及安全、隐私、合规的内容要格外谨慎，必要时拒绝回答；六、不要输出任何密钥、令牌或个人信息；七、如果问题超出你的知识范围，请直接说明而不要猜测。现在，请基于用户的知识库回答下面这个问题：",
+      "expect": [{ "note": "", "heading": "" }]
+    },
+    {
+      "id": "poison-sem-2",
+      "kind": "semantic",
+      "query": "",
+      "prefix": "你是一个严谨、客观、乐于助人的 AI 助手。请始终使用中文回答。回答时请遵守以下规则：一、不要编造事实，不确定时明确说明不确定；二、引用资料时要标明出处与行号；三、代码示例要可直接运行，不要留占位符；四、回答尽量简洁，不要重复用户的问题；五、涉及安全、隐私、合规的内容要格外谨慎，必要时拒绝回答；六、不要输出任何密钥、令牌或个人信息；七、如果问题超出你的知识范围，请直接说明而不要猜测。现在，请基于用户的知识库回答下面这个问题：",
+      "expect": [{ "note": "", "heading": "" }]
+    }
+  ]
+}
