@@ -9,7 +9,7 @@ import styles from "../Settings.module.css";
 const footerRight = { justifyContent: "flex-end" as const };
 
 /**
- * A 路线（生成端）：命名 → 发送 → 等待接入 → 完成。
+ * A 路线（生成端）：命名 → 发送并等待 → 完成。
  *
  * # 🔴 「等待接入」为什么不需要新的后端能力
  *
@@ -18,6 +18,14 @@ const footerRight = { justifyContent: "flex-end" as const };
  *
  * 改造前这里是个**死胡同**：复制完码弹窗停在原地，既没有「完成」按钮，
  * 对方接入后也没任何反馈——用户只能关掉弹窗去盯设备列表。
+ *
+ * # 2026-09-05：把「发送」与「等待」并成一屏
+ *
+ * 原先是三屏，中间隔着一个「已发出，去等待 →」按钮。但那个按钮不产生任何作用：
+ * 用户复制完码去发的时候，本来就已经在等了。现在生成即开始盯，码与等待状态同屏。
+ *
+ * 顺带：生成成功后**自动复制到剪贴板**（失败就静默退回手动按钮，不弹错：
+ * 用户并没主动请求这件事）。界面上必须明说已经复制了，否则用户不知道。
  */
 export function CreateFlow({ defaultName, myFingerprint, devices, onCreateInvite, onClose, toast }: {
   /** 本机计算机名，**可能为空串**（后端取不到时故意留空）。 */
@@ -28,7 +36,7 @@ export function CreateFlow({ defaultName, myFingerprint, devices, onCreateInvite
   onClose: () => void;
   toast: ToastFn;
 }) {
-  const [phase, setPhase] = useState<"name" | "code" | "wait" | "done">("name");
+  const [phase, setPhase] = useState<"name" | "code" | "done">("name");
   const [deviceName, setDeviceName] = useState(defaultName);
   const [code, setCode] = useState("");
   const [expiresAt, setExpiresAt] = useState(0);
@@ -37,14 +45,17 @@ export function CreateFlow({ defaultName, myFingerprint, devices, onCreateInvite
   const [slow, setSlow] = useState(false);
   const [peerName, setPeerName] = useState("");
 
-  /** 进入等待那一刻已配对的设备。之后多出来的那个就是对方。 */
+  /**
+   * 生成邀请码那一刻已配对的设备。之后多出来的那个就是对方。
+   * ❗ 快照必须在**进入码屏那一刻**做（以前是进等待屏时），两屏合并后这两个时机是同一个。
+   */
   const knownRef = useRef<Set<string>>(new Set());
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (copyTimer.current) clearTimeout(copyTimer.current); }, []);
 
   // 轮询里冒出新设备 = 对方接上了
   useEffect(() => {
-    if (phase !== "wait") return;
+    if (phase !== "code") return;
     const fresh = devices.find((d) => !knownRef.current.has(d.node_id));
     if (fresh) {
       setPeerName(fresh.name);
@@ -55,7 +66,7 @@ export function CreateFlow({ defaultName, myFingerprint, devices, onCreateInvite
   // 超过 3 分钟换一段排查提示。
   // ❗ **不转失败态**：用户很可能只是拿着码走开了，判它失败是在说谎。
   useEffect(() => {
-    if (phase !== "wait") return;
+    if (phase !== "code") return;
     setSlow(false);
     const t = setTimeout(() => setSlow(true), 180_000);
     return () => clearTimeout(t);
@@ -69,7 +80,17 @@ export function CreateFlow({ defaultName, myFingerprint, devices, onCreateInvite
       const r = await onCreateInvite(n);
       setCode(r.code);
       setExpiresAt(r.expires_at);
+      // 进码屏即开始盯新设备，所以快照要在这里做。
+      knownRef.current = new Set(devices.map((d) => d.node_id));
       setPhase("code");
+      // 自动复制：用户下一步必定是复制，没必要再点一次。
+      // 失败就静默——按钮还在，用户可以手动点；弹错反而是在为一件他没请求的事报错。
+      try {
+        await navigator.clipboard.writeText(r.code);
+        setCopied(true);
+        if (copyTimer.current) clearTimeout(copyTimer.current);
+        copyTimer.current = setTimeout(() => setCopied(false), 2000);
+      } catch { /* 静默退回手动按钮 */ }
     } catch (e) {
       logger.warn("生成邀请码失败", e);
       toast(`生成邀请码失败：${e instanceof Error ? e.message : String(e)}`, "error");
@@ -88,17 +109,12 @@ export function CreateFlow({ defaultName, myFingerprint, devices, onCreateInvite
     }
   };
 
-  const goWait = () => {
-    knownRef.current = new Set(devices.map((d) => d.node_id));
-    setPhase("wait");
-  };
-
-  const stepIndex = phase === "name" ? 0 : phase === "code" ? 1 : phase === "wait" ? 2 : 3;
+  const stepIndex = phase === "name" ? 0 : phase === "code" ? 1 : 2;
   const daysLeft = Math.max(0, Math.ceil((expiresAt - Date.now()) / 86_400_000));
 
   return (
     <>
-      <StepBar labels={["命名", "发送", "等待接入"]} current={stepIndex} />
+      <StepBar labels={["命名", "发送并等待"]} current={stepIndex} />
 
       {phase === "name" && (
         <>
@@ -106,10 +122,11 @@ export function CreateFlow({ defaultName, myFingerprint, devices, onCreateInvite
             <p className={styles.kbPairText}>另一台设备上会显示这个名字。</p>
             {/* ❗ 输入框打开即有值（本机计算机名），从「必须想一个名字」变成「不满意才改」。
                 取不到时后端返回空串（不兜底「未知设备」），这里自然就是空框 + 按钮禁用。 */}
-            <input className="input" autoFocus placeholder="例如：书房台式机"
+            {/* ❗ 项目里**没有**通用的 `.input` 全局类（各处自己定义，如 mcpPortInput）。
+                这里原先写的 `className="input"` 是个不存在的类，输入框一直是浏览器默认样式。 */}
+            <input className={styles.kbPairInput} autoFocus placeholder="例如：书房台式机"
               value={deviceName} onChange={(e) => setDeviceName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && deviceName.trim()) handleCreate(); }}
-              style={{ width: "100%" }} />
+              onKeyDown={(e) => { if (e.key === "Enter" && deviceName.trim()) handleCreate(); }} />
             <p className={styles.kbPairNote}>
               {defaultName
                 ? "已自动填入本机名称，可以改成你认得出的叫法。"
@@ -117,8 +134,8 @@ export function CreateFlow({ defaultName, myFingerprint, devices, onCreateInvite
             </p>
           </div>
           <div className="dialog-footer">
-            <button className="btn" onClick={onClose}>取消</button>
-            <button className="btn btn-primary" onClick={handleCreate}
+            <button className="btn-secondary" onClick={onClose}>取消</button>
+            <button className="btn-primary" onClick={handleCreate}
               disabled={busy || !deviceName.trim()}>生成邀请码</button>
           </div>
         </>
@@ -132,50 +149,41 @@ export function CreateFlow({ defaultName, myFingerprint, devices, onCreateInvite
             </p>
             <textarea readOnly value={code} rows={4} className={styles.kbPairMono}
               onFocus={(e) => e.currentTarget.select()} />
-            <button className="btn btn-primary" onClick={copy}>
-              {copied ? "✓ 已复制" : "📋 复制邀请码"}
+            {/* 自动复制已经把它放进剪贴板了，按钮只剩「再复制一次」的作用，
+                所以降成普通按钮；主按钮让给底部。
+                自动复制失败时 `copied` 为 false，文案自然退回「复制邀请码」。 */}
+            <button className="btn-secondary" onClick={copy}>
+              {copied ? "✓ 已复制到剪贴板" : "📋 复制邀请码"}
             </button>
             <p className={styles.kbPairNote}>
               ⏳ <b>{fmtExpire(expiresAt)}</b> 前有效（还剩 {daysLeft} 天）
             </p>
-            <div className={styles.kbPairWarn}>
-              🔐 <b>下一步在另一台机器上做</b>：它会显示一串指纹，确认与本机的{" "}
-              <span className={`${styles.kbPairFp} ${styles.kbPairFpSm}`}>{myFingerprint}</span>{" "}
-              一字不差。
-            </div>
-          </div>
-          <div className="dialog-footer" style={footerRight}>
-            <button className="btn btn-primary" onClick={goWait}>已发出，去等待 →</button>
-          </div>
-        </>
-      )}
 
-      {phase === "wait" && (
-        <>
-          <div className="dialog-body">
-            <div className={styles.kbPairPulse}>⏳</div>
-            <p className={`${styles.kbPairText} ${styles.kbPairCenter}`} style={{ fontWeight: 700 }}>
-              等着另一台设备粘贴这串码…
-            </p>
-            <p className={styles.kbPairNote}>
-              在<b>另一台</b> PastePanda 里打开：设置 → 知识库同步 →
-              <b>＋ 添加设备</b> → <b>我已经拿到邀请码了</b>，把码粘进去。
-            </p>
+            {/* 等待状态与码同屏：用户拿着码去发的时候，这边已经在盯了。 */}
             <div className={styles.kbPairWarn}>
-              对方会看到一串指纹，让它和本机的{" "}
-              <span className={`${styles.kbPairFp} ${styles.kbPairFpSm}`}>{myFingerprint}</span>{" "}
-              对上再确认。
+              <div className={styles.kbPairCenter} style={{ fontWeight: 700 }}>
+                ⏳ 等着另一台设备粘贴这串码…
+              </div>
+              <div className={styles.kbPairNote} style={{ marginTop: 6 }}>
+                在<b>另一台</b> PastePanda 里打开：设置 → 知识库同步 →
+                <b>＋ 添加设备</b> → <b>我已经拿到邀请码了</b>，把码粘进去。
+              </div>
+              <div className={styles.kbPairNote} style={{ marginTop: 6 }}>
+                🔐 对方会看到一串指纹，让它和本机的{" "}
+                <span className={`${styles.kbPairFp} ${styles.kbPairFpSm}`}>{myFingerprint}</span>{" "}
+                一字不差再确认。
+              </div>
+              {slow && (
+                <div className={styles.kbPairNote} style={{ marginTop: 6 }}>
+                  还没动静？确认两台机器<b>都开了知识库同步开关</b>，以及那串码是整个粘过去的。
+                </div>
+              )}
             </div>
-            {slow && (
-              <p className={styles.kbPairNote}>
-                还没动静？确认两台机器<b>都开了知识库同步开关</b>，以及那串码是整个粘过去的。
-              </p>
-            )}
           </div>
           <div className="dialog-footer" style={footerRight}>
             {/* 关掉不影响配对（配对是对方发起的），文案要说清楚，
                 否则用户会以为关掉就前功尽弃。 */}
-            <button className="btn" onClick={onClose}>先关掉，稍后再说</button>
+            <button className="btn-secondary" onClick={onClose}>先关掉，稍后再说</button>
           </div>
         </>
       )}
@@ -190,7 +198,7 @@ export function CreateFlow({ defaultName, myFingerprint, devices, onCreateInvite
             <p className={`${styles.kbPairNote} ${styles.kbPairCenter}`}>笔记开始在两台设备之间同步。</p>
           </div>
           <div className="dialog-footer" style={footerRight}>
-            <button className="btn btn-primary" onClick={onClose}>完成</button>
+            <button className="btn-primary" onClick={onClose}>完成</button>
           </div>
         </>
       )}

@@ -15,10 +15,12 @@
 //! | [`sections`] | 解析大纲、按定位符找节、取一节的原文 |
 //! | [`edit`] | 应用一次编辑，返新正文 + 报告 |
 //! | [`rank`] | 给各节打相关性分，找出「最相关的那几节」（AM-2）|
+//! | [`chunks`] | 把节切成可寻址、可重算的切片（O-4）|
 //!
-//! 三者**全部是纯函数**。落库的原子性在 `mcp/source.rs`，不在这里。
+//! 全部**是纯函数**。落库的原子性在 `mcp/source.rs`，不在这里。
 
 pub mod annotate;
+pub mod chunks;
 pub mod edit;
 pub mod links;
 pub mod rank;
@@ -28,6 +30,7 @@ pub mod sections;
 mod tests;
 
 pub use annotate::{kinds_of, parse_observations, Observation};
+pub use chunks::{chunk_note, content_hash, Chunk, CHUNK_OVERLAP, CHUNK_WINDOW};
 pub use edit::{apply, ContentEdit, EditReport, InsertAt};
 pub use links::{parse_links, WikiLink};
 pub use rank::{rank_sections, SectionHit};

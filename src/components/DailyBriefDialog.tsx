@@ -123,21 +123,30 @@ export const DailyBriefDialog = memo(function DailyBriefDialog({
         <FocusTrap>
           <motion.div
             {...panel}
-            className="dialog-panel"
-            style={{ width: 420 }}
+            /* 🔴 外壳类是 `dialog-box` + 宽度修饰类（见 `styles/dialog.css`）。
+               别写成 `dialog-panel`：那个类根本不存在，CSS 不报错，
+               结果是面板没背景/没边框/没圆角/没 flex 列，内容裸摊在遮罩上。
+               宽度也走 `w420` 而不是内联 style：修饰类里连带着 `max-height`。 */
+            className={`dialog-box w420 ${styles.box}`}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="dialog-header">
               <span className={styles.headerIcon}>
-                <CalendarDays size={14} />
+                <CalendarDays size={16} />
               </span>
-              <span style={{ flex: 1, fontWeight: 600 }}>今日整理</span>
-              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{dayTitle(date)}</span>
+              <h2 className="dialog-title" style={{ flex: 1 }}>今日整理</h2>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", marginRight: 4 }}>
+                {dayTitle(date)}
+              </span>
               <button className="dialog-close" onClick={onClose} aria-label="关闭">
-                <X size={15} />
+                <X size={16} />
               </button>
             </div>
 
+            {/* 滚动层：时间线的段数不定（一天 30 段也正常），而 `w420` 带着
+                `max-height: 80vh`——不给滚动的话后面的段会被直接截掉且够不着。
+                周报那边块数固定所以没这一层，本组件不行。 */}
+            <div className={styles.scroll}>
             {rows === null ? (
               <div className={styles.cold}>正在算……</div>
             ) : cold ? (
@@ -238,6 +247,7 @@ export const DailyBriefDialog = memo(function DailyBriefDialog({
                 </div>
               </>
             )}
+            </div>
           </motion.div>
         </FocusTrap>
       </motion.div>

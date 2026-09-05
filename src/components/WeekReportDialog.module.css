@@ -5,6 +5,18 @@
   flex-direction: column;
 }
 
+/* 滚动层（每日整理用，周报不用）。
+   周报的块数固定，每日整理的时间线段数不定，不给滚动会被
+   `.dialog-box.w420` 的 `max-height: 80vh` 截掉。
+   🔴 `min-height: 0` 不能省：flex 子项默认 `min-height: auto`，
+   不写的话它会被内容撑开、overflow 不生效，反而把面板顶破。 */
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 12px;
+}
+
 .headerIcon {
   display: inline-flex;
   align-items: center;

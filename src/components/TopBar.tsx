@@ -1,7 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { isEventRange } from "@/lib/eventLabel";
-import { useEventOptions } from "@/hooks/useEventOptions";
 import { useAppStore, FilterType, TimeFilter, SourceFilter } from "@/stores/appStore";
 import { AiStatusCap } from "@/components/AiStatusCap";
 import { AiStatusDot } from "@/components/AiStatusDot";
@@ -84,8 +82,6 @@ export function TopBar({ onSettings, settingsOpen = false }: {
   const filterType = useAppStore((s) => s.filterType);
   const setFilterType = useAppStore((s) => s.setFilterType);
   const timeFilter = useAppStore((s) => s.timeFilter);
-  // 事件下拉的选项（G3）。懒加载：只在展开时拉。
-  const eventOptions = useEventOptions();
   const setTimeFilter = useAppStore((s) => s.setTimeFilter);
   const sourceFilter = useAppStore((s) => s.sourceFilter);
   const setSourceFilter = useAppStore((s) => s.setSourceFilter);
@@ -252,18 +248,14 @@ export function TopBar({ onSettings, settingsOpen = false }: {
             onChange={(v) => setTimeFilter(v as TimeFilter)}
             auto
           />
-          {/* 事件筛选（G3）。与「时间」「来源」并列而**不塞进时间下拉**：
-              那会让「本周」与「某个事件」互相覆盖的语义变乱（设计稿 §4）。
-              底层仍复用 timeFilter 一个 state：后端只有一个 time_filter 参数，
-              两个 state 传下去还得在某处合并，而那个合并点就是新的分叉源。 */}
-          <FilterDropdown
-            label="事件"
-            value={isEventRange(timeFilter) ? timeFilter : "all"}
-            options={eventOptions.options}
-            onChange={(v) => setTimeFilter(v as TimeFilter)}
-            onOpen={eventOptions.load}
-            auto
-          />
+          {/* 事件筛选（G3）曾在这里，2026-09-05 撤掉。原因不是它不能用，是入口放错了：
+              ① 它与「时间」功能重叠（都在筛时间范围），且**共用同一个 `timeFilter` state**，
+                天然互斥；选中事件后「时间」会退回显示「时间」（`range:` 匹配不上任何时间选项），
+                这是两者耦合的唯一可见线索，很隐晦；
+              ② 真实数据下它有 48 项，在里面滚找「那一阵」未必比直接搜关键词便宜；
+              ③ 540 宽下顶栏已经很挤，它占的那一格是实打实的。
+              🔴 后端的 `range:` 支持（`time_bound`）与分段纯函数（`lib/events.ts`）**都留着**：
+              每日整理在用分段，而 `range:` 是日后把这个能力挪进「今日整理」时候的现成地基。 */}
           <SourceFilterDropdown
             value={sourceFilter}
             onChange={setSourceFilter}

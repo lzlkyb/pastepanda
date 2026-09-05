@@ -6,73 +6,13 @@
   flex-direction: column;
 }
 
-/* ─── Search bar ─── */
-.h2SearchBar {
-  padding: 10px 18px;
-  border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
-}
-.h2SearchWrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-.h2SearchIcon {
-  position: absolute;
-  left: 10px;
-  color: var(--text-muted);
-  pointer-events: none;
-}
-.h2SearchInput {
-  width: 100%;
-  height: 34px;
-  padding: 0 28px 0 32px;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  background: var(--input-bg);
-  color: var(--text-primary);
-  font-size: 12.5px;
-  font-family: inherit;
-  outline: none;
-  transition: border-color 0.2s;
-}
-.h2SearchInput:focus {
-  border-color: var(--accent);
-}
-.h2SearchInput::placeholder {
-  color: var(--text-muted);
-}
-.h2SearchClear {
-  position: absolute;
-  right: 6px;
-  width: 22px;
-  height: 22px;
-  border-radius: 5px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-}
-.h2SearchClear:hover {
-  background: var(--hover);
-}
-
 /* ─── Body ─── */
+/* 帮助页原本自带一套搜索（搜功能/快捷键/问题），2026-09-05 拆掉。
+   它与设置页顶栏那个「搜索设置」同屏，一个页面两个搜索框。
+   随之删掉的还有：.h2Search*、.h2NoResults、.h2Hidden，
+   以及四个子组件上只服务于过滤的 `hidden` prop。 */
 .h2Body {
   padding: 16px 18px;
-}
-.h2NoResults {
-  padding: 28px 18px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-.h2Hidden {
-  display: none !important;
 }
 
 /* ─── Quick Start ─── */

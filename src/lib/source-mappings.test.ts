@@ -75,3 +75,22 @@ describe("resolveSource · 归一化的实际收益", () => {
     expect(a).toBe("Eclipse IDE");
   });
 });
+
+describe("resolveSource · 标题里的「 · 」", () => {
+  it("没有 「 - 」分隔符时，按「 · 」取**第一段**作应用名", () => {
+    // 真库实例（2026-09-05）：这个页面标题里没有 " - "，
+    // 于是一路滑到截断那一步，变成「策手 StratHand · 你的…」。
+    // 它自带的 " · " 会和事件标签的分隔符撞车，
+    // 整条读成「时间 · 策手 StratHand · 你的… · 3 条」四个字段。
+    expect(cleanSourceName("策手 StratHand · 你的 AI 量化副驾")).toBe("策手 StratHand");
+  });
+
+  it("已有 「 - 」时不受影响——它优先，且取的是**最后**一段", () => {
+    // 🔴 两个分隔符方向相反，不能弄反：
+    // Windows 惯例是「文档标题 - 应用名」（应用名在后），
+    // 而观测到的 " · " 是「应用名 · 副标题」（应用名在前）。
+    // GitHub 那类「Page · repo」标题在真库里全都带着
+    // " - 个人 - Microsoft Edge"，已被上一步接走，到不了这里。
+    expect(cleanSourceName("Releases · lzlkyb/strathand - 个人 - Notepad")).toBe("Notepad");
+  });
+});

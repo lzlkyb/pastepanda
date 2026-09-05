@@ -21,7 +21,7 @@ describe("segmentByGap", () => {
   });
 
   it("间隔刚好等于阈值 → **不**断段（边界说死）", () => {
-    // 09:00:00 与 09:20:00 相巔 1200 秒，恰好等于阈值
+    // 09:00:00 与 09:20:00 相隔 1200 秒，恰好等于阈值
     const segs = segmentByGap([it_("09:00:00"), it_("09:20:00")], EVENT_GAP_SECS);
     expect(segs).toHaveLength(1);
     expect(segs[0].items).toHaveLength(2);
@@ -87,6 +87,33 @@ describe("segmentByGap", () => {
       { type: "text", count: 2 },
       { type: "image", count: 1 },
     ]);
+  });
+
+  it("空来源不能赢主来源——只要段里有带名字的就选带名字的", () => {
+    // 真库实情（2026-09-05 最近 500 条）：7 条 `source` 为空，**全是截图**
+    // （截图没有窗口标题）。`2026-08-30 20:55~20:58` 那段 3 条全是图片，
+    // 2 条空 + 1 条有名字，多数决直接投出了空串，
+    // 标签渲染成「8-30 20:55-20:58 ·  · 3 条」——中间空一格。
+    const segs = segmentByGap(
+      [
+        it_("20:55:35", "", "image"),
+        it_("20:56:00", "策手 StratHand", "image"),
+        it_("20:58:12", "", "image"),
+      ],
+      EVENT_GAP_SECS,
+    );
+    expect(segs[0].topSource).toBe("策手 StratHand");
+  });
+
+  it("整段来源全空时，主来源回退成「未知来源」而不是空串", () => {
+    // 标签位必须总有东西，否则分隔符会碍在一起。
+    // 不在 `resolveSource` 里改空串的返值：那个函数有十几处调用方，
+    // 来源芯片靠「空串就不渲染」这个行为，改了会让它们凭空多出一个标签。
+    const segs = segmentByGap(
+      [it_("20:55:35", "", "image"), it_("20:56:00", "", "image")],
+      EVENT_GAP_SECS,
+    );
+    expect(segs[0].topSource).toBe("未知来源");
   });
 
   it("时间串解不出来的条目被丢掉，而不是把整段算崩", () => {

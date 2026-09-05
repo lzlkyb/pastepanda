@@ -114,14 +114,29 @@ pub fn kb_sync_invite_preview(code: String) -> Result<invite::Invite, String> {
 ///
 /// 🔴 配对成功后**必须**立刻给这台设备起一条同步循环，否则要重启应用才生效——
 /// 而用户配完正盯着界面看，什么都不动就等于坏的。
+///
+/// 🔴 **必须拦住「粘自己的邀请码」**（2026-09-05 实际碰到）。不拦的后果不是
+/// 「白干一场」，而是造出一个**永远显示离线、又永远不会好的幽灵设备**：
+/// 自己发的组播公告会回环回来，但 [`presence`] 把它判为 [`presence::Heard::Mine`]
+/// 直接丢弃、不记地址，于是 `last_seen` 恒为 0、`live_peers()` 里永远没它。
+/// 用户看到的就是「配对成功了但它就是不上线」，而任何重试都无法改变。
+///
+/// 顺带还会给自己起一条往自己拨的同步循环，一直跑、一直失败。
 #[tauri::command]
 pub async fn kb_sync_pair(
+    app: AppHandle,
     store: State<'_, DataStore>,
     svc: State<'_, SyncService>,
     code: String,
 ) -> Result<invite::Invite, String> {
     let now = chrono::Utc::now().timestamp_millis();
     let inv = invite::decode(&code, now)?;
+
+    let me = NodeIdentity::load_or_create(&app_dir(&app)?)?;
+    if inv.node_id == me.node_id() {
+        return Err("这是本机自己的邀请码，不能和自己配对。请把它粘到**另一台**设备上。".into());
+    }
+
     store.device_pair(&inv.node_id, &inv.name, "")?;
     svc.add_peer(&inv.node_id).await?;
     Ok(inv)

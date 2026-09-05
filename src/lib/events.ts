@@ -35,6 +35,15 @@ import { cleanSourceName } from "@/lib/utils";
  */
 export const EVENT_GAP_SECS = 1200;
 
+/**
+ * 整段都没来源时的主来源文案（一整段全是截图时会碰上）。
+ *
+ * 不去改 `resolveSource` 对空串的返值：它有十几处调用方，
+ * 来源芯片靠的就是「空串就不渲染」，改了会让它们凭空多出一个标签。
+ * 缺名字只影响标签位，那就只在标签位兜底。
+ */
+export const UNKNOWN_SOURCE = "未知来源";
+
 /** 分段所需的最小条目形状（就是后端只查的那五列）。 */
 export interface SegmentItem {
   id: string;
@@ -109,9 +118,17 @@ export function segmentByGap(items: SegmentItem[], gapSecs: number): Segment[] {
     const srcCount = new Map<string, number>();
     for (const it of g) {
       const name = cleanSourceName(it.source ?? "");
+      // 🔴 空名字不参与投票。截图没有窗口标题，`source` 就是空串
+      // （真库 500 条里 7 条，全是图片）。让它参与的话，一段里图片占多数
+      // 就会把空串选成主来源，标签渲染成「20:55-20:58 ·  · 3 条」中间空一格。
+      // 带名字的哪怕只有一条，也比「未知」有信息。
+      if (!name) continue;
       srcCount.set(name, (srcCount.get(name) ?? 0) + 1);
     }
-    const topSource = [...srcCount.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    const topSource =
+      srcCount.size > 0
+        ? [...srcCount.entries()].sort((a, b) => b[1] - a[1])[0][0]
+        : UNKNOWN_SOURCE;
 
     const typeCount = new Map<string, number>();
     for (const it of g) {

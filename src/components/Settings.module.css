@@ -962,6 +962,10 @@
   border-right: 1px solid var(--border-color);
   background: var(--section-bg);
   overflow-y: auto;
+  /* 同 `.settingsContent`：只写 y 的话 x 会被计算成 auto。
+     菜单项文字已经是 `text-overflow: ellipsis`（见 `.settingsNavLabel`），
+     本就不该横向溢出，这里只是把同类隐患一并堵上。 */
+  overflow-x: hidden;
   padding: 6px 0;
 }
 
@@ -1004,6 +1008,16 @@
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
+  /* 🔴 `overflow-x` 必须显式写。只写 `overflow-y: auto` 不等于「x 不滚」：
+     CSS 规范里一轴为非 visible 时，另一轴的 `visible` 会被**计算成 `auto`**。
+     所以任何一个比容器宽一点点的子元素（哪怕只溢出几个像素）
+     都会让整个设置页冒出一条横向滚动条。
+     2026-09-05 把窗口从 600 调到 540 后，每个分页都出现了这条横条。
+
+     ⚠ 这不是「把内容裁掉了事」：**真需要横向空间的块必须自带滚动容器**，
+     现有的 `.mcpCode`（JSON 配置）与 `.mcpAuditList` 就是这么做的。
+     新增宽内容时照办，别回头把这行去掉。 */
+  overflow-x: hidden;
 }
 
 .settingsNoResult {
@@ -2004,6 +2018,25 @@
   resize: none;
 }
 .kbPairMono.bad { border-color: var(--danger); }
+
+/* 设备名输入框。
+   ❗ 不能写 `className="input"`——项目里根本没有那个全局类，
+   写了等于没样式（一直是浏览器默认输入框，2026-09-05 修）。
+   取值与 .kbPairMono 对齐，只是不用等宽。 */
+.kbPairInput {
+  width: 100%;
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.kbPairInput:focus { border-color: var(--accent); }
+.kbPairInput::placeholder { color: var(--text-muted); }
 
 /* 指纹：等宽 + 拉开字距，人肉逐位核对靠这个 */
 .kbPairFp {

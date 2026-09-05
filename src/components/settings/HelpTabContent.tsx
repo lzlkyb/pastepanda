@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from "react";
-import { X, Search, ChevronRight } from "lucide-react";
+import { useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { AppConfig } from "@/stores/appStore";
 import helpStyles from "../Help.module.css";
 
@@ -13,9 +13,12 @@ function KeyCaps({ value }: { value: string }) {
   });
   return (
     <span className={helpStyles.hKey}>
+      {/* ❗ 这里不能写字面量 `className="plus"`：Help.module.css 是 CSS Module，
+          `.hKey .plus` 两个类名都会被哈希，字面量永远匹配不上，
+          结果是快捷键里那个 `+` 号一直没样式（2026-09-05 修）。 */}
       {parts.map((p, i) => (
         <span key={i}>
-          {i > 0 && <span className="plus">+</span>}
+          {i > 0 && <span className={helpStyles.plus}>+</span>}
           {p}
         </span>
       ))}
@@ -27,8 +30,7 @@ function StaticKey({ children }: { children: string }) {
   return <span className={helpStyles.hKey}>{children}</span>;
 }
 
-function KeyRow({ desc, value, isStatic, hidden }: { desc: string; value: string; isStatic?: boolean; hidden?: boolean }) {
-  if (hidden) return null;
+function KeyRow({ desc, value, isStatic }: { desc: string; value: string; isStatic?: boolean }) {
   return (
     <div className={helpStyles.h2Row}>
       <span className={helpStyles.h2Desc}>{desc}</span>
@@ -37,24 +39,16 @@ function KeyRow({ desc, value, isStatic, hidden }: { desc: string; value: string
   );
 }
 
-function SubTitle({ children, hidden }: { children: string; hidden?: boolean }) {
-  if (hidden) return null;
+function SubTitle({ children }: { children: string }) {
   return <div className={helpStyles.h2SubTitle}>{children}</div>;
-}
-
-function matches(q: string, ...texts: (string | undefined)[]) {
-  if (!q) return false;
-  const lower = q.toLowerCase();
-  return texts.some(t => t?.toLowerCase().includes(lower));
 }
 
 /* ─── 折叠面板 ─── */
 
-function Collapse({ icon, title, defaultOpen, children, hidden }: {
-  icon: string; title: string; defaultOpen?: boolean; children: React.ReactNode; hidden?: boolean;
+function Collapse({ icon, title, defaultOpen, children }: {
+  icon: string; title: string; defaultOpen?: boolean; children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen ?? false);
-  if (hidden) return null;
   return (
     <div className={`${helpStyles.collapse}${open ? ` ${helpStyles.collapseOpen}` : ""}`}>
       <div className={helpStyles.collapseHeader} onClick={() => setOpen(!open)}>
@@ -71,9 +65,8 @@ function Collapse({ icon, title, defaultOpen, children, hidden }: {
 
 /* ─── FAQ 项 ─── */
 
-function FaqItem({ question, answer, hidden }: { question: string; answer: string; hidden?: boolean }) {
+function FaqItem({ question, answer }: { question: string; answer: string }) {
   const [open, setOpen] = useState(false);
-  if (hidden) return null;
   return (
     <div className={`${helpStyles.faqItem}${open ? ` ${helpStyles.faqItemOpen}` : ""}`}>
       <button className={helpStyles.faqQuestion} onClick={() => setOpen(!open)}>
@@ -118,132 +111,74 @@ const FAQ_ITEMS = [
 /* ─── 主组件 ─── */
 
 export function HelpTabContent({ config }: { config: AppConfig; appName: string; appVersion: string }) {
-  const [query, setQuery] = useState("");
-  const searchRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setQuery("");
-    setTimeout(() => searchRef.current?.focus(), 100);
-  }, []);
-
   const hotkeyShow = (config.hotkey as string) || "ctrl+alt+v";
   const hotkeySeq = (config.sequential_hotkey as string) || "ctrl+alt+q";
   const hotkeyStackToggle = (config.stack_toggle_hotkey as string) || "ctrl+alt+k";
   const hotkeyStackPaste = (config.stack_paste_hotkey as string) || "ctrl+alt+p";
   const hotkeyQuickPaste = (config.quick_paste_hotkey as string) || "alt+v";
 
-  const q = query.trim();
-  const searching = q.length > 0;
-
-  // 搜索时过滤功能卡片
-  const visibleFeatures = searching
-    ? FEATURES.filter((f) => matches(q, f.name, f.desc, f.path))
-    : FEATURES;
-
-  const hotkeyMatch = !searching || matches(q, "唤出 隐藏 窗口 热键 全局 粘贴 栈 索引 导航 删除 置顶 撤销 全选 预览 Escape Enter Space Delete", hotkeyShow, hotkeySeq, hotkeyStackToggle, hotkeyStackPaste, hotkeyQuickPaste);
-  const faqMatch = !searching || matches(q, ...FAQ_ITEMS.map((f) => `${f.q} ${f.a}`));
-
-  // 搜索时无任何结果
-  const noResults = searching && visibleFeatures.length === 0 && !hotkeyMatch && !faqMatch;
-
   return (
     <div className={helpStyles.helpRoot}>
-      {/* 搜索栏 */}
-      <div className={helpStyles.h2SearchBar}>
-        <div className={helpStyles.h2SearchWrap}>
-          <Search size={13} className={helpStyles.h2SearchIcon} />
-          <input
-            ref={searchRef}
-            type="text"
-            className={helpStyles.h2SearchInput}
-            placeholder="搜索功能、快捷键、问题…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
-          />
-          {searching && (
-            <button className={helpStyles.h2SearchClear} onClick={() => { setQuery(""); searchRef.current?.focus(); }}>
-              <X size={12} />
-            </button>
-          )}
-        </div>
-      </div>
-
       <div className={helpStyles.h2Body}>
         {/* ── 快速上手 ── */}
-        {!searching && (
-          <div className={helpStyles.quickstart}>
-            {QUICK_STEPS.map((s, i) => (
-              <div key={i} className={helpStyles.qsCard}>
-                <div className={helpStyles.qsNum}>{i + 1}</div>
-                <div className={helpStyles.qsIcon}>{s.icon}</div>
-                <div className={helpStyles.qsTitle}>{s.title}</div>
-                <div className={helpStyles.qsDesc}>{s.desc}</div>
-                {i < QUICK_STEPS.length - 1 && <span className={helpStyles.qsArrow}>→</span>}
-              </div>
-            ))}
-          </div>
-        )}
+        <div className={helpStyles.quickstart}>
+          {QUICK_STEPS.map((s, i) => (
+            <div key={i} className={helpStyles.qsCard}>
+              <div className={helpStyles.qsNum}>{i + 1}</div>
+              <div className={helpStyles.qsIcon}>{s.icon}</div>
+              <div className={helpStyles.qsTitle}>{s.title}</div>
+              <div className={helpStyles.qsDesc}>{s.desc}</div>
+              {i < QUICK_STEPS.length - 1 && <span className={helpStyles.qsArrow}>→</span>}
+            </div>
+          ))}
+        </div>
 
         {/* ── 功能全景 ── */}
-        {visibleFeatures.length > 0 && (
-          <>
-            <div className={helpStyles.sectionLabel}>功能全景</div>
-            <div className={helpStyles.featureGrid}>
-              {visibleFeatures.map((f) => (
-                <div key={f.name} className={helpStyles.featCard}>
-                  <div className={helpStyles.featTop}>
-                    <span className={helpStyles.featIcon} style={{ background: f.bg }}>{f.icon}</span>
-                    <span className={helpStyles.featName}>{f.name}</span>
-                  </div>
-                  <div className={helpStyles.featDesc}>{f.desc}</div>
-                  <span className={helpStyles.featPath}>{f.path}</span>
-                </div>
-              ))}
+        <div className={helpStyles.sectionLabel}>功能全景</div>
+        <div className={helpStyles.featureGrid}>
+          {FEATURES.map((f) => (
+            <div key={f.name} className={helpStyles.featCard}>
+              <div className={helpStyles.featTop}>
+                <span className={helpStyles.featIcon} style={{ background: f.bg }}>{f.icon}</span>
+                <span className={helpStyles.featName}>{f.name}</span>
+              </div>
+              <div className={helpStyles.featDesc}>{f.desc}</div>
+              <span className={helpStyles.featPath}>{f.path}</span>
             </div>
-          </>
-        )}
+          ))}
+        </div>
 
         {/* ── 快捷键速查 ── */}
-        <Collapse icon="⌨️" title="快捷键速查" defaultOpen hidden={!hotkeyMatch}>
-          <SubTitle hidden={searching && !matches(q, "唤出 隐藏 窗口 热键 全局 依次 索引 栈 收集 快捷", hotkeyShow, hotkeySeq, hotkeyStackToggle, hotkeyStackPaste, hotkeyQuickPaste)}>全局热键</SubTitle>
-          <KeyRow desc="唤出 / 隐藏窗口" value={hotkeyShow} hidden={searching && !matches(q, "唤出 隐藏 窗口", hotkeyShow)} />
-          <KeyRow desc="依次粘贴（逐条文本）" value={hotkeySeq} hidden={searching && !matches(q, "依次粘贴 逐条", hotkeySeq)} />
-          <KeyRow desc="索引粘贴第 N 条" value="Ctrl+Alt+1~9" isStatic hidden={searching && !matches(q, "索引粘贴 第N 1~9 ctrl alt")} />
-          <KeyRow desc="收集模式 开/关" value={hotkeyStackToggle} hidden={searching && !matches(q, "收集 栈模式 开关", hotkeyStackToggle)} />
-          <KeyRow desc="粘贴收集内容（栈顶）" value={hotkeyStackPaste} hidden={searching && !matches(q, "栈顶粘贴 收集 粘贴", hotkeyStackPaste)} />
-          <KeyRow desc="快捷粘贴面板（类 Win+V）" value={hotkeyQuickPaste} hidden={searching && !matches(q, "快捷粘贴 面板 winv", hotkeyQuickPaste)} />
+        <Collapse icon="⌨️" title="快捷键速查" defaultOpen>
+          <SubTitle>全局热键</SubTitle>
+          <KeyRow desc="唤出 / 隐藏窗口" value={hotkeyShow} />
+          <KeyRow desc="依次粘贴（逐条文本）" value={hotkeySeq} />
+          <KeyRow desc="索引粘贴第 N 条" value="Ctrl+Alt+1~9" isStatic />
+          <KeyRow desc="收集模式 开/关" value={hotkeyStackToggle} />
+          <KeyRow desc="粘贴收集内容（栈顶）" value={hotkeyStackPaste} />
+          <KeyRow desc="快捷粘贴面板（类 Win+V）" value={hotkeyQuickPaste} />
 
-          <SubTitle hidden={searching && !matches(q, "导航 上下 顶部 底部 粘贴 预览 删除 置顶 撤销 全选", "Enter Space Delete Home End")}>窗口内</SubTitle>
-          <KeyRow desc="上下导航" value="↑ / ↓" isStatic hidden={searching && !matches(q, "导航 上下 ↑ ↓")} />
-          <KeyRow desc="跳到顶部 / 底部" value="Home / End" isStatic hidden={searching && !matches(q, "顶部 底部 Home End")} />
-          <KeyRow desc="粘贴选中记录" value="Enter" isStatic hidden={searching && !matches(q, "粘贴 Enter")} />
-          <KeyRow desc="快速预览" value="Space" isStatic hidden={searching && !matches(q, "预览 Space")} />
-          <KeyRow desc="删除" value="Delete" isStatic hidden={searching && !matches(q, "删除 Delete")} />
-          <KeyRow desc="置顶 / 取消置顶" value="Ctrl+D" hidden={searching && !matches(q, "置顶 Ctrl+D")} />
-          <KeyRow desc="撤销删除" value="Ctrl+Z" hidden={searching && !matches(q, "撤销 Ctrl+Z")} />
-          <KeyRow desc="全选" value="Ctrl+A" hidden={searching && !matches(q, "全选 Ctrl+A")} />
-          <KeyRow desc="多选" value="Ctrl+Click" isStatic hidden={searching && !matches(q, "多选 Ctrl Click")} />
-          <KeyRow desc="范围选择" value="Shift+Click" isStatic hidden={searching && !matches(q, "范围 Shift Click")} />
-          <KeyRow desc="打开设置" value="Ctrl+S" hidden={searching && !matches(q, "设置 Ctrl+S")} />
-          <KeyRow desc="分层关闭 / 隐藏窗口" value="Escape" isStatic hidden={searching && !matches(q, "Escape 关闭 隐藏")} />
+          <SubTitle>窗口内</SubTitle>
+          <KeyRow desc="上下导航" value="↑ / ↓" isStatic />
+          <KeyRow desc="跳到顶部 / 底部" value="Home / End" isStatic />
+          <KeyRow desc="粘贴选中记录" value="Enter" isStatic />
+          <KeyRow desc="快速预览" value="Space" isStatic />
+          <KeyRow desc="删除" value="Delete" isStatic />
+          <KeyRow desc="置顶 / 取消置顶" value="Ctrl+D" />
+          <KeyRow desc="撤销删除" value="Ctrl+Z" />
+          <KeyRow desc="全选" value="Ctrl+A" />
+          <KeyRow desc="多选" value="Ctrl+Click" isStatic />
+          <KeyRow desc="范围选择" value="Shift+Click" isStatic />
+          <KeyRow desc="打开设置" value="Ctrl+S" />
+          <KeyRow desc="分层关闭 / 隐藏窗口" value="Escape" isStatic />
         </Collapse>
 
         {/* ── 常见问题 ── */}
-        <Collapse icon="❓" title="常见问题" hidden={!faqMatch}>
+        <Collapse icon="❓" title="常见问题">
           {FAQ_ITEMS.map((f) => (
-            <FaqItem
-              key={f.q}
-              question={f.q}
-              answer={f.a}
-              hidden={searching && !matches(q, `${f.q} ${f.a}`)}
-            />
+            <FaqItem key={f.q} question={f.q} answer={f.a} />
           ))}
         </Collapse>
-
-        {noResults && (
-          <div className={helpStyles.h2NoResults}>未找到匹配内容</div>
-        )}
       </div>
     </div>
   );

@@ -16,6 +16,7 @@ import { useToast } from "@/components/Toast";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UpdateProvider, useUpdate } from "@/contexts/UpdateContext";
 import { useFirstTimeTip } from "@/hooks/useFirstTimeTip";
+import { useViewTransition } from "@/hooks/useViewTransition";
 import { logger } from "@/lib/logger";
 import { deleteHistory, togglePin, toggleWindow, saveForeground, restoreDeleted, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
 import { resolveSource, getAutoTagIcon, getAutoTagColor } from "@/lib/source-mappings";
@@ -102,6 +103,30 @@ function App() {
   /** v6.4 审查：#10 从变换中心跳转时指定初始 tab（"ai"）。
    *  类型走 `SettingsTabName`（与 SettingsDialog 共用一份，加 tab 时不会漏）。 */
   const [showSettingsTab, setShowSettingsTab] = useState<SettingsTabName | undefined>(undefined);
+
+  /**
+   * 关闭设置页。🔴 **必须顺手清掉 `showSettingsTab`**：它的语义是「这一次打开定位到哪」，
+   * 是一次性意图，不清就变成了永久默认值。
+   *
+   * 这正是 2026-09-05 报上来的那个 bug：知识库「⋯」菜单里的 `openSettingsTab("mcp")`
+   * 跳过一次之后，这个值就永远停在 `"mcp"`，之后从顶栏齿轮 / 托盘 / Ctrl+S /
+   * Ctrl+H（帮助！）进设置，全都被拉到 MCP。
+   *
+   * ❗ 两个关闭入口都得走它（规则 #11.1）：底部按钮/返回的 `onClose`，以及 ESC
+   * 优先级链里那一条。只改 `onClose` 的话，ESC 关闭仍会把残值留下来。
+   */
+  const closeSettings = useCallback(() => {
+    setShowSettings(false);
+    setShowSettingsTab(undefined);
+  }, []);
+
+  /**
+   * 内容区当前该显示哪个视图。设置不是第四个 `appMode`（退出时要回到原来那个模式），
+   * 所以在这里合成一个 key——四个分支从此只看它，不再各自写 `!showSettings && …`。
+   */
+  const targetView = showSettings ? "settings" : appMode;
+  const { shown: shownView, phase: viewPhase } = useViewTransition(targetView);
+  const viewPhaseClass = viewPhase === "out" ? appStyles.viewOut : appStyles.viewIn;
 
   /**
    * A-61 ③：知识模式中栏的「⋯」菜单 → 直接跳到设置页指定 tab（如 MCP）。
@@ -844,7 +869,7 @@ function App() {
       if (d.learningsOpen) { d.closeLearnings(); return; }
       if (d.editorItem) { return; } // 编辑器自带 Esc（含未保存确认），全局不抢；也不隐藏窗口
       if (d.noteDraft) { return; }   // 同上：NoteDialog 自己接 Esc（脏数据要弹确认）。代关就会跳过确认
-      if (showSettings) { setShowSettings(false); return; }
+      if (showSettings) { closeSettings(); return; }
       if (showSequential) { setShowSequential(false); return; }
       if (showSnippets) { setShowSnippets(false); return; }
       if (showExtract) { setShowExtract(false); return; }
@@ -966,8 +991,8 @@ function App() {
       }
     }
     // 状态都走 ref 读，避免频繁重新注册键盘事件；
-    // toast / openFreeDiff 本身都是恒引用的 useCallback，列进依赖不会引起重注册
-  }, [toast, openFreeDiff]);
+    // toast / openFreeDiff / closeSettings 本身都是恒引用的 useCallback，列进依赖不会引起重注册
+  }, [toast, openFreeDiff, closeSettings]);
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
@@ -1059,13 +1084,16 @@ function App() {
             "nokey"（已启用但缺密钥）必须走回建议条，否则会渲染出一排点下去必然失败的 AI 按钮 */}
         {/* 建议条 / AI 快捷区只属于「记录」模式（D15）：两者都是对**当前剪贴板内容**的建议，
             在工具/知识模式下无指向，还白占一行高度 */}
-        {/* 🔴 三个模式视图都要被 showSettings 门控：设置视图是普通流内元素，
-            不门控的话它会接在原内容**下面**而不是盖住它。 */}
-        {!showSettings && appMode === "record" && (aiStatus === "on" && aiAwareActive ? <AiQuickBar /> : <SuggestionBar />)}
+        {/* 🔴 四个视图互斥，全看 `shownView` 一个值。它们都是**普通流内元素**，
+            同时在场会上下叠而不是盖住——这也是切换动画只能做成串行的原因，
+            见 `useViewTransition`。
+            ❗ 头上那一行（建议条 / AI 快捷区）也跟着 `shownView` 走：
+            不跟的话切走时它先硬消失、列表再慢慢淡出，看着像卡一下。 */}
+        {shownView === "record" && (aiStatus === "on" && aiAwareActive ? <AiQuickBar /> : <SuggestionBar />)}
         {/* 主体区按模式分发（D15 三模式框架）。
             三个分支里只有「记录」是零成本的——它就是原来的主体，只是被包起来了。 */}
-        {!showSettings && appMode === "record" && (
-          <div className={appStyles.contentArea}>
+        {shownView === "record" && (
+          <div className={`${appStyles.contentArea} ${viewPhaseClass}`}>
             <Sidebar
               open={sidebarOpen}
               activeGroupId={activeGroupId}
@@ -1085,24 +1113,24 @@ function App() {
             </div>
           </div>
         )}
-        {!showSettings && appMode === "tools" && (
-          <div className={appStyles.contentArea}>
+        {shownView === "tools" && (
+          <div className={`${appStyles.contentArea} ${viewPhaseClass}`}>
             <ToolboxView handlers={toolHandlers} />
           </div>
         )}
-        {!showSettings && appMode === "knowledge" && (
-          <div className={appStyles.contentArea}>
+        {shownView === "knowledge" && (
+          <div className={`${appStyles.contentArea} ${viewPhaseClass}`}>
             <KnowledgeView />
           </div>
         )}
         {/* 设置不再是弹框，而是**盖在内容区上的一个视图**（第 3 步）。
             不做成第四个 appMode：退出时要回到用户原来那个模式，
             做成平级模式就得额外记一份「上一个模式」。 */}
-        {showSettings && (
-          <div className={appStyles.contentArea}>
+        {shownView === "settings" && (
+          <div className={`${appStyles.contentArea} ${viewPhaseClass}`}>
             <Suspense fallback={null}>
               <ErrorBoundary fallback={null} componentName="设置页">
-                <SettingsView open onClose={() => setShowSettings(false)} initialTab={showSettingsTab} />
+                <SettingsView open onClose={closeSettings} initialTab={showSettingsTab} />
               </ErrorBoundary>
             </Suspense>
           </div>

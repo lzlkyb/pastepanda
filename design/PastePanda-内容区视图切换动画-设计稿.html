@@ -1,0 +1,193 @@
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --line: #e3e6ea; --text: #1c1f23; --dim: #6b7280;
+    --accent: #4f7cff; --topbar: #eef1f5; --code: #f3f4f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #16181c; --panel: #1e2126; --line: #2c3037; --text: #e6e8ea; --dim: #9aa3ad;
+      --accent: #6b93ff; --topbar: #212429; --code: #24272c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #16181c; --panel: #1e2126; --line: #2c3037; --text: #e6e8ea; --dim: #9aa3ad;
+    --accent: #6b93ff; --topbar: #212429; --code: #24272c;
+  }
+  body {
+    background: var(--bg); color: var(--text); margin: 0; padding: 28px 20px 64px;
+    font: 14px/1.7 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; }
+  h1 { font-size: 21px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 34px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  .sub { color: var(--dim); margin: 0 0 24px; font-size: 13px; }
+  code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  .note { border-left: 3px solid var(--accent); padding: 8px 12px; margin: 12px 0; background: var(--panel); border-radius: 0 6px 6px 0; }
+  .warn { border-left-color: #e0803a; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; }
+  th { background: var(--code); font-weight: 600; }
+  .scroll { overflow-x: auto; }
+
+  /* ============ 演示区 ============ */
+  .demo {
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    background: var(--panel); margin: 16px 0;
+  }
+  .demoTop {
+    display: flex; gap: 6px; align-items: center; padding: 8px 10px;
+    background: var(--topbar); border-bottom: 1px solid var(--line);
+  }
+  .demoTop button {
+    font: inherit; font-size: 12.5px; padding: 4px 11px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer;
+  }
+  .demoTop button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .demoTop .spacer { flex: 1; }
+  .demoTop .gear { font-size: 12.5px; }
+
+  /* 台：固定高度，避免切换时页面跳 */
+  .stage { position: relative; height: 210px; }
+  .view {
+    position: absolute; inset: 0; padding: 14px; display: flex; gap: 10px;
+  }
+  /* 🔴 这两段就是要落地的动画本体 */
+  .view.in  { animation: viewIn 180ms cubic-bezier(.22,.61,.36,1) both; }
+  .view.out { animation: viewOut 140ms cubic-bezier(.4,0,1,1) both; pointer-events: none; }
+  @keyframes viewIn  { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @keyframes viewOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(4px); } }
+  @media (prefers-reduced-motion: reduce) {
+    .view.in, .view.out { animation-duration: 1ms; }
+  }
+
+  .col { border: 1px solid var(--line); border-radius: 7px; padding: 9px; background: var(--bg); }
+  .colNarrow { width: 108px; flex: none; }
+  .colWide { flex: 1; }
+  .row { height: 11px; border-radius: 3px; background: var(--line); margin-bottom: 7px; }
+  .row.w70 { width: 70%; } .row.w45 { width: 45%; } .row.w85 { width: 85%; }
+  .vlabel { font-size: 11.5px; color: var(--dim); margin-bottom: 8px; letter-spacing: .04em; }
+
+  .timeline { font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: pre; }
+</style>
+
+<div class="wrap">
+
+<h1>内容区视图切换微动画</h1>
+<p class="sub">PastePanda · 设计稿 · 2026-09-05 · 淡入 + 轻微上移，范围 = 记录 / 工具 / 知识 / 设置 四个视图</p>
+
+<h2>点一下看效果</h2>
+<p style="color:var(--dim);font-size:13px;margin:0">下面是真实时长（进 180ms / 退 140ms），不是示意。快速连点可以试试会不会糊。</p>
+
+<div class="demo">
+  <div class="demoTop">
+    <button data-v="record" class="on">记录</button>
+    <button data-v="tools">工具</button>
+    <button data-v="knowledge">知识</button>
+    <span class="spacer"></span>
+    <button data-v="settings" class="gear">⚙ 设置</button>
+  </div>
+  <div class="stage" id="stage"></div>
+</div>
+
+<h2>时序</h2>
+<div class="scroll">
+<div class="timeline">点击
+  │
+  ├─ 0ms ...... 140ms   旧视图淡出（opacity 1→0, translateY 0→4px）
+  │                    pointer-events: none——退场中不接点击
+  │
+  ├─ 140ms             旧视图卸载，新视图挂载
+  │
+  └─ 140 ... 320ms     新视图淡入（opacity 0→1, translateY 8px→0）
+
+总时长 320ms。串行而不是交叉淡入淡出——理由见下。</div>
+</div>
+
+<h2>🔴 为什么是串行，不是交叉淡入淡出</h2>
+<div class="note warn">
+<p style="margin:0 0 8px">四个视图都是<strong>普通流内元素</strong>。同时渲染新旧两个，新的会接在旧的<strong>下面</strong>而不是盖住它——页面会突然变成两倍高然后弹回去。</p>
+<p style="margin:0">这个坑 <code>App.tsx</code> 已经踩过，注释里写着：「三个模式视图都要被 <code>showSettings</code> 门控，不门控的话它会接在原内容<strong>下面</strong>」。</p>
+</div>
+
+<p>两条路：</p>
+<div class="scroll">
+<table>
+<tr><th>做法</th><th>代价</th></tr>
+<tr>
+  <td><strong>串行（本稿采用）</strong><br>先淡出旧的，完全消失后再淡入新的</td>
+  <td>总时长 320ms，略长。<br>但<strong>不碰布局</strong>，不需要给四个视图改定位上下文，回归面最小</td>
+</tr>
+<tr>
+  <td>交叉淡入淡出<br>两个视图同时在场</td>
+  <td>要把 <code>.contentArea</code> 改成 <code>position: relative</code>、退场那个 <code>absolute</code> 脱流。<br>而记录模式里有 Sidebar + 虚拟滚动列表，脱流后它们的高度/滚动位置都要重算，<strong>风险远大于收益</strong></td>
+</tr>
+</table>
+</div>
+
+<h2>实现形状</h2>
+<p>四个分支现在各自判断 <code>!showSettings &amp;&amp; appMode === "x"</code>。改成由一个 hook 统一算「当前该显示哪个」（规则 #11 收口）：</p>
+
+<div class="scroll">
+<table>
+<tr><th>件</th><th>内容</th></tr>
+<tr><td><code>useViewTransition</code><br>（新 hook）</td><td>输入目标视图 key（<code>showSettings ? "settings" : appMode</code>），<br>输出 <code>{ shown, phase }</code>。目标变了先置 <code>phase="out"</code>，140ms 后才换 <code>shown</code> 并置 <code>"in"</code></td></tr>
+<tr><td><code>App.tsx</code></td><td>四个分支的条件从 <code>appMode === "x"</code> 改成 <code>shown === "x"</code>；<br><code>.contentArea</code> 上挂 <code>phase</code> 对应的 class</td></tr>
+<tr><td><code>App.module.css</code></td><td>两段 <code>@keyframes</code> + <code>prefers-reduced-motion</code> 降级</td></tr>
+</table>
+</div>
+
+<h2>三个顺带要定的</h2>
+<div class="scroll">
+<table>
+<tr><th>#</th><th>事</th><th>本稿的做法</th></tr>
+<tr><td>①</td><td><strong>记录模式头上那一行</strong>（建议条 / AI 快捷区）在 <code>.contentArea</code> <strong>外面</strong>，不跟着动</td><td>让它跟 <code>shown</code> 走同一个条件，一起淡——否则切走时它会先硬消失、列表再慢慢淡出，看着像卡一下</td></tr>
+<tr><td>②</td><td>退场那 140ms 里用户又点了别的模式</td><td><code>pointer-events: none</code> 拦住旧视图内部；顶栏不在台内，<strong>仍可点</strong>，<br>hook 里的 timer 会被新目标重置（cleanup 清 timer），不会排队播两遍</td></tr>
+<tr><td>③</td><td>首次启动</td><td><strong>不播动画</strong>。<code>shown</code> 初值直接取目标，第一帧就是最终态；<br>开机就看到一次淡入反而像加载慢</td></tr>
+</table>
+</div>
+
+<h2>无障碍</h2>
+<p><code>prefers-reduced-motion: reduce</code> 时把时长降到 1ms（不是 <code>none</code>）——保留动画结束事件，逻辑不分岔。本稿顶部的演示已含这段，系统开了减少动画就会看到硬切。</p>
+
+</div>
+
+<script>
+  const VIEWS = {
+    record:    { label: "记录模式", cols: ["narrow", "wide"] },
+    tools:     { label: "工具箱",   cols: ["wide"] },
+    knowledge: { label: "知识库",   cols: ["narrow", "wide", "wide"] },
+    settings:  { label: "设置页",   cols: ["narrow", "wide"] },
+  };
+  const OUT_MS = 140;
+  const stage = document.getElementById("stage");
+  let shown = "record";
+  let timer = null;
+
+  function build(key, phase) {
+    const v = VIEWS[key];
+    const el = document.createElement("div");
+    el.className = "view " + phase;
+    el.innerHTML = v.cols.map((c, i) => `
+      <div class="col ${c === "narrow" ? "colNarrow" : "colWide"}">
+        <div class="vlabel">${i === 0 ? v.label : ""}</div>
+        <div class="row w85"></div><div class="row w70"></div>
+        <div class="row"></div><div class="row w45"></div>
+      </div>`).join("");
+    return el;
+  }
+
+  function render(phase) { stage.replaceChildren(build(shown, phase)); }
+  render("in");
+
+  for (const btn of document.querySelectorAll(".demoTop button")) {
+    btn.addEventListener("click", () => {
+      const target = btn.dataset.v;
+      for (const b of document.querySelectorAll(".demoTop button")) b.classList.toggle("on", b === btn);
+      if (target === shown) return;
+      // 新点击重置旧 timer，不排队——对应实现里 effect 的 cleanup
+      if (timer) clearTimeout(timer);
+      render("out");
+      timer = setTimeout(() => { shown = target; render("in"); timer = null; }, OUT_MS);
+    });
+  }
+</script>

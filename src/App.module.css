@@ -18,6 +18,33 @@
   min-height: 0;
 }
 
+/* ===== 视图切换微动画（记录 / 工具 / 知识 / 设置）=====
+   串行：先淡出旧的（140ms），完全消失后再淡入新的（180ms）。
+   为何不做交叉淡入淡出：四个视图都是流内元素，同时在场会上下叠而不是盖住，
+   详见 `useViewTransition` 的模块注释。
+   时长必须与那里的 VIEW_OUT_MS 对得上（140）。 */
+.viewIn {
+  animation: viewIn 180ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.viewOut {
+  animation: viewOut 140ms cubic-bezier(0.4, 0, 1, 1) both;
+  /* 退场中不接点击：那 140ms 里看到的已经是「正在离开的东西」，
+     点它会作用在即将卸载的视图上。顶栏不在这里，仍可点。 */
+  pointer-events: none;
+}
+@keyframes viewIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes viewOut {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateY(4px); }
+}
+/* 降到 1ms 而不是 none：保留动画事件，逻辑不分岔。 */
+@media (prefers-reduced-motion: reduce) {
+  .viewIn, .viewOut { animation-duration: 1ms; }
+}
+
 /* 卡片面板 — flex:1 自动填充剩余空间（窗口宽度 - sidebar 180px） */
 .cardPanel {
   flex: 1;

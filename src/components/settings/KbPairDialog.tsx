@@ -23,9 +23,14 @@ import { PasteFlow, RolePick, looksLikeInvite } from "./KbPairSteps";
  * 但仍要在界面上明说「已从剪贴板读到」，让这次读取是可见的而不是悄悄发生。
  */
 export function KbPairDialog({
-  myFingerprint, defaultName, devices, onClose, onCreateInvite, onPreview, onPair, toast,
+  myFingerprint, myNodeId, defaultName, devices, onClose, onCreateInvite, onPreview, onPair, toast,
 }: {
   myFingerprint: string;
+  /**
+   * 本机完整 `node_id`。用它而不是指纹来认「这是不是我自己」：
+   * 指纹是截短的派生物，拿它判身份理论上会撞。
+   */
+  myNodeId: string;
   /** 本机计算机名，给设备名当默认值。可能为空串。 */
   defaultName: string;
   /** 已配对设备（来自 5s 轮询）。生成端靠它判断对方接没接上。 */
@@ -79,7 +84,7 @@ export function KbPairDialog({
           <CreateFlow defaultName={defaultName} myFingerprint={myFingerprint} devices={devices}
             onCreateInvite={onCreateInvite} onClose={onClose} toast={toast} />
         ) : mode === "paste" ? (
-          <PasteFlow initialCode={clipCode} onPreview={onPreview} onPair={onPair}
+          <PasteFlow initialCode={clipCode} selfNodeId={myNodeId} onPreview={onPreview} onPair={onPair}
             onClose={onClose} toast={toast} />
         ) : (
           <RolePick onPick={setMode} />

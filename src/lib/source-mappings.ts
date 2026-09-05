@@ -324,8 +324,26 @@ export function resolveSource(raw: string): { displayName: string; icon: string;
   // ❗ 分隔符**两边必须有空格**（字面匹配 `" - "` 而不是 `"-"`）：
   // 应用名自己带的连字符是紧贴的（`GLM-5.3-Flash`），不能被当分隔符。
   // 两种分隔符长度都是 3，所以偏移量一致。
+  //
+  // 没有连字符/破折号时再试「 · 」，但**取第一段**——方向与上面相反，不能弄反：
+  // Windows 惯例是「文档标题 - 应用名」（应用名在**后**），
+  // 而观测到的 " · " 是「应用名 · 副标题」（应用名在**前**），
+  // 如「策手 StratHand · 你的 AI 量化副驾」。
+  //
+  // 为什么放在连字符**之后**而不是并列：真库里 GitHub 那类「Page · repo」
+  // 标题全都带着 " - 个人 - Microsoft Edge"，已被上一步接走。只有**既没连字符
+  // 又带 " · "** 的才到这里（341 个不同 source 里只有 1 个）。
+  // 不修的后果不只是名字长：它自带的 " · " 会和事件标签的分隔符撞车，
+  // 整条读成「时间 · 策手 StratHand · 你的… · 3 条」四个字段。
   const dash = Math.max(raw.lastIndexOf(" — "), raw.lastIndexOf(" - "));
-  const appName = dash > 0 ? raw.slice(dash + 3).trim() : raw;
+  let appName: string;
+  if (dash > 0) {
+    appName = raw.slice(dash + 3).trim();
+  } else {
+    // `> 0` 而不是 `>= 0`：标题以 " · " 开头时取第一段会得到空串。
+    const dot = raw.indexOf(" · ");
+    appName = dot > 0 ? raw.slice(0, dot).trim() : raw;
+  }
 
   // 3. 用提取后的应用名模糊匹配 aliases（先走 exactAliases 全等匹配，再走 aliases 子串包含匹配）
   const lower = appName.toLowerCase();

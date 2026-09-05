@@ -93,8 +93,10 @@ export function RolePick({ onPick }: { onPick: (m: "create" | "paste") => void }
  * `initialCode` 非空 = 外壳已从剪贴板预读到一串，进来就自动解析，
  * 用户看到的第一屏直接就是指纹核对。
  */
-export function PasteFlow({ initialCode, onPreview, onPair, onClose, toast }: {
+export function PasteFlow({ initialCode, selfNodeId, onPreview, onPair, onClose, toast }: {
   initialCode: string;
+  /** 本机 `node_id`，用来当场拦住「粘了自己的邀请码」。 */
+  selfNodeId: string;
   onPreview: (code: string) => Promise<KbInvite>;
   onPair: (code: string) => Promise<KbInvite>;
   onClose: () => void;
@@ -112,7 +114,18 @@ export function PasteFlow({ initialCode, onPreview, onPair, onClose, toast }: {
     if (!c) return;
     setBusy(true);
     try {
-      setPeer(await onPreview(c));
+      const inv = await onPreview(c);
+      // 🔴 粘自己的码当场拦，不要让用户走完「核对指纹 → 勾选 → 完成」三步才失败。
+      // 后端那道校验不能去（前端拿不到 identity 时这里会漏），两道都要。
+      // 为何非拦不可：自己的组播公告会被 presence 当成「自己发的」丢掉，
+      // 配上也只会得到一个永远离线、重试也没用的幽灵设备。
+      if (inv.node_id === selfNodeId) {
+        setErr("这是本机自己的邀请码。请把它粘到另一台设备上，和自己配对是没有用的。");
+        setPeer(null);
+        setChecked(false);
+        return;
+      }
+      setPeer(inv);
       setErr("");
       setChecked(false);
     } catch (e) {
@@ -123,7 +136,7 @@ export function PasteFlow({ initialCode, onPreview, onPair, onClose, toast }: {
       setErr(typeof e === "string" ? e : e instanceof Error ? e.message : "邀请码无效");
       setPeer(null);
     } finally { setBusy(false); }
-  }, [onPreview]);
+  }, [onPreview, selfNodeId]);
 
   // 外壳预读到了就直接解析，省掉用户再点一次「下一步」。
   // 两个依赖都是稳定的（initialCode 不变、preview 是 useCallback），只跑一次。
@@ -186,7 +199,7 @@ export function PasteFlow({ initialCode, onPreview, onPair, onClose, toast }: {
                 </div>
               </div>
             )}
-            <button className="btn" onClick={readClip} disabled={busy}>📋 读取剪贴板</button>
+            <button className="btn-secondary" onClick={readClip} disabled={busy}>📋 读取剪贴板</button>
           </>
         )}
 
@@ -212,8 +225,8 @@ export function PasteFlow({ initialCode, onPreview, onPair, onClose, toast }: {
         )}
       </div>
       <div className="dialog-footer">
-        <button className="btn" onClick={onClose}>取消</button>
-        <button className="btn btn-primary" onClick={handlePair} disabled={!peer || !checked || busy}>
+        <button className="btn-secondary" onClick={onClose}>取消</button>
+        <button className="btn-primary" onClick={handlePair} disabled={!peer || !checked || busy}>
           完成配对
         </button>
       </div>

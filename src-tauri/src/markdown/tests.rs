@@ -799,3 +799,161 @@ fn test_目标标题去首尾空白() {
     let ls = parse_links("[[  甲乙  ]]");
     assert_eq!(ls[0].target, "甲乙");
 }
+
+// ===== O-4 切片层 =====
+//
+// 验收口径直接抄 `docs/O-4-切片层定案.md` §7。那五条不是随便列的：
+// 它们共同保证了「重新切一遍不用全量重算向量」，而那正是 O-4 存在的理由。
+
+use super::chunks::{chunk_note, content_hash, CHUNK_OVERLAP, CHUNK_WINDOW};
+
+/// 造一段指定字符数的文本（不带换行，便于算预期长度）。
+fn pad(n: usize) -> String {
+    "填".repeat(n)
+}
+
+#[test]
+fn test_同一篇连算两次完全一致() {
+    // 验收①：确定性。不成立的话，每次启动都会发现「全库切片都变了」→ 全量重算向量。
+    let md = format!("# 甲\n\n{}\n\n## 乙\n\n{}\n", pad(700), pad(300));
+    assert_eq!(chunk_note(&md), chunk_note(&md));
+}
+
+#[test]
+fn test_改一个字只有一个切片的hash变() {
+    // 验收②：增量重算的地基。改字不改长度 → 所有切片边界不变，
+    // 只有含那个字的切片 hash 变。
+    let a = format!("# 甲\n\n{}\n\n{}\n\n{}\n", pad(300), pad(300), pad(300));
+    // 把第二段的首字换掉（同为一个字符，长度不变）
+    let b = a.replacen(&format!("\n\n{}\n\n{}", pad(300), pad(300)),
+                       &format!("\n\n{}\n\n改{}", pad(300), pad(299)), 1);
+    assert_ne!(a, b, "用例自身得真的改动了一个字");
+
+    let (ca, cb) = (chunk_note(&a), chunk_note(&b));
+    assert_eq!(ca.len(), cb.len(), "改一个字不该改变切片数量");
+    let changed: Vec<usize> = ca
+        .iter()
+        .zip(cb.iter())
+        .enumerate()
+        .filter(|(_, (x, y))| x.content_hash != y.content_hash)
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(changed.len(), 1, "只该有一个切片变，实得 {:?}", changed);
+}
+
+#[test]
+fn test_空节不产生切片() {
+    // 验收③ / 规则①：纯标题节占实测 4.0%，给它算向量是白烧且污染召回。
+    let cs = chunk_note("# 只有标题没正文\n\n## 子标题\n\n这里才有内容\n");
+    assert_eq!(cs.len(), 1, "只该有「子标题」那一节出切片");
+    assert_eq!(cs[0].heading, "子标题");
+}
+
+#[test]
+fn test_超长节每片不超窗口且覆盖全文无洞() {
+    // 验收④。真库最长一节 28997 字，这里用 5000 字的单段走硬切分支。
+    //
+    // 🔴 「能拼回原文」在有重叠时不能直接首尾相接地拼，所以验的是**区间覆盖性**：
+    // 首片从 0 起、末片到尾、相邻不断开。这是「无丢失」的严格形式。
+    let body = pad(5000);
+    let md = format!("# 甲\n\n{}\n", body);
+    let cs = chunk_note(&md);
+    assert!(cs.len() > 1, "5000 字必须被切开");
+
+    for c in &cs {
+        assert!(
+            c.text.chars().count() <= CHUNK_WINDOW,
+            "切片 {} 长 {} 超了窗口",
+            c.sub_index,
+            c.text.chars().count()
+        );
+    }
+    assert_eq!(cs[0].char_start, 0, "首片必须从头开始");
+    for w in cs.windows(2) {
+        assert!(
+            w[1].char_start <= w[0].char_end,
+            "两片之间漏了一段：{}..{} 与 {}..",
+            w[0].char_start, w[0].char_end, w[1].char_start
+        );
+    }
+    // 预期长度直接取 `slice()` 的结果，**不自己再推导一遍 body**。
+    // 一开始我用 `md.lines()` 重算，差了 1 个字符：`lines()` 不保留末尾空串，
+    // 而 `slice()` 内部用 `split('\n')`，节末那个空行是算进 body 的。
+    // 重推一遍等于把被测逻辑抄了一遍，抄错了就变成假失败。
+    let body_len = slice(&md, &outline(&md)[0], false).chars().count();
+    assert_eq!(cs.last().unwrap().char_end, body_len, "末片必须盖到节尾");
+}
+
+#[test]
+fn test_硬切时相邻切片真的重叠() {
+    // 重叠是为了把被切断的语义救回来。它若静默失效，现象是「跨边界的句子搜不到」——
+    // 那种错不跑基准根本发现不了，所以在这里钉死。
+    let md = format!("# 甲\n\n{}\n", pad(2000));
+    let cs = chunk_note(&md);
+    let overlap = cs[0].char_end - cs[1].char_start;
+    assert_eq!(overlap, CHUNK_OVERLAP, "相邻两片该重叠 {} 字", CHUNK_OVERLAP);
+}
+
+#[test]
+fn test_每个切片都能反查节标题路径() {
+    // 验收⑤。没这一条的话，检索命中一个切片后无法告诉用户「这段在哪里」。
+    let md = "# 架构\n\n引言\n\n## 数据流\n\n正文内容\n";
+    let cs = chunk_note(md);
+    let last = cs.last().unwrap();
+    assert_eq!(last.heading, "数据流");
+    assert_eq!(last.path, vec!["架构".to_string(), "数据流".to_string()]);
+}
+
+#[test]
+fn test_装得下的节sub_index恒为0() {
+    // 规则②：实测 70% 的节都走这条分支。
+    let md = format!("# 甲\n\n{}\n\n## 乙\n\n{}\n", pad(100), pad(200));
+    let cs = chunk_note(&md);
+    assert_eq!(cs.len(), 2);
+    assert!(cs.iter().all(|c| c.sub_index == 0));
+}
+
+#[test]
+fn test_短节不合并() {
+    // 规则④。合并会让切片跨节，直接破掉可寻址性——
+    // 那时 `section_index` 就不再能唯一标识一个切片从哪来。
+    let md = "# 甲\n\n短\n\n## 乙\n\n也短\n\n## 丙\n\n还是短\n";
+    let cs = chunk_note(md);
+    assert_eq!(cs.len(), 3, "三个短节该出三个切片，不得合成一个");
+    let idx: Vec<usize> = cs.iter().map(|c| c.section_index).collect();
+    assert_eq!(idx.len(), 3);
+    assert!(idx[0] < idx[1] && idx[1] < idx[2], "节序号该各不相同");
+}
+
+#[test]
+fn test上下文卡片留位且不参与hash() {
+    // 定案 §5：本次只留位。它若参与 hash，将来把卡片开关一切换就全库重算向量。
+    let cs = chunk_note("# 甲\n\n内容\n");
+    assert!(cs[0].context_card.is_none(), "本次恒为 None");
+    assert_eq!(cs[0].content_hash, content_hash(&cs[0].text), "hash 只算正文");
+}
+
+#[test]
+fn test_切片id可重算() {
+    // 🔴 `note_chunks` 建表时就用这个形状做复合主键，**不能用自增**。
+    let md = format!("# 甲\n\n{}\n", pad(1200));
+    let cs = chunk_note(&md);
+    assert!(cs.len() >= 3);
+    assert_eq!(cs[0].id("n1"), "n1#1.0");
+    assert_eq!(cs[1].id("n1"), "n1#1.1");
+    // 同一份正文重算，ID 一模一样——这就是「可重算」的意思
+    assert_eq!(
+        chunk_note(&md).iter().map(|c| c.id("n1")).collect::<Vec<_>>(),
+        cs.iter().map(|c| c.id("n1")).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn test_无标题的纯文本也能切() {
+    // 剪贴板文本大多没标题。`outline` 承诺永不返空，切片层得接住这个保证。
+    let cs = chunk_note("就一行话，没有任何标题。");
+    assert_eq!(cs.len(), 1);
+    assert_eq!(cs[0].section_index, 0, "引言节");
+    assert_eq!(cs[0].sub_index, 0);
+    assert!(cs[0].path.is_empty());
+}

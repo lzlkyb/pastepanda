@@ -131,6 +131,7 @@ export function KbSyncPanel({ toast }: {
       {pairOpen && s.identity && (
         <KbPairDialog
           myFingerprint={s.identity.fingerprint}
+          myNodeId={s.identity.node_id}
           defaultName={s.identity.device_name}
           devices={s.devices}
           onClose={() => setPairOpen(false)}
@@ -154,8 +155,8 @@ export function KbSyncPanel({ toast }: {
               </p>
             </div>
             <div className="dialog-footer">
-              <button className="btn" onClick={() => setConfirmForget(null)}>取消</button>
-              <button className="btn btn-danger" disabled={s.busy} onClick={async () => {
+              <button className="btn-secondary" onClick={() => setConfirmForget(null)}>取消</button>
+              <button className="btn-danger" disabled={s.busy} onClick={async () => {
                 await s.forget(confirmForget.node_id);
                 toast(`已忘记「${confirmForget.name}」`, "success");
                 setConfirmForget(null);
