@@ -10,7 +10,7 @@
 //! 抽成 trait 后，生产走 [`AppKbSource`]，测试塞一个手搭的假实现。
 
 use super::gate::WriteSwitches;
-use crate::data_store::{DataStore, Note, NoteFolder, NoteUpdateReport, NoteViewOpts, Tag};
+use crate::data_store::{DataStore, Note, NoteFolder, NoteUpdateReport, NoteViewOpts};
 use crate::markdown::{apply, ContentEdit, EditReport};
 
 /// `kb_list` 的结果。
@@ -141,8 +141,12 @@ pub trait KbSource: Send + Sync + 'static {
     /// 全部文件夹（`kb_folders` 用）。
     fn folders(&self) -> Result<Vec<NoteFolder>, String>;
 
-    /// 全部标签（`kb_folders` 用）。
-    fn tags(&self) -> Result<Vec<Tag>, String>;
+    /// **被笔记用到**的标签名（`kb_folders` 用）。
+    ///
+    /// 🔴 不是全库标签。`tags` 是剪贴板与知识库的共用表，而本工具描述的是
+    /// **知识库**。拿全库的话，模型会看到一堆剪贴板自动标签（`CSS` / `邮箱` ……），
+    /// 拿它们去 `kb_search(tag=)` 只会得到空结果。详见 `DataStore::note_tag_names`。
+    fn note_tag_names(&self) -> Result<Vec<String>, String>;
 
     // ===== 写入（M5）=====
     //
@@ -304,8 +308,8 @@ impl KbSource for AppKbSource {
         self.with_store(|s| s.folder_list())?
     }
 
-    fn tags(&self) -> Result<Vec<Tag>, String> {
-        self.with_store(|s| s.get_tags())?
+    fn note_tag_names(&self) -> Result<Vec<String>, String> {
+        self.with_store(|s| s.note_tag_names())?
     }
 
     fn create(

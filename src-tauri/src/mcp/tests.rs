@@ -195,16 +195,14 @@ impl super::source::KbSource for FakeKb {
         .expect("造假文件夹失败")])
     }
 
-    fn tags(&self) -> Result<Vec<crate::data_store::Tag>, String> {
-        // AM-8：Java / java 是真库里实测到的那一组（2026-09-04，38 个标签里的唯一一组）。
-        let mk = |id: &str, name: &str| {
-            serde_json::from_value::<crate::data_store::Tag>(json!({
-                "id": id, "name": name, "color": "#000",
-                "source": "manual", "created_at": "2026-09-01 10:00:00",
-            }))
-            .expect("造假标签失败")
-        };
-        Ok(vec![mk("t1", "rust"), mk("t2", "Java"), mk("t3", "java")])
+    fn note_tag_names(&self) -> Result<Vec<String>, String> {
+        // AM-8：Java / java 是当初在真库实测到的那一组（2026-09-04）。
+        //
+        // ❗ 2026-09-05 更正：那一组是从**全库 38 个标签**里量出来的，
+        // 而 `Java` / `java` 下一篇笔记都没有——它们是剪贴板的代码类型标签。
+        // 本方法现在的语义是「笔记用到的标签」，这里仍然造这一组，
+        // 为的是钉住「真有重名时 kb_folders 要报」这一支。
+        Ok(vec!["Java".into(), "java".into(), "rust".into()])
     }
 
     fn create(

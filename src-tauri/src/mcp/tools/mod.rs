@@ -707,7 +707,10 @@ async fn call_folders(
         Err(e) => return Ok(error_result(format!("读文件夹失败：{}", e)).into()),
     };
     let kb2 = kb.clone();
-    let tags = match blocking(move || kb2.tags()).await {
+    // 🔴 只取**笔记用到的**标签，不是全库标签（`tags` 与剪贴板共用一张表）。
+    // 改这一行之前真库会向模型报「标签（38 个）：CSS、ENV、Go……」，
+    // 而其中只有 5 个真有笔记在用；模型拿剩下那些去 `kb_search(tag=)` 必然空手而回。
+    let tags = match blocking(move || kb2.note_tag_names()).await {
         Ok(v) => v,
         Err(e) => return Ok(error_result(format!("读标签失败：{}", e)).into()),
     };
@@ -740,20 +743,22 @@ async fn call_folders(
 
     out.push('\n');
     if tags.is_empty() {
-        out.push_str("标签：一个都没有。\n");
+        out.push_str("标签：笔记上还没有任何标签。\n");
     } else {
-        let names: Vec<&str> = tags.iter().map(|t| t.name.as_str()).collect();
         out.push_str(&format!(
             "标签（{} 个）：{}\n",
-            names.len(),
-            names.join("、")
+            tags.len(),
+            tags.join("、")
         ));
         // AM-8：标签近重复。与上面「同名文件夹」是同一类危险——**按名字寻址会撞车**，
         // 只是文件夹撞的是完全同名，标签撞的是大小写/全半角/写岔一个字。
-        // 真库实测就有一组（Java / java，2026-09-04）。
-        let tag_names: Vec<String> = tags.iter().map(|t| t.name.clone()).collect();
+        //
+        // ❗ 下面那句「另一个下面的笔记会被漏掉」只有在**笔记口径**下才是真话。
+        // 2026-09-04 那次实测拿的是全库 38 个标签，量出的那组 Java / java
+        // 下面一篇笔记都没有——也就是说那句警告当时是假的。改成
+        // `note_tag_names` 之后，报出来的重复才真的会影响模型按标签检索。
         out.push_str(&format_dups(
-            &crate::similar::find_dups(&tag_names),
+            &crate::similar::find_dups(&tags),
             "标签",
             "按标签筛时只会命中你写的那一个，另一个下面的笔记会被漏掉",
         ));
