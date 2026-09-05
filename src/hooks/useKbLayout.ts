@@ -17,23 +17,10 @@
  * 用 matchMedia 而不是监 resize：同 `usePrefersReducedMotion` 的现成范式，
  * 且 matchMedia 只在跳档时触发，拖窗口不会每帧 setState。
  */
-import { useEffect, useState } from "react";
+import { useMediaQuery } from "./useMediaQuery";
 
 /** 第三栏的门槛。 */
 const EXTRA_WIDE = "(min-width: 800px)";
-
-function useMql(query: string): boolean {
-  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
-  useEffect(() => {
-    const mql = window.matchMedia(query);
-    const onChange = (e: MediaQueryListEvent) => setMatches(e.matches);
-    mql.addEventListener("change", onChange);
-    // 订阅前窗口可能已变（组件挂载与尺寸变化的竞态），对一次
-    setMatches(mql.matches);
-    return () => mql.removeEventListener("change", onChange);
-  }, [query]);
-  return matches;
-}
 
 export interface KbLayout {
   /** ≥800px：第三栏可用，点笔记不再弹窗 */
@@ -41,6 +28,6 @@ export interface KbLayout {
 }
 
 export function useKbLayout(): KbLayout {
-  const hasDetailPane = useMql(EXTRA_WIDE);
+  const hasDetailPane = useMediaQuery(EXTRA_WIDE);
   return { hasDetailPane };
 }

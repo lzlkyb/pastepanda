@@ -22,6 +22,9 @@ interface ToastContextType {
   toast: (message: string, type?: ToastType, duration?: number, onRetry?: () => void, actionLabel?: string, copyText?: string, action?: string) => void;
 }
 
+/** toast 函数签名。各组件 props 里原本各写各的窄版本，收口到这里（规则 #11）。 */
+export type ToastFn = ToastContextType["toast"];
+
 const ToastContext = createContext<ToastContextType>({ toast: () => {} });
 
 export function useToast() {

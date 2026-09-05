@@ -817,7 +817,8 @@
   border-bottom: 1px solid var(--border-color);  /* 页面分区线（吸顶栏与下方内容的分界），与搜索框本身的边框是两个层级，保留 */
 }
 .settingsSearchIcon {
-  font-size: 13px;
+  display: flex;
+  align-items: center;
   color: var(--text-muted);
   flex-shrink: 0;
 }
@@ -864,6 +865,147 @@
   background: var(--hover);
   color: var(--text-primary);
 }
+/* 搜索命中计数。文本由 useSettingsData 直接写入 DOM（该 span 不渲染子节点，
+   React 不会覆盖），所以这里不能给它加 content 之类的伪元素文本 */
+.settingsSearchCount {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+/* 命中行的浅色底纹：--accent-light 六套主题各自定义过，不会在某套主题下翻车。
+   只在有关键词时加，空搜索时不加（否则整页都是底纹） */
+.settingsHit {
+  background: var(--accent-light);
+}
+/* ══ 设置从弹框改为主窗口视图（第 3 步） ══
+   ≥600px：左导航 + 右内容双栏；<600px：一级导航 ↔ 二级内容下钻。
+   门槛取 600 而不是 800：默认窗口正好 600 宽，取 800 的话绝大多数用户永远看不到双栏。
+   档位判定在 JS（useMediaQuery）而不是纯 CSS：下钻需要两套不同的 DOM。 */
+.settingsView {
+  /* 🔴 flex: 1 + min-width: 0 不能省：父容器 .contentArea 是 flex **行**，
+     不写 flex-grow 的话默认 0、基准 auto，本视图只会占内容宽度，右边留一大块空白。
+     旁边「记录」模式的 .cardPanel 写的就是 flex: 1 + min-width: 0，同一个道理。 */
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--dialog-bg);
+}
+.settingsViewHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+/* 标题不抢 flex：中间那块空间要留给搜索框（.settingsSearchBox 自带 flex: 1）。
+   窗口真窄时让标题先被压，而不是把搜索框挤没。 */
+.settingsViewTitle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+/* lucide 图标默认 vertical-align 会比文字基线高一点，flex 对齐后再微调颜色 */
+.settingsViewTitle svg { color: var(--text-muted); flex-shrink: 0; }
+/* 返回按钮：规格对齐 .sAction（5px 12px / 6px 圆角 / 11px / 600），
+   让它看上去就是软件里那一类按钮，而不是一个裸箭头。 */
+.settingsViewBack {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.settingsViewBack:hover {
+  background: var(--section-bg);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+.settingsViewBack:active { transform: translateY(1px); }
+/* 双栏主体 */
+.settingsViewBody {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+/* 菜单宽度：占 20%，但上下夹住。
+   下限 128px 是量出来的：最长标签「局域网同步」5 个汉字 @12.5px ≈ 62px，
+   加图标 16 + 间距 8 + 左右内边距 28 ≈ 115px——低于这个文字就要被截。
+   上限 220px 是防宽屏：1920px 下 20% = 384px，一栏菜单不需要那么宽。
+   用百分比 + 夹值就不需要断点判断了，文字始终显示。 */
+.settingsNav {
+  flex: 0 0 20%;
+  min-width: 128px;
+  max-width: 220px;
+  border-right: 1px solid var(--border-color);
+  background: var(--section-bg);
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.settingsNavItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.settingsNavItem:hover { background: var(--hover); }
+.settingsNavItemActive {
+  background: var(--accent-light);
+  color: var(--accent-strong, var(--accent));
+  font-weight: 600;
+}
+.settingsNavIcon { font-size: 14px; flex-shrink: 0; }
+/* 标签单行，真装不下时省略号而不是折行——折行会把菜单项高度撞不齐 */
+.settingsNavLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settingsNavSep { height: 1px; background: var(--border-color); margin: 6px 12px; }
+/* 🔴 这里不能写 display: flex + flex-direction: column。
+   AboutTabContent / HelpTabContent 的根用的是全局 .dialog-body，而那个类带着
+   `flex: 1` + `overflow-y: auto`（为弹框内布局设计的）。一旦父容器是 flex 列，
+   它就只分到「剩余高度」并在内部另开一个滚动区——表现为「关于页显示不全」。
+   块级排布下 `flex: 1` 失效，它们按内容高度展开，由本容器统一滚动。 */
+.settingsContent {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .settingsNoResult {
   padding: 32px 20px;
   text-align: center;
@@ -1786,3 +1928,154 @@
   border-color: var(--red, #e5534b);
   color: var(--red, #e5534b);
 }
+
+/* ===== 知识库配对向导（KbPairDialog / KbPairSteps）=====
+   样式收在 CSS 而不是写成 tsx 里的内联对象：向导有 6 屏，
+   内联会把两个组件都顶过 300 行（规则 #7）。 */
+
+/* 步骤条。贴在 dialog-header 下面，不跟着 dialog-body 滚 */
+.kbPairSteps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--section-bg, var(--card-bg));
+}
+.kbPairStep {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.kbPairStepNum {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--border-color);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.kbPairStep.on { color: var(--text-primary); font-weight: 700; }
+.kbPairStep.on .kbPairStepNum { background: var(--accent); color: #fff; }
+.kbPairStep.done { color: var(--text-secondary); }
+.kbPairStep.done .kbPairStepNum { background: var(--green); color: #fff; }
+/* 连接线吃掉剩余宽度，步骤数变化时不用改宽度 */
+.kbPairBar { flex: 1; height: 1px; background: var(--border-color); min-width: 8px; }
+
+/* 第一屏的角色选择卡 */
+.kbPairPick {
+  display: flex;
+  gap: 11px;
+  width: 100%;
+  padding: 13px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.kbPairPick:hover { border-color: var(--accent); background: var(--hover); }
+.kbPairPickEmoji { font-size: 19px; line-height: 1.2; flex-shrink: 0; }
+.kbPairPickTitle { font-size: 12.5px; font-weight: 700; margin-bottom: 2px; }
+.kbPairPickDesc { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+
+/* 邀请码 / 粘贴框。textarea 与只读展示共用一套 */
+.kbPairMono {
+  width: 100%;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  resize: none;
+}
+.kbPairMono.bad { border-color: var(--danger); }
+
+/* 指纹：等宽 + 拉开字距，人肉逐位核对靠这个 */
+.kbPairFp {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 15px;
+  letter-spacing: 2px;
+  font-weight: 700;
+}
+.kbPairFpSm { font-size: 12px; letter-spacing: 1px; }
+
+/* 三种提示框：橙（安全）/ 绿（已读到）/ 红（解析失败）*/
+.kbPairWarn {
+  padding: 11px 12px;
+  border-radius: 9px;
+  background: var(--orange-bg);
+  border: 1px solid var(--orange-border);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.kbPairOk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 11px;
+  border-radius: 8px;
+  background: var(--green-bg);
+  border: 1px solid var(--green-border, var(--border-color));
+  font-size: 11.5px;
+  color: var(--green);
+}
+.kbPairErr { font-size: 11.5px; line-height: 1.6; color: var(--danger); }
+
+/* 对端身份卡（名字 + 指纹）*/
+.kbPairPeer { background: var(--input-bg); border-radius: 10px; padding: 12px; }
+.kbPairPeerName { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+
+/* 等待 / 成功 那个大圆圈 */
+.kbPairPulse {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--accent-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  margin: 0 auto;
+  animation: kbPairBreathe 2s ease-in-out infinite;
+}
+.kbPairPulse.done { background: var(--green-bg); animation: none; }
+@keyframes kbPairBreathe {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.08); opacity: .75; }
+}
+/* 无障碍：系统关了动画就不呼吸（规则 #9）*/
+@media (prefers-reduced-motion: reduce) {
+  .kbPairPulse { animation: none; }
+}
+
+/* 「不是这个？手动粘贴」这类次要入口 */
+.kbPairLink {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.kbPairLink:hover { color: var(--accent); }
+
+.kbPairCenter { text-align: center; }
+.kbPairNote { font-size: 11px; color: var(--text-muted); line-height: 1.7; margin: 0; }
+.kbPairText { font-size: 12px; color: var(--text-secondary); line-height: 1.7; margin: 0; }

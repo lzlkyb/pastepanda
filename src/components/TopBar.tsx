@@ -62,8 +62,17 @@ function getTabStyle(): TabStyle {
   try { return (localStorage.getItem("tabStyle") as TabStyle) || "segmented"; } catch { return "segmented"; }
 }
 
-export function TopBar({ onSettings }: {
+export function TopBar({ onSettings, settingsOpen = false }: {
   onSettings?: () => void;
+  /**
+   * 设置视图是否正占着内容区。为 true 时隐掉**模式切换器与搜索/页签行**：
+   * 那两样都是「记录模式」的东西，在设置里既无指向又让人以为还在记录页。
+   *
+   * 🔴 顶栏外壳（图标/名称/最小化/隐藏）**不能**一并藏：主窗口是
+   * `decorated: false` 的无边框窗，这一条兼着 data-tauri-drag-region 拖动区
+   * 与仅有的两个窗口控制按钮，藏了就拖不动也最小化不了。
+   */
+  settingsOpen?: boolean;
 }) {
   const appMode = useAppStore((s) => s.appMode);
   // 侧栏开合直接读 store，不走 props：按钮要反映的是**当前模式**那一份，
@@ -153,9 +162,11 @@ export function TopBar({ onSettings }: {
           <button
             className={`${styles.sidebarToggle}${sidebarOpen ? ` ${styles.sidebarToggleActive}` : ""}`}
             onClick={onToggleSidebar}
-            disabled={appMode === "tools"}
+            disabled={appMode === "tools" || settingsOpen}
             title={
-              appMode === "tools"
+              settingsOpen
+                ? "设置页没有侧边栏"
+                : appMode === "tools"
                 ? "工具模式没有侧边栏"
                 : appMode === "knowledge"
                   ? sidebarOpen
@@ -185,8 +196,9 @@ export function TopBar({ onSettings }: {
               </span>
             }
           />
-          {/* 三模式切换器（D15）：站在应用名右侧，宽度正好是名位复用省下的那一块 */}
-          <ModeSwitcher />
+          {/* 三模式切换器（D15）：站在应用名右侧，宽度正好是名位复用省下的那一块。
+              设置打开时不渲染：那时内容区是设置，再摆一个「记录|工具|知识」会让人以为还在记录页 */}
+          {!settingsOpen && <ModeSwitcher />}
         </div>
         <div className={styles.headerIcons} data-tauri-drag-region="false">
           <IconBtn tip={`收集模式（栈模式）· ${stackToggleHotkey || "ctrl+alt+k"}${stackMode ? " · 已开启" : ""}`} active={stackMode} hue="amber" onClick={() => toggleStackMode()}>
@@ -224,7 +236,7 @@ export function TopBar({ onSettings }: {
           工具模式：两行都不渲染——工具既不需要按内容类型筛，也没有可搜的东西；
           知识模式：A 阶段也不渲染。设计稿原本写「搜索行换文案」，但 notes 表还没建，
           摆一个搜不到任何东西的搜索框是假 UI。等 §8.1 2️⃣ 建表后再加。 */}
-      {appMode === "record" && (
+      {appMode === "record" && !settingsOpen && (
       <div className={styles.headerControls}>
         {/* 搜索 + 时间/来源筛选同行（方案 A：筛选并入搜索行，省一行垂直空间） */}
         <div className={styles.searchFilterRow} data-tauri-drag-region="false">

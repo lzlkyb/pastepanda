@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>PastePanda 设置改为页面 · 二级下钻设计稿</title>
+<title>PastePanda 设置改为页面 · 左菜单 + 右详情设计稿</title>
 <style>
 :root{
   --app-bg:#F7F7F8; --card-bg:#fff; --section-bg:#F0F4F8; --input-bg:#F1F5F9;
@@ -75,13 +75,19 @@ th{color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-sp
 </style>
 </head>
 <body>
-<h1>设置改为页面 · 二级下钻</h1>
+<h1>设置改为页面 · 左菜单 + 右详情</h1>
 <p class="lead">
-  已定方案 <b>B</b>。真实约束：主窗口 <b>600×700</b>（<code>tauri.conf.json</code>），
-  现在设置是 <b>420px 宽的弹框</b>，而「通用」一个 tab 就装了 <b>7 个分组、约 44 行</b>
-  （<code>GeneralTab.tsx</code> <b>1303 行</b>，已破规则 #7）。
+  真实约束：主窗口 <b>600×700</b>（<code>tauri.conf.json</code>，<code>minWidth: 320</code> 无上限），
+  改造前设置是 <b>420px 宽的弹框</b>，而「通用」一个 tab 就装了 <b>7 个分组、约 38 行</b>
+  （<code>GeneralTab.tsx</code> 曾达 <b>1338 行</b>，已破规则 #7）。
   下面的窗口示意按 <b>1:2 缩放</b>画的，比例是真的。
 </p>
+<div class="bad">
+  🔴 <b>文件名里的「二级下钻」已经不作数了（2026-09-05）。</b>
+  实做出来之后拍板改为<b>恒定左右两栏</b>（左菜单 + 右详情），
+  不再有「一级列表 / 二级内容」两屏。文件名未改是为了不断已有引用；
+  以第二、八节的内容为准。
+</div>
 
 <h2>一、诊断：不是「弹框」的问题，是三件事叠在一起</h2>
 <table>
@@ -96,179 +102,248 @@ th{color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-sp
   而搜索与容器改造互相独立，可以先做、单独验证。
 </div>
 
-<h2>二、窄屏下的两屏（宽屏见第八节）</h2>
+<h2>二、恒定左右：左菜单 + 右详情（2026-09-05 定案）</h2>
+<div class="bad">
+  🔴 <b>本节原来写的「窄屏两屏下钻」已作废。</b>实做出来之后拍板改为
+  <b>始终左右两栏</b>：不再有「一级列表 / 二级内容」两屏，也就没有「我现在在第几级」这回事，
+  <code>Esc</code> 的语义随之单一（直接退出设置）。窄屏怎么办见第八节。
+</div>
+
 <div class="side">
   <div>
-    <h3>一级：分类列表（占满主窗口）</h3>
-    <div class="holder"><div class="scale"><div class="win">
-      <div class="cap"><span>←</span><span>设置</span></div>
-      <div class="body">
-        <div class="srch">🔍 搜索设置项…</div>
-        <div class="grp">常用</div>
-        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#3B82F6,#0078D4)">⚙</span>
-          <span class="itxt"><span class="iname">通用</span><span class="idesc">启动、监听、粘贴行为</span></span><span class="chev">›</span></div>
-        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#8B5CF6,#5856D6)">🎨</span>
-          <span class="itxt"><span class="iname">外观</span><span class="idesc">主题、标签页样式</span></span><span class="chev">›</span></div>
-        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#F97316,#EA580C)">⌨</span>
-          <span class="itxt"><span class="iname">快捷键</span><span class="idesc">7 个全局快捷键</span></span><span class="chev">›</span></div>
-        <div class="grp">同步与外部</div>
-        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#06B6D4,#3B82F6)">🌐</span>
-          <span class="itxt"><span class="iname">局域网同步</span><span class="idesc">剪贴板 · 已开启</span></span><span class="chev">›</span></div>
-        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#8B5CF6,#6366F1)">📚</span>
-          <span class="itxt"><span class="iname">知识库同步</span><span class="idesc">笔记 · 2 台已配对</span></span><span class="chev">›</span></div>
-        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#22C55E,#16A34A)">🧩</span>
-          <span class="itxt"><span class="iname">MCP</span><span class="idesc">让外部 AI 读写笔记</span></span><span class="chev">›</span></div>
-        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#EC4899,#DB2777)">✨</span>
-          <span class="itxt"><span class="iname">AI</span><span class="idesc">模型与密钥</span></span><span class="chev">›</span></div>
-        <div class="grp">数据</div>
-        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#64748B,#475569)">📊</span>
-          <span class="itxt"><span class="iname">数据统计</span><span class="idesc">1,284 条 · 42 MB</span></span><span class="chev">›</span></div>
-        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#0EA5E9,#0284C7)">💾</span>
-          <span class="itxt"><span class="iname">数据管理</span><span class="idesc">导入导出、清理、工作区</span></span><span class="chev">›</span></div>
-        <div class="grp">其它</div>
-        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#A855F7,#9333EA)">📖</span>
-          <span class="itxt"><span class="iname">帮助</span></span><span class="chev">›</span></div>
-        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#6366F1,#4F46E5)">ℹ</span>
-          <span class="itxt"><span class="iname">关于</span><span class="idesc">v7.0.0 · 有新版本</span></span><span class="chev">›</span></div>
+    <div class="holder" style="height:330px"><div class="scale" style="height:165px">
+      <div class="win" style="width:300px;height:165px;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:5px;padding:4px 7px;border-bottom:1px solid var(--border-color);font-size:8.5px">
+          <span>🐼 PastePanda</span>
+          <span style="margin-left:auto">⚙ ─ 👁</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:5px;padding:4px 7px;border-bottom:1px solid var(--border-color);font-size:9px">
+          <span>←</span><b>⚙ 设置</b><span style="margin-left:auto;opacity:.5;font-size:8px">v7.0.0</span>
+        </div>
+        <div style="flex:1;display:flex;min-height:0">
+          <div style="width:86px;border-right:1px solid var(--border-color);background:var(--section-bg);overflow:auto">
+            <div style="padding:4px 7px;font-size:8.5px;background:var(--accent-light);color:var(--accent-strong);font-weight:700">📊 数据统计</div>
+            <div style="padding:4px 7px;font-size:8.5px">🎨 外观</div>
+            <div style="padding:4px 7px;font-size:8.5px">⚙️ 通用</div>
+            <div style="padding:4px 7px;font-size:8.5px">🌐 局域网同步</div>
+            <div style="padding:4px 7px;font-size:8.5px">📚 知识库同步</div>
+            <div style="padding:4px 7px;font-size:8.5px">⌨️ 快捷键</div>
+            <div style="padding:4px 7px;font-size:8.5px">💾 数据管理</div>
+            <div style="height:1px;background:var(--border-color);margin:3px 6px"></div>
+            <div style="padding:4px 7px;font-size:8.5px">✨ AI</div>
+            <div style="padding:4px 7px;font-size:8.5px">🧩 MCP</div>
+            <div style="padding:4px 7px;font-size:8.5px">📖 帮助</div>
+            <div style="padding:4px 7px;font-size:8.5px">ℹ 关于</div>
+          </div>
+          <div style="flex:1;overflow:auto">
+            <div class="srch" style="margin:4px;padding:3px 5px;font-size:8px">🔍 搜索设置项…</div>
+            <div class="grp" style="font-size:8px">数据统计</div>
+            <div style="margin:4px;padding:6px;border:1px solid var(--border-color);border-radius:6px;font-size:8px">
+              📊 剪贴板数据概览
+              <div style="display:flex;gap:4px;margin-top:4px">
+                <div style="flex:1;text-align:center"><b style="font-size:10px">1,284</b><br><span style="opacity:.6">总记录</span></div>
+                <div style="flex:1;text-align:center"><b style="font-size:10px">36</b><br><span style="opacity:.6">⭐ 收藏</span></div>
+                <div style="flex:1;text-align:center"><b style="font-size:10px">57</b><br><span style="opacity:.6">今日</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-    </div></div></div>
-    <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px">
-      11 条一屏放得下，<b>一级页不用滚</b>。副标题给的是「当前值」而不是解释——
-      用户扫一眼就知道要不要点进去。
-    </div>
+    </div></div>
+    <p style="font-size:11.5px;color:var(--text-secondary);margin:6px 2px 0">
+      顶栏外壳保留（无边框窗口靠它拖动与最小化），但「记录|工具|知识」切换器与搜索/页签行已隐掉。
+    </p>
   </div>
 
   <div>
-    <h3>二级：只看这一组</h3>
-    <div class="holder"><div class="scale"><div class="win">
-      <div class="back"><span>←</span><span>快捷键</span></div>
-      <div class="body">
-        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#3B82F6,#0078D4)">⌨</span>
-          <span class="itxt"><span class="iname">唤出窗口</span><span class="idesc">在任何位置唤出</span></span>
-          <code style="font-size:9px">Ctrl+`</code></div>
-        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#8B5CF6,#5856D6)">📋</span>
-          <span class="itxt"><span class="iname">依次粘贴</span><span class="idesc">按顺序逐条粘贴</span></span>
-          <code style="font-size:9px">Ctrl+Alt+Q</code></div>
-        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#F97316,#EA580C)">📚</span>
-          <span class="itxt"><span class="iname">收集模式开关</span><span class="idesc">进入/退出栈模式</span></span>
-          <code style="font-size:9px">未设置</code></div>
-        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#22C55E,#16A34A)">⚡</span>
-          <span class="itxt"><span class="iname">快速粘贴</span></span>
-          <code style="font-size:9px">Ctrl+Shift+V</code></div>
-        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#EF4444,#DC2626)">📷</span>
-          <span class="itxt"><span class="iname">截图</span></span>
-          <code style="font-size:9px">Ctrl+Q</code></div>
-        <div class="item"><span class="ico" style="background:linear-gradient(135deg,#14B8A6,#0D9488)">📝</span>
-          <span class="itxt"><span class="iname">今日速记</span></span>
-          <code style="font-size:9px">Ctrl+Alt+D</code></div>
-      </div>
-    </div></div></div>
-    <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px">
-      每屏一个分组，<b>基本不用滚</b>。左上角「←」回一级。
+    <h3>左边菜单：11 项，分两组</h3>
+    <table>
+      <tr><th>组</th><th>项</th><th>来源</th></tr>
+      <tr><td>设置分区</td>
+          <td>数据统计 · 外观 · 通用 · 局域网同步 · 知识库同步 · 快捷键 · 数据管理</td>
+          <td>原「通用」页签里的 7 个分区，<b>顺序不变</b></td></tr>
+      <tr><td>独立页</td><td>AI · MCP · 帮助 · 关于</td><td>原 4 个顶层 tab</td></tr>
+    </table>
+    <div class="note">
+      一行设置项都不挪（沿用「分组照旧」的决定）。重新分组仍然是独立的后续步骤。
+    </div>
+
+    <h3>右边详情</h3>
+    <p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 6px">
+      只渲染选中的那一项。分区组件都返回片段，所以容器 children 仍是一层扁平的行。
+    </p>
+    <div class="bad">
+      🔴 <b>默认必须选中一项。</b>实测：选中项初值为 <code>null</code> 时右栏<b>整块空白</b>，
+      看上去像 bug，实际是「还没点过菜单」。默认落在第一项「数据统计」。
+    </div>
+    <div class="warn">
+      ⚠ <b>搜索时右栏要渲染全部分区。</b>搜索是对<b>已挂载的 DOM</b> 做原地过滤的，
+      只挂选中的那一个分区就搜不到别的。已实现，不用重做。
+    </div>
+    <div class="note">
+      搜索框暂定留在<b>右侧详情顶部</b>（零成本）。移到左侧菜单顶部视觉上更对，
+      但那要把 <code>settingsFilter</code> 从 <code>GeneralTab</code> 提升到 <code>SettingsView</code>，
+      等于把 <code>useSettingsData</code> 拆成「搜索」与「分区数据」两块——<b>待确认再动</b>。
     </div>
   </div>
 </div>
+<h2>三、搜索：收益最大的那一件（2026-09-05 修正）</h2>
+<div class="bad">
+  🔴 <b>本节最初写错了一个前提：设置搜索不是要新加。</b>它已经在
+  <code>GeneralTab.tsx</code> 里跑了很久：吸顶搜索框 + 一个 <code>useLayoutEffect</code>
+  遍历容器 <code>children</code>，逐行 <code>textContent.includes(kw)</code> 决定
+  <code>display</code>，再第二遍把「整组无命中」的分区标题一起隐藏。
+  所以第 2 步是<b>改造</b>，不是新建。
+</div>
+<p class="lead">读完真实实现后量出来的 4 个缺陷（都不是猜的）：</p>
+<table>
+<tr><th>#</th><th>缺陷</th><th>证据</th></tr>
+<tr><td>D1</td><td>搜「关」命中<b>所有关着的开关</b>；搜「开」同理</td>
+    <td><code>ToggleRow.tsx:25</code> 把 <code>开</code>/<code>关</code> 渲染成行内文本，进了 <code>textContent</code></td></tr>
+<tr><td>D2</td><td><b>没有同义词</b>：搜「开机启动」「深色」「热键」全是 0 结果</td>
+    <td>只做字面 <code>includes</code></td></tr>
+<tr><td>D3</td><td>不知道<b>匹配了几条</b>、命中在哪一行</td><td>无计数、无高亮</td></tr>
+<tr><td>D4</td><td>搜<b>分区名</b>（外观 / 数据管理）基本无结果</td>
+    <td>第一遍 <code>if (el.classList.contains(styles.sSection)) continue;</code> 直接跳过分区标题</td></tr>
+</table>
 
-<h2>三、搜索：收益最大的那一件</h2>
+<h3>同义词怎么放：三个方案的取舍</h3>
+<div class="bad">
+  🔴 <b>「全局查询扩展」已被否决（曾一度推荐，错了）。</b>
+  即把同义词当成「查询词 → 其它词」的展开表，不挂在行上。
+  <b>实测并不可行</b>：「快捷键」三个字在分区标题之外出现 <b>17 次</b>（散在各种
+  <code>desc</code> 里），所以一条「热键 → 快捷键」就会炸出十几行不相干的。
+  <b>别名必须挂在具体某一行上。</b>
+</div>
+<table>
+<tr><th></th><th>全局查询扩展</th><th>完整手写索引<br>（每行加 <code>data-sid</code>）</th><th><b>标签为键的索引</b> ← 采用</th></tr>
+<tr><td>别名精确度</td><td>❌ 串味（实测 17 次）</td><td>✅</td><td>✅ 挂在具体行上</td></tr>
+<tr><td>要给 38 行加标注</td><td>不用</td><td>🔴 <b>要</b>，38 处改动</td><td>✅ 不用</td></tr>
+<tr><td>新增行忘了维护</td><td>—</td><td>🔴 <b>静默搜不到</b></td><td>✅ 仍可按自身标签/描述搜到，只是没别名（降级，不失效）</td></tr>
+<tr><td>行改名后别名失效</td><td>—</td><td>静默</td><td>✅ dev 下校验别名表 key 能否对上真实行，对不上就 <code>console.warn</code></td></tr>
+<tr><td>支撑第 3 步跨分区检索</td><td>❌</td><td>✅</td><td>✅ 别名与分区归属都是数据</td></tr>
+</table>
+<div class="warn">
+  ⚠ <b>第 3 步会让纯 DOM 遍历失效，这是手写索引真正的理由。</b>
+  窄屏是「一级分类列表 → 二级只看这一组」，用户在一级页输关键词时，
+  <b>别的分区的行根本没挂载</b>，没有 DOM 可遍历。本节最初那张图（结果带面包屑
+  跨分区列出）本来就是按索引画的——那不是过时前提，而是为第 3 步准备的。
+</div>
+<div class="note">
+  ✅ <b>原地过滤这个形态白捎了两条要求。</b>本节最初列的「开关类命中要直接可拨」
+  和「非开关类点进去要滚到并高亮」，在弹框形态下<b>自动成立</b>——用户没离开页面，
+  看到的就是真实那一行，拨的就是真开关。面包屑也已经有：分区标题会跟着命中行留在上面。
+  所以第 2 步<b>不做</b>单独的搜索结果列表，只把匹配依据从 <code>textContent</code>
+  换成「标签 + 描述 + 别名表」。
+</div>
+
 <div class="side">
   <div>
     <div class="holder" style="height:300px"><div class="scale" style="height:150px"><div class="win" style="height:150px">
       <div class="back"><span>←</span><span>设置</span></div>
       <div class="body">
-        <div class="srch" style="color:var(--text-primary)">🔍 密钥</div>
-        <div class="item" style="padding:6px 11px">
-          <span class="itxt"><span class="iname hit">屏蔽<b>密钥</b>类内容</span>
-          <span class="idesc">通用 › 隐私</span></span><span class="tg"><i></i></span></div>
-        <div class="item" style="padding:6px 11px">
-          <span class="itxt"><span class="iname">AI 服务<b class="hit">密钥</b></span>
-          <span class="idesc">AI › 模型</span></span><span class="chev">›</span></div>
-        <div class="item" style="padding:6px 11px">
-          <span class="itxt"><span class="iname">局域网配对<b class="hit">密钥</b></span>
-          <span class="idesc">局域网同步</span></span><span class="chev">›</span></div>
+        <div class="srch" style="color:var(--text-primary)">🔍 深色 <span style="float:right;font-size:10px;opacity:.6">1 项</span></div>
+        <div class="grp">外观</div>
+        <div class="item" style="padding:6px 11px;background:rgba(255,196,0,.13)">
+          <span class="itxt"><span class="iname">主题</span>
+          <span class="idesc">六套配色，含两套深色</span></span><span class="chev">›</span></div>
       </div>
     </div></div></div>
+    <p style="font-size:11.5px;color:var(--text-secondary);margin:6px 2px 0">
+      搜「深色」只命中「主题」一行——别名挂在这一行上，不会把其它提到配色的行一起拉出来。
+    </p>
   </div>
   <div>
-    <h3>搜索要满足的几条</h3>
+    <h3>第 2 步要改的四处</h3>
     <table>
-      <tr><th>要求</th><th>为什么</th></tr>
-      <tr><td>命中项显示<b>面包屑</b>（「通用 › 隐私」）</td><td>让用户下次知道去哪找，而不是永远依赖搜索</td></tr>
-      <tr><td>开关类命中<b>直接在结果里可拨</b></td><td>找到就是为了改它，再点进去是多一步</td></tr>
-      <tr><td>非开关类点进去要<b>滚到并高亮</b>那一行</td><td>点进一个 20 行的分组还得自己找，等于没搜</td></tr>
-      <tr><td>索引里带<b>同义词</b></td><td>用户搜「开机」要能命中「自启动」；搜「暗色」要命中「主题」</td></tr>
+      <tr><th>改动</th><th>对应</th></tr>
+      <tr><td>匹配只读行内的 <code>.sRowLabel</code> + <code>.sRowDesc</code>，不读开关按钮文本</td><td>D1</td></tr>
+      <tr><td>按行标题查<b>别名表</b></td><td>D2</td></tr>
+      <tr><td>搜索框右侧显示<b>「N 项」</b>；命中行加<b>浅色底纹</b></td><td>D3</td></tr>
+      <tr><td><b>分区标题参与匹配</b>，命中则整节展开</td><td>D4</td></tr>
     </table>
-    <div class="warn">
-      索引<b>手写一份常量表</b>，不要去扫 JSX。扫 JSX 得不到同义词与面包屑，
-      而且任何一次改版都会静默漏项——漏了的表现是「搜不到」，
-      而「搜不到」与「本来就没这项」在界面上长得一样，没人会发现。
+    <div class="note">
+      别名表以<b>行标题为键</b>，不用给任何行加属性：
+      <br><code>"主题": ["深色","暗色","夜间","配色"]</code>
+      <br><code>"开机自启": ["开机启动","自启动","随系统启动"]</code>
+      <br><code>"窗口置顶": ["置顶","always on top","pin"]</code>
+      <br><code>"清理过期记录": ["剪贴板留多久","历史保留"]</code>
     </div>
   </div>
 </div>
-
 <h2>四、入口与返回</h2>
 <table>
 <tr><th>动作</th><th>行为</th></tr>
-<tr><td>顶栏齿轮 / <code>Ctrl+,</code></td><td>切到设置视图（一级）</td></tr>
-<tr><td>某处「去设置改 X」</td><td>直接进二级并高亮那一行（沿用现在 <code>initialTab</code> 的能力，扩成 <code>initialSection</code>）</td></tr>
-<tr><td>二级页「←」</td><td>回一级</td></tr>
-<tr><td>一级页「←」</td><td>回上一个视图（记录 / 知识库）</td></tr>
-<tr><td><code>Esc</code></td><td><b>窄屏</b>：二级 → 一级 → 退出，<b>逐级退</b>，不要一下退到底。<br><b>宽屏双栏</b>：没有「级」可退，直接退出设置</td></tr>
+<tr><td>顶栏齿轮 / <code>Ctrl+,</code></td><td>切到设置视图，菜单默认选中第一项</td></tr>
+<tr><td>某处「去设置改 X」</td><td>直接选中对应菜单项（已有 <code>initialTab</code> 支持 AI/MCP/帮助/关于；
+    要定位到具体某一行再扩 <code>initialSection</code>）</td></tr>
+<tr><td>标题栏「←」</td><td>退出设置，回到之前那个模式（记录 / 工具 / 知识）</td></tr>
+<tr><td><code>Esc</code></td><td><b>直接退出设置</b>。恒定左右布局下没有「级」了，不存在逐级退</td></tr>
 </table>
+<div class="bad">
+  🔴 <b>2026-09-05 修正</b>：本节原写「二级页←回一级」「<code>Esc</code> 逐级退」，
+  那是下钻形态的设定。改成恒定左右后，<b>「级」这个概念没了</b>，两者均为直接退出。
+</div>
 <div class="note">
-  ❗ <b>不做面包屑式的深层路由</b>：设置只有两级，加 URL 路由是为一个不存在的
-  需求付复杂度。用一个 <code>section: string | null</code> 就够。
+  ❗ <b>不做面包屑式的深层路由</b>：加 URL 路由是为一个不存在的需求付复杂度。
+  用一个 <code>nav: NavKey</code>（不再需要 <code>| null</code>，因为总有默认选中项）就够。
 </div>
 
-<h2>五、拆文件（规则 #7：单 .tsx ≤ 300 行）</h2>
-<p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 6px">
-  <code>GeneralTab.tsx</code> 现在 1303 行、7 个分组。按分组拆：
+<h2>五、拆文件（规则 #7：单 .tsx ≤ 300 行）— ✅ 2026-09-05 已完成</h2>
+<p class="lead">
+  实际结果：<code>GeneralTab.tsx</code> <b>1338 → 150 行</b>，共享状态抽进
+  <code>hooks/useSettingsData.ts</code>，分区拆成 9 个文件，<b>全部 ≤ 300 行</b>。
+  <code>tsc</code> 与 <code>eslint</code> 均 0 错。
 </p>
 <table>
-<tr><th>新文件</th><th>来自 GeneralTab 的行</th><th>预估</th></tr>
-<tr><td><code>settings/SettingsView.tsx</code></td><td>新写：一级列表 + 二级路由 + 搜索框</td><td>~160</td></tr>
-<tr><td><code>settings/SettingsSearch.tsx</code></td><td>新写：搜索结果列表</td><td>~110</td></tr>
-<tr><td><code>settings/settingsIndex.ts</code></td><td>新写：手写索引（标题 / 同义词 / 面包屑 / 定位 id）</td><td>~140</td></tr>
-<tr><td><code>settings/sections/StatsSection.tsx</code></td><td>292–468</td><td>~175</td></tr>
-<tr><td><code>settings/sections/AppearanceSection.tsx</code></td><td>469–545</td><td>~75</td></tr>
-<tr><td><code>settings/sections/GeneralSection.tsx</code></td><td>546–868</td><td>~320 ⚠ 还要再拆</td></tr>
-<tr><td><code>settings/sections/LanSection.tsx</code></td><td>869–896</td><td>~30</td></tr>
-<tr><td><code>settings/sections/KbSyncSection.tsx</code></td><td>897–928</td><td>~35</td></tr>
-<tr><td><code>settings/sections/HotkeysSection.tsx</code></td><td>929–1215</td><td>~290</td></tr>
-<tr><td><code>settings/sections/DataSection.tsx</code></td><td>1216–1303</td><td>~90</td></tr>
+<tr><th>文件</th><th>行数</th></tr>
+<tr><td><code>hooks/useSettingsData.ts</code></td><td>234</td></tr>
+<tr><td><code>sections/GeneralSection.tsx</code></td><td>255</td></tr>
+<tr><td><code>sections/StatsSection.tsx</code></td><td>222</td></tr>
+<tr><td><code>sections/HotkeySection.tsx</code></td><td>214</td></tr>
+<tr><td><code>settings/GeneralTab.tsx</code>（只剩编排）</td><td>150</td></tr>
+<tr><td><code>sections/WindowSystemRows.tsx</code></td><td>135</td></tr>
+<tr><td><code>sections/ScreenshotRows.tsx</code></td><td>119</td></tr>
+<tr><td><code>sections/AppearanceSection.tsx</code></td><td>105</td></tr>
+<tr><td><code>sections/DataSection.tsx</code></td><td>103</td></tr>
+<tr><td><code>sections/KbSyncSection.tsx</code></td><td>54</td></tr>
+<tr><td><code>sections/LanSyncSection.tsx</code></td><td>44</td></tr>
 </table>
-<div class="warn">
-  ⚠ <b>「通用」拆出来还是 ~320 行，仍破规则 #7</b>，得再分成两块
-  （比如「启动与监听」+「粘贴行为」）。这个数字是量出来的，不是估的——
-  别到时候拆一半发现放不下。
-</div>
 <div class="bad">
-  🔴 <b>1–291 行是共享的 state 与 handler</b>（<code>pendingCleanup</code> /
-  <code>handlePickCleanupDays</code> / <code>pendingTrash</code> …），
-  被「数据统计」「通用」「数据管理」三块同时用。
-  <b>拆分的真正难点在这里，不在 JSX。</b>
-  做法：抽成 <code>hooks/useSettingsData.ts</code>，由 <code>SettingsView</code> 调一次、往下传——
-  <b>不要</b>让三个 section 各自调一遍，那会变成三份互不知情的确认框状态。
+  🔴 <b>拆分时踩到的硬约束：每个分区组件必须返回 <code>&lt;&gt;…&lt;/&gt;</code> 片段，不能包一层 <code>&lt;div&gt;</code>。</b>
+  搜索过滤遍历的是容器 <code>children</code>，多包一层就会遍历到分区外壳而不是设置行，
+  <b>搜索静默失效</b>（界面看着完全正常）。已在每个分区文件头写了红字警告。
+</div>
+<div class="note">
+  第七节担心的「通用还剩 ~320 行」确实发生了（361 行），已在<b>不改变行顺序</b>的前提下
+  从「时间线」那一行切开，后半段进 <code>WindowSystemRows.tsx</code>；
+  <code>HotkeySection</code> 同样从「自动框选当前窗口」切出 <code>ScreenshotRows.tsx</code>。
+  两处都是天然语义边界，不是为了凑行数硬切。
+</div>
+<div class="note">
+  ✅ 用<b>逐行比对</b>验证「纯搬家」：把改动前后所有 JSX 行去空白后排序 <code>comm</code> 对比，
+  除容器自身的 <code>&lt;/div&gt;</code> 和新增的子组件调用外，只有一段注释丢失（已补回）。
+  18 个设置项 <code>label</code> 与分区标题完全一致。
 </div>
 
 <h2>六、分三步做，每步能独立验证</h2>
 <table>
-<tr><th>步</th><th>内容</th><th>能独立验什么</th></tr>
-<tr><td><b>1</b></td><td>抽 <code>useSettingsData</code> + 按分组拆成 section 文件，
-  <b>容器仍是现在的弹框</b></td><td>行为应当**完全不变**——这一步是纯搬家，
-  界面上看不出差别就是对的。也是规则 #7 本来就欠的账</td></tr>
-<tr><td><b>2</b></td><td>加搜索（索引 + 结果列表 + 跳转高亮）</td><td>「找不到」这件事本身。
-  仍在弹框里，风险最小、收益最大</td></tr>
-<tr><td><b>3</b></td><td>换容器：弹框 → 主窗口视图。<b>同时做两种布局</b>：
-  ≥600px 双栏、&lt;600px 下钻（见第八节）</td><td>只剩布局与导航，
-  前两步已经把内容和检索都理顺了。两种布局共用一个 <code>section</code> 状态，
-  所以不是两套实现</td></tr>
+<tr><th>步</th><th>内容</th><th>能独立验什么</th><th>状态</th></tr>
+<tr><td><b>1</b></td><td>抽 <code>useSettingsData</code> + 按分组拆成 section 文件，<b>容器仍是现在的弹框</b></td>
+    <td>行为应当<b>完全不变</b>——纯搬家，界面上看不出差别就是对的</td><td>✅ 已完成</td></tr>
+<tr><td><b>2</b></td><td><b>改造</b>现有搜索（原地过滤已存在）：修 D1/D4，加同义词与命中提示</td>
+    <td>「找不到」这件事本身。仍在弹框里，风险最小、收益最大</td><td>✅ 已完成</td></tr>
+<tr><td><b>3</b></td><td>换容器：弹框 → 主窗口视图（左菜单 + 右详情）；顶栏隐掉模式切换器与搜索/页签行</td>
+    <td>只剩布局与导航，前两步已把内容和检索理顺</td><td>✅ 已完成</td></tr>
+<tr><td><b>4</b></td><td>改成<b>恒定左右</b>：砍掉下钻分支，&lt;600px 菜单收成图标条；补默认选中项</td>
+    <td>从 320 拖到 900，菜单始终在左、不出现两屏；刚打开右栏就有内容（不再空白）</td><td>待做</td></tr>
+<tr><td><b>5</b></td><td>（可选）搜索框移到菜单顶部</td>
+    <td>搜索仍能跨分区出结果。<b>代价</b>：要拆 <code>useSettingsData</code>，待确认</td><td>待定</td></tr>
 </table>
 <div class="note">
-  <b>为什么不一次做完</b>：这三步各自都可能出问题，混在一个提交里出了问题
-  分不清是哪一步带的。而第 1 步「纯搬家」的验证标准是「看不出差别」，
-  一旦同时改了容器，这个标准就没了。
+  <b>为什么不一次做完</b>：这三步各自都可能出问题，混在一个提交里出了问题分不清是哪一步带的。
+  而第 1 步「纯搬家」的验证标准是「看不出差别」，一旦同时改了容器，这个标准就没了。
 </div>
-
 <h2>七、🔴「通用」那 320 行怎么再拆（当时留白，现在量清楚了）</h2>
 <p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 8px">
   第五节说「通用拆出来还是 ~320 行，仍破规则 #7」。把里面的项列全之后是
@@ -293,113 +368,72 @@ th{color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-sp
   <b>真正改变行为可见性</b>的地方。
 </div>
 
-<h2>八、宽屏：≥600px 双栏同时显示，&lt;600px 才下钻</h2>
-<p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 8px">
-  窗口是<b>可缩放</b>的（<code>minWidth: 320</code>，无上限），而 <code>window-state</code>
-  记着用户长期实际跑在 <b>600×875</b>。所以「二级下钻」不该是唯一形态——
-  宽度够时两栏同时显示明显更好用（少一次点击、且能看见自己在整体里的位置）。
+<h2>八、窄屏怎么办：菜单收成图标条（不再下钻）</h2>
+<p class="lead">
+  硬约束：主窗口 <code>minWidth: 320</code>，可缩放无上限。
+  菜单 180 + 详情 140 会挤爆，所以窄到一定程度菜单必须变形——<b>但仍然是左右两栏</b>。
 </p>
 
-<h3>门槛取 600，不是 800</h3>
-<table>
-<tr><th></th><th>600</th><th>800</th></tr>
-<tr><td>默认窗口（600 宽）</td><td>✅ 直接就是双栏</td><td>❌ 永远单栏，等于这个特性大多数人看不到</td></tr>
-<tr><td>内容栏宽度</td><td>600 − 180 = <b>420px</b>，与今天的弹框<b>一样宽</b>，行不用重画</td><td>620px，更宽松</td></tr>
-<tr><td>是否新断点</td><td>❌ 项目已有 600</td><td>❌ 项目已有 800</td></tr>
-</table>
-<div class="note">
-  <b>600 与 800 都是项目现有断点</b>（<code>useKbLayout</code> 的注释明写「断点沿用项目现有的
-  600 / 800，再引入第三套只会让以后改布局时没人知道该改哪一档」）。
-  取 600 的决定性理由是：<b>默认窗口正好 600</b>，取 800 的话绝大多数用户永远见不到双栏。
-</div>
-
-<h3>两种形态</h3>
 <div class="side">
   <div>
-    <h4 style="font-size:12px;margin:0 0 6px">≥600px：左导航 + 右内容</h4>
-    <div class="holder" style="height:330px"><div class="scale" style="height:165px">
-      <div class="win" style="width:300px;height:165px;flex-direction:row">
-        <div style="width:88px;border-right:1px solid var(--border-color);background:var(--section-bg);overflow:auto">
-          <div class="srch" style="margin:5px;padding:3px 5px;font-size:8px">🔍 搜索</div>
-          <div style="padding:5px 7px;font-size:9px;font-weight:600">⚙ 通用</div>
-          <div style="padding:5px 7px;font-size:9px;background:var(--accent-light);color:var(--accent-strong);font-weight:700">🔒 采集与隐私</div>
-          <div style="padding:5px 7px;font-size:9px">🪟 窗口与启动</div>
-          <div style="padding:5px 7px;font-size:9px">📋 列表与交互</div>
-          <div style="padding:5px 7px;font-size:9px">📝 笔记与编辑器</div>
-          <div style="padding:5px 7px;font-size:9px">⌨ 快捷键</div>
-          <div style="padding:5px 7px;font-size:9px">📚 知识库同步</div>
+    <h4 style="font-size:12px;margin:0 0 6px">≥600px：菜单 180 + 详情 ≥420</h4>
+    <div class="holder" style="height:200px"><div class="scale" style="height:100px">
+      <div class="win" style="width:300px;height:100px;flex-direction:row">
+        <div style="width:90px;border-right:1px solid var(--border-color);background:var(--section-bg)">
+          <div style="padding:4px 7px;font-size:8.5px;background:var(--accent-light);color:var(--accent-strong);font-weight:700">📊 数据统计</div>
+          <div style="padding:4px 7px;font-size:8.5px">🎨 外观</div>
+          <div style="padding:4px 7px;font-size:8.5px">⚙️ 通用</div>
+          <div style="padding:4px 7px;font-size:8.5px">🌐 局域网同步</div>
         </div>
-        <div style="flex:1;overflow:auto">
-          <div class="item" style="padding:6px 9px">
-            <span class="ico" style="width:18px;height:18px;font-size:9px;background:linear-gradient(135deg,#EF4444,#DC2626)">🔒</span>
-            <span class="itxt"><span class="iname" style="font-size:9.5px">敏感内容防护</span>
-            <span class="idesc" style="font-size:8px">密钥/Token 不写入历史</span></span>
-            <span class="tg" style="width:26px;height:15px"><i style="left:13px;width:11px;height:11px"></i></span></div>
-          <div class="item" style="padding:6px 9px">
-            <span class="itxt"><span class="iname" style="font-size:9.5px">自动去除空白</span></span>
-            <span class="tg off" style="width:26px;height:15px"><i style="left:2px;width:11px;height:11px"></i></span></div>
-          <div class="item" style="padding:6px 9px">
-            <span class="itxt"><span class="iname" style="font-size:9.5px">文档保真采集</span></span>
-            <span class="tg" style="width:26px;height:15px"><i style="left:13px;width:11px;height:11px"></i></span></div>
-          <div class="item" style="padding:6px 9px">
-            <span class="itxt"><span class="iname" style="font-size:9.5px">保留格式粘贴</span></span>
-            <span class="tg off" style="width:26px;height:15px"><i style="left:2px;width:11px;height:11px"></i></span></div>
-          <div class="item" style="padding:6px 9px">
-            <span class="itxt"><span class="iname" style="font-size:9.5px">应用排除名单</span>
-            <span class="idesc" style="font-size:8px">3 个程序</span></span><span class="chev">›</span></div>
-        </div>
+        <div style="flex:1;padding:5px;font-size:8.5px">详情区（完整宽度，与今天弹框同宽）</div>
       </div>
     </div></div>
-    <div style="font-size:11.5px;color:var(--text-muted);margin-top:4px">
-      导航宽度<b>固定 180px</b>，不用百分比——用百分比的话窗口往 600 收时内容栏会被压到 420 以下。
-    </div>
   </div>
   <div>
-    <h4 style="font-size:12px;margin:0 0 6px">&lt;600px：退回二级下钻</h4>
-    <div class="holder" style="height:330px"><div class="scale" style="height:165px">
-      <div class="win" style="width:230px;height:165px">
-        <div class="back"><span>←</span><span>采集与隐私</span></div>
-        <div class="body">
-          <div class="item" style="padding:6px 9px">
-            <span class="ico" style="width:18px;height:18px;font-size:9px;background:linear-gradient(135deg,#EF4444,#DC2626)">🔒</span>
-            <span class="itxt"><span class="iname" style="font-size:9.5px">敏感内容防护</span></span>
-            <span class="tg" style="width:26px;height:15px"><i style="left:13px;width:11px;height:11px"></i></span></div>
-          <div class="item" style="padding:6px 9px">
-            <span class="itxt"><span class="iname" style="font-size:9.5px">自动去除空白</span></span>
-            <span class="tg off" style="width:26px;height:15px"><i style="left:2px;width:11px;height:11px"></i></span></div>
+    <h4 style="font-size:12px;margin:0 0 6px">&lt;600px：菜单收成 44px 图标条</h4>
+    <div class="holder" style="height:200px"><div class="scale" style="height:100px">
+      <div class="win" style="width:220px;height:100px;flex-direction:row">
+        <div style="width:26px;border-right:1px solid var(--border-color);background:var(--section-bg);text-align:center">
+          <div style="padding:4px 0;font-size:9px;background:var(--accent-light)">📊</div>
+          <div style="padding:4px 0;font-size:9px">🎨</div>
+          <div style="padding:4px 0;font-size:9px">⚙️</div>
+          <div style="padding:4px 0;font-size:9px">🌐</div>
+          <div style="padding:4px 0;font-size:9px">📚</div>
         </div>
+        <div style="flex:1;padding:5px;font-size:8.5px">详情区仍有 ≥276px<br><span style="opacity:.6">图标靠 title 提示说明是哪一项</span></div>
       </div>
     </div></div>
-    <div style="font-size:11.5px;color:var(--text-muted);margin-top:4px">
-      窄到 320px 也能用——那是 <code>minWidth</code>，得保证不塌。
-    </div>
   </div>
 </div>
 
-<h3>拖动窗口跨过 600 时</h3>
-<p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 8px">
-  两种形态<b>共用同一个状态</b> <code>section: string | null</code>，所以跨档不用做任何迁移：
-</p>
+<h3>门槛为什么仍取 600</h3>
 <table>
-<tr><th>当时在</th><th>拖宽 → 双栏</th><th>拖窄 → 下钻</th></tr>
-<tr><td>二级页（<code>section = "privacy"</code>）</td><td>左栏选中「采集与隐私」，右栏就是它</td><td>—</td></tr>
-<tr><td>一级列表（<code>section = null</code>）</td><td>右栏<b>默认落到第一项</b>，不要留空白</td><td>—</td></tr>
-<tr><td>双栏（<code>section = "hotkeys"</code>）</td><td>—</td><td>直接显示「快捷键」那一页，返回键回一级</td></tr>
+<tr><th></th><th>600</th><th>480</th></tr>
+<tr><td>详情栏宽度</td><td>600 − 180 = <b>420px</b>，与今天弹框<b>一样宽</b>，设置行一行不用重画</td><td>300px，图标+标题+描述+开关挤不下</td></tr>
+<tr><td>默认窗口（600 宽）</td><td>✅ 正好是完整菜单</td><td>✅ 也是，但 480–600 区间里详情栏太窄</td></tr>
+<tr><td>是否新断点</td><td>❌ 项目已有 600</td><td>🔴 新增第三套断点</td></tr>
 </table>
-
-<div class="bad">
-  🔴 <b>断点必须用 <code>matchMedia</code>，不要写全局 CSS。</b>
-  <code>app.css</code> 里曾有两条「宽屏适配」断点选的是 <code>.card-list</code>，
-  而实际渲染的是 CSS Module 的 <code>.cardList</code>（编译后带哈希）——
-  <b>全局选择器永远匹配不上，两条规则从未生效</b>，与同文件的 <code>.app-shell</code> 是同一个坑
-  （已在 <code>44cb02b</code> 删掉）。
-  <br><br>
-  <code>useKbLayout</code> 已经是现成范式：<code>matchMedia</code> + <code>addEventListener("change")</code>，
-  只在<b>跳档时</b>触发，拖窗口不会每帧 <code>setState</code>。设置页直接照它写，
-  或者干脆把那个 hook 扩一个字段。
+<div class="note">
+  沿用项目现有的 600，<b>不引入第三套断点</b>（<code>useKbLayout</code> 的注释明写过这一条）。
+  代码上直接复用已有的 <code>useMediaQuery("(min-width: 600px)")</code>，不新增常量。
 </div>
 
+<h3>为什么不保留下钻</h3>
+<table>
+<tr><th></th><th>恒定左右（采用）</th><th>窄屏下钻（废弃）</th></tr>
+<tr><td>“我在哪”</td><td>菜单始终可见，高亮当前项</td><td>二级页看不到全貌</td></tr>
+<tr><td><code>Esc</code> 语义</td><td>单一：退出设置</td><td>要分「退一级 / 退出」两种</td></tr>
+<tr><td>拖窗口跨过门槛</td><td>只是菜单宽度变，选中项不变</td><td>会在「两栏」与「两屏」之间跳，还得处理 nav 为 null 的中间态</td></tr>
+<tr><td>代码分支</td><td>一套 DOM，只切菜单样式类</td><td>两套渲染分支</td></tr>
+</table>
 <h2>九、搜索的三个状态（当时只画了命中态）</h2>
+<div class="warn">
+  ⚠ <b>2026-09-05 修正</b>：本节①②两个状态是按「另做一套搜索结果列表」画的。
+  实际实现是<b>原地过滤</b>（隐藏不命中的行，保留分区标题），所以：
+  ①「直接可拨」<b>天然成立</b>——看到的就是真实那一行；
+  ②「点进去并高亮」<b>不需要了</b>——用户根本没离开页面，改成命中行加浅色底纹即可。
+  ③「无结果」仍然适用（现有实现已有 <code>settingsNoResult</code> 提示，但没给出路）。
+</div>
 <div class="side">
   <div>
     <h3>① 开关类命中：直接可拨</h3>

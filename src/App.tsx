@@ -49,7 +49,7 @@ const NoteDialog = lazy(() => import("@/components/notes/NoteDialog").then((m) =
 migrateLegacyStorageKeys();
 
 // 懒加载对话框组件 — 只在打开时才加载对应 JS chunk
-const SettingsDialog = lazy(() => import("@/components/SettingsDialog").then(m => ({ default: m.SettingsDialog })));
+const SettingsView = lazy(() => import("@/components/SettingsView").then(m => ({ default: m.SettingsView })));
 const PinnedPanel = lazy(() => import("@/components/PinnedPanel"));
 const SnippetsDialog = lazy(() => import("@/components/SnippetsDialog").then(m => ({ default: m.SnippetsDialog })));
 const ExtractDialog = lazy(() => import("@/components/ExtractDialog").then(m => ({ default: m.ExtractDialog })));
@@ -1040,17 +1040,21 @@ function App() {
         {/* 工具回调不再给 TopBar：D15 把工具箱从顶栏下拉改成了「工具」模式主体区，
             回调直接传给下方的 ToolboxView（见 toolHandlers） */}
         {/* 侧栏开关已收进 TopBar 自己（它直接读 store 的当前模式那一份） */}
-        <TopBar onSettings={() => setShowSettings(true)} />
+        {/* settingsOpen 让顶栏隐掉模式切换器与搜索/页签行（那两样属于「记录模式」），
+            外壳仍保留——无边框窗口靠它拖动和最小化 */}
+        <TopBar onSettings={() => setShowSettings(true)} settingsOpen={showSettings} />
         {/* v6.2 主动建议：只在主窗口（用户已打开）inline 出现，绝不弹窗。
             v6.4 方案 B：AI 真能用且处于引导期（更新后 1 周）→ 用 AI 快捷区替代；过期后回归原建议条。
             这里只认 "on"（唯一判定 @/lib/aiAvailability：开关开着 + 密钥配齐，本地厂商免密钥）——
             "nokey"（已启用但缺密钥）必须走回建议条，否则会渲染出一排点下去必然失败的 AI 按钮 */}
         {/* 建议条 / AI 快捷区只属于「记录」模式（D15）：两者都是对**当前剪贴板内容**的建议，
             在工具/知识模式下无指向，还白占一行高度 */}
-        {appMode === "record" && (aiStatus === "on" && aiAwareActive ? <AiQuickBar /> : <SuggestionBar />)}
+        {/* 🔴 三个模式视图都要被 showSettings 门控：设置视图是普通流内元素，
+            不门控的话它会接在原内容**下面**而不是盖住它。 */}
+        {!showSettings && appMode === "record" && (aiStatus === "on" && aiAwareActive ? <AiQuickBar /> : <SuggestionBar />)}
         {/* 主体区按模式分发（D15 三模式框架）。
             三个分支里只有「记录」是零成本的——它就是原来的主体，只是被包起来了。 */}
-        {appMode === "record" && (
+        {!showSettings && appMode === "record" && (
           <div className={appStyles.contentArea}>
             <Sidebar
               open={sidebarOpen}
@@ -1071,14 +1075,26 @@ function App() {
             </div>
           </div>
         )}
-        {appMode === "tools" && (
+        {!showSettings && appMode === "tools" && (
           <div className={appStyles.contentArea}>
             <ToolboxView handlers={toolHandlers} />
           </div>
         )}
-        {appMode === "knowledge" && (
+        {!showSettings && appMode === "knowledge" && (
           <div className={appStyles.contentArea}>
             <KnowledgeView />
+          </div>
+        )}
+        {/* 设置不再是弹框，而是**盖在内容区上的一个视图**（第 3 步）。
+            不做成第四个 appMode：退出时要回到用户原来那个模式，
+            做成平级模式就得额外记一份「上一个模式」。 */}
+        {showSettings && (
+          <div className={appStyles.contentArea}>
+            <Suspense fallback={null}>
+              <ErrorBoundary fallback={null} componentName="设置页">
+                <SettingsView open onClose={() => setShowSettings(false)} initialTab={showSettingsTab} />
+              </ErrorBoundary>
+            </Suspense>
           </div>
         )}
         <QuickPreview />
@@ -1137,7 +1153,6 @@ function App() {
 
         <Suspense fallback={null}>
           <ErrorBoundary fallback={null} componentName="设置面板">
-            <SettingsDialog open={showSettings} onClose={() => setShowSettings(false)} initialTab={showSettingsTab} />
             <Suspense fallback={null}>
               <PinnedPanel open={showPinnedPanel} onClose={() => setShowPinnedPanel(false)} />
             </Suspense>

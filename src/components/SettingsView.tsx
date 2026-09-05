@@ -1,9 +1,7 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { X } from "lucide-react";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { ArrowLeft, Settings as SettingsIcon, Search as SearchIcon } from "lucide-react";
 import { useAppStore, HistoryItem, DEFAULT_CONFIG } from "@/stores/appStore";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { VersionBadge } from "@/components/VersionBadge";
 import { useToast } from "@/components/Toast";
 import { useUpdate } from "@/contexts/UpdateContext";
 import { logger } from "@/lib/logger";
@@ -15,17 +13,11 @@ import { HelpTabContent } from "@/components/settings/HelpTabContent";
 import { AboutTabContent } from "@/components/settings/AboutTabContent";
 import { AiTab } from "@/components/settings/AiTab";
 import { McpTab } from "@/components/settings/McpTab";
+import { LazyMount } from "@/components/settings/LazyMount";
 import type { SettingsTabName } from "@/lib/openSettings";
+import { SETTINGS_SECTIONS, type SettingsSectionKey } from "@/components/settings/sections/meta";
+import { useSettingsSearch } from "@/hooks/useSettingsSearch";
 import styles from "./Settings.module.css";
-import { FocusTrap } from "@/components/FocusTrap";
-import { useDialogAnim } from "@/lib/dialogMotion";
-
-const tabPanelVariants = {
-  initial: { opacity: 0, y: 8 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -8 },
-};
-const tabPanelTransition = { duration: 0.22, ease: [0.4, 0, 0.2, 1] as const };
 
 /**
  * tab 类型从 `@/lib/openSettings` 引（与 `App.tsx` 共用一份）。
@@ -37,10 +29,23 @@ const tabPanelTransition = { duration: 0.22, ease: [0.4, 0, 0.2, 1] as const };
  */
 type SettingsTab = SettingsTabName;
 
-export function SettingsDialog({ open, onClose, initialTab }: { open: boolean; onClose: () => void; initialTab?: SettingsTab }) {
+/** 左导航的一项：要么是「通用」下的一个分区，要么是 AI/MCP/帮助/关于 四个页 */
+type NavKey = SettingsSectionKey | Exclude<SettingsTab, "general">;
+
+// ❗ 这里没有断点判断。菜单宽度全靠 CSS 的百分比 + 夹值（占 20%，128–220px），
+// 文字始终显示。曾经有过一个 600px 断点用来把菜单收成图标条，已废弃：
+// 只剩图标用户看不懂是哪一项。
+
+export function SettingsView({ open, onClose, initialTab }: { open: boolean; onClose: () => void; initialTab?: SettingsTab }) {
   const config = useAppStore((s) => s.config);
   const updateConfig = useAppStore((s) => s.updateConfig);
-  const [activeTab, setActiveTab] = useState<SettingsTab>("general");
+  /**
+   * 当前菜单项。🔴 **不允许为 null**：之前初值是 null，结果刚打开设置右栏整块空白，
+   * 看上去像 bug，实际是「还没点过菜单」。恒定左右布局下没有「未选中」这个态。
+   */
+  const [nav, setNav] = useState<NavKey>(SETTINGS_SECTIONS[0].key);
+  // 搜索框在左侧菜单顶部（本组件渲染），而装设置行的容器在 GeneralTab 里，靠 ref 对接
+  const search = useSettingsSearch();
   const [tabStyle, setTabStyle] = useState<string>(
     () => localStorage.getItem("tabStyle") || "segmented",
   );
@@ -51,13 +56,11 @@ export function SettingsDialog({ open, onClose, initialTab }: { open: boolean; o
   const [appVersion, setAppVersion] = useState("?.?.?");
   const [showCleanupConfirm, setShowCleanupConfirm] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const { status: updateStatus } = useUpdate();
-  const anim = useDialogAnim();
 
   /** 关于 tab 红点：有新版本可用 或 有未查看过的更新日志 */
   const hasAboutDot = useMemo(() => {
@@ -68,9 +71,9 @@ export function SettingsDialog({ open, onClose, initialTab }: { open: boolean; o
 
   useEffect(() => {
     if (open) {
-      // v6.4 审查：#10 从变换中心跳转过来时直接定位到指定 tab
-      setActiveTab(initialTab ?? "general");
-      setScrolled(false);
+      // v6.4 审查：#10 从变换中心跳转过来时直接定位到指定页；
+      // 不传或传 "general" 就落在第一个分区（右栏永远不能是空的）。
+      setNav(initialTab && initialTab !== "general" ? initialTab : SETTINGS_SECTIONS[0].key);
       // 审查：stats 失败不再静默——置错误标记，界面给重试
       setStatsError(false);
       getStatsDetail(config.current_workspace)
@@ -87,20 +90,14 @@ export function SettingsDialog({ open, onClose, initialTab }: { open: boolean; o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, config.current_workspace]);
 
-  const handleBodyScroll = useCallback(() => {
-    if (bodyRef.current) setScrolled(bodyRef.current.scrollTop > 40);
-  }, []);
-
-  const handleTabSwitch = useCallback((tab: SettingsTab) => {
-    setActiveTab(tab);
-    if (tab === "about" && CHANGELOG.length > 0) {
-      setLastSeenVersion(CHANGELOG[0].version);
-    }
-    if (bodyRef.current) {
-      bodyRef.current.scrollTop = 0;
-      setScrolled(false);
-    }
-  }, []);
+  /** 点菜单后待执行的滚动目标（等目标渲染出来再滑）。包含 AI/MCP/帮助/关于 */
+  const pendingScrollRef = useRef<NavKey | null>(null);
+  /**
+   * 平滑期间抑制 scroll-spy 的截止时间。
+   * 不加这个的话：点「数据管理」→ 开始平滑 → 途中扫过「快捷键」→ spy 把 nav 改成快捷键，
+   * 菜单高亮会在滑动过程中乱跳，最后停在错的项上。
+   */
+  const spyMutedUntilRef = useRef(0);
 
   // 串行化配置写入：后一次保存必须在前一次之后执行，且读取最新 store 快照，
   // 避免快速连续切换时闭包过期 config 相互覆盖导致设置丢失（M20）
@@ -283,113 +280,200 @@ export function SettingsDialog({ open, onClose, initialTab }: { open: boolean; o
   };
 
   const isBlossom = config.theme === "blossom";
-  const tabs: { key: SettingsTab; label: string; icon: string }[] = [
-    { key: "general", label: "通用", icon: isBlossom ? "🎀" : "⚙" },
+  /** 左导航的四个非「通用」页（原顶层 tab）。「通用」拆成了上面七个分区，不再占一项。 */
+  const pageTabs: { key: Exclude<SettingsTab, "general">; label: string; icon: string }[] = [
     { key: "ai", label: "AI", icon: isBlossom ? "🌸" : "✨" },
-    // 摆在 AI 后面：两者都是「跟 AI 有关」，但 AI tab 管模型/密钥，
-    // 本 tab 管的是「让外部 AI 工具读写我的笔记」，方向相反。
+    // 摆在 AI 后面：两者都是「跟 AI 有关」，但 AI 页管模型/密钥，
+    // 本页管的是「让外部 AI 工具读写我的笔记」，方向相反。
     { key: "mcp", label: "MCP", icon: isBlossom ? "🩷" : "🧩" },
     { key: "help", label: "帮助", icon: isBlossom ? "💌" : "📖" },
     { key: "about", label: "关于", icon: isBlossom ? "💗" : "ℹ" },
   ];
 
-  return (
-    <AnimatePresence>
-      {open && (
-        <motion.div key="settings-dialog"
-          {...anim.backdrop}
-          className="dialog-backdrop" onClick={onClose}>
-          <FocusTrap>
-          <motion.div
-            {...anim.panel}
-            className="dialog-box dialog-solid w420" onClick={(e) => e.stopPropagation()}>
+  /** 搜索态：右栏看到的是跨分区结果，此时菜单不该再高亮某一项（那会误导） */
+  const searching = search.filter.trim() !== "";
 
-            {/* Header */}
-            <div className={`dialog-header${scrolled ? ` ${styles.dialogHeaderCompact}` : ""}`}>
-              <h2 className={`dialog-title${scrolled ? ` ${styles.dialogTitleCompact}` : ""}`}>⚙ 设置</h2>
-              <button onClick={onClose} className={`dialog-close${scrolled ? ` ${styles.dialogCloseCompact}` : ""}`}><X size={16} /></button>
-            </div>
+  /** 菜单全部 11 项（七个分区 + 四个页），**顺序即滚动顺序**，scroll-spy 与跳转都靠它 */
+  const allNav: { key: NavKey; label: string; icon: string }[] = [...SETTINGS_SECTIONS, ...pageTabs];
 
-            {/* Tab bar */}
-            <div className={`${styles.tabBarWrapper}${scrolled ? ` ${styles.tabBarWrapperHidden}` : ""}`}>
-              <div className={styles.tabBar}>
-                {tabs.map((tab) => {
-                  const isActive = activeTab === tab.key;
-                  const showDot = tab.key === "about" && hasAboutDot && !isActive;
-                  return (
-                    <button key={tab.key} onClick={() => handleTabSwitch(tab.key)}
-                      className={`${styles.tabBtn} ${isActive ? styles.tabBtnActive : ""}`}>
-                      <span className={styles.tabIcon}>{tab.icon}</span>
-                      {tab.label}
-                      {showDot && <span className={styles.tabDot} />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+  /**
+   * 在滚动容器里找某一项的标题元素。靠**标题文字**对应——meta.ts 已声明
+   * label 必须与分区标题逐字一致；AI/MCP/帮助/关于 的标题也按同一套文字渲染。
+   * 用 querySelectorAll 而不是遍历 container.children：四个页的标题在搜索容器**之外**。
+   */
+  const findNavEl = (key: NavKey): HTMLElement | undefined => {
+    const scroller = bodyRef.current;
+    if (!scroller) return undefined;
+    const label = allNav.find((n) => n.key === key)?.label;
+    return Array.from(scroller.querySelectorAll<HTMLElement>("." + styles.sSection)).find(
+      (el) => (el.textContent || "").trim() === label,
+    );
+  };
 
-            {/* Body */}
-            <div className="dialog-body" ref={bodyRef} onScroll={handleBodyScroll}
-              style={{ "--dialog-body-padding": "0", "--dialog-body-gap": "0" } as React.CSSProperties}>
-              <AnimatePresence mode="wait">
-                {activeTab === "general" && (
-                  <motion.div key="tab-general" variants={tabPanelVariants} initial="initial" animate="animate" exit="exit" transition={tabPanelTransition}>
-                    <GeneralTab
-                      config={config} updateConfig={updateConfig} updateAndSave={updateAndSave}
-                      stats={stats} statsError={statsError} onRetryStats={() => {
-                        setStatsError(false);
-                        getStatsDetail(config.current_workspace).then(setStats).catch(() => setStatsError(true));
-                      }} expiredCount={expiredCount}
-                      tabStyle={tabStyle} handleSwitchTabStyle={handleSwitchTabStyle}
-                      handleExport={handleExport} handleImport={handleImport} handleCleanup={handleCleanup}
-                      exporting={exporting} importing={importing}
-                    />
-                  </motion.div>
-                )}
+  const handleNavPick = (key: NavKey) => {
+    setNav(key);
+    if (key === "about" && CHANGELOG.length > 0) setLastSeenVersion(CHANGELOG[0].version);
+    // 点菜单 → 平滑到那一节。不在这里直接滚：MCP 那块是按可见性懒挂载的，
+    // 可能还没真正渲染出来，交给渲染后的 effect 去量位置。
+    pendingScrollRef.current = key;
+  };
 
-                {activeTab === "ai" && (
-                  <motion.div key="tab-ai" variants={tabPanelVariants} initial="initial" animate="animate" exit="exit" transition={tabPanelTransition}>
-                    <AiTab />
-                  </motion.div>
-                )}
+  // 点菜单后真正执行滚动：放在渲染后，因为目标（尤其是懒挂载的 MCP）可能刚出现
+  useEffect(() => {
+    const key = pendingScrollRef.current;
+    if (!key) return;
+    pendingScrollRef.current = null;
+    const scroller = bodyRef.current;
+    const target = findNavEl(key);
+    if (!scroller || !target) return;
+    // 用 scrollTop 增量而不是 scrollIntoView：后者会连带滑动祖先容器，把整个窗口顶掉
+    const top = scroller.scrollTop + target.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    spyMutedUntilRef.current = performance.now() + 700;
+    scroller.scrollTo({ top, behavior: "smooth" });
+  });
 
-                {activeTab === "mcp" && (
-                  <motion.div key="tab-mcp" variants={tabPanelVariants} initial="initial" animate="animate" exit="exit" transition={tabPanelTransition}>
-                    <McpTab />
-                  </motion.div>
-                )}
+  // scroll-spy：滑到哪一节，菜单就高亮哪一项（含 AI/MCP/帮助/关于）
+  useEffect(() => {
+    const scroller = bodyRef.current;
+    // 搜索时大量行被隐藏、右栏是跨分区结果，此时跟随高亮只会添乱
+    if (!scroller || searching) return;
+    const onScroll = () => {
+      if (performance.now() < spyMutedUntilRef.current) return;
+      // 判定线放在可视区顶部下方 80px：标题刚滑过这条线就算「进入这一节」
+      const line = scroller.getBoundingClientRect().top + 80;
+      let current: NavKey | null = null;
+      for (const el of Array.from(scroller.querySelectorAll<HTMLElement>("." + styles.sSection))) {
+        // 被搜索隐掉的标题没有布局盒，位置恰好是 0，不跳过会把高亮拉到最后一项
+        if (el.offsetParent === null) continue;
+        if (el.getBoundingClientRect().top > line) break;
+        // 认不出的标题（如 HotkeySection 内部的「转笔记模板」）直接跳过，
+        // 保留上一个认得出的，否则滑到那里时菜单会突然掉高亮
+        const hit = allNav.find((n) => n.label === (el.textContent || "").trim());
+        if (hit) current = hit.key;
+      }
+      if (current) setNav((prev) => (prev === current ? prev : current));
+    };
+    onScroll();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => scroller.removeEventListener("scroll", onScroll);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searching]);
 
-                {activeTab === "help" && (
-                  <motion.div key="tab-help" variants={tabPanelVariants} initial="initial" animate="animate" exit="exit" transition={tabPanelTransition}
-                    style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-                    <HelpTabContent config={config} appName={appName} appVersion={appVersion} />
-                  </motion.div>
-                )}
+  /** 菜单一项。**文字始终显示**——只有图标的话用户看不懂是哪一项 */
+  const navItem = (key: NavKey, icon: string, label: string, dot = false) => (
+    <button key={key}
+      className={`${styles.settingsNavItem}${!searching && nav === key ? ` ${styles.settingsNavItemActive}` : ""}`}
+      onClick={() => handleNavPick(key)}>
+      <span className={styles.settingsNavIcon}>{icon}</span>
+      <span className={styles.settingsNavLabel}>{label}</span>
+      {dot && <span className={styles.tabDot} />}
+    </button>
+  );
 
-                {activeTab === "about" && (
-                  <motion.div key="tab-about" variants={tabPanelVariants} initial="initial" animate="animate" exit="exit" transition={tabPanelTransition}
-                    style={{ flex: 1 }}>
-                    <AboutTabContent appName={appName} appVersion={appVersion} />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+  /**
+   * 左侧菜单：搜索框 + 7 个分区 + 4 个独立页。
+   * 宽度全交给 CSS（占 20%，夹在 128–220px），所以这里不再需要任何断点判断。
+   */
+  const navList = (
+    <div className={styles.settingsNav}>
+      {SETTINGS_SECTIONS.map((s) => navItem(s.key, s.icon, s.label))}
+      <div className={styles.settingsNavSep} />
+      {pageTabs.map((t) => navItem(t.key, t.icon, t.label, t.key === "about" && hasAboutDot && nav !== "about"))}
+    </div>
+  );
 
-            {/* Footer — 方案 B 紧凑两行 */}
-            <div className={styles.sFooter}>
-              <div className={styles.sFooterRow}>
-                <button onClick={() => setShowResetConfirm(true)} className={styles.sResetBtn} title="将所有设置恢复为默认值">恢复默认设置</button>
-                <button onClick={onClose} className={styles.sSaveBtn}>关闭设置</button>
-              </div>
-              <div className={styles.sFooterMeta}>
-                <span className={styles.sAutoSaveHint}>所有设置修改后自动保存</span>
-                <span className={styles.sFooterVer}><VersionBadge version={appVersion} compact /></span>
-              </div>
-            </div>
-          </motion.div>
-          </FocusTrap>
-        </motion.div>
+  /**
+   * 右侧详情：**全部 11 项排在同一根滚动里**，滑到哪一节菜单就高亮哪一项。
+   *
+   * 前七个分区在 GeneralTab 里（它们得待在搜索容器内，那里的 children 必须是一层扁平的行）；
+   * AI/MCP/帮助/关于 是整块组件，放在容器**之外**，自己带分区标题。
+   */
+  const content = (
+    <div className={styles.settingsContent} ref={bodyRef}>
+      <GeneralTab
+        config={config} updateConfig={updateConfig} updateAndSave={updateAndSave}
+        stats={stats} statsError={statsError} onRetryStats={() => {
+          setStatsError(false);
+          getStatsDetail(config.current_workspace).then(setStats).catch(() => setStatsError(true));
+        }} expiredCount={expiredCount}
+        tabStyle={tabStyle} handleSwitchTabStyle={handleSwitchTabStyle}
+        handleExport={handleExport} handleImport={handleImport} handleCleanup={handleCleanup}
+        exporting={exporting} importing={importing}
+        search={search}
+      />
+      {/* 搜索时隐掉这四块：它们不是「设置行」，不参与逐行过滤，
+          留着会让搜索结果下面拖着四大块不相干的内容。 */}
+      {!searching && (
+        <>
+          <div className={styles.sSection}>AI</div>
+          <AiTab />
+          <div className={styles.sSection}>MCP</div>
+          {/* 🔴 MCP 必须懒挂载：useMcpServer 带 5s 轮询，直接挂等于一打开设置就轮询，
+              会把 McpTab 当初搬出 GeneralTab 时做的那个优化撤销。详见 LazyMount 注释。 */}
+          <LazyMount minHeight={220}><McpTab /></LazyMount>
+          <div className={styles.sSection}>帮助</div>
+          <HelpTabContent config={config} appName={appName} appVersion={appVersion} />
+          <div className={styles.sSection}>关于</div>
+          <AboutTabContent appName={appName} appVersion={appVersion} />
+        </>
       )}
+    </div>
+  );
+
+  return (
+    <div className={styles.settingsView}>
+      <div className={styles.settingsViewHeader}>
+        {/* 恒定左右布局没有「级」，这个按钮就是直接退出设置（Esc 同义）。
+            图标走 lucide、尺寸与圆角对齐 .sAction，与软件其它按钮一致。 */}
+        <button className={styles.settingsViewBack} onClick={onClose} title="返回（Esc）">
+          <ArrowLeft size={13} strokeWidth={2.4} />
+          返回
+        </button>
+        {/* 菜单里已经高亮了当前项，标题不必重复；搜索时右栏是跨分区结果，跟着改。
+            ❗ 图标用 lucide 而不是 ⚙ 字形：后者粗细/基线随系统字体变，跟旁边文字对不齐，
+            也与顶栏那排 SVG 图标不是一个风格。 */}
+        <h2 className={styles.settingsViewTitle}>
+          {searching
+            ? <><SearchIcon size={14} strokeWidth={2.2} />搜索结果</>
+            : <><SettingsIcon size={14} strokeWidth={2.2} />设置</>}
+        </h2>
+        {/* 🔴 搜索框放在标题栏，不在菜单也不在详情里：它搜的是**全部**设置，
+            就应当在两栏之上。放菜单里像「搜菜单」，放详情里像「搜当前分区」，都不对。
+            而且菜单只有 128px，输入框只剩 ~70px 可用，根本看不全。 */}
+        <div className={styles.settingsSearchBox}>
+          <span className={styles.settingsSearchIcon}><SearchIcon size={13} strokeWidth={2.2} /></span>
+          <input
+            className={styles.settingsSearchInput}
+            type="text"
+            value={search.filter}
+            placeholder="搜索设置"
+            onChange={(e) => search.setFilter(e.target.value)}
+          />
+          {/* 命中计数：子节点故意留空，文本由 useSettingsSearch 的 effect 直接写入 */}
+          <span ref={search.countRef} className={styles.settingsSearchCount} />
+          {search.filter && (
+            <button className={styles.settingsSearchClear} onClick={() => search.setFilter("")} title="清空搜索">✕</button>
+          )}
+        </div>
+      </div>
+
+      <div className={styles.settingsViewBody}>
+        {/* 恒定左右：菜单与详情始终同时在场，窄屏只是菜单收成图标条。
+            不再有「一级/二级」两套渲染分支。 */}
+        {navList}
+        {content}
+      </div>
+
+      <div className={styles.sFooter}>
+        <div className={styles.sFooterRow}>
+          <button onClick={() => setShowResetConfirm(true)} className={styles.sResetBtn} title="将所有设置恢复为默认值">恢复默认设置</button>
+          <button onClick={onClose} className={styles.sSaveBtn}>退出设置</button>
+        </div>
+        <div className={styles.sFooterMeta}>
+          <span className={styles.sAutoSaveHint}>所有设置修改后自动保存</span>
+        </div>
+      </div>
+
       <ConfirmDialog key="cleanup-confirm"
         open={showCleanupConfirm}
         title="确认清理"
@@ -407,6 +491,6 @@ export function SettingsDialog({ open, onClose, initialTab }: { open: boolean; o
         onConfirm={handleResetDefaults}
         onCancel={() => setShowResetConfirm(false)}
       />
-    </AnimatePresence>
+    </div>
   );
 }
