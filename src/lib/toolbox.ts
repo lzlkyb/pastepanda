@@ -18,7 +18,8 @@ export type ToolKey =
   | "diff"
   | "diffedit"
   | "difffull"
-  | "newdiagram";
+  | "newdiagram"
+  | "dailybrief";
 
 export interface ToolItem {
   key: ToolKey;
@@ -41,6 +42,9 @@ export const TOOLBOX_GROUPS: ToolGroup[] = [
       { key: "snippets", icon: "📝", name: "片段库", desc: "常用文本收藏，一键粘贴", hue: "amber" },
       { key: "extract", icon: "🧲", name: "内容提取", desc: "从记录中批量提取链接 / 邮箱 / 电话", hue: "rose" },
       { key: "newdiagram", icon: "📊", name: "新建流程图", desc: "从零绘制，或让 AI 一键生成", hue: "cyan" },
+      // 不绑热键：规划建议的 Ctrl+Shift+D 已被下面的「文本对比」占用，
+      // 而日报是低频动作，不值得为它再抢一个。
+      { key: "dailybrief", icon: "📅", name: "今日整理", desc: "把今天的碎片按时间理成一条时间线", hue: "amber" },
     ],
   },
   {

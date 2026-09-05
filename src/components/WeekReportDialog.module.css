@@ -258,3 +258,53 @@
   opacity: 0.6;
   cursor: default;
 }
+
+/* ===== 时间线（每日整理 H3 新增的唯一一种块） =====
+   放在这个文件而不是新开一个 module：每日整理复用了本文件全部其它块
+   （overview / bars / aiBox / cold），拆成两份 CSS 只会让两边的间距慢慢漂。 */
+.segRow {
+  display: flex;
+  gap: 9px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.segRow:last-child {
+  border-bottom: none;
+}
+
+.segTime {
+  width: 88px;
+  flex: none;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  /* 等宽数字：不加的话每行时间宽度不一，时间线看着是歪的 */
+  font-variant-numeric: tabular-nums;
+}
+
+.segMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.segSrc {
+  font-size: 12.5px;
+  color: var(--text-primary);
+  /* 归一化后仍可能有长应用名，截断而不是撑破弹窗 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.segMeta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+.segN {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-muted);
+  align-self: center;
+}

@@ -53,6 +53,7 @@ const SettingsView = lazy(() => import("@/components/SettingsView").then(m => ({
 const PinnedPanel = lazy(() => import("@/components/PinnedPanel"));
 const SnippetsDialog = lazy(() => import("@/components/SnippetsDialog").then(m => ({ default: m.SnippetsDialog })));
 const ExtractDialog = lazy(() => import("@/components/ExtractDialog").then(m => ({ default: m.ExtractDialog })));
+const DailyBriefDialog = lazy(() => import("@/components/DailyBriefDialog").then(m => ({ default: m.DailyBriefDialog })));
 const EncodingDialog = lazy(() => import("@/components/EncodingDialog").then(m => ({ default: m.EncodingDialog })));
 const BatchReplaceDialog = lazy(() => import("@/components/BatchReplaceDialog").then(m => ({ default: m.BatchReplaceDialog })));
 const ConfigDiffDialog = lazy(() => import("@/components/ConfigDiffDialog").then(m => ({ default: m.ConfigDiffDialog })));
@@ -157,6 +158,9 @@ function App() {
   }, [workspace, toast]);
   const [showSequential, setShowSequential] = useState(false);
   const [showSnippets, setShowSnippets] = useState(false);
+  /** 每日整理（H3）。不进 `dialogOpen`：它自带 FocusTrap 与背景点击关闭，
+   *  与周报弹窗同一类（那个也没进）。 */
+  const [showDailyBrief, setShowDailyBrief] = useState(false);
   const [showExtract, setShowExtract] = useState(false);
   const [showEncoding, setShowEncoding] = useState(false);
   const [showBatchReplace, setShowBatchReplace] = useState(false);
@@ -1027,6 +1031,7 @@ function App() {
     diffedit: openFreeDiff,
     difffull: openFreeDiffFullscreen,
     newdiagram: handleNewDiagram,
+    dailybrief: () => setShowDailyBrief(true),
   };
 
   return (
@@ -1165,6 +1170,16 @@ function App() {
           </ErrorBoundary>
           <ErrorBoundary fallback={null} componentName="提取面板">
             <ExtractDialog open={showExtract} onClose={() => setShowExtract(false)} />
+          </ErrorBoundary>
+          {/* 每日整理（H3）。写成 `{cond && <X/>}` 而不是传 open：
+              它每次打开都要重新拉当天数据（行为层实时算），
+              常挂载反而要多写一套「打开时重拉」的逻辑。 */}
+          <ErrorBoundary fallback={null} componentName="今日整理">
+            {showDailyBrief && (
+              <Suspense fallback={null}>
+                <DailyBriefDialog onClose={() => setShowDailyBrief(false)} />
+              </Suspense>
+            )}
           </ErrorBoundary>
           <ErrorBoundary fallback={null} componentName="编码转换">
             <EncodingDialog open={showEncoding} onClose={() => setShowEncoding(false)} />

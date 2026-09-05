@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PastePanda · 每日整理（H3 行为层）设计稿</title>
+<style>
+/* 主题令牌照抄 src/styles/theme.css；组件尺寸照抄 WeekReportDialog.module.css */
+:root{
+  --card-bg:#fff; --bg:#F6F7F9; --section-bg:#F3F4F6;
+  --text:#1B2330; --text-primary:#1B2330; --text-secondary:#495565; --text-muted:#627083;
+  --border-color:#E0E4EB;
+  --accent:#0284C7; --accent-strong:#0273AD; --accent-light:#E0F2FE;
+  --green:#11813A; --green-bg:#DCFCE7; --green-border:#BBF7D0;
+  --orange:#C54A0A; --orange-bg:#FFF7ED;
+  --danger:#D82525; --red-bg:#FEF2F2;
+}
+html[data-t="dark"]{
+  --card-bg:#18181B; --bg:#0F0F11; --section-bg:#212124;
+  --text:#E8E8EC; --text-primary:#E8E8EC; --text-secondary:#AFAFB7; --text-muted:#8D8D95;
+  --border-color:#27272A;
+  --accent:#38BDF8; --accent-strong:#38BDF8; --accent-light:#0C4A6E;
+  --green:#4ADE80; --green-bg:#052E16; --green-border:#166534;
+  --orange:#FB923C; --orange-bg:#431407;
+  --danger:#F87171; --red-bg:#450A0A;
+}
+*{box-sizing:border-box}
+body{margin:0;padding:28px 20px 60px;background:var(--bg);color:var(--text);
+  font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+.wrap{max-width:1120px;margin:0 auto}
+h1{font-size:21px;margin:0 0 4px}
+h2{font-size:16px;margin:36px 0 6px;padding-top:18px;border-top:1px solid var(--border-color)}
+h3{font-size:13.5px;margin:18px 0 8px;color:var(--text-secondary);font-weight:600}
+.sub{color:var(--text-muted);font-size:12.5px;margin:0 0 6px}
+code{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:var(--accent-light);
+  color:var(--accent-strong);padding:1px 5px;border-radius:3px}
+.note{border-left:3px solid var(--orange);background:var(--orange-bg);padding:9px 13px;
+  border-radius:0 5px 5px 0;font-size:12.5px;margin:12px 0}
+.note b{color:var(--orange)}
+.ok{border-left-color:var(--green);background:var(--green-bg)} .ok b{color:var(--green)}
+table{border-collapse:collapse;width:100%;font-size:12.5px;margin:10px 0}
+th,td{border:1px solid var(--border-color);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--accent-light);color:var(--accent-strong);font-weight:600}
+.kill{color:var(--danger);font-weight:600} .keep{color:var(--green);font-weight:600}
+.cap{font-size:11.5px;color:var(--text-muted);margin:0 0 16px;padding-left:2px}
+.row2{display:flex;gap:16px;flex-wrap:wrap} .row2>*{flex:1;min-width:330px}
+
+/* ===== 弹窗外壳（照 WeekReportDialog）===== */
+.dlg{width:420px;border:1px solid var(--border-color);border-radius:12px;background:var(--card-bg);
+  overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.12);margin:10px 0 4px}
+.dhead{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border-color)}
+.hicon{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;
+  border-radius:7px;background:var(--accent-light);color:var(--accent-strong);font-size:13px}
+.dtitle{flex:1;font-size:14px;font-weight:600}
+.dsub{font-size:11px;color:var(--text-muted)}
+.x{border:none;background:transparent;cursor:pointer;color:var(--text-muted);font-size:15px;line-height:1;padding:0}
+
+/* overview 数字卡 */
+.overview{display:flex;gap:8px;padding:10px 16px 0}
+.ovItem{flex:1;border:1px solid var(--border-color);border-radius:10px;padding:10px 0;
+  text-align:center;background:var(--section-bg)}
+.ovNum{font-size:22px;font-weight:700;color:var(--text-primary)}
+.ovUnit{font-size:11px;font-weight:400;color:var(--green);margin-left:1px}
+.ovLabel{font-size:11px;color:var(--text-muted);margin-top:2px}
+
+.section{margin:12px 16px 0}
+.sectionTitle{font-size:12px;color:var(--text-muted);margin-bottom:6px}
+
+/* 横条 */
+.bars{display:flex;flex-direction:column;gap:6px}
+.barRow{display:flex;align-items:center;gap:8px}
+.barLabel{width:52px;font-size:12px;color:var(--text-primary);flex-shrink:0}
+.barTrack{flex:1;height:8px;border-radius:4px;background:var(--section-bg);overflow:hidden}
+.barFill{height:100%;border-radius:4px;background:var(--accent)}
+.barVal{width:34px;text-align:right;font-size:11px;color:var(--text-muted)}
+
+/* 时间线（本次新增的唯一一种块） */
+.seg{display:flex;gap:9px;padding:7px 0;border-bottom:1px solid var(--border-color)}
+.seg:last-child{border-bottom:none}
+.segTime{width:88px;flex:none;font-size:11.5px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.segMain{flex:1;min-width:0}
+.segSrc{font-size:12.5px;color:var(--text-primary)}
+.segMeta{font-size:11px;color:var(--text-muted);margin-top:1px}
+.segN{flex:none;font-size:11px;color:var(--text-muted);align-self:center}
+
+/* AI 紫框 */
+.aiBox{margin:12px 16px 0;border:1px solid rgba(168,85,247,.35);border-radius:10px;
+  padding:8px 10px;background:rgba(168,85,247,.08)}
+.aiLabel{font-size:11px;color:#A855F7;margin-bottom:4px}
+.aiBtn{display:inline-flex;align-items:center;gap:4px;border:1px solid rgba(168,85,247,.4);
+  background:transparent;color:#A855F7;border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer}
+.aiText{font-size:12.5px;color:var(--text-secondary);line-height:1.7}
+.cold{padding:30px 20px;text-align:center;font-size:13px;color:var(--text-muted);line-height:1.7}
+.dfoot{display:flex;gap:8px;padding:12px 16px;margin-top:12px;border-top:1px solid var(--border-color)}
+.btn{border:1px solid var(--border-color);background:var(--card-bg);color:var(--text);
+  border-radius:7px;padding:5px 11px;font-size:12px;cursor:pointer}
+.btnP{border-color:var(--accent);background:var(--accent);color:#fff}
+.grow{flex:1}
+.toggle{position:fixed;top:14px;right:16px;z-index:9;border:1px solid var(--border-color);
+  background:var(--card-bg);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px}
+</style>
+</head>
+<body>
+<button class="toggle" onclick="document.documentElement.dataset.t=document.documentElement.dataset.t==='dark'?'':'dark'">切换深浅色</button>
+<div class="wrap">
+
+<h1>每日整理 · H3 行为层 · 设计稿</h1>
+<p class="sub">2026-09-05 ｜ 对应《每日整理工作碎片-规划》§6 的 <b>H3（P0）</b> ｜ 规则 #4 预览稿</p>
+<p class="sub">下方所有数字与段落都是 <b>2026-09-05 从真库跑出来的</b>，不是编的。</p>
+
+<h2>一、第一刀只做行为层，且零新表</h2>
+<table>
+<tr><th>项</th><th>本次做</th><th>依据</th></tr>
+<tr><td>分段</td><td class="keep">✅ 20 分钟断段纯函数</td><td>《事件聚合设计稿》实测定的 <code>EVENT_GAP_SECS=1200</code>。<b>不自写聚类</b></td></tr>
+<tr><td>统计</td><td class="keep">✅ 复用 <code>weekReport.ts</code></td><td>它本来就是纯函数（<code>WeekStats</code>/<code>hourBuckets</code>）。规划 §8.4 担心的「需抽公共层」已经现成</td></tr>
+<tr><td>来源名</td><td class="keep">✅ <code>cleanSourceName()</code></td><td>设计稿原话：「绝不自写第二套」</td></tr>
+<tr><td>存储</td><td class="kill">🔴 不建 <code>daily_brief</code></td><td>行为层任何时候都能从 history 重算，存下来只会与源数据不一致</td></tr>
+<tr><td>AI</td><td class="kill">🔴 本刀不接</td><td>规划 §6：H3 是「零 AI 也能用」。内容层授权读原文是 C3（P1）</td></tr>
+<tr><td>定时推送</td><td class="kill">🔴 本刀不做</td><td>规划 §8.3 自己列的风险：通知疲劳。先验证「打开看一眼」有不有用</td></tr>
+</table>
+
+<div class="note"><b>入口：</b>工具箱新增一项「今日整理」。<b>不绑热键</b>——规划建议的
+<code>Ctrl+Shift+D</code> 已被「文本对比」占用（<code>toolbox.ts:52</code>），而日报是低频动作，
+不值得为它再抢一个热键。</div>
+
+<h2>二、主体：今日整理（真实数据 = 2026-09-04）</h2>
+
+<div class="row2">
+<div>
+<h3>A · 正常态</h3>
+<div class="dlg">
+  <div class="dhead">
+    <span class="hicon">📅</span>
+    <span class="dtitle">今日整理</span>
+    <span class="dsub">9 月 4 日 · 周五</span>
+    <button class="x">✕</button>
+  </div>
+
+  <div class="overview">
+    <div class="ovItem"><div class="ovNum">72</div><div class="ovLabel">条碎片</div></div>
+    <div class="ovItem"><div class="ovNum">7</div><div class="ovLabel">段工作</div></div>
+    <div class="ovItem"><div class="ovNum">08:39<span class="ovUnit">起</span></div><div class="ovLabel">17:35 止</div></div>
+  </div>
+
+  <div class="section">
+    <div class="sectionTitle">今天的时间线</div>
+    <div class="seg">
+      <div class="segTime">08:39-09:00</div>
+      <div class="segMain"><div class="segSrc">DeepSeek</div>
+        <div class="segMeta">文本 6 · 链接 1</div></div>
+      <div class="segN">7 条</div>
+    </div>
+    <div class="seg">
+      <div class="segTime">10:28-11:49</div>
+      <div class="segMain"><div class="segSrc">企业微信</div>
+        <div class="segMeta">文本 12 · 图片 4</div></div>
+      <div class="segN">16 条</div>
+    </div>
+    <div class="seg">
+      <div class="segTime">12:39</div>
+      <div class="segMain"><div class="segSrc">丁香园</div>
+        <div class="segMeta">文本 3</div></div>
+      <div class="segN">3 条</div>
+    </div>
+    <div class="seg">
+      <div class="segTime">14:31-15:26</div>
+      <div class="segMain"><div class="segSrc">远程桌面连接</div>
+        <div class="segMeta">文本 24 · 文件 2</div></div>
+      <div class="segN">26 条</div>
+    </div>
+    <div class="seg">
+      <div class="segTime">15:52-16:11</div>
+      <div class="segMain"><div class="segSrc">企业微信</div>
+        <div class="segMeta">文本 9</div></div>
+      <div class="segN">9 条</div>
+    </div>
+    <div class="seg">
+      <div class="segTime">16:35-17:35</div>
+      <div class="segMain"><div class="segSrc">Microsoft Edge</div>
+        <div class="segMeta">文本 8 · 文档 2</div></div>
+      <div class="segN">10 条</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="sectionTitle">内容类型</div>
+    <div class="bars">
+      <div class="barRow"><span class="barLabel">文本</span>
+        <span class="barTrack"><span class="barFill" style="width:76%"></span></span><span class="barVal">55</span></div>
+      <div class="barRow"><span class="barLabel">图片</span>
+        <span class="barTrack"><span class="barFill" style="width:10%"></span></span><span class="barVal">7</span></div>
+      <div class="barRow"><span class="barLabel">文档</span>
+        <span class="barTrack"><span class="barFill" style="width:8%"></span></span><span class="barVal">6</span></div>
+      <div class="barRow"><span class="barLabel">文件</span>
+        <span class="barTrack"><span class="barFill" style="width:6%"></span></span><span class="barVal">4</span></div>
+    </div>
+  </div>
+
+  <div class="aiBox">
+    <div class="aiLabel">✨ AI 小结</div>
+    <button class="aiBtn">生成今日小结</button>
+    <div class="segMeta" style="margin-top:5px">只发送上面这些<b>数字与来源名</b>，不发送任何内容。</div>
+  </div>
+
+  <div class="dfoot">
+    <button class="btn">看看前一天</button>
+    <span class="grow"></span>
+    <button class="btn">关闭</button>
+  </div>
+</div>
+<p class="cap">三个数字卡、横条、紫框全是 <code>WeekReportDialog</code> 现成的块。<br>
+<b>本次新增的只有「时间线」一种块</b>（<code>.seg</code>）。</p>
+</div>
+
+<div>
+<h3>B · AI 小结生成后</h3>
+<div class="dlg">
+  <div class="dhead">
+    <span class="hicon">📅</span><span class="dtitle">今日整理</span>
+    <span class="dsub">9 月 4 日 · 周五</span><button class="x">✕</button>
+  </div>
+  <div class="overview">
+    <div class="ovItem"><div class="ovNum">72</div><div class="ovLabel">条碎片</div></div>
+    <div class="ovItem"><div class="ovNum">7</div><div class="ovLabel">段工作</div></div>
+    <div class="ovItem"><div class="ovNum">08:39<span class="ovUnit">起</span></div><div class="ovLabel">17:35 止</div></div>
+  </div>
+  <div class="aiBox">
+    <div class="aiLabel">✨ AI 小结</div>
+    <div class="aiText">今天的重心在<b>远程桌面</b>（14:31-15:26，26 条，占全天一半以上），
+      上下午各有一段<b>企业微信</b>的沟通（25 条）。开头与结尾都在查资料（DeepSeek / Edge）。
+      全天 7 段、跨度 9 小时，文本占 76%。</div>
+    <div class="segMeta" style="margin-top:6px">上面这段只根据<b>数字与来源名</b>生成。
+      想让它说出「具体在做什么项目」需要读原文——那是下一期（C3），且必须先授权。</div>
+  </div>
+  <div class="dfoot">
+    <button class="btn btnP">存入今日速记</button>
+    <span class="grow"></span>
+    <button class="btn">重新生成</button>
+  </div>
+</div>
+<p class="cap"><b>只有这一步会写入。</b>点「存入今日速记」才追加到
+<code>notes.daily_date = 今天</code> 那一条（复用现有 <code>note_daily_append</code>）。不点就什么都不存。</p>
+</div>
+</div>
+
+<h3>C · 冷启动态（今天 = 2026-09-05，真实只有 12 条）</h3>
+<div class="dlg">
+  <div class="dhead">
+    <span class="hicon">📅</span><span class="dtitle">今日整理</span>
+    <span class="dsub">9 月 5 日 · 周六</span><button class="x">✕</button>
+  </div>
+  <div class="cold">
+    今天才攻下 <b>12</b> 条，分不出几段工作来。<br>
+    再攒攒，或者 <span style="color:var(--accent-strong);text-decoration:underline;cursor:pointer">看看前一天</span>。
+  </div>
+</div>
+<p class="cap"><b>阈值不能照搬周报的 50</b>——真库近 7 天有 4 天不足 50 条，照搬就是大半数天打开都是这个面。见下方待拍板 ①。</p>
+
+<h2>三、真库验证：分段数落在规划想要的区间里</h2>
+<table>
+<tr><th>日期</th><th>碎片数</th><th>分段（20 分钟）</th><th>≥2 条的段</th><th>规划要的 3–8 簇</th></tr>
+<tr><td>2026-09-04</td><td>72</td><td>7</td><td>6</td><td class="keep">✅</td></tr>
+<tr><td>2026-09-02</td><td>74</td><td>9</td><td>8</td><td class="keep">✅</td></tr>
+<tr><td>2026-08-31</td><td>132</td><td>10</td><td>9</td><td class="keep">✅ （略超，可接受）</td></tr>
+</table>
+<div class="note ok"><b>而如果按规划原案的 source 聚类：</b>09-04 那天有 <b>21 个不同 source</b>，
+会得到 21 个碎簇，而且 source 存的是完整窗口标题（<code>10．200．21．46 (SERVER) - … - 远程桌面连接</code>）。</div>
+
+<h2>四、隐私：本刀零内容出网</h2>
+<table>
+<tr><th></th><th>读什么</th><th>发给 AI 的</th></tr>
+<tr><td>分段与统计</td><td><code>id / time / source / type / content_type</code> 五列</td><td>—</td></tr>
+<tr><td>AI 小结</td><td>同上</td><td class="keep">只有数字与来源名</td></tr>
+<tr><td><code>text</code> / <code>content</code></td><td class="kill">🔴 不读</td><td class="kill">🔴 不发</td></tr>
+</table>
+<p class="cap">不读 <code>text</code>/<code>content</code> 不只是隐私，也是性能：图片的 <code>content</code> 是 base64（事件聚合设计稿 §5 同约束）。</p>
+
+<h2>五、需要你拍板的两处</h2>
+<table>
+<tr><th>#</th><th>问题</th><th>我的建议</th></tr>
+<tr><td>①</td><td>冷启动阈值 N 定多少？（规划 §7 一直没定）</td>
+<td><b>按段数而不是条数：不足 2 段就是冷启动。</b>条数阈值定多少都是拍的，
+而「分不出两段事」本身就是「今天没什么好整理」的定义。真库 09-05 的 12 条正好只有 1 段</td></tr>
+<tr><td>②</td><td>「看看前一天」能翻多远？</td>
+<td><b>只给前一天，不做日历。</b>知识库侧栏已经有一个速记月历（<code>DailyCalendar</code>），
+再做一个就是两套日期导航；而日报的真实场景是「下班前看今天」与「早上补看昨天」</td></tr>
+</table>
+
+<h2>六、实现拆分（预估）</h2>
+<table>
+<tr><th>层</th><th>文件</th><th>内容</th></tr>
+<tr><td>纯函数</td><td><code>src/lib/events.ts</code>（新）</td><td><code>segmentByGap(items, gapSecs)</code>。
+<b>同时喂每日整理与 G3 事件聚合</b>，一个函数两个消费方（已配单测）</td></tr>
+<tr><td>后端</td><td><code>commands/history.rs</code></td><td>一个 <code>history_day_meta(date)</code>：只查五列、按 <code>time</code> 过滤当天</td></tr>
+<tr><td>前端</td><td><code>DailyBriefDialog.tsx</code>（新）</td><td>三个数字卡 + 时间线 + 类型条 + AI 框。预估 ≤ 200 行（规则 #7）</td></tr>
+<tr><td>入口</td><td><code>lib/toolbox.ts</code></td><td>新增一项，不绑热键</td></tr>
+</table>
+
+<p class="sub" style="margin-top:26px">数据来源：2026-09-05 对 <code>clipboard.db</code> 的实测；
+主题令牌照抄 <code>src/styles/theme.css</code>，组件尺寸照抄 <code>WeekReportDialog.module.css</code>。</p>
+</div>
+</body>
+</html>

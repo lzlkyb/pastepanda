@@ -434,3 +434,18 @@ pub fn get_all_history(
 ) -> Result<Vec<HistoryItem>, String> {
     store.get_all_history(&workspace)
 }
+
+/// 某一天的剪贴板条目元信息（每日整理 H3 行为层）。
+///
+/// **只返五列**（`id / time / source / type / content_type`），不含 `text` 与 `content`——
+/// 行为层零内容出网，且图片的 `content` 是 base64，一天几百条就是几十 MB。
+///
+/// 分段与统计全在前端做（`lib/events.ts` 的 `segmentByGap` + `lib/weekReport.ts`），
+/// 后端只负责把这一天的元信息按时间升序捞出来。
+#[tauri::command]
+pub fn history_day_meta(
+    store: State<DataStore>,
+    date: String,
+) -> Result<Vec<crate::data_store::DayMetaRow>, String> {
+    store.history_day_meta(&date)
+}
