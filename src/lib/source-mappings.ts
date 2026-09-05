@@ -67,7 +67,11 @@ export const SOURCE_MAP: SourceMeta[] = [
     icon: "⚡",
     color: "#6B7280",
     aliases: ["terminal", "cmd", "PowerShell", "命令提示符"],
-    matchPatterns: [/Terminal/i, /PowerShell/i, /cmd/i, /命令提示符/i],
+    // 🔴 必须带词边界：无锚点的 `/Terminal/i` 会把 **Xterminal**（真库 191 条，
+    // 一个独立的终端软件）认成系统 Terminal——开头那个 X 就这么没了。
+    // `/cmd/i` 同理，任何含 cmd 的串都会中。
+    // 中文那条不加 `\b`：JS 的 `\b` 按 ASCII 词字符判定，加了反而匹不上。
+    matchPatterns: [/\bTerminal\b/i, /\bPowerShell\b/i, /\bcmd\b/i, /命令提示符/],
   },
   {
     displayName: "Figma",
@@ -309,8 +313,18 @@ export function resolveSource(raw: string): { displayName: string; icon: string;
     }
   }
 
-  // 2. 窗口标题提取应用名
-  const dash = raw.lastIndexOf(" — ");
+  // 2. 窗口标题提取应用名：Windows 的惯例是「文档标题 - 应用名」，取**最后一段**。
+  //
+  // 🔴 必须同时认连字符 `" - "` 与破折号 `" — "`。
+  // 这里原先只拆破折号，而 2026-09-05 真库实测：含 `" - "` 的有 **730 条**，
+  // 含 `" — "` 的只有 **16 条**——也就是说这一步对绝大多数真实数据根本没生效，
+  // 窗口标题一路滑到第 4 步被截断成「模型对比分析 - DeepSeek…」这种东西。
+  // 修后全库 341 个不同 source 归并到 96 个，且 Top 全是干净应用名。
+  //
+  // ❗ 分隔符**两边必须有空格**（字面匹配 `" - "` 而不是 `"-"`）：
+  // 应用名自己带的连字符是紧贴的（`GLM-5.3-Flash`），不能被当分隔符。
+  // 两种分隔符长度都是 3，所以偏移量一致。
+  const dash = Math.max(raw.lastIndexOf(" — "), raw.lastIndexOf(" - "));
   const appName = dash > 0 ? raw.slice(dash + 3).trim() : raw;
 
   // 3. 用提取后的应用名模糊匹配 aliases（先走 exactAliases 全等匹配，再走 aliases 子串包含匹配）
