@@ -309,6 +309,32 @@ th{color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-sp
 <tr><td><code>sections/KbSyncSection.tsx</code></td><td>54</td></tr>
 <tr><td><code>sections/LanSyncSection.tsx</code></td><td>44</td></tr>
 </table>
+
+<h3>🔴 第二轮：拆完 GeneralTab 之后，<code>SettingsView</code> 自己又超了</h3>
+<div class="bad">
+  上面那句「全部 ≤ 300 行」当时<b>并不成立</b>：表里只统计了 <code>GeneralTab</code> 那一支，
+  而宿主组件 <code>SettingsView.tsx</code> 在接下来做的滚动联动、标题栏、搜索框之后涨到了 <b>496 行</b>。
+  拆一个大文件把行数挪到另一个文件里，不算拆完。
+</div>
+<table>
+<tr><th>文件</th><th>行数</th><th>职责</th></tr>
+<tr><td><code>hooks/useSettingsShell.ts</code>（新）</td><td>257</td><td>保存串行、导出导入、清理、恢复默认、统计与版本号</td></tr>
+<tr><td><code>components/SettingsView.tsx</code></td><td><b>496 → 172</b></td><td>只剩编排与 JSX</td></tr>
+<tr><td><code>hooks/useSettingsNav.ts</code>（新）</td><td>121</td><td>菜单高亮、平滑跳转、scroll-spy</td></tr>
+<tr><td><code>sections/meta.ts</code></td><td>76</td><td>菜单元数据（下方）</td></tr>
+</table>
+<div class="note">
+  🔴 <b>顺带收口了一个真实的隐患（规则 #11）</b>：菜单的 11 项原先<b>散在两处</b>——
+  七个分区在 <code>sections/meta.ts</code> 的 <code>SETTINGS_SECTIONS</code>，
+  四个页在 <code>SettingsView</code> 组件内的 <code>pageTabs</code> 局部变量。
+  而 scroll-spy 与点菜单跳转都建在「<b>数组顺序＝滚动顺序</b>」这个约定上，
+  两处定义迟早会不一致。现已全部收进 <code>meta.ts</code> 的 <code>settingsNavItems()</code>。
+</div>
+<div class="note">
+  同时加了一道<b>编译期核对</b>：<code>SETTINGS_PAGES</code> 的 key 必须与
+  <code>openSettings</code> 的 tab 名（去掉 general）完全对应，少一个多一个直接编译不过——
+  而不是等到用户从变换中心点 <code>initialTab</code> 跳过来时静默落空。
+</div>
 <div class="bad">
   🔴 <b>拆分时踩到的硬约束：每个分区组件必须返回 <code>&lt;&gt;…&lt;/&gt;</code> 片段，不能包一层 <code>&lt;div&gt;</code>。</b>
   搜索过滤遍历的是容器 <code>children</code>，多包一层就会遍历到分区外壳而不是设置行，
@@ -368,57 +394,52 @@ th{color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-sp
   <b>真正改变行为可见性</b>的地方。
 </div>
 
-<h2>八、窄屏怎么办：菜单收成图标条（不再下钻）</h2>
-<p class="lead">
-  硬约束：主窗口 <code>minWidth: 320</code>，可缩放无上限。
-  菜单 180 + 详情 140 会挤爆，所以窄到一定程度菜单必须变形——<b>但仍然是左右两栏</b>。
-</p>
+<h2>八、窄屏怎么办：菜单按百分比伸缩（最终实现）</h2>
 
-<div class="side">
-  <div>
-    <h4 style="font-size:12px;margin:0 0 6px">≥600px：菜单 180 + 详情 ≥420</h4>
-    <div class="holder" style="height:200px"><div class="scale" style="height:100px">
-      <div class="win" style="width:300px;height:100px;flex-direction:row">
-        <div style="width:90px;border-right:1px solid var(--border-color);background:var(--section-bg)">
-          <div style="padding:4px 7px;font-size:8.5px;background:var(--accent-light);color:var(--accent-strong);font-weight:700">📊 数据统计</div>
-          <div style="padding:4px 7px;font-size:8.5px">🎨 外观</div>
-          <div style="padding:4px 7px;font-size:8.5px">⚙️ 通用</div>
-          <div style="padding:4px 7px;font-size:8.5px">🌐 局域网同步</div>
-        </div>
-        <div style="flex:1;padding:5px;font-size:8.5px">详情区（完整宽度，与今天弹框同宽）</div>
-      </div>
-    </div></div>
-  </div>
-  <div>
-    <h4 style="font-size:12px;margin:0 0 6px">&lt;600px：菜单收成 44px 图标条</h4>
-    <div class="holder" style="height:200px"><div class="scale" style="height:100px">
-      <div class="win" style="width:220px;height:100px;flex-direction:row">
-        <div style="width:26px;border-right:1px solid var(--border-color);background:var(--section-bg);text-align:center">
-          <div style="padding:4px 0;font-size:9px;background:var(--accent-light)">📊</div>
-          <div style="padding:4px 0;font-size:9px">🎨</div>
-          <div style="padding:4px 0;font-size:9px">⚙️</div>
-          <div style="padding:4px 0;font-size:9px">🌐</div>
-          <div style="padding:4px 0;font-size:9px">📚</div>
-        </div>
-        <div style="flex:1;padding:5px;font-size:8.5px">详情区仍有 ≥276px<br><span style="opacity:.6">图标靠 title 提示说明是哪一项</span></div>
-      </div>
-    </div></div>
-  </div>
+<div class="bad">
+  🔴 <b>本节初稿写的是「&lt;600px 菜单收成 44px 图标条」，实现时推翻了。</b>
+  理由很直接：<b>只剩图标，用户看不懂是哪一项</b>。
+  「📊 数据统计」去掉文字之后，📊 与 💾（数据管理）、🌐（局域网同步）与 📚（知识库同步）
+  在小尺寸下几乎分不出；而 <code>title</code> 提示要悬停才出来——在一个用户平均停留十几秒、
+  来了就想找到某一项的页面里，这个代价不值。
 </div>
 
-<h3>门槛为什么仍取 600</h3>
-<table>
-<tr><th></th><th>600</th><th>480</th></tr>
-<tr><td>详情栏宽度</td><td>600 − 180 = <b>420px</b>，与今天弹框<b>一样宽</b>，设置行一行不用重画</td><td>300px，图标+标题+描述+开关挤不下</td></tr>
-<tr><td>默认窗口（600 宽）</td><td>✅ 正好是完整菜单</td><td>✅ 也是，但 480–600 区间里详情栏太窄</td></tr>
-<tr><td>是否新断点</td><td>❌ 项目已有 600</td><td>🔴 新增第三套断点</td></tr>
-</table>
+<p class="lead">
+  硬约束不变：主窗口 <code>minWidth: 320</code>，可缩放无上限。
+  最终做法是<b>干脆不设断点</b>：菜单占 20% 宽、夹在 128–220px 之间，<b>文字始终显示</b>，
+  装不下就省略号。
+</p>
+
+<pre><code>.settingsNav {
+  flex: 0 0 20%;        /* 跟着窗口连续伸缩，没有跳变 */
+  min-width: 128px;     /* 320px 极端宽度下仍能放下「局域网同步」五个字 */
+  max-width: 220px;     /* 宽屏下不让菜单无限变胖 */
+  overflow-y: auto;
+}
+.settingsNavLabel {
+  min-width: 0;         /* 不写这条省略号不生效（flex 子项默认 min-width:auto）*/
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}</code></pre>
+
 <div class="note">
-  沿用项目现有的 600，<b>不引入第三套断点</b>（<code>useKbLayout</code> 的注释明写过这一条）。
-  代码上直接复用已有的 <code>useMediaQuery("(min-width: 600px)")</code>，不新增常量。
+  三条好处：<br>
+  ① <b>没有第三套断点</b>——<code>useKbLayout</code> 的注释明写过项目只允许 600 / 800 两个，
+  而现在连这两个也不需要；<br>
+  ② <b>没有两套渲染分支</b>——一套 DOM 从头用到尾，不存在「宽屏一套、窄屏一套」；<br>
+  ③ <b>拖窗口时只是菜单连续变宽窄</b>，选中项不动、不会在某个宽度突然变形。
+</div>
+
+<div class="warn">
+  ⚠ 初稿的「门槛为什么取 600」那张对比表已一并删除。
+  那张表里的算式（600 − 180 = 420px 详情栏）本身没错，
+  但它服务的是一个<b>已经不存在的决策</b>——固定 180px 菜单 + 断点切换。
+  留着会让后来的人以为代码里还有一个 600 的判断去找。
 </div>
 
 <h3>为什么不保留下钻</h3>
+<p class="lead">这一段仍然成立，且是上面那个决定的前提：既然不下钻，菜单就必须始终在场。</p>
 <table>
 <tr><th></th><th>恒定左右（采用）</th><th>窄屏下钻（废弃）</th></tr>
 <tr><td>“我在哪”</td><td>菜单始终可见，高亮当前项</td><td>二级页看不到全貌</td></tr>
@@ -426,6 +447,11 @@ th{color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-sp
 <tr><td>拖窗口跨过门槛</td><td>只是菜单宽度变，选中项不变</td><td>会在「两栏」与「两屏」之间跳，还得处理 nav 为 null 的中间态</td></tr>
 <tr><td>代码分支</td><td>一套 DOM，只切菜单样式类</td><td>两套渲染分支</td></tr>
 </table>
+<div class="bad">
+  🔴 “nav 为 null 的中间态”不是假想的风险：实现时 <code>nav</code> 初值真的写了 <code>null</code>，
+  结果刚打开设置右栏整块空白，看上去像 bug。现在它的类型就不允许为 null（默认落在第一个分区）。
+</div>
+
 <h2>九、搜索的三个状态（当时只画了命中态）</h2>
 <div class="warn">
   ⚠ <b>2026-09-05 修正</b>：本节①②两个状态是按「另做一套搜索结果列表」画的。
